@@ -1,6 +1,6 @@
 # 本机开发说明（Windows 11）：装依赖、起停数据库、跑检查
 
-> 负责人：运维负责人 · 最后更新：2026-10-04 · 来源任务：T-011（D-L0-01、D-L0-02）
+> 负责人：运维负责人 · 最后更新：2026-10-05 · 来源任务：T-011（D-L0-01、D-L0-02），T-015 修订（检查项、CI）
 > 读者：总经理（零基础）。前提：已按 `docs/ops/dev-env-setup.md` 装好 Node.js 24、pnpm 11、Docker Desktop。
 > 软件版本以 `docs/decisions/ADR-0003-tech-stack.md`「版本基线」为准，本文只讲怎么用。
 
@@ -133,14 +133,15 @@ docker compose down -v
 
 | 命令 | 做什么 | 成功的样子 |
 |---|---|---|
-| `pnpm check` | **一次跑完下面全部四项**（推荐） | 最后没有 `ERR`，且测试部分显示 `passed` |
+| `pnpm check` | **一次跑完下面全部检查**（推荐）：格式、代码规则、类型、测试、设计令牌 | 最后没有 `ERR`，测试部分显示 `passed`，最后一行 `已是最新： docs/design/tokens.css` |
 | `pnpm format` | 把代码自动排版整齐（会改文件） | 列出文件名，不报错 |
-| `pnpm lint` | 代码规则检查，含模块边界规则 R1～R9 | 只显示 `$ eslint .`，没有其他输出 |
+| `pnpm lint` | 代码规则检查，含模块边界规则 R1～R10、服务器禁止路径别名、模块间循环依赖 | 显示 `no dependency violations found`，没有报错 |
 | `pnpm typecheck` | 类型检查 | 每个子项目都显示 `Done` |
 | `pnpm test` | 自动测试 | `Test Files  N passed`、`Tests  N passed` |
+| `pnpm tokens` | 改了 `docs/design/tokens.json` 后重新生成 `tokens.css`（会改文件） | `已生成 docs/design/tokens.css` |
 
 - `pnpm check` 里的格式检查只「检查」不改文件；格式不对时先执行 `pnpm format` 再跑一次。
-- 自动化测试服务器（CI，D-L0-03）以后会在每次提交时跑同样的命令。
+- 每次推送到 GitHub，自动检查流水线（CI）都会跑同样的检查，说明见 `docs/ops/ci.md`。
 
 ---
 

@@ -13,7 +13,8 @@ export function toPosix(filename) {
 }
 
 const SERVER_SRC = /^(.*\/apps\/server\/src)\/(.*)$/;
-const COMPOSITION_FILES = /^(main|app\.module)\.[cm]?[jt]sx?$/;
+// 扩展名可省略：import 写成 '../src/app.module' 时也要认出是装配入口
+const COMPOSITION_FILES = /^(main|app\.module)(\.[cm]?[jt]sx?)?$/;
 const INDEX_FILE = /^index(\.[cm]?[jt]sx?)?$/;
 
 /**
@@ -39,6 +40,18 @@ export function locate(filename) {
 /** 模块目录内的路径是否就是公开出口 index.ts（R1）。 */
 export function isModuleEntry(inner) {
   return inner === '' || INDEX_FILE.test(inner);
+}
+
+const TESTING_FILE = /^testing(\.[cm]?[jt]sx?)?$/;
+
+/** 模块目录内的路径是否是测试出口 testing.ts（R10：只给测试用的第二个公开出口）。 */
+export function isModuleTestingEntry(inner) {
+  return TESTING_FILE.test(inner);
+}
+
+/** 是否是服务器集成测试目录 apps/server/test/ 下的文件（R10）。 */
+export function isServerIntegrationTest(filename) {
+  return /\/apps\/server\/test\//.test(toPosix(filename));
 }
 
 /** 位置对应的层级数字（R2）。未知的位置返回 null，不参与层级判断。 */

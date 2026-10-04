@@ -1,6 +1,6 @@
 /**
  * R4 模型出口唯一、R5 推送出口唯一。
- * 某类 SDK（及其接口域名）只允许在指定模块里出现；apps/ 下其他任何地方出现都报错。
+ * 某类 SDK（及其接口域名）只允许在指定模块里出现；apps/ 和 packages/ai-evals/ 下其他任何地方出现都报错。
  * 名单在 ../architecture.js。
  */
 import { STANDARDS_DOC, importSourceVisitors, locate, matchesPackage, toPosix } from './support.js';
@@ -37,7 +37,8 @@ export default {
   },
   create(context) {
     const filename = toPosix(context.filename);
-    if (!filename.includes('/apps/')) return {};
+    // 检查范围：apps/ 全部，以及 packages/ai-evals（评测一律经模型网关，engineering-standards.md 3.3）
+    if (!filename.includes('/apps/') && !filename.includes('/packages/ai-evals/')) return {};
     const here = locate(filename);
     const groups = (context.options[0] ?? []).filter(
       (group) => !(here.kind === 'module' && here.module === group.allowedModule),
