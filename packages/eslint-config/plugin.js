@@ -1,11 +1,12 @@
 /**
- * 本地 ESLint 插件「weiban」：实现模块边界规则 R1～R9。
+ * 本地 ESLint 插件「weiban」：实现模块边界规则 R1～R9，以及服务器禁止路径别名。
  * 每条规则自己根据文件路径判断是否适用，所以在整个仓库统一开启即可。
  */
 import billingPortExit from './rules/billing-port-exit.js';
 import contractsSource from './rules/contracts-source.js';
 import exclusiveSdk from './rules/exclusive-sdk.js';
 import moduleBoundaries from './rules/module-boundaries.js';
+import noPathAlias from './rules/no-path-alias.js';
 import noRawTime from './rules/no-raw-time.js';
 import ownSchemaOnly from './rules/own-schema-only.js';
 
@@ -18,5 +19,6 @@ export default {
     'no-raw-time': noRawTime,
     'own-schema-only': ownSchemaOnly,
     'billing-port-exit': billingPortExit,
+    'no-path-alias': noPathAlias,
   },
 };

@@ -56,6 +56,7 @@ export const boundaryRules = {
   'weiban/no-raw-time': 'error', // R7
   'weiban/own-schema-only': 'error', // R8
   'weiban/billing-port-exit': 'error', // R9
+  'weiban/no-path-alias': 'error', // 服务器禁止路径别名（保证 R1～R3 不失效）
 };
 
 export default [

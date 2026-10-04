@@ -180,18 +180,97 @@ describe('R7 时间', () => {
     expect(errors.filter((e) => e.startsWith('R7'))).toHaveLength(2);
   });
 
-  it('解析时间戳、平台内核、测试文件 → 通过', async () => {
-    const code = 'export const a = new Date();\nexport const b = Date.now();\n';
+  it('经 globalThis / global 取 Date、不带 new 调用 Date()、拿走 Date.now → 报错（T-015 加固）', async () => {
+    const errors = await boundaryErrors(
+      `${SERVER}/modules/contacts/domain/accept.ts`,
+      [
+        'export const a = new globalThis.Date();',
+        'export const b = globalThis.Date.now();',
+        "export const c = globalThis['Date'].now();",
+        'export const d = new global.Date();',
+        'export const e = Date();',
+        'export const f = Date.now;',
+        'export const g = new Date;',
+        '',
+      ].join('\n'),
+    );
+    expect(errors.filter((e) => e.startsWith('R7'))).toHaveLength(7);
+  });
+
+  it('apps/server/src 下 modules 以外的文件（装配入口、其他目录）也检查（T-015 加固）', async () => {
+    const code = 'export const a = new Date();\n';
+    expect((await boundaryErrors(`${SERVER}/main.ts`, code)).join('\n')).toMatch(/^R7/m);
+    expect((await boundaryErrors(`${SERVER}/app.module.ts`, code)).join('\n')).toMatch(/^R7/m);
+    expect((await boundaryErrors(`${SERVER}/jobs/cleanup.ts`, code)).join('\n')).toMatch(/^R7/m);
+  });
+
+  it('解析时间戳、平台内核、测试文件、服务器以外 → 通过', async () => {
+    const code =
+      'export const a = new Date();\nexport const b = Date.now();\nexport const c = new globalThis.Date();\n';
     expect(
       await boundaryErrors(
         `${SERVER}/modules/contacts/domain/accept.ts`,
-        "export const a = new Date('2026-10-04T00:00:00Z');\n",
+        "export const a = new Date('2026-10-04T00:00:00Z');\nexport const b = new globalThis.Date(0);\nexport const c = Date.parse('2026-10-04');\n",
       ),
     ).toEqual([]);
     expect(await boundaryErrors(`${SERVER}/platform/clock/system-clock.ts`, code)).toEqual([]);
     expect(await boundaryErrors(`${SERVER}/modules/contacts/domain/accept.test.ts`, code)).toEqual(
       [],
     );
+    expect(await boundaryErrors('apps/server/test/integration/chat.test.ts', code)).toEqual([]);
+    expect(await boundaryErrors('apps/web/src/features/chat/time.ts', code)).toEqual([]);
+  });
+});
+
+describe('服务器禁止路径别名（T-015）', () => {
+  it('@/、~/、#、src/ 这类别名导入 → 报错', async () => {
+    const errors = await boundaryErrors(
+      `${SERVER}/modules/contacts/application/add-contact.ts`,
+      [
+        "import { a } from '@/modules/chat';",
+        "import { b } from '~/platform/clock';",
+        "import { c } from '#platform/clock';",
+        "import { d } from 'src/modules/chat';",
+        "export { e } from 'modules/chat/infra/db/schema';",
+        "export const f = await import('@/modules/billing');",
+        'export const all = [a, b, c, d];',
+        '',
+      ].join('\n'),
+    );
+    expect(errors.filter((e) => e.startsWith('禁止路径别名'))).toHaveLength(6);
+  });
+
+  it('服务器测试目录里用别名 → 报错', async () => {
+    const errors = await boundaryErrors(
+      'apps/server/test/integration/chat.test.ts',
+      "import { ChatModule } from '@/modules/chat';\nexport const x = ChatModule;\n",
+    );
+    expect(errors.join('\n')).toMatch(/^禁止路径别名/m);
+  });
+
+  it('相对路径、npm 包（含 @scope/包）、服务器以外的别名 → 通过', async () => {
+    expect(
+      await boundaryErrors(
+        `${SERVER}/modules/contacts/application/add-contact.ts`,
+        [
+          "import { ChatModule } from '../../chat';",
+          "import { clock } from '../../../platform/clock/index.js';",
+          "import { Injectable } from '@nestjs/common';",
+          "import { type Message } from '@weiban/contracts';",
+          "import pg from 'pg';",
+          "import { readFile } from 'node:fs/promises';",
+          'export type M = Message;',
+          'export const all = [ChatModule, clock, Injectable, pg, readFile];',
+          '',
+        ].join('\n'),
+      ),
+    ).toEqual([]);
+    expect(
+      await boundaryErrors(
+        'apps/web/src/features/chat/send.ts',
+        "import { x } from '@/lib/x';\nexport const y = x;\n",
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -254,5 +333,40 @@ describe('R9 扣费出口唯一', () => {
     expect(
       await boundaryErrors(`${SERVER}/modules/model-access/application/generate.ts`, code),
     ).toEqual([]);
+  });
+
+  // ---- 已知漏检（Q-009，独立质量负责人登记）----
+  // 下面两个用例描述的是「应该报错」的写法，目前 R9 规则拦不住，所以先标记为 skip。
+  // R9 加固方案由架构负责人在 T-014 中确定；实现加固时把 it.skip 改成 it，必须通过。
+  it.skip('Q-009 漏检①：变量名不含 billing、但类型是 BillingPort 的对象调用 settle → 应报错', async () => {
+    const bypass = [
+      'interface BillingPort {',
+      '  estimateAndReserve(i: unknown): unknown;',
+      '  settle(i: unknown): unknown;',
+      '  release(i: unknown): unknown;',
+      '}',
+      'declare const port: BillingPort;',
+      'port.settle({});',
+      'port.release({});',
+      '',
+    ].join('\n');
+    for (const file of [
+      `${SERVER}/modules/ai-runtime/application/plan.ts`,
+      `${SERVER}/modules/contacts/application/gift.ts`,
+    ]) {
+      const errors = await boundaryErrors(file, bypass);
+      expect(errors.filter((e) => e.startsWith('R9'))).toHaveLength(2);
+    }
+  });
+
+  it.skip("Q-009 漏检②：方括号写法 billingPort['estimateAndReserve'](…) → 应报错", async () => {
+    const bypass = [
+      'declare const billingPort: Record<string, (i: unknown) => unknown>;',
+      "billingPort['estimateAndReserve']({});",
+      "billingPort['settle']({});",
+      '',
+    ].join('\n');
+    const errors = await boundaryErrors(`${SERVER}/modules/ai-runtime/application/plan.ts`, bypass);
+    expect(errors.filter((e) => e.startsWith('R9'))).toHaveLength(2);
   });
 });
