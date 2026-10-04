@@ -71,7 +71,7 @@ pnpm db:up
 
 成功的样子：最后一行 `Container weiban-dev-postgres  Healthy`。
 
-- 第一次启动会下载数据库镜像（约 150 MB），需要几分钟。
+- 第一次启动会下载数据库镜像（下载约 200 MB，解压后占硬盘约 650 MB），需要几分钟。
 - 第一次启动时还会自动做两件事：开启 pgvector 扩展；另建一个测试专用库 `weiban_test`（自动测试会随意清空它，不影响开发库）。
 - 启动后**一直在后台运行**，关掉 PowerShell 也不影响；重启电脑后，只要 Docker Desktop 开着，它会自动重新运行。
 
