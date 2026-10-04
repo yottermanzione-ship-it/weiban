@@ -1,7 +1,13 @@
 /**
  * chat 模块提供的端口。chat 不知道调用者是不是 AI——它只认「参与者」。
  */
-import type { ContentScope, Conversation, Message, MessageContent, Participant } from '../http/chat.js';
+import type {
+  ContentScope,
+  Conversation,
+  Message,
+  MessageContent,
+  Participant,
+} from '../http/chat.js';
 import type { PortResult, Tx } from './common.js';
 
 /** 读消息必须声明可见范围（内容范围标签，见 docs/architecture/hard-boundaries.md）。 */
@@ -36,17 +42,30 @@ export interface PostMessageInput {
   quoteMessageId?: string;
 }
 
-export type PostMessageError = 'conversation_not_found' | 'not_conversation_member' | 'invalid_content';
+export type PostMessageError =
+  'conversation_not_found' | 'not_conversation_member' | 'invalid_content';
 
 /** 以参与者身份说话：AI 运行时用它让角色发言、已读、正在输入、撤回（人设小巧思）。 */
 export interface ChatParticipantPort {
   postMessage(input: PostMessageInput): Promise<PortResult<Message, PostMessageError>>;
   /** 标记某参与者读到第几条（角色已读，CHAT-07）。只前进不后退。 */
-  markRead(input: { conversationId: string; participantId: string; readSeq: number }): Promise<void>;
+  markRead(input: {
+    conversationId: string;
+    participantId: string;
+    readSeq: number;
+  }): Promise<void>;
   /** 正在输入：只实时转发，不落库（CHAT-06）。 */
-  setTyping(input: { conversationId: string; participantId: string; state: 'start' | 'stop' }): Promise<void>;
+  setTyping(input: {
+    conversationId: string;
+    participantId: string;
+    state: 'start' | 'stop';
+  }): Promise<void>;
   /** 撤回某参与者自己发的消息（角色撤回重发，CHAT-08）。 */
-  recall(input: { conversationId: string; participantId: string; messageId: string }): Promise<PortResult<Message, 'not_found' | 'not_sender'>>;
+  recall(input: {
+    conversationId: string;
+    participantId: string;
+    messageId: string;
+  }): Promise<PortResult<Message, 'not_found' | 'not_sender'>>;
 }
 
 /** 会话管理：供 contacts（添加角色后建私聊）、ai-runtime（设置内容范围）等模块使用。 */
@@ -62,11 +81,20 @@ export interface ChatAdminPort {
   /** 写一条系统提示（如「XX 通过了你的好友申请」）。幂等键规则同 postMessage。 */
   postSystemMessage(
     tx: Tx | null,
-    input: { conversationId: string; code: string; params?: Record<string, string | number | boolean>; idempotencyKey: string },
+    input: {
+      conversationId: string;
+      code: string;
+      params?: Record<string, string | number | boolean>;
+      idempotencyKey: string;
+    },
   ): Promise<Message>;
   /**
-   * 设置会话内容范围。只有在 policy 判定通过后才允许设为 adult；群聊只能是 normal。
-   * 之后写入的消息按此盖章（内容范围标签）。
+   * 设置会话内容范围。调用方（ai-runtime）只有在 policy 判定通过后才可设为 adult；
+   * 群聊按成员资格开放情景模式（PRD v1.2 SOC-03 第 4 条），chat 不区分私聊群聊。
+   * 之后写入的消息按此盖章（内容范围标签）。v1.0：去掉 group_conversation 错误。
    */
-  setContentScope(input: { conversationId: string; scope: ContentScope }): Promise<PortResult<void, 'group_conversation' | 'not_found'>>;
+  setContentScope(input: {
+    conversationId: string;
+    scope: ContentScope;
+  }): Promise<PortResult<void, 'not_found'>>;
 }

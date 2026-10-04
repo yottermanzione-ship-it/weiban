@@ -1,16 +1,9 @@
 {
+  // 契约源码：网页、安卓（经 JSON Schema）、服务器共用，不能依赖 Node 或浏览器专有的 API，
+  // 所以只用 base.json（不带 Node 类型）。脚本和测试用 tsconfig.node.json。
+  "extends": "@weiban/tsconfig/base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": false,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "isolatedModules": true,
-    "verbatimModuleSyntax": true,
-    "noEmit": true
+    "types": []
   },
-  "include": ["src", "scripts"]
+  "include": ["src"]
 }

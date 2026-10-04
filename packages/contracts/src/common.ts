@@ -52,6 +52,45 @@ export const DeviceInfo = z.object({
 });
 export type DeviceInfo = z.infer<typeof DeviceInfo>;
 
+// ---------- 接收端容错（README「版本规则」） ----------
+
+/**
+ * 保留字：客户端遇到不认识的类型 / 取值时统一换成它。任何真实的类型名、枚举值都不得使用 'unsupported'。
+ */
+export const UNSUPPORTED = 'unsupported' as const;
+
+/**
+ * 接收端容错枚举：不认识的字符串取值变成 'unsupported'（新增取值是次版本变更，旧客户端不能因此出错）。
+ * 只用于「服务器 → 客户端」方向的字段；客户端发给服务器的字段一律用严格的 z.enum。
+ */
+export function tolerantEnum<T extends Readonly<Record<string, string>>>(strict: z.ZodEnum<T>) {
+  const known = new Set<string>(strict.options);
+  return z.preprocess(
+    (value) => (typeof value === 'string' && !known.has(value) ? UNSUPPORTED : value),
+    z.enum({ ...strict.enum, [UNSUPPORTED]: UNSUPPORTED } as T & {
+      readonly [UNSUPPORTED]: typeof UNSUPPORTED;
+    }),
+  );
+}
+
+/**
+ * 接收端容错联合类型的前置处理：输入是带 type 字段的对象、且 type 不在已知列表里时，
+ * 换成 fallback(原 type) 的结果（一个 type = 'unsupported' 的对象），再交给严格的联合类型校验。
+ * 已知 type 但内容不合法的照常校验失败，不掩盖服务器的错误。
+ */
+export function unknownTypeFallback(
+  knownTypes: readonly string[],
+  fallback: (originalType: string) => Record<string, unknown>,
+) {
+  const known = new Set(knownTypes);
+  return (value: unknown): unknown => {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+    const type = (value as { type?: unknown }).type;
+    if (typeof type !== 'string' || known.has(type)) return value;
+    return fallback(type);
+  };
+}
+
 // ---------- 错误 ----------
 
 /**
@@ -96,16 +135,22 @@ export const ErrorCode = z.enum([
   'adult_mode_not_eligible',
   'romance_not_allowed',
   'policy_denied',
-  // 情景模式的功能前提 / 产品规则（不是硬性边界）：是否使用以 PRD v1.2 为准
-  'adult_model_missing', // 422：没有可用的成人模式模型
-  'age_not_confirmed', // 若 PRD v1.2 取消年龄确认则不再返回，下个主版本删除
-  'group_conversation', // 若 PRD v1.2 取消「群聊只用日常」则不再返回，下个主版本删除
+  // 情景模式的功能前提（不是硬性边界）
+  'adult_model_missing', // 422：没有可用的成人模式模型（不自动改用聊天模型，pm-rulings-2 B2）
+  // v1.0 删除：age_not_confirmed、group_conversation（PRD v1.2 取消年龄确认和「群聊只用日常」）
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
+/**
+ * 客户端读取错误码时用：不认识的新错误码变成 'unsupported'，按通用失败处理，而不是解析失败。
+ * 服务器产生错误时用严格的 ErrorCode。
+ */
+export const ReceivedErrorCode = tolerantEnum(ErrorCode);
+export type ReceivedErrorCode = z.infer<typeof ReceivedErrorCode>;
+
 export const ApiError = z.object({
   error: z.object({
-    code: ErrorCode,
+    code: ReceivedErrorCode,
     /** 给人看的中文说明；客户端按 code 做逻辑判断，不要解析 message。 */
     message: z.string(),
     requestId: z.string(),

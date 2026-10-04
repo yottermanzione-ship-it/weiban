@@ -2,8 +2,8 @@
  * 计费端口。提供方：billing。设计见 docs/architecture/billing.md 第 5–7 节，决策 ADR-0012。
  *
  * 调用权限（engineering-standards R9，CI 强制）：
- * - estimateAndReserve / settle / release：**只有 model-access 的模型网关**可以调用。
- * - getSpendStatus：ai-runtime 等需要判断「要不要安排后台任务」的模块可读。
+ * - BillingReservationPort（estimateAndReserve / settle / release）：**只有 model-access 的模型网关**可以引用和调用。
+ * - BillingReadPort（getSpendStatus）：ai-runtime 等需要判断「要不要安排后台任务」的模块可读。
  * 金额一律为整数微元（1 元 = 1,000,000）。
  */
 import type { ModelPurpose } from './model-gateway.js';
@@ -78,9 +78,24 @@ export interface SpendStatus {
   backgroundRemainingTodayMicros: number;
 }
 
-export interface BillingPort {
+/**
+ * 扣费端口（冻结 / 结算 / 解冻）。**只有 model-access 可以引用这个类型和它的注入令牌**（R9，
+ * engineering-standards.md 第 3.1 节）。v1.0 从原 BillingPort 拆出，让 lint 能按「谁 import 了它」检查，
+ * 而不是按变量名猜（Q-009）。
+ */
+export interface BillingReservationPort {
+  /**
+   * 原子地冻结用户（或平台账户）的钱，同时预留平台每日成本预算（billing.md 第 7 节，Q-007）；
+   * 任一不够即整体失败，不留半个冻结。
+   */
   estimateAndReserve(input: ReserveInput): Promise<PortResult<ReserveOutput, ReserveError>>;
   settle(input: SettleInput): Promise<SettleOutput>;
   release(input: ReleaseInput): Promise<void>;
+}
+
+/** 只读计费端口：任何模块都可以用（例如 ai-runtime 判断要不要安排后台任务）。 */
+export interface BillingReadPort {
   getSpendStatus(userId: string): Promise<SpendStatus>;
 }
+
+// v1.0：原 BillingPort（四个方法合在一起）删除，拆为上面两个端口。

@@ -9,11 +9,6 @@ docs/
 # 安卓工程是 Kotlin，格式由 ktlint 负责（D-L0-18）
 apps/android/
 
-# 【临时】契约包现有文件尚未按 Prettier 排版，且本任务（T-011）无权修改契约。
-# 由架构负责人在 D-L0-04 契约工程化时运行 `pnpm exec prettier --write packages/contracts`
-# 并删除下面这一行。
-packages/contracts/
-
 # 生成物
 **/generated/
 

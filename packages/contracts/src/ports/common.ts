@@ -25,4 +25,5 @@ export interface UserDataOwner {
 }
 
 /** 端口方法统一的失败结果：不抛业务异常，而是返回可判断的错误。 */
-export type PortResult<T, E extends string> = { ok: true; value: T } | { ok: false; error: E; message?: string };
+export type PortResult<T, E extends string> =
+  { ok: true; value: T } | { ok: false; error: E; message?: string };
