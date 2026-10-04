@@ -135,9 +135,9 @@ docker compose down -v
 |---|---|---|
 | `pnpm check` | **一次跑完下面全部检查**（推荐）：格式、代码规则、类型、测试、设计令牌 | 最后没有 `ERR`，测试部分显示 `passed`，最后一行 `已是最新： docs/design/tokens.css` |
 | `pnpm format` | 把代码自动排版整齐（会改文件） | 列出文件名，不报错 |
-| `pnpm lint` | 代码规则检查，含模块边界规则 R1～R9、服务器禁止路径别名、模块间循环依赖 | 显示 `no dependency violations found`，没有报错 |
+| `pnpm lint` | 代码规则检查，含模块边界规则 R1～R10、服务器禁止路径别名、模块间循环依赖 | 显示 `no dependency violations found`，没有报错 |
 | `pnpm typecheck` | 类型检查 | 每个子项目都显示 `Done` |
-| `pnpm test` | 自动测试 | `Test Files  N passed`、`Tests  N passed`（`skipped` 是登记在案的已知漏检用例，正常） |
+| `pnpm test` | 自动测试 | `Test Files  N passed`、`Tests  N passed` |
 | `pnpm tokens` | 改了 `docs/design/tokens.json` 后重新生成 `tokens.css`（会改文件） | `已生成 docs/design/tokens.css` |
 
 - `pnpm check` 里的格式检查只「检查」不改文件；格式不对时先执行 `pnpm format` 再跑一次。

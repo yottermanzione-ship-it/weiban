@@ -62,7 +62,7 @@ jobs:
       - name: 格式检查
         run: pnpm format:check
 
-      - name: 代码规则检查（含模块边界 R1～R9、禁止路径别名、模块间循环依赖）
+      - name: 代码规则检查（含模块边界 R1～R10、禁止路径别名、模块间循环依赖）
         run: pnpm lint
 
       - name: 类型检查

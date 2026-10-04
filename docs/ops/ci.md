@@ -39,7 +39,7 @@
 |---|---|---|
 | 1 | `pnpm install --frozen-lockfile` | 依赖能装上，且锁文件 `pnpm-lock.yaml` 与 `package.json` 一致 |
 | 2 | `pnpm format:check` | 代码排版 |
-| 3 | `pnpm lint` | 代码规则：模块边界 R1～R9、服务器禁止路径别名、服务器模块之间禁止循环依赖 |
+| 3 | `pnpm lint` | 代码规则：模块边界 R1～R10、服务器禁止路径别名、服务器模块之间禁止循环依赖 |
 | 4 | `pnpm typecheck` | 类型检查 |
 | 5 | `pnpm test` | 自动测试 |
 | 6 | `pnpm tokens --check` | `docs/design/tokens.css` 与 `tokens.json` 重新生成的结果一致 |
