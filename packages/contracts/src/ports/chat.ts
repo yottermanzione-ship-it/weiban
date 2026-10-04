@@ -4,7 +4,7 @@
 import type { ContentScope, Conversation, Message, MessageContent, Participant } from '../http/chat.js';
 import type { PortResult, Tx } from './common.js';
 
-/** 读消息必须声明可见范围（SAFE-07，见 docs/architecture/hard-boundaries.md）。 */
+/** 读消息必须声明可见范围（内容范围标签，见 docs/architecture/hard-boundaries.md）。 */
 export interface ReadMessagesInput {
   conversationId: string;
   /** 必填。除「成人模式私聊内生成回复」外，调用方只能传 ['normal']。 */
@@ -66,7 +66,7 @@ export interface ChatAdminPort {
   ): Promise<Message>;
   /**
    * 设置会话内容范围。只有在 policy 判定通过后才允许设为 adult；群聊只能是 normal。
-   * 之后写入的消息按此盖章（SAFE-07）。
+   * 之后写入的消息按此盖章（内容范围标签）。
    */
   setContentScope(input: { conversationId: string; scope: ContentScope }): Promise<PortResult<void, 'group_conversation' | 'not_found'>>;
 }

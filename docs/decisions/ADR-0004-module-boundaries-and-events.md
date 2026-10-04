@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 状态 | 已采纳 |
+| 状态 | 已采纳；T-009 在中层新增 `billing` 模块（ADR-0012），`model-access` 单向调用 `billing` |
 | 日期 | 2026-10-04 |
 | 提出人 | 架构负责人（T-004） |
 | 批准人 | 架构负责人 |
@@ -66,7 +66,7 @@ ADR-0001 定了「模块化单体」：一个程序，内部模块严格分开�
             └─────────────────────────────────────────────────────────────────┘
  上层（玩法与智能）  ai-runtime   moments   growth   importer
                          │  调用端口 ↓       订阅事件 ↑
- 中层（领域）        chat   contacts   characters   model-access   policy
+ 中层（领域）        chat   contacts   characters   model-access → billing   policy
                          │  调用端口 ↓
  底层（基础）        identity   realtime(同步与在线)   push   media
 ```

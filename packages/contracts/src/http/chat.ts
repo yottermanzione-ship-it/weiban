@@ -60,7 +60,7 @@ export type UserSendableContent = z.infer<typeof UserSendableContent>;
 
 // ---------- 消息 ----------
 
-/** 内容范围：由服务器按会话当时的 contentScope 盖章，客户端不能指定（SAFE-07）。 */
+/** 内容范围：由服务器按会话当时的 contentScope 盖章，客户端不能指定（hard-boundaries.md「内容范围标签」）。 */
 export const ContentScope = z.enum(['normal', 'adult']);
 export type ContentScope = z.infer<typeof ContentScope>;
 
@@ -91,7 +91,7 @@ export const Message = z.object({
 });
 export type Message = z.infer<typeof Message>;
 
-/** 会话列表中的最后一条消息摘要。成人范围的消息摘要统一为「[消息]」。 */
+/** 会话列表中的最后一条消息摘要。成人范围消息是否显示为「[消息]」以 PRD v1.2 为准。 */
 export const MessagePreview = z.object({
   messageId: Id,
   seq: Seq,

@@ -75,10 +75,12 @@ export const ErrorCode = z.enum([
   'invite_invalid',
   'username_taken',
   'password_too_weak',
-  // 密钥与模型
-  'credential_exists',
-  'credential_test_failed',
+  // 模型与计费（v0.2：BYOK 的 credential_exists、credential_test_failed 已删除）
   'model_unavailable',
+  'model_not_allowed', // 无审查模型用于无成人资格的角色，或选为全局聊天 / 后台模型
+  'insufficient_balance',
+  'upstream_test_failed', // 管理后台：上游连通测试失败
+  'price_version_immutable', // 管理后台：已生效的价目表不可修改
   // 角色与通讯录
   'contact_limit_reached',
   'contact_exists',
@@ -90,13 +92,14 @@ export const ErrorCode = z.enum([
   'not_conversation_member',
   // 同步
   'sync_cursor_expired',
-  // 硬性边界（见 docs/architecture/hard-boundaries.md）
+  // 硬性边界（见 docs/architecture/hard-boundaries.md），HTTP 403
   'adult_mode_not_eligible',
-  'age_not_confirmed',
-  'adult_model_missing',
-  'group_conversation',
   'romance_not_allowed',
   'policy_denied',
+  // 情景模式的功能前提 / 产品规则（不是硬性边界）：是否使用以 PRD v1.2 为准
+  'adult_model_missing', // 422：没有可用的成人模式模型
+  'age_not_confirmed', // 若 PRD v1.2 取消年龄确认则不再返回，下个主版本删除
+  'group_conversation', // 若 PRD v1.2 取消「群聊只用日常」则不再返回，下个主版本删除
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

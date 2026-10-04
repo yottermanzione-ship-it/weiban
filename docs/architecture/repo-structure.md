@@ -1,11 +1,11 @@
 # 仓库目录结构（monorepo）
 
-> 负责人：架构负责人 · v1.0 · 2026-10-04 · 来源任务：T-004
-> 技术选型见 `docs/decisions/ADR-0003-tech-stack.md`。
+> 负责人：架构负责人 · v1.1 · 2026-10-04 · 来源任务：T-004，T-009 修订（安卓原生客户端）
+> 技术选型见 `docs/decisions/ADR-0003-tech-stack.md`、安卓见 `ADR-0011`。
 
 ## 1. 一句话
 
-**一个 git 仓库装下全部代码**（monorepo，「单一仓库」）：服务器、网页、管理后台、安卓壳、接口契约各是一个子项目，用 pnpm workspace（pnpm 的「工作区」功能）串起来，子项目之间可以直接引用。
+**一个 git 仓库装下全部代码**（monorepo，「单一仓库」）：服务器、网页、管理后台、安卓原生客户端、接口契约各是一个子项目。TypeScript 子项目用 pnpm workspace（pnpm 的「工作区」功能）串起来，可以直接互相引用；安卓是独立的 Gradle 工程，只通过「契约导出的 JSON Schema → 生成 Kotlin 代码」与其他部分连接。
 
 ## 2. 目录总览
 
@@ -13,11 +13,11 @@
 weiban/
 ├─ apps/                          可运行的程序
 │  ├─ server/                     服务器：NestJS 模块化单体          负责人：后端（ai-runtime 目录归 AI）
-│  ├─ web/                        用户端网页 / PWA（安卓壳也加载它）   负责人：Web
+│  ├─ web/                        用户端网页 / PWA（iPhone、电脑浏览器）负责人：Web
 │  ├─ admin/                      管理后台网页                        负责人：Web
-│  └─ android/                    Capacitor 安卓壳 + Kotlin 原生插件   负责人：Android
+│  └─ android/                    安卓原生客户端（Kotlin + Compose，Gradle 工程，不属于 pnpm 工作区）负责人：Android
 ├─ packages/                      被多个程序共享的代码
-│  ├─ contracts/                  接口与事件契约（唯一准绳）          负责人：架构
+│  ├─ contracts/                  接口与事件契约（唯一准绳）；test-vectors/ 同步协议用例  负责人：架构
 │  ├─ ai-evals/                   AI 评测集用例与运行器（见 docs/ai/eval-plan.md） 负责人：AI
 │  ├─ tsconfig/                   共享 TypeScript 配置                负责人：运维
 │  └─ eslint-config/              共享代码检查规则（含模块边界规则）    负责人：运维（规则内容由架构定）
@@ -55,6 +55,7 @@ apps/server/
 │     ├─ push/
 │     ├─ media/
 │     ├─ model-access/
+│     ├─ billing/
 │     ├─ characters/
 │     ├─ contacts/
 │     ├─ chat/
@@ -95,7 +96,6 @@ apps/web/
 │  ├─ app/                  路由、全局布局
 │  ├─ features/             按功能分：chat/、contacts/、characters/、settings/、onboarding/ ...
 │  ├─ data/                 API 客户端（基于 contracts）、WebSocket 客户端、IndexedDB 本地库、发件队列
-│  ├─ native/               原生桥封装：安卓壳里调用 Capacitor 插件，浏览器里走网页实现
 │  ├─ components/           通用组件（遵循设计体系）
 │  └─ sw/                   Service Worker（离线缓存、Web Push 通知点击）
 └─ public/                  图标、manifest
@@ -103,15 +103,27 @@ apps/web/
 
 `apps/admin` 结构相同但更简单（无离线、无推送）。
 
-## 5. 安卓壳结构 `apps/android`
+## 5. 安卓原生客户端结构 `apps/android`（ADR-0011）
+
+标准 Android Studio / Gradle 工程，用 Android Studio 直接打开 `apps/android/` 即可。下面是架构层面的约定，包内细分由 Android 负责人决定并写入 `docs/android/`。
 
 ```
 apps/android/
-├─ capacitor.config.ts      webDir 指向 ../web/dist（网页构建产物打包进 APK）
-├─ package.json
-└─ android/                 Capacitor 生成的 Android Studio 工程
-   └─ app/src/main/java/.../plugins/   自写 Kotlin 插件（厂商推送、全屏来电、通话前台服务）
+├─ settings.gradle.kts / build.gradle.kts / gradle/libs.versions.toml   依赖版本集中管理
+├─ app/                          应用入口、导航、依赖装配
+├─ core/
+│  ├─ contracts-generated/       由契约 JSON Schema 生成的 Kotlin 数据类（★ 不手改，CI 检查重新生成无差异）
+│  ├─ network/                   OkHttp（HTTP + WebSocket）、令牌、错误格式
+│  ├─ data/                      Room 本地库、同步引擎（发件队列、updateSeq 补拉、会话级缺口自检）、WorkManager 任务
+│  ├─ designsystem/              由 docs/design/tokens.json 生成的令牌常量 + 通用组件（★ 令牌不手抄）
+│  └─ testvectors/               运行 packages/contracts/test-vectors 用例的 JUnit 运行器
+├─ feature/                      按功能分：chat/、contacts/、characters/、me/（含微伴服务）、settings/ ...
+└─ platform/                     推送（厂商通道 / 聚合推送）、通知、前台服务、全屏来电、通话
 ```
+
+规则：
+- `feature/*` 只能依赖 `core/*`，不能互相依赖；推送、来电等系统能力只放在 `platform/`。
+- 生成代码（契约、设计令牌）的生成脚本放在 `scripts/`，由 Gradle 任务调用（需要本机有 Node，开发环境已安装）。
 
 ## 6. 构建产物目录（交接运维补 `.gitignore`）
 
@@ -124,10 +136,9 @@ apps/android/
 | `build/` | Android Gradle | 已覆盖 |
 | `coverage/` | Vitest 覆盖率 | 已覆盖 |
 | `.gradle/` | Gradle 缓存 | 已覆盖 |
-| `apps/android/android/app/src/main/assets/public/` | `npx cap sync` 复制进来的网页产物 | **需新增** |
-| `apps/android/android/capacitor-cordova-android-plugins/` | Capacitor 生成 | **需新增** |
-| `apps/android/android/app/release/`、`*.apk`、`*.aab` | 安卓打包输出 | **需新增** |
-| `apps/android/android/.idea/`、`*.iml` | Android Studio | `.idea/` 已覆盖，`*.iml` **需新增** |
+| `apps/android/app/release/`、`*.apk`、`*.aab` | 安卓打包输出 | **需新增** |
+| `apps/android/.idea/`、`*.iml`、`apps/android/.kotlin/` | Android Studio / Kotlin 编译缓存 | `.idea/` 已覆盖，`*.iml`、`.kotlin/` **需新增** |
+| `apps/android/core/contracts-generated/build/` 等生成产物的中间目录 | 生成脚本 | 由 `build/` 覆盖；**生成后的 Kotlin 源码本身要进仓库**（便于评审与 CI 比对） |
 | `.pnpm-store/` | pnpm 本地仓库（若配置在项目内） | **需新增** |
 | `*.tsbuildinfo` | TypeScript 增量编译 | **需新增** |
 | `.turbo/`、`.vite/`、`.cache/` | 构建缓存 | **需新增** |

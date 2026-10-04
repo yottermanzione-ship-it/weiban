@@ -9,6 +9,11 @@ import { CharacterCard } from '../character-card.js';
 
 // ---------- 分类（硬性边界的判定依据） ----------
 
+/**
+ * 角色原型。real_person = 以真实人物本人身份呈现（使用真名，或含可识别的真实身份事实：真实作品、
+ * 真实人际关系、真实经历）；以真人为灵感但用新名字、不带真实身份事实的角色归为 original
+ * （总负责人 2026-10-04 补充决定，hard-boundaries.md 第 2 节）。系统只按此字段执行，不检测灵感来源。
+ */
 export const CharacterBasis = z.enum(['real_person', 'fictional', 'original']);
 export type CharacterBasis = z.infer<typeof CharacterBasis>;
 
@@ -29,13 +34,12 @@ export const CharacterClassificationInput = z.object({
 export type CharacterClassificationInput = z.infer<typeof CharacterClassificationInput>;
 
 /**
- * 形象图生成策略（SAFE-01、MED-02、总负责人裁定 9.2 第 1、3 条）：
- * forbidden 真人（在世公众人物、基于身边真人）不生成本人形象；
- * classical_art_only 历史人物，只允许古风插画风格、不模仿具体作品；
- * personal_only 虚构作品角色，允许生成，仅限个人测试、不对外分发，分享图需加注；
- * allowed 原创角色。
+ * 形象图生成策略（SAFE-01、MED-02）：
+ * forbidden 真人分类（公众人物、身边真人、历史人物）不生成本人形象；
+ * allowed 虚构、原创角色。
+ * v0.2：原裁定 9.2 第 1、3 条（古风插画、仅个人测试）已删除，去掉 classical_art_only、personal_only。
  */
-export const PortraitPolicy = z.enum(['forbidden', 'classical_art_only', 'personal_only', 'allowed']);
+export const PortraitPolicy = z.enum(['forbidden', 'allowed']);
 export type PortraitPolicy = z.infer<typeof PortraitPolicy>;
 
 /** 读取时返回：分类事实 + 系统推导结果（只读，任何接口都不能写入推导字段）。 */
@@ -44,6 +48,7 @@ export const CharacterClassification = CharacterClassificationInput.extend({
   childFeaturesDetected: z.boolean(),
   derived: z.object({
     isMinor: z.boolean(),
+    /** = 非真人 且 非儿童（两条底线，hard-boundaries.md 第 2 节）；同时决定能否使用无审查模型。 */
     adultModeEligible: z.boolean(),
     romanceAllowed: z.boolean(),
     portraitPolicy: PortraitPolicy,
@@ -58,17 +63,44 @@ export type CharacterClassification = z.infer<typeof CharacterClassification>;
 export const CharacterKind = z.enum(['preset', 'custom']);
 export type CharacterKind = z.infer<typeof CharacterKind>;
 
-/** 头像：非肖像的字母 / 应援色设计（真人默认），或一张图片。 */
-export const CharacterAvatar = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('monogram'),
-    text: z.string().min(1).max(2),
-    /** 设计令牌中的颜色名，具体取值由设计负责人定义。 */
-    colorToken: z.string(),
-  }),
-  z.object({ type: z.literal('media'), mediaId: Id, url: z.url() }),
-]);
+/** 十六进制颜色，例 "#FF6FA3"。 */
+export const HexColor = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
+
+/** 默认头像右上角小图案（docs/design/default-avatar.md 3.5）。heart 对儿童角色不可用（服务器校验，422）。 */
+export const AvatarPattern = z.enum(['star', 'heart', 'note', 'moon', 'flower', 'none']);
+export type AvatarPattern = z.infer<typeof AvatarPattern>;
+
+/**
+ * 角色展示字段（设计负责人 T-006 申请，T-009 批准）。客户端据此绘制非肖像默认头像，
+ * 规则见 docs/design/default-avatar.md 第 3 节。与 App 界面主题（微信绿 / 微伴粉）无关。
+ */
+export const CharacterDisplay = z.object({
+  /** 官方应援色，0–3 个；为空时客户端按角色 ID 哈希从预设盘取色。第 1 个作底色，第 2 个作图案色。 */
+  supportColors: z.array(HexColor).max(3),
+  /** 头像字，1–2 个字；null 时客户端按名字自动取字。 */
+  avatarText: z.string().min(1).max(2).nullable(),
+  avatarPattern: AvatarPattern,
+  /** 角色主题色（资料页等处的点缀色）；null 时用第一个应援色或预设色。 */
+  themeColor: HexColor.nullable(),
+});
+export type CharacterDisplay = z.infer<typeof CharacterDisplay>;
+
+/**
+ * 头像：image 为管理员上传的图片（purpose = character_avatar，见 http/media.ts）；
+ * 为 null 时客户端用 display 绘制默认头像。图片加载失败时同样退回默认头像。
+ * 用户为自己通讯录设置的头像在 Contact.customAvatarMediaId，优先级更高，只对本人可见。
+ */
+export const CharacterAvatar = z.object({
+  image: z.object({ mediaId: Id, url: z.url() }).nullable(),
+  display: CharacterDisplay,
+});
 export type CharacterAvatar = z.infer<typeof CharacterAvatar>;
+
+/** 管理后台写入头像：传 mediaId（null 表示去掉图片，用默认头像），展示字段整体提交。 */
+export const CharacterAvatarWrite = z.object({
+  imageMediaId: Id.nullable(),
+  display: CharacterDisplay,
+});
 
 export const CharacterPublishStatus = z.enum(['draft', 'pending_check', 'published', 'unpublished', 'disabled']);
 export type CharacterPublishStatus = z.infer<typeof CharacterPublishStatus>;
@@ -182,7 +214,7 @@ export const AdminCharacterWrite = z.object({
   intro: z.string().max(1000),
   tags: z.array(z.string().max(16)).max(10).default([]),
   categoryId: z.string().nullable(),
-  avatar: CharacterAvatar,
+  avatar: CharacterAvatarWrite,
   birthday: LocalDate.nullable(),
   fanName: z.string().max(20).nullable(),
   classification: CharacterClassificationInput,

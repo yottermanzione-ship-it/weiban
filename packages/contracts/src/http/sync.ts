@@ -62,12 +62,13 @@ const ContactRemoved = z.object({
 const SettingsUpdated = z.object({
   type: z.literal('settings.updated'),
   data: z.object({
-    section: z.enum(['profile', 'notification', 'companion', 'model_selection', 'model_credentials']),
+    /** v0.2：model_credentials 删除（BYOK），新增 wallet（余额变化，客户端重新拉 GET /billing/wallet）。 */
+    section: z.enum(['profile', 'notification', 'companion', 'model_selection', 'wallet']),
     characterId: Id.nullable(),
   }),
 });
 
-/** 模型可用状态变化，用于显示或撤掉系统横条（MDL-04）。 */
+/** 模型可用状态变化（含余额不足 / 恢复），用于显示或撤掉系统横条（MDL-04）。 */
 const ModelStatusUpdated = z.object({
   type: z.literal('model.status_updated'),
   data: z.object({ status: ModelStatus }),

@@ -1,45 +1,47 @@
 /**
- * 模型网关端口。提供方：model-access。全系统调用模型供应商的唯一出口（engineering-standards R4）。
- * 网关统一负责：选模型（按 modelRole 与角色覆盖）、解密密钥、预算检查、policy 二次检查（成人生成）、
- * 重试与错误分类（message-reliability.md 第 6 节）、用量记账、日志消毒。
+ * 模型网关端口。提供方：model-access。全系统调用模型上游的唯一出口（engineering-standards R4）。
+ * 网关统一负责：选模型（按 modelRole 与角色覆盖）、policy 检查（成人生成、无审查模型）、
+ * 冻结与结算（经 BillingPort，ADR-0012）、解密上游密钥、重试与错误分类（message-reliability.md 第 6 节）、
+ * 用量记账、日志消毒。
  *
- * 请求 / 响应的消息结构是 v0 草案：AI 系统负责人在 T-005 / D-L0-09 中可提出变更申请调整
- * （例如工具调用、流式输出、多模态内容），由架构负责人批准后修改本文件。
+ * v0.2（T-009）：BYOK 删除。billingOwner 的含义改为「扣哪个账户」：user = 用户钱包，platform = 平台账户。
+ * 请求 / 响应的消息结构仍是草案：AI 系统负责人可提出变更申请（流式输出、多模态、工具调用），架构批准后修改。
  */
 import { z } from 'zod';
 import type { ModelRole } from '../http/model-access.js';
 import type { PortResult } from './common.js';
 
-/** 调用用途：用于用量页分类（MDL-05）和预算判断。新增用途属于次版本变更。 */
+/** 调用用途：用于用量页分类和预算判断。新增用途属于次版本变更。 */
 export const ModelPurpose = z.enum([
-  'chat_reply', // 私聊 / 群聊回复（含首条问候、恢复后合并回复）
-  'safety_check', // 安全关怀识别
+  'chat_reply', // 私聊 / 群聊回复（含首条问候、恢复后合并回复、成人模式回复）
+  'safety_check', // 安全关怀识别、边界检查
   'memory', // 记忆提取与长对话整理
   'simulation', // 推演日常、近期主线
-  'proactive', // 主动消息生成
+  'proactive', // 主动消息、群聊自发、来电开场
   'moments', // 朋友圈生成与互动
   'vision', // 识图
   'voice', // 语音合成 / 识别 / 通话
   'image_generation', // 角色发图
   'web_search', // 联网搜索
-  'import_analysis', // 导入聊天记录生成草稿
-  'connectivity_test', // 保存密钥时的连通测试
+  'import_analysis', // 导入聊天记录生成草稿、儿童特征检测
   'admin_distill', // 管理员：蒸馏公开资料生成角色草稿
   'admin_persona_check', // 管理员：人设稳定检查
   'admin_public_update_search', // 管理员：公开动态候选搜索
+  'admin_eval', // 管理员：评测集、排行榜自测
+  'admin_upstream_test', // 管理员：上游连通测试与恢复探测
 ]);
 export type ModelPurpose = z.infer<typeof ModelPurpose>;
 
-/** 属于「后台功能」的用途：受用户后台每日预算约束（MDL-05 第 2 条）；聊天回复不受约束。 */
-export const BACKGROUND_PURPOSES: readonly ModelPurpose[] = [
-  'memory',
-  'simulation',
-  'proactive',
-  'moments',
-  'import_analysis',
-];
+/**
+ * 属于「后台功能」的用途：受用户后台每日上限约束；聊天回复不受约束。
+ * 范围与 docs/ai/cost-estimate.md 第 6 节一致（用户主动发起的导入不计入）。
+ */
+export const BACKGROUND_PURPOSES: readonly ModelPurpose[] = ['memory', 'simulation', 'proactive', 'moments'];
 
-/** 计费归属：user = 用户自己的密钥；platform = 管理员配置的平台密钥（prd-answers.md 第 4 节）。 */
+/** 不受用户后台每日上限约束、但仍从余额扣费的用途（安全优先）。 */
+export const BUDGET_EXEMPT_PURPOSES: readonly ModelPurpose[] = ['safety_check'];
+
+/** 计费账户：user = 用户钱包；platform = 平台账户（只用于 admin_* 用途）。 */
 export const BillingOwner = z.enum(['user', 'platform']);
 export type BillingOwner = z.infer<typeof BillingOwner>;
 
@@ -50,46 +52,61 @@ export interface ChatMessageForModel {
 }
 
 export interface GenerateTextInput {
-  /** 计费与用量归属的用户；billingOwner = platform 时为发起操作的管理员。 */
+  /** 发起调用的用户；billingOwner = platform 时为发起操作的管理员。 */
   userId: string;
   purpose: ModelPurpose;
   billingOwner: BillingOwner;
   /** 用哪一类模型；网关按用户的选择解析出具体模型（后台未设置时沿用聊天模型）。 */
   modelRole: ModelRole;
-  /** 涉及具体角色时必填：用于角色模型覆盖（MDL-02 第 2 条）和 policy 检查。 */
+  /**
+   * 涉及具体角色时必填：用于角色模型覆盖和 policy 检查。
+   * 解析出的模型带 adult_content 能力时，缺少 characterId 一律拒绝（model_not_allowed）。
+   */
   characterId?: string;
-  /** 涉及具体会话时必填：成人生成时网关会检查会话类型与资格。 */
+  /** 涉及具体会话时必填。 */
   conversationId?: string;
   messages: ChatMessageForModel[];
+  /** 最大输出 token；不传时网关按用途取默认值。冻结金额按它估算。 */
   maxOutputTokens?: number;
   temperature?: number;
-  /** 要求模型输出 JSON 时提供（网关不解释 schema，只透传给支持的供应商）。 */
+  /** 要求模型输出 JSON 时提供（网关不解释 schema，只透传给支持的上游）。 */
   responseFormat?: 'text' | 'json';
-  /** 幂等键：同一键在 24 小时内重复调用，返回第一次的结果而不再次计费。 */
+  /** 幂等键：同一键在 24 小时内重复调用，返回第一次的结果，不再冻结、不再扣费。 */
   idempotencyKey: string;
+  /** 记入用量记录，追查「变脸」用（AI 负责人申请，T-009 批准）。 */
+  meta?: { personaVersion?: number; promptTemplateVersion?: string; scenarioMode?: string };
 }
 
 export interface GenerateTextOutput {
   text: string;
-  providerId: string;
-  modelId: string;
-  usage: { inputTokens: number; outputTokens: number; estimatedCostCny: number | null };
+  modelKey: string;
+  usage: { inputTokens: number; cachedInputTokens: number; outputTokens: number; estimated: boolean };
+  /** 本次从账户扣的金额（微元）。 */
+  chargedMicros: number;
   latencyMs: number;
   usageRecordId: string;
 }
 
 export type GenerateError =
-  | 'not_configured' // 用户还没有配置对应模型
-  | 'invalid_key'
-  | 'quota_exhausted'
-  | 'provider_unavailable' // 重试后仍失败
-  | 'budget_exceeded' // 后台预算或平台预算用完
+  | 'not_configured' // 没有可用的模型（用户未选且平台无默认）
+  | 'insufficient_balance' // 余额不足（未调用上游）
+  | 'budget_exceeded' // 后台每日上限或平台每日总上限（未调用上游）
+  | 'model_unavailable' // 模型下架、没有价格
+  | 'provider_unavailable' // 上游重试后仍失败（不扣费）
   | 'capability_missing' // 所选模型不具备所需能力（如识图）
+  | 'model_not_allowed' // 无审查模型用于无成人资格的角色或无角色调用
   | 'policy_denied' // 硬性边界拒绝（如为无资格角色做成人生成）
+  | 'content_rejected' // 被上游内容审核拦截（不扣费）
   | 'bad_request';
 
 export interface ModelGatewayPort {
   generateText(input: GenerateTextInput): Promise<PortResult<GenerateTextOutput, GenerateError>>;
-  /** 低成本探测某把密钥是否已恢复（MDL-04 恢复检查），成功时网关会发布 credential_status_changed。 */
-  probeCredential(userId: string, credentialId: string): Promise<'active' | 'invalid' | 'quota_exhausted' | 'provider_unavailable'>;
+  /**
+   * 用户当前能否和某角色聊天（模型已选且可用、余额充足）。ai-runtime 安排后台任务前、
+   * 界面横条（GET /model/status）都用它；上游恢复由网关自己探测并发布 model_access.model_status_changed。
+   */
+  getModelStatus(userId: string, characterId: string | null): Promise<{
+    available: boolean;
+    reason: 'not_configured' | 'insufficient_balance' | 'provider_unavailable' | 'model_removed' | null;
+  }>;
 }

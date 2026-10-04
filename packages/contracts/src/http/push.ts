@@ -1,6 +1,6 @@
 /**
  * push 模块：推送设备登记与通知载荷格式。
- * 需求：CHAT-10、ACC-01（退出不再推送）、ACC-03、SAFE-07 第 3 条。
+ * 需求：CHAT-10、ACC-01（退出不再推送）、ACC-03；余额 / 模型状态提醒（billing.md 第 6.4 节）。
  * 推送规则见 docs/architecture/message-reliability.md 第 7 节。
  * 安卓推送通道的具体厂商由 Android 负责人评估（D-L1-06），契约只约束格式，新增通道属于次版本变更。
  */
@@ -35,13 +35,14 @@ export const PushDevice = z.object({
  */
 export const NotificationPayload = z.object({
   v: z.literal(1),
-  kind: z.enum(['message', 'call', 'model_status', 'system']),
+  /** balance：余额不足 / 过低提醒（v0.2 新增）。 */
+  kind: z.enum(['message', 'call', 'model_status', 'balance', 'system']),
   /** 合并键：同一会话的多条消息用同一个键，新通知替换旧通知（CHAT-10 第 5 条）。 */
   collapseKey: z.string().max(64),
   title: z.string().max(64),
   /**
    * 正文。以下情况由服务器替换为「发来一条消息」类的通用文案：
-   * 用户关闭显示内容（ACC-03）、成人范围消息（SAFE-07，不受任何设置影响）。
+   * 用户关闭显示内容（ACC-03）；成人范围消息是否替换以 PRD v1.2 为准（v0.2 起不再是硬性边界）。
    */
   body: z.string().max(200),
   /** 同一合并键下的累计条数，>1 时显示「发来 N 条消息」。 */

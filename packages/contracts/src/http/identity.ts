@@ -42,7 +42,10 @@ export const CurrentUser = z.object({
   userId: Id,
   username: Username,
   role: UserRole,
-  /** 是否已完成「我已年满 18 周岁」确认（ACC-02 第 2 条）。 */
+  /**
+   * 是否已完成「我已年满 18 周岁」确认（ACC-02 第 2 条）。
+   * v0.2：不再是成人模式的前置条件（硬性边界只剩两条底线）；是否保留此确认由 PRD v1.2 决定，若取消则下个主版本删除。
+   */
   ageConfirmed: z.boolean(),
   /** 是否已填写必填昵称（首次引导判断用，ACC-04）。 */
   profileCompleted: z.boolean(),
@@ -217,7 +220,7 @@ export const IdentityEndpoints = {
     auth: 'user',
     body: z.object({ password: Password, confirm: z.literal('DELETE') }),
     response: z.object({ status: z.literal('deleting') }),
-    summary: '注销账号（ACC-06，L6 完成全部模块删除清单）。立即删除密钥、下线所有设备',
+    summary: '注销账号（ACC-06，L6 完成全部模块删除清单）。立即下线所有设备，各模块（含钱包与流水）随后物理删除',
   }),
 } as const;
 

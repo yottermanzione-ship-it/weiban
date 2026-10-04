@@ -10,6 +10,7 @@ export * from './character-card.js';
 // HTTP 接口（客户端 ↔ 服务器）
 export * from './http/identity.js';
 export * from './http/model-access.js';
+export * from './http/billing.js';
 export * from './http/characters.js';
 export * from './http/contacts.js';
 export * from './http/chat.js';
@@ -27,5 +28,4 @@ export * as Events from './events.js';
 // 端口（模块 ↔ 模块，同进程接口）
 export * from './ports/index.js';
 
-// 原生桥（网页 ↔ 安卓壳）
-export * from './bridge.js';
+// v0.2：原生桥 bridge.ts 已删除（安卓改为 Kotlin 原生客户端，ADR-0011），网页与安卓之间没有桥。

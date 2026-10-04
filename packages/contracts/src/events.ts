@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { Id, Seq, Timestamp } from './common.js';
 import { CharacterBasis, PortraitPolicy, RealPersonKind } from './http/characters.js';
 import { ContentScope, ConversationType, ParticipantKind } from './http/chat.js';
-import { CredentialStatus } from './http/model-access.js';
+import { ModelKey } from './http/model-access.js';
 
 export const ModuleName = z.enum([
   'identity',
@@ -18,6 +18,7 @@ export const ModuleName = z.enum([
   'push',
   'media',
   'model_access',
+  'billing',
   'characters',
   'contacts',
   'chat',
@@ -90,27 +91,52 @@ export const UserDataPurged = z.object({
 
 // ---------- model-access ----------
 
-export const CredentialStatusChanged = event(
-  'model_access.credential_status_changed',
+/**
+ * 某个模型的可用状态变化（上游故障 / 恢复、管理员停用）。影响所有选用该模型的用户：
+ * ai-runtime 暂停 / 恢复相关任务，恢复后对等待中的会话补一次合并回复（MDL-04）。
+ * v0.2 取代 credential_status_changed / credential_deleted（BYOK 删除）。
+ */
+export const ModelStatusChanged = event(
+  'model_access.model_status_changed',
   'model_access',
   z.object({
-    userId: Id,
-    credentialId: Id,
-    status: CredentialStatus,
-    previousStatus: CredentialStatus.nullable(),
+    modelKey: ModelKey,
+    available: z.boolean(),
+    reason: z.enum(['provider_unavailable', 'model_removed', 'recovered']),
   }),
-);
-
-export const CredentialDeleted = event(
-  'model_access.credential_deleted',
-  'model_access',
-  z.object({ userId: Id, credentialId: Id }),
 );
 
 export const ModelSelectionChanged = event(
   'model_access.selection_changed',
   'model_access',
   z.object({ userId: Id, characterId: Id.nullable() }),
+);
+
+// ---------- billing ----------
+
+/** 余额变化（加余额、扣费结算等）：realtime 写 settings.updated(section = wallet) 让客户端刷新。 */
+export const BalanceChanged = event(
+  'billing.balance_changed',
+  'billing',
+  z.object({
+    userId: Id,
+    balanceMicros: z.number().int(),
+    availableMicros: z.number().int(),
+    entryType: z.enum(['admin_grant', 'admin_deduct', 'charge', 'refund', 'adjustment']),
+  }),
+);
+
+/** 可用余额从 > 0 变为 ≤ 0：ai-runtime 暂停该用户全部后台任务，聊天不再回复。 */
+export const BalanceDepleted = event('billing.balance_depleted', 'billing', z.object({ userId: Id }));
+
+/** 可用余额从 ≤ 0 回到 > 0：ai-runtime 对「最后一条是用户消息」的会话补一次合并回复。 */
+export const BalanceRestored = event('billing.balance_restored', 'billing', z.object({ userId: Id }));
+
+/** 可用余额低于提醒线（同一账户每天最多一次）：push 发提醒。 */
+export const BalanceLow = event(
+  'billing.balance_low',
+  'billing',
+  z.object({ userId: Id, availableMicros: z.number().int(), thresholdMicros: z.number().int().nonnegative() }),
 );
 
 // ---------- characters ----------
@@ -261,9 +287,12 @@ export const DomainEvent = z.discriminatedUnion('type', [
   SessionRevoked,
   UserDeletionRequested,
   UserDataPurged,
-  CredentialStatusChanged,
-  CredentialDeleted,
+  ModelStatusChanged,
   ModelSelectionChanged,
+  BalanceChanged,
+  BalanceDepleted,
+  BalanceRestored,
+  BalanceLow,
   CharacterPublished,
   CharacterUnpublished,
   CharacterClassificationChanged,
