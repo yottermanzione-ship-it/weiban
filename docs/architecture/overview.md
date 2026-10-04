@@ -1,6 +1,6 @@
 # 微伴系统架构总览
 
-> 负责人：架构负责人 · 版本 v1.1 · 2026-10-04 · 来源任务：T-004，T-009 修订（安卓原生、平台中转计费）
+> 负责人：架构负责人 · 版本 v1.2 · 2026-10-05 · 来源任务：T-004，T-009 修订（安卓原生、平台中转计费），T-014 修订（主题偏好同步、计费端口拆分、删除年龄确认）
 > 技术选型见 `docs/decisions/ADR-0003-tech-stack.md`、安卓客户端见 `ADR-0011`；模块通信规则见 `ADR-0004`；消息可靠方案见 `ADR-0005`、`ADR-0013` 和 `message-reliability.md`；账号与密钥安全见 `ADR-0006` 和 `security-and-privacy.md`；计费见 `ADR-0012` 和 `billing.md`；硬性边界执行见 `ADR-0007` 和 `hard-boundaries.md`。本文不重复这些文档的细节。
 
 ## 1. 一句话
@@ -58,7 +58,7 @@ graph TB
 | 模块 | 职责（一句话） | 主要需求 | 层 | 负责人 | 首次出现 |
 |---|---|---|---|---|---|
 | `platform`（平台内核，不是业务模块） | 配置、数据库连接、事件发件箱与分发、任务队列、日志脱敏、加密工具、时钟、鉴权守卫、错误格式 | 全部 | 内核 | 后端 | L0 |
-| `identity` 账号 | 注册（邀请码）、登录、设备会话、我的资料、年龄确认（是否保留以 PRD v1.2 为准）、全局通知与免打扰设置、管理员角色、注销 | ACC-01～06 | 底层 | 后端 | L0 |
+| `identity` 账号 | 注册（邀请码）、登录、设备会话、我的资料、全局通知与免打扰设置、**界面偏好（主题选择，所有设备同步，T-014）**、管理员角色、注销（PRD v1.2 已取消年龄确认） | ACC-01～06、SVC-01 第 7 条 | 底层 | 后端 | L0 |
 | `realtime` 实时与同步 | WebSocket 网关、在线与「正在看哪个会话」、**每用户更新日志**（多端同步的核心）、补拉接口、「正在输入」转发 | CHAT-03、CHAT-06、ACC-01 | 底层 | 后端 | L1 |
 | `push` 推送 | 设备推送凭证、通知内容组装与合并、免打扰判断、成人范围内容处理（按 PRD v1.2）、余额与模型状态提醒、对接 Web Push 和安卓推送通道 | CHAT-10、ACC-03 | 底层 | 后端（安卓通道细节与 Android 负责人共建） | L1 |
 | `media` 媒体 | 上传、存储、缩略图、带签名的访问链接；头像（我的、通讯录、管理员为预设角色上传）；素材库文件 | ACC-02 头像、CHR-05、MED、ADM-04 | 底层 | 后端 | L0（头像） |
@@ -93,12 +93,12 @@ graph TB
 | 模块 | PostgreSQL schema | 拥有的数据（主要表） | 敏感级别 |
 |---|---|---|---|
 | platform | `platform` | `outbox`（待投递事件）、`event_inbox`（订阅者已处理记录）、`audit_log`（管理操作和边界判定审计）、`user_data_keys`（每用户数据密钥，被主密钥加密，见 `security-and-privacy.md`）；`pgboss` schema 由 pg-boss 自管 | 中 |
-| identity | `identity` | `users`（用户名、密码哈希、角色 user/admin）、`invites`（邀请码）、`sessions`（设备会话，令牌只存哈希）、`profiles`（昵称、头像、生日、性别、城市、关于我、时区）、`age_confirmations`、`notification_settings` | 高（密码哈希、个人资料） |
+| identity | `identity` | `users`（用户名、密码哈希、角色 user/admin）、`invites`（邀请码）、`sessions`（设备会话，令牌只存哈希）、`profiles`（昵称、头像、生日、性别、城市、关于我、时区）、`notification_settings`、`preferences`（界面偏好：主题，T-014；原 `age_confirmations` 随 PRD v1.2 取消） | 高（密码哈希、个人资料） |
 | realtime | `realtime` | `user_updates`（每用户递增的更新日志，保留 30 天）、`user_update_cursors`（每用户最新序号）；在线状态只在内存 | 中 |
 | push | `push` | `devices`（推送凭证，绑定会话）、`notification_log`（去重与合并，保留 7 天） | 中 |
 | media | `media` | `objects`（文件元数据：所有者、类型、大小、存储键、用途）；文件本体在对象存储 | 中～高（用户图片、语音） |
 | model-access | `model_access` | `upstreams`（上游与**加密后的平台密钥**、掩码、状态）、`model_catalog`（模型键 → 上游 + 上游模型名、能力、默认标记）、`leaderboard_entries`、`selections`、`character_overrides`、`usage_records`（每次调用：用途、模型、token、耗时、状态、计费账户、扣费流水引用）、`upstream_status` | **最高**（平台密钥） |
-| billing | `billing` | `accounts`（每用户钱包 + 平台账户）、`ledger_entries`（流水，只增不改）、`holds`（冻结）、`price_versions` / `price_items`（价目表）、`daily_spend`、`upstream_bills`、`reconciliation_runs` | 高（财务记录） |
+| billing | `billing` | `accounts`（每用户钱包 + 平台账户）、`ledger_entries`（流水，只增不改）、`holds`（冻结）、`price_versions` / `price_items`（价目表）、`daily_spend`、`platform_daily_budget`（平台每日成本预算，T-014）、`upstream_bills`、`reconciliation_runs` | 高（财务记录） |
 | characters | `characters` | `characters`（基础信息、分类、状态）、`character_cards`（角色卡，按版本；公开资料条目放在卡内 `knowledge.entries`，随人设版本一起版本化和回滚，不另设表）、`persona_versions`、`public_updates`（公开动态及审核状态）、`relations`（关系网）、`user_supplements`（我的补充设定）、`categories` | 中（自定义角色、补充设定属于用户数据） |
 | contacts | `contacts` | `contacts`（用户×角色：状态、备注、自定义头像、认识日期、关系类型、专属称呼、删除时间）、`card_recommendation_cooldowns` | 中 |
 | chat | `chat` | `conversations`、`participants`、`messages`（含会话内递增 `seq`、`client_msg_id`、`scope`）、`read_cursors`、`user_conversation_state`（置顶、免打扰、隐藏、清空位置）、`message_hides` | **高**（聊天内容是唯一事实来源） |
@@ -171,7 +171,7 @@ AI 运行时是一个模块，**对外只通过以下方式与系统交互**：
 | 收到「发生了什么」 | 订阅事件：`chat.message_created`、`chat.message_recalled`、`contacts.contact_accepted`、`model_access.model_status_changed`、`billing.balance_depleted` / `billing.balance_restored`、`characters.character_classification_changed`、`identity.profile_updated`、`identity.user_deletion_requested` 等 | `events.ts` |
 | 读数据 | 调端口：`ChatReadPort`、`CharacterReadPort`、`ContactsReadPort`、`IdentityReadPort`、`PolicyPort` | `ports/` |
 | 以角色身份说话 | 调端口：`ChatParticipantPort.postMessage / markRead / setTyping` | `ports/chat.ts` |
-| 调用模型 | **只能**调端口：`ModelGatewayPort.generateText`（带用途、模型角色、幂等键）；判断能否安排后台任务可读 `BillingPort.getSpendStatus` | `ports/model-gateway.ts`、`ports/billing.ts` |
+| 调用模型 | **只能**调端口：`ModelGatewayPort.generateText`（带用途、模型角色、幂等键）；判断能否安排后台任务可读 `BillingReadPort.getSpendStatus` | `ports/model-gateway.ts`、`ports/billing.ts` |
 | 对用户开放的接口 | 陪伴设置、记忆页、时间线等 HTTP 接口，由 AI 负责人提出、架构批准后写进契约 | `http/companion.ts`（L1 先有秒回和拆条） |
 | 定时与延迟 | 使用平台内核的 pg-boss 任务队列（队列名以 `ai.` 开头） | — |
 
@@ -181,7 +181,7 @@ AI 运行时**不能**：直接读写 `chat` 等其他模块的表；绕过模�
 
 | 端口 | 提供方 | 主要调用方 | 作用 |
 |---|---|---|---|
-| `IdentityReadPort` | identity | 全部 | 读资料、时区、通知设置、年龄确认状态 |
+| `IdentityReadPort` | identity | 全部 | 读资料、时区、通知设置 |
 | `CharacterReadPort` | characters | ai-runtime、policy、contacts | 读角色基础信息、分类、角色卡、补充设定 |
 | `ContactsReadPort` | contacts | ai-runtime、policy、push | 是否已添加、备注名、关系类型 |
 | `ChatReadPort` | chat | ai-runtime | 读会话、参与者、消息（必须指定可见范围） |
@@ -190,7 +190,8 @@ AI 运行时**不能**：直接读写 `chat` 等其他模块的表；绕过模�
 | `SyncPort` | realtime | chat、contacts、model-access、billing 等 | 在事务里写「每用户更新」；查询用户是否正在看某会话；转发正在输入 |
 | `PushPort` | push | （一般通过事件触发，少数直接调用） | 发送通知 |
 | `ModelGatewayPort` | model-access | ai-runtime、importer | 调用模型（唯一出口）、查询模型可用状态 |
-| `BillingPort` | billing | **冻结 / 结算 / 解冻只有 model-access**；`getSpendStatus` 可被 ai-runtime 读 | 计费（`billing.md`） |
+| `BillingReservationPort` | billing | **只有 model-access**（R9，lint 按 import 检查） | 冻结 / 结算 / 解冻（`billing.md`） |
+| `BillingReadPort` | billing | ai-runtime 等 | 读可用余额、后台预算余量（`getSpendStatus`） |
 | `PolicyPort` | policy | characters、ai-runtime、chat、media、library、model-access | 硬性边界判定（含无审查模型闸门） |
 
 ## 6. 运行形态

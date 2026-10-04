@@ -23,14 +23,42 @@ export type RealPersonKind = z.infer<typeof RealPersonKind>;
 export const AgeSetting = z.enum(['minor', 'adult']);
 export type AgeSetting = z.infer<typeof AgeSetting>;
 
-/** 可写入的分类事实（谁能写见 hard-boundaries.md 第 2 节）。 */
-export const CharacterClassificationInput = z.object({
+const classificationFields = {
   basis: CharacterBasis,
-  /** basis = real_person 时必填，其他情况必须为 null。 */
+  /** basis = real_person 时必填，其他情况必须为 null（组合校验见 checkClassificationCombination）。 */
   realPersonKind: RealPersonKind.nullable(),
   ageSetting: AgeSetting,
   childAppearance: z.boolean(),
-});
+};
+
+/**
+ * 分类组合校验（Q-006）：real_person 必须给出 realPersonKind；fictional / original 的 realPersonKind 必须为 null。
+ * 读写两种 schema 都执行，服务器另在数据库加同样的 CHECK 约束。
+ */
+function checkClassificationCombination(
+  value: { basis: CharacterBasis; realPersonKind: RealPersonKind | null },
+  ctx: z.RefinementCtx,
+) {
+  if (value.basis === 'real_person' && value.realPersonKind === null) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['realPersonKind'],
+      message: '真人角色必须选择真人类型（公众人物 / 历史人物 / 身边真人）',
+    });
+  }
+  if (value.basis !== 'real_person' && value.realPersonKind !== null) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['realPersonKind'],
+      message: '只有真人角色才能设置真人类型',
+    });
+  }
+}
+
+/** 可写入的分类事实（谁能写见 hard-boundaries.md 第 2 节）。 */
+export const CharacterClassificationInput = z
+  .object(classificationFields)
+  .superRefine(checkClassificationCombination);
 export type CharacterClassificationInput = z.infer<typeof CharacterClassificationInput>;
 
 /**
@@ -43,19 +71,22 @@ export const PortraitPolicy = z.enum(['forbidden', 'allowed']);
 export type PortraitPolicy = z.infer<typeof PortraitPolicy>;
 
 /** 读取时返回：分类事实 + 系统推导结果（只读，任何接口都不能写入推导字段）。 */
-export const CharacterClassification = CharacterClassificationInput.extend({
-  /** 由系统检测人设文本写入（SAFE-03 第 4 条）。 */
-  childFeaturesDetected: z.boolean(),
-  derived: z.object({
-    isMinor: z.boolean(),
-    /** = 非真人 且 非儿童（两条底线，hard-boundaries.md 第 2 节）；同时决定能否使用无审查模型。 */
-    adultModeEligible: z.boolean(),
-    romanceAllowed: z.boolean(),
-    portraitPolicy: PortraitPolicy,
-    /** 是否开启「不冒充本人公开言论」检查（SAFE-02），= basis 为 real_person。 */
-    publicStatementGuard: z.boolean(),
-  }),
-});
+export const CharacterClassification = z
+  .object({
+    ...classificationFields,
+    /** 由系统检测人设文本写入（SAFE-03 第 4 条）。 */
+    childFeaturesDetected: z.boolean(),
+    derived: z.object({
+      isMinor: z.boolean(),
+      /** = 非真人 且 非儿童（两条底线，hard-boundaries.md 第 2 节）；同时决定能否使用无审查模型。 */
+      adultModeEligible: z.boolean(),
+      romanceAllowed: z.boolean(),
+      portraitPolicy: PortraitPolicy,
+      /** 是否开启「不冒充本人公开言论」检查（SAFE-02），= basis 为 real_person。 */
+      publicStatementGuard: z.boolean(),
+    }),
+  })
+  .superRefine(checkClassificationCombination);
 export type CharacterClassification = z.infer<typeof CharacterClassification>;
 
 // ---------- 展示信息 ----------
@@ -102,7 +133,13 @@ export const CharacterAvatarWrite = z.object({
   display: CharacterDisplay,
 });
 
-export const CharacterPublishStatus = z.enum(['draft', 'pending_check', 'published', 'unpublished', 'disabled']);
+export const CharacterPublishStatus = z.enum([
+  'draft',
+  'pending_check',
+  'published',
+  'unpublished',
+  'disabled',
+]);
 export type CharacterPublishStatus = z.infer<typeof CharacterPublishStatus>;
 
 /** 角色广场卡片（CHR-01 第 4 条）。 */
@@ -206,21 +243,39 @@ export const AdminCharacter = z.object({
 });
 export type AdminCharacter = z.infer<typeof AdminCharacter>;
 
-export const AdminCharacterWrite = z.object({
+/** 角色库的可写字段（不带默认值）。 */
+const adminCharacterFields = {
   name: z.string().min(1).max(32),
-  aliases: z.array(z.string()).default([]),
-  works: z.array(z.string()).default([]),
+  aliases: z.array(z.string()),
+  works: z.array(z.string()),
   tagline: z.string().max(60),
   intro: z.string().max(1000),
-  tags: z.array(z.string().max(16)).max(10).default([]),
+  tags: z.array(z.string().max(16)).max(10),
   categoryId: z.string().nullable(),
   avatar: CharacterAvatarWrite,
   birthday: LocalDate.nullable(),
   fanName: z.string().max(20).nullable(),
   classification: CharacterClassificationInput,
-  fallbackGreetings: z.array(z.string().min(1).max(200)).default([]),
+  fallbackGreetings: z.array(z.string().min(1).max(200)),
   card: CharacterCard,
+};
+
+/** 新建角色：别名、作品、标签、备用开场白不传时为空数组。 */
+export const AdminCharacterWrite = z.object({
+  ...adminCharacterFields,
+  aliases: adminCharacterFields.aliases.default([]),
+  works: adminCharacterFields.works.default([]),
+  tags: adminCharacterFields.tags.default([]),
+  fallbackGreetings: adminCharacterFields.fallbackGreetings.default([]),
 });
+export type AdminCharacterWrite = z.infer<typeof AdminCharacterWrite>;
+
+/**
+ * 编辑角色：只传要改的字段；没传的字段保持原值（Q-001：不复用带默认值的新建 schema，
+ * 否则只改名字会把别名、作品、标签、备用开场白清空）。
+ */
+export const AdminCharacterUpdate = z.object(adminCharacterFields).partial();
+export type AdminCharacterUpdate = z.infer<typeof AdminCharacterUpdate>;
 
 export const CharacterAdminEndpoints = {
   list: defineEndpoint({
@@ -244,7 +299,7 @@ export const CharacterAdminEndpoints = {
     path: `${API_PREFIX}/admin/characters/:characterId`,
     auth: 'admin',
     params: z.object({ characterId: Id }),
-    body: AdminCharacterWrite.partial(),
+    body: AdminCharacterUpdate,
     response: AdminCharacter,
     summary: '编辑预设角色；分类变化触发 characters.character_classification_changed',
   }),

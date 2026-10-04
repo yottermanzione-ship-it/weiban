@@ -5,19 +5,32 @@
  * 安卓推送通道的具体厂商由 Android 负责人评估（D-L1-06），契约只约束格式，新增通道属于次版本变更。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, NoContent, Timestamp, defineEndpoint } from '../common.js';
+import { API_PREFIX, Id, NoContent, Timestamp, defineEndpoint, tolerantEnum } from '../common.js';
 
 export const WebPushSubscription = z.object({
   endpoint: z.url(),
   keys: z.object({ p256dh: z.string(), auth: z.string() }),
 });
 
-export const AndroidPushProvider = z.enum(['fcm', 'jpush', 'getui', 'xiaomi', 'huawei', 'honor', 'oppo', 'vivo']);
+export const AndroidPushProvider = z.enum([
+  'fcm',
+  'jpush',
+  'getui',
+  'xiaomi',
+  'huawei',
+  'honor',
+  'oppo',
+  'vivo',
+]);
 export type AndroidPushProvider = z.infer<typeof AndroidPushProvider>;
 
 export const RegisterPushDeviceRequest = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('webpush'), subscription: WebPushSubscription }),
-  z.object({ kind: z.literal('android'), provider: AndroidPushProvider, token: z.string().min(1).max(4096) }),
+  z.object({
+    kind: z.literal('android'),
+    provider: AndroidPushProvider,
+    token: z.string().min(1).max(4096),
+  }),
 ]);
 export type RegisterPushDeviceRequest = z.infer<typeof RegisterPushDeviceRequest>;
 
@@ -29,14 +42,20 @@ export const PushDevice = z.object({
   createdAt: Timestamp,
 });
 
+export const NotificationKind = z.enum(['message', 'call', 'model_status', 'balance', 'system']);
+export type NotificationKind = z.infer<typeof NotificationKind>;
+
 /**
  * 通知载荷：服务器发给 Service Worker / 安卓原生的数据格式。
  * 两端都按此渲染通知，点击时打开 deepLink。
  */
 export const NotificationPayload = z.object({
   v: z.literal(1),
-  /** balance：余额不足 / 过低提醒（v0.2 新增）。 */
-  kind: z.enum(['message', 'call', 'model_status', 'balance', 'system']),
+  /**
+   * balance：余额不足 / 过低提醒（v0.2 新增）。新增种类是次版本变更：
+   * 客户端不认识的种类解析为 'unsupported'，按普通通知显示（标题、正文、deepLink）。
+   */
+  kind: tolerantEnum(NotificationKind),
   /** 合并键：同一会话的多条消息用同一个键，新通知替换旧通知（CHAT-10 第 5 条）。 */
   collapseKey: z.string().max(64),
   title: z.string().max(64),
