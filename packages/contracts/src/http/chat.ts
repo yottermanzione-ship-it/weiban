@@ -4,10 +4,20 @@
  * 可靠性规则见 docs/architecture/message-reliability.md。
  *
  * 重要：chat 不知道 AI 的存在。角色只是 kind = 'character' 的参与者。
- * 客户端遇到不认识的 content.type，必须显示「当前版本不支持此消息」而不是报错（新增消息类型是次版本变更）。
+ * 客户端遇到不认识的 content.type，必须显示「当前版本不支持此消息」而不是报错（新增消息类型是次版本变更）；
+ * 契约用 ReceivedMessageContent 把它解析为 type = 'unsupported'。
  */
 import { z } from 'zod';
-import { API_PREFIX, ClientMsgId, Id, NoContent, Seq, Timestamp, defineEndpoint } from '../common.js';
+import {
+  API_PREFIX,
+  ClientMsgId,
+  Id,
+  NoContent,
+  Seq,
+  Timestamp,
+  defineEndpoint,
+  unknownTypeFallback,
+} from '../common.js';
 
 // ---------- 参与者 ----------
 
@@ -50,9 +60,43 @@ export const SystemContent = z.object({
   params: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
 });
 
-/** L1 可发送的消息内容。图片、语音、表情包、链接、名片、通话记录在 L4/L5 由架构扩展。 */
-export const MessageContent = z.discriminatedUnion('type', [TextContent, NudgeContent, SystemContent]);
+/**
+ * L1 的消息内容（严格）：服务器写入消息时用它校验。
+ * 图片、语音、表情包、链接、名片、通话记录在 L4/L5 由架构扩展（新增类型是次版本变更）。
+ */
+export const MessageContent = z.discriminatedUnion('type', [
+  TextContent,
+  NudgeContent,
+  SystemContent,
+]);
 export type MessageContent = z.infer<typeof MessageContent>;
+
+/** 当前契约版本认识的消息类型。 */
+export const MESSAGE_CONTENT_TYPES = MessageContent.options.map((o) => o.shape.type.value);
+
+/**
+ * 客户端不认识的消息类型（新版本服务器发来的新类型）：显示「当前版本不支持此消息」。
+ * 这个类型只由接收端解析产生，服务器永远不会发出 type = 'unsupported'。
+ */
+export const UnsupportedContent = z.object({
+  type: z.literal('unsupported'),
+  /** 服务器发来的原始类型名，例 "image"。 */
+  originalType: z.string(),
+});
+export type UnsupportedContent = z.infer<typeof UnsupportedContent>;
+
+/**
+ * 接收端的消息内容（Q-003）：已知类型照常严格校验；不认识的类型变成 UnsupportedContent，不报错。
+ * 出现在所有「服务器 → 客户端」的消息里（Message.content）。
+ */
+export const ReceivedMessageContent = z.preprocess(
+  unknownTypeFallback(MESSAGE_CONTENT_TYPES, (originalType) => ({
+    type: 'unsupported',
+    originalType,
+  })),
+  z.discriminatedUnion('type', [TextContent, NudgeContent, SystemContent, UnsupportedContent]),
+);
+export type ReceivedMessageContent = z.infer<typeof ReceivedMessageContent>;
 
 /** 用户可以发送的内容（不能发系统提示）。 */
 export const UserSendableContent = z.discriminatedUnion('type', [TextContent, NudgeContent]);
@@ -79,8 +123,8 @@ export const Message = z.object({
   seq: Seq,
   senderParticipantId: Id,
   senderKind: ParticipantKind.or(z.literal('system')),
-  /** 撤回后为 null（与微信一致，看不到撤回内容）。 */
-  content: MessageContent.nullable(),
+  /** 撤回后为 null（与微信一致，看不到撤回内容）。客户端解析时不认识的类型变为 unsupported。 */
+  content: ReceivedMessageContent.nullable(),
   quote: QuoteRef.nullable(),
   status: MessageStatus,
   scope: ContentScope,
@@ -174,8 +218,8 @@ export const UpdateConversationStateRequest = z.object({
 
 // ---------- 接口 ----------
 
-const ConversationParams = z.object({ conversationId: Id });
-const MessageParams = z.object({ conversationId: Id, messageId: Id });
+export const ConversationParams = z.object({ conversationId: Id });
+export const MessageParams = z.object({ conversationId: Id, messageId: Id });
 
 export const ChatEndpoints = {
   listConversations: defineEndpoint({
@@ -209,7 +253,8 @@ export const ChatEndpoints = {
     params: ConversationParams,
     body: SendMessageRequest,
     response: MessageAck,
-    summary: '发送消息（WebSocket 不可用时的等价路径）。同一 clientMsgId 重复提交返回同一条消息（幂等）',
+    summary:
+      '发送消息（WebSocket 不可用时的等价路径）。同一 clientMsgId 重复提交返回同一条消息（幂等）',
   }),
   recallMessage: defineEndpoint({
     method: 'POST',

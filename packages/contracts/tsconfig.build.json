@@ -1,0 +1,14 @@
+{
+  // pnpm --filter @weiban/contracts build：把 src 编译成 dist/（JS + 类型声明），
+  // 给不经过 TypeScript 转译、直接用 Node 运行的场景使用（导入条件 weiban-dist，见 README「构建产物」）。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  },
+  "include": ["src"]
+}

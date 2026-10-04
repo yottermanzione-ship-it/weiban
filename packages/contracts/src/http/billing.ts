@@ -171,7 +171,10 @@ export const BillingEndpoints = {
     path: `${API_PREFIX}/billing/usage-summary`,
     auth: 'user',
     query: UsageSummaryQuery,
-    response: z.object({ rows: z.array(UsageSummaryRow), totalMicros: z.number().int().nonnegative() }),
+    response: z.object({
+      rows: z.array(UsageSummaryRow),
+      totalMicros: z.number().int().nonnegative(),
+    }),
     summary: '按天 / 角色 / 用途 / 模型汇总的花费（用量页）',
   }),
 } as const;
@@ -276,7 +279,10 @@ export const BillingAdminEndpoints = {
     path: `${API_PREFIX}/admin/billing/accounts/:userId/ledger`,
     auth: 'admin',
     params: z.object({ userId: Id }),
-    query: z.object({ cursor: z.string().optional(), limit: z.coerce.number().int().min(1).max(200).default(50) }),
+    query: z.object({
+      cursor: z.string().optional(),
+      limit: z.coerce.number().int().min(1).max(200).default(50),
+    }),
     response: cursorPage(AdminLedgerEntry),
     summary: '某用户的完整流水（含成本价）',
   }),
@@ -304,7 +310,10 @@ export const BillingAdminEndpoints = {
     path: `${API_PREFIX}/admin/billing/price-versions/:priceVersionId`,
     auth: 'admin',
     params: z.object({ priceVersionId: Id }),
-    body: z.object({ note: z.string().max(200).nullable().optional(), items: z.array(AdminPriceItem).optional() }),
+    body: z.object({
+      note: z.string().max(200).nullable().optional(),
+      items: z.array(AdminPriceItem).optional(),
+    }),
     response: AdminPriceVersion,
     summary: '修改草稿；已生效或已停用的版本不可修改（409）',
   }),
@@ -341,7 +350,9 @@ export const BillingAdminEndpoints = {
       todayCostMicros: z.number().int().nonnegative(),
       dailyCapMicros: z.number().int().nonnegative(),
       platformAccountBalanceMicros: MoneyMicros,
-      last30DaysCostByUpstream: z.array(z.object({ upstreamId: Id, costMicros: z.number().int().nonnegative() })),
+      last30DaysCostByUpstream: z.array(
+        z.object({ upstreamId: Id, costMicros: z.number().int().nonnegative() }),
+      ),
     }),
     summary: '平台今日成本、每日上限、平台账户、各上游近 30 天成本',
   }),

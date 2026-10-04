@@ -9,7 +9,14 @@
  * - 连接只负责「快」，不负责「全」：任何丢失都靠 updateSeq 补拉（GET /api/v1/sync/updates）。
  */
 import { z } from 'zod';
-import { ClientMsgId, DeviceInfo, ErrorCode, Id, UpdateSeq } from './common.js';
+import {
+  ClientMsgId,
+  DeviceInfo,
+  Id,
+  ReceivedErrorCode,
+  UpdateSeq,
+  unknownTypeFallback,
+} from './common.js';
 import { MessageAck, SendMessageRequest } from './http/chat.js';
 import { UserUpdate } from './http/sync.js';
 
@@ -99,7 +106,7 @@ export const ServerMessageErrorFrame = frame(
   'message.error',
   z.object({
     clientMsgId: ClientMsgId,
-    code: ErrorCode,
+    code: ReceivedErrorCode,
     message: z.string(),
     retryable: z.boolean(),
   }),
@@ -123,10 +130,10 @@ export const ServerTypingFrame = frame(
 
 export const ServerErrorFrame = frame(
   'error',
-  z.object({ code: ErrorCode, message: z.string() }),
+  z.object({ code: ReceivedErrorCode, message: z.string() }),
 );
 
-export const ServerFrame = z.discriminatedUnion('type', [
+const KnownServerFrame = z.discriminatedUnion('type', [
   ServerAuthOkFrame,
   ServerPongFrame,
   ServerMessageAckFrame,
@@ -135,4 +142,26 @@ export const ServerFrame = z.discriminatedUnion('type', [
   ServerTypingFrame,
   ServerErrorFrame,
 ]);
+
+/** 当前契约版本认识的服务器帧类型。 */
+export const SERVER_FRAME_TYPES = KnownServerFrame.options.map((o) => o.shape.type.value);
+
+/** 客户端不认识的帧类型（新版本服务器新增的帧）：忽略（服务器永远不会发出这个类型）。 */
+export const ServerUnsupportedFrame = frame('unsupported', z.object({ originalType: z.string() }));
+
+/**
+ * 服务器 → 客户端的帧（Q-003）：已知类型严格校验；不认识的帧类型解析为 'unsupported'，客户端忽略。
+ * 服务器发送前用 ServerFrameStrict 校验。
+ */
+export const ServerFrame = z.preprocess(
+  unknownTypeFallback(SERVER_FRAME_TYPES, (originalType) => ({
+    v: 1,
+    type: 'unsupported',
+    data: { originalType },
+  })),
+  z.discriminatedUnion('type', [...KnownServerFrame.options, ServerUnsupportedFrame]),
+);
 export type ServerFrame = z.infer<typeof ServerFrame>;
+
+/** 服务器发送帧时用的严格版本。 */
+export const ServerFrameStrict = KnownServerFrame;

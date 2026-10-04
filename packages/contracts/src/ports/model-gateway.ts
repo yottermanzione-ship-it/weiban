@@ -1,7 +1,7 @@
 /**
  * 模型网关端口。提供方：model-access。全系统调用模型上游的唯一出口（engineering-standards R4）。
  * 网关统一负责：选模型（按 modelRole 与角色覆盖）、policy 检查（成人生成、无审查模型）、
- * 冻结与结算（经 BillingPort，ADR-0012）、解密上游密钥、重试与错误分类（message-reliability.md 第 6 节）、
+ * 冻结与结算（经 BillingReservationPort，ADR-0012）、解密上游密钥、重试与错误分类（message-reliability.md 第 6 节）、
  * 用量记账、日志消毒。
  *
  * v0.2（T-009）：BYOK 删除。billingOwner 的含义改为「扣哪个账户」：user = 用户钱包，platform = 平台账户。
@@ -36,7 +36,12 @@ export type ModelPurpose = z.infer<typeof ModelPurpose>;
  * 属于「后台功能」的用途：受用户后台每日上限约束；聊天回复不受约束。
  * 范围与 docs/ai/cost-estimate.md 第 6 节一致（用户主动发起的导入不计入）。
  */
-export const BACKGROUND_PURPOSES: readonly ModelPurpose[] = ['memory', 'simulation', 'proactive', 'moments'];
+export const BACKGROUND_PURPOSES: readonly ModelPurpose[] = [
+  'memory',
+  'simulation',
+  'proactive',
+  'moments',
+];
 
 /** 不受用户后台每日上限约束、但仍从余额扣费的用途（安全优先）。 */
 export const BUDGET_EXEMPT_PURPOSES: readonly ModelPurpose[] = ['safety_check'];
@@ -80,7 +85,12 @@ export interface GenerateTextInput {
 export interface GenerateTextOutput {
   text: string;
   modelKey: string;
-  usage: { inputTokens: number; cachedInputTokens: number; outputTokens: number; estimated: boolean };
+  usage: {
+    inputTokens: number;
+    cachedInputTokens: number;
+    outputTokens: number;
+    estimated: boolean;
+  };
   /** 本次从账户扣的金额（微元）。 */
   chargedMicros: number;
   latencyMs: number;
@@ -105,8 +115,12 @@ export interface ModelGatewayPort {
    * 用户当前能否和某角色聊天（模型已选且可用、余额充足）。ai-runtime 安排后台任务前、
    * 界面横条（GET /model/status）都用它；上游恢复由网关自己探测并发布 model_access.model_status_changed。
    */
-  getModelStatus(userId: string, characterId: string | null): Promise<{
+  getModelStatus(
+    userId: string,
+    characterId: string | null,
+  ): Promise<{
     available: boolean;
-    reason: 'not_configured' | 'insufficient_balance' | 'provider_unavailable' | 'model_removed' | null;
+    reason:
+      'not_configured' | 'insufficient_balance' | 'provider_unavailable' | 'model_removed' | null;
   }>;
 }

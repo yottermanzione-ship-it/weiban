@@ -18,5 +18,7 @@ export interface PushRequest {
 }
 
 export interface PushPort {
-  send(request: PushRequest): Promise<{ delivered: boolean; reason?: 'deduplicated' | 'do_not_disturb' | 'no_device' }>;
+  send(
+    request: PushRequest,
+  ): Promise<{ delivered: boolean; reason?: 'deduplicated' | 'do_not_disturb' | 'no_device' }>;
 }

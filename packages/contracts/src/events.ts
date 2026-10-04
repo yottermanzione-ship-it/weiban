@@ -45,7 +45,11 @@ function event<T extends string, P extends z.ZodType>(type: T, producer: ModuleN
 
 // ---------- identity ----------
 
-export const UserRegistered = event('identity.user_registered', 'identity', z.object({ userId: Id }));
+export const UserRegistered = event(
+  'identity.user_registered',
+  'identity',
+  z.object({ userId: Id }),
+);
 
 /** 资料变更：只告知哪些字段变了，订阅者需要时通过 IdentityReadPort 读取新值。 */
 export const ProfileUpdated = event(
@@ -54,7 +58,14 @@ export const ProfileUpdated = event(
   z.object({ userId: Id, changedFields: z.array(z.string()) }),
 );
 
-export const AgeConfirmed = event('identity.age_confirmed', 'identity', z.object({ userId: Id }));
+// v1.0：identity.age_confirmed 删除（PRD v1.2 取消年龄确认）。
+
+/** 界面偏好（主题）变化：realtime 写 settings.updated(section = preferences)，其他设备重新拉取。 */
+export const PreferencesUpdated = event(
+  'identity.preferences_updated',
+  'identity',
+  z.object({ userId: Id }),
+);
 
 export const NotificationSettingsUpdated = event(
   'identity.notification_settings_updated',
@@ -66,7 +77,11 @@ export const NotificationSettingsUpdated = event(
 export const SessionRevoked = event(
   'identity.session_revoked',
   'identity',
-  z.object({ userId: Id, sessionId: Id, reason: z.enum(['logout', 'revoked', 'expired', 'account_deleting']) }),
+  z.object({
+    userId: Id,
+    sessionId: Id,
+    reason: z.enum(['logout', 'revoked', 'expired', 'account_deleting']),
+  }),
 );
 
 /**
@@ -86,7 +101,11 @@ export const UserDataPurged = z.object({
   version: z.literal(1),
   producer: ModuleName,
   occurredAt: Timestamp,
-  payload: z.object({ userId: Id, module: ModuleName, deletedRows: z.number().int().nonnegative() }),
+  payload: z.object({
+    userId: Id,
+    module: ModuleName,
+    deletedRows: z.number().int().nonnegative(),
+  }),
 });
 
 // ---------- model-access ----------
@@ -127,21 +146,48 @@ export const BalanceChanged = event(
 );
 
 /** 可用余额从 > 0 变为 ≤ 0：ai-runtime 暂停该用户全部后台任务，聊天不再回复。 */
-export const BalanceDepleted = event('billing.balance_depleted', 'billing', z.object({ userId: Id }));
+export const BalanceDepleted = event(
+  'billing.balance_depleted',
+  'billing',
+  z.object({ userId: Id }),
+);
 
-/** 可用余额从 ≤ 0 回到 > 0：ai-runtime 对「最后一条是用户消息」的会话补一次合并回复。 */
-export const BalanceRestored = event('billing.balance_restored', 'billing', z.object({ userId: Id }));
+/**
+ * 「可能又能付钱了」：ai-runtime 收到后重新检查该用户所有因余额不足而没回复的会话，补一次合并回复
+ * （billing.md 6.3、6.4 节）。v1.0 起（Q-008）在以下任一情况发出，不再只看可用余额是否跨过 0：
+ * - crossed_zero：可用余额从 ≤ 0 回到 > 0；
+ * - topped_up_after_rejection：自上次发出本事件以来，该账户有过 insufficient_balance 拒绝（可用余额为正但
+ *   小于冻结额也算），之后余额增加（加余额、退款、正向冲正）。
+ * 补回复仍可能因余额不够再被拒绝；那样会再次记下拒绝，下一次加余额时再发本事件。
+ */
+export const BalanceRestored = event(
+  'billing.balance_restored',
+  'billing',
+  z.object({
+    userId: Id,
+    availableMicros: z.number().int(),
+    trigger: z.enum(['crossed_zero', 'topped_up_after_rejection']),
+  }),
+);
 
 /** 可用余额低于提醒线（同一账户每天最多一次）：push 发提醒。 */
 export const BalanceLow = event(
   'billing.balance_low',
   'billing',
-  z.object({ userId: Id, availableMicros: z.number().int(), thresholdMicros: z.number().int().nonnegative() }),
+  z.object({
+    userId: Id,
+    availableMicros: z.number().int(),
+    thresholdMicros: z.number().int().nonnegative(),
+  }),
 );
 
 // ---------- characters ----------
 
-export const CharacterPublished = event('characters.character_published', 'characters', z.object({ characterId: Id }));
+export const CharacterPublished = event(
+  'characters.character_published',
+  'characters',
+  z.object({ characterId: Id }),
+);
 
 export const CharacterUnpublished = event(
   'characters.character_unpublished',
@@ -268,7 +314,12 @@ export const MessageRecalled = event(
 export const ReadCursorMoved = event(
   'chat.read_cursor_moved',
   'chat',
-  z.object({ conversationId: Id, participantId: Id, participantKind: ParticipantKind, readSeq: Seq }),
+  z.object({
+    conversationId: Id,
+    participantId: Id,
+    participantKind: ParticipantKind,
+    readSeq: Seq,
+  }),
 );
 
 export const ContentScopeChanged = event(
@@ -282,7 +333,7 @@ export const ContentScopeChanged = event(
 export const DomainEvent = z.discriminatedUnion('type', [
   UserRegistered,
   ProfileUpdated,
-  AgeConfirmed,
+  PreferencesUpdated,
   NotificationSettingsUpdated,
   SessionRevoked,
   UserDeletionRequested,

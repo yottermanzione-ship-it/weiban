@@ -13,5 +13,13 @@ export interface SyncPort {
   /** 用户最近一次在任一会话发消息的时间（P-09「正在聊天」判断）。 */
   getLastUserActivityAt(userId: string): Promise<string | null>;
   /** 向用户在线设备转发一闪而过的状态（正在输入），不落库。 */
-  sendEphemeral(userId: string, frame: { type: 'typing'; conversationId: string; participantId: string; state: 'start' | 'stop' }): Promise<void>;
+  sendEphemeral(
+    userId: string,
+    frame: {
+      type: 'typing';
+      conversationId: string;
+      participantId: string;
+      state: 'start' | 'stop';
+    },
+  ): Promise<void>;
 }

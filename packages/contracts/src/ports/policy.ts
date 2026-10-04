@@ -63,13 +63,25 @@ export interface PolicyPort {
   }): Promise<ScenarioModeTraits[]>;
 
   /** 切换情景模式前调用（SAFE-03、SAFE-05）。 */
-  checkScenarioMode(input: { userId: string; characterId: string; mode: ScenarioModeTraits }): Promise<PolicyDecision>;
+  checkScenarioMode(input: {
+    userId: string;
+    characterId: string;
+    mode: ScenarioModeTraits;
+  }): Promise<PolicyDecision>;
 
   /** 设置关系类型前调用（SAFE-05：儿童角色不能是恋人）。 */
-  checkRelationshipType(input: { userId: string; characterId: string; relationshipType: string }): Promise<PolicyDecision>;
+  checkRelationshipType(input: {
+    userId: string;
+    characterId: string;
+    relationshipType: string;
+  }): Promise<PolicyDecision>;
 
   /** 模型网关在使用成人模式模型前调用（生成闸，不信任上游）。 */
-  checkAdultGeneration(input: { userId: string; characterId: string; conversationId: string }): Promise<PolicyDecision>;
+  checkAdultGeneration(input: {
+    userId: string;
+    characterId: string;
+    conversationId: string;
+  }): Promise<PolicyDecision>;
 
   /**
    * 无审查模型闸门：模型带 adult_content 能力时，设置角色单独模型前、网关每次调用前都要调用。
@@ -85,5 +97,9 @@ export interface PolicyPort {
    * 图片生成前调用（SAFE-01）。depictsCharacter = 画面要出现该角色本人形象。
    * 真人分类不画本人；不画本人时仍须做生成后人脸检查（AI 负责）。
    */
-  checkImageGeneration(input: { userId: string; characterId: string; depictsCharacter: boolean }): Promise<PolicyDecision>;
+  checkImageGeneration(input: {
+    userId: string;
+    characterId: string;
+    depictsCharacter: boolean;
+  }): Promise<PolicyDecision>;
 }

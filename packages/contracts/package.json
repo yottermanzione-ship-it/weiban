@@ -1,23 +1,31 @@
 {
   "name": "@weiban/contracts",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "微伴接口与事件契约（唯一准绳）。Zod 4 schema 为源头，导出 TypeScript 类型与 JSON Schema。",
+  "description": "微伴接口与事件契约（唯一准绳）。Zod 4 schema 为源头，导出 TypeScript 类型、JSON Schema 与 OpenAPI 文档。",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "weiban-dist": "./dist/index.js",
+      "default": "./src/index.ts"
+    }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "generate": "tsx scripts/generate-json-schema.ts"
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+    "build": "tsc -p tsconfig.build.json",
+    "generate": "tsx scripts/generate.ts"
   },
   "dependencies": {
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.6.0",
-    "tsx": "^4.19.0"
+    "@types/node": "^24.19.1",
+    "@weiban/tsconfig": "workspace:*",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3"
   }
 }

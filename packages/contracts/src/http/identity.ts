@@ -1,6 +1,7 @@
 /**
- * identity 模块：注册、登录、会话、我的资料、年龄确认、全局通知设置、注销。
- * 需求：ACC-01、ACC-02、ACC-03、ACC-06。规则见 docs/architecture/security-and-privacy.md 第 2、5 节。
+ * identity 模块：注册、登录、会话、我的资料、全局通知设置、界面偏好（主题）、注销。
+ * 需求：ACC-01、ACC-02、ACC-03、ACC-06、SVC-01 第 7 条。规则见 docs/architecture/security-and-privacy.md 第 2、5 节。
+ * v1.0：删除年龄确认（PRD v1.2 取消 ACC-02 第 2 条）；新增界面偏好（主题多设备同步）。
  */
 import { z } from 'zod';
 import {
@@ -13,6 +14,7 @@ import {
   TimeZone,
   Timestamp,
   defineEndpoint,
+  tolerantEnum,
 } from '../common.js';
 
 // ---------- 账号与会话 ----------
@@ -42,11 +44,6 @@ export const CurrentUser = z.object({
   userId: Id,
   username: Username,
   role: UserRole,
-  /**
-   * 是否已完成「我已年满 18 周岁」确认（ACC-02 第 2 条）。
-   * v0.2：不再是成人模式的前置条件（硬性边界只剩两条底线）；是否保留此确认由 PRD v1.2 决定，若取消则下个主版本删除。
-   */
-  ageConfirmed: z.boolean(),
   /** 是否已填写必填昵称（首次引导判断用，ACC-04）。 */
   profileCompleted: z.boolean(),
   createdAt: Timestamp,
@@ -88,20 +85,25 @@ export type SessionSummary = z.infer<typeof SessionSummary>;
 
 export const Gender = z.enum(['female', 'male', 'other', 'unspecified']);
 
-export const Profile = z.object({
+/** 资料的可写字段。不带默认值：修改请求只改传了的字段（Q-001）。新账号的默认值由服务器在注册时写入。 */
+const profileFields = {
   nickname: z.string().min(1).max(20).nullable(),
   avatarMediaId: Id.nullable(),
   birthday: LocalDate.nullable(),
-  gender: Gender.default('unspecified'),
+  /** 新账号为 unspecified。 */
+  gender: Gender,
   city: z.string().max(32).nullable(),
   about: z.string().max(500).nullable(),
   /** 用户时区；客户端每次连接上报设备时区，服务器据此更新（SIM-04 以设备时区为准）。 */
   timeZone: TimeZone,
-  updatedAt: Timestamp,
-});
+};
+
+export const Profile = z.object({ ...profileFields, updatedAt: Timestamp });
 export type Profile = z.infer<typeof Profile>;
 
-export const UpdateProfileRequest = Profile.omit({ updatedAt: true }).partial();
+/** 修改资料：只传要改的字段；没传的字段保持原值（不会被补成默认值）。 */
+export const UpdateProfileRequest = z.object(profileFields).partial();
+export type UpdateProfileRequest = z.infer<typeof UpdateProfileRequest>;
 
 // ---------- 全局通知与免打扰（ACC-03） ----------
 
@@ -127,6 +129,29 @@ export type NotificationSettings = z.infer<typeof NotificationSettings>;
 export const UpdateNotificationSettingsRequest = NotificationSettings.omit({
   updatedAt: true,
 }).partial();
+
+// ---------- 界面偏好（SVC-01 第 7 条：主题切换后所有设备同步） ----------
+
+/**
+ * 界面主题 id（docs/design/tokens.json 的主题列表）：green = 默认（接近微信），pink = 微伴粉。
+ * 新增主题属于次版本变更；读取用 ReceivedAppTheme，客户端不认识的主题按 green 显示。
+ */
+export const AppTheme = z.enum(['green', 'pink']);
+export type AppTheme = z.infer<typeof AppTheme>;
+export const ReceivedAppTheme = tolerantEnum(AppTheme);
+
+/**
+ * 跟着账号走、所有设备同步的界面偏好。深色模式、字体大小是每台设备自己的设置，不在这里（PRD SVC-01）。
+ * 新账号为 green。
+ */
+export const UserPreferences = z.object({
+  theme: ReceivedAppTheme,
+  updatedAt: Timestamp,
+});
+export type UserPreferences = z.infer<typeof UserPreferences>;
+
+export const UpdateUserPreferencesRequest = z.object({ theme: AppTheme }).partial();
+export type UpdateUserPreferencesRequest = z.infer<typeof UpdateUserPreferencesRequest>;
 
 // ---------- 接口 ----------
 
@@ -191,13 +216,21 @@ export const IdentityEndpoints = {
     response: Profile,
     summary: '修改我的资料；角色从下一次回复起使用新资料',
   }),
-  confirmAge: defineEndpoint({
-    method: 'POST',
-    path: `${API_PREFIX}/me/age-confirmation`,
+  getPreferences: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/me/preferences`,
     auth: 'user',
-    body: z.object({ confirmedAdult: z.literal(true) }),
-    response: CurrentUser,
-    summary: '确认「我已年满 18 周岁」（ACC-02 第 2 条），不可撤销',
+    response: UserPreferences,
+    summary: '界面偏好（主题），所有设备共用（SVC-01 第 7 条）',
+  }),
+  updatePreferences: defineEndpoint({
+    method: 'PATCH',
+    path: `${API_PREFIX}/me/preferences`,
+    auth: 'user',
+    body: UpdateUserPreferencesRequest,
+    response: UserPreferences,
+    summary:
+      '修改界面偏好；本设备立即生效，其他设备收到 settings.updated(section = preferences) 后重新拉取',
   }),
   getNotificationSettings: defineEndpoint({
     method: 'GET',
@@ -220,7 +253,8 @@ export const IdentityEndpoints = {
     auth: 'user',
     body: z.object({ password: Password, confirm: z.literal('DELETE') }),
     response: z.object({ status: z.literal('deleting') }),
-    summary: '注销账号（ACC-06，L6 完成全部模块删除清单）。立即下线所有设备，各模块（含钱包与流水）随后物理删除',
+    summary:
+      '注销账号（ACC-06，L6 完成全部模块删除清单）。立即下线所有设备，各模块（含钱包与流水）随后物理删除',
   }),
 } as const;
 

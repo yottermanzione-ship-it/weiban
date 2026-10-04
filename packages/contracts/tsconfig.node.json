@@ -1,0 +1,5 @@
+{
+  // 导出脚本、测试与 Vitest 配置：在 Node 里运行，需要 Node 类型（@types/node 已在本包声明，Q-004）。
+  "extends": "@weiban/tsconfig/node.json",
+  "include": ["scripts", "test", "vitest.config.ts"]
+}

@@ -7,17 +7,21 @@
  * 价格不在本文件：见 http/billing.ts（价目表归 billing 模块）。模型清单、标签、排行榜数据由 AI 负责人维护（docs/ai/model-catalog.md）。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, NoContent, Timestamp, defineEndpoint } from '../common.js';
+import { API_PREFIX, Id, NoContent, Timestamp, defineEndpoint, tolerantEnum } from '../common.js';
 
 // ---------- 模型目录 ----------
 
 /** 平台内的模型键，例 "deepseek/deepseek-v4-pro"。用户选择、价目表、用量都用它。 */
-export const ModelKey = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,47}\/[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/);
+export const ModelKey = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9._-]{0,47}\/[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/);
 export type ModelKey = z.infer<typeof ModelKey>;
 
 /**
  * 模型能力。adult_content = 无审查 / 允许成人内容的模型：只能用于有成人资格的角色
  * （hard-boundaries.md 第 4 节「模型层闸门」、billing.md 第 9 节）。
+ * 对用户它只是「允许成人内容」信息标签，不是选为成人模式模型的前提（pm-rulings-2 B1）。
+ * 新增能力是次版本变更：客户端解析 ModelInfo 时不认识的能力变为 'unsupported'，不显示即可。
  */
 export const ModelCapability = z.enum([
   'vision',
@@ -38,7 +42,7 @@ export const ModelInfo = z.object({
   vendorName: z.string(),
   /** 价格档位，由价目表推算，用于列表上的「便宜 / 中等 / 较贵」标签；具体价格见 billing 价目表。 */
   priceTier: PriceTier,
-  capabilities: z.array(ModelCapability),
+  capabilities: z.array(tolerantEnum(ModelCapability)),
   /** 展示标签，例：「中文好」「长记忆」「后台推荐」，由 AI 负责人维护。 */
   tags: z.array(z.string()),
   leaderboardRank: z.number().int().positive().nullable(),
@@ -67,13 +71,20 @@ export const ModelSelection = z.object({
   chat: ModelRefState.nullable(),
   /** 不设置时后台功能沿用聊天模型。 */
   background: ModelRefState.nullable(),
+  /**
+   * 成人模式模型。不设置时成人模式**不能开启**（422 adult_model_missing，提示去「服务 → 模型」选择），
+   * 不会自动改用聊天模型（pm-rulings-2 B2）。
+   */
   adult: ModelRefState.nullable(),
 });
 export type ModelSelection = z.infer<typeof ModelSelection>;
 
 /**
  * 修改全局模型选择。chat / background 不能选 adult_content 模型（422 model_not_allowed），
- * 因为全局选择会作用到真人和儿童角色；adult 必须选 adult_content 模型。
+ * 因为全局选择会作用到真人和儿童角色。
+ * adult（成人模式模型）可以选目录里任何模型：adult_content 只是信息标签，列表把带标签的排在前面，
+ * 但不限制只能选它（pm-rulings-2 B1、PRD MDL-02 第 3 条）。真正的闸门是「无审查模型只能给有成人资格的角色用」
+ * （网关调用时 checkModelForCharacter）和「开启成人模式前必须已设置成人模式模型」（adult_model_missing）。
  */
 export const UpdateModelSelectionRequest = z.object({
   chat: ModelRef.nullable().optional(),
@@ -125,7 +136,8 @@ export const ModelAccessEndpoints = {
     auth: 'user',
     body: UpdateModelSelectionRequest,
     response: ModelSelection,
-    summary: '修改全局模型选择。chat / background 选无审查模型 → 422 model_not_allowed；adult 选非无审查模型 → 422 model_not_allowed',
+    summary:
+      '修改全局模型选择。chat / background 选无审查（adult_content）模型 → 422 model_not_allowed；adult 不限模型（adult_content 只是信息标签）',
   }),
   getCharacterOverride: defineEndpoint({
     method: 'GET',
@@ -142,7 +154,8 @@ export const ModelAccessEndpoints = {
     params: z.object({ characterId: Id }),
     body: z.object({ chat: ModelRef.nullable() }),
     response: CharacterModelOverride,
-    summary: '为角色单独设置聊天模型；null 恢复使用全局默认。无审查模型只能给有成人资格的角色设置，否则 403 model_not_allowed',
+    summary:
+      '为角色单独设置聊天模型；null 恢复使用全局默认。无审查模型只能给有成人资格的角色设置，否则 403 model_not_allowed',
   }),
   getModelStatus: defineEndpoint({
     method: 'GET',
@@ -189,7 +202,12 @@ export const CreateUpstreamRequest = z.object({
   apiKey: z.string().min(8).max(512),
 });
 
-export const UpstreamTestFailure = z.enum(['invalid_key', 'insufficient_balance', 'network_error', 'provider_error']);
+export const UpstreamTestFailure = z.enum([
+  'invalid_key',
+  'insufficient_balance',
+  'network_error',
+  'provider_error',
+]);
 
 /** 连通测试失败时 422 upstream_test_failed 的 details 结构。 */
 export const UpstreamTestFailedDetails = z.object({ reason: UpstreamTestFailure });
@@ -230,7 +248,8 @@ export const ModelAccessAdminEndpoints = {
     auth: 'admin',
     body: CreateUpstreamRequest,
     response: Upstream,
-    summary: '登记上游：先连通测试（记平台账户），成功才保存。失败 422 upstream_test_failed（details.reason）',
+    summary:
+      '登记上游：先连通测试（记平台账户），成功才保存。失败 422 upstream_test_failed（details.reason）',
   }),
   rotateUpstreamKey: defineEndpoint({
     method: 'PUT',
