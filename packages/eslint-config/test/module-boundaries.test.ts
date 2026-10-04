@@ -423,19 +423,43 @@ describe('R10 测试引用（3.2）', () => {
   const IT = 'apps/server/test/integration/chat.test.ts';
   const r10 = (errors: string[]) => errors.filter((e) => e.startsWith('R10'));
 
-  it('集成测试引用模块内部文件、装配入口、src 其他目录 → 报错', async () => {
+  it('集成测试引用模块内部文件 → 报错', async () => {
     const errors = await boundaryErrors(
       IT,
       [
         "import { messages } from '../../src/modules/chat/infra/db/schema';",
         "import { send } from '../../src/modules/chat/domain/send';",
-        "import { AppModule } from '../../src/app.module';",
-        "import { loadConfig } from '../../src/config/load';",
-        'export const all = [messages, send, AppModule, loadConfig];',
+        'export const all = [messages, send];',
         '',
       ].join('\n'),
     );
-    expect(r10(errors)).toHaveLength(4);
+    expect(r10(errors)).toHaveLength(2);
+  });
+
+  it('集成测试引用 src/ 下装配入口以外的其他目录 → 仍报错', async () => {
+    const errors = await boundaryErrors(
+      IT,
+      [
+        "import { loadConfig } from '../../src/config/load';",
+        "import { runEvals } from '../../src/cli/run-evals';",
+        'export const all = [loadConfig, runEvals];',
+        '',
+      ].join('\n'),
+    );
+    expect(r10(errors)).toHaveLength(2);
+  });
+
+  it('集成测试引用装配入口 app.module.ts、main.ts（启动整个应用）→ 通过', async () => {
+    const errors = await boundaryErrors(
+      IT,
+      [
+        "import { AppModule } from '../../src/app.module';",
+        "import { bootstrap } from '../../src/main.js';",
+        'export const all = [AppModule, bootstrap];',
+        '',
+      ].join('\n'),
+    );
+    expect(errors).toEqual([]);
   });
 
   it('集成测试引用 index.ts、testing.ts、platform/、测试目录自己的工具 → 通过', async () => {

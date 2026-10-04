@@ -13,7 +13,8 @@ export function toPosix(filename) {
 }
 
 const SERVER_SRC = /^(.*\/apps\/server\/src)\/(.*)$/;
-const COMPOSITION_FILES = /^(main|app\.module)\.[cm]?[jt]sx?$/;
+// 扩展名可省略：import 写成 '../src/app.module' 时也要认出是装配入口
+const COMPOSITION_FILES = /^(main|app\.module)(\.[cm]?[jt]sx?)?$/;
 const INDEX_FILE = /^index(\.[cm]?[jt]sx?)?$/;
 
 /**

@@ -18,7 +18,7 @@
 | R7 时间          | `weiban/no-raw-time`       | `apps/server/src` 不直接取当前时间（含 `globalThis.Date`）；平台内核、测试除外                                                                                                                                             |
 | R8 数据表        | `weiban/own-schema-only`   | `pgSchema()` 和原生 SQL 只用自己的 schema                                                                                                                                                                                  |
 | R9 扣费出口唯一  | `weiban/billing-port-exit` | 规则 A：`BillingReservationPort` / `BILLING_RESERVATION_PORT` 这两个名字只能出现在 model-access、billing、装配入口、集成测试；规则 B：`estimateAndReserve` 同上；规则 C：除 platform、装配入口、集成测试外不用 `ModuleRef` |
-| R10 测试引用     | `weiban/module-boundaries` | `apps/server/test/` 只 import 模块 `index.ts`、`testing.ts`、`platform/`；生产代码不 import 任何 `testing.ts`                                                                                                              |
+| R10 测试引用     | `weiban/module-boundaries` | `apps/server/test/` 只 import 模块 `index.ts`、`testing.ts`、`platform/`、`app.module.ts` / `main.ts`；生产代码不 import 任何 `testing.ts`                                                                                 |
 
 另外两项保护边界规则本身的检查（T-015）：
 

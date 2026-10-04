@@ -6,8 +6,8 @@
  *
  * R10（T-014 定，T-015 实现）：
  *   - apps/server/test/ 下的集成测试只能引用 src/modules/<模块>/index.ts、src/modules/<模块>/testing.ts、
- *     src/platform/**；引用模块内部文件、装配入口（main.ts / app.module.ts）、src 下其他目录一律报错。
- *     （按「最严格理解」实现：规范列出的三类以外都不允许，见 T-015 交接说明。）
+ *     src/platform/**，以及装配入口 src/app.module.ts、src/main.ts（启动整个应用用；总负责人裁定，T-015）；
+ *     引用模块内部文件、src 下其他目录一律报错。
  *   - 模块的 testing.ts 只给测试用：生产代码（非测试文件）引用任何模块的 testing.ts 都报错，含本模块。
  *   - 测试文件（含模块目录内的单元测试）可以引用其他模块的 testing.ts。
  */
@@ -58,7 +58,7 @@ export default {
         'R3 聊天不依赖 AI：modules/chat 不得 import modules/ai-runtime 的任何内容。见 ' +
         STANDARDS_DOC,
       r10Test:
-        'R10 测试引用：集成测试（apps/server/test/）只能 import 模块的 index.ts、testing.ts 和 platform/，不能引用 {{to}}。需要的假实现 / 数据工厂请让该模块从 testing.ts 导出。见 ' +
+        'R10 测试引用：集成测试（apps/server/test/）只能 import 模块的 index.ts、testing.ts、platform/ 和 app.module.ts / main.ts，不能引用 {{to}}。需要的假实现 / 数据工厂请让该模块从 testing.ts 导出。见 ' +
         STANDARDS_DOC +
         '（3.2）',
       r10Prod:
@@ -93,8 +93,10 @@ export default {
 
       // R10：集成测试只能引用 index.ts、testing.ts、platform/
       if (integrationTest) {
+        // 装配入口（app.module.ts / main.ts）允许：集成测试需要启动整个应用（总负责人裁定，T-015）
         const allowed =
           to.kind === 'platform' ||
+          to.kind === 'composition' ||
           (to.kind === 'module' && (isModuleEntry(to.inner) || isModuleTestingEntry(to.inner)));
         if (!allowed) {
           const what =
