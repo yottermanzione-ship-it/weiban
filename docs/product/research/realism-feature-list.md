@@ -1,5 +1,7 @@
 # 真人感功能清单（供总经理勾选）
 
+> ⚠ 已被 `docs/product/prd-v1.md`（PRD v1.0）取代，仅作历史参考。总经理的取舍见 `docs/product/input/2026-10-04-manager-feedback.md`。
+
 | 项 | 内容 |
 |---|---|
 | 负责人 | product-lead |
