@@ -1,0 +1,420 @@
+/*
+ * 微伴设计令牌 v1.0 — CSS 版本
+ * 来源：docs/design/tokens.json（唯一来源，本文件与之同步，冲突以 JSON 为准）
+ * 用法：页面引入本文件后，只通过 var(--wb-*) 使用数值，不写死颜色和尺寸。
+ * 深色模式：默认跟随系统；在 <html> 上设 data-theme="light" 或 "dark" 可手动指定。
+ * 字体大小：在 <html> 上改 --wb-font-scale（0.9 / 1 / 1.1 / 1.2 / 1.35）。
+ */
+
+:root {
+  /* ---------- 原始色板（组件不要直接用） ---------- */
+  --wb-pink-50: #FFF4F7;
+  --wb-pink-100: #FFE6EE;
+  --wb-pink-200: #FFD3E1;
+  --wb-pink-300: #FFB3CA;
+  --wb-pink-400: #F784A8;
+  --wb-pink-500: #E0457B;
+  --wb-pink-600: #C7346A;
+  --wb-pink-700: #A32457;
+  --wb-pink-750: #8A3358;
+  --wb-pink-800: #7A1C43;
+  --wb-pink-900: #4F1430;
+  --wb-lilac-100: #F1EBFF;
+  --wb-lilac-300: #C9B5F5;
+  --wb-lilac-500: #8F72D9;
+  --wb-lilac-700: #5E44A8;
+  --wb-neutral-0: #FFFFFF;
+  --wb-neutral-25: #FBF9FA;
+  --wb-neutral-50: #F6F3F5;
+  --wb-neutral-100: #EEEAEC;
+  --wb-neutral-200: #E2DDE0;
+  --wb-neutral-300: #CBC5C9;
+  --wb-neutral-400: #A8A1A6;
+  --wb-neutral-500: #857E83;
+  --wb-neutral-600: #655F63;
+  --wb-neutral-700: #4A4448;
+  --wb-neutral-800: #2E2A2D;
+  --wb-neutral-850: #262329;
+  --wb-neutral-900: #1C1A1E;
+  --wb-neutral-950: #121013;
+  --wb-neutral-1000: #0B0A0C;
+  --wb-neutral-ink: #1F1A1D;
+  --wb-neutral-mist: #EDE8EC;
+  --wb-red-100: #FDE7E7;
+  --wb-red-400: #FF6B6B;
+  --wb-red-500: #F04848;
+  --wb-orange-100: #FDF0E1;
+  --wb-orange-300: #F5B36B;
+  --wb-orange-500: #E8892B;
+  --wb-orange-700: #8A4B0F;
+  --wb-green-100: #E2F5EC;
+  --wb-green-400: #4CC38A;
+  --wb-green-500: #2BA471;
+  --wb-blue-100: #E6F0FD;
+  --wb-blue-400: #6FA3F0;
+  --wb-blue-500: #3B7FE0;
+  --wb-gold-100: #FBF1DC;
+  --wb-gold-500: #D9A23A;
+  --wb-gold-700: #8C6418;
+
+  /* 应援色预设盘（default-avatar.md） */
+  --wb-support-01-bg: #E8608C; --wb-support-01-on: #FFFFFF;
+  --wb-support-02-bg: #E8664A; --wb-support-02-on: #FFFFFF;
+  --wb-support-03-bg: #E0892B; --wb-support-03-on: #1F1A1D;
+  --wb-support-04-bg: #D9B226; --wb-support-04-on: #1F1A1D;
+  --wb-support-05-bg: #6FAE45; --wb-support-05-on: #1F1A1D;
+  --wb-support-06-bg: #2EAA8A; --wb-support-06-on: #1F1A1D;
+  --wb-support-07-bg: #2F97CF; --wb-support-07-on: #FFFFFF;
+  --wb-support-08-bg: #3F5FC4; --wb-support-08-on: #FFFFFF;
+  --wb-support-09-bg: #8F72D9; --wb-support-09-on: #FFFFFF;
+  --wb-support-10-bg: #A548BA; --wb-support-10-on: #FFFFFF;
+  --wb-support-11-bg: #CF3D66; --wb-support-11-on: #FFFFFF;
+  --wb-support-12-bg: #8E6A58; --wb-support-12-on: #FFFFFF;
+
+  /* ---------- 语义颜色：浅色（默认） ---------- */
+  color-scheme: light;
+  --wb-color-bg-page: var(--wb-neutral-50);
+  --wb-color-bg-chat: #F7F2F4;
+  --wb-color-bg-surface: var(--wb-neutral-0);
+  --wb-color-bg-surface-pinned: var(--wb-neutral-25);
+  --wb-color-bg-elevated: var(--wb-neutral-0);
+  --wb-color-bg-input-field: var(--wb-neutral-0);
+  --wb-color-bg-input-bar: var(--wb-neutral-50);
+  --wb-color-bg-nav-bar: var(--wb-neutral-50);
+  --wb-color-bg-tab-bar: var(--wb-neutral-25);
+  --wb-color-bg-scrim: rgba(20, 12, 16, 0.45);
+  --wb-color-bg-pressed: rgba(31, 26, 29, 0.06);
+  --wb-color-bg-skeleton: var(--wb-neutral-100);
+
+  --wb-color-text-primary: var(--wb-neutral-ink);
+  --wb-color-text-secondary: var(--wb-neutral-600);
+  --wb-color-text-tertiary: var(--wb-neutral-500);
+  --wb-color-text-placeholder: var(--wb-neutral-400);
+  --wb-color-text-on-brand: #FFFFFF;
+  --wb-color-text-link: var(--wb-pink-700);
+  --wb-color-text-name-in-moments: #4E5F8C;
+  --wb-color-text-danger: var(--wb-red-500);
+
+  --wb-color-border-hairline: rgba(31, 26, 29, 0.10);
+  --wb-color-border-strong: var(--wb-neutral-200);
+  --wb-color-border-focus: var(--wb-pink-500);
+
+  --wb-color-brand-primary: var(--wb-pink-500);
+  --wb-color-brand-primary-pressed: var(--wb-pink-600);
+  --wb-color-brand-soft: var(--wb-pink-100);
+  --wb-color-brand-on-soft: var(--wb-pink-700);
+  --wb-color-brand-accent: var(--wb-lilac-500);
+
+  --wb-color-bubble-self-bg: #FFD6E3;
+  --wb-color-bubble-self-text: var(--wb-neutral-ink);
+  --wb-color-bubble-other-bg: var(--wb-neutral-0);
+  --wb-color-bubble-other-text: var(--wb-neutral-ink);
+  --wb-color-bubble-quote-bg: rgba(31, 26, 29, 0.05);
+  --wb-color-bubble-quote-text: var(--wb-neutral-600);
+  --wb-color-bubble-voice-wave: var(--wb-neutral-ink);
+
+  --wb-color-status-success: var(--wb-green-500);
+  --wb-color-status-success-soft: var(--wb-green-100);
+  --wb-color-status-warning: var(--wb-orange-500);
+  --wb-color-status-warning-soft: var(--wb-orange-100);
+  --wb-color-status-warning-text: var(--wb-orange-700);
+  --wb-color-status-danger: var(--wb-red-500);
+  --wb-color-status-danger-soft: var(--wb-red-100);
+  --wb-color-status-info: var(--wb-blue-500);
+  --wb-color-status-info-soft: var(--wb-blue-100);
+
+  --wb-color-badge-unread: var(--wb-red-500);
+  --wb-color-badge-on-unread: #FFFFFF;
+  --wb-color-badge-muted: var(--wb-neutral-300);
+
+  --wb-color-familiarity-l1: var(--wb-neutral-400);
+  --wb-color-familiarity-l2: var(--wb-pink-400);
+  --wb-color-familiarity-l3: var(--wb-pink-500);
+  --wb-color-familiarity-l4: var(--wb-lilac-500);
+  --wb-color-familiarity-l5: var(--wb-gold-500);
+  --wb-color-familiarity-track: var(--wb-neutral-100);
+
+  --wb-color-card-memorial: var(--wb-pink-500);
+  --wb-color-card-familiarity: var(--wb-lilac-500);
+  --wb-color-card-festival: var(--wb-orange-500);
+  --wb-color-card-moment: var(--wb-blue-500);
+  --wb-color-card-silhouette: var(--wb-neutral-200);
+
+  --wb-color-mode-tsundere: var(--wb-orange-500);
+  --wb-color-mode-romance: var(--wb-pink-500);
+  --wb-color-mode-adult: var(--wb-neutral-600);
+  --wb-color-mode-custom: var(--wb-lilac-500);
+
+  --wb-color-call-bg-top: #2A1A22;
+  --wb-color-call-bg-bottom: #120C10;
+  --wb-color-call-text: #FFFFFF;
+  --wb-color-call-text-secondary: rgba(255, 255, 255, 0.68);
+  --wb-color-call-accept: var(--wb-green-500);
+  --wb-color-call-decline: var(--wb-red-500);
+  --wb-color-call-control: rgba(255, 255, 255, 0.14);
+  --wb-color-call-control-active: #FFFFFF;
+
+  --wb-color-share-label-text: var(--wb-neutral-600);
+
+  --wb-shadow-none: none;
+  --wb-shadow-sm: 0 1px 2px rgba(31, 26, 29, 0.08);
+  --wb-shadow-md: 0 4px 12px rgba(31, 26, 29, 0.10);
+  --wb-shadow-lg: 0 8px 24px rgba(31, 26, 29, 0.14);
+
+  /* ---------- 字体 ---------- */
+  --wb-font-scale: 1;
+  --wb-font-family-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  --wb-font-family-serif: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong", "SimSun", serif;
+  --wb-font-family-numeric: "SF Pro Rounded", -apple-system, "HarmonyOS Sans SC", "MiSans", "Roboto", sans-serif;
+
+  --wb-font-size-caption2: calc(11px * var(--wb-font-scale));
+  --wb-font-size-caption1: calc(12px * var(--wb-font-scale));
+  --wb-font-size-footnote: calc(13px * var(--wb-font-scale));
+  --wb-font-size-subhead: calc(14px * var(--wb-font-scale));
+  --wb-font-size-callout: calc(15px * var(--wb-font-scale));
+  --wb-font-size-body: calc(17px * var(--wb-font-scale));
+  --wb-font-size-headline: calc(17px * var(--wb-font-scale));
+  --wb-font-size-title3: calc(20px * var(--wb-font-scale));
+  --wb-font-size-title2: calc(22px * var(--wb-font-scale));
+  --wb-font-size-title1: calc(28px * var(--wb-font-scale));
+  --wb-font-size-display: calc(40px * var(--wb-font-scale));
+  --wb-font-size-emoji-only: calc(40px * var(--wb-font-scale));
+
+  --wb-line-height-tight: 1.25;
+  --wb-line-height-normal: 1.45;
+  --wb-line-height-relaxed: 1.7;
+
+  --wb-font-weight-regular: 400;
+  --wb-font-weight-medium: 500;
+  --wb-font-weight-semibold: 600;
+  --wb-font-weight-bold: 700;
+
+  /* ---------- 间距 ---------- */
+  --wb-space-0: 0px;
+  --wb-space-1: 2px;
+  --wb-space-2: 4px;
+  --wb-space-3: 8px;
+  --wb-space-4: 12px;
+  --wb-space-5: 16px;
+  --wb-space-6: 20px;
+  --wb-space-7: 24px;
+  --wb-space-8: 32px;
+  --wb-space-9: 40px;
+  --wb-space-10: 48px;
+
+  /* ---------- 圆角 ---------- */
+  --wb-radius-xs: 4px;
+  --wb-radius-sm: 6px;
+  --wb-radius-bubble: 10px;
+  --wb-radius-md: 12px;
+  --wb-radius-lg: 16px;
+  --wb-radius-xl: 20px;
+  --wb-radius-full: 999px;
+  --wb-radius-avatar-ratio: 0.22;
+
+  /* ---------- 尺寸 ---------- */
+  --wb-size-touch-target: 44px;
+  --wb-size-nav-bar: 44px;
+  --wb-size-tab-bar: 50px;
+  --wb-size-input-bar-min: 56px;
+  --wb-size-list-row: 72px;
+  --wb-size-contact-row: 56px;
+  --wb-size-setting-row: 56px;
+  --wb-size-avatar-xs: 24px;
+  --wb-size-avatar-sm: 32px;
+  --wb-size-avatar-md: 40px;
+  --wb-size-avatar-lg: 48px;
+  --wb-size-avatar-xl: 64px;
+  --wb-size-avatar-xxl: 96px;
+  --wb-size-bubble-max-width-ratio: 0.70;
+  --wb-size-image-message-max: 200px;
+  --wb-size-content-max-width: 640px;
+  --wb-size-sidebar-width: 360px;
+
+  /* ---------- 动效（只用于 transform / opacity） ---------- */
+  --wb-motion-duration-instant: 100ms;
+  --wb-motion-duration-fast: 160ms;
+  --wb-motion-duration-base: 240ms;
+  --wb-motion-duration-page: 300ms;
+  --wb-motion-duration-slow: 420ms;
+  --wb-motion-duration-typing-cycle: 1200ms;
+  --wb-motion-duration-ring-cycle: 1800ms;
+  --wb-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --wb-motion-easing-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --wb-motion-easing-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --wb-motion-easing-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --wb-motion-easing-linear: cubic-bezier(0, 0, 1, 1);
+
+  /* ---------- 其他 ---------- */
+  --wb-opacity-disabled: 0.4;
+  --wb-opacity-pressed: 0.7;
+  --wb-opacity-muted: 0.55;
+
+  --wb-z-index-base: 0;
+  --wb-z-index-sticky: 10;
+  --wb-z-index-tab-bar: 20;
+  --wb-z-index-menu: 100;
+  --wb-z-index-sheet: 200;
+  --wb-z-index-dialog: 300;
+  --wb-z-index-toast: 400;
+  --wb-z-index-call: 500;
+
+  /* 断点仅作记录：CSS 媒体查询不能读取变量，请直接写 600px / 900px */
+  --wb-breakpoint-medium: 600px;
+  --wb-breakpoint-expanded: 900px;
+}
+
+/* ---------- 语义颜色：深色 ---------- */
+/* 写两遍：一遍跟随系统（未手动指定浅色时），一遍给手动指定深色。两段内容必须一致。 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --wb-color-bg-page: var(--wb-neutral-1000);
+    --wb-color-bg-chat: var(--wb-neutral-950);
+    --wb-color-bg-surface: var(--wb-neutral-900);
+    --wb-color-bg-surface-pinned: var(--wb-neutral-850);
+    --wb-color-bg-elevated: var(--wb-neutral-850);
+    --wb-color-bg-input-field: var(--wb-neutral-850);
+    --wb-color-bg-input-bar: var(--wb-neutral-900);
+    --wb-color-bg-nav-bar: var(--wb-neutral-1000);
+    --wb-color-bg-tab-bar: var(--wb-neutral-900);
+    --wb-color-bg-scrim: rgba(0, 0, 0, 0.60);
+    --wb-color-bg-pressed: rgba(255, 255, 255, 0.08);
+    --wb-color-bg-skeleton: var(--wb-neutral-850);
+    --wb-color-text-primary: var(--wb-neutral-mist);
+    --wb-color-text-secondary: var(--wb-neutral-400);
+    --wb-color-text-tertiary: var(--wb-neutral-500);
+    --wb-color-text-placeholder: var(--wb-neutral-600);
+    --wb-color-text-on-brand: #FFFFFF;
+    --wb-color-text-link: var(--wb-pink-300);
+    --wb-color-text-name-in-moments: #9AABD6;
+    --wb-color-text-danger: var(--wb-red-400);
+    --wb-color-border-hairline: rgba(255, 255, 255, 0.10);
+    --wb-color-border-strong: var(--wb-neutral-700);
+    --wb-color-border-focus: var(--wb-pink-400);
+    --wb-color-brand-primary: var(--wb-pink-500);
+    --wb-color-brand-primary-pressed: var(--wb-pink-600);
+    --wb-color-brand-soft: rgba(224, 69, 123, 0.18);
+    --wb-color-brand-on-soft: var(--wb-pink-300);
+    --wb-color-brand-accent: var(--wb-lilac-300);
+    --wb-color-bubble-self-bg: var(--wb-pink-750);
+    --wb-color-bubble-self-text: #FFFFFF;
+    --wb-color-bubble-other-bg: var(--wb-neutral-850);
+    --wb-color-bubble-other-text: var(--wb-neutral-mist);
+    --wb-color-bubble-quote-bg: rgba(255, 255, 255, 0.06);
+    --wb-color-bubble-quote-text: var(--wb-neutral-400);
+    --wb-color-bubble-voice-wave: var(--wb-neutral-mist);
+    --wb-color-status-success: var(--wb-green-400);
+    --wb-color-status-success-soft: rgba(43, 164, 113, 0.18);
+    --wb-color-status-warning: var(--wb-orange-300);
+    --wb-color-status-warning-soft: rgba(232, 137, 43, 0.16);
+    --wb-color-status-warning-text: var(--wb-orange-300);
+    --wb-color-status-danger: var(--wb-red-400);
+    --wb-color-status-danger-soft: rgba(240, 72, 72, 0.18);
+    --wb-color-status-info: var(--wb-blue-400);
+    --wb-color-status-info-soft: rgba(59, 127, 224, 0.18);
+    --wb-color-badge-unread: var(--wb-red-500);
+    --wb-color-badge-on-unread: #FFFFFF;
+    --wb-color-badge-muted: var(--wb-neutral-600);
+    --wb-color-familiarity-l1: var(--wb-neutral-500);
+    --wb-color-familiarity-l2: var(--wb-pink-300);
+    --wb-color-familiarity-l3: var(--wb-pink-400);
+    --wb-color-familiarity-l4: var(--wb-lilac-300);
+    --wb-color-familiarity-l5: var(--wb-gold-500);
+    --wb-color-familiarity-track: var(--wb-neutral-800);
+    --wb-color-card-memorial: var(--wb-pink-400);
+    --wb-color-card-familiarity: var(--wb-lilac-300);
+    --wb-color-card-festival: var(--wb-orange-300);
+    --wb-color-card-moment: var(--wb-blue-400);
+    --wb-color-card-silhouette: var(--wb-neutral-800);
+    --wb-color-mode-tsundere: var(--wb-orange-300);
+    --wb-color-mode-romance: var(--wb-pink-400);
+    --wb-color-mode-adult: var(--wb-neutral-400);
+    --wb-color-mode-custom: var(--wb-lilac-300);
+    --wb-color-share-label-text: var(--wb-neutral-400);
+    --wb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
+    --wb-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+    --wb-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.55);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --wb-color-bg-page: var(--wb-neutral-1000);
+  --wb-color-bg-chat: var(--wb-neutral-950);
+  --wb-color-bg-surface: var(--wb-neutral-900);
+  --wb-color-bg-surface-pinned: var(--wb-neutral-850);
+  --wb-color-bg-elevated: var(--wb-neutral-850);
+  --wb-color-bg-input-field: var(--wb-neutral-850);
+  --wb-color-bg-input-bar: var(--wb-neutral-900);
+  --wb-color-bg-nav-bar: var(--wb-neutral-1000);
+  --wb-color-bg-tab-bar: var(--wb-neutral-900);
+  --wb-color-bg-scrim: rgba(0, 0, 0, 0.60);
+  --wb-color-bg-pressed: rgba(255, 255, 255, 0.08);
+  --wb-color-bg-skeleton: var(--wb-neutral-850);
+  --wb-color-text-primary: var(--wb-neutral-mist);
+  --wb-color-text-secondary: var(--wb-neutral-400);
+  --wb-color-text-tertiary: var(--wb-neutral-500);
+  --wb-color-text-placeholder: var(--wb-neutral-600);
+  --wb-color-text-on-brand: #FFFFFF;
+  --wb-color-text-link: var(--wb-pink-300);
+  --wb-color-text-name-in-moments: #9AABD6;
+  --wb-color-text-danger: var(--wb-red-400);
+  --wb-color-border-hairline: rgba(255, 255, 255, 0.10);
+  --wb-color-border-strong: var(--wb-neutral-700);
+  --wb-color-border-focus: var(--wb-pink-400);
+  --wb-color-brand-primary: var(--wb-pink-500);
+  --wb-color-brand-primary-pressed: var(--wb-pink-600);
+  --wb-color-brand-soft: rgba(224, 69, 123, 0.18);
+  --wb-color-brand-on-soft: var(--wb-pink-300);
+  --wb-color-brand-accent: var(--wb-lilac-300);
+  --wb-color-bubble-self-bg: var(--wb-pink-750);
+  --wb-color-bubble-self-text: #FFFFFF;
+  --wb-color-bubble-other-bg: var(--wb-neutral-850);
+  --wb-color-bubble-other-text: var(--wb-neutral-mist);
+  --wb-color-bubble-quote-bg: rgba(255, 255, 255, 0.06);
+  --wb-color-bubble-quote-text: var(--wb-neutral-400);
+  --wb-color-bubble-voice-wave: var(--wb-neutral-mist);
+  --wb-color-status-success: var(--wb-green-400);
+  --wb-color-status-success-soft: rgba(43, 164, 113, 0.18);
+  --wb-color-status-warning: var(--wb-orange-300);
+  --wb-color-status-warning-soft: rgba(232, 137, 43, 0.16);
+  --wb-color-status-warning-text: var(--wb-orange-300);
+  --wb-color-status-danger: var(--wb-red-400);
+  --wb-color-status-danger-soft: rgba(240, 72, 72, 0.18);
+  --wb-color-status-info: var(--wb-blue-400);
+  --wb-color-status-info-soft: rgba(59, 127, 224, 0.18);
+  --wb-color-badge-unread: var(--wb-red-500);
+  --wb-color-badge-on-unread: #FFFFFF;
+  --wb-color-badge-muted: var(--wb-neutral-600);
+  --wb-color-familiarity-l1: var(--wb-neutral-500);
+  --wb-color-familiarity-l2: var(--wb-pink-300);
+  --wb-color-familiarity-l3: var(--wb-pink-400);
+  --wb-color-familiarity-l4: var(--wb-lilac-300);
+  --wb-color-familiarity-l5: var(--wb-gold-500);
+  --wb-color-familiarity-track: var(--wb-neutral-800);
+  --wb-color-card-memorial: var(--wb-pink-400);
+  --wb-color-card-familiarity: var(--wb-lilac-300);
+  --wb-color-card-festival: var(--wb-orange-300);
+  --wb-color-card-moment: var(--wb-blue-400);
+  --wb-color-card-silhouette: var(--wb-neutral-800);
+  --wb-color-mode-tsundere: var(--wb-orange-300);
+  --wb-color-mode-romance: var(--wb-pink-400);
+  --wb-color-mode-adult: var(--wb-neutral-400);
+  --wb-color-mode-custom: var(--wb-lilac-300);
+  --wb-color-share-label-text: var(--wb-neutral-400);
+  --wb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
+  --wb-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --wb-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+
+/* ---------- 减少动态效果：系统开启后所有位移动画改为短淡入淡出（motion.md 第 4 节） ---------- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --wb-motion-duration-fast: 120ms;
+    --wb-motion-duration-base: 120ms;
+    --wb-motion-duration-page: 120ms;
+    --wb-motion-duration-slow: 120ms;
+    --wb-motion-reduced: 1;
+  }
+}
