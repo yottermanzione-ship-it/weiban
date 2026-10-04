@@ -12,4 +12,4 @@
 | `eval-runs/` | 每次评测报告（首次评测时创建） | — |
 | `cost-report-YYYY-MM.md` | 按月成本报告（开发跑通后开始） | — |
 
-相关决策：`docs/decisions/ADR-0020-platform-model-call-billing.md`、`ADR-0021-character-card-format.md`（均为提议）。
+相关决策：`docs/decisions/ADR-0008-platform-model-call-billing.md`、`ADR-0009-character-card-format.md`（均为提议）。

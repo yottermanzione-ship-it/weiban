@@ -6,7 +6,7 @@
 | 任务 | T-005 |
 | 版本 | 1.0（方案稿，进入开发前可能按架构契约调整） |
 | 日期 | 2026-10-04 |
-| 相关文档 | 角色卡 `docs/ai/character-card-spec.md`；成本 `docs/ai/cost-estimate.md`；模型目录 `docs/ai/model-catalog.md`；评测 `docs/ai/eval-plan.md`；PRD 8.2 问答 `docs/ai/prd-8.2-answers.md`；费用归属 ADR `docs/decisions/ADR-0020-platform-model-call-billing.md` |
+| 相关文档 | 角色卡 `docs/ai/character-card-spec.md`；成本 `docs/ai/cost-estimate.md`；模型目录 `docs/ai/model-catalog.md`；评测 `docs/ai/eval-plan.md`；PRD 8.2 问答 `docs/ai/prd-8.2-answers.md`；费用归属 ADR `docs/decisions/ADR-0008-platform-model-call-billing.md` |
 
 ## 0. 先看结论（给总经理）
 
@@ -79,7 +79,7 @@
 1. 密钥加密存储与解密方案见 `docs/architecture/security-and-privacy.md`（ADR-0006）。供应商适配器只在**发出请求的那一刻**从网关拿到明文，用完即丢，不缓存、不写入日志和用量记录；ai-runtime 永远接触不到密钥。
 2. 用量记录只存 `credentialId`（掩码由 model-access 管理），用于对账。
 3. 适配器抛出的错误信息在写日志前必须经过平台脱敏（供应商有时会在错误信息里回显部分密钥），这一条请质量负责人纳入检查。
-4. 后台任务（推演、朋友圈、记忆整理）同样使用用户的密钥；管理员侧任务用平台密钥。费用归属方案见 ADR-0020（提议，与架构 `prd-answers.md` 第 4 节的系统约束一致）。
+4. 后台任务（推演、朋友圈、记忆整理）同样使用用户的密钥；管理员侧任务用平台密钥。费用归属方案见 ADR-0008（提议，与架构 `prd-answers.md` 第 4 节的系统约束一致）。
 
 ### 2.4 调用用途与模型路由
 

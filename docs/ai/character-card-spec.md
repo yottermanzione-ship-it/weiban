@@ -8,7 +8,7 @@
 | 日期 | 2026-10-04 |
 | 依据 | PRD CHR-11（角色需要具备的信息）、第 10 章硬性边界、`docs/product/input/2026-10-04-pm-rulings.md`（历史人物子类等裁定） |
 | 遵守的系统约束 | `docs/architecture/hard-boundaries.md` 第 2 节、`packages/contracts/src/character-card.ts` 文件头的 4 条约束、`packages/contracts/src/http/characters.ts` 已定义的角色基础字段 |
-| 相关 | 制作流程 `docs/ai/character-distillation.md`；运行时用法 `docs/ai/runtime-overview.md`；格式决策 `docs/decisions/ADR-0021-character-card-format.md` |
+| 相关 | 制作流程 `docs/ai/character-distillation.md`；运行时用法 `docs/ai/runtime-overview.md`；格式决策 `docs/decisions/ADR-0009-character-card-format.md` |
 
 ## 0. 先看结论（给总经理）
 
