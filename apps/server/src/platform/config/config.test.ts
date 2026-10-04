@@ -10,8 +10,17 @@ describe('配置加载 loadConfig', () => {
   it('只给 DATABASE_URL 时其余取默认值', () => {
     const config = loadConfig({ DATABASE_URL: DB });
     expect(config.role).toBe('all');
-    expect(config.http).toEqual({ host: '127.0.0.1', port: 3000 });
+    expect(config.http).toEqual({ host: '127.0.0.1', port: 3000, trustProxy: false });
     expect(config.crypto.kekFile).toBeNull();
+  });
+
+  it('HTTP_TRUST_PROXY：层数、true、地址列表', () => {
+    expect(loadConfig({ DATABASE_URL: DB, HTTP_TRUST_PROXY: '1' }).http.trustProxy).toBe(1);
+    expect(loadConfig({ DATABASE_URL: DB, HTTP_TRUST_PROXY: 'true' }).http.trustProxy).toBe(true);
+    expect(loadConfig({ DATABASE_URL: DB, HTTP_TRUST_PROXY: '0' }).http.trustProxy).toBe(false);
+    expect(loadConfig({ DATABASE_URL: DB, HTTP_TRUST_PROXY: 'loopback' }).http.trustProxy).toBe(
+      'loopback',
+    );
   });
 
   it('不合法时列出变量名，但不回显变量的值', () => {

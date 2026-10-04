@@ -24,6 +24,7 @@ import { CLOCK, SystemClock, type Clock } from './clock/clock.js';
 import { APP_CONFIG, readKekFile, type AppConfig } from './config/config.js';
 import { ENVELOPE_CRYPTO, EnvelopeCrypto, type KekRing } from './crypto/envelope.js';
 import { DATABASE, Database } from './db/database.js';
+import { USER_DATA_REGISTRY, UserDataRegistry } from './deletion/user-data-registry.js';
 import { EVENT_DISPATCHER, EventDispatcher } from './events/dispatcher.js';
 import { EVENT_BUS, EventBus } from './events/event-bus.js';
 import { EVENT_INBOX, EventInbox } from './events/inbox.js';
@@ -139,6 +140,7 @@ export class PlatformModule implements NestModule {
           inject: [LOGGER],
         },
         { provide: EVENT_BUS, useValue: new EventBus() },
+        { provide: USER_DATA_REGISTRY, useValue: new UserDataRegistry() },
         {
           provide: EVENT_INBOX,
           useFactory: (db: Database, clock: Clock) => new EventInbox(db, clock),
@@ -214,6 +216,7 @@ export class PlatformModule implements NestModule {
         LOGGER,
         DATABASE,
         EVENT_BUS,
+        USER_DATA_REGISTRY,
         EVENT_INBOX,
         OUTBOX,
         EVENT_DISPATCHER,

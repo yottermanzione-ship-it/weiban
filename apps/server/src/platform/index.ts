@@ -17,6 +17,8 @@ export { OUTBOX, Outbox } from './events/outbox.js';
 export { EVENT_INBOX, EventInbox, type InboxResult } from './events/inbox.js';
 export { EVENT_DISPATCHER, EventDispatcher } from './events/dispatcher.js';
 
+export { USER_DATA_REGISTRY, UserDataRegistry } from './deletion/user-data-registry.js';
+
 export { JOB_QUEUE, JobQueue, type JobContext, type JobSendOptions } from './jobs/job-queue.js';
 
 export { LOGGER, createLogger, type Logger } from './logging/logger.js';

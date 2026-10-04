@@ -13,12 +13,14 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/cli/migrate.ts up",
     "db:rollback": "tsx src/cli/migrate.ts down",
-    "db:status": "tsx src/cli/migrate.ts status"
+    "db:status": "tsx src/cli/migrate.ts status",
+    "identity": "tsx src/cli/identity.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.7",
     "@nestjs/core": "^11.2.7",
     "@nestjs/platform-express": "^11.2.7",
+    "@node-rs/argon2": "^2.2.1",
     "@weiban/contracts": "workspace:*",
     "drizzle-orm": "^0.45.3",
     "pg": "^8.23.1",
