@@ -68,11 +68,33 @@ jobs:
       - name: 类型检查
         run: pnpm typecheck
 
-      - name: 自动测试
-        run: pnpm test
+      # 测试数据库：直接用本机开发同一份 docker-compose.yml 启动（T-019）。
+      # 这样镜像版本（PostgreSQL 18 + pgvector）、初始化脚本（deploy/dev/postgres-init/：开 pgvector、
+      # 建 weiban_test 库）、健康检查都只在 docker-compose.yml 一处定义，CI 与本机不会走样。
+      # 没有 .env 时 compose 用自己的默认值（与 .env.example 一致）；--wait 等到数据库「健康」才继续。
+      # 不用 GitHub 的 services: 写法，是因为它在取代码之前启动，挂不上仓库里的初始化脚本，还得再抄一遍镜像版本。
+      - name: 启动测试数据库（PostgreSQL 18 + pgvector，与本机开发相同）
+        run: |
+          docker compose up -d --wait
+          docker compose exec -T postgres psql -U weiban -d weiban_test -tAc \
+            "SELECT 'PostgreSQL ' || current_setting('server_version') || ' / pgvector ' || extversion FROM pg_extension WHERE extname = 'vector'"
+
+      - name: 自动测试（含需要数据库的服务器集成测试）
+        # 连接串与 .env.example 的 TEST_DATABASE_URL 一致：本机开发专用值，不是机密；数据库只在这台临时 CI 电脑的 127.0.0.1 上。
+        # 库名必须是 weiban_test（测试会清空它），指向开发库 weiban 时测试会拒绝运行。
+        env:
+          TEST_DATABASE_URL: postgres://weiban:weiban_dev_only@127.0.0.1:5432/weiban_test
+        run: pnpm test --reporter=default --reporter=json --outputFile.json=test-results/vitest-report.json
+
+      - name: 确认集成测试实际执行（跳过数必须为 0）
+        run: node .github/scripts/check-test-report.mjs test-results/vitest-report.json
 
       - name: 设计令牌生成物是否最新（重新生成后应无差异）
         run: pnpm tokens --check
+
+      - name: 失败时打印数据库日志（排查用）
+        if: failure()
+        run: docker compose logs postgres
 
   # ---------------------------------------------------------------------------
   # 安卓构建（预留位置，暂不启用）
