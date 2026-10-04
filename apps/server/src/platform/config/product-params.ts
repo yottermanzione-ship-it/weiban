@@ -77,7 +77,11 @@ export const P12_RECALL_RESEND_PER_CHARACTER_PER_DAY = 1;
 export const P13_TYPO_CORRECTION_PER_CHARACTER_PER_DAY = 2;
 
 /** 来源：PRD 第 5 节 P-14。负面心情：每角色每 7 天最多 2 天；单次最长 24 小时。SIM-12 */
-export const P14_NEGATIVE_MOOD = { windowMs: 7 * DAY_MS, maxDays: 2, maxDurationMs: DAY_MS } as const;
+export const P14_NEGATIVE_MOOD = {
+  windowMs: 7 * DAY_MS,
+  maxDays: 2,
+  maxDurationMs: DAY_MS,
+} as const;
 
 /** 来源：PRD 第 5 节 P-15。推演日常事件数：每角色每天 3–6 件。SIM-01 */
 export const P15_DAILY_EVENTS_PER_CHARACTER = { min: 3, max: 6 } as const;
@@ -92,7 +96,10 @@ export const P17_SIMULATION_PAUSE_AFTER_INACTIVE_MS = 7 * DAY_MS;
 export const P18_WHILE_AWAY_SUMMARY = { minAbsenceMs: 12 * HOUR_MS, maxItems: 5 } as const;
 
 /** 来源：PRD 第 5 节 P-19。群聊回应：每条用户消息后最多 3 个角色回应；无用户新发言时角色连续消息最多 6 条。SOC-04 */
-export const P19_GROUP_RESPONSES = { maxRespondersPerUserMessage: 3, maxConsecutiveCharacterMessages: 6 } as const;
+export const P19_GROUP_RESPONSES = {
+  maxRespondersPerUserMessage: 3,
+  maxConsecutiveCharacterMessages: 6,
+} as const;
 
 /** 来源：PRD 第 5 节 P-20。群聊自发话题：每群每天最多 1 次，每次最多 10 条；仅限 7 天内用户发过言的群。SOC-05 */
 export const P20_GROUP_SPONTANEOUS_TOPIC = {
@@ -149,7 +156,10 @@ export const P29_MOMENTS_REPLY_DEADLINE_MS = 2 * HOUR_MS;
 export const P30_CONTACT_ACCEPT_DELAY = { minMs: 3 * SECOND_MS, maxMs: 30 * SECOND_MS } as const;
 
 /** 来源：PRD 第 5 节 P-31。单次语音通话时长上限 60 分钟；到 55 分钟时角色自然提醒。MED-06 */
-export const P31_VOICE_CALL = { maxDurationMs: 60 * MINUTE_MS, reminderAtMs: 55 * MINUTE_MS } as const;
+export const P31_VOICE_CALL = {
+  maxDurationMs: 60 * MINUTE_MS,
+  reminderAtMs: 55 * MINUTE_MS,
+} as const;
 
 /** 来源：PRD 第 5 节 P-32（v1.2 新增）。低余额提醒线：5 元。MDL-10、SVC-01 */
 export const P32_LOW_BALANCE_ALERT_MICROS = 5 * YUAN_MICROS;

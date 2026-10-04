@@ -41,6 +41,8 @@ export function createLogger(options: CreateLoggerOptions = {}): Logger {
       timestamp: pino.stdTimeFunctions.isoTime,
       messageKey: 'msg',
       errorKey: 'err',
+      // Error 已在 sanitize 里转成 { type, message, stack }，不再让 pino 的默认序列化器改写
+      serializers: { err: (value: unknown) => value },
       formatters: {
         level: (label) => ({ level: label }),
         bindings: (bindings) => sanitize(bindings) as Record<string, unknown>,

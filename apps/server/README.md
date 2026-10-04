@@ -1,8 +1,16 @@
-# apps/server · 服务器（占位）
+# apps/server · 服务器（@weiban/server）
 
 - 负责人：后端负责人（`src/modules/ai-runtime/` 归 AI 负责人）
-- 技术：Node.js 24 + NestJS 11，模块化单体（ADR-0003、ADR-0004）
-- 内部结构：见 `docs/architecture/repo-structure.md` 第 3 节
-- 由 D-L0-05（服务器平台内核）建立工程：届时新增 `package.json`（名称 `@weiban/server`）、`tsconfig.json`（extends `@weiban/tsconfig/node.json`）、`vitest.config.ts`（用 `defineProject`），根目录的 `pnpm lint / typecheck / test` 会自动包含它。
+- 技术：Node.js 24 + NestJS 11，模块化单体（ADR-0003、ADR-0004）；实现取舍见 ADR-0015
+- 内部结构：`docs/architecture/repo-structure.md` 第 3 节
+- **平台内核怎么用：`docs/backend/kernel.md`**（写业务模块前必读）
 
-模块边界规则 R1～R9 已在 `packages/eslint-config` 中按 `apps/server/src/modules/<模块名>/` 的路径约定生效，新增模块目录前先在 `packages/eslint-config/architecture.js` 登记层级（否则 lint 报错）。
+常用命令（仓库根目录运行，先 `pnpm db:up`）：
+
+| 命令 | 作用 |
+|---|---|
+| `pnpm --filter @weiban/server db:migrate` / `db:rollback` / `db:status` | 数据库迁移执行 / 回滚 / 查看 |
+| `pnpm --filter @weiban/server dev` | 本机启动（热重载），默认 http://127.0.0.1:3000/health |
+| `pnpm --filter @weiban/server build` | 生产构建到 `dist/` |
+
+模块边界规则 R1～R10 由 `packages/eslint-config` 检查；新增 `src/modules/<模块名>/` 前先在 `packages/eslint-config/architecture.js` 登记层级（运维维护）。

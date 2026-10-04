@@ -81,9 +81,13 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
 /** 读主密钥文件：内容为 32 字节的 base64（44 个字符）或十六进制（64 个字符），首尾空白忽略。 */
 export function readKekFile(path: string): Buffer {
   const text = readFileSync(path, 'utf8').trim();
-  const key = /^[0-9a-fA-F]{64}$/.test(text) ? Buffer.from(text, 'hex') : Buffer.from(text, 'base64');
+  const key = /^[0-9a-fA-F]{64}$/.test(text)
+    ? Buffer.from(text, 'hex')
+    : Buffer.from(text, 'base64');
   if (key.length !== 32) {
-    throw new ConfigError([`PLATFORM_KEK_FILE：主密钥必须是 32 字节（base64 或十六进制），实际 ${key.length} 字节`]);
+    throw new ConfigError([
+      `PLATFORM_KEK_FILE：主密钥必须是 32 字节（base64 或十六进制），实际 ${key.length} 字节`,
+    ]);
   }
   return key;
 }

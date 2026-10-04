@@ -1,0 +1,57 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { ConfigError, loadConfig, readKekFile } from './config.js';
+
+const DB = 'postgres://u:p@127.0.0.1:5432/db';
+
+describe('配置加载 loadConfig', () => {
+  it('只给 DATABASE_URL 时其余取默认值', () => {
+    const config = loadConfig({ DATABASE_URL: DB });
+    expect(config.role).toBe('all');
+    expect(config.http).toEqual({ host: '127.0.0.1', port: 3000 });
+    expect(config.crypto.kekFile).toBeNull();
+  });
+
+  it('不合法时列出变量名，但不回显变量的值', () => {
+    try {
+      loadConfig({ DATABASE_URL: 'mysql://secret-password@host', PORT: 'abc' });
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigError);
+      const message = (error as Error).message;
+      expect(message).toContain('DATABASE_URL');
+      expect(message).toContain('PORT');
+      expect(message).not.toContain('secret-password');
+    }
+  });
+
+  it('生产环境必须配置主密钥文件', () => {
+    expect(() => loadConfig({ DATABASE_URL: DB, NODE_ENV: 'production' })).toThrow(
+      /PLATFORM_KEK_FILE/,
+    );
+  });
+
+  it('生产环境强制关闭 DEBUG_LLM_PAYLOAD', () => {
+    const prod = loadConfig({
+      DATABASE_URL: DB,
+      NODE_ENV: 'production',
+      PLATFORM_KEK_FILE: '/run/secrets/kek',
+      DEBUG_LLM_PAYLOAD: '1',
+    });
+    expect(prod.debugLlmPayload).toBe(false);
+    expect(loadConfig({ DATABASE_URL: DB, DEBUG_LLM_PAYLOAD: '1' }).debugLlmPayload).toBe(true);
+  });
+
+  it('主密钥文件支持 base64 与十六进制，长度不对报错', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'weiban-kek-'));
+    const key = Buffer.alloc(32, 7);
+    writeFileSync(join(dir, 'b64'), `${key.toString('base64')}\n`);
+    writeFileSync(join(dir, 'hex'), key.toString('hex'));
+    writeFileSync(join(dir, 'bad'), 'c2hvcnQ=');
+    expect(readKekFile(join(dir, 'b64')).equals(key)).toBe(true);
+    expect(readKekFile(join(dir, 'hex')).equals(key)).toBe(true);
+    expect(() => readKekFile(join(dir, 'bad'))).toThrow(ConfigError);
+  });
+});

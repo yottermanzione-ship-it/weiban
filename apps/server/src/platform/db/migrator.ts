@@ -130,7 +130,9 @@ export class Migrator {
       const file = byTag.get(tag);
       if (!file) throw new Error(`数据库里记录了迁移 ${tag}，但迁移目录里没有这个文件`);
       if (file.checksum !== record.checksum) {
-        throw new Error(`已执行的迁移 ${tag} 被修改过（校验和不一致）。迁移只增不改，请新增一个迁移`);
+        throw new Error(
+          `已执行的迁移 ${tag} 被修改过（校验和不一致）。迁移只增不改，请新增一个迁移`,
+        );
       }
     }
   }

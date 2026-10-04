@@ -5,12 +5,7 @@
  * - 未配置主密钥：503 service_unavailable；
  * - 其他一切：500 internal_error，对外只说「服务器内部错误」，细节只进日志（日志会脱敏）。
  */
-import {
-  Catch,
-  HttpException,
-  type ArgumentsHost,
-  type ExceptionFilter,
-} from '@nestjs/common';
+import { Catch, HttpException, type ArgumentsHost, type ExceptionFilter } from '@nestjs/common';
 import type { ApiError, ErrorCode } from '@weiban/contracts';
 import type { Response } from 'express';
 import { CryptoUnavailableError } from '../crypto/envelope.js';
@@ -60,7 +55,7 @@ export function normalizeError(error: unknown): Normalized {
     };
   }
   const status =
-    error instanceof HttpException ? error.getStatus() : clientErrorStatus(error) ?? 500;
+    error instanceof HttpException ? error.getStatus() : (clientErrorStatus(error) ?? 500);
   const code: ErrorCode =
     STATUS_TO_CODE[status] ?? (status >= 500 ? 'internal_error' : 'bad_request');
   return { status, code, message: GENERIC_MESSAGE[code] ?? '请求失败' };

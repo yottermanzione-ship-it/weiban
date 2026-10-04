@@ -12,7 +12,7 @@
  * - 延迟时间用平台时钟计算（startAfter = clock.now() + delayMs）。
  * - 任务数据只放 ID，不放正文和密钥（任务数据会持久化）。
  */
-import { PgBoss, type IDatabase, type SendOptions } from 'pg-boss';
+import { PgBoss, type Db as IDatabase, type SendOptions } from 'pg-boss';
 import type { Clock } from '../clock/clock.js';
 import type { DbTx } from '../db/database.js';
 import { runWithLogContext } from '../logging/log-context.js';
@@ -54,27 +54,44 @@ export interface JobQueueOptions {
 }
 
 export class JobQueue {
-  readonly boss: PgBoss;
+  private bossInstance: PgBoss;
   private started = false;
   private readonly knownQueues = new Set<string>();
   private readonly pendingWorkers: Array<{ name: string; handler: JobHandler<unknown> }> = [];
 
   constructor(private readonly options: JobQueueOptions) {
-    this.boss = new PgBoss({
-      connectionString: options.databaseUrl,
-      schema: options.schema ?? 'pgboss',
+    this.bossInstance = this.createBoss();
+  }
+
+  /** 底层 pg-boss 实例（测试与排查用；业务代码用本类的方法）。 */
+  get boss(): PgBoss {
+    return this.bossInstance;
+  }
+
+  private createBoss(): PgBoss {
+    const boss = new PgBoss({
+      connectionString: this.options.databaseUrl,
+      schema: this.options.schema ?? 'pgboss',
       application_name: 'weiban-jobs',
       max: 4,
       // 只投递不消费的进程（APP_ROLE = web）不做维护和定时调度
-      supervise: options.consume,
-      schedule: options.consume,
+      supervise: this.options.consume,
+      schedule: this.options.consume,
     });
-    this.boss.on('error', (error) => options.logger.error({ err: error }, 'pg-boss 出错'));
+    boss.on('error', (error) => this.options.logger.error({ err: error }, 'pg-boss 出错'));
+    return boss;
   }
 
+  /** 启动；失败（例如数据库暂时连不上）时抛错，可以再次调用重试。 */
   async start(): Promise<void> {
     if (this.started) return;
-    await this.boss.start();
+    try {
+      await this.bossInstance.start();
+    } catch (error) {
+      await this.bossInstance.stop({ graceful: false }).catch(() => undefined);
+      this.bossInstance = this.createBoss();
+      throw error;
+    }
     this.started = true;
     for (const { name, handler } of this.pendingWorkers.splice(0)) {
       await this.startWorker(name, handler);
