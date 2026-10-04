@@ -1,0 +1,16 @@
+{
+  "name": "@weiban/tsconfig",
+  "version": "0.1.0",
+  "private": true,
+  "description": "微伴共享 TypeScript 配置。各子项目在自己的 tsconfig.json 里 extends 这里的文件。",
+  "files": [
+    "base.json",
+    "node.json",
+    "react.json"
+  ],
+  "exports": {
+    "./base.json": "./base.json",
+    "./node.json": "./node.json",
+    "./react.json": "./react.json"
+  }
+}

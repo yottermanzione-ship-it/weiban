@@ -1,0 +1,19 @@
+# 让各种编辑器使用统一的基础格式（换行符、缩进）。细节格式以 Prettier 为准。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = true
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{bat,cmd,ps1}]
+end_of_line = crlf
+
+[*.{kt,kts}]
+indent_size = 4

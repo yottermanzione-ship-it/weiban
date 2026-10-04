@@ -1,0 +1,23 @@
+# pnpm 工作区（workspace）定义与 pnpm 设置。
+# 按 ADR-0003「版本基线」：除认证和镜像源地址外，pnpm 设置一律写在这里，不写 .npmrc。
+# 维护：运维负责人。
+
+packages:
+  - 'apps/*'
+  - 'packages/*'
+  # 安卓是独立的 Gradle 工程，不属于 pnpm 工作区（repo-structure.md 第 2 节）
+  - '!apps/android'
+
+# Node 版本不符合 package.json 的 engines 时直接报错，而不是只警告
+engineStrict: true
+
+# 工作区内的包互相引用必须写 workspace:* 协议，避免误从 npm 下载同名包
+linkWorkspacePackages: false
+
+# 依赖包的安装脚本（postinstall 等）默认一律不运行，这是防供应链攻击的重要一道门。
+# 新增依赖如果要求运行脚本，安装会报 ERR_PNPM_IGNORED_BUILDS，需要在这里逐个表态：
+#   true = 允许运行；false = 明确不运行（安装不再报错）。改动须在交接说明里写理由。
+allowBuilds:
+  # esbuild（契约包的 tsx 带进来）的安装脚本只是校验 / 补装原生二进制；
+  # 对应平台的预编译二进制已经通过 optionalDependencies 装好，不需要运行脚本。
+  esbuild: false
