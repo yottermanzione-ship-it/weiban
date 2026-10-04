@@ -1,6 +1,6 @@
 /*
  * 微伴设计令牌 v2.0.0 — CSS 版本
- * 由 docs/design/tools/build-tokens.mjs 从 docs/design/tokens.json 生成，请勿手改。
+ * 由 scripts/build-tokens.mjs 从 docs/design/tokens.json 生成，请勿手改。
  * 用法：页面只通过 var(--wb-*) 使用数值。
  * 主题：<html data-theme="green|pink">，不写 = green。
  * 深浅模式：<html data-scheme="light|dark">，不写 = 跟随系统。

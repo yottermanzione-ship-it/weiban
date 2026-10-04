@@ -9,15 +9,15 @@
 
 ## 1. 结论
 
-- 安卓和网页用**同一份** `tokens.json`。生成脚本 `tools/build-tokens.mjs` 一条命令同时产出网页的 `tokens.css` 和安卓的 `WbTokens.kt`，两端数值不可能对不上。
+- 安卓和网页用**同一份** `tokens.json`。生成脚本 `scripts/build-tokens.mjs`（仓库根目录）一条命令同时产出网页的 `tokens.css` 和安卓的 `WbTokens.kt`，两端数值不可能对不上。
 - 生成命令（项目根目录，需要 Node，开发环境已装）：
 
   ```
-  node docs/design/tools/build-tokens.mjs --kotlin apps/android/<模块>/src/main/java/app/weiban/designsystem/tokens/WbTokens.kt
-  node docs/design/tools/build-tokens.mjs --check      # 只检查，不写文件（适合放进 CI）
+  node scripts/build-tokens.mjs --kotlin apps/android/<模块>/src/main/java/app/weiban/designsystem/tokens/WbTokens.kt
+  node scripts/build-tokens.mjs --check --kotlin <同上路径>   # 只检查不写文件：tokens.json 自洽，且该文件与重新生成的结果一致
   ```
 
-- 脚本现放在 `docs/design/tools/` 是**参考实现**。仓库建好 `scripts/` 后，由 Android / Web 负责人移到 `scripts/` 并接入 Gradle 任务和网页构建（`repo-structure.md` 第 5 节），然后删除这份，保证只有一份脚本。CI 检查「重新生成后无差异」，与契约代码生成同一规则。
+- 脚本已在 T-015 移到 `scripts/build-tokens.mjs`（原 `docs/design/tools/` 下的副本已删除，只有这一份）；网页的 `tokens.css` 用 `pnpm tokens` 生成。接入 Gradle 任务和网页构建由 Android / Web 负责人负责（`repo-structure.md` 第 5 节）。CI 检查「重新生成后无差异」，与契约代码生成同一规则。
 - 生成的 Kotlin 文件**不手改**；要改数值，改 `tokens.json` 再重新生成。
 
 ## 2. 生成出来的 Kotlin 长什么样

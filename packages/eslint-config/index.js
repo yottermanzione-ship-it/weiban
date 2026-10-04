@@ -7,7 +7,7 @@
  *
  * 内容：
  *   1. 通用规则：ESLint 推荐规则 + typescript-eslint 推荐规则，禁止 any（engineering-standards.md 第 1 节）
- *   2. 模块边界规则 R1～R9（engineering-standards.md 第 3 节），由本地插件 weiban 实现
+ *   2. 模块边界规则 R1～R10（engineering-standards.md 第 3 节），由本地插件 weiban 实现
  */
 import js from '@eslint/js';
 import globals from 'globals';
@@ -36,9 +36,9 @@ export const GLOBAL_IGNORES = [
   'apps/android/**',
 ];
 
-/** R1～R9 的规则开关与参数。单独导出，方便测试直接使用。 */
+/** R1～R10 的规则开关与参数。单独导出，方便测试直接使用。 */
 export const boundaryRules = {
-  'weiban/module-boundaries': 'error', // R1、R2、R3
+  'weiban/module-boundaries': 'error', // R1、R2、R3、R10
   'weiban/exclusive-sdk': [
     'error',
     [
@@ -56,6 +56,7 @@ export const boundaryRules = {
   'weiban/no-raw-time': 'error', // R7
   'weiban/own-schema-only': 'error', // R8
   'weiban/billing-port-exit': 'error', // R9
+  'weiban/no-path-alias': 'error', // 服务器禁止路径别名（保证 R1～R3 不失效）
 };
 
 export default [

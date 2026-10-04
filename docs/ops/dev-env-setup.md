@@ -460,4 +460,4 @@ Docker Desktop 运行时会在后台开一台「迷你 Linux 虚拟机」，即�
 | compose | `Docker Compose version v2.x.x` 或更新（2026 年新版 Docker Desktop 显示 `v5.x.x`，也合格） | 第七节 |
 | hello-world | 出现 `Hello from Docker!` | 第七节第 5 步 |
 
-全部合格后，就可以开始 D-L0-01（仓库骨架）了，这一步由运维负责人在你的电脑上完成，**不需要你动手**。仓库骨架和本机数据库（D-L0-01、D-L0-02）已在 T-011 完成，怎么起停数据库、怎么跑检查见 `docs/ops/local-dev.md`。
+全部合格就说明开发环境装好了。仓库骨架和本机数据库（D-L0-01、D-L0-02）已由运维负责人在 T-011 搭好，**不需要你动手**；之后怎么起停数据库、怎么跑检查，见 `docs/ops/local-dev.md`。
