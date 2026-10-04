@@ -1,0 +1,11 @@
+{
+  // 服务器：Node.js 24 + NestJS 11。
+  // NestJS 依赖注入需要旧式装饰器（experimentalDecorators）。
+  // 不开 emitDecoratorMetadata：开发运行用的 tsx 和生产打包用的 esbuild 都不生成装饰器元数据，
+  // 所以构造函数注入一律显式写 @Inject(令牌)，不依赖参数类型推断（见 docs/backend/kernel.md 第 2 节）。
+  "extends": "@weiban/tsconfig/node.json",
+  "compilerOptions": {
+    "experimentalDecorators": true
+  },
+  "include": ["src", "test", "scripts", "vitest.config.ts", "drizzle.config.ts"]
+}
