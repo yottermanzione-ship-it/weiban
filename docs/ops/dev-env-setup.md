@@ -1,6 +1,6 @@
 # 开发环境安装说明（Windows 11）：Node.js、pnpm、Docker Desktop
 
-> 负责人：运维负责人 · 最后更新：2026-10-04 · 来源任务：T-007
+> 负责人：运维负责人 · 最后更新：2026-10-04 · 来源任务：T-007，T-011 修订（pnpm 改为 11）
 > 读者：总经理（零基础）。照着一步步做，大约 60–90 分钟，中间要**重启电脑 1–2 次**。
 > 软件版本以 `docs/decisions/ADR-0003-tech-stack.md`「版本基线」为准，本文只讲「怎么装、怎么验证」。git 已按 `docs/ops/git-setup.md` 装好，本文不再涉及。
 
@@ -185,14 +185,15 @@ npm config get registry
 在 PowerShell 里输入，回车：
 
 ```
-npm install -g pnpm@10
+npm install -g pnpm@11
 ```
 
-- `-g` 表示「装在全局」，即整台电脑都能用；`@10` 表示装第 10 代（与 ADR-0003 版本基线一致）。
+- `-g` 表示「装在全局」，即整台电脑都能用；`@11` 表示装第 11 代（与 ADR-0003 版本基线一致；T-009 从 10 改为 11）。
+- 以前装过 pnpm 10 的，直接执行这一行就会升级到 11，不用先卸载。
 - 等它跑完，最后出现 `added 1 package` 之类的字样就行。中间出现黄色 `npm warn` 字样不用管。
 - **不需要**用「管理员身份」打开 PowerShell。
 
-> 为什么不用 Node.js 自带的 Corepack 来装 pnpm？Corepack 在 Windows 上启用要管理员权限，而且 Node.js 25 以后已经不再自带它；我们以后升级 Node 时还得换方法。用 npm 装一次最简单、最稳。仓库骨架建好后，项目里会锁定 pnpm 的具体版本，pnpm 会自动按项目要求的版本工作，你不用操心。
+> 为什么不用 Node.js 自带的 Corepack 来装 pnpm？Corepack 在 Windows 上启用要管理员权限，而且 Node.js 25 以后已经不再自带它；我们以后升级 Node 时还得换方法。用 npm 装一次最简单、最稳。仓库骨架（T-011）已在根目录 `package.json` 的 `devEngines.packageManager` 锁定了 pnpm 的具体版本（11.x 中的一个），电脑上的 pnpm 版本不一致时，pnpm 会自动下载并改用项目要求的版本，你不用操心。
 
 ### 3. 验证
 
@@ -202,7 +203,7 @@ npm install -g pnpm@10
 pnpm -v
 ```
 
-- 显示 `10.xx.x` → **成功**。
+- 显示 `11.xx.x` → **成功**。
 - 显示「无法将 pnpm 项识别为……」→ 重启电脑再试；仍不行，见文末「常见问题」。
 - 显示「无法加载文件 …\pnpm.ps1，因为在此系统上禁止运行脚本」→ 回到第四节第 4 步。
 
@@ -402,7 +403,7 @@ Docker Desktop 运行时会在后台开一台「迷你 Linux 虚拟机」，即�
 **Q：`pnpm -v` 一直找不到，但 `npm -v` 正常？**
 执行 `npm config get prefix`，会显示一个文件夹（通常是 `C:\Users\你的用户名\AppData\Roaming\npm`）。把这个结果和报错一起发给项目总负责人。
 
-**Q：`npm install -g pnpm@10` 报 `EPERM`、`operation not permitted`？**
+**Q：`npm install -g pnpm@11` 报 `EPERM`、`operation not permitted`？**
 通常是杀毒软件或另一个窗口占用了文件。关掉其他 PowerShell 窗口，等一分钟再执行一次。仍失败把报错发给总负责人。**不要**为了绕过它去用管理员身份反复尝试。
 
 **Q：WSL 安装卡在 0% 不动？**
@@ -452,11 +453,11 @@ Docker Desktop 运行时会在后台开一台「迷你 Linux 虚拟机」，即�
 | node | `v24.` 开头 | 第四节 |
 | npm | 一个版本号，如 `11.x.x` | 第四节 |
 | npm registry | `https://registry.npmjs.org/`（官方）或 `https://registry.npmmirror.com/`（国内镜像），两者都合格 | 第五节第 1 步 |
-| pnpm | `10.` 开头 | 第五节 |
+| pnpm | `11.` 开头 | 第五节 |
 | ExecutionPolicy | `RemoteSigned`（如果是 `Undefined` 但 npm、pnpm 都能显示版本号，也合格） | 第四节第 4 步 |
 | wsl | 第一行 `WSL 版本: 2.x.x.x`（不低于 2.1.5） | 第六节 |
 | docker | `Docker version 2x.x.x` | 第七节 |
-| compose | `Docker Compose version v2.x.x` | 第七节 |
+| compose | `Docker Compose version v2.x.x` 或更新（2026 年新版 Docker Desktop 显示 `v5.x.x`，也合格） | 第七节 |
 | hello-world | 出现 `Hello from Docker!` | 第七节第 5 步 |
 
-全部合格后，就可以开始 D-L0-01（仓库骨架）了，这一步由运维负责人在你的电脑上完成，**不需要你动手**。之后 D-L0-02 会给你一条命令在本机启动数据库，到时另有说明。
+全部合格后，就可以开始 D-L0-01（仓库骨架）了，这一步由运维负责人在你的电脑上完成，**不需要你动手**。仓库骨架和本机数据库（D-L0-01、D-L0-02）已在 T-011 完成，怎么起停数据库、怎么跑检查见 `docs/ops/local-dev.md`。
