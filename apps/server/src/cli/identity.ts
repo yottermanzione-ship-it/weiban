@@ -116,7 +116,8 @@ async function main(): Promise<void> {
         const userId = args[0];
         if (!userId) throw new CommandError('缺少用户 ID');
         const counts = await commands.verifyPurged(userId);
-        for (const { module, count } of counts) out(`${count === 0 ? '[已清空]' : '[有残留]'} ${module}: ${count}`);
+        for (const { module, count } of counts)
+          out(`${count === 0 ? '[已清空]' : '[有残留]'} ${module}: ${count}`);
         if (counts.some((c) => c.count > 0)) process.exitCode = 2;
         break;
       }

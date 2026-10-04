@@ -70,7 +70,8 @@ export class InviteService {
           code,
           createdAt: now,
           createdBy,
-          expiresAt: expiresInDays === null ? null : new Date(now.getTime() + expiresInDays * DAY_MS),
+          expiresAt:
+            expiresInDays === null ? null : new Date(now.getTime() + expiresInDays * DAY_MS),
           idempotencyKey: scopedKey,
         })
         // 同一个 key 的两个请求同时到达：后到的什么也不插，再读一次已有的

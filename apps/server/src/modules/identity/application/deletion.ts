@@ -63,11 +63,16 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
         eventType: 'identity.user_deletion_requested',
         handle: async (event, tx) => {
           const deletedRows = await owner.purgeUser(event.payload.userId);
-          await this.outbox.publish(tx, 'platform.user_data_purged', owner.module as Events.ModuleName, {
-            userId: event.payload.userId,
-            module: owner.module as Events.ModuleName,
-            deletedRows,
-          });
+          await this.outbox.publish(
+            tx,
+            'platform.user_data_purged',
+            owner.module as Events.ModuleName,
+            {
+              userId: event.payload.userId,
+              module: owner.module as Events.ModuleName,
+              deletedRows,
+            },
+          );
         },
       });
     });

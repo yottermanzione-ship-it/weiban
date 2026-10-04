@@ -11,10 +11,7 @@ export class AppModule {
   static forRoot(options: PlatformOptions): DynamicModule {
     return {
       module: AppModule,
-      imports: [
-        PlatformModule.forRoot(options),
-        IdentityModule,
-      ],
+      imports: [PlatformModule.forRoot(options), IdentityModule],
     };
   }
 }

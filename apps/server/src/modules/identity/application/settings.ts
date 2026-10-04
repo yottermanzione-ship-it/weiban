@@ -87,7 +87,8 @@ function changedKeys<P extends object>(
   patch: P,
 ): Array<keyof P> {
   return (Object.keys(patch) as Array<keyof P>).filter(
-    (key) => patch[key] !== undefined && JSON.stringify(patch[key]) !== JSON.stringify(current[key]),
+    (key) =>
+      patch[key] !== undefined && JSON.stringify(patch[key]) !== JSON.stringify(current[key]),
   );
 }
 

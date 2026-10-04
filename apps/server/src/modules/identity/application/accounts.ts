@@ -53,13 +53,12 @@ export interface LoginInput {
   kind: SessionKind;
 }
 
-/** PostgreSQL 唯一约束冲突。 */
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: unknown }).code === '23505'
-  );
+/** PostgreSQL 唯一约束冲突（Drizzle 会把驱动的错误包在 cause 里）。 */
+export function isUniqueViolation(error: unknown): boolean {
+  for (let e: unknown = error; typeof e === 'object' && e !== null; e = (e as Error).cause) {
+    if ((e as { code?: unknown }).code === '23505') return true;
+  }
+  return false;
 }
 
 @Injectable()
@@ -87,7 +86,10 @@ export class AccountService {
    * 邀请码注册。返回 created = false 表示这是同一次注册的重试（邀请码已被这个用户名用掉、密码也对），
    * 此时不新建账号，只给这台设备发一个新会话。
    */
-  async register(input: RegisterInput, ip: string): Promise<{ response: AuthResponse; created: boolean }> {
+  async register(
+    input: RegisterInput,
+    ip: string,
+  ): Promise<{ response: AuthResponse; created: boolean }> {
     if (!isValidTimeZone(input.device.timeZone)) throw invalidTimeZone('device.timeZone');
     const ipKey = throttleKey('ip', ip);
     if (await this.throttle.isLocked([ipKey])) {
@@ -199,7 +201,10 @@ export class AccountService {
           tx,
         );
       }
-      this.log.info({ userId: user.id, sessionId: session.sessionId, kind: input.kind }, '登录成功');
+      this.log.info(
+        { userId: user.id, sessionId: session.sessionId, kind: input.kind },
+        '登录成功',
+      );
       return this.authResponse(tx, user, session);
     });
   }

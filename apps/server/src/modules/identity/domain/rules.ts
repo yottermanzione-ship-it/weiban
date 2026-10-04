@@ -116,7 +116,8 @@ const INVITE_LENGTH = 16;
 /** 生成邀请码：16 位（约 78 位随机），展示为 XXXX-XXXX-XXXX-XXXX。 */
 export function generateInviteCode(): string {
   let raw = '';
-  for (let i = 0; i < INVITE_LENGTH; i += 1) raw += INVITE_ALPHABET[randomInt(INVITE_ALPHABET.length)];
+  for (let i = 0; i < INVITE_LENGTH; i += 1)
+    raw += INVITE_ALPHABET[randomInt(INVITE_ALPHABET.length)];
   return formatInviteCode(raw);
 }
 

@@ -19,7 +19,7 @@ import {
 import { passwordWeakness, throttleKey } from '../domain/rules.js';
 import { loginThrottle, users } from '../infra/db/schema.js';
 import { PasswordHasher } from '../infra/password-hasher.js';
-import { PASSWORD_HASHER } from './accounts.js';
+import { isUniqueViolation, PASSWORD_HASHER } from './accounts.js';
 import { InviteService, type Invite } from './invites.js';
 import { SessionService } from './sessions.js';
 import { SettingsService } from './settings.js';
@@ -49,7 +49,11 @@ export class IdentityCommands {
   ) {}
 
   /** 创建管理员账号（第一个管理员由运维在服务器上执行）。时区默认 Asia/Shanghai，可登录后在资料里改。 */
-  async createAdmin(username: string, password: string, timeZone = 'Asia/Shanghai'): Promise<string> {
+  async createAdmin(
+    username: string,
+    password: string,
+    timeZone = 'Asia/Shanghai',
+  ): Promise<string> {
     checkCredentials(username, password);
     const passwordHash = await this.hasher.hash(password);
     try {
@@ -67,13 +71,19 @@ export class IdentityCommands {
         });
         await this.settings.createDefaults(tx, userId, timeZone);
         await this.audit.record(
-          { module: 'identity', action: 'admin.created', actorType: 'system', targetType: 'user', targetId: userId },
+          {
+            module: 'identity',
+            action: 'admin.created',
+            actorType: 'system',
+            targetType: 'user',
+            targetId: userId,
+          },
           tx,
         );
         return userId;
       });
     } catch (error) {
-      if ((error as { code?: unknown }).code === '23505') {
+      if (isUniqueViolation(error)) {
         throw new CommandError(`用户名 ${username} 已存在；要把已有账号设为管理员请用 set-role`);
       }
       throw error;
@@ -96,9 +106,17 @@ export class IdentityCommands {
         .set({ passwordHash, updatedAt: this.clock.now() })
         .where(eq(users.id, user.id));
       const revoked = await this.sessions.revokeAll(tx, user.id, 'revoked');
-      await tx.db.delete(loginThrottle).where(eq(loginThrottle.key, throttleKey('username', user.username)));
+      await tx.db
+        .delete(loginThrottle)
+        .where(eq(loginThrottle.key, throttleKey('username', user.username)));
       await this.audit.record(
-        { module: 'identity', action: 'password.reset', actorType: 'system', targetType: 'user', targetId: user.id },
+        {
+          module: 'identity',
+          action: 'password.reset',
+          actorType: 'system',
+          targetType: 'user',
+          targetId: user.id,
+        },
         tx,
       );
       return revoked;
@@ -114,7 +132,10 @@ export class IdentityCommands {
         .where(sql`lower(${users.username}) = lower(${username})`)
         .for('update');
       if (!user || user.status !== 'active') throw new CommandError(`找不到账号 ${username}`);
-      await tx.db.update(users).set({ role, updatedAt: this.clock.now() }).where(eq(users.id, user.id));
+      await tx.db
+        .update(users)
+        .set({ role, updatedAt: this.clock.now() })
+        .where(eq(users.id, user.id));
       if (role === 'user') await this.sessions.revokeAll(tx, user.id, 'revoked', 'admin');
       await this.audit.record(
         {
@@ -131,7 +152,10 @@ export class IdentityCommands {
   }
 
   async createInvite(expiresInDays: number | null): Promise<Invite> {
-    if (expiresInDays !== null && !(Number.isInteger(expiresInDays) && expiresInDays >= 1 && expiresInDays <= 365)) {
+    if (
+      expiresInDays !== null &&
+      !(Number.isInteger(expiresInDays) && expiresInDays >= 1 && expiresInDays <= 365)
+    ) {
       throw new CommandError('有效天数必须是 1–365 的整数');
     }
     return this.invites.create(expiresInDays, null);
@@ -147,4 +171,3 @@ export class IdentityCommands {
     return this.sessions.sweepExpired();
   }
 }
-

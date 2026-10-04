@@ -162,7 +162,8 @@ export class IdentityController {
   @RequireAuth(E.updatePreferences.auth)
   updatePreferences(
     @CurrentPrincipal() me: AuthPrincipal,
-    @Body(new ContractPipe(schema(E.updatePreferences.body))) body: Body<typeof E.updatePreferences>,
+    @Body(new ContractPipe(schema(E.updatePreferences.body)))
+    body: Body<typeof E.updatePreferences>,
   ): Promise<UserPreferences> {
     return this.settings.updatePreferences(me.userId, body);
   }

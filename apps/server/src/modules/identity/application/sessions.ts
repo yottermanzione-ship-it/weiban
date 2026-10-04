@@ -177,7 +177,11 @@ export class SessionService implements SessionVerifier {
     const rows = await tx.db
       .select({ id: sessions.id })
       .from(sessions)
-      .where(kind ? and(eq(sessions.userId, userId), eq(sessions.kind, kind)) : eq(sessions.userId, userId));
+      .where(
+        kind
+          ? and(eq(sessions.userId, userId), eq(sessions.kind, kind))
+          : eq(sessions.userId, userId),
+      );
     let count = 0;
     for (const row of rows) {
       if (await this.revoke(tx, userId, row.id, reason)) count += 1;
