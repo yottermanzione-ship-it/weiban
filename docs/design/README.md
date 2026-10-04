@@ -16,7 +16,7 @@
 | | `tokens.json` | 设计令牌，**所有数值的唯一来源**，按主题 × 深浅模式组织 |
 | | `tokens.css` | 网页用 CSS 变量，**由脚本生成**，不手改 |
 | | `tokens-android.md` | 令牌在安卓 Kotlin / Compose 中的格式与用法 |
-| | `tools/build-tokens.mjs` | 生成脚本（参考实现）：`--css`、`--kotlin`、`--check` |
+| | `scripts/build-tokens.mjs`（仓库根目录） | 生成脚本：`--css`、`--kotlin`、`--check`；根命令 `pnpm tokens` |
 | | `default-avatar.md` | 头像显示优先级与非肖像默认头像 |
 | | `motion.md` | 动效规范与性能符合性（网页 + Compose） |
 | | `components.md` | 组件清单与规范（两端通用） |
@@ -24,7 +24,7 @@
 | 4 页面设计 | `pages/` | 页面设计说明（索引见 `pages/README.md`） |
 | 样张 | `preview/index.html` | 浏览器打开即可；可切换两套主题和深浅模式；展示会话列表、私聊、「我」页、服务页、令牌和组件。图标需能访问 unpkg.com |
 
-改令牌的步骤：改 `tokens.json` → `node docs/design/tools/build-tokens.mjs --check` → `node docs/design/tools/build-tokens.mjs --css docs/design/tokens.css`。
+改令牌的步骤：改 `tokens.json` → `pnpm tokens`（重新生成 `tokens.css`）→ `pnpm tokens --check`（确认已是最新；CI 也会检查）。
 
 ## 设计决定记录
 
