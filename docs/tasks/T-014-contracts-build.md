@@ -28,8 +28,9 @@
 3. 删除 `.prettierignore` 中跳过契约包的那一行，格式化契约包，`pnpm format:check` 通过
 4. 修正 B1 相关注释；清理 PRD 已取消的 `age_not_confirmed`、`group_conversation` 错误码（如确已无用）
 5. 契约升为 1.0，更新 README 变更记录
-6. 为契约写最基本的单元测试：关键 schema 能正确接受合法数据、拒绝非法数据
-7. 规范确认（更新你自己的文档）：
+6. **主题偏好字段**：总负责人裁定主题选择要在用户的所有设备间同步（按 PRD），请在用户设置相关契约中加入主题偏好（`green` | `pink`），并更新 `overview.md` 中「主题只在客户端」的表述（设计交接见 `docs/handoffs/2026-10-04-design-lead-T-012.md`）
+7. 为契约写最基本的单元测试：关键 schema 能正确接受合法数据、拒绝非法数据
+8. 规范确认（更新你自己的文档）：
    - 用本地 ESLint 规则代替 `eslint-plugin-boundaries`：确认并修改 `engineering-standards.md` 第 3 节措辞
    - `library` 模块在 ADR-0004 分层图中的位置
    - `apps/server/test/` 集成测试能否引用模块内部（QA 建议 3）

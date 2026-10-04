@@ -3,7 +3,7 @@
 | 项 | 内容 |
 |---|---|
 | 负责人 | design-lead |
-| 任务 | T-006 |
+| 任务 | T-006（v1.0）、T-012（v2.0：补安卓 Compose 对应写法） |
 | 日期 | 2026-10-04 |
 | 依据 | ADR-0001 第 5 条（动画只用 transform 和 opacity，聊天列表虚拟滚动，限制大面积模糊与阴影） |
 
@@ -11,7 +11,7 @@
 
 ## 1. 结论
 
-- **所有动画只改两样东西：位置/缩放（transform）和透明度（opacity）**。这两样浏览器可以交给显卡单独处理，不需要重新排版和重新上色，所以在中低端安卓 WebView 上也能稳定 60 帧。
+- **所有动画只改两样东西：位置/缩放（transform）和透明度（opacity）**。这两样浏览器可以交给显卡单独处理，不需要重新排版和重新上色，所以在中低端手机浏览器上也能稳定 60 帧。安卓原生客户端（Compose）遵守同一条规则，写法见第 6 节。
 - 不做的事：动画改宽高、改位置坐标（top/left）、改颜色、改阴影、改模糊（filter / backdrop-filter）。
 - 共 16 个动效（M-01～M-16），每个都在第 3 节逐项写了「改了什么属性、为什么不卡」。
 - 系统开启「减少动态效果」时，所有位移动画改为 120ms 的淡入淡出。
@@ -62,7 +62,7 @@
 | 气泡背景渐变流动、霓虹光效 | 违反 R3，且风格过于喧闹 |
 | 列表项入场依次飞入 | 虚拟滚动下会让新进入可视区的行反复播放，造成闪烁 |
 | 下拉刷新弹性橡皮筋（自定义） | 使用浏览器 / 系统原生的回弹即可 |
-| 卡片 3D 翻转（rotateY） | 卡片正反面切换改为交叉淡入：3D 翻转需要两面同时保持合成层，且在部分安卓 WebView 上有闪烁问题 |
+| 卡片 3D 翻转（rotateY） | 卡片正反面切换改为交叉淡入：3D 翻转需要两面同时保持合成层，且在部分低端机浏览器上有闪烁问题 |
 | 全屏飘落爱心、彩带 | 低端机掉帧；也和「不恋爱化」「克制」冲突 |
 
 ## 4. 减少动态效果（无障碍）
@@ -76,4 +76,22 @@
 
 1. Chrome 开发者工具 → Performance 面板录制每个动效，确认没有紫色「Layout（排版）」块、绿色「Paint（上色）」块极少（M-14 圆环除外）。
 2. 打开 Rendering → Paint flashing，滚动聊天列表和会话列表，屏幕上不应大面积闪绿。
-3. 在一台中低端安卓机（建议 2020 年前后的千元机）的 WebView 中，滚动 1000 条消息的私聊和 100 个会话的列表，帧率记录在 `docs/web/` 的性能检查记录中。
+3. 在一台中低端手机（建议 2020 年前后的千元机）的浏览器中，滚动 1000 条消息的私聊和 100 个会话的列表，帧率记录在 `docs/web/` 的性能检查记录中。
+
+## 6. 安卓 Compose 的对应写法（给 Android 负责人）
+
+规则 R1–R10 对安卓同样适用。Compose 里「只合成、不重排、不重画」的对应做法：
+
+| 网页 | Compose | 不要这样做 |
+|---|---|---|
+| `transform: translate / scale / rotate` | `Modifier.graphicsLayer { translationX / scaleX / rotationZ }`，配合 `animateFloatAsState` / `Animatable` | 用 `Modifier.offset(x = 动画值.dp)`、`Modifier.size(动画值)`、`padding(动画值)`：会触发重新测量和布局 |
+| `opacity` | `graphicsLayer { alpha = … }` | `Modifier.alpha` 在动画中可以用（内部也是图层），但不要在列表每一行常驻 |
+| 不动画颜色（R3） | 两层叠放、改上层 alpha；或瞬间切换 | `animateColorAsState` 用于大面积背景、按钮底色 |
+| 不用毛玻璃（R4） | 不用 `Modifier.blur` 做背景模糊 | `RenderEffect` 模糊 |
+| 阴影只给浮层（R5） | `Modifier.shadow(WbElevation.*)` 只用于菜单、弹层、对话框、悬浮摘要卡 | 列表行、气泡加 elevation |
+| 虚拟滚动、高度稳定（R8） | `LazyColumn` + 稳定 `key` + `contentType`；新消息出现动画用 `graphicsLayer`，不用 `animateItem` 的高度动画 | `AnimatedVisibility` 的 expand / shrink（会改高度）用在消息列表里 |
+| 曲线、时长 | `WbMotion.Standard` 等 `CubicBezierEasing`、`WbMotion.FastMs` 等（`tokens-android.md`） | 自己写数值 |
+| 页面推入（M-01） | 导航动画用 slide（`slideInHorizontally` 本质是图层位移）+ 遮罩 alpha | 用 `AnimatedContent` 的 `SizeTransform` |
+| 减少动态效果 | 读取系统「移除动画」设置（`Settings.Global.ANIMATOR_DURATION_SCALE == 0`），改为 120ms 淡入淡出 | — |
+
+检查方法：Android Studio 的 Layout Inspector 看重组次数（动画期间列表行不应持续重组）；开发者选项「GPU 呈现模式分析」滚动 1000 条消息的私聊和 100 个会话的列表，帧率记录在 `docs/android/`。

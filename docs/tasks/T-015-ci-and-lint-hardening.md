@@ -28,11 +28,12 @@
 4. **同层循环依赖检查**（遗留问题 4）：用 `import-x/no-cycle` 或 dependency-cruiser，附「违规会报错」的测试
 5. **文档措辞**（QA 建议 7）：修正 `dev-env-setup.md` 末段
 6. **main 保护规则**：写成给总经理的一步一步操作说明（在 GitHub 网页上设置：必须通过 CI 才能合并），放在 `docs/ops/`。不要尝试自己修改 GitHub 仓库设置
-7. R9 加固（不允许其他模块引用 `BillingPort`）：方案由架构在 T-014 中定，本任务**不做**，等 T-014 交接后另开小任务
+7. **设计令牌生成脚本**：把 `docs/design/tools/build-tokens.mjs` 移到 `scripts/`（删除原文件，更新 `docs/design/` 中引用它的路径），根脚本加 `pnpm tokens`，CI 加 `--check`（重新生成后应无差异）
+8. R9 加固（不允许其他模块引用 `BillingPort`）：方案由架构在 T-014 中定，本任务**不做**，等 T-014 交接后另开小任务
 
 ## 范围
 
-- 可以改：`.github/`、`packages/eslint-config/`、根目录 ESLint 配置、`docs/ops/`
+- 可以改：`.github/`、`packages/eslint-config/`、根目录 ESLint 配置与 `package.json` 脚本、`scripts/`、`docs/ops/`；`docs/design/` 中仅限更新脚本路径引用
 - 不可以改：`packages/contracts/`、`.prettierignore`（架构 T-014 在改）、其他目录
 - 在分支上提交，不合并 main；完成后推送分支到 origin，确认 GitHub Actions 在该分支上实际运行通过
 
