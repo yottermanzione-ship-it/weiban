@@ -1,0 +1,95 @@
+# 微伴自动检查流水线（CI，D-L0-03）
+# 每次推送到任何分支、每次向 main 发起合并请求（PR），都在 GitHub 的云端电脑上跑一遍和本机
+# `pnpm check` 相同的检查。任何一项失败，这次运行就显示红叉。
+# 维护：运维负责人。说明文档：docs/ops/ci.md。
+#
+# 版本来源（只在一处定义，这里不重复写版本号）：
+#   - Node：.nvmrc（24）
+#   - pnpm：package.json 的 devEngines.packageManager（11.28.4），pnpm/action-setup 会自动读取
+# 第三方 action 一律钉死到具体提交（40 位哈希），防止 action 被篡改后影响我们；注释里是对应版本号。
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+  # 允许在 GitHub 网页上手动重跑（Actions → CI → Run workflow）
+  workflow_dispatch:
+
+# 只读权限：CI 只需要读代码，不需要写仓库
+permissions:
+  contents: read
+
+# 同一分支连续推送时，取消还没跑完的旧运行，只保留最新一次
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    # 这个名字会出现在 main 保护规则的「必须通过的检查」里，用英文方便搜索，不要随意改名
+    name: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: 取代码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 安装 Node（版本读 .nvmrc）
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          # 依赖缓存交给下面的 pnpm/action-setup，这里关掉，避免在 pnpm 装好之前尝试缓存
+          package-manager-cache: false
+
+      - name: 安装 pnpm（版本读 package.json 的 devEngines），并缓存依赖
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: true
+
+      - name: 打印版本
+        run: |
+          node -v
+          pnpm -v
+
+      - name: 安装依赖（锁文件必须与 package.json 一致，否则失败）
+        run: pnpm install --frozen-lockfile
+
+      - name: 格式检查
+        run: pnpm format:check
+
+      - name: 代码规则检查（含模块边界 R1～R9、禁止路径别名、模块间循环依赖）
+        run: pnpm lint
+
+      - name: 类型检查
+        run: pnpm typecheck
+
+      - name: 自动测试
+        run: pnpm test
+
+      - name: 设计令牌生成物是否最新（重新生成后应无差异）
+        run: pnpm tokens --check
+
+  # ---------------------------------------------------------------------------
+  # 安卓构建（预留位置，暂不启用）
+  # 等 Android 负责人在 D-L0-18 建立 apps/android 的 Gradle 工程后，由运维与 Android 负责人一起接入：
+  #   - actions/setup-java（JDK 版本按 Android 负责人定的基线）
+  #   - Gradle 缓存
+  #   - ./gradlew ktlintCheck detekt test assembleDebug（具体任务名以安卓工程为准）
+  #   - 生成代码无差异检查：重新生成契约 Kotlin 数据类和设计令牌 WbTokens.kt 后 `git diff --exit-code`
+  #     （设计令牌可直接用 node scripts/build-tokens.mjs --check --kotlin <WbTokens.kt 路径>）
+  # 接入后，在 main 保护规则里把这个任务也设为「必须通过」（docs/ops/ci.md 第三节）。
+  #
+  # android:
+  #   name: 安卓构建与检查
+  #   runs-on: ubuntu-24.04
+  #   steps:
+  #     - uses: actions/checkout@<哈希> # vX
+  #     - uses: actions/setup-java@<哈希> # vX
+  #     - run: ./gradlew ...
+  #       working-directory: apps/android
+  # ---------------------------------------------------------------------------
