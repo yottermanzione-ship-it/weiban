@@ -18,6 +18,7 @@
 - `docs/handoffs/2026-10-05-devops-lead-T-015.md`（「最严格理解」的四处取舍，以及总负责人对 R10 的裁定）
 - `docs/architecture/engineering-standards.md`、`billing.md`、`tech-debt.md`
 - `docs/product/input/2026-10-04-pm-rulings-2.md`（B4：余额为零时，安全关怀允许小额透支，设单独上限；A1：历史人物可以生成古风插画）
+- `docs/product/prd-v1.md`（v1.3）第 15～17 章、`docs/handoffs/2026-10-05-product-lead-T-017.md`、`docs/product/input/2026-10-04-pm-rulings-2.md` C1
 - `docs/ai/runtime-overview.md` 第 15 节（AI 负责人的接口变更申请，尤其是「安全关怀跟进」用途）
 
 ## 工作内容
@@ -30,7 +31,8 @@
    - 确认运维提出的四处取舍
 3. **B4 安全透支**：在 `billing.md` 中设计「安全关怀」用途的小额透支，包括：上限、怎么记账、透支后怎么恢复、怎么防止滥用；同时评估 AI 申请的「安全关怀跟进不受后台预算限制」。需要改契约的，直接在契约里改，并升次版本
 4. **A1 历史人物形象**：同步 `hard-boundaries.md` 和 policy 推导规则说明（代码实现留给 D-L0-11）
-5. 更新 `tech-debt.md`
+5. **PRD v1.3 的架构工作**（见 `docs/handoffs/2026-10-05-product-lead-T-017.md` 中给架构的部分）：在 `dev-plan.md` 补充 v1.3 的任务（人设广场、经期日记、共同领养宠物、行为规划决策层、后台用量查询），设计经期数据加密与隔离、广场的数据结构与「分类锁定」的系统级执行；确认后台用量查询接口够用；契约中成人模式模型的注释已在 T-014 按 B1、B2 修正，复核即可
+6. 更新 `tech-debt.md`
 
 ## 范围
 
