@@ -1,6 +1,6 @@
 # 自动检查流水线（CI）与 main 保护规则
 
-> 负责人：运维负责人 · 最后更新：2026-10-05 · 来源任务：T-015（D-L0-03）
+> 负责人：运维负责人 · 最后更新：2026-10-05 · 来源任务：T-015（D-L0-03），T-019 修订（CI 测试数据库）
 > 读者：总经理（零基础）、项目总负责人。
 > 流水线配置文件：`.github/workflows/ci.yml`。检查命令本身的说明见 `docs/ops/local-dev.md` 第四节，这里不重复。
 
@@ -41,11 +41,38 @@
 | 2 | `pnpm format:check` | 代码排版 |
 | 3 | `pnpm lint` | 代码规则：模块边界 R1～R10、服务器禁止路径别名、服务器模块之间禁止循环依赖 |
 | 4 | `pnpm typecheck` | 类型检查 |
-| 5 | `pnpm test` | 自动测试 |
-| 6 | `pnpm tokens --check` | `docs/design/tokens.css` 与 `tokens.json` 重新生成的结果一致 |
+| 5 | `docker compose up -d --wait` | 启动测试数据库（PostgreSQL 18 + pgvector），并打印数据库和 pgvector 的版本号 |
+| 6 | `pnpm test`（带 `TEST_DATABASE_URL`） | 自动测试，**包括需要真实数据库的服务器集成测试** |
+| 7 | `node .github/scripts/check-test-report.mjs …` | 确认集成测试真的跑了：**跳过数必须为 0**，否则红叉 |
+| 8 | `pnpm tokens --check` | `docs/design/tokens.css` 与 `tokens.json` 重新生成的结果一致 |
 
 - Node 版本读 `.nvmrc`（24），pnpm 版本读 `package.json` 的 `devEngines`（11.28.4），和本机完全一样。
-- 依赖会被缓存，第二次起运行更快（通常 1～2 分钟）。
+- 依赖会被缓存，第二次起运行更快（通常 2～3 分钟，其中下载数据库镜像约半分钟）。
+- 有步骤失败时，最后会自动打印数据库日志，方便排查。
+
+### CI 里的测试数据库（T-019）
+
+结论：**CI 用和本机开发完全相同的方式起数据库，服务器集成测试在 CI 里全部实际执行，一条都不跳过。**
+
+| 项 | 做法 | 为什么 |
+|---|---|---|
+| 怎么起 | 直接执行根目录的 `docker-compose.yml`（和本机 `pnpm db:up` 是同一个文件） | 镜像版本、初始化脚本、健康检查只在 `docker-compose.yml` 一处定义，CI 和本机不可能走样 |
+| 版本 | 以 `docker-compose.yml` 的 `image:` 为准（PostgreSQL 18 + pgvector），CI 日志「启动测试数据库」一步会打印实际版本号 | 升级数据库只改 `docker-compose.yml` 一处，CI 自动跟上 |
+| 初始化 | `deploy/dev/postgres-init/01-init.sql`：开启 pgvector、建 `weiban_test` 库 | 同上 |
+| 测试连接串 | `TEST_DATABASE_URL` 指向 `weiban_test` 库，写在 `ci.yml` 的「自动测试」一步，值与 `.env.example` 相同 | 测试会清空这个库；指向开发库 `weiban` 时测试代码会拒绝运行 |
+| 密码 | 用 `.env.example` 里的本机开发密码 `weiban_dev_only` | 不是机密：这台 CI 电脑是 GitHub 临时分配的，跑完即销毁，数据库只监听它自己的 127.0.0.1 |
+
+为什么不用 GitHub 自带的 `services:`（服务容器）写法：它在「取代码」之前就启动，挂不上仓库里的初始化脚本，还得在 `ci.yml` 里再抄一遍镜像版本，违反「同一信息只定义一处」。
+
+**「跳过数为 0」检查**：服务器集成测试在没有 `TEST_DATABASE_URL` 时会整组「跳过」，跳过不算失败，CI 原本会照样绿勾，等于悄悄漏测。第 7 步读取测试报告（`test-results/vitest-report.json`），出现任何跳过就红叉，并在日志里列出被跳过的测试名。日志里成功的样子：
+
+```
+测试总数 125：通过 125，失败 0，跳过 0
+其中服务器集成测试（apps/server/test/）通过 31
+通过：集成测试已实际执行，没有被跳过。
+```
+
+（数字会随着测试增加而变大。）以后如果确实有测试需要在 CI 里跳过（例如需要真实模型供应商的测试），由负责人在交接说明里提出，运维把它连同原因登记到脚本里的 `ALLOWED_SKIPS` 名单。
 - 安卓的 Gradle 构建已在 `ci.yml` 末尾留好位置，等 Android 负责人建好安卓工程（D-L0-18）后接入。
 - 费用：私有仓库每月有 2000 分钟免费额度，我们一次运行约 1～2 分钟，正常使用远用不完。
 
@@ -149,6 +176,12 @@ gh run view <运行编号> --log-failed
 
 **Q：`pnpm install --frozen-lockfile` 这一步失败？**
 说明有人改了 `package.json` 的依赖但没有提交更新后的 `pnpm-lock.yaml`。本机执行 `pnpm install` 后把 `pnpm-lock.yaml` 一起提交。
+
+**Q：「确认集成测试实际执行」这一步失败，说有测试被跳过？**
+看日志里列出的测试名。最常见的原因：有人新写了一个测试，用了 `skip` / `todo` 却没删；或者有人改了 `ci.yml`，把 `TEST_DATABASE_URL` 弄丢了。转给对应负责人修；确实需要跳过的，按上面「跳过数为 0」一段登记原因。
+
+**Q：「启动测试数据库」这一步失败？**
+多半是 GitHub 下载数据库镜像时网络抖动，在运行页面点 **Re-run jobs** 重跑一次。连续失败就把日志截图转运维负责人。
 
 **Q：`pnpm tokens --check` 失败？**
 有人改了 `docs/design/tokens.json` 但没重新生成 CSS，或手改了 `tokens.css`。执行 `pnpm tokens`，把 `docs/design/tokens.css` 一起提交。
