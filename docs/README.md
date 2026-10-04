@@ -21,6 +21,8 @@ AI 之间没有共同记忆，**文档就是记忆**。每份信息只在一处�
 
 接口契约不在 docs/，以 `packages/contracts/` 为准。
 
+2026-10-04 起，独立质量验收由 Codex 接替 Claude `qa-lead`；质量职责、报告格式与 GitHub 交接流程见 [`quality/README.md`](quality/README.md)，遗留问题见 [`quality/issues.md`](quality/issues.md)。
+
 ## 命名约定
 
 - 任务卡：`tasks/T-001-short-name.md`（简称用英文小写加短横线，因为 git 分支名直接取任务卡文件名）
