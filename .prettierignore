@@ -1,0 +1,22 @@
+# Prettier 不处理的文件（另外 .gitignore 里的内容 Prettier 会自动跳过）。
+
+# 锁文件由 pnpm 自己维护
+pnpm-lock.yaml
+
+# 文档目录归各负责人维护，排版按人工编写为准，不让格式化工具批量改写
+docs/
+
+# 安卓工程是 Kotlin，格式由 ktlint 负责（D-L0-18）
+apps/android/
+
+# 【临时】契约包现有文件尚未按 Prettier 排版，且本任务（T-011）无权修改契约。
+# 由架构负责人在 D-L0-04 契约工程化时运行 `pnpm exec prettier --write packages/contracts`
+# 并删除下面这一行。
+packages/contracts/
+
+# 生成物
+**/generated/
+
+# Claude Code 本地工作副本与配置
+.claude/
+CLAUDE.md

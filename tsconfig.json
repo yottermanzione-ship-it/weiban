@@ -1,0 +1,5 @@
+{
+  // 只检查仓库根目录的配置文件；各子项目有自己的 tsconfig.json，由 `pnpm -r typecheck` 分别检查。
+  "extends": "@weiban/tsconfig/node.json",
+  "include": ["vitest.config.ts"]
+}

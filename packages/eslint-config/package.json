@@ -1,0 +1,30 @@
+{
+  "name": "@weiban/eslint-config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "微伴共享 ESLint 规则，含模块边界规则 R1～R9（engineering-standards.md 第 3 节）。",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./architecture": "./architecture.js"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "eslint": "^10.0.0"
+  },
+  "dependencies": {
+    "@eslint/js": "^10.0.1",
+    "globals": "^17.13.0",
+    "typescript-eslint": "^8.71.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "@weiban/tsconfig": "workspace:*",
+    "eslint": "^10.12.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3"
+  }
+}
