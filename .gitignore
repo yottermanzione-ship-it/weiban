@@ -1,0 +1,43 @@
+# 维护：运维负责人。规则：机密文件、生成物、个人本地文件不进仓库。
+# 技术栈确定后由运维负责人按需补充；各负责人需要新增忽略项时在交接说明里提出。
+
+# ---- 依赖与构建产物 ----
+node_modules/
+dist/
+build/
+coverage/
+.gradle/
+__pycache__/
+.venv/
+
+# ---- 机密：密码、密钥、证书（绝不进仓库）----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+secrets/
+local.properties
+
+# ---- 数据库备份与本地数据 ----
+backups/
+*.dump
+*.sql.gz
+
+# ---- 日志 ----
+*.log
+
+# ---- 系统与编辑器生成的个人文件 ----
+Thumbs.db
+desktop.ini
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# ---- Claude Code 个人本地设置 ----
+.claude/settings.local.json
