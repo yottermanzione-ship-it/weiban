@@ -1,5 +1,6 @@
 # 维护：运维负责人。规则：机密文件、生成物、个人本地文件不进仓库。
-# 技术栈确定后由运维负责人按需补充；各负责人需要新增忽略项时在交接说明里提出。
+# 各负责人需要新增忽略项时在交接说明里提出。
+# 注意：pnpm-lock.yaml 要进仓库（锁定依赖版本），不要加到这里。
 
 # ---- 依赖与构建产物 ----
 node_modules/
@@ -9,6 +10,32 @@ coverage/
 .gradle/
 __pycache__/
 .venv/
+.pnpm-store/
+*.tsbuildinfo
+.turbo/
+.vite/
+.cache/
+dev-dist/
+
+# ---- 测试报告（Playwright）----
+playwright-report/
+test-results/
+blob-report/
+
+# ---- 生成物（每次构建重新生成）----
+# 契约导出的 JSON Schema / OpenAPI。注意：安卓由契约生成的 Kotlin 源码要进仓库，不在此列。
+packages/contracts/generated/
+
+# ---- 安卓打包输出与编译缓存 ----
+*.apk
+*.aab
+apps/android/app/release/
+*.iml
+.kotlin/
+
+# ---- 开发环境本机数据（对象存储目录等）----
+apps/server/uploads/
+.data/
 
 # ---- 机密：密码、密钥、证书（绝不进仓库）----
 .env
@@ -39,5 +66,6 @@ desktop.ini
 .vscode/
 *.swp
 
-# ---- Claude Code 个人本地设置 ----
+# ---- Claude Code 个人本地设置与工作副本 ----
 .claude/settings.local.json
+.claude/worktrees/
