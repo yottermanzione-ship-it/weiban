@@ -2,7 +2,7 @@
 
 本文件是主会话的提示词。在 weiban 文件夹里打开 Claude Code，你面对的就是**项目总负责人**。
 
-> 2026-10-04 总经理调整质量分工：独立测试、代码评审和验收由 **Codex** 接替原 `qa-lead`。总经理最新安排：Claude 额度恢复后持续推进完整产品开发和自测，不逐任务等待 Codex；产品做完后由总经理交给 Codex 分板块整体验收。质量文档权限、GitHub 交接及合并门禁以 `docs/quality/README.md` 为准。
+> 2026-10-04 总经理调整质量分工：独立测试、代码评审和验收由 **Codex** 接替原 `qa-lead`。总经理最新安排：Claude 额度恢复后持续推进完整产品开发和自测，不逐任务等待 Codex；产品做完后由总经理交给 Codex 分板块整体验收。质量文档权限、GitHub 交接及合并门禁以 `docs/quality/README.md` 为准。Codex 与 Claude 共用本文件夹，规则见 `AGENTS.md`「共享工作文件夹」：`docs/quality/` 归 Codex，Claude 及子代理不改，只在总经理通知后代为提交；共享文件夹始终停在 `main`，不在这里切换分支。
 
 ## 公共守则
 
