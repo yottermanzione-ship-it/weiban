@@ -97,7 +97,7 @@ v1.0 覆盖 L0、L1 所需：账号、界面偏好、模型选择与计费、角
 - **修改**：
   - `AdminCharacterUpdate` 不再复用带默认值的新建 schema；`Profile.gender` 去掉默认值，`UpdateProfileRequest` 改为独立定义（Q-001）。
   - `CharacterClassificationInput` / `CharacterClassification` 加组合校验：`real_person` 必须有 `realPersonKind`，其他必须为 null（Q-006）。
-  - `BalanceRestored` 载荷新增 `availableMicros`、`trigger`（`crossed_zero` / `topped_up_after_rejection`），加余额后不跨零也会发出（Q-008，`billing.md` 6.3）。
+  - `BalanceRestored` 载荷新增 `availableMicros`、`trigger`（`crossed_zero` / `topped_up_after_rejection`），加余额后不跨零也会发出；`SpendStatus` 新增 `insufficient`（Q-008，`billing.md` 6.3）。
   - `SyncEndpoints.getState` 改为全量重建的**第一步**（固定重建起点），重建后从该点补拉（Q-002，`message-reliability.md` 4.2）。
   - `Message.content`、`UserUpdate`、`ServerFrame`、`ApiError.code`、WebSocket 错误帧的 `code`、`NotificationPayload.kind`、`ModelInfo.capabilities` 改用接收端容错 schema。
   - 注释：成人模式模型可以选任何模型，`adult_content` 只是信息标签（B1）；没设成人模式模型时不能开启成人模式、不自动改用聊天模型（B2）。

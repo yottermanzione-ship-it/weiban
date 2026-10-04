@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 状态 | 已采纳；T-009 在中层新增 `billing` 模块（ADR-0012），`model-access` 单向调用 `billing` |
+| 状态 | 已采纳；T-009 在中层新增 `billing` 模块（ADR-0012），`model-access` 单向调用 `billing`；T-014 在分层图补上 `library`（上层），「用工具强制」改为本地 ESLint 规则 |
 | 日期 | 2026-10-04 |
 | 提出人 | 架构负责人（T-004） |
 | 批准人 | 架构负责人 |
@@ -64,12 +64,14 @@ ADR-0001 定了「模块化单体」：一个程序，内部模块严格分开�
             ┌──────────────── 平台内核 platform（所有模块可用）────────────────┐
             │ 配置 · 日志脱敏 · 数据库 · 事件总线/发件箱 · 任务队列 · 时钟 · 加密 · 鉴权守卫 │
             └─────────────────────────────────────────────────────────────────┘
- 上层（玩法与智能）  ai-runtime   moments   growth   importer
+ 上层（玩法与智能）  ai-runtime   moments   growth   importer   library
                          │  调用端口 ↓       订阅事件 ↑
  中层（领域）        chat   contacts   characters   model-access → billing   policy
                          │  调用端口 ↓
  底层（基础）        identity   realtime(同步与在线)   push   media
 ```
+
+- `library`（收藏与分享，L6）放在**上层**（T-014 补充）：它要读 `chat` 的消息（收藏时复制内容快照）、调用 `policy` 判断分享图标注、读 `characters` 资料，都是中层；而没有任何中层或底层模块需要调用它。与 T-011 在 `architecture.js` 中的临时登记一致。
 
 - 上层可以调用中层、底层的端口；**下层永远不 import 上层**，只通过发布事件让上层知道。
 - 特别规定：**`chat` 不得 import `ai-runtime`**，也不得出现任何「如果是 AI 就……」的分支。角色在聊天模块眼里只是 `kind = character` 的参与者。
@@ -87,7 +89,7 @@ ADR-0001 定了「模块化单体」：一个程序，内部模块严格分开�
 
 | 检查 | 工具 | 由谁落地 |
 |---|---|---|
-| 模块只能 import 其他模块的 `index.ts`（公开端口），不能 import 对方内部文件或数据库表定义 | ESLint 规则（`eslint-plugin-boundaries` 或 `dependency-cruiser`），CI 必跑 | 运维搭骨架时配置，规则见 `docs/architecture/engineering-standards.md` |
+| 模块只能 import 其他模块的 `index.ts`（公开端口），不能 import 对方内部文件或数据库表定义 | 本地 ESLint 规则（`packages/eslint-config`，T-014 确认，原写 `eslint-plugin-boundaries` 或 `dependency-cruiser`），CI 必跑 | 运维搭骨架时配置，规则见 `docs/architecture/engineering-standards.md` 第 3 节 |
 | `chat` 不 import `ai-runtime`；下层不 import 上层 | 同上 | 同上 |
 | 每个模块的 Drizzle 表定义只在自己目录，SQL 只访问自己的 schema | lint + 代码评审 | 质量负责人评审时检查 |
 | 事件订阅者幂等 | 每个订阅者有「重复投递」单元测试 | 各模块负责人 |

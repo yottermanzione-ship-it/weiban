@@ -75,6 +75,11 @@ export interface SpendStatus {
   availableMicros: number;
   /** 可用余额 ≤ 0。 */
   depleted: boolean;
+  /**
+   * 余额不足：depleted，或最近有冻结因余额不足被拒、之后还没加过钱（billing.md 6.3 第 3 条）。
+   * 模型状态横条（reason = insufficient_balance）以它为准。
+   */
+  insufficient: boolean;
   backgroundRemainingTodayMicros: number;
 }
 
