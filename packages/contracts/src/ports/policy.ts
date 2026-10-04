@@ -1,11 +1,13 @@
 /**
  * 硬性边界判定端口。提供方：policy（纯函数 + 审计日志）。
- * 规则定义见 docs/architecture/hard-boundaries.md（v1.1），决策见 ADR-0007（含 T-009 修订记录）。
+ * 规则定义见 docs/architecture/hard-boundaries.md（v1.2），决策见 ADR-0007（含 T-009 修订记录）。
  * 所有可能越界的操作都必须在服务器端调用这里，不得在各模块自行判断。
  *
  * v0.2（T-009）：成人模式只保留两条底线（非儿童、非真人）。年龄确认、群聊、成人模型是否配置
  * 不再由 policy 判定（后两者若仍需要，由业务模块按 PRD 执行）。新增 checkModelForCharacter（无审查模型闸门）。
  * 形象图策略简化为 forbidden / allowed（原裁定 9.2 第 1、3 条删除）。
+ * v1.1（T-020）：按 pm-rulings-2 A1 恢复 classical_art_only（管理员标注的历史人物只生成古风插画形象）；
+ * checkImageGeneration 新增 style。
  */
 import type { PortraitPolicy } from '../http/characters.js';
 
@@ -95,11 +97,16 @@ export interface PolicyPort {
 
   /**
    * 图片生成前调用（SAFE-01）。depictsCharacter = 画面要出现该角色本人形象。
-   * 真人分类不画本人；不画本人时仍须做生成后人脸检查（AI 负责）。
+   * - portraitPolicy = forbidden：不画本人；
+   * - portraitPolicy = classical_art_only（管理员标注的历史人物，v1.1）：画本人时 style 必须为
+   *   classical_illustration，否则 portrait_not_allowed；
+   * - 不画本人时仍须做生成后人脸检查（AI 负责）。
    */
   checkImageGeneration(input: {
     userId: string;
     characterId: string;
     depictsCharacter: boolean;
+    /** v1.1：请求的画风；不传视为 unspecified。古风插画的提示词模板与生成后复检由 AI 负责人定义。 */
+    style?: 'classical_illustration' | 'unspecified';
   }): Promise<PolicyDecision>;
 }

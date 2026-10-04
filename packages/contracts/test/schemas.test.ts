@@ -4,10 +4,17 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  AdminCatalogEntryWrite,
   AdminCharacterUpdate,
   AdminCharacterWrite,
+  AdminUsageSummaryRequest,
   ApiError,
+  BACKGROUND_PURPOSES,
+  BUDGET_EXEMPT_PURPOSES,
   CONTRACT_VERSION,
+  LedgerEntry,
+  ModelPurpose,
+  SAFETY_OVERDRAFT_PURPOSES,
   CharacterClassification,
   CharacterClassificationInput,
   ClientFrame,
@@ -68,8 +75,8 @@ const adminCharacter = {
 };
 
 describe('契约版本', () => {
-  it('为 1.0', () => {
-    expect(CONTRACT_VERSION).toBe('1.0');
+  it('为 1.1', () => {
+    expect(CONTRACT_VERSION).toBe('1.1');
   });
 });
 
@@ -304,5 +311,97 @@ describe('领域事件', () => {
     const types = Events.DomainEvent.options.map((o) => o.shape.type.value);
     expect(types).not.toContain('identity.age_confirmed');
     expect(types).toContain('identity.preferences_updated');
+  });
+});
+
+describe('v1.1（T-020）', () => {
+  const derived = {
+    isMinor: false,
+    adultModeEligible: false,
+    romanceAllowed: true,
+    publicStatementGuard: true,
+  };
+  const historical = {
+    ...classification,
+    basis: 'real_person',
+    realPersonKind: 'historical',
+    childFeaturesDetected: false,
+  };
+
+  it('历史人物的形象策略 classical_art_only 可以解析；不认识的策略变为 unsupported', () => {
+    const ok = CharacterClassification.parse({
+      ...historical,
+      derived: { ...derived, portraitPolicy: 'classical_art_only' },
+    });
+    expect(ok.derived.portraitPolicy).toBe('classical_art_only');
+    const future = CharacterClassification.parse({
+      ...historical,
+      derived: { ...derived, portraitPolicy: 'cartoon_only' },
+    });
+    expect(future.derived.portraitPolicy).toBe('unsupported');
+  });
+
+  it('流水用途分组新增 planning；不认识的分组变为 unsupported', () => {
+    const entry = {
+      entryId: ID,
+      type: 'charge',
+      amountMicros: -1200,
+      balanceAfterMicros: 5000,
+      category: 'planning',
+      modelKey: 'deepseek/deepseek-v4-flash',
+      characterId: ID2,
+      note: null,
+      createdAt: NOW,
+    };
+    expect(LedgerEntry.parse(entry).category).toBe('planning');
+    expect(LedgerEntry.parse({ ...entry, category: 'games' }).category).toBe('unsupported');
+  });
+
+  it('安全关怀跟进不受后台预算限制，且可以使用安全优先透支；行为规划不是默认的后台用途', () => {
+    expect(ModelPurpose.options).toContain('safety_followup');
+    expect(ModelPurpose.options).toContain('behavior_planning');
+    expect(BUDGET_EXEMPT_PURPOSES).toContain('safety_followup');
+    expect(BACKGROUND_PURPOSES).not.toContain('safety_followup');
+    expect(BACKGROUND_PURPOSES).not.toContain('behavior_planning');
+    expect([...SAFETY_OVERDRAFT_PURPOSES].sort()).toEqual(
+      ['chat_reply', 'safety_check', 'safety_followup'].sort(),
+    );
+  });
+
+  it('管理后台用量汇总：1～2 个不重复的分组维度', () => {
+    const filter = { from: NOW, to: '2026-10-06T08:30:00.000Z' };
+    expect(
+      AdminUsageSummaryRequest.safeParse({ filter, groupBy: ['user', 'purpose'] }).success,
+    ).toBe(true);
+    expect(AdminUsageSummaryRequest.safeParse({ filter, groupBy: [] }).success).toBe(false);
+    expect(AdminUsageSummaryRequest.safeParse({ filter, groupBy: ['user', 'user'] }).success).toBe(
+      false,
+    );
+    expect(
+      AdminUsageSummaryRequest.safeParse({ filter, groupBy: ['user', 'model', 'day'] }).success,
+    ).toBe(false);
+    expect(
+      AdminUsageSummaryRequest.safeParse({
+        filter: { ...filter, purposes: ['not_a_purpose'] },
+        groupBy: ['day'],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('默认识图模型可以在目录中标记', () => {
+    const entry = {
+      modelKey: 'qwen/qwen-vl-plus',
+      displayName: '通义千问 VL',
+      vendorName: '阿里云',
+      upstreamId: ID,
+      upstreamModelId: 'qwen-vl-plus',
+      capabilities: ['vision'],
+      tags: [],
+      leaderboardRank: null,
+      sortOrder: 0,
+      defaultFor: ['vision'],
+      enabled: true,
+    };
+    expect(AdminCatalogEntryWrite.safeParse(entry).success).toBe(true);
   });
 });

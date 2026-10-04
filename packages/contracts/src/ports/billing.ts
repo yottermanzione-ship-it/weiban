@@ -5,6 +5,7 @@
  * - BillingReservationPort（estimateAndReserve / settle / release）：**只有 model-access 的模型网关**可以引用和调用。
  * - BillingReadPort（getSpendStatus）：ai-runtime 等需要判断「要不要安排后台任务」的模块可读。
  * 金额一律为整数微元（1 元 = 1,000,000）。
+ * v1.1（T-020）：安全优先透支（ReserveInput.safetyOverdraft）、countAsBackground、release 返回平台吸收成本。
  */
 import type { ModelPurpose } from './model-gateway.js';
 import type { PortResult } from './common.js';
@@ -33,12 +34,21 @@ export interface ReserveInput {
   estimate: UsageQuantities;
   /** 与网关调用的幂等键相同：重复调用返回同一个冻结。 */
   idempotencyKey: string;
+  /**
+   * v1.1：安全优先透支（billing.md 6.6 节）。网关只在 GenerateTextInput.safetyPriority 合法时传 true；
+   * billing 再校验一次（purpose ∈ SAFETY_OVERDRAFT_PURPOSES、account 为 user），不满足则按普通冻结处理。
+   */
+  safetyOverdraft?: boolean;
+  /** v1.1：按后台功能计入后台每日上限（规则同 GenerateTextInput.countAsBackground）。 */
+  countAsBackground?: boolean;
 }
 
 export interface ReserveOutput {
   holdId: string;
   amountMicros: number;
   priceVersionId: string;
+  /** v1.1：这次冻结是否动用了安全优先透支额度（可用余额不足、靠透支才冻结成功）。 */
+  usedSafetyOverdraft: boolean;
 }
 
 export type ReserveError =
@@ -71,6 +81,12 @@ export interface ReleaseInput {
   startedAt?: string;
 }
 
+/** v1.1：解冻结果。网关把平台吸收的成本记到用量记录上（管理后台用量页 ADM-08，billing.md 10.1 节）。 */
+export interface ReleaseOutput {
+  /** 失败调用仍被上游收费时由平台吸收的成本（微元）；没有则为 0。 */
+  absorbedCostMicros: number;
+}
+
 export interface SpendStatus {
   availableMicros: number;
   /** 可用余额 ≤ 0。 */
@@ -95,7 +111,8 @@ export interface BillingReservationPort {
    */
   estimateAndReserve(input: ReserveInput): Promise<PortResult<ReserveOutput, ReserveError>>;
   settle(input: SettleInput): Promise<SettleOutput>;
-  release(input: ReleaseInput): Promise<void>;
+  /** v1.1：返回值由 void 改为 ReleaseOutput（尚无实现，调用方可忽略返回值）。 */
+  release(input: ReleaseInput): Promise<ReleaseOutput>;
 }
 
 /** 只读计费端口：任何模块都可以用（例如 ai-runtime 判断要不要安排后台任务）。 */

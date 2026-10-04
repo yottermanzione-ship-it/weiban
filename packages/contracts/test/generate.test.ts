@@ -30,7 +30,7 @@ const sourceEndpointCount = Object.entries(contracts)
 
 describe('JSON Schema 导出', () => {
   it('带契约版本', () => {
-    expect(jsonSchema.contractVersion).toBe('1.0');
+    expect(jsonSchema.contractVersion).toBe(contracts.CONTRACT_VERSION);
   });
 
   it('每个接口都导出且带路由信息', () => {

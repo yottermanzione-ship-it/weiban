@@ -1,7 +1,7 @@
 # 计费模块设计：平台中转、价目表、余额与流水
 
-> 负责人：架构负责人 · v1.1 · 2026-10-05 · 来源任务：T-009；T-014 修订（6.3、6.4 余额恢复改为「加余额后重新检查」，第 7 节平台每日上限改为原子预留，计费端口拆分）
-> 决策记录见 `docs/decisions/ADR-0012-relay-billing-and-wallet.md`（为什么这样选）；本文讲**具体怎么做**。
+> 负责人：架构负责人 · v1.2 · 2026-10-05 · 来源任务：T-009；T-014 修订（6.3、6.4 余额恢复改为「加余额后重新检查」，第 7 节平台每日上限改为原子预留，计费端口拆分）；T-020 修订（新增 6.6 安全优先透支〔裁定 B4〕；第 7 节 `safety_followup`、`countAsBackground`；3.2 默认识图模型〔裁定 B5〕；5.2 用途分组对照；新增 10.1 管理后台用量查询〔ADM-08〕、10.2 行为规划计费〔PLAN-03〕；契约 1.1）
+> 决策记录见 `docs/decisions/ADR-0012-relay-billing-and-wallet.md`（为什么这样选；v1.2 的安全优先透支、用量查询见 `ADR-0016`）；本文讲**具体怎么做**。
 > 契约以 `packages/contracts/src/http/billing.ts`、`src/http/model-access.ts`、`src/ports/billing.ts`、`src/ports/model-gateway.ts` 为准。
 > 价格数字、模型清单、默认后台预算数值不在本文定义：模型与价格见 `docs/ai/model-catalog.md`，费用估算与默认预算见 `docs/ai/cost-estimate.md`，产品参数见 PRD。
 
@@ -10,7 +10,7 @@
 1. 平台在后台登记各家模型供应商的密钥（叫「**上游**」），用户在 App 里只选「模型」，不接触任何密钥。
 2. 每次调用模型：**先冻结一笔估算的钱 → 调用 → 按实际用量结算，多退少补；调用失败就全额解冻，不扣钱。**
 3. 用户钱包余额 = 所有流水加起来。流水只增不改，每一分钱都能查到来源。
-4. 余额不够时，网关在调用供应商之前就拦下，不会产生费用；用户的消息照常送达，角色等加了余额后补一次回复。
+4. 余额不够时，网关在调用供应商之前就拦下，不会产生费用；用户的消息照常送达，角色等加了余额后补一次回复。**唯一例外**：用户发来高危信号（安全关怀）时，允许余额透支最多 2 元来回复，下次加余额时先抵扣（6.6 节）。
 5. 管理员在后台给用户加余额（首版不接真实支付），每天自动对账。
 
 术语：
@@ -47,7 +47,7 @@ graph LR
 
 | 模块 | 拥有的数据（schema） | 不做什么 |
 |---|---|---|
-| `model-access` | `model_access`：`upstreams`（上游与加密密钥）、`model_catalog`（模型目录：模型键 → 上游 + 上游模型名、能力、标签、是否启用）、`leaderboard_entries`、`selections`、`character_overrides`、`usage_records`（每次调用的 token、耗时、状态、结算金额引用）、`upstream_status` | 不记钱、不判断余额 |
+| `model-access` | `model_access`：`upstreams`（上游与加密密钥）、`model_catalog`（模型目录：模型键 → 上游 + 上游模型名、能力、标签、是否启用）、`leaderboard_entries`、`selections`、`character_overrides`、`usage_records`（每次调用的 token、耗时、状态、结算金额引用；v1.2 起另存结算返回的扣费 / 成本 / 平台吸收金额**快照**，供管理后台统计，10.1 节）、`upstream_status` | 不记账（余额与流水的权威只在 billing）、不判断余额 |
 | `billing` | `billing`：`accounts`（账户：每用户一个钱包 + 一个平台账户；余额、提醒线、后台每日上限）、`ledger_entries`（流水，只增不改）、`holds`（冻结记录）、`price_versions` / `price_items`（价目表）、`daily_spend`（按用户当地日期的后台花费汇总）、`platform_daily_budget`（平台每日成本预算：已结算 + 预留中，第 7 节）、`upstream_bills`（管理员录入的上游账单）、`reconciliation_runs`（对账结果） | 不调用模型、不 import `model-access` |
 
 依赖方向：`model-access` → `billing`（同层调用，单向）。`billing` 不调用 `model-access`；它需要的模型信息（模型键）由调用方传入。
@@ -77,6 +77,8 @@ graph LR
 | `capabilities` | `vision` / `voice_input` / `voice_output` / `web_search` / `image_generation` / `adult_content`（无审查，见第 9 节） |
 | `tags`、`leaderboardRank`、`sortOrder` | 展示用，数据来自 AI 负责人的模型目录 |
 | `enabled` | 管理员下架模型时设为 false；已选它的用户会看到「模型已下架」并被提示换模型（MDL-04 不自动切换原则不变） |
+
+**平台默认模型**（`AdminCatalogEntry.defaultFor`）：`chat`、`background` 各最多一个（用户没选时使用）；v1.2 新增 `vision`（**默认识图模型**，裁定 B5、PRD ADM-05 第 9 条）。网关处理用途为 `vision` 的调用时：先按聊天模型的规则解析（角色覆盖 > 全局 > 平台默认聊天模型）；解析出的模型没有 `vision` 能力时，改用默认识图模型；没有设置默认识图模型时返回 `capability_missing`。费用照常从用户余额扣、记在用户选择的角色名下；用量记录里的 `modelKey` 是实际使用的识图模型。默认识图模型必须具备 `vision` 能力，且不能是 `adult_content` 模型（保存时 422）。
 
 同一个模型**不自动换上游**。管理员可以手动把模型键改指到另一个上游（例如 DeepSeek 官方故障时改走百炼托管的同一模型），这属于运维操作，记审计日志。
 
@@ -143,7 +145,22 @@ token 数优先用上游返回的用量字段；上游没返回时按 AI 负责�
 | `idempotency_key` | 唯一约束：同一笔操作重复提交只记一次 |
 | `usage_record_id`、`purpose`、`model_key`、`character_id`、`price_version_id` | 扣费类流水必填，便于用量页按用途 / 角色 / 模型汇总 |
 | `cost_micros` | 这笔调用的成本金额（对账用，用户不可见） |
+| `safety_overdraft` | 这笔扣费是否动用了安全优先透支（来自冻结记录，6.6 节；v1.2） |
 | `reason`、`operator_user_id` | 管理员操作必填 |
+
+**用途 → 用户可见的用途分组**（契约 `SpendCategory`，余额明细与用量页用；用户看不到 `ModelPurpose` 原值）：
+
+| 分组 | 包含的用途（`ModelPurpose`） |
+|---|---|
+| `chat` 聊天 | `chat_reply` |
+| `background` 后台 | `memory`、`simulation`、`proactive`、`moments` |
+| `media` 多媒体 | `vision`、`voice`、`image_generation`、`web_search` |
+| `import` 导入 | `import_analysis` |
+| `safety` 安全 | `safety_check`、`safety_followup` |
+| `planning` 行为规划 | `behavior_planning`（v1.2，PRD MDL-05 第 1 条要求单独显示） |
+| `admin` 管理员 | 全部 `admin_*`（只出现在平台账户） |
+
+新增用途时必须同时在本表登记它属于哪一组。
 
 规则：
 1. 写流水和改账户余额在**同一个数据库事务**里，对账户行加锁（`SELECT ... FOR UPDATE`），并发调用不会算错。
@@ -159,6 +176,8 @@ token 数优先用上游返回的用量字段；上游没返回时按 AI 负责�
 | `status` | `active` / `settled` / `released` / `expired` |
 | `expires_at` | 默认创建后 10 分钟（覆盖最长 60 秒的调用加重试，留足余量） |
 | `budget_day`、`reserved_cost_micros` | 本次在平台每日成本预算中预留的成本金额及所属日期（T-014，第 7 节）；结算 / 解冻 / 过期时按它归还 |
+| `counts_as_background` | 本次冻结是否计入用户后台每日上限（用途属于 `BACKGROUND_PURPOSES`，或调用方传了 `countAsBackground`；第 7 节第 1 条） |
+| `safety_overdraft` | 本次冻结是否动用了安全优先透支（6.6 节）；结算时抄到流水 |
 
 - 冻结不写流水（钱还没动），只改账户的 `held_micros`。
 - 定时任务每分钟把过期仍是 `active` 的冻结改为 `expired` 并释放额度（进程崩溃的兜底），同时归还它在平台预算中的预留。
@@ -205,7 +224,7 @@ sequenceDiagram
 
 ### 6.3 透支与余额不足
 
-1. **调用前**：可用余额 < 冻结额 → 拒绝（`insufficient_balance`）。
+1. **调用前**：可用余额 < 冻结额 → 拒绝（`insufficient_balance`）。唯一例外是安全优先透支（6.6 节）。
 2. **结算时**：实际金额 > 冻结额（估算偏差）→ 照常扣，允许余额变为小额负数；之后可用余额 ≤ 0，新调用全部被拒，直到加余额。
 3. 余额事件（T-014 修订，Q-008）：
    - 可用余额从「> 0」变为「≤ 0」时发 `billing.balance_depleted`；低于提醒线时发 `billing.balance_low`（同一天同一账户最多一次）。
@@ -234,9 +253,33 @@ sequenceDiagram
 | 成功返回，但 AI 输出守卫判定不合格、重新生成 | **两次都扣**（两次都是真实的成功调用） | — |
 | 对账发现多扣 | 管理员发起 `refund` | — |
 
+### 6.6 安全优先透支（v1.2，裁定 B4、PRD MDL-10 第 6 条）
+
+**结论**：用户发来高危信号（安全关怀规则预筛命中，SAFE-06）时，即使余额不足，角色也要回复。为此允许这类调用让余额**透支到 −2 元为止**；透支的钱照常记流水，管理员下次加余额时自然先抵扣。透支额度用完、或平台每日总上限触发时，不再调用模型，由 ai-runtime 发不花钱的固定关怀消息（第 6 条），**角色不会沉默**。
+
+1. **谁能用**（三个条件同时满足，网关和 billing 各校验一次）：
+   - 调用方在 `GenerateTextInput` 里传 `safetyPriority: true`——只有 ai-runtime 在安全关怀规则预筛命中、会话进入安全关怀状态时才传，用户、客户端、其他模块都没有途径设置它（不是 HTTP 字段）；
+   - 用途属于 `SAFETY_OVERDRAFT_PURPOSES`：`chat_reply`（回复高危消息）、`safety_check`（识别）、`safety_followup`（次日跟进）；
+   - 计费账户是用户钱包（`billingOwner = user`）。
+   - 不满足时：网关返回 `bad_request`（这是程序错误，应在测试中暴露）。
+2. **上限**：透支上限 `SAFETY_OVERDRAFT_LIMIT` = **2 元（2,000,000 微元）**，每个用户钱包一份，**本文是这个数字的唯一定义处**；代码中为 billing 模块的配置常量，可用环境变量 `BILLING_SAFETY_OVERDRAFT_LIMIT_MICROS` 覆盖（运维不需要设置，默认即可）。取 2 元的理由：一条回复约 0.007～0.10 元（`docs/ai/cost-estimate.md` 7.3 节首批模型），2 元在最贵的首批模型上也能支撑约 20 次回复，足够一段危机对话和之后几天的跟进；又小到即使永远收不回也可以忽略。
+3. **怎么冻结**：普通冻结要求「可用余额 ≥ 冻结额」；带 `safetyOverdraft` 的冻结先按普通规则判断，够就按普通冻结处理（不算透支）；不够时改为判断 `可用余额 − 冻结额 ≥ −SAFETY_OVERDRAFT_LIMIT`，满足则冻结成功并标记 `holds.safety_overdraft = true`、返回 `usedSafetyOverdraft = true`，不满足仍返回 `insufficient_balance`。透支冻结同样要预留平台每日成本预算（第 7 节第 2 条），**平台上限不为安全透支让路**——它是防程序失控的紧急刹车。
+4. **怎么记账**：结算照常写 `charge` 流水，余额变为负数，流水带 `safety_overdraft = true`（管理后台流水和用量明细可见，用户余额明细里只是普通的「安全」类扣费）。结算金额超出冻结额时照常扣（6.3 第 2 条），所以实际负余额可能略低于 −2 元（以单次估算偏差为界）。每次动用透支写一条审计日志（`platform.audit_log`：用户 ID、冻结 ID、金额，不含任何内容）。
+5. **怎么恢复**：没有单独的「还款」动作。余额 = 流水合计，管理员下次 `admin_grant` 时先填平负数；加余额后的可用余额 > 0 时照常发 `billing.balance_restored`（6.3 第 3 条）。管理后台加余额页面应显示「当前余额为负 X 元（其中安全透支 Y 元），本次加余额将先抵扣」（`AdminAccountSummary.balanceMicros` 已足够判断；页面文案归设计）。用户注销时负余额随账户删除，由平台承担（金额不超过上限，技术债 TD-024）。
+6. **透支也用完时**：ai-runtime 收到 `insufficient_balance` 或 `budget_exceeded` 后，**必须**发一条不调用模型的安全关怀兜底消息（固定模板，含求助渠道；措辞与人设化方式归 AI 负责人），不能因为没钱而沉默。这条要求同样适用于上游故障（`provider_unavailable`）时的高危消息。
+7. **防止滥用**：
+   - 入口唯一：只有 ai-runtime 的预筛结果能打开这扇门；预筛是代码规则（不是用户能操纵的开关），命中后的回复处于安全关怀状态（关闭小巧思等，`hard-boundaries.md` SAFE-06），不是普通聊天，「故意说高危词换免费聊天」得不到正常陪聊。
+   - 不是免费：透支的每一分钱都记账，下次加余额先抵扣。
+   - 金额封顶：每个用户最多欠 2 元左右；后台用途（推演、朋友圈等）永远不能透支。
+   - 可查：每次透支有审计日志和流水标记；对账第 ① 层增加检查「余额低于 −(上限 + 1 元)」的账户（说明有透支以外的原因让余额过负），标红通知管理员。
+   - 代码评审：质量负责人评审 ai-runtime 时检查 `safetyPriority` 只在安全关怀路径上设置（与 R9 的评审兜底同一做法）。
+8. **测试要求**（D-L0-16 / D-L1-04）：余额为 0 时带 `safetyPriority` 的 `chat_reply` 冻结成功、流水为负且带标记；不带时被拒；`proactive`、`memory` 等用途带 `safetyPriority` 返回 `bad_request`；透支到上限后再次被拒；加余额后先抵扣、可用余额转正时发 `balance_restored`；平台每日上限已满时透支冻结同样被拒。
+
 ## 7. 后台预算与平台上限
 
-1. **用户后台每日上限**：只约束「后台用途」（`ports/model-gateway.ts` 的 `BACKGROUND_PURPOSES`：记忆整理、推演、主动消息与群聊自发、朋友圈；范围与 `docs/ai/cost-estimate.md` 第 6 节一致，用户主动发起的导入分析不计入）。在冻结步骤检查「今天（用户时区）后台已结算 + 当前后台冻结 + 本次冻结额」是否超过上限，超过返回 `budget_exceeded`。聊天回复不受限；安全检查（`safety_check`）**不受限**（`BUDGET_EXEMPT_PURPOSES`）。超限后 AI 运行时的处理规则不变（`docs/ai/runtime-overview.md` 2.5）。
+1. **用户后台每日上限**：只约束「后台用途」（`ports/model-gateway.ts` 的 `BACKGROUND_PURPOSES`：记忆整理、推演、主动消息与群聊自发、朋友圈；范围与 `docs/ai/cost-estimate.md` 第 6 节一致，用户主动发起的导入分析不计入）。在冻结步骤检查「今天（用户时区）后台已结算 + 当前后台冻结 + 本次冻结额」是否超过上限，超过返回 `budget_exceeded`。聊天回复不受限；安全检查（`safety_check`）和安全关怀次日跟进（`safety_followup`，v1.2 批准 AI 负责人变更申请第 12 条）**不受限**（`BUDGET_EXEMPT_PURPOSES`）。超限后 AI 运行时的处理规则不变（`docs/ai/runtime-overview.md` 2.5）。
+   - **按后台计入**（v1.2，契约 `countAsBackground`）：有些调用的用途本身不是后台用途，但这一次是系统主动发起的，也应受后台上限约束，调用方传 `countAsBackground: true`：为主动行为（主动消息、朋友圈、来电、玩法时机）做的**行为规划**（PRD PLAN-03 第 4 条）、**朋友圈配图**（`image_generation`，AI 负责人变更申请第 14 条中与计费有关的部分）。这个标记只能让调用更受限：后台用途不传也计入，`BUDGET_EXEMPT_PURPOSES` 中的用途传了也不计入。冻结记录存 `counts_as_background`，「今天后台已花费」按它统计。
+   - **安全关怀次日跟进的评估结论**（T-020）：同意不受后台预算限制。理由：它每个高危事件只发一次（计入主动消息上限 P-03，SAFE-06 第 6 条），金额极小，而被预算挡下的代价是错过一次关怀；它也不受 P-33 保留线限制（P-33 由 ai-runtime 执行，AI 负责人已确认）。余额不足时它可以使用 6.6 节的安全优先透支。
 2. **平台每日总上限**：环境变量 `BILLING_PLATFORM_DAILY_CAP_MICROS`，约束全平台（所有用户 + 平台账户）当天按**成本价**计的花费，相当于紧急刹车，防止程序出错时无限调用。T-014 修订（Q-007）：原写法只统计「已结算」的成本，几十个并发请求可以同时通过检查、一起超出上限。改为**原子预留**：
    - 表 `billing.platform_daily_budget(budget_day, cap_micros, settled_cost_micros, reserved_cost_micros)`，每天一行；`budget_day` 按北京时间自然日（与供应商账单日一致），当天第一次冻结时创建（`cap_micros` 取当时的环境变量值）。
    - **冻结时**：按估算用量 × **成本价**算出 `预留成本`，在冻结的同一个事务里执行一条带条件的更新：`UPDATE ... SET reserved_cost_micros = reserved_cost_micros + 预留成本 WHERE budget_day = 今天 AND settled_cost_micros + reserved_cost_micros + 预留成本 <= cap_micros`。更新到 0 行 → 返回 `budget_exceeded`，整个冻结回滚（用户钱包不被冻结）。这一行的行锁让并发请求排队检查，不会同时通过。预留额和日期记在冻结记录上（5.3 节）。
@@ -258,8 +301,8 @@ sequenceDiagram
 
 | 层 | 检查什么 | 异常时 |
 |---|---|---|
-| ① 账本自洽 | 每个账户：流水合计 = `balance_micros`；`held_micros` = 有效冻结合计；没有超过 1 小时仍为 `active` 的冻结 | 标红、通知管理员；不自动修复 |
-| ② 用量与扣费一一对应 | 每条成功的 `usage_records` 恰好对应一条 `charge` 流水，反之亦然（通过 billing 只读端口提供的按日汇总与 model-access 的用量汇总比对，不跨 schema 查询；该方法在 D-L0-16 时补入 `BillingReadPort`） | 列出缺失 / 多余的记录 |
+| ① 账本自洽 | 每个账户：流水合计 = `balance_micros`；`held_micros` = 有效冻结合计；没有超过 1 小时仍为 `active` 的冻结；用户钱包余额不低于 −(安全透支上限 + 1 元)（v1.2，6.6 节） | 标红、通知管理员；不自动修复 |
+| ② 用量与扣费一一对应 | 每条成功的 `usage_records` 恰好对应一条 `charge` 流水，反之亦然；v1.2 起还要核对用量记录上的金额快照与流水金额相等（10.1 节）。通过 billing 只读端口提供的按日 / 按用量记录 ID 查询与 model-access 的用量数据比对，不跨 schema 查询；该方法在 D-L0-16 时补入 `BillingReadPort`（由后端按此提契约变更申请） | 列出缺失 / 多余 / 金额不一致的记录；金额快照缺失（进程在结算后、写快照前崩溃）由 model-access 的修复任务按 billing 返回值补写 |
 | ③ 与上游账单比对 | 管理员在后台录入各上游某天 / 某月的实际账单金额；系统按成本价汇总同期金额，偏差 > 3%（阈值可配）标红 | 提示检查价目表是否过期（最常见原因是供应商调价） |
 
 上游账单首版**手工录入**（多数供应商的账单接口各不相同），登记技术债 TD-013。
@@ -285,7 +328,32 @@ sequenceDiagram
 | 管理后台：`/api/v1/admin/model/upstreams*`、`/admin/model/catalog*` | 上游登记与测试、模型目录维护 |
 | 管理后台：`/api/v1/admin/billing/*` | 账户列表、加扣余额、流水、价目表版本、上游账单录入、对账结果、平台花费 |
 
+| 管理后台：`POST /api/v1/admin/model/usage/summary`、`/records`、`/export`（v1.2） | 用量与费用查询（ADM-08），见 10.1 节 |
+
 具体字段见契约。界面放在哪里（例如「我 → 微伴服务 → 余额」）由产品 / 设计定。
+
+### 10.1 管理后台用量与费用查询（ADM-08，v1.2）
+
+**评估结论**：原有接口不够用——用户端 `GET /billing/usage-summary` 只能看自己、只能按一个维度、没有 token；管理端 `listAccountLedger` 只能逐个用户看流水。契约 1.1 新增 `ModelAccessAdminUsageEndpoints` 三个接口（汇总、明细、导出），放在 **model-access** 模块。
+
+1. **为什么放 model-access**：ADM-08 的最小单位是「一次调用」，这正是 `model_access.usage_records` 的一行；token、模型、上游、耗时、重试、状态都只在这里。只要在同一行上再存结算时 billing 返回的金额，整个页面就是**单表查询**，不需要跨 schema 联表（ADR-0004）。
+2. **金额快照**：网关在 `settle` 返回后把 `amountMicros`（用户扣费，记为 `charged_micros`）、`costMicros`，在 `release` 返回后把 `absorbedCostMicros`、以及冻结结果 `usedSafetyOverdraft` 写进用量记录。这些是**副本**，余额与流水的权威仍是 billing（`overview.md` 第 4 节规则 5 已同步）；对账第 ② 层核对两者逐条相等（第 8.2 节；同一数字存两处，登记为技术债 TD-023）。
+3. **口径**：「用户扣费」= `billingOwner = user` 的成功调用的 `charged_micros` 合计，与余额明细中扣费类流水合计相等（ADM-08 第 7 条）；「平台成本」= `cost_micros` 合计（含平台账户的 `admin_*` 调用）；「平台吸收」= `absorbed_cost_micros` 合计（失败调用仍被上游收费，6.5 节），单独一列，不计入用户扣费。
+4. **时间**：筛选用 `[from, to)` 时间戳（可精确到小时）；按天分组用**北京时间**自然日，与平台每日上限、供应商账单日一致（第 7 节第 2 条）。
+5. **按用户名、角色名搜索**：接口只收 ID。管理后台先用已有接口把名字换成 ID（用户：`GET /admin/billing/accounts` 返回用户名；角色：管理后台角色库），再查询。不在 model-access 里存用户名，避免复制别的模块的数据。
+6. **导出**：`/export` 返回最多 50,000 行 JSON（`ADMIN_USAGE_EXPORT_MAX_ROWS`），管理后台网页转成 CSV 下载；服务器每次导出写审计日志（谁、何时、筛选条件）。超过上限时 `truncated = true`，提示缩小范围。
+7. **不含内容**：用量记录本来就不存消息、提示词、模型输出（engineering-standards 第 6 节第 3 条），接口也没有这些字段。
+8. **索引建议**（后端实现时定）：`created_at`；`(user_id, created_at)`；`(character_id, created_at)`；`purpose`、`model_key` 可用联合索引或在数据量大时再加。个人测试规模下，单表聚合足够快。
+9. **注销**：用户注销时 model-access 的删除清单删除该用户的用量记录（与 billing 第 11 节一致），本页不再能查到。
+10. 会话类型（私聊 / 群聊）来自 `GenerateTextInput.meta.conversationKind`，由 ai-runtime 传入。
+
+### 10.2 行为规划的计费（PRD PLAN-03 第 4 条，v1.2）
+
+1. 用途 `behavior_planning`，用户可见分组 `planning`（「行为规划」，5.2 节对照表），从用户余额扣。
+2. 为**主动行为**做的决策（主动消息、朋友圈、来电、玩法时机）调用时传 `countAsBackground: true`，计入后台每日上限；为**聊天回复**做的决策不传，不计入。后台预算用完时网关返回 `budget_exceeded`，ai-runtime 按 PRD 退回规则版，不产生「行为规划」费用。
+3. **如果某个实现按平台账户计费、无法按用户记账**（例如 Jev 按平台的套餐收费）：仍然把它登记为一个上游、在模型目录里登记为一个模型，并在价目表里给它定一个售价（按 token，或按次——按次需要新增计价单位，届时由架构评估契约变更）。网关照常按售价从**用户**余额扣、按成本价记成本；平台和供应商之间怎么结算不影响用户记账，差异在对账第 ③ 层体现。这样「每个用户花在行为规划上的钱」始终可查，符合 MDL-05、MDL-08。
+4. 不经网关的实现（例如纯规则版）不产生费用，也不写用量记录。
+5. 决策层的接口、默认实现、Jev 接入方式归 AI 负责人评估（PRD 9.3 第 7 条）；如需新增端口，按变更流程申请。
 
 ## 11. 注销与删除
 
@@ -294,7 +362,7 @@ sequenceDiagram
 
 ## 12. 实现顺序（对应 dev-plan）
 
-1. `billing` 模块：账户、流水、冻结、价目表、估价、结算、过期清理、后台预算、平台上限、事件（D-L0-16）。
-2. `model-access` 改造：上游、模型目录、选择规则、网关接入计费端口（D-L0-08、D-L0-09）。
+1. `billing` 模块：账户、流水、冻结、价目表、估价、结算、过期清理、后台预算（含 `countAsBackground`）、平台上限、**安全优先透支（6.6 节）**、事件（D-L0-16）。
+2. `model-access` 改造：上游、模型目录（含默认识图模型）、选择规则、网关接入计费端口、`safetyPriority` 校验、用量记录的金额快照字段（D-L0-08、D-L0-09）。管理后台用量查询接口（10.1 节）在 L2 实现（D-L2-11），但用量记录表的字段在 D-L0-08 一次建好。
 3. 管理后台：上游、模型目录、价目表、加余额（D-L0-13 扩展）。
 4. 用户端：余额、流水、价目展示（网页 D-L0-12 / 安卓 D-L1-06 起）；用量汇总与对账页（L2）。

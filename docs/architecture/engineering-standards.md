@@ -1,6 +1,6 @@
 # 工程规范
 
-> 负责人：架构负责人 · v1.2 · 2026-10-05 · 来源任务：T-004，T-009 修订（R9、金额规则、安卓第 10 节），T-014 修订（第 3 节实现方式、R4 范围、R9 加固、R10 测试引用、10.4 主题同步）
+> 负责人：架构负责人 · v1.3 · 2026-10-05 · 来源任务：T-004，T-009 修订（R9、金额规则、安卓第 10 节），T-014 修订（第 3 节实现方式、R4 范围、R9 加固、R10 测试引用、10.4 主题同步），T-020 修订（第 3 节措辞与 T-015 实现对齐：工具、R7 范围、R9 范围与豁免、R10 装配入口、新增 R11 循环依赖；新增 3.4 服务器代码约定与第 5 节迁移回滚，依据 ADR-0015）
 > 适用于所有写代码的负责人。git 分支与提交格式见 `docs/ops/git-workflow.md`，本文不重复。违反「必须」条款的代码，质量负责人可以直接判定验收不通过。
 
 ## 1. 语言与通用规则
@@ -27,13 +27,18 @@
 | 错误码 | 小写下划线 | `contact_limit_reached` |
 | 环境变量 | 全大写下划线，模块前缀 | `MODEL_ACCESS_KEK_FILE` |
 
-PRD 参数（P-01～P-30）在代码中**只在一个文件**里映射：`apps/server/src/platform/config/product-params.ts`，常量名带编号，如 `P03_PROACTIVE_PER_CHARACTER_PER_DAY = 3`，注释写明「来源：PRD 第 5 节 P-03」。PRD 改数字时只改这个文件。
+PRD 参数（P-01 起，编号以 PRD 第 5.1 节为准）在代码中**只在一个文件**里映射：`apps/server/src/platform/config/product-params.ts`，常量名带编号，如 `P03_PROACTIVE_PER_CHARACTER_PER_DAY = 3`，注释写明「来源：PRD 第 5 节 P-03」。PRD 改数字时只改这个文件。
 
 ## 3. 模块边界规则（CI 强制）
 
-依据 ADR-0004，由运维在 `packages/eslint-config` 中用**本地 ESLint 规则**（自写插件 `weiban`，按文件路径和 import 语句判断）实现，不使用 `eslint-plugin-boundaries` / `dependency-cruiser`。规则与实现的对照表见该包 README；分层和 schema 名单只在 `packages/eslint-config/architecture.js` 一处映射，内容以 ADR-0004 第 3 节、`overview.md` 第 4 节为准。
+依据 ADR-0004，由运维在 `packages/eslint-config` 中实现，两种工具分工如下（规则与实现的对照表见该包 README；分层和 schema 名单只在 `packages/eslint-config/architecture.js` 一处映射，内容以 ADR-0004 第 3 节、`overview.md` 第 4 节为准）：
 
-> T-014 确认：T-011 改用本地规则是合理的偏离——boundaries 插件只能覆盖 R1～R3，还要额外的 TypeScript 路径解析器；R4～R10 无论如何都要自写。若以后要查「同层循环依赖」（ADR-0004 第 3 节），可再单独引入 `import/no-cycle` 或 dependency-cruiser，不影响本节其他规则。
+| 工具 | 负责的规则 | 说明 |
+|---|---|---|
+| **本地 ESLint 规则**（自写插件 `weiban`，按文件路径和 import 语句判断） | R1～R10 | 不使用 `eslint-plugin-boundaries`（T-014 确认：它只能覆盖 R1～R3，还要额外的 TypeScript 路径解析器） |
+| **dependency-cruiser**（`pnpm lint:deps`，并入 `pnpm lint`） | **只用于 R11**（跨模块循环依赖） | 循环要看整张引用图，单个文件的 lint 看不出来；纯 JavaScript、无原生二进制（T-015 选型）。**不用它检查 R1～R10**，避免同一条规则两处实现 |
+
+> 规则只按「名字」静态判断（R7、R9 尤其如此）：先把 `Date` 赋给别的变量再用、运行时拼字符串取属性之类的写法拦不住，由代码评审兜底（技术债 TD-021）。
 
 | 规则 | 允许 | 禁止 |
 |---|---|---|
@@ -43,10 +48,11 @@ PRD 参数（P-01～P-30）在代码中**只在一个文件**里映射：`apps/s
 | R4 模型出口唯一 | 只有 `modules/model-access/**` 可以 import 供应商 SDK 或向供应商域名发请求 | 其他模块、**`packages/ai-evals/**`**（T-014，见 3.3）直接调用模型 API |
 | R5 推送出口唯一 | 只有 `modules/push/**` 可以 import 推送 SDK | 其他模块直接发推送 |
 | R6 契约来源 | 前后端接口类型只从 `@weiban/contracts` 导入 | 在 web / server 里另写一份接口类型 |
-| R7 时间 | 使用 `platform/clock` | 业务代码直接 `new Date()` / `Date.now()`（平台内核和测试除外） |
+| R7 时间 | 使用 `platform/clock` | `new Date()`、`Date()`、`Date.now`（含不调用的引用）及经 `globalThis` / `global` / `window` / `self` 访问的同等写法。范围：`apps/server/src` 下**除 `platform/` 和测试文件以外的全部文件**（含 `main.ts`、`app.module.ts`、`cli/` 等，T-015） |
 | R8 数据表 | 模块只访问自己 `pgSchema` 下的表 | 原生 SQL 里出现别的 schema 名 |
-| R9 扣费出口唯一（T-009，T-014 加固） | 只有 `modules/model-access/**`（和 `billing` 自己、组装文件）可以引用 `BillingReservationPort` 类型与注入令牌 `BILLING_RESERVATION_PORT`；其他模块只能用 `BillingReadPort.getSpendStatus` | 其他模块自行冻结、扣费或改余额；检查方式见 3.1 |
-| R10 测试引用（T-014） | `apps/server/test/**`（集成测试）只 import 各模块公开出口 `index.ts`、各模块测试出口 `testing.ts`、`platform/**`；模块目录内与源码放在一起的单元测试（`*.test.ts`）可以引用**本模块**内部文件 | 集成测试 import 某个模块的内部文件（`domain/`、`infra/` 等）；见 3.2 |
+| R9 扣费出口唯一（T-009，T-014 加固，T-020 按实现确认范围） | 只有 `modules/model-access/**`、`modules/billing/**`、装配入口（`main.ts`、`app.module.ts`）、集成测试 `apps/server/test/**` 可以出现 `BillingReservationPort`、`BILLING_RESERVATION_PORT`、`estimateAndReserve` 这些名字；其他地方只能用 `BillingReadPort.getSpendStatus` | 其他代码自行冻结、扣费或改余额；范围是 `apps/server/src` **全部**（含 `platform/`、其他目录、模块目录内的单元测试）；检查方式见 3.1 |
+| R10 测试引用（T-014，T-020 补装配入口） | `apps/server/test/**`（集成测试）只 import 各模块公开出口 `index.ts`、各模块测试出口 `testing.ts`、`platform/**`，以及**装配入口 `src/app.module.ts`、`src/main.ts`**（启动整个应用用，扩展名可省略）；模块目录内与源码放在一起的单元测试（`*.test.ts`）可以引用**本模块**内部文件，也可以引用其他模块的 `testing.ts` | 集成测试 import 某个模块的内部文件（`domain/`、`infra/` 等）或 `src/` 下其他目录（`config/`、`cli/` 等）；**生产代码 import 任何 `testing.ts`（含本模块的）**；见 3.2 |
+| R11 无跨模块循环（ADR-0004 第 3 节，T-015 实现） | 模块之间单向依赖 | `modules/A` 的文件沿 import 绕一圈回到 `modules/A`、且途中经过别的模块（`import type` 也算）。同一模块内部文件之间的循环、测试文件不查（ADR-0004 未要求，若以后出现问题再收紧） |
 
 ### 3.1 R9 加固方案（Q-009；实现：运维 T-015）
 
@@ -54,14 +60,19 @@ PRD 参数（P-01～P-30）在代码中**只在一个文件**里映射：`apps/s
 
 1. **契约拆分（已在契约 1.0 完成）**：原 `BillingPort` 拆为 `BillingReservationPort`（冻结 / 结算 / 解冻）与 `BillingReadPort`（`getSpendStatus`）。不 import 前者，就写不出调用它的合法代码。
 2. **注入令牌**：billing 模块在自己的 `index.ts` 导出两个注入令牌 `BILLING_RESERVATION_PORT`、`BILLING_READ_PORT`，**必须是 `Symbol`**（不能是字符串，否则不 import 也能凭字符串取到）。实现类只在 billing 内部，受 R1 保护。
-3. **lint 规则 A（主检查）**：在 `apps/server/src/modules/**` 中，除 `model-access`、`billing` 外，以下任何写法引入名为 `BillingReservationPort` 或 `BILLING_RESERVATION_PORT` 的绑定都报错——按**被导入的原名**判断，与本地变量名无关：
+3. **lint 规则 A（主检查）**：在 `apps/server/src` **全部文件**中（含 `platform/`、`src` 下其他目录、模块目录里的单元测试；豁免见第 6 条），以下任何写法出现名为 `BillingReservationPort` 或 `BILLING_RESERVATION_PORT` 的名字都报错——按**名字本身**判断（导入时按被导入的原名），与本地变量名无关：
    - `import { BillingReservationPort } …`、`import type { … }`、`import { BillingReservationPort as X } …`；
    - 再导出 `export { BillingReservationPort } from …`、`export * from` 后经他处使用；
-   - 命名空间导入后访问：`import * as c from '@weiban/contracts'` 之后的 `c.BillingReservationPort`（值或类型位置，含 `TSQualifiedName`）；
-   - 动态导入 `import('…')` 后解构出这两个名字。
-4. **lint 规则 B（兜底）**：同一范围内，属性名为 `estimateAndReserve` 的任何访问都报错，包括 `x.estimateAndReserve`、`x['estimateAndReserve']`、模板字符串常量键、解构 `const { estimateAndReserve } = x`。`settle` / `release` 是常见单词，不按名字查，由规则 A 覆盖。
-5. **lint 规则 C**：除 `platform/**` 与组装文件（`main.ts`、`app.module.ts`）外，禁止 import NestJS 的 `ModuleRef`（动态按令牌取服务会绕开 import 检查）。
-6. **豁免**：`modules/model-access/**`、`modules/billing/**`、组装文件、`apps/server/test/**`（集成测试需要直接测计费）。
+   - 命名空间导入后访问：`import * as c from '@weiban/contracts'` 之后的 `c.BillingReservationPort`、`c['BillingReservationPort']`（值或类型位置，含 `TSQualifiedName`）；`import('…').BillingReservationPort` 类型；
+   - 动态导入 `import('…')` 后解构出这两个名字；字符串形式的导入名。
+4. **lint 规则 B（兜底）**：同一范围内，名为 `estimateAndReserve` 的任何访问都报错，包括 `x.estimateAndReserve`、`x['estimateAndReserve']`、无插值模板字符串键、解构 `const { estimateAndReserve } = x`、字符串常量。`settle` / `release` 是常见单词，不按名字查，由规则 A 覆盖。
+5. **lint 规则 C**：除 `platform/**`、装配入口（`main.ts`、`app.module.ts`）、`apps/server/test/**` 外，**任何名为 `ModuleRef` 的标识符**都报错（不限来源包，含别名导入、`core.ModuleRef`）——动态按令牌取服务会绕开 import 检查。规则 C 对 `model-access`、`billing` **同样生效**（它们也不需要 `ModuleRef`）。
+6. **豁免**（只对规则 A、B）：`modules/model-access/**`、`modules/billing/**`、装配入口、`apps/server/test/**`（集成测试需要直接测计费）。
+6a. **T-020 确认的四处取舍**（运维 T-015 按「最严格理解」实现，架构确认全部保留）：
+   - R10 允许集成测试引用装配入口 `app.module.ts`、`main.ts`（总负责人裁定），`src/` 下其他目录仍禁止；
+   - 规则 A、B 的范围是 `apps/server/src` 全部，不只 `modules/**`——`platform/` 是全体模块的底座，更不应该接触扣费端口；
+   - 规则 C 对 `model-access`、`billing` 也生效，集成测试豁免；
+   - 只按名字判断：受限范围内**自己声明**同名变量 / 接口（例如本地写一个 `estimateAndReserve` 函数）也会报错。这是有意的：这几个名字在业务代码里本来就不该出现，换个名字即可，误报成本远低于漏报。
 7. **测试（运维补齐）**：每种违规写法各一条「报错」用例——至少覆盖 Q-009 的两种绕过（声明为 `BillingReservationPort` 类型的 `port` 调用 `port.settle`、`billingPort['estimateAndReserve']`）、别名导入、命名空间导入、解构；以及「model-access 内调用不报错」「其他模块只用 `BillingReadPort.getSpendStatus` 不报错」两条合规用例。
 8. 剩余风险：`any` 被禁止（第 1 节）、跨模块内部文件被 R1 禁止，仍可能存在的绕过只剩人为构造的反射写法，由代码评审兜底（质量负责人评审 billing 相关改动时专门检查）。
 
@@ -71,12 +82,23 @@ PRD 参数（P-01～P-30）在代码中**只在一个文件**里映射：`apps/s
 - 测试需要的假实现、测试数据工厂、清表工具，由各模块在 `modules/<模块>/testing.ts` 中导出（第二个公开出口，只给测试用，生产代码 import 它 lint 报错）。模型网关和推送的「假实现」也从各自的 `testing.ts` 导出（第 7 节）。
 - 断言数据库状态时，只读被测模块自己的表，并通过该模块 `testing.ts` 导出的查询工具进行。
 - 实现：运维在 T-015 把 R1 扩展到 `apps/server/test/**`，并允许 `testing.ts` 作为出口。
+- **装配入口**（总负责人裁定，T-020 同步）：集成测试需要启动整个应用时，可以 import `src/app.module.ts`、`src/main.ts`（只此两个；扩展名省略也识别）。这两个文件只负责「把模块装起来」，不含业务逻辑，引用它们不会让测试依赖模块内部。识别扩展名省略后，业务模块 import 不带扩展名的 `app.module` 也会被 R2 拦下（T-015 顺带修正了此前的漏检）。
+- `testing.ts` 是给测试用的第二出口：生产代码（任何非测试文件）import 任何模块的 `testing.ts`（含本模块的）都报错；测试文件（集成测试、模块目录内的单元测试）可以引用其他模块的 `testing.ts`。
 
 ### 3.3 AI 评测不直连模型（R4 范围，QA 建议 4）
 
 - `packages/ai-evals` 只放评测用例、评分细则和评分逻辑，**不 import 供应商 SDK、不出现供应商域名**（R4 扩展到该目录）。
 - 评测要调用被测模型和评审模型时，一律经服务器的模型网关（`ModelGatewayPort`，用途 `admin_eval`，计费账户 `platform`）。这与 AI 方案一致：`docs/ai/eval-plan.md` 规定评测和评审费用记平台账户，而只有经网关调用才会冻结、结算、记用量，平台每日上限也才生效。
 - 推荐入口：服务器内的命令行脚本（例如 `apps/server/src/cli/run-evals.ts`）启动平台内核与 model-access，读取 `packages/ai-evals` 的用例逐条调用网关；或在 L2 前由 AI 负责人提出「管理后台评测接口」的契约变更申请。具体选哪种由 AI 负责人建工程时决定，两种都满足本规则。
+
+### 3.4 服务器代码约定（ADR-0015，T-020）
+
+平台内核怎么用见 `docs/backend/kernel.md`（后端维护）；这里只列**必须**遵守、违反即验收不通过的几条：
+
+1. **依赖注入一律显式 `@Inject(令牌)`**：构造函数的每个参数都写 `@Inject(TOKEN)`，令牌是提供方模块 `index.ts` 导出的 `Symbol`。`tsconfig` 只开 `experimentalDecorators`，**不开** `emitDecoratorMetadata`（开发用 tsx、生产用 esbuild、测试用 Vitest 都不生成装饰器元数据，靠参数类型自动注入会在某种运行方式下悄悄失败）。
+2. **事件订阅者必须幂等、必须快**：分发器把订阅者和收件箱记录放在同一事务里执行，重复投递只生效一次；订阅者里只做数据库写入，目标 1 秒内完成，模型调用、发推送、批量处理等耗时工作转成 pg-boss 任务（队列名 `模块.动作`）。连续失败 10 次的事件被标记 `dead_at`，需要人工处理。
+3. **服务器启动不自动迁移**：部署时先执行迁移命令，再启动新版本（运维写进操作手册）。迁移必须兼容上一版代码（先加列再使用；删列分两次发布）。
+4. **生产运行方式**：`pnpm --filter @weiban/server build` 打包（esbuild，契约一起打进去），`node dist/main.js` 运行；不需要先构建契约包，也不使用导入条件 `weiban-dist`。
 
 ## 4. 接口与错误
 
@@ -91,7 +113,7 @@ PRD 参数（P-01～P-30）在代码中**只在一个文件**里映射：`apps/s
 1. 每个模块用 Drizzle 的 `pgSchema('模块名')` 定义自己的表；**禁止跨 schema 外键和跨 schema JOIN**。
 2. 主键统一使用 **UUIDv7**（按时间递增的全局唯一 ID，存为 `uuid` 类型）。
 3. 时间统一 `timestamptz`，存 UTC。「用户当地日期」类字段（生日、认识日期）用 `date`。
-4. 迁移文件由 drizzle-kit 生成，放 `apps/server/drizzle/`，**只增不改**：已合并到 `main` 的迁移文件禁止修改，要改就新增一个迁移。
+4. 迁移文件由 drizzle-kit 生成，放 `apps/server/drizzle/`，**只增不改**：已合并到 `main` 的迁移文件禁止修改，要改就新增一个迁移（执行器按校验和拦下被改动的已执行迁移）。**每个迁移必须同时提交手写的回滚脚本** `NNNN_名字.down.sql`（ADR-0015；缺少时执行器拒绝执行，测试也会检查），并通过「执行 → 回滚 → 再执行」测试。回滚脚本不参与校验和，发现写错可以经评审修正。生产环境出问题优先用新迁移向前修复；会删除已有数据的回滚，执行前必须先备份数据库。
 5. 删除策略：用户可恢复的删除（如角色 30 天恢复）用 `deleted_at` 软删除，到期由定时任务物理删除；注销账号必须物理删除（见 `security-and-privacy.md`）。
 6. 每个模块的表结构在其模块负责人的交接说明中列出（表、主要字段、索引、谁写谁读）。
 7. **钱一律用整数「微元」**（1 元 = 1,000,000 微元，数据库 `bigint`，接口字段名以 `Micros` 结尾），禁止用浮点数存储或计算金额；换算成「元」只在显示时进行（`billing.md`）。

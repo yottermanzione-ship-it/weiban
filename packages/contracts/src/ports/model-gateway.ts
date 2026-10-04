@@ -5,6 +5,8 @@
  * 用量记账、日志消毒。
  *
  * v0.2（T-009）：BYOK 删除。billingOwner 的含义改为「扣哪个账户」：user = 用户钱包，platform = 平台账户。
+ * v1.1（T-020）：新增用途 safety_followup、behavior_planning；安全优先透支（safetyPriority、
+ * SAFETY_OVERDRAFT_PURPOSES）；countAsBackground；meta.conversationKind。
  * 请求 / 响应的消息结构仍是草案：AI 系统负责人可提出变更申请（流式输出、多模态、工具调用），架构批准后修改。
  */
 import { z } from 'zod';
@@ -29,6 +31,8 @@ export const ModelPurpose = z.enum([
   'admin_public_update_search', // 管理员：公开动态候选搜索
   'admin_eval', // 管理员：评测集、排行榜自测
   'admin_upstream_test', // 管理员：上游连通测试与恢复探测
+  'safety_followup', // v1.1：安全关怀次日跟进（SAFE-06 第 6 条），不受后台预算限制
+  'behavior_planning', // v1.1：行为规划决策层（PRD PLAN-03）；是否计入后台预算看 countAsBackground
 ]);
 export type ModelPurpose = z.infer<typeof ModelPurpose>;
 
@@ -43,8 +47,22 @@ export const BACKGROUND_PURPOSES: readonly ModelPurpose[] = [
   'moments',
 ];
 
-/** 不受用户后台每日上限约束、但仍从余额扣费的用途（安全优先）。 */
-export const BUDGET_EXEMPT_PURPOSES: readonly ModelPurpose[] = ['safety_check'];
+/**
+ * 不受用户后台每日上限约束、但仍从余额扣费的用途（安全优先）。对它们传 countAsBackground 无效。
+ * v1.1：加入 safety_followup（AI 负责人变更申请第 12 条，T-020 批准）。
+ */
+export const BUDGET_EXEMPT_PURPOSES: readonly ModelPurpose[] = ['safety_check', 'safety_followup'];
+
+/**
+ * 可以使用「安全优先透支」的用途（PRD MDL-10 第 6 条、pm-rulings-2 B4，billing.md 6.6 节）。
+ * 只有 GenerateTextInput.safetyPriority = true、用途在此列表、billingOwner = user 三者同时满足时才生效；
+ * 其他组合带 safetyPriority = true 一律返回 bad_request。
+ */
+export const SAFETY_OVERDRAFT_PURPOSES: readonly ModelPurpose[] = [
+  'chat_reply',
+  'safety_check',
+  'safety_followup',
+];
 
 /** 计费账户：user = 用户钱包；platform = 平台账户（只用于 admin_* 用途）。 */
 export const BillingOwner = z.enum(['user', 'platform']);
@@ -78,8 +96,27 @@ export interface GenerateTextInput {
   responseFormat?: 'text' | 'json';
   /** 幂等键：同一键在 24 小时内重复调用，返回第一次的结果，不再冻结、不再扣费。 */
   idempotencyKey: string;
-  /** 记入用量记录，追查「变脸」用（AI 负责人申请，T-009 批准）。 */
-  meta?: { personaVersion?: number; promptTemplateVersion?: string; scenarioMode?: string };
+  /**
+   * 安全优先（v1.1，billing.md 6.6 节）：只有 ai-runtime 在安全关怀规则预筛命中高危信号（SAFE-06）时可以传 true。
+   * 效果：可用余额不足时允许透支到单独的小额上限；不突破平台每日总上限；每次实际透支写审计日志。
+   */
+  safetyPriority?: boolean;
+  /**
+   * 按「后台功能」计入用户后台每日上限（v1.1，billing.md 第 7 节第 1 条）。用于用途本身不在
+   * BACKGROUND_PURPOSES、但这次是系统主动发起的调用，例如为主动行为做的行为规划（PLAN-03）、朋友圈配图。
+   * 只能让调用更受限：BACKGROUND_PURPOSES 中的用途不传也照样计入；BUDGET_EXEMPT_PURPOSES 中的用途忽略此项。
+   */
+  countAsBackground?: boolean;
+  /**
+   * 记入用量记录，追查「变脸」用（AI 负责人申请，T-009 批准）。
+   * v1.1：conversationKind（私聊 / 群聊）供管理后台用量明细显示（ADM-08）。
+   */
+  meta?: {
+    personaVersion?: number;
+    promptTemplateVersion?: string;
+    scenarioMode?: string;
+    conversationKind?: 'direct' | 'group';
+  };
 }
 
 export interface GenerateTextOutput {
