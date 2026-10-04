@@ -12,5 +12,8 @@
 | `pnpm --filter @weiban/server db:migrate` / `db:rollback` / `db:status` | 数据库迁移执行 / 回滚 / 查看                          |
 | `pnpm --filter @weiban/server dev`                                      | 本机启动（热重载），默认 http://127.0.0.1:3000/health |
 | `pnpm --filter @weiban/server build`                                    | 生产构建到 `dist/`                                    |
+| `pnpm --filter @weiban/server identity <命令>`                          | 账号运维：创建管理员、重置密码、生成邀请码等          |
+
+账号模块（identity）说明：`docs/backend/identity.md`。
 
 模块边界规则 R1～R10 由 `packages/eslint-config` 检查；新增 `src/modules/<模块名>/` 前先在 `packages/eslint-config/architecture.js` 登记层级（运维维护）。
