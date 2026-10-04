@@ -4,7 +4,15 @@
  * 硬性边界字段规则见 docs/architecture/hard-boundaries.md 第 2 节。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, LocalDate, Timestamp, cursorPage, defineEndpoint } from '../common.js';
+import {
+  API_PREFIX,
+  Id,
+  LocalDate,
+  Timestamp,
+  cursorPage,
+  defineEndpoint,
+  tolerantEnum,
+} from '../common.js';
 import { CharacterCard } from '../character-card.js';
 
 // ---------- 分类（硬性边界的判定依据） ----------
@@ -62,12 +70,14 @@ export const CharacterClassificationInput = z
 export type CharacterClassificationInput = z.infer<typeof CharacterClassificationInput>;
 
 /**
- * 形象图生成策略（SAFE-01、MED-02）：
- * forbidden 真人分类（公众人物、身边真人、历史人物）不生成本人形象；
- * allowed 虚构、原创角色。
- * v0.2：原裁定 9.2 第 1、3 条（古风插画、仅个人测试）已删除，去掉 classical_art_only、personal_only。
+ * 形象图生成策略（SAFE-01、MED-02，推导规则见 hard-boundaries.md 第 2 节）：
+ * - forbidden：真人分类（公众人物、身边真人；以及未经管理员标注的历史人物）不生成本人形象；
+ * - classical_art_only：管理员在角色库标注的历史人物（预设角色），只能生成古风插画风格的本人形象，
+ *   不生成写实照片风格（PRD SAFE-01 第 6 条、pm-rulings-2 A1）；
+ * - allowed：虚构、原创角色。
+ * v0.2 曾删除 classical_art_only；v1.1（T-020）按裁定 A1 恢复。响应中用接收端容错解析。
  */
-export const PortraitPolicy = z.enum(['forbidden', 'allowed']);
+export const PortraitPolicy = z.enum(['forbidden', 'classical_art_only', 'allowed']);
 export type PortraitPolicy = z.infer<typeof PortraitPolicy>;
 
 /** 读取时返回：分类事实 + 系统推导结果（只读，任何接口都不能写入推导字段）。 */
@@ -81,7 +91,8 @@ export const CharacterClassification = z
       /** = 非真人 且 非儿童（两条底线，hard-boundaries.md 第 2 节）；同时决定能否使用无审查模型。 */
       adultModeEligible: z.boolean(),
       romanceAllowed: z.boolean(),
-      portraitPolicy: PortraitPolicy,
+      /** 不认识的取值解析为 'unsupported'（v1.1），客户端按 forbidden 对待。 */
+      portraitPolicy: tolerantEnum(PortraitPolicy),
       /** 是否开启「不冒充本人公开言论」检查（SAFE-02），= basis 为 real_person。 */
       publicStatementGuard: z.boolean(),
     }),

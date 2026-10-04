@@ -59,7 +59,7 @@ HTTP 接口用 `defineEndpoint({ method, path, auth, params, query, body, respon
 
 ## 当前范围
 
-v1.0 覆盖 L0、L1 所需：账号、界面偏好、模型选择与计费、角色基础信息与展示字段、通讯录、会话与消息、同步、推送、陪伴设置（秒回 / 拆条）、媒体（头像）、领域事件、端口。后续层由架构负责人按 `docs/architecture/dev-plan.md` 扩展。
+v1.1 在 v1.0 基础上补了计费（安全优先透支、后台计入规则）、管理后台用量查询（ADM-08，L2 使用）、默认识图模型和历史人物形象策略。v1.0 覆盖 L0、L1 所需：账号、界面偏好、模型选择与计费、角色基础信息与展示字段、通讯录、会话与消息、同步、推送、陪伴设置（秒回 / 拆条）、媒体（头像）、领域事件、端口。后续层由架构负责人按 `docs/architecture/dev-plan.md` 扩展。
 
 ## 版本规则
 
@@ -67,24 +67,47 @@ v1.0 覆盖 L0、L1 所需：账号、界面偏好、模型选择与计费、角
    - 次版本加一：新增接口、事件、可选字段、错误码、消息类型、更新类型、WebSocket 帧类型、设置分块、通知种类，以及下面第 3 条列出的「接收端容错字段」的新取值。
    - 主版本加一：删除字段、改字段含义、改必填，以及给**其他**出现在服务器响应里的枚举新增取值（旧客户端会解析失败）。要把这类枚举改成可以平滑扩展，先把它改为 `tolerantEnum`（这本身是次版本变更），之后新增取值就是次版本变更。
 2. 0.x 阶段（尚无实现代码）允许不兼容改动，只升次版本；该阶段的记录保留在下方「变更记录」。
+   - **1.1 的一次性例外**（架构负责人 T-020 决定）：1.1 给三个**响应枚举**新增了取值（`PortraitPolicy` 加 `classical_art_only`、`SpendCategory` 加 `planning`、`AdminCatalogEntry.defaultFor` 加 `vision`），按第 1 条本应升主版本。理由是此时**还没有任何客户端实现**（网页 D-L0-12、管理后台 D-L0-13、安卓 D-L0-18 均未开工，服务器也还没有用到这三个枚举的模块），不存在会解析失败的旧客户端；同时把前两个改为接收端容错（第 3 条）。**从第一个客户端任务合并起，此例外失效**，严格按第 1 条执行。
 3. **接收端容错**（客户端必须容忍新版本服务器发来的、它不认识的东西）。契约里由「接收端 schema」把不认识的值解析为保留字 `unsupported`，不报错：
 
-   | 位置                                           | 接收端 schema                    | 客户端行为                   |
-   | ---------------------------------------------- | -------------------------------- | ---------------------------- |
-   | 消息内容 `Message.content`                     | `ReceivedMessageContent`         | 显示「当前版本不支持此消息」 |
-   | 更新日志 `UserUpdate`（补拉接口、`update` 帧） | `ReceivedUserUpdatePayload`      | 推进游标，跳过               |
-   | 设置分块 `settings.updated.section`            | `tolerantEnum(SettingsSection)`  | 忽略                         |
-   | 服务器 WebSocket 帧 `ServerFrame`              | 内置                             | 忽略                         |
-   | 错误码 `ApiError.error.code`、帧里的 `code`    | `ReceivedErrorCode`              | 按通用失败提示               |
-   | 通知种类 `NotificationPayload.kind`            | `tolerantEnum(NotificationKind)` | 按普通通知显示               |
-   | 模型能力 `ModelInfo.capabilities`              | `tolerantEnum(ModelCapability)`  | 不显示该能力                 |
-   | 主题 `UserPreferences.theme`                   | `ReceivedAppTheme`               | 按默认主题 green 显示        |
+   | 位置                                                             | 接收端 schema                    | 客户端行为                   |
+   | ---------------------------------------------------------------- | -------------------------------- | ---------------------------- |
+   | 消息内容 `Message.content`                                       | `ReceivedMessageContent`         | 显示「当前版本不支持此消息」 |
+   | 更新日志 `UserUpdate`（补拉接口、`update` 帧）                   | `ReceivedUserUpdatePayload`      | 推进游标，跳过               |
+   | 设置分块 `settings.updated.section`                              | `tolerantEnum(SettingsSection)`  | 忽略                         |
+   | 服务器 WebSocket 帧 `ServerFrame`                                | 内置                             | 忽略                         |
+   | 错误码 `ApiError.error.code`、帧里的 `code`                      | `ReceivedErrorCode`              | 按通用失败提示               |
+   | 通知种类 `NotificationPayload.kind`                              | `tolerantEnum(NotificationKind)` | 按普通通知显示               |
+   | 模型能力 `ModelInfo.capabilities`                                | `tolerantEnum(ModelCapability)`  | 不显示该能力                 |
+   | 主题 `UserPreferences.theme`                                     | `ReceivedAppTheme`               | 按默认主题 green 显示        |
+   | 形象策略 `CharacterClassification.derived.portraitPolicy`（1.1） | `tolerantEnum(PortraitPolicy)`   | 按 `forbidden` 对待          |
+   | 流水用途分组 `LedgerEntry.category`（1.1）                       | `tolerantEnum(SpendCategory)`    | 归入「其他」显示             |
+   | 用量明细用途 `AdminUsageRecord.purpose`（1.1，管理后台）         | `tolerantEnum(ModelPurpose)`     | 显示原始值或「其他」         |
    - 已知类型但内容不合法的，仍然校验失败（不掩盖服务器的错误）。
    - 服务器发出数据前用**严格**版本校验：`MessageContent`、`UserUpdatePayload`、`ServerFrameStrict`、`ErrorCode` 等。客户端发给服务器的数据（请求体、`ClientFrame`）一律严格。
    - `unsupported` 是保留字，任何真实的类型名、枚举值都不得使用它。
    - 安卓端（Kotlin）不运行 Zod，必须在反序列化配置里实现同样的行为（未知多态类型 → 默认分支，未知枚举值 → 兜底值），由 Android 负责人在 D-L0-18 落实并用协议用例验证。
 
 ## 变更记录
+
+### 1.1（2026-10-05，T-020）
+
+依据：`docs/product/input/2026-10-04-pm-rulings-2.md`（A1、B4、B5）、PRD v1.3（MDL-05、MDL-10 第 6 条、ADM-08、PLAN-03）、AI 负责人变更申请（`docs/ai/runtime-overview.md` 第 15 节第 5、12、14、15 条）。设计见 `docs/architecture/billing.md` v1.2（6.6、7、10.1 节）、`hard-boundaries.md` v1.2。
+
+- **新增**：
+  - 用途 `safety_followup`（安全关怀次日跟进，放入 `BUDGET_EXEMPT_PURPOSES`，不属于后台用途）、`behavior_planning`（行为规划）。
+  - 安全优先透支：`SAFETY_OVERDRAFT_PURPOSES`、`GenerateTextInput.safetyPriority`、`ReserveInput.safetyOverdraft`、`ReserveOutput.usedSafetyOverdraft`、`AdminLedgerEntry.safetyOverdraft`。
+  - `GenerateTextInput.countAsBackground` / `ReserveInput.countAsBackground`：非后台用途的主动调用按后台计入后台每日上限（只能更严）。
+  - `GenerateTextInput.meta.conversationKind`。
+  - 管理后台用量与费用（ADM-08）：`ModelAccessAdminUsageEndpoints`（`POST /admin/model/usage/summary`、`/records`、`/export`）及 `AdminUsageFilter`、`AdminUsageTotals`、`AdminUsageSummary*`、`AdminUsageRecord`、`ADMIN_USAGE_EXPORT_MAX_ROWS`。
+  - `ReleaseOutput`（平台吸收成本）。
+- **修改**：
+  - `PortraitPolicy` 恢复 `classical_art_only`（裁定 A1：管理员标注的历史人物只生成古风插画形象）；`CharacterClassification.derived.portraitPolicy` 改为接收端容错；`PolicyPort.checkImageGeneration` 新增可选 `style`。
+  - `SpendCategory` 新增 `planning`；`LedgerEntry.category` 改为接收端容错。
+  - `AdminCatalogEntry.defaultFor` 新增 `vision`（平台默认识图模型，裁定 B5）。
+  - `BillingReservationPort.release` 返回值由 `void` 改为 `ReleaseOutput`（尚无实现，调用方不受影响）。
+- 响应枚举新增取值按次版本处理的理由见「版本规则」第 2 条的一次性例外。
+- 复核（无改动）：成人模式模型注释已在 1.0 按 B1、B2 修正（`UpdateModelSelectionRequest`、`ModelSelection.adult`）。
 
 ### 1.0（2026-10-05，T-014 / D-L0-04）
 

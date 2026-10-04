@@ -1,6 +1,6 @@
 # 仓库目录结构（monorepo）
 
-> 负责人：架构负责人 · v1.1 · 2026-10-04 · 来源任务：T-004，T-009 修订（安卓原生客户端）
+> 负责人：架构负责人 · v1.2 · 2026-10-05 · 来源任务：T-004，T-009 修订（安卓原生客户端），T-020 修订（新增 health、plaza 模块目录）
 > 技术选型见 `docs/decisions/ADR-0003-tech-stack.md`、安卓见 `ADR-0011`。
 
 ## 1. 一句话
@@ -60,11 +60,13 @@ apps/server/
 │     ├─ contacts/
 │     ├─ chat/
 │     ├─ policy/
+│     ├─ health/                  （L3，v1.3：经期日记，`health-data.md`）
 │     ├─ ai-runtime/              内部结构由 AI 负责人决定
 │     ├─ moments/                 （L4）
 │     ├─ growth/                  （L3）
 │     ├─ importer/                （L6）
-│     └─ library/                 （L6）
+│     ├─ library/                 （L6）
+│     └─ plaza/                   （L7，v1.3：人设广场，`persona-plaza.md`）
 ├─ drizzle/                       数据库迁移文件（按时间顺序，所有模块共用一条迁移序列）
 └─ test/                          跨模块集成测试、端到端场景测试
 ```

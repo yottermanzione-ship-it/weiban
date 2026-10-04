@@ -1,6 +1,6 @@
 # 微伴系统架构总览
 
-> 负责人：架构负责人 · 版本 v1.2 · 2026-10-05 · 来源任务：T-004，T-009 修订（安卓原生、平台中转计费），T-014 修订（主题偏好同步、计费端口拆分、删除年龄确认）
+> 负责人：架构负责人 · 版本 v1.3 · 2026-10-05 · 来源任务：T-004，T-009 修订（安卓原生、平台中转计费），T-014 修订（主题偏好同步、计费端口拆分、删除年龄确认），T-020 修订（PRD v1.3：新增 `health`、`plaza` 模块；用量记录金额快照）
 > 技术选型见 `docs/decisions/ADR-0003-tech-stack.md`、安卓客户端见 `ADR-0011`；模块通信规则见 `ADR-0004`；消息可靠方案见 `ADR-0005`、`ADR-0013` 和 `message-reliability.md`；账号与密钥安全见 `ADR-0006` 和 `security-and-privacy.md`；计费见 `ADR-0012` 和 `billing.md`；硬性边界执行见 `ADR-0007` 和 `hard-boundaries.md`。本文不重复这些文档的细节。
 
 ## 1. 一句话
@@ -23,7 +23,7 @@ graph TB
     subgraph APP[app：一个 Node.js 进程（NestJS 模块化单体）]
       API[HTTP 接口 /api/v1]
       WS[WebSocket 网关 /api/v1/ws]
-      MODS[业务模块<br/>identity · model-access · billing · characters · contacts · chat<br/>realtime · push · media · policy · ai-runtime<br/>moments · growth · importer · library]
+      MODS[业务模块<br/>identity · model-access · billing · characters · contacts · chat<br/>realtime · push · media · policy · health · ai-runtime<br/>moments · growth · importer · library · plaza]
       KERNEL[平台内核<br/>事件发件箱 · pg-boss 任务队列 · 日志脱敏 · 加密 · 时钟]
     end
     PG[(PostgreSQL 18<br/>每模块一个 schema<br/>+ 任务队列 + 发件箱 + pgvector)]
@@ -70,9 +70,11 @@ graph TB
 | `policy` 硬性边界 | 根据角色分类推导「成人模式资格（非儿童且非真人）、能否用无审查模型、能否生成形象、能否恋爱」等，所有相关写操作和模型调用前都要过它；只管硬性边界，不管产品体验规则；无自有业务表，只有审计日志 | 第 10 章 | 中层 | 规则由架构定义，后端实现 | L0 |
 | `ai-runtime` AI 运行时 | 角色怎么说话、什么时候说：上下文构建、记忆、回复计划（节奏、拆条、人设小巧思）、安全关怀识别、情景模式、推演、主动消息调度、群聊发言调度、识图与语音编排、陪伴设置（秒回、拆条、贴合度、情景模式、主动消息频率） | CHAT-04～09/14、MEM、SIM、SOC-02/04～06、MED、SAFE-06/08、MODE | 上层 | **AI 系统负责人**（内部设计见 `docs/ai/`） | L1 |
 | `moments` 朋友圈 | 动态、点赞、评论、可见范围、新动态红点 | SOC-07～09 | 上层 | 后端（数据）；内容生成由 ai-runtime 通过端口写入 | L4 |
-| `growth` 养成 | 熟悉度、认识天数与纪念日、卡片、成就 | GRW-03～06 | 上层 | 后端 | L3 |
+| `growth` 养成 | 熟悉度、认识天数与纪念日、卡片、成就；【v1.3】共同领养的宠物（只升不降的成长与亲密值） | GRW-03～06、PLAY-02 | 上层 | 后端 | L3（宠物 L6） |
 | `importer` 导入 | 导入聊天记录、发言人识别、原文加密暂存与按期删除、生成草稿任务 | CHR-08、CHR-09 | 上层 | 后端（文件与删除）+ AI（分析生成） | L6 |
-| `library` 收藏与分享 | 收藏、分享图数据准备（含真人内容时带标注标记；是否过滤成人内容以 PRD v1.2 为准） | CHAT-11、EXP-01 | 上层 | 后端 | L6 |
+| `library` 收藏与分享 | 收藏、分享图数据准备（含真人内容时带标注标记；成人模式消息、带「健康」标记的消息不能选入分享图，PRD v1.3 EXP-01 第 6 条） | CHAT-11、EXP-01 | 上层 | 后端 | L6 |
+| `health` 健康数据（v1.3） | 经期日记：记录（整行加密）、预测、按角色授权；只经 `HealthReadPort` 向 ai-runtime 提供「最少够用」的状态摘要（详见 `health-data.md`） | PLAY-01 | 中层 | 后端（AI 负责使用方式） | L3 |
+| `plaza` 人设广场（v1.3） | 作品与版本快照、点赞评论、举报、广场昵称、复制与应用关系、管理员下架与更正（详见 `persona-plaza.md`） | PLZ-01～08、ADM-09 | 上层 | 后端（AI 负责隐私识别） | L7 |
 
 客户端（不是服务器模块，列出便于对照）：
 
@@ -105,16 +107,20 @@ graph TB
 | policy | 无业务表 | 判定审计写入 `platform.audit_log` | — |
 | ai-runtime | `ai_runtime` | 由 AI 负责人设计（见 `docs/ai/runtime-overview.md`），预计包括：`message_annotations`（AI 对消息的附加信息：发送理由、卡片版本、小巧思类型，按 messageId 关联，**不存进 chat**）、`memories`（含向量与可见范围）、`conversation_summaries`、`agreements`、`daily_events`、`storylines`、`mood_states`、`reply_plans`（持久化的回复计划）、`proactive_ledger`（主动消息配额账本）、`companion_settings`、`safety_states` | 高（记忆含用户隐私） |
 | moments | `moments` | `posts`、`post_media`、`likes`、`comments`、`visibility` | 中 |
-| growth | `growth` | `familiarity`、`familiarity_ledger`、`anniversaries`、`cards`、`achievements` | 低 |
+| growth | `growth` | `familiarity`、`familiarity_ledger`、`anniversaries`、`cards`、`achievements`；v1.3：`pets`、`pet_interactions`、`pet_album`（宠物图鉴图片在 media 素材库） | 低 |
 | importer | `importer` | `import_jobs`、`import_raw`（**原文，加密，默认生成后删除**） | **最高**（第三方聊天原文） |
 | library | `library` | `favorites`（收藏时复制一份内容快照，原消息删了收藏还在） | 中 |
+| health（v1.3） | `health` | `period_entries`、`period_settings`（内容整行用**用户数据密钥**加密，日期也在密文里）、`grants`（授权的角色） | **最高**（敏感个人信息） |
+| plaza（v1.3） | `plaza` | `author_profiles`、`works`、`work_versions`（白名单快照，只增不改）、`adoptions`（复制 / 应用关系）、`likes`、`comments`、`reports`、`badges` | 中（公开内容，但含作者身份） |
+
+v1.3 另有两处跨模块数据规则：`chat.messages` 新增通用属性 `labels`（v1 只有 `health`，由服务器端发送方写入，push / library / growth 据此排除，见 `health-data.md` 第 5 节）；`characters` 的自定义角色新增 `origin`（是否复制自广场）和只增标记 `everPrivatePerson`（`hard-boundaries.md` 第 2、6 节）。
 
 几条关键数据规则：
 1. **消息是唯一事实来源**：会话里出现过的每一句话都只存在 `chat.messages`。AI 记忆、摘要、推送内容、分享图都是从消息派生的副产品，可以重建，不能反过来覆盖消息。
 2. **日常事件是角色生活的唯一底稿**（PRD 原则 9）：存在 `ai_runtime.daily_events`；主动消息、朋友圈、时间线引用事件 ID，不各自编造。
 3. **成人模式内容带标记**：消息和记忆都有 `scope` 字段（`normal` / `adult`），由服务器按当时的情景模式写入，客户端不能指定。v1.1 起它是数据能力而非硬性边界，哪些地方按它过滤以 PRD 为准（见 `hard-boundaries.md`）。
 4. **注销与删除**：`identity` 发出 `identity.user_deletion_requested`，每个拥有用户数据的模块必须订阅并彻底删除自己的那部分，完成后回报（见 `security-and-privacy.md`）。
-5. **钱只记在 billing**：余额、流水、价格只存在 `billing`；`model-access` 的用量记录只存 token 等技术数据和扣费流水 ID。流水只增不改（`billing.md` 第 5 节）。
+5. **钱只记在 billing**：余额、流水、价格只存在 `billing`，它们是唯一权威；`model-access` 的用量记录存 token 等技术数据、扣费流水 ID，以及（v1.3 起）结算时 billing 返回的金额**快照**，只供管理后台统计（ADM-08），由对账逐条核对，不能反过来修改余额。流水只增不改（`billing.md` 第 5 节、10.1 节）。
 
 ## 5. 模块之间怎么通信
 
@@ -192,7 +198,9 @@ AI 运行时**不能**：直接读写 `chat` 等其他模块的表；绕过模�
 | `ModelGatewayPort` | model-access | ai-runtime、importer | 调用模型（唯一出口）、查询模型可用状态 |
 | `BillingReservationPort` | billing | **只有 model-access**（R9，lint 按 import 检查） | 冻结 / 结算 / 解冻（`billing.md`） |
 | `BillingReadPort` | billing | ai-runtime 等 | 读可用余额、后台预算余量（`getSpendStatus`） |
-| `PolicyPort` | policy | characters、ai-runtime、chat、media、library、model-access | 硬性边界判定（含无审查模型闸门） |
+| `PolicyPort` | policy | characters、ai-runtime、chat、media、library、model-access、plaza | 硬性边界判定（含无审查模型闸门） |
+
+v1.3 规划中的端口（随对应层的契约任务写入，设计见引用文档）：`HealthReadPort`（health → **只有** ai-runtime，L3，`health-data.md` 第 4 节）、`CharacterPlazaPort`（characters → plaza，L7，`persona-plaza.md` 第 2 节）。
 
 ## 6. 运行形态
 
@@ -212,5 +220,7 @@ AI 运行时**不能**：直接读写 `chat` 等其他模块的表；绕过模�
 | `hard-boundaries.md` | 硬性边界的系统级执行（第 9 问） |
 | `billing.md` | 计费：上游与平台密钥、价目表、余额、流水、扣费、对账 |
 | `prd-answers.md` | PRD 8.1 九个问题的回答汇总 |
-| `dev-plan.md` | L0～L6 开发任务清单 |
+| `dev-plan.md` | L0～L7 开发任务清单 |
+| `health-data.md` | 经期日记的加密、隔离与「健康」标记（v1.3） |
+| `persona-plaza.md` | 人设广场的模块、数据结构与分类锁定（v1.3） |
 | `tech-debt.md` | 技术债登记 |

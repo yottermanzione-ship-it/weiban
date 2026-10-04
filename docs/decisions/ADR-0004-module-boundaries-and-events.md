@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 状态 | 已采纳；T-009 在中层新增 `billing` 模块（ADR-0012），`model-access` 单向调用 `billing`；T-014 在分层图补上 `library`（上层），「用工具强制」改为本地 ESLint 规则 |
+| 状态 | 已采纳；T-009 在中层新增 `billing` 模块（ADR-0012），`model-access` 单向调用 `billing`；T-014 在分层图补上 `library`（上层），「用工具强制」改为本地 ESLint 规则；T-020 新增 `health`（中层）、`plaza`（上层），循环依赖检查由 dependency-cruiser 实现（engineering-standards R11） |
 | 日期 | 2026-10-04 |
 | 提出人 | 架构负责人（T-004） |
 | 批准人 | 架构负责人 |
@@ -64,14 +64,18 @@ ADR-0001 定了「模块化单体」：一个程序，内部模块严格分开�
             ┌──────────────── 平台内核 platform（所有模块可用）────────────────┐
             │ 配置 · 日志脱敏 · 数据库 · 事件总线/发件箱 · 任务队列 · 时钟 · 加密 · 鉴权守卫 │
             └─────────────────────────────────────────────────────────────────┘
- 上层（玩法与智能）  ai-runtime   moments   growth   importer   library
+ 上层（玩法与智能）  ai-runtime   moments   growth   importer   library   plaza → ai-runtime
                          │  调用端口 ↓       订阅事件 ↑
- 中层（领域）        chat   contacts   characters   model-access → billing   policy
+ 中层（领域）        chat   contacts   characters   model-access → billing   policy   health
                          │  调用端口 ↓
  底层（基础）        identity   realtime(同步与在线)   push   media
 ```
 
 - `library`（收藏与分享，L6）放在**上层**（T-014 补充）：它要读 `chat` 的消息（收藏时复制内容快照）、调用 `policy` 判断分享图标注、读 `characters` 资料，都是中层；而没有任何中层或底层模块需要调用它。与 T-011 在 `architecture.js` 中的临时登记一致。
+- v1.3 新增两个模块（T-020，设计见 `docs/architecture/health-data.md`、`persona-plaza.md`）：
+  - `health`（经期日记，L3）放**中层**：它只被上层的 ai-runtime 读取，自己只订阅 contacts、identity 的事件，不调用任何上层模块。
+  - `plaza`（人设广场，L7）放**上层**：它调用 characters、contacts、policy、media（中层 / 底层），并**单向**调用同层 ai-runtime 的检测端口（隐私识别、儿童特征）；ai-runtime 不得 import plaza。
+  - 两个模块的目录在建工程时由运维登记到 `packages/eslint-config/architecture.js`（分层与 schema 名单）。
 
 - 上层可以调用中层、底层的端口；**下层永远不 import 上层**，只通过发布事件让上层知道。
 - 特别规定：**`chat` 不得 import `ai-runtime`**，也不得出现任何「如果是 AI 就……」的分支。角色在聊天模块眼里只是 `kind = character` 的参与者。

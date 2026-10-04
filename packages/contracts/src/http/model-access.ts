@@ -5,9 +5,19 @@
  * v0.2（T-009）：BYOK 全部删除。用户不再填写密钥，只选择平台模型目录里的模型（modelKey）。
  * 安全规则：任何响应都不包含上游密钥原文或密文，只有前 4 后 4 位掩码（docs/architecture/security-and-privacy.md 第 3 节）。
  * 价格不在本文件：见 http/billing.ts（价目表归 billing 模块）。模型清单、标签、排行榜数据由 AI 负责人维护（docs/ai/model-catalog.md）。
+ * v1.1（T-020）：默认识图模型（defaultFor 新增 vision）；管理后台用量与费用查询（ADM-08，billing.md 10.1 节）。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, NoContent, Timestamp, defineEndpoint, tolerantEnum } from '../common.js';
+import {
+  API_PREFIX,
+  Id,
+  NoContent,
+  Timestamp,
+  cursorPage,
+  defineEndpoint,
+  tolerantEnum,
+} from '../common.js';
+import { BillingOwner, ModelPurpose } from '../ports/model-gateway.js';
 
 // ---------- 模型目录 ----------
 
@@ -225,8 +235,13 @@ export const AdminCatalogEntry = z.object({
   tags: z.array(z.string().max(16)).max(10),
   leaderboardRank: z.number().int().positive().nullable(),
   sortOrder: z.number().int(),
-  /** 作为平台默认聊天 / 后台模型（各最多一个）；无审查模型不能设为默认。 */
-  defaultFor: z.array(z.enum(['chat', 'background'])),
+  /**
+   * 作为平台默认模型（每种最多一个）；无审查模型不能设为默认。
+   * v1.1：vision = 平台默认识图模型（pm-rulings-2 B5、PRD ADM-05 第 9 条）：用途为 vision 时，
+   * 若用户（或角色覆盖）解析出的聊天模型没有 vision 能力，网关改用它，费用照常从用户余额扣；
+   * 必须具备 vision 能力；未设置时网关返回 capability_missing（billing.md 3.2 节）。
+   */
+  defaultFor: z.array(z.enum(['chat', 'background', 'vision'])),
   enabled: z.boolean(),
   updatedAt: Timestamp,
 });
@@ -291,5 +306,149 @@ export const ModelAccessAdminEndpoints = {
     body: AdminCatalogEntryWrite,
     response: AdminCatalogEntry,
     summary: '新增或修改模型目录条目；改指上游、停用都记审计日志。path 中的 modelKey 需 URL 编码',
+  }),
+} as const;
+
+// ---------- 管理后台：用量与费用（ADM-08，v1.1） ----------
+// 设计见 docs/architecture/billing.md 10.1 节。数据来自 model_access.usage_records：每次调用一行，
+// 结算时把 billing 返回的扣费、成本、平台吸收成本记在同一行（快照，权威仍是 billing 流水，对账第 ② 层校验）。
+// 查询条件较多（多选列表），所以三个查询接口都用 POST + 请求体；它们只读，不创建任何数据。
+// 任何响应都不含消息内容、提示词或模型输出。
+
+/** 分组维度。day 按北京时间自然日（与供应商账单日一致，billing.md 第 7 节）。 */
+export const AdminUsageDimension = z.enum([
+  'user',
+  'character',
+  'model',
+  'purpose',
+  'upstream',
+  'day',
+]);
+export type AdminUsageDimension = z.infer<typeof AdminUsageDimension>;
+
+export const AdminUsageCallStatus = z.enum(['succeeded', 'failed']);
+
+/** 筛选条件（可组合，均为「且」）。时间为左闭右开区间 [from, to)，界面按北京时间换算，可精确到小时。 */
+export const AdminUsageFilter = z.object({
+  from: Timestamp,
+  to: Timestamp,
+  userIds: z.array(Id).min(1).max(50).optional(),
+  characterIds: z.array(Id).min(1).max(50).optional(),
+  modelKeys: z.array(ModelKey).min(1).max(50).optional(),
+  purposes: z.array(ModelPurpose).min(1).optional(),
+  billingOwner: BillingOwner.optional(),
+  status: AdminUsageCallStatus.optional(),
+  upstreamIds: z.array(Id).min(1).max(50).optional(),
+});
+export type AdminUsageFilter = z.infer<typeof AdminUsageFilter>;
+
+/** 一组调用的合计。金额为微元：charged = 用户被扣（售价），cost = 平台成本（成本价），absorbedCost = 失败调用由平台吸收的成本。 */
+export const AdminUsageTotals = z.object({
+  calls: z.number().int().nonnegative(),
+  failedCalls: z.number().int().nonnegative(),
+  inputTokens: z.number().int().nonnegative(),
+  cachedInputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  totalTokens: z.number().int().nonnegative(),
+  /** 其中按估算得出的 token 数（上游没返回用量时），界面据此显示估算占比。 */
+  estimatedTokens: z.number().int().nonnegative(),
+  chargedMicros: z.number().int().nonnegative(),
+  costMicros: z.number().int().nonnegative(),
+  absorbedCostMicros: z.number().int().nonnegative(),
+});
+export type AdminUsageTotals = z.infer<typeof AdminUsageTotals>;
+
+export const AdminUsageSummaryRequest = z.object({
+  filter: AdminUsageFilter,
+  /** 1～2 个分组维度，不能重复。 */
+  groupBy: z
+    .array(AdminUsageDimension)
+    .min(1)
+    .max(2)
+    .refine((dims) => new Set(dims).size === dims.length, { message: '分组维度不能重复' }),
+  /** key_asc：按分组键排序（趋势图用 day）；charged_desc：按用户扣费从高到低（「前 10 名」用）。 */
+  sort: z.enum(['key_asc', 'charged_desc']).default('key_asc'),
+  limit: z.number().int().min(1).max(1000).default(200),
+});
+
+export const AdminUsageSummaryRow = AdminUsageTotals.extend({
+  /** 与 groupBy 一一对应的键：userId / characterId（无角色为空字符串）/ modelKey / 用途 / upstreamId / 日期。 */
+  keys: z.array(z.string()).min(1).max(2),
+});
+
+export const AdminUsageSummary = z.object({
+  rows: z.array(AdminUsageSummaryRow),
+  /** 整个筛选范围的合计（不受 limit 影响）。 */
+  totals: AdminUsageTotals,
+  /** 分组行数超过 limit 被截断。 */
+  truncated: z.boolean(),
+});
+export type AdminUsageSummary = z.infer<typeof AdminUsageSummary>;
+
+/** 一次调用的明细（ADM-08 第 5 条）。没有任何内容字段。 */
+export const AdminUsageRecord = z.object({
+  usageRecordId: Id,
+  createdAt: Timestamp,
+  /** 发起调用的用户；平台账户的调用为发起操作的管理员。 */
+  userId: Id,
+  characterId: Id.nullable(),
+  conversationKind: z.enum(['direct', 'group']).nullable(),
+  /** 不认识的用途解析为 'unsupported'。 */
+  purpose: tolerantEnum(ModelPurpose),
+  billingOwner: BillingOwner,
+  modelKey: ModelKey,
+  upstreamId: Id,
+  inputTokens: z.number().int().nonnegative(),
+  cachedInputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  estimated: z.boolean(),
+  latencyMs: z.number().int().nonnegative(),
+  /** 首字耗时；非流式调用为 null。 */
+  ttftMs: z.number().int().nonnegative().nullable(),
+  status: AdminUsageCallStatus,
+  /** 失败时的错误类别（网关内部错误码，不含上游原文）。 */
+  errorCode: z.string().max(64).nullable(),
+  retryCount: z.number().int().nonnegative(),
+  chargedMicros: z.number().int().nonnegative(),
+  costMicros: z.number().int().nonnegative(),
+  absorbedCostMicros: z.number().int().nonnegative(),
+  priceVersionId: Id.nullable(),
+  /** 这次扣费动用了安全优先透支（billing.md 6.6 节）。 */
+  safetyOverdraft: z.boolean(),
+});
+export type AdminUsageRecord = z.infer<typeof AdminUsageRecord>;
+
+/** 导出上限：一次最多导出的明细行数，超过时 truncated = true，请缩小筛选范围。 */
+export const ADMIN_USAGE_EXPORT_MAX_ROWS = 50_000 as const;
+
+export const ModelAccessAdminUsageEndpoints = {
+  usageSummary: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/model/usage/summary`,
+    auth: 'admin',
+    body: AdminUsageSummaryRequest,
+    response: AdminUsageSummary,
+    summary: '用量与费用汇总：按 1～2 个维度分组，筛选条件可组合（只读查询）',
+  }),
+  listUsageRecords: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/model/usage/records`,
+    auth: 'admin',
+    body: z.object({
+      filter: AdminUsageFilter,
+      cursor: z.string().optional(),
+      limit: z.number().int().min(1).max(200).default(50),
+    }),
+    response: cursorPage(AdminUsageRecord),
+    summary: '逐次调用明细（按时间倒序，只读查询），不含任何内容',
+  }),
+  exportUsageRecords: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/model/usage/export`,
+    auth: 'admin',
+    body: z.object({ filter: AdminUsageFilter }),
+    response: z.object({ items: z.array(AdminUsageRecord), truncated: z.boolean() }),
+    summary:
+      '导出明细（最多 ADMIN_USAGE_EXPORT_MAX_ROWS 行，管理后台转成 CSV）；每次导出写审计日志（ADM-08 第 6 条）',
   }),
 } as const;

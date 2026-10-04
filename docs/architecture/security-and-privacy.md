@@ -1,6 +1,6 @@
 # 账号、密钥安全、日志脱敏与彻底删除
 
-> 负责人：架构负责人 · v1.1 · 2026-10-04 · 来源任务：T-004，T-009 修订
+> 负责人：架构负责人 · v1.2 · 2026-10-05 · 来源任务：T-004，T-009 修订，T-020 修订（经期日记用用户数据密钥加密，详见 `health-data.md`）
 > 回答 PRD 8.1 第 1 问（登录方式）、第 3 问（密钥加密、日志脱敏、注销彻底删除及验证方法）、第 6 问中的「导入原文删除」。决策记录见 `docs/decisions/ADR-0006-auth-and-secrets.md`；平台上游密钥见 `ADR-0012`。
 > v1.1 改动：BYOK 取消，需要加密保存的「API 密钥」从「用户自己的密钥」变为「管理员登记的平台上游密钥」（第 3 节）；客户端增加安卓原生 App（令牌存储见第 2 节）。
 
@@ -49,10 +49,10 @@
   └─ 存放：platform.user_data_keys（只存被 KEK 加密后的密文 + kek_version）
         │ 加密
         ▼
-平台上游密钥、用户导入的原始聊天记录
-  └─ 存放：model_access.upstreams.secret_ciphertext（平台 DEK）、importer.import_raw（用户 DEK）
+平台上游密钥、用户导入的原始聊天记录、经期日记（v1.2）
+  └─ 存放：model_access.upstreams.secret_ciphertext（平台 DEK）、importer.import_raw（用户 DEK）、health.period_entries / period_settings 的 payload（用户 DEK，`health-data.md`）
   └─ 算法：AES-256-GCM，每条记录独立随机 nonce
-  └─ 附加认证数据（AAD）：上游密钥用 `upstream:{upstreamId}`，导入原文用 `import:{jobId}:{userId}` —— 把密文和这一行绑定，挪到别的行就解不开
+  └─ 附加认证数据（AAD）：上游密钥用 `upstream:{upstreamId}`，导入原文用 `import:{jobId}:{userId}`，经期日记用 `health:{entryId}:{userId}` —— 把密文和这一行绑定，挪到别的行就解不开
 ```
 
 ### 3.2 规则

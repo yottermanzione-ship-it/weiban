@@ -4,9 +4,18 @@
  *
  * 金额一律为整数「微元」：1 元 = 1,000,000 微元（字段名以 Micros 结尾）。客户端显示时统一换算，
  * 不要用浮点数做加减。
+ * v1.1（T-020）：SpendCategory 新增 planning 并改为接收端容错；AdminLedgerEntry 新增 safetyOverdraft。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, LocalDate, Timestamp, cursorPage, defineEndpoint } from '../common.js';
+import {
+  API_PREFIX,
+  Id,
+  LocalDate,
+  Timestamp,
+  cursorPage,
+  defineEndpoint,
+  tolerantEnum,
+} from '../common.js';
 import { ModelKey } from './model-access.js';
 
 // ---------- 基础类型 ----------
@@ -18,8 +27,20 @@ export const PositiveMoneyMicros = z.number().int().positive();
 
 export const MICROS_PER_YUAN = 1_000_000 as const;
 
-/** 计费用途分组（用量页按此分类）。与 ports/model-gateway.ts 的 ModelPurpose 一一对应，由服务器换算。 */
-export const SpendCategory = z.enum(['chat', 'background', 'media', 'import', 'safety', 'admin']);
+/**
+ * 计费用途分组（用量页按此分类）。由服务器从 ports/model-gateway.ts 的 ModelPurpose 换算，
+ * 对照表见 billing.md 5.2 节。v1.1：新增 planning（行为规划，PRD MDL-05 第 1 条）；
+ * 响应中改用接收端容错（tolerantEnum），以后新增分组是次版本变更。
+ */
+export const SpendCategory = z.enum([
+  'chat',
+  'background',
+  'media',
+  'import',
+  'safety',
+  'admin',
+  'planning',
+]);
 
 // ---------- 钱包 ----------
 
@@ -65,8 +86,8 @@ export const LedgerEntry = z.object({
   /** 加钱为正，扣钱为负。 */
   amountMicros: MoneyMicros,
   balanceAfterMicros: MoneyMicros,
-  /** 扣费类：用途分组、模型、角色。 */
-  category: SpendCategory.nullable(),
+  /** 扣费类：用途分组、模型、角色。不认识的分组解析为 'unsupported'（v1.1）。 */
+  category: tolerantEnum(SpendCategory).nullable(),
   modelKey: ModelKey.nullable(),
   characterId: Id.nullable(),
   /** 管理员操作的原因 / 冲正说明。 */
@@ -198,6 +219,8 @@ export const AdminLedgerEntry = LedgerEntry.extend({
   operatorUserId: Id.nullable(),
   /** 平台账户上的「失败调用仍被上游收费」记录。 */
   absorbed: z.boolean(),
+  /** v1.1：这笔扣费动用了安全优先透支额度（billing.md 6.6 节）。 */
+  safetyOverdraft: z.boolean(),
 });
 
 export const AdminAdjustmentRequest = z.object({
