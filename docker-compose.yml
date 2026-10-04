@@ -1,0 +1,43 @@
+# 本机开发环境：只有数据库（PostgreSQL 18 + pgvector）。
+# 用法见 docs/ops/local-dev.md。生产部署用 deploy/ 下的另一套文件（D-L0-14），不用这个。
+#
+# 起：docker compose up -d --wait     停：docker compose down
+# 数据存在命名卷 weiban-dev-pgdata 里，停掉、重启电脑都不会丢；
+# 只有执行 docker compose down -v（带 -v）才会连数据一起删除。
+#
+# 配置从根目录的 .env 读取（从 .env.example 复制）；没有 .env 时使用下面 :- 后面的默认值，
+# 默认值与 .env.example 一致。这些都是只在本机使用的开发值，不是生产机密。
+
+name: weiban-dev
+
+services:
+  postgres:
+    # pgvector 官方镜像 = PostgreSQL 官方镜像 + pgvector 扩展。版本写死，升级时改这里。
+    image: pgvector/pgvector:0.8.7-pg18-bookworm
+    container_name: weiban-dev-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-weiban}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-weiban_dev_only}
+      POSTGRES_DB: ${POSTGRES_DB:-weiban}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      # 只监听本机 127.0.0.1，局域网里的其他设备连不上
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      # PostgreSQL 18 起镜像的数据目录是 /var/lib/postgresql/18/docker，卷要挂在上一级 /var/lib/postgresql
+      - weiban-dev-pgdata:/var/lib/postgresql
+      # 首次创建数据库时执行一次：建测试库、开启 pgvector 扩展
+      - ./deploy/dev/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # 走 TCP（-h 127.0.0.1）检查：首次初始化期间的临时服务只开本地套接字，这样不会过早报「健康」
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  weiban-dev-pgdata:
+    name: weiban-dev-pgdata
