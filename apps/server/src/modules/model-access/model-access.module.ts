@@ -6,10 +6,7 @@
 import { Module } from '@nestjs/common';
 import { BILLING_CHARGE_QUERY_PORT, BillingModule } from '../billing/index.js';
 import { CatalogService } from './application/catalog.js';
-import {
-  EmptyPriceSource,
-  FailClosedModelPolicy,
-} from './application/defaults.js';
+import { EmptyPriceSource, FailClosedModelPolicy } from './application/defaults.js';
 import { ModelAccessLifecycle } from './application/lifecycle.js';
 import { UsageReconciliationService } from './application/reconciliation.js';
 import { ModelResolver, ModelStatusService } from './application/resolver.js';
