@@ -19,6 +19,7 @@ import {
   PriceTable,
   ReconciliationRun,
   Wallet,
+  type BillingChargeQueryPort,
   type BillingReadPort,
   type BillingReservationPort,
   type DeviceInfo,
@@ -29,7 +30,11 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../src/app.module.js';
 import { configureHttpApp } from '../src/main.js';
-import { BILLING_READ_PORT, BILLING_RESERVATION_PORT } from '../src/modules/billing/index.js';
+import {
+  BILLING_CHARGE_QUERY_PORT,
+  BILLING_READ_PORT,
+  BILLING_RESERVATION_PORT,
+} from '../src/modules/billing/index.js';
 import {
   BillingLifecycle,
   BillingTestQueries,
@@ -1000,6 +1005,36 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       expect(await reconciliation.chargesByUsage([tagged.usageRecordId])).toEqual([
         expect.objectContaining({ amountMicros: 10_000, costMicros: 5000, absorbed: false }),
       ]);
+
+      // BillingChargeQueryPort（契约 1.3）：按 ID 查、按北京日列出（含分页）、列出有价格的模型键
+      const query = app.get<BillingChargeQueryPort>(BILLING_CHARGE_QUERY_PORT);
+      const byId = await query.getChargesByUsageRecordIds([tagged.usageRecordId, uuid()]);
+      expect(byId).toEqual([
+        expect.objectContaining({
+          usageRecordId: tagged.usageRecordId,
+          amountMicros: 10_000,
+          costMicros: 5000,
+          absorbed: false,
+          chargedAt: clock.now().toISOString(),
+        }),
+      ]);
+      await expect(
+        query.getChargesByUsageRecordIds(Array.from({ length: 1001 }, () => uuid())),
+      ).rejects.toThrow();
+      const beijingDay = new Date(clock.now().getTime() + 8 * 3_600_000).toISOString().slice(0, 10);
+      const dayAll = await query.listChargesByDay(beijingDay);
+      expect(dayAll.items.map((i) => i.usageRecordId)).toContain(tagged.usageRecordId);
+      expect(dayAll.nextCursor).toBeNull();
+      const seen: string[] = [];
+      let cursor: string | undefined;
+      do {
+        const pg = await query.listChargesByDay(beijingDay, { cursor, limit: 1 });
+        seen.push(...pg.items.map((i) => i.ledgerEntryId));
+        cursor = pg.nextCursor ?? undefined;
+      } while (cursor);
+      expect(seen).toEqual(dayAll.items.map((i) => i.ledgerEntryId));
+      expect((await query.listChargesByDay('2000-01-01')).items).toEqual([]);
+      expect(await query.listActivePricedModelKeys()).toContain(MODEL);
 
       // 修好，避免影响后面的用例；清掉过期冻结
       await withClient((c) =>
