@@ -143,10 +143,7 @@
       "compositePrimaryKeys": {
         "event_inbox_consumer_event_id_pk": {
           "name": "event_inbox_consumer_event_id_pk",
-          "columns": [
-            "consumer",
-            "event_id"
-          ]
+          "columns": ["consumer", "event_id"]
         }
       },
       "uniqueConstraints": {},
@@ -472,12 +469,8 @@
           "tableFrom": "daily_spend",
           "tableTo": "accounts",
           "schemaTo": "billing",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["account_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -485,10 +478,7 @@
       "compositePrimaryKeys": {
         "daily_spend_account_id_day_pk": {
           "name": "daily_spend_account_id_day_pk",
-          "columns": [
-            "account_id",
-            "day"
-          ]
+          "columns": ["account_id", "day"]
         }
       },
       "uniqueConstraints": {},
@@ -681,12 +671,8 @@
           "tableFrom": "holds",
           "tableTo": "accounts",
           "schemaTo": "billing",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["account_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -906,12 +892,8 @@
           "tableFrom": "ledger_entries",
           "tableTo": "accounts",
           "schemaTo": "billing",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["account_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1057,12 +1039,8 @@
           "tableFrom": "price_items",
           "tableTo": "price_versions",
           "schemaTo": "billing",
-          "columnsFrom": [
-            "price_version_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["price_version_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1364,12 +1342,8 @@
           "tableFrom": "deletion_progress",
           "tableTo": "users",
           "schemaTo": "identity",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1377,10 +1351,7 @@
       "compositePrimaryKeys": {
         "deletion_progress_user_id_module_pk": {
           "name": "deletion_progress_user_id_module_pk",
-          "columns": [
-            "user_id",
-            "module"
-          ]
+          "columns": ["user_id", "module"]
         }
       },
       "uniqueConstraints": {},
@@ -1480,12 +1451,8 @@
           "tableFrom": "invites",
           "tableTo": "users",
           "schemaTo": "identity",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["created_by"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -1494,12 +1461,8 @@
           "tableFrom": "invites",
           "tableTo": "users",
           "schemaTo": "identity",
-          "columnsFrom": [
-            "used_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["used_by"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1619,12 +1582,8 @@
           "tableFrom": "notification_settings",
           "tableTo": "users",
           "schemaTo": "identity",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1665,12 +1624,8 @@
           "tableFrom": "preferences",
           "tableTo": "users",
           "schemaTo": "identity",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1747,12 +1702,8 @@
           "tableFrom": "profiles",
           "tableTo": "users",
           "schemaTo": "identity",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1869,12 +1820,8 @@
           "tableFrom": "sessions",
           "tableTo": "users",
           "schemaTo": "identity",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2038,10 +1985,7 @@
       "compositePrimaryKeys": {
         "character_overrides_user_id_character_id_pk": {
           "name": "character_overrides_user_id_character_id_pk",
-          "columns": [
-            "user_id",
-            "character_id"
-          ]
+          "columns": ["user_id", "character_id"]
         }
       },
       "uniqueConstraints": {},
@@ -2280,12 +2224,8 @@
           "tableFrom": "upstream_status",
           "tableTo": "upstreams",
           "schemaTo": "model_access",
-          "columnsFrom": [
-            "upstream_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["upstream_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }

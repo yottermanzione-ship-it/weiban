@@ -6,10 +6,7 @@
 import type { ModelCapability, UpstreamStatus } from '@weiban/contracts';
 
 export type UpstreamTestFailure =
-  | 'invalid_key'
-  | 'insufficient_balance'
-  | 'network_error'
-  | 'provider_error';
+  'invalid_key' | 'insufficient_balance' | 'network_error' | 'provider_error';
 
 /** 契约 ModelRefState.unavailableReason。 */
 export type UnavailableReason = 'model_removed' | 'provider_unavailable';
@@ -148,6 +145,25 @@ export function priceTier(prices: ModelTextPrices | undefined): PriceTier {
 
 /** 北京时间（与平台每日上限、供应商账单日一致，billing.md 10.1 第 4 条）。 */
 export const USAGE_DAY_TIME_ZONE = 'Asia/Shanghai';
+
+/** 北京时间固定 UTC+8、没有夏令时，所以自然日边界可以直接算。 */
+const BEIJING_OFFSET_MS = 8 * 3_600_000;
+
+/** 某时刻的北京日期 YYYY-MM-DD。 */
+export function beijingDay(at: Date): string {
+  return new Date(at.getTime() + BEIJING_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** 北京日期 → [当天 0 点, 次日 0 点)（UTC 时刻）。 */
+export function beijingDayRange(day: string): { from: Date; to: Date } {
+  const from = new Date(Date.parse(`${day}T00:00:00.000Z`) - BEIJING_OFFSET_MS);
+  return { from, to: new Date(from.getTime() + 86_400_000) };
+}
+
+/** 北京日期的前一天。 */
+export function previousBeijingDay(at: Date): string {
+  return beijingDay(new Date(at.getTime() - 86_400_000));
+}
 
 /** 列表游标：(created_at, id) 的 base64url。 */
 export function encodeCursor(createdAt: Date, id: string): string {

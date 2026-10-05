@@ -1,9 +1,9 @@
 /**
  * 外部能力的默认实现（在对应模块 / 契约方法就绪前使用，见 docs/backend/model-access.md 第 2 节）。
  */
-import type { PolicyDecision } from '@weiban/contracts';
+import type { PolicyDecision, UsageCharge, UsageChargePage } from '@weiban/contracts';
 import type { ModelTextPrices } from '../domain/rules.js';
-import type { ModelPolicy, ModelPriceSource } from '../tokens.js';
+import type { ChargeQuery, ModelPolicy, ModelPriceSource } from '../tokens.js';
 
 /**
  * policy 模块（D-L0-11）上线前的无审查模型闸门：**失败即拒绝**。
@@ -21,6 +21,27 @@ export class FailClosedModelPolicy implements ModelPolicy {
         ? { allowed: false, reason: 'model_not_allowed' }
         : { allowed: true },
     );
+  }
+}
+
+/** billing 还没实现 BillingChargeQueryPort 时抛出（调用方转成「暂不可用」）。 */
+export class ChargeQueryUnavailableError extends Error {
+  constructor() {
+    super('计费查询端口（BillingChargeQueryPort）尚未接入');
+    this.name = 'ChargeQueryUnavailableError';
+  }
+}
+
+/** billing 侧实现完成前的占位：任何调用都报「暂不可用」，不假装有数据。 */
+export class ChargeQueryUnavailable implements ChargeQuery {
+  getChargesByUsageRecordIds(): Promise<UsageCharge[]> {
+    return Promise.reject(new ChargeQueryUnavailableError());
+  }
+  listChargesByDay(): Promise<UsageChargePage> {
+    return Promise.reject(new ChargeQueryUnavailableError());
+  }
+  listActivePricedModelKeys(): Promise<string[]> {
+    return Promise.reject(new ChargeQueryUnavailableError());
   }
 }
 

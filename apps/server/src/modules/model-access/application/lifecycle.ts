@@ -1,6 +1,6 @@
 /**
  * model-access 的启动登记：删除清单（注销账号，security-and-privacy.md 5.1；billing.md 10.1 第 9 条）
- * 与事件订阅（角色被彻底删除时删掉该角色的单独模型设置，5.2 节）。
+ * 、事件订阅（角色被彻底删除时删掉该角色的单独模型设置，5.2 节）与每日用量对账定时任务。
  *
  * 删除清单范围：该用户的全局模型选择、角色单独模型、用量记录（含 user_id = 该用户的平台账户调用记录，
  * 即该管理员发起的 admin_* 调用）。上游与模型目录是平台数据，不属于任何用户。
@@ -11,13 +11,19 @@ import { and, count, eq } from 'drizzle-orm';
 import {
   DATABASE,
   EVENT_BUS,
+  JOB_QUEUE,
   USER_DATA_REGISTRY,
   type Database,
   type DbTx,
   type EventBus,
+  type JobQueue,
   type UserDataRegistry,
 } from '../../../platform/index.js';
 import { characterOverrides, selections, usageRecords } from '../infra/db/schema.js';
+import { UsageReconciliationService } from './reconciliation.js';
+
+/** 每天 3:45（北京时间）对前一天做用量对账（billing.md 8.2 第 ② 层；billing 的第 ①③ 层在 3:30）。 */
+export const RECONCILE_USAGE_JOB = 'model_access.reconcile_usage';
 
 @Injectable()
 export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
@@ -27,15 +33,22 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
     @Inject(DATABASE) private readonly database: Database,
     @Inject(EVENT_BUS) private readonly bus: EventBus,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
+    @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
+    @Inject(UsageReconciliationService)
+    private readonly reconciliation: UsageReconciliationService,
   ) {}
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     this.registry.register(this);
     this.bus.subscribe({
       consumer: 'model_access.on_contact_purged',
       eventType: 'contacts.contact_purged',
       handle: (event, tx) => this.onContactPurged(event.payload, tx),
     });
+    await this.jobs.work(RECONCILE_USAGE_JOB, async () => {
+      await this.reconciliation.runForYesterday();
+    });
+    await this.jobs.schedule(RECONCILE_USAGE_JOB, '45 3 * * *');
   }
 
   /** 角色被彻底删除：删除该用户对该角色的单独模型设置（可重复执行）。 */

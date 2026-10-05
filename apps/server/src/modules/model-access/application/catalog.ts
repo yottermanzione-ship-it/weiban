@@ -33,7 +33,13 @@ import {
 } from '../../../platform/index.js';
 import { hasAdultContent, priceTier, unavailableReason } from '../domain/rules.js';
 import { modelCatalog, upstreams } from '../infra/db/schema.js';
-import { MODEL_PRICE_SOURCE, type ModelPriceSource } from '../tokens.js';
+import {
+  MODEL_ACCESS_CHARGE_QUERY,
+  MODEL_PRICE_SOURCE,
+  type ChargeQuery,
+  type ModelPriceSource,
+} from '../tokens.js';
+import { ChargeQueryUnavailableError } from './defaults.js';
 
 type CatalogRow = typeof modelCatalog.$inferSelect;
 type CatalogWrite = z.infer<typeof AdminCatalogEntryWrite>;
@@ -74,6 +80,7 @@ export class CatalogService {
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(MODEL_PRICE_SOURCE) private readonly prices: ModelPriceSource,
+    @Inject(MODEL_ACCESS_CHARGE_QUERY) private readonly charges: ChargeQuery,
   ) {}
 
   // ---------- 管理后台 ----------
@@ -105,6 +112,8 @@ export class CatalogService {
       throw new AppError('bad_request', '停用的模型不能设为平台默认模型', { status: 422 });
     }
 
+    if (body.enabled) await this.requirePrice(body.modelKey);
+
     return this.database.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock($1)', [CATALOG_LOCK_KEY]);
       const [before] = await tx.db
@@ -129,7 +138,9 @@ export class CatalogService {
         const holders = await tx.db
           .select({ modelKey: modelCatalog.modelKey })
           .from(modelCatalog)
-          .where(sql`${use}::text = any(${modelCatalog.defaultFor}) and ${modelCatalog.modelKey} <> ${body.modelKey}`);
+          .where(
+            sql`${use}::text = any(${modelCatalog.defaultFor}) and ${modelCatalog.modelKey} <> ${body.modelKey}`,
+          );
         for (const h of holders) {
           await tx.db
             .update(modelCatalog)
@@ -228,7 +239,8 @@ export class CatalogService {
       capabilities: entry.capabilities as ModelCapability[],
       tags: entry.tags,
       leaderboardRank: entry.leaderboardRank,
-      available: unavailableReason(entry, (upstreamStatus as UpstreamStatus | null) ?? null) === null,
+      available:
+        unavailableReason(entry, (upstreamStatus as UpstreamStatus | null) ?? null) === null,
     }));
   }
 
@@ -276,6 +288,29 @@ export class CatalogService {
       entry: r.entry,
       upstreamStatus: (r.upstreamStatus as UpstreamStatus | null) ?? null,
     };
+  }
+
+  /**
+   * 契约 1.3：保存为启用时，当前生效价目表必须有这个模型的价格，否则 422 model_unavailable
+   * （billing.md 4.1、ADR-0017 第 1 条）。计费查询端口未接入时 503，不放行。
+   */
+  private async requirePrice(modelKey: string): Promise<void> {
+    let priced: string[];
+    try {
+      priced = await this.charges.listActivePricedModelKeys();
+    } catch (error) {
+      if (error instanceof ChargeQueryUnavailableError) {
+        throw new AppError('service_unavailable', '暂时无法查询价目表，模型未启用，请稍后再试');
+      }
+      throw error;
+    }
+    if (!priced.includes(modelKey)) {
+      throw new AppError(
+        'model_unavailable',
+        '当前生效的价目表里没有这个模型的价格：请先发布含该模型价格的价目表，再启用模型',
+        { status: 422 },
+      );
+    }
   }
 
   private async upstreamStatusOf(tx: DbTx, upstreamId: string): Promise<UpstreamStatus | null> {

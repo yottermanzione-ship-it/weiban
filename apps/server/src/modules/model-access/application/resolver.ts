@@ -139,7 +139,12 @@ export class ModelStatusService {
   async getStatus(userId: string, characterId: string | null): Promise<ModelStatus> {
     const picked = await this.resolver.pick(userId, 'chat', characterId);
     if (!picked) {
-      return { characterId, available: false, reason: 'not_configured', canFallbackToDefault: false };
+      return {
+        characterId,
+        available: false,
+        reason: 'not_configured',
+        canFallbackToDefault: false,
+      };
     }
     const reason = unavailableReason(picked.facts.entry, picked.facts.upstreamStatus);
     if (reason) {

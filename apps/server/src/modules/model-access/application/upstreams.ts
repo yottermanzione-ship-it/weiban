@@ -7,7 +7,7 @@
  * - 解密只在 withApiKey() 里发生（D-L0-09 的网关发请求那一刻用），用完即弃。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import type { Upstream, UpstreamStatus, UpstreamKind } from '@weiban/contracts';
+import type { AdminAlertFacts, Upstream, UpstreamKind, UpstreamStatus } from '@weiban/contracts';
 import { and, asc, eq } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
@@ -309,7 +309,10 @@ export class UpstreamService {
   }
 
   async get(upstreamId: string): Promise<UpstreamRow> {
-    const [row] = await this.database.db.select().from(upstreams).where(eq(upstreams.id, upstreamId));
+    const [row] = await this.database.db
+      .select()
+      .from(upstreams)
+      .where(eq(upstreams.id, upstreamId));
     if (!row) throw new AppError('not_found', '上游不存在');
     return row;
   }
@@ -318,7 +321,7 @@ export class UpstreamService {
 
   /**
    * 改上游状态（调用方已对上游行加锁）：写状态历史；可用性翻转时，对指向它的每个启用模型发
-   * model_access.model_status_changed；变为异常时写审计和错误日志（给管理员的通知渠道尚未实现）。
+   * model_access.model_status_changed；写审计、错误日志，并发管理员提醒 platform.admin_alert_raised（billing.md 8.4）。
    */
   private async applyStatus(
     tx: DbTx,
@@ -368,6 +371,14 @@ export class UpstreamService {
       },
       tx,
     );
+    const alert = upstreamAlert(next, wasUp, row.name);
+    if (alert) {
+      await this.outbox.publish(tx, 'platform.admin_alert_raised', 'model_access', {
+        ...alert,
+        dedupeKey: `${alert.kind}:${row.id}`,
+        refs: { upstreamId: row.id },
+      });
+    }
     if (!isUp) {
       // quota_exhausted = 总经理需要去供应商处充值（billing.md 3.1 第 5 条）
       this.log.error(
@@ -419,6 +430,42 @@ export class UpstreamService {
       );
     }
     return url;
+  }
+}
+
+/**
+ * 上游状态变化 → 管理员提醒（billing.md 8.4 节，契约 1.3）。载荷只有种类、级别、固定模板说明和上游 ID，
+ * 上游展示名是管理员自己起的平台数据，不含用户信息和密钥。恢复只在之前异常时发（info，只进列表）。
+ */
+export function upstreamAlert(
+  next: UpstreamStatus,
+  wasUp: boolean,
+  name: string,
+): Pick<AdminAlertFacts, 'kind' | 'severity' | 'summary'> | null {
+  const label = `上游「${name.slice(0, 40)}」`;
+  switch (next) {
+    case 'quota_exhausted':
+      return {
+        kind: 'upstream_quota_exhausted',
+        severity: 'critical',
+        summary: `${label}的平台余额已用完，请到供应商控制台充值`,
+      };
+    case 'invalid':
+      return {
+        kind: 'upstream_invalid',
+        severity: 'critical',
+        summary: `${label}的平台密钥无效或已被作废，请在管理后台更换密钥`,
+      };
+    case 'unavailable':
+      return {
+        kind: 'upstream_unavailable',
+        severity: 'warning',
+        summary: `${label}重试后仍不可用，相关模型暂时不能使用`,
+      };
+    case 'active':
+      return wasUp
+        ? null
+        : { kind: 'upstream_recovered', severity: 'info', summary: `${label}已恢复可用` };
   }
 }
 

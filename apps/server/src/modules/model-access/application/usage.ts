@@ -311,8 +311,7 @@ export class AdminUsageService {
       dims.map((_, i) => sql.raw(`k${i}`)),
       sql`, `,
     );
-    const order =
-      req.sort === 'charged_desc' ? sql`charged_micros desc, ${groupCols}` : groupCols;
+    const order = req.sort === 'charged_desc' ? sql`charged_micros desc, ${groupCols}` : groupCols;
     const grouped = await this.database.db.execute<TotalsRow & Record<string, string>>(sql`
       select ${keyCols}, ${TOTALS_SQL}
         from ${usageRecords}
