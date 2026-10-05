@@ -110,6 +110,7 @@ export const ledgerEntries = billingSchema.table(
       .where(sql`${t.type} = 'charge' and ${t.absorbed} = false`),
     index('ledger_entries_account_created_idx').on(t.accountId, t.createdAt, t.id),
     index('ledger_entries_created_idx').on(t.createdAt),
+    index('ledger_entries_usage_record_idx').on(t.usageRecordId),
     check(
       'ledger_entries_type_check',
       sql`${t.type} in ('admin_grant', 'admin_deduct', 'charge', 'refund', 'adjustment')`,
@@ -255,6 +256,8 @@ export const reconciliationRuns = billingSchema.table(
     staleHolds: integer('stale_holds').notNull(),
     usageWithoutCharge: integer('usage_without_charge').notNull(),
     chargeWithoutUsage: integer('charge_without_usage').notNull(),
+    usageReconciledAt: tz('usage_reconciled_at'),
+    usageAmountMismatch: integer('usage_amount_mismatch').notNull().default(0),
     upstreamDiffs: jsonb('upstream_diffs').notNull(),
     absorbedMicros: money('absorbed_micros').notNull(),
     details: jsonb('details').notNull(),

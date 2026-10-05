@@ -34,11 +34,11 @@
 | 令牌 | 契约 | 现在绑定的 | 换成真实实现的时机 |
 |---|---|---|---|
 | `MODEL_ACCESS_POLICY` | `PolicyPort.checkModelForCharacter` | `FailClosedModelPolicy`：**失败即拒绝**——任何角色都不能用 adult_content 模型，普通模型放行 | policy 模块（D-L0-11）导出令牌后，在 `model-access.module.ts` 改为 `useExisting` |
-| `MODEL_ACCESS_CHARGE_QUERY` | `BillingChargeQueryPort`（契约 1.3） | `ChargeQueryUnavailable`：调用即报「暂不可用」——**启用模型返回 503**（不放行未查价的模型），用量对账跳过并写错误日志 | billing 实现并导出令牌后改为 `useExisting`（另开任务） |
+| `MODEL_ACCESS_CHARGE_QUERY` | `BillingChargeQueryPort`（契约 1.3） | `BILLING_CHARGE_QUERY_PORT`：真实计费查询实现（T-028） | 已绑定 `useExisting` |
 | `MODEL_PRICE_SOURCE` | 无（契约没有「读当前价目表单价」） | `EmptyPriceSource`：价格档位一律显示「中等」 | 需要契约变更申请，见交接说明 |
 | `UPSTREAM_PROBE` | 无（模块内部） | `OpenAiCompatibleProbe` | D-L0-09 的适配器可替换 |
 
-**注意**：在 billing 接上 `BillingChargeQueryPort` 之前，管理后台**无法启用任何模型**（503）。这是有意的：不查价就启用会让模型出现在列表里却调用失败。
+**T-028 接续**：真实计费查询已接入。管理员先发布含价格的价目表，再启用目录模型；未发布价格仍返回422。价格档位与角色policy的接入仍按后续任务执行。
 
 ## 3. 表（schema `model_access`）
 

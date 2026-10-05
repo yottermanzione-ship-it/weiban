@@ -71,3 +71,5 @@ export class IdentityTestQueries {
     return parts.join('\n');
   }
 }
+export { LoginThrottle } from './infra/login-throttle.js';
+export { throttleKey } from './domain/rules.js';

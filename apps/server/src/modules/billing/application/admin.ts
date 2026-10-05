@@ -7,6 +7,7 @@ import type {
   AdminAdjustmentRequest,
   AdminLedgerEntry,
   IdentityAccountStatusPort,
+  IdentityDirectoryPort,
   UpstreamBill,
 } from '@weiban/contracts';
 import { and, desc, eq } from 'drizzle-orm';
@@ -23,7 +24,7 @@ import {
   type Clock,
   type Database,
 } from '../../../platform/index.js';
-import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
+import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_DIRECTORY_PORT } from '../../identity/index.js';
 import { daysBetween, localDate, PLATFORM_TIME_ZONE } from '../domain/local-time.js';
 import { accounts, ledgerEntries, upstreamBills } from '../infra/db/schema.js';
 import { available, Ledger, type LedgerRow } from './ledger.js';
@@ -56,14 +57,14 @@ export class BillingAdminService {
     @Inject(Ledger) private readonly ledger: Ledger,
     @Inject(PlatformBudget) private readonly budget: PlatformBudget,
     @Inject(IDENTITY_ACCOUNT_STATUS_PORT) private readonly status: IdentityAccountStatusPort,
+    @Inject(IDENTITY_DIRECTORY_PORT) private readonly directory: IdentityDirectoryPort,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   /**
-   * 所有用户钱包概况。username 暂为空字符串：identity 的端口还没有「按 ID 取用户名」的方法，
-   * 已提契约变更申请（交接说明）；批准前管理后台用用户 ID 显示。
+   * 所有用户钱包概况。用户名通过 identity 目录端口按500个ID分批读取，不复制到计费表。
    */
   async listAccounts(): Promise<Summary[]> {
     const since = new Date(this.clock.nowMs() - 30 * DAY_MS);
@@ -83,9 +84,16 @@ export class BillingAdminService {
         ORDER BY a.created_at, a.id`,
       [since],
     );
+    const usernames: Record<string, string> = {};
+    for (let offset = 0; offset < rows.length; offset += 500) {
+      Object.assign(
+        usernames,
+        await this.directory.getUsernames(rows.slice(offset, offset + 500).map((r) => r.user_id)),
+      );
+    }
     return rows.map((r) => ({
       userId: r.user_id,
-      username: '',
+      username: usernames[r.user_id] ?? '',
       balanceMicros: Number(r.balance),
       heldMicros: Number(r.held),
       spentLast30DaysMicros: Math.max(0, Number(r.spent ?? 0)),

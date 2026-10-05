@@ -4,13 +4,9 @@
  * ModelResolver、UpstreamService.withApiKey / reportStatus、UsageRecorder、ModelStatusService。
  */
 import { Module } from '@nestjs/common';
-import { BillingModule } from '../billing/index.js';
+import { BILLING_CHARGE_QUERY_PORT, BillingModule } from '../billing/index.js';
 import { CatalogService } from './application/catalog.js';
-import {
-  ChargeQueryUnavailable,
-  EmptyPriceSource,
-  FailClosedModelPolicy,
-} from './application/defaults.js';
+import { EmptyPriceSource, FailClosedModelPolicy } from './application/defaults.js';
 import { ModelAccessLifecycle } from './application/lifecycle.js';
 import { UsageReconciliationService } from './application/reconciliation.js';
 import { ModelResolver, ModelStatusService } from './application/resolver.js';
@@ -44,8 +40,7 @@ import {
     { provide: MODEL_ACCESS_POLICY, useClass: FailClosedModelPolicy },
     // billing 读价目表的端口方法批准后改为真实实现（见交接说明契约变更申请）
     { provide: MODEL_PRICE_SOURCE, useClass: EmptyPriceSource },
-    // billing 实现并导出 BillingChargeQueryPort 的令牌后改为 useExisting（契约 1.3，另开任务）
-    { provide: MODEL_ACCESS_CHARGE_QUERY, useClass: ChargeQueryUnavailable },
+    { provide: MODEL_ACCESS_CHARGE_QUERY, useExisting: BILLING_CHARGE_QUERY_PORT },
   ],
 })
 export class ModelAccessModule {}

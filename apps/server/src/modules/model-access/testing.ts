@@ -17,3 +17,4 @@ export { UsageRecorder } from './application/usage.js';
 export { UsageReconciliationService } from './application/reconciliation.js';
 export { ModelAccessLifecycle, RECONCILE_USAGE_JOB } from './application/lifecycle.js';
 export type { ModelTextPrices } from './domain/rules.js';
+export { CatalogService } from './application/catalog.js';

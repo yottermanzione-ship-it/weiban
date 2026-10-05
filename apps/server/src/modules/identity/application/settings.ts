@@ -11,6 +11,7 @@ import type {
   AccountStatus,
   AppTheme,
   IdentityAccountStatusPort,
+  IdentityDirectoryPort,
   IdentityReadPort,
   NotificationSettings,
   Profile,
@@ -19,7 +20,7 @@ import type {
   UserPreferences,
 } from '@weiban/contracts';
 import { UpdateNotificationSettingsRequest } from '@weiban/contracts';
-import { eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   AppError,
@@ -95,7 +96,9 @@ function changedKeys<P extends object>(
 }
 
 @Injectable()
-export class SettingsService implements IdentityReadPort, IdentityAccountStatusPort {
+export class SettingsService
+  implements IdentityReadPort, IdentityAccountStatusPort, IdentityDirectoryPort
+{
   constructor(
     @Inject(DATABASE) private readonly database: Database,
     @Inject(OUTBOX) private readonly outbox: Outbox,
@@ -271,6 +274,25 @@ export class SettingsService implements IdentityReadPort, IdentityAccountStatusP
       .from(users)
       .where(eq(users.id, userId));
     return (row?.status as AccountStatus | undefined) ?? null;
+  }
+
+  async getUsernames(userIds: readonly string[]): Promise<Record<string, string>> {
+    if (userIds.length > 500) throw new AppError('bad_request', '一次最多查询 500 个用户 ID');
+    if (userIds.length === 0) return {};
+    const rows = await this.database.db
+      .select({ id: users.id, username: users.username })
+      .from(users)
+      .where(inArray(users.id, [...new Set(userIds)]));
+    return Object.fromEntries(rows.map((row) => [row.id, row.username]));
+  }
+
+  async listAdminUserIds(): Promise<string[]> {
+    const rows = await this.database.db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.role, 'admin'), eq(users.status, 'active')))
+      .orderBy(asc(users.id));
+    return rows.map((row) => row.id);
   }
 }
 
