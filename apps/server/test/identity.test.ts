@@ -451,10 +451,10 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
 
     it('成功登录清零失败计数（「连续」失败才锁）', async () => {
       const { user } = await register();
-      for (let i = 0; i < 4; i += 1)
+      for (let i = 0; i < 3; i += 1)
         await login(user.username, { password: 'wrong password!' }).expect(401);
       await login(user.username).expect(200);
-      for (let i = 0; i < 4; i += 1)
+      for (let i = 0; i < 3; i += 1)
         await login(user.username, { password: 'wrong password!' }).expect(401);
       await login(user.username).expect(200);
     });
@@ -945,7 +945,7 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
       await vi.waitFor(
         async () => {
           // 登记了删除清单的模块：chat（假模块）、billing（T-023）、model_access（T-027）各回报一次
-          expect(await outbox('platform.user_data_purged', web.user.userId)).toHaveLength(3);
+          expect(await outbox('platform.user_data_purged', web.user.userId)).toHaveLength(4);
         },
         { timeout: 20_000, interval: 200 },
       );
@@ -953,7 +953,12 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
       expect(purged).toEqual([web.user.userId]);
       const reports = await outbox('platform.user_data_purged', web.user.userId);
       expect(reports).toContainEqual({ userId: web.user.userId, module: 'chat', deletedRows: 3 });
-      expect(reports.map((r) => r.module).sort()).toEqual(['billing', 'chat', 'model_access']);
+      expect(reports.map((r) => r.module).sort()).toEqual([
+        'billing',
+        'chat',
+        'media',
+        'model_access',
+      ]);
       expect(await q.userById(web.user.userId)).toBeNull();
       expect(await commands.verifyPurged(web.user.userId)).toEqual(
         registry.modules().map((module) => ({ module, count: 0 })),

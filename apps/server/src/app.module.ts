@@ -5,6 +5,7 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import { BillingModule } from './modules/billing/index.js';
 import { IdentityModule } from './modules/identity/index.js';
+import { MediaModule } from './modules/media/index.js';
 import { ModelAccessModule } from './modules/model-access/index.js';
 import { PlatformModule, type PlatformOptions } from './platform/index.js';
 
@@ -13,7 +14,13 @@ export class AppModule {
   static forRoot(options: PlatformOptions): DynamicModule {
     return {
       module: AppModule,
-      imports: [PlatformModule.forRoot(options), IdentityModule, BillingModule, ModelAccessModule],
+      imports: [
+        PlatformModule.forRoot(options),
+        IdentityModule,
+        BillingModule,
+        ModelAccessModule,
+        MediaModule,
+      ],
     };
   }
 }

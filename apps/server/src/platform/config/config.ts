@@ -16,6 +16,26 @@ const booleanFlag = z
   .transform((value) => value === '1' || value === 'true');
 
 export const EnvSchema = z.object({
+  MEDIA_STORAGE: z.enum(['disk', 's3']).default('disk'),
+  MEDIA_DISK_ROOT: z.string().min(1).default('.data/media'),
+  MEDIA_PUBLIC_BASE_URL: z
+    .url()
+    .refine((value) => {
+      const u = new URL(value);
+      return (
+        ['http:', 'https:'].includes(u.protocol) &&
+        !u.username &&
+        !u.password &&
+        !u.search &&
+        !u.hash
+      );
+    }, '必须是无认证、查询或片段的 HTTP(S) 地址')
+    .default('http://127.0.0.1:3000'),
+  MEDIA_S3_BUCKET: z.string().min(1).optional(),
+  MEDIA_S3_REGION: z.string().min(1).default('auto'),
+  MEDIA_S3_ENDPOINT: z.url().optional(),
+  MEDIA_S3_CREDENTIALS_FILE: z.string().min(1).optional(),
+  MEDIA_S3_FORCE_PATH_STYLE: booleanFlag,
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   /** 进程角色（overview.md 第 6 节）：web 只开 HTTP；worker 只跑事件分发和任务；all 两者都做。 */
   APP_ROLE: z.enum(['web', 'worker', 'all']).default('all'),
@@ -53,6 +73,16 @@ export const EnvSchema = z.object({
 export const DEV_PLATFORM_DAILY_CAP_MICROS = 20_000_000;
 
 export interface AppConfig {
+  readonly media: {
+    readonly driver: 'disk' | 's3';
+    readonly diskRoot: string;
+    readonly publicBaseUrl: string;
+    readonly s3Bucket: string | null;
+    readonly s3Region: string;
+    readonly s3Endpoint: string | null;
+    readonly s3CredentialsFile: string | null;
+    readonly s3ForcePathStyle: boolean;
+  };
   readonly nodeEnv: 'development' | 'test' | 'production';
   readonly role: 'web' | 'worker' | 'all';
   readonly http: {
@@ -104,7 +134,29 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (production && e.BILLING_PLATFORM_DAILY_CAP_MICROS === undefined) {
     throw new ConfigError(['BILLING_PLATFORM_DAILY_CAP_MICROS：生产环境必须配置平台每日总上限']);
   }
+  if (e.MEDIA_STORAGE === 's3' && (!e.MEDIA_S3_BUCKET || !e.MEDIA_S3_CREDENTIALS_FILE)) {
+    throw new ConfigError([
+      'MEDIA_S3_BUCKET / MEDIA_S3_CREDENTIALS_FILE：S3 存储必须配置桶和凭据文件',
+    ]);
+  }
+  if (
+    production &&
+    !e.MEDIA_PUBLIC_BASE_URL.startsWith('https://') &&
+    env['MEDIA_PUBLIC_BASE_URL']
+  ) {
+    throw new ConfigError(['MEDIA_PUBLIC_BASE_URL：生产环境必须使用 HTTPS']);
+  }
   return {
+    media: {
+      driver: e.MEDIA_STORAGE,
+      diskRoot: e.MEDIA_DISK_ROOT,
+      publicBaseUrl: e.MEDIA_PUBLIC_BASE_URL,
+      s3Bucket: e.MEDIA_S3_BUCKET ?? null,
+      s3Region: e.MEDIA_S3_REGION,
+      s3Endpoint: e.MEDIA_S3_ENDPOINT ?? null,
+      s3CredentialsFile: e.MEDIA_S3_CREDENTIALS_FILE ?? null,
+      s3ForcePathStyle: e.MEDIA_S3_FORCE_PATH_STYLE,
+    },
     nodeEnv: e.NODE_ENV,
     role: e.APP_ROLE,
     http: { host: e.HOST, port: e.PORT, trustProxy: parseTrustProxy(e.HTTP_TRUST_PROXY) },
