@@ -1207,9 +1207,14 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         username: expect.stringMatching(/^payer_/),
         lastRetriggeredAt: null,
       });
-      expect(mine?.modules).toEqual([
-        { module: 'billing', purged: false, deletedRows: null, purgedAt: null },
-      ]);
+      // T-027 起 model_access 也登记了删除清单
+      expect(mine?.modules).toHaveLength(2);
+      expect(mine?.modules).toEqual(
+        expect.arrayContaining([
+          { module: 'billing', purged: false, deletedRows: null, purgedAt: null },
+          { module: 'model_access', purged: false, deletedRows: null, purgedAt: null },
+        ]),
+      );
       await http().get('/api/v1/admin/account-deletions', user.token).expect(401);
 
       const retried = PendingAccountDeletion.parse(
@@ -1226,10 +1231,12 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       await dispatchAll();
       await vi.waitFor(
         async () => {
-          // 重新触发与原事件各投递一次任务，删除清单可能执行两次（第二次删 0 行），所以 ≥ 1
-          expect(
-            (await events('platform.user_data_purged', user.userId)).length,
-          ).toBeGreaterThanOrEqual(1);
+          // 重新触发与原事件各投递一次任务，删除清单可能执行两次（第二次删 0 行）；
+          // 等 billing 与 model_access（T-027）都回报
+          const reported = (await events('platform.user_data_purged', user.userId)).map(
+            (e) => (e as { module: string }).module,
+          );
+          expect(new Set(reported)).toEqual(new Set(['billing', 'model_access']));
         },
         { timeout: 20_000, interval: 200 },
       );
@@ -1270,7 +1277,8 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       // 模拟「billing 已回报」但账号删除那一步没执行（例如回报事件处理前进程退出）
       await withClient((c) =>
         c.query(
-          `INSERT INTO identity.deletion_progress (user_id, module, deleted_rows, reported_at) VALUES ($1, 'billing', 0, now())`,
+          `INSERT INTO identity.deletion_progress (user_id, module, deleted_rows, reported_at)
+           VALUES ($1, 'billing', 0, now()), ($1, 'model_access', 0, now())`,
           [user.userId],
         ),
       );
