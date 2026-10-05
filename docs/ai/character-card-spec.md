@@ -82,7 +82,7 @@
 |---|---|---|
 | 1 | `childAppearance` 对自定义角色也做单向限制：`true` 不能改为 `false` | 与「未满 18 岁不能改成已满 18 岁」同理，防止先建儿童外表角色再改掉来绕过 |
 | 2 | `policy` 推导值增加 `publicStatementGuard`（= `basis == real_person`） | AI 输出守卫据此开启 SAFE-02 检查，避免 AI 模块自己判断分类 |
-| 3 | ~~`portraitAllowed` 细化为四值枚举~~ **v1.1 更新**：架构已改为 `portraitPolicy`（`forbidden` / `allowed`，`hard-boundaries.md` v1.1）。总负责人第二轮裁定 A1 又确定「历史人物可生成古风插画」，因此仍需一个历史人物专用取值（如 `classical_art_only`），待架构同步；`personal_only` 不再需要（虚构角色形象图已取消「仅个人测试」） | 图片生成需要区分历史人物 |
+| 3 | ~~`portraitAllowed` 细化为四值枚举~~ **v1.1 更新**：架构已改为 `portraitPolicy`（`forbidden` / `allowed`，`hard-boundaries.md` v1.1）。总负责人第二轮裁定 A1 又确定「历史人物可生成古风插画」。**v1.0.2：已完成**——契约 1.1 恢复 `classical_art_only`，只给管理员标注的历史人物（预设角色），用户自定义的「历史人物」按 `forbidden`（`hard-boundaries.md` v1.2 第 2 节）；`personal_only` 不再需要 | 图片生成需要区分历史人物 |
 | 4 | **已采纳**（T-009）：`shareImageLabel` 只对真人标注；文案以 PRD EXP-01 为准（「微伴AI聊天非本人，请谨慎识别」），不在本文重复 | — |
 | 5 | `policy.listAllowedScenarioModes` 的输入中加入角色卡 `modes.adminAllowlist`（管理员允许列表），结果 = 允许列表 ∩ 资格 | MODE-01：管理员可以为某角色关掉某些模式，但永远不能打开不具备资格的模式 |
 
@@ -101,7 +101,7 @@
 |---|---|---|---|---|---|---|
 | 成人模式 | 无 | 无 | 无 | 无 | 有资格 | 有资格 |
 | 恋人关系 / 恋爱模式 / 恋爱称呼 | 允许（私人情景，SAFE-02 说明） | 允许 | 允许 | **禁止** | 允许 | 允许 |
-| 生成角色形象图 | **禁止**，只发 TA 视角景物 | 古风插画，不仿具体版权作品（PRD SAFE-01 第 6 条、裁定第二轮 A1） | **禁止** | 按来源（真人童星禁止；虚构 / 原创儿童允许） | 允许 | 允许 |
+| 生成角色形象图 | **禁止**，只发 TA 视角景物 | 预设角色：古风插画，不仿具体版权作品（PRD SAFE-01 第 6 条、裁定第二轮 A1，`portraitPolicy = classical_art_only`）；用户自定义的历史人物：**禁止**（按 `forbidden`） | **禁止** | 按来源（真人童星禁止；虚构 / 原创儿童允许） | 允许 | 允许 |
 | 可用无审查模型（`adult_content`） | 否 | 否 | 否 | 否 | 是 | 是 |
 | 克隆 / 模仿声音 | 禁止 | 禁止 | 禁止 | 禁止 | 禁止 | 禁止 |
 | SAFE-02 输出检查 | 开 | 开 | 开 | 真人童星开 | 关 | 关 |
@@ -260,7 +260,7 @@ MEM-06「聊到相关话题时调出」。**公开动态（SIM-03）不在这里
 | `deflectStyle` | string | 真人必填 | 被问官宣、恋情、时事、隐私时的打趣方式 | 「笑着岔开：『你猜～』，转到吃的」 | P |
 | `refuseSelfieStyle` | string | 真人必填 | 被要自拍时如何婉拒（SAFE-01 验收） | 「不给看～给你看午饭」 | P |
 | `careVoice` | string | 是 | 安全关怀时的口吻提示（固定求助信息由系统注入，不在卡里） | 「收起玩闹，语气放慢」 | P |
-| `careFallbackText` | string | 是 | 关怀回复两次检查都不合格时的兜底文案（人设口吻，**必须**含建议联系信任的人和 12356、110 / 120，保存时系统校验） | — | D（直接发出） |
+| `careFallbackText` | string | 是 | 关怀回复两次检查都不合格时，以及没钱 / 模型不可用时（`runtime-overview.md` 9.1.2）的兜底文案（人设口吻，**必须**含建议联系信任的人和 12356、110 / 120，保存时系统校验） | — | D（直接发出） |
 
 ### 5.11 `profileExtra` 身份补充
 
@@ -767,3 +767,4 @@ AI 需要：`{updateId, characterId, content, dateFrom, dateTo, sourceUrls[], st
 |---|---|---|---|
 | 1.0 | 2026-10-04 | 首版；按架构契约（`characters.ts`、`character-card.ts`）将分类与基础信息移出卡片，字段统一 camelCase | ai-lead |
 | 1.0.1 | 2026-10-04 | T-013：字段结构不变。更新「真人」定义说明（3.1）、3.2 第 3、4 条状态、3.4 形象图与无审查模型两行、`fallbackGreetings` 触发条件（去掉「未配置模型」）、示例说明（林夏予为假设分类；成人模式样本移至 `samples/`） | ai-lead |
+| 1.0.2 | 2026-10-05 | T-022：字段结构不变。按契约 1.1 更新 3.2 第 3 条（`classical_art_only` 已完成）与 3.4 历史人物形象一格（自定义历史人物按 `forbidden`）；`safetyStyle.careFallbackText` 同时用于没钱 / 模型故障时的安全兜底消息（`runtime-overview.md` 9.1.2） | ai-lead |

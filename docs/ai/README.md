@@ -7,10 +7,13 @@
 | `character-distillation.md` | 预设角色蒸馏流程与更新流程 | 是 |
 | `cost-estimate.md` | 费用估算、默认后台预算与执行规则、「大约每条回复 X 元」估算方法 | 是（费用估算数字） |
 | `model-catalog.md` | 上游选择、上架候选模型、能力与标签（含无审查模型）、价目表成本价初始值、排行榜数据来源 | 是（模型目录与成本价） |
-| `eval-plan.md` | 评测集方案、人设稳定检查、模型选型评测 | 是（通过线） |
+| `eval-plan.md` | 评测集方案、人设稳定检查、模型选型评测；v1.3 的行为规划盲评、Jev 对比、广场隐私识别、健康与玩法、安全兜底 | 是（通过线） |
+| `behavior-planning.md` | 行为规划决策层（PRD 第 17 章）：决策类型与格式、默认实现（规则 + 便宜模型）、故障退回、P-45 识别、Jev 接入方式与出境数据规则 | 是（决策层设计） |
+| `plaza-privacy-check.md` | 人设广场发布前检测：疑似私人信息识别、儿童特征重检、给 plaza 的端口草案 | 是（识别方法） |
+| `health-and-play.md` | 经期摘要进上下文（不写记忆）、「健康」标记规则、经期主动关心调度、宠物进推演、5 个玩法的生成方式 | 是（AI 侧做法） |
 | `prd-8.2-answers.md` | PRD 8.2 十五问答复（第 10 问的禁止清单 v1.1 起停用，仅作历史记录） | — |
 | `samples/` | 成人模式测试样本：6 张原创成年角色卡 + 跨模式测试清单 | 是（样本卡） |
 | `eval-runs/` | 每次评测报告（首次评测时创建） | — |
 | `cost-report-YYYY-MM.md` | 按月成本报告（开发跑通后开始） | — |
 
-相关决策：`docs/decisions/ADR-0010-native-android-and-relay-billing.md`、`ADR-0012-relay-billing-and-wallet.md`（平台中转计费，取代已作废的 ADR-0008）、`ADR-0007-hard-boundary-enforcement.md`（含成人模式修订）、`ADR-0009-character-card-format.md`（提议）。计费设计见 `docs/architecture/billing.md`。
+相关决策：`docs/decisions/ADR-0016-v13-safety-overdraft-health-plaza.md`（安全透支、健康数据、人设广场）、`docs/decisions/ADR-0010-native-android-and-relay-billing.md`、`ADR-0012-relay-billing-and-wallet.md`（平台中转计费，取代已作废的 ADR-0008）、`ADR-0007-hard-boundary-enforcement.md`（含成人模式修订）、`ADR-0009-character-card-format.md`（提议）。计费设计见 `docs/architecture/billing.md`。
