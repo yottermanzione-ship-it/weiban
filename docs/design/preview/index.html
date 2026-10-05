@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>微伴设计样张</title>
-<meta name="description" content="微伴设计体系 v2.0 静态样张：两套主题（默认 / 微伴粉）、会话列表、私聊、「我」页、服务页、令牌与组件。仅用于展示设计，不是业务代码。">
+<meta name="description" content="微伴设计体系 v2.1 静态样张：两套主题（默认 / 微伴粉）、会话列表、私聊、「我」页、服务页、人设广场首页、宠物主页、令牌与组件。仅用于展示设计，不是业务代码。">
 <!-- 令牌唯一来源：../tokens.json；本页只通过 ../tokens.css（脚本生成）使用数值 -->
 <link rel="stylesheet" href="../tokens.css">
 <!-- 图标：Phosphor Icons（MIT），brand.md 第 5 节。离线时图标不显示，不影响其他内容 -->
@@ -182,6 +182,70 @@
 
   .note { font-size: var(--wb-font-size-footnote); color: var(--wb-color-text-secondary); margin-top: var(--wb-space-3); }
 
+  /* ============ v2.1（T-021）============ */
+  /* TabSwitch（C 1.5） */
+  .tabsw { flex: none; height: 44px; display: grid; grid-template-columns: 1fr 1fr; background: var(--wb-color-bg-nav-bar); border-bottom: 0.5px solid var(--wb-color-border-hairline); position: relative; }
+  .tabsw button { appearance: none; border: 0; background: transparent; font-size: var(--wb-font-size-callout); color: var(--wb-color-text-secondary); cursor: pointer; }
+  .tabsw button[aria-selected="true"] { color: var(--wb-color-text-primary); font-weight: var(--wb-font-weight-semibold); }
+  .tabsw .ind { position: absolute; bottom: 4px; left: 25%; width: 24px; height: 3px; margin-left: -12px; border-radius: var(--wb-radius-full); background: var(--wb-color-brand-primary);
+    transition: transform var(--wb-motion-duration-fast) var(--wb-motion-easing-standard); }
+  .tabsw[data-on="1"] .ind { transform: translateX(var(--tabw, 187px)); }
+  /* FilterBar（C 16.5） */
+  .fbar { display: flex; gap: var(--wb-space-3); padding: 0 var(--wb-space-3) var(--wb-space-3); background: var(--wb-color-bg-page); }
+  .chip { height: 32px; display: inline-flex; align-items: center; gap: 2px; padding: 0 var(--wb-space-4); border-radius: var(--wb-radius-full); background: var(--wb-color-bg-surface); font-size: var(--wb-font-size-subhead); white-space: nowrap; }
+  .chip.on { background: var(--wb-color-brand-soft); color: var(--wb-color-brand-on-soft); }
+  /* Tag（C 6.4） */
+  .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 var(--wb-space-2); border-radius: var(--wb-radius-xs); font-size: var(--wb-font-size-caption2); font-weight: var(--wb-font-weight-medium); background: var(--wb-color-bg-page); color: var(--wb-color-text-secondary); white-space: nowrap; flex: none; }
+  .tag.brand { background: var(--wb-color-brand-soft); color: var(--wb-color-brand-on-soft); }
+  /* WorkRow（C 18.1） */
+  .work { display: flex; align-items: center; gap: var(--wb-space-4); height: 88px; padding-left: var(--wb-space-5); background: var(--wb-color-bg-surface); }
+  .work .txt { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding-right: var(--wb-space-5); border-bottom: 0.5px solid var(--wb-color-border-hairline); }
+  .work .l1 { display: flex; align-items: center; gap: var(--wb-space-2); min-width: 0; }
+  .work .nm { font-size: var(--wb-font-size-body); font-weight: var(--wb-font-weight-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .work .l2 { font-size: var(--wb-font-size-footnote); color: var(--wb-color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .work .l3 { display: flex; justify-content: space-between; gap: var(--wb-space-3); font-size: var(--wb-font-size-caption1); color: var(--wb-color-text-tertiary); white-space: nowrap; }
+  .work .l3 span:first-child { overflow: hidden; text-overflow: ellipsis; }
+  .nav .r i.withdot { position: relative; }
+  .nav .r .dot { position: relative; top: -10px; left: -8px; }
+  /* 宠物（C 19.4–19.6） */
+  .petstage { position: relative; aspect-ratio: 4 / 3; background: var(--wb-color-brand-soft); display: grid; place-items: end center; overflow: hidden; flex: none; }
+  .petstage .stage-tag { position: absolute; top: var(--wb-space-4); right: var(--wb-space-4); }
+  .petstage .floor { position: absolute; left: 0; right: 0; bottom: 0; height: 26%; background: var(--wb-color-bg-surface); opacity: 0.55; }
+  .petimg { position: relative; width: 56%; margin-bottom: 6%; will-change: auto; }
+  .petimg svg { display: block; width: 100%; height: auto; }
+  /* 宠物占位插画用原始色板（brand.md 6.1：宠物用动物本身颜色 + 品牌粉配饰，不随主题变） */
+  .cat .shadow { fill: var(--wb-gray-ink); opacity: 0.08; }
+  .cat .fur { fill: var(--wb-orange-300); stroke: var(--wb-orange-700); stroke-width: 2; stroke-linejoin: round; }
+  .cat .stripe { fill: none; stroke: var(--wb-orange-500); stroke-width: 2; stroke-linecap: round; }
+  .cat .ink { fill: none; stroke: var(--wb-neutral-700); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .cat .blush { fill: var(--wb-pink-400); opacity: 0.6; }
+  .cat .scarf { fill: none; stroke: var(--wb-pink-500); stroke-width: 5; stroke-linecap: round; }
+  .cat .bell { fill: var(--wb-gold-500); stroke: var(--wb-gold-700); stroke-width: 1.5; }
+  .say { position: absolute; top: 18%; right: 14%; background: var(--wb-color-bg-elevated); box-shadow: var(--wb-shadow-sm); border-radius: var(--wb-radius-md); padding: var(--wb-space-2) var(--wb-space-3); font-size: var(--wb-font-size-footnote); opacity: 0; transition: opacity var(--wb-motion-duration-fast); pointer-events: none; }
+  .say.show { opacity: 1; }
+  .fx { position: absolute; left: 50%; top: 30%; font-size: 16px; color: var(--wb-color-tint-orange); opacity: 0; pointer-events: none; }
+  .pet-info { background: var(--wb-color-bg-surface); padding: var(--wb-space-5); }
+  .pet-info .pn { font-size: var(--wb-font-size-title2); font-weight: var(--wb-font-weight-semibold); }
+  .pet-info .ps { display: flex; align-items: center; gap: var(--wb-space-2); font-size: var(--wb-font-size-footnote); color: var(--wb-color-text-secondary); margin-top: var(--wb-space-1); }
+  .pet-info .pi { font-size: var(--wb-font-size-subhead); margin-top: var(--wb-space-2); }
+  .pet-info .pi b { font-family: var(--wb-font-family-numeric); font-variant-numeric: tabular-nums; font-weight: var(--wb-font-weight-semibold); }
+  .pet-actions { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--wb-color-bg-surface); padding: var(--wb-space-3) 0 var(--wb-space-5); }
+  .pact { appearance: none; border: 0; background: transparent; display: flex; flex-direction: column; align-items: center; gap: var(--wb-space-2); font-size: var(--wb-font-size-caption1); color: var(--wb-color-text-primary); cursor: pointer; }
+  .pact span { width: 56px; height: 56px; border-radius: 50%; background: var(--wb-color-bg-surface); border: 0.5px solid var(--wb-color-border-strong); display: grid; place-items: center; transition: transform var(--wb-motion-duration-instant); }
+  .pact i { font-size: 28px; }
+  .pact:active span { transform: scale(0.92); }
+  .steps { background: var(--wb-color-bg-surface); margin-top: var(--wb-space-3); padding: var(--wb-space-5); }
+  .steps .row { display: grid; grid-template-columns: 12px 1fr 12px 1fr 12px; align-items: center; }
+  .steps .pt { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--wb-color-border-strong); background: var(--wb-color-bg-surface); }
+  .steps .pt.on { background: var(--wb-color-brand-primary); border-color: var(--wb-color-brand-primary); }
+  .steps .ln { height: 2px; background: var(--wb-color-border-strong); }
+  .steps .lab { display: grid; grid-template-columns: 1fr 1fr 1fr; font-size: var(--wb-font-size-caption1); margin-top: var(--wb-space-2); }
+  .steps .lab span:nth-child(2) { text-align: center; } .steps .lab span:nth-child(3) { text-align: right; }
+  .steps .cap { font-size: var(--wb-font-size-caption1); color: var(--wb-color-text-secondary); margin-top: var(--wb-space-2); }
+  .link-row { background: var(--wb-color-bg-surface); margin-top: var(--wb-space-3); min-height: var(--wb-size-setting-row); display: grid; place-items: center; color: var(--wb-color-text-link); font-size: var(--wb-font-size-body); }
+  .t-gray { color: var(--wb-color-tint-gray); }
+  @media (prefers-reduced-motion: reduce) { .tabsw .ind { transition-duration: 0ms; } }
+
   @media (max-width: 599px) {
     .doc { padding-top: var(--wb-space-5); }
     .phones { grid-template-columns: 1fr; justify-items: center; }
@@ -202,7 +266,7 @@
 
 <div class="doc">
   <header class="doc-head">
-    <h1>微伴设计样张 <span>v2.0</span></h1>
+    <h1>微伴设计样张 <span>v2.1</span></h1>
     <p>两套主题（默认 / 微伴粉）× 浅色 / 深色。所有颜色、尺寸都来自 <code>tokens.css</code>，切换主题只改 &lt;html&gt; 上的 data-theme，页面代码不变。</p>
   </header>
 
@@ -232,13 +296,14 @@
         <button type="button" data-v="ok" aria-pressed="true">正常</button>
         <button type="button" data-v="low" aria-pressed="false">低于提醒线</button>
         <button type="button" data-v="zero" aria-pressed="false">为零</button>
+        <button type="button" data-v="neg" aria-pressed="false">负数</button>
       </div>
     </div>
   </div>
 
   <section class="block" id="screens">
     <h2>1. 主要页面</h2>
-    <p class="lead">会话列表、私聊、「我」页、服务页（pages/ 下对应的说明文件）。切换上方「余额」可以看到红点、余额不足小字和聊天横条的变化。</p>
+    <p class="lead">会话列表、私聊、「我」页、服务页、人设广场首页、宠物主页（pages/ 下对应的说明文件）。切换上方「余额」可以看到红点、余额不足小字、聊天横条和负数余额（−¥ 0.03）的变化；人设广场可以点顶部分页切换；宠物页可以点喂食、玩耍、摸摸。</p>
     <div class="phones">
 
       <!-- 会话列表 -->
@@ -335,6 +400,106 @@
               <div class="gcell press"><i class="ph ph-bell-ringing t-blue"></i>主动消息与免打扰</div>
               <div class="gcell press"><i class="ph ph-sliders-horizontal t-teal"></i>聊天偏好</div>
             </div></div>
+            <div class="grid-block"><h4>互动玩法</h4><div class="grid">
+              <div class="gcell press"><i class="ph ph-flower-lotus t-pink"></i>经期日记</div>
+              <div class="gcell press"><i class="ph ph-paw-print t-orange"></i>宠物</div>
+              <div class="gcell press"><i class="ph ph-alarm t-blue"></i>TA 的提醒</div>
+              <div class="gcell press"><i class="ph ph-list-checks t-teal"></i>心愿清单</div>
+              <div class="gcell press"><i class="ph ph-chat-circle-dots t-gold"></i>每日一问</div>
+              <div class="gcell press"><i class="ph ph-envelope-simple t-lilac"></i>信箱<span class="dot"></span></div>
+              <div class="gcell press"><i class="ph ph-hourglass-medium t-pink"></i>陪你专注</div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 人设广场首页（v2.1） -->
+      <div class="phone-wrap">
+        <h3>人设广场首页 · pages/persona-plaza.md 第 2 节</h3>
+        <div class="phone">
+          <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+          <div class="nav"><div class="l"><i class="ph ph-caret-left"></i></div><div class="t">角色广场</div><div class="r js-plaza-only"><i class="ph ph-user-list" aria-label="我发布的"></i><span class="dot"></span></div></div>
+          <div class="tabsw" role="tablist" data-on="1">
+            <button type="button" role="tab" aria-selected="false" data-tab="0">预设角色</button>
+            <button type="button" role="tab" aria-selected="true" data-tab="1">人设广场</button>
+            <span class="ind" aria-hidden="true"></span>
+          </div>
+          <div class="scroll">
+            <div class="js-pane" data-pane="0" hidden>
+              <div class="search"><div><i class="ph ph-magnifying-glass"></i>搜索名字、别名、作品</div></div>
+              <div class="work press"><div class="av s01 deco">杨幂</div><div class="txt"><div class="l1"><span class="nm">杨幂</span><span class="tag">演员</span></div><div class="l2">演员、歌手</div><div class="l3"><span>《三生三世》</span><span>已添加</span></div></div></div>
+              <div class="work press"><div class="av s07 deco">一博</div><div class="txt"><div class="l1"><span class="nm">王一博</span><span class="tag">演员</span></div><div class="l2">演员、舞者</div><div class="l3"><span>《有翡》</span><span></span></div></div></div>
+            </div>
+            <div class="js-pane" data-pane="1">
+              <div class="search"><div><i class="ph ph-magnifying-glass"></i>搜索角色、标签、作者、基于的角色</div></div>
+              <div class="fbar"><span class="chip">热门 <i class="ph ph-caret-down"></i></span><span class="chip">类型 <i class="ph ph-caret-down"></i></span><span class="chip">分类 <i class="ph ph-caret-down"></i></span></div>
+              <div class="work press"><div class="av s01 deco">杨幂</div><div class="txt"><div class="l1"><span class="nm">更黏人的杨幂</span><span class="tag brand">预设改版 · 基于 杨幂</span></div><div class="l2">下雨天会给你打电话的那种黏人</div><div class="l3"><span>小鱼 · 赞 128 · 添加 56</span><span>已添加</span></div></div></div>
+              <div class="work press"><div class="av s12 deco">书店</div><div class="txt"><div class="l1"><span class="nm">雨夜书店老板</span><span class="tag">原创</span></div><div class="l2">会记得你上次买的那本书</div><div class="l3"><span>阿柚 · 赞 96 · 添加 40</span><span></span></div></div></div>
+              <div class="work press"><div class="av s05 deco">小黑</div><div class="txt"><div class="l1"><span class="nm">话痨版罗小黑</span><span class="tag brand">预设改版 · 基于 罗小黑</span></div><div class="l2">每天给你讲一件森林里的小事</div><div class="l3"><span>团团 · 赞 77 · 添加 31</span><span></span></div></div></div>
+              <div class="work press"><div class="av s09 deco">学姐</div><div class="txt"><div class="l1"><span class="nm">图书馆学姐</span><span class="tag">原创</span></div><div class="l2">考研路上一起刷题的人</div><div class="l3"><span>Mia · 赞 64 · 添加 29</span><span></span></div></div></div>
+              <div class="work press"><div class="av s07 deco">船长</div><div class="txt"><div class="l1"><span class="nm">星港船长</span><span class="tag">虚构</span></div><div class="l2">刚从远航回来，带着很多故事</div><div class="l3"><span>北北 · 赞 51 · 添加 18</span><span></span></div></div></div>
+            </div>
+          </div>
+          <div class="tabs">
+            <div class="tab"><i class="ph ph-chat-circle"></i>微伴<span class="badge">5</span></div>
+            <div class="tab"><i class="ph ph-user"></i>通讯录</div>
+            <div class="tab on"><i class="ph-fill ph-compass"></i>发现</div>
+            <div class="tab"><i class="ph ph-user-circle"></i>我<span class="dot js-low" hidden style="left:calc(50% + 8px)"></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 宠物主页（v2.1） -->
+      <div class="phone-wrap">
+        <h3>宠物主页 · pages/pet.md 第 5 节（点下方按钮试试）</h3>
+        <div class="phone">
+          <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+          <div class="nav"><div class="l"><i class="ph ph-caret-left"></i></div><div class="t">团子</div><div class="r"><i class="ph ph-dots-three"></i></div></div>
+          <div class="scroll">
+            <div class="petstage">
+              <div class="floor"></div>
+              <span class="tag brand stage-tag">幼年</span>
+              <div class="petimg js-pet">
+                <!-- 宠物图占位：图鉴正式图由管理员维护（pet.md 第 7 节）。圆润、2px 描边、配饰用品牌粉 -->
+                <svg class="cat" viewBox="0 0 120 110" aria-label="团子（小橘猫，幼年）" role="img">
+                  <ellipse class="shadow" cx="60" cy="104" rx="34" ry="5"/>
+                  <path class="fur" d="M30 40 L34 14 L50 30 Z"/>
+                  <path class="fur" d="M90 40 L86 14 L70 30 Z"/>
+                  <ellipse class="fur" cx="60" cy="74" rx="34" ry="28"/>
+                  <ellipse class="fur" cx="60" cy="46" rx="32" ry="26"/>
+                  <path class="stripe" d="M48 26 q4 6 0 10 M60 22 v10 M72 26 q-4 6 0 10"/>
+                  <path class="ink" d="M45 48 q4 -4 8 0 M67 48 q4 -4 8 0"/>
+                  <ellipse class="blush" cx="44" cy="56" rx="5" ry="3"/>
+                  <ellipse class="blush" cx="76" cy="56" rx="5" ry="3"/>
+                  <path class="ink" d="M57 55 l3 3 l3 -3"/>
+                  <path class="scarf" d="M40 68 q20 8 40 0"/>
+                  <circle class="bell" cx="60" cy="74" r="4"/>
+                </svg>
+                <i class="ph-fill ph-paw-print fx js-fx"></i><i class="ph-fill ph-star fx js-fx"></i><i class="ph-fill ph-fish fx js-fx"></i>
+              </div>
+              <span class="say js-say">呼噜呼噜～</span>
+            </div>
+            <div class="pet-info">
+              <div class="pn">团子</div>
+              <div class="ps"><span class="av xs s01" style="--s:20px;font-size:8px">杨幂</span>和 杨幂 一起养 · 领养第 12 天</div>
+              <div class="pi">亲密值 <b class="js-close">86</b></div>
+            </div>
+            <div class="pet-actions">
+              <button type="button" class="pact" data-act="feed"><span><i class="ph ph-fish"></i></span>喂食</button>
+              <button type="button" class="pact" data-act="play"><span><i class="ph ph-tennis-ball"></i></span>玩耍</button>
+              <button type="button" class="pact" data-act="pat"><span><i class="ph ph-hand-palm"></i></span>摸摸</button>
+            </div>
+            <div class="steps">
+              <div class="row"><span class="pt on"></span><span class="ln"></span><span class="pt"></span><span class="ln"></span><span class="pt"></span></div>
+              <div class="lab"><span>幼年</span><span>少年</span><span>成年</span></div>
+              <div class="cap">第 30 天长成少年 · 第 100 天长成成年</div>
+            </div>
+            <div class="group">
+              <div class="cell press"><div class="body">成长记录<i class="ph ph-caret-right chev"></i></div></div>
+              <div class="cell press"><div class="body">相册<span class="val">12 张</span><i class="ph ph-caret-right chev"></i></div></div>
+            </div>
+            <div class="link-row press">去和 杨幂 聊聊团子</div>
+            <div style="height:var(--wb-space-5)"></div>
           </div>
         </div>
       </div>
@@ -376,7 +541,7 @@
       ['bubble-self-bg', 'bubble.selfBg'], ['bubble-other-bg', 'bubble.otherBg'],
       ['badge-unread', 'badge.unread'], ['status-warning', 'status.warning'], ['amount-income', 'amount.income'],
       ['tint-orange', 'tint.orange'], ['tint-blue', 'tint.blue'], ['familiarity-l3', 'familiarity.l3'],
-      ['achievement-memorial', 'achievement.memorial'], ['mode-tsundere', 'mode.tsundere']
+      ['achievement-memorial', 'achievement.memorial'], ['achievement-play', 'achievement.play'], ['mode-tsundere', 'mode.tsundere']
     ];
     var sw = document.getElementById('swatches');
     function renderSwatches() {
@@ -396,9 +561,10 @@
       if (state.scheme) root.setAttribute('data-scheme', state.scheme); else root.removeAttribute('data-scheme');
       root.style.setProperty('--wb-font-scale', state.scale);
       var low = state.balance !== 'ok';
+      var amounts = { ok: '¥ 12.34', low: '¥ 3.20', zero: '¥ 0.00', neg: '−¥ 0.03' };
       document.querySelectorAll('.js-low').forEach(function (n) { n.hidden = !low; });
-      document.querySelectorAll('.js-zero').forEach(function (n) { n.hidden = state.balance !== 'zero'; });
-      document.querySelectorAll('.js-amt').forEach(function (n) { n.textContent = state.balance === 'ok' ? '¥ 12.34' : (state.balance === 'low' ? '¥ 3.20' : '¥ 0.00'); });
+      document.querySelectorAll('.js-zero').forEach(function (n) { n.hidden = state.balance !== 'zero' && state.balance !== 'neg'; });
+      document.querySelectorAll('.js-amt').forEach(function (n) { n.textContent = amounts[state.balance] || amounts.ok; });
       document.querySelectorAll('.seg').forEach(function (seg) {
         var key = seg.getAttribute('data-ctl');
         seg.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-v') === state[key])); });
@@ -418,6 +584,59 @@
       var mq = window.matchMedia('(prefers-color-scheme: dark)');
       if (mq.addEventListener) mq.addEventListener('change', renderSwatches);
     }
+
+    /* TabSwitch（C 1.5，M-17）：指示条只做 translateX */
+    document.querySelectorAll('.tabsw').forEach(function (bar) {
+      var phone = bar.closest('.phone');
+      function sizeIndicator() { bar.style.setProperty('--tabw', (bar.clientWidth / 2) + 'px'); }
+      sizeIndicator();
+      if (window.ResizeObserver) new ResizeObserver(sizeIndicator).observe(bar);
+      bar.addEventListener('click', function (ev) {
+        var b = ev.target.closest('button[data-tab]'); if (!b) return;
+        var on = b.getAttribute('data-tab');
+        bar.setAttribute('data-on', on);
+        bar.querySelectorAll('button[data-tab]').forEach(function (x) { x.setAttribute('aria-selected', String(x === b)); });
+        phone.querySelectorAll('.js-pane').forEach(function (p) { p.hidden = p.getAttribute('data-pane') !== on; });
+        phone.querySelectorAll('.js-plaza-only').forEach(function (n) { n.style.visibility = on === '1' ? 'visible' : 'hidden'; });
+      });
+    });
+
+    /* 宠物互动反应（C 19.4、M-19）：只改 transform / opacity；连点时打断上一次 */
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var pet = document.querySelector('.js-pet');
+    var say = document.querySelector('.js-say');
+    var fxs = document.querySelectorAll('.js-fx');
+    var close = document.querySelector('.js-close');
+    var lines = { feed: ['吧唧吧唧', '好吃！'], play: ['扑！', '再来一次'], pat: ['呼噜呼噜～', '蹭蹭'] };
+    var counted = 0, sayTimer = null;
+    document.querySelectorAll('.pact').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var act = btn.getAttribute('data-act');
+        if (pet && pet.animate && !reduce) {
+          pet.getAnimations().forEach(function (a) { a.cancel(); });
+          var frames = act === 'play'
+            ? [{ transform: 'scale(1) rotate(0deg)' }, { transform: 'scale(1.06) rotate(-3deg)' }, { transform: 'scale(1.06) rotate(3deg)' }, { transform: 'scale(1) rotate(0deg)' }]
+            : [{ transform: 'scale(1)' }, { transform: 'scale(1.06)' }, { transform: 'scale(1)' }];
+          pet.animate(frames, { duration: 420, easing: 'cubic-bezier(0.34, 1.36, 0.64, 1)' });
+          fxs.forEach(function (f, i) {
+            f.getAnimations().forEach(function (a) { a.cancel(); });
+            var dx = (i - 1) * 22;
+            f.animate([{ opacity: 1, transform: 'translate(' + dx + 'px, 0)' }, { opacity: 0, transform: 'translate(' + dx + 'px, -32px)' }],
+              { duration: 420, delay: i * 60, easing: 'cubic-bezier(0.05, 0.7, 0.1, 1)' });
+          });
+        }
+        if (say) {
+          var pool = lines[act] || lines.pat;
+          say.textContent = pool[Math.floor(Math.random() * pool.length)];
+          say.classList.add('show');
+          clearTimeout(sayTimer);
+          sayTimer = setTimeout(function () { say.classList.remove('show'); }, 1500);
+        }
+        /* P-39：每天最多计 5 次，之后照常有反应、数字不再增加，也不提示上限 */
+        if (close && counted < 5) { counted += 1; close.textContent = String(86 + counted); }
+      });
+    });
+
     apply();
   })();
 </script>

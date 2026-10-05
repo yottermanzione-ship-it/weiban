@@ -3,9 +3,9 @@
 | 项 | 内容 |
 |---|---|
 | 负责人 | design-lead |
-| 任务 | T-006（v1.0）、T-012（v2.0） |
-| 日期 | 2026-10-04 |
-| 依据 | `docs/product/prd-v1.md`（v1.2）及 `prd-v1/` 各章（重点：原则 8、第 14 章 SVC、第 2 章 MDL、EXP-01）、`docs/product/user-flows.md`、`docs/product/glossary.md`、`docs/product/input/2026-10-04-manager-feedback-2.md`、ADR-0010、ADR-0011 |
+| 任务 | T-006（v1.0）、T-012（v2.0）、T-021（v2.1：4.1 节、第 5 节第 7～9 条） |
+| 日期 | 2026-10-05 |
+| 依据 | v2.1：`docs/product/prd-v1.md`（v1.3）第 15～17 章、`13-admin.md`、`14-services.md`、`docs/product/input/2026-10-05-manager-feedback-3.md`；v2.0：`docs/product/prd-v1.md`（v1.2）及 `prd-v1/` 各章（重点：原则 8、第 14 章 SVC、第 2 章 MDL、EXP-01）、`docs/product/user-flows.md`、`docs/product/glossary.md`、`docs/product/input/2026-10-04-manager-feedback-2.md`、ADR-0010、ADR-0011 |
 
 > 本文只把产品需求「翻译」成设计要做的事，不重新定义需求。规则细节以 PRD 为准，这里只写编号。
 
@@ -70,6 +70,21 @@
 | ACC-01、03、05、06 | 设置、新消息通知、添加到主屏幕、注销 | `pages/settings.md` |
 | ACC-04 | 首次引导（无模型配置步骤） | `pages/onboarding.md` |
 
+### 4.1 v1.3 新增（T-021）
+
+| 需求 | 设计要做的事 | 产出位置 |
+|---|---|---|
+| PLZ-01～PLZ-07、CHR-01 第 5 条 | 角色广场两个分页、人设广场首页、作品页、作者页、点赞评论、添加 / 应用、发布流程（含疑似私人信息确认）、我发布的、举报、来源标注与新版本提示 | `pages/persona-plaza.md`、`components.md` 1.5、18 |
+| PLAY-01、CHAT-10 第 7 条、EXP-01 第 6 条 | 经期日记（说明、记录、日历、授权）；「健康」标记消息在推送、分享图、收藏中的规则 | `pages/period-diary.md`、`components.md` 5.6、15.6、19.1～19.3 |
+| PLAY-02、GRW-05、GRW-06 第 29、30 号 | 宠物总览、领养流程、宠物主页、照顾、联动、插画规格、2 枚徽章、宠物卡面 | `pages/pet.md`、`brand.md` 6.1、`pages/cards-familiarity.md` |
+| PLAY-03～PLAY-07（总经理已采纳） | 入口与核心页面；候选成就 | `pages/play.md`、`pages/cards-familiarity.md` 5.3 |
+| SVC-01（v1.3） | 服务页「互动玩法」分组（17 个宫格） | `pages/me-and-services.md` |
+| ADM-08、ADM-09、ADM-07 第 3 条 | 管理后台框架、用量与费用、广场管理、负余额显示 | `pages/admin.md`、`components.md` 20 |
+| MDL-10 第 6 条 | 余额为负数时各处的显示 | `components.md` 16.1、16.3、16.4、`pages/billing.md` 第 9 节 |
+| MODE-03 第 3、6 条、MODE-05 | 成人模式「先选模型」提示、模型不可用提示、成人模式消息不能生成分享图 | `components.md` 4.4、5.6、8.2 |
+| MDL-06 第 2 条、ACC-04 | 全局换模型轻提示文案、登录页口号定稿 | `pages/billing.md` 6.1、`pages/onboarding.md` |
+| 第 17 章 PLAN（行为规划） | 不新增任何用户可见的设置（PLAN-01 第 5 条）；只在余额明细、花费统计中多一个「行为规划」用途 | `components.md` 16.4、`pages/billing.md` 第 4 节 |
+
 ## 5. 设计上的自我约束
 
 1. **消息高度可预知**：图片、视频、表情包用接口给的宽高先占位（契约已包含）。
@@ -78,6 +93,9 @@
 4. **儿童角色**：带恋爱含义的入口（恋人关系、恋爱模式）「不显示」，不是置灰。真人、儿童角色看不到成人模式。
 5. **红点只用于需要用户处理的事**（SVC-01 第 5 条）：余额不足时「我」标签有红点；新卡片、新成就只在宫格上有红点，「我」标签不显示。
 6. **功能未上线就不显示入口**（SVC-01 第 6 条），不做「敬请期待」。
+7. **（v2.1）用户之间只有点赞和评论**：广场上没有关注、私信、个人主页；点别人的头像没有反应（PLZ-03 第 6 条）。
+8. **（v2.1）敏感的东西不在聊天界面露面**：「健康」消息的气泡不加标记；经期日记的授权不放在聊天信息页；经期日记图标不用直白符号。
+9. **（v2.1）玩法不打卡**：没有连续天数、完成率、「今天还没……」的红点或提示；宠物没有负面状态。
 
 ## 6. v2.0 删除的内容
 

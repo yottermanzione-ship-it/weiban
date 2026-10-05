@@ -3,10 +3,12 @@
 | 项 | 内容 |
 |---|---|
 | 负责人 | design-lead |
-| 任务 | T-006（v1.0）、T-012（v2.0） |
-| 版本 | v2.0 |
-| 日期 | 2026-10-04 |
+| 任务 | T-006（v1.0）、T-012（v2.0）、T-021（v2.1） |
+| 版本 | v2.1 |
+| 日期 | 2026-10-05 |
 
+> v2.1 变更（T-021，PRD v1.3）：新增 1.5 TabSwitch 顶部分页；4.2 新增信件卡片 `LetterCard`、QuickReplyMessage 放宽到 3 个按钮（宠物起名）；4.4 新增会话内提示用途（宠物、专注、慢信、成人模式模型不可用）；5.3「+」面板新增「写信」「陪我专注」；5.6 成人模式与「健康」消息不能生成分享图（EXP-01 第 6 条）；8.2 成人模式「先选模型」提示（MODE-03 第 3 条）；9.6 成就增至 30 枚、新增分组色 `achievement.play`；15.6 收藏卡的「不能生成分享图」标记；16.1、16.3、16.4 余额为负数的显示（安全优先透支，上限见 `billing.md` 6.6）；16.4 新增「安全」「行为规划」类型图标；新增第 18 节「人设广场」、第 19 节「互动玩法」、第 20 节「管理后台」组件。
+>
 > v2.0 变更（T-012）：规范同时适用于网页和安卓 Compose（第 0 节新增两端实现规则）；气泡改为小圆角 + 小尖角、头像圆角变小（更像参照产品）；删除密钥输入框、供应商密钥卡（原 6.7 后半、13.1）；系统横条改为「模型服务不可用」「余额不足」等变体；删除成人模式消息不可多选、会话摘要「[消息]」、年龄确认弹窗；群聊也显示情景模式；新增 3.6 MenuCell、第 16 节「服务与计费」组件、第 17 节「聊天信息页」组件、9.6 成就徽章按 28 枚定稿。
 
 ## 0. 使用规则
@@ -77,6 +79,15 @@
 - **结构**：放大镜图标 + 占位文字「搜索」，居中显示；聚焦后图标和占位文字移到左侧，右侧出现「取消」。
 - **尺寸**：高 36px，圆角 `radius.sm`，背景 `bg.surface`（在 `bg.page` 上）。
 - **交互**：会话列表顶部的搜索框点击后推入全局搜索页（CHAT-12）；通讯录、广场内的搜索框就地过滤。
+
+### 1.5 TabSwitch 顶部分页（v2.1）
+
+- **用途**：同一个页面里两到三个**并列的内容区**切换，例如「角色广场」的「预设角色 | 人设广场」（PLZ-01 第 1 条）、「信箱」的「收到的 | 寄出的」。与 SegmentedControl（6.5）的区别：TabSwitch 切换的是整页内容、放在 NavBar 正下方；SegmentedControl 是页面内的筛选。
+- **结构**：NavBar 下方一条高 44px 的栏，背景 `bg.navBar`（与 NavBar 连成一体），底部 0.5px `border.hairline`；2–3 个等宽文字标签（`fontSize.callout`）；未选中 `text.secondary`、选中 `text.primary` + `fontWeight.semibold`；选中标签文字下方一条指示条：宽 24px、高 3px、`radius.full`、`brand.primary`，距栏底 4px。
+- **角标**：标签文字右上角可带 Badge 红点（例如人设广场有新的举报处理结果时不在这里显示，红点只放在「我发布的」入口，见 `pages/persona-plaza.md`）。
+- **交互**：点标签切换；内容区左右滑动也可切换（安卓、iPhone 网页都支持，跟手 translateX）。指示条移动用 M-17。切换时内容区不做淡入，直接替换（与参照产品一致）。
+- **状态**：每个分页各自记住滚动位置；离开页面再回来停在上次的分页。
+- **只能放 2–3 个标签**；更多分类用 SegmentedControl 或横向滚动 Tag。
 
 ---
 
@@ -179,7 +190,8 @@
 | 链接卡片 | `LinkCard` | 固定宽 240px，气泡底色同发送方；上：标题（`fontSize.callout`，最多 2 行）；下：摘要或来源（`fontSize.caption1`、`text.secondary`），右侧 48px 方形封面（有则显示）；底部一行来源（如「网易云音乐」） | 点击 → 能识别的音乐 / 视频平台尝试唤起 App，否则浏览器打开 | MED-05 |
 | 名片 | `ContactCard` | 固定宽 240px，`bubble.otherBg`；上：头像 40 + 角色名（`fontSize.body`）+ 一句话简介（`fontSize.caption1`）；分隔线；下：「角色名片」（`fontSize.caption2`、`text.tertiary`） | 点击 → 该角色资料页（未添加态，底部「添加」「不感兴趣」） | CHR-04 |
 | 通话记录 | `CallRecord` | 气泡样式；内容：电话图标 + 文字：「通话时长 05:23」/「已取消」/「对方已拒绝」/「未接来电」（`text.danger`）/「XX 给你打过电话」（iPhone） | 点击 → 回拨（发起语音通话） | MED-06、MED-07 |
-| 带快捷按钮的消息 | `QuickReplyMessage` | 普通角色文字气泡 + 气泡下方一行按钮（Button sm，最多 2 个，间距 `space.3`）；按钮区高度随消息一起固定。目前只用于「以后可以给你打电话吗？」 | 每个按钮只能点一次；点后按钮区替换为灰字「你选择了：可以」（`fontSize.caption1`、`text.tertiary`，高度不变） | MED-07 |
+| 带快捷按钮的消息 | `QuickReplyMessage` | 普通角色文字气泡 + 气泡下方一行按钮（Button sm tonal，最多 3 个，间距 `space.3`；3 个放不下一行时折成两行，行数在消息到达时就确定）；按钮区高度随消息一起固定。用于：「以后可以给你打电话吗？」（MED-07，2 个）、角色提议领养宠物「去看看」（PLAY-02 第 2 条，1 个）、「让 TA 起名」的 3 个候选名（PLAY-02 第 3 条，3 个）、角色提议加入心愿清单「加进去 / 先不了」（PLAY-04，2 个） | 每组按钮只能点一次；点后按钮区替换为灰字「你选择了：可以」（`fontSize.caption1`、`text.tertiary`，高度不变）。「去看看」类跳转按钮点后不替换，可重复点 | MED-07、PLAY-02、PLAY-04 |
+| 信件 | `LetterCard` | 固定 240×96，无尖角，`bubble.otherBg`（自己寄出的为 `bubble.selfBg`），`radius.md`；左侧 48px 信封插画（静态 SVG，`brand.md` 第 6 节风格），右侧上行「杨幂 给你寄来了一封信」/「你给 杨幂 寄了一封信」（`fontSize.subhead`、`fontWeight.medium`），下行信的第一句（`fontSize.caption1`、`text.secondary`，单行省略）；未读的来信右上角 8px 红点 | 点击 → 读信页（`pages/play.md` 第 4 节）；长按：收藏、删除（无复制、无引用） | PLAY-05 |
 | 引用 | `QuoteBlock` | 跟在被回复消息的气泡**下方**，与气泡左（或右）对齐，间距 `space.2`；背景 `bubble.quoteBg`，圆角 `radius.xs`，内边距 `space.2` `space.3`；内容「名字：被引用内容」（`fontSize.caption1`、`bubble.quoteText`），最多 2 行省略；被引用的是图片时显示 32px 缩略图 | 点击 → 滚动定位到原消息并闪一下（原消息叠加遮罩 opacity 0→1→0） | CHAT-02 |
 
 ### 4.3 发送状态（CHAT-03）
@@ -213,7 +225,12 @@
 | 模型下架 | 「原模型已停止提供，已改用 XX，TA 的说话风格可能有变化」（每次下架只出现一次） | — | MDL-04 |
 | 通话因余额结束 | 「余额不足，通话已结束」 | 「查看余额」→ 余额页 | MDL-10 第 5 条 |
 | 等待通过 | 「已发送好友申请」 | — | CHR-03 |
-
+| 成人模式模型不可用（v2.1） | 「成人模式模型已不可用，已回到日常模式」 | — | MODE-03 第 6 条 |
+| 共同领养（v2.1） | 「你和 杨幂 一起领养了团子」+ 下一行「去看看团子 ›」 | 「去看看」→ 宠物页 | PLAY-02 第 3 条 |
+| 宠物长大（v2.1） | 「团子长成少年啦 · 获得瞬间卡 ›」 | → 卡片详情 | PLAY-02 第 11 条 |
+| 慢信在路上（v2.1） | 「信已寄出，TA 的回信在路上」 | — | PLAY-05 |
+| 专注开始 / 结束（v2.1） | 「开始专注 25 分钟」/「专注结束 · 25 分钟」/「专注提前结束」 | — | PLAY-06 |
+| 心愿完成（v2.1） | 「一起去看海 已完成 · 获得瞬间卡 ›」 | → 卡片详情 | PLAY-04 |
 **禁止**：在会话内插入 AI 身份提示、安全关怀官方文案、广告式提示（SAFE-06、G12）。
 
 ### 4.5 TypingIndicator 正在输入（CHAT-06）
@@ -252,7 +269,7 @@
 ### 5.3 PlusPanel「+」面板
 
 - 网格每行 4 个，每项：56px 圆角方块（`bg.surface`、`radius.md`）内 28px 图标 + 下方文字（`fontSize.caption1`）。
-- 项目：相册、拍摄、语音通话。
+- 项目：相册、拍摄、语音通话；v2.1 增加「写信」（信封图标，PLAY-05 → 写信页）、「陪我专注」（沙漏图标，PLAY-06 → 专注设置弹层）。只在私聊出现，群聊没有这两项。功能所在开发层未上线时不显示（SVC-01 第 6 条同一做法）。
 - 语音通话在 iPhone 网页版不支持时：图标照常显示，点击弹出 Dialog「iPhone 网页版暂不支持语音通话」（MED-06：不能点了没反应）。
 
 ### 5.4 VoiceRecordOverlay 按住说话浮层（MED-03）
@@ -269,8 +286,9 @@
 
 - 进入多选后：每条消息左侧出现 22px 圆形勾选框（未选：`border.strong` 描边；选中：`brand.primary` 实心 + 白色 ✓）；NavBar 左侧变为「取消」，标题显示「已选择 3 条」。
 - 底部栏替换输入栏，3 个等宽按钮（图标 + 文字）：收藏、分享图、删除。
-- **不可选的消息**：撤回提示、会话内提示 → 不显示勾选框（它们不是消息）。（v2.0 删除「成人模式消息不可选」，EXP-01 第 6 条。）
-- 选择超过 P-24 条时：「分享图」按钮禁用，点击轻提示「一张分享图最多 30 条消息」（数值引用 P-24，界面文案由前端读取参数）。
+- **不可选的消息**：撤回提示、会话内提示 → 不显示勾选框（它们不是消息）。
+- **不能生成分享图的消息**（v2.1，EXP-01 第 6 条、MODE-05 第 4 条、PLAY-01 第 7 条）：成人模式中的消息、带「健康」标记的消息。它们**照常显示勾选框**（因为收藏、删除不受限）；选中的消息里只要有一条这类消息，「分享图」按钮显示为禁用态，点击 Toast 文字型「成人模式 / 健康相关的消息不能生成分享图」（PRD 要求说明原因，不静默丢掉）。从「分享图」入口进入的多选（例如收藏页「选择」）中，这类消息**不显示勾选框**。判断依据是服务器下发的消息标记（`scope`、`labels`，`docs/architecture/health-data.md` 第 5 节），客户端不自行猜测；服务器的拒绝才是真正的闸门。
+- 选择超过 P-24 条时：「分享图」按钮禁用，点击轻提示「一张分享图最多 30 条消息」（数值引用 P-24，界面文案由前端读取参数）。两种禁用原因同时存在时，提示成人模式 / 健康的原因。
 
 ---
 
@@ -317,7 +335,7 @@
 ### 6.5 SegmentedControl 分段选择
 
 - 高 32px，外框 `bg.page`、`radius.sm`；选中段 `bg.surface` + `shadow.sm`、`fontWeight.semibold`；选中块切换用 translateX（`duration.fast`）。
-- 用于：角色广场分类（明星 / 虚构角色 / 历史人物）、花费统计页按天 / 角色 / 用途。
+- 用于：角色广场分类（明星 / 虚构角色 / 历史人物）、花费统计页按天 / 角色 / 用途；v2.1 增加：「我发布的」作品 / 消息。（「可以不选」的选项组，如经期记录的流量、痛感，用 ChoiceChip 19.3，不用本组件：本组件总有一项被选中。）
 
 ### 6.6 StepSlider 五档滑杆（人设贴合度 CHAT-09）
 
@@ -350,7 +368,7 @@
 
 - 宽 `min(320px, 屏幕宽 - 64px)`，`bg.elevated`，`radius.lg`，`shadow.lg`。
 - 结构：标题（`fontSize.headline`，可省）→ 正文（`fontSize.subhead`、`text.secondary`，居中）→ 底部按钮区：两个按钮左右排列，中间 0.5px 分隔线；主操作在右侧、`fontWeight.semibold`；危险操作文字 `text.danger`。
-- 只用于需要用户明确确认的事：删除角色、换模型提醒（MDL-06）、注销、删除并退出群聊、「全部改为默认值」（SVC-01 第 4 条）、拨打时余额不足（MDL-10 第 5 条，这是用户主动拨打后的反馈，不是聊天中主动弹出）。**聊天过程中不主动弹出**。（v2.0 删除成人模式年龄确认，MODE-03 第 2 条。）
+- 只用于需要用户明确确认的事：删除角色、换模型提醒（MDL-06）、注销、删除并退出群聊、「全部改为默认值」（SVC-01 第 4 条）、拨打时余额不足（MDL-10 第 5 条，这是用户主动拨打后的反馈，不是聊天中主动弹出）。v2.1 增加：成人模式「先选模型」（8.2）、经期日记授权确认与清空（`pages/period-diary.md`）、送养宠物（`pages/pet.md`）、广场「替换补充设定」「保留疑似私人信息」「删除作品」（`pages/persona-plaza.md`）、管理后台导出与下架（`pages/admin.md`）。**聊天过程中不主动弹出**。（v2.0 删除成人模式年龄确认，MODE-03 第 2 条。）
 
 ### 6.11 Toast 轻提示
 
@@ -430,7 +448,8 @@
 - 两种容器，内容相同：底部弹层（点 NavBar 副标题快捷进入）和推入页面（聊天信息 › 情景模式；服务 › 情景模式总览 › 点某个角色）。
 - 每项：ListCell 选择型：模式名 + 一行说明（MODE-01 表中的说明）+ 右侧 ✓。
 - **只列出有资格的模式**；没资格的**不出现**（不是置灰，MODE-01 第 4 条）。私聊看该角色的资格；群聊看所有成员都具备的资格（SOC-03 第 4 条）。
-- **选择即生效**（MODE-03 第 2 条）：没有年龄确认、没有模型配置引导。
+- **选择即生效**（MODE-03 第 2 条）：没有年龄确认。
+- **成人模式的功能前提**（v2.1，MODE-03 第 3 条）：用户还没有在「服务 › 模型」设置成人模式模型时，点「成人」**不切换**（✓ 不移动、不出现切换提示），弹出 Dialog：标题「先选择成人模式模型」，正文「开启成人模式前，请先在『服务 › 模型』中选择成人模式模型」，按钮「取消」「去选择」（主操作）。点「去选择」推入成人模式模型选择页（`pages/billing.md` 6.1）；选好后返回原页面，用户再点一次「成人」即开启。这是用户主动操作后的反馈，不属于「聊天中主动弹窗」。
 - 选择后弹层关闭（页面形式则 ✓ 移动，留在本页），会话中出现 SystemTip「已切换到 XX 模式」。
 
 ---
@@ -487,9 +506,9 @@
 
 ### 9.6 AchievementBadge 成就徽章（GRW-06）
 
-- 成就清单（28 个）的唯一定义在 PRD GRW-06；每枚徽章的插画题材见 `pages/cards-familiarity.md` 第 5.2 节。
+- 成就清单（v1.3 为 30 个）的唯一定义在 PRD GRW-06；每枚徽章的插画题材见 `pages/cards-familiarity.md` 第 5.2 节。
 - **结构**：64px 圆形底座（`radius.full`）+ 内部 40px 物件插画；下方成就名（`fontSize.footnote`，最多 2 行）+ 获得日期或进度（`fontSize.caption2`、`text.tertiary`）。
-- **底座颜色按分组**（`achievement.*`，两个主题相同）：相识 `meet`、聊天与通话 `chat`、群聊与朋友圈 `social`、收藏与卡片 `collect`、纪念日与熟悉度 `memorial`。
+- **底座颜色按分组**（`achievement.*`，两个主题相同）：相识 `meet`、聊天与通话 `chat`、群聊与朋友圈 `social`、收藏与卡片 `collect`、纪念日与熟悉度 `memorial`、互动玩法 `play`（v2.1）。
 - **已获得**：底座 = 分组色 16% 透明叠加在 `bg.surface` 上（与 Tag「12% 底」同一做法，不新增颜色），外圈 2px 分组色描边；插画彩色。
 - **未获得**：底座 `bg.page`，无描边；插画用 `achievement.locked` 单色线稿（单独一套灰色 SVG，不用滤镜）；累计型显示进度「3/5」。
 - **新获得**：右上角 8px 红点，查看成就页后消失（SVC-01 第 5 条）。
@@ -638,6 +657,7 @@
 - 顶部：头像 24 + 角色名（`fontSize.footnote`、`fontWeight.medium`）+「· 10 月 3 日」（`text.tertiary`）；朋友圈收藏右侧加 Tag 中性型「朋友圈」。
 - 内容：文字（`fontSize.body`，最多 6 行）/ 图片缩略图（长边 120）/ 语音（语音条 + 转写）。
 - 多选模式：左上角出现 22px 勾选框（同 5.6）。
+- **不能生成分享图的收藏**（v2.1，成人模式消息、「健康」消息，EXP-01 第 6 条）：顶部行右侧加 Tag 中性型「不能生成分享图」（前置 12px 锁形图标）；长按 ActionSheet 不出现「生成分享图」；收藏页「选择」（为生成分享图而多选）时不显示勾选框。卡片内容照常显示（收藏是给自己看的）。
 
 ### 15.7 EntryCard 入口大卡片
 
@@ -668,6 +688,7 @@
 - 每格：图标 28（线性）→ 标签（`fontSize.subhead`）→ 值：余额用 `fontSize.title3`、`fontFamily.numeric`、`fontWeight.semibold`，模型名用 `fontSize.subhead`、单行省略。
 - 白字在强调色上按大字 / 界面元素标准（≥ 3:1，`brand.md` 3.4），所以值文字不小于 `fontSize.subhead` 且为半粗。
 - 余额低于 P-32：余额值下方加「余额不足」（`fontSize.caption1`）+ 余额格右上角红点（`badge.unread`，外加 1.5px 白色描边让红点在强调色上清晰）。
+- **余额为负数**（v2.1，安全优先透支，MDL-10 第 6 条；透支上限的唯一定义在 `docs/architecture/billing.md` 6.6 节）：值显示为「−¥ 0.03」——负号用数学减号「−」（U+2212，与等宽数字同宽，避免短横线「-」太细看不清），紧贴「¥」前；颜色、字号不变（仍为 `text.onBrand`，**不用红色**，不制造焦虑）；同时满足「低于 P-32」，所以照常显示「余额不足」和红点。最长形态「−¥ 2.15」在 320px 宽屏幕的半格内放得下（title3 约 7 个字宽）。
 - 每格整格可点：左 → 余额页；右 → 模型页。按下态：格子叠加白色 12% 遮罩（不改底色）。
 
 ### 16.2 ServiceGrid 服务宫格（SVC-01 第 2 条）
@@ -683,7 +704,7 @@
 - 居中：钱包图标 48（`brand.primary`）→「余额」（`fontSize.subhead`、`text.secondary`）→ 金额「¥ 12.34」（`fontSize.display`、`fontFamily.numeric`、`fontWeight.bold`、等宽数字、`text.primary`）→ 说明「如需增加余额，请联系管理员」（`fontSize.footnote`、`text.tertiary`）。
 - 低于 P-32 时金额下方加 Tag（`status.warningSoft` 底、`status.warningText` 字）「余额不足」。
 - **没有充值按钮**（MDL-07 第 4 条）。
-- 金额保留 2 位小数；余额为负（安全优先情况，MDL-10 第 6 条）显示「−¥ 0.03」，颜色仍为 `text.primary`。
+- 金额保留 2 位小数；余额为负（安全优先情况，MDL-10 第 6 条）显示「−¥ 0.03」（负号规则同 16.1），颜色仍为 `text.primary`；Tag「余额不足」照常显示；说明文字改为两行：「如需增加余额，请联系管理员」+「余额为负数时，下次加余额会先补上这部分」（`fontSize.footnote`、`text.tertiary`）。**不出现**「透支」「安全」等字样：负数只在用户发出高危信号时才可能出现，界面不能让人联想到安全关怀被触发（SAFE-06「界面无任何变化」）。
 
 ### 16.4 LedgerRow 余额明细行（MDL-08）
 
@@ -692,9 +713,10 @@
             共 46 次 · 模型 X                余额 12.3400
 ```
 
-- 左：40px 圆形底（类型对应 `tint.*` 16% 叠加）+ 20px 类型图标（同色）：聊天 = 气泡（blue）、后台 = 月亮（lilac）、识图 = 眼睛（teal）、语音 = 声波（orange）、图片 = 画框（pink）、导入 = 文档（gray）、管理员加余额 = 加号（teal）、管理员扣减 = 减号（gray）、退还 = 回旋箭头（teal）。
+- 左：40px 圆形底（类型对应 `tint.*` 16% 叠加）+ 20px 类型图标（同色）：聊天 = 气泡（blue）、后台 = 月亮（lilac）、识图 = 眼睛（teal）、语音 = 声波（orange）、图片 = 画框（pink）、导入 = 文档（gray）、管理员加余额 = 加号（teal）、管理员扣减 = 减号（gray）、退还 = 回旋箭头（teal）；v2.1 增加：安全 = 盾牌（gray，用途分组 `safety`）、行为规划 = 路线（`path` 图标，blue，用途分组 `planning`，PLAN-03 第 4 条）。分组对照以 `docs/architecture/billing.md` 5.2 节为准。
+- 「安全」类记录的文字只写「安全」，第二行「共 N 次」，不显示是否动用了透支（透支标记只在管理后台可见，`billing.md` 6.6 第 4 条）。
 - 中：第一行标题（`fontSize.body`，单行）：「角色名 · 类型」，无角色时只写类型（「管理员加余额」）；第二行（`fontSize.caption1`、`text.secondary`）：合并行写「共 N 次 · 模型名」，管理员记录写备注，退还写「调用失败退还」。
-- 右：金额（`fontSize.body`、`fontFamily.numeric`、等宽）：「+」用 `amount.income`，「−」用 `amount.expense`；下方「余额 12.3400」（`fontSize.caption1`、`text.tertiary`）。单条最多 4 位小数，不足 0.0001 显示「< 0.0001」。
+- 右：金额（`fontSize.body`、`fontFamily.numeric`、等宽）：「+」用 `amount.income`，「−」用 `amount.expense`；下方「余额 12.3400」（`fontSize.caption1`、`text.tertiary`）。单条最多 4 位小数，不足 0.0001 显示「< 0.0001」。变动后余额为负时写「余额 −0.0300」（同色，不标红）。
 - 行高最小 64；合并行右侧有 ›，点击推入该组的每次调用列表（同一组件，标题改为时间「14:05」，第二行为模型名）。
 - 管理员加余额、扣减、退还永远单独一行（MDL-08 第 4 条）。
 - 按天分组：SectionHeader「10 月 4 日」，右侧当天合计「支出 ¥1.23  收入 ¥50.00」（`fontSize.caption1`、`text.tertiary`）。
@@ -747,6 +769,199 @@
 
 ---
 
+## 18. 人设广场（v2.1，PLZ-01～PLZ-07）
+
+页面怎么组合见 `pages/persona-plaza.md`。
+
+### 18.1 WorkRow 作品行（PLZ-01 第 2 条）
+
+```
+[头像48] 更黏人的杨幂  [预设改版 · 基于 杨幂]
+         下雨天会给你打电话的那种黏人            ← 一句话介绍
+         小鱼 · 赞 128 · 添加 56            已添加
+```
+
+- 由 CharacterRow（9.1）扩展：头像 48（显示规则见 `pages/persona-plaza.md` 第 2.3 节）；第一行名字（`fontSize.body`、`fontWeight.medium`，单行省略）+ 类型 Tag（中性型：「原创」「虚构」「真人」；品牌型：「预设改版 · 基于 XX」，XX 超过 4 字省略）；第二行一句话介绍（`fontSize.footnote`、`text.secondary`，单行）；第三行元信息（`fontSize.caption1`、`text.tertiary`）：作者广场昵称 · 赞 N · 添加 N（数字过万写「1.2 万」）。
+- 右侧：我已添加或应用过时显示「已添加」（`text.tertiary` 文字），否则不显示按钮（广场作品必须进作品页看完内容再拿走，不提供行内「添加」）。
+- **行高固定 88**（三行文字），便于虚拟滚动；改编作品不在行内显示「改编自」，只在作品页显示。
+- 「我发布的」列表中的变体：右侧换成状态 Tag（「展示中」品牌型 / 「已下架」中性型 / 「被管理员下架」`status.warningSoft` 底 + `status.warningText` 字）+ 有新点赞、评论时 Badge 红点。
+
+### 18.2 WorkHeader 作品页头部
+
+- 居中：头像 64 → 名字（`fontSize.title2`、`fontWeight.semibold`）→ 类型 Tag 行 → 一句话介绍（`fontSize.subhead`、`text.secondary`）→ 作者行「[头像 20] 小鱼 ›」（`fontSize.footnote`、`text.link`，点击 → 作者页）→ 「版本 3 · 10 月 5 日更新」（`fontSize.caption1`、`text.tertiary`，点击 → 版本记录弹层）。
+- 改编作品：作者行下方加一行「改编自《原作品名》· 原作者 XX」（`fontSize.caption1`、`text.secondary`，原作品仍在广场时可点，不可删除，PLZ-04 第 6 条）。
+- `bg.surface` 白块，上下内边距 `space.7`。
+
+### 18.3 ContentPreview 发布内容预览
+
+- 用于作品页「将要复制给你的内容」和发布确认页。分组列表：每组一个小标题（SectionHeader）+ 正文块（`bg.surface`、内边距 `space.5`、`fontSize.callout`、`lineHeight.relaxed`）。
+- 长文本（人设描述、改版设定）默认显示 6 行，超出显示「展开」文字按钮（用户主动操作，允许改变高度）。
+- 示例对话：每句一行「角色：……」「用户：……」，说话人 `fontWeight.medium`。
+- 被遮盖的私人信息片段显示为 PrivacyMask（18.4）的「已遮盖」态。
+
+### 18.4 PrivacyMask 疑似私人信息片段（PLZ-02 第 6 条）
+
+- **已遮盖**（默认，也是其他用户看到的样子）：片段替换为「▢▢▢」（方块数 = 原文字数，最多 6 个），`bubble.quoteBg` 底、`radius.xs`、`text.tertiary` 色，行内显示。
+- **作者在确认页看到的待处理态**：原文照常显示但加 `status.warningSoft` 底 + 1px `status.warning` 下划线（静态），右上角小号序号「①」；同一片段在确认页顶部的「需要你确认」列表里有对应一行（见 `pages/persona-plaza.md` 4.4）。
+- **作者已确认保留**：去掉底色，只留 1px 虚线下划线 `border.strong`，表示「这处是我确认过的」。
+- 只在发布流程和作品页出现；聊天、资料页等其他地方没有这个样式。
+
+### 18.5 CommentItem 广场评论（PLZ-03）
+
+- 结构：头像 32（评论者广场头像）→ 右侧：第一行广场昵称（`fontSize.footnote`、`text.nameInMoments`）+ 作者本人加 Tag 品牌型「作者」；第二行内容（`fontSize.callout`）；回复显示为「回复 XX：内容」，「XX」用 `text.nameInMoments`（一层，与朋友圈评论一致，C 10.1）；第三行时间（`fontSize.caption1`、`text.tertiary`）。
+- 评论之间 0.5px `border.hairline`（从文字起始处开始）。
+- 点评论 → 底部输入栏占位变为「回复 XX」；长按 → ActionSheet：回复、复制、删除（自己的评论，或作者在自己作品下）、举报（别人的评论；已举报过显示禁用的「已举报」）。
+- 被删除的评论直接消失，不留「该评论已删除」。
+- **没有**点评论者头像进入任何个人页的交互（PLZ-03 第 6 条：用户之间只有点赞和评论）。头像点击无反应。
+
+### 18.6 WorkActionBar 作品页底部操作栏
+
+- 固定在页面底部（吃掉安全区），`bg.surface` + 顶部 0.5px `border.hairline`，高 56 + 安全区。
+- 左：点赞按钮（Phosphor `thumbs-up`，24px；未赞 `text.secondary`、已赞 `brand.primary` 填充图标 + 数字，`fontSize.subhead`、等宽）；点赞动效 M-18。**不用爱心**（与成就 18 号「不用爱心」同理，避免恋爱联想）。
+- 中：评论按钮（`chat-circle` + 数字），点击滚动到评论区并聚焦评论输入。
+- 右：动作按钮，按作品类型：
+  - 自定义角色：主按钮 md「添加为我的角色」；
+  - 预设改版：主按钮 md「应用到我的 杨幂」（未添加该预设角色时为「添加 杨幂 并应用」）+ 左侧次级按钮 md「添加为新角色」。
+  - 我自己的作品：主按钮换为次级按钮「管理」→ ActionSheet（`pages/persona-plaza.md` 第 5 节）。
+- 已添加过：按钮文字不变，点击时先给提示（PLZ-04 第 5 条，见页面说明）。
+
+### 18.7 SourceNote 来源标注（PLZ-04 第 4 条）
+
+- 一行 ListCell 只读变体：左 16 图标（`storefront`，`text.secondary`）+「来自人设广场 · 作者 小鱼 · 版本 3」（`fontSize.footnote`、`text.secondary`）+ 右侧 ›（作品仍在广场时）。作品已下架 / 删除：没有 ›，不可点；作者已注销：作者显示「已注销用户」（PLZ-06 第 4 条）。
+- 改编作品发布后，自己作品页的「改编自」同样用 18.2 的那一行，不用本组件。
+
+---
+
+## 19. 互动玩法（v2.1，PLAY-01～PLAY-07）
+
+页面怎么组合见 `pages/period-diary.md`、`pages/pet.md`、`pages/play.md`。
+
+### 19.1 PeriodCalendar 经期日历（PLAY-01 第 3 条）
+
+- 月视图，7 列（周一开头），每格宽 = 内容宽 / 7、高 44；顶部「2026 年 10 月」+ 左右切月箭头（`fontSize.headline`）；星期行 `fontSize.caption1`、`text.tertiary`。
+- 日期数字 `fontSize.subhead`、等宽，居中在 32px 圆内：
+
+  | 状态 | 样式 |
+  |---|---|
+  | 已记录的经期日 | 32 圆实心，`tint.pink`，数字 `text.onBrand` |
+  | 预测的经期日 | 32 圆，1.5px **虚线**描边 `tint.pink`，数字 `tint.pink`（静态虚线，不做动画） |
+  | 有当天记录（痛感、症状） | 数字下方 4px 圆点，`text.tertiary` |
+  | 今天 | 数字 `fontWeight.bold` + 下方「今天」（`fontSize.caption2`） |
+  | 未来日期 | 数字 `text.placeholder`，不可点 |
+
+- 日历下方固定图例一行：「● 已记录  ◌ 预测（仅供参考）」（`fontSize.caption1`、`text.secondary`）。**「仅供参考」必须出现在每处预测旁**（PLAY-01 验收）。
+- 用 `tint.pink` 而不用红色：红色在本系统只表示「需要注意」（`brand.md` 3.3）；`tint.pink` 两个主题相同。
+- 点某一天 → 推入该天的记录页。切月：左右滑动或点箭头，月份内容 translateX 切换（`duration.base`）。
+
+### 19.2 PeriodStatusCard 经期状态卡
+
+- `bg.surface`、`radius.md`、内边距 `space.6`，页面左右外边距 `space.3`；无阴影。
+- 内容三种：
+  - 经期中：大字「经期第 2 天」（`fontSize.title2`、`fontWeight.semibold`）+「预计还有 3 天 · 仅供参考」（`fontSize.footnote`、`text.secondary`）+ 按钮行：主按钮 md「记录今天」、次级按钮 md「经期结束了」。
+  - 不在经期：「距下次预计还有 12 天」+「预计 10 月 17 日开始 · 仅供参考」+ 按钮行：主按钮 md「经期开始了」、次级按钮 md「记录今天」。
+  - 记录不足 / 不规律：第二行改为「记录较少 / 不规律，预测可能不准」（PLAY-01 边界情况）。
+- 不使用倒计时动画、不用进度环（不制造期待焦虑，同 `cards-familiarity.md` 第 4 节）。
+
+### 19.3 ChoiceChip 选项片
+
+- 高 32、`radius.full`、左右内边距 `space.4`、`fontSize.subhead`；未选：`bg.page` 底 + `text.primary`；选中：`brand.soft` 底 + `brand.onSoft` 字 + `fontWeight.medium`（瞬间切换）。
+- 一组横排，自动换行，间距 `space.3`。分单选组（再点一次已选的 = 取消选择，可以不选）和多选组两种。
+- 用于：经期记录的流量、痛感（单选）、症状标签（多选）；TA 的提醒的重复方式；心愿、提醒的快捷文案；专注时长；人设广场举报原因不用它（用 ListCell 选择型）。
+
+### 19.4 PetStage 宠物形象区（PLAY-02 第 5 条）
+
+- 宽 = 页面宽，高 = 宽 × 0.75；背景为宠物图鉴提供的**静态场景图**（无场景图时 `brand.soft` 纯色 + 品牌星星纹样）；宠物图片居中偏下，边长 = 宽 × 0.56，透明底 PNG / WebP（规格见 `pages/pet.md` 第 7 节）。
+- 右上角 Tag 品牌型「幼年 / 少年 / 成年」。
+- 互动反应：宠物图片 M-19；反应小字气泡（`bg.elevated` + `shadow.sm`、`radius.md`、`fontSize.footnote`，如「呼噜呼噜～」，文案为预置随机，不调用模型）出现在宠物右上方 1.5 秒后淡出。
+- 只放一张静态图，不做逐帧动画、不做呼吸循环（R7：循环动画越少越好）。
+
+### 19.5 PetActionButton 照顾按钮
+
+- 三个等宽按钮一行（喂食 / 玩耍 / 摸摸）：每个 = 56px 圆（`bg.surface` + 0.5px `border.strong`）内 28 图标（Phosphor `fish`、`tennis-ball`、`hand-palm`；不用带爱心的图标）+ 下方文字（`fontSize.caption1`）。
+- 按下：圆 scale 0.92（`duration.instant`），松开回弹；触发 PetStage 的 M-19。
+- 每次点击都有反应；当天计亲密值的次数用完后（P-39）照常有反应，只是数字不再增加，**界面不提示「今天已达上限」「明天再来」**（不催促、不打卡，PLAY-02 第 8 条）。
+
+### 19.6 GrowthSteps 成长阶段
+
+- 三段横向步骤：幼年 · 少年 · 成年；圆点 12px，已到达 `brand.primary` 实心，未到达 `border.strong` 描边；圆点间连线 2px（已走过 `brand.primary`、未走过 `border.strong`，静态）。
+- 下方说明（`fontSize.caption1`、`text.secondary`）：「第 30 天长成少年 · 第 100 天长成成年」（数字读 P-39），已到成年为「已经长大啦」。只是信息，不是倒计时。
+
+### 19.7 WishItem 心愿行（PLAY-04）
+
+- 左：22px 圆形勾选框（同 5.6 样式，选中 = 已完成）；中：心愿文字（`fontSize.body`，完成后 `text.tertiary` + 静态删除线）+ 可选第二行（`fontSize.caption1`）：日期 Tag 品牌型「10 月 20 日 · 约定」、来源「TA 提议」（`text.tertiary`）；右：›。
+- 行高最小 `size.settingRow`。点勾选框 = 完成 / 取消完成；点其他区域 → 编辑弹层。
+- 完成时勾选框 scale 0.6 → 1（`duration.fast`，`easing.spring`）；文字变灰和删除线**瞬间**切换（不做颜色过渡，R3）。
+
+### 19.8 QuestionCard 每日一问（PLAY-03）
+
+- `bg.surface`、`radius.md`、内边距 `space.6`：顶部「10 月 5 日 · 今天的问题」（`fontSize.caption1`、`text.tertiary`）→ 问题（`fontSize.title3`、`fontWeight.semibold`，最多 3 行）。
+- 下方两个答案块（`bubble.quoteBg` 底、`radius.sm`、内边距 `space.4`）：「我的回答」「杨幂 的回答」。
+- TA 的答案在我答完之前：显示锁形图标 +「你答完就能看到 TA 的答案」（`fontSize.footnote`、`text.secondary`），**不用模糊遮住真实答案**（R4，且答案此时还没生成）。答完揭晓：答案块 opacity 0 → 1 + translateY 8 → 0（M-07 同参数）。
+
+### 19.9 FocusTimer 专注计时（PLAY-06）
+
+- 全屏覆盖页中央：TA 头像 64 → 「杨幂 陪你专注中」（`fontSize.subhead`、`text.secondary`）→ 剩余时间「18:24」（`fontSize.display`、`fontFamily.numeric`、等宽）→ 进度条（同 FamiliarityMeter 进度条规格，宽 200，填充 `brand.primary`，scaleX，每秒更新一次、不做补间）→ 说明「这段时间所有角色都不会打扰你」（`fontSize.footnote`、`text.tertiary`）。
+- **没有失败态**：没有「专注失败」「中断」字样、没有红色、没有掉落类动画（PLAY-06 规则要点）。
+- 离开专注页后，所有页面 NavBar 上方出现 FocusCapsule：样式同 CallCapsule（12.2），背景改 `brand.primary`，文字「专注中 18:24 · 点击返回」。通话中时 CallCapsule 优先，FocusCapsule 隐藏。
+
+### 19.10 ReminderRow 提醒行（PLAY-07）
+
+- 左：时间「22:30」（`fontSize.title3`、`fontFamily.numeric`）；中：第一行提醒内容（`fontSize.body`）+ 健康类加 Tag 中性型「健康」；第二行「[头像 20] 杨幂 提醒 · 每天」（`fontSize.caption1`、`text.secondary`）；右：Switch（开 / 关这条提醒）。
+- 行高 72；点行（开关以外）→ 编辑页；左滑 → 删除（SwipeActions 危险色）。
+
+---
+
+## 20. 管理后台（v2.1，ADM-08、ADM-09，电脑浏览器）
+
+管理后台是**电脑浏览器使用的独立网页**（`docs/architecture/prd-answers.md` 第 5 节），页面怎么组合见 `pages/admin.md`。用同一份令牌：固定**默认主题**（`data-theme` 不设），深浅模式跟随系统；不做手机布局（最小宽度 1200px，窄于此时横向滚动）。下列组件只在管理后台使用；按钮、输入框、开关、Dialog、Toast、Tag、Badge 复用前文组件。
+
+### 20.1 AdminShell 后台框架
+
+- 左侧导航栏宽 `size.sidebarWidth` × 0.6（216px）、`bg.surface`、右侧 0.5px `border.hairline`；顶部 56px 区放 logo（`share.logo`）+「微伴管理后台」（`fontSize.headline`）；下方菜单项高 40、左右内边距 `space.5`、24 图标 + 文字（`fontSize.subhead`）；选中项 `brand.soft` 底 + `brand.onSoft` 字；菜单分组标题 SectionHeader 样式。
+- 右侧内容区背景 `bg.page`；顶部 56px 页头（`bg.surface`、底部 hairline）：左页面标题（`fontSize.title3`、`fontWeight.semibold`）、右侧管理员名字 + 退出。内容区内边距 `space.7`，内容最大宽 1440px。
+- 菜单（按 ADM 章节）：角色库、关系网、公开动态、素材库、模型与价目、用户与余额、**用量与费用**（ADM-08）、**人设广场**（ADM-09，右侧 Badge 数字 = 待处理举报数）、审计记录。
+
+### 20.2 FilterPanel 筛选面板
+
+- `bg.surface`、`radius.md`、内边距 `space.5`；一行或两行排列的筛选项，每项 = 标签（`fontSize.footnote`、`text.secondary`）+ 控件（高 36，`bg.inputField`，0.5px `border.strong`，`radius.sm`，`fontSize.subhead`）。
+- 控件类型：时间范围（快捷 ChoiceChip「今天 / 近 7 天 / 近 30 天 / 本月」+ 起止日期时间选择，精确到小时）、可搜索多选（输入名字出候选，已选项为可删除的 Tag 品牌型）、下拉单选 / 多选。
+- 右下角：次级按钮 md「重置」+ 主按钮 md「查询」。筛选条件写进页面网址（便于收藏和回到原状态），**网址里只有 ID，不放用户名**。
+
+### 20.3 StatTile 汇总数字块
+
+- 一行 4–6 个等宽块，间距 `space.4`；每块 `bg.surface`、`radius.md`、内边距 `space.5`：标签（`fontSize.footnote`、`text.secondary`）→ 数值（`fontSize.title2`、`fontFamily.numeric`、等宽、`fontWeight.semibold`）→ 可选副行（`fontSize.caption1`、`text.tertiary`，如「其中估算 3.2%」）。
+- 不做环比箭头、不做红绿涨跌色（这是对账工具，不是运营看板）。
+
+### 20.4 DataTable 数据表
+
+- `bg.surface`、`radius.md`；表头行高 40、`fontSize.footnote`、`text.secondary`、`fontWeight.medium`，**吸顶**；数据行高 44、`fontSize.subhead`；行间 0.5px `border.hairline`；悬停行叠加 `bg.pressed`。
+- 数字列右对齐、`fontFamily.numeric` 等宽；金额列统一 4 位小数（与 LedgerRow 一致）、token 列千分位。文字列左对齐，超长省略，悬停显示完整内容。
+- 可排序列表头带 ↕，当前排序列显示 ↑ / ↓（`brand.primary`）。
+- **合计行**：固定在表格底部（吸底），`bg.page` 底、`fontWeight.semibold`，左侧写「合计（筛选范围内）」。
+- 分页：底部右侧「共 1,234 条 · 每页 50 · ‹ 1 2 3 … ›」；也支持「加载更多」。列表超过 200 行时用虚拟滚动。
+- 空：表格区域内居中 EmptyState（无插画）「没有符合条件的记录」；加载：行内 Skeleton（同 6.13）；出错：表格区域内一行 `status.dangerSoft` 横条「查询失败：原因」+「重试」文字按钮。
+- 可点击的行右侧带 ›，整行可点。
+
+### 20.5 TrendChart 趋势折线图
+
+- 高 240，`bg.surface`、`radius.md`、内边距 `space.5`；**一次只画一条线**：右上角 SegmentedControl「费用 | token」切换（费用视图可再选「用户扣费 / 平台成本」）。
+- 线 2px `brand.primary`；数据点 4px 圆，只在悬停时显示；网格线 0.5px `border.hairline`，只画水平线；坐标文字 `fontSize.caption2`、`text.tertiary`；横轴按天（北京时间，标注「北京时间」）。
+- 悬停：竖向参考线 + 提示框（`bg.elevated` + `shadow.sm`、`radius.sm`）显示当天数值。
+- 只有一组数据，不做图例；切换视图时线条直接重画，不做过渡动画。
+- 实现前由 Web 负责人按 `dataviz` 等图表规范核对可读性；本节只定外观约束。
+
+### 20.6 RankList 排行小表
+
+- 三列并排的小卡片（`bg.surface`、`radius.md`），标题「费用最高的用户 / 角色 / 模型」；每行：名次（`fontFamily.numeric`、`text.tertiary`）+ 名字 + 右侧金额（等宽、右对齐）+ 同色系占比条（高 4、`brand.soft` 底、`brand.primary` 填充，scaleX 静态）。最多 10 行。点行 = 把该项加入筛选。
+
+### 20.7 DetailDrawer 详情抽屉
+
+- 从右侧滑入的面板，宽 560，`bg.elevated` + `shadow.lg`，背后 `bg.scrim`；translateX 100% → 0（`duration.base`，M-03 的横向版本）。
+- 顶部标题 + × 关闭；内容为只读字段列表（标签 `fontSize.footnote`、`text.secondary`，值 `fontSize.subhead`），可含一个 DataTable。
+- 用于：用量明细中某一次调用的完整字段、广场作品的某个版本内容、举报详情。
+
+---
+
 ## 附：组件与需求覆盖检查
 
 | 任务卡点名的组件 | 本文位置 |
@@ -759,10 +974,15 @@
 | 系统横条 | 7.1 |
 | 来电界面 | 12、`pages/call.md` |
 | 卡片 | 9.5 |
-| 成就徽章（28 枚） | 9.6、`pages/cards-familiarity.md` 5.2 |
+| 成就徽章（v2.1 为 30 枚） | 9.6、`pages/cards-familiarity.md` 5.2 |
 | 情景模式标识 | 8.1 |
 | 服务页顶部卡片、服务宫格 | 16.1、16.2 |
 | 余额、明细、价目、档位、后台预算 | 16.3–16.8 |
 | 总览行、主题预览卡 | 16.9、16.10 |
 | 聊天信息页（私聊、群聊） | 17 |
 | 「我」页菜单行 | 3.6 |
+| 顶部分页（v2.1） | 1.5 |
+| 人设广场：作品行、作品页头部、内容预览、隐私遮盖、评论、操作栏、来源标注（v2.1） | 18 |
+| 经期日历与状态卡、选项片、宠物形象区与照顾按钮、成长阶段、心愿行、每日一问卡、专注计时、提醒行（v2.1） | 19 |
+| 信件消息、带 3 个快捷按钮的消息（v2.1） | 4.2 |
+| 管理后台框架、筛选面板、汇总数字、数据表、趋势图、排行小表、详情抽屉（v2.1） | 20 |
