@@ -316,4 +316,24 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     await app.get(GatewayMaintenance).recover();
     expect((await db.query('SELECT * FROM model_access.generation_results')).rows).toHaveLength(0);
   });
+  it('缓存重放也检查新加的adult_content标签，不再次调用或重复扣费', async () => {
+    const payload = input();
+    expect((await gateway.generateText(payload)).ok).toBe(true);
+    const catalog = app.get(CatalogService);
+    const original = (await catalog.adminList()).find((m) => m.modelKey === modelKey)!;
+    try {
+      await catalog.upsert(admin, modelKey, {
+        ...original,
+        capabilities: ['adult_content'],
+        defaultFor: [],
+      });
+      expect(await gateway.generateText(payload)).toEqual({
+        ok: false,
+        error: 'model_not_allowed',
+      });
+      expect(calls).toBe(1);
+    } finally {
+      await catalog.upsert(admin, modelKey, original);
+    }
+  });
 });

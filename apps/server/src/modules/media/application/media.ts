@@ -4,6 +4,7 @@ import { and, count, eq, lt } from 'drizzle-orm';
 import {
   MEDIA_LIMITS,
   type MediaObject,
+  type MediaReadPort,
   type MediaPurpose,
   type UserDataOwner,
 } from '@weiban/contracts';
@@ -30,9 +31,6 @@ import { objects } from '../infra/db/schema.js';
 import { MEDIA_STORAGE } from '../tokens.js';
 import type { ObjectStorage } from '../infra/storage.js';
 type Row = typeof objects.$inferSelect;
-export interface MediaReadPort {
-  getMedia(userId: string, mediaId: string): Promise<MediaObject>;
-}
 @Injectable()
 export class MediaService implements UserDataOwner, OnModuleInit, MediaReadPort {
   readonly module = 'media';

@@ -81,12 +81,12 @@ const adminCharacter = {
   birthday: null,
   fanName: null,
   classification,
-  card: { cardSchemaVersion: 0, data: {} },
+  card: { cardSchemaVersion: 1, data: {} },
 };
 
 describe('契约版本', () => {
-  it('为 1.3', () => {
-    expect(CONTRACT_VERSION).toBe('1.3');
+  it('为 2.0', () => {
+    expect(CONTRACT_VERSION).toBe('2.0');
   });
 });
 

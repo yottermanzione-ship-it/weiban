@@ -57,6 +57,13 @@
       "when": 1791214528517,
       "tag": "0007_media",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791216406070,
+      "tag": "0008_characters",
+      "breakpoints": true
     }
   ]
 }

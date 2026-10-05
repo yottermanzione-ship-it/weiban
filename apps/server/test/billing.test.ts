@@ -1245,12 +1245,13 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         lastRetriggeredAt: null,
       });
       // T-027 起 model_access 也登记了删除清单
-      expect(mine?.modules).toHaveLength(3);
+      expect(mine?.modules).toHaveLength(4);
       expect(mine?.modules).toEqual(
         expect.arrayContaining([
           { module: 'billing', purged: false, deletedRows: null, purgedAt: null },
           { module: 'model_access', purged: false, deletedRows: null, purgedAt: null },
           { module: 'media', purged: false, deletedRows: null, purgedAt: null },
+          { module: 'characters', purged: false, deletedRows: null, purgedAt: null },
         ]),
       );
       await http().get('/api/v1/admin/account-deletions', user.token).expect(401);
@@ -1274,7 +1275,9 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
           const reported = (await events('platform.user_data_purged', user.userId)).map(
             (e) => (e as { module: string }).module,
           );
-          expect(new Set(reported)).toEqual(new Set(['billing', 'media', 'model_access']));
+          expect(new Set(reported)).toEqual(
+            new Set(['billing', 'characters', 'media', 'model_access']),
+          );
         },
         { timeout: 20_000, interval: 200 },
       );
@@ -1316,7 +1319,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       await withClient((c) =>
         c.query(
           `INSERT INTO identity.deletion_progress (user_id, module, deleted_rows, reported_at)
-           VALUES ($1, 'billing', 0, now()), ($1, 'model_access', 0, now()), ($1, 'media', 0, now())`,
+           VALUES ($1, 'billing', 0, now()), ($1, 'model_access', 0, now()), ($1, 'media', 0, now()), ($1, 'characters', 0, now())`,
           [user.userId],
         ),
       );

@@ -1,6 +1,6 @@
 {
   "name": "@weiban/contracts",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "private": true,
   "description": "微伴接口与事件契约（唯一准绳）。Zod 4 schema 为源头，导出 TypeScript 类型、JSON Schema 与 OpenAPI 文档。",
   "type": "module",

@@ -945,7 +945,7 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
       await vi.waitFor(
         async () => {
           // 登记了删除清单的模块：chat（假模块）、billing（T-023）、model_access（T-027）各回报一次
-          expect(await outbox('platform.user_data_purged', web.user.userId)).toHaveLength(4);
+          expect(await outbox('platform.user_data_purged', web.user.userId)).toHaveLength(5);
         },
         { timeout: 20_000, interval: 200 },
       );
@@ -955,6 +955,7 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
       expect(reports).toContainEqual({ userId: web.user.userId, module: 'chat', deletedRows: 3 });
       expect(reports.map((r) => r.module).sort()).toEqual([
         'billing',
+        'characters',
         'chat',
         'media',
         'model_access',

@@ -12,7 +12,6 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
-import { z } from 'zod';
 import {
   MediaEndpoints,
   MediaAdminEndpoints,
@@ -51,10 +50,10 @@ export class MediaController {
     return this.media.getMedia(me.userId, p.mediaId);
   }
   @Get(':mediaId/content')
-  @RequireAuth('none')
+  @RequireAuth(MediaEndpoints.download.auth)
   async content(
     @Param(params) p: { mediaId: string },
-    @Query(new ContractPipe(z.object({ token: z.string().min(1).max(1000) }))) q: { token: string },
+    @Query(new ContractPipe(MediaEndpoints.download.query!)) q: { token: string },
     @Res() res: Response,
   ) {
     const media = await this.media.download(p.mediaId, q.token);

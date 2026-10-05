@@ -8,17 +8,14 @@ import type { ModelTextPrices, UpstreamTestFailure } from './domain/rules.js';
 
 /**
  * 无审查模型闸门用的 policy 能力（契约 PolicyPort.checkModelForCharacter）。
- * policy 模块（D-L0-11）尚未实现：默认绑定「失败即拒绝」的实现（FailClosedModelPolicy），
- * policy 模块上线后在装配处改为 `{ provide: MODEL_ACCESS_POLICY, useExisting: <policy 的 PolicyPort 令牌> }`。
+ * 组合根绑定真实 policy；测试可以覆盖该窄端口。
  */
 export const MODEL_ACCESS_POLICY = Symbol('weiban.model-access.policy');
 export type ModelPolicy = Pick<PolicyPort, 'checkModelForCharacter'>;
 
 /**
  * 计费只读查询（契约 1.3 BillingChargeQueryPort：查价、按日 / 按用量记录查扣费）。
- * billing 侧实现尚未完成（另开任务）：默认绑定 ChargeQueryUnavailable（调用即报「暂不可用」，
- * 启用模型返回 503、用量对账跳过并记错误日志）。billing 导出它的令牌后，在本模块改为
- * `{ provide: MODEL_ACCESS_CHARGE_QUERY, useExisting: <billing 的令牌> }`。
+ * 绑定 billing 的真实只读查询；不允许其他模块取得冻结/结算能力。
  */
 export const MODEL_ACCESS_CHARGE_QUERY = Symbol('weiban.model-access.charge-query');
 export type ChargeQuery = BillingChargeQueryPort;

@@ -5,13 +5,14 @@
  */
 import { Module } from '@nestjs/common';
 import { BILLING_CHARGE_QUERY_PORT, BillingModule } from '../billing/index.js';
+import { POLICY_PORT } from '../policy/index.js';
 import { IdentityModule } from '../identity/index.js';
 import { GenerationCache } from './application/generation-cache.js';
 import { GatewayMaintenance } from './application/gateway-maintenance.js';
 import { ModelGateway } from './application/gateway.js';
 import { OpenAiTextAdapter } from './infra/text-adapter.js';
 import { CatalogService } from './application/catalog.js';
-import { EmptyPriceSource, FailClosedModelPolicy } from './application/defaults.js';
+import { EmptyPriceSource } from './application/defaults.js';
 import { ModelAccessLifecycle } from './application/lifecycle.js';
 import { UsageReconciliationService } from './application/reconciliation.js';
 import { ModelResolver, ModelStatusService } from './application/resolver.js';
@@ -42,12 +43,7 @@ import {
     GatewayMaintenance,
     { provide: MODEL_GATEWAY_PORT, useExisting: ModelGateway },
     { provide: TEXT_ADAPTER, useFactory: () => new OpenAiTextAdapter() },
-    {
-      provide: MODEL_GENERATION_POLICY,
-      useValue: {
-        checkAdultGeneration: async () => ({ allowed: false, reason: 'adult_mode_not_eligible' }),
-      },
-    },
+    { provide: MODEL_GENERATION_POLICY, useExisting: POLICY_PORT },
     {
       provide: GATEWAY_RETRY_WAIT,
       useValue: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
@@ -62,7 +58,7 @@ import {
     ModelAccessLifecycle,
     { provide: UPSTREAM_PROBE, useFactory: () => new OpenAiCompatibleProbe() },
     // policy 模块（D-L0-11）上线后改为 useExisting: policy 的 PolicyPort 令牌
-    { provide: MODEL_ACCESS_POLICY, useClass: FailClosedModelPolicy },
+    { provide: MODEL_ACCESS_POLICY, useExisting: POLICY_PORT },
     // billing 读价目表的端口方法批准后改为真实实现（见交接说明契约变更申请）
     { provide: MODEL_PRICE_SOURCE, useClass: EmptyPriceSource },
     { provide: MODEL_ACCESS_CHARGE_QUERY, useExisting: BILLING_CHARGE_QUERY_PORT },

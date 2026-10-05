@@ -197,6 +197,8 @@ export interface EndpointDef<
   body?: B;
   /** 成功时的响应体；204 无内容时用 NoContent。 */
   response: R;
+  /** 默认 application/json；二进制媒体响应为实际 MIME。 */
+  responseContentType?: string;
   /** 中文说明，对应的 PRD 需求编号。 */
   summary: string;
 }

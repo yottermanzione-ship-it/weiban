@@ -19,9 +19,11 @@ import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_DIRECTORY_PORT } from '../../ide
 import {
   GATEWAY_RETRY_WAIT,
   MODEL_GENERATION_POLICY,
+  MODEL_ACCESS_POLICY,
   TEXT_ADAPTER,
   type RetryWait,
   type GenerationPolicy,
+  type ModelPolicy,
 } from '../tokens.js';
 import { estimateTokens, type TextAdapter, type TextResult } from '../infra/text-adapter.js';
 import {
@@ -33,6 +35,7 @@ import {
 import { ModelResolver, ModelStatusService } from './resolver.js';
 import { UpstreamService } from './upstreams.js';
 import { UsageRecorder } from './usage.js';
+import { CatalogService } from './catalog.js';
 
 const DEFAULT_TOKENS: Partial<Record<GenerateTextInput['purpose'], number>> = {
   chat_reply: 600,
@@ -58,6 +61,8 @@ export class ModelGateway implements ModelGatewayPort {
     @Inject(IDENTITY_DIRECTORY_PORT) private readonly directory: IdentityDirectoryPort,
     @Inject(IDENTITY_ACCOUNT_STATUS_PORT) private readonly accounts: IdentityAccountStatusPort,
     @Inject(MODEL_GENERATION_POLICY) private readonly policy: GenerationPolicy,
+    @Inject(MODEL_ACCESS_POLICY) private readonly modelPolicy: ModelPolicy,
+    @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(TEXT_ADAPTER) private readonly adapter: TextAdapter,
     @Inject(GATEWAY_RETRY_WAIT) private readonly wait: RetryWait,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -84,7 +89,24 @@ export class ModelGateway implements ModelGatewayPort {
     }
     const claim = await this.cache.claim(input);
     if (claim.row.requestHash !== requestHash(input)) return { ok: false, error: 'bad_request' };
-    if (!claim.created) return this.replay(claim.row);
+    if (!claim.created) {
+      const result = await this.replay(claim.row);
+      if (result.ok) {
+        // 财务结算可以重放，但不能因缓存而绕过后来收紧的角色或模型分类。
+        const facts = await this.catalog.fact(result.value.modelKey);
+        if (!facts.entry) return { ok: false, error: 'model_unavailable' };
+        if (facts.entry.capabilities.includes('adult_content')) {
+          if (!input.characterId) return { ok: false, error: 'model_not_allowed' };
+          const decision = await this.modelPolicy.checkModelForCharacter({
+            userId: input.userId,
+            characterId: input.characterId,
+            modelHasAdultContent: true,
+          });
+          if (!decision.allowed) return { ok: false, error: 'model_not_allowed' };
+        }
+      }
+      return result;
+    }
     const row = claim.row;
     const resolved = await this.resolver.resolve(input);
     if (!resolved.ok) {
