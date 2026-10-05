@@ -14,7 +14,8 @@
     "db:migrate": "tsx src/cli/migrate.ts up",
     "db:rollback": "tsx src/cli/migrate.ts down",
     "db:status": "tsx src/cli/migrate.ts status",
-    "identity": "tsx src/cli/identity.ts"
+    "identity": "tsx src/cli/identity.ts",
+    "models:seed": "tsx src/cli/seed-models.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.7",

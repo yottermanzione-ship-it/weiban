@@ -210,3 +210,26 @@ export const usageRecords = modelAccessSchema.table(
     ),
   ],
 );
+
+/** 24h 幂等结果缓存；输出独立用户 DEK 加密，用量记录仍不保存任何正文。 */
+export const generationResults = modelAccessSchema.table(
+  'generation_results',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    keyHash: text('key_hash').notNull().unique(),
+    requestHash: text('request_hash').notNull(),
+    phase: text('phase').notNull(),
+    ciphertext: bytea('ciphertext'),
+    usageRecordId: uuid('usage_record_id'),
+    holdId: uuid('hold_id'),
+    upstreamId: uuid('upstream_id'),
+    createdAt: tz('created_at').notNull(),
+    expiresAt: tz('expires_at').notNull(),
+  },
+  (t) => [
+    index('generation_results_expiry_idx').on(t.expiresAt),
+    index('generation_results_user_idx').on(t.userId),
+    check('generation_results_phase_check', sql`${t.phase} in ('pending', 'result', 'complete')`),
+  ],
+);

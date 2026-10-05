@@ -5,6 +5,11 @@
  */
 import { Module } from '@nestjs/common';
 import { BILLING_CHARGE_QUERY_PORT, BillingModule } from '../billing/index.js';
+import { IdentityModule } from '../identity/index.js';
+import { GenerationCache } from './application/generation-cache.js';
+import { GatewayMaintenance } from './application/gateway-maintenance.js';
+import { ModelGateway } from './application/gateway.js';
+import { OpenAiTextAdapter } from './infra/text-adapter.js';
 import { CatalogService } from './application/catalog.js';
 import { EmptyPriceSource, FailClosedModelPolicy } from './application/defaults.js';
 import { ModelAccessLifecycle } from './application/lifecycle.js';
@@ -17,16 +22,36 @@ import { ModelAdminController, ModelController } from './http/model-access.contr
 import { OpenAiCompatibleProbe } from './infra/upstream-probe.js';
 import {
   MODEL_ACCESS_CHARGE_QUERY,
+  MODEL_GATEWAY_PORT,
+  MODEL_GENERATION_POLICY,
+  TEXT_ADAPTER,
+  GATEWAY_RETRY_WAIT,
   MODEL_ACCESS_POLICY,
   MODEL_PRICE_SOURCE,
   UPSTREAM_PROBE,
 } from './tokens.js';
 
 @Module({
-  imports: [BillingModule],
+  imports: [BillingModule, IdentityModule],
+  exports: [MODEL_GATEWAY_PORT],
   controllers: [ModelController, ModelAdminController],
   providers: [
     UpstreamService,
+    GenerationCache,
+    ModelGateway,
+    GatewayMaintenance,
+    { provide: MODEL_GATEWAY_PORT, useExisting: ModelGateway },
+    { provide: TEXT_ADAPTER, useFactory: () => new OpenAiTextAdapter() },
+    {
+      provide: MODEL_GENERATION_POLICY,
+      useValue: {
+        checkAdultGeneration: async () => ({ allowed: false, reason: 'adult_mode_not_eligible' }),
+      },
+    },
+    {
+      provide: GATEWAY_RETRY_WAIT,
+      useValue: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+    },
     CatalogService,
     SelectionService,
     ModelResolver,

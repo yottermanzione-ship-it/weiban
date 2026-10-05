@@ -42,3 +42,11 @@ export const MODEL_PRICE_SOURCE = Symbol('weiban.model-access.price-source');
 export interface ModelPriceSource {
   textPrices(modelKeys: readonly string[]): Promise<Map<string, ModelTextPrices>>;
 }
+
+export const MODEL_GATEWAY_PORT = Symbol('weiban.model-access.gateway');
+export const TEXT_ADAPTER = Symbol('weiban.model-access.text-adapter');
+export const MODEL_GENERATION_POLICY = Symbol('weiban.model-access.adult-generation-policy');
+export type GenerationPolicy = Pick<PolicyPort, 'checkAdultGeneration'>;
+/** 默认真实退避；测试可替换为立即执行，生产固定 2/5/15 秒加抖动。 */
+export const GATEWAY_RETRY_WAIT = Symbol('weiban.model-access.retry-wait');
+export type RetryWait = (ms: number) => Promise<void>;
