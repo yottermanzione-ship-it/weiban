@@ -7,10 +7,11 @@
  * - 新增事件或给载荷新增可选字段属于次版本变更；删除 / 改含义属于主版本变更，需架构负责人批准。
  */
 import { z } from 'zod';
-import { Id, Seq, Timestamp } from './common.js';
+import { Id, LocalDate, Seq, Timestamp } from './common.js';
 import { CharacterBasis, PortraitPolicy, RealPersonKind } from './http/characters.js';
 import { ContentScope, ConversationType, ParticipantKind } from './http/chat.js';
 import { ModelKey } from './http/model-access.js';
+import { AdminAlertFacts } from './http/push.js';
 
 export const ModuleName = z.enum([
   'identity',
@@ -124,6 +125,21 @@ export const UserDataPurged = z.object({
   }),
 });
 
+/**
+ * v1.3（T-026）：需要通知管理员（总经理）的事。设计见 docs/architecture/billing.md 8.4 节；载荷 AdminAlertFacts
+ * 定义在 http/push.ts（管理后台接口共用）。任何模块都可以发（producer 为发出的模块，所以单独定义），与发现问题的那次
+ * 写入同一事务进发件箱。push 订阅：存入管理员提醒列表（管理后台红点），并推送到管理员账号已登记的设备。
+ * 发布方仍要照常写审计日志 / 错误日志（运维告警不依赖 push）。
+ */
+export const AdminAlertRaised = z.object({
+  eventId: Id,
+  type: z.literal('platform.admin_alert_raised'),
+  version: z.literal(1),
+  producer: ModuleName,
+  occurredAt: Timestamp,
+  payload: AdminAlertFacts,
+});
+
 // ---------- model-access ----------
 
 /**
@@ -145,6 +161,31 @@ export const ModelSelectionChanged = event(
   'model_access.selection_changed',
   'model_access',
   z.object({ userId: Id, characterId: Id.nullable() }),
+);
+
+/**
+ * v1.3（T-026）：对账第 ② 层（用量记录 ↔ 扣费）某一天的结果。model-access 用 BillingChargeQueryPort
+ * 比对后发出；billing 订阅，写进当天的对账记录（ReconciliationRun 的 usageWithoutCharge 等字段），
+ * 管理后台对账页从 billing 一处读取（billing.md 8.2 节）。同一天重跑会再发一次，billing 以最新的为准。
+ * 有异常时 model-access 另发 platform.admin_alert_raised（kind = reconciliation_flagged）。
+ * 只有计数，不带明细：明细由 model-access 写自己的日志 / 审计，排查时在 model-access 查。
+ */
+export const UsageReconciled = event(
+  'model_access.usage_reconciled',
+  'model_access',
+  z.object({
+    /** 北京时间自然日。 */
+    day: LocalDate,
+    /** 成功调用的用量记录，没有对应的用户扣费流水。 */
+    usageWithoutCharge: z.number().int().nonnegative(),
+    /** 扣费流水找不到对应的用量记录。 */
+    chargeWithoutUsage: z.number().int().nonnegative(),
+    /** 用量记录上的金额快照与流水金额不相等（修复后仍不相等的）。 */
+    amountMismatch: z.number().int().nonnegative(),
+    /** 本次按 billing 返回值补写的金额快照条数（进程在结算后、写快照前崩溃的情况）。 */
+    snapshotsRepaired: z.number().int().nonnegative(),
+    checkedAt: Timestamp,
+  }),
 );
 
 // ---------- billing ----------
@@ -354,8 +395,10 @@ export const DomainEvent = z.discriminatedUnion('type', [
   SessionRevoked,
   UserDeletionRequested,
   UserDataPurged,
+  AdminAlertRaised,
   ModelStatusChanged,
   ModelSelectionChanged,
+  UsageReconciled,
   BalanceChanged,
   BalanceDepleted,
   BalanceRestored,

@@ -1,6 +1,6 @@
 # 微伴系统架构总览
 
-> 负责人：架构负责人 · 版本 v1.3 · 2026-10-05 · 来源任务：T-004，T-009 修订（安卓原生、平台中转计费），T-014 修订（主题偏好同步、计费端口拆分、删除年龄确认），T-020 修订（PRD v1.3：新增 `health`、`plaza` 模块；用量记录金额快照），T-024 修订（`IdentityAccountStatusPort`）
+> 负责人：架构负责人 · 版本 v1.3 · 2026-10-05 · 来源任务：T-004，T-009 修订（安卓原生、平台中转计费），T-014 修订（主题偏好同步、计费端口拆分、删除年龄确认），T-020 修订（PRD v1.3：新增 `health`、`plaza` 模块；用量记录金额快照），T-024 修订（`IdentityAccountStatusPort`），T-026 修订（`IdentityDirectoryPort`、`BillingChargeQueryPort`、push 管理员提醒）
 > 技术选型见 `docs/decisions/ADR-0003-tech-stack.md`、安卓客户端见 `ADR-0011`；模块通信规则见 `ADR-0004`；消息可靠方案见 `ADR-0005`、`ADR-0013` 和 `message-reliability.md`；账号与密钥安全见 `ADR-0006` 和 `security-and-privacy.md`；计费见 `ADR-0012` 和 `billing.md`；硬性边界执行见 `ADR-0007` 和 `hard-boundaries.md`。本文不重复这些文档的细节。
 
 ## 1. 一句话
@@ -60,7 +60,7 @@ graph TB
 | `platform`（平台内核，不是业务模块） | 配置、数据库连接、事件发件箱与分发、任务队列、日志脱敏、加密工具、时钟、鉴权守卫、错误格式 | 全部 | 内核 | 后端 | L0 |
 | `identity` 账号 | 注册（邀请码）、登录、设备会话、我的资料、全局通知与免打扰设置、**界面偏好（主题选择，所有设备同步，T-014）**、管理员角色、注销（PRD v1.2 已取消年龄确认） | ACC-01～06、SVC-01 第 7 条 | 底层 | 后端 | L0 |
 | `realtime` 实时与同步 | WebSocket 网关、在线与「正在看哪个会话」、**每用户更新日志**（多端同步的核心）、补拉接口、「正在输入」转发 | CHAT-03、CHAT-06、ACC-01 | 底层 | 后端 | L1 |
-| `push` 推送 | 设备推送凭证、通知内容组装与合并、免打扰判断、成人范围内容处理（按 PRD v1.2）、余额与模型状态提醒、对接 Web Push 和安卓推送通道 | CHAT-10、ACC-03 | 底层 | 后端（安卓通道细节与 Android 负责人共建） | L1 |
+| `push` 推送 | 设备推送凭证、通知内容组装与合并、免打扰判断、成人范围内容处理（按 PRD v1.2）、余额与模型状态提醒、管理员提醒（契约 1.3）、对接 Web Push 和安卓推送通道 | CHAT-10、ACC-03 | 底层 | 后端（安卓通道细节与 Android 负责人共建） | L1 |
 | `media` 媒体 | 上传、存储、缩略图、带签名的访问链接；头像（我的、通讯录、管理员为预设角色上传）；素材库文件 | ACC-02 头像、CHR-05、MED、ADM-04 | 底层 | 后端 | L0（头像） |
 | `model-access` 模型接入 | **上游与平台密钥**（管理员登记、信封加密、连通测试、状态监测）、模型目录与排行榜数据、用户的模型选择（聊天 / 后台 / 成人，按角色覆盖，无审查模型闸门）、**模型网关**（唯一调用上游的地方）、用量记录 | MDL（PRD v1.2） | 中层 | 后端（上游存储、接口）+ AI（上游适配器、错误分类、目录数据） | L0 |
 | `billing` 计费 | 钱包余额、只增不改的流水、冻结与结算、价目表（按版本）、后台每日上限、平台每日上限、管理员加扣余额、对账（详见 `billing.md`） | MDL（PRD v1.2 余额与计费） | 中层 | 后端 | L0 |
@@ -97,7 +97,7 @@ graph TB
 | platform | `platform` | `outbox`（待投递事件）、`event_inbox`（订阅者已处理记录）、`audit_log`（管理操作和边界判定审计）、`user_data_keys`（每用户数据密钥，被主密钥加密，见 `security-and-privacy.md`）；`pgboss` schema 由 pg-boss 自管 | 中 |
 | identity | `identity` | `users`（用户名、密码哈希、角色 user/admin）、`invites`（邀请码）、`sessions`（设备会话，令牌只存哈希）、`profiles`（昵称、头像、生日、性别、城市、关于我、时区）、`notification_settings`、`preferences`（界面偏好：主题，T-014；原 `age_confirmations` 随 PRD v1.2 取消） | 高（密码哈希、个人资料） |
 | realtime | `realtime` | `user_updates`（每用户递增的更新日志，保留 30 天）、`user_update_cursors`（每用户最新序号）；在线状态只在内存 | 中 |
-| push | `push` | `devices`（推送凭证，绑定会话）、`notification_log`（去重与合并，保留 7 天） | 中 |
+| push | `push` | `devices`（推送凭证，绑定会话）、`notification_log`（去重与合并，保留 7 天）、`admin_alerts`（管理员提醒，保留 90 天，契约 1.3，`billing.md` 8.4 节） | 中 |
 | media | `media` | `objects`（文件元数据：所有者、类型、大小、存储键、用途）；文件本体在对象存储 | 中～高（用户图片、语音） |
 | model-access | `model_access` | `upstreams`（上游与**加密后的平台密钥**、掩码、状态）、`model_catalog`（模型键 → 上游 + 上游模型名、能力、默认标记）、`leaderboard_entries`、`selections`、`character_overrides`、`usage_records`（每次调用：用途、模型、token、耗时、状态、计费账户、扣费流水引用）、`upstream_status` | **最高**（平台密钥） |
 | billing | `billing` | `accounts`（每用户钱包 + 平台账户）、`ledger_entries`（流水，只增不改）、`holds`（冻结）、`price_versions` / `price_items`（价目表）、`daily_spend`、`platform_daily_budget`（平台每日成本预算，T-014）、`upstream_bills`、`reconciliation_runs` | 高（财务记录） |
@@ -189,6 +189,7 @@ AI 运行时**不能**：直接读写 `chat` 等其他模块的表；绕过模�
 |---|---|---|---|
 | `IdentityReadPort` | identity | 全部 | 读资料、时区、通知设置 |
 | `IdentityAccountStatusPort`（契约 1.2） | identity | billing 等「收到注册事件要新建数据」的模块 | 账号是否正常 / 注销中 / 已不存在（防止迟到事件给已删除账号留残留，`billing.md` 8.3 节） |
+| `IdentityDirectoryPort`（契约 1.3） | identity | billing（管理后台账户列表）、push（管理员提醒） | 批量取用户名（只用于管理后台展示，不得存）、列出管理员 |
 | `CharacterReadPort` | characters | ai-runtime、policy、contacts | 读角色基础信息、分类、角色卡、补充设定 |
 | `ContactsReadPort` | contacts | ai-runtime、policy、push | 是否已添加、备注名、关系类型 |
 | `ChatReadPort` | chat | ai-runtime | 读会话、参与者、消息（必须指定可见范围） |
@@ -199,6 +200,7 @@ AI 运行时**不能**：直接读写 `chat` 等其他模块的表；绕过模�
 | `ModelGatewayPort` | model-access | ai-runtime、importer | 调用模型（唯一出口）、查询模型可用状态 |
 | `BillingReservationPort` | billing | **只有 model-access**（R9，lint 按 import 检查） | 冻结 / 结算 / 解冻（`billing.md`） |
 | `BillingReadPort` | billing | ai-runtime 等 | 读可用余额、后台预算余量（`getSpendStatus`） |
+| `BillingChargeQueryPort`（契约 1.3） | billing | model-access | 按用量记录 ID / 北京日期查扣费（对账第 ② 层、金额快照修复）、当前价目表有价格的模型键（启用模型前检查），`billing.md` 4.1、8.2 节 |
 | `PolicyPort` | policy | characters、ai-runtime、chat、media、library、model-access、plaza | 硬性边界判定（含无审查模型闸门） |
 
 v1.3 规划中的端口（随对应层的契约任务写入，设计见引用文档）：`HealthReadPort`（health → **只有** ai-runtime，L3，`health-data.md` 第 4 节）、`CharacterPlazaPort`（characters → plaza，L7，`persona-plaza.md` 第 2 节）。

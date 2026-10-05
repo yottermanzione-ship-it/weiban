@@ -50,7 +50,7 @@ PRD 参数（P-01 起，编号以 PRD 第 5.1 节为准）在代码中**只在�
 | R6 契约来源 | 前后端接口类型只从 `@weiban/contracts` 导入 | 在 web / server 里另写一份接口类型 |
 | R7 时间 | 使用 `platform/clock` | `new Date()`、`Date()`、`Date.now`（含不调用的引用）及经 `globalThis` / `global` / `window` / `self` 访问的同等写法。范围：`apps/server/src` 下**除 `platform/` 和测试文件以外的全部文件**（含 `main.ts`、`app.module.ts`、`cli/` 等，T-015） |
 | R8 数据表 | 模块只访问自己 `pgSchema` 下的表 | 原生 SQL 里出现别的 schema 名 |
-| R9 扣费出口唯一（T-009，T-014 加固，T-020 按实现确认范围） | 只有 `modules/model-access/**`、`modules/billing/**`、装配入口（`main.ts`、`app.module.ts`）、集成测试 `apps/server/test/**` 可以出现 `BillingReservationPort`、`BILLING_RESERVATION_PORT`、`estimateAndReserve` 这些名字；其他地方只能用 `BillingReadPort.getSpendStatus` | 其他代码自行冻结、扣费或改余额；范围是 `apps/server/src` **全部**（含 `platform/`、其他目录、模块目录内的单元测试）；检查方式见 3.1 |
+| R9 扣费出口唯一（T-009，T-014 加固，T-020 按实现确认范围） | 只有 `modules/model-access/**`、`modules/billing/**`、装配入口（`main.ts`、`app.module.ts`）、集成测试 `apps/server/test/**` 可以出现 `BillingReservationPort`、`BILLING_RESERVATION_PORT`、`estimateAndReserve` 这些名字；其他地方只能用只读的 `BillingReadPort.getSpendStatus`（契约 1.3 起另有只读的 `BillingChargeQueryPort`，不在本规则限制内） | 其他代码自行冻结、扣费或改余额；范围是 `apps/server/src` **全部**（含 `platform/`、其他目录、模块目录内的单元测试）；检查方式见 3.1 |
 | R10 测试引用（T-014，T-020 补装配入口） | `apps/server/test/**`（集成测试）只 import 各模块公开出口 `index.ts`、各模块测试出口 `testing.ts`、`platform/**`，以及**装配入口 `src/app.module.ts`、`src/main.ts`**（启动整个应用用，扩展名可省略）；模块目录内与源码放在一起的单元测试（`*.test.ts`）可以引用**本模块**内部文件，也可以引用其他模块的 `testing.ts` | 集成测试 import 某个模块的内部文件（`domain/`、`infra/` 等）或 `src/` 下其他目录（`config/`、`cli/` 等）；**生产代码 import 任何 `testing.ts`（含本模块的）**；见 3.2 |
 | R11 无跨模块循环（ADR-0004 第 3 节，T-015 实现） | 模块之间单向依赖 | `modules/A` 的文件沿 import 绕一圈回到 `modules/A`、且途中经过别的模块（`import type` 也算）。同一模块内部文件之间的循环、测试文件不查（ADR-0004 未要求，若以后出现问题再收紧） |
 
