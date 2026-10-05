@@ -54,6 +54,8 @@ GET /health                         200 {"status":"ok",…,"database":{"ok":true
    POST /admin/invites（同一 Idempotency-Key 两次）  201，两次返回同一个码
 ```
 
+第二轮（注销改为任务执行后，同一天复测）：注册 201 → 改主题 pink 200 → `DELETE /me` 202 `{"status":"deleting"}` → 原令牌 401 → 原账号登录 401 `invalid_credentials` → `identity verify-purged <用户ID>` 输出「[已清空] identity: 0」；服务器日志中令牌前缀 `wbs_` 与密码出现 0 次。
+
 ## 改了哪些文件
 
 - 新增 `apps/server/src/modules/identity/`：`index.ts`、`testing.ts`、`tokens.ts`、`identity.module.ts`、`domain/rules.ts`（+ 测试）、`infra/db/schema.ts`、`infra/password-hasher.ts`（+ 测试）、`infra/login-throttle.ts`、`application/{accounts,sessions,settings,invites,deletion,commands,user-hash}.ts`、`http/identity.controller.ts`
