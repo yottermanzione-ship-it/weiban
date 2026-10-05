@@ -143,7 +143,14 @@ export class AccountService {
           .set({ usedAt: now, usedBy: userId })
           .where(and(eq(invites.code, code), sql`${invites.usedAt} is null`));
         const session = await this.sessions.create(tx, userId, 'app', input.device);
-        await this.outbox.publish(tx, 'identity.user_registered', 'identity', { userId });
+        // 邀请码设了注册赠送时事件带上 signupBonus（不带码本身），billing 订阅后记 admin_grant（billing.md 8.3）
+        const bonus = invite.bonusMicros;
+        await this.outbox.publish(tx, 'identity.user_registered', 'identity', {
+          userId,
+          ...(bonus > 0
+            ? { signupBonus: { amountMicros: bonus, grantedByUserId: invite.createdBy } }
+            : {}),
+        });
         const [user] = await tx.db.select().from(users).where(eq(users.id, userId));
         this.log.info({ userId }, '新用户注册');
         return { response: await this.authResponse(tx, user as UserRow, session), created: true };

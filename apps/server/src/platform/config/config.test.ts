@@ -42,11 +42,30 @@ describe('配置加载 loadConfig', () => {
     );
   });
 
+  it('计费配置：开发默认值；生产必须配置平台每日上限（T-023）', () => {
+    expect(loadConfig({ DATABASE_URL: DB }).billing).toEqual({
+      platformDailyCapMicros: 20_000_000,
+      safetyOverdraftLimitMicros: null,
+      upstreamDiffRatio: 0.03,
+    });
+    expect(
+      loadConfig({
+        DATABASE_URL: DB,
+        BILLING_PLATFORM_DAILY_CAP_MICROS: '5000000',
+        BILLING_SAFETY_OVERDRAFT_LIMIT_MICROS: '1000000',
+      }).billing,
+    ).toMatchObject({ platformDailyCapMicros: 5_000_000, safetyOverdraftLimitMicros: 1_000_000 });
+    expect(() =>
+      loadConfig({ DATABASE_URL: DB, NODE_ENV: 'production', PLATFORM_KEK_FILE: '/run/secrets/k' }),
+    ).toThrow(/BILLING_PLATFORM_DAILY_CAP_MICROS/);
+  });
+
   it('生产环境强制关闭 DEBUG_LLM_PAYLOAD', () => {
     const prod = loadConfig({
       DATABASE_URL: DB,
       NODE_ENV: 'production',
       PLATFORM_KEK_FILE: '/run/secrets/kek',
+      BILLING_PLATFORM_DAILY_CAP_MICROS: '100000000',
       DEBUG_LLM_PAYLOAD: '1',
     });
     expect(prod.debugLlmPayload).toBe(false);

@@ -3,6 +3,7 @@
  * 新增业务模块时：先在 packages/eslint-config/architecture.js 登记层级，再把模块类加到 imports。
  */
 import { Module, type DynamicModule } from '@nestjs/common';
+import { BillingModule } from './modules/billing/index.js';
 import { IdentityModule } from './modules/identity/index.js';
 import { PlatformModule, type PlatformOptions } from './platform/index.js';
 
@@ -11,7 +12,7 @@ export class AppModule {
   static forRoot(options: PlatformOptions): DynamicModule {
     return {
       module: AppModule,
-      imports: [PlatformModule.forRoot(options), IdentityModule],
+      imports: [PlatformModule.forRoot(options), IdentityModule, BillingModule],
     };
   }
 }

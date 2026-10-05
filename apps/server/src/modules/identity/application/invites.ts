@@ -4,7 +4,7 @@
  */
 import { Inject, Injectable } from '@nestjs/common';
 import type { z } from 'zod';
-import type { Invite as InviteSchema } from '@weiban/contracts';
+import { INVITE_BONUS_MAX_MICROS, type Invite as InviteSchema } from '@weiban/contracts';
 import { desc, eq } from 'drizzle-orm';
 import {
   AppError,
@@ -27,6 +27,8 @@ const IDEMPOTENCY_KEY = /^[A-Za-z0-9_-]{8,128}$/;
 function toInvite(row: InviteRow): Invite {
   return {
     code: formatInviteCode(row.code),
+    // 契约 1.2：服务器必须总是返回（schema 上可选只为兼容旧实现）
+    bonusMicros: row.bonusMicros,
     createdAt: row.createdAt.toISOString(),
     expiresAt: row.expiresAt?.toISOString() ?? null,
     usedAt: row.usedAt?.toISOString() ?? null,
@@ -43,15 +45,25 @@ export class InviteService {
 
   /**
    * 生成邀请码。createdBy 为管理员用户 ID（命令行生成时为 null）。
+   * bonusMicros：注册赠送余额（微元，0 = 不赠送，上限 INVITE_BONUS_MAX_MICROS；billing.md 8.3）。
    * idempotencyKey 可选；格式不对返回 400。
    */
   async create(
-    expiresInDays: number | null,
+    options: { expiresInDays: number | null; bonusMicros?: number },
     createdBy: string | null,
     idempotencyKey?: string,
   ): Promise<Invite> {
+    const { expiresInDays } = options;
+    const bonusMicros = options.bonusMicros ?? 0;
     if (idempotencyKey !== undefined && !IDEMPOTENCY_KEY.test(idempotencyKey)) {
       throw new AppError('bad_request', 'Idempotency-Key 必须是 8–128 位字母、数字、- 或 _');
+    }
+    if (
+      !Number.isInteger(bonusMicros) ||
+      bonusMicros < 0 ||
+      bonusMicros > INVITE_BONUS_MAX_MICROS
+    ) {
+      throw new AppError('bad_request', '注册赠送余额必须是 0 到 1,000 元之间的整数微元');
     }
     const scopedKey = idempotencyKey ? `${createdBy ?? 'cli'}:${idempotencyKey}` : null;
     return this.database.transaction(async (tx) => {
@@ -73,6 +85,7 @@ export class InviteService {
           expiresAt:
             expiresInDays === null ? null : new Date(now.getTime() + expiresInDays * DAY_MS),
           idempotencyKey: scopedKey,
+          bonusMicros,
         })
         // 同一个 key 的两个请求同时到达：后到的什么也不插，再读一次已有的
         .onConflictDoNothing({ target: invites.idempotencyKey })
@@ -92,7 +105,7 @@ export class InviteService {
           actorId: createdBy,
           targetType: 'invite',
           // 不记邀请码本身：审计日志能被更多人看到，码在使用前等同于一次性口令
-          details: { expiresInDays },
+          details: { expiresInDays, bonusMicros },
         },
         tx,
       );

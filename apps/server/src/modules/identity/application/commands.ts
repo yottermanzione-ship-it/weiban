@@ -3,7 +3,7 @@
  * 用法见 docs/backend/identity.md 第 7 节。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { Password, Username } from '@weiban/contracts';
+import { INVITE_BONUS_MAX_MICROS, Password, Username } from '@weiban/contracts';
 import { eq, sql } from 'drizzle-orm';
 import {
   AUDIT_LOG,
@@ -151,14 +151,22 @@ export class IdentityCommands {
     });
   }
 
-  async createInvite(expiresInDays: number | null): Promise<Invite> {
+  /** 生成邀请码；bonusMicros 为注册赠送余额（微元，默认 0）。 */
+  async createInvite(expiresInDays: number | null, bonusMicros = 0): Promise<Invite> {
     if (
       expiresInDays !== null &&
       !(Number.isInteger(expiresInDays) && expiresInDays >= 1 && expiresInDays <= 365)
     ) {
       throw new CommandError('有效天数必须是 1–365 的整数');
     }
-    return this.invites.create(expiresInDays, null);
+    if (
+      !Number.isInteger(bonusMicros) ||
+      bonusMicros < 0 ||
+      bonusMicros > INVITE_BONUS_MAX_MICROS
+    ) {
+      throw new CommandError('注册赠送余额必须是 0–1000 元');
+    }
+    return this.invites.create({ expiresInDays, bonusMicros }, null);
   }
 
   /** 注销核验：每个登记了删除清单的模块剩余的数据条数（全部为 0 才算删干净）。 */

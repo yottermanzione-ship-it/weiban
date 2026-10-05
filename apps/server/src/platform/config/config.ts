@@ -38,7 +38,19 @@ export const EnvSchema = z.object({
   EVENTS_POLL_INTERVAL_MS: z.coerce.number().int().min(50).max(60_000).default(500),
   /** 开发调试：日志里打印模型请求全文。生产环境强制关闭（engineering-standards.md 第 6 节）。 */
   DEBUG_LLM_PAYLOAD: booleanFlag,
+  /**
+   * 平台每日总上限（按成本价，微元；billing.md 第 7 节第 2 条，紧急刹车）。生产必填（数值由运维定，D-L0-14）；
+   * 开发 / 测试不填时用 DEV_PLATFORM_DAILY_CAP_MICROS。
+   */
+  BILLING_PLATFORM_DAILY_CAP_MICROS: z.coerce.number().int().min(0).optional(),
+  /** 安全优先透支上限（微元）覆盖值；不填用 billing.md 6.6 第 2 条的默认值（运维不需要设置）。 */
+  BILLING_SAFETY_OVERDRAFT_LIMIT_MICROS: z.coerce.number().int().min(0).optional(),
+  /** 对账第 ③ 层：上游账单与按成本价汇总的偏差超过此比例标红（billing.md 8.2，默认 0.03 = 3%）。 */
+  BILLING_UPSTREAM_DIFF_RATIO: z.coerce.number().min(0).max(10).default(0.03),
 });
+
+/** 开发 / 测试环境没配置平台每日上限时的取值：20 元。生产环境必须显式配置。 */
+export const DEV_PLATFORM_DAILY_CAP_MICROS = 20_000_000;
 
 export interface AppConfig {
   readonly nodeEnv: 'development' | 'test' | 'production';
@@ -54,6 +66,12 @@ export interface AppConfig {
   readonly crypto: { readonly kekFile: string | null; readonly kekVersion: number };
   readonly events: { readonly pollIntervalMs: number };
   readonly debugLlmPayload: boolean;
+  readonly billing: {
+    readonly platformDailyCapMicros: number;
+    /** null = 使用 billing 模块的默认值（billing.md 6.6 第 2 条）。 */
+    readonly safetyOverdraftLimitMicros: number | null;
+    readonly upstreamDiffRatio: number;
+  };
 }
 
 export class ConfigError extends Error {
@@ -83,6 +101,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (production && !e.PLATFORM_KEK_FILE) {
     throw new ConfigError(['PLATFORM_KEK_FILE：生产环境必须配置主密钥文件']);
   }
+  if (production && e.BILLING_PLATFORM_DAILY_CAP_MICROS === undefined) {
+    throw new ConfigError(['BILLING_PLATFORM_DAILY_CAP_MICROS：生产环境必须配置平台每日总上限']);
+  }
   return {
     nodeEnv: e.NODE_ENV,
     role: e.APP_ROLE,
@@ -93,6 +114,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     events: { pollIntervalMs: e.EVENTS_POLL_INTERVAL_MS },
     // 生产环境无论怎么配置都关闭
     debugLlmPayload: production ? false : e.DEBUG_LLM_PAYLOAD,
+    billing: {
+      platformDailyCapMicros: e.BILLING_PLATFORM_DAILY_CAP_MICROS ?? DEV_PLATFORM_DAILY_CAP_MICROS,
+      safetyOverdraftLimitMicros: e.BILLING_SAFETY_OVERDRAFT_LIMIT_MICROS ?? null,
+      upstreamDiffRatio: e.BILLING_UPSTREAM_DIFF_RATIO,
+    },
   };
 }
 

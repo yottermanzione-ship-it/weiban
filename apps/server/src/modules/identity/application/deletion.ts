@@ -14,9 +14,10 @@
  * identity 自己也登记为删除清单（只用于 countUserData 核验；它的删除由第 3 步在最后执行）。
  */
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
-import type { Events, UserDataOwner } from '@weiban/contracts';
-import { eq } from 'drizzle-orm';
+import type { Events, PendingAccountDeletion, UserDataOwner } from '@weiban/contracts';
+import { asc, eq } from 'drizzle-orm';
 import {
+  AppError,
   AUDIT_LOG,
   CLOCK,
   DATABASE,
@@ -104,6 +105,98 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
         await this.tryFinalize(tx, userId);
       },
     });
+  }
+
+  // ---------- 管理接口：注销未完成的账号（security-and-privacy.md 5.1 第 2 条，契约 1.2） ----------
+
+  /** 全部「注销中」的账号，按申请时间从早到晚，含每个模块的删除进度。 */
+  async listPending(): Promise<PendingAccountDeletion[]> {
+    const rows = await this.database.db
+      .select()
+      .from(users)
+      .where(eq(users.status, 'deleting'))
+      .orderBy(asc(users.deletionRequestedAt), asc(users.id));
+    const result: PendingAccountDeletion[] = [];
+    for (const user of rows) result.push(await this.progressOf(this.database.db, user));
+    return result;
+  }
+
+  /**
+   * 重新触发删除：对尚未回报的模块（含注销之后才登记的模块）重新投递删除任务；全部已回报时直接完成账号删除。
+   * 返回触发后的进度快照（账号已删完时 modules 全部为已回报）。账号不存在或不在注销中 → 404。可重复调用。
+   */
+  async retry(userId: string, operatorUserId: string): Promise<PendingAccountDeletion> {
+    return this.database.transaction(async (tx) => {
+      const [user] = await tx.db.select().from(users).where(eq(users.id, userId)).for('update');
+      if (!user || user.status !== 'deleting') {
+        throw new AppError('not_found', '该账号不存在或不在注销中');
+      }
+      const now = this.clock.now();
+      await tx.db.update(users).set({ deletionRetriggeredAt: now }).where(eq(users.id, userId));
+      const reported = new Set(
+        (
+          await tx.db
+            .select({ module: deletionProgress.module })
+            .from(deletionProgress)
+            .where(eq(deletionProgress.userId, userId))
+        ).map((r) => r.module),
+      );
+      const pending = this.registry.modules().filter((m) => m !== IDENTITY && !reported.has(m));
+      for (const module of pending) {
+        await this.jobs.send<PurgeJob>(
+          PURGE_JOB,
+          { userId, module },
+          { tx, singletonKey: `${module}:${userId}`, retryLimit: 10, retryBackoff: true },
+        );
+      }
+      await this.audit.record(
+        {
+          module: 'identity',
+          action: 'user.deletion_retriggered',
+          actorType: 'admin',
+          actorId: operatorUserId,
+          targetType: 'user_hash',
+          targetId: hashUserId(userId),
+          details: { pendingModules: pending },
+        },
+        tx,
+      );
+      const snapshot = await this.progressOf(tx.db, { ...user, deletionRetriggeredAt: now });
+      if (pending.length === 0) await this.tryFinalize(tx, userId);
+      return snapshot;
+    });
+  }
+
+  private async progressOf(
+    db: Database['db'],
+    user: typeof users.$inferSelect,
+  ): Promise<PendingAccountDeletion> {
+    const reported = await db
+      .select()
+      .from(deletionProgress)
+      .where(eq(deletionProgress.userId, user.id));
+    const byModule = new Map(reported.map((r) => [r.module, r]));
+    const modules = [
+      ...new Set([
+        ...this.registry.modules().filter((m) => m !== IDENTITY),
+        ...reported.map((r) => r.module),
+      ]),
+    ];
+    return {
+      userId: user.id,
+      username: user.username,
+      requestedAt: (user.deletionRequestedAt ?? user.updatedAt).toISOString(),
+      lastRetriggeredAt: user.deletionRetriggeredAt?.toISOString() ?? null,
+      modules: modules.map((module) => {
+        const r = byModule.get(module);
+        return {
+          module: module as PendingAccountDeletion['modules'][number]['module'],
+          purged: r !== undefined,
+          deletedRows: r?.deletedRows ?? null,
+          purgedAt: r?.reportedAt.toISOString() ?? null,
+        };
+      }),
+    };
   }
 
   /** 任务：执行某个模块的删除清单并回报。可重复执行。 */
