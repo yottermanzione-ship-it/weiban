@@ -4,6 +4,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  AdminAlert,
+  AdminAlertFacts,
   AdminCatalogEntryWrite,
   AdminCharacterUpdate,
   AdminCharacterWrite,
@@ -15,6 +17,8 @@ import {
   IdentityEndpoints,
   Invite,
   PendingAccountDeletion,
+  PushAdminEndpoints,
+  ReconciliationRun,
   BACKGROUND_PURPOSES,
   BUDGET_EXEMPT_PURPOSES,
   CONTRACT_VERSION,
@@ -81,8 +85,8 @@ const adminCharacter = {
 };
 
 describe('契约版本', () => {
-  it('为 1.2', () => {
-    expect(CONTRACT_VERSION).toBe('1.2');
+  it('为 1.3', () => {
+    expect(CONTRACT_VERSION).toBe('1.3');
   });
 });
 
@@ -517,5 +521,95 @@ describe('v1.2（T-024）', () => {
   it('注销时密码错误的返回写在接口说明里（403 invalid_credentials）', () => {
     expect(IdentityEndpoints.deleteAccount.summary).toContain('403 invalid_credentials');
     expect(ErrorCode.options).toContain('invalid_credentials');
+  });
+});
+
+describe('v1.3（T-026）', () => {
+  it('管理员提醒事件：任何模块可发，载荷不接受未知种类', () => {
+    const base = {
+      eventId: ID,
+      type: 'platform.admin_alert_raised',
+      version: 1,
+      producer: 'billing',
+      occurredAt: NOW,
+    };
+    const payload = {
+      kind: 'platform_budget_warning',
+      severity: 'warning',
+      dedupeKey: 'platform_budget_warning:2026-10-06',
+      summary: '平台今日成本已达上限的 80%（25.60 / 32.00 元）',
+      refs: { day: '2026-10-06' },
+    };
+    expect(Events.AdminAlertRaised.safeParse({ ...base, payload }).success).toBe(true);
+    expect(
+      Events.AdminAlertRaised.safeParse({ ...base, producer: 'model_access', payload }).success,
+    ).toBe(true);
+    expect(
+      Events.AdminAlertRaised.safeParse({ ...base, payload: { ...payload, kind: 'whatever' } })
+        .success,
+    ).toBe(false);
+    expect(AdminAlertFacts.safeParse({ ...payload, dedupeKey: '' }).success).toBe(false);
+    const types = Events.DomainEvent.options.map((o) => o.shape.type.value);
+    expect(types).toContain('platform.admin_alert_raised');
+    expect(types).toContain('model_access.usage_reconciled');
+  });
+
+  it('管理后台读提醒：不认识的种类不报错', () => {
+    const alert = AdminAlert.parse({
+      alertId: ID,
+      kind: 'future_kind',
+      severity: 'critical',
+      dedupeKey: 'future_kind:1',
+      summary: '说明',
+      occurrences: 2,
+      firstRaisedAt: NOW,
+      lastRaisedAt: NOW,
+      acknowledgedAt: null,
+      acknowledgedByUserId: null,
+    });
+    expect(alert.kind).toBe('unsupported');
+    const list = PushAdminEndpoints.listAdminAlerts;
+    expect([list.method, list.path, list.auth]).toEqual(['GET', '/api/v1/admin/alerts', 'admin']);
+    expect(list.query?.parse({})).toMatchObject({ status: 'open', limit: 50 });
+  });
+
+  it('对账第 ② 层结果事件与对账记录的新字段（可选）', () => {
+    expect(
+      Events.UsageReconciled.safeParse({
+        eventId: ID,
+        type: 'model_access.usage_reconciled',
+        version: 1,
+        producer: 'model_access',
+        occurredAt: NOW,
+        payload: {
+          day: '2026-10-05',
+          usageWithoutCharge: 0,
+          chargeWithoutUsage: 1,
+          amountMismatch: 0,
+          snapshotsRepaired: 2,
+          checkedAt: NOW,
+        },
+      }).success,
+    ).toBe(true);
+    const run = {
+      runId: ID,
+      date: '2026-10-05',
+      ledgerConsistent: true,
+      staleHolds: 0,
+      usageWithoutCharge: 0,
+      chargeWithoutUsage: 0,
+      upstreamDiffs: [],
+      absorbedMicros: 0,
+      createdAt: NOW,
+    };
+    expect(ReconciliationRun.safeParse(run).success).toBe(true);
+    expect(
+      ReconciliationRun.safeParse({ ...run, usageReconciledAt: null, usageAmountMismatch: 0 })
+        .success,
+    ).toBe(true);
+  });
+
+  it('通知种类新增 admin_alert', () => {
+    expect(NotificationPayload.shape.kind.parse('admin_alert')).toBe('admin_alert');
   });
 });

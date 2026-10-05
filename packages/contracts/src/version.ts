@@ -7,4 +7,4 @@
  * 客户端启动时把自己的契约版本发给服务器（WebSocket auth 帧），服务器返回 minClientVersion，
  * 过旧的安卓客户端会被提示更新。
  */
-export const CONTRACT_VERSION = '1.2' as const;
+export const CONTRACT_VERSION = '1.3' as const;

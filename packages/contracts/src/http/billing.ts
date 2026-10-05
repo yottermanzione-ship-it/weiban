@@ -5,6 +5,8 @@
  * 金额一律为整数「微元」：1 元 = 1,000,000 微元（字段名以 Micros 结尾）。客户端显示时统一换算，
  * 不要用浮点数做加减。
  * v1.1（T-020）：SpendCategory 新增 planning 并改为接收端容错；AdminLedgerEntry 新增 safetyOverdraft。
+ * v1.3（T-026）：ReconciliationRun 新增 usageReconciledAt、usageAmountMismatch；发布价目表写明不支持预约生效、
+ * 不再检查「启用模型缺价」；AdminAccountSummary.username 的来源写明。
  */
 import { z } from 'zod';
 import {
@@ -204,6 +206,7 @@ export const BillingEndpoints = {
 
 export const AdminAccountSummary = z.object({
   userId: Id,
+  /** v1.3：billing 调 IdentityDirectoryPort.getUsernames 取得，不存进 billing 的表；取不到（账号已删除）时为空字符串。 */
   username: z.string(),
   balanceMicros: MoneyMicros,
   heldMicros: z.number().int().nonnegative(),
@@ -277,6 +280,15 @@ export const ReconciliationRun = z.object({
     }),
   ),
   absorbedMicros: z.number().int().nonnegative(),
+  /**
+   * v1.3：第 ② 层（用量记录 ↔ 扣费）由 model-access 比对、用事件 model_access.usage_reconciled 交回
+   * （billing.md 8.2 节）。usageReconciledAt 为 null 表示当天第 ② 层还没有结果，此时
+   * usageWithoutCharge / chargeWithoutUsage / usageAmountMismatch 都是 0、不代表「没有异常」。
+   * 两个字段写成可选只为兼容 1.2 的实现；客户端缺省按 null / 0 处理。
+   */
+  usageReconciledAt: Timestamp.nullable().optional(),
+  /** v1.3：用量记录上的金额快照与流水金额不相等的条数（第 ② 层）。 */
+  usageAmountMismatch: z.number().int().nonnegative().optional(),
   createdAt: Timestamp,
 });
 
@@ -345,9 +357,14 @@ export const BillingAdminEndpoints = {
     path: `${API_PREFIX}/admin/billing/price-versions/:priceVersionId/activate`,
     auth: 'admin',
     params: z.object({ priceVersionId: Id }),
+    /**
+     * v1.3：首版**不支持预约生效**，effectiveFrom 只能为 null 或不晚于服务器当前时间，晚于现在 400 bad_request
+     * （技术债 TD-026）。字段保留，将来支持预约时不改接口。
+     */
     body: z.object({ effectiveFrom: Timestamp.nullable() }),
     response: AdminPriceVersion,
-    summary: '发布价目表（null = 立即生效）；原生效版本自动停用。目录中启用的模型缺少价格时 422',
+    summary:
+      '发布价目表（立即生效，effectiveFrom 晚于现在 400）；原生效版本自动停用。v1.3：不再检查「启用模型缺价」（billing 看不到模型目录），改由管理后台发布前对照模型目录提示、model-access 启用模型时检查（billing.md 4.1 节）',
   }),
   createUpstreamBill: defineEndpoint({
     method: 'POST',

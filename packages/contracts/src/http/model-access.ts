@@ -305,7 +305,8 @@ export const ModelAccessAdminEndpoints = {
     params: z.object({ modelKey: z.string() }),
     body: AdminCatalogEntryWrite,
     response: AdminCatalogEntry,
-    summary: '新增或修改模型目录条目；改指上游、停用都记审计日志。path 中的 modelKey 需 URL 编码',
+    summary:
+      '新增或修改模型目录条目；改指上游、停用都记审计日志。path 中的 modelKey 需 URL 编码。v1.3：保存为启用（enabled = true）时，当前生效价目表没有该模型的价格 → 422 model_unavailable（BillingChargeQueryPort.listActivePricedModelKeys，billing.md 4.1 节）',
   }),
 } as const;
 

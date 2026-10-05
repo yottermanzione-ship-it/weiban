@@ -27,3 +27,19 @@ export interface IdentityAccountStatusPort {
    */
   getAccountStatus(userId: string): Promise<AccountStatus | null>;
 }
+
+/**
+ * v1.3（T-026）：账号目录端口。提供方：identity；任何模块可用。
+ * 同 IdentityAccountStatusPort，单独成接口，新增它不影响已有实现。
+ */
+export interface IdentityDirectoryPort {
+  /**
+   * 按用户 ID 批量取用户名（登录名，管理后台展示用；一次最多 500 个 ID，超过抛异常）。
+   * 返回「用户 ID → 用户名」；不存在（已删除或从未存在）的 ID 不出现在结果里，调用方按「已注销」显示。
+   * 只用于管理后台的展示与「按用户名搜索」（例：billing 的 AdminAccountSummary.username，billing.md 10.1 第 5 条）；
+   * 调用方**不得**把用户名存进自己的表（避免复制别的模块的数据、注销时漏删）。
+   */
+  getUsernames(userIds: readonly string[]): Promise<Record<string, string>>;
+  /** 当前所有管理员（role = admin、账号 active）的用户 ID。push 给管理员发提醒时用（billing.md 8.4 节）。 */
+  listAdminUserIds(): Promise<string[]>;
+}

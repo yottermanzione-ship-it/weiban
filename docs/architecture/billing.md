@@ -1,6 +1,6 @@
 # 计费模块设计：平台中转、价目表、余额与流水
 
-> 负责人：架构负责人 · v1.3 · 2026-10-05 · 来源任务：T-009；T-024 修订（新增 8.3 注册赠送余额，契约 1.2）；T-014 修订（6.3、6.4 余额恢复改为「加余额后重新检查」，第 7 节平台每日上限改为原子预留，计费端口拆分）；T-020 修订（新增 6.6 安全优先透支〔裁定 B4〕；第 7 节 `safety_followup`、`countAsBackground`；3.2 默认识图模型〔裁定 B5〕；5.2 用途分组对照；新增 10.1 管理后台用量查询〔ADM-08〕、10.2 行为规划计费〔PLAN-03〕；契约 1.1）
+> 负责人：架构负责人 · v1.4 · 2026-10-06 · 来源任务：T-009；T-026 修订（4.1 预约生效与缺价检查、5.2 只增不改用触发器、8.2 第 ②③ 层的数据来源、新增 8.4 管理员提醒、10.1 第 5 条用户名来源；契约 1.3，ADR-0017）；T-024 修订（新增 8.3 注册赠送余额，契约 1.2）；T-014 修订（6.3、6.4 余额恢复改为「加余额后重新检查」，第 7 节平台每日上限改为原子预留，计费端口拆分）；T-020 修订（新增 6.6 安全优先透支〔裁定 B4〕；第 7 节 `safety_followup`、`countAsBackground`；3.2 默认识图模型〔裁定 B5〕；5.2 用途分组对照；新增 10.1 管理后台用量查询〔ADM-08〕、10.2 行为规划计费〔PLAN-03〕；契约 1.1）
 > 决策记录见 `docs/decisions/ADR-0012-relay-billing-and-wallet.md`（为什么这样选；v1.2 的安全优先透支、用量查询见 `ADR-0016`）；本文讲**具体怎么做**。
 > 契约以 `packages/contracts/src/http/billing.ts`、`src/http/model-access.ts`、`src/ports/billing.ts`、`src/ports/model-gateway.ts` 为准。
 > 价格数字、模型清单、默认后台预算数值不在本文定义：模型与价格见 `docs/ai/model-catalog.md`，费用估算与默认预算见 `docs/ai/cost-estimate.md`，产品参数见 PRD。
@@ -63,7 +63,7 @@ graph LR
 5. 上游状态：`active` / `invalid`（密钥被作废）/ `quota_exhausted`（平台在该上游的余额用完）/ `unavailable`（重试后仍失败）。状态变化时：
    - 写 `model_access.upstream_status`；
    - 对受影响的每个模型发 `model_access.model_status_changed`（用户侧只看到「模型暂时不可用」，看不到上游细节）；
-   - 给管理员发通知（推送 + 后台红点）——**上游余额用完是总经理需要去供应商处充值的信号**。
+   - 给管理员发提醒（事件 `platform.admin_alert_raised`，推送 + 后台红点，8.4 节）——**上游余额用完是总经理需要去供应商处充值的信号**。
 6. 恢复检查由网关自己的定时任务做（每 5 分钟对异常上游发一次低成本探测，记平台账户），AI 运行时不再负责探测。
 7. **运维额外要求**：在每家供应商控制台设置月度消费上限和余额告警（平台之外的最后一道保险，写入 `docs/ops/` 操作手册）。
 
@@ -103,6 +103,12 @@ graph LR
 - **分时价**：一条价格可以带「时段」（例如 DeepSeek 工作日 9–12、14–18 点为高峰），按调用**开始时刻**（北京时间，按供应商规则）取价。
 - **成本价与售价**：成本价是上游收我们的钱，用于对账；售价是扣用户的钱。个人测试阶段售价 = 成本价。将来要加价，只改新版本的售价，不改代码。
 - 数据来源：AI 负责人维护 `docs/ai/model-catalog.md` 的价格表（唯一定义处），管理员按它在后台录入并发布。
+- **发布即生效，首版不支持预约**（v1.4，T-026 确认）：`activate` 的 `effectiveFrom` 只能为空或不晚于现在，晚于现在返回 400。个人测试阶段调价由总经理手动操作，立即生效足够；将来需要「某天零点起生效」时再加（技术债 TD-026，接口字段已保留，不改契约）。
+- **「启用的模型必须有价格」由 model-access 把关**（v1.4，T-026 决定）：billing 看不到模型目录（依赖方向只能 model-access → billing），所以发布价目表时**不检查**目录里启用的模型是否缺价。改为三道关：
+  1. **model-access 启用模型时检查**：`upsertCatalogEntry` 保存为 `enabled = true` 时，调 `BillingChargeQueryPort.listActivePricedModelKeys()`，当前价目表没有该模型的价格就返回 422 `model_unavailable`。所以正确的上新顺序是：登记上游 → 新增模型（停用状态）→ 价目表加价格并发布 → 启用模型。
+  2. **管理后台发布前提示**：发布价目表前，管理后台用已有接口（`listCatalog` + 草稿内容）对照，列出「启用中、但新版本里没有价格」的模型，让管理员确认（D-L0-13 页面要求，不是服务器规则）。
+  3. **兜底**：真有启用的模型缺价（例如新版本漏了某个模型），冻结时 billing 返回 `price_missing`，网关对外报 `model_unavailable`，不调用上游，不会产生「免费调用」（第 4.2 节最后一段）。
+  - 为什么不让 billing 调 model-access 的「列出启用模型」端口：同层双向调用会形成循环依赖（ADR-0004、R11）；在装配层做检查则把业务规则放进了不该有逻辑的地方。
 
 ### 4.2 一次调用怎么算钱
 
@@ -164,7 +170,8 @@ token 数优先用上游返回的用量字段；上游没返回时按 AI 负责�
 
 规则：
 1. 写流水和改账户余额在**同一个数据库事务**里，对账户行加锁（`SELECT ... FOR UPDATE`），并发调用不会算错。
-2. 流水**禁止 UPDATE 和 DELETE**（数据库层面撤销本表的更新、删除权限；注销账号的物理删除由专门的删除清单函数以独立权限执行）。
+2. 流水**禁止 UPDATE 和 DELETE**。实现方式（v1.4，T-026 确认后端 T-023 的做法）：**数据库触发器**拒绝本表的任何 `UPDATE`、`DELETE`、`TRUNCATE`（含删账户时的级联删除）；同时对 `PUBLIC` 撤销这三种权限，防将来新增的只读账号。注销账号的物理删除只能经专门的删除函数 `billing.purge_user_account`，它在函数内部临时打开事务级开关、删完即关（`docs/backend/billing.md` 第 4 节）。
+   - 为什么不单靠撤销权限：应用和迁移用的是同一个数据库账号，而且它是表的所有者，所有者可以随时给自己授回权限，撤销拦不住；触发器对所有者同样生效。将来运维把「应用账号」和「表所有者」分开时，再对应用账号撤销权限作为第二道锁，触发器保留（技术债 TD-027）。
 3. 改错 = 追加一条 `adjustment`，原因写清楚引用哪条流水。
 
 ### 5.3 冻结 `billing.holds`
@@ -285,7 +292,7 @@ sequenceDiagram
    - **冻结时**：按估算用量 × **成本价**算出 `预留成本`，在冻结的同一个事务里执行一条带条件的更新：`UPDATE ... SET reserved_cost_micros = reserved_cost_micros + 预留成本 WHERE budget_day = 今天 AND settled_cost_micros + reserved_cost_micros + 预留成本 <= cap_micros`。更新到 0 行 → 返回 `budget_exceeded`，整个冻结回滚（用户钱包不被冻结）。这一行的行锁让并发请求排队检查，不会同时通过。预留额和日期记在冻结记录上（5.3 节）。
    - **结算时**：同一事务里 `reserved_cost_micros −= 该冻结的预留`、`settled_cost_micros += 实际成本`（按冻结记录上的 `budget_day` 记账，跨零点的调用记在发起那天）。实际成本可能略高于预留，允许小幅超出上限（以估算偏差为界）。
    - **解冻 / 过期时**：归还预留；若上游对失败调用仍收费（平台吸收，6.5 节），把这部分成本计入 `settled_cost_micros`。
-   - 达到 80%（已结算 + 预留中）给管理员发通知；`GET /admin/billing/platform-summary` 的 `todayCostMicros` 显示已结算部分。
+   - 达到 80%（已结算 + 预留中）给管理员发提醒（`platform_budget_warning`，8.4 节）；`GET /admin/billing/platform-summary` 的 `todayCostMicros` 显示已结算部分。
    - 用户的后台每日上限（第 1 条）是在冻结时对**该用户账户行**加锁（`SELECT ... FOR UPDATE`）后检查的，同一用户的并发请求已排队，不存在同样的问题。
 3. **平台账户**：管理员侧任务（`admin_*` 用途）记平台账户。平台账户余额可以为负（它代表总经理自己的花费），只受平台每日总上限约束。
 
@@ -302,8 +309,10 @@ sequenceDiagram
 | 层 | 检查什么 | 异常时 |
 |---|---|---|
 | ① 账本自洽 | 每个账户：流水合计 = `balance_micros`；`held_micros` = 有效冻结合计；没有超过 1 小时仍为 `active` 的冻结；用户钱包余额不低于 −(安全透支上限 + 1 元)（v1.2，6.6 节） | 标红、通知管理员；不自动修复 |
-| ② 用量与扣费一一对应 | 每条成功的 `usage_records` 恰好对应一条 `charge` 流水，反之亦然；v1.2 起还要核对用量记录上的金额快照与流水金额相等（10.1 节）。通过 billing 只读端口提供的按日 / 按用量记录 ID 查询与 model-access 的用量数据比对，不跨 schema 查询；该方法在 D-L0-16 时补入 `BillingReadPort`（由后端按此提契约变更申请） | 列出缺失 / 多余 / 金额不一致的记录；金额快照缺失（进程在结算后、写快照前崩溃）由 model-access 的修复任务按 billing 返回值补写 |
-| ③ 与上游账单比对 | 管理员在后台录入各上游某天 / 某月的实际账单金额；系统按成本价汇总同期金额，偏差 > 3%（阈值可配）标红 | 提示检查价目表是否过期（最常见原因是供应商调价） |
+| ② 用量与扣费一一对应 | 每条成功的 `usage_records` 恰好对应一条 `charge` 流水，反之亦然；v1.2 起还要核对用量记录上的金额快照与流水金额相等（10.1 节）。**由 model-access 比对**（v1.4，契约 1.3）：它用 `BillingChargeQueryPort.listChargesByDay` / `getChargesByUsageRecordIds` 取扣费，与自己的用量记录逐条比，不跨 schema 查询 | 结果用事件 `model_access.usage_reconciled` 交回 billing，写进当天对账记录（`usageWithoutCharge`、`chargeWithoutUsage`、`usageAmountMismatch`、`usageReconciledAt`），管理后台对账页只从 billing 一处读；明细记在 model-access 自己的日志。金额快照缺失（进程在结算后、写快照前崩溃）先按 billing 返回值补写再比。有异常另发管理员提醒（8.4 节） |
+| ③ 与上游账单比对 | 管理员在后台录入各上游某天 / 某月的实际账单金额；系统按成本价汇总同期金额，偏差 > 3%（阈值可配）标红。按上游汇总的依据是流水上的 `upstream_id`，由网关在 `settle` / `release` 时传入（契约 1.3 `upstreamId`）；没有上游 ID 的旧流水不计入任何上游 | 提示检查价目表是否过期（最常见原因是供应商调价） |
+
+**第 ② 层的时间安排**：billing 每天 3:30（北京时间）对前一天跑第 ①、③ 层并建当天的对账记录；model-access 在 3:45 对同一天跑第 ② 层并发事件。billing 收到事件时若当天的记录还没建（例如 3:30 的任务失败），先建一条只有第 ② 层结果的记录，之后第 ①、③ 层重跑时补齐、不覆盖第 ② 层字段。同一天重跑第 ② 层，以最新的事件为准（按 `checkedAt`）。
 
 上游账单首版**手工录入**（多数供应商的账单接口各不相同），登记技术债 TD-013。
 
@@ -321,6 +330,29 @@ sequenceDiagram
    - 加余额照常走 6.3 第 3 条的余额事件规则（新账号从 0 变正会发 `balance_restored(crossed_zero)`，ai-runtime 收到后没有待回复会话，无副作用）。不另写审计：邀请码生成时 identity 已审计。
 3. **钱包按需创建**：注册后、事件处理完之前（约 1 秒）用户就打开余额页时，`GET /billing/wallet` 返回余额 0 的钱包（按需创建或直接返回默认值，由后端定），随后赠送到账。
 4. **测试**（D-L0-16 / identity 补充）：带赠送的码注册后余额 = 赠送金额、明细有一条备注「注册赠送」的 `admin_grant`；同一事件投递两次只记一次；不带赠送的码不写流水；账号已注销时迟到的注册事件不建钱包、不记流水；赠送 0 或负数、超过上限的生成请求被拒（400）。
+
+### 8.4 管理员提醒（v1.4，T-026，契约 1.3）
+
+**结论**：凡是「需要总经理去处理」的平台运行问题，发出问题的模块都发同一种事件 `platform.admin_alert_raised`；**push 模块**订阅它，存进管理员提醒列表（管理后台红点），并推送到管理员账号已登记的手机 / 网页。各模块不各自造通知渠道。
+
+| 种类 `AdminAlertKind` | 谁发 | 什么时候 | 级别 | 合并键（例） |
+|---|---|---|---|---|
+| `platform_budget_warning` | billing | 平台当天成本（已结算 + 预留中）首次达到每日总上限的 80%（第 7 节第 2 条） | warning | `platform_budget_warning:{北京日期}` |
+| `reconciliation_flagged` | billing（第 ①、③ 层）、model-access（第 ② 层） | 每日对账有任何标红项（8.2 节；含「余额过负」的账户） | warning | `reconciliation_flagged:{对账日期}:{层}` |
+| `upstream_quota_exhausted` | model-access | 上游状态变为 `quota_exhausted`（3.1 第 5 条）——**总经理需要去供应商处充值** | critical | `upstream_quota_exhausted:{upstreamId}` |
+| `upstream_invalid` | model-access | 上游状态变为 `invalid`（密钥无效） | critical | `upstream_invalid:{upstreamId}` |
+| `upstream_unavailable` | model-access | 上游状态变为 `unavailable`（重试后仍失败，`message-reliability.md` 第 6 节） | warning | `upstream_unavailable:{upstreamId}` |
+| `upstream_recovered` | model-access | 上述上游问题恢复为 `active` | info | `upstream_recovered:{upstreamId}` |
+
+1. **发出方**：在发现问题的同一个事务里写发件箱（与写审计、改状态一起）；**照常写审计日志和错误级日志**——运维的日志告警（`docs/ops/`）不依赖 push，push 没上线（L1）之前也能发现问题。载荷只放种类、级别、合并键、一句固定模板说明和相关 ID（上游、模型、日期），**不放用户名、用户 ID、消息内容、密钥**。
+2. **push（数据归 push，表 `push.admin_alerts`）**：
+   - 同一个合并键还有**未处理**的提醒时，不新建，只把次数加一、更新说明和最后发生时间；否则新建一条。
+   - `warning` / `critical`：新建时推送一次，通知种类 `admin_alert`，发给 `IdentityDirectoryPort.listAdminUserIds()` 返回的每个管理员已登记的设备；同一条提醒合并期间不再推送。`info`：只进列表，不推送。
+   - 不受用户的免打扰设置影响（这是给管理员的运维通知，不是聊天消息）；不在用户的「余额 / 模型状态」通知去重里。
+   - 管理后台：`GET /admin/alerts`（未处理数 = 红点）、`POST /admin/alerts/:alertId/acknowledge`（标记已处理；之后同一个键再发生会新建、重新推送）。提醒保留 90 天。
+   - 提醒里的 `acknowledgedByUserId` 是管理员的用户 ID：push 的删除清单在该管理员注销时把它置空。
+3. **为什么归 push**：`overview.md` 规定「所有通知经过 push」，推送凭证、合并、频率控制都在那里；提醒列表与推送记录放在一起，合并规则只写一处。替代方案「平台内核建表」把业务规则放进内核，「各模块各存各的」让管理后台要拼多处数据，都不选。
+4. **上线顺序**：事件现在就可以发（billing 已在 D-L0-16 写了审计与错误日志，补发事件即可；model-access 在 D-L0-08 / D-L0-09 发）；push 在 D-L1-05 实现订阅、列表与推送，管理后台红点在 D-L1-05 之后的管理后台任务接入。push 上线前发出的提醒**不保证**补进提醒列表（取决于分发器对「发出时还没有订阅者」的事件怎么处理），以审计和日志为准，这是可接受的。
 
 ## 9. 与硬性边界的关系（成人内容模型）
 
@@ -355,7 +387,7 @@ sequenceDiagram
 2. **金额快照**：网关在 `settle` 返回后把 `amountMicros`（用户扣费，记为 `charged_micros`）、`costMicros`，在 `release` 返回后把 `absorbedCostMicros`、以及冻结结果 `usedSafetyOverdraft` 写进用量记录。这些是**副本**，余额与流水的权威仍是 billing（`overview.md` 第 4 节规则 5 已同步）；对账第 ② 层核对两者逐条相等（第 8.2 节；同一数字存两处，登记为技术债 TD-023）。
 3. **口径**：「用户扣费」= `billingOwner = user` 的成功调用的 `charged_micros` 合计，与余额明细中扣费类流水合计相等（ADM-08 第 7 条）；「平台成本」= `cost_micros` 合计（含平台账户的 `admin_*` 调用）；「平台吸收」= `absorbed_cost_micros` 合计（失败调用仍被上游收费，6.5 节），单独一列，不计入用户扣费。
 4. **时间**：筛选用 `[from, to)` 时间戳（可精确到小时）；按天分组用**北京时间**自然日，与平台每日上限、供应商账单日一致（第 7 节第 2 条）。
-5. **按用户名、角色名搜索**：接口只收 ID。管理后台先用已有接口把名字换成 ID（用户：`GET /admin/billing/accounts` 返回用户名；角色：管理后台角色库），再查询。不在 model-access 里存用户名，避免复制别的模块的数据。
+5. **按用户名、角色名搜索**：接口只收 ID。管理后台先用已有接口把名字换成 ID（用户：`GET /admin/billing/accounts` 返回用户名——billing 调 `IdentityDirectoryPort.getUsernames` 现取，不存；角色：管理后台角色库），再查询。不在 model-access 里存用户名，避免复制别的模块的数据。
 6. **导出**：`/export` 返回最多 50,000 行 JSON（`ADMIN_USAGE_EXPORT_MAX_ROWS`），管理后台网页转成 CSV 下载；服务器每次导出写审计日志（谁、何时、筛选条件）。超过上限时 `truncated = true`，提示缩小范围。
 7. **不含内容**：用量记录本来就不存消息、提示词、模型输出（engineering-standards 第 6 节第 3 条），接口也没有这些字段。
 8. **索引建议**（后端实现时定）：`created_at`；`(user_id, created_at)`；`(character_id, created_at)`；`purpose`、`model_key` 可用联合索引或在数据量大时再加。个人测试规模下，单表聚合足够快。
@@ -381,3 +413,4 @@ sequenceDiagram
 2. `model-access` 改造：上游、模型目录（含默认识图模型）、选择规则、网关接入计费端口、`safetyPriority` 校验、用量记录的金额快照字段（D-L0-08、D-L0-09）。管理后台用量查询接口（10.1 节）在 L2 实现（D-L2-11），但用量记录表的字段在 D-L0-08 一次建好。
 3. 管理后台：上游、模型目录、价目表、加余额（D-L0-13 扩展）。
 4. 用户端：余额、流水、价目展示（网页 D-L0-12 / 安卓 D-L1-06 起）；用量汇总与对账页（L2）。
+5. 【契约 1.3，T-026】billing 补：实现 `BillingChargeQueryPort`、`settle` / `release` 记 `upstreamId`、订阅 `model_access.usage_reconciled`、发 `platform.admin_alert_raised`、账户列表用 `IdentityDirectoryPort.getUsernames`；identity 补：实现 `IdentityDirectoryPort`（与 D-L0-08 同批，后端）。model-access：启用模型时查价、传 `upstreamId`、第 ② 层对账任务、上游状态提醒（D-L0-08 / D-L0-09）。push：管理员提醒订阅、列表、推送（D-L1-05）。

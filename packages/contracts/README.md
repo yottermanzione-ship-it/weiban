@@ -46,7 +46,7 @@ HTTP 接口用 `defineEndpoint({ method, path, auth, params, query, body, respon
 | `src/http/contacts.ts`           | 添加角色、通讯录、备注、自定义头像、专属称呼、删除恢复                                     | web、android、server        |
 | `src/http/chat.ts`               | 会话、参与者、消息内容、消息、已读、撤回、会话状态                                         | web、android、server        |
 | `src/http/sync.ts`               | 每用户更新日志与补拉（多端同步）                                                           | web、android、server        |
-| `src/http/push.ts`               | 推送设备登记、通知载荷格式                                                                 | web、android、server        |
+| `src/http/push.ts`               | 推送设备登记、通知载荷格式；管理员提醒（1.3，管理）                                        | web、android、admin、server |
 | `src/http/companion.ts`          | 陪伴设置（秒回、拆条），数据归 ai-runtime                                                  | web、android、server        |
 | `src/http/media.ts`              | 图片上传（我的头像、通讯录头像；管理员上传角色头像）                                       | web、android、admin、server |
 | `src/ws.ts`                      | WebSocket 帧协议                                                                           | web、android、server        |
@@ -59,7 +59,7 @@ HTTP 接口用 `defineEndpoint({ method, path, auth, params, query, body, respon
 
 ## 当前范围
 
-v1.2 补了邀请码注册赠送余额、管理后台「注销未完成」列表与重新触发、账号状态端口。v1.1 在 v1.0 基础上补了计费（安全优先透支、后台计入规则）、管理后台用量查询（ADM-08，L2 使用）、默认识图模型和历史人物形象策略。v1.0 覆盖 L0、L1 所需：账号、界面偏好、模型选择与计费、角色基础信息与展示字段、通讯录、会话与消息、同步、推送、陪伴设置（秒回 / 拆条）、媒体（头像）、领域事件、端口。后续层由架构负责人按 `docs/architecture/dev-plan.md` 扩展。
+v1.3 补了计费对账与管理所需的只读端口（批量取用户名、按用量记录 / 日期查扣费、有价格的模型键）、结算 / 解冻的上游 ID、对账第 ② 层结果事件、统一的「管理员提醒」事件与接口。v1.2 补了邀请码注册赠送余额、管理后台「注销未完成」列表与重新触发、账号状态端口。v1.1 在 v1.0 基础上补了计费（安全优先透支、后台计入规则）、管理后台用量查询（ADM-08，L2 使用）、默认识图模型和历史人物形象策略。v1.0 覆盖 L0、L1 所需：账号、界面偏好、模型选择与计费、角色基础信息与展示字段、通讯录、会话与消息、同步、推送、陪伴设置（秒回 / 拆条）、媒体（头像）、领域事件、端口。后续层由架构负责人按 `docs/architecture/dev-plan.md` 扩展。
 
 ## 版本规则
 
@@ -85,6 +85,7 @@ v1.2 补了邀请码注册赠送余额、管理后台「注销未完成」列表
    | 用量明细用途 `AdminUsageRecord.purpose`（1.1，管理后台）         | `tolerantEnum(ModelPurpose)`     | 显示原始值或「其他」         |
 
 | 注销进度模块名 `AccountDeletionModuleProgress.module`（1.2，管理后台） | `tolerantEnum(ModuleName)` | 显示「其他模块」 |
+| 管理员提醒 `AdminAlert.kind` / `severity`（1.3，管理后台） | `tolerantEnum(AdminAlertKind)` 等 | 显示「其他提醒」/ 按 warning |
 
 - 已知类型但内容不合法的，仍然校验失败（不掩盖服务器的错误）。
 - 服务器发出数据前用**严格**版本校验：`MessageContent`、`UserUpdatePayload`、`ServerFrameStrict`、`ErrorCode` 等。客户端发给服务器的数据（请求体、`ClientFrame`）一律严格。
@@ -92,6 +93,23 @@ v1.2 补了邀请码注册赠送余额、管理后台「注销未完成」列表
 - 安卓端（Kotlin）不运行 Zod，必须在反序列化配置里实现同样的行为（未知多态类型 → 默认分支，未知枚举值 → 兜底值），由 Android 负责人在 D-L0-18 落实并用协议用例验证。
 
 ## 变更记录
+
+### 1.3（2026-10-06，T-026）
+
+依据：后端 T-023 交接说明「给架构」的 6 条申请（`docs/handoffs/2026-10-05-backend-lead-T-023.md`）。设计见 `docs/architecture/billing.md` v1.4（4.1、5.2、8.2、8.4、10.1 节），决策见 `docs/decisions/ADR-0017-billing-contract-requests-t026.md`。全部为次版本变更（只新增、改说明），1.2 的服务器实现不改代码也能通过类型检查。
+
+- **新增**：
+  - 端口 `IdentityDirectoryPort`（申请 1）：`getUsernames(userIds)`（批量取用户名，管理后台展示与按用户名搜索用，调用方不得存用户名）、`listAdminUserIds()`（push 给管理员发提醒用）。单独成接口，不并入 `IdentityReadPort`。
+  - 端口 `BillingChargeQueryPort`（申请 2、5）：`getChargesByUsageRecordIds`、`listChargesByDay`（北京日期、分页）、`listActivePricedModelKeys`；类型 `UsageCharge`、`UsageChargePage`。只读，单独成接口，不并入 `BillingReadPort`。
+  - `SettleInput.upstreamId`、`ReleaseInput.upstreamId`（可选，申请 3）：网关应当传，用于对账第 ③ 层与「各上游近 30 天成本」。
+  - 事件 `model_access.usage_reconciled`：对账第 ② 层由 model-access 比对，结果交回 billing 写进当天的对账记录；`ReconciliationRun.usageReconciledAt`、`usageAmountMismatch`（可选）。
+  - 管理员提醒（申请 6）：事件 `platform.admin_alert_raised`（任何模块可发）、`AdminAlertKind` / `AdminAlertSeverity` / `AdminAlertFacts` / `AdminAlert`、`PushAdminEndpoints`（`GET /admin/alerts`、`POST /admin/alerts/:alertId/acknowledge`），通知种类 `NotificationKind` 新增 `admin_alert`。数据归 push。
+- **改说明（无结构改动）**：
+  - `activatePriceVersion`：首版不支持预约生效（`effectiveFrom` 晚于现在 400，技术债 TD-026）；不再在 billing 检查「启用模型缺价」（申请 4、5）。
+  - `upsertCatalogEntry`：保存为启用时当前价目表没有该模型价格 → 422 `model_unavailable`（申请 5）。
+  - `AdminAccountSummary.username` 来源写明。
+- **确认偏差（只改设计文档）**：流水只增不改用触发器实现、而非单靠撤销权限（申请 4），见 `billing.md` 5.2 第 2 条。
+- 顺带修正：上方「接收端容错」表格中 1.2 那一行被空行隔开、不在表格里。
 
 ### 1.2（2026-10-05，T-024）
 
