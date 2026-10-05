@@ -5,7 +5,7 @@
 | 负责人 | backend-lead |
 | 日期 | 2026-10-06 |
 | 分支 | `T-028-billing-identity-c13`（起点 origin/main c1e4ec5） |
-| 状态 | **暂停**：只完成了阅读与方案梳理，**还没有改任何代码** |
+| 状态 | **进行中**：已完成计费查询端口与 model-access 装配，其余未开始 |
 
 ## 做了什么
 
@@ -13,7 +13,9 @@
 - 读完现有实现：identity `SettingsService`、`identity.module.ts`、`tokens.ts`；billing `reconciliation.ts`、`platform-budget.ts`、`lifecycle.ts`、`admin.ts`、`reservations.ts`（settle / release）、`infra/db/schema.ts`；`model-access.module.ts`。
 - 本地环境已就绪（`pnpm install`、`pnpm db:up`、`.env`）。未运行 `pnpm check`。
 
-## 还剩什么（全部工作内容 1–3 都未开始写）
+## 还剩什么
+
+**已完成（第一小块，pnpm check 全部通过）**：billing 新增 `application/charge-query.ts`（`ChargeQueryService`，实现 `BillingChargeQueryPort` 三个方法）、令牌 `BILLING_CHARGE_QUERY_PORT` 已在 billing `index.ts` 导出；`model-access.module.ts` 的 `MODEL_ACCESS_CHARGE_QUERY` 已改为 `useExisting: BILLING_CHARGE_QUERY_PORT`；测试加在 `test/billing.test.ts` 每日对账用例里。下面第 2 条中的 `BillingChargeQueryPort` 和第 3 条已做完，其余仍待做。注意：`MODEL_PRICE_SOURCE`（档位用价格源）仍是 `EmptyPriceSource`，不在本任务范围；`ChargeQueryUnavailable` 类仍留在 defaults.ts。
 
 接着做时按下面顺序：
 

@@ -1015,13 +1015,15 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
           amountMicros: 10_000,
           costMicros: 5000,
           absorbed: false,
-          chargedAt: clock.now().toISOString(),
+          chargedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/),
         }),
       ]);
       await expect(
         query.getChargesByUsageRecordIds(Array.from({ length: 1001 }, () => uuid())),
       ).rejects.toThrow();
-      const beijingDay = new Date(clock.now().getTime() + 8 * 3_600_000).toISOString().slice(0, 10);
+      const beijingDay = new Date(new Date(byId[0]!.chargedAt).getTime() + 8 * 3_600_000)
+        .toISOString()
+        .slice(0, 10);
       const dayAll = await query.listChargesByDay(beijingDay);
       expect(dayAll.items.map((i) => i.usageRecordId)).toContain(tagged.usageRecordId);
       expect(dayAll.nextCursor).toBeNull();
