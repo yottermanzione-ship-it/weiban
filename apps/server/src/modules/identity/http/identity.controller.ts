@@ -22,6 +22,7 @@ import {
   type AuthResponse,
   type CurrentUser,
   type NotificationSettings,
+  type PendingAccountDeletion,
   type Profile,
   type SessionSummary,
   type UserPreferences,
@@ -35,6 +36,7 @@ import {
   type AuthPrincipal,
 } from '../../../platform/index.js';
 import { AccountService } from '../application/accounts.js';
+import { DeletionService } from '../application/deletion.js';
 import { InviteService, type Invite } from '../application/invites.js';
 import { SessionService } from '../application/sessions.js';
 import { SettingsService } from '../application/settings.js';
@@ -184,7 +186,10 @@ export class IdentityController {
 
 @Controller('api/v1/admin')
 export class IdentityAdminController {
-  constructor(@Inject(InviteService) private readonly invites: InviteService) {}
+  constructor(
+    @Inject(InviteService) private readonly invites: InviteService,
+    @Inject(DeletionService) private readonly deletion: DeletionService,
+  ) {}
 
   @Post('invites')
   @RequireAuth(A.createInvite.auth)
@@ -193,7 +198,27 @@ export class IdentityAdminController {
     @Body(new ContractPipe(schema(A.createInvite.body))) body: Body<typeof A.createInvite>,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<Invite> {
-    return this.invites.create(body.expiresInDays, me.userId, idempotencyKey);
+    return this.invites.create(
+      { expiresInDays: body.expiresInDays, bonusMicros: body.bonusMicros },
+      me.userId,
+      idempotencyKey,
+    );
+  }
+
+  @Get('account-deletions')
+  @RequireAuth(A.listPendingDeletions.auth)
+  async listPendingDeletions(): Promise<{ items: PendingAccountDeletion[] }> {
+    return { items: await this.deletion.listPending() };
+  }
+
+  @Post('account-deletions/:userId/retry')
+  @HttpCode(202)
+  @RequireAuth(A.retryDeletion.auth)
+  retryDeletion(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(schema(A.retryDeletion.params))) params: { userId: string },
+  ): Promise<PendingAccountDeletion> {
+    return this.deletion.retry(params.userId, me.userId);
   }
 
   @Get('invites')

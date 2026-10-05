@@ -8,7 +8,9 @@
  */
 import { Inject, Injectable } from '@nestjs/common';
 import type {
+  AccountStatus,
   AppTheme,
+  IdentityAccountStatusPort,
   IdentityReadPort,
   NotificationSettings,
   Profile,
@@ -93,7 +95,7 @@ function changedKeys<P extends object>(
 }
 
 @Injectable()
-export class SettingsService implements IdentityReadPort {
+export class SettingsService implements IdentityReadPort, IdentityAccountStatusPort {
   constructor(
     @Inject(DATABASE) private readonly database: Database,
     @Inject(OUTBOX) private readonly outbox: Outbox,
@@ -258,6 +260,17 @@ export class SettingsService implements IdentityReadPort {
       .from(users)
       .where(eq(users.id, userId));
     return row?.lastActiveAt?.toISOString() ?? null;
+  }
+
+  // ---------- IdentityAccountStatusPort（契约 1.2） ----------
+
+  /** 账号状态：active / deleting；账号不存在（已删除或从未存在）返回 null。 */
+  async getAccountStatus(userId: string): Promise<AccountStatus | null> {
+    const [row] = await this.database.db
+      .select({ status: users.status })
+      .from(users)
+      .where(eq(users.id, userId));
+    return (row?.status as AccountStatus | undefined) ?? null;
   }
 }
 

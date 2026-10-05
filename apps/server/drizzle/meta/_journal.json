@@ -15,6 +15,20 @@
       "when": 1791152659403,
       "tag": "0001_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791170359643,
+      "tag": "0002_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791170824000,
+      "tag": "0003_identity_invite_bonus",
+      "breakpoints": true
     }
   ]
 }

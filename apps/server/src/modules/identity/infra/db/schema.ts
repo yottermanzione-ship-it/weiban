@@ -6,6 +6,7 @@
  */
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   check,
   customType,
@@ -46,6 +47,8 @@ export const users = identitySchema.table(
     /** 最近一次使用任一会话的时间（IdentityReadPort.getLastActiveAt，P-17）。 */
     lastActiveAt: tz('last_active_at'),
     deletionRequestedAt: tz('deletion_requested_at'),
+    /** 管理员最近一次「重新触发删除」的时间（security-and-privacy.md 5.1 第 2 条；T-023 新增）。 */
+    deletionRetriggeredAt: tz('deletion_retriggered_at'),
   },
   (t) => [
     uniqueIndex('users_username_lower_key').on(sql`lower(${t.username})`),
@@ -134,6 +137,8 @@ export const invites = identitySchema.table(
     usedBy: uuid('used_by').references(() => users.id, { onDelete: 'set null' }),
     /** 生成请求的 Idempotency-Key（同一个 key 重复请求返回同一个码）。 */
     idempotencyKey: text('idempotency_key'),
+    /** 注册赠送余额（微元），0 = 不赠送（ADM-01 第 6 条，billing.md 8.3；T-023 新增）。 */
+    bonusMicros: bigint('bonus_micros', { mode: 'number' }).notNull().default(0),
   },
   (t) => [
     uniqueIndex('invites_idempotency_key_key').on(t.idempotencyKey),

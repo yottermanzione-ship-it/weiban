@@ -1,0 +1,2 @@
+ALTER TABLE "identity"."invites" ADD COLUMN "bonus_micros" bigint DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "identity"."users" ADD COLUMN "deletion_retriggered_at" timestamp with time zone;

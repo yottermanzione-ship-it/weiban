@@ -4,7 +4,7 @@
  *   pnpm --filter @weiban/server identity create-admin <用户名> [--tz Asia/Shanghai]
  *   pnpm --filter @weiban/server identity reset-password <用户名>
  *   pnpm --filter @weiban/server identity set-role <用户名> <user|admin>
- *   pnpm --filter @weiban/server identity create-invite [--days 7]
+ *   pnpm --filter @weiban/server identity create-invite [--days 7] [--bonus 10]
  *   pnpm --filter @weiban/server identity verify-purged <用户ID>
  *   pnpm --filter @weiban/server identity sweep-sessions
  *
@@ -26,7 +26,8 @@ const USAGE = `用法：
   identity create-admin <用户名> [--tz 时区]   创建管理员（随后输入密码）
   identity reset-password <用户名>            重置密码（随后输入新密码；该账号所有设备下线、解除锁定）
   identity set-role <用户名> <user|admin>     改角色（降为 user 时作废其管理会话）
-  identity create-invite [--days 天数]        生成一个邀请码（不填天数则永不过期）
+  identity create-invite [--days 天数] [--bonus 元]
+                                              生成一个邀请码（不填天数则永不过期；--bonus 注册赠送余额，单位元）
   identity verify-purged <用户ID>             注销核验：列出每个模块剩余的数据条数
   identity sweep-sessions                     清扫已过期的会话`;
 
@@ -107,8 +108,14 @@ async function main(): Promise<void> {
       }
       case 'create-invite': {
         const days = option(args, '--days');
-        const invite = await commands.createInvite(days === undefined ? null : Number(days));
+        const bonusYuan = option(args, '--bonus');
+        const bonusMicros = bonusYuan === undefined ? 0 : Math.round(Number(bonusYuan) * 1_000_000);
+        const invite = await commands.createInvite(
+          days === undefined ? null : Number(days),
+          bonusMicros,
+        );
         out(`邀请码：${invite.code}`);
+        if (bonusMicros > 0) out(`注册赠送：${bonusMicros / 1_000_000} 元`);
         out(`有效期至：${invite.expiresAt ?? '永不过期'}`);
         break;
       }

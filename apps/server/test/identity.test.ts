@@ -944,15 +944,16 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
       await dispatchAll();
       await vi.waitFor(
         async () => {
-          expect(await outbox('platform.user_data_purged', web.user.userId)).toHaveLength(1);
+          // T-023 起 billing 也登记了删除清单：chat（假模块）与 billing 各回报一次
+          expect(await outbox('platform.user_data_purged', web.user.userId)).toHaveLength(2);
         },
         { timeout: 20_000, interval: 200 },
       );
       await dispatchAll();
       expect(purged).toEqual([web.user.userId]);
-      expect(await outbox('platform.user_data_purged', web.user.userId)).toEqual([
-        { userId: web.user.userId, module: 'chat', deletedRows: 3 },
-      ]);
+      const reports = await outbox('platform.user_data_purged', web.user.userId);
+      expect(reports).toContainEqual({ userId: web.user.userId, module: 'chat', deletedRows: 3 });
+      expect(reports.map((r) => r.module).sort()).toEqual(['billing', 'chat']);
       expect(await q.userById(web.user.userId)).toBeNull();
       expect(await commands.verifyPurged(web.user.userId)).toEqual(
         registry.modules().map((module) => ({ module, count: 0 })),

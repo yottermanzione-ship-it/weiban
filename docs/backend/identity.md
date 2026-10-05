@@ -1,6 +1,6 @@
 # 账号模块 identity 实现说明（apps/server/src/modules/identity）
 
-> 负责人：后端负责人 · v1.0 · 2026-10-05 · 来源任务：T-018（D-L0-06）
+> 负责人：后端负责人 · v1.0 · 2026-10-05 · 来源任务：T-018（D-L0-06）；v1.1 T-023（契约 1.2：邀请码注册赠送、账号状态端口、注销管理接口）
 > 读者：要用登录身份、资料、设置的其他模块负责人；运维（命令行脚本）；质量负责人。
 > 规则来源（本文不重复）：接口以 `packages/contracts/src/http/identity.ts` 为准；安全规则 `docs/architecture/security-and-privacy.md` 第 2、5 节；ADR-0006；内核用法 `docs/backend/kernel.md`。
 
@@ -12,7 +12,7 @@
 
 | 位置 | 内容 |
 |---|---|
-| `index.ts` | 公开出口：`IdentityModule`、`IDENTITY_READ_PORT`、`IdentityCommands`、`CommandError` |
+| `index.ts` | 公开出口：`IdentityModule`、`IDENTITY_READ_PORT`、`IDENTITY_ACCOUNT_STATUS_PORT`（契约 1.2 `IdentityAccountStatusPort`）、`hashUserId`、`IdentityCommands`、`CommandError` |
 | `testing.ts` | 测试出口：`IdentityTestQueries`（只读本模块表）、默认值常量 |
 | `domain/rules.ts` | 纯规则：会话期限、登录锁定、密码强度、邀请码格式、时区校验、令牌生成与哈希 |
 | `infra/db/schema.ts` | 表定义（schema `identity`），迁移 `drizzle/0001_identity.sql` + 手写回滚 |
@@ -34,7 +34,9 @@
 | `DELETE /me/sessions/:id` | 204 | 别人的会话或已下线 → 404（不暴露是否存在） |
 | `PATCH /me/profile`、`/me/notification-settings`、`/me/preferences` | 200 | 只改传了的字段；与原值相同的修改不写库、不发事件 |
 | `DELETE /me` | 202 | 密码错 → `invalid_credentials` **403**（不用默认的 401，避免客户端误以为登录失效而退出）|
-| `POST /admin/invites` | 201 | 支持请求头 `Idempotency-Key`（8–128 位字母数字 `-` `_`），同一管理员同一个 key 返回同一个码 |
+| `POST /admin/invites` | 201 | 支持请求头 `Idempotency-Key`（8–128 位字母数字 `-` `_`），同一管理员同一个 key 返回同一个码；可带 `bonusMicros`（注册赠送，0～1,000 元，超出或负数 400），响应**总是**带 `bonusMicros`；审计记赠送金额，不记码 |
+| `GET /admin/account-deletions` | 200 | 状态为注销中的全部账号，按申请时间从早到晚；每个账号的模块进度 = 当前删除清单登记处的模块（identity 除外）∪ 已回报过的模块 |
+| `POST /admin/account-deletions/:userId/retry` | 202 | 对未回报的模块重新投递删除任务（同一模块排队中的任务不重复）；全部已回报则直接删除账号；返回触发后的进度快照；账号不存在或不在注销中 404；审计 `user.deletion_retriggered` 只记用户 ID 哈希 |
 
 其他错误：被锁定 `account_locked` 429；注册时 IP 被锁 `rate_limited` 429；参数不合法（含不认识的 IANA 时区）400 `bad_request`，`details.issues` 只给字段路径。
 
@@ -45,11 +47,11 @@
 | `users` | `username`（不区分大小写唯一）、`password_hash`（argon2id）、`role` user/admin、`status` active/deleting、`last_active_at`、`deletion_requested_at` | |
 | `sessions` | `user_id`、`kind` app/admin、`token_hash`（SHA-256，唯一）、`device`（契约 DeviceInfo）、`last_active_at`、`expires_at` | 作废 = 删行 |
 | `profiles` / `notification_settings` / `preferences` | 每用户一行 | 注册时写默认值 |
-| `invites` | `code`（大写无连字符）、`expires_at`、`used_at`、`used_by`、`created_by`、`idempotency_key` | 用户删除后 `used_by` 置空，`used_at` 保留（码仍算已用） |
+| `invites` | `code`（大写无连字符）、`expires_at`、`used_at`、`used_by`、`created_by`、`idempotency_key`、`bonus_micros`（T-023） | 用户删除后 `used_by` 置空，`used_at` 保留（码仍算已用） |
 | `login_throttle` | `key`（sha256 的用户名或 IP，库里不存 IP 原文）、`failures`、`last_failed_at`、`locked_until` | |
 | `deletion_progress` | `(user_id, module)`、`deleted_rows` | 注销进度 |
 
-谁写谁读：全部只由 identity 读写；其他模块通过 `IDENTITY_READ_PORT`（读资料、通知设置、最近活跃时间）和事件。外键只在本 schema 内部。
+谁写谁读：全部只由 identity 读写；其他模块通过 `IDENTITY_READ_PORT`（读资料、通知设置、最近活跃时间）、`IDENTITY_ACCOUNT_STATUS_PORT`（账号 active / deleting / 不存在）和事件。`users.deletion_retriggered_at` 记管理员最近一次重新触发删除的时间（T-023）。注册时邀请码 `bonus_micros > 0` 则 `identity.user_registered` 带 `signupBonus { amountMicros, grantedByUserId }`（命令行生成的码 grantedByUserId 为 null），billing 据此记注册赠送（billing.md 8.3）。外键只在本 schema 内部。
 
 ## 4. 账号与会话规则
 
@@ -90,7 +92,7 @@ DELETE /me（密码 + confirm=DELETE）
      → 审计 user.deleted（只记哈希）
 ```
 
-- 模块怎么登记：kernel.md 第 16 节。目前只有 identity 自己登记（用于核验）；没有其他模块时由 `identity.on_user_deletion_requested` 直接完成。
+- 模块怎么登记：kernel.md 第 16 节。T-023 起 billing 也登记了删除清单；没有其他模块时由 `identity.on_user_deletion_requested` 直接完成。
 - 删除任务需要消费任务的进程（`APP_ROLE` = worker 或 all）在运行。
 - 注销中的账号不能登录；用户名在账号行删除后才释放。
 - 重复投递安全：收件箱去重 + 账号已删除时忽略迟到的回报（有测试）。
@@ -104,7 +106,7 @@ DELETE /me（密码 + confirm=DELETE）
 | `pnpm --filter @weiban/server identity create-admin <用户名> [--tz Asia/Shanghai]` | 创建管理员（第一个管理员由运维执行），随后输入密码 |
 | `pnpm --filter @weiban/server identity reset-password <用户名>` | 重置密码：该账号所有设备下线、解除登录锁定，写审计 |
 | `pnpm --filter @weiban/server identity set-role <用户名> <user\|admin>` | 改角色；降为 user 时作废其管理会话 |
-| `pnpm --filter @weiban/server identity create-invite [--days 7]` | 生成一个邀请码（不填天数永不过期） |
+| `pnpm --filter @weiban/server identity create-invite [--days 7] [--bonus 10]` | 生成一个邀请码（不填天数永不过期；`--bonus` 注册赠送余额，单位元） |
 | `pnpm --filter @weiban/server identity verify-purged <用户ID>` | 注销核验：列出每个模块剩余条数，有残留时退出码 2 |
 | `pnpm --filter @weiban/server identity sweep-sessions` | 清扫已过期会话 |
 
