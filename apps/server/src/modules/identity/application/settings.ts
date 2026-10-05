@@ -18,6 +18,7 @@ import type {
   UpdateProfileRequest,
   UpdateUserPreferencesRequest,
   UserPreferences,
+  MediaReadPort,
 } from '@weiban/contracts';
 import { UpdateNotificationSettingsRequest } from '@weiban/contracts';
 import { and, asc, eq, inArray } from 'drizzle-orm';
@@ -33,6 +34,7 @@ import {
   type Outbox,
 } from '../../../platform/index.js';
 import { isValidTimeZone } from '../domain/rules.js';
+import { MEDIA_READ_PORT } from '../../media/index.js';
 import { notificationSettings, preferences, profiles, users } from '../infra/db/schema.js';
 
 type ProfileRow = typeof profiles.$inferSelect;
@@ -103,6 +105,7 @@ export class SettingsService
     @Inject(DATABASE) private readonly database: Database,
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(MEDIA_READ_PORT) private readonly media: MediaReadPort,
   ) {}
 
   /** 注册时在同一事务写入资料、通知设置、界面偏好的默认值。 */
@@ -139,6 +142,11 @@ export class SettingsService
   }
 
   async updateProfile(userId: string, patch: UpdateProfileRequest): Promise<Profile> {
+    if (patch.avatarMediaId) {
+      const avatar = await this.media.getMedia(userId, patch.avatarMediaId);
+      if (avatar.purpose !== 'user_avatar')
+        throw new AppError('bad_request', '请使用自己的头像图片', { status: 422 });
+    }
     if (patch.timeZone !== undefined && !isValidTimeZone(patch.timeZone)) {
       throw invalidTimeZone('timeZone');
     }

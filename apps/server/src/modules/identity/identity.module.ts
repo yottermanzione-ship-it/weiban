@@ -2,6 +2,7 @@
  * identity 模块装配（D-L0-06）。说明见 docs/backend/identity.md。
  */
 import { Module } from '@nestjs/common';
+import { MediaModule } from '../media/index.js';
 import {
   CLOCK,
   DATABASE,
@@ -25,6 +26,7 @@ import {
 } from './tokens.js';
 
 @Module({
+  imports: [MediaModule],
   controllers: [IdentityController, IdentityAdminController],
   providers: [
     { provide: PASSWORD_HASHER, useValue: new PasswordHasher() },

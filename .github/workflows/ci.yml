@@ -89,6 +89,13 @@ jobs:
       - name: 确认集成测试实际执行（跳过数必须为 0）
         run: node .github/scripts/check-test-report.mjs test-results/vitest-report.json
 
+      - name: 网页生产构建与真实浏览器测试
+        env:
+          TEST_DATABASE_URL: postgres://weiban:weiban_dev_only@127.0.0.1:5432/weiban_test
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm web:e2e
+
       - name: 设计令牌生成物是否最新（重新生成后应无差异）
         run: pnpm tokens --check
 

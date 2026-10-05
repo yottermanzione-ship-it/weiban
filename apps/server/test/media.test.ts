@@ -88,6 +88,52 @@ describeDb('media 最小版：权限、图片真实性、加密文件、签名�
     await rm(dir, { recursive: true, force: true });
   });
   const http = () => request(app.getHttpServer());
+  it('资料头像只能绑定本人user_avatar，拒绝跨用户、错误用途和不存在的ID', async () => {
+    const uploaded = MediaObject.parse(
+      (
+        await http()
+          .post('/api/v1/media?purpose=user_avatar')
+          .set('Authorization', `Bearer ${userToken}`)
+          .attach('file', image, { filename: 'avatar.png', contentType: 'image/png' })
+          .expect(201)
+      ).body,
+    );
+    await http()
+      .patch('/api/v1/me/profile')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ avatarMediaId: uploaded.mediaId })
+      .expect(200);
+    await http()
+      .patch('/api/v1/me/profile')
+      .set('Authorization', `Bearer ${otherToken}`)
+      .send({ avatarMediaId: uploaded.mediaId })
+      .expect(404);
+    await http()
+      .patch('/api/v1/me/profile')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ avatarMediaId: newId() })
+      .expect(404);
+    const wrong = MediaObject.parse(
+      (
+        await http()
+          .post('/api/v1/media?purpose=contact_avatar')
+          .set('Authorization', `Bearer ${userToken}`)
+          .attach('file', image, { filename: 'avatar.png', contentType: 'image/png' })
+          .expect(201)
+      ).body,
+    );
+    await http()
+      .patch('/api/v1/me/profile')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ avatarMediaId: wrong.mediaId })
+      .expect(422);
+    await http()
+      .patch('/api/v1/me/profile')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ avatarMediaId: null })
+      .expect(200);
+    await app.get(MediaService).purgeUser(userId);
+  });
   it('未登录拒绝上传；普通用户不能上传预设角色头像；伪造MIME、SVG和空文件拒绝', async () => {
     await http()
       .post('/api/v1/media?purpose=user_avatar')
