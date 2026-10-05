@@ -1,6 +1,6 @@
 # 计费模块设计：平台中转、价目表、余额与流水
 
-> 负责人：架构负责人 · v1.2 · 2026-10-05 · 来源任务：T-009；T-014 修订（6.3、6.4 余额恢复改为「加余额后重新检查」，第 7 节平台每日上限改为原子预留，计费端口拆分）；T-020 修订（新增 6.6 安全优先透支〔裁定 B4〕；第 7 节 `safety_followup`、`countAsBackground`；3.2 默认识图模型〔裁定 B5〕；5.2 用途分组对照；新增 10.1 管理后台用量查询〔ADM-08〕、10.2 行为规划计费〔PLAN-03〕；契约 1.1）
+> 负责人：架构负责人 · v1.3 · 2026-10-05 · 来源任务：T-009；T-024 修订（新增 8.3 注册赠送余额，契约 1.2）；T-014 修订（6.3、6.4 余额恢复改为「加余额后重新检查」，第 7 节平台每日上限改为原子预留，计费端口拆分）；T-020 修订（新增 6.6 安全优先透支〔裁定 B4〕；第 7 节 `safety_followup`、`countAsBackground`；3.2 默认识图模型〔裁定 B5〕；5.2 用途分组对照；新增 10.1 管理后台用量查询〔ADM-08〕、10.2 行为规划计费〔PLAN-03〕；契约 1.1）
 > 决策记录见 `docs/decisions/ADR-0012-relay-billing-and-wallet.md`（为什么这样选；v1.2 的安全优先透支、用量查询见 `ADR-0016`）；本文讲**具体怎么做**。
 > 契约以 `packages/contracts/src/http/billing.ts`、`src/http/model-access.ts`、`src/ports/billing.ts`、`src/ports/model-gateway.ts` 为准。
 > 价格数字、模型清单、默认后台预算数值不在本文定义：模型与价格见 `docs/ai/model-catalog.md`，费用估算与默认预算见 `docs/ai/cost-estimate.md`，产品参数见 PRD。
@@ -306,6 +306,21 @@ sequenceDiagram
 | ③ 与上游账单比对 | 管理员在后台录入各上游某天 / 某月的实际账单金额；系统按成本价汇总同期金额，偏差 > 3%（阈值可配）标红 | 提示检查价目表是否过期（最常见原因是供应商调价） |
 
 上游账单首版**手工录入**（多数供应商的账单接口各不相同），登记技术债 TD-013。
+
+### 8.3 注册赠送余额（PRD ADM-01 第 6 条、ACC-04；T-024，契约 1.2）
+
+**结论**：管理员生成邀请码时可以填「注册赠送余额」；有人用这个码注册成功后，**billing 收到注册事件，给新账号记一条「管理员加余额」流水，备注「注册赠送」**。identity 不直接调用 billing。
+
+为什么不让 identity 调 billing 的端口：identity 在底层，billing 在中层，ADR-0004 规定「下层永远不 import 上层，只通过发布事件让上层知道」（lint 规则 R2 会直接拦下）。用事件还有一个好处：事件和新账号在**同一个事务**里写入发件箱，注册成功就一定会送达（至少一次），不会出现「账号建好了、赠送因为 billing 一时出错丢了」的情况；而同步调用端口要么把两个模块绑进一个事务，要么得自己处理失败补偿。代价是余额晚到约 1 秒（分发器轮询间隔），对首次引导没有影响。
+
+1. **identity**：邀请码表存 `bonus_micros`（默认 0，上限 `INVITE_BONUS_MAX_MICROS` = 1,000 元，只防手误）；接口 `POST /admin/invites` 的 `bonusMicros`、`Invite.bonusMicros`。注册成功时发 `identity.user_registered`，赠送金额 > 0 才带 `signupBonus: { amountMicros, grantedByUserId }`（`grantedByUserId` = 生成邀请码的管理员，命令行生成的码为 null）。**事件不带邀请码本身**。生成邀请码的审计记录加上赠送金额（仍不记码）。
+2. **billing 订阅 `identity.user_registered`**（订阅者只做数据库写入，规范第 3.4 节）：
+   - 先调 `IdentityAccountStatusPort.getAccountStatus(userId)`，不是 `active` 就什么都不做（事件迟到、账号已在注销或已删除时，不能再给它建数据，否则留下删除清单之外的残留）。
+   - 创建该用户的钱包账户（已存在则不动——钱包也可能在用户先打开余额页时按需创建，两处都要「有则跳过」）。
+   - 有 `signupBonus` 时，在同一事务里写一条 `admin_grant` 流水：金额 = `amountMicros`，`reason` = 「注册赠送」，`operator_user_id` = `grantedByUserId`（可为空），**幂等键 `signup_bonus:{userId}`**（重复投递只记一次）。用户在余额明细里看到的是「管理员加余额 · 注册赠送」（PRD ADM-01 第 6 条）。
+   - 加余额照常走 6.3 第 3 条的余额事件规则（新账号从 0 变正会发 `balance_restored(crossed_zero)`，ai-runtime 收到后没有待回复会话，无副作用）。不另写审计：邀请码生成时 identity 已审计。
+3. **钱包按需创建**：注册后、事件处理完之前（约 1 秒）用户就打开余额页时，`GET /billing/wallet` 返回余额 0 的钱包（按需创建或直接返回默认值，由后端定），随后赠送到账。
+4. **测试**（D-L0-16 / identity 补充）：带赠送的码注册后余额 = 赠送金额、明细有一条备注「注册赠送」的 `admin_grant`；同一事件投递两次只记一次；不带赠送的码不写流水；账号已注销时迟到的注册事件不建钱包、不记流水；赠送 0 或负数、超过上限的生成请求被拒（400）。
 
 ## 9. 与硬性边界的关系（成人内容模型）
 

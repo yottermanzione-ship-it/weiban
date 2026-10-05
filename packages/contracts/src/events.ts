@@ -45,10 +45,26 @@ function event<T extends string, P extends z.ZodType>(type: T, producer: ModuleN
 
 // ---------- identity ----------
 
+/**
+ * 新用户注册成功。
+ * v1.2（T-024）：可选 signupBonus——所用邀请码预设了注册赠送余额（ADM-01 第 6 条）时才有。
+ * billing 订阅本事件给新账号记一条 admin_grant 流水（billing.md 8.3 节）。identity 处于底层，
+ * 不能调用中层 billing 的端口（ADR-0004 / R2），所以用事件传递；不带邀请码本身。
+ */
 export const UserRegistered = event(
   'identity.user_registered',
   'identity',
-  z.object({ userId: Id }),
+  z.object({
+    userId: Id,
+    signupBonus: z
+      .object({
+        /** 赠送金额（微元），> 0；不赠送时不带 signupBonus。 */
+        amountMicros: z.number().int().positive(),
+        /** 生成该邀请码的管理员；命令行生成的码为 null。billing 记为流水的操作人。 */
+        grantedByUserId: Id.nullable(),
+      })
+      .optional(),
+  }),
 );
 
 /** 资料变更：只告知哪些字段变了，订阅者需要时通过 IdentityReadPort 读取新值。 */

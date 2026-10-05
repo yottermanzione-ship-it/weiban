@@ -39,7 +39,7 @@ HTTP 接口用 `defineEndpoint({ method, path, auth, params, query, body, respon
 | -------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------- |
 | `src/version.ts`                 | 契约版本号                                                                                 | 全部                        |
 | `src/common.ts`                  | ID、时间、错误码与错误格式、分页、`defineEndpoint`、接收端容错工具                         | 全部                        |
-| `src/http/identity.ts`           | 注册登录、会话、我的资料、通知设置、界面偏好（主题）、注销、邀请码（管理）                 | web、android、admin、server |
+| `src/http/identity.ts`           | 注册登录、会话、我的资料、通知设置、界面偏好（主题）、注销、邀请码与注销进度（管理）       | web、android、admin、server |
 | `src/http/model-access.ts`       | 模型目录、模型选择、角色模型覆盖、模型状态；管理：上游（平台密钥，只有掩码）、模型目录维护 | web、android、admin、server |
 | `src/http/billing.ts`            | 钱包、流水、价目表、用量汇总；管理：加扣余额、价目表版本、上游账单、对账                   | web、android、admin、server |
 | `src/http/characters.ts`         | 角色分类（硬性边界依据）、展示字段与头像、角色广场、资料页、管理后台角色库                 | web、android、admin、server |
@@ -59,7 +59,7 @@ HTTP 接口用 `defineEndpoint({ method, path, auth, params, query, body, respon
 
 ## 当前范围
 
-v1.1 在 v1.0 基础上补了计费（安全优先透支、后台计入规则）、管理后台用量查询（ADM-08，L2 使用）、默认识图模型和历史人物形象策略。v1.0 覆盖 L0、L1 所需：账号、界面偏好、模型选择与计费、角色基础信息与展示字段、通讯录、会话与消息、同步、推送、陪伴设置（秒回 / 拆条）、媒体（头像）、领域事件、端口。后续层由架构负责人按 `docs/architecture/dev-plan.md` 扩展。
+v1.2 补了邀请码注册赠送余额、管理后台「注销未完成」列表与重新触发、账号状态端口。v1.1 在 v1.0 基础上补了计费（安全优先透支、后台计入规则）、管理后台用量查询（ADM-08，L2 使用）、默认识图模型和历史人物形象策略。v1.0 覆盖 L0、L1 所需：账号、界面偏好、模型选择与计费、角色基础信息与展示字段、通讯录、会话与消息、同步、推送、陪伴设置（秒回 / 拆条）、媒体（头像）、领域事件、端口。后续层由架构负责人按 `docs/architecture/dev-plan.md` 扩展。
 
 ## 版本规则
 
@@ -83,12 +83,26 @@ v1.1 在 v1.0 基础上补了计费（安全优先透支、后台计入规则）
    | 形象策略 `CharacterClassification.derived.portraitPolicy`（1.1） | `tolerantEnum(PortraitPolicy)`   | 按 `forbidden` 对待          |
    | 流水用途分组 `LedgerEntry.category`（1.1）                       | `tolerantEnum(SpendCategory)`    | 归入「其他」显示             |
    | 用量明细用途 `AdminUsageRecord.purpose`（1.1，管理后台）         | `tolerantEnum(ModelPurpose)`     | 显示原始值或「其他」         |
-   - 已知类型但内容不合法的，仍然校验失败（不掩盖服务器的错误）。
-   - 服务器发出数据前用**严格**版本校验：`MessageContent`、`UserUpdatePayload`、`ServerFrameStrict`、`ErrorCode` 等。客户端发给服务器的数据（请求体、`ClientFrame`）一律严格。
-   - `unsupported` 是保留字，任何真实的类型名、枚举值都不得使用它。
-   - 安卓端（Kotlin）不运行 Zod，必须在反序列化配置里实现同样的行为（未知多态类型 → 默认分支，未知枚举值 → 兜底值），由 Android 负责人在 D-L0-18 落实并用协议用例验证。
+
+| 注销进度模块名 `AccountDeletionModuleProgress.module`（1.2，管理后台） | `tolerantEnum(ModuleName)` | 显示「其他模块」 |
+
+- 已知类型但内容不合法的，仍然校验失败（不掩盖服务器的错误）。
+- 服务器发出数据前用**严格**版本校验：`MessageContent`、`UserUpdatePayload`、`ServerFrameStrict`、`ErrorCode` 等。客户端发给服务器的数据（请求体、`ClientFrame`）一律严格。
+- `unsupported` 是保留字，任何真实的类型名、枚举值都不得使用它。
+- 安卓端（Kotlin）不运行 Zod，必须在反序列化配置里实现同样的行为（未知多态类型 → 默认分支，未知枚举值 → 兜底值），由 Android 负责人在 D-L0-18 落实并用协议用例验证。
 
 ## 变更记录
+
+### 1.2（2026-10-05，T-024）
+
+依据：后端 T-018 交接说明的两条契约变更申请（`docs/handoffs/2026-10-05-backend-lead-T-018.md`）、PRD ADM-01 第 6 条 / ACC-04（注册赠送余额）、`docs/architecture/security-and-privacy.md` 5.1 第 2 条（注销未完成）。设计见 `docs/architecture/billing.md` 8.3 节。全部为次版本变更（只新增），1.1 的服务器实现不改代码也能通过类型检查。
+
+- **新增**：
+  - 邀请码注册赠送余额：`CreateInviteRequest`（`createInvite` 的请求体，新增可选 `bonusMicros`，默认 0，上限 `INVITE_BONUS_MAX_MICROS` = 1,000 元）；`Invite.bonusMicros`（服务器必须返回；schema 写成可选只为兼容 1.1 的实现，客户端缺省按 0）。
+  - 事件 `identity.user_registered` 载荷新增可选 `signupBonus: { amountMicros, grantedByUserId }`：billing 订阅后记 `admin_grant` 流水「注册赠送」。**不采用**「billing 提供端口给 identity 调用」：identity（底层）不能调用 billing（中层），ADR-0004 / R2。
+  - 端口 `IdentityAccountStatusPort.getAccountStatus`（`AccountStatus` = `active` / `deleting`，不存在为 null）：收到注册事件要新建数据的模块先确认账号仍是 active。单独成接口，不并入 `IdentityReadPort`，免得已有实现编译失败。
+  - 管理接口 `IdentityAdminEndpoints.listPendingDeletions`（`GET /admin/account-deletions`）、`retryDeletion`（`POST /admin/account-deletions/:userId/retry`），及 `PendingAccountDeletion`、`AccountDeletionModuleProgress`（模块名接收端容错）。
+- **写明（无结构改动）**：注销 `DELETE /me` 密码错误返回 **403 `invalid_credentials`**，不新增错误码；客户端只按 `unauthenticated` 判断登录失效（`engineering-standards.md` 第 4 节第 2 条）。`createInvite` 成功 201、支持 `Idempotency-Key` 写进接口说明。
 
 ### 1.1（2026-10-05，T-020）
 

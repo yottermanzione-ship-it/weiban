@@ -8,3 +8,22 @@ export interface IdentityReadPort {
   getLastActiveAt(userId: string): Promise<string | null>;
   // v1.0：isAgeConfirmed 删除（PRD v1.2 取消年龄确认）。
 }
+
+/**
+ * v1.2（T-024）：账号状态。active = 正常；deleting = 已申请注销、各模块正在删除。
+ * 账号不存在（已删除或从未存在）时端口返回 null。
+ */
+export type AccountStatus = 'active' | 'deleting';
+
+/**
+ * v1.2（T-024）：账号状态端口。提供方：identity；任何模块可用。
+ * 单独成一个接口（而不是并入 IdentityReadPort），是为了新增它不影响已有实现；
+ * identity 可以让同一个服务同时实现两个接口，注入令牌由后端在 identity 的 index.ts 定义。
+ */
+export interface IdentityAccountStatusPort {
+  /**
+   * 订阅 identity.user_registered 等事件、要为用户**新建**数据的模块，写入前先确认账号仍是 active，
+   * 避免事件迟到（晚于注销删除）时给已删除的账号留下残留数据（例：billing 建钱包、记注册赠送，billing.md 8.3 节）。
+   */
+  getAccountStatus(userId: string): Promise<AccountStatus | null>;
+}

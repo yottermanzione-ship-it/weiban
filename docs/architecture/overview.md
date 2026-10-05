@@ -1,6 +1,6 @@
 # 微伴系统架构总览
 
-> 负责人：架构负责人 · 版本 v1.3 · 2026-10-05 · 来源任务：T-004，T-009 修订（安卓原生、平台中转计费），T-014 修订（主题偏好同步、计费端口拆分、删除年龄确认），T-020 修订（PRD v1.3：新增 `health`、`plaza` 模块；用量记录金额快照）
+> 负责人：架构负责人 · 版本 v1.3 · 2026-10-05 · 来源任务：T-004，T-009 修订（安卓原生、平台中转计费），T-014 修订（主题偏好同步、计费端口拆分、删除年龄确认），T-020 修订（PRD v1.3：新增 `health`、`plaza` 模块；用量记录金额快照），T-024 修订（`IdentityAccountStatusPort`）
 > 技术选型见 `docs/decisions/ADR-0003-tech-stack.md`、安卓客户端见 `ADR-0011`；模块通信规则见 `ADR-0004`；消息可靠方案见 `ADR-0005`、`ADR-0013` 和 `message-reliability.md`；账号与密钥安全见 `ADR-0006` 和 `security-and-privacy.md`；计费见 `ADR-0012` 和 `billing.md`；硬性边界执行见 `ADR-0007` 和 `hard-boundaries.md`。本文不重复这些文档的细节。
 
 ## 1. 一句话
@@ -188,6 +188,7 @@ AI 运行时**不能**：直接读写 `chat` 等其他模块的表；绕过模�
 | 端口 | 提供方 | 主要调用方 | 作用 |
 |---|---|---|---|
 | `IdentityReadPort` | identity | 全部 | 读资料、时区、通知设置 |
+| `IdentityAccountStatusPort`（契约 1.2） | identity | billing 等「收到注册事件要新建数据」的模块 | 账号是否正常 / 注销中 / 已不存在（防止迟到事件给已删除账号留残留，`billing.md` 8.3 节） |
 | `CharacterReadPort` | characters | ai-runtime、policy、contacts | 读角色基础信息、分类、角色卡、补充设定 |
 | `ContactsReadPort` | contacts | ai-runtime、policy、push | 是否已添加、备注名、关系类型 |
 | `ChatReadPort` | chat | ai-runtime | 读会话、参与者、消息（必须指定可见范围） |

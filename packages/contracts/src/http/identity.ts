@@ -2,8 +2,11 @@
  * identity 模块：注册、登录、会话、我的资料、全局通知设置、界面偏好（主题）、注销。
  * 需求：ACC-01、ACC-02、ACC-03、ACC-06、SVC-01 第 7 条。规则见 docs/architecture/security-and-privacy.md 第 2、5 节。
  * v1.0：删除年龄确认（PRD v1.2 取消 ACC-02 第 2 条）；新增界面偏好（主题多设备同步）。
+ * v1.2（T-024）：邀请码注册赠送余额（ADM-01 第 6 条）；管理接口「注销未完成」列表与重新触发删除
+ * （security-and-privacy.md 5.1 第 2 条）；注销时密码错误的返回写明（403 invalid_credentials）。
  */
 import { z } from 'zod';
+import { ModuleName } from '../events.js';
 import {
   API_PREFIX,
   DeviceInfo,
@@ -254,27 +257,77 @@ export const IdentityEndpoints = {
     body: z.object({ password: Password, confirm: z.literal('DELETE') }),
     response: z.object({ status: z.literal('deleting') }),
     summary:
-      '注销账号（ACC-06，L6 完成全部模块删除清单）。立即下线所有设备，各模块（含钱包与流水）随后物理删除',
+      '注销账号（ACC-06，L6 完成全部模块删除清单），成功 202。立即下线所有设备，各模块（含钱包与流水）随后物理删除。' +
+      '密码错误返回 403 invalid_credentials（不用 401：会话仍然有效，客户端不得因此退出登录，engineering-standards 第 4 节第 2 条）',
   }),
 } as const;
 
-// ---------- 管理接口 ----------
+// ---------- 管理接口：邀请码（ADM-01 第 6 条） ----------
+
+/**
+ * v1.2：邀请码预设「注册赠送余额」的上限，1,000 元（微元）。只防管理员手误多打几个 0，
+ * 不是产品参数；更大的金额用 billing 的管理员加余额接口。
+ */
+export const INVITE_BONUS_MAX_MICROS = 1_000_000_000 as const;
 
 export const Invite = z.object({
   code: z.string(),
+  /**
+   * v1.2：注册赠送余额（微元），0 = 不赠送。用该码注册成功后，billing 给新账号记一条
+   * admin_grant 流水，备注「注册赠送」（billing.md 8.3 节）。
+   * 服务器**必须**返回；schema 上写成可选只是为了兼容 1.1 的服务器实现，客户端缺省按 0 显示。
+   */
+  bonusMicros: z.number().int().nonnegative().optional(),
   createdAt: Timestamp,
   expiresAt: Timestamp.nullable(),
   usedAt: Timestamp.nullable(),
 });
+export type Invite = z.infer<typeof Invite>;
+
+export const CreateInviteRequest = z.object({
+  /** null = 永不过期。 */
+  expiresInDays: z.number().int().min(1).max(365).nullable(),
+  /** v1.2：注册赠送余额（微元），可省略，默认 0。 */
+  bonusMicros: z.number().int().nonnegative().max(INVITE_BONUS_MAX_MICROS).default(0),
+});
+export type CreateInviteRequest = z.input<typeof CreateInviteRequest>;
+
+// ---------- 管理接口：注销未完成的账号（security-and-privacy.md 5.1 第 2 条） ----------
+
+/** 一个模块对某次注销的删除进度。模块清单 = 当前删除清单登记处的全部模块 ∪ 已回报过的模块。 */
+export const AccountDeletionModuleProgress = z.object({
+  /** 模块名。新增模块属于次版本变更，管理后台不认识的显示为「其他模块」（接收端容错）。 */
+  module: tolerantEnum(ModuleName),
+  /** 是否已回报删除完成（platform.user_data_purged）。 */
+  purged: z.boolean(),
+  deletedRows: z.number().int().nonnegative().nullable(),
+  purgedAt: Timestamp.nullable(),
+});
+export type AccountDeletionModuleProgress = z.infer<typeof AccountDeletionModuleProgress>;
+
+/**
+ * 一个处于「注销中」的账号。账号行在全部模块回报后才物理删除，所以这里还能看到用户名
+ * （审计日志里仍然只记用户 ID 的哈希）。
+ */
+export const PendingAccountDeletion = z.object({
+  userId: Id,
+  username: z.string(),
+  requestedAt: Timestamp,
+  /** 管理员最近一次手动重新触发的时间；没有触发过为 null。 */
+  lastRetriggeredAt: Timestamp.nullable(),
+  modules: z.array(AccountDeletionModuleProgress),
+});
+export type PendingAccountDeletion = z.infer<typeof PendingAccountDeletion>;
 
 export const IdentityAdminEndpoints = {
   createInvite: defineEndpoint({
     method: 'POST',
     path: `${API_PREFIX}/admin/invites`,
     auth: 'admin',
-    body: z.object({ expiresInDays: z.number().int().min(1).max(365).nullable() }),
+    body: CreateInviteRequest,
     response: Invite,
-    summary: '生成一次性邀请码',
+    summary:
+      '生成一次性邀请码，成功 201；支持请求头 Idempotency-Key。v1.2：可预设注册赠送余额 bonusMicros（ADM-01 第 6 条）',
   }),
   listInvites: defineEndpoint({
     method: 'GET',
@@ -282,5 +335,23 @@ export const IdentityAdminEndpoints = {
     auth: 'admin',
     response: z.object({ items: z.array(Invite) }),
     summary: '邀请码列表',
+  }),
+  listPendingDeletions: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/account-deletions`,
+    auth: 'admin',
+    response: z.object({ items: z.array(PendingAccountDeletion) }),
+    summary:
+      'v1.2：「注销未完成」的账号（状态为注销中的全部账号，按申请时间从早到晚），含每个模块的删除进度',
+  }),
+  retryDeletion: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/account-deletions/:userId/retry`,
+    auth: 'admin',
+    params: z.object({ userId: Id }),
+    response: PendingAccountDeletion,
+    summary:
+      'v1.2：重新触发删除，成功 202。对尚未回报的模块（含注销之后才登记的模块）重新投递删除任务；' +
+      '全部模块都已回报时直接完成账号删除。返回触发后的进度快照。可重复调用。账号不存在或不在注销中 → 404 not_found。写审计（只记用户 ID 的哈希）',
   }),
 } as const;

@@ -9,6 +9,12 @@ import {
   AdminCharacterWrite,
   AdminUsageSummaryRequest,
   ApiError,
+  CreateInviteRequest,
+  INVITE_BONUS_MAX_MICROS,
+  IdentityAdminEndpoints,
+  IdentityEndpoints,
+  Invite,
+  PendingAccountDeletion,
   BACKGROUND_PURPOSES,
   BUDGET_EXEMPT_PURPOSES,
   CONTRACT_VERSION,
@@ -75,8 +81,8 @@ const adminCharacter = {
 };
 
 describe('契约版本', () => {
-  it('为 1.1', () => {
-    expect(CONTRACT_VERSION).toBe('1.1');
+  it('为 1.2', () => {
+    expect(CONTRACT_VERSION).toBe('1.2');
   });
 });
 
@@ -403,5 +409,113 @@ describe('v1.1（T-020）', () => {
       enabled: true,
     };
     expect(AdminCatalogEntryWrite.safeParse(entry).success).toBe(true);
+  });
+});
+
+describe('v1.2（T-024）', () => {
+  it('生成邀请码：赠送余额可省略（默认 0），不能为负、不能超过上限', () => {
+    expect(CreateInviteRequest.parse({ expiresInDays: 7 }).bonusMicros).toBe(0);
+    expect(
+      CreateInviteRequest.parse({ expiresInDays: null, bonusMicros: 20_000_000 }).bonusMicros,
+    ).toBe(20_000_000);
+    expect(CreateInviteRequest.safeParse({ expiresInDays: 7, bonusMicros: -1 }).success).toBe(
+      false,
+    );
+    expect(CreateInviteRequest.safeParse({ expiresInDays: 7, bonusMicros: 1.5 }).success).toBe(
+      false,
+    );
+    expect(
+      CreateInviteRequest.safeParse({
+        expiresInDays: 7,
+        bonusMicros: INVITE_BONUS_MAX_MICROS + 1,
+      }).success,
+    ).toBe(false);
+    expect(IdentityAdminEndpoints.createInvite.body).toBe(CreateInviteRequest);
+  });
+
+  it('邀请码响应带赠送金额；兼容 1.1 服务器不带该字段', () => {
+    const invite = { code: 'ABCD2345EFGH6789', createdAt: NOW, expiresAt: null, usedAt: null };
+    expect(Invite.parse({ ...invite, bonusMicros: 5_000_000 }).bonusMicros).toBe(5_000_000);
+    expect(Invite.safeParse(invite).success).toBe(true);
+    expect(Invite.safeParse({ ...invite, bonusMicros: -1 }).success).toBe(false);
+  });
+
+  it('注册事件可带注册赠送，金额必须为正', () => {
+    const base = {
+      eventId: ID,
+      type: 'identity.user_registered',
+      version: 1,
+      producer: 'identity',
+      occurredAt: NOW,
+    };
+    expect(Events.UserRegistered.safeParse({ ...base, payload: { userId: ID } }).success).toBe(
+      true,
+    );
+    expect(
+      Events.UserRegistered.safeParse({
+        ...base,
+        payload: { userId: ID, signupBonus: { amountMicros: 10_000_000, grantedByUserId: ID2 } },
+      }).success,
+    ).toBe(true);
+    expect(
+      Events.UserRegistered.safeParse({
+        ...base,
+        payload: { userId: ID, signupBonus: { amountMicros: 10_000_000, grantedByUserId: null } },
+      }).success,
+    ).toBe(true);
+    expect(
+      Events.UserRegistered.safeParse({
+        ...base,
+        payload: { userId: ID, signupBonus: { amountMicros: 0, grantedByUserId: null } },
+      }).success,
+    ).toBe(false);
+    // 事件不带邀请码本身
+    expect(
+      Events.UserRegistered.parse({
+        ...base,
+        payload: { userId: ID, inviteCode: 'ABCD2345EFGH6789' },
+      }).payload,
+    ).not.toHaveProperty('inviteCode');
+  });
+
+  it('注销未完成列表：模块进度，管理后台不认识的模块名不报错', () => {
+    const pending = {
+      userId: ID,
+      username: 'demo_user',
+      requestedAt: NOW,
+      lastRetriggeredAt: null,
+      modules: [
+        { module: 'identity', purged: true, deletedRows: 6, purgedAt: NOW },
+        { module: 'billing', purged: false, deletedRows: null, purgedAt: null },
+        { module: 'future_module', purged: false, deletedRows: null, purgedAt: null },
+      ],
+    };
+    const parsed = PendingAccountDeletion.parse(pending);
+    expect(parsed.modules.map((m) => m.module)).toEqual(['identity', 'billing', 'unsupported']);
+    expect(PendingAccountDeletion.safeParse({ ...pending, requestedAt: 'yesterday' }).success).toBe(
+      false,
+    );
+  });
+
+  it('注销管理接口：列表与重新触发', () => {
+    const list = IdentityAdminEndpoints.listPendingDeletions;
+    expect([list.method, list.path, list.auth]).toEqual([
+      'GET',
+      '/api/v1/admin/account-deletions',
+      'admin',
+    ]);
+    const retry = IdentityAdminEndpoints.retryDeletion;
+    expect([retry.method, retry.path, retry.auth]).toEqual([
+      'POST',
+      '/api/v1/admin/account-deletions/:userId/retry',
+      'admin',
+    ]);
+    expect(retry.params?.safeParse({ userId: 'not-a-uuid' }).success).toBe(false);
+    expect(retry.response).toBe(PendingAccountDeletion);
+  });
+
+  it('注销时密码错误的返回写在接口说明里（403 invalid_credentials）', () => {
+    expect(IdentityEndpoints.deleteAccount.summary).toContain('403 invalid_credentials');
+    expect(ErrorCode.options).toContain('invalid_credentials');
   });
 });
