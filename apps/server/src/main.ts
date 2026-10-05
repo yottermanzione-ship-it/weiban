@@ -13,7 +13,13 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
 import { loadLocalEnv } from './platform/config/local-env.js';
 import { NestPinoLogger } from './platform/logging/nest-logger.js';
-import { ConfigError, createLogger, loadConfig, type PlatformOptions } from './platform/index.js';
+import {
+  ConfigError,
+  createLogger,
+  loadConfig,
+  type AppConfig,
+  type PlatformOptions,
+} from './platform/index.js';
 
 /** 创建 HTTP 应用（不监听端口）。集成测试也用它。 */
 export async function createApp(options: PlatformOptions): Promise<INestApplication> {
@@ -23,9 +29,20 @@ export async function createApp(options: PlatformOptions): Promise<INestApplicat
     bufferLogs: false,
   });
   app.enableShutdownHooks();
-  // 不暴露 X-Powered-By: Express
-  app.getHttpAdapter().getInstance().disable('x-powered-by');
+  configureHttpApp(app, options.config);
   return app;
+}
+
+/** HTTP 应用的 Express 设置（createApp 与集成测试共用）。 */
+export function configureHttpApp(app: INestApplication, config: AppConfig): void {
+  const express = app.getHttpAdapter().getInstance() as {
+    disable(name: string): void;
+    set(name: string, value: unknown): void;
+  };
+  // 不暴露 X-Powered-By: Express
+  express.disable('x-powered-by');
+  // 反向代理后面取真实客户端 IP（登录失败按 IP 锁定要用），见 HTTP_TRUST_PROXY
+  express.set('trust proxy', config.http.trustProxy);
 }
 
 /** 创建无 HTTP 的应用上下文（APP_ROLE = worker）。 */

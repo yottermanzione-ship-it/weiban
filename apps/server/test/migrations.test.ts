@@ -23,6 +23,18 @@ async function platformTables(): Promise<string[]> {
   });
 }
 
+/** 本项目建的 schema（不含 public 和系统 schema）。 */
+async function schemas(): Promise<string[]> {
+  return withClient(async (client) => {
+    const { rows } = await client.query<{ nspname: string }>(
+      `SELECT nspname FROM pg_namespace
+        WHERE nspname NOT IN ('public', 'information_schema') AND nspname NOT LIKE 'pg\\_%'
+        ORDER BY 1`,
+    );
+    return rows.map((r) => r.nspname);
+  });
+}
+
 it('每个迁移都有手写的回滚脚本', () => {
   const files = readMigrations(MIGRATIONS_DIR);
   expect(files.length).toBeGreaterThan(0);
@@ -40,7 +52,9 @@ describeDb('数据库迁移（真实 PostgreSQL）', () => {
 
   it('执行 → 回滚 → 再执行，结构与记录都正确', async () => {
     const migrator = new Migrator(url, MIGRATIONS_DIR);
+    const tags = readMigrations(MIGRATIONS_DIR).map((f) => f.tag);
     const applied = await migrator.up();
+    expect(applied).toEqual(tags);
     expect(applied).toContain('0000_platform_kernel');
     expect(await platformTables()).toEqual([
       'audit_log',
@@ -50,12 +64,15 @@ describeDb('数据库迁移（真实 PostgreSQL）', () => {
     ]);
     expect(await migrator.up()).toEqual([]); // 重复执行无副作用
 
-    const rolledBack = await migrator.down(1);
-    expect(rolledBack).toEqual(['0000_platform_kernel']);
+    // 回滚最近 1 个，再全部回滚（从新到旧）
+    expect(await migrator.down(1)).toEqual([tags[tags.length - 1]]);
+    const rolledBack = await migrator.down(tags.length);
+    expect(rolledBack).toEqual(tags.slice(0, -1).reverse());
     expect(await platformTables()).toEqual([]);
+    expect(await schemas()).toEqual([]);
     expect((await migrator.status()).every((s) => !s.applied)).toBe(true);
 
-    expect(await migrator.up()).toEqual(['0000_platform_kernel']);
+    expect(await migrator.up()).toEqual(tags);
     expect(await platformTables()).toHaveLength(4);
   });
 

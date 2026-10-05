@@ -21,6 +21,12 @@ export const EnvSchema = z.object({
   APP_ROLE: z.enum(['web', 'worker', 'all']).default('all'),
   HOST: z.string().min(1).default('127.0.0.1'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  /**
+   * 是否信任反向代理（Caddy）转发的 X-Forwarded-For 来取客户端 IP（登录失败按 IP 锁定要用）。
+   * 不设或 0 / false：不信任（直连）；正整数：信任的代理层数（Caddy 在前面一层就填 1）；
+   * 其他：交给 Express 的 trust proxy（例如 loopback、172.16.0.0/12）。
+   */
+  HTTP_TRUST_PROXY: z.string().min(1).optional(),
   DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//, '必须是 postgres:// 开头的连接串'),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
@@ -37,7 +43,12 @@ export const EnvSchema = z.object({
 export interface AppConfig {
   readonly nodeEnv: 'development' | 'test' | 'production';
   readonly role: 'web' | 'worker' | 'all';
-  readonly http: { readonly host: string; readonly port: number };
+  readonly http: {
+    readonly host: string;
+    readonly port: number;
+    /** Express 的 trust proxy 设置；false 表示不信任代理头。 */
+    readonly trustProxy: boolean | number | string;
+  };
   readonly database: { readonly url: string; readonly poolMax: number };
   readonly logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
   readonly crypto: { readonly kekFile: string | null; readonly kekVersion: number };
@@ -50,6 +61,13 @@ export class ConfigError extends Error {
     super(`服务器配置不合法：\n- ${problems.join('\n- ')}`);
     this.name = 'ConfigError';
   }
+}
+
+function parseTrustProxy(value: string | undefined): boolean | number | string {
+  if (value === undefined || value === '0' || value === 'false') return false;
+  if (value === 'true') return true;
+  if (/^[1-9]\d*$/.test(value)) return Number(value);
+  return value;
 }
 
 /** 校验环境变量并转成 AppConfig。只报变量名和原因，不回显值。 */
@@ -68,7 +86,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   return {
     nodeEnv: e.NODE_ENV,
     role: e.APP_ROLE,
-    http: { host: e.HOST, port: e.PORT },
+    http: { host: e.HOST, port: e.PORT, trustProxy: parseTrustProxy(e.HTTP_TRUST_PROXY) },
     database: { url: e.DATABASE_URL, poolMax: e.DATABASE_POOL_MAX },
     logLevel: e.LOG_LEVEL,
     crypto: { kekFile: e.PLATFORM_KEK_FILE ?? null, kekVersion: e.PLATFORM_KEK_VERSION },

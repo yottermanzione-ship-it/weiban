@@ -106,8 +106,11 @@ describeDb('HTTP 平台内核（真实 PostgreSQL）', () => {
         }),
       ],
       controllers: [ProbeController],
-      providers: [{ provide: SESSION_VERIFIER, useClass: FakeSessionVerifier }],
-    }).compile();
+    })
+      // AppModule 里 identity 已提供真实的 SESSION_VERIFIER；这里换成假的，只测平台守卫本身
+      .overrideProvider(SESSION_VERIFIER)
+      .useClass(FakeSessionVerifier)
+      .compile();
     app = moduleRef.createNestApplication({ logger: new NestPinoLogger(logger) });
     await app.init();
   });

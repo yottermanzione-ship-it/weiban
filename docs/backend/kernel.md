@@ -24,6 +24,7 @@
 | `crypto/envelope.ts` | 信封加密 `seal` / `open` / `destroyKey` | `ENVELOPE_CRYPTO` |
 | `audit/audit-log.ts` | 审计日志 | `AUDIT_LOG` |
 | `auth/auth.ts` | 鉴权守卫（全局）、`@RequireAuth`、`@CurrentPrincipal` | 业务方提供 `SESSION_VERIFIER` |
+| `deletion/user-data-registry.ts` | 删除清单登记处（注销用，见第 16 节） | `USER_DATA_REGISTRY` |
 | `http/` | `AppError`、全局异常过滤器、请求 ID、`ContractPipe`、`GET /health` | — |
 | `platform.module.ts` | 全局 Nest 模块，装配以上全部 | — |
 
@@ -52,6 +53,7 @@
 | `NODE_ENV` | development | development / test / production |
 | `APP_ROLE` | all | web（只开 HTTP，任务只投递不消费，不跑分发器）/ worker（不开 HTTP）/ all |
 | `HOST`、`PORT` | 127.0.0.1、3000 | 容器内需设 `HOST=0.0.0.0` |
+| `HTTP_TRUST_PROXY` | 不信任 | 反向代理（Caddy）后面**必须设置**，否则取不到真实客户端 IP，按 IP 的登录锁定会把所有人当成同一个 IP。Caddy 在前面一层填 `1`；也可填 `loopback`、网段等（Express trust proxy 语法）。T-018 新增 |
 | `DATABASE_URL` | 必填 | |
 | `DATABASE_POOL_MAX` | 10 | |
 | `LOG_LEVEL` | info | |
@@ -173,7 +175,7 @@ export class ContactsController {
 ```
 - 取值与契约 `defineEndpoint` 的 `auth` 一致；**没标注的接口默认要求登录**。
 - 令牌只从 `Authorization: Bearer` 读取。
-- identity 模块（D-L0-06）需要实现 `SessionVerifier` 并在自己的 providers 中提供 `{ provide: SESSION_VERIFIER, useClass: … }`；未提供时所有需要登录的接口一律 401。
+- identity 模块已实现 `SessionVerifier` 并提供 `SESSION_VERIFIER`（T-018，见 `identity.md`）；未提供时所有需要登录的接口一律 401。集成测试要换成假的校验器时用 `Test.createTestingModule(...).overrideProvider(SESSION_VERIFIER)`（参考 `test/http-kernel.test.ts`）。
 - admin 要求 `role = admin` 且 `adminSession = true`。
 
 ## 11. 错误与请求校验
@@ -216,3 +218,22 @@ details 自动脱敏，但仍不要放密钥和正文。
 - 集成测试连 `TEST_DATABASE_URL`（`weiban_test` 库）；没设置时整组跳过并打印提示，设置了但连不上则失败。测试文件依次运行（不并行），因为会清空重建测试库。
 - 工具在 `apps/server/test/support/`：`resetTestDatabase()`（清空并执行全部迁移）、`describeDb`、`captureLogger()`（把日志收集到内存搜索）、`canaryKey()`（`sk-weiban-canary-…` 金丝雀密钥）、`testKekRing()`。
 - HTTP 测试用 `Test.createTestingModule({ imports: [AppModule.forRoot({..., background: false})] })` + supertest，参考 `test/http-kernel.test.ts`。
+
+## 16. 删除清单（注销账号）
+
+每个拥有用户数据的模块**必须**登记删除清单（security-and-privacy.md 第 5.1 节；契约 `UserDataOwner`），在模块类的 `onModuleInit` 里：
+
+```ts
+constructor(@Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry) {}
+onModuleInit() {
+  this.registry.register({
+    module: 'chat',                                   // 契约 Events.ModuleName 的取值
+    purgeUser: async (userId) => { /* 物理删除本模块该用户全部数据（含对象存储文件），返回删除行数；必须可重复调用 */ },
+    countUserData: async (userId) => { /* 剩余条数，注销完成后必须为 0 */ },
+  });
+}
+```
+
+- **不用自己写订阅者**：identity 收到 `identity.user_deletion_requested` 后，为每个登记的模块投递一个 pg-boss 任务 `identity.purge_user_data`，任务里调用 `purgeUser` 并发布 `platform.user_data_purged`；全部模块回报后 identity 删除账号本身。流程见 `identity.md` 第 6 节。
+- `purgeUser` 在任务里执行（不在事件订阅者里，可以慢），自己开事务；任务至少执行一次、失败会重试，`purgeUser` 会被再调用（第二次通常返回 0），所以必须可重复调用。
+- 注销核验：`pnpm --filter @weiban/server identity verify-purged <用户ID>` 列出每个模块的 `countUserData`。
