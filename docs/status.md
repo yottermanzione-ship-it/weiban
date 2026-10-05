@@ -41,7 +41,7 @@
 
 ## 暂停中（2026-10-06 总经理要求）
 
-- T-028（后端，分支 `T-028-billing-identity-c13`，b71f3b1）：文档已读完，代码未开始。进度说明在分支的 `docs/handoffs/2026-10-06-backend-lead-T-028.md`。恢复时注意：每日对账要从「删除后重建」改为「更新」；迁移编号 0005 可能与 T-029 冲突
+- T-028（后端，分支 `T-028-billing-identity-c13`，f86e23f，CI 通过、未合并）：已完成 billing 的 `BillingChargeQueryPort` 并接入 model-access（管理后台启用模型不再依赖测试替身）。其余未做，进度说明在分支的 `docs/handoffs/2026-10-06-backend-lead-T-028.md`。恢复时注意：每日对账要从「删除后重建」改为「更新」；迁移编号 0005 可能与 T-029 冲突；`MODEL_PRICE_SOURCE` 仍是空实现
 - T-029（AI，分支 `T-029-model-gateway`，a8eee6f）：大部分文档已读完，代码未开始。进度说明在分支的 `docs/handoffs/2026-10-06-ai-lead-T-029.md`
 - 恢复方式：以分支上的进度说明为准，用新的子代理接着做
 
