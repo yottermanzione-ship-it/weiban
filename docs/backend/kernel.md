@@ -234,6 +234,6 @@ onModuleInit() {
 }
 ```
 
-- **不用自己写订阅者**：identity 会替每个登记的模块订阅 `identity.user_deletion_requested`（订阅者名 `<模块>.on_user_deletion_requested`），调用 `purgeUser` 后发布 `platform.user_data_purged`；全部模块回报后 identity 删除账号本身。流程见 `identity.md` 第 6 节。
-- `purgeUser` 在自己的事务里执行；回报事件写入失败时会整体重投，`purgeUser` 会被再调一次（第二次通常返回 0），所以必须可重复调用。
+- **不用自己写订阅者**：identity 收到 `identity.user_deletion_requested` 后，为每个登记的模块投递一个 pg-boss 任务 `identity.purge_user_data`，任务里调用 `purgeUser` 并发布 `platform.user_data_purged`；全部模块回报后 identity 删除账号本身。流程见 `identity.md` 第 6 节。
+- `purgeUser` 在任务里执行（不在事件订阅者里，可以慢），自己开事务；任务至少执行一次、失败会重试，`purgeUser` 会被再调用（第二次通常返回 0），所以必须可重复调用。
 - 注销核验：`pnpm --filter @weiban/server identity verify-purged <用户ID>` 列出每个模块的 `countUserData`。

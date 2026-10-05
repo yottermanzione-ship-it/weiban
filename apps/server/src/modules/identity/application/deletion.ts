@@ -2,13 +2,16 @@
  * 注销编排（删除清单框架，security-and-privacy.md 第 5.1 节；说明见 docs/backend/identity.md 第 6 节）。
  *
  * 1. AccountService.requestDeletion 发布 identity.user_deletion_requested。
- * 2. 对删除清单登记处（platform USER_DATA_REGISTRY）里的每个模块（identity 自己除外），这里替它订阅该事件：
- *    调用 purgeUser(userId)，然后在同一个处理事务里发布 platform.user_data_purged（该模块名、删除行数）。
- *    purgeUser 必须可重复调用：事务失败重投时会再调一次（第二次通常返回 0）。
- * 3. identity 订阅 platform.user_data_purged，记入 identity.deletion_progress；
- *    登记的模块全部回报后，删除 identity 自己的数据（账号行，级联删除资料、设置、会话、进度），写审计（只记用户 ID 的哈希）。
+ * 2. identity.on_user_deletion_requested：对删除清单登记处（platform USER_DATA_REGISTRY）里的每个模块
+ *    （identity 自己除外）在同一事务投递一个 pg-boss 任务 identity.purge_user_data（订阅者只做快速的数据库写入，
+ *    删除这种可能很慢的工作放进任务，engineering-standards.md 第 3.4 节第 2 条）。
+ *    任务执行该模块的 purgeUser(userId)，再发布 platform.user_data_purged（模块名、删除行数）。
+ *    任务至少执行一次，purgeUser 必须可重复调用（第二次通常返回 0）。
+ * 3. identity.on_user_data_purged：记入 identity.deletion_progress；登记的模块全部回报后，
+ *    删除 identity 自己的数据（账号行，级联删除资料、设置、会话、进度），写审计（只记用户 ID 的哈希）。
+ *    没有其他模块登记时，第 2 步直接完成。
  *
- * identity 自己也登记为删除清单（只用于 countUserData 验证；它的 purgeUser 由第 3 步在最后执行，不自动订阅）。
+ * identity 自己也登记为删除清单（只用于 countUserData 核验；它的删除由第 3 步在最后执行）。
  */
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import type { Events, UserDataOwner } from '@weiban/contracts';
@@ -18,6 +21,7 @@ import {
   CLOCK,
   DATABASE,
   EVENT_BUS,
+  JOB_QUEUE,
   LOGGER,
   OUTBOX,
   USER_DATA_REGISTRY,
@@ -26,6 +30,7 @@ import {
   type Database,
   type DbTx,
   type EventBus,
+  type JobQueue,
   type Logger,
   type Outbox,
   type UserDataRegistry,
@@ -35,6 +40,12 @@ import { deletionProgress, loginThrottle, users } from '../infra/db/schema.js';
 import { hashUserId } from './user-hash.js';
 
 const IDENTITY: Events.ModuleName = 'identity';
+export const PURGE_JOB = 'identity.purge_user_data';
+
+interface PurgeJob {
+  userId: string;
+  module: Events.ModuleName;
+}
 
 @Injectable()
 export class DeletionService implements OnModuleInit, UserDataOwner {
@@ -48,40 +59,30 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(LOGGER) logger: Logger,
   ) {
     this.log = logger.child({ module: 'identity' });
   }
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     this.registry.register(this);
-    // 替每个登记了删除清单的模块订阅注销事件（之后登记的模块在登记时自动订阅）
-    this.registry.onRegister((owner) => {
-      if (owner.module === IDENTITY) return;
-      this.bus.subscribe({
-        consumer: `${owner.module}.on_user_deletion_requested`,
-        eventType: 'identity.user_deletion_requested',
-        handle: async (event, tx) => {
-          const deletedRows = await owner.purgeUser(event.payload.userId);
-          await this.outbox.publish(
-            tx,
-            'platform.user_data_purged',
-            owner.module as Events.ModuleName,
-            {
-              userId: event.payload.userId,
-              module: owner.module as Events.ModuleName,
-              deletedRows,
-            },
-          );
-        },
-      });
-    });
+    await this.jobs.work<PurgeJob>(PURGE_JOB, (job) => this.runPurgeJob(job.data));
     this.bus.subscribe({
       consumer: 'identity.on_user_deletion_requested',
       eventType: 'identity.user_deletion_requested',
-      // 没有其他模块登记删除清单时，直接完成
       handle: async (event, tx) => {
-        await this.tryFinalize(tx, event.payload.userId);
+        const { userId } = event.payload;
+        const owners = this.registry.modules().filter((m) => m !== IDENTITY);
+        for (const module of owners) {
+          await this.jobs.send<PurgeJob>(
+            PURGE_JOB,
+            { userId, module },
+            { tx, singletonKey: `${module}:${userId}`, retryLimit: 10, retryBackoff: true },
+          );
+        }
+        // 没有其他模块登记删除清单时，直接完成
+        if (owners.length === 0) await this.tryFinalize(tx, userId);
       },
     });
     this.bus.subscribe({
@@ -103,6 +104,16 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
         await this.tryFinalize(tx, userId);
       },
     });
+  }
+
+  /** 任务：执行某个模块的删除清单并回报。可重复执行。 */
+  async runPurgeJob({ userId, module }: PurgeJob): Promise<void> {
+    const owner = this.registry.list().find((o) => o.module === module);
+    if (!owner) throw new Error(`模块 ${module} 没有登记删除清单`);
+    const deletedRows = await owner.purgeUser(userId);
+    await this.database.transaction((tx) =>
+      this.outbox.publish(tx, 'platform.user_data_purged', module, { userId, module, deletedRows }),
+    );
   }
 
   /** 登记的模块（identity 除外）是否都已回报；是则删除账号本身。 */

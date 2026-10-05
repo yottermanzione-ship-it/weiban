@@ -83,12 +83,15 @@ DELETE /me（密码 + confirm=DELETE）
   └─ 同一事务：users.status = deleting → 作废全部会话（每个发 session_revoked）→ 删除该用户数据密钥（destroyKey）
               → 发 identity.user_deletion_requested → 审计（只记用户 ID 的哈希）
 分发器投递：
-  ├─ 对删除清单登记处（platform USER_DATA_REGISTRY）里每个模块：调用 purgeUser → 发 platform.user_data_purged
+  ├─ identity.on_user_deletion_requested：对删除清单登记处（platform USER_DATA_REGISTRY）里每个模块，
+  │    在同一事务投递 pg-boss 任务 identity.purge_user_data（订阅者要快，删除放进任务，规范第 3.4 节）
+  ├─ 任务：调用该模块 purgeUser → 发 platform.user_data_purged（失败按退避重试最多 10 次）
   └─ identity.on_user_data_purged：记 deletion_progress；登记的模块全部回报 → 删除账号行（级联删除资料、设置、会话、进度）
      → 审计 user.deleted（只记哈希）
 ```
 
-- 模块怎么登记：kernel.md 第 16 节。目前只有 identity 自己登记（用于核验）；没有其他模块时请求后由 `identity.on_user_deletion_requested` 直接完成。
+- 模块怎么登记：kernel.md 第 16 节。目前只有 identity 自己登记（用于核验）；没有其他模块时由 `identity.on_user_deletion_requested` 直接完成。
+- 删除任务需要消费任务的进程（`APP_ROLE` = worker 或 all）在运行。
 - 注销中的账号不能登录；用户名在账号行删除后才释放。
 - 重复投递安全：收件箱去重 + 账号已删除时忽略迟到的回报（有测试）。
 

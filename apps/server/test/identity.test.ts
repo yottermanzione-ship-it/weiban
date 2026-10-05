@@ -19,7 +19,7 @@ import {
   type UserDataOwner,
 } from '@weiban/contracts';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../src/app.module.js';
 import { configureHttpApp } from '../src/main.js';
 import { CommandError, IdentityCommands } from '../src/modules/identity/index.js';
@@ -33,12 +33,14 @@ import {
   ENVELOPE_CRYPTO,
   EVENT_BUS,
   EVENT_DISPATCHER,
+  JOB_QUEUE,
   TestClock,
   USER_DATA_REGISTRY,
   type Database,
   type EnvelopeCrypto,
   type EventBus,
   type EventDispatcher,
+  type JobQueue,
   type UserDataRegistry,
 } from '../src/platform/index.js';
 import { NestPinoLogger } from '../src/platform/logging/nest-logger.js';
@@ -106,6 +108,8 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
     registry = app.get<UserDataRegistry>(USER_DATA_REGISTRY);
     crypto = app.get<EnvelopeCrypto>(ENVELOPE_CRYPTO);
     commands = app.get(IdentityCommands);
+    // 注销的删除工作在 pg-boss 任务里执行（identity.purge_user_data），这里启动任务队列（分发器仍由测试手动驱动）
+    await app.get<JobQueue>(JOB_QUEUE).start();
     q = new IdentityTestQueries(database);
     // 假的 realtime 订阅者（D-L1-01 实现前代替它）：收到偏好变化就记下来
     bus.subscribe({
@@ -936,6 +940,14 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
       expect(await outbox('identity.user_deletion_requested', web.user.userId)).toHaveLength(1);
       expect((await q.userById(web.user.userId))?.status).toBe('deleting');
 
+      // 分发注销事件 → 投递删除任务 → 任务执行 chat 的删除清单并回报 → 再分发回报 → 账号删除
+      await dispatchAll();
+      await vi.waitFor(
+        async () => {
+          expect(await outbox('platform.user_data_purged', web.user.userId)).toHaveLength(1);
+        },
+        { timeout: 20_000, interval: 200 },
+      );
       await dispatchAll();
       expect(purged).toEqual([web.user.userId]);
       expect(await outbox('platform.user_data_purged', web.user.userId)).toEqual([

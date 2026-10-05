@@ -4,18 +4,18 @@
 |---|---|
 | 负责人 | 后端负责人（backend-lead） |
 | 日期 | 2026-10-05 |
-| 分支 | `T-018-identity`（基于 origin/main，已合并 T-019 `d40da47`） |
+| 分支 | `T-018-identity`（基于 origin/main，已合并 `2be4911`：T-019、契约 1.1、ADR-0015 批准） |
 
 ## 做了什么
 
-结论：用户能用邀请码注册、登录、退出、查看和踢掉登录设备，能改资料、通知设置和主题（主题改动会通知其他设备）；管理员有独立的 12 小时管理会话，可生成邀请码；创建管理员、重置密码等有命令行脚本；注销账号的「删除清单」框架已搭好。契约 `IdentityEndpoints` + `IdentityAdminEndpoints` 共 14 个接口全部实现，`pnpm check` 通过（服务器测试 178 条全过，0 跳过）。
+结论：用户能用邀请码注册、登录、退出、查看和踢掉登录设备，能改资料、通知设置和主题（主题改动会通知其他设备）；管理员有独立的 12 小时管理会话，可生成邀请码；创建管理员、重置密码等有命令行脚本；注销账号的「删除清单」框架已搭好。契约 `IdentityEndpoints` + `IdentityAdminEndpoints` 共 14 个接口全部实现，`pnpm check` 通过（服务器测试 183 条全过，0 跳过）。
 
 1. **注册**：邀请码一次性、可过期，注册时对邀请码行加锁，并发注册只有一个成功；同一次注册重发返回同一账号（200）；用户名不区分大小写唯一。
 2. **登录与会话**：密码 argon2id；令牌 256 位随机、库里只存 SHA-256；普通会话 90 天使用即续期，管理会话 12 小时不续期；同一用户名或同一 IP 连续 5 次失败锁 15 分钟；会话可退出、可踢下线、过期自动作废，每次作废发 `identity.session_revoked`。
 3. **资料 / 通知设置 / 界面偏好**：修改只改传了的字段（Q-001）；值没变不写库不发事件；有变化在同一事务发 `profile_updated` / `notification_settings_updated` / `preferences_updated`。
 4. **管理员**：`role = admin` + 管理会话；邀请码生成支持 `Idempotency-Key`；审计记录不记邀请码本身。
 5. **命令行** `src/cli/identity.ts`：create-admin、reset-password、set-role、create-invite、verify-purged、sweep-sessions；生产包 `dist/identity.js`。密码不走命令参数。
-6. **删除清单框架**：平台新增 `USER_DATA_REGISTRY`（契约 `UserDataOwner` 的登记处）；identity 替登记的模块订阅注销事件、收齐回报后物理删除账号。`DELETE /me` 已可用（立即下线全部设备、删除数据密钥）。
+6. **删除清单框架**：平台新增 `USER_DATA_REGISTRY`（契约 `UserDataOwner` 的登记处）；identity 收到注销事件后为每个登记模块投递 pg-boss 任务 `identity.purge_user_data`（订阅者只做快速写入，符合 ADR-0015 批准附带的规范第 3.4 节），任务执行删除并回报，收齐回报后物理删除账号。`DELETE /me` 已可用（立即下线全部设备、删除数据密钥）。
 7. **平台小改动**：新增配置 `HTTP_TRUST_PROXY`（反向代理后取真实 IP）；`main.ts` 抽出 `configureHttpApp` 供测试共用；内核 HTTP 测试改用 `overrideProvider` 换假校验器；迁移测试改为支持多个迁移。
 8. 文档：`docs/backend/identity.md`（新）、`docs/backend/kernel.md`（第 3 节新变量、第 10 节、新增第 16 节删除清单）、`apps/server/README.md`。
 
@@ -23,7 +23,7 @@
 
 | 验收项 | 结果 | 实际验证 |
 |---|---|---|
-| `pnpm check` 通过（本机带数据库，集成测试不跳过） | 通过 | format:check、eslint、depcruise「no dependency violations found」、三个子项目 typecheck、`Test Files 18 passed / Tests 178 passed`（0 skipped）、tokens 检查，退出码 0 |
+| `pnpm check` 通过（本机带数据库，集成测试不跳过） | 通过 | format:check、eslint、depcruise「no dependency violations found」、三个子项目 typecheck、`Test Files 18 passed / Tests 183 passed`（0 skipped）、tokens 检查，退出码 0 |
 | 每个接口有测试：正常、未登录、无权限、参数错误、重复请求 | 通过 | `apps/server/test/identity.test.ts` 36 条，14 个接口逐一覆盖（无权限：普通用户 / 管理员 App 会话访问管理接口 403、踢别人的设备 404、普通用户开管理会话 403；重复请求：注册重发、重复退出、重复踢下线、重复 PATCH 不重复发事件、同一 Idempotency-Key 只生成一个码、重复注销 401） |
 | 密码慢哈希（ADR-0006 argon2id）；登录失败限流或锁定；会话可吊销 | 通过 | 单元测试断言哈希为 `$argon2id$v=19$m=19456,t=2,p=1$…`；集成测试：5 次失败后正确密码 429、15 分钟后恢复；同一 IP 锁定、换 IP 不受影响；成功清零；退出 / 踢下线 / 重置密码 / 降级 / 过期后令牌 401 |
 | 无效、已用、过期邀请码被拒绝；邀请码只能用一次（并发注册测试） | 通过 | 三种情况均 422 `invite_invalid`；6 个请求并发用同一个码：结果 `[201, 422×5]`；同用户名 3 个不同码并发：`[201, 409, 409]` 且只消耗一个码；curl 实测同码第二次注册 422 |
@@ -76,7 +76,8 @@ GET /health                         200 {"status":"ok",…,"database":{"ok":true
 3. **注销后来登记的模块收不到旧事件**：注销请求发出后才新增的模块不会收到那次 `user_deletion_requested`，账号会一直停在「注销中」。PRD 要求的管理后台「注销未完成」列表和「重新触发」入口尚未做（契约里也没有对应管理接口）。
 4. **「注册赠送余额」未做**：PRD ADM-01 第 6 条 / ACC-04 写邀请码可预设赠送余额，但契约 `createInvite` 只有 `expiresInDays`，且 billing 尚未实现。见下方契约变更申请。
 5. **用户名注销期间仍被占用**：账号行要等所有模块删除完才删除，期间同名注册返回 `username_taken`（属预期，记录在此）。
-6. 共享开发数据库容器 `weiban-dev-postgres` 在本任务期间被其他会话停过一次（`pnpm db:up` 重新拉起即可，数据卷未动）；并行任务较多时建议约定由谁 `db:down`。
+6. 注销删除任务需要消费任务的进程（`APP_ROLE` 为 worker 或 all）在运行；拆分进程部署时注意。
+7. 共享开发数据库容器 `weiban-dev-postgres` 在本任务期间被其他会话停过一次（`pnpm db:up` 重新拉起即可，数据卷未动）；并行任务较多时建议约定由谁 `db:down`。
 
 ## 需要总经理决定的事
 
