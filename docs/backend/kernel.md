@@ -1,6 +1,6 @@
 # 服务器平台内核使用说明（apps/server/src/platform）
 
-> 负责人：后端负责人 · v1.0 · 2026-10-05 · 来源任务：T-016（D-L0-05）
+> 负责人：后端负责人 · v1.0 · 2026-10-05 · 来源任务：T-016（D-L0-05）；T-023 补充计费配置项与定时任务 `JobQueue.schedule`
 > 读者：之后写业务模块（identity、billing、model-access、chat……）的负责人。
 > 规则来源（本文不重复）：`docs/architecture/engineering-standards.md`、`security-and-privacy.md`、`message-reliability.md`、ADR-0004、ADR-0006、ADR-0014。实现取舍见 `docs/decisions/ADR-0015-server-kernel-implementation.md`。
 
@@ -61,6 +61,9 @@
 | `PLATFORM_KEK_VERSION` | 1 | 轮换主密钥时加一 |
 | `EVENTS_POLL_INTERVAL_MS` | 500 | 分发器轮询间隔 |
 | `DEBUG_LLM_PAYLOAD` | 关 | 生产强制关闭 |
+| `BILLING_PLATFORM_DAILY_CAP_MICROS` | 开发 / 测试 20 元；**生产必填** | 平台每日总上限（按成本价，微元；billing.md 第 7 节）。生产不配置拒绝启动（T-023） |
+| `BILLING_SAFETY_OVERDRAFT_LIMIT_MICROS` | 不设（用 billing.md 6.6 的 2 元） | 安全优先透支上限覆盖值，运维一般不用设（T-023） |
+| `BILLING_UPSTREAM_DIFF_RATIO` | 0.03 | 对账第 ③ 层上游账单偏差阈值（T-023） |
 
 新增配置项：加到 `EnvSchema` 和 `AppConfig`，并在交接说明中告诉运维（`.env.example` 归运维维护）。模块专用变量带模块前缀（`MODEL_ACCESS_…`）。
 
@@ -148,6 +151,7 @@ await this.jobs.send('ai.generate_reply', { conversationId }, { tx, delayMs: 300
 - `delayMs` 按平台时钟计算；`singletonKey` 防重复；`retryLimit` 等重试参数可选。
 - 任务至少执行一次，处理函数要幂等；任务数据只放 ID。
 - `APP_ROLE=web` 的进程只投递不消费。需要防抖等高级用法时用 `jobs.boss`（pg-boss 原对象），并在交接说明里说明。
+- **定时任务**（T-023）：`await jobs.schedule('billing.expire_holds', '* * * * *', { tz })`（cron，默认按北京时间解释），处理函数照常用 `work()` 登记；只在消费任务的进程生效，多个进程登记同一个名字只保留一份。触发时刻按真实时间，处理函数里取「现在」仍用平台时钟。
 
 ## 9. 加密（信封加密）
 

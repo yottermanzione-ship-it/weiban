@@ -5,6 +5,8 @@
  *   await jobs.work('ai.generate_reply', async (job) => { ... });
  *   // 2. 投递任务；传入 tx 时与业务写入同一事务（事务回滚则任务不存在）
  *   await jobs.send('ai.generate_reply', { conversationId }, { tx, delayMs: 3000 });
+ *   // 3. 定时任务（cron，T-023）：只在消费任务的进程登记；多个进程登记同一个名字只保留一份
+ *   await jobs.schedule('billing.expire_holds', '* * * * *');
  *
  * 规则：
  * - 队列名「模块.动作」（engineering-standards.md 第 2 节），例如 `ai.generate_reply`；第一次使用时自动创建。
@@ -58,6 +60,7 @@ export class JobQueue {
   private started = false;
   private readonly knownQueues = new Set<string>();
   private readonly pendingWorkers: Array<{ name: string; handler: JobHandler<unknown> }> = [];
+  private readonly pendingSchedules: Array<{ name: string; cron: string; tz: string }> = [];
 
   constructor(private readonly options: JobQueueOptions) {
     this.bossInstance = this.createBoss();
@@ -95,6 +98,9 @@ export class JobQueue {
     this.started = true;
     for (const { name, handler } of this.pendingWorkers.splice(0)) {
       await this.startWorker(name, handler);
+    }
+    for (const { name, cron, tz } of this.pendingSchedules.splice(0)) {
+      await this.startSchedule(name, cron, tz);
     }
   }
 
@@ -135,6 +141,27 @@ export class JobQueue {
       return;
     }
     await this.startWorker(name, handler as JobHandler<unknown>);
+  }
+
+  /**
+   * 登记定时任务（cron 表达式，按 tz 时区解释，默认北京时间）。到点由 pg-boss 投递一个同名任务，
+   * 处理函数仍用 work() 登记。只在消费任务的进程（APP_ROLE = worker / all）生效。
+   * 注意：触发时刻由 pg-boss 按真实时间计算，不受平台时钟（TestClock）影响；处理函数里取「现在」仍用平台时钟。
+   */
+  async schedule(name: string, cron: string, options: { tz?: string } = {}): Promise<void> {
+    assertQueueName(name);
+    if (!this.options.consume) return;
+    const tz = options.tz ?? 'Asia/Shanghai';
+    if (!this.started) {
+      this.pendingSchedules.push({ name, cron, tz });
+      return;
+    }
+    await this.startSchedule(name, cron, tz);
+  }
+
+  private async startSchedule(name: string, cron: string, tz: string): Promise<void> {
+    await this.ensureQueue(name);
+    await this.boss.schedule(name, cron, null, { tz });
   }
 
   /** 按 ID 查任务（测试与排查用）。 */
