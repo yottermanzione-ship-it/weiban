@@ -7,6 +7,7 @@ import {
   ModelPurpose,
   BillingOwner,
   Id,
+  Timestamp,
   type GenerateTextInput,
   type ModelGatewayPort,
   type BillingReservationPort,
@@ -108,6 +109,11 @@ export class ModelGateway implements ModelGatewayPort {
       return result;
     }
     const row = claim.row;
+    if (input.deadlineAt && Date.parse(input.deadlineAt) <= this.clock.nowMs()) {
+      const result: CachedResult = { ok: false, error: 'provider_unavailable' };
+      await this.cache.save(row, result, 'complete');
+      return result;
+    }
     const resolved = await this.resolver.resolve(input);
     if (!resolved.ok) {
       await this.cache.save(row, resolved, 'complete');
@@ -163,8 +169,11 @@ export class ModelGateway implements ModelGatewayPort {
     let retryCount = 0;
     // AbortSignal 超时覆盖读正文；performance 只测耗时，业务日期始终由 CLOCK 提供。
     const wallStart = performance.now();
+    const budgetMs = input.deadlineAt
+      ? Math.max(0, Math.min(60000, Date.parse(input.deadlineAt) - this.clock.nowMs()))
+      : 60000;
     for (let attempt = 0; attempt <= 3; attempt++) {
-      const remaining = Math.floor(60000 - (performance.now() - wallStart));
+      const remaining = Math.floor(budgetMs - (performance.now() - wallStart));
       if (remaining <= 0) break;
       answer = await this.upstreams.withApiKey(model.upstreamId, (apiKey) =>
         this.adapter.generate({
@@ -181,7 +190,7 @@ export class ModelGateway implements ModelGatewayPort {
       );
       if (answer.ok || !answer.retryable || attempt === 3) break;
       const delay = [2000, 5000, 15000][attempt]! * (0.85 + Math.random() * 0.3);
-      if (performance.now() - wallStart + delay >= 60000) break;
+      if (performance.now() - wallStart + delay >= budgetMs) break;
       await this.wait(Math.round(delay));
       retryCount++;
     }
@@ -321,6 +330,7 @@ export class ModelGateway implements ModelGatewayPort {
           m && ['system', 'user', 'assistant'].includes(m.role) && typeof m.content === 'string',
       ) &&
       i.messages.reduce((n, m) => n + m.content.length, 0) <= 200000 &&
+      (i.deadlineAt === undefined || Timestamp.safeParse(i.deadlineAt).success) &&
       (i.maxOutputTokens === undefined ||
         (Number.isInteger(i.maxOutputTokens) &&
           i.maxOutputTokens > 0 &&

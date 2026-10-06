@@ -15,7 +15,7 @@ import type { PortResult, Tx } from './common.js';
 /** 读消息必须声明可见范围（内容范围标签，见 docs/architecture/hard-boundaries.md）。 */
 export interface ReadMessagesInput {
   conversationId: string;
-  /** 必填。除「成人模式私聊内生成回复」外，调用方只能传 ['normal']。 */
+  /** 必填。仅同用户同角色的私聊回复上下文可在当前角色仍具资格时读adult历史（即使当前回到normal）；其他用途只能传 ['normal']，见runtime-overview 4.1与hard-boundaries。 */
   scopes: ContentScope[];
   afterSeq?: number;
   beforeSeq?: number;

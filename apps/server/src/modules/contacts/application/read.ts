@@ -1,12 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import {
+  type Tx,
   Contact,
   Id,
   type IdentityAccountStatusPort,
   type ContactsReadPort,
 } from '@weiban/contracts';
 import {
+  asDbTx,
   DATABASE,
   ENVELOPE_CRYPTO,
   parseContract,
@@ -50,6 +52,27 @@ export class ContactsReadService implements ContactsReadPort {
         ),
       );
     return row ? contactDto(row) : null;
+  }
+  async getActiveContactEpoch(
+    userId: string,
+    characterId: string,
+    input?: Tx,
+  ): Promise<{ version: string; acceptAfter: string } | null> {
+    parseContract(Id, userId);
+    parseContract(Id, characterId);
+    if ((await this.accounts.getAccountStatus(userId, input)) !== 'active') return null;
+    const query = (input ? asDbTx(input).db : this.db.db)
+      .select({ epoch: contacts.requestId, acceptAfter: contacts.acceptAfter })
+      .from(contacts)
+      .where(
+        and(
+          eq(contacts.userId, userId),
+          eq(contacts.characterId, characterId),
+          eq(contacts.status, 'active'),
+        ),
+      );
+    const [row] = await (input ? query.for('share') : query);
+    return row ? { version: row.epoch, acceptAfter: row.acceptAfter.toISOString() } : null;
   }
   async listActiveContacts(userId: string): Promise<Contact[]> {
     parseContract(Id, userId);

@@ -68,6 +68,10 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
         res.writeHead(429).end('{"error":{"code":"insufficient_quota"}}');
         return;
       }
+      if (mode === 'slow') {
+        res.writeHead(200, { 'Content-Type': 'application/json' }).write('{');
+        return;
+      }
       const usage = {
         prompt_tokens: 100,
         prompt_tokens_details: { cached_tokens: 30 },
@@ -209,6 +213,38 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     expect(ledger.rows).toHaveLength(1);
     expect(ledger.rows[0]?.upstream_id).toBe(upstreamId);
     expect(Number(ledger.rows[0]?.amount_micros)).toBe(-330);
+  });
+  it('调用方截止时间覆盖慢正文与重试；超期不调用、不扣款；无效截止拒绝', async () => {
+    const before = (
+      await db.query<{ n: string }>(
+        "SELECT count(*) n FROM billing.ledger_entries WHERE type='charge'",
+      )
+    ).rows[0]!.n;
+    expect(await gateway.generateText(input({ deadlineAt: 'invalid' }))).toMatchObject({
+      ok: false,
+      error: 'bad_request',
+    });
+    expect(
+      await gateway.generateText(input({ deadlineAt: new Date(clock.nowMs() - 1).toISOString() })),
+    ).toMatchObject({ ok: false, error: 'provider_unavailable' });
+    expect(calls).toBe(0);
+    await app.get(UpstreamService).reportStatus(upstreamId, 'active', 'probe');
+    mode = 'slow';
+    const start = performance.now();
+    expect(
+      await gateway.generateText(
+        input({ deadlineAt: new Date(clock.nowMs() + 250).toISOString() }),
+      ),
+    ).toMatchObject({ ok: false, error: 'provider_unavailable' });
+    expect(performance.now() - start).toBeLessThan(2000);
+    expect(calls).toBe(1);
+    expect(
+      (
+        await db.query<{ n: string }>(
+          "SELECT count(*) n FROM billing.ledger_entries WHERE type='charge'",
+        )
+      ).rows[0]!.n,
+    ).toBe(before);
   });
   it('429重试3次，始终一个冻结；成功只扣一次', async () => {
     mode = '429';

@@ -5,6 +5,7 @@
 import { Global, Module, type DynamicModule } from '@nestjs/common';
 import type { ContactsReadPort } from '@weiban/contracts';
 import { ContactsModule, CONTACTS_READ_PORT } from './modules/contacts/index.js';
+import { AiRuntimeModule } from './modules/ai-runtime/index.js';
 import { BillingModule } from './modules/billing/index.js';
 import { ChatModule, CHAT_USER_PORT } from './modules/chat/index.js';
 import { RealtimeModule, REALTIME_MESSAGE_SENDER } from './modules/realtime/index.js';
@@ -59,6 +60,7 @@ export class AppModule {
         RealtimeModule,
         ChatCompositionModule,
         ContactsCompositionModule,
+        AiRuntimeModule,
         BillingModule,
         GatewayCompositionModule,
         MediaModule,

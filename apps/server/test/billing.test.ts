@@ -1245,7 +1245,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         lastRetriggeredAt: null,
       });
       // T-036 起 realtime 也登记了更新日志与前台状态的删除清单
-      expect(mine?.modules).toHaveLength(7);
+      expect(mine?.modules).toHaveLength(8);
       expect(mine?.modules).toEqual(
         expect.arrayContaining([
           { module: 'billing', purged: false, deletedRows: null, purgedAt: null },
@@ -1255,6 +1255,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
           { module: 'realtime', purged: false, deletedRows: null, purgedAt: null },
           { module: 'chat', purged: false, deletedRows: null, purgedAt: null },
           { module: 'contacts', purged: false, deletedRows: null, purgedAt: null },
+          { module: 'ai_runtime', purged: false, deletedRows: null, purgedAt: null },
         ]),
       );
       await http().get('/api/v1/admin/account-deletions', user.token).expect(401);
@@ -1280,6 +1281,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
           );
           expect(new Set(reported)).toEqual(
             new Set([
+              'ai_runtime',
               'billing',
               'characters',
               'chat',
@@ -1290,7 +1292,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
             ]),
           );
         },
-        // 七个模块及重触发共最多14项串行任务，pg-boss空闲轮询为2秒。
+        // 八个模块及重触发共最多16项串行任务，pg-boss空闲轮询为2秒。
         { timeout: 35_000, interval: 200 },
       );
       await dispatchAll();
@@ -1331,7 +1333,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       await withClient((c) =>
         c.query(
           `INSERT INTO identity.deletion_progress (user_id, module, deleted_rows, reported_at)
-           VALUES ($1, 'billing', 0, now()), ($1, 'model_access', 0, now()), ($1, 'media', 0, now()), ($1, 'characters', 0, now()), ($1, 'realtime', 0, now()), ($1, 'chat', 0, now()), ($1, 'contacts', 0, now())`,
+           VALUES ($1, 'billing', 0, now()), ($1, 'model_access', 0, now()), ($1, 'media', 0, now()), ($1, 'characters', 0, now()), ($1, 'realtime', 0, now()), ($1, 'chat', 0, now()), ($1, 'contacts', 0, now()), ($1, 'ai_runtime', 0, now())`,
           [user.userId],
         ),
       );

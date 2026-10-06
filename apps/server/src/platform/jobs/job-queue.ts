@@ -76,6 +76,11 @@ export class JobQueue {
     this.bossInstance = this.createBoss();
   }
 
+  /** 模块启动对账只能在队列连接就绪后投递；实际消费仍由APP_ROLE决定。 */
+  get isReady(): boolean {
+    return this.started;
+  }
+
   /** 底层 pg-boss 实例（测试与排查用；业务代码用本类的方法）。 */
   get boss(): PgBoss {
     return this.bossInstance;
