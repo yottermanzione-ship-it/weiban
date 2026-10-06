@@ -1,4 +1,4 @@
-import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
 import { and, count, eq, gt, ilike, inArray, sql, type SQL } from 'drizzle-orm';
 import {
   CharacterCard,
@@ -61,7 +61,9 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
     @Inject(MEDIA_READ_PORT) private readonly media: MediaReadPort,
-    @Inject(CHARACTER_CONTACT_ACCESS) private readonly contacts: CharacterContactAccess,
+    @Optional()
+    @Inject(CHARACTER_CONTACT_ACCESS)
+    private readonly contacts: CharacterContactAccess | null,
   ) {}
   async onModuleInit(): Promise<void> {
     this.registry.register(this);
@@ -539,7 +541,8 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     return row.kind === 'custom'
       ? row.ownerId === userId
       : row.status === 'published' ||
-          (row.status === 'unpublished' && (await this.contacts.hasContact(userId, row.id)));
+          (row.status === 'unpublished' &&
+            ((await this.contacts?.hasContact(userId, row.id)) ?? false));
   }
   private async profile(userId: string, row: Row): Promise<CharacterProfile> {
     const body = await this.decode(row, row.kind === 'preset');
@@ -567,7 +570,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       tags: body.tags,
       categoryId: body.categoryId,
       basis: c.basis,
-      added: await this.contacts.hasContact(userId, row.id),
+      added: (await this.contacts?.hasContact(userId, row.id)) ?? false,
       intro: body.intro,
       birthday: body.birthday,
       fanName: body.fanName,
@@ -596,6 +599,12 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       fallbackGreetings: body.fallbackGreetings,
       userSupplement: null,
     };
+  }
+  async canAdd(userId: string, id: string, transaction?: Tx): Promise<boolean> {
+    const db = transaction ? asDbTx(transaction).db : this.database.db;
+    const query = db.select().from(characters).where(eq(characters.id, id));
+    const [row] = await (transaction ? query.for('share') : query);
+    return !!row && row.status === 'published' && (row.kind === 'preset' || row.ownerId === userId);
   }
   async getClassification(id: string, transaction?: Tx): Promise<CharacterClassification | null> {
     const db = transaction ? asDbTx(transaction).db : this.database.db;

@@ -3,10 +3,19 @@ FROM node:24.19.0-bookworm-slim AS build
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 WORKDIR /source
-COPY . .
+# 依赖层只由工作区清单与锁文件决定，业务/文档变化复用安装结果。
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/server/package.json ./apps/server/
+COPY apps/web/package.json ./apps/web/
+COPY apps/admin/package.json ./apps/admin/
+COPY packages/contracts/package.json ./packages/contracts/
+COPY packages/client-core/package.json ./packages/client-core/
+COPY packages/eslint-config/package.json ./packages/eslint-config/
+COPY packages/tsconfig/package.json ./packages/tsconfig/
 RUN --mount=type=secret,id=build_ca,required=false \
     if [ -r /run/secrets/build_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/build_ca; fi; \
     npm install --global pnpm@11.28.4 && pnpm install --frozen-lockfile
+COPY . .
 RUN pnpm --filter @weiban/server build && pnpm --filter @weiban/web build && pnpm --filter @weiban/admin build
 RUN --mount=type=secret,id=build_ca,required=false \
     if [ -r /run/secrets/build_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/build_ca; fi; \

@@ -69,7 +69,7 @@ export class ChatAdminService implements ChatAdminPort {
       if (existing.archivedAt) {
         await tx.db
           .update(conversations)
-          .set({ archivedAt: null, updatedAt: this.clock.now() })
+          .set({ archivedAt: null, contentScope: 'normal', updatedAt: this.clock.now() })
           .where(eq(conversations.id, existing.id));
         await tx.db
           .update(userConversationStates)

@@ -46,6 +46,12 @@ export interface JobContext<T> {
 
 export type JobHandler<T> = (job: JobContext<T>) => Promise<void>;
 
+/** 少量对时延敏感的队列可单独提高轮询频率/并发；默认行为保持不变。 */
+export interface JobWorkerOptions {
+  pollingIntervalSeconds?: number;
+  localConcurrency?: number;
+}
+
 export interface JobQueueOptions {
   databaseUrl: string;
   clock: Clock;
@@ -59,7 +65,11 @@ export class JobQueue {
   private bossInstance: PgBoss;
   private started = false;
   private readonly knownQueues = new Set<string>();
-  private readonly pendingWorkers: Array<{ name: string; handler: JobHandler<unknown> }> = [];
+  private readonly pendingWorkers: Array<{
+    name: string;
+    handler: JobHandler<unknown>;
+    options: JobWorkerOptions;
+  }> = [];
   private readonly pendingSchedules: Array<{ name: string; cron: string; tz: string }> = [];
 
   constructor(private readonly options: JobQueueOptions) {
@@ -96,8 +106,8 @@ export class JobQueue {
       throw error;
     }
     this.started = true;
-    for (const { name, handler } of this.pendingWorkers.splice(0)) {
-      await this.startWorker(name, handler);
+    for (const { name, handler, options } of this.pendingWorkers.splice(0)) {
+      await this.startWorker(name, handler, options);
     }
     for (const { name, cron, tz } of this.pendingSchedules.splice(0)) {
       await this.startSchedule(name, cron, tz);
@@ -133,14 +143,36 @@ export class JobQueue {
   }
 
   /** 登记处理函数。每次处理一个任务；抛错则按重试策略重试。 */
-  async work<T>(name: string, handler: JobHandler<T>): Promise<void> {
+  async work<T>(
+    name: string,
+    handler: JobHandler<T>,
+    options: JobWorkerOptions = {},
+  ): Promise<void> {
     assertQueueName(name);
+    if (
+      options.pollingIntervalSeconds !== undefined &&
+      (!Number.isFinite(options.pollingIntervalSeconds) ||
+        options.pollingIntervalSeconds < 0.5 ||
+        options.pollingIntervalSeconds > 60)
+    )
+      throw new Error('任务轮询间隔须为0.5～60秒');
+    if (
+      options.localConcurrency !== undefined &&
+      (!Number.isInteger(options.localConcurrency) ||
+        options.localConcurrency < 1 ||
+        options.localConcurrency > 16)
+    )
+      throw new Error('任务本机并发须为1～16');
     if (!this.options.consume) return;
     if (!this.started) {
-      this.pendingWorkers.push({ name, handler: handler as JobHandler<unknown> });
+      this.pendingWorkers.push({
+        name,
+        handler: handler as JobHandler<unknown>,
+        options: { ...options },
+      });
       return;
     }
-    await this.startWorker(name, handler as JobHandler<unknown>);
+    await this.startWorker(name, handler as JobHandler<unknown>, options);
   }
 
   /**
@@ -172,9 +204,13 @@ export class JobQueue {
     return job ? { id: job.id, state: job.state } : null;
   }
 
-  private async startWorker(name: string, handler: JobHandler<unknown>): Promise<void> {
+  private async startWorker(
+    name: string,
+    handler: JobHandler<unknown>,
+    options: JobWorkerOptions,
+  ): Promise<void> {
     await this.ensureQueue(name);
-    await this.boss.work(name, { batchSize: 1 }, async (jobs) => {
+    await this.boss.work(name, { batchSize: 1, ...options }, async (jobs) => {
       for (const job of jobs) {
         await runWithLogContext({ jobId: job.id }, () =>
           handler({ id: job.id, name: job.name, data: job.data }),

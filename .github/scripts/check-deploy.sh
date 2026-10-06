@@ -15,6 +15,12 @@ temporary=$(mktemp -d)
 export WEIBAN_DEPLOY_ENV=$temporary/runtime.env
 compose=(docker compose --env-file "$WEIBAN_DEPLOY_ENV" -f deploy/prod/compose.yml -f deploy/prod/smoke.override.yml)
 cleanup() {
+  result=$?
+  if [[ $result != 0 ]]; then
+    # 出错时先保留临时数据库的诊断，再清理本次项目；不输出环境或秘密文件。
+    "${compose[@]}" -p "$project" logs --no-color --tail 80 postgres >&2 || true
+    "${compose[@]}" -p "$restore_project" logs --no-color --tail 80 postgres >&2 || true
+  fi
   "${compose[@]}" -p "$project" down --volumes --remove-orphans >/dev/null 2>&1 || true
   "${compose[@]}" -p "$restore_project" down --volumes --remove-orphans >/dev/null 2>&1 || true
   rm -rf -- "$temporary"

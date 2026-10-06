@@ -20,5 +20,7 @@ export interface CharacterReadPort {
   getForRuntime(userId: string, characterId: string): Promise<CharacterForRuntime | null>;
   /** 可选事务用于资格闸门：锁定当前分类，与消息/模式写入共享同一提交。 */
   getClassification(characterId: string, tx?: Tx): Promise<CharacterClassification | null>;
+  /** 添加资格：上架预设或本人可用自定义角色；可共享调用方事务并锁定角色行。 */
+  canAdd(userId: string, characterId: string, tx?: Tx): Promise<boolean>;
   getProfiles(userId: string, characterIds: string[]): Promise<CharacterProfile[]>;
 }
