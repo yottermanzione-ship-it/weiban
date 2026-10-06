@@ -124,6 +124,72 @@ export class EnvelopeCrypto {
     ]);
   }
 
+  /** 只读运维校验：每个DEK均能解包；仅返回版本与数量。 */
+  async inspectKeys(): Promise<Array<{ version: number; count: number }>> {
+    const counts = new Map<number, number>();
+    let cursor = '';
+    for (;;) {
+      const result = await this.database.query<{
+        owner: string;
+        wrapped_dek: Buffer;
+        kek_version: number;
+      }>(
+        'SELECT owner, wrapped_dek, kek_version FROM platform.user_data_keys WHERE owner > $1 ORDER BY owner LIMIT 500',
+        [cursor],
+      );
+      if (!result.rows.length) break;
+      for (const row of result.rows) {
+        const dek = this.unwrapKey(row);
+        dek.fill(0);
+        counts.set(row.kek_version, (counts.get(row.kek_version) ?? 0) + 1);
+        cursor = row.owner;
+      }
+    }
+    return [...counts].sort(([a], [b]) => a - b).map(([version, count]) => ({ version, count }));
+  }
+
+  /** 维护窗口事务批处理；成功提交后可中断，重新执行只处理旧版本。 */
+  async rotateKeyBatch(batchSize = 100): Promise<number> {
+    if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 1000)
+      throw new Error('轮换批量必须在1–1000之间');
+    const ring = this.requireRing();
+    return this.database.transaction(async (tx) => {
+      await tx.query("SELECT pg_advisory_xact_lock(hashtext('weiban:kek-rotation'))");
+      const newer = await tx.query(
+        'SELECT 1 FROM platform.user_data_keys WHERE kek_version > $1 LIMIT 1',
+        [ring.currentVersion],
+      );
+      if (newer.rowCount) throw new DecryptionError('拒绝把数据密钥轮换到旧版本');
+      const result = await tx.query<{ owner: string; wrapped_dek: Buffer; kek_version: number }>(
+        'SELECT owner, wrapped_dek, kek_version FROM platform.user_data_keys WHERE kek_version <> $1 ORDER BY owner LIMIT $2 FOR UPDATE',
+        [ring.currentVersion, batchSize],
+      );
+      for (const row of result.rows) {
+        const dek = this.unwrapKey(row);
+        try {
+          const wrapped = aesGcmSeal(
+            ring.keys.get(ring.currentVersion) as Buffer,
+            dekAad(row.owner, ring.currentVersion),
+            dek,
+          );
+          await tx.query(
+            'UPDATE platform.user_data_keys SET wrapped_dek=$2, kek_version=$3 WHERE owner=$1',
+            [row.owner, wrapped, ring.currentVersion],
+          );
+        } finally {
+          dek.fill(0);
+        }
+      }
+      return result.rows.length;
+    });
+  }
+
+  private unwrapKey(row: { owner: string; wrapped_dek: Buffer; kek_version: number }): Buffer {
+    const key = this.requireRing().keys.get(row.kek_version);
+    if (!key) throw new DecryptionError(`缺少主密钥 v${row.kek_version}`);
+    return aesGcmOpen(key, dekAad(row.owner, row.kek_version), row.wrapped_dek);
+  }
+
   private requireRing(): KekRing {
     if (!this.ring) throw new CryptoUnavailableError();
     return this.ring;

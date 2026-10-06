@@ -1,0 +1,100 @@
+name: weiban-prod
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg18-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: weiban
+      POSTGRES_DB: weiban
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      TZ: UTC
+      PGTZ: UTC
+    secrets: [postgres_password]
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U weiban -d weiban']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [private]
+  migrate:
+    image: ${APP_IMAGE:-weiban-app:local}
+    build:
+      context: ../..
+      dockerfile: deploy/prod/Dockerfile
+      target: app
+    command: ['node', 'dist/migrate.js', 'up']
+    environment: &app_environment
+      NODE_ENV: production
+      APP_ROLE: all
+      HOST: 0.0.0.0
+      PORT: 3000
+      HTTP_TRUST_PROXY: '1'
+      DATABASE_URL_FILE: /run/secrets/database_url
+      PLATFORM_KEK_FILE: /run/secrets/kek
+      PLATFORM_KEK_VERSION: ${PLATFORM_KEK_VERSION:-1}
+      BILLING_PLATFORM_DAILY_CAP_MICROS: ${BILLING_PLATFORM_DAILY_CAP_MICROS:?Set platform cost limit in micros}
+      MEDIA_DISK_ROOT: /app/.data/media
+      MEDIA_PUBLIC_BASE_URL: https://${WEB_HOST:?Set public web hostname}
+    secrets: [database_url, kek]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [private]
+    restart: 'no'
+  app:
+    image: ${APP_IMAGE:-weiban-app:local}
+    build:
+      context: ../..
+      dockerfile: deploy/prod/Dockerfile
+      target: app
+    restart: unless-stopped
+    environment: *app_environment
+    secrets: [database_url, kek]
+    volumes: [media:/app/.data/media]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    stop_grace_period: 45s
+    networks: [private, outbound]
+  caddy:
+    image: ${EDGE_IMAGE:-weiban-edge:local}
+    build:
+      context: ../..
+      dockerfile: deploy/prod/Dockerfile
+      target: edge
+    restart: unless-stopped
+    environment:
+      WEB_DOMAIN: ${WEB_DOMAIN:?Set web TLS domain}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?Set admin TLS domain}
+      NO_PROXY: app,postgres,localhost,127.0.0.1
+    ports: ['80:80', '443:443', '443:443/udp']
+    volumes: [caddy_data:/data, caddy_config:/config]
+    depends_on:
+      app:
+        condition: service_healthy
+    networks: [private, outbound]
+secrets:
+  postgres_password:
+    file: ${SECRETS_DIR:?Set secrets directory}/postgres-password
+  database_url:
+    file: ${SECRETS_DIR}/database-url
+  kek:
+    file: ${SECRETS_DIR}/kek
+volumes:
+  pgdata:
+  media:
+  caddy_data:
+  caddy_config:
+networks:
+  private:
+    internal: true
+  outbound:

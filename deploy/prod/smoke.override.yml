@@ -1,0 +1,7 @@
+# 仅本机隔离演练；不得作为公网生产覆盖文件。
+services:
+  caddy:
+    ports: !override ['127.0.0.1:18080:80']
+    environment:
+      WEB_DOMAIN: http://app.localhost
+      ADMIN_DOMAIN: http://admin.localhost

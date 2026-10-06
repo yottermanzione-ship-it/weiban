@@ -52,8 +52,9 @@ export const EnvSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   /** 主密钥（KEK）文件路径（security-and-privacy.md 第 3 节）。生产必填；开发可不填，此时加密功能不可用。 */
   PLATFORM_KEK_FILE: z.string().min(1).optional(),
+  PLATFORM_KEK_RING_FILE: z.string().min(1).optional(),
   /** 主密钥版本号；轮换主密钥时加一。 */
-  PLATFORM_KEK_VERSION: z.coerce.number().int().min(1).default(1),
+  PLATFORM_KEK_VERSION: z.coerce.number().int().min(1).max(2_147_483_647).default(1),
   /** 事件分发器轮询发件箱的间隔（毫秒）。 */
   EVENTS_POLL_INTERVAL_MS: z.coerce.number().int().min(50).max(60_000).default(500),
   /** 开发调试：日志里打印模型请求全文。生产环境强制关闭（engineering-standards.md 第 6 节）。 */
@@ -93,7 +94,11 @@ export interface AppConfig {
   };
   readonly database: { readonly url: string; readonly poolMax: number };
   readonly logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
-  readonly crypto: { readonly kekFile: string | null; readonly kekVersion: number };
+  readonly crypto: {
+    readonly kekFile: string | null;
+    readonly kekVersion: number;
+    readonly kekRingFile: string | null;
+  };
   readonly events: { readonly pollIntervalMs: number };
   readonly debugLlmPayload: boolean;
   readonly billing: {
@@ -120,7 +125,15 @@ function parseTrustProxy(value: string | undefined): boolean | number | string {
 
 /** 校验环境变量并转成 AppConfig。只报变量名和原因，不回显值。 */
 export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {
-  const parsed = EnvSchema.safeParse(env);
+  let resolved = env;
+  if (!env['DATABASE_URL'] && env['DATABASE_URL_FILE']) {
+    try {
+      resolved = { ...env, DATABASE_URL: readFileSync(env['DATABASE_URL_FILE'], 'utf8').trim() };
+    } catch {
+      throw new ConfigError(['DATABASE_URL_FILE：数据库连接秘密文件不可读取']);
+    }
+  }
+  const parsed = EnvSchema.safeParse(resolved);
   if (!parsed.success) {
     throw new ConfigError(
       parsed.error.issues.map((issue) => `${issue.path.join('.') || '(根)'}：${issue.message}`),
@@ -128,7 +141,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   }
   const e = parsed.data;
   const production = e.NODE_ENV === 'production';
-  if (production && !e.PLATFORM_KEK_FILE) {
+  if (production && !e.PLATFORM_KEK_FILE && !e.PLATFORM_KEK_RING_FILE) {
     throw new ConfigError(['PLATFORM_KEK_FILE：生产环境必须配置主密钥文件']);
   }
   if (production && e.BILLING_PLATFORM_DAILY_CAP_MICROS === undefined) {
@@ -162,7 +175,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     http: { host: e.HOST, port: e.PORT, trustProxy: parseTrustProxy(e.HTTP_TRUST_PROXY) },
     database: { url: e.DATABASE_URL, poolMax: e.DATABASE_POOL_MAX },
     logLevel: e.LOG_LEVEL,
-    crypto: { kekFile: e.PLATFORM_KEK_FILE ?? null, kekVersion: e.PLATFORM_KEK_VERSION },
+    crypto: {
+      kekFile: e.PLATFORM_KEK_FILE ?? null,
+      kekVersion: e.PLATFORM_KEK_VERSION,
+      kekRingFile: e.PLATFORM_KEK_RING_FILE ?? null,
+    },
     events: { pollIntervalMs: e.EVENTS_POLL_INTERVAL_MS },
     // 生产环境无论怎么配置都关闭
     debugLlmPayload: production ? false : e.DEBUG_LLM_PAYLOAD,

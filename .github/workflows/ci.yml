@@ -97,6 +97,12 @@ jobs:
           pnpm web:e2e
           pnpm admin:e2e
 
+      - name: 生产容器与加密备份恢复演练
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y age
+          bash .github/scripts/check-deploy.sh
+
       - name: 设计令牌生成物是否最新（重新生成后应无差异）
         run: pnpm tokens --check
 
