@@ -95,6 +95,7 @@ jobs:
         run: |
           pnpm exec playwright install --with-deps chromium
           pnpm web:e2e
+          pnpm admin:e2e
 
       - name: 设计令牌生成物是否最新（重新生成后应无差异）
         run: pnpm tokens --check

@@ -43,9 +43,9 @@
 
 ## Codex 开发接管（2026-10-05）
 
-总经理授权 Codex 在独立分支 `dev/codex-product-continuation` 接续 Claude 剩余开发，PR #3。已完成 T-028 接续、Q-010/Q-011修复、T-029 文本网关及 D-L0-07 媒体最小版。带真实数据库完整检查283条测试通过。此为开发自测，独立质量验收尚未执行；整体产品未完成。
+总经理授权 Codex 在独立分支 `dev/codex-product-continuation` 接续 Claude 剩余开发，PR #3。已完成 T-028 接续、Q-010/Q-011修复、T-029 文本网关、媒体、T-030角色库/policy、T-031网页与T-032后台底座。带真实数据库完整检查308条测试通过；用户端5组和后台6组真实浏览器自测通过。此为开发自测，独立质量验收尚未执行；整体产品未完成。
 
-活动断点以 `docs/handoffs/2026-10-05-codex-product-continuation.md` 为准；Claude 恢复时先读取断点和 PR，避免重复开发。接下来角色卡契约、角色库/policy、Web与Android底座，再推进后续层。
+活动断点以 `docs/handoffs/2026-10-05-codex-product-continuation.md` 为准；Claude 恢复时先读取断点和 PR，避免重复开发。接下来主密钥轮换/部署、协议向量与Android底座，再推进后续层。
 
 ## Claude 暂停原始断点（已由 Codex 接续）
 

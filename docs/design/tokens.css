@@ -256,6 +256,8 @@
   --wb-radius-xl: 20px;
   --wb-radius-full: 999px;
   --wb-radius-avatar-ratio: 0.12;
+  --wb-size-admin-min-width: 1200;
+  --wb-size-admin-content-max-width: 1440;
   --wb-size-touch-target: 44px;
   --wb-size-nav-bar: 44px;
   --wb-size-tab-bar: 50px;
