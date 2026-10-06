@@ -140,8 +140,10 @@ jobs:
             apps/android/gradle/wrapper/gradle-wrapper.properties
       - name: 安装 Android SDK 36
         run: |
-          sdkmanager --licenses < <(yes) >/dev/null
-          sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+          sdk_manager="${ANDROID_HOME:?}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdk_manager"
+          "$sdk_manager" --licenses < <(yes) >/dev/null
+          "$sdk_manager" 'platforms;android-36' 'build-tools;36.0.0'
       - name: 校验契约、图标与令牌生成物
         run: |
           pnpm install --frozen-lockfile

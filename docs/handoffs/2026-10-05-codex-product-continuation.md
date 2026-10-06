@@ -55,3 +55,5 @@ React19/Vite/PWA用户端，真实登录/注册、首次资料、头像裁剪、
 新增依赖/许可证完整表在docs/android/foundation.md：Kotlin/serialization/coroutines、AGP/AndroidX/Room/WorkManager/KSP、Gradle、OkHttp/MockWebServer为Apache-2.0；Phosphor/Robolectric/ktlint插件为MIT，detekt为Apache-2.0；JUnit4 EPL-1.0仅开发测试，项目工程规范10.7明确要求JUnit。
 
 仍不是完整产品或独立QA：聊天/通讯录/发现当前仅入口；Room协议驱动与WorkManager、HTTP/WS、两端聊天/好友/AI回复/推送在L1接续。真机Keystore/IME/无障碍/国产厂商保活与正式签名另验。下一项T-036每用户更新日志与WebSocket，然后聊天/联系人/AI链路；用户已再次要求继续，不停在本里程碑。
+
+T-035首轮远端086e478的安卓job在SDK安装前失败（exit127）：GitHub运行器没有将sdkmanager加入PATH，已读取job112206734053日志确认，改用ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager绝对路径并验证可执行。此故障不是已执行安卓测试失败；这些步骤首轮没有运行。修正后重新读取CI结果，不能报告首轮通过。
