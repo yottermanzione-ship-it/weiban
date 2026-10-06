@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  Optional,
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from '@nestjs/common';
@@ -11,6 +12,7 @@ import type pg from 'pg';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import {
   ClientFrame,
+  type ChatUserPort,
   Id,
   ServerFrameStrict,
   ServerTypingFrame,
@@ -18,6 +20,7 @@ import {
   WS_PATH,
 } from '@weiban/contracts';
 import {
+  AppError,
   APP_CONFIG,
   CLOCK,
   DATABASE,
@@ -29,6 +32,7 @@ import {
   type Database,
   type SessionVerifier,
 } from '../../../platform/index.js';
+import { REALTIME_MESSAGE_SENDER } from '../tokens.js';
 import { UpdateLogService, REALTIME_UPDATE_CHANNEL } from '../application/update-log.js';
 import {
   PresenceService,
@@ -66,6 +70,7 @@ export class SocketServer implements OnApplicationBootstrap, OnModuleDestroy {
   private sweeping = false;
   private stopping = false;
   constructor(
+    @Optional() @Inject(REALTIME_MESSAGE_SENDER) private readonly sender: ChatUserPort | null,
     @Inject(HttpAdapterHost) private readonly adapter: HttpAdapterHost,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -242,20 +247,35 @@ export class SocketServer implements OnApplicationBootstrap, OnModuleDestroy {
       });
     if (frame.type === 'presence.focus')
       await this.presence.focus(c.principal.userId, c.principal.sessionId, c.id, frame);
-    // T-037 将装配同一个 ChatUserPort；未接入时明确拒绝，绝不伪造已送达 ack。
-    if (frame.type === 'message.send')
-      this.send(c, {
-        v: 1,
-        type: 'message.error',
-        ...ref,
-        data: {
-          clientMsgId: frame.data.clientMsgId,
-          code: 'service_unavailable',
-          message: '聊天服务尚未接入',
-          retryable: true,
-        },
-      });
+    if (frame.type === 'message.send') {
+      try {
+        if (!this.sender) throw new AppError('service_unavailable', '聊天服务尚未接入');
+        const ack = await this.sender.sendMessage(
+          c.principal.userId,
+          frame.data.conversationId,
+          frame.data,
+        );
+        this.send(c, { v: 1, type: 'message.ack', ...ref, data: ack });
+      } catch (error) {
+        if (error instanceof AppError && error.code === 'unauthenticated') {
+          c.ws.close(WsCloseCode.unauthenticated, 'Session expired');
+          return;
+        }
+        this.send(c, {
+          v: 1,
+          type: 'message.error',
+          ...ref,
+          data: {
+            clientMsgId: frame.data.clientMsgId,
+            code: error instanceof AppError ? error.code : 'internal_error',
+            message: error instanceof AppError ? error.message : '消息未能发送，请稍后重试',
+            retryable: !(error instanceof AppError) || error.status >= 500 || error.status === 429,
+          },
+        });
+      }
+    }
   }
+
   private async valid(c: Connection): Promise<boolean> {
     const principal = c.token ? await this.verifier.verify(c.token, 'user') : null;
     if (!principal || principal.sessionId !== c.principal?.sessionId) {

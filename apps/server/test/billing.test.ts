@@ -1245,7 +1245,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         lastRetriggeredAt: null,
       });
       // T-036 起 realtime 也登记了更新日志与前台状态的删除清单
-      expect(mine?.modules).toHaveLength(5);
+      expect(mine?.modules).toHaveLength(6);
       expect(mine?.modules).toEqual(
         expect.arrayContaining([
           { module: 'billing', purged: false, deletedRows: null, purgedAt: null },
@@ -1253,6 +1253,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
           { module: 'media', purged: false, deletedRows: null, purgedAt: null },
           { module: 'characters', purged: false, deletedRows: null, purgedAt: null },
           { module: 'realtime', purged: false, deletedRows: null, purgedAt: null },
+          { module: 'chat', purged: false, deletedRows: null, purgedAt: null },
         ]),
       );
       await http().get('/api/v1/admin/account-deletions', user.token).expect(401);
@@ -1277,10 +1278,11 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
             (e) => (e as { module: string }).module,
           );
           expect(new Set(reported)).toEqual(
-            new Set(['billing', 'characters', 'media', 'model_access', 'realtime']),
+            new Set(['billing', 'characters', 'chat', 'media', 'model_access', 'realtime']),
           );
         },
-        { timeout: 20_000, interval: 200 },
+        // 六个模块及重触发共最多12项串行任务，pg-boss空闲轮询为2秒。
+        { timeout: 35_000, interval: 200 },
       );
       await dispatchAll();
       expect(await commands.verifyPurged(user.userId)).toEqual(
@@ -1307,7 +1309,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       expect(audit.some((a) => a.details?.balanceAtDeletionMicros === 1234)).toBe(true);
       // 重复调用删除清单：返回 0
       expect(await lifecycle.purgeUser(user.userId)).toBe(0);
-    });
+    }, 45_000);
 
     it('全部模块已回报时，重新触发直接完成账号删除', async () => {
       const user = await newUser();
@@ -1320,7 +1322,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       await withClient((c) =>
         c.query(
           `INSERT INTO identity.deletion_progress (user_id, module, deleted_rows, reported_at)
-           VALUES ($1, 'billing', 0, now()), ($1, 'model_access', 0, now()), ($1, 'media', 0, now()), ($1, 'characters', 0, now()), ($1, 'realtime', 0, now())`,
+           VALUES ($1, 'billing', 0, now()), ($1, 'model_access', 0, now()), ($1, 'media', 0, now()), ($1, 'characters', 0, now()), ($1, 'realtime', 0, now()), ($1, 'chat', 0, now())`,
           [user.userId],
         ),
       );

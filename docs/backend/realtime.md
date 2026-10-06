@@ -16,6 +16,6 @@ HTTP 实例通过专用 PostgreSQL LISTEN 连接接收持久更新、连接替�
 
 开发自测含实际PG/WS、真实账号和会话、十事务并发/回滚、分页与410、两会话同用户、重连替换、typing、独立worker应用、前台与超时、未知/二进制/大帧/跨站/URL令牌、会话作废、注销与迟到事件。原纯客户端协议向量另行保留。这里没有独立验收结论。
 
-T-037 尚需装配真正聊天消息发送端口；当前 message.send 返回 service_unavailable，未写消息且不返回 ack。网页与安卓实际 WS/HTTP 状态机驱动、Room/IndexedDB同步提交/发件任务、好友和AI回复、推送随后接续；不能把本模块完成当作可用完整聊天产品。
+T-037组合根已接入ChatUserPort，message.send与HTTP共用同一处理器；提交后返回message.ack，业务拒绝返回带原ref/clientMsgId的message.error，账号作废关闭4401。未装配发送端口的独立realtime实例仍返回service_unavailable。网页与安卓实际 WS/HTTP 状态机驱动、Room/IndexedDB同步提交/发件任务、好友和AI回复、推送随后接续；不能把本模块完成当作可用完整聊天产品。
 
 本机最终全仓349条/零跳过、浏览器5+6组、安卓auth两条回归及生产容器/迁移/备份恢复通过，详见T-036任务卡；远端CI发布后另核验。

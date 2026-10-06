@@ -1,12 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
   CharacterReadPort,
+  Tx,
   PolicyPort,
   PolicyDecision,
   CharacterPolicy,
   ScenarioModeTraits,
 } from '@weiban/contracts';
-import { AUDIT_LOG, type AuditLog } from '../../../platform/index.js';
+import { AUDIT_LOG, asDbTx, type AuditLog } from '../../../platform/index.js';
 import { POLICY_CHARACTER_READ } from '../tokens.js';
 import { checkMode, deriveClassification } from '../domain/rules.js';
 @Injectable()
@@ -108,9 +109,32 @@ export class PolicyService implements PolicyPort {
         : { allowed: true },
     );
   }
-  checkAdultGeneration(
+  async checkAdultGeneration(
     input: Parameters<PolicyPort['checkAdultGeneration']>[0],
+    transaction?: Tx,
   ): Promise<PolicyDecision> {
+    if (transaction) {
+      const c = await this.characters.getClassification(input.characterId, transaction);
+      const result: PolicyDecision = !c
+        ? { allowed: false, reason: 'character_not_found' }
+        : c.derived.adultModeEligible
+          ? { allowed: true }
+          : { allowed: false, reason: 'adult_mode_not_eligible' };
+      if (!result.allowed)
+        await this.audit.record(
+          {
+            module: 'policy',
+            action: 'operation.denied',
+            actorType: 'user',
+            actorId: input.userId,
+            targetType: 'character',
+            targetId: input.characterId,
+            details: { operation: 'adult_generation', reason: result.reason },
+          },
+          asDbTx(transaction),
+        );
+      return result;
+    }
     return this.decision(input.userId, input.characterId, 'adult_generation', (p) =>
       p.adultModeEligible
         ? { allowed: true }

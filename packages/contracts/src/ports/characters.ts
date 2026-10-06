@@ -1,3 +1,4 @@
+import type { Tx } from './common.js';
 import type { CharacterCard } from '../character-card.js';
 import type { CharacterClassification, CharacterProfile } from '../http/characters.js';
 
@@ -17,6 +18,7 @@ export interface CharacterForRuntime {
 export interface CharacterReadPort {
   /** 用户视角的角色数据：预设角色对所有人可读；自定义角色只有创建者可读，否则返回 null。 */
   getForRuntime(userId: string, characterId: string): Promise<CharacterForRuntime | null>;
-  getClassification(characterId: string): Promise<CharacterClassification | null>;
+  /** 可选事务用于资格闸门：锁定当前分类，与消息/模式写入共享同一提交。 */
+  getClassification(characterId: string, tx?: Tx): Promise<CharacterClassification | null>;
   getProfiles(userId: string, characterIds: string[]): Promise<CharacterProfile[]>;
 }

@@ -8,6 +8,7 @@ import {
   type AdminCharacter,
   type AdminCharacterUpdate,
   type CharacterReadPort,
+  type Tx,
   type CharacterForRuntime,
   type CharacterClassification,
   type CharacterProfile,
@@ -24,6 +25,7 @@ import {
   PLATFORM_KEY_OWNER,
   USER_DATA_REGISTRY,
   AppError,
+  asDbTx,
   newId,
   type AuditLog,
   type Clock,
@@ -595,8 +597,10 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       userSupplement: null,
     };
   }
-  async getClassification(id: string): Promise<CharacterClassification | null> {
-    const [row] = await this.database.db.select().from(characters).where(eq(characters.id, id));
+  async getClassification(id: string, transaction?: Tx): Promise<CharacterClassification | null> {
+    const db = transaction ? asDbTx(transaction).db : this.database.db;
+    const query = db.select().from(characters).where(eq(characters.id, id));
+    const [row] = await (transaction ? query.for('share') : query);
     return row ? this.classify(row) : null;
   }
   async getProfiles(userId: string, ids: string[]): Promise<CharacterProfile[]> {

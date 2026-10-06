@@ -895,15 +895,15 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
 
     it('注销：202，所有设备立即下线、不能登录、数据密钥删除；各模块回报后账号物理删除；重复投递无副作用', async () => {
       const purged: string[] = [];
-      const chatOwner: UserDataOwner = {
-        module: 'chat',
+      const growthOwner: UserDataOwner = {
+        module: 'growth',
         purgeUser: async (userId) => {
           purged.push(userId);
           return 3;
         },
         countUserData: async () => 0,
       };
-      registry.register(chatOwner);
+      registry.register(growthOwner);
 
       const canary = canaryKey();
       const web = await register();
@@ -940,23 +940,24 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
       expect(await outbox('identity.user_deletion_requested', web.user.userId)).toHaveLength(1);
       expect((await q.userById(web.user.userId))?.status).toBe('deleting');
 
-      // 分发注销事件 → 投递删除任务 → 任务执行 chat 的删除清单并回报 → 再分发回报 → 账号删除
+      // 分发注销事件 → 投递删除任务 → 任务执行各模块的删除清单并回报 → 再分发回报 → 账号删除
       await dispatchAll();
       await vi.waitFor(
         async () => {
-          // 所有非identity删除清单各回报一次；T-036新增realtime。
-          expect(await outbox('platform.user_data_purged', web.user.userId)).toHaveLength(6);
+          // 所有非identity删除清单各回报一次；T-037新增真实chat；另用growth模拟清理回报。
+          expect(await outbox('platform.user_data_purged', web.user.userId)).toHaveLength(7);
         },
         { timeout: 20_000, interval: 200 },
       );
       await dispatchAll();
       expect(purged).toEqual([web.user.userId]);
       const reports = await outbox('platform.user_data_purged', web.user.userId);
-      expect(reports).toContainEqual({ userId: web.user.userId, module: 'chat', deletedRows: 3 });
+      expect(reports).toContainEqual({ userId: web.user.userId, module: 'growth', deletedRows: 3 });
       expect(reports.map((r) => r.module).sort()).toEqual([
         'billing',
         'characters',
         'chat',
+        'growth',
         'media',
         'model_access',
         'realtime',

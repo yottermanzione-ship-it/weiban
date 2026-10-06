@@ -71,6 +71,13 @@
       "when": 1791280647548,
       "tag": "0009_realtime",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791283460560,
+      "tag": "0010_chat",
+      "breakpoints": true
     }
   ]
 }

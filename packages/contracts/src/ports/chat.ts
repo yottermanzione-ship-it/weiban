@@ -7,6 +7,8 @@ import type {
   Message,
   MessageContent,
   Participant,
+  SendMessageRequest,
+  MessageAck,
 } from '../http/chat.js';
 import type { PortResult, Tx } from './common.js';
 
@@ -78,6 +80,10 @@ export interface ChatAdminPort {
     tx: Tx,
     input: { userId: string; characterId: string; restoreHistory: boolean },
   ): Promise<Conversation>;
+  /** contacts 删除好友：停止收发并隐藏会话，保留历史供30天内恢复。 */
+  archiveDirectConversation(tx: Tx, input: { userId: string; characterId: string }): Promise<void>;
+  /** contacts 立即删除/保留期到期：物理清除该私聊；下一次添加创建新会话。 */
+  purgeDirectConversation(tx: Tx, input: { userId: string; characterId: string }): Promise<void>;
   /** 写一条系统提示（如「XX 通过了你的好友申请」）。幂等键规则同 postMessage。 */
   postSystemMessage(
     tx: Tx | null,
@@ -96,5 +102,14 @@ export interface ChatAdminPort {
   setContentScope(input: {
     conversationId: string;
     scope: ContentScope;
-  }): Promise<PortResult<void, 'not_found'>>;
+  }): Promise<PortResult<void, 'not_found' | 'adult_mode_not_eligible'>>;
+}
+
+/** 提供方 chat；组合根把 WS 与 HTTP 连接到同一用户发送处理器。 */
+export interface ChatUserPort {
+  sendMessage(
+    userId: string,
+    conversationId: string,
+    input: SendMessageRequest,
+  ): Promise<MessageAck>;
 }
