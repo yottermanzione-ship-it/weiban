@@ -110,22 +110,54 @@ jobs:
         if: failure()
         run: docker compose logs postgres
 
-  # ---------------------------------------------------------------------------
-  # 安卓构建（预留位置，暂不启用）
-  # 等 Android 负责人在 D-L0-18 建立 apps/android 的 Gradle 工程后，由运维与 Android 负责人一起接入：
-  #   - actions/setup-java（JDK 版本按 Android 负责人定的基线）
-  #   - Gradle 缓存
-  #   - ./gradlew ktlintCheck detekt test assembleDebug（具体任务名以安卓工程为准）
-  #   - 生成代码无差异检查：重新生成契约 Kotlin 数据类和设计令牌 WbTokens.kt 后 `git diff --exit-code`
-  #     （设计令牌可直接用 node scripts/build-tokens.mjs --check --kotlin <WbTokens.kt 路径>）
-  # 接入后，在 main 保护规则里把这个任务也设为「必须通过」（docs/ops/ci.md 第三节）。
-  #
-  # android:
-  #   name: 安卓构建与检查
-  #   runs-on: ubuntu-24.04
-  #   steps:
-  #     - uses: actions/checkout@<哈希> # vX
-  #     - uses: actions/setup-java@<哈希> # vX
-  #     - run: ./gradlew ...
-  #       working-directory: apps/android
-  # ---------------------------------------------------------------------------
+  android:
+    name: 安卓构建与检查
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: 取代码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 安装 Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: true
+      - name: 安装 JDK 21 并缓存 Gradle
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: |
+            apps/android/**/*.gradle.kts
+            apps/android/gradle/libs.versions.toml
+            apps/android/gradle/wrapper/gradle-wrapper.properties
+      - name: 安装 Android SDK 36
+        run: |
+          sdkmanager --licenses < <(yes) >/dev/null
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: 校验契约、图标与令牌生成物
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm android:generate:check
+          git diff --exit-code
+      - name: 安卓静态检查、真实 Room 与共享协议 JUnit、APK
+        working-directory: apps/android
+        run: ./gradlew --no-daemon ktlintCheck detekt testDebugUnitTest :core:contracts-generated:test assembleDebug
+      - name: 验证安卓测试实际执行且没有跳过
+        run: node .github/scripts/check-android-test-report.mjs
+      - name: 保存可安装的调试 APK 与测试报告
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: weiban-android-debug
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            apps/android/app/build/outputs/apk/debug/*.apk
+            apps/android/**/build/test-results/**/*.xml

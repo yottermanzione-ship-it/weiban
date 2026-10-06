@@ -40,6 +40,18 @@ React19/Vite/PWA用户端，真实登录/注册、首次资料、头像裁剪、
 
 交付19份共享JSON协议向量、跨端格式schema、Vitest运行器和可持久化纯状态机；完整比较状态/动作、重启实际JSON往返、错误逐步原子回滚。契约2.1补MessagePage覆盖范围/隐藏清空负记录，L1后端必须填充。撤回ID/时间负记录防止先到撤回被迟到历史正文或引用复原；清空也清除存量/迟到引用。修复接收端unknownTypeFallback二次解析丢originalType（Q-012为开发自测发现，独立复核待执行）。驱动与服务端装配约定见docs/web/message-sync-core.md。
 
-最终真实PG测试31文件334条全通过，无跳过；格式/lint/完整类型检查通过，最后核心变更另跑contracts与client-core类型检查。两端生产浏览器回归5+6组全通过。导出340定义/85接口/70路径，无opaque警告。T-033发布后GitHub CI失败定位到演练文件创建时444被umask077收紧为400，宿主CI UID1001与容器UID1000不同；显式chmod444，宿主私有父目录仍700。实际容器复现400读取失败/444通过；修正后完整生产镜像、迁移、双域HTTP、age加密备份与空卷恢复、非空目标拒绝自动演练通过。新提交CI待检查，不能据本机通过宣称CI已通过。
+最终真实PG测试31文件334条全通过，无跳过；格式/lint/完整类型检查通过，最后核心变更另跑contracts与client-core类型检查。两端生产浏览器回归5+6组全通过。导出340定义/85接口/70路径，无opaque警告。T-033发布后GitHub CI失败定位到演练文件创建时444被umask077收紧为400，宿主CI UID1001与容器UID1000不同；显式chmod444，宿主私有父目录仍700。实际容器复现400读取失败/444通过；修正后完整生产镜像、迁移、双域HTTP、age加密备份与空卷恢复、非空目标拒绝自动演练通过。远端1715414b67ae42e1d4cd06c6c819363786005235的push运行37409862996与PR运行37409866151均success，已读取结果。
 
 安卓SDK36、build-tools36/JDK21/Gradle8.13准备完成，正在T-035建立原生底座；接下来安卓契约生成、Keystore/Room/网络、同文件JUnit协议运行器与L0原生页面，再推进L1。自测不等于独立验收，产品仍未完成。
+
+## T-035 安卓原生底座（2026-10-06）
+
+实现独立Kotlin/Compose Gradle工程、513命名契约定义/85接口生成、原Schema运行时验证、设计令牌与Phosphor原生矢量图；OkHttp与Keystore AES-GCM令牌、账号事务Room缓存/迟到响应隔离、独立Kotlin状态机和同19份共享JSON的JUnit运行器。原生登录注册/首次资料、512像素EXIF头像裁剪上传与已存头像、三类模型/默认选择、余额/预算/流水精确Long微元、账号主题。GitHub安卓job附debug APK与JUnit报告14天，Windows开发说明已写。
+
+原生Compose登录成功/失败、首次资料保存→真实HTTP/Room/账号刷新/主题；Room账号切换/慢响应/离线/重启、未知JSON/畸形已知类型/金额范围、API禁跳转/会话失效、头像API26原生图形及不可信媒体链接等合计41条JUnit全通过、零跳过，其中19协议向量。全仓pnpm check再次通过：31文件334测试/真实PG、格式/lint/类型/tokens。集中版本目录+提交Gradle依赖锁、编译警告视为错误、ktlint/detekt与生成无差异检查通过。实际APK app.weiban min26/target36、debug签名校验通过，APK本机SHA256见T-035任务卡。T-035发布后CI还需读取结果；本机通过不能代替它。
+
+复核规范修正：安卓不能按任意HTTP401退出；现仅有效unauthenticated清会话，invalid_credentials/未知或畸形错误不误删账号缓存。网络响应包含原Schema校验，已知类型缺字段不降级；媒体凭证只同源同路径/不附bearer。静态检查发现的大函数已拆开，协议完整分派与明确边界只局部带理由豁免，未使用baseline。
+
+新增依赖/许可证完整表在docs/android/foundation.md：Kotlin/serialization/coroutines、AGP/AndroidX/Room/WorkManager/KSP、Gradle、OkHttp/MockWebServer为Apache-2.0；Phosphor/Robolectric/ktlint插件为MIT，detekt为Apache-2.0；JUnit4 EPL-1.0仅开发测试，项目工程规范10.7明确要求JUnit。
+
+仍不是完整产品或独立QA：聊天/通讯录/发现当前仅入口；Room协议驱动与WorkManager、HTTP/WS、两端聊天/好友/AI回复/推送在L1接续。真机Keystore/IME/无障碍/国产厂商保活与正式签名另验。下一项T-036每用户更新日志与WebSocket，然后聊天/联系人/AI链路；用户已再次要求继续，不停在本里程碑。

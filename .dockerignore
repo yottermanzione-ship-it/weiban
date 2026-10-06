@@ -15,6 +15,7 @@
 **/generated
 secrets
 backups
+apps/android
 *.pem
 *.key
 *.p12
