@@ -4,6 +4,7 @@
  */
 import { Global, Module, type DynamicModule } from '@nestjs/common';
 import { BillingModule } from './modules/billing/index.js';
+import { RealtimeModule } from './modules/realtime/index.js';
 import { IdentityModule } from './modules/identity/index.js';
 import { CharactersModule, CHARACTER_READ_PORT } from './modules/characters/index.js';
 import { PolicyModule } from './modules/policy/index.js';
@@ -23,6 +24,7 @@ export class AppModule {
       imports: [
         PlatformModule.forRoot(options),
         IdentityModule,
+        RealtimeModule,
         BillingModule,
         GatewayCompositionModule,
         MediaModule,

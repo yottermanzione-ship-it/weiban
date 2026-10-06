@@ -944,8 +944,8 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
       await dispatchAll();
       await vi.waitFor(
         async () => {
-          // 登记了删除清单的模块：chat（假模块）、billing（T-023）、model_access（T-027）各回报一次
-          expect(await outbox('platform.user_data_purged', web.user.userId)).toHaveLength(5);
+          // 所有非identity删除清单各回报一次；T-036新增realtime。
+          expect(await outbox('platform.user_data_purged', web.user.userId)).toHaveLength(6);
         },
         { timeout: 20_000, interval: 200 },
       );
@@ -959,6 +959,7 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
         'chat',
         'media',
         'model_access',
+        'realtime',
       ]);
       expect(await q.userById(web.user.userId)).toBeNull();
       expect(await commands.verifyPurged(web.user.userId)).toEqual(

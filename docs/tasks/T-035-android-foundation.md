@@ -1,6 +1,6 @@
 # T-035 安卓原生底座（D-L0-18/19）
 
-来源：总经理持续开发授权；分支 dev/codex-product-continuation。按 ADR-0011、repo-structure 第5节、engineering-standards 第10节实现。2026-10-06：开发实现与本机自测完成，GitHub CI 发布后检查；独立质量验收待另一位审查者执行。
+来源：总经理持续开发授权；分支 dev/codex-product-continuation。按 ADR-0011、repo-structure 第5节、engineering-standards 第10节实现。2026-10-06：开发实现与本机自测完成，GitHub push/PR CI 已核验通过；独立质量验收待另一位审查者执行。
 
 - [x] Gradle 分模块、SDK36/min26/JDK21/字节码17、校验SHA256的wrapper、集中版本目录与提交依赖锁；编译警告视为错误，ktlint/detekt。
 - [x] 实际JSON Schema生成Kotlin，513命名定义与85接口；接收端未知类型/必填可空/常量输出/往返校验；令牌与Phosphor矢量图生成无差异。
@@ -15,3 +15,5 @@
 代码、依赖/许可证及限制见 [安卓实现说明](../android/foundation.md)，操作见 [Windows开发](../ops/android-development.md)。JUnit4 EPL-1.0仅测试使用，遵循工程规范第10.7条明确选定的JUnit；其他新增库与工具许可证逐项登记。
 
 L1接续：Room同步状态持久化/HTTP与WS驱动、WorkManager发件重试、聊天和角色/好友、推送。当前这部分是入口/存储骨架，不能将纯状态机向量通过视为聊天端到端完成。真机Keystore、IME、厂商推送/保活及独立验收另执行；产品仍未完成。
+
+修正后的远端9b33566880706aa54a46a8279dde2c9f770e0b0f：push37445108581与PR37445113532均success，安卓/check任务和APK/测试报告上传成功，已读取结果。首轮SDK路径exit127经修正后重跑通过。

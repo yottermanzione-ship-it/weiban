@@ -48,6 +48,7 @@ import {
     { provide: IDENTITY_DIRECTORY_PORT, useExisting: SettingsService },
   ],
   exports: [
+    SESSION_VERIFIER,
     IDENTITY_READ_PORT,
     IDENTITY_ACCOUNT_STATUS_PORT,
     IDENTITY_DIRECTORY_PORT,

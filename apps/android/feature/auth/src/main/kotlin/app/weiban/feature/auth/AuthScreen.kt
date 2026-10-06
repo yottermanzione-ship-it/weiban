@@ -85,7 +85,7 @@ private class AuthState(
                 "device",
                 buildJsonObject {
                     put("platform", "android")
-                    put("name", Build.MODEL.take(80))
+                    put("name", Build.MODEL.take(64))
                     put("appVersion", "0.1.0")
                     put("timeZone", ZoneId.systemDefault().id)
                 },

@@ -9,6 +9,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
   AccountStatus,
+  Tx,
   AppTheme,
   IdentityAccountStatusPort,
   IdentityDirectoryPort,
@@ -25,6 +26,7 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   AppError,
+  asDbTx,
   CLOCK,
   DATABASE,
   OUTBOX,
@@ -276,11 +278,10 @@ export class SettingsService
   // ---------- IdentityAccountStatusPort（契约 1.2） ----------
 
   /** 账号状态：active / deleting；账号不存在（已删除或从未存在）返回 null。 */
-  async getAccountStatus(userId: string): Promise<AccountStatus | null> {
-    const [row] = await this.database.db
-      .select({ status: users.status })
-      .from(users)
-      .where(eq(users.id, userId));
+  async getAccountStatus(userId: string, transaction?: Tx): Promise<AccountStatus | null> {
+    const db = transaction ? asDbTx(transaction).db : this.database.db;
+    const query = db.select({ status: users.status }).from(users).where(eq(users.id, userId));
+    const [row] = await (transaction ? query.for('share') : query);
     return (row?.status as AccountStatus | undefined) ?? null;
   }
 
