@@ -86,7 +86,7 @@ export function unknownTypeFallback(
   return (value: unknown): unknown => {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
     const type = (value as { type?: unknown }).type;
-    if (typeof type !== 'string' || known.has(type)) return value;
+    if (typeof type !== 'string' || known.has(type) || type === UNSUPPORTED) return value;
     return fallback(type);
   };
 }

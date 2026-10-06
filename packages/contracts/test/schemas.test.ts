@@ -85,8 +85,8 @@ const adminCharacter = {
 };
 
 describe('契约版本', () => {
-  it('为 2.0', () => {
-    expect(CONTRACT_VERSION).toBe('2.0');
+  it('为 2.1', () => {
+    expect(CONTRACT_VERSION).toBe('2.1');
   });
 });
 
@@ -611,5 +611,32 @@ describe('v1.3（T-026）', () => {
 
   it('通知种类新增 admin_alert', () => {
     expect(NotificationPayload.shape.kind.parse('admin_alert')).toBe('admin_alert');
+  });
+});
+
+describe('接收降级可重复解析（T-034）', () => {
+  it('未知消息与更新从缓存再次解析，不丢失originalType', () => {
+    const message = Message.parse({
+      ...textMessage,
+      content: { type: 'future-hologram', payload: 'discarded' },
+    });
+    expect(message.content).toEqual({ type: 'unsupported', originalType: 'future-hologram' });
+    expect(Message.parse(JSON.parse(JSON.stringify(message)))).toEqual(message);
+    const update = UserUpdate.parse({
+      updateSeq: 1,
+      occurredAt: NOW,
+      type: 'future-update',
+      data: { payload: 'discarded' },
+    });
+    expect(update).toEqual({
+      updateSeq: 1,
+      occurredAt: NOW,
+      type: 'unsupported',
+      data: { originalType: 'future-update' },
+    });
+    expect(UserUpdate.parse(JSON.parse(JSON.stringify(update)))).toEqual(update);
+    expect(Message.safeParse({ ...textMessage, content: { type: 'unsupported' } }).success).toBe(
+      false,
+    );
   });
 });

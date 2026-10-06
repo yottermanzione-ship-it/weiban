@@ -21,11 +21,17 @@ cleanup() {
 }
 trap cleanup EXIT
 node --input-type=module - "$temporary" <<'JS'
-import {mkdirSync,writeFileSync} from 'node:fs';
+import {mkdirSync,writeFileSync,chmodSync} from 'node:fs';
 import {randomBytes} from 'node:crypto';
 const dir=process.argv[2]; mkdirSync(dir+'/secrets',{mode:0o700});
 const password=randomBytes(24).toString('hex');
-for(const [name,value] of Object.entries({'postgres-password':password,'database-url':`postgres://weiban:${password}@postgres:5432/weiban`,kek:randomBytes(32).toString('base64')})) writeFileSync(dir+'/secrets/'+name,value,{mode:0o444});
+for(const [name,value] of Object.entries({'postgres-password':password,'database-url':`postgres://weiban:${password}@postgres:5432/weiban`,kek:randomBytes(32).toString('base64')})) {
+  const path=dir+'/secrets/'+name;
+  writeFileSync(path,value,{mode:0o400});
+  // umask 077 会把创建时的444变成400；显式chmod让容器UID1000也能读取。
+  // 文件只读，宿主父目录仍700，其他宿主用户不能遍历临时秘密目录。
+  chmodSync(path,0o444);
+}
 writeFileSync(dir+'/runtime.env',`SECRETS_DIR=${dir}/secrets\nWEB_HOST=app.localhost\nWEB_DOMAIN=http://app.localhost\nADMIN_DOMAIN=http://admin.localhost\nBILLING_PLATFORM_DAILY_CAP_MICROS=20000000\nAPP_IMAGE=weiban-deploy-app:selftest\nEDGE_IMAGE=weiban-deploy-edge:selftest\n`,{mode:0o600});
 JS
 build_ca=()
