@@ -117,10 +117,16 @@ class MeScreenTest {
                     .fetchSemanticsNodes()
                     .isEmpty()
         }
+        compose.onNodeWithText("TA 该怎么称呼你？").assertExists()
+        compose.onNodeWithText("选择并裁剪头像").assertDoesNotExist()
         compose.onNodeWithText("昵称").performTextInput("原生昵称")
-        compose.onNodeWithText("保存").performScrollTo().performClick()
+        compose.onNodeWithText("下一步").performScrollTo().performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("账号：native_user").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("原生昵称").assertIsDisplayed()
+        assertTrue(
+            repository.auth.value!!
+                .user.profileCompleted,
+        )
         assertEquals("pink", theme)
         val patch = requests.single { it.method == "PATCH" }
         assertEquals("/api/v1/me/profile", patch.path)

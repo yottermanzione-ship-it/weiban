@@ -19,6 +19,7 @@ import { JOB_QUEUE, type JobQueue } from '../../src/platform/index.js';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../../src/app.module.js';
 import { configureHttpApp } from '../../src/main.js';
+import { SettingsService } from '../../src/modules/identity/testing.js';
 import { IdentityCommands } from '../../src/modules/identity/index.js';
 import { BillingAdminService } from '../../src/modules/billing/testing.js';
 import { newId, TestClock, loadConfig, createLogger } from '../../src/platform/index.js';
@@ -64,10 +65,13 @@ const admin = await commands.createAdmin('browser_admin', 'correct horse battery
 for (const [name, balance] of [
   ['browser_user', 50_000_000],
   ['browser_other', 1_000_000],
+  ['browser_first', 1_000_000],
 ] as const) {
   const user = await commands.createAdmin(name, 'correct horse battery');
   if (name === 'browser_user') chatUser = user;
   await commands.setRole(name, 'user');
+  if (name === 'browser_other')
+    await app.get(SettingsService).updateProfile(user, { nickname: '其他用户' });
   await app.get(BillingAdminService).adjust(admin, user, {
     direction: 'grant',
     amountMicros: balance,

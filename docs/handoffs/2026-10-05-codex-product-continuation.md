@@ -180,3 +180,17 @@ T041原生实时/后台检查点已发布并核验CI：本机f6105216472fc7e75fb
 构建依赖使用已有版本目录activity-compose1.11.0（AndroidX Apache-2.0）；共用设计模块新增直接声明，Gradle生成该模块及依赖它的auth模块锁文件，版本与应用/聊天原有1.11.0一致。证据/tmp/weiban-t041-avatar-edit-native3.log（生成锁）与/tmp/weiban-t041-avatar-edit-native4.log（正常锁定模式全部检查通过）及JUnit XML、/tmp/weiban-t041-avatar-edit-generated1.log、/tmp/weiban-t041-avatar-edit-format-root1.log。初轮运行目录错误、手动中断轮次和移动解码函数后的遗漏导入编译失败不计为通过，均已纠正；没有放宽阈值或删除原测试。
 
 继续首次引导、聊天内头像/其余头像场景、拍照与手势裁剪、通知PNG、原生推送及管理员跨站点击；随后L2–L7。独立QA与真实设备/厂商验证仍待执行，产品未完成。
+
+
+原生私有头像编辑检查点已发布并核验CI：本机f5d7012ada954e5631edf2e2d4dd3d0c241d73a9，远端1c4d7b3a6b0d196592cd3878c6434148908d560a，同tree1f60d41ba95612af37b93eeaef5aa8f99a5ea701。push37596450788、PR37596458152以及各自check/Android job均最终success、结果已读取。push新源码生产构建、14迁移、加密备份/空目标恢复通过。后续首次引导是另一个尚待验证的新工作树，不借用这些CI。
+
+
+## T041 首次昵称与角色引导（2026-10-07）
+
+两端首次资料聚焦必填昵称，头像/生日/城市等可选资料折叠，提供返回登录和下一步，不要求配置模型或提前提示余额。昵称保存后进入角色广场引导，顶部不可关闭提示；网页在同一路径内展开选择资料/申请，不额外进入角色资料路由。待通过申请显示真实pending状态，不创建假会话；联系人更新日志持久保存后，以服务端给出的conversationId自动进入聊天。安卓导航保存引导状态，聊天中隐藏主标签栏；网页刷新引导URL仍保留模式，资料未完成时统一回昵称页。网页资料提交/完成跳转核对owner，添加前核对当前驱动并等待持久同步。
+
+本机开发自测：整仓50文件451条真实PG测试、格式/依赖边界/完整类型/tokens通过；安卓79条JUnit零跳过、ktlint/detekt/全部单元测试/APK通过。新增原生实际HTTP/Room/Compose等待申请→接收contact.upserted→保存日志→用服务器ID跳转；首次昵称测试验证必填表单/可选折叠及资料完成。网页生产构建、13组及后台7组真实浏览器通过，含真实新用户昵称保存/刷新引导/实际添加pending/null会话/重复选择保持等待，以及已有真实会话的自动跳转。原生使用MockWebServer，网页新申请测试只证明pending分支与已有会话跳转，不宣称新申请到真实服务端首次AI回复的完整整链路；系统通知展示仍使用原夹具。
+
+证据/tmp/weiban-t041-onboarding-root1.log、/tmp/weiban-t041-onboarding-native2.log及JUnit XML、/tmp/weiban-t041-onboarding-web-build1.log、/tmp/weiban-t041-onboarding-web2.log、/tmp/weiban-t041-onboarding-admin1.log、/tmp/weiban-t041-onboarding-generated1.log（514定义/85操作/图标/tokens无差异）。首轮原生测试在资料加载前点击禁用按钮、首轮网页测试将“正在登录”的按钮变化当登录完成，均已改为等待真实完成状态；不增加超时或削弱旧回归断言，失败轮次不计通过。
+
+首次流程继续补iPhone主屏幕引导/设置入口和完整冷启动恢复及视觉/手势验收；头像其他场景、拍照与手势裁剪、原生推送/通知PNG、管理员跨站点击继续，然后L2–L7。发布后另读本轮CI；开发自测不等于独立QA，产品未完成。

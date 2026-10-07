@@ -18,7 +18,7 @@ import kotlinx.serialization.json.*
 
 private class MeState(
     val repository: SessionRepository,
-    firstProfile: Boolean,
+    val firstProfile: Boolean,
     val onTheme: (String) -> Unit,
     private val scope: CoroutineScope,
 ) {
@@ -97,6 +97,7 @@ private class MeState(
                 .padding(WbSpace.S5),
             verticalArrangement = Arrangement.spacedBy(WbSpace.S5),
         ) {
+            if (firstProfile) TextButton(onClick = onLogout) { Text("‹ 返回登录") }
             if (page != "me" && !firstProfile) {
                 TextButton(onClick = {
                     page = "me"
@@ -130,8 +131,6 @@ private class MeState(
 
 @Composable private fun ProfilePage(state: MeState) =
     with(state) {
-        SavedAvatar(repository, profile?.avatarMediaId)
-        AvatarPicker(repository) { perform { load() } }
         OutlinedTextField(
             nickname,
             { nickname = it },
@@ -139,6 +138,16 @@ private class MeState(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
+        var details by remember { mutableStateOf(!firstProfile) }
+        TextButton(onClick = { details = !details }) { Text("补充更多资料（可选）") }
+        if (details) ProfileDetails(state)
+        ProfileSave(state)
+    }
+
+@Composable private fun ProfileDetails(state: MeState) =
+    with(state) {
+        SavedAvatar(repository, profile?.avatarMediaId)
+        AvatarPicker(repository) { perform { load() } }
         OutlinedTextField(city, { city = it }, label = { Text("城市（可不填）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(birthday, {
             birthday = it
@@ -154,7 +163,6 @@ private class MeState(
             }
         }
         OutlinedTextField(about, { about = it }, label = { Text("个性签名") }, modifier = Modifier.fillMaxWidth())
-        ProfileSave(state)
     }
 
 @Composable private fun ProfileSave(state: MeState) =
@@ -178,7 +186,7 @@ private class MeState(
                 load()
                 page = "me"
             }
-        }) { Text("保存") }
+        }) { Text(if (firstProfile) "下一步" else "保存") }
     }
 
 @Composable private fun BudgetPage(state: MeState) =
@@ -361,7 +369,7 @@ private fun pageTitle(
     firstProfile: Boolean,
 ): String =
     when (page) {
-        "profile" -> if (firstProfile) "先介绍一下你" else "我的资料"
+        "profile" -> if (firstProfile) "TA 该怎么称呼你？" else "我的资料"
         "wallet" -> "余额与账单"
         "models" -> "模型选择"
         "theme" -> "主题"

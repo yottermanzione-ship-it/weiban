@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import {
+  Link,
+  NavLink,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useSearchParams,
+} from 'react-router-dom';
 import { ChatsCircle, AddressBook, Compass, User, CaretLeft } from '@phosphor-icons/react';
 import { IdentityEndpoints } from '@weiban/contracts';
 import { ConversationListPage } from '../features/conversation-list.js';
@@ -19,6 +27,7 @@ import { UpdatePrompt } from './update-prompt.js';
 function Shell() {
   const auth = useAuth();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [offline, setOffline] = useState(!navigator.onLine);
   useEffect(() => {
     const update = () => setOffline(!navigator.onLine);
@@ -55,32 +64,42 @@ function Shell() {
       </main>
     );
   if (!auth.session) return <AuthPage />;
+  const firstProfile = !auth.session.user.profileCompleted;
+  const onboarding = firstProfile || searchParams.get('onboarding') === '1';
+  if (firstProfile && location.pathname !== '/profile') return <Navigate to="/profile" replace />;
   const roots = ['/chat', '/contacts', '/discover', '/me'];
   return (
     <div
       className="app-shell"
       key={`${auth.session.user.userId}:${auth.session.session.sessionId}`}
     >
+      {firstProfile && (
+        <header className="topbar">
+          <button onClick={() => void auth.logout()}>‹ 返回登录</button>
+        </header>
+      )}
       {offline && (
         <div role="status" className="offline">
           网络暂不可用，正在显示本机保存的内容
         </div>
       )}
-      {!roots.includes(location.pathname) && !location.pathname.startsWith('/chat/') && (
-        <header className="topbar">
-          <Link
-            to={
-              ['/wallet', '/models', '/ledger', '/prices'].includes(location.pathname)
-                ? '/services'
-                : '/me'
-            }
-            aria-label="返回"
-          >
-            <CaretLeft size={24} />
-            返回
-          </Link>
-        </header>
-      )}
+      {!onboarding &&
+        !roots.includes(location.pathname) &&
+        !location.pathname.startsWith('/chat/') && (
+          <header className="topbar">
+            <Link
+              to={
+                ['/wallet', '/models', '/ledger', '/prices'].includes(location.pathname)
+                  ? '/services'
+                  : '/me'
+              }
+              aria-label="返回"
+            >
+              <CaretLeft size={24} />
+              返回
+            </Link>
+          </header>
+        )}
       <Routes>
         <Route
           path="/"
@@ -104,7 +123,7 @@ function Shell() {
         <Route path="/characters/:characterId" element={<CharacterPage />} />
         <Route path="*" element={<Navigate to="/me" replace />} />
       </Routes>
-      {!location.pathname.startsWith('/chat/') && (
+      {!onboarding && !location.pathname.startsWith('/chat/') && (
         <nav className="tabbar" aria-label="主导航">
           {(
             [

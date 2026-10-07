@@ -6,16 +6,25 @@ async function login(page: Page, name = 'browser_user') {
   await page.getByLabel('微伴号').fill(name);
   await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
   await page.getByRole('button', { name: '登录', exact: true }).click();
-  await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+  await expect(
+    page
+      .getByRole('navigation', { name: '主导航' })
+      .or(page.getByRole('heading', { name: 'TA 该怎么称呼你？' })),
+  ).toBeVisible();
 }
+
 test('真实API：登录、资料、微元预算、主题、刷新与退出清本地数据', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await login(page);
-  await expect(page.getByRole('heading', { name: '我的资料' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'TA 该怎么称呼你？' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '主导航' })).toHaveCount(0);
   await page.getByLabel('昵称', { exact: true }).fill('浏览器用户');
-  await page.getByRole('button', { name: '保存', exact: true }).click();
-  await expect(page.getByRole('status')).toHaveText('已保存');
+  await page.getByRole('button', { name: '下一步', exact: true }).click();
+  await expect(page.getByText('先加一个你喜欢的 TA 吧')).toBeVisible();
+  await page.getByRole('button', { name: '选择测试陪伴角色', exact: true }).click();
+  await expect(page).toHaveURL(/\/chat\//);
+  await page.goto('/me');
   await page.getByRole('link', { name: '我', exact: true }).click();
   await page.getByRole('link', { name: '服务', exact: true }).click();
   await page.getByRole('link', { name: '余额 查看余额与明细' }).click();

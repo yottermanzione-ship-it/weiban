@@ -21,15 +21,22 @@ import java.util.Locale
     owner: OwnerRecord,
     startAtPlaza: Boolean,
     onOpenConversation: (String) -> Unit,
+    onboarding: Boolean = false,
 ) {
     var plaza by rememberSaveable(owner.sessionId) { mutableStateOf(startAtPlaza) }
     var selected by rememberSaveable(owner.sessionId) { mutableStateOf<String?>(null) }
     val snapshot by runtime.snapshot.collectAsState()
     val state = if (snapshot.owner == owner) snapshot.state else SyncEngine.freshState()
+    val open by rememberUpdatedState(onOpenConversation)
+    val conversationId = state.contacts.find { it.characterId == selected }?.conversationId
+    LaunchedEffect(onboarding, owner, selected, conversationId) {
+        if (onboarding && conversationId != null) open(conversationId)
+    }
     BackHandler(selected != null || plaza != startAtPlaza) {
         if (selected != null) selected = null else plaza = startAtPlaza
     }
     Column(Modifier.fillMaxSize()) {
+        if (onboarding) Text("先加一个你喜欢的 TA 吧", Modifier.padding(WbSpace.S5))
         if (selected != null) {
             TextButton(onClick = { selected = null }) { Text("返回") }
             CharacterScreen(repository, runtime, owner, state, selected!!, onOpenConversation)

@@ -73,3 +73,5 @@ export class IdentityTestQueries {
 }
 export { LoginThrottle } from './infra/login-throttle.js';
 export { throttleKey } from './domain/rules.js';
+
+export { SettingsService } from './application/settings.js';

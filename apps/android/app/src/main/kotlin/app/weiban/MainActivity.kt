@@ -105,11 +105,14 @@ private fun revokeSession(
 private class NavigationUi(
     initialTab: String = "微伴",
     initialConversation: String? = null,
+    initialOnboarding: Boolean = false,
 ) {
     var tab by mutableStateOf(initialTab)
     var conversationId by mutableStateOf(initialConversation)
+    var onboarding by mutableStateOf(initialOnboarding)
 
     fun open(id: String) {
+        onboarding = false
         conversationId = id
         tab = "微伴"
     }
@@ -117,8 +120,8 @@ private class NavigationUi(
     companion object {
         val saver =
             listSaver<NavigationUi, String>(
-                save = { listOf(it.tab, it.conversationId.orEmpty()) },
-                restore = { NavigationUi(it[0], it[1].ifBlank { null }) },
+                save = { listOf(it.tab, it.conversationId.orEmpty(), it.onboarding.toString()) },
+                restore = { NavigationUi(it[0], it[1].ifBlank { null }, it.getOrNull(2) == "true") },
             )
     }
 }
@@ -129,11 +132,14 @@ private class NavigationUi(
     onTheme: (String) -> Unit,
     onLogout: () -> Unit,
 ) {
-    val navigation = rememberSaveable(saver = NavigationUi.saver) { NavigationUi() }
+    val navigation = rememberSaveable(saver = NavigationUi.saver) { NavigationUi(initialOnboarding = !auth.user.profileCompleted) }
     if (!auth.user.profileCompleted) {
         MeScreen(runtime.repository, true, onTheme, onLogout)
+    } else if (navigation.onboarding) {
+        val owner = OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId)
+        RoleBrowser(runtime.repository, runtime.chat, owner, true, navigation::open, onboarding = true)
     } else {
-        Scaffold(bottomBar = { Tabs(navigation.tab) { navigation.tab = it } }) { padding ->
+        Scaffold(bottomBar = { if (navigation.conversationId == null) Tabs(navigation.tab) { navigation.tab = it } }) { padding ->
             Box(Modifier.padding(padding)) { SignedInPage(runtime, auth, navigation, onTheme, onLogout) }
         }
     }

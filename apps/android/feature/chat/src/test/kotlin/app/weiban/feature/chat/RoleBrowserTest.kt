@@ -31,6 +31,8 @@ class RoleBrowserTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val posts = ConcurrentLinkedQueue<AddContactRequestInput>()
     private val opened = ConcurrentLinkedQueue<String>()
+
+    @Volatile private var accepted = false
     private val firstId = "01920000-0000-7000-8000-00000000001a"
     private val secondId = "01920000-0000-7000-8000-00000000001b"
     private val conversationId = "01920000-0000-7000-8000-000000000099"
@@ -129,7 +131,21 @@ class RoleBrowserTest {
                 val path = request.requestUrl!!.encodedPath
                 return when {
                     path == "/api/v1/contacts" && request.method == "POST" -> addResponse(request)
-                    path == "/api/v1/sync/state" -> MockResponse().setBody("{\"latestUpdateSeq\":0}")
+                    path == "/api/v1/sync/state" -> MockResponse().setBody("{\"latestUpdateSeq\":${if (accepted) 1 else 0}}")
+                    path == "/api/v1/sync/updates" -> {
+                        val update =
+                            UserUpdateContactUpserted(
+                                1,
+                                "2026-10-07T03:00:00.000Z",
+                                data = UserUpdateContactUpsertedData(contact(secondId, false)),
+                            )
+                        MockResponse().setBody(
+                            api.json.encodeToString(
+                                SyncEndpointsGetUpdatesResponse.serializer(),
+                                SyncEndpointsGetUpdatesResponse(listOf(update), 1, false),
+                            ),
+                        )
+                    }
                     path == "/api/v1/characters/categories" -> MockResponse().setBody("{\"items\":[]}")
                     path == "/api/v1/characters" -> plaza(request)
                     path.startsWith(
@@ -216,5 +232,35 @@ class RoleBrowserTest {
         compose.onNodeWithText("发消息").performScrollTo().performClick()
         assertEquals(listOf(conversationId), opened.toList())
         assertTrue(posts.isEmpty())
+    }
+
+    @Test fun firstUseWaitsForAcceptedContactAndThenOpensServerConversation() {
+        compose.setContent { WeibanTheme { RoleBrowser(repository, runtime, owner, true, opened::add, onboarding = true) } }
+        compose.onNodeWithText("先加一个你喜欢的 TA 吧").assertExists()
+        compose.onNodeWithText("返回通讯录").assertDoesNotExist()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("纸飞机").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("下一页角色").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("星河").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hasText("星河") and !hasSetTextAction()).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("一起认识身边的世界").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("添加到通讯录").performScrollTo().performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("你们以前认识过").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("恢复旧记录").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("等待通过好友申请").fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(opened.isEmpty())
+        accepted = true
+        runBlocking { runtime.refresh(owner) }
+        compose.waitUntil(10_000) { opened.isNotEmpty() }
+        assertEquals(listOf(conversationId), opened.toList())
+        assertEquals(
+            conversationId,
+            runBlocking {
+                repository
+                    .loadSync(owner)!!
+                    .contacts
+                    .single()
+                    .conversationId
+            },
+        )
     }
 }

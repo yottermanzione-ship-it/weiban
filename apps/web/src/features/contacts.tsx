@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CharacterEndpoints, ContactsEndpoints } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
 import { useChat } from '../app/chat.js';
@@ -42,6 +42,9 @@ export function ContactsPage() {
   );
 }
 export function DiscoverPage() {
+  const [searchParams] = useSearchParams();
+  const onboarding = searchParams.get('onboarding') === '1';
+  const [selected, setSelected] = useState<string>();
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [cursor, setCursor] = useState<string>();
@@ -49,9 +52,24 @@ export function DiscoverPage() {
   const roles = useRemote(CharacterEndpoints.searchPlaza, {
     query: { q: search || undefined, cursor, limit: 50 },
   });
+  if (onboarding && selected)
+    return (
+      <main>
+        <p className="panel" role="note">
+          先加一个你喜欢的 TA 吧
+        </p>
+        <button onClick={() => setSelected(undefined)}>重新选择角色</button>
+        <CharacterPage id={selected} onboarding />
+      </main>
+    );
   return (
     <main>
       <h1 className="page-title">角色广场</h1>
+      {onboarding && (
+        <p className="panel" role="note">
+          先加一个你喜欢的 TA 吧
+        </p>
+      )}
       <form
         className="message-composer"
         onSubmit={(event) => {
@@ -70,16 +88,36 @@ export function DiscoverPage() {
       {roles.error && <p role="alert">{roles.error}</p>}
       {roles.loading && <p role="status">正在读取角色…</p>}
       <div className="panel rows">
-        {roles.data?.items.map((role) => (
-          <Link key={role.characterId} to={`/characters/${role.characterId}`} className="role-row">
-            <CharacterAvatar id={role.characterId} profile={role} />
-            <strong>{role.name}</strong>
-            <small>
-              {role.tagline}
-              {role.added && ' · 已添加'}
-            </small>
-          </Link>
-        ))}
+        {roles.data?.items.map((role) =>
+          onboarding ? (
+            <button
+              key={role.characterId}
+              className="role-row"
+              aria-label={`选择${role.name}`}
+              onClick={() => setSelected(role.characterId)}
+            >
+              <CharacterAvatar id={role.characterId} profile={role} />
+              <strong>{role.name}</strong>
+              <small>
+                {role.tagline}
+                {role.added && ' · 已添加'}
+              </small>
+            </button>
+          ) : (
+            <Link
+              key={role.characterId}
+              to={`/characters/${role.characterId}`}
+              className="role-row"
+            >
+              <CharacterAvatar id={role.characterId} profile={role} />
+              <strong>{role.name}</strong>
+              <small>
+                {role.tagline}
+                {role.added && ' · 已添加'}
+              </small>
+            </Link>
+          ),
+        )}
       </div>
       {!roles.loading && roles.data?.items.length === 0 && <p className="empty">没有找到角色</p>}
       {previous.length > 0 && (
@@ -107,23 +145,34 @@ export function DiscoverPage() {
     </main>
   );
 }
-export function CharacterPage() {
-  const { characterId = '' } = useParams();
+export function CharacterPage({
+  id,
+  onboarding = false,
+}: { id?: string; onboarding?: boolean } = {}) {
+  const params = useParams();
+  const characterId = id ?? params.characterId ?? '';
+  const navigate = useNavigate();
   const profile = useRemote(CharacterEndpoints.getProfile, { params: { characterId } });
-  const { state } = useChat();
+  const { state, assertOwner, synchronize } = useChat();
   const contact = state.contacts.find((item) => item.characterId === characterId);
   const [greeting, setGreeting] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [restore, setRestore] = useState(false);
+  useEffect(() => {
+    if (onboarding && state.initialized && contact?.conversationId)
+      navigate(`/chat/${contact.conversationId}`, { replace: true });
+  }, [onboarding, state.initialized, contact?.conversationId, navigate]);
   async function add(restoreMode?: 'restore' | 'fresh') {
     setPending(true);
     setError('');
     try {
+      assertOwner();
       await api.call(ContactsEndpoints.add, {
         body: { characterId, greeting: greeting || null, restoreMode },
       });
+      await synchronize();
       setRestore(false);
       setMessage('已发送好友申请，请稍等 TA 通过');
       profile.refresh();
@@ -134,8 +183,9 @@ export function CharacterPage() {
       setPending(false);
     }
   }
+  const Content = onboarding ? 'section' : 'main';
   return (
-    <main>
+    <Content>
       <h1 className="page-title">{contact?.remark || profile.data?.name || '角色资料'}</h1>
       {profile.data && (
         <div className="panel stack">
@@ -176,8 +226,10 @@ export function CharacterPage() {
           </button>
         </form>
       )}
-      {contact && <ContactAvatarEditor key={characterId} characterId={characterId} />}
-      {contact?.conversationId && (
+      {contact && !onboarding && (
+        <ContactAvatarEditor key={characterId} characterId={characterId} />
+      )}
+      {!onboarding && contact?.conversationId && (
         <Link to={`/chat/${contact.conversationId}/settings`}>设置备注和头像</Link>
       )}
       {restore && (
@@ -191,6 +243,6 @@ export function CharacterPage() {
           </button>
         </div>
       )}
-    </main>
+    </Content>
   );
 }
