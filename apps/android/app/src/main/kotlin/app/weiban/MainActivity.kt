@@ -173,7 +173,7 @@ private suspend fun finishOnboarding(
     val owner = OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId)
     when (navigation.tab) {
         "我" -> MeScreen(runtime.repository, onTheme = onTheme, onLogout = onLogout)
-        "微伴" -> ChatScreen(runtime.repository, runtime.chat, owner, navigation.conversationId) { navigation.conversationId = null }
+        "微伴" -> ChatScreen(runtime.repository, runtime.chat, owner, navigation.conversationId) { navigation.conversationId = it }
         else -> key(navigation.tab) { RoleBrowser(runtime.repository, runtime.chat, owner, navigation.tab == "发现", navigation::open) }
     }
 }

@@ -23,7 +23,7 @@ import kotlinx.serialization.json.*
     runtime: ChatRuntime,
     owner: OwnerRecord,
     openConversationId: String? = null,
-    onOpened: () -> Unit = {},
+    onConversationChanged: (String?) -> Unit = {},
 ) {
     val snapshot by runtime.snapshot.collectAsState()
     val state = if (snapshot.owner == owner) snapshot.state else SyncEngine.freshState()
@@ -33,20 +33,28 @@ import kotlinx.serialization.json.*
     LaunchedEffect(openConversationId) {
         if (openConversationId != null) {
             conversationId = openConversationId
-            onOpened()
         }
     }
     var information by rememberSaveable(conversationId) { mutableStateOf(false) }
-    BackHandler(conversationId != null) { if (information) information = false else conversationId = null }
-    val selected = state.conversations.find { it.conversationId == conversationId }
+    val changed by rememberUpdatedState(onConversationChanged)
+    val select: (String?) -> Unit = { id ->
+        conversationId = id
+        changed(id)
+    }
+    BackHandler(conversationId != null) { if (information) information = false else select(null) }
+    val activeConversationId = conversationId
+    val selected = state.conversations.find { it.conversationId == activeConversationId }
+    LaunchedEffect(state.initialized, activeConversationId, selected?.conversationId) {
+        if (state.initialized && activeConversationId != null && selected == null) select(null)
+    }
     Column(Modifier.fillMaxSize()) {
         if (!online) Text(error ?: "正在连接…", Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.bodySmall)
         if (selected == null) {
-            ConversationList(repository, owner, state) { conversationId = it }
+            ConversationList(repository, owner, state, select)
         } else if (information) {
-            ChatInformation(repository, runtime, owner, state, selected, { information = false }) { conversationId = null }
+            ChatInformation(repository, runtime, owner, state, selected, { information = false }) { select(null) }
         } else {
-            ConversationView(repository, runtime, owner, state, selected, { information = true }) { conversationId = null }
+            ConversationView(repository, runtime, owner, state, selected, { information = true }) { select(null) }
         }
     }
 }

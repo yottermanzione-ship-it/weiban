@@ -1,7 +1,15 @@
 package app.weiban.feature.chat
 
 import android.content.Context
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -85,8 +93,10 @@ class ChatScreenTest {
     }
 
     @Test fun actualComposeOfflineSendCommitsRoomBeforeClearingAndSurvivesRestart() {
-        compose.setContent { WeibanTheme { ChatScreen(repository, runtime, owner) } }
+        compose.setContent { NavigationHost() }
+        compose.onNodeWithText("主导航").assertExists()
         compose.onNodeWithText("角色", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("主导航").assertDoesNotExist()
         compose.onNode(hasSetTextAction()).performTextInput("原生离线消息")
         compose.onNodeWithText("发送", useUnmergedTree = true).performClick()
         compose.waitUntil(10_000) { runBlocking { repository.loadSync(owner)?.outbox?.size == 1 } }
@@ -112,5 +122,39 @@ class ChatScreenTest {
                 .body.clientMsgId,
         )
         compose.onNodeWithText("原生离线消息").assertExists()
+        compose.onNodeWithText("返回", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("主导航").assertExists()
+    }
+
+    @Test fun externalConversationAndStateRestoreKeepTabsHiddenUntilExplicitBack() {
+        val id =
+            runtime.snapshot.value.state.conversations
+                .first()
+                .conversationId
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { NavigationHost(id) }
+        compose.onNodeWithText("发送", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("主导航").assertDoesNotExist()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("发送", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("主导航").assertDoesNotExist()
+        compose.onNodeWithText("聊天信息", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("主导航").assertDoesNotExist()
+        compose.onNodeWithText("返回聊天", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("发送", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("主导航").assertDoesNotExist()
+        compose.onNodeWithText("返回", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("主导航").assertExists()
+    }
+
+    @Composable private fun NavigationHost(initialConversation: String? = null) {
+        var selected by rememberSaveable { mutableStateOf(initialConversation) }
+        WeibanTheme {
+            Scaffold(bottomBar = { if (selected == null) Text("主导航") }) { padding ->
+                Box(Modifier.padding(padding)) {
+                    ChatScreen(repository, runtime, owner, selected) { selected = it }
+                }
+            }
+        }
     }
 }
