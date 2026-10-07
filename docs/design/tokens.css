@@ -110,6 +110,7 @@
 
   /* ---------- 默认主题（green）浅色 + 模式颜色浅色 ---------- */
   color-scheme: light;
+  --wb-color-bg-user-avatar: var(--wb-gray-200);
   --wb-color-bg-page: var(--wb-gray-100);
   --wb-color-bg-chat: var(--wb-gray-100);
   --wb-color-bg-surface: var(--wb-gray-0);
@@ -122,6 +123,7 @@
   --wb-color-bg-scrim: rgba(0, 0, 0, 0.50);
   --wb-color-bg-pressed: rgba(0, 0, 0, 0.05);
   --wb-color-bg-skeleton: var(--wb-gray-150);
+  --wb-color-text-user-avatar: var(--wb-gray-ink);
   --wb-color-text-primary: var(--wb-gray-ink);
   --wb-color-text-secondary: var(--wb-gray-600);
   --wb-color-text-tertiary: var(--wb-gray-500);
@@ -316,6 +318,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-scheme="light"]) {
     color-scheme: dark;
+    --wb-color-bg-user-avatar: var(--wb-gray-200);
     --wb-color-bg-page: var(--wb-gray-950);
     --wb-color-bg-chat: var(--wb-gray-950);
     --wb-color-bg-surface: var(--wb-gray-900);
@@ -328,6 +331,7 @@
     --wb-color-bg-scrim: rgba(0, 0, 0, 0.60);
     --wb-color-bg-pressed: rgba(255, 255, 255, 0.06);
     --wb-color-bg-skeleton: var(--wb-gray-800);
+    --wb-color-text-user-avatar: var(--wb-gray-ink);
     --wb-color-text-primary: var(--wb-gray-mist);
     --wb-color-text-secondary: var(--wb-gray-400);
     --wb-color-text-tertiary: var(--wb-gray-500);
@@ -411,6 +415,7 @@
 }
 :root[data-scheme="dark"] {
   color-scheme: dark;
+  --wb-color-bg-user-avatar: var(--wb-gray-200);
   --wb-color-bg-page: var(--wb-gray-950);
   --wb-color-bg-chat: var(--wb-gray-950);
   --wb-color-bg-surface: var(--wb-gray-900);
@@ -423,6 +428,7 @@
   --wb-color-bg-scrim: rgba(0, 0, 0, 0.60);
   --wb-color-bg-pressed: rgba(255, 255, 255, 0.06);
   --wb-color-bg-skeleton: var(--wb-gray-800);
+  --wb-color-text-user-avatar: var(--wb-gray-ink);
   --wb-color-text-primary: var(--wb-gray-mist);
   --wb-color-text-secondary: var(--wb-gray-400);
   --wb-color-text-tertiary: var(--wb-gray-500);
@@ -506,6 +512,7 @@
 
 /* ---------- 主题：pink（微伴粉）只覆盖 bg / text / border / brand / bubble 五组 ---------- */
 :root[data-theme="pink"] {
+  --wb-color-bg-user-avatar: var(--wb-neutral-200);
   --wb-color-bg-page: var(--wb-neutral-50);
   --wb-color-bg-chat: #F7F2F4;
   --wb-color-bg-surface: var(--wb-neutral-0);
@@ -518,6 +525,7 @@
   --wb-color-bg-scrim: rgba(20, 12, 16, 0.45);
   --wb-color-bg-pressed: rgba(31, 26, 29, 0.06);
   --wb-color-bg-skeleton: var(--wb-neutral-100);
+  --wb-color-text-user-avatar: var(--wb-neutral-ink);
   --wb-color-text-primary: var(--wb-neutral-ink);
   --wb-color-text-secondary: var(--wb-neutral-600);
   --wb-color-text-tertiary: var(--wb-neutral-500);
@@ -543,6 +551,7 @@
 }
 @media (prefers-color-scheme: dark) {
   :root[data-theme="pink"]:not([data-scheme="light"]) {
+    --wb-color-bg-user-avatar: var(--wb-neutral-200);
     --wb-color-bg-page: var(--wb-neutral-1000);
     --wb-color-bg-chat: var(--wb-neutral-950);
     --wb-color-bg-surface: var(--wb-neutral-900);
@@ -555,6 +564,7 @@
     --wb-color-bg-scrim: rgba(0, 0, 0, 0.60);
     --wb-color-bg-pressed: rgba(255, 255, 255, 0.08);
     --wb-color-bg-skeleton: var(--wb-neutral-850);
+    --wb-color-text-user-avatar: var(--wb-neutral-ink);
     --wb-color-text-primary: var(--wb-neutral-mist);
     --wb-color-text-secondary: var(--wb-neutral-400);
     --wb-color-text-tertiary: var(--wb-neutral-500);
@@ -580,6 +590,7 @@
   }
 }
 :root[data-theme="pink"][data-scheme="dark"] {
+  --wb-color-bg-user-avatar: var(--wb-neutral-200);
   --wb-color-bg-page: var(--wb-neutral-1000);
   --wb-color-bg-chat: var(--wb-neutral-950);
   --wb-color-bg-surface: var(--wb-neutral-900);
@@ -592,6 +603,7 @@
   --wb-color-bg-scrim: rgba(0, 0, 0, 0.60);
   --wb-color-bg-pressed: rgba(255, 255, 255, 0.08);
   --wb-color-bg-skeleton: var(--wb-neutral-850);
+  --wb-color-text-user-avatar: var(--wb-neutral-ink);
   --wb-color-text-primary: var(--wb-neutral-mist);
   --wb-color-text-secondary: var(--wb-neutral-400);
   --wb-color-text-tertiary: var(--wb-neutral-500);

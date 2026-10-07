@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -171,60 +172,6 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
     }
 }
 
-private class ConversationUi(
-    val repository: SessionRepository,
-    val runtime: ChatRuntime,
-    val owner: OwnerRecord,
-    var conversation: Conversation,
-    private val scope: CoroutineScope,
-) {
-    var text by mutableStateOf("")
-    var quoteId by mutableStateOf<String?>(null)
-    var error by mutableStateOf<String?>(null)
-    var sending by mutableStateOf(false)
-    var loadingHistory by mutableStateOf(false)
-
-    fun send() {
-        if (sending || text.isBlank()) return
-        sending = true
-        val captured = text
-        val quotedId =
-            runtime.snapshot.value.state.messages
-                .find { it.messageId == quoteId && it.status == "normal" }
-                ?.messageId
-        scope.launch {
-            try {
-                userAction({ error = it }) {
-                    runtime.send(owner, conversation.conversationId, captured, quotedId)
-                    if (text == captured) text = ""
-                    quoteId = null
-                }
-            } finally {
-                sending = false
-            }
-        }
-    }
-
-    fun older(beforeSeq: Long) {
-        loadingHistory = true
-        scope.launch {
-            try {
-                userAction({ error = it }) { runtime.history.older(owner, conversation.conversationId, beforeSeq) }
-            } finally {
-                loadingHistory = false
-            }
-        }
-    }
-
-    fun retry(clientMsgId: String) {
-        scope.launch {
-            userAction({ error = it }) {
-                runtime.retry(owner, conversation.conversationId, clientMsgId)
-            }
-        }
-    }
-}
-
 @Composable private fun ColumnScope.ConversationView(
     repository: SessionRepository,
     runtime: ChatRuntime,
@@ -242,7 +189,8 @@ private class ConversationUi(
     val visible = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
     val list = rememberLazyListState()
     val messages = state.messages.filter { it.conversationId == conversation.conversationId }.sortedBy { it.seq }
-    val names = characterNames(repository, conversation.participants.filter { it.kind == "character" }.map { it.refId })
+    val avatars = messageAvatars(repository, owner, state, conversation)
+    val names = conversation.participants.associate { it.refId to avatars.roles[it.participantId]?.name.orEmpty() }
     val pending = state.outbox.filter { it.conversationId == conversation.conversationId }
     val typing by runtime.typing.collectAsState()
     val typingActive =
@@ -279,7 +227,7 @@ private class ConversationUi(
     }
     ui.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = WbSpace.S5)) }
     if (visible && typingActive) Text("对方正在输入…", Modifier.padding(horizontal = WbSpace.S5))
-    MessageTimeline(ui, messages, pending, list, Modifier.weight(1f))
+    MessageTimeline(ui, messages, pending, list, Modifier.weight(1f), avatars)
     Composer(ui, messages.find { it.messageId == ui.quoteId && it.status == "normal" })
 }
 
@@ -289,6 +237,7 @@ private class ConversationUi(
     pending: List<ClientPendingSend>,
     list: androidx.compose.foundation.lazy.LazyListState,
     modifier: Modifier,
+    avatars: MessageAvatars,
 ) {
     LazyColumn(state = list, modifier = modifier.fillMaxWidth(), contentPadding = PaddingValues(WbSpace.S5)) {
         item(key = "older") {
@@ -298,13 +247,21 @@ private class ConversationUi(
             ) { Text(if (ui.loadingHistory) "正在加载…" else "更早的消息") }
         }
         items(messages, key = { it.messageId }) { message ->
-            MessageRow(ui.repository, ui.owner, ui.conversation, message, { ui.quoteId = message.messageId }, { ui.error = it })
+            MessageRow(ui, avatars, message)
         }
         items(pending, key = { it.body.clientMsgId }) { item ->
-            Column(Modifier.fillMaxWidth().padding(vertical = WbSpace.S3)) {
-                Text((item.body.content as? UserSendableContentText)?.text ?: "拍了拍")
-                Text(if (item.state == "failed") "发送失败" else "待发送", style = MaterialTheme.typography.bodySmall)
-                if (item.state == "failed") TextButton(onClick = { ui.retry(item.body.clientMsgId) }) { Text("重试") }
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = WbSpace.S3),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(Modifier.weight(1f, fill = false), horizontalAlignment = Alignment.End) {
+                    Text((item.body.content as? UserSendableContentText)?.text ?: "拍了拍")
+                    Text(if (item.state == "failed") "发送失败" else "待发送", style = MaterialTheme.typography.bodySmall)
+                    if (item.state == "failed") TextButton(onClick = { ui.retry(item.body.clientMsgId) }) { Text("重试") }
+                }
+                Spacer(Modifier.width(WbSpace.S3))
+                MessageAvatar(ui.repository, ui.owner, avatars.user)
             }
         }
     }
@@ -323,68 +280,5 @@ private class ConversationUi(
     Row(Modifier.imePadding().padding(WbSpace.S5)) {
         OutlinedTextField(ui.text, { if (it.length <= 4_000) ui.text = it }, Modifier.weight(1f), label = { Text("消息") }, maxLines = 5)
         TextButton(enabled = ui.text.isNotBlank() && !ui.sending, onClick = ui::send) { Text("发送") }
-    }
-}
-
-@Composable private fun MessageRow(
-    repository: SessionRepository,
-    owner: OwnerRecord,
-    conversation: Conversation,
-    message: Message,
-    onQuote: () -> Unit,
-    onError: (String) -> Unit,
-) {
-    val scope = rememberCoroutineScope()
-    var menu by remember { mutableStateOf(false) }
-    val mine = message.senderKind == "user"
-    Column(Modifier.fillMaxWidth().padding(vertical = WbSpace.S3)) {
-        Surface(
-            color = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
-            modifier =
-                Modifier.clickable {
-                    menu =
-                        true
-                },
-        ) {
-            Column(Modifier.padding(WbSpace.S5)) {
-                message.quote?.let { Text(it.preview ?: "引用的消息已不可见", style = MaterialTheme.typography.bodySmall) }
-                Text(messageText(message))
-            }
-        }
-        if (mine && conversation.peerReadSeq?.let { it >= message.seq } == true) Text("已读", style = MaterialTheme.typography.bodySmall)
-        DropdownMenu(menu, { menu = false }) {
-            if (message.status != "recalled") {
-                DropdownMenuItem(text = { Text("引用") }, onClick = {
-                    menu = false
-                    onQuote()
-                })
-            }
-            if (mine && message.status != "recalled") {
-                DropdownMenuItem(text = { Text("撤回") }, onClick = {
-                    menu = false
-                    scope.launch {
-                        userAction(onError) {
-                            repository.call(
-                                Endpoints.chatEndpointsRecallMessage,
-                                params = mapOf("conversationId" to conversation.conversationId, "messageId" to message.messageId),
-                                options = SessionCallOptions(owner = owner),
-                            )
-                        }
-                    }
-                })
-            }
-            DropdownMenuItem(text = { Text("从我的界面删除") }, onClick = {
-                menu = false
-                scope.launch {
-                    userAction(onError) {
-                        repository.call(
-                            Endpoints.chatEndpointsHideMessage,
-                            params = mapOf("conversationId" to conversation.conversationId, "messageId" to message.messageId),
-                            options = SessionCallOptions(owner = owner),
-                        )
-                    }
-                }
-            })
-        }
     }
 }

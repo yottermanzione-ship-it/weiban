@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import app.weiban.contracts.*
 import app.weiban.data.*
 import app.weiban.designsystem.DefaultAvatar
+import app.weiban.designsystem.LocalWeibanColors
 import app.weiban.designsystem.defaultAvatarStyle
 import app.weiban.designsystem.tokens.WbMotion
 import app.weiban.designsystem.tokens.WbRadius
@@ -31,6 +32,7 @@ data class RoleAvatarIdentity(
     val name: String,
     val avatar: CharacterAvatar?,
     val privateMediaId: String? = null,
+    val user: Boolean = false,
 )
 
 @Composable internal fun RoleAvatar(
@@ -49,7 +51,7 @@ data class RoleAvatarIdentity(
     val opacity by animateFloatAsState(if (bitmap == null) 0f else 1f, tween(WbMotion.FastMs), label = "头像淡入")
     val display = if (authorized) role.avatar?.display else null
     val name = if (authorized) role.name else ""
-    val style =
+    val baseStyle =
         defaultAvatarStyle(
             role.id,
             name,
@@ -57,6 +59,17 @@ data class RoleAvatarIdentity(
             display?.avatarText,
             display?.avatarPattern ?: "star",
         )
+    val colors = LocalWeibanColors.current
+    val style =
+        if (role.user) {
+            baseStyle.copy(
+                background = colors.bgUserAvatar,
+                foreground = colors.textUserAvatar,
+                pattern = "none",
+            )
+        } else {
+            baseStyle
+        }
     Box(
         Modifier.size(size).clip(RoundedCornerShape(size * WbRadius.AvatarRatio)).clearAndSetSemantics {
             contentDescription = "${name.ifEmpty { "角色" }}头像"

@@ -116,6 +116,9 @@ test('断网待发消息刷新后仍在；重新联网送达；退出后旧聊�
   await expect(page.locator('.pending-message')).toContainText('离线待发私密消息');
   await page.reload();
   await expect(page.locator('.pending-message')).toContainText('离线待发私密消息');
+  await expect(
+    page.locator('.pending-message').getByRole('img', { name: '我的头像' }),
+  ).toBeVisible();
   await context.setOffline(false);
   await expect(page.locator('.message-bubble').filter({ hasText: '离线待发私密消息' })).toHaveCount(
     1,

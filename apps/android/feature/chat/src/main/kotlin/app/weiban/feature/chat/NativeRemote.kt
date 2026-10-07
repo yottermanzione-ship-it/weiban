@@ -2,6 +2,8 @@ package app.weiban.feature.chat
 
 import androidx.compose.runtime.*
 import app.weiban.contracts.*
+import app.weiban.data.OwnerRecord
+import app.weiban.data.SessionCallOptions
 import app.weiban.data.SessionRepository
 import app.weiban.network.ApiFailure
 import kotlinx.coroutines.*
@@ -38,19 +40,16 @@ internal class NativeRemote<T> {
     repository: SessionRepository,
     ids: List<String>,
 ): Map<String, CharacterProfile> {
-    val owner =
-        repository.auth
-            .collectAsState()
-            .value
-            ?.session
-            ?.sessionId
+    val auth = repository.auth.collectAsState().value
+    val owner = auth?.let { OwnerRecord(userId = it.user.userId, sessionId = it.session.sessionId) }
     var names by remember(owner) { mutableStateOf<Map<String, CharacterProfile>>(emptyMap()) }
     val wanted = ids.distinct().sorted()
     LaunchedEffect(owner, wanted) {
+        if (owner == null) return@LaunchedEffect
         for (batch in wanted.chunked(4)) {
             val loaded =
                 coroutineScope {
-                    batch.map { id -> async { readProfile(repository, id)?.let { id to it } } }.awaitAll().filterNotNull()
+                    batch.map { id -> async { readProfile(repository, owner, id)?.let { id to it } } }.awaitAll().filterNotNull()
                 }
             names = names + loaded
         }
@@ -65,10 +64,15 @@ internal class NativeRemote<T> {
 
 private suspend fun readProfile(
     repository: SessionRepository,
+    owner: OwnerRecord,
     id: String,
 ): CharacterProfile? =
     try {
-        repository.call(Endpoints.characterEndpointsGetProfile, params = mapOf("characterId" to id))
+        repository.call(
+            Endpoints.characterEndpointsGetProfile,
+            params = mapOf("characterId" to id),
+            options = SessionCallOptions(owner = owner),
+        )
     } catch (error: CancellationException) {
         throw error
     } catch (_: IOException) {

@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ChatEndpoints,
+  IdentityEndpoints,
   CharacterEndpoints,
   ModelAccessEndpoints,
   type Conversation,
@@ -12,6 +13,8 @@ import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import { VirtualList } from './virtual-list.js';
 import { HomeScreenGuide } from './home-screen-guide.js';
+import { CharacterAvatar } from './character-avatar.js';
+import { UserMessageAvatar } from './message-avatar.js';
 export function CharacterName({ id, fallback }: { id: string; fallback?: string | null }) {
   const profile = useRemote(CharacterEndpoints.getProfile, { params: { characterId: id } });
   return <>{fallback || profile.data?.name || '角色'}</>;
@@ -68,6 +71,7 @@ export function ConversationPage() {
 function ConversationView({ conversation }: { conversation: Conversation }) {
   const chat = useChat();
   const id = conversation.conversationId;
+  const userProfile = useRemote(IdentityEndpoints.getProfile);
   const role = conversation.participants.find((item) => item.kind === 'character');
   const status = useRemote(ModelAccessEndpoints.getModelStatus, {
     query: { characterId: role?.refId },
@@ -196,46 +200,70 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
                 minute: '2-digit',
               })}
             </time>
-            {message.quote && (
-              <small className="quote-preview">
-                引用：{message.quote.preview ?? '原消息已不可见'}
-              </small>
-            )}
-            <p className="message-bubble">{content(message)}</p>
-            {message.senderKind === 'user' && message.status === 'normal' && (
-              <small>
-                {conversation.peerReadSeq !== null && conversation.peerReadSeq >= message.seq
-                  ? '已读'
-                  : '已送达'}
-              </small>
-            )}
-            {message.status === 'normal' && message.content?.type === 'text' && (
-              <details>
-                <summary aria-label="消息操作">•••</summary>
-                <button onClick={() => setQuoteId(message.messageId)}>引用</button>
-                <button onClick={() => void action(message, 'hide')}>删除</button>
-                {message.senderKind === 'user' && (
-                  <button onClick={() => void action(message, 'recall')}>撤回</button>
+            <div className="message-body">
+              {message.status === 'normal' && message.senderKind === 'user' && (
+                <UserMessageAvatar profile={userProfile.data} />
+              )}
+              {message.status === 'normal' && message.senderKind === 'character' && (
+                <CharacterAvatar
+                  id={
+                    conversation.participants.find(
+                      (participant) => participant.participantId === message.senderParticipantId,
+                    )?.refId ??
+                    role?.refId ??
+                    ''
+                  }
+                  size={40}
+                />
+              )}
+              <div className="message-details">
+                {message.quote && (
+                  <small className="quote-preview">
+                    引用：{message.quote.preview ?? '原消息已不可见'}
+                  </small>
                 )}
-              </details>
-            )}
+                <p className="message-bubble">{content(message)}</p>
+                {message.senderKind === 'user' && message.status === 'normal' && (
+                  <small>
+                    {conversation.peerReadSeq !== null && conversation.peerReadSeq >= message.seq
+                      ? '已读'
+                      : '已送达'}
+                  </small>
+                )}
+                {message.status === 'normal' && message.content?.type === 'text' && (
+                  <details>
+                    <summary aria-label="消息操作">•••</summary>
+                    <button onClick={() => setQuoteId(message.messageId)}>引用</button>
+                    <button onClick={() => void action(message, 'hide')}>删除</button>
+                    {message.senderKind === 'user' && (
+                      <button onClick={() => void action(message, 'recall')}>撤回</button>
+                    )}
+                  </details>
+                )}
+              </div>
+            </div>
           </div>
         )}
       />
       {pending.map((item) => (
         <div className="pending-message" key={item.body.clientMsgId}>
-          <p>{item.body.content.type === 'text' ? item.body.content.text : '拍了拍'}</p>
-          {item.state === 'failed' ? (
-            <button
-              onClick={() =>
-                void chat.retry(id, item.body.clientMsgId).catch((e) => setError(friendlyError(e)))
-              }
-            >
-              发送失败，点击重试
-            </button>
-          ) : (
-            <span role="status">{item.state === 'sending' ? '发送中…' : '等待发送'}</span>
-          )}
+          <UserMessageAvatar profile={userProfile.data} />
+          <div className="message-details">
+            <p>{item.body.content.type === 'text' ? item.body.content.text : '拍了拍'}</p>
+            {item.state === 'failed' ? (
+              <button
+                onClick={() =>
+                  void chat
+                    .retry(id, item.body.clientMsgId)
+                    .catch((e) => setError(friendlyError(e)))
+                }
+              >
+                发送失败，点击重试
+              </button>
+            ) : (
+              <span role="status">{item.state === 'sending' ? '发送中…' : '等待发送'}</span>
+            )}
+          </div>
         </div>
       ))}
       {quote && (

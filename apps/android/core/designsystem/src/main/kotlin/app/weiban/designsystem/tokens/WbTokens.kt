@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.sp
 /** 随主题 × 深浅模式变化的颜色（bg / text / border / brand / bubble 五组） */
 @Immutable
 data class WbThemeColors(
+    val bgUserAvatar: Color,
     val bgPage: Color,
     val bgChat: Color,
     val bgSurface: Color,
@@ -24,6 +25,7 @@ data class WbThemeColors(
     val bgScrim: Color,
     val bgPressed: Color,
     val bgSkeleton: Color,
+    val textUserAvatar: Color,
     val textPrimary: Color,
     val textSecondary: Color,
     val textTertiary: Color,
@@ -115,6 +117,7 @@ enum class WbThemeId(val id: String, val displayName: String) {
 
 object WbColorSets {
     val GreenLight = WbThemeColors(
+        bgUserAvatar = Color(0xFFD9D9D9),
         bgPage = Color(0xFFEDEDED),
         bgChat = Color(0xFFEDEDED),
         bgSurface = Color(0xFFFFFFFF),
@@ -127,6 +130,7 @@ object WbColorSets {
         bgScrim = Color(0x80000000),
         bgPressed = Color(0x0D000000),
         bgSkeleton = Color(0xFFE5E5E5),
+        textUserAvatar = Color(0xFF1A1A1A),
         textPrimary = Color(0xFF1A1A1A),
         textSecondary = Color(0xFF6B6B6B),
         textTertiary = Color(0xFF8C8C8C),
@@ -151,6 +155,7 @@ object WbColorSets {
         bubbleQuoteText = Color(0xFF6B6B6B)
     )
     val GreenDark = WbThemeColors(
+        bgUserAvatar = Color(0xFFD9D9D9),
         bgPage = Color(0xFF111111),
         bgChat = Color(0xFF111111),
         bgSurface = Color(0xFF191919),
@@ -163,6 +168,7 @@ object WbColorSets {
         bgScrim = Color(0x99000000),
         bgPressed = Color(0x0FFFFFFF),
         bgSkeleton = Color(0xFF262626),
+        textUserAvatar = Color(0xFF1A1A1A),
         textPrimary = Color(0xFFE6E6E6),
         textSecondary = Color(0xFFADADAD),
         textTertiary = Color(0xFF8C8C8C),
@@ -187,6 +193,7 @@ object WbColorSets {
         bubbleQuoteText = Color(0xFFADADAD)
     )
     val PinkLight = WbThemeColors(
+        bgUserAvatar = Color(0xFFE2DDE0),
         bgPage = Color(0xFFF6F3F5),
         bgChat = Color(0xFFF7F2F4),
         bgSurface = Color(0xFFFFFFFF),
@@ -199,6 +206,7 @@ object WbColorSets {
         bgScrim = Color(0x73140C10),
         bgPressed = Color(0x0F1F1A1D),
         bgSkeleton = Color(0xFFEEEAEC),
+        textUserAvatar = Color(0xFF1F1A1D),
         textPrimary = Color(0xFF1F1A1D),
         textSecondary = Color(0xFF655F63),
         textTertiary = Color(0xFF857E83),
@@ -223,6 +231,7 @@ object WbColorSets {
         bubbleQuoteText = Color(0xFF655F63)
     )
     val PinkDark = WbThemeColors(
+        bgUserAvatar = Color(0xFFE2DDE0),
         bgPage = Color(0xFF0B0A0C),
         bgChat = Color(0xFF121013),
         bgSurface = Color(0xFF1C1A1E),
@@ -235,6 +244,7 @@ object WbColorSets {
         bgScrim = Color(0x99000000),
         bgPressed = Color(0x14FFFFFF),
         bgSkeleton = Color(0xFF262329),
+        textUserAvatar = Color(0xFF1F1A1D),
         textPrimary = Color(0xFFEDE8EC),
         textSecondary = Color(0xFFA8A1A6),
         textTertiary = Color(0xFF857E83),

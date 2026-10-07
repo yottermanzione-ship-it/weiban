@@ -110,6 +110,7 @@ class ChatScreenTest {
             ),
         )
         compose.onNodeWithText("原生离线消息").assertExists()
+        compose.onNodeWithContentDescription("我头像").assertExists()
         runBlocking {
             runtime.detach()
             runtime.attach(owner)
