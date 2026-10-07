@@ -21,6 +21,7 @@ kotlin {
 dependencies {
     implementation(libs.serialization.json)
     implementation(libs.coroutines.android)
+    implementation(libs.activity.compose)
     testImplementation(libs.junit)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

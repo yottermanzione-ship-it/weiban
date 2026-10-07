@@ -93,7 +93,10 @@ private class CharacterUi(
             if (role.works.isNotEmpty()) Text("作品：${role.works.joinToString("、")}")
             if (role.showPublicSourceNotice) Text("本角色根据公开资料创作，不代表本人", style = MaterialTheme.typography.bodySmall)
         }
-        contact?.let { Text("认识于 ${it.knownSince}") }
+        contact?.let {
+            Text("认识于 ${it.knownSince}")
+            ContactAvatarEditor(repository, runtime, owner, it)
+        }
         (ui.error ?: profile.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         CharacterAction(contact, ui, profile.data != null, onOpenConversation)
         TextButton(onClick = {

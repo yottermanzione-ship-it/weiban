@@ -13,6 +13,7 @@ import app.weiban.contracts.Endpoints
 import app.weiban.data.OwnerRecord
 import app.weiban.data.SessionCallOptions
 import app.weiban.data.SessionRepository
+import app.weiban.designsystem.decodeAvatar
 import app.weiban.designsystem.tokens.WbSize
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers

@@ -37,6 +37,7 @@ for (const name of [
   'app.weiban.feature.chat.ChatScreenTest',
   'app.weiban.feature.chat.RoleBrowserTest',
   'app.weiban.feature.chat.RoleAvatarTest',
+  'app.weiban.feature.chat.ContactAvatarEditorTest',
   'app.weiban.feature.chat.ChatInformationTest',
   'app.weiban.data.ChatHistoryTest',
   'app.weiban.data.SessionRepositoryTest',

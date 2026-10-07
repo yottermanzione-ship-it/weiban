@@ -2,6 +2,8 @@ package app.weiban.feature.me
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import app.weiban.designsystem.cropAvatar
+import app.weiban.designsystem.decodeAvatar
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith

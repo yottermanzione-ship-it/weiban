@@ -61,3 +61,17 @@ T041原生实时/后台检查点已发布并核验CI：本机f6105216472fc7e75fb
 证据：/tmp/weiban-t041-avatar-root1.log、/tmp/weiban-t041-avatar-core1.log、/tmp/weiban-t041-avatar-native-all2.log及JUnit XML、/tmp/weiban-t041-avatar-generated1.log、/tmp/weiban-t041-avatar-web-build1.log、/tmp/weiban-t041-avatar-web1.log、/tmp/weiban-t041-avatar-admin1.log。中途MatchingDeclarationName/LongMethod静态失败经重命名和拆分解决，没有放宽阈值。新源码CI须发布后另行读取，不能借用前一提交的成功。
 
 待继续：原生联系人私有头像选择/裁剪/上传/恢复、聊天内头像及其余出现头像的场景、符合设计的拍照与手势裁剪、通知PNG、首次引导、原生推送与管理通知跨站点击，随后L2–L7。当前是开发自测，T041与产品尚未完成；真实设备/厂商推送/独立QA仍待验。
+
+
+头像显示/网页私有编辑检查点已发布：本机f4dcf7e107d20fc3d1fac353202751e4099dc545，远端f22725ebbdbe7e75a40cbaa1157c8612919a1b4b，同tree cd62658092e77537561c869aa366a4a441f768a4。push37594560940、PR37594570076以及各自check/Android job均最终success、结果已读取；push新源码生产构建、14迁移、加密备份和空目标恢复通过。后续原生私有头像编辑属于新工作树，不借用上述CI。
+
+
+## T041 原生联系人私有头像编辑（2026-10-07）
+
+从角色资料进入设置头像，使用共用PhotoCropper选图、正方形裁剪、缩放/位置调整、上传contact_avatar及恢复默认。原有本人头像复用同一裁剪代码，已有真实图片几何测试仍验证同一实现；元数据写入只提交customAvatarMediaId，保留备注和称呼。所有图片上传和资料/联系人保存绑定打开裁剪器时的owner，换号即卸载旧裁剪状态。成功提示前等待联系人更新日志已持久保存到Room。
+
+新增两条实际Compose/Room/MockWebServer测试：系统选图结果由Robolectric提供，之后执行真实512像素裁剪、multipart上传、头像字段PATCH、日志补拉/Room持久保存和恢复；第二条在打开裁剪窗口后切换账号，窗口/旧设置消失且无上传或PATCH。这是开发自测，不是真实系统相册/设备或Node服务端到原生整链路证明。共78条JUnit零跳过，完整原生静态检查/测试/APK构建通过；生成检查仍为514定义/85操作且图标/tokens无差异。Web/服务端源码本轮不变，其整仓451/core56/Web12+后台7以及f22725eb两套CI证据仍按上一检查点登记，不重复计为本轮新增验收。
+
+构建依赖使用已有版本目录activity-compose1.11.0（AndroidX Apache-2.0）；共用设计模块新增直接声明，Gradle生成该模块及依赖它的auth模块锁文件，版本与应用/聊天原有1.11.0一致。证据/tmp/weiban-t041-avatar-edit-native3.log（生成锁）与/tmp/weiban-t041-avatar-edit-native4.log（正常锁定模式全部检查通过）及JUnit XML、/tmp/weiban-t041-avatar-edit-generated1.log、/tmp/weiban-t041-avatar-edit-format-root1.log。初轮运行目录错误、手动中断轮次和移动解码函数后的遗漏导入编译失败不计为通过，均已纠正；没有放宽阈值或删除原测试。
+
+继续首次引导、聊天内头像/其余头像场景、拍照与手势裁剪、通知PNG、原生推送及管理员跨站点击；随后L2–L7。独立QA与真实设备/厂商验证仍待执行，产品未完成。
