@@ -37,6 +37,16 @@ export const MediaObject = z.object({
 export type MediaObject = z.infer<typeof MediaObject>;
 
 export const MediaEndpoints = {
+  download: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/media/:mediaId/content`,
+    auth: 'none',
+    params: z.object({ mediaId: Id }),
+    query: z.object({ token: z.string().min(1).max(1000) }),
+    response: z.string().meta({ format: 'binary' }),
+    responseContentType: 'image/webp',
+    summary: '凭5分钟媒体访问凭证下载；不接受越期或跨媒体凭证；响应是WebP二进制',
+  }),
   upload: defineEndpoint({
     method: 'POST',
     path: `${API_PREFIX}/media`,

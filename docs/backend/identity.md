@@ -119,3 +119,7 @@ DELETE /me（密码 + confirm=DELETE）
 - 单元：`domain/rules.test.ts`、`infra/password-hasher.test.ts`、`platform/deletion/user-data-registry.test.ts`。
 - 集成：`apps/server/test/identity.test.ts`（36 条）：每个接口的正常 / 未登录 / 无权限 / 参数错误 / 重复请求；邀请码无效 / 已用 / 过期 / 并发；登录锁定（用户名、IP、到期恢复、成功清零）；会话续期与过期、管理会话 12 小时；主题同步；命令行；注销编排与重复投递；日志里搜不到任何密码和令牌。
 - 测试用 `X-Forwarded-For` + `HTTP_TRUST_PROXY=true` 给每个请求不同 IP，避免按 IP 锁定互相干扰。
+
+## 契约 1.3 目录端口（T-028）
+
+`IDENTITY_DIRECTORY_PORT` 提供 `getUsernames`（单次最多500个ID，缺失ID不返回）与 `listAdminUserIds`（只返回active管理员）。其他模块只通过公开出口注入，不复制用户名。登录失败计数先建立行再锁定更新，已有锁定不会被并发在途请求清除（Q-010开发修复）。

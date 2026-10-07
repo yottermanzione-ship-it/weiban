@@ -2,10 +2,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 状态 | **提议**（待架构负责人在 D-L0-10 并入契约时评审批准；原编号 ADR-0021，已重编为 0009） |
+| 状态 | **采用**（T-030，Codex根据总经理开发接管授权完成架构影响自审；独立复核待交付；原编号ADR-0021） |
 | 日期 | 2026-10-04 |
 | 提出人 | AI 系统负责人（T-005） |
-| 批准人 | 架构负责人 |
+| 评估人 | Codex（接管范围内自审，未代签原架构负责人） |
 | 关联 | 规范正文 `docs/ai/character-card-spec.md`；PRD CHR-11、第 10 章；`docs/architecture/hard-boundaries.md` 第 2 节；契约 `packages/contracts/src/character-card.ts` |
 
 ## 背景

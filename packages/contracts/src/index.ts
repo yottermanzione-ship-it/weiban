@@ -6,6 +6,7 @@
 export * from './version.js';
 export * from './common.js';
 export * from './character-card.js';
+export * from './client-sync.js';
 
 // HTTP 接口（客户端 ↔ 服务器）
 export * from './http/identity.js';

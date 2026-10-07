@@ -8,3 +8,4 @@ export * from './push.js';
 export * from './model-gateway.js';
 export * from './billing.js';
 export * from './policy.js';
+export * from './media.js';

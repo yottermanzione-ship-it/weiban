@@ -13,11 +13,13 @@ import {
   AUDIT_LOG,
   CLOCK,
   LOGGER,
+  OUTBOX,
   type AppConfig,
   type AuditLog,
   type Clock,
   type DbTx,
   type Logger,
+  type Outbox,
 } from '../../../platform/index.js';
 import { PLATFORM_BUDGET_ALERT_RATIO } from '../domain/rules.js';
 
@@ -29,6 +31,7 @@ export class PlatformBudget {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(LOGGER) logger: Logger,
   ) {
     this.log = logger.child({ module: 'billing' });
@@ -123,6 +126,13 @@ export class PlatformBudget {
       },
       tx,
     );
+    await this.outbox.publish(tx, 'platform.admin_alert_raised', 'billing', {
+      kind: 'platform_budget_warning',
+      severity: 'warning',
+      summary: '平台每日成本已达上限的 80%，请查看管理后台',
+      dedupeKey: `platform_budget_warning:${day}`,
+      refs: { day },
+    });
     this.log.error(
       { budgetDay: day, usedMicros: used, capMicros: cap },
       '平台每日成本已达上限的 80%',

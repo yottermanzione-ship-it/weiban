@@ -1,6 +1,3 @@
-# apps/web · 用户端网页 / PWA（占位）
+# @weiban/web
 
-- 负责人：Web 负责人
-- 技术：React 19 + Vite + vite-plugin-pwa（ADR-0003）
-- 内部结构：见 `docs/architecture/repo-structure.md` 第 4 节
-- 由 D-L0-12（网页骨架）建立工程：届时新增 `package.json`（名称 `@weiban/web`）、`tsconfig.json`（extends `@weiban/tsconfig/react.json`）、`vitest.config.ts`（用 `defineProject`）。浏览器全局变量和 React 相关 ESLint 规则在根 `eslint.config.js` 追加带 `files: ['apps/web/**']` 的配置块。
+React19/Vite/PWA用户端，设计与contracts2.0驱动；启动 `pnpm --filter @weiban/web dev`，构建 `pnpm --filter @weiban/web build`。实现与测试说明见 `docs/web/foundation.md`，当前工作T-031/D-L0-12，后续按L1接入聊天链路。

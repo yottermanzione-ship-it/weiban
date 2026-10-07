@@ -19,6 +19,7 @@ import {
   PriceTable,
   ReconciliationRun,
   Wallet,
+  type BillingChargeQueryPort,
   type BillingReadPort,
   type BillingReservationPort,
   type DeviceInfo,
@@ -29,7 +30,11 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../src/app.module.js';
 import { configureHttpApp } from '../src/main.js';
-import { BILLING_READ_PORT, BILLING_RESERVATION_PORT } from '../src/modules/billing/index.js';
+import {
+  BILLING_CHARGE_QUERY_PORT,
+  BILLING_READ_PORT,
+  BILLING_RESERVATION_PORT,
+} from '../src/modules/billing/index.js';
 import {
   BillingLifecycle,
   BillingTestQueries,
@@ -1001,6 +1006,38 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         expect.objectContaining({ amountMicros: 10_000, costMicros: 5000, absorbed: false }),
       ]);
 
+      // BillingChargeQueryPort（契约 1.3）：按 ID 查、按北京日列出（含分页）、列出有价格的模型键
+      const query = app.get<BillingChargeQueryPort>(BILLING_CHARGE_QUERY_PORT);
+      const byId = await query.getChargesByUsageRecordIds([tagged.usageRecordId, uuid()]);
+      expect(byId).toEqual([
+        expect.objectContaining({
+          usageRecordId: tagged.usageRecordId,
+          amountMicros: 10_000,
+          costMicros: 5000,
+          absorbed: false,
+          chargedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/),
+        }),
+      ]);
+      await expect(
+        query.getChargesByUsageRecordIds(Array.from({ length: 1001 }, () => uuid())),
+      ).rejects.toThrow();
+      const beijingDay = new Date(new Date(byId[0]!.chargedAt).getTime() + 8 * 3_600_000)
+        .toISOString()
+        .slice(0, 10);
+      const dayAll = await query.listChargesByDay(beijingDay);
+      expect(dayAll.items.map((i) => i.usageRecordId)).toContain(tagged.usageRecordId);
+      expect(dayAll.nextCursor).toBeNull();
+      const seen: string[] = [];
+      let cursor: string | undefined;
+      do {
+        const pg = await query.listChargesByDay(beijingDay, { cursor, limit: 1 });
+        seen.push(...pg.items.map((i) => i.ledgerEntryId));
+        cursor = pg.nextCursor ?? undefined;
+      } while (cursor);
+      expect(seen).toEqual(dayAll.items.map((i) => i.ledgerEntryId));
+      expect((await query.listChargesByDay('2000-01-01')).items).toEqual([]);
+      expect(await query.listActivePricedModelKeys()).toContain(MODEL);
+
       // 修好，避免影响后面的用例；清掉过期冻结
       await withClient((c) =>
         c.query(
@@ -1207,12 +1244,19 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         username: expect.stringMatching(/^payer_/),
         lastRetriggeredAt: null,
       });
-      // T-027 起 model_access 也登记了删除清单
-      expect(mine?.modules).toHaveLength(2);
+      // T-036 起 realtime 也登记了更新日志与前台状态的删除清单
+      expect(mine?.modules).toHaveLength(9);
       expect(mine?.modules).toEqual(
         expect.arrayContaining([
           { module: 'billing', purged: false, deletedRows: null, purgedAt: null },
           { module: 'model_access', purged: false, deletedRows: null, purgedAt: null },
+          { module: 'media', purged: false, deletedRows: null, purgedAt: null },
+          { module: 'characters', purged: false, deletedRows: null, purgedAt: null },
+          { module: 'realtime', purged: false, deletedRows: null, purgedAt: null },
+          { module: 'chat', purged: false, deletedRows: null, purgedAt: null },
+          { module: 'contacts', purged: false, deletedRows: null, purgedAt: null },
+          { module: 'ai_runtime', purged: false, deletedRows: null, purgedAt: null },
+          { module: 'push', purged: false, deletedRows: null, purgedAt: null },
         ]),
       );
       await http().get('/api/v1/admin/account-deletions', user.token).expect(401);
@@ -1236,9 +1280,22 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
           const reported = (await events('platform.user_data_purged', user.userId)).map(
             (e) => (e as { module: string }).module,
           );
-          expect(new Set(reported)).toEqual(new Set(['billing', 'model_access']));
+          expect(new Set(reported)).toEqual(
+            new Set([
+              'ai_runtime',
+              'billing',
+              'characters',
+              'chat',
+              'contacts',
+              'media',
+              'model_access',
+              'push',
+              'realtime',
+            ]),
+          );
         },
-        { timeout: 20_000, interval: 200 },
+        // 九个模块及重触发共最多18项串行任务，pg-boss空闲轮询为2秒；留45秒等待全部回报。
+        { timeout: 45_000, interval: 200 },
       );
       await dispatchAll();
       expect(await commands.verifyPurged(user.userId)).toEqual(
@@ -1265,7 +1322,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       expect(audit.some((a) => a.details?.balanceAtDeletionMicros === 1234)).toBe(true);
       // 重复调用删除清单：返回 0
       expect(await lifecycle.purgeUser(user.userId)).toBe(0);
-    });
+    }, 60_000);
 
     it('全部模块已回报时，重新触发直接完成账号删除', async () => {
       const user = await newUser();
@@ -1278,7 +1335,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       await withClient((c) =>
         c.query(
           `INSERT INTO identity.deletion_progress (user_id, module, deleted_rows, reported_at)
-           VALUES ($1, 'billing', 0, now()), ($1, 'model_access', 0, now())`,
+           VALUES ($1, 'billing', 0, now()), ($1, 'model_access', 0, now()), ($1, 'media', 0, now()), ($1, 'characters', 0, now()), ($1, 'realtime', 0, now()), ($1, 'chat', 0, now()), ($1, 'contacts', 0, now()), ($1, 'ai_runtime', 0, now()), ($1, 'push', 0, now())`,
           [user.userId],
         ),
       );

@@ -9,6 +9,11 @@
  * 会话校验通过平台的 SESSION_VERIFIER 提供，业务模块不需要直接用。
  */
 export { IdentityModule } from './identity.module.js';
-export { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from './tokens.js';
+export {
+  IDENTITY_ACCOUNT_STATUS_PORT,
+  IDENTITY_DIRECTORY_PORT,
+  IDENTITY_READ_PORT,
+  IDENTITY_SESSION_READ_PORT,
+} from './tokens.js';
 export { IdentityCommands, CommandError } from './application/commands.js';
 export { hashUserId } from './application/user-hash.js';

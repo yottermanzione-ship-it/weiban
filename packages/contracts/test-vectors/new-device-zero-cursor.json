@@ -1,0 +1,94 @@
+{
+  "formatVersion": 1,
+  "id": "new-device-zero-cursor",
+  "description": "新设备即使服务端游标为0也必须先拉设置与快照",
+  "initialState": {
+    "initialized": false,
+    "lastUpdateSeq": 0,
+    "messages": [],
+    "conversations": [],
+    "contacts": [],
+    "outbox": [],
+    "excluded": [],
+    "scannedThrough": {},
+    "pendingUpdates": [],
+    "settings": {},
+    "recalled": []
+  },
+  "steps": [
+    {
+      "operation": {
+        "type": "reconnect",
+        "latestUpdateSeq": 0,
+        "now": 0
+      }
+    },
+    {
+      "operation": {
+        "type": "rebuild.state",
+        "latestUpdateSeq": 0
+      }
+    },
+    {
+      "operation": {
+        "type": "snapshot",
+        "startSeq": 0,
+        "snapshot": {
+          "conversations": [],
+          "messages": [],
+          "contacts": [],
+          "settings": {
+            "profile": {
+              "nickname": "新用户"
+            }
+          },
+          "coverages": []
+        }
+      }
+    },
+    {
+      "operation": {
+        "type": "updates.page",
+        "page": {
+          "items": [],
+          "latestUpdateSeq": 0,
+          "hasMore": false
+        },
+        "now": 0
+      }
+    }
+  ],
+  "expected": {
+    "state": {
+      "initialized": true,
+      "lastUpdateSeq": 0,
+      "messages": [],
+      "conversations": [],
+      "contacts": [],
+      "outbox": [],
+      "excluded": [],
+      "scannedThrough": {},
+      "pendingUpdates": [],
+      "settings": {
+        "profile": {
+          "nickname": "新用户"
+        }
+      },
+      "recalled": []
+    },
+    "effects": [
+      {
+        "type": "state"
+      },
+      {
+        "type": "snapshot",
+        "startSeq": 0
+      },
+      {
+        "type": "updates",
+        "since": 0,
+        "limit": 500
+      }
+    ]
+  }
+}

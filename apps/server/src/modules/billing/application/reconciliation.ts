@@ -3,16 +3,14 @@
  *
  * ① 账本自洽：每个账户 流水合计 = balance_micros；held_micros = 有效冻结合计；超过 1 小时仍 active 的冻结；
  *    用户钱包余额低于 −(安全透支上限 + 1 元)。任一不满足 → ledgerConsistent = false，异常明细存 details。
- * ② 用量与扣费一一对应：需要 model-access 的用量记录（D-L0-08 尚未实现），billing 不能读别的 schema。
- *    本模块已提供按日 / 按用量记录 ID 的只读查询（ChargeLookup），比对由 model-access 侧完成（契约变更申请）；
- *    在那之前 usageWithoutCharge / chargeWithoutUsage 记 0，details.usageCheck = 'pending_model_access'。
+ * ② model-access 比对用量与流水后经事件回写；重跑①③层只更新自己的字段。
  * ③ 与上游账单比对：近 35 天内结束的账单，按成本价汇总同期（北京时间）流水的 cost_micros，偏差超过阈值标红。
  *
- * 异常时「标红、通知管理员」：写审计日志 + 错误级日志（管理员通知渠道尚未实现，见交接说明）。不自动修复。
+ * 异常时「标红、通知管理员」：同事务发布管理员提醒并写审计日志 + 错误级日志。不自动修复。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import type { ReconciliationRun } from '@weiban/contracts';
-import { and, asc, eq, gte, lte } from 'drizzle-orm';
+import type { Events, ReconciliationRun } from '@weiban/contracts';
+import { and, asc, eq, gte, lte, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   APP_CONFIG,
@@ -21,12 +19,15 @@ import {
   CLOCK,
   DATABASE,
   LOGGER,
+  OUTBOX,
   newId,
   type AppConfig,
   type AuditLog,
   type Clock,
   type Database,
+  type DbTx,
   type Logger,
+  type Outbox,
 } from '../../../platform/index.js';
 import {
   addDays,
@@ -50,7 +51,6 @@ export interface ReconciliationDetails {
   heldMismatches: Array<{ accountId: string; heldMicros: number; activeHoldsMicros: number }>;
   overdrawnAccounts: Array<{ accountId: string; userId: string | null; balanceMicros: number }>;
   staleHoldIds: string[];
-  usageCheck: 'pending_model_access';
 }
 
 @Injectable()
@@ -62,6 +62,7 @@ export class ReconciliationService {
     @Inject(ReservationService) private readonly reservations: ReservationService,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(LOGGER) logger: Logger,
   ) {
@@ -171,7 +172,6 @@ export class ReconciliationService {
       heldMismatches,
       overdrawnAccounts,
       staleHoldIds: stale.rows.map((r) => r.id),
-      usageCheck: 'pending_model_access',
     };
     const ledgerConsistent =
       balanceMismatches.length === 0 &&
@@ -184,6 +184,8 @@ export class ReconciliationService {
       staleHolds: stale.rows.length,
       usageWithoutCharge: 0,
       chargeWithoutUsage: 0,
+      usageReconciledAt: null,
+      usageAmountMismatch: 0,
       upstreamDiffs,
       absorbedMicros: Math.max(0, Number(absorbed.rows[0]?.total ?? 0)),
       details,
@@ -191,17 +193,41 @@ export class ReconciliationService {
       createdAt: now,
     };
     const flagged = !ledgerConsistent || row.staleHolds > 0 || upstreamDiffs.some((d) => d.flagged);
+    let persisted = row;
     await db.transaction(async (tx) => {
-      await tx.db.delete(reconciliationRuns).where(eq(reconciliationRuns.runDate, date));
-      await tx.db.insert(reconciliationRuns).values(row);
+      const [saved] = await tx.db
+        .insert(reconciliationRuns)
+        .values(row)
+        .onConflictDoUpdate({
+          target: reconciliationRuns.runDate,
+          set: {
+            ledgerConsistent,
+            staleHolds: row.staleHolds,
+            upstreamDiffs,
+            absorbedMicros: row.absorbedMicros,
+            details,
+            diffRatioThreshold: threshold,
+            createdAt: now,
+          },
+        })
+        .returning();
+      if (!saved) throw new Error('对账记录保存失败');
+      persisted = saved;
       if (flagged) {
+        await this.outbox.publish(tx, 'platform.admin_alert_raised', 'billing', {
+          kind: 'reconciliation_flagged',
+          severity: 'critical',
+          summary: '账本或上游对账发现异常，请到管理后台查看',
+          dedupeKey: `reconciliation_flagged:${date}:ledger_upstream`,
+          refs: { day: date },
+        });
         await this.audit.record(
           {
             module: 'billing',
             action: 'reconciliation.flagged',
             actorType: 'system',
             targetType: 'reconciliation_run',
-            targetId: row.id,
+            targetId: persisted.id,
             details: {
               date,
               balanceMismatches: balanceMismatches.length,
@@ -217,7 +243,47 @@ export class ReconciliationService {
     });
     if (flagged) this.log.error({ date, runId: row.id }, '对账发现异常，请到管理后台查看');
     else this.log.info({ date, runId: row.id }, '对账完成，无异常');
-    return this.toRun(row);
+    return this.toRun(persisted);
+  }
+
+  /** 同日事件可重投/乱序；只接受更新的 checkedAt，且不覆盖①③层。 */
+  async applyUsageReconciled(
+    payload: Events.EventOf<'model_access.usage_reconciled'>['payload'],
+    tx: DbTx,
+  ): Promise<void> {
+    const checked = new Date(payload.checkedAt);
+    await tx.db
+      .insert(reconciliationRuns)
+      .values({
+        id: newId(),
+        runDate: payload.day,
+        ledgerConsistent: true,
+        staleHolds: 0,
+        usageWithoutCharge: payload.usageWithoutCharge,
+        chargeWithoutUsage: payload.chargeWithoutUsage,
+        usageReconciledAt: checked,
+        usageAmountMismatch: payload.amountMismatch,
+        upstreamDiffs: [],
+        absorbedMicros: 0,
+        details: {
+          balanceMismatches: [],
+          heldMismatches: [],
+          overdrawnAccounts: [],
+          staleHoldIds: [],
+        },
+        diffRatioThreshold: this.config.billing.upstreamDiffRatio,
+        createdAt: this.clock.now(),
+      })
+      .onConflictDoUpdate({
+        target: reconciliationRuns.runDate,
+        set: {
+          usageWithoutCharge: payload.usageWithoutCharge,
+          chargeWithoutUsage: payload.chargeWithoutUsage,
+          usageReconciledAt: checked,
+          usageAmountMismatch: payload.amountMismatch,
+        },
+        setWhere: sql`${reconciliationRuns.usageReconciledAt} IS NULL OR ${reconciliationRuns.usageReconciledAt} < ${checked}`,
+      });
   }
 
   async list(from: string, to: string): Promise<Run[]> {
@@ -286,6 +352,8 @@ export class ReconciliationService {
       staleHolds: row.staleHolds,
       usageWithoutCharge: row.usageWithoutCharge,
       chargeWithoutUsage: row.chargeWithoutUsage,
+      usageReconciledAt: row.usageReconciledAt?.toISOString() ?? null,
+      usageAmountMismatch: row.usageAmountMismatch,
       upstreamDiffs: row.upstreamDiffs as Run['upstreamDiffs'],
       absorbedMicros: row.absorbedMicros,
       createdAt: row.createdAt.toISOString(),

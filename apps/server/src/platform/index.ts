@@ -19,7 +19,13 @@ export { EVENT_DISPATCHER, EventDispatcher } from './events/dispatcher.js';
 
 export { USER_DATA_REGISTRY, UserDataRegistry } from './deletion/user-data-registry.js';
 
-export { JOB_QUEUE, JobQueue, type JobContext, type JobSendOptions } from './jobs/job-queue.js';
+export {
+  JOB_QUEUE,
+  JobQueue,
+  type JobContext,
+  type JobSendOptions,
+  type JobWorkerOptions,
+} from './jobs/job-queue.js';
 
 export { LOGGER, createLogger, type Logger } from './logging/logger.js';
 export { runWithLogContext, currentLogContext } from './logging/log-context.js';

@@ -15,6 +15,7 @@ import {
   NoContent,
   Seq,
   Timestamp,
+  tolerantEnum,
   defineEndpoint,
   unknownTypeFallback,
 } from '../common.js';
@@ -221,6 +222,43 @@ export const UpdateConversationStateRequest = z.object({
 export const ConversationParams = z.object({ conversationId: Id });
 export const MessageParams = z.object({ conversationId: Id, messageId: Id });
 
+/** 分页实际检查的seq范围；排除区间是已隐藏/清空的负记录，不含正文。 */
+export const MessagePageCoverage = z
+  .object({
+    fromSeq: z.number().int().nonnegative(),
+    throughSeq: z.number().int().nonnegative(),
+    excludedRanges: z
+      .array(
+        z.object({
+          fromSeq: Seq,
+          throughSeq: Seq,
+          reason: tolerantEnum(z.enum(['hidden', 'cleared'])),
+        }),
+      )
+      .max(200),
+  })
+  .superRefine((value, ctx) => {
+    if (value.fromSeq > value.throughSeq || (value.fromSeq === 0 && value.throughSeq !== 0))
+      ctx.addIssue({ code: 'custom', message: '扫描范围必须有序；空范围为0/0' });
+    if (value.throughSeq - value.fromSeq + 1 > 200)
+      ctx.addIssue({ code: 'custom', message: '单页最多扫描200个seq' });
+    for (const range of value.excludedRanges)
+      if (
+        range.fromSeq > range.throughSeq ||
+        range.fromSeq < value.fromSeq ||
+        range.throughSeq > value.throughSeq
+      )
+        ctx.addIssue({ code: 'custom', message: '排除区间必须位于扫描范围内' });
+  });
+export type MessagePageCoverage = z.infer<typeof MessagePageCoverage>;
+export const MessagePage = z.object({
+  items: z.array(Message),
+  hasMore: z.boolean(),
+  /** 2.1新增；旧客户端忽略，新同步引擎用它避免对合法空洞无限补拉。 */
+  coverage: MessagePageCoverage.optional(),
+});
+export type MessagePage = z.infer<typeof MessagePage>;
+
 export const ChatEndpoints = {
   listConversations: defineEndpoint({
     method: 'GET',
@@ -243,7 +281,7 @@ export const ChatEndpoints = {
     auth: 'user',
     params: ConversationParams,
     query: ListMessagesQuery,
-    response: z.object({ items: z.array(Message), hasMore: z.boolean() }),
+    response: MessagePage,
     summary: '按 seq 分页取消息（结果按 seq 升序）；不返回已被本人删除或已清空的消息',
   }),
   sendMessage: defineEndpoint({

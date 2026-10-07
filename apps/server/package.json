@@ -14,9 +14,12 @@
     "db:migrate": "tsx src/cli/migrate.ts up",
     "db:rollback": "tsx src/cli/migrate.ts down",
     "db:status": "tsx src/cli/migrate.ts status",
-    "identity": "tsx src/cli/identity.ts"
+    "identity": "tsx src/cli/identity.ts",
+    "models:seed": "tsx src/cli/seed-models.ts",
+    "crypto:rotate": "tsx src/cli/rotate-kek.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1146.0",
     "@nestjs/common": "^11.2.7",
     "@nestjs/core": "^11.2.7",
     "@nestjs/platform-express": "^11.2.7",
@@ -28,7 +31,10 @@
     "pino": "^10.4.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "sharp": "^0.35.5",
     "uuid": "^14.0.2",
+    "web-push": "3.6.7",
+    "ws": "8.22.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -37,6 +43,8 @@
     "@types/node": "^24.19.1",
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",
+    "@types/web-push": "3.6.4",
+    "@types/ws": "8.18.2",
     "@weiban/tsconfig": "workspace:*",
     "drizzle-kit": "^0.31.11",
     "esbuild": "^0.28.2",
@@ -44,5 +52,9 @@
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^5.0.3"
-  }
+  },
+  "files": [
+    "dist",
+    "drizzle"
+  ]
 }

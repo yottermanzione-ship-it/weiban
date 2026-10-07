@@ -1,0 +1,171 @@
+{
+  "formatVersion": 1,
+  "id": "unknown-types",
+  "description": "未知更新推进游标；未知消息显示降级，缓存往返保留原类型",
+  "initialState": {
+    "initialized": true,
+    "lastUpdateSeq": 0,
+    "messages": [],
+    "conversations": [
+      {
+        "conversationId": "01920000-0000-7000-8000-00000000000a",
+        "type": "direct",
+        "title": null,
+        "participants": [
+          {
+            "participantId": "01920000-0000-7000-8000-000000000014",
+            "kind": "user",
+            "refId": "01920000-0000-7000-8000-00000000001e",
+            "joinedAt": "2026-10-05T08:30:00.000Z"
+          },
+          {
+            "participantId": "01920000-0000-7000-8000-000000000015",
+            "kind": "character",
+            "refId": "01920000-0000-7000-8000-00000000001f",
+            "joinedAt": "2026-10-05T08:30:00.000Z"
+          }
+        ],
+        "contentScope": "normal",
+        "lastSeq": 0,
+        "lastMessage": null,
+        "state": {
+          "pinned": false,
+          "muted": false,
+          "hidden": false,
+          "clearedThroughSeq": 0,
+          "readSeq": 0,
+          "markedUnread": false
+        },
+        "unreadCount": 0,
+        "peerReadSeq": 0,
+        "createdAt": "2026-10-05T08:30:00.000Z",
+        "updatedAt": "2026-10-05T08:30:00.000Z"
+      }
+    ],
+    "contacts": [],
+    "outbox": [],
+    "excluded": [],
+    "scannedThrough": {},
+    "pendingUpdates": [],
+    "settings": {},
+    "recalled": []
+  },
+  "steps": [
+    {
+      "operation": {
+        "type": "update",
+        "update": {
+          "updateSeq": 1,
+          "occurredAt": "2026-10-05T08:30:00.000Z",
+          "type": "future-operation",
+          "data": {
+            "extra": "drop"
+          }
+        }
+      }
+    },
+    {
+      "operation": {
+        "type": "update",
+        "update": {
+          "updateSeq": 2,
+          "occurredAt": "2026-10-05T08:30:00.000Z",
+          "type": "message.created",
+          "data": {
+            "message": {
+              "messageId": "01920000-0000-7000-8000-000000000065",
+              "conversationId": "01920000-0000-7000-8000-00000000000a",
+              "seq": 1,
+              "senderParticipantId": "01920000-0000-7000-8000-000000000015",
+              "senderKind": "character",
+              "content": {
+                "type": "future-hologram",
+                "extra": "must-not-keep"
+              },
+              "quote": null,
+              "status": "normal",
+              "scope": "normal",
+              "clientMsgId": null,
+              "createdAt": "2026-10-05T08:30:00.000Z",
+              "recalledAt": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "operation": {
+        "type": "restart"
+      }
+    }
+  ],
+  "expected": {
+    "state": {
+      "initialized": true,
+      "lastUpdateSeq": 2,
+      "messages": [
+        {
+          "messageId": "01920000-0000-7000-8000-000000000065",
+          "conversationId": "01920000-0000-7000-8000-00000000000a",
+          "seq": 1,
+          "senderParticipantId": "01920000-0000-7000-8000-000000000015",
+          "senderKind": "character",
+          "content": {
+            "type": "unsupported",
+            "originalType": "future-hologram"
+          },
+          "quote": null,
+          "status": "normal",
+          "scope": "normal",
+          "clientMsgId": null,
+          "createdAt": "2026-10-05T08:30:00.000Z",
+          "recalledAt": null
+        }
+      ],
+      "conversations": [
+        {
+          "conversationId": "01920000-0000-7000-8000-00000000000a",
+          "type": "direct",
+          "title": null,
+          "participants": [
+            {
+              "participantId": "01920000-0000-7000-8000-000000000014",
+              "kind": "user",
+              "refId": "01920000-0000-7000-8000-00000000001e",
+              "joinedAt": "2026-10-05T08:30:00.000Z"
+            },
+            {
+              "participantId": "01920000-0000-7000-8000-000000000015",
+              "kind": "character",
+              "refId": "01920000-0000-7000-8000-00000000001f",
+              "joinedAt": "2026-10-05T08:30:00.000Z"
+            }
+          ],
+          "contentScope": "normal",
+          "lastSeq": 1,
+          "lastMessage": null,
+          "state": {
+            "pinned": false,
+            "muted": false,
+            "hidden": false,
+            "clearedThroughSeq": 0,
+            "readSeq": 0,
+            "markedUnread": false
+          },
+          "unreadCount": 0,
+          "peerReadSeq": 0,
+          "createdAt": "2026-10-05T08:30:00.000Z",
+          "updatedAt": "2026-10-05T08:30:00.000Z"
+        }
+      ],
+      "contacts": [],
+      "outbox": [],
+      "excluded": [],
+      "scannedThrough": {},
+      "pendingUpdates": [],
+      "settings": {},
+      "recalled": []
+    },
+    "effects": []
+  }
+}

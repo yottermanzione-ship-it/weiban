@@ -55,14 +55,6 @@ import { PriceService } from './prices.js';
 
 type HoldRow = typeof holds.$inferSelect;
 
-/**
- * SettleInput / ReleaseInput 的扩展：上游 ID（对账第 ③ 层、平台花费按上游汇总需要）。
- * 契约暂无此字段，已提变更申请（交接说明）；批准前网关不传，流水上为空。
- */
-export interface UpstreamTag {
-  upstreamId?: string;
-}
-
 /** 把计费内部的程序错误（调用方用错了端口）和业务结果区分开：前者抛出，后者走 PortResult。 */
 export class BillingUsageError extends Error {
   constructor(message: string) {
@@ -233,7 +225,7 @@ export class ReservationService implements BillingReservationPort {
 
   // ---------- 结算 ----------
 
-  async settle(input: SettleInput & UpstreamTag): Promise<SettleOutput> {
+  async settle(input: SettleInput): Promise<SettleOutput> {
     if (!validUsage(input.actual)) throw new BillingUsageError('实际用量必须是非负数');
     const startedAt = new Date(input.startedAt);
     if (Number.isNaN(startedAt.getTime())) throw new BillingUsageError('startedAt 不是合法时间');
@@ -314,7 +306,7 @@ export class ReservationService implements BillingReservationPort {
 
   // ---------- 解冻 ----------
 
-  async release(input: ReleaseInput & UpstreamTag): Promise<ReleaseOutput> {
+  async release(input: ReleaseInput): Promise<ReleaseOutput> {
     const hold0 = await this.findHold(input.holdId);
     const startedAt = input.startedAt ? new Date(input.startedAt) : this.clock.now();
     if (Number.isNaN(startedAt.getTime())) throw new BillingUsageError('startedAt 不是合法时间');

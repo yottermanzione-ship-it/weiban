@@ -12,7 +12,12 @@ import { ReconciliationService } from './application/reconciliation.js';
 import { ReservationService } from './application/reservations.js';
 import { WalletService } from './application/wallet.js';
 import { BillingAdminController, BillingController } from './http/billing.controller.js';
-import { BILLING_READ_PORT, BILLING_RESERVATION_PORT } from './tokens.js';
+import { ChargeQueryService } from './application/charge-query.js';
+import {
+  BILLING_CHARGE_QUERY_PORT,
+  BILLING_READ_PORT,
+  BILLING_RESERVATION_PORT,
+} from './tokens.js';
 
 @Module({
   imports: [IdentityModule],
@@ -28,7 +33,9 @@ import { BILLING_READ_PORT, BILLING_RESERVATION_PORT } from './tokens.js';
     BillingLifecycle,
     { provide: BILLING_RESERVATION_PORT, useExisting: ReservationService },
     { provide: BILLING_READ_PORT, useExisting: WalletService },
+    ChargeQueryService,
+    { provide: BILLING_CHARGE_QUERY_PORT, useExisting: ChargeQueryService },
   ],
-  exports: [BILLING_RESERVATION_PORT, BILLING_READ_PORT],
+  exports: [BILLING_RESERVATION_PORT, BILLING_READ_PORT, BILLING_CHARGE_QUERY_PORT],
 })
 export class BillingModule {}

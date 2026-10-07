@@ -23,6 +23,8 @@ await build({
     main: 'src/main.ts',
     migrate: 'src/cli/migrate.ts',
     identity: 'src/cli/identity.ts',
+    'rotate-kek': 'src/cli/rotate-kek.ts',
+    'seed-models': 'src/cli/seed-models.ts',
   },
   outdir: 'dist',
   bundle: true,

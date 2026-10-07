@@ -91,6 +91,8 @@ export interface GenerateTextInput {
   messages: ChatMessageForModel[];
   /** 最大输出 token；不传时网关按用途取默认值。冻结金额按它估算。 */
   maxOutputTokens?: number;
+  /** 可选调用方绝对截止时间（ISO），预算包含网关重试；AI用它保证首气泡期限。 */
+  deadlineAt?: string;
   temperature?: number;
   /** 要求模型输出 JSON 时提供（网关不解释 schema，只透传给支持的上游）。 */
   responseFormat?: 'text' | 'json';
@@ -160,4 +162,14 @@ export interface ModelGatewayPort {
     reason:
       'not_configured' | 'insufficient_balance' | 'provider_unavailable' | 'model_removed' | null;
   }>;
+}
+
+/** 模型故障提醒的只读受影响用户筛选；仅检查选择/默认/覆盖及当前故障，不调用上游。 */
+export interface ModelNotificationReadPort {
+  affectedUsers(
+    userIds: readonly string[],
+    modelKey: string,
+    tx?: import('./common.js').Tx,
+    previousDefaultFor?: readonly ('chat' | 'background' | 'vision')[],
+  ): Promise<string[]>;
 }

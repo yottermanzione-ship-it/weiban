@@ -36,6 +36,69 @@
       "when": 1791206183547,
       "tag": "0004_model_access",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791212590260,
+      "tag": "0005_billing_c13",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791213596123,
+      "tag": "0006_model_gateway",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791214528517,
+      "tag": "0007_media",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791216406070,
+      "tag": "0008_characters",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791280647548,
+      "tag": "0009_realtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791283460560,
+      "tag": "0010_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791284942769,
+      "tag": "0011_contacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791298889603,
+      "tag": "0012_ai_replies",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791307433330,
+      "tag": "0013_push_notifications",
+      "breakpoints": true
     }
   ]
 }

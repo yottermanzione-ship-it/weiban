@@ -1,5 +1,11 @@
+import type { Tx } from './common.js';
 import type { CharacterCard } from '../character-card.js';
 import type { CharacterClassification, CharacterProfile } from '../http/characters.js';
+
+/** 通知显示专用：只返回名字，不加载头像或向调用方提供角色卡上下文，不派生供应商调用。 */
+export interface CharacterNameReadPort {
+  getDisplayName(userId: string, characterId: string, tx?: Tx): Promise<string | null>;
+}
 
 /** AI 运行时生成回复所需的角色数据。 */
 export interface CharacterForRuntime {
@@ -17,6 +23,9 @@ export interface CharacterForRuntime {
 export interface CharacterReadPort {
   /** 用户视角的角色数据：预设角色对所有人可读；自定义角色只有创建者可读，否则返回 null。 */
   getForRuntime(userId: string, characterId: string): Promise<CharacterForRuntime | null>;
-  getClassification(characterId: string): Promise<CharacterClassification | null>;
+  /** 可选事务用于资格闸门：锁定当前分类，与消息/模式写入共享同一提交。 */
+  getClassification(characterId: string, tx?: Tx): Promise<CharacterClassification | null>;
+  /** 添加资格：上架预设或本人可用自定义角色；可共享调用方事务并锁定角色行。 */
+  canAdd(userId: string, characterId: string, tx?: Tx): Promise<boolean>;
   getProfiles(userId: string, characterIds: string[]): Promise<CharacterProfile[]>;
 }

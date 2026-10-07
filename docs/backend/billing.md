@@ -132,3 +132,7 @@ await this.billing.release({ holdId, reason, upstreamUsage?, usageRecordId? }); 
 
 - 单元：`domain/rules.test.ts`（计价、分时价含跨午夜、缺价、用途分类、透支资格、时区日期）。
 - 集成：`apps/server/test/billing.test.ts`（27 条）：价目表；钱包按需创建；多退少补、重复结算只扣一次、冻结幂等；失败解冻与平台吸收；过期清理与过期后结算；**并发**（同一用户 20 个同时冻结只成功 5 个；10 个用户 20 个同时冻结，平台上限只放行 6 个）；余额事件（topped_up_after_rejection、depleted、crossed_zero、low 每天一次）；安全透支清单（6.6 第 8 条全部 6 项）；后台上限；管理员加扣（原因必填、幂等、409、422、审计、403、404）；流水分页与用量汇总；流水只增不改；对账发现人为不一致、过期冻结、账单偏差、透支过深；注册赠送（A 部分）与 identity 补充（B 部分）。
+
+## 契约 1.3 配套（T-028接续）
+
+`BILLING_CHARGE_QUERY_PORT` 提供按用量ID查扣费、按北京日分页查扣费及当前有价模型键。`upstreamId` 在结算/平台吸收时写入流水。账户列表从identity目录端口取用户名。订阅用量对账事件，仅接受更晚的checkedAt；①③层重跑保留②层结果和runId。80%预算及①③层异常通过同事务发件箱发送管理员提醒，载荷不含用户资料。迁移0005同时修复注销active冻结未归还平台预算的问题（Q-011）；保留已结算成本，不修改旧迁移。

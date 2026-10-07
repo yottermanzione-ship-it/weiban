@@ -154,6 +154,8 @@ export const ModelStatusChanged = event(
     modelKey: ModelKey,
     available: z.boolean(),
     reason: z.enum(['provider_unavailable', 'model_removed', 'recovered']),
+    /** 2.2：下架会清默认用途；保留变化前用途供隐式默认用户故障提醒。 */
+    previousDefaultFor: z.array(z.enum(['chat', 'background', 'vision'])).optional(),
   }),
 );
 

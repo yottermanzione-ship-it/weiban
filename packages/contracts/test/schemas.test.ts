@@ -33,6 +33,7 @@ import {
   Message,
   MessageContent,
   NotificationPayload,
+  NotificationEnvelope,
   SendMessageRequest,
   ServerFrame,
   ServerFrameStrict,
@@ -81,12 +82,12 @@ const adminCharacter = {
   birthday: null,
   fanName: null,
   classification,
-  card: { cardSchemaVersion: 0, data: {} },
+  card: { cardSchemaVersion: 1, data: {} },
 };
 
 describe('契约版本', () => {
-  it('为 1.3', () => {
-    expect(CONTRACT_VERSION).toBe('1.3');
+  it('为 2.2', () => {
+    expect(CONTRACT_VERSION).toBe('2.2');
   });
 });
 
@@ -611,5 +612,59 @@ describe('v1.3（T-026）', () => {
 
   it('通知种类新增 admin_alert', () => {
     expect(NotificationPayload.shape.kind.parse('admin_alert')).toBe('admin_alert');
+  });
+});
+
+describe('接收降级可重复解析（T-034）', () => {
+  it('未知消息与更新从缓存再次解析，不丢失originalType', () => {
+    const message = Message.parse({
+      ...textMessage,
+      content: { type: 'future-hologram', payload: 'discarded' },
+    });
+    expect(message.content).toEqual({ type: 'unsupported', originalType: 'future-hologram' });
+    expect(Message.parse(JSON.parse(JSON.stringify(message)))).toEqual(message);
+    const update = UserUpdate.parse({
+      updateSeq: 1,
+      occurredAt: NOW,
+      type: 'future-update',
+      data: { payload: 'discarded' },
+    });
+    expect(update).toEqual({
+      updateSeq: 1,
+      occurredAt: NOW,
+      type: 'unsupported',
+      data: { originalType: 'future-update' },
+    });
+    expect(UserUpdate.parse(JSON.parse(JSON.stringify(update)))).toEqual(update);
+    expect(Message.safeParse({ ...textMessage, content: { type: 'unsupported' } }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe('2.2推送归属兼容', () => {
+  it('旧载荷仍可解析；新接收契约必须有账号、会话及去重ID', () => {
+    const legacy = {
+      v: 1,
+      kind: 'message',
+      collapseKey: ID,
+      title: '角色',
+      body: '你好',
+      count: 1,
+      deepLink: `/chat/${ID}`,
+      conversationId: ID,
+      sound: true,
+      sentAt: NOW,
+    };
+    expect(NotificationPayload.parse(legacy).body).toBe('你好');
+    expect(NotificationEnvelope.safeParse(legacy).success).toBe(false);
+    const owned = { ...legacy, recipientUserId: ID, recipientSessionId: ID2, notificationId: ID };
+    expect(NotificationEnvelope.parse(owned).recipientSessionId).toBe(ID2);
+    expect(NotificationPayload.parse(owned).body).toBe('你好');
+    for (const field of ['recipientUserId', 'recipientSessionId', 'notificationId'] as const) {
+      const missing = { ...owned };
+      delete (missing as Partial<typeof owned>)[field];
+      expect(NotificationEnvelope.safeParse(missing).success).toBe(false);
+    }
   });
 });

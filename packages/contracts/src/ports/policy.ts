@@ -9,6 +9,7 @@
  * v1.1（T-020）：按 pm-rulings-2 A1 恢复 classical_art_only（管理员标注的历史人物只生成古风插画形象）；
  * checkImageGeneration 新增 style。
  */
+import type { Tx } from './common.js';
 import type { PortraitPolicy } from '../http/characters.js';
 
 export interface CharacterPolicy {
@@ -79,11 +80,14 @@ export interface PolicyPort {
   }): Promise<PolicyDecision>;
 
   /** 模型网关在使用成人模式模型前调用（生成闸，不信任上游）。 */
-  checkAdultGeneration(input: {
-    userId: string;
-    characterId: string;
-    conversationId: string;
-  }): Promise<PolicyDecision>;
+  checkAdultGeneration(
+    input: {
+      userId: string;
+      characterId: string;
+      conversationId: string;
+    },
+    tx?: Tx,
+  ): Promise<PolicyDecision>;
 
   /**
    * 无审查模型闸门：模型带 adult_content 能力时，设置角色单独模型前、网关每次调用前都要调用。

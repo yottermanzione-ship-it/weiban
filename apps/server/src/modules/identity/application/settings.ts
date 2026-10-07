@@ -9,20 +9,24 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
   AccountStatus,
+  Tx,
   AppTheme,
   IdentityAccountStatusPort,
+  IdentityDirectoryPort,
   IdentityReadPort,
   NotificationSettings,
   Profile,
   UpdateProfileRequest,
   UpdateUserPreferencesRequest,
   UserPreferences,
+  MediaReadPort,
 } from '@weiban/contracts';
 import { UpdateNotificationSettingsRequest } from '@weiban/contracts';
-import { eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   AppError,
+  asDbTx,
   CLOCK,
   DATABASE,
   OUTBOX,
@@ -32,6 +36,7 @@ import {
   type Outbox,
 } from '../../../platform/index.js';
 import { isValidTimeZone } from '../domain/rules.js';
+import { MEDIA_READ_PORT } from '../../media/index.js';
 import { notificationSettings, preferences, profiles, users } from '../infra/db/schema.js';
 
 type ProfileRow = typeof profiles.$inferSelect;
@@ -95,11 +100,14 @@ function changedKeys<P extends object>(
 }
 
 @Injectable()
-export class SettingsService implements IdentityReadPort, IdentityAccountStatusPort {
+export class SettingsService
+  implements IdentityReadPort, IdentityAccountStatusPort, IdentityDirectoryPort
+{
   constructor(
     @Inject(DATABASE) private readonly database: Database,
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(MEDIA_READ_PORT) private readonly media: MediaReadPort,
   ) {}
 
   /** 注册时在同一事务写入资料、通知设置、界面偏好的默认值。 */
@@ -124,8 +132,11 @@ export class SettingsService implements IdentityReadPort, IdentityAccountStatusP
 
   // ---------- 资料 ----------
 
-  async getProfile(userId: string): Promise<Profile | null> {
-    const [row] = await this.database.db.select().from(profiles).where(eq(profiles.userId, userId));
+  async getProfile(userId: string, input?: Tx): Promise<Profile | null> {
+    const [row] = await (input ? asDbTx(input).db : this.database.db)
+      .select()
+      .from(profiles)
+      .where(eq(profiles.userId, userId));
     return row ? toProfile(row) : null;
   }
 
@@ -136,6 +147,11 @@ export class SettingsService implements IdentityReadPort, IdentityAccountStatusP
   }
 
   async updateProfile(userId: string, patch: UpdateProfileRequest): Promise<Profile> {
+    if (patch.avatarMediaId) {
+      const avatar = await this.media.getMedia(userId, patch.avatarMediaId);
+      if (avatar.purpose !== 'user_avatar')
+        throw new AppError('bad_request', '请使用自己的头像图片', { status: 422 });
+    }
     if (patch.timeZone !== undefined && !isValidTimeZone(patch.timeZone)) {
       throw invalidTimeZone('timeZone');
     }
@@ -166,8 +182,8 @@ export class SettingsService implements IdentityReadPort, IdentityAccountStatusP
 
   // ---------- 通知设置 ----------
 
-  async getNotificationSettings(userId: string): Promise<NotificationSettings | null> {
-    const [row] = await this.database.db
+  async getNotificationSettings(userId: string, input?: Tx): Promise<NotificationSettings | null> {
+    const [row] = await (input ? asDbTx(input).db : this.database.db)
       .select()
       .from(notificationSettings)
       .where(eq(notificationSettings.userId, userId));
@@ -265,12 +281,30 @@ export class SettingsService implements IdentityReadPort, IdentityAccountStatusP
   // ---------- IdentityAccountStatusPort（契约 1.2） ----------
 
   /** 账号状态：active / deleting；账号不存在（已删除或从未存在）返回 null。 */
-  async getAccountStatus(userId: string): Promise<AccountStatus | null> {
-    const [row] = await this.database.db
-      .select({ status: users.status })
-      .from(users)
-      .where(eq(users.id, userId));
+  async getAccountStatus(userId: string, transaction?: Tx): Promise<AccountStatus | null> {
+    const db = transaction ? asDbTx(transaction).db : this.database.db;
+    const query = db.select({ status: users.status }).from(users).where(eq(users.id, userId));
+    const [row] = await (transaction ? query.for('share') : query);
     return (row?.status as AccountStatus | undefined) ?? null;
+  }
+
+  async getUsernames(userIds: readonly string[]): Promise<Record<string, string>> {
+    if (userIds.length > 500) throw new AppError('bad_request', '一次最多查询 500 个用户 ID');
+    if (userIds.length === 0) return {};
+    const rows = await this.database.db
+      .select({ id: users.id, username: users.username })
+      .from(users)
+      .where(inArray(users.id, [...new Set(userIds)]));
+    return Object.fromEntries(rows.map((row) => [row.id, row.username]));
+  }
+
+  async listAdminUserIds(input?: Tx): Promise<string[]> {
+    const rows = await (input ? asDbTx(input).db : this.database.db)
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.role, 'admin'), eq(users.status, 'active')))
+      .orderBy(asc(users.id));
+    return rows.map((row) => row.id);
   }
 }
 

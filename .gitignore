@@ -69,3 +69,6 @@ desktop.ini
 # ---- Claude Code 个人本地设置与工作副本 ----
 .claude/settings.local.json
 .claude/worktrees/
+
+# 由Web SVG在构建时生成的PWA/Apple安装图标
+/apps/web/public/generated/

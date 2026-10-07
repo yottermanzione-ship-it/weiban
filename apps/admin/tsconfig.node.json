@@ -1,0 +1,5 @@
+{
+  "extends": "@weiban/tsconfig/node.json",
+  "compilerOptions": { "lib": ["ES2023", "DOM"] },
+  "include": ["vite.config.ts", "playwright.config.ts", "test/**/*.ts"]
+}

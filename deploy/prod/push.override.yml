@@ -1,0 +1,9 @@
+# 可选推送凭据：与compose.yml叠加；不配置时推送接口明确返回未配置。
+services:
+  app:
+    environment:
+      PUSH_CREDENTIALS_FILE: /run/secrets/push_credentials
+    secrets: [push_credentials]
+secrets:
+  push_credentials:
+    file: ${PUSH_CREDENTIALS_PATH:?Set absolute push credential JSON path}

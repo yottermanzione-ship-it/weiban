@@ -51,6 +51,7 @@ export const PushDevice = z.object({
   sessionId: Id,
   createdAt: Timestamp,
 });
+export type PushDevice = z.infer<typeof PushDevice>;
 
 /** v1.3：新增 admin_alert（管理员提醒，只发给管理员账号的设备，billing.md 8.4 节）。 */
 export const NotificationKind = z.enum([
@@ -69,6 +70,10 @@ export type NotificationKind = z.infer<typeof NotificationKind>;
  */
 export const NotificationPayload = z.object({
   v: z.literal(1),
+  /** 2.2：传输附带接收者；发送前由push覆盖，客户端必须核对当前账号与会话后才展示。 */
+  recipientUserId: Id.optional(),
+  recipientSessionId: Id.optional(),
+  notificationId: Id.optional(),
   /**
    * balance：余额不足 / 过低提醒（v0.2 新增）。新增种类是次版本变更：
    * 客户端不认识的种类解析为 'unsupported'，按普通通知显示（标题、正文、deepLink）。
@@ -92,6 +97,14 @@ export const NotificationPayload = z.object({
   sentAt: z.iso.datetime(),
 });
 export type NotificationPayload = z.infer<typeof NotificationPayload>;
+
+/** 2.2：新客户端接收推送用此严格版本；缺少归属的旧载荷不展示私密正文。其余字段与v1兼容。 */
+export const NotificationEnvelope = NotificationPayload.required({
+  recipientUserId: true,
+  recipientSessionId: true,
+  notificationId: true,
+});
+export type NotificationEnvelope = z.infer<typeof NotificationEnvelope>;
 
 export const PushEndpoints = {
   getVapidPublicKey: defineEndpoint({

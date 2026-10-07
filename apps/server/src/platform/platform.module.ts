@@ -21,7 +21,8 @@ import { APP_FILTER, APP_GUARD, ModuleRef, Reflector } from '@nestjs/core';
 import { AUDIT_LOG, AuditLog } from './audit/audit-log.js';
 import { AuthGuard, SESSION_VERIFIER, type SessionVerifier } from './auth/auth.js';
 import { CLOCK, SystemClock, type Clock } from './clock/clock.js';
-import { APP_CONFIG, readKekFile, type AppConfig } from './config/config.js';
+import { APP_CONFIG, type AppConfig } from './config/config.js';
+import { loadKekRing } from './crypto/kek-ring.js';
 import { ENVELOPE_CRYPTO, EnvelopeCrypto, type KekRing } from './crypto/envelope.js';
 import { DATABASE, Database } from './db/database.js';
 import { USER_DATA_REGISTRY, UserDataRegistry } from './deletion/user-data-registry.js';
@@ -93,15 +94,6 @@ class PlatformLifecycle implements OnApplicationBootstrap, OnApplicationShutdown
     await this.jobs.stop();
     await this.database.close();
   }
-}
-
-function loadKekRing(config: AppConfig): KekRing | null {
-  if (!config.crypto.kekFile) return null;
-  const version = config.crypto.kekVersion;
-  return {
-    currentVersion: version,
-    keys: new Map([[version, readKekFile(config.crypto.kekFile)]]),
-  };
 }
 
 @Global()
