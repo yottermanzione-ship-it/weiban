@@ -9,8 +9,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import app.weiban.contracts.*
+import app.weiban.data.OwnerRecord
+import app.weiban.data.SessionCallOptions
 import app.weiban.data.SessionRepository
 import app.weiban.designsystem.tokens.WbSpace
+import app.weiban.network.ApiFailure
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -18,6 +21,7 @@ import kotlinx.serialization.json.*
 
 private class MeState(
     val repository: SessionRepository,
+    val owner: OwnerRecord,
     val firstProfile: Boolean,
     val onTheme: (String) -> Unit,
     private val scope: CoroutineScope,
@@ -39,8 +43,19 @@ private class MeState(
     var message by mutableStateOf<String?>(null)
     var busy by mutableStateOf(false)
 
+    suspend fun <T> call(
+        endpoint: ContractEndpoint<T>,
+        body: JsonElement? = null,
+        query: Map<String, String> = emptyMap(),
+    ): T {
+        val result = repository.call(endpoint, body, query = query, options = SessionCallOptions(owner = owner))
+        val current = repository.auth.value
+        if (current?.user?.userId != owner.userId || current.session.sessionId != owner.sessionId) throw ApiFailure("session_changed", 0)
+        return result
+    }
+
     suspend fun load() {
-        val p = repository.call(Endpoints.identityEndpointsGetProfile)
+        val p = call(Endpoints.identityEndpointsGetProfile)
         profile = p
         nickname = p.nickname.orEmpty()
         city = p.city.orEmpty()
@@ -48,12 +63,12 @@ private class MeState(
             p.about.orEmpty()
         birthday = p.birthday.orEmpty()
         gender = p.gender
-        val w = repository.call(Endpoints.billingEndpointsGetWallet)
+        val w = call(Endpoints.billingEndpointsGetWallet)
         wallet = w
         threshold = yuan(w.lowBalanceThresholdMicros)
         daily =
             yuan(w.backgroundBudget.dailyLimitMicros)
-        val prefs = repository.call(Endpoints.identityEndpointsGetPreferences)
+        val prefs = call(Endpoints.identityEndpointsGetPreferences)
         onTheme(prefs.theme)
     }
 
@@ -84,9 +99,21 @@ private class MeState(
     onTheme: (String) -> Unit,
     onLogout: () -> Unit,
 ) {
+    val auth by repository.auth.collectAsState()
+    val owner = auth?.let { OwnerRecord(userId = it.user.userId, sessionId = it.session.sessionId) } ?: return
+    key(owner) { MeContent(repository, owner, firstProfile, onTheme, onLogout) }
+}
+
+@Composable private fun MeContent(
+    repository: SessionRepository,
+    owner: OwnerRecord,
+    firstProfile: Boolean,
+    onTheme: (String) -> Unit,
+    onLogout: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
     val themeCallback = rememberUpdatedState(onTheme)
-    val state = remember(repository) { MeState(repository, firstProfile, { themeCallback.value(it) }, scope) }
+    val state = remember(repository, owner) { MeState(repository, owner, firstProfile, { themeCallback.value(it) }, scope) }
     LaunchedEffect(state) { state.perform { state.load() } }
     with(state) {
         Column(
@@ -146,7 +173,7 @@ private class MeState(
 
 @Composable private fun ProfileDetails(state: MeState) =
     with(state) {
-        SavedAvatar(repository, profile?.avatarMediaId)
+        SavedAvatar(repository, owner, profile)
         AvatarPicker(repository) { perform { load() } }
         OutlinedTextField(city, { city = it }, label = { Text("城市（可不填）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(birthday, {
@@ -171,7 +198,7 @@ private class MeState(
             perform {
                 require(nickname.isNotBlank())
                 if (birthday.isNotBlank())java.time.LocalDate.parse(birthday)
-                repository.call(
+                call(
                     Endpoints.identityEndpointsUpdateProfile,
                     buildJsonObject {
                         put("nickname", nickname)
@@ -181,8 +208,8 @@ private class MeState(
                         put("gender", gender)
                     },
                 )
-                val user = repository.call(Endpoints.identityEndpointsMe)
-                repository.updateUser(user)
+                val user = call(Endpoints.identityEndpointsMe)
+                repository.updateUser(user, owner)
                 load()
                 page = "me"
             }
@@ -228,7 +255,7 @@ private class MeState(
         Button(enabled = !busy, onClick = {
             perform {
                 wallet =
-                    repository.call(
+                    call(
                         Endpoints.billingEndpointsUpdateWalletSettings,
                         buildJsonObject {
                             put("lowBalanceThresholdMicros", micros(threshold))
@@ -265,7 +292,7 @@ private class MeState(
             TextButton(enabled = !busy, onClick = {
                 perform {
                     val result =
-                        repository.call(
+                        call(
                             Endpoints.billingEndpointsListLedger,
                             query =
                                 mapOf("cursor" to cursor!!),
@@ -281,7 +308,7 @@ private class MeState(
     state: MeState,
     onLogout: () -> Unit,
 ) = with(state) {
-    SavedAvatar(repository, profile?.avatarMediaId)
+    SavedAvatar(repository, owner, profile)
     Text(
         profile?.nickname ?: repository.auth.value
             ?.user
@@ -294,7 +321,7 @@ private class MeState(
     OutlinedButton(onClick = {
         page = "wallet"
         perform {
-            val result = repository.call(Endpoints.billingEndpointsListLedger)
+            val result = call(Endpoints.billingEndpointsListLedger)
             ledger =
                 result.items
             cursor = result.nextCursor
@@ -303,9 +330,9 @@ private class MeState(
     OutlinedButton(onClick = {
         page = "models"
         perform {
-            models = repository.call(Endpoints.modelAccessEndpointsListModels).items
+            models = call(Endpoints.modelAccessEndpointsListModels).items
             selection =
-                repository.call(Endpoints.modelAccessEndpointsGetSelection)
+                call(Endpoints.modelAccessEndpointsGetSelection)
         }
     }) { Text("模型选择") }
     OutlinedButton(onClick = { page = "theme" }) { Text("主题") }
@@ -340,7 +367,7 @@ private class MeState(
             RadioButton(selected = selected == model.modelKey, enabled = model.available && !busy, onClick = {
                 perform {
                     selection =
-                        repository.call(
+                        call(
                             Endpoints.modelAccessEndpointsUpdateSelection,
                             buildJsonObject {
                                 put(kind, buildJsonObject { put("modelKey", model.modelKey) })
@@ -357,7 +384,7 @@ private class MeState(
         for ((id, label) in listOf("green" to "默认", "pink" to "微伴粉")) {
             OutlinedButton(enabled = !busy, onClick = {
                 perform {
-                    val prefs = repository.call(Endpoints.identityEndpointsUpdatePreferences, buildJsonObject { put("theme", id) })
+                    val prefs = call(Endpoints.identityEndpointsUpdatePreferences, buildJsonObject { put("theme", id) })
                     onTheme(prefs.theme)
                 }
             }) { Text(label) }
@@ -390,7 +417,7 @@ private fun pageTitle(
     ListItem(headlineContent = { Text(title) }, trailingContent = {
         RadioButton(selected = selected == null, enabled = !busy, onClick = {
             perform {
-                selection = repository.call(Endpoints.modelAccessEndpointsUpdateSelection, buildJsonObject { put(kind, JsonNull) })
+                selection = call(Endpoints.modelAccessEndpointsUpdateSelection, buildJsonObject { put(kind, JsonNull) })
             }
         })
     })

@@ -14,7 +14,7 @@ import { useRemote, friendlyError } from '../data/use-remote.js';
 import { VirtualList } from './virtual-list.js';
 import { HomeScreenGuide } from './home-screen-guide.js';
 import { CharacterAvatar } from './character-avatar.js';
-import { UserMessageAvatar } from './message-avatar.js';
+import { UserAvatar } from './user-avatar.js';
 export function CharacterName({ id, fallback }: { id: string; fallback?: string | null }) {
   const profile = useRemote(CharacterEndpoints.getProfile, { params: { characterId: id } });
   return <>{fallback || profile.data?.name || '角色'}</>;
@@ -202,7 +202,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
             </time>
             <div className="message-body">
               {message.status === 'normal' && message.senderKind === 'user' && (
-                <UserMessageAvatar profile={userProfile.data} />
+                <UserAvatar profile={userProfile.data} />
               )}
               {message.status === 'normal' && message.senderKind === 'character' && (
                 <CharacterAvatar
@@ -247,7 +247,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
       />
       {pending.map((item) => (
         <div className="pending-message" key={item.body.clientMsgId}>
-          <UserMessageAvatar profile={userProfile.data} />
+          <UserAvatar profile={userProfile.data} />
           <div className="message-details">
             <p>{item.body.content.type === 'text' ? item.body.content.text : '拍了拍'}</p>
             {item.state === 'failed' ? (

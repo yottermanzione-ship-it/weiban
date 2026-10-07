@@ -2,7 +2,15 @@ import { useState } from 'react';
 import { MediaEndpoints, type Profile } from '@weiban/contracts';
 import { avatarLetters } from '@weiban/client-core';
 import { useRemote } from '../data/use-remote.js';
-export function UserMessageAvatar({ profile, size = 40 }: { profile?: Profile; size?: number }) {
+export function UserAvatar({
+  profile,
+  size = 40,
+  imageClassName,
+}: {
+  profile?: Profile;
+  size?: number;
+  imageClassName?: string;
+}) {
   const letters = avatarLetters(profile?.nickname ?? '我');
   return (
     <span
@@ -18,20 +26,27 @@ export function UserMessageAvatar({ profile, size = 40 }: { profile?: Profile; s
     >
       <span aria-hidden="true">{letters}</span>
       {profile?.avatarMediaId && (
-        <PrivateImage key={profile.avatarMediaId} mediaId={profile.avatarMediaId} />
+        <PrivateImage
+          key={profile.avatarMediaId}
+          mediaId={profile.avatarMediaId}
+          imageClassName={imageClassName}
+        />
       )}
     </span>
   );
 }
-function PrivateImage({ mediaId }: { mediaId: string }) {
+function PrivateImage({ mediaId, imageClassName }: { mediaId: string; imageClassName?: string }) {
   const media = useRemote(MediaEndpoints.getMedia, { params: { mediaId } });
-  return media.data ? <Picture key={media.data.url} url={media.data.url} /> : null;
+  return media.data ? (
+    <Picture key={media.data.url} url={media.data.url} imageClassName={imageClassName} />
+  ) : null;
 }
-function Picture({ url }: { url: string }) {
+function Picture({ url, imageClassName }: { url: string; imageClassName?: string }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   return failed ? null : (
     <img
+      className={imageClassName}
       src={url}
       alt=""
       aria-hidden="true"

@@ -82,7 +82,7 @@ export function ProfilePage() {
         <details open={firstUse ? undefined : true}>
           <summary>补充更多资料（可选）</summary>
           <div className="stack">
-            <ProfileAvatar mediaId={remote.data?.avatarMediaId} />
+            <ProfileAvatar profile={remote.data} />
             <AvatarEditor
               onSaved={async (mediaId) => {
                 await api.call(IdentityEndpoints.updateProfile, {

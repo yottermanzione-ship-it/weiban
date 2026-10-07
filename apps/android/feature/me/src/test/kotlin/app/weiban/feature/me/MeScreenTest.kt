@@ -19,6 +19,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(RobolectricTestRunner::class)
@@ -51,7 +52,20 @@ class MeScreenTest {
                         stored = null
                     }
                 }
-            repository = SessionRepository(ApiClient(server.url("/").toString()), database, vault)
+            // The fixture listens on IPv4; do not let cancellation send a later request to an unused localhost IPv6 route.
+            repository =
+                SessionRepository(
+                    ApiClient(
+                        server
+                            .url("/")
+                            .newBuilder()
+                            .host("127.0.0.1")
+                            .build()
+                            .toString(),
+                    ),
+                    database,
+                    vault,
+                )
             server.dispatcher =
                 object : Dispatcher() {
                     override fun dispatch(request: RecordedRequest): MockResponse {
@@ -105,6 +119,48 @@ class MeScreenTest {
     @After fun close() {
         server.close()
         database.close()
+    }
+
+    @Test fun replacingAccountDiscardsItsSlowProfileAndShowsTheNewOwnersAvatar() {
+        val old = repository.auth.value!!
+        val other =
+            old.copy(
+                user = old.user.copy(userId = "01920000-0000-7000-8000-000000000024", username = "other_user", profileCompleted = true),
+                session = old.session.copy(sessionId = "01920000-0000-7000-8000-000000000025", token = "other-test-token-".repeat(4)),
+            )
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    requests.add(request)
+                    if (request.path != "/api/v1/me/profile") return respond(request)
+                    val previous = request.getHeader("Authorization") == "Bearer ${old.session.token}"
+                    val value = profile.get().copy(nickname = if (previous) "旧昵称" else "新昵称")
+                    return MockResponse().setBody(repository.api.json.encodeToString(Profile.serializer(), value)).apply {
+                        if (previous) setBodyDelay(2, TimeUnit.SECONDS)
+                    }
+                }
+            }
+        compose.setContent { WeibanTheme { MeScreen(repository, onTheme = {}, onLogout = {}) } }
+        compose.waitUntil(10_000) { requests.any { it.path == "/api/v1/me/profile" } }
+        runBlocking { repository.authenticate(other) }
+        try {
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("新昵称").fetchSemanticsNodes().isNotEmpty() }
+        } catch (error: ComposeTimeoutException) {
+            val calls =
+                requests.map {
+                    val actor = if (it.getHeader("Authorization") == "Bearer ${other.session.token}") "new" else "previous"
+                    "${it.method} ${it.requestUrl?.encodedPath} $actor"
+                }
+            throw AssertionError("$calls\n${compose.onRoot().printToString()}", error)
+        }
+        compose.onNodeWithContentDescription("我的头像").assertExists()
+        compose.onNodeWithText("旧昵称").assertDoesNotExist()
+        assertEquals(other, repository.auth.value)
+        assertFalse(requests.any { it.method == "PATCH" || it.method == "POST" })
+        assertEquals(
+            1,
+            requests.count { it.path == "/api/v1/me/profile" && it.getHeader("Authorization") == "Bearer ${other.session.token}" },
+        )
     }
 
     @Test fun firstProfileSaveUsesNativeFormAndRefreshesAccount() {

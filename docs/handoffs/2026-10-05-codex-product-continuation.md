@@ -262,3 +262,19 @@ Web与Android私聊为正常消息显示40px双方头像：角色按实际发送
 开发自测：最终Web20组（/tmp/weiban-t041-avatar-gesture-web4.log，退出0），新增真实来源弹层/取消/文件选择器、双色PNG拖动后的实际像素、CDP双指缩放、键盘展开/折叠、真实私有512像素上传；截图已查看，修正首版白底白字按钮与控件挤出常用按钮的问题。Android完整ktlint/detekt/单元测试/APK通过，86条JUnit零失败/零跳过（/tmp/weiban-t041-avatar-gesture-native6.log，退出0，实际XML汇总与报告脚本一致），新增真实FileProvider照片读写、只分享头像子目录/非导出检查、拖动和双指缩放后实际蓝色512px输出、取消清理及换号迟到结果拒绝三条。管理端7组（/tmp/weiban-t041-avatar-gesture-admin1.log，退出0）、514定义/85操作/图标/tokens生成无差异（/tmp/weiban-t041-avatar-gesture-generated1.log）。整仓50文件451条真实PG测试、格式/模块边界/完整类型/tokens检查通过（/tmp/weiban-t041-avatar-gesture-root1.log，退出0）。
 
 原生早期格式/文件名/行长门禁失败轮次、native1静态检查失败、native2模式颜色访问编译错误、native3测试辅助函数名编译错误均不计通过，native4发现Robolectric不同模拟应用缓存目录与同authority的FileProvider静态策略串用，按Android启动流程为每个测试实例初始化真实manifest Provider；native5新测试长度达到门禁上限，拆出照片返回夹具后通过。分别修正源码结构/使用已有令牌模式与语义匹配；没有放宽门禁/断言。系统相机结果在Robolectric中模拟写入真实FileProvider URI，不构成真实拍摄/设备权限验收；Web拍照文件仍是测试夹具，触控在Chromium/CDP模拟。真机相机/系统强杀恢复仍待验；开发自测不等于独立QA。继续头像剩余入口/通知PNG、原生推送、引导草稿恢复及L2–L7，产品未完成。提交后另读CI。
+
+
+拍照/手势裁剪检查点已发布并核验CI：本机f2aedb1bb59171a5c103cbc7ac9a84ae9468328a，远端143d015711e8129e62272d3cb2c5cd78d1dbe987，同tree3adf92c99ac26ee1a0a76f6319fd93c5d6bc11a6。push37634370493（check112836574161/Android112836574405）与PR37634375744（check112836590488/Android112836591648）及全部job最终success，结果已读取；新源码生产构建、14迁移及加密备份/空卷恢复通过。后续资料页用户头像/Me页会话归属是新的继续开发工作树，不借用此CI。
+
+
+## T041 资料页头像与原生会话一致性（2026-10-07）
+
+Web聊天/资料/我的页复用UserAvatar，资料与我的页64px、聊天40px；用户私有图加载/失败使用同一标准昵称字形，固定灰底/深色字/0.12圆角和淡入规则。Android我的/资料页同样使用64px默认字形和owner绑定的私有图；Me页按userId+sessionId重建状态，资料/余额/模型/流水及保存均绑定原owner，旧资料刷新不能改写同账号的新会话。
+
+另外修正原生SessionRepository先发布Auth再绑定HTTP造成观察者立即请求失败的问题，改为先完成HTTP绑定再公布会话。StateFlow对相同值保留原对象，资料不变和相同会话恢复也保留该对象，避免HTTP引用与可观察会话永久不同步。updateUser在会话锁内校验可选expected owner。没有修改网络重试策略或新增依赖/契约。
+
+开发自测：Web21组（/tmp/weiban-t041-profile-avatar-web1.log，退出0），新增真实上传512px→资料/我的64px→失败回退与深色实际计算颜色/圆角检查；原有上传断言仍检查内部真实图片512px。Android完整ktlint/detekt/单元测试/APK构建通过，89条JUnit零失败/零跳过（/tmp/weiban-t041-profile-avatar-native2.log，退出0，实际XML与报告脚本一致）。新增真实Room/HTTP换号丢弃慢资料、同账号新会话拒绝旧刷新，以及发布时HTTP绑定已准备、相同资料/恢复后真实HTTP仍可请求三条。管理端7组（/tmp/weiban-t041-profile-avatar-admin1.log）；514定义/85操作/图标/tokens生成无差异（/tmp/weiban-t041-profile-avatar-generated1.log）。整仓50文件451条真实PG测试、格式/模块边界/完整类型/tokens通过（/tmp/weiban-t041-profile-avatar-root2.log，退出0）。
+
+首轮完整原生及focus1/2/3的新Me换号界面测试失败，独立HTTP准备测试在focus2已通过；诊断最终确认MockWebServer的localhost双栈在旧请求取消后选择未监听IPv6而连接拒绝，测试服务固定127.0.0.1后focus4与完整native2通过。临时生产诊断已移除，保留失败时无令牌的请求归属/界面树辅助信息。没有放宽超时或删除断言，专项报告不冒充完整套件。整仓root1新增测试文件格式未通过，格式修正后重跑root2；失败轮次不计通过。
+
+本轮属于开发自测，非独立QA；Robolectric/Chromium不构成真实设备/OS强杀/Safari或系统推送验收。发布后另读本轮CI；继续头像恢复来源菜单/通知PNG、原生推送、引导草稿及L2–L7，产品未完成。

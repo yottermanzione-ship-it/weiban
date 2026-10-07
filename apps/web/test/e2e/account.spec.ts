@@ -99,7 +99,7 @@ test('实际头像裁剪、multipart上传和私有凭证展示', async ({ page 
   await expect(page.getByRole('status')).toHaveText('头像已保存');
   const avatar = page.getByRole('img', { name: '我的头像' });
   await expect(avatar).toBeVisible();
-  await expect(avatar).toHaveJSProperty('naturalWidth', 512);
+  await expect(avatar.locator('img')).toHaveJSProperty('naturalWidth', 512);
 });
 test('服务器失效会话后刷新，不能重新恢复旧令牌或显示资料', async ({ page }) => {
   await login(page);

@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import app.weiban.contracts.*
 import app.weiban.network.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.filterNotNull
 import okhttp3.mockwebserver.*
 import org.junit.*
 import org.junit.Assert.*
@@ -60,6 +61,55 @@ class SessionRepositoryTest {
         server.close()
         db.close()
     }
+
+    @Test fun observersSeeAuthenticatedSessionsOnlyAfterTheHttpBindingIsReady() =
+        runBlocking {
+            val ready = mutableListOf<Boolean>()
+            val observer =
+                launch(Dispatchers.Unconfined) {
+                    repository.auth.filterNotNull().collect { ready.add(api.current() === it) }
+                }
+            try {
+                repository.authenticate(a)
+                repository.updateUser(
+                    a.user.copy(profileCompleted = false),
+                    OwnerRecord(userId = a.user.userId, sessionId = a.session.sessionId),
+                )
+                val unchanged =
+                    repository.auth.value!!
+                        .user
+                        .copy()
+                repository.updateUser(unchanged, OwnerRecord(userId = a.user.userId, sessionId = a.session.sessionId))
+                assertSame(repository.auth.value, api.current())
+                server.enqueue(MockResponse().setBody(api.json.encodeToString(CurrentUser.serializer(), unchanged)))
+                assertEquals(unchanged, repository.call(Endpoints.identityEndpointsMe))
+                repository.forget()
+                db.local().owner(OwnerRecord(userId = b.user.userId, sessionId = b.session.sessionId))
+                vault.value = b
+                repository.restore()
+                vault.value = b.copy()
+                repository.restore()
+                assertSame(repository.auth.value, api.current())
+                server.enqueue(MockResponse().setBody(api.json.encodeToString(CurrentUser.serializer(), b.user)))
+                assertEquals(b.user, repository.call(Endpoints.identityEndpointsMe))
+                assertEquals(listOf(true, true, true), ready)
+            } finally {
+                observer.cancelAndJoin()
+            }
+        }
+
+    @Test fun oldProfileRefreshCannotUpdateTheSameUsersReplacementSession() =
+        runBlocking {
+            repository.authenticate(a)
+            val owner = OwnerRecord(userId = a.user.userId, sessionId = a.session.sessionId)
+            val replacement = a.copy(session = b.session, user = a.user.copy(profileCompleted = false))
+            repository.authenticate(replacement)
+            val error = runCatching { repository.updateUser(a.user, owner) }.exceptionOrNull()
+            assertTrue(error is ApiFailure)
+            assertEquals("session_changed", (error as ApiFailure).code)
+            assertEquals(replacement, repository.auth.value)
+            assertEquals(replacement, vault.value)
+        }
 
     @Test fun unfinishedOnboardingSurvivesProfileSaveAndRepositoryRestart() =
         runBlocking {

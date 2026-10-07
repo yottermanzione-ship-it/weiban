@@ -41,8 +41,9 @@ class SessionRepository(
                 api.authenticate(null)
             } else {
                 onboarding.value = !saved.user.profileCompleted || database.local().cache("ui:onboarding") == "true"
-                current.value = saved
-                api.authenticate(saved)
+                val published = current.value?.takeIf { it == saved } ?: saved
+                api.authenticate(published)
+                current.value = published
             }
         }
 
@@ -59,8 +60,8 @@ class SessionRepository(
             onboarding.value = !auth.user.profileCompleted
             database.local().cache(CacheRecord("ui:onboarding", onboarding.value.toString()))
             withContext(Dispatchers.IO) { vault.save(auth) }
-            current.value = auth
             api.authenticate(auth)
+            current.value = auth
         }
 
     suspend fun forget() =
@@ -212,13 +213,16 @@ class SessionRepository(
         }
     }
 
-    suspend fun updateUser(user: CurrentUser) =
-        lock.withLock {
-            val before = current.value ?: throw ApiFailure("unauthenticated", 401)
-            require(before.user.userId == user.userId)
-            val next = before.copy(user = user)
-            withContext(Dispatchers.IO) { vault.save(next) }
-            current.value = next
-            api.authenticate(next)
-        }
+    suspend fun updateUser(
+        user: CurrentUser,
+        owner: OwnerRecord? = null,
+    ) = lock.withLock {
+        val before = capture(owner) ?: throw ApiFailure("unauthenticated", 401)
+        require(before.user.userId == user.userId)
+        // StateFlow retains the existing object for an equal value; keep the HTTP identity aligned.
+        val next = if (before.user == user) before else before.copy(user = user)
+        withContext(Dispatchers.IO) { vault.save(next) }
+        api.authenticate(next)
+        current.value = next
+    }
 }

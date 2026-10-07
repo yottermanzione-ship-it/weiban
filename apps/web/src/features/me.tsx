@@ -11,7 +11,7 @@ export function MePage() {
     <main>
       <h1 className="page-title">我</h1>
       <Link className="panel profile-row" to="/profile">
-        <ProfileAvatar mediaId={profile.data?.avatarMediaId} />
+        <ProfileAvatar profile={profile.data} />
         <div>
           <h2>{profile.data?.nickname ?? '填写你的昵称'}</h2>
           <p>微伴号：{session?.user.username}</p>
