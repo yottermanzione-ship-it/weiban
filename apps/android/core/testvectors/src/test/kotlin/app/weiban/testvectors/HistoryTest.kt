@@ -1,10 +1,6 @@
 package app.weiban.testvectors
 
-import app.weiban.contracts.Message
-import app.weiban.contracts.MessagePage
-import app.weiban.contracts.MessagePageCoverage
-import app.weiban.contracts.MessagePageCoverageExcludedRangesItem
-import app.weiban.contracts.ProtocolVector
+import app.weiban.contracts.*
 import app.weiban.data.SyncEngine
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -83,5 +79,70 @@ class HistoryTest {
         )
         assertTrue(engine.state.messages.isEmpty())
         assertEquals(1, engine.state.excluded.size)
+    }
+
+    @Test fun clearConfirmationKeepsCursorAndSurvivesRestartAndLateHistory() {
+        val engine = SyncEngine(vector.initialState)
+        engine.history(cid, 3, MessagePage(listOf(original), false))
+        engine.clearHistory(cid, 1)
+        assertEquals(0L, engine.state.lastUpdateSeq)
+        assertTrue(engine.state.messages.isEmpty())
+        val restarted =
+            SyncEngine(json.decodeFromString(ClientSyncState.serializer(), json.encodeToString(ClientSyncState.serializer(), engine.state)))
+        restarted.history(cid, 3, MessagePage(listOf(original), false))
+        assertTrue(restarted.state.messages.isEmpty())
+        assertEquals(
+            1L,
+            restarted.state.conversations
+                .first()
+                .state.clearedThroughSeq,
+        )
+        val before = restarted.state
+        assertTrue(runCatching { restarted.clearHistory(cid, -1) }.isFailure)
+        assertEquals(before, restarted.state)
+    }
+
+    @Test fun clearConfirmationCannotBeOverwrittenByEarlierSnapshotOrConversation() {
+        val engine = SyncEngine(vector.initialState)
+        engine.apply(ClientSyncOperationCursorExpired())
+        engine.apply(ClientSyncOperationRebuildState(latestUpdateSeq = 0))
+        engine.clearHistory(cid, 1)
+        engine.apply(
+            ClientSyncOperationSnapshot(
+                startSeq = 0,
+                snapshot =
+                    ClientFullSyncSnapshot(
+                        vector.initialState.conversations,
+                        listOf(original),
+                        emptyList(),
+                        emptyMap(),
+                        emptyList(),
+                    ),
+            ),
+        )
+        assertTrue(engine.state.messages.isEmpty())
+        val first = (vector.steps.first().operation as ClientSyncOperationUpdate).update
+        engine.apply(
+            ClientSyncOperationUpdate(
+                update =
+                    UserUpdateConversationUpdated(
+                        updateSeq = first.updateSeq,
+                        occurredAt = first.occurredAt,
+                        data = UserUpdateConversationUpdatedData(vector.initialState.conversations.first()),
+                    ),
+            ),
+        )
+        assertEquals(
+            1L,
+            engine.state.conversations
+                .first()
+                .state.clearedThroughSeq,
+        )
+        assertNull(
+            engine.state.conversations
+                .first()
+                .lastMessage,
+        )
+        assertTrue(engine.state.messages.isEmpty())
     }
 }

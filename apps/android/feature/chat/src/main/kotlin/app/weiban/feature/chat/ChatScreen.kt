@@ -1,5 +1,6 @@
 package app.weiban.feature.chat
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,29 +22,42 @@ import kotlinx.serialization.json.*
     repository: SessionRepository,
     runtime: ChatRuntime,
     owner: OwnerRecord,
-    onQueued: () -> Unit,
+    openConversationId: String? = null,
+    onOpened: () -> Unit = {},
 ) {
     val snapshot by runtime.snapshot.collectAsState()
     val state = if (snapshot.owner == owner) snapshot.state else SyncEngine.freshState()
     val online by runtime.online.collectAsState()
     val error by runtime.error.collectAsState()
     var conversationId by rememberSaveable(owner.sessionId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(openConversationId) {
+        if (openConversationId != null) {
+            conversationId = openConversationId
+            onOpened()
+        }
+    }
+    var information by rememberSaveable(conversationId) { mutableStateOf(false) }
+    BackHandler(conversationId != null) { if (information) information = false else conversationId = null }
     val selected = state.conversations.find { it.conversationId == conversationId }
     Column(Modifier.fillMaxSize()) {
         if (!online) Text(error ?: "正在连接…", Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.bodySmall)
         if (selected == null) {
-            ConversationList(state) { conversationId = it }
+            ConversationList(repository, state) { conversationId = it }
+        } else if (information) {
+            ChatInformation(repository, runtime, owner, state, selected, { information = false }) { conversationId = null }
         } else {
-            ConversationView(repository, runtime, owner, state, selected, onQueued) { conversationId = null }
+            ConversationView(repository, runtime, owner, state, selected, { information = true }) { conversationId = null }
         }
     }
 }
 
 @Composable private fun ConversationList(
+    repository: SessionRepository,
     state: ClientSyncState,
     onSelect: (String) -> Unit,
 ) {
     var search by rememberSaveable { mutableStateOf("") }
+    val names = characterNames(repository, state.contacts.map { it.characterId })
     Text("微伴", Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.headlineSmall)
     OutlinedTextField(
         search,
@@ -57,7 +71,7 @@ import kotlinx.serialization.json.*
             .sortedWith(
                 compareByDescending<Conversation> { it.state.pinned }.thenByDescending { it.lastMessage?.createdAt ?: it.updatedAt },
             ).filter {
-                search.isBlank() || title(state, it).contains(search, true) ||
+                search.isBlank() || title(state, it, names).contains(search, true) ||
                     it.lastMessage
                         ?.text
                         .orEmpty()
@@ -70,7 +84,7 @@ import kotlinx.serialization.json.*
     LazyColumn {
         items(conversations, key = { it.conversationId }) { conversation ->
             ListItem(
-                headlineContent = { Text(title(state, conversation)) },
+                headlineContent = { Text(title(state, conversation, names)) },
                 supportingContent = { Text(conversation.lastMessage?.text ?: "开始聊天", maxLines = 1) },
                 trailingContent = {
                     Text(
@@ -95,9 +109,10 @@ import kotlinx.serialization.json.*
 internal fun title(
     state: ClientSyncState,
     conversation: Conversation,
+    names: Map<String, String> = emptyMap(),
 ): String {
     val characterId = conversation.participants.find { it.kind == "character" }?.refId
-    return conversation.title ?: state.contacts.find { it.characterId == characterId }?.remark ?: "角色"
+    return conversation.title ?: state.contacts.find { it.characterId == characterId }?.remark ?: names[characterId] ?: "角色"
 }
 
 internal fun messageText(message: Message): String =
@@ -130,7 +145,6 @@ private class ConversationUi(
     val owner: OwnerRecord,
     var conversation: Conversation,
     private val scope: CoroutineScope,
-    private val onQueued: () -> Unit,
 ) {
     var text by mutableStateOf("")
     var quoteId by mutableStateOf<String?>(null)
@@ -152,7 +166,6 @@ private class ConversationUi(
                     runtime.send(owner, conversation.conversationId, captured, quotedId)
                     if (text == captured) text = ""
                     quoteId = null
-                    onQueued()
                 }
             } finally {
                 sending = false
@@ -164,7 +177,7 @@ private class ConversationUi(
         loadingHistory = true
         scope.launch {
             try {
-                userAction({ error = it }) { runtime.older(owner, conversation.conversationId, beforeSeq) }
+                userAction({ error = it }) { runtime.history.older(owner, conversation.conversationId, beforeSeq) }
             } finally {
                 loadingHistory = false
             }
@@ -175,7 +188,6 @@ private class ConversationUi(
         scope.launch {
             userAction({ error = it }) {
                 runtime.retry(owner, conversation.conversationId, clientMsgId)
-                onQueued()
             }
         }
     }
@@ -187,17 +199,18 @@ private class ConversationUi(
     owner: OwnerRecord,
     state: ClientSyncState,
     conversation: Conversation,
-    onQueued: () -> Unit,
+    onInformation: () -> Unit,
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val ui = remember(conversation.conversationId, owner) { ConversationUi(repository, runtime, owner, conversation, scope, onQueued) }
+    val ui = remember(conversation.conversationId, owner) { ConversationUi(repository, runtime, owner, conversation, scope) }
     SideEffect { ui.conversation = conversation }
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow
         .collectAsState()
     val visible = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
     val list = rememberLazyListState()
     val messages = state.messages.filter { it.conversationId == conversation.conversationId }.sortedBy { it.seq }
+    val names = characterNames(repository, conversation.participants.filter { it.kind == "character" }.map { it.refId })
     val pending = state.outbox.filter { it.conversationId == conversation.conversationId }
     val typing by runtime.typing.collectAsState()
     val typingActive =
@@ -222,13 +235,15 @@ private class ConversationUi(
                     Endpoints.chatEndpointsMarkRead,
                     params = mapOf("conversationId" to conversation.conversationId),
                     body = buildJsonObject { put("readSeq", seq) },
+                    options = SessionCallOptions(owner = owner),
                 )
             }
         }
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         TextButton(onBack) { Text("返回") }
-        Text(title(state, conversation), Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.titleMedium)
+        Text(title(state, conversation, names), Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.titleMedium)
+        TextButton(onInformation) { Text("聊天信息") }
     }
     ui.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = WbSpace.S5)) }
     if (visible && typingActive) Text("对方正在输入…", Modifier.padding(horizontal = WbSpace.S5))
@@ -251,7 +266,7 @@ private class ConversationUi(
             ) { Text(if (ui.loadingHistory) "正在加载…" else "更早的消息") }
         }
         items(messages, key = { it.messageId }) { message ->
-            MessageRow(ui.repository, ui.conversation, message, { ui.quoteId = message.messageId }, { ui.error = it })
+            MessageRow(ui.repository, ui.owner, ui.conversation, message, { ui.quoteId = message.messageId }, { ui.error = it })
         }
         items(pending, key = { it.body.clientMsgId }) { item ->
             Column(Modifier.fillMaxWidth().padding(vertical = WbSpace.S3)) {
@@ -281,6 +296,7 @@ private class ConversationUi(
 
 @Composable private fun MessageRow(
     repository: SessionRepository,
+    owner: OwnerRecord,
     conversation: Conversation,
     message: Message,
     onQuote: () -> Unit,
@@ -319,6 +335,7 @@ private class ConversationUi(
                             repository.call(
                                 Endpoints.chatEndpointsRecallMessage,
                                 params = mapOf("conversationId" to conversation.conversationId, "messageId" to message.messageId),
+                                options = SessionCallOptions(owner = owner),
                             )
                         }
                     }
@@ -331,6 +348,7 @@ private class ConversationUi(
                         repository.call(
                             Endpoints.chatEndpointsHideMessage,
                             params = mapOf("conversationId" to conversation.conversationId, "messageId" to message.messageId),
+                            options = SessionCallOptions(owner = owner),
                         )
                     }
                 }

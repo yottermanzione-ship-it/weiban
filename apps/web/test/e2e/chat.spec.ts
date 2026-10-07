@@ -137,3 +137,86 @@ test('断网待发消息刷新后仍在；重新联网送达；退出后旧聊�
   );
   expect(keys).toEqual([]);
 });
+test('HTTP确认清空先持久保存范围，更新日志暂不可达也不会重现旧正文', async ({ page }) => {
+  await page.routeWebSocket('**/api/v1/ws', (socket) => socket.close({ code: 1000 }));
+  await openChat(page);
+  const secret = '清空后不可恢复的浏览器正文';
+  await page.getByLabel('消息', { exact: true }).fill(secret);
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await expect(page.locator('.message-bubble').filter({ hasText: secret })).toHaveCount(1);
+  await expect(
+    page.locator('.message-row').filter({ hasText: secret }).getByText('已送达', { exact: true }),
+  ).toBeVisible();
+  let blockedUpdates = 0;
+  await page.route('**/sync/updates?**', (route) => {
+    blockedUpdates++;
+    return route.abort('failed');
+  });
+  await page.getByRole('link', { name: '聊天信息', exact: true }).click();
+  await page.getByRole('button', { name: '清空聊天记录', exact: true }).click();
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+  await page.getByRole('button', { name: '清空聊天记录', exact: true }).click();
+  const response = page.waitForResponse(
+    (value) => value.request().method() === 'POST' && value.url().endsWith('/clear'),
+  );
+  await page.getByRole('button', { name: '确认', exact: true }).click();
+  expect((await response).ok()).toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          new Promise<boolean>((resolve, reject) => {
+            const open = indexedDB.open('weiban-app', 1);
+            open.onerror = () => reject(open.error);
+            open.onsuccess = () => {
+              const database = open.result;
+              const request = database.transaction('records').objectStore('records').getAll();
+              request.onsuccess = () => {
+                const state = request.result.find(
+                  (value) => value && typeof value === 'object' && 'messages' in value,
+                );
+                resolve(
+                  Boolean(
+                    state &&
+                    state.messages.length === 0 &&
+                    state.excluded.some(
+                      (entry: { range: { reason: string; fromSeq: number } }) =>
+                        entry.range.reason === 'cleared' && entry.range.fromSeq === 1,
+                    ),
+                  ),
+                );
+                database.close();
+              };
+              request.onerror = () => {
+                reject(request.error);
+                database.close();
+              };
+            };
+          }),
+      ),
+    )
+    .toBe(true);
+  await expect.poll(() => blockedUpdates).toBeGreaterThan(0);
+  await page.unroute('**/sync/updates?**');
+  await page.getByRole('link', { name: '返回聊天', exact: true }).click();
+  await expect(page.locator('.message-bubble').filter({ hasText: secret })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
+  await expect(page.locator('.message-bubble').filter({ hasText: secret })).toHaveCount(0);
+  await page.getByRole('link', { name: '聊天信息', exact: true }).click();
+  const removals: string[] = [];
+  await page.route('**/contacts/*?mode=purge', (route) => {
+    removals.push(route.request().url());
+    return route.abort('failed');
+  });
+  await page.getByRole('button', { name: '永久删除角色和数据', exact: true }).click();
+  await page.getByRole('button', { name: '确认', exact: true }).click();
+  await expect(
+    page.getByText('再次确认永久删除：重新添加也无法恢复这些数据', { exact: true }),
+  ).toBeVisible();
+  expect(removals).toEqual([]);
+  await page.getByRole('button', { name: '确认', exact: true }).click();
+  await expect.poll(() => removals.length).toBe(1);
+  expect(removals[0]).toContain('mode=purge');
+  await expect(page.getByRole('alert')).toBeVisible();
+});

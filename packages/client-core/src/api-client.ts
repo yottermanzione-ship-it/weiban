@@ -58,10 +58,14 @@ export class ApiClient {
     this.auth = null;
     await this.enqueue(() => this.store.clear());
   }
+  owns(owner: { userId: string; sessionId: string }): boolean {
+    return (
+      this.auth?.user.userId === owner.userId && this.auth.session.sessionId === owner.sessionId
+    );
+  }
   /** 旧WebSocket的失效通知不能退出刚切换的新会话。 */
   async forgetIf(owner: { userId: string; sessionId: string }): Promise<boolean> {
-    if (this.auth?.user.userId !== owner.userId || this.auth.session.sessionId !== owner.sessionId)
-      return false;
+    if (!this.owns(owner)) return false;
     await this.forget();
     this.onUnauthenticated();
     return true;

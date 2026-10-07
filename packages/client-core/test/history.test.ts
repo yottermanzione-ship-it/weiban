@@ -42,3 +42,48 @@ it('历史扫描的隐藏负记录删除旧缓存正文与引用，不等待更�
   expect(engine.state.messages).toEqual([]);
   expect(engine.state.excluded).toHaveLength(1);
 });
+it('清空HTTP确认不改更新游标，重启后的迟到历史仍不能复活正文', () => {
+  const engine = new SyncEngine(vector.initialState);
+  engine.history(cid, 3, { items: [original], hasMore: false });
+  engine.clearHistory(cid, 1);
+  expect(engine.state.lastUpdateSeq).toBe(0);
+  expect(engine.state.messages).toEqual([]);
+  const restarted = new SyncEngine(JSON.parse(JSON.stringify(engine.state)));
+  restarted.history(cid, 3, { items: [original], hasMore: false });
+  expect(restarted.state.messages).toEqual([]);
+  expect(restarted.state.conversations[0]!.state.clearedThroughSeq).toBe(1);
+  const before = restarted.state;
+  expect(() => restarted.clearHistory(cid, -1)).toThrow();
+  expect(restarted.state).toEqual(before);
+});
+it('清空HTTP确认不会被之前启动的快照或旧会话更新覆盖', () => {
+  const engine = new SyncEngine(vector.initialState);
+  engine.apply({ type: 'cursor.expired' });
+  engine.apply({ type: 'rebuild.state', latestUpdateSeq: 0 });
+  engine.clearHistory(cid, 1);
+  engine.apply({
+    type: 'snapshot',
+    startSeq: 0,
+    snapshot: {
+      conversations: vector.initialState.conversations,
+      messages: [original],
+      contacts: [],
+      settings: {},
+      coverages: [],
+    },
+  });
+  expect(engine.state.messages).toEqual([]);
+  const first = vector.steps[0]!.operation;
+  if (first.type !== 'update') throw new Error('shared fixture changed');
+  engine.apply({
+    type: 'update',
+    update: {
+      ...first.update,
+      type: 'conversation.updated',
+      data: { conversation: vector.initialState.conversations[0] },
+    },
+  });
+  expect(engine.state.conversations[0]!.state.clearedThroughSeq).toBe(1);
+  expect(engine.state.conversations[0]!.lastMessage).toBeNull();
+  expect(engine.state.messages).toEqual([]);
+});

@@ -8,6 +8,7 @@ import {
   MessagePage,
   Id,
   ClientSyncOperation,
+  type Conversation,
 } from '@weiban/contracts';
 import { LocalSyncState, FullSyncSnapshot, freshSyncState, type SyncEffect } from './sync-state.js';
 export class SyncEngine {
@@ -118,6 +119,73 @@ export class SyncEngine {
     const effects = this.effects;
     this.effects = [];
     return effects;
+  }
+  /** HTTP clear confirmation is durable immediately; its update cursor is still pulled normally. */
+  clearHistory(conversationId: string, throughSeq: number): void {
+    Id.parse(conversationId);
+    if (!Number.isSafeInteger(throughSeq) || throughSeq < 0) throw new Error('无效清空范围');
+    const conversation = this.value.conversations.find(
+      (item) => item.conversationId === conversationId,
+    );
+    if (!conversation) throw new Error('未知会话');
+    const through = Math.max(
+      throughSeq,
+      conversation.state.clearedThroughSeq,
+      this.localClear(conversationId),
+    );
+    if (through > 0) {
+      this.value.excluded = this.value.excluded.filter(
+        (item) =>
+          !(
+            item.conversationId === conversationId &&
+            item.range.reason === 'cleared' &&
+            item.range.fromSeq === 1
+          ),
+      );
+      this.value.excluded.push({
+        conversationId,
+        range: { fromSeq: 1, throughSeq: through, reason: 'cleared' },
+      });
+    }
+    const cleared = this.cleanConversation(conversation);
+    cleared.state.markedUnread = false;
+    this.value.conversations = this.value.conversations.map((item) =>
+      item.conversationId === conversationId ? cleared : item,
+    );
+    this.value.messages = this.value.messages.filter(
+      (item) => item.conversationId !== conversationId || item.seq > through,
+    );
+    for (const message of this.value.messages)
+      if (
+        message.conversationId === conversationId &&
+        message.quote &&
+        message.quote.seq <= through
+      )
+        message.quote.preview = null;
+  }
+
+  private localClear(id: string): number {
+    return this.value.excluded.reduce(
+      (through, item) =>
+        item.conversationId === id && item.range.reason === 'cleared' && item.range.fromSeq === 1
+          ? Math.max(through, item.range.throughSeq)
+          : through,
+      0,
+    );
+  }
+
+  private cleanConversation(input: Conversation): Conversation {
+    const conversation = structuredClone(input);
+    const through = Math.max(
+      conversation.state.clearedThroughSeq,
+      this.localClear(conversation.conversationId),
+    );
+    conversation.state.clearedThroughSeq = through;
+    if (conversation.lastSeq <= through) {
+      conversation.lastMessage = null;
+      conversation.unreadCount = 0;
+    }
+    return conversation;
   }
   /** 用户向上加载历史，独立于afterSeq补拉，不改变进行中的补拉起点。 */
   history(conversationId: string, beforeSeq: number, value: unknown): void {
@@ -300,11 +368,16 @@ export class SyncEngine {
       ...freshSyncState(),
       initialized: true,
       lastUpdateSeq: this.rebuildStart,
-      conversations: snapshot.conversations,
+      conversations: snapshot.conversations.map((conversation) =>
+        this.cleanConversation(conversation),
+      ),
       contacts: snapshot.contacts,
       outbox,
       pendingUpdates,
       settings: snapshot.settings,
+      excluded: this.value.excluded.filter(
+        (item) => item.range.reason === 'cleared' && item.range.fromSeq === 1,
+      ),
     };
     for (const message of snapshot.messages) this.upsertMessage(message);
     for (const { conversationId, coverage } of snapshot.coverages)
@@ -449,7 +522,7 @@ export class SyncEngine {
       }
       case 'conversation.created':
       case 'conversation.updated': {
-        const conversation = update.data.conversation;
+        const conversation = this.cleanConversation(update.data.conversation);
         this.value.conversations = this.value.conversations.filter(
           (item) => item.conversationId !== conversation.conversationId,
         );
@@ -461,8 +534,17 @@ export class SyncEngine {
           (item) => item.conversationId === update.data.conversationId,
         );
         if (conversation) {
-          conversation.state = update.data.state;
-          conversation.unreadCount = update.data.unreadCount;
+          conversation.state = {
+            ...update.data.state,
+            clearedThroughSeq: Math.max(
+              update.data.state.clearedThroughSeq,
+              this.localClear(conversation.conversationId),
+            ),
+          };
+          conversation.unreadCount =
+            conversation.lastSeq <= conversation.state.clearedThroughSeq
+              ? 0
+              : update.data.unreadCount;
           this.value.messages = this.value.messages.filter(
             (item) =>
               item.conversationId !== conversation.conversationId ||

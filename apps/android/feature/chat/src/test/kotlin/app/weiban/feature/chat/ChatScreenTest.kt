@@ -85,7 +85,7 @@ class ChatScreenTest {
     }
 
     @Test fun actualComposeOfflineSendCommitsRoomBeforeClearingAndSurvivesRestart() {
-        compose.setContent { WeibanTheme { ChatScreen(repository, runtime, owner, {}) } }
+        compose.setContent { WeibanTheme { ChatScreen(repository, runtime, owner) } }
         compose.onNodeWithText("角色", useUnmergedTree = true).performClick()
         compose.onNode(hasSetTextAction()).performTextInput("原生离线消息")
         compose.onNodeWithText("发送", useUnmergedTree = true).performClick()

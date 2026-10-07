@@ -23,6 +23,7 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
     implementation(libs.lifecycle.compose)
+    implementation(libs.activity.compose)
     implementation(libs.serialization.json)
     implementation(libs.coroutines.android)
     implementation(project(":core:contracts-generated"))

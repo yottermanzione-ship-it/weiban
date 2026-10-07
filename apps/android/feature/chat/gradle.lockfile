@@ -1,9 +1,9 @@
 # This is a Gradle generated file for dependency locking.
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
-androidx.activity:activity-compose:1.8.2=debugRuntimeClasspath,debugUnitTestRuntimeClasspath
-androidx.activity:activity-ktx:1.8.2=debugRuntimeClasspath,debugUnitTestRuntimeClasspath
-androidx.activity:activity:1.8.2=debugCompileClasspath,debugRuntimeClasspath,debugUnitTestCompileClasspath,debugUnitTestRuntimeClasspath
+androidx.activity:activity-compose:1.11.0=debugCompileClasspath,debugRuntimeClasspath,debugUnitTestCompileClasspath,debugUnitTestRuntimeClasspath
+androidx.activity:activity-ktx:1.11.0=debugRuntimeClasspath,debugUnitTestRuntimeClasspath
+androidx.activity:activity:1.11.0=debugCompileClasspath,debugRuntimeClasspath,debugUnitTestCompileClasspath,debugUnitTestRuntimeClasspath
 androidx.annotation:annotation-experimental:1.5.0=debugCompileClasspath,debugRuntimeClasspath,debugUnitTestCompileClasspath,debugUnitTestRuntimeClasspath
 androidx.annotation:annotation-jvm:1.9.1=debugCompileClasspath,debugRuntimeClasspath,debugUnitTestCompileClasspath,debugUnitTestRuntimeClasspath
 androidx.annotation:annotation:1.9.1=debugCompileClasspath,debugRuntimeClasspath,debugUnitTestCompileClasspath,debugUnitTestRuntimeClasspath
@@ -56,7 +56,7 @@ androidx.concurrent:concurrent-futures-ktx:1.2.0=debugUnitTestCompileClasspath,d
 androidx.concurrent:concurrent-futures:1.1.0=debugRuntimeClasspath
 androidx.concurrent:concurrent-futures:1.2.0=debugUnitTestCompileClasspath,debugUnitTestRuntimeClasspath
 androidx.core:core-ktx:1.15.0=debugCompileClasspath,debugRuntimeClasspath,debugUnitTestCompileClasspath,debugUnitTestRuntimeClasspath
-androidx.core:core-viewtree:1.0.0=debugRuntimeClasspath,debugUnitTestRuntimeClasspath
+androidx.core:core-viewtree:1.0.0=debugCompileClasspath,debugRuntimeClasspath,debugUnitTestCompileClasspath,debugUnitTestRuntimeClasspath
 androidx.core:core:1.15.0=debugCompileClasspath,debugRuntimeClasspath,debugUnitTestCompileClasspath,debugUnitTestRuntimeClasspath
 androidx.customview:customview-poolingcontainer:1.0.0=debugRuntimeClasspath,debugUnitTestRuntimeClasspath
 androidx.emoji2:emoji2:1.4.0=debugRuntimeClasspath,debugUnitTestRuntimeClasspath

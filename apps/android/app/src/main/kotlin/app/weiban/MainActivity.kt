@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -18,6 +19,7 @@ import app.weiban.designsystem.WeibanTheme
 import app.weiban.designsystem.tokens.WbSize
 import app.weiban.feature.auth.AuthScreen
 import app.weiban.feature.chat.ChatScreen
+import app.weiban.feature.chat.RoleBrowser
 import app.weiban.feature.me.MeScreen
 import app.weiban.network.ApiClient
 import kotlinx.coroutines.CancellationException
@@ -100,31 +102,55 @@ private fun revokeSession(
     }
 }
 
+private class NavigationUi(
+    initialTab: String = "微伴",
+    initialConversation: String? = null,
+) {
+    var tab by mutableStateOf(initialTab)
+    var conversationId by mutableStateOf(initialConversation)
+
+    fun open(id: String) {
+        conversationId = id
+        tab = "微伴"
+    }
+
+    companion object {
+        val saver =
+            listSaver<NavigationUi, String>(
+                save = { listOf(it.tab, it.conversationId.orEmpty()) },
+                restore = { NavigationUi(it[0], it[1].ifBlank { null }) },
+            )
+    }
+}
+
 @Composable private fun SignedIn(
     runtime: WeibanApplication,
     auth: AuthResponse,
     onTheme: (String) -> Unit,
     onLogout: () -> Unit,
 ) {
-    var tab by rememberSaveable { mutableStateOf("微伴") }
+    val navigation = rememberSaveable(saver = NavigationUi.saver) { NavigationUi() }
     if (!auth.user.profileCompleted) {
         MeScreen(runtime.repository, true, onTheme, onLogout)
     } else {
-        Scaffold(bottomBar = { Tabs(tab) { tab = it } }) { padding ->
-            Box(Modifier.padding(padding)) {
-                when (tab) {
-                    "我" -> MeScreen(runtime.repository, onTheme = onTheme, onLogout = onLogout)
-                    "微伴" ->
-                        ChatScreen(
-                            runtime.repository,
-                            runtime.chat,
-                            OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId),
-                            {},
-                        )
-                    else -> Placeholder(tab)
-                }
-            }
+        Scaffold(bottomBar = { Tabs(navigation.tab) { navigation.tab = it } }) { padding ->
+            Box(Modifier.padding(padding)) { SignedInPage(runtime, auth, navigation, onTheme, onLogout) }
         }
+    }
+}
+
+@Composable private fun SignedInPage(
+    runtime: WeibanApplication,
+    auth: AuthResponse,
+    navigation: NavigationUi,
+    onTheme: (String) -> Unit,
+    onLogout: () -> Unit,
+) {
+    val owner = OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId)
+    when (navigation.tab) {
+        "我" -> MeScreen(runtime.repository, onTheme = onTheme, onLogout = onLogout)
+        "微伴" -> ChatScreen(runtime.repository, runtime.chat, owner, navigation.conversationId) { navigation.conversationId = null }
+        else -> key(navigation.tab) { RoleBrowser(runtime.repository, runtime.chat, owner, navigation.tab == "发现", navigation::open) }
     }
 }
 
@@ -152,16 +178,3 @@ private fun tabIcon(
         "发现" -> if (selected) R.drawable.ic_discover_fill else R.drawable.ic_discover_regular
         else -> if (selected) R.drawable.ic_me_fill else R.drawable.ic_me_regular
     }
-
-@Composable private fun Placeholder(tab: String) {
-    Column {
-        Text(tab, style = MaterialTheme.typography.headlineSmall)
-        Text(
-            when (tab) {
-                "聊天" -> "添加喜欢的角色后，聊天会出现在这里"
-                "通讯录" -> "和角色慢慢熟悉，从添加好友开始"
-                else -> "更多玩法正在准备中"
-            },
-        )
-    }
-}

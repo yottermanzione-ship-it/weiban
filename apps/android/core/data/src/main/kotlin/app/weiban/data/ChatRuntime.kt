@@ -6,7 +6,6 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.io.IOException
 import java.util.UUID
 
 data class ChatSnapshot(
@@ -21,6 +20,7 @@ class ChatRuntime(
     private val onQueued: (OwnerRecord) -> Unit = {},
 ) {
     private val lock = Mutex()
+    val history = ChatHistory(repository, scope, ::runnerFor, ::refresh)
 
     @Volatile private var owner: OwnerRecord? = null
 
@@ -231,25 +231,40 @@ class ChatRuntime(
             runner.takeIf { owner == expected }
         }
 
-    suspend fun refresh(expected: OwnerRecord) {
-        val current = runnerFor(expected)?.takeIf { it.active && !bootstrapping } ?: return
+    @Suppress("TooGenericExceptionCaught") // Lifecycle boundary reports transport/storage failures without crashing the application scope.
+    suspend fun refresh(expected: OwnerRecord): Long? {
+        val current = runnerFor(expected)?.takeIf { it.active && !bootstrapping } ?: return null
+        var sequence: Long? = null
         try {
             val remote =
                 repository.call(
                     Endpoints.syncEndpointsGetState,
                     options = SessionCallOptions(networkOnly = true, owner = expected),
                 )
-            if (runnerFor(expected) !== current) return
-            reconnect(expected, remote.latestUpdateSeq)
+            if (runnerFor(expected) === current) {
+                reconnect(expected, remote.latestUpdateSeq)
+                if (current.active) sequence = remote.latestUpdateSeq
+            }
         } catch (error: CancellationException) {
             throw error
-        } catch (_: IOException) {
-            if (runnerFor(expected) === current) {
-                bootstrapping = false
-                connected.value = false
-                problem.value = "网络暂不可用，消息已保存在此设备"
-                current.dispatch(ClientSyncOperationOffline())
-            }
+        } catch (_: Exception) {
+            refreshFailed(expected, current)
+        }
+        return sequence
+    }
+
+    @Suppress("TooGenericExceptionCaught") // Saving the offline transition can also fail; preserve the stopped runtime and storage warning.
+    private suspend fun refreshFailed(expected: OwnerRecord, current: SyncRunner) {
+        if (runnerFor(expected) !== current) return
+        bootstrapping = false
+        connected.value = false
+        problem.value = if (!current.active) "本机保存失败，请检查设备存储后重新打开微伴" else "网络暂不可用，消息已保存在此设备"
+        try {
+            if (current.active) current.dispatch(ClientSyncOperationOffline())
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            problem.value = "本机保存失败，请检查设备存储后重新打开微伴"
         }
     }
 
@@ -309,21 +324,5 @@ class ChatRuntime(
         conversationId: String,
     ) {
         runnerFor(expected)?.dispatch(ClientSyncOperationInspect(conversationId = conversationId))
-    }
-
-    suspend fun older(
-        expected: OwnerRecord,
-        conversationId: String,
-        beforeSeq: Long,
-    ) {
-        val current = runnerFor(expected) ?: return
-        val page =
-            repository.call(
-                Endpoints.chatEndpointsListMessages,
-                params = mapOf("conversationId" to conversationId),
-                query = mapOf("beforeSeq" to beforeSeq.toString(), "limit" to "50"),
-                options = SessionCallOptions(networkOnly = true, owner = expected),
-            )
-        if (runnerFor(expected) === current) current.history(conversationId, beforeSeq, page)
     }
 }

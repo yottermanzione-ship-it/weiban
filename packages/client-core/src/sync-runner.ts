@@ -45,6 +45,9 @@ export class SyncRunner {
   history(conversationId: string, beforeSeq: number, page: unknown): Promise<void> {
     return this.mutate((engine) => engine.history(conversationId, beforeSeq, page));
   }
+  clearHistory(conversationId: string, throughSeq: number): Promise<void> {
+    return this.mutate((engine) => engine.clearHistory(conversationId, throughSeq));
+  }
   private mutate(action: (engine: SyncEngine) => void, guard?: AbortSignal): Promise<void> {
     const work = this.queue.then(async () => {
       if (this.stopped || guard?.aborted) return;

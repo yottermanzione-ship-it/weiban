@@ -20,7 +20,7 @@ export function ChatSettingsPage() {
   return <Settings key={conversationId} id={conversationId} characterId={role.refId} />;
 }
 function Settings({ id, characterId }: { id: string; characterId: string }) {
-  const { state } = useChat();
+  const { state, clearHistory, synchronize, assertOwner } = useChat();
   const conversation = state.conversations.find((item) => item.conversationId === id)!;
   const contact = state.contacts.find((item) => item.characterId === characterId);
   const companion = useRemote(CompanionEndpoints.getForCharacter, { params: { characterId } });
@@ -28,15 +28,20 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [confirmation, setConfirmation] = useState<'clear' | 'remove' | null>(null);
-  async function change(operation: () => Promise<unknown>) {
+  const [confirmation, setConfirmation] = useState<
+    'clear' | 'remove' | 'purge' | 'purgeConfirmed' | null
+  >(null);
+  async function change(operation: () => Promise<unknown>, after?: () => void) {
     setPending(true);
     setError('');
     setMessage('');
     try {
+      assertOwner();
       await operation();
-      setMessage('已保存，下一条回复开始生效');
+      await synchronize();
+      setMessage('已保存');
       companion.refresh();
+      after?.();
     } catch (e) {
       setError(friendlyError(e));
     } finally {
@@ -149,8 +154,15 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
       {(error || companion.error) && <p role="alert">{error || companion.error}</p>}
       {message && <p role="status">{message}</p>}
       <div className="panel rows">
-        <button onClick={() => setConfirmation('clear')}>清空聊天记录</button>
-        <button onClick={() => setConfirmation('remove')}>删除角色</button>
+        <button disabled={pending} onClick={() => setConfirmation('clear')}>
+          清空聊天记录
+        </button>
+        <button disabled={pending} onClick={() => setConfirmation('remove')}>
+          删除角色
+        </button>
+        <button disabled={pending} onClick={() => setConfirmation('purge')}>
+          永久删除角色和数据
+        </button>
       </div>
       {confirmation && (
         <div
@@ -161,24 +173,35 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
           <p>
             {confirmation === 'clear'
               ? '只清空聊天记录显示，TA的记忆和养成数据会保留'
-              : '角色和聊天将从列表移除，30天内重新添加可恢复'}
+              : confirmation === 'remove'
+                ? '角色和聊天将从列表移除，30天内重新添加可恢复'
+                : confirmation === 'purge'
+                  ? '这会永久删除聊天记录、记忆和养成数据，无法恢复'
+                  : '再次确认永久删除：重新添加也无法恢复这些数据'}
           </p>
           <button
             disabled={pending}
-            onClick={() =>
-              void change(async () => {
-                if (confirmation === 'clear')
-                  await api.call(ChatEndpoints.clearHistory, { params: { conversationId: id } });
-                else {
-                  await api.call(ContactsEndpoints.remove, {
-                    params: { characterId },
-                    query: { mode: 'soft' },
-                  });
-                  navigate('/contacts');
-                }
-                setConfirmation(null);
-              })
-            }
+            onClick={() => {
+              if (confirmation === 'purge') {
+                setConfirmation('purgeConfirmed');
+                return;
+              }
+              void change(
+                async () => {
+                  if (confirmation === 'clear') await clearHistory(id);
+                  else {
+                    await api.call(ContactsEndpoints.remove, {
+                      params: { characterId },
+                      query: { mode: confirmation === 'remove' ? 'soft' : 'purge' },
+                    });
+                  }
+                },
+                () => {
+                  setConfirmation(null);
+                  if (confirmation !== 'clear') navigate('/contacts');
+                },
+              );
+            }}
           >
             确认
           </button>

@@ -53,6 +53,9 @@ export class ChatDriver {
     this.owner = { userId: session.user.userId, sessionId: session.session.sessionId };
     this.key = `sync-state:${this.owner.userId}:${this.owner.sessionId}`;
   }
+  get ownerKey(): string {
+    return `${this.owner.userId}:${this.owner.sessionId}`;
+  }
   async start(): Promise<void> {
     const parsed = LocalSyncState.safeParse(await this.store.get(this.key));
     if (this.stopped) return;
@@ -148,6 +151,50 @@ export class ChatDriver {
     if (this.stopped) return false;
     await this.runner.history(id, beforeSeq, page);
     return page.hasMore;
+  }
+  async clearHistory(id: string): Promise<void> {
+    const runner = this.runner;
+    if (!runner || this.stopped || !runner.active || !this.api.owns(this.owner))
+      throw new Error('聊天尚未准备好');
+    const confirmed = await this.api.call(ChatEndpoints.clearHistory, {
+      params: { conversationId: id },
+      networkOnly: true,
+      signal: this.lifetime.signal,
+    });
+    if (this.stopped || this.runner !== runner || !this.api.owns(this.owner))
+      throw new Error('聊天会话已改变');
+    await runner.clearHistory(id, confirmed.clearedThroughSeq);
+    if (!runner.active) throw new Error('聊天未保存，请重新打开微伴');
+  }
+  async synchronize(): Promise<void> {
+    const runner = this.runner;
+    if (!runner || this.stopped || this.paused || !runner.active || !this.api.owns(this.owner))
+      throw new Error('聊天尚未准备好');
+    const state = await this.api.call(SyncEndpoints.getState, {
+      networkOnly: true,
+      signal: this.lifetime.signal,
+    });
+    await this.reconnect(state.latestUpdateSeq);
+    const deadline = Date.now() + 10_000;
+    while (!runner.state.initialized || runner.state.lastUpdateSeq < state.latestUpdateSeq) {
+      if (
+        this.stopped ||
+        this.paused ||
+        !runner.active ||
+        !this.api.owns(this.owner) ||
+        Date.now() >= deadline
+      )
+        throw new Error('修改已在服务器提交，本机暂未同步，请联网后重试');
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
+    }
+    if (
+      this.stopped ||
+      this.paused ||
+      this.runner !== runner ||
+      !runner.active ||
+      !this.api.owns(this.owner)
+    )
+      throw new Error('聊天会话已改变');
   }
   private online = () => {
     this.replaced = false;

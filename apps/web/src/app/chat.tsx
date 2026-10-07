@@ -22,6 +22,9 @@ interface ChatContextValue {
   send(id: string, text: string, quoteMessageId?: string): Promise<void>;
   retry(id: string, clientMsgId: string): Promise<void>;
   older(id: string, beforeSeq: number): Promise<boolean>;
+  clearHistory(id: string): Promise<void>;
+  synchronize(): Promise<void>;
+  assertOwner(): void;
 }
 const ChatContext = createContext<ChatContextValue | null>(null);
 export function ChatProvider({ children }: { children: ReactNode }) {
@@ -102,7 +105,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, sessionId]);
   function current() {
-    if (!driver.current) throw new Error('聊天尚未准备好');
+    if (
+      !driver.current ||
+      driver.current.ownerKey !== ownerKey ||
+      !userId ||
+      !sessionId ||
+      !api.owns({ userId, sessionId })
+    )
+      throw new Error('聊天会话已改变，请重新打开微伴');
     return driver.current;
   }
   const focus = useCallback((id: string | null) => driver.current?.focus(id), []);
@@ -126,6 +136,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           current().dispatch({ type: 'retry', conversationId: id, clientMsgId, now: Date.now() }),
         older: async (id, beforeSeq) => {
           return current().older(id, beforeSeq);
+        },
+        clearHistory: (id) => current().clearHistory(id),
+        synchronize: () => current().synchronize(),
+        assertOwner: () => {
+          current();
         },
       }}
     >

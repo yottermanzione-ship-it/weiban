@@ -132,6 +132,14 @@ class SyncEngine(
         }
     }
 
+    /** Persist the HTTP confirmation without inventing a user update sequence. */
+    fun clearHistory(
+        cid: String,
+        throughSeq: Long,
+    ) {
+        state = ClearedHistory.confirm(state, cid, throughSeq)
+    }
+
     private fun resetSending() {
         state = state.copy(outbox = state.outbox.map { if (it.state == "sending")it.copy(state = "pending")else it })
     }
@@ -238,7 +246,8 @@ class SyncEngine(
             freshState().copy(
                 initialized = true,
                 lastUpdateSeq = seq,
-                conversations = snapshot.conversations,
+                conversations = snapshot.conversations.map { ClearedHistory.clean(state, it) },
+                excluded = state.excluded.filter { it.range.reason == "cleared" && it.range.fromSeq == 1L },
                 contacts = snapshot.contacts,
                 settings = snapshot.settings,
                 outbox = state.outbox,
@@ -361,7 +370,11 @@ class SyncEngine(
 
     private fun replace(conversation: Conversation) {
         state =
-            state.copy(conversations = state.conversations.filter { it.conversationId != conversation.conversationId } + conversation)
+            state.copy(
+                conversations =
+                    state.conversations.filter { it.conversationId != conversation.conversationId } +
+                        ClearedHistory.clean(state, conversation),
+            )
     }
 
     // Exhaustive generated update dispatch has one branch per wire type.
@@ -588,41 +601,12 @@ class SyncEngine(
     }
 
     private fun conversationState(update: UserUpdateConversationStateUpdated) {
-        val d = update.data
-        val conversation = state.conversations.find { it.conversationId == d.conversationId }
+        val data = update.data
+        val conversation = state.conversations.find { it.conversationId == data.conversationId }
         if (conversation != null) {
-            edit(
-                conversation.copy(
-                    state = d.state,
-                    unreadCount = d.unreadCount,
-                    lastMessage =
-                        if (conversation.lastSeq <=
-                            d.state.clearedThroughSeq
-                        ) {
-                            null
-                        } else {
-                            conversation.lastMessage
-                        },
-                ),
-            )
-            state =
-                state.copy(
-                    messages =
-                        state.messages
-                            .filter { it.conversationId != d.conversationId || it.seq > d.state.clearedThroughSeq }
-                            .map { m ->
-                                val quote = m.quote
-                                if (m.conversationId ==
-                                    d.conversationId &&
-                                    quote != null &&
-                                    quote.seq <= d.state.clearedThroughSeq
-                                ) {
-                                    m.copy(quote = quote.copy(preview = null))
-                                } else {
-                                    m
-                                }
-                            },
-                )
+            val cleaned = ClearedHistory.clean(state, conversation.copy(state = data.state, unreadCount = data.unreadCount))
+            edit(cleaned)
+            state = ClearedHistory.remove(state, data.conversationId, cleaned.state.clearedThroughSeq)
         }
     }
 

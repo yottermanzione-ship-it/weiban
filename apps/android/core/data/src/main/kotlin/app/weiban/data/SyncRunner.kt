@@ -54,6 +54,11 @@ class SyncRunner(
         page: MessagePage,
     ) = mutate(null) { it.history(conversationId, beforeSeq, page) }
 
+    suspend fun clearHistory(
+        conversationId: String,
+        throughSeq: Long,
+    ) = mutate(null) { it.clearHistory(conversationId, throughSeq) }
+
     private suspend fun mutate(
         guard: Job?,
         action: (SyncEngine) -> Unit,
