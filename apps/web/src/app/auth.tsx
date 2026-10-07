@@ -1,10 +1,20 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { IdentityEndpoints, type AuthResponse } from '@weiban/contracts';
 import { pausePush } from '../notifications/client.js';
-import { api } from '../data/client.js';
+import { api, localStore } from '../data/client.js';
 interface AuthState {
   session: AuthResponse | null;
   loading: boolean;
+  onboarding: boolean;
+  finishOnboarding(): Promise<boolean>;
   accept(auth: AuthResponse): Promise<void>;
   logout(): Promise<void>;
   refreshUser(): Promise<void>;
@@ -13,6 +23,7 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [onboarding, setOnboarding] = useState(false);
   const latest = useRef<AuthResponse | null>(null);
   useEffect(() => {
     let active = true;
@@ -27,8 +38,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             auth = await api.restore();
           }
         }
+        const pending =
+          auth && (!auth.user.profileCompleted || (await localStore.get('ui:onboarding')) === true);
+        if (auth && !api.owns({ userId: auth.user.userId, sessionId: auth.session.sessionId }))
+          auth = null;
         if (active) {
           latest.current = auth;
+          setOnboarding(!!auth && !!pending);
           setSession(auth);
         }
       })
@@ -53,11 +69,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('weiban:unauthenticated', expired);
     };
   }, []);
+  const userId = session?.user.userId;
+  const sessionId = session?.session.sessionId;
+  const finishOnboarding = useCallback(async () => {
+    if (!userId || !sessionId) return false;
+    const owner = { userId, sessionId };
+    if (
+      !api.owns(owner) ||
+      !(await localStore.setOwned(owner, 'ui:onboarding', false)) ||
+      !api.owns(owner)
+    )
+      return false;
+    setOnboarding(false);
+    return true;
+  }, [userId, sessionId]);
   return (
     <AuthContext.Provider
       value={{
         session,
         loading,
+        onboarding,
+        finishOnboarding,
         accept: async (auth) => {
           const previous = latest.current;
           if (previous)
@@ -66,6 +98,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               sessionId: previous.session.sessionId,
             }).catch(() => {});
           await api.authenticate(auth);
+          await localStore.setOwned(
+            { userId: auth.user.userId, sessionId: auth.session.sessionId },
+            'ui:onboarding',
+            !auth.user.profileCompleted,
+          );
+          setOnboarding(!auth.user.profileCompleted);
           latest.current = auth;
           setSession(auth);
         },

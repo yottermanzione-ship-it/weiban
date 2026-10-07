@@ -24,6 +24,9 @@ test('真实API：登录、资料、微元预算、主题、刷新与退出清�
   await expect(page.getByText('先加一个你喜欢的 TA 吧')).toBeVisible();
   await page.getByRole('button', { name: '选择测试陪伴角色', exact: true }).click();
   await expect(page).toHaveURL(/\/chat\//);
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/chat$/);
+  await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
   await page.goto('/me');
   await page.getByRole('link', { name: '我', exact: true }).click();
   await page.getByRole('link', { name: '服务', exact: true }).click();

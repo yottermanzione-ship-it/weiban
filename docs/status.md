@@ -1,4 +1,4 @@
-> Codex最新断点：首次昵称引导远端171203f7两套CI及全部job已通过。管理员通知跨域点击完成本机开发自测：整仓451条、Web14+后台7组、真实Caddy302/管理HTML/404和生产备份恢复演练通过；新增部署必填ADMIN_PUBLIC_ORIGIN，新源码发布后另读CI。原生源码未变，79条证据引用引导检查点。继续iPhone主屏幕引导/冷启动恢复、头像其余场景/拍照/手势、原生推送及L2–L7。PR #3保持草稿，不修改main；产品未完成，真实设备/厂商/独立QA待验。
+> Codex最新断点：管理员通知跨域远端cf5615b5的push/PR及全部job已成功。新增iPhone主屏幕说明/设置入口与两端引导进度持久恢复，本机Web18组、原生81条零跳过/静态检查/APK、生成无差异通过；后台7组及整仓451条/全部检查通过，新源码CI另读。继续头像其余场景/拍照/手势、原生推送与通知PNG及L2–L7。PR #3草稿，不修改main；产品未完成，真实Safari/设备/厂商/独立QA待验。
 
 # 项目状态
 
@@ -106,3 +106,19 @@ Web Service Worker仅在当前app会话属于管理员时接受admin_alert，点
 证据：/tmp/weiban-t041-admin-link-web1.log（14通过）、/tmp/weiban-t041-admin-link-admin1.log（7通过）、/tmp/weiban-t041-admin-link-deploy3.log（退出0）。/tmp/weiban-t041-admin-link-root2.log：整仓50文件451条真实PG测试、格式/模块边界/完整类型/令牌全部通过（退出0）。deploy1缺少PATH中的age、deploy2磁盘耗尽、root1受磁盘耗尽影响并中断，均不计通过；使用已有age工具并定点清理本任务旧缓存后重跑，没有修改断言或门禁。未证明真实系统/厂商通知投递，也不是独立QA。
 
 后续继续iPhone主屏幕引导/冷启动恢复、其余头像场景、拍照与手势裁剪、通知PNG及原生推送，然后L2–L7。新检查点发布后另读CI，产品尚未完成。
+
+
+管理员通知跨域检查点已发布并核验CI：本机aab06fc04b8c6afc4a0a177bd13976395d179f73，远端cf5615b55832b7399e61a418f12d75c00062294d，同tree0fb514ddbc35dcf70837bb5cac6d487e668044fa。push37601241239（check112725858983/Android112725859239）与PR37601245524（check112725873376/Android112725873015）及全部job最终success、结果已读取；新源码生产构建、14迁移、加密备份/空卷恢复通过。之后的iPhone主屏幕引导与引导进度恢复属于新工作树，不借用此CI。
+
+
+## T041 主屏幕说明与引导进度恢复（2026-10-07）
+
+iPhone Safari在私聊收到正常角色消息后自动显示一次添加到主屏幕的底部说明，三步图文与Safari分享工具栏示意、知道了/键盘关闭、设置重开入口。已从主屏幕启动时不自动提示；低于iOS16.4显示系统限制，缺少原生dialog API时仍可读/关闭。一次性记录是设备级无账号数据的标记，不申请通知权限；主题/安全区使用现有令牌，截图已检查。
+
+两端首次登录将未完成引导持久写入本账号存储。填写昵称后，从网页首页重新打开仍进入引导广场；原生重建SessionRepository后保留待引导状态。只有真实联系人更新已保存并获得真实conversationId后，先持久标记完成再进入聊天；原生旧owner不能结束新账号引导，退出清除本账号进度。资料完成标记不能代替已完成角色选择。网页恢复读取后再次核对当前会话，完成写入使用IndexedDB同事务归属检查；原生写入使用既有会话锁/Room。
+
+开发自测：最终Web18组通过（/tmp/weiban-t041-home-guide-web4.log）；Android81条JUnit零跳过、完整ktlint/detekt/单元测试/APK通过（/tmp/weiban-t041-onboarding-resume-native1.log及JUnit XML）；514定义/85操作/图标/tokens生成无差异（/tmp/weiban-t041-onboarding-resume-generated1.log）。新增真实Room进度重建/完成后再重建、换号/旧owner拒绝两条，以及四组浏览器引导/旧API测试和首页恢复/完成后不重引导断言。管理端7组通过（/tmp/weiban-t041-home-guide-admin1.log）；整仓50文件451条真实PG测试、完整格式/模块边界/类型/tokens检查通过（/tmp/weiban-t041-home-guide-root1.log，退出0）。
+
+iPhone UA、standalone状态和缺失dialog API在Chromium中模拟，消息来自真实测试服务；不构成真实Safari/主屏幕推送证明。原生是同一Room中的仓库实例重建，不冒充OS强杀/重启设备。新账号待通过→真实AI首次回复整链路、未完成时恢复已选择角色/招呼草稿、视觉手势与实机仍待验。首轮主屏幕测试误用了已被此前清空用例清空的共享聊天历史，改为独立真实联系人/消息账号后通过；该失败轮次不计通过，没有削弱旧断言/增加超时。
+
+继续头像其余场景、拍照与手势裁剪、原生推送/通知PNG及L2–L7。发布后另读本轮CI，开发自测不等于独立QA，产品未完成。

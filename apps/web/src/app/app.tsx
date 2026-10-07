@@ -65,7 +65,9 @@ function Shell() {
     );
   if (!auth.session) return <AuthPage />;
   const firstProfile = !auth.session.user.profileCompleted;
-  const onboarding = firstProfile || searchParams.get('onboarding') === '1';
+  const onboarding = auth.onboarding || firstProfile || searchParams.get('onboarding') === '1';
+  if (!firstProfile && auth.onboarding && ['/', '/chat'].includes(location.pathname))
+    return <Navigate to="/discover?onboarding=1" replace />;
   if (firstProfile && location.pathname !== '/profile') return <Navigate to="/profile" replace />;
   const roots = ['/chat', '/contacts', '/discover', '/me'];
   return (

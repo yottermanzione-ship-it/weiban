@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CharacterEndpoints, ContactsEndpoints } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
 import { useChat } from '../app/chat.js';
+import { useAuth } from '../app/auth.js';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import { useCharacterNames } from '../data/character-names.js';
@@ -152,6 +153,7 @@ export function CharacterPage({
   const params = useParams();
   const characterId = id ?? params.characterId ?? '';
   const navigate = useNavigate();
+  const { finishOnboarding } = useAuth();
   const profile = useRemote(CharacterEndpoints.getProfile, { params: { characterId } });
   const { state, assertOwner, synchronize } = useChat();
   const contact = state.contacts.find((item) => item.characterId === characterId);
@@ -161,9 +163,19 @@ export function CharacterPage({
   const [message, setMessage] = useState('');
   const [restore, setRestore] = useState(false);
   useEffect(() => {
-    if (onboarding && state.initialized && contact?.conversationId)
-      navigate(`/chat/${contact.conversationId}`, { replace: true });
-  }, [onboarding, state.initialized, contact?.conversationId, navigate]);
+    if (!onboarding || !state.initialized || !contact?.conversationId) return;
+    let active = true;
+    void finishOnboarding()
+      .then((saved) => {
+        if (active && saved) navigate(`/chat/${contact.conversationId}`, { replace: true });
+      })
+      .catch((error) => {
+        if (active) setError(friendlyError(error));
+      });
+    return () => {
+      active = false;
+    };
+  }, [onboarding, state.initialized, contact?.conversationId, navigate, finishOnboarding]);
   async function add(restoreMode?: 'restore' | 'fresh') {
     setPending(true);
     setError('');

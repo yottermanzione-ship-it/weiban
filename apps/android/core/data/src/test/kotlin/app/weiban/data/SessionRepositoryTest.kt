@@ -61,6 +61,37 @@ class SessionRepositoryTest {
         db.close()
     }
 
+    @Test fun unfinishedOnboardingSurvivesProfileSaveAndRepositoryRestart() =
+        runBlocking {
+            repository.authenticate(a.copy(user = a.user.copy(profileCompleted = false)))
+            assertTrue(repository.onboardingPending.value)
+            repository.updateUser(a.user)
+            val restarted = SessionRepository(api, db, vault)
+            restarted.restore()
+            assertTrue(
+                restarted.auth.value!!
+                    .user.profileCompleted,
+            )
+            assertTrue(restarted.onboardingPending.value)
+            assertTrue(restarted.finishOnboarding(OwnerRecord(userId = a.user.userId, sessionId = a.session.sessionId)))
+            val completed = SessionRepository(api, db, vault)
+            completed.restore()
+            assertFalse(completed.onboardingPending.value)
+        }
+
+    @Test fun oldOwnerCannotFinishNewAccountsOnboarding() =
+        runBlocking {
+            repository.authenticate(a.copy(user = a.user.copy(profileCompleted = false)))
+            val oldOwner = OwnerRecord(userId = a.user.userId, sessionId = a.session.sessionId)
+            repository.authenticate(b.copy(user = b.user.copy(profileCompleted = false)))
+            assertFalse(repository.finishOnboarding(oldOwner))
+            assertTrue(repository.onboardingPending.value)
+            assertEquals("true", db.local().cache("ui:onboarding"))
+            repository.forget()
+            assertFalse(repository.onboardingPending.value)
+            assertNull(db.local().cache("ui:onboarding"))
+        }
+
     @Test fun realRoomCacheWorksOfflineAndCannotCrossAccount() =
         runBlocking {
             repository.authenticate(a)

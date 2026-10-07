@@ -11,6 +11,7 @@ import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import { VirtualList } from './virtual-list.js';
+import { HomeScreenGuide } from './home-screen-guide.js';
 export function CharacterName({ id, fallback }: { id: string; fallback?: string | null }) {
   const profile = useRemote(CharacterEndpoints.getProfile, { params: { characterId: id } });
   return <>{fallback || profile.data?.name || '角色'}</>;
@@ -141,6 +142,14 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         </h1>
         <Link to={`/chat/${id}/settings`}>聊天信息</Link>
       </header>
+      <HomeScreenGuide
+        received={messages.some(
+          (message) =>
+            message.senderKind === 'character' &&
+            message.status === 'normal' &&
+            message.content !== null,
+        )}
+      />
       {conversation.contentScope === 'adult' && <p className="hint">成人模式</p>}
       {!chat.online && <p className="offline">网络暂不可用，消息保存在本机，联网后继续发送</p>}
       {status.data && !status.data.available && (

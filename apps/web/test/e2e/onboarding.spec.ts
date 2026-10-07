@@ -11,6 +11,9 @@ test('首次昵称和选择角色在四步内；真实添加保持待通过状�
   await page.getByRole('button', { name: '下一步', exact: true }).click();
   await expect(page).toHaveURL(/\/discover\?onboarding=1$/);
   await expect(page.getByText('先加一个你喜欢的 TA 吧')).toBeVisible();
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/discover\?onboarding=1$/);
+  await expect(page.getByText('先加一个你喜欢的 TA 吧')).toBeVisible();
   await page.reload();
   await expect(page.getByText('先加一个你喜欢的 TA 吧')).toBeVisible();
   await expect(page.getByRole('navigation', { name: '主导航' })).toHaveCount(0);

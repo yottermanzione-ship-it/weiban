@@ -1,4 +1,5 @@
 import { PushSettings } from './push-settings.js';
+import { HomeScreenGuide } from './home-screen-guide.js';
 import { useState } from 'react';
 import { IdentityEndpoints } from '@weiban/contracts';
 import { useAuth } from '../app/auth.js';
@@ -49,6 +50,7 @@ export function SettingsPage() {
         <p role="status">{message || prefs.error}</p>
       </div>
       <PushSettings />
+      <HomeScreenGuide manual />
       <button className="panel full" onClick={() => void auth.logout().catch(() => {})}>
         退出登录
       </button>

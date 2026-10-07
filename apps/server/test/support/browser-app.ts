@@ -61,16 +61,19 @@ await app.init();
 await app.get<JobQueue>(JOB_QUEUE).start();
 const commands = app.get(IdentityCommands);
 let chatUser = '';
+let guideUser = '';
 const admin = await commands.createAdmin('browser_admin', 'correct horse battery');
 for (const [name, balance] of [
   ['browser_user', 50_000_000],
   ['browser_other', 1_000_000],
   ['browser_first', 1_000_000],
+  ['browser_guide', 1_000_000],
 ] as const) {
   const user = await commands.createAdmin(name, 'correct horse battery');
   if (name === 'browser_user') chatUser = user;
+  if (name === 'browser_guide') guideUser = user;
   await commands.setRole(name, 'user');
-  if (name === 'browser_other')
+  if (name === 'browser_other' || name === 'browser_guide')
     await app.get(SettingsService).updateProfile(user, { nickname: '其他用户' });
   await app.get(BillingAdminService).adjust(admin, user, {
     direction: 'grant',
@@ -121,31 +124,35 @@ await app
   .get(CharacterCheckWorker)
   .runChecks({ characterId: role.characterId, adminId: admin, revision: 1 });
 await app.get(CharacterService).publish(admin, role.characterId);
-await app.get(ContactsCommands).add(chatUser, { characterId: role.characterId, greeting: '你好' });
-const contactRow = await new ContactsTestQueries(app.get(DATABASE)).row(chatUser, role.characterId);
-if (!contactRow) throw new Error('missing browser contact');
-clock.advance(Math.max(0, contactRow.accept_after.getTime() - clock.nowMs()));
-await app
-  .get(ContactsCommands)
-  .accept({ userId: chatUser, characterId: role.characterId, requestId: contactRow.request_id });
-const activeRow = await app
-  .get<Database>(DATABASE)
-  .query<{ conversation_id: string }>(
-    'SELECT conversation_id FROM contacts.contacts WHERE user_id=$1 AND character_id=$2',
-    [chatUser, role.characterId],
-  );
-const conversationId = activeRow.rows[0]!.conversation_id;
-const conversation = await app.get<ChatReadPort>(CHAT_READ_PORT).getConversation(conversationId);
-const participant = conversation!.participants.find((item) => item.kind === 'character')!;
-for (let index = 0; index < 70; index++) {
-  const posted = await app.get<ChatParticipantPort>(CHAT_PARTICIPANT_PORT).postMessage({
-    conversationId,
-    senderParticipantId: participant.participantId,
-    content: { type: 'text', text: `浏览器历史消息 ${index}` },
-    idempotencyKey: `browser-history:${index}`,
-  });
-  if (!posted.ok) throw new Error('browser message seed failed');
+async function seedConversation(userId: string, count: number) {
+  await app.get(ContactsCommands).add(userId, { characterId: role.characterId, greeting: '你好' });
+  const contactRow = await new ContactsTestQueries(app.get(DATABASE)).row(userId, role.characterId);
+  if (!contactRow) throw new Error('missing browser contact');
+  clock.advance(Math.max(0, contactRow.accept_after.getTime() - clock.nowMs()));
+  await app
+    .get(ContactsCommands)
+    .accept({ userId: userId, characterId: role.characterId, requestId: contactRow.request_id });
+  const activeRow = await app
+    .get<Database>(DATABASE)
+    .query<{ conversation_id: string }>(
+      'SELECT conversation_id FROM contacts.contacts WHERE user_id=$1 AND character_id=$2',
+      [userId, role.characterId],
+    );
+  const conversationId = activeRow.rows[0]!.conversation_id;
+  const conversation = await app.get<ChatReadPort>(CHAT_READ_PORT).getConversation(conversationId);
+  const participant = conversation!.participants.find((item) => item.kind === 'character')!;
+  for (let index = 0; index < count; index++) {
+    const posted = await app.get<ChatParticipantPort>(CHAT_PARTICIPANT_PORT).postMessage({
+      conversationId,
+      senderParticipantId: participant.participantId,
+      content: { type: 'text', text: `浏览器历史消息 ${index}` },
+      idempotencyKey: `browser-history:${userId}:${index}`,
+    });
+    if (!posted.ok) throw new Error('browser message seed failed');
+  }
 }
+await seedConversation(chatUser, 70);
+await seedConversation(guideUser, 1);
 await app.listen(3000, '127.0.0.1');
 for (const signal of ['SIGINT', 'SIGTERM'] as const)
   process.on(signal, () => void app.close().then(() => process.exit(0)));

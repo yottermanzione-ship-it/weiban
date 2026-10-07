@@ -1,6 +1,7 @@
 package app.weiban
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -105,14 +106,11 @@ private fun revokeSession(
 private class NavigationUi(
     initialTab: String = "微伴",
     initialConversation: String? = null,
-    initialOnboarding: Boolean = false,
 ) {
     var tab by mutableStateOf(initialTab)
     var conversationId by mutableStateOf(initialConversation)
-    var onboarding by mutableStateOf(initialOnboarding)
 
     fun open(id: String) {
-        onboarding = false
         conversationId = id
         tab = "微伴"
     }
@@ -120,8 +118,8 @@ private class NavigationUi(
     companion object {
         val saver =
             listSaver<NavigationUi, String>(
-                save = { listOf(it.tab, it.conversationId.orEmpty(), it.onboarding.toString()) },
-                restore = { NavigationUi(it[0], it[1].ifBlank { null }, it.getOrNull(2) == "true") },
+                save = { listOf(it.tab, it.conversationId.orEmpty()) },
+                restore = { NavigationUi(it[0], it[1].ifBlank { null }) },
             )
     }
 }
@@ -132,16 +130,36 @@ private class NavigationUi(
     onTheme: (String) -> Unit,
     onLogout: () -> Unit,
 ) {
-    val navigation = rememberSaveable(saver = NavigationUi.saver) { NavigationUi(initialOnboarding = !auth.user.profileCompleted) }
+    val navigation = rememberSaveable(saver = NavigationUi.saver) { NavigationUi() }
+    val onboarding by runtime.repository.onboardingPending.collectAsState()
+    val scope = rememberCoroutineScope()
     if (!auth.user.profileCompleted) {
         MeScreen(runtime.repository, true, onTheme, onLogout)
-    } else if (navigation.onboarding) {
+    } else if (onboarding) {
         val owner = OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId)
-        RoleBrowser(runtime.repository, runtime.chat, owner, true, navigation::open, onboarding = true)
+        RoleBrowser(runtime.repository, runtime.chat, owner, true, { id ->
+            scope.launch { finishOnboarding(runtime, owner, id, navigation::open) }
+        }, onboarding = true)
     } else {
         Scaffold(bottomBar = { if (navigation.conversationId == null) Tabs(navigation.tab) { navigation.tab = it } }) { padding ->
             Box(Modifier.padding(padding)) { SignedInPage(runtime, auth, navigation, onTheme, onLogout) }
         }
+    }
+}
+
+@Suppress("TooGenericExceptionCaught") // Storage failure leaves onboarding active and offers a visible retry message.
+private suspend fun finishOnboarding(
+    runtime: WeibanApplication,
+    owner: OwnerRecord,
+    conversationId: String,
+    onOpen: (String) -> Unit,
+) {
+    try {
+        if (runtime.repository.finishOnboarding(owner)) onOpen(conversationId)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        Toast.makeText(runtime, "无法保存引导进度，请重试", Toast.LENGTH_SHORT).show()
     }
 }
 

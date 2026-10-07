@@ -26,6 +26,8 @@ class SessionRepository(
     private val lock = Mutex()
     private val current = MutableStateFlow<AuthResponse?>(null)
     val auth: StateFlow<AuthResponse?> = current
+    private val onboarding = MutableStateFlow(false)
+    val onboardingPending: StateFlow<Boolean> = onboarding
 
     suspend fun restore() =
         lock.withLock {
@@ -35,8 +37,10 @@ class SessionRepository(
                 database.withTransaction { database.local().replaceOwner(null) }
                 withContext(Dispatchers.IO) { vault.clear() }
                 current.value = null
+                onboarding.value = false
                 api.authenticate(null)
             } else {
+                onboarding.value = !saved.user.profileCompleted || database.local().cache("ui:onboarding") == "true"
                 current.value = saved
                 api.authenticate(saved)
             }
@@ -45,12 +49,15 @@ class SessionRepository(
     suspend fun authenticate(auth: AuthResponse) =
         lock.withLock {
             current.value = null
+            onboarding.value = false
             api.authenticate(null)
             database.withTransaction {
                 database.local().replaceOwner(
                     OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId),
                 )
             }
+            onboarding.value = !auth.user.profileCompleted
+            database.local().cache(CacheRecord("ui:onboarding", onboarding.value.toString()))
             withContext(Dispatchers.IO) { vault.save(auth) }
             current.value = auth
             api.authenticate(auth)
@@ -59,6 +66,7 @@ class SessionRepository(
     suspend fun forget() =
         lock.withLock {
             current.value = null
+            onboarding.value = false
             api.authenticate(null)
             database.withTransaction { database.local().replaceOwner(null) }
             withContext(Dispatchers.IO) { vault.clear() }
@@ -68,6 +76,7 @@ class SessionRepository(
         lock.withLock {
             if (current.value !== expected)return@withLock
             current.value = null
+            onboarding.value = false
             api.authenticate(null)
             database.withTransaction { database.local().replaceOwner(null) }
             withContext(Dispatchers.IO) { vault.clear() }
@@ -138,6 +147,15 @@ class SessionRepository(
             } else {
                 value
             }
+        }
+
+    /** Finish only after a real conversation is available; preserve this marker across process restarts. */
+    suspend fun finishOnboarding(owner: OwnerRecord): Boolean =
+        lock.withLock {
+            if (!owns(owner)) return@withLock false
+            database.local().cache(CacheRecord("ui:onboarding", "false"))
+            onboarding.value = false
+            true
         }
 
     suspend fun loadSync(owner: OwnerRecord): ClientSyncState? =
