@@ -89,3 +89,17 @@ T041原生实时/后台检查点已发布并核验CI：本机f6105216472fc7e75fb
 证据/tmp/weiban-t041-onboarding-root1.log、/tmp/weiban-t041-onboarding-native2.log及JUnit XML、/tmp/weiban-t041-onboarding-web-build1.log、/tmp/weiban-t041-onboarding-web2.log、/tmp/weiban-t041-onboarding-admin1.log、/tmp/weiban-t041-onboarding-generated1.log（514定义/85操作/图标/tokens无差异）。首轮原生测试在资料加载前点击禁用按钮、首轮网页测试将“正在登录”的按钮变化当登录完成，均已改为等待真实完成状态；不增加超时或削弱旧回归断言，失败轮次不计通过。
 
 首次流程继续补iPhone主屏幕引导/设置入口和完整冷启动恢复及视觉/手势验收；头像其他场景、拍照与手势裁剪、原生推送/通知PNG、管理员跨站点击继续，然后L2–L7。发布后另读本轮CI；开发自测不等于独立QA，产品未完成。
+
+
+首次昵称/角色引导检查点已发布并核验：本机433b52d0c7510926db17174b3130de74a9cffdc1，远端171203f7bf0522b26e5dd146e2d64741316baef8，同tree b74e3f5bf26db653cca89ab8a8731138211dfee8。push37598748849、PR37598757042及各自check/Android job均最终success、结果已读取。push新源码生产构建、14迁移、加密备份与空目标恢复通过。管理员通知跨站点击属于后续新工作树，不借用这些CI。
+
+
+## T041 管理员通知跨域点击（2026-10-07）
+
+Web Service Worker仅在当前app会话属于管理员时接受admin_alert，点击只允许固定/admin/alerts；普通消息不能跳入管理页。该路径不进入用户SPA离线回退，由用户域Caddy以302跳到ADMIN_PUBLIC_ORIGIN下的真实管理页，其他/admin路径返回404。管理站继续要求独立admin会话，不复用用户站app令牌。生产环境新增必填ADMIN_PUBLIC_ORIGIN（完整HTTPS源、不带路径或末尾斜杠），示例与运维说明已更新。
+
+开发自测：Web14组及管理端7组真实浏览器通过，含真实SW/IndexedDB、错误种类深链拒绝、跨源导航、独立管理员登录/刷新与原app会话保留。浏览器的HTTP302和系统通知展示使用夹具；另以真实生产镜像/Caddy验证实际302与Location、管理页HTML和未知管理路径404，14迁移、加密媒体、加密备份/空目标恢复和非空目标拒绝全部通过。原生源码未变，79条零跳过及完整构建证据仍引用首次引导检查点，不重复登记本轮新增原生验收。
+
+证据：/tmp/weiban-t041-admin-link-web1.log（14通过）、/tmp/weiban-t041-admin-link-admin1.log（7通过）、/tmp/weiban-t041-admin-link-deploy3.log（退出0）。/tmp/weiban-t041-admin-link-root2.log：整仓50文件451条真实PG测试、格式/模块边界/完整类型/令牌全部通过（退出0）。deploy1缺少PATH中的age、deploy2磁盘耗尽、root1受磁盘耗尽影响并中断，均不计通过；使用已有age工具并定点清理本任务旧缓存后重跑，没有修改断言或门禁。未证明真实系统/厂商通知投递，也不是独立QA。
+
+后续继续iPhone主屏幕引导/冷启动恢复、其余头像场景、拍照与手势裁剪、通知PNG及原生推送，然后L2–L7。新检查点发布后另读CI，产品尚未完成。

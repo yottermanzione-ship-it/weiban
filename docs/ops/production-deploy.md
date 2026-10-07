@@ -6,7 +6,7 @@
 
 `deploy/prod/Dockerfile`用固定Node24.19.0/pnpm11.28.4、冻结锁文件构建服务及两套网页；`pnpm deploy --prod --legacy`生成只含生产依赖、dist和迁移的运行包。app以node用户运行，只读根文件系统、无额外capability，媒体与/tmp单独可写。Caddy2.10.2独立镜像包含网页静态产物，同域`/api`反向代理、TLS、安全头和SPA回退；用户网页与管理后台不同域名。数据库只在内部Docker网络，app另有出口网络调用供应商；只有Caddy对公网开放80/443。
 
-配置文件复制`deploy/prod/runtime.env.example`到仓库外，例如`/srv/weiban/runtime.env`，填实际域名和平台每日成本上限。秘密放`SECRETS_DIR`：`postgres-password`（数据库密码）、`database-url`（完整连接串，密码URL编码）、`kek`（32字节随机数的base64/hex）。app UID1000必须能读后两份秘密文件，主目录限制其他用户访问；本机Compose秘密挂载保留宿主权限，不能只依靠YAML的mode。密码不进入镜像、Compose环境输出或日志。秘密备份与数据库备份分开。
+配置文件复制`deploy/prod/runtime.env.example`到仓库外，例如`/srv/weiban/runtime.env`，填实际域名和平台每日成本上限；ADMIN_PUBLIC_ORIGIN填写后台完整HTTPS源（不含路径/尾斜杠），例如https://admin.weiban.example.com。用户域/admin/alerts只作302跳转到该源的同一路径；用户PWA不拦截/admin导航，不在用户域提供后台HTML。其他/admin路径404，后台仍要求独立admin会话。秘密放`SECRETS_DIR`：`postgres-password`（数据库密码）、`database-url`（完整连接串，密码URL编码）、`kek`（32字节随机数的base64/hex）。app UID1000必须能读后两份秘密文件，主目录限制其他用户访问；本机Compose秘密挂载保留宿主权限，不能只依靠YAML的mode。密码不进入镜像、Compose环境输出或日志。秘密备份与数据库备份分开。
 
 ## 初始化与升级
 

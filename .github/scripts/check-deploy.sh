@@ -38,7 +38,7 @@ for(const [name,value] of Object.entries({'postgres-password':password,'database
   // 文件只读，宿主父目录仍700，其他宿主用户不能遍历临时秘密目录。
   chmodSync(path,0o444);
 }
-writeFileSync(dir+'/runtime.env',`SECRETS_DIR=${dir}/secrets\nWEB_HOST=app.localhost\nWEB_DOMAIN=http://app.localhost\nADMIN_DOMAIN=http://admin.localhost\nBILLING_PLATFORM_DAILY_CAP_MICROS=20000000\nAPP_IMAGE=weiban-deploy-app:selftest\nEDGE_IMAGE=weiban-deploy-edge:selftest\n`,{mode:0o600});
+writeFileSync(dir+'/runtime.env',`SECRETS_DIR=${dir}/secrets\nWEB_HOST=app.localhost\nWEB_DOMAIN=http://app.localhost\nADMIN_DOMAIN=http://admin.localhost\nADMIN_PUBLIC_ORIGIN=http://admin.localhost:18080\nBILLING_PLATFORM_DAILY_CAP_MICROS=20000000\nAPP_IMAGE=weiban-deploy-app:selftest\nEDGE_IMAGE=weiban-deploy-edge:selftest\n`,{mode:0o600});
 JS
 build_ca=()
 if [[ -n ${WEIBAN_BUILD_CA_FILE:-} ]]; then build_ca=(--secret "id=build_ca,src=$WEIBAN_BUILD_CA_FILE"); fi

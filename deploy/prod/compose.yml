@@ -75,6 +75,7 @@ services:
     environment:
       WEB_DOMAIN: ${WEB_DOMAIN:?Set web TLS domain}
       ADMIN_DOMAIN: ${ADMIN_DOMAIN:?Set admin TLS domain}
+      ADMIN_PUBLIC_ORIGIN: ${ADMIN_PUBLIC_ORIGIN:?Set full public admin HTTPS origin}
       NO_PROXY: app,postgres,localhost,127.0.0.1
     ports: ['80:80', '443:443', '443:443/udp']
     volumes: [caddy_data:/data, caddy_config:/config]

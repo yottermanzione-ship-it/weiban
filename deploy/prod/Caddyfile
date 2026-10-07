@@ -8,6 +8,14 @@
     Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; worker-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
     -Server
   }
+  @adminAlert path /admin/alerts
+  handle @adminAlert {
+    redir {$ADMIN_PUBLIC_ORIGIN}/admin/alerts 302
+  }
+  @otherAdmin path /admin /admin/*
+  handle @otherAdmin {
+    respond "Not found" 404
+  }
   @api path /api/* /health
   handle @api {
     reverse_proxy app:3000

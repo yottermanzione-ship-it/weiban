@@ -21,7 +21,9 @@ precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 clientsClaim();
 registerRoute(
-  new NavigationRoute(createHandlerBoundToURL('/index.html'), { denylist: [/^\/api\//] }),
+  new NavigationRoute(createHandlerBoundToURL('/index.html'), {
+    denylist: [/^\/api\//, /^\/admin(?:\/|$)/],
+  }),
 );
 const store = new IndexedLocalStore('weiban-app', self.indexedDB);
 const seenSchema = z.array(z.object({ id: z.string(), sent: z.number() })).max(200);
@@ -110,7 +112,7 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     enqueue(async () => {
       const notice = await current(event.notification.data);
-      const route = notice && notificationRoute(notice.deepLink);
+      const route = notice && notificationRoute(notice.deepLink, notice.kind);
       if (!notice || !route) return;
       const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       const url = new URL(route, self.location.origin).href;

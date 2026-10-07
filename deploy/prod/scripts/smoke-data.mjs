@@ -12,7 +12,10 @@ const device = {
   appVersion: '0.1.0',
   timeZone: 'Asia/Shanghai',
 };
-async function call(path, { method = 'GET', body, token, file, host = 'app.localhost' } = {}) {
+async function call(
+  path,
+  { method = 'GET', body, token, file, host = 'app.localhost', status } = {},
+) {
   const headers = { Host: host };
   if (token) headers.Authorization = `Bearer ${token}`;
   let payload;
@@ -47,7 +50,7 @@ async function call(path, { method = 'GET', body, token, file, host = 'app.local
     outgoing.setTimeout(20_000, () => outgoing.destroy(new Error('本机演练请求超时')));
     outgoing.end(bytes);
   });
-  assert(r.ok, `${method} ${path} HTTP${r.status}`);
+  assert(status === undefined ? r.ok : r.status === status, `${method} ${path} HTTP${r.status}`);
   return r;
 }
 async function json(path, options) {
@@ -61,6 +64,11 @@ assert((await web.text()).includes('微伴'));
 assert(web.headers.get('content-security-policy')?.includes("frame-ancestors 'none'"));
 const adminHTML = await call('/', { host: 'admin.localhost' });
 assert((await adminHTML.text()).includes('微伴管理后台'));
+const redirect = await call('/admin/alerts', { status: 302 });
+assert.equal(redirect.headers.get('location'), 'http://admin.localhost:18080/admin/alerts');
+const alertsHTML = await call('/admin/alerts', { host: 'admin.localhost' });
+assert((await alertsHTML.text()).includes('微伴管理后台'));
+await call('/admin/other', { status: 404 });
 assert.equal((await (await call('/health')).json()).checks.crypto.configured, true);
 let user, record;
 if (mode === 'seed') {

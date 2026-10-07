@@ -32,7 +32,7 @@
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres",
     "db:psql": "docker compose exec postgres psql -U weiban -d weiban",
-    "web:e2e": "pnpm --filter @weiban/web build && playwright test --config apps/web/playwright.config.ts",
+    "web:e2e": "pnpm --filter @weiban/web build && pnpm --filter @weiban/admin build && playwright test --config apps/web/playwright.config.ts",
     "admin:e2e": "pnpm --filter @weiban/admin build && playwright test --config apps/admin/playwright.config.ts",
     "android:generate": "pnpm --filter @weiban/contracts generate && node apps/android/tools/generate-contracts.mjs && node scripts/build-tokens.mjs --kotlin apps/android/core/designsystem/src/main/kotlin/app/weiban/designsystem/tokens/WbTokens.kt && node apps/android/tools/generate-icons.mjs",
     "android:generate:check": "pnpm --filter @weiban/contracts generate && node apps/android/tools/generate-contracts.mjs --check && node scripts/build-tokens.mjs --check --kotlin apps/android/core/designsystem/src/main/kotlin/app/weiban/designsystem/tokens/WbTokens.kt && node apps/android/tools/generate-icons.mjs --check"

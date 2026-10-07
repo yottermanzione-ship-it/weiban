@@ -5,3 +5,4 @@ services:
     environment:
       WEB_DOMAIN: http://app.localhost
       ADMIN_DOMAIN: http://admin.localhost
+      ADMIN_PUBLIC_ORIGIN: http://admin.localhost:18080

@@ -23,11 +23,16 @@ export function ownedNotification(
     notice.data.recipientSessionId !== owner.data.sessionId
   )
     return null;
+  if (notice.data.kind === 'admin_alert' && auth.data.user.role !== 'admin') return null;
   const sent = Date.parse(notice.data.sentAt);
   if (sent > now + 60_000 || now - sent > 600_000) return null;
   return notice.data;
 }
-export function notificationRoute(value: string): string | null {
+export function notificationRoute(
+  value: string,
+  kind?: NotificationEnvelope['kind'],
+): string | null {
+  if (kind === 'admin_alert') return value === '/admin/alerts' ? value : null;
   return /^\/chat\/[0-9a-f-]{36}$/i.test(value) ||
     ['/chat', '/wallet', '/models', '/services'].includes(value)
     ? value
