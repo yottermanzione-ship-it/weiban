@@ -74,7 +74,7 @@ private fun avatarColor(hex: String) = Color(0xFF000000 or hex.substring(1).toLo
     }
 }
 
-private fun DrawScope.avatarPattern(style: DefaultAvatarStyle) {
+internal fun DrawScope.avatarPattern(style: DefaultAvatarStyle) {
     val unit = this.size.width
     when (style.pattern) {
         "heart" -> drawPath(heart(unit), style.patternColor)

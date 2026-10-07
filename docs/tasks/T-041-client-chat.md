@@ -198,3 +198,12 @@ Web最终21组（/tmp/weiban-t041-onboarding-draft-web2.log，退出0）；原�
 首轮web1：头像实际上传等待5秒未完成，留下测试联系人备注导致随后4个共享账号聊天用例无法匹配标准标题；另有新引导测试同名h1/h2严格定位歧义。修正新断言为实际h1，完整web2通过；原有上传/聊天超时、断言和生产重试策略未改，没有把未查明的首轮上传延迟写成实现修复。原生format1运行目录错误未执行；format2/3/4通过。native1被参数数与复杂度门禁拒绝，归并引导状态参数、拆出引导头部后重跑，没有豁免或调高门禁；native2前的修正初次相对路径错误未编辑，随即使用绝对路径修正；整仓root1被新增h1断言格式拒绝，按格式修正后root2通过。失败/未执行轮次均不计通过。
 
 开发自测非独立QA。网页实际测试服务/IndexedDB、原生模拟器Compose/Room的实例重建不等于OS强杀、真机或真实供应商AI/通知验收。新账号申请→实际延迟接受→真正AI首回复整链路、通知96PNG/原生推送及L2–L7继续开发，产品未完成。发布后另读对应源码CI。
+
+
+## T041 通知默认头像96px PNG（2026-10-07）
+
+Android设计系统新增defaultAvatarPng(context, style)：按生成的96px尺寸和0.12比例圆角，在透明Bitmap上绘制同一默认头像样式、半粗字形和右上角图案，复用界面实际avatarPattern路径/几何，字体由Compose默认SemiBold解析；像素输出独立于设备密度。压缩PNG后总是回收临时Bitmap。没有引入外部图像或第二套图案实现。
+
+designsystem测试增加既有集中版本Robolectric（MIT）/AndroidX test-core（Apache-2.0），仅测试用途；本机按工程规范--write-locks完整检查更新锁，只有该模块锁文件变化，应用runtime版本未变。新增真实API26原生图形测试：解码96x96、PNG签名、两角透明、实际底色/字形像素、无图案与星/心/音符/月亮/花不同实际像素遮罩。六个PNG已查看（/tmp/weiban-notification-avatar-{none,star,heart,note,moon,flower}.png）。首轮--write-locks完整ktlint/detekt/测试/APK通过，91条JUnit零失败/零跳过（/tmp/weiban-t041-avatar-png-native1.log，退出0及实际报告脚本）；锁定后的正常完整ktlint/detekt/测试/APK检查也通过，91条JUnit零失败/零跳过（/tmp/weiban-t041-avatar-png-native2.log，退出0及实际报告脚本）；514定义/85操作/图标/tokens生成无差异（/tmp/weiban-t041-avatar-png-generated1.log，退出0）。
+
+本轮是头像像素导出能力的开发自测，不构成系统通知、真实厂商投递或实机验收；通知发出前仍需按原owner核对、私有头像优先读取与失败回退，并与系统通知/厂商凭证接入。Web/管理端/服务端未修改，453条整仓/Web21/管理端7证据引用引导恢复检查点，不重复记本轮新增通过。继续原生通知/推送和新账号首回复整链路，然后L2–L7；产品未完成。发布后单独读取源码CI。
