@@ -61,5 +61,6 @@ dependencies {
     implementation(project(":core:designsystem"))
     implementation(project(":feature:auth"))
     implementation(project(":feature:me"))
+    implementation(project(":feature:chat"))
     implementation(project(":platform"))
 }

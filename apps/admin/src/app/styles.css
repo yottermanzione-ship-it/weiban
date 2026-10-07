@@ -224,3 +224,11 @@ td button {
   border-radius: var(--wb-radius-sm);
   margin-bottom: var(--wb-space-3);
 }
+.alert-badge {
+  display: inline-block;
+  margin-left: var(--wb-space-2);
+  padding: 0 var(--wb-space-2);
+  background: var(--wb-color-text-danger);
+  color: var(--wb-color-text-on-brand);
+  border-radius: var(--wb-radius-sm);
+}

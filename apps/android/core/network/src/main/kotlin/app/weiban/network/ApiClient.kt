@@ -58,7 +58,7 @@ class ApiClient(
             val auth = session.get()
             if (endpoint.auth != "none" && auth == null) throw ApiFailure("unauthenticated", 401)
             val request = request(endpoint, auth, body, params, query, idempotencyKey, multipart)
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).awaitDecoded { response ->
                 if (session.get() !== auth) throw ApiFailure("session_changed", 0)
                 val bytes = response.body?.byteStream()?.use { it.readBounded(4_194_305) } ?: byteArrayOf()
                 if (bytes.size > 4_194_304) throw ApiFailure("invalid_response", 0)
@@ -142,8 +142,7 @@ class ApiClient(
                         .url(url)
                         .header("Accept", "image/webp")
                         .build(),
-                ).execute()
-                .use { response ->
+                ).awaitDecoded { response ->
                     if (session.get() !== auth) throw ApiFailure("session_changed", 0)
                     if (!response.isSuccessful) throw ApiFailure("media_unavailable", response.code)
                     if (response.header("Content-Type")?.substringBefore(';') != "image/webp") throw ApiFailure("invalid_response", 0)

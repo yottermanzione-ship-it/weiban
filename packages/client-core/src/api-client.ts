@@ -9,6 +9,10 @@ export interface RequestOptions<E extends EndpointDef> {
   idempotencyKey?: string;
   /** 媒体契约的 multipart 字段 file；浏览器自动生成边界。 */
   file?: Blob;
+  /** 同步游标/快照必须来自服务器，不能用缓存伪装成功。 */
+  networkOnly?: boolean;
+  /** 驱动停止或账号切换时取消在途请求。 */
+  signal?: AbortSignal;
 }
 export class ApiFailure extends Error {
   constructor(
@@ -53,6 +57,14 @@ export class ApiClient {
   async forget(): Promise<void> {
     this.auth = null;
     await this.enqueue(() => this.store.clear());
+  }
+  /** 旧WebSocket的失效通知不能退出刚切换的新会话。 */
+  async forgetIf(owner: { userId: string; sessionId: string }): Promise<boolean> {
+    if (this.auth?.user.userId !== owner.userId || this.auth.session.sessionId !== owner.sessionId)
+      return false;
+    await this.forget();
+    this.onUnauthenticated();
+    return true;
   }
   async updateUser(user: CurrentUser): Promise<AuthResponse> {
     const parsed = CurrentUser.parse(user);
@@ -123,19 +135,24 @@ export class ApiClient {
         credentials: 'omit',
         redirect: 'error',
         cache: 'no-store',
-        signal: AbortSignal.timeout(20_000),
+        signal: options.signal
+          ? AbortSignal.any([options.signal, AbortSignal.timeout(20_000)])
+          : AbortSignal.timeout(20_000),
         ...(payload !== undefined ? { body: payload } : {}),
       });
     } catch {
       if (endpoint.auth !== 'none' && this.auth !== auth)
         throw new ApiFailure('session_changed', '登录状态已改变，请重新打开页面', 0);
-      if (endpoint.method === 'GET') {
+      if (options.signal?.aborted) throw new ApiFailure('request_cancelled', '请求已取消', 0);
+      if (endpoint.method === 'GET' && !options.networkOnly) {
         const local = await this.cached(endpoint, options);
         if (local !== undefined) return local;
       }
       throw new ApiFailure('network_error', '网络暂不可用，请稍后重试', 0);
     }
+    if (options.signal?.aborted) throw new ApiFailure('request_cancelled', '请求已取消', 0);
     const raw: unknown = response.status === 204 ? null : await response.json().catch(() => null);
+    if (options.signal?.aborted) throw new ApiFailure('request_cancelled', '请求已取消', 0);
     if (!response.ok) {
       const error = ApiError.safeParse(raw);
       const code = error.success ? error.data.error.code : 'unsupported';
@@ -152,7 +169,7 @@ export class ApiClient {
     const data = endpoint.response.parse(raw);
     if (endpoint.auth !== 'none' && this.auth !== auth)
       throw new ApiFailure('session_changed', '登录状态已改变，请重新打开页面', 0);
-    if (this.cacheResponses && endpoint.auth !== 'none') {
+    if (this.cacheResponses && endpoint.auth !== 'none' && !options.networkOnly) {
       return this.enqueue(async () => {
         if (this.auth !== auth)
           throw new ApiFailure('session_changed', '登录状态已改变，请重新打开页面', 0);

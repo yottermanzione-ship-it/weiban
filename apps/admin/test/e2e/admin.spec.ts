@@ -183,3 +183,49 @@ test('价目草稿精确微元、模型启用与缺价发布确认', async ({ pa
   await row.getByRole('button', { name: '立即发布' }).click();
   await expect(row.getByRole('cell', { name: '生效中', exact: true })).toBeVisible();
 });
+
+test('真实提醒红点、分页、丢失处理响应后幂等重试；管理内容不落本机缓存', async ({ page }) => {
+  await login(page);
+  await expect(page.getByLabel('53条未处理提醒')).toBeVisible();
+  await page.getByRole('link', { name: '运行提醒' }).click();
+  await expect(page.getByRole('heading', { name: '运行提醒' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '标记已处理' })).toHaveCount(50);
+  await page.getByRole('button', { name: '加载更多提醒' }).click();
+  await expect(page.getByRole('button', { name: '标记已处理' })).toHaveCount(53);
+  let first = true;
+  const ids: string[] = [];
+  await page.route('**/admin/alerts/*/acknowledge', async (route) => {
+    ids.push(route.request().url());
+    if (first) {
+      first = false;
+      expect((await route.fetch()).ok()).toBe(true);
+      await route.abort('failed');
+    } else await route.continue();
+  });
+  await page.getByRole('button', { name: '标记已处理' }).first().click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await page.getByRole('button', { name: '标记已处理' }).first().click();
+  await expect(page.getByRole('status').filter({ hasText: '已标记为已处理' })).toHaveText(
+    '已标记为已处理',
+  );
+  expect(ids).toHaveLength(2);
+  expect(ids[0]).toBe(ids[1]);
+  await expect(page.getByLabel('52条未处理提醒')).toBeVisible();
+  await page.getByLabel('提醒范围').selectOption('all');
+  await page.getByRole('button', { name: '加载更多提醒' }).click();
+  await expect(page.getByRole('cell', { name: '已处理', exact: true })).toHaveCount(1);
+  await expect(page.getByRole('row')).toHaveCount(54);
+  await page.reload();
+  await expect(page.getByLabel('52条未处理提醒')).toBeVisible();
+  const records = await page.evaluate(
+    () =>
+      new Promise<IDBValidKey[]>((resolve) => {
+        const request = indexedDB.open('weiban-admin', 1);
+        request.onsuccess = () => {
+          const keys = request.result.transaction('records').objectStore('records').getAllKeys();
+          keys.onsuccess = () => resolve(keys.result);
+        };
+      }),
+  );
+  expect(records).toEqual(['session']);
+});

@@ -22,5 +22,6 @@ include(
     ":core:testvectors",
     ":feature:auth",
     ":feature:me",
+    ":feature:chat",
     ":platform",
 )

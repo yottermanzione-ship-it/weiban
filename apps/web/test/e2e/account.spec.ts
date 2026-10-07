@@ -61,6 +61,7 @@ test('断网与账号切换：本机资料可读，旧账号余额不会进入�
   await context.setOffline(false);
   await page.goto('/settings');
   await page.getByRole('button', { name: '退出登录', exact: true }).click();
+  await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible();
   await login(page, 'browser_other');
   await page.goto('/wallet');
   await expect(page.locator('.balance strong')).toHaveText('¥ 1.00');

@@ -75,6 +75,7 @@ class SessionRepository(
         query: Map<String, String> = emptyMap(),
         idempotencyKey: String? = null,
         multipart: okhttp3.MultipartBody? = null,
+        networkOnly: Boolean = false,
     ): T {
         val captured = current.value
         val key = endpoint.id + ":" + params.toSortedMap() + ":" + query.toSortedMap()
@@ -85,9 +86,10 @@ class SessionRepository(
                 if (error.code == "unauthenticated" && captured != null) invalidate(captured)
                 throw error
             } catch (error: IOException) {
+                if (networkOnly) throw error
                 return cached(endpoint, captured, key, error)
             }
-        return if (endpoint.auth == "none") value else commit(endpoint, captured, key, value)
+        return if (endpoint.auth == "none") value else commit(endpoint, captured, key, value, networkOnly)
     }
 
     // Distinct transport, account-epoch and cache-miss reject gates intentionally preserve the original failure.
@@ -112,10 +114,11 @@ class SessionRepository(
         captured: AuthResponse?,
         key: String,
         value: T,
+        networkOnly: Boolean,
     ): T =
         lock.withLock {
             if (current.value !== captured || captured == null) throw ApiFailure("session_changed", 0)
-            if (endpoint.method == "GET") {
+            if (endpoint.method == "GET" && !networkOnly) {
                 database.withTransaction { database.local().cache(CacheRecord(key, api.json.encodeToString(endpoint.response, value))) }
                 // First display also reads the committed representation.
                 api.json.decodeFromString(endpoint.response, database.local().cache(key)!!)
@@ -123,6 +126,48 @@ class SessionRepository(
                 value
             }
         }
+
+    suspend fun loadSync(owner: OwnerRecord): ClientSyncState? =
+        lock.withLock {
+            database.withTransaction {
+                if (!owns(owner)) return@withTransaction null
+                val stored = database.local().sync() ?: return@withTransaction null
+                api.json.decodeFromJsonElement(
+                    ClientSyncState.serializer(),
+                    ContractJson.normalize("ClientSyncState", api.json.parseToJsonElement(stored.value)),
+                )
+            }
+        }
+
+    suspend fun saveSync(
+        owner: OwnerRecord,
+        state: ClientSyncState,
+    ): Boolean =
+        lock.withLock {
+            database.withTransaction {
+                if (!owns(owner)) return@withTransaction false
+                val previous = database.local().sync()
+                database.local().sync(
+                    SyncRecord(
+                        value = api.json.encodeToString(ClientSyncState.serializer(), state),
+                        revision =
+                            (previous?.revision ?: 0) + 1,
+                    ),
+                )
+                true
+            }
+        }
+
+    private suspend fun owns(owner: OwnerRecord): Boolean {
+        val auth = current.value
+        val stored = database.local().owner()
+        return auth?.user?.userId == owner.userId && auth?.session?.sessionId == owner.sessionId && stored == owner
+    }
+
+    suspend fun forgetIf(owner: OwnerRecord) {
+        val captured = current.value ?: return
+        if (captured.user.userId == owner.userId && captured.session.sessionId == owner.sessionId) invalidate(captured)
+    }
 
     suspend fun download(media: MediaObject): ByteArray {
         val captured = current.value ?: throw ApiFailure("unauthenticated", 401)

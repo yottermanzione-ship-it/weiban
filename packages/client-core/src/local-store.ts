@@ -1,8 +1,13 @@
+import { AuthResponse } from '@weiban/contracts';
 /** 数据按应用和账号隔离；退出登录删除本机令牌、缓存及待发队列。 */
 export interface LocalStore {
   get(key: string): Promise<unknown>;
   set(key: string, value: unknown): Promise<void>;
   clear(): Promise<void>;
+}
+export interface StoreOwner {
+  userId: string;
+  sessionId: string;
 }
 export class IndexedLocalStore implements LocalStore {
   private readonly database: Promise<IDBDatabase>;
@@ -33,6 +38,30 @@ export class IndexedLocalStore implements LocalStore {
   }
   async set(key: string, value: unknown): Promise<void> {
     await this.run('readwrite', (store) => store.put(value, key));
+  }
+  /** 归属检查与写入同一事务：退出清库后，迟到的驱动不能重建旧账号数据。 */
+  async setOwned(owner: StoreOwner, key: string, value: unknown): Promise<boolean> {
+    if (key === 'session') throw new Error('驱动不能改写登录会话');
+    const db = await this.database;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('records', 'readwrite');
+      const records = tx.objectStore('records');
+      const request = records.get('session');
+      let written = false;
+      request.onsuccess = () => {
+        const parsed = AuthResponse.safeParse(request.result);
+        if (
+          !parsed.success ||
+          parsed.data.user.userId !== owner.userId ||
+          parsed.data.session.sessionId !== owner.sessionId
+        )
+          return;
+        records.put(value, key);
+        written = true;
+      };
+      tx.oncomplete = () => resolve(written);
+      tx.onabort = tx.onerror = () => reject(new Error('同步数据保存失败'));
+    });
   }
   async clear(): Promise<void> {
     const db = await this.database;

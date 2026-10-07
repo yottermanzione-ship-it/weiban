@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ChatsCircle, AddressBook, Compass, User, CaretLeft } from '@phosphor-icons/react';
 import { IdentityEndpoints } from '@weiban/contracts';
+import { ConversationListPage } from '../features/conversation-list.js';
+import { ConversationPage } from '../features/chat.js';
+import { ChatSettingsPage } from '../features/chat-settings.js';
+import { ContactsPage, DiscoverPage, CharacterPage } from '../features/contacts.js';
+import { ChatProvider } from './chat.js';
 import { AuthProvider, useAuth } from './auth.js';
 import { AuthPage } from '../features/auth-page.js';
 import { MePage, ServicesPage } from '../features/me.js';
@@ -36,9 +41,11 @@ function Shell() {
         .catch(() => {});
     refresh();
     window.addEventListener('focus', refresh);
+    window.addEventListener('weiban:settings-updated', refresh);
     return () => {
       active = false;
       window.removeEventListener('focus', refresh);
+      window.removeEventListener('weiban:settings-updated', refresh);
     };
   }, [auth.session]);
   if (auth.loading)
@@ -56,7 +63,7 @@ function Shell() {
           网络暂不可用，正在显示本机保存的内容
         </div>
       )}
-      {!roots.includes(location.pathname) && (
+      {!roots.includes(location.pathname) && !location.pathname.startsWith('/chat/') && (
         <header className="topbar">
           <Link
             to={
@@ -75,7 +82,7 @@ function Shell() {
         <Route
           path="/"
           element={
-            <Navigate to={auth.session.user.profileCompleted ? '/me' : '/profile'} replace />
+            <Navigate to={auth.session.user.profileCompleted ? '/chat' : '/profile'} replace />
           }
         />
         <Route path="/me" element={<MePage />} />
@@ -86,53 +93,31 @@ function Shell() {
         <Route path="/ledger" element={<LedgerPage />} />
         <Route path="/prices" element={<PricesPage />} />
         <Route path="/models" element={<ModelsPage />} />
-        <Route
-          path="/chat"
-          element={
-            <main>
-              <h1 className="page-title">聊天</h1>
-              <p className="empty">还没有聊天，去添加一位角色吧</p>
-              <Link className="plain" to="/discover">
-                去发现
-              </Link>
-            </main>
-          }
-        />
-        <Route
-          path="/contacts"
-          element={
-            <main>
-              <h1 className="page-title">通讯录</h1>
-              <p className="empty">还没有添加角色</p>
-            </main>
-          }
-        />
-        <Route
-          path="/discover"
-          element={
-            <main>
-              <h1 className="page-title">发现</h1>
-              <p className="empty">角色广场即将开放</p>
-            </main>
-          }
-        />
+        <Route path="/chat" element={<ConversationListPage />} />
+        <Route path="/chat/:conversationId" element={<ConversationPage />} />
+        <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />
+        <Route path="/contacts" element={<ContactsPage />} />
+        <Route path="/discover" element={<DiscoverPage />} />
+        <Route path="/characters/:characterId" element={<CharacterPage />} />
         <Route path="*" element={<Navigate to="/me" replace />} />
       </Routes>
-      <nav className="tabbar" aria-label="主导航">
-        {(
-          [
-            ['/chat', '聊天', ChatsCircle],
-            ['/contacts', '通讯录', AddressBook],
-            ['/discover', '发现', Compass],
-            ['/me', '我', User],
-          ] as const
-        ).map(([to, label, Icon]) => (
-          <NavLink key={to} to={to}>
-            <Icon size={24} />
-            <span>{label}</span>
-          </NavLink>
-        ))}
-      </nav>
+      {!location.pathname.startsWith('/chat/') && (
+        <nav className="tabbar" aria-label="主导航">
+          {(
+            [
+              ['/chat', '微伴', ChatsCircle],
+              ['/contacts', '通讯录', AddressBook],
+              ['/discover', '发现', Compass],
+              ['/me', '我', User],
+            ] as const
+          ).map(([to, label, Icon]) => (
+            <NavLink key={to} to={to}>
+              <Icon size={24} />
+              <span>{label}</span>
+            </NavLink>
+          ))}
+        </nav>
+      )}
     </div>
   );
 }
@@ -140,7 +125,9 @@ export function App() {
   return (
     <AuthProvider>
       <UpdatePrompt />
-      <Shell />
+      <ChatProvider>
+        <Shell />
+      </ChatProvider>
     </AuthProvider>
   );
 }

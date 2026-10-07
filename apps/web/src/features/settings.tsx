@@ -1,3 +1,4 @@
+import { PushSettings } from './push-settings.js';
 import { useState } from 'react';
 import { IdentityEndpoints } from '@weiban/contracts';
 import { useAuth } from '../app/auth.js';
@@ -47,6 +48,7 @@ export function SettingsPage() {
         <p className="hint">主题会同步到你登录的所有设备。</p>
         <p role="status">{message || prefs.error}</p>
       </div>
+      <PushSettings />
       <button className="panel full" onClick={() => void auth.logout().catch(() => {})}>
         退出登录
       </button>

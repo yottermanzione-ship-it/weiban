@@ -15,10 +15,11 @@ export function ProfilePage() {
     city: '',
     about: '',
   });
+  const [loaded, setLoaded] = useState(false);
   const [message, setMessage] = useState('');
   const [pending, setPending] = useState(false);
   useEffect(() => {
-    if (remote.data)
+    if (remote.data) {
       setForm({
         nickname: remote.data.nickname ?? '',
         birthday: remote.data.birthday ?? '',
@@ -26,6 +27,8 @@ export function ProfilePage() {
         city: remote.data.city ?? '',
         about: remote.data.about ?? '',
       });
+      setLoaded(true);
+    }
   }, [remote.data]);
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -66,6 +69,7 @@ export function ProfilePage() {
         <label>
           昵称
           <input
+            disabled={!loaded}
             value={form.nickname}
             onChange={(e) => setForm({ ...form, nickname: e.target.value })}
             required
@@ -75,6 +79,7 @@ export function ProfilePage() {
         <label>
           生日
           <input
+            disabled={!loaded}
             type="date"
             value={form.birthday}
             onChange={(e) => setForm({ ...form, birthday: e.target.value })}
@@ -83,6 +88,7 @@ export function ProfilePage() {
         <label>
           性别
           <select
+            disabled={!loaded}
             value={form.gender}
             onChange={(e) => setForm({ ...form, gender: e.target.value })}
           >
@@ -95,6 +101,7 @@ export function ProfilePage() {
         <label>
           所在城市
           <input
+            disabled={!loaded}
             value={form.city}
             onChange={(e) => setForm({ ...form, city: e.target.value })}
             maxLength={32}
@@ -103,13 +110,14 @@ export function ProfilePage() {
         <label>
           关于我
           <textarea
+            disabled={!loaded}
             value={form.about}
             onChange={(e) => setForm({ ...form, about: e.target.value })}
             maxLength={500}
           />
         </label>
         <p className="hint">这些信息所有角色都会知道。</p>
-        <button className="primary" disabled={pending || remote.loading}>
+        <button className="primary" disabled={!loaded || pending || remote.loading}>
           保存
         </button>
         <p role="status">{message || remote.error}</p>

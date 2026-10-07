@@ -13,9 +13,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import app.weiban.contracts.AuthResponse
 import app.weiban.contracts.Endpoints
+import app.weiban.data.OwnerRecord
 import app.weiban.designsystem.WeibanTheme
 import app.weiban.designsystem.tokens.WbSize
 import app.weiban.feature.auth.AuthScreen
+import app.weiban.feature.chat.ChatScreen
 import app.weiban.feature.me.MeScreen
 import app.weiban.network.ApiClient
 import kotlinx.coroutines.CancellationException
@@ -59,7 +61,7 @@ private suspend fun restoreSession(runtime: WeibanApplication) {
                 !restored -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 auth == null -> AuthScreen(runtime.repository)
                 else ->
-                    key(auth!!.user.userId) {
+                    key(auth!!.session.sessionId) {
                         val logout: () -> Unit = {
                             val previous = runtime.repository.auth.value
                             scope.launch {
@@ -94,13 +96,23 @@ private fun revokeSession(
     onTheme: (String) -> Unit,
     onLogout: () -> Unit,
 ) {
-    var tab by rememberSaveable { mutableStateOf("我") }
+    var tab by rememberSaveable { mutableStateOf("微伴") }
     if (!auth.user.profileCompleted) {
         MeScreen(runtime.repository, true, onTheme, onLogout)
     } else {
         Scaffold(bottomBar = { Tabs(tab) { tab = it } }) { padding ->
             Box(Modifier.padding(padding)) {
-                if (tab == "我") MeScreen(runtime.repository, onTheme = onTheme, onLogout = onLogout) else Placeholder(tab)
+                when (tab) {
+                    "我" -> MeScreen(runtime.repository, onTheme = onTheme, onLogout = onLogout)
+                    "微伴" ->
+                        ChatScreen(
+                            runtime.repository,
+                            runtime.chat,
+                            OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId),
+                            {},
+                        )
+                    else -> Placeholder(tab)
+                }
             }
         }
     }
@@ -111,7 +123,7 @@ private fun revokeSession(
     onSelect: (String) -> Unit,
 ) {
     NavigationBar {
-        for (label in listOf("聊天", "通讯录", "发现", "我")) {
+        for (label in listOf("微伴", "通讯录", "发现", "我")) {
             val selected = tab == label
             NavigationBarItem(selected = selected, onClick = { onSelect(label) }, icon = {
                 Icon(painterResource(tabIcon(label, selected)), null, Modifier.size(WbSize.ListIcon))
@@ -125,7 +137,7 @@ private fun tabIcon(
     selected: Boolean,
 ): Int =
     when (label) {
-        "聊天" -> if (selected) R.drawable.ic_chat_fill else R.drawable.ic_chat_regular
+        "微伴" -> if (selected) R.drawable.ic_chat_fill else R.drawable.ic_chat_regular
         "通讯录" -> if (selected) R.drawable.ic_contacts_fill else R.drawable.ic_contacts_regular
         "发现" -> if (selected) R.drawable.ic_discover_fill else R.drawable.ic_discover_regular
         else -> if (selected) R.drawable.ic_me_fill else R.drawable.ic_me_regular

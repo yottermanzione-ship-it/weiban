@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 const csp =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'";
-const proxy = { '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false } };
+const proxy = { '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false, ws: true } };
 export default defineConfig({
   plugins: [
     react(),
@@ -21,6 +21,9 @@ export default defineConfig({
       },
     },
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       registerType: 'prompt',
       injectRegister: false,
       manifest: {
@@ -41,11 +44,8 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//],
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        runtimeCaching: [],
       },
     }),
   ],

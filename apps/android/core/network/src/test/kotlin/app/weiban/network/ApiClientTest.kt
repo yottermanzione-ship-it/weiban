@@ -141,4 +141,22 @@ class ApiClientTest {
                 }
             }
         }
+
+    @Test fun cancellationClosesSlowBodyWithoutWaitingForNetworkTimeout() =
+        runBlocking {
+            MockWebServer().use { server ->
+                server.enqueue(MockResponse().setBody("{}").setBodyDelay(2, TimeUnit.SECONDS))
+                val api = ApiClient(server.url("/").toString())
+                api.authenticate(auth("cancel-private-token".repeat(3)))
+                val request = async { api.call(Endpoints.identityEndpointsMe) }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    server.takeRequest(5, TimeUnit.SECONDS) ?: error("request missing")
+                }
+                kotlinx.coroutines.withTimeout(1000) {
+                    request.cancel()
+                    request.join()
+                }
+                assertTrue(request.isCancelled)
+            }
+        }
 }

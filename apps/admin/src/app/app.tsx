@@ -8,6 +8,7 @@ import { AccountsPage } from '../features/accounts.js';
 import { UpstreamsPage } from '../features/upstreams.js';
 import { CatalogPage } from '../features/catalog.js';
 import { PricesPage } from '../features/prices.js';
+import { AlertsPage, AlertBadge } from '../features/alerts.js';
 import { CharactersPage } from '../features/characters.js';
 export function App() {
   const [auth, setAuth] = useState<AuthResponse | null>(null);
@@ -64,9 +65,11 @@ export function App() {
             ['/catalog', '模型目录'],
             ['/prices', '价目表'],
             ['/accounts', '用户与余额'],
+            ['/admin/alerts', '运行提醒'],
           ].map(([to, label]) => (
             <NavLink key={to} to={to!}>
               {label}
+              {to === '/admin/alerts' && <AlertBadge />}
             </NavLink>
           ))}
         </nav>
@@ -88,6 +91,7 @@ export function App() {
             <Route path="/accounts" element={<AccountsPage />} />
             <Route path="/upstreams" element={<UpstreamsPage />} />
             <Route path="/catalog" element={<CatalogPage />} />
+            <Route path="/admin/alerts" element={<AlertsPage />} />
             <Route path="*" element={<Navigate to="/invites" replace />} />
           </Routes>
         </main>

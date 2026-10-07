@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { AuthResponse, IdentityEndpoints } from '@weiban/contracts';
 import {
@@ -130,4 +130,92 @@ it('浏览器原生fetch保持全局接收者；更新用户状态不改变会�
   await expect(client.updateUser(session('another_user').user)).rejects.toMatchObject({
     code: 'session_changed',
   });
+});
+it('同步请求断网不能返回旧游标；networkOnly也不覆盖页面缓存', async () => {
+  const db = store();
+  let offline = false;
+  let profileCompleted = false;
+  const client = new ApiClient(db, async () => {
+    if (offline) throw new TypeError('offline');
+    return Response.json({ ...session().user, profileCompleted });
+  });
+  await client.authenticate(session());
+  await client.call(IdentityEndpoints.me);
+  profileCompleted = true;
+  expect((await client.call(IdentityEndpoints.me, { networkOnly: true })).profileCompleted).toBe(
+    true,
+  );
+  expect((await client.cached(IdentityEndpoints.me))?.profileCompleted).toBe(false);
+  offline = true;
+  await expect(client.call(IdentityEndpoints.me, { networkOnly: true })).rejects.toMatchObject({
+    code: 'network_error',
+  });
+  expect((await client.call(IdentityEndpoints.me)).profileCompleted).toBe(false);
+});
+it('停止同步驱动会取消请求，不回退缓存，也不保存迟到响应', async () => {
+  const db = store();
+  let late = false;
+  const controller = new AbortController();
+  const client = new ApiClient(db, async (_url, init) => {
+    if (late) {
+      expect(init?.signal?.aborted).toBe(true);
+      return Response.json({ ...session().user, profileCompleted: true });
+    }
+    return Response.json(session().user);
+  });
+  await client.authenticate(session());
+  await client.call(IdentityEndpoints.me);
+  late = true;
+  controller.abort();
+  await expect(
+    client.call(IdentityEndpoints.me, { signal: controller.signal }),
+  ).rejects.toMatchObject({ code: 'request_cancelled' });
+  expect((await client.cached(IdentityEndpoints.me))?.profileCompleted).toBe(false);
+  const failed = new ApiClient(db, async () => {
+    throw new TypeError('aborted');
+  });
+  await failed.restore();
+  await expect(
+    failed.call(IdentityEndpoints.me, { signal: controller.signal }),
+  ).rejects.toMatchObject({ code: 'request_cancelled' });
+});
+it('同步持久化事务核对账号和会话，清库与迟到写交错不恢复旧数据', async () => {
+  const db = store();
+  const client = new ApiClient(db);
+  const auth = session();
+  const owner = { userId: auth.user.userId, sessionId: auth.session.sessionId };
+  await client.authenticate(auth);
+  expect(await db.setOwned(owner, 'sync-state', { cursor: 10, outbox: ['pending'] })).toBe(true);
+  expect(await db.get('sync-state')).toEqual({ cursor: 10, outbox: ['pending'] });
+  await Promise.all([client.forget(), db.setOwned(owner, 'sync-state', { cursor: 11 })]);
+  expect(await db.get('sync-state')).toBeUndefined();
+  expect(await db.setOwned(owner, 'sync-state', { cursor: 12 })).toBe(false);
+  await client.authenticate(session('another_user'));
+  expect(await db.setOwned(owner, 'sync-state', { cursor: 13 })).toBe(false);
+  await client.authenticate({
+    ...auth,
+    session: { ...auth.session, sessionId: '33333333-3333-4333-8333-333333333333' },
+  });
+  expect(await db.setOwned(owner, 'sync-state', { cursor: 14 })).toBe(false);
+  await expect(db.setOwned(owner, 'session', auth)).rejects.toThrow('驱动不能改写');
+  expect(await db.get('sync-state')).toBeUndefined();
+});
+it('旧连接的unauthenticated不会退出后来登录的新会话', async () => {
+  const db = store();
+  const expired = vi.fn();
+  const client = new ApiClient(db, fetch, expired);
+  const auth = session();
+  await client.authenticate(auth);
+  await client.authenticate(session('another_user'));
+  expect(
+    await client.forgetIf({ userId: auth.user.userId, sessionId: auth.session.sessionId }),
+  ).toBe(false);
+  expect((await client.restore())?.user.username).toBe('another_user');
+  expect(expired).not.toHaveBeenCalled();
+  const current = session('another_user');
+  expect(
+    await client.forgetIf({ userId: current.user.userId, sessionId: current.session.sessionId }),
+  ).toBe(true);
+  expect(await db.get('session')).toBeUndefined();
+  expect(expired).toHaveBeenCalledOnce();
 });

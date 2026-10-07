@@ -105,6 +105,33 @@ class SyncEngine(
         }
     }
 
+    /** Older history is separate from a running forward gap pull. */
+    fun history(
+        cid: String,
+        beforeSeq: Long,
+        input: MessagePage,
+    ) {
+        require(beforeSeq in 1..9_007_199_254_740_991L)
+        require(state.conversations.any { it.conversationId == cid })
+        val page =
+            json.decodeFromJsonElement(
+                MessagePage.serializer(),
+                ContractJson.normalize("MessagePage", json.encodeToJsonElement(MessagePage.serializer(), input)),
+            )
+        val cover = page.coverage
+        require(cover == null || cover.throughSeq < beforeSeq)
+        require(page.items.all { it.conversationId == cid && it.seq < beforeSeq })
+        val before = state
+        var committed = false
+        try {
+            page.items.forEach { upsert(it) }
+            page.coverage?.let { coverage(cid, it) }
+            committed = true
+        } finally {
+            if (!committed) state = before
+        }
+    }
+
     private fun resetSending() {
         state = state.copy(outbox = state.outbox.map { if (it.state == "sending")it.copy(state = "pending")else it })
     }
@@ -277,30 +304,9 @@ class SyncEngine(
 
     private fun coverage(
         cid: String,
-        coverage: MessagePageCoverage,
+        value: MessagePageCoverage,
     ) {
-        require(coverage.throughSeq >= coverage.fromSeq && coverage.throughSeq - coverage.fromSeq <= 199)
-        require((coverage.fromSeq == 0L) == (coverage.throughSeq == 0L))
-        for (range in coverage.excludedRanges) {
-            require(range.fromSeq >= coverage.fromSeq && range.throughSeq <= coverage.throughSeq && range.throughSeq >= range.fromSeq)
-            state =
-                state.copy(
-                    excluded =
-                        state.excluded +
-                            ClientSyncStateExcludedItem(
-                                conversationId = cid,
-                                range = ClientSyncStateExcludedItemRange(range.fromSeq, range.throughSeq, range.reason),
-                            ),
-                )
-        }
-        if (coverage.fromSeq >
-            0
-        ) {
-            for (seq in coverage.fromSeq..coverage.throughSeq) {
-                require(excluded(cid, seq) || state.messages.any { it.conversationId == cid && it.seq == seq })
-            }
-        }
-        state = state.copy(scannedThrough = state.scannedThrough + (cid to maxOf(state.scannedThrough[cid] ?: 0, coverage.throughSeq)))
+        state = SyncCoverage.apply(state, cid, value)
     }
 
     // Reject gates prevent excluded/cleared/recalled content from resurrecting.

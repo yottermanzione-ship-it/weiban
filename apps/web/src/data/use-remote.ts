@@ -13,7 +13,13 @@ export function useRemote<E extends EndpointDef>(endpoint: E, options: RequestOp
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
+    const refresh = () => setRevision((value) => value + 1);
+    window.addEventListener('weiban:settings-updated', refresh);
+    return () => window.removeEventListener('weiban:settings-updated', refresh);
+  }, []);
+  useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     const request = JSON.parse(key) as RequestOptions<E>;
     setLoading(true);
     setError('');
@@ -21,7 +27,7 @@ export function useRemote<E extends EndpointDef>(endpoint: E, options: RequestOp
       try {
         const cached = await api.cached(endpoint, request);
         if (active && cached !== undefined) setData(cached);
-        const result = await api.call(endpoint, request);
+        const result = await api.call(endpoint, { ...request, signal: controller.signal });
         if (active) setData(result);
       } catch (e) {
         if (active) setError(friendlyError(e));
@@ -31,6 +37,7 @@ export function useRemote<E extends EndpointDef>(endpoint: E, options: RequestOp
     })();
     return () => {
       active = false;
+      controller.abort();
     };
   }, [endpoint, key, revision]);
   return { data, error, loading, refresh: () => setRevision((v) => v + 1) };

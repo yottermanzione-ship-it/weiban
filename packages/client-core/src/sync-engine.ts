@@ -119,6 +119,26 @@ export class SyncEngine {
     this.effects = [];
     return effects;
   }
+  /** 用户向上加载历史，独立于afterSeq补拉，不改变进行中的补拉起点。 */
+  history(conversationId: string, beforeSeq: number, value: unknown): void {
+    Id.parse(conversationId);
+    if (!Number.isSafeInteger(beforeSeq) || beforeSeq <= 0) throw new Error('无效历史起点');
+    const page = MessagePage.parse(value);
+    if (!this.value.conversations.some((item) => item.conversationId === conversationId))
+      throw new Error('未知会话');
+    if (page.coverage && page.coverage.throughSeq >= beforeSeq) throw new Error('历史范围越界');
+    for (const message of page.items)
+      if (message.conversationId !== conversationId || message.seq >= beforeSeq)
+        throw new Error('历史消息越界');
+    const previous = this.state;
+    try {
+      for (const message of page.items) this.upsertMessage(message);
+      if (page.coverage) this.coverage(conversationId, page.coverage);
+    } catch (error) {
+      this.value = previous;
+      throw error;
+    }
+  }
   private offline(): void {
     this.online = false;
     this.pulling = false;
@@ -576,5 +596,11 @@ export class SyncEngine {
       this.value.scannedThrough[conversationId] ?? 0,
       value.throughSeq,
     );
+    this.value.messages = this.value.messages.filter(
+      (message) => !this.isExcluded(message.conversationId, message.seq),
+    );
+    for (const message of this.value.messages)
+      if (message.quote && this.isExcluded(message.conversationId, message.quote.seq))
+        message.quote.preview = null;
   }
 }
