@@ -31,6 +31,8 @@ for (const name of [
   'app.weiban.testvectors.ProtocolVectorsTest',
   'app.weiban.testvectors.HistoryTest',
   'app.weiban.data.SyncRunnerTest',
+  'app.weiban.data.ChatRealtimeTest',
+  'app.weiban.data.BackgroundChatDrainTest',
   'app.weiban.feature.chat.ChatScreenTest',
   'app.weiban.data.SessionRepositoryTest',
   'app.weiban.network.ApiClientTest',

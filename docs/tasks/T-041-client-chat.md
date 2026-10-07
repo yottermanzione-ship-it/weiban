@@ -15,3 +15,17 @@ Web已接HTTP/WS鉴权、补拉/重建、事务发送、虚拟历史、联系人
 前置T040远端f548ffdfca89d05fbebcf071501b83b234f0c10e，本机f432f85c455ae470860948919e2f140d9a33ebd4，同tree1b9952c5b3e98b05fde4b4501fd4e189d602438e。push37561984286、PR37561988414均success，已读取两套check及安卓job结果。
 
 真机/真实厂商/iOS主屏幕PWA及独立QA另验。后续L2–L7继续。
+
+
+T041已发布客户端检查点：本机f297a1d00e9f5acd0de1c54e60dffa96d29b5234，远端0748fba763ca66405bc7adb15c5611a1b0d844f3，同tree ae6e6b5aa65175cb3056968b2d01b3a96a35378a。push37566911981与PR37566914953（attempt2）均success，已读取最终结果；新源码生产镜像、14迁移与加密备份空目标恢复在push CI实际通过。PR首轮安卓KSP插件下载失败，不算通过；保持原锁定版本，单独重跑失败job后通过。原生WS与后台恢复属于检查点后的继续开发，不能借用上述CI证明新代码。
+
+
+## T041 原生实时连接与后台恢复检查点（2026-10-07）
+
+已装配原生同源WS、首帧2.2鉴权/无URL令牌、心跳/有限收件队列/前台focus/正在输入与退避，HTTP仍是可靠发送与断网补拉出口。Application单例供前台与WorkManager共享；仅前台或后台任务持有租约时轮询，最后一个后台租约退出即取消在途效果并保留原clientMsgId。WorkManager使用联网约束/指数退避/按账号会话追加唯一任务链；退出与换号取消旧tag，启动恢复Room队列，调度参数仅含归属ID，不含正文或令牌。UI调用者取消不会中断已开始的Room提交及应用级任务安排。
+
+复核修正请求调度期间换号风险：ApiClient在进入IO线程前捕获会话，仓库向网络显式传递同一捕获对象；所有同步HTTP请求额外绑定所属userId/sessionId，旧任务不能用新账号令牌发POST、补拉或下载。networkOnly与请求owner合并为内部SessionCallOptions，不改网络契约。保留响应后的归属复核与Room事务检查。
+
+完整ktlint/detekt/testDebugUnitTest/assembleDebug通过，60条JUnit/零跳过；新增真实MockWebServer WS握手/首帧/typing/presence/更新与旧socket不能退出新账号两条，Room/HTTP后台发送、限时取消后同ID重发/只保留一个ACK消息、过期账号任务/POST不出网、页面消失且Room被阻塞时提交后仍安排任务四条，以及捕获旧会话POST/媒体请求不出网一条。另有SyncRunner取消调用者仍完成本地提交测试。CI报告要求新增WS和后台恢复suite实际执行。最终本机证据/tmp/weiban-t041-android-background5.log与JUnit XML；源码未改版本或放宽检查阈值。中途静态检查未通过的轮次及工作区断开导致未完成的轮次不算通过。
+
+这是开发自测：WorkManager系统调度/进程杀死/厂商保活和真实推送仍需设备验证；MockWebServer HTTP并非真实Node服务端到原生客户端整链路。原生联系人/角色/聊天设置、默认头像、客户端引导等继续开发；T041与整个产品仍未完成，不标记独立QA通过。发布后另读本检查点CI。

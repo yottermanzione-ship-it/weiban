@@ -6,6 +6,45 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SyncRunnerTest {
+    @Test fun cancellingForegroundCallerDoesNotInterruptStartedLocalCommit() =
+        runBlocking {
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val executed = CompletableDeferred<Unit>()
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            val port =
+                object : SyncDriverPort {
+                    override suspend fun save(state: ClientSyncState): Boolean {
+                        entered.complete(Unit)
+                        release.await()
+                        return true
+                    }
+
+                    override suspend fun execute(effect: ClientSyncEffect): List<ClientSyncOperation> {
+                        executed.complete(Unit)
+                        return emptyList()
+                    }
+
+                    override fun failed(error: Exception): Unit = throw AssertionError(error)
+                }
+            val runner = SyncRunner(SyncEngine.freshState(), scope, port)
+            try {
+                val caller = launch { runner.dispatch(ClientSyncOperationReconnect(latestUpdateSeq = 0, now = 1)) }
+                withTimeout(2_000) { entered.await() }
+                caller.cancel()
+                release.complete(Unit)
+                withTimeout(2_000) {
+                    caller.join()
+                    executed.await()
+                }
+                assertTrue(runner.active)
+            } finally {
+                release.complete(Unit)
+                runner.stop()
+                scope.cancel()
+            }
+        }
+
     @Test fun persistencePrecedesEffectAndCommittedObserver() =
         runBlocking {
             val saved = CompletableDeferred<Unit>()

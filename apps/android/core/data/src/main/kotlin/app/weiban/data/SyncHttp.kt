@@ -3,14 +3,31 @@ package app.weiban.data
 import app.weiban.contracts.*
 import app.weiban.network.ApiFailure
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import java.io.IOException
 
 /** HTTP is the reliable send/fallback transport; sync pulls must never read a stale GET cache. */
 class SyncHttp(
     private val repository: SessionRepository,
+    private val owner: OwnerRecord,
 ) {
     private val json = repository.api.json
+
+    private suspend fun <T> ownedCall(
+        endpoint: ContractEndpoint<T>,
+        body: JsonElement? = null,
+        params: Map<String, String> = emptyMap(),
+        query: Map<String, String> = emptyMap(),
+        networkOnly: Boolean = true,
+    ): T =
+        repository.call(
+            endpoint,
+            body = body,
+            params = params,
+            query = query,
+            options = SessionCallOptions(networkOnly = networkOnly, owner = owner),
+        )
 
     suspend fun execute(effect: ClientSyncEffect): List<ClientSyncOperation> =
         when (effect) {
@@ -19,7 +36,7 @@ class SyncHttp(
             is ClientSyncEffectState ->
                 listOf(
                     ClientSyncOperationRebuildState(
-                        latestUpdateSeq = repository.call(Endpoints.syncEndpointsGetState, networkOnly = true).latestUpdateSeq,
+                        latestUpdateSeq = ownedCall(Endpoints.syncEndpointsGetState, networkOnly = true).latestUpdateSeq,
                     ),
                 )
             is ClientSyncEffectSnapshot -> listOf(ClientSyncOperationSnapshot(startSeq = effect.startSeq, snapshot = snapshot()))
@@ -28,7 +45,7 @@ class SyncHttp(
                     ClientSyncOperationMessagesPage(
                         conversationId = effect.conversationId,
                         page =
-                            repository.call(
+                            ownedCall(
                                 Endpoints.chatEndpointsListMessages,
                                 params = mapOf("conversationId" to effect.conversationId),
                                 query = mapOf("afterSeq" to effect.afterSeq.toString(), "limit" to effect.limit.toString()),
@@ -46,7 +63,7 @@ class SyncHttp(
     private suspend fun send(effect: ClientSyncEffectSend): List<ClientSyncOperation> =
         try {
             val ack =
-                repository.call(
+                ownedCall(
                     Endpoints.chatEndpointsSendMessage,
                     body = json.encodeToJsonElement(SendMessageRequest.serializer(), effect.body),
                     params = mapOf("conversationId" to effect.conversationId),
@@ -69,7 +86,7 @@ class SyncHttp(
     private suspend fun updates(effect: ClientSyncEffectUpdates): List<ClientSyncOperation> =
         try {
             val page =
-                repository.call(
+                ownedCall(
                     Endpoints.syncEndpointsGetUpdates,
                     query = mapOf("since" to effect.since.toString(), "limit" to effect.limit.toString()),
                     networkOnly = true,
@@ -81,13 +98,13 @@ class SyncHttp(
         }
 
     private suspend fun snapshot(): ClientFullSyncSnapshot {
-        val conversations = repository.call(Endpoints.chatEndpointsListConversations, networkOnly = true).items
-        val contacts = repository.call(Endpoints.contactsEndpointsList, networkOnly = true).items
+        val conversations = ownedCall(Endpoints.chatEndpointsListConversations, networkOnly = true).items
+        val contacts = ownedCall(Endpoints.contactsEndpointsList, networkOnly = true).items
         val messages = mutableListOf<Message>()
         val coverages = mutableListOf<ClientFullSyncSnapshotCoveragesItem>()
         for (conversation in conversations) {
             val page =
-                repository.call(
+                ownedCall(
                     Endpoints.chatEndpointsListMessages,
                     params = mapOf("conversationId" to conversation.conversationId),
                     query = mapOf("limit" to "50"),
@@ -98,28 +115,28 @@ class SyncHttp(
         }
         val settings =
             mapOf(
-                "profile" to json.encodeToJsonElement(repository.call(Endpoints.identityEndpointsGetProfile, networkOnly = true)),
+                "profile" to json.encodeToJsonElement(ownedCall(Endpoints.identityEndpointsGetProfile, networkOnly = true)),
                 "notification" to
-                    json.encodeToJsonElement(repository.call(Endpoints.identityEndpointsGetNotificationSettings, networkOnly = true)),
-                "preferences" to json.encodeToJsonElement(repository.call(Endpoints.identityEndpointsGetPreferences, networkOnly = true)),
+                    json.encodeToJsonElement(ownedCall(Endpoints.identityEndpointsGetNotificationSettings, networkOnly = true)),
+                "preferences" to json.encodeToJsonElement(ownedCall(Endpoints.identityEndpointsGetPreferences, networkOnly = true)),
                 "model_selection" to
-                    json.encodeToJsonElement(repository.call(Endpoints.modelAccessEndpointsGetSelection, networkOnly = true)),
-                "wallet" to json.encodeToJsonElement(repository.call(Endpoints.billingEndpointsGetWallet, networkOnly = true)),
+                    json.encodeToJsonElement(ownedCall(Endpoints.modelAccessEndpointsGetSelection, networkOnly = true)),
+                "wallet" to json.encodeToJsonElement(ownedCall(Endpoints.billingEndpointsGetWallet, networkOnly = true)),
             )
         return ClientFullSyncSnapshot(conversations, messages, contacts, settings, coverages)
     }
 
     private suspend fun refreshSetting(effect: ClientSyncEffectSettings) {
         when (effect.section) {
-            "profile" -> repository.call(Endpoints.identityEndpointsGetProfile, networkOnly = true)
-            "notification" -> repository.call(Endpoints.identityEndpointsGetNotificationSettings, networkOnly = true)
-            "preferences" -> repository.call(Endpoints.identityEndpointsGetPreferences, networkOnly = true)
-            "wallet" -> repository.call(Endpoints.billingEndpointsGetWallet, networkOnly = true)
+            "profile" -> ownedCall(Endpoints.identityEndpointsGetProfile, networkOnly = true)
+            "notification" -> ownedCall(Endpoints.identityEndpointsGetNotificationSettings, networkOnly = true)
+            "preferences" -> ownedCall(Endpoints.identityEndpointsGetPreferences, networkOnly = true)
+            "wallet" -> ownedCall(Endpoints.billingEndpointsGetWallet, networkOnly = true)
             "companion" ->
                 effect.characterId?.let {
-                    repository.call(Endpoints.companionEndpointsGetForCharacter, params = mapOf("characterId" to it), networkOnly = true)
+                    ownedCall(Endpoints.companionEndpointsGetForCharacter, params = mapOf("characterId" to it), networkOnly = true)
                 }
-            "model_selection" -> repository.call(Endpoints.modelAccessEndpointsGetSelection, networkOnly = true)
+            "model_selection" -> ownedCall(Endpoints.modelAccessEndpointsGetSelection, networkOnly = true)
         }
     }
 }

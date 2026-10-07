@@ -110,10 +110,12 @@ class SessionRepositoryTest {
             server.enqueue(MockResponse().setBody(api.json.encodeToString(CurrentUser.serializer(), a.user)))
             repository.call(Endpoints.identityEndpointsMe)
             server.enqueue(MockResponse().setBody(api.json.encodeToString(CurrentUser.serializer(), a.user.copy(profileCompleted = false))))
-            assertFalse(repository.call(Endpoints.identityEndpointsMe, networkOnly = true).profileCompleted)
+            assertFalse(repository.call(Endpoints.identityEndpointsMe, options = SessionCallOptions(networkOnly = true)).profileCompleted)
             server.shutdown()
             assertTrue(repository.call(Endpoints.identityEndpointsMe).profileCompleted)
-            assertTrue(runCatching { repository.call(Endpoints.identityEndpointsMe, networkOnly = true) }.isFailure)
+            assertTrue(
+                runCatching { repository.call(Endpoints.identityEndpointsMe, options = SessionCallOptions(networkOnly = true)) }.isFailure,
+            )
         }
 
     @Test fun runtimeOfflineQueueSurvivesRestartAndIsNotExposedToNextOwner() =

@@ -24,6 +24,16 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    override fun onResume() {
+        super.onResume()
+        (application as WeibanApplication).chat.foreground(true)
+    }
+
+    override fun onPause() {
+        (application as WeibanApplication).chat.foreground(false)
+        super.onPause()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -35,7 +45,7 @@ class MainActivity : ComponentActivity() {
 @Suppress("TooGenericExceptionCaught") // Restore fails closed or retains the validated offline session.
 private suspend fun restoreSession(runtime: WeibanApplication) {
     try {
-        runtime.repository.restore()
+        runtime.initialize()
         if (runtime.repository.auth.value != null) {
             runtime.repository.updateUser(runtime.repository.call(Endpoints.identityEndpointsMe))
         }

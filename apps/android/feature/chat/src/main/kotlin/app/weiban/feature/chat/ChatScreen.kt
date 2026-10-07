@@ -199,6 +199,16 @@ private class ConversationUi(
     val list = rememberLazyListState()
     val messages = state.messages.filter { it.conversationId == conversation.conversationId }.sortedBy { it.seq }
     val pending = state.outbox.filter { it.conversationId == conversation.conversationId }
+    val typing by runtime.typing.collectAsState()
+    val typingActive =
+        typing.any { (key, expiry) ->
+            key.startsWith("${conversation.conversationId}:") &&
+                expiry > System.currentTimeMillis()
+        }
+    DisposableEffect(conversation.conversationId) {
+        runtime.focus(conversation.conversationId)
+        onDispose { runtime.focus(null) }
+    }
     LaunchedEffect(conversation.conversationId) { runtime.inspect(owner, conversation.conversationId) }
     val atBottom = !list.canScrollForward
     LaunchedEffect(messages.lastOrNull()?.messageId, pending.size) {
@@ -221,6 +231,7 @@ private class ConversationUi(
         Text(title(state, conversation), Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.titleMedium)
     }
     ui.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = WbSpace.S5)) }
+    if (visible && typingActive) Text("对方正在输入…", Modifier.padding(horizontal = WbSpace.S5))
     MessageTimeline(ui, messages, pending, list, Modifier.weight(1f))
     Composer(ui, messages.find { it.messageId == ui.quoteId && it.status == "normal" })
 }

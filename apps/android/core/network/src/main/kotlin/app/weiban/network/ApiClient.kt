@@ -10,6 +10,8 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -46,6 +48,10 @@ class ApiClient(
 
     fun current(): AuthResponse? = session.get()
 
+    /** The socket URL has no credential; the owner driver authenticates in its first frame. */
+    fun openRealtime(listener: WebSocketListener): WebSocket =
+        client.newWebSocket(Request.Builder().url(root.resolve("/api/v1/ws")!!).build(), listener)
+
     suspend fun <T> call(
         endpoint: ContractEndpoint<T>,
         body: JsonElement? = null,
@@ -53,9 +59,11 @@ class ApiClient(
         query: Map<String, String> = emptyMap(),
         idempotencyKey: String? = null,
         multipart: okhttp3.MultipartBody? = null,
+        expectedSession: AuthResponse? = session.get(),
     ): T =
         withContext(Dispatchers.IO) {
-            val auth = session.get()
+            val auth = expectedSession
+            if (session.get() !== auth) throw ApiFailure("session_changed", 0)
             if (endpoint.auth != "none" && auth == null) throw ApiFailure("unauthenticated", 401)
             val request = request(endpoint, auth, body, params, query, idempotencyKey, multipart)
             client.newCall(request).awaitDecoded { response ->
@@ -131,9 +139,13 @@ class ApiClient(
         }
 
     /** A media grant is bound to this API origin and path; never attach the bearer to its URL. */
-    suspend fun download(media: MediaObject): ByteArray =
+    suspend fun download(
+        media: MediaObject,
+        expectedSession: AuthResponse? = session.get(),
+    ): ByteArray =
         withContext(Dispatchers.IO) {
-            val auth = session.get() ?: throw ApiFailure("unauthenticated", 401)
+            val auth = expectedSession ?: throw ApiFailure("unauthenticated", 401)
+            if (session.get() !== auth) throw ApiFailure("session_changed", 0)
             val url = grantUrl(media)
             client
                 .newCall(

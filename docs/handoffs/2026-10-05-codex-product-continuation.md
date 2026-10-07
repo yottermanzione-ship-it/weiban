@@ -120,3 +120,17 @@ Web/PWA可靠聊天、HTTP/WS、IndexedDB持久outbox与游标、网络补拉/�
 开发自测：整仓49文件430条；client-core4文件35条；用户端10组、后台7组真实浏览器；原生52条JUnit零跳过、ktlint/detekt/APK，含新聊天Compose断网发送→真实Room提交后清输入→重启保留同ID；生成514定义/85操作/图标/tokens无差异。浏览器有过资源压力下超时和Target crashed的失败轮，不算通过；停止本任务已闲置的Gradle/Kotlin进程并释放约3GB后，串行复测最新源码，不放宽断言。推送测试仅通知系统展示层夹具，真实SW/IDB/导航执行；不能作为厂商投递或OS真正弹出证明。新源码生产Vite/PWA构建通过；上一轮T040 Docker/14迁移/加密恢复证据仍是上一轮镜像，不能冒充新源码部署证明；发布后另读两套远端CI。
 
 本检查点不是T041完成或独立质量验收。接续原生WS/前台/正在输入与WorkManager，再补完整原生联系人/角色/设置与推送、Web默认头像/引导等剩余界面细节；管理员推送点击的跨站跳转尚待接入。真机/厂商通道/iOS主屏幕PWA/跨端5秒及独立QA未验证。接着L2–L7；产品尚未完成。始终独立分支，不修改main、不合并PR3。
+
+
+T041已发布客户端检查点：本机f297a1d00e9f5acd0de1c54e60dffa96d29b5234，远端0748fba763ca66405bc7adb15c5611a1b0d844f3，同tree ae6e6b5aa65175cb3056968b2d01b3a96a35378a。push37566911981与PR37566914953（attempt2）均success，已读取最终结果；新源码生产镜像、14迁移与加密备份空目标恢复在push CI实际通过。PR首轮安卓KSP插件下载失败，不算通过；保持原锁定版本，单独重跑失败job后通过。原生WS与后台恢复属于检查点后的继续开发，不能借用上述CI证明新代码。
+
+
+## T041 原生实时连接与后台恢复检查点（2026-10-07）
+
+已装配原生同源WS、首帧2.2鉴权/无URL令牌、心跳/有限收件队列/前台focus/正在输入与退避，HTTP仍是可靠发送与断网补拉出口。Application单例供前台与WorkManager共享；仅前台或后台任务持有租约时轮询，最后一个后台租约退出即取消在途效果并保留原clientMsgId。WorkManager使用联网约束/指数退避/按账号会话追加唯一任务链；退出与换号取消旧tag，启动恢复Room队列，调度参数仅含归属ID，不含正文或令牌。UI调用者取消不会中断已开始的Room提交及应用级任务安排。
+
+复核修正请求调度期间换号风险：ApiClient在进入IO线程前捕获会话，仓库向网络显式传递同一捕获对象；所有同步HTTP请求额外绑定所属userId/sessionId，旧任务不能用新账号令牌发POST、补拉或下载。networkOnly与请求owner合并为内部SessionCallOptions，不改网络契约。保留响应后的归属复核与Room事务检查。
+
+完整ktlint/detekt/testDebugUnitTest/assembleDebug通过，60条JUnit/零跳过；新增真实MockWebServer WS握手/首帧/typing/presence/更新与旧socket不能退出新账号两条，Room/HTTP后台发送、限时取消后同ID重发/只保留一个ACK消息、过期账号任务/POST不出网、页面消失且Room被阻塞时提交后仍安排任务四条，以及捕获旧会话POST/媒体请求不出网一条。另有SyncRunner取消调用者仍完成本地提交测试。CI报告要求新增WS和后台恢复suite实际执行。最终本机证据/tmp/weiban-t041-android-background5.log与JUnit XML；源码未改版本或放宽检查阈值。中途静态检查未通过的轮次及工作区断开导致未完成的轮次不算通过。
+
+这是开发自测：WorkManager系统调度/进程杀死/厂商保活和真实推送仍需设备验证；MockWebServer HTTP并非真实Node服务端到原生客户端整链路。原生联系人/角色/聊天设置、默认头像、客户端引导等继续开发；T041与整个产品仍未完成，不标记独立QA通过。发布后另读本检查点CI。

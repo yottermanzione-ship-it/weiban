@@ -33,3 +33,4 @@ dependencies {
     implementation(libs.work.runtime)
 }
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
+android.sourceSets["test"].resources.srcDir("../../../../packages/contracts/test-vectors")

@@ -15,6 +15,24 @@ class ApiClientTest {
     private fun auth(token: String) =
         AuthResponse(AuthenticatedSession("01920000-0000-7000-8000-000000000015", token, "app", "2026-11-06T03:00:00.000Z"), user)
 
+    @Test fun staleCapturedSessionCannotStartPostOrMediaRequestWithNewToken() =
+        runBlocking {
+            MockWebServer().use { server ->
+                val api = ApiClient(server.url("/").toString())
+                val previous = auth("old-token-".repeat(4))
+                val current = auth("new-token-".repeat(4))
+                api.authenticate(previous)
+                api.authenticate(current)
+                val post = runCatching { api.call(Endpoints.identityEndpointsLogout, expectedSession = previous) }
+                assertEquals("session_changed", (post.exceptionOrNull() as ApiFailure).code)
+                val grant = media(server.url("/api/v1/media/01920000-0000-7000-8000-000000000099/content?token=grant").toString())
+                val download = runCatching { api.download(grant, expectedSession = previous) }
+                assertEquals("session_changed", (download.exceptionOrNull() as ApiFailure).code)
+                assertEquals(0, server.requestCount)
+                assertSame(current, api.current())
+            }
+        }
+
     @Test fun changedAccountRejectsLateBody() =
         runBlocking {
             MockWebServer().use { server ->

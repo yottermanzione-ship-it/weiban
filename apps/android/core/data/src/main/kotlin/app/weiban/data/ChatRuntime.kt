@@ -18,6 +18,7 @@ data class ChatSnapshot(
 class ChatRuntime(
     private val repository: SessionRepository,
     private val scope: CoroutineScope,
+    private val onQueued: (OwnerRecord) -> Unit = {},
 ) {
     private val lock = Mutex()
 
@@ -27,6 +28,15 @@ class ChatRuntime(
     private var runner: SyncRunner? = null
     private var observing: Job? = null
     private var loop: Job? = null
+    private var backgroundUsers = 0
+    private var realtime: ChatRealtime? = null
+    private var typingJob: Job? = null
+
+    @Volatile private var foreground = false
+
+    @Volatile private var focused: String? = null
+    private val typingState = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val typing: StateFlow<Map<String, Long>> = typingState
     private val committed = MutableStateFlow(ChatSnapshot(null, SyncEngine.freshState()))
     val snapshot: StateFlow<ChatSnapshot> = committed
     private val problem = MutableStateFlow<String?>(null)
@@ -38,10 +48,10 @@ class ChatRuntime(
         lock.withLock {
             val auth = repository.auth.value
             if (auth?.user?.userId != expected.userId || auth.session.sessionId != expected.sessionId) return@withLock false
-            if (owner == expected && runner != null) return@withLock true
+            if (owner == expected && runner?.active == true) return@withLock true
             detachLocked()
             val initial = repository.loadSync(expected) ?: SyncEngine.freshState()
-            val http = SyncHttp(repository)
+            val http = SyncHttp(repository, expected)
             val current =
                 SyncRunner(
                     initial,
@@ -67,40 +77,147 @@ class ChatRuntime(
             owner = expected
             runner = current
             committed.value = ChatSnapshot(expected, current.state.value)
-            observing =
-                scope.launch {
-                    current.state.collect {
-                        if (owner == expected) {
-                            committed.value = ChatSnapshot(expected, it)
-                            if (it.initialized) bootstrapping = false
-                        }
-                    }
-                }
-            loop =
-                scope.launch {
-                    while (isActive) {
-                        refresh(expected)
-                        repeat(20) {
-                            delay(250)
-                            val now = System.currentTimeMillis()
-                            val due =
-                                current.state.value.outbox
-                                    .any { it.state == "pending" && it.retryAt <= now }
-                            if (connected.value && due) current.dispatch(ClientSyncOperationTick(now = now))
-                        }
-                    }
-                }
+            observe(expected, current)
+            connectRealtime(expected, auth, current)
+            if (foreground || backgroundUsers > 0) startPolling(expected, current)
             true
         }
+
+    private fun observe(
+        expected: OwnerRecord,
+        current: SyncRunner,
+    ) {
+        observing =
+            scope.launch {
+                current.state.collect {
+                    if (owner == expected) {
+                        committed.value = ChatSnapshot(expected, it)
+                        if (it.initialized) bootstrapping = false
+                    }
+                }
+            }
+    }
+
+    private fun startPolling(
+        expected: OwnerRecord,
+        current: SyncRunner,
+    ) {
+        if (loop?.isActive == true) return
+        loop =
+            scope.launch {
+                while (isActive) {
+                    refresh(expected)
+                    repeat(20) {
+                        delay(250)
+                        val now = System.currentTimeMillis()
+                        val due =
+                            current.state.value.outbox
+                                .any { it.state == "pending" && it.retryAt <= now }
+                        if (connected.value && due) current.dispatch(ClientSyncOperationTick(now = now))
+                    }
+                }
+            }
+    }
+
+    private fun connectRealtime(
+        expected: OwnerRecord,
+        auth: AuthResponse,
+        current: SyncRunner,
+    ) {
+        val transport =
+            ChatRealtime(repository, auth, scope, { current.state.value.lastUpdateSeq }, { operation ->
+                if (operation is ClientSyncOperationReconnect) {
+                    reconnect(expected, operation.latestUpdateSeq)
+                } else {
+                    runnerFor(expected)?.dispatch(operation)
+                }
+            }, { message -> if (owner == expected) problem.value = message })
+        realtime = transport
+        typingJob = scope.launch { transport.typing.collect { if (owner == expected) typingState.value = it } }
+        transport.focus(focused, foreground)
+        if (foreground) transport.start()
+    }
+
+    fun foreground(active: Boolean) {
+        foreground = active
+        realtime?.focus(focused, active)
+        if (active) realtime?.start() else realtime?.stop()
+        scope.launch {
+            lock.withLock {
+                val expected = owner
+                val current = runner
+                if (expected != null && current != null) {
+                    if (foreground || backgroundUsers > 0) startPolling(expected, current) else pausePolling(current)
+                }
+            }
+        }
+    }
+
+    fun focus(conversationId: String?) {
+        focused = conversationId
+        realtime?.focus(conversationId, foreground)
+    }
+
+    /** Background leases share the foreground runner; the last inactive lease aborts transport and preserves pending IDs. */
+    suspend fun <T> background(
+        expected: OwnerRecord,
+        work: suspend () -> T,
+    ): T? {
+        val accepted =
+            if (attach(expected)) {
+                lock.withLock {
+                    if (owner == expected) {
+                        backgroundUsers++
+                        startPolling(expected, runner!!)
+                        true
+                    } else {
+                        false
+                    }
+                }
+            } else {
+                false
+            }
+        return if (!accepted) {
+            null
+        } else {
+            try {
+                work()
+            } finally {
+                withContext(NonCancellable) {
+                    lock.withLock {
+                        if (owner == expected) {
+                            backgroundUsers--
+                            if (!foreground && backgroundUsers == 0) runner?.let { pausePolling(it) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun pausePolling(current: SyncRunner) {
+        loop?.cancel()
+        loop = null
+        bootstrapping = false
+        connected.value = false
+        current.dispatch(ClientSyncOperationOffline())
+    }
 
     suspend fun detach() = lock.withLock { detachLocked() }
 
     private fun detachLocked() {
         loop?.cancel()
         observing?.cancel()
+        typingJob?.cancel()
+        realtime?.stop()
         runner?.stop()
         loop = null
+        backgroundUsers = 0
         observing = null
+        realtime = null
+        typingJob = null
+        typingState.value = emptyMap()
+        focused = null
         runner = null
         owner = null
         bootstrapping = false
@@ -117,12 +234,13 @@ class ChatRuntime(
     suspend fun refresh(expected: OwnerRecord) {
         val current = runnerFor(expected)?.takeIf { it.active && !bootstrapping } ?: return
         try {
-            val remote = repository.call(Endpoints.syncEndpointsGetState, networkOnly = true)
+            val remote =
+                repository.call(
+                    Endpoints.syncEndpointsGetState,
+                    options = SessionCallOptions(networkOnly = true, owner = expected),
+                )
             if (runnerFor(expected) !== current) return
-            bootstrapping = !current.state.value.initialized
-            current.dispatch(ClientSyncOperationReconnect(latestUpdateSeq = remote.latestUpdateSeq, now = System.currentTimeMillis()))
-            connected.value = true
-            problem.value = null
+            reconnect(expected, remote.latestUpdateSeq)
         } catch (error: CancellationException) {
             throw error
         } catch (_: IOException) {
@@ -135,6 +253,17 @@ class ChatRuntime(
         }
     }
 
+    private suspend fun reconnect(
+        expected: OwnerRecord,
+        latestUpdateSeq: Long,
+    ) = lock.withLock {
+        val current = runner.takeIf { owner == expected && !bootstrapping && it?.active == true } ?: return@withLock
+        bootstrapping = !current.state.value.initialized
+        current.dispatch(ClientSyncOperationReconnect(latestUpdateSeq = latestUpdateSeq, now = System.currentTimeMillis()))
+        connected.value = current.active
+        if (current.active) problem.value = null
+    }
+
     suspend fun send(
         expected: OwnerRecord,
         conversationId: String,
@@ -143,14 +272,18 @@ class ChatRuntime(
     ) {
         require(text.isNotBlank() && text.length <= 4_000)
         val current = runnerFor(expected) ?: throw ApiFailure("sync_not_ready", 0)
-        current.dispatch(
-            ClientSyncOperationEnqueue(
-                conversationId = conversationId,
-                body = SendMessageRequest(UUID.randomUUID().toString(), UserSendableContentText(text = text), quoteMessageId),
-                now = System.currentTimeMillis(),
-            ),
-        )
-        if (!current.active) throw ApiFailure("sync_not_ready", 0)
+        // Queue scheduling belongs to the application, even when the initiating screen disappears during the Room commit.
+        withContext(NonCancellable) {
+            current.dispatch(
+                ClientSyncOperationEnqueue(
+                    conversationId = conversationId,
+                    body = SendMessageRequest(UUID.randomUUID().toString(), UserSendableContentText(text = text), quoteMessageId),
+                    now = System.currentTimeMillis(),
+                ),
+            )
+            if (!current.active) throw ApiFailure("sync_not_ready", 0)
+            onQueued(expected)
+        }
     }
 
     suspend fun retry(
@@ -158,13 +291,17 @@ class ChatRuntime(
         conversationId: String,
         clientMsgId: String,
     ) {
-        runnerFor(expected)?.dispatch(
-            ClientSyncOperationRetry(
-                conversationId = conversationId,
-                clientMsgId = clientMsgId,
-                now = System.currentTimeMillis(),
-            ),
-        )
+        val current = runnerFor(expected) ?: return
+        withContext(NonCancellable) {
+            current.dispatch(
+                ClientSyncOperationRetry(
+                    conversationId = conversationId,
+                    clientMsgId = clientMsgId,
+                    now = System.currentTimeMillis(),
+                ),
+            )
+            if (current.active) onQueued(expected)
+        }
     }
 
     suspend fun inspect(
@@ -185,7 +322,7 @@ class ChatRuntime(
                 Endpoints.chatEndpointsListMessages,
                 params = mapOf("conversationId" to conversationId),
                 query = mapOf("beforeSeq" to beforeSeq.toString(), "limit" to "50"),
-                networkOnly = true,
+                options = SessionCallOptions(networkOnly = true, owner = expected),
             )
         if (runnerFor(expected) === current) current.history(conversationId, beforeSeq, page)
     }

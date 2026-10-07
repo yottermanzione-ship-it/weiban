@@ -55,6 +55,7 @@ dependencies {
     implementation(libs.compose.preview)
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.compose)
+    implementation(libs.work.runtime)
     implementation(project(":core:contracts-generated"))
     implementation(project(":core:network"))
     implementation(project(":core:data"))

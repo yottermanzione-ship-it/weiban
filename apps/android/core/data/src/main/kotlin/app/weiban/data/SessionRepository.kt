@@ -12,6 +12,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import java.io.IOException
 
+data class SessionCallOptions(
+    val networkOnly: Boolean = false,
+    val owner: OwnerRecord? = null,
+)
+
 /** Session changes and all cache writes share one lock; responses never cross an account epoch. */
 class SessionRepository(
     val api: ApiClient,
@@ -75,21 +80,29 @@ class SessionRepository(
         query: Map<String, String> = emptyMap(),
         idempotencyKey: String? = null,
         multipart: okhttp3.MultipartBody? = null,
-        networkOnly: Boolean = false,
+        options: SessionCallOptions = SessionCallOptions(),
     ): T {
-        val captured = current.value
+        val captured = capture(options.owner)
         val key = endpoint.id + ":" + params.toSortedMap() + ":" + query.toSortedMap()
         val value =
             try {
-                api.call(endpoint, body, params, query, idempotencyKey, multipart)
+                api.call(endpoint, body, params, query, idempotencyKey, multipart, expectedSession = captured)
             } catch (error: ApiFailure) {
                 if (error.code == "unauthenticated" && captured != null) invalidate(captured)
                 throw error
             } catch (error: IOException) {
-                if (networkOnly) throw error
+                if (options.networkOnly) throw error
                 return cached(endpoint, captured, key, error)
             }
-        return if (endpoint.auth == "none") value else commit(endpoint, captured, key, value, networkOnly)
+        return if (endpoint.auth == "none") value else commit(endpoint, captured, key, value, options.networkOnly)
+    }
+
+    private fun capture(expected: OwnerRecord?): AuthResponse? {
+        val auth = current.value
+        if (expected != null && (auth?.user?.userId != expected.userId || auth.session.sessionId != expected.sessionId)) {
+            throw ApiFailure("session_changed", 0)
+        }
+        return auth
     }
 
     // Distinct transport, account-epoch and cache-miss reject gates intentionally preserve the original failure.
@@ -171,7 +184,7 @@ class SessionRepository(
 
     suspend fun download(media: MediaObject): ByteArray {
         val captured = current.value ?: throw ApiFailure("unauthenticated", 401)
-        val bytes = api.download(media)
+        val bytes = api.download(media, expectedSession = captured)
         return lock.withLock {
             if (current.value !== captured) throw ApiFailure("session_changed", 0)
             bytes

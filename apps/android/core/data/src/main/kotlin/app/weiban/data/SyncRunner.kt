@@ -54,33 +54,40 @@ class SyncRunner(
         page: MessagePage,
     ) = mutate(null) { it.history(conversationId, beforeSeq, page) }
 
-    @Suppress("TooGenericExceptionCaught") // Persistence/validation failures stop this owner runtime; cancellation still propagates.
-    private suspend fun mutate(guard: Job?, action: (SyncEngine) -> Unit) =
-        lock.withLock {
-            if (stopped || guard?.isActive == false) return@withLock
-            val previous = engine.state
-            try {
-                action(engine)
-                if (!port.save(engine.state)) {
-                    engine = SyncEngine(previous)
-                    stop()
-                    return@withLock
-                }
-            } catch (error: CancellationException) {
+    private suspend fun mutate(
+        guard: Job?,
+        action: (SyncEngine) -> Unit,
+    ) = lock.withLock {
+        if (stopped || guard?.isActive == false) return@withLock
+        // A foreground caller disappearing must not cancel an already started local transaction halfway through.
+        withContext(NonCancellable) { commit(action) }
+    }
+
+    @Suppress("TooGenericExceptionCaught") // Persistence failures stop this owner runtime; explicit cancellation still propagates.
+    private suspend fun commit(action: (SyncEngine) -> Unit) {
+        val previous = engine.state
+        try {
+            action(engine)
+            if (!port.save(engine.state)) {
                 engine = SyncEngine(previous)
                 stop()
-                throw error
-            } catch (error: Exception) {
-                engine = SyncEngine(previous)
-                stop()
-                port.failed(error)
-                throw error
+                return
             }
-            if (!stopped) {
-                committed.value = engine.state
-                engine.drainEffects().forEach { execute(it, effectsJob) }
-            }
+        } catch (error: CancellationException) {
+            engine = SyncEngine(previous)
+            stop()
+            throw error
+        } catch (error: Exception) {
+            engine = SyncEngine(previous)
+            stop()
+            port.failed(error)
+            throw error
         }
+        if (!stopped) {
+            committed.value = engine.state
+            engine.drainEffects().forEach { execute(it, effectsJob) }
+        }
+    }
 
     @Suppress("TooGenericExceptionCaught") // Network and decoding failures share the effect boundary; cancellation propagates.
     private fun execute(effect: ClientSyncEffect, guard: Job) {
