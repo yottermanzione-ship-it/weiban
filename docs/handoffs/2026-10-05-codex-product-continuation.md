@@ -248,3 +248,17 @@ Web与Android私聊为正常消息显示40px双方头像：角色按实际发送
 已完成开发自测：Web19组浏览器（/tmp/weiban-t041-chat-avatar-web2.log），新增真实上传512px私有用户/角色图片→真实聊天消息显示40px→图片请求失败字形回退/深色实际计算颜色检查，截图已查看；加强原有离线待发头像断言。管理端7组（/tmp/weiban-t041-chat-avatar-admin1.log）；Android完整ktlint/detekt/单元测试/APK构建成功，83条JUnit零失败/零跳过（/tmp/weiban-t041-chat-avatar-native3.log及实际XML汇总），新增四主题用户头像颜色校验并保留换号/图片请求隔离。514定义/85操作/图标/tokens生成无差异（/tmp/weiban-t041-chat-avatar-generated1.log）。整仓50文件451条真实PG测试、完整格式/模块边界/类型/tokens门禁通过（/tmp/weiban-t041-chat-avatar-root2.log）。
 
 原生native1/2被既有函数长度/复杂度门禁拒绝，按职责拆分消息动作、行布局与会话状态后通过，未放宽规则；format2运行目录错误未执行格式检查。整仓root1发现新增浏览器文件格式问题，修正后重跑，失败轮次不计通过。本轮为开发自测，非独立QA；没有证明真实设备、Safari、系统推送或新账号待通过→首次真实AI回复整链路。继续拍照/手势裁剪、其余头像场景、原生推送/通知PNG及L2–L7，产品未完成。提交后单独读取本轮CI。
+
+
+消息头像检查点已发布并核验CI：本机d644e46ab331e2b5d62a3270b79fc130d7d7209b，远端7227b4747b8d2285fd0d789806add6cd7c909e6c，同tree88d08a6252f8d00faab782d7ac8da374ecd5e81f。push37629601890（check112820100705/Android112820100837）及PR37629608276（check112820116448/Android112820116170）和全部job最终success，结果已读取；新源码生产构建、14迁移及加密备份/空卷恢复通过。后续拍照/手势裁剪属于新工作树，不借用此CI。
+
+
+## T041 拍照与手势裁剪（2026-10-07）
+
+两端头像编辑增加相册/拍照选择、正方形黑底裁剪、拖动/双指缩放、键盘/滑块精细调整与取消/完成。Web来源和裁剪使用独立原生dialog，缺少dialog API时仍能读/关闭；浏览器拍照使用capture=user文件入口，上传期间禁止继续选图/改裁剪/关闭，私有上传返回后再次核对原owner才更新资料。原生使用系统相机TakePicture、未导出的FileProvider，只授权头像缓存子目录的临时URI读写，不申请应用CAMERA权限；图片读取仍限制10MB/40MP，EXIF与512像素裁剪复用原实现。成功、取消、组件离开/换号均清理本次临时照片，迟到旧相机结果不进入新账号。新增模式颜色上下文，从生成令牌读取黑色viewer背景；原有角色私有图恢复入口继续保留。
+
+新增显式依赖androidx.core:core-ktx 1.15.0用于FileProvider，Apache-2.0；此前已在本模块传递锁文件，版本未变，集中版本目录声明。没有新增厂商SDK或修改服务端契约。
+
+开发自测：最终Web20组（/tmp/weiban-t041-avatar-gesture-web4.log，退出0），新增真实来源弹层/取消/文件选择器、双色PNG拖动后的实际像素、CDP双指缩放、键盘展开/折叠、真实私有512像素上传；截图已查看，修正首版白底白字按钮与控件挤出常用按钮的问题。Android完整ktlint/detekt/单元测试/APK通过，86条JUnit零失败/零跳过（/tmp/weiban-t041-avatar-gesture-native6.log，退出0，实际XML汇总与报告脚本一致），新增真实FileProvider照片读写、只分享头像子目录/非导出检查、拖动和双指缩放后实际蓝色512px输出、取消清理及换号迟到结果拒绝三条。管理端7组（/tmp/weiban-t041-avatar-gesture-admin1.log，退出0）、514定义/85操作/图标/tokens生成无差异（/tmp/weiban-t041-avatar-gesture-generated1.log）。整仓50文件451条真实PG测试、格式/模块边界/完整类型/tokens检查通过（/tmp/weiban-t041-avatar-gesture-root1.log，退出0）。
+
+原生早期格式/文件名/行长门禁失败轮次、native1静态检查失败、native2模式颜色访问编译错误、native3测试辅助函数名编译错误均不计通过，native4发现Robolectric不同模拟应用缓存目录与同authority的FileProvider静态策略串用，按Android启动流程为每个测试实例初始化真实manifest Provider；native5新测试长度达到门禁上限，拆出照片返回夹具后通过。分别修正源码结构/使用已有令牌模式与语义匹配；没有放宽门禁/断言。系统相机结果在Robolectric中模拟写入真实FileProvider URI，不构成真实拍摄/设备权限验收；Web拍照文件仍是测试夹具，触控在Chromium/CDP模拟。真机相机/系统强杀恢复仍待验；开发自测不等于独立QA。继续头像剩余入口/通知PNG、原生推送、引导草稿恢复及L2–L7，产品未完成。提交后另读CI。

@@ -8,8 +8,11 @@ import android.graphics.Color
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.core.content.FileProvider
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.weiban.contracts.*
@@ -56,6 +59,13 @@ class ContactAvatarEditorTest {
 
     @Before fun setup() =
         runBlocking {
+            // Each Robolectric case has a new cacheDir but reuses the FileProvider authority/static strategy.
+            // Initialize the manifest provider for this application instance, as Android does on process start.
+            val context = compose.activity.applicationContext
+            val provider = context.packageManager.resolveContentProvider("${context.packageName}.avatar.camera", 0)!!
+            assertFalse(provider.exported)
+            assertTrue(provider.grantUriPermissions)
+            FileProvider().attachInfo(context, provider)
             server = MockWebServer()
             server.start()
             database = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LocalDatabase::class.java).build()
@@ -162,6 +172,7 @@ class ContactAvatarEditorTest {
     private fun selectPicture() {
         compose.onNodeWithText("设置头像").performClick()
         compose.onNodeWithText("选择并裁剪头像").performClick()
+        compose.onNodeWithText("从相册选择").performClick()
         val image = Bitmap.createBitmap(80, 40, Bitmap.Config.ARGB_8888)
         image.eraseColor(Color.RED)
         val file = File(compose.activity.cacheDir, "contact-avatar-test.png")
@@ -209,6 +220,106 @@ class ContactAvatarEditorTest {
         assertEquals("原备注", durable.remark)
         assertEquals("原称呼", durable.addressAs)
         assertEquals(2, requests.count { it.method == "PATCH" })
+    }
+
+    private fun returnCameraPicture() {
+        compose.runOnIdle {
+            val activity = shadowOf(compose.activity)
+            val launched = activity.nextStartedActivityForResult
+            assertEquals(android.provider.MediaStore.ACTION_IMAGE_CAPTURE, launched.intent.action)
+            val uri = launched.intent.getParcelableExtra(android.provider.MediaStore.EXTRA_OUTPUT, Uri::class.java)!!
+            assertEquals("content", uri.scheme)
+            assertTrue(
+                runCatching {
+                    FileProvider.getUriForFile(compose.activity, uri.authority!!, File(compose.activity.cacheDir, "private-note.txt"))
+                }.isFailure,
+            )
+            assertTrue(launched.intent.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0)
+            val image = Bitmap.createBitmap(80, 40, Bitmap.Config.ARGB_8888)
+            for (x in 0 until 80) for (y in 0 until 40) image.setPixel(x, y, if (x < 40) Color.RED else Color.BLUE)
+            compose.activity.contentResolver
+                .openOutputStream(uri)!!
+                .use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            image.recycle()
+            activity.receiveResult(launched.intent, Activity.RESULT_OK, null)
+        }
+    }
+
+    @Test fun cameraResultCanBeDraggedCroppedAndUploadedAndTemporaryPhotoIsRemoved() {
+        compose.onNodeWithText("设置头像").performClick()
+        compose.onNodeWithText("选择并裁剪头像").performClick()
+        compose.onNodeWithText("拍照", substring = false).performClick()
+        returnCameraPicture()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("调整头像").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("头像裁剪预览").performTouchInput { swipeLeft() }
+        compose.onNodeWithContentDescription("头像裁剪预览").performTouchInput {
+            pinch(
+                start0 = center - Offset(20f, 0f),
+                end0 = center - Offset(60f, 0f),
+                start1 = center + Offset(20f, 0f),
+                end1 = center + Offset(60f, 0f),
+            )
+        }
+        val zoom =
+            compose
+                .onAllNodes(
+                    SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo),
+                ).fetchSemanticsNodes()
+                .first()
+                .config[SemanticsProperties.ProgressBarRangeInfo]
+                .current
+        assertTrue(zoom > 1.5f)
+        compose.onNodeWithText("使用头像").performClick()
+        compose.waitUntil(10_000) { requests.any { it.method == "PATCH" } }
+        val body =
+            requests
+                .single { it.method == "POST" }
+                .body
+                .clone()
+                .readByteArray()
+        val marker = "\r\n\r\n".toByteArray()
+        val start =
+            body.indices.first { i -> i + marker.size <= body.size && marker.indices.all { body[i + it] == marker[it] } } + marker.size
+        val cropped = app.weiban.designsystem.decodeAvatar(body.copyOfRange(start, body.size))
+        assertEquals(512, cropped.width)
+        assertEquals(Color.BLUE, cropped.getPixel(256, 256))
+        cropped.recycle()
+        assertTrue(File(compose.activity.cacheDir, "avatar-camera").listFiles().orEmpty().isEmpty())
+    }
+
+    @Test fun accountReplacementDiscardsPendingCameraAndCannotUploadItsLateResult() {
+        compose.onNodeWithText("设置头像").performClick()
+        compose.onNodeWithText("选择并裁剪头像").performClick()
+        compose.onNodeWithText("拍照", substring = false).performClick()
+        val activity = shadowOf(compose.activity)
+        val launched = activity.nextStartedActivityForResult
+        assertEquals(1, File(compose.activity.cacheDir, "avatar-camera").listFiles().orEmpty().size)
+        val other =
+            auth.copy(
+                user = auth.user.copy(userId = "01920000-0000-7000-8000-000000000024"),
+                session = auth.session.copy(sessionId = "01920000-0000-7000-8000-000000000025"),
+            )
+        runBlocking { repository.authenticate(other) }
+        compose.onNodeWithText("设置头像").assertDoesNotExist()
+        compose.runOnIdle { activity.receiveResult(launched.intent, Activity.RESULT_OK, null) }
+        compose.onNodeWithText("调整头像").assertDoesNotExist()
+        assertTrue(File(compose.activity.cacheDir, "avatar-camera").listFiles().orEmpty().isEmpty())
+        assertFalse(requests.any { it.method == "POST" || it.method == "PATCH" })
+        assertEquals(other, repository.auth.value)
+    }
+
+    @Test fun cancellingCameraDoesNotOpenCropOrUploadAndRemovesTemporaryPhoto() {
+        compose.onNodeWithText("设置头像").performClick()
+        compose.onNodeWithText("选择并裁剪头像").performClick()
+        compose.onNodeWithText("拍照", substring = false).performClick()
+        compose.runOnIdle {
+            val activity = shadowOf(compose.activity)
+            val launched = activity.nextStartedActivityForResult
+            activity.receiveResult(launched.intent, Activity.RESULT_CANCELED, null)
+        }
+        compose.onNodeWithText("调整头像").assertDoesNotExist()
+        assertFalse(requests.any { it.method == "POST" || it.method == "PATCH" })
+        assertTrue(File(compose.activity.cacheDir, "avatar-camera").listFiles().orEmpty().isEmpty())
     }
 
     @Test fun replacingAccountDiscardsOpenCropWithoutUploadingIntoNewSession() {

@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
 import app.weiban.designsystem.tokens.*
 
+val LocalWeibanModeColors = staticCompositionLocalOf { WbColorSets.ModeLight }
 val LocalWeibanColors = staticCompositionLocalOf { WbColorSets.GreenLight }
 
 @Composable fun WeibanTheme(
@@ -66,7 +67,10 @@ val LocalWeibanColors = staticCompositionLocalOf { WbColorSets.GreenLight }
                 error = colors.textDanger,
             )
         }
-    CompositionLocalProvider(LocalWeibanColors provides colors) {
+    CompositionLocalProvider(
+        LocalWeibanColors provides colors,
+        LocalWeibanModeColors provides if (dark) WbColorSets.ModeDark else WbColorSets.ModeLight,
+    ) {
         MaterialTheme(colorScheme = scheme, typography = typography, shapes = shapes, content = content)
     }
 }

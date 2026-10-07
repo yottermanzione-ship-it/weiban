@@ -266,7 +266,35 @@ textarea {
   width: 100%;
   max-width: var(--wb-size-content-max-width);
   aspect-ratio: 1;
-  border-radius: var(--wb-radius-md);
+  border-radius: calc(100% * var(--wb-radius-avatar-ratio));
+  touch-action: none;
+  user-select: none;
+}
+
+.avatar-source-dialog,
+.avatar-crop-dialog {
+  position: fixed;
+  inset: var(--wb-space-5);
+  margin: auto;
+  width: calc(100% - var(--wb-space-5) * 2);
+  max-width: var(--wb-size-content-max-width);
+  max-height: calc(100dvh - var(--wb-space-5) * 2);
+  overflow: auto;
+  border: 0;
+  border-radius: var(--wb-radius-lg);
+}
+.avatar-source-dialog {
+  background: var(--wb-color-bg-surface);
+  color: var(--wb-color-text-primary);
+}
+.avatar-source-dialog::backdrop,
+.avatar-crop-dialog::backdrop {
+  background: var(--wb-color-bg-scrim);
+}
+.avatar-crop-dialog {
+  padding: var(--wb-space-5);
+  background: var(--wb-color-overlay-viewer);
+  color: var(--wb-color-text-on-brand);
 }
 
 .user-avatar {
@@ -540,4 +568,10 @@ textarea {
   padding: var(--wb-space-3);
   border-radius: var(--wb-radius-sm);
   align-items: end;
+}
+
+.avatar-crop-dialog button {
+  background: transparent;
+  color: var(--wb-color-text-on-brand);
+  border-color: var(--wb-color-text-on-brand);
 }
