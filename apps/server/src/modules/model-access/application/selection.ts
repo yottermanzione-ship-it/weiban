@@ -8,10 +8,11 @@
  * 选择变化发 model_access.selection_changed。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import type { ModelSelection } from '@weiban/contracts';
+import type { ModelNotificationReadPort, Tx, ModelSelection } from '@weiban/contracts';
 import { and, eq } from 'drizzle-orm';
 import {
   AppError,
+  asDbTx,
   CLOCK,
   DATABASE,
   OUTBOX,
@@ -43,7 +44,7 @@ const COLUMN = {
 } as const;
 
 @Injectable()
-export class SelectionService {
+export class SelectionService implements ModelNotificationReadPort {
   constructor(
     @Inject(DATABASE) private readonly database: Database,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -51,6 +52,36 @@ export class SelectionService {
     @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(MODEL_ACCESS_POLICY) private readonly policy: ModelPolicy,
   ) {}
+
+  async affectedUsers(
+    userIds: readonly string[],
+    modelKey: string,
+    tx?: Tx,
+    previousDefaultFor: readonly ('chat' | 'background' | 'vision')[] = [],
+  ): Promise<string[]> {
+    if (!userIds.length) return [];
+    const connection = tx ? asDbTx(tx) : this.database;
+    // 只读本模块表；NULL选择也需考虑默认模型，覆盖设置独立影响用户。
+    const result = await connection.query<{ user_id: string }>(
+      `
+      WITH model AS (
+        SELECT c.default_for, c.enabled, u.status FROM model_access.model_catalog c
+        LEFT JOIN model_access.upstreams u ON u.id=c.upstream_id WHERE c.model_key=$2
+      )
+      SELECT candidate.user_id FROM unnest($1::uuid[]) AS candidate(user_id)
+      LEFT JOIN model_access.selections s ON s.user_id=candidate.user_id
+      WHERE NOT EXISTS (SELECT 1 FROM model WHERE enabled AND status='active') AND (
+        s.chat_model_key=$2 OR s.background_model_key=$2 OR s.adult_model_key=$2
+        OR EXISTS (SELECT 1 FROM model_access.character_overrides o WHERE o.user_id=candidate.user_id AND o.chat_model_key=$2)
+        OR (s.chat_model_key IS NULL AND (EXISTS (SELECT 1 FROM model WHERE 'chat'=ANY(default_for))
+          OR ('chat'=ANY($3::text[]) AND NOT EXISTS (SELECT 1 FROM model_access.model_catalog WHERE enabled AND 'chat'=ANY(default_for)))))
+        OR (s.background_model_key IS NULL AND s.chat_model_key IS NULL AND (EXISTS (SELECT 1 FROM model WHERE 'background'=ANY(default_for))
+          OR ('background'=ANY($3::text[]) AND NOT EXISTS (SELECT 1 FROM model_access.model_catalog WHERE enabled AND 'background'=ANY(default_for)))))
+      )`,
+      [[...userIds], modelKey, [...previousDefaultFor]],
+    );
+    return result.rows.map((row) => row.user_id);
+  }
 
   /** 用户原始选择（未设置为 null）。 */
   async raw(userId: string): Promise<Record<Field, string | null>> {

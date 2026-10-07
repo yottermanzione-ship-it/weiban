@@ -34,11 +34,11 @@
 | 令牌 | 契约 | 现在绑定的 | 换成真实实现的时机 |
 |---|---|---|---|
 | `MODEL_ACCESS_POLICY` | `PolicyPort.checkModelForCharacter` | `FailClosedModelPolicy`：**失败即拒绝**——任何角色都不能用 adult_content 模型，普通模型放行 | policy 模块（D-L0-11）导出令牌后，在 `model-access.module.ts` 改为 `useExisting` |
-| `MODEL_ACCESS_CHARGE_QUERY` | `BillingChargeQueryPort`（契约 1.3） | `ChargeQueryUnavailable`：调用即报「暂不可用」——**启用模型返回 503**（不放行未查价的模型），用量对账跳过并写错误日志 | billing 实现并导出令牌后改为 `useExisting`（另开任务） |
+| `MODEL_ACCESS_CHARGE_QUERY` | `BillingChargeQueryPort`（契约 1.3） | `BILLING_CHARGE_QUERY_PORT`：真实计费查询实现（T-028） | 已绑定 `useExisting` |
 | `MODEL_PRICE_SOURCE` | 无（契约没有「读当前价目表单价」） | `EmptyPriceSource`：价格档位一律显示「中等」 | 需要契约变更申请，见交接说明 |
 | `UPSTREAM_PROBE` | 无（模块内部） | `OpenAiCompatibleProbe` | D-L0-09 的适配器可替换 |
 
-**注意**：在 billing 接上 `BillingChargeQueryPort` 之前，管理后台**无法启用任何模型**（503）。这是有意的：不查价就启用会让模型出现在列表里却调用失败。
+**T-028 接续**：真实计费查询已接入。管理员先发布含价格的价目表，再启用目录模型；未发布价格仍返回422。价格档位与角色policy的接入仍按后续任务执行。
 
 ## 3. 表（schema `model_access`）
 
@@ -121,3 +121,7 @@
 
 - 单元：`domain/rules.test.ts`（掩码、分类、接口地址、可用性、价格档位、游标）。
 - 集成：`apps/server/test/model-access.test.ts`（25 条，本机假上游 HTTP 服务 + 假 policy / 价格 / 计费查询）：上游登记四种失败分类、掩码、数据库只有密文、换钥失败不覆盖、手动测试状态与事件 / 提醒、网关报告状态不重复发、删除 409 / 204 / 404、管理端 403 / 401；目录默认规则、查价 422 / 503、默认转移、审计、用户端列表与筛选；全局选择与角色单独模型闸门（403 / 404 / 422）、调用时闸门绕过测试、解析顺序与识图回退；模型状态四种原因与回退；用量汇总口径、分页、导出审计；对账（补写快照、跨零点、三类异常、事件、提醒、端口未接入）；删除清单；最后全库 + 日志搜索金丝雀密钥。
+
+## Codex 接续：D-L0-09 文本网关
+
+其他模块从公开出口注入 `MODEL_GATEWAY_PORT`。计费冻结/结算仍只有本模块可调用。实现和运维命令见 [`2026-10-05-codex-T-029.md`](../handoffs/2026-10-05-codex-T-029.md)。网关结果缓存和用量记录分开；前者24h用户DEK加密，后者不保存正文。默认 `MODEL_GENERATION_POLICY` 拒绝成人生成，真实 policy 上线后用同一闸门替换。异步维护注册在worker/all进程；关闭后台任务的测试可手动触发 `GatewayMaintenance`。

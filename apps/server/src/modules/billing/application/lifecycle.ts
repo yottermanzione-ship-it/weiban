@@ -61,6 +61,11 @@ export class BillingLifecycle implements OnModuleInit, UserDataOwner {
       eventType: 'identity.user_registered',
       handle: (event, tx) => this.onUserRegistered(event.payload, tx),
     });
+    this.bus.subscribe({
+      consumer: 'billing.on_usage_reconciled',
+      eventType: 'model_access.usage_reconciled',
+      handle: (event, tx) => this.reconciliation.applyUsageReconciled(event.payload, tx),
+    });
     await this.jobs.work(EXPIRE_HOLDS_JOB, async () => {
       await this.reservations.expireHolds();
     });

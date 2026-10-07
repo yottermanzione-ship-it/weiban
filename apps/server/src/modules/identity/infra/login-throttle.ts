@@ -27,17 +27,30 @@ export class LoginThrottle {
   async recordFailure(keys: Buffer[]): Promise<void> {
     const now = this.clock.now();
     await this.database.transaction(async (tx) => {
-      for (const key of keys) {
+      for (const key of [...new Map(keys.map((key) => [key.toString('hex'), key])).values()].sort(
+        Buffer.compare,
+      )) {
+        // FOR UPDATE cannot lock a missing row. Establish it first; a concurrent
+        // insert waits for the first transaction before reading the current count.
+        await tx.db
+          .insert(loginThrottle)
+          .values({
+            key,
+            failures: 0,
+            lastFailedAt: now,
+            lockedUntil: null,
+          })
+          .onConflictDoNothing();
         const [current] = await tx.db
           .select()
           .from(loginThrottle)
           .where(eq(loginThrottle.key, key))
           .for('update');
+        // Requests already in flight before the fifth failure must not clear
+        // the lock just established by a preceding concurrent transaction.
+        if (current && isLocked(current, now)) continue;
         const next = nextFailureState(current ?? null, now);
-        await tx.db
-          .insert(loginThrottle)
-          .values({ key, ...next })
-          .onConflictDoUpdate({ target: loginThrottle.key, set: next });
+        await tx.db.update(loginThrottle).set(next).where(eq(loginThrottle.key, key));
       }
     });
   }

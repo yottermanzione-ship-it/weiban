@@ -9,7 +9,7 @@ export interface SyncPort {
    */
   appendUpdate(tx: Tx, userId: string, update: UserUpdatePayload): Promise<number>;
   /** 用户是否有设备正在前台查看该会话（CHAT-10 第 6 条：此时不推送）。 */
-  isViewingConversation(userId: string, conversationId: string): Promise<boolean>;
+  isViewingConversation(userId: string, conversationId: string, tx?: Tx): Promise<boolean>;
   /** 用户最近一次在任一会话发消息的时间（P-09「正在聊天」判断）。 */
   getLastUserActivityAt(userId: string): Promise<string | null>;
   /** 向用户在线设备转发一闪而过的状态（正在输入），不落库。 */

@@ -6,7 +6,15 @@
  * - 作废 = 删除整行，并在同一事务发布 identity.session_revoked（push 删推送设备、realtime 断开连接）。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import type { AuthLevel, DeviceInfo, SessionKind, SessionSummary } from '@weiban/contracts';
+import {
+  Id,
+  type AuthLevel,
+  type DeviceInfo,
+  type SessionKind,
+  type SessionSummary,
+  type IdentitySessionReadPort,
+  type Tx,
+} from '@weiban/contracts';
 import { and, desc, eq, gt, lte } from 'drizzle-orm';
 import {
   CLOCK,
@@ -14,6 +22,8 @@ import {
   LOGGER,
   OUTBOX,
   newId,
+  asDbTx,
+  parseContract,
   type AuthPrincipal,
   type Clock,
   type Database,
@@ -41,7 +51,7 @@ export interface CreatedSession {
 }
 
 @Injectable()
-export class SessionService implements SessionVerifier {
+export class SessionService implements SessionVerifier, IdentitySessionReadPort {
   private readonly log: Logger;
 
   constructor(
@@ -123,6 +133,19 @@ export class SessionService implements SessionVerifier {
       await tx.db.update(sessions).set(set).where(eq(sessions.id, sessionId));
       await tx.db.update(users).set({ lastActiveAt: now }).where(eq(users.id, userId));
     });
+  }
+
+  async isActiveAppSession(userId: string, sessionId: string, input?: Tx): Promise<boolean> {
+    parseContract(Id, userId);
+    parseContract(Id, sessionId);
+    const runner = input ? asDbTx(input) : this.database;
+    const result = await runner.query(
+      `SELECT s.id FROM identity.sessions s JOIN identity.users u ON u.id=s.user_id
+       WHERE s.id=$1 AND s.user_id=$2 AND s.kind='app' AND s.expires_at>$3 AND u.status='active'
+       ${input ? 'FOR SHARE OF s,u' : ''}`,
+      [sessionId, userId, this.clock.now()],
+    );
+    return result.rows.length > 0;
   }
 
   /** 我的登录设备（不含已过期的）。 */

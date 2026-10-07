@@ -1,0 +1,16 @@
+complexity:
+  TooManyFunctions:
+    ignorePrivate: true
+  LongParameterList:
+    functionThreshold: 8
+naming:
+  FunctionNaming:
+    ignoreAnnotated: ['Composable']
+style:
+  # Import and line layout are owned by ktlint; keep one formatter policy.
+  WildcardImport:
+    active: false
+  MaxLineLength:
+    maxLineLength: 140
+  MagicNumber:
+    active: false

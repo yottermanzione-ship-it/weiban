@@ -7,4 +7,8 @@
  * - BILLING_READ_PORT：注入后得到契约 BillingReadPort（getSpendStatus），任何模块可用。
  */
 export { BillingModule } from './billing.module.js';
-export { BILLING_READ_PORT, BILLING_RESERVATION_PORT } from './tokens.js';
+export {
+  BILLING_CHARGE_QUERY_PORT,
+  BILLING_READ_PORT,
+  BILLING_RESERVATION_PORT,
+} from './tokens.js';

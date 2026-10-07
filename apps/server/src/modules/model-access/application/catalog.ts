@@ -211,6 +211,9 @@ export class CatalogService {
             modelKey: row.modelKey,
             available: isReason === null,
             reason: isReason ?? 'recovered',
+            ...(before.defaultFor.length
+              ? { previousDefaultFor: before.defaultFor as DefaultUse[] }
+              : {}),
           });
         }
       }

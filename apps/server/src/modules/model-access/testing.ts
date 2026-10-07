@@ -17,3 +17,10 @@ export { UsageRecorder } from './application/usage.js';
 export { UsageReconciliationService } from './application/reconciliation.js';
 export { ModelAccessLifecycle, RECONCILE_USAGE_JOB } from './application/lifecycle.js';
 export type { ModelTextPrices } from './domain/rules.js';
+export { CatalogService } from './application/catalog.js';
+
+export { TEXT_ADAPTER, MODEL_GENERATION_POLICY, GATEWAY_RETRY_WAIT } from './tokens.js';
+export { ModelGateway } from './application/gateway.js';
+export { GenerationCache } from './application/generation-cache.js';
+export { OpenAiTextAdapter, estimateTokens, type TextAdapter } from './infra/text-adapter.js';
+export { GatewayMaintenance } from './application/gateway-maintenance.js';

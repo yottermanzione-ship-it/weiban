@@ -19,7 +19,12 @@ import {
   type JobQueue,
   type UserDataRegistry,
 } from '../../../platform/index.js';
-import { characterOverrides, selections, usageRecords } from '../infra/db/schema.js';
+import {
+  characterOverrides,
+  selections,
+  usageRecords,
+  generationResults,
+} from '../infra/db/schema.js';
 import { UsageReconciliationService } from './reconciliation.js';
 
 /** 每天 3:45（北京时间）对前一天做用量对账（billing.md 8.2 第 ② 层；billing 的第 ①③ 层在 3:30）。 */
@@ -77,7 +82,11 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
         .delete(usageRecords)
         .where(eq(usageRecords.userId, userId))
         .returning({ id: usageRecords.id });
-      return a.length + b.length + c.length;
+      const d = await tx.db
+        .delete(generationResults)
+        .where(eq(generationResults.userId, userId))
+        .returning({ id: generationResults.id });
+      return a.length + b.length + c.length + d.length;
     });
   }
 
@@ -94,6 +103,10 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
       .select({ n: count() })
       .from(usageRecords)
       .where(eq(usageRecords.userId, userId));
-    return (a?.n ?? 0) + (b?.n ?? 0) + (c?.n ?? 0);
+    const [d] = await this.database.db
+      .select({ n: count() })
+      .from(generationResults)
+      .where(eq(generationResults.userId, userId));
+    return (a?.n ?? 0) + (b?.n ?? 0) + (c?.n ?? 0) + (d?.n ?? 0);
   }
 }

@@ -31,15 +31,21 @@
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres",
-    "db:psql": "docker compose exec postgres psql -U weiban -d weiban"
+    "db:psql": "docker compose exec postgres psql -U weiban -d weiban",
+    "web:e2e": "pnpm --filter @weiban/web build && pnpm --filter @weiban/admin build && playwright test --config apps/web/playwright.config.ts",
+    "admin:e2e": "pnpm --filter @weiban/admin build && playwright test --config apps/admin/playwright.config.ts",
+    "android:generate": "pnpm --filter @weiban/contracts generate && node apps/android/tools/generate-contracts.mjs && node scripts/build-tokens.mjs --kotlin apps/android/core/designsystem/src/main/kotlin/app/weiban/designsystem/tokens/WbTokens.kt && node apps/android/tools/generate-icons.mjs",
+    "android:generate:check": "pnpm --filter @weiban/contracts generate && node apps/android/tools/generate-contracts.mjs --check && node scripts/build-tokens.mjs --check --kotlin apps/android/core/designsystem/src/main/kotlin/app/weiban/designsystem/tokens/WbTokens.kt && node apps/android/tools/generate-icons.mjs --check"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "1.63.0",
     "@types/node": "^24.19.1",
     "@weiban/eslint-config": "workspace:*",
     "@weiban/tsconfig": "workspace:*",
     "dependency-cruiser": "^18.5.0",
     "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "7.1.1",
     "globals": "^17.13.0",
     "prettier": "^3.9.9",
     "typescript": "^5.9.3",

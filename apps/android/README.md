@@ -1,11 +1,13 @@
-# apps/android · 安卓原生客户端（占位）
+# 微伴安卓原生客户端
 
-- 负责人：Android 负责人
-- 技术：Kotlin + Jetpack Compose，标准 Android Studio / Gradle 工程（ADR-0011）
-- 内部结构：见 `docs/architecture/repo-structure.md` 第 5 节
-- 由 D-L0-18（安卓原生骨架）建立 Gradle 工程。
+独立 Kotlin + Jetpack Compose 工程，SDK36/min26、构建JDK21、Gradle8.13。用 Android Studio 打开本目录；零基础安装/USB调试/APK说明见 [Windows 开发说明](../../docs/ops/android-development.md)，模块、数据与限制见 [安卓底座](../../docs/android/foundation.md)。
 
-注意：
-- 本目录**不属于 pnpm 工作区**（`pnpm-workspace.yaml` 已排除），也不参与 ESLint、Prettier；格式与静态检查由 ktlint + detekt 负责。
-- 构建产物（`build/`、`.gradle/`、`.kotlin/`、`*.apk`、`*.aab`、`app/release/`）和签名文件（`*.jks`、`*.keystore`、`local.properties`）已在根 `.gitignore` 中排除，不进仓库。
-- 由契约生成的 Kotlin 源码（`core/contracts-generated/`）**要进仓库**，便于评审与 CI 比对。
+在仓库根安装 pnpm 依赖，然后运行 `pnpm android:generate:check`；改契约或令牌后运行 `pnpm android:generate`。生成源码进仓库，不手改。本目录不属于 pnpm 工作区，Kotlin 使用 ktlint/detekt：
+
+```bash
+./gradlew --no-daemon ktlintCheck detekt testDebugUnitTest :core:contracts-generated:test assembleDebug
+```
+
+Windows 使用 `gradlew.bat`。默认 debug 服务是模拟器宿主 `http://10.0.2.2:3000`；需先启动真实服务/数据库。正式构建须设置 `WEIBAN_API_BASE_URL` 为 HTTPS。构建产物、SDK路径、秘密与签名文件不提交；依赖目录版本和 Gradle 锁文件提交。debug APK 在 app/build/outputs/apk/debug；CI 附件保留14天。
+
+L0 提供认证、资料、头像、模型、余额流水与主题；聊天、通讯录和发现按后续任务接续，产品尚未完成。

@@ -83,3 +83,16 @@ describe('配置加载 loadConfig', () => {
     expect(() => readKekFile(join(dir, 'bad'))).toThrow(ConfigError);
   });
 });
+
+describe('数据库秘密文件', () => {
+  it('读取秘密文件且读取失败不回显路径内容；显式DATABASE_URL优先', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wb-db-secret-'));
+    const path = join(dir, 'database-url');
+    writeFileSync(path, DB + '\n');
+    expect(loadConfig({ DATABASE_URL_FILE: path }).database.url).toBe(DB);
+    expect(loadConfig({ DATABASE_URL: DB, DATABASE_URL_FILE: '/missing' }).database.url).toBe(DB);
+    expect(() => loadConfig({ DATABASE_URL_FILE: join(dir, 'missing') })).toThrow(
+      /DATABASE_URL_FILE/,
+    );
+  });
+});

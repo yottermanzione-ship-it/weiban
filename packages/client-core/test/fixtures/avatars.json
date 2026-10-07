@@ -1,0 +1,117 @@
+{
+  "names": [
+    {
+      "characterId": "01920000-0000-7000-8000-00000000000a",
+      "name": "杨幂",
+      "override": null,
+      "text": "杨幂",
+      "paletteIndex": 5
+    },
+    {
+      "characterId": "01920000-0000-7000-8000-00000000000b",
+      "name": "王一博",
+      "override": null,
+      "text": "一博",
+      "paletteIndex": 6
+    },
+    {
+      "characterId": "01920000-0000-7000-8000-00000000000c",
+      "name": "欧阳娜娜",
+      "override": null,
+      "text": "欧阳",
+      "paletteIndex": 7
+    },
+    {
+      "characterId": "01920000-0000-7000-8000-00000000000d",
+      "name": "王",
+      "override": null,
+      "text": "王",
+      "paletteIndex": 8
+    },
+    {
+      "characterId": "01920000-0000-7000-8000-00000000000e",
+      "name": "Taylor Swift",
+      "override": null,
+      "text": "TS",
+      "paletteIndex": 9
+    },
+    {
+      "characterId": "01920000-0000-7000-8000-00000000000f",
+      "name": "Taylor-Swift!",
+      "override": null,
+      "text": "TS",
+      "paletteIndex": 10
+    },
+    {
+      "characterId": "01920000-0000-7000-8000-000000000010",
+      "name": "🦋王・一・博",
+      "override": null,
+      "text": "一博",
+      "paletteIndex": 11
+    },
+    {
+      "characterId": "01920000-0000-7000-8000-000000000011",
+      "name": "✨!!!",
+      "override": null,
+      "text": "?",
+      "paletteIndex": 12
+    },
+    {
+      "characterId": "01920000-0000-7000-8000-000000000012",
+      "name": "émile zola",
+      "override": null,
+      "text": "ÉZ",
+      "paletteIndex": 1
+    },
+    {
+      "characterId": "01920000-0000-7000-8000-000000000013",
+      "name": "𠀀王一",
+      "override": null,
+      "text": "王一",
+      "paletteIndex": 2
+    },
+    {
+      "characterId": "01920000-0000-7000-8000-000000000014",
+      "name": "王一博",
+      "override": "博",
+      "text": "博",
+      "paletteIndex": 3
+    },
+    {
+      "characterId": "01920000-0000-7000-8000-000000000015",
+      "name": "Anything",
+      "override": "⭐",
+      "text": "⭐",
+      "paletteIndex": 4
+    },
+    {
+      "characterId": "01920000-0000-7000-8000-000000000016",
+      "name": "单词",
+      "override": null,
+      "text": "单词",
+      "paletteIndex": 5
+    }
+  ],
+  "colors": [
+    {
+      "background": "#FFFFFF",
+      "foreground": "#1F1A1D"
+    },
+    {
+      "background": "#000000",
+      "foreground": "#FFFFFF"
+    },
+    {
+      "background": "#FFCC00",
+      "foreground": "#1F1A1D"
+    },
+    {
+      "background": "#103080",
+      "foreground": "#FFFFFF"
+    },
+    {
+      "background": "#808080",
+      "foreground": "#1F1A1D"
+    }
+  ]
+}

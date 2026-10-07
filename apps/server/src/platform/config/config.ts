@@ -16,6 +16,28 @@ const booleanFlag = z
   .transform((value) => value === '1' || value === 'true');
 
 export const EnvSchema = z.object({
+  /** 可选推送凭据文件；不配置时通道明确不可用，不生成虚假生产密钥。 */
+  PUSH_CREDENTIALS_FILE: z.string().min(1).optional(),
+  MEDIA_STORAGE: z.enum(['disk', 's3']).default('disk'),
+  MEDIA_DISK_ROOT: z.string().min(1).default('.data/media'),
+  MEDIA_PUBLIC_BASE_URL: z
+    .url()
+    .refine((value) => {
+      const u = new URL(value);
+      return (
+        ['http:', 'https:'].includes(u.protocol) &&
+        !u.username &&
+        !u.password &&
+        !u.search &&
+        !u.hash
+      );
+    }, '必须是无认证、查询或片段的 HTTP(S) 地址')
+    .default('http://127.0.0.1:3000'),
+  MEDIA_S3_BUCKET: z.string().min(1).optional(),
+  MEDIA_S3_REGION: z.string().min(1).default('auto'),
+  MEDIA_S3_ENDPOINT: z.url().optional(),
+  MEDIA_S3_CREDENTIALS_FILE: z.string().min(1).optional(),
+  MEDIA_S3_FORCE_PATH_STYLE: booleanFlag,
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   /** 进程角色（overview.md 第 6 节）：web 只开 HTTP；worker 只跑事件分发和任务；all 两者都做。 */
   APP_ROLE: z.enum(['web', 'worker', 'all']).default('all'),
@@ -32,8 +54,9 @@ export const EnvSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   /** 主密钥（KEK）文件路径（security-and-privacy.md 第 3 节）。生产必填；开发可不填，此时加密功能不可用。 */
   PLATFORM_KEK_FILE: z.string().min(1).optional(),
+  PLATFORM_KEK_RING_FILE: z.string().min(1).optional(),
   /** 主密钥版本号；轮换主密钥时加一。 */
-  PLATFORM_KEK_VERSION: z.coerce.number().int().min(1).default(1),
+  PLATFORM_KEK_VERSION: z.coerce.number().int().min(1).max(2_147_483_647).default(1),
   /** 事件分发器轮询发件箱的间隔（毫秒）。 */
   EVENTS_POLL_INTERVAL_MS: z.coerce.number().int().min(50).max(60_000).default(500),
   /** 开发调试：日志里打印模型请求全文。生产环境强制关闭（engineering-standards.md 第 6 节）。 */
@@ -53,6 +76,17 @@ export const EnvSchema = z.object({
 export const DEV_PLATFORM_DAILY_CAP_MICROS = 20_000_000;
 
 export interface AppConfig {
+  readonly push: { readonly credentialsFile: string | null };
+  readonly media: {
+    readonly driver: 'disk' | 's3';
+    readonly diskRoot: string;
+    readonly publicBaseUrl: string;
+    readonly s3Bucket: string | null;
+    readonly s3Region: string;
+    readonly s3Endpoint: string | null;
+    readonly s3CredentialsFile: string | null;
+    readonly s3ForcePathStyle: boolean;
+  };
   readonly nodeEnv: 'development' | 'test' | 'production';
   readonly role: 'web' | 'worker' | 'all';
   readonly http: {
@@ -63,7 +97,11 @@ export interface AppConfig {
   };
   readonly database: { readonly url: string; readonly poolMax: number };
   readonly logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
-  readonly crypto: { readonly kekFile: string | null; readonly kekVersion: number };
+  readonly crypto: {
+    readonly kekFile: string | null;
+    readonly kekVersion: number;
+    readonly kekRingFile: string | null;
+  };
   readonly events: { readonly pollIntervalMs: number };
   readonly debugLlmPayload: boolean;
   readonly billing: {
@@ -90,7 +128,15 @@ function parseTrustProxy(value: string | undefined): boolean | number | string {
 
 /** 校验环境变量并转成 AppConfig。只报变量名和原因，不回显值。 */
 export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {
-  const parsed = EnvSchema.safeParse(env);
+  let resolved = env;
+  if (!env['DATABASE_URL'] && env['DATABASE_URL_FILE']) {
+    try {
+      resolved = { ...env, DATABASE_URL: readFileSync(env['DATABASE_URL_FILE'], 'utf8').trim() };
+    } catch {
+      throw new ConfigError(['DATABASE_URL_FILE：数据库连接秘密文件不可读取']);
+    }
+  }
+  const parsed = EnvSchema.safeParse(resolved);
   if (!parsed.success) {
     throw new ConfigError(
       parsed.error.issues.map((issue) => `${issue.path.join('.') || '(根)'}：${issue.message}`),
@@ -98,19 +144,46 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   }
   const e = parsed.data;
   const production = e.NODE_ENV === 'production';
-  if (production && !e.PLATFORM_KEK_FILE) {
+  if (production && !e.PLATFORM_KEK_FILE && !e.PLATFORM_KEK_RING_FILE) {
     throw new ConfigError(['PLATFORM_KEK_FILE：生产环境必须配置主密钥文件']);
   }
   if (production && e.BILLING_PLATFORM_DAILY_CAP_MICROS === undefined) {
     throw new ConfigError(['BILLING_PLATFORM_DAILY_CAP_MICROS：生产环境必须配置平台每日总上限']);
   }
+  if (e.MEDIA_STORAGE === 's3' && (!e.MEDIA_S3_BUCKET || !e.MEDIA_S3_CREDENTIALS_FILE)) {
+    throw new ConfigError([
+      'MEDIA_S3_BUCKET / MEDIA_S3_CREDENTIALS_FILE：S3 存储必须配置桶和凭据文件',
+    ]);
+  }
+  if (
+    production &&
+    !e.MEDIA_PUBLIC_BASE_URL.startsWith('https://') &&
+    env['MEDIA_PUBLIC_BASE_URL']
+  ) {
+    throw new ConfigError(['MEDIA_PUBLIC_BASE_URL：生产环境必须使用 HTTPS']);
+  }
   return {
+    push: { credentialsFile: e.PUSH_CREDENTIALS_FILE ?? null },
+    media: {
+      driver: e.MEDIA_STORAGE,
+      diskRoot: e.MEDIA_DISK_ROOT,
+      publicBaseUrl: e.MEDIA_PUBLIC_BASE_URL,
+      s3Bucket: e.MEDIA_S3_BUCKET ?? null,
+      s3Region: e.MEDIA_S3_REGION,
+      s3Endpoint: e.MEDIA_S3_ENDPOINT ?? null,
+      s3CredentialsFile: e.MEDIA_S3_CREDENTIALS_FILE ?? null,
+      s3ForcePathStyle: e.MEDIA_S3_FORCE_PATH_STYLE,
+    },
     nodeEnv: e.NODE_ENV,
     role: e.APP_ROLE,
     http: { host: e.HOST, port: e.PORT, trustProxy: parseTrustProxy(e.HTTP_TRUST_PROXY) },
     database: { url: e.DATABASE_URL, poolMax: e.DATABASE_POOL_MAX },
     logLevel: e.LOG_LEVEL,
-    crypto: { kekFile: e.PLATFORM_KEK_FILE ?? null, kekVersion: e.PLATFORM_KEK_VERSION },
+    crypto: {
+      kekFile: e.PLATFORM_KEK_FILE ?? null,
+      kekVersion: e.PLATFORM_KEK_VERSION,
+      kekRingFile: e.PLATFORM_KEK_RING_FILE ?? null,
+    },
     events: { pollIntervalMs: e.EVENTS_POLL_INTERVAL_MS },
     // 生产环境无论怎么配置都关闭
     debugLlmPayload: production ? false : e.DEBUG_LLM_PAYLOAD,

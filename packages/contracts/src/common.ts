@@ -86,7 +86,7 @@ export function unknownTypeFallback(
   return (value: unknown): unknown => {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
     const type = (value as { type?: unknown }).type;
-    if (typeof type !== 'string' || known.has(type)) return value;
+    if (typeof type !== 'string' || known.has(type) || type === UNSUPPORTED) return value;
     return fallback(type);
   };
 }
@@ -197,6 +197,8 @@ export interface EndpointDef<
   body?: B;
   /** 成功时的响应体；204 无内容时用 NoContent。 */
   response: R;
+  /** 默认 application/json；二进制媒体响应为实际 MIME。 */
+  responseContentType?: string;
   /** 中文说明，对应的 PRD 需求编号。 */
   summary: string;
 }

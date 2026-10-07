@@ -13,7 +13,7 @@ import {
   defineEndpoint,
   tolerantEnum,
 } from '../common.js';
-import { CharacterCard } from '../character-card.js';
+import { DraftCharacterCard } from '../character-card.js';
 
 // ---------- 分类（硬性边界的判定依据） ----------
 
@@ -241,7 +241,7 @@ export const AdminCharacter = z.object({
   classification: CharacterClassification,
   /** 备用开场白：未配置模型时的第一条消息（CHR-03 第 6 条），上架前至少 1 条。 */
   fallbackGreetings: z.array(z.string().min(1).max(200)),
-  card: CharacterCard,
+  card: DraftCharacterCard,
   personaVersion: z.number().int().positive(),
   /** 上架前置检查结果（ADM-01 第 3 条）。 */
   publishChecks: z.object({
@@ -268,7 +268,7 @@ const adminCharacterFields = {
   fanName: z.string().max(20).nullable(),
   classification: CharacterClassificationInput,
   fallbackGreetings: z.array(z.string().min(1).max(200)),
-  card: CharacterCard,
+  card: DraftCharacterCard,
 };
 
 /** 新建角色：别名、作品、标签、备用开场白不传时为空数组。 */

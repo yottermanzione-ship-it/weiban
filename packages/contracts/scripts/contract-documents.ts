@@ -28,6 +28,7 @@ interface EndpointLike {
   query?: z.ZodType;
   body?: z.ZodType;
   response: z.ZodType;
+  responseContentType?: string;
 }
 
 const REQUEST_PARTS = [
@@ -133,11 +134,29 @@ function convertRegistry(
     uri: (id) => DEFS_PREFIX + id,
   });
   const defs: Record<string, Json> = {};
+  // Zod 的递归匿名类型（如 z.json）放在 __shared.$defs 中。扁平化并改写复合 URI，
+  // 避免生成指向不存在的 '__shared#/$defs/schema0' 顶层定义。
+  const localAliases = new Map<string, string>();
+  for (const [id, schema] of Object.entries(result.schemas)) {
+    if (isRecord(schema.$defs)) {
+      for (const name of Object.keys(schema.$defs))
+        localAliases.set(`${id}#/$defs/${name}`, `${id}.${name}`);
+    }
+  }
+  const rename = (id: string) => localAliases.get(id) ?? id;
   for (const [id, schema] of Object.entries(result.schemas)) {
     const copy: Json = { ...(schema as Json) };
+    const local = copy.$defs;
     delete copy.$schema;
     delete copy.$id;
-    defs[id] = copy;
+    delete copy.$defs;
+    if (id !== '__shared' || Object.keys(copy).length > 0)
+      defs[id] = rewriteRefs(copy, DEFS_PREFIX, rename) as Json;
+    if (isRecord(local)) {
+      for (const [name, child] of Object.entries(local)) {
+        defs[`${id}.${name}`] = rewriteRefs(child, DEFS_PREFIX, rename) as Json;
+      }
+    }
   }
   return defs;
 }
@@ -252,6 +271,7 @@ export function buildContractDocuments(
       auth: e.def.auth,
       summary: e.def.summary,
       successStatus: isNoContent(e) ? 204 : 200,
+      responseContentType: e.def.responseContentType ?? 'application/json',
     };
     for (const [part] of REQUEST_PARTS) {
       const id = e.request[part];
@@ -310,7 +330,11 @@ export function buildContractDocuments(
       : {
           '200': {
             description: '成功',
-            content: { 'application/json': { schema: { $ref: COMPONENTS_PREFIX + e.response } } },
+            content: {
+              [e.def.responseContentType ?? 'application/json']: {
+                schema: { $ref: COMPONENTS_PREFIX + e.response },
+              },
+            },
           },
         };
 

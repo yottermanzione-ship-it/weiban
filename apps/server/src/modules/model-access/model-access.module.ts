@@ -4,13 +4,15 @@
  * ModelResolver、UpstreamService.withApiKey / reportStatus、UsageRecorder、ModelStatusService。
  */
 import { Module } from '@nestjs/common';
-import { BillingModule } from '../billing/index.js';
+import { BILLING_CHARGE_QUERY_PORT, BillingModule } from '../billing/index.js';
+import { POLICY_PORT } from '../policy/index.js';
+import { IdentityModule } from '../identity/index.js';
+import { GenerationCache } from './application/generation-cache.js';
+import { GatewayMaintenance } from './application/gateway-maintenance.js';
+import { ModelGateway } from './application/gateway.js';
+import { OpenAiTextAdapter } from './infra/text-adapter.js';
 import { CatalogService } from './application/catalog.js';
-import {
-  ChargeQueryUnavailable,
-  EmptyPriceSource,
-  FailClosedModelPolicy,
-} from './application/defaults.js';
+import { EmptyPriceSource } from './application/defaults.js';
 import { ModelAccessLifecycle } from './application/lifecycle.js';
 import { UsageReconciliationService } from './application/reconciliation.js';
 import { ModelResolver, ModelStatusService } from './application/resolver.js';
@@ -20,19 +22,36 @@ import { AdminUsageService, UsageRecorder } from './application/usage.js';
 import { ModelAdminController, ModelController } from './http/model-access.controller.js';
 import { OpenAiCompatibleProbe } from './infra/upstream-probe.js';
 import {
+  MODEL_NOTIFICATION_READ_PORT,
   MODEL_ACCESS_CHARGE_QUERY,
+  MODEL_GATEWAY_PORT,
+  MODEL_GENERATION_POLICY,
+  TEXT_ADAPTER,
+  GATEWAY_RETRY_WAIT,
   MODEL_ACCESS_POLICY,
   MODEL_PRICE_SOURCE,
   UPSTREAM_PROBE,
 } from './tokens.js';
 
 @Module({
-  imports: [BillingModule],
+  imports: [BillingModule, IdentityModule],
+  exports: [MODEL_GATEWAY_PORT, MODEL_NOTIFICATION_READ_PORT],
   controllers: [ModelController, ModelAdminController],
   providers: [
     UpstreamService,
+    GenerationCache,
+    ModelGateway,
+    GatewayMaintenance,
+    { provide: MODEL_GATEWAY_PORT, useExisting: ModelGateway },
+    { provide: TEXT_ADAPTER, useFactory: () => new OpenAiTextAdapter() },
+    { provide: MODEL_GENERATION_POLICY, useExisting: POLICY_PORT },
+    {
+      provide: GATEWAY_RETRY_WAIT,
+      useValue: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+    },
     CatalogService,
     SelectionService,
+    { provide: MODEL_NOTIFICATION_READ_PORT, useExisting: SelectionService },
     ModelResolver,
     ModelStatusService,
     UsageRecorder,
@@ -41,11 +60,10 @@ import {
     ModelAccessLifecycle,
     { provide: UPSTREAM_PROBE, useFactory: () => new OpenAiCompatibleProbe() },
     // policy 模块（D-L0-11）上线后改为 useExisting: policy 的 PolicyPort 令牌
-    { provide: MODEL_ACCESS_POLICY, useClass: FailClosedModelPolicy },
+    { provide: MODEL_ACCESS_POLICY, useExisting: POLICY_PORT },
     // billing 读价目表的端口方法批准后改为真实实现（见交接说明契约变更申请）
     { provide: MODEL_PRICE_SOURCE, useClass: EmptyPriceSource },
-    // billing 实现并导出 BillingChargeQueryPort 的令牌后改为 useExisting（契约 1.3，另开任务）
-    { provide: MODEL_ACCESS_CHARGE_QUERY, useClass: ChargeQueryUnavailable },
+    { provide: MODEL_ACCESS_CHARGE_QUERY, useExisting: BILLING_CHARGE_QUERY_PORT },
   ],
 })
 export class ModelAccessModule {}

@@ -15,3 +15,6 @@ apps/android/
 # Claude Code 本地工作副本与配置
 .claude/
 CLAUDE.md
+
+# Compose标准的!override自定义YAML标签由docker compose校验
+deploy/prod/smoke.override.yml

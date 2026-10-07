@@ -1,0 +1,209 @@
+# T-041 两端可靠聊天与通知客户端
+
+2026-10-07；Codex；开发中。接续T-036至T-040服务端，不合并main。
+
+依据D-L1-07/09、message-reliability、conversation-list/private-chat/contacts设计。范围：Web/PWA同步驱动与聊天/联系人/角色入口、通知归属校验与点击；管理后台告警红点/分页/处理；安卓Room协议驱动、WorkManager与原生聊天/联系人/通知。尚未完成项不标记验收。
+
+必须先原子持久化状态/游标/outbox，再执行副作用；账号与会话归属在同一本机事务检查。退出停止驱动和在途请求，清库后迟到回调不能重新写入。补拉与快照必须networkOnly，不能把GET页面缓存当成功同步。完整重建先获取S再快照，再从S补拉；不丢覆盖负记录。复用19份两端协议向量，不另写一套排序/幂等算法。
+
+当前实现客户端基础：ApiClient追加networkOnly与取消信号；IndexedLocalStore.setOwned事务归属写；SyncRunner串行处理、保存先于网络、迟到回调与保存失败保护。新增10条开发测试，原19份协议向量保持通过，共35条client-core测试通过。
+
+Web已接HTTP/WS鉴权、补拉/重建、事务发送、虚拟历史、联系人/预设角色入口与聊天设置；PWA已接真实Service Worker归属/时效校验、去重、点击和退出清理，系统拒绝展示不吞掉相同ID后续重试。最新真实浏览器10组通过，含WS/撤回/历史、HTTP丢失ACK、断网刷新、账号切换和版本升级；其中通知系统展示层明确使用夹具，不构成真实OS展示证明。后台告警红点/分页/处理7组最新真实浏览器通过，丢失处理响应后同URL幂等重试。整仓49文件430条、依赖边界175模块629依赖、格式/类型/令牌检查通过。
+
+安卓历史/负覆盖、可取消HTTP、networkOnly和Room归属事务已接入，已装配串行SyncRunner、单例ChatRuntime、HTTP快照/补拉，以及会话列表、私聊、引用/撤回/本人删除、已读、离线队列与重试。完整原生静态检查、52条JUnit零跳过与APK构建通过，含真实Room离线队列重启恢复/换号隔离、取消后的迟到结果不能二次保存，以及实际Compose进入会话→断网发送→提交Room后清输入→重启仍用同ID的一条交互测试。已读限制前台RESUMED，空队列不频繁整库写入。两端引用草稿仅保留ID，撤回/隐藏后从有效消息读取预览，避免残留正文。原生聊天其余UI交互和真机仍待测试，不能据一条交互测试宣称原生完整交付。WS、WorkManager、完整原生联系人/角色/设置、真机通知及保活仍待完成。最终发布与独立验收未完成。
+
+前置T040远端f548ffdfca89d05fbebcf071501b83b234f0c10e，本机f432f85c455ae470860948919e2f140d9a33ebd4，同tree1b9952c5b3e98b05fde4b4501fd4e189d602438e。push37561984286、PR37561988414均success，已读取两套check及安卓job结果。
+
+真机/真实厂商/iOS主屏幕PWA及独立QA另验。后续L2–L7继续。
+
+
+T041已发布客户端检查点：本机f297a1d00e9f5acd0de1c54e60dffa96d29b5234，远端0748fba763ca66405bc7adb15c5611a1b0d844f3，同tree ae6e6b5aa65175cb3056968b2d01b3a96a35378a。push37566911981与PR37566914953（attempt2）均success，已读取最终结果；新源码生产镜像、14迁移与加密备份空目标恢复在push CI实际通过。PR首轮安卓KSP插件下载失败，不算通过；保持原锁定版本，单独重跑失败job后通过。原生WS与后台恢复属于检查点后的继续开发，不能借用上述CI证明新代码。
+
+
+## T041 原生实时连接与后台恢复检查点（2026-10-07）
+
+已装配原生同源WS、首帧2.2鉴权/无URL令牌、心跳/有限收件队列/前台focus/正在输入与退避，HTTP仍是可靠发送与断网补拉出口。Application单例供前台与WorkManager共享；仅前台或后台任务持有租约时轮询，最后一个后台租约退出即取消在途效果并保留原clientMsgId。WorkManager使用联网约束/指数退避/按账号会话追加唯一任务链；退出与换号取消旧tag，启动恢复Room队列，调度参数仅含归属ID，不含正文或令牌。UI调用者取消不会中断已开始的Room提交及应用级任务安排。
+
+复核修正请求调度期间换号风险：ApiClient在进入IO线程前捕获会话，仓库向网络显式传递同一捕获对象；所有同步HTTP请求额外绑定所属userId/sessionId，旧任务不能用新账号令牌发POST、补拉或下载。networkOnly与请求owner合并为内部SessionCallOptions，不改网络契约。保留响应后的归属复核与Room事务检查。
+
+完整ktlint/detekt/testDebugUnitTest/assembleDebug通过，60条JUnit/零跳过；新增真实MockWebServer WS握手/首帧/typing/presence/更新与旧socket不能退出新账号两条，Room/HTTP后台发送、限时取消后同ID重发/只保留一个ACK消息、过期账号任务/POST不出网、页面消失且Room被阻塞时提交后仍安排任务四条，以及捕获旧会话POST/媒体请求不出网一条。另有SyncRunner取消调用者仍完成本地提交测试。CI报告要求新增WS和后台恢复suite实际执行。最终本机证据/tmp/weiban-t041-android-background5.log与JUnit XML；源码未改版本或放宽检查阈值。中途静态检查未通过的轮次及工作区断开导致未完成的轮次不算通过。
+
+这是开发自测：WorkManager系统调度/进程杀死/厂商保活和真实推送仍需设备验证；MockWebServer HTTP并非真实Node服务端到原生客户端整链路。原生联系人/角色/聊天设置、默认头像、客户端引导等继续开发；T041与整个产品仍未完成，不标记独立QA通过。发布后另读本检查点CI。
+
+
+T041原生实时/后台检查点已发布并核验CI：本机f6105216472fc7e75fb4171d277060f4e698f87e，远端beb1b6849fd0e2e68f7ba02c2673c28b677e97ba，同tree75a95f5785719447934e742758755b78ad0f1256。push37569743985和PR37569748050均success；两套check/Android job最终结果均已读取，push中的新源码生产构建、14迁移、加密备份与空目标恢复通过。这仅证明该检查点，后续联系人和聊天设置代码须另行验证。
+
+
+## T041 联系人、角色与聊天信息继续开发（2026-10-07）
+
+原生通讯录/预设角色广场接入真实角色API：名字与备注搜索、中文排序、分类/分页、资料、50字招呼、等待通过、30天恢复或重新认识，以及联系人→私聊入口。联系人仍含待通过项，不编造已建立会话。原生聊天信息接置顶/免打扰、秒回/拆条、备注/对我的称呼、清空、软删除和两次确认的永久删除；更新备注只提交两个字段，清空用显式null，不影响已有自定义头像字段。移除重复的UI后台调度钩子，发送恢复仍由Application统一安排。
+
+两端共享同步处理增加HTTP清空确认的持久负覆盖，既不编造updateSeq也不推进日志游标；缓存正文及引用预览在落盘后消失，迟到历史和清空前启动的快照不能恢复它们。无正文的设置/删除响应等待服务器日志序号已保存到本机后才完成或退出页面；网页旧页面回调发起修改前核对owner，原生每次请求绑定owner。原生清空请求归应用级scope，页面消失不丢失已确认的本地提交。同步存储故障在生命周期边界报告并停止在线状态，不能让应用级任务因未捕获Room异常崩溃。
+
+开发自测已完成：整仓49文件432条真实PG测试、格式/依赖边界/全仓类型/tokens通过；client-core4文件37条，19份原协议向量不变；用户端11组、后台7组真实浏览器全部通过；安卓70条JUnit零跳过、ktlint/detekt与debug APK通过，生成514定义/85操作/图标/tokens无差异。新增原生角色Compose两条、聊天信息Compose三条（清空取消/确认、二次确认永久删除与退出前持久同步、可访问置顶开关保存且保留正文）、实际Room/HTTP清空与换号/存储失败三条；两端迟到历史与较早快照清空保护各两条。网页新增真实HTTP清空确认→阻断更新日志请求→IndexedDB负覆盖/正文清除→刷新验证；永久删除确认交互与purge请求检查使用请求中断夹具，不能作为网页永久删除服务端整链路证明。原生仍是MockWebServer/Room，不冒充生产Node原生整链路。
+
+证据：/tmp/weiban-t041-root-settings1.log、/tmp/weiban-t041-core-clear3.log、/tmp/weiban-t041-android-settings5.log及JUnit XML、/tmp/weiban-t041-web-settings1.log、/tmp/weiban-t041-admin-settings1.log、/tmp/weiban-t041-settings-generated.log。静态检查失败和新增测试构造参数编译失败的中间轮次不计通过；通过拆分模块/修正实际参数解决，未放宽阈值/断言。chat feature直接声明已有版本目录中的activity-compose 1.11.0，以支持系统返回，Gradle生成的该模块锁文件相应对齐既有应用使用的版本，许可证仍为AndroidX Apache-2.0。
+
+这些是开发自测，不是独立QA；新检查点发布后须另读CI。
+
+默认头像/私有头像设置、完整首次引导、联系人索引/自建角色与后续分期、原生推送和管理员通知跨站点击继续；仍不表示T041或整个产品完成，也不是独立QA。真机/WorkManager系统调度与厂商投递、无障碍和跨端时延需实机验证。
+
+
+联系人/聊天信息与持久清空保护检查点已发布并核验：本机19f6167a0654cf8c64f1d0b7f25620a2c4442d74，远端df3546beec1554573c477deda82e8774371a3ef0，同tree a9c1800b2f25b3e18f51f582b2bdb9a4e0b1da1c。push37573530919与PR37573535193以及各自check/Android job均最终success、结果已读取；push CI的新源码生产构建、14迁移、加密备份/空目标恢复通过。后续头像代码是另一个尚未验证/发布的继续开发工作树，不能借用这些CI。
+
+
+## T041 默认头像与私有图片显示检查点（2026-10-07）
+
+两端使用相同名字取字、31倍UTF-16哈希/12色编号及应援色对比度规则；新增共享黄金样本，备注不参与取字/颜色。修正Kotlin令牌生成中JS整数键枚举导致10/11/12排在01之前的问题，保留原颜色与字号令牌。网页和安卓在会话列表、通讯录、角色广场和资料页接入默认头像/官方图片/个人私有图片优先级，图片加载中或失败保留默认绘制，圆角0.12、40以上显示图案、图片淡入。网页角色资料可实际裁剪上传contact_avatar、仅修改本人联系人头像、恢复官方或默认；资料页面账号切换时重建。原生角色及用户图片元数据/下载始终绑定同一owner，旧图片授权不能使用新账号令牌；旧角色图片及名称在换号时立即隐藏。
+
+开发自测：整仓50文件451条真实PG测试，格式/lint/依赖边界/完整类型/tokens通过；client-core5文件56条（含19份原协议向量）；原生76条JUnit零跳过，完整ktlint/detekt/testDebugUnitTest/assembleDebug通过，514定义/85操作/图标/tokens检查通过；Web生产构建与12组、后台7组真实浏览器通过。新增浏览器验证实际contact_avatar上传/512像素裁剪/私有图片展示、阻断图片请求后回退、恢复默认，以及备注改变后默认字和颜色不变。原生新增默认头像黄金样本/实际生成调色板、旧owner图片下载零请求、Compose私有图片优先级及延迟元数据换号隔离；使用MockWebServer/Room，不冒充真实Node到原生整链路或像素级视觉验收。
+
+证据：/tmp/weiban-t041-avatar-root1.log、/tmp/weiban-t041-avatar-core1.log、/tmp/weiban-t041-avatar-native-all2.log及JUnit XML、/tmp/weiban-t041-avatar-generated1.log、/tmp/weiban-t041-avatar-web-build1.log、/tmp/weiban-t041-avatar-web1.log、/tmp/weiban-t041-avatar-admin1.log。中途MatchingDeclarationName/LongMethod静态失败经重命名和拆分解决，没有放宽阈值。新源码CI须发布后另行读取，不能借用前一提交的成功。
+
+待继续：原生联系人私有头像选择/裁剪/上传/恢复、聊天内头像及其余出现头像的场景、符合设计的拍照与手势裁剪、通知PNG、首次引导、原生推送与管理通知跨站点击，随后L2–L7。当前是开发自测，T041与产品尚未完成；真实设备/厂商推送/独立QA仍待验。
+
+
+头像显示/网页私有编辑检查点已发布：本机f4dcf7e107d20fc3d1fac353202751e4099dc545，远端f22725ebbdbe7e75a40cbaa1157c8612919a1b4b，同tree cd62658092e77537561c869aa366a4a441f768a4。push37594560940、PR37594570076以及各自check/Android job均最终success、结果已读取；push新源码生产构建、14迁移、加密备份和空目标恢复通过。后续原生私有头像编辑属于新工作树，不借用上述CI。
+
+
+## T041 原生联系人私有头像编辑（2026-10-07）
+
+从角色资料进入设置头像，使用共用PhotoCropper选图、正方形裁剪、缩放/位置调整、上传contact_avatar及恢复默认。原有本人头像复用同一裁剪代码，已有真实图片几何测试仍验证同一实现；元数据写入只提交customAvatarMediaId，保留备注和称呼。所有图片上传和资料/联系人保存绑定打开裁剪器时的owner，换号即卸载旧裁剪状态。成功提示前等待联系人更新日志已持久保存到Room。
+
+新增两条实际Compose/Room/MockWebServer测试：系统选图结果由Robolectric提供，之后执行真实512像素裁剪、multipart上传、头像字段PATCH、日志补拉/Room持久保存和恢复；第二条在打开裁剪窗口后切换账号，窗口/旧设置消失且无上传或PATCH。这是开发自测，不是真实系统相册/设备或Node服务端到原生整链路证明。共78条JUnit零跳过，完整原生静态检查/测试/APK构建通过；生成检查仍为514定义/85操作且图标/tokens无差异。Web/服务端源码本轮不变，其整仓451/core56/Web12+后台7以及f22725eb两套CI证据仍按上一检查点登记，不重复计为本轮新增验收。
+
+构建依赖使用已有版本目录activity-compose1.11.0（AndroidX Apache-2.0）；共用设计模块新增直接声明，Gradle生成该模块及依赖它的auth模块锁文件，版本与应用/聊天原有1.11.0一致。证据/tmp/weiban-t041-avatar-edit-native3.log（生成锁）与/tmp/weiban-t041-avatar-edit-native4.log（正常锁定模式全部检查通过）及JUnit XML、/tmp/weiban-t041-avatar-edit-generated1.log、/tmp/weiban-t041-avatar-edit-format-root1.log。初轮运行目录错误、手动中断轮次和移动解码函数后的遗漏导入编译失败不计为通过，均已纠正；没有放宽阈值或删除原测试。
+
+继续首次引导、聊天内头像/其余头像场景、拍照与手势裁剪、通知PNG、原生推送及管理员跨站点击；随后L2–L7。独立QA与真实设备/厂商验证仍待执行，产品未完成。
+
+
+原生私有头像编辑检查点已发布并核验CI：本机f5d7012ada954e5631edf2e2d4dd3d0c241d73a9，远端1c4d7b3a6b0d196592cd3878c6434148908d560a，同tree1f60d41ba95612af37b93eeaef5aa8f99a5ea701。push37596450788、PR37596458152以及各自check/Android job均最终success、结果已读取。push新源码生产构建、14迁移、加密备份/空目标恢复通过。后续首次引导是另一个尚待验证的新工作树，不借用这些CI。
+
+
+## T041 首次昵称与角色引导（2026-10-07）
+
+两端首次资料聚焦必填昵称，头像/生日/城市等可选资料折叠，提供返回登录和下一步，不要求配置模型或提前提示余额。昵称保存后进入角色广场引导，顶部不可关闭提示；网页在同一路径内展开选择资料/申请，不额外进入角色资料路由。待通过申请显示真实pending状态，不创建假会话；联系人更新日志持久保存后，以服务端给出的conversationId自动进入聊天。安卓导航保存引导状态，聊天中隐藏主标签栏；网页刷新引导URL仍保留模式，资料未完成时统一回昵称页。网页资料提交/完成跳转核对owner，添加前核对当前驱动并等待持久同步。
+
+本机开发自测：整仓50文件451条真实PG测试、格式/依赖边界/完整类型/tokens通过；安卓79条JUnit零跳过、ktlint/detekt/全部单元测试/APK通过。新增原生实际HTTP/Room/Compose等待申请→接收contact.upserted→保存日志→用服务器ID跳转；首次昵称测试验证必填表单/可选折叠及资料完成。网页生产构建、13组及后台7组真实浏览器通过，含真实新用户昵称保存/刷新引导/实际添加pending/null会话/重复选择保持等待，以及已有真实会话的自动跳转。原生使用MockWebServer，网页新申请测试只证明pending分支与已有会话跳转，不宣称新申请到真实服务端首次AI回复的完整整链路；系统通知展示仍使用原夹具。
+
+证据/tmp/weiban-t041-onboarding-root1.log、/tmp/weiban-t041-onboarding-native2.log及JUnit XML、/tmp/weiban-t041-onboarding-web-build1.log、/tmp/weiban-t041-onboarding-web2.log、/tmp/weiban-t041-onboarding-admin1.log、/tmp/weiban-t041-onboarding-generated1.log（514定义/85操作/图标/tokens无差异）。首轮原生测试在资料加载前点击禁用按钮、首轮网页测试将“正在登录”的按钮变化当登录完成，均已改为等待真实完成状态；不增加超时或削弱旧回归断言，失败轮次不计通过。
+
+首次流程继续补iPhone主屏幕引导/设置入口和完整冷启动恢复及视觉/手势验收；头像其他场景、拍照与手势裁剪、原生推送/通知PNG、管理员跨站点击继续，然后L2–L7。发布后另读本轮CI；开发自测不等于独立QA，产品未完成。
+
+
+首次昵称/角色引导检查点已发布并核验：本机433b52d0c7510926db17174b3130de74a9cffdc1，远端171203f7bf0522b26e5dd146e2d64741316baef8，同tree b74e3f5bf26db653cca89ab8a8731138211dfee8。push37598748849、PR37598757042及各自check/Android job均最终success、结果已读取。push新源码生产构建、14迁移、加密备份与空目标恢复通过。管理员通知跨站点击属于后续新工作树，不借用这些CI。
+
+
+## T041 管理员通知跨域点击（2026-10-07）
+
+Web Service Worker仅在当前app会话属于管理员时接受admin_alert，点击只允许固定/admin/alerts；普通消息不能跳入管理页。该路径不进入用户SPA离线回退，由用户域Caddy以302跳到ADMIN_PUBLIC_ORIGIN下的真实管理页，其他/admin路径返回404。管理站继续要求独立admin会话，不复用用户站app令牌。生产环境新增必填ADMIN_PUBLIC_ORIGIN（完整HTTPS源、不带路径或末尾斜杠），示例与运维说明已更新。
+
+开发自测：Web14组及管理端7组真实浏览器通过，含真实SW/IndexedDB、错误种类深链拒绝、跨源导航、独立管理员登录/刷新与原app会话保留。浏览器的HTTP302和系统通知展示使用夹具；另以真实生产镜像/Caddy验证实际302与Location、管理页HTML和未知管理路径404，14迁移、加密媒体、加密备份/空目标恢复和非空目标拒绝全部通过。原生源码未变，79条零跳过及完整构建证据仍引用首次引导检查点，不重复登记本轮新增原生验收。
+
+证据：/tmp/weiban-t041-admin-link-web1.log（14通过）、/tmp/weiban-t041-admin-link-admin1.log（7通过）、/tmp/weiban-t041-admin-link-deploy3.log（退出0）。/tmp/weiban-t041-admin-link-root2.log：整仓50文件451条真实PG测试、格式/模块边界/完整类型/令牌全部通过（退出0）。deploy1缺少PATH中的age、deploy2磁盘耗尽、root1受磁盘耗尽影响并中断，均不计通过；使用已有age工具并定点清理本任务旧缓存后重跑，没有修改断言或门禁。未证明真实系统/厂商通知投递，也不是独立QA。
+
+后续继续iPhone主屏幕引导/冷启动恢复、其余头像场景、拍照与手势裁剪、通知PNG及原生推送，然后L2–L7。新检查点发布后另读CI，产品尚未完成。
+
+
+管理员通知跨域检查点已发布并核验CI：本机aab06fc04b8c6afc4a0a177bd13976395d179f73，远端cf5615b55832b7399e61a418f12d75c00062294d，同tree0fb514ddbc35dcf70837bb5cac6d487e668044fa。push37601241239（check112725858983/Android112725859239）与PR37601245524（check112725873376/Android112725873015）及全部job最终success、结果已读取；新源码生产构建、14迁移、加密备份/空卷恢复通过。之后的iPhone主屏幕引导与引导进度恢复属于新工作树，不借用此CI。
+
+
+## T041 主屏幕说明与引导进度恢复（2026-10-07）
+
+iPhone Safari在私聊收到正常角色消息后自动显示一次添加到主屏幕的底部说明，三步图文与Safari分享工具栏示意、知道了/键盘关闭、设置重开入口。已从主屏幕启动时不自动提示；低于iOS16.4显示系统限制，缺少原生dialog API时仍可读/关闭。一次性记录是设备级无账号数据的标记，不申请通知权限；主题/安全区使用现有令牌，截图已检查。
+
+两端首次登录将未完成引导持久写入本账号存储。填写昵称后，从网页首页重新打开仍进入引导广场；原生重建SessionRepository后保留待引导状态。只有真实联系人更新已保存并获得真实conversationId后，先持久标记完成再进入聊天；原生旧owner不能结束新账号引导，退出清除本账号进度。资料完成标记不能代替已完成角色选择。网页恢复读取后再次核对当前会话，完成写入使用IndexedDB同事务归属检查；原生写入使用既有会话锁/Room。
+
+开发自测：最终Web18组通过（/tmp/weiban-t041-home-guide-web4.log）；Android81条JUnit零跳过、完整ktlint/detekt/单元测试/APK通过（/tmp/weiban-t041-onboarding-resume-native1.log及JUnit XML）；514定义/85操作/图标/tokens生成无差异（/tmp/weiban-t041-onboarding-resume-generated1.log）。新增真实Room进度重建/完成后再重建、换号/旧owner拒绝两条，以及四组浏览器引导/旧API测试和首页恢复/完成后不重引导断言。管理端7组通过（/tmp/weiban-t041-home-guide-admin1.log）；整仓50文件451条真实PG测试、完整格式/模块边界/类型/tokens检查通过（/tmp/weiban-t041-home-guide-root1.log，退出0）。
+
+iPhone UA、standalone状态和缺失dialog API在Chromium中模拟，消息来自真实测试服务；不构成真实Safari/主屏幕推送证明。原生是同一Room中的仓库实例重建，不冒充OS强杀/重启设备。新账号待通过→真实AI首次回复整链路、未完成时恢复已选择角色/招呼草稿、视觉手势与实机仍待验。首轮主屏幕测试误用了已被此前清空用例清空的共享聊天历史，改为独立真实联系人/消息账号后通过；该失败轮次不计通过，没有削弱旧断言/增加超时。
+
+继续头像其余场景、拍照与手势裁剪、原生推送/通知PNG及L2–L7。发布后另读本轮CI，开发自测不等于独立QA，产品未完成。
+
+
+主屏幕说明/引导进度检查点已发布：本机2c95ed39768ab813b06440b1e397db085669b3d2，远端252634e7fe1dace1a458e0ae5399d5f74396af6a，同tree b6e7a879a06f087d3c31e653a4c0be6235d7369f。push37603241179（check112732453499/Android112732453837）与PR37603248619（check112732477560/Android112732477937）及全部job均最终success，结果已读取；新源码生产构建、14迁移与加密备份/空卷恢复通过。后续原生私聊导航修正是新工作树，须另验。
+
+
+## T041 原生私聊导航修正（2026-10-07）
+
+修正打开聊天后立即消费/清空外层conversationId导致底部主标签重新出现的问题。ChatScreen只在实际选择、明确返回/移除会话时通知外层；外部打开保留当前会话，聊天信息返回不退出私聊。已初始化且真实会话已消失时返回列表，清理检查使用同一次渲染的ID/会话快照，不能把新打开的会话与旧快照混用。
+
+开发自测：完整ktlint/detekt/单元测试/APK构建通过，82条JUnit零跳过（/tmp/weiban-t041-chat-nav-native3.log及JUnit XML/报告检查脚本）。原有真实Room离线发送测试加强为实际父导航容器下选择聊天→标签隐藏→返回列表恢复；新增外部真实会话ID打开、Compose状态保存/恢复、聊天信息往返且标签保持隐藏。使用Robolectric/Compose/Room，不是MainActivity真机或OS强杀验收。Web/服务端本轮不变，其451条/Web18+后台7证据引用主屏幕引导检查点，不重复记本轮新增验收。
+
+初次编辑运行目录错误，未改到源码；随后native1发现新清理检查读取旧派生会话/新可变ID的时序问题，改为渲染快照；native2的新测试用错聊天信息页返回按钮名，改为实际“返回聊天”；两失败轮次不计通过，没有放宽超时/断言。继续消息行/其他头像场景、拍照与手势裁剪、原生推送/通知PNG及L2–L7。发布后另读CI，开发自测不等于独立QA，产品未完成。
+
+
+原生私聊导航修正已发布并核验CI：本机176348a822e6848ce816f48299fbad7bbc4c66bd，远端3f2c1bd0890d392278f075e62d431b83b12d9f12，同tree3f8c2db345843f76a8a5a900ad288d6fe1761a51。push37604366536（check112736163463/Android112736163875）与PR37604375506（check112736190876/Android112736191105）及全部job均最终success，结果已读取；新源码生产构建、14迁移与加密备份/空卷恢复通过。之后的消息头像是新的继续开发工作树，不借用此CI。
+
+
+## T041 消息行头像（2026-10-07）
+
+Web与Android私聊为正常消息显示40px双方头像：角色按实际发送参与者匹配标准角色名/角色资料，优先本账号联系人自定义图片，再管理员图片，加载失败回退默认字形；用户使用本账号资料头像/昵称，离线待发消息也显示用户头像。撤回/系统消息不显示头像。保留引用、已读、撤回/删除与真实Room发件队列。两端用户默认头像在深色模式也使用固定灰底和对应浅色主题深色文字，避免深色主题白字落在固定灰底上；新增语义令牌并生成四套主题，不增加依赖。原生角色资料批量请求显式绑定渲染时owner，旧页面不能借新会话请求。
+
+已完成开发自测：Web19组浏览器（/tmp/weiban-t041-chat-avatar-web2.log），新增真实上传512px私有用户/角色图片→真实聊天消息显示40px→图片请求失败字形回退/深色实际计算颜色检查，截图已查看；加强原有离线待发头像断言。管理端7组（/tmp/weiban-t041-chat-avatar-admin1.log）；Android完整ktlint/detekt/单元测试/APK构建成功，83条JUnit零失败/零跳过（/tmp/weiban-t041-chat-avatar-native3.log及实际XML汇总），新增四主题用户头像颜色校验并保留换号/图片请求隔离。514定义/85操作/图标/tokens生成无差异（/tmp/weiban-t041-chat-avatar-generated1.log）。整仓50文件451条真实PG测试、完整格式/模块边界/类型/tokens门禁通过（/tmp/weiban-t041-chat-avatar-root2.log）。
+
+原生native1/2被既有函数长度/复杂度门禁拒绝，按职责拆分消息动作、行布局与会话状态后通过，未放宽规则；format2运行目录错误未执行格式检查。整仓root1发现新增浏览器文件格式问题，修正后重跑，失败轮次不计通过。本轮为开发自测，非独立QA；没有证明真实设备、Safari、系统推送或新账号待通过→首次真实AI回复整链路。继续拍照/手势裁剪、其余头像场景、原生推送/通知PNG及L2–L7，产品未完成。提交后单独读取本轮CI。
+
+
+消息头像检查点已发布并核验CI：本机d644e46ab331e2b5d62a3270b79fc130d7d7209b，远端7227b4747b8d2285fd0d789806add6cd7c909e6c，同tree88d08a6252f8d00faab782d7ac8da374ecd5e81f。push37629601890（check112820100705/Android112820100837）及PR37629608276（check112820116448/Android112820116170）和全部job最终success，结果已读取；新源码生产构建、14迁移及加密备份/空卷恢复通过。后续拍照/手势裁剪属于新工作树，不借用此CI。
+
+
+## T041 拍照与手势裁剪（2026-10-07）
+
+两端头像编辑增加相册/拍照选择、正方形黑底裁剪、拖动/双指缩放、键盘/滑块精细调整与取消/完成。Web来源和裁剪使用独立原生dialog，缺少dialog API时仍能读/关闭；浏览器拍照使用capture=user文件入口，上传期间禁止继续选图/改裁剪/关闭，私有上传返回后再次核对原owner才更新资料。原生使用系统相机TakePicture、未导出的FileProvider，只授权头像缓存子目录的临时URI读写，不申请应用CAMERA权限；图片读取仍限制10MB/40MP，EXIF与512像素裁剪复用原实现。成功、取消、组件离开/换号均清理本次临时照片，迟到旧相机结果不进入新账号。新增模式颜色上下文，从生成令牌读取黑色viewer背景；原有角色私有图恢复入口继续保留。
+
+新增显式依赖androidx.core:core-ktx 1.15.0用于FileProvider，Apache-2.0；此前已在本模块传递锁文件，版本未变，集中版本目录声明。没有新增厂商SDK或修改服务端契约。
+
+开发自测：最终Web20组（/tmp/weiban-t041-avatar-gesture-web4.log，退出0），新增真实来源弹层/取消/文件选择器、双色PNG拖动后的实际像素、CDP双指缩放、键盘展开/折叠、真实私有512像素上传；截图已查看，修正首版白底白字按钮与控件挤出常用按钮的问题。Android完整ktlint/detekt/单元测试/APK通过，86条JUnit零失败/零跳过（/tmp/weiban-t041-avatar-gesture-native6.log，退出0，实际XML汇总与报告脚本一致），新增真实FileProvider照片读写、只分享头像子目录/非导出检查、拖动和双指缩放后实际蓝色512px输出、取消清理及换号迟到结果拒绝三条。管理端7组（/tmp/weiban-t041-avatar-gesture-admin1.log，退出0）、514定义/85操作/图标/tokens生成无差异（/tmp/weiban-t041-avatar-gesture-generated1.log）。整仓50文件451条真实PG测试、格式/模块边界/完整类型/tokens检查通过（/tmp/weiban-t041-avatar-gesture-root1.log，退出0）。
+
+原生早期格式/文件名/行长门禁失败轮次、native1静态检查失败、native2模式颜色访问编译错误、native3测试辅助函数名编译错误均不计通过，native4发现Robolectric不同模拟应用缓存目录与同authority的FileProvider静态策略串用，按Android启动流程为每个测试实例初始化真实manifest Provider；native5新测试长度达到门禁上限，拆出照片返回夹具后通过。分别修正源码结构/使用已有令牌模式与语义匹配；没有放宽门禁/断言。系统相机结果在Robolectric中模拟写入真实FileProvider URI，不构成真实拍摄/设备权限验收；Web拍照文件仍是测试夹具，触控在Chromium/CDP模拟。真机相机/系统强杀恢复仍待验；开发自测不等于独立QA。继续头像剩余入口/通知PNG、原生推送、引导草稿恢复及L2–L7，产品未完成。提交后另读CI。
+
+
+拍照/手势裁剪检查点已发布并核验CI：本机f2aedb1bb59171a5c103cbc7ac9a84ae9468328a，远端143d015711e8129e62272d3cb2c5cd78d1dbe987，同tree3adf92c99ac26ee1a0a76f6319fd93c5d6bc11a6。push37634370493（check112836574161/Android112836574405）与PR37634375744（check112836590488/Android112836591648）及全部job最终success，结果已读取；新源码生产构建、14迁移及加密备份/空卷恢复通过。后续资料页用户头像/Me页会话归属是新的继续开发工作树，不借用此CI。
+
+
+## T041 资料页头像与原生会话一致性（2026-10-07）
+
+Web聊天/资料/我的页复用UserAvatar，资料与我的页64px、聊天40px；用户私有图加载/失败使用同一标准昵称字形，固定灰底/深色字/0.12圆角和淡入规则。Android我的/资料页同样使用64px默认字形和owner绑定的私有图；Me页按userId+sessionId重建状态，资料/余额/模型/流水及保存均绑定原owner，旧资料刷新不能改写同账号的新会话。
+
+另外修正原生SessionRepository先发布Auth再绑定HTTP造成观察者立即请求失败的问题，改为先完成HTTP绑定再公布会话。StateFlow对相同值保留原对象，资料不变和相同会话恢复也保留该对象，避免HTTP引用与可观察会话永久不同步。updateUser在会话锁内校验可选expected owner。没有修改网络重试策略或新增依赖/契约。
+
+开发自测：Web21组（/tmp/weiban-t041-profile-avatar-web1.log，退出0），新增真实上传512px→资料/我的64px→失败回退与深色实际计算颜色/圆角检查；原有上传断言仍检查内部真实图片512px。Android完整ktlint/detekt/单元测试/APK构建通过，89条JUnit零失败/零跳过（/tmp/weiban-t041-profile-avatar-native2.log，退出0，实际XML与报告脚本一致）。新增真实Room/HTTP换号丢弃慢资料、同账号新会话拒绝旧刷新，以及发布时HTTP绑定已准备、相同资料/恢复后真实HTTP仍可请求三条。管理端7组（/tmp/weiban-t041-profile-avatar-admin1.log）；514定义/85操作/图标/tokens生成无差异（/tmp/weiban-t041-profile-avatar-generated1.log）。整仓50文件451条真实PG测试、格式/模块边界/完整类型/tokens通过（/tmp/weiban-t041-profile-avatar-root2.log，退出0）。
+
+首轮完整原生及focus1/2/3的新Me换号界面测试失败，独立HTTP准备测试在focus2已通过；诊断最终确认MockWebServer的localhost双栈在旧请求取消后选择未监听IPv6而连接拒绝，测试服务固定127.0.0.1后focus4与完整native2通过。临时生产诊断已移除，保留失败时无令牌的请求归属/界面树辅助信息。没有放宽超时或删除断言，专项报告不冒充完整套件。整仓root1新增测试文件格式未通过，格式修正后重跑root2；失败轮次不计通过。
+
+本轮属于开发自测，非独立QA；Robolectric/Chromium不构成真实设备/OS强杀/Safari或系统推送验收。发布后另读本轮CI；继续头像恢复来源菜单/通知PNG、原生推送、引导草稿及L2–L7，产品未完成。
+
+
+## T041 头像来源内恢复默认（2026-10-07）
+
+Web与Android角色头像来源菜单增加「恢复默认头像」，只有本账号该联系人存在customAvatarMediaId时显示，恢复动作关闭来源菜单并使用原有owner绑定PATCH与持久同步，成功后菜单不再提供恢复。取消/图库/拍照流程保留，选择控件在操作中禁用；用户本人头像不显示角色恢复动作。不新增依赖、接口或外部权限。
+
+Web21组全通过（/tmp/weiban-t041-avatar-restore-web1.log，退出0）；原有真实私有上传/失败回退/恢复测试加强为菜单三选项、恢复后关闭、重开无恢复项，并保留图片512px及默认颜色/备注断言。lint与完整类型检查通过（对应-lint1/-types1日志及退出0），改动文件格式检查通过。Android完整ktlint/detekt/测试/APK通过，89条JUnit零失败/零跳过（/tmp/weiban-t041-avatar-restore-native1.log，退出0，实际报告脚本检查）；原有真实FileProvider/512px上传/Room恢复测试加强为来源内恢复与恢复前后选项变化，备注/称呼和PATCH次数断言保留。服务端/管理端未修改，其451条真实PG与7组管理浏览器证据引用资料头像检查点，不重复记为本轮新增验收。
+
+资料头像发布时git diff默认重命名检测只输出新文件路径，发布清单漏掉旧message-avatar.tsx删除；远端临时tree与本机tree核对不一致，未移动分支。补齐删除后tree完全一致才提交/校验expected_sha更新分支，清单生成脚本改为--no-renames避免重现。发布后CI另读；开发自测非独立QA，继续引导草稿、通知PNG/原生推送及L2–L7，产品未完成。
+
+
+资料头像/原生会话一致性检查点已发布并核验CI：本机769529e5832888db29be911e7bc11738ee9dbc5d，远端d4b8aa07e77e0a0b22f3f0531ef2b7ac134f7986，同tree ede8e2d7a2a78f77f8a59d5e86a89a88ab22d15e。push37641221880（check112860415309/Android112860414584）与PR37641458284（check112861217458/Android112861218115）及全部job最终success，已读取；新源码生产构建、14迁移及加密备份/空卷恢复通过。后续恢复来源菜单和引导草稿为新源码，须另验。本机恢复菜单95cfae7待与后续一起发布。
+
+
+## T041 已选角色与招呼草稿恢复（2026-10-07）
+
+首次引导选择角色与50字符招呼草稿按本账号/会话保存：Web IndexedDB、Android Room；首页重新打开/页面刷新与原生界面重建都读取持久草稿后呈现角色，重新选择时清除对应草稿。只保存本地UI状态，不增加第二套网络契约；角色ID使用现有Id schema校验。存储错误保留可见重试/失败提示，不伪造完成。已接受的真实联系人与真实conversationId仍是完成门槛。
+
+引导完成标记与草稿清除改为同事务：IndexedDB增加账号校验多记录写入/可选布尔前置条件，Room沿用会话锁/事务。草稿写入要求仍待引导，既防旧账号迟到写，也防同账号引导完成后队列里的迟到写复原草稿；事务遇到不可克隆值会主动中止、整体回滚。原生独立草稿存储复用原会话锁/owner与持久待引导条件，不增加SessionRepository公开网络方法。
+
+Web最终21组（/tmp/weiban-t041-onboarding-draft-web2.log，退出0）；原有首次引导测试加强为实际IndexedDB写入→首页重开/刷新→选中角色和招呼恢复→实际联系人申请仍pending/null conversationId。IndexedDB专项12条通过（/tmp/weiban-t041-onboarding-draft-core1.log），新增2条验证多记录写失败整体回滚/旧会话和会话字段保护、完成后同账号迟到草稿拒绝；完整lint/类型通过（-lint1/-types1）。Android完整ktlint/detekt/单元测试/APK通过，90条JUnit零失败/零跳过（/tmp/weiban-t041-onboarding-draft-native2.log，退出0及实际报告脚本）。新增真实Compose/Room选择角色、招呼持久保存→销毁/重建界面→实际HTTP申请使用恢复招呼一条；既有仓库重建/完成/旧owner测试加强草稿持久性和迟到写拒绝。整仓50文件453条真实PG/客户端测试、格式/模块边界/完整类型/tokens通过（/tmp/weiban-t041-onboarding-draft-root2.log，退出0）。514定义/85操作/图标/tokens生成无差异（-generated1）。管理端7组真实浏览器通过（/tmp/weiban-t041-onboarding-draft-admin1.log，退出0）。
+
+首轮web1：头像实际上传等待5秒未完成，留下测试联系人备注导致随后4个共享账号聊天用例无法匹配标准标题；另有新引导测试同名h1/h2严格定位歧义。修正新断言为实际h1，完整web2通过；原有上传/聊天超时、断言和生产重试策略未改，没有把未查明的首轮上传延迟写成实现修复。原生format1运行目录错误未执行；format2/3/4通过。native1被参数数与复杂度门禁拒绝，归并引导状态参数、拆出引导头部后重跑，没有豁免或调高门禁；native2前的修正初次相对路径错误未编辑，随即使用绝对路径修正；整仓root1被新增h1断言格式拒绝，按格式修正后root2通过。失败/未执行轮次均不计通过。
+
+开发自测非独立QA。网页实际测试服务/IndexedDB、原生模拟器Compose/Room的实例重建不等于OS强杀、真机或真实供应商AI/通知验收。新账号申请→实际延迟接受→真正AI首回复整链路、通知96PNG/原生推送及L2–L7继续开发，产品未完成。发布后另读对应源码CI。
+
+
+## T041 通知默认头像96px PNG（2026-10-07）
+
+Android设计系统新增defaultAvatarPng(context, style)：按生成的96px尺寸和0.12比例圆角，在透明Bitmap上绘制同一默认头像样式、半粗字形和右上角图案，复用界面实际avatarPattern路径/几何，字体由Compose默认SemiBold解析；像素输出独立于设备密度。压缩PNG后总是回收临时Bitmap。没有引入外部图像或第二套图案实现。
+
+designsystem测试增加既有集中版本Robolectric（MIT）/AndroidX test-core（Apache-2.0），仅测试用途；本机按工程规范--write-locks完整检查更新锁，只有该模块锁文件变化，应用runtime版本未变。新增真实API26原生图形测试：解码96x96、PNG签名、两角透明、实际底色/字形像素、无图案与星/心/音符/月亮/花不同实际像素遮罩。六个PNG已查看（/tmp/weiban-notification-avatar-{none,star,heart,note,moon,flower}.png）。首轮--write-locks完整ktlint/detekt/测试/APK通过，91条JUnit零失败/零跳过（/tmp/weiban-t041-avatar-png-native1.log，退出0及实际报告脚本）；锁定后的正常完整ktlint/detekt/测试/APK检查也通过，91条JUnit零失败/零跳过（/tmp/weiban-t041-avatar-png-native2.log，退出0及实际报告脚本）；514定义/85操作/图标/tokens生成无差异（/tmp/weiban-t041-avatar-png-generated1.log，退出0）。
+
+本轮是头像像素导出能力的开发自测，不构成系统通知、真实厂商投递或实机验收；通知发出前仍需按原owner核对、私有头像优先读取与失败回退，并与系统通知/厂商凭证接入。Web/管理端/服务端未修改，453条整仓/Web21/管理端7证据引用引导恢复检查点，不重复记本轮新增通过。继续原生通知/推送和新账号首回复整链路，然后L2–L7；产品未完成。发布后单独读取源码CI。
