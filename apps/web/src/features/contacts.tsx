@@ -6,6 +6,7 @@ import { useChat } from '../app/chat.js';
 import { useAuth } from '../app/auth.js';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
+import { useOnboardingDraft } from '../data/onboarding-draft.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterName } from './chat.js';
 import { CharacterAvatar } from './character-avatar.js';
@@ -45,7 +46,8 @@ export function ContactsPage() {
 export function DiscoverPage() {
   const [searchParams] = useSearchParams();
   const onboarding = searchParams.get('onboarding') === '1';
-  const [selected, setSelected] = useState<string>();
+  const draft = useOnboardingDraft(onboarding);
+  const selected = draft.draft?.characterId;
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [cursor, setCursor] = useState<string>();
@@ -53,14 +55,30 @@ export function DiscoverPage() {
   const roles = useRemote(CharacterEndpoints.searchPlaza, {
     query: { q: search || undefined, cursor, limit: 50 },
   });
+  if (onboarding && !draft.ready)
+    return (
+      <main>
+        {draft.error ? <p role="alert">{draft.error}</p> : <p role="status">正在恢复引导…</p>}
+        {draft.error && <button onClick={draft.retry}>重试</button>}
+      </main>
+    );
   if (onboarding && selected)
     return (
       <main>
         <p className="panel" role="note">
           先加一个你喜欢的 TA 吧
         </p>
-        <button onClick={() => setSelected(undefined)}>重新选择角色</button>
-        <CharacterPage id={selected} onboarding />
+        <button disabled={draft.saving} onClick={() => void draft.choose(null)}>
+          重新选择角色
+        </button>
+        {draft.error && <p role="alert">{draft.error}</p>}
+        <CharacterPage
+          key={selected}
+          id={selected}
+          onboarding
+          draftGreeting={draft.draft?.greeting}
+          onGreetingChange={draft.greet}
+        />
       </main>
     );
   return (
@@ -71,6 +89,7 @@ export function DiscoverPage() {
           先加一个你喜欢的 TA 吧
         </p>
       )}
+      {onboarding && draft.error && <p role="alert">{draft.error}</p>}
       <form
         className="message-composer"
         onSubmit={(event) => {
@@ -95,7 +114,8 @@ export function DiscoverPage() {
               key={role.characterId}
               className="role-row"
               aria-label={`选择${role.name}`}
-              onClick={() => setSelected(role.characterId)}
+              disabled={draft.saving}
+              onClick={() => void draft.choose(role.characterId)}
             >
               <CharacterAvatar id={role.characterId} profile={role} />
               <strong>{role.name}</strong>
@@ -149,7 +169,14 @@ export function DiscoverPage() {
 export function CharacterPage({
   id,
   onboarding = false,
-}: { id?: string; onboarding?: boolean } = {}) {
+  draftGreeting,
+  onGreetingChange,
+}: {
+  id?: string;
+  onboarding?: boolean;
+  draftGreeting?: string;
+  onGreetingChange?: (greeting: string) => void;
+} = {}) {
   const params = useParams();
   const characterId = id ?? params.characterId ?? '';
   const navigate = useNavigate();
@@ -157,7 +184,9 @@ export function CharacterPage({
   const profile = useRemote(CharacterEndpoints.getProfile, { params: { characterId } });
   const { state, assertOwner, synchronize } = useChat();
   const contact = state.contacts.find((item) => item.characterId === characterId);
-  const [greeting, setGreeting] = useState('');
+  const [localGreeting, setLocalGreeting] = useState('');
+  const greeting = draftGreeting ?? localGreeting;
+  const setGreeting = onGreetingChange ?? setLocalGreeting;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');

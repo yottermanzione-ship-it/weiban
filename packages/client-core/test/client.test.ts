@@ -219,3 +219,52 @@ it('旧连接的unauthenticated不会退出后来登录的新会话', async () =
   expect(await db.get('session')).toBeUndefined();
   expect(expired).toHaveBeenCalledOnce();
 });
+
+it('账号UI多记录事务失败全部回滚，旧会话也不能清除新账号草稿', async () => {
+  const db = store();
+  const auth = session();
+  await db.set('session', auth);
+  const owner = { userId: auth.user.userId, sessionId: auth.session.sessionId };
+  await db.setOwnedValues(owner, {
+    'ui:onboarding': true,
+    'ui:onboardingDraft': { greeting: '保留' },
+  });
+  await expect(
+    db.setOwnedValues(owner, { 'ui:onboarding': false, 'ui:onboardingDraft': () => {} }),
+  ).rejects.toThrow();
+  expect(await db.get('ui:onboarding')).toBe(true);
+  expect(await db.get('ui:onboardingDraft')).toEqual({ greeting: '保留' });
+  const replacement = session('other_user');
+  await db.set('session', replacement);
+  expect(
+    await db.setOwnedValues(owner, { 'ui:onboarding': false, 'ui:onboardingDraft': null }),
+  ).toBe(false);
+  expect(await db.get('ui:onboardingDraft')).toEqual({ greeting: '保留' });
+  await expect(
+    db.setOwnedValues(owner, { session: auth, 'ui:onboarding': false }),
+  ).rejects.toThrow();
+  expect(await db.get('session')).toEqual(replacement);
+});
+
+it('引导完成后同账号迟到草稿写入也不能复原，标记与清草稿同事务提交', async () => {
+  const db = store();
+  const auth = session();
+  await db.set('session', auth);
+  const owner = { userId: auth.user.userId, sessionId: auth.session.sessionId };
+  await db.setOwnedValues(owner, {
+    'ui:onboarding': true,
+    'ui:onboardingDraft': { greeting: '你好' },
+  });
+  expect(
+    await db.setOwnedValues(owner, { 'ui:onboarding': false, 'ui:onboardingDraft': null }),
+  ).toBe(true);
+  expect(
+    await db.setOwnedValues(
+      owner,
+      { 'ui:onboardingDraft': { greeting: '迟到' } },
+      { key: 'ui:onboarding', value: true },
+    ),
+  ).toBe(false);
+  expect(await db.get('ui:onboarding')).toBe(false);
+  expect(await db.get('ui:onboardingDraft')).toBeNull();
+});

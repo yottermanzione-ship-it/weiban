@@ -76,7 +76,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const owner = { userId, sessionId };
     if (
       !api.owns(owner) ||
-      !(await localStore.setOwned(owner, 'ui:onboarding', false)) ||
+      !(await localStore.setOwnedValues(owner, {
+        'ui:onboarding': false,
+        'ui:onboardingDraft': null,
+      })) ||
       !api.owns(owner)
     )
       return false;

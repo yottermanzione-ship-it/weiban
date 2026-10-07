@@ -115,6 +115,9 @@ class SessionRepositoryTest {
         runBlocking {
             repository.authenticate(a.copy(user = a.user.copy(profileCompleted = false)))
             assertTrue(repository.onboardingPending.value)
+            val owner = OwnerRecord(userId = a.user.userId, sessionId = a.session.sessionId)
+            val draft = OnboardingDraft("01920000-0000-7000-8000-000000000031", "很高兴认识你")
+            assertTrue(repository.onboardingDraft.save(owner, draft))
             repository.updateUser(a.user)
             val restarted = SessionRepository(api, db, vault)
             restarted.restore()
@@ -123,10 +126,14 @@ class SessionRepositoryTest {
                     .user.profileCompleted,
             )
             assertTrue(restarted.onboardingPending.value)
+            assertEquals(draft, restarted.onboardingDraft.load(owner))
             assertTrue(restarted.finishOnboarding(OwnerRecord(userId = a.user.userId, sessionId = a.session.sessionId)))
             val completed = SessionRepository(api, db, vault)
             completed.restore()
             assertFalse(completed.onboardingPending.value)
+            assertNull(completed.onboardingDraft.load(owner))
+            assertEquals("null", db.local().cache(ONBOARDING_DRAFT_KEY))
+            assertFalse(restarted.onboardingDraft.save(owner, draft))
         }
 
     @Test fun oldOwnerCannotFinishNewAccountsOnboarding() =
@@ -134,6 +141,12 @@ class SessionRepositoryTest {
             repository.authenticate(a.copy(user = a.user.copy(profileCompleted = false)))
             val oldOwner = OwnerRecord(userId = a.user.userId, sessionId = a.session.sessionId)
             repository.authenticate(b.copy(user = b.user.copy(profileCompleted = false)))
+            val newOwner = OwnerRecord(userId = b.user.userId, sessionId = b.session.sessionId)
+            val draft = OnboardingDraft("01920000-0000-7000-8000-000000000032", "新账号招呼")
+            assertTrue(repository.onboardingDraft.save(newOwner, draft))
+            assertFalse(repository.onboardingDraft.save(oldOwner, draft.copy(greeting = "旧账号迟到")))
+            assertNull(repository.onboardingDraft.load(oldOwner))
+            assertEquals(draft, repository.onboardingDraft.load(newOwner))
             assertFalse(repository.finishOnboarding(oldOwner))
             assertTrue(repository.onboardingPending.value)
             assertEquals("true", db.local().cache("ui:onboarding"))

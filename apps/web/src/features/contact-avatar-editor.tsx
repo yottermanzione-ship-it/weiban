@@ -37,13 +37,13 @@ export function ContactAvatarEditor({ characterId }: { characterId: string }) {
       <h2>设置头像</h2>
       <p>上传的头像只有你自己能看到，其他人看到的角色头像不会改变</p>
       <fieldset disabled={pending}>
-        <AvatarEditor purpose="contact_avatar" onSaved={update} onPendingChange={setPending} />
+        <AvatarEditor
+          purpose="contact_avatar"
+          onSaved={update}
+          onPendingChange={setPending}
+          onRestore={contact.customAvatarMediaId ? () => void restore() : undefined}
+        />
       </fieldset>
-      {contact.customAvatarMediaId && (
-        <button disabled={pending} onClick={() => void restore()}>
-          恢复默认头像
-        </button>
-      )}
       {message && <p role="status">{message}</p>}
       {error && <p role="alert">{error}</p>}
     </section>

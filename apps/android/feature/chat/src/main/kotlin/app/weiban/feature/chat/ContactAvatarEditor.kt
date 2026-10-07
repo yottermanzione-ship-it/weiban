@@ -34,11 +34,29 @@ import kotlinx.serialization.json.*
     var pending by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    val restore: () -> Unit = {
+        pending = true
+        message = null
+        error = null
+        scope.launch {
+            try {
+                userAction({ error = it }) {
+                    updateContactAvatar(repository, runtime, owner, contact.characterId, null)
+                    message = "已恢复默认头像"
+                }
+            } finally {
+                pending = false
+            }
+        }
+    }
     TextButton(onClick = { expanded = !expanded }, enabled = !pending) { Text("设置头像") }
     if (!expanded) return
     Column {
         Text("上传的头像只有你自己能看到")
-        PhotoCropper(enabled = !pending) { bytes ->
+        PhotoCropper(
+            enabled = !pending,
+            onRestore = if (contact.customAvatarMediaId != null) restore else null,
+        ) { bytes ->
             pending = true
             message = null
             error = null
@@ -49,23 +67,6 @@ import kotlinx.serialization.json.*
             } finally {
                 pending = false
             }
-        }
-        if (contact.customAvatarMediaId != null) {
-            TextButton(enabled = !pending, onClick = {
-                pending = true
-                message = null
-                error = null
-                scope.launch {
-                    try {
-                        userAction({ error = it }) {
-                            updateContactAvatar(repository, runtime, owner, contact.characterId, null)
-                            message = "已恢复默认头像"
-                        }
-                    } finally {
-                        pending = false
-                    }
-                }
-            }) { Text("恢复默认头像") }
         }
         message?.let { Text(it) }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }

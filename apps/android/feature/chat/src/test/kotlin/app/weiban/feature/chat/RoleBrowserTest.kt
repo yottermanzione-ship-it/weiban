@@ -1,6 +1,8 @@
 package app.weiban.feature.chat
 
 import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.room.Room
@@ -234,7 +236,15 @@ class RoleBrowserTest {
         assertTrue(posts.isEmpty())
     }
 
+    private fun beginOnboarding() =
+        runBlocking {
+            repository.authenticate(auth.copy(user = auth.user.copy(profileCompleted = false)))
+            repository.updateUser(auth.user)
+            repository.saveSync(owner, SyncEngine.freshState().copy(initialized = true))
+        }
+
     @Test fun firstUseWaitsForAcceptedContactAndThenOpensServerConversation() {
+        beginOnboarding()
         compose.setContent { WeibanTheme { RoleBrowser(repository, runtime, owner, true, opened::add, onboarding = true) } }
         compose.onNodeWithText("先加一个你喜欢的 TA 吧").assertExists()
         compose.onNodeWithText("返回通讯录").assertDoesNotExist()
@@ -262,5 +272,28 @@ class RoleBrowserTest {
                     .conversationId
             },
         )
+    }
+
+    @Test fun selectedRoleAndGreetingSurviveDisposingAndRecreatingTheOnboardingUi() {
+        beginOnboarding()
+        var mounted by androidx.compose.runtime.mutableStateOf(true)
+        compose.setContent {
+            WeibanTheme { if (mounted) RoleBrowser(repository, runtime, owner, true, opened::add, onboarding = true) }
+        }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("纸飞机").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hasText("纸飞机") and !hasSetTextAction()).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("一起认识身边的世界").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hasSetTextAction()).performTextInput("很高兴认识你")
+        compose.waitUntil(10_000) { runBlocking { repository.onboardingDraft.load(owner)?.greeting == "很高兴认识你" } }
+        compose.runOnIdle { mounted = false }
+        compose.onNodeWithText("一起认识身边的世界").assertDoesNotExist()
+        compose.runOnIdle { mounted = true }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("一起认识身边的世界").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hasSetTextAction()).assertTextContains("很高兴认识你")
+        compose.onNodeWithText("添加到通讯录").performScrollTo().performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("你们以前认识过").fetchSemanticsNodes().isNotEmpty() }
+        assertEquals(firstId, posts.single().characterId)
+        assertEquals("很高兴认识你", posts.single().greeting)
+        assertTrue(opened.isEmpty())
     }
 }

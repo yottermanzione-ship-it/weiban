@@ -172,6 +172,7 @@ class ContactAvatarEditorTest {
     private fun selectPicture() {
         compose.onNodeWithText("设置头像").performClick()
         compose.onNodeWithText("选择并裁剪头像").performClick()
+        compose.onNodeWithText("恢复默认头像").assertDoesNotExist()
         compose.onNodeWithText("从相册选择").performClick()
         val image = Bitmap.createBitmap(80, 40, Bitmap.Config.ARGB_8888)
         image.eraseColor(Color.RED)
@@ -211,6 +212,7 @@ class ContactAvatarEditorTest {
         assertEquals(512, image.width)
         assertEquals(512, image.height)
         image.recycle()
+        compose.onNodeWithText("选择并裁剪头像").performClick()
         compose.onNodeWithText("恢复默认头像").performClick()
         compose.waitUntil(10_000) { runBlocking { repository.loadSync(owner)?.lastUpdateSeq == 2L } }
         compose.onNodeWithText("已恢复默认头像").assertExists()
@@ -220,6 +222,10 @@ class ContactAvatarEditorTest {
         assertEquals("原备注", durable.remark)
         assertEquals("原称呼", durable.addressAs)
         assertEquals(2, requests.count { it.method == "PATCH" })
+        compose.onNodeWithText("选择并裁剪头像").performClick()
+        compose.onNodeWithText("从相册选择").assertExists()
+        compose.onNodeWithText("拍照", substring = false).assertExists()
+        compose.onNodeWithText("恢复默认头像").assertDoesNotExist()
     }
 
     private fun returnCameraPicture() {

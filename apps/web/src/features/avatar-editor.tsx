@@ -11,10 +11,12 @@ export function AvatarEditor({
   onSaved,
   purpose = 'user_avatar',
   onPendingChange,
+  onRestore,
 }: {
   onSaved: (mediaId: string) => Promise<void>;
   purpose?: z.infer<typeof UserMediaPurpose>;
   onPendingChange?: (pending: boolean) => void;
+  onRestore?: () => void;
 }) {
   const { session } = useAuth();
   const owner = session
@@ -173,6 +175,18 @@ export function AvatarEditor({
           >
             拍照
           </button>
+          {onRestore && (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => {
+                setChoosing(false);
+                onRestore();
+              }}
+            >
+              恢复默认头像
+            </button>
+          )}
           <button type="button" onClick={() => setChoosing(false)}>
             取消
           </button>

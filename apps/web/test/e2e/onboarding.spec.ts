@@ -20,6 +20,32 @@ test('首次昵称和选择角色在四步内；真实添加保持待通过状�
   await page.getByRole('button', { name: '选择测试陪伴角色', exact: true }).click();
   await expect(page).toHaveURL(/\/discover\?onboarding=1$/);
   await page.getByLabel('打招呼', { exact: true }).fill('很高兴认识你');
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const db = await new Promise<IDBDatabase>((resolve) => {
+          const request = indexedDB.open('weiban-app');
+          request.onsuccess = () => resolve(request.result);
+        });
+        const value = await new Promise<unknown>((resolve) => {
+          const request = db
+            .transaction('records')
+            .objectStore('records')
+            .get('ui:onboardingDraft');
+          request.onsuccess = () => resolve(request.result);
+        });
+        db.close();
+        return value;
+      }),
+    )
+    .toMatchObject({ greeting: '很高兴认识你' });
+  await page.goto('/');
+  await expect(page.getByLabel('打招呼', { exact: true })).toHaveValue('很高兴认识你');
+  await expect(
+    page.getByRole('heading', { name: '测试陪伴角色', exact: true, level: 1 }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel('打招呼', { exact: true })).toHaveValue('很高兴认识你');
   const added = page.waitForResponse(
     (response) => response.url().endsWith('/contacts') && response.request().method() === 'POST',
   );

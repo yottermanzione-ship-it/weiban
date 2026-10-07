@@ -41,13 +41,31 @@ export class IndexedLocalStore implements LocalStore {
   }
   /** 归属检查与写入同一事务：退出清库后，迟到的驱动不能重建旧账号数据。 */
   async setOwned(owner: StoreOwner, key: string, value: unknown): Promise<boolean> {
-    if (key === 'session') throw new Error('驱动不能改写登录会话');
+    return this.setOwnedValues(owner, { [key]: value });
+  }
+  /** Multiple UI records commit together, with the same account check as a single write. */
+  async setOwnedValues(
+    owner: StoreOwner,
+    values: Record<string, unknown>,
+    expected?: { key: string; value: boolean },
+  ): Promise<boolean> {
+    if (Object.hasOwn(values, 'session')) throw new Error('驱动不能改写登录会话');
     const db = await this.database;
     return new Promise((resolve, reject) => {
       const tx = db.transaction('records', 'readwrite');
       const records = tx.objectStore('records');
       const request = records.get('session');
       let written = false;
+      let failure: unknown;
+      const commit = () => {
+        try {
+          for (const [key, value] of Object.entries(values)) records.put(value, key);
+          written = true;
+        } catch (error) {
+          failure = error;
+          tx.abort();
+        }
+      };
       request.onsuccess = () => {
         const parsed = AuthResponse.safeParse(request.result);
         if (
@@ -56,11 +74,16 @@ export class IndexedLocalStore implements LocalStore {
           parsed.data.session.sessionId !== owner.sessionId
         )
           return;
-        records.put(value, key);
-        written = true;
+        if (!expected) commit();
+        else {
+          const condition = records.get(expected.key);
+          condition.onsuccess = () => {
+            if (condition.result === expected.value) commit();
+          };
+        }
       };
       tx.oncomplete = () => resolve(written);
-      tx.onabort = tx.onerror = () => reject(new Error('同步数据保存失败'));
+      tx.onabort = tx.onerror = () => reject(failure ?? new Error('同步数据保存失败'));
     });
   }
   async clear(): Promise<void> {

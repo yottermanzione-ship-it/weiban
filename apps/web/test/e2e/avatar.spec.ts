@@ -8,6 +8,7 @@ test('角色默认头像不随备注改变；实际私有头像裁剪、失败�
   await page.goto('/contacts');
   await page.getByRole('link', { name: /测试陪伴角色/ }).click();
   const profilePath = new URL(page.url()).pathname;
+  const sources = page.getByRole('dialog', { name: '选择头像来源' });
   const avatar = page.getByRole('img', { name: '测试陪伴角色头像', exact: true });
   await expect(avatar).toBeVisible();
   await expect(avatar).toContainText('测试');
@@ -20,6 +21,9 @@ test('角色默认头像不随备注改变；实际私有头像裁剪、失败�
   await expect(page.getByRole('status')).toHaveText('已保存');
   await page.goto(profilePath);
   await expect(avatar).toBeVisible();
+  await page.getByRole('button', { name: '选择头像', exact: true }).click();
+  await expect(sources.getByRole('button', { name: '恢复默认头像', exact: true })).toHaveCount(0);
+  await sources.getByRole('button', { name: '取消', exact: true }).click();
   await expect(avatar).toContainText('测试');
   expect(await avatar.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
     originalColor,
@@ -56,9 +60,16 @@ test('角色默认头像不随备注改变；实际私有头像裁剪、失败�
   await expect(avatar).toContainText('测试');
   await expect(avatar.locator('img')).toHaveCount(0);
   await page.unroute('**/api/v1/media/*/content?**');
-  await page.getByRole('button', { name: '恢复默认头像', exact: true }).click();
+  await page.getByRole('button', { name: '选择头像', exact: true }).click();
+  await expect(sources.getByRole('button', { name: '从相册选择', exact: true })).toBeVisible();
+  await expect(sources.getByRole('button', { name: '拍照', exact: true })).toBeVisible();
+  await sources.getByRole('button', { name: '恢复默认头像', exact: true }).click();
+  await expect(sources).toHaveCount(0);
   await expect(page.getByRole('status')).toHaveText('已恢复默认头像');
   await expect(page.getByRole('button', { name: '恢复默认头像', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '选择头像', exact: true }).click();
+  await expect(sources.getByRole('button', { name: '恢复默认头像', exact: true })).toHaveCount(0);
+  await sources.getByRole('button', { name: '取消', exact: true }).click();
   await expect(avatar).toContainText('测试');
   expect(await avatar.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
     originalColor,

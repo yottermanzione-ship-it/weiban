@@ -48,13 +48,14 @@ internal class PhotoCropState(
 @Composable
 fun PhotoCropper(
     enabled: Boolean = true,
+    onRestore: (() -> Unit)? = null,
     onSaved: suspend (ByteArray) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val state = remember { PhotoCropState(scope) }
     val allowed by rememberUpdatedState(enabled)
     val save by rememberUpdatedState(onSaved)
-    PhotoPicker(state, enabled)
+    PhotoPicker(state, enabled, onRestore)
     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     state.original?.let { image ->
         AvatarDialog(image, state.busy || !enabled, { state.original = null }) { preview ->

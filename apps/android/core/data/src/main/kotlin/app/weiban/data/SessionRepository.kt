@@ -28,6 +28,10 @@ class SessionRepository(
     val auth: StateFlow<AuthResponse?> = current
     private val onboarding = MutableStateFlow(false)
     val onboardingPending: StateFlow<Boolean> = onboarding
+    val onboardingDraft =
+        OnboardingDraftStore(database, api.json, lock) {
+            owns(it) && onboarding.value && database.local().cache("ui:onboarding") == "true"
+        }
 
     suspend fun restore() =
         lock.withLock {
@@ -154,7 +158,10 @@ class SessionRepository(
     suspend fun finishOnboarding(owner: OwnerRecord): Boolean =
         lock.withLock {
             if (!owns(owner)) return@withLock false
-            database.local().cache(CacheRecord("ui:onboarding", "false"))
+            database.withTransaction {
+                database.local().cache(CacheRecord("ui:onboarding", "false"))
+                database.local().cache(CacheRecord(ONBOARDING_DRAFT_KEY, "null"))
+            }
             onboarding.value = false
             true
         }

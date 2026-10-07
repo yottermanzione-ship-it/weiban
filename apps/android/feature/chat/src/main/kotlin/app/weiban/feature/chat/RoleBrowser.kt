@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import app.weiban.contracts.*
 import app.weiban.data.*
 import app.weiban.designsystem.tokens.WbSpace
+import kotlinx.coroutines.launch
 import java.text.Collator
 import java.util.Locale
 
@@ -24,7 +25,12 @@ import java.util.Locale
     onboarding: Boolean = false,
 ) {
     var plaza by rememberSaveable(owner.sessionId) { mutableStateOf(startAtPlaza) }
-    var selected by rememberSaveable(owner.sessionId) { mutableStateOf<String?>(null) }
+    var ordinarySelection by rememberSaveable(owner.sessionId) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val progress = remember(repository, owner) { OnboardingProgress(repository, owner, scope) }
+    LaunchedEffect(progress, onboarding) { if (onboarding) progress.load() }
+    val selected = if (onboarding) progress.draft?.characterId else ordinarySelection
+    val select: (String?) -> Unit = { if (onboarding) progress.choose(it) else ordinarySelection = it }
     val snapshot by runtime.snapshot.collectAsState()
     val state = if (snapshot.owner == owner) snapshot.state else SyncEngine.freshState()
     val open by rememberUpdatedState(onOpenConversation)
@@ -33,18 +39,26 @@ import java.util.Locale
         if (onboarding && conversationId != null) open(conversationId)
     }
     BackHandler(selected != null || plaza != startAtPlaza) {
-        if (selected != null) selected = null else plaza = startAtPlaza
+        if (selected != null) select(null) else plaza = startAtPlaza
     }
     Column(Modifier.fillMaxSize()) {
-        if (onboarding) Text("先加一个你喜欢的 TA 吧", Modifier.padding(WbSpace.S5))
+        if (!OnboardingHeader(onboarding, progress, scope)) return@Column
         if (selected != null) {
-            TextButton(onClick = { selected = null }) { Text("返回") }
-            CharacterScreen(repository, runtime, owner, state, selected!!, onOpenConversation)
+            TextButton(onClick = { select(null) }, enabled = !progress.saving) { Text("返回") }
+            CharacterScreen(
+                repository,
+                runtime,
+                owner,
+                state,
+                selected,
+                onOpenConversation,
+                progress = progress.takeIf { onboarding },
+            )
         } else if (plaza) {
             if (!startAtPlaza) TextButton(onClick = { plaza = false }) { Text("返回通讯录") }
-            CharacterCatalog(repository, owner) { selected = it }
+            CharacterCatalog(repository, owner) { select(it) }
         } else {
-            ContactsList(repository, owner, state, { plaza = true }) { selected = it }
+            ContactsList(repository, owner, state, { plaza = true }) { select(it) }
         }
     }
 }
@@ -197,4 +211,22 @@ private class CatalogUi {
             }, label = { Text(category.name) })
         }
     }
+}
+
+@Composable private fun OnboardingHeader(
+    onboarding: Boolean,
+    progress: OnboardingProgress,
+    scope: kotlinx.coroutines.CoroutineScope,
+): Boolean {
+    if (!onboarding) return true
+    Text("先加一个你喜欢的 TA 吧", Modifier.padding(WbSpace.S5))
+    progress.error?.let { Text(it, Modifier.padding(WbSpace.S5), color = MaterialTheme.colorScheme.error) }
+    if (!progress.loaded) {
+        if (progress.error == null) {
+            Text("正在恢复引导…")
+        } else {
+            TextButton(onClick = { scope.launch { progress.load() } }) { Text("重试") }
+        }
+    }
+    return progress.loaded
 }

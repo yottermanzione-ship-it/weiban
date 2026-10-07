@@ -20,8 +20,9 @@ private class CharacterUi(
     private val owner: OwnerRecord,
     private val characterId: String,
     private val scope: CoroutineScope,
+    initialGreeting: String,
 ) {
-    var greeting by mutableStateOf("")
+    var greeting by mutableStateOf(initialGreeting)
     var pending by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
     var restore by mutableStateOf(false)
@@ -62,6 +63,7 @@ private class CharacterUi(
     state: ClientSyncState,
     characterId: String,
     onOpenConversation: (String) -> Unit,
+    progress: OnboardingProgress? = null,
 ) {
     val profile =
         remote(characterId) {
@@ -72,7 +74,8 @@ private class CharacterUi(
             )
         }
     val scope = rememberCoroutineScope()
-    val ui = remember(characterId, owner) { CharacterUi(repository, runtime, owner, characterId, scope) }
+    val ui =
+        remember(characterId, owner) { CharacterUi(repository, runtime, owner, characterId, scope, progress?.draft?.greeting.orEmpty()) }
     val contact = state.contacts.find { it.characterId == characterId } ?: ui.added
     Column(
         Modifier
@@ -98,7 +101,7 @@ private class CharacterUi(
             ContactAvatarEditor(repository, runtime, owner, it)
         }
         (ui.error ?: profile.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        CharacterAction(contact, ui, profile.data != null, onOpenConversation)
+        CharacterAction(contact, ui, profile.data != null, onOpenConversation, progress?.let { it::greet })
         TextButton(onClick = {
             profile.refresh()
             scope.launch { userAction({ ui.error = it }) { runtime.refresh(owner) } }
@@ -112,6 +115,7 @@ private class CharacterUi(
     ui: CharacterUi,
     loaded: Boolean,
     onOpen: (String) -> Unit,
+    onGreetingChange: ((String) -> Unit)?,
 ) {
     val conversationId = contact?.conversationId
     when {
@@ -124,6 +128,7 @@ private class CharacterUi(
         else -> {
             OutlinedTextField(ui.greeting, {
                 ui.greeting = it.take(50)
+                onGreetingChange?.invoke(ui.greeting)
             }, Modifier.fillMaxWidth(), label = { Text("打个招呼（选填，${ui.greeting.length}/50）") })
             Button(onClick = { ui.add() }, enabled = loaded && !ui.pending, modifier = Modifier.fillMaxWidth()) {
                 Text(if (ui.pending) "正在发送…" else "添加到通讯录")

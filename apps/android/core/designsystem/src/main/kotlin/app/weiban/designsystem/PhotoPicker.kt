@@ -17,6 +17,7 @@ import java.io.IOException
 @Composable internal fun PhotoPicker(
     state: PhotoCropState,
     enabled: Boolean,
+    onRestore: (() -> Unit)?,
 ) {
     val context = LocalContext.current
     val allowed by rememberUpdatedState(enabled)
@@ -38,14 +39,20 @@ import java.io.IOException
         Text(if (state.busy) "请稍候…" else "选择并裁剪头像")
     }
     DropdownMenu(choosing, { choosing = false }) {
-        DropdownMenuItem(text = { Text("从相册选择") }, onClick = {
+        DropdownMenuItem(enabled = enabled && !state.busy, text = { Text("从相册选择") }, onClick = {
             choosing = false
             gallery.launch("image/*")
         })
-        DropdownMenuItem(text = { Text("拍照") }, onClick = {
+        DropdownMenuItem(enabled = enabled && !state.busy, text = { Text("拍照") }, onClick = {
             choosing = false
             launchCamera(state, context) { camera.launch(it) }
         })
+        if (onRestore != null) {
+            DropdownMenuItem(enabled = enabled && !state.busy, text = { Text("恢复默认头像") }, onClick = {
+                choosing = false
+                onRestore()
+            })
+        }
     }
 }
 
