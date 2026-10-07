@@ -33,6 +33,7 @@
     "rxjs": "^7.8.2",
     "sharp": "^0.35.5",
     "uuid": "^14.0.2",
+    "web-push": "3.6.7",
     "ws": "8.22.0",
     "zod": "^4.6.5"
   },
@@ -42,6 +43,7 @@
     "@types/node": "^24.19.1",
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",
+    "@types/web-push": "3.6.4",
     "@types/ws": "8.18.2",
     "@weiban/tsconfig": "workspace:*",
     "drizzle-kit": "^0.31.11",

@@ -132,8 +132,11 @@ export class SettingsService
 
   // ---------- 资料 ----------
 
-  async getProfile(userId: string): Promise<Profile | null> {
-    const [row] = await this.database.db.select().from(profiles).where(eq(profiles.userId, userId));
+  async getProfile(userId: string, input?: Tx): Promise<Profile | null> {
+    const [row] = await (input ? asDbTx(input).db : this.database.db)
+      .select()
+      .from(profiles)
+      .where(eq(profiles.userId, userId));
     return row ? toProfile(row) : null;
   }
 
@@ -179,8 +182,8 @@ export class SettingsService
 
   // ---------- 通知设置 ----------
 
-  async getNotificationSettings(userId: string): Promise<NotificationSettings | null> {
-    const [row] = await this.database.db
+  async getNotificationSettings(userId: string, input?: Tx): Promise<NotificationSettings | null> {
+    const [row] = await (input ? asDbTx(input).db : this.database.db)
       .select()
       .from(notificationSettings)
       .where(eq(notificationSettings.userId, userId));
@@ -295,8 +298,8 @@ export class SettingsService
     return Object.fromEntries(rows.map((row) => [row.id, row.username]));
   }
 
-  async listAdminUserIds(): Promise<string[]> {
-    const rows = await this.database.db
+  async listAdminUserIds(input?: Tx): Promise<string[]> {
+    const rows = await (input ? asDbTx(input).db : this.database.db)
       .select({ id: users.id })
       .from(users)
       .where(and(eq(users.role, 'admin'), eq(users.status, 'active')))

@@ -3,8 +3,8 @@ import type { NotificationSettings, Profile } from '../http/identity.js';
 
 /** 提供方：identity。读取用户资料与设置。 */
 export interface IdentityReadPort {
-  getProfile(userId: string): Promise<Profile | null>;
-  getNotificationSettings(userId: string): Promise<NotificationSettings | null>;
+  getProfile(userId: string, tx?: Tx): Promise<Profile | null>;
+  getNotificationSettings(userId: string, tx?: Tx): Promise<NotificationSettings | null>;
   /** 用户最近一次打开 App 的时间（用于 P-17 长期不活跃暂停推演）。 */
   getLastActiveAt(userId: string): Promise<string | null>;
   // v1.0：isAgeConfirmed 删除（PRD v1.2 取消年龄确认）。
@@ -43,5 +43,11 @@ export interface IdentityDirectoryPort {
    */
   getUsernames(userIds: readonly string[]): Promise<Record<string, string>>;
   /** 当前所有管理员（role = admin、账号 active）的用户 ID。push 给管理员发提醒时用（billing.md 8.4 节）。 */
-  listAdminUserIds(): Promise<string[]>;
+  listAdminUserIds(tx?: Tx): Promise<string[]>;
+}
+
+/** identity提供：推送等后台任务校验绑定会话，不能靠历史登录或迟到解绑事件判定。 */
+export interface IdentitySessionReadPort {
+  /** 只认有效普通App会话及active账号；调用方事务锁住会话/账号，注销作废不能穿过提交。 */
+  isActiveAppSession(userId: string, sessionId: string, tx?: Tx): Promise<boolean>;
 }

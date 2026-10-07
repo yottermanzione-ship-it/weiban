@@ -33,6 +33,7 @@ import {
   Message,
   MessageContent,
   NotificationPayload,
+  NotificationEnvelope,
   SendMessageRequest,
   ServerFrame,
   ServerFrameStrict,
@@ -85,8 +86,8 @@ const adminCharacter = {
 };
 
 describe('契约版本', () => {
-  it('为 2.1', () => {
-    expect(CONTRACT_VERSION).toBe('2.1');
+  it('为 2.2', () => {
+    expect(CONTRACT_VERSION).toBe('2.2');
   });
 });
 
@@ -638,5 +639,32 @@ describe('接收降级可重复解析（T-034）', () => {
     expect(Message.safeParse({ ...textMessage, content: { type: 'unsupported' } }).success).toBe(
       false,
     );
+  });
+});
+
+describe('2.2推送归属兼容', () => {
+  it('旧载荷仍可解析；新接收契约必须有账号、会话及去重ID', () => {
+    const legacy = {
+      v: 1,
+      kind: 'message',
+      collapseKey: ID,
+      title: '角色',
+      body: '你好',
+      count: 1,
+      deepLink: `/chat/${ID}`,
+      conversationId: ID,
+      sound: true,
+      sentAt: NOW,
+    };
+    expect(NotificationPayload.parse(legacy).body).toBe('你好');
+    expect(NotificationEnvelope.safeParse(legacy).success).toBe(false);
+    const owned = { ...legacy, recipientUserId: ID, recipientSessionId: ID2, notificationId: ID };
+    expect(NotificationEnvelope.parse(owned).recipientSessionId).toBe(ID2);
+    expect(NotificationPayload.parse(owned).body).toBe('你好');
+    for (const field of ['recipientUserId', 'recipientSessionId', 'notificationId'] as const) {
+      const missing = { ...owned };
+      delete (missing as Partial<typeof owned>)[field];
+      expect(NotificationEnvelope.safeParse(missing).success).toBe(false);
+    }
   });
 });

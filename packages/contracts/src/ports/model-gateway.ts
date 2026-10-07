@@ -163,3 +163,13 @@ export interface ModelGatewayPort {
       'not_configured' | 'insufficient_balance' | 'provider_unavailable' | 'model_removed' | null;
   }>;
 }
+
+/** 模型故障提醒的只读受影响用户筛选；仅检查选择/默认/覆盖及当前故障，不调用上游。 */
+export interface ModelNotificationReadPort {
+  affectedUsers(
+    userIds: readonly string[],
+    modelKey: string,
+    tx?: import('./common.js').Tx,
+    previousDefaultFor?: readonly ('chat' | 'background' | 'vision')[],
+  ): Promise<string[]>;
+}

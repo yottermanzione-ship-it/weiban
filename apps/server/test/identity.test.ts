@@ -945,9 +945,9 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
       await vi.waitFor(
         async () => {
           // 所有非identity删除清单各回报一次；T-037新增真实chat；另用growth模拟清理回报。
-          expect(await outbox('platform.user_data_purged', web.user.userId)).toHaveLength(9);
+          expect(await outbox('platform.user_data_purged', web.user.userId)).toHaveLength(10);
         },
-        { timeout: 20_000, interval: 200 },
+        { timeout: 25_000, interval: 200 },
       );
       await dispatchAll();
       expect(purged).toEqual([web.user.userId]);
@@ -962,6 +962,7 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
         'growth',
         'media',
         'model_access',
+        'push',
         'realtime',
       ]);
       expect(await q.userById(web.user.userId)).toBeNull();

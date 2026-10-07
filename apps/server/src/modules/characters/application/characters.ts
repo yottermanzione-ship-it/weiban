@@ -91,13 +91,13 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
         (!!row.publishedCiphertext && row.publishedChildFeaturesDetected),
     );
   }
-  private async decode(row: Row, published = false): Promise<AdminCharacterWrite> {
+  private async decode(row: Row, published = false, tx?: DbTx): Promise<AdminCharacterWrite> {
     const cipher = published ? row.publishedCiphertext : row.draftCiphertext;
     if (!cipher) throw new AppError('character_not_available', '角色尚未上架');
     const aad = published
       ? `character:${row.id}:published:${row.personaVersion}`
       : `character:${row.id}:draft:${row.revision}`;
-    const plain = await this.crypto.open(row.ownerId ?? PLATFORM_KEY_OWNER, aad, cipher);
+    const plain = await this.crypto.open(row.ownerId ?? PLATFORM_KEY_OWNER, aad, cipher, tx);
     try {
       return AdminCharacterWrite.parse(JSON.parse(plain.toString('utf8')));
     } finally {
@@ -623,6 +623,23 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     for (const row of rows)
       if (await this.visible(userId, row)) profiles.push(await this.profile(userId, row));
     return profiles;
+  }
+  async getDisplayName(userId: string, id: string, input?: Tx): Promise<string | null> {
+    Id.parse(userId);
+    Id.parse(id);
+    const tx = input ? asDbTx(input) : undefined;
+    const [row] = await (tx?.db ?? this.database.db)
+      .select()
+      .from(characters)
+      .where(eq(characters.id, id));
+    if (
+      !row ||
+      (row.kind === 'custom'
+        ? row.ownerId !== userId
+        : !['published', 'unpublished'].includes(row.status))
+    )
+      return null;
+    return (await this.decode(row, row.kind === 'preset', tx)).name;
   }
   async purgeUser(userId: string): Promise<number> {
     const removed = await this.database.db

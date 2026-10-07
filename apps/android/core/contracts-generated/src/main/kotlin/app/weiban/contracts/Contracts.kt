@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 2.1. Regenerate: pnpm android:generate
+// Contract 2.2. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "2.1"
+const val CONTRACT_VERSION: String = "2.2"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -2656,12 +2656,33 @@ typealias MoneyMicros = Long
 
 typealias NoContent = JsonElement?
 
+@Serializable
+data class NotificationEnvelope(
+    @EncodeDefault
+    @SerialName("v") val `v`: Long = 1,
+    @SerialName("recipientUserId") val `recipientUserId`: Id,
+    @SerialName("recipientSessionId") val `recipientSessionId`: Id,
+    @SerialName("notificationId") val `notificationId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("collapseKey") val `collapseKey`: String,
+    @SerialName("title") val `title`: String,
+    @SerialName("body") val `body`: String,
+    @SerialName("count") val `count`: Long,
+    @SerialName("deepLink") val `deepLink`: String,
+    @SerialName("conversationId") val `conversationId`: Id?,
+    @SerialName("sound") val `sound`: Boolean,
+    @SerialName("sentAt") val `sentAt`: String,
+)
+
 typealias NotificationKind = String
 
 @Serializable
 data class NotificationPayload(
     @EncodeDefault
     @SerialName("v") val `v`: Long = 1,
+    @SerialName("recipientUserId") val `recipientUserId`: Id? = null,
+    @SerialName("recipientSessionId") val `recipientSessionId`: Id? = null,
+    @SerialName("notificationId") val `notificationId`: Id? = null,
     @SerialName("kind") val `kind`: String,
     @SerialName("collapseKey") val `collapseKey`: String,
     @SerialName("title") val `title`: String,
@@ -4406,6 +4427,7 @@ data class EventsDomainEventModelAccessModelStatusChangedPayload(
     @SerialName("modelKey") val `modelKey`: ModelKey,
     @SerialName("available") val `available`: Boolean,
     @SerialName("reason") val `reason`: String,
+    @SerialName("previousDefaultFor") val `previousDefaultFor`: List<String>? = null,
 )
 
 @Serializable
@@ -4597,6 +4619,7 @@ data class EventsModelStatusChangedPayload(
     @SerialName("modelKey") val `modelKey`: ModelKey,
     @SerialName("available") val `available`: Boolean,
     @SerialName("reason") val `reason`: String,
+    @SerialName("previousDefaultFor") val `previousDefaultFor`: List<String>? = null,
 )
 
 @Serializable

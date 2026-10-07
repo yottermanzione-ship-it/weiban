@@ -16,6 +16,8 @@ const booleanFlag = z
   .transform((value) => value === '1' || value === 'true');
 
 export const EnvSchema = z.object({
+  /** 可选推送凭据文件；不配置时通道明确不可用，不生成虚假生产密钥。 */
+  PUSH_CREDENTIALS_FILE: z.string().min(1).optional(),
   MEDIA_STORAGE: z.enum(['disk', 's3']).default('disk'),
   MEDIA_DISK_ROOT: z.string().min(1).default('.data/media'),
   MEDIA_PUBLIC_BASE_URL: z
@@ -74,6 +76,7 @@ export const EnvSchema = z.object({
 export const DEV_PLATFORM_DAILY_CAP_MICROS = 20_000_000;
 
 export interface AppConfig {
+  readonly push: { readonly credentialsFile: string | null };
   readonly media: {
     readonly driver: 'disk' | 's3';
     readonly diskRoot: string;
@@ -160,6 +163,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     throw new ConfigError(['MEDIA_PUBLIC_BASE_URL：生产环境必须使用 HTTPS']);
   }
   return {
+    push: { credentialsFile: e.PUSH_CREDENTIALS_FILE ?? null },
     media: {
       driver: e.MEDIA_STORAGE,
       diskRoot: e.MEDIA_DISK_ROOT,

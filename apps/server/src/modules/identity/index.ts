@@ -13,6 +13,7 @@ export {
   IDENTITY_ACCOUNT_STATUS_PORT,
   IDENTITY_DIRECTORY_PORT,
   IDENTITY_READ_PORT,
+  IDENTITY_SESSION_READ_PORT,
 } from './tokens.js';
 export { IdentityCommands, CommandError } from './application/commands.js';
 export { hashUserId } from './application/user-hash.js';

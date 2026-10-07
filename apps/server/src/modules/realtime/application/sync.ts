@@ -11,8 +11,8 @@ export class SyncService implements SyncPort {
   appendUpdate(tx: Tx, userId: string, update: UserUpdatePayload): Promise<number> {
     return this.log.appendUpdate(tx, userId, update);
   }
-  isViewingConversation(userId: string, conversationId: string): Promise<boolean> {
-    return this.presence.isViewingConversation(userId, conversationId);
+  isViewingConversation(userId: string, conversationId: string, tx?: Tx): Promise<boolean> {
+    return this.presence.isViewingConversation(userId, conversationId, tx);
   }
   getLastUserActivityAt(userId: string): Promise<string | null> {
     return this.presence.getLastUserActivityAt(userId);

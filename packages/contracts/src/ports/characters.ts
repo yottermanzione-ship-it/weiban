@@ -2,6 +2,11 @@ import type { Tx } from './common.js';
 import type { CharacterCard } from '../character-card.js';
 import type { CharacterClassification, CharacterProfile } from '../http/characters.js';
 
+/** 通知显示专用：只返回名字，不加载头像或向调用方提供角色卡上下文，不派生供应商调用。 */
+export interface CharacterNameReadPort {
+  getDisplayName(userId: string, characterId: string, tx?: Tx): Promise<string | null>;
+}
+
 /** AI 运行时生成回复所需的角色数据。 */
 export interface CharacterForRuntime {
   profile: CharacterProfile;

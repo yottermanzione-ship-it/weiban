@@ -40,3 +40,19 @@ bash deploy/prod/scripts/restore.sh /安全目录/可信备份bundle /安全目�
 ```
 
 脚本拒绝非空数据库或媒体卷，校验密文哈希后解密；数据库restore为单事务，失败停止；媒体失败时保留服务停止，废弃此次恢复卷并重新演练，不自动覆盖。恢复后检查迁移状态和KEK只读校验，再启动并核对账号/余额、媒体下载及历史加密数据。确认恢复才切域名；旧节点与旧备份继续保留。没有恢复演练的备份不登记为已验证。
+
+### 可选推送通道（T-040）
+
+默认部署不登记推送厂商凭据，登记设备/读取 VAPID 公钥返回明确的未配置响应；聊天仍通过数据库和同步链路送达。开启通道时，在部署主机创建 app UID1000 可读的 JSON 文件（例如文件所有者 UID1000、权限0600，宿主父目录0700；本机Compose保留宿主文件权限），通过 `PUSH_CREDENTIALS_PATH` 指定绝对路径，并叠加 `deploy/prod/push.override.yml`。Compose 仅向 app 挂载只读 secret，凭据不放进镜像、数据库、Git 或网页配置。
+
+文件可同时包含 `webpush: {subject, publicKey, privateKey}` 与 `jpush: {appKey, masterSecret}`；只配置其中一个也可以。Web Push 的 subject 使用可联系的 `mailto:` 或 HTTPS 地址，密钥按 web-push 的 VAPID 规范生成。安卓当前只实现极光 REST，其他厂商在登记时返回尚未配置，不伪装可用。修改文件后重新创建 app 容器以读取新凭据。
+
+```sh
+PUSH_CREDENTIALS_PATH=/absolute/private/push.json docker compose \
+  --env-file /absolute/private/runtime.env \
+  -f deploy/prod/compose.yml -f deploy/prod/push.override.yml up -d app
+```
+
+Web Push 限定已知厂商 HTTPS endpoint；DNS 必须为公共地址，此次连接固定解析地址且校验原厂商 TLS 主机。厂商单次请求预算含 DNS 共 1.5 秒，响应上限 4 KiB，不跟随重定向。极光消息覆盖使用官方 `override_msg_id`，厂商 long 消息 ID 原样存储、输出数值，避免浮点精度损失。成功表示厂商接收，不能当成手机展示或用户已读。
+
+开发夹具已验证实际 HTTP 请求、Web Push 独立解密及 VAPID 签名、极光请求及失效码；测试网络端口仅在测试装配替换，不引入生产 HTTP/私网豁免。真实厂商配额、iOS 主屏幕 PWA、安卓厂商离线通道和真机通知展示仍需后续设备验收。

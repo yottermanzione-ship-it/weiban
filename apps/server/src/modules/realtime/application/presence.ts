@@ -1,6 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ClientPresenceFrame, Id, type SyncPort } from '@weiban/contracts';
-import { CLOCK, DATABASE, type Clock, type Database, type DbTx } from '../../../platform/index.js';
+import { ClientPresenceFrame, Id, type SyncPort, type Tx } from '@weiban/contracts';
+import {
+  CLOCK,
+  DATABASE,
+  asDbTx,
+  type Clock,
+  type Database,
+  type DbTx,
+} from '../../../platform/index.js';
 import { UpdateLogService } from './update-log.js';
 export const REALTIME_CONTROL_CHANNEL = 'weiban_realtime_control';
 export const REALTIME_TYPING_CHANNEL = 'weiban_realtime_typing';
@@ -66,10 +73,14 @@ export class PresenceService {
       connectionId,
     ]);
   }
-  async isViewingConversation(userId: string, conversationId: string): Promise<boolean> {
+  async isViewingConversation(
+    userId: string,
+    conversationId: string,
+    input?: Tx,
+  ): Promise<boolean> {
     Id.parse(userId);
     Id.parse(conversationId);
-    const result = await this.db.query(
+    const result = await (input ? asDbTx(input) : this.db).query(
       'SELECT 1 FROM realtime.device_presence WHERE user_id=$1 AND conversation_id=$2 AND foreground=true AND last_seen_at>$3 LIMIT 1',
       [userId, conversationId, new Date(this.clock.nowMs() - PRESENCE_TTL_MS)],
     );

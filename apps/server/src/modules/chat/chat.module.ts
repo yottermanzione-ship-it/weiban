@@ -13,6 +13,7 @@ import {
   CHAT_ADMIN_PORT,
   CHAT_PARTICIPANT_PORT,
   CHAT_READ_PORT,
+  CHAT_NOTIFICATION_READ_PORT,
   CHAT_USER_PORT,
 } from './tokens.js';
 @Module({
@@ -29,8 +30,15 @@ import {
     { provide: CHAT_ADMIN_PORT, useExisting: ChatAdminService },
     { provide: CHAT_PARTICIPANT_PORT, useExisting: ChatParticipantService },
     { provide: CHAT_READ_PORT, useExisting: ChatReadService },
+    { provide: CHAT_NOTIFICATION_READ_PORT, useExisting: ChatReadService },
     { provide: CHAT_USER_PORT, useExisting: ChatUserService },
   ],
-  exports: [CHAT_ADMIN_PORT, CHAT_PARTICIPANT_PORT, CHAT_READ_PORT, CHAT_USER_PORT],
+  exports: [
+    CHAT_ADMIN_PORT,
+    CHAT_PARTICIPANT_PORT,
+    CHAT_READ_PORT,
+    CHAT_USER_PORT,
+    CHAT_NOTIFICATION_READ_PORT,
+  ],
 })
 export class ChatModule {}

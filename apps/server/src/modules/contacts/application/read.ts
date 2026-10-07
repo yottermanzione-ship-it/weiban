@@ -37,11 +37,11 @@ export class ContactsReadService implements ContactsReadPort {
     @Inject(ENVELOPE_CRYPTO) private readonly crypto: EnvelopeCrypto,
     @Inject(IDENTITY_ACCOUNT_STATUS_PORT) private readonly accounts: IdentityAccountStatusPort,
   ) {}
-  async getActiveContact(userId: string, characterId: string): Promise<Contact | null> {
+  async getActiveContact(userId: string, characterId: string, input?: Tx): Promise<Contact | null> {
     parseContract(Id, userId);
     parseContract(Id, characterId);
-    if ((await this.accounts.getAccountStatus(userId)) !== 'active') return null;
-    const [row] = await this.db.db
+    if ((await this.accounts.getAccountStatus(userId, input)) !== 'active') return null;
+    const [row] = await (input ? asDbTx(input).db : this.db.db)
       .select()
       .from(contacts)
       .where(

@@ -10,15 +10,22 @@ import {
   type Message,
   type Participant,
   type ReadMessagesInput,
+  type Tx,
 } from '@weiban/contracts';
 import {
   AppError,
   DATABASE,
   parseContract,
+  asDbTx,
   type Database,
   type DbTx,
 } from '../../../platform/index.js';
-import { conversations, messages, userConversationStates } from '../infra/db/schema.js';
+import {
+  conversations,
+  messages,
+  participants,
+  userConversationStates,
+} from '../infra/db/schema.js';
 import { ChatStore, type ConversationRow } from './store.js';
 
 @Injectable()
@@ -27,6 +34,64 @@ export class ChatReadService implements ChatReadPort {
     @Inject(DATABASE) private readonly db: Database,
     @Inject(ChatStore) private readonly store: ChatStore,
   ) {}
+  async getNotificationContext(userId: string, messageId: string, input?: Tx) {
+    parseContract(Id, userId);
+    parseContract(Id, messageId);
+    const read = async (tx: DbTx) => {
+      const [first] = await tx.db.select().from(messages).where(eq(messages.id, messageId));
+      if (!first) return null;
+      let row: ConversationRow;
+      try {
+        row = await this.store.load(tx, first.conversationId, userId);
+      } catch (error) {
+        if (
+          error instanceof AppError &&
+          ['not_found', 'not_conversation_member', 'unauthenticated'].includes(error.code)
+        )
+          return null;
+        throw error;
+      }
+      if (row.archivedAt) return null;
+      const [message] = await tx.db.select().from(messages).where(eq(messages.id, messageId));
+      const view = await this.store.view(tx, row, userId, ['normal']);
+      if (
+        !message ||
+        message.status !== 'normal' ||
+        view.state.hidden ||
+        message.seq <= Math.max(view.state.readSeq, view.state.clearedThroughSeq) ||
+        view.hidden.has(message.id)
+      )
+        return null;
+      const [sender] = await tx.db
+        .select()
+        .from(participants)
+        .where(eq(participants.id, message.senderParticipantId));
+      if (!sender || (sender.kind === 'user' && sender.refId === userId)) return null;
+      const [recipient] = await tx.db
+        .select({ id: participants.id })
+        .from(participants)
+        .where(
+          and(
+            eq(participants.conversationId, row.id),
+            eq(participants.kind, 'user'),
+            eq(participants.refId, userId),
+          ),
+        );
+      if (!recipient) return null;
+      return {
+        conversationId: row.id,
+        conversationType: row.type as 'direct' | 'group',
+        seq: message.seq,
+        scope: message.scope as 'normal' | 'adult',
+        senderKind: message.senderKind as 'user' | 'character' | 'system',
+        senderRefId: sender.refId,
+        recipientParticipantId: recipient.id,
+        muted: view.state.muted,
+        content: message.scope === 'normal' ? await this.store.content(tx, row, message) : null,
+      };
+    };
+    return input ? read(asDbTx(input)) : this.db.transaction(read);
+  }
   private async internalConversation(tx: DbTx, row: ConversationRow): Promise<Conversation> {
     const result = await this.store.conversation(tx, row);
     if (result.lastMessage) {

@@ -47,3 +47,5 @@ export type GenerationPolicy = Pick<PolicyPort, 'checkAdultGeneration'>;
 /** 默认真实退避；测试可替换为立即执行，生产固定 2/5/15 秒加抖动。 */
 export const GATEWAY_RETRY_WAIT = Symbol('weiban.model-access.retry-wait');
 export type RetryWait = (ms: number) => Promise<void>;
+
+export const MODEL_NOTIFICATION_READ_PORT = Symbol('weiban.model-access.notification-read');

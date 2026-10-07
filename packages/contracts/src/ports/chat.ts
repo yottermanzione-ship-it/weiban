@@ -113,3 +113,22 @@ export interface ChatUserPort {
     input: SendMessageRequest,
   ): Promise<MessageAck>;
 }
+
+/** 通知专用读取：按接收者的隐藏/清空/已读状态检查；adult正文永不读取。 */
+export interface ChatNotificationReadPort {
+  getNotificationContext(
+    userId: string,
+    messageId: string,
+    tx?: Tx,
+  ): Promise<{
+    conversationId: string;
+    conversationType: 'direct' | 'group';
+    seq: number;
+    scope: ContentScope;
+    senderKind: 'user' | 'character' | 'system';
+    senderRefId: string | null;
+    recipientParticipantId: string;
+    muted: boolean;
+    content: MessageContent | null;
+  } | null>;
+}
