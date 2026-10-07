@@ -4,6 +4,7 @@ import { useChat } from '../app/chat.js';
 import { VirtualList } from './virtual-list.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { Name } from './chat.js';
+import { CharacterAvatar } from './character-avatar.js';
 export function ConversationListPage() {
   const { state, online, error } = useChat();
   const [query, setQuery] = useState('');
@@ -66,9 +67,12 @@ export function ConversationListPage() {
             to={`/chat/${item.conversationId}`}
             className={`conversation-row ${item.state.pinned ? 'pinned' : ''}`}
           >
-            <span className="character-avatar" aria-hidden="true">
-              伴
-            </span>
+            <CharacterAvatar
+              id={
+                item.participants.find((participant) => participant.kind === 'character')?.refId ??
+                item.conversationId
+              }
+            />
             <span className="conversation-copy">
               <strong>
                 <Name conversation={item} />

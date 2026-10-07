@@ -182,8 +182,11 @@ class SessionRepository(
         if (captured.user.userId == owner.userId && captured.session.sessionId == owner.sessionId) invalidate(captured)
     }
 
-    suspend fun download(media: MediaObject): ByteArray {
-        val captured = current.value ?: throw ApiFailure("unauthenticated", 401)
+    suspend fun download(
+        media: MediaObject,
+        owner: OwnerRecord? = null,
+    ): ByteArray {
+        val captured = capture(owner) ?: throw ApiFailure("unauthenticated", 401)
         val bytes = api.download(media, expectedSession = captured)
         return lock.withLock {
             if (current.value !== captured) throw ApiFailure("session_changed", 0)

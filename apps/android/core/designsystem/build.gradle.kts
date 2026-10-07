@@ -27,3 +27,4 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.preview)
 }
+android.sourceSets["test"].resources.srcDir("../../../../packages/client-core/test/fixtures")

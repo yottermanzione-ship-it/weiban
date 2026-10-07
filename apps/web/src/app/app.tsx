@@ -57,7 +57,10 @@ function Shell() {
   if (!auth.session) return <AuthPage />;
   const roots = ['/chat', '/contacts', '/discover', '/me'];
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      key={`${auth.session.user.userId}:${auth.session.session.sessionId}`}
+    >
       {offline && (
         <div role="status" className="offline">
           网络暂不可用，正在显示本机保存的内容

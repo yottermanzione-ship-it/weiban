@@ -6,6 +6,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import app.weiban.contracts.*
 import app.weiban.data.*
 import app.weiban.designsystem.tokens.WbSpace
@@ -83,6 +84,7 @@ private class CharacterUi(
     ) {
         if (profile.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         profile.data?.let { role ->
+            RoleAvatar(repository, owner, RoleAvatarIdentity(role.characterId, role.name, role.avatar, contact?.customAvatarMediaId), 64.dp)
             Text(contact?.remark ?: role.name, style = MaterialTheme.typography.headlineSmall)
             if (contact?.remark != null) Text("名字：${role.name}")
             Text(role.tagline)

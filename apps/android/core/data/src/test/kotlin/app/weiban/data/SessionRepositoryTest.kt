@@ -156,6 +156,30 @@ class SessionRepositoryTest {
             }
         }
 
+    @Test fun oldImageGrantCannotBeDownloadedUsingTheNewAccount() =
+        runBlocking {
+            repository.authenticate(a)
+            val owner = OwnerRecord(userId = a.user.userId, sessionId = a.session.sessionId)
+            val id = "01920000-0000-7000-8000-000000000099"
+            val media =
+                MediaObject(
+                    id,
+                    "contact_avatar",
+                    "image/png",
+                    3,
+                    1,
+                    1,
+                    server.url("/api/v1/media/$id/content?token=old-grant").toString(),
+                    "2026-11-06T03:00:00.000Z",
+                    "2026-10-06T03:00:00.000Z",
+                )
+            repository.authenticate(b)
+            val rejected = runCatching { repository.download(media, owner) }
+            assertEquals("session_changed", (rejected.exceptionOrNull() as ApiFailure).code)
+            assertEquals(0, server.requestCount)
+            assertEquals(b, repository.auth.value)
+        }
+
     @Test fun atomicSyncOwnerRejectsLateWritesAndOldConnectionInvalidation() =
         runBlocking {
             repository.authenticate(a)

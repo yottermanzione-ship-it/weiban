@@ -379,9 +379,6 @@ object WbColorSets {
 object WbSupportPalette {
     data class Swatch(val name: String, val bg: Color, val on: Color)
     val all = listOf(
-        Swatch("葡萄", Color(0xFFA548BA), Color(0xFFFFFFFF)),
-        Swatch("玫瑰", Color(0xFFCF3D66), Color(0xFFFFFFFF)),
-        Swatch("可可", Color(0xFF8E6A58), Color(0xFFFFFFFF)),
         Swatch("樱粉", Color(0xFFE8608C), Color(0xFFFFFFFF)),
         Swatch("珊瑚", Color(0xFFE8664A), Color(0xFFFFFFFF)),
         Swatch("橘子", Color(0xFFE0892B), Color(0xFF1F1A1D)),
@@ -390,7 +387,10 @@ object WbSupportPalette {
         Swatch("薄荷", Color(0xFF2EAA8A), Color(0xFF1F1A1D)),
         Swatch("湖蓝", Color(0xFF2F97CF), Color(0xFFFFFFFF)),
         Swatch("海军", Color(0xFF3F5FC4), Color(0xFFFFFFFF)),
-        Swatch("薰衣草", Color(0xFF8F72D9), Color(0xFFFFFFFF))
+        Swatch("薰衣草", Color(0xFF8F72D9), Color(0xFFFFFFFF)),
+        Swatch("葡萄", Color(0xFFA548BA), Color(0xFFFFFFFF)),
+        Swatch("玫瑰", Color(0xFFCF3D66), Color(0xFFFFFFFF)),
+        Swatch("可可", Color(0xFF8E6A58), Color(0xFFFFFFFF))
     )
 }
 

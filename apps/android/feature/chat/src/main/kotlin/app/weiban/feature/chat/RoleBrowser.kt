@@ -35,21 +35,23 @@ import java.util.Locale
             CharacterScreen(repository, runtime, owner, state, selected!!, onOpenConversation)
         } else if (plaza) {
             if (!startAtPlaza) TextButton(onClick = { plaza = false }) { Text("返回通讯录") }
-            CharacterCatalog(repository) { selected = it }
+            CharacterCatalog(repository, owner) { selected = it }
         } else {
-            ContactsList(repository, state, { plaza = true }) { selected = it }
+            ContactsList(repository, owner, state, { plaza = true }) { selected = it }
         }
     }
 }
 
 @Composable private fun ColumnScope.ContactsList(
     repository: SessionRepository,
+    owner: OwnerRecord,
     state: ClientSyncState,
     onAdd: () -> Unit,
     onSelect: (String) -> Unit,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
-    val names = characterNames(repository, state.contacts.map { it.characterId })
+    val profiles = characterProfiles(repository, state.contacts.map { it.characterId })
+    val names = profiles.mapValues { it.value.name }
     val ordering = remember { Collator.getInstance(Locale.SIMPLIFIED_CHINESE) }
     val contacts =
         state.contacts
@@ -71,6 +73,18 @@ import java.util.Locale
         items(contacts, key = { it.characterId }) { contact ->
             ListItem(
                 headlineContent = { Text(contact.remark ?: names[contact.characterId] ?: "角色") },
+                leadingContent = {
+                    RoleAvatar(
+                        repository,
+                        owner,
+                        RoleAvatarIdentity(
+                            contact.characterId,
+                            names[contact.characterId].orEmpty(),
+                            profiles[contact.characterId]?.avatar,
+                            contact.customAvatarMediaId,
+                        ),
+                    )
+                },
                 supportingContent = { Text(if (contact.status == "pending") "等待通过好友申请" else "认识于 ${contact.knownSince}") },
                 modifier = Modifier.clickable { onSelect(contact.characterId) },
             )
@@ -105,6 +119,7 @@ private class CatalogUi {
 
 @Composable private fun ColumnScope.CharacterCatalog(
     repository: SessionRepository,
+    owner: OwnerRecord,
     onSelect: (String) -> Unit,
 ) {
     val ui = remember { CatalogUi() }
@@ -137,6 +152,7 @@ private class CatalogUi {
         items(page.data?.items.orEmpty(), key = { it.characterId }) { role ->
             ListItem(
                 headlineContent = { Text(role.name) },
+                leadingContent = { RoleAvatar(repository, owner, RoleAvatarIdentity(role.characterId, role.name, role.avatar)) },
                 supportingContent = { Text(role.tagline) },
                 trailingContent = { if (role.added) Text("已添加") },
                 modifier = Modifier.clickable { onSelect(role.characterId) },

@@ -7,6 +7,8 @@ import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterName } from './chat.js';
+import { CharacterAvatar } from './character-avatar.js';
+import { ContactAvatarEditor } from './contact-avatar-editor.js';
 export function ContactsPage() {
   const { state } = useChat();
   const names = useCharacterNames(state.contacts.map((contact) => contact.characterId));
@@ -24,7 +26,12 @@ export function ContactsPage() {
       </Link>
       <div className="panel rows">
         {contacts.map((contact) => (
-          <Link key={contact.characterId} to={`/characters/${contact.characterId}`}>
+          <Link
+            key={contact.characterId}
+            to={`/characters/${contact.characterId}`}
+            className="role-row"
+          >
+            <CharacterAvatar id={contact.characterId} />
             <CharacterName id={contact.characterId} fallback={contact.remark} />
             <small>{contact.status === 'pending' ? '等待通过好友申请' : ''}</small>
           </Link>
@@ -64,7 +71,8 @@ export function DiscoverPage() {
       {roles.loading && <p role="status">正在读取角色…</p>}
       <div className="panel rows">
         {roles.data?.items.map((role) => (
-          <Link key={role.characterId} to={`/characters/${role.characterId}`}>
+          <Link key={role.characterId} to={`/characters/${role.characterId}`} className="role-row">
+            <CharacterAvatar id={role.characterId} profile={role} />
             <strong>{role.name}</strong>
             <small>
               {role.tagline}
@@ -131,6 +139,7 @@ export function CharacterPage() {
       <h1 className="page-title">{contact?.remark || profile.data?.name || '角色资料'}</h1>
       {profile.data && (
         <div className="panel stack">
+          <CharacterAvatar id={characterId} profile={profile.data} size={64} />
           <h2>{profile.data.name}</h2>
           <p>{profile.data.tagline}</p>
           <p>{profile.data.intro}</p>
@@ -166,6 +175,10 @@ export function CharacterPage() {
             添加到通讯录
           </button>
         </form>
+      )}
+      {contact && <ContactAvatarEditor key={characterId} characterId={characterId} />}
+      {contact?.conversationId && (
+        <Link to={`/chat/${contact.conversationId}/settings`}>设置备注和头像</Link>
       )}
       {restore && (
         <div className="panel" role="dialog" aria-label="恢复好友">

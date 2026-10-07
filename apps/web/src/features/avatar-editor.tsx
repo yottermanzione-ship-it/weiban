@@ -1,8 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
-import { MediaEndpoints, MEDIA_LIMITS } from '@weiban/contracts';
+import type { z } from 'zod';
+import { MediaEndpoints, MEDIA_LIMITS, type UserMediaPurpose } from '@weiban/contracts';
+import { ApiFailure } from '@weiban/client-core';
+import { useAuth } from '../app/auth.js';
 import { api } from '../data/client.js';
 import { friendlyError } from '../data/use-remote.js';
-export function AvatarEditor({ onSaved }: { onSaved: (mediaId: string) => Promise<void> }) {
+export function AvatarEditor({
+  onSaved,
+  purpose = 'user_avatar',
+  onPendingChange,
+}: {
+  onSaved: (mediaId: string) => Promise<void>;
+  purpose?: z.infer<typeof UserMediaPurpose>;
+  onPendingChange?: (pending: boolean) => void;
+}) {
+  const { session } = useAuth();
+  const owner = session
+    ? { userId: session.user.userId, sessionId: session.session.sessionId }
+    : null;
   const [source, setSource] = useState('');
   const [zoom, setZoom] = useState(1);
   const [x, setX] = useState(0);
@@ -45,6 +60,7 @@ export function AvatarEditor({ onSaved }: { onSaved: (mediaId: string) => Promis
   async function save() {
     if (!canvas.current) return;
     setPending(true);
+    onPendingChange?.(true);
     setError('');
     try {
       const blob = await new Promise<Blob>((resolve, reject) =>
@@ -53,8 +69,9 @@ export function AvatarEditor({ onSaved }: { onSaved: (mediaId: string) => Promis
           'image/png',
         ),
       );
+      if (!owner || !api.owns(owner)) throw new ApiFailure('session_changed', '登录状态已改变', 0);
       const media = await api.call(MediaEndpoints.upload, {
-        query: { purpose: 'user_avatar' },
+        query: { purpose },
         file: blob,
       });
       await onSaved(media.mediaId);
@@ -63,6 +80,7 @@ export function AvatarEditor({ onSaved }: { onSaved: (mediaId: string) => Promis
       setError(friendlyError(e));
     } finally {
       setPending(false);
+      onPendingChange?.(false);
     }
   }
   return (

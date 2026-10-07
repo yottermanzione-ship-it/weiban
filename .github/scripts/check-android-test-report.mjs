@@ -30,11 +30,13 @@ for (const path of collect('apps/android')) {
 for (const name of [
   'app.weiban.testvectors.ProtocolVectorsTest',
   'app.weiban.testvectors.HistoryTest',
+  'app.weiban.designsystem.AvatarDefaultsTest',
   'app.weiban.data.SyncRunnerTest',
   'app.weiban.data.ChatRealtimeTest',
   'app.weiban.data.BackgroundChatDrainTest',
   'app.weiban.feature.chat.ChatScreenTest',
   'app.weiban.feature.chat.RoleBrowserTest',
+  'app.weiban.feature.chat.RoleAvatarTest',
   'app.weiban.feature.chat.ChatInformationTest',
   'app.weiban.data.ChatHistoryTest',
   'app.weiban.data.SessionRepositoryTest',

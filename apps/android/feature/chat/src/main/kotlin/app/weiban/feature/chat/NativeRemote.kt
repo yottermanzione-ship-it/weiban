@@ -34,23 +34,23 @@ internal class NativeRemote<T> {
     return state
 }
 
-@Composable internal fun characterNames(
+@Composable internal fun characterProfiles(
     repository: SessionRepository,
     ids: List<String>,
-): Map<String, String> {
+): Map<String, CharacterProfile> {
     val owner =
         repository.auth
             .collectAsState()
             .value
             ?.session
             ?.sessionId
-    var names by remember(owner) { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var names by remember(owner) { mutableStateOf<Map<String, CharacterProfile>>(emptyMap()) }
     val wanted = ids.distinct().sorted()
     LaunchedEffect(owner, wanted) {
         for (batch in wanted.chunked(4)) {
             val loaded =
                 coroutineScope {
-                    batch.map { id -> async { readName(repository, id)?.let { id to it } } }.awaitAll().filterNotNull()
+                    batch.map { id -> async { readProfile(repository, id)?.let { id to it } } }.awaitAll().filterNotNull()
                 }
             names = names + loaded
         }
@@ -58,12 +58,17 @@ internal class NativeRemote<T> {
     return names
 }
 
-private suspend fun readName(
+@Composable internal fun characterNames(
+    repository: SessionRepository,
+    ids: List<String>,
+): Map<String, String> = characterProfiles(repository, ids).mapValues { it.value.name }
+
+private suspend fun readProfile(
     repository: SessionRepository,
     id: String,
-): String? =
+): CharacterProfile? =
     try {
-        repository.call(Endpoints.characterEndpointsGetProfile, params = mapOf("characterId" to id)).name
+        repository.call(Endpoints.characterEndpointsGetProfile, params = mapOf("characterId" to id))
     } catch (error: CancellationException) {
         throw error
     } catch (_: IOException) {

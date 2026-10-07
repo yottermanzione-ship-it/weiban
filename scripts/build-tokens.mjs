@@ -306,7 +306,9 @@ function buildKotlin(pkg) {
     '    data class Swatch(val name: String, val bg: Color, val on: Color)',
     '    val all = listOf(',
   );
-  const sw = Object.entries(tokens.primitive.color.support).filter(([k]) => !k.startsWith('$'));
+  const sw = Object.entries(tokens.primitive.color.support)
+    .filter(([k]) => !k.startsWith('$'))
+    .sort(([left], [right]) => Number(left) - Number(right));
   sw.forEach(([, v], i) =>
     L.push(
       `        Swatch("${v.name}", ${kColor(v.bg.$value)}, ${kColor(v.on.$value)})${i < sw.length - 1 ? ',' : ''}`,

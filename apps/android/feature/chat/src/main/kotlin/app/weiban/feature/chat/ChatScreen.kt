@@ -42,7 +42,7 @@ import kotlinx.serialization.json.*
     Column(Modifier.fillMaxSize()) {
         if (!online) Text(error ?: "正在连接…", Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.bodySmall)
         if (selected == null) {
-            ConversationList(repository, state) { conversationId = it }
+            ConversationList(repository, owner, state) { conversationId = it }
         } else if (information) {
             ChatInformation(repository, runtime, owner, state, selected, { information = false }) { conversationId = null }
         } else {
@@ -53,11 +53,13 @@ import kotlinx.serialization.json.*
 
 @Composable private fun ConversationList(
     repository: SessionRepository,
+    owner: OwnerRecord,
     state: ClientSyncState,
     onSelect: (String) -> Unit,
 ) {
     var search by rememberSaveable { mutableStateOf("") }
-    val names = characterNames(repository, state.contacts.map { it.characterId })
+    val profiles = characterProfiles(repository, state.contacts.map { it.characterId })
+    val names = profiles.mapValues { it.value.name }
     Text("微伴", Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.headlineSmall)
     OutlinedTextField(
         search,
@@ -85,6 +87,7 @@ import kotlinx.serialization.json.*
         items(conversations, key = { it.conversationId }) { conversation ->
             ListItem(
                 headlineContent = { Text(title(state, conversation, names)) },
+                leadingContent = { ConversationAvatar(repository, owner, state, conversation, profiles) },
                 supportingContent = { Text(conversation.lastMessage?.text ?: "开始聊天", maxLines = 1) },
                 trailingContent = {
                     Text(
@@ -104,6 +107,27 @@ import kotlinx.serialization.json.*
             HorizontalDivider()
         }
     }
+}
+
+@Composable private fun ConversationAvatar(
+    repository: SessionRepository,
+    owner: OwnerRecord,
+    state: ClientSyncState,
+    conversation: Conversation,
+    profiles: Map<String, CharacterProfile>,
+) {
+    val id = conversation.participants.find { it.kind == "character" }?.refId
+    val profile = profiles[id]
+    RoleAvatar(
+        repository,
+        owner,
+        RoleAvatarIdentity(
+            id ?: conversation.conversationId,
+            profile?.name.orEmpty(),
+            profile?.avatar,
+            state.contacts.find { it.characterId == id }?.customAvatarMediaId,
+        ),
+    )
 }
 
 internal fun title(
