@@ -148,15 +148,21 @@ export class CompanionSettingsService {
             { conversationId: contact.conversationId, scope: 'normal' },
             tx,
           );
-          if (mode === 'adult')
+          if (!value.inheritsDefaults)
             await this.chat.postSystemMessage(tx, {
               conversationId: contact.conversationId,
               code: 'scenario_mode_changed',
-              params: { mode: 'daily', reason: 'adult_mode_unavailable' },
+              params: {
+                mode: 'daily',
+                reason: mode === 'adult' ? 'adult_mode_unavailable' : 'scenario_mode_unavailable',
+              },
               idempotencyKey: `mode-unavailable:${userId}:${characterId}:${Date.parse(value.updatedAt)}`,
             });
         }
-        await invalidateReplyPlans(tx, this.plans, userId, characterId);
+        // An ineligible inherited default is an effective fallback, not a persisted setting change.
+        // Invalidating here would cancel the very reply whose context is being built on every retry.
+        if (!value.inheritsDefaults)
+          await invalidateReplyPlans(tx, this.plans, userId, characterId);
       }
       return value;
     });

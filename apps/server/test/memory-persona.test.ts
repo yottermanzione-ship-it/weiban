@@ -637,6 +637,38 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     ).toBe(true);
     adultAvailability = 'not_configured';
   });
+  it('儿童继承全局恋爱默认使用日常，不能反复作废正在构建的回复', async () => {
+    await db.query(
+      'DELETE FROM ai_runtime.companion_settings WHERE user_id=$1 AND character_id=$2',
+      [userId, characterId],
+    );
+    await db.query("UPDATE characters.characters SET age_setting='minor' WHERE id=$1", [
+      characterId,
+    ]);
+    try {
+      await http()
+        .patch('/api/v1/me/companion-defaults')
+        .set('Authorization', auth())
+        .send({ scenarioMode: 'romance' })
+        .expect(200);
+      const pending = await user('今天有什么有趣的事？');
+      clock.advance(Math.max(0, pending.dueAt.getTime() - clock.nowMs()));
+      await engine.run(pending.id);
+      expect(await store.get(pending.id)).toMatchObject({ status: 'sending', nextBubble: 0 });
+      expect(calls.at(-1)?.meta?.scenarioMode).toBe('daily');
+      await finish(pending.id);
+      expect((await store.get(pending.id))?.status).toBe('done');
+    } finally {
+      await db.query("UPDATE characters.characters SET age_setting='adult' WHERE id=$1", [
+        characterId,
+      ]);
+      await http()
+        .patch('/api/v1/me/companion-defaults')
+        .set('Authorization', auth())
+        .send({ scenarioMode: 'daily' })
+        .expect(200);
+    }
+  });
   it('长消息抽取按完整来源分批，网关输入有界且不跳过剩余游标', async () => {
     response = JSON.stringify({ operations: [] });
     for (let i = 0; i < 4; i++) await memory().extract(await job());
