@@ -1,17 +1,21 @@
 import { Module } from '@nestjs/common';
+import { ChatModule } from '../chat/index.js';
 import { MediaModule } from '../media/index.js';
 import { MODEL_GATEWAY_PORT } from '../model-access/index.js';
 import { CharacterService } from './application/characters.js';
 import { CharacterCheckWorker } from './application/check-worker.js';
+import { CustomCharacterService } from './application/custom-character.js';
 import { GatewayCharacterEvaluator, EVALUATOR_GATEWAY } from './application/evaluator.js';
 import { CharacterController, CharacterAdminController } from './http/characters.controller.js';
+import { CustomCharacterController } from './http/custom-character.controller.js';
 import { CHARACTER_READ_PORT, CHARACTER_NAME_READ_PORT, CHARACTER_EVALUATOR } from './tokens.js';
 @Module({
-  imports: [MediaModule],
-  controllers: [CharacterController, CharacterAdminController],
+  imports: [MediaModule, ChatModule],
+  controllers: [CharacterController, CharacterAdminController, CustomCharacterController],
   providers: [
     CharacterService,
     CharacterCheckWorker,
+    CustomCharacterService,
     GatewayCharacterEvaluator,
     { provide: CHARACTER_READ_PORT, useExisting: CharacterService },
     { provide: CHARACTER_NAME_READ_PORT, useExisting: CharacterService },
