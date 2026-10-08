@@ -7,7 +7,7 @@ function collect(directory, found = []) {
     else if (
       item.name.startsWith('TEST-') &&
       item.name.endsWith('.xml') &&
-      path.includes('/build/test-results/')
+      path.replaceAll('\\', '/').includes('/build/test-results/')
     )
       found.push(path);
   }
@@ -48,6 +48,14 @@ for (const name of [
   'app.weiban.feature.me.AvatarCropTest',
   'app.weiban.feature.me.MoneyTest',
   'app.weiban.contracts.ContractRoundTripTest',
+  'app.weiban.designsystem.AvatarImagePngTest',
+  'app.weiban.platform.NativePushRuntimeTest',
+  'app.weiban.platform.FirebaseRegistrationCallbacksTest',
+  'app.weiban.platform.NotificationDeliveryPolicyTest',
+  'app.weiban.platform.NotificationAvatarTest',
+  'app.weiban.platform.NotificationEntryTest',
+  'app.weiban.platform.NotificationPermissionTest',
+  'app.weiban.platform.NotificationStateTest',
 ]) {
   if (!classes.has(name)) throw new Error(`Required Android suite did not execute: ${name}`);
 }

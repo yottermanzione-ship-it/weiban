@@ -32,6 +32,7 @@ class ChatInformationTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutations = ConcurrentLinkedQueue<String>()
     private val removed = AtomicBoolean(false)
+    private val modelsOpened = AtomicBoolean(false)
     private val ready = AtomicBoolean(false)
     private val auth =
         AuthResponse(
@@ -106,7 +107,14 @@ class ChatInformationTest {
     private fun showInformation() {
         compose.setContent {
             WeibanTheme {
-                ChatInformation(repository, runtime, owner, initial, initial.conversations.single(), {}) {
+                ChatInformation(
+                    repository,
+                    runtime,
+                    owner,
+                    initial,
+                    initial.conversations.single(),
+                    InformationNavigation({}, { modelsOpened.set(true) }),
+                ) {
                     val durable = runBlocking { repository.loadSync(owner)!! }
                     assertTrue(durable.messages.isEmpty())
                     assertTrue(
@@ -178,6 +186,12 @@ class ChatInformationTest {
                     it.startsWith("DELETE")
                 },
         )
+
+    @Test fun modelSelectionLeavesConversationSettingsWithoutMutatingItsState() {
+        compose.onNodeWithText("模型选择").performScrollTo().performClick()
+        assertTrue(modelsOpened.get())
+        assertTrue(mutations.isEmpty())
+    }
 
     @Test fun pinToggleHasAccessibleLabelAndPersistsActualServerState() {
         compose.onNodeWithContentDescription("置顶聊天").performClick()

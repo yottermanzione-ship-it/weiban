@@ -4,7 +4,7 @@
 
 ## 模块与契约
 
-`app` 装配导航和会话；`feature/auth`、`feature/me` 提供原生登录注册、资料与头像裁剪、模型、余额/预算/流水和账号主题。`core/network` 负责 OkHttp、接口校验及 Keystore；`core/data` 负责 Room、账号隔离和 Kotlin 协议状态机；`core/designsystem` 使用生成令牌与 Phosphor 原生矢量图；`core/testvectors` 在 JVM 上执行共享 JSON 向量。`platform` 留给 L1 厂商推送/后台能力，当前没有假推送实现。
+`app` 装配导航和会话；`feature/auth`、`feature/me` 提供原生登录注册、资料与头像裁剪、模型、余额/预算/流水和账号主题。`core/network` 负责 OkHttp、接口校验及 Keystore；`core/data` 负责 Room、账号隔离和 Kotlin 协议状态机；`core/designsystem` 使用生成令牌与 Phosphor 原生矢量图；`core/testvectors` 在 JVM 上执行共享 JSON 向量。`platform` 集中实现可选厂商推送/后台通知能力；当前原生通知装配与配置见[通知说明](notifications.md)，默认未配置通道，不以测试 transport 代替生产厂商 SDK。
 
 `pnpm android:generate` 先生成契约 JSON Schema，再从实际定义生成 Kotlin 数据类、tagged union 和 85 个类型化接口，复制原 Schema 作为运行时验证资源，并生成主题令牌和底栏图标。`android:generate:check` 逐文件比较。生成 Kotlin 主源码不手改；手写测试不被生成器覆盖。
 
@@ -28,7 +28,7 @@ OkHttp 关闭跳转和自动重试，HTTPS 为默认；仅 debug 对指定本机
 
 CI 校验生成物、ktlint/detekt、JUnit 实际执行与零跳过，并构建 debug APK，保留 APK 与报告 14 天。安装方式与正式 HTTPS 配置见 [Windows 开发说明](../ops/android-development.md)。正式签名、真机/中文输入法/无障碍/厂商推送与保活尚待专项验收。
 
-L0 的聊天/通讯录/发现仍是入口骨架。L1 才装配 Room 持久化协议状态、HTTP/WebSocket 驱动、WorkManager 发件队列及聊天、好友、角色界面；当前纯状态机通过向量不能作为这些端到端功能完成的证明。产品仍未完成。
+L1 已装配 Room 持久化协议状态、HTTP/WebSocket 驱动、WorkManager 发件队列及私聊、好友、角色界面，详见[原生聊天](chat.md)和T-041；下述41条为L0历史证据，当前证据以任务卡对应不可变提交为准。纯状态机向量或Robolectric通过不能当作真实设备端到端验收。产品仍未完成。
 
 ## 新依赖与许可证
 
@@ -43,5 +43,6 @@ L0 的聊天/通讯录/发现仍是入口骨架。L1 才装配 Room 持久化协
 | JUnit4 | 工程规范第10.7条明确要求的协议/界面测试框架，仅开发测试 | EPL-1.0 |
 | ktlint / ktlint Gradle plugin | 格式检查 | MIT |
 | detekt | 静态检查 | Apache-2.0 |
+| Firebase Messaging（可选运行时通道） | 原生 data-only 推送接收，默认不配置 | Apache-2.0；传递 Google Play Services 组件遵循 Google Android SDK license，接入限制见 `notifications.md` |
 
 所有构建/测试工具都不作为模型或推送供应商客户端，第三方 SDK 不绕过项目模块边界。

@@ -10,98 +10,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import app.weiban.contracts.*
 import app.weiban.data.OwnerRecord
-import app.weiban.data.SessionCallOptions
 import app.weiban.data.SessionRepository
 import app.weiban.designsystem.tokens.WbSpace
-import app.weiban.network.ApiFailure
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
-
-private class MeState(
-    val repository: SessionRepository,
-    val owner: OwnerRecord,
-    val firstProfile: Boolean,
-    val onTheme: (String) -> Unit,
-    private val scope: CoroutineScope,
-) {
-    var page by mutableStateOf(if (firstProfile) "profile" else "me")
-    var profile by mutableStateOf<Profile?>(null)
-    var wallet by mutableStateOf<Wallet?>(null)
-    var ledger by mutableStateOf<List<LedgerEntry>>(emptyList())
-    var cursor by mutableStateOf<String?>(null)
-    var models by mutableStateOf<List<ModelInfo>>(emptyList())
-    var selection by mutableStateOf<ModelSelection?>(null)
-    var nickname by mutableStateOf("")
-    var city by mutableStateOf("")
-    var about by mutableStateOf("")
-    var birthday by mutableStateOf("")
-    var gender by mutableStateOf("unspecified")
-    var threshold by mutableStateOf("")
-    var daily by mutableStateOf("")
-    var message by mutableStateOf<String?>(null)
-    var busy by mutableStateOf(false)
-
-    suspend fun <T> call(
-        endpoint: ContractEndpoint<T>,
-        body: JsonElement? = null,
-        query: Map<String, String> = emptyMap(),
-    ): T {
-        val result = repository.call(endpoint, body, query = query, options = SessionCallOptions(owner = owner))
-        val current = repository.auth.value
-        if (current?.user?.userId != owner.userId || current.session.sessionId != owner.sessionId) throw ApiFailure("session_changed", 0)
-        return result
-    }
-
-    suspend fun load() {
-        val p = call(Endpoints.identityEndpointsGetProfile)
-        profile = p
-        nickname = p.nickname.orEmpty()
-        city = p.city.orEmpty()
-        about =
-            p.about.orEmpty()
-        birthday = p.birthday.orEmpty()
-        gender = p.gender
-        val w = call(Endpoints.billingEndpointsGetWallet)
-        wallet = w
-        threshold = yuan(w.lowBalanceThresholdMicros)
-        daily =
-            yuan(w.backgroundBudget.dailyLimitMicros)
-        val prefs = call(Endpoints.identityEndpointsGetPreferences)
-        onTheme(prefs.theme)
-    }
-
-    @Suppress("TooGenericExceptionCaught") // Present a generic user message for service/storage failures.
-    fun perform(work: suspend () -> Unit) {
-        busy = true
-        message = null
-        scope.launch {
-            try {
-                work()
-            } catch (_: IllegalArgumentException) {
-                message =
-                    "请检查填写的内容"
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                message = "暂时无法完成，请稍后重试"
-            } finally {
-                busy = false
-            }
-        }
-    }
-}
 
 @Composable fun MeScreen(
     repository: SessionRepository,
     firstProfile: Boolean = false,
     onTheme: (String) -> Unit,
     onLogout: () -> Unit,
+    entry: MeEntry = MeEntry(),
 ) {
     val auth by repository.auth.collectAsState()
     val owner = auth?.let { OwnerRecord(userId = it.user.userId, sessionId = it.session.sessionId) } ?: return
-    key(owner) { MeContent(repository, owner, firstProfile, onTheme, onLogout) }
+    key(owner) { MeContent(repository, owner, firstProfile, onTheme, onLogout, entry) }
 }
 
 @Composable private fun MeContent(
@@ -110,11 +32,13 @@ private class MeState(
     firstProfile: Boolean,
     onTheme: (String) -> Unit,
     onLogout: () -> Unit,
+    entry: MeEntry,
 ) {
     val scope = rememberCoroutineScope()
     val themeCallback = rememberUpdatedState(onTheme)
     val state = remember(repository, owner) { MeState(repository, owner, firstProfile, { themeCallback.value(it) }, scope) }
     LaunchedEffect(state) { state.perform { state.load() } }
+    LaunchedEffect(state, entry.page) { if (!firstProfile) entry.page?.let(state::openPage) }
     with(state) {
         Column(
             Modifier
@@ -137,21 +61,34 @@ private class MeState(
             )
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            when (page) {
-                "profile" -> ProfilePage(state)
-                "wallet" -> {
-                    BudgetPage(state)
-                    LedgerPage(state)
-                }
-                "models" -> {
-                    ModelChoices(state, "chat", "聊天模型")
-                    ModelChoices(state, "background", "后台任务模型")
-                    ModelChoices(state, "adult", "成人模式模型")
-                    Text("成人模式模型未设置时不能开启成人模式；具体对话仍受角色与账号规则约束。")
-                }
-                "theme" -> ThemePage(state)
-                else -> HomePage(state, onLogout)
+            MePageBody(state, entry, onLogout)
+        }
+    }
+}
+
+@Composable private fun MePageBody(
+    state: MeState,
+    entry: MeEntry,
+    onLogout: () -> Unit,
+) {
+    with(state) {
+        when (page) {
+            "profile" -> ProfilePage(state)
+            "wallet" -> {
+                BudgetPage(state)
+                LedgerPage(state)
             }
+            "models" -> {
+                ModelChoices(state, "chat", "聊天模型")
+                ModelChoices(state, "background", "后台任务模型")
+                ModelChoices(state, "adult", "成人模式模型")
+                Text("成人模式模型未设置时不能开启成人模式；具体对话仍受角色与账号规则约束。")
+            }
+            "theme" -> ThemePage(state)
+            "settings" -> MeSettings(state)
+            "notifications" -> NotificationSettingsPage(state, entry.notifications)
+            "services" -> MeServices(state)
+            else -> HomePage(state, onLogout)
         }
     }
 }
@@ -318,24 +255,8 @@ private class MeState(
     )
     Text("账号：${repository.auth.value?.user?.username.orEmpty()}")
     OutlinedButton(onClick = { page = "profile" }) { Text("我的资料") }
-    OutlinedButton(onClick = {
-        page = "wallet"
-        perform {
-            val result = call(Endpoints.billingEndpointsListLedger)
-            ledger =
-                result.items
-            cursor = result.nextCursor
-        }
-    }) { Text("余额与账单") }
-    OutlinedButton(onClick = {
-        page = "models"
-        perform {
-            models = call(Endpoints.modelAccessEndpointsListModels).items
-            selection =
-                call(Endpoints.modelAccessEndpointsGetSelection)
-        }
-    }) { Text("模型选择") }
-    OutlinedButton(onClick = { page = "theme" }) { Text("主题") }
+    OutlinedButton(onClick = { openPage("services") }) { Text("服务") }
+    OutlinedButton(onClick = { openPage("settings") }) { Text("设置") }
     TextButton(enabled = !busy, onClick = {
         perform {
             load()
@@ -400,6 +321,9 @@ private fun pageTitle(
         "wallet" -> "余额与账单"
         "models" -> "模型选择"
         "theme" -> "主题"
+        "settings" -> "设置"
+        "notifications" -> "新消息通知"
+        "services" -> "服务"
         else -> "我"
     }
 

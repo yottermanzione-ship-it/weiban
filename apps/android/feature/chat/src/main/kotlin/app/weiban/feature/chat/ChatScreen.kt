@@ -24,6 +24,7 @@ import kotlinx.serialization.json.*
     runtime: ChatRuntime,
     owner: OwnerRecord,
     openConversationId: String? = null,
+    onModelsRequested: () -> Unit = {},
     onConversationChanged: (String?) -> Unit = {},
 ) {
     val snapshot by runtime.snapshot.collectAsState()
@@ -53,7 +54,16 @@ import kotlinx.serialization.json.*
         if (selected == null) {
             ConversationList(repository, owner, state, select)
         } else if (information) {
-            ChatInformation(repository, runtime, owner, state, selected, { information = false }) { select(null) }
+            ChatInformation(
+                repository,
+                runtime,
+                owner,
+                state,
+                selected,
+                InformationNavigation({
+                    information = false
+                }, onModelsRequested),
+            ) { select(null) }
         } else {
             ConversationView(repository, runtime, owner, state, selected, { information = true }) { select(null) }
         }

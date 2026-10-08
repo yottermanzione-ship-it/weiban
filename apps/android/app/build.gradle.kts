@@ -15,11 +15,18 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
-        buildConfigField(
-            "String",
-            "API_BASE_URL",
-            "\"${providers.environmentVariable("WEIBAN_API_BASE_URL").getOrElse("http://10.0.2.2:3000")}\"",
-        )
+        for ((field, variable) in mapOf(
+            "API_BASE_URL" to "WEIBAN_API_BASE_URL",
+            "FCM_APP_ID" to "WEIBAN_FCM_APP_ID",
+            "FCM_SENDER_ID" to "WEIBAN_FCM_SENDER_ID",
+            "FCM_PROJECT_ID" to "WEIBAN_FCM_PROJECT_ID",
+            "FCM_API_KEY" to "WEIBAN_FCM_API_KEY",
+            "ADMIN_PUBLIC_ORIGIN" to "WEIBAN_ADMIN_PUBLIC_ORIGIN",
+        )) {
+            val value = providers.environmentVariable(variable).getOrElse(if (field == "API_BASE_URL") "http://10.0.2.2:3000" else "")
+            check(value.none { it.code < 32 }) { "Client configuration must not contain control characters" }
+            buildConfigField("String", field, "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

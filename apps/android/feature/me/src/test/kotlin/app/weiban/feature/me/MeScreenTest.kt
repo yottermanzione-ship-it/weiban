@@ -32,6 +32,22 @@ class MeScreenTest {
     private val timestamp = "2026-10-06T03:00:00.000Z"
     private val user = CurrentUser("01920000-0000-7000-8000-000000000014", "native_user", "user", false, timestamp)
     private val profile = AtomicReference(Profile(null, null, null, "unspecified", null, null, "Asia/Shanghai", timestamp))
+    private val notifications =
+        AtomicReference(
+            NotificationSettings(
+                true,
+                true,
+                true,
+                true,
+                NotificationSettingsDoNotDisturb(
+                    false,
+                    "22:00",
+                    "08:00",
+                ),
+                true,
+                timestamp,
+            ),
+        )
     private val requests = ConcurrentLinkedQueue<RecordedRequest>()
 
     @Before fun setup() =
@@ -109,6 +125,23 @@ class MeScreenTest {
                             timestamp,
                         ),
                     )
+                "/api/v1/me/notification-settings" -> {
+                    if (request.method == "PATCH") {
+                        val input = json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                        val before = notifications.get()
+                        notifications.set(
+                            before.copy(
+                                pushSoundEnabled = input["pushSoundEnabled"]?.jsonPrimitive?.boolean ?: before.pushSoundEnabled,
+                                pushShowContent = input["pushShowContent"]?.jsonPrimitive?.boolean ?: before.pushShowContent,
+                                doNotDisturb =
+                                    input["doNotDisturb"]?.let {
+                                        json.decodeFromJsonElement(NotificationSettingsDoNotDisturb.serializer(), it)
+                                    } ?: before.doNotDisturb,
+                            ),
+                        )
+                    }
+                    json.encodeToString(NotificationSettings.serializer(), notifications.get())
+                }
                 "/api/v1/me/preferences" -> json.encodeToString(UserPreferences.serializer(), UserPreferences("pink", timestamp))
                 "/api/v1/me" -> json.encodeToString(CurrentUser.serializer(), user.copy(profileCompleted = profile.get().nickname != null))
                 else -> return MockResponse().setResponseCode(404)
@@ -119,6 +152,54 @@ class MeScreenTest {
     @After fun close() {
         server.close()
         database.close()
+    }
+
+    @Test fun notificationPageUsesActualSettingsAndDisablesUnsupportedDeviceOptIn() {
+        var attempts = 0
+        val controls = DeviceNotificationControls("此设备暂不支持消息通知", false, false, false, { attempts++ }, { attempts++ })
+        compose.setContent { WeibanTheme { MeScreen(repository, onTheme = {}, onLogout = {}, entry = MeEntry(notifications = controls)) } }
+        compose.waitUntil(10_000) { requests.any { it.path == "/api/v1/me/preferences" } }
+        compose.onNodeWithText("设置").performScrollTo().performClick()
+        compose.onNodeWithText("新消息通知").performScrollTo().performClick()
+        awaitNotificationControls()
+        compose.onNodeWithText("此设备暂不支持消息通知").assertExists()
+        compose.onNodeWithText("开启通知").assertIsNotEnabled()
+        compose.onAllNodes(isToggleable())[0].performScrollTo().performClick()
+        compose.waitUntil(10_000) { !notifications.get().pushSoundEnabled }
+        compose.waitForIdle()
+        awaitNotificationControls()
+        compose.onAllNodes(isToggleable())[1].performScrollTo().performClick()
+        compose.waitUntil(10_000) { !notifications.get().pushShowContent }
+        assertEquals(0, attempts)
+        val changes = requests.filter { it.path == "/api/v1/me/notification-settings" && it.method == "PATCH" }
+        assertEquals(2, changes.size)
+        assertFalse(requests.any { it.path == "/api/v1/push/devices" })
+    }
+
+    @Test fun quietHoursRejectInvalidInputAndPersistValidOwnedSettings() {
+        compose.setContent { WeibanTheme { MeScreen(repository, onTheme = {}, onLogout = {}, entry = MeEntry(page = "notifications")) } }
+        awaitNotificationControls()
+        compose.onNodeWithText("开始时间").performScrollTo().performTextReplacement("25:00")
+        compose.onNodeWithText("保存免打扰时段").performScrollTo().assertIsNotEnabled()
+        assertFalse(requests.any { it.method == "PATCH" })
+        compose.onNodeWithText("开始时间").performScrollTo().performTextReplacement("23:30")
+        compose.onNodeWithText("结束时间").performScrollTo().performTextReplacement("07:15")
+        compose.onNodeWithText("保存免打扰时段").performScrollTo().performClick()
+        compose.waitUntil(10_000) { notifications.get().doNotDisturb.start == "23:30" }
+        compose.waitForIdle()
+        awaitNotificationControls()
+        compose.onAllNodes(isToggleable())[2].performScrollTo().performClick()
+        compose.waitUntil(10_000) { notifications.get().doNotDisturb.enabled }
+        assertEquals("07:15", notifications.get().doNotDisturb.end)
+        assertTrue(notifications.get().pushShowContent)
+        assertTrue(notifications.get().pushSoundEnabled)
+        val changes = requests.filter { it.method == "PATCH" }
+        assertEquals(2, changes.size)
+        assertTrue(changes.all { it.getHeader("Authorization") == "Bearer ${repository.auth.value!!.session.token}" })
+    }
+
+    private fun awaitNotificationControls() {
+        compose.waitUntil(10_000) { compose.onAllNodes(isToggleable() and isEnabled()).fetchSemanticsNodes().size == 3 }
     }
 
     @Test fun replacingAccountDiscardsItsSlowProfileAndShowsTheNewOwnersAvatar() {
