@@ -207,3 +207,8 @@ Android设计系统新增defaultAvatarPng(context, style)：按生成的96px尺�
 designsystem测试增加既有集中版本Robolectric（MIT）/AndroidX test-core（Apache-2.0），仅测试用途；本机按工程规范--write-locks完整检查更新锁，只有该模块锁文件变化，应用runtime版本未变。新增真实API26原生图形测试：解码96x96、PNG签名、两角透明、实际底色/字形像素、无图案与星/心/音符/月亮/花不同实际像素遮罩。六个PNG已查看（/tmp/weiban-notification-avatar-{none,star,heart,note,moon,flower}.png）。首轮--write-locks完整ktlint/detekt/测试/APK通过，91条JUnit零失败/零跳过（/tmp/weiban-t041-avatar-png-native1.log，退出0及实际报告脚本）；锁定后的正常完整ktlint/detekt/测试/APK检查也通过，91条JUnit零失败/零跳过（/tmp/weiban-t041-avatar-png-native2.log，退出0及实际报告脚本）；514定义/85操作/图标/tokens生成无差异（/tmp/weiban-t041-avatar-png-generated1.log，退出0）。
 
 本轮是头像像素导出能力的开发自测，不构成系统通知、真实厂商投递或实机验收；通知发出前仍需按原owner核对、私有头像优先读取与失败回退，并与系统通知/厂商凭证接入。Web/管理端/服务端未修改，453条整仓/Web21/管理端7证据引用引导恢复检查点，不重复记本轮新增通过。继续原生通知/推送和新账号首回复整链路，然后L2–L7；产品未完成。发布后单独读取源码CI。
+
+
+## 2026-10-08 临时接续：服务端整链路
+
+T-044在独立dev/t041-server-flow接续：真实生产启动all角色、系统时钟、PG/pg-boss/事件、HTTP邀请码注册赠送、角色后台上架评测、实际延迟接受、开场/首回复、网关计费、WS/补拉与发送幂等均接通。仅供应商HTTP假上游。完整54文件468条零跳过开发自测通过，源码CI尚待读取。详情/时间预算见T-044任务卡，安卓推送由下一任务接续；不登记独立QA通过。
