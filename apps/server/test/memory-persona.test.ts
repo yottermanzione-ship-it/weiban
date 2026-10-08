@@ -67,6 +67,8 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     'not_configured';
   let generationGate: Promise<void> | null = null;
   let response = '我听着呢\n今天过得怎么样？';
+  let emulateCache = false;
+  const cachedAnswers = new Map<string, string>();
   const gateway: ModelGatewayPort = {
     getModelStatus: async () => {
       throw Error('unused');
@@ -74,12 +76,16 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     generateText: async (input) => {
       calls.push(input);
       if (generationGate) await generationGate;
+      const answer = emulateCache
+        ? (cachedAnswers.get(input.idempotencyKey) ?? response)
+        : response;
+      if (emulateCache && !failure) cachedAnswers.set(input.idempotencyKey, answer);
       return failure
         ? { ok: false, error: failure as 'provider_unavailable' }
         : {
             ok: true,
             value: {
-              text: response,
+              text: answer,
               modelKey: 'test/model',
               usage: { inputTokens: 10, cachedInputTokens: 0, outputTokens: 10, estimated: false },
               chargedMicros: 1,
@@ -284,7 +290,12 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
         },
       ],
     });
+    emulateCache = true;
     await expect(memory().extract(await job())).rejects.toThrow('memory_unknown_source');
+    const invalidKey = calls.at(-1)!.idempotencyKey;
+    const callsBeforeBackoff = calls.length;
+    await memory().extract(await job());
+    expect(calls.length).toBe(callsBeforeBackoff);
     response = JSON.stringify({
       operations: [
         {
@@ -297,7 +308,10 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
       ],
       summary: '曾谈到喜欢咖啡。',
     });
+    clock.advance(3600000);
     await memory().extract(await job());
+    expect(calls.at(-1)!.idempotencyKey).not.toBe(invalidKey);
+    emulateCache = false;
     const coffee = (await memory().list(userId, characterId, { limit: 50 })).items.find(
       (m) => m.content === '喜欢咖啡',
     )!;

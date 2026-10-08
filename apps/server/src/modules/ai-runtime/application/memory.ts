@@ -419,6 +419,21 @@ export class MemoryService {
       retryBackoff: true,
     });
   }
+  private async defer(job: MemoryJob, state: typeof memoryStates.$inferSelect, delayMs: number) {
+    await this.db.transaction(async (tx) => {
+      await this.lock(tx, job);
+      const now = await this.state(tx, job);
+      if (now.revision !== state.revision || now.cursorSeq !== state.cursorSeq) return;
+      const retryAfter = new Date(this.clock.nowMs() + delayMs);
+      await tx.db.update(memoryStates).set({ retryAfter }).where(eq(memoryStates.id, now.id));
+      await this.jobs.send(EXTRACT_MEMORY_JOB, job, {
+        tx,
+        startAfter: retryAfter,
+        retryLimit: 10,
+        retryBackoff: true,
+      });
+    });
+  }
   async extract(job: MemoryJob): Promise<void> {
     if (
       ![job.userId, job.characterId, job.conversationId, job.epoch].every(
@@ -504,7 +519,7 @@ export class MemoryService {
           },
           responseFormat: 'json',
           maxOutputTokens: 1600,
-          idempotencyKey: `memory:${state.id}:${state.revision}:${state.cursorSeq}:${lastSeq}`,
+          idempotencyKey: `memory:${state.id}:${state.revision}:${state.cursorSeq}:${lastSeq}:${state.retryAfter?.getTime() ?? 0}`,
           messages: [
             {
               role: 'system',
@@ -528,30 +543,36 @@ export class MemoryService {
       : null;
     if (result && !result.ok) {
       if (result.error === 'budget_exceeded' || result.error === 'insufficient_balance') {
-        await this.db.transaction(async (tx) => {
-          await this.lock(tx, job);
-          const now = await this.state(tx, job);
-          if (now.revision !== state.revision || now.cursorSeq !== state.cursorSeq) return;
-          const retryAfter = new Date(this.clock.nowMs() + 86400000);
-          await tx.db.update(memoryStates).set({ retryAfter }).where(eq(memoryStates.id, now.id));
-          await this.jobs.send(EXTRACT_MEMORY_JOB, job, {
-            tx,
-            startAfter: retryAfter,
-            retryLimit: 10,
-            retryBackoff: true,
-          });
-        });
+        await this.defer(job, state, 86400000);
         return;
       }
       throw new Error(`memory_generation_${result.error}`);
     }
-    const extracted = result?.ok
-      ? ExtractedMemory.parse(JSON.parse(result.value.text))
-      : { operations: [] };
+    let raw: unknown = { operations: [] };
+    if (result?.ok) {
+      try {
+        raw = JSON.parse(result.value.text);
+      } catch {
+        // Parser diagnostics may contain private provider output; keep only a fixed validation code.
+        raw = null;
+      }
+    }
+    const parsed = ExtractedMemory.safeParse(raw);
+    if (!parsed.success) {
+      await this.defer(job, state, 3600000);
+      throw new Error('memory_invalid_output');
+    }
+    const extracted = parsed.data;
     for (const operation of extracted.operations) {
-      if (!operation.sourceMessageIds.every((id) => sourceMap.has(id)))
-        throw new Error('memory_unknown_source');
-      if (healthPrivate(operation.content)) throw new Error('memory_private_health');
+      const invalid = !operation.sourceMessageIds.every((id) => sourceMap.has(id))
+        ? 'memory_unknown_source'
+        : healthPrivate(operation.content)
+          ? 'memory_private_health'
+          : null;
+      if (!invalid) continue;
+      // A billed but invalid answer is cached by the gateway. Retry in a new round, not every minute.
+      await this.defer(job, state, 3600000);
+      throw new Error(invalid);
     }
     await this.db.transaction(async (tx) => {
       await this.lock(tx, job);
