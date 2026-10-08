@@ -42,7 +42,7 @@ function hashBucket(s: string, buckets: number): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
-    h = (Math.imul(h, 16777619) >>> 0);
+    h = Math.imul(h, 16777619) >>> 0;
   }
   return h % buckets;
 }
@@ -75,12 +75,7 @@ export function toVectorLiteral(v: Float32Array): string {
 
 /** 将数据库返回的向量字符串解析回 Float32Array。 */
 export function fromVectorLiteral(s: string): Float32Array {
-  return new Float32Array(
-    s
-      .slice(1, -1)
-      .split(',')
-      .map(Number),
-  );
+  return new Float32Array(s.slice(1, -1).split(',').map(Number));
 }
 
 export const VECTOR_DIM = DIM;

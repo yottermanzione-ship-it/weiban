@@ -118,7 +118,10 @@ async function setupTestApp(clock: TestClock, response: { current: string }) {
   await identity.setRole('vecuser1x', 'user');
   const token = AuthResponse.parse(
     (
-      await (await import('supertest')).default(app.getHttpServer())
+      await (
+        await import('supertest')
+      )
+        .default(app.getHttpServer())
         .post('/api/v1/auth/login')
         .send({
           username: 'vecuser1x',
@@ -178,7 +181,18 @@ async function setupTestApp(clock: TestClock, response: { current: string }) {
         return;
   };
   return {
-    app, db, calls, gateway, memory, jobFor, dispatch, userId, characterId, cid, token, adminId,
+    app,
+    db,
+    calls,
+    gateway,
+    memory,
+    jobFor,
+    dispatch,
+    userId,
+    characterId,
+    cid,
+    token,
+    adminId,
   };
 }
 
@@ -297,10 +311,9 @@ describeDb('T-046 向量检索与分层摘要', () => {
       content: '最近在学钢琴',
     });
     // 把这条记忆的向量清空，强制走关键词路径
-    await ctx.db.query(
-      'UPDATE ai_runtime.memories SET embedding=NULL WHERE id=$1',
-      [newMem.memoryId],
-    );
+    await ctx.db.query('UPDATE ai_runtime.memories SET embedding=NULL WHERE id=$1', [
+      newMem.memoryId,
+    ]);
     // context 应该正常返回，不抛出
     const result = await memory().context(userId, characterId, 'normal', '钢琴');
     // 能找到钢琴记忆（关键词路径）
@@ -347,7 +360,7 @@ describeDb('T-046 向量检索与分层摘要', () => {
     const { memory, jobFor, db, userId, cid, dispatch } = ctx;
     // 强制 lastMonthlyAt 为 31 天前，触发月汇总
     await db.query(
-      "UPDATE ai_runtime.memory_states SET last_monthly_at=$1 WHERE user_id=$2 AND character_id=$3",
+      'UPDATE ai_runtime.memory_states SET last_monthly_at=$1 WHERE user_id=$2 AND character_id=$3',
       [new Date(clock.nowMs() - 32 * 24 * 3600 * 1000), userId, ctx.characterId],
     );
     // 需要 daily_summaries_ciphertext 存在才触发月汇总，已在上一个测试写入

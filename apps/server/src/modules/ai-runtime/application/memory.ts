@@ -360,8 +360,18 @@ export class MemoryService {
           const keywordFill = nonVector
             .sort(
               (a, b) =>
-                relevance(b.content, query, b.importance, this.clock.nowMs() - Date.parse(b.updatedAt)) -
-                relevance(a.content, query, a.importance, this.clock.nowMs() - Date.parse(a.updatedAt)),
+                relevance(
+                  b.content,
+                  query,
+                  b.importance,
+                  this.clock.nowMs() - Date.parse(b.updatedAt),
+                ) -
+                relevance(
+                  a.content,
+                  query,
+                  a.importance,
+                  this.clock.nowMs() - Date.parse(a.updatedAt),
+                ),
             )
             .slice(0, Math.max(0, 12 - vectorItems.length));
           items = [...vectorItems, ...keywordFill].slice(0, 12);
@@ -370,8 +380,18 @@ export class MemoryService {
           items = filtered
             .sort(
               (a, b) =>
-                relevance(b.content, query, b.importance, this.clock.nowMs() - Date.parse(b.updatedAt)) -
-                relevance(a.content, query, a.importance, this.clock.nowMs() - Date.parse(a.updatedAt)),
+                relevance(
+                  b.content,
+                  query,
+                  b.importance,
+                  this.clock.nowMs() - Date.parse(b.updatedAt),
+                ) -
+                relevance(
+                  a.content,
+                  query,
+                  a.importance,
+                  this.clock.nowMs() - Date.parse(a.updatedAt),
+                ),
             )
             .slice(0, 12);
         }
@@ -380,8 +400,18 @@ export class MemoryService {
         items = filtered
           .sort(
             (a, b) =>
-              relevance(b.content, query, b.importance, this.clock.nowMs() - Date.parse(b.updatedAt)) -
-              relevance(a.content, query, a.importance, this.clock.nowMs() - Date.parse(a.updatedAt)),
+              relevance(
+                b.content,
+                query,
+                b.importance,
+                this.clock.nowMs() - Date.parse(b.updatedAt),
+              ) -
+              relevance(
+                a.content,
+                query,
+                a.importance,
+                this.clock.nowMs() - Date.parse(a.updatedAt),
+              ),
           )
           .slice(0, 12);
       }
@@ -389,7 +419,12 @@ export class MemoryService {
       // Segment summaries (existing rolling layer)
       let segmentSummary = '';
       if (state.summaryCiphertext) {
-        const bytes = await this.crypto.open(userId, `ai:summary:${state.id}`, state.summaryCiphertext, tx);
+        const bytes = await this.crypto.open(
+          userId,
+          `ai:summary:${state.id}`,
+          state.summaryCiphertext,
+          tx,
+        );
         try {
           const data = Summaries.parse(JSON.parse(bytes.toString('utf8')));
           segmentSummary = scope === 'adult' ? `${data.normal}\n${data.adult}` : data.normal;
@@ -401,7 +436,12 @@ export class MemoryService {
       // Layered summaries: daily + monthly
       let dailySummary = '';
       if (state.dailySummariesCiphertext) {
-        const bytes = await this.crypto.open(userId, `ai:daily:${state.id}`, state.dailySummariesCiphertext, tx);
+        const bytes = await this.crypto.open(
+          userId,
+          `ai:daily:${state.id}`,
+          state.dailySummariesCiphertext,
+          tx,
+        );
         try {
           const entries = SummaryEntries.parse(JSON.parse(bytes.toString('utf8')));
           // Return the 3 most recent daily entries relevant to scope
@@ -417,7 +457,12 @@ export class MemoryService {
 
       let monthlySummary = '';
       if (state.monthlySummariesCiphertext) {
-        const bytes = await this.crypto.open(userId, `ai:monthly:${state.id}`, state.monthlySummariesCiphertext, tx);
+        const bytes = await this.crypto.open(
+          userId,
+          `ai:monthly:${state.id}`,
+          state.monthlySummariesCiphertext,
+          tx,
+        );
         try {
           const entries = SummaryEntries.parse(JSON.parse(bytes.toString('utf8')));
           // Return the 2 most relevant monthly entries
@@ -431,7 +476,9 @@ export class MemoryService {
         }
       }
 
-      const summary = [segmentSummary, dailySummary, monthlySummary].filter(Boolean).join('\n===\n');
+      const summary = [segmentSummary, dailySummary, monthlySummary]
+        .filter(Boolean)
+        .join('\n===\n');
       return { revision: state.revision, barrierSeq: state.barrierSeq, items, summary };
     });
   }
@@ -796,7 +843,8 @@ export class MemoryService {
           }
         }
         const summaryScope = sources.some((m) => m.scope === 'adult') ? 'adult' : 'normal';
-        summaries[summaryScope] = `${summaries[summaryScope]}\n${extracted.summary.slice(0, 250)}`.slice(-4000);
+        summaries[summaryScope] =
+          `${summaries[summaryScope]}\n${extracted.summary.slice(0, 250)}`.slice(-4000);
         summaryCiphertext = await this.crypto.seal(
           job.userId,
           `ai:summary:${now.id}`,
@@ -852,8 +900,14 @@ export class MemoryService {
           const existingIdx = dailyEntries.findIndex((e) => e.period === dateKey);
           const newEntry = {
             period: dateKey,
-            normal: `${existingIdx >= 0 ? dailyEntries[existingIdx]!.normal : ''}\n${segSummaries.normal}`.slice(-2000).trim(),
-            adult: `${existingIdx >= 0 ? dailyEntries[existingIdx]!.adult : ''}\n${segSummaries.adult}`.slice(-2000).trim(),
+            normal:
+              `${existingIdx >= 0 ? dailyEntries[existingIdx]!.normal : ''}\n${segSummaries.normal}`
+                .slice(-2000)
+                .trim(),
+            adult:
+              `${existingIdx >= 0 ? dailyEntries[existingIdx]!.adult : ''}\n${segSummaries.adult}`
+                .slice(-2000)
+                .trim(),
           };
           if (existingIdx >= 0) dailyEntries[existingIdx] = newEntry;
           else dailyEntries.push(newEntry);
@@ -895,8 +949,16 @@ export class MemoryService {
 
           const monthDays = dailyEntries.filter((e) => e.period.startsWith(monthKey));
           if (monthDays.length > 0) {
-            const combinedNormal = monthDays.map((e) => e.normal).filter(Boolean).join('\n').slice(-2000);
-            const combinedAdult = monthDays.map((e) => e.adult).filter(Boolean).join('\n').slice(-2000);
+            const combinedNormal = monthDays
+              .map((e) => e.normal)
+              .filter(Boolean)
+              .join('\n')
+              .slice(-2000);
+            const combinedAdult = monthDays
+              .map((e) => e.adult)
+              .filter(Boolean)
+              .join('\n')
+              .slice(-2000);
 
             let monthlyEntries: z.infer<typeof SummaryEntries> = [];
             if (now.monthlySummariesCiphertext) {
@@ -917,7 +979,8 @@ export class MemoryService {
             const newEntry = { period: monthKey, normal: combinedNormal, adult: combinedAdult };
             if (existingIdx >= 0) monthlyEntries[existingIdx] = newEntry;
             else monthlyEntries.push(newEntry);
-            if (monthlyEntries.length > MAX_MONTHLY) monthlyEntries = monthlyEntries.slice(-MAX_MONTHLY);
+            if (monthlyEntries.length > MAX_MONTHLY)
+              monthlyEntries = monthlyEntries.slice(-MAX_MONTHLY);
 
             monthlySummariesCiphertext = await this.crypto.seal(
               job.userId,

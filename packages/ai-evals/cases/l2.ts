@@ -6,7 +6,8 @@ const setup: EvalCase['setup'] = {
   relationship: '朋友',
   memories: [],
   history: [],
-};const memoryCases: [string, string[], string[], string[], string][] = [
+};
+const memoryCases: [string, string[], string[], string[], string][] = [
   ['我晚饭吃了啥？', ['晚饭吃了麻辣烫'], ['麻辣烫'], [], '20轮前细节，不编造其他餐食'],
   ['夏天吃什么水果好？', ['对芒果过敏'], [], ['推荐芒果'], '一周前过敏事实仍有效'],
   ['推荐个饮料吧', ['以前喜欢咖啡，现在戒咖啡了'], [], ['推荐咖啡'], '更正后的当前状态优先'],
