@@ -259,7 +259,9 @@ class RoleBrowserTest {
         compose.waitUntil(10_000) { compose.onAllNodesWithText("等待通过好友申请").fetchSemanticsNodes().isNotEmpty() }
         assertTrue(opened.isEmpty())
         accepted = true
-        runBlocking { runtime.refresh(owner) }
+        // Match production refresh dispatch; do not block the test/UI thread
+        // while the accepted-contact update drives Compose navigation.
+        scope.launch { runtime.refresh(owner) }
         compose.waitUntil(10_000) { opened.isNotEmpty() }
         assertEquals(listOf(conversationId), opened.toList())
         assertEquals(

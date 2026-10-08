@@ -8,3 +8,6 @@
 
 
 开发自测：首轮lint通过，类型检查发现错误使用AdminCharacter内部checks字段，改为契约publishChecks；第二轮类型与一条真实装配专项通过，41.17秒/零跳过。补回复完成后的同ID重试与两个终态计划断言后，完整pnpm check退出0：54文件468条全通过/零跳过，280.96秒；格式/lint/模块边界/全仓类型/tokens通过。日志wb-t041-flow-check2.log、wb-t041-check1.log及.exit。尚未读取本轮源码GitHub CI，正式交接在CI后登记。
+
+
+首版6920977的PR完整CI成功，push服务端check成功但既有安卓RoleBrowserTest报CalledFromWrongThreadException；本机单项未复现，未把失败作业记为通过。检查发现界面活动时runBlocking在测试线程触发刷新，改为运行时同样的IO scope调度并等真实导航，保留原断言/超时；该类4条本机测试全部通过/零跳过，ktlint/detekt通过，日志wb-t041-native-role2.log。CI保存APK/报告步骤改为always，失败也保留JUnit用于定位，不改变门禁。最终修正CI随后登记。
