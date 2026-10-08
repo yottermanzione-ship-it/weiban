@@ -11,3 +11,6 @@
 
 
 首版6920977的PR完整CI成功，push服务端check成功但既有安卓RoleBrowserTest报CalledFromWrongThreadException；本机单项未复现，未把失败作业记为通过。检查发现界面活动时runBlocking在测试线程触发刷新，改为运行时同样的IO scope调度并等真实导航，保留原断言/超时；该类4条本机测试全部通过/零跳过，ktlint/detekt通过，日志wb-t041-native-role2.log。CI保存APK/报告步骤改为always，失败也保留JUnit用于定位，不改变门禁。最终修正CI随后登记。
+
+
+最终源码cdf43aa0aded091818b5d31ce0c8bc19826db40b已推送。push37742958220和PR37742965688完整CI均success：整仓468条零跳过、Web22/后台7、安卓92条零跳过/生成/静态/APK、生产备份恢复通过，已读所有job/step及解码日志。交接见docs/handoffs/2026-10-08-codex-T-044.md。未合main/未登记独立验收，原生推送由下一任务继续。
