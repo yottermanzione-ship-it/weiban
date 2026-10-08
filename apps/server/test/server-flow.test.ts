@@ -149,11 +149,14 @@ describeDb('T041真实启动：注册→延迟接受→HTTP上游→计费/消�
       .set('Authorization', auth)
       .send({ nickname: '第一天' })
       .expect(200);
-    expect(
-      Wallet.parse(
-        (await http().get('/api/v1/billing/wallet').set('Authorization', auth).expect(200)).body,
-      ).balanceMicros,
-    ).toBe(bonusMicros);
+    // Registration credits arrive through the production event dispatcher.
+    await vi.waitFor(async () => {
+      expect(
+        Wallet.parse(
+          (await http().get('/api/v1/billing/wallet').set('Authorization', auth).expect(200)).body,
+        ).balanceMicros,
+      ).toBe(bonusMicros);
+    });
     await openSocket(registered.session.token);
     const characterId = fixture.character.characterId;
     const requestedAt = Date.now();
