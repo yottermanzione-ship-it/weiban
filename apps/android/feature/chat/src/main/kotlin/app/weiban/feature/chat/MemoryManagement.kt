@@ -82,7 +82,7 @@ private class MemoryActions(
         Text("TA记住了什么", style = MaterialTheme.typography.headlineSmall)
         Text("删除后旧消息不会重新记下这条信息；再次主动提起时可以重新记下。")
         MemoryCreation(actions, records::refresh)
-        records.data?.items?.forEach { entry -> key(entry.memoryId, entry.updatedAt) { MemoryEditor(entry, actions, records::refresh) } }
+        records.data?.items?.forEach { entry -> key(entry.memoryId) { MemoryEditor(entry, actions, records::refresh) } }
         MemoryPaging(records, actions.pending, afterId, { afterId = it })
         (actions.error ?: records.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
@@ -123,9 +123,9 @@ private class MemoryActions(
     actions: MemoryActions,
     refresh: () -> Unit,
 ) {
-    var content by remember { mutableStateOf(entry.content) }
+    var content by remember(entry.content) { mutableStateOf(entry.content) }
     var confirm by remember { mutableStateOf(false) }
-    var past by remember { mutableStateOf(entry.status == "past") }
+    var past by remember(entry.status) { mutableStateOf(entry.status == "past") }
     HorizontalDivider()
     OutlinedTextField(content, { if (it.length <= 1000) content = it }, enabled = !actions.pending, label = { Text("记忆内容") })
     Row {

@@ -98,7 +98,7 @@ export function MemoriesPage() {
       {records.data?.items.length === 0 && <p>还没有记下的事情</p>}
       {records.data?.items.map((entry) => (
         <MemoryEditor
-          key={`${entry.memoryId}:${entry.updatedAt}`}
+          key={entry.memoryId}
           entry={entry}
           busy={busy}
           save={(content, status) =>
@@ -161,11 +161,17 @@ function MemoryEditor({
       <h2>{categories[entry.category]}</h2>
       <label>
         内容
-        <textarea name="content" defaultValue={entry.content} required maxLength={1000} />
+        <textarea
+          key={entry.updatedAt}
+          name="content"
+          defaultValue={entry.content}
+          required
+          maxLength={1000}
+        />
       </label>
       <label>
         状态
-        <select name="status" defaultValue={entry.status}>
+        <select key={entry.updatedAt} name="status" defaultValue={entry.status}>
           <option value="current">现在</option>
           <option value="past">过去</option>
         </select>

@@ -215,13 +215,16 @@ export class ReplyContext {
       });
     const userRounds = history.filter((m) => m.senderKind === 'user');
     const start = userRounds.at(-21)?.seq ?? 0;
-    for (const m of history.filter(
+    const recent = history.filter(
       (m) => m.seq >= start && m.seq > remembered.barrierSeq && m.senderKind !== 'system',
-    ))
+    );
+    // Preserve selected rounds while bounding long or heavily split conversations.
+    const perMessageChars = Math.max(1, Math.floor(80000 / Math.max(1, recent.length)));
+    for (const m of recent)
       if (m.status === 'normal' && m.content?.type === 'text')
         messages.push({
           role: m.senderKind === 'user' ? 'user' : 'assistant',
-          content: m.content.text,
+          content: m.content.text.slice(0, perMessageChars),
         });
     if (row.kind === 'greeting')
       messages.push({

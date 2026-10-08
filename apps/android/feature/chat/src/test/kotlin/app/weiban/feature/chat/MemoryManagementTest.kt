@@ -136,8 +136,12 @@ class MemoryManagementTest {
                 ?.jsonPrimitive
                 ?.content == "原生记忆金丝雀：猫改叫芝麻"
         }
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText("删除这条记忆") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithText("删除这条记忆").performScrollTo().performClick()
         assertNotNull(entry.get())
+        compose.onNodeWithText("确认让TA忘记这条？").assertIsDisplayed()
         compose.onNodeWithText("确认删除").performClick()
         compose.waitUntil(10_000) { entry.get() == null }
         runBlocking {

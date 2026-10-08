@@ -459,7 +459,16 @@ export class MemoryService {
     if (!availableHistory.length) return;
     const batchScope = availableHistory[0]!.scope;
     const boundary = availableHistory.findIndex((m) => m.scope !== batchScope);
-    const history = boundary < 0 ? availableHistory : availableHistory.slice(0, boundary);
+    const sameScope = boundary < 0 ? availableHistory : availableHistory.slice(0, boundary);
+    // Keep whole source messages and process a bounded prefix; remaining seqs go to the next job.
+    const history: typeof availableHistory = [];
+    let sourceChars = 0;
+    for (const message of sameScope) {
+      const size = textOf(message).length;
+      if (history.length && sourceChars + size > 20000) break;
+      history.push(message);
+      sourceChars += size;
+    }
     const policy = await this.policy.getCharacterPolicy(job.userId, job.characterId);
     if (!policy) return;
     // Sensitive messages are excluded before calling the model; their seq still advances the cursor.
@@ -564,7 +573,7 @@ export class MemoryService {
             ),
           })
           .where(eq(memoryStates.id, now.id));
-        if (history.length === 100 || boundary >= 0)
+        if (history.length < sameScope.length || history.length === 100 || boundary >= 0)
           await this.enqueue(tx, { ...job, urgent: true }, 0);
         return;
       }
@@ -683,7 +692,7 @@ export class MemoryService {
         type: 'settings.updated',
         data: { section: 'companion', characterId: job.characterId },
       });
-      if (history.length === 100 || boundary >= 0)
+      if (history.length < sameScope.length || history.length === 100 || boundary >= 0)
         await this.enqueue(tx, { ...job, urgent: true }, 0);
     });
   }

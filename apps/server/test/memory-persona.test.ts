@@ -623,6 +623,39 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     ).toBe(true);
     adultAvailability = 'not_configured';
   });
+  it('长消息抽取按完整来源分批，网关输入有界且不跳过剩余游标', async () => {
+    response = JSON.stringify({ operations: [] });
+    for (let i = 0; i < 4; i++) await memory().extract(await job());
+    for (let i = 0; i < 65; i++)
+      await app.get<ChatUserPort>(CHAT_USER_PORT).sendMessage(userId, cid, {
+        clientMsgId: newId(),
+        content: { type: 'text', text: `长消息${i}：${'日常聊天'.repeat(825)}` },
+      });
+    await dispatch();
+    const before = calls.length;
+    await memory().extract(await job());
+    const input = calls[before]!;
+    expect(input.messages.reduce((n, m) => n + m.content.length, 0)).toBeLessThan(60000);
+    const first = JSON.parse(input.messages[1]!.content) as {
+      messages: { id: string; text: string }[];
+    };
+    expect(first.messages.length).toBeGreaterThan(0);
+    expect(first.messages.every((m) => m.text.endsWith('日常聊天'))).toBe(true);
+    const state = await db.query<{ cursor_seq: string; pending_count: number }>(
+      'SELECT cursor_seq,pending_count FROM ai_runtime.memory_states WHERE user_id=$1',
+      [userId],
+    );
+    expect(Number(state.rows[0]!.cursor_seq)).toBeLessThan(
+      (await app.get(CHAT_READ_PORT).getConversation(cid)).lastSeq,
+    );
+    expect(state.rows[0]!.pending_count).toBeGreaterThan(0);
+    await memory().extract(await job());
+    const second = JSON.parse(calls[before + 1]!.messages[1]!.content) as {
+      messages: { id: string }[];
+    };
+    expect(second.messages.some((m) => first.messages.some((f) => f.id === m.id))).toBe(false);
+    response = '我听着呢\n今天过得怎么样？';
+  });
   it('后台预算失败保留游标待重试，注销清单包含记忆；彻底删除只清除旧会话', async () => {
     await user('后台余额失败也不能丢这条记忆');
     failure = 'budget_exceeded';
