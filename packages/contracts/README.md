@@ -94,6 +94,12 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 2.3（2026-10-08，T-043）
+
+契约申请及接管架构影响自审先于实现，见 `docs/tasks/T-043-l2-memory-persona.md`、ADR-0018；沿用已合并T-030的总经理接管授权，不将Claude登记为审批者，独立复核待安排。
+
+新增记忆管理HTTP（受限写入/幂等/分页/服务端来源与scope）、允许情景模式列表；Contact关系和陪伴贴合度/模式/主动行为设置均为可选新增字段，旧2.2调用仍可使用。新增只读AdultModelReadPort，ChatAdminPort.setContentScope及ChatParticipantPort.postMessage增加可选Tx，后者可选expectedScope保证版本与发送同事务。无删字段/改必填/扩已有枚举，因此升次版本。安卓由同一schema重新生成，不手改生成物。
+
 ### 2.0（2026-10-05，T-030）
 
 开发接管授权下的契约影响自审，见 `docs/tasks/T-030-character-card-and-policy.md`。独立审查待交付；未把原架构负责人登记为审批者。

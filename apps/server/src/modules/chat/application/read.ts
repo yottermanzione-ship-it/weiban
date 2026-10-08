@@ -103,15 +103,16 @@ export class ChatReadService implements ChatReadPort {
     }
     return result;
   }
-  async getConversation(conversationId: string): Promise<Conversation | null> {
-    return this.db.transaction(async (tx) => {
+  async getConversation(conversationId: string, input?: Tx): Promise<Conversation | null> {
+    const read = async (tx: DbTx) => {
       try {
         return await this.internalConversation(tx, await this.store.load(tx, conversationId));
       } catch (error) {
         if (error instanceof AppError && error.code === 'not_found') return null;
         throw error;
       }
-    });
+    };
+    return input ? read(asDbTx(input)) : this.db.transaction(read);
   }
   async getParticipants(conversationId: string): Promise<Participant[]> {
     return (await this.getConversation(conversationId))?.participants ?? [];

@@ -156,10 +156,28 @@ internal fun messageText(message: Message): String =
             is ReceivedMessageContentText -> content.text
             is ReceivedMessageContentNudge -> "拍了拍"
             is ReceivedMessageContentSystem ->
-                if (content.code == "contact_accepted") "已通过好友申请，现在可以开始聊天了" else "会话提示"
+                when (content.code) {
+                    "contact_accepted" -> "已通过好友申请，现在可以开始聊天了"
+                    "scenario_mode_changed" -> scenarioModeMessage(content)
+                    else -> "会话提示"
+                }
             else -> "当前版本不支持此消息"
         }
     }
+
+private fun scenarioModeMessage(content: ReceivedMessageContentSystem): String {
+    if ((content.params["reason"] as? JsonPrimitive)?.contentOrNull == "adult_mode_unavailable") {
+        return "成人模式已不可用，已回到日常模式"
+    }
+    val mode =
+        when ((content.params["mode"] as? JsonPrimitive)?.contentOrNull) {
+            "tsundere" -> "傲娇"
+            "romance" -> "恋爱"
+            "adult" -> "成人"
+            else -> "日常"
+        }
+    return "已切换到${mode}模式"
+}
 
 @Suppress("TooGenericExceptionCaught") // UI operation boundary reports failures and preserves cancellation.
 internal suspend fun userAction(onError: (String) -> Unit, action: suspend () -> Unit) {

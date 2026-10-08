@@ -16,6 +16,7 @@
  */
 import { Inject, Injectable } from '@nestjs/common';
 import type {
+  AdultModelReadPort,
   BillingReadPort,
   GenerateError,
   ModelPurpose,
@@ -39,7 +40,28 @@ export interface ResolvedModel {
 }
 
 @Injectable()
-export class ModelResolver {
+export class ModelResolver implements AdultModelReadPort {
+  async getAdultModelStatus(
+    userId: string,
+    characterId: string,
+  ): ReturnType<AdultModelReadPort['getAdultModelStatus']> {
+    const result = await this.resolve({
+      userId,
+      characterId,
+      modelRole: 'adult',
+      purpose: 'chat_reply',
+    });
+    if (result.ok) return { available: true, reason: null };
+    const reason =
+      result.error === 'model_unavailable'
+        ? 'model_removed'
+        : result.error === 'provider_unavailable'
+          ? 'provider_unavailable'
+          : result.error === 'model_not_allowed'
+            ? 'model_not_allowed'
+            : 'not_configured';
+    return { available: false, reason };
+  }
   constructor(
     @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(SelectionService) private readonly selection: SelectionService,

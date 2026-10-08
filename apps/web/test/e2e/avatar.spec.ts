@@ -17,7 +17,7 @@ test('角色默认头像不随备注改变；实际私有头像裁剪、失败�
   );
   await page.getByRole('link', { name: '设置备注和头像', exact: true }).click();
   await page.getByLabel('备注名').fill('王一博');
-  await page.getByRole('button', { name: '保存称呼', exact: true }).click();
+  await page.getByRole('button', { name: '保存称呼和关系', exact: true }).click();
   await expect(page.getByRole('status')).toHaveText('已保存');
   await page.goto(profilePath);
   await expect(avatar).toBeVisible();
@@ -76,6 +76,6 @@ test('角色默认头像不随备注改变；实际私有头像裁剪、失败�
   );
   await page.getByRole('link', { name: '设置备注和头像', exact: true }).click();
   await page.getByLabel('备注名').fill('');
-  await page.getByRole('button', { name: '保存称呼', exact: true }).click();
+  await page.getByRole('button', { name: '保存称呼和关系', exact: true }).click();
   await expect(page.getByRole('status')).toHaveText('已保存');
 });

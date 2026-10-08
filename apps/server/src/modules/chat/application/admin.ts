@@ -233,10 +233,11 @@ export class ChatAdminService implements ChatAdminPort {
   }
   async setContentScope(
     input: Parameters<ChatAdminPort['setContentScope']>[0],
+    transaction?: Tx,
   ): Promise<PortResult<void, 'not_found' | 'adult_mode_not_eligible'>> {
     parseContract(Id, input.conversationId);
     const scope = parseContract(ContentScope, input.scope);
-    const result = await this.db.transaction(async (tx) => {
+    const apply = async (tx: DbTx) => {
       let row: ConversationRow;
       try {
         row = await this.store.load(tx, input.conversationId);
@@ -273,7 +274,10 @@ export class ChatAdminService implements ChatAdminPort {
         scope,
       });
       return 'updated' as const;
-    });
+    };
+    const result = transaction
+      ? await apply(asDbTx(transaction))
+      : await this.db.transaction(apply);
     // 判定拒绝的事务正常提交，保留policy审计；之后才向调用方报告拒绝。
     if (result === 'denied')
       return { ok: false, error: 'adult_mode_not_eligible', message: '该会话不能开启成人模式' };

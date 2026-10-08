@@ -41,9 +41,19 @@ function content(message: Message): string {
     case 'nudge':
       return '拍了拍';
     case 'system':
-      return message.content.code === 'contact_accepted'
-        ? '已通过好友申请，现在可以开始聊天了'
-        : '会话提示';
+      if (message.content.code === 'contact_accepted') return '已通过好友申请，现在可以开始聊天了';
+      if (message.content.code === 'scenario_mode_changed') {
+        if (message.content.params.reason === 'adult_mode_unavailable')
+          return '成人模式已不可用，已回到日常模式';
+        const names: Record<string, string> = {
+          daily: '日常',
+          tsundere: '傲娇',
+          romance: '恋爱',
+          adult: '成人',
+        };
+        return `已切换到${names[String(message.content.params.mode)] ?? '日常'}模式`;
+      }
+      return '会话提示';
     default:
       return '当前版本不支持此消息';
   }

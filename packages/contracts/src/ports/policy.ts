@@ -73,11 +73,14 @@ export interface PolicyPort {
   }): Promise<PolicyDecision>;
 
   /** 设置关系类型前调用（SAFE-05：儿童角色不能是恋人）。 */
-  checkRelationshipType(input: {
-    userId: string;
-    characterId: string;
-    relationshipType: string;
-  }): Promise<PolicyDecision>;
+  checkRelationshipType(
+    input: {
+      userId: string;
+      characterId: string;
+      relationshipType: string;
+    },
+    tx?: Tx,
+  ): Promise<PolicyDecision>;
 
   /** 模型网关在使用成人模式模型前调用（生成闸，不信任上游）。 */
   checkAdultGeneration(

@@ -12,6 +12,7 @@ import { ChatsCircle, AddressBook, Compass, User, CaretLeft } from '@phosphor-ic
 import { IdentityEndpoints } from '@weiban/contracts';
 import { ConversationListPage } from '../features/conversation-list.js';
 import { ConversationPage } from '../features/chat.js';
+import { MemoriesPage } from '../features/memories.js';
 import { ChatSettingsPage } from '../features/chat-settings.js';
 import { ContactsPage, DiscoverPage, CharacterPage } from '../features/contacts.js';
 import { ChatProvider } from './chat.js';
@@ -120,6 +121,7 @@ function Shell() {
         <Route path="/chat" element={<ConversationListPage />} />
         <Route path="/chat/:conversationId" element={<ConversationPage />} />
         <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />
+        <Route path="/characters/:characterId/memories" element={<MemoriesPage />} />
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/discover" element={<DiscoverPage />} />
         <Route path="/characters/:characterId" element={<CharacterPage />} />

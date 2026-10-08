@@ -8,9 +8,12 @@ import {
   type PostMessageError,
   type PortResult,
   type SyncPort,
+  type Tx,
 } from '@weiban/contracts';
 import {
   AppError,
+  asDbTx,
+  type DbTx,
   CLOCK,
   DATABASE,
   OUTBOX,
@@ -34,11 +37,22 @@ export class ChatParticipantService implements ChatParticipantPort {
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
     @Inject(OUTBOX) private readonly outbox: Outbox,
   ) {}
-  async postMessage(input: PostMessageInput): Promise<PortResult<Message, PostMessageError>> {
+  async postMessage(
+    input: PostMessageInput,
+    transaction?: Tx,
+  ): Promise<PortResult<Message, PostMessageError>> {
     try {
-      return await this.db.transaction(async (tx) =>
-        this.writer.post(tx, await this.store.load(tx, input.conversationId), input),
-      );
+      const post = async (tx: DbTx) => {
+        const row = await this.store.load(tx, input.conversationId);
+        if (input.expectedScope !== undefined && row.contentScope !== input.expectedScope)
+          return {
+            ok: false as const,
+            error: 'invalid_content' as const,
+            message: '内容范围已变化',
+          };
+        return this.writer.post(tx, row, input);
+      };
+      return transaction ? await post(asDbTx(transaction)) : await this.db.transaction(post);
     } catch (error) {
       if (error instanceof AppError && error.code === 'not_found')
         return { ok: false, error: 'conversation_not_found', message: '会话不存在' };

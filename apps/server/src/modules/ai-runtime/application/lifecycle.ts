@@ -11,14 +11,17 @@ import {
 } from '../../../platform/index.js';
 import { CHAT_READ_PORT } from '../../chat/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
-import { companionSettings, replyPlans } from '../infra/db/schema.js';
+import { companionSettings, replyPlans, memories, memoryStates } from '../infra/db/schema.js';
 import { GENERATE_REPLY_JOB, ReplyPlanStore } from './plan-store.js';
+import { MemoryService, EXTRACT_MEMORY_JOB, type MemoryJob } from './memory.js';
 import { ReplyEngine } from './reply-engine.js';
+import { invalidateReplyPlans } from './invalidate.js';
 @Injectable()
 export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap {
   constructor(
     @Inject(ReplyPlanStore) readonly store: ReplyPlanStore,
     @Inject(ReplyEngine) readonly engine: ReplyEngine,
+    @Inject(MemoryService) readonly memory: MemoryService,
     @Inject(EVENT_BUS) readonly bus: EventBus,
     @Inject(JOB_QUEUE) readonly jobs: JobQueue,
     @Inject(USER_DATA_REGISTRY) readonly registry: UserDataRegistry,
@@ -43,7 +46,14 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     await this.jobs.work<{ userId?: string }>('ai.recover_replies', (job) =>
       this.store.recover(job.data.userId),
     );
-    await this.jobs.work('ai.reconcile', () => this.store.reconcile());
+    await this.jobs.work<MemoryJob>(EXTRACT_MEMORY_JOB, (j) => this.memory.extract(j.data), {
+      pollingIntervalSeconds: 0.5,
+      localConcurrency: 2,
+    });
+    await this.jobs.work('ai.reconcile', async () => {
+      await this.store.reconcile();
+      await this.memory.reconcile();
+    });
     await this.jobs.schedule('ai.reconcile', '* * * * *');
     this.bus.subscribe({
       consumer: 'ai.on_user_message',
@@ -63,6 +73,39 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
           kind: 'message',
           triggeredAt: event.occurredAt,
         });
+      },
+    });
+    this.bus.subscribe({
+      consumer: 'ai.memory_on_message',
+      eventType: 'chat.message_created',
+      handle: async (event, tx) => {
+        const p = event.payload;
+        if (p.conversationType !== 'direct' || p.senderKind === 'system') return;
+        const conversation = await this.chat.getConversation(p.conversationId);
+        const role = conversation?.participants.find((member) => member.kind === 'character');
+        const user = conversation?.participants.find((member) => member.kind === 'user');
+        if (!role || !user) return;
+        const epoch = await this.contacts.getActiveContactEpoch(user.refId, role.refId);
+        if (!epoch || new Date(event.occurredAt) < new Date(epoch.acceptAfter)) return;
+        const message =
+          p.senderKind === 'character'
+            ? await this.chat.getMessage(p.messageId, ['normal', 'adult'])
+            : null;
+        const promise =
+          message?.content?.type === 'text' &&
+          /记住了|我会记住|我记下了/u.test(message.content.text);
+        await this.memory.observe(
+          tx,
+          {
+            userId: user.refId,
+            characterId: role.refId,
+            conversationId: p.conversationId,
+            epoch: epoch.version,
+          },
+          p.senderKind === 'user',
+          !!promise,
+          p.seq,
+        );
       },
     });
     this.bus.subscribe({
@@ -104,11 +147,35 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       },
     });
     this.bus.subscribe({
+      consumer: 'ai.on_contact_context_changed',
+      eventType: 'contacts.contact_updated',
+      handle: async (event, tx) => {
+        if (
+          !event.payload.changedFields.some((field) =>
+            ['relationshipType', 'addressAs'].includes(field),
+          )
+        )
+          return;
+        await this.store.lock(tx, event.payload.userId);
+        await invalidateReplyPlans(tx, this.store, event.payload.userId, event.payload.characterId);
+      },
+    });
+    this.bus.subscribe({
       consumer: 'ai.on_contact_purged',
       eventType: 'contacts.contact_purged',
       handle: async (event, tx) => {
         const { userId, characterId, conversationId } = event.payload;
         await this.store.lock(tx, userId);
+        if (conversationId) {
+          await tx.db
+            .delete(memories)
+            .where(and(eq(memories.userId, userId), eq(memories.conversationId, conversationId)));
+          await tx.db
+            .delete(memoryStates)
+            .where(
+              and(eq(memoryStates.userId, userId), eq(memoryStates.conversationId, conversationId)),
+            );
+        }
         if (conversationId)
           await tx.db
             .delete(replyPlans)

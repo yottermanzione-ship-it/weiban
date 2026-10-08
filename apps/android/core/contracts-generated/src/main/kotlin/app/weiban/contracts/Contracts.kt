@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 2.2. Regenerate: pnpm android:generate
+// Contract 2.3. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "2.2"
+const val CONTRACT_VERSION: String = "2.3"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -1266,6 +1266,22 @@ data class CompanionEndpointsGetForCharacterResponse(
     @SerialName("splitBubbles") val `splitBubbles`: Boolean,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
     @SerialName("inheritsDefaults") val `inheritsDefaults`: Boolean,
+    @SerialName("personaFit") val `personaFit`: Long? = null,
+    @SerialName("scenarioMode") val `scenarioMode`: ScenarioMode? = null,
+    @SerialName("proactiveMessages") val `proactiveMessages`: Boolean? = null,
+    @SerialName("proactiveFrequency") val `proactiveFrequency`: ProactiveFrequency? = null,
+    @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
+    @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
+)
+
+@Serializable
+data class CompanionEndpointsListModesParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class CompanionEndpointsListModesResponse(
+    @SerialName("items") val `items`: List<CompanionEndpointsListModesResponseItemsItem>,
 )
 
 @Serializable
@@ -1274,18 +1290,16 @@ data class CompanionEndpointsUpdateForCharacterParams(
 )
 
 @Serializable
-data class CompanionEndpointsUpdateForCharacterResponse(
-    @SerialName("instantReply") val `instantReply`: Boolean,
-    @SerialName("splitBubbles") val `splitBubbles`: Boolean,
-    @SerialName("updatedAt") val `updatedAt`: Timestamp,
-    @SerialName("inheritsDefaults") val `inheritsDefaults`: Boolean,
-)
-
-@Serializable
 data class CompanionSettings(
     @SerialName("instantReply") val `instantReply`: Boolean,
     @SerialName("splitBubbles") val `splitBubbles`: Boolean,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("personaFit") val `personaFit`: Long? = null,
+    @SerialName("scenarioMode") val `scenarioMode`: ScenarioMode? = null,
+    @SerialName("proactiveMessages") val `proactiveMessages`: Boolean? = null,
+    @SerialName("proactiveFrequency") val `proactiveFrequency`: ProactiveFrequency? = null,
+    @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
+    @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
 )
 
 @Serializable
@@ -1298,6 +1312,7 @@ data class Contact(
     @SerialName("knownSince") val `knownSince`: LocalDate,
     @SerialName("conversationId") val `conversationId`: Id?,
     @SerialName("addedAt") val `addedAt`: Timestamp,
+    @SerialName("relationship") val `relationship`: String? = null,
 )
 
 typealias ContactStatus = String
@@ -1362,6 +1377,16 @@ data class CreateInviteRequest(
 data class CreateInviteRequestInput(
     @SerialName("expiresInDays") val `expiresInDays`: Long?,
     @SerialName("bonusMicros") val `bonusMicros`: Long? = null,
+)
+
+@Serializable
+data class CreateMemoryRequest(
+    @SerialName("clientMemoryId") val `clientMemoryId`: Id,
+    @SerialName("content") val `content`: String,
+    @SerialName("category") val `category`: MemoryCategory,
+    @SerialName("importance") val `importance`: Long? = null,
+    @SerialName("dueAt") val `dueAt`: Timestamp? = null,
+    @SerialName("visibility") val `visibility`: MemoryVisibility? = null,
 )
 
 @Serializable
@@ -2401,6 +2426,56 @@ data class MediaObject(
 
 typealias MediaPurpose = String
 
+typealias MemoryCategory = String
+
+@Serializable
+data class MemoryEndpointsListParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class MemoryEndpointsListQuery(
+    @SerialName("afterId") val `afterId`: Id? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class MemoryEndpointsListResponse(
+    @SerialName("items") val `items`: List<MemoryEntry>,
+    @SerialName("nextCursor") val `nextCursor`: Id?,
+)
+
+@Serializable
+data class MemoryEndpointsUpdateParams(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("memoryId") val `memoryId`: Id,
+)
+
+@Serializable
+data class MemoryEntry(
+    @SerialName("memoryId") val `memoryId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("category") val `category`: MemoryCategory,
+    @SerialName("content") val `content`: String,
+    @SerialName("status") val `status`: MemoryStatus,
+    @SerialName("importance") val `importance`: Long,
+    @SerialName("dueAt") val `dueAt`: Timestamp?,
+    @SerialName("visibility") val `visibility`: MemoryVisibility,
+    @SerialName("sharingClass") val `sharingClass`: MemorySharingClass,
+    @SerialName("scope") val `scope`: String,
+    @SerialName("sourceMessageIds") val `sourceMessageIds`: List<Id>,
+    @SerialName("createdBy") val `createdBy`: String,
+    @SerialName("knownBy") val `knownBy`: List<Id>,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+typealias MemorySharingClass = String
+
+typealias MemoryStatus = String
+
+typealias MemoryVisibility = String
+
 @Serializable
 data class Message(
     @SerialName("messageId") val `messageId`: Id,
@@ -2776,6 +2851,8 @@ typealias PriceUnit = String
 
 typealias PriceVersionStatus = String
 
+typealias ProactiveFrequency = String
+
 @Serializable
 data class Profile(
     @SerialName("nickname") val `nickname`: String?,
@@ -3082,6 +3159,8 @@ data class RegisterRequestInput(
     @SerialName("inviteCode") val `inviteCode`: String,
     @SerialName("device") val `device`: DeviceInfoInput,
 )
+
+typealias ScenarioMode = String
 
 @Serializable
 data class SendMessageRequest(
@@ -3487,12 +3566,24 @@ data class UnsupportedUpdate(
 data class UpdateCompanionSettingsRequest(
     @SerialName("instantReply") val `instantReply`: Boolean? = null,
     @SerialName("splitBubbles") val `splitBubbles`: Boolean? = null,
+    @SerialName("personaFit") val `personaFit`: Long? = null,
+    @SerialName("scenarioMode") val `scenarioMode`: ScenarioMode? = null,
+    @SerialName("proactiveMessages") val `proactiveMessages`: Boolean? = null,
+    @SerialName("proactiveFrequency") val `proactiveFrequency`: ProactiveFrequency? = null,
+    @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
+    @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
 )
 
 @Serializable
 data class UpdateCompanionSettingsRequestInput(
     @SerialName("instantReply") val `instantReply`: Boolean? = null,
     @SerialName("splitBubbles") val `splitBubbles`: Boolean? = null,
+    @SerialName("personaFit") val `personaFit`: Long? = null,
+    @SerialName("scenarioMode") val `scenarioMode`: ScenarioMode? = null,
+    @SerialName("proactiveMessages") val `proactiveMessages`: Boolean? = null,
+    @SerialName("proactiveFrequency") val `proactiveFrequency`: ProactiveFrequency? = null,
+    @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
+    @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
 )
 
 @Serializable
@@ -3500,6 +3591,7 @@ data class UpdateContactRequest(
     @SerialName("remark") val `remark`: String? = null,
     @SerialName("customAvatarMediaId") val `customAvatarMediaId`: Id? = null,
     @SerialName("addressAs") val `addressAs`: String? = null,
+    @SerialName("relationship") val `relationship`: String? = null,
 )
 
 @Serializable
@@ -3507,6 +3599,7 @@ data class UpdateContactRequestInput(
     @SerialName("remark") val `remark`: String? = null,
     @SerialName("customAvatarMediaId") val `customAvatarMediaId`: Id? = null,
     @SerialName("addressAs") val `addressAs`: String? = null,
+    @SerialName("relationship") val `relationship`: String? = null,
 )
 
 @Serializable
@@ -3521,6 +3614,17 @@ data class UpdateConversationStateRequestInput(
     @SerialName("pinned") val `pinned`: Boolean? = null,
     @SerialName("muted") val `muted`: Boolean? = null,
     @SerialName("hidden") val `hidden`: Boolean? = null,
+)
+
+@Serializable
+data class UpdateMemoryRequest(
+    @SerialName("content") val `content`: String? = null,
+    @SerialName("category") val `category`: MemoryCategory? = null,
+    @SerialName("status") val `status`: MemoryStatus? = null,
+    @SerialName("importance") val `importance`: Long? = null,
+    @SerialName("dueAt") val `dueAt`: Timestamp? = null,
+    @SerialName("visibility") val `visibility`: MemoryVisibility? = null,
+    @SerialName("sharingClass") val `sharingClass`: MemorySharingClass? = null,
 )
 
 @Serializable
@@ -4262,6 +4366,12 @@ data class ClientSyncStateRecalledItem(
 data class ClientSyncStateExcludedItem(
     @SerialName("conversationId") val `conversationId`: Id,
     @SerialName("range") val `range`: ClientSyncStateExcludedItemRange,
+)
+
+@Serializable
+data class CompanionEndpointsListModesResponseItemsItem(
+    @SerialName("id") val `id`: ScenarioMode,
+    @SerialName("name") val `name`: String,
 )
 
 @Serializable

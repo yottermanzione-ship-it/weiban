@@ -16,9 +16,9 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 
 private class InformationActions(
-    private val repository: SessionRepository,
+    val repository: SessionRepository,
     private val runtime: ChatRuntime,
-    private val owner: OwnerRecord,
+    val owner: OwnerRecord,
     private val scope: CoroutineScope,
 ) {
     var pending by mutableStateOf(false)
@@ -91,6 +91,11 @@ private class InformationActions(
 ) {
     val characterId = conversation.participants.find { it.kind == "character" }?.refId ?: return
     val contact = state.contacts.find { it.characterId == characterId }
+    var memoryPage by remember(owner, characterId) { mutableStateOf(false) }
+    if (memoryPage) {
+        MemoryManagement(repository, owner, characterId) { memoryPage = false }
+        return
+    }
     val scope = rememberCoroutineScope()
     val actions = remember(owner, conversation.conversationId) { InformationActions(repository, runtime, owner, scope) }
     val companion =
@@ -109,6 +114,7 @@ private class InformationActions(
         Text("聊天信息", style = MaterialTheme.typography.headlineSmall)
         Text(title(state, conversation, characterNames(repository, listOf(characterId))))
         InformationPreferences(actions, conversation, companion, characterId)
+        TextButton(onClick = { memoryPage = true }, enabled = !actions.pending) { Text("TA记住了什么") }
         InformationNames(actions, contact, characterId)
         (actions.error ?: companion.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         if (actions.saved) Text("已保存")
@@ -129,6 +135,7 @@ private class InformationActions(
         actions.change { actions.updateState(conversation.conversationId, buildJsonObject { put("muted", value) }) }
     }
     companion.data?.let { settings ->
+        InformationPersona(actions, companion, characterId, settings)
         InformationToggle("秒回", settings.instantReply, !actions.pending) { value ->
             actions.change(after = companion::refresh) {
                 actions.call(Endpoints.companionEndpointsUpdateForCharacter, characterId, buildJsonObject { put("instantReply", value) })
@@ -149,20 +156,23 @@ private class InformationActions(
 ) {
     var remark by remember(contact?.remark) { mutableStateOf(contact?.remark.orEmpty()) }
     var addressAs by remember(contact?.addressAs) { mutableStateOf(contact?.addressAs.orEmpty()) }
+    var relationship by remember(contact?.relationship) { mutableStateOf(contact?.relationship ?: "朋友") }
     OutlinedTextField(remark, { if (it.length <= 20) remark = it }, label = { Text("备注名") }, enabled = !actions.pending)
     OutlinedTextField(addressAs, { if (it.length <= 20) addressAs = it }, label = { Text("TA怎么叫我") }, enabled = !actions.pending)
-    Button(enabled = !actions.pending, onClick = {
+    OutlinedTextField(relationship, { if (it.length <= 30) relationship = it }, label = { Text("我们的关系") }, enabled = !actions.pending)
+    Button(enabled = !actions.pending && relationship.isNotBlank(), onClick = {
         actions.change {
             actions.call(
                 Endpoints.contactsEndpointsUpdate,
                 characterId,
                 buildJsonObject {
                     put("remark", remark.takeIf { it.isNotBlank() }?.let(::JsonPrimitive) ?: JsonNull)
+                    put("relationship", relationship)
                     put("addressAs", addressAs.takeIf { it.isNotBlank() }?.let(::JsonPrimitive) ?: JsonNull)
                 },
             )
         }
-    }) { Text("保存称呼") }
+    }) { Text("保存称呼和关系") }
 }
 
 @Composable private fun InformationRemoval(
@@ -237,4 +247,36 @@ private class InformationActions(
         confirmButton = { TextButton(onConfirm, enabled = !pending) { Text("确认") } },
         dismissButton = { TextButton(onDismiss, enabled = !pending) { Text("取消") } },
     )
+}
+
+@Composable private fun InformationPersona(
+    actions: InformationActions,
+    companion: NativeRemote<CompanionEndpointsGetForCharacterResponse>,
+    characterId: String,
+    settings: CompanionEndpointsGetForCharacterResponse,
+) {
+    val modes =
+        remote("${actions.owner.sessionId}:modes:$characterId") {
+            actions.repository.call(
+                Endpoints.companionEndpointsListModes,
+                params = mapOf("characterId" to characterId),
+                options = SessionCallOptions(owner = actions.owner),
+            )
+        }
+    var fit by remember(settings.personaFit) { mutableFloatStateOf((settings.personaFit ?: 3).toFloat()) }
+    Text("人设贴合度：${fit.toInt()}（1更顺从，5更贴合人设）")
+    Slider(fit, { fit = it }, valueRange = 1f..5f, steps = 3, enabled = !actions.pending, onValueChangeFinished = {
+        actions.change(after = companion::refresh) {
+            actions.call(Endpoints.companionEndpointsUpdateForCharacter, characterId, buildJsonObject { put("personaFit", fit.toInt()) })
+        }
+    })
+    Text("情景模式")
+    modes.data?.items?.forEach { mode ->
+        TextButton(enabled = !actions.pending && settings.scenarioMode != mode.id, onClick = {
+            actions.change(after = companion::refresh) {
+                actions.call(Endpoints.companionEndpointsUpdateForCharacter, characterId, buildJsonObject { put("scenarioMode", mode.id) })
+            }
+        }) { Text(mode.name) }
+    }
+    modes.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 }

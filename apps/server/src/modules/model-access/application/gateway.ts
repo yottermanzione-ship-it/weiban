@@ -79,7 +79,10 @@ export class ModelGateway implements ModelGatewayPort {
       !(await this.directory.listAdminUserIds()).includes(input.userId)
     )
       return { ok: false, error: 'bad_request' };
-    if (input.modelRole === 'adult') {
+    if (
+      input.modelRole === 'adult' ||
+      (input.purpose === 'memory' && input.meta?.scenarioMode === 'adult')
+    ) {
       if (!input.characterId || !input.conversationId) return { ok: false, error: 'policy_denied' };
       const decision = await this.policy.checkAdultGeneration({
         userId: input.userId,

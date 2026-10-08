@@ -25,7 +25,7 @@ export function useRemote<E extends EndpointDef>(endpoint: E, options: RequestOp
     setError('');
     void (async () => {
       try {
-        const cached = await api.cached(endpoint, request);
+        const cached = request.networkOnly ? undefined : await api.cached(endpoint, request);
         if (active && cached !== undefined) setData(cached);
         const result = await api.call(endpoint, { ...request, signal: controller.signal });
         if (active) setData(result);

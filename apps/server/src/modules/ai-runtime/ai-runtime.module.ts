@@ -1,3 +1,5 @@
+import { MemoryService } from './application/memory.js';
+import { MemoryController } from './http/memory.controller.js';
 import { Module } from '@nestjs/common';
 import { ChatModule } from '../chat/index.js';
 import { CharactersModule } from '../characters/index.js';
@@ -22,11 +24,12 @@ import { CompanionSettingsController } from './http/settings.controller.js';
   ],
   providers: [
     CompanionSettingsService,
+    MemoryService,
     ReplyPlanStore,
     ReplyContext,
     ReplyEngine,
     AiRuntimeLifecycle,
   ],
-  controllers: [CompanionSettingsController],
+  controllers: [CompanionSettingsController, MemoryController],
 })
 export class AiRuntimeModule {}

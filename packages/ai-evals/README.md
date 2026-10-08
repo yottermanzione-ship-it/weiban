@@ -1,5 +1,7 @@
-# packages/ai-evals · AI 评测集（占位）
+# AI评测集：L2考题与规则检查
 
-- 负责人：AI 负责人
-- 内容：AI 评测集用例与运行器，方案见 `docs/ai/eval-plan.md`
-- 建立工程时新增 `package.json`（名称 `@weiban/ai-evals`）、`tsconfig.json`（extends `@weiban/tsconfig/node.json`）；需要并入 `pnpm test` 时再加 `vitest.config.ts`（用 `defineProject`）。
+T-043 初版共有37题：15个记忆题（含20轮和1000轮合成历史）、20个人设贴合度×模式组合、关系/儿童边界各1题。位于 `cases/l2.ts`，引用 `docs/ai/eval-plan.md`。尚未覆盖完整19类评测集，不能拿题量或工程测试宣称人设质量通过。
+
+`src/index.ts` 只核对固定包含/禁止内容；缺独立评审人及1～5分评审证据时返回 `needs_review`，有规则失败时始终失败。≥4分仅是单题判分，完整发布门槛还要按eval-plan分组汇总、硬边界100%、人工抽查与供应商执行记录。真实模型调用由服务器通过ModelGatewayPort完成，不在这个包加入SDK、密钥或计费出口。
+
+`pnpm test` 已纳入规则检查运行器的工程回归。当前未运行真实供应商、盲评或1000轮质量测试。判卷记录必须保存角色/personaVersion、模型键、promptTemplateVersion、考题版本、评审身份和输出证据；不得将固定假上游回答当作独立质量结论。

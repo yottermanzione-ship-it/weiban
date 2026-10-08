@@ -25,6 +25,8 @@ export const Contact = z.object({
   /** 私聊会话 ID；status = pending 时为 null。 */
   conversationId: Id.nullable(),
   addedAt: Timestamp,
+  /** GRW-02：用户明确选择，旧响应缺省时沿用既有关系。 */
+  relationship: z.string().trim().min(1).max(30).optional(),
 });
 export type Contact = z.infer<typeof Contact>;
 
@@ -45,6 +47,7 @@ export const UpdateContactRequest = z.object({
   remark: z.string().max(20).nullable().optional(),
   customAvatarMediaId: Id.nullable().optional(),
   addressAs: z.string().max(20).nullable().optional(),
+  relationship: z.string().trim().min(1).max(30).optional(),
 });
 
 export const ContactsEndpoints = {

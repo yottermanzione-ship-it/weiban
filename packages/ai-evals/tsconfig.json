@@ -1,0 +1,4 @@
+{
+  "extends": "@weiban/tsconfig/node.json",
+  "include": ["src/**/*.ts", "cases/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
+}
