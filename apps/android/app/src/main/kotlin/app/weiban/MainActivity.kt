@@ -1,5 +1,7 @@
 package app.weiban
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -21,8 +23,11 @@ import app.weiban.designsystem.tokens.WbSize
 import app.weiban.feature.auth.AuthScreen
 import app.weiban.feature.chat.ChatScreen
 import app.weiban.feature.chat.RoleBrowser
+import app.weiban.feature.me.MeEntry
 import app.weiban.feature.me.MeScreen
 import app.weiban.network.ApiClient
+import app.weiban.platform.NotificationTarget
+import app.weiban.platform.adminNotificationAddress
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -42,6 +47,21 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val runtime = application as WeibanApplication
         setContent { WeibanRoot(runtime) }
+        openNotification(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openNotification(intent)
+    }
+
+    private fun openNotification(intent: Intent) {
+        val runtime = application as WeibanApplication
+        runtime.scope.launch {
+            runtime.initialize()
+            runtime.push.navigation.open(intent)
+        }
     }
 }
 
@@ -109,17 +129,31 @@ private class NavigationUi(
 ) {
     var tab by mutableStateOf(initialTab)
     var conversationId by mutableStateOf(initialConversation)
+    var mePage by mutableStateOf<String?>(null)
 
     fun open(id: String) {
         conversationId = id
         tab = "微伴"
     }
 
+    fun route(value: String) {
+        conversationId = null
+        mePage = null
+        if (value.startsWith("/chat/")) {
+            open(value.removePrefix("/chat/"))
+        } else if (value == "/chat") {
+            tab = "微伴"
+        } else {
+            tab = "我"
+            mePage = value.removePrefix("/")
+        }
+    }
+
     companion object {
         val saver =
             listSaver<NavigationUi, String>(
-                save = { listOf(it.tab, it.conversationId.orEmpty()) },
-                restore = { NavigationUi(it[0], it[1].ifBlank { null }) },
+                save = { listOf(it.tab, it.conversationId.orEmpty(), it.mePage.orEmpty()) },
+                restore = { NavigationUi(it[0], it[1].ifBlank { null }).apply { mePage = it.getOrNull(2)?.ifBlank { null } } },
             )
     }
 }
@@ -132,6 +166,11 @@ private class NavigationUi(
 ) {
     val navigation = rememberSaveable(saver = NavigationUi.saver) { NavigationUi() }
     val onboarding by runtime.repository.onboardingPending.collectAsState()
+    val target by runtime.push.navigation.target
+        .collectAsState()
+    LaunchedEffect(target, auth, onboarding) {
+        if (auth.user.profileCompleted && !onboarding) target?.let { applyNotification(runtime, auth, navigation, it) }
+    }
     val scope = rememberCoroutineScope()
     if (!auth.user.profileCompleted) {
         MeScreen(runtime.repository, true, onTheme, onLogout)
@@ -141,7 +180,16 @@ private class NavigationUi(
             scope.launch { finishOnboarding(runtime, owner, id, navigation::open) }
         }, onboarding = true)
     } else {
-        Scaffold(bottomBar = { if (navigation.conversationId == null) Tabs(navigation.tab) { navigation.tab = it } }) { padding ->
+        Scaffold(bottomBar = {
+            if (navigation.conversationId ==
+                null
+            ) {
+                Tabs(navigation.tab) {
+                    navigation.tab = it
+                    navigation.mePage = null
+                }
+            }
+        }) { padding ->
             Box(Modifier.padding(padding)) { SignedInPage(runtime, auth, navigation, onTheme, onLogout) }
         }
     }
@@ -172,10 +220,43 @@ private suspend fun finishOnboarding(
 ) {
     val owner = OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId)
     when (navigation.tab) {
-        "我" -> MeScreen(runtime.repository, onTheme = onTheme, onLogout = onLogout)
-        "微伴" -> ChatScreen(runtime.repository, runtime.chat, owner, navigation.conversationId) { navigation.conversationId = it }
+        "我" ->
+            MeScreen(
+                runtime.repository,
+                onTheme = onTheme,
+                onLogout = onLogout,
+                entry = MeEntry(navigation.mePage, notificationControls(runtime, owner)),
+            )
+        "微伴" ->
+            ChatScreen(
+                runtime.repository,
+                runtime.chat,
+                owner,
+                navigation.conversationId,
+                onModelsRequested = { navigation.route("/models") },
+            ) { navigation.conversationId = it }
         else -> key(navigation.tab) { RoleBrowser(runtime.repository, runtime.chat, owner, navigation.tab == "发现", navigation::open) }
     }
+}
+
+private fun applyNotification(
+    runtime: WeibanApplication,
+    auth: AuthResponse,
+    navigation: NavigationUi,
+    target: NotificationTarget,
+) {
+    if (target.owner.userId != auth.user.userId || target.owner.sessionId != auth.session.sessionId) return
+    if (target.route == "/admin/alerts") {
+        val address = adminNotificationAddress(BuildConfig.ADMIN_PUBLIC_ORIGIN)
+        if (address != null && auth.user.role == "admin") {
+            runCatching { runtime.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(address)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        } else {
+            Toast.makeText(runtime, "暂时无法打开管理提醒", Toast.LENGTH_SHORT).show()
+        }
+    } else {
+        navigation.route(target.route)
+    }
+    runtime.push.navigation.consume(target)
 }
 
 @Composable private fun Tabs(

@@ -4,8 +4,8 @@
 
 核心数据层复用Kotlin协议引擎和19份共享向量，新增历史页入口保留撤回与负覆盖。网络回调使用可取消OkHttp调用，取消在读取完整有界响应体之前保持生效。SessionRepository的networkOnly禁止补拉读旧GET缓存；完整SyncRecord写入与归属检查在同一个Room事务。
 
-SyncRunner持有串行互斥锁，先保存再发布状态和执行网络效果，取消或失效归属停止当前实例。ChatRuntime由Application持有，计划供UI与WorkManager共用；客户端发送复用持久化clientMsgId，HTTP响应丢失按原ID重试。快照从S读取后补拉S之后的更新，不仅按可见消息最大seq恢复。
+SyncRunner持有串行互斥锁，先保存再发布状态和执行网络效果，取消或失效归属停止当前实例。ChatRuntime由Application持有，已由UI与WorkManager共用；客户端发送复用持久化clientMsgId，HTTP响应丢失按原ID重试。快照从S读取后补拉S之后的更新，不仅按可见消息最大seq恢复。
 
-feature:chat已接入会话列表和私聊，包含LazyColumn、旧历史、待发送/失败重试、引用、撤回、本人删除与已读。界面从带owner的原子快照读取，新会话不能短暂呈现旧账号状态。页面仍在完善，通讯录/发现/聊天设置、WS前台/正在输入、WorkManager后台恢复和通知厂商接入未完成；构建和开发测试证据登记在任务卡及交接。
+feature:chat已接入会话列表和私聊，包含LazyColumn、旧历史、待发送/失败重试、引用、撤回、本人删除与已读。界面从带owner的原子快照读取，新会话不能短暂呈现旧账号状态。页面仍在完善；通讯录/发现、私聊设置、WS前台/正在输入和WorkManager发件恢复已装配并有开发回归，尚不等于实机验收。原生消息通知的可选FCM接入见[通知说明](notifications.md)，国内厂商与真实投递仍待验证；构建和开发测试证据登记在任务卡及交接。
 
 真实设备输入法、进后台/杀进程、多端5秒同步、系统通知与厂商白名单需要后续验证；APK能构建不代表这些项目通过。

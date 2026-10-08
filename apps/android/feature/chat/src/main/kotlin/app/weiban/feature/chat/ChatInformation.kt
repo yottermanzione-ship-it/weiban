@@ -80,13 +80,18 @@ private class InformationActions(
     }
 }
 
+internal data class InformationNavigation(
+    val back: () -> Unit,
+    val models: () -> Unit = {},
+)
+
 @Composable internal fun ChatInformation(
     repository: SessionRepository,
     runtime: ChatRuntime,
     owner: OwnerRecord,
     state: ClientSyncState,
     conversation: Conversation,
-    onBack: () -> Unit,
+    navigation: InformationNavigation,
     onRemoved: () -> Unit,
 ) {
     val characterId = conversation.participants.find { it.kind == "character" }?.refId ?: return
@@ -110,15 +115,16 @@ private class InformationActions(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
     ) {
-        TextButton(onBack, enabled = !actions.pending) { Text("返回聊天") }
+        TextButton(navigation.back, enabled = !actions.pending) { Text("返回聊天") }
         Text("聊天信息", style = MaterialTheme.typography.headlineSmall)
         Text(title(state, conversation, characterNames(repository, listOf(characterId))))
         InformationPreferences(actions, conversation, companion, characterId)
+        TextButton(onClick = navigation.models, enabled = !actions.pending) { Text("模型选择") }
         TextButton(onClick = { memoryPage = true }, enabled = !actions.pending) { Text("TA记住了什么") }
         InformationNames(actions, contact, characterId)
         (actions.error ?: companion.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         if (actions.saved) Text("已保存")
-        InformationRemoval(actions, conversation.conversationId, characterId, onBack, onRemoved)
+        InformationRemoval(actions, conversation.conversationId, characterId, navigation.back, onRemoved)
     }
 }
 

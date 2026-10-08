@@ -47,6 +47,9 @@ interface LocalDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun sync(record: SyncRecord)
 
+    @Query("DELETE FROM cache WHERE key = :key")
+    suspend fun deleteCache(key: String)
+
     @Query("DELETE FROM cache")
     suspend fun clearCache()
 
