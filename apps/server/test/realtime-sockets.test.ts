@@ -200,6 +200,15 @@ describeDb('realtime 真实 WS：鉴权、提交推送、替换、前台、超�
     const largeClosed = once(large.ws, 'close');
     large.ws.send('x'.repeat(65537));
     expect((await largeClosed)[0]).toBe(1009);
+    const fragmented = await open();
+    const fragmentedClosed = once(fragmented.ws, 'close');
+    fragmented.ws.send('x'.repeat(32768), { fin: false });
+    fragmented.ws.send('x'.repeat(32769), { fin: true });
+    expect((await fragmentedClosed)[0]).toBe(1009);
+    const invalidText = await open();
+    const invalidTextClosed = once(invalidText.ws, 'close');
+    invalidText.ws.send(Buffer.from([0xc3, 0x28]), { binary: false });
+    expect((await invalidTextClosed)[0]).toBe(1007);
   });
   it('同用户不同会话收到同一提交更新；回滚不推，补拉与帧内容相同', async () => {
     const one = await open();

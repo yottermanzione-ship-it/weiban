@@ -75,16 +75,42 @@ it('安全透支表驱动：全部用途×账户×高危×关怀×疑似，仅�
           }
 });
 
-it('安全透支字面量在AI生产源码仅能出现在唯一关怀包装文件', () => {
-  const root = resolve(import.meta.dirname, '..');
-  for (const file of readdirSync(root, { recursive: true })) {
+function careLiteralViolations(files: Iterable<{ path: string; source: string }>): string[] {
+  const violations: string[] = [];
+  for (const { path, source } of files) {
+    const relative = path.replaceAll('\\', '/');
     if (
-      typeof file !== 'string' ||
-      !file.endsWith('.ts') ||
-      file.endsWith('.test.ts') ||
-      file === 'application/safety-care.ts'
+      !relative.endsWith('.ts') ||
+      relative.endsWith('.test.ts') ||
+      relative === 'application/safety-care.ts'
     )
       continue;
-    expect(readFileSync(resolve(root, file), 'utf8'), file).not.toMatch(/\bsafetyPriority\s*:/u);
+    if (/\bsafetyPriority\s*:/u.test(source)) violations.push(path);
   }
+  return violations;
+}
+
+it('安全透支白名单兼容两种路径分隔符，其他生产文件的注入仍被拒绝', () => {
+  for (const separator of ['/', '\\']) {
+    const path = (name: string) => name.replaceAll('/', separator);
+    const source = 'const input = { safetyPriority: true };';
+    expect(careLiteralViolations([{ path: path('application/safety-care.ts'), source }])).toEqual(
+      [],
+    );
+    for (const name of [
+      'application/reply.ts',
+      'application/safety-care-copy.ts',
+      'nested/application/safety-care.ts',
+    ]) {
+      expect(careLiteralViolations([{ path: path(name), source }])).toEqual([path(name)]);
+    }
+  }
+});
+
+it('安全透支字面量在AI生产源码仅能出现在唯一关怀包装文件', () => {
+  const root = resolve(import.meta.dirname, '..');
+  const files = readdirSync(root, { recursive: true })
+    .filter((file): file is string => typeof file === 'string' && file.endsWith('.ts'))
+    .map((path) => ({ path, source: readFileSync(resolve(root, path), 'utf8') }));
+  expect(careLiteralViolations(files)).toEqual([]);
 });

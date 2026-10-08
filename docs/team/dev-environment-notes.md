@@ -56,3 +56,11 @@ $pnpm = "C:\Users\lomjy3\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnpm
 - L0（底座：账号、计费、模型网关、媒体、角色库、网页、后台、部署、协议向量、安卓底座）已完成开发自测。
 - L1（聊天链路：实时同步、聊天存储、好友、AI 回复、推送、两端客户端聊天）大部分完成，T-041 收尾中。
 - L2～L7 未开始。产品未完成，未做独立质量验收。
+
+## 2026-10-08 Codex 云端临时接手
+
+总经理明确改为先以 GitHub 为准，云端执行 #1 Windows 一致性 → #3 L2 记忆与人设 → #2 T-041 服务端整链路 → #4 Android 推送，串行开发，角色为开发者。上述 Windows 环境是历史记录；总经理说明本机已安装 JDK21/SDK，但云端没有访问本机验证，也未比对 C:\wb-dev\wb 中尚未推送的环境文件。不得称未提交成果已恢复。
+
+云端每个任务另建 /workspace/wb-fix、wb-l2、wb-t041、wb-android 独立副本，不改 /workspace/weiban 共享副本；测试库分别为 weiban_test_fix、weiban_test_l2、weiban_test_t041、weiban_test_pm，连接云端现有 PostgreSQL 18+pgvector 的 127.0.0.1:55432，每个副本的 .env 不入 Git。日志统一 /workspace/logs/，文件名带 wb-fix / wb-l2 / wb-t041 / wb-android 前缀，不写 /tmp。
+
+Node 当前 24.19.0；pnpm 固定 11.28.4，通过 `pnpm --package=pnpm@11.28.4 dlx pnpm <命令>` 调用工程指定版本。缺离线元数据时按正常网络安装，不关闭供应链检查、不改锁文件或降版本。各任务交付跑一次相关完整检查，失败修正后才按需要重跑；不得把缺数据库导致的跳过记为通过。所有新增代码的检查是开发自测，独立验收由总经理另行安排。当前授权不包含合并 main。

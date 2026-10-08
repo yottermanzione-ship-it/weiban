@@ -139,7 +139,11 @@ export class SocketServer implements OnApplicationBootstrap, OnModuleDestroy {
       drainQueued: false,
     };
     this.connections.add(c);
-    ws.on('error', () => ws.terminate());
+    ws.on('error', () => {
+      // ws starts protocol-error handshakes before emitting error; do not destroy the close frame.
+      // Transport failures close their own socket; an otherwise-open connection gets a graceful fallback.
+      if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'Transport error');
+    });
     ws.on('close', () => {
       this.connections.delete(c);
       void this.presence.disconnect(c.id).catch(() => undefined);
