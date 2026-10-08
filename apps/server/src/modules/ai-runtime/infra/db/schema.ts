@@ -22,12 +22,67 @@ export const companionSettings = aiRuntimeSchema.table(
     characterId: uuid('character_id'),
     instantReply: boolean('instant_reply').notNull(),
     splitBubbles: boolean('split_bubbles').notNull(),
+    personaFit: integer('persona_fit').notNull().default(3),
+    scenarioMode: text('scenario_mode').notNull().default('daily'),
+    proactiveMessages: boolean('proactive_messages').notNull().default(true),
+    proactiveFrequency: text('proactive_frequency').notNull().default('medium'),
+    proactiveCalls: boolean('proactive_calls').notNull().default(false),
+    dailyLife: boolean('daily_life').notNull().default(true),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
-  (t) => [unique('companion_user_character_idx').on(t.userId, t.characterId).nullsNotDistinct()],
+  (t) => [
+    unique('companion_user_character_idx').on(t.userId, t.characterId).nullsNotDistinct(),
+    check('companion_persona_fit', sql`${t.personaFit} BETWEEN 1 AND 5`),
+    check('companion_mode', sql`${t.scenarioMode} IN ('daily','tsundere','romance','adult')`),
+    check('companion_frequency', sql`${t.proactiveFrequency} IN ('low','medium','high')`),
+  ],
 );
 
 const bytes = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
+/** 不在明文列保存记忆内容、来源消息、私密类别或共享标签。 */
+export const memories = aiRuntimeSchema.table(
+  'memories',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    conversationId: uuid('conversation_id').notNull(),
+    clientId: uuid('client_id'),
+    scope: text('scope').notNull(),
+    ciphertext: bytes('ciphertext').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('memory_client_idx').on(t.userId, t.characterId, t.clientId),
+    index('memory_owner_idx').on(t.userId, t.characterId, t.conversationId, t.id),
+    check('memory_scope', sql`${t.scope} IN ('normal','adult')`),
+  ],
+);
+/** 删除屏障按会话seq保守截断旧原文；摘要与来源清单加密。 */
+export const memoryStates = aiRuntimeSchema.table(
+  'memory_states',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    conversationId: uuid('conversation_id').notNull(),
+    revision: integer('revision').notNull().default(0),
+    pendingCount: integer('pending_count').notNull().default(0),
+    retryAfter: timestamp('retry_after', { withTimezone: true }),
+    barrierSeq: bigint('barrier_seq', { mode: 'number' }).notNull().default(0),
+    cursorSeq: bigint('cursor_seq', { mode: 'number' }).notNull().default(0),
+    summaryCiphertext: bytes('summary_ciphertext'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('memory_state_owner_idx').on(t.userId, t.characterId, t.conversationId),
+    check(
+      'memory_state_counters',
+      sql`${t.pendingCount} >= 0 AND ${t.revision} >= 0 AND ${t.barrierSeq} >= 0 AND ${t.cursorSeq} >= 0`,
+    ),
+  ],
+);
 /** 计划记录仅ID、状态与时序；模型输入和已生成气泡按用户DEK加密。 */
 export const replyPlans = aiRuntimeSchema.table(
   'reply_plans',

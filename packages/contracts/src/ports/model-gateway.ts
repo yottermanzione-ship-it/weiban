@@ -164,6 +164,18 @@ export interface ModelGatewayPort {
   }>;
 }
 
+/** 模式设置用只读解析端口，不调用模型、不扣费、不返回上游配置。 */
+export interface AdultModelReadPort {
+  getAdultModelStatus(
+    userId: string,
+    characterId: string,
+  ): Promise<{
+    available: boolean;
+    reason:
+      'not_configured' | 'model_removed' | 'provider_unavailable' | 'model_not_allowed' | null;
+  }>;
+}
+
 /** 模型故障提醒的只读受影响用户筛选；仅检查选择/默认/覆盖及当前故障，不调用上游。 */
 export interface ModelNotificationReadPort {
   affectedUsers(

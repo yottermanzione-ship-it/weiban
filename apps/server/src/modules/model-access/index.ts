@@ -13,3 +13,5 @@ export { MODEL_GATEWAY_PORT } from './tokens.js';
 export { INITIAL_MODELS, initialPriceItems } from './domain/seed.js';
 
 export { MODEL_NOTIFICATION_READ_PORT } from './tokens.js';
+
+export { ADULT_MODEL_READ_PORT } from './tokens.js';

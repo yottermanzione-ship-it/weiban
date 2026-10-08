@@ -23,7 +23,7 @@ export interface ReadMessagesInput {
 }
 
 export interface ChatReadPort {
-  getConversation(conversationId: string): Promise<Conversation | null>;
+  getConversation(conversationId: string, tx?: Tx): Promise<Conversation | null>;
   getParticipants(conversationId: string): Promise<Participant[]>;
   /** 找到用户与某角色的私聊会话。 */
   findDirectConversation(userId: string, characterId: string): Promise<Conversation | null>;
@@ -42,6 +42,8 @@ export interface PostMessageInput {
    */
   idempotencyKey: string;
   quoteMessageId?: string;
+  /** AI缓存发送时核对当前内容范围，防止模式切换后错盖章。 */
+  expectedScope?: ContentScope;
 }
 
 export type PostMessageError =
@@ -49,7 +51,7 @@ export type PostMessageError =
 
 /** 以参与者身份说话：AI 运行时用它让角色发言、已读、正在输入、撤回（人设小巧思）。 */
 export interface ChatParticipantPort {
-  postMessage(input: PostMessageInput): Promise<PortResult<Message, PostMessageError>>;
+  postMessage(input: PostMessageInput, tx?: Tx): Promise<PortResult<Message, PostMessageError>>;
   /** 标记某参与者读到第几条（角色已读，CHAT-07）。只前进不后退。 */
   markRead(input: {
     conversationId: string;
@@ -99,10 +101,13 @@ export interface ChatAdminPort {
    * 群聊按成员资格开放情景模式（PRD v1.2 SOC-03 第 4 条），chat 不区分私聊群聊。
    * 之后写入的消息按此盖章（内容范围标签）。v1.0：去掉 group_conversation 错误。
    */
-  setContentScope(input: {
-    conversationId: string;
-    scope: ContentScope;
-  }): Promise<PortResult<void, 'not_found' | 'adult_mode_not_eligible'>>;
+  setContentScope(
+    input: {
+      conversationId: string;
+      scope: ContentScope;
+    },
+    tx?: Tx,
+  ): Promise<PortResult<void, 'not_found' | 'adult_mode_not_eligible'>>;
 }
 
 /** 提供方 chat；组合根把 WS 与 HTTP 连接到同一用户发送处理器。 */

@@ -223,3 +223,46 @@ test('HTTP确认清空先持久保存范围，更新日志暂不可达也不会�
   expect(removals[0]).toContain('mode=purge');
   await expect(page.getByRole('alert')).toBeVisible();
 });
+test('真实HTTP记忆管理：新增、手改、删除确认与人设设置', async ({ page }) => {
+  await openChat(page);
+  await page.getByRole('link', { name: '聊天信息', exact: true }).click();
+  await expect(page.getByLabel('人设贴合度（1更顺从，5更贴合人设）')).toBeVisible();
+  await expect(page.getByLabel('情景模式')).toBeVisible();
+  await page.getByRole('link', { name: 'TA记住了什么', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'TA记住了什么', exact: true })).toBeVisible();
+  const text = '浏览器记忆金丝雀：我的猫叫团子';
+  await page.getByLabel('我想让TA记住…').fill(text);
+  await page.getByRole('button', { name: '添加记忆', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '内容', exact: true })).toHaveValue(text);
+  const editor = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: '保存修改', exact: true }) });
+  await editor
+    .getByRole('textbox', { name: '内容', exact: true })
+    .fill('浏览器记忆金丝雀：猫改叫芝麻');
+  await editor.getByRole('button', { name: '保存修改', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '内容', exact: true })).toHaveValue(
+    '浏览器记忆金丝雀：猫改叫芝麻',
+  );
+  const cached = await page.evaluate(
+    () =>
+      new Promise<string>((resolve) => {
+        const open = indexedDB.open('weiban-app', 1);
+        open.onsuccess = () => {
+          const db = open.result;
+          const request = db.transaction('records').objectStore('records').getAll();
+          request.onsuccess = () => {
+            resolve(JSON.stringify(request.result));
+            db.close();
+          };
+        };
+      }),
+  );
+  expect(cached).not.toContain('浏览器记忆金丝雀');
+  await page.getByRole('button', { name: '删除', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: '删除记忆' })
+    .getByRole('button', { name: '确认删除', exact: true })
+    .click();
+  await expect(page.getByRole('textbox', { name: '内容', exact: true })).toHaveCount(0);
+});

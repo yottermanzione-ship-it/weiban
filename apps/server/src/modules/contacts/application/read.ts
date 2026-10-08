@@ -25,6 +25,7 @@ export function contactDto(row: ContactRow): Contact {
     remark: row.remark,
     customAvatarMediaId: row.customAvatarMediaId,
     addressAs: row.addressAs,
+    relationship: row.relationshipType,
     knownSince: row.knownSince,
     conversationId: row.status === 'active' ? row.conversationId : null,
     addedAt: row.addedAt.toISOString(),

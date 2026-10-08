@@ -12,6 +12,7 @@ import {
   type IdentityReadPort,
   type MediaReadPort,
   type SyncPort,
+  type PolicyPort,
 } from '@weiban/contracts';
 import {
   AppError,
@@ -36,6 +37,7 @@ import { CHAT_ADMIN_PORT } from '../../chat/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from '../../identity/index.js';
 import { MEDIA_READ_PORT } from '../../media/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
+import { POLICY_PORT } from '../../policy/index.js';
 import { contacts } from '../infra/db/schema.js';
 import { contactDto, type ContactRow } from './read.js';
 export interface ContactJob {
@@ -61,6 +63,7 @@ export class ContactsCommands {
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
+    @Inject(POLICY_PORT) private readonly policy: PolicyPort,
   ) {}
   async lockUser(tx: DbTx, userId: string): Promise<void> {
     parseContract(Id, userId);
@@ -274,22 +277,48 @@ export class ContactsCommands {
   async update(userId: string, characterId: string, input: unknown): Promise<Contact> {
     parseContract(Id, characterId);
     const patch = parseContract(UpdateContactRequest, input);
+    if (
+      patch.relationship &&
+      !(
+        await this.policy.checkRelationshipType({
+          userId,
+          characterId,
+          relationshipType: patch.relationship,
+        })
+      ).allowed
+    )
+      throw new AppError('romance_not_allowed', '该角色不能使用恋爱关系');
     if (patch.customAvatarMediaId) {
       const object = await this.media.getMedia(userId, patch.customAvatarMediaId);
       if (object.purpose !== 'contact_avatar')
         throw new AppError('bad_request', '请上传通讯录头像');
     }
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       await this.lockUser(tx, userId);
       const row = await this.row(tx, userId, characterId);
       if (!row || row.status === 'deleted') throw new AppError('not_found', '联系人不存在');
-      const changedFields = Object.entries(patch)
+      if (
+        patch.relationship &&
+        !(
+          await this.policy.checkRelationshipType(
+            { userId, characterId, relationshipType: patch.relationship },
+            tx,
+          )
+        ).allowed
+      )
+        return null;
+      const { relationship, ...fields } = patch;
+      const values = {
+        ...fields,
+        ...(relationship === undefined ? {} : { relationshipType: relationship }),
+      };
+      const changedFields = Object.entries(values)
         .filter(([key, value]) => row[key as keyof ContactRow] !== value)
         .map(([key]) => key);
       if (!changedFields.length) return contactDto(row);
       const [updated] = await tx.db
         .update(contacts)
-        .set(patch)
+        .set(values)
         .where(eq(contacts.id, row.id))
         .returning();
       const contact = contactDto(updated!);
@@ -301,6 +330,8 @@ export class ContactsCommands {
       });
       return contact;
     });
+    if (result === null) throw new AppError('romance_not_allowed', '该角色不能使用恋爱关系');
+    return result;
   }
   async remove(userId: string, characterId: string, mode: 'soft' | 'purge'): Promise<void> {
     parseContract(Id, characterId);

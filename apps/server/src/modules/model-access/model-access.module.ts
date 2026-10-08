@@ -22,6 +22,7 @@ import { AdminUsageService, UsageRecorder } from './application/usage.js';
 import { ModelAdminController, ModelController } from './http/model-access.controller.js';
 import { OpenAiCompatibleProbe } from './infra/upstream-probe.js';
 import {
+  ADULT_MODEL_READ_PORT,
   MODEL_NOTIFICATION_READ_PORT,
   MODEL_ACCESS_CHARGE_QUERY,
   MODEL_GATEWAY_PORT,
@@ -35,7 +36,7 @@ import {
 
 @Module({
   imports: [BillingModule, IdentityModule],
-  exports: [MODEL_GATEWAY_PORT, MODEL_NOTIFICATION_READ_PORT],
+  exports: [MODEL_GATEWAY_PORT, MODEL_NOTIFICATION_READ_PORT, ADULT_MODEL_READ_PORT],
   controllers: [ModelController, ModelAdminController],
   providers: [
     UpstreamService,
@@ -53,6 +54,7 @@ import {
     SelectionService,
     { provide: MODEL_NOTIFICATION_READ_PORT, useExisting: SelectionService },
     ModelResolver,
+    { provide: ADULT_MODEL_READ_PORT, useExisting: ModelResolver },
     ModelStatusService,
     UsageRecorder,
     AdminUsageService,

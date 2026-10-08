@@ -49,3 +49,5 @@ export const GATEWAY_RETRY_WAIT = Symbol('weiban.model-access.retry-wait');
 export type RetryWait = (ms: number) => Promise<void>;
 
 export const MODEL_NOTIFICATION_READ_PORT = Symbol('weiban.model-access.notification-read');
+
+export const ADULT_MODEL_READ_PORT = Symbol('weiban.model-access.adult-model-read');

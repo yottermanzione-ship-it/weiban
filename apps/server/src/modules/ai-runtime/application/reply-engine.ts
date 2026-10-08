@@ -143,6 +143,15 @@ export class ReplyEngine {
         .from(replyPlans)
         .where(eq(replyPlans.id, row.id))
         .for('update');
+      if (
+        (await this.context.memory.revision(
+          tx,
+          row.userId,
+          row.characterId,
+          row.conversationId,
+        )) !== snapshot.memoryRevision
+      )
+        return;
       if (!current || current.status !== 'generating' || current.leaseId !== row.leaseId) return;
       const resultCiphertext = await this.store.seal(tx, row, 'result', {
         bubbles,
@@ -203,7 +212,7 @@ export class ReplyEngine {
         personaVersion: snapshot.personaVersion,
         promptTemplateVersion: snapshot.promptTemplateVersion,
         conversationKind: 'direct',
-        scenarioMode: snapshot.scope,
+        scenarioMode: snapshot.scenarioMode,
       },
     };
   }
@@ -298,18 +307,42 @@ export class ReplyEngine {
           ?.version !== result.snapshot.epoch
       )
         return;
-      const posted = await this.writer.postMessage({
-        conversationId: row.conversationId,
-        senderParticipantId: result.snapshot.participantId,
-        content: { type: 'text', text: result.bubbles[row.nextBubble]! },
-        idempotencyKey: `reply:${row.triggerId}:${row.nextBubble}`,
-      });
-      if (!posted.ok) {
-        await this.store.cancel(row.id);
-        return;
-      }
       await this.store.db.transaction(async (tx) => {
         if (!(await this.store.lock(tx, row.userId, row.conversationId))) return;
+        const [pending] = await tx.db
+          .select()
+          .from(replyPlans)
+          .where(eq(replyPlans.id, row.id))
+          .for('update');
+        if (
+          !pending ||
+          pending.status !== 'sending' ||
+          pending.nextBubble !== row.nextBubble ||
+          (await this.context.memory.revision(
+            tx,
+            row.userId,
+            row.characterId,
+            row.conversationId,
+          )) !== result.snapshot.memoryRevision
+        )
+          return;
+        const posted = await this.writer.postMessage(
+          {
+            conversationId: row.conversationId,
+            senderParticipantId: result.snapshot.participantId,
+            content: { type: 'text', text: result.bubbles[row.nextBubble]! },
+            idempotencyKey: `reply:${row.triggerId}:${row.nextBubble}`,
+            expectedScope: result.snapshot.scope,
+          },
+          tx,
+        );
+        if (!posted.ok) {
+          await tx.db
+            .update(replyPlans)
+            .set({ status: 'cancelled', inputCiphertext: null, resultCiphertext: null })
+            .where(eq(replyPlans.id, row.id));
+          return;
+        }
         const nextBubble = row.nextBubble + 1;
         const done = nextBubble >= result.bubbles.length;
         const dueAt = new Date(

@@ -97,17 +97,39 @@ export class PolicyService implements PolicyPort {
       ),
     );
   }
-  checkRelationshipType(
+  async checkRelationshipType(
     input: Parameters<PolicyPort['checkRelationshipType']>[0],
+    transaction?: Tx,
   ): Promise<PolicyDecision> {
-    return this.decision(input.userId, input.characterId, 'relationship', (p) =>
-      !p.romanceAllowed &&
-      /lover|romance|partner|boyfriend|girlfriend|恋人|恋爱|情侣|男友|女友|夫妻|配偶/i.test(
+    const decide = (romanceAllowed: boolean): PolicyDecision =>
+      !romanceAllowed &&
+      /lover|romance|partner|boyfriend|girlfriend|恋人|恋爱|情侣|男友|女友|男朋友|女朋友|老公|老婆|丈夫|妻子|夫妻|配偶/i.test(
         input.relationshipType,
       )
         ? { allowed: false, reason: 'romance_not_allowed' }
-        : { allowed: true },
-    );
+        : { allowed: true };
+    if (!transaction)
+      return this.decision(input.userId, input.characterId, 'relationship', (p) =>
+        decide(p.romanceAllowed),
+      );
+    const classification = await this.characters.getClassification(input.characterId, transaction);
+    const result: PolicyDecision = classification
+      ? decide(classification.derived.romanceAllowed)
+      : { allowed: false, reason: 'character_not_found' };
+    if (!result.allowed)
+      await this.audit.record(
+        {
+          module: 'policy',
+          action: 'operation.denied',
+          actorType: 'user',
+          actorId: input.userId,
+          targetType: 'character',
+          targetId: input.characterId,
+          details: { operation: 'relationship', reason: result.reason },
+        },
+        asDbTx(transaction),
+      );
+    return result;
   }
   async checkAdultGeneration(
     input: Parameters<PolicyPort['checkAdultGeneration']>[0],

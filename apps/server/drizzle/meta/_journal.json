@@ -99,6 +99,13 @@
       "when": 1791307433330,
       "tag": "0013_push_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791425422957,
+      "tag": "0014_ai_memory",
+      "breakpoints": true
     }
   ]
 }

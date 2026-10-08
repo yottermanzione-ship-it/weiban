@@ -23,6 +23,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
   const { state, clearHistory, synchronize, assertOwner } = useChat();
   const conversation = state.conversations.find((item) => item.conversationId === id)!;
   const contact = state.contacts.find((item) => item.characterId === characterId);
+  const modes = useRemote(CompanionEndpoints.listModes, { params: { characterId } });
   const companion = useRemote(CompanionEndpoints.getForCharacter, { params: { characterId } });
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);
@@ -90,6 +91,53 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
         </label>
         {companion.data && (
           <>
+            <label>
+              人设贴合度（1更顺从，5更贴合人设）
+              <input
+                type="range"
+                min={1}
+                max={5}
+                step={1}
+                value={companion.data.personaFit ?? 3}
+                disabled={pending}
+                onChange={(event) =>
+                  void change(() =>
+                    api.call(CompanionEndpoints.updateForCharacter, {
+                      params: { characterId },
+                      body: { personaFit: Number(event.target.value) },
+                    }),
+                  )
+                }
+              />
+            </label>
+            {modes.data && (
+              <label>
+                情景模式
+                <select
+                  disabled={pending}
+                  value={companion.data.scenarioMode ?? 'daily'}
+                  onChange={(event) =>
+                    void change(() =>
+                      api.call(CompanionEndpoints.updateForCharacter, {
+                        params: { characterId },
+                        body: {
+                          scenarioMode: event.target.value as
+                            'daily' | 'tsundere' | 'romance' | 'adult',
+                        },
+                      }),
+                    )
+                  }
+                >
+                  {modes.data.items.map((mode) => (
+                    <option key={mode.id} value={mode.id}>
+                      {mode.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <Link to="/models">选择成人模式模型</Link>
+            <Link to={`/characters/${characterId}/memories`}>TA记住了什么</Link>
             <label className="check">
               <input
                 type="checkbox"
@@ -136,6 +184,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
               body: {
                 remark: String(form.get('remark') || '') || null,
                 addressAs: String(form.get('addressAs') || '') || null,
+                relationship: String(form.get('relationship') || '朋友'),
               },
             }),
           );
@@ -149,7 +198,16 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
           TA怎么叫我
           <input name="addressAs" maxLength={20} defaultValue={contact?.addressAs ?? ''} />
         </label>
-        <button disabled={pending}>保存称呼</button>
+        <label>
+          我们的关系
+          <input
+            name="relationship"
+            maxLength={30}
+            defaultValue={contact?.relationship ?? '朋友'}
+            required
+          />
+        </label>
+        <button disabled={pending}>保存称呼和关系</button>
       </form>
       {(error || companion.error) && <p role="alert">{error || companion.error}</p>}
       {message && <p role="status">{message}</p>}

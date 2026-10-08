@@ -18,6 +18,7 @@ export * from './http/chat.js';
 export * from './http/sync.js';
 export * from './http/push.js';
 export * from './http/companion.js';
+export * from './http/memory.js';
 export * from './http/media.js';
 
 // WebSocket 帧

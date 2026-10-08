@@ -13,22 +13,29 @@ export class CompanionSettingsController {
   constructor(
     @Inject(CompanionSettingsService) private readonly settings: CompanionSettingsService,
   ) {}
+  @Get('characters/:characterId/scenario-modes')
+  modes(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Param(new ContractPipe(E.listModes.params!)) params: { characterId: string },
+  ) {
+    return this.settings.listModes(p.userId, params.characterId);
+  }
   @Get('me/companion-defaults')
   async defaults(@CurrentPrincipal() p: AuthPrincipal) {
-    const { instantReply, splitBubbles, updatedAt } = await this.settings.get(p.userId, null);
-    return { instantReply, splitBubbles, updatedAt };
+    const { inheritsDefaults: _inherits, ...value } = await this.settings.get(p.userId, null);
+    return value;
   }
   @Patch('me/companion-defaults')
   async updateDefaults(
     @CurrentPrincipal() p: AuthPrincipal,
     @Body(new ContractPipe(E.updateDefaults.body!)) body: unknown,
   ) {
-    const { instantReply, splitBubbles, updatedAt } = await this.settings.update(
+    const { inheritsDefaults: _inherits, ...value } = await this.settings.update(
       p.userId,
       null,
       body,
     );
-    return { instantReply, splitBubbles, updatedAt };
+    return value;
   }
   @Get('characters/:characterId/companion-settings')
   get(
