@@ -26,7 +26,8 @@ $pnpm = "C:\Users\lomjy3\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnpm
     `PLATFORM_KEK_FILE=C:/wb-dev/secrets/dev-kek`（开发主密钥，共享一份即可）
   - 跑完测试**必须核对「跳过 0 条」**。有跳过就说明你的环境不对，不是测试通过。
 - git / gh 可用（gh 已登录）。`gh` 在 `C:\Program Files\GitHub CLI\gh.exe`。
-- **本机没有 Java、没有安卓 SDK**（`java`、`ANDROID_HOME` 都没有）。安卓的原生构建/单元测试在本机暂时跑不了，安卓改动以 **GitHub CI 的 Android job** 为准；需要本机验证安卓时先报告，不要假装跑过。
+- **本机安卓环境（2026-10-08 总负责人实测更新，原文写「没有 Java、没有安卓 SDK」已过时）**：`java` = Temurin 21.0.12.1，`ANDROID_HOME=C:\android-sdk`，SDK 里有 `platforms/android-36`、`build-tools/35.0.0` 与 `36.0.0`，`~/.gradle` 已缓存 Gradle 8.13。**即环境看起来已齐，但总负责人没有实际跑过一次 gradle 构建，因此只能算「看起来能用」，不能当作已验证。**
+- **安卓改动一律以 GitHub CI 的 Android job 为准**（总经理 2026-10-08 决定）：CI 跑在 GitHub 云端，**不消耗 Claude 额度**；本机跑安卓需要额外装环境、调问题，反而更费额度。需要本机验证安卓时先报告，不要假装跑过。
 - 32GB 内存、12 核、C 盘约 356GB 可用。
 
 ## 硬性规则
