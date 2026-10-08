@@ -63,6 +63,22 @@ class NotificationEntryTest {
         )
     }
 
+    @Test
+    @Config(sdk = [35], application = PushTestApplication::class)
+    fun mergedManifestHasOnlyTheOwnedMessagingServiceAndNoDirectBootFallback() {
+        val intent = Intent("com.google.firebase.MESSAGING_EVENT").setPackage(fixture.context.packageName)
+        val flags = android.content.pm.PackageManager.MATCH_DIRECT_BOOT_AWARE or android.content.pm.PackageManager.MATCH_DIRECT_BOOT_UNAWARE
+        val services =
+            fixture.context.packageManager.queryIntentServices(
+                intent,
+                android.content.pm.PackageManager.ResolveInfoFlags
+                    .of(flags.toLong()),
+            )
+        assertEquals(listOf(WeibanMessagingService::class.java.name), services.map { it.serviceInfo.name })
+        assertFalse(services.single().serviceInfo.exported)
+        assertFalse(services.single().serviceInfo.directBootAware)
+    }
+
     @Test fun sdkRegistrationCallbackCompletesTheInMemoryWaiterWithoutQueuingAnotherRegistration() =
         runBlocking {
             val request = FirebaseRegistrationCallbacks.begin()

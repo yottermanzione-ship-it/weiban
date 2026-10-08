@@ -28,6 +28,8 @@ SDK 25.1.3 使用 installation-ID 注册模式：`register` / `unregister` 与 `
 
 Firebase SDK 对 notification 字段会在 onMessageReceived 前自动展示，因此自有服务同时保护 RECEIVE 和 RECEIVE_DIRECT_BOOT：缺少 data.weiban 或通道不可用的消息不进入 SDK 分派；有 weiban 的消息先删除 `gcm.n.*` / `gcm.notification.*` 展示字段，再进入 SDK。所有展示只能走账号校验后的自有 NotificationManager。
 
+最终合并清单移除 SDK 默认 FirebaseMessagingService，只保留不导出的自有接收服务，避免其他接收入口绕过归属保护。自有服务明确非 directBootAware：重启后首次解锁前不启用通知接收，因为会话凭据与 Room 在凭据保护存储中；不允许默认 SDK direct-boot 服务代替它展示。合并清单的服务解析有原生回归，真实设备的解锁后供应商补投行为仍待验证。
+
 本机开启标记、设备 ID、待展示载荷和最多 128 个最近通知 ID 收据存在账号归属的 Room 缓存中，与登录/退出共用互斥锁。待展示载荷也限 128 项，过量删除旧项；关闭通知清理待展示正文，切换账号清空本地缓存。WorkManager 持久任务只包含 userId、sessionId、notificationId，刷新绑定任务不保存厂商 token。同步 OS publish 与账号替换共锁，迟到旧 token、头像与工作任务不能写入新会话；关闭动作先关闭本地展示门槛，再取消自己的通知/任务并删除服务端设备。已经进入 POST 的绑定仍保存返回设备 ID，随后关闭动作完成 DELETE，不能因开关关闭而丢失解绑目标。
 
 展示前读取服务器当前声音/预览设置和会话静音/内容范围，使用 networkOnly 禁止旧 GET 缓存恢复已关闭的消息预览；成人会话只显示通用新消息提醒。免打扰启用时读取账号时区，并在 OS 展示时重新判断开始含、结束不含的时段，跨午夜和全天时段与服务端规则一致。网络暂时不可用则后台重试，超过通知 TTL 后丢弃。声音/静默使用不同系统通知渠道，最终声音仍由用户的系统渠道设置决定。相同会话合并键替换旧通知，设置 onlyAlertOnce。

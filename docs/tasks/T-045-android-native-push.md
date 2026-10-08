@@ -17,3 +17,5 @@ PushTransport测试实现只替代厂商token服务，实际Room、归属锁、H
 真实FCM/国产厂商、真机权限与强杀恢复、完整账号设置页面及独立验收未验证或未完成；此任务不是全产品完成声明。完整源码CI与正式交接在验证后追加。
 
 根目录相关检查root-related1全部成功：契约2.3/529个Kotlin定义、图标与令牌生成物检查、全仓Prettier、报告脚本ESLint和最新JUnit门禁118条/零跳过，packages/contracts无差异。锁文件只更新app/platform两处，随后正常锁定构建通过。构建、检查与配置文档是云端实测；没有使用Windows本机或真实供应商凭据。
+
+首版093f4d8的push37750756732/PR37750802723全CI成功并已读四个job/step/日志：468条整仓、Web22/admin7、Android118零跳过、APK与部署恢复通过。开发打包清单复核随后发现SDK默认FirebaseMessagingService也被合并；追加移除该默认服务，明确自有服务非directBootAware，增加SDK35真实PackageManager清单解析回归，首次解锁前不借SDK默认入口展示。正常锁定exclusive1全检查/APK成功（59秒），最新JUnit119条零跳过；追加源码CI待确认后写正式交接，首版证据不冒充最终源码。
