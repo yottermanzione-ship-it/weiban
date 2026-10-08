@@ -6,7 +6,7 @@
 | 日期 | 2026-10-08 |
 | 分支 | dev/fix-windows-test-parity |
 | 基线 | main be8c6b5825e675a8d834e16400f22a30124b6d13 |
-| 状态 | 云端开发自测通过，源码 CI 待读取 |
+| 状态 | 云端开发自测及源码 push/PR CI通过；交接已写，待独立验收/合并 |
 
 来源：总经理转交 DSH 中断任务 #1，随后明确以 GitHub 为准在云端继续。Windows 的 task-fix-windows-test-parity.md 和未提交 reply-rules.test.ts 未上传，因此没有将它们当成已读取或已合并的成果；范围以总经理说明、GitHub 状态页和现有回归为准。
 
@@ -23,4 +23,4 @@
 交付检查使用 `pnpm --package=pnpm@11.28.4 dlx pnpm check`，必须汇总实际通过数量和零跳过。Windows 11 本机运行尚未验证；跨平台路径夹具与云端真实 TCP/PG 回归不能冒充本机 Windows 验收。结果和源码 CI 在交接说明补录。无契约/依赖/生产数据库迁移变更。
 
 
-2026-10-08 云端检查退出 0：50 个测试文件、454 条测试全部通过、零跳过；格式/lint/模块边界/完整类型/设计令牌均通过（/workspace/logs/wb-fix-check1.log 与 .exit）。生产字面量检索仍只有 application/safety-care.ts 一个命中，未留下生产注入。初次离线安装因缺少 @node-rs/argon2 离线元数据失败，后续按正常网络安装完成且供应链政策检查通过；未关闭检查或修改锁文件。源码提交与 CI 结果稍后登记交接。
+2026-10-08 云端检查退出 0：50 个测试文件、454 条测试全部通过、零跳过；格式/lint/模块边界/完整类型/设计令牌均通过（/workspace/logs/wb-fix-check1.log 与 .exit）。生产字面量检索仍只有 application/safety-care.ts 一个命中，未留下生产注入。初次离线安装因缺少 @node-rs/argon2 离线元数据失败，后续按正常网络安装完成且供应链政策检查通过；未关闭检查或修改锁文件。源码4f352d5的push/PR CI均success，见 `docs/handoffs/2026-10-08-codex-T-042.md`。
