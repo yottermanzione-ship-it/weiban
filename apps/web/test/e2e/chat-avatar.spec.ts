@@ -31,7 +31,9 @@ test('私聊双方40px头像：真实私有图片、失败默认回退和深色�
   await page.getByRole('link', { name: '发消息', exact: true }).click();
   const role = page.getByRole('img', { name: '测试陪伴角色头像' }).first();
   await expect(role.locator('img')).toHaveJSProperty('naturalWidth', 512);
-  expect(await role.evaluate((element) => element.getBoundingClientRect().width)).toBe(40);
+  await expect
+    .poll(() => role.evaluate((element) => element.getBoundingClientRect().width))
+    .toBe(40);
   await page.getByLabel('消息', { exact: true }).fill('检查我的聊天头像');
   await page.getByRole('button', { name: '发送', exact: true }).click();
   const mine = page.locator('.message-row.mine').filter({ hasText: '检查我的聊天头像' });
@@ -39,11 +41,13 @@ test('私聊双方40px头像：真实私有图片、失败默认回退和深色�
     'naturalWidth',
     512,
   );
-  expect(
-    await mine
-      .getByRole('img', { name: '我的头像' })
-      .evaluate((element) => element.getBoundingClientRect().width),
-  ).toBe(40);
+  await expect
+    .poll(() =>
+      mine
+        .getByRole('img', { name: '我的头像' })
+        .evaluate((element) => element.getBoundingClientRect().width),
+    )
+    .toBe(40);
   await page.route('**/api/v1/media/*/content?**', (route) => route.abort('failed'));
   await page.reload();
   await expect(role).toContainText('测试');
@@ -51,10 +55,13 @@ test('私聊双方40px头像：真实私有图片、失败默认回退和深色�
   await expect(mine.getByRole('img', { name: '我的头像' })).toContainText('其他');
   await expect(mine.locator('img')).toHaveCount(0);
   await page.evaluate(() => (document.documentElement.dataset.scheme = 'dark'));
-  const colors = await mine.getByRole('img', { name: '我的头像' }).evaluate((element) => {
-    const style = getComputedStyle(element);
-    return { background: style.backgroundColor, foreground: style.color };
-  });
-  expect(colors).toEqual({ background: 'rgb(217, 217, 217)', foreground: 'rgb(26, 26, 26)' });
+  await expect
+    .poll(() =>
+      mine.getByRole('img', { name: '我的头像' }).evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { background: style.backgroundColor, foreground: style.color };
+      }),
+    )
+    .toEqual({ background: 'rgb(217, 217, 217)', foreground: 'rgb(26, 26, 26)' });
   await page.screenshot({ path: 'apps/web/test-results/chat-avatars.png', fullPage: true });
 });
