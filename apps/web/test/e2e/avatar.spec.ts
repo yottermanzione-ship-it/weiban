@@ -12,9 +12,18 @@ test('角色默认头像不随备注改变；实际私有头像裁剪、失败�
   const avatar = page.getByRole('img', { name: '测试陪伴角色头像', exact: true });
   await expect(avatar).toBeVisible();
   await expect(avatar).toContainText('测试');
-  const originalColor = await avatar.evaluate(
-    (element) => getComputedStyle(element).backgroundColor,
-  );
+  // The profile and contact list can finish loading between locator resolution and
+  // evaluation. A detached avatar has no computed style; never use that as the
+  // reference color for the canonical-name invariant.
+  let originalColor = '';
+  await expect
+    .poll(async () => {
+      originalColor = await avatar.evaluate((element) =>
+        element.isConnected ? getComputedStyle(element).backgroundColor : '',
+      );
+      return originalColor;
+    })
+    .toMatch(/^rgb\(\d+, \d+, \d+\)$/);
   await page.getByRole('link', { name: '设置备注和头像', exact: true }).click();
   await page.getByLabel('备注名').fill('王一博');
   await page.getByRole('button', { name: '保存称呼和关系', exact: true }).click();
@@ -25,9 +34,9 @@ test('角色默认头像不随备注改变；实际私有头像裁剪、失败�
   await expect(sources.getByRole('button', { name: '恢复默认头像', exact: true })).toHaveCount(0);
   await sources.getByRole('button', { name: '取消', exact: true }).click();
   await expect(avatar).toContainText('测试');
-  expect(await avatar.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
-    originalColor,
-  );
+  await expect
+    .poll(() => avatar.evaluate((element) => getComputedStyle(element).backgroundColor))
+    .toBe(originalColor);
   const purposes: string[] = [];
   page.on('request', (request) => {
     if (request.method() === 'POST' && request.url().includes('/media?'))
@@ -71,9 +80,9 @@ test('角色默认头像不随备注改变；实际私有头像裁剪、失败�
   await expect(sources.getByRole('button', { name: '恢复默认头像', exact: true })).toHaveCount(0);
   await sources.getByRole('button', { name: '取消', exact: true }).click();
   await expect(avatar).toContainText('测试');
-  expect(await avatar.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
-    originalColor,
-  );
+  await expect
+    .poll(() => avatar.evaluate((element) => getComputedStyle(element).backgroundColor))
+    .toBe(originalColor);
   await page.getByRole('link', { name: '设置备注和头像', exact: true }).click();
   await page.getByLabel('备注名').fill('');
   await page.getByRole('button', { name: '保存称呼和关系', exact: true }).click();
