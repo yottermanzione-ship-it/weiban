@@ -9,16 +9,21 @@ import { ChatWriteService } from './application/write.js';
 import { ChatStore } from './application/store.js';
 import { ChatLifecycle } from './application/lifecycle.js';
 import { ChatController } from './http/chat.controller.js';
+import { ChatActionController, ChatGroupController } from './http/groups.controller.js';
+import { ChatActionService } from './application/actions.js';
+import { ChatGroupService } from './application/groups.js';
 import {
   CHAT_ADMIN_PORT,
   CHAT_PARTICIPANT_PORT,
   CHAT_READ_PORT,
   CHAT_NOTIFICATION_READ_PORT,
   CHAT_USER_PORT,
+  CHAT_GROUP_ADMIN_PORT,
+  CHAT_GROUP_READ_PORT,
 } from './tokens.js';
 @Module({
   imports: [IdentityModule, RealtimeModule],
-  controllers: [ChatController],
+  controllers: [ChatController, ChatGroupController, ChatActionController],
   providers: [
     ChatAdminService,
     ChatParticipantService,
@@ -27,6 +32,10 @@ import {
     ChatWriteService,
     ChatStore,
     ChatLifecycle,
+    ChatGroupService,
+    ChatActionService,
+    { provide: CHAT_GROUP_ADMIN_PORT, useExisting: ChatGroupService },
+    { provide: CHAT_GROUP_READ_PORT, useExisting: ChatGroupService },
     { provide: CHAT_ADMIN_PORT, useExisting: ChatAdminService },
     { provide: CHAT_PARTICIPANT_PORT, useExisting: ChatParticipantService },
     { provide: CHAT_READ_PORT, useExisting: ChatReadService },
@@ -39,6 +48,8 @@ import {
     CHAT_READ_PORT,
     CHAT_USER_PORT,
     CHAT_NOTIFICATION_READ_PORT,
+    CHAT_GROUP_ADMIN_PORT,
+    CHAT_GROUP_READ_PORT,
   ],
 })
 export class ChatModule {}

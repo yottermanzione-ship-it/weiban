@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, gt, notInArray, sql } from 'drizzle-orm';
 import {
   Conversation,
+  GROUP_MEMBER_LIMIT,
   Id,
   Message,
   MessageContent,
@@ -158,6 +159,14 @@ export class ChatStore {
       clientMsgId: view.userId && stored.senderKind === 'user' ? stored.clientMsgId : null,
       createdAt: stored.createdAt.toISOString(),
       recalledAt: stored.recalledAt?.toISOString() ?? null,
+      ...(stored.actionId && stored.actionChosenAt
+        ? {
+            actionChoice: {
+              actionId: stored.actionId,
+              chosenAt: stored.actionChosenAt.toISOString(),
+            },
+          }
+        : {}),
     });
   }
   async conversation(tx: DbTx, row: ConversationRow): Promise<Conversation> {
@@ -168,6 +177,8 @@ export class ChatStore {
       .where(eq(participants.conversationId, row.id))
       .orderBy(participants.joinedAt, participants.id);
     const owner = members.find((p) => p.kind === 'user' && p.refId === row.ownerUserId);
+    const active = members.filter((p) => !p.leftAt);
+    const former = members.filter((p) => p.leftAt);
     if (!owner) throw new AppError('internal_error', '会话状态不完整');
     const visible = and(
       eq(messages.conversationId, row.id),
@@ -194,7 +205,9 @@ export class ChatStore {
               ? '[拍一拍]'
               : content?.type === 'system' && content.code === 'contact_accepted'
                 ? '通过了你的好友申请'
-                : '[消息]';
+                : content?.type === 'system'
+                  ? systemPreview(content.code, content.params)
+                  : '[消息]';
       lastMessage = {
         messageId: last.id,
         seq: last.seq,
@@ -217,7 +230,7 @@ export class ChatStore {
       conversationId: row.id,
       type: row.type,
       title: row.title,
-      participants: members.map((p) => ({
+      participants: active.map((p) => ({
         participantId: p.id,
         kind: p.kind,
         refId: p.refId,
@@ -232,6 +245,42 @@ export class ChatStore {
         row.type === 'direct' ? (members.find((p) => p.kind === 'character')?.readSeq ?? 0) : null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
+      group:
+        row.type === 'group'
+          ? {
+              createdByCharacterId: row.createdByCharacterId,
+              titleCustomized: row.titleCustomized,
+              memberLimit: GROUP_MEMBER_LIMIT,
+              formerParticipants: former.map((p) => ({
+                participantId: p.id,
+                kind: p.kind,
+                refId: p.refId,
+                joinedAt: p.joinedAt.toISOString(),
+              })),
+            }
+          : null,
     });
+  }
+}
+
+/** 群系统提示在会话列表里的摘要（客户端按 code 渲染正文，这里只给列表一个可读的文字）。 */
+function systemPreview(code: string, params: Record<string, string | number | boolean>): string {
+  const name = typeof params.name === 'string' ? params.name : '';
+  const names = typeof params.names === 'string' ? params.names : name;
+  switch (code) {
+    case 'group_created':
+      return '你发起了群聊';
+    case 'group_invited_by_character':
+      return `${name}邀请你加入了群聊`;
+    case 'member_joined':
+      return `${names}加入了群聊`;
+    case 'member_removed':
+      return `你将${names}移出了群聊`;
+    case 'member_left':
+      return `${name}退出了群聊`;
+    case 'group_renamed':
+      return typeof params.title === 'string' ? `群名已改为「${params.title}」` : '修改了群名';
+    default:
+      return '[系统消息]';
   }
 }

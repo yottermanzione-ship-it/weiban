@@ -9,3 +9,4 @@ export interface CharacterContactAccess {
 }
 export const PUBLIC_UPDATE_READ_PORT = Symbol('weiban.characters.public-update-read');
 export const PUBLIC_UPDATE_WEB_SEARCH = Symbol('weiban.characters.public-update-web-search');
+export const CHARACTER_RELATION_READ_PORT = Symbol('weiban.characters.relation-read');

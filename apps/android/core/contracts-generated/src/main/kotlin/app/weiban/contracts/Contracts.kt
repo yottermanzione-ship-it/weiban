@@ -9182,6 +9182,7 @@ data class ConversationGroup(
     @SerialName("createdByCharacterId") val `createdByCharacterId`: Id?,
     @SerialName("titleCustomized") val `titleCustomized`: Boolean,
     @SerialName("memberLimit") val `memberLimit`: Long,
+    @SerialName("formerParticipants") val `formerParticipants`: List<Participant>? = null,
 )
 
 @Serializable

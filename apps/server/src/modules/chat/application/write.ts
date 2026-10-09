@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   ClientMsgId,
   Id,
@@ -78,6 +78,9 @@ export class ChatWriteService {
         ),
       );
     if (sender?.kind === 'user') parseContract(ClientMsgId, idempotencyKey);
+    // 已退出 / 被移出群的角色不能再发言（幂等重试也不行，避免迟到的 AI 回复进群）。
+    if (sender?.leftAt)
+      return { ok: false, error: 'not_conversation_member', message: '发送者已不在此群聊中' };
     const system = senderKind === 'system' && input.senderParticipantId === row.systemParticipantId;
     if (!sender && !system)
       return { ok: false, error: 'not_conversation_member', message: '发送者不在此会话中' };
@@ -134,7 +137,13 @@ export class ChatWriteService {
       const members = await tx.db
         .select()
         .from(participants)
-        .where(and(eq(participants.conversationId, row.id), eq(participants.kind, 'character')));
+        .where(
+          and(
+            eq(participants.conversationId, row.id),
+            eq(participants.kind, 'character'),
+            isNull(participants.leftAt),
+          ),
+        );
       if (!members.length)
         return { ok: false, error: 'invalid_content', message: '该会话不能发送成人范围消息' };
       for (const member of members) {
@@ -145,6 +154,16 @@ export class ChatWriteService {
         if (!decision.allowed)
           return { ok: false, error: 'invalid_content', message: '角色资格已变化，请回到日常模式' };
       }
+    }
+    // 群聊 @：只保留仍在群里的参与者（SOC-04 第 1 条）；私聊忽略。
+    let mentionedParticipantIds: string[] = [];
+    if (row.type === 'group' && content.type === 'text' && content.mentions?.length) {
+      const active = await tx.db
+        .select({ id: participants.id })
+        .from(participants)
+        .where(and(eq(participants.conversationId, row.id), isNull(participants.leftAt)));
+      const ids = new Set(active.map((p) => p.id));
+      mentionedParticipantIds = [...new Set(content.mentions)].filter((m) => ids.has(m));
     }
     const id = newId();
     const at = this.clock.now();
@@ -174,6 +193,7 @@ export class ChatWriteService {
         status: 'normal',
         scope: current.contentScope,
         labels: labels.length ? labels : null,
+        contentType: content.type,
         createdAt: at,
         recalledAt: null,
       })
@@ -203,7 +223,7 @@ export class ChatWriteService {
       contentType: content.type,
       scope: current.contentScope as 'normal' | 'adult',
       quoteMessageId: input.quoteMessageId ?? null,
-      mentionedParticipantIds: [],
+      mentionedParticipantIds,
       userRecipientIds: [row.ownerUserId],
     });
     return { ok: true, value };

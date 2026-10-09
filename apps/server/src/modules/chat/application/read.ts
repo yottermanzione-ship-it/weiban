@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gt, inArray, lt } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm';
 import {
   ContentScope,
   Id,
@@ -147,6 +147,9 @@ export class ChatReadService implements ChatReadPort {
       const row = await this.store.load(tx, input.conversationId);
       if (!scopes.length) return [];
       const view = await this.store.view(tx, row, null, scopes);
+      const excludeLabels = (input.excludeLabels ?? []).filter((l) => typeof l === 'string');
+      const excludeIds = (input.excludeMessageIds ?? []).filter((m) => Id.safeParse(m).success);
+      const types = input.contentTypes?.filter((t) => typeof t === 'string');
       const rows = await tx.db
         .select()
         .from(messages)
@@ -156,13 +159,30 @@ export class ChatReadService implements ChatReadPort {
             inArray(messages.scope, scopes),
             query.afterSeq === undefined ? undefined : gt(messages.seq, query.afterSeq),
             query.beforeSeq === undefined ? undefined : lt(messages.seq, query.beforeSeq),
+            excludeLabels.length
+              ? sql`NOT coalesce(${messages.labels} && ${excludeLabels}::text[], false)`
+              : undefined,
+            excludeIds.length ? notInArray(messages.id, excludeIds) : undefined,
+            types?.length
+              ? or(inArray(messages.contentType, types), isNull(messages.contentType))
+              : undefined,
           ),
         )
         .orderBy(query.afterSeq === undefined ? desc(messages.seq) : asc(messages.seq))
         .limit(query.limit);
       rows.sort((a, b) => a.seq - b.seq);
       const result: Message[] = [];
-      for (const message of rows) result.push(await this.store.message(tx, row, message, view));
+      for (const message of rows) {
+        const value = await this.store.message(tx, row, message, view);
+        // 0030 之前的旧消息没有 content_type，解密后再按类型过滤；撤回的旧消息无法判断类型，跳过。
+        if (
+          types?.length &&
+          !message.contentType &&
+          (!value.content || !types.includes(value.content.type))
+        )
+          continue;
+        result.push(value);
+      }
       return result;
     });
   }

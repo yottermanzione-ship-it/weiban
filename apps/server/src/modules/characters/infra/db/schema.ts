@@ -144,3 +144,29 @@ export const publicUpdateSettings = charactersSchema.table('public_update_settin
   lastAutoRunAt: timestamp('last_auto_run_at', { withTimezone: true, mode: 'date' }),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
 });
+
+/**
+ * 关系网（SOC-01、ADM-02，T-063，迁移 0031）。一条关系双向生效：character_a_id < character_b_id。
+ * 预设角色之间：owner_user_id 为空、evidence（公开依据）必填；自定义角色之间：owner_user_id 为设定者、evidence 为空。
+ */
+export const relations = charactersSchema.table(
+  'relations',
+  {
+    id: uuid('id').primaryKey(),
+    characterAId: uuid('character_a_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    characterBId: uuid('character_b_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    type: text('type').notNull(),
+    label: text('label'),
+    closeness: text('closeness').notNull(),
+    evidence: text('evidence'),
+    ownerUserId: uuid('owner_user_id'),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [index('relations_b_idx').on(t.characterBId)],
+);

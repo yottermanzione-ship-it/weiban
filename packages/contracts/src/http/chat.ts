@@ -367,6 +367,11 @@ export const Conversation = z.object({
       titleCustomized: z.boolean(),
       /** 角色成员上限（P-21）。 */
       memberLimit: z.number().int().positive(),
+      /**
+       * 3.0.1（T-063，次版本变更）：已退出 / 被移出的角色参与者，只用于渲染其历史消息的发送者头像与名字；
+       * 不是群成员，不计入 participants 与上限。旧客户端忽略。
+       */
+      formerParticipants: z.array(Participant).optional(),
     })
     .nullable()
     .optional(),

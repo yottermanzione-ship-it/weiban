@@ -7,6 +7,7 @@ import type {
   ContactsReadPort,
   ChatNotificationReadPort,
   CharacterNameReadPort,
+  Tx,
 } from '@weiban/contracts';
 import {
   ContactsModule,
@@ -16,7 +17,13 @@ import {
 } from './modules/contacts/index.js';
 import { AiRuntimeModule } from './modules/ai-runtime/index.js';
 import { BillingModule } from './modules/billing/index.js';
-import { ChatModule, CHAT_USER_PORT, CHAT_NOTIFICATION_READ_PORT } from './modules/chat/index.js';
+import {
+  ChatModule,
+  CHAT_USER_PORT,
+  CHAT_NOTIFICATION_READ_PORT,
+  CHAT_GROUP_DIRECTORY,
+  type ChatGroupDirectory,
+} from './modules/chat/index.js';
 import {
   PushModule,
   PUSH_MODEL_SOURCE,
@@ -69,6 +76,36 @@ class ChatCompositionModule {}
 })
 class ContactsCompositionModule {}
 
+/** 群聊（T-063）需要的通讯录与名字查询：chat 不能 import contacts / characters，由这里绑定。 */
+@Global()
+@Module({
+  imports: [ContactsModule, CharactersModule],
+  providers: [
+    {
+      provide: CHAT_GROUP_DIRECTORY,
+      inject: [CONTACTS_READ_PORT, CHARACTER_NAME_READ_PORT],
+      useFactory: (
+        contacts: ContactsReadPort,
+        characters: CharacterNameReadPort,
+      ): ChatGroupDirectory => ({
+        isActiveContact: async (userId, characterId, tx) =>
+          !!(await contacts.getActiveContact(userId, characterId, tx as Tx | undefined)),
+        displayName: async (userId, characterId, tx) => {
+          const contact = await contacts.getActiveContact(
+            userId,
+            characterId,
+            tx as Tx | undefined,
+          );
+          if (contact?.remark) return contact.remark;
+          return characters.getDisplayName(userId, characterId, tx as Tx | undefined);
+        },
+      }),
+    },
+  ],
+  exports: [CHAT_GROUP_DIRECTORY],
+})
+class ChatGroupDirectoryCompositionModule {}
+
 @Global()
 @Module({
   imports: [ChatModule, CharactersModule, ContactsModule, ModelAccessModule],
@@ -108,6 +145,7 @@ export class AppModule {
         ChatCompositionModule,
         ContactsCompositionModule,
         PushCompositionModule,
+        ChatGroupDirectoryCompositionModule,
         PushModule,
         AiRuntimeModule,
         BillingModule,

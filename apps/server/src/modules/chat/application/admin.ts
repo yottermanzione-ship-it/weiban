@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import {
   ContentScope,
   Id,
@@ -249,7 +249,13 @@ export class ChatAdminService implements ChatAdminPort {
         const members = await tx.db
           .select()
           .from(participants)
-          .where(and(eq(participants.conversationId, row.id), eq(participants.kind, 'character')));
+          .where(
+            and(
+              eq(participants.conversationId, row.id),
+              eq(participants.kind, 'character'),
+              isNull(participants.leftAt),
+            ),
+          );
         if (!members.length) return 'denied' as const;
         for (const member of members) {
           const decision = await this.policy.checkAdultGeneration(

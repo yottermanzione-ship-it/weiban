@@ -40,7 +40,7 @@ import {
 import { MEDIA_READ_PORT } from '../../media/index.js';
 import { deriveClassification, classificationCanChange } from '../../policy/index.js';
 import { childFeaturesIn } from '../domain/child-features.js';
-import { categories, characters, personaVersions } from '../infra/db/schema.js';
+import { categories, characters, personaVersions, relations } from '../infra/db/schema.js';
 import { CHARACTER_CONTACT_ACCESS, type CharacterContactAccess } from '../tokens.js';
 import type { CharacterEvaluator } from './evaluator.js';
 type Row = typeof characters.$inferSelect;
@@ -648,18 +648,27 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     return (await this.decode(row, row.kind === 'preset', tx)).name;
   }
   async purgeUser(userId: string): Promise<number> {
+    // 关系网：该用户为自定义角色设定的关系（T-063）；角色删除时也会级联删除。
+    const relationRows = await this.database.db
+      .delete(relations)
+      .where(eq(relations.ownerUserId, userId))
+      .returning({ id: relations.id });
     const removed = await this.database.db
       .delete(characters)
       .where(eq(characters.ownerId, userId))
       .returning({ id: characters.id });
-    return removed.length;
+    return removed.length + relationRows.length;
   }
   async countUserData(userId: string): Promise<number> {
     const [row] = await this.database.db
       .select({ n: count() })
       .from(characters)
       .where(eq(characters.ownerId, userId));
-    return row?.n ?? 0;
+    const [rel] = await this.database.db
+      .select({ n: count() })
+      .from(relations)
+      .where(eq(relations.ownerUserId, userId));
+    return (row?.n ?? 0) + (rel?.n ?? 0);
   }
   async listPersonaVersions(
     adminId: string,
