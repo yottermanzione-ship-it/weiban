@@ -13,6 +13,7 @@ import { ContactsModule } from '../contacts/index.js';
 import { RealtimeModule } from '../realtime/index.js';
 import { CompanionSettingsService } from './application/settings.js';
 import { CompanionSettingsController } from './http/settings.controller.js';
+import { SimulationService, SIMULATION_READ_PORT } from './application/simulation.js';
 @Module({
   imports: [
     IdentityModule,
@@ -28,8 +29,11 @@ import { CompanionSettingsController } from './http/settings.controller.js';
     ReplyPlanStore,
     ReplyContext,
     ReplyEngine,
+    SimulationService,
+    { provide: SIMULATION_READ_PORT, useExisting: SimulationService },
     AiRuntimeLifecycle,
   ],
+  exports: [SIMULATION_READ_PORT],
   controllers: [CompanionSettingsController, MemoryController],
 })
 export class AiRuntimeModule {}
