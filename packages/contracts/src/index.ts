@@ -38,6 +38,7 @@ export * from './http/importer.js';
 export * from './http/plaza.js';
 export * from './http/play.js';
 export * from './http/ai-runtime-extras.js';
+export * from './http/public-updates.js';
 
 // WebSocket 帧
 export * from './ws.js';

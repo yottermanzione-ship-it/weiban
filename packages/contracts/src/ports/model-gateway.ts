@@ -242,7 +242,7 @@ export interface GenerateImageInput extends MediaCallBase {
 }
 
 /** 联网搜索（按 search_call 计价）。 */
-export interface WebSearchInput extends MediaCallBase {
+export interface GatewayWebSearchInput extends MediaCallBase {
   query: string;
   maxResults: number;
 }
@@ -311,7 +311,7 @@ export interface ModelGatewayMediaPort {
     input: GenerateImageInput,
   ): Promise<PortResult<MediaCallResult & { mediaId: string }, GenerateError>>;
   webSearch(
-    input: WebSearchInput,
+    input: GatewayWebSearchInput,
   ): Promise<PortResult<MediaCallResult & { items: WebSearchResultItem[] }, GenerateError>>;
   openRealtimeAsr(
     input: MediaCallBase & { sampleRate: 16000 },

@@ -154,6 +154,7 @@ export class ChatStore {
       quote,
       status: stored.status,
       scope: stored.scope,
+      ...(stored.labels?.length ? { labels: stored.labels } : {}),
       clientMsgId: view.userId && stored.senderKind === 'user' ? stored.clientMsgId : null,
       createdAt: stored.createdAt.toISOString(),
       recalledAt: stored.recalledAt?.toISOString() ?? null,
