@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 2.4. Regenerate: pnpm android:generate
+// Contract 2.5. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "2.4"
+const val CONTRACT_VERSION: String = "2.5"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -471,6 +471,11 @@ data class AuthenticatedSession(
     @SerialName("expiresAt") val `expiresAt`: Timestamp,
 )
 
+@Serializable
+data class AuthorizationResponse(
+    @SerialName("authorizedCharacterIds") val `authorizedCharacterIds`: List<Id>,
+)
+
 typealias AvatarPattern = String
 
 @Serializable
@@ -746,6 +751,12 @@ data class CharacterAdminEndpointsUnpublishParams(
 @Serializable
 data class CharacterAdminEndpointsUpdateParams(
     @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class CharacterAuthEntry(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("authorized") val `authorized`: Boolean,
 )
 
 @Serializable
@@ -1433,6 +1444,16 @@ data class ConversationParamsInput(
 typealias ConversationType = String
 
 @Serializable
+data class CreateCycleRequest(
+    @SerialName("startDate") val `startDate`: LocalDate,
+)
+
+@Serializable
+data class CreateCycleRequestInput(
+    @SerialName("startDate") val `startDate`: LocalDate,
+)
+
+@Serializable
 data class CreateInviteRequest(
     @SerialName("expiresInDays") val `expiresInDays`: Long?,
     @SerialName("bonusMicros") val `bonusMicros`: Long,
@@ -1483,6 +1504,34 @@ data class CurrentUser(
 data class CursorPageQuery(
     @SerialName("cursor") val `cursor`: String? = null,
     @SerialName("limit") val `limit`: Long,
+)
+
+@Serializable
+data class CycleRecord(
+    @SerialName("cycleId") val `cycleId`: Id,
+    @SerialName("startDate") val `startDate`: LocalDate,
+    @SerialName("endDate") val `endDate`: LocalDate?,
+    @SerialName("dayLogs") val `dayLogs`: List<DayLog>,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class DayLog(
+    @SerialName("date") val `date`: LocalDate,
+    @SerialName("flow") val `flow`: PeriodFlow?,
+    @SerialName("pain") val `pain`: PeriodPain?,
+    @SerialName("symptoms") val `symptoms`: List<String>,
+    @SerialName("notes") val `notes`: String?,
+)
+
+@Serializable
+data class DayLogInput(
+    @SerialName("date") val `date`: LocalDate,
+    @SerialName("flow") val `flow`: PeriodFlow?,
+    @SerialName("pain") val `pain`: PeriodPain?,
+    @SerialName("symptoms") val `symptoms`: List<String>,
+    @SerialName("notes") val `notes`: String?,
 )
 
 @Serializable
@@ -2348,6 +2397,25 @@ data class EventsUserRegistered(
 
 typealias Gender = String
 
+typealias HealthEndpointsDeleteCycleResponse = JsonElement?
+
+@Serializable
+data class HealthEndpointsListCyclesQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class HealthEndpointsListCyclesResponse(
+    @SerialName("items") val `items`: List<CycleRecord>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class HealthEndpointsUpdateCycleParams(
+    @SerialName("cycleId") val `cycleId`: Id,
+)
+
 typealias HexColor = String
 
 typealias Id = String
@@ -2552,6 +2620,7 @@ data class Message(
     @SerialName("quote") val `quote`: QuoteRef?,
     @SerialName("status") val `status`: MessageStatus,
     @SerialName("scope") val `scope`: ContentScope,
+    @SerialName("labels") val `labels`: List<String>? = null,
     @SerialName("clientMsgId") val `clientMsgId`: ClientMsgId?,
     @SerialName("createdAt") val `createdAt`: Timestamp,
     @SerialName("recalledAt") val `recalledAt`: Timestamp?,
@@ -2880,6 +2949,10 @@ data class PendingAccountDeletion(
     @SerialName("modules") val `modules`: List<AccountDeletionModuleProgress>,
 )
 
+typealias PeriodFlow = String
+
+typealias PeriodPain = String
+
 typealias PersonaTag = String
 
 @Serializable
@@ -2911,6 +2984,16 @@ data class PersonaVersionSummary(
 typealias PortraitPolicy = String
 
 typealias PositiveMoneyMicros = Long
+
+typealias PredictionConfidence = String
+
+@Serializable
+data class PredictionResult(
+    @SerialName("predictedNextStart") val `predictedNextStart`: LocalDate?,
+    @SerialName("predictedDays") val `predictedDays`: Long?,
+    @SerialName("confidence") val `confidence`: PredictionConfidence,
+    @SerialName("disclaimer") val `disclaimer`: String,
+)
 
 @Serializable
 data class PriceTable(
@@ -3666,6 +3749,16 @@ data class UnsupportedUpdate(
 )
 
 @Serializable
+data class UpdateAuthorizationRequest(
+    @SerialName("authorizedCharacterIds") val `authorizedCharacterIds`: List<Id>,
+)
+
+@Serializable
+data class UpdateAuthorizationRequestInput(
+    @SerialName("authorizedCharacterIds") val `authorizedCharacterIds`: List<Id>,
+)
+
+@Serializable
 data class UpdateCompanionSettingsRequest(
     @SerialName("instantReply") val `instantReply`: Boolean? = null,
     @SerialName("splitBubbles") val `splitBubbles`: Boolean? = null,
@@ -3717,6 +3810,18 @@ data class UpdateConversationStateRequestInput(
     @SerialName("pinned") val `pinned`: Boolean? = null,
     @SerialName("muted") val `muted`: Boolean? = null,
     @SerialName("hidden") val `hidden`: Boolean? = null,
+)
+
+@Serializable
+data class UpdateCycleRequest(
+    @SerialName("endDate") val `endDate`: LocalDate? = null,
+    @SerialName("dayLog") val `dayLog`: DayLog? = null,
+)
+
+@Serializable
+data class UpdateCycleRequestInput(
+    @SerialName("endDate") val `endDate`: LocalDate? = null,
+    @SerialName("dayLog") val `dayLog`: DayLogInput? = null,
 )
 
 @Serializable

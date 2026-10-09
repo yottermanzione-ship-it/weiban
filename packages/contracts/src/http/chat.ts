@@ -129,6 +129,16 @@ export const Message = z.object({
   quote: QuoteRef.nullable(),
   status: MessageStatus,
   scope: ContentScope,
+  /**
+   * 服务器端标签集合（v2.5 新增，次版本变更）。
+   * 当前已定义取值：
+   *   - 'health'：消息使用了经期数据生成（PLAY-01 第 7 条 / health-data.md 第 5 节）。
+   *     效果：推送通知只显示「XX 发来一条消息」（不显示正文）；不能选入分享图；不进名场面瞬间卡。
+   * **只有服务器端发送方（ChatParticipantPort.postMessage 的 labels 参数）可以设置此字段。**
+   * 用户经 HTTP / WebSocket 发送的消息不能携带 labels，服务器会忽略或拒绝。
+   * 客户端遇到不认识的标签值时忽略，不报错（接收端容错，同 scope 的处理原则）。
+   */
+  labels: z.array(z.string()).optional(),
   /** 仅当发送者是当前用户时返回，用于与本地「发送中」的消息合并。 */
   clientMsgId: ClientMsgId.nullable(),
   createdAt: Timestamp,
