@@ -97,7 +97,11 @@ private class CharacterUi(
             if (role.showPublicSourceNotice) Text("本角色根据公开资料创作，不代表本人", style = MaterialTheme.typography.bodySmall)
         }
         contact?.let {
-            Text("认识于 ${it.knownSince}")
+            if (it.conversationId != null) {
+                FamiliaritySummary(repository, owner, characterId)
+            } else {
+                Text("认识于 ${it.knownSince}")
+            }
             ContactAvatarEditor(repository, runtime, owner, it)
         }
         (ui.error ?: profile.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }

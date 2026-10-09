@@ -253,6 +253,15 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
         Text(title(state, conversation, names), Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.titleMedium)
         TextButton(onInformation) { Text("聊天信息") }
     }
+    val whileAway =
+        rememberWhileAway(
+            repository,
+            owner,
+            conversation.conversationId,
+            conversation.participants.find { it.kind == "character" }?.refId,
+            messages.lastOrNull()?.messageId,
+        )
+    WhileAwayCard(whileAway) { ui.text = it }
     ui.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = WbSpace.S5)) }
     if (visible && typingActive) Text("对方正在输入…", Modifier.padding(horizontal = WbSpace.S5))
     MessageTimeline(ui, messages, pending, list, Modifier.weight(1f), avatars)

@@ -29,6 +29,7 @@ class SessionRepository(
     private val onboarding = MutableStateFlow(false)
     val onboardingPending: StateFlow<Boolean> = onboarding
     val notifications = NotificationStateStore(database, api.json, lock, ::owns)
+    val flags = LocalFlagStore(database, lock, ::owns)
     val onboardingDraft =
         OnboardingDraftStore(database, api.json, lock) {
             owns(it) && onboarding.value && database.local().cache("ui:onboarding") == "true"
