@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 2.4. Regenerate: pnpm android:generate
+// Contract 2.5. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "2.4"
+const val CONTRACT_VERSION: String = "2.5"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -16,6 +16,18 @@ data class AccountDeletionModuleProgress(
     @SerialName("purged") val `purged`: Boolean,
     @SerialName("deletedRows") val `deletedRows`: Long?,
     @SerialName("purgedAt") val `purgedAt`: Timestamp?,
+)
+
+@Serializable
+data class AddAnniversaryRequest(
+    @SerialName("label") val `label`: String,
+    @SerialName("date") val `date`: LocalDate,
+)
+
+@Serializable
+data class AddAnniversaryRequestInput(
+    @SerialName("label") val `label`: String,
+    @SerialName("date") val `date`: LocalDate,
 )
 
 @Serializable
@@ -32,6 +44,29 @@ data class AddContactRequestInput(
     @SerialName("greeting") val `greeting`: String? = null,
     @SerialName("restoreMode") val `restoreMode`: String? = null,
     @SerialName("referrerCharacterId") val `referrerCharacterId`: Id? = null,
+)
+
+@Serializable
+data class AddFamiliarityPointsRequest(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("eventType") val `eventType`: FamiliarityEventType,
+    @SerialName("idempotencyKey") val `idempotencyKey`: String,
+    @SerialName("occurredAt") val `occurredAt`: Timestamp? = null,
+)
+
+@Serializable
+data class AddFamiliarityPointsRequestInput(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("eventType") val `eventType`: FamiliarityEventType,
+    @SerialName("idempotencyKey") val `idempotencyKey`: String,
+    @SerialName("occurredAt") val `occurredAt`: Timestamp? = null,
+)
+
+@Serializable
+data class AddFamiliarityPointsResponse(
+    @SerialName("familiarity") val `familiarity`: FamiliarityInfo,
+    @SerialName("pointsAdded") val `pointsAdded`: Long,
+    @SerialName("leveledUp") val `leveledUp`: Boolean,
 )
 
 @Serializable
@@ -449,6 +484,15 @@ data class AdminUsageTotals(
 typealias AgeSetting = String
 
 typealias AndroidPushProvider = String
+
+@Serializable
+data class Anniversary(
+    @SerialName("id") val `id`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("label") val `label`: String,
+    @SerialName("date") val `date`: LocalDate,
+    @SerialName("nextOccurrence") val `nextOccurrence`: LocalDate?,
+)
 
 @Serializable
 data class ApiError(
@@ -1486,6 +1530,16 @@ data class CursorPageQuery(
 )
 
 @Serializable
+data class DaysKnownInfo(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("daysKnown") val `daysKnown`: Long,
+    @SerialName("knownSince") val `knownSince`: LocalDate,
+    @SerialName("nextAnniversary") val `nextAnniversary`: Anniversary?,
+    @SerialName("anniversaries") val `anniversaries`: List<Anniversary>,
+    @SerialName("isRomantic") val `isRomantic`: Boolean,
+)
+
+@Serializable
 data class DeviceInfo(
     @SerialName("platform") val `platform`: ClientPlatform,
     @SerialName("name") val `name`: String,
@@ -2346,7 +2400,49 @@ data class EventsUserRegistered(
     @SerialName("payload") val `payload`: EventsUserRegisteredPayload,
 )
 
+typealias FamiliarityEventType = String
+
+@Serializable
+data class FamiliarityInfo(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("level") val `level`: FamiliarityLevel,
+    @SerialName("pointsInLevel") val `pointsInLevel`: Long,
+    @SerialName("pointsToNextLevel") val `pointsToNextLevel`: Long?,
+    @SerialName("totalPoints") val `totalPoints`: Long,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+typealias FamiliarityLevel = Long
+
 typealias Gender = String
+
+@Serializable
+data class GrowthEndpointsAddAnniversaryParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class GrowthEndpointsAddPointsParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class GrowthEndpointsGetDaysKnownParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class GrowthEndpointsGetFamiliarityParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class GrowthEndpointsRemoveAnniversaryParams(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("anniversaryId") val `anniversaryId`: Id,
+)
+
+typealias GrowthEndpointsRemoveAnniversaryResponse = JsonElement?
 
 typealias HexColor = String
 
@@ -3624,6 +3720,8 @@ data class SyncEndpointsGetUpdatesResponse(
     @SerialName("latestUpdateSeq") val `latestUpdateSeq`: UpdateSeq,
     @SerialName("hasMore") val `hasMore`: Boolean,
 )
+
+typealias SystemAnniversaryDay = Long
 
 @Serializable
 data class SystemContent(
