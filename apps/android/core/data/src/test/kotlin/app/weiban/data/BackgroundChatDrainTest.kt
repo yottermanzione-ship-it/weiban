@@ -80,18 +80,18 @@ class BackgroundChatDrainTest {
                         ids.add(body.clientMsgId)
                         val message =
                             Message(
-                                "01920000-0000-7000-8000-000000000099",
-                                conversationId,
-                                1,
-                                auth.user.userId,
-                                "user",
-                                ReceivedMessageContentText(text = (body.content as UserSendableContentText).text),
-                                null,
-                                "normal",
-                                "normal",
-                                body.clientMsgId,
-                                "2026-10-07T03:00:00.000Z",
-                                null,
+                                messageId = "01920000-0000-7000-8000-000000000099",
+                                conversationId = conversationId,
+                                seq = 1,
+                                senderParticipantId = auth.user.userId,
+                                senderKind = "user",
+                                content = ReceivedMessageContentText(text = (body.content as UserSendableContentText).text),
+                                quote = null,
+                                status = "normal",
+                                scope = "normal",
+                                clientMsgId = body.clientMsgId,
+                                createdAt = "2026-10-07T03:00:00.000Z",
+                                recalledAt = null,
                             )
                         val response =
                             MockResponse().setBody(
