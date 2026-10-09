@@ -15,3 +15,18 @@ export interface ContactsReadPort {
   /** 添加时填写的「打招呼的话」（CHR-03 第 3 条），角色第一条消息生成后可被清除。 */
   getPendingGreeting(userId: string, characterId: string): Promise<string | null>;
 }
+
+/** 3.0：名片推荐（CHR-04、P-27）。提供方 contacts；调用方 ai-runtime。 */
+export interface ContactCardRecommendationPort {
+  /** 该角色能否被推荐给用户：未添加、不在「不感兴趣」冷却期、不在全局每 7 天 1 次的限制内（ignoreWeeklyLimit 用于用户主动询问）。 */
+  canRecommend(
+    userId: string,
+    characterId: string,
+    options?: { ignoreWeeklyLimit?: boolean },
+  ): Promise<boolean>;
+  /** 记一次推荐（发出名片消息时，与消息同一事务）。 */
+  recordRecommendation(
+    tx: Tx | null,
+    input: { userId: string; characterId: string; recommenderCharacterId: string; messageId: string },
+  ): Promise<void>;
+}

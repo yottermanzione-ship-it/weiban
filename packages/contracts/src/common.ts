@@ -137,6 +137,19 @@ export const ErrorCode = z.enum([
   'policy_denied',
   // 情景模式的功能前提（不是硬性边界）
   'adult_model_missing', // 422：没有可用的成人模式模型（不自动改用聊天模型，pm-rulings-2 B2）
+  // 3.0（L4～L7，T-062）
+  'limit_reached', // 422：功能数量上限（群成员 P-21、宠物 P-38、心愿 P-41、提醒 P-44、纪念日等），details.limit 给出上限
+  'not_group_conversation', // 对私聊调用群聊接口
+  'action_already_chosen', // 消息卡片按钮只能点一次
+  'service_disabled', // 422：平台未开通该服务（图片、语音、通话、搜索）
+  'call_busy', // 409：已有进行中的通话
+  'share_content_not_allowed', // 422：选中内容含成人模式 / 「健康」标记消息，details.rejected 列出
+  'import_format_unrecognized', // 422：识别不出两个以上发言人
+  'already_answered', // 409：今天的每日一问已经答过
+  'focus_in_progress', // 409：已有进行中的专注
+  'plaza_publish_forbidden', // 403：基于身边真人 / 原作品不允许改编 / 被停止发布权限 / 作品被管理员下架
+  'plaza_classification_loosened', // 422：新版本分类比上一版宽
+  'plaza_check_unavailable', // 422：隐私检查或儿童特征重检无法完成（余额不足或模型故障），不能跳过
   // v1.0 删除：age_not_confirmed、group_conversation（PRD v1.2 取消年龄确认和「群聊只用日常」）
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

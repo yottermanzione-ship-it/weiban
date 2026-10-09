@@ -40,6 +40,8 @@ export const TextContent = z.object({
   type: z.literal('text'),
   /** 文字与 emoji。 */
   text: z.string().min(1).max(4000),
+  /** 3.0：群聊中被 @ 的参与者（SOC-04 第 1 条）；私聊忽略。 */
+  mentions: z.array(Id).max(10).optional(),
 });
 
 /** 拍一拍（CHAT-02 第 4 条）。 */
@@ -61,14 +63,164 @@ export const SystemContent = z.object({
   params: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
 });
 
+// ---------- 3.0 新增消息类型（L4～L7，T-062，ADR-0026） ----------
+
+/** 图片（MED-02、MED-04）：用户发图、角色发图、宠物照片。访问链接经 GET /media/:mediaId 获取。 */
+export const ImageContent = z.object({
+  type: z.literal('image'),
+  mediaId: Id,
+  width: z.number().int().positive().nullable(),
+  height: z.number().int().positive().nullable(),
+});
+
 /**
- * L1 的消息内容（严格）：服务器写入消息时用它校验。
- * 图片、语音、表情包、链接、名片、通话记录在 L4/L5 由架构扩展（新增类型是次版本变更）。
+ * 语音消息（MED-03）。transcript：角色语音在发送时即带原文；用户语音为 null，
+ * 「转文字」走 GET /media/:mediaId/transcript（识别完成后另发 media.transcript_ready 更新）。
+ */
+export const VoiceContent = z.object({
+  type: z.literal('voice'),
+  mediaId: Id,
+  durationMs: z.number().int().positive().max(60_000 * 5),
+  transcript: z.string().max(4000).nullable(),
+});
+
+/** 表情包（MED-01）：library = 管理员表情包库，user = 用户自己添加的表情。 */
+export const StickerContent = z.object({
+  type: z.literal('sticker'),
+  stickerId: Id,
+  source: z.enum(['library', 'user']),
+  mediaId: Id,
+  /** 表情含义（库内表情由管理员填写），供无识图能力时理解，例「捂脸笑」。 */
+  description: z.string().max(40).nullable(),
+});
+
+/** 链接打开方式提示（MED-05）：music / video 时安卓尝试唤起对应 App。 */
+export const LinkAppHint = z.enum(['music', 'video', 'web']);
+
+/**
+ * 链接卡片（MED-05）。角色发出的链接必须来自作品链接库或通过可访问性检查（AI 负责）；
+ * 用户发链接前客户端先调 POST /links/preview 取标题。
+ */
+export const LinkContent = z.object({
+  type: z.literal('link'),
+  url: z.url().max(2000),
+  title: z.string().min(1).max(100),
+  /** 来源展示名，例「QQ 音乐」「微博」。 */
+  source: z.string().max(30).nullable(),
+  description: z.string().max(200).nullable(),
+  coverMediaId: Id.nullable(),
+  appHint: tolerantEnum(LinkAppHint),
+});
+
+/** 名片（CHR-04）：点开是该角色资料页，可直接添加；添加时带 referrerCharacterId。 */
+export const ContactCardContent = z.object({
+  type: z.literal('contact_card'),
+  characterId: Id,
+  /** 发出时的角色名快照（展示用；以资料页为准）。 */
+  name: z.string().min(1).max(32),
+  /** 推荐人（发出名片的角色）。 */
+  recommenderCharacterId: Id,
+});
+
+export const CallDirection = z.enum(['outgoing', 'incoming']);
+export type CallDirection = z.infer<typeof CallDirection>;
+/** 通话结果（MED-06 第 5 条、MED-07 第 5 条）。 */
+export const CallOutcome = z.enum([
+  'completed',
+  'missed',
+  'declined',
+  'cancelled',
+  'failed',
+  'insufficient_balance',
+  'time_limit',
+]);
+export type CallOutcome = z.infer<typeof CallOutcome>;
+
+/** 通话记录（「通话时长 05:23」「未接来电」「XX 给你打过电话」）。 */
+export const CallRecordContent = z.object({
+  type: z.literal('call_record'),
+  callId: Id,
+  direction: CallDirection,
+  outcome: tolerantEnum(CallOutcome),
+  durationSec: z.number().int().nonnegative(),
+});
+
+/** 信件卡片（PLAY-05）：来信（用户写给角色）与回信（角色写给用户）都以此出现在私聊，正文就是信。 */
+export const LetterContent = z.object({
+  type: z.literal('letter'),
+  letterId: Id,
+  direction: z.enum(['to_character', 'from_character']),
+  body: z.string().min(1).max(4000),
+});
+
+/** 每日一问卡片（PLAY-03 第 6 条）：用户的回答以此进入私聊（发送者为用户参与者），角色接话是普通文字消息。 */
+export const DailyQuestionContent = z.object({
+  type: z.literal('daily_question'),
+  answerId: Id,
+  questionId: Id,
+  /** 题目所属的用户当地日期。 */
+  date: z.iso.date(),
+  question: z.string().min(1).max(100),
+  answer: z.string().min(1).max(200),
+});
+
+/** 卡片按钮样式。 */
+export const MessageActionStyle = z.enum(['primary', 'secondary']);
+
+/**
+ * 卡片按钮的种类（谁来处理用户的选择）。新增种类是次版本变更，客户端不认识时只显示文字与按钮。
+ * - call_permission：「以后可以给你打电话吗」（MED-07 第 1 条，ai-runtime 处理）
+ * - pet_proposal：角色提议领养，「去看看」（PLAY-02 第 2 条，ai-runtime 记已提议；客户端跳转领养页）
+ * - pet_names：「让 TA 起名」的 3 个候选名（PLAY-02 第 3 条，growth 处理）
+ * - wishlist_proposal：「加进去 / 先不了」（PLAY-04 第 4 条，play 处理）
+ */
+export const ActionCardKind = z.enum([
+  'call_permission',
+  'pet_proposal',
+  'pet_names',
+  'wishlist_proposal',
+]);
+export type ActionCardKind = z.infer<typeof ActionCardKind>;
+
+/**
+ * 带按钮的卡片消息（ADR-0026）。只有服务器端发送方能发；用户点按钮走 chooseMessageAction，
+ * 只能点一次，结果写在 Message.actionChoice，并发出 chat.message_action_chosen 由 ref 所属模块处理。
+ */
+export const ActionCardContent = z.object({
+  type: z.literal('action_card'),
+  cardKind: tolerantEnum(ActionCardKind),
+  text: z.string().min(1).max(500),
+  actions: z
+    .array(
+      z.object({
+        actionId: z.string().regex(/^[a-z0-9_]{1,32}$/),
+        label: z.string().min(1).max(16),
+        style: MessageActionStyle,
+      }),
+    )
+    .min(1)
+    .max(4),
+  /** 卡片关联的业务对象，例 { kind: 'pet_naming_request', id }；chat 只原样存取。 */
+  ref: z.object({ kind: z.string().max(32), id: z.string().max(64) }).nullable(),
+});
+
+/**
+ * 消息内容（严格）：服务器写入消息时用它校验。新增类型是次版本变更（接收端容错）。
+ * 3.0：新增 image、voice、sticker、link、contact_card、call_record、letter、daily_question、action_card。
  */
 export const MessageContent = z.discriminatedUnion('type', [
   TextContent,
   NudgeContent,
   SystemContent,
+  ImageContent,
+  VoiceContent,
+  StickerContent,
+  LinkContent,
+  ContactCardContent,
+  CallRecordContent,
+  LetterContent,
+  DailyQuestionContent,
+  ActionCardContent,
 ]);
 export type MessageContent = z.infer<typeof MessageContent>;
 
@@ -95,12 +247,22 @@ export const ReceivedMessageContent = z.preprocess(
     type: 'unsupported',
     originalType,
   })),
-  z.discriminatedUnion('type', [TextContent, NudgeContent, SystemContent, UnsupportedContent]),
+  z.discriminatedUnion('type', [...MessageContent.options, UnsupportedContent]),
 );
 export type ReceivedMessageContent = z.infer<typeof ReceivedMessageContent>;
 
-/** 用户可以发送的内容（不能发系统提示）。 */
-export const UserSendableContent = z.discriminatedUnion('type', [TextContent, NudgeContent]);
+/**
+ * 用户可以发送的内容。3.0 新增 image、voice、sticker、link（mediaId 必须是本人上传、用途匹配的媒体，
+ * 服务器校验）。名片、通话记录、信件、每日一问、卡片只由服务器端发送方产生。
+ */
+export const UserSendableContent = z.discriminatedUnion('type', [
+  TextContent,
+  NudgeContent,
+  ImageContent,
+  VoiceContent,
+  StickerContent,
+  LinkContent,
+]);
 export type UserSendableContent = z.infer<typeof UserSendableContent>;
 
 // ---------- 消息 ----------
@@ -143,6 +305,8 @@ export const Message = z.object({
   clientMsgId: ClientMsgId.nullable(),
   createdAt: Timestamp,
   recalledAt: Timestamp.nullable(),
+  /** 3.0：action_card 消息上用户的选择（只能选一次）；未选或不是卡片消息时不返回或为 null。 */
+  actionChoice: z.object({ actionId: z.string(), chosenAt: Timestamp }).nullable().optional(),
 });
 export type Message = z.infer<typeof Message>;
 
@@ -190,6 +354,18 @@ export const Conversation = z.object({
   peerReadSeq: z.number().int().nonnegative().nullable(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
+  /** 3.0：群聊信息（SOC-03、SOC-06）；私聊为 null 或不返回。 */
+  group: z
+    .object({
+      /** 拉群的角色（SOC-06）；用户自己建的群为 null。 */
+      createdByCharacterId: Id.nullable(),
+      /** 群名是否由用户改过；false 时客户端可按成员名拼接显示。 */
+      titleCustomized: z.boolean(),
+      /** 角色成员上限（P-21）。 */
+      memberLimit: z.number().int().positive(),
+    })
+    .nullable()
+    .optional(),
 });
 export type Conversation = z.infer<typeof Conversation>;
 

@@ -20,6 +20,12 @@ export interface ReadMessagesInput {
   afterSeq?: number;
   beforeSeq?: number;
   limit: number;
+  /** 3.0（CR-21）：排除带任一标签的消息，例 ['health']（记忆整理、名场面、分享图）。 */
+  excludeLabels?: string[];
+  /** 3.0（AI 变更申请第 2 条）：排除指定消息（记忆删除后上下文跳过来源消息）。 */
+  excludeMessageIds?: string[];
+  /** 3.0：只取这些内容类型，例 ['text', 'voice']；不传为全部。 */
+  contentTypes?: string[];
 }
 
 export interface ChatReadPort {
@@ -30,6 +36,13 @@ export interface ChatReadPort {
   /** 结果按 seq 升序；不含正文被撤回的内容。 */
   readMessages(input: ReadMessagesInput): Promise<Message[]>;
   getMessage(messageId: string, scopes: ContentScope[]): Promise<Message | null>;
+  /** 3.0：用户的群聊（可按某角色是否在群内过滤），供群聊调度、拉群去重（SOC-06 第 2 条）使用。 */
+  listGroupConversations(
+    userId: string,
+    filter?: { memberCharacterId?: string; exactMemberCharacterIds?: string[] },
+  ): Promise<Conversation[]>;
+  /** 3.0：用户在该会话最后一次发言时间（SOC-05 第 2 条「7 天内用户发过言」）。 */
+  getLastUserMessageAt(conversationId: string): Promise<string | null>;
 }
 
 export interface PostMessageInput {
@@ -116,6 +129,35 @@ export interface ChatAdminPort {
     },
     tx?: Tx,
   ): Promise<PortResult<void, 'not_found' | 'adult_mode_not_eligible'>>;
+}
+
+/**
+ * 3.0：群聊管理（SOC-03、SOC-06）。提供方 chat；调用方 ai-runtime（角色拉群、角色提议改群名）、contacts（彻底删除角色时移出其所在群）。
+ * 群里的系统提示（group_created、member_joined、member_removed、group_renamed、group_invited_by_character）由 chat 自己写。
+ */
+export interface ChatGroupAdminPort {
+  /** 创建群（幂等键相同返回同一个群）。characterIds 不含用户；createdByCharacterId 为拉群者（SOC-06），用户建群为 null。 */
+  createGroupConversation(
+    tx: Tx | null,
+    input: {
+      ownerUserId: string;
+      characterIds: string[];
+      title: string | null;
+      createdByCharacterId: string | null;
+      idempotencyKey: string;
+    },
+  ): Promise<PortResult<Conversation, 'limit_reached' | 'invalid_members'>>;
+  addGroupMembers(
+    tx: Tx | null,
+    input: { conversationId: string; characterIds: string[]; byCharacterId: string | null },
+  ): Promise<PortResult<Conversation, 'not_found' | 'limit_reached'>>;
+  /** 角色按人设提议改群名（SOC-03 第 2 条）。 */
+  renameGroup(
+    tx: Tx | null,
+    input: { conversationId: string; title: string; byCharacterId: string | null },
+  ): Promise<PortResult<Conversation, 'not_found'>>;
+  /** contacts 彻底删除角色时：把该角色移出用户的所有群（不写「你将 XX 移出了群聊」，写 member_left）。 */
+  removeCharacterFromUserGroups(tx: Tx, input: { userId: string; characterId: string }): Promise<void>;
 }
 
 /** 提供方 chat；组合根把 WS 与 HTTP 连接到同一用户发送处理器。 */

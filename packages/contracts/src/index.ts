@@ -25,6 +25,19 @@ export * from './http/health.js';
 export * from './http/growth.js';
 export * from './http/timeline.js';
 export * from './http/proactive.js';
+// 3.0（L4～L7，T-062）
+export * from './http/chat-groups.js';
+export * from './http/character-extras.js';
+export * from './http/assets.js';
+export * from './http/moments.js';
+export * from './http/calls.js';
+export * from './http/growth-cards.js';
+export * from './http/pets.js';
+export * from './http/library.js';
+export * from './http/importer.js';
+export * from './http/plaza.js';
+export * from './http/play.js';
+export * from './http/ai-runtime-extras.js';
 
 // WebSocket 帧
 export * from './ws.js';

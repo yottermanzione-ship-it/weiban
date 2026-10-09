@@ -11,3 +11,4 @@ export * from './policy.js';
 export * from './media.js';
 export * from './health.js';
 export * from './proactive.js';
+export * from './social.js';
