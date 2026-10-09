@@ -502,6 +502,16 @@ data class ApiError(
 typealias AppTheme = String
 
 @Serializable
+data class ApprovePublicUpdateRequest(
+    @SerialName("kind") val `kind`: PublicUpdateKind? = null,
+    @SerialName("content") val `content`: String? = null,
+    @SerialName("startDate") val `startDate`: LocalDate? = null,
+    @SerialName("endDate") val `endDate`: LocalDate? = null,
+    @SerialName("effectiveDate") val `effectiveDate`: LocalDate? = null,
+    @SerialName("sourceUrl") val `sourceUrl`: String? = null,
+)
+
+@Serializable
 data class AuthResponse(
     @SerialName("session") val `session`: AuthenticatedSession,
     @SerialName("user") val `user`: CurrentUser,
@@ -1546,6 +1556,30 @@ data class CreateMemoryRequest(
     @SerialName("importance") val `importance`: Long? = null,
     @SerialName("dueAt") val `dueAt`: Timestamp? = null,
     @SerialName("visibility") val `visibility`: MemoryVisibility? = null,
+)
+
+@Serializable
+data class CreatePublicUpdateRequest(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("kind") val `kind`: PublicUpdateKind,
+    @SerialName("content") val `content`: String,
+    @SerialName("startDate") val `startDate`: LocalDate,
+    @SerialName("endDate") val `endDate`: LocalDate?,
+    @SerialName("effectiveDate") val `effectiveDate`: LocalDate,
+    @SerialName("sourceUrl") val `sourceUrl`: String,
+    @SerialName("status") val `status`: String,
+)
+
+@Serializable
+data class CreatePublicUpdateRequestInput(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("kind") val `kind`: PublicUpdateKind? = null,
+    @SerialName("content") val `content`: String,
+    @SerialName("startDate") val `startDate`: LocalDate,
+    @SerialName("endDate") val `endDate`: LocalDate? = null,
+    @SerialName("effectiveDate") val `effectiveDate`: LocalDate,
+    @SerialName("sourceUrl") val `sourceUrl`: String,
+    @SerialName("status") val `status`: String? = null,
 )
 
 @Serializable
@@ -3266,6 +3300,77 @@ data class PublicPriceItem(
 )
 
 @Serializable
+data class PublicUpdate(
+    @SerialName("updateId") val `updateId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("characterName") val `characterName`: String,
+    @SerialName("kind") val `kind`: PublicUpdateKind,
+    @SerialName("content") val `content`: String,
+    @SerialName("startDate") val `startDate`: LocalDate,
+    @SerialName("endDate") val `endDate`: LocalDate?,
+    @SerialName("effectiveDate") val `effectiveDate`: LocalDate,
+    @SerialName("sourceUrl") val `sourceUrl`: String,
+    @SerialName("source") val `source`: PublicUpdateSource,
+    @SerialName("status") val `status`: PublicUpdateStatus,
+    @SerialName("reviewNote") val `reviewNote`: String?,
+    @SerialName("createdBy") val `createdBy`: Id?,
+    @SerialName("reviewedBy") val `reviewedBy`: Id?,
+    @SerialName("reviewedAt") val `reviewedAt`: Timestamp?,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class PublicUpdateAdminEndpointsGetParams(
+    @SerialName("updateId") val `updateId`: Id,
+)
+
+@Serializable
+data class PublicUpdateAdminEndpointsListQuery(
+    @SerialName("status") val `status`: PublicUpdateStatus? = null,
+    @SerialName("source") val `source`: PublicUpdateSource? = null,
+    @SerialName("characterId") val `characterId`: Id? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+)
+
+@Serializable
+data class PublicUpdateAdminEndpointsListResponse(
+    @SerialName("items") val `items`: List<PublicUpdate>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class PublicUpdateAdminEndpointsTriggerSearchParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class PublicUpdateAdminEndpointsUpdateSettingsBody(
+    @SerialName("autoSearchEnabled") val `autoSearchEnabled`: Boolean,
+)
+
+typealias PublicUpdateKind = String
+
+@Serializable
+data class PublicUpdateSearchResult(
+    @SerialName("outcome") val `outcome`: String,
+    @SerialName("created") val `created`: List<PublicUpdate>,
+    @SerialName("duplicates") val `duplicates`: Long,
+)
+
+@Serializable
+data class PublicUpdateSettings(
+    @SerialName("autoSearchEnabled") val `autoSearchEnabled`: Boolean,
+    @SerialName("lastAutoRunAt") val `lastAutoRunAt`: Timestamp?,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp?,
+)
+
+typealias PublicUpdateSource = String
+
+typealias PublicUpdateStatus = String
+
+@Serializable
 data class PushAdminEndpointsAcknowledgeAdminAlertParams(
     @SerialName("alertId") val `alertId`: Id,
 )
@@ -3539,6 +3644,16 @@ data class RegisterRequestInput(
     @SerialName("password") val `password`: Password,
     @SerialName("inviteCode") val `inviteCode`: String,
     @SerialName("device") val `device`: DeviceInfoInput,
+)
+
+@Serializable
+data class ReviewNoteRequest(
+    @SerialName("note") val `note`: String?,
+)
+
+@Serializable
+data class ReviewNoteRequestInput(
+    @SerialName("note") val `note`: String? = null,
 )
 
 typealias ScenarioMode = String
