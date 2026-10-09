@@ -170,3 +170,34 @@ export const relations = charactersSchema.table(
   },
   (t) => [index('relations_b_idx').on(t.characterBId)],
 );
+
+/** 作品链接库（MED-05，T-069，迁移 0042）。check_ok 为 null 表示还没检查过。 */
+export const workLinks = charactersSchema.table(
+  'work_links',
+  {
+    id: uuid('id').primaryKey(),
+    characterId: uuid('character_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    url: text('url').notNull(),
+    source: text('source'),
+    appHint: text('app_hint').notNull(),
+    coverMediaId: uuid('cover_media_id'),
+    checkOk: boolean('check_ok'),
+    checkedAt: timestamp('checked_at', { withTimezone: true, mode: 'date' }),
+    enabled: boolean('enabled').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [index('work_links_character_idx').on(t.characterId)],
+);
+
+/** 预设角色默认音色（MED-03 第 1 条，T-069，迁移 0042）。音色本身在 media.voices。 */
+export const defaultVoices = charactersSchema.table('default_voices', {
+  characterId: uuid('character_id')
+    .primaryKey()
+    .references(() => characters.id, { onDelete: 'cascade' }),
+  voiceId: uuid('voice_id').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
+});

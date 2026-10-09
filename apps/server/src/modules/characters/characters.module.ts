@@ -16,6 +16,8 @@ import { ScenarioModeAdminController } from './http/scenario-modes.controller.js
 import { PersonaVersionAdminController } from './http/persona-versions.controller.js';
 import { RelationAdminController, UserRelationController } from './http/relations.controller.js';
 import { CharacterRelationService } from './application/relations.js';
+import { CharacterWorkLinkService } from './application/work-links.js';
+import { WorkLinkAdminController } from './http/work-links.controller.js';
 import {
   CHARACTER_READ_PORT,
   CHARACTER_NAME_READ_PORT,
@@ -23,6 +25,9 @@ import {
   PUBLIC_UPDATE_READ_PORT,
   PUBLIC_UPDATE_WEB_SEARCH,
   CHARACTER_RELATION_READ_PORT,
+  CHARACTER_WORK_LINK_READ_PORT,
+  CHARACTER_VOICE_READ_PORT,
+  CHARACTER_REAL_PERSON_NAMES,
 } from './tokens.js';
 @Module({
   imports: [MediaModule, ChatModule, IdentityModule],
@@ -36,6 +41,7 @@ import {
     PublicUpdateAdminController,
     RelationAdminController,
     UserRelationController,
+    WorkLinkAdminController,
   ],
   providers: [
     CharacterService,
@@ -45,6 +51,10 @@ import {
     ScenarioModeService,
     PublicUpdateService,
     CharacterRelationService,
+    CharacterWorkLinkService,
+    { provide: CHARACTER_WORK_LINK_READ_PORT, useExisting: CharacterWorkLinkService },
+    { provide: CHARACTER_VOICE_READ_PORT, useExisting: CharacterWorkLinkService },
+    { provide: CHARACTER_REAL_PERSON_NAMES, useExisting: CharacterWorkLinkService },
     { provide: CHARACTER_RELATION_READ_PORT, useExisting: CharacterRelationService },
     { provide: PUBLIC_UPDATE_READ_PORT, useExisting: PublicUpdateService },
     { provide: PUBLIC_UPDATE_WEB_SEARCH, useExisting: WEB_SEARCH_PROVIDER },
@@ -58,6 +68,9 @@ import {
     CHARACTER_NAME_READ_PORT,
     PUBLIC_UPDATE_READ_PORT,
     CHARACTER_RELATION_READ_PORT,
+    CHARACTER_WORK_LINK_READ_PORT,
+    CHARACTER_VOICE_READ_PORT,
+    CHARACTER_REAL_PERSON_NAMES,
   ],
 })
 export class CharactersModule {}

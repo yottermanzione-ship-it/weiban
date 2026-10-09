@@ -24,6 +24,12 @@ import {
   type Outbox,
 } from '../../../platform/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
+import {
+  MEDIA_SYSTEM_PORT,
+  MEDIA_STICKER_CHECK,
+  type MediaStickerCheck,
+  type MediaSystemPort,
+} from '../../media/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
 import {
   conversations,
@@ -52,6 +58,8 @@ export class ChatWriteService {
     @Inject(ENVELOPE_CRYPTO) private readonly crypto: EnvelopeCrypto,
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
+    @Inject(MEDIA_SYSTEM_PORT) private readonly media: MediaSystemPort,
+    @Inject(MEDIA_STICKER_CHECK) private readonly stickers: MediaStickerCheck,
   ) {}
   async post(
     tx: DbTx,
@@ -118,6 +126,11 @@ export class ChatWriteService {
         );
       if (!target)
         return { ok: false, error: 'invalid_content', message: '拍一拍目标不在此会话中' };
+    }
+    // L5（T-069）：用户发的图片、语音、表情、链接封面必须是本人可用的媒体（MediaSystemPort.canUse）。
+    if (sender?.kind === 'user') {
+      const invalid = await this.invalidUserMedia(sender.refId, content);
+      if (invalid) return { ok: false, error: 'invalid_content', message: invalid };
     }
     if (input.quoteMessageId) {
       parseContract(Id, input.quoteMessageId);
@@ -227,5 +240,32 @@ export class ChatWriteService {
       userRecipientIds: [row.ownerUserId],
     });
     return { ok: true, value };
+  }
+  private async invalidUserMedia(userId: string, content: MessageContent): Promise<string | null> {
+    switch (content.type) {
+      case 'image':
+        return (await this.media.canUse(userId, content.mediaId, ['chat_image']))
+          ? null
+          : '图片不存在或不能发送';
+      case 'voice':
+        return (await this.media.canUse(userId, content.mediaId, ['chat_voice']))
+          ? null
+          : '语音不存在或不能发送';
+      case 'sticker':
+        return (await this.stickers.canSendSticker(userId, {
+          stickerId: content.stickerId,
+          source: content.source,
+          mediaId: content.mediaId,
+        }))
+          ? null
+          : '表情不存在或不能发送';
+      case 'link':
+        if (!content.coverMediaId) return null;
+        return (await this.media.canUse(userId, content.coverMediaId, ['chat_image']))
+          ? null
+          : '链接封面不存在';
+      default:
+        return null;
+    }
   }
 }

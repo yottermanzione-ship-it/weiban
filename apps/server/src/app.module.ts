@@ -4,6 +4,7 @@
  */
 import { Global, Module, type DynamicModule } from '@nestjs/common';
 import type {
+  ChatReadPort,
   ContactsReadPort,
   ChatNotificationReadPort,
   CharacterNameReadPort,
@@ -22,6 +23,7 @@ import {
   CHAT_USER_PORT,
   CHAT_NOTIFICATION_READ_PORT,
   CHAT_GROUP_DIRECTORY,
+  CHAT_READ_PORT,
   type ChatGroupDirectory,
 } from './modules/chat/index.js';
 import {
@@ -30,17 +32,24 @@ import {
   PUSH_MESSAGE_SOURCE,
   type PushMessageSource,
 } from './modules/push/index.js';
-import { RealtimeModule, REALTIME_MESSAGE_SENDER } from './modules/realtime/index.js';
+import { RealtimeModule, REALTIME_MESSAGE_SENDER, SYNC_PORT } from './modules/realtime/index.js';
 import { IdentityModule } from './modules/identity/index.js';
 import {
   CharactersModule,
   CHARACTER_READ_PORT,
   CHARACTER_NAME_READ_PORT,
   CHARACTER_CONTACT_ACCESS,
+  CHARACTER_REAL_PERSON_NAMES,
 } from './modules/characters/index.js';
 import { HealthModule } from './modules/health/index.js';
 import { PolicyModule } from './modules/policy/index.js';
-import { MediaModule } from './modules/media/index.js';
+import {
+  MediaModule,
+  MEDIA_SYNC,
+  MEDIA_MESSAGE_LOOKUP,
+  MEDIA_REAL_PERSON_NAMES,
+  type MediaMessageLookup,
+} from './modules/media/index.js';
 import { ModelAccessModule, MODEL_NOTIFICATION_READ_PORT } from './modules/model-access/index.js';
 import { GrowthModule } from './modules/growth/index.js';
 import { MomentsModule } from './modules/moments/index.js';
@@ -134,6 +143,42 @@ class ChatGroupDirectoryCompositionModule {}
 })
 class PushCompositionModule {}
 
+/**
+ * media（底层）需要的同步更新、消息读取、真人姓名（T-069）：media 不能 import realtime / chat / characters，
+ * 由这里绑定，media 以可选注入使用。
+ */
+@Global()
+@Module({
+  imports: [RealtimeModule, ChatModule, CharactersModule],
+  providers: [
+    { provide: MEDIA_SYNC, useExisting: SYNC_PORT },
+    { provide: MEDIA_REAL_PERSON_NAMES, useExisting: CHARACTER_REAL_PERSON_NAMES },
+    {
+      provide: MEDIA_MESSAGE_LOOKUP,
+      inject: [CHAT_READ_PORT],
+      useFactory: (chat: ChatReadPort): MediaMessageLookup => ({
+        findMessageMedia: async (userId, conversationId, messageId) => {
+          const conversation = await chat.getConversation(conversationId);
+          if (
+            !conversation ||
+            !conversation.participants.some((p) => p.kind === 'user' && p.refId === userId)
+          )
+            return null;
+          const message = await chat.getMessage(messageId, ['normal', 'adult']);
+          if (!message || message.conversationId !== conversationId || !message.content)
+            return null;
+          const content = message.content;
+          if (content.type === 'image' || content.type === 'sticker')
+            return { mediaId: content.mediaId };
+          return null;
+        },
+      }),
+    },
+  ],
+  exports: [MEDIA_SYNC, MEDIA_REAL_PERSON_NAMES, MEDIA_MESSAGE_LOOKUP],
+})
+class MediaCompositionModule {}
+
 @Module({})
 export class AppModule {
   static forRoot(options: PlatformOptions): DynamicModule {
@@ -147,6 +192,7 @@ export class AppModule {
         ContactsCompositionModule,
         PushCompositionModule,
         ChatGroupDirectoryCompositionModule,
+        MediaCompositionModule,
         PushModule,
         AiRuntimeModule,
         BillingModule,

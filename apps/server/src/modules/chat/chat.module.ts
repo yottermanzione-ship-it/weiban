@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { IdentityModule } from '../identity/index.js';
 import { RealtimeModule } from '../realtime/index.js';
+import { MediaModule } from '../media/index.js';
 import { ChatAdminService } from './application/admin.js';
 import { ChatParticipantService } from './application/participant.js';
 import { ChatReadService } from './application/read.js';
@@ -22,7 +23,7 @@ import {
   CHAT_GROUP_READ_PORT,
 } from './tokens.js';
 @Module({
-  imports: [IdentityModule, RealtimeModule],
+  imports: [IdentityModule, RealtimeModule, MediaModule],
   controllers: [ChatController, ChatGroupController, ChatActionController],
   providers: [
     ChatAdminService,
