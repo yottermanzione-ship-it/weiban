@@ -130,13 +130,7 @@ function ChangePasswordForm({ onDone }: { onDone: () => void }) {
       </label>
       <label>
         确认新密码
-        <input
-          type="password"
-          name="confirm"
-          minLength={10}
-          required
-          autoComplete="new-password"
-        />
+        <input type="password" name="confirm" minLength={10} required autoComplete="new-password" />
       </label>
       {error && (
         <p role="alert" className="error">

@@ -1,10 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import {
-  ChatEndpoints,
-  CompanionEndpoints,
-  ContactsEndpoints,
-} from '@weiban/contracts';
+import { ChatEndpoints, CompanionEndpoints, ContactsEndpoints } from '@weiban/contracts';
 import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
