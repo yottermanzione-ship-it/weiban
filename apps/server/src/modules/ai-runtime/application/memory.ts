@@ -635,7 +635,9 @@ export class MemoryService {
         m.content?.type === 'text' &&
         m.senderKind !== 'system' &&
         (m.scope !== 'adult' || policy.adultModeEligible) &&
-        !healthPrivate(m.content.text),
+        !healthPrivate(m.content.text) &&
+        // T-060：用经期摘要生成的消息（health 标记）不进入记忆。
+        !m.labels?.includes('health'),
     );
     const sourceMap = new Map(sources.map((m) => [m.messageId, m]));
     const lastSeq = history.at(-1)!.seq;

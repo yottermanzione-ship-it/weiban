@@ -86,3 +86,16 @@ export const ContactsEndpoints = {
     summary: '删除角色：soft 保留 30 天可恢复；purge 立即彻底删除（CHR-06）',
   }),
 } as const;
+
+// ---------- 3.0：名片推荐（CHR-04，D-L4-02） ----------
+
+export const ContactCardEndpoints = {
+  dismissRecommendation: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/contacts/recommendations/:characterId/dismiss`,
+    auth: 'user',
+    params: z.object({ characterId: Id }),
+    response: NoContent,
+    summary: '名片「不感兴趣」：该角色在 P-27 冷却期（90 天）内不再被推荐（CHR-04 第 4 条）',
+  }),
+} as const;

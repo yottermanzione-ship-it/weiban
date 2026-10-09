@@ -11,7 +11,11 @@ export interface UpcomingHoliday {
 
 /** 提供方 proactive；本地日期由调用方按用户 IANA 时区计算。 */
 export interface ProactiveMessagePort {
-  /** 预检；实际发送必须经过 recordSent 的事务闸门。上限 P03=3/P04=8。 */
+  /**
+   * 预检；实际发送必须经过 recordSent 的事务闸门。
+   * perCharacterLimit：单角色每日上限，按用户频率档位传（CHAT-13：少 1 / 适中 P-03=3 / 多 5），取值 1–5，默认 3；
+   * 全部角色合计 P-04=8 不变。
+   */
   canSendProactive(
     userId: string,
     characterId: string,
@@ -28,6 +32,8 @@ export interface ProactiveMessagePort {
     reason: string,
     tx: Tx,
     isHoliday?: boolean,
+    /** 单角色每日上限（同 canSendProactive，1–5，默认 3）。 */
+    perCharacterLimit?: number,
   ): Promise<number>;
   getDailyCount(userId: string, characterId: string, localDate: string): Promise<number>;
   getDailyTotalCount(userId: string, localDate: string): Promise<number>;

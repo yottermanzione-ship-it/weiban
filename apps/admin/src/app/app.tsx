@@ -13,6 +13,9 @@ import { CharactersPage } from '../features/characters.js';
 import { UsagePage } from '../features/usage.js';
 import { BillingPage } from '../features/billing.js';
 import { ScenarioModesPage } from '../features/scenario-modes.js';
+import { PublicUpdatesPage } from '../features/public-updates.js';
+import { HolidaysPage } from '../features/holidays.js';
+import { SymptomTagsPage } from '../features/symptom-tags.js';
 export function App() {
   const [auth, setAuth] = useState<AuthResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,6 +74,9 @@ export function App() {
             ['/usage', '用量与费用'],
             ['/billing', '对账与平台花费'],
             ['/scenario-modes', '情景模式'],
+            ['/public-updates', '公开动态'],
+            ['/holidays', '节日清单'],
+            ['/symptom-tags', '经期症状标签'],
             ['/admin/alerts', '运行提醒'],
           ].map(([to, label]) => (
             <NavLink key={to} to={to!}>
@@ -100,6 +106,9 @@ export function App() {
             <Route path="/usage" element={<UsagePage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/scenario-modes" element={<ScenarioModesPage />} />
+            <Route path="/public-updates" element={<PublicUpdatesPage />} />
+            <Route path="/holidays" element={<HolidaysPage />} />
+            <Route path="/symptom-tags" element={<SymptomTagsPage />} />
             <Route path="/admin/alerts" element={<AlertsPage />} />
             <Route path="*" element={<Navigate to="/invites" replace />} />
           </Routes>

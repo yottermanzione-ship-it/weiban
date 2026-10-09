@@ -74,6 +74,8 @@ graph TB
 | `importer` 导入 | 导入聊天记录、发言人识别、原文加密暂存与按期删除、生成草稿任务 | CHR-08、CHR-09 | 上层 | 后端（文件与删除）+ AI（分析生成） | L6 |
 | `library` 收藏与分享 | 收藏、分享图数据准备（含真人内容时带标注标记；成人模式消息、带「健康」标记的消息不能选入分享图，PRD v1.3 EXP-01 第 6 条） | CHAT-11、EXP-01 | 上层 | 后端 | L6 |
 | `health` 健康数据（v1.3） | 经期日记：记录（整行加密）、预测、按角色授权；只经 `HealthReadPort` 向 ai-runtime 提供「最少够用」的状态摘要（详见 `health-data.md`） | PLAY-01 | 中层 | 后端（AI 负责使用方式） | L3 |
+| `calls` 语音通话（3.0，ADR-0024/0025） | 通话会话、信令、音频 WebSocket、通话记录；角色一侧由 ai-runtime 实现 `CallAgentPort` | MED-06、MED-07 | 中层 | 后端（AI 负责对话管线） | L5 |
+| `play` 互动玩法（3.0，ADR-0024） | 每日一问、心愿清单、慢信、陪你专注、TA 的提醒的数据与到点；角色说的话由 ai-runtime 经 `PlayAgentPort` 回写 | PLAY-03～07 | 上层 | 后端（AI 负责说话） | L7 |
 | `plaza` 人设广场（v1.3） | 作品与版本快照、点赞评论、举报、广场昵称、复制与应用关系、管理员下架与更正（详见 `persona-plaza.md`） | PLZ-01～08、ADM-09 | 上层 | 后端（AI 负责隐私识别） | L7 |
 
 客户端（不是服务器模块，列出便于对照）：
@@ -112,6 +114,8 @@ graph TB
 | library | `library` | `favorites`（收藏时复制一份内容快照，原消息删了收藏还在） | 中 |
 | health（v1.3） | `health` | `period_entries`、`period_settings`（内容整行用**用户数据密钥**加密，日期也在密文里）、`grants`（授权的角色） | **最高**（敏感个人信息） |
 | plaza（v1.3） | `plaza` | `author_profiles`、`works`、`work_versions`（白名单快照，只增不改）、`adoptions`（复制 / 应用关系）、`likes`、`comments`、`reports`、`badges` | 中（公开内容，但含作者身份） |
+| calls（3.0） | `calls` | `call_sessions`（方向、状态、结果、时长；不存音频和转写） | 中 |
+| play（3.0） | `play` | `daily_questions`（题库）、`daily_answers`、`wishlist_items`、`wishlist_proposals`、`letters`、`letter_drafts`、`focus_sessions`、`reminders`（「健康」类内容用用户数据密钥加密）、`reminder_phrasings` | 中～高 |
 
 v1.3 另有两处跨模块数据规则：`chat.messages` 新增通用属性 `labels`（v1 只有 `health`，由服务器端发送方写入，push / library / growth 据此排除，见 `health-data.md` 第 5 节）；`characters` 的自定义角色新增 `origin`（是否复制自广场）和只增标记 `everPrivatePerson`（`hard-boundaries.md` 第 2、6 节）。
 

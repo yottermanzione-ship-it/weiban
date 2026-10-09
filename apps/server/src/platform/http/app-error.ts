@@ -46,6 +46,19 @@ export const DEFAULT_ERROR_STATUS: Record<ErrorCode, number> = {
   romance_not_allowed: 403,
   policy_denied: 403,
   adult_model_missing: 422,
+  // 契约 3.0（T-062）
+  limit_reached: 422,
+  not_group_conversation: 422,
+  action_already_chosen: 409,
+  service_disabled: 422,
+  call_busy: 409,
+  share_content_not_allowed: 422,
+  import_format_unrecognized: 422,
+  already_answered: 409,
+  focus_in_progress: 409,
+  plaza_publish_forbidden: 403,
+  plaza_classification_loosened: 422,
+  plaza_check_unavailable: 422,
 };
 
 export interface AppErrorOptions {

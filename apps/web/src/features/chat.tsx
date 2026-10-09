@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import {
   ChatEndpoints,
   IdentityEndpoints,
@@ -15,6 +15,7 @@ import { VirtualList } from './virtual-list.js';
 import { HomeScreenGuide } from './home-screen-guide.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { UserAvatar } from './user-avatar.js';
+import { WhileAwayCard, useWhileAway } from './while-away.js';
 export function CharacterName({ id, fallback }: { id: string; fallback?: string | null }) {
   const profile = useRemote(CharacterEndpoints.getProfile, { params: { characterId: id } });
   return <>{fallback || profile.data?.name || '角色'}</>;
@@ -86,7 +87,20 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const status = useRemote(ModelAccessEndpoints.getModelStatus, {
     query: { characterId: role?.refId },
   });
-  const [text, setText] = useState('');
+  const location = useLocation();
+  const prefill = (location.state as { prefill?: string } | null)?.prefill;
+  const [text, setText] = useState(prefill ?? '');
+  const input = useRef<HTMLInputElement>(null);
+  const whileAway = useWhileAway(id, role?.refId);
+  const [awayOpen, setAwayOpen] = useState<boolean | null>(null);
+  const cardOpen = awayOpen ?? whileAway.autoOpen;
+  const { markShown } = whileAway;
+  useEffect(() => {
+    if (whileAway.data && cardOpen) markShown();
+  }, [whileAway.data, cardOpen, markShown]);
+  useEffect(() => {
+    if (prefill) input.current?.focus();
+  }, [prefill]);
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   const [older, setOlder] = useState(true);
@@ -178,6 +192,18 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
       )}
       {hasTyping && status.data?.available && <p role="status">对方正在输入…</p>}
       {(error || chat.error) && <p role="alert">{error || chat.error}</p>}
+      {whileAway.data && role && (
+        <WhileAwayCard
+          data={whileAway.data}
+          open={cardOpen}
+          characterId={role.refId}
+          onOpenChange={setAwayOpen}
+          onAsk={(value) => {
+            setText(value);
+            input.current?.focus();
+          }}
+        />
+      )}
       {older && messages.length > 0 && (
         <button
           disabled={loadingOlder}
@@ -285,9 +311,13 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         <label>
           消息
           <input
+            ref={input}
             value={text}
             maxLength={4000}
-            onChange={(event) => setText(event.target.value)}
+            onChange={(event) => {
+              setText(event.target.value);
+              if (cardOpen && whileAway.data) setAwayOpen(false);
+            }}
             autoComplete="off"
           />
         </label>

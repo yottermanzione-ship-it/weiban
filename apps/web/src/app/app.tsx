@@ -36,6 +36,15 @@ import {
   ProactiveSettingsPage,
 } from '../features/account-settings.js';
 import { api } from '../data/client.js';
+import { TimelinePage } from '../features/timeline.js';
+import { AnniversariesPage } from '../features/growth.js';
+import {
+  PeriodPage,
+  PeriodDayPage,
+  PeriodHistoryPage,
+  PeriodAuthorizationPage,
+  PeriodSettingsPage,
+} from '../features/period.js';
 import { UpdatePrompt } from './update-prompt.js';
 function Shell() {
   const auth = useAuth();
@@ -100,7 +109,9 @@ function Shell() {
       )}
       {!onboarding &&
         !roots.includes(location.pathname) &&
-        !location.pathname.startsWith('/chat/') && (
+        !location.pathname.startsWith('/chat/') &&
+        !/^\/characters\/[^/]+\/(timeline|anniversaries)$/.test(location.pathname) &&
+        !location.pathname.startsWith('/services/period') && (
           <header className="topbar">
             <Link
               to={
@@ -150,10 +161,17 @@ function Shell() {
         <Route path="/settings/privacy" element={<PrivacySettingsPage />} />
         <Route path="/settings/general" element={<GeneralSettingsPage />} />
         <Route path="/services/proactive" element={<ProactiveSettingsPage />} />
+        <Route path="/services/period" element={<PeriodPage />} />
+        <Route path="/services/period/day/:date" element={<PeriodDayPage />} />
+        <Route path="/services/period/history" element={<PeriodHistoryPage />} />
+        <Route path="/services/period/authorization" element={<PeriodAuthorizationPage />} />
+        <Route path="/services/period/settings" element={<PeriodSettingsPage />} />
         <Route path="/chat" element={<ConversationListPage />} />
         <Route path="/chat/:conversationId" element={<ConversationPage />} />
         <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />
         <Route path="/characters/:characterId/memories" element={<MemoriesPage />} />
+        <Route path="/characters/:characterId/timeline" element={<TimelinePage />} />
+        <Route path="/characters/:characterId/anniversaries" element={<AnniversariesPage />} />
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/discover" element={<DiscoverPage />} />
         <Route path="/characters/:characterId" element={<CharacterPage />} />

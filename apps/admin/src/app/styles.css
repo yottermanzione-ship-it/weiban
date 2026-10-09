@@ -232,3 +232,61 @@ td button {
   color: var(--wb-color-text-on-brand);
   border-radius: var(--wb-radius-sm);
 }
+
+/* ---------- L3：公开动态、节日清单、症状标签（T-055） ---------- */
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wb-space-5);
+}
+.tag {
+  display: inline-block;
+  padding: 0 var(--wb-space-2);
+  border-radius: var(--wb-radius-sm);
+  font-size: var(--wb-font-size-caption1);
+  background: var(--wb-color-bg-page);
+  color: var(--wb-color-text-secondary);
+}
+.tag.success {
+  background: var(--wb-color-status-success-soft);
+  color: var(--wb-color-status-success);
+}
+.tag.warning {
+  background: var(--wb-color-status-warning-soft);
+  color: var(--wb-color-status-warning-text);
+}
+.tag.danger {
+  background: var(--wb-color-status-danger-soft);
+  color: var(--wb-color-status-danger);
+}
+.inline-tip {
+  background: var(--wb-color-brand-soft);
+  color: var(--wb-color-brand-on-soft);
+  border-radius: var(--wb-radius-sm);
+  padding: var(--wb-space-3) var(--wb-space-4);
+}
+.error-banner {
+  background: var(--wb-color-status-danger-soft);
+  color: var(--wb-color-text-danger);
+  border-radius: var(--wb-radius-sm);
+  padding: var(--wb-space-3) var(--wb-space-4);
+}
+button.danger {
+  color: var(--wb-color-text-danger);
+}
+.ellipsis {
+  max-width: 320px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+tr.past td {
+  color: var(--wb-color-text-tertiary);
+}
+.skeleton-line {
+  display: block;
+  height: 16px;
+  border-radius: var(--wb-radius-sm);
+  background: var(--wb-color-bg-skeleton);
+}

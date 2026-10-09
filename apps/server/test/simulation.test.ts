@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import type {
   ContactsReadPort,
   IdentityAccountStatusPort,
+  IdentityReadPort,
   ModelGatewayPort,
 } from '@weiban/contracts';
 import {
@@ -66,7 +67,8 @@ describeDb('T-051 推演真实PG：迁移、预算、幂等、活跃与迟到注
   beforeAll(async () => {
     await resetTestDatabase();
     db = new Database({ url: requireTestDatabaseUrl() });
-    service = new SimulationService(db, clock, jobs, gateway, accounts, contacts);
+    const identity = { getLastActiveAt: async () => null } as unknown as IdentityReadPort;
+    service = new SimulationService(db, clock, jobs, gateway, accounts, identity, contacts);
   });
   afterAll(async () => {
     await db?.close();

@@ -5,14 +5,20 @@ import { HEALTH_READ_PORT } from './tokens.js';
 import { HealthStore } from './application/store.js';
 import { HealthService } from './application/health.service.js';
 import { HealthLifecycle } from './application/lifecycle.js';
-import { HealthController } from './http/health.controller.js';
+import {
+  HealthController,
+  SymptomTagAdminController,
+  SymptomTagController,
+} from './http/health.controller.js';
+import { SymptomTagService } from './application/symptom-tags.js';
 
 @Module({
   imports: [IdentityModule, ContactsModule],
-  controllers: [HealthController],
+  controllers: [HealthController, SymptomTagController, SymptomTagAdminController],
   providers: [
     HealthStore,
     HealthService,
+    SymptomTagService,
     HealthLifecycle,
     { provide: HEALTH_READ_PORT, useExisting: HealthService },
   ],

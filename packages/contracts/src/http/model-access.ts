@@ -188,7 +188,8 @@ export const UpstreamStatus = z.enum([
 export type UpstreamStatus = z.infer<typeof UpstreamStatus>;
 
 /** v1 只有 OpenAI 兼容接入；个别非兼容的语音 / 图片接口由 AI 负责人在适配器中处理并以新取值加入。 */
-export const UpstreamKind = z.enum(['openai_compatible']);
+/** 3.0：dashscope = 阿里云百炼原生接口（语音、图片）；bocha_search = 博查搜索；jev = TypeSafe AI Jev（CR-18，待配置后验证）。 */
+export const UpstreamKind = z.enum(['openai_compatible', 'dashscope', 'bocha_search', 'jev']);
 
 export const Upstream = z.object({
   upstreamId: Id,
@@ -240,8 +241,21 @@ export const AdminCatalogEntry = z.object({
    * v1.1：vision = 平台默认识图模型（pm-rulings-2 B5、PRD ADM-05 第 9 条）：用途为 vision 时，
    * 若用户（或角色覆盖）解析出的聊天模型没有 vision 能力，网关改用它，费用照常从用户余额扣；
    * 必须具备 vision 能力；未设置时网关返回 capability_missing（billing.md 3.2 节）。
+   * 3.0：planner = 行为规划默认模型（CR-17，只能用于 behavior_planning）；speech_synthesis / speech_recognition /
+   * image_generation / web_search = 平台提供的语音合成、语音识别、图片生成、联网搜索服务（MED，平台未设置即「未开通」）。
    */
-  defaultFor: z.array(z.enum(['chat', 'background', 'vision'])),
+  defaultFor: z.array(
+    z.enum([
+      'chat',
+      'background',
+      'vision',
+      'planner',
+      'speech_synthesis',
+      'speech_recognition',
+      'image_generation',
+      'web_search',
+    ]),
+  ),
   enabled: z.boolean(),
   updatedAt: Timestamp,
 });

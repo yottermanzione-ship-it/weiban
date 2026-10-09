@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ChatModule } from '../chat/index.js';
 import { MediaModule } from '../media/index.js';
-import { MODEL_GATEWAY_PORT } from '../model-access/index.js';
+import { MODEL_GATEWAY_PORT, WEB_SEARCH_PROVIDER } from '../model-access/index.js';
+import { IdentityModule } from '../identity/index.js';
+import { PublicUpdateService } from './application/public-updates.js';
+import { PublicUpdateAdminController } from './http/public-updates.controller.js';
 import { CharacterService } from './application/characters.js';
 import { CharacterCheckWorker } from './application/check-worker.js';
 import { CustomCharacterService } from './application/custom-character.js';
@@ -11,15 +14,22 @@ import { CharacterController, CharacterAdminController } from './http/characters
 import { CustomCharacterController } from './http/custom-character.controller.js';
 import { ScenarioModeAdminController } from './http/scenario-modes.controller.js';
 import { PersonaVersionAdminController } from './http/persona-versions.controller.js';
-import { CHARACTER_READ_PORT, CHARACTER_NAME_READ_PORT, CHARACTER_EVALUATOR } from './tokens.js';
+import {
+  CHARACTER_READ_PORT,
+  CHARACTER_NAME_READ_PORT,
+  CHARACTER_EVALUATOR,
+  PUBLIC_UPDATE_READ_PORT,
+  PUBLIC_UPDATE_WEB_SEARCH,
+} from './tokens.js';
 @Module({
-  imports: [MediaModule, ChatModule],
+  imports: [MediaModule, ChatModule, IdentityModule],
   controllers: [
     CharacterController,
     CharacterAdminController,
     CustomCharacterController,
     ScenarioModeAdminController,
     PersonaVersionAdminController,
+    PublicUpdateAdminController,
   ],
   providers: [
     CharacterService,
@@ -27,11 +37,14 @@ import { CHARACTER_READ_PORT, CHARACTER_NAME_READ_PORT, CHARACTER_EVALUATOR } fr
     CustomCharacterService,
     GatewayCharacterEvaluator,
     ScenarioModeService,
+    PublicUpdateService,
+    { provide: PUBLIC_UPDATE_READ_PORT, useExisting: PublicUpdateService },
+    { provide: PUBLIC_UPDATE_WEB_SEARCH, useExisting: WEB_SEARCH_PROVIDER },
     { provide: CHARACTER_READ_PORT, useExisting: CharacterService },
     { provide: CHARACTER_NAME_READ_PORT, useExisting: CharacterService },
     { provide: CHARACTER_EVALUATOR, useExisting: GatewayCharacterEvaluator },
     { provide: EVALUATOR_GATEWAY, useExisting: MODEL_GATEWAY_PORT },
   ],
-  exports: [CHARACTER_READ_PORT, CHARACTER_NAME_READ_PORT],
+  exports: [CHARACTER_READ_PORT, CHARACTER_NAME_READ_PORT, PUBLIC_UPDATE_READ_PORT],
 })
 export class CharactersModule {}
