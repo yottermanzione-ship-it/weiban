@@ -31,6 +31,7 @@ export const SERVER_MODULES = {
   'model-access': { layer: 'middle', schema: 'model_access' },
   billing: { layer: 'middle', schema: 'billing' },
   policy: { layer: 'middle', schema: null },
+  health: { layer: 'middle', schema: 'health' },
   'ai-runtime': { layer: 'upper', schema: 'ai_runtime' },
   proactive: { layer: 'upper', schema: 'proactive' },
   moments: { layer: 'upper', schema: 'moments' },

@@ -6,6 +6,7 @@ import billingPortExit from './rules/billing-port-exit.js';
 import contractsSource from './rules/contracts-source.js';
 import exclusiveSdk from './rules/exclusive-sdk.js';
 import moduleBoundaries from './rules/module-boundaries.js';
+import healthPortExit from './rules/health-port-exit.js';
 import noPathAlias from './rules/no-path-alias.js';
 import noRawTime from './rules/no-raw-time.js';
 import ownSchemaOnly from './rules/own-schema-only.js';
@@ -19,6 +20,7 @@ export default {
     'no-raw-time': noRawTime,
     'own-schema-only': ownSchemaOnly,
     'billing-port-exit': billingPortExit,
+    'health-port-exit': healthPortExit,
     'no-path-alias': noPathAlias,
   },
 };

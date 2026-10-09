@@ -87,7 +87,11 @@ export class ChatReadService implements ChatReadPort {
         senderRefId: sender.refId,
         recipientParticipantId: recipient.id,
         muted: view.state.muted,
-        content: message.scope === 'normal' ? await this.store.content(tx, row, message) : null,
+        // 带 health 标签的消息不向推送提供正文（health-data.md 第 5 节、CHAT-10 第 7 条）。
+        content:
+          message.scope === 'normal' && !message.labels?.includes('health')
+            ? await this.store.content(tx, row, message)
+            : null,
       };
     };
     return input ? read(asDbTx(input)) : this.db.transaction(read);
