@@ -16,7 +16,11 @@ import type { FocusSession, Reminder, WishlistItem } from '../http/play.js';
 export interface MomentsReadPort {
   getPost(ownerUserId: string, postId: string): Promise<MomentsPost | null>;
   /** 角色最近的动态（避免重复、P-16 计数）。 */
-  listCharacterPosts(ownerUserId: string, characterId: string, since: string): Promise<MomentsPost[]>;
+  listCharacterPosts(
+    ownerUserId: string,
+    characterId: string,
+    since: string,
+  ): Promise<MomentsPost[]>;
   /** 用户发的、对该角色可见的动态（SOC-09 第 5 条记忆素材；不可见的角色不得提起）。 */
   listUserPostsVisibleTo(
     ownerUserId: string,
@@ -225,7 +229,10 @@ export interface ImportAnalyzerPort {
     sample: string;
     idempotencyKey: string;
   }): Promise<
-    PortResult<ImportDialogueLine[], 'insufficient_balance' | 'model_unavailable' | 'format_unrecognized'>
+    PortResult<
+      ImportDialogueLine[],
+      'insufficient_balance' | 'model_unavailable' | 'format_unrecognized'
+    >
   >;
   /** 分析生成草稿或补充设定（分块并行在 ai-runtime 内部）；原文不得进入任何日志。 */
   analyze(input: {
@@ -248,8 +255,15 @@ export interface PlayReadPort {
   listWishlist(userId: string, characterId: string): Promise<WishlistItem[]>;
   getReminder(reminderId: string): Promise<Reminder | null>;
   /** 待生成的回信（送达前约 10 分钟取，或余额恢复后补生成）。 */
-  listPendingLetterReplies(userId: string): Promise<
-    Array<{ letterId: string; characterId: string; inReplyToLetterId: string | null; deliverAt: string }>
+  listPendingLetterReplies(
+    userId: string,
+  ): Promise<
+    Array<{
+      letterId: string;
+      characterId: string;
+      inReplyToLetterId: string | null;
+      deliverAt: string;
+    }>
   >;
   /** 来信正文（生成回信时作为上下文）。 */
   getLetterBody(letterId: string): Promise<string | null>;

@@ -442,7 +442,12 @@ export const GroupRenamed = event(
 export const GroupDissolved = event(
   'chat.group_dissolved',
   'chat',
-  z.object({ conversationId: Id, ownerUserId: Id, createdByCharacterId: Id.nullable(), memberCharacterIds: z.array(Id) }),
+  z.object({
+    conversationId: Id,
+    ownerUserId: Id,
+    createdByCharacterId: Id.nullable(),
+    memberCharacterIds: z.array(Id),
+  }),
 );
 
 /** 用户点了卡片消息的按钮（ADR-0026）。按 cardKind / ref 由所属模块处理。 */
@@ -550,7 +555,13 @@ export const AnniversaryReached = event(
 export const CardIssued = event(
   'growth.card_issued',
   'growth',
-  z.object({ userId: Id, characterId: Id, cardId: Id, kind: z.string(), totalCards: z.number().int().positive() }),
+  z.object({
+    userId: Id,
+    characterId: Id,
+    cardId: Id,
+    kind: z.string(),
+    totalCards: z.number().int().positive(),
+  }),
 );
 
 export const AchievementUnlocked = event(
@@ -605,13 +616,23 @@ export const ShareImageGenerated = event(
 export const CallStarted = event(
   'calls.call_started',
   'calls',
-  z.object({ callId: Id, userId: Id, characterId: Id, direction: z.enum(['outgoing', 'incoming']) }),
+  z.object({
+    callId: Id,
+    userId: Id,
+    characterId: Id,
+    direction: z.enum(['outgoing', 'incoming']),
+  }),
 );
 
 export const CallAnswered = event(
   'calls.call_answered',
   'calls',
-  z.object({ callId: Id, userId: Id, characterId: Id, direction: z.enum(['outgoing', 'incoming']) }),
+  z.object({
+    callId: Id,
+    userId: Id,
+    characterId: Id,
+    direction: z.enum(['outgoing', 'incoming']),
+  }),
 );
 
 /** 通话结束：ai-runtime 未接 / 拒接后发一条消息、当天不再来电（MED-07 第 5 条）；growth 判成就、熟悉度。 */
@@ -632,7 +653,12 @@ export const CallEnded = event(
 export const ImportJobCompleted = event(
   'importer.job_completed',
   'importer',
-  z.object({ userId: Id, jobId: Id, kind: z.enum(['new_character', 'supplement']), ok: z.boolean() }),
+  z.object({
+    userId: Id,
+    jobId: Id,
+    kind: z.enum(['new_character', 'supplement']),
+    ok: z.boolean(),
+  }),
 );
 
 export const PlazaWorkPublished = event(

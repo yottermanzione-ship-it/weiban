@@ -69,7 +69,8 @@ export const StickerEndpoints = {
       z.object({ from: z.literal('upload'), mediaId: Id }),
     ]),
     response: UserSticker,
-    summary: '添加到我的表情；超过 300 个返回 422 limit_reached；成人模式 / 「健康」标记的消息也可添加（只对自己可见）',
+    summary:
+      '添加到我的表情；超过 300 个返回 422 limit_reached；成人模式 / 「健康」标记的消息也可添加（只对自己可见）',
   }),
   reorderMyStickers: defineEndpoint({
     method: 'PUT',
@@ -217,7 +218,14 @@ export const VoiceAdminEndpoints = {
 // ---------- 卡面模板（GRW-05 第 2 条、ADM-04 第 3 条） ----------
 
 /** 卡片种类（与 growth 的 CardKind 一致，见 http/growth-cards.ts）。 */
-export const CardTemplateKind = z.enum(['anniversary', 'familiarity', 'holiday', 'moment', 'pet', 'play']);
+export const CardTemplateKind = z.enum([
+  'anniversary',
+  'familiarity',
+  'holiday',
+  'moment',
+  'pet',
+  'play',
+]);
 
 /** 卡面模板。portraitFree = 不含人物，可用于真人角色（GRW-05 第 2 条）。 */
 export const CardTemplate = z.object({
@@ -232,7 +240,11 @@ export const CardTemplate = z.object({
 });
 export type CardTemplate = z.infer<typeof CardTemplate>;
 
-export const CardTemplateWrite = CardTemplate.omit({ templateId: true, url: true, updatedAt: true });
+export const CardTemplateWrite = CardTemplate.omit({
+  templateId: true,
+  url: true,
+  updatedAt: true,
+});
 
 export const CardTemplateAdminEndpoints = {
   listTemplates: defineEndpoint({

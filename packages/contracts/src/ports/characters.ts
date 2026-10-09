@@ -38,22 +38,34 @@ export interface CharacterReadPort {
 
 // ---------- 3.0：关系网（SOC-01）、作品链接、广场（L4～L7） ----------
 
-
 /**
  * 关系网读取。提供方 characters；调用方 ai-runtime（群聊、朋友圈互评、私聊提起、名片、共享记忆、拉群）、
  * policy（识图认人名单）、chat 不调用。userId 用于带上该用户为自定义角色设定的关系。
  */
 export interface CharacterRelationReadPort {
   /** 两个角色之间的关系；没有为 null。 */
-  getRelation(userId: string, characterAId: string, characterBId: string): Promise<CharacterRelation | null>;
+  getRelation(
+    userId: string,
+    characterAId: string,
+    characterBId: string,
+  ): Promise<CharacterRelation | null>;
   /** 某角色的全部关系（预设之间 + 该用户设定的自定义之间）。 */
   listRelations(userId: string, characterId: string): Promise<CharacterRelation[]>;
 }
 
 /** 作品链接库读取（MED-05）。只返回 enabled 且最近一次检查通过的链接。 */
 export interface CharacterWorkLinkReadPort {
-  listUsableWorkLinks(characterId: string): Promise<
-    Array<{ workLinkId: string; title: string; url: string; source: string | null; appHint: 'music' | 'video' | 'web'; coverMediaId: string | null }>
+  listUsableWorkLinks(
+    characterId: string,
+  ): Promise<
+    Array<{
+      workLinkId: string;
+      title: string;
+      url: string;
+      source: string | null;
+      appHint: 'music' | 'video' | 'web';
+      coverMediaId: string | null;
+    }>
   >;
   /** 可访问性检查结果回写（AI / 定时任务）。 */
   recordLinkCheck(workLinkId: string, ok: boolean): Promise<void>;
@@ -73,7 +85,9 @@ export interface CharacterPlazaPort {
   buildPublishSnapshot(
     userId: string,
     characterId: string,
-  ): Promise<PortResult<Extract<PlazaSnapshot, { kind: 'custom_character' }>, 'not_found' | 'forbidden'>>;
+  ): Promise<
+    PortResult<Extract<PlazaSnapshot, { kind: 'custom_character' }>, 'not_found' | 'forbidden'>
+  >;
   /** 预设改版快照（用户的补充设定）；没有补充设定返回 not_found。 */
   buildVariantSnapshot(
     userId: string,

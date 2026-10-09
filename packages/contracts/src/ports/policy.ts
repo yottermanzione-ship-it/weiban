@@ -140,7 +140,10 @@ export interface PolicyExtensionPort {
    * characters 按新版本更新复制品时调用。规则：original / fictional → real_person 为更严；adult → minor 为更严；
    * childAppearance、childFeaturesDetected、everPrivatePerson 只能 false → true；其余变化（含真人子类互换）视为 looser。
    */
-  compareClassification(previous: ClassificationFacts, next: ClassificationFacts): ClassificationComparison;
+  compareClassification(
+    previous: ClassificationFacts,
+    next: ClassificationFacts,
+  ): ClassificationComparison;
   /** 群聊情景模式（SOC-03 第 4 条）：结果 = 每个成员 listAllowedScenarioModes 的交集。 */
   listAllowedGroupScenarioModes(input: {
     userId: string;

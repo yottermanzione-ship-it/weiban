@@ -19,7 +19,13 @@
 import { z } from 'zod';
 import { API_PREFIX, Id, LocalDate, NoContent, Timestamp, defineEndpoint } from '../common.js';
 
-export const PublicUpdateStatus = z.enum(['draft', 'pending', 'effective', 'rejected', 'withdrawn']);
+export const PublicUpdateStatus = z.enum([
+  'draft',
+  'pending',
+  'effective',
+  'rejected',
+  'withdrawn',
+]);
 export type PublicUpdateStatus = z.infer<typeof PublicUpdateStatus>;
 
 export const PublicUpdateSource = z.enum(['manual', 'auto_search']);

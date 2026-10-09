@@ -100,7 +100,8 @@ export const CallEndpoints = {
     auth: 'user',
     params: CallParams,
     response: CallSession,
-    summary: '拒接来电：私聊写「未接来电」记录，ai-runtime 随后让角色发一条消息、当天不再来电（MED-07 第 5 条）',
+    summary:
+      '拒接来电：私聊写「未接来电」记录，ai-runtime 随后让角色发一条消息、当天不再来电（MED-07 第 5 条）',
   }),
   hangUp: defineEndpoint({
     method: 'POST',
@@ -158,7 +159,10 @@ export const CallStreamServerFrame = z.discriminatedUnion('type', [
     'call.ready',
     z.object({ callId: Id, outputSampleRate: z.number().int().positive(), serverTime: Timestamp }),
   ),
-  callFrame('call.state', z.object({ state: tolerantEnum(CallState), durationSec: z.number().int().nonnegative() })),
+  callFrame(
+    'call.state',
+    z.object({ state: tolerantEnum(CallState), durationSec: z.number().int().nonnegative() }),
+  ),
   /** 角色开始 / 停止说话（头像下方声波）。 */
   callFrame('call.agent_speaking', z.object({ speaking: z.boolean() })),
   /** 服务器要结束通话（到达上限、余额用完角色已道别、对方挂断），随后关闭连接。 */

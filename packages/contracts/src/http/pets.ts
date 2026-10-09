@@ -5,7 +5,15 @@
  * 按钮互动不调用模型、不花钱；「让 TA 起名」经事件交给 ai-runtime，候选名经 PetNamingPort 回传。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, LocalDate, NoContent, Timestamp, defineEndpoint, tolerantEnum } from '../common.js';
+import {
+  API_PREFIX,
+  Id,
+  LocalDate,
+  NoContent,
+  Timestamp,
+  defineEndpoint,
+  tolerantEnum,
+} from '../common.js';
 
 /** P-38、P-39。 */
 export const PET_LIMITS = {
@@ -111,7 +119,8 @@ export const PetEndpoints = {
     auth: 'user',
     query: z.object({ characterId: Id.optional() }),
     response: z.object({ items: z.array(Pet) }),
-    summary: '「我 → 服务 → 宠物」：所有宠物（含「回忆」中已送养的）；可按角色筛选（聊天信息页「我们的宠物」）',
+    summary:
+      '「我 → 服务 → 宠物」：所有宠物（含「回忆」中已送养的）；可按角色筛选（聊天信息页「我们的宠物」）',
   }),
   getPet: defineEndpoint({
     method: 'GET',
@@ -178,7 +187,8 @@ export const PetEndpoints = {
     auth: 'user',
     params: z.object({ petId: Id }),
     response: PetDetail,
-    summary: '送养（二次确认在客户端）：移入「回忆」，记录与相册保留；发出 growth.pet_sent_away（角色回应一次，不挽留）',
+    summary:
+      '送养（二次确认在客户端）：移入「回忆」，记录与相册保留；发出 growth.pet_sent_away（角色回应一次，不挽留）',
   }),
   listAlbum: defineEndpoint({
     method: 'GET',

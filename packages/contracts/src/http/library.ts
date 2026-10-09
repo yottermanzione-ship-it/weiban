@@ -6,7 +6,15 @@
  * 成人模式消息（scope = adult）与带「健康」标记的消息一律不能进分享图（EXP-01 第 6 条），由服务器拒绝。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, NoContent, Timestamp, cursorPage, defineEndpoint, tolerantEnum } from '../common.js';
+import {
+  API_PREFIX,
+  Id,
+  NoContent,
+  Timestamp,
+  cursorPage,
+  defineEndpoint,
+  tolerantEnum,
+} from '../common.js';
 import { ParticipantKind, ReceivedMessageContent } from './chat.js';
 
 /** 单张分享图最多消息数（P-24）。 */
@@ -99,7 +107,10 @@ export const ShareSource = z.discriminatedUnion('kind', [
     conversationId: Id,
     messageIds: z.array(Id).min(1).max(SHARE_IMAGE_MAX_ITEMS),
   }),
-  z.object({ kind: z.literal('favorites'), favoriteIds: z.array(Id).min(1).max(SHARE_IMAGE_MAX_ITEMS) }),
+  z.object({
+    kind: z.literal('favorites'),
+    favoriteIds: z.array(Id).min(1).max(SHARE_IMAGE_MAX_ITEMS),
+  }),
   z.object({ kind: z.literal('moments_post'), postId: Id }),
   z.object({ kind: z.literal('card'), cardId: Id }),
 ]);
@@ -146,7 +157,8 @@ export const ShareEndpoints = {
     auth: 'user',
     body: z.object({ template: ShareTemplate }),
     response: NoContent,
-    summary: '客户端生成分享图后回报一次（只记次数，不上传图片）；发出 library.share_image_generated（成就第 21 号）',
+    summary:
+      '客户端生成分享图后回报一次（只记次数，不上传图片）；发出 library.share_image_generated（成就第 21 号）',
   }),
   getPreferences: defineEndpoint({
     method: 'GET',

@@ -62,7 +62,8 @@ export const ChatGroupEndpoints = {
     auth: 'user',
     params: z.object({ conversationId: Id, characterId: Id }),
     response: Conversation,
-    summary: '移出角色（「−」），群里写系统提示 member_removed（SOC-03 第 5 条）；少于 1 个角色时群仍保留',
+    summary:
+      '移出角色（「−」），群里写系统提示 member_removed（SOC-03 第 5 条）；少于 1 个角色时群仍保留',
   }),
   dissolveGroup: defineEndpoint({
     method: 'POST',
@@ -148,6 +149,7 @@ export const ChatSearchEndpoints = {
       limit: z.coerce.number().int().min(1).max(50).default(20),
     }),
     response: z.object({ items: z.array(MessageSearchHit), hasMore: z.boolean() }),
-    summary: '会话内搜索（群聊信息页「查找聊天记录」），结果按 seq 倒序；点击后用 listMessages 定位上下文',
+    summary:
+      '会话内搜索（群聊信息页「查找聊天记录」），结果按 seq 倒序；点击后用 listMessages 定位上下文',
   }),
 } as const;

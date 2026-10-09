@@ -68,15 +68,17 @@ export const SAFETY_OVERDRAFT_PURPOSES: readonly ModelPurpose[] = [
 export const BillingOwner = z.enum(['user', 'platform']);
 export type BillingOwner = z.infer<typeof BillingOwner>;
 
-/** 3.0：多模态消息片段（识图，MED-04、MED-01 第 3 条）。图片由网关经 MediaReadPort 读取后交给上游，调用方不传字节。 */
-export type ChatContentPart =
-  | { type: 'text'; text: string }
-  | { type: 'image'; mediaId: string; ownerUserId: string };
+/** 3.0：随消息附带的图片（识图，MED-04、MED-01 第 3 条）。网关经 MediaSystemPort 读取后交给上游，调用方不传字节。 */
+export interface ModelImageRef {
+  mediaId: string;
+  ownerUserId: string;
+}
 
 export interface ChatMessageForModel {
   role: 'system' | 'user' | 'assistant';
-  /** 纯文本；3.0 起可传片段数组（含图片时网关要求模型具备 vision 能力，否则改用平台默认识图模型）。 */
-  content: string | ChatContentPart[];
+  content: string;
+  /** 3.0：附带图片（只允许 role = user）。有图片时网关要求模型具备 vision 能力，否则改用平台默认识图模型（B5）。 */
+  images?: ModelImageRef[];
 }
 
 export interface GenerateTextInput {
@@ -323,6 +325,7 @@ export interface ModelGatewayMediaPort {
   decide(input: DecideInput): Promise<PortResult<DecideOutput, GenerateError>>;
   /** 某项平台服务是否已开通（入口显隐）。 */
   isServiceEnabled(
-    service: 'speech_synthesis' | 'speech_recognition' | 'image_generation' | 'web_search' | 'vision',
+    service:
+      'speech_synthesis' | 'speech_recognition' | 'image_generation' | 'web_search' | 'vision',
   ): Promise<boolean>;
 }

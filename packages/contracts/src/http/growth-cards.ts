@@ -55,7 +55,14 @@ export const CardAlbumSummary = z.object({
 // ---------- 成就 ----------
 
 /** 成就分组（GRW-06 表「分组」列）。 */
-export const AchievementGroup = z.enum(['acquaintance', 'chat_call', 'group_moments', 'collect', 'anniversary', 'play']);
+export const AchievementGroup = z.enum([
+  'acquaintance',
+  'chat_call',
+  'group_moments',
+  'collect',
+  'anniversary',
+  'play',
+]);
 
 /**
  * 成就键与编号（GRW-06 成就清单，唯一定义处是 PRD；此处只是编号到键的映射）。
@@ -110,7 +117,9 @@ export const Achievement = z.object({
   /** 获得时间；未获得为 null。已获得的永不收回（GRW-06 第 5 条）。 */
   unlockedAt: Timestamp.nullable(),
   /** 累计类的进度（例 37 / 50）；第一次类为 null。 */
-  progress: z.object({ current: z.number().int().nonnegative(), target: z.number().int().positive() }).nullable(),
+  progress: z
+    .object({ current: z.number().int().nonnegative(), target: z.number().int().positive() })
+    .nullable(),
 });
 export type Achievement = z.infer<typeof Achievement>;
 

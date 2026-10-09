@@ -27,6 +27,11 @@ export interface ContactCardRecommendationPort {
   /** 记一次推荐（发出名片消息时，与消息同一事务）。 */
   recordRecommendation(
     tx: Tx | null,
-    input: { userId: string; characterId: string; recommenderCharacterId: string; messageId: string },
+    input: {
+      userId: string;
+      characterId: string;
+      recommenderCharacterId: string;
+      messageId: string;
+    },
   ): Promise<void>;
 }

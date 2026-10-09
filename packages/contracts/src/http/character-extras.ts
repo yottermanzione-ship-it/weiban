@@ -228,9 +228,7 @@ export const WorkLink = z.object({
   appHint: LinkAppHint,
   coverMediaId: Id.nullable(),
   /** 最近一次可访问性检查（AI / 后端定时任务写入），失败的链接角色不再分享。 */
-  lastCheck: z
-    .object({ ok: z.boolean(), checkedAt: Timestamp })
-    .nullable(),
+  lastCheck: z.object({ ok: z.boolean(), checkedAt: Timestamp }).nullable(),
   enabled: z.boolean(),
   updatedAt: Timestamp,
 });

@@ -213,7 +213,8 @@ export const HealthEndpoints = {
     path: `${API_PREFIX}/me/health/settings`,
     auth: 'user',
     response: HealthSettings,
-    summary: 'PLAY-01 / P-37 用户填写的默认周期与经期天数（未填写时返回 28 / 5，userProvided = false）',
+    summary:
+      'PLAY-01 / P-37 用户填写的默认周期与经期天数（未填写时返回 28 / 5，userProvided = false）',
   }),
   updateSettings: defineEndpoint({
     method: 'PUT',

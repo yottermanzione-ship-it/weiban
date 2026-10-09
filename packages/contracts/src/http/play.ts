@@ -35,7 +35,14 @@ export const PLAY_LIMITS = {
 
 // ---------- 每日一问（PLAY-03） ----------
 
-export const DailyQuestionTag = z.enum(['romance', 'child_safe', 'work', 'family', 'childhood', 'light']);
+export const DailyQuestionTag = z.enum([
+  'romance',
+  'child_safe',
+  'work',
+  'family',
+  'childhood',
+  'light',
+]);
 
 export const DailyQuestionToday = z.object({
   /** 用户当地日期。 */
@@ -305,7 +312,11 @@ export const LetterEndpoints = {
 export const FocusSession = z.object({
   focusId: Id,
   characterId: Id,
-  plannedMinutes: z.number().int().min(PLAY_LIMITS.focusMinMinutes).max(PLAY_LIMITS.focusMaxMinutes),
+  plannedMinutes: z
+    .number()
+    .int()
+    .min(PLAY_LIMITS.focusMinMinutes)
+    .max(PLAY_LIMITS.focusMaxMinutes),
   note: z.string().max(PLAY_LIMITS.focusNoteMaxChars).nullable(),
   startedAt: Timestamp,
   /** 计划结束时间（服务器时间为准）。 */
@@ -344,7 +355,8 @@ export const FocusEndpoints = {
     auth: 'user',
     params: z.object({ focusId: Id }),
     response: FocusSession,
-    summary: '提前结束（幂等；结束确认无挽留文案）。时间到由服务器自动结束。都发出 play.focus_ended',
+    summary:
+      '提前结束（幂等；结束确认无挽留文案）。时间到由服务器自动结束。都发出 play.focus_ended',
   }),
 } as const;
 
@@ -353,9 +365,15 @@ export const FocusEndpoints = {
 export const ReminderRepeat = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('once'), date: LocalDate }),
   z.object({ kind: z.literal('daily'), weekdays: z.array(z.number().int().min(1).max(7)).max(0) }),
-  z.object({ kind: z.literal('workdays'), weekdays: z.array(z.number().int().min(1).max(7)).max(0) }),
+  z.object({
+    kind: z.literal('workdays'),
+    weekdays: z.array(z.number().int().min(1).max(7)).max(0),
+  }),
   /** weekdays：1 = 周一 … 7 = 周日。 */
-  z.object({ kind: z.literal('weekly'), weekdays: z.array(z.number().int().min(1).max(7)).min(1).max(7) }),
+  z.object({
+    kind: z.literal('weekly'),
+    weekdays: z.array(z.number().int().min(1).max(7)).min(1).max(7),
+  }),
 ]);
 export type ReminderRepeat = z.infer<typeof ReminderRepeat>;
 

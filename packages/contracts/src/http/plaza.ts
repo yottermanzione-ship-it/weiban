@@ -7,7 +7,16 @@
  * 复制 = characters 新建一个自定义角色，分类从快照写入并锁定（只能更严）。客户端没有任何字段能影响分类。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, LocalDate, NoContent, Timestamp, cursorPage, defineEndpoint, tolerantEnum } from '../common.js';
+import {
+  API_PREFIX,
+  Id,
+  LocalDate,
+  NoContent,
+  Timestamp,
+  cursorPage,
+  defineEndpoint,
+  tolerantEnum,
+} from '../common.js';
 import { AgeSetting, CharacterBasis, RealPersonKind } from './characters.js';
 
 /** P-35：评论长度上限。 */
@@ -71,7 +80,12 @@ export const PlazaPublishSettings = z.strictObject({
 // ---------- 作品 ----------
 
 export const PlazaWorkKind = z.enum(['custom_character', 'preset_variant']);
-export const PlazaWorkStatus = z.enum(['listed', 'unlisted_by_author', 'removed_by_admin', 'author_banned']);
+export const PlazaWorkStatus = z.enum([
+  'listed',
+  'unlisted_by_author',
+  'removed_by_admin',
+  'author_banned',
+]);
 
 export const PlazaAuthor = z.object({
   /** 作者在广场上的身份 ID（不是 userId，不能反查账号）。 */
@@ -120,7 +134,9 @@ export const PlazaWorkDetail = PlazaWorkCard.extend({
   snapshot: PlazaSnapshot,
   versions: z.array(PlazaVersionNote),
   /** 改编自（PLZ-04 第 6 条，不可删除）。 */
-  remixOf: z.object({ workId: Id, name: z.string(), authorNickname: z.string(), available: z.boolean() }).nullable(),
+  remixOf: z
+    .object({ workId: Id, name: z.string(), authorNickname: z.string(), available: z.boolean() })
+    .nullable(),
   /** 我是作者。 */
   isMine: z.boolean(),
 });
@@ -239,7 +255,13 @@ export const PlazaBadge = z.object({
 
 export const PlazaNotice = z.object({
   noticeId: Id,
-  kind: z.enum(['work_liked', 'work_commented', 'comment_replied', 'report_resolved', 'work_removed_by_admin']),
+  kind: z.enum([
+    'work_liked',
+    'work_commented',
+    'comment_replied',
+    'report_resolved',
+    'work_removed_by_admin',
+  ]),
   workId: Id.nullable(),
   /** 例「你举报的作品已处理」「你的作品《XX》已被下架，原因：…」。 */
   text: z.string().max(300),
@@ -349,7 +371,8 @@ export const PlazaEndpoints = {
     auth: 'user',
     body: z.object({ nickname: z.string().trim().min(1).max(12), avatarMediaId: Id.nullable() }),
     response: PlazaAuthorProfile,
-    summary: '设置 / 修改广场昵称与头像（第一次发布或评论前必须设置，PLZ-02 第 2 条）；所有作品署名一起变',
+    summary:
+      '设置 / 修改广场昵称与头像（第一次发布或评论前必须设置，PLZ-02 第 2 条）；所有作品署名一起变',
   }),
   getBadge: defineEndpoint({
     method: 'GET',
@@ -402,7 +425,8 @@ export const PlazaEndpoints = {
       replyToCommentId: Id.nullable().optional(),
     }),
     response: PlazaComment,
-    summary: '评论 / 回复评论；未设置广场昵称返回 409 conflict（客户端先设置）；被停权 403 plaza_publish_forbidden',
+    summary:
+      '评论 / 回复评论；未设置广场昵称返回 409 conflict（客户端先设置）；被停权 403 plaza_publish_forbidden',
   }),
   deleteComment: defineEndpoint({
     method: 'DELETE',
@@ -425,7 +449,8 @@ export const PlazaEndpoints = {
       note: z.string().max(200).nullable().optional(),
     }),
     response: NoContent,
-    summary: '举报作品或评论（PLZ-07）；同一用户同一对象只能一次，重复返回 409 conflict；不自动隐藏',
+    summary:
+      '举报作品或评论（PLZ-07）；同一用户同一对象只能一次，重复返回 409 conflict；不自动隐藏',
   }),
   adopt: defineEndpoint({
     method: 'POST',
@@ -453,7 +478,10 @@ export const PlazaEndpoints = {
     path: `${API_PREFIX}/plaza/adoptions/:characterId/update`,
     auth: 'user',
     params: z.object({ characterId: Id }),
-    body: z.object({ decision: z.enum(['update', 'dismiss']), confirmOverwrite: z.boolean().default(false) }),
+    body: z.object({
+      decision: z.enum(['update', 'dismiss']),
+      confirmOverwrite: z.boolean().default(false),
+    }),
     response: z.object({ characterId: Id, workVersion: z.number().int().positive() }),
     summary:
       '作者发布了新版本（PLZ-05 第 4 条）：update 用新版本替换人设类字段或补充设定（我改过且未确认覆盖时 409 conflict），分类只会更严；dismiss 红点消失',
@@ -505,7 +533,11 @@ export const PlazaAdminEndpoints = {
     path: `${API_PREFIX}/admin/plaza/works/:workId/versions/:version`,
     auth: 'admin',
     params: z.object({ workId: Id, version: z.coerce.number().int().positive() }),
-    response: z.object({ snapshot: PlazaSnapshot, settings: PlazaPublishSettings, createdAt: Timestamp }),
+    response: z.object({
+      snapshot: PlazaSnapshot,
+      settings: PlazaPublishSettings,
+      createdAt: Timestamp,
+    }),
     summary: '某个版本的完整发布内容',
   }),
   removeWork: defineEndpoint({
@@ -515,7 +547,8 @@ export const PlazaAdminEndpoints = {
     params: WorkParams,
     body: AdminReason,
     response: AdminPlazaWork,
-    summary: '管理员下架（原因必填），作者收到通知且不能自行重新上架；写审计，发 plaza.work_removed',
+    summary:
+      '管理员下架（原因必填），作者收到通知且不能自行重新上架；写审计，发 plaza.work_removed',
   }),
   restoreWork: defineEndpoint({
     method: 'POST',
@@ -538,7 +571,10 @@ export const PlazaAdminEndpoints = {
       childAppearance: z.boolean(),
       reason: z.string().trim().min(1).max(200),
     }),
-    response: z.object({ work: AdminPlazaWork, affectedCharacterCount: z.number().int().nonnegative() }),
+    response: z.object({
+      work: AdminPlazaWork,
+      affectedCharacterCount: z.number().int().nonnegative(),
+    }),
     summary:
       '更正分类（只能更严，ADM-09 第 6 条）：作品及所有由它复制 / 应用 / 改编出去的角色逐个更正，受影响会话立即退出成人模式并有系统提示；放宽返回 422 plaza_classification_loosened；写审计',
   }),
@@ -546,7 +582,10 @@ export const PlazaAdminEndpoints = {
     method: 'GET',
     path: `${API_PREFIX}/admin/plaza/reports`,
     auth: 'admin',
-    query: z.object({ status: z.enum(['pending', 'dismissed', 'actioned']).optional(), cursor: z.string().optional() }),
+    query: z.object({
+      status: z.enum(['pending', 'dismissed', 'actioned']).optional(),
+      cursor: z.string().optional(),
+    }),
     response: cursorPage(AdminPlazaReport),
     summary: '举报列表（ADM-09 第 3 条）',
   }),
@@ -555,7 +594,10 @@ export const PlazaAdminEndpoints = {
     path: `${API_PREFIX}/admin/plaza/reports/:reportId/resolve`,
     auth: 'admin',
     params: z.object({ reportId: Id }),
-    body: z.object({ action: z.enum(['dismiss', 'remove_work', 'delete_comment']), reason: z.string().trim().min(1).max(200) }),
+    body: z.object({
+      action: z.enum(['dismiss', 'remove_work', 'delete_comment']),
+      reason: z.string().trim().min(1).max(200),
+    }),
     response: AdminPlazaReport,
     summary: '处理举报：驳回或下架作品 / 删除评论；通知举报人；写审计',
   }),
@@ -573,7 +615,10 @@ export const PlazaAdminEndpoints = {
     path: `${API_PREFIX}/admin/plaza/users/:userId/ban`,
     auth: 'admin',
     params: z.object({ userId: Id }),
-    body: z.object({ until: z.union([Timestamp, z.literal('permanent')]), reason: z.string().trim().min(1).max(200) }),
+    body: z.object({
+      until: z.union([Timestamp, z.literal('permanent')]),
+      reason: z.string().trim().min(1).max(200),
+    }),
     response: NoContent,
     summary: '停止发布与评论权限（ADM-09 第 4 条）：期间其作品全部不展示；写审计',
   }),

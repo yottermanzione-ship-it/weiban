@@ -80,7 +80,11 @@ export const ImageContent = z.object({
 export const VoiceContent = z.object({
   type: z.literal('voice'),
   mediaId: Id,
-  durationMs: z.number().int().positive().max(60_000 * 5),
+  durationMs: z
+    .number()
+    .int()
+    .positive()
+    .max(60_000 * 5),
   transcript: z.string().max(4000).nullable(),
 });
 

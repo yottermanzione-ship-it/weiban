@@ -52,7 +52,9 @@ export const ImportJob = z.object({
   sourceKind: ImportSourceKind,
   status: tolerantEnum(ImportJobStatus),
   /** 识别出的发言人与发言条数。 */
-  speakers: z.array(z.object({ name: z.string().max(40), messageCount: z.number().int().nonnegative() })),
+  speakers: z.array(
+    z.object({ name: z.string().max(40), messageCount: z.number().int().nonnegative() }),
+  ),
   selectedSpeaker: z.string().max(40).nullable(),
   charCount: z.number().int().nonnegative(),
   /** 超过 IMPORT_LIMITS.maxChars 时只取最近的部分（CHR-08 边界情况）。 */
@@ -107,7 +109,11 @@ export const ImporterEndpoints = {
       targetCharacterId: Id.nullable().optional(),
       sourceKind: ImportSourceKind,
       /** sourceKind = text 时的粘贴内容；超长部分服务器截取最近的部分。 */
-      text: z.string().min(1).max(IMPORT_LIMITS.maxChars * 2).optional(),
+      text: z
+        .string()
+        .min(1)
+        .max(IMPORT_LIMITS.maxChars * 2)
+        .optional(),
     }),
     response: ImportJob,
     summary:

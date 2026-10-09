@@ -36,6 +36,10 @@ export interface ChatReadPort {
   /** 结果按 seq 升序；不含正文被撤回的内容。 */
   readMessages(input: ReadMessagesInput): Promise<Message[]>;
   getMessage(messageId: string, scopes: ContentScope[]): Promise<Message | null>;
+}
+
+/** 3.0：群聊读取（提供方 chat，调用方 ai-runtime）。与 ChatReadPort 分开，避免改动已有实现。 */
+export interface ChatGroupReadPort {
   /** 3.0：用户的群聊（可按某角色是否在群内过滤），供群聊调度、拉群去重（SOC-06 第 2 条）使用。 */
   listGroupConversations(
     userId: string,
@@ -157,7 +161,10 @@ export interface ChatGroupAdminPort {
     input: { conversationId: string; title: string; byCharacterId: string | null },
   ): Promise<PortResult<Conversation, 'not_found'>>;
   /** contacts 彻底删除角色时：把该角色移出用户的所有群（不写「你将 XX 移出了群聊」，写 member_left）。 */
-  removeCharacterFromUserGroups(tx: Tx, input: { userId: string; characterId: string }): Promise<void>;
+  removeCharacterFromUserGroups(
+    tx: Tx,
+    input: { userId: string; characterId: string },
+  ): Promise<void>;
 }
 
 /** 提供方 chat；组合根把 WS 与 HTTP 连接到同一用户发送处理器。 */

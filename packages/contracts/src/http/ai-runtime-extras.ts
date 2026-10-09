@@ -99,7 +99,8 @@ export const QuietStateEndpoints = {
     path: `${API_PREFIX}/me/quiet-state`,
     auth: 'user',
     response: QuietState,
-    summary: '当前的「不方便」静默与专注安静状态（只读；P-45 由 ai-runtime 识别聊天内容自动设置，用户再发消息时提前结束）',
+    summary:
+      '当前的「不方便」静默与专注安静状态（只读；P-45 由 ai-runtime 识别聊天内容自动设置，用户再发消息时提前结束）',
   }),
 } as const;
 
