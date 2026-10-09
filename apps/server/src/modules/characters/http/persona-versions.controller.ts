@@ -2,7 +2,7 @@
  * 人设版本管理后台 HTTP 接口（ADM-06）。
  * 一一对应契约 PersonaVersionAdminEndpoints（packages/contracts/src/http/admin-content.ts）。
  */
-import { Controller, Get, HttpCode, Inject, Param, Post } from '@nestjs/common';
+import { Controller, Get, Inject, Param, Post } from '@nestjs/common';
 import { PersonaVersionAdminEndpoints as E } from '@weiban/contracts';
 import type { z } from 'zod';
 import {
