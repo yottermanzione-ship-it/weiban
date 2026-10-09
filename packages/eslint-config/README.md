@@ -10,7 +10,7 @@
 | 规则             | ESLint 规则名              | 检查什么                                                                                                                                                                                                                   |
 | ---------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | R1 公开出口      | `weiban/module-boundaries` | 其他模块只能 import `modules/<模块>/index.ts`                                                                                                                                                                              |
-| R2 层级方向      | `weiban/module-boundaries` | 下层不 import 上层；平台内核不 import 业务模块                                                                                                                                                                             |
+| R2 层级方向      | `weiban/module-boundaries` | 下层不 import 上层；平台内核不 import 业务模块；上层之间只允许 `architecture.js` 中 `UPPER_LAYER_ALLOWED_DEPS` 登记的单向依赖（ADR-0024，T-101）                                                                           |
 | R3 聊天不依赖 AI | `weiban/module-boundaries` | `modules/chat` 不 import `modules/ai-runtime`                                                                                                                                                                              |
 | R4 模型出口唯一  | `weiban/exclusive-sdk`     | 供应商 SDK 和接口域名只出现在 `modules/model-access`（检查范围：`apps/` 全部 + `packages/ai-evals`）                                                                                                                       |
 | R5 推送出口唯一  | `weiban/exclusive-sdk`     | 推送 SDK 只出现在 `modules/push`                                                                                                                                                                                           |
@@ -19,6 +19,7 @@
 | R8 数据表        | `weiban/own-schema-only`   | `pgSchema()` 和原生 SQL 只用自己的 schema                                                                                                                                                                                  |
 | R9 扣费出口唯一  | `weiban/billing-port-exit` | 规则 A：`BillingReservationPort` / `BILLING_RESERVATION_PORT` 这两个名字只能出现在 model-access、billing、装配入口、集成测试；规则 B：`estimateAndReserve` 同上；规则 C：除 platform、装配入口、集成测试外不用 `ModuleRef` |
 | R10 测试引用     | `weiban/module-boundaries` | `apps/server/test/` 只 import 模块 `index.ts`、`testing.ts`、`platform/`、`app.module.ts` / `main.ts`；生产代码不 import 任何 `testing.ts`                                                                                 |
+| 健康数据隔离     | `weiban/health-port-exit`  | `HealthReadPort` / `HEALTH_READ_PORT` 只能出现在 health、ai-runtime、装配入口、集成测试（health-data.md 第 4 节，T-059）                                                                                                   |
 
 另外两项保护边界规则本身的检查（T-015）：
 

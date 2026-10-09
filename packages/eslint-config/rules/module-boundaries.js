@@ -1,5 +1,5 @@
 /**
- * R1 公开出口、R2 层级方向、R3 聊天不依赖 AI、R10 测试引用。
+ * R1 公开出口、R2 层级方向（含上层之间的单向白名单，T-101）、R3 聊天不依赖 AI、R10 测试引用。
  * 依据：ADR-0004 第 3 节；engineering-standards.md 第 3 节（含 3.2）。
  *
  * 只检查相对路径的 import（服务器内部互相引用一律写相对路径，别名由 weiban/no-path-alias 直接报错）。
@@ -11,7 +11,7 @@
  *   - 模块的 testing.ts 只给测试用：生产代码（非测试文件）引用任何模块的 testing.ts 都报错，含本模块。
  *   - 测试文件（含模块目录内的单元测试）可以引用其他模块的 testing.ts。
  */
-import { SERVER_MODULES } from '../architecture.js';
+import { SERVER_MODULES, UPPER_LAYER_ALLOWED_DEPS } from '../architecture.js';
 import {
   STANDARDS_DOC,
   importSourceVisitors,
@@ -54,6 +54,8 @@ export default {
       r2:
         'R2 层级方向：{{from}} 不能 import {{to}}（下层不能依赖上层，只能通过事件通知上层）。见 ' +
         STANDARDS_DOC,
+      r2Upper:
+        'R2 上层之间单向：模块 {{from}} 不能 import 模块 {{to}}。上层模块之间只允许 ai-runtime → moments / growth / play / proactive、plaza → ai-runtime、importer → ai-runtime；其余改用事件，或在本模块定义端口令牌、由装配入口注入（ADR-0024）。登记表见 packages/eslint-config/architecture.js',
       r3:
         'R3 聊天不依赖 AI：modules/chat 不得 import modules/ai-runtime 的任何内容。见 ' +
         STANDARDS_DOC,
@@ -129,6 +131,14 @@ export default {
       const toRank = rankOf(to);
       if (fromRank !== null && toRank !== null && fromRank < toRank) {
         context.report({ node, messageId: 'r2', data: { from: label(from), to: label(to) } });
+      } else if (
+        from.kind === 'module' &&
+        to.kind === 'module' &&
+        SERVER_MODULES[from.module]?.layer === 'upper' &&
+        SERVER_MODULES[to.module]?.layer === 'upper' &&
+        !(UPPER_LAYER_ALLOWED_DEPS[from.module] ?? []).includes(to.module)
+      ) {
+        context.report({ node, messageId: 'r2Upper', data: { from: from.module, to: to.module } });
       }
     });
 
