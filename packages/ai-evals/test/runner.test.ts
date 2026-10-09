@@ -1,9 +1,17 @@
 import { expect, it } from 'vitest';
 import { L2_CASES } from '../cases/l2.js';
 import { evaluateOutput } from '../src/index.js';
-it('考题ID唯一且包含15个记忆与20个跨模式人设题；不冒充完整19类评测集', () => {
+it('考题ID唯一且保留15个原记忆题、5个向量/分层题与20个跨模式人设题', () => {
   expect(new Set(L2_CASES.map((c) => c.id)).size).toBe(L2_CASES.length);
-  expect(L2_CASES.filter((c) => c.category === 'memory')).toHaveLength(15);
+  const memoryIds = L2_CASES.filter((c) => c.category === 'memory').map((c) => c.id);
+  expect(memoryIds).toEqual([
+    ...Array.from({ length: 15 }, (_, i) => `MEM-L2-${String(i + 1).padStart(3, '0')}`),
+    'MEM-VEC-001',
+    'MEM-VEC-002',
+    'MEM-LAYER-001',
+    'MEM-LAYER-002',
+    'MEM-LAYER-003',
+  ]);
   expect(L2_CASES.filter((c) => c.category === 'persona')).toHaveLength(20);
 });
 it('缺人工/评审模型证据的规则匹配只能标待评审；不合规则失败优先', () => {
