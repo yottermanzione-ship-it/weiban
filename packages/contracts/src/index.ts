@@ -22,6 +22,7 @@ export * from './http/companion.js';
 export * from './http/memory.js';
 export * from './http/media.js';
 export * from './http/health.js';
+export * from './http/growth.js';
 
 // WebSocket 帧
 export * from './ws.js';
