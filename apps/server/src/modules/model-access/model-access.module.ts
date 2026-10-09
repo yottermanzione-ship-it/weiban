@@ -10,6 +10,7 @@ import { IdentityModule } from '../identity/index.js';
 import { GenerationCache } from './application/generation-cache.js';
 import { GatewayMaintenance } from './application/gateway-maintenance.js';
 import { ModelGateway } from './application/gateway.js';
+import { GatewayWebSearchProvider } from './application/web-search.js';
 import { OpenAiTextAdapter } from './infra/text-adapter.js';
 import { CatalogService } from './application/catalog.js';
 import { EmptyPriceSource } from './application/defaults.js';
@@ -32,11 +33,17 @@ import {
   MODEL_ACCESS_POLICY,
   MODEL_PRICE_SOURCE,
   UPSTREAM_PROBE,
+  WEB_SEARCH_PROVIDER,
 } from './tokens.js';
 
 @Module({
   imports: [BillingModule, IdentityModule],
-  exports: [MODEL_GATEWAY_PORT, MODEL_NOTIFICATION_READ_PORT, ADULT_MODEL_READ_PORT],
+  exports: [
+    MODEL_GATEWAY_PORT,
+    MODEL_NOTIFICATION_READ_PORT,
+    ADULT_MODEL_READ_PORT,
+    WEB_SEARCH_PROVIDER,
+  ],
   controllers: [ModelController, ModelAdminController],
   providers: [
     UpstreamService,
@@ -44,6 +51,8 @@ import {
     ModelGateway,
     GatewayMaintenance,
     { provide: MODEL_GATEWAY_PORT, useExisting: ModelGateway },
+    GatewayWebSearchProvider,
+    { provide: WEB_SEARCH_PROVIDER, useExisting: GatewayWebSearchProvider },
     { provide: TEXT_ADAPTER, useFactory: () => new OpenAiTextAdapter() },
     { provide: MODEL_GENERATION_POLICY, useExisting: POLICY_PORT },
     {

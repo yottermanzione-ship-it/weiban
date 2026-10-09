@@ -24,6 +24,8 @@ export const CompanionSettings = z.object({
   proactiveFrequency: ProactiveFrequency.optional(),
   proactiveCalls: z.boolean().optional(),
   dailyLife: z.boolean().optional(),
+  /** 3.0：该角色发语音、通话用的音色（MED-03 第 1 条，音色库见 GET /voices）；null = 用预设角色默认音色或平台默认。 */
+  voiceId: Id.nullable().optional(),
 });
 export type CompanionSettings = z.infer<typeof CompanionSettings>;
 

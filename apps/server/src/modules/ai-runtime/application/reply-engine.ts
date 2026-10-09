@@ -23,6 +23,7 @@ import { replyPlans } from '../infra/db/schema.js';
 import { ReplyPlanStore, type ReplyPlan } from './plan-store.js';
 import { ReplyContext, ReplySnapshot } from './reply-context.js';
 import { callModelForCare, careFallback } from './safety-care.js';
+import { HEALTH_LABEL } from './health-care.js';
 import { outputAllowed, replyDelay, splitReply } from '../domain/reply-rules.js';
 const Result = z.object({
   bubbles: z.array(z.string().min(1).max(4000)).min(1).max(4),
@@ -333,6 +334,7 @@ export class ReplyEngine {
             content: { type: 'text', text: result.bubbles[row.nextBubble]! },
             idempotencyKey: `reply:${row.triggerId}:${row.nextBubble}`,
             expectedScope: result.snapshot.scope,
+            ...(result.snapshot.healthUsed ? { labels: [HEALTH_LABEL] } : {}),
           },
           tx,
         );

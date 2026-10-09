@@ -112,6 +112,16 @@ export const UpdateAuthorizationRequest = z.object({
 });
 export type UpdateAuthorizationRequest = z.infer<typeof UpdateAuthorizationRequest>;
 
+// ---------- 3.0：默认值设置（P-37） ----------
+
+export const HealthSettings = z.object({
+  cycleLengthDays: z.number().int().min(15).max(60),
+  periodLengthDays: z.number().int().min(1).max(15),
+  /** false = 用户没填过，返回的是 P-37 默认值。 */
+  userProvided: z.boolean(),
+});
+export type HealthSettings = z.infer<typeof HealthSettings>;
+
 // ---------- 路由参数 ----------
 
 const CycleParams = z.object({ cycleId: Id });
@@ -195,5 +205,72 @@ export const HealthEndpoints = {
     body: UpdateAuthorizationRequest,
     response: AuthorizationResponse,
     summary: 'PLAY-01 更新授权角色列表（全量覆盖）',
+  }),
+
+  /** 3.0（T-059 交接缺口①）：用户自填的周期长度与经期天数，记录不足 2 个周期时用于预测（P-37）。 */
+  getSettings: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/me/health/settings`,
+    auth: 'user',
+    response: HealthSettings,
+    summary:
+      'PLAY-01 / P-37 用户填写的默认周期与经期天数（未填写时返回 28 / 5，userProvided = false）',
+  }),
+  updateSettings: defineEndpoint({
+    method: 'PUT',
+    path: `${API_PREFIX}/me/health/settings`,
+    auth: 'user',
+    body: HealthSettings.omit({ userProvided: true }),
+    response: HealthSettings,
+    summary: 'PLAY-01 修改默认周期与经期天数（整行加密保存）',
+  }),
+  /** 3.0（T-059 交接缺口②）：一键清空全部经期日记（PLAY-01 第 8 条）。 */
+  clearAll: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/me/health/clear`,
+    auth: 'user',
+    body: z.object({ confirm: z.literal('CLEAR') }),
+    response: z.null(),
+    summary:
+      'PLAY-01 第 8 条：物理删除全部经期记录、日记、设置与授权（不可恢复，二次确认在客户端）；角色下次生成起不再知道',
+  }),
+} as const;
+
+// ---------- 3.0：症状标签（ADM-04 第 5 条，管理员只能维护标签，看不到任何用户记录） ----------
+
+export const SymptomTag = z.object({
+  tagId: Id,
+  name: z.string().min(1).max(10),
+  order: z.number().int().nonnegative(),
+  enabled: z.boolean(),
+});
+
+export const HealthTagEndpoints = {
+  listSymptomTags: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/health/symptom-tags`,
+    auth: 'user',
+    response: z.object({ items: z.array(SymptomTag) }),
+    summary: '可选症状标签（只含启用的）',
+  }),
+} as const;
+
+export const HealthTagAdminEndpoints = {
+  listSymptomTags: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/health/symptom-tags`,
+    auth: 'admin',
+    response: z.object({ items: z.array(SymptomTag) }),
+    summary: '症状标签维护（含停用的）',
+  }),
+  putSymptomTags: defineEndpoint({
+    method: 'PUT',
+    path: `${API_PREFIX}/admin/health/symptom-tags`,
+    auth: 'admin',
+    body: z.object({
+      items: z.array(SymptomTag.omit({ tagId: true }).extend({ tagId: Id.optional() })).max(50),
+    }),
+    response: z.object({ items: z.array(SymptomTag) }),
+    summary: '整体保存标签列表（停用的标签在旧记录中照常显示）；写审计',
   }),
 } as const;

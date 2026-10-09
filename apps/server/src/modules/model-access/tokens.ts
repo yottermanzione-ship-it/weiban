@@ -51,3 +51,5 @@ export type RetryWait = (ms: number) => Promise<void>;
 export const MODEL_NOTIFICATION_READ_PORT = Symbol('weiban.model-access.notification-read');
 
 export const ADULT_MODEL_READ_PORT = Symbol('weiban.model-access.adult-model-read');
+/** 联网搜索（WebSearchProvider，prd-answers.md 第 7 节）：统一记账、统一脱敏。 */
+export const WEB_SEARCH_PROVIDER = Symbol('weiban.model-access.web-search');

@@ -39,3 +39,9 @@
 ## 注销
 
 `HealthLifecycle` 向 `USER_DATA_REGISTRY` 登记 `purgeUser` / `countUserData`（三张表）。identity 先删 DEK，删除清单再物理删除。
+
+## 3.0 补齐（2026-10-10，交接 2026-10-10-backend-lead-followups）
+
+- 默认值设置：`GET/PUT /api/v1/me/health/settings`，存在 `health.period_settings`（整行加密，AAD = `health:settings:{userId}`）。预测在记录不足 2 个周期时用用户设置，没填用 28 / 5。经期天数必须小于周期长度。
+- 一键清空：`POST /api/v1/me/health/clear`，body `{confirm:"CLEAR"}`；同一事务物理删除经期、日记、设置、授权，审计只记「已清空」。
+- 症状标签：`health.symptom_tags`（迁移 0027，带 10 个初始标签）。用户 `GET /api/v1/health/symptom-tags`（只含启用）；管理员 `GET/PUT /api/v1/admin/health/symptom-tags`（整体保存：带 tagId 更新、不带新增、列表外删除，咨询锁串行，写审计）。记日记时标签必须在启用列表里；这条日记原有的旧标签允许保留。

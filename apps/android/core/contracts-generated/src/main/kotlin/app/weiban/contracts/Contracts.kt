@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 2.5. Regenerate: pnpm android:generate
+// Contract 3.0. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "2.5"
+const val CONTRACT_VERSION: String = "3.0"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -17,6 +17,34 @@ data class AccountDeletionModuleProgress(
     @SerialName("deletedRows") val `deletedRows`: Long?,
     @SerialName("purgedAt") val `purgedAt`: Timestamp?,
 )
+
+@Serializable
+data class Achievement(
+    @SerialName("no") val `no`: Long,
+    @SerialName("key") val `key`: String,
+    @SerialName("name") val `name`: String,
+    @SerialName("condition") val `condition`: String,
+    @SerialName("group") val `group`: String,
+    @SerialName("type") val `type`: String,
+    @SerialName("unlockedAt") val `unlockedAt`: Timestamp?,
+    @SerialName("progress") val `progress`: AchievementProgress?,
+)
+
+typealias AchievementGroup = String
+
+typealias AchievementKey = String
+
+@Serializable
+data class ActionCardContent(
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "action_card",
+    @SerialName("cardKind") val `cardKind`: String,
+    @SerialName("text") val `text`: String,
+    @SerialName("actions") val `actions`: List<ActionCardContentActionsItem>,
+    @SerialName("ref") val `ref`: ActionCardContentRef?,
+)
+
+typealias ActionCardKind = String
 
 @Serializable
 data class AddAnniversaryRequest(
@@ -67,6 +95,16 @@ data class AddFamiliarityPointsResponse(
     @SerialName("familiarity") val `familiarity`: FamiliarityInfo,
     @SerialName("pointsAdded") val `pointsAdded`: Long,
     @SerialName("leveledUp") val `leveledUp`: Boolean,
+)
+
+@Serializable
+data class AddFavoritesRequest(
+    @SerialName("items") val `items`: List<AddFavoritesRequestItemsItem>,
+)
+
+@Serializable
+data class AddFavoritesRequestInput(
+    @SerialName("items") val `items`: List<AddFavoritesRequestInputItemsItem>,
 )
 
 @Serializable
@@ -260,6 +298,15 @@ data class AdminCharacterWriteInput(
 )
 
 @Serializable
+data class AdminDailyQuestion(
+    @SerialName("questionId") val `questionId`: Id,
+    @SerialName("text") val `text`: String,
+    @SerialName("tags") val `tags`: List<DailyQuestionTag>,
+    @SerialName("listed") val `listed`: Boolean,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
 data class AdminLedgerEntry(
     @SerialName("entryId") val `entryId`: Id,
     @SerialName("type") val `type`: LedgerEntryType,
@@ -276,6 +323,49 @@ data class AdminLedgerEntry(
     @SerialName("operatorUserId") val `operatorUserId`: Id?,
     @SerialName("absorbed") val `absorbed`: Boolean,
     @SerialName("safetyOverdraft") val `safetyOverdraft`: Boolean,
+)
+
+typealias AdminMediaPurpose = String
+
+@Serializable
+data class AdminPlazaReport(
+    @SerialName("reportId") val `reportId`: Id,
+    @SerialName("reporterUserId") val `reporterUserId`: Id,
+    @SerialName("target") val `target`: AdminPlazaReportTarget,
+    @SerialName("reason") val `reason`: String,
+    @SerialName("note") val `note`: String?,
+    @SerialName("status") val `status`: String,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("resolvedAt") val `resolvedAt`: Timestamp?,
+)
+
+@Serializable
+data class AdminPlazaWork(
+    @SerialName("workId") val `workId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("name") val `name`: String,
+    @SerialName("tagline") val `tagline`: String,
+    @SerialName("basis") val `basis`: String?,
+    @SerialName("basedOnPresetId") val `basedOnPresetId`: Id?,
+    @SerialName("basedOnPresetName") val `basedOnPresetName`: String?,
+    @SerialName("avatarUrl") val `avatarUrl`: String?,
+    @SerialName("author") val `author`: PlazaAuthor,
+    @SerialName("likeCount") val `likeCount`: Long,
+    @SerialName("adoptCount") val `adoptCount`: Long,
+    @SerialName("commentCount") val `commentCount`: Long,
+    @SerialName("adoptedByMe") val `adoptedByMe`: Boolean,
+    @SerialName("likedByMe") val `likedByMe`: Boolean,
+    @SerialName("currentVersion") val `currentVersion`: Long,
+    @SerialName("publishedAt") val `publishedAt`: Timestamp,
+    @SerialName("status") val `status`: String,
+    @SerialName("settings") val `settings`: PlazaPublishSettings,
+    @SerialName("snapshot") val `snapshot`: PlazaSnapshot,
+    @SerialName("versions") val `versions`: List<PlazaVersionNote>,
+    @SerialName("remixOf") val `remixOf`: AdminPlazaWorkRemixOf?,
+    @SerialName("isMine") val `isMine`: Boolean,
+    @SerialName("authorUserId") val `authorUserId`: Id,
+    @SerialName("reportCount") val `reportCount`: Long,
+    @SerialName("removedReason") val `removedReason`: String?,
 )
 
 @Serializable
@@ -305,6 +395,26 @@ data class AdminPriceVersion(
     @SerialName("note") val `note`: String?,
     @SerialName("items") val `items`: List<AdminPriceItem>,
     @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class AdminRelationWrite(
+    @SerialName("characterAId") val `characterAId`: Id,
+    @SerialName("characterBId") val `characterBId`: Id,
+    @SerialName("type") val `type`: RelationType,
+    @SerialName("label") val `label`: String?,
+    @SerialName("closeness") val `closeness`: RelationCloseness,
+    @SerialName("evidence") val `evidence`: String,
+)
+
+@Serializable
+data class AdminRelationWriteInput(
+    @SerialName("characterAId") val `characterAId`: Id,
+    @SerialName("characterBId") val `characterBId`: Id,
+    @SerialName("type") val `type`: RelationType,
+    @SerialName("label") val `label`: String? = null,
+    @SerialName("closeness") val `closeness`: RelationCloseness,
+    @SerialName("evidence") val `evidence`: String,
 )
 
 @Serializable
@@ -481,6 +591,42 @@ data class AdminUsageTotals(
     @SerialName("absorbedCostMicros") val `absorbedCostMicros`: Long,
 )
 
+@Serializable
+data class AdminVoice(
+    @SerialName("voiceId") val `voiceId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("tags") val `tags`: List<String>,
+    @SerialName("sampleMediaId") val `sampleMediaId`: Id?,
+    @SerialName("sampleUrl") val `sampleUrl`: String?,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("providerVoiceKey") val `providerVoiceKey`: String,
+    @SerialName("modelKey") val `modelKey`: String,
+    @SerialName("careFallbackMediaId") val `careFallbackMediaId`: Id?,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class AdminVoiceWrite(
+    @SerialName("name") val `name`: String,
+    @SerialName("tags") val `tags`: List<String>,
+    @SerialName("sampleMediaId") val `sampleMediaId`: Id?,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("providerVoiceKey") val `providerVoiceKey`: String,
+    @SerialName("modelKey") val `modelKey`: String,
+    @SerialName("careFallbackMediaId") val `careFallbackMediaId`: Id?,
+)
+
+@Serializable
+data class AdminVoiceWriteInput(
+    @SerialName("name") val `name`: String,
+    @SerialName("tags") val `tags`: List<String>,
+    @SerialName("sampleMediaId") val `sampleMediaId`: Id?,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("providerVoiceKey") val `providerVoiceKey`: String,
+    @SerialName("modelKey") val `modelKey`: String,
+    @SerialName("careFallbackMediaId") val `careFallbackMediaId`: Id?,
+)
+
 typealias AgeSetting = String
 
 typealias AndroidPushProvider = String
@@ -500,6 +646,16 @@ data class ApiError(
 )
 
 typealias AppTheme = String
+
+@Serializable
+data class ApprovePublicUpdateRequest(
+    @SerialName("kind") val `kind`: PublicUpdateKind? = null,
+    @SerialName("content") val `content`: String? = null,
+    @SerialName("startDate") val `startDate`: LocalDate? = null,
+    @SerialName("endDate") val `endDate`: LocalDate? = null,
+    @SerialName("effectiveDate") val `effectiveDate`: LocalDate? = null,
+    @SerialName("sourceUrl") val `sourceUrl`: String? = null,
+)
 
 @Serializable
 data class AuthResponse(
@@ -632,6 +788,209 @@ data class BillingEndpointsListLedgerResponse(
 typealias BillingOwner = String
 
 @Serializable
+data class CallAvailability(
+    @SerialName("available") val `available`: Boolean,
+    @SerialName("reason") val `reason`: String?,
+)
+
+typealias CallDirection = String
+
+@Serializable
+data class CallEndpointsAnswerCallParams(
+    @SerialName("callId") val `callId`: Id,
+)
+
+@Serializable
+data class CallEndpointsGetActiveCallResponse(
+    @SerialName("call") val `call`: CallSession?,
+)
+
+@Serializable
+data class CallEndpointsGetAvailabilityQuery(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class CallEndpointsStartCallBody(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+)
+
+typealias CallOutcome = String
+
+@Serializable
+data class CallRecordContent(
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "call_record",
+    @SerialName("callId") val `callId`: Id,
+    @SerialName("direction") val `direction`: CallDirection,
+    @SerialName("outcome") val `outcome`: String,
+    @SerialName("durationSec") val `durationSec`: Long,
+)
+
+@Serializable
+data class CallSession(
+    @SerialName("callId") val `callId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("direction") val `direction`: CallDirection,
+    @SerialName("state") val `state`: String,
+    @SerialName("outcome") val `outcome`: String?,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("answeredAt") val `answeredAt`: Timestamp?,
+    @SerialName("endedAt") val `endedAt`: Timestamp?,
+    @SerialName("durationSec") val `durationSec`: Long,
+    @SerialName("stream") val `stream`: CallStreamTicket?,
+)
+
+typealias CallState = String
+
+@Serializable(with = CallStreamClientFrameSerializer::class)
+sealed interface CallStreamClientFrame {
+    val `type`: String
+}
+
+@Serializable
+data class CallStreamClientFrameHello(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "hello",
+    @SerialName("data") val `data`: CallStreamClientFrameHelloData,
+) : CallStreamClientFrame
+
+@Serializable
+data class CallStreamClientFrameBargeIn(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "barge_in",
+    @SerialName("data") val `data`: CallStreamClientFrameBargeInData,
+) : CallStreamClientFrame
+
+@Serializable
+data class CallStreamClientFrameMute(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "mute",
+    @SerialName("data") val `data`: CallStreamClientFrameMuteData,
+) : CallStreamClientFrame
+
+@Serializable
+data class CallStreamClientFramePing(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "ping",
+    @SerialName("data") val `data`: CallStreamClientFramePingData,
+) : CallStreamClientFrame
+
+object CallStreamClientFrameSerializer : KSerializer<CallStreamClientFrame> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("CallStreamClientFrame")
+    override fun deserialize(decoder: Decoder): CallStreamClientFrame {
+        val input = decoder as JsonDecoder
+        var value = input.decodeJsonElement().jsonObject
+        val tag = value["type"]?.jsonPrimitive?.content
+        return when (tag) {
+            "hello" -> input.json.decodeFromJsonElement(CallStreamClientFrameHello.serializer(), value)
+            "barge_in" -> input.json.decodeFromJsonElement(CallStreamClientFrameBargeIn.serializer(), value)
+            "mute" -> input.json.decodeFromJsonElement(CallStreamClientFrameMute.serializer(), value)
+            "ping" -> input.json.decodeFromJsonElement(CallStreamClientFramePing.serializer(), value)
+            else -> throw SerializationException("Unknown discriminator")
+        }
+    }
+    override fun serialize(encoder: Encoder, value: CallStreamClientFrame) {
+        val output = encoder as JsonEncoder
+        val element = when (value) {
+            is CallStreamClientFrameHello -> output.json.encodeToJsonElement(CallStreamClientFrameHello.serializer(), value)
+            is CallStreamClientFrameBargeIn -> output.json.encodeToJsonElement(CallStreamClientFrameBargeIn.serializer(), value)
+            is CallStreamClientFrameMute -> output.json.encodeToJsonElement(CallStreamClientFrameMute.serializer(), value)
+            is CallStreamClientFramePing -> output.json.encodeToJsonElement(CallStreamClientFramePing.serializer(), value)
+        }
+        output.encodeJsonElement(element)
+    }
+}
+
+@Serializable(with = CallStreamServerFrameSerializer::class)
+sealed interface CallStreamServerFrame {
+    val `type`: String
+}
+
+@Serializable
+data class CallStreamServerFrameCallReady(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "call.ready",
+    @SerialName("data") val `data`: CallStreamServerFrameCallReadyData,
+) : CallStreamServerFrame
+
+@Serializable
+data class CallStreamServerFrameCallState(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "call.state",
+    @SerialName("data") val `data`: CallStreamServerFrameCallStateData,
+) : CallStreamServerFrame
+
+@Serializable
+data class CallStreamServerFrameCallAgentSpeaking(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "call.agent_speaking",
+    @SerialName("data") val `data`: CallStreamServerFrameCallAgentSpeakingData,
+) : CallStreamServerFrame
+
+@Serializable
+data class CallStreamServerFrameCallEnding(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "call.ending",
+    @SerialName("data") val `data`: CallStreamServerFrameCallEndingData,
+) : CallStreamServerFrame
+
+@Serializable
+data class CallStreamServerFrameCallError(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "call.error",
+    @SerialName("data") val `data`: CallStreamServerFrameCallErrorData,
+) : CallStreamServerFrame
+
+@Serializable
+data class CallStreamServerFramePong(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "pong",
+    @SerialName("data") val `data`: CallStreamServerFramePongData,
+) : CallStreamServerFrame
+
+object CallStreamServerFrameSerializer : KSerializer<CallStreamServerFrame> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("CallStreamServerFrame")
+    override fun deserialize(decoder: Decoder): CallStreamServerFrame {
+        val input = decoder as JsonDecoder
+        var value = input.decodeJsonElement().jsonObject
+        val tag = value["type"]?.jsonPrimitive?.content
+        return when (tag) {
+            "call.ready" -> input.json.decodeFromJsonElement(CallStreamServerFrameCallReady.serializer(), value)
+            "call.state" -> input.json.decodeFromJsonElement(CallStreamServerFrameCallState.serializer(), value)
+            "call.agent_speaking" -> input.json.decodeFromJsonElement(CallStreamServerFrameCallAgentSpeaking.serializer(), value)
+            "call.ending" -> input.json.decodeFromJsonElement(CallStreamServerFrameCallEnding.serializer(), value)
+            "call.error" -> input.json.decodeFromJsonElement(CallStreamServerFrameCallError.serializer(), value)
+            "pong" -> input.json.decodeFromJsonElement(CallStreamServerFramePong.serializer(), value)
+            else -> throw SerializationException("Unknown discriminator")
+        }
+    }
+    override fun serialize(encoder: Encoder, value: CallStreamServerFrame) {
+        val output = encoder as JsonEncoder
+        val element = when (value) {
+            is CallStreamServerFrameCallReady -> output.json.encodeToJsonElement(CallStreamServerFrameCallReady.serializer(), value)
+            is CallStreamServerFrameCallState -> output.json.encodeToJsonElement(CallStreamServerFrameCallState.serializer(), value)
+            is CallStreamServerFrameCallAgentSpeaking -> output.json.encodeToJsonElement(CallStreamServerFrameCallAgentSpeaking.serializer(), value)
+            is CallStreamServerFrameCallEnding -> output.json.encodeToJsonElement(CallStreamServerFrameCallEnding.serializer(), value)
+            is CallStreamServerFrameCallError -> output.json.encodeToJsonElement(CallStreamServerFrameCallError.serializer(), value)
+            is CallStreamServerFramePong -> output.json.encodeToJsonElement(CallStreamServerFramePong.serializer(), value)
+        }
+        output.encodeJsonElement(element)
+    }
+}
+
+@Serializable
+data class CallStreamTicket(
+    @SerialName("path") val `path`: String,
+    @SerialName("token") val `token`: String,
+    @SerialName("expiresAt") val `expiresAt`: Timestamp,
+)
+
+typealias CallUnavailableReason = String
+
+@Serializable
 data class CardAdmin(
     @SerialName("creatorNotes") val `creatorNotes`: String? = null,
     @SerialName("sourceList") val `sourceList`: List<CardAdminSourceListItem>? = null,
@@ -641,11 +1000,27 @@ data class CardAdmin(
 )
 
 @Serializable
+data class CardAlbum(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("obtained") val `obtained`: List<GrowthCard>,
+    @SerialName("locked") val `locked`: List<LockedCard>,
+)
+
+@Serializable
+data class CardAlbumSummary(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("obtainedCount") val `obtainedCount`: Long,
+    @SerialName("latestObtainedOn") val `latestObtainedOn`: LocalDate?,
+)
+
+@Serializable
 data class CardExample(
     @SerialName("id") val `id`: String,
     @SerialName("scene") val `scene`: String,
     @SerialName("turns") val `turns`: List<CardExampleTurnsItem>,
 )
+
+typealias CardKind = String
 
 @Serializable
 data class CardKnowledge(
@@ -769,6 +1144,57 @@ data class CardSpeech(
     @SerialName("typoStyle") val `typoStyle`: String? = null,
     @SerialName("forbiddenWords") val `forbiddenWords`: List<String>? = null,
     @SerialName("languageNotes") val `languageNotes`: String? = null,
+)
+
+@Serializable
+data class CardTemplate(
+    @SerialName("templateId") val `templateId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("kinds") val `kinds`: List<CardTemplateKind>,
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("url") val `url`: String,
+    @SerialName("portraitFree") val `portraitFree`: Boolean,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class CardTemplateAdminEndpointsListTemplatesResponse(
+    @SerialName("items") val `items`: List<CardTemplate>,
+)
+
+@Serializable
+data class CardTemplateAdminEndpointsUpdateTemplateBody(
+    @SerialName("name") val `name`: String? = null,
+    @SerialName("kinds") val `kinds`: List<CardTemplateKind>? = null,
+    @SerialName("mediaId") val `mediaId`: Id? = null,
+    @SerialName("portraitFree") val `portraitFree`: Boolean? = null,
+    @SerialName("enabled") val `enabled`: Boolean? = null,
+)
+
+@Serializable
+data class CardTemplateAdminEndpointsUpdateTemplateParams(
+    @SerialName("templateId") val `templateId`: Id,
+)
+
+typealias CardTemplateKind = String
+
+@Serializable
+data class CardTemplateWrite(
+    @SerialName("name") val `name`: String,
+    @SerialName("kinds") val `kinds`: List<CardTemplateKind>,
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("portraitFree") val `portraitFree`: Boolean,
+    @SerialName("enabled") val `enabled`: Boolean,
+)
+
+@Serializable
+data class CardTemplateWriteInput(
+    @SerialName("name") val `name`: String,
+    @SerialName("kinds") val `kinds`: List<CardTemplateKind>,
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("portraitFree") val `portraitFree`: Boolean,
+    @SerialName("enabled") val `enabled`: Boolean,
 )
 
 @Serializable
@@ -936,6 +1362,19 @@ data class CharacterProfile(
 typealias CharacterPublishStatus = String
 
 @Serializable
+data class CharacterRelation(
+    @SerialName("relationId") val `relationId`: Id,
+    @SerialName("characterAId") val `characterAId`: Id,
+    @SerialName("characterBId") val `characterBId`: Id,
+    @SerialName("type") val `type`: RelationType,
+    @SerialName("label") val `label`: String?,
+    @SerialName("closeness") val `closeness`: RelationCloseness,
+    @SerialName("evidence") val `evidence`: String?,
+    @SerialName("ownerUserId") val `ownerUserId`: Id?,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
 data class CharacterSummary(
     @SerialName("characterId") val `characterId`: Id,
     @SerialName("kind") val `kind`: CharacterKind,
@@ -949,6 +1388,39 @@ data class CharacterSummary(
 )
 
 @Serializable
+data class CharacterSupplementEndpointsDeleteSupplementParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class CharacterSupplementEndpointsGetSupplementParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+typealias CharacterSupplementEndpointsGetSupplementResponse = UserSupplement?
+
+@Serializable
+data class CharacterSupplementEndpointsPutSupplementBody(
+    @SerialName("text") val `text`: String,
+)
+
+@Serializable
+data class CharacterSupplementEndpointsPutSupplementParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class ChatActionEndpointsChooseMessageActionBody(
+    @SerialName("actionId") val `actionId`: String,
+)
+
+@Serializable
+data class ChatActionEndpointsChooseMessageActionParams(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("messageId") val `messageId`: Id,
+)
+
+@Serializable
 data class ChatEndpointsListConversationsResponse(
     @SerialName("items") val `items`: List<Conversation>,
 )
@@ -956,6 +1428,45 @@ data class ChatEndpointsListConversationsResponse(
 @Serializable
 data class ChatEndpointsMarkReadBody(
     @SerialName("readSeq") val `readSeq`: Seq,
+)
+
+@Serializable
+data class ChatGroupEndpointsAddMembersBody(
+    @SerialName("characterIds") val `characterIds`: List<Id>,
+)
+
+@Serializable
+data class ChatGroupEndpointsRemoveMemberParams(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class ChatGroupEndpointsRenameGroupBody(
+    @SerialName("title") val `title`: String,
+)
+
+@Serializable
+data class ChatSearchEndpointsSearchAllQuery(
+    @SerialName("q") val `q`: SearchKeyword,
+)
+
+@Serializable
+data class ChatSearchEndpointsSearchConversationParams(
+    @SerialName("conversationId") val `conversationId`: Id,
+)
+
+@Serializable
+data class ChatSearchEndpointsSearchConversationQuery(
+    @SerialName("q") val `q`: SearchKeyword,
+    @SerialName("beforeSeq") val `beforeSeq`: Long? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class ChatSearchEndpointsSearchConversationResponse(
+    @SerialName("items") val `items`: List<MessageSearchHit>,
+    @SerialName("hasMore") val `hasMore`: Boolean,
 )
 
 @Serializable
@@ -1392,6 +1903,7 @@ data class CompanionEndpointsGetForCharacterResponse(
     @SerialName("proactiveFrequency") val `proactiveFrequency`: ProactiveFrequency? = null,
     @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
+    @SerialName("voiceId") val `voiceId`: Id? = null,
 )
 
 @Serializable
@@ -1420,6 +1932,16 @@ data class CompanionSettings(
     @SerialName("proactiveFrequency") val `proactiveFrequency`: ProactiveFrequency? = null,
     @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
+    @SerialName("voiceId") val `voiceId`: Id? = null,
+)
+
+@Serializable
+data class ConfirmPublishRequest(
+    @SerialName("draftId") val `draftId`: Id,
+    @SerialName("settings") val `settings`: PlazaPublishSettings,
+    @SerialName("keptSpanIds") val `keptSpanIds`: List<String>,
+    @SerialName("avatarRightsConfirmed") val `avatarRightsConfirmed`: Boolean,
+    @SerialName("changeNote") val `changeNote`: String? = null,
 )
 
 @Serializable
@@ -1433,6 +1955,20 @@ data class Contact(
     @SerialName("conversationId") val `conversationId`: Id?,
     @SerialName("addedAt") val `addedAt`: Timestamp,
     @SerialName("relationship") val `relationship`: String? = null,
+)
+
+@Serializable
+data class ContactCardContent(
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "contact_card",
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("recommenderCharacterId") val `recommenderCharacterId`: Id,
+)
+
+@Serializable
+data class ContactCardEndpointsDismissRecommendationParams(
+    @SerialName("characterId") val `characterId`: Id,
 )
 
 typealias ContactStatus = String
@@ -1473,6 +2009,7 @@ data class Conversation(
     @SerialName("peerReadSeq") val `peerReadSeq`: Long?,
     @SerialName("createdAt") val `createdAt`: Timestamp,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("group") val `group`: ConversationGroup? = null,
 )
 
 @Serializable
@@ -1483,6 +2020,13 @@ data class ConversationParams(
 @Serializable
 data class ConversationParamsInput(
     @SerialName("conversationId") val `conversationId`: Id,
+)
+
+@Serializable
+data class ConversationSearchGroup(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("matchCount") val `matchCount`: Long,
+    @SerialName("latestHit") val `latestHit`: MessageSearchHit,
 )
 
 typealias ConversationType = String
@@ -1508,6 +2052,20 @@ data class CreateDailyEventRequest(
     @SerialName("withCharacterId") val `withCharacterId`: Id? = null,
     @SerialName("moodEffect") val `moodEffect`: String? = null,
     @SerialName("source") val `source`: DailyEventSource,
+)
+
+@Serializable
+data class CreateGroupRequest(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("characterIds") val `characterIds`: List<Id>,
+    @SerialName("title") val `title`: String? = null,
+)
+
+@Serializable
+data class CreateGroupRequestInput(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("characterIds") val `characterIds`: List<Id>,
+    @SerialName("title") val `title`: String? = null,
 )
 
 @Serializable
@@ -1549,6 +2107,46 @@ data class CreateMemoryRequest(
 )
 
 @Serializable
+data class CreateMomentsPostRequest(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("text") val `text`: String,
+    @SerialName("imageMediaIds") val `imageMediaIds`: List<Id>,
+    @SerialName("visibility") val `visibility`: MomentsVisibility,
+)
+
+@Serializable
+data class CreateMomentsPostRequestInput(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("text") val `text`: String,
+    @SerialName("imageMediaIds") val `imageMediaIds`: List<Id>,
+    @SerialName("visibility") val `visibility`: MomentsVisibilityInput,
+)
+
+@Serializable
+data class CreatePublicUpdateRequest(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("kind") val `kind`: PublicUpdateKind,
+    @SerialName("content") val `content`: String,
+    @SerialName("startDate") val `startDate`: LocalDate,
+    @SerialName("endDate") val `endDate`: LocalDate?,
+    @SerialName("effectiveDate") val `effectiveDate`: LocalDate,
+    @SerialName("sourceUrl") val `sourceUrl`: String,
+    @SerialName("status") val `status`: String,
+)
+
+@Serializable
+data class CreatePublicUpdateRequestInput(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("kind") val `kind`: PublicUpdateKind? = null,
+    @SerialName("content") val `content`: String,
+    @SerialName("startDate") val `startDate`: LocalDate,
+    @SerialName("endDate") val `endDate`: LocalDate? = null,
+    @SerialName("effectiveDate") val `effectiveDate`: LocalDate,
+    @SerialName("sourceUrl") val `sourceUrl`: String,
+    @SerialName("status") val `status`: String? = null,
+)
+
+@Serializable
 data class CreateUpstreamRequest(
     @SerialName("name") val `name`: String,
     @SerialName("kind") val `kind`: UpstreamKind,
@@ -1579,6 +2177,19 @@ data class CursorPageQuery(
     @SerialName("limit") val `limit`: Long,
 )
 
+typealias CustomCharacterOrigin = JsonElement
+
+@Serializable
+data class CustomCharacterOriginEndpointsGetOriginParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class CustomCharacterOriginEndpointsGetOriginResponse(
+    @SerialName("origin") val `origin`: CustomCharacterOrigin,
+    @SerialName("everPrivatePerson") val `everPrivatePerson`: Boolean,
+)
+
 @Serializable
 data class CycleRecord(
     @SerialName("cycleId") val `cycleId`: Id,
@@ -1587,6 +2198,16 @@ data class CycleRecord(
     @SerialName("dayLogs") val `dayLogs`: List<DayLog>,
     @SerialName("createdAt") val `createdAt`: Timestamp,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class DailyAnswerHistoryItem(
+    @SerialName("answerId") val `answerId`: Id,
+    @SerialName("date") val `date`: LocalDate,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("question") val `question`: String,
+    @SerialName("userAnswer") val `userAnswer`: String,
+    @SerialName("characterAnswer") val `characterAnswer`: String?,
 )
 
 @Serializable
@@ -1638,6 +2259,85 @@ data class DailyEventEndpointsRemoveParams(
 )
 
 typealias DailyEventSource = String
+
+@Serializable
+data class DailyQuestionAdminEndpointsCreateBody(
+    @SerialName("text") val `text`: String,
+    @SerialName("tags") val `tags`: List<DailyQuestionTag>,
+    @SerialName("listed") val `listed`: Boolean,
+)
+
+@Serializable
+data class DailyQuestionAdminEndpointsListQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("tag") val `tag`: DailyQuestionTag? = null,
+)
+
+@Serializable
+data class DailyQuestionAdminEndpointsListResponse(
+    @SerialName("items") val `items`: List<AdminDailyQuestion>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class DailyQuestionAdminEndpointsUpdateBody(
+    @SerialName("text") val `text`: String? = null,
+    @SerialName("tags") val `tags`: List<DailyQuestionTag>? = null,
+    @SerialName("listed") val `listed`: Boolean? = null,
+)
+
+@Serializable
+data class DailyQuestionAdminEndpointsUpdateParams(
+    @SerialName("questionId") val `questionId`: Id,
+)
+
+@Serializable
+data class DailyQuestionContent(
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "daily_question",
+    @SerialName("answerId") val `answerId`: Id,
+    @SerialName("questionId") val `questionId`: Id,
+    @SerialName("date") val `date`: String,
+    @SerialName("question") val `question`: String,
+    @SerialName("answer") val `answer`: String,
+)
+
+@Serializable
+data class DailyQuestionEndpointsAnswerBody(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("questionId") val `questionId`: Id,
+    @SerialName("answer") val `answer`: String,
+)
+
+@Serializable
+data class DailyQuestionEndpointsGetTodayQuery(
+    @SerialName("characterId") val `characterId`: Id? = null,
+)
+
+@Serializable
+data class DailyQuestionEndpointsListHistoryQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+)
+
+@Serializable
+data class DailyQuestionEndpointsListHistoryResponse(
+    @SerialName("items") val `items`: List<DailyAnswerHistoryItem>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+typealias DailyQuestionTag = String
+
+@Serializable
+data class DailyQuestionToday(
+    @SerialName("date") val `date`: LocalDate,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("questionId") val `questionId`: Id,
+    @SerialName("question") val `question`: String,
+    @SerialName("answer") val `answer`: DailyQuestionTodayAnswer?,
+)
+
+typealias DataSection = String
 
 @Serializable
 data class DayLog(
@@ -1693,6 +2393,19 @@ data class DraftCharacterCard(
 typealias ErrorCode = String
 
 @Serializable
+data class EventsAchievementUnlocked(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "growth.achievement_unlocked",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsAchievementUnlockedPayload,
+)
+
+@Serializable
 data class EventsAdminAlertRaised(
     @SerialName("eventId") val `eventId`: Id,
     @EncodeDefault
@@ -1702,6 +2415,32 @@ data class EventsAdminAlertRaised(
     @SerialName("producer") val `producer`: EventsModuleName,
     @SerialName("occurredAt") val `occurredAt`: Timestamp,
     @SerialName("payload") val `payload`: AdminAlertFacts,
+)
+
+@Serializable
+data class EventsAiMilestone(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "ai_runtime.milestone",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "ai_runtime",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsAiMilestonePayload,
+)
+
+@Serializable
+data class EventsAnniversaryReached(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "growth.anniversary_reached",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsAnniversaryReachedPayload,
 )
 
 @Serializable
@@ -1754,6 +2493,58 @@ data class EventsBalanceRestored(
     @SerialName("producer") val `producer`: String = "billing",
     @SerialName("occurredAt") val `occurredAt`: Timestamp,
     @SerialName("payload") val `payload`: EventsBalanceRestoredPayload,
+)
+
+@Serializable
+data class EventsCallAnswered(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "calls.call_answered",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "calls",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsCallAnsweredPayload,
+)
+
+@Serializable
+data class EventsCallEnded(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "calls.call_ended",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "calls",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsCallEndedPayload,
+)
+
+@Serializable
+data class EventsCallStarted(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "calls.call_started",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "calls",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsCallStartedPayload,
+)
+
+@Serializable
+data class EventsCardIssued(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "growth.card_issued",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsCardIssuedPayload,
 )
 
 @Serializable
@@ -1884,6 +2675,19 @@ data class EventsConversationCreated(
     @SerialName("producer") val `producer`: String = "chat",
     @SerialName("occurredAt") val `occurredAt`: Timestamp,
     @SerialName("payload") val `payload`: EventsConversationCreatedPayload,
+)
+
+@Serializable
+data class EventsDailyAnswerSubmitted(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "play.daily_answer_submitted",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "play",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDailyAnswerSubmittedPayload,
 )
 
 @Serializable(with = EventsDomainEventSerializer::class)
@@ -2269,6 +3073,474 @@ data class EventsDomainEventChatContentScopeChanged(
     @SerialName("payload") val `payload`: EventsDomainEventChatContentScopeChangedPayload,
 ) : EventsDomainEvent
 
+@Serializable
+data class EventsDomainEventCharactersRelationChanged(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "characters.relation_changed",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "characters",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventCharactersRelationChangedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventCharactersSupplementChanged(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "characters.supplement_changed",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "characters",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventCharactersSupplementChangedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventChatGroupMembersChanged(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "chat.group_members_changed",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "chat",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventChatGroupMembersChangedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventChatGroupRenamed(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "chat.group_renamed",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "chat",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventChatGroupRenamedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventChatGroupDissolved(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "chat.group_dissolved",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "chat",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventChatGroupDissolvedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventChatMessageActionChosen(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "chat.message_action_chosen",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "chat",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventChatMessageActionChosenPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventMomentsPostCreated(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "moments.post_created",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "moments",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventMomentsPostCreatedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventMomentsCommentCreated(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "moments.comment_created",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "moments",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventMomentsCommentCreatedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventMomentsPostLiked(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "moments.post_liked",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "moments",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventMomentsPostLikedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventAiRuntimeMilestone(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "ai_runtime.milestone",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "ai_runtime",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventAiRuntimeMilestonePayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventGrowthFamiliarityLeveledUp(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "growth.familiarity_leveled_up",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventGrowthFamiliarityLeveledUpPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventGrowthAnniversaryReached(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "growth.anniversary_reached",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventGrowthAnniversaryReachedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventGrowthCardIssued(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "growth.card_issued",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventGrowthCardIssuedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventGrowthAchievementUnlocked(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "growth.achievement_unlocked",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventGrowthAchievementUnlockedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventGrowthPetAdopted(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "growth.pet_adopted",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventGrowthPetAdoptedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventGrowthPetStageChanged(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "growth.pet_stage_changed",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventGrowthPetStageChangedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventGrowthPetSentAway(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "growth.pet_sent_away",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventGrowthPetSentAwayPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventGrowthPetRenamed(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "growth.pet_renamed",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventGrowthPetRenamedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventGrowthPetNamingRequested(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "growth.pet_naming_requested",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventGrowthPetNamingRequestedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventLibraryFavoriteAdded(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "library.favorite_added",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "library",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventLibraryFavoriteAddedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventLibraryShareImageGenerated(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "library.share_image_generated",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "library",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventLibraryShareImageGeneratedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventCallsCallStarted(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "calls.call_started",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "calls",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventCallsCallStartedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventCallsCallAnswered(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "calls.call_answered",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "calls",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventCallsCallAnsweredPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventCallsCallEnded(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "calls.call_ended",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "calls",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventCallsCallEndedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventImporterJobCompleted(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "importer.job_completed",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "importer",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventImporterJobCompletedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventPlazaWorkPublished(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "plaza.work_published",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "plaza",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventPlazaWorkPublishedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventPlazaWorkVersionPublished(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "plaza.work_version_published",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "plaza",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventPlazaWorkVersionPublishedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventPlazaWorkRemoved(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "plaza.work_removed",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "plaza",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventPlazaWorkRemovedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventPlayDailyAnswerSubmitted(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "play.daily_answer_submitted",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "play",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventPlayDailyAnswerSubmittedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventPlayWishlistItemChanged(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "play.wishlist_item_changed",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "play",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventPlayWishlistItemChangedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventPlayWishlistItemCompleted(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "play.wishlist_item_completed",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "play",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventPlayWishlistItemCompletedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventPlayLetterSent(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "play.letter_sent",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "play",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventPlayLetterSentPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventPlayLetterDelivered(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "play.letter_delivered",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "play",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventPlayLetterDeliveredPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventPlayFocusStarted(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "play.focus_started",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "play",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventPlayFocusStartedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventPlayFocusEnded(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "play.focus_ended",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "play",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventPlayFocusEndedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventPlayReminderSaved(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "play.reminder_saved",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "play",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventPlayReminderSavedPayload,
+) : EventsDomainEvent
+
 object EventsDomainEventSerializer : KSerializer<EventsDomainEvent> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("EventsDomainEvent")
     override fun deserialize(decoder: Decoder): EventsDomainEvent {
@@ -2305,6 +3577,42 @@ object EventsDomainEventSerializer : KSerializer<EventsDomainEvent> {
             "chat.message_recalled" -> input.json.decodeFromJsonElement(EventsDomainEventChatMessageRecalled.serializer(), value)
             "chat.read_cursor_moved" -> input.json.decodeFromJsonElement(EventsDomainEventChatReadCursorMoved.serializer(), value)
             "chat.content_scope_changed" -> input.json.decodeFromJsonElement(EventsDomainEventChatContentScopeChanged.serializer(), value)
+            "characters.relation_changed" -> input.json.decodeFromJsonElement(EventsDomainEventCharactersRelationChanged.serializer(), value)
+            "characters.supplement_changed" -> input.json.decodeFromJsonElement(EventsDomainEventCharactersSupplementChanged.serializer(), value)
+            "chat.group_members_changed" -> input.json.decodeFromJsonElement(EventsDomainEventChatGroupMembersChanged.serializer(), value)
+            "chat.group_renamed" -> input.json.decodeFromJsonElement(EventsDomainEventChatGroupRenamed.serializer(), value)
+            "chat.group_dissolved" -> input.json.decodeFromJsonElement(EventsDomainEventChatGroupDissolved.serializer(), value)
+            "chat.message_action_chosen" -> input.json.decodeFromJsonElement(EventsDomainEventChatMessageActionChosen.serializer(), value)
+            "moments.post_created" -> input.json.decodeFromJsonElement(EventsDomainEventMomentsPostCreated.serializer(), value)
+            "moments.comment_created" -> input.json.decodeFromJsonElement(EventsDomainEventMomentsCommentCreated.serializer(), value)
+            "moments.post_liked" -> input.json.decodeFromJsonElement(EventsDomainEventMomentsPostLiked.serializer(), value)
+            "ai_runtime.milestone" -> input.json.decodeFromJsonElement(EventsDomainEventAiRuntimeMilestone.serializer(), value)
+            "growth.familiarity_leveled_up" -> input.json.decodeFromJsonElement(EventsDomainEventGrowthFamiliarityLeveledUp.serializer(), value)
+            "growth.anniversary_reached" -> input.json.decodeFromJsonElement(EventsDomainEventGrowthAnniversaryReached.serializer(), value)
+            "growth.card_issued" -> input.json.decodeFromJsonElement(EventsDomainEventGrowthCardIssued.serializer(), value)
+            "growth.achievement_unlocked" -> input.json.decodeFromJsonElement(EventsDomainEventGrowthAchievementUnlocked.serializer(), value)
+            "growth.pet_adopted" -> input.json.decodeFromJsonElement(EventsDomainEventGrowthPetAdopted.serializer(), value)
+            "growth.pet_stage_changed" -> input.json.decodeFromJsonElement(EventsDomainEventGrowthPetStageChanged.serializer(), value)
+            "growth.pet_sent_away" -> input.json.decodeFromJsonElement(EventsDomainEventGrowthPetSentAway.serializer(), value)
+            "growth.pet_renamed" -> input.json.decodeFromJsonElement(EventsDomainEventGrowthPetRenamed.serializer(), value)
+            "growth.pet_naming_requested" -> input.json.decodeFromJsonElement(EventsDomainEventGrowthPetNamingRequested.serializer(), value)
+            "library.favorite_added" -> input.json.decodeFromJsonElement(EventsDomainEventLibraryFavoriteAdded.serializer(), value)
+            "library.share_image_generated" -> input.json.decodeFromJsonElement(EventsDomainEventLibraryShareImageGenerated.serializer(), value)
+            "calls.call_started" -> input.json.decodeFromJsonElement(EventsDomainEventCallsCallStarted.serializer(), value)
+            "calls.call_answered" -> input.json.decodeFromJsonElement(EventsDomainEventCallsCallAnswered.serializer(), value)
+            "calls.call_ended" -> input.json.decodeFromJsonElement(EventsDomainEventCallsCallEnded.serializer(), value)
+            "importer.job_completed" -> input.json.decodeFromJsonElement(EventsDomainEventImporterJobCompleted.serializer(), value)
+            "plaza.work_published" -> input.json.decodeFromJsonElement(EventsDomainEventPlazaWorkPublished.serializer(), value)
+            "plaza.work_version_published" -> input.json.decodeFromJsonElement(EventsDomainEventPlazaWorkVersionPublished.serializer(), value)
+            "plaza.work_removed" -> input.json.decodeFromJsonElement(EventsDomainEventPlazaWorkRemoved.serializer(), value)
+            "play.daily_answer_submitted" -> input.json.decodeFromJsonElement(EventsDomainEventPlayDailyAnswerSubmitted.serializer(), value)
+            "play.wishlist_item_changed" -> input.json.decodeFromJsonElement(EventsDomainEventPlayWishlistItemChanged.serializer(), value)
+            "play.wishlist_item_completed" -> input.json.decodeFromJsonElement(EventsDomainEventPlayWishlistItemCompleted.serializer(), value)
+            "play.letter_sent" -> input.json.decodeFromJsonElement(EventsDomainEventPlayLetterSent.serializer(), value)
+            "play.letter_delivered" -> input.json.decodeFromJsonElement(EventsDomainEventPlayLetterDelivered.serializer(), value)
+            "play.focus_started" -> input.json.decodeFromJsonElement(EventsDomainEventPlayFocusStarted.serializer(), value)
+            "play.focus_ended" -> input.json.decodeFromJsonElement(EventsDomainEventPlayFocusEnded.serializer(), value)
+            "play.reminder_saved" -> input.json.decodeFromJsonElement(EventsDomainEventPlayReminderSaved.serializer(), value)
             else -> throw SerializationException("Unknown discriminator")
         }
     }
@@ -2340,10 +3648,189 @@ object EventsDomainEventSerializer : KSerializer<EventsDomainEvent> {
             is EventsDomainEventChatMessageRecalled -> output.json.encodeToJsonElement(EventsDomainEventChatMessageRecalled.serializer(), value)
             is EventsDomainEventChatReadCursorMoved -> output.json.encodeToJsonElement(EventsDomainEventChatReadCursorMoved.serializer(), value)
             is EventsDomainEventChatContentScopeChanged -> output.json.encodeToJsonElement(EventsDomainEventChatContentScopeChanged.serializer(), value)
+            is EventsDomainEventCharactersRelationChanged -> output.json.encodeToJsonElement(EventsDomainEventCharactersRelationChanged.serializer(), value)
+            is EventsDomainEventCharactersSupplementChanged -> output.json.encodeToJsonElement(EventsDomainEventCharactersSupplementChanged.serializer(), value)
+            is EventsDomainEventChatGroupMembersChanged -> output.json.encodeToJsonElement(EventsDomainEventChatGroupMembersChanged.serializer(), value)
+            is EventsDomainEventChatGroupRenamed -> output.json.encodeToJsonElement(EventsDomainEventChatGroupRenamed.serializer(), value)
+            is EventsDomainEventChatGroupDissolved -> output.json.encodeToJsonElement(EventsDomainEventChatGroupDissolved.serializer(), value)
+            is EventsDomainEventChatMessageActionChosen -> output.json.encodeToJsonElement(EventsDomainEventChatMessageActionChosen.serializer(), value)
+            is EventsDomainEventMomentsPostCreated -> output.json.encodeToJsonElement(EventsDomainEventMomentsPostCreated.serializer(), value)
+            is EventsDomainEventMomentsCommentCreated -> output.json.encodeToJsonElement(EventsDomainEventMomentsCommentCreated.serializer(), value)
+            is EventsDomainEventMomentsPostLiked -> output.json.encodeToJsonElement(EventsDomainEventMomentsPostLiked.serializer(), value)
+            is EventsDomainEventAiRuntimeMilestone -> output.json.encodeToJsonElement(EventsDomainEventAiRuntimeMilestone.serializer(), value)
+            is EventsDomainEventGrowthFamiliarityLeveledUp -> output.json.encodeToJsonElement(EventsDomainEventGrowthFamiliarityLeveledUp.serializer(), value)
+            is EventsDomainEventGrowthAnniversaryReached -> output.json.encodeToJsonElement(EventsDomainEventGrowthAnniversaryReached.serializer(), value)
+            is EventsDomainEventGrowthCardIssued -> output.json.encodeToJsonElement(EventsDomainEventGrowthCardIssued.serializer(), value)
+            is EventsDomainEventGrowthAchievementUnlocked -> output.json.encodeToJsonElement(EventsDomainEventGrowthAchievementUnlocked.serializer(), value)
+            is EventsDomainEventGrowthPetAdopted -> output.json.encodeToJsonElement(EventsDomainEventGrowthPetAdopted.serializer(), value)
+            is EventsDomainEventGrowthPetStageChanged -> output.json.encodeToJsonElement(EventsDomainEventGrowthPetStageChanged.serializer(), value)
+            is EventsDomainEventGrowthPetSentAway -> output.json.encodeToJsonElement(EventsDomainEventGrowthPetSentAway.serializer(), value)
+            is EventsDomainEventGrowthPetRenamed -> output.json.encodeToJsonElement(EventsDomainEventGrowthPetRenamed.serializer(), value)
+            is EventsDomainEventGrowthPetNamingRequested -> output.json.encodeToJsonElement(EventsDomainEventGrowthPetNamingRequested.serializer(), value)
+            is EventsDomainEventLibraryFavoriteAdded -> output.json.encodeToJsonElement(EventsDomainEventLibraryFavoriteAdded.serializer(), value)
+            is EventsDomainEventLibraryShareImageGenerated -> output.json.encodeToJsonElement(EventsDomainEventLibraryShareImageGenerated.serializer(), value)
+            is EventsDomainEventCallsCallStarted -> output.json.encodeToJsonElement(EventsDomainEventCallsCallStarted.serializer(), value)
+            is EventsDomainEventCallsCallAnswered -> output.json.encodeToJsonElement(EventsDomainEventCallsCallAnswered.serializer(), value)
+            is EventsDomainEventCallsCallEnded -> output.json.encodeToJsonElement(EventsDomainEventCallsCallEnded.serializer(), value)
+            is EventsDomainEventImporterJobCompleted -> output.json.encodeToJsonElement(EventsDomainEventImporterJobCompleted.serializer(), value)
+            is EventsDomainEventPlazaWorkPublished -> output.json.encodeToJsonElement(EventsDomainEventPlazaWorkPublished.serializer(), value)
+            is EventsDomainEventPlazaWorkVersionPublished -> output.json.encodeToJsonElement(EventsDomainEventPlazaWorkVersionPublished.serializer(), value)
+            is EventsDomainEventPlazaWorkRemoved -> output.json.encodeToJsonElement(EventsDomainEventPlazaWorkRemoved.serializer(), value)
+            is EventsDomainEventPlayDailyAnswerSubmitted -> output.json.encodeToJsonElement(EventsDomainEventPlayDailyAnswerSubmitted.serializer(), value)
+            is EventsDomainEventPlayWishlistItemChanged -> output.json.encodeToJsonElement(EventsDomainEventPlayWishlistItemChanged.serializer(), value)
+            is EventsDomainEventPlayWishlistItemCompleted -> output.json.encodeToJsonElement(EventsDomainEventPlayWishlistItemCompleted.serializer(), value)
+            is EventsDomainEventPlayLetterSent -> output.json.encodeToJsonElement(EventsDomainEventPlayLetterSent.serializer(), value)
+            is EventsDomainEventPlayLetterDelivered -> output.json.encodeToJsonElement(EventsDomainEventPlayLetterDelivered.serializer(), value)
+            is EventsDomainEventPlayFocusStarted -> output.json.encodeToJsonElement(EventsDomainEventPlayFocusStarted.serializer(), value)
+            is EventsDomainEventPlayFocusEnded -> output.json.encodeToJsonElement(EventsDomainEventPlayFocusEnded.serializer(), value)
+            is EventsDomainEventPlayReminderSaved -> output.json.encodeToJsonElement(EventsDomainEventPlayReminderSaved.serializer(), value)
         }
         output.encodeJsonElement(element)
     }
 }
+
+@Serializable
+data class EventsFamiliarityLeveledUp(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "growth.familiarity_leveled_up",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsFamiliarityLeveledUpPayload,
+)
+
+@Serializable
+data class EventsFavoriteAdded(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "library.favorite_added",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "library",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsFavoriteAddedPayload,
+)
+
+@Serializable
+data class EventsFocusEnded(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "play.focus_ended",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "play",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsFocusEndedPayload,
+)
+
+@Serializable
+data class EventsFocusStarted(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "play.focus_started",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "play",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsFocusStartedPayload,
+)
+
+@Serializable
+data class EventsGroupDissolved(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "chat.group_dissolved",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "chat",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsGroupDissolvedPayload,
+)
+
+@Serializable
+data class EventsGroupMembersChanged(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "chat.group_members_changed",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "chat",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsGroupMembersChangedPayload,
+)
+
+@Serializable
+data class EventsGroupRenamed(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "chat.group_renamed",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "chat",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsGroupRenamedPayload,
+)
+
+@Serializable
+data class EventsImportJobCompleted(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "importer.job_completed",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "importer",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsImportJobCompletedPayload,
+)
+
+@Serializable
+data class EventsLetterDelivered(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "play.letter_delivered",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "play",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsLetterDeliveredPayload,
+)
+
+@Serializable
+data class EventsLetterSent(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "play.letter_sent",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "play",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsLetterSentPayload,
+)
+
+@Serializable
+data class EventsMessageActionChosen(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "chat.message_action_chosen",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "chat",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsMessageActionChosenPayload,
+)
 
 @Serializable
 data class EventsMessageCreated(
@@ -2400,6 +3887,45 @@ data class EventsModelStatusChanged(
 typealias EventsModuleName = String
 
 @Serializable
+data class EventsMomentsCommentCreated(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "moments.comment_created",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "moments",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsMomentsCommentCreatedPayload,
+)
+
+@Serializable
+data class EventsMomentsPostCreated(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "moments.post_created",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "moments",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsMomentsPostCreatedPayload,
+)
+
+@Serializable
+data class EventsMomentsPostLiked(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "moments.post_liked",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "moments",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsMomentsPostLikedPayload,
+)
+
+@Serializable
 data class EventsNotificationSettingsUpdated(
     @SerialName("eventId") val `eventId`: Id,
     @EncodeDefault
@@ -2423,6 +3949,110 @@ data class EventsPersonaVersionPublished(
     @SerialName("producer") val `producer`: String = "characters",
     @SerialName("occurredAt") val `occurredAt`: Timestamp,
     @SerialName("payload") val `payload`: EventsPersonaVersionPublishedPayload,
+)
+
+@Serializable
+data class EventsPetAdopted(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "growth.pet_adopted",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsPetAdoptedPayload,
+)
+
+@Serializable
+data class EventsPetNamingRequested(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "growth.pet_naming_requested",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsPetNamingRequestedPayload,
+)
+
+@Serializable
+data class EventsPetRenamed(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "growth.pet_renamed",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsPetRenamedPayload,
+)
+
+@Serializable
+data class EventsPetSentAway(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "growth.pet_sent_away",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsPetSentAwayPayload,
+)
+
+@Serializable
+data class EventsPetStageChanged(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "growth.pet_stage_changed",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "growth",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsPetStageChangedPayload,
+)
+
+@Serializable
+data class EventsPlazaWorkPublished(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "plaza.work_published",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "plaza",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsPlazaWorkPublishedPayload,
+)
+
+@Serializable
+data class EventsPlazaWorkRemoved(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "plaza.work_removed",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "plaza",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsPlazaWorkRemovedPayload,
+)
+
+@Serializable
+data class EventsPlazaWorkVersionPublished(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "plaza.work_version_published",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "plaza",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsPlazaWorkVersionPublishedPayload,
 )
 
 @Serializable
@@ -2465,6 +4095,32 @@ data class EventsReadCursorMoved(
 )
 
 @Serializable
+data class EventsRelationChanged(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "characters.relation_changed",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "characters",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsRelationChangedPayload,
+)
+
+@Serializable
+data class EventsReminderSaved(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "play.reminder_saved",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "play",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsReminderSavedPayload,
+)
+
+@Serializable
 data class EventsSessionRevoked(
     @SerialName("eventId") val `eventId`: Id,
     @EncodeDefault
@@ -2475,6 +4131,32 @@ data class EventsSessionRevoked(
     @SerialName("producer") val `producer`: String = "identity",
     @SerialName("occurredAt") val `occurredAt`: Timestamp,
     @SerialName("payload") val `payload`: EventsSessionRevokedPayload,
+)
+
+@Serializable
+data class EventsShareImageGenerated(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "library.share_image_generated",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "library",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsShareImageGeneratedPayload,
+)
+
+@Serializable
+data class EventsSupplementChanged(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "characters.supplement_changed",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "characters",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsSupplementChangedPayload,
 )
 
 @Serializable
@@ -2528,6 +4210,32 @@ data class EventsUserRegistered(
     @SerialName("payload") val `payload`: EventsUserRegisteredPayload,
 )
 
+@Serializable
+data class EventsWishlistItemChanged(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "play.wishlist_item_changed",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "play",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsWishlistItemChangedPayload,
+)
+
+@Serializable
+data class EventsWishlistItemCompleted(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "play.wishlist_item_completed",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "play",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsWishlistItemCompletedPayload,
+)
+
 typealias FamiliarityEventType = String
 
 @Serializable
@@ -2542,7 +4250,134 @@ data class FamiliarityInfo(
 
 typealias FamiliarityLevel = Long
 
+@Serializable
+data class Favorite(
+    @SerialName("favoriteId") val `favoriteId`: Id,
+    @SerialName("source") val `source`: FavoriteSource,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("content") val `content`: ReceivedMessageContent,
+    @SerialName("extraImages") val `extraImages`: List<Id>,
+    @SerialName("shareable") val `shareable`: Boolean,
+    @SerialName("notShareableReason") val `notShareableReason`: String?,
+    @SerialName("sourceCreatedAt") val `sourceCreatedAt`: Timestamp,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+typealias FavoriteSource = JsonElement
+
+@Serializable
+data class FocusEndpointsEndParams(
+    @SerialName("focusId") val `focusId`: Id,
+)
+
+@Serializable
+data class FocusEndpointsGetActiveResponse(
+    @SerialName("session") val `session`: FocusSession?,
+)
+
+@Serializable
+data class FocusEndpointsStartBody(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("minutes") val `minutes`: Long,
+    @SerialName("note") val `note`: String? = null,
+)
+
+@Serializable
+data class FocusSession(
+    @SerialName("focusId") val `focusId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("plannedMinutes") val `plannedMinutes`: Long,
+    @SerialName("note") val `note`: String?,
+    @SerialName("startedAt") val `startedAt`: Timestamp,
+    @SerialName("endsAt") val `endsAt`: Timestamp,
+    @SerialName("endedAt") val `endedAt`: Timestamp?,
+    @SerialName("result") val `result`: String,
+)
+
 typealias Gender = String
+
+@Serializable
+data class GlobalSearchResult(
+    @SerialName("characterIds") val `characterIds`: List<Id>,
+    @SerialName("groupConversationIds") val `groupConversationIds`: List<Id>,
+    @SerialName("messages") val `messages`: List<ConversationSearchGroup>,
+)
+
+@Serializable
+data class GroupCompanionEndpointsGetSettingsParams(
+    @SerialName("conversationId") val `conversationId`: Id,
+)
+
+@Serializable
+data class GroupCompanionEndpointsListModesResponse(
+    @SerialName("items") val `items`: List<GroupCompanionEndpointsListModesResponseItemsItem>,
+)
+
+@Serializable
+data class GroupCompanionEndpointsUpdateSettingsBody(
+    @SerialName("instantReply") val `instantReply`: Boolean? = null,
+    @SerialName("selfChatEnabled") val `selfChatEnabled`: Boolean? = null,
+    @SerialName("scenarioMode") val `scenarioMode`: ScenarioMode? = null,
+)
+
+@Serializable
+data class GroupCompanionSettings(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("instantReply") val `instantReply`: Boolean,
+    @SerialName("selfChatEnabled") val `selfChatEnabled`: Boolean,
+    @SerialName("scenarioMode") val `scenarioMode`: String,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class GroupParams(
+    @SerialName("conversationId") val `conversationId`: Id,
+)
+
+@Serializable
+data class GroupParamsInput(
+    @SerialName("conversationId") val `conversationId`: Id,
+)
+
+@Serializable
+data class GrowthCard(
+    @SerialName("cardId") val `cardId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("serialNo") val `serialNo`: Long,
+    @SerialName("title") val `title`: String,
+    @SerialName("line") val `line`: String,
+    @SerialName("obtainedOn") val `obtainedOn`: LocalDate,
+    @SerialName("face") val `face`: GrowthCardFace,
+    @SerialName("sourceMessageIds") val `sourceMessageIds`: List<Id>,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class GrowthCardEndpointsGetAlbumParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class GrowthCardEndpointsGetCardParams(
+    @SerialName("cardId") val `cardId`: Id,
+)
+
+@Serializable
+data class GrowthCardEndpointsListAchievementsResponse(
+    @SerialName("items") val `items`: List<Achievement>,
+)
+
+@Serializable
+data class GrowthCardEndpointsListAlbumsResponse(
+    @SerialName("items") val `items`: List<CardAlbumSummary>,
+)
+
+@Serializable
+data class GrowthCardEndpointsListFamiliarityResponse(
+    @SerialName("items") val `items`: List<FamiliarityInfo>,
+)
 
 @Serializable
 data class GrowthEndpointsAddAnniversaryParams(
@@ -2572,6 +4407,14 @@ data class GrowthEndpointsRemoveAnniversaryParams(
 
 typealias GrowthEndpointsRemoveAnniversaryResponse = JsonElement?
 
+@Serializable
+data class HealthEndpointsClearAllBody(
+    @EncodeDefault
+    @SerialName("confirm") val `confirm`: String = "CLEAR",
+)
+
+typealias HealthEndpointsClearAllResponse = JsonElement?
+
 typealias HealthEndpointsDeleteCycleResponse = JsonElement?
 
 @Serializable
@@ -2589,6 +4432,39 @@ data class HealthEndpointsListCyclesResponse(
 @Serializable
 data class HealthEndpointsUpdateCycleParams(
     @SerialName("cycleId") val `cycleId`: Id,
+)
+
+@Serializable
+data class HealthEndpointsUpdateSettingsBody(
+    @SerialName("cycleLengthDays") val `cycleLengthDays`: Long,
+    @SerialName("periodLengthDays") val `periodLengthDays`: Long,
+)
+
+@Serializable
+data class HealthSettings(
+    @SerialName("cycleLengthDays") val `cycleLengthDays`: Long,
+    @SerialName("periodLengthDays") val `periodLengthDays`: Long,
+    @SerialName("userProvided") val `userProvided`: Boolean,
+)
+
+@Serializable
+data class HealthTagAdminEndpointsListSymptomTagsResponse(
+    @SerialName("items") val `items`: List<SymptomTag>,
+)
+
+@Serializable
+data class HealthTagAdminEndpointsPutSymptomTagsBody(
+    @SerialName("items") val `items`: List<HealthTagAdminEndpointsPutSymptomTagsBodyItemsItem>,
+)
+
+@Serializable
+data class HealthTagAdminEndpointsPutSymptomTagsResponse(
+    @SerialName("items") val `items`: List<SymptomTag>,
+)
+
+@Serializable
+data class HealthTagEndpointsListSymptomTagsResponse(
+    @SerialName("items") val `items`: List<SymptomTag>,
 )
 
 typealias HexColor = String
@@ -2666,6 +4542,95 @@ data class IdentityEndpointsRevokeSessionParams(
 )
 
 @Serializable
+data class ImageContent(
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "image",
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("width") val `width`: Long?,
+    @SerialName("height") val `height`: Long?,
+)
+
+@Serializable
+data class ImageContentInput(
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "image",
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("width") val `width`: Long?,
+    @SerialName("height") val `height`: Long?,
+)
+
+typealias ImportFailure = String
+
+@Serializable
+data class ImportJob(
+    @SerialName("jobId") val `jobId`: Id,
+    @SerialName("kind") val `kind`: ImportKind,
+    @SerialName("targetCharacterId") val `targetCharacterId`: Id?,
+    @SerialName("sourceKind") val `sourceKind`: ImportSourceKind,
+    @SerialName("status") val `status`: String,
+    @SerialName("speakers") val `speakers`: List<ImportJobSpeakersItem>,
+    @SerialName("selectedSpeaker") val `selectedSpeaker`: String?,
+    @SerialName("charCount") val `charCount`: Long,
+    @SerialName("truncated") val `truncated`: Boolean,
+    @SerialName("estimatedMicros") val `estimatedMicros`: Long?,
+    @SerialName("progress") val `progress`: Long,
+    @SerialName("keepRaw") val `keepRaw`: Boolean,
+    @SerialName("rawDeletedAt") val `rawDeletedAt`: Timestamp?,
+    @SerialName("failure") val `failure`: String?,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+typealias ImportJobStatus = String
+
+typealias ImportKind = String
+
+typealias ImportResult = JsonElement
+
+typealias ImportResultInput = JsonElement
+
+typealias ImportSourceKind = String
+
+@Serializable
+data class ImporterEndpointsConfirmDialogueBody(
+    @SerialName("lines") val `lines`: List<RecognizedDialogueLineInput>? = null,
+)
+
+@Serializable
+data class ImporterEndpointsCreateJobBody(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("kind") val `kind`: ImportKind,
+    @SerialName("targetCharacterId") val `targetCharacterId`: Id? = null,
+    @SerialName("sourceKind") val `sourceKind`: ImportSourceKind,
+    @SerialName("text") val `text`: String? = null,
+)
+
+@Serializable
+data class ImporterEndpointsGetRecognizedDialogueResponse(
+    @SerialName("items") val `items`: List<RecognizedDialogueLine>,
+)
+
+@Serializable
+data class ImporterEndpointsListJobsResponse(
+    @SerialName("items") val `items`: List<ImportJob>,
+)
+
+@Serializable
+data class ImporterEndpointsSelectSpeakerBody(
+    @SerialName("speaker") val `speaker`: String,
+)
+
+@Serializable
+data class ImporterEndpointsStartBody(
+    @SerialName("keepRaw") val `keepRaw`: Boolean? = null,
+)
+
+@Serializable
+data class ImporterEndpointsUploadFileParams(
+    @SerialName("jobId") val `jobId`: Id,
+)
+
+@Serializable
 data class Invite(
     @SerialName("code") val `code`: String,
     @SerialName("bonusMicros") val `bonusMicros`: Long? = null,
@@ -2690,6 +4655,149 @@ data class LedgerEntry(
 typealias LedgerEntryType = String
 
 @Serializable
+data class Letter(
+    @SerialName("letterId") val `letterId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("direction") val `direction`: String,
+    @SerialName("status") val `status`: String,
+    @SerialName("body") val `body`: String?,
+    @SerialName("inReplyToLetterId") val `inReplyToLetterId`: Id?,
+    @SerialName("expectedDeliveryDate") val `expectedDeliveryDate`: LocalDate?,
+    @SerialName("sentAt") val `sentAt`: Timestamp?,
+    @SerialName("deliveredAt") val `deliveredAt`: Timestamp?,
+    @SerialName("readAt") val `readAt`: Timestamp?,
+    @SerialName("messageId") val `messageId`: Id?,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class LetterContent(
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "letter",
+    @SerialName("letterId") val `letterId`: Id,
+    @SerialName("direction") val `direction`: String,
+    @SerialName("body") val `body`: String,
+)
+
+@Serializable
+data class LetterEndpointsGetBadgeResponse(
+    @SerialName("unreadCount") val `unreadCount`: Long,
+)
+
+@Serializable
+data class LetterEndpointsGetLetterParams(
+    @SerialName("letterId") val `letterId`: Id,
+)
+
+@Serializable
+data class LetterEndpointsListLettersQuery(
+    @SerialName("box") val `box`: String,
+    @SerialName("characterId") val `characterId`: Id? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+)
+
+@Serializable
+data class LetterEndpointsListLettersResponse(
+    @SerialName("items") val `items`: List<Letter>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class LetterEndpointsSaveDraftBody(
+    @SerialName("body") val `body`: String,
+)
+
+@Serializable
+data class LetterEndpointsSaveDraftParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class LetterEndpointsSendLetterBody(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("body") val `body`: String,
+)
+
+@Serializable
+data class LetterEndpointsSendLetterResponse(
+    @SerialName("letter") val `letter`: Letter,
+    @SerialName("replyDelayed") val `replyDelayed`: Boolean,
+)
+
+typealias LetterStatus = String
+
+@Serializable
+data class LibraryEndpointsAddFavoritesResponse(
+    @SerialName("items") val `items`: List<Favorite>,
+)
+
+@Serializable
+data class LibraryEndpointsListFavoritesQuery(
+    @SerialName("characterId") val `characterId`: Id? = null,
+    @SerialName("q") val `q`: String? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class LibraryEndpointsListFavoritesResponse(
+    @SerialName("items") val `items`: List<Favorite>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class LibraryEndpointsRemoveFavoriteParams(
+    @SerialName("favoriteId") val `favoriteId`: Id,
+)
+
+@Serializable
+data class LibrarySticker(
+    @SerialName("stickerId") val `stickerId`: Id,
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("url") val `url`: String,
+    @SerialName("description") val `description`: String,
+    @SerialName("packId") val `packId`: Id,
+)
+
+typealias LinkAppHint = String
+
+@Serializable
+data class LinkContent(
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "link",
+    @SerialName("url") val `url`: String,
+    @SerialName("title") val `title`: String,
+    @SerialName("source") val `source`: String?,
+    @SerialName("description") val `description`: String?,
+    @SerialName("coverMediaId") val `coverMediaId`: Id?,
+    @SerialName("appHint") val `appHint`: String,
+)
+
+@Serializable
+data class LinkContentInput(
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "link",
+    @SerialName("url") val `url`: String,
+    @SerialName("title") val `title`: String,
+    @SerialName("source") val `source`: String?,
+    @SerialName("description") val `description`: String?,
+    @SerialName("coverMediaId") val `coverMediaId`: Id?,
+    @SerialName("appHint") val `appHint`: String,
+)
+
+@Serializable
+data class LinkPreview(
+    @SerialName("url") val `url`: String,
+    @SerialName("title") val `title`: String,
+    @SerialName("source") val `source`: String?,
+    @SerialName("description") val `description`: String?,
+    @SerialName("coverMediaId") val `coverMediaId`: Id?,
+    @SerialName("appHint") val `appHint`: String,
+    @SerialName("reachable") val `reachable`: Boolean,
+)
+
+@Serializable
 data class ListMessagesQuery(
     @SerialName("afterSeq") val `afterSeq`: Long? = null,
     @SerialName("beforeSeq") val `beforeSeq`: Long? = null,
@@ -2703,9 +4811,38 @@ data class ListMessagesQueryInput(
     @SerialName("limit") val `limit`: Long? = null,
 )
 
+@Serializable
+data class ListPlazaWorksQuery(
+    @SerialName("q") val `q`: String? = null,
+    @SerialName("sort") val `sort`: PlazaSort,
+    @SerialName("kind") val `kind`: PlazaWorkKind? = null,
+    @SerialName("basis") val `basis`: CharacterBasis? = null,
+    @SerialName("authorId") val `authorId`: Id? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long,
+)
+
+@Serializable
+data class ListPlazaWorksQueryInput(
+    @SerialName("q") val `q`: String? = null,
+    @SerialName("sort") val `sort`: PlazaSort? = null,
+    @SerialName("kind") val `kind`: PlazaWorkKind? = null,
+    @SerialName("basis") val `basis`: CharacterBasis? = null,
+    @SerialName("authorId") val `authorId`: Id? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
 typealias LocalDate = String
 
 typealias LocalTime = String
+
+@Serializable
+data class LockedCard(
+    @SerialName("kind") val `kind`: String,
+    @SerialName("title") val `title`: String,
+    @SerialName("condition") val `condition`: String,
+)
 
 @Serializable
 data class LoginRequest(
@@ -2725,8 +4862,7 @@ data class LoginRequestInput(
 
 @Serializable
 data class MediaAdminEndpointsAdminUploadQuery(
-    @EncodeDefault
-    @SerialName("purpose") val `purpose`: String = "character_avatar",
+    @SerialName("purpose") val `purpose`: AdminMediaPurpose,
 )
 
 @Serializable
@@ -2752,9 +4888,19 @@ data class MediaEndpointsUploadQuery(
 )
 
 @Serializable
+data class MediaExtraEndpointsGetTranscriptParams(
+    @SerialName("mediaId") val `mediaId`: Id,
+)
+
+@Serializable
+data class MediaExtraEndpointsPreviewLinkBody(
+    @SerialName("url") val `url`: String,
+)
+
+@Serializable
 data class MediaObject(
     @SerialName("mediaId") val `mediaId`: Id,
-    @SerialName("purpose") val `purpose`: MediaPurpose,
+    @SerialName("purpose") val `purpose`: String,
     @SerialName("mimeType") val `mimeType`: String,
     @SerialName("sizeBytes") val `sizeBytes`: Long,
     @SerialName("width") val `width`: Long?,
@@ -2762,9 +4908,18 @@ data class MediaObject(
     @SerialName("url") val `url`: String,
     @SerialName("urlExpiresAt") val `urlExpiresAt`: Timestamp,
     @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("thumbnailUrl") val `thumbnailUrl`: String? = null,
+    @SerialName("durationMs") val `durationMs`: Long? = null,
 )
 
 typealias MediaPurpose = String
+
+@Serializable
+data class MediaTranscript(
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("status") val `status`: String,
+    @SerialName("text") val `text`: String?,
+)
 
 typealias MemoryCategory = String
 
@@ -2812,6 +4967,19 @@ data class MemoryEntry(
 
 typealias MemorySharingClass = String
 
+@Serializable
+data class MemorySharingEndpointsUpdateBody(
+    @SerialName("level") val `level`: MemorySharingLevel,
+)
+
+typealias MemorySharingLevel = String
+
+@Serializable
+data class MemorySharingSettings(
+    @SerialName("level") val `level`: MemorySharingLevel,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
 typealias MemoryStatus = String
 
 typealias MemoryVisibility = String
@@ -2831,6 +4999,7 @@ data class Message(
     @SerialName("clientMsgId") val `clientMsgId`: ClientMsgId?,
     @SerialName("createdAt") val `createdAt`: Timestamp,
     @SerialName("recalledAt") val `recalledAt`: Timestamp?,
+    @SerialName("actionChoice") val `actionChoice`: MessageActionChoice? = null,
 )
 
 @Serializable
@@ -2838,6 +5007,8 @@ data class MessageAck(
     @SerialName("clientMsgId") val `clientMsgId`: ClientMsgId,
     @SerialName("message") val `message`: Message,
 )
+
+typealias MessageActionStyle = String
 
 @Serializable(with = MessageContentSerializer::class)
 sealed interface MessageContent {
@@ -2849,6 +5020,7 @@ data class MessageContentText(
     @EncodeDefault
     @SerialName("type") override val `type`: String = "text",
     @SerialName("text") val `text`: String,
+    @SerialName("mentions") val `mentions`: List<Id>? = null,
 ) : MessageContent
 
 @Serializable
@@ -2866,6 +5038,95 @@ data class MessageContentSystem(
     @SerialName("params") val `params`: Map<String, MessageContentSystemParamsValue>,
 ) : MessageContent
 
+@Serializable
+data class MessageContentImage(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "image",
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("width") val `width`: Long?,
+    @SerialName("height") val `height`: Long?,
+) : MessageContent
+
+@Serializable
+data class MessageContentVoice(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "voice",
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("durationMs") val `durationMs`: Long,
+    @SerialName("transcript") val `transcript`: String?,
+) : MessageContent
+
+@Serializable
+data class MessageContentSticker(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "sticker",
+    @SerialName("stickerId") val `stickerId`: Id,
+    @SerialName("source") val `source`: String,
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("description") val `description`: String?,
+) : MessageContent
+
+@Serializable
+data class MessageContentLink(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "link",
+    @SerialName("url") val `url`: String,
+    @SerialName("title") val `title`: String,
+    @SerialName("source") val `source`: String?,
+    @SerialName("description") val `description`: String?,
+    @SerialName("coverMediaId") val `coverMediaId`: Id?,
+    @SerialName("appHint") val `appHint`: String,
+) : MessageContent
+
+@Serializable
+data class MessageContentContactCard(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "contact_card",
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("recommenderCharacterId") val `recommenderCharacterId`: Id,
+) : MessageContent
+
+@Serializable
+data class MessageContentCallRecord(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "call_record",
+    @SerialName("callId") val `callId`: Id,
+    @SerialName("direction") val `direction`: CallDirection,
+    @SerialName("outcome") val `outcome`: String,
+    @SerialName("durationSec") val `durationSec`: Long,
+) : MessageContent
+
+@Serializable
+data class MessageContentLetter(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "letter",
+    @SerialName("letterId") val `letterId`: Id,
+    @SerialName("direction") val `direction`: String,
+    @SerialName("body") val `body`: String,
+) : MessageContent
+
+@Serializable
+data class MessageContentDailyQuestion(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "daily_question",
+    @SerialName("answerId") val `answerId`: Id,
+    @SerialName("questionId") val `questionId`: Id,
+    @SerialName("date") val `date`: String,
+    @SerialName("question") val `question`: String,
+    @SerialName("answer") val `answer`: String,
+) : MessageContent
+
+@Serializable
+data class MessageContentActionCard(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "action_card",
+    @SerialName("cardKind") val `cardKind`: String,
+    @SerialName("text") val `text`: String,
+    @SerialName("actions") val `actions`: List<MessageContentActionCardActionsItem>,
+    @SerialName("ref") val `ref`: MessageContentActionCardRef?,
+) : MessageContent
+
 object MessageContentSerializer : KSerializer<MessageContent> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("MessageContent")
     override fun deserialize(decoder: Decoder): MessageContent {
@@ -2876,6 +5137,15 @@ object MessageContentSerializer : KSerializer<MessageContent> {
             "text" -> input.json.decodeFromJsonElement(MessageContentText.serializer(), value)
             "nudge" -> input.json.decodeFromJsonElement(MessageContentNudge.serializer(), value)
             "system" -> input.json.decodeFromJsonElement(MessageContentSystem.serializer(), value)
+            "image" -> input.json.decodeFromJsonElement(MessageContentImage.serializer(), value)
+            "voice" -> input.json.decodeFromJsonElement(MessageContentVoice.serializer(), value)
+            "sticker" -> input.json.decodeFromJsonElement(MessageContentSticker.serializer(), value)
+            "link" -> input.json.decodeFromJsonElement(MessageContentLink.serializer(), value)
+            "contact_card" -> input.json.decodeFromJsonElement(MessageContentContactCard.serializer(), value)
+            "call_record" -> input.json.decodeFromJsonElement(MessageContentCallRecord.serializer(), value)
+            "letter" -> input.json.decodeFromJsonElement(MessageContentLetter.serializer(), value)
+            "daily_question" -> input.json.decodeFromJsonElement(MessageContentDailyQuestion.serializer(), value)
+            "action_card" -> input.json.decodeFromJsonElement(MessageContentActionCard.serializer(), value)
             else -> throw SerializationException("Unknown discriminator")
         }
     }
@@ -2885,6 +5155,15 @@ object MessageContentSerializer : KSerializer<MessageContent> {
             is MessageContentText -> output.json.encodeToJsonElement(MessageContentText.serializer(), value)
             is MessageContentNudge -> output.json.encodeToJsonElement(MessageContentNudge.serializer(), value)
             is MessageContentSystem -> output.json.encodeToJsonElement(MessageContentSystem.serializer(), value)
+            is MessageContentImage -> output.json.encodeToJsonElement(MessageContentImage.serializer(), value)
+            is MessageContentVoice -> output.json.encodeToJsonElement(MessageContentVoice.serializer(), value)
+            is MessageContentSticker -> output.json.encodeToJsonElement(MessageContentSticker.serializer(), value)
+            is MessageContentLink -> output.json.encodeToJsonElement(MessageContentLink.serializer(), value)
+            is MessageContentContactCard -> output.json.encodeToJsonElement(MessageContentContactCard.serializer(), value)
+            is MessageContentCallRecord -> output.json.encodeToJsonElement(MessageContentCallRecord.serializer(), value)
+            is MessageContentLetter -> output.json.encodeToJsonElement(MessageContentLetter.serializer(), value)
+            is MessageContentDailyQuestion -> output.json.encodeToJsonElement(MessageContentDailyQuestion.serializer(), value)
+            is MessageContentActionCard -> output.json.encodeToJsonElement(MessageContentActionCard.serializer(), value)
         }
         output.encodeJsonElement(element)
     }
@@ -2922,6 +5201,17 @@ data class MessagePreview(
     @SerialName("seq") val `seq`: Seq,
     @SerialName("senderParticipantId") val `senderParticipantId`: Id,
     @SerialName("text") val `text`: String,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class MessageSearchHit(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("messageId") val `messageId`: Id,
+    @SerialName("seq") val `seq`: Seq,
+    @SerialName("senderParticipantId") val `senderParticipantId`: Id,
+    @SerialName("senderKind") val `senderKind`: String,
+    @SerialName("snippet") val `snippet`: String,
     @SerialName("createdAt") val `createdAt`: Timestamp,
 )
 
@@ -3068,6 +5358,119 @@ data class ModelStatus(
     @SerialName("canFallbackToDefault") val `canFallbackToDefault`: Boolean,
 )
 
+@Serializable
+data class MomentsActor(
+    @SerialName("kind") val `kind`: String,
+    @SerialName("refId") val `refId`: Id,
+)
+
+@Serializable
+data class MomentsBadge(
+    @SerialName("unseenPostCount") val `unseenPostCount`: Long,
+    @SerialName("characterIds") val `characterIds`: List<Id>,
+    @SerialName("unseenInteractionCount") val `unseenInteractionCount`: Long,
+)
+
+@Serializable
+data class MomentsComment(
+    @SerialName("commentId") val `commentId`: Id,
+    @SerialName("author") val `author`: MomentsActor,
+    @SerialName("replyTo") val `replyTo`: MomentsActor?,
+    @SerialName("replyToCommentId") val `replyToCommentId`: Id?,
+    @SerialName("text") val `text`: String,
+    @SerialName("mentionsUser") val `mentionsUser`: Boolean,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class MomentsEndpointsCommentBody(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("text") val `text`: String,
+    @SerialName("replyToCommentId") val `replyToCommentId`: Id? = null,
+)
+
+@Serializable
+data class MomentsEndpointsDeleteCommentParams(
+    @SerialName("postId") val `postId`: Id,
+    @SerialName("commentId") val `commentId`: Id,
+)
+
+@Serializable
+data class MomentsEndpointsGetPostParams(
+    @SerialName("postId") val `postId`: Id,
+)
+
+@Serializable
+data class MomentsEndpointsListCharacterPostsParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class MomentsEndpointsListCharacterPostsQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class MomentsEndpointsListCharacterPostsResponse(
+    @SerialName("items") val `items`: List<MomentsPost>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class MomentsEndpointsListFeedQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class MomentsEndpointsListFeedResponse(
+    @SerialName("items") val `items`: List<MomentsPost>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class MomentsEndpointsListMyPostsQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class MomentsEndpointsListMyPostsResponse(
+    @SerialName("items") val `items`: List<MomentsPost>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class MomentsEndpointsMarkSeenBody(
+    @SerialName("scope") val `scope`: String,
+)
+
+@Serializable
+data class MomentsImage(
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("width") val `width`: Long?,
+    @SerialName("height") val `height`: Long?,
+)
+
+@Serializable
+data class MomentsPost(
+    @SerialName("postId") val `postId`: Id,
+    @SerialName("author") val `author`: MomentsActor,
+    @SerialName("text") val `text`: String,
+    @SerialName("images") val `images`: List<MomentsImage>,
+    @SerialName("link") val `link`: MomentsPostLink?,
+    @SerialName("visibility") val `visibility`: MomentsVisibility?,
+    @SerialName("likes") val `likes`: List<MomentsActor>,
+    @SerialName("likedByMe") val `likedByMe`: Boolean,
+    @SerialName("comments") val `comments`: List<MomentsComment>,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+typealias MomentsVisibility = JsonElement
+
+typealias MomentsVisibilityInput = JsonElement
+
 typealias MoneyMicros = Long
 
 typealias NoContent = JsonElement?
@@ -3163,6 +5566,29 @@ typealias PeriodPain = String
 typealias PersonaTag = String
 
 @Serializable
+data class PersonaUpdateEndpointsListPersonaUpdatesParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class PersonaUpdateEndpointsListPersonaUpdatesResponse(
+    @SerialName("items") val `items`: List<PersonaUpdateNote>,
+    @SerialName("unseenCount") val `unseenCount`: Long,
+)
+
+@Serializable
+data class PersonaUpdateEndpointsMarkPersonaUpdatesSeenParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class PersonaUpdateNote(
+    @SerialName("personaVersion") val `personaVersion`: Long,
+    @SerialName("summary") val `summary`: String,
+    @SerialName("publishedAt") val `publishedAt`: Timestamp,
+)
+
+@Serializable
 data class PersonaVersionAdminEndpointsListPersonaVersionsParams(
     @SerialName("characterId") val `characterId`: Id,
 )
@@ -3187,6 +5613,710 @@ data class PersonaVersionSummary(
     @SerialName("publishedAt") val `publishedAt`: Timestamp,
     @SerialName("isCurrent") val `isCurrent`: Boolean,
 )
+
+@Serializable
+data class Pet(
+    @SerialName("petId") val `petId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("speciesId") val `speciesId`: Id,
+    @SerialName("appearanceId") val `appearanceId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("stage") val `stage`: String,
+    @SerialName("adoptedOn") val `adoptedOn`: LocalDate,
+    @SerialName("daysAdopted") val `daysAdopted`: Long,
+    @SerialName("intimacy") val `intimacy`: Long,
+    @SerialName("todayCountedInteractions") val `todayCountedInteractions`: Long,
+    @SerialName("allowMomentsShare") val `allowMomentsShare`: Boolean,
+    @SerialName("status") val `status`: String,
+    @SerialName("sentAwayAt") val `sentAwayAt`: Timestamp?,
+    @SerialName("image") val `image`: PetImage,
+)
+
+@Serializable
+data class PetAlbumPhoto(
+    @SerialName("photoId") val `photoId`: Id,
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("source") val `source`: String,
+    @SerialName("messageId") val `messageId`: Id?,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class PetAppearance(
+    @SerialName("appearanceId") val `appearanceId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("images") val `images`: PetAppearanceImages,
+)
+
+@Serializable
+data class PetDetail(
+    @SerialName("petId") val `petId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("speciesId") val `speciesId`: Id,
+    @SerialName("appearanceId") val `appearanceId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("stage") val `stage`: String,
+    @SerialName("adoptedOn") val `adoptedOn`: LocalDate,
+    @SerialName("daysAdopted") val `daysAdopted`: Long,
+    @SerialName("intimacy") val `intimacy`: Long,
+    @SerialName("todayCountedInteractions") val `todayCountedInteractions`: Long,
+    @SerialName("allowMomentsShare") val `allowMomentsShare`: Boolean,
+    @SerialName("status") val `status`: String,
+    @SerialName("sentAwayAt") val `sentAwayAt`: Timestamp?,
+    @SerialName("image") val `image`: PetImage,
+    @SerialName("timeline") val `timeline`: List<PetTimelineEntry>,
+)
+
+@Serializable
+data class PetEndpointsAddAlbumPhotoBody(
+    @SerialName("mediaId") val `mediaId`: Id,
+)
+
+@Serializable
+data class PetEndpointsAddAlbumPhotoParams(
+    @SerialName("petId") val `petId`: Id,
+)
+
+@Serializable
+data class PetEndpointsAdoptBody(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("speciesId") val `speciesId`: Id,
+    @SerialName("appearanceId") val `appearanceId`: Id,
+    @SerialName("name") val `name`: PetName,
+    @SerialName("namingRequestId") val `namingRequestId`: Id? = null,
+)
+
+@Serializable
+data class PetEndpointsDeleteAlbumPhotoParams(
+    @SerialName("petId") val `petId`: Id,
+    @SerialName("photoId") val `photoId`: Id,
+)
+
+@Serializable
+data class PetEndpointsGetNamingRequestParams(
+    @SerialName("requestId") val `requestId`: Id,
+)
+
+@Serializable
+data class PetEndpointsGetPetParams(
+    @SerialName("petId") val `petId`: Id,
+)
+
+@Serializable
+data class PetEndpointsInteractBody(
+    @SerialName("kind") val `kind`: PetInteractionKind,
+    @SerialName("clientActionId") val `clientActionId`: Id,
+)
+
+@Serializable
+data class PetEndpointsInteractParams(
+    @SerialName("petId") val `petId`: Id,
+)
+
+@Serializable
+data class PetEndpointsInteractResponse(
+    @SerialName("pet") val `pet`: Pet,
+    @SerialName("intimacyAdded") val `intimacyAdded`: Long,
+)
+
+@Serializable
+data class PetEndpointsListAlbumParams(
+    @SerialName("petId") val `petId`: Id,
+)
+
+@Serializable
+data class PetEndpointsListAlbumResponse(
+    @SerialName("items") val `items`: List<PetAlbumPhoto>,
+)
+
+@Serializable
+data class PetEndpointsListPetsQuery(
+    @SerialName("characterId") val `characterId`: Id? = null,
+)
+
+@Serializable
+data class PetEndpointsListPetsResponse(
+    @SerialName("items") val `items`: List<Pet>,
+)
+
+@Serializable
+data class PetEndpointsListSpeciesResponse(
+    @SerialName("items") val `items`: List<PetSpecies>,
+)
+
+@Serializable
+data class PetEndpointsRequestNamesBody(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("speciesId") val `speciesId`: Id,
+    @SerialName("appearanceId") val `appearanceId`: Id,
+)
+
+@Serializable
+data class PetEndpointsSendAwayParams(
+    @SerialName("petId") val `petId`: Id,
+)
+
+@Serializable
+data class PetEndpointsUpdatePetBody(
+    @SerialName("name") val `name`: PetName? = null,
+    @SerialName("allowMomentsShare") val `allowMomentsShare`: Boolean? = null,
+)
+
+@Serializable
+data class PetEndpointsUpdatePetParams(
+    @SerialName("petId") val `petId`: Id,
+)
+
+@Serializable
+data class PetImage(
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("url") val `url`: String,
+)
+
+typealias PetInteractionKind = String
+
+typealias PetName = String
+
+@Serializable
+data class PetNamingRequest(
+    @SerialName("requestId") val `requestId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("status") val `status`: String,
+    @SerialName("names") val `names`: List<String>,
+)
+
+@Serializable
+data class PetSpecies(
+    @SerialName("speciesId") val `speciesId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("intro") val `intro`: String,
+    @SerialName("appearances") val `appearances`: List<PetAppearance>,
+    @SerialName("presetNames") val `presetNames`: List<String>,
+    @SerialName("listed") val `listed`: Boolean,
+)
+
+@Serializable
+data class PetSpeciesAdminEndpointsListSpeciesResponse(
+    @SerialName("items") val `items`: List<PetSpecies>,
+)
+
+@Serializable
+data class PetSpeciesAdminEndpointsUpdateSpeciesBody(
+    @SerialName("name") val `name`: String? = null,
+    @SerialName("intro") val `intro`: String? = null,
+    @SerialName("presetNames") val `presetNames`: List<String>? = null,
+    @SerialName("listed") val `listed`: Boolean? = null,
+    @SerialName("appearances") val `appearances`: List<PetSpeciesAdminEndpointsUpdateSpeciesBodyAppearancesItem>? = null,
+)
+
+@Serializable
+data class PetSpeciesAdminEndpointsUpdateSpeciesParams(
+    @SerialName("speciesId") val `speciesId`: Id,
+)
+
+@Serializable
+data class PetSpeciesWrite(
+    @SerialName("name") val `name`: String,
+    @SerialName("intro") val `intro`: String,
+    @SerialName("presetNames") val `presetNames`: List<String>,
+    @SerialName("listed") val `listed`: Boolean,
+    @SerialName("appearances") val `appearances`: List<PetSpeciesWriteAppearancesItem>,
+)
+
+@Serializable
+data class PetSpeciesWriteInput(
+    @SerialName("name") val `name`: String,
+    @SerialName("intro") val `intro`: String,
+    @SerialName("presetNames") val `presetNames`: List<String>,
+    @SerialName("listed") val `listed`: Boolean,
+    @SerialName("appearances") val `appearances`: List<PetSpeciesWriteInputAppearancesItem>,
+)
+
+typealias PetStage = String
+
+@Serializable
+data class PetTimelineEntry(
+    @SerialName("kind") val `kind`: String,
+    @SerialName("at") val `at`: Timestamp,
+    @SerialName("detail") val `detail`: Map<String, String>,
+)
+
+@Serializable
+data class PlannerAdminEndpointsGetConfigResponse(
+    @SerialName("items") val `items`: List<PlannerConfigEntry>,
+)
+
+@Serializable
+data class PlannerAdminEndpointsListDecisionsQuery(
+    @SerialName("userId") val `userId`: Id? = null,
+    @SerialName("characterId") val `characterId`: Id? = null,
+    @SerialName("decisionType") val `decisionType`: PlanningDecisionType? = null,
+    @SerialName("fallback") val `fallback`: PlanningFallback? = null,
+    @SerialName("from") val `from`: Timestamp? = null,
+    @SerialName("to") val `to`: Timestamp? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+)
+
+@Serializable
+data class PlannerAdminEndpointsListDecisionsResponse(
+    @SerialName("items") val `items`: List<PlanningDecisionRecord>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class PlannerAdminEndpointsUpdateConfigBody(
+    @SerialName("implementation") val `implementation`: PlannerImplementation,
+    @SerialName("modelKey") val `modelKey`: String?,
+    @SerialName("confidenceThreshold") val `confidenceThreshold`: Double,
+    @SerialName("evalReportId") val `evalReportId`: String?,
+)
+
+@Serializable
+data class PlannerAdminEndpointsUpdateConfigParams(
+    @SerialName("decisionType") val `decisionType`: PlanningDecisionType,
+)
+
+@Serializable
+data class PlannerConfigEntry(
+    @SerialName("decisionType") val `decisionType`: String,
+    @SerialName("implementation") val `implementation`: String,
+    @SerialName("modelKey") val `modelKey`: String?,
+    @SerialName("confidenceThreshold") val `confidenceThreshold`: Double,
+    @SerialName("evalReportId") val `evalReportId`: String?,
+    @SerialName("updatedBy") val `updatedBy`: Id?,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+typealias PlannerImplementation = String
+
+@Serializable
+data class PlanningDecisionRecord(
+    @SerialName("decisionId") val `decisionId`: Id,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("conversationId") val `conversationId`: Id?,
+    @SerialName("decisionType") val `decisionType`: String,
+    @SerialName("options") val `options`: List<String>,
+    @SerialName("choice") val `choice`: String,
+    @SerialName("confidence") val `confidence`: Double,
+    @SerialName("reason") val `reason`: String,
+    @SerialName("implementation") val `implementation`: String,
+    @SerialName("fallback") val `fallback`: String?,
+    @SerialName("latencyMs") val `latencyMs`: Long,
+    @SerialName("usageRecordId") val `usageRecordId`: Id?,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+typealias PlanningDecisionType = String
+
+typealias PlanningFallback = String
+
+@Serializable
+data class PlazaAdminEndpointsBanAuthorBody(
+    @SerialName("until") val `until`: String,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class PlazaAdminEndpointsBanAuthorParams(
+    @SerialName("userId") val `userId`: Id,
+)
+
+@Serializable
+data class PlazaAdminEndpointsDeleteCommentParams(
+    @SerialName("commentId") val `commentId`: Id,
+)
+
+@Serializable
+data class PlazaAdminEndpointsGetWorkVersionParams(
+    @SerialName("workId") val `workId`: Id,
+    @SerialName("version") val `version`: Long,
+)
+
+@Serializable
+data class PlazaAdminEndpointsGetWorkVersionResponse(
+    @SerialName("snapshot") val `snapshot`: PlazaSnapshot,
+    @SerialName("settings") val `settings`: PlazaPublishSettings,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class PlazaAdminEndpointsListReportsQuery(
+    @SerialName("status") val `status`: String? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+)
+
+@Serializable
+data class PlazaAdminEndpointsListReportsResponse(
+    @SerialName("items") val `items`: List<AdminPlazaReport>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class PlazaAdminEndpointsListWorksQuery(
+    @SerialName("authorUserId") val `authorUserId`: Id? = null,
+    @SerialName("kind") val `kind`: PlazaWorkKind? = null,
+    @SerialName("basis") val `basis`: CharacterBasis? = null,
+    @SerialName("status") val `status`: PlazaWorkStatus? = null,
+    @SerialName("minReports") val `minReports`: Long? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+)
+
+@Serializable
+data class PlazaAdminEndpointsListWorksResponse(
+    @SerialName("items") val `items`: List<AdminPlazaWork>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class PlazaAdminEndpointsRemoveWorkBody(
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class PlazaAdminEndpointsRemoveWorkParams(
+    @SerialName("workId") val `workId`: Id,
+)
+
+@Serializable
+data class PlazaAdminEndpointsResolveReportBody(
+    @SerialName("action") val `action`: String,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class PlazaAdminEndpointsResolveReportParams(
+    @SerialName("reportId") val `reportId`: Id,
+)
+
+@Serializable
+data class PlazaAdminEndpointsTightenClassificationBody(
+    @SerialName("basis") val `basis`: CharacterBasis,
+    @SerialName("realPersonKind") val `realPersonKind`: RealPersonKind?,
+    @SerialName("ageSetting") val `ageSetting`: AgeSetting,
+    @SerialName("childAppearance") val `childAppearance`: Boolean,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class PlazaAdminEndpointsTightenClassificationResponse(
+    @SerialName("work") val `work`: AdminPlazaWork,
+    @SerialName("affectedCharacterCount") val `affectedCharacterCount`: Long,
+)
+
+@Serializable
+data class PlazaAdminEndpointsUnbanAuthorParams(
+    @SerialName("userId") val `userId`: Id,
+)
+
+@Serializable
+data class PlazaAuthor(
+    @SerialName("authorId") val `authorId`: Id,
+    @SerialName("nickname") val `nickname`: String,
+    @SerialName("avatarUrl") val `avatarUrl`: String?,
+    @SerialName("deleted") val `deleted`: Boolean,
+)
+
+@Serializable
+data class PlazaAuthorProfile(
+    @SerialName("authorId") val `authorId`: Id,
+    @SerialName("nickname") val `nickname`: String,
+    @SerialName("avatarMediaId") val `avatarMediaId`: Id?,
+    @SerialName("avatarUrl") val `avatarUrl`: String?,
+    @SerialName("bannedUntil") val `bannedUntil`: String?,
+)
+
+@Serializable
+data class PlazaBadge(
+    @SerialName("myWorksUnseen") val `myWorksUnseen`: Long,
+    @SerialName("reportResultsUnseen") val `reportResultsUnseen`: Long,
+    @SerialName("adoptedUpdatesAvailable") val `adoptedUpdatesAvailable`: Long,
+)
+
+@Serializable
+data class PlazaComment(
+    @SerialName("commentId") val `commentId`: Id,
+    @SerialName("author") val `author`: PlazaAuthor,
+    @SerialName("replyTo") val `replyTo`: PlazaAuthor?,
+    @SerialName("replyToCommentId") val `replyToCommentId`: Id?,
+    @SerialName("text") val `text`: String,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("deletable") val `deletable`: Boolean,
+)
+
+@Serializable
+data class PlazaCustomCharacterSnapshot(
+    @EncodeDefault
+    @SerialName("kind") val `kind`: String = "custom_character",
+    @SerialName("name") val `name`: String,
+    @SerialName("classification") val `classification`: PlazaSnapshotClassification,
+    @SerialName("description") val `description`: String,
+    @SerialName("speechStyle") val `speechStyle`: String,
+    @SerialName("catchphrases") val `catchphrases`: List<String>,
+    @SerialName("exampleDialogue") val `exampleDialogue`: String,
+    @SerialName("tags") val `tags`: List<String>,
+    @SerialName("birthday") val `birthday`: LocalDate?,
+    @SerialName("voiceName") val `voiceName`: String?,
+    @SerialName("avatarMediaId") val `avatarMediaId`: Id?,
+)
+
+@Serializable
+data class PlazaEndpointsAddCommentBody(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("text") val `text`: String,
+    @SerialName("replyToCommentId") val `replyToCommentId`: Id? = null,
+)
+
+@Serializable
+data class PlazaEndpointsAdoptBody(
+    @SerialName("adoptionId") val `adoptionId`: Id,
+)
+
+@Serializable
+data class PlazaEndpointsAdoptResponse(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("workVersion") val `workVersion`: Long,
+)
+
+@Serializable
+data class PlazaEndpointsApplyBody(
+    @SerialName("adoptionId") val `adoptionId`: Id,
+    @SerialName("confirmReplaceSupplement") val `confirmReplaceSupplement`: Boolean,
+)
+
+@Serializable
+data class PlazaEndpointsApplyResponse(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("workVersion") val `workVersion`: Long,
+)
+
+@Serializable
+data class PlazaEndpointsConfirmPublishBody(
+    @SerialName("settings") val `settings`: PlazaPublishSettings,
+    @SerialName("keptSpanIds") val `keptSpanIds`: List<String>,
+    @SerialName("avatarRightsConfirmed") val `avatarRightsConfirmed`: Boolean,
+    @SerialName("changeNote") val `changeNote`: String? = null,
+)
+
+@Serializable
+data class PlazaEndpointsConfirmPublishParams(
+    @SerialName("draftId") val `draftId`: Id,
+)
+
+@Serializable
+data class PlazaEndpointsCreatePublishDraftBody(
+    @SerialName("source") val `source`: PlazaPublishSourceInput,
+)
+
+@Serializable
+data class PlazaEndpointsDeleteCommentParams(
+    @SerialName("commentId") val `commentId`: Id,
+)
+
+@Serializable
+data class PlazaEndpointsGetAuthorParams(
+    @SerialName("authorId") val `authorId`: Id,
+)
+
+typealias PlazaEndpointsGetMyProfileResponse = PlazaAuthorProfile?
+
+@Serializable
+data class PlazaEndpointsLikeResponse(
+    @SerialName("likeCount") val `likeCount`: Long,
+    @SerialName("likedByMe") val `likedByMe`: Boolean,
+)
+
+@Serializable
+data class PlazaEndpointsListCommentsQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+)
+
+@Serializable
+data class PlazaEndpointsListCommentsResponse(
+    @SerialName("items") val `items`: List<PlazaComment>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class PlazaEndpointsListMyWorksResponse(
+    @SerialName("items") val `items`: List<PlazaWorkDetail>,
+)
+
+@Serializable
+data class PlazaEndpointsListNoticesQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+)
+
+@Serializable
+data class PlazaEndpointsListNoticesResponse(
+    @SerialName("items") val `items`: List<PlazaNotice>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class PlazaEndpointsListWorksResponse(
+    @SerialName("items") val `items`: List<PlazaWorkCard>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class PlazaEndpointsPutMyProfileBody(
+    @SerialName("nickname") val `nickname`: String,
+    @SerialName("avatarMediaId") val `avatarMediaId`: Id?,
+)
+
+@Serializable
+data class PlazaEndpointsReportBody(
+    @SerialName("target") val `target`: PlazaEndpointsReportBodyTarget,
+    @SerialName("reason") val `reason`: PlazaReportReason,
+    @SerialName("note") val `note`: String? = null,
+)
+
+@Serializable
+data class PlazaEndpointsUnlikeResponse(
+    @SerialName("likeCount") val `likeCount`: Long,
+    @SerialName("likedByMe") val `likedByMe`: Boolean,
+)
+
+@Serializable
+data class PlazaEndpointsUpdateAdoptedBody(
+    @SerialName("decision") val `decision`: String,
+    @SerialName("confirmOverwrite") val `confirmOverwrite`: Boolean? = null,
+)
+
+@Serializable
+data class PlazaEndpointsUpdateAdoptedParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class PlazaEndpointsUpdateAdoptedResponse(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("workVersion") val `workVersion`: Long,
+)
+
+@Serializable
+data class PlazaEndpointsUpdateWorkSettingsBody(
+    @SerialName("tagline") val `tagline`: String? = null,
+    @SerialName("publishNote") val `publishNote`: String? = null,
+    @SerialName("allowRemix") val `allowRemix`: Boolean? = null,
+    @SerialName("commentsOpen") val `commentsOpen`: Boolean? = null,
+)
+
+@Serializable
+data class PlazaNotice(
+    @SerialName("noticeId") val `noticeId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("workId") val `workId`: Id?,
+    @SerialName("text") val `text`: String,
+    @SerialName("seen") val `seen`: Boolean,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class PlazaPresetVariantSnapshot(
+    @EncodeDefault
+    @SerialName("kind") val `kind`: String = "preset_variant",
+    @SerialName("presetCharacterId") val `presetCharacterId`: Id,
+    @SerialName("variantText") val `variantText`: String,
+)
+
+@Serializable
+data class PlazaPublishDraft(
+    @SerialName("draftId") val `draftId`: Id,
+    @SerialName("workId") val `workId`: Id?,
+    @SerialName("snapshot") val `snapshot`: PlazaSnapshot,
+    @SerialName("spans") val `spans`: List<PrivacySpan>,
+    @SerialName("childFeaturesDetected") val `childFeaturesDetected`: Boolean,
+    @SerialName("needsAuthorProfile") val `needsAuthorProfile`: Boolean,
+    @SerialName("expiresAt") val `expiresAt`: Timestamp,
+)
+
+@Serializable
+data class PlazaPublishSettings(
+    @SerialName("tagline") val `tagline`: String,
+    @SerialName("publishNote") val `publishNote`: String,
+    @SerialName("allowRemix") val `allowRemix`: Boolean,
+    @SerialName("commentsOpen") val `commentsOpen`: Boolean,
+)
+
+typealias PlazaPublishSource = JsonElement
+
+typealias PlazaPublishSourceInput = JsonElement
+
+typealias PlazaReportReason = String
+
+typealias PlazaSnapshot = JsonElement
+
+@Serializable
+data class PlazaSnapshotClassification(
+    @SerialName("basis") val `basis`: CharacterBasis,
+    @SerialName("realPersonKind") val `realPersonKind`: RealPersonKind?,
+    @SerialName("ageSetting") val `ageSetting`: AgeSetting,
+    @SerialName("childAppearance") val `childAppearance`: Boolean,
+    @SerialName("childFeaturesDetected") val `childFeaturesDetected`: Boolean,
+    @SerialName("everPrivatePerson") val `everPrivatePerson`: Boolean,
+)
+
+typealias PlazaSort = String
+
+@Serializable
+data class PlazaVersionNote(
+    @SerialName("version") val `version`: Long,
+    @SerialName("changeNote") val `changeNote`: String?,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class PlazaWorkCard(
+    @SerialName("workId") val `workId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("name") val `name`: String,
+    @SerialName("tagline") val `tagline`: String,
+    @SerialName("basis") val `basis`: String?,
+    @SerialName("basedOnPresetId") val `basedOnPresetId`: Id?,
+    @SerialName("basedOnPresetName") val `basedOnPresetName`: String?,
+    @SerialName("avatarUrl") val `avatarUrl`: String?,
+    @SerialName("author") val `author`: PlazaAuthor,
+    @SerialName("likeCount") val `likeCount`: Long,
+    @SerialName("adoptCount") val `adoptCount`: Long,
+    @SerialName("commentCount") val `commentCount`: Long,
+    @SerialName("adoptedByMe") val `adoptedByMe`: Boolean,
+    @SerialName("likedByMe") val `likedByMe`: Boolean,
+    @SerialName("currentVersion") val `currentVersion`: Long,
+    @SerialName("publishedAt") val `publishedAt`: Timestamp,
+)
+
+@Serializable
+data class PlazaWorkDetail(
+    @SerialName("workId") val `workId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("name") val `name`: String,
+    @SerialName("tagline") val `tagline`: String,
+    @SerialName("basis") val `basis`: String?,
+    @SerialName("basedOnPresetId") val `basedOnPresetId`: Id?,
+    @SerialName("basedOnPresetName") val `basedOnPresetName`: String?,
+    @SerialName("avatarUrl") val `avatarUrl`: String?,
+    @SerialName("author") val `author`: PlazaAuthor,
+    @SerialName("likeCount") val `likeCount`: Long,
+    @SerialName("adoptCount") val `adoptCount`: Long,
+    @SerialName("commentCount") val `commentCount`: Long,
+    @SerialName("adoptedByMe") val `adoptedByMe`: Boolean,
+    @SerialName("likedByMe") val `likedByMe`: Boolean,
+    @SerialName("currentVersion") val `currentVersion`: Long,
+    @SerialName("publishedAt") val `publishedAt`: Timestamp,
+    @SerialName("status") val `status`: String,
+    @SerialName("settings") val `settings`: PlazaPublishSettings,
+    @SerialName("snapshot") val `snapshot`: PlazaSnapshot,
+    @SerialName("versions") val `versions`: List<PlazaVersionNote>,
+    @SerialName("remixOf") val `remixOf`: PlazaWorkDetailRemixOf?,
+    @SerialName("isMine") val `isMine`: Boolean,
+)
+
+typealias PlazaWorkKind = String
+
+typealias PlazaWorkStatus = String
 
 typealias PortraitPolicy = String
 
@@ -3232,6 +6362,17 @@ typealias PriceUnit = String
 
 typealias PriceVersionStatus = String
 
+typealias PrivacyKind = String
+
+@Serializable
+data class PrivacySpan(
+    @SerialName("spanId") val `spanId`: String,
+    @SerialName("fieldKey") val `fieldKey`: String,
+    @SerialName("start") val `start`: Long,
+    @SerialName("end") val `end`: Long,
+    @SerialName("kinds") val `kinds`: List<String>,
+)
+
 typealias ProactiveFrequency = String
 
 @Serializable
@@ -3264,6 +6405,77 @@ data class PublicPriceItem(
     @SerialName("priceMicros") val `priceMicros`: Long,
     @SerialName("band") val `band`: PriceTimeBand?,
 )
+
+@Serializable
+data class PublicUpdate(
+    @SerialName("updateId") val `updateId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("characterName") val `characterName`: String,
+    @SerialName("kind") val `kind`: PublicUpdateKind,
+    @SerialName("content") val `content`: String,
+    @SerialName("startDate") val `startDate`: LocalDate,
+    @SerialName("endDate") val `endDate`: LocalDate?,
+    @SerialName("effectiveDate") val `effectiveDate`: LocalDate,
+    @SerialName("sourceUrl") val `sourceUrl`: String,
+    @SerialName("source") val `source`: PublicUpdateSource,
+    @SerialName("status") val `status`: PublicUpdateStatus,
+    @SerialName("reviewNote") val `reviewNote`: String?,
+    @SerialName("createdBy") val `createdBy`: Id?,
+    @SerialName("reviewedBy") val `reviewedBy`: Id?,
+    @SerialName("reviewedAt") val `reviewedAt`: Timestamp?,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class PublicUpdateAdminEndpointsGetParams(
+    @SerialName("updateId") val `updateId`: Id,
+)
+
+@Serializable
+data class PublicUpdateAdminEndpointsListQuery(
+    @SerialName("status") val `status`: PublicUpdateStatus? = null,
+    @SerialName("source") val `source`: PublicUpdateSource? = null,
+    @SerialName("characterId") val `characterId`: Id? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+)
+
+@Serializable
+data class PublicUpdateAdminEndpointsListResponse(
+    @SerialName("items") val `items`: List<PublicUpdate>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class PublicUpdateAdminEndpointsTriggerSearchParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class PublicUpdateAdminEndpointsUpdateSettingsBody(
+    @SerialName("autoSearchEnabled") val `autoSearchEnabled`: Boolean,
+)
+
+typealias PublicUpdateKind = String
+
+@Serializable
+data class PublicUpdateSearchResult(
+    @SerialName("outcome") val `outcome`: String,
+    @SerialName("created") val `created`: List<PublicUpdate>,
+    @SerialName("duplicates") val `duplicates`: Long,
+)
+
+@Serializable
+data class PublicUpdateSettings(
+    @SerialName("autoSearchEnabled") val `autoSearchEnabled`: Boolean,
+    @SerialName("lastAutoRunAt") val `lastAutoRunAt`: Timestamp?,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp?,
+)
+
+typealias PublicUpdateSource = String
+
+typealias PublicUpdateStatus = String
 
 @Serializable
 data class PushAdminEndpointsAcknowledgeAdminAlertParams(
@@ -3303,6 +6515,12 @@ data class PushEndpointsUnregisterDeviceParams(
 )
 
 @Serializable
+data class QuietState(
+    @SerialName("inconvenientUntil") val `inconvenientUntil`: Timestamp?,
+    @SerialName("focusUntil") val `focusUntil`: Timestamp?,
+)
+
+@Serializable
 data class QuoteRef(
     @SerialName("messageId") val `messageId`: Id,
     @SerialName("seq") val `seq`: Seq,
@@ -3325,6 +6543,7 @@ data class ReceivedMessageContentText(
     @EncodeDefault
     @SerialName("type") override val `type`: String = "text",
     @SerialName("text") val `text`: String,
+    @SerialName("mentions") val `mentions`: List<Id>? = null,
 ) : ReceivedMessageContent
 
 @Serializable
@@ -3340,6 +6559,95 @@ data class ReceivedMessageContentSystem(
     @SerialName("type") override val `type`: String = "system",
     @SerialName("code") val `code`: String,
     @SerialName("params") val `params`: Map<String, ReceivedMessageContentSystemParamsValue>,
+) : ReceivedMessageContent
+
+@Serializable
+data class ReceivedMessageContentImage(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "image",
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("width") val `width`: Long?,
+    @SerialName("height") val `height`: Long?,
+) : ReceivedMessageContent
+
+@Serializable
+data class ReceivedMessageContentVoice(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "voice",
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("durationMs") val `durationMs`: Long,
+    @SerialName("transcript") val `transcript`: String?,
+) : ReceivedMessageContent
+
+@Serializable
+data class ReceivedMessageContentSticker(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "sticker",
+    @SerialName("stickerId") val `stickerId`: Id,
+    @SerialName("source") val `source`: String,
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("description") val `description`: String?,
+) : ReceivedMessageContent
+
+@Serializable
+data class ReceivedMessageContentLink(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "link",
+    @SerialName("url") val `url`: String,
+    @SerialName("title") val `title`: String,
+    @SerialName("source") val `source`: String?,
+    @SerialName("description") val `description`: String?,
+    @SerialName("coverMediaId") val `coverMediaId`: Id?,
+    @SerialName("appHint") val `appHint`: String,
+) : ReceivedMessageContent
+
+@Serializable
+data class ReceivedMessageContentContactCard(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "contact_card",
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("recommenderCharacterId") val `recommenderCharacterId`: Id,
+) : ReceivedMessageContent
+
+@Serializable
+data class ReceivedMessageContentCallRecord(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "call_record",
+    @SerialName("callId") val `callId`: Id,
+    @SerialName("direction") val `direction`: CallDirection,
+    @SerialName("outcome") val `outcome`: String,
+    @SerialName("durationSec") val `durationSec`: Long,
+) : ReceivedMessageContent
+
+@Serializable
+data class ReceivedMessageContentLetter(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "letter",
+    @SerialName("letterId") val `letterId`: Id,
+    @SerialName("direction") val `direction`: String,
+    @SerialName("body") val `body`: String,
+) : ReceivedMessageContent
+
+@Serializable
+data class ReceivedMessageContentDailyQuestion(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "daily_question",
+    @SerialName("answerId") val `answerId`: Id,
+    @SerialName("questionId") val `questionId`: Id,
+    @SerialName("date") val `date`: String,
+    @SerialName("question") val `question`: String,
+    @SerialName("answer") val `answer`: String,
+) : ReceivedMessageContent
+
+@Serializable
+data class ReceivedMessageContentActionCard(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "action_card",
+    @SerialName("cardKind") val `cardKind`: String,
+    @SerialName("text") val `text`: String,
+    @SerialName("actions") val `actions`: List<ReceivedMessageContentActionCardActionsItem>,
+    @SerialName("ref") val `ref`: ReceivedMessageContentActionCardRef?,
 ) : ReceivedMessageContent
 
 @Serializable
@@ -3359,6 +6667,15 @@ object ReceivedMessageContentSerializer : KSerializer<ReceivedMessageContent> {
             "text" -> input.json.decodeFromJsonElement(ReceivedMessageContentText.serializer(), value)
             "nudge" -> input.json.decodeFromJsonElement(ReceivedMessageContentNudge.serializer(), value)
             "system" -> input.json.decodeFromJsonElement(ReceivedMessageContentSystem.serializer(), value)
+            "image" -> input.json.decodeFromJsonElement(ReceivedMessageContentImage.serializer(), value)
+            "voice" -> input.json.decodeFromJsonElement(ReceivedMessageContentVoice.serializer(), value)
+            "sticker" -> input.json.decodeFromJsonElement(ReceivedMessageContentSticker.serializer(), value)
+            "link" -> input.json.decodeFromJsonElement(ReceivedMessageContentLink.serializer(), value)
+            "contact_card" -> input.json.decodeFromJsonElement(ReceivedMessageContentContactCard.serializer(), value)
+            "call_record" -> input.json.decodeFromJsonElement(ReceivedMessageContentCallRecord.serializer(), value)
+            "letter" -> input.json.decodeFromJsonElement(ReceivedMessageContentLetter.serializer(), value)
+            "daily_question" -> input.json.decodeFromJsonElement(ReceivedMessageContentDailyQuestion.serializer(), value)
+            "action_card" -> input.json.decodeFromJsonElement(ReceivedMessageContentActionCard.serializer(), value)
             "unsupported" -> input.json.decodeFromJsonElement(ReceivedMessageContentUnsupported.serializer(), value)
             else -> { require(tag != null) { "Missing discriminator" }; value = JsonObject(value + mapOf("type" to JsonPrimitive("unsupported"), "originalType" to JsonPrimitive(tag))); input.json.decodeFromJsonElement(ReceivedMessageContentUnsupported.serializer(), value) }
         }
@@ -3369,6 +6686,15 @@ object ReceivedMessageContentSerializer : KSerializer<ReceivedMessageContent> {
             is ReceivedMessageContentText -> output.json.encodeToJsonElement(ReceivedMessageContentText.serializer(), value)
             is ReceivedMessageContentNudge -> output.json.encodeToJsonElement(ReceivedMessageContentNudge.serializer(), value)
             is ReceivedMessageContentSystem -> output.json.encodeToJsonElement(ReceivedMessageContentSystem.serializer(), value)
+            is ReceivedMessageContentImage -> output.json.encodeToJsonElement(ReceivedMessageContentImage.serializer(), value)
+            is ReceivedMessageContentVoice -> output.json.encodeToJsonElement(ReceivedMessageContentVoice.serializer(), value)
+            is ReceivedMessageContentSticker -> output.json.encodeToJsonElement(ReceivedMessageContentSticker.serializer(), value)
+            is ReceivedMessageContentLink -> output.json.encodeToJsonElement(ReceivedMessageContentLink.serializer(), value)
+            is ReceivedMessageContentContactCard -> output.json.encodeToJsonElement(ReceivedMessageContentContactCard.serializer(), value)
+            is ReceivedMessageContentCallRecord -> output.json.encodeToJsonElement(ReceivedMessageContentCallRecord.serializer(), value)
+            is ReceivedMessageContentLetter -> output.json.encodeToJsonElement(ReceivedMessageContentLetter.serializer(), value)
+            is ReceivedMessageContentDailyQuestion -> output.json.encodeToJsonElement(ReceivedMessageContentDailyQuestion.serializer(), value)
+            is ReceivedMessageContentActionCard -> output.json.encodeToJsonElement(ReceivedMessageContentActionCard.serializer(), value)
             is ReceivedMessageContentUnsupported -> output.json.encodeToJsonElement(ReceivedMessageContentUnsupported.serializer(), value)
         }
         output.encodeJsonElement(element)
@@ -3458,6 +6784,48 @@ data class ReceivedUserUpdatePayloadModelStatusUpdated(
 ) : ReceivedUserUpdatePayload
 
 @Serializable
+data class ReceivedUserUpdatePayloadMessageUpdated(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "message.updated",
+    @SerialName("data") val `data`: ReceivedUserUpdatePayloadMessageUpdatedData,
+) : ReceivedUserUpdatePayload
+
+@Serializable
+data class ReceivedUserUpdatePayloadCallUpdated(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "call.updated",
+    @SerialName("data") val `data`: ReceivedUserUpdatePayloadCallUpdatedData,
+) : ReceivedUserUpdatePayload
+
+@Serializable
+data class ReceivedUserUpdatePayloadMediaTranscriptReady(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "media.transcript_ready",
+    @SerialName("data") val `data`: ReceivedUserUpdatePayloadMediaTranscriptReadyData,
+) : ReceivedUserUpdatePayload
+
+@Serializable
+data class ReceivedUserUpdatePayloadMomentsBadgeUpdated(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "moments.badge_updated",
+    @SerialName("data") val `data`: ReceivedUserUpdatePayloadMomentsBadgeUpdatedData,
+) : ReceivedUserUpdatePayload
+
+@Serializable
+data class ReceivedUserUpdatePayloadMomentsPostChanged(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "moments.post_changed",
+    @SerialName("data") val `data`: ReceivedUserUpdatePayloadMomentsPostChangedData,
+) : ReceivedUserUpdatePayload
+
+@Serializable
+data class ReceivedUserUpdatePayloadDataChanged(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "data.changed",
+    @SerialName("data") val `data`: ReceivedUserUpdatePayloadDataChangedData,
+) : ReceivedUserUpdatePayload
+
+@Serializable
 data class ReceivedUserUpdatePayloadUnsupported(
     @EncodeDefault
     @SerialName("type") override val `type`: String = "unsupported",
@@ -3482,6 +6850,12 @@ object ReceivedUserUpdatePayloadSerializer : KSerializer<ReceivedUserUpdatePaylo
             "contact.removed" -> input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadContactRemoved.serializer(), value)
             "settings.updated" -> input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadSettingsUpdated.serializer(), value)
             "model.status_updated" -> input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadModelStatusUpdated.serializer(), value)
+            "message.updated" -> input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadMessageUpdated.serializer(), value)
+            "call.updated" -> input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadCallUpdated.serializer(), value)
+            "media.transcript_ready" -> input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadMediaTranscriptReady.serializer(), value)
+            "moments.badge_updated" -> input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadMomentsBadgeUpdated.serializer(), value)
+            "moments.post_changed" -> input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadMomentsPostChanged.serializer(), value)
+            "data.changed" -> input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadDataChanged.serializer(), value)
             "unsupported" -> input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadUnsupported.serializer(), value)
             else -> { require(tag != null) { "Missing discriminator" }; value = JsonObject(value + mapOf("type" to JsonPrimitive("unsupported"), "data" to buildJsonObject { put("originalType", tag) })); input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadUnsupported.serializer(), value) }
         }
@@ -3500,11 +6874,33 @@ object ReceivedUserUpdatePayloadSerializer : KSerializer<ReceivedUserUpdatePaylo
             is ReceivedUserUpdatePayloadContactRemoved -> output.json.encodeToJsonElement(ReceivedUserUpdatePayloadContactRemoved.serializer(), value)
             is ReceivedUserUpdatePayloadSettingsUpdated -> output.json.encodeToJsonElement(ReceivedUserUpdatePayloadSettingsUpdated.serializer(), value)
             is ReceivedUserUpdatePayloadModelStatusUpdated -> output.json.encodeToJsonElement(ReceivedUserUpdatePayloadModelStatusUpdated.serializer(), value)
+            is ReceivedUserUpdatePayloadMessageUpdated -> output.json.encodeToJsonElement(ReceivedUserUpdatePayloadMessageUpdated.serializer(), value)
+            is ReceivedUserUpdatePayloadCallUpdated -> output.json.encodeToJsonElement(ReceivedUserUpdatePayloadCallUpdated.serializer(), value)
+            is ReceivedUserUpdatePayloadMediaTranscriptReady -> output.json.encodeToJsonElement(ReceivedUserUpdatePayloadMediaTranscriptReady.serializer(), value)
+            is ReceivedUserUpdatePayloadMomentsBadgeUpdated -> output.json.encodeToJsonElement(ReceivedUserUpdatePayloadMomentsBadgeUpdated.serializer(), value)
+            is ReceivedUserUpdatePayloadMomentsPostChanged -> output.json.encodeToJsonElement(ReceivedUserUpdatePayloadMomentsPostChanged.serializer(), value)
+            is ReceivedUserUpdatePayloadDataChanged -> output.json.encodeToJsonElement(ReceivedUserUpdatePayloadDataChanged.serializer(), value)
             is ReceivedUserUpdatePayloadUnsupported -> output.json.encodeToJsonElement(ReceivedUserUpdatePayloadUnsupported.serializer(), value)
         }
         output.encodeJsonElement(element)
     }
 }
+
+@Serializable
+data class RecognizedDialogueLine(
+    @SerialName("lineId") val `lineId`: String,
+    @SerialName("speaker") val `speaker`: String,
+    @SerialName("text") val `text`: String,
+    @SerialName("screenshotIndex") val `screenshotIndex`: Long,
+)
+
+@Serializable
+data class RecognizedDialogueLineInput(
+    @SerialName("lineId") val `lineId`: String,
+    @SerialName("speaker") val `speaker`: String,
+    @SerialName("text") val `text`: String,
+    @SerialName("screenshotIndex") val `screenshotIndex`: Long,
+)
 
 @Serializable
 data class ReconciliationRun(
@@ -3541,6 +6937,112 @@ data class RegisterRequestInput(
     @SerialName("device") val `device`: DeviceInfoInput,
 )
 
+@Serializable
+data class RelationAdminEndpointsListRelationsQuery(
+    @SerialName("characterId") val `characterId`: Id? = null,
+)
+
+@Serializable
+data class RelationAdminEndpointsListRelationsResponse(
+    @SerialName("items") val `items`: List<CharacterRelation>,
+)
+
+@Serializable
+data class RelationAdminEndpointsUpdateRelationBody(
+    @SerialName("type") val `type`: RelationType? = null,
+    @SerialName("label") val `label`: String? = null,
+    @SerialName("closeness") val `closeness`: RelationCloseness? = null,
+    @SerialName("evidence") val `evidence`: String? = null,
+)
+
+typealias RelationCloseness = String
+
+@Serializable
+data class RelationParams(
+    @SerialName("relationId") val `relationId`: Id,
+)
+
+@Serializable
+data class RelationParamsInput(
+    @SerialName("relationId") val `relationId`: Id,
+)
+
+typealias RelationType = String
+
+@Serializable
+data class Reminder(
+    @SerialName("reminderId") val `reminderId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("text") val `text`: String,
+    @SerialName("time") val `time`: LocalTime,
+    @SerialName("repeat") val `repeat`: ReminderRepeat,
+    @SerialName("health") val `health`: Boolean,
+    @SerialName("bypassDoNotDisturb") val `bypassDoNotDisturb`: Boolean,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("phrasingsReady") val `phrasingsReady`: Boolean,
+    @SerialName("nextFireAt") val `nextFireAt`: Timestamp?,
+    @SerialName("pausedByContactRemoval") val `pausedByContactRemoval`: Boolean,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class ReminderEndpointsCreateReminderBody(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("text") val `text`: String,
+    @SerialName("time") val `time`: LocalTime,
+    @SerialName("repeat") val `repeat`: ReminderRepeatInput,
+    @SerialName("health") val `health`: Boolean,
+    @SerialName("bypassDoNotDisturb") val `bypassDoNotDisturb`: Boolean,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+)
+
+@Serializable
+data class ReminderEndpointsListRemindersResponse(
+    @SerialName("items") val `items`: List<Reminder>,
+    @SerialName("limit") val `limit`: Long,
+)
+
+@Serializable
+data class ReminderEndpointsUpdateReminderBody(
+    @SerialName("text") val `text`: String? = null,
+    @SerialName("time") val `time`: LocalTime? = null,
+    @SerialName("repeat") val `repeat`: ReminderRepeatInput? = null,
+    @SerialName("health") val `health`: Boolean? = null,
+    @SerialName("bypassDoNotDisturb") val `bypassDoNotDisturb`: Boolean? = null,
+    @SerialName("enabled") val `enabled`: Boolean? = null,
+)
+
+@Serializable
+data class ReminderEndpointsUpdateReminderParams(
+    @SerialName("reminderId") val `reminderId`: Id,
+)
+
+typealias ReminderRepeat = JsonElement
+
+typealias ReminderRepeatInput = JsonElement
+
+@Serializable
+data class ReminderWrite(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("text") val `text`: String,
+    @SerialName("time") val `time`: LocalTime,
+    @SerialName("repeat") val `repeat`: ReminderRepeat,
+    @SerialName("health") val `health`: Boolean,
+    @SerialName("bypassDoNotDisturb") val `bypassDoNotDisturb`: Boolean,
+    @SerialName("enabled") val `enabled`: Boolean,
+)
+
+@Serializable
+data class ReviewNoteRequest(
+    @SerialName("note") val `note`: String?,
+)
+
+@Serializable
+data class ReviewNoteRequestInput(
+    @SerialName("note") val `note`: String? = null,
+)
+
 typealias ScenarioMode = String
 
 @Serializable
@@ -3554,6 +7056,8 @@ data class ScenarioModeAdminEndpointsUpdateScenarioModeParams(
 )
 
 typealias ScenarioModeAppliesTo = String
+
+typealias SearchKeyword = String
 
 @Serializable
 data class SendMessageRequest(
@@ -3895,7 +7399,171 @@ data class SessionSummary(
 
 typealias SettingsSection = String
 
+@Serializable
+data class ShareEndpointsPrepareBody(
+    @SerialName("source") val `source`: ShareSourceInput,
+)
+
+@Serializable
+data class ShareEndpointsRecordGeneratedBody(
+    @SerialName("template") val `template`: ShareTemplate,
+)
+
+@Serializable
+data class ShareImageData(
+    @SerialName("label") val `label`: String,
+    @SerialName("items") val `items`: List<ShareItem>,
+    @SerialName("cardId") val `cardId`: Id?,
+    @SerialName("characterIds") val `characterIds`: List<Id>,
+)
+
+@Serializable
+data class ShareItem(
+    @SerialName("senderKind") val `senderKind`: ParticipantKind,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("content") val `content`: ReceivedMessageContent,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class SharePreferences(
+    @SerialName("defaultTemplate") val `defaultTemplate`: ShareTemplate,
+)
+
+@Serializable
+data class SharePreferencesInput(
+    @SerialName("defaultTemplate") val `defaultTemplate`: ShareTemplate,
+)
+
+typealias ShareRejectReason = String
+
+typealias ShareSource = JsonElement
+
+typealias ShareSourceInput = JsonElement
+
+typealias ShareTemplate = String
+
 typealias SpendCategory = String
+
+@Serializable
+data class StickerAdminEndpointsAddStickerBody(
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("description") val `description`: String,
+    @EncodeDefault
+    @SerialName("confirmNoRealPersonPortrait") val `confirmNoRealPersonPortrait`: Boolean = true,
+)
+
+@Serializable
+data class StickerAdminEndpointsAddStickerParams(
+    @SerialName("packId") val `packId`: Id,
+)
+
+@Serializable
+data class StickerAdminEndpointsDeleteStickerParams(
+    @SerialName("stickerId") val `stickerId`: Id,
+)
+
+@Serializable
+data class StickerAdminEndpointsListPacksResponse(
+    @SerialName("items") val `items`: List<StickerPack>,
+)
+
+@Serializable
+data class StickerAdminEndpointsUpdatePackBody(
+    @SerialName("name") val `name`: String? = null,
+    @SerialName("characterIds") val `characterIds`: List<Id>? = null,
+    @SerialName("userVisible") val `userVisible`: Boolean? = null,
+    @SerialName("enabled") val `enabled`: Boolean? = null,
+)
+
+@Serializable
+data class StickerAdminEndpointsUpdatePackParams(
+    @SerialName("packId") val `packId`: Id,
+)
+
+@Serializable
+data class StickerContent(
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "sticker",
+    @SerialName("stickerId") val `stickerId`: Id,
+    @SerialName("source") val `source`: String,
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("description") val `description`: String?,
+)
+
+@Serializable
+data class StickerContentInput(
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "sticker",
+    @SerialName("stickerId") val `stickerId`: Id,
+    @SerialName("source") val `source`: String,
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("description") val `description`: String?,
+)
+
+typealias StickerEndpointsAddMyStickerBody = JsonElement
+
+@Serializable
+data class StickerEndpointsDeleteMyStickerParams(
+    @SerialName("stickerId") val `stickerId`: Id,
+)
+
+@Serializable
+data class StickerEndpointsListMyStickersResponse(
+    @SerialName("items") val `items`: List<UserSticker>,
+)
+
+@Serializable
+data class StickerEndpointsListPacksResponse(
+    @SerialName("items") val `items`: List<StickerPack>,
+)
+
+@Serializable
+data class StickerEndpointsReorderMyStickersBody(
+    @SerialName("stickerIds") val `stickerIds`: List<Id>,
+)
+
+@Serializable
+data class StickerPack(
+    @SerialName("packId") val `packId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("characterIds") val `characterIds`: List<Id>,
+    @SerialName("userVisible") val `userVisible`: Boolean,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("stickers") val `stickers`: List<LibrarySticker>,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class StickerPackWrite(
+    @SerialName("name") val `name`: String,
+    @SerialName("characterIds") val `characterIds`: List<Id>,
+    @SerialName("userVisible") val `userVisible`: Boolean,
+    @SerialName("enabled") val `enabled`: Boolean,
+)
+
+@Serializable
+data class StickerPackWriteInput(
+    @SerialName("name") val `name`: String,
+    @SerialName("characterIds") val `characterIds`: List<Id>,
+    @SerialName("userVisible") val `userVisible`: Boolean,
+    @SerialName("enabled") val `enabled`: Boolean,
+)
+
+@Serializable
+data class SupplementConflict(
+    @SerialName("field") val `field`: String,
+    @SerialName("publicValue") val `publicValue`: String,
+    @SerialName("supplementValue") val `supplementValue`: String,
+)
+
+@Serializable
+data class SymptomTag(
+    @SerialName("tagId") val `tagId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("order") val `order`: Long,
+    @SerialName("enabled") val `enabled`: Boolean,
+)
 
 @Serializable
 data class SyncEndpointsGetStateResponse(
@@ -3930,6 +7598,7 @@ data class TextContent(
     @EncodeDefault
     @SerialName("type") val `type`: String = "text",
     @SerialName("text") val `text`: String,
+    @SerialName("mentions") val `mentions`: List<Id>? = null,
 )
 
 @Serializable
@@ -3937,6 +7606,7 @@ data class TextContentInput(
     @EncodeDefault
     @SerialName("type") val `type`: String = "text",
     @SerialName("text") val `text`: String,
+    @SerialName("mentions") val `mentions`: List<Id>? = null,
 )
 
 typealias TimeZone = String
@@ -3951,6 +7621,37 @@ data class TimelineEndpointsGetSummaryQuery(
     @SerialName("characterId") val `characterId`: Id,
     @SerialName("lastActiveAt") val `lastActiveAt`: Timestamp,
 )
+
+@Serializable
+data class TimelineEndpointsListTimelineParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class TimelineEndpointsListTimelineQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class TimelineEndpointsListTimelineResponse(
+    @SerialName("items") val `items`: List<TimelineEntry>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class TimelineEntry(
+    @SerialName("entryId") val `entryId`: Id,
+    @SerialName("source") val `source`: String,
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("kind") val `kind`: String?,
+    @SerialName("summary") val `summary`: String,
+    @SerialName("moodAfter") val `moodAfter`: String?,
+    @SerialName("withCharacterIds") val `withCharacterIds`: List<Id>,
+    @SerialName("ref") val `ref`: TimelineEntryRef?,
+)
+
+typealias TimelineEntrySource = String
 
 @Serializable
 data class TimelineEvent(
@@ -3975,6 +7676,8 @@ data class TimelineSummaryResponse(
 )
 
 typealias Timestamp = String
+
+typealias TranscriptStatus = String
 
 @Serializable
 data class UnsupportedContent(
@@ -4010,6 +7713,7 @@ data class UpdateCompanionSettingsRequest(
     @SerialName("proactiveFrequency") val `proactiveFrequency`: ProactiveFrequency? = null,
     @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
+    @SerialName("voiceId") val `voiceId`: Id? = null,
 )
 
 @Serializable
@@ -4022,6 +7726,7 @@ data class UpdateCompanionSettingsRequestInput(
     @SerialName("proactiveFrequency") val `proactiveFrequency`: ProactiveFrequency? = null,
     @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
+    @SerialName("voiceId") val `voiceId`: Id? = null,
 )
 
 @Serializable
@@ -4322,6 +8027,36 @@ data class UserPreferences(
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
 )
 
+@Serializable
+data class UserRelationEndpointsListMyRelationsResponse(
+    @SerialName("items") val `items`: List<CharacterRelation>,
+)
+
+@Serializable
+data class UserRelationEndpointsUpdateMyRelationBody(
+    @SerialName("type") val `type`: RelationType? = null,
+    @SerialName("label") val `label`: String? = null,
+    @SerialName("closeness") val `closeness`: RelationCloseness? = null,
+)
+
+@Serializable
+data class UserRelationWrite(
+    @SerialName("characterAId") val `characterAId`: Id,
+    @SerialName("characterBId") val `characterBId`: Id,
+    @SerialName("type") val `type`: RelationType,
+    @SerialName("label") val `label`: String?,
+    @SerialName("closeness") val `closeness`: RelationCloseness,
+)
+
+@Serializable
+data class UserRelationWriteInput(
+    @SerialName("characterAId") val `characterAId`: Id,
+    @SerialName("characterBId") val `characterBId`: Id,
+    @SerialName("type") val `type`: RelationType,
+    @SerialName("label") val `label`: String? = null,
+    @SerialName("closeness") val `closeness`: RelationCloseness,
+)
+
 typealias UserRole = String
 
 @Serializable(with = UserSendableContentSerializer::class)
@@ -4334,6 +8069,7 @@ data class UserSendableContentText(
     @EncodeDefault
     @SerialName("type") override val `type`: String = "text",
     @SerialName("text") val `text`: String,
+    @SerialName("mentions") val `mentions`: List<Id>? = null,
 ) : UserSendableContent
 
 @Serializable
@@ -4341,6 +8077,46 @@ data class UserSendableContentNudge(
     @EncodeDefault
     @SerialName("type") override val `type`: String = "nudge",
     @SerialName("targetParticipantId") val `targetParticipantId`: Id,
+) : UserSendableContent
+
+@Serializable
+data class UserSendableContentImage(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "image",
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("width") val `width`: Long?,
+    @SerialName("height") val `height`: Long?,
+) : UserSendableContent
+
+@Serializable
+data class UserSendableContentVoice(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "voice",
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("durationMs") val `durationMs`: Long,
+    @SerialName("transcript") val `transcript`: String?,
+) : UserSendableContent
+
+@Serializable
+data class UserSendableContentSticker(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "sticker",
+    @SerialName("stickerId") val `stickerId`: Id,
+    @SerialName("source") val `source`: String,
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("description") val `description`: String?,
+) : UserSendableContent
+
+@Serializable
+data class UserSendableContentLink(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "link",
+    @SerialName("url") val `url`: String,
+    @SerialName("title") val `title`: String,
+    @SerialName("source") val `source`: String?,
+    @SerialName("description") val `description`: String?,
+    @SerialName("coverMediaId") val `coverMediaId`: Id?,
+    @SerialName("appHint") val `appHint`: String,
 ) : UserSendableContent
 
 object UserSendableContentSerializer : KSerializer<UserSendableContent> {
@@ -4352,6 +8128,10 @@ object UserSendableContentSerializer : KSerializer<UserSendableContent> {
         return when (tag) {
             "text" -> input.json.decodeFromJsonElement(UserSendableContentText.serializer(), value)
             "nudge" -> input.json.decodeFromJsonElement(UserSendableContentNudge.serializer(), value)
+            "image" -> input.json.decodeFromJsonElement(UserSendableContentImage.serializer(), value)
+            "voice" -> input.json.decodeFromJsonElement(UserSendableContentVoice.serializer(), value)
+            "sticker" -> input.json.decodeFromJsonElement(UserSendableContentSticker.serializer(), value)
+            "link" -> input.json.decodeFromJsonElement(UserSendableContentLink.serializer(), value)
             else -> throw SerializationException("Unknown discriminator")
         }
     }
@@ -4360,6 +8140,10 @@ object UserSendableContentSerializer : KSerializer<UserSendableContent> {
         val element = when (value) {
             is UserSendableContentText -> output.json.encodeToJsonElement(UserSendableContentText.serializer(), value)
             is UserSendableContentNudge -> output.json.encodeToJsonElement(UserSendableContentNudge.serializer(), value)
+            is UserSendableContentImage -> output.json.encodeToJsonElement(UserSendableContentImage.serializer(), value)
+            is UserSendableContentVoice -> output.json.encodeToJsonElement(UserSendableContentVoice.serializer(), value)
+            is UserSendableContentSticker -> output.json.encodeToJsonElement(UserSendableContentSticker.serializer(), value)
+            is UserSendableContentLink -> output.json.encodeToJsonElement(UserSendableContentLink.serializer(), value)
         }
         output.encodeJsonElement(element)
     }
@@ -4375,6 +8159,7 @@ data class UserSendableContentInputText(
     @EncodeDefault
     @SerialName("type") override val `type`: String = "text",
     @SerialName("text") val `text`: String,
+    @SerialName("mentions") val `mentions`: List<Id>? = null,
 ) : UserSendableContentInput
 
 @Serializable
@@ -4382,6 +8167,46 @@ data class UserSendableContentInputNudge(
     @EncodeDefault
     @SerialName("type") override val `type`: String = "nudge",
     @SerialName("targetParticipantId") val `targetParticipantId`: Id,
+) : UserSendableContentInput
+
+@Serializable
+data class UserSendableContentInputImage(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "image",
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("width") val `width`: Long?,
+    @SerialName("height") val `height`: Long?,
+) : UserSendableContentInput
+
+@Serializable
+data class UserSendableContentInputVoice(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "voice",
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("durationMs") val `durationMs`: Long,
+    @SerialName("transcript") val `transcript`: String?,
+) : UserSendableContentInput
+
+@Serializable
+data class UserSendableContentInputSticker(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "sticker",
+    @SerialName("stickerId") val `stickerId`: Id,
+    @SerialName("source") val `source`: String,
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("description") val `description`: String?,
+) : UserSendableContentInput
+
+@Serializable
+data class UserSendableContentInputLink(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "link",
+    @SerialName("url") val `url`: String,
+    @SerialName("title") val `title`: String,
+    @SerialName("source") val `source`: String?,
+    @SerialName("description") val `description`: String?,
+    @SerialName("coverMediaId") val `coverMediaId`: Id?,
+    @SerialName("appHint") val `appHint`: String,
 ) : UserSendableContentInput
 
 object UserSendableContentInputSerializer : KSerializer<UserSendableContentInput> {
@@ -4393,6 +8218,10 @@ object UserSendableContentInputSerializer : KSerializer<UserSendableContentInput
         return when (tag) {
             "text" -> input.json.decodeFromJsonElement(UserSendableContentInputText.serializer(), value)
             "nudge" -> input.json.decodeFromJsonElement(UserSendableContentInputNudge.serializer(), value)
+            "image" -> input.json.decodeFromJsonElement(UserSendableContentInputImage.serializer(), value)
+            "voice" -> input.json.decodeFromJsonElement(UserSendableContentInputVoice.serializer(), value)
+            "sticker" -> input.json.decodeFromJsonElement(UserSendableContentInputSticker.serializer(), value)
+            "link" -> input.json.decodeFromJsonElement(UserSendableContentInputLink.serializer(), value)
             else -> throw SerializationException("Unknown discriminator")
         }
     }
@@ -4401,10 +8230,32 @@ object UserSendableContentInputSerializer : KSerializer<UserSendableContentInput
         val element = when (value) {
             is UserSendableContentInputText -> output.json.encodeToJsonElement(UserSendableContentInputText.serializer(), value)
             is UserSendableContentInputNudge -> output.json.encodeToJsonElement(UserSendableContentInputNudge.serializer(), value)
+            is UserSendableContentInputImage -> output.json.encodeToJsonElement(UserSendableContentInputImage.serializer(), value)
+            is UserSendableContentInputVoice -> output.json.encodeToJsonElement(UserSendableContentInputVoice.serializer(), value)
+            is UserSendableContentInputSticker -> output.json.encodeToJsonElement(UserSendableContentInputSticker.serializer(), value)
+            is UserSendableContentInputLink -> output.json.encodeToJsonElement(UserSendableContentInputLink.serializer(), value)
         }
         output.encodeJsonElement(element)
     }
 }
+
+@Serializable
+data class UserSticker(
+    @SerialName("stickerId") val `stickerId`: Id,
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("url") val `url`: String,
+    @SerialName("order") val `order`: Long,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class UserSupplement(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("text") val `text`: String,
+    @SerialName("conflicts") val `conflicts`: List<SupplementConflict>,
+    @SerialName("plazaSource") val `plazaSource`: UserSupplementPlazaSource?,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
 
 @Serializable(with = UserUpdateSerializer::class)
 sealed interface UserUpdate {
@@ -4513,6 +8364,60 @@ data class UserUpdateModelStatusUpdated(
 ) : UserUpdate
 
 @Serializable
+data class UserUpdateMessageUpdated(
+    @SerialName("updateSeq") override val `updateSeq`: UpdateSeq,
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "message.updated",
+    @SerialName("data") val `data`: UserUpdateMessageUpdatedData,
+) : UserUpdate
+
+@Serializable
+data class UserUpdateCallUpdated(
+    @SerialName("updateSeq") override val `updateSeq`: UpdateSeq,
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "call.updated",
+    @SerialName("data") val `data`: UserUpdateCallUpdatedData,
+) : UserUpdate
+
+@Serializable
+data class UserUpdateMediaTranscriptReady(
+    @SerialName("updateSeq") override val `updateSeq`: UpdateSeq,
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "media.transcript_ready",
+    @SerialName("data") val `data`: UserUpdateMediaTranscriptReadyData,
+) : UserUpdate
+
+@Serializable
+data class UserUpdateMomentsBadgeUpdated(
+    @SerialName("updateSeq") override val `updateSeq`: UpdateSeq,
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "moments.badge_updated",
+    @SerialName("data") val `data`: UserUpdateMomentsBadgeUpdatedData,
+) : UserUpdate
+
+@Serializable
+data class UserUpdateMomentsPostChanged(
+    @SerialName("updateSeq") override val `updateSeq`: UpdateSeq,
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "moments.post_changed",
+    @SerialName("data") val `data`: UserUpdateMomentsPostChangedData,
+) : UserUpdate
+
+@Serializable
+data class UserUpdateDataChanged(
+    @SerialName("updateSeq") override val `updateSeq`: UpdateSeq,
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "data.changed",
+    @SerialName("data") val `data`: UserUpdateDataChangedData,
+) : UserUpdate
+
+@Serializable
 data class UserUpdateUnsupported(
     @SerialName("updateSeq") override val `updateSeq`: UpdateSeq,
     @SerialName("occurredAt") override val `occurredAt`: Timestamp,
@@ -4539,6 +8444,12 @@ object UserUpdateSerializer : KSerializer<UserUpdate> {
             "contact.removed" -> input.json.decodeFromJsonElement(UserUpdateContactRemoved.serializer(), value)
             "settings.updated" -> input.json.decodeFromJsonElement(UserUpdateSettingsUpdated.serializer(), value)
             "model.status_updated" -> input.json.decodeFromJsonElement(UserUpdateModelStatusUpdated.serializer(), value)
+            "message.updated" -> input.json.decodeFromJsonElement(UserUpdateMessageUpdated.serializer(), value)
+            "call.updated" -> input.json.decodeFromJsonElement(UserUpdateCallUpdated.serializer(), value)
+            "media.transcript_ready" -> input.json.decodeFromJsonElement(UserUpdateMediaTranscriptReady.serializer(), value)
+            "moments.badge_updated" -> input.json.decodeFromJsonElement(UserUpdateMomentsBadgeUpdated.serializer(), value)
+            "moments.post_changed" -> input.json.decodeFromJsonElement(UserUpdateMomentsPostChanged.serializer(), value)
+            "data.changed" -> input.json.decodeFromJsonElement(UserUpdateDataChanged.serializer(), value)
             "unsupported" -> input.json.decodeFromJsonElement(UserUpdateUnsupported.serializer(), value)
             else -> { require(tag != null) { "Missing discriminator" }; value = JsonObject(value + mapOf("type" to JsonPrimitive("unsupported"), "data" to buildJsonObject { put("originalType", tag) })); input.json.decodeFromJsonElement(UserUpdateUnsupported.serializer(), value) }
         }
@@ -4557,6 +8468,12 @@ object UserUpdateSerializer : KSerializer<UserUpdate> {
             is UserUpdateContactRemoved -> output.json.encodeToJsonElement(UserUpdateContactRemoved.serializer(), value)
             is UserUpdateSettingsUpdated -> output.json.encodeToJsonElement(UserUpdateSettingsUpdated.serializer(), value)
             is UserUpdateModelStatusUpdated -> output.json.encodeToJsonElement(UserUpdateModelStatusUpdated.serializer(), value)
+            is UserUpdateMessageUpdated -> output.json.encodeToJsonElement(UserUpdateMessageUpdated.serializer(), value)
+            is UserUpdateCallUpdated -> output.json.encodeToJsonElement(UserUpdateCallUpdated.serializer(), value)
+            is UserUpdateMediaTranscriptReady -> output.json.encodeToJsonElement(UserUpdateMediaTranscriptReady.serializer(), value)
+            is UserUpdateMomentsBadgeUpdated -> output.json.encodeToJsonElement(UserUpdateMomentsBadgeUpdated.serializer(), value)
+            is UserUpdateMomentsPostChanged -> output.json.encodeToJsonElement(UserUpdateMomentsPostChanged.serializer(), value)
+            is UserUpdateDataChanged -> output.json.encodeToJsonElement(UserUpdateDataChanged.serializer(), value)
             is UserUpdateUnsupported -> output.json.encodeToJsonElement(UserUpdateUnsupported.serializer(), value)
         }
         output.encodeJsonElement(element)
@@ -4645,6 +8562,48 @@ data class UserUpdatePayloadModelStatusUpdated(
     @SerialName("data") val `data`: UserUpdatePayloadModelStatusUpdatedData,
 ) : UserUpdatePayload
 
+@Serializable
+data class UserUpdatePayloadMessageUpdated(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "message.updated",
+    @SerialName("data") val `data`: UserUpdatePayloadMessageUpdatedData,
+) : UserUpdatePayload
+
+@Serializable
+data class UserUpdatePayloadCallUpdated(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "call.updated",
+    @SerialName("data") val `data`: UserUpdatePayloadCallUpdatedData,
+) : UserUpdatePayload
+
+@Serializable
+data class UserUpdatePayloadMediaTranscriptReady(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "media.transcript_ready",
+    @SerialName("data") val `data`: UserUpdatePayloadMediaTranscriptReadyData,
+) : UserUpdatePayload
+
+@Serializable
+data class UserUpdatePayloadMomentsBadgeUpdated(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "moments.badge_updated",
+    @SerialName("data") val `data`: UserUpdatePayloadMomentsBadgeUpdatedData,
+) : UserUpdatePayload
+
+@Serializable
+data class UserUpdatePayloadMomentsPostChanged(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "moments.post_changed",
+    @SerialName("data") val `data`: UserUpdatePayloadMomentsPostChangedData,
+) : UserUpdatePayload
+
+@Serializable
+data class UserUpdatePayloadDataChanged(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "data.changed",
+    @SerialName("data") val `data`: UserUpdatePayloadDataChangedData,
+) : UserUpdatePayload
+
 object UserUpdatePayloadSerializer : KSerializer<UserUpdatePayload> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("UserUpdatePayload")
     override fun deserialize(decoder: Decoder): UserUpdatePayload {
@@ -4663,6 +8622,12 @@ object UserUpdatePayloadSerializer : KSerializer<UserUpdatePayload> {
             "contact.removed" -> input.json.decodeFromJsonElement(UserUpdatePayloadContactRemoved.serializer(), value)
             "settings.updated" -> input.json.decodeFromJsonElement(UserUpdatePayloadSettingsUpdated.serializer(), value)
             "model.status_updated" -> input.json.decodeFromJsonElement(UserUpdatePayloadModelStatusUpdated.serializer(), value)
+            "message.updated" -> input.json.decodeFromJsonElement(UserUpdatePayloadMessageUpdated.serializer(), value)
+            "call.updated" -> input.json.decodeFromJsonElement(UserUpdatePayloadCallUpdated.serializer(), value)
+            "media.transcript_ready" -> input.json.decodeFromJsonElement(UserUpdatePayloadMediaTranscriptReady.serializer(), value)
+            "moments.badge_updated" -> input.json.decodeFromJsonElement(UserUpdatePayloadMomentsBadgeUpdated.serializer(), value)
+            "moments.post_changed" -> input.json.decodeFromJsonElement(UserUpdatePayloadMomentsPostChanged.serializer(), value)
+            "data.changed" -> input.json.decodeFromJsonElement(UserUpdatePayloadDataChanged.serializer(), value)
             else -> throw SerializationException("Unknown discriminator")
         }
     }
@@ -4680,12 +8645,72 @@ object UserUpdatePayloadSerializer : KSerializer<UserUpdatePayload> {
             is UserUpdatePayloadContactRemoved -> output.json.encodeToJsonElement(UserUpdatePayloadContactRemoved.serializer(), value)
             is UserUpdatePayloadSettingsUpdated -> output.json.encodeToJsonElement(UserUpdatePayloadSettingsUpdated.serializer(), value)
             is UserUpdatePayloadModelStatusUpdated -> output.json.encodeToJsonElement(UserUpdatePayloadModelStatusUpdated.serializer(), value)
+            is UserUpdatePayloadMessageUpdated -> output.json.encodeToJsonElement(UserUpdatePayloadMessageUpdated.serializer(), value)
+            is UserUpdatePayloadCallUpdated -> output.json.encodeToJsonElement(UserUpdatePayloadCallUpdated.serializer(), value)
+            is UserUpdatePayloadMediaTranscriptReady -> output.json.encodeToJsonElement(UserUpdatePayloadMediaTranscriptReady.serializer(), value)
+            is UserUpdatePayloadMomentsBadgeUpdated -> output.json.encodeToJsonElement(UserUpdatePayloadMomentsBadgeUpdated.serializer(), value)
+            is UserUpdatePayloadMomentsPostChanged -> output.json.encodeToJsonElement(UserUpdatePayloadMomentsPostChanged.serializer(), value)
+            is UserUpdatePayloadDataChanged -> output.json.encodeToJsonElement(UserUpdatePayloadDataChanged.serializer(), value)
         }
         output.encodeJsonElement(element)
     }
 }
 
 typealias Username = String
+
+@Serializable
+data class Voice(
+    @SerialName("voiceId") val `voiceId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("tags") val `tags`: List<String>,
+    @SerialName("sampleMediaId") val `sampleMediaId`: Id?,
+    @SerialName("sampleUrl") val `sampleUrl`: String?,
+    @SerialName("enabled") val `enabled`: Boolean,
+)
+
+@Serializable
+data class VoiceAdminEndpointsListVoicesResponse(
+    @SerialName("items") val `items`: List<AdminVoice>,
+)
+
+@Serializable
+data class VoiceAdminEndpointsUpdateVoiceBody(
+    @SerialName("name") val `name`: String? = null,
+    @SerialName("tags") val `tags`: List<String>? = null,
+    @SerialName("sampleMediaId") val `sampleMediaId`: Id? = null,
+    @SerialName("enabled") val `enabled`: Boolean? = null,
+    @SerialName("providerVoiceKey") val `providerVoiceKey`: String? = null,
+    @SerialName("modelKey") val `modelKey`: String? = null,
+    @SerialName("careFallbackMediaId") val `careFallbackMediaId`: Id? = null,
+)
+
+@Serializable
+data class VoiceAdminEndpointsUpdateVoiceParams(
+    @SerialName("voiceId") val `voiceId`: Id,
+)
+
+@Serializable
+data class VoiceContent(
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "voice",
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("durationMs") val `durationMs`: Long,
+    @SerialName("transcript") val `transcript`: String?,
+)
+
+@Serializable
+data class VoiceContentInput(
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "voice",
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("durationMs") val `durationMs`: Long,
+    @SerialName("transcript") val `transcript`: String?,
+)
+
+@Serializable
+data class VoiceEndpointsListVoicesResponse(
+    @SerialName("items") val `items`: List<Voice>,
+)
 
 @Serializable
 data class Wallet(
@@ -4725,11 +8750,181 @@ data class WeibanCardData(
     @SerialName("admin") val `admin`: CardAdmin,
 )
 
+@Serializable
+data class WishlistEndpointsAddItemBody(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("text") val `text`: String,
+    @SerialName("dueDate") val `dueDate`: LocalDate? = null,
+)
+
+@Serializable
+data class WishlistEndpointsAddItemParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class WishlistEndpointsListItemsParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class WishlistEndpointsListItemsResponse(
+    @SerialName("items") val `items`: List<WishlistItem>,
+    @SerialName("limit") val `limit`: Long,
+)
+
+@Serializable
+data class WishlistEndpointsListSummariesResponse(
+    @SerialName("items") val `items`: List<WishlistSummary>,
+)
+
+@Serializable
+data class WishlistEndpointsUpdateItemBody(
+    @SerialName("text") val `text`: String? = null,
+    @SerialName("dueDate") val `dueDate`: LocalDate? = null,
+    @SerialName("completed") val `completed`: Boolean? = null,
+)
+
+@Serializable
+data class WishlistEndpointsUpdateItemParams(
+    @SerialName("itemId") val `itemId`: Id,
+)
+
+@Serializable
+data class WishlistItem(
+    @SerialName("itemId") val `itemId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("text") val `text`: String,
+    @SerialName("proposedByCharacter") val `proposedByCharacter`: Boolean,
+    @SerialName("dueDate") val `dueDate`: LocalDate?,
+    @SerialName("completedAt") val `completedAt`: Timestamp?,
+    @SerialName("cardIssued") val `cardIssued`: Boolean,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class WishlistSummary(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("total") val `total`: Long,
+    @SerialName("completed") val `completed`: Long,
+)
+
+@Serializable
+data class WorkLink(
+    @SerialName("workLinkId") val `workLinkId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("title") val `title`: String,
+    @SerialName("url") val `url`: String,
+    @SerialName("source") val `source`: String?,
+    @SerialName("appHint") val `appHint`: LinkAppHint,
+    @SerialName("coverMediaId") val `coverMediaId`: Id?,
+    @SerialName("lastCheck") val `lastCheck`: WorkLinkLastCheck?,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class WorkLinkAdminEndpointsCreateWorkLinkParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class WorkLinkAdminEndpointsDeleteWorkLinkParams(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("workLinkId") val `workLinkId`: Id,
+)
+
+@Serializable
+data class WorkLinkAdminEndpointsListWorkLinksParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class WorkLinkAdminEndpointsListWorkLinksResponse(
+    @SerialName("items") val `items`: List<WorkLink>,
+)
+
+@Serializable
+data class WorkLinkAdminEndpointsSetDefaultVoiceBody(
+    @SerialName("voiceId") val `voiceId`: Id?,
+)
+
+@Serializable
+data class WorkLinkAdminEndpointsSetDefaultVoiceParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class WorkLinkAdminEndpointsSetDefaultVoiceResponse(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("voiceId") val `voiceId`: Id?,
+)
+
+@Serializable
+data class WorkLinkAdminEndpointsUpdateWorkLinkBody(
+    @SerialName("title") val `title`: String? = null,
+    @SerialName("url") val `url`: String? = null,
+    @SerialName("source") val `source`: String? = null,
+    @SerialName("appHint") val `appHint`: LinkAppHint? = null,
+    @SerialName("coverMediaId") val `coverMediaId`: Id? = null,
+    @SerialName("enabled") val `enabled`: Boolean? = null,
+)
+
+@Serializable
+data class WorkLinkAdminEndpointsUpdateWorkLinkParams(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("workLinkId") val `workLinkId`: Id,
+)
+
+@Serializable
+data class WorkLinkWrite(
+    @SerialName("title") val `title`: String,
+    @SerialName("url") val `url`: String,
+    @SerialName("source") val `source`: String?,
+    @SerialName("appHint") val `appHint`: LinkAppHint,
+    @SerialName("coverMediaId") val `coverMediaId`: Id?,
+    @SerialName("enabled") val `enabled`: Boolean,
+)
+
+@Serializable
+data class WorkLinkWriteInput(
+    @SerialName("title") val `title`: String,
+    @SerialName("url") val `url`: String,
+    @SerialName("source") val `source`: String?,
+    @SerialName("appHint") val `appHint`: LinkAppHint,
+    @SerialName("coverMediaId") val `coverMediaId`: Id?,
+    @SerialName("enabled") val `enabled`: Boolean,
+)
+
 typealias SharedSchema0 = JsonElement
 
 typealias SharedSchema1 = JsonElement
 
 typealias SharedSchema2 = JsonElement
+
+@Serializable
+data class AchievementProgress(
+    @SerialName("current") val `current`: Long,
+    @SerialName("target") val `target`: Long,
+)
+
+@Serializable
+data class ActionCardContentActionsItem(
+    @SerialName("actionId") val `actionId`: String,
+    @SerialName("label") val `label`: String,
+    @SerialName("style") val `style`: MessageActionStyle,
+)
+
+@Serializable
+data class ActionCardContentRef(
+    @SerialName("kind") val `kind`: String,
+    @SerialName("id") val `id`: String,
+)
+
+typealias AddFavoritesRequestItemsItem = JsonElement
+
+typealias AddFavoritesRequestInputItemsItem = JsonElement
 
 @Serializable
 data class AdminAlertRefs(
@@ -4753,6 +8948,16 @@ data class AdminCharacterPublishChecks(
     @SerialName("hasFallbackGreeting") val `hasFallbackGreeting`: Boolean,
 )
 
+typealias AdminPlazaReportTarget = JsonElement
+
+@Serializable
+data class AdminPlazaWorkRemixOf(
+    @SerialName("workId") val `workId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("authorNickname") val `authorNickname`: String,
+    @SerialName("available") val `available`: Boolean,
+)
+
 @Serializable
 data class ApiErrorError(
     @SerialName("code") val `code`: ReceivedErrorCode,
@@ -4765,6 +8970,62 @@ data class ApiErrorError(
 data class BillingAdminEndpointsGetPlatformSummaryResponseLast30DaysCostByUpstreamItem(
     @SerialName("upstreamId") val `upstreamId`: Id,
     @SerialName("costMicros") val `costMicros`: Long,
+)
+
+@Serializable
+data class CallStreamClientFrameHelloData(
+    @EncodeDefault
+    @SerialName("inputSampleRate") val `inputSampleRate`: Long = 16000,
+    @SerialName("clientTime") val `clientTime`: Timestamp,
+)
+
+@Serializable
+data class CallStreamClientFrameBargeInData(
+    @SerialName("at") val `at`: Timestamp,
+)
+
+@Serializable
+data class CallStreamClientFrameMuteData(
+    @SerialName("muted") val `muted`: Boolean,
+)
+
+@Serializable
+data class CallStreamClientFramePingData(
+    @SerialName("clientTime") val `clientTime`: Timestamp,
+)
+
+@Serializable
+data class CallStreamServerFrameCallReadyData(
+    @SerialName("callId") val `callId`: Id,
+    @SerialName("outputSampleRate") val `outputSampleRate`: Long,
+    @SerialName("serverTime") val `serverTime`: Timestamp,
+)
+
+@Serializable
+data class CallStreamServerFrameCallStateData(
+    @SerialName("state") val `state`: String,
+    @SerialName("durationSec") val `durationSec`: Long,
+)
+
+@Serializable
+data class CallStreamServerFrameCallAgentSpeakingData(
+    @SerialName("speaking") val `speaking`: Boolean,
+)
+
+@Serializable
+data class CallStreamServerFrameCallEndingData(
+    @SerialName("outcome") val `outcome`: String,
+)
+
+@Serializable
+data class CallStreamServerFrameCallErrorData(
+    @SerialName("code") val `code`: String,
+    @SerialName("message") val `message`: String,
+)
+
+@Serializable
+data class CallStreamServerFramePongData(
+    @SerialName("serverTime") val `serverTime`: Timestamp,
 )
 
 @Serializable
@@ -4917,6 +9178,22 @@ data class CompanionEndpointsListModesResponseItemsItem(
 )
 
 @Serializable
+data class ConversationGroup(
+    @SerialName("createdByCharacterId") val `createdByCharacterId`: Id?,
+    @SerialName("titleCustomized") val `titleCustomized`: Boolean,
+    @SerialName("memberLimit") val `memberLimit`: Long,
+)
+
+@Serializable
+data class DailyQuestionTodayAnswer(
+    @SerialName("answerId") val `answerId`: Id,
+    @SerialName("userAnswer") val `userAnswer`: String,
+    @SerialName("characterAnswer") val `characterAnswer`: String?,
+    @SerialName("characterAnswerStatus") val `characterAnswerStatus`: String,
+    @SerialName("answeredAt") val `answeredAt`: Timestamp,
+)
+
+@Serializable
 data class DraftCharacterCardData(
     @SerialName("persona") val `persona`: DraftCharacterCardDataPersona? = null,
     @SerialName("speech") val `speech`: DraftCharacterCardDataSpeech? = null,
@@ -4930,6 +9207,31 @@ data class DraftCharacterCardData(
     @SerialName("safetyStyle") val `safetyStyle`: DraftCharacterCardDataSafetyStyle? = null,
     @SerialName("profileExtra") val `profileExtra`: DraftCharacterCardDataProfileExtra? = null,
     @SerialName("admin") val `admin`: DraftCharacterCardDataAdmin? = null,
+)
+
+@Serializable
+data class EventsAchievementUnlockedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("achievementKey") val `achievementKey`: String,
+    @SerialName("no") val `no`: Long,
+)
+
+@Serializable
+data class EventsAiMilestonePayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("refId") val `refId`: String?,
+)
+
+@Serializable
+data class EventsAnniversaryReachedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("anniversaryId") val `anniversaryId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("daysKnown") val `daysKnown`: Long,
+    @SerialName("date") val `date`: LocalDate,
 )
 
 @Serializable
@@ -4957,6 +9259,42 @@ data class EventsBalanceRestoredPayload(
     @SerialName("userId") val `userId`: Id,
     @SerialName("availableMicros") val `availableMicros`: Long,
     @SerialName("trigger") val `trigger`: String,
+)
+
+@Serializable
+data class EventsCallAnsweredPayload(
+    @SerialName("callId") val `callId`: Id,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("direction") val `direction`: String,
+)
+
+@Serializable
+data class EventsCallEndedPayload(
+    @SerialName("callId") val `callId`: Id,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("direction") val `direction`: String,
+    @SerialName("outcome") val `outcome`: String,
+    @SerialName("durationSec") val `durationSec`: Long,
+)
+
+@Serializable
+data class EventsCallStartedPayload(
+    @SerialName("callId") val `callId`: Id,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("direction") val `direction`: String,
+)
+
+@Serializable
+data class EventsCardIssuedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("cardId") val `cardId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("totalCards") val `totalCards`: Long,
 )
 
 @Serializable
@@ -5030,6 +9368,15 @@ data class EventsConversationCreatedPayload(
     @SerialName("conversationId") val `conversationId`: Id,
     @SerialName("type") val `type`: ConversationType,
     @SerialName("participants") val `participants`: List<EventsConversationCreatedPayloadParticipantsItem>,
+)
+
+@Serializable
+data class EventsDailyAnswerSubmittedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("answerId") val `answerId`: Id,
+    @SerialName("questionId") val `questionId`: Id,
+    @SerialName("messageId") val `messageId`: Id,
 )
 
 @Serializable
@@ -5237,6 +9584,399 @@ data class EventsDomainEventChatContentScopeChangedPayload(
 )
 
 @Serializable
+data class EventsDomainEventCharactersRelationChangedPayload(
+    @SerialName("relationId") val `relationId`: Id,
+    @SerialName("characterAId") val `characterAId`: Id,
+    @SerialName("characterBId") val `characterBId`: Id,
+    @SerialName("ownerUserId") val `ownerUserId`: Id?,
+    @SerialName("action") val `action`: String,
+)
+
+@Serializable
+data class EventsDomainEventCharactersSupplementChangedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("action") val `action`: String,
+)
+
+@Serializable
+data class EventsDomainEventChatGroupMembersChangedPayload(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("ownerUserId") val `ownerUserId`: Id,
+    @SerialName("addedCharacterIds") val `addedCharacterIds`: List<Id>,
+    @SerialName("removedCharacterIds") val `removedCharacterIds`: List<Id>,
+    @SerialName("cause") val `cause`: String,
+    @SerialName("byCharacterId") val `byCharacterId`: Id?,
+)
+
+@Serializable
+data class EventsDomainEventChatGroupRenamedPayload(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("ownerUserId") val `ownerUserId`: Id,
+    @SerialName("byCharacterId") val `byCharacterId`: Id?,
+)
+
+@Serializable
+data class EventsDomainEventChatGroupDissolvedPayload(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("ownerUserId") val `ownerUserId`: Id,
+    @SerialName("createdByCharacterId") val `createdByCharacterId`: Id?,
+    @SerialName("memberCharacterIds") val `memberCharacterIds`: List<Id>,
+)
+
+@Serializable
+data class EventsDomainEventChatMessageActionChosenPayload(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("messageId") val `messageId`: Id,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("cardKind") val `cardKind`: String,
+    @SerialName("actionId") val `actionId`: String,
+    @SerialName("ref") val `ref`: EventsDomainEventChatMessageActionChosenPayloadRef?,
+)
+
+@Serializable
+data class EventsDomainEventMomentsPostCreatedPayload(
+    @SerialName("postId") val `postId`: Id,
+    @SerialName("ownerUserId") val `ownerUserId`: Id,
+    @SerialName("authorKind") val `authorKind`: String,
+    @SerialName("authorCharacterId") val `authorCharacterId`: Id?,
+    @SerialName("hasImages") val `hasImages`: Boolean,
+    @SerialName("visibleCharacterIds") val `visibleCharacterIds`: List<Id>,
+)
+
+@Serializable
+data class EventsDomainEventMomentsCommentCreatedPayload(
+    @SerialName("postId") val `postId`: Id,
+    @SerialName("commentId") val `commentId`: Id,
+    @SerialName("ownerUserId") val `ownerUserId`: Id,
+    @SerialName("postAuthorKind") val `postAuthorKind`: String,
+    @SerialName("postAuthorCharacterId") val `postAuthorCharacterId`: Id?,
+    @SerialName("authorKind") val `authorKind`: String,
+    @SerialName("authorCharacterId") val `authorCharacterId`: Id?,
+    @SerialName("replyToKind") val `replyToKind`: String?,
+    @SerialName("replyToCharacterId") val `replyToCharacterId`: Id?,
+    @SerialName("mentionsUser") val `mentionsUser`: Boolean,
+)
+
+@Serializable
+data class EventsDomainEventMomentsPostLikedPayload(
+    @SerialName("postId") val `postId`: Id,
+    @SerialName("ownerUserId") val `ownerUserId`: Id,
+    @SerialName("postAuthorKind") val `postAuthorKind`: String,
+    @SerialName("likerKind") val `likerKind`: String,
+    @SerialName("likerCharacterId") val `likerCharacterId`: Id?,
+    @SerialName("characterLikeCount") val `characterLikeCount`: Long,
+)
+
+@Serializable
+data class EventsDomainEventAiRuntimeMilestonePayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("refId") val `refId`: String?,
+)
+
+@Serializable
+data class EventsDomainEventGrowthFamiliarityLeveledUpPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("level") val `level`: Long,
+)
+
+@Serializable
+data class EventsDomainEventGrowthAnniversaryReachedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("anniversaryId") val `anniversaryId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("daysKnown") val `daysKnown`: Long,
+    @SerialName("date") val `date`: LocalDate,
+)
+
+@Serializable
+data class EventsDomainEventGrowthCardIssuedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("cardId") val `cardId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("totalCards") val `totalCards`: Long,
+)
+
+@Serializable
+data class EventsDomainEventGrowthAchievementUnlockedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("achievementKey") val `achievementKey`: String,
+    @SerialName("no") val `no`: Long,
+)
+
+@Serializable
+data class EventsDomainEventGrowthPetAdoptedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("petId") val `petId`: Id,
+    @SerialName("speciesId") val `speciesId`: Id,
+)
+
+@Serializable
+data class EventsDomainEventGrowthPetStageChangedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("petId") val `petId`: Id,
+    @SerialName("stage") val `stage`: String,
+)
+
+@Serializable
+data class EventsDomainEventGrowthPetSentAwayPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("petId") val `petId`: Id,
+)
+
+@Serializable
+data class EventsDomainEventGrowthPetRenamedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("petId") val `petId`: Id,
+)
+
+@Serializable
+data class EventsDomainEventGrowthPetNamingRequestedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("requestId") val `requestId`: Id,
+    @SerialName("speciesId") val `speciesId`: Id,
+    @SerialName("appearanceId") val `appearanceId`: Id,
+)
+
+@Serializable
+data class EventsDomainEventLibraryFavoriteAddedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("favoriteIds") val `favoriteIds`: List<Id>,
+    @SerialName("totalFavorites") val `totalFavorites`: Long,
+)
+
+@Serializable
+data class EventsDomainEventLibraryShareImageGeneratedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("template") val `template`: String,
+)
+
+@Serializable
+data class EventsDomainEventCallsCallStartedPayload(
+    @SerialName("callId") val `callId`: Id,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("direction") val `direction`: String,
+)
+
+@Serializable
+data class EventsDomainEventCallsCallAnsweredPayload(
+    @SerialName("callId") val `callId`: Id,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("direction") val `direction`: String,
+)
+
+@Serializable
+data class EventsDomainEventCallsCallEndedPayload(
+    @SerialName("callId") val `callId`: Id,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("direction") val `direction`: String,
+    @SerialName("outcome") val `outcome`: String,
+    @SerialName("durationSec") val `durationSec`: Long,
+)
+
+@Serializable
+data class EventsDomainEventImporterJobCompletedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("jobId") val `jobId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("ok") val `ok`: Boolean,
+)
+
+@Serializable
+data class EventsDomainEventPlazaWorkPublishedPayload(
+    @SerialName("workId") val `workId`: Id,
+    @SerialName("authorUserId") val `authorUserId`: Id,
+    @SerialName("kind") val `kind`: String,
+)
+
+@Serializable
+data class EventsDomainEventPlazaWorkVersionPublishedPayload(
+    @SerialName("workId") val `workId`: Id,
+    @SerialName("authorUserId") val `authorUserId`: Id,
+    @SerialName("version") val `version`: Long,
+)
+
+@Serializable
+data class EventsDomainEventPlazaWorkRemovedPayload(
+    @SerialName("workId") val `workId`: Id,
+    @SerialName("authorUserId") val `authorUserId`: Id,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class EventsDomainEventPlayDailyAnswerSubmittedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("answerId") val `answerId`: Id,
+    @SerialName("questionId") val `questionId`: Id,
+    @SerialName("messageId") val `messageId`: Id,
+)
+
+@Serializable
+data class EventsDomainEventPlayWishlistItemChangedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("itemId") val `itemId`: Id,
+    @SerialName("action") val `action`: String,
+    @SerialName("dueDate") val `dueDate`: LocalDate?,
+)
+
+@Serializable
+data class EventsDomainEventPlayWishlistItemCompletedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("itemId") val `itemId`: Id,
+    @SerialName("firstCompletion") val `firstCompletion`: Boolean,
+)
+
+@Serializable
+data class EventsDomainEventPlayLetterSentPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("letterId") val `letterId`: Id,
+    @SerialName("deliverAt") val `deliverAt`: Timestamp,
+)
+
+@Serializable
+data class EventsDomainEventPlayLetterDeliveredPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("letterId") val `letterId`: Id,
+    @SerialName("firstReplyFromCharacter") val `firstReplyFromCharacter`: Boolean,
+)
+
+@Serializable
+data class EventsDomainEventPlayFocusStartedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("focusId") val `focusId`: Id,
+    @SerialName("endsAt") val `endsAt`: Timestamp,
+)
+
+@Serializable
+data class EventsDomainEventPlayFocusEndedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("focusId") val `focusId`: Id,
+    @SerialName("result") val `result`: String,
+    @SerialName("minutes") val `minutes`: Long,
+)
+
+@Serializable
+data class EventsDomainEventPlayReminderSavedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("reminderId") val `reminderId`: Id,
+    @SerialName("textChanged") val `textChanged`: Boolean,
+)
+
+@Serializable
+data class EventsFamiliarityLeveledUpPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("level") val `level`: Long,
+)
+
+@Serializable
+data class EventsFavoriteAddedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("favoriteIds") val `favoriteIds`: List<Id>,
+    @SerialName("totalFavorites") val `totalFavorites`: Long,
+)
+
+@Serializable
+data class EventsFocusEndedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("focusId") val `focusId`: Id,
+    @SerialName("result") val `result`: String,
+    @SerialName("minutes") val `minutes`: Long,
+)
+
+@Serializable
+data class EventsFocusStartedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("focusId") val `focusId`: Id,
+    @SerialName("endsAt") val `endsAt`: Timestamp,
+)
+
+@Serializable
+data class EventsGroupDissolvedPayload(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("ownerUserId") val `ownerUserId`: Id,
+    @SerialName("createdByCharacterId") val `createdByCharacterId`: Id?,
+    @SerialName("memberCharacterIds") val `memberCharacterIds`: List<Id>,
+)
+
+@Serializable
+data class EventsGroupMembersChangedPayload(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("ownerUserId") val `ownerUserId`: Id,
+    @SerialName("addedCharacterIds") val `addedCharacterIds`: List<Id>,
+    @SerialName("removedCharacterIds") val `removedCharacterIds`: List<Id>,
+    @SerialName("cause") val `cause`: String,
+    @SerialName("byCharacterId") val `byCharacterId`: Id?,
+)
+
+@Serializable
+data class EventsGroupRenamedPayload(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("ownerUserId") val `ownerUserId`: Id,
+    @SerialName("byCharacterId") val `byCharacterId`: Id?,
+)
+
+@Serializable
+data class EventsImportJobCompletedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("jobId") val `jobId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("ok") val `ok`: Boolean,
+)
+
+@Serializable
+data class EventsLetterDeliveredPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("letterId") val `letterId`: Id,
+    @SerialName("firstReplyFromCharacter") val `firstReplyFromCharacter`: Boolean,
+)
+
+@Serializable
+data class EventsLetterSentPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("letterId") val `letterId`: Id,
+    @SerialName("deliverAt") val `deliverAt`: Timestamp,
+)
+
+@Serializable
+data class EventsMessageActionChosenPayload(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("messageId") val `messageId`: Id,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("cardKind") val `cardKind`: String,
+    @SerialName("actionId") val `actionId`: String,
+    @SerialName("ref") val `ref`: EventsMessageActionChosenPayloadRef?,
+)
+
+@Serializable
 data class EventsMessageCreatedPayload(
     @SerialName("conversationId") val `conversationId`: Id,
     @SerialName("conversationType") val `conversationType`: ConversationType,
@@ -5275,6 +10015,40 @@ data class EventsModelStatusChangedPayload(
 )
 
 @Serializable
+data class EventsMomentsCommentCreatedPayload(
+    @SerialName("postId") val `postId`: Id,
+    @SerialName("commentId") val `commentId`: Id,
+    @SerialName("ownerUserId") val `ownerUserId`: Id,
+    @SerialName("postAuthorKind") val `postAuthorKind`: String,
+    @SerialName("postAuthorCharacterId") val `postAuthorCharacterId`: Id?,
+    @SerialName("authorKind") val `authorKind`: String,
+    @SerialName("authorCharacterId") val `authorCharacterId`: Id?,
+    @SerialName("replyToKind") val `replyToKind`: String?,
+    @SerialName("replyToCharacterId") val `replyToCharacterId`: Id?,
+    @SerialName("mentionsUser") val `mentionsUser`: Boolean,
+)
+
+@Serializable
+data class EventsMomentsPostCreatedPayload(
+    @SerialName("postId") val `postId`: Id,
+    @SerialName("ownerUserId") val `ownerUserId`: Id,
+    @SerialName("authorKind") val `authorKind`: String,
+    @SerialName("authorCharacterId") val `authorCharacterId`: Id?,
+    @SerialName("hasImages") val `hasImages`: Boolean,
+    @SerialName("visibleCharacterIds") val `visibleCharacterIds`: List<Id>,
+)
+
+@Serializable
+data class EventsMomentsPostLikedPayload(
+    @SerialName("postId") val `postId`: Id,
+    @SerialName("ownerUserId") val `ownerUserId`: Id,
+    @SerialName("postAuthorKind") val `postAuthorKind`: String,
+    @SerialName("likerKind") val `likerKind`: String,
+    @SerialName("likerCharacterId") val `likerCharacterId`: Id?,
+    @SerialName("characterLikeCount") val `characterLikeCount`: Long,
+)
+
+@Serializable
 data class EventsNotificationSettingsUpdatedPayload(
     @SerialName("userId") val `userId`: Id,
 )
@@ -5283,6 +10057,66 @@ data class EventsNotificationSettingsUpdatedPayload(
 data class EventsPersonaVersionPublishedPayload(
     @SerialName("characterId") val `characterId`: Id,
     @SerialName("personaVersion") val `personaVersion`: Long,
+)
+
+@Serializable
+data class EventsPetAdoptedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("petId") val `petId`: Id,
+    @SerialName("speciesId") val `speciesId`: Id,
+)
+
+@Serializable
+data class EventsPetNamingRequestedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("requestId") val `requestId`: Id,
+    @SerialName("speciesId") val `speciesId`: Id,
+    @SerialName("appearanceId") val `appearanceId`: Id,
+)
+
+@Serializable
+data class EventsPetRenamedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("petId") val `petId`: Id,
+)
+
+@Serializable
+data class EventsPetSentAwayPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("petId") val `petId`: Id,
+)
+
+@Serializable
+data class EventsPetStageChangedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("petId") val `petId`: Id,
+    @SerialName("stage") val `stage`: String,
+)
+
+@Serializable
+data class EventsPlazaWorkPublishedPayload(
+    @SerialName("workId") val `workId`: Id,
+    @SerialName("authorUserId") val `authorUserId`: Id,
+    @SerialName("kind") val `kind`: String,
+)
+
+@Serializable
+data class EventsPlazaWorkRemovedPayload(
+    @SerialName("workId") val `workId`: Id,
+    @SerialName("authorUserId") val `authorUserId`: Id,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class EventsPlazaWorkVersionPublishedPayload(
+    @SerialName("workId") val `workId`: Id,
+    @SerialName("authorUserId") val `authorUserId`: Id,
+    @SerialName("version") val `version`: Long,
 )
 
 @Serializable
@@ -5305,10 +10139,40 @@ data class EventsReadCursorMovedPayload(
 )
 
 @Serializable
+data class EventsRelationChangedPayload(
+    @SerialName("relationId") val `relationId`: Id,
+    @SerialName("characterAId") val `characterAId`: Id,
+    @SerialName("characterBId") val `characterBId`: Id,
+    @SerialName("ownerUserId") val `ownerUserId`: Id?,
+    @SerialName("action") val `action`: String,
+)
+
+@Serializable
+data class EventsReminderSavedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("reminderId") val `reminderId`: Id,
+    @SerialName("textChanged") val `textChanged`: Boolean,
+)
+
+@Serializable
 data class EventsSessionRevokedPayload(
     @SerialName("userId") val `userId`: Id,
     @SerialName("sessionId") val `sessionId`: Id,
     @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class EventsShareImageGeneratedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("template") val `template`: String,
+)
+
+@Serializable
+data class EventsSupplementChangedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("action") val `action`: String,
 )
 
 @Serializable
@@ -5340,7 +10204,70 @@ data class EventsUserRegisteredPayload(
     @SerialName("signupBonus") val `signupBonus`: EventsUserRegisteredPayloadSignupBonus? = null,
 )
 
+@Serializable
+data class EventsWishlistItemChangedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("itemId") val `itemId`: Id,
+    @SerialName("action") val `action`: String,
+    @SerialName("dueDate") val `dueDate`: LocalDate?,
+)
+
+@Serializable
+data class EventsWishlistItemCompletedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("itemId") val `itemId`: Id,
+    @SerialName("firstCompletion") val `firstCompletion`: Boolean,
+)
+
+@Serializable
+data class GroupCompanionEndpointsListModesResponseItemsItem(
+    @SerialName("id") val `id`: ScenarioMode,
+    @SerialName("name") val `name`: String,
+)
+
+@Serializable
+data class GrowthCardFace(
+    @SerialName("templateId") val `templateId`: Id?,
+    @SerialName("mediaId") val `mediaId`: Id?,
+    @SerialName("url") val `url`: String?,
+)
+
+@Serializable
+data class HealthTagAdminEndpointsPutSymptomTagsBodyItemsItem(
+    @SerialName("name") val `name`: String,
+    @SerialName("order") val `order`: Long,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("tagId") val `tagId`: Id? = null,
+)
+
+@Serializable
+data class ImportJobSpeakersItem(
+    @SerialName("name") val `name`: String,
+    @SerialName("messageCount") val `messageCount`: Long,
+)
+
+@Serializable
+data class MessageActionChoice(
+    @SerialName("actionId") val `actionId`: String,
+    @SerialName("chosenAt") val `chosenAt`: Timestamp,
+)
+
 typealias MessageContentSystemParamsValue = JsonElement
+
+@Serializable
+data class MessageContentActionCardActionsItem(
+    @SerialName("actionId") val `actionId`: String,
+    @SerialName("label") val `label`: String,
+    @SerialName("style") val `style`: MessageActionStyle,
+)
+
+@Serializable
+data class MessageContentActionCardRef(
+    @SerialName("kind") val `kind`: String,
+    @SerialName("id") val `id`: String,
+)
 
 @Serializable
 data class MessagePageCoverageExcludedRangesItem(
@@ -5350,10 +10277,58 @@ data class MessagePageCoverageExcludedRangesItem(
 )
 
 @Serializable
+data class MomentsPostLink(
+    @SerialName("url") val `url`: String,
+    @SerialName("title") val `title`: String,
+    @SerialName("source") val `source`: String?,
+    @SerialName("description") val `description`: String?,
+    @SerialName("coverMediaId") val `coverMediaId`: Id?,
+    @SerialName("appHint") val `appHint`: String,
+)
+
+@Serializable
 data class NotificationSettingsDoNotDisturb(
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("start") val `start`: LocalTime,
     @SerialName("end") val `end`: LocalTime,
+)
+
+@Serializable
+data class PetAppearanceImages(
+    @SerialName("baby") val `baby`: PetImage,
+    @SerialName("junior") val `junior`: PetImage,
+    @SerialName("adult") val `adult`: PetImage,
+)
+
+@Serializable
+data class PetSpeciesAdminEndpointsUpdateSpeciesBodyAppearancesItem(
+    @SerialName("appearanceId") val `appearanceId`: Id? = null,
+    @SerialName("name") val `name`: String,
+    @SerialName("imageMediaIds") val `imageMediaIds`: PetSpeciesAdminEndpointsUpdateSpeciesBodyAppearancesItemImageMediaIds,
+)
+
+@Serializable
+data class PetSpeciesWriteAppearancesItem(
+    @SerialName("appearanceId") val `appearanceId`: Id? = null,
+    @SerialName("name") val `name`: String,
+    @SerialName("imageMediaIds") val `imageMediaIds`: PetSpeciesWriteAppearancesItemImageMediaIds,
+)
+
+@Serializable
+data class PetSpeciesWriteInputAppearancesItem(
+    @SerialName("appearanceId") val `appearanceId`: Id? = null,
+    @SerialName("name") val `name`: String,
+    @SerialName("imageMediaIds") val `imageMediaIds`: PetSpeciesWriteInputAppearancesItemImageMediaIds,
+)
+
+typealias PlazaEndpointsReportBodyTarget = JsonElement
+
+@Serializable
+data class PlazaWorkDetailRemixOf(
+    @SerialName("workId") val `workId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("authorNickname") val `authorNickname`: String,
+    @SerialName("available") val `available`: Boolean,
 )
 
 @Serializable
@@ -5370,6 +10345,19 @@ data class ProtocolVectorExpected(
 )
 
 typealias ReceivedMessageContentSystemParamsValue = JsonElement
+
+@Serializable
+data class ReceivedMessageContentActionCardActionsItem(
+    @SerialName("actionId") val `actionId`: String,
+    @SerialName("label") val `label`: String,
+    @SerialName("style") val `style`: MessageActionStyle,
+)
+
+@Serializable
+data class ReceivedMessageContentActionCardRef(
+    @SerialName("kind") val `kind`: String,
+    @SerialName("id") val `id`: String,
+)
 
 @Serializable
 data class ReceivedUserUpdatePayloadMessageCreatedData(
@@ -5431,6 +10419,39 @@ data class ReceivedUserUpdatePayloadSettingsUpdatedData(
 @Serializable
 data class ReceivedUserUpdatePayloadModelStatusUpdatedData(
     @SerialName("status") val `status`: ModelStatus,
+)
+
+@Serializable
+data class ReceivedUserUpdatePayloadMessageUpdatedData(
+    @SerialName("message") val `message`: Message,
+)
+
+@Serializable
+data class ReceivedUserUpdatePayloadCallUpdatedData(
+    @SerialName("call") val `call`: CallSession,
+)
+
+@Serializable
+data class ReceivedUserUpdatePayloadMediaTranscriptReadyData(
+    @SerialName("transcript") val `transcript`: MediaTranscript,
+)
+
+@Serializable
+data class ReceivedUserUpdatePayloadMomentsBadgeUpdatedData(
+    @SerialName("badge") val `badge`: MomentsBadge,
+)
+
+@Serializable
+data class ReceivedUserUpdatePayloadMomentsPostChangedData(
+    @SerialName("postId") val `postId`: Id,
+    @SerialName("deleted") val `deleted`: Boolean,
+)
+
+@Serializable
+data class ReceivedUserUpdatePayloadDataChangedData(
+    @SerialName("section") val `section`: String,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("itemId") val `itemId`: Id?,
 )
 
 @Serializable
@@ -5567,6 +10588,12 @@ data class ServerUnsupportedFrameData(
 typealias SystemContentParamsValue = JsonElement
 
 @Serializable
+data class TimelineEntryRef(
+    @SerialName("kind") val `kind`: String,
+    @SerialName("id") val `id`: String,
+)
+
+@Serializable
 data class UnsupportedUpdateData(
     @SerialName("originalType") val `originalType`: String,
 )
@@ -5583,6 +10610,13 @@ data class UpdateNotificationSettingsRequestInputDoNotDisturb(
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("start") val `start`: LocalTime,
     @SerialName("end") val `end`: LocalTime,
+)
+
+@Serializable
+data class UserSupplementPlazaSource(
+    @SerialName("workId") val `workId`: Id,
+    @SerialName("version") val `version`: Long,
+    @SerialName("authorName") val `authorName`: String,
 )
 
 @Serializable
@@ -5645,6 +10679,39 @@ data class UserUpdateSettingsUpdatedData(
 @Serializable
 data class UserUpdateModelStatusUpdatedData(
     @SerialName("status") val `status`: ModelStatus,
+)
+
+@Serializable
+data class UserUpdateMessageUpdatedData(
+    @SerialName("message") val `message`: Message,
+)
+
+@Serializable
+data class UserUpdateCallUpdatedData(
+    @SerialName("call") val `call`: CallSession,
+)
+
+@Serializable
+data class UserUpdateMediaTranscriptReadyData(
+    @SerialName("transcript") val `transcript`: MediaTranscript,
+)
+
+@Serializable
+data class UserUpdateMomentsBadgeUpdatedData(
+    @SerialName("badge") val `badge`: MomentsBadge,
+)
+
+@Serializable
+data class UserUpdateMomentsPostChangedData(
+    @SerialName("postId") val `postId`: Id,
+    @SerialName("deleted") val `deleted`: Boolean,
+)
+
+@Serializable
+data class UserUpdateDataChangedData(
+    @SerialName("section") val `section`: String,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("itemId") val `itemId`: Id?,
 )
 
 @Serializable
@@ -5715,6 +10782,39 @@ data class UserUpdatePayloadModelStatusUpdatedData(
 )
 
 @Serializable
+data class UserUpdatePayloadMessageUpdatedData(
+    @SerialName("message") val `message`: Message,
+)
+
+@Serializable
+data class UserUpdatePayloadCallUpdatedData(
+    @SerialName("call") val `call`: CallSession,
+)
+
+@Serializable
+data class UserUpdatePayloadMediaTranscriptReadyData(
+    @SerialName("transcript") val `transcript`: MediaTranscript,
+)
+
+@Serializable
+data class UserUpdatePayloadMomentsBadgeUpdatedData(
+    @SerialName("badge") val `badge`: MomentsBadge,
+)
+
+@Serializable
+data class UserUpdatePayloadMomentsPostChangedData(
+    @SerialName("postId") val `postId`: Id,
+    @SerialName("deleted") val `deleted`: Boolean,
+)
+
+@Serializable
+data class UserUpdatePayloadDataChangedData(
+    @SerialName("section") val `section`: String,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("itemId") val `itemId`: Id?,
+)
+
+@Serializable
 data class WalletBackgroundBudget(
     @SerialName("dailyLimitMicros") val `dailyLimitMicros`: Long,
     @SerialName("spentTodayMicros") val `spentTodayMicros`: Long,
@@ -5731,6 +10831,12 @@ data class WebPushSubscriptionKeys(
 data class WebPushSubscriptionInputKeys(
     @SerialName("p256dh") val `p256dh`: String,
     @SerialName("auth") val `auth`: String,
+)
+
+@Serializable
+data class WorkLinkLastCheck(
+    @SerialName("ok") val `ok`: Boolean,
+    @SerialName("checkedAt") val `checkedAt`: Timestamp,
 )
 
 typealias CardProfileExtraWorksDetailItemYear = JsonElement
@@ -5866,9 +10972,42 @@ data class EventsDomainEventChatConversationCreatedPayloadParticipantsItem(
 )
 
 @Serializable
+data class EventsDomainEventChatMessageActionChosenPayloadRef(
+    @SerialName("kind") val `kind`: String,
+    @SerialName("id") val `id`: String,
+)
+
+@Serializable
+data class EventsMessageActionChosenPayloadRef(
+    @SerialName("kind") val `kind`: String,
+    @SerialName("id") val `id`: String,
+)
+
+@Serializable
 data class EventsUserRegisteredPayloadSignupBonus(
     @SerialName("amountMicros") val `amountMicros`: Long,
     @SerialName("grantedByUserId") val `grantedByUserId`: Id?,
+)
+
+@Serializable
+data class PetSpeciesAdminEndpointsUpdateSpeciesBodyAppearancesItemImageMediaIds(
+    @SerialName("baby") val `baby`: Id,
+    @SerialName("junior") val `junior`: Id,
+    @SerialName("adult") val `adult`: Id,
+)
+
+@Serializable
+data class PetSpeciesWriteAppearancesItemImageMediaIds(
+    @SerialName("baby") val `baby`: Id,
+    @SerialName("junior") val `junior`: Id,
+    @SerialName("adult") val `adult`: Id,
+)
+
+@Serializable
+data class PetSpeciesWriteInputAppearancesItemImageMediaIds(
+    @SerialName("baby") val `baby`: Id,
+    @SerialName("junior") val `junior`: Id,
+    @SerialName("adult") val `adult`: Id,
 )
 
 @Serializable

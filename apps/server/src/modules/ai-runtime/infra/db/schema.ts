@@ -175,6 +175,22 @@ export const moodStates = aiRuntimeSchema.table(
   ],
 );
 
+/**
+ * T-060 经期关怀配额账本（PLAY-01 第 6 条、P-36）。
+ * 只记「某周期的某个名额已用」：cycleKey 是 health 给的不透明随机 ID，slot 是
+ * pre_period / in_period / chat_d{经期第几天}；不存任何日期、痛感或症状（health-data.md 第 4 节）。
+ */
+export const healthCareLedger = aiRuntimeSchema.table(
+  'health_care_ledger',
+  {
+    userId: uuid('user_id').notNull(),
+    cycleKey: text('cycle_key').notNull(),
+    slot: text('slot').notNull(),
+    characterId: uuid('character_id'),
+  },
+  (t) => [unique('health_care_ledger_slot_idx').on(t.userId, t.cycleKey, t.slot)],
+);
+
 /** 计划记录仅ID、状态与时序；模型输入和已生成气泡按用户DEK加密。 */
 export const replyPlans = aiRuntimeSchema.table(
   'reply_plans',
@@ -211,5 +227,59 @@ export const replyPlans = aiRuntimeSchema.table(
     unique('reply_trigger_idx').on(t.userId, t.triggerId),
     index('reply_due_idx').on(t.status, t.dueAt),
     index('reply_conversation_idx').on(t.conversationId, t.triggerSeq),
+  ],
+);
+
+/**
+ * T-053 主动消息调度计划：每条候选主动消息一行，记录理由（SIM-05 第 10 条）、
+ * 来源（事件 ID / 约定 ID / 节日 ID / 久未联系起点）、话题键（P-07 去重）与最终结局。
+ * 同一来源（sourceRef）对同一用户只会出现一次：一个日常事件最多推一次（第 6 章总规则 1）。
+ */
+export const proactivePlans = aiRuntimeSchema.table(
+  'proactive_plans',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    reason: text('reason').notNull(),
+    sourceRef: text('source_ref').notNull(),
+    topicKey: text('topic_key').notNull(),
+    /** 给模型的素材说明（不含用户隐私原文以外的东西；事件摘要、节日名等）。 */
+    brief: text('brief').notNull(),
+    localDate: text('local_date').notNull(),
+    isHoliday: boolean('is_holiday').notNull().default(false),
+    priority: integer('priority').notNull().default(0),
+    status: text('status').notNull(),
+    dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
+    /** 第一次因 P-09 延后的时间；超过 60 分钟放弃。 */
+    deferredSince: timestamp('deferred_since', { withTimezone: true }),
+    outcome: text('outcome'),
+    messageId: uuid('message_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('proactive_plan_source_idx').on(t.userId, t.characterId, t.sourceRef),
+    check('proactive_plan_status', sql`${t.status} IN ('planned','generating','sent','dropped')`),
+    index('proactive_plan_due_idx').on(t.status, t.dueAt),
+    index('proactive_plan_topic_idx').on(t.userId, t.characterId, t.topicKey),
+  ],
+);
+
+/**
+ * T-053 用户聊天活跃小时（P-06 活跃时段学习、P-09 正在聊天判断）。
+ * 只存「哪天哪个小时发过消息」与该小时最后一次时间，不存内容。保留 15 天。
+ */
+export const userChatActivity = aiRuntimeSchema.table(
+  'user_chat_activity',
+  {
+    userId: uuid('user_id').notNull(),
+    localDate: text('local_date').notNull(),
+    hour: integer('hour').notNull(),
+    lastAt: timestamp('last_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('user_chat_activity_pk').on(t.userId, t.localDate, t.hour),
+    check('user_chat_activity_hour', sql`${t.hour} >= 0 AND ${t.hour} <= 23`),
   ],
 );

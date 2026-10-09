@@ -1,10 +1,13 @@
 import {
+  boolean,
   customType,
+  integer,
   index,
   pgSchema,
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -56,4 +59,21 @@ export const grants = healthSchema.table(
     primaryKey({ columns: [t.userId, t.characterId] }),
     index('grants_user_idx').on(t.userId),
   ],
+);
+
+/**
+ * symptom_tags: 管理员维护的经期症状标签（ADM-04 第 5 条）。迁移 0027。
+ * 只是标签字典，不含任何用户数据；用户记录里存标签名，停用/删除的标签在旧记录中照常显示。
+ */
+export const symptomTags = healthSchema.table(
+  'symptom_tags',
+  {
+    id: uuid('id').primaryKey(),
+    name: text('name').notNull(),
+    sortOrder: integer('sort_order').notNull(),
+    enabled: boolean('enabled').notNull(),
+    createdAt: time('created_at').notNull(),
+    updatedAt: time('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('symptom_tags_name_idx').on(t.name)],
 );

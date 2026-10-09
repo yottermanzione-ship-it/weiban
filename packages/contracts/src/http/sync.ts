@@ -18,6 +18,9 @@ import {
 import { Contact } from './contacts.js';
 import { Conversation, Message, UserConversationState } from './chat.js';
 import { ModelStatus } from './model-access.js';
+import { CallSession } from './calls.js';
+import { MediaTranscript } from './media.js';
+import { MomentsBadge } from './moments.js';
 
 const MessageCreated = z.object({
   type: z.literal('message.created'),
@@ -101,6 +104,71 @@ const ModelStatusUpdated = z.object({
   data: z.object({ status: ModelStatus }),
 });
 
+// ---------- 3.0（L4～L7） ----------
+
+/** 消息本身的变化（目前只有卡片按钮被选择，Message.actionChoice）。带完整新消息，可重复应用。 */
+const MessageUpdated = z.object({
+  type: z.literal('message.updated'),
+  data: z.object({ message: Message }),
+});
+
+/** 通话状态变化（响铃、接通、结束）：其他设备停止响铃、恢复「通话中」胶囊。 */
+const CallUpdated = z.object({
+  type: z.literal('call.updated'),
+  data: z.object({ call: CallSession }),
+});
+
+/** 语音转文字完成（MED-03）。 */
+const MediaTranscriptReady = z.object({
+  type: z.literal('media.transcript_ready'),
+  data: z.object({ transcript: MediaTranscript }),
+});
+
+/** 朋友圈红点变化（新动态、新互动、已读）。 */
+const MomentsBadgeUpdated = z.object({
+  type: z.literal('moments.badge_updated'),
+  data: z.object({ badge: MomentsBadge }),
+});
+
+/** 某条朋友圈有新点赞 / 评论（客户端在看这条时重新拉 getPost）。 */
+const MomentsPostChanged = z.object({
+  type: z.literal('moments.post_changed'),
+  data: z.object({ postId: Id, deleted: z.boolean() }),
+});
+
+/**
+ * 养成、收藏、玩法、广场、导入等「哪一块变了」的通知，客户端重新拉对应接口（同 settings.updated 的做法）。
+ * 新增 section 是次版本变更；不认识的忽略。
+ */
+export const DataSection = z.enum([
+  'familiarity',
+  'anniversaries',
+  'cards',
+  'achievements',
+  'pets',
+  'favorites',
+  'daily_question',
+  'wishlist',
+  'letters',
+  'focus',
+  'reminders',
+  'plaza_badge',
+  'imports',
+  'quiet_state',
+  'stickers',
+]);
+export type DataSection = z.infer<typeof DataSection>;
+
+const DataChanged = z.object({
+  type: z.literal('data.changed'),
+  data: z.object({
+    section: tolerantEnum(DataSection),
+    characterId: Id.nullable(),
+    /** 具体对象（卡片、宠物、信件、导入任务等）；整块变化为 null。 */
+    itemId: Id.nullable(),
+  }),
+});
+
 /** 服务器写入更新日志时用的严格联合类型。 */
 export const UserUpdatePayload = z.discriminatedUnion('type', [
   MessageCreated,
@@ -114,6 +182,12 @@ export const UserUpdatePayload = z.discriminatedUnion('type', [
   ContactRemoved,
   SettingsUpdated,
   ModelStatusUpdated,
+  MessageUpdated,
+  CallUpdated,
+  MediaTranscriptReady,
+  MomentsBadgeUpdated,
+  MomentsPostChanged,
+  DataChanged,
 ]);
 export type UserUpdatePayload = z.infer<typeof UserUpdatePayload>;
 

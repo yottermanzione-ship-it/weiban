@@ -95,6 +95,15 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.0（2026-10-09，T-062：L4～L7 一次定稿）
+
+依据：ADR-0024～0027；对照表 `docs/architecture/contracts-3.0-map.md`。只新增，不删字段、不改已有含义；升主版本是因为给响应枚举新增了取值（`MediaObject.purpose` 同时改为接收端容错、`AdminCatalogEntry.defaultFor`、`UpstreamKind`）。
+
+- **消息**：新增 image、voice、sticker、link、contact_card、call_record、letter、daily_question、action_card；`TextContent.mentions`；`Message.actionChoice`；`Conversation.group`。用户可发 image / voice / sticker / link。
+- **新文件**：`http/chat-groups.ts`（群聊、卡片按钮、搜索）、`character-extras.ts`（关系网、补充设定、人设更新提示、作品链接、默认音色、自定义角色来源）、`assets.ts`（表情包、音色、卡面模板）、`moments.ts`、`calls.ts`（含音频流协议）、`growth-cards.ts`、`pets.ts`、`library.ts`、`importer.ts`、`plaza.ts`、`play.ts`、`ai-runtime-extras.ts`（共享开关、群聊陪伴设置、安静状态、行为规划管理）、`ports/social.ts`。
+- **扩展**：media（用途、语音、缩略图、转文字、链接预览）、health（默认值设置、一键清空、症状标签）、timeline（时间线列表）、contacts（名片「不感兴趣」）、companion（`voiceId`）、model-access（`defaultFor`、`UpstreamKind`）、模型网关（图片附件、`modelKeyOverride`、`ModelGatewayMediaPort`）、policy（`PolicyExtensionPort`）、chat 端口（`ChatGroupReadPort`、`ChatGroupAdminPort`、读取排除标签 / 消息）、characters 端口（关系网、作品链接、音色、`CharacterPlazaPort`）、media 端口。
+- **事件**：36 个（`events.ts`「3.0」段）；**更新类型**：message.updated、call.updated、media.transcript_ready、moments.badge_updated、moments.post_changed、data.changed；**通知种类**：moments、letter、import；**错误码** 12 个；`ModuleName` 新增 health、calls、plaza、play。
+
 ### 2.5（2026-10-09，L3 集成：T-050 / T-051 / T-052 / T-054 / T-058）
 
 各 L3 分支都以 2.5 新增接口，集成后统一为一个 2.5：growth（熟悉度）、simulation（推演）、timeline（你不在时卡片）、proactive（日报/节日/主动消息端口，ADR-0023）、health（经期日记契约）。只新增，不改旧字段。Android 生成物在合并后统一重生成。
