@@ -32,3 +32,4 @@ export * as Events from './events.js';
 export * from './ports/index.js';
 
 // v0.2：原生桥 bridge.ts 已删除（安卓改为 Kotlin 原生客户端，ADR-0011），网页与安卓之间没有桥。
+export * from './http/proactive.js';
