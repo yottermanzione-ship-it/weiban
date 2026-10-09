@@ -97,4 +97,7 @@ object Endpoints {
     val pushEndpointsUnregisterDevice = ContractEndpoint<NoContent>("PushEndpoints.unregisterDevice", "DELETE", "/api/v1/push/devices/:pushDeviceId", "user", "NoContent", null, serializer<NoContent>())
     val syncEndpointsGetUpdates = ContractEndpoint<SyncEndpointsGetUpdatesResponse>("SyncEndpoints.getUpdates", "GET", "/api/v1/sync/updates", "user", "SyncEndpoints.getUpdates.Response", null, serializer<SyncEndpointsGetUpdatesResponse>())
     val syncEndpointsGetState = ContractEndpoint<SyncEndpointsGetStateResponse>("SyncEndpoints.getState", "GET", "/api/v1/sync/state", "user", "SyncEndpoints.getState.Response", null, serializer<SyncEndpointsGetStateResponse>())
+    val userCustomEndpointsCreate = ContractEndpoint<UserCustomCharacter>("UserCustomEndpoints.create", "POST", "/api/v1/characters/custom", "user", "UserCustomCharacter", "UserCustomCharacterWriteInput", serializer<UserCustomCharacter>())
+    val userCustomEndpointsUpdate = ContractEndpoint<UserCustomCharacter>("UserCustomEndpoints.update", "PATCH", "/api/v1/characters/custom/:characterId", "user", "UserCustomCharacter", "UserCustomCharacterPatchInput", serializer<UserCustomCharacter>())
+    val userCustomEndpointsStartTrial = ContractEndpoint<UserCustomEndpointsStartTrialResponse>("UserCustomEndpoints.startTrial", "POST", "/api/v1/characters/custom/:characterId/trial", "user", "UserCustomEndpoints.startTrial.Response", null, serializer<UserCustomEndpointsStartTrialResponse>())
 }
