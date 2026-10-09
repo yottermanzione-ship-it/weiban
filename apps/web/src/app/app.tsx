@@ -38,6 +38,13 @@ import {
 import { api } from '../data/client.js';
 import { TimelinePage } from '../features/timeline.js';
 import { AnniversariesPage } from '../features/growth.js';
+import {
+  PeriodPage,
+  PeriodDayPage,
+  PeriodHistoryPage,
+  PeriodAuthorizationPage,
+  PeriodSettingsPage,
+} from '../features/period.js';
 import { UpdatePrompt } from './update-prompt.js';
 function Shell() {
   const auth = useAuth();
@@ -103,7 +110,8 @@ function Shell() {
       {!onboarding &&
         !roots.includes(location.pathname) &&
         !location.pathname.startsWith('/chat/') &&
-        !/^\/characters\/[^/]+\/(timeline|anniversaries)$/.test(location.pathname) && (
+        !/^\/characters\/[^/]+\/(timeline|anniversaries)$/.test(location.pathname) &&
+        !location.pathname.startsWith('/services/period') && (
           <header className="topbar">
             <Link
               to={
@@ -153,6 +161,11 @@ function Shell() {
         <Route path="/settings/privacy" element={<PrivacySettingsPage />} />
         <Route path="/settings/general" element={<GeneralSettingsPage />} />
         <Route path="/services/proactive" element={<ProactiveSettingsPage />} />
+        <Route path="/services/period" element={<PeriodPage />} />
+        <Route path="/services/period/day/:date" element={<PeriodDayPage />} />
+        <Route path="/services/period/history" element={<PeriodHistoryPage />} />
+        <Route path="/services/period/authorization" element={<PeriodAuthorizationPage />} />
+        <Route path="/services/period/settings" element={<PeriodSettingsPage />} />
         <Route path="/chat" element={<ConversationListPage />} />
         <Route path="/chat/:conversationId" element={<ConversationPage />} />
         <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />

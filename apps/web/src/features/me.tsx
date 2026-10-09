@@ -95,6 +95,16 @@ export function ServicesPage() {
           </Link>
         </div>
       </section>
+
+      {/* 互动玩法 */}
+      <section>
+        <h2 className="section-label">互动玩法</h2>
+        <div className="service-grid">
+          <Link to="/services/period" className="service-card">
+            经期日记<span>加密保存，只有你授权的角色知道</span>
+          </Link>
+        </div>
+      </section>
     </main>
   );
 }
