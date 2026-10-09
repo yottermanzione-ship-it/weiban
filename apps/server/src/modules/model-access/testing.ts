@@ -13,7 +13,7 @@ export { ChargeQueryUnavailableError } from './application/defaults.js';
 export { OpenAiCompatibleProbe } from './infra/upstream-probe.js';
 export { UpstreamService } from './application/upstreams.js';
 export { ModelResolver, ModelStatusService } from './application/resolver.js';
-export { UsageRecorder } from './application/usage.js';
+export { UsageRecorder, AdminUsageService } from './application/usage.js';
 export { UsageReconciliationService } from './application/reconciliation.js';
 export { ModelAccessLifecycle, RECONCILE_USAGE_JOB } from './application/lifecycle.js';
 export type { ModelTextPrices } from './domain/rules.js';

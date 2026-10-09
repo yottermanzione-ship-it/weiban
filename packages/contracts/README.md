@@ -43,6 +43,7 @@ HTTP 接口用 `defineEndpoint({ method, path, auth, params, query, body, respon
 | `src/http/model-access.ts`       | 模型目录、模型选择、角色模型覆盖、模型状态；管理：上游（平台密钥，只有掩码）、模型目录维护 | web、android、admin、server |
 | `src/http/billing.ts`            | 钱包、流水、价目表、用量汇总；管理：加扣余额、价目表版本、上游账单、对账                   | web、android、admin、server |
 | `src/http/characters.ts`         | 角色分类（硬性边界依据）、展示字段与头像、角色广场、资料页、管理后台角色库                 | web、android、admin、server |
+| `src/http/admin-content.ts`      | 管理后台内容维护：情景模式维护、人设版本列表与回滚（T-049，ADM-05 / ADM-06）                | admin、server               |
 | `src/http/contacts.ts`           | 添加角色、通讯录、备注、自定义头像、专属称呼、删除恢复                                     | web、android、server        |
 | `src/http/chat.ts`               | 会话、参与者、消息内容、消息、已读、撤回、会话状态                                         | web、android、server        |
 | `src/http/sync.ts`               | 每用户更新日志与补拉（多端同步）                                                           | web、android、server        |

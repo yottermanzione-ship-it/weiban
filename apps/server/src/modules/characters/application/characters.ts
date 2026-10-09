@@ -1,5 +1,5 @@
 import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
-import { and, count, eq, gt, ilike, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, gt, ilike, inArray, sql, type SQL } from 'drizzle-orm';
 import {
   CharacterCard,
   CharacterSummary,
@@ -13,6 +13,7 @@ import {
   type CharacterClassification,
   type CharacterProfile,
   type MediaReadPort,
+  type PersonaVersionSummary,
   type UserDataOwner,
 } from '@weiban/contracts';
 import {
@@ -418,9 +419,14 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
         .where(and(eq(characters.id, id), eq(characters.revision, row.revision)))
         .returning();
       if (!updated) throw new AppError('conflict', '角色已修改，请重新检查');
-      await tx.db
-        .insert(personaVersions)
-        .values({ characterId: id, version, ciphertext: sealed, publishedAt: this.clock.now() });
+      await tx.db.insert(personaVersions).values({
+        characterId: id,
+        version,
+        ciphertext: sealed,
+        publishedAt: this.clock.now(),
+        modifiedBy: adminId,
+        stabilityPassed: row.checks.personaStabilityPassed,
+      });
       await this.outbox.publish(tx, 'characters.character_published', 'characters', {
         characterId: id,
       });
@@ -654,5 +660,107 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       .from(characters)
       .where(eq(characters.ownerId, userId));
     return row?.n ?? 0;
+  }
+  async listPersonaVersions(
+    adminId: string,
+    characterId: string,
+  ): Promise<PersonaVersionSummary[]> {
+    const [character] = await this.database.db
+      .select()
+      .from(characters)
+      .where(eq(characters.id, characterId));
+    if (!character) throw new AppError('not_found', '找不到角色');
+    const versions = await this.database.db
+      .select()
+      .from(personaVersions)
+      .where(eq(personaVersions.characterId, characterId))
+      .orderBy(desc(personaVersions.version));
+    return versions.map((v) => ({
+      version: v.version,
+      summary: v.summary,
+      modifiedBy: v.modifiedBy,
+      stabilityPassed: v.stabilityPassed,
+      publishedAt: v.publishedAt.toISOString(),
+      isCurrent: v.version === character.personaVersion,
+    }));
+  }
+  async rollbackPersonaVersion(
+    adminId: string,
+    characterId: string,
+    version: number,
+  ): Promise<AdminCharacter> {
+    const [character] = await this.database.db
+      .select()
+      .from(characters)
+      .where(eq(characters.id, characterId));
+    if (!character) throw new AppError('not_found', '找不到角色');
+    if (!character.publishedCiphertext) {
+      throw new AppError('bad_request', '角色从未上架，无法回滚', { status: 422 });
+    }
+    const [targetVersion] = await this.database.db
+      .select()
+      .from(personaVersions)
+      .where(
+        and(
+          eq(personaVersions.characterId, characterId),
+          eq(personaVersions.version, version),
+        ),
+      );
+    if (!targetVersion) throw new AppError('not_found', '找不到该版本');
+    const ownerId = character.ownerId ?? PLATFORM_KEY_OWNER;
+    const oldBody = await this.crypto.open(
+      ownerId,
+      `character:${characterId}:published:${version}`,
+      targetVersion.ciphertext,
+    );
+    const newVersion = character.personaVersion + 1;
+    const sealed = await this.crypto.seal(
+      ownerId,
+      `character:${characterId}:published:${newVersion}`,
+      oldBody,
+    );
+    await this.database.transaction(async (tx) => {
+      const [locked] = await tx.db
+        .select()
+        .from(characters)
+        .where(eq(characters.id, characterId))
+        .for('update');
+      if (!locked) throw new AppError('not_found', '角色不存在');
+      await tx.db
+        .update(characters)
+        .set({
+          personaVersion: newVersion,
+          draftCiphertext: targetVersion.ciphertext,
+          publishedCiphertext: sealed,
+          updatedAt: this.clock.now(),
+        })
+        .where(eq(characters.id, characterId));
+      await tx.db.insert(personaVersions).values({
+        characterId,
+        version: newVersion,
+        ciphertext: sealed,
+        publishedAt: this.clock.now(),
+        modifiedBy: adminId,
+        stabilityPassed: targetVersion.stabilityPassed,
+        summary: `回滚到版本 ${version}`,
+      });
+      await this.outbox.publish(tx, 'characters.persona_version_published', 'characters', {
+        characterId,
+        personaVersion: newVersion,
+      });
+      await this.audit.record(
+        {
+          module: 'characters',
+          action: 'preset.persona_rollback',
+          actorType: 'admin',
+          actorId: adminId,
+          targetType: 'character',
+          targetId: characterId,
+          details: { fromVersion: version, toVersion: newVersion },
+        },
+        tx,
+      );
+    });
+    return this.admin(adminId, await this.row(characterId));
   }
 }

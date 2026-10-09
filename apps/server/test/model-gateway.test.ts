@@ -20,6 +20,7 @@ import {
   GATEWAY_RETRY_WAIT,
   GenerationCache,
   GatewayMaintenance,
+  AdminUsageService,
 } from '../src/modules/model-access/testing.js';
 import { captureLogger, testConfig, testKekRing } from './support/fixtures.js';
 import { describeDb, resetTestDatabase } from './support/db.js';
@@ -371,5 +372,41 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     } finally {
       await catalog.upsert(admin, modelKey, original);
     }
+  });
+
+  // ADM-08 验收标准第 3 条：本页「用户扣费」合计 = 余额明细中扣费类记录合计（同一口径）。
+  // 这里用真实网关 + 真实 billing：跑几次成功与失败调用，再同时用两个口径求和比较。
+  it('ADM-08 口径核对：用量页用户扣费合计 = 余额明细扣费合计', async () => {
+    const usage = app.get(AdminUsageService);
+    const from = new Date(clock.nowMs() - 60_000).toISOString();
+    const to = new Date(clock.nowMs() + 60_000).toISOString();
+    const filter = { from, to };
+
+    // 三次成功调用（不同用途）+ 一次失败调用（不向用户扣费）
+    for (const purpose of ['chat_reply', 'memory', 'chat_reply'] as const) {
+      const r = await gateway.generateText(input({ purpose }));
+      expect(r.ok).toBe(true);
+    }
+    mode = 'down';
+    expect((await gateway.generateText(input())).ok).toBe(false);
+    mode = 'ok';
+
+    // 口径一：用量页（usage_records.charged_micros，billingOwner=user 且成功）
+    const summary = await usage.summary({ filter, groupBy: ['day'], sort: 'key_asc', limit: 100 });
+
+    // 口径二：余额明细扣费合计（billing.ledger_entries，type='charge' 且未吸收，
+    // 只属于该用户的钱包）；amount_micros 为负数，取相反数。
+    const { rows } = await db.query<{ total: string }>(
+      `SELECT coalesce(-sum(l.amount_micros), 0)::bigint AS total
+         FROM billing.ledger_entries l
+         JOIN billing.accounts a ON a.id = l.account_id
+        WHERE l.type = 'charge' AND NOT l.absorbed
+          AND a.user_id = $1
+          AND l.created_at >= $2 AND l.created_at < $3`,
+      [user, new Date(from), new Date(to)],
+    );
+
+    expect(summary.totals.chargedMicros).toBeGreaterThan(0);
+    expect(summary.totals.chargedMicros).toBe(Number(rows[0]?.total ?? 0));
   });
 });
