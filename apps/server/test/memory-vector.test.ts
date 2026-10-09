@@ -16,7 +16,7 @@ import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
   AdminCharacterWrite,
   AuthResponse,
@@ -45,7 +45,7 @@ import { ContactsCommands, ContactsTestQueries } from '../src/modules/contacts/t
 import { CHAT_READ_PORT, CHAT_USER_PORT } from '../src/modules/chat/index.js';
 import { type ChatUserPort } from '@weiban/contracts';
 import { MODEL_GATEWAY_PORT, ADULT_MODEL_READ_PORT } from '../src/modules/model-access/index.js';
-import { MemoryService, memories, memoryStates } from '../src/modules/ai-runtime/testing.js';
+import { MemoryService } from '../src/modules/ai-runtime/testing.js';
 import { captureLogger, testConfig, testKekRing } from './support/fixtures.js';
 import { describeDb, resetTestDatabase } from './support/db.js';
 
@@ -213,7 +213,7 @@ describeDb('T-046 向量检索与分层摘要', () => {
   });
 
   it('extract 后 memories 行写入非 null 向量（Phase 1 统计嵌入，不走网关）', async () => {
-    const { memory, jobFor, db, userId, cid } = ctx;
+    const { memory, _jobFor, db, _userId, cid } = ctx;
     // 先用 extract 往 DB 写记忆
     response.current = JSON.stringify({
       operations: [
@@ -285,7 +285,7 @@ describeDb('T-046 向量检索与分层摘要', () => {
     // 由于我们没法直接调用 embed 模块，我们检验：context 查询 "体育运动" 时，
     // 既然 m1 和 m3 内容与「体育运动」语义相关，它们应该出现在结果里
     // 先确保 memories 有向量（通过 DB 手动更新，以验证 context 向量路径生效）
-    const vec1 = await db.query<{ embedding: string }>(
+    const _vec1 = await db.query<{ embedding: string }>(
       'SELECT embedding FROM ai_runtime.memories WHERE id=$1',
       [m1.memoryId],
     );
@@ -440,7 +440,7 @@ describeDb('T-046 向量检索与分层摘要', () => {
   });
 
   it('删除屏障仍然有效：删除记忆后日/月摘要一并清除，旧事实不再注入', async () => {
-    const { memory, jobFor, db, userId, characterId } = ctx;
+    const { memory, _jobFor, db, userId, characterId } = ctx;
     // 创建一条记忆
     const mem = await memory().create(userId, characterId, {
       clientMemoryId: newId(),
