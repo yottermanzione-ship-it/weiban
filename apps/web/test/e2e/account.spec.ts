@@ -44,6 +44,8 @@ test('真实API：登录、资料、微元预算、主题、刷新与退出清�
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'pink');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'pink');
+  await expect(page.getByRole('heading', { name: '通用', exact: true })).toBeVisible();
+  await page.goto('/settings');
   await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '退出登录', exact: true }).click();
   await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible();
