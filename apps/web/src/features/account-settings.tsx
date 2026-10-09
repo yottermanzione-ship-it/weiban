@@ -359,9 +359,6 @@ export function ProactiveSettingsPage() {
   return (
     <main>
       <h1 className="page-title">主动消息设置</h1>
-      <p className="hint notice">
-        设置已保存，实际主动能力随 L3 上线。当前设置会在功能上线后生效。
-      </p>
       {data && (
         <form key={data.updatedAt} className="panel stack" onSubmit={(e) => void save(e)}>
           <label className="check">

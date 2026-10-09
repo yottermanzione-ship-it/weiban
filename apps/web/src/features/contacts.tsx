@@ -11,6 +11,8 @@ import { useCharacterNames } from '../data/character-names.js';
 import { CharacterName } from './chat.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { ContactAvatarEditor } from './contact-avatar-editor.js';
+import { FamiliarityLine } from './growth.js';
+import { RecentRow } from './timeline.js';
 export function ContactsPage() {
   const { state } = useChat();
   const names = useCharacterNames(state.contacts.map((contact) => contact.characterId));
@@ -232,6 +234,7 @@ export function CharacterPage({
         <div className="panel stack">
           <CharacterAvatar id={characterId} profile={profile.data} size={64} />
           <h2>{profile.data.name}</h2>
+          {!onboarding && contact?.conversationId && <FamiliarityLine characterId={characterId} />}
           <p>{profile.data.tagline}</p>
           <p>{profile.data.intro}</p>
           <p>{profile.data.tags.join(' · ')}</p>
@@ -267,6 +270,7 @@ export function CharacterPage({
           </button>
         </form>
       )}
+      {!onboarding && contact?.conversationId && <RecentRow characterId={characterId} />}
       {contact && !onboarding && (
         <ContactAvatarEditor key={characterId} characterId={characterId} />
       )}

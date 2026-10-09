@@ -36,6 +36,8 @@ import {
   ProactiveSettingsPage,
 } from '../features/account-settings.js';
 import { api } from '../data/client.js';
+import { TimelinePage } from '../features/timeline.js';
+import { AnniversariesPage } from '../features/growth.js';
 import { UpdatePrompt } from './update-prompt.js';
 function Shell() {
   const auth = useAuth();
@@ -100,7 +102,8 @@ function Shell() {
       )}
       {!onboarding &&
         !roots.includes(location.pathname) &&
-        !location.pathname.startsWith('/chat/') && (
+        !location.pathname.startsWith('/chat/') &&
+        !/^\/characters\/[^/]+\/(timeline|anniversaries)$/.test(location.pathname) && (
           <header className="topbar">
             <Link
               to={
@@ -154,6 +157,8 @@ function Shell() {
         <Route path="/chat/:conversationId" element={<ConversationPage />} />
         <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />
         <Route path="/characters/:characterId/memories" element={<MemoriesPage />} />
+        <Route path="/characters/:characterId/timeline" element={<TimelinePage />} />
+        <Route path="/characters/:characterId/anniversaries" element={<AnniversariesPage />} />
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/discover" element={<DiscoverPage />} />
         <Route path="/characters/:characterId" element={<CharacterPage />} />
