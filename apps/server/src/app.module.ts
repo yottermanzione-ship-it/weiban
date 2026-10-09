@@ -26,6 +26,7 @@ import {
   CHARACTER_NAME_READ_PORT,
   CHARACTER_CONTACT_ACCESS,
 } from './modules/characters/index.js';
+import { HealthModule } from './modules/health/index.js';
 import { PolicyModule } from './modules/policy/index.js';
 import { MediaModule } from './modules/media/index.js';
 import { ModelAccessModule, MODEL_NOTIFICATION_READ_PORT } from './modules/model-access/index.js';
@@ -107,6 +108,7 @@ export class AppModule {
         GatewayCompositionModule,
         MediaModule,
         CharactersModule,
+        HealthModule,
         PolicyModule.forRoot({
           imports: [CharactersModule],
           characterReadToken: CHARACTER_READ_PORT,

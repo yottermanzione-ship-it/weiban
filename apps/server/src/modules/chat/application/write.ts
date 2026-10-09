@@ -33,6 +33,16 @@ import {
 } from '../infra/db/schema.js';
 import { ChatStore, type ConversationRow } from './store.js';
 
+const LABEL_PATTERN = /^[a-z][a-z0-9_]{0,31}$/;
+
+/** 去重、排序、过滤非法值；最多 8 个。chat 不理解标签含义，只负责存与下发。 */
+export function normalizeLabels(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const set = new Set<string>();
+  for (const v of input) if (typeof v === 'string' && LABEL_PATTERN.test(v)) set.add(v);
+  return [...set].sort().slice(0, 8);
+}
+
 @Injectable()
 export class ChatWriteService {
   constructor(
@@ -50,6 +60,8 @@ export class ChatWriteService {
     senderKind?: 'system',
   ): Promise<PortResult<Message, PostMessageError>> {
     const content = parseContract(MessageContent, input.content);
+    // labels 只接受服务器端发送方传入（participant 端口）；用户经 HTTP / WebSocket 发送时由 user.ts 构造输入，不会带上。
+    const labels = normalizeLabels(input.labels);
     const idempotencyKey = input.idempotencyKey;
     if (typeof idempotencyKey !== 'string' || !/^[A-Za-z0-9:_-]{1,200}$/.test(idempotencyKey))
       throw new AppError('bad_request', '消息幂等键不正确');
@@ -161,6 +173,7 @@ export class ChatWriteService {
         quoteMessageId: input.quoteMessageId ?? null,
         status: 'normal',
         scope: current.contentScope,
+        labels: labels.length ? labels : null,
         createdAt: at,
         recalledAt: null,
       })
