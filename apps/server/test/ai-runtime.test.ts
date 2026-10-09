@@ -10,6 +10,7 @@ import {
   AdminCharacterWrite,
   AuthResponse,
   CharacterCard,
+  TimelineSummaryResponse,
   type GenerateTextInput,
   type ModelGatewayPort,
   type ChatUserPort,
@@ -203,6 +204,72 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     await dispatch();
     return (await plans()).at(-1)!;
   }
+  it('时间线真实HTTP校验身份/会话归属/查询；缺席12小时按后台预算生成', async () => {
+    const path = `/api/v1/conversations/${cid}/timeline-summary`;
+    const lastActiveAt = new Date(clock.nowMs() - 12 * 3600_000).toISOString();
+    const query = { characterId, lastActiveAt };
+    const eventDate = clock.now().toISOString().slice(0, 10);
+    const createdAt = new Date(clock.nowMs() - 3600_000);
+    await db.query(
+      `INSERT INTO ai_runtime.daily_events
+       (id,user_id,character_id,event_date,seq,kind,summary,created_at)
+       VALUES ($1,$2,$3,$4,0,'work','时间线HTTP事件',$5)`,
+      [newId(), userId, characterId, eventDate, createdAt],
+    );
+    const before = calls.length;
+    await http().get(path).query(query).expect(401);
+    await http().get(path).set('Authorization', auth()).expect(400);
+    await http()
+      .get(path)
+      .query({ ...query, lastActiveAt: 'invalid' })
+      .set('Authorization', auth())
+      .expect(400);
+    await http()
+      .get(`/api/v1/conversations/${newId()}/timeline-summary`)
+      .query(query)
+      .set('Authorization', auth())
+      .expect(404);
+    await http()
+      .get(path)
+      .query({ ...query, characterId: newId() })
+      .set('Authorization', auth())
+      .expect(404);
+    const short = TimelineSummaryResponse.parse(
+      (
+        await http()
+          .get(path)
+          .query({
+            characterId,
+            lastActiveAt: new Date(clock.nowMs() - 2 * 3600_000).toISOString(),
+          })
+          .set('Authorization', auth())
+          .expect(200)
+      ).body,
+    );
+    expect(short.summary).toBeNull();
+    expect(calls).toHaveLength(before);
+    const result = TimelineSummaryResponse.parse(
+      (await http().get(path).query(query).set('Authorization', auth()).expect(200)).body,
+    );
+    expect(result.events.map((e) => e.summary)).toEqual(['时间线HTTP事件']);
+    expect(result.summary).toBe(response);
+    expect(calls.at(-1)).toMatchObject({
+      userId,
+      characterId,
+      conversationId: cid,
+      purpose: 'behavior_planning',
+      modelRole: 'background',
+      countAsBackground: true,
+    });
+    failure = 'budget_exceeded';
+    expect(
+      (await http().get(path).query(query).set('Authorization', auth()).expect(200)).body.summary,
+    ).toBeNull();
+    failure = null;
+    await db.query('DELETE FROM ai_runtime.daily_events WHERE user_id=$1', [userId]);
+    // 本用例的网关观测与事件夹具不进入后续回复用例的计数基线。
+    calls.splice(before);
+  });
   it('陪伴默认继承；单独设置快照不随全局变化；未知好友拒绝、鉴权、更新同步', async () => {
     await http().get('/api/v1/me/companion-defaults').expect(401);
     expect(

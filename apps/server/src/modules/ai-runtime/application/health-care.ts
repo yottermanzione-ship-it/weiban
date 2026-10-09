@@ -31,6 +31,7 @@ import {
   type ModelGatewayPort,
   type PeriodContext,
   type PolicyPort,
+  type ProactiveMessagePort,
 } from '@weiban/contracts';
 import {
   CLOCK,
@@ -47,6 +48,7 @@ import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from '../../identity/index.js';
 import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
+import { PROACTIVE_MESSAGE_PORT } from '../../proactive/index.js';
 import { healthCareLedger, simulationStates } from '../infra/db/schema.js';
 import { CompanionSettingsService } from './settings.js';
 
@@ -114,6 +116,9 @@ export class HealthCareService {
     @Optional()
     @Inject(HEALTH_CARE_FAMILIARITY)
     private readonly familiarity?: HealthCareFamiliaritySource,
+    @Optional()
+    @Inject(PROACTIVE_MESSAGE_PORT)
+    private readonly proactive?: ProactiveMessagePort,
   ) {}
 
   get enabled(): boolean {
@@ -166,6 +171,16 @@ export class HealthCareService {
     if (!ctx) return { sent: false, reason: 'no_context' };
     const kind = decideKind(ctx, local.date);
     if (!kind) return { sent: false, reason: 'nothing_due' };
+    // P-03/P-04：已满时不发（只做预检，不写入 proactive 发送日志——那里按日期记理由，
+    // 写入会把经期日期落到 health 之外，违反 health-data.md 第 4 节；见交接说明待决事项）。
+    // isHoliday=true 只用于跳过「上一条主动消息未回复」检查：经期关怀不因此被挡。
+    if (
+      this.proactive &&
+      !(await this.proactive
+        .canSendProactive(userId, characterId, local.date, undefined, true)
+        .catch(() => false))
+    )
+      return { sent: false, reason: 'proactive_quota_full' };
 
     // 每周期合计上限 P-36，且同一名额只用一次。
     const used = await this.db.db

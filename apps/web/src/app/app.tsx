@@ -23,6 +23,18 @@ import { ProfilePage } from '../features/profile.js';
 import { SettingsPage } from '../features/settings.js';
 import { WalletPage, LedgerPage, PricesPage } from '../features/wallet.js';
 import { ModelsPage } from '../features/models.js';
+import { LeaderboardPage } from '../features/leaderboard.js';
+import { UsagePage } from '../features/usage.js';
+import {
+  CreateCustomCharacterPage,
+  EditCustomCharacterPage,
+} from '../features/custom-character.js';
+import {
+  AccountSecurityPage,
+  PrivacySettingsPage,
+  GeneralSettingsPage,
+  ProactiveSettingsPage,
+} from '../features/account-settings.js';
 import { api } from '../data/client.js';
 import { UpdatePrompt } from './update-prompt.js';
 function Shell() {
@@ -92,9 +104,21 @@ function Shell() {
           <header className="topbar">
             <Link
               to={
-                ['/wallet', '/models', '/ledger', '/prices'].includes(location.pathname)
+                [
+                  '/wallet',
+                  '/models',
+                  '/ledger',
+                  '/prices',
+                  '/leaderboard',
+                  '/usage',
+                  '/services/proactive',
+                ].includes(location.pathname)
                   ? '/services'
-                  : '/me'
+                  : ['/settings/security', '/settings/privacy', '/settings/general'].includes(
+                        location.pathname,
+                      )
+                    ? '/settings'
+                    : '/me'
               }
               aria-label="返回"
             >
@@ -118,6 +142,14 @@ function Shell() {
         <Route path="/ledger" element={<LedgerPage />} />
         <Route path="/prices" element={<PricesPage />} />
         <Route path="/models" element={<ModelsPage />} />
+        <Route path="/leaderboard" element={<LeaderboardPage />} />
+        <Route path="/usage" element={<UsagePage />} />
+        <Route path="/characters/custom/new" element={<CreateCustomCharacterPage />} />
+        <Route path="/characters/custom/:characterId/edit" element={<EditCustomCharacterPage />} />
+        <Route path="/settings/security" element={<AccountSecurityPage />} />
+        <Route path="/settings/privacy" element={<PrivacySettingsPage />} />
+        <Route path="/settings/general" element={<GeneralSettingsPage />} />
+        <Route path="/services/proactive" element={<ProactiveSettingsPage />} />
         <Route path="/chat" element={<ConversationListPage />} />
         <Route path="/chat/:conversationId" element={<ConversationPage />} />
         <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />

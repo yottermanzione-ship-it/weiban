@@ -19,6 +19,18 @@ data class AccountDeletionModuleProgress(
 )
 
 @Serializable
+data class AddAnniversaryRequest(
+    @SerialName("label") val `label`: String,
+    @SerialName("date") val `date`: LocalDate,
+)
+
+@Serializable
+data class AddAnniversaryRequestInput(
+    @SerialName("label") val `label`: String,
+    @SerialName("date") val `date`: LocalDate,
+)
+
+@Serializable
 data class AddContactRequest(
     @SerialName("characterId") val `characterId`: Id,
     @SerialName("greeting") val `greeting`: String? = null,
@@ -32,6 +44,29 @@ data class AddContactRequestInput(
     @SerialName("greeting") val `greeting`: String? = null,
     @SerialName("restoreMode") val `restoreMode`: String? = null,
     @SerialName("referrerCharacterId") val `referrerCharacterId`: Id? = null,
+)
+
+@Serializable
+data class AddFamiliarityPointsRequest(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("eventType") val `eventType`: FamiliarityEventType,
+    @SerialName("idempotencyKey") val `idempotencyKey`: String,
+    @SerialName("occurredAt") val `occurredAt`: Timestamp? = null,
+)
+
+@Serializable
+data class AddFamiliarityPointsRequestInput(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("eventType") val `eventType`: FamiliarityEventType,
+    @SerialName("idempotencyKey") val `idempotencyKey`: String,
+    @SerialName("occurredAt") val `occurredAt`: Timestamp? = null,
+)
+
+@Serializable
+data class AddFamiliarityPointsResponse(
+    @SerialName("familiarity") val `familiarity`: FamiliarityInfo,
+    @SerialName("pointsAdded") val `pointsAdded`: Long,
+    @SerialName("leveledUp") val `leveledUp`: Boolean,
 )
 
 @Serializable
@@ -449,6 +484,15 @@ data class AdminUsageTotals(
 typealias AgeSetting = String
 
 typealias AndroidPushProvider = String
+
+@Serializable
+data class Anniversary(
+    @SerialName("id") val `id`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("label") val `label`: String,
+    @SerialName("date") val `date`: LocalDate,
+    @SerialName("nextOccurrence") val `nextOccurrence`: LocalDate?,
+)
 
 @Serializable
 data class ApiError(
@@ -1454,6 +1498,35 @@ data class CreateCycleRequestInput(
 )
 
 @Serializable
+data class CreateDailyEventRequest(
+    @SerialName("eventId") val `eventId`: Id,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("eventDate") val `eventDate`: LocalDate,
+    @SerialName("eventTime") val `eventTime`: String? = null,
+    @SerialName("summary") val `summary`: String,
+    @SerialName("withCharacterId") val `withCharacterId`: Id? = null,
+    @SerialName("moodEffect") val `moodEffect`: String? = null,
+    @SerialName("source") val `source`: DailyEventSource,
+)
+
+@Serializable
+data class CreateHolidayRequest(
+    @SerialName("name") val `name`: String,
+    @SerialName("dateType") val `dateType`: HolidayDateType,
+    @SerialName("dateValue") val `dateValue`: String,
+    @SerialName("romantic") val `romantic`: Boolean,
+)
+
+@Serializable
+data class CreateHolidayRequestInput(
+    @SerialName("name") val `name`: String,
+    @SerialName("dateType") val `dateType`: HolidayDateType,
+    @SerialName("dateValue") val `dateValue`: String,
+    @SerialName("romantic") val `romantic`: Boolean? = null,
+)
+
+@Serializable
 data class CreateInviteRequest(
     @SerialName("expiresInDays") val `expiresInDays`: Long?,
     @SerialName("bonusMicros") val `bonusMicros`: Long,
@@ -1517,6 +1590,56 @@ data class CycleRecord(
 )
 
 @Serializable
+data class DailyEvent(
+    @SerialName("eventId") val `eventId`: Id,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("eventDate") val `eventDate`: LocalDate,
+    @SerialName("eventTime") val `eventTime`: String?,
+    @SerialName("summary") val `summary`: String,
+    @SerialName("withCharacterId") val `withCharacterId`: Id?,
+    @SerialName("moodEffect") val `moodEffect`: String?,
+    @SerialName("source") val `source`: DailyEventSource,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class DailyEventEndpointsCreateBatchBody(
+    @SerialName("events") val `events`: List<CreateDailyEventRequest>,
+)
+
+@Serializable
+data class DailyEventEndpointsCreateBatchResponse(
+    @SerialName("created") val `created`: Long,
+)
+
+@Serializable
+data class DailyEventEndpointsListByCharacterParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class DailyEventEndpointsListByCharacterQuery(
+    @SerialName("from") val `from`: LocalDate? = null,
+    @SerialName("to") val `to`: LocalDate? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+)
+
+@Serializable
+data class DailyEventEndpointsListByCharacterResponse(
+    @SerialName("items") val `items`: List<DailyEvent>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class DailyEventEndpointsRemoveParams(
+    @SerialName("eventId") val `eventId`: Id,
+)
+
+typealias DailyEventSource = String
+
+@Serializable
 data class DayLog(
     @SerialName("date") val `date`: LocalDate,
     @SerialName("flow") val `flow`: PeriodFlow?,
@@ -1532,6 +1655,16 @@ data class DayLogInput(
     @SerialName("pain") val `pain`: PeriodPain?,
     @SerialName("symptoms") val `symptoms`: List<String>,
     @SerialName("notes") val `notes`: String?,
+)
+
+@Serializable
+data class DaysKnownInfo(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("daysKnown") val `daysKnown`: Long,
+    @SerialName("knownSince") val `knownSince`: LocalDate,
+    @SerialName("nextAnniversary") val `nextAnniversary`: Anniversary?,
+    @SerialName("anniversaries") val `anniversaries`: List<Anniversary>,
+    @SerialName("isRomantic") val `isRomantic`: Boolean,
 )
 
 @Serializable
@@ -2395,7 +2528,49 @@ data class EventsUserRegistered(
     @SerialName("payload") val `payload`: EventsUserRegisteredPayload,
 )
 
+typealias FamiliarityEventType = String
+
+@Serializable
+data class FamiliarityInfo(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("level") val `level`: FamiliarityLevel,
+    @SerialName("pointsInLevel") val `pointsInLevel`: Long,
+    @SerialName("pointsToNextLevel") val `pointsToNextLevel`: Long?,
+    @SerialName("totalPoints") val `totalPoints`: Long,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+typealias FamiliarityLevel = Long
+
 typealias Gender = String
+
+@Serializable
+data class GrowthEndpointsAddAnniversaryParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class GrowthEndpointsAddPointsParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class GrowthEndpointsGetDaysKnownParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class GrowthEndpointsGetFamiliarityParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class GrowthEndpointsRemoveAnniversaryParams(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("anniversaryId") val `anniversaryId`: Id,
+)
+
+typealias GrowthEndpointsRemoveAnniversaryResponse = JsonElement?
 
 typealias HealthEndpointsDeleteCycleResponse = JsonElement?
 
@@ -2417,6 +2592,38 @@ data class HealthEndpointsUpdateCycleParams(
 )
 
 typealias HexColor = String
+
+@Serializable
+data class HolidayAdminEndpointsListQuery(
+    @SerialName("enabled") val `enabled`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+)
+
+@Serializable
+data class HolidayAdminEndpointsListResponse(
+    @SerialName("items") val `items`: List<HolidayEvent>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class HolidayAdminEndpointsUpdateParams(
+    @SerialName("holidayId") val `holidayId`: Id,
+)
+
+typealias HolidayDateType = String
+
+@Serializable
+data class HolidayEvent(
+    @SerialName("holidayId") val `holidayId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("dateType") val `dateType`: HolidayDateType,
+    @SerialName("dateValue") val `dateValue`: String,
+    @SerialName("romantic") val `romantic`: Boolean,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
 
 typealias Id = String
 
@@ -3708,6 +3915,8 @@ data class SyncEndpointsGetUpdatesResponse(
     @SerialName("hasMore") val `hasMore`: Boolean,
 )
 
+typealias SystemAnniversaryDay = Long
+
 @Serializable
 data class SystemContent(
     @EncodeDefault
@@ -3731,6 +3940,39 @@ data class TextContentInput(
 )
 
 typealias TimeZone = String
+
+@Serializable
+data class TimelineEndpointsGetSummaryParams(
+    @SerialName("conversationId") val `conversationId`: Id,
+)
+
+@Serializable
+data class TimelineEndpointsGetSummaryQuery(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("lastActiveAt") val `lastActiveAt`: Timestamp,
+)
+
+@Serializable
+data class TimelineEvent(
+    @SerialName("id") val `id`: Id,
+    @SerialName("seq") val `seq`: Long,
+    @SerialName("kind") val `kind`: TimelineEventKind,
+    @SerialName("summary") val `summary`: String,
+    @SerialName("detail") val `detail`: String? = null,
+    @SerialName("moodAfter") val `moodAfter`: TimelineMood? = null,
+)
+
+typealias TimelineEventKind = String
+
+typealias TimelineMood = String
+
+@Serializable
+data class TimelineSummaryResponse(
+    @SerialName("summary") val `summary`: String?,
+    @SerialName("events") val `events`: List<TimelineEvent>,
+    @SerialName("currentMood") val `currentMood`: TimelineMood,
+    @SerialName("offlineSeconds") val `offlineSeconds`: Long,
+)
 
 typealias Timestamp = String
 
@@ -3822,6 +4064,14 @@ data class UpdateCycleRequest(
 data class UpdateCycleRequestInput(
     @SerialName("endDate") val `endDate`: LocalDate? = null,
     @SerialName("dayLog") val `dayLog`: DayLogInput? = null,
+)
+
+@Serializable
+data class UpdateHolidayRequest(
+    @SerialName("name") val `name`: String? = null,
+    @SerialName("dateValue") val `dateValue`: String? = null,
+    @SerialName("romantic") val `romantic`: Boolean? = null,
+    @SerialName("enabled") val `enabled`: Boolean? = null,
 )
 
 @Serializable

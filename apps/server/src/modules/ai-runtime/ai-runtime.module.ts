@@ -14,7 +14,11 @@ import { RealtimeModule } from '../realtime/index.js';
 import { CompanionSettingsService } from './application/settings.js';
 import { CompanionSettingsController } from './http/settings.controller.js';
 import { SimulationService, SIMULATION_READ_PORT } from './application/simulation.js';
-import { HealthCareService } from './application/health-care.js';
+import { HealthCareService, HEALTH_CARE_FAMILIARITY } from './application/health-care.js';
+import { GrowthModule, GROWTH_SERVICE, type GrowthService } from '../growth/index.js';
+import { ProactiveModule } from '../proactive/index.js';
+import { TimelineSummaryService } from './application/timeline.js';
+import { TimelineController } from './http/timeline.controller.js';
 @Module({
   imports: [
     IdentityModule,
@@ -23,6 +27,8 @@ import { HealthCareService } from './application/health-care.js';
     ChatModule,
     CharactersModule,
     ModelAccessModule,
+    GrowthModule,
+    ProactiveModule,
   ],
   providers: [
     CompanionSettingsService,
@@ -31,11 +37,20 @@ import { HealthCareService } from './application/health-care.js';
     ReplyContext,
     ReplyEngine,
     SimulationService,
+    TimelineSummaryService,
     { provide: SIMULATION_READ_PORT, useExisting: SimulationService },
     HealthCareService,
+    {
+      provide: HEALTH_CARE_FAMILIARITY,
+      useFactory: (growth: GrowthService) => ({
+        getFamiliarityPoints: async (userId: string, characterId: string) =>
+          (await growth.getFamiliarity(userId, characterId)).totalPoints,
+      }),
+      inject: [GROWTH_SERVICE],
+    },
     AiRuntimeLifecycle,
   ],
   exports: [SIMULATION_READ_PORT],
-  controllers: [CompanionSettingsController, MemoryController],
+  controllers: [CompanionSettingsController, MemoryController, TimelineController],
 })
 export class AiRuntimeModule {}

@@ -29,8 +29,7 @@ test('真实API：登录、资料、微元预算、主题、刷新与退出清�
   await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
   await page.goto('/me');
   await page.getByRole('link', { name: '我', exact: true }).click();
-  await page.getByRole('link', { name: '服务', exact: true }).click();
-  await page.getByRole('link', { name: '余额 查看余额与明细' }).click();
+  await page.goto('/wallet');
   await expect(page.locator('.balance strong')).toHaveText('¥ 50.00');
   await page.screenshot({ path: 'apps/web/test-results/wallet.png', fullPage: true });
   await page.getByLabel('每日上限（元）').fill('1.234567');
@@ -40,11 +39,13 @@ test('真实API：登录、资料、微元预算、主题、刷新与退出清�
   );
   await page.getByRole('button', { name: '保存', exact: true }).click();
   expect((await (await updated).json()).backgroundBudget.dailyLimitMicros).toBe(1234567);
-  await page.goto('/settings');
+  await page.goto('/settings/general');
   await page.getByRole('button', { name: '微伴粉', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'pink');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'pink');
+  await expect(page.getByRole('heading', { name: '通用', exact: true })).toBeVisible();
+  await page.goto('/settings');
   await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '退出登录', exact: true }).click();
   await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible();
