@@ -15,7 +15,15 @@ import {
   type JobQueue,
 } from '../../../platform/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
-import { companionSettings, replyPlans, memories, memoryStates } from '../infra/db/schema.js';
+import {
+  companionSettings,
+  replyPlans,
+  memories,
+  memoryStates,
+  simulationStates,
+  dailyEvents,
+  moodStates,
+} from '../infra/db/schema.js';
 import { USER_BATCH_DELAY_MS } from '../domain/reply-rules.js';
 export const GENERATE_REPLY_JOB = 'ai.generate_reply';
 export type ReplyPlan = typeof replyPlans.$inferSelect;
@@ -260,7 +268,13 @@ export class ReplyPlanStore {
         .returning();
       const c = await tx.db.delete(memories).where(eq(memories.userId, userId)).returning();
       const d = await tx.db.delete(memoryStates).where(eq(memoryStates.userId, userId)).returning();
-      return a.length + b.length + c.length + d.length;
+      const e = await tx.db
+        .delete(simulationStates)
+        .where(eq(simulationStates.userId, userId))
+        .returning();
+      const f = await tx.db.delete(dailyEvents).where(eq(dailyEvents.userId, userId)).returning();
+      const g = await tx.db.delete(moodStates).where(eq(moodStates.userId, userId)).returning();
+      return a.length + b.length + c.length + d.length + e.length + f.length + g.length;
     });
   }
   async countUserData(userId: string): Promise<number> {
@@ -280,6 +294,26 @@ export class ReplyPlanStore {
       .select({ n: count() })
       .from(memoryStates)
       .where(eq(memoryStates.userId, userId));
-    return (a?.n ?? 0) + (b?.n ?? 0) + (c?.n ?? 0) + (d?.n ?? 0);
+    const [e] = await this.db.db
+      .select({ n: count() })
+      .from(simulationStates)
+      .where(eq(simulationStates.userId, userId));
+    const [f] = await this.db.db
+      .select({ n: count() })
+      .from(dailyEvents)
+      .where(eq(dailyEvents.userId, userId));
+    const [g] = await this.db.db
+      .select({ n: count() })
+      .from(moodStates)
+      .where(eq(moodStates.userId, userId));
+    return (
+      (a?.n ?? 0) +
+      (b?.n ?? 0) +
+      (c?.n ?? 0) +
+      (d?.n ?? 0) +
+      (e?.n ?? 0) +
+      (f?.n ?? 0) +
+      (g?.n ?? 0)
+    );
   }
 }
