@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 2.4. Regenerate: pnpm android:generate
+// Contract 2.5. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "2.4"
+const val CONTRACT_VERSION: String = "2.5"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -3648,6 +3648,39 @@ data class TextContentInput(
 )
 
 typealias TimeZone = String
+
+@Serializable
+data class TimelineEndpointsGetSummaryParams(
+    @SerialName("conversationId") val `conversationId`: Id,
+)
+
+@Serializable
+data class TimelineEndpointsGetSummaryQuery(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("lastActiveAt") val `lastActiveAt`: Timestamp,
+)
+
+@Serializable
+data class TimelineEvent(
+    @SerialName("id") val `id`: Id,
+    @SerialName("seq") val `seq`: Long,
+    @SerialName("kind") val `kind`: TimelineEventKind,
+    @SerialName("summary") val `summary`: String,
+    @SerialName("detail") val `detail`: String? = null,
+    @SerialName("moodAfter") val `moodAfter`: TimelineMood? = null,
+)
+
+typealias TimelineEventKind = String
+
+typealias TimelineMood = String
+
+@Serializable
+data class TimelineSummaryResponse(
+    @SerialName("summary") val `summary`: String?,
+    @SerialName("events") val `events`: List<TimelineEvent>,
+    @SerialName("currentMood") val `currentMood`: TimelineMood,
+    @SerialName("offlineSeconds") val `offlineSeconds`: Long,
+)
 
 typealias Timestamp = String
 

@@ -5,7 +5,7 @@
 | 负责人 | ai-lead |
 | 派发人 | 项目总负责人 |
 | 日期 | 2026-10-09 |
-| 状态 | 待开始 |
+| 状态 | Codex 接续开发自测，远端 CI 待核验；完整 SIM-11 尚未完成 |
 
 ## 目标
 
@@ -31,7 +31,7 @@
 - **可以改**：`apps/server/src/modules/ai-runtime/application/timeline.ts`（新建）及同目录相关文件、`packages/contracts/src/http/simulation.ts`（追加接口，或新建 `timeline.ts`）、`packages/contracts/src/index.ts`、`packages/contracts/src/version.ts`。
 - **不可以改**：`apps/server/src/modules/proactive/**`、`docs/quality/**`。
 - 摘要生成走后台网关（`behavior_planning`，`countAsBackground: true`），受每日上限控制。
-- 用户离线时长 < 1 小时时不生成摘要（避免频繁调用）。
+- 用户离线时长不足正式 PRD P-18 的 12 小时时不生成摘要，最多 5 条。原卡片 1 小时描述与 PRD 不符，接续按 PRD 修正。
 
 ## 验收标准
 

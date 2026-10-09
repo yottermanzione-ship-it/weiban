@@ -14,6 +14,8 @@ import { RealtimeModule } from '../realtime/index.js';
 import { CompanionSettingsService } from './application/settings.js';
 import { CompanionSettingsController } from './http/settings.controller.js';
 import { SimulationService, SIMULATION_READ_PORT } from './application/simulation.js';
+import { TimelineSummaryService } from './application/timeline.js';
+import { TimelineController } from './http/timeline.controller.js';
 @Module({
   imports: [
     IdentityModule,
@@ -30,10 +32,11 @@ import { SimulationService, SIMULATION_READ_PORT } from './application/simulatio
     ReplyContext,
     ReplyEngine,
     SimulationService,
+    TimelineSummaryService,
     { provide: SIMULATION_READ_PORT, useExisting: SimulationService },
     AiRuntimeLifecycle,
   ],
   exports: [SIMULATION_READ_PORT],
-  controllers: [CompanionSettingsController, MemoryController],
+  controllers: [CompanionSettingsController, MemoryController, TimelineController],
 })
 export class AiRuntimeModule {}
