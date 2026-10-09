@@ -82,3 +82,32 @@ trial conversationId 可传入 chat 接口发送消息；试聊不建立联系�
 
 **给安卓负责人（T-051）**：  
 自定义角色创建/更新/试聊接口与 web 完全共用，参见 `packages/contracts/src/http/characters.ts` 中的 `UserCustomEndpoints`。试聊 conversationId 可直接用于 WebSocket chat 接口。
+
+
+## 2026-10-09 Codex CI 修复接续（开发自测）
+
+总经理本轮明确授权只完成 PR #9/#8 的 CI 修复与交付。PR #9 分支 `T-047-l2-custom-character`，读取的断点为 `db1b622643acd13c8bb67f0eb67199822a0c78f1`；修复源码 `32120456a78b106504939f2ab258a6f3ad32c6ac`，已推送，未合并 main。本记录是开发自测，独立验收须由未参与开发的审查者执行；不把原交接中的功能完成声明视为独立验收。
+
+### 修复与文件
+
+- 按原 Prettier 规范格式化 `application/custom-character.ts`、`http/custom-character.controller.ts` 与 `test/custom-characters.test.ts`。
+- 后续 ESLint 发现装饰器参数常量赋值及测试中未使用的 DB/账号 ID；直接使用原契约参数 schema，移除未使用接收项，保留原 HTTP 校验、账号创建与全部断言。
+- 原 `characters-policy.test.ts` 断言实际失败：`二十七岁` 被儿童规则从后缀 `七岁` 误命中。修复 `domain/child-features.ts` 的完整年龄边界，新增 `domain/child-features.test.ts` 覆盖儿童年龄与成人中文/数字/小数年龄，原失败断言保持不变。没有放宽门禁、增加超时或跳过测试。
+- 本轮没有修改 contracts 或生成物，也没有混入 T-046 的改动。
+
+### 云端本地检查
+
+独立副本 `/workspace/wb-t047`，独立真实 PostgreSQL 18/pgvector 库 `weiban_test_t047`（127.0.0.1:55432），`.env` 不提交；Node24.19.0、pnpm11.28.4。命令使用 `pnpm --package=pnpm@11.28.4 dlx pnpm ...`。
+
+- 针对性 ESLint/server typecheck；Vitest 自定义角色/分类/迁移及新增年龄规则：26条通过、0失败、0跳过（25条服务器集成）；迁移 up→down→up 实际执行。
+- `android:generate:check` 成功：contracts2.3、362个JSON定义、93个接口、536个Kotlin定义；相关契约与生成物 Git diff 为0。
+- 最终完整 `format:check`、`lint`（含边界/循环）、`typecheck`、`test --reporter=default --reporter=json`、零跳过门禁、`tokens --check` 全部成功；56个文件482条通过、0失败、0跳过，其中服务器集成245条。
+- 日志 `/workspace/logs/wb-t047-*`：最初targeted记录4处ESLint失败；targeted2记录年龄误判失败；targeted3及full1为修正后通过证据。原交接中的人设/回复失败本次最终检查未复现，不据此宣称已独立关闭问题。
+
+### 最终源码 CI
+
+源码 `32120456a78b106504939f2ab258a6f3ad32c6ac` 的 [push37875546877](https://github.com/yottermanzione-ship-it/weiban/actions/runs/37875546877) 与 [PR37875550102](https://github.com/yottermanzione-ship-it/weiban/actions/runs/37875550102) 全部成功，已逐项读取job/step与四份完整解码日志：check113643191428/113643202147、android113643191154/113643202308。整仓482条、Web22/admin7、Android119条零跳过，静态/类型/契约生成物/APK、生产镜像与迁移/双域HTTP/加密备份/空卷恢复及非空目标拒绝均通过。完整日志 `/workspace/logs/wb-t047-source-{push,pr}-{check,android}-ci.log`。随后只提交本交接和任务卡；文档提交的最新CI结论记录在PR检查/说明中，不计作独立验收。
+
+### 范围与后续
+
+本轮只修CI阻塞；原交接里的模型二次儿童检测、严格试聊隔离、导入路径及真实供应商/真机等限制保留，不扩展其他功能、不更改契约或代签架构。开发自测通过不等于任务功能逐条独立验收通过。总负责人按最新PR检查安排后续，Codex本轮不合并main。
