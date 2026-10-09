@@ -39,6 +39,13 @@ export class MomentsController {
   ) {
     return this.moments.listMyPosts(p.userId, q);
   }
+  @Get('notifications')
+  notifications(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Query(new ContractPipe(E.listNotifications.query!)) q: PageQuery,
+  ) {
+    return this.moments.listNotifications(p.userId, q);
+  }
   @Get('badge')
   badge(@CurrentPrincipal() p: AuthPrincipal) {
     return this.moments.getBadge(p.userId);

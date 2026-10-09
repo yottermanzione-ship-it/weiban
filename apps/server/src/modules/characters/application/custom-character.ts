@@ -6,7 +6,7 @@
  * - 试聊：创建或复用一个不绑定 contacts 的临时会话（CHR-07 第 6 条）。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import {
   type UserCustomCharacterWrite,
   type UserCustomCharacterPatch,
@@ -310,6 +310,17 @@ export class CustomCharacterService {
     return { conversationId: conv.conversationId };
   }
 
+  /** 3.0.1：我的全部自定义角色，按创建时间倒序。 */
+  async list(userId: string): Promise<{ items: UserCustomCharacter[] }> {
+    const rows = await this.database.db
+      .select({ id: characters.id })
+      .from(characters)
+      .where(and(eq(characters.ownerId, userId), eq(characters.kind, 'custom')))
+      .orderBy(desc(characters.createdAt));
+    const items: UserCustomCharacter[] = [];
+    for (const row of rows) items.push(await this.get(userId, row.id));
+    return { items };
+  }
   /** Load and return UserCustomCharacter for the given owner+characterId. */
   async get(userId: string, characterId: string): Promise<UserCustomCharacter> {
     const [row] = await this.database.db

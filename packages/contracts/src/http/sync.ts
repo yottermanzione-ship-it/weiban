@@ -64,6 +64,16 @@ const ConversationPeerReadUpdated = z.object({
   data: z.object({ conversationId: Id, peerReadSeq: z.number().int().nonnegative() }),
 });
 
+/**
+ * 3.0.1（L4 收尾，次版本变更）：会话已被物理删除（群聊「删除并退出」、私聊彻底删除）。
+ * 客户端从本地删除会话及其消息；旧客户端仍会先收到 hidden = true 的 conversation.state_updated。
+ */
+export const ConversationRemovedReason = z.enum(['group_dissolved', 'purged']);
+const ConversationRemoved = z.object({
+  type: z.literal('conversation.removed'),
+  data: z.object({ conversationId: Id, reason: tolerantEnum(ConversationRemovedReason) }),
+});
+
 const ContactUpserted = z.object({
   type: z.literal('contact.upserted'),
   data: z.object({ contact: Contact }),
@@ -156,6 +166,8 @@ export const DataSection = z.enum([
   'imports',
   'quiet_state',
   'stickers',
+  /** 3.0.1：「新的朋友」列表（名片推荐、好友申请记录）变化，重新拉 GET /contacts/new-friends。 */
+  'new_friends',
 ]);
 export type DataSection = z.infer<typeof DataSection>;
 
@@ -188,6 +200,7 @@ export const UserUpdatePayload = z.discriminatedUnion('type', [
   MomentsBadgeUpdated,
   MomentsPostChanged,
   DataChanged,
+  ConversationRemoved,
 ]);
 export type UserUpdatePayload = z.infer<typeof UserUpdatePayload>;
 

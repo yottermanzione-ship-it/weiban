@@ -300,6 +300,7 @@ export const Message = z.object({
    * 当前已定义取值：
    *   - 'health'：消息使用了经期数据生成（PLAY-01 第 7 条 / health-data.md 第 5 节）。
    *     效果：推送通知只显示「XX 发来一条消息」（不显示正文）；不能选入分享图；不进名场面瞬间卡。
+   *   - 'self_chat'（3.0.1，T-065）：群聊里角色自己聊起来的消息（SOC-05）。效果：没有 @ 用户时不推送；未读数照常。
    * **只有服务器端发送方（ChatParticipantPort.postMessage 的 labels 参数）可以设置此字段。**
    * 用户经 HTTP / WebSocket 发送的消息不能携带 labels，服务器会忽略或拒绝。
    * 客户端遇到不认识的标签值时忽略，不报错（接收端容错，同 scope 的处理原则）。

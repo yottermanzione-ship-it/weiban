@@ -1443,7 +1443,7 @@ data class ChatGroupEndpointsRemoveMemberParams(
 
 @Serializable
 data class ChatGroupEndpointsRenameGroupBody(
-    @SerialName("title") val `title`: String,
+    @SerialName("title") val `title`: String?,
 )
 
 @Serializable
@@ -2021,6 +2021,8 @@ data class ConversationParams(
 data class ConversationParamsInput(
     @SerialName("conversationId") val `conversationId`: Id,
 )
+
+typealias ConversationRemovedReason = String
 
 @Serializable
 data class ConversationSearchGroup(
@@ -5442,6 +5444,18 @@ data class MomentsEndpointsListMyPostsResponse(
 )
 
 @Serializable
+data class MomentsEndpointsListNotificationsQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class MomentsEndpointsListNotificationsResponse(
+    @SerialName("items") val `items`: List<MomentsNotification>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
 data class MomentsEndpointsMarkSeenBody(
     @SerialName("scope") val `scope`: String,
 )
@@ -5452,6 +5466,20 @@ data class MomentsImage(
     @SerialName("width") val `width`: Long?,
     @SerialName("height") val `height`: Long?,
 )
+
+@Serializable
+data class MomentsNotification(
+    @SerialName("notificationId") val `notificationId`: String,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("postId") val `postId`: Id,
+    @SerialName("commentId") val `commentId`: Id?,
+    @SerialName("actor") val `actor`: MomentsActor,
+    @SerialName("text") val `text`: String?,
+    @SerialName("post") val `post`: MomentsNotificationPost,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+typealias MomentsNotificationKind = String
 
 @Serializable
 data class MomentsPost(
@@ -5472,6 +5500,30 @@ typealias MomentsVisibility = JsonElement
 typealias MomentsVisibilityInput = JsonElement
 
 typealias MoneyMicros = Long
+
+@Serializable
+data class NewFriendItem(
+    @SerialName("itemId") val `itemId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("recommenderCharacterId") val `recommenderCharacterId`: Id?,
+    @SerialName("messageId") val `messageId`: Id?,
+    @SerialName("status") val `status`: String,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+typealias NewFriendStatus = String
+
+@Serializable
+data class NewFriendsEndpointsListResponse(
+    @SerialName("items") val `items`: List<NewFriendItem>,
+    @SerialName("unseenCount") val `unseenCount`: Long,
+)
+
+@Serializable
+data class NewFriendsEndpointsRemoveParams(
+    @SerialName("itemId") val `itemId`: Id,
+)
 
 typealias NoContent = JsonElement?
 
@@ -6826,6 +6878,13 @@ data class ReceivedUserUpdatePayloadDataChanged(
 ) : ReceivedUserUpdatePayload
 
 @Serializable
+data class ReceivedUserUpdatePayloadConversationRemoved(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "conversation.removed",
+    @SerialName("data") val `data`: ReceivedUserUpdatePayloadConversationRemovedData,
+) : ReceivedUserUpdatePayload
+
+@Serializable
 data class ReceivedUserUpdatePayloadUnsupported(
     @EncodeDefault
     @SerialName("type") override val `type`: String = "unsupported",
@@ -6856,6 +6915,7 @@ object ReceivedUserUpdatePayloadSerializer : KSerializer<ReceivedUserUpdatePaylo
             "moments.badge_updated" -> input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadMomentsBadgeUpdated.serializer(), value)
             "moments.post_changed" -> input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadMomentsPostChanged.serializer(), value)
             "data.changed" -> input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadDataChanged.serializer(), value)
+            "conversation.removed" -> input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadConversationRemoved.serializer(), value)
             "unsupported" -> input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadUnsupported.serializer(), value)
             else -> { require(tag != null) { "Missing discriminator" }; value = JsonObject(value + mapOf("type" to JsonPrimitive("unsupported"), "data" to buildJsonObject { put("originalType", tag) })); input.json.decodeFromJsonElement(ReceivedUserUpdatePayloadUnsupported.serializer(), value) }
         }
@@ -6880,6 +6940,7 @@ object ReceivedUserUpdatePayloadSerializer : KSerializer<ReceivedUserUpdatePaylo
             is ReceivedUserUpdatePayloadMomentsBadgeUpdated -> output.json.encodeToJsonElement(ReceivedUserUpdatePayloadMomentsBadgeUpdated.serializer(), value)
             is ReceivedUserUpdatePayloadMomentsPostChanged -> output.json.encodeToJsonElement(ReceivedUserUpdatePayloadMomentsPostChanged.serializer(), value)
             is ReceivedUserUpdatePayloadDataChanged -> output.json.encodeToJsonElement(ReceivedUserUpdatePayloadDataChanged.serializer(), value)
+            is ReceivedUserUpdatePayloadConversationRemoved -> output.json.encodeToJsonElement(ReceivedUserUpdatePayloadConversationRemoved.serializer(), value)
             is ReceivedUserUpdatePayloadUnsupported -> output.json.encodeToJsonElement(ReceivedUserUpdatePayloadUnsupported.serializer(), value)
         }
         output.encodeJsonElement(element)
@@ -8010,6 +8071,11 @@ data class UserCustomCharacterWriteInput(
 )
 
 @Serializable
+data class UserCustomEndpointsListResponse(
+    @SerialName("items") val `items`: List<UserCustomCharacter>,
+)
+
+@Serializable
 data class UserCustomEndpointsStartTrialResponse(
     @SerialName("conversationId") val `conversationId`: Id,
 )
@@ -8418,6 +8484,15 @@ data class UserUpdateDataChanged(
 ) : UserUpdate
 
 @Serializable
+data class UserUpdateConversationRemoved(
+    @SerialName("updateSeq") override val `updateSeq`: UpdateSeq,
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "conversation.removed",
+    @SerialName("data") val `data`: UserUpdateConversationRemovedData,
+) : UserUpdate
+
+@Serializable
 data class UserUpdateUnsupported(
     @SerialName("updateSeq") override val `updateSeq`: UpdateSeq,
     @SerialName("occurredAt") override val `occurredAt`: Timestamp,
@@ -8450,6 +8525,7 @@ object UserUpdateSerializer : KSerializer<UserUpdate> {
             "moments.badge_updated" -> input.json.decodeFromJsonElement(UserUpdateMomentsBadgeUpdated.serializer(), value)
             "moments.post_changed" -> input.json.decodeFromJsonElement(UserUpdateMomentsPostChanged.serializer(), value)
             "data.changed" -> input.json.decodeFromJsonElement(UserUpdateDataChanged.serializer(), value)
+            "conversation.removed" -> input.json.decodeFromJsonElement(UserUpdateConversationRemoved.serializer(), value)
             "unsupported" -> input.json.decodeFromJsonElement(UserUpdateUnsupported.serializer(), value)
             else -> { require(tag != null) { "Missing discriminator" }; value = JsonObject(value + mapOf("type" to JsonPrimitive("unsupported"), "data" to buildJsonObject { put("originalType", tag) })); input.json.decodeFromJsonElement(UserUpdateUnsupported.serializer(), value) }
         }
@@ -8474,6 +8550,7 @@ object UserUpdateSerializer : KSerializer<UserUpdate> {
             is UserUpdateMomentsBadgeUpdated -> output.json.encodeToJsonElement(UserUpdateMomentsBadgeUpdated.serializer(), value)
             is UserUpdateMomentsPostChanged -> output.json.encodeToJsonElement(UserUpdateMomentsPostChanged.serializer(), value)
             is UserUpdateDataChanged -> output.json.encodeToJsonElement(UserUpdateDataChanged.serializer(), value)
+            is UserUpdateConversationRemoved -> output.json.encodeToJsonElement(UserUpdateConversationRemoved.serializer(), value)
             is UserUpdateUnsupported -> output.json.encodeToJsonElement(UserUpdateUnsupported.serializer(), value)
         }
         output.encodeJsonElement(element)
@@ -8604,6 +8681,13 @@ data class UserUpdatePayloadDataChanged(
     @SerialName("data") val `data`: UserUpdatePayloadDataChangedData,
 ) : UserUpdatePayload
 
+@Serializable
+data class UserUpdatePayloadConversationRemoved(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "conversation.removed",
+    @SerialName("data") val `data`: UserUpdatePayloadConversationRemovedData,
+) : UserUpdatePayload
+
 object UserUpdatePayloadSerializer : KSerializer<UserUpdatePayload> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("UserUpdatePayload")
     override fun deserialize(decoder: Decoder): UserUpdatePayload {
@@ -8628,6 +8712,7 @@ object UserUpdatePayloadSerializer : KSerializer<UserUpdatePayload> {
             "moments.badge_updated" -> input.json.decodeFromJsonElement(UserUpdatePayloadMomentsBadgeUpdated.serializer(), value)
             "moments.post_changed" -> input.json.decodeFromJsonElement(UserUpdatePayloadMomentsPostChanged.serializer(), value)
             "data.changed" -> input.json.decodeFromJsonElement(UserUpdatePayloadDataChanged.serializer(), value)
+            "conversation.removed" -> input.json.decodeFromJsonElement(UserUpdatePayloadConversationRemoved.serializer(), value)
             else -> throw SerializationException("Unknown discriminator")
         }
     }
@@ -8651,6 +8736,7 @@ object UserUpdatePayloadSerializer : KSerializer<UserUpdatePayload> {
             is UserUpdatePayloadMomentsBadgeUpdated -> output.json.encodeToJsonElement(UserUpdatePayloadMomentsBadgeUpdated.serializer(), value)
             is UserUpdatePayloadMomentsPostChanged -> output.json.encodeToJsonElement(UserUpdatePayloadMomentsPostChanged.serializer(), value)
             is UserUpdatePayloadDataChanged -> output.json.encodeToJsonElement(UserUpdatePayloadDataChanged.serializer(), value)
+            is UserUpdatePayloadConversationRemoved -> output.json.encodeToJsonElement(UserUpdatePayloadConversationRemoved.serializer(), value)
         }
         output.encodeJsonElement(element)
     }
@@ -10278,6 +10364,13 @@ data class MessagePageCoverageExcludedRangesItem(
 )
 
 @Serializable
+data class MomentsNotificationPost(
+    @SerialName("author") val `author`: MomentsActor,
+    @SerialName("text") val `text`: String,
+    @SerialName("imageMediaId") val `imageMediaId`: Id?,
+)
+
+@Serializable
 data class MomentsPostLink(
     @SerialName("url") val `url`: String,
     @SerialName("title") val `title`: String,
@@ -10453,6 +10546,12 @@ data class ReceivedUserUpdatePayloadDataChangedData(
     @SerialName("section") val `section`: String,
     @SerialName("characterId") val `characterId`: Id?,
     @SerialName("itemId") val `itemId`: Id?,
+)
+
+@Serializable
+data class ReceivedUserUpdatePayloadConversationRemovedData(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("reason") val `reason`: String,
 )
 
 @Serializable
@@ -10716,6 +10815,12 @@ data class UserUpdateDataChangedData(
 )
 
 @Serializable
+data class UserUpdateConversationRemovedData(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
 data class UserUpdateUnsupportedData(
     @SerialName("originalType") val `originalType`: String,
 )
@@ -10813,6 +10918,12 @@ data class UserUpdatePayloadDataChangedData(
     @SerialName("section") val `section`: String,
     @SerialName("characterId") val `characterId`: Id?,
     @SerialName("itemId") val `itemId`: Id?,
+)
+
+@Serializable
+data class UserUpdatePayloadConversationRemovedData(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("reason") val `reason`: String,
 )
 
 @Serializable

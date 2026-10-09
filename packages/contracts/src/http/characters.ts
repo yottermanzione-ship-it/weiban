@@ -266,6 +266,14 @@ export type UserCustomCharacter = z.infer<typeof UserCustomCharacter>;
 const customParams = z.object({ characterId: Id });
 
 export const UserCustomEndpoints = {
+  /** 3.0.1（L4 收尾）：我的自定义角色列表（「TA 认识的人」选人、管理）。 */
+  list: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/characters/custom`,
+    auth: 'user',
+    response: z.object({ items: z.array(UserCustomCharacter) }),
+    summary: '我创建的全部自定义角色，按创建时间倒序',
+  }),
   /** 创建自定义角色（CHR-07）；自动执行儿童特征检测后返回检测结果。 */
   create: defineEndpoint({
     method: 'POST',

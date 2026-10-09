@@ -42,9 +42,11 @@ export const ChatGroupEndpoints = {
     path: `${API_PREFIX}/groups/:conversationId`,
     auth: 'user',
     params: GroupParams,
-    body: z.object({ title: z.string().trim().min(1).max(40) }),
+    /** 3.0.1：传空字符串或 null 表示恢复默认名（成员名拼接，之后随成员变化自动更新）。 */
+    body: z.object({ title: z.string().trim().max(40).nullable() }),
     response: Conversation,
-    summary: '修改群名，群里写系统提示 group_renamed；私聊返回 422 not_group_conversation',
+    summary:
+      '修改群名，群里写系统提示 group_renamed（恢复默认名时 params.reset = true）；私聊返回 422 not_group_conversation',
   }),
   addMembers: defineEndpoint({
     method: 'POST',

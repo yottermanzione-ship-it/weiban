@@ -192,5 +192,7 @@ export interface ChatNotificationReadPort {
     recipientParticipantId: string;
     muted: boolean;
     content: MessageContent | null;
+    /** 3.0.1：服务器标签（health、self_chat 等），推送据此决定是否显示正文、是否推送。 */
+    labels?: string[];
   } | null>;
 }

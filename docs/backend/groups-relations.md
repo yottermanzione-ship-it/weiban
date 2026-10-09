@@ -32,3 +32,10 @@
 ## 4. ReadMessagesInput 3.0 过滤
 
 - `excludeLabels`、`excludeMessageIds` 在 SQL 中过滤；`contentTypes` 用新列 `messages.content_type`（0030 起写入），旧消息该列为空时解密后再判断。
+
+## 5. L4 收尾补充（3.0.1）
+
+- 改群名传空字符串或 null：恢复默认名（`title_customized = false`，按成员名拼接并随成员变化更新），系统提示 `group_renamed` 带 `reset = true`。
+- 解散群 / 私聊彻底删除后追加 `conversation.removed` 更新（`reason = group_dissolved | purged`）；之前的 hidden 更新保留，兼容旧客户端。
+- 推送：`ChatNotificationReadPort.getNotificationContext` 返回 `labels`；带 `self_chat` 且没 @ 用户的群消息不推送。角色朋友圈评论 @ 用户推送 kind = moments，链接 `/moments/posts/{postId}`。
+- 新接口：`GET /contacts/new-friends`、`POST /contacts/new-friends/seen`、`DELETE /contacts/new-friends/:itemId`（迁移 0035）；`GET /moments/notifications`；`GET /characters/custom`。

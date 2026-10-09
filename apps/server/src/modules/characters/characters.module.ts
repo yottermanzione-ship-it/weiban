@@ -27,9 +27,10 @@ import {
 @Module({
   imports: [MediaModule, ChatModule, IdentityModule],
   controllers: [
+    // CustomCharacterController 必须在 CharacterController 之前：GET /characters/custom 与 /characters/:characterId 同前缀。
+    CustomCharacterController,
     CharacterController,
     CharacterAdminController,
-    CustomCharacterController,
     ScenarioModeAdminController,
     PersonaVersionAdminController,
     PublicUpdateAdminController,

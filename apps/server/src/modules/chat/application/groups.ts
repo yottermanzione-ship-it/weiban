@@ -95,10 +95,12 @@ export class ChatGroupService implements ChatGroupAdminPort, ChatGroupReadPort {
   async renameForUser(
     userId: string,
     conversationId: string,
-    title: string,
+    title: string | null,
   ): Promise<Conversation> {
     return this.db.transaction(async (tx) => {
       const row = await this.loadGroup(tx, conversationId, userId);
+      // 3.0.1：空字符串或 null = 恢复默认名（成员名拼接，之后随成员变化自动更新）。
+      if (!title?.trim()) return this.resetTitleTx(tx, row);
       return this.renameTx(tx, row, title, null);
     });
   }
@@ -162,6 +164,10 @@ export class ChatGroupService implements ChatGroupAdminPort, ChatGroupReadPort {
         data: { conversation },
       });
       await tx.db.delete(conversations).where(eq(conversations.id, row.id));
+      await this.sync.appendUpdate(tx, userId, {
+        type: 'conversation.removed',
+        data: { conversationId: row.id, reason: 'group_dissolved' },
+      });
       await this.outbox.publish(tx, 'chat.group_dissolved', 'chat', {
         conversationId: row.id,
         ownerUserId: row.ownerUserId,
@@ -591,6 +597,28 @@ export class ChatGroupService implements ChatGroupAdminPort, ChatGroupReadPort {
       addedCharacterIds: [],
       removedCharacterIds: [member.refId],
       cause,
+      byCharacterId: null,
+    });
+    return this.reload(tx, row.id);
+  }
+  private async resetTitleTx(tx: DbTx, row: ConversationRow): Promise<Conversation> {
+    if (!row.titleCustomized) return this.store.conversation(tx, row);
+    await tx.db
+      .update(conversations)
+      .set({ titleCustomized: false, updatedAt: this.clock.now() })
+      .where(eq(conversations.id, row.id));
+    await this.refreshDefaultTitle(tx, { ...row, titleCustomized: false });
+    const [current] = await tx.db.select().from(conversations).where(eq(conversations.id, row.id));
+    await this.system(
+      tx,
+      row,
+      'group_renamed',
+      { title: current?.title ?? '', reset: true },
+      `group_renamed:${newId()}`,
+    );
+    await this.outbox.publish(tx, 'chat.group_renamed', 'chat', {
+      conversationId: row.id,
+      ownerUserId: row.ownerUserId,
       byCharacterId: null,
     });
     return this.reload(tx, row.id);

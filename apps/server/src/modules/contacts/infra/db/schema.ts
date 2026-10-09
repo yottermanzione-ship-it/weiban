@@ -34,6 +34,8 @@ export const contacts = contactsSchema.table(
     referrerCharacterId: uuid('referrer_character_id'),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     purgeAfter: timestamp('purge_after', { withTimezone: true }),
+    /** 「新的朋友」里删除了这条申请记录（0035）。 */
+    newFriendHiddenAt: timestamp('new_friend_hidden_at', { withTimezone: true }),
   },
   (t) => [
     uniqueIndex('contact_user_character_idx').on(t.userId, t.characterId),
@@ -61,6 +63,8 @@ export const cardRecommendations = contactsSchema.table(
     recommenderCharacterId: uuid('recommender_character_id').notNull(),
     messageId: uuid('message_id').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    /** 「新的朋友」里删除了这条记录（0035）。 */
+    hiddenAt: timestamp('hidden_at', { withTimezone: true }),
   },
   (t) => [
     uniqueIndex('card_recommendations_message_idx').on(t.userId, t.messageId),
@@ -78,3 +82,9 @@ export const cardDismissals = contactsSchema.table(
   },
   (t) => [primaryKey({ columns: [t.userId, t.characterId] })],
 );
+
+/** 「新的朋友」红点游标（0035）。 */
+export const newFriendState = contactsSchema.table('new_friend_state', {
+  userId: uuid('user_id').primaryKey(),
+  seenAt: timestamp('seen_at', { withTimezone: true }).notNull(),
+});

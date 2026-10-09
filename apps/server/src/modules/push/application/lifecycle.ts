@@ -28,6 +28,7 @@ import { pushDevices } from '../infra/db/schema.js';
 import {
   isDoNotDisturb,
   messageNotification,
+  notificationText,
   notificationTopic,
 } from '../domain/notification-rules.js';
 import { AdminAlertService } from './admin-alerts.js';
@@ -109,6 +110,12 @@ export class PushLifecycle implements OnModuleInit, OnApplicationBootstrap {
             !event.payload.mentionedParticipantIds.includes(context.recipientParticipantId)
           )
             continue;
+          // 群里角色自己聊起来的消息（self_chat，SOC-05 第 3 条）：没有 @ 用户就不推送，未读数照常。
+          if (
+            context.labels?.includes('self_chat') &&
+            !event.payload.mentionedParticipantIds.includes(context.recipientParticipantId)
+          )
+            continue;
           const profile = await this.identity.getProfile(userId, tx);
           const settings = await this.identity.getNotificationSettings(userId, tx);
           if (!profile || !settings) continue;
@@ -122,6 +129,7 @@ export class PushLifecycle implements OnModuleInit, OnApplicationBootstrap {
             name,
             content: context.content,
             scope: context.scope,
+            ...(context.labels ? { labels: context.labels } : {}),
             count: 1,
             settings,
             muted: context.muted,
@@ -138,6 +146,41 @@ export class PushLifecycle implements OnModuleInit, OnApplicationBootstrap {
             occurredAt: event.occurredAt,
           });
         }
+      },
+    });
+    // 角色在朋友圈评论里 @ 了用户（SOC-08 第 4 条）：推送 kind = moments，点开到那条动态。
+    this.bus.subscribe({
+      consumer: 'push.on_moments_mention',
+      eventType: 'moments.comment_created',
+      handle: async (event, tx) => {
+        const p = event.payload;
+        if (!p.mentionsUser || p.authorKind !== 'character' || !p.authorCharacterId) return;
+        const settings = await this.identity.getNotificationSettings(p.ownerUserId, tx);
+        if (!settings) return;
+        const name = notificationText(
+          await this.source.name(p.ownerUserId, p.authorCharacterId, tx),
+          48,
+        );
+        await this.store.enqueue(tx, {
+          userId: p.ownerUserId,
+          eventId: event.eventId,
+          dedupeKey: `moments:${p.commentId}`,
+          dedupeWindowHours: 0,
+          respectsDoNotDisturb: true,
+          notification: NotificationPayload.parse({
+            v: 1,
+            kind: 'moments',
+            collapseKey: `moments:${p.postId}`,
+            title: name || '微伴',
+            body: `${name || '有人'} 在朋友圈提到了你`,
+            count: 1,
+            deepLink: `/moments/posts/${p.postId}`,
+            conversationId: null,
+            sound: settings.pushSoundEnabled,
+            sentAt: this.clock.now().toISOString(),
+          }),
+          occurredAt: event.occurredAt,
+        });
       },
     });
     this.bus.subscribe({

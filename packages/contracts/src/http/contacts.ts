@@ -3,7 +3,15 @@
  * 需求：CHR-03、CHR-05、CHR-06、GRW-01；关系类型（GRW-02）在 L2 扩展。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, LocalDate, NoContent, Timestamp, defineEndpoint } from '../common.js';
+import {
+  API_PREFIX,
+  Id,
+  LocalDate,
+  NoContent,
+  Timestamp,
+  defineEndpoint,
+  tolerantEnum,
+} from '../common.js';
 
 export const ContactStatus = z.enum([
   'pending', // 已发送申请，等待「通过」（P-30）
@@ -97,5 +105,55 @@ export const ContactCardEndpoints = {
     params: z.object({ characterId: Id }),
     response: NoContent,
     summary: '名片「不感兴趣」：该角色在 P-27 冷却期（90 天）内不再被推荐（CHR-04 第 4 条）',
+  }),
+} as const;
+
+// ---------- 3.0.1：「新的朋友」列表（CHR-04、CHR-03，L4 收尾） ----------
+
+/** 名片推荐 / 好友申请记录的状态：可添加、等待通过、已添加、不感兴趣。 */
+export const NewFriendStatus = z.enum(['can_add', 'pending', 'added', 'dismissed']);
+export type NewFriendStatus = z.infer<typeof NewFriendStatus>;
+
+export const NewFriendItem = z.object({
+  itemId: Id,
+  /** card_recommendation：角色发来的名片；contact_request：我发出的好友申请。 */
+  kind: tolerantEnum(z.enum(['card_recommendation', 'contact_request'])),
+  characterId: Id,
+  /** 名片推荐人；好友申请记录为 null（通过名片添加时为推荐人）。 */
+  recommenderCharacterId: Id.nullable(),
+  /** 名片消息（点击跳回聊天用）；好友申请为 null。 */
+  messageId: Id.nullable(),
+  status: tolerantEnum(NewFriendStatus),
+  createdAt: Timestamp,
+});
+export type NewFriendItem = z.infer<typeof NewFriendItem>;
+
+export const NewFriendsEndpoints = {
+  list: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/contacts/new-friends`,
+    auth: 'user',
+    response: z.object({
+      items: z.array(NewFriendItem).max(200),
+      /** 上次查看后新出现的、仍可添加的名片推荐数（通讯录「新的朋友」红点）。 */
+      unseenCount: z.number().int().nonnegative(),
+    }),
+    summary:
+      '「新的朋友」：名片推荐与好友申请记录，按时间倒序（客户端按近三天 / 更早分组）；不含已删除的记录。变化时发 data.changed(new_friends)',
+  }),
+  markSeen: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/contacts/new-friends/seen`,
+    auth: 'user',
+    response: NoContent,
+    summary: '打开「新的朋友」后清红点，所有设备同步',
+  }),
+  remove: defineEndpoint({
+    method: 'DELETE',
+    path: `${API_PREFIX}/contacts/new-friends/:itemId`,
+    auth: 'user',
+    params: z.object({ itemId: Id }),
+    response: NoContent,
+    summary: '删除一条记录（只从列表移除，不影响通讯录与推荐冷却）',
   }),
 } as const;

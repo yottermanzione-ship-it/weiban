@@ -26,7 +26,7 @@ export class ChatGroupController {
   rename(
     @CurrentPrincipal() p: AuthPrincipal,
     @Param(new ContractPipe(G.renameGroup.params!)) params: { conversationId: string },
-    @Body(new ContractPipe(G.renameGroup.body!)) body: { title: string },
+    @Body(new ContractPipe(G.renameGroup.body!)) body: { title: string | null },
   ) {
     return this.groups.renameForUser(p.userId, params.conversationId, body.title);
   }

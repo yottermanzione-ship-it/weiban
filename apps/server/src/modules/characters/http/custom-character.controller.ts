@@ -2,7 +2,7 @@
  * 用户自定义角色 HTTP 控制器（CHR-07）。
  * 对应 packages/contracts/src/http/characters.ts 中的 UserCustomEndpoints。
  */
-import { Body, Controller, HttpCode, Inject, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post } from '@nestjs/common';
 import { UserCustomEndpoints as E } from '@weiban/contracts';
 import {
   ContractPipe,
@@ -16,6 +16,11 @@ import { CustomCharacterService } from '../application/custom-character.js';
 @RequireAuth('user')
 export class CustomCharacterController {
   constructor(@Inject(CustomCharacterService) private readonly service: CustomCharacterService) {}
+
+  @Get()
+  list(@CurrentPrincipal() p: AuthPrincipal) {
+    return this.service.list(p.userId);
+  }
 
   @Post()
   @HttpCode(200)

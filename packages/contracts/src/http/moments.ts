@@ -7,7 +7,15 @@
  * 服务器在返回前过滤。朋友圈不包含成人模式内容和经期内容（生成侧保证，SOC-07 第 8 条）。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, NoContent, Timestamp, cursorPage, defineEndpoint } from '../common.js';
+import {
+  API_PREFIX,
+  Id,
+  NoContent,
+  Timestamp,
+  cursorPage,
+  defineEndpoint,
+  tolerantEnum,
+} from '../common.js';
 import { LinkContent } from './chat.js';
 
 /** 发布者 / 点赞者 / 评论者：用户本人或某个角色。 */
@@ -82,6 +90,28 @@ export const MomentsBadge = z.object({
   unseenInteractionCount: z.number().int().nonnegative(),
 });
 export type MomentsBadge = z.infer<typeof MomentsBadge>;
+
+/** 3.0.1：朋友圈消息列表的一条（谁赞了、评论了、回复了、@ 了我，L4 收尾）。 */
+export const MomentsNotificationKind = z.enum(['like', 'comment', 'reply', 'mention']);
+export const MomentsNotification = z.object({
+  /** 列表内唯一（like:{postId}:{characterId} 或 comment:{commentId}）。 */
+  notificationId: z.string().max(120),
+  kind: tolerantEnum(MomentsNotificationKind),
+  postId: Id,
+  /** 评论类为该评论；点赞为 null。 */
+  commentId: Id.nullable(),
+  actor: MomentsActor,
+  /** 评论正文；点赞为 null。 */
+  text: z.string().max(500).nullable(),
+  /** 被互动的动态摘要（右侧缩略）。 */
+  post: z.object({
+    author: MomentsActor,
+    text: z.string().max(100),
+    imageMediaId: Id.nullable(),
+  }),
+  createdAt: Timestamp,
+});
+export type MomentsNotification = z.infer<typeof MomentsNotification>;
 
 const PostParams = z.object({ postId: Id });
 
@@ -197,5 +227,18 @@ export const MomentsEndpoints = {
     body: z.object({ scope: z.enum(['posts', 'interactions', 'all']) }),
     response: MomentsBadge,
     summary: '打开朋友圈后清红点；所有设备同步（moments.badge_updated 更新）',
+  }),
+  /** 3.0.1（L4 收尾）。 */
+  listNotifications: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/moments/notifications`,
+    auth: 'user',
+    query: z.object({
+      cursor: z.string().optional(),
+      limit: z.coerce.number().int().min(1).max(50).default(20),
+    }),
+    response: cursorPage(MomentsNotification),
+    summary:
+      '朋友圈消息列表：通讯录中角色给我的动态点赞、评论，回复我的评论，评论里 @ 我；按时间倒序。点进去后用 markSeen(interactions) 清红点',
   }),
 } as const;

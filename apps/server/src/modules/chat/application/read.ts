@@ -92,6 +92,7 @@ export class ChatReadService implements ChatReadPort {
           message.scope === 'normal' && !message.labels?.includes('health')
             ? await this.store.content(tx, row, message)
             : null,
+        ...(message.labels?.length ? { labels: [...message.labels] } : {}),
       };
     };
     return input ? read(asDbTx(input)) : this.db.transaction(read);

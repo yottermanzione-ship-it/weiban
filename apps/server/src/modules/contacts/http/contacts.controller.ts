@@ -10,7 +10,11 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ContactCardEndpoints as C, ContactsEndpoints as E } from '@weiban/contracts';
+import {
+  ContactCardEndpoints as C,
+  ContactsEndpoints as E,
+  NewFriendsEndpoints as N,
+} from '@weiban/contracts';
 import {
   ContractPipe,
   CurrentPrincipal,
@@ -27,6 +31,24 @@ export class ContactsController {
     @Inject(ContactCardRecommendationService)
     private readonly recommendations: ContactCardRecommendationService,
   ) {}
+  /** 「新的朋友」列表（3.0.1）。 */
+  @Get('new-friends')
+  newFriends(@CurrentPrincipal() p: AuthPrincipal) {
+    return this.recommendations.listNewFriends(p.userId);
+  }
+  @Post('new-friends/seen')
+  @HttpCode(204)
+  async newFriendsSeen(@CurrentPrincipal() p: AuthPrincipal) {
+    await this.recommendations.markNewFriendsSeen(p.userId);
+  }
+  @Delete('new-friends/:itemId')
+  @HttpCode(204)
+  async removeNewFriend(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Param(new ContractPipe(N.remove.params!)) params: { itemId: string },
+  ) {
+    await this.recommendations.removeNewFriend(p.userId, params.itemId);
+  }
   /** 名片「不感兴趣」（CHR-04 第 4 条，P-27 冷却 90 天）。 */
   @Post('recommendations/:characterId/dismiss')
   @HttpCode(204)

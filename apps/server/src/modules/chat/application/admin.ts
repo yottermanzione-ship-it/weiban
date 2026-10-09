@@ -202,7 +202,13 @@ export class ChatAdminService implements ChatAdminPort {
       type: 'conversation.updated',
       data: { conversation },
     });
-    if (purge) await tx.db.delete(conversations).where(eq(conversations.id, row.id));
+    if (purge) {
+      await tx.db.delete(conversations).where(eq(conversations.id, row.id));
+      await this.sync.appendUpdate(tx, input.userId, {
+        type: 'conversation.removed',
+        data: { conversationId: row.id, reason: 'purged' },
+      });
+    }
   }
   async postSystemMessage(
     transaction: Tx | null,

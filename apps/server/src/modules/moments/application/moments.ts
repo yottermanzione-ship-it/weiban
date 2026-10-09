@@ -13,6 +13,7 @@ import {
   CreateMomentsPostRequest,
   Id,
   MomentsBadge,
+  MomentsNotification,
   MomentsPost,
   type ContactsReadPort,
   type MediaReadPort,
@@ -298,6 +299,137 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
       if (removed.length) await this.postChanged(tx, userId, row.id, false);
     });
     return this.getPostForUser(userId, postId);
+  }
+  /** 朋友圈消息列表（3.0.1）：通讯录中角色给我的动态点赞评论、回复我、@ 我。 */
+  async listNotifications(
+    userId: string,
+    query: { cursor?: string; limit: number },
+  ): Promise<{ items: MomentsNotification[]; nextCursor: string | null }> {
+    const active = [...(await this.activeIds(userId))];
+    if (!active.length) return { items: [], nextCursor: null };
+    const limit = Math.min(Math.max(query.limit, 1), 50);
+    let before: Date | null = null;
+    let beforeId = '';
+    if (query.cursor) {
+      const [at, id] = Buffer.from(query.cursor, 'base64url').toString('utf8').split('|');
+      before = new Date(at ?? '');
+      beforeId = id ?? '';
+      if (Number.isNaN(before.getTime())) throw new AppError('bad_request', '分页游标不正确');
+    }
+    const likeRows = await this.db.db
+      .select({ like: likes, post: posts })
+      .from(likes)
+      .innerJoin(posts, eq(posts.id, likes.postId))
+      .where(
+        and(
+          eq(posts.ownerUserId, userId),
+          eq(posts.authorKind, 'user'),
+          eq(likes.actorKind, 'character'),
+          inArray(likes.actorRefId, active),
+          before ? sql`${likes.createdAt} <= ${before}` : undefined,
+        ),
+      )
+      .orderBy(desc(likes.createdAt))
+      .limit(limit + 1);
+    const commentRows = await this.db.db
+      .select({ comment: comments, post: posts })
+      .from(comments)
+      .innerJoin(posts, eq(posts.id, comments.postId))
+      .where(
+        and(
+          eq(posts.ownerUserId, userId),
+          eq(comments.authorKind, 'character'),
+          inArray(comments.authorRefId, active),
+          or(
+            eq(posts.authorKind, 'user'),
+            eq(comments.replyToKind, 'user'),
+            eq(comments.mentionsUser, true),
+          ),
+          before ? sql`${comments.createdAt} <= ${before}` : undefined,
+        ),
+      )
+      .orderBy(desc(comments.createdAt))
+      .limit(limit + 1);
+    type Entry = { id: string; at: Date; build: () => Promise<MomentsNotification> };
+    const preview = async (post: typeof posts.$inferSelect) => {
+      const [image] = await this.db.db
+        .select({ mediaId: postMedia.mediaId })
+        .from(postMedia)
+        .where(eq(postMedia.postId, post.id))
+        .orderBy(asc(postMedia.position))
+        .limit(1);
+      const text = await this.open(
+        post.ownerUserId,
+        `moments:post:${post.id}`,
+        post.textCiphertext,
+      );
+      return {
+        author:
+          post.authorKind === 'user'
+            ? { kind: 'user' as const, refId: post.ownerUserId }
+            : { kind: 'character' as const, refId: post.authorCharacterId! },
+        text: text.slice(0, 100),
+        imageMediaId: image?.mediaId ?? null,
+      };
+    };
+    const entries: Entry[] = [
+      ...likeRows.map(({ like, post }) => ({
+        id: `like:${post.id}:${like.actorRefId}`,
+        at: like.createdAt,
+        build: async () =>
+          MomentsNotification.parse({
+            notificationId: `like:${post.id}:${like.actorRefId}`,
+            kind: 'like',
+            postId: post.id,
+            commentId: null,
+            actor: { kind: 'character', refId: like.actorRefId },
+            text: null,
+            post: await preview(post),
+            createdAt: like.createdAt.toISOString(),
+          }),
+      })),
+      ...commentRows.map(({ comment, post }) => ({
+        id: `comment:${comment.id}`,
+        at: comment.createdAt,
+        build: async () =>
+          MomentsNotification.parse({
+            notificationId: `comment:${comment.id}`,
+            kind: comment.mentionsUser
+              ? 'mention'
+              : comment.replyToKind === 'user'
+                ? 'reply'
+                : 'comment',
+            postId: post.id,
+            commentId: comment.id,
+            actor: { kind: 'character', refId: comment.authorRefId },
+            text: await this.open(
+              post.ownerUserId,
+              `moments:comment:${comment.id}`,
+              comment.textCiphertext,
+            ),
+            post: await preview(post),
+            createdAt: comment.createdAt.toISOString(),
+          }),
+      })),
+    ]
+      .filter(
+        (e) =>
+          !before ||
+          e.at.getTime() < before.getTime() ||
+          (e.at.getTime() === before.getTime() && e.id < beforeId),
+      )
+      .sort((a, b) => b.at.getTime() - a.at.getTime() || (a.id < b.id ? 1 : -1));
+    const page = entries.slice(0, limit);
+    const items: MomentsNotification[] = [];
+    for (const entry of page) items.push(await entry.build());
+    const last = page.at(-1);
+    return {
+      items,
+      nextCursor:
+        entries.length > limit && last
+          ? Buffer.from(`${last.at.toISOString()}|${last.id}`, 'utf8').toString('base64url')
+          : null,
+    };
   }
   async markSeen(userId: string, scope: 'posts' | 'interactions' | 'all'): Promise<MomentsBadge> {
     const active = await this.activeIds(userId);

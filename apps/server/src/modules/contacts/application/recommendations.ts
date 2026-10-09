@@ -5,8 +5,14 @@
  * - 已在通讯录（含待通过）的角色不推荐。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { and, count, eq, gt, inArray } from 'drizzle-orm';
-import { Id, type ContactCardRecommendationPort, type Tx } from '@weiban/contracts';
+import { and, count, desc, eq, gt, inArray, isNull } from 'drizzle-orm';
+import {
+  Id,
+  NewFriendItem,
+  type ContactCardRecommendationPort,
+  type SyncPort,
+  type Tx,
+} from '@weiban/contracts';
 import {
   CLOCK,
   DATABASE,
@@ -17,14 +23,22 @@ import {
   type Clock,
   type Database,
   type DbTx,
+  AppError,
 } from '../../../platform/index.js';
-import { cardDismissals, cardRecommendations, contacts } from '../infra/db/schema.js';
+import { SYNC_PORT } from '../../realtime/index.js';
+import {
+  cardDismissals,
+  cardRecommendations,
+  contacts,
+  newFriendState,
+} from '../infra/db/schema.js';
 
 @Injectable()
 export class ContactCardRecommendationService implements ContactCardRecommendationPort {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(SYNC_PORT) private readonly sync: SyncPort,
   ) {}
 
   async canRecommend(
@@ -85,6 +99,7 @@ export class ContactCardRecommendationService implements ContactCardRecommendati
           createdAt: this.clock.now(),
         })
         .onConflictDoNothing();
+      await this.changed(tx, input.userId);
     };
     await (transaction ? write(asDbTx(transaction)) : this.db.transaction(write));
   }
@@ -93,13 +108,129 @@ export class ContactCardRecommendationService implements ContactCardRecommendati
   async dismiss(userId: string, characterId: string): Promise<void> {
     parseContract(Id, characterId);
     const at = this.clock.now();
-    await this.db.db
-      .insert(cardDismissals)
-      .values({ userId, characterId, dismissedAt: at })
-      .onConflictDoUpdate({
-        target: [cardDismissals.userId, cardDismissals.characterId],
-        set: { dismissedAt: at },
+    await this.db.transaction(async (tx) => {
+      await tx.db
+        .insert(cardDismissals)
+        .values({ userId, characterId, dismissedAt: at })
+        .onConflictDoUpdate({
+          target: [cardDismissals.userId, cardDismissals.characterId],
+          set: { dismissedAt: at },
+        });
+      await this.changed(tx, userId);
+    });
+  }
+
+  // ---------- 「新的朋友」（3.0.1，L4 收尾） ----------
+
+  async listNewFriends(userId: string): Promise<{ items: NewFriendItem[]; unseenCount: number }> {
+    parseContract(Id, userId);
+    const now = this.clock.nowMs();
+    const contactRows = await this.db.db
+      .select()
+      .from(contacts)
+      .where(and(eq(contacts.userId, userId), inArray(contacts.status, ['pending', 'active'])));
+    const byCharacter = new Map(contactRows.map((c) => [c.characterId, c]));
+    const dismissals = await this.db.db
+      .select()
+      .from(cardDismissals)
+      .where(eq(cardDismissals.userId, userId));
+    const dismissed = new Set(
+      dismissals
+        .filter(
+          (d) => now - d.dismissedAt.getTime() < P27_CARD_RECOMMENDATION.notInterestedCooldownMs,
+        )
+        .map((d) => d.characterId),
+    );
+    const cards = await this.db.db
+      .select()
+      .from(cardRecommendations)
+      .where(and(eq(cardRecommendations.userId, userId), isNull(cardRecommendations.hiddenAt)))
+      .orderBy(desc(cardRecommendations.createdAt))
+      .limit(200);
+    const [state] = await this.db.db
+      .select()
+      .from(newFriendState)
+      .where(eq(newFriendState.userId, userId));
+    const items: NewFriendItem[] = [];
+    let unseenCount = 0;
+    const seenCards = new Set<string>();
+    for (const card of cards) {
+      // 同一角色被多次推荐只显示最新一条。
+      if (seenCards.has(card.characterId)) continue;
+      seenCards.add(card.characterId);
+      const contact = byCharacter.get(card.characterId);
+      const status = contact
+        ? contact.status === 'active'
+          ? 'added'
+          : 'pending'
+        : dismissed.has(card.characterId)
+          ? 'dismissed'
+          : 'can_add';
+      if (status === 'can_add' && (!state || card.createdAt > state.seenAt)) unseenCount += 1;
+      items.push({
+        itemId: card.id,
+        kind: 'card_recommendation',
+        characterId: card.characterId,
+        recommenderCharacterId: card.recommenderCharacterId,
+        messageId: card.messageId,
+        status,
+        createdAt: card.createdAt.toISOString(),
       });
+    }
+    for (const contact of contactRows) {
+      if (contact.newFriendHiddenAt) continue;
+      items.push({
+        itemId: contact.id,
+        kind: 'contact_request',
+        characterId: contact.characterId,
+        recommenderCharacterId: contact.referrerCharacterId,
+        messageId: null,
+        status: contact.status === 'active' ? 'added' : 'pending',
+        createdAt: contact.addedAt.toISOString(),
+      });
+    }
+    items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return {
+      items: items.slice(0, 200).map((item) => NewFriendItem.parse(item)),
+      unseenCount,
+    };
+  }
+  async markNewFriendsSeen(userId: string): Promise<void> {
+    const at = this.clock.now();
+    await this.db.transaction(async (tx) => {
+      await tx.db
+        .insert(newFriendState)
+        .values({ userId, seenAt: at })
+        .onConflictDoUpdate({ target: newFriendState.userId, set: { seenAt: at } });
+      await this.changed(tx, userId);
+    });
+  }
+  /** 只从列表移除，不影响通讯录与推荐冷却。 */
+  async removeNewFriend(userId: string, itemId: string): Promise<void> {
+    parseContract(Id, itemId);
+    const at = this.clock.now();
+    await this.db.transaction(async (tx) => {
+      const cards = await tx.db
+        .update(cardRecommendations)
+        .set({ hiddenAt: at })
+        .where(and(eq(cardRecommendations.id, itemId), eq(cardRecommendations.userId, userId)))
+        .returning({ id: cardRecommendations.id });
+      const rows = cards.length
+        ? cards
+        : await tx.db
+            .update(contacts)
+            .set({ newFriendHiddenAt: at })
+            .where(and(eq(contacts.id, itemId), eq(contacts.userId, userId)))
+            .returning({ id: contacts.id });
+      if (!rows.length) throw new AppError('not_found', '记录不存在');
+      await this.changed(tx, userId);
+    });
+  }
+  private async changed(tx: DbTx, userId: string): Promise<void> {
+    await this.sync.appendUpdate(tx, userId, {
+      type: 'data.changed',
+      data: { section: 'new_friends', characterId: null, itemId: null },
+    });
   }
 
   async purgeUser(userId: string): Promise<number> {
@@ -107,6 +238,7 @@ export class ContactCardRecommendationService implements ContactCardRecommendati
       .delete(cardRecommendations)
       .where(eq(cardRecommendations.userId, userId))
       .returning({ id: cardRecommendations.id });
+    await this.db.db.delete(newFriendState).where(eq(newFriendState.userId, userId));
     const b = await this.db.db
       .delete(cardDismissals)
       .where(eq(cardDismissals.userId, userId))
