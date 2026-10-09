@@ -62,3 +62,8 @@ T-043 已交付记忆的完整工程骨架（加密存储、抽取任务、删�
 - 代码 / 文档路径：`apps/server/src/modules/ai-runtime/**`、`apps/server/drizzle/0015_*`、`packages/ai-evals/**`、`docs/decisions/`（如需要）、`docs/ai/l2-memory-implementation.md`
 - 交接说明：`docs/handoffs/2026-10-08-ai-lead-T-046.md`
 - 分支：`T-046-l2-memory-vector`（已建好，worktree 在 `C:\wb-dev\wb-t046`）
+
+
+## 2026-10-09 Codex CI 接续
+
+本轮仅修PR #8的测试属性引用与扩展评测清单断言；源码 `f1ef42cd1e7aff1f6093467cc2eaf23737649b07`。最终本地完整476条零跳过，类型/边界/格式及安卓生成一致性通过；最终远端CI与遗留见 `docs/handoffs/2026-10-09-ai-lead-T-046.md` 追加记录。只登记开发自测，独立验收另行安排；原任务清单不由本轮勾选。

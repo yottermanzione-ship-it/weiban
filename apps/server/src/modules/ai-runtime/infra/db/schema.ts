@@ -39,7 +39,16 @@ export const companionSettings = aiRuntimeSchema.table(
 );
 
 const bytes = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
-/** 不在明文列保存记忆内容、来源消息、私密类别或共享标签。 */
+/**
+ * pgvector 列（vector(256)）。fromDriver/toDriver 使用字符串字面量，
+ * 应用层在查询时通过原生 sql 调用 <=> 操作符，不经过 Drizzle 操作符。
+ */
+const vector256 = customType<{ data: string | null; driverData: string | null }>({
+  dataType: () => 'vector(256)',
+  fromDriver: (v) => v as string | null,
+  toDriver: (v) => v,
+});
+/** 不在明文列保存记忆内容、来源消息、私密类别或共享标签。embedding 明文存储（见 ADR-0020）。 */
 export const memories = aiRuntimeSchema.table(
   'memories',
   {
@@ -50,6 +59,8 @@ export const memories = aiRuntimeSchema.table(
     clientId: uuid('client_id'),
     scope: text('scope').notNull(),
     ciphertext: bytes('ciphertext').notNull(),
+    /** 向量嵌入（明文，256 维，Phase 1 统计嵌入，见 ADR-0020）。新记录自动填充，旧记录 null。 */
+    embedding: vector256('embedding'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
@@ -72,7 +83,16 @@ export const memoryStates = aiRuntimeSchema.table(
     retryAfter: timestamp('retry_after', { withTimezone: true }),
     barrierSeq: bigint('barrier_seq', { mode: 'number' }).notNull().default(0),
     cursorSeq: bigint('cursor_seq', { mode: 'number' }).notNull().default(0),
+    /** 分段摘要（最近批次滚动，normal/adult 分开，保留 4000 字）。 */
     summaryCiphertext: bytes('summary_ciphertext'),
+    /** 日摘要（加密 JSON 数组，最多 30 条），格式：{date,normal,adult}[]。 */
+    dailySummariesCiphertext: bytes('daily_summaries_ciphertext'),
+    /** 月摘要（加密 JSON 数组，最多 24 条），格式：{yearMonth,normal,adult}[]。 */
+    monthlySummariesCiphertext: bytes('monthly_summaries_ciphertext'),
+    /** 上次合并日摘要的时间，用于判断是否需要触发日汇总。 */
+    lastDailyAt: timestamp('last_daily_at', { withTimezone: true }),
+    /** 上次合并月摘要的时间，用于判断是否需要触发月汇总。 */
+    lastMonthlyAt: timestamp('last_monthly_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
   (t) => [

@@ -40,6 +40,7 @@ import {
   sharingClass,
   relevance,
 } from '../domain/memory.js';
+import { embed, toVectorLiteral, VECTOR_DIM } from '../domain/vector-embed.js';
 import { ReplyPlanStore } from './plan-store.js';
 import { invalidateReplyPlans } from './invalidate.js';
 export const EXTRACT_MEMORY_JOB = 'ai.extract_memory';
@@ -52,8 +53,26 @@ export interface MemoryJob {
 }
 type Row = typeof memories.$inferSelect;
 type State = typeof memoryStates.$inferSelect;
+
+/** 分段摘要（现有滚动层）。 */
 const Summaries = z.object({ normal: z.string().max(4000), adult: z.string().max(4000) });
+/** 日/月摘要条目。 */
+const SummaryEntry = z.object({
+  /** 格式：YYYY-MM-DD（日摘要）或 YYYY-MM（月摘要）。 */
+  period: z.string(),
+  normal: z.string().max(2000),
+  adult: z.string().max(2000),
+});
+const SummaryEntries = z.array(SummaryEntry);
+
 const MAX_MEMORIES = 1000;
+/** 日摘要最多保留 30 条；月摘要最多保留 24 条。 */
+const MAX_DAILY = 30;
+const MAX_MONTHLY = 24;
+/** 距上次日汇总超过此时间才触发（毫秒）。 */
+const DAILY_ROLLUP_INTERVAL_MS = 24 * 3600 * 1000;
+/** 距上次月汇总超过此时间才触发（毫秒）。 */
+const MONTHLY_ROLLUP_INTERVAL_MS = 30 * 24 * 3600 * 1000;
 @Injectable()
 export class MemoryService {
   constructor(
@@ -233,6 +252,10 @@ export class MemoryService {
               cursorSeq: Math.max(state.cursorSeq, barrierSeq),
               pendingCount: 0,
               summaryCiphertext: null,
+              dailySummariesCiphertext: null,
+              monthlySummariesCiphertext: null,
+              lastDailyAt: null,
+              lastMonthlyAt: null,
             }
           : {}),
       })
@@ -309,20 +332,92 @@ export class MemoryService {
         .limit(MAX_MEMORIES);
       const decoded: MemoryEntry[] = [];
       for (const row of rows) decoded.push(await this.open(row, tx));
-      const items = decoded
-        .filter((entry) => scope === 'adult' || entry.scope === 'normal')
-        .sort(
-          (a, b) =>
-            relevance(
-              b.content,
-              query,
-              b.importance,
-              this.clock.nowMs() - Date.parse(b.updatedAt),
-            ) -
-            relevance(a.content, query, a.importance, this.clock.nowMs() - Date.parse(a.updatedAt)),
-        )
-        .slice(0, 12);
-      let summary = '';
+      const filtered = decoded.filter((entry) => scope === 'adult' || entry.scope === 'normal');
+
+      // Vector search with keyword fallback (ADR-0020)
+      let items: MemoryEntry[];
+      if (query.trim() && rows.some((r) => r.embedding != null)) {
+        try {
+          const queryVec = toVectorLiteral(embed(query));
+          // Use pgvector cosine distance; lower = more similar
+          const vectorRows = await tx.query<{ id: string; score: number }>(
+            `SELECT m.id,
+                    (m.embedding <=> $1::vector(${VECTOR_DIM}))::float AS score
+             FROM ai_runtime.memories m
+             WHERE m.user_id = $2
+               AND m.character_id = $3
+               AND m.conversation_id = $4
+               AND m.embedding IS NOT NULL
+               AND ($5 = 'adult' OR m.scope = 'normal')
+             ORDER BY score ASC
+             LIMIT 12`,
+            [queryVec, userId, characterId, job.conversationId, scope],
+          );
+          const vectorIds = new Set(vectorRows.rows.map((r) => r.id));
+          const vectorItems = filtered.filter((e) => vectorIds.has(e.memoryId));
+          // Fill remaining slots with keyword ranking for memories without vectors
+          const nonVector = filtered.filter((e) => !vectorIds.has(e.memoryId));
+          const keywordFill = nonVector
+            .sort(
+              (a, b) =>
+                relevance(
+                  b.content,
+                  query,
+                  b.importance,
+                  this.clock.nowMs() - Date.parse(b.updatedAt),
+                ) -
+                relevance(
+                  a.content,
+                  query,
+                  a.importance,
+                  this.clock.nowMs() - Date.parse(a.updatedAt),
+                ),
+            )
+            .slice(0, Math.max(0, 12 - vectorItems.length));
+          items = [...vectorItems, ...keywordFill].slice(0, 12);
+        } catch {
+          // Fallback: vector search failed (e.g. index not ready), use keyword ranking
+          items = filtered
+            .sort(
+              (a, b) =>
+                relevance(
+                  b.content,
+                  query,
+                  b.importance,
+                  this.clock.nowMs() - Date.parse(b.updatedAt),
+                ) -
+                relevance(
+                  a.content,
+                  query,
+                  a.importance,
+                  this.clock.nowMs() - Date.parse(a.updatedAt),
+                ),
+            )
+            .slice(0, 12);
+        }
+      } else {
+        // No query or no vectors yet: pure keyword ranking (existing behaviour)
+        items = filtered
+          .sort(
+            (a, b) =>
+              relevance(
+                b.content,
+                query,
+                b.importance,
+                this.clock.nowMs() - Date.parse(b.updatedAt),
+              ) -
+              relevance(
+                a.content,
+                query,
+                a.importance,
+                this.clock.nowMs() - Date.parse(a.updatedAt),
+              ),
+          )
+          .slice(0, 12);
+      }
+
+      // Segment summaries (existing rolling layer)
+      let segmentSummary = '';
       if (state.summaryCiphertext) {
         const bytes = await this.crypto.open(
           userId,
@@ -332,11 +427,58 @@ export class MemoryService {
         );
         try {
           const data = Summaries.parse(JSON.parse(bytes.toString('utf8')));
-          summary = scope === 'adult' ? `${data.normal}\n${data.adult}` : data.normal;
+          segmentSummary = scope === 'adult' ? `${data.normal}\n${data.adult}` : data.normal;
         } finally {
           bytes.fill(0);
         }
       }
+
+      // Layered summaries: daily + monthly
+      let dailySummary = '';
+      if (state.dailySummariesCiphertext) {
+        const bytes = await this.crypto.open(
+          userId,
+          `ai:daily:${state.id}`,
+          state.dailySummariesCiphertext,
+          tx,
+        );
+        try {
+          const entries = SummaryEntries.parse(JSON.parse(bytes.toString('utf8')));
+          // Return the 3 most recent daily entries relevant to scope
+          dailySummary = entries
+            .slice(-3)
+            .map((e) => (scope === 'adult' ? `${e.normal}\n${e.adult}` : e.normal))
+            .filter(Boolean)
+            .join('\n---\n');
+        } finally {
+          bytes.fill(0);
+        }
+      }
+
+      let monthlySummary = '';
+      if (state.monthlySummariesCiphertext) {
+        const bytes = await this.crypto.open(
+          userId,
+          `ai:monthly:${state.id}`,
+          state.monthlySummariesCiphertext,
+          tx,
+        );
+        try {
+          const entries = SummaryEntries.parse(JSON.parse(bytes.toString('utf8')));
+          // Return the 2 most relevant monthly entries
+          monthlySummary = entries
+            .slice(-2)
+            .map((e) => (scope === 'adult' ? `${e.normal}\n${e.adult}` : e.normal))
+            .filter(Boolean)
+            .join('\n---\n');
+        } finally {
+          bytes.fill(0);
+        }
+      }
+
+      const summary = [segmentSummary, dailySummary, monthlySummary]
+        .filter(Boolean)
+        .join('\n===\n');
       return { revision: state.revision, barrierSeq: state.barrierSeq, items, summary };
     });
   }
@@ -651,10 +793,22 @@ export class MemoryService {
         };
         const id = existing?.id ?? newId();
         const ciphertext = await this.seal(tx, job.userId, id, payload);
+        // Compute embedding for vector search (ADR-0020). Failure is non-fatal — falls back to keyword.
+        let embeddingLiteral: string | null = null;
+        try {
+          embeddingLiteral = toVectorLiteral(embed(payload.content));
+        } catch {
+          // ignore embedding error; keyword search will be used
+        }
         if (existing)
           await tx.db
             .update(memories)
-            .set({ ciphertext, scope, updatedAt: this.clock.now() })
+            .set({
+              ciphertext,
+              scope,
+              embedding: embeddingLiteral,
+              updatedAt: this.clock.now(),
+            })
             .where(eq(memories.id, id));
         else {
           await tx.db.insert(memories).values({
@@ -664,6 +818,7 @@ export class MemoryService {
             conversationId: job.conversationId,
             scope,
             ciphertext,
+            embedding: embeddingLiteral,
             createdAt: this.clock.now(),
             updatedAt: this.clock.now(),
           });
@@ -687,8 +842,9 @@ export class MemoryService {
             bytes.fill(0);
           }
         }
-        const scope = sources.some((m) => m.scope === 'adult') ? 'adult' : 'normal';
-        summaries[scope] = `${summaries[scope]}\n${extracted.summary.slice(0, 250)}`.slice(-4000);
+        const summaryScope = sources.some((m) => m.scope === 'adult') ? 'adult' : 'normal';
+        summaries[summaryScope] =
+          `${summaries[summaryScope]}\n${extracted.summary.slice(0, 250)}`.slice(-4000);
         summaryCiphertext = await this.crypto.seal(
           job.userId,
           `ai:summary:${now.id}`,
@@ -696,6 +852,149 @@ export class MemoryService {
           tx,
         );
       }
+
+      // Daily/monthly summary rollup (ADR-0020)
+      let dailySummariesCiphertext = now.dailySummariesCiphertext;
+      let monthlySummariesCiphertext = now.monthlySummariesCiphertext;
+      let lastDailyAt = now.lastDailyAt;
+      let lastMonthlyAt = now.lastMonthlyAt;
+
+      const needsDailyRollup =
+        !now.lastDailyAt ||
+        this.clock.nowMs() - now.lastDailyAt.getTime() >= DAILY_ROLLUP_INTERVAL_MS;
+
+      if (needsDailyRollup && summaryCiphertext) {
+        try {
+          // Read current segment summary to roll into daily
+          let segSummaries = { normal: '', adult: '' };
+          const segBytes = await this.crypto.open(
+            job.userId,
+            `ai:summary:${now.id}`,
+            summaryCiphertext,
+            tx,
+          );
+          try {
+            segSummaries = Summaries.parse(JSON.parse(segBytes.toString('utf8')));
+          } finally {
+            segBytes.fill(0);
+          }
+
+          const today = new Date(this.clock.now());
+          const dateKey = today.toISOString().slice(0, 10); // YYYY-MM-DD
+
+          let dailyEntries: z.infer<typeof SummaryEntries> = [];
+          if (now.dailySummariesCiphertext) {
+            const dailyBytes = await this.crypto.open(
+              job.userId,
+              `ai:daily:${now.id}`,
+              now.dailySummariesCiphertext,
+              tx,
+            );
+            try {
+              dailyEntries = SummaryEntries.parse(JSON.parse(dailyBytes.toString('utf8')));
+            } finally {
+              dailyBytes.fill(0);
+            }
+          }
+
+          const existingIdx = dailyEntries.findIndex((e) => e.period === dateKey);
+          const newEntry = {
+            period: dateKey,
+            normal:
+              `${existingIdx >= 0 ? dailyEntries[existingIdx]!.normal : ''}\n${segSummaries.normal}`
+                .slice(-2000)
+                .trim(),
+            adult:
+              `${existingIdx >= 0 ? dailyEntries[existingIdx]!.adult : ''}\n${segSummaries.adult}`
+                .slice(-2000)
+                .trim(),
+          };
+          if (existingIdx >= 0) dailyEntries[existingIdx] = newEntry;
+          else dailyEntries.push(newEntry);
+          // Keep at most MAX_DAILY entries (most recent)
+          if (dailyEntries.length > MAX_DAILY) dailyEntries = dailyEntries.slice(-MAX_DAILY);
+
+          dailySummariesCiphertext = await this.crypto.seal(
+            job.userId,
+            `ai:daily:${now.id}`,
+            JSON.stringify(dailyEntries),
+            tx,
+          );
+          lastDailyAt = this.clock.now();
+        } catch {
+          // Non-fatal: daily rollup failure does not block extract
+        }
+      }
+
+      const needsMonthlyRollup =
+        !now.lastMonthlyAt ||
+        this.clock.nowMs() - now.lastMonthlyAt.getTime() >= MONTHLY_ROLLUP_INTERVAL_MS;
+
+      if (needsMonthlyRollup && dailySummariesCiphertext) {
+        try {
+          const monthKey = new Date(this.clock.now()).toISOString().slice(0, 7); // YYYY-MM
+
+          let dailyEntries: z.infer<typeof SummaryEntries> = [];
+          const dailyBytes = await this.crypto.open(
+            job.userId,
+            `ai:daily:${now.id}`,
+            dailySummariesCiphertext,
+            tx,
+          );
+          try {
+            dailyEntries = SummaryEntries.parse(JSON.parse(dailyBytes.toString('utf8')));
+          } finally {
+            dailyBytes.fill(0);
+          }
+
+          const monthDays = dailyEntries.filter((e) => e.period.startsWith(monthKey));
+          if (monthDays.length > 0) {
+            const combinedNormal = monthDays
+              .map((e) => e.normal)
+              .filter(Boolean)
+              .join('\n')
+              .slice(-2000);
+            const combinedAdult = monthDays
+              .map((e) => e.adult)
+              .filter(Boolean)
+              .join('\n')
+              .slice(-2000);
+
+            let monthlyEntries: z.infer<typeof SummaryEntries> = [];
+            if (now.monthlySummariesCiphertext) {
+              const mBytes = await this.crypto.open(
+                job.userId,
+                `ai:monthly:${now.id}`,
+                now.monthlySummariesCiphertext,
+                tx,
+              );
+              try {
+                monthlyEntries = SummaryEntries.parse(JSON.parse(mBytes.toString('utf8')));
+              } finally {
+                mBytes.fill(0);
+              }
+            }
+
+            const existingIdx = monthlyEntries.findIndex((e) => e.period === monthKey);
+            const newEntry = { period: monthKey, normal: combinedNormal, adult: combinedAdult };
+            if (existingIdx >= 0) monthlyEntries[existingIdx] = newEntry;
+            else monthlyEntries.push(newEntry);
+            if (monthlyEntries.length > MAX_MONTHLY)
+              monthlyEntries = monthlyEntries.slice(-MAX_MONTHLY);
+
+            monthlySummariesCiphertext = await this.crypto.seal(
+              job.userId,
+              `ai:monthly:${now.id}`,
+              JSON.stringify(monthlyEntries),
+              tx,
+            );
+            lastMonthlyAt = this.clock.now();
+          }
+        } catch {
+          // Non-fatal: monthly rollup failure does not block extract
+        }
+      }
+
       await tx.db
         .update(memoryStates)
         .set({
@@ -706,6 +1005,10 @@ export class MemoryService {
             now.pendingCount - history.filter((m) => m.senderKind === 'user').length,
           ),
           summaryCiphertext,
+          dailySummariesCiphertext,
+          monthlySummariesCiphertext,
+          lastDailyAt,
+          lastMonthlyAt,
           updatedAt: this.clock.now(),
         })
         .where(eq(memoryStates.id, now.id));

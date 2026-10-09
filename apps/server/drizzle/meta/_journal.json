@@ -110,7 +110,14 @@
     {
       "idx": 15,
       "version": "7",
-      "when": 1791500000000,
+      "when": 1791600000000,
+      "tag": "0015_memory_vector_summaries",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791700000000,
       "tag": "0016_custom_characters",
       "breakpoints": true
     }
