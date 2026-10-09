@@ -283,3 +283,54 @@ export const userChatActivity = aiRuntimeSchema.table(
     check('user_chat_activity_hour', sql`${t.hour} >= 0 AND ${t.hour} <= 23`),
   ],
 );
+
+/** T-065 群聊陪伴设置（SOC-03 第 3、4 条）：秒回、角色自己聊天、群情景模式。没有行 = 默认值。 */
+export const groupCompanionSettings = aiRuntimeSchema.table('group_companion_settings', {
+  conversationId: uuid('conversation_id').primaryKey(),
+  userId: uuid('user_id').notNull(),
+  instantReply: boolean('instant_reply').notNull().default(false),
+  selfChatEnabled: boolean('self_chat_enabled').notNull().default(true),
+  scenarioMode: text('scenario_mode').notNull().default('daily'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+});
+
+/** T-065 群里自己聊（SOC-05）账本：每群每个用户当地日期一行，实现 P-20「每群每天最多 1 次」。 */
+export const groupSelfChats = aiRuntimeSchema.table(
+  'group_self_chats',
+  {
+    conversationId: uuid('conversation_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    localDate: text('local_date').notNull(),
+    starterCharacterId: uuid('starter_character_id'),
+    sourceRef: text('source_ref'),
+    messages: integer('messages').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('group_self_chat_day_idx').on(t.conversationId, t.localDate),
+    check('group_self_chat_messages', sql`${t.messages} >= 0 AND ${t.messages} <= 10`),
+  ],
+);
+
+/** T-065 角色拉群（SOC-06）账本：P-22、每个节日最多 1 个群、退出后私聊最多提一次。 */
+export const groupInvites = aiRuntimeSchema.table(
+  'group_invites',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    inviterCharacterId: uuid('inviter_character_id').notNull(),
+    conversationId: uuid('conversation_id'),
+    trigger: text('trigger').notNull(),
+    sourceRef: text('source_ref').notNull(),
+    reason: text('reason').notNull(),
+    outcome: text('outcome').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    leftAt: timestamp('left_at', { withTimezone: true }),
+    exitMentioned: boolean('exit_mentioned').notNull().default(false),
+  },
+  (t) => [
+    unique('group_invite_source_idx').on(t.userId, t.sourceRef),
+    check('group_invite_trigger', sql`${t.trigger} IN ('co_event','user_mention','holiday')`),
+    index('group_invite_user_idx').on(t.userId, t.createdAt),
+  ],
+);

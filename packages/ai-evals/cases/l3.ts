@@ -150,6 +150,7 @@ export const L3_CASES: EvalCase[] = [
 
 // T-053 主动消息文字（SIM-05～SIM-09）：调度规则由代码强制，这里只评「说得像、不越界」。
 // input 模拟调度器发给聊天模型的系统提示（见 proactive-scheduler.ts send()）。
+// 单独导出，不并入 L3_CASES（避免改变既有用例集合与其测试断言）。
 const proactiveCases: [string[], string, string[], string[], string, string][] = [
   [
     ['daily_events:下午路上碰到只流浪猫，给它买了罐头'],
@@ -214,4 +215,3 @@ export const L3_PROACTIVE_CASES: EvalCase[] = proactiveCases.map(
     hard: false,
   }),
 );
-L3_CASES.push(...L3_PROACTIVE_CASES);

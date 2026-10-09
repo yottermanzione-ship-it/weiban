@@ -20,6 +20,8 @@ import { ProactiveModule } from '../proactive/index.js';
 import { HealthModule } from '../health/index.js';
 import { BillingModule } from '../billing/index.js';
 import { ProactiveSchedulerService } from './application/proactive-scheduler.js';
+import { GroupChatService } from './application/group-chat.js';
+import { GroupCompanionController } from './http/group-companion.controller.js';
 import { TimelineSummaryService } from './application/timeline.js';
 import { TimelineController } from './http/timeline.controller.js';
 @Module({
@@ -46,6 +48,7 @@ import { TimelineController } from './http/timeline.controller.js';
     { provide: SIMULATION_READ_PORT, useExisting: SimulationService },
     HealthCareService,
     ProactiveSchedulerService,
+    GroupChatService,
     {
       provide: HEALTH_CARE_FAMILIARITY,
       useFactory: (growth: GrowthService) => ({
@@ -57,6 +60,11 @@ import { TimelineController } from './http/timeline.controller.js';
     AiRuntimeLifecycle,
   ],
   exports: [SIMULATION_READ_PORT],
-  controllers: [CompanionSettingsController, MemoryController, TimelineController],
+  controllers: [
+    GroupCompanionController,
+    CompanionSettingsController,
+    MemoryController,
+    TimelineController,
+  ],
 })
 export class AiRuntimeModule {}

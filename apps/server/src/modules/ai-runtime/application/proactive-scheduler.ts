@@ -612,13 +612,7 @@ export class ProactiveSchedulerService {
         continue;
       }
       const allowed = await this.quota
-        .canSendProactive(
-          ctx.userId,
-          plan.characterId,
-          ctx.localDate,
-          freq,
-          plan.isHoliday,
-        )
+        .canSendProactive(ctx.userId, plan.characterId, ctx.localDate, freq, plan.isHoliday)
         .catch(() => false);
       if (!allowed) {
         const pending = await this.quota.hasPendingProactive(ctx.userId, plan.characterId);

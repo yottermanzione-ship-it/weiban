@@ -32,6 +32,15 @@ import {
   PROACTIVE_CLEANUP_JOB,
 } from './proactive-scheduler.js';
 import {
+  GroupChatService,
+  GROUP_TURN_JOB,
+  GROUP_SELF_CHAT_TICK_JOB,
+  GROUP_SELF_CHAT_JOB,
+  GROUP_INVITE_JOB,
+  type GroupTurnJob,
+  type GroupInviteJob,
+} from './group-chat.js';
+import {
   SimulationService,
   SIMULATE_CHARACTER_JOB,
   RUN_DAILY_SIMULATIONS_JOB,
@@ -45,6 +54,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     @Inject(SimulationService) readonly simulation: SimulationService,
     @Inject(HealthCareService) readonly healthCare: HealthCareService,
     @Inject(ProactiveSchedulerService) readonly proactive: ProactiveSchedulerService,
+    @Inject(GroupChatService) readonly groupChat: GroupChatService,
     @Inject(EVENT_BUS) readonly bus: EventBus,
     @Inject(JOB_QUEUE) readonly jobs: JobQueue,
     @Inject(USER_DATA_REGISTRY) readonly registry: UserDataRegistry,
@@ -112,6 +122,70 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         const p = event.payload;
         if (p.senderKind !== 'user' || !p.senderRefId) return;
         await this.proactive.recordUserActivity(tx, p.senderRefId, new Date(event.occurredAt));
+      },
+    });
+
+    // 群聊（T-065）：用户在群里发言交给群聊调度，不走私聊回复；自发话题与拉群。
+    await this.jobs.work<GroupTurnJob>(GROUP_TURN_JOB, (j) => this.groupChat.runTurn(j.data), {
+      pollingIntervalSeconds: 1,
+      localConcurrency: 4,
+    });
+    await this.jobs.work<{ userId: string; conversationId: string }>(GROUP_SELF_CHAT_JOB, (j) =>
+      this.groupChat.runSelfChat(j.data),
+    );
+    await this.jobs.work<GroupInviteJob>(GROUP_INVITE_JOB, (j) => this.groupChat.runInvite(j.data));
+    await this.jobs.work(GROUP_SELF_CHAT_TICK_JOB, () => this.groupChat.selfChatTick());
+    await this.jobs.schedule(GROUP_SELF_CHAT_TICK_JOB, '5 * * * *');
+    this.bus.subscribe({
+      consumer: 'ai.group_on_user_message',
+      eventType: 'chat.message_created',
+      handle: async (event, tx) => {
+        const p = event.payload;
+        if (p.conversationType !== 'group' || p.senderKind !== 'user' || !p.senderRefId) return;
+        await this.groupChat.onUserMessage(tx, {
+          conversationId: p.conversationId,
+          userId: p.senderRefId,
+          messageId: p.messageId,
+          seq: p.seq,
+        });
+      },
+    });
+    this.bus.subscribe({
+      consumer: 'ai.group_invite_intent',
+      eventType: 'chat.message_created',
+      handle: async (event, tx) => {
+        const p = event.payload;
+        if (p.conversationType !== 'direct' || p.senderKind !== 'user' || !p.senderRefId) return;
+        if (p.contentType !== 'text' || p.scope !== 'normal') return;
+        const conversation = await this.chat.getConversation(p.conversationId);
+        const role = conversation?.participants.find((member) => member.kind === 'character');
+        if (!role) return;
+        const message = await this.chat.getMessage(p.messageId, ['normal']);
+        if (message?.content?.type !== 'text') return;
+        await this.groupChat.detectWantToMeet(tx, {
+          userId: p.senderRefId,
+          characterId: role.refId,
+          text: message.content.text,
+          messageId: p.messageId,
+        });
+      },
+    });
+    this.bus.subscribe({
+      consumer: 'ai.group_members_changed',
+      eventType: 'chat.group_members_changed',
+      handle: async (event, tx) => {
+        await this.groupChat.onMembersChanged(
+          tx,
+          event.payload.conversationId,
+          event.payload.ownerUserId,
+        );
+      },
+    });
+    this.bus.subscribe({
+      consumer: 'ai.group_dissolved',
+      eventType: 'chat.group_dissolved',
+      handle: async (event, tx) => {
+        await this.groupChat.onDissolved(tx, event.payload);
       },
     });
 

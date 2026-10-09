@@ -26,6 +26,9 @@ import {
   healthCareLedger,
   proactivePlans,
   userChatActivity,
+  groupCompanionSettings,
+  groupSelfChats,
+  groupInvites,
 } from '../infra/db/schema.js';
 import { USER_BATCH_DELAY_MS } from '../domain/reply-rules.js';
 export const GENERATE_REPLY_JOB = 'ai.generate_reply';
@@ -299,7 +302,16 @@ export class ReplyPlanStore {
         g.length +
         h.length +
         i.length +
-        j.length
+        j.length +
+        (
+          await tx.db
+            .delete(groupCompanionSettings)
+            .where(eq(groupCompanionSettings.userId, userId))
+            .returning()
+        ).length +
+        (await tx.db.delete(groupSelfChats).where(eq(groupSelfChats.userId, userId)).returning())
+          .length +
+        (await tx.db.delete(groupInvites).where(eq(groupInvites.userId, userId)).returning()).length
       );
     });
   }
@@ -344,7 +356,22 @@ export class ReplyPlanStore {
       .select({ n: count() })
       .from(userChatActivity)
       .where(eq(userChatActivity.userId, userId));
+    const [k] = await this.db.db
+      .select({ n: count() })
+      .from(groupCompanionSettings)
+      .where(eq(groupCompanionSettings.userId, userId));
+    const [l] = await this.db.db
+      .select({ n: count() })
+      .from(groupSelfChats)
+      .where(eq(groupSelfChats.userId, userId));
+    const [m] = await this.db.db
+      .select({ n: count() })
+      .from(groupInvites)
+      .where(eq(groupInvites.userId, userId));
     return (
+      (k?.n ?? 0) +
+      (l?.n ?? 0) +
+      (m?.n ?? 0) +
       (i?.n ?? 0) +
       (j?.n ?? 0) +
       (h?.n ?? 0) +

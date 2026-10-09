@@ -195,7 +195,14 @@ export class HealthCareService {
     if (!(await this.reserve(userId, ctx.cycleKey, kind, characterId)))
       return { sent: false, reason: 'already_sent' };
 
-    const sent = await this.compose(userId, characterId, kind, ctx, local.date, perCharacterLimit).catch(() => null);
+    const sent = await this.compose(
+      userId,
+      characterId,
+      kind,
+      ctx,
+      local.date,
+      perCharacterLimit,
+    ).catch(() => null);
     if (!sent || !sent.ok) {
       await this.release(userId, ctx.cycleKey, kind);
       return { sent: false, reason: sent ? sent.reason : 'send_failed' };

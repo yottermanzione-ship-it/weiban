@@ -23,6 +23,7 @@ import { MemoryService } from './memory.js';
 import { publicKnowledge } from '../domain/knowledge.js';
 import { personaPrompt } from '../domain/persona.js';
 import { CompanionSettingsService } from './settings.js';
+import { GroupChatService } from './group-chat.js';
 import { ReplyPlanStore, type ReplyPlan } from './plan-store.js';
 import { highRisk, REPLY_TEMPLATE_VERSION } from '../domain/reply-rules.js';
 import { HealthCareService } from './health-care.js';
@@ -73,6 +74,7 @@ export class ReplyContext {
     @Inject(CompanionSettingsService) readonly settings: CompanionSettingsService,
     @Inject(ReplyPlanStore) readonly store: ReplyPlanStore,
     @Inject(MemoryService) readonly memory: MemoryService,
+    @Inject(GroupChatService) readonly groupChat: GroupChatService,
     @Inject(HealthCareService) readonly healthCare: HealthCareService,
   ) {}
   async build(row: ReplyPlan): Promise<ReplySnapshot | null> {
@@ -227,6 +229,15 @@ export class ReplyContext {
           })
         : { prompt: null, healthUsed: false };
     if (healthHint.prompt) messages.push({ role: 'system', content: healthHint.prompt });
+    // SOC-06 第 3 条：用户退出了该角色拉的群 → 私聊里最多提一次，按人设，不做情感操纵。
+    const exitReason = await this.store.db.transaction((tx) =>
+      this.groupChat.consumeExitMention(tx, row.userId, row.characterId),
+    );
+    if (exitReason)
+      messages.push({
+        role: 'system',
+        content: `用户之前退出了你拉的群（当时拉群原因：${exitReason.slice(0, 200)}）。如果自然，可以轻描淡写提一句，按你的性格；不追问原因、不让对方愧疚、不说难过或被抛弃。之后不再提。`,
+      });
     const userRounds = history.filter((m) => m.senderKind === 'user');
     const start = userRounds.at(-21)?.seq ?? 0;
     const recent = history.filter(

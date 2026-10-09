@@ -211,6 +211,13 @@
       "when": 1793400000000,
       "tag": "0034_moments",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793600000000,
+      "tag": "0036_group_chat_ai",
+      "breakpoints": true
     }
   ]
 }
