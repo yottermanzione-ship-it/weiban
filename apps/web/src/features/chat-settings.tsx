@@ -39,11 +39,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
   const [confirmation, setConfirmation] = useState<
     'clear' | 'remove' | 'purge' | 'purgeConfirmed' | null
   >(null);
-  async function change(
-    operation: () => Promise<unknown>,
-    after?: () => void,
-    success = '已保存',
-  ) {
+  async function change(operation: () => Promise<unknown>, after?: () => void, success = '已保存') {
     setPending(true);
     setError('');
     setMessage('');
@@ -200,8 +196,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
             </label>
             {globalOff && (
               <p className="hint">
-                已在 服务 › 主动消息与免打扰 中关闭{' '}
-                <Link to="/services/proactive">去设置</Link>
+                已在 服务 › 主动消息与免打扰 中关闭 <Link to="/services/proactive">去设置</Link>
               </p>
             )}
             {!globalOff && companion.data.proactiveMessages !== false && (
