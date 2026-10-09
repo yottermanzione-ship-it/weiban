@@ -39,7 +39,7 @@ test('真实API：登录、资料、微元预算、主题、刷新与退出清�
   );
   await page.getByRole('button', { name: '保存', exact: true }).click();
   expect((await (await updated).json()).backgroundBudget.dailyLimitMicros).toBe(1234567);
-  await page.goto('/settings');
+  await page.goto('/settings/general');
   await page.getByRole('button', { name: '微伴粉', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'pink');
   await page.reload();
