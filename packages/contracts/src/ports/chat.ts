@@ -44,6 +44,14 @@ export interface PostMessageInput {
   quoteMessageId?: string;
   /** AI缓存发送时核对当前内容范围，防止模式切换后错盖章。 */
   expectedScope?: ContentScope;
+  /**
+   * 服务器端标签（v2.5 新增）。
+   * 目前唯一已定义取值：'health'（使用了经期数据生成，PLAY-01 / health-data.md 第 5 节）。
+   * 传入此字段后 chat 会原样写入 Message.labels 并随消息下发；
+   * 只有通过此端口发送的消息才能携带，用户经 HTTP / WebSocket 发送的消息不能带。
+   * 不认识的标签客户端忽略，不报错。
+   */
+  labels?: string[];
 }
 
 export type PostMessageError =
