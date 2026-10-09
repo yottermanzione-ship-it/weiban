@@ -88,6 +88,8 @@ import kotlinx.serialization.json.*
             "settings" -> MeSettings(state)
             "notifications" -> NotificationSettingsPage(state, entry.notifications)
             "services" -> MeServices(state)
+            "period" -> PeriodDiaryPage(repository, owner)
+            "proactive" -> ProactiveDefaultsPage(state)
             else -> HomePage(state, onLogout)
         }
     }
@@ -324,6 +326,8 @@ private fun pageTitle(
         "settings" -> "设置"
         "notifications" -> "新消息通知"
         "services" -> "服务"
+        "period" -> "经期日记"
+        "proactive" -> "主动消息与免打扰"
         else -> "我"
     }
 
