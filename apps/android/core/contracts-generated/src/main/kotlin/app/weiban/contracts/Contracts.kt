@@ -3732,6 +3732,39 @@ data class TextContentInput(
 
 typealias TimeZone = String
 
+@Serializable
+data class TimelineEndpointsGetSummaryParams(
+    @SerialName("conversationId") val `conversationId`: Id,
+)
+
+@Serializable
+data class TimelineEndpointsGetSummaryQuery(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("lastActiveAt") val `lastActiveAt`: Timestamp,
+)
+
+@Serializable
+data class TimelineEvent(
+    @SerialName("id") val `id`: Id,
+    @SerialName("seq") val `seq`: Long,
+    @SerialName("kind") val `kind`: TimelineEventKind,
+    @SerialName("summary") val `summary`: String,
+    @SerialName("detail") val `detail`: String? = null,
+    @SerialName("moodAfter") val `moodAfter`: TimelineMood? = null,
+)
+
+typealias TimelineEventKind = String
+
+typealias TimelineMood = String
+
+@Serializable
+data class TimelineSummaryResponse(
+    @SerialName("summary") val `summary`: String?,
+    @SerialName("events") val `events`: List<TimelineEvent>,
+    @SerialName("currentMood") val `currentMood`: TimelineMood,
+    @SerialName("offlineSeconds") val `offlineSeconds`: Long,
+)
+
 typealias Timestamp = String
 
 @Serializable
