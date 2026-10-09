@@ -77,8 +77,6 @@ export const FREQUENCY_LIMIT = {
   medium: P03_PER_CHARACTER_DAILY,
   high: P03_PER_CHARACTER_DAILY + 2,
 } as const;
-/** proactive 端口当前的单角色硬上限（预检参数只接受 1–3），见交接遗留。 */
-const PORT_PER_CHARACTER_MAX = 3;
 /** 每角色每天最多分享几件日常事件（SIM-06），仍受频率档位约束。 */
 const DAILY_EVENT_SHARES_MAX = 2;
 const GENERATING_STALE_MS = 10 * 60_000;
@@ -618,7 +616,7 @@ export class ProactiveSchedulerService {
           ctx.userId,
           plan.characterId,
           ctx.localDate,
-          Math.min(freq, PORT_PER_CHARACTER_MAX),
+          freq,
           plan.isHoliday,
         )
         .catch(() => false);
@@ -745,6 +743,7 @@ export class ProactiveSchedulerService {
           plan.reason,
           tx,
           plan.isHoliday,
+          FREQUENCY_LIMIT[settings.proactiveFrequency ?? 'medium'],
         );
         let firstId: string | null = null;
         for (let i = 0; i < bubbles.length; i++) {

@@ -53,6 +53,7 @@ import { HEALTH_READ_PORT } from '../../health/index.js';
 import { PROACTIVE_MESSAGE_PORT } from '../../proactive/index.js';
 import { healthCareLedger, simulationStates } from '../infra/db/schema.js';
 import { CompanionSettingsService } from './settings.js';
+import { FREQUENCY_LIMIT } from './proactive-scheduler.js';
 
 // ---------------------------------------------------------------------------
 // 产品参数（P-36、P-37 的 AI 侧取值；health 后端合入 product-params 后改为引用）
@@ -171,9 +172,14 @@ export class HealthCareService {
     if (!kind) return { sent: false, reason: 'nothing_due' };
     // P-03/P-04（总负责人 2026-10-09 裁定按 PRD 计入）：先预检，发送时在同一事务里 recordSent，
     // 理由用通用值 HEALTH_CARE_PROACTIVE_REASON，幂等键不含 health 字样，不留经期痕迹。
+    // 单角色上限按用户频率档位（CHAT-13：少 1 / 适中 3 / 多 5）。
+    const companion = await this.settings.get(userId, characterId).catch(() => null);
+    const perCharacterLimit = FREQUENCY_LIMIT[companion?.proactiveFrequency ?? 'medium'];
     if (
       this.proactive &&
-      !(await this.proactive.canSendProactive(userId, characterId, local.date).catch(() => false))
+      !(await this.proactive
+        .canSendProactive(userId, characterId, local.date, perCharacterLimit)
+        .catch(() => false))
     )
       return { sent: false, reason: 'proactive_quota_full' };
 
@@ -189,7 +195,7 @@ export class HealthCareService {
     if (!(await this.reserve(userId, ctx.cycleKey, kind, characterId)))
       return { sent: false, reason: 'already_sent' };
 
-    const sent = await this.compose(userId, characterId, kind, ctx, local.date).catch(() => null);
+    const sent = await this.compose(userId, characterId, kind, ctx, local.date, perCharacterLimit).catch(() => null);
     if (!sent || !sent.ok) {
       await this.release(userId, ctx.cycleKey, kind);
       return { sent: false, reason: sent ? sent.reason : 'send_failed' };
@@ -225,6 +231,7 @@ export class HealthCareService {
     kind: HealthCareKind,
     ctx: PeriodContext,
     localDate: string,
+    perCharacterLimit: number,
   ): Promise<{ ok: true; messageId: string } | { ok: false; reason: string }> {
     const contact = await this.contacts.getActiveContact(userId, characterId);
     if (!contact?.conversationId) return { ok: false, reason: 'no_conversation' };
@@ -299,6 +306,8 @@ export class HealthCareService {
           key,
           HEALTH_CARE_PROACTIVE_REASON,
           tx,
+          false,
+          perCharacterLimit,
         );
       return { ok: true as const, messageId: posted.value.messageId };
     });

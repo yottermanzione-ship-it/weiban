@@ -13,7 +13,7 @@ import {
   type DbTx,
   type EnvelopeCrypto,
 } from '../../../platform/index.js';
-import { periodEntries } from '../infra/db/schema.js';
+import { grants, periodEntries, periodSettings } from '../infra/db/schema.js';
 
 export interface CyclePayload {
   startDate: string;
@@ -146,4 +146,54 @@ export class HealthStore {
         .delete(periodEntries)
         .where(and(eq(periodEntries.id, id), eq(periodEntries.userId, userId)));
   }
+
+  // ---------- 3.0：默认值设置（P-37），整行加密，AAD = health:settings:{userId} ----------
+
+  async loadSettings(
+    tx: DbTx,
+    userId: string,
+  ): Promise<{ cycleLengthDays: number; periodLengthDays: number } | null> {
+    const [row] = await tx.db
+      .select()
+      .from(periodSettings)
+      .where(eq(periodSettings.userId, userId));
+    if (!row) return null;
+    const buf = await this.crypto.open(userId, settingsAad(userId), row.payload, tx);
+    try {
+      return JSON.parse(buf.toString('utf8')) as { cycleLengthDays: number; periodLengthDays: number };
+    } finally {
+      buf.fill(0);
+    }
+  }
+
+  async saveSettings(
+    tx: DbTx,
+    userId: string,
+    data: { cycleLengthDays: number; periodLengthDays: number },
+  ): Promise<void> {
+    const payload = await this.crypto.seal(
+      userId,
+      settingsAad(userId),
+      JSON.stringify(data),
+      tx,
+    );
+    const at = this.clock.now();
+    await tx.db
+      .insert(periodSettings)
+      .values({ userId, payload, updatedAt: at })
+      .onConflictDoUpdate({ target: periodSettings.userId, set: { payload, updatedAt: at } });
+  }
+
+  /** 一键清空（PLAY-01 第 8 条）：物理删除全部经期、日记、设置与授权。返回删除行数。 */
+  async deleteAll(tx: DbTx, userId: string): Promise<number> {
+    let n = 0;
+    n += (await tx.db.delete(periodEntries).where(eq(periodEntries.userId, userId))).rowCount ?? 0;
+    n += (await tx.db.delete(periodSettings).where(eq(periodSettings.userId, userId))).rowCount ?? 0;
+    n += (await tx.db.delete(grants).where(eq(grants.userId, userId))).rowCount ?? 0;
+    return n;
+  }
+}
+
+function settingsAad(userId: string): string {
+  return `health:settings:${userId}`;
 }

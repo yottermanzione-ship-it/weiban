@@ -13,6 +13,7 @@ import {
   PredictionResult,
   UpdateAuthorizationRequest,
   UpdateCycleRequest,
+  HealthSettings,
   type AuthorizationResponse,
   type ContactsReadPort,
   type HealthReadPort,
@@ -44,6 +45,7 @@ import {
 } from '../domain/prediction.js';
 import { grants } from '../infra/db/schema.js';
 import { HealthStore, type LoadedCycle } from './store.js';
+import { SymptomTagService } from './symptom-tags.js';
 
 const ALLOWED_SCENES: ReadonlySet<HealthReadScene> = new Set([
   'direct_reply',
@@ -77,7 +79,17 @@ export class HealthService implements HealthReadPort {
     @Inject(HealthStore) private readonly store: HealthStore,
     @Inject(IDENTITY_READ_PORT) private readonly identity: IdentityReadPort,
     @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
+    @Inject(SymptomTagService) private readonly tags: SymptomTagService,
   ) {}
+
+  /** 预测用默认值：用户自填优先，否则 P-37 的 28 / 5。 */
+  private async defaults(tx: DbTx, userId: string) {
+    const saved = await this.store.loadSettings(tx, userId);
+    return {
+      cycleDays: saved?.cycleLengthDays ?? P37.defaultCycleDays,
+      periodDays: saved?.periodLengthDays ?? P37.defaultPeriodDays,
+    };
+  }
 
   /** 用户时区下的「今天」。 */
   private async today(userId: string, tx?: DbTx): Promise<string> {
@@ -153,6 +165,11 @@ export class HealthService implements HealthReadPort {
           throw new AppError('bad_request', '日记日期不在这次经期内');
         const symptoms = [...new Set(log.symptoms)];
         const existing = cycle.dayLogs.find((l) => l.date === log.date);
+        // 只能选管理员列表里启用中的标签；这条日记原有的旧标签（可能已停用）允许保留。
+        const allowed = await this.tags.enabledNames(tx);
+        for (const name of symptoms)
+          if (!allowed.has(name) && !existing?.symptoms.includes(name))
+            throw new AppError('bad_request', '症状标签不在可选列表里');
         await this.store.upsertDayLog(tx, userId, existing?.entryId ?? null, {
           cycleId: cycle.id,
           date: log.date,
@@ -203,7 +220,7 @@ export class HealthService implements HealthReadPort {
       const today = await this.today(userId, tx);
       const cycles = await this.store.loadAll(tx, userId);
       return PredictionResult.parse({
-        ...predict(cycles, today),
+        ...predict(cycles, today, await this.defaults(tx, userId)),
         disclaimer: PREDICTION_DISCLAIMER,
       });
     });
@@ -257,6 +274,51 @@ export class HealthService implements HealthReadPort {
     });
   }
 
+  // ---------- 3.0：默认值设置（P-37）与一键清空（PLAY-01 第 8 条） ----------
+
+  async getSettings(userId: string): Promise<HealthSettings> {
+    return this.db.transaction(async (tx) => {
+      const saved = await this.store.loadSettings(tx, userId);
+      return {
+        cycleLengthDays: saved?.cycleLengthDays ?? P37.defaultCycleDays,
+        periodLengthDays: saved?.periodLengthDays ?? P37.defaultPeriodDays,
+        userProvided: !!saved,
+      };
+    });
+  }
+
+  async updateSettings(userId: string, input: unknown): Promise<HealthSettings> {
+    const body = parseContract(HealthEndpoints.updateSettings.body!, input);
+    if (body.periodLengthDays >= body.cycleLengthDays)
+      throw new AppError('bad_request', '经期天数应小于周期长度');
+    await this.db.transaction((tx) =>
+      this.store.saveSettings(tx, userId, {
+        cycleLengthDays: body.cycleLengthDays,
+        periodLengthDays: body.periodLengthDays,
+      }),
+    );
+    return { ...body, userProvided: true };
+  }
+
+  async clearAll(userId: string, input: unknown): Promise<void> {
+    parseContract(HealthEndpoints.clearAll.body!, input);
+    await this.db.transaction(async (tx) => {
+      await this.store.deleteAll(tx, userId);
+      // 审计只记「清空了」，不记任何内容（health-data.md 第 6 节）。
+      await this.audit.record(
+        {
+          module: 'health',
+          action: 'health.cleared',
+          actorType: 'user',
+          actorId: userId,
+          targetType: 'user',
+          targetId: userId,
+        },
+        tx,
+      );
+    });
+  }
+
   // ---------- HealthReadPort（只给 ai-runtime） ----------
 
   async getAuthorizedCharacters(userId: string): Promise<string[]> {
@@ -288,7 +350,7 @@ export class HealthService implements HealthReadPort {
       if (!cycles.length) return null;
       const today = await this.today(input.userId, tx);
       const status = currentStatus(cycles, today);
-      const prediction = predict(cycles, today);
+      const prediction = predict(cycles, today, await this.defaults(tx, input.userId));
       const todayLog = cycles.flatMap((c) => c.dayLogs).find((l) => l.date === today) ?? null;
       // cycleKey：以「上一次经期」为锚点的不透明哈希，不含日期。经期前提醒与该次经期中的关心
       // 落在同一个 key 下（提醒时锚点是最近一次经期；进入新经期后锚点是它的前一次）。

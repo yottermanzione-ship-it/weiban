@@ -84,8 +84,18 @@ function average(values: number[]): number {
   return values.reduce((s, v) => s + v, 0) / values.length;
 }
 
-/** 按 P-37 预测下次开始日与经期天数。cycles 顺序不限。 */
-export function predict(cycles: CycleSpan[], today: string): Prediction {
+/**
+ * 按 P-37 预测下次开始日与经期天数。cycles 顺序不限。
+ * defaults：用户自填的默认周期 / 经期天数（3.0 HealthSettings），记录不足时代替 28 / 5。
+ */
+export function predict(
+  cycles: CycleSpan[],
+  today: string,
+  defaults: { cycleDays: number; periodDays: number } = {
+    cycleDays: P37.defaultCycleDays,
+    periodDays: P37.defaultPeriodDays,
+  },
+): Prediction {
   if (!cycles.length)
     return { predictedNextStart: null, predictedDays: null, confidence: 'insufficient_data' };
   const sorted = [...cycles].sort((a, b) => a.startDate.localeCompare(b.startDate));
@@ -94,14 +104,14 @@ export function predict(cycles: CycleSpan[], today: string): Prediction {
   for (let i = 1; i < recent.length; i++)
     gaps.push(dateDiffDays(recent[i - 1]!.startDate, recent[i]!.startDate));
   const enough = gaps.length >= P37.minCycles;
-  const cycleDays = enough ? Math.round(average(gaps)) : P37.defaultCycleDays;
+  const cycleDays = enough ? Math.round(average(gaps)) : defaults.cycleDays;
   const lengths = sorted
     .filter((c) => c.endDate)
     .slice(-P37.recentCycles)
     .map((c) => dateDiffDays(c.startDate, c.endDate!) + 1)
     .filter((n) => n > 0);
   const periodDays =
-    lengths.length >= P37.minCycles ? Math.round(average(lengths)) : P37.defaultPeriodDays;
+    lengths.length >= P37.minCycles ? Math.round(average(lengths)) : defaults.periodDays;
   let confidence: Confidence = 'normal';
   if (!enough) confidence = 'insufficient_data';
   else if (Math.max(...gaps) - Math.min(...gaps) > P37.irregularSpreadDays)

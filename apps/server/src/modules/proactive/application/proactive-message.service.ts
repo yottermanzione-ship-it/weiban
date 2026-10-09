@@ -14,7 +14,9 @@ import {
 import { proactiveSentLog, proactivePendingReply } from '../infra/db/schema.js';
 import { ProactiveGuards, validateDate, validateId } from './guards.js';
 
+/** P-03 默认（适中）；用户频率档位「多」= P-03 + 2 = 5（CHAT-13 第 2 条）。 */
 const PER_CHARACTER_LIMIT = 3;
+const PER_CHARACTER_MAX = 5;
 const TOTAL_LIMIT = 8;
 const REASONS = new Set([
   'daily_event',
@@ -42,12 +44,7 @@ export class ProactiveMessageService implements ProactiveMessagePort {
     isHoliday = false,
   ): Promise<boolean> {
     validateDate(localDate);
-    if (
-      !Number.isInteger(perCharacterLimit) ||
-      perCharacterLimit < 1 ||
-      perCharacterLimit > PER_CHARACTER_LIMIT
-    )
-      throw new AppError('bad_request', '角色每日上限无效');
+    checkLimit(perCharacterLimit);
     return this.db.transaction(async (tx) => {
       await this.guards.lock(tx, userId);
       await this.guards.requireContact(userId, characterId, tx);
@@ -66,8 +63,10 @@ export class ProactiveMessageService implements ProactiveMessagePort {
     reason: string,
     transaction: Tx,
     isHoliday = false,
+    perCharacterLimit = PER_CHARACTER_LIMIT,
   ): Promise<number> {
     validateDate(localDate);
+    checkLimit(perCharacterLimit);
     if (
       !idempotencyKey.trim() ||
       idempotencyKey.length > 200 ||
@@ -98,7 +97,7 @@ export class ProactiveMessageService implements ProactiveMessagePort {
     }
     const n = await this.dailyCount(tx.db, userId, localDate, characterId);
     if (
-      n >= PER_CHARACTER_LIMIT ||
+      n >= perCharacterLimit ||
       (await this.dailyCount(tx.db, userId, localDate)) >= TOTAL_LIMIT ||
       (!isHoliday && (await this.pending(tx.db, userId, characterId)))
     )
@@ -190,4 +189,9 @@ export class ProactiveMessageService implements ProactiveMessagePort {
       );
     return !!row;
   }
+}
+
+function checkLimit(limit: number): void {
+  if (!Number.isInteger(limit) || limit < 1 || limit > PER_CHARACTER_MAX)
+    throw new AppError('bad_request', '角色每日上限无效');
 }
