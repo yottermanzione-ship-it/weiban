@@ -16,6 +16,7 @@ import { ScenarioModesPage } from '../features/scenario-modes.js';
 import { PublicUpdatesPage } from '../features/public-updates.js';
 import { HolidaysPage } from '../features/holidays.js';
 import { SymptomTagsPage } from '../features/symptom-tags.js';
+import { RelationsPage } from '../features/relations.js';
 export function App() {
   const [auth, setAuth] = useState<AuthResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,6 +77,7 @@ export function App() {
             ['/scenario-modes', '情景模式'],
             ['/public-updates', '公开动态'],
             ['/holidays', '节日清单'],
+            ['/relations', '关系网'],
             ['/symptom-tags', '经期症状标签'],
             ['/admin/alerts', '运行提醒'],
           ].map(([to, label]) => (
@@ -108,6 +110,7 @@ export function App() {
             <Route path="/scenario-modes" element={<ScenarioModesPage />} />
             <Route path="/public-updates" element={<PublicUpdatesPage />} />
             <Route path="/holidays" element={<HolidaysPage />} />
+            <Route path="/relations" element={<RelationsPage />} />
             <Route path="/symptom-tags" element={<SymptomTagsPage />} />
             <Route path="/admin/alerts" element={<AlertsPage />} />
             <Route path="*" element={<Navigate to="/invites" replace />} />
