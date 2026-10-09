@@ -29,6 +29,12 @@ private val frequencies = listOf("low" to "少", "medium" to "适中", "high" to
         }
     }
     Text("关闭后所有角色都不会主动发消息；你发消息时 TA 照常回复。", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+    PeriodSwitchRow("允许角色拉我进群", settings.allowCharacterGroupInvites, !state.busy) { enabled ->
+        state.perform {
+            state.notificationSettings =
+                state.call(Endpoints.identityEndpointsUpdateNotificationSettings, buildJsonObject { put("allowCharacterGroupInvites", enabled) })
+        }
+    }
     val current = defaults
     if (settings.proactiveMessagesEnabled && current != null) {
         Text("默认主动消息频率", style = MaterialTheme.typography.titleSmall)

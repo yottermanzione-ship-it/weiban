@@ -22,6 +22,8 @@ import app.weiban.designsystem.WeibanTheme
 import app.weiban.designsystem.tokens.WbSize
 import app.weiban.feature.auth.AuthScreen
 import app.weiban.feature.chat.ChatScreen
+import app.weiban.feature.chat.DiscoverScreen
+import app.weiban.feature.chat.rememberMomentsBadge
 import app.weiban.feature.chat.RoleBrowser
 import app.weiban.feature.me.MeEntry
 import app.weiban.feature.me.MeScreen
@@ -131,6 +133,9 @@ private class NavigationUi(
     var conversationId by mutableStateOf(initialConversation)
     var mePage by mutableStateOf<String?>(null)
 
+    /** 发现页里打开的朋友圈：feed / me / post:<id>；null = 发现首页。 */
+    var moments by mutableStateOf<String?>(null)
+
     fun open(id: String) {
         conversationId = id
         tab = "微伴"
@@ -139,7 +144,14 @@ private class NavigationUi(
     fun route(value: String) {
         conversationId = null
         mePage = null
-        if (value.startsWith("/chat/")) {
+        moments = null
+        if (value.startsWith("/moments/posts/")) {
+            tab = "发现"
+            moments = "post:" + value.removePrefix("/moments/posts/")
+        } else if (value == "/moments") {
+            tab = "发现"
+            moments = "feed"
+        } else if (value.startsWith("/chat/")) {
             open(value.removePrefix("/chat/"))
         } else if (value == "/chat") {
             tab = "微伴"
@@ -152,8 +164,13 @@ private class NavigationUi(
     companion object {
         val saver =
             listSaver<NavigationUi, String>(
-                save = { listOf(it.tab, it.conversationId.orEmpty(), it.mePage.orEmpty()) },
-                restore = { NavigationUi(it[0], it[1].ifBlank { null }).apply { mePage = it.getOrNull(2)?.ifBlank { null } } },
+                save = { listOf(it.tab, it.conversationId.orEmpty(), it.mePage.orEmpty(), it.moments.orEmpty()) },
+                restore = {
+                    NavigationUi(it[0], it[1].ifBlank { null }).apply {
+                        mePage = it.getOrNull(2)?.ifBlank { null }
+                        moments = it.getOrNull(3)?.ifBlank { null }
+                    }
+                },
             )
     }
 }
@@ -184,9 +201,12 @@ private class NavigationUi(
             if (navigation.conversationId ==
                 null
             ) {
-                Tabs(navigation.tab) {
+                val owner = OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId)
+                val badge = rememberMomentsBadge(runtime.repository, owner)
+                Tabs(navigation.tab, (badge?.unseenPostCount ?: 0) > 0) {
                     navigation.tab = it
                     navigation.mePage = null
+                    navigation.moments = null
                 }
             }
         }) { padding ->
@@ -225,7 +245,11 @@ private suspend fun finishOnboarding(
                 runtime.repository,
                 onTheme = onTheme,
                 onLogout = onLogout,
-                entry = MeEntry(navigation.mePage, notificationControls(runtime, owner)),
+                entry =
+                    MeEntry(navigation.mePage, notificationControls(runtime, owner)) {
+                        navigation.tab = "发现"
+                        navigation.moments = "me"
+                    },
             )
         "微伴" ->
             ChatScreen(
@@ -235,7 +259,9 @@ private suspend fun finishOnboarding(
                 navigation.conversationId,
                 onModelsRequested = { navigation.route("/models") },
             ) { navigation.conversationId = it }
-        else -> key(navigation.tab) { RoleBrowser(runtime.repository, runtime.chat, owner, navigation.tab == "发现", navigation::open) }
+        "发现" ->
+            DiscoverScreen(runtime.repository, runtime.chat, owner, navigation.moments, { navigation.moments = it }, navigation::open)
+        else -> key(navigation.tab) { RoleBrowser(runtime.repository, runtime.chat, owner, false, navigation::open) }
     }
 }
 
@@ -261,13 +287,17 @@ private fun applyNotification(
 
 @Composable private fun Tabs(
     tab: String,
+    discoverDot: Boolean,
     onSelect: (String) -> Unit,
 ) {
     NavigationBar {
         for (label in listOf("微伴", "通讯录", "发现", "我")) {
             val selected = tab == label
             NavigationBarItem(selected = selected, onClick = { onSelect(label) }, icon = {
-                Icon(painterResource(tabIcon(label, selected)), null, Modifier.size(WbSize.ListIcon))
+                // 朋友圈新动态不推送，只在「发现」标签显示红点（SOC-07 第 7 条）。
+                BadgedBox(badge = { if (label == "发现" && discoverDot) Badge() }) {
+                    Icon(painterResource(tabIcon(label, selected)), null, Modifier.size(WbSize.ListIcon))
+                }
             }, label = { Text(label) })
         }
     }

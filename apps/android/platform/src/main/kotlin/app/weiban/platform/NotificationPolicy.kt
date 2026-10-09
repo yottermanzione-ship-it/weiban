@@ -30,7 +30,11 @@ internal fun notificationRoute(envelope: NotificationEnvelope): String? {
         val id = route.removePrefix("/chat/")
         val valid = runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false)
         route.takeIf { valid && (envelope.conversationId == null || envelope.conversationId == id) }
+    } else if (route.startsWith("/moments/posts/")) {
+        // 角色在朋友圈评论里 @ 我（SOC-08 第 4 条）：点通知进入对应动态。
+        val id = route.removePrefix("/moments/posts/")
+        route.takeIf { runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false) }
     } else {
-        route.takeIf { it in listOf("/chat", "/wallet", "/models", "/services") }
+        route.takeIf { it in listOf("/chat", "/wallet", "/models", "/services", "/moments") }
     }
 }

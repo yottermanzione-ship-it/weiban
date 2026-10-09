@@ -407,6 +407,14 @@ class SyncEngine(
                     effects += ClientSyncEffectSettings(section = update.data.section, characterId = update.data.characterId)
                 }
             is UserUpdateModelStatusUpdated -> effects += ClientSyncEffectModelStatus(status = update.data.status)
+            // 3.0: card choices replace the stored message; the rest are not sync-core state and go to screens.
+            is UserUpdateMessageUpdated -> upsert(update.data.message)
+            is UserUpdateCallUpdated,
+            is UserUpdateMediaTranscriptReady,
+            is UserUpdateMomentsBadgeUpdated,
+            is UserUpdateMomentsPostChanged,
+            is UserUpdateDataChanged,
+            -> AppUpdates.publish(update)
             is UserUpdateUnsupported -> Unit
         }
     }

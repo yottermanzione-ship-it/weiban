@@ -20,13 +20,13 @@ import app.weiban.designsystem.tokens.WbSpace
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-/** 「TA 的近况」时间线（SIM-11 第 3、4 条）：最近 90 天日常事件，倒序分页。 */
+/** 「TA 的近况」时间线（SIM-11 第 3、4 条）：契约 3.0 listTimeline，90 天内日常事件、朋友圈、角色互动、公开动态，倒序分页。 */
 private class TimelinePager(
     private val repository: SessionRepository,
     private val owner: OwnerRecord,
     private val characterId: String,
 ) {
-    val items = mutableStateListOf<DailyEvent>()
+    val items = mutableStateListOf<TimelineEntry>()
     var cursor by mutableStateOf<String?>(null)
     var finished by mutableStateOf(false)
     var loading by mutableStateOf(false)
@@ -41,12 +41,12 @@ private class TimelinePager(
         try {
             val page =
                 repository.call(
-                    Endpoints.dailyEventEndpointsListByCharacter,
+                    Endpoints.timelineEndpointsListTimeline,
                     params = mapOf("characterId" to characterId),
                     query = buildMap<String, String> { cursor?.let { put("cursor", it) } },
                     options = SessionCallOptions(owner = owner, networkOnly = true),
                 )
-            items.addAll(page.items.filter { incoming -> items.none { it.eventId == incoming.eventId } })
+            items.addAll(page.items.filter { incoming -> items.none { it.entryId == incoming.entryId } })
             cursor = page.nextCursor
             finished = page.nextCursor == null
             initialized = true
@@ -96,33 +96,30 @@ private class TimelinePager(
                 Text("TA 的近况会出现在这里", Modifier.fillMaxWidth().padding(WbSpace.S8), color = colors.textSecondary)
             else ->
                 LazyColumn(state = list, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(WbSpace.S5)) {
-                    items(pager.items, key = { it.eventId }) { event -> TimelineRow(event) }
+                    items(pager.items, key = { it.entryId }) { entry -> TimelineRow(entry) }
                     item(key = "footer") { TimelineFooter(pager) { scope.launch { pager.next() } } }
                 }
         }
     }
 }
 
-@Composable private fun TimelineRow(event: DailyEvent) {
+@Composable private fun TimelineRow(entry: TimelineEntry) {
     val colors = LocalWeibanColors.current
-    var open by remember(event.eventId) { mutableStateOf(false) }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clickable(enabled = event.moodEffect != null) { open = !open }
-            .padding(vertical = WbSpace.S3),
-    ) {
-        val time = listOfNotNull(event.eventDate, event.eventTime).joinToString(" ")
-        Text(time, color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-        Text(event.summary, style = MaterialTheme.typography.bodyMedium)
-        if (event.source == "public_feed") Text("公开动态", color = colors.textTertiary, style = MaterialTheme.typography.bodySmall)
-        if (event.moodEffect != null) {
-            if (open) {
-                Text(event.moodEffect.orEmpty(), color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-            } else {
-                Text("展开", color = colors.textLink, style = MaterialTheme.typography.bodySmall)
-            }
+    Column(Modifier.fillMaxWidth().padding(vertical = WbSpace.S3)) {
+        Text(momentTime(entry.occurredAt), color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(WbSpace.S3)) {
+            entry.kind?.let { Text(timelineKindLabel(it), color = colors.textSecondary, style = MaterialTheme.typography.bodySmall) }
+            Text(entry.summary, style = MaterialTheme.typography.bodyMedium)
         }
+        val source =
+            when (entry.source) {
+                "public_update" -> "公开资料"
+                "moments_post" -> "朋友圈"
+                "character_interaction" -> "和其他角色"
+                else -> null
+            }
+        source?.let { Text(it, color = colors.textTertiary, style = MaterialTheme.typography.bodySmall) }
+        if (entry.ref?.kind == "url") Text(entry.ref?.id.orEmpty(), color = colors.textLink, style = MaterialTheme.typography.bodySmall, maxLines = 1)
     }
     HorizontalDivider(color = colors.borderHairline)
 }

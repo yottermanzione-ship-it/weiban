@@ -284,6 +284,7 @@ class ChatRuntime(
         conversationId: String,
         text: String,
         quoteMessageId: String? = null,
+        mentions: List<String>? = null,
     ) {
         require(text.isNotBlank() && text.length <= 4_000)
         val current = runnerFor(expected) ?: throw ApiFailure("sync_not_ready", 0)
@@ -292,7 +293,7 @@ class ChatRuntime(
             current.dispatch(
                 ClientSyncOperationEnqueue(
                     conversationId = conversationId,
-                    body = SendMessageRequest(UUID.randomUUID().toString(), UserSendableContentText(text = text), quoteMessageId),
+                    body = SendMessageRequest(UUID.randomUUID().toString(), UserSendableContentText(text = text, mentions = mentions?.takeIf { it.isNotEmpty() }?.take(10)), quoteMessageId),
                     now = System.currentTimeMillis(),
                 ),
             )

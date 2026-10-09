@@ -26,11 +26,17 @@ import java.util.Locale
 ) {
     var plaza by rememberSaveable(owner.sessionId) { mutableStateOf(startAtPlaza) }
     var ordinarySelection by rememberSaveable(owner.sessionId) { mutableStateOf<String?>(null) }
+    var referral by remember(owner.sessionId) { mutableStateOf<ProfileTarget?>(null) }
+    // contacts / newFriends / groups（通讯录内子页）
+    var section by rememberSaveable(owner.sessionId) { mutableStateOf("contacts") }
     val scope = rememberCoroutineScope()
     val progress = remember(repository, owner) { OnboardingProgress(repository, owner, scope) }
     LaunchedEffect(progress, onboarding) { if (onboarding) progress.load() }
     val selected = if (onboarding) progress.draft?.characterId else ordinarySelection
-    val select: (String?) -> Unit = { if (onboarding) progress.choose(it) else ordinarySelection = it }
+    val select: (String?) -> Unit = {
+        if (it == null) referral = null
+        if (onboarding) progress.choose(it) else ordinarySelection = it
+    }
     val snapshot by runtime.snapshot.collectAsState()
     val state = if (snapshot.owner == owner) snapshot.state else SyncEngine.freshState()
     val open by rememberUpdatedState(onOpenConversation)
@@ -53,11 +59,20 @@ import java.util.Locale
                 selected,
                 onOpenConversation,
                 progress = progress.takeIf { onboarding },
+                referral = referral?.takeIf { it.characterId == selected },
             )
         } else if (plaza) {
             if (!startAtPlaza) TextButton(onClick = { plaza = false }) { Text("返回通讯录") }
             CharacterCatalog(repository, owner) { select(it) }
+        } else if (section == "newFriends") {
+            NewFriendsPage(repository, owner, state, { section = "contacts" }, { plaza = true }) { target ->
+                referral = target
+                select(target.characterId)
+            }
+        } else if (section == "groups") {
+            GroupList(repository, owner, state, { section = "contacts" }, onOpenConversation)
         } else {
+            ContactsEntries(repository, owner, state, { section = "newFriends" }) { section = "groups" }
             ContactsList(repository, owner, state, { plaza = true }) { select(it) }
         }
     }

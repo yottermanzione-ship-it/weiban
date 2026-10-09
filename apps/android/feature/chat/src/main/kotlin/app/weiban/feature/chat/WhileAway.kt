@@ -43,10 +43,12 @@ internal fun nowTimestamp(): String = Instant.now().truncatedTo(ChronoUnit.MILLI
     val state = remember(owner, conversationId) { WhileAwayState() }
     LaunchedEffect(state) {
         val activeKey = "lastActive:$conversationId"
-        val previous = repository.flags.get(owner, activeKey)
-        repository.flags.set(owner, activeKey, nowTimestamp())
+        val now = nowTimestamp()
+        // T-066：服务器以每次调用摘要接口记录「进入私聊」的时间，所以每次打开私聊都调用；本机没有记录时传当前时刻。
+        val previous = repository.flags.get(owner, activeKey) ?: now
+        repository.flags.set(owner, activeKey, now)
         state.ready = true
-        if (previous == null || characterId == null) return@LaunchedEffect
+        if (characterId == null) return@LaunchedEffect
         val summary = loadSummary(repository, owner, conversationId, characterId, previous) ?: return@LaunchedEffect
         if (summary.summary == null) return@LaunchedEffect
         val shownKey = "whileAway:$conversationId:$previous"

@@ -90,7 +90,8 @@ import kotlinx.serialization.json.*
             "services" -> MeServices(state)
             "period" -> PeriodDiaryPage(repository, owner)
             "proactive" -> ProactiveDefaultsPage(state)
-            else -> HomePage(state, onLogout)
+            "privacy" -> PrivacyPage(state)
+            else -> HomePage(state, entry, onLogout)
         }
     }
 }
@@ -245,6 +246,7 @@ import kotlinx.serialization.json.*
 
 @Composable private fun HomePage(
     state: MeState,
+    entry: MeEntry,
     onLogout: () -> Unit,
 ) = with(state) {
     SavedAvatar(repository, owner, profile)
@@ -257,6 +259,7 @@ import kotlinx.serialization.json.*
     )
     Text("账号：${repository.auth.value?.user?.username.orEmpty()}")
     OutlinedButton(onClick = { page = "profile" }) { Text("我的资料") }
+    entry.onMyMoments?.let { open -> OutlinedButton(onClick = open) { Text("朋友圈") } }
     OutlinedButton(onClick = { openPage("services") }) { Text("服务") }
     OutlinedButton(onClick = { openPage("settings") }) { Text("设置") }
     TextButton(enabled = !busy, onClick = {
@@ -328,6 +331,7 @@ private fun pageTitle(
         "services" -> "服务"
         "period" -> "经期日记"
         "proactive" -> "主动消息与免打扰"
+        "privacy" -> "隐私"
         else -> "我"
     }
 

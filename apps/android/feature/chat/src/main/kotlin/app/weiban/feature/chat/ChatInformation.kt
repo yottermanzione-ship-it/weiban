@@ -89,6 +89,7 @@ private class InformationActions(
 internal data class InformationNavigation(
     val back: () -> Unit,
     val models: () -> Unit = {},
+    val createGroup: () -> Unit = {},
 )
 
 @Composable internal fun ChatInformation(
@@ -129,6 +130,7 @@ internal data class InformationNavigation(
     ) {
         TextButton(navigation.back, enabled = !actions.pending) { Text("返回聊天") }
         Text("聊天信息", style = MaterialTheme.typography.headlineSmall)
+        TextButton(onClick = navigation.createGroup, enabled = !actions.pending) { Text("＋ 发起群聊") }
         Text(title(state, conversation, names))
         InformationPreferences(actions, conversation, companion, characterId)
         Text("和 TA 的相处", style = MaterialTheme.typography.titleSmall)

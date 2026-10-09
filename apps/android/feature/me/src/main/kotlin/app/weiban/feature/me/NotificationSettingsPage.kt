@@ -11,6 +11,7 @@ import kotlinx.serialization.json.put
 @Composable internal fun MeSettings(state: MeState) {
     OutlinedButton(onClick = { state.openPage("notifications") }) { Text("新消息通知") }
     OutlinedButton(onClick = { state.openPage("theme") }) { Text("主题") }
+    OutlinedButton(onClick = { state.openPage("privacy") }) { Text("隐私") }
 }
 
 @Composable internal fun MeServices(state: MeState) {

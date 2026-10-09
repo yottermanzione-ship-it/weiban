@@ -38,6 +38,9 @@ import kotlinx.serialization.json.*
         }
     }
     var information by rememberSaveable(conversationId) { mutableStateOf(false) }
+    // "": 从会话列表发起；characterId：从私聊聊天信息页发起（原角色锁定）。
+    var creating by rememberSaveable(owner.sessionId) { mutableStateOf<String?>(null) }
+    var profile by remember(owner.sessionId) { mutableStateOf<ProfileTarget?>(null) }
     val changed by rememberUpdatedState(onConversationChanged)
     val select: (String?) -> Unit = { id ->
         conversationId = id
@@ -51,21 +54,58 @@ import kotlinx.serialization.json.*
     }
     Column(Modifier.fillMaxSize()) {
         if (!online) Text(error ?: "正在连接…", Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.bodySmall)
-        if (selected == null) {
-            ConversationList(repository, owner, state, select)
-        } else if (information) {
-            ChatInformation(
-                repository,
-                runtime,
-                owner,
-                state,
-                selected,
-                InformationNavigation({
+        val target = profile
+        val creatingFrom = creating
+        when {
+            target != null -> {
+                BackHandler { profile = null }
+                TextButton(onClick = { profile = null }) { Text("‹ 返回") }
+                CharacterScreen(
+                    repository,
+                    runtime,
+                    owner,
+                    state,
+                    target.characterId,
+                    {
+                        profile = null
+                        information = false
+                        select(it)
+                    },
+                    referral = target,
+                )
+            }
+            creatingFrom != null ->
+                GroupCreate(repository, runtime, owner, state, creatingFrom.ifEmpty { null }, { creating = null }) { id ->
+                    creating = null
                     information = false
-                }, onModelsRequested),
-            ) { select(null) }
-        } else {
-            ConversationView(repository, runtime, owner, state, selected, { information = true }) { select(null) }
+                    select(id)
+                }
+            selected == null -> ConversationList(repository, owner, state, select) { creating = "" }
+            information && selected.isGroup() ->
+                GroupInformation(
+                    repository,
+                    runtime,
+                    owner,
+                    state,
+                    selected,
+                    { information = false },
+                    { profile = ProfileTarget(it, groupGreeting(state, selected)) },
+                ) { select(null) }
+            information ->
+                ChatInformation(
+                    repository,
+                    runtime,
+                    owner,
+                    state,
+                    selected,
+                    InformationNavigation(
+                        { information = false },
+                        onModelsRequested,
+                        createGroup = { creating = selected.characterMembers().firstOrNull()?.refId.orEmpty() },
+                    ),
+                ) { select(null) }
+            else ->
+                ConversationView(repository, runtime, owner, state, selected, { information = true }, { profile = it }) { select(null) }
         }
     }
 }
@@ -75,11 +115,19 @@ import kotlinx.serialization.json.*
     owner: OwnerRecord,
     state: ClientSyncState,
     onSelect: (String) -> Unit,
+    onCreateGroup: () -> Unit,
 ) {
     var search by rememberSaveable { mutableStateOf("") }
-    val profiles = characterProfiles(repository, state.contacts.map { it.characterId })
+    val profiles =
+        characterProfiles(
+            repository,
+            state.contacts.map { it.characterId } + state.conversations.flatMap { c -> c.characterMembers().map { it.refId } },
+        )
     val names = profiles.mapValues { it.value.name }
-    Text("微伴", Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.headlineSmall)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Text("微伴", Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.headlineSmall)
+        TextButton(onClick = onCreateGroup) { Text("发起群聊") }
+    }
     OutlinedTextField(
         search,
         { search = it },
@@ -135,6 +183,10 @@ import kotlinx.serialization.json.*
     conversation: Conversation,
     profiles: Map<String, CharacterProfile>,
 ) {
+    if (conversation.isGroup()) {
+        GroupAvatar(repository, owner, state, conversation, profiles)
+        return
+    }
     val id = conversation.participants.find { it.kind == "character" }?.refId
     val profile = profiles[id]
     RoleAvatar(
@@ -154,6 +206,7 @@ internal fun title(
     conversation: Conversation,
     names: Map<String, String> = emptyMap(),
 ): String {
+    if (conversation.isGroup()) return conversation.title ?: defaultGroupTitle(state, conversation, names)
     val characterId = conversation.participants.find { it.kind == "character" }?.refId
     return conversation.title ?: state.contacts.find { it.characterId == characterId }?.remark ?: names[characterId] ?: "角色"
 }
@@ -165,15 +218,31 @@ internal fun messageText(message: Message): String =
         when (val content = message.content) {
             is ReceivedMessageContentText -> content.text
             is ReceivedMessageContentNudge -> "拍了拍"
-            is ReceivedMessageContentSystem ->
-                when (content.code) {
-                    "contact_accepted" -> "已通过好友申请，现在可以开始聊天了"
-                    "scenario_mode_changed" -> scenarioModeMessage(content)
-                    else -> "会话提示"
-                }
+            is ReceivedMessageContentSystem -> systemMessage(content)
+            is ReceivedMessageContentContactCard -> "[名片] ${content.name}"
+            is ReceivedMessageContentActionCard -> content.text
             else -> "当前版本不支持此消息"
         }
     }
+
+private fun systemMessage(content: ReceivedMessageContentSystem): String {
+    fun p(key: String) = (content.params[key] as? JsonPrimitive)?.contentOrNull.orEmpty()
+    val by = p("byName")
+    return when (content.code) {
+        "contact_accepted" -> "已通过好友申请，现在可以开始聊天了"
+        "scenario_mode_changed" -> scenarioModeMessage(content)
+        "scenario_mode_switched" ->
+            if (p("reason") == "member_not_eligible") "有新成员加入，群聊已回到日常模式" else scenarioModeMessage(content)
+        "group_created" -> "你邀请 ${p("names")} 加入了群聊"
+        "group_invited_by_character" -> "${p("name")} 邀请你和 ${p("names")} 加入了群聊"
+        "member_joined" -> if (by.isNotEmpty()) "$by 邀请 ${p("names")} 加入了群聊" else "你邀请 ${p("names")} 加入了群聊"
+        "member_removed" -> "你将 ${p("name")} 移出了群聊"
+        "member_left" -> "${p("name")} 退出了群聊"
+        "group_renamed" -> if (by.isNotEmpty()) "$by 修改群名为「${p("title")}」" else "你修改群名为「${p("title")}」"
+        "group_dissolved" -> "群聊已解散"
+        else -> "会话提示"
+    }
+}
 
 private fun scenarioModeMessage(content: ReceivedMessageContentSystem): String {
     if ((content.params["reason"] as? JsonPrimitive)?.contentOrNull == "adult_mode_unavailable") {
@@ -207,11 +276,17 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
     state: ClientSyncState,
     conversation: Conversation,
     onInformation: () -> Unit,
+    onProfile: (ProfileTarget) -> Unit,
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val ui = remember(conversation.conversationId, owner) { ConversationUi(repository, runtime, owner, conversation, scope) }
-    SideEffect { ui.conversation = conversation }
+    val group = conversation.isGroup()
+    SideEffect {
+        ui.conversation = conversation
+        ui.openProfile = onProfile
+        ui.groupGreeting = if (group) groupGreeting(state, conversation) else null
+    }
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow
         .collectAsState()
     val visible = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
@@ -221,10 +296,17 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
     val names = conversation.participants.associate { it.refId to avatars.roles[it.participantId]?.name.orEmpty() }
     val pending = state.outbox.filter { it.conversationId == conversation.conversationId }
     val typing by runtime.typing.collectAsState()
-    val typingActive =
-        typing.any { (key, expiry) ->
-            key.startsWith("${conversation.conversationId}:") &&
-                expiry > System.currentTimeMillis()
+    val typingIds =
+        typing
+            .filter { (key, expiry) -> key.startsWith("${conversation.conversationId}:") && expiry > System.currentTimeMillis() }
+            .keys
+            .map { it.substringAfter(":") }
+    val typingActive = typingIds.isNotEmpty()
+    val typingText =
+        if (group) {
+            typingIds.mapNotNull { avatars.roles[it]?.name?.takeIf(String::isNotBlank) }.joinToString("、").ifEmpty { "有人" } + " 正在输入…"
+        } else {
+            "对方正在输入…"
         }
     DisposableEffect(conversation.conversationId) {
         runtime.focus(conversation.conversationId)
@@ -250,7 +332,8 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         TextButton(onBack) { Text("返回") }
-        Text(title(state, conversation, names), Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.titleMedium)
+        val heading = title(state, conversation, names) + if (group) "（${conversation.characterMembers().size + 1}）" else ""
+        Text(heading, Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.titleMedium)
         TextButton(onInformation) { Text("聊天信息") }
     }
     val whileAway =
@@ -258,14 +341,21 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
             repository,
             owner,
             conversation.conversationId,
-            conversation.participants.find { it.kind == "character" }?.refId,
+            conversation.participants.find { it.kind == "character" }?.refId.takeIf { !group },
             messages.lastOrNull()?.messageId,
         )
     WhileAwayCard(whileAway) { ui.text = it }
+    if (group && conversation.state.hidden) {
+        Text("这个群聊已解散", Modifier.padding(WbSpace.S5))
+    }
     ui.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = WbSpace.S5)) }
-    if (visible && typingActive) Text("对方正在输入…", Modifier.padding(horizontal = WbSpace.S5))
+    if (visible && typingActive) Text(typingText, Modifier.padding(horizontal = WbSpace.S5))
     MessageTimeline(ui, messages, pending, list, Modifier.weight(1f), avatars)
-    Composer(ui, messages.find { it.messageId == ui.quoteId && it.status == "normal" })
+    if (group && conversation.state.hidden) {
+        Text("你已不在该群聊中", Modifier.fillMaxWidth().padding(WbSpace.S5), style = MaterialTheme.typography.bodySmall)
+    } else {
+        Composer(ui, messages.find { it.messageId == ui.quoteId && it.status == "normal" }, avatars)
+    }
 }
 
 @Composable private fun MessageTimeline(
@@ -307,7 +397,16 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
 @Composable private fun Composer(
     ui: ConversationUi,
     quote: Message?,
+    avatars: MessageAvatars,
 ) {
+    val members = if (ui.conversation.isGroup()) ui.conversation.characterMembers() else emptyList()
+    var picking by remember { mutableStateOf(false) }
+    if (picking) {
+        MentionPicker(members, avatars, { picking = false }) { participant, name ->
+            ui.mention(name, participant)
+            picking = false
+        }
+    }
     quote?.let { quoted ->
         Row {
             Text("引用：${messageText(quoted).take(60)}", Modifier.weight(1f).padding(WbSpace.S5))
@@ -315,7 +414,52 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
         }
     }
     Row(Modifier.imePadding().padding(WbSpace.S5)) {
-        OutlinedTextField(ui.text, { if (it.length <= 4_000) ui.text = it }, Modifier.weight(1f), label = { Text("消息") }, maxLines = 5)
+        OutlinedTextField(ui.text, { next ->
+            if (next.length <= 4_000) {
+                val typedAt = next.length == ui.text.length + 1 && next.endsWith("@")
+                ui.text = next
+                if (typedAt && members.isNotEmpty()) {
+                    if (members.size == 1) {
+                        val only = members.first()
+                        ui.mention(avatars.roles[only.participantId]?.name?.ifBlank { null } ?: "角色", only.participantId)
+                    } else {
+                        picking = true
+                    }
+                }
+            }
+        }, Modifier.weight(1f), label = { Text("消息") }, maxLines = 5)
         TextButton(enabled = ui.text.isNotBlank() && !ui.sending, onClick = ui::send) { Text("发送") }
     }
 }
+
+/** @ 选人弹层（social-l4.md 2.2）：不含用户自己；关闭不插入时「@」保留为普通文字。 */
+@Composable private fun MentionPicker(
+    members: List<Participant>,
+    avatars: MessageAvatars,
+    onDismiss: () -> Unit,
+    onPick: (String, String) -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("选择提醒的人") },
+        text = {
+            Column {
+                OutlinedTextField(query, { query = it.take(20) }, singleLine = true, label = { Text("搜索") })
+                members
+                    .map { it to (avatars.roles[it.participantId]?.name?.ifBlank { null } ?: "角色") }
+                    .filter { (_, name) -> query.isBlank() || name.contains(query, true) }
+                    .forEach { (member, name) ->
+                        TextButton(onClick = { onPick(member.participantId, name) }) { Text(name) }
+                    }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+/** 群里点头像打开资料页时，打招呼默认「我们在『群名』群里见过」（SOC-06 第 3 条）。 */
+internal fun groupGreeting(
+    state: ClientSyncState,
+    conversation: Conversation,
+): String = "我们在『${title(state, conversation)}』群里见过".take(50)
