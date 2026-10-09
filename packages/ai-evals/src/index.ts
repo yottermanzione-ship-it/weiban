@@ -1,6 +1,6 @@
 export interface EvalCase {
   id: string;
-  category: 'memory' | 'persona' | 'mode' | 'relationship';
+  category: 'memory' | 'persona' | 'mode' | 'relationship' | 'simulation';
   prdRefs: string[];
   setup: {
     character: string;

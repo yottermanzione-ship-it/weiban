@@ -422,9 +422,17 @@ describeDb('push主应用端口、模型故障目标与独立worker真实HTTP', 
       { timeout: 10000, interval: 50 },
     );
     expect(performance.now() - started).toBeLessThan(2000);
-    const count = bodies.length;
+    // worker也会恢复此前持久化的模型告警；只按本条delivery的稳定通知ID验证重投。
+    const receivedForDelivery = () =>
+      bodies.filter((body) => {
+        const notification = body.notification as {
+          android: { extras: { weiban: { notificationId: string } } };
+        };
+        return notification.android.extras.weiban.notificationId === result.ids[0];
+      });
+    expect(receivedForDelivery()).toHaveLength(1);
     await worker.get(PushDeliveryEngine).run(result.ids[0]!);
-    expect(bodies).toHaveLength(count);
+    expect(receivedForDelivery()).toHaveLength(1);
     expect(logs.capture.text).not.toContain('WORKER_PUSH_BODY_CANARY');
     expect(logs.capture.text).not.toContain('fixture-secret');
   }, 30000);

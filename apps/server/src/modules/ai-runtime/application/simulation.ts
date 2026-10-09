@@ -12,7 +12,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, gte } from 'drizzle-orm';
 import { z } from 'zod';
-import { type ModelGatewayPort } from '@weiban/contracts';
+import {
+  type ModelGatewayPort,
+  type IdentityAccountStatusPort,
+  type ContactsReadPort,
+} from '@weiban/contracts';
 import {
   CLOCK,
   DATABASE,
@@ -24,15 +28,17 @@ import {
   type JobQueue,
 } from '../../../platform/index.js';
 import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
+import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
+import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { simulationStates, dailyEvents, moodStates } from '../infra/db/schema.js';
 
 // ---------------------------------------------------------------------------
 // 常量（SIM-12 规模控制）
 // ---------------------------------------------------------------------------
 /** 每角色每天最多生成事件数（SIM-12）。 */
-const MAX_EVENTS_PER_RUN = 8;
+const MAX_EVENTS_PER_RUN = 6;
 /** 长期不活跃判定天数（SIM-13）。 */
-const INACTIVE_DAYS_THRESHOLD = 14;
+const INACTIVE_DAYS_THRESHOLD = 7;
 /** 推演 maxOutputTokens（后台任务，不需要长回复）。 */
 const SIMULATION_MAX_OUTPUT_TOKENS = 512;
 
@@ -61,7 +67,7 @@ const SimulatedEvent = z.object({
 });
 
 const SimulationOutput = z.object({
-  events: z.array(SimulatedEvent).min(1).max(MAX_EVENTS_PER_RUN),
+  events: z.array(SimulatedEvent).min(3).max(MAX_EVENTS_PER_RUN),
   overallMood: SimulationMood,
 });
 type SimulationOutput = z.infer<typeof SimulationOutput>;
@@ -112,6 +118,8 @@ export class SimulationService implements SimulationReadPort {
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(MODEL_GATEWAY_PORT) private readonly gateway: ModelGatewayPort,
+    @Inject(IDENTITY_ACCOUNT_STATUS_PORT) private readonly accounts: IdentityAccountStatusPort,
+    @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -220,9 +228,12 @@ export class SimulationService implements SimulationReadPort {
   async simulateCharacter(userId: string, characterId: string): Promise<void> {
     const now = this.clock.now();
     const today = toDateString(now);
+    const epoch = await this.contacts.getActiveContactEpoch(userId, characterId);
+    if (!epoch) return;
 
     // 加载或初始化状态（行锁）
     const state = await this.db.transaction(async (tx) => {
+      if (!(await this.lockActiveAccount(tx, userId))) return null;
       const [existing] = await tx.db
         .select()
         .from(simulationStates)
@@ -286,6 +297,17 @@ export class SimulationService implements SimulationReadPort {
 
     // 在事务中写入事件、心情、更新推演状态
     await this.db.transaction(async (tx) => {
+      if (!(await this.lockActiveAccount(tx, userId))) return;
+      const currentEpoch = await this.contacts.getActiveContactEpoch(userId, characterId, tx);
+      if (currentEpoch?.version !== epoch.version) return;
+      const [current] = await tx.db
+        .select()
+        .from(simulationStates)
+        .where(
+          and(eq(simulationStates.userId, userId), eq(simulationStates.characterId, characterId)),
+        )
+        .for('update');
+      if (!current || current.lastSimulatedDate === today) return;
       // 写入日常事件（seq 从 0 开始）
       for (let i = 0; i < output.events.length; i++) {
         const ev = output.events[i]!;
@@ -340,6 +362,13 @@ export class SimulationService implements SimulationReadPort {
   // 内部工具
   // -------------------------------------------------------------------------
 
+  private async lockActiveAccount(tx: DbTx, userId: string): Promise<boolean> {
+    await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('ai_runtime:user:' || $1,0))", [
+      userId,
+    ]);
+    return (await this.accounts.getAccountStatus(userId, tx)) === 'active';
+  }
+
   private async setPausedReason(
     userId: string,
     characterId: string,
@@ -379,7 +408,7 @@ function buildSimulationPrompt(date: string, maxEvents: number): string {
 }
 
 要求：
-- events 数组包含 2 到 ${maxEvents} 条，每条描述角色今天经历的一件具体事情。
+- events 数组包含 3 到 ${maxEvents} 条，每条描述角色今天经历的一件具体事情。
 - 事件要贴近角色人设，真实可信，不要过于戏剧化。
 - overallMood 反映今天整体心情。
 - 只输出 JSON，不要有其他内容。`;
