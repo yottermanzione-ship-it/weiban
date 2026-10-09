@@ -7,6 +7,7 @@
  *    - 经期中关心：当天记录痛感为「中 / 重」时，每周期 1 次；
  *    - 两者合计每周期 ≤ P-36（=2），每次只由**一个**授权角色发出：熟悉度最高，相同取最近聊过的；
  *    - 遵守主动消息总开关、角色主动消息开关、免打扰、默认活跃时段（P-05）；
+ *    - 计入 P-03/P-04：发送与 recordSent 同一事务，理由用通用值 interactive_play，键不含 health 字样；
  *    - 走后台网关：purpose=proactive、modelRole=background、countAsBackground=true，计费由网关记录。
  * 2. 私聊中自然体现（chatHint）：私聊回复构建上下文时现取摘要；经期中用户没提起时，
  *    每天（按经期第几天计）最多 1 次允许角色主动提起；用户自己提起不舒服时不受此限。
@@ -48,6 +49,7 @@ import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from '../../identity/index.js';
 import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
+import { HEALTH_READ_PORT } from '../../health/index.js';
 import { PROACTIVE_MESSAGE_PORT } from '../../proactive/index.js';
 import { healthCareLedger, simulationStates } from '../infra/db/schema.js';
 import { CompanionSettingsService } from './settings.js';
@@ -65,14 +67,10 @@ export const HEALTH_CHAT_UNPROMPTED_PER_DAY = 1;
 export const HEALTH_LABEL = 'health';
 export const HEALTH_CARE_SWEEP_JOB = 'ai.health_care_sweep';
 export const HEALTH_CARE_CHECK_JOB = 'ai.health_care_check';
-export const HEALTH_CARE_PROMPT_VERSION = 'health-care-v1';
-
-/**
- * ai-runtime 内使用的 HealthReadPort 注入名。
- * health 模块（T-059）合入后，在 AiRuntimeModule 里 `{ provide: AI_HEALTH_READ_PORT, useExisting: HEALTH_READ_PORT }`。
- * 未绑定时本服务整体不工作（没有任何角色知道经期），这是安全的默认。
- */
-export const AI_HEALTH_READ_PORT = Symbol('weiban.ai-runtime.health-read-port');
+/** 写入用量记录的模板版本：用通用名，不透露这是经期关怀。 */
+export const HEALTH_CARE_PROMPT_VERSION = 'proactive-care-v1';
+/** 记入主动消息日志（P-03/P-04）的理由：用通用取值，不留健康信息痕迹（总负责人 2026-10-09 裁定）。 */
+export const HEALTH_CARE_PROACTIVE_REASON = 'interactive_play';
 
 /** 熟悉度来源（T-050 growth 合入后绑定）；未绑定时所有角色熟悉度视为相同，按最近聊过排序。 */
 export interface HealthCareFamiliaritySource {
@@ -112,7 +110,7 @@ export class HealthCareService {
     @Inject(CHARACTER_READ_PORT) private readonly characters: CharacterReadPort,
     @Inject(POLICY_PORT) private readonly policy: PolicyPort,
     @Inject(CompanionSettingsService) private readonly settings: CompanionSettingsService,
-    @Optional() @Inject(AI_HEALTH_READ_PORT) private readonly health?: HealthReadPort,
+    @Inject(HEALTH_READ_PORT) private readonly health: HealthReadPort,
     @Optional()
     @Inject(HEALTH_CARE_FAMILIARITY)
     private readonly familiarity?: HealthCareFamiliaritySource,
@@ -140,7 +138,7 @@ export class HealthCareService {
       await this.jobs.send(
         HEALTH_CARE_CHECK_JOB,
         { userId },
-        { singletonKey: `health-care:${userId}:${hour}`, retryLimit: 2, retryBackoff: true },
+        { singletonKey: `care-sweep:${userId}:${hour}`, retryLimit: 2, retryBackoff: true },
       );
   }
 
@@ -171,14 +169,11 @@ export class HealthCareService {
     if (!ctx) return { sent: false, reason: 'no_context' };
     const kind = decideKind(ctx, local.date);
     if (!kind) return { sent: false, reason: 'nothing_due' };
-    // P-03/P-04：已满时不发（只做预检，不写入 proactive 发送日志——那里按日期记理由，
-    // 写入会把经期日期落到 health 之外，违反 health-data.md 第 4 节；见交接说明待决事项）。
-    // isHoliday=true 只用于跳过「上一条主动消息未回复」检查：经期关怀不因此被挡。
+    // P-03/P-04（总负责人 2026-10-09 裁定按 PRD 计入）：先预检，发送时在同一事务里 recordSent，
+    // 理由用通用值 HEALTH_CARE_PROACTIVE_REASON，幂等键不含 health 字样，不留经期痕迹。
     if (
       this.proactive &&
-      !(await this.proactive
-        .canSendProactive(userId, characterId, local.date, undefined, true)
-        .catch(() => false))
+      !(await this.proactive.canSendProactive(userId, characterId, local.date).catch(() => false))
     )
       return { sent: false, reason: 'proactive_quota_full' };
 
@@ -194,7 +189,7 @@ export class HealthCareService {
     if (!(await this.reserve(userId, ctx.cycleKey, kind, characterId)))
       return { sent: false, reason: 'already_sent' };
 
-    const sent = await this.compose(userId, characterId, kind, ctx).catch(() => null);
+    const sent = await this.compose(userId, characterId, kind, ctx, local.date).catch(() => null);
     if (!sent || !sent.ok) {
       await this.release(userId, ctx.cycleKey, kind);
       return { sent: false, reason: sent ? sent.reason : 'send_failed' };
@@ -229,6 +224,7 @@ export class HealthCareService {
     characterId: string,
     kind: HealthCareKind,
     ctx: PeriodContext,
+    localDate: string,
   ): Promise<{ ok: true; messageId: string } | { ok: false; reason: string }> {
     const contact = await this.contacts.getActiveContact(userId, characterId);
     if (!contact?.conversationId) return { ok: false, reason: 'no_conversation' };
@@ -252,8 +248,8 @@ export class HealthCareService {
       countAsBackground: true,
       responseFormat: 'text',
       maxOutputTokens: 200,
-      // 幂等键只含不透明周期 ID 与名额，不含日期。
-      idempotencyKey: `health-care:${userId}:${ctx.cycleKey}:${kind}`,
+      // 幂等键只含不透明周期 ID 与名额，不含日期和 health 字样。
+      idempotencyKey: `care:${userId}:${careKey(ctx.cycleKey, kind)}`,
       meta: {
         personaVersion: role.personaVersion,
         promptTemplateVersion: HEALTH_CARE_PROMPT_VERSION,
@@ -279,16 +275,33 @@ export class HealthCareService {
     if (!result.ok) return { ok: false, reason: result.error };
     const text = cleanText(result.value.text);
     if (!text) return { ok: false, reason: 'empty_output' };
-    const posted = await this.writer.postMessage({
-      conversationId: conversation.conversationId,
-      senderParticipantId: participant.participantId,
-      content: { type: 'text', text },
-      idempotencyKey: `health-care:${ctx.cycleKey}:${kind}`,
-      expectedScope: conversation.contentScope,
-      labels: [HEALTH_LABEL],
+    const key = `care:${careKey(ctx.cycleKey, kind)}`;
+    const proactive = this.proactive;
+    return this.db.transaction(async (tx) => {
+      const posted = await this.writer.postMessage(
+        {
+          conversationId: conversation.conversationId,
+          senderParticipantId: participant.participantId,
+          content: { type: 'text', text },
+          idempotencyKey: key,
+          expectedScope: conversation.contentScope,
+          labels: [HEALTH_LABEL],
+        },
+        tx,
+      );
+      if (!posted.ok) return { ok: false as const, reason: posted.error };
+      // 计入 P-03/P-04；超限会抛错，整个事务回滚（消息不发出），名额由调用方退回。
+      if (proactive)
+        await proactive.recordSent(
+          userId,
+          characterId,
+          localDate,
+          key,
+          HEALTH_CARE_PROACTIVE_REASON,
+          tx,
+        );
+      return { ok: true as const, messageId: posted.value.messageId };
     });
-    if (!posted.ok) return { ok: false, reason: posted.error };
-    return { ok: true, messageId: posted.value.messageId };
   }
 
   // -------------------------------------------------------------------------
@@ -399,6 +412,11 @@ export function inWindow(minutes: number, start: string, end: string): boolean {
   const b = toMin(end);
   if (a === b) return false;
   return a < b ? minutes >= a && minutes < b : minutes >= a || minutes < b;
+}
+
+/** 不透明的名额键：周期随机 ID + 序号，不含日期、不含健康字样。 */
+function careKey(cycleKey: string, kind: HealthCareKind): string {
+  return `${cycleKey}:${kind === 'pre_period' ? 1 : 2}`;
 }
 
 function careSystemPrompt(i: {

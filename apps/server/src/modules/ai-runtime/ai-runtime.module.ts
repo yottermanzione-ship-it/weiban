@@ -17,6 +17,7 @@ import { SimulationService, SIMULATION_READ_PORT } from './application/simulatio
 import { HealthCareService, HEALTH_CARE_FAMILIARITY } from './application/health-care.js';
 import { GrowthModule, GROWTH_SERVICE, type GrowthService } from '../growth/index.js';
 import { ProactiveModule } from '../proactive/index.js';
+import { HealthModule } from '../health/index.js';
 import { TimelineSummaryService } from './application/timeline.js';
 import { TimelineController } from './http/timeline.controller.js';
 @Module({
@@ -29,6 +30,7 @@ import { TimelineController } from './http/timeline.controller.js';
     ModelAccessModule,
     GrowthModule,
     ProactiveModule,
+    HealthModule,
   ],
   providers: [
     CompanionSettingsService,
