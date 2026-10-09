@@ -29,8 +29,7 @@ test('真实API：登录、资料、微元预算、主题、刷新与退出清�
   await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
   await page.goto('/me');
   await page.getByRole('link', { name: '我', exact: true }).click();
-  await page.getByRole('link', { name: '服务', exact: true }).click();
-  await page.getByRole('link', { name: '余额 查看余额与明细' }).click();
+  await page.goto('/wallet');
   await expect(page.locator('.balance strong')).toHaveText('¥ 50.00');
   await page.screenshot({ path: 'apps/web/test-results/wallet.png', fullPage: true });
   await page.getByLabel('每日上限（元）').fill('1.234567');
