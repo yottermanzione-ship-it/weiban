@@ -10,7 +10,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ContactsEndpoints as E } from '@weiban/contracts';
+import { ContactCardEndpoints as C, ContactsEndpoints as E } from '@weiban/contracts';
 import {
   ContractPipe,
   CurrentPrincipal,
@@ -18,10 +18,24 @@ import {
   type AuthPrincipal,
 } from '../../../platform/index.js';
 import { ContactsCommands } from '../application/commands.js';
+import { ContactCardRecommendationService } from '../application/recommendations.js';
 @Controller('api/v1/contacts')
 @RequireAuth('user')
 export class ContactsController {
-  constructor(@Inject(ContactsCommands) private readonly commands: ContactsCommands) {}
+  constructor(
+    @Inject(ContactsCommands) private readonly commands: ContactsCommands,
+    @Inject(ContactCardRecommendationService)
+    private readonly recommendations: ContactCardRecommendationService,
+  ) {}
+  /** 名片「不感兴趣」（CHR-04 第 4 条，P-27 冷却 90 天）。 */
+  @Post('recommendations/:characterId/dismiss')
+  @HttpCode(204)
+  async dismissRecommendation(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Param(new ContractPipe(C.dismissRecommendation.params!)) params: { characterId: string },
+  ) {
+    await this.recommendations.dismiss(p.userId, params.characterId);
+  }
   @Get()
   list(@CurrentPrincipal() p: AuthPrincipal) {
     return this.commands.list(p.userId);

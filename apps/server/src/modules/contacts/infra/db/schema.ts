@@ -5,6 +5,7 @@ import {
   date,
   index,
   pgSchema,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -48,4 +49,32 @@ export const contacts = contactsSchema.table(
       sql`(${t.status} = 'deleted' AND ${t.deletedAt} IS NOT NULL AND ${t.purgeAfter} IS NOT NULL) OR (${t.status} <> 'deleted' AND ${t.deletedAt} IS NULL AND ${t.purgeAfter} IS NULL)`,
     ),
   ],
+);
+
+/** 名片推荐记录（CHR-04、P-27，迁移 0033）：所有角色合计每 7 天最多主动推荐 1 次。 */
+export const cardRecommendations = contactsSchema.table(
+  'card_recommendations',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    recommenderCharacterId: uuid('recommender_character_id').notNull(),
+    messageId: uuid('message_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    uniqueIndex('card_recommendations_message_idx').on(t.userId, t.messageId),
+    index('card_recommendations_user_idx').on(t.userId, t.createdAt),
+  ],
+);
+
+/** 名片「不感兴趣」（P-27：该角色冷却 90 天）。 */
+export const cardDismissals = contactsSchema.table(
+  'card_dismissals',
+  {
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    dismissedAt: timestamp('dismissed_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.characterId] })],
 );

@@ -13,6 +13,7 @@ import {
   type UserDataRegistry,
 } from '../../../platform/index.js';
 import { contacts } from '../infra/db/schema.js';
+import { ContactCardRecommendationService } from './recommendations.js';
 import {
   ACCEPT_CONTACT_JOB,
   PURGE_CONTACT_JOB,
@@ -28,6 +29,8 @@ export class ContactsLifecycle implements OnModuleInit {
     @Inject(EVENT_BUS) private readonly bus: EventBus,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
     @Inject(ContactsCommands) private readonly commands: ContactsCommands,
+    @Inject(ContactCardRecommendationService)
+    private readonly recommendations: ContactCardRecommendationService,
   ) {}
   async onModuleInit(): Promise<void> {
     this.registry.register({
@@ -85,18 +88,22 @@ export class ContactsLifecycle implements OnModuleInit {
     }
   }
   async purgeUser(userId: string): Promise<number> {
+    const ledger = await this.recommendations.purgeUser(userId);
     return (
-      await this.db.db
-        .delete(contacts)
-        .where(eq(contacts.userId, userId))
-        .returning({ id: contacts.id })
-    ).length;
+      ledger +
+      (
+        await this.db.db
+          .delete(contacts)
+          .where(eq(contacts.userId, userId))
+          .returning({ id: contacts.id })
+      ).length
+    );
   }
   async countUserData(userId: string): Promise<number> {
     const [row] = await this.db.db
       .select({ n: count() })
       .from(contacts)
       .where(eq(contacts.userId, userId));
-    return row?.n ?? 0;
+    return (row?.n ?? 0) + (await this.recommendations.countUserData(userId));
   }
 }

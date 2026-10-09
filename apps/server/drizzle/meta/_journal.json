@@ -197,6 +197,20 @@
       "when": 1793100000000,
       "tag": "0031_character_relations",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793300000000,
+      "tag": "0033_contact_card_recommendations",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793400000000,
+      "tag": "0034_moments",
+      "breakpoints": true
     }
   ]
 }

@@ -205,9 +205,11 @@ export class ChatStore {
               ? '[拍一拍]'
               : content?.type === 'system' && content.code === 'contact_accepted'
                 ? '通过了你的好友申请'
-                : content?.type === 'system'
-                  ? systemPreview(content.code, content.params)
-                  : '[消息]';
+                : content?.type === 'contact_card'
+                  ? previewText(`[名片] ${content.name}`)
+                  : content?.type === 'system'
+                    ? systemPreview(content.code, content.params)
+                    : '[消息]';
       lastMessage = {
         messageId: last.id,
         seq: last.seq,

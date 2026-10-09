@@ -5,3 +5,4 @@ export const CONTACTS_CHARACTER_STATS = Symbol('weiban.contacts.character-stats'
 export interface ContactsCharacterStats {
   hasAnyActiveContact(characterId: string): Promise<boolean>;
 }
+export const CONTACT_CARD_RECOMMENDATION_PORT = Symbol('weiban.contacts.card-recommendation');
