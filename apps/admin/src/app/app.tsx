@@ -10,6 +10,9 @@ import { CatalogPage } from '../features/catalog.js';
 import { PricesPage } from '../features/prices.js';
 import { AlertsPage, AlertBadge } from '../features/alerts.js';
 import { CharactersPage } from '../features/characters.js';
+import { UsagePage } from '../features/usage.js';
+import { BillingPage } from '../features/billing.js';
+import { ScenarioModesPage } from '../features/scenario-modes.js';
 export function App() {
   const [auth, setAuth] = useState<AuthResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -65,6 +68,9 @@ export function App() {
             ['/catalog', '模型目录'],
             ['/prices', '价目表'],
             ['/accounts', '用户与余额'],
+            ['/usage', '用量与费用'],
+            ['/billing', '对账与平台花费'],
+            ['/scenario-modes', '情景模式'],
             ['/admin/alerts', '运行提醒'],
           ].map(([to, label]) => (
             <NavLink key={to} to={to!}>
@@ -91,6 +97,9 @@ export function App() {
             <Route path="/accounts" element={<AccountsPage />} />
             <Route path="/upstreams" element={<UpstreamsPage />} />
             <Route path="/catalog" element={<CatalogPage />} />
+            <Route path="/usage" element={<UsagePage />} />
+            <Route path="/billing" element={<BillingPage />} />
+            <Route path="/scenario-modes" element={<ScenarioModesPage />} />
             <Route path="/admin/alerts" element={<AlertsPage />} />
             <Route path="*" element={<Navigate to="/invites" replace />} />
           </Routes>
