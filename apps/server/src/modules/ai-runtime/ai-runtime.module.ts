@@ -14,6 +14,7 @@ import { RealtimeModule } from '../realtime/index.js';
 import { CompanionSettingsService } from './application/settings.js';
 import { CompanionSettingsController } from './http/settings.controller.js';
 import { SimulationService, SIMULATION_READ_PORT } from './application/simulation.js';
+import { HealthCareService } from './application/health-care.js';
 @Module({
   imports: [
     IdentityModule,
@@ -31,6 +32,7 @@ import { SimulationService, SIMULATION_READ_PORT } from './application/simulatio
     ReplyEngine,
     SimulationService,
     { provide: SIMULATION_READ_PORT, useExisting: SimulationService },
+    HealthCareService,
     AiRuntimeLifecycle,
   ],
   exports: [SIMULATION_READ_PORT],

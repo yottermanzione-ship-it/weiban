@@ -175,6 +175,22 @@ export const moodStates = aiRuntimeSchema.table(
   ],
 );
 
+/**
+ * T-060 经期关怀配额账本（PLAY-01 第 6 条、P-36）。
+ * 只记「某周期的某个名额已用」：cycleKey 是 health 给的不透明随机 ID，slot 是
+ * pre_period / in_period / chat_d{经期第几天}；不存任何日期、痛感或症状（health-data.md 第 4 节）。
+ */
+export const healthCareLedger = aiRuntimeSchema.table(
+  'health_care_ledger',
+  {
+    userId: uuid('user_id').notNull(),
+    cycleKey: text('cycle_key').notNull(),
+    slot: text('slot').notNull(),
+    characterId: uuid('character_id'),
+  },
+  (t) => [unique('health_care_ledger_slot_idx').on(t.userId, t.cycleKey, t.slot)],
+);
+
 /** 计划记录仅ID、状态与时序；模型输入和已生成气泡按用户DEK加密。 */
 export const replyPlans = aiRuntimeSchema.table(
   'reply_plans',
