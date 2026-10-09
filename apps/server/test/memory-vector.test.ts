@@ -213,7 +213,7 @@ describeDb('T-046 向量检索与分层摘要', () => {
   });
 
   it('extract 后 memories 行写入非 null 向量（Phase 1 统计嵌入，不走网关）', async () => {
-    const { memory, _jobFor, db, _userId, cid } = ctx;
+    const { memory, jobFor, db, cid } = ctx;
     // 先用 extract 往 DB 写记忆
     response.current = JSON.stringify({
       operations: [
@@ -440,7 +440,7 @@ describeDb('T-046 向量检索与分层摘要', () => {
   });
 
   it('删除屏障仍然有效：删除记忆后日/月摘要一并清除，旧事实不再注入', async () => {
-    const { memory, _jobFor, db, userId, characterId } = ctx;
+    const { memory, db, userId, characterId } = ctx;
     // 创建一条记忆
     const mem = await memory().create(userId, characterId, {
       clientMemoryId: newId(),
