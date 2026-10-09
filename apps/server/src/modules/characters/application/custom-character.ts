@@ -188,9 +188,7 @@ export class CustomCharacterService {
         ? { exampleDialogue: patch.exampleDialogue ?? null }
         : {}),
       ...(patch.tags !== undefined ? { tags: patch.tags ?? [] } : {}),
-      ...(patch.avatarMediaId !== undefined
-        ? { avatarMediaId: patch.avatarMediaId ?? null }
-        : {}),
+      ...(patch.avatarMediaId !== undefined ? { avatarMediaId: patch.avatarMediaId ?? null } : {}),
     };
 
     if (patch.classification !== undefined) {
@@ -199,10 +197,7 @@ export class CustomCharacterService {
           {
             basis: existing.classification.basis as 'real_person' | 'fictional' | 'original',
             realPersonKind: existing.classification.realPersonKind as
-              | 'celebrity'
-              | 'historical'
-              | 'private_person'
-              | null,
+              'celebrity' | 'historical' | 'private_person' | null,
             ageSetting: existing.classification.ageSetting as 'minor' | 'adult',
             childAppearance: existing.classification.childAppearance,
           },
@@ -210,7 +205,11 @@ export class CustomCharacterService {
           'custom',
         )
       ) {
-        throw new AppError('classification_change_forbidden', '自定义角色的分类不能向更宽松方向修改', { status: 422 });
+        throw new AppError(
+          'classification_change_forbidden',
+          '自定义角色的分类不能向更宽松方向修改',
+          { status: 422 },
+        );
       }
       merged.classification = {
         basis: patch.classification.basis,
@@ -241,15 +240,12 @@ export class CustomCharacterService {
           childAppearance: merged.classification.childAppearance,
           childFeaturesDetected: detected,
           everPrivatePerson:
-            current.everPrivatePerson ||
-            merged.classification.realPersonKind === 'private_person',
+            current.everPrivatePerson || merged.classification.realPersonKind === 'private_person',
           draftCiphertext: sealed,
           revision,
           updatedAt: this.clock.now(),
         })
-        .where(
-          and(eq(characters.id, characterId), eq(characters.revision, current.revision)),
-        )
+        .where(and(eq(characters.id, characterId), eq(characters.revision, current.revision)))
         .returning();
       if (!row) throw new AppError('conflict', '角色已被修改，请刷新后重试');
       await this.audit.record(
@@ -319,9 +315,7 @@ export class CustomCharacterService {
     const [row] = await this.database.db
       .select()
       .from(characters)
-      .where(
-        and(eq(characters.id, characterId), eq(characters.ownerId, userId)),
-      );
+      .where(and(eq(characters.id, characterId), eq(characters.ownerId, userId)));
     if (!row) throw new AppError('not_found', '角色不存在');
 
     const rawPlain = await this.crypto.open(

@@ -19,13 +19,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { AuthResponse, UserCustomCharacter } from '@weiban/contracts';
 import { AppModule } from '../src/app.module.js';
-import {
-  DATABASE,
-  JOB_QUEUE,
-  TestClock,
-  type Database,
-  type JobQueue,
-} from '../src/platform/index.js';
+import { JOB_QUEUE, TestClock, type JobQueue } from '../src/platform/index.js';
 import { IdentityCommands } from '../src/modules/identity/index.js';
 import { CHARACTER_EVALUATOR } from '../src/modules/characters/testing.js';
 import { captureLogger, testConfig, testKekRing } from './support/fixtures.js';
@@ -33,7 +27,6 @@ import { describeDb, resetTestDatabase } from './support/db.js';
 
 describeDb('自定义角色 CHR-07 真实PG：创建、检测、更新、分类限制、试聊', () => {
   let app: INestApplication;
-  let db: Database;
   let ownerToken: string;
   let otherToken: string;
   let mediaDir: string;
@@ -69,10 +62,9 @@ describeDb('自定义角色 CHR-07 真实PG：创建、检测、更新、分类�
     app = module.createNestApplication({ logger: false });
     await app.init();
     await app.get<JobQueue>(JOB_QUEUE).start();
-    db = app.get(DATABASE);
 
     const identity = app.get(IdentityCommands);
-    const ownerId = await identity.createAdmin('custom_owner', 'horse battery staple');
+    await identity.createAdmin('custom_owner', 'horse battery staple');
     await identity.setRole('custom_owner', 'user');
     ownerToken = AuthResponse.parse(
       (
@@ -82,13 +74,18 @@ describeDb('自定义角色 CHR-07 真实PG：创建、检测、更新、分类�
             username: 'custom_owner',
             password: 'horse battery staple',
             kind: 'app',
-            device: { platform: 'web', name: 'test', appVersion: '0.1.0', timeZone: 'Asia/Shanghai' },
+            device: {
+              platform: 'web',
+              name: 'test',
+              appVersion: '0.1.0',
+              timeZone: 'Asia/Shanghai',
+            },
           })
           .expect(200)
       ).body,
     ).session.token;
 
-    const otherId = await identity.createAdmin('custom_other', 'horse battery staple');
+    await identity.createAdmin('custom_other', 'horse battery staple');
     await identity.setRole('custom_other', 'user');
     otherToken = AuthResponse.parse(
       (
@@ -98,7 +95,12 @@ describeDb('自定义角色 CHR-07 真实PG：创建、检测、更新、分类�
             username: 'custom_other',
             password: 'horse battery staple',
             kind: 'app',
-            device: { platform: 'web', name: 'test2', appVersion: '0.1.0', timeZone: 'Asia/Shanghai' },
+            device: {
+              platform: 'web',
+              name: 'test2',
+              appVersion: '0.1.0',
+              timeZone: 'Asia/Shanghai',
+            },
           })
           .expect(200)
       ).body,
@@ -129,7 +131,12 @@ describeDb('自定义角色 CHR-07 真实PG：创建、检测、更新、分类�
       .send({
         name: '短描述角色',
         description: '太短了',
-        classification: { basis: 'original', realPersonKind: null, ageSetting: 'adult', childAppearance: false },
+        classification: {
+          basis: 'original',
+          realPersonKind: null,
+          ageSetting: 'adult',
+          childAppearance: false,
+        },
       })
       .expect(400);
   });
@@ -142,7 +149,8 @@ describeDb('自定义角色 CHR-07 真实PG：创建、检测、更新、分类�
       .set('Authorization', auth(ownerToken))
       .send({
         name: '原创测试角色',
-        description: '这是一个性格开朗、乐于助人的原创成年角色，喜欢在日落时分散步，总能带给周围的人温暖与微笑，对生活充满热情。',
+        description:
+          '这是一个性格开朗、乐于助人的原创成年角色，喜欢在日落时分散步，总能带给周围的人温暖与微笑，对生活充满热情。',
         classification: {
           basis: 'original',
           realPersonKind: null,
@@ -169,7 +177,8 @@ describeDb('自定义角色 CHR-07 真实PG：创建、检测、更新、分类�
       .set('Authorization', auth(ownerToken))
       .send({
         name: '儿童特征角色',
-        description: '这个角色只有8岁，在小学上学，喜欢玩玩具和看动画片，每天放学后认真做作业，是老师和同学眼中的好孩子。',
+        description:
+          '这个角色只有8岁，在小学上学，喜欢玩玩具和看动画片，每天放学后认真做作业，是老师和同学眼中的好孩子。',
         classification: {
           basis: 'original',
           realPersonKind: null,
@@ -190,7 +199,8 @@ describeDb('自定义角色 CHR-07 真实PG：创建、检测、更新、分类�
       .set('Authorization', auth(ownerToken))
       .send({
         name: '真人角色测试',
-        description: '这个角色是一位在演艺圈颇具影响力的著名演员，以其精湛的演技和亲和力著称，深受圈内外人士喜爱，口碑极好。',
+        description:
+          '这个角色是一位在演艺圈颇具影响力的著名演员，以其精湛的演技和亲和力著称，深受圈内外人士喜爱，口碑极好。',
         classification: {
           basis: 'real_person',
           realPersonKind: 'private_person',
@@ -231,7 +241,8 @@ describeDb('自定义角色 CHR-07 真实PG：创建、检测、更新、分类�
       .set('Authorization', auth(ownerToken))
       .send({
         name: '真人变更测试',
-        description: '这个角色是一位真实存在的公众人物，拥有丰富的真实经历与公开资料，在社会上具有相当知名度和广泛影响力。',
+        description:
+          '这个角色是一位真实存在的公众人物，拥有丰富的真实经历与公开资料，在社会上具有相当知名度和广泛影响力。',
         classification: {
           basis: 'real_person',
           realPersonKind: 'celebrity',
@@ -262,7 +273,8 @@ describeDb('自定义角色 CHR-07 真实PG：创建、检测、更新、分类�
       .set('Authorization', auth(ownerToken))
       .send({
         name: '未成年角色测试',
-        description: '这是一个年龄设定为未满18岁的年轻角色，目前在学校就读，性格纯真善良，对身边每一个人都十分友善温柔。',
+        description:
+          '这是一个年龄设定为未满18岁的年轻角色，目前在学校就读，性格纯真善良，对身边每一个人都十分友善温柔。',
         classification: {
           basis: 'original',
           realPersonKind: null,
@@ -325,7 +337,8 @@ describeDb('自定义角色 CHR-07 真实PG：创建、检测、更新、分类�
       .set('Authorization', auth(ownerToken))
       .send({
         name: '单向检测测试',
-        description: '这个角色只有8岁，正在小学一年级就读，性格活泼开朗，喜欢和小朋友们一起奔跑跳跃玩耍，非常有活力。，是',
+        description:
+          '这个角色只有8岁，正在小学一年级就读，性格活泼开朗，喜欢和小朋友们一起奔跑跳跃玩耍，非常有活力。，是',
         classification: {
           basis: 'original',
           realPersonKind: null,
@@ -342,7 +355,8 @@ describeDb('自定义角色 CHR-07 真实PG：创建、检测、更新、分类�
       .patch(`/api/v1/characters/custom/${created.characterId}`)
       .set('Authorization', auth(ownerToken))
       .send({
-        description: '这是一个普通的成年角色，没有特殊的背景设定，平时生活简单，性格平和，对人真诚友善，生活态度积极乐观。',
+        description:
+          '这是一个普通的成年角色，没有特殊的背景设定，平时生活简单，性格平和，对人真诚友善，生活态度积极乐观。',
       })
       .expect(200);
     // childFeaturesDetected 不会从 true 变成 false
