@@ -42,6 +42,14 @@ export interface EnqueueReply {
   kind: 'message' | 'greeting';
   triggeredAt?: string;
 }
+/** T-066 迁移 0038 的表（都按 user_id 归属）。 */
+const T066_TABLES = [
+  'memory_sharing_settings',
+  'chat_visits',
+  'joint_events',
+  'moments_plans',
+  'card_referrals',
+] as const;
 @Injectable()
 export class ReplyPlanStore {
   constructor(
@@ -311,11 +319,32 @@ export class ReplyPlanStore {
         ).length +
         (await tx.db.delete(groupSelfChats).where(eq(groupSelfChats.userId, userId)).returning())
           .length +
-        (await tx.db.delete(groupInvites).where(eq(groupInvites.userId, userId)).returning()).length
+        (await tx.db.delete(groupInvites).where(eq(groupInvites.userId, userId)).returning())
+          .length +
+        (await this.purgeT066(tx, userId))
       );
     });
   }
+  /** T-066 新表（迁移 0038）的注销清理。 */
+  private async purgeT066(tx: DbTx, userId: string): Promise<number> {
+    let n = 0;
+    for (const table of T066_TABLES)
+      n +=
+        (await tx.query(`DELETE FROM ai_runtime.${table} WHERE user_id=$1`, [userId])).rowCount ??
+        0;
+    return n;
+  }
   async countUserData(userId: string): Promise<number> {
+    let t066 = 0;
+    for (const table of T066_TABLES)
+      t066 += Number(
+        (
+          await this.db.query<{ n: string }>(
+            `SELECT count(*) n FROM ai_runtime.${table} WHERE user_id=$1`,
+            [userId],
+          )
+        ).rows[0]?.n ?? 0,
+      );
     const [a] = await this.db.db
       .select({ n: count() })
       .from(replyPlans)
@@ -369,6 +398,7 @@ export class ReplyPlanStore {
       .from(groupInvites)
       .where(eq(groupInvites.userId, userId));
     return (
+      t066 +
       (k?.n ?? 0) +
       (l?.n ?? 0) +
       (m?.n ?? 0) +

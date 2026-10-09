@@ -22,7 +22,11 @@ import { BillingModule } from '../billing/index.js';
 import { ProactiveSchedulerService } from './application/proactive-scheduler.js';
 import { GroupChatService } from './application/group-chat.js';
 import { GroupCompanionController } from './http/group-companion.controller.js';
-import { TimelineSummaryService } from './application/timeline.js';
+import { TimelineListService, TimelineSummaryService } from './application/timeline.js';
+import { SocialService } from './application/social.js';
+import { MomentsAiService } from './application/moments-ai.js';
+import { MemorySharingController } from './http/memory-sharing.controller.js';
+import { MomentsModule } from '../moments/index.js';
 import { TimelineController } from './http/timeline.controller.js';
 @Module({
   imports: [
@@ -36,6 +40,7 @@ import { TimelineController } from './http/timeline.controller.js';
     ProactiveModule,
     HealthModule,
     BillingModule,
+    MomentsModule,
   ],
   providers: [
     CompanionSettingsService,
@@ -45,6 +50,9 @@ import { TimelineController } from './http/timeline.controller.js';
     ReplyEngine,
     SimulationService,
     TimelineSummaryService,
+    TimelineListService,
+    SocialService,
+    MomentsAiService,
     { provide: SIMULATION_READ_PORT, useExisting: SimulationService },
     HealthCareService,
     ProactiveSchedulerService,
@@ -65,6 +73,7 @@ import { TimelineController } from './http/timeline.controller.js';
     CompanionSettingsController,
     MemoryController,
     TimelineController,
+    MemorySharingController,
   ],
 })
 export class AiRuntimeModule {}

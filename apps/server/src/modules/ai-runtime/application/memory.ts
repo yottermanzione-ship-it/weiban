@@ -39,6 +39,8 @@ import {
   healthPrivate,
   sharingClass,
   relevance,
+  memoryShareable,
+  type MemorySharingLevel,
 } from '../domain/memory.js';
 import { embed, toVectorLiteral, VECTOR_DIM } from '../domain/vector-embed.js';
 import { ReplyPlanStore } from './plan-store.js';
@@ -87,6 +89,60 @@ export class MemoryService {
     @Inject(POLICY_PORT) readonly policy: PolicyPort,
     @Inject(ReplyPlanStore) readonly plans: ReplyPlanStore,
   ) {}
+  /** T-066：记忆页「谁知道」（MEM-07 第 5 条）。由 SocialService 注入，避免循环依赖。 */
+  private knownByResolver:
+    | ((
+        userId: string,
+        characterId: string,
+      ) => Promise<{ level: MemorySharingLevel; others: string[] }>)
+    | null = null;
+  setKnownByResolver(
+    fn: (
+      userId: string,
+      characterId: string,
+    ) => Promise<{ level: MemorySharingLevel; others: string[] }>,
+  ): void {
+    this.knownByResolver = fn;
+  }
+  /**
+   * T-066 MEM-07：从角色 source 的私聊记忆里取能传给别的角色的条目（闸门见 domain/memory.ts）。
+   * 每次现读，用户在 source 处删除 / 改为「仅 TA 知道」后立即不再共享。关系网条件由调用方保证。
+   */
+  async sharedFrom(
+    userId: string,
+    sourceCharacterId: string,
+    level: MemorySharingLevel,
+    query: string,
+    limit = 3,
+  ): Promise<MemoryEntry[]> {
+    if (level === 'off') return [];
+    const contact = await this.contacts.getActiveContact(userId, sourceCharacterId);
+    if (!contact?.conversationId) return [];
+    const rows = await this.db.db
+      .select()
+      .from(memories)
+      .where(
+        and(
+          this.where(userId, sourceCharacterId, contact.conversationId),
+          eq(memories.scope, 'normal'),
+        ),
+      )
+      .orderBy(asc(memories.id))
+      .limit(MAX_MEMORIES);
+    const out: MemoryEntry[] = [];
+    for (const row of rows) {
+      const entry = await this.open(row).catch(() => null);
+      if (entry && memoryShareable(entry, level)) out.push(entry);
+    }
+    const now = this.clock.nowMs();
+    return out
+      .sort(
+        (a, b) =>
+          relevance(b.content, query, b.importance, now - Date.parse(b.updatedAt)) -
+          relevance(a.content, query, a.importance, now - Date.parse(a.updatedAt)),
+      )
+      .slice(0, limit);
+  }
   private where(userId: string, characterId: string, conversationId: string) {
     return and(
       eq(memories.userId, userId),
@@ -179,6 +235,10 @@ export class MemoryService {
       const page = rows.slice(0, query.limit);
       const items: MemoryEntry[] = [];
       for (const row of page) items.push(await this.open(row, tx));
+      const known = await this.knownByResolver?.(userId, characterId).catch(() => null);
+      if (known?.others.length)
+        for (const item of items)
+          if (memoryShareable(item, known.level)) item.knownBy = [characterId, ...known.others];
       return {
         items,
         nextCursor: rows.length > query.limit ? page.at(-1)!.id : null,
@@ -787,7 +847,8 @@ export class MemoryService {
             ...new Set([...(old?.sourceMessageIds ?? []), ...operation.sourceMessageIds]),
           ].slice(-100),
           createdBy: old?.createdBy ?? 'extracted',
-          visibility: old?.visibility ?? 'only_this_character',
+          // T-066：自动提取的记忆默认「谁知道 = 默认」，能否共享由 sharingClass 闸门决定（MEM-07）。
+          visibility: old?.visibility ?? 'default',
           sharingClass: sharingClass(
             from.map(textOf).join('\n') + operation.content,
             operation.sharingClass,

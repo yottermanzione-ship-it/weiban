@@ -334,3 +334,83 @@ export const groupInvites = aiRuntimeSchema.table(
     index('group_invite_user_idx').on(t.userId, t.createdAt),
   ],
 );
+
+/** T-066 跨角色共享档位（MEM-07 第 1 条）。没有行 = 默认 friends。 */
+export const memorySharingSettings = aiRuntimeSchema.table(
+  'memory_sharing_settings',
+  {
+    userId: uuid('user_id').primaryKey(),
+    level: text('level').notNull().default('friends'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [check('memory_sharing_level', sql`${t.level} IN ('off','basic','friends')`)],
+);
+
+/** T-066 P-18：用户进入某私聊的时间（服务器自己记，不只信客户端）。 */
+export const chatVisits = aiRuntimeSchema.table(
+  'chat_visits',
+  {
+    userId: uuid('user_id').notNull(),
+    conversationId: uuid('conversation_id').notNull(),
+    lastEnteredAt: timestamp('last_entered_at', { withTimezone: true }).notNull(),
+    prevEnteredAt: timestamp('prev_entered_at', { withTimezone: true }),
+  },
+  (t) => [unique('chat_visit_pk').on(t.userId, t.conversationId)],
+);
+
+/**
+ * T-066 角色共同事件（SOC-02、CHR-04 第 2 条）：两个有关系的角色同一天一起做的事。
+ * 两人读同一行，说法天然一致。characterAId < characterBId。
+ */
+export const jointEvents = aiRuntimeSchema.table(
+  'joint_events',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    eventDate: text('event_date').notNull(),
+    characterAId: uuid('character_a_id').notNull(),
+    characterBId: uuid('character_b_id').notNull(),
+    kind: text('kind').notNull(),
+    summary: text('summary').notNull(),
+    detail: text('detail'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('joint_event_pair_day_idx').on(t.userId, t.eventDate, t.characterAId, t.characterBId),
+    index('joint_event_a_idx').on(t.userId, t.characterAId, t.eventDate),
+    index('joint_event_b_idx').on(t.userId, t.characterBId, t.eventDate),
+  ],
+);
+
+/** T-066 朋友圈发帖账本（P-16：每角色每天最多 1 条，每周按人设 2–4 条）。 */
+export const momentsPlans = aiRuntimeSchema.table(
+  'moments_plans',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    localDate: text('local_date').notNull(),
+    sourceKind: text('source_kind').notNull(),
+    sourceId: text('source_id').notNull(),
+    status: text('status').notNull(),
+    postId: uuid('post_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('moments_plan_day_idx').on(t.userId, t.characterId, t.localDate),
+    index('moments_plan_week_idx').on(t.userId, t.characterId, t.createdAt),
+  ],
+);
+
+/** T-066 通过名片添加的推荐人（CHR-04 第 3 条：第一条消息提到推荐人；读取即消费）。 */
+export const cardReferrals = aiRuntimeSchema.table(
+  'card_referrals',
+  {
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    referrerCharacterId: uuid('referrer_character_id').notNull(),
+    consumed: boolean('consumed').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [unique('card_referral_pk').on(t.userId, t.characterId)],
+);

@@ -429,6 +429,20 @@ v1.3：上表中「谁决定发不发」的调度器仍然决定**能不能发**
 - **退群后私聊提一次**：群解散事件记下退出；拉群者下一次私聊回复的上下文里加一条一次性提示（读取即消费）。
 - **SAFE-06 第 5 条**：群里出现高危表达 → 最熟悉的角色在群里只说「我私聊你一下」，随即在私聊里用 `safety_followup` 跟进（失败用不花钱的兜底话术）；群里其他角色本轮不接话。
 
+### 7.6 T-066 朋友圈、共同事件、跨角色共享、名片（2026-10-10）
+
+代码：`application/moments-ai.ts`、`application/social.ts`、`application/timeline.ts`（`TimelineListService`）、`http/memory-sharing.controller.ts`；迁移 `0038_social_ai`。
+
+- **发圈（P-16、SOC-07）**：每小时 tick（`ai.moments_tick`）。按「用户 + 角色 + 周」稳定抽出本周发圈的日子（条数取卡片 `social.moments.frequencyPerWeek`，即人设决定，PRD 默认 2–4），当天按稳定随机挑 9–22 点中的一个小时。账本 `moments_plans` 唯一约束保证每天最多 1 条；滚动 7 天不超过上限。素材优先级：节日（非浪漫类）> 近 3 天已生效公开动态 > 今天的共同事件 > 今天的日常事件 > 宠物（`MOMENTS_PET_READ_PORT`，T-077/T-082 注入后启用）。每条动态的 `sourceRef` 写来源。后台模型（用途 `moments`、计入后台预算）只负责写字；P-33 余额低于 1 元或当天后台预算用完不发。「TA 的日常」关闭的角色不发。
+- **内容守卫**：素材不含聊天记录 → 没有成人模式内容；`healthPrivate` 拦经期词；真人角色除素材是公开动态外，命中官宣 / 新作品 / 合作 / 新闻 / 社会事件等词直接丢弃（SAFE-02）。
+- **互动（SOC-08、SOC-09、P-29）**：订阅 `moments.post_created / comment_created`，排延时任务 `ai.moments_react`（最晚 1 小时 40 分，给 2 小时留余量）。用户评论角色动态 → 作者必回（失败抛错重试 5 次；只看 P-33，不受当天后台预算限制）；用户回复某角色的评论 → 该角色必回。角色动态只有与作者有关系且已添加的角色按亲疏抽签点赞 / 评论；角色评论另一角色后，被回复者按亲疏 50% 以内概率接梗，评论 6 条上限由 moments 端口控制。用户动态 → 可见角色按熟悉度（L1 15% … L5 90%）点赞评论，至少保证 1 个 L2 及以上的角色评论。评论可写「@昵称」，代码识别后去掉并设 `mentionsUser = true`。图片动态 L5 前只看文字。
+- **共同事件（SOC-02）**：每用户每天（当地 8 点后）在「已添加角色 × 其关系网」里按亲疏稳定抽签，最多 2 件，一次后台调用（用途 `simulation`）生成一件，存 `joint_events`，两个角色读同一行 → 说法一致。私聊上下文给出「你圈子里认识的人」和最近 3 天的共同事件，明确「没列出的人不编造共同经历」。关系删除时删掉两人的共同事件。
+- **跨角色共享（MEM-07）**：档位 `GET/PUT /api/v1/me/memory-sharing`，默认 friends。B 的上下文现读「与 B 有关系且已添加的角色」的私聊记忆，闸门 `memoryShareable`（代码）：档位非 off；非「仅 TA 知道」；日常范围（成人模式产生的不传）；当前有效；不含经期词和「永不共享类别」词表；`sharingClass` 再判一次 never；friends 档只传 basic / preference / status / commitment 类别，basic 档只传 `sharingClass = basic`。注入时带「（XX 跟你提过）」前缀并要求交代来源。现读不缓存，所以删除 / 改「仅 TA 知道」 / 关闭档位立即生效。记忆页 `knownBy` 按同一闸门实时算。**改动**：自动提取的记忆默认 `visibility = default`（原来是 `only_this_character`，那样任何记忆都不会被共享）。
+- **私聊提起其他角色**：同上，加上今天的日常事件、已生效公开动态（D-L3-02）、用户近 7 天对该角色可见的朋友圈（SOC-09 第 5 条，不可见的角色拿不到）。
+- **名片推荐（CHR-04、P-27）**：①用户私聊消息里提到与该角色有关系、未添加的预设角色 → 上下文提示「可以说推名片给你」，40 秒后发 `contact_card`（`canRecommend` 传 `ignoreWeeklyLimit: true`）；②共同事件的另一方用户未添加 → 2–7 小时后已添加的一方先说一句再发名片（受 P-27 周限与 90 天冷却）。名片消息与 `recordRecommendation`、`ai_runtime.milestone(contact_card_sent)` 同一事务。通过名片添加：`contacts.contact_accepted.referrerCharacterId` 记入 `card_referrals`，首条问候上下文要求提到推荐人。
+- **你不在时（P-18 回改）**：服务器在 `chat_visits` 记每次进入私聊（= 调用摘要接口）的时间；以「上一次进入」为起点（5 分钟内重复请求算同一次），没有记录才用客户端 `lastActiveAt`；不足 12 小时 `summary = null` 且 `events = []`，满 12 小时且期间有事件才生成，最多 5 条。
+- **时间线列表（契约 3.0 listTimeline）**：`GET /api/v1/characters/:characterId/timeline`，合并 90 天内日常事件、共同事件（`character_interaction`，`withCharacterIds` 只列已添加的）、角色朋友圈（`ref.kind = moments_post`）、公开动态（`ref.kind = public_update`，时间取开始日期），时间倒序，游标 = base64url(时间|条目 ID)。
+
 ## 8. 识图与联网搜索的认人方案（MED-04、SAFE-04）
 
 ### 8.1 总体思路：封闭名单判断，不做人脸识别

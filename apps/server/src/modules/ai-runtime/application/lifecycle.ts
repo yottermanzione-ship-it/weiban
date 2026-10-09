@@ -45,6 +45,14 @@ import {
   SIMULATE_CHARACTER_JOB,
   RUN_DAILY_SIMULATIONS_JOB,
 } from './simulation.js';
+import { SocialService, CARD_RECOMMEND_JOB, type CardRecommendJob } from './social.js';
+import {
+  MomentsAiService,
+  MOMENTS_TICK_JOB,
+  MOMENTS_USER_JOB,
+  MOMENTS_REACT_JOB,
+  type MomentsReactJob,
+} from './moments-ai.js';
 @Injectable()
 export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap {
   constructor(
@@ -55,6 +63,8 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     @Inject(HealthCareService) readonly healthCare: HealthCareService,
     @Inject(ProactiveSchedulerService) readonly proactive: ProactiveSchedulerService,
     @Inject(GroupChatService) readonly groupChat: GroupChatService,
+    @Inject(SocialService) readonly social: SocialService,
+    @Inject(MomentsAiService) readonly momentsAi: MomentsAiService,
     @Inject(EVENT_BUS) readonly bus: EventBus,
     @Inject(JOB_QUEUE) readonly jobs: JobQueue,
     @Inject(USER_DATA_REGISTRY) readonly registry: UserDataRegistry,
@@ -189,6 +199,68 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       },
     });
 
+    // T-066 朋友圈（SOC-07～SOC-09）：每小时检查发圈；互动由 moments 事件触发，P-29 两小时内。
+    await this.jobs.work(MOMENTS_TICK_JOB, () => this.momentsAi.tick());
+    await this.jobs.schedule(MOMENTS_TICK_JOB, '17 * * * *');
+    await this.jobs.work<{ userId: string }>(MOMENTS_USER_JOB, (j) =>
+      this.momentsAi.runForUser(j.data.userId),
+    );
+    await this.jobs.work<MomentsReactJob>(
+      MOMENTS_REACT_JOB,
+      (j) => this.momentsAi.runReact(j.data),
+      {
+        pollingIntervalSeconds: 5,
+        localConcurrency: 2,
+      },
+    );
+    this.bus.subscribe({
+      consumer: 'ai.moments_post_created',
+      eventType: 'moments.post_created',
+      handle: async (event) => {
+        await this.momentsAi.onPostCreated(event.payload);
+      },
+    });
+    this.bus.subscribe({
+      consumer: 'ai.moments_comment_created',
+      eventType: 'moments.comment_created',
+      handle: async (event) => {
+        await this.momentsAi.onCommentCreated(event.payload);
+      },
+    });
+    // T-066 关系删除：两人之间的共同事件不再使用。
+    this.bus.subscribe({
+      consumer: 'ai.relation_changed',
+      eventType: 'characters.relation_changed',
+      handle: async (event, tx) => {
+        if (event.payload.action === 'deleted')
+          await this.social.onRelationDeleted(tx, event.payload);
+      },
+    });
+    // T-066 名片推荐（CHR-04）：用户在私聊问起关系网里没添加的人 → 角色回复后发名片。
+    await this.jobs.work<CardRecommendJob>(CARD_RECOMMEND_JOB, (j) =>
+      this.social.runCardRecommend(j.data),
+    );
+    this.bus.subscribe({
+      consumer: 'ai.card_on_user_message',
+      eventType: 'chat.message_created',
+      handle: async (event, tx) => {
+        const p = event.payload;
+        if (p.conversationType !== 'direct' || p.senderKind !== 'user' || !p.senderRefId) return;
+        if (p.contentType !== 'text' || p.scope !== 'normal') return;
+        const conversation = await this.chat.getConversation(p.conversationId);
+        const role = conversation?.participants.find((member) => member.kind === 'character');
+        if (!role) return;
+        const message = await this.chat.getMessage(p.messageId, ['normal']);
+        if (message?.content?.type !== 'text') return;
+        await this.social.onUserDirectMessage(tx, {
+          userId: p.senderRefId,
+          characterId: role.refId,
+          text: message.content.text,
+          messageId: p.messageId,
+        });
+      },
+    });
+
     this.bus.subscribe({
       consumer: 'ai.on_user_message',
       eventType: 'chat.message_created',
@@ -250,6 +322,13 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       handle: async (event, tx) => {
         if (!(await this.store.lock(tx, event.payload.userId))) return;
         await this.simulation.markActive(tx, event.payload.userId, event.payload.characterId);
+        // CHR-04 第 3 条：通过名片添加，第一条消息提到推荐人。
+        if (event.payload.referrerCharacterId)
+          await this.social.recordReferral(tx, {
+            userId: event.payload.userId,
+            characterId: event.payload.characterId,
+            referrerCharacterId: event.payload.referrerCharacterId,
+          });
         await this.store.enqueue(tx, {
           ...event.payload,
           triggerId: event.eventId,
@@ -333,6 +412,19 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
             .delete(dailyEvents)
             .where(and(eq(dailyEvents.userId, userId), eq(dailyEvents.characterId, characterId)));
           await this.proactive.purgePair(tx, userId, characterId);
+          // T-066：朋友圈账本、共同事件、名片推荐人。
+          await tx.query(
+            'DELETE FROM ai_runtime.moments_plans WHERE user_id=$1 AND character_id=$2',
+            [userId, characterId],
+          );
+          await tx.query(
+            'DELETE FROM ai_runtime.joint_events WHERE user_id=$1 AND (character_a_id=$2 OR character_b_id=$2)',
+            [userId, characterId],
+          );
+          await tx.query(
+            'DELETE FROM ai_runtime.card_referrals WHERE user_id=$1 AND (character_id=$2 OR referrer_character_id=$2)',
+            [userId, characterId],
+          );
           await tx.db
             .delete(moodStates)
             .where(and(eq(moodStates.userId, userId), eq(moodStates.characterId, characterId)));

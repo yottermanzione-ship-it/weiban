@@ -27,6 +27,7 @@ import { GroupChatService } from './group-chat.js';
 import { ReplyPlanStore, type ReplyPlan } from './plan-store.js';
 import { highRisk, REPLY_TEMPLATE_VERSION } from '../domain/reply-rules.js';
 import { HealthCareService } from './health-care.js';
+import { SocialService } from './social.js';
 export const ReplySnapshot = z.object({
   triggerAt: z.iso.datetime(),
   deadlineAt: z.iso.datetime(),
@@ -76,6 +77,7 @@ export class ReplyContext {
     @Inject(MemoryService) readonly memory: MemoryService,
     @Inject(GroupChatService) readonly groupChat: GroupChatService,
     @Inject(HealthCareService) readonly healthCare: HealthCareService,
+    @Inject(SocialService) readonly social: SocialService,
   ) {}
   async build(row: ReplyPlan): Promise<ReplySnapshot | null> {
     const contact = await this.contacts.getActiveContact(row.userId, row.characterId);
@@ -229,6 +231,18 @@ export class ReplyContext {
           })
         : { prompt: null, healthUsed: false };
     if (healthHint.prompt) messages.push({ role: 'system', content: healthHint.prompt });
+    // T-066：圈子资料——今天的日常、与朋友的共同事件（SOC-02）、公开动态、用户朋友圈（SOC-09 第 5 条）、
+    // 朋友转述（MEM-07 闸门）、名片推荐提示与推荐人（CHR-04）。失败不影响回复。
+    const socialBlocks = await this.social
+      .replyContext({
+        userId: row.userId,
+        characterId: row.characterId,
+        userText,
+        timeZone: profile.timeZone,
+        greeting: row.kind === 'greeting',
+      })
+      .catch(() => [] as string[]);
+    for (const block of socialBlocks) messages.push({ role: 'system', content: block });
     // SOC-06 第 3 条：用户退出了该角色拉的群 → 私聊里最多提一次，按人设，不做情感操纵。
     const exitReason = await this.store.db.transaction((tx) =>
       this.groupChat.consumeExitMention(tx, row.userId, row.characterId),
