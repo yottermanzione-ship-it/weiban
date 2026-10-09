@@ -24,6 +24,8 @@ import {
   dailyEvents,
   moodStates,
   healthCareLedger,
+  proactivePlans,
+  userChatActivity,
 } from '../infra/db/schema.js';
 import { USER_BATCH_DELAY_MS } from '../domain/reply-rules.js';
 export const GENERATE_REPLY_JOB = 'ai.generate_reply';
@@ -279,7 +281,26 @@ export class ReplyPlanStore {
         .delete(healthCareLedger)
         .where(eq(healthCareLedger.userId, userId))
         .returning();
-      return a.length + b.length + c.length + d.length + e.length + f.length + g.length + h.length;
+      const i = await tx.db
+        .delete(proactivePlans)
+        .where(eq(proactivePlans.userId, userId))
+        .returning();
+      const j = await tx.db
+        .delete(userChatActivity)
+        .where(eq(userChatActivity.userId, userId))
+        .returning();
+      return (
+        a.length +
+        b.length +
+        c.length +
+        d.length +
+        e.length +
+        f.length +
+        g.length +
+        h.length +
+        i.length +
+        j.length
+      );
     });
   }
   async countUserData(userId: string): Promise<number> {
@@ -315,7 +336,17 @@ export class ReplyPlanStore {
       .select({ n: count() })
       .from(healthCareLedger)
       .where(eq(healthCareLedger.userId, userId));
+    const [i] = await this.db.db
+      .select({ n: count() })
+      .from(proactivePlans)
+      .where(eq(proactivePlans.userId, userId));
+    const [j] = await this.db.db
+      .select({ n: count() })
+      .from(userChatActivity)
+      .where(eq(userChatActivity.userId, userId));
     return (
+      (i?.n ?? 0) +
+      (j?.n ?? 0) +
       (h?.n ?? 0) +
       (a?.n ?? 0) +
       (b?.n ?? 0) +

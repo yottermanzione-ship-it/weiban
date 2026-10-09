@@ -26,6 +26,12 @@ import { ReplyEngine } from './reply-engine.js';
 import { HealthCareService, HEALTH_CARE_CHECK_JOB, HEALTH_CARE_SWEEP_JOB } from './health-care.js';
 import { invalidateReplyPlans } from './invalidate.js';
 import {
+  ProactiveSchedulerService,
+  PROACTIVE_TICK_JOB,
+  PROACTIVE_USER_JOB,
+  PROACTIVE_CLEANUP_JOB,
+} from './proactive-scheduler.js';
+import {
   SimulationService,
   SIMULATE_CHARACTER_JOB,
   RUN_DAILY_SIMULATIONS_JOB,
@@ -38,6 +44,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     @Inject(MemoryService) readonly memory: MemoryService,
     @Inject(SimulationService) readonly simulation: SimulationService,
     @Inject(HealthCareService) readonly healthCare: HealthCareService,
+    @Inject(ProactiveSchedulerService) readonly proactive: ProactiveSchedulerService,
     @Inject(EVENT_BUS) readonly bus: EventBus,
     @Inject(JOB_QUEUE) readonly jobs: JobQueue,
     @Inject(USER_DATA_REGISTRY) readonly registry: UserDataRegistry,
@@ -88,6 +95,25 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     });
     await this.jobs.work(HEALTH_CARE_SWEEP_JOB, () => this.healthCare.sweep());
     await this.jobs.schedule(HEALTH_CARE_SWEEP_JOB, '7 * * * *');
+
+    // 主动消息调度（T-053）：每 10 分钟按用户检查一次；每天清理过期计划与活跃记录。
+    await this.jobs.work<{ userId: string }>(PROACTIVE_USER_JOB, (j) =>
+      this.proactive.runForUser(j.data.userId),
+    );
+    await this.jobs.work(PROACTIVE_TICK_JOB, () => this.proactive.tick());
+    await this.jobs.schedule(PROACTIVE_TICK_JOB, '*/10 * * * *');
+    await this.jobs.work(PROACTIVE_CLEANUP_JOB, () => this.proactive.cleanup());
+    await this.jobs.schedule(PROACTIVE_CLEANUP_JOB, '23 * * * *');
+    // P-06/P-09：记录用户在任一会话（私聊或群聊）发消息的时间。
+    this.bus.subscribe({
+      consumer: 'ai.proactive_activity',
+      eventType: 'chat.message_created',
+      handle: async (event, tx) => {
+        const p = event.payload;
+        if (p.senderKind !== 'user' || !p.senderRefId) return;
+        await this.proactive.recordUserActivity(tx, p.senderRefId, new Date(event.occurredAt));
+      },
+    });
 
     this.bus.subscribe({
       consumer: 'ai.on_user_message',
@@ -232,6 +258,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
           await tx.db
             .delete(dailyEvents)
             .where(and(eq(dailyEvents.userId, userId), eq(dailyEvents.characterId, characterId)));
+          await this.proactive.purgePair(tx, userId, characterId);
           await tx.db
             .delete(moodStates)
             .where(and(eq(moodStates.userId, userId), eq(moodStates.characterId, characterId)));

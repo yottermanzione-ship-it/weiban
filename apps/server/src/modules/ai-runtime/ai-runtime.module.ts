@@ -18,6 +18,8 @@ import { HealthCareService, HEALTH_CARE_FAMILIARITY } from './application/health
 import { GrowthModule, GROWTH_SERVICE, type GrowthService } from '../growth/index.js';
 import { ProactiveModule } from '../proactive/index.js';
 import { HealthModule } from '../health/index.js';
+import { BillingModule } from '../billing/index.js';
+import { ProactiveSchedulerService } from './application/proactive-scheduler.js';
 import { TimelineSummaryService } from './application/timeline.js';
 import { TimelineController } from './http/timeline.controller.js';
 @Module({
@@ -31,6 +33,7 @@ import { TimelineController } from './http/timeline.controller.js';
     GrowthModule,
     ProactiveModule,
     HealthModule,
+    BillingModule,
   ],
   providers: [
     CompanionSettingsService,
@@ -42,6 +45,7 @@ import { TimelineController } from './http/timeline.controller.js';
     TimelineSummaryService,
     { provide: SIMULATION_READ_PORT, useExisting: SimulationService },
     HealthCareService,
+    ProactiveSchedulerService,
     {
       provide: HEALTH_CARE_FAMILIARITY,
       useFactory: (growth: GrowthService) => ({
