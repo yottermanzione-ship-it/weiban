@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChatEndpoints, CompanionEndpoints, ContactsEndpoints } from '@weiban/contracts';
+import {
+  ChatEndpoints,
+  CompanionEndpoints,
+  ContactsEndpoints,
+} from '@weiban/contracts';
 import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
@@ -91,25 +95,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
         </label>
         {companion.data && (
           <>
-            <label>
-              人设贴合度（1更顺从，5更贴合人设）
-              <input
-                type="range"
-                min={1}
-                max={5}
-                step={1}
-                value={companion.data.personaFit ?? 3}
-                disabled={pending}
-                onChange={(event) =>
-                  void change(() =>
-                    api.call(CompanionEndpoints.updateForCharacter, {
-                      params: { characterId },
-                      body: { personaFit: Number(event.target.value) },
-                    }),
-                  )
-                }
-              />
-            </label>
+            <h3 className="group-label">和 TA 的相处</h3>
             {modes.data && (
               <label>
                 情景模式
@@ -136,8 +122,27 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
                 </select>
               </label>
             )}
-            <Link to="/models">选择成人模式模型</Link>
-            <Link to={`/characters/${characterId}/memories`}>TA记住了什么</Link>
+            <label>
+              人设贴合度（
+              {['极顺从', '顺从', '均衡', '贴合', '极贴合'][(companion.data.personaFit ?? 3) - 1]}
+              ）
+              <input
+                type="range"
+                min={1}
+                max={5}
+                step={1}
+                value={companion.data.personaFit ?? 3}
+                disabled={pending}
+                onChange={(event) =>
+                  void change(() =>
+                    api.call(CompanionEndpoints.updateForCharacter, {
+                      params: { characterId },
+                      body: { personaFit: Number(event.target.value) },
+                    }),
+                  )
+                }
+              />
+            </label>
             <label className="check">
               <input
                 type="checkbox"
@@ -170,6 +175,78 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
               />
               拆条
             </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={companion.data.proactiveMessages ?? true}
+                disabled={pending}
+                onChange={(event) =>
+                  void change(() =>
+                    api.call(CompanionEndpoints.updateForCharacter, {
+                      params: { characterId },
+                      body: { proactiveMessages: event.target.checked },
+                    }),
+                  )
+                }
+              />
+              主动消息
+            </label>
+            {companion.data.proactiveMessages !== false && (
+              <label>
+                主动消息频率
+                <select
+                  disabled={pending}
+                  value={companion.data.proactiveFrequency ?? 'medium'}
+                  onChange={(event) =>
+                    void change(() =>
+                      api.call(CompanionEndpoints.updateForCharacter, {
+                        params: { characterId },
+                        body: {
+                          proactiveFrequency: event.target.value as 'low' | 'medium' | 'high',
+                        },
+                      }),
+                    )
+                  }
+                >
+                  <option value="low">少（每天最多 1 次）</option>
+                  <option value="medium">适中（默认）</option>
+                  <option value="high">多</option>
+                </select>
+              </label>
+            )}
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={companion.data.proactiveCalls ?? false}
+                disabled={pending}
+                onChange={(event) =>
+                  void change(() =>
+                    api.call(CompanionEndpoints.updateForCharacter, {
+                      params: { characterId },
+                      body: { proactiveCalls: event.target.checked },
+                    }),
+                  )
+                }
+              />
+              主动来电
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={companion.data.dailyLife ?? true}
+                disabled={pending}
+                onChange={(event) =>
+                  void change(() =>
+                    api.call(CompanionEndpoints.updateForCharacter, {
+                      params: { characterId },
+                      body: { dailyLife: event.target.checked },
+                    }),
+                  )
+                }
+              />
+              TA 的日常（推演）
+            </label>
+            <Link to={`/characters/${characterId}/memories`}>TA 记住了什么</Link>
           </>
         )}
       </div>
