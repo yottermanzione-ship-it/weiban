@@ -47,6 +47,8 @@ export function messageNotification(input: {
   name: string;
   content: MessageContent | null;
   scope: 'normal' | 'adult';
+  /** 消息标签；含 health 时只显示「XX 发来一条消息」（CHAT-10 第 7 条，health-data.md 第 5 节）。 */
+  labels?: readonly string[];
   count: number;
   settings: NotificationSettings;
   muted: boolean;
@@ -56,7 +58,12 @@ export function messageNotification(input: {
   const name = notificationText(input.name, 48) || '微伴';
   let body = `${name} 发来一条消息`;
   if (input.count > 1) body = `${name} 发来 ${input.count} 条消息`;
-  else if (input.settings.pushShowContent && input.scope === 'normal' && input.content) {
+  else if (
+    input.settings.pushShowContent &&
+    input.scope === 'normal' &&
+    !input.labels?.includes('health') &&
+    input.content
+  ) {
     switch (input.content.type) {
       case 'text':
         body = input.content.text;

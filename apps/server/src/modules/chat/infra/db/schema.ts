@@ -73,6 +73,8 @@ export const messages = chatSchema.table(
     quoteMessageId: uuid('quote_message_id'),
     status: text('status').notNull().default('normal'),
     scope: text('scope').notNull(),
+    /** 服务器端标签（如 health）：只有 ChatParticipantPort.postMessage 能设置，用户发送的消息恒为 null。 */
+    labels: text('labels').array(),
     createdAt: time('created_at').notNull(),
     recalledAt: time('recalled_at'),
   },
