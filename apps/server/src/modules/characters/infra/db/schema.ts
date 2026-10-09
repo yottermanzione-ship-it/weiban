@@ -54,6 +54,8 @@ export const characters = charactersSchema.table(
       .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
+    /** 试聊会话（CHR-07 第 6 条），nullable；试聊不建立正式联系人关系。 */
+    trialConversationId: uuid('trial_conversation_id'),
   },
   (t) => [
     index('characters_owner_idx').on(t.ownerId),

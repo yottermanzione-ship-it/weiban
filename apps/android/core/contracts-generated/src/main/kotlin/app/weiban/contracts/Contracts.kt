@@ -3772,6 +3772,90 @@ data class UserConversationState(
     @SerialName("markedUnread") val `markedUnread`: Boolean,
 )
 
+@Serializable
+data class UserCustomCharacter(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("kind") val `kind`: CharacterKind,
+    @SerialName("name") val `name`: String,
+    @SerialName("avatar") val `avatar`: CharacterAvatar,
+    @SerialName("tagline") val `tagline`: String,
+    @SerialName("tags") val `tags`: List<String>,
+    @SerialName("categoryId") val `categoryId`: String?,
+    @SerialName("basis") val `basis`: CharacterBasis,
+    @SerialName("added") val `added`: Boolean,
+    @SerialName("aliases") val `aliases`: List<String>,
+    @SerialName("works") val `works`: List<String>,
+    @SerialName("intro") val `intro`: String,
+    @SerialName("birthday") val `birthday`: LocalDate?,
+    @SerialName("fanName") val `fanName`: String?,
+    @SerialName("classification") val `classification`: CharacterClassification,
+    @SerialName("showPublicSourceNotice") val `showPublicSourceNotice`: Boolean,
+    @SerialName("personaVersion") val `personaVersion`: Long,
+    @SerialName("personaUpdatedUnseen") val `personaUpdatedUnseen`: Boolean,
+    @SerialName("description") val `description`: String,
+    @SerialName("catchphrase") val `catchphrase`: String?,
+    @SerialName("exampleDialogue") val `exampleDialogue`: String?,
+    @SerialName("childFeaturesDetected") val `childFeaturesDetected`: Boolean,
+)
+
+@Serializable
+data class UserCustomCharacterPatch(
+    @SerialName("name") val `name`: String? = null,
+    @SerialName("description") val `description`: String? = null,
+    @SerialName("classification") val `classification`: CharacterClassificationInput? = null,
+    @SerialName("birthday") val `birthday`: LocalDate? = null,
+    @SerialName("catchphrase") val `catchphrase`: String? = null,
+    @SerialName("exampleDialogue") val `exampleDialogue`: String? = null,
+    @SerialName("tags") val `tags`: List<String>? = null,
+    @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+)
+
+@Serializable
+data class UserCustomCharacterPatchInput(
+    @SerialName("name") val `name`: String? = null,
+    @SerialName("description") val `description`: String? = null,
+    @SerialName("classification") val `classification`: CharacterClassificationInputInput? = null,
+    @SerialName("birthday") val `birthday`: LocalDate? = null,
+    @SerialName("catchphrase") val `catchphrase`: String? = null,
+    @SerialName("exampleDialogue") val `exampleDialogue`: String? = null,
+    @SerialName("tags") val `tags`: List<String>? = null,
+    @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+)
+
+@Serializable
+data class UserCustomCharacterWrite(
+    @SerialName("name") val `name`: String,
+    @SerialName("description") val `description`: String,
+    @SerialName("classification") val `classification`: CharacterClassificationInput,
+    @SerialName("birthday") val `birthday`: LocalDate? = null,
+    @SerialName("catchphrase") val `catchphrase`: String? = null,
+    @SerialName("exampleDialogue") val `exampleDialogue`: String? = null,
+    @SerialName("tags") val `tags`: List<String>? = null,
+    @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+)
+
+@Serializable
+data class UserCustomCharacterWriteInput(
+    @SerialName("name") val `name`: String,
+    @SerialName("description") val `description`: String,
+    @SerialName("classification") val `classification`: CharacterClassificationInputInput,
+    @SerialName("birthday") val `birthday`: LocalDate? = null,
+    @SerialName("catchphrase") val `catchphrase`: String? = null,
+    @SerialName("exampleDialogue") val `exampleDialogue`: String? = null,
+    @SerialName("tags") val `tags`: List<String>? = null,
+    @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+)
+
+@Serializable
+data class UserCustomEndpointsStartTrialResponse(
+    @SerialName("conversationId") val `conversationId`: Id,
+)
+
+@Serializable
+data class UserCustomEndpointsUpdateParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
 typealias UserMediaPurpose = String
 
 @Serializable

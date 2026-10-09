@@ -223,6 +223,83 @@ export const CharacterEndpoints = {
   }),
 } as const;
 
+// ---------- 用户自定义角色（CHR-07） ----------
+
+/**
+ * 用户手动创建的自定义角色写入字段（CHR-07）。
+ * 人设描述 ≥ 50 字；真人选择后不能改回其他分类（分类单向规则由服务器用数据库触发器执行）。
+ */
+export const UserCustomCharacterWrite = z.object({
+  name: z.string().min(1).max(32),
+  /** 人设描述，至少 50 字（含空格），用于儿童特征检测与生成回复。 */
+  description: z.string().min(50).max(2000),
+  classification: CharacterClassificationInput,
+  birthday: LocalDate.nullable().optional(),
+  /** 口头禅，显示在资料页，也参与儿童特征检测。 */
+  catchphrase: z.string().max(200).optional(),
+  /** 示例对话（纯文本，多轮用换行分隔）。 */
+  exampleDialogue: z.string().max(2000).optional(),
+  tags: z.array(z.string().max(16)).max(10).optional(),
+  /** 头像媒体 ID（purpose = character_avatar）；null 使用默认头像。 */
+  avatarMediaId: Id.nullable().optional(),
+});
+export type UserCustomCharacterWrite = z.infer<typeof UserCustomCharacterWrite>;
+
+/** PATCH 请求：所有字段可选。 */
+export const UserCustomCharacterPatch = UserCustomCharacterWrite.partial();
+export type UserCustomCharacterPatch = z.infer<typeof UserCustomCharacterPatch>;
+
+/** 用户自定义角色的完整响应（资料页 + 自定义字段）。 */
+export const UserCustomCharacter = CharacterProfile.extend({
+  description: z.string(),
+  catchphrase: z.string().nullable(),
+  exampleDialogue: z.string().nullable(),
+  tags: z.array(z.string().max(16)),
+  /**
+   * 人设文本中检测到儿童特征（SAFE-03 第 4 条）。
+   * true 时系统已设置 classification.childFeaturesDetected=true，禁止成人模式。
+   */
+  childFeaturesDetected: z.boolean(),
+});
+export type UserCustomCharacter = z.infer<typeof UserCustomCharacter>;
+
+const customParams = z.object({ characterId: Id });
+
+export const UserCustomEndpoints = {
+  /** 创建自定义角色（CHR-07）；自动执行儿童特征检测后返回检测结果。 */
+  create: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/characters/custom`,
+    auth: 'user',
+    body: UserCustomCharacterWrite,
+    response: UserCustomCharacter,
+    summary: 'CHR-07 手动创建自定义角色；儿童特征检测在服务器同步完成',
+  }),
+  /** 更新自定义角色（仅限创建者；分类单向规则由数据库触发器执行）。 */
+  update: defineEndpoint({
+    method: 'PATCH',
+    path: `${API_PREFIX}/characters/custom/:characterId`,
+    auth: 'user',
+    params: customParams,
+    body: UserCustomCharacterPatch,
+    response: UserCustomCharacter,
+    summary: 'CHR-07 更新自定义角色；real_person→other 触发 422 classification_change_forbidden',
+  }),
+  /**
+   * 开始或复用试聊会话（CHR-07 第 6 条）。
+   * 试聊会话不建立正式联系人关系，不写入长期记忆。
+   * 试聊会话的 conversationId 仅当前用户可见；关闭编辑器后可被清理。
+   */
+  startTrial: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/characters/custom/:characterId/trial`,
+    auth: 'user',
+    params: customParams,
+    response: z.object({ conversationId: Id }),
+    summary: 'CHR-07 试聊：开始或复用试聊会话，试聊记录不保留',
+  }),
+} as const;
+
 // ---------- 管理后台（ADM-01 最小版） ----------
 
 export const AdminCharacter = z.object({
