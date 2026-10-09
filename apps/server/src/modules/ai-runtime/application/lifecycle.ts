@@ -16,12 +16,18 @@ import { GENERATE_REPLY_JOB, ReplyPlanStore } from './plan-store.js';
 import { MemoryService, EXTRACT_MEMORY_JOB, type MemoryJob } from './memory.js';
 import { ReplyEngine } from './reply-engine.js';
 import { invalidateReplyPlans } from './invalidate.js';
+import {
+  SimulationService,
+  SIMULATE_CHARACTER_JOB,
+  RUN_DAILY_SIMULATIONS_JOB,
+} from './simulation.js';
 @Injectable()
 export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap {
   constructor(
     @Inject(ReplyPlanStore) readonly store: ReplyPlanStore,
     @Inject(ReplyEngine) readonly engine: ReplyEngine,
     @Inject(MemoryService) readonly memory: MemoryService,
+    @Inject(SimulationService) readonly simulation: SimulationService,
     @Inject(EVENT_BUS) readonly bus: EventBus,
     @Inject(JOB_QUEUE) readonly jobs: JobQueue,
     @Inject(USER_DATA_REGISTRY) readonly registry: UserDataRegistry,
@@ -55,6 +61,17 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       await this.memory.reconcile();
     });
     await this.jobs.schedule('ai.reconcile', '* * * * *');
+
+    // 推演引擎（T-051）：每角色日常事件与心情
+    await this.jobs.work<{ userId: string; characterId: string }>(
+      SIMULATE_CHARACTER_JOB,
+      (j) => this.simulation.simulateCharacter(j.data.userId, j.data.characterId),
+      { pollingIntervalSeconds: 2, localConcurrency: 2 },
+    );
+    await this.jobs.work(RUN_DAILY_SIMULATIONS_JOB, () => this.simulation.runDailySimulations());
+    // 每天凌晨 2:00（北京时间）触发推演调度
+    await this.jobs.schedule(RUN_DAILY_SIMULATIONS_JOB, '0 18 * * *'); // UTC 18:00 = 北京 02:00
+
     this.bus.subscribe({
       consumer: 'ai.on_user_message',
       eventType: 'chat.message_created',
