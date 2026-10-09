@@ -126,17 +126,10 @@ export const L3_CASES: EvalCase[] = [
       history: [],
     },
     input,
-    checks: {
-      rules: {
-        mustIncludeAny: mustInclude.length > 0 ? mustInclude : undefined,
-        mustNotInclude: mustNotInclude.length > 0 ? mustNotInclude : undefined,
-      },
-      judge: {
-        rubric: judgeRubric,
-        passThreshold: 0.9,
-      },
-    },
-    severity: 'soft' as const,
+    mustInclude,
+    mustNotInclude,
+    judgeRubric,
+    hard: false,
   })),
   ...sim02Cases.map(([input, memories, mustInclude, mustNotInclude, judgeRubric], i) => ({
     id: `SIM-L3-${String(i + 11).padStart(3, '0')}`,
@@ -148,16 +141,9 @@ export const L3_CASES: EvalCase[] = [
       history: [],
     },
     input,
-    checks: {
-      rules: {
-        mustIncludeAny: mustInclude.length > 0 ? mustInclude : undefined,
-        mustNotInclude: mustNotInclude.length > 0 ? mustNotInclude : undefined,
-      },
-      judge: {
-        rubric: judgeRubric,
-        passThreshold: 0.9,
-      },
-    },
-    severity: 'soft' as const,
+    mustInclude,
+    mustNotInclude,
+    judgeRubric,
+    hard: false,
   })),
 ];

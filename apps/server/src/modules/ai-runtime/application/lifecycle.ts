@@ -11,7 +11,15 @@ import {
 } from '../../../platform/index.js';
 import { CHAT_READ_PORT } from '../../chat/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
-import { companionSettings, replyPlans, memories, memoryStates } from '../infra/db/schema.js';
+import {
+  companionSettings,
+  replyPlans,
+  memories,
+  memoryStates,
+  simulationStates,
+  dailyEvents,
+  moodStates,
+} from '../infra/db/schema.js';
 import { GENERATE_REPLY_JOB, ReplyPlanStore } from './plan-store.js';
 import { MemoryService, EXTRACT_MEMORY_JOB, type MemoryJob } from './memory.js';
 import { ReplyEngine } from './reply-engine.js';
@@ -81,6 +89,8 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         const conversation = await this.chat.getConversation(p.conversationId);
         const role = conversation?.participants.find((member) => member.kind === 'character');
         if (!role) return;
+        if (!(await this.store.lock(tx, p.senderRefId, p.conversationId))) return;
+        await this.simulation.markActive(tx, p.senderRefId, role.refId);
         await this.store.enqueue(tx, {
           userId: p.senderRefId,
           characterId: role.refId,
@@ -129,6 +139,8 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       consumer: 'ai.on_contact_accepted',
       eventType: 'contacts.contact_accepted',
       handle: async (event, tx) => {
+        if (!(await this.store.lock(tx, event.payload.userId))) return;
+        await this.simulation.markActive(tx, event.payload.userId, event.payload.characterId);
         await this.store.enqueue(tx, {
           ...event.payload,
           triggerId: event.eventId,
@@ -199,7 +211,21 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
             .where(
               and(eq(replyPlans.userId, userId), eq(replyPlans.conversationId, conversationId)),
             );
-        if (!(await this.contacts.getActiveContact(userId, characterId)))
+        if (!(await this.contacts.getActiveContact(userId, characterId))) {
+          await tx.db
+            .delete(simulationStates)
+            .where(
+              and(
+                eq(simulationStates.userId, userId),
+                eq(simulationStates.characterId, characterId),
+              ),
+            );
+          await tx.db
+            .delete(dailyEvents)
+            .where(and(eq(dailyEvents.userId, userId), eq(dailyEvents.characterId, characterId)));
+          await tx.db
+            .delete(moodStates)
+            .where(and(eq(moodStates.userId, userId), eq(moodStates.characterId, characterId)));
           await tx.db
             .delete(companionSettings)
             .where(
@@ -208,6 +234,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
                 eq(companionSettings.characterId, characterId),
               ),
             );
+        }
       },
     });
     this.bus.subscribe({
