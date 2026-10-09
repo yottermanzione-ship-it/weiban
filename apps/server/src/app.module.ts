@@ -8,7 +8,12 @@ import type {
   ChatNotificationReadPort,
   CharacterNameReadPort,
 } from '@weiban/contracts';
-import { ContactsModule, CONTACTS_READ_PORT } from './modules/contacts/index.js';
+import {
+  ContactsModule,
+  CONTACTS_READ_PORT,
+  CONTACTS_CHARACTER_STATS,
+  type ContactsCharacterStats,
+} from './modules/contacts/index.js';
 import { AiRuntimeModule } from './modules/ai-runtime/index.js';
 import { BillingModule } from './modules/billing/index.js';
 import { ChatModule, CHAT_USER_PORT, CHAT_NOTIFICATION_READ_PORT } from './modules/chat/index.js';
@@ -52,10 +57,11 @@ class ChatCompositionModule {}
   providers: [
     {
       provide: CHARACTER_CONTACT_ACCESS,
-      inject: [CONTACTS_READ_PORT],
-      useFactory: (contacts: ContactsReadPort) => ({
+      inject: [CONTACTS_READ_PORT, CONTACTS_CHARACTER_STATS],
+      useFactory: (contacts: ContactsReadPort, stats: ContactsCharacterStats) => ({
         hasContact: async (userId: string, characterId: string) =>
           !!(await contacts.getActiveContact(userId, characterId)),
+        hasAnyContact: (characterId: string) => stats.hasAnyActiveContact(characterId),
       }),
     },
   ],

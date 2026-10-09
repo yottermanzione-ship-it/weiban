@@ -54,6 +54,16 @@ export class ContactsReadService implements ContactsReadPort {
       );
     return row ? contactDto(row) : null;
   }
+  /** 是否至少有一个用户把该角色加为好友（D-L3-02 公开动态候选搜索的范围判断，不暴露具体用户）。 */
+  async hasAnyActiveContact(characterId: string): Promise<boolean> {
+    parseContract(Id, characterId);
+    const [row] = await this.db.db
+      .select({ id: contacts.characterId })
+      .from(contacts)
+      .where(and(eq(contacts.characterId, characterId), eq(contacts.status, 'active')))
+      .limit(1);
+    return !!row;
+  }
   async getActiveContactEpoch(
     userId: string,
     characterId: string,

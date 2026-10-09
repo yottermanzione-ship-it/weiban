@@ -100,3 +100,47 @@ export const scenarioModes = charactersSchema.table('scenario_modes', {
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
 });
+
+/**
+ * 公开动态（D-L3-02，SIM-03、ADM-03）。迁移 0025_public_updates。
+ * 只有 status = 'effective' 且 effective_date 已到的行会经 PublicUpdateReadPort 给 AI 运行时。
+ * 日期列用 text（YYYY-MM-DD），与契约 LocalDate 一致，避免时区换算。
+ */
+export const publicUpdates = charactersSchema.table(
+  'public_updates',
+  {
+    id: uuid('id').primaryKey(),
+    characterId: uuid('character_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    content: text('content').notNull(),
+    startDate: text('start_date').notNull(),
+    endDate: text('end_date'),
+    effectiveDate: text('effective_date').notNull(),
+    sourceUrl: text('source_url').notNull(),
+    /** 规范化后的来源链接，用于候选去重。 */
+    sourceKey: text('source_key').notNull(),
+    source: text('source').notNull(),
+    status: text('status').notNull(),
+    reviewNote: text('review_note'),
+    createdBy: uuid('created_by'),
+    reviewedBy: uuid('reviewed_by'),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true, mode: 'date' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [
+    index('public_updates_status_idx').on(t.status, t.createdAt),
+    index('public_updates_character_idx').on(t.characterId, t.status, t.startDate),
+    index('public_updates_source_key_idx').on(t.characterId, t.sourceKey),
+  ],
+);
+
+/** 公开动态自动候选设置（单行，id = 'default'）。 */
+export const publicUpdateSettings = charactersSchema.table('public_update_settings', {
+  id: text('id').primaryKey(),
+  autoSearchEnabled: boolean('auto_search_enabled').notNull(),
+  lastAutoRunAt: timestamp('last_auto_run_at', { withTimezone: true, mode: 'date' }),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
+});
