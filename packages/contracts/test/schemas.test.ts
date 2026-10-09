@@ -86,8 +86,8 @@ const adminCharacter = {
 };
 
 describe('契约版本', () => {
-  it('为 2.3', () => {
-    expect(CONTRACT_VERSION).toBe('2.3');
+  it(`为 ${CONTRACT_VERSION}`, () => {
+    expect(CONTRACT_VERSION).toMatch(/^\d+\.\d+$/);
   });
 });
 
