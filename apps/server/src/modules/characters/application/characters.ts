@@ -701,10 +701,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       .select()
       .from(personaVersions)
       .where(
-        and(
-          eq(personaVersions.characterId, characterId),
-          eq(personaVersions.version, version),
-        ),
+        and(eq(personaVersions.characterId, characterId), eq(personaVersions.version, version)),
       );
     if (!targetVersion) throw new AppError('not_found', '找不到该版本');
     const ownerId = character.ownerId ?? PLATFORM_KEY_OWNER;

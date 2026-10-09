@@ -2,7 +2,17 @@
  * 情景模式管理后台 HTTP 接口（ADM-05 第 8 条）。
  * 一一对应契约 ScenarioModeAdminEndpoints（packages/contracts/src/http/admin-content.ts）。
  */
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { ScenarioModeAdminEndpoints as E } from '@weiban/contracts';
 import type { z } from 'zod';
 import {
@@ -35,7 +45,8 @@ export class ScenarioModeAdminController {
   @RequireAuth(E.createScenarioMode.auth)
   create(
     @CurrentPrincipal() me: AuthPrincipal,
-    @Body(new ContractPipe(schema(E.createScenarioMode.body))) body: Out<typeof E.createScenarioMode.body>,
+    @Body(new ContractPipe(schema(E.createScenarioMode.body)))
+    body: Out<typeof E.createScenarioMode.body>,
   ) {
     return this.service.create(me.userId, body);
   }
@@ -45,7 +56,8 @@ export class ScenarioModeAdminController {
   update(
     @CurrentPrincipal() me: AuthPrincipal,
     @Param(new ContractPipe(schema(E.updateScenarioMode.params))) params: { id: string },
-    @Body(new ContractPipe(schema(E.updateScenarioMode.body))) body: Out<typeof E.updateScenarioMode.body>,
+    @Body(new ContractPipe(schema(E.updateScenarioMode.body)))
+    body: Out<typeof E.updateScenarioMode.body>,
   ) {
     return this.service.update(me.userId, params.id, body);
   }
