@@ -29,7 +29,6 @@ import {
   SYSTEM_ANNIVERSARY_DAYS,
   systemAnniversaryLabel,
   computeNextOccurrence,
-  todayInTz,
   daysKnownFromDate,
 } from '../domain/familiarity-rules.js';
 
@@ -87,7 +86,7 @@ export class GrowthService {
   ): Promise<AddFamiliarityPointsResponse> {
     parseContract(Id, characterId);
     const body = parseContract(AddFamiliarityPointsRequest, input);
-    const contact = await this.requireActiveContact(userId, characterId);
+    await this.requireActiveContact(userId, characterId);
     const occurredAt = body.occurredAt ? new Date(body.occurredAt) : this.clock.now();
 
     // Determine user timezone from contact.knownSince origin; fall back to
