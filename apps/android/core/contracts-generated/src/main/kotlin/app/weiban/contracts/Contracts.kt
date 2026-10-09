@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 2.3. Regenerate: pnpm android:generate
+// Contract 2.4. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "2.3"
+const val CONTRACT_VERSION: String = "2.4"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -270,6 +270,71 @@ data class AdminPriceVersion(
     @SerialName("note") val `note`: String?,
     @SerialName("items") val `items`: List<AdminPriceItem>,
     @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class AdminScenarioMode(
+    @SerialName("id") val `id`: String,
+    @SerialName("name") val `name`: String,
+    @SerialName("description") val `description`: String,
+    @SerialName("presetPrompt") val `presetPrompt`: String?,
+    @SerialName("appliesTo") val `appliesTo`: ScenarioModeAppliesTo,
+    @SerialName("hasRomanceContent") val `hasRomanceContent`: Boolean,
+    @SerialName("hasAdultContent") val `hasAdultContent`: Boolean,
+    @SerialName("isBuiltin") val `isBuiltin`: Boolean,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("sortOrder") val `sortOrder`: Long,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class AdminScenarioModeCreate(
+    @SerialName("id") val `id`: String,
+    @SerialName("name") val `name`: String,
+    @SerialName("description") val `description`: String,
+    @SerialName("presetPrompt") val `presetPrompt`: String?,
+    @SerialName("appliesTo") val `appliesTo`: ScenarioModeAppliesTo,
+    @SerialName("hasRomanceContent") val `hasRomanceContent`: Boolean,
+    @SerialName("hasAdultContent") val `hasAdultContent`: Boolean,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("sortOrder") val `sortOrder`: Long,
+)
+
+@Serializable
+data class AdminScenarioModeCreateInput(
+    @SerialName("id") val `id`: String,
+    @SerialName("name") val `name`: String,
+    @SerialName("description") val `description`: String? = null,
+    @SerialName("presetPrompt") val `presetPrompt`: String? = null,
+    @SerialName("appliesTo") val `appliesTo`: ScenarioModeAppliesTo? = null,
+    @SerialName("hasRomanceContent") val `hasRomanceContent`: Boolean? = null,
+    @SerialName("hasAdultContent") val `hasAdultContent`: Boolean? = null,
+    @SerialName("enabled") val `enabled`: Boolean? = null,
+    @SerialName("sortOrder") val `sortOrder`: Long? = null,
+)
+
+@Serializable
+data class AdminScenarioModeUpdate(
+    @SerialName("name") val `name`: String? = null,
+    @SerialName("description") val `description`: String? = null,
+    @SerialName("presetPrompt") val `presetPrompt`: String? = null,
+    @SerialName("appliesTo") val `appliesTo`: ScenarioModeAppliesTo? = null,
+    @SerialName("hasRomanceContent") val `hasRomanceContent`: Boolean? = null,
+    @SerialName("hasAdultContent") val `hasAdultContent`: Boolean? = null,
+    @SerialName("enabled") val `enabled`: Boolean? = null,
+    @SerialName("sortOrder") val `sortOrder`: Long? = null,
+)
+
+@Serializable
+data class AdminScenarioModeUpdateInput(
+    @SerialName("name") val `name`: String? = null,
+    @SerialName("description") val `description`: String? = null,
+    @SerialName("presetPrompt") val `presetPrompt`: String? = null,
+    @SerialName("appliesTo") val `appliesTo`: ScenarioModeAppliesTo? = null,
+    @SerialName("hasRomanceContent") val `hasRomanceContent`: Boolean? = null,
+    @SerialName("hasAdultContent") val `hasAdultContent`: Boolean? = null,
+    @SerialName("enabled") val `enabled`: Boolean? = null,
+    @SerialName("sortOrder") val `sortOrder`: Long? = null,
 )
 
 typealias AdminUsageCallStatus = String
@@ -2817,6 +2882,32 @@ data class PendingAccountDeletion(
 
 typealias PersonaTag = String
 
+@Serializable
+data class PersonaVersionAdminEndpointsListPersonaVersionsParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class PersonaVersionAdminEndpointsListPersonaVersionsResponse(
+    @SerialName("items") val `items`: List<PersonaVersionSummary>,
+)
+
+@Serializable
+data class PersonaVersionAdminEndpointsRollbackPersonaVersionParams(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("version") val `version`: Long,
+)
+
+@Serializable
+data class PersonaVersionSummary(
+    @SerialName("version") val `version`: Long,
+    @SerialName("summary") val `summary`: String?,
+    @SerialName("modifiedBy") val `modifiedBy`: Id?,
+    @SerialName("stabilityPassed") val `stabilityPassed`: Boolean,
+    @SerialName("publishedAt") val `publishedAt`: Timestamp,
+    @SerialName("isCurrent") val `isCurrent`: Boolean,
+)
+
 typealias PortraitPolicy = String
 
 typealias PositiveMoneyMicros = Long
@@ -3161,6 +3252,18 @@ data class RegisterRequestInput(
 )
 
 typealias ScenarioMode = String
+
+@Serializable
+data class ScenarioModeAdminEndpointsListScenarioModesResponse(
+    @SerialName("items") val `items`: List<AdminScenarioMode>,
+)
+
+@Serializable
+data class ScenarioModeAdminEndpointsUpdateScenarioModeParams(
+    @SerialName("id") val `id`: String,
+)
+
+typealias ScenarioModeAppliesTo = String
 
 @Serializable
 data class SendMessageRequest(
