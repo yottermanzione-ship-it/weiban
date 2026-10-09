@@ -226,7 +226,11 @@ test('HTTP确认清空先持久保存范围，更新日志暂不可达也不会�
 test('真实HTTP记忆管理：新增、手改、删除确认与人设设置', async ({ page }) => {
   await openChat(page);
   await page.getByRole('link', { name: '聊天信息', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '和 TA 的相处', exact: true }).or(page.locator('.group-label').filter({ hasText: '和 TA 的相处' }))).toBeVisible({ timeout: 10000 });
+  await expect(
+    page
+      .getByRole('heading', { name: '和 TA 的相处', exact: true })
+      .or(page.locator('.group-label').filter({ hasText: '和 TA 的相处' })),
+  ).toBeVisible({ timeout: 10000 });
   await expect(page.locator('label').filter({ hasText: '人设贴合度' })).toBeVisible();
   await expect(page.getByLabel('情景模式')).toBeVisible();
   await page.getByRole('link', { name: 'TA记住了什么', exact: true }).click();
