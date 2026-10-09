@@ -1245,7 +1245,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         lastRetriggeredAt: null,
       });
       // T-036 起 realtime 也登记了更新日志与前台状态的删除清单
-      expect(mine?.modules).toHaveLength(9);
+      expect(mine?.modules).toHaveLength(10);
       expect(mine?.modules).toEqual(
         expect.arrayContaining([
           { module: 'billing', purged: false, deletedRows: null, purgedAt: null },
@@ -1256,6 +1256,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
           { module: 'chat', purged: false, deletedRows: null, purgedAt: null },
           { module: 'contacts', purged: false, deletedRows: null, purgedAt: null },
           { module: 'ai_runtime', purged: false, deletedRows: null, purgedAt: null },
+          { module: 'proactive', purged: false, deletedRows: null, purgedAt: null },
           { module: 'push', purged: false, deletedRows: null, purgedAt: null },
         ]),
       );
@@ -1289,6 +1290,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
               'contacts',
               'media',
               'model_access',
+              'proactive',
               'push',
               'realtime',
             ]),
@@ -1335,7 +1337,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       await withClient((c) =>
         c.query(
           `INSERT INTO identity.deletion_progress (user_id, module, deleted_rows, reported_at)
-           VALUES ($1, 'billing', 0, now()), ($1, 'model_access', 0, now()), ($1, 'media', 0, now()), ($1, 'characters', 0, now()), ($1, 'realtime', 0, now()), ($1, 'chat', 0, now()), ($1, 'contacts', 0, now()), ($1, 'ai_runtime', 0, now()), ($1, 'push', 0, now())`,
+           VALUES ($1, 'billing', 0, now()), ($1, 'model_access', 0, now()), ($1, 'media', 0, now()), ($1, 'characters', 0, now()), ($1, 'realtime', 0, now()), ($1, 'chat', 0, now()), ($1, 'contacts', 0, now()), ($1, 'ai_runtime', 0, now()), ($1, 'proactive', 0, now()), ($1, 'push', 0, now())`,
           [user.userId],
         ),
       );

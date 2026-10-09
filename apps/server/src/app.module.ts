@@ -30,6 +30,7 @@ import { PolicyModule } from './modules/policy/index.js';
 import { MediaModule } from './modules/media/index.js';
 import { ModelAccessModule, MODEL_NOTIFICATION_READ_PORT } from './modules/model-access/index.js';
 import { GrowthModule } from './modules/growth/index.js';
+import { ProactiveModule } from './modules/proactive/index.js';
 import { PlatformModule, type PlatformOptions } from './platform/index.js';
 
 @Global()
@@ -111,6 +112,7 @@ export class AppModule {
           characterReadToken: CHARACTER_READ_PORT,
         }),
         GrowthModule,
+        ProactiveModule,
       ],
     };
   }

@@ -25,6 +25,7 @@ export const ModuleName = z.enum([
   'chat',
   'policy',
   'ai_runtime',
+  'proactive',
   'moments',
   'growth',
   'importer',

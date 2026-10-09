@@ -24,6 +24,7 @@ export * from './http/media.js';
 export * from './http/health.js';
 export * from './http/growth.js';
 export * from './http/timeline.js';
+export * from './http/proactive.js';
 
 // WebSocket 帧
 export * from './ws.js';

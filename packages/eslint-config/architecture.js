@@ -32,6 +32,7 @@ export const SERVER_MODULES = {
   billing: { layer: 'middle', schema: 'billing' },
   policy: { layer: 'middle', schema: null },
   'ai-runtime': { layer: 'upper', schema: 'ai_runtime' },
+  proactive: { layer: 'upper', schema: 'proactive' },
   moments: { layer: 'upper', schema: 'moments' },
   growth: { layer: 'upper', schema: 'growth' },
   importer: { layer: 'upper', schema: 'importer' },
