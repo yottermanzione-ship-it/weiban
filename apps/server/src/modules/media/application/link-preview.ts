@@ -106,11 +106,12 @@ function decodeEntities(value: string): string {
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&');
 }
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
 function clean(value: string | null | undefined, max: number): string | null {
   if (!value) return null;
-  // eslint-disable-next-line no-control-regex
   const text = decodeEntities(value)
-    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(CONTROL_CHARS, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   if (!text) return null;

@@ -54,6 +54,7 @@ import { ModelAccessModule, MODEL_NOTIFICATION_READ_PORT } from './modules/model
 import { GrowthModule } from './modules/growth/index.js';
 import { MomentsModule } from './modules/moments/index.js';
 import { ProactiveModule } from './modules/proactive/index.js';
+import { CallsModule } from './modules/calls/index.js';
 import { PlatformModule, type PlatformOptions } from './platform/index.js';
 
 @Global()
@@ -207,6 +208,7 @@ export class AppModule {
         GrowthModule,
         MomentsModule,
         ProactiveModule,
+        CallsModule,
       ],
     };
   }

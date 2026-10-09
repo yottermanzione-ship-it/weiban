@@ -89,6 +89,8 @@ export class SocketServer implements OnApplicationBootstrap, OnModuleDestroy {
     this.timer.unref();
   }
   private readonly upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer): void => {
+    // 通话音频流（ADR-0025）由 calls 模块自己的升级处理接管。
+    if (request.url?.startsWith('/api/v1/calls/')) return;
     if (
       this.connections.size >= 1024 ||
       request.url !== WS_PATH ||

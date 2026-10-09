@@ -148,6 +148,38 @@ export class PushLifecycle implements OnModuleInit, OnApplicationBootstrap {
         }
       },
     });
+    // 角色来电（MED-07 第 4 条，T-070）：推送 kind = call，安卓据此显示全屏来电 / 横幅。
+    // 免打扰、频率由 ai-runtime 发起来电前判断，这里不再按免打扰拦截（否则来电静默）。
+    this.bus.subscribe({
+      consumer: 'push.on_incoming_call',
+      eventType: 'calls.call_started',
+      handle: async (event, tx) => {
+        const p = event.payload;
+        if (p.direction !== 'incoming') return;
+        const settings = await this.identity.getNotificationSettings(p.userId, tx);
+        if (!settings) return;
+        const name = notificationText(await this.source.name(p.userId, p.characterId, tx), 48);
+        await this.store.enqueue(tx, {
+          userId: p.userId,
+          eventId: event.eventId,
+          dedupeKey: `call:${p.callId}`,
+          dedupeWindowHours: 0,
+          notification: NotificationPayload.parse({
+            v: 1,
+            kind: 'call',
+            collapseKey: `call:${p.callId}`,
+            title: name || '微伴',
+            body: '邀请你语音通话',
+            count: 1,
+            deepLink: `/calls/${p.callId}`,
+            conversationId: null,
+            sound: true,
+            sentAt: this.clock.now().toISOString(),
+          }),
+          occurredAt: event.occurredAt,
+        });
+      },
+    });
     // 角色在朋友圈评论里 @ 了用户（SOC-08 第 4 条）：推送 kind = moments，点开到那条动态。
     this.bus.subscribe({
       consumer: 'push.on_moments_mention',
