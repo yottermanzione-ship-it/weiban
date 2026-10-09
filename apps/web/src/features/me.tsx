@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { CaretRight, Gear, Wallet } from '@phosphor-icons/react';
+import { CaretRight, Gear, Images, Wallet } from '@phosphor-icons/react';
 import { BillingEndpoints, IdentityEndpoints, ModelAccessEndpoints } from '@weiban/contracts';
 import { formatMoney } from '@weiban/client-core';
 import { useAuth } from '../app/auth.js';
@@ -29,6 +29,11 @@ export function MePage() {
           <Wallet size={24} />
           服务
           {lowBalance && <span className="red-dot" aria-label="余额不足" />}
+          <CaretRight />
+        </Link>
+        <Link to="/me/moments">
+          <Images size={24} />
+          朋友圈
           <CaretRight />
         </Link>
         <Link to="/settings">

@@ -63,6 +63,9 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
       <h2>
         <Name conversation={conversation} />
       </h2>
+      <Link className="plain" to={`/groups/new?with=${characterId}`} aria-label="发起群聊">
+        ＋ 发起群聊
+      </Link>
       <div className="panel stack">
         <label className="check">
           <input

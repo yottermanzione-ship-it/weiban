@@ -70,13 +70,14 @@ export function useWhileAway(conversationId: string, characterId: string | undef
     };
   }, [conversationId]);
   useEffect(() => {
-    if (!lastActiveAt || !characterId) return;
+    // 每次进入私聊都调用一次（服务器据此记录「上次进入」，T-066 交接）；本机没有记录时传当前时刻。
+    if (!characterId) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 2000);
     void api
       .call(TimelineEndpoints.getSummary, {
         params: { conversationId },
-        query: { characterId, lastActiveAt },
+        query: { characterId, lastActiveAt: lastActiveAt ?? new Date().toISOString() },
         signal: controller.signal,
         networkOnly: true,
       })

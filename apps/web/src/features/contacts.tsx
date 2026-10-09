@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { CharacterEndpoints, ContactsEndpoints } from '@weiban/contracts';
+import { CharacterEndpoints, ContactCardEndpoints, ContactsEndpoints } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
 import { useChat } from '../app/chat.js';
 import { useAuth } from '../app/auth.js';
@@ -13,8 +13,12 @@ import { CharacterAvatar } from './character-avatar.js';
 import { ContactAvatarEditor } from './contact-avatar-editor.js';
 import { FamiliarityLine } from './growth.js';
 import { RecentRow } from './timeline.js';
+import { RelationsRow } from './relations.js';
+import { markDismissed, useNewFriendsDot } from './new-friends.js';
+import { useMomentsBadge } from './moments.js';
 export function ContactsPage() {
   const { state } = useChat();
+  const newFriendsDot = useNewFriendsDot();
   const names = useCharacterNames(state.contacts.map((contact) => contact.characterId));
   const contacts = [...state.contacts].sort((a, b) =>
     (a.remark || names[a.characterId] || '').localeCompare(
@@ -25,9 +29,14 @@ export function ContactsPage() {
   return (
     <main>
       <h1 className="page-title">通讯录</h1>
-      <Link className="plain" to="/discover">
-        添加角色
-      </Link>
+      <div className="panel rows">
+        <Link to="/contacts/new">
+          新的朋友
+          {newFriendsDot && <span className="red-dot" aria-label="有新的名片推荐" />}
+        </Link>
+        <Link to="/contacts/groups">群聊</Link>
+        <Link to="/discover">添加角色</Link>
+      </div>
       <div className="panel rows">
         {contacts.map((contact) => (
           <Link
@@ -85,6 +94,12 @@ export function DiscoverPage() {
     );
   return (
     <main>
+      {!onboarding && (
+        <Link className="panel row-link" to="/moments">
+          <span>朋友圈</span>
+          <MomentsBadgeAvatars />
+        </Link>
+      )}
       <h1 className="page-title">角色广场</h1>
       {onboarding && (
         <p className="panel" role="note">
@@ -168,6 +183,18 @@ export function DiscoverPage() {
     </main>
   );
 }
+function MomentsBadgeAvatars() {
+  const badge = useMomentsBadge();
+  if (!badge || badge.unseenPostCount === 0) return null;
+  return (
+    <span className="badge-avatars" aria-label={`${badge.unseenPostCount} 条新动态`}>
+      {badge.characterIds.map((id) => (
+        <CharacterAvatar key={id} id={id} size={24} />
+      ))}
+      <span className="red-dot" />
+    </span>
+  );
+}
 export function CharacterPage({
   id,
   onboarding = false,
@@ -186,7 +213,28 @@ export function CharacterPage({
   const profile = useRemote(CharacterEndpoints.getProfile, { params: { characterId } });
   const { state, assertOwner, synchronize } = useChat();
   const contact = state.contacts.find((item) => item.characterId === characterId);
+  const { session } = useAuth();
+  const [query] = useSearchParams();
+  const referrer = onboarding ? null : query.get('ref');
+  const fromGroup = onboarding ? null : query.get('group');
+  const referrerProfile = useRemote(CharacterEndpoints.getProfile, {
+    params: { characterId: referrer ?? characterId },
+  });
+  const referrerName = referrer
+    ? state.contacts.find((c) => c.characterId === referrer)?.remark || referrerProfile.data?.name
+    : null;
   const [localGreeting, setLocalGreeting] = useState('');
+  const [defaulted, setDefaulted] = useState(false);
+  useEffect(() => {
+    if (defaulted || draftGreeting !== undefined) return;
+    if (referrerName) {
+      setLocalGreeting(`是 ${referrerName} 推荐我来的`);
+      setDefaulted(true);
+    } else if (fromGroup) {
+      setLocalGreeting(`我们在「${fromGroup}」群里见过`.slice(0, 50));
+      setDefaulted(true);
+    }
+  }, [referrerName, fromGroup, defaulted, draftGreeting]);
   const greeting = draftGreeting ?? localGreeting;
   const setGreeting = onGreetingChange ?? setLocalGreeting;
   const [pending, setPending] = useState(false);
@@ -213,7 +261,12 @@ export function CharacterPage({
     try {
       assertOwner();
       await api.call(ContactsEndpoints.add, {
-        body: { characterId, greeting: greeting || null, restoreMode },
+        body: {
+          characterId,
+          greeting: greeting || null,
+          restoreMode,
+          referrerCharacterId: referrer ?? null,
+        },
       });
       await synchronize();
       setRestore(false);
@@ -221,6 +274,10 @@ export function CharacterPage({
       profile.refresh();
     } catch (e) {
       if (e instanceof ApiFailure && e.code === 'restore_choice_required') setRestore(true);
+      else if (e instanceof ApiFailure && e.code === 'contact_limit_reached')
+        setError('通讯录已满 50 个角色，先删除一些再添加吧');
+      else if (e instanceof ApiFailure && e.code === 'character_not_available')
+        setError('TA 暂时不能添加');
       else setError(friendlyError(e));
     } finally {
       setPending(false);
@@ -268,9 +325,39 @@ export function CharacterPage({
           <button className="primary" disabled={pending || !profile.data}>
             添加到通讯录
           </button>
+          {referrer && (
+            <button
+              type="button"
+              className="text-button"
+              disabled={pending}
+              onClick={() => {
+                setPending(true);
+                setError('');
+                void api
+                  .call(ContactCardEndpoints.dismissRecommendation, { params: { characterId } })
+                  .then(() => {
+                    markDismissed(session?.user.userId ?? '', characterId);
+                    setMessage('好的，不会再推荐 TA');
+                  })
+                  .catch((e) => setError(friendlyError(e)))
+                  .finally(() => setPending(false));
+              }}
+            >
+              不感兴趣
+            </button>
+          )}
         </form>
       )}
       {!onboarding && contact?.conversationId && <RecentRow characterId={characterId} />}
+      {!onboarding && contact?.status === 'active' && (
+        <Link className="panel row-link" to={`/characters/${characterId}/moments`}>
+          <span>朋友圈</span>
+          <small>›</small>
+        </Link>
+      )}
+      {!onboarding && contact?.status === 'active' && profile.data?.kind === 'custom' && (
+        <RelationsRow characterId={characterId} />
+      )}
       {contact && !onboarding && (
         <ContactAvatarEditor key={characterId} characterId={characterId} />
       )}

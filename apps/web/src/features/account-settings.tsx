@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { IdentityEndpoints } from '@weiban/contracts';
+import { IdentityEndpoints, MemorySharingEndpoints } from '@weiban/contracts';
 import { useAuth } from '../app/auth.js';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
@@ -217,6 +217,7 @@ function DeleteAccountSection() {
 
 export function PrivacySettingsPage() {
   const remote = useRemote(IdentityEndpoints.getNotificationSettings);
+  const sharing = useRemote(MemorySharingEndpoints.get);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -251,7 +252,35 @@ export function PrivacySettingsPage() {
           允许角色拉我进群
         </label>
         <p className="hint">关闭后，角色不会自动把你加入群聊。</p>
-        <p className="hint">跨角色记忆共享（MEM-07）等更多隐私设置将在后续版本中添加。</p>
+      </div>
+      <div className="panel stack">
+        <label>
+          跨角色共享
+          <select
+            disabled={pending || !sharing.data}
+            value={sharing.data?.level ?? 'friends'}
+            onChange={(e) => {
+              const level = e.target.value as 'off' | 'basic' | 'friends';
+              setPending(true);
+              setError('');
+              void api
+                .call(MemorySharingEndpoints.update, { body: { level } })
+                .then(() => {
+                  sharing.refresh();
+                  setMessage('已保存');
+                })
+                .catch((err) => setError(friendlyError(err)))
+                .finally(() => setPending(false));
+            }}
+          >
+            <option value="friends">互相认识的角色之间可以聊起（默认）</option>
+            <option value="basic">只共享基础资料</option>
+            <option value="off">关闭</option>
+          </select>
+        </label>
+        <p className="hint">
+          开启后，互相认识的角色可能会转述你和另一个角色聊过的事；关闭后立即生效，其他角色不再使用转述来的记忆。
+        </p>
       </div>
       {error && (
         <p role="alert" className="error">

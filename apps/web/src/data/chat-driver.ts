@@ -17,6 +17,7 @@ import {
   type IndexedLocalStore,
 } from '@weiban/client-core';
 import { syncHttp } from './sync-http.js';
+import { announceUpdate } from './updates.js';
 export interface ChatDriverObserver {
   state(state: LocalSyncState): void;
   connection(online: boolean): void;
@@ -283,8 +284,10 @@ export class ChatDriver {
             this.lastPong = Date.now();
             break;
           case 'update':
-            if (this.authenticated)
+            if (this.authenticated) {
+              announceUpdate(frame.data);
               void this.runner?.dispatch({ type: 'update', update: frame.data }).catch(() => {});
+            }
             break;
           case 'typing':
             if (this.authenticated)

@@ -19,7 +19,7 @@ interface ChatContextValue {
   error: string;
   typing: Record<string, number>;
   focus(id: string | null): void;
-  send(id: string, text: string, quoteMessageId?: string): Promise<void>;
+  send(id: string, text: string, quoteMessageId?: string, mentions?: string[]): Promise<void>;
   retry(id: string, clientMsgId: string): Promise<void>;
   older(id: string, beforeSeq: number): Promise<boolean>;
   clearHistory(id: string): Promise<void>;
@@ -124,10 +124,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         error,
         typing,
         focus,
-        send: async (id, text, quoteMessageId) => {
+        send: async (id, text, quoteMessageId, mentions) => {
           const body: SendMessageRequest = {
             clientMsgId: crypto.randomUUID(),
-            content: { type: 'text', text },
+            content: mentions?.length ? { type: 'text', text, mentions } : { type: 'text', text },
             quoteMessageId: quoteMessageId ?? null,
           };
           await current().dispatch({ type: 'enqueue', conversationId: id, body, now: Date.now() });

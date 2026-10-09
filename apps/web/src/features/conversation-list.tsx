@@ -5,6 +5,7 @@ import { VirtualList } from './virtual-list.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { Name } from './chat.js';
 import { CharacterAvatar } from './character-avatar.js';
+import { GroupAvatar } from './groups.js';
 export function ConversationListPage() {
   const { state, online, error } = useChat();
   const [query, setQuery] = useState('');
@@ -39,9 +40,14 @@ export function ConversationListPage() {
         微伴{unread > 0 ? `（${unread}）` : ''}
         {!online && '（未连接）'}
       </h1>
-      <Link className="plain" to="/discover">
-        添加角色
-      </Link>
+      <div className="button-row">
+        <Link className="plain" to="/groups/new">
+          发起群聊
+        </Link>
+        <Link className="plain" to="/discover">
+          添加角色
+        </Link>
+      </div>
       <label className="search-label">
         搜索会话
         <input
@@ -67,12 +73,18 @@ export function ConversationListPage() {
             to={`/chat/${item.conversationId}`}
             className={`conversation-row ${item.state.pinned ? 'pinned' : ''}`}
           >
-            <CharacterAvatar
-              id={
-                item.participants.find((participant) => participant.kind === 'character')?.refId ??
-                item.conversationId
-              }
-            />
+            {item.type === 'group' ? (
+              <GroupAvatar
+                ids={item.participants.filter((p) => p.kind === 'character').map((p) => p.refId)}
+              />
+            ) : (
+              <CharacterAvatar
+                id={
+                  item.participants.find((participant) => participant.kind === 'character')
+                    ?.refId ?? item.conversationId
+                }
+              />
+            )}
             <span className="conversation-copy">
               <strong>
                 <Name conversation={item} />

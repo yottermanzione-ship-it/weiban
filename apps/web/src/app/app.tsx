@@ -45,7 +45,49 @@ import {
   PeriodAuthorizationPage,
   PeriodSettingsPage,
 } from '../features/period.js';
+import { GroupListPage, GroupSettingsPage, SelectMembersPage } from '../features/groups.js';
+import {
+  CharacterMomentsPage,
+  ComposeMomentPage,
+  MomentDetailPage,
+  MomentsFeedPage,
+  MyMomentsPage,
+  useMomentsBadge,
+} from '../features/moments.js';
+import { NewFriendsPage, useNewFriendsDot } from '../features/new-friends.js';
+import { RelationsPage } from '../features/relations.js';
 import { UpdatePrompt } from './update-prompt.js';
+/** 这些页面自带返回按钮，不显示通用顶栏。 */
+const ownHeader = [
+  /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations)$/,
+  /^\/services\/period/,
+  /^\/(contacts\/(new|groups)|groups\/new|moments|me\/moments)/,
+];
+function TabBar() {
+  const badge = useMomentsBadge();
+  const friends = useNewFriendsDot();
+  const dot = (to: string) =>
+    (to === '/discover' && badge && badge.unseenPostCount + badge.unseenInteractionCount > 0) ||
+    (to === '/contacts' && friends);
+  return (
+    <nav className="tabbar" aria-label="主导航">
+      {(
+        [
+          ['/chat', '微伴', ChatsCircle],
+          ['/contacts', '通讯录', AddressBook],
+          ['/discover', '发现', Compass],
+          ['/me', '我', User],
+        ] as const
+      ).map(([to, label, Icon]) => (
+        <NavLink key={to} to={to}>
+          <Icon size={24} />
+          <span>{label}</span>
+          {dot(to) && <span className="red-dot" aria-label="有新内容" />}
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
 function Shell() {
   const auth = useAuth();
   const location = useLocation();
@@ -110,8 +152,7 @@ function Shell() {
       {!onboarding &&
         !roots.includes(location.pathname) &&
         !location.pathname.startsWith('/chat/') &&
-        !/^\/characters\/[^/]+\/(timeline|anniversaries)$/.test(location.pathname) &&
-        !location.pathname.startsWith('/services/period') && (
+        !ownHeader.some((pattern) => pattern.test(location.pathname)) && (
           <header className="topbar">
             <Link
               to={
@@ -171,29 +212,23 @@ function Shell() {
         <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />
         <Route path="/characters/:characterId/memories" element={<MemoriesPage />} />
         <Route path="/characters/:characterId/timeline" element={<TimelinePage />} />
+        <Route path="/characters/:characterId/moments" element={<CharacterMomentsPage />} />
+        <Route path="/characters/:characterId/relations" element={<RelationsPage />} />
+        <Route path="/contacts/new" element={<NewFriendsPage />} />
+        <Route path="/contacts/groups" element={<GroupListPage />} />
+        <Route path="/groups/new" element={<SelectMembersPage />} />
+        <Route path="/chat/:conversationId/group" element={<GroupSettingsPage />} />
+        <Route path="/moments" element={<MomentsFeedPage />} />
+        <Route path="/moments/new" element={<ComposeMomentPage />} />
+        <Route path="/moments/posts/:postId" element={<MomentDetailPage />} />
+        <Route path="/me/moments" element={<MyMomentsPage />} />
         <Route path="/characters/:characterId/anniversaries" element={<AnniversariesPage />} />
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/discover" element={<DiscoverPage />} />
         <Route path="/characters/:characterId" element={<CharacterPage />} />
         <Route path="*" element={<Navigate to="/me" replace />} />
       </Routes>
-      {!onboarding && !location.pathname.startsWith('/chat/') && (
-        <nav className="tabbar" aria-label="主导航">
-          {(
-            [
-              ['/chat', '微伴', ChatsCircle],
-              ['/contacts', '通讯录', AddressBook],
-              ['/discover', '发现', Compass],
-              ['/me', '我', User],
-            ] as const
-          ).map(([to, label, Icon]) => (
-            <NavLink key={to} to={to}>
-              <Icon size={24} />
-              <span>{label}</span>
-            </NavLink>
-          ))}
-        </nav>
-      )}
+      {!onboarding && !location.pathname.startsWith('/chat/') && <TabBar />}
     </div>
   );
 }
