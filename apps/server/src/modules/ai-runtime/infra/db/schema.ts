@@ -103,6 +103,78 @@ export const memoryStates = aiRuntimeSchema.table(
     ),
   ],
 );
+/** T-051 推演引擎：每用户每角色的推演控制状态。 */
+export const simulationStates = aiRuntimeSchema.table(
+  'simulation_states',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    lastSimulatedDate: text('last_simulated_date'),
+    lastActiveAt: timestamp('last_active_at', { withTimezone: true }).notNull(),
+    eventsToday: integer('events_today').notNull().default(0),
+    pausedReason: text('paused_reason'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('simulation_state_owner_idx').on(t.userId, t.characterId),
+    check('simulation_events_today', sql`${t.eventsToday} >= 0`),
+    check(
+      'simulation_paused_reason',
+      sql`${t.pausedReason} IS NULL OR ${t.pausedReason} IN ('budget_exceeded','inactive','model_unavailable')`,
+    ),
+  ],
+);
+
+/** T-051 推演引擎：生成的日常事件流水。 */
+export const dailyEvents = aiRuntimeSchema.table(
+  'daily_events',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    eventDate: text('event_date').notNull(),
+    seq: integer('seq').notNull(),
+    kind: text('kind').notNull(),
+    summary: text('summary').notNull(),
+    detail: text('detail'),
+    moodAfter: text('mood_after'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('daily_event_date_owner_seq_idx').on(t.userId, t.characterId, t.eventDate, t.seq),
+    index('daily_event_owner_date_idx').on(t.userId, t.characterId, t.eventDate),
+    check('daily_event_seq', sql`${t.seq} >= 0`),
+    check(
+      'daily_event_kind',
+      sql`${t.kind} IN ('work','social','leisure','errand','rest','unexpected')`,
+    ),
+    check(
+      'daily_event_mood',
+      sql`${t.moodAfter} IS NULL OR ${t.moodAfter} IN ('happy','neutral','tired','annoyed','excited','sad','anxious')`,
+    ),
+  ],
+);
+
+/** T-051 推演引擎：每用户每角色当前心情。 */
+export const moodStates = aiRuntimeSchema.table(
+  'mood_states',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    mood: text('mood').notNull().default('neutral'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('mood_state_owner_idx').on(t.userId, t.characterId),
+    check(
+      'mood_state_mood',
+      sql`${t.mood} IN ('happy','neutral','tired','annoyed','excited','sad','anxious')`,
+    ),
+  ],
+);
+
 /** 计划记录仅ID、状态与时序；模型输入和已生成气泡按用户DEK加密。 */
 export const replyPlans = aiRuntimeSchema.table(
   'reply_plans',
