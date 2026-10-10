@@ -10,7 +10,7 @@
  */
 import { Inject, Injectable } from '@nestjs/common';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { and, desc, eq, gte, ne } from 'drizzle-orm';
 import {
   type BillingReadPort,
   type CharacterReadPort,
@@ -71,6 +71,7 @@ import {
 } from '../infra/db/schema.js';
 import { SimulationService } from './simulation.js';
 import { localParts } from './proactive-scheduler.js';
+import { PlannerService } from './planner.js';
 
 // ---------------------------------------------------------------------------
 // 参数
@@ -175,6 +176,7 @@ export class GroupChatService {
     @Inject(GROWTH_SERVICE) private readonly growth: GrowthService,
     @Inject(HOLIDAY_EVENT_PORT) private readonly holidays: HolidayEventPort,
     @Inject(SimulationService) private readonly simulation: SimulationService,
+    @Inject(PlannerService) private readonly planner: PlannerService,
   ) {}
 
   // =========================================================================
@@ -283,6 +285,28 @@ export class GroupChatService {
       }
     });
     return { ...values, updatedAt: now.toISOString() };
+  }
+
+  /** T-090 / SAFE-03 第 5 条：角色分类变化 → 含该角色、处于非日常模式的群重新检查资格。 */
+  async onCharacterClassificationChanged(
+    tx: DbTx,
+    characterId: string,
+    ownerUserId: string | null,
+  ): Promise<void> {
+    const rows = await tx.db
+      .select()
+      .from(groupCompanionSettings)
+      .where(
+        and(
+          ne(groupCompanionSettings.scenarioMode, 'daily'),
+          ownerUserId ? eq(groupCompanionSettings.userId, ownerUserId) : undefined,
+        ),
+      );
+    for (const row of rows) {
+      const conversation = await this.chat.getConversation(row.conversationId, tx);
+      if (!conversation || !this.memberIds(conversation).includes(characterId)) continue;
+      await this.onMembersChanged(tx, row.conversationId, row.userId);
+    }
   }
 
   /** 成员变化：当前模式有人不具备资格 → 自动回到日常并发系统提示（SOC-03 第 4 条）。 */
@@ -739,7 +763,29 @@ export class GroupChatService {
     let h = 0;
     for (const ch of `${conversation.conversationId}${local.date}`)
       h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    if (local.hour !== 9 + (h % 13)) return;
+    // T-090 proactive_slot：规则版时刻附近挑一个小时（或今天不聊），每群每天只问一次。
+    const ruleHour = 9 + (h % 13);
+    const hours = [...new Set([ruleHour, Math.max(9, ruleHour - 2), Math.min(21, ruleHour + 2)])];
+    const slot = await this.planner.decide({
+      userId: job.userId,
+      conversationId: conversation.conversationId,
+      decisionType: 'proactive_slot',
+      options: [...hours.map((x) => `h${x}`), 'skip_today'],
+      ruleChoice: `h${ruleHour}`,
+      ruleReason: '规则版群自发时刻',
+      conservative: `h${ruleHour}`,
+      question:
+        '群里角色们今天什么时候自己聊起来最自然？hN 表示用户当地 N 点；也可以今天不聊（skip_today）。',
+      features: {
+        localHour: local.hour,
+        reasonKind: 'group_self_chat',
+        candidateCount: hours.length,
+      },
+      path: 'proactive',
+      idempotencyKey: `selfchat:${conversation.conversationId}:${local.date}`,
+      decisionKey: `selfchat:${conversation.conversationId}:${local.date}`,
+    });
+    if (slot.choice === 'skip_today' || local.hour !== Number(slot.choice.slice(1))) return;
     if (!(await this.backgroundAllowed(job.userId))) return;
     // 刚有人在聊就不插自发话题。
     const history = await this.history(conversation);

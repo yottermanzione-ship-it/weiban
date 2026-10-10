@@ -8,6 +8,9 @@
  *    - 两者合计每周期 ≤ P-36（=2），每次只由**一个**授权角色发出：熟悉度最高，相同取最近聊过的；
  *    - 遵守主动消息总开关、角色主动消息开关、免打扰、默认活跃时段（P-05）；
  *    - 计入 P-03/P-04：发送与 recordSent 同一事务，理由用通用值 interactive_play，键不含 health 字样；
+ *    - T-090：不再自己发送，改为经 ProactiveSchedulerService.request() 登记（reason interactive_play），
+ *      由调度器统一做免打扰、活跃时段（含 P-06 学习）、P-09 延后、P-45 静默、话题去重与频率预检；
+ *      到点时调度器回调 sendPlanned()，这里现取 PeriodContext 再生成（计划里不存任何经期信息）；
  *    - 走后台网关：purpose=proactive、modelRole=background、countAsBackground=true，计费由网关记录。
  * 2. 私聊中自然体现（chatHint）：私聊回复构建上下文时现取摘要；经期中用户没提起时，
  *    每天（按经期第几天计）最多 1 次允许角色主动提起；用户自己提起不舒服时不受此限。
@@ -53,7 +56,14 @@ import { HEALTH_READ_PORT } from '../../health/index.js';
 import { PROACTIVE_MESSAGE_PORT } from '../../proactive/index.js';
 import { healthCareLedger, simulationStates } from '../infra/db/schema.js';
 import { CompanionSettingsService } from './settings.js';
-import { FREQUENCY_LIMIT } from './proactive-scheduler.js';
+import {
+  FREQUENCY_LIMIT,
+  ProactiveSchedulerService,
+  type ProactivePlanHandlerInput,
+} from './proactive-scheduler.js';
+
+/** T-090：经期关怀经主动消息调度器登记的计划来源前缀（不含 health 字样；键 = 不透明周期 ID + 名额 + 当地日期）。 */
+export const CARE_PLAN_PREFIX = 'care:';
 
 // ---------------------------------------------------------------------------
 // 产品参数（P-36、P-37 的 AI 侧取值；health 后端合入 product-params 后改为引用）
@@ -118,6 +128,9 @@ export class HealthCareService {
     @Optional()
     @Inject(PROACTIVE_MESSAGE_PORT)
     private readonly proactive?: ProactiveMessagePort,
+    @Optional()
+    @Inject(ProactiveSchedulerService)
+    private readonly scheduler?: ProactiveSchedulerService,
   ) {}
 
   get enabled(): boolean {
@@ -192,6 +205,21 @@ export class HealthCareService {
     if (proactiveUsed.some((r) => r.slot === kind)) return { sent: false, reason: 'already_sent' };
     if (proactiveUsed.length >= P36_HEALTH_CARE_PER_CYCLE)
       return { sent: false, reason: 'cycle_quota_reached' };
+    // T-090：经调度器登记，到点由 sendPlanned 现取数据发送。
+    if (this.scheduler) {
+      const key = careKey(ctx.cycleKey, kind);
+      const sourceRef = `${CARE_PLAN_PREFIX}${key}:${local.date}`;
+      await this.scheduler.request({
+        userId,
+        characterId,
+        reason: HEALTH_CARE_PROACTIVE_REASON,
+        sourceRef,
+        topicKey: sourceRef,
+        brief: '（互动玩法：内容在发送时现取，不在计划里保存）',
+        priority: 60,
+      });
+      return { sent: false, reason: 'scheduled' };
+    }
     if (!(await this.reserve(userId, ctx.cycleKey, kind, characterId)))
       return { sent: false, reason: 'already_sent' };
 
@@ -208,6 +236,54 @@ export class HealthCareService {
       return { sent: false, reason: sent ? sent.reason : 'send_failed' };
     }
     return { sent: true, kind, characterId, messageId: sent.messageId };
+  }
+
+  /**
+   * T-090：调度器到点回调。现取 PeriodContext，确认这个名额仍然该发、本周期没发过，再生成并发送；
+   * recordSent 用 proactive:{planId}（调度器计划 ID）在同一事务里计入 P-03/P-04。
+   */
+  async sendPlanned(
+    input: ProactivePlanHandlerInput,
+  ): Promise<{ ok: true; messageId: string } | { ok: false; reason: string }> {
+    const health = this.health;
+    if (!health) return { ok: false, reason: 'health_port_unbound' };
+    const ctx = await health.getPeriodContext({
+      userId: input.userId,
+      characterId: input.characterId,
+      scene: 'proactive_direct',
+    });
+    if (!ctx) return { ok: false, reason: 'no_context' };
+    const kind = decideKind(ctx, input.localDate);
+    if (!kind) return { ok: false, reason: 'nothing_due' };
+    const key = careKey(ctx.cycleKey, kind);
+    if (!input.sourceRef.startsWith(`${CARE_PLAN_PREFIX}${key}:`))
+      return { ok: false, reason: 'no_longer_due' };
+    const used = await this.db.db
+      .select({ slot: healthCareLedger.slot })
+      .from(healthCareLedger)
+      .where(
+        and(eq(healthCareLedger.userId, input.userId), eq(healthCareLedger.cycleKey, ctx.cycleKey)),
+      );
+    const proactiveUsed = used.filter((r) => r.slot === 'pre_period' || r.slot === 'in_period');
+    if (proactiveUsed.some((r) => r.slot === kind)) return { ok: false, reason: 'already_sent' };
+    if (proactiveUsed.length >= P36_HEALTH_CARE_PER_CYCLE)
+      return { ok: false, reason: 'cycle_quota_reached' };
+    if (!(await this.reserve(input.userId, ctx.cycleKey, kind, input.characterId)))
+      return { ok: false, reason: 'already_sent' };
+    const sent = await this.compose(
+      input.userId,
+      input.characterId,
+      kind,
+      ctx,
+      input.localDate,
+      input.perCharacterLimit,
+      `proactive:${input.planId}`,
+    ).catch(() => null);
+    if (!sent || !sent.ok) {
+      await this.release(input.userId, ctx.cycleKey, kind);
+      return { ok: false, reason: sent ? sent.reason : 'send_failed' };
+    }
+    return { ok: true, messageId: sent.messageId };
   }
 
   /** 选角色：已授权且仍是好友、角色主动消息开关未关；熟悉度最高，相同取最近聊过的。 */
@@ -239,6 +315,7 @@ export class HealthCareService {
     ctx: PeriodContext,
     localDate: string,
     perCharacterLimit: number,
+    recordKey?: string,
   ): Promise<{ ok: true; messageId: string } | { ok: false; reason: string }> {
     const contact = await this.contacts.getActiveContact(userId, characterId);
     if (!contact?.conversationId) return { ok: false, reason: 'no_conversation' };
@@ -310,7 +387,7 @@ export class HealthCareService {
           userId,
           characterId,
           localDate,
-          key,
+          recordKey ?? key,
           HEALTH_CARE_PROACTIVE_REASON,
           tx,
           false,

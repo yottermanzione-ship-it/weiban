@@ -106,8 +106,22 @@ export class ModelResolver implements AdultModelReadPort {
     characterId?: string;
     /** T-071：消息带图片时同样要求识图能力（ChatMessageForModel.images）。 */
     hasImages?: boolean;
+    /** T-090（CR-17）：只允许 purpose = behavior_planning；指定规划模型（不随用户的后台模型）。 */
+    modelKeyOverride?: string;
   }): Promise<PortResult<ResolvedModel, GenerateError>> {
-    const picked = await this.pick(input.userId, input.modelRole, input.characterId ?? null);
+    let picked: { facts: ModelFacts } | null;
+    if (input.modelKeyOverride) {
+      if (input.purpose !== 'behavior_planning') return { ok: false, error: 'bad_request' };
+      picked = { facts: await this.catalog.fact(input.modelKeyOverride) };
+    } else if (input.purpose === 'behavior_planning') {
+      // 规划默认模型（defaultFor 含 planner）；平台未设置时沿用用户的后台模型。
+      const planner = await this.catalog.defaultModel('planner');
+      picked = planner
+        ? { facts: planner }
+        : await this.pick(input.userId, input.modelRole, input.characterId ?? null);
+    } else {
+      picked = await this.pick(input.userId, input.modelRole, input.characterId ?? null);
+    }
     if (!picked) return { ok: false, error: 'not_configured' };
     let facts = picked.facts;
     let usedVisionDefault = false;
@@ -132,6 +146,9 @@ export class ModelResolver implements AdultModelReadPort {
     }
     const entry = facts.entry;
     if (!entry) return { ok: false, error: 'model_unavailable' };
+    // 规划模型一律不能是无审查模型（CR-17）。
+    if (input.purpose === 'behavior_planning' && hasAdultContent(entry.capabilities))
+      return { ok: false, error: 'model_not_allowed' };
     // 调用时的无审查模型闸门（billing.md 第 9 节第 2 条）
     if (hasAdultContent(entry.capabilities)) {
       if (!input.characterId) return { ok: false, error: 'model_not_allowed' };

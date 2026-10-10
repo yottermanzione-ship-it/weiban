@@ -361,6 +361,11 @@ export class ModelGateway implements ModelGatewayPort {
       ModelPurpose.safeParse(i.purpose).success &&
       BillingOwner.safeParse(i.billingOwner).success &&
       ['chat', 'background', 'adult'].includes(i.modelRole) &&
+      (i.modelKeyOverride === undefined ||
+        (i.purpose === 'behavior_planning' &&
+          typeof i.modelKeyOverride === 'string' &&
+          i.modelKeyOverride.length > 0 &&
+          i.modelKeyOverride.length <= 120)) &&
       typeof i.idempotencyKey === 'string' &&
       i.idempotencyKey.length > 0 &&
       i.idempotencyKey.length <= 200 &&

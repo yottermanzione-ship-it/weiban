@@ -55,6 +55,7 @@ import { localParts } from './proactive-scheduler.js';
 import { CompanionSettingsService } from './settings.js';
 import { SimulationService } from './simulation.js';
 import { CharacterImageService } from './character-image.js';
+import { PlannerService } from './planner.js';
 import {
   CLOSENESS_WEIGHT,
   SocialService,
@@ -127,6 +128,7 @@ export class MomentsAiService {
     @Inject(CompanionSettingsService) private readonly settings: CompanionSettingsService,
     @Inject(SocialService) private readonly social: SocialService,
     @Inject(CharacterImageService) private readonly images: CharacterImageService,
+    @Inject(PlannerService) private readonly planner: PlannerService,
     @Optional()
     @Inject(PUBLIC_UPDATE_READ_PORT)
     private readonly publicUpdates?: PublicUpdateReadPort,
@@ -201,7 +203,38 @@ export class MomentsAiService {
     const local = localParts(now, tz);
     const perWeek = role.card.data.social.moments.frequencyPerWeek ?? P16_MOMENTS.defaultPerWeek;
     const plan = this.schedule(userId, characterId, local.date, perWeek);
-    if (!plan.postToday || local.hour < plan.hour || local.hour > POST_HOURS.to) return;
+    if (
+      !plan.postToday ||
+      local.hour < Math.max(POST_HOURS.from, plan.hour - 2) ||
+      local.hour > POST_HOURS.to
+    )
+      return;
+    // T-090 moments_plan：规则版时刻附近挑一个发圈时段（或今天不发），每角色每天只问一次。
+    const hours = [
+      ...new Set([
+        plan.hour,
+        Math.max(POST_HOURS.from, plan.hour - 2),
+        Math.min(POST_HOURS.to, plan.hour + 2),
+      ]),
+    ];
+    const slot = await this.planner.decide({
+      userId,
+      characterId,
+      decisionType: 'moments_plan',
+      options: [...hours.map((h) => `post_at:${h}`), 'skip_today'],
+      ruleChoice: `post_at:${plan.hour}`,
+      ruleReason: '规则版发圈时刻',
+      conservative: `post_at:${plan.hour}`,
+      question:
+        '角色今天什么时候发一条朋友圈最自然？post_at:N 表示用户当地 N 点之后；也可以今天不发（skip_today）。',
+      features: { localHour: local.hour, candidateCount: hours.length },
+      path: 'proactive',
+      idempotencyKey: `moments:${characterId}:${local.date}`,
+      decisionKey: `moments:${characterId}:${local.date}`,
+    });
+    if (slot.choice === 'skip_today') return;
+    const postHour = Number(slot.choice.split(':')[1]);
+    if (local.hour < (Number.isFinite(postHour) ? postHour : plan.hour)) return;
     // P-16 每天最多 1 条：账本唯一约束 + 朋友圈里今天已有就不发。
     const [today] = await this.db.db
       .select({ id: momentsPlans.id })
@@ -292,7 +325,26 @@ export class MomentsAiService {
     }
     // T-072 MED-02：日常事件朋友圈约一半配图（真人角色只有 TA 视角、无人脸；失败或未开通时用素材库或不配）。
     let imageMediaIds = source.imageMediaIds ?? [];
-    if (!imageMediaIds.length && source.kind === 'daily_event' && Math.random() < 0.5) {
+    const withImage =
+      !imageMediaIds.length && source.kind === 'daily_event'
+        ? (
+            await this.planner.decide({
+              userId,
+              characterId,
+              decisionType: 'moments_plan',
+              options: ['no_image', 'with_image'],
+              ruleChoice: Math.random() < 0.5 ? 'with_image' : 'no_image',
+              ruleReason: '规则版约一半配图',
+              conservative: 'no_image',
+              question: '这条日常朋友圈要不要配一张 TA 视角的图（with_image）？',
+              features: { localHour: local.hour, reasonKind: source.kind },
+              path: 'proactive',
+              idempotencyKey: `moments-image:${characterId}:${local.date}`,
+              decisionKey: `moments-image:${characterId}:${local.date}`,
+            })
+          ).choice === 'with_image'
+        : false;
+    if (withImage) {
       const image = await this.images
         .generate({
           userId,

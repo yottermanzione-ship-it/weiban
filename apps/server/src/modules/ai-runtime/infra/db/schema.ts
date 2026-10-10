@@ -6,6 +6,8 @@ import {
   customType,
   index,
   integer,
+  jsonb,
+  real,
   pgSchema,
   primaryKey,
   text,
@@ -476,4 +478,45 @@ export const momentCardAttempts = aiRuntimeSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.characterId, t.weekKey] })],
+);
+
+/** T-090 行为规划：按决策类型的实现配置（ADM-05 第 10 条）。没有行 = 默认（rules）。 */
+export const plannerConfig = aiRuntimeSchema.table('planner_config', {
+  decisionType: text('decision_type').primaryKey(),
+  implementation: text('implementation').notNull().default('rules'),
+  modelKey: text('model_key'),
+  confidenceThreshold: real('confidence_threshold').notNull().default(0.55),
+  evalReportId: text('eval_report_id'),
+  updatedBy: uuid('updated_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+});
+
+/** T-090 决策记录（PLAN-01 第 4 条）：决策、置信度、理由；不存消息原文；保留 90 天。 */
+export const planningDecisions = aiRuntimeSchema.table(
+  'planning_decisions',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id'),
+    conversationId: uuid('conversation_id'),
+    decisionType: text('decision_type').notNull(),
+    options: jsonb('options').$type<string[]>().notNull(),
+    choice: text('choice').notNull(),
+    confidence: real('confidence').notNull(),
+    reason: text('reason').notNull(),
+    implementation: text('implementation').notNull(),
+    fallback: text('fallback'),
+    latencyMs: integer('latency_ms').notNull().default(0),
+    usageRecordId: uuid('usage_record_id'),
+    chargedMicros: bigint('charged_micros', { mode: 'number' }).notNull().default(0),
+    path: text('path').notNull().default('reply'),
+    /** 同一决策只问一次（例 proactive:{userId}:{date}:{sourceRef}）；回复路径为 null。 */
+    decisionKey: text('decision_key'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    index('planning_decisions_user_idx').on(t.userId, t.createdAt),
+    index('planning_decisions_created_idx').on(t.createdAt),
+    unique('planning_decisions_key_idx').on(t.userId, t.decisionKey),
+  ],
 );

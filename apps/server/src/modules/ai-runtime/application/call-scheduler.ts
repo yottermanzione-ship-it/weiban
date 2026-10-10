@@ -37,6 +37,7 @@ import { POLICY_PORT } from '../../policy/index.js';
 import { outputAllowed } from '../domain/reply-rules.js';
 import { callAttempts, proactivePlans, userChatActivity } from '../infra/db/schema.js';
 import { QuietStateService } from './quiet-state.js';
+import { PlannerService } from './planner.js';
 import { CompanionSettingsService } from './settings.js';
 
 /** P-10 原文：每角色每 7 天最多 1 次；全部角色每 7 天最多 3 次；要求熟悉度 L3 及以上。 */
@@ -46,7 +47,7 @@ const P09_BUSY_MS = 5 * 60_000;
 /** P-33：余额保留线 1 元。 */
 const P33_FLOOR_MICROS = 1_000_000;
 const COUNTED = ['started', 'completed', 'missed', 'declined', 'failed'];
-/** 各触发理由在当天被选中拨出的概率（规则版，T-090 决策层就绪后替换）。 */
+/** 各触发理由在当天被选中拨出的概率：T-090 起作为决策层 call_slot 的规则版与退路。 */
 const TRIGGER_CHANCE: Record<string, number> = {
   anniversary: 1,
   follow_up: 0.5,
@@ -76,6 +77,7 @@ export class CallSchedulerService {
     @Inject(POLICY_PORT) private readonly policy: PolicyPort,
     @Inject(CompanionSettingsService) private readonly settings: CompanionSettingsService,
     @Inject(QuietStateService) private readonly quiet: QuietStateService,
+    @Inject(PlannerService) private readonly planner: PlannerService,
   ) {}
 
   /** 调度器用户级任务里调用：最多发起一通来电。 */
@@ -136,11 +138,36 @@ export class CallSchedulerService {
         .then((f) => f.level)
         .catch(() => 1);
       if (level < P10_CALLS.minLevel) continue;
-      const trigger = triggers
-        .filter((t) => t.characterId === characterId)
-        .find(
-          (t) => stableRandom(ctx.userId, t.sourceRef, 'call') < (TRIGGER_CHANCE[t.reason] ?? 0),
-        );
+      // T-090 call_slot：P-10、熟悉度、P-45、开关都已由代码先扣掉；决策层只在「今天打 / 今天不打」里挑，每个来源每天只问一次。
+      let trigger: (typeof triggers)[number] | undefined;
+      for (const t of triggers.filter((x) => x.characterId === characterId)) {
+        const ruleCall =
+          stableRandom(ctx.userId, t.sourceRef, 'call') < (TRIGGER_CHANCE[t.reason] ?? 0);
+        const d = await this.planner.decide({
+          userId: ctx.userId,
+          characterId,
+          conversationId: contact.conversationId,
+          decisionType: 'call_slot',
+          options: ['call_now', 'skip_today'],
+          ruleChoice: ruleCall ? 'call_now' : 'skip_today',
+          ruleReason: ruleCall ? `规则版：${t.reason}` : '规则版：今天不打',
+          conservative: 'skip_today',
+          question:
+            '角色今天要不要为这件事主动给用户打一通语音电话（call_now）还是今天不打（skip_today）？',
+          features: {
+            reasonKind: t.reason,
+            familiarityLevel: level,
+            relationshipType: contact.relationship ?? null,
+          },
+          path: 'proactive',
+          idempotencyKey: `call:${ctx.localDate}:${t.sourceRef}`,
+          decisionKey: `call:${ctx.localDate}:${t.sourceRef}`,
+        });
+        if (d.choice === 'call_now') {
+          trigger = t;
+          break;
+        }
+      }
       if (!trigger) continue;
       const attemptId = newId();
       const inserted = await this.db.db

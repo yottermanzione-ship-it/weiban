@@ -56,6 +56,9 @@ import {
 import { MediaAiService } from './media-ai.js';
 import { QuietStateService } from './quiet-state.js';
 import { CallSchedulerService } from './call-scheduler.js';
+import { PlannerService, PLANNER_CLEANUP_JOB } from './planner.js';
+import { CompanionSettingsService } from './settings.js';
+import { CARE_PLAN_PREFIX } from './health-care.js';
 const TRANSCRIBE_VOICE_JOB = 'ai.transcribe_voice';
 @Injectable()
 export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap {
@@ -77,6 +80,8 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     @Inject(MediaAiService) readonly mediaAi: MediaAiService,
     @Inject(QuietStateService) readonly quiet: QuietStateService,
     @Inject(CallSchedulerService) readonly calls: CallSchedulerService,
+    @Inject(PlannerService) readonly planner: PlannerService,
+    @Inject(CompanionSettingsService) readonly companion: CompanionSettingsService,
   ) {}
   async onApplicationBootstrap(): Promise<void> {
     if (this.jobs.isReady)
@@ -115,6 +120,25 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     await this.jobs.work(RUN_DAILY_SIMULATIONS_JOB, () => this.simulation.runDailySimulations());
     // 每天凌晨 2:00（北京时间）触发推演调度
     await this.jobs.schedule(RUN_DAILY_SIMULATIONS_JOB, '0 18 * * *'); // UTC 18:00 = 北京 02:00
+
+    // T-090 行为规划：决策记录保留 90 天，每天清理一次。
+    await this.jobs.work(PLANNER_CLEANUP_JOB, () => this.planner.cleanup());
+    await this.jobs.schedule(PLANNER_CLEANUP_JOB, '41 3 * * *');
+    // T-090：经期关怀经主动消息调度器登记，到点由 health-care 现取数据发送。
+    this.proactive.registerPlanHandler(CARE_PLAN_PREFIX, (input) =>
+      this.healthCare.sendPlanned(input),
+    );
+    // T-090 / SAFE-03 第 5 条：分类变化 → 资格变「否」的成人模式（及不可恋爱的恋爱模式）立即切回日常并提示。
+    this.bus.subscribe({
+      consumer: 'ai.on_classification_changed',
+      eventType: 'characters.character_classification_changed',
+      handle: async (event, tx) => {
+        const p = event.payload;
+        if (p.adultModeEligible && p.romanceAllowed) return;
+        await this.companion.onClassificationChanged(tx, p);
+        await this.groupChat.onCharacterClassificationChanged(tx, p.characterId, p.ownerUserId);
+      },
+    });
 
     // 经期关怀（T-060）：每小时扫描一次，按用户时区与活跃时段判断；每周期每名额最多一次。
     await this.jobs.work<{ userId: string }>(HEALTH_CARE_CHECK_JOB, async (j) => {

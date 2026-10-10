@@ -58,6 +58,8 @@ import {
   AI_CHARACTER_READ,
 } from './application/supplemented-character-read.js';
 import { ImportAiService } from './application/import-ai.js';
+import { PlannerService } from './application/planner.js';
+import { PlannerAdminController } from './http/planner-admin.controller.js';
 import {
   SupplementConflictService,
   PersonaUpdateSummaryService,
@@ -79,6 +81,8 @@ import {
     CallsModule,
   ],
   providers: [
+    // T-090：行为规划决策层。
+    PlannerService,
     // T-081：角色读取补上「我的补充设定」；导入分析；补充设定冲突项；人设更新摘要。
     SupplementedCharacterRead,
     { provide: AI_CHARACTER_READ, useExisting: SupplementedCharacterRead },
@@ -145,6 +149,7 @@ import {
     TimelineController,
     MemorySharingController,
     QuietStateController,
+    PlannerAdminController,
   ],
 })
 export class AiRuntimeModule {}

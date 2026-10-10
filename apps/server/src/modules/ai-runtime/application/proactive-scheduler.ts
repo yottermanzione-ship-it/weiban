@@ -75,6 +75,25 @@ import { SimulationService } from './simulation.js';
 import { MediaAiService } from './media-ai.js';
 import { CharacterImageService } from './character-image.js';
 import { CallSchedulerService } from './call-scheduler.js';
+import { QuietStateService } from './quiet-state.js';
+import { PlannerService } from './planner.js';
+
+/**
+ * T-090：其他服务（经期关怀等）经调度器登记的计划，到发送时由登记方自己生成并发送（内容现取，不存进计划）。
+ * 调度器负责开关、免打扰、活跃时段、P-09 延后、P-45 静默、话题去重、频率与 P-03/P-04 预检；
+ * 处理器必须在同一事务里 recordSent（键用 proactive:{planId}）。
+ */
+export interface ProactivePlanHandlerInput {
+  planId: string;
+  userId: string;
+  characterId: string;
+  sourceRef: string;
+  localDate: string;
+  perCharacterLimit: number;
+}
+export type ProactivePlanHandler = (
+  input: ProactivePlanHandlerInput,
+) => Promise<{ ok: true; messageId: string } | { ok: false; reason: string }>;
 
 // ---------------------------------------------------------------------------
 // 参数
@@ -262,10 +281,58 @@ export class ProactiveSchedulerService {
     @Inject(MediaAiService) private readonly mediaAi: MediaAiService,
     @Inject(CharacterImageService) private readonly images: CharacterImageService,
     @Inject(CallSchedulerService) private readonly calls: CallSchedulerService,
+    @Inject(QuietStateService) private readonly quiet: QuietStateService,
+    @Inject(PlannerService) private readonly planner: PlannerService,
     /** T-082 PLAY-02：宠物读取（推演一致、提议领养、宠物照片）与角色照片进相册。 */
     @Optional() @Inject(GROWTH_PET_READ_PORT) private readonly pets?: PetReadPort,
     @Optional() @Inject(GROWTH_PET_ALBUM) private readonly album?: PetAlbum,
   ) {}
+
+  private readonly handlers: Array<{ prefix: string; handle: ProactivePlanHandler }> = [];
+
+  /** T-090：登记某类计划（按 sourceRef 前缀）的发送处理器（lifecycle 启动时调用）。 */
+  registerPlanHandler(prefix: string, handle: ProactivePlanHandler): void {
+    if (!this.handlers.some((h) => h.prefix === prefix)) this.handlers.push({ prefix, handle });
+  }
+
+  /**
+   * T-090 proactive_slot：在规则版时刻附近给出 2～3 个候选时段 + 今天不发，由决策层挑一次（同一来源每天只问一次）。
+   * 返回要发的小时；null = 今天不发。
+   */
+  private async slotFor(
+    ctx: UserContext,
+    characterId: string,
+    sourceRef: string,
+    ruleHour: number,
+    reasonKind: string,
+  ): Promise<number | null> {
+    const { startHour, endHour } = P05_DEFAULT_WINDOW;
+    const clamp = (h: number) => Math.max(startHour, Math.min(endHour - 1, h));
+    const hours = [...new Set([clamp(ruleHour), clamp(ruleHour - 2), clamp(ruleHour + 3)])];
+    const options = [...hours.map((h) => `h${h}`), 'skip_today'];
+    const d = await this.planner.decide({
+      userId: ctx.userId,
+      characterId,
+      decisionType: 'proactive_slot',
+      options,
+      ruleChoice: `h${clamp(ruleHour)}`,
+      ruleReason: '规则版时段',
+      conservative: `h${clamp(ruleHour)}`,
+      question:
+        '角色想主动找用户分享一件事。挑一个最自然的时段（hN 表示用户当地 N 点之后），或今天不发（skip_today）。',
+      features: {
+        localHour: ctx.localHour,
+        reasonKind,
+        candidateCount: hours.length,
+      },
+      path: 'proactive',
+      idempotencyKey: `slot:${ctx.localDate}:${characterId}:${sourceRef}`,
+      decisionKey: `slot:${ctx.localDate}:${characterId}:${sourceRef}`,
+    });
+    if (d.choice === 'skip_today') return null;
+    const h = Number(d.choice.slice(1));
+    return Number.isFinite(h) ? h : clamp(ruleHour);
+  }
 
   private async listPets(userId: string, characterId: string): Promise<PetForRuntime[]> {
     return (await this.pets?.listPetsForCharacter(userId, characterId).catch(() => [])) ?? [];
@@ -551,9 +618,17 @@ export class ProactiveSchedulerService {
             Math.floor(stableRandom(ctx.localDate, characterId, String(i)) * shareable.length)
           ];
         if (!pick) continue;
-        // 目标时刻：当天剩余窗口里的稳定随机点（相对 09:00–23:00 的比例）。
-        const targetHour = 9 + stableRandom(ctx.userId, pick.id) * 13;
-        if (ctx.localHour < Math.floor(targetHour)) continue;
+        // 目标时刻：规则版为当天窗口里的稳定随机点；T-090 起由决策层在附近时段里挑（或今天不发）。
+        const ruleHour = Math.floor(9 + stableRandom(ctx.userId, pick.id) * 13);
+        if (ctx.localHour < Math.min(ruleHour, ruleHour - 2)) continue;
+        const targetHour = await this.slotFor(
+          ctx,
+          characterId,
+          `event:${pick.id}`,
+          ruleHour,
+          'daily_event',
+        );
+        if (targetHour === null || ctx.localHour < targetHour) continue;
         await this.request({
           userId: ctx.userId,
           characterId,
@@ -680,6 +755,8 @@ export class ProactiveSchedulerService {
     for (const plan of due)
       if (plan.deferredSince && now.getTime() - plan.deferredSince.getTime() > P09_DEFER.maxDeferMs)
         await this.drop(plan, 'chat_defer_timeout');
+    // T-090 / behavior-planning.md 6.2：P-45「不方便」静默期间主动消息延后到静默结束之后（安全关怀跟进例外）。
+    const quietUntil = await this.quiet.getInconvenientUntil(ctx.userId).catch(() => null);
 
     // 余额保留线 P-33 与后台预算（SIM-05 第 9 条）；安全关怀跟进例外。
     const spend = await this.billing.getSpendStatus(ctx.userId).catch(() => null);
@@ -692,6 +769,7 @@ export class ProactiveSchedulerService {
     for (const plan of due) {
       if (plan.deferredSince && now.getTime() - plan.deferredSince.getTime() > P09_DEFER.maxDeferMs)
         continue;
+      if (quietUntil && plan.reason !== 'safety_follow_up') continue;
       const contact = contacts.find((c) => c.characterId === plan.characterId);
       if (!contact?.conversationId) {
         await this.drop(plan, 'contact_inactive');
@@ -730,6 +808,27 @@ export class ProactiveSchedulerService {
     }
   }
 
+  /** T-090 reply_form（发图时机）：分享日常事件时配不配图；规则版约三分之一。 */
+  private async wantEventPhoto(ctx: UserContext, plan: Plan): Promise<boolean> {
+    const rule = stableRandom(plan.id, 'photo') < 0.35;
+    const d = await this.planner.decide({
+      userId: ctx.userId,
+      characterId: plan.characterId,
+      decisionType: 'reply_form',
+      options: ['text', 'keep_image'],
+      ruleChoice: rule ? 'keep_image' : 'text',
+      ruleReason: rule ? '规则版配图' : '规则版只发文字',
+      conservative: 'text',
+      question:
+        '角色主动分享一件日常小事，要不要配一张 TA 视角的照片（keep_image）还是只发文字（text）？',
+      features: { localHour: ctx.localHour, reasonKind: plan.reason },
+      path: 'proactive',
+      idempotencyKey: `photo:${plan.id}`,
+      decisionKey: `photo:${plan.id}`,
+    });
+    return d.choice === 'keep_image';
+  }
+
   private async topicRecentlyUsed(plan: Plan): Promise<boolean> {
     if (plan.isHoliday) return false;
     const since = new Date(this.clock.nowMs() - P07_TOPIC_DEDUPE_DAYS * 86400_000);
@@ -757,6 +856,35 @@ export class ProactiveSchedulerService {
       .where(and(eq(proactivePlans.id, plan.id), eq(proactivePlans.status, 'planned')))
       .returning();
     if (!claimed.length) return;
+    // T-090：登记方自己发送的计划（如经期关怀，内容现取）。
+    const handler = this.handlers.find((h) => plan.sourceRef.startsWith(h.prefix));
+    if (handler) {
+      const settingsForLimit = await this.settings
+        .get(ctx.userId, plan.characterId)
+        .catch(() => null);
+      const result = await handler
+        .handle({
+          planId: plan.id,
+          userId: ctx.userId,
+          characterId: plan.characterId,
+          sourceRef: plan.sourceRef,
+          localDate: plan.localDate,
+          perCharacterLimit: FREQUENCY_LIMIT[settingsForLimit?.proactiveFrequency ?? 'medium'],
+        })
+        .catch(() => ({ ok: false as const, reason: 'handler_error' }));
+      if (result.ok)
+        await this.db.db
+          .update(proactivePlans)
+          .set({
+            status: 'sent',
+            outcome: 'sent',
+            messageId: result.messageId,
+            updatedAt: this.clock.now(),
+          })
+          .where(eq(proactivePlans.id, plan.id));
+      else await this.drop(plan, result.reason.slice(0, 60));
+      return;
+    }
     const epoch = await this.contacts.getActiveContactEpoch(ctx.userId, plan.characterId);
     const role = await this.characters.getForRuntime(ctx.userId, plan.characterId);
     const policy = await this.policy.getCharacterPolicy(ctx.userId, plan.characterId);
@@ -877,7 +1005,7 @@ export class ProactiveSchedulerService {
         ? { type: 'image', mediaId: image.mediaId, width: image.width, height: image.height }
         : { type: 'image', mediaId: pet.presetImageMediaId, width: null, height: null };
       petPhoto = true;
-    } else if (plan.reason === 'daily_event' && stableRandom(plan.id, 'photo') < 0.35) {
+    } else if (plan.reason === 'daily_event' && (await this.wantEventPhoto(ctx, plan))) {
       const scene = /「(.+?)」/u.exec(plan.brief)?.[1] ?? plan.brief.slice(0, 200);
       const image = await this.images
         .generate({

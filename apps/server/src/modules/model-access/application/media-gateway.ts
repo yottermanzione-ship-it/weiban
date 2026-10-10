@@ -235,9 +235,55 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     });
   }
 
-  /** 行为规划决策（CR-18）由 T-090 实现；在此之前一律「未开通」，决策层按规则版处理。 */
-  async decide(_input: DecideInput): Promise<PortResult<DecideOutput, GenerateError>> {
-    return { ok: false, error: 'not_configured' };
+  /**
+   * 行为规划决策（CR-18，T-090）：模型由调用方按决策层配置指定（目录中登记的 Jev 模型）；按输入 token 计价，
+   * 与其他调用相同的冻结 / 结算 / 用量记录。假上游（fake-）时确定性输出。真实 Jev 接口「待配置后验证」。
+   */
+  async decide(input: DecideInput): Promise<PortResult<DecideOutput, GenerateError>> {
+    if (
+      input.purpose !== 'behavior_planning' ||
+      !input.modelKey ||
+      !Array.isArray(input.questions) ||
+      input.questions.length === 0 ||
+      input.questions.length > 20
+    )
+      return { ok: false, error: 'bad_request' };
+    return this.cached('decide', input, async () => {
+      const facts = await this.catalog.fact(input.modelKey);
+      const reason = unavailableReason(facts.entry, facts.upstreamStatus);
+      if (!facts.entry || reason === 'model_removed')
+        return { ok: false, error: 'model_unavailable' };
+      if (reason === 'provider_unavailable') return { ok: false, error: 'provider_unavailable' };
+      if (facts.entry.capabilities.includes('adult_content'))
+        return { ok: false, error: 'model_not_allowed' };
+      const model: Resolved = {
+        modelKey: facts.entry.modelKey,
+        upstreamId: facts.entry.upstreamId,
+        upstreamModelId: facts.entry.upstreamModelId,
+        fake: isFakeModel(facts.entry.upstreamModelId, this.config.nodeEnv === 'production'),
+      };
+      const estimateTokens = Math.ceil(JSON.stringify(input.state).length / 2) + 200;
+      const questions = input.questions.map((q) => ({
+        questionId: q.questionId,
+        kind: q.kind,
+        prompt: q.prompt,
+        options: q.kind === 'yes_no' ? ['yes', 'no'] : (q.options ?? []).slice(0, 255),
+      }));
+      return this.run(
+        input,
+        model,
+        { inputTokens: estimateTokens, outputTokens: 0 },
+        async (target, adapter) => {
+          const result = await adapter.decide(target, { state: input.state, questions });
+          if (!result.ok) return result;
+          return {
+            ok: true,
+            value: { answers: result.value.answers },
+            actual: { inputTokens: result.value.inputTokens, outputTokens: 0 },
+          };
+        },
+      );
+    });
   }
 
   // ---------- 流式（通话，ADR-0025） ----------

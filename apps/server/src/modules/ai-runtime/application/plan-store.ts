@@ -55,6 +55,8 @@ const T066_TABLES = [
   // T-082：领养提议（一次）、名场面评估记录
   'pet_proposals',
   'moment_card_attempts',
+  // T-090：行为规划决策记录
+  'planning_decisions',
 ] as const;
 @Injectable()
 export class ReplyPlanStore {

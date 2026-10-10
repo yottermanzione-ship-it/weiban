@@ -15,6 +15,7 @@ import {
   CLOCK,
   OUTBOX,
   type Outbox,
+  P01_REPLY_DELAY,
   P02_SPLIT_BUBBLES,
   P28_INSTANT_REPLY_MIN_TYPING_MS,
   type AuditLog,
@@ -28,6 +29,7 @@ import { ReplyContext, ReplySnapshot } from './reply-context.js';
 import { callModelForCare, careFallback } from './safety-care.js';
 import { HEALTH_LABEL } from './health-care.js';
 import { MediaAiService } from './media-ai.js';
+import { PlannerService } from './planner.js';
 import { outputAllowed, replyDelay, splitReply } from '../domain/reply-rules.js';
 const Result = z.object({
   bubbles: z.array(z.string().min(1).max(4000)).min(1).max(4),
@@ -47,6 +49,7 @@ export class ReplyEngine {
     @Inject(AUDIT_LOG) readonly audit: AuditLog,
     @Inject(MediaAiService) readonly mediaAi: MediaAiService,
     @Inject(OUTBOX) readonly outbox: Outbox,
+    @Inject(PlannerService) readonly planner: PlannerService,
   ) {}
   async run(id: string): Promise<void> {
     if (!z.uuid().safeParse(id).success) return;
@@ -202,8 +205,38 @@ export class ReplyEngine {
           userText: snapshot.userText,
           history,
           voiceId: snapshot.voiceId,
+          instant: snapshot.instantReply,
         })
         .catch(() => null);
+    }
+    // T-090 reply_timing：秒回关闭时由决策层在 fast / normal / slow 间挑（仍在 P-01 上下限内）；秒回开启不加人为延迟。
+    let timing: 'fast' | 'normal' | 'slow' = 'normal';
+    if (!inCare && !snapshot.instantReply && row.kind === 'message') {
+      const d = await this.planner
+        .decide({
+          userId: row.userId,
+          characterId: row.characterId,
+          conversationId: row.conversationId,
+          decisionType: 'reply_timing',
+          options: ['fast', 'normal', 'slow'],
+          ruleChoice: 'normal',
+          ruleReason: '规则版按长度',
+          conservative: 'normal',
+          question:
+            '这次回复按什么节奏发出：fast（按长度下限，像正好拿着手机）、normal（按长度中值）、slow（按长度上限，像在忙）？',
+          features: {
+            userMsgLength: [...snapshot.userText].length,
+            replyLength: bubbles.join('').length,
+            scenarioMode: snapshot.scenarioMode,
+          },
+          summary: snapshot.scope === 'adult' ? null : snapshot.userText.slice(0, 100),
+          adult: snapshot.scope === 'adult',
+          path: 'reply',
+          idempotencyKey: `${row.id}:${row.retryEpoch}:timing`,
+          timeoutMs: 3000,
+        })
+        .catch(() => null);
+      if (d && (d.choice === 'fast' || d.choice === 'slow')) timing = d.choice;
     }
     await this.store.db.transaction(async (tx) => {
       if (!(await this.store.lock(tx, row.userId, row.conversationId))) return;
@@ -228,13 +261,21 @@ export class ReplyEngine {
         care: inCare,
         ...(contents ? { contents } : {}),
       });
-      const delay = inCare
-        ? 0
-        : replyDelay(
-            bubbles.join(''),
-            snapshot.instantReply,
-            this.clock.nowMs() - Date.parse(snapshot.triggerAt),
-          );
+      const elapsed = this.clock.nowMs() - Date.parse(snapshot.triggerAt);
+      const base = inCare ? 0 : replyDelay(bubbles.join(''), snapshot.instantReply, elapsed);
+      const delay =
+        inCare || snapshot.instantReply || timing === 'normal'
+          ? base
+          : Math.max(
+              0,
+              Math.min(
+                Math.min(
+                  P01_REPLY_DELAY.maxMs,
+                  Math.max(P01_REPLY_DELAY.minMs, base * (timing === 'fast' ? 0.6 : 1.5)),
+                ),
+                P01_REPLY_DELAY.firstBubbleDeadlineMs - elapsed,
+              ),
+            );
       const dueAt = new Date(
         this.clock.nowMs() + Math.max(0, delay - (inCare ? 0 : P28_INSTANT_REPLY_MIN_TYPING_MS)),
       );

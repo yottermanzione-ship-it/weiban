@@ -45,6 +45,7 @@ import {
 } from '../../media/index.js';
 import { MODEL_GATEWAY_MEDIA_PORT, MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { CharacterImageService } from './character-image.js';
+import { PlannerService } from './planner.js';
 
 /** P-45 静默查询（契约 UserQuietStatePort，由 QuietStateService 提供，T-072）。 */
 export const AI_USER_QUIET_STATE = Symbol('weiban.ai-runtime.user-quiet-state');
@@ -52,11 +53,11 @@ export const AI_USER_QUIET_STATE = Symbol('weiban.ai-runtime.user-quiet-state');
 /** MED-01 第 4 条：每 10 条气泡最多 2 个表情包。 */
 export const STICKER_WINDOW = 10;
 export const STICKER_MAX_IN_WINDOW = 2;
-/** 规则版下每次回复附表情包的概率（在上限之内）。 */
+/** 规则版下每次回复附表情包的概率（在上限之内）；T-090 起作为决策层 reply_form 的规则版与退路。 */
 const STICKER_CHANCE = 0.15;
 /** MED-03 第 2 条：角色主动发语音不超过该角色消息的 10%。 */
 export const VOICE_MAX_RATIO = 0.1;
-/** 规则版（T-090 决策层未就绪）：上限内主动发语音的概率。 */
+/** 规则版：上限内主动发语音的概率（T-090 起作为决策层 reply_form 的规则版与退路）。 */
 const VOICE_CHANCE = 0.06;
 const VOICE_MAX_CHARS = 120;
 const VOICE_REQUEST =
@@ -107,6 +108,7 @@ export class MediaAiService {
     @Inject(AI_USER_QUIET_STATE) private readonly quiet: UserQuietStatePort,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(CharacterImageService) private readonly images: CharacterImageService,
+    @Inject(PlannerService) private readonly planner: PlannerService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -400,6 +402,8 @@ export class MediaAiService {
     userText: string;
     history: Message[];
     voiceId: string | null;
+    /** 秒回开启：决策层最多等 1 秒（PLAN-02 第 1 条）。 */
+    instant?: boolean;
   }): Promise<MessageContent[] | null> {
     const { ctx, bubbles } = input;
     const joined = bubbles.join('，');
@@ -411,9 +415,48 @@ export class MediaAiService {
     const recent = mine.slice(-100);
     const voiceCount = recent.filter((m) => m.content?.type === 'voice').length;
     const ratioOk = (voiceCount + 1) / (recent.length + bubbles.length) <= VOICE_MAX_RATIO;
-    const wantVoice =
-      [...joined].length <= VOICE_MAX_CHARS &&
-      (requested || (ratioOk && seededChance(`voice:${seed}`) < VOICE_CHANCE));
+    const shortEnough = [...joined].length <= VOICE_MAX_CHARS;
+    let wantVoice = shortEnough && requested;
+    // T-090：未被要求时由决策层在「文字 / 语音」间挑（上限、P-45 静默已由代码先扣掉；静默中 voice 不在选项里）。
+    const lastUser = [...input.history].reverse().find((m) => m.senderKind === 'user');
+    const baseFeatures = {
+      userMsgLength: [...input.userText].length,
+      userMsgIsVoice: lastUser?.content?.type === 'voice',
+      userMsgHasImage: lastUser?.content?.type === 'image',
+      replyLength: [...joined].length,
+      quotaLeft: {
+        voice: Math.max(
+          0,
+          Math.floor((recent.length + bubbles.length) * VOICE_MAX_RATIO) - voiceCount,
+        ),
+      },
+    };
+    const timeoutMs = input.instant ? 1000 : 3000;
+    if (!wantVoice && shortEnough && ratioOk) {
+      const until = await this.quiet.getInconvenientUntil(ctx.userId).catch(() => null);
+      const quiet = !!until && Date.parse(until) > this.clock.nowMs();
+      if (!quiet) {
+        const ruleVoice = seededChance(`voice:${seed}`) < VOICE_CHANCE;
+        const d = await this.planner.decide({
+          userId: ctx.userId,
+          characterId: ctx.characterId,
+          conversationId: ctx.conversationId,
+          decisionType: 'reply_form',
+          options: ['text', 'voice'],
+          ruleChoice: ruleVoice ? 'voice' : 'text',
+          ruleReason: ruleVoice ? '规则版抽中语音' : '规则版发文字',
+          conservative: 'text',
+          question:
+            '这次回复保持文字（text）还是改成语音消息（voice）？语音只在自然、合适的时候用。',
+          features: { ...baseFeatures, inconvenientActive: false },
+          summary: input.userText.slice(0, 100),
+          path: 'reply',
+          idempotencyKey: `${seed}:voice`,
+          timeoutMs,
+        });
+        wantVoice = d.choice === 'voice';
+      }
+    }
     if (wantVoice) {
       const voice = await this.synthesizeReply(input).catch(() => null);
       if (voice) return [voice];
@@ -458,10 +501,31 @@ export class MediaAiService {
     if (!changed) {
       const windowPrev = mine.slice(-(STICKER_WINDOW - contents.length - 1));
       const stickersInWindow = windowPrev.filter((m) => m.content?.type === 'sticker').length;
-      if (
-        stickersInWindow < STICKER_MAX_IN_WINDOW &&
-        seededChance(`sticker:${seed}`) < STICKER_CHANCE
-      ) {
+      let wantSticker = false;
+      if (stickersInWindow < STICKER_MAX_IN_WINDOW) {
+        const ruleSticker = seededChance(`sticker:${seed}`) < STICKER_CHANCE;
+        const d = await this.planner.decide({
+          userId: ctx.userId,
+          characterId: ctx.characterId,
+          conversationId: ctx.conversationId,
+          decisionType: 'reply_form',
+          options: ['no_sticker', 'keep_sticker'],
+          ruleChoice: ruleSticker ? 'keep_sticker' : 'no_sticker',
+          ruleReason: ruleSticker ? '规则版附表情包' : '规则版不附表情包',
+          conservative: 'no_sticker',
+          question: '这次回复要不要附一个表情包（keep_sticker）？每 10 条气泡最多 2 个。',
+          features: {
+            ...baseFeatures,
+            quotaLeft: { sticker: STICKER_MAX_IN_WINDOW - stickersInWindow },
+          },
+          summary: input.userText.slice(0, 100),
+          path: 'reply',
+          idempotencyKey: `${seed}:sticker`,
+          timeoutMs,
+        });
+        wantSticker = d.choice === 'keep_sticker';
+      }
+      if (wantSticker) {
         const sticker = await this.pickSticker(ctx.characterId, joined, seed).catch(() => null);
         if (sticker) {
           contents.push(sticker);
