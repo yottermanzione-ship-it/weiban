@@ -36,7 +36,7 @@ import {
   type UserDataRegistry,
 } from '../../../platform/index.js';
 import { objects, userStickers } from '../infra/db/schema.js';
-import { MEDIA_STORAGE, MEDIA_SYNC, type MediaSync } from '../tokens.js';
+import { MEDIA_STORAGE, MEDIA_SYNC, type MediaStorageAudit, type MediaSync } from '../tokens.js';
 import type { ObjectStorage } from '../infra/storage.js';
 type Row = typeof objects.$inferSelect;
 
@@ -648,6 +648,32 @@ export class MediaService
       .from(userStickers)
       .where(eq(userStickers.userId, userId));
     return (a?.n ?? 0) + (b?.n ?? 0);
+  }
+
+  /** 注销核验（MediaStorageAudit）：存储里没有元数据行对应的文件。 */
+  async findOrphanKeys(limit = 50): ReturnType<MediaStorageAudit['findOrphanKeys']> {
+    if (!this.storage.list) return { listed: false, total: 0, orphans: [] };
+    const orphans: string[] = [];
+    let total = 0;
+    let batch: string[] = [];
+    const flush = async () => {
+      if (!batch.length) return;
+      const keys = batch.map((k) => k.replace(/.pending$/, ''));
+      const rows = await this.database.db
+        .select({ a: objects.storageKey, b: objects.thumbStorageKey })
+        .from(objects)
+        .where(or(inArray(objects.storageKey, keys), inArray(objects.thumbStorageKey, keys)));
+      const known = new Set(rows.flatMap((r) => [r.a, r.b]).filter(Boolean));
+      for (const k of keys) if (!known.has(k) && orphans.length < limit) orphans.push(k);
+      batch = [];
+    };
+    for await (const key of this.storage.list()) {
+      total += 1;
+      batch.push(key);
+      if (batch.length >= 500) await flush();
+    }
+    await flush();
+    return { listed: true, total, orphans };
   }
 
   /** 内部：批量读元数据（素材库列表用）。 */

@@ -21,6 +21,7 @@ import { loginThrottle, users } from '../infra/db/schema.js';
 import { PasswordHasher } from '../infra/password-hasher.js';
 import { isUniqueViolation, PASSWORD_HASHER } from './accounts.js';
 import { InviteService, type Invite } from './invites.js';
+import { PurgeVerifier, type PurgeReport } from './purge-verifier.js';
 import { SessionService } from './sessions.js';
 import { SettingsService } from './settings.js';
 
@@ -46,6 +47,7 @@ export class IdentityCommands {
     @Inject(SessionService) private readonly sessions: SessionService,
     @Inject(SettingsService) private readonly settings: SettingsService,
     @Inject(InviteService) private readonly invites: InviteService,
+    @Inject(PurgeVerifier) private readonly verifier: PurgeVerifier,
   ) {}
 
   /** 创建管理员账号（第一个管理员由运维在服务器上执行）。时区默认 Asia/Shanghai，可登录后在资料里改。 */
@@ -172,6 +174,11 @@ export class IdentityCommands {
   /** 注销核验：每个登记了删除清单的模块剩余的数据条数（全部为 0 才算删干净）。 */
   async verifyPurged(userId: string): Promise<Array<{ module: string; count: number }>> {
     return this.registry.countAll(userId);
+  }
+
+  /** 完整注销核验（scripts/verify-user-purged，T-080）：删除清单 + 全库扫描 + 平台表 + 对象存储。 */
+  async verifyPurgedReport(userId: string): Promise<PurgeReport> {
+    return this.verifier.verify(userId);
   }
 
   /** 清扫已过期会话。 */

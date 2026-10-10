@@ -1,17 +1,20 @@
 /** 存储键由服务器生成；不使用客户端文件名。文件本体已信封加密。 */
-import { mkdir, readFile, rm, writeFile, rename } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, writeFile, rename } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
 import { AppError } from '../../../platform/index.js';
 export interface ObjectStorage {
   put(key: string, body: Buffer): Promise<void>;
   get(key: string): Promise<Buffer>;
   delete(key: string): Promise<void>;
+  /** 列出存储里的全部对象键（注销核验 scripts/verify-user-purged 用，T-080）。 */
+  list?(): AsyncIterable<string>;
 }
 function checkedKey(key: string): string {
   if (!/^[0-9a-f-]{36}\.sealed$/.test(key)) throw new Error('存储键格式不正确');
@@ -39,6 +42,15 @@ export class DiskStorage implements ObjectStorage {
   async delete(key: string): Promise<void> {
     await rm(this.path(key), { force: true });
     await rm(`${this.path(key)}.pending`, { force: true });
+  }
+  async *list(): AsyncIterable<string> {
+    let names: string[];
+    try {
+      names = await readdir(resolve(this.root));
+    } catch {
+      return;
+    }
+    for (const name of names) if (name.endsWith('.sealed') || name.endsWith('.pending')) yield name;
   }
 }
 export class S3Storage implements ObjectStorage {
@@ -73,5 +85,15 @@ export class S3Storage implements ObjectStorage {
   }
   async delete(key: string): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: checkedKey(key) }));
+  }
+  async *list(): AsyncIterable<string> {
+    let token: string | undefined;
+    do {
+      const page = await this.client.send(
+        new ListObjectsV2Command({ Bucket: this.bucket, ContinuationToken: token }),
+      );
+      for (const item of page.Contents ?? []) if (item.Key) yield item.Key;
+      token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
   }
 }

@@ -238,12 +238,15 @@ export class ContactCardRecommendationService implements ContactCardRecommendati
       .delete(cardRecommendations)
       .where(eq(cardRecommendations.userId, userId))
       .returning({ id: cardRecommendations.id });
-    await this.db.db.delete(newFriendState).where(eq(newFriendState.userId, userId));
+    const nf = await this.db.db
+      .delete(newFriendState)
+      .where(eq(newFriendState.userId, userId))
+      .returning({ id: newFriendState.userId });
     const b = await this.db.db
       .delete(cardDismissals)
       .where(eq(cardDismissals.userId, userId))
       .returning({ id: cardDismissals.characterId });
-    return a.length + b.length;
+    return a.length + b.length + nf.length;
   }
   async countUserData(userId: string): Promise<number> {
     const [a] = await this.db.db
@@ -254,6 +257,10 @@ export class ContactCardRecommendationService implements ContactCardRecommendati
       .select({ n: count() })
       .from(cardDismissals)
       .where(eq(cardDismissals.userId, userId));
-    return (a?.n ?? 0) + (b?.n ?? 0);
+    const [c] = await this.db.db
+      .select({ n: count() })
+      .from(newFriendState)
+      .where(eq(newFriendState.userId, userId));
+    return (a?.n ?? 0) + (b?.n ?? 0) + (c?.n ?? 0);
   }
 }

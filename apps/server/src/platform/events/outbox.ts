@@ -11,7 +11,7 @@
  */
 import { Events } from '@weiban/contracts';
 import type { Clock } from '../clock/clock.js';
-import type { DbTx } from '../db/database.js';
+import type { Database, DbTx } from '../db/database.js';
 import { newId } from '../db/ids.js';
 import type { DomainEventType, EventOf } from './event-bus.js';
 
@@ -25,6 +25,33 @@ export class Outbox {
 
   setOnCommitted(fn: () => void): void {
     this.onCommitted = fn;
+  }
+
+  /**
+   * 注销收尾（T-080，ACC-06 第 3 条）：删除已送达（或已放弃）且载荷里含 needle（用户 ID）的事件，
+   * 不在发件箱里留下可关联到该用户的记录。未送达的事件不动（仍要投递）。返回删除条数。
+   */
+  async scrubDelivered(executor: Database | DbTx, needle: string): Promise<number> {
+    const result = await executor.query(
+      `DELETE FROM platform.outbox
+        WHERE (dispatched_at IS NOT NULL OR dead_at IS NOT NULL) AND strpos(event::text, $1::text) > 0`,
+      [needle],
+    );
+    return result.rowCount ?? 0;
+  }
+
+  /** 核验用：载荷里仍含 needle 的事件条数（pending = 尚未送达的）。 */
+  async countMentioning(
+    executor: Database | DbTx,
+    needle: string,
+  ): Promise<{ delivered: number; pending: number }> {
+    const { rows } = await executor.query<{ delivered: string; pending: string }>(
+      `SELECT count(*) FILTER (WHERE dispatched_at IS NOT NULL OR dead_at IS NOT NULL) AS delivered,
+              count(*) FILTER (WHERE dispatched_at IS NULL AND dead_at IS NULL) AS pending
+         FROM platform.outbox WHERE strpos(event::text, $1::text) > 0`,
+      [needle],
+    );
+    return { delivered: Number(rows[0]?.delivered ?? 0), pending: Number(rows[0]?.pending ?? 0) };
   }
 
   /** 在事务 tx 里发布一个事件，返回完整事件对象（含 eventId）。 */

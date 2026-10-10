@@ -13,6 +13,7 @@ import {
 import { AccountService, LOGIN_THROTTLE, PASSWORD_HASHER } from './application/accounts.js';
 import { IdentityCommands } from './application/commands.js';
 import { DeletionService } from './application/deletion.js';
+import { PurgeVerifier } from './application/purge-verifier.js';
 import { InviteService } from './application/invites.js';
 import { SessionService } from './application/sessions.js';
 import { SettingsService } from './application/settings.js';
@@ -41,6 +42,7 @@ import {
     AccountService,
     InviteService,
     DeletionService,
+    PurgeVerifier,
     IdentityCommands,
     // 平台鉴权守卫按这个令牌找令牌校验器（kernel.md 第 10 节）
     { provide: SESSION_VERIFIER, useExisting: SessionService },

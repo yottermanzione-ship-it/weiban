@@ -21,6 +21,7 @@ import {
   MEDIA_ASSET_READ_PORT,
   LINK_PREVIEW_PORT,
   MEDIA_STICKER_CHECK,
+  MEDIA_STORAGE_AUDIT,
 } from './tokens.js';
 @Module({
   controllers: [
@@ -40,6 +41,7 @@ import {
     { provide: MEDIA_ASSET_READ_PORT, useExisting: MediaAssetService },
     { provide: MEDIA_STICKER_CHECK, useExisting: MediaAssetService },
     { provide: LINK_PREVIEW_PORT, useExisting: LinkPreviewService },
+    { provide: MEDIA_STORAGE_AUDIT, useExisting: MediaService },
     {
       provide: MEDIA_STORAGE,
       inject: [APP_CONFIG],
@@ -73,6 +75,7 @@ import {
     MEDIA_ASSET_READ_PORT,
     MEDIA_STICKER_CHECK,
     LINK_PREVIEW_PORT,
+    MEDIA_STORAGE_AUDIT,
   ],
 })
 export class MediaModule {}

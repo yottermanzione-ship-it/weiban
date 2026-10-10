@@ -1151,7 +1151,7 @@ export class PlazaService {
         : null;
     return {
       workAvailable: available,
-      authorDeleted: !!w && !profile,
+      authorDeleted: (!!w && !profile) || (!w && !!a?.authorDeletedAt),
       authorName: profile?.nickname ?? null,
       newerVersionAvailable: newer,
     };

@@ -15,7 +15,7 @@
  */
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import type { Events, PendingAccountDeletion, UserDataOwner } from '@weiban/contracts';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
   AppError,
   AUDIT_LOG,
@@ -42,6 +42,10 @@ import { hashUserId } from './user-hash.js';
 
 const IDENTITY: Events.ModuleName = 'identity';
 export const PURGE_JOB = 'identity.purge_user_data';
+/** 注销完成后清理平台表里的残留痕迹（已送达事件、审计中的明文 ID），完成时一次 + 1 小时后再一次。 */
+export const SCRUB_JOB = 'identity.scrub_user_traces';
+/** 完成判定前的复核轮数上限：超过后停在「注销未完成」，交管理员重新触发（重新触发会清零）。 */
+export const MAX_DELETION_RECHECKS = 3;
 
 interface PurgeJob {
   userId: string;
@@ -69,6 +73,7 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
   async onModuleInit(): Promise<void> {
     this.registry.register(this);
     await this.jobs.work<PurgeJob>(PURGE_JOB, (job) => this.runPurgeJob(job.data));
+    await this.jobs.work<{ userId: string }>(SCRUB_JOB, (job) => this.scrubTraces(job.data.userId));
     this.bus.subscribe({
       consumer: 'identity.on_user_deletion_requested',
       eventType: 'identity.user_deletion_requested',
@@ -132,7 +137,10 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
         throw new AppError('not_found', '该账号不存在或不在注销中');
       }
       const now = this.clock.now();
-      await tx.db.update(users).set({ deletionRetriggeredAt: now }).where(eq(users.id, userId));
+      await tx.db
+        .update(users)
+        .set({ deletionRetriggeredAt: now, deletionRechecks: 0 })
+        .where(eq(users.id, userId));
       const reported = new Set(
         (
           await tx.db
@@ -203,7 +211,21 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
   async runPurgeJob({ userId, module }: PurgeJob): Promise<void> {
     const owner = this.registry.list().find((o) => o.module === module);
     if (!owner) throw new Error(`模块 ${module} 没有登记删除清单`);
-    const deletedRows = await owner.purgeUser(userId);
+    let deletedRows: number;
+    try {
+      deletedRows = await owner.purgeUser(userId);
+    } catch (error) {
+      // 只记用户 ID 的哈希；任务失败由 pg-boss 自动重试（retryLimit 10，指数退避），用尽后停在「注销未完成」
+      this.log.warn(
+        {
+          userIdHash: hashUserId(userId),
+          module,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        '删除清单执行失败，等待重试',
+      );
+      throw error;
+    }
     await this.database.transaction((tx) =>
       this.outbox.publish(tx, 'platform.user_data_purged', module, { userId, module, deletedRows }),
     );
@@ -227,7 +249,38 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
     );
     const pending = this.registry.modules().filter((m) => m !== IDENTITY && !reported.has(m));
     if (pending.length > 0) return false;
+    // 完成判定：全部回报后逐模块复核剩余条数（防止删除期间仍在运行的任务又写入数据）。
+    const leftovers = await this.leftoverModules(userId);
+    if (leftovers.length > 0) {
+      await tx.db
+        .delete(deletionProgress)
+        .where(
+          and(eq(deletionProgress.userId, userId), inArray(deletionProgress.module, leftovers)),
+        );
+      const [row] = await tx.db
+        .update(users)
+        .set({ deletionRechecks: sql`${users.deletionRechecks} + 1` })
+        .where(eq(users.id, userId))
+        .returning({ rechecks: users.deletionRechecks });
+      const rechecks = row?.rechecks ?? MAX_DELETION_RECHECKS + 1;
+      if (rechecks <= MAX_DELETION_RECHECKS) {
+        for (const module of leftovers)
+          await this.jobs.send<PurgeJob>(
+            PURGE_JOB,
+            { userId, module },
+            { tx, retryLimit: 10, retryBackoff: true },
+          );
+      }
+      this.log.warn(
+        { userIdHash: hashUserId(userId), modules: leftovers, rechecks },
+        rechecks <= MAX_DELETION_RECHECKS
+          ? '复核发现残留，已重新投递删除'
+          : '复核多次仍有残留，停在「注销未完成」等待管理员重新触发',
+      );
+      return false;
+    }
     await this.purgeIdentityData(tx, userId, user.username);
+    await this.audit.anonymizeUser(userId, hashUserId(userId), tx);
     await this.audit.record(
       {
         module: 'identity',
@@ -239,8 +292,36 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
       },
       tx,
     );
+    await this.jobs.send(SCRUB_JOB, { userId }, { tx, retryLimit: 5, retryBackoff: true });
+    await this.jobs.send(
+      SCRUB_JOB,
+      { userId },
+      { tx, delayMs: 3_600_000, retryLimit: 5, retryBackoff: true },
+    );
     this.log.info({ userIdHash: hashUserId(userId) }, '账号注销完成');
     return true;
+  }
+
+  /** 复核：除 identity 外剩余条数大于 0 的模块。 */
+  private async leftoverModules(userId: string): Promise<Events.ModuleName[]> {
+    const result: Events.ModuleName[] = [];
+    for (const owner of this.registry.list()) {
+      if (owner.module === IDENTITY) continue;
+      if ((await owner.countUserData(userId)) > 0) result.push(owner.module as Events.ModuleName);
+    }
+    return result;
+  }
+
+  /** 任务：清理平台表残留（已送达事件载荷、迟到审计中的明文 ID）。账号仍在注销中时跳过。可重复执行。 */
+  async scrubTraces(userId: string): Promise<void> {
+    const [user] = await this.database.db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, userId));
+    if (user) return;
+    const events = await this.outbox.scrubDelivered(this.database, userId);
+    const audits = await this.audit.anonymizeUser(userId, hashUserId(userId));
+    this.log.info({ userIdHash: hashUserId(userId), events, audits }, '注销残留痕迹已清理');
   }
 
   /** identity 自己的删除：登录锁定记录 + 账号行（级联删除资料、设置、偏好、会话、注销进度）。 */

@@ -45,3 +45,14 @@ export interface MediaRealPersonNames {
   /** 已录入的真人角色（basis = real_person）的姓名。 */
   listRealPersonNames(): Promise<string[]>;
 }
+
+/**
+ * 注销核验（T-080，scripts/verify-user-purged）：对象存储里没有对应元数据行的「孤儿」文件。
+ * 存储键是服务器生成的 `{uuid}.sealed`，不按用户分目录；注销删完元数据后用户文件就无法再归属，
+ * 所以核验的口径是「全库不存在孤儿文件」（10 分钟内的上传中文件可能短暂出现）。
+ */
+export const MEDIA_STORAGE_AUDIT = Symbol('weiban.media.storage-audit');
+export interface MediaStorageAudit {
+  /** listed = false 表示存储驱动不支持列举（无法核验）。 */
+  findOrphanKeys(limit?: number): Promise<{ listed: boolean; total: number; orphans: string[] }>;
+}

@@ -9,6 +9,8 @@ export {
   MEDIA_SYNC,
   MEDIA_MESSAGE_LOOKUP,
   MEDIA_REAL_PERSON_NAMES,
+  MEDIA_STORAGE_AUDIT,
+  type MediaStorageAudit,
   type MediaStickerCheck,
   type MediaSync,
   type MediaMessageLookup,

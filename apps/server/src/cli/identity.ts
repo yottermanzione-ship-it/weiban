@@ -28,7 +28,7 @@ const USAGE = `用法：
   identity set-role <用户名> <user|admin>     改角色（降为 user 时作废其管理会话）
   identity create-invite [--days 天数] [--bonus 元]
                                               生成一个邀请码（不填天数则永不过期；--bonus 注册赠送余额，单位元）
-  identity verify-purged <用户ID>             注销核验：列出每个模块剩余的数据条数
+  identity verify-purged <用户ID>             注销核验：删除清单、全库扫描、审计 / 事件、对象存储（有残留时退出码 2）
   identity sweep-sessions                     清扫已过期的会话`;
 
 function option(args: string[], name: string): string | undefined {
@@ -122,10 +122,13 @@ async function main(): Promise<void> {
       case 'verify-purged': {
         const userId = args[0];
         if (!userId) throw new CommandError('缺少用户 ID');
-        const counts = await commands.verifyPurged(userId);
-        for (const { module, count } of counts)
-          out(`${count === 0 ? '[已清空]' : '[有残留]'} ${module}: ${count}`);
-        if (counts.some((c) => c.count > 0)) process.exitCode = 2;
+        const report = await commands.verifyPurgedReport(userId);
+        for (const c of report.checks) {
+          const tag = c.count === 0 ? '[已清空]' : c.blocking ? '[有残留]' : '[提示]';
+          out(`${tag} ${c.name}: ${c.count}${c.note ? `（${c.note}）` : ''}`);
+        }
+        out(report.ok ? '结论：该用户数据已全部删除' : '结论：仍有残留，见上方 [有残留] 项');
+        if (!report.ok) process.exitCode = 2;
         break;
       }
       case 'sweep-sessions': {

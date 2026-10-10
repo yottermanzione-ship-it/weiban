@@ -153,6 +153,8 @@ export const adoptions = plazaSchema.table(
     /** copy：复制得到的新角色；apply：被应用改版的预设角色。 */
     characterId: uuid('character_id').notNull(),
     updateDismissedVersion: integer('update_dismissed_version').notNull().default(0),
+    /** 作者已注销、作品随之删除的时间（迁移 0056，T-080；来源显示「已注销用户」）。 */
+    authorDeletedAt: time('author_deleted_at'),
     createdAt: time('created_at').notNull(),
     updatedAt: time('updated_at').notNull(),
   },

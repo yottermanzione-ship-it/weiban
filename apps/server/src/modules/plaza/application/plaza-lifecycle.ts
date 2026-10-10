@@ -7,7 +7,7 @@
  * 发布草稿保留 24 小时，过期由每小时的清扫删除。
  */
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
-import { and, count, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { MediaSystemPort } from '@weiban/contracts';
 import {
   JOB_QUEUE,
@@ -64,6 +64,20 @@ export class PlazaLifecycle implements OnModuleInit {
     return db.transaction(async (tx) => {
       let n = 0;
       const mine = await tx.db.select().from(works).where(eq(works.authorUserId, userId));
+      // 别人复制 / 应用过的角色保留，来源作者显示「已注销用户」（PLZ-06 第 4 条）：作品删除前在采用记录上留标记。
+      if (mine.length)
+        await tx.db
+          .update(adoptions)
+          .set({ authorDeletedAt: this.store.clock.now() })
+          .where(
+            and(
+              inArray(
+                adoptions.workId,
+                mine.map((w) => w.id),
+              ),
+              isNull(adoptions.authorDeletedAt),
+            ),
+          );
       for (const w of mine) n += await this.plaza.deleteWorkTx(tx, w);
       await tx.db
         .update(works)
