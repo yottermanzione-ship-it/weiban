@@ -225,6 +225,7 @@ import kotlinx.serialization.json.*
     val items = remember { mutableStateListOf<PlazaNotice>() }
     var cursor by remember { mutableStateOf<String?>(null) }
     var state by remember { mutableStateOf("loading") }
+
     suspend fun load(after: String?) {
         state = "loading"
         try {
@@ -424,7 +425,11 @@ private class PublishUi {
         ui.balanceShort = false
         scope.launch {
             try {
-                val mine = repository.call(Endpoints.plazaEndpointsGetMyProfile, options = SessionCallOptions(owner = owner, networkOnly = true))
+                val mine =
+                    repository.call(
+                        Endpoints.plazaEndpointsGetMyProfile,
+                        options = SessionCallOptions(owner = owner, networkOnly = true),
+                    )
                 if (mine == null) {
                     ui.step = "nickname"
                     return@launch
@@ -447,7 +452,9 @@ private class PublishUi {
         "checking" -> {
             PlazaHeader("发布到人设广场")
             Column(Modifier.fillMaxWidth().padding(WbSpace.S5), verticalArrangement = Arrangement.spacedBy(WbSpace.S3)) {
-                repeat(3) { Surface(Modifier.fillMaxWidth().height(64.dp), color = colors.bgSkeleton, shape = MaterialTheme.shapes.small) {} }
+                repeat(
+                    3,
+                ) { Surface(Modifier.fillMaxWidth().height(64.dp), color = colors.bgSkeleton, shape = MaterialTheme.shapes.small) {} }
                 Text(if (ui.slow) "内容比较多，还在检查…" else "正在检查要发布的内容…", color = colors.textSecondary)
             }
             return
@@ -492,7 +499,11 @@ private class PublishUi {
         Text("1/2", Modifier.padding(horizontal = WbSpace.S5), color = colors.textTertiary, style = MaterialTheme.typography.labelSmall)
     }
     Column(
-        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
+        Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
     ) {
         ui.blocked?.let { Text(it, color = colors.textDanger) }
@@ -586,8 +597,11 @@ private class PublishUi {
     val spans = remember(draft) { draft.spans.sortedWith(compareBy<PrivacySpan>({ it.fieldKey }, { it.start })) }
     val fields = remember(parsed) { parsed?.let(::snapshotFields).orEmpty().associateBy { it.key } }
     val pending = spans.filter { it.spanId !in ui.kept }
+
     fun numberOf(span: PrivacySpan) = spans.indexOfFirst { it.spanId == span.spanId }
+
     fun original(span: PrivacySpan) = codePointSlice(fields[span.fieldKey]?.text.orEmpty(), span.start.toInt(), span.end.toInt())
+
     fun boxes(span: PrivacySpan) = "▢".repeat((span.end - span.start).toInt().coerceIn(1, 8))
 
     fun publish() {
@@ -642,7 +656,11 @@ private class PublishUi {
         Text("2/2", Modifier.padding(horizontal = WbSpace.S5), color = colors.textTertiary, style = MaterialTheme.typography.labelSmall)
     }
     Column(
-        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
+        Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
     ) {
         if (pending.isNotEmpty()) {

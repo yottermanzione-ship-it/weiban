@@ -58,7 +58,11 @@ import java.time.LocalDate
     }
     PlayHeader("每日一问") { TextButton(onClick = { PlayNav.open(PlayPage.DailyHistory()) }) { Text("历史") } }
     Column(
-        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
+        Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S4),
     ) {
         val answered = data?.answer
@@ -156,6 +160,7 @@ import java.time.LocalDate
     var loading by remember { mutableStateOf(true) }
     var failed by remember { mutableStateOf(false) }
     var open by remember { mutableStateOf(focusAnswerId) }
+
     suspend fun load(after: String?) {
         loading = true
         failed = false
@@ -181,7 +186,11 @@ import java.time.LocalDate
     val profiles = rememberPlayNames(repository, contacts, items.map { it.characterId })
     PlayHeader("历史")
     Column(
-        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
+        Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
     ) {
         if (loading && items.isEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -236,7 +245,14 @@ import java.time.LocalDate
         ids.forEach { id ->
             val summary = counts[id]
             ListItem(
-                leadingContent = { RoleAvatar(repository, owner, RoleAvatarIdentity(id, profiles[id]?.name.orEmpty(), profiles[id]?.avatar), 40.dp) },
+                leadingContent = {
+                    RoleAvatar(
+                        repository,
+                        owner,
+                        RoleAvatarIdentity(id, profiles[id]?.name.orEmpty(), profiles[id]?.avatar),
+                        40.dp,
+                    )
+                },
                 headlineContent = { Text(playName(contacts, profiles, id)) },
                 supportingContent = {
                     Text(if (summary == null || summary.total == 0L) "还没有心愿" else "${summary.total} 件心愿 · 完成 ${summary.completed} 件")
@@ -334,7 +350,11 @@ import java.time.LocalDate
 
     PlayHeader("和 ${playName(contacts, profiles, characterId)} 的心愿清单")
     Column(
-        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
+        Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S2),
     ) {
         if (list.loading && list.data == null) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -352,7 +372,10 @@ import java.time.LocalDate
                 label = { Text("想和 TA 一起做的事") },
                 supportingText = { CharCount(plazaChars(adding), WISH_TEXT_MAX) },
             )
-            Button(onClick = ::add, enabled = !full && !pending && adding.isNotBlank() && plazaChars(adding) <= WISH_TEXT_MAX) { Text("添加") }
+            Button(
+                onClick = ::add,
+                enabled = !full && !pending && adding.isNotBlank() && plazaChars(adding) <= WISH_TEXT_MAX,
+            ) { Text("添加") }
         }
         if (full) Text("最多 50 件心愿", color = colors.textDanger, style = MaterialTheme.typography.bodySmall)
         if (list.data != null && items.isEmpty()) Text("还没有心愿，写下第一件想一起做的事吧", color = colors.textSecondary)
@@ -408,7 +431,13 @@ import java.time.LocalDate
             Text(item.text, color = if (item.completedAt != null) colors.textTertiary else colors.textPrimary)
             Row(horizontalArrangement = Arrangement.spacedBy(WbSpace.S2)) {
                 if (item.proposedByCharacter) Text("TA 提议", color = colors.brandPrimary, style = MaterialTheme.typography.labelSmall)
-                item.dueDate?.let { Text("${monthDay(it)} · 约定", color = colors.textSecondary, style = MaterialTheme.typography.labelSmall) }
+                item.dueDate?.let {
+                    Text(
+                        "${monthDay(it)} · 约定",
+                        color = colors.textSecondary,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
             }
         }
     }
@@ -430,7 +459,12 @@ import java.time.LocalDate
         title = { Text("心愿") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(WbSpace.S2)) {
-                OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth(), supportingText = { CharCount(plazaChars(text), WISH_TEXT_MAX) })
+                OutlinedTextField(
+                    text,
+                    { text = it },
+                    Modifier.fillMaxWidth(),
+                    supportingText = { CharCount(plazaChars(text), WISH_TEXT_MAX) },
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(date?.let { "${monthDay(it)} · 约定" } ?: "还没定日期", Modifier.weight(1f))
                     TextButton(onClick = {

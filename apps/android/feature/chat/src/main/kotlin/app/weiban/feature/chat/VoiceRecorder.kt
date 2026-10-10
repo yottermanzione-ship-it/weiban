@@ -46,7 +46,7 @@ internal class VoiceRecorder(
     private var file: File? = null
     private var startedAt = 0L
 
-    @Suppress("TooGenericExceptionCaught") // Busy microphone / device quirks: report false and clean up.
+    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException") // Busy microphone / device quirks: report false and clean up.
     fun start(): Boolean {
         cancel()
         return try {
@@ -81,7 +81,7 @@ internal class VoiceRecorder(
     private fun legacyRecorder(): MediaRecorder = MediaRecorder()
 
     /** 结束录音：返回文件与时长（毫秒）；太短或失败返回时长但文件为 null。 */
-    @Suppress("TooGenericExceptionCaught") // stop() throws when nothing valid was recorded (too short).
+    @Suppress("TooGenericExceptionCaught", "ReturnCount") // stop() throws when nothing valid was recorded (too short).
     fun finish(): Pair<File?, Long> {
         val duration = (System.currentTimeMillis() - startedAt).coerceAtMost(MAX_VOICE_MS)
         val current = recorder ?: return null to 0L
@@ -140,7 +140,9 @@ internal fun openAppSettings(context: Context) {
  * 「按住 说话」（设计 C 5.4、media-l5.md 3.1）：上滑取消，不到 1 秒提示太短，满 60 秒自动发出；
  * 首次要麦克风权限，拒绝后再按弹说明 +「去设置」。
  */
-@Composable internal fun HoldToTalk(
+@Suppress("LoopWithTooManyJumpStatements") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
+@Composable
+internal fun HoldToTalk(
     enabled: Boolean,
     onStart: () -> Unit,
     onVoice: (File, Long) -> Unit,
@@ -209,7 +211,11 @@ internal fun openAppSettings(context: Context) {
                             recorder.cancel()
                         } else {
                             val (file, duration) = recorder.finish()
-                            if (file != null) send(file, duration) else if (duration < MIN_VOICE_MS) notice("说话时间太短")
+                            if (file != null) {
+                                send(file, duration)
+                            } else if (duration < MIN_VOICE_MS) {
+                                notice("说话时间太短")
+                            }
                         }
                     }
                     cancelling = false

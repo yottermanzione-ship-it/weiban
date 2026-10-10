@@ -14,6 +14,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 /** 经期日记（PLAY-01）的数据与操作。健康数据一律 networkOnly，不写入本机响应缓存。 */
+@Suppress("TooManyFunctions") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
 internal class PeriodState(
     val repository: SessionRepository,
     val owner: OwnerRecord,
@@ -60,10 +61,11 @@ internal class PeriodState(
                 val page =
                     call(
                         Endpoints.healthEndpointsListCycles,
-                        query = buildMap<String, String> {
-                            put("limit", "100")
-                            cursor?.let { put("cursor", it) }
-                        },
+                        query =
+                            buildMap<String, String> {
+                                put("limit", "100")
+                                cursor?.let { put("cursor", it) }
+                            },
                     )
                 all.addAll(page.items)
                 cursor = page.nextCursor

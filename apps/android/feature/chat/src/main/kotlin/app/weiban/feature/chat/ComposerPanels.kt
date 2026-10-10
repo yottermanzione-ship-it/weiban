@@ -64,12 +64,20 @@ internal class StickerLibrary(
 @Composable internal fun StickerPanel(ui: ConversationUi) {
     val colors = LocalWeibanColors.current
     val library = rememberStickerLibrary(ui.repository, ui.owner)
-    val packs = library.packs.data?.items.orEmpty().filter { it.enabled && it.userVisible && it.stickers.isNotEmpty() }
+    val packs =
+        library.packs.data
+            ?.items
+            .orEmpty()
+            .filter { it.enabled && it.userVisible && it.stickers.isNotEmpty() }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     Column(Modifier.fillMaxWidth().height(PANEL_HEIGHT)) {
         Box(Modifier.weight(1f)) {
             if (tab == 0) {
-                val mine = library.mine.data?.items.orEmpty().sortedBy { it.order }
+                val mine =
+                    library.mine.data
+                        ?.items
+                        .orEmpty()
+                        .sortedBy { it.order }
                 when {
                     library.mine.loading && library.mine.data == null -> LinearProgressIndicator(Modifier.fillMaxWidth())
                     mine.isEmpty() ->
@@ -128,7 +136,11 @@ internal class StickerLibrary(
 @Composable internal fun PlusPanel(ui: ConversationUi) {
     val context = LocalContext.current
     var photo by remember { mutableStateOf<File?>(null) }
-    val characterId = ui.conversation.participants.find { it.kind == "character" }?.refId.takeIf { !ui.conversation.isGroup() }
+    val characterId =
+        ui.conversation.participants
+            .find { it.kind == "character" }
+            ?.refId
+            .takeIf { !ui.conversation.isGroup() }
     val callable = rememberCallEntry(characterId)
     val dial = rememberDial()
     val names = characterNames(ui.repository, listOfNotNull(characterId))
@@ -220,7 +232,9 @@ private fun chatCameraCapture(context: Context): Pair<File, Uri> {
     val directory = File(context.cacheDir, "avatar-camera")
     if (!directory.isDirectory && !directory.mkdirs()) throw IOException("Unable to create camera cache")
     val file = File.createTempFile("chat-", ".jpg", directory)
-    return file to androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.avatar.camera", file)
+    return file to
+        androidx.core.content.FileProvider
+            .getUriForFile(context, "${context.packageName}.avatar.camera", file)
 }
 
 private class ChatCameraContract : ActivityResultContracts.TakePicture() {

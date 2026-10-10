@@ -39,6 +39,7 @@ internal class PreparedImage(
 )
 
 /** 读取相册 / 相机的图片：GIF 小于上限原样上传（保留动图），其余按方向转正、压到 2048 内的 JPEG。 */
+@Suppress("CyclomaticComplexMethod", "LongMethod") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
 internal suspend fun prepareChatImage(
     context: Context,
     uri: Uri,
@@ -53,7 +54,9 @@ internal suspend fun prepareChatImage(
             throw IOException("unsupported image")
         }
         val preview = decodeSampled(raw, PREVIEW_EDGE)
-        if (bounds.outMimeType == "image/gif" && raw.size <= MAX_UPLOAD_BYTES && maxOf(bounds.outWidth, bounds.outHeight) <= SEND_MAX_EDGE) {
+        if (bounds.outMimeType == "image/gif" && raw.size <= MAX_UPLOAD_BYTES &&
+            maxOf(bounds.outWidth, bounds.outHeight) <= SEND_MAX_EDGE
+        ) {
             return@withContext PreparedImage(raw, "image/gif", bounds.outWidth, bounds.outHeight, preview)
         }
         var bitmap = decodeSampled(raw, SEND_MAX_EDGE) ?: throw IOException("unsupported image")
@@ -83,7 +86,20 @@ internal suspend fun prepareChatImage(
         val out = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
         val bytes = out.toByteArray()
-        val result = PreparedImage(bytes, "image/jpeg", bitmap.width, bitmap.height, if (rotation != 0f) decodeSampled(bytes, PREVIEW_EDGE) else preview)
+        val result =
+            PreparedImage(
+                bytes,
+                "image/jpeg",
+                bitmap.width,
+                bitmap.height,
+                if (rotation !=
+                    0f
+                ) {
+                    decodeSampled(bytes, PREVIEW_EDGE)
+                } else {
+                    preview
+                },
+            )
         bitmap.recycle()
         if (bytes.size > MAX_UPLOAD_BYTES) throw IOException("image too large")
         result

@@ -14,6 +14,7 @@ import app.weiban.network.ApiFailure
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.encodeToJsonElement
 
+@Suppress("LongParameterList") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
 private class CharacterUi(
     private val repository: SessionRepository,
     private val runtime: ChatRuntime,

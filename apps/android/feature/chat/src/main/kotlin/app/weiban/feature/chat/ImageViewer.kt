@@ -48,7 +48,8 @@ internal fun viewerItems(messages: List<Message>): List<ViewerItem> =
  * 「…」菜单：保存图片、收藏、添加到表情（别人的图）、删除。
  */
 @OptIn(ExperimentalFoundationApi::class)
-@Composable internal fun ImageViewer(
+@Composable
+internal fun ImageViewer(
     ui: ConversationUi,
     items: List<ViewerItem>,
     startMessageId: String,
@@ -68,7 +69,11 @@ internal fun viewerItems(messages: List<Message>): List<ViewerItem> =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             val mediaId = pendingSave
             pendingSave = null
-            if (granted && mediaId != null) ui.media.save(context, mediaId) else if (!granted) ui.media.toast("需要存储权限才能保存图片")
+            if (granted && mediaId != null) {
+                ui.media.save(context, mediaId)
+            } else if (!granted) {
+                ui.media.toast("需要存储权限才能保存图片")
+            }
         }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -122,7 +127,11 @@ internal fun viewerItems(messages: List<Message>): List<ViewerItem> =
                                 userAction({ ui.media.toast(it) }) {
                                     ui.repository.call(
                                         Endpoints.chatEndpointsHideMessage,
-                                        params = mapOf("conversationId" to current.message.conversationId, "messageId" to current.message.messageId),
+                                        params =
+                                            mapOf(
+                                                "conversationId" to current.message.conversationId,
+                                                "messageId" to current.message.messageId,
+                                            ),
                                         options = SessionCallOptions(owner = ui.owner),
                                     )
                                 }

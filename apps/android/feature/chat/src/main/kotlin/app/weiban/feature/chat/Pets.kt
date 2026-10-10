@@ -37,10 +37,10 @@ import app.weiban.designsystem.tokens.WbRadius
 import app.weiban.designsystem.tokens.WbSpace
 import app.weiban.network.ApiFailure
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.*
 import java.util.UUID
 
@@ -166,7 +166,8 @@ private fun roleName(
 // ---------- 总览 ----------
 
 @Suppress("LongParameterList", "LongMethod") // Overview list with memories section.
-@Composable private fun PetList(
+@Composable
+private fun PetList(
     repository: SessionRepository,
     owner: OwnerRecord,
     state: ClientSyncState,
@@ -224,7 +225,8 @@ private fun roleName(
 // ---------- 领养流程 ----------
 
 @Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod") // Four short steps share one state holder.
-@Composable private fun AdoptFlow(
+@Composable
+private fun AdoptFlow(
     repository: SessionRepository,
     owner: OwnerRecord,
     state: ClientSyncState,
@@ -446,7 +448,8 @@ private fun roleName(
 // ---------- 宠物主页 ----------
 
 @Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod") // Page with care buttons, timeline, album and settings.
-@Composable private fun PetPage(
+@Composable
+private fun PetPage(
     repository: SessionRepository,
     owner: OwnerRecord,
     state: ClientSyncState,

@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package app.weiban.feature.chat
 
 import androidx.compose.animation.core.RepeatMode
@@ -139,7 +141,14 @@ internal fun imageBox(
                 horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val wave = if (failed) "!" else if (mine) "·)))" else "(((·"
+                val wave =
+                    if (failed) {
+                        "!"
+                    } else if (mine) {
+                        "·)))"
+                    } else {
+                        "(((·"
+                    }
                 val waveColor = if (failed) colors.textDanger else LocalContentColor.current
                 if (mine) Text("$seconds″  ", fontFamily = FontFamily.Monospace)
                 Text(wave, Modifier.alpha(pulse), color = waveColor)
@@ -272,14 +281,21 @@ internal fun callRecordText(content: ReceivedMessageContentCallRecord): String {
     ) {
         if (item.failed) {
             Box(
-                Modifier.size(20.dp).clip(CircleShape).background(colors.textDanger).clickable { choosing = true },
+                Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(colors.textDanger)
+                    .clickable { choosing = true },
                 contentAlignment = Alignment.Center,
             ) { Text("!", color = colors.textOnBrand) }
             Spacer(Modifier.width(WbSpace.S3))
         }
         if (item.kind == "image") {
             val (w, h) = imageBox(item.width.toLong(), item.height.toLong())
-            Box(Modifier.size(w, h).clip(RoundedCornerShape(WbRadius.Sm)).background(colors.bgSkeleton), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.size(w, h).clip(RoundedCornerShape(WbRadius.Sm)).background(colors.bgSkeleton),
+                contentAlignment = Alignment.Center,
+            ) {
                 item.preview?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                 if (item.uploading || item.failed) {
                     Box(Modifier.fillMaxSize().background(colors.bgScrim), contentAlignment = Alignment.Center) {

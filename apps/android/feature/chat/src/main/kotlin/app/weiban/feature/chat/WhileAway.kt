@@ -1,3 +1,5 @@
+@file:Suppress("MatchingDeclarationName")
+
 package app.weiban.feature.chat
 
 import androidx.activity.compose.BackHandler
@@ -89,7 +91,12 @@ private suspend fun loadSummary(
 
 internal fun whileAwayTitle(offlineSeconds: Long): String {
     val zone = ZoneId.systemDefault()
-    val since = Instant.now().minusSeconds(offlineSeconds).atZone(zone).toLocalDate()
+    val since =
+        Instant
+            .now()
+            .minusSeconds(offlineSeconds)
+            .atZone(zone)
+            .toLocalDate()
     val days = ChronoUnit.DAYS.between(since, LocalDate.now(zone))
     return if (days < 1) "你不在的这段时间，TA……" else "你不在的这 $days 天，TA……"
 }
@@ -122,7 +129,9 @@ internal fun timelineKindLabel(kind: String): String =
     val events = data.events.take(CARD_EVENT_LIMIT).sortedBy { it.seq }
     Card(
         Modifier.fillMaxWidth().padding(horizontal = WbSpace.S5, vertical = WbSpace.S3),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(WbRadius.Md),
+        shape =
+            androidx.compose.foundation.shape
+                .RoundedCornerShape(WbRadius.Md),
         colors = CardDefaults.cardColors(containerColor = colors.bgSurface, contentColor = colors.textPrimary),
     ) {
         Column(Modifier.padding(WbSpace.S5), verticalArrangement = Arrangement.spacedBy(WbSpace.S2)) {

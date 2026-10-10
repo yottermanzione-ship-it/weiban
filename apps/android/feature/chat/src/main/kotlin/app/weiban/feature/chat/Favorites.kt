@@ -25,6 +25,7 @@ import kotlinx.serialization.json.*
 private const val SEARCH_DEBOUNCE_MS = 300L
 
 /** 收藏来源里的消息定位信息（FavoriteSource 是 JSON 联合类型）。 */
+@Suppress("ReturnCount") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
 private fun favoriteMessage(favorite: Favorite): Pair<String, String>? {
     val source = favorite.source as? JsonObject ?: return null
     if (source["kind"]?.jsonPrimitive?.contentOrNull != "message") return null
@@ -84,7 +85,8 @@ private class FavoritesPager(
  * 点开时原消息在本机就跳回聊天定位，否则显示详情。
  */
 @Suppress("LongMethod", "CyclomaticComplexMethod") // Search, filters, paged list, selection bar and detail dialog.
-@Composable fun FavoritesScreen(
+@Composable
+fun FavoritesScreen(
     repository: SessionRepository,
     runtime: ChatRuntime,
     owner: OwnerRecord,
@@ -120,8 +122,8 @@ private class FavoritesPager(
     val state = if (snapshot.owner == owner) snapshot.state else SyncEngine.freshState()
     val ids = (state.contacts.map { it.characterId } + pager.items.mapNotNull { it.characterId }).distinct()
     val profiles = characterProfiles(repository, ids)
-    fun nameOf(id: String?): String =
-        id?.let { state.contacts.find { c -> c.characterId == it }?.remark ?: profiles[it]?.name } ?: "我"
+
+    fun nameOf(id: String?): String = id?.let { state.contacts.find { c -> c.characterId == it }?.remark ?: profiles[it]?.name } ?: "我"
     val remove: (List<String>) -> Unit = { targets ->
         scope.launch {
             userAction({ toast(context, "操作暂未完成，请稍后再试") }) {
@@ -272,7 +274,8 @@ private class FavoritesPager(
 }
 
 @Suppress("LongParameterList", "LongMethod") // One row with its own menu and selection state.
-@Composable private fun FavoriteRow(
+@Composable
+private fun FavoriteRow(
     repository: SessionRepository,
     owner: OwnerRecord,
     favorite: Favorite,

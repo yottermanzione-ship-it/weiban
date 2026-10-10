@@ -1,12 +1,12 @@
 package app.weiban.feature.chat
 
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import app.weiban.contracts.*
-import app.weiban.data.SessionCallOptions
 import android.content.ClipData
 import android.content.ClipboardManager
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import app.weiban.contracts.*
+import app.weiban.data.SessionCallOptions
 import kotlinx.coroutines.launch
 
 @Composable internal fun MessageActions(
@@ -75,6 +75,7 @@ import kotlinx.coroutines.launch
 ) {
     val context = LocalContext.current
     val mine = message.senderKind == "user"
+
     fun item(
         label: String,
         action: () -> Unit,

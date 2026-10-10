@@ -34,7 +34,10 @@ private val frequencies = listOf("low" to "少", "medium" to "适中", "high" to
     PeriodSwitchRow("角色主动找我", settings.proactiveMessagesEnabled, !state.busy) { enabled ->
         state.perform {
             state.notificationSettings =
-                state.call(Endpoints.identityEndpointsUpdateNotificationSettings, buildJsonObject { put("proactiveMessagesEnabled", enabled) })
+                state.call(
+                    Endpoints.identityEndpointsUpdateNotificationSettings,
+                    buildJsonObject { put("proactiveMessagesEnabled", enabled) },
+                )
         }
     }
     Text("关闭后所有角色都不会主动发消息；你发消息时 TA 照常回复。", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
@@ -55,7 +58,10 @@ private val frequencies = listOf("low" to "少", "medium" to "适中", "high" to
     PeriodSwitchRow("允许角色拉我进群", settings.allowCharacterGroupInvites, !state.busy) { enabled ->
         state.perform {
             state.notificationSettings =
-                state.call(Endpoints.identityEndpointsUpdateNotificationSettings, buildJsonObject { put("allowCharacterGroupInvites", enabled) })
+                state.call(
+                    Endpoints.identityEndpointsUpdateNotificationSettings,
+                    buildJsonObject { put("allowCharacterGroupInvites", enabled) },
+                )
         }
     }
     val current = defaults
@@ -68,7 +74,8 @@ private val frequencies = listOf("low" to "少", "medium" to "适中", "high" to
                     enabled = !state.busy,
                     onClick = {
                         state.perform {
-                            defaults = state.call(Endpoints.companionEndpointsUpdateDefaults, buildJsonObject { put("proactiveFrequency", id) })
+                            defaults =
+                                state.call(Endpoints.companionEndpointsUpdateDefaults, buildJsonObject { put("proactiveFrequency", id) })
                             state.message = "下一次主动消息开始生效"
                         }
                     },

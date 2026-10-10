@@ -27,6 +27,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -38,7 +39,6 @@ import app.weiban.designsystem.shareImage
 import app.weiban.designsystem.tokens.WbColorSets
 import app.weiban.designsystem.tokens.WbSpace
 import app.weiban.network.ApiFailure
-import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import java.io.File
@@ -55,6 +55,7 @@ private val templates =
     )
 
 /** 编辑页一次准备好的素材：服务器内容 + 已下载的头像 / 图片 / 卡面。 */
+@Suppress("LongParameterList") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
 private class ShareMaterials(
     val data: ShareImageData,
     val items: List<ShareRenderItem>,
@@ -90,7 +91,8 @@ private class ShareEditorState {
  * 服务器决定能放进图里的内容和贴纸文案；本页在手机本地绘制，保存到系统相册或交给系统分享。
  */
 @Suppress("LongMethod", "CyclomaticComplexMethod") // Loading, preview, options and the two actions.
-@Composable internal fun ShareEditor(
+@Composable
+internal fun ShareEditor(
     repository: SessionRepository,
     runtime: ChatRuntime,
     owner: OwnerRecord,
@@ -245,7 +247,8 @@ private class ShareEditorState {
 }
 
 @Suppress("LongMethod", "LongParameterList") // Template list and five options.
-@Composable private fun ShareOptions(
+@Composable
+private fun ShareOptions(
     repository: SessionRepository,
     owner: OwnerRecord,
     editor: ShareEditorState,
@@ -498,7 +501,11 @@ private suspend fun prepareMaterials(
                             defaultAvatarStyle(
                                 id,
                                 profile?.name.orEmpty(),
-                                profile?.avatar?.display?.supportColors.orEmpty(),
+                                profile
+                                    ?.avatar
+                                    ?.display
+                                    ?.supportColors
+                                    .orEmpty(),
                                 profile?.avatar?.display?.avatarText,
                             )
                         // SAFE-01 第 5 条：用户上传 > 管理员上传 > 默认头像。
@@ -568,8 +575,7 @@ private suspend fun prepareMaterials(
                             Endpoints.growthEndpointsGetDaysKnown,
                             params = mapOf("characterId" to id),
                             options = SessionCallOptions(owner = owner),
-                        )
-                        .daysKnown
+                        ).daysKnown
                 }
             }
         val heading =

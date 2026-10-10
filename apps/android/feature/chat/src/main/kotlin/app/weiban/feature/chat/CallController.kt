@@ -69,6 +69,7 @@ private const val INCOMING_TIMEOUT_MS = 30_000L
  * 信令走 HTTP（拨打 / 接听 / 拒接 / 挂断），音频走每通电话一条 WebSocket；状态变化同时以 call.updated 同步到所有设备。
  * 全程不出现费用信息（MED-06 第 10 条）。
  */
+@Suppress("TooManyFunctions") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
 class CallController(
     context: Context,
     private val repository: SessionRepository,
@@ -93,8 +94,10 @@ class CallController(
     val notices: SharedFlow<String> = messages
     var system: CallSystem? = null
     private var owner: OwnerRecord? = null
+
     @Volatile private var socket: WebSocket? = null
     private var generation = 0
+
     @Volatile private var audio: CallAudio? = null
     private var outputRate = 0
     private var reconnecting: Job? = null
@@ -185,6 +188,7 @@ class CallController(
     // ---------- 来电 ----------
 
     /** 收到来电（推送全屏通知点开 / 应用内 call.updated）：核对仍在响铃再显示来电页（T-070 交接）。 */
+    @Suppress("ComplexCondition") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
     fun incoming(
         callId: String,
         autoAnswer: Boolean = false,
@@ -216,7 +220,8 @@ class CallController(
         autoAnswer: Boolean,
     ) {
         val name = characterName(call.characterId)
-        mutable.value = CallView(call.callId, call.characterId, name, "incoming", CallPhase.Incoming, call.conversationId, autoAnswer = autoAnswer)
+        mutable.value =
+            CallView(call.callId, call.characterId, name, "incoming", CallPhase.Incoming, call.conversationId, autoAnswer = autoAnswer)
         updateRingtone()
         ringTimeout?.cancel()
         // 30 秒无人接听：来电页消失（服务器同时记为未接，MED-07 第 4 条）。
@@ -376,10 +381,13 @@ class CallController(
                     ) {
                         scope.launch {
                             if (serial != generation) return@launch
-                            send("hello", buildJsonObject {
-                                put("inputSampleRate", 16_000)
-                                put("clientTime", Instant.now().toString())
-                            })
+                            send(
+                                "hello",
+                                buildJsonObject {
+                                    put("inputSampleRate", 16_000)
+                                    put("clientTime", Instant.now().toString())
+                                },
+                            )
                             startPing()
                         }
                     }
@@ -440,6 +448,7 @@ class CallController(
             }
     }
 
+    @Suppress("CyclomaticComplexMethod") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
     private fun control(
         callId: String,
         raw: String,
@@ -517,7 +526,11 @@ class CallController(
             current?.callId == call.callId && call.state == "ended" ->
                 finish(endedText(call.outcome ?: "completed", current), immediate = current.phase == CallPhase.Incoming)
             // 另一台设备接听了：本机来电页消失。
-            current?.callId == call.callId && current.phase == CallPhase.Incoming && call.state != "ringing" -> finish(null, immediate = true)
+            current?.callId == call.callId && current.phase == CallPhase.Incoming && call.state != "ringing" ->
+                finish(
+                    null,
+                    immediate = true,
+                )
             current == null && call.state == "ringing" && call.direction == "incoming" && owner != null -> showIncoming(call, false)
             current == null && call.state == "ended" -> system?.dismissIncomingNotice(call.callId)
         }
@@ -541,6 +554,7 @@ class CallController(
     }
 
     /** 结束：停音频、关连接、停前台服务；结束页停 1 秒后关闭（immediate 直接关闭）。 */
+    @Suppress("ReturnCount") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
     private fun finish(
         text: String?,
         immediate: Boolean = false,

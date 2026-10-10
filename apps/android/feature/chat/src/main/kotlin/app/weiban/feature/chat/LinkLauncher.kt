@@ -1,3 +1,5 @@
+@file:Suppress("MatchingDeclarationName")
+
 package app.weiban.feature.chat
 
 import android.content.ActivityNotFoundException
@@ -48,6 +50,7 @@ internal fun linkPlatform(url: String): LinkPlatform? {
 }
 
 /** 返回 false = 没有任何 App 能打开（极少见），由调用方提示。 */
+@Suppress("ReturnCount") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
 internal fun openLink(
     context: Context,
     url: String,

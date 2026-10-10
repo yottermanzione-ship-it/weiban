@@ -1,5 +1,6 @@
 package app.weiban.feature.me
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -7,7 +8,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import android.widget.Toast
 import app.weiban.contracts.*
 import app.weiban.designsystem.LocalWeibanColors
 import app.weiban.designsystem.tokens.WbSpace
@@ -64,7 +64,8 @@ private fun shortDate(value: String): String = LocalDate.parse(value).let { "${i
 
 /** 某一天的记录页（PLAY-01 第 2 条；设计 3.2）。 */
 @OptIn(ExperimentalLayoutApi::class)
-@Composable internal fun PeriodDayPage(
+@Composable
+internal fun PeriodDayPage(
     state: PeriodState,
     date: LocalDate,
     onBack: () -> Unit,
@@ -137,7 +138,7 @@ private fun shortDate(value: String): String = LocalDate.parse(value).let { "${i
         )
         Text("只有你自己能看到，不会告诉任何角色", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
     }
-    if (existing != null && containing != null) {
+    if (existing != null) {
         TextButton(enabled = !state.busy, onClick = {
             state.perform(success = "已删除这天的记录", after = onBack) {
                 state.updateCycle(containing.cycleId, dayLog = dayLogJson(date, null, null, emptyList(), null))
@@ -232,13 +233,21 @@ private suspend fun savePeriodDay(
         val start = LocalDate.parse(cycle.startDate)
         val end = cycle.endDate?.let(LocalDate::parse)
         val length = end?.let { ChronoUnit.DAYS.between(start, it) + 1 }
-        val newer = state.cycles.getOrNull(index - 1)?.startDate?.let(LocalDate::parse)
+        val newer =
+            state.cycles
+                .getOrNull(index - 1)
+                ?.startDate
+                ?.let(LocalDate::parse)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 val range = "${shortDate(cycle.startDate)} – ${cycle.endDate?.let(::shortDate) ?: "至今"}"
                 Text(range + (length?.let { " · $it 天" } ?: ""), Modifier.padding(top = WbSpace.S3))
                 newer?.let {
-                    Text("周期 ${ChronoUnit.DAYS.between(start, it)} 天", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "周期 ${ChronoUnit.DAYS.between(start, it)} 天",
+                        color = colors.textSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
             TextButton(onClick = {
@@ -302,8 +311,22 @@ private suspend fun savePeriodDay(
     onBack: () -> Unit,
 ) {
     val colors = LocalWeibanColors.current
-    var cycle by remember(state.settings) { mutableStateOf(state.settings?.cycleLengthDays?.toString().orEmpty()) }
-    var period by remember(state.settings) { mutableStateOf(state.settings?.periodLengthDays?.toString().orEmpty()) }
+    var cycle by remember(state.settings) {
+        mutableStateOf(
+            state.settings
+                ?.cycleLengthDays
+                ?.toString()
+                .orEmpty(),
+        )
+    }
+    var period by remember(state.settings) {
+        mutableStateOf(
+            state.settings
+                ?.periodLengthDays
+                ?.toString()
+                .orEmpty(),
+        )
+    }
     SubHeader("周期设置", onBack)
     OutlinedTextField(cycle, { cycle = it.filter(Char::isDigit).take(2) }, label = { Text("平时的周期长度（15–60 天）") })
     OutlinedTextField(period, { period = it.filter(Char::isDigit).take(2) }, label = { Text("平时经期天数（1–15 天）") })

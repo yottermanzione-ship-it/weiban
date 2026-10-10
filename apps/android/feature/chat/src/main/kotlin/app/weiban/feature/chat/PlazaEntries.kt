@@ -33,6 +33,7 @@ private data class PlazaCopyOrigin(
     val newerVersion: Long?,
 )
 
+@Suppress("ReturnCount") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
 private fun parseOrigin(origin: JsonElement): PlazaCopyOrigin? {
     val value = origin as? JsonObject ?: return null
     if (value["kind"]?.jsonPrimitive?.contentOrNull != "plaza_copy") return null
@@ -115,7 +116,11 @@ private fun parseOrigin(origin: JsonElement): PlazaCopyOrigin? {
         }
     var overwrite by remember { mutableStateOf(false) }
     var pending by remember { mutableStateOf(false) }
-    val note = work.data?.versions?.find { it.version == version }?.changeNote
+    val note =
+        work.data
+            ?.versions
+            ?.find { it.version == version }
+            ?.changeNote
 
     fun decide(
         decision: String,
@@ -180,7 +185,11 @@ private fun parseOrigin(origin: JsonElement): PlazaCopyOrigin? {
 }
 
 @Composable private fun NewVersionBadge(onClick: () -> Unit) {
-    Row(Modifier.clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(WbSpace.S2)) {
+    Row(
+        Modifier.clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WbSpace.S2),
+    ) {
         Text("作者发布了新版本", style = MaterialTheme.typography.bodySmall)
         RedDot()
     }

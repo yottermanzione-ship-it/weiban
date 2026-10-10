@@ -122,7 +122,14 @@ import kotlinx.serialization.json.*
                     InformationNavigation(
                         { information = false },
                         onModelsRequested,
-                        createGroup = { creating = selected.characterMembers().firstOrNull()?.refId.orEmpty() },
+                        createGroup = {
+                            creating =
+                                selected
+                                    .characterMembers()
+                                    .firstOrNull()
+                                    ?.refId
+                                    .orEmpty()
+                        },
                     ),
                 ) { select(null) }
             else ->
@@ -241,6 +248,7 @@ internal fun messageText(message: Message): String =
         }
     }
 
+@Suppress("CyclomaticComplexMethod") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
 private fun systemMessage(content: ReceivedMessageContentSystem): String {
     fun p(key: String) = (content.params[key] as? JsonPrimitive)?.contentOrNull.orEmpty()
     val by = p("byName")
@@ -383,7 +391,10 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
             repository,
             owner,
             conversation.conversationId,
-            conversation.participants.find { it.kind == "character" }?.refId.takeIf { !group },
+            conversation.participants
+                .find { it.kind == "character" }
+                ?.refId
+                .takeIf { !group },
             messages.lastOrNull()?.messageId,
         )
     WhileAwayCard(whileAway) { ui.text = it }

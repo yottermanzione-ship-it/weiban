@@ -1,4 +1,4 @@
-@file:Suppress("TooGenericExceptionCaught", "SwallowedException", "ReturnCount")
+@file:Suppress("TooManyFunctions", "TooGenericExceptionCaught", "SwallowedException", "ReturnCount")
 
 package app.weiban.feature.chat
 
@@ -305,11 +305,12 @@ internal data class SnapshotField(
 internal fun snapshotFields(snapshot: ParsedSnapshot): List<SnapshotField> {
     if (snapshot is ParsedSnapshot.Variant) return listOf(SnapshotField("variantText", "改版设定", snapshot.value.variantText))
     val value = (snapshot as ParsedSnapshot.Custom).value
-    val rows = mutableListOf(
-        SnapshotField("name", "名字", value.name),
-        SnapshotField("description", "人设描述", value.description),
-        SnapshotField("speechStyle", "说话方式", value.speechStyle),
-    )
+    val rows =
+        mutableListOf(
+            SnapshotField("name", "名字", value.name),
+            SnapshotField("description", "人设描述", value.description),
+            SnapshotField("speechStyle", "说话方式", value.speechStyle),
+        )
     value.catchphrases.forEachIndexed { index, text -> rows.add(SnapshotField("catchphrases.$index", if (index == 0) "口头禅" else "", text)) }
     rows.add(SnapshotField("exampleDialogue", "示例对话", value.exampleDialogue))
     value.tags.forEachIndexed { index, text -> rows.add(SnapshotField("tags.$index", if (index == 0) "标签" else "", text)) }

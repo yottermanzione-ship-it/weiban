@@ -57,7 +57,10 @@ internal class MomentsPager(
             val page: Pair<List<MomentsPost>, String?> =
                 when {
                     mode == "me" ->
-                        repository.call(Endpoints.momentsEndpointsListMyPosts, query = query, options = options).let { it.items to it.nextCursor }
+                        repository.call(Endpoints.momentsEndpointsListMyPosts, query = query, options = options).let {
+                            it.items to
+                                it.nextCursor
+                        }
                     mode.startsWith("character:") ->
                         repository
                             .call(
@@ -67,7 +70,10 @@ internal class MomentsPager(
                                 options = options,
                             ).let { it.items to it.nextCursor }
                     else ->
-                        repository.call(Endpoints.momentsEndpointsListFeed, query = query, options = options).let { it.items to it.nextCursor }
+                        repository.call(Endpoints.momentsEndpointsListFeed, query = query, options = options).let {
+                            it.items to
+                                it.nextCursor
+                        }
                 }
             items.addAll(page.first.filter { incoming -> items.none { it.postId == incoming.postId } })
             cursor = page.second
@@ -114,7 +120,8 @@ internal class MomentsPager(
 
 /** 发现页红点（SOC-07 第 7 条：新动态不推送，只亮入口）。 */
 @Suppress("TooGenericExceptionCaught")
-@Composable fun rememberMomentsBadge(
+@Composable
+fun rememberMomentsBadge(
     repository: SessionRepository,
     owner: OwnerRecord,
 ): MomentsBadge? {
@@ -138,8 +145,9 @@ internal fun momentTime(createdAt: String): String =
     try {
         val zone = ZoneId.systemDefault()
         val time = Instant.parse(createdAt).atZone(zone)
-        val days = java.time.temporal.ChronoUnit.DAYS
-            .between(time.toLocalDate(), LocalDate.now(zone))
+        val days =
+            java.time.temporal.ChronoUnit.DAYS
+                .between(time.toLocalDate(), LocalDate.now(zone))
         when {
             days == 0L -> time.format(DateTimeFormatter.ofPattern("HH:mm"))
             days == 1L -> "昨天 " + time.format(DateTimeFormatter.ofPattern("HH:mm"))
@@ -175,7 +183,11 @@ private suspend fun mediaPicture(
 ): Bitmap? =
     try {
         val media =
-            repository.call(Endpoints.mediaEndpointsGetMedia, params = mapOf("mediaId" to mediaId), options = SessionCallOptions(owner = owner))
+            repository.call(
+                Endpoints.mediaEndpointsGetMedia,
+                params = mapOf("mediaId" to mediaId),
+                options = SessionCallOptions(owner = owner),
+            )
         val bytes = repository.download(media, owner)
         withContext(Dispatchers.IO) {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

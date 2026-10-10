@@ -17,6 +17,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.lifecycle.lifecycleScope
 import app.weiban.contracts.AuthResponse
 import app.weiban.contracts.Endpoints
 import app.weiban.data.OwnerRecord
@@ -26,17 +27,17 @@ import app.weiban.feature.auth.AuthScreen
 import app.weiban.feature.chat.AchievementsScreen
 import app.weiban.feature.chat.CallOverlay
 import app.weiban.feature.chat.CardAlbumsScreen
+import app.weiban.feature.chat.ChatScreen
+import app.weiban.feature.chat.DiscoverScreen
 import app.weiban.feature.chat.FamiliarityOverviewScreen
 import app.weiban.feature.chat.FavoritesScreen
 import app.weiban.feature.chat.GrowthNavigation
 import app.weiban.feature.chat.GrowthShareOverlay
-import app.weiban.feature.chat.PlayNavigation
-import app.weiban.feature.chat.ChatScreen
-import app.weiban.feature.chat.DiscoverScreen
 import app.weiban.feature.chat.LocalCalls
 import app.weiban.feature.chat.MyStickersScreen
-import app.weiban.feature.chat.rememberMomentsBadge
+import app.weiban.feature.chat.PlayNavigation
 import app.weiban.feature.chat.RoleBrowser
+import app.weiban.feature.chat.rememberMomentsBadge
 import app.weiban.feature.me.MeEntry
 import app.weiban.feature.me.MeScreen
 import app.weiban.network.ApiClient
@@ -44,7 +45,6 @@ import app.weiban.platform.CallNotices
 import app.weiban.platform.NotificationTarget
 import app.weiban.platform.adminNotificationAddress
 import kotlinx.coroutines.CancellationException
-import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {

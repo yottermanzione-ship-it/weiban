@@ -83,7 +83,13 @@ internal class ConversationUi(
                         repository.call(
                             Endpoints.chatActionEndpointsChooseMessageAction,
                             params = mapOf("conversationId" to message.conversationId, "messageId" to message.messageId),
-                            body = kotlinx.serialization.json.buildJsonObject { put("actionId", kotlinx.serialization.json.JsonPrimitive(actionId)) },
+                            body =
+                                kotlinx.serialization.json.buildJsonObject {
+                                    put(
+                                        "actionId",
+                                        kotlinx.serialization.json.JsonPrimitive(actionId),
+                                    )
+                                },
                             options = SessionCallOptions(owner = owner),
                         )
                     } catch (failure: app.weiban.network.ApiFailure) {

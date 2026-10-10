@@ -26,7 +26,8 @@ private const val SUPPLEMENT_TEXT_MAX = 5_000
  * 自定义角色没有补充设定：导入结果直接合并进人设描述。
  */
 @Suppress("LongMethod", "CyclomaticComplexMethod") // List, editor dialog and confirmations.
-@Composable internal fun SupplementPage(
+@Composable
+internal fun SupplementPage(
     repository: SessionRepository,
     owner: OwnerRecord,
     characterId: String,
@@ -60,8 +61,15 @@ private const val SUPPLEMENT_TEXT_MAX = 5_000
     var pending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val custom = profile.data?.kind == "custom"
-    val lines = supplement.data?.text?.split('\n')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+    val lines =
+        supplement.data
+            ?.text
+            ?.split('\n')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            .orEmpty()
     val conflicts = supplement.data?.conflicts.orEmpty()
+
     fun save(next: List<String>) {
         pending = true
         error = null

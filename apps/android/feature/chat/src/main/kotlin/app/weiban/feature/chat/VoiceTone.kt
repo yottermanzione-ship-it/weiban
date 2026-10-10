@@ -38,7 +38,11 @@ import kotlinx.serialization.json.buildJsonObject
     onOpen: () -> Unit,
 ) {
     val voices = rememberVoices(repository, owner)
-    val items = voices.data?.items.orEmpty().filter { it.enabled }
+    val items =
+        voices.data
+            ?.items
+            .orEmpty()
+            .filter { it.enabled }
     if (items.isEmpty()) return
     val name = voiceId?.let { id -> items.find { it.voiceId == id }?.name } ?: "默认"
     TextButton(onClick = onOpen, enabled = enabled) { Text("TA 的声音  $name ›") }
@@ -65,6 +69,7 @@ import kotlinx.serialization.json.buildJsonObject
     var current by remember(characterId) { mutableStateOf(initialVoiceId) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+
     fun choose(id: String?) {
         if (saving || id == current) return
         val before = current
@@ -92,7 +97,10 @@ import kotlinx.serialization.json.buildJsonObject
             Text("TA 的声音", style = MaterialTheme.typography.titleMedium)
         }
         when {
-            voices.loading && voices.data == null -> repeat(5) { LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = WbSpace.S5)) }
+            voices.loading && voices.data == null ->
+                repeat(
+                    5,
+                ) { LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = WbSpace.S5)) }
             voices.error != null && voices.data == null ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(WbSpace.S8)) {
                     Text("加载失败")
@@ -140,7 +148,10 @@ import kotlinx.serialization.json.buildJsonObject
     onPreview: () -> Unit,
 ) {
     val colors = LocalWeibanColors.current
-    Row(Modifier.fillMaxWidth().clickable(onClick = onChoose).padding(vertical = WbSpace.S3), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onChoose).padding(vertical = WbSpace.S3),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         if (sampleMediaId != null) {
             TextButton(onClick = onPreview) { Text(if (playing) "■" else "▶") }
         } else {

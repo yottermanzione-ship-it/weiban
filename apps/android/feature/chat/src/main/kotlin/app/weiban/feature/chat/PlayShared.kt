@@ -1,4 +1,4 @@
-@file:Suppress("TooGenericExceptionCaught", "LongParameterList")
+@file:Suppress("TooManyFunctions", "TooGenericExceptionCaught", "LongParameterList")
 
 package app.weiban.feature.chat
 
@@ -176,7 +176,10 @@ internal fun monthDay(date: String): String =
     }
 
 /** 通讯录里已通过的角色（玩法只对已添加的角色）。 */
-@Composable internal fun playContacts(runtime: ChatRuntime, owner: OwnerRecord): List<Contact> {
+@Composable internal fun playContacts(
+    runtime: ChatRuntime,
+    owner: OwnerRecord,
+): List<Contact> {
     val snapshot by runtime.snapshot.collectAsState()
     val state = if (snapshot.owner == owner) snapshot.state else SyncEngine.freshState()
     return state.contacts.filter { it.status != "pending" }
@@ -241,7 +244,12 @@ internal fun openChatWith(
                 Modifier.clickable { onSelect(id) }.padding(WbSpace.S1),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                RoleAvatar(repository, owner, RoleAvatarIdentity(id, profiles[id]?.name.orEmpty(), profiles[id]?.avatar, contact.customAvatarMediaId), 48.dp)
+                RoleAvatar(
+                    repository,
+                    owner,
+                    RoleAvatarIdentity(id, profiles[id]?.name.orEmpty(), profiles[id]?.avatar, contact.customAvatarMediaId),
+                    48.dp,
+                )
                 Text(
                     playName(contacts, profiles, id),
                     color = if (chosen) colors.brandPrimary else colors.textSecondary,

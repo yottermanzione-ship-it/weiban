@@ -42,6 +42,7 @@ private val letterBoxes = listOf("received" to "收到的", "sent" to "寄出的
     var loading by remember(box) { mutableStateOf(true) }
     var failed by remember(box) { mutableStateOf(false) }
     var revision by remember { mutableIntStateOf(0) }
+
     suspend fun load(after: String?) {
         loading = true
         failed = false
@@ -103,7 +104,13 @@ private val letterBoxes = listOf("received" to "收到的", "sent" to "寄出的
                 when {
                     inTransit ->
                         "信件在路上" + if (letter.expectedDeliveryDate == todayText()) "，预计今天送到" else ""
-                    else -> letter.body.orEmpty().lineSequence().firstOrNull().orEmpty().take(40)
+                    else ->
+                        letter.body
+                            .orEmpty()
+                            .lineSequence()
+                            .firstOrNull()
+                            .orEmpty()
+                            .take(40)
                 }
             Row(
                 Modifier
@@ -175,7 +182,11 @@ private val letterBoxes = listOf("received" to "收到的", "sent" to "寄出的
                     query = mapOf("box" to "drafts", "characterId" to target),
                     options = SessionCallOptions(owner = owner, networkOnly = true),
                 )
-            val draft = drafts.items.firstOrNull()?.body.orEmpty()
+            val draft =
+                drafts.items
+                    .firstOrNull()
+                    ?.body
+                    .orEmpty()
             if (body.isEmpty()) body = draft
             original = draft
         }
@@ -186,7 +197,15 @@ private val letterBoxes = listOf("received" to "收到的", "sent" to "寄出的
                     query = mapOf("box" to "received", "characterId" to target),
                     options = SessionCallOptions(owner = owner, networkOnly = true),
                 )
-            repliedToday = received.items.any { letter -> letter.deliveredAt?.let { plazaDate(it) } == plazaDate(java.time.Instant.now().toString()) }
+            repliedToday =
+                received.items.any { letter ->
+                    letter.deliveredAt?.let { plazaDate(it) } ==
+                        plazaDate(
+                            java.time.Instant
+                                .now()
+                                .toString(),
+                        )
+                }
         }
     }
     val name = playName(contacts, profiles, target)
@@ -201,7 +220,11 @@ private val letterBoxes = listOf("received" to "收到的", "sent" to "寄出的
     BackHandler(onBack = cancel)
     PlayHeader("写给 $name", onBack = cancel)
     Column(
-        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
+        Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
     ) {
         // 信纸样式、衬线字体。
@@ -335,7 +358,11 @@ private val letterBoxes = listOf("received" to "收到的", "sent" to "寄出的
     val conversationId = contacts.find { it.characterId == data.characterId }?.conversationId
     val messageId = data.messageId
     Column(
-        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
+        Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
     ) {
         Text(if (fromCharacter) "来自 $name" else "写给 $name", style = MaterialTheme.typography.titleMedium)
@@ -346,7 +373,13 @@ private val letterBoxes = listOf("received" to "收到的", "sent" to "寄出的
                 Text(data.body.orEmpty(), fontFamily = FontFamily.Serif, style = MaterialTheme.typography.bodyLarge)
             }
         }
-        (data.deliveredAt ?: data.sentAt)?.let { Text(plazaDate(it), color = colors.textTertiary, style = MaterialTheme.typography.bodySmall) }
+        (data.deliveredAt ?: data.sentAt)?.let {
+            Text(
+                plazaDate(it),
+                color = colors.textTertiary,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
     }
     if (data.body != null) {
         Row(

@@ -16,6 +16,7 @@ import java.io.File
 import java.util.UUID
 
 /** 本机正在上传的一条图片 / 语音（上传完成后进入发送队列）。 */
+@Suppress("LongParameterList") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
 internal class LocalSend(
     val id: String,
     val kind: String,
@@ -42,6 +43,7 @@ internal data class TranscriptView(
  * 聊天里的多媒体操作（T-074）：发图 / 发语音 / 发表情、转文字、添加到表情、收藏、保存。
  * 与 ConversationUi 同生命周期（一个会话一份）。
  */
+@Suppress("TooManyFunctions") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
 internal class ChatMediaUi(
     context: Context,
     private val ui: ConversationUi,
@@ -209,6 +211,7 @@ internal class ChatMediaUi(
     // ---------- 转文字 ----------
 
     /** 长按「转文字 / 隐藏文字」：角色语音直接显示原文；用户语音向服务器查询，并随 media.transcript_ready 更新。 */
+    @Suppress("ReturnCount") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
     fun toggleTranscript(message: Message) {
         val content = message.content as? ReceivedMessageContentVoice ?: return
         val current = transcripts[message.messageId]

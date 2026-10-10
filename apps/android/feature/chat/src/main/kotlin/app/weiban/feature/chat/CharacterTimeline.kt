@@ -75,7 +75,10 @@ private class TimelinePager(
     LaunchedEffect(pager) { pager.next() }
     val nearEnd by remember {
         derivedStateOf {
-            val last = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val last =
+                list.layoutInfo.visibleItemsInfo
+                    .lastOrNull()
+                    ?.index ?: 0
             last >= list.layoutInfo.totalItemsCount - 2
         }
     }
@@ -119,7 +122,11 @@ private class TimelinePager(
                 else -> null
             }
         source?.let { Text(it, color = colors.textTertiary, style = MaterialTheme.typography.bodySmall) }
-        if (entry.ref?.kind == "url") Text(entry.ref?.id.orEmpty(), color = colors.textLink, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+        if (entry.ref?.kind ==
+            "url"
+        ) {
+            Text(entry.ref?.id.orEmpty(), color = colors.textLink, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+        }
     }
     HorizontalDivider(color = colors.borderHairline)
 }

@@ -65,7 +65,8 @@ private fun seenKey(characterId: String) = "cards:seen:$characterId"
 // ---------- 卡册总览（我 › 服务 › 卡册） ----------
 
 @Suppress("LongMethod") // Album list with per-role badge.
-@Composable fun CardAlbumsScreen(
+@Composable
+fun CardAlbumsScreen(
     repository: SessionRepository,
     runtime: ChatRuntime,
     owner: OwnerRecord,
@@ -145,7 +146,8 @@ private fun seenKey(characterId: String) = "cards:seen:$characterId"
 // ---------- 某角色的卡册 ----------
 
 @Suppress("LongMethod", "CyclomaticComplexMethod") // Header plus four card groups in one scroll.
-@Composable internal fun CardAlbumPage(
+@Composable
+internal fun CardAlbumPage(
     repository: SessionRepository,
     runtime: ChatRuntime,
     owner: OwnerRecord,
@@ -284,7 +286,8 @@ private fun seenKey(characterId: String) = "cards:seen:$characterId"
 // ---------- 卡片详情（全屏浮层） ----------
 
 @Suppress("LongMethod") // Scrim, pager and the two actions.
-@Composable internal fun CardDetailOverlay(
+@Composable
+internal fun CardDetailOverlay(
     repository: SessionRepository,
     owner: OwnerRecord,
     open: CardOpen,
@@ -342,7 +345,8 @@ private fun seenKey(characterId: String) = "cards:seen:$characterId"
 }
 
 @Suppress("LongMethod") // Front and back faces of one card.
-@Composable private fun FlipCard(
+@Composable
+private fun FlipCard(
     repository: SessionRepository,
     owner: OwnerRecord,
     card: GrowthCard,
@@ -421,7 +425,8 @@ private val achievementGroups =
 }
 
 @Suppress("LongMethod") // Header, grouped badge grid and the detail dialog.
-@Composable fun AchievementsScreen(
+@Composable
+fun AchievementsScreen(
     repository: SessionRepository,
     owner: OwnerRecord,
     onBack: () -> Unit,
@@ -433,7 +438,13 @@ private val achievementGroups =
     }
     var fresh by remember(owner) { mutableStateOf<Set<String>>(emptySet()) }
     LaunchedEffect(owner) {
-        fresh = repository.flags.get(owner, ACHIEVEMENT_NEW_FLAG).orEmpty().split(',').filter(String::isNotBlank).toSet()
+        fresh =
+            repository.flags
+                .get(owner, ACHIEVEMENT_NEW_FLAG)
+                .orEmpty()
+                .split(',')
+                .filter(String::isNotBlank)
+                .toSet()
         // 新获得的红点只在这一次进入时显示，离开成就页后消失（5.1）。
         repository.flags.set(owner, ACHIEVEMENT_NEW_FLAG, "")
     }
@@ -521,7 +532,8 @@ private val achievementGroups =
 // ---------- 熟悉度总览（我 › 服务 › 熟悉度） ----------
 
 @Suppress("LongMethod") // One list page with progress rows.
-@Composable fun FamiliarityOverviewScreen(
+@Composable
+fun FamiliarityOverviewScreen(
     repository: SessionRepository,
     runtime: ChatRuntime,
     owner: OwnerRecord,

@@ -206,7 +206,9 @@ private fun clock(seconds: Long): String = "%02d:%02d".format(seconds / 60, seco
         Column(Modifier.fillMaxSize().systemBarsPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(Modifier.fillMaxWidth()) {
                 if (view.phase == CallPhase.Active || view.phase == CallPhase.Reconnecting) {
-                    TextButton(onClick = { calls.minimize(true) }) { Text("⌄", color = modes.callText, style = MaterialTheme.typography.titleLarge) }
+                    TextButton(
+                        onClick = { calls.minimize(true) },
+                    ) { Text("⌄", color = modes.callText, style = MaterialTheme.typography.titleLarge) }
                 }
             }
             Spacer(Modifier.fillMaxHeight(0.14f))
@@ -253,7 +255,12 @@ private fun clock(seconds: Long): String = "%02d:%02d".format(seconds / 60, seco
             CallButton(if (view.direction == "incoming") "挂断" else "取消", "✕", modes.callDecline) { calls.hangUp() }
         CallPhase.Active, CallPhase.Reconnecting ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                CallButton("静音", "∅", if (view.muted) modes.callControlActive else modes.callControl, active = view.muted) { calls.toggleMute() }
+                CallButton(
+                    "静音",
+                    "∅",
+                    if (view.muted) modes.callControlActive else modes.callControl,
+                    active = view.muted,
+                ) { calls.toggleMute() }
                 CallButton("挂断", "✕", modes.callDecline) { calls.hangUp() }
                 CallButton("扬声器", "◖))", if (view.speaker) modes.callControlActive else modes.callControl, active = view.speaker) {
                     calls.toggleSpeaker()
@@ -273,7 +280,11 @@ private fun clock(seconds: Long): String = "%02d:%02d".format(seconds / 60, seco
     val modes = LocalWeibanModeColors.current
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
-            Modifier.size(CALL_BUTTON).clip(CircleShape).background(color).clickable(onClick = onClick),
+            Modifier
+                .size(CALL_BUTTON)
+                .clip(CircleShape)
+                .background(color)
+                .clickable(onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
             Text(glyph, color = if (active) modes.callBgBottom else modes.callText, style = MaterialTheme.typography.headlineSmall)

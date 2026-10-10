@@ -26,7 +26,8 @@ private fun hitTime(createdAt: String): String = createdAt.take(16).replace('T',
  * 单条命中直接定位；多条命中进入该会话的命中列表。
  */
 @Suppress("LongMethod", "CyclomaticComplexMethod") // One results page with three sections.
-@Composable internal fun GlobalSearchScreen(
+@Composable
+internal fun GlobalSearchScreen(
     repository: SessionRepository,
     owner: OwnerRecord,
     state: ClientSyncState,
@@ -152,7 +153,8 @@ private fun hitTime(createdAt: String): String = createdAt.take(16).replace('T',
  * 点开结果定位到该消息上下文。
  */
 @Suppress("LongMethod") // Search field, three quick filters and one paged list.
-@Composable internal fun ConversationSearchScreen(
+@Composable
+internal fun ConversationSearchScreen(
     repository: SessionRepository,
     owner: OwnerRecord,
     state: ClientSyncState,
@@ -169,6 +171,7 @@ private fun hitTime(createdAt: String): String = createdAt.take(16).replace('T',
     var hasMore by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+
     suspend fun load(more: Boolean) {
         val keyword = query.trim()
         if (keyword.isEmpty()) {

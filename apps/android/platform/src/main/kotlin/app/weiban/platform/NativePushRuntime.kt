@@ -65,6 +65,7 @@ class NativePushRuntime(
         }
     }
 
+    @Suppress("ReturnCount") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
     suspend fun deliver(
         owner: OwnerRecord,
         id: String,
@@ -125,7 +126,11 @@ class NativePushRuntime(
         if (auth?.user?.userId != owner.userId || auth.session.sessionId != owner.sessionId || !permitted()) return
         val call = fetchCall(repository, owner, callId)
         CallNotices.dismissIncoming(context, callId)
-        if (call.state == "ended" && call.outcome == "missed") CallNotices.showMissed(context, activity, owner, callId, conversationId, name)
+        if (call.state == "ended" &&
+            call.outcome == "missed"
+        ) {
+            CallNotices.showMissed(context, activity, owner, callId, conversationId, name)
+        }
     }
 
     private fun owner(envelope: NotificationEnvelope) =

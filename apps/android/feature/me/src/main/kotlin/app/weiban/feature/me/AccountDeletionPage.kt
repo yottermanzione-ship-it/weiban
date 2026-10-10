@@ -41,7 +41,8 @@ private val deletedItems =
  * 密码错误（403 invalid_credentials）只提示、不退出登录；只有服务器明确返回「未登录」才退出。
  */
 @Suppress("LongMethod", "CyclomaticComplexMethod") // Three steps of one flow.
-@Composable internal fun AccountDeletionPage(
+@Composable
+internal fun AccountDeletionPage(
     state: MeState,
     onLogout: () -> Unit,
 ) {

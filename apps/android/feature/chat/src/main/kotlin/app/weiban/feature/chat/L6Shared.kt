@@ -169,6 +169,7 @@ internal fun shareBlockReason(messages: List<Message>): String? =
     }
 
 /** 消息内容的一行文字（收藏列表、分享图、搜索）。 */
+@Suppress("CyclomaticComplexMethod") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
 internal fun contentText(content: ReceivedMessageContent?): String =
     when (content) {
         is ReceivedMessageContentText -> content.text
@@ -262,7 +263,12 @@ internal fun serialText(serialNo: Long): String = "No." + serialNo.toString().pa
                     // 契约里的事件不带成就键：按 unlockedAt 比较找出新获得的（T-076 交接）。
                     val fresh = items.filter { it.unlockedAt != null && before[it.key] == null }
                     if (fresh.isNotEmpty()) {
-                        val previous = repository.flags.get(owner, ACHIEVEMENT_NEW_FLAG).orEmpty().split(',').filter(String::isNotBlank)
+                        val previous =
+                            repository.flags
+                                .get(owner, ACHIEVEMENT_NEW_FLAG)
+                                .orEmpty()
+                                .split(',')
+                                .filter(String::isNotBlank)
                         repository.flags.set(owner, ACHIEVEMENT_NEW_FLAG, (previous + fresh.map { it.key }).distinct().joinToString(","))
                         queue.addAll(fresh.take(3).map { it.name })
                     }

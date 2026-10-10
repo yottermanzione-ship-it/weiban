@@ -71,8 +71,14 @@ internal fun closenessName(value: String): String = closenessLevels.find { it.fi
         }
     var editing by remember { mutableStateOf<CharacterRelation?>(null) }
     var adding by remember { mutableStateOf(false) }
-    val mine = relations.data?.items?.filter { it.characterAId == characterId || it.characterBId == characterId }.orEmpty()
+    val mine =
+        relations.data
+            ?.items
+            ?.filter { it.characterAId == characterId || it.characterBId == characterId }
+            .orEmpty()
+
     fun other(relation: CharacterRelation) = if (relation.characterAId == characterId) relation.characterBId else relation.characterAId
+
     fun nameOf(id: String) = state.contacts.find { it.characterId == id }?.remark ?: profiles[id]?.name ?: "角色"
     val available = custom.filter { id -> id != characterId && mine.none { other(it) == id } }
     if (adding || editing != null) {
@@ -103,7 +109,14 @@ internal fun closenessName(value: String): String = closenessLevels.find { it.fi
             val id = other(relation)
             ListItem(
                 headlineContent = { Text(nameOf(id)) },
-                leadingContent = { RoleAvatar(repository, owner, RoleAvatarIdentity(id, nameOf(id), profiles[id]?.avatar), WbSize.AvatarMd) },
+                leadingContent = {
+                    RoleAvatar(
+                        repository,
+                        owner,
+                        RoleAvatarIdentity(id, nameOf(id), profiles[id]?.avatar),
+                        WbSize.AvatarMd,
+                    )
+                },
                 trailingContent = {
                     val type = if (relation.type == "other") relation.label ?: "其他" else relationTypeName(relation.type)
                     Text("$type · ${closenessName(relation.closeness)} ›", color = colors.textSecondary)

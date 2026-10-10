@@ -35,7 +35,9 @@ class WeibanApplication :
 
     /** 语音通话（T-075）：应用级单例；通话中由前台服务保活。 */
     val calls by lazy {
-        app.weiban.feature.chat.CallController(this, repository, BuildConfig.API_BASE_URL).also { it.system = AppCallSystem(this) }
+        app.weiban.feature.chat
+            .CallController(this, repository, BuildConfig.API_BASE_URL)
+            .also { it.system = AppCallSystem(this) }
     }
 
     override fun onCallAction(
@@ -46,7 +48,12 @@ class WeibanApplication :
         scope.launch {
             // 进程可能刚被通知拉起：先恢复登录状态再核对账号。
             initialize()
-            if (repository.auth.value?.session?.sessionId != sessionId) return@launch
+            if (repository.auth.value
+                    ?.session
+                    ?.sessionId != sessionId
+            ) {
+                return@launch
+            }
             when (action) {
                 "decline" -> calls.declineFromNotice(callId)
                 "hangup" -> calls.hangUp()
@@ -108,7 +115,10 @@ private class AppCallSystem(
     private val app: WeibanApplication,
 ) : app.weiban.feature.chat.CallSystem {
     override fun callStarted(view: app.weiban.feature.chat.CallView) {
-        val sessionId = app.repository.auth.value?.session?.sessionId ?: return
+        val sessionId =
+            app.repository.auth.value
+                ?.session
+                ?.sessionId ?: return
         CallNotices.startOngoing(app, MainActivity::class.java, sessionId, view.callId, view.name, view.connectedAtMs)
     }
 

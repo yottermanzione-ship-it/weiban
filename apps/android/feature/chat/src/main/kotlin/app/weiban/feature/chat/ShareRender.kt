@@ -75,6 +75,7 @@ internal class ShareRenderItem(
     val image: Bitmap?,
 )
 
+@Suppress("LongParameterList") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
 internal class ShareRenderCard(
     val title: String,
     val line: String,
@@ -85,6 +86,7 @@ internal class ShareRenderCard(
     val characterId: String,
 )
 
+@Suppress("LongParameterList") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
 internal class ShareRenderInput(
     val template: String,
     val label: String,

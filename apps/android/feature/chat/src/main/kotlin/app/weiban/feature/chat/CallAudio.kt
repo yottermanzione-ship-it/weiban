@@ -77,7 +77,8 @@ internal class CallAudio(
 
     /** call.ready 后开始双向音频。重连时会再次调用：只重建播放（采样率可能变化）。 */
     @SuppressLint("MissingPermission") // The call UI requests RECORD_AUDIO before dialing / answering.
-    @Suppress("TooGenericExceptionCaught") // Device audio failures end in silence instead of crashing the call.
+    // Device audio failures end in silence instead of crashing the call.
+    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException")
     fun start(outputRate: Int) {
         startPlayback(outputRate)
         if (running) return
@@ -103,6 +104,7 @@ internal class CallAudio(
         }
     }
 
+    @Suppress("CyclomaticComplexMethod", "LoopWithTooManyJumpStatements") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
     private fun captureLoop(source: AudioRecord) {
         val buffer = ByteArray(FRAME_BYTES)
         var loud = 0

@@ -1,10 +1,10 @@
 package app.weiban.feature.chat
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -297,7 +297,11 @@ private class MomentActions(
     val actions = remember(pager) { MomentActions(repository, owner, scope, pager::replace, pager::remove) }
     val list = rememberLazyListState()
     val badge = rememberMomentsBadge(repository, owner)
-    val ids = pager.items.flatMap { post -> listOf(post.author) + post.likes + post.comments.flatMap { listOfNotNull(it.author, it.replyTo) } }
+    val ids =
+        pager.items.flatMap { post ->
+            listOf(post.author) + post.likes +
+                post.comments.flatMap { listOfNotNull(it.author, it.replyTo) }
+        }
     val profiles = characterProfiles(repository, ids.filter { it.kind == "character" }.map { it.refId })
     val names = MomentNames(state, profiles)
     LaunchedEffect(pager) {
@@ -319,7 +323,10 @@ private class MomentActions(
     }
     val nearEnd by remember {
         derivedStateOf {
-            val last = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val last =
+                list.layoutInfo.visibleItemsInfo
+                    .lastOrNull()
+                    ?.index ?: 0
             last >= list.layoutInfo.totalItemsCount - 2
         }
     }
@@ -431,7 +438,11 @@ private class MomentActions(
                 TextButton(onClick = { actions.replying = post to null }, enabled = !actions.pending) { Text("评论") }
             }
             if (post.likes.isNotEmpty()) {
-                Text("♡ " + post.likes.joinToString("，") { names.of(it) }, color = colors.textNameInMoments, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "♡ " + post.likes.joinToString("，") { names.of(it) },
+                    color = colors.textNameInMoments,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
             post.comments.forEach { comment ->
                 val who = names.of(comment.author)
@@ -498,7 +509,8 @@ private class MomentActions(
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable private fun MomentImages(
+@Composable
+private fun MomentImages(
     actions: MomentActions,
     post: MomentsPost,
 ) {

@@ -51,11 +51,17 @@ private const val STICKER_LIMIT = 300
     val colors = LocalWeibanColors.current
     val scope = rememberCoroutineScope()
     val library = rememberStickerLibrary(repository, owner)
-    val stickers = library.mine.data?.items.orEmpty().sortedBy { it.order }
+    val stickers =
+        library.mine.data
+            ?.items
+            .orEmpty()
+            .sortedBy { it.order }
     var organizing by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var preview by remember { mutableStateOf<UserSticker?>(null) }
+
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+
     fun act(work: suspend () -> Unit) {
         if (busy) return
         busy = true
@@ -132,12 +138,19 @@ private const val STICKER_LIMIT = 300
                     }
                     items(stickers, key = { it.stickerId }) { sticker ->
                         Column(Modifier.padding(WbSpace.S2), horizontalAlignment = Alignment.CenterHorizontally) {
-                            StickerMessage(repository, owner, sticker.mediaId, Modifier.clickable { if (!organizing) preview = sticker }, 72.dp)
+                            StickerMessage(
+                                repository,
+                                owner,
+                                sticker.mediaId,
+                                Modifier.clickable { if (!organizing) preview = sticker },
+                                72.dp,
+                            )
                             if (organizing) {
                                 Row {
                                     TextButton(enabled = !busy, onClick = {
                                         act {
-                                            val order = listOf(sticker.stickerId) + stickers.map { it.stickerId }.filter { it != sticker.stickerId }
+                                            val order =
+                                                listOf(sticker.stickerId) + stickers.map { it.stickerId }.filter { it != sticker.stickerId }
                                             repository.call(
                                                 Endpoints.stickerEndpointsReorderMyStickers,
                                                 body = buildJsonObject { put("stickerIds", JsonArray(order.map(::JsonPrimitive))) },

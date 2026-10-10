@@ -66,6 +66,7 @@ private fun JsonElement?.str(): String? = (this as? JsonPrimitive)?.contentOrNul
 private fun JsonElement?.strings(): List<String> = (this as? JsonArray)?.mapNotNull { it.str() }.orEmpty()
 
 /** 导入生成的角色卡草稿摊平到编辑器字段（与网页 custom-character.tsx draftFields 一致）。 */
+@Suppress("LongParameterList") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
 private class DraftFields(
     val name: String,
     val description: String,
@@ -109,9 +110,19 @@ private fun draftFields(
     return DraftFields(
         name = speaker.orEmpty().take(32),
         description = description,
-        catchphrase = speech?.get("catchphrases").strings().joinToString("、").take(200),
+        catchphrase =
+            speech
+                ?.get("catchphrases")
+                .strings()
+                .joinToString("、")
+                .take(200),
         exampleDialogue = examples,
-        tags = persona?.get("personaTagsCustom").strings().take(10).joinToString("，"),
+        tags =
+            persona
+                ?.get("personaTagsCustom")
+                .strings()
+                .take(10)
+                .joinToString("，"),
         realPersonKind = classification?.get("realPersonKind").str() ?: "private_person",
         basis = classification?.get("basis").str() ?: "real_person",
         ageSetting = classification?.get("ageSetting").str() ?: "adult",
@@ -140,7 +151,8 @@ private suspend fun readPicked(
  * 截图确认识别结果 → 选哪一方是 TA → 保留原文 + 预计花费 → 生成中（可离开）→ 编辑草稿 / 确认补充设定。
  */
 @Suppress("LongMethod", "CyclomaticComplexMethod") // One state machine following the job status.
-@Composable internal fun ImportOverlay(
+@Composable
+internal fun ImportOverlay(
     repository: SessionRepository,
     runtime: ChatRuntime,
     owner: OwnerRecord,
@@ -230,7 +242,8 @@ private suspend fun readPicked(
 // ---------- 开始：说明、选来源、进行中的导入 ----------
 
 @Suppress("LongMethod", "CyclomaticComplexMethod", "LongParameterList") // Intro, three sources and the job list.
-@Composable private fun ImportStart(
+@Composable
+private fun ImportStart(
     repository: SessionRepository,
     owner: OwnerRecord,
     open: ImportOpen,
@@ -250,6 +263,7 @@ private suspend fun readPicked(
         remote("${owner.sessionId}:imports") {
             repository.call(Endpoints.importerEndpointsListJobs, options = SessionCallOptions(owner = owner, networkOnly = true)).items
         }
+
     fun create(
         sourceKind: String,
         upload: suspend (String) -> Unit = {},
@@ -394,7 +408,8 @@ private fun jobStatusText(job: ImportJob): String =
 // ---------- 任务页：按状态显示 ----------
 
 @Suppress("LongMethod", "CyclomaticComplexMethod", "LongParameterList") // One page per job status.
-@Composable private fun ImportJobPage(
+@Composable
+private fun ImportJobPage(
     repository: SessionRepository,
     owner: OwnerRecord,
     job: ImportJob,
@@ -670,7 +685,8 @@ private fun jobStatusText(job: ImportJob): String =
 
 /** 导入草稿编辑器（CHR-08 第 4 条）：默认「真人」，不勾选声明不能改成原创 / 虚构。 */
 @Suppress("LongMethod", "CyclomaticComplexMethod", "LongParameterList") // One form.
-@Composable private fun DraftEditor(
+@Composable
+private fun DraftEditor(
     repository: SessionRepository,
     owner: OwnerRecord,
     job: ImportJob,
@@ -742,7 +758,12 @@ private fun jobStatusText(job: ImportJob): String =
                 error = null
                 scope.launch {
                     try {
-                        val tagList = tags.split(',', '，', '、').map { it.trim().take(16) }.filter { it.isNotEmpty() }.take(10)
+                        val tagList =
+                            tags
+                                .split(',', '，', '、')
+                                .map { it.trim().take(16) }
+                                .filter { it.isNotEmpty() }
+                                .take(10)
                         val created =
                             repository.call(
                                 Endpoints.userCustomEndpointsCreate,
@@ -784,7 +805,8 @@ private fun jobStatusText(job: ImportJob): String =
 
 /** 补充设定导入结果确认（CHR-09）：勾选确认后追加到我的补充设定；自定义角色合并进人设描述。 */
 @Suppress("LongMethod") // One confirmation form.
-@Composable private fun SupplementResult(
+@Composable
+private fun SupplementResult(
     repository: SessionRepository,
     owner: OwnerRecord,
     job: ImportJob,

@@ -56,7 +56,11 @@ private val focusPresets = listOf(25, 45, 60, 90)
     val profiles = rememberPlayNames(repository, contacts, listOfNotNull(session?.characterId, finished?.characterId))
     PlayHeader("陪你专注") { if (session != null) TextButton(onClick = PlayNav::close) { Text("收起") } }
     Column(
-        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
+        Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S4),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -91,7 +95,10 @@ private val focusPresets = listOf(25, 45, 60, 90)
                 Text("选一个陪你的人", Modifier.fillMaxWidth())
                 RolePickerRow(repository, owner, contacts, profiles, selected) { selected = it }
                 Text("时长", Modifier.fillMaxWidth())
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(WbSpace.S2)) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(WbSpace.S2),
+                ) {
                     focusPresets.forEach { value ->
                         FilterChip(selected = !useCustom && minutes == value, onClick = {
                             useCustom = false
@@ -355,7 +362,11 @@ private val reminderQuickFills = listOf("喝水", "吃药", "休息一下", "早
     }
     val count = plazaChars(text)
     Column(
-        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
+        Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
     ) {
         OutlinedTextField(
@@ -391,7 +402,11 @@ private val reminderQuickFills = listOf("喝水", "吃药", "休息一下", "早
                     repeat =
                         when (kind) {
                             "once" -> RepeatValue("once", repeat.date ?: todayText())
-                            "weekly" -> RepeatValue("weekly", weekdays = repeat.weekdays.ifEmpty { listOf(LocalDate.now().dayOfWeek.value) })
+                            "weekly" ->
+                                RepeatValue(
+                                    "weekly",
+                                    weekdays = repeat.weekdays.ifEmpty { listOf(LocalDate.now().dayOfWeek.value) },
+                                )
                             else -> RepeatValue(kind)
                         }
                 }, label = { Text(label) })

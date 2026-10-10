@@ -147,6 +147,7 @@ private class WorkListState {
     val colors = LocalWeibanColors.current
     val list = remember { WorkListState() }
     val scope = rememberCoroutineScope()
+
     suspend fun load(after: String?) {
         list.loading = true
         list.failed = false
@@ -243,13 +244,30 @@ private class WorkListState {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(WbSpace.S2)) {
                 Text(work.name, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (status != null) {
-                    Text(status, color = if (status == "展示中") colors.textSecondary else colors.textDanger, style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        status,
+                        color =
+                            if (status ==
+                                "展示中"
+                            ) {
+                                colors.textSecondary
+                            } else {
+                                colors.textDanger
+                            },
+                        style = MaterialTheme.typography.labelSmall,
+                    )
                 } else {
                     KindTag(work, hit)
                 }
             }
             if (status == null) {
-                Text(work.tagline, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    work.tagline,
+                    color = colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 Text(
                     "${plazaAuthorName(work.author)} · 赞 ${work.likeCount} · 添加 ${work.adoptCount}",
                     color = colors.textTertiary,
@@ -276,7 +294,10 @@ private class WorkListState {
         androidx.compose.ui.text.buildAnnotatedString {
             Regex("▢+|[^▢]+").findAll(text).forEach { part ->
                 if (part.value.startsWith("▢")) {
-                    pushStyle(androidx.compose.ui.text.SpanStyle(background = colors.brandSoft, color = colors.brandOnSoft))
+                    pushStyle(
+                        androidx.compose.ui.text
+                            .SpanStyle(background = colors.brandSoft, color = colors.brandOnSoft),
+                    )
                     append(part.value)
                     pop()
                 } else {
@@ -400,7 +421,15 @@ private class WorkUi {
                     repository.call(
                         Endpoints.plazaEndpointsAdopt,
                         params = mapOf("workId" to workId),
-                        body = buildJsonObject { put("adoptionId", java.util.UUID.randomUUID().toString()) },
+                        body =
+                            buildJsonObject {
+                                put(
+                                    "adoptionId",
+                                    java.util.UUID
+                                        .randomUUID()
+                                        .toString(),
+                                )
+                            },
                         options = SessionCallOptions(owner = owner),
                     )
                 // 服务器已自动加进通讯录（T-088），只同步一次通讯录，不调 POST /contacts。
@@ -429,7 +458,12 @@ private class WorkUi {
                         params = mapOf("workId" to workId),
                         body =
                             buildJsonObject {
-                                put("adoptionId", java.util.UUID.randomUUID().toString())
+                                put(
+                                    "adoptionId",
+                                    java.util.UUID
+                                        .randomUUID()
+                                        .toString(),
+                                )
                                 put("confirmReplaceSupplement", confirmReplace)
                             },
                         options = SessionCallOptions(owner = owner),
@@ -528,7 +562,11 @@ private class WorkUi {
                 scope.launch {
                     // 契约没有作品的来源角色 ID：按名字匹配我的自定义角色（与网页 T-097 相同）。
                     userAction({ plazaToast(context, it) }) {
-                        val mine = repository.call(Endpoints.userCustomEndpointsList, options = SessionCallOptions(owner = owner, networkOnly = true))
+                        val mine =
+                            repository.call(
+                                Endpoints.userCustomEndpointsList,
+                                options = SessionCallOptions(owner = owner, networkOnly = true),
+                            )
                         val match = mine.items.find { it.name == parsed.value.name }
                         if (match != null) {
                             PlazaNav.open(PlazaPage.Publish(match.characterId, null))
@@ -543,10 +581,18 @@ private class WorkUi {
 
     PlazaHeader("") { TextButton(onClick = { sheet = "menu" }) { Text("···") } }
     Column(
-        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = WbSpace.S5),
+        Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
     ) {
-        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(WbSpace.S2)) {
+        Column(
+            Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(WbSpace.S2),
+        ) {
             val presetProfile = presetId?.let { characterProfiles(repository, listOf(it))[it] }
             WorkAvatar(repository, owner, w.summary(), presetProfile, 64.dp)
             Text(w.name, style = MaterialTheme.typography.titleLarge)
@@ -731,7 +777,10 @@ private class CommentUi {
     var text by mutableStateOf("")
     var replyTo by mutableStateOf<PlazaComment?>(null)
     var sending by mutableStateOf(false)
-    var requestId = java.util.UUID.randomUUID().toString()
+    var requestId =
+        java.util.UUID
+            .randomUUID()
+            .toString()
 }
 
 @Composable private fun CommentSection(
@@ -744,6 +793,7 @@ private class CommentUi {
     val colors = LocalWeibanColors.current
     val scope = rememberCoroutineScope()
     val ui = remember(work.workId) { CommentUi() }
+
     suspend fun load(after: String?) {
         ui.loading = true
         try {
@@ -780,7 +830,11 @@ private class CommentUi {
     fun startCompose(target: PlazaComment?) {
         scope.launch {
             try {
-                val profile = repository.call(Endpoints.plazaEndpointsGetMyProfile, options = SessionCallOptions(owner = owner, networkOnly = true))
+                val profile =
+                    repository.call(
+                        Endpoints.plazaEndpointsGetMyProfile,
+                        options = SessionCallOptions(owner = owner, networkOnly = true),
+                    )
                 if (profile == null) {
                     PlazaNav.open(PlazaPage.Profile)
                     return@launch
@@ -817,7 +871,10 @@ private class CommentUi {
                             },
                         options = SessionCallOptions(owner = owner),
                     )
-                ui.requestId = java.util.UUID.randomUUID().toString()
+                ui.requestId =
+                    java.util.UUID
+                        .randomUUID()
+                        .toString()
                 ui.items.add(comment)
                 onCount(work.commentCount + 1)
                 ui.text = ""

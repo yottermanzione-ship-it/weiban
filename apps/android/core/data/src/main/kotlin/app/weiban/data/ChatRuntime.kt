@@ -293,7 +293,19 @@ class ChatRuntime(
             current.dispatch(
                 ClientSyncOperationEnqueue(
                     conversationId = conversationId,
-                    body = SendMessageRequest(UUID.randomUUID().toString(), UserSendableContentText(text = text, mentions = mentions?.takeIf { it.isNotEmpty() }?.take(10)), quoteMessageId),
+                    body =
+                        SendMessageRequest(
+                            UUID.randomUUID().toString(),
+                            UserSendableContentText(
+                                text = text,
+                                mentions =
+                                    mentions
+                                        ?.takeIf {
+                                            it.isNotEmpty()
+                                        }?.take(10),
+                            ),
+                            quoteMessageId,
+                        ),
                     now = System.currentTimeMillis(),
                 ),
             )

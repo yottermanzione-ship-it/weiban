@@ -25,7 +25,8 @@ import java.time.temporal.ChronoUnit
  * 收到 `data.changed(new_friends)` 时重新拉取。
  */
 @Suppress("TooGenericExceptionCaught") // Badge failures keep the previous value; cancellation stops the old owner.
-@Composable internal fun rememberNewFriends(
+@Composable
+internal fun rememberNewFriends(
     repository: SessionRepository,
     owner: OwnerRecord,
 ): NewFriendsEndpointsListResponse? {
@@ -72,7 +73,8 @@ import java.time.temporal.ChronoUnit
     val visible = list?.items.orEmpty().filter { it.itemId !in removed }
     val profiles = characterProfiles(repository, visible.flatMap { listOfNotNull(it.characterId, it.recommenderCharacterId) })
 
-    fun nameOf(id: String?): String = id?.let { key -> state.contacts.find { it.characterId == key }?.remark ?: profiles[key]?.name }.orEmpty()
+    fun nameOf(id: String?): String =
+        id?.let { key -> state.contacts.find { it.characterId == key }?.remark ?: profiles[key]?.name }.orEmpty()
     val now = Instant.now()
     val recent =
         visible.filter { item ->

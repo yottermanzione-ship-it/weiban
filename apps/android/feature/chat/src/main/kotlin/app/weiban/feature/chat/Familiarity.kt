@@ -47,8 +47,7 @@ internal fun familiarityName(level: Long): String =
     }
 }
 
-internal fun daysKnownLabel(info: DaysKnownInfo): String =
-    if (info.isRomantic) "在一起第 ${info.daysKnown} 天" else "认识第 ${info.daysKnown} 天"
+internal fun daysKnownLabel(info: DaysKnownInfo): String = if (info.isRomantic) "在一起第 ${info.daysKnown} 天" else "认识第 ${info.daysKnown} 天"
 
 /**
  * 资料页头部副信息「认识第 N 天 · L3 熟络 ›」与展开后的熟悉度 / 纪念日详情（GRW-03、GRW-04；design l3-companion.md 第 4、5 节）。
@@ -99,8 +98,11 @@ internal fun daysKnownLabel(info: DaysKnownInfo): String =
     Column(
         Modifier
             .fillMaxWidth()
-            .background(colors.bgSurface, androidx.compose.foundation.shape.RoundedCornerShape(WbRadius.Md))
-            .padding(WbSpace.S5),
+            .background(
+                colors.bgSurface,
+                androidx.compose.foundation.shape
+                    .RoundedCornerShape(WbRadius.Md),
+            ).padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
     ) {
         Text(daysKnownLabel(known), style = MaterialTheme.typography.headlineSmall)
@@ -130,7 +132,15 @@ internal fun daysKnownLabel(info: DaysKnownInfo): String =
             style = MaterialTheme.typography.bodySmall,
         )
         known.nextAnniversary?.let { next ->
-            val until = next.nextOccurrence?.let { runCatching { ChronoUnit.DAYS.between(LocalDate.now(), LocalDate.parse(it)) }.getOrNull() }
+            val until =
+                next.nextOccurrence?.let {
+                    runCatching {
+                        ChronoUnit.DAYS.between(
+                            LocalDate.now(),
+                            LocalDate.parse(it),
+                        )
+                    }.getOrNull()
+                }
             Text("下一个：${next.label}" + (until?.let { " · 还有 $it 天" } ?: ""), color = colors.textSecondary)
         }
     }

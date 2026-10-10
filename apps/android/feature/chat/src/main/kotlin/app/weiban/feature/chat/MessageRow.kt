@@ -16,7 +16,8 @@ import app.weiban.designsystem.LocalWeibanColors
 import app.weiban.designsystem.tokens.WbSpace
 
 @OptIn(ExperimentalFoundationApi::class)
-@Composable internal fun MessageRow(
+@Composable
+internal fun MessageRow(
     ui: ConversationUi,
     avatars: MessageAvatars,
     message: Message,
@@ -43,13 +44,20 @@ import app.weiban.designsystem.tokens.WbSpace
             // 信件卡片 → 读信；每日一问卡片 → 历史里这一题（PLAY-03、PLAY-05）。
             is ReceivedMessageContentLetter -> { -> PlayNav.stack.value = listOf(PlayPage.LetterRead(content.letterId)) }
             is ReceivedMessageContentDailyQuestion -> { -> PlayNav.stack.value = listOf(PlayPage.DailyHistory(content.answerId)) }
-            is ReceivedMessageContentCallRecord -> { ->
-                if (dial != null && peer != null) {
-                    dial(peer.refId, avatars.roles[peer.participantId]?.name.orEmpty().ifEmpty { "角色" })
-                } else {
-                    menu = true
+            is ReceivedMessageContentCallRecord -> {
+                {
+                    if (dial != null && peer != null) {
+                        dial(
+                            peer.refId,
+                            avatars.roles[peer.participantId]
+                                ?.name
+                                .orEmpty()
+                                .ifEmpty { "角色" },
+                        )
+                    } else {
+                        menu = true
+                    }
                 }
-                Unit
             }
             else -> { -> menu = true }
         }
@@ -75,7 +83,8 @@ import app.weiban.designsystem.tokens.WbSpace
 }
 
 @Suppress("LongParameterList") // Split from MessageRow so the selection checkbox can sit beside the row.
-@Composable private fun MessageRowContent(
+@Composable
+private fun MessageRowContent(
     ui: ConversationUi,
     avatars: MessageAvatars,
     message: Message,
@@ -138,7 +147,11 @@ import app.weiban.designsystem.tokens.WbSpace
     when {
         message.status == "normal" && content is ReceivedMessageContentContactCard -> {
             // 名片（CHR-04）：点开资料页，添加时带推荐人。
-            val recommender = avatars.roles.values.find { it.id == content.recommenderCharacterId }?.name.orEmpty()
+            val recommender =
+                avatars.roles.values
+                    .find { it.id == content.recommenderCharacterId }
+                    ?.name
+                    .orEmpty()
             Column(
                 Modifier.clickable {
                     ui.openProfile(
@@ -163,7 +176,10 @@ import app.weiban.designsystem.tokens.WbSpace
                 if (id == "allow") permissions?.invoke()
                 // 角色提议一起领养：「去看看」进领养流程，角色已预选（T-082、pet.md 第 2 节）。
                 if (content.cardKind == "pet_proposal" && id == "go") {
-                    val target = content.ref?.id ?: ui.conversation.participants.find { it.kind == "character" }?.refId
+                    val target =
+                        content.ref?.id ?: ui.conversation.participants
+                            .find { it.kind == "character" }
+                            ?.refId
                     L6Overlays.pets.value = PetsOpen(target, adopt = true)
                 }
                 ui.choose(message, id)
@@ -189,7 +205,10 @@ import app.weiban.designsystem.tokens.WbSpace
         message.status == "normal" && content is ReceivedMessageContentCallRecord -> CallRecordMessage(content)
         message.status == "normal" && content is ReceivedMessageContentText -> LinkifiedText(content.text)
         message.status == "normal" && content is ReceivedMessageContentSystem && content.code == "pet_adopted" -> {
-            val characterId = ui.conversation.participants.find { it.kind == "character" }?.refId
+            val characterId =
+                ui.conversation.participants
+                    .find { it.kind == "character" }
+                    ?.refId
             Text(
                 messageText(message),
                 Modifier.clickable { L6Overlays.pets.value = PetsOpen(characterId) },
@@ -199,7 +218,10 @@ import app.weiban.designsystem.tokens.WbSpace
         message.status == "normal" && content is ReceivedMessageContentSystem && content.code == "card_obtained" -> {
             // 「获得 XX 卡 ›」：点开卡片详情（M-13 动画在详情里播放）。
             val cardId = (content.params["cardId"] as? kotlinx.serialization.json.JsonPrimitive)?.content
-            val characterId = ui.conversation.participants.find { it.kind == "character" }?.refId
+            val characterId =
+                ui.conversation.participants
+                    .find { it.kind == "character" }
+                    ?.refId
             Text(
                 messageText(message),
                 Modifier.clickable(enabled = cardId != null && characterId != null) {

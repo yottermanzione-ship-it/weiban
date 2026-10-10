@@ -34,6 +34,7 @@ class ChatHistory(
      * earliest = 本地已有的最早 seq；从它往前连续翻页（每页 200，最多 10 页），保证时间线没有缺口；
      * 太远时直接取 seq 前后一页。
      */
+    @Suppress("ReturnCount") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
     suspend fun reveal(
         expected: OwnerRecord,
         conversationId: String,

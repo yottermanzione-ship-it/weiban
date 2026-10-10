@@ -101,7 +101,12 @@ object CallNotices {
                 callId?.let { putExtra(EXTRA_CALL, it) }
                 conversationId?.let { putExtra(EXTRA_CONVERSATION, it) }
             }
-        return PendingIntent.getActivity(context, action.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        return PendingIntent.getActivity(
+            context,
+            action.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 
     private fun broadcast(
@@ -117,7 +122,12 @@ object CallNotices {
                 putExtra(EXTRA_SESSION, sessionId)
                 putExtra(EXTRA_CALL, callId)
             }
-        return PendingIntent.getBroadcast(context, action.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        return PendingIntent.getBroadcast(
+            context,
+            action.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 
     /** 来电通知（系统通话样式）：全屏 Intent 打开来电页；「接听」直接打开应用接听，「拒绝」在后台回传服务器。 */
@@ -256,7 +266,8 @@ object CallNotices {
 class CallForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
-    @Suppress("TooGenericExceptionCaught") // A refused foreground start must not crash the call; audio continues while visible.
+    // A refused foreground start must not crash the call; audio continues while visible.
+    @Suppress("TooGenericExceptionCaught", "ReturnCount")
     override fun onStartCommand(
         intent: Intent?,
         flags: Int,
@@ -297,6 +308,7 @@ class CallForegroundService : Service() {
 
 /** 通知栏「拒绝」「挂断」：交给宿主（不打开界面）。 */
 class CallActionReceiver : BroadcastReceiver() {
+    @Suppress("ReturnCount") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
     override fun onReceive(
         context: Context,
         intent: Intent,
@@ -346,7 +358,7 @@ class MissedCallWorker(
     context: Context,
     parameters: WorkerParameters,
 ) : CoroutineWorker(context, parameters) {
-    @Suppress("TooGenericExceptionCaught") // Best-effort reminder; never retries beyond the call's lifetime.
+    @Suppress("TooGenericExceptionCaught", "ReturnCount") // Best-effort reminder; never retries beyond the call's lifetime.
     override suspend fun doWork(): Result {
         val host = applicationContext as? NativePushHost ?: return Result.failure()
         val userId = inputData.getString("userId") ?: return Result.failure()

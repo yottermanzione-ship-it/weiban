@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package app.weiban.feature.chat
 
 import androidx.activity.compose.BackHandler
@@ -369,7 +371,8 @@ private suspend fun updateGroupState(
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable private fun GroupMembers(
+@Composable
+private fun GroupMembers(
     repository: SessionRepository,
     owner: OwnerRecord,
     state: ClientSyncState,

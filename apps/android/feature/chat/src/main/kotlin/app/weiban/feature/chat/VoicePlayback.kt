@@ -106,7 +106,8 @@ internal class VoicePlayer(
         scope.launch { repository.flags.set(owner, "voice:played:${message.messageId}", "1") }
     }
 
-    @Suppress("TooGenericExceptionCaught") // A broken file or decoder shows the failure mark instead of crashing.
+    // A broken file or decoder shows the failure mark instead of crashing.
+    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException")
     private fun start(
         message: Message,
         file: File,
@@ -147,6 +148,7 @@ internal class VoicePlayer(
     }
 
     /** 自动连播：紧接着的下一条也是角色的未播放语音才继续（MED-03 第 3 条）。 */
+    @Suppress("ComplexCondition") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
     private fun finished(message: Message) {
         val following = nextOf(message.messageId)
         stop()
@@ -190,6 +192,7 @@ internal class VoicePlayer(
 
     /** 听筒 / 扬声器切换：换播放用途并从当前位置继续；贴近耳朵时熄屏。 */
     @SuppressLint("WakelockTimeout") // Released as soon as the ear leaves the sensor or playback stops.
+    @Suppress("ReturnCount") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
     private fun route(
         near: Boolean,
         restart: Boolean = true,
@@ -255,7 +258,6 @@ internal class VoicePlayer(
         } catch (_: Exception) {
             null
         }
-
 
     private companion object {
         const val NEAR_CM = 3f
