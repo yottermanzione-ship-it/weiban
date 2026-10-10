@@ -128,6 +128,10 @@ internal class StickerLibrary(
 @Composable internal fun PlusPanel(ui: ConversationUi) {
     val context = LocalContext.current
     var photo by remember { mutableStateOf<File?>(null) }
+    val characterId = ui.conversation.participants.find { it.kind == "character" }?.refId.takeIf { !ui.conversation.isGroup() }
+    val callable = rememberCallEntry(characterId)
+    val dial = rememberDial()
+    val names = characterNames(ui.repository, listOfNotNull(characterId))
     val gallery =
         rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(ChatMediaUi.IMAGE_PICK_LIMIT)) { picked ->
             if (picked.isNotEmpty()) {
@@ -170,6 +174,8 @@ internal class StickerLibrary(
                 }
             }
         }
+        // 语音通话（MED-06 第 1、11 条）：只在私聊、平台开通语音服务时显示。
+        if (callable && characterId != null) PanelButton("语音通话") { dial(characterId, names[characterId].orEmpty().ifEmpty { "角色" }) }
     }
 }
 
@@ -178,13 +184,19 @@ internal class StickerLibrary(
     onClick: () -> Unit,
 ) {
     val colors = LocalWeibanColors.current
+    val glyph =
+        when (label) {
+            "相册" -> "▦"
+            "拍摄" -> "◉"
+            else -> "✆"
+        }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Surface(
             color = colors.bgSurface,
             shape = MaterialTheme.shapes.medium,
             modifier = Modifier.size(WbSize.GridCell - WbSpace.S5).clickable(onClick = onClick),
         ) {
-            Box(contentAlignment = Alignment.Center) { Text(if (label == "相册") "▦" else "◉", style = MaterialTheme.typography.headlineSmall) }
+            Box(contentAlignment = Alignment.Center) { Text(glyph, style = MaterialTheme.typography.headlineSmall) }
         }
         Text(label, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
     }

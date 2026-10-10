@@ -156,7 +156,7 @@ private class CharacterUi(
             }
         }
         (ui.error ?: profile.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        CharacterAction(contact, ui, profile.data != null, onOpenConversation, progress?.let { it::greet })
+        CharacterAction(contact, ui, profile.data, onOpenConversation, progress?.let { it::greet })
         if (referral?.referrerCharacterId != null && contact == null) {
             if (ui.dismissed) {
                 Text("好的，不会再推荐 TA", style = MaterialTheme.typography.bodySmall)
@@ -175,17 +175,27 @@ private class CharacterUi(
 @Composable private fun CharacterAction(
     contact: Contact?,
     ui: CharacterUi,
-    loaded: Boolean,
+    role: CharacterProfile?,
     onOpen: (String) -> Unit,
     onGreetingChange: ((String) -> Unit)?,
 ) {
     val conversationId = contact?.conversationId
+    val loaded = role != null
     when {
-        conversationId != null ->
+        conversationId != null -> {
             Button(
                 onClick = { onOpen(conversationId) },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("发消息") }
+            // 资料页「语音通话」（MED-06 第 1 条）；平台未开通时不显示。
+            if (role != null && rememberCallEntry(role.characterId)) {
+                val dial = rememberDial()
+                OutlinedButton(
+                    onClick = { dial(role.characterId, contact?.remark ?: role.name) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("语音通话") }
+            }
+        }
         contact?.status == "pending" -> Text("等待通过好友申请")
         else -> {
             OutlinedTextField(ui.greeting, {

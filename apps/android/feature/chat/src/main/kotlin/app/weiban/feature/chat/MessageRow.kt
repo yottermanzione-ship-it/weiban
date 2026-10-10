@@ -31,12 +31,23 @@ import app.weiban.designsystem.tokens.WbSpace
         if (avatar != null && !avatar.user) ui.openProfile(ProfileTarget(avatar.id, ui.groupGreeting))
     }
     val content = message.content.takeIf { message.status == "normal" }
+    // 点通话记录回拨（design/pages/call.md 第 1 节）。
+    val dial = if (content is ReceivedMessageContentCallRecord && !group) rememberDial() else null
+    val peer = conversation.participants.find { it.kind == "character" }
     // 点一下的主操作：图片 → 查看器；语音 → 播放；链接 → 唤起 App；其余 → 菜单。长按一律菜单。
     val primary: () -> Unit =
         when (content) {
             is ReceivedMessageContentImage -> { -> ui.media.viewing = message.messageId }
             is ReceivedMessageContentVoice -> { -> ui.media.player.toggle(message) }
             is ReceivedMessageContentLink -> { -> if (!openLink(context, content.url)) ui.media.toast("无法打开这个链接") }
+            is ReceivedMessageContentCallRecord -> { ->
+                if (dial != null && peer != null) {
+                    dial(peer.refId, avatars.roles[peer.participantId]?.name.orEmpty().ifEmpty { "角色" })
+                } else {
+                    menu = true
+                }
+                Unit
+            }
             else -> { -> menu = true }
         }
     val press = Modifier.combinedClickable(onLongClick = { menu = true }, onClick = primary)
@@ -108,16 +119,22 @@ import app.weiban.designsystem.tokens.WbSpace
         }
         message.status == "normal" && content is ReceivedMessageContentActionCard -> {
             val chosen = message.actionChoice?.actionId
+            // 来电询问点「可以」：顺带检查通知与全屏通知权限（media-l5.md 7.4）。
+            val permissions = if (content.cardKind == "call_permission") rememberCallPermissionFlow() else null
+            val choose: (String) -> Unit = { id ->
+                if (id == "allow") permissions?.invoke()
+                ui.choose(message, id)
+            }
             Text(content.text)
             Row(horizontalArrangement = Arrangement.spacedBy(WbSpace.S3)) {
                 content.actions.forEach { action ->
                     val enabled = chosen == null && !ui.choosing
                     if (action.style == "primary") {
-                        Button(enabled = enabled, onClick = { ui.choose(message, action.actionId) }) {
+                        Button(enabled = enabled, onClick = { choose(action.actionId) }) {
                             Text(if (chosen == action.actionId) "✓ ${action.label}" else action.label)
                         }
                     } else {
-                        OutlinedButton(enabled = enabled, onClick = { ui.choose(message, action.actionId) }) {
+                        OutlinedButton(enabled = enabled, onClick = { choose(action.actionId) }) {
                             Text(if (chosen == action.actionId) "✓ ${action.label}" else action.label)
                         }
                     }

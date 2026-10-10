@@ -7,6 +7,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import app.weiban.contracts.*
@@ -370,11 +371,44 @@ private val proactiveFrequencies = listOf("low" to "少", "medium" to "适中", 
             }
         }
     }
+    InformationCalls(actions, companion, characterId, settings, global.data?.proactiveCallsEnabled == false)
     InformationToggle("TA 的日常", daily, !actions.pending) { value ->
         val before = daily
         daily = value
         actions.change(after = companion::refresh, failed = { daily = before }) {
             actions.call(Endpoints.companionEndpointsUpdateForCharacter, characterId, buildJsonObject { put("dailyLife", value) })
+        }
+    }
+}
+
+/**
+ * 「TA 给我打电话」（MED-07 第 1 条）：默认关闭；全局开关关闭时置灰。打开时检查通知与全屏通知权限（media-l5.md 7.4），
+ * 没有全屏通知权限时开关照常打开，下方说明「锁屏时只会收到通知」+「去设置」。
+ */
+@Composable private fun InformationCalls(
+    actions: InformationActions,
+    companion: NativeRemote<CompanionEndpointsGetForCharacterResponse>,
+    characterId: String,
+    settings: CompanionEndpointsGetForCharacterResponse,
+    globalOff: Boolean,
+) {
+    val context = LocalContext.current
+    val permissions = rememberCallPermissionFlow()
+    var enabled by remember(settings.proactiveCalls) { mutableStateOf(settings.proactiveCalls ?: false) }
+    InformationToggle("TA 给我打电话", enabled && !globalOff, !actions.pending && !globalOff) { value ->
+        val before = enabled
+        enabled = value
+        if (value) permissions()
+        actions.change(after = companion::refresh, failed = { enabled = before }) {
+            actions.call(Endpoints.companionEndpointsUpdateForCharacter, characterId, buildJsonObject { put("proactiveCalls", value) })
+        }
+    }
+    if (globalOff) {
+        Text("已在 我 › 服务 › 主动消息与免打扰 中关闭", style = MaterialTheme.typography.bodySmall)
+    } else if (enabled && !canUseFullScreen(context)) {
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("未允许全屏通知，锁屏时只会收到通知", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = { openFullScreenSettings(context) }) { Text("去设置") }
         }
     }
 }

@@ -2,7 +2,9 @@ package app.weiban
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -21,27 +23,33 @@ import app.weiban.data.OwnerRecord
 import app.weiban.designsystem.WeibanTheme
 import app.weiban.designsystem.tokens.WbSize
 import app.weiban.feature.auth.AuthScreen
+import app.weiban.feature.chat.CallOverlay
 import app.weiban.feature.chat.ChatScreen
 import app.weiban.feature.chat.DiscoverScreen
+import app.weiban.feature.chat.LocalCalls
 import app.weiban.feature.chat.MyStickersScreen
 import app.weiban.feature.chat.rememberMomentsBadge
 import app.weiban.feature.chat.RoleBrowser
 import app.weiban.feature.me.MeEntry
 import app.weiban.feature.me.MeScreen
 import app.weiban.network.ApiClient
+import app.weiban.platform.CallNotices
 import app.weiban.platform.NotificationTarget
 import app.weiban.platform.adminNotificationAddress
 import kotlinx.coroutines.CancellationException
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         (application as WeibanApplication).chat.foreground(true)
+        (application as WeibanApplication).calls.foreground(true)
     }
 
     override fun onPause() {
         (application as WeibanApplication).chat.foreground(false)
+        (application as WeibanApplication).calls.foreground(false)
         super.onPause()
     }
 
@@ -50,6 +58,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val runtime = application as WeibanApplication
         setContent { WeibanRoot(runtime) }
+        lifecycleScope.launch {
+            // 通话结束后不再显示在锁屏上。
+            runtime.calls.state.collect { view -> if (view == null) showOverLockScreen(false) }
+        }
         openNotification(intent)
     }
 
@@ -61,10 +73,64 @@ class MainActivity : ComponentActivity() {
 
     private fun openNotification(intent: Intent) {
         val runtime = application as WeibanApplication
+        if (intent.action in callActions) {
+            openCall(runtime, intent)
+            return
+        }
         runtime.scope.launch {
             runtime.initialize()
             runtime.push.navigation.open(intent)
         }
+    }
+
+    /** 来电全屏通知 / 「接听」/ 通话中通知 / 未接来电：只带 ID，先核对当前账号（T-075）。 */
+    private fun openCall(
+        runtime: WeibanApplication,
+        intent: Intent,
+    ) {
+        val sessionId = intent.getStringExtra(CallNotices.EXTRA_SESSION) ?: return
+        val callId = intent.getStringExtra(CallNotices.EXTRA_CALL)
+        val conversationId = intent.getStringExtra(CallNotices.EXTRA_CONVERSATION)
+        if (intent.action == CallNotices.ACTION_INCOMING || intent.action == CallNotices.ACTION_ANSWER) showOverLockScreen(true)
+        runtime.scope.launch {
+            runtime.initialize()
+            if (runtime.repository.auth.value
+                    ?.session
+                    ?.sessionId != sessionId
+            ) {
+                return@launch
+            }
+            when (intent.action) {
+                CallNotices.ACTION_INCOMING -> callId?.let { runtime.calls.incoming(it) }
+                CallNotices.ACTION_ANSWER ->
+                    callId?.let {
+                        CallNotices.dismissIncoming(runtime, it)
+                        runtime.calls.incoming(it, autoAnswer = true)
+                    }
+                CallNotices.ACTION_OPEN -> runtime.calls.minimize(false)
+                CallNotices.ACTION_CHAT -> conversationId?.let { runtime.callRoute.value = "/chat/$it" }
+            }
+        }
+    }
+
+    /** 来电时在锁屏上显示并点亮屏幕；通话结束后恢复（挂断后回到锁屏，media-l5.md 7.2）。 */
+    fun showOverLockScreen(show: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(show)
+            setTurnScreenOn(show)
+        } else {
+            legacyLockScreen(show)
+        }
+    }
+
+    @Suppress("DEPRECATION") // Android 8.0 only: window flags predate setShowWhenLocked.
+    private fun legacyLockScreen(show: Boolean) {
+        val flags = WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+        if (show) window.addFlags(flags) else window.clearFlags(flags)
+    }
+
+    private companion object {
+        val callActions = setOf(CallNotices.ACTION_INCOMING, CallNotices.ACTION_ANSWER, CallNotices.ACTION_OPEN, CallNotices.ACTION_CHAT)
     }
 }
 
@@ -198,20 +264,31 @@ private class NavigationUi(
             scope.launch { finishOnboarding(runtime, owner, id, navigation::open) }
         }, onboarding = true)
     } else {
-        Scaffold(bottomBar = {
-            if (navigation.conversationId ==
-                null
-            ) {
-                val owner = OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId)
-                val badge = rememberMomentsBadge(runtime.repository, owner)
-                Tabs(navigation.tab, (badge?.unseenPostCount ?: 0) > 0) {
-                    navigation.tab = it
-                    navigation.mePage = null
-                    navigation.moments = null
-                }
+        val owner = OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId)
+        val callRoute by runtime.callRoute.collectAsState()
+        LaunchedEffect(callRoute) {
+            callRoute?.let {
+                navigation.route(it)
+                runtime.callRoute.value = null
             }
-        }) { padding ->
-            Box(Modifier.padding(padding)) { SignedInPage(runtime, auth, navigation, onTheme, onLogout) }
+        }
+        CompositionLocalProvider(LocalCalls provides runtime.calls) {
+            Box(Modifier.fillMaxSize()) {
+                Scaffold(bottomBar = {
+                    if (navigation.conversationId == null) {
+                        val badge = rememberMomentsBadge(runtime.repository, owner)
+                        Tabs(navigation.tab, (badge?.unseenPostCount ?: 0) > 0) {
+                            navigation.tab = it
+                            navigation.mePage = null
+                            navigation.moments = null
+                        }
+                    }
+                }) { padding ->
+                    Box(Modifier.padding(padding)) { SignedInPage(runtime, auth, navigation, onTheme, onLogout) }
+                }
+                // 通话页 / 来电页 / 通话中胶囊盖在所有页面上（design/pages/call.md）。
+                CallOverlay(runtime.repository, owner)
+            }
         }
     }
 }
