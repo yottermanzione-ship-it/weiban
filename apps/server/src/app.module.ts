@@ -17,7 +17,11 @@ import {
   CONTACTS_CHARACTER_STATS,
   type ContactsCharacterStats,
 } from './modules/contacts/index.js';
-import { AiRuntimeModule, AI_CALL_AGENT_PORT } from './modules/ai-runtime/index.js';
+import {
+  AiRuntimeModule,
+  AI_CALL_AGENT_PORT,
+  AI_IMPORT_ANALYZER,
+} from './modules/ai-runtime/index.js';
 import { BillingModule } from './modules/billing/index.js';
 import {
   ChatModule,
@@ -63,7 +67,7 @@ import {
   LIBRARY_MOMENTS_READ,
   LIBRARY_CARD_LOOKUP,
 } from './modules/library/index.js';
-import { ImporterModule } from './modules/importer/index.js';
+import { ImporterModule, IMPORTER_ANALYZER } from './modules/importer/index.js';
 import { ProactiveModule, HOLIDAY_EVENT_PORT } from './modules/proactive/index.js';
 import {
   CallsModule,
@@ -92,12 +96,18 @@ import { PlatformModule, type PlatformOptions } from './platform/index.js';
 })
 class GatewayCompositionModule {}
 
-/** T-072：calls 的角色一侧（CallAgentPort）由 ai-runtime 实现，calls 不能 import ai-runtime，由这里绑定。 */
+/**
+ * T-072：calls 的角色一侧（CallAgentPort）由 ai-runtime 实现，calls 不能 import ai-runtime，由这里绑定。
+ * T-081：importer 的 ImportAnalyzerPort（截图识别、发言人识别、草稿生成）同样由 ai-runtime 实现、这里绑定。
+ */
 @Global()
 @Module({
   imports: [AiRuntimeModule],
-  providers: [{ provide: CALL_AGENT_PORT, useExisting: AI_CALL_AGENT_PORT }],
-  exports: [CALL_AGENT_PORT],
+  providers: [
+    { provide: CALL_AGENT_PORT, useExisting: AI_CALL_AGENT_PORT },
+    { provide: IMPORTER_ANALYZER, useExisting: AI_IMPORT_ANALYZER },
+  ],
+  exports: [CALL_AGENT_PORT, IMPORTER_ANALYZER],
 })
 class CallAgentCompositionModule {}
 

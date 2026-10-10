@@ -20,6 +20,7 @@
  * - 用了摘要生成的消息一律带 labels: ['health']。
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 import { and, eq } from 'drizzle-orm';
 import {
   type CharacterReadPort,
@@ -43,7 +44,6 @@ import {
   type Database,
   type JobQueue,
 } from '../../../platform/index.js';
-import { CHARACTER_READ_PORT } from '../../characters/index.js';
 import { CHAT_PARTICIPANT_PORT, CHAT_READ_PORT } from '../../chat/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from '../../identity/index.js';
@@ -108,7 +108,7 @@ export class HealthCareService {
     @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
     @Inject(IDENTITY_READ_PORT) private readonly identity: IdentityReadPort,
     @Inject(IDENTITY_ACCOUNT_STATUS_PORT) private readonly accounts: IdentityAccountStatusPort,
-    @Inject(CHARACTER_READ_PORT) private readonly characters: CharacterReadPort,
+    @Inject(AI_CHARACTER_READ) private readonly characters: CharacterReadPort,
     @Inject(POLICY_PORT) private readonly policy: PolicyPort,
     @Inject(CompanionSettingsService) private readonly settings: CompanionSettingsService,
     @Inject(HEALTH_READ_PORT) private readonly health: HealthReadPort,

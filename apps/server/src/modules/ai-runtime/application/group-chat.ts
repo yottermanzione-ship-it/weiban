@@ -9,6 +9,7 @@
  * 说明见 docs/ai/runtime-overview.md 第 7 节「T-065 实现差异」。
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
 import { and, desc, eq, gte } from 'drizzle-orm';
 import {
   type BillingReadPort,
@@ -45,7 +46,7 @@ import {
   type Outbox,
 } from '../../../platform/index.js';
 import { BILLING_READ_PORT } from '../../billing/index.js';
-import { CHARACTER_READ_PORT, CHARACTER_RELATION_READ_PORT } from '../../characters/index.js';
+import { CHARACTER_RELATION_READ_PORT } from '../../characters/index.js';
 import {
   CHAT_ADMIN_PORT,
   CHAT_GROUP_ADMIN_PORT,
@@ -163,7 +164,7 @@ export class GroupChatService {
     @Inject(CHAT_GROUP_ADMIN_PORT) private readonly groupAdmin: ChatGroupAdminPort,
     @Inject(CHAT_ADMIN_PORT) private readonly chatAdmin: ChatAdminPort,
     @Inject(CHAT_PARTICIPANT_PORT) private readonly writer: ChatParticipantPort,
-    @Inject(CHARACTER_READ_PORT) private readonly characters: CharacterReadPort,
+    @Inject(AI_CHARACTER_READ) private readonly characters: CharacterReadPort,
     @Inject(CHARACTER_RELATION_READ_PORT) private readonly relations: CharacterRelationReadPort,
     @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
     @Inject(IDENTITY_READ_PORT) private readonly identity: IdentityReadPort,
@@ -597,7 +598,7 @@ export class GroupChatService {
         },
         {
           role: 'system',
-          content: `你的角色资料：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, groupStyle: role.card.data.social.groupStyle, examples: role.card.data.examples.slice(0, 6) }).slice(0, 16000)}\n群成员关系：\n${relationLines.join('\n') || '（群里只有你和用户）'}\n用户：${profile?.nickname ?? '用户'}（与你的熟悉度 L${speaker.familiarity}）`,
+          content: `你的角色资料：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, groupStyle: role.card.data.social.groupStyle, examples: role.card.data.examples.slice(0, 6) }).slice(0, 16000)}${supplementBlock(role.userSupplement)}\n群成员关系：\n${relationLines.join('\n') || '（群里只有你和用户）'}\n用户：${profile?.nickname ?? '用户'}（与你的熟悉度 L${speaker.familiarity}）`,
         },
         {
           role: 'user',

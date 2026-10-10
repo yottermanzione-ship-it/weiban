@@ -36,7 +36,21 @@ import { QuietStateController } from './http/quiet-state.controller.js';
 import { CharacterImageService } from './application/character-image.js';
 import { CallSchedulerService } from './application/call-scheduler.js';
 import { CallAgentService } from './application/call-agent.js';
-import { AI_CALL_AGENT_PORT, AI_USER_QUIET_STATE_PORT } from './tokens.js';
+import {
+  AI_CALL_AGENT_PORT,
+  AI_USER_QUIET_STATE_PORT,
+  AI_IMPORT_ANALYZER,
+  AI_PERSONA_UPDATE_SUMMARIZER,
+} from './tokens.js';
+import {
+  SupplementedCharacterRead,
+  AI_CHARACTER_READ,
+} from './application/supplemented-character-read.js';
+import { ImportAiService } from './application/import-ai.js';
+import {
+  SupplementConflictService,
+  PersonaUpdateSummaryService,
+} from './application/supplement-ai.js';
 @Module({
   imports: [
     IdentityModule,
@@ -54,6 +68,14 @@ import { AI_CALL_AGENT_PORT, AI_USER_QUIET_STATE_PORT } from './tokens.js';
     CallsModule,
   ],
   providers: [
+    // T-081：角色读取补上「我的补充设定」；导入分析；补充设定冲突项；人设更新摘要。
+    SupplementedCharacterRead,
+    { provide: AI_CHARACTER_READ, useExisting: SupplementedCharacterRead },
+    ImportAiService,
+    { provide: AI_IMPORT_ANALYZER, useExisting: ImportAiService },
+    SupplementConflictService,
+    PersonaUpdateSummaryService,
+    { provide: AI_PERSONA_UPDATE_SUMMARIZER, useExisting: PersonaUpdateSummaryService },
     CompanionSettingsService,
     MemoryService,
     ReplyPlanStore,
@@ -87,7 +109,13 @@ import { AI_CALL_AGENT_PORT, AI_USER_QUIET_STATE_PORT } from './tokens.js';
     },
     AiRuntimeLifecycle,
   ],
-  exports: [SIMULATION_READ_PORT, AI_CALL_AGENT_PORT, AI_USER_QUIET_STATE_PORT],
+  exports: [
+    SIMULATION_READ_PORT,
+    AI_CALL_AGENT_PORT,
+    AI_USER_QUIET_STATE_PORT,
+    AI_IMPORT_ANALYZER,
+    AI_PERSONA_UPDATE_SUMMARIZER,
+  ],
   controllers: [
     GroupCompanionController,
     CompanionSettingsController,

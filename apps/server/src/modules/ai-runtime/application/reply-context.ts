@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
 import { z } from 'zod';
 import {
   type CharacterReadPort,
@@ -14,7 +15,6 @@ import {
   CLOCK,
   type Clock,
 } from '../../../platform/index.js';
-import { CHARACTER_READ_PORT } from '../../characters/index.js';
 import { CHAT_ADMIN_PORT, CHAT_READ_PORT } from '../../chat/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { IDENTITY_READ_PORT } from '../../identity/index.js';
@@ -72,7 +72,7 @@ export type ReplySnapshot = z.infer<typeof ReplySnapshot>;
 @Injectable()
 export class ReplyContext {
   constructor(
-    @Inject(CHARACTER_READ_PORT) readonly characters: CharacterReadPort,
+    @Inject(AI_CHARACTER_READ) readonly characters: CharacterReadPort,
     @Inject(CHAT_ADMIN_PORT) readonly admin: ChatAdminPort,
     @Inject(CHAT_READ_PORT) readonly chat: ChatReadPort,
     @Inject(CONTACTS_READ_PORT) readonly contacts: ContactsReadPort,
@@ -220,7 +220,7 @@ export class ReplyContext {
       },
       {
         role: 'system',
-        content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 12), modeOverride: role.card.data.modes.modeOverrides?.[settings.scenarioMode ?? 'daily'], safetyStyle: role.card.data.safetyStyle }).slice(0, 40000)}\n用户称呼：${contact.addressAs ?? profile.nickname ?? '你'}\n当地时区：${profile.timeZone}，当前UTC：${this.clock.now().toISOString()}\n我的补充设定：${role.userSupplement?.slice(0, 4000) ?? ''}`,
+        content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 12), modeOverride: role.card.data.modes.modeOverrides?.[settings.scenarioMode ?? 'daily'], safetyStyle: role.card.data.safetyStyle }).slice(0, 40000)}\n用户称呼：${contact.addressAs ?? profile.nickname ?? '你'}\n当地时区：${profile.timeZone}，当前UTC：${this.clock.now().toISOString()}${supplementBlock(role.userSupplement, 4000)}`,
       },
     ];
     const localDate = new Intl.DateTimeFormat('en-CA', {

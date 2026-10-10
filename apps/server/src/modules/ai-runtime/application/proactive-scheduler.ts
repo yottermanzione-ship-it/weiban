@@ -13,6 +13,7 @@
  * - P-33 余额保留线 1 元（cost-estimate.md 6.2）。
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
 import { and, asc, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import {
   type BillingReadPort,
@@ -43,7 +44,6 @@ import {
   type JobQueue,
 } from '../../../platform/index.js';
 import { BILLING_READ_PORT } from '../../billing/index.js';
-import { CHARACTER_READ_PORT } from '../../characters/index.js';
 import { CHAT_PARTICIPANT_PORT, CHAT_READ_PORT } from '../../chat/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { GROWTH_SERVICE, type GrowthService } from '../../growth/index.js';
@@ -224,7 +224,7 @@ export class ProactiveSchedulerService {
     @Inject(IDENTITY_READ_PORT) private readonly identity: IdentityReadPort,
     @Inject(IDENTITY_ACCOUNT_STATUS_PORT) private readonly accounts: IdentityAccountStatusPort,
     @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
-    @Inject(CHARACTER_READ_PORT) private readonly characters: CharacterReadPort,
+    @Inject(AI_CHARACTER_READ) private readonly characters: CharacterReadPort,
     @Inject(POLICY_PORT) private readonly policy: PolicyPort,
     @Inject(CHAT_READ_PORT) private readonly chat: ChatReadPort,
     @Inject(CHAT_PARTICIPANT_PORT) private readonly writer: ChatParticipantPort,
@@ -736,7 +736,7 @@ export class ProactiveSchedulerService {
         },
         {
           role: 'system',
-          content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 8) }).slice(0, 20000)}\n关系：${contact.relationship ?? '朋友'}；熟悉度：${tone}（熟悉度低时客气，高时随意）\n用户称呼：${address}\n用户当地时间：${ctx.localDate} ${String(ctx.localHour).padStart(2, '0')}点（${ctx.timeZone}）`,
+          content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 8) }).slice(0, 20000)}${supplementBlock(role.userSupplement)}\n关系：${contact.relationship ?? '朋友'}；熟悉度：${tone}（熟悉度低时客气，高时随意）\n用户称呼：${address}\n用户当地时间：${ctx.localDate} ${String(ctx.localHour).padStart(2, '0')}点（${ctx.timeZone}）`,
         },
         ...recent,
         {

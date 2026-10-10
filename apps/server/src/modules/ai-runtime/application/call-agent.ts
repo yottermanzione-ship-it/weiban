@@ -12,6 +12,7 @@
  * - 结束：整理通话摘要写入记忆（MEM-04），记忆页可见。
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
 import type {
   BillingReadPort,
   CallAgentPort,
@@ -34,7 +35,6 @@ import { eq } from 'drizzle-orm';
 import { CLOCK, DATABASE, type Clock, type Database } from '../../../platform/index.js';
 import { callAttempts } from '../infra/db/schema.js';
 import { BILLING_READ_PORT } from '../../billing/index.js';
-import { CHARACTER_READ_PORT } from '../../characters/index.js';
 import { CHAT_READ_PORT } from '../../chat/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { MODEL_GATEWAY_MEDIA_PORT, MODEL_GATEWAY_PORT } from '../../model-access/index.js';
@@ -205,7 +205,7 @@ class AgentSession implements CallAgentSession {
       },
       {
         role: 'system',
-        content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 8), safetyStyle: role.card.data.safetyStyle }).slice(0, 20000)}\n用户称呼：${this.info.addressAs}`,
+        content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 8), safetyStyle: role.card.data.safetyStyle }).slice(0, 20000)}${supplementBlock(role.userSupplement)}\n用户称呼：${this.info.addressAs}`,
       },
       ...(this.info.memoryBlock
         ? [{ role: 'system' as const, content: this.info.memoryBlock }]
@@ -364,7 +364,7 @@ export class CallAgentService implements CallAgentPort {
     @Inject(MODEL_GATEWAY_PORT) private readonly gateway: ModelGatewayPort,
     @Inject(MODEL_GATEWAY_MEDIA_PORT) private readonly media: ModelGatewayMediaPort,
     @Inject(BILLING_READ_PORT) private readonly billing: BillingReadPort,
-    @Inject(CHARACTER_READ_PORT) private readonly characters: CharacterReadPort,
+    @Inject(AI_CHARACTER_READ) private readonly characters: CharacterReadPort,
     @Inject(POLICY_PORT) private readonly policy: PolicyPort,
     @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
     @Inject(CHAT_READ_PORT) private readonly chat: ChatReadPort,

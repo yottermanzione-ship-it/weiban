@@ -10,6 +10,7 @@
  * 说明见 docs/ai/runtime-overview.md 7.6 节。
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 import { and, eq, gte } from 'drizzle-orm';
 import {
   type BillingReadPort,
@@ -39,11 +40,7 @@ import {
   type Outbox,
 } from '../../../platform/index.js';
 import { BILLING_READ_PORT } from '../../billing/index.js';
-import {
-  CHARACTER_READ_PORT,
-  CHARACTER_RELATION_READ_PORT,
-  PUBLIC_UPDATE_READ_PORT,
-} from '../../characters/index.js';
+import { CHARACTER_RELATION_READ_PORT, PUBLIC_UPDATE_READ_PORT } from '../../characters/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { GROWTH_SERVICE, type GrowthService } from '../../growth/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from '../../identity/index.js';
@@ -116,7 +113,7 @@ export class MomentsAiService {
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(MOMENTS_READ_PORT) private readonly moments: MomentsReadPort,
     @Inject(MOMENTS_CHARACTER_PORT) private readonly writer: MomentsCharacterPort,
-    @Inject(CHARACTER_READ_PORT) private readonly characters: CharacterReadPort,
+    @Inject(AI_CHARACTER_READ) private readonly characters: CharacterReadPort,
     @Inject(CHARACTER_RELATION_READ_PORT) private readonly relations: CharacterRelationReadPort,
     @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
     @Inject(IDENTITY_READ_PORT) private readonly identity: IdentityReadPort,
