@@ -13,6 +13,7 @@ import type {
   WishlistItem,
 } from '@weiban/contracts';
 import { DailyQuestionService } from './daily-question.service.js';
+import { LettersService } from './letters.service.js';
 import { WishlistService } from './wishlist.service.js';
 
 type PendingReply = Awaited<ReturnType<PlayReadPort['listPendingLetterReplies']>>[number];
@@ -22,6 +23,7 @@ export class PlayPortsService implements PlayReadPort, PlayAgentPort {
   constructor(
     @Inject(DailyQuestionService) private readonly daily: DailyQuestionService,
     @Inject(WishlistService) private readonly wishlist: WishlistService,
+    @Inject(LettersService) private readonly letters: LettersService,
   ) {}
 
   // ---------- PlayReadPort ----------
@@ -40,13 +42,12 @@ export class PlayPortsService implements PlayReadPort, PlayAgentPort {
     return null;
   }
 
-  /** T-093 交付前：没有待生成的回信。 */
-  async listPendingLetterReplies(_userId: string): Promise<PendingReply[]> {
-    return [];
+  listPendingLetterReplies(userId: string): Promise<PendingReply[]> {
+    return this.letters.listPendingReplies(userId);
   }
 
-  async getLetterBody(_letterId: string): Promise<string | null> {
-    return null;
+  getLetterBody(letterId: string): Promise<string | null> {
+    return this.letters.getBody(letterId);
   }
 
   // ---------- PlayAgentPort ----------
@@ -67,21 +68,21 @@ export class PlayPortsService implements PlayReadPort, PlayAgentPort {
     return this.wishlist.createProposal(input);
   }
 
-  async deliverLetterReply(_input: {
+  deliverLetterReply(input: {
     letterId: string;
     body: string;
     idempotencyKey: string;
   }): Promise<PortResult<{ messageId: string }, 'not_found' | 'contact_inactive'>> {
-    return { ok: false, error: 'not_found', message: '慢信尚未开放（T-093）' };
+    return this.letters.deliverReply(input);
   }
 
-  async sendCharacterLetter(_input: {
+  sendCharacterLetter(input: {
     userId: string;
     characterId: string;
     body: string;
     idempotencyKey: string;
   }): Promise<PortResult<{ letterId: string }, 'contact_inactive'>> {
-    return { ok: false, error: 'contact_inactive', message: '慢信尚未开放（T-093）' };
+    return this.letters.sendCharacterLetter(input);
   }
 
   async setReminderPhrasings(_input: {

@@ -136,3 +136,44 @@ export const wishlistProposals = playSchema.table(
     index('wishlist_proposals_week_idx').on(t.userId, t.characterId, t.weekStart),
   ],
 );
+
+// ---------- T-093 慢信（PLAY-05） ----------
+
+/**
+ * 信件。来信（to_character，用户写的）：draft → sent；回信与角色主动寄的信（from_character）：in_transit → delivered。
+ * 回信在 in_transit 期间的内部状态 reply_state：pending_body（等 ai-runtime 生成，含余额不足 / 模型故障时一直等）
+ * → body_ready（正文已到，等 deliver_at 送达）。正文按用户数据密钥加密（AAD = play:letter:{id}）。
+ */
+export const letters = playSchema.table(
+  'letters',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    /** to_character | from_character */
+    direction: text('direction').notNull(),
+    /** draft | sent | in_transit | delivered */
+    status: text('status').notNull(),
+    bodyCiphertext: bytes('body_ciphertext'),
+    /** 只用于 from_character + in_transit：pending_body | body_ready */
+    replyState: text('reply_state'),
+    inReplyToLetterId: uuid('in_reply_to_letter_id'),
+    /** 回信计划送达时间（P-42 + 活跃时段 + 每角色每天 1 封顺延）。 */
+    deliverAt: time('deliver_at'),
+    /** deliver_at 对应的用户当地日期（每角色每天最多 1 封的判断依据）。 */
+    deliverLocalDate: date('deliver_local_date', { mode: 'string' }),
+    sentAt: time('sent_at'),
+    deliveredAt: time('delivered_at'),
+    readAt: time('read_at'),
+    messageId: uuid('message_id'),
+    /** 用户寄信：clientRequestId；角色主动寄信：调用方幂等键。 */
+    idempotencyKey: text('idempotency_key'),
+    createdAt: time('created_at').notNull(),
+    updatedAt: time('updated_at').notNull(),
+  },
+  (t) => [
+    index('letters_user_box_idx').on(t.userId, t.direction, t.status, t.createdAt),
+    index('letters_due_idx').on(t.status, t.replyState, t.deliverAt),
+    index('letters_character_day_idx').on(t.userId, t.characterId, t.deliverLocalDate),
+  ],
+);

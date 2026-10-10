@@ -379,6 +379,13 @@
       "when": 1796600000000,
       "tag": "0066_play_wishlist",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1796700000000,
+      "tag": "0067_play_letters",
+      "breakpoints": true
     }
   ]
 }

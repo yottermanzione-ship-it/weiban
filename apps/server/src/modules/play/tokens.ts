@@ -60,3 +60,13 @@ export interface PlayWishlistFollowUp {
   /** 标记已跟进；返回 false 表示已跟进过或该项不存在 / 已完成（不要再问）。 */
   markWishlistFollowedUp(itemId: string): Promise<boolean>;
 }
+
+/**
+ * 用户活跃时段（P-06 学到的活跃小时，用户时区 0～23）。数据归 ai-runtime（T-053 user_chat_activity），
+ * play 不能 import ai-runtime，由 app.module.ts 绑定；未绑定或返回 null 时用 P-05 默认 09:00–23:00。
+ * T-093 慢信回信送达时间使用。
+ */
+export const PLAY_ACTIVE_HOURS = Symbol('weiban.play.active-hours');
+export interface PlayActiveHours {
+  getActiveHours(userId: string): Promise<Set<number> | null>;
+}

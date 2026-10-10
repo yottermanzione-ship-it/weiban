@@ -40,3 +40,16 @@
 - **角色提议**：`PlayAgentPort.createWishlistProposal`，每个角色每用户每周（用户当地时间周一起算）1 次，清单满时返回 `list_full`，同一幂等键重复调用返回原 proposalId。ai-runtime 发 `action_card`（cardKind `wishlist_proposal`，`ref = {kind:'wishlist_proposal', id: proposalId}`，按钮 actionId `add` / `skip`，常量见 `WISHLIST_PROPOSAL_ACTIONS`）。play 订阅 `chat.message_action_chosen`：点 `add` 时建项并标「TA 提议」；点 `skip`、清单已满或角色已删除时记为 declined。
 - **跟进标记**：`PLAY_WISHLIST_FOLLOW_UP.markWishlistFollowedUp(itemId)` 返回 false 表示该项已问过或已完成，不要再问。
 - **删除角色**：30 天回收期内清单保留，但接口返回「角色不在通讯录」；恢复后原样回来；彻底删除时一并删除。
+
+## 4. 慢信（PLAY-05，T-093，迁移 0067）
+
+表：`letters`（来信、回信、角色主动寄的信、草稿都在一张表；正文加密；每用户每角色最多一份草稿；`deliver_at` / `deliver_local_date` 用于计划送达；`reply_state` 是回信在路上时的内部状态）。
+
+- **状态**：来信 draft → sent；回信 in_transit（`pending_body` 等生成 → `body_ready` 等到点）→ delivered → 已读（`read_at`）。in_transit 时接口 `body = null`（「信件在路上」）。
+- **寄信** `POST /play/letters`：clientRequestId 幂等；私聊写信件卡片（用户）；清掉草稿；同时建好回信，并在同一事务里投递到点任务 `play.letter_deliver`；发 `play.letter_sent{deliverAt}`。`replyDelayed = true` 表示回信被顺延到 24 小时之后。
+- **送达时间**：从现在起 6～24 小时内，按 15 分钟一格，取「落在活跃小时内」且「该角色这个当地日期还没有回信」的时刻，随机选一个；都不满足时顺延到最近一个有空的日期。活跃小时取自 `PLAY_ACTIVE_HOURS`（未绑定时用 P-05 的 09:00–23:00）。
+- **回信正文**：`PlayAgentPort.deliverLetterReply`（letterId = 回信 ID，来自 `listPendingLetterReplies`）。已过 deliver_at 就立即送达，返回真实 messageId；还没到就先存好，到点由任务送达，此时返回的 messageId 是回信的 letterId 占位。余额不足时正文不来，信一直在路上；补到正文后（已过点）立即送达。每分钟扫描兜底。
+- **送达**：私聊写信件卡片（角色身份，幂等键 `letter:{id}`），push 识别这种卡片后发 kind `letter` 推送「XX 给你寄来了一封信」，不显示内容，deepLink `/play/letters/{id}`。第一次收到某角色的回信时，经 `PLAY_CARD_ISSUER` 发瞬间卡（幂等键 `letter_first:{characterId}`）。然后发 `play.letter_delivered{firstReplyFromCharacter}` 和 `data.changed(letters)`。
+- **红点**：`GET /play/letters/badge` = 已送达未读的信数；`GET /play/letters/:id` 第一次读后标已读。
+- **角色主动寄信**：`sendCharacterLetter`，直接送达；P-03 额度与预算由 ai-runtime 判断。
+- **删除角色**：进入回收期时删除在路上的回信（不再送达）；彻底删除时删除该角色的全部信件。

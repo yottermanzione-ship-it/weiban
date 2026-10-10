@@ -15,11 +15,13 @@ import { DailyQuestionService } from './application/daily-question.service.js';
 import { PlayJobs } from './application/play-jobs.js';
 import { PlayLifecycle } from './application/play-lifecycle.js';
 import { PlayPortsService } from './application/play-ports.js';
+import { LettersService } from './application/letters.service.js';
 import { WishlistService } from './application/wishlist.service.js';
 import {
   DailyQuestionAdminController,
   DailyQuestionController,
 } from './http/daily-question.controller.js';
+import { LettersController } from './http/letters.controller.js';
 import { WishlistController } from './http/wishlist.controller.js';
 import {
   PLAY_AGENT_PORT,
@@ -30,12 +32,18 @@ import {
 
 @Module({
   imports: [CharactersModule, ChatModule, ContactsModule, IdentityModule, RealtimeModule],
-  controllers: [DailyQuestionController, DailyQuestionAdminController, WishlistController],
+  controllers: [
+    DailyQuestionController,
+    DailyQuestionAdminController,
+    WishlistController,
+    LettersController,
+  ],
   providers: [
     PlayContext,
     PlayJobs,
     DailyQuestionService,
     WishlistService,
+    LettersService,
     PlayPortsService,
     PlayLifecycle,
     { provide: PLAY_READ_PORT, useExisting: PlayPortsService },
