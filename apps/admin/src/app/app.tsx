@@ -28,6 +28,12 @@ import {
   PendingDeletionBadge,
   PetSpeciesPage,
 } from '../features/pets-deletions.js';
+import {
+  DailyQuestionsPage,
+  PlannerPage,
+  PlazaAdminPage,
+  PlazaReportBadge,
+} from '../features/plaza-admin.js';
 export function App() {
   const [auth, setAuth] = useState<AuthResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -96,12 +102,16 @@ export function App() {
             ['/symptom-tags', '经期症状标签'],
             ['/pet-species', '宠物图鉴'],
             ['/account-deletions', '注销未完成'],
+            ['/plaza', '人设广场'],
+            ['/planner', '行为规划'],
+            ['/daily-questions', '每日一问题库'],
             ['/admin/alerts', '运行提醒'],
           ].map(([to, label]) => (
             <NavLink key={to} to={to!}>
               {label}
               {to === '/admin/alerts' && <AlertBadge />}
               {to === '/account-deletions' && <PendingDeletionBadge />}
+              {to === '/plaza' && <PlazaReportBadge />}
             </NavLink>
           ))}
         </nav>
@@ -136,6 +146,9 @@ export function App() {
             <Route path="/symptom-tags" element={<SymptomTagsPage />} />
             <Route path="/pet-species" element={<PetSpeciesPage />} />
             <Route path="/account-deletions" element={<AccountDeletionsPage />} />
+            <Route path="/plaza" element={<PlazaAdminPage />} />
+            <Route path="/planner" element={<PlannerPage />} />
+            <Route path="/daily-questions" element={<DailyQuestionsPage />} />
             <Route path="/admin/alerts" element={<AlertsPage />} />
             <Route path="*" element={<Navigate to="/invites" replace />} />
           </Routes>

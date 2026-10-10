@@ -80,10 +80,18 @@ import { ImportListPage, ImportPage } from '../features/import.js';
 import { SupplementPage } from '../features/supplement.js';
 import { AccountDeletionPage } from '../features/account-deletion.js';
 import { AdoptPage, PetPage, PetsPage } from '../features/pets.js';
+import {
+  AuthorPage,
+  MyWorksPage,
+  PlazaProfilePage,
+  PublishPage,
+  ReportPage,
+  WorkPage,
+} from '../features/plaza.js';
 /** 这些页面自带返回按钮，不显示通用顶栏。 */
 const ownHeader = [
   /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice|cards|supplement)$/,
-  /^\/(imports|pets)(\/|$)/,
+  /^\/(imports|pets|plaza)(\/|$)/,
   /^\/settings\/delete-account$/,
   /^\/(share|search)(\/|$)/,
   /^\/me\/favorites/,
@@ -278,6 +286,12 @@ function Shell() {
           <Route path="/services/pets" element={<PetsPage />} />
           <Route path="/pets/adopt" element={<AdoptPage />} />
           <Route path="/pets/:petId" element={<PetPage />} />
+          <Route path="/plaza/works/:workId" element={<WorkPage />} />
+          <Route path="/plaza/authors/:authorId" element={<AuthorPage />} />
+          <Route path="/plaza/me" element={<MyWorksPage />} />
+          <Route path="/plaza/profile" element={<PlazaProfilePage />} />
+          <Route path="/plaza/publish" element={<PublishPage />} />
+          <Route path="/plaza/report" element={<ReportPage />} />
           <Route path="/characters/:characterId/voice" element={<VoicePickerPage />} />
           <Route path="/calls/:callId" element={<CallLinkPage />} />
           <Route path="/contacts" element={<ContactsPage />} />

@@ -10,6 +10,7 @@ import {
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { Dialog, showToast } from './toast.js';
+import { SupplementSourceNote, VariantPublishLink } from './plaza.js';
 
 /*
  * 我的补充设定（CHR-09，import.md 第 3 节）。契约里补充设定是一段文字，这里按行拆成「一条一条」显示和编辑。
@@ -117,11 +118,7 @@ export function SupplementPage() {
               })}
             </div>
           )}
-          {data?.plazaSource && (
-            <p className="hint">
-              来自人设广场 · 作者 {data.plazaSource.authorName} · 版本 {data.plazaSource.version}
-            </p>
-          )}
+          {data?.plazaSource && <SupplementSourceNote characterId={characterId} />}
         </>
       )}
       <div className="button-row">
@@ -133,6 +130,7 @@ export function SupplementPage() {
         </Link>
         {!custom && <button onClick={() => setEditing({ index: -1, text: '' })}>手写一条</button>}
       </div>
+      {!custom && lines.length > 0 && <VariantPublishLink characterId={characterId} />}
       {!custom && lines.length > 0 && (
         <button className="danger" onClick={() => setConfirmClear(true)}>
           删除全部补充设定

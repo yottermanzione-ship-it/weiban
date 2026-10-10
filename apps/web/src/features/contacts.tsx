@@ -18,6 +18,7 @@ import { RelationsRow } from './relations.js';
 import { useNewFriendsDot } from './new-friends.js';
 import { useMomentsBadge } from './moments.js';
 import { ProfileCallButton } from './call.js';
+import { PlazaOriginNote, PlazaTab } from './plaza.js';
 export function ContactsPage() {
   const { state } = useChat();
   const newFriendsDot = useNewFriendsDot();
@@ -57,7 +58,8 @@ export function ContactsPage() {
   );
 }
 export function DiscoverPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const plazaTab = searchParams.get('tab') === 'plaza';
   const onboarding = searchParams.get('onboarding') === '1';
   const draft = useOnboardingDraft(onboarding);
   const selected = draft.draft?.characterId;
@@ -103,84 +105,114 @@ export function DiscoverPage() {
         </Link>
       )}
       <h1 className="page-title">角色广场</h1>
-      {onboarding && (
-        <p className="panel" role="note">
-          先加一个你喜欢的 TA 吧
-        </p>
+      {!onboarding && (
+        <div className="plaza-tabs" role="tablist">
+          <button
+            role="tab"
+            aria-selected={!plazaTab}
+            onClick={() => setSearchParams({}, { replace: true })}
+          >
+            预设角色
+          </button>
+          <button
+            role="tab"
+            aria-selected={plazaTab}
+            onClick={() => setSearchParams({ tab: 'plaza' }, { replace: true })}
+          >
+            人设广场
+          </button>
+        </div>
       )}
-      {onboarding && draft.error && <p role="alert">{draft.error}</p>}
-      <form
-        className="message-composer"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setSearch(query);
-          setCursor(undefined);
-          setPrevious([]);
-        }}
-      >
-        <label>
-          搜索角色
-          <input value={query} maxLength={50} onChange={(event) => setQuery(event.target.value)} />
-        </label>
-        <button>搜索</button>
-      </form>
-      {roles.error && <p role="alert">{roles.error}</p>}
-      {roles.loading && <p role="status">正在读取角色…</p>}
-      <div className="panel rows">
-        {roles.data?.items.map((role) =>
-          onboarding ? (
+      {!onboarding && plazaTab ? (
+        <PlazaTab />
+      ) : (
+        <>
+          {onboarding && (
+            <p className="panel" role="note">
+              先加一个你喜欢的 TA 吧
+            </p>
+          )}
+          {onboarding && draft.error && <p role="alert">{draft.error}</p>}
+          <form
+            className="message-composer"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setSearch(query);
+              setCursor(undefined);
+              setPrevious([]);
+            }}
+          >
+            <label>
+              搜索角色
+              <input
+                value={query}
+                maxLength={50}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            <button>搜索</button>
+          </form>
+          {roles.error && <p role="alert">{roles.error}</p>}
+          {roles.loading && <p role="status">正在读取角色…</p>}
+          <div className="panel rows">
+            {roles.data?.items.map((role) =>
+              onboarding ? (
+                <button
+                  key={role.characterId}
+                  className="role-row"
+                  aria-label={`选择${role.name}`}
+                  disabled={draft.saving}
+                  onClick={() => void draft.choose(role.characterId)}
+                >
+                  <CharacterAvatar id={role.characterId} profile={role} />
+                  <strong>{role.name}</strong>
+                  <small>
+                    {role.tagline}
+                    {role.added && ' · 已添加'}
+                  </small>
+                </button>
+              ) : (
+                <Link
+                  key={role.characterId}
+                  to={`/characters/${role.characterId}`}
+                  className="role-row"
+                >
+                  <CharacterAvatar id={role.characterId} profile={role} />
+                  <strong>{role.name}</strong>
+                  <small>
+                    {role.tagline}
+                    {role.added && ' · 已添加'}
+                  </small>
+                </Link>
+              ),
+            )}
+          </div>
+          {!roles.loading && roles.data?.items.length === 0 && (
+            <p className="empty">没有找到角色</p>
+          )}
+          {previous.length > 0 && (
             <button
-              key={role.characterId}
-              className="role-row"
-              aria-label={`选择${role.name}`}
-              disabled={draft.saving}
-              onClick={() => void draft.choose(role.characterId)}
+              disabled={roles.loading}
+              onClick={() => {
+                setCursor(previous.at(-1));
+                setPrevious(previous.slice(0, -1));
+              }}
             >
-              <CharacterAvatar id={role.characterId} profile={role} />
-              <strong>{role.name}</strong>
-              <small>
-                {role.tagline}
-                {role.added && ' · 已添加'}
-              </small>
+              上一页角色
             </button>
-          ) : (
-            <Link
-              key={role.characterId}
-              to={`/characters/${role.characterId}`}
-              className="role-row"
+          )}
+          {roles.data?.nextCursor && (
+            <button
+              disabled={roles.loading}
+              onClick={() => {
+                setPrevious([...previous, cursor]);
+                setCursor(roles.data?.nextCursor ?? undefined);
+              }}
             >
-              <CharacterAvatar id={role.characterId} profile={role} />
-              <strong>{role.name}</strong>
-              <small>
-                {role.tagline}
-                {role.added && ' · 已添加'}
-              </small>
-            </Link>
-          ),
-        )}
-      </div>
-      {!roles.loading && roles.data?.items.length === 0 && <p className="empty">没有找到角色</p>}
-      {previous.length > 0 && (
-        <button
-          disabled={roles.loading}
-          onClick={() => {
-            setCursor(previous.at(-1));
-            setPrevious(previous.slice(0, -1));
-          }}
-        >
-          上一页角色
-        </button>
-      )}
-      {roles.data?.nextCursor && (
-        <button
-          disabled={roles.loading}
-          onClick={() => {
-            setPrevious([...previous, cursor]);
-            setCursor(roles.data?.nextCursor ?? undefined);
-          }}
-        >
-          下一页角色
-        </button>
+              下一页角色
+            </button>
+          )}
+        </>
       )}
     </main>
   );
@@ -295,6 +327,9 @@ export function CharacterPage({
           {!onboarding && contact?.conversationId && <FamiliarityLine characterId={characterId} />}
           {!onboarding && contact?.status === 'active' && (
             <PersonaUpdateBadge characterId={characterId} />
+          )}
+          {!onboarding && profile.data.kind === 'custom' && contact && (
+            <PlazaOriginNote characterId={characterId} />
           )}
           <p>{profile.data.tagline}</p>
           <p>{profile.data.intro}</p>
