@@ -15,3 +15,5 @@ export const AI_PERSONA_UPDATE_SUMMARIZER = Symbol('weiban.ai-runtime.persona-up
  * growth 自己发的纪念 / 熟悉度 / 节日 / 宠物卡若要用 AI 写这句话，由装配入口绑给 growth 定义的令牌。
  */
 export const AI_CARD_LINE_WRITER = Symbol('weiban.ai-runtime.card-line-writer');
+/** 契约 PlazaPublishCheckPort（T-089）：app.module 绑定为 plaza 的 PLAZA_PUBLISH_CHECK。 */
+export const AI_PLAZA_PUBLISH_CHECK = Symbol('weiban.ai-runtime.plaza-publish-check');

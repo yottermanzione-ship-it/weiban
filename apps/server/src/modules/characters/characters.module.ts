@@ -35,6 +35,7 @@ import {
   CHARACTER_SUPPLEMENT_PORT,
   CHARACTER_SUPPLEMENT_CONFLICTS,
   CHARACTER_PLAZA_PORT,
+  CHARACTER_CHILD_FEATURES_WRITER,
 } from './tokens.js';
 @Module({
   imports: [MediaModule, ChatModule, IdentityModule],
@@ -61,6 +62,7 @@ import {
     CustomCharacterService,
     CharacterPlazaService,
     { provide: CHARACTER_PLAZA_PORT, useExisting: CharacterPlazaService },
+    { provide: CHARACTER_CHILD_FEATURES_WRITER, useExisting: CharacterPlazaService },
     GatewayCharacterEvaluator,
     ScenarioModeService,
     PublicUpdateService,
@@ -88,6 +90,7 @@ import {
     CHARACTER_SUPPLEMENT_PORT,
     CHARACTER_SUPPLEMENT_CONFLICTS,
     CHARACTER_PLAZA_PORT,
+    CHARACTER_CHILD_FEATURES_WRITER,
   ],
 })
 export class CharactersModule {}

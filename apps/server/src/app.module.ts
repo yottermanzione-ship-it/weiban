@@ -22,6 +22,7 @@ import {
   AiRuntimeModule,
   AI_CALL_AGENT_PORT,
   AI_IMPORT_ANALYZER,
+  AI_PLAZA_PUBLISH_CHECK,
 } from './modules/ai-runtime/index.js';
 import { BillingModule } from './modules/billing/index.js';
 import {
@@ -86,6 +87,7 @@ import {
   PLAZA_CLASSIFICATION_POLICY,
   PLAZA_ORIGIN_STATUS,
   PLAZA_PRESET_NAMES,
+  PLAZA_PUBLISH_CHECK,
   PLAZA_SUPPLEMENT_READ,
   type PlazaClassificationPolicy,
 } from './modules/plaza/index.js';
@@ -113,6 +115,7 @@ class GatewayCompositionModule {}
 /**
  * T-072：calls 的角色一侧（CallAgentPort）由 ai-runtime 实现，calls 不能 import ai-runtime，由这里绑定。
  * T-081：importer 的 ImportAnalyzerPort（截图识别、发言人识别、草稿生成）同样由 ai-runtime 实现、这里绑定。
+ * T-089：plaza 的 PlazaPublishCheckPort（发布前隐私片段 + 儿童特征重检）由 ai-runtime 实现、这里绑定；检测失败时 plaza 拒绝发布。
  */
 @Global()
 @Module({
@@ -120,8 +123,9 @@ class GatewayCompositionModule {}
   providers: [
     { provide: CALL_AGENT_PORT, useExisting: AI_CALL_AGENT_PORT },
     { provide: IMPORTER_ANALYZER, useExisting: AI_IMPORT_ANALYZER },
+    { provide: PLAZA_PUBLISH_CHECK, useExisting: AI_PLAZA_PUBLISH_CHECK },
   ],
-  exports: [CALL_AGENT_PORT, IMPORTER_ANALYZER],
+  exports: [CALL_AGENT_PORT, IMPORTER_ANALYZER, PLAZA_PUBLISH_CHECK],
 })
 class CallAgentCompositionModule {}
 
@@ -271,8 +275,8 @@ class LibraryCompositionModule {}
 /**
  * T-087：plaza 只经端口访问 characters / policy / ai-runtime，令牌定义在 plaza，由这里绑定。
  * T-088：PLAZA_CHARACTERS 绑定 characters 的 CharacterPlazaPort；PLAZA_CLASSIFICATION_POLICY 绑定 policy 的
- * compareClassification（「只能更严」的唯一判定处）。PLAZA_PUBLISH_CHECK（PlazaPublishCheckPort）由 T-089 补绑定，
- * 未绑定时发布返回 plaza_check_unavailable，绝不跳过检查。
+ * compareClassification（「只能更严」的唯一判定处）。PLAZA_PUBLISH_CHECK（PlazaPublishCheckPort）已由 T-089
+ * 在 CallAgentCompositionModule 绑定到 ai-runtime；检测失败时发布返回 plaza_check_unavailable，绝不跳过检查。
  */
 @Global()
 @Module({

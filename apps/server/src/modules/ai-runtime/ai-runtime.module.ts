@@ -50,7 +50,9 @@ import {
   AI_IMPORT_ANALYZER,
   AI_PERSONA_UPDATE_SUMMARIZER,
   AI_CARD_LINE_WRITER,
+  AI_PLAZA_PUBLISH_CHECK,
 } from './tokens.js';
+import { PlazaPublishCheckService } from './application/plaza-check.js';
 import {
   SupplementedCharacterRead,
   AI_CHARACTER_READ,
@@ -85,6 +87,9 @@ import {
     SupplementConflictService,
     PersonaUpdateSummaryService,
     { provide: AI_PERSONA_UPDATE_SUMMARIZER, useExisting: PersonaUpdateSummaryService },
+    // T-089：广场发布前检测（隐私片段 + 儿童特征重检）。
+    PlazaPublishCheckService,
+    { provide: AI_PLAZA_PUBLISH_CHECK, useExisting: PlazaPublishCheckService },
     // T-082：朋友圈晒宠物读宠物（T-066 预留令牌）；宠物 AI；名场面卡与卡片一句话。
     { provide: MOMENTS_PET_READ_PORT, useExisting: GROWTH_PET_READ_PORT },
     PetAiService,
@@ -131,6 +136,7 @@ import {
     AI_IMPORT_ANALYZER,
     AI_PERSONA_UPDATE_SUMMARIZER,
     AI_CARD_LINE_WRITER,
+    AI_PLAZA_PUBLISH_CHECK,
   ],
   controllers: [
     GroupCompanionController,

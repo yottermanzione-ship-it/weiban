@@ -424,6 +424,44 @@ export class CharacterPlazaService implements CharacterPlazaPort {
     return { ok: true, value: undefined };
   }
 
+  // ---------- T-089：发布前儿童特征重检写回（hard-boundaries.md 第 6 节第 4 条） ----------
+
+  /**
+   * 系统写入 childFeaturesDetected = true（只能从否变是）。只改作者本人的自定义角色；
+   * 已是「是」或角色不存在时什么也不做。分类变化照常发 characters.character_classification_changed（ai-runtime 退出成人模式）。
+   */
+  async markChildFeaturesDetected(userId: string, characterId: string): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const [updated] = await tx.db
+        .update(characters)
+        .set({ childFeaturesDetected: true, updatedAt: this.clock.now() })
+        .where(
+          and(
+            eq(characters.id, characterId),
+            eq(characters.ownerId, userId),
+            eq(characters.kind, 'custom'),
+            eq(characters.childFeaturesDetected, false),
+          ),
+        )
+        .returning();
+      if (!updated) return false;
+      await this.characters.classificationEvent(tx, updated);
+      await this.audit.record(
+        {
+          module: 'characters',
+          action: 'custom.child_features_detected',
+          actorType: 'system',
+          actorId: null,
+          targetType: 'character',
+          targetId: characterId,
+          details: { source: 'plaza_publish_check' },
+        },
+        tx,
+      );
+      return true;
+    });
+  }
+
   // ---------- 管理员更正 ----------
 
   async tightenClassification(

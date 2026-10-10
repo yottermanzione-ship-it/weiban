@@ -13,4 +13,6 @@ export {
   CHARACTER_PLAZA_PORT,
   CHARACTER_PLAZA_ORIGIN_STATUS,
   type CharacterPlazaOriginStatus,
+  CHARACTER_CHILD_FEATURES_WRITER,
+  type CharacterChildFeaturesWriter,
 } from './tokens.js';

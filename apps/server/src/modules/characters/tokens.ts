@@ -40,3 +40,11 @@ export interface CharacterPlazaOriginStatus {
     newerVersionAvailable: number | null;
   }>;
 }
+/**
+ * T-089 服务器内部（非契约）：广场发布前检测重跑儿童特征后，系统写回源角色 childFeaturesDetected（只能从否变是）。
+ * 提供方 characters，调用方 ai-runtime。
+ */
+export const CHARACTER_CHILD_FEATURES_WRITER = Symbol('weiban.characters.child-features-writer');
+export interface CharacterChildFeaturesWriter {
+  markChildFeaturesDetected(userId: string, characterId: string): Promise<boolean>;
+}
