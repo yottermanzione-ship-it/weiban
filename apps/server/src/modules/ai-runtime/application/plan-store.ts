@@ -49,6 +49,9 @@ const T066_TABLES = [
   'joint_events',
   'moments_plans',
   'card_referrals',
+  // T-072：P-45 静默、来电记录
+  'user_quiet_states',
+  'call_attempts',
 ] as const;
 @Injectable()
 export class ReplyPlanStore {

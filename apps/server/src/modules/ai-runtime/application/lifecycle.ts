@@ -54,6 +54,8 @@ import {
   type MomentsReactJob,
 } from './moments-ai.js';
 import { MediaAiService } from './media-ai.js';
+import { QuietStateService } from './quiet-state.js';
+import { CallSchedulerService } from './call-scheduler.js';
 const TRANSCRIBE_VOICE_JOB = 'ai.transcribe_voice';
 @Injectable()
 export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap {
@@ -73,6 +75,8 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     @Inject(CHAT_READ_PORT) readonly chat: ChatReadPort,
     @Inject(CONTACTS_READ_PORT) readonly contacts: ContactsReadPort,
     @Inject(MediaAiService) readonly mediaAi: MediaAiService,
+    @Inject(QuietStateService) readonly quiet: QuietStateService,
+    @Inject(CallSchedulerService) readonly calls: CallSchedulerService,
   ) {}
   async onApplicationBootstrap(): Promise<void> {
     if (this.jobs.isReady)
@@ -160,6 +164,49 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
           { userId: p.senderRefId, messageId: p.messageId, conversationId: p.conversationId },
           { singletonKey: `voice:${p.messageId}`, retryLimit: 3, retryBackoff: true },
         );
+      },
+    });
+    // T-072 P-45：用户说「不方便」→ 2 小时静默；再发任何消息提前结束（任一会话）。
+    this.bus.subscribe({
+      consumer: 'ai.quiet_state',
+      eventType: 'chat.message_created',
+      handle: async (event, tx) => {
+        const p = event.payload;
+        if (p.senderKind !== 'user' || !p.senderRefId) return;
+        const message =
+          p.contentType === 'text'
+            ? await this.chat.getMessage(p.messageId, ['normal', 'adult'])
+            : null;
+        await this.quiet.onUserMessage(
+          tx,
+          p.senderRefId,
+          message?.content?.type === 'text' ? message.content.text : null,
+        );
+      },
+    });
+    // T-072 来电：未接 / 拒接后续消息（MED-07 第 5 条）；熟悉度到 L3 征求同意；用户点「可以」开启。
+    this.bus.subscribe({
+      consumer: 'ai.call_ended',
+      eventType: 'calls.call_ended',
+      handle: async (event) => {
+        await this.calls.onCallEnded(event.payload);
+      },
+    });
+    this.bus.subscribe({
+      consumer: 'ai.call_permission_ask',
+      eventType: 'growth.familiarity_leveled_up',
+      handle: async (event) => {
+        if (event.payload.level >= 3)
+          await this.calls.askPermission(event.payload.userId, event.payload.characterId);
+      },
+    });
+    this.bus.subscribe({
+      consumer: 'ai.call_permission_chosen',
+      eventType: 'chat.message_action_chosen',
+      handle: async (event) => {
+        const p = event.payload;
+        if (p.cardKind !== 'call_permission' || !p.characterId) return;
+        await this.calls.onPermissionChosen(p.userId, p.characterId, p.actionId);
       },
     });
     // P-06/P-09：记录用户在任一会话（私聊或群聊）发消息的时间。

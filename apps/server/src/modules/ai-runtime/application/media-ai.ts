@@ -44,14 +44,10 @@ import {
   MEDIA_TRANSCRIPT_PORT,
 } from '../../media/index.js';
 import { MODEL_GATEWAY_MEDIA_PORT, MODEL_GATEWAY_PORT } from '../../model-access/index.js';
+import { CharacterImageService } from './character-image.js';
 
-/** P-45 静默查询（契约 UserQuietStatePort，T-072 / T-090 提供；未装配前用 NullQuietState）。 */
+/** P-45 静默查询（契约 UserQuietStatePort，由 QuietStateService 提供，T-072）。 */
 export const AI_USER_QUIET_STATE = Symbol('weiban.ai-runtime.user-quiet-state');
-export class NullQuietState implements UserQuietStatePort {
-  async getInconvenientUntil(): Promise<string | null> {
-    return null;
-  }
-}
 
 /** MED-01 第 4 条：每 10 条气泡最多 2 个表情包。 */
 export const STICKER_WINDOW = 10;
@@ -65,6 +61,8 @@ const VOICE_CHANCE = 0.06;
 const VOICE_MAX_CHARS = 120;
 const VOICE_REQUEST =
   /(发|来)(条|个|段|一段|一条)?语音|语音(给我|发我|说)|听听你的声音|想听你(的)?声音|用语音/u;
+const PHOTO_REQUEST =
+  /(发|拍|来)(张|个|一张)?(照片|图|图片|自拍)|拍给我看|给我看看你(在|那边|那里)|看看你(在干嘛|那边)/u;
 const LINK_REQUEST =
   /(推荐|分享|发我|发给我|想听|想看|听听|看看).{0,8}(歌|歌曲|音乐|作品|新歌|视频|电影|剧|专辑)|(歌|作品|视频|专辑).{0,4}(链接|地址)/u;
 
@@ -108,6 +106,7 @@ export class MediaAiService {
     @Inject(CHARACTER_REAL_PERSON_NAMES) private readonly realNames: RealNames,
     @Inject(AI_USER_QUIET_STATE) private readonly quiet: UserQuietStatePort,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(CharacterImageService) private readonly images: CharacterImageService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -422,6 +421,29 @@ export class MediaAiService {
 
     const contents: MessageContent[] = bubbles.map((text) => ({ type: 'text', text }));
     let changed = false;
+
+    // T-072 MED-02：用户想看照片时发一张 TA 视角的图（真人无人脸；未开通时素材库兜底，没有就不发）。
+    if (PHOTO_REQUEST.test(input.userText)) {
+      const image = await this.images
+        .generate({
+          userId: ctx.userId,
+          characterId: ctx.characterId,
+          conversationId: ctx.conversationId,
+          scene: joined.slice(0, 300),
+          use: 'chat',
+          idempotencyKey: `reply:${input.triggerId}`,
+        })
+        .catch(() => null);
+      if (image) {
+        contents.push({
+          type: 'image',
+          mediaId: image.mediaId,
+          width: image.width,
+          height: image.height,
+        });
+        changed = true;
+      }
+    }
 
     // 作品链接（MED-05）：用户想听 / 想看时，从作品链接库挑一条。
     if (LINK_REQUEST.test(input.userText)) {

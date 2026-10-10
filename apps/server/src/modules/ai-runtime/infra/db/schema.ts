@@ -416,3 +416,34 @@ export const cardReferrals = aiRuntimeSchema.table(
   },
   (t) => [unique('card_referral_pk').on(t.userId, t.characterId)],
 );
+
+/** T-072 P-45「不方便」静默：到 inconvenientUntil 前该用户所有角色不发语音、不主动来电；用户再发消息提前结束。 */
+export const userQuietStates = aiRuntimeSchema.table('user_quiet_states', {
+  userId: uuid('user_id').primaryKey(),
+  inconvenientUntil: timestamp('inconvenient_until', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+});
+
+/**
+ * T-072 主动来电记录（MED-07、P-10）：每次尝试一行。outcome：started / missed / declined / completed /
+ * skipped_*（未拨出原因）。P-10 按 started 起的行计数；未接 / 拒接当天不再打。
+ */
+export const callAttempts = aiRuntimeSchema.table(
+  'call_attempts',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    localDate: text('local_date').notNull(),
+    reason: text('reason').notNull(),
+    sourceRef: text('source_ref').notNull(),
+    callId: uuid('call_id'),
+    outcome: text('outcome').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('call_attempt_source_idx').on(t.userId, t.sourceRef),
+    index('call_attempt_user_created_idx').on(t.userId, t.createdAt),
+  ],
+);

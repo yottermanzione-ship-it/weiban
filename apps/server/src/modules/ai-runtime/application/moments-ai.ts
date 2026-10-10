@@ -57,6 +57,7 @@ import { momentsPlans, simulationStates } from '../infra/db/schema.js';
 import { localParts } from './proactive-scheduler.js';
 import { CompanionSettingsService } from './settings.js';
 import { SimulationService } from './simulation.js';
+import { CharacterImageService } from './character-image.js';
 import {
   CLOSENESS_WEIGHT,
   SocialService,
@@ -128,6 +129,7 @@ export class MomentsAiService {
     @Inject(SimulationService) private readonly simulation: SimulationService,
     @Inject(CompanionSettingsService) private readonly settings: CompanionSettingsService,
     @Inject(SocialService) private readonly social: SocialService,
+    @Inject(CharacterImageService) private readonly images: CharacterImageService,
     @Optional()
     @Inject(PUBLIC_UPDATE_READ_PORT)
     private readonly publicUpdates?: PublicUpdateReadPort,
@@ -291,11 +293,26 @@ export class MomentsAiService {
       await drop();
       return;
     }
+    // T-072 MED-02：日常事件朋友圈约一半配图（真人角色只有 TA 视角、无人脸；失败或未开通时用素材库或不配）。
+    let imageMediaIds = source.imageMediaIds ?? [];
+    if (!imageMediaIds.length && source.kind === 'daily_event' && Math.random() < 0.5) {
+      const image = await this.images
+        .generate({
+          userId,
+          characterId,
+          scene: source.brief,
+          use: 'moments',
+          idempotencyKey: `moments:${userId}:${characterId}:${local.date}`,
+          countAsBackground: true,
+        })
+        .catch(() => null);
+      if (image) imageMediaIds = [image.mediaId];
+    }
     const posted = await this.writer.createPost(null, {
       ownerUserId: userId,
       characterId,
       text,
-      imageMediaIds: source.imageMediaIds ?? [],
+      imageMediaIds,
       link: null,
       sourceRef: { kind: source.kind, id: source.id },
       idempotencyKey: `ai-post-${local.date}`,

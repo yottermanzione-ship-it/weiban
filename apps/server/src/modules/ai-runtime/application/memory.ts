@@ -245,6 +245,54 @@ export class MemoryService {
       };
     });
   }
+  /**
+   * T-072 MEM-04 / MED-06 第 5 条：通话结束后的摘要写入记忆（类别 episode，记忆页可见、可删改）。
+   * 以 callId 作为客户端幂等键，同一通电话只写一条；经期等健康内容不写。
+   */
+  async addCallSummary(
+    userId: string,
+    characterId: string,
+    callId: string,
+    content: string,
+  ): Promise<void> {
+    const text = content.trim().slice(0, 1000);
+    if (!text || healthPrivate(text)) return;
+    const job = await this.guard(userId, characterId).catch(() => null);
+    if (!job) return;
+    await this.db.transaction(async (tx) => {
+      await this.lock(tx, job);
+      const conversation = await this.chat.getConversation(job.conversationId, tx);
+      if (!conversation) return;
+      const id = newId();
+      const data: z.infer<typeof MemoryPayload> = {
+        content: text,
+        category: 'episode',
+        importance: 5,
+        dueAt: null,
+        visibility: 'only_this_character',
+        sharingClass: 'never',
+        status: 'past',
+        sourceMessageIds: [],
+        createdBy: 'extracted',
+      };
+      const inserted = await tx.db
+        .insert(memories)
+        .values({
+          id,
+          userId,
+          characterId,
+          conversationId: job.conversationId,
+          clientId: callId,
+          scope: 'normal',
+          ciphertext: await this.seal(tx, userId, id, data),
+          createdAt: this.clock.now(),
+          updatedAt: this.clock.now(),
+        })
+        .onConflictDoNothing()
+        .returning({ id: memories.id });
+      if (inserted.length) await this.changed(tx, job, false, conversation.lastSeq);
+    });
+  }
   async create(userId: string, characterId: string, input: unknown): Promise<MemoryEntry> {
     const body = parseContract(CreateMemoryRequest, input);
     if (healthPrivate(body.content)) throw new AppError('bad_request', '经期数据不进入角色记忆');

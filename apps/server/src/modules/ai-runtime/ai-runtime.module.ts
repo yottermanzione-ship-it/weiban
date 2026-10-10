@@ -29,7 +29,14 @@ import { MemorySharingController } from './http/memory-sharing.controller.js';
 import { MomentsModule } from '../moments/index.js';
 import { TimelineController } from './http/timeline.controller.js';
 import { MediaModule } from '../media/index.js';
-import { MediaAiService, AI_USER_QUIET_STATE, NullQuietState } from './application/media-ai.js';
+import { MediaAiService, AI_USER_QUIET_STATE } from './application/media-ai.js';
+import { CallsModule } from '../calls/index.js';
+import { QuietStateService } from './application/quiet-state.js';
+import { QuietStateController } from './http/quiet-state.controller.js';
+import { CharacterImageService } from './application/character-image.js';
+import { CallSchedulerService } from './application/call-scheduler.js';
+import { CallAgentService } from './application/call-agent.js';
+import { AI_CALL_AGENT_PORT, AI_USER_QUIET_STATE_PORT } from './tokens.js';
 @Module({
   imports: [
     IdentityModule,
@@ -44,6 +51,7 @@ import { MediaAiService, AI_USER_QUIET_STATE, NullQuietState } from './applicati
     BillingModule,
     MomentsModule,
     MediaModule,
+    CallsModule,
   ],
   providers: [
     CompanionSettingsService,
@@ -57,8 +65,14 @@ import { MediaAiService, AI_USER_QUIET_STATE, NullQuietState } from './applicati
     SocialService,
     MomentsAiService,
     MediaAiService,
-    // P-45 静默：T-072 / T-090 提供真实实现后改为 useExisting。
-    { provide: AI_USER_QUIET_STATE, useClass: NullQuietState },
+    // T-072：P-45「不方便」静默的真实提供方。
+    QuietStateService,
+    { provide: AI_USER_QUIET_STATE, useExisting: QuietStateService },
+    { provide: AI_USER_QUIET_STATE_PORT, useExisting: QuietStateService },
+    CharacterImageService,
+    CallSchedulerService,
+    CallAgentService,
+    { provide: AI_CALL_AGENT_PORT, useExisting: CallAgentService },
     { provide: SIMULATION_READ_PORT, useExisting: SimulationService },
     HealthCareService,
     ProactiveSchedulerService,
@@ -73,13 +87,14 @@ import { MediaAiService, AI_USER_QUIET_STATE, NullQuietState } from './applicati
     },
     AiRuntimeLifecycle,
   ],
-  exports: [SIMULATION_READ_PORT],
+  exports: [SIMULATION_READ_PORT, AI_CALL_AGENT_PORT, AI_USER_QUIET_STATE_PORT],
   controllers: [
     GroupCompanionController,
     CompanionSettingsController,
     MemoryController,
     TimelineController,
     MemorySharingController,
+    QuietStateController,
   ],
 })
 export class AiRuntimeModule {}

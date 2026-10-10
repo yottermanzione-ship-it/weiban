@@ -61,6 +61,8 @@ import { CompanionSettingsService } from './settings.js';
 import { MemoryService } from './memory.js';
 import { SimulationService } from './simulation.js';
 import { MediaAiService } from './media-ai.js';
+import { CharacterImageService } from './character-image.js';
+import { CallSchedulerService } from './call-scheduler.js';
 
 // ---------------------------------------------------------------------------
 // 参数
@@ -233,6 +235,8 @@ export class ProactiveSchedulerService {
     @Inject(MemoryService) private readonly memory: MemoryService,
     @Inject(SimulationService) private readonly simulation: SimulationService,
     @Inject(MediaAiService) private readonly mediaAi: MediaAiService,
+    @Inject(CharacterImageService) private readonly images: CharacterImageService,
+    @Inject(CallSchedulerService) private readonly calls: CallSchedulerService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -357,6 +361,8 @@ export class ProactiveSchedulerService {
     const contacts = await this.contacts.listActiveContacts(userId);
     await this.collectCandidates(ctx, contacts);
     await this.processDue(ctx, contacts);
+    // T-072 主动来电（MED-07）：在同样的开关、免打扰、活跃时段判断之后登记；其余条件由来电调度判断。
+    await this.calls.consider(ctx, contacts).catch(() => undefined);
   }
 
   // -------------------------------------------------------------------------
@@ -758,6 +764,23 @@ export class ProactiveSchedulerService {
         await this.drop(plan, 'link_unreachable');
         return;
       }
+    }
+    // T-072 MED-02：分享日常事件时约三分之一配一张 TA 视角的图（与事件一致；生成失败用素材库，没有就只发文字）。
+    if (plan.reason === 'daily_event' && stableRandom(plan.id, 'photo') < 0.35) {
+      const scene = /「(.+?)」/u.exec(plan.brief)?.[1] ?? plan.brief.slice(0, 200);
+      const image = await this.images
+        .generate({
+          userId: ctx.userId,
+          characterId: plan.characterId,
+          conversationId: conversation.conversationId,
+          scene,
+          use: 'chat',
+          idempotencyKey: `proactive:${plan.id}`,
+          countAsBackground: true,
+        })
+        .catch(() => null);
+      if (image)
+        link = { type: 'image', mediaId: image.mediaId, width: image.width, height: image.height };
     }
     try {
       const sent = await this.db.transaction(async (tx) => {

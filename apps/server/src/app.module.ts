@@ -17,7 +17,7 @@ import {
   CONTACTS_CHARACTER_STATS,
   type ContactsCharacterStats,
 } from './modules/contacts/index.js';
-import { AiRuntimeModule } from './modules/ai-runtime/index.js';
+import { AiRuntimeModule, AI_CALL_AGENT_PORT } from './modules/ai-runtime/index.js';
 import { BillingModule } from './modules/billing/index.js';
 import {
   ChatModule,
@@ -59,7 +59,12 @@ import {
 import { GrowthModule } from './modules/growth/index.js';
 import { MomentsModule } from './modules/moments/index.js';
 import { ProactiveModule } from './modules/proactive/index.js';
-import { CallsModule, CALL_SERVICE_STATUS, type CallServiceStatus } from './modules/calls/index.js';
+import {
+  CallsModule,
+  CALL_AGENT_PORT,
+  CALL_SERVICE_STATUS,
+  type CallServiceStatus,
+} from './modules/calls/index.js';
 import { PlatformModule, type PlatformOptions } from './platform/index.js';
 
 @Global()
@@ -80,6 +85,15 @@ import { PlatformModule, type PlatformOptions } from './platform/index.js';
   exports: [ModelAccessModule, CALL_SERVICE_STATUS],
 })
 class GatewayCompositionModule {}
+
+/** T-072：calls 的角色一侧（CallAgentPort）由 ai-runtime 实现，calls 不能 import ai-runtime，由这里绑定。 */
+@Global()
+@Module({
+  imports: [AiRuntimeModule],
+  providers: [{ provide: CALL_AGENT_PORT, useExisting: AI_CALL_AGENT_PORT }],
+  exports: [CALL_AGENT_PORT],
+})
+class CallAgentCompositionModule {}
 
 @Global()
 @Module({
@@ -229,6 +243,7 @@ export class AppModule {
         MomentsModule,
         ProactiveModule,
         CallsModule,
+        CallAgentCompositionModule,
       ],
     };
   }
