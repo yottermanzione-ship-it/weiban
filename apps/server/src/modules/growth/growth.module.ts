@@ -16,9 +16,18 @@ import { CardsService } from './application/cards.service.js';
 import { GrowthContext } from './application/context.js';
 import { GrowthEvents } from './application/growth-events.js';
 import { GrowthService } from './application/growth.service.js';
+import { PetsService } from './application/pets.service.js';
+import { PetSpeciesAdminController, PetsController } from './http/pets.controller.js';
 import { GrowthCardsController } from './http/growth-cards.controller.js';
 import { GrowthController } from './http/growth.controller.js';
-import { GROWTH_CARD_PORT, GROWTH_READ_PORT, GROWTH_SERVICE } from './tokens.js';
+import {
+  GROWTH_CARD_PORT,
+  GROWTH_PET_ALBUM,
+  GROWTH_PET_NAMING_PORT,
+  GROWTH_PET_READ_PORT,
+  GROWTH_READ_PORT,
+  GROWTH_SERVICE,
+} from './tokens.js';
 
 @Module({
   imports: [
@@ -30,13 +39,17 @@ import { GROWTH_CARD_PORT, GROWTH_READ_PORT, GROWTH_SERVICE } from './tokens.js'
     RealtimeModule,
   ],
   // 卡片控制器在前：/growth/cards、/growth/achievements 等固定路径先于 /growth/:characterId/... 匹配。
-  controllers: [GrowthCardsController, GrowthController],
+  controllers: [GrowthCardsController, GrowthController, PetsController, PetSpeciesAdminController],
   providers: [
     GrowthContext,
     AchievementService,
     CardsService,
     GrowthService,
+    PetsService,
     GrowthEvents,
+    { provide: GROWTH_PET_READ_PORT, useExisting: PetsService },
+    { provide: GROWTH_PET_NAMING_PORT, useExisting: PetsService },
+    { provide: GROWTH_PET_ALBUM, useExisting: PetsService },
     { provide: GROWTH_SERVICE, useExisting: GrowthService },
     { provide: GROWTH_CARD_PORT, useExisting: CardsService },
     {
@@ -49,6 +62,13 @@ import { GROWTH_CARD_PORT, GROWTH_READ_PORT, GROWTH_SERVICE } from './tokens.js'
       }),
     },
   ],
-  exports: [GROWTH_SERVICE, GROWTH_READ_PORT, GROWTH_CARD_PORT],
+  exports: [
+    GROWTH_SERVICE,
+    GROWTH_READ_PORT,
+    GROWTH_CARD_PORT,
+    GROWTH_PET_READ_PORT,
+    GROWTH_PET_NAMING_PORT,
+    GROWTH_PET_ALBUM,
+  ],
 })
 export class GrowthModule {}

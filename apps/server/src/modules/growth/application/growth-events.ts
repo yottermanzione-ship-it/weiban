@@ -40,8 +40,10 @@ import { AchievementService } from './achievements.service.js';
 import { CARD_LINES, CardsService, anniversaryTitle } from './cards.service.js';
 import { GrowthContext } from './context.js';
 import { GrowthService, systemAnniversaryId, type FirstInteractionKind } from './growth.service.js';
+import { PetsService } from './pets.service.js';
 
 export const GROWTH_ANNIVERSARY_SWEEP_JOB = 'growth.anniversary_sweep';
+export const GROWTH_PET_STAGE_SWEEP_JOB = 'growth.pet_stage_sweep';
 /** 停机错过的系统纪念日最多往回补几天。 */
 const CATCH_UP_DAYS = 7;
 const DAY_ACHIEVEMENTS: Array<[number, AchievementKey]> = [
@@ -66,11 +68,12 @@ export class GrowthEvents implements OnModuleInit {
     @Inject(CardsService) private readonly cards: CardsService,
     @Inject(AchievementService) private readonly achievements: AchievementService,
     @Inject(GrowthContext) private readonly ctx: GrowthContext,
+    @Inject(PetsService) private readonly pets: PetsService,
     @Optional() @Inject(GROWTH_HOLIDAY_SOURCE) private readonly holidays?: HolidayEventPort,
   ) {}
 
   async onModuleInit(): Promise<void> {
-    // 删除清单。T-077（宠物，同属 growth）请把自己的表加进 purgeUser / countUserData，不要再登记一次 'growth'。
+    // 删除清单（卡片、成就、熟悉度、纪念日、宠物都在这一份里；模块只能登记一次）。
     this.registry.register({
       module: 'growth',
       purgeUser: (userId) => this.purgeUser(userId),
@@ -79,6 +82,9 @@ export class GrowthEvents implements OnModuleInit {
     this.subscribe();
     await this.jobs.work(GROWTH_ANNIVERSARY_SWEEP_JOB, () => this.sweep());
     await this.jobs.schedule(GROWTH_ANNIVERSARY_SWEEP_JOB, '5 * * * *');
+    // T-077：宠物成长阶段按领养天数推进（读取时也会推进）。
+    await this.jobs.work(GROWTH_PET_STAGE_SWEEP_JOB, () => this.pets.sweepStages());
+    await this.jobs.schedule(GROWTH_PET_STAGE_SWEEP_JOB, '9 * * * *');
   }
 
   private subscribe(): void {
@@ -121,6 +127,8 @@ export class GrowthEvents implements OnModuleInit {
           .where(and(eq(contactIndex.userId, userId), eq(contactIndex.characterId, characterId)));
         await this.cards.purgeCharacter(tx, userId, characterId);
         await this.growth.purgeCharacter(tx, userId, characterId);
+        await this.pets.purgeCharacter(tx, userId, characterId);
+        await this.ctx.dataChanged(tx, userId, 'pets', characterId, null);
         await this.ctx.dataChanged(tx, userId, 'cards', characterId, null);
       },
     });
@@ -273,7 +281,16 @@ export class GrowthEvents implements OnModuleInit {
       },
     });
 
-    // ---------- 宠物（T-077 发出） ----------
+    // ---------- 宠物（T-077） ----------
+    bus.subscribe({
+      consumer: 'growth.on_pet_names_chosen',
+      eventType: 'chat.message_action_chosen',
+      handle: async (event, tx) => {
+        const p = event.payload;
+        if (p.cardKind !== 'pet_names' || p.ref?.kind !== 'pet_naming_request') return;
+        await this.pets.onNameChosen(tx, p.userId, p.ref.id, p.actionId);
+      },
+    });
     bus.subscribe({
       consumer: 'growth.on_pet_adopted',
       eventType: 'growth.pet_adopted',
@@ -585,6 +602,7 @@ export class GrowthEvents implements OnModuleInit {
       n += await this.cards.purgeUser(tx, userId);
       n += await this.achievements.purgeUser(tx, userId);
       n += await this.growth.purgeUser(tx, userId);
+      n += await this.pets.purgeUser(tx, userId);
       for (const table of [contactIndex, notices] as const) {
         const r = await tx.db.delete(table).where(eq(table.userId, userId));
         n += r.rowCount ?? 0;
@@ -597,7 +615,8 @@ export class GrowthEvents implements OnModuleInit {
     let n =
       (await this.cards.countUserData(userId)) +
       (await this.achievements.countUserData(userId)) +
-      (await this.growth.countUserData(userId));
+      (await this.growth.countUserData(userId)) +
+      (await this.pets.countUserData(userId));
     for (const table of [contactIndex, notices] as const) {
       const [r] = await this.db.db
         .select({ n: sql<number>`count(*)::int` })

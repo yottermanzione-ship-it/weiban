@@ -184,3 +184,6 @@ export const notices = growthSchema.table(
   },
   (t) => [primaryKey({ columns: [t.userId, t.noticeKey] })],
 );
+
+// T-077 宠物表（drizzle.config 只扫描 schema.ts，所以在这里转出）。
+export * from './pets-schema.js';
