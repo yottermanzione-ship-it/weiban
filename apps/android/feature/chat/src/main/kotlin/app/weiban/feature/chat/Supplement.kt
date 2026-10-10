@@ -101,7 +101,7 @@ private const val SUPPLEMENT_TEXT_MAX = 5_000
         Text("补充设定只对你生效，不会改变角色的分类和成人模式资格；和公开资料冲突时以公开资料为准。", color = colors.textSecondary)
         if (supplement.loading && supplement.data == null) LinearProgressIndicator(Modifier.fillMaxWidth())
         (error ?: supplement.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        supplement.data?.plazaSource?.let { Text("来自人设广场 · 作者 ${it.authorName} · 版本 ${it.version}", color = colors.textSecondary) }
+        supplement.data?.plazaSource?.let { SupplementSourceNote(repository, owner, characterId, it, supplement::refresh) }
         if (custom) {
             Text("自定义角色可以直接修改人设；导入的资料会合并进人设描述。", color = colors.textSecondary)
         } else {
@@ -130,6 +130,8 @@ private const val SUPPLEMENT_TEXT_MAX = 5_000
         TextButton(enabled = !pending, onClick = { L6Overlays.openImport("supplement", characterId) }) { Text("导入资料") }
         if (!custom && lines.isNotEmpty()) {
             TextButton(enabled = !pending, onClick = { clearing = true }) { Text("删除全部", color = colors.textDanger) }
+            // 预设改版入口（persona-plaza.md 4.1）：有补充设定时才显示。
+            VariantPublishButton(characterId, !pending)
         }
     }
     editing?.let { index ->

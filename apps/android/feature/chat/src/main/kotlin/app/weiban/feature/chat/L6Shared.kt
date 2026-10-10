@@ -237,6 +237,7 @@ internal fun serialText(serialNo: Long): String = "No." + serialNo.toString().pa
     val imports by L6Overlays.imports.collectAsState()
     pets?.let { open -> key(open) { PetsOverlay(repository, runtime, owner, open) { L6Overlays.pets.value = null } } }
     imports?.let { open -> key(open) { ImportOverlay(repository, runtime, owner, open) { L6Overlays.imports.value = null } } }
+    PlazaOverlay(repository, runtime, owner)
     card?.let { open -> CardDetailOverlay(repository, owner, open) { L6Overlays.card.value = null } }
     share?.let { request -> key(request) { ShareEditor(repository, runtime, owner, request) { L6Overlays.share.value = null } } }
     AchievementToasts(repository, owner)

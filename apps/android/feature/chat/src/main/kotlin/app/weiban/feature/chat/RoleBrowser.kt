@@ -29,6 +29,8 @@ import java.util.Locale
     var referral by remember(owner.sessionId) { mutableStateOf<ProfileTarget?>(null) }
     // contacts / newFriends / groups（通讯录内子页）
     var section by rememberSaveable(owner.sessionId) { mutableStateOf("contacts") }
+    // 角色广场的两个分页：从「添加角色」、通讯录进入时默认停在「预设角色」（PLZ-01 第 1 条）。
+    var personaPlaza by rememberSaveable(owner.sessionId) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val progress = remember(repository, owner) { OnboardingProgress(repository, owner, scope) }
     LaunchedEffect(progress, onboarding) { if (onboarding) progress.load() }
@@ -63,7 +65,18 @@ import java.util.Locale
             )
         } else if (plaza) {
             if (!startAtPlaza) TextButton(onClick = { plaza = false }) { Text("返回通讯录") }
-            CharacterCatalog(repository, owner) { select(it) }
+            // 一个入口、两个分页（persona-plaza.md 2.1）；新手引导时不显示「人设广场」。
+            if (!onboarding) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = WbSpace.S5), horizontalArrangement = Arrangement.spacedBy(WbSpace.S2)) {
+                    FilterChip(selected = !personaPlaza, onClick = { personaPlaza = false }, label = { Text("预设角色") })
+                    FilterChip(selected = personaPlaza, onClick = { personaPlaza = true }, label = { Text("人设广场") })
+                }
+            }
+            if (personaPlaza && !onboarding) {
+                PlazaTab(repository, owner)
+            } else {
+                CharacterCatalog(repository, owner) { select(it) }
+            }
         } else if (section == "newFriends") {
             NewFriendsPage(repository, owner, state, { section = "contacts" }, { plaza = true }) { target ->
                 referral = target

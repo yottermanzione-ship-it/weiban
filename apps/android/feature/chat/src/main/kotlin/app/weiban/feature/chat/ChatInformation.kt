@@ -163,6 +163,7 @@ internal data class InformationNavigation(
         TextButton(onClick = { searchPage = true }, enabled = !actions.pending) { Text("查找聊天记录 ›") }
         TextButton(onClick = { L6Overlays.pets.value = PetsOpen(characterId) }, enabled = !actions.pending) { Text("我们的宠物 ›") }
         TextButton(onClick = { supplementPage = true }, enabled = !actions.pending) { Text("我的补充设定 ›") }
+        PlazaPublishRow(repository, owner, characterId, !actions.pending)
         companion.data?.let { InformationProactive(actions, companion, characterId, it) }
         TextButton(onClick = navigation.models, enabled = !actions.pending) { Text("模型选择") }
         VoiceToneRow(repository, owner, companion.data?.voiceId, !actions.pending) { voicePage = true }
