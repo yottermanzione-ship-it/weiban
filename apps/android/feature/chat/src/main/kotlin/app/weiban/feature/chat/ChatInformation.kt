@@ -162,6 +162,8 @@ internal data class InformationNavigation(
         TextButton(onClick = { cardsPage = true }, enabled = !actions.pending) { Text("卡册 ›") }
         TextButton(onClick = { searchPage = true }, enabled = !actions.pending) { Text("查找聊天记录 ›") }
         TextButton(onClick = { L6Overlays.pets.value = PetsOpen(characterId) }, enabled = !actions.pending) { Text("我们的宠物 ›") }
+        // 心愿清单（PLAY-04）：和服务页是同一张清单。
+        TextButton(onClick = { PlayNav.open(PlayPage.Wishlist(characterId)) }, enabled = !actions.pending) { Text("心愿清单 ›") }
         TextButton(onClick = { supplementPage = true }, enabled = !actions.pending) { Text("我的补充设定 ›") }
         PlazaPublishRow(repository, owner, characterId, !actions.pending)
         companion.data?.let { InformationProactive(actions, companion, characterId, it) }

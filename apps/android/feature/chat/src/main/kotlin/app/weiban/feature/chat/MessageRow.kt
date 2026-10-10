@@ -10,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import app.weiban.contracts.*
 import app.weiban.designsystem.LocalWeibanColors
 import app.weiban.designsystem.tokens.WbSpace
@@ -39,6 +40,9 @@ import app.weiban.designsystem.tokens.WbSpace
             is ReceivedMessageContentImage -> { -> ui.media.viewing = message.messageId }
             is ReceivedMessageContentVoice -> { -> ui.media.player.toggle(message) }
             is ReceivedMessageContentLink -> { -> if (!openLink(context, content.url)) ui.media.toast("无法打开这个链接") }
+            // 信件卡片 → 读信；每日一问卡片 → 历史里这一题（PLAY-03、PLAY-05）。
+            is ReceivedMessageContentLetter -> { -> PlayNav.stack.value = listOf(PlayPage.LetterRead(content.letterId)) }
+            is ReceivedMessageContentDailyQuestion -> { -> PlayNav.stack.value = listOf(PlayPage.DailyHistory(content.answerId)) }
             is ReceivedMessageContentCallRecord -> { ->
                 if (dial != null && peer != null) {
                     dial(peer.refId, avatars.roles[peer.participantId]?.name.orEmpty().ifEmpty { "角色" })
@@ -203,6 +207,22 @@ import app.weiban.designsystem.tokens.WbSpace
                 },
                 color = colors.textLink,
             )
+        }
+        message.status == "normal" && content is ReceivedMessageContentLetter -> {
+            Column(Modifier.widthIn(max = 260.dp)) {
+                Text(if (content.direction == "from_character") "一封来信" else "一封信", style = MaterialTheme.typography.titleSmall)
+                HorizontalDivider(color = colors.borderHairline)
+                Text(content.body, maxLines = 3, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
+                Text("[信件] 点开阅读", color = colors.textTertiary, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        message.status == "normal" && content is ReceivedMessageContentDailyQuestion -> {
+            Column(Modifier.widthIn(max = 260.dp)) {
+                Text("每日一问", color = colors.textTertiary, style = MaterialTheme.typography.bodySmall)
+                Text(content.question, style = MaterialTheme.typography.titleSmall)
+                HorizontalDivider(color = colors.borderHairline)
+                Text(content.answer)
+            }
         }
         else -> Text(messageText(message))
     }

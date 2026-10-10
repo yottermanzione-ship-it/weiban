@@ -30,6 +30,7 @@ import app.weiban.feature.chat.FamiliarityOverviewScreen
 import app.weiban.feature.chat.FavoritesScreen
 import app.weiban.feature.chat.GrowthNavigation
 import app.weiban.feature.chat.GrowthShareOverlay
+import app.weiban.feature.chat.PlayNavigation
 import app.weiban.feature.chat.ChatScreen
 import app.weiban.feature.chat.DiscoverScreen
 import app.weiban.feature.chat.LocalCalls
@@ -215,6 +216,8 @@ private class NavigationUi(
     }
 
     fun route(value: String) {
+        // 玩法页（如慢信推送 /play/letters/{id}）是全局浮层，不切换标签。
+        if (value.startsWith("/play/") && PlayNavigation.openRoute(value)) return
         conversationId = null
         mePage = null
         moments = null
@@ -381,7 +384,12 @@ private suspend fun finishOnboarding(
                 onFavorites = { navigation.mePage = "favorites" },
                 onGrowth = { page ->
                     // 宠物是全局浮层（T-086），其余是「我」里的页面。
-                    if (page == "pets") GrowthNavigation.openPets() else navigation.mePage = page
+                    when {
+                        page == "pets" -> GrowthNavigation.openPets()
+                        // 五个玩法是全局浮层（T-100）。
+                        page.startsWith("play:") -> PlayNavigation.openRoute(page.removePrefix("play:"))
+                        else -> navigation.mePage = page
+                    }
                 },
             ),
     )

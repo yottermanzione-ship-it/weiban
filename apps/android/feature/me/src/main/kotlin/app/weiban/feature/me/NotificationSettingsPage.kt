@@ -28,6 +28,25 @@ import kotlinx.serialization.json.put
     Text("互动玩法")
     OutlinedButton(onClick = { state.openPage("period") }) { Text("经期日记") }
     entry.onGrowth?.let { open -> OutlinedButton(onClick = { open("pets") }) { Text("宠物") } }
+    // 五个玩法（SVC-01、PLAY-03～07）：信箱有未读来信时红点；每日一问不显示红点。
+    entry.onGrowth?.let { open ->
+        var unread by remember { mutableLongStateOf(0L) }
+        LaunchedEffect(state.owner) {
+            runCatching {
+                unread =
+                    state.repository
+                        .call(
+                            Endpoints.letterEndpointsGetBadge,
+                            options = app.weiban.data.SessionCallOptions(owner = state.owner, networkOnly = true),
+                        ).unreadCount
+            }
+        }
+        OutlinedButton(onClick = { open("play:daily") }) { Text("每日一问") }
+        OutlinedButton(onClick = { open("play:wishlists") }) { Text("心愿清单") }
+        OutlinedButton(onClick = { open("play:letters") }) { Text(if (unread > 0) "信箱 ●" else "信箱") }
+        OutlinedButton(onClick = { open("play:focus") }) { Text("陪你专注") }
+        OutlinedButton(onClick = { open("play:reminders") }) { Text("TA 的提醒") }
+    }
     // 陪伴分组（SVC-01）：卡册、成就、熟悉度。
     entry.onGrowth?.let { open ->
         Text("陪伴")

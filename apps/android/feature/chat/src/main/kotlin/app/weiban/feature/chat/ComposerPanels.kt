@@ -176,6 +176,17 @@ internal class StickerLibrary(
         }
         // 语音通话（MED-06 第 1、11 条）：只在私聊、平台开通语音服务时显示。
         if (callable && characterId != null) PanelButton("语音通话") { dial(characterId, names[characterId].orEmpty().ifEmpty { "角色" }) }
+        // 写信、陪我专注（PLAY-05、PLAY-06）：只在私聊里出现。
+        if (characterId != null) {
+            PanelButton("写信") {
+                ui.media.panel = 0
+                PlayNav.stack.value = listOf(PlayPage.LetterWrite(characterId))
+            }
+            PanelButton("陪我专注") {
+                ui.media.panel = 0
+                PlayNav.stack.value = listOf(PlayPage.Focus(characterId))
+            }
+        }
     }
 }
 
@@ -188,6 +199,8 @@ internal class StickerLibrary(
         when (label) {
             "相册" -> "▦"
             "拍摄" -> "◉"
+            "写信" -> "✉"
+            "陪我专注" -> "◷"
             else -> "✆"
         }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
