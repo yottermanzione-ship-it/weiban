@@ -95,6 +95,10 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.0.1 补充（2026-10-10，T-088，总负责人裁定）
+
+- **端口**：新增 `ContactsWritePort.addForUser`（提供方 contacts，调用方 plaza）：「添加为我的角色」由服务器代用户走 CHR-03 添加流程。只是服务器内部 TypeScript 接口，不影响 HTTP / WebSocket 线上格式，`CONTRACT_VERSION` 不变，Android 生成物无变化。
+
 ### 3.0（2026-10-09，T-062：L4～L7 一次定稿）
 
 依据：ADR-0024～0027；对照表 `docs/architecture/contracts-3.0-map.md`。只新增，不删字段、不改已有含义；升主版本是因为给响应枚举新增了取值（`MediaObject.purpose` 同时改为接收端容错、`AdminCatalogEntry.defaultFor`、`UpstreamKind`）。

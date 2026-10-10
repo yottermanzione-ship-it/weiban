@@ -21,3 +21,22 @@ export const CHARACTER_SUPPLEMENT_PORT = Symbol('weiban.characters.supplement-po
  * 类型 { setConflicts(userId, characterId, conflicts: SupplementConflict[]): Promise<void> }。
  */
 export const CHARACTER_SUPPLEMENT_CONFLICTS = Symbol('weiban.characters.supplement-conflicts');
+/** T-088：契约 CharacterPlazaPort（调用方只有 plaza，装配入口绑定到 plaza 的 PLAZA_CHARACTERS）。 */
+export const CHARACTER_PLAZA_PORT = Symbol('weiban.characters.plaza-port');
+/**
+ * T-088 服务器内部（非契约）：来源标注需要的广场状态（作品是否还在、作者是否注销、是否有更新的版本）。
+ * characters 不能 import plaza（上层），由 plaza 实现、装配入口绑定；未绑定时按「作品可用、无新版本」显示。
+ */
+export const CHARACTER_PLAZA_ORIGIN_STATUS = Symbol('weiban.characters.plaza-origin-status');
+export interface CharacterPlazaOriginStatus {
+  originStatus(
+    userId: string,
+    characterId: string,
+    workId: string,
+  ): Promise<{
+    workAvailable: boolean;
+    authorDeleted: boolean;
+    authorName: string | null;
+    newerVersionAvailable: number | null;
+  }>;
+}

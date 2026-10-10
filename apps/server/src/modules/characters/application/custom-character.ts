@@ -30,26 +30,17 @@ import {
   type EnvelopeCrypto,
 } from '../../../platform/index.js';
 import { CHAT_ADMIN_PORT, CHAT_READ_PORT } from '../../chat/index.js';
-import { deriveClassification, classificationCanChange } from '../../policy/index.js';
+import {
+  deriveClassification,
+  classificationCanChange,
+  compareClassification,
+} from '../../policy/index.js';
 import { characters } from '../infra/db/schema.js';
 import { childFeaturesIn } from '../domain/child-features.js';
+import type { CustomCharacterPayload } from '../domain/custom-card.js';
+import { CharacterService } from './characters.js';
 
-/** 自定义角色的 draft_ciphertext 中存储的明文 JSON 结构。 */
-interface CustomCharacterPayload {
-  name: string;
-  description: string;
-  classification: {
-    basis: string;
-    realPersonKind: string | null;
-    ageSetting: string;
-    childAppearance: boolean;
-  };
-  birthday: string | null;
-  catchphrase: string | null;
-  exampleDialogue: string | null;
-  tags: string[];
-  avatarMediaId: string | null;
-}
+/** 自定义角色的 draft_ciphertext 中存储的明文 JSON 结构（定义见 domain/custom-card.ts）。 */
 
 function buildPayload(body: UserCustomCharacterWrite): CustomCharacterPayload {
   return {
@@ -87,6 +78,7 @@ export class CustomCharacterService {
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(CHAT_ADMIN_PORT) private readonly chatAdmin: ChatAdminPort,
     @Inject(CHAT_READ_PORT) private readonly chatRead: ChatReadPort,
+    @Inject(CharacterService) private readonly characterService: CharacterService,
   ) {}
 
   async create(userId: string, body: UserCustomCharacterWrite): Promise<UserCustomCharacter> {
@@ -177,6 +169,13 @@ export class CustomCharacterService {
       rawPlain.fill(0);
     }
 
+    // 分类以数据库列为准（管理员更正、按新版本更新可能已改得更严）。
+    existing.classification = {
+      basis: current.basis,
+      realPersonKind: current.realPersonKind,
+      ageSetting: current.ageSetting,
+      childAppearance: current.childAppearance,
+    };
     // Merge patch fields
     const merged: CustomCharacterPayload = {
       ...existing,
@@ -211,6 +210,25 @@ export class CustomCharacterService {
           { status: 422 },
         );
       }
+      // 广场复制品：分类只能更严，任何横向修改（虚构 ↔ 原创、真人子类互换）也拒绝（hard-boundaries.md 第 6 节第 2 条）。
+      if (
+        current.originKind === 'plaza_copy' &&
+        compareClassification(
+          {
+            basis: current.basis as 'real_person' | 'fictional' | 'original',
+            realPersonKind: current.realPersonKind as
+              'celebrity' | 'historical' | 'private_person' | null,
+            ageSetting: current.ageSetting as 'minor' | 'adult',
+            childAppearance: current.childAppearance,
+          },
+          patch.classification,
+        ) === 'looser'
+      )
+        throw new AppError(
+          'classification_change_forbidden',
+          '从人设广场添加的角色，分类只能改得更严格',
+          { status: 422 },
+        );
       merged.classification = {
         basis: patch.classification.basis,
         realPersonKind: patch.classification.realPersonKind,
@@ -248,6 +266,15 @@ export class CustomCharacterService {
         .where(and(eq(characters.id, characterId), eq(characters.revision, current.revision)))
         .returning();
       if (!row) throw new AppError('conflict', '角色已被修改，请刷新后重试');
+      // 分类或儿童特征变化：照常发 characters.character_classification_changed（ai-runtime 退出成人模式）。
+      if (
+        row.basis !== current.basis ||
+        row.realPersonKind !== current.realPersonKind ||
+        row.ageSetting !== current.ageSetting ||
+        row.childAppearance !== current.childAppearance ||
+        row.childFeaturesDetected !== current.childFeaturesDetected
+      )
+        await this.characterService.classificationEvent(tx, row);
       await this.audit.record(
         {
           module: 'characters',

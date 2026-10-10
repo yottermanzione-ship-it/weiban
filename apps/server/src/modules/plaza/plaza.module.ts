@@ -14,10 +14,18 @@ import { PlazaStore } from './application/plaza-store.js';
 import { PlazaService } from './application/plaza.service.js';
 import { PlazaAdminController } from './http/plaza-admin.controller.js';
 import { PlazaController } from './http/plaza.controller.js';
+import { PLAZA_ORIGIN_STATUS } from './tokens.js';
 
 @Module({
   imports: [ContactsModule, MediaModule, RealtimeModule],
   controllers: [PlazaController, PlazaAdminController],
-  providers: [PlazaStore, PlazaService, PlazaAdminService, PlazaLifecycle],
+  providers: [
+    PlazaStore,
+    PlazaService,
+    PlazaAdminService,
+    PlazaLifecycle,
+    { provide: PLAZA_ORIGIN_STATUS, useExisting: PlazaService },
+  ],
+  exports: [PLAZA_ORIGIN_STATUS],
 })
 export class PlazaModule {}

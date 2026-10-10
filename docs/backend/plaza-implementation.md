@@ -30,6 +30,6 @@ plaza **不 import characters**：所有对角色的访问经令牌注入的契�
 
 ## 3. 已知限制
 
-- 「添加为我的角色」只创建角色，不代替客户端走 CHR-03 添加流程（contacts 没有供其他模块调用的添加端口）：客户端在 `adopt` 返回后照常调用 `POST /contacts` 添加（P-26 在那里再查一次）。已在交接中提契约变更申请。
+- （T-088 已解决）「添加为我的角色」创建角色后由服务器经 `ContactsWritePort.addForUser` 走 CHR-03 添加流程；「应用改版」时未添加该预设角色也会先添加。
 - 预设改版作品卡片的 `avatarUrl` 为 null，客户端按 `basedOnPresetId` 显示预设角色头像。
 - `pg_trgm` 需要数据库允许 `CREATE EXTENSION`（本机 Docker 的超级用户可以；生产库需运维确认）。

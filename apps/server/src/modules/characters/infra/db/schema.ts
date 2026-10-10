@@ -56,6 +56,14 @@ export const characters = charactersSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
     /** 试聊会话（CHR-07 第 6 条），nullable；试聊不建立正式联系人关系。 */
     trialConversationId: uuid('trial_conversation_id'),
+    /** T-088（迁移 0063）：自定义角色来源。plaza_copy 的分类只能更严（数据库触发器）。 */
+    originKind: text('origin_kind').$type<'created' | 'plaza_copy'>().notNull().default('created'),
+    originImportJobId: uuid('origin_import_job_id'),
+    plazaWorkId: uuid('plaza_work_id'),
+    plazaVersion: integer('plaza_version'),
+    plazaAuthorName: text('plaza_author_name'),
+    /** plaza 的 adoptionId（文本），同一用户同一键只建一个角色。 */
+    plazaIdempotencyKey: text('plaza_idempotency_key'),
   },
   (t) => [
     index('characters_owner_idx').on(t.ownerId),

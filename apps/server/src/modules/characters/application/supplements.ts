@@ -112,6 +112,49 @@ export class CharacterSupplementService implements CharacterSupplementPort {
     return (await this.getForUser(userId, characterId))!;
   }
 
+  /**
+   * 人设广场「应用改版」（PLZ-04 第 3 条，T-088 经 CharacterPlazaPort.applyVariant 调用）：写入 / 替换补充设定并记来源。
+   * 重复调用结果相同（幂等）；聊天记录、记忆、熟悉度不受影响，分类不变（补充设定只是文字）。
+   */
+  async putFromPlaza(
+    userId: string,
+    characterId: string,
+    text: string,
+    plazaSource: { workId: string; version: number; authorName: string },
+  ): Promise<boolean> {
+    try {
+      await this.presetOrThrow(characterId);
+    } catch {
+      return false;
+    }
+    const clean = text.trim().slice(0, 5000);
+    if (!clean) return false;
+    const now = this.clock.now();
+    await this.db.transaction(async (tx) => {
+      const sealed = await this.crypto.seal(userId, aad(userId, characterId), clean, tx);
+      await tx.db
+        .insert(userSupplements)
+        .values({
+          userId,
+          characterId,
+          textCiphertext: sealed,
+          conflicts: [],
+          plazaSource,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [userSupplements.userId, userSupplements.characterId],
+          set: { textCiphertext: sealed, conflicts: [], plazaSource, updatedAt: now },
+        });
+      await this.outbox.publish(tx, 'characters.supplement_changed', 'characters', {
+        userId,
+        characterId,
+        action: 'saved',
+      });
+    });
+    return true;
+  }
+
   /** AI 检出冲突项后写入（服务器内部，T-081 经 CHARACTER_SUPPLEMENT_ADMIN 调用）。 */
   async setConflicts(userId: string, characterId: string, conflicts: ConflictDto[]): Promise<void> {
     const parsed = parseContract(z.array(SupplementConflict).max(50), conflicts);

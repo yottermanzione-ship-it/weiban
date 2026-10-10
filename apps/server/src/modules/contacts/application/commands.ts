@@ -14,6 +14,7 @@ import {
   type MediaReadPort,
   type SyncPort,
   type PolicyPort,
+  type PortResult,
 } from '@weiban/contracts';
 import {
   AppError,
@@ -97,6 +98,46 @@ export class ContactsCommands {
         .orderBy(contacts.characterId);
       return { items: rows.map(contactDto) };
     });
+  }
+  /**
+   * ContactsWritePort（T-088）：系统代用户添加（人设广场「添加为我的角色」）。同一套规则；
+   * 新复制的角色从未添加过，所以不会出现「恢复以前的记录」选择；已添加或等待通过时返回现有联系人（幂等）。
+   */
+  async addForUser(input: {
+    userId: string;
+    characterId: string;
+    idempotencyKey: string;
+  }): Promise<
+    PortResult<Contact, 'contact_limit_reached' | 'character_not_available' | 'unauthenticated'>
+  > {
+    try {
+      return { ok: true, value: await this.add(input.userId, { characterId: input.characterId }) };
+    } catch (error) {
+      if (error instanceof AppError) {
+        if (error.code === 'contact_exists' || error.code === 'restore_choice_required') {
+          const existing = await this.db.transaction((tx) =>
+            this.row(tx, input.userId, input.characterId),
+          );
+          if (existing && existing.status !== 'deleted')
+            return { ok: true, value: contactDto(existing) };
+          if (error.code === 'restore_choice_required')
+            return {
+              ok: true,
+              value: await this.add(input.userId, {
+                characterId: input.characterId,
+                restoreMode: 'fresh',
+              }),
+            };
+        }
+        if (
+          error.code === 'contact_limit_reached' ||
+          error.code === 'character_not_available' ||
+          error.code === 'unauthenticated'
+        )
+          return { ok: false, error: error.code, message: error.message };
+      }
+      throw error;
+    }
   }
   async add(userId: string, input: unknown): Promise<Contact> {
     const body = parseContract(AddContactRequest, input);

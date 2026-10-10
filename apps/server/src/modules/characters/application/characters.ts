@@ -40,6 +40,7 @@ import {
 import { MEDIA_READ_PORT } from '../../media/index.js';
 import { deriveClassification, classificationCanChange } from '../../policy/index.js';
 import { childFeaturesIn } from '../domain/child-features.js';
+import { customToAdminWrite, type CustomCharacterPayload } from '../domain/custom-card.js';
 import { categories, characters, personaVersions, relations } from '../infra/db/schema.js';
 import { CHARACTER_CONTACT_ACCESS, type CharacterContactAccess } from '../tokens.js';
 import type { CharacterEvaluator } from './evaluator.js';
@@ -83,7 +84,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       .from(categories)
       .orderBy(categories.order, categories.id);
   }
-  private classify(row: Row): CharacterClassification {
+  classify(row: Row): CharacterClassification {
     return deriveClassification(
       {
         basis: row.basis as 'real_person' | 'fictional' | 'original',
@@ -97,6 +98,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     );
   }
   private async decode(row: Row, published = false, tx?: DbTx): Promise<AdminCharacterWrite> {
+    if (row.kind === 'custom') return customToAdminWrite(await this.customPayload(row, tx));
     const cipher = published ? row.publishedCiphertext : row.draftCiphertext;
     if (!cipher) throw new AppError('character_not_available', '角色尚未上架');
     const aad = published
@@ -105,6 +107,30 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     const plain = await this.crypto.open(row.ownerId ?? PLATFORM_KEY_OWNER, aad, cipher, tx);
     try {
       return AdminCharacterWrite.parse(JSON.parse(plain.toString('utf8')));
+    } finally {
+      plain.fill(0);
+    }
+  }
+  /** T-088：预设改版「添加为新角色」时读取预设角色当前人设版本（只限已上架）。 */
+  async presetForCopy(id: string): Promise<{
+    row: Row;
+    body: AdminCharacterWrite;
+    classification: CharacterClassification;
+  } | null> {
+    const [row] = await this.database.db.select().from(characters).where(eq(characters.id, id));
+    if (!row || row.kind !== 'preset' || row.status !== 'published') return null;
+    return { row, body: await this.decode(row, true), classification: this.classify(row) };
+  }
+  /** 自定义角色（含广场复制品）的存储 payload（T-088）。 */
+  private async customPayload(row: Row, tx?: DbTx): Promise<CustomCharacterPayload> {
+    const plain = await this.crypto.open(
+      row.ownerId!,
+      `character:${row.id}:draft:${row.revision}`,
+      row.draftCiphertext,
+      tx,
+    );
+    try {
+      return JSON.parse(plain.toString('utf8')) as CustomCharacterPayload;
     } finally {
       plain.fill(0);
     }
@@ -283,7 +309,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     });
     return this.admin(adminId, await this.row(id));
   }
-  private async classificationEvent(tx: DbTx, row: Row): Promise<void> {
+  async classificationEvent(tx: DbTx, row: Row): Promise<void> {
     const c = this.classify(row);
     await this.outbox.publish(tx, 'characters.character_classification_changed', 'characters', {
       characterId: row.id,
@@ -617,7 +643,10 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     const db = transaction ? asDbTx(transaction).db : this.database.db;
     const query = db.select().from(characters).where(eq(characters.id, id));
     const [row] = await (transaction ? query.for('share') : query);
-    return !!row && row.status === 'published' && (row.kind === 'preset' || row.ownerId === userId);
+    if (!row) return false;
+    // 自定义角色（含广场复制品）只有创建者能添加（状态为 active，没有上架流程）。
+    if (row.kind === 'custom') return row.ownerId === userId;
+    return row.status === 'published';
   }
   async getClassification(id: string, transaction?: Tx): Promise<CharacterClassification | null> {
     const db = transaction ? asDbTx(transaction).db : this.database.db;

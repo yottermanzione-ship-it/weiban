@@ -8,6 +8,7 @@ import {
   CONTACTS_READ_PORT,
   CONTACTS_CHARACTER_STATS,
   CONTACT_CARD_RECOMMENDATION_PORT,
+  CONTACTS_WRITE_PORT,
 } from './tokens.js';
 import { ContactCardRecommendationService } from './application/recommendations.js';
 import { ContactsCommands } from './application/commands.js';
@@ -24,8 +25,14 @@ import { ContactsController } from './http/contacts.controller.js';
     ContactCardRecommendationService,
     { provide: CONTACT_CARD_RECOMMENDATION_PORT, useExisting: ContactCardRecommendationService },
     { provide: CONTACTS_READ_PORT, useExisting: ContactsReadService },
+    { provide: CONTACTS_WRITE_PORT, useExisting: ContactsCommands },
     { provide: CONTACTS_CHARACTER_STATS, useExisting: ContactsReadService },
   ],
-  exports: [CONTACTS_READ_PORT, CONTACTS_CHARACTER_STATS, CONTACT_CARD_RECOMMENDATION_PORT],
+  exports: [
+    CONTACTS_READ_PORT,
+    CONTACTS_WRITE_PORT,
+    CONTACTS_CHARACTER_STATS,
+    CONTACT_CARD_RECOMMENDATION_PORT,
+  ],
 })
 export class ContactsModule {}

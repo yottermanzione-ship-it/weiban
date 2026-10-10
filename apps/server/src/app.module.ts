@@ -3,6 +3,7 @@
  * 新增业务模块时：先在 packages/eslint-config/architecture.js 登记层级，再把模块类加到 imports。
  */
 import { Global, Module, type DynamicModule } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import type {
   ChatReadPort,
   ContactsReadPort,
@@ -46,9 +47,12 @@ import {
   CHARACTER_CONTACT_ACCESS,
   CHARACTER_REAL_PERSON_NAMES,
   CHARACTER_SUPPLEMENT_PORT,
+  CHARACTER_PLAZA_PORT,
+  CHARACTER_PLAZA_ORIGIN_STATUS,
+  type CharacterPlazaOriginStatus,
 } from './modules/characters/index.js';
 import { HealthModule } from './modules/health/index.js';
-import { PolicyModule } from './modules/policy/index.js';
+import { PolicyModule, compareClassification } from './modules/policy/index.js';
 import {
   MediaModule,
   MEDIA_SYNC,
@@ -76,7 +80,15 @@ import {
   CALL_SERVICE_STATUS,
   type CallServiceStatus,
 } from './modules/calls/index.js';
-import { PlazaModule, PLAZA_PRESET_NAMES, PLAZA_SUPPLEMENT_READ } from './modules/plaza/index.js';
+import {
+  PlazaModule,
+  PLAZA_CHARACTERS,
+  PLAZA_CLASSIFICATION_POLICY,
+  PLAZA_ORIGIN_STATUS,
+  PLAZA_PRESET_NAMES,
+  PLAZA_SUPPLEMENT_READ,
+  type PlazaClassificationPolicy,
+} from './modules/plaza/index.js';
 import { PlatformModule, type PlatformOptions } from './platform/index.js';
 
 @Global()
@@ -258,8 +270,9 @@ class LibraryCompositionModule {}
 
 /**
  * T-087：plaza 只经端口访问 characters / policy / ai-runtime，令牌定义在 plaza，由这里绑定。
- * PLAZA_CHARACTERS（CharacterPlazaPort）与 PLAZA_CLASSIFICATION_POLICY 由 T-088 补绑定；
- * PLAZA_PUBLISH_CHECK（PlazaPublishCheckPort）由 T-089 补绑定。未绑定时相关操作返回不可用，绝不跳过检查。
+ * T-088：PLAZA_CHARACTERS 绑定 characters 的 CharacterPlazaPort；PLAZA_CLASSIFICATION_POLICY 绑定 policy 的
+ * compareClassification（「只能更严」的唯一判定处）。PLAZA_PUBLISH_CHECK（PlazaPublishCheckPort）由 T-089 补绑定，
+ * 未绑定时发布返回 plaza_check_unavailable，绝不跳过检查。
  */
 @Global()
 @Module({
@@ -267,10 +280,42 @@ class LibraryCompositionModule {}
   providers: [
     { provide: PLAZA_PRESET_NAMES, useExisting: CHARACTER_NAME_READ_PORT },
     { provide: PLAZA_SUPPLEMENT_READ, useExisting: CHARACTER_SUPPLEMENT_PORT },
+    { provide: PLAZA_CHARACTERS, useExisting: CHARACTER_PLAZA_PORT },
+    {
+      provide: PLAZA_CLASSIFICATION_POLICY,
+      useValue: { compareClassification } satisfies PlazaClassificationPolicy,
+    },
   ],
-  exports: [PLAZA_PRESET_NAMES, PLAZA_SUPPLEMENT_READ],
+  exports: [
+    PLAZA_PRESET_NAMES,
+    PLAZA_SUPPLEMENT_READ,
+    PLAZA_CHARACTERS,
+    PLAZA_CLASSIFICATION_POLICY,
+  ],
 })
 class PlazaCompositionModule {}
+
+/**
+ * T-088：characters 的来源标注要读广场状态；characters 不能 import plaza（上层），由这里绑定。
+ * plaza 又依赖 characters 的 CharacterPlazaPort，为避免循环注入，这里用到时才从容器取 plaza 的实现。
+ */
+@Global()
+@Module({
+  providers: [
+    {
+      provide: CHARACTER_PLAZA_ORIGIN_STATUS,
+      inject: [ModuleRef],
+      useFactory: (ref: ModuleRef): CharacterPlazaOriginStatus => ({
+        originStatus: (userId, characterId, workId) =>
+          ref
+            .get<CharacterPlazaOriginStatus>(PLAZA_ORIGIN_STATUS, { strict: false })
+            .originStatus(userId, characterId, workId),
+      }),
+    },
+  ],
+  exports: [CHARACTER_PLAZA_ORIGIN_STATUS],
+})
+class PlazaOriginCompositionModule {}
 
 @Module({})
 export class AppModule {
@@ -308,6 +353,7 @@ export class AppModule {
         CallAgentCompositionModule,
         PlazaCompositionModule,
         PlazaModule,
+        PlazaOriginCompositionModule,
       ],
     };
   }

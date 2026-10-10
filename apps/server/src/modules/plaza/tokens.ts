@@ -31,3 +31,6 @@ export type PlazaSupplementRead = CharacterSupplementPort;
 export type PlazaPresetNames = CharacterNameReadPort;
 export type PlazaPublishCheck = PlazaPublishCheckPort;
 export type PlazaClassificationPolicy = Pick<PolicyExtensionPort, 'compareClassification'>;
+
+/** T-088：plaza 提供给 characters 来源标注的状态查询（CharacterPlazaOriginStatus），由装配入口绑定。 */
+export const PLAZA_ORIGIN_STATUS = Symbol('weiban.plaza.origin-status');

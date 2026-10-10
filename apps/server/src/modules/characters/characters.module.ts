@@ -12,6 +12,8 @@ import { GatewayCharacterEvaluator, EVALUATOR_GATEWAY } from './application/eval
 import { ScenarioModeService } from './application/scenario-modes.js';
 import { CharacterController, CharacterAdminController } from './http/characters.controller.js';
 import { CustomCharacterController } from './http/custom-character.controller.js';
+import { CustomCharacterOriginController } from './http/custom-origin.controller.js';
+import { CharacterPlazaService } from './application/plaza-port.js';
 import { ScenarioModeAdminController } from './http/scenario-modes.controller.js';
 import { PersonaVersionAdminController } from './http/persona-versions.controller.js';
 import { RelationAdminController, UserRelationController } from './http/relations.controller.js';
@@ -32,12 +34,14 @@ import {
   CHARACTER_REAL_PERSON_NAMES,
   CHARACTER_SUPPLEMENT_PORT,
   CHARACTER_SUPPLEMENT_CONFLICTS,
+  CHARACTER_PLAZA_PORT,
 } from './tokens.js';
 @Module({
   imports: [MediaModule, ChatModule, IdentityModule],
   controllers: [
     // CustomCharacterController 必须在 CharacterController 之前：GET /characters/custom 与 /characters/:characterId 同前缀。
     CustomCharacterController,
+    CustomCharacterOriginController,
     CharacterSupplementController,
     CharacterController,
     CharacterAdminController,
@@ -55,6 +59,8 @@ import {
     CharacterService,
     CharacterCheckWorker,
     CustomCharacterService,
+    CharacterPlazaService,
+    { provide: CHARACTER_PLAZA_PORT, useExisting: CharacterPlazaService },
     GatewayCharacterEvaluator,
     ScenarioModeService,
     PublicUpdateService,
@@ -81,6 +87,7 @@ import {
     CHARACTER_REAL_PERSON_NAMES,
     CHARACTER_SUPPLEMENT_PORT,
     CHARACTER_SUPPLEMENT_CONFLICTS,
+    CHARACTER_PLAZA_PORT,
   ],
 })
 export class CharactersModule {}

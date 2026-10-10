@@ -6,3 +6,5 @@ export interface ContactsCharacterStats {
   hasAnyActiveContact(characterId: string): Promise<boolean>;
 }
 export const CONTACT_CARD_RECOMMENDATION_PORT = Symbol('weiban.contacts.card-recommendation');
+/** T-088：契约 ContactsWritePort（系统代用户添加，调用方 plaza）。 */
+export const CONTACTS_WRITE_PORT = Symbol('weiban.contacts.write');

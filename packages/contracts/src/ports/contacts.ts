@@ -1,4 +1,4 @@
-import type { Tx } from './common.js';
+import type { PortResult, Tx } from './common.js';
 import type { Contact } from '../http/contacts.js';
 
 /** 提供方：contacts。 */
@@ -34,4 +34,19 @@ export interface ContactCardRecommendationPort {
       messageId: string;
     },
   ): Promise<void>;
+}
+
+/**
+ * 3.0.1（T-088，总负责人裁定）：系统代用户走 CHR-03 添加流程。提供方 contacts；调用方 plaza（「添加为我的角色」）。
+ * 与用户手动添加同一套规则（P-26 上限、角色可添加资格、P-30 延迟通过与第一条消息）。
+ * idempotencyKey：调用方的幂等键（plaza 的 adoptionId）；同一用户同一角色已添加或正在等待通过时视为成功并返回现有联系人。
+ */
+export interface ContactsWritePort {
+  addForUser(input: {
+    userId: string;
+    characterId: string;
+    idempotencyKey: string;
+  }): Promise<
+    PortResult<Contact, 'contact_limit_reached' | 'character_not_available' | 'unauthenticated'>
+  >;
 }

@@ -26,6 +26,7 @@ import {
   PlazaReportReason,
   PlazaSnapshot,
   type ContactsReadPort,
+  type ContactsWritePort,
   type MediaSystemPort,
   type PlazaWorkDetail,
 } from '@weiban/contracts';
@@ -39,7 +40,7 @@ import {
   type DbTx,
   type Outbox,
 } from '../../../platform/index.js';
-import { CONTACTS_READ_PORT } from '../../contacts/index.js';
+import { CONTACTS_READ_PORT, CONTACTS_WRITE_PORT } from '../../contacts/index.js';
 import { MEDIA_SYSTEM_PORT } from '../../media/index.js';
 import {
   DRAFT_TTL_MS,
@@ -128,6 +129,7 @@ export class PlazaService {
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(MEDIA_SYSTEM_PORT) private readonly media: MediaSystemPort,
     @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
+    @Inject(CONTACTS_WRITE_PORT) private readonly contactsWrite: ContactsWritePort,
     @Optional() @Inject(PLAZA_CHARACTERS) private readonly characters?: PlazaCharacters,
     @Optional() @Inject(PLAZA_SUPPLEMENT_READ) private readonly supplements?: PlazaSupplementRead,
     @Optional() @Inject(PLAZA_PRESET_NAMES) private readonly presetNames?: PlazaPresetNames,
@@ -1040,6 +1042,8 @@ export class PlazaService {
       idempotencyKey: adoptionId,
     });
     if (!created.ok) throw new AppError('character_not_available', '该作品基于的预设角色已不可用');
+    // 走 CHR-03 添加流程（ContactsWritePort，「通过了你的好友申请」→ 第一条消息）；失败可用同一 adoptionId 重试。
+    await this.addContact(userId, created.value.characterId, adoptionId);
     return this.recordAdoption(userId, adoptionId, w, 'copy', created.value.characterId);
   }
 
@@ -1068,7 +1072,20 @@ export class PlazaService {
       idempotencyKey: body.adoptionId,
     });
     if (!r.ok) throw new AppError('character_not_available', '该预设角色已不可用');
+    // 未添加该预设角色时先添加（PLZ-04 第 3 条）。
+    if (!(await this.contacts.getActiveContact(userId, snapshot.presetCharacterId)))
+      await this.addContact(userId, snapshot.presetCharacterId, body.adoptionId);
     return this.recordAdoption(userId, body.adoptionId, w, 'apply', snapshot.presetCharacterId);
+  }
+
+  private async addContact(userId: string, characterId: string, idempotencyKey: string) {
+    const added = await this.contactsWrite.addForUser({ userId, characterId, idempotencyKey });
+    if (!added.ok) {
+      if (added.error === 'contact_limit_reached')
+        throw new AppError('contact_limit_reached', '通讯录已满，请先删除一些角色');
+      if (added.error === 'unauthenticated') throw new AppError('unauthenticated', '账号已失效');
+      throw new AppError('character_not_available', '该角色暂不能添加');
+    }
   }
 
   private async recordAdoption(
@@ -1107,6 +1124,36 @@ export class PlazaService {
     return {
       characterId: a?.characterId ?? characterId,
       workVersion: a?.version ?? w.currentVersion,
+    };
+  }
+
+  /** 来源标注所需的广场状态（characters 的 CHARACTER_PLAZA_ORIGIN_STATUS，由装配入口绑定，T-088）。 */
+  async originStatus(userId: string, characterId: string, workId: string) {
+    const w = await this.store.work(workId);
+    const profile = w ? await this.store.profile(w.authorUserId) : null;
+    const [a] = await this.db.db
+      .select()
+      .from(adoptions)
+      .where(
+        and(
+          eq(adoptions.userId, userId),
+          eq(adoptions.characterId, characterId),
+          eq(adoptions.workId, workId),
+        ),
+      )
+      .orderBy(desc(adoptions.updatedAt))
+      .limit(1);
+    const available =
+      !!w && w.status === 'listed' && !(await this.store.banState(w.authorUserId)).banned;
+    const newer =
+      w && a && w.currentVersion > a.version && w.currentVersion > a.updateDismissedVersion
+        ? w.currentVersion
+        : null;
+    return {
+      workAvailable: available,
+      authorDeleted: !!w && !profile,
+      authorName: profile?.nickname ?? null,
+      newerVersionAvailable: newer,
     };
   }
 
