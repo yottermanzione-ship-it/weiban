@@ -50,9 +50,7 @@ export interface MediaAssetReadPort {
   listStickersForCharacter(
     characterId: string,
   ): Promise<Array<{ stickerId: string; mediaId: string; description: string }>>;
-  getVoice(
-    voiceId: string,
-  ): Promise<{
+  getVoice(voiceId: string): Promise<{
     voiceId: string;
     name: string;
     providerVoiceKey: string;
@@ -68,9 +66,7 @@ export interface MediaAssetReadPort {
 
 /** 3.0：链接预览与可访问性检查（MED-05）。提供方 media。 */
 export interface LinkPreviewPort {
-  preview(
-    url: string,
-  ): Promise<{
+  preview(url: string): Promise<{
     reachable: boolean;
     title: string | null;
     description: string | null;

@@ -43,6 +43,8 @@ import {
   DATABASE,
   JOB_QUEUE,
   P05_DEFAULT_ACTIVE_WINDOW,
+  P36_PERIOD_CARE_PER_CYCLE,
+  P37_PERIOD_PREDICTION,
   type Clock,
   type Database,
   type JobQueue,
@@ -66,12 +68,12 @@ import {
 export const CARE_PLAN_PREFIX = 'care:';
 
 // ---------------------------------------------------------------------------
-// 产品参数（P-36、P-37 的 AI 侧取值；health 后端合入 product-params 后改为引用）
+// 产品参数（P-36、P-37 数字唯一定义处是 platform/config/product-params.ts，这里只是别名）
 // ---------------------------------------------------------------------------
 /** P-36：每个经期周期最多主动关心 2 次（经期前提醒 1 + 经期中关心 1）。 */
-export const P36_HEALTH_CARE_PER_CYCLE = 2;
+export const P36_HEALTH_CARE_PER_CYCLE = P36_PERIOD_CARE_PER_CYCLE;
 /** P-37：经期前提醒在预计开始日前 2 天。 */
-export const P37_PRE_REMINDER_DAYS = 2;
+export const P37_PRE_REMINDER_DAYS = P37_PERIOD_PREDICTION.reminderDaysBefore;
 /** 私聊中自然体现：经期中用户没提起时，每天最多主动提起 1 次（PLAY-01 第 6 条）。 */
 export const HEALTH_CHAT_UNPROMPTED_PER_DAY = 1;
 

@@ -110,10 +110,7 @@ function decodeEntities(value: string): string {
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
 function clean(value: string | null | undefined, max: number): string | null {
   if (!value) return null;
-  const text = decodeEntities(value)
-    .replace(CONTROL_CHARS, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const text = decodeEntities(value).replace(CONTROL_CHARS, ' ').replace(/\s+/g, ' ').trim();
   if (!text) return null;
   return [...text].slice(0, max).join('');
 }

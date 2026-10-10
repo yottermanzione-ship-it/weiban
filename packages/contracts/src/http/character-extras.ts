@@ -146,6 +146,7 @@ export const SupplementConflict = z.object({
   publicValue: z.string().max(200),
   supplementValue: z.string().max(200),
 });
+export type SupplementConflict = z.infer<typeof SupplementConflict>;
 
 export const UserSupplement = z.object({
   characterId: Id,
@@ -177,7 +178,8 @@ export const CharacterSupplementEndpoints = {
     response: UserSupplement,
     summary:
       '保存补充设定（手写或导入结果确认后）。只对预设角色可用；自定义角色的导入结果直接合并进人设（PATCH /characters/custom/:id）。' +
-      '不能改变分类与成人模式资格（CHR-09 第 5 条）。发 characters.supplement_changed',
+      '不能改变分类与成人模式资格（CHR-09 第 5 条）。发 characters.supplement_changed；保存时清空旧冲突项，' +
+      '新冲突项由 ai-runtime 异步检出后写入并发 data.changed(supplement)（3.1）',
   }),
   deleteSupplement: defineEndpoint({
     method: 'DELETE',
@@ -205,7 +207,10 @@ export const PersonaUpdateEndpoints = {
     auth: 'user',
     params: z.object({ characterId: Id }),
     response: z.object({ items: z.array(PersonaUpdateNote), unseenCount: z.number().int() }),
-    summary: '角色资料页「资料已更新」：最近的人设版本摘要，最新在前（最多 20 条）',
+    summary:
+      '角色资料页「资料已更新」：最近的人设版本摘要，最新在前（最多 20 条）。' +
+      '3.1 写明红点起算点：用户第一次看到该角色（添加或首次打开资料页）时记下当时的人设版本作为基线，' +
+      '只有之后发布的新版本计入 unseenCount；新用户不会因为历史版本亮红点',
   }),
   markPersonaUpdatesSeen: defineEndpoint({
     method: 'POST',
@@ -287,6 +292,22 @@ export const WorkLinkAdminEndpoints = {
     response: z.object({ characterId: Id, voiceId: Id.nullable() }),
     summary:
       '为预设角色指定默认音色（MED-03 第 1 条；音色库见 media）；用户可在陪伴设置 voiceId 中更换。写审计',
+  }),
+  /**
+   * 3.1（积压 ⑲）：读取预设角色当前默认音色，供后台作品链接页下拉框显示当前值。
+   * voiceName 由 characters 经 MediaAssetReadPort 取音色库名称；音色已停用或未设置时为 null。
+   */
+  getDefaultVoice: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/characters/:characterId/voice`,
+    auth: 'admin',
+    params: z.object({ characterId: Id }),
+    response: z.object({
+      characterId: Id,
+      voiceId: Id.nullable(),
+      voiceName: z.string().nullable(),
+    }),
+    summary: '3.1：读取预设角色默认音色（未设置时 voiceId = null）',
   }),
 } as const;
 

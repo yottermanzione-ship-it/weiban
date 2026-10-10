@@ -160,7 +160,10 @@ export class HealthStore {
     if (!row) return null;
     const buf = await this.crypto.open(userId, settingsAad(userId), row.payload, tx);
     try {
-      return JSON.parse(buf.toString('utf8')) as { cycleLengthDays: number; periodLengthDays: number };
+      return JSON.parse(buf.toString('utf8')) as {
+        cycleLengthDays: number;
+        periodLengthDays: number;
+      };
     } finally {
       buf.fill(0);
     }
@@ -171,12 +174,7 @@ export class HealthStore {
     userId: string,
     data: { cycleLengthDays: number; periodLengthDays: number },
   ): Promise<void> {
-    const payload = await this.crypto.seal(
-      userId,
-      settingsAad(userId),
-      JSON.stringify(data),
-      tx,
-    );
+    const payload = await this.crypto.seal(userId, settingsAad(userId), JSON.stringify(data), tx);
     const at = this.clock.now();
     await tx.db
       .insert(periodSettings)
@@ -188,7 +186,8 @@ export class HealthStore {
   async deleteAll(tx: DbTx, userId: string): Promise<number> {
     let n = 0;
     n += (await tx.db.delete(periodEntries).where(eq(periodEntries.userId, userId))).rowCount ?? 0;
-    n += (await tx.db.delete(periodSettings).where(eq(periodSettings.userId, userId))).rowCount ?? 0;
+    n +=
+      (await tx.db.delete(periodSettings).where(eq(periodSettings.userId, userId))).rowCount ?? 0;
     n += (await tx.db.delete(grants).where(eq(grants.userId, userId))).rowCount ?? 0;
     return n;
   }

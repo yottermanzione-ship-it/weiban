@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.0. Regenerate: pnpm android:generate
+// Contract 3.1. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.0"
+const val CONTRACT_VERSION: String = "3.1"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -365,9 +365,12 @@ data class AdminPlazaWork(
     @SerialName("versions") val `versions`: List<PlazaVersionNote>,
     @SerialName("remixOf") val `remixOf`: AdminPlazaWorkRemixOf?,
     @SerialName("isMine") val `isMine`: Boolean,
+    @SerialName("sourceCharacterId") val `sourceCharacterId`: Id? = null,
+    @SerialName("myAdoptedCharacterId") val `myAdoptedCharacterId`: Id? = null,
+    @SerialName("removedReason") val `removedReason`: String?,
+    @SerialName("unreadCount") val `unreadCount`: Long? = null,
     @SerialName("authorUserId") val `authorUserId`: Id,
     @SerialName("reportCount") val `reportCount`: Long,
-    @SerialName("removedReason") val `removedReason`: String?,
 )
 
 @Serializable
@@ -1157,6 +1160,7 @@ data class CardTemplate(
     @SerialName("mediaId") val `mediaId`: Id,
     @SerialName("url") val `url`: String,
     @SerialName("portraitFree") val `portraitFree`: Boolean,
+    @SerialName("classicalStyle") val `classicalStyle`: Boolean? = null,
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
 )
@@ -1172,6 +1176,7 @@ data class CardTemplateAdminEndpointsUpdateTemplateBody(
     @SerialName("kinds") val `kinds`: List<CardTemplateKind>? = null,
     @SerialName("mediaId") val `mediaId`: Id? = null,
     @SerialName("portraitFree") val `portraitFree`: Boolean? = null,
+    @SerialName("classicalStyle") val `classicalStyle`: Boolean? = null,
     @SerialName("enabled") val `enabled`: Boolean? = null,
 )
 
@@ -1188,6 +1193,7 @@ data class CardTemplateWrite(
     @SerialName("kinds") val `kinds`: List<CardTemplateKind>,
     @SerialName("mediaId") val `mediaId`: Id,
     @SerialName("portraitFree") val `portraitFree`: Boolean,
+    @SerialName("classicalStyle") val `classicalStyle`: Boolean? = null,
     @SerialName("enabled") val `enabled`: Boolean,
 )
 
@@ -1197,6 +1203,7 @@ data class CardTemplateWriteInput(
     @SerialName("kinds") val `kinds`: List<CardTemplateKind>,
     @SerialName("mediaId") val `mediaId`: Id,
     @SerialName("portraitFree") val `portraitFree`: Boolean,
+    @SerialName("classicalStyle") val `classicalStyle`: Boolean? = null,
     @SerialName("enabled") val `enabled`: Boolean,
 )
 
@@ -1450,6 +1457,40 @@ data class ChatGroupEndpointsRenameGroupBody(
 )
 
 @Serializable
+data class ChatSearchEndpointsListByTypeParams(
+    @SerialName("conversationId") val `conversationId`: Id,
+)
+
+@Serializable
+data class ChatSearchEndpointsListByTypeQuery(
+    @SerialName("contentType") val `contentType`: String? = null,
+    @SerialName("senderParticipantId") val `senderParticipantId`: Id? = null,
+    @SerialName("beforeSeq") val `beforeSeq`: Long? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class ChatSearchEndpointsListByTypeResponse(
+    @SerialName("items") val `items`: List<Message>,
+    @SerialName("hasMore") val `hasMore`: Boolean,
+)
+
+@Serializable
+data class ChatSearchEndpointsLocateByDateParams(
+    @SerialName("conversationId") val `conversationId`: Id,
+)
+
+@Serializable
+data class ChatSearchEndpointsLocateByDateQuery(
+    @SerialName("date") val `date`: LocalDate,
+)
+
+@Serializable
+data class ChatSearchEndpointsLocateByDateResponse(
+    @SerialName("seq") val `seq`: Seq?,
+)
+
+@Serializable
 data class ChatSearchEndpointsSearchAllQuery(
     @SerialName("q") val `q`: SearchKeyword,
 )
@@ -1463,6 +1504,7 @@ data class ChatSearchEndpointsSearchConversationParams(
 data class ChatSearchEndpointsSearchConversationQuery(
     @SerialName("q") val `q`: SearchKeyword,
     @SerialName("beforeSeq") val `beforeSeq`: Long? = null,
+    @SerialName("senderParticipantId") val `senderParticipantId`: Id? = null,
     @SerialName("limit") val `limit`: Long? = null,
 )
 
@@ -4270,6 +4312,8 @@ data class Favorite(
     @SerialName("characterId") val `characterId`: Id?,
     @SerialName("content") val `content`: ReceivedMessageContent,
     @SerialName("extraImages") val `extraImages`: List<Id>,
+    @SerialName("characterNameSnapshot") val `characterNameSnapshot`: String? = null,
+    @SerialName("characterAvatarMediaIdSnapshot") val `characterAvatarMediaIdSnapshot`: Id? = null,
     @SerialName("shareable") val `shareable`: Boolean,
     @SerialName("notShareableReason") val `notShareableReason`: String?,
     @SerialName("sourceCreatedAt") val `sourceCreatedAt`: Timestamp,
@@ -4578,6 +4622,7 @@ data class ImageContent(
     @SerialName("mediaId") val `mediaId`: Id,
     @SerialName("width") val `width`: Long?,
     @SerialName("height") val `height`: Long?,
+    @SerialName("sizeBytes") val `sizeBytes`: Long? = null,
 )
 
 @Serializable
@@ -4587,6 +4632,7 @@ data class ImageContentInput(
     @SerialName("mediaId") val `mediaId`: Id,
     @SerialName("width") val `width`: Long?,
     @SerialName("height") val `height`: Long?,
+    @SerialName("sizeBytes") val `sizeBytes`: Long? = null,
 )
 
 typealias ImportFailure = String
@@ -4607,6 +4653,7 @@ data class ImportJob(
     @SerialName("keepRaw") val `keepRaw`: Boolean,
     @SerialName("rawDeletedAt") val `rawDeletedAt`: Timestamp?,
     @SerialName("failure") val `failure`: String?,
+    @SerialName("mergedIntoJobId") val `mergedIntoJobId`: Id? = null,
     @SerialName("createdAt") val `createdAt`: Timestamp,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
 )
@@ -4631,6 +4678,7 @@ data class ImporterEndpointsCreateJobBody(
     @SerialName("clientRequestId") val `clientRequestId`: Id,
     @SerialName("kind") val `kind`: ImportKind,
     @SerialName("targetCharacterId") val `targetCharacterId`: Id? = null,
+    @SerialName("mergeIntoJobId") val `mergeIntoJobId`: Id? = null,
     @SerialName("sourceKind") val `sourceKind`: ImportSourceKind,
     @SerialName("text") val `text`: String? = null,
 )
@@ -4753,6 +4801,7 @@ data class LetterEndpointsSendLetterBody(
 data class LetterEndpointsSendLetterResponse(
     @SerialName("letter") val `letter`: Letter,
     @SerialName("replyDelayed") val `replyDelayed`: Boolean,
+    @SerialName("replyDelayReason") val `replyDelayReason`: String? = null,
 )
 
 typealias LetterStatus = String
@@ -5075,6 +5124,7 @@ data class MessageContentImage(
     @SerialName("mediaId") val `mediaId`: Id,
     @SerialName("width") val `width`: Long?,
     @SerialName("height") val `height`: Long?,
+    @SerialName("sizeBytes") val `sizeBytes`: Long? = null,
 ) : MessageContent
 
 @Serializable
@@ -5386,6 +5436,7 @@ data class ModelStatus(
     @SerialName("available") val `available`: Boolean,
     @SerialName("reason") val `reason`: String?,
     @SerialName("canFallbackToDefault") val `canFallbackToDefault`: Boolean,
+    @SerialName("visionAvailable") val `visionAvailable`: Boolean? = null,
 )
 
 @Serializable
@@ -5726,6 +5777,7 @@ data class PetAppearance(
     @SerialName("appearanceId") val `appearanceId`: Id,
     @SerialName("name") val `name`: String,
     @SerialName("images") val `images`: PetAppearanceImages,
+    @SerialName("listed") val `listed`: Boolean? = null,
 )
 
 @Serializable
@@ -5966,6 +6018,7 @@ data class PlannerConfigEntry(
     @SerialName("evalReportId") val `evalReportId`: String?,
     @SerialName("updatedBy") val `updatedBy`: Id?,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("circuitOpenUntil") val `circuitOpenUntil`: Timestamp? = null,
 )
 
 typealias PlannerImplementation = String
@@ -6009,6 +6062,11 @@ data class PlazaAdminEndpointsDeleteCommentParams(
 )
 
 @Serializable
+data class PlazaAdminEndpointsGetWorkParams(
+    @SerialName("workId") val `workId`: Id,
+)
+
+@Serializable
 data class PlazaAdminEndpointsGetWorkVersionParams(
     @SerialName("workId") val `workId`: Id,
     @SerialName("version") val `version`: Long,
@@ -6019,6 +6077,18 @@ data class PlazaAdminEndpointsGetWorkVersionResponse(
     @SerialName("snapshot") val `snapshot`: PlazaSnapshot,
     @SerialName("settings") val `settings`: PlazaPublishSettings,
     @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class PlazaAdminEndpointsListBansQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class PlazaAdminEndpointsListBansResponse(
+    @SerialName("items") val `items`: List<PlazaAdminEndpointsListBansResponseItemsItem>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
 )
 
 @Serializable
@@ -6300,6 +6370,7 @@ data class PlazaPresetVariantSnapshot(
     @SerialName("kind") val `kind`: String = "preset_variant",
     @SerialName("presetCharacterId") val `presetCharacterId`: Id,
     @SerialName("variantText") val `variantText`: String,
+    @SerialName("childFeaturesDetected") val `childFeaturesDetected`: Boolean? = null,
 )
 
 @Serializable
@@ -6392,6 +6463,10 @@ data class PlazaWorkDetail(
     @SerialName("versions") val `versions`: List<PlazaVersionNote>,
     @SerialName("remixOf") val `remixOf`: PlazaWorkDetailRemixOf?,
     @SerialName("isMine") val `isMine`: Boolean,
+    @SerialName("sourceCharacterId") val `sourceCharacterId`: Id? = null,
+    @SerialName("myAdoptedCharacterId") val `myAdoptedCharacterId`: Id? = null,
+    @SerialName("removedReason") val `removedReason`: String? = null,
+    @SerialName("unreadCount") val `unreadCount`: Long? = null,
 )
 
 typealias PlazaWorkKind = String
@@ -6648,6 +6723,7 @@ data class ReceivedMessageContentImage(
     @SerialName("mediaId") val `mediaId`: Id,
     @SerialName("width") val `width`: Long?,
     @SerialName("height") val `height`: Long?,
+    @SerialName("sizeBytes") val `sizeBytes`: Long? = null,
 ) : ReceivedMessageContent
 
 @Serializable
@@ -7526,6 +7602,11 @@ data class SharePreferencesInput(
 
 typealias ShareRejectReason = String
 
+@Serializable
+data class ShareRejectedDetails(
+    @SerialName("rejected") val `rejected`: List<ShareRejectedDetailsRejectedItem>,
+)
+
 typealias ShareSource = JsonElement
 
 typealias ShareSourceInput = JsonElement
@@ -7641,6 +7722,13 @@ data class StickerPackWriteInput(
 
 @Serializable
 data class SupplementConflict(
+    @SerialName("field") val `field`: String,
+    @SerialName("publicValue") val `publicValue`: String,
+    @SerialName("supplementValue") val `supplementValue`: String,
+)
+
+@Serializable
+data class SupplementConflictInput(
     @SerialName("field") val `field`: String,
     @SerialName("publicValue") val `publicValue`: String,
     @SerialName("supplementValue") val `supplementValue`: String,
@@ -8065,6 +8153,8 @@ data class UserCustomCharacter(
     @SerialName("personaUpdatedUnseen") val `personaUpdatedUnseen`: Boolean,
     @SerialName("description") val `description`: String,
     @SerialName("catchphrase") val `catchphrase`: String?,
+    @SerialName("catchphrases") val `catchphrases`: List<String>? = null,
+    @SerialName("speechStyle") val `speechStyle`: String? = null,
     @SerialName("exampleDialogue") val `exampleDialogue`: String?,
     @SerialName("childFeaturesDetected") val `childFeaturesDetected`: Boolean,
 )
@@ -8076,6 +8166,8 @@ data class UserCustomCharacterPatch(
     @SerialName("classification") val `classification`: CharacterClassificationInput? = null,
     @SerialName("birthday") val `birthday`: LocalDate? = null,
     @SerialName("catchphrase") val `catchphrase`: String? = null,
+    @SerialName("catchphrases") val `catchphrases`: List<String>? = null,
+    @SerialName("speechStyle") val `speechStyle`: String? = null,
     @SerialName("exampleDialogue") val `exampleDialogue`: String? = null,
     @SerialName("tags") val `tags`: List<String>? = null,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
@@ -8088,6 +8180,8 @@ data class UserCustomCharacterPatchInput(
     @SerialName("classification") val `classification`: CharacterClassificationInputInput? = null,
     @SerialName("birthday") val `birthday`: LocalDate? = null,
     @SerialName("catchphrase") val `catchphrase`: String? = null,
+    @SerialName("catchphrases") val `catchphrases`: List<String>? = null,
+    @SerialName("speechStyle") val `speechStyle`: String? = null,
     @SerialName("exampleDialogue") val `exampleDialogue`: String? = null,
     @SerialName("tags") val `tags`: List<String>? = null,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
@@ -8100,6 +8194,8 @@ data class UserCustomCharacterWrite(
     @SerialName("classification") val `classification`: CharacterClassificationInput,
     @SerialName("birthday") val `birthday`: LocalDate? = null,
     @SerialName("catchphrase") val `catchphrase`: String? = null,
+    @SerialName("catchphrases") val `catchphrases`: List<String>? = null,
+    @SerialName("speechStyle") val `speechStyle`: String? = null,
     @SerialName("exampleDialogue") val `exampleDialogue`: String? = null,
     @SerialName("tags") val `tags`: List<String>? = null,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
@@ -8112,6 +8208,8 @@ data class UserCustomCharacterWriteInput(
     @SerialName("classification") val `classification`: CharacterClassificationInputInput,
     @SerialName("birthday") val `birthday`: LocalDate? = null,
     @SerialName("catchphrase") val `catchphrase`: String? = null,
+    @SerialName("catchphrases") val `catchphrases`: List<String>? = null,
+    @SerialName("speechStyle") val `speechStyle`: String? = null,
     @SerialName("exampleDialogue") val `exampleDialogue`: String? = null,
     @SerialName("tags") val `tags`: List<String>? = null,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
@@ -8199,6 +8297,7 @@ data class UserSendableContentImage(
     @SerialName("mediaId") val `mediaId`: Id,
     @SerialName("width") val `width`: Long?,
     @SerialName("height") val `height`: Long?,
+    @SerialName("sizeBytes") val `sizeBytes`: Long? = null,
 ) : UserSendableContent
 
 @Serializable
@@ -8289,6 +8388,7 @@ data class UserSendableContentInputImage(
     @SerialName("mediaId") val `mediaId`: Id,
     @SerialName("width") val `width`: Long?,
     @SerialName("height") val `height`: Long?,
+    @SerialName("sizeBytes") val `sizeBytes`: Long? = null,
 ) : UserSendableContentInput
 
 @Serializable
@@ -8966,6 +9066,18 @@ data class WorkLinkAdminEndpointsCreateWorkLinkParams(
 data class WorkLinkAdminEndpointsDeleteWorkLinkParams(
     @SerialName("characterId") val `characterId`: Id,
     @SerialName("workLinkId") val `workLinkId`: Id,
+)
+
+@Serializable
+data class WorkLinkAdminEndpointsGetDefaultVoiceParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class WorkLinkAdminEndpointsGetDefaultVoiceResponse(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("voiceId") val `voiceId`: Id?,
+    @SerialName("voiceName") val `voiceName`: String?,
 )
 
 @Serializable
@@ -9881,6 +9993,7 @@ data class EventsDomainEventGrowthPetNamingRequestedPayload(
     @SerialName("requestId") val `requestId`: Id,
     @SerialName("speciesId") val `speciesId`: Id,
     @SerialName("appearanceId") val `appearanceId`: Id,
+    @SerialName("speciesName") val `speciesName`: String? = null,
 )
 
 @Serializable
@@ -10208,6 +10321,7 @@ data class EventsPetNamingRequestedPayload(
     @SerialName("requestId") val `requestId`: Id,
     @SerialName("speciesId") val `speciesId`: Id,
     @SerialName("appearanceId") val `appearanceId`: Id,
+    @SerialName("speciesName") val `speciesName`: String? = null,
 )
 
 @Serializable
@@ -10446,6 +10560,7 @@ data class PetSpeciesAdminEndpointsUpdateSpeciesBodyAppearancesItem(
     @SerialName("appearanceId") val `appearanceId`: Id? = null,
     @SerialName("name") val `name`: String,
     @SerialName("imageMediaIds") val `imageMediaIds`: PetSpeciesAdminEndpointsUpdateSpeciesBodyAppearancesItemImageMediaIds,
+    @SerialName("listed") val `listed`: Boolean? = null,
 )
 
 @Serializable
@@ -10453,6 +10568,7 @@ data class PetSpeciesWriteAppearancesItem(
     @SerialName("appearanceId") val `appearanceId`: Id? = null,
     @SerialName("name") val `name`: String,
     @SerialName("imageMediaIds") val `imageMediaIds`: PetSpeciesWriteAppearancesItemImageMediaIds,
+    @SerialName("listed") val `listed`: Boolean? = null,
 )
 
 @Serializable
@@ -10460,6 +10576,16 @@ data class PetSpeciesWriteInputAppearancesItem(
     @SerialName("appearanceId") val `appearanceId`: Id? = null,
     @SerialName("name") val `name`: String,
     @SerialName("imageMediaIds") val `imageMediaIds`: PetSpeciesWriteInputAppearancesItemImageMediaIds,
+    @SerialName("listed") val `listed`: Boolean? = null,
+)
+
+@Serializable
+data class PlazaAdminEndpointsListBansResponseItemsItem(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("nickname") val `nickname`: String?,
+    @SerialName("until") val `until`: String,
+    @SerialName("reason") val `reason`: String,
+    @SerialName("bannedAt") val `bannedAt`: Timestamp,
 )
 
 typealias PlazaEndpointsReportBodyTarget = JsonElement
@@ -10730,6 +10856,12 @@ data class ServerTypingFrameData(
 @Serializable
 data class ServerUnsupportedFrameData(
     @SerialName("originalType") val `originalType`: String,
+)
+
+@Serializable
+data class ShareRejectedDetailsRejectedItem(
+    @SerialName("id") val `id`: Id,
+    @SerialName("reason") val `reason`: String,
 )
 
 typealias SystemContentParamsValue = JsonElement

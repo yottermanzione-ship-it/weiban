@@ -51,3 +51,13 @@ export interface IdentitySessionReadPort {
   /** 只认有效普通App会话及active账号；调用方事务锁住会话/账号，注销作废不能穿过提交。 */
   isActiveAppSession(userId: string, sessionId: string, tx?: Tx): Promise<boolean>;
 }
+
+/**
+ * 3.1（积压 ⑰，T-072 遗留）：通知设置写端口。提供方：identity；调用方：ai-runtime（MED-07 来电询问点「可以」时）。
+ * 单独成接口，新增它不影响已有实现。只开不关：关闭全局开关只能由用户在设置页操作（PATCH /me/notification-settings）。
+ * 已是开启状态时什么都不做（幂等）；账号不存在或不是 active 时返回 false。
+ * 成功打开后 identity 照常发 `settings.updated(section = notifications)` 更新，多端同步。
+ */
+export interface IdentitySettingsWritePort {
+  enableProactiveCalls(userId: string, tx?: Tx): Promise<boolean>;
+}

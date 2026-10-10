@@ -23,6 +23,15 @@ export const SHARE_IMAGE_MAX_ITEMS = 30 as const;
 /** 不能进分享图的原因。 */
 export const ShareRejectReason = z.enum(['adult_scope', 'health_label', 'recalled', 'not_found']);
 
+/**
+ * 3.1（积压 ㉘）：422 share_content_not_allowed 时 `ApiError.error.details` 的形状（之前只写在说明里）。
+ * id = 消息 ID / 收藏 ID / 动态 ID（与请求来源一致）。客户端错误对象需保留 details 才能逐条提示（网页 client-core、安卓 ApiFailure）。
+ */
+export const ShareRejectedDetails = z.object({
+  rejected: z.array(z.object({ id: Id, reason: tolerantEnum(ShareRejectReason) })).min(1),
+});
+export type ShareRejectedDetails = z.infer<typeof ShareRejectedDetails>;
+
 export const FavoriteSource = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('message'),
@@ -31,6 +40,11 @@ export const FavoriteSource = z.discriminatedUnion('kind', [
     /** 收藏时的发送者。 */
     senderKind: ParticipantKind.or(z.literal('system')),
     senderRefId: Id.nullable(),
+    /**
+     * 3.1（积压 ㉘）：原消息在会话里的序号，客户端据此用 listMessages 取上下文直接定位（同 ChatSearchEndpoints.locateByDate 的用法）。
+     * 3.1 之前的收藏、旧服务器不带；为空时退回「本机缓存查找 → 详情页」。
+     */
+    seq: z.number().int().positive().optional(),
   }),
   z.object({ kind: z.literal('moments_post'), postId: Id, authorCharacterId: Id.nullable() }),
 ]);
@@ -43,6 +57,13 @@ export const Favorite = z.object({
   /** 内容快照。朋友圈动态快照为 text 内容（图片作为 image 内容另列在 extraImages）。 */
   content: ReceivedMessageContent,
   extraImages: z.array(Id).max(9),
+  /**
+   * 3.1（积压 ㉔，favorites.md）：收藏时的角色名字 / 头像快照，角色被删除后卡片仍显示删除前的样子。
+   * 头像快照是 library 自己复制的一份媒体对象（经 MediaSystemPort.copyObject），客户端经 GET /media/:mediaId 取。
+   * 发送者 / 作者不是角色时为 null；3.1 之前的收藏不带（客户端退回按 characterId 现查）。
+   */
+  characterNameSnapshot: z.string().max(32).nullable().optional(),
+  characterAvatarMediaIdSnapshot: Id.nullable().optional(),
   /** 能否用于生成分享图；不能时给出原因（客户端在多选时置灰）。 */
   shareable: z.boolean(),
   notShareableReason: tolerantEnum(ShareRejectReason).nullable(),

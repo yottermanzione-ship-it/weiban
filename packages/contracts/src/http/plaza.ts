@@ -58,6 +58,11 @@ export const PlazaPresetVariantSnapshot = z.strictObject({
   kind: z.literal('preset_variant'),
   presetCharacterId: Id,
   variantText: z.string().min(1).max(5000),
+  /**
+   * 3.1（积压 ㉝，T-089）：发布检测在改版文字里检出儿童特征。按快照应用改版时，characters 取它与预设分类
+   * childFeaturesDetected 中更严的一边（只增不减），不写回全站共用的预设角色。3.1 之前发布的版本没有此字段，按 false。
+   */
+  childFeaturesDetected: z.boolean().optional(),
 });
 
 export const PlazaSnapshot = z.discriminatedUnion('kind', [
@@ -139,6 +144,17 @@ export const PlazaWorkDetail = PlazaWorkCard.extend({
     .nullable(),
   /** 我是作者。 */
   isMine: z.boolean(),
+  /**
+   * 3.1（积压 ㊱）：发布它的源角色 ID（自定义角色作品 = 我的自定义角色；改版作品 = 预设角色 ID）。
+   * 只在 isMine = true 时返回，否则为 null / 不带。客户端据此匹配「发布新版本」与聊天信息页「已发布 · 版本 N」。
+   */
+  sourceCharacterId: Id.nullable().optional(),
+  /** 3.1（积压 ㊱）：我从这个作品添加的复制品角色 ID（作品页直接「更新到版本 N」）；没添加过为 null / 不带。 */
+  myAdoptedCharacterId: Id.nullable().optional(),
+  /** 3.1（积压 ㊱）：管理员下架原因，只在 isMine = true 且 status = removed_by_admin 时返回。 */
+  removedReason: z.string().max(200).nullable().optional(),
+  /** 3.1（积压 ㊱）：「我发布的」逐作品红点：作者上次看过后新增的点赞 + 评论数，只在 listMyWorks 返回。 */
+  unreadCount: z.number().int().nonnegative().optional(),
 });
 export type PlazaWorkDetail = z.infer<typeof PlazaWorkDetail>;
 
@@ -630,5 +646,35 @@ export const PlazaAdminEndpoints = {
     body: AdminReason,
     response: NoContent,
     summary: '恢复权限，作品重新展示（被单独下架的除外）；写审计',
+  }),
+  /** 3.1（积压 ㊱）：举报详情直接打开作品。 */
+  getWork: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/plaza/works/:workId`,
+    auth: 'admin',
+    params: z.object({ workId: Id }),
+    response: AdminPlazaWork,
+    summary: '3.1：按 ID 取单个作品（含下架、作者停权中的作品）',
+  }),
+  /** 3.1（积压 ㊱）：「发布权限」页的当前被停权用户列表。 */
+  listBans: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/plaza/bans`,
+    auth: 'admin',
+    query: z.object({
+      cursor: z.string().optional(),
+      limit: z.coerce.number().int().min(1).max(100).default(50),
+    }),
+    response: cursorPage(
+      z.object({
+        userId: Id,
+        /** 广场昵称（没设置过为 null）；登录名由后台另经 identity 目录取，不在这里。 */
+        nickname: z.string().nullable(),
+        until: z.union([Timestamp, z.literal('permanent')]),
+        reason: z.string().max(200),
+        bannedAt: Timestamp,
+      }),
+    ),
+    summary: '3.1：当前仍在停权期内的用户（已到期、已恢复的不列）',
   }),
 } as const;

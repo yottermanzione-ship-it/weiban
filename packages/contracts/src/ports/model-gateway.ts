@@ -176,6 +176,26 @@ export interface ModelGatewayPort {
   }>;
 }
 
+/**
+ * 3.1（积压 ㉖）：按用户所选模型报价。提供方 model-access（网关先按用途 / 角色覆盖 / 平台默认解析模型，
+ * 再经 BillingQuotePort 按当前价目表计价）；调用方 ai-runtime（导入估价、行为规划成本闸等）。不调用上游、不冻结、不扣费。
+ * 单独成接口，新增它不影响已有网关实现。
+ */
+export interface ModelQuotePort {
+  quote(input: {
+    userId: string;
+    characterId?: string;
+    purpose: ModelPurpose;
+    /** 估算用量（输入 token 估算值 + maxOutputTokens 等），单位同 billing 的 UsageQuantities。 */
+    estimate: import('./billing.js').UsageQuantities;
+  }): Promise<
+    PortResult<
+      { modelKey: string; amountMicros: number; priceVersionId: string },
+      'not_configured' | 'model_removed' | 'price_missing'
+    >
+  >;
+}
+
 /** 模式设置用只读解析端口，不调用模型、不扣费、不返回上游配置。 */
 export interface AdultModelReadPort {
   getAdultModelStatus(

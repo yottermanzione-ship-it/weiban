@@ -63,6 +63,20 @@ export const SystemContent = z.object({
   params: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
 });
 
+/**
+ * 3.1（积压 ㊲）：玩法系统提示 code 与参数（play 经 ChatAdminPort.postSystemMessage 发到私聊，只对用户可见，
+ * 不进模型上下文；客户端按 code 渲染，不认识的 code 按 SystemContent 通用规则处理）。
+ * - focus_started：「开始专注 {minutes} 分钟」；params: sessionId、minutes、characterName。
+ * - letter_sent：「信已寄出，{characterName} 的回信在路上」；params: letterId、characterName、expectedAt（ISO 时间，可省略）。
+ * - wishlist_item_completed：「{title} 已完成」，cardIssued = true 时加「· 获得瞬间卡」；params: itemId、title、cardIssued、cardId（可省略）。
+ */
+export const PLAY_SYSTEM_NOTICE_CODES = [
+  'focus_started',
+  'letter_sent',
+  'wishlist_item_completed',
+] as const;
+export type PlaySystemNoticeCode = (typeof PLAY_SYSTEM_NOTICE_CODES)[number];
+
 // ---------- 3.0 新增消息类型（L4～L7，T-062，ADR-0026） ----------
 
 /** 图片（MED-02、MED-04）：用户发图、角色发图、宠物照片。访问链接经 GET /media/:mediaId 获取。 */
@@ -71,6 +85,11 @@ export const ImageContent = z.object({
   mediaId: Id,
   width: z.number().int().positive().nullable(),
   height: z.number().int().positive().nullable(),
+  /**
+   * 3.1（积压 ⑲）：图片字节数，服务器发送时从媒体记录填入；客户端据此决定「添加到表情」是否可用（< 1 MB）。
+   * 旧消息、旧服务器不带，客户端按「未知」处理（不限制，由服务器 422 兜底）。
+   */
+  sizeBytes: z.number().int().positive().nullable().optional(),
 });
 
 /**

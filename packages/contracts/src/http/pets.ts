@@ -39,6 +39,11 @@ export const PetAppearance = z.object({
   name: z.string().min(1).max(12),
   /** 每个成长阶段的插画。 */
   images: z.object({ baby: PetImage, junior: PetImage, adult: PetImage }),
+  /**
+   * 3.1（积压 ㉚）：外观单独上下架（pet.md「物种和外观都可单独下架」）。false 时不能再选这个外观领养，已领养的不受影响；
+   * 用户端领养列表不返回 listed = false 的外观（一个上架外观都没有的物种视为下架）。不带时按 true。
+   */
+  listed: z.boolean().optional(),
 });
 
 export const PetSpecies = z.object({
@@ -224,6 +229,8 @@ export const PetSpeciesWrite = PetSpecies.omit({ speciesId: true, appearances: t
         appearanceId: Id.optional(),
         name: z.string().min(1).max(12),
         imageMediaIds: z.object({ baby: Id, junior: Id, adult: Id }),
+        /** 3.1：不传为 true。 */
+        listed: z.boolean().optional(),
       }),
     )
     .min(1),

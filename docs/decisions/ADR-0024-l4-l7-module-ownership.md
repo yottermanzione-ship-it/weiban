@@ -35,3 +35,11 @@
 - 模块数量增加，运维 lint 规则要登记新模块（T-101）。
 - `CallAgentPort` 是依赖反转，接口在契约、实现在 ai-runtime，组合根要注意绑定顺序。
 - 3.0 只是版本号的主版本，服务器的 `minClientVersion` 仍为 2.0，不强制旧安卓升级。
+
+## 补记（2026-10-11，契约 3.1 收口）
+
+1. **ai-runtime → proactive**：允许。L3 起 T-053（`proactive-scheduler.ts`）、T-060（`health-care.ts`，T-090 起经调度器登记）已直接 import `proactive/index.ts` 的配额与调度端口；proactive 只做配额账本与节日 / 日报数据，不 import ai-runtime，方向单一。T-101 已写进 lint 白名单，本条补齐决策出处。
+2. **library → moments**：**不加进白名单，维持注入写法**（总负责人 2026-10-10 裁定）。library 在自己模块定义令牌，由 `app.module.ts` 绑定到 moments 导出的 `MOMENTS_READ_PORT`。理由：library 只在收藏 / 分享朋友圈动态时读一次，注入已够用；少一条上层之间的直接依赖，白名单保持最小。`contracts-3.0-map.md` 第 4 节 T-078 的「使用 `MomentsReadPort`」指的就是经注入使用，不矛盾。
+3. **底层模块的可选 AI 接入点**（3.1 新增模式，见 ADR-0028）：characters 的人设更新摘要、growth 的卡片文案由 ai-runtime 实现契约端口、组合根注入；未绑定时走规则 / 模板兜底。这不是新的模块依赖方向（底层仍不 import ai-runtime）。
+4. **characters 订阅 `plaza.work_removed`**：作者注销（`reason = author_deleted`）时清掉复制品里保存的作者旧广场昵称（T-080 遗留）。底层订阅上层事件属于允许的反方向通信，不改依赖规则。
+5. 上层白名单的完整列表写进 `engineering-standards.md` 第 3 节 R2（本次一并更新），lint 规则仍以 `packages/eslint-config` 为执行处。

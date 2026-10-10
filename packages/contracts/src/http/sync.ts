@@ -168,6 +168,8 @@ export const DataSection = z.enum([
   'stickers',
   /** 3.0.1：「新的朋友」列表（名片推荐、好友申请记录）变化，重新拉 GET /contacts/new-friends。 */
   'new_friends',
+  /** 3.1：补充设定（含异步检出的冲突项）变化；characterId = 该预设角色、itemId = null，重新拉 GET /characters/:id/supplement。 */
+  'supplement',
 ]);
 export type DataSection = z.infer<typeof DataSection>;
 

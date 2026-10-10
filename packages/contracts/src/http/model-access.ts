@@ -121,6 +121,11 @@ export const ModelStatus = z.object({
     .nullable(),
   /** 角色单独设置的模型不可用、全局模型正常时为 true，界面显示「临时改用默认模型」按钮。 */
   canFallbackToDefault: z.boolean(),
+  /**
+   * 3.1（积压 ㉚）：识图能否使用（截图导入、发图给角色看）= 解析出的聊天模型有 vision 能力，
+   * 或平台设置了默认识图模型（defaultFor = vision）。客户端据此提前禁用截图导入入口；旧服务器不带时按 true（失败时再提示）。
+   */
+  visionAvailable: z.boolean().optional(),
 });
 export type ModelStatus = z.infer<typeof ModelStatus>;
 

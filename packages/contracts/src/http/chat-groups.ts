@@ -4,7 +4,7 @@
  * 群聊的回复节奏、「角色自己聊天」、情景模式属于陪伴设置，归 ai-runtime（http/companion.ts GroupCompanionEndpoints）。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, NoContent, Seq, Timestamp, defineEndpoint } from '../common.js';
+import { API_PREFIX, Id, LocalDate, NoContent, Seq, Timestamp, defineEndpoint } from '../common.js';
 import { Conversation, Message, ParticipantKind } from './chat.js';
 
 /** 群里角色成员上限（P-21：9 个角色 + 用户）。 */
@@ -148,10 +148,47 @@ export const ChatSearchEndpoints = {
       q: SearchKeyword,
       /** 取 seq 小于此值的命中（向旧翻页）。 */
       beforeSeq: z.coerce.number().int().positive().optional(),
+      /** 3.1（积压 ㉘）：只看某位成员发的（群成员筛选）。 */
+      senderParticipantId: Id.optional(),
       limit: z.coerce.number().int().min(1).max(50).default(20),
     }),
     response: z.object({ items: z.array(MessageSearchHit), hasMore: z.boolean() }),
     summary:
       '会话内搜索（群聊信息页「查找聊天记录」），结果按 seq 倒序；点击后用 listMessages 定位上下文',
+  }),
+  /**
+   * 3.1（积压 ㉘）：按日期定位（会话内查找「日期」）。date 按用户时区解释，返回这一天及之后第一条可见消息的 seq；
+   * 之后没有消息时为 null。客户端拿到 seq 后用 listMessages（beforeSeq = seq + 1 与 afterSeq = seq - 1）取上下文。
+   */
+  locateByDate: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/conversations/:conversationId/messages/locate`,
+    auth: 'user',
+    params: z.object({ conversationId: Id }),
+    query: z.object({ date: LocalDate }),
+    response: z.object({ seq: Seq.nullable() }),
+    summary: '3.1：按日期定位到当天第一条消息（CHAT-12 会话内查找「日期」）',
+  }),
+  /**
+   * 3.1（积压 ㉘）：按类型 / 发送者列出（会话内查找「图片 / 链接」、群成员筛选）。结果按 seq 倒序，
+   * 不返回已撤回、本人已删除、已清空的消息；不受「只搜文字类」限制。
+   */
+  listByType: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/conversations/:conversationId/messages/by-type`,
+    auth: 'user',
+    params: z.object({ conversationId: Id }),
+    query: z
+      .object({
+        contentType: z.enum(['image', 'link', 'voice', 'sticker']).optional(),
+        senderParticipantId: Id.optional(),
+        beforeSeq: z.coerce.number().int().positive().optional(),
+        limit: z.coerce.number().int().min(1).max(100).default(50),
+      })
+      .refine((q) => q.contentType !== undefined || q.senderParticipantId !== undefined, {
+        message: 'contentType 与 senderParticipantId 至少传一个',
+      }),
+    response: z.object({ items: z.array(Message), hasMore: z.boolean() }),
+    summary: '3.1：按消息类型 / 发送者列出（图片、链接；只看某人）',
   }),
 } as const;

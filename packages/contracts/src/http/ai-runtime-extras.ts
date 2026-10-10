@@ -141,6 +141,11 @@ export const PlannerConfigEntry = z.object({
   evalReportId: z.string().max(64).nullable(),
   updatedBy: Id.nullable(),
   updatedAt: Timestamp,
+  /**
+   * 3.1（积压 ㊱）：熔断状态。熔断打开（模型版连续失败、暂时退回规则版）时为下次恢复尝试时间，否则 null。
+   * 熔断目前只在单台服务器内存里统计（docs/ai/behavior-planning.md），多实例部署时返回处理本请求那台的状态。
+   */
+  circuitOpenUntil: Timestamp.nullable().optional(),
 });
 
 export const PlanningDecisionRecord = z.object({
@@ -182,7 +187,8 @@ export const PlannerAdminEndpoints = {
       evalReportId: z.string().trim().min(1).max(64).nullable(),
     }),
     response: PlannerConfigEntry,
-    summary: '切换实现 / 改门槛；切换实现没有评测报告编号返回 422 bad_request；写审计',
+    summary:
+      '切换实现 / 改门槛；切换实现没有评测报告编号返回 400 bad_request（3.1 更正：bad_request 统一映射 400）；写审计',
   }),
   listDecisions: defineEndpoint({
     method: 'GET',

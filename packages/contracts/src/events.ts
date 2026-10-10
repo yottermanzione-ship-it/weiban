@@ -598,7 +598,15 @@ export const PetRenamed = event(
 export const PetNamingRequested = event(
   'growth.pet_naming_requested',
   'growth',
-  z.object({ userId: Id, characterId: Id, requestId: Id, speciesId: Id, appearanceId: Id }),
+  z.object({
+    userId: Id,
+    characterId: Id,
+    requestId: Id,
+    speciesId: Id,
+    appearanceId: Id,
+    /** 3.1（T-082 申请）：物种名称（如「猫」），起名提示用；旧事件不带。 */
+    speciesName: z.string().min(1).max(12).optional(),
+  }),
 );
 
 export const FavoriteAdded = event(

@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { API_PREFIX, Id, NoContent, Timestamp, defineEndpoint, tolerantEnum } from '../common.js';
 import { DraftCharacterCard } from '../character-card.js';
 import { CharacterClassificationInput } from './characters.js';
+import { SupplementConflict } from './character-extras.js';
 
 /** 单次导入上限（runtime-overview.md 第 12 节第 6、7 条）。 */
 export const IMPORT_LIMITS = {
@@ -66,6 +67,11 @@ export const ImportJob = z.object({
   /** 原文已删除的时间；保留原文或尚未删除为 null。 */
   rawDeletedAt: Timestamp.nullable(),
   failure: tolerantEnum(ImportFailure).nullable(),
+  /**
+   * 3.1（积压 ㉕）：分批导入。创建时带了 mergeIntoJobId 的任务，分析完成后结果合并进那个任务的草稿，本字段为目标任务 ID；
+   * 客户端随后打开目标任务的 getResult。普通任务为 null / 不带。
+   */
+  mergedIntoJobId: Id.nullable().optional(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
 });
@@ -92,6 +98,13 @@ export const ImportResult = z.discriminatedUnion('kind', [
     kind: z.literal('supplement'),
     targetCharacterId: Id,
     text: z.string().max(5000),
+    /**
+     * 3.1（积压 ㉕）：分析时预先检出的、与公开资料冲突的条目（确认页提示「以公开资料为准」）。
+     * 保存补充设定后，正式冲突项仍由 ai-runtime 异步检出、经 CharacterSupplementConflictsWritePort 写入（ports/characters.ts）。
+     */
+    conflicts: z.array(SupplementConflict).optional(),
+    /** 3.1（积压 ㉚）：因涉及分类 / 年龄 / 成人资格而被过滤掉、不会生效的条目数（CHR-09 第 5 条）。 */
+    filteredCount: z.number().int().nonnegative().optional(),
   }),
 ]);
 export type ImportResult = z.infer<typeof ImportResult>;
@@ -107,6 +120,12 @@ export const ImporterEndpoints = {
       clientRequestId: Id,
       kind: ImportKind,
       targetCharacterId: Id.nullable().optional(),
+      /**
+       * 3.1（积压 ㉕）：「继续导入下一批」。指向同一用户、同一 kind（及同一 targetCharacterId）、已完成待编辑的任务；
+       * 本批分析完成后把结果合并进那个任务的草稿（新角色：补全空字段、合并示例与记忆线索，不覆盖用户已改的字段；
+       * 补充设定：文字追加）。目标不符合条件返回 422 bad_request；目标已删除返回 404 not_found。
+       */
+      mergeIntoJobId: Id.optional(),
       sourceKind: ImportSourceKind,
       /** sourceKind = text 时的粘贴内容；超长部分服务器截取最近的部分。 */
       text: z
@@ -150,7 +169,8 @@ export const ImporterEndpoints = {
     auth: 'user',
     params: JobParams,
     response: ImportJob,
-    summary: '任务状态与进度（也会经 importer.job_updated 更新推到各设备）',
+    summary:
+      '任务状态与进度（变化时经 data.changed(section = imports, itemId = jobId) 推到各设备）',
   }),
   getRecognizedDialogue: defineEndpoint({
     method: 'GET',

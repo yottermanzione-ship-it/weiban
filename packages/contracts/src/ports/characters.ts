@@ -5,7 +5,7 @@ import type {
   CharacterClassificationInput,
   CharacterProfile,
 } from '../http/characters.js';
-import type { CharacterRelation } from '../http/character-extras.js';
+import type { CharacterRelation, SupplementConflict } from '../http/character-extras.js';
 import type { PlazaSnapshot, PlazaSnapshotClassification } from '../http/plaza.js';
 
 /** 通知显示专用：只返回名字，不加载头像或向调用方提供角色卡上下文，不派生供应商调用。 */
@@ -55,9 +55,7 @@ export interface CharacterRelationReadPort {
 
 /** 作品链接库读取（MED-05）。只返回 enabled 且最近一次检查通过的链接。 */
 export interface CharacterWorkLinkReadPort {
-  listUsableWorkLinks(
-    characterId: string,
-  ): Promise<
+  listUsableWorkLinks(characterId: string): Promise<
     Array<{
       workLinkId: string;
       title: string;
@@ -130,4 +128,46 @@ export interface CharacterPlazaPort {
 /** 补充设定写入（importer 导入结果确认、plaza 应用改版之外的系统写入）。提供方 characters。 */
 export interface CharacterSupplementPort {
   getSupplement(userId: string, characterId: string): Promise<string | null>;
+}
+
+// ---------- 3.1 补登（此前是服务器内部令牌，积压 ㉕ / ㉖ / ㉝） ----------
+
+/**
+ * 3.1：补充设定冲突项写入（T-079 / T-081 已实现的 CHARACTER_SUPPLEMENT_CONFLICTS 转为契约）。提供方 characters；调用方 ai-runtime。
+ * 流程：用户保存补充设定 → characters 清空旧冲突、发 characters.supplement_changed(saved) → ai-runtime 对比公开资料 →
+ * 调本端口写入。expectedTextSha256 是 ai-runtime 对比时读到的补充设定原文的 sha256（十六进制）；与当前不一致（用户又改过）
+ * 时返回 stale、不写入。写入后 characters 发 data.changed(section = supplement)。
+ */
+export interface CharacterSupplementConflictsWritePort {
+  setConflicts(
+    userId: string,
+    characterId: string,
+    conflicts: SupplementConflict[],
+    expectedTextSha256?: string,
+  ): Promise<PortResult<void, 'not_found' | 'stale'>>;
+}
+
+/**
+ * 3.1：儿童特征检出写回（T-089 已实现的 CHARACTER_CHILD_FEATURES_WRITER 转为契约）。提供方 characters；调用方 ai-runtime。
+ * 只能从否变是；只对用户自己的自定义角色生效（预设角色不写回，见 PlazaPresetVariantSnapshot.childFeaturesDetected）。
+ * 返回是否发生了变化；变化时照常发 characters.character_classification_changed。
+ */
+export interface CharacterChildFeaturesWritePort {
+  markChildFeaturesDetected(userId: string, characterId: string): Promise<boolean>;
+}
+
+/**
+ * 3.1（积压 ㉖）：「发布新版本」时生成人设更新摘要的可选 AI 接入点。提供方 ai-runtime（T-081 的 PersonaUpdateSummaryService）；
+ * 调用方 characters（管理员发布预设角色新人设版本时）。characters 是底层，不 import ai-runtime：令牌定义在 characters，
+ * 由装配入口绑定；未绑定或返回 null 时用管理员填写的摘要或「资料已更新」兜底，不阻塞发布。
+ * 用平台账户计费（purpose = admin_persona_check）；幂等键 = characterId + version。
+ */
+export interface PersonaUpdateSummarizerPort {
+  summarize(input: {
+    adminId: string;
+    characterId: string;
+    before: CharacterCard | null;
+    after: CharacterCard;
+    version: number;
+  }): Promise<string | null>;
 }

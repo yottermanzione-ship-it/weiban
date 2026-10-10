@@ -6,18 +6,10 @@
  * （周期 28 天、经期 5 天）；经期前提醒在预计开始日前 2 天；经期持续超过 10 天时角色可温和建议就医。
  */
 
-export const P37 = {
-  recentCycles: 6,
-  minCycles: 2,
-  defaultCycleDays: 28,
-  defaultPeriodDays: 5,
-  reminderDaysBefore: 2,
-  longPeriodDays: 10,
-  /** 未填结束日的经期超过这么多天，视为用户忘记补记（不再算「正在经期」），避免误报就医提醒。 */
-  staleOpenDays: 15,
-  /** 相邻周期长度最大差超过此值视为不规律。 */
-  irregularSpreadDays: 7,
-} as const;
+import { P37_PERIOD_PREDICTION } from '../../../platform/config/product-params.js';
+
+/** 数字唯一定义处是 platform/config/product-params.ts（P37_PERIOD_PREDICTION）；这里只是本模块内的简称。 */
+export const P37 = P37_PERIOD_PREDICTION;
 
 const DAY_MS = 86_400_000;
 

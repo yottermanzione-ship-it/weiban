@@ -7,7 +7,7 @@
  * - 常量名带编号，注释写明来源。时长统一用毫秒（后缀 _MS）或秒（后缀 _SECONDS），金额用微元（后缀 _MICROS，
  *   1 元 = 1,000,000 微元，engineering-standards.md 第 5 节第 7 条）。
  *
- * 当前对照 PRD v1.2（2026-10-05）。
+ * 当前对照 PRD v1.2（2026-10-05）；P-36、P-37 对照 PRD v1.3。
  */
 
 const SECOND_MS = 1000;
@@ -166,3 +166,28 @@ export const P32_LOW_BALANCE_ALERT_MICROS = 5 * YUAN_MICROS;
 
 /** 来源：PRD 第 5 节 P-33（v1.2 新增）。后台功能保留线：1 元，低于此值时后台功能停止，余额留给聊天回复。MDL-05、MDL-10 */
 export const P33_BACKGROUND_RESERVE_MICROS = 1 * YUAN_MICROS;
+
+/**
+ * 来源：PRD 第 5 节 P-36（v1.3）。经期主动关心：每个经期周期最多 2 次（经期前提醒 1 次 + 经期中关心 1 次），
+ * 所有授权角色合计，每次只由一个角色发出。PLAY-01（契约 3.1 收口时从 ai-runtime/health-care.ts 挪入）
+ */
+export const P36_PERIOD_CARE_PER_CYCLE = 2;
+
+/**
+ * 来源：PRD 第 5 节 P-37（v1.3）。经期预测与提醒：最近 6 个周期平均；不足 2 个周期用用户填写值（默认周期 28 天、经期 5 天）；
+ * 经期前提醒在预计开始日前 2 天；经期持续超过 10 天时角色可温和建议就医。PLAY-01
+ * staleOpenDays、irregularSpreadDays 是实现细节（不是 PRD 数字），一并放在这里以免分两处。
+ * （契约 3.1 收口时从 health/domain/prediction.ts 挪入）
+ */
+export const P37_PERIOD_PREDICTION = {
+  recentCycles: 6,
+  minCycles: 2,
+  defaultCycleDays: 28,
+  defaultPeriodDays: 5,
+  reminderDaysBefore: 2,
+  longPeriodDays: 10,
+  /** 未填结束日的经期超过这么多天，视为用户忘记补记（不再算「正在经期」），避免误报就医提醒。 */
+  staleOpenDays: 15,
+  /** 相邻周期长度最大差超过此值视为不规律。 */
+  irregularSpreadDays: 7,
+} as const;

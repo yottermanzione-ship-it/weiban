@@ -293,7 +293,17 @@ export const LetterEndpoints = {
       characterId: Id,
       body: z.string().trim().min(1).max(PLAY_LIMITS.letterMaxChars),
     }),
-    response: z.object({ letter: Letter, replyDelayed: z.boolean() }),
+    response: z.object({
+      letter: Letter,
+      replyDelayed: z.boolean(),
+      /**
+       * 3.1（积压 ㊲）：顺延原因，replyDelayed = true 时给出。already_replied_today = 这个角色今天已经回过一封（每角色每天最多 1 封）；
+       * outside_active_window = 按 P-42 算出的时间落在活跃时段外，顺延到下一个活跃时段。客户端据此显示说明，不再自行推断。
+       */
+      replyDelayReason: tolerantEnum(z.enum(['already_replied_today', 'outside_active_window']))
+        .nullable()
+        .optional(),
+    }),
     summary:
       '寄信：私聊写信件卡片（发送者为用户），定好回信送达时间（P-42、活跃时段、每角色每天最多回 1 封，replyDelayed = 顺延）；' +
       '发出 play.letter_sent。回信由 ai-runtime 在送达前生成、经 PlayAgentPort.deliverLetterReply 送达；余额不足时信不丢',

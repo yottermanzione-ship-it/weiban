@@ -235,6 +235,11 @@ export const CardTemplate = z.object({
   mediaId: Id,
   url: z.url(),
   portraitFree: z.boolean(),
+  /**
+   * 3.1（积压 ㉓）：古风插画（GRW-05 第 2 条：历史人物可用古风插画）。挑选规则：历史人物优先取 classicalStyle = true 的模板，
+   * 其余真人只取 portraitFree = true 的模板。不传 / 旧服务器不返回时按 false。
+   */
+  classicalStyle: z.boolean().optional(),
   enabled: z.boolean(),
   updatedAt: Timestamp,
 });

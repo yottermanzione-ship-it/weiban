@@ -76,6 +76,25 @@ export interface GrowthReadPort {
   getDaysKnown(userId: string, characterId: string): Promise<number | null>;
 }
 
+/**
+ * 3.1（积压 ㉗）：卡片文案可选 AI 接入点。提供方 ai-runtime；调用方 growth（发纪念卡 / 熟悉度卡 / 节日卡时）。
+ * growth 不 import ai-runtime：令牌定义在 growth，由装配入口绑定；**未绑定、超时（建议 3 秒）或返回 null 时用模板文案**，不阻塞发卡。
+ * 计入用户后台功能（countAsBackground），余额低于 P-33 时直接返回 null。title ≤ 30 字、line ≤ 60 字（同 issueCard）。
+ */
+export interface CardCopywriterPort {
+  writeCardCopy(input: {
+    userId: string;
+    characterId: string;
+    kind: CardKind;
+    /** 模板文案（AI 不可用时的兜底，也作为改写参考）。 */
+    templateTitle: string;
+    templateLine: string;
+    /** 事实参数，例 { daysKnown: 100 }、{ level: 3, levelName: '无话不谈' }、{ holidayName: '中秋' }。 */
+    facts: Record<string, string | number>;
+    idempotencyKey: string;
+  }): Promise<{ title: string; line: string } | null>;
+}
+
 /** ai-runtime 发瞬间卡（名场面、宠物、玩法、第一次通话、被拉群等）。同一幂等键只发一张。 */
 export interface GrowthCardPort {
   issueCard(
@@ -255,9 +274,7 @@ export interface PlayReadPort {
   listWishlist(userId: string, characterId: string): Promise<WishlistItem[]>;
   getReminder(reminderId: string): Promise<Reminder | null>;
   /** 待生成的回信（送达前约 10 分钟取，或余额恢复后补生成）。 */
-  listPendingLetterReplies(
-    userId: string,
-  ): Promise<
+  listPendingLetterReplies(userId: string): Promise<
     Array<{
       letterId: string;
       characterId: string;
@@ -283,7 +300,12 @@ export interface PlayAgentPort {
     text: string;
     idempotencyKey: string;
   }): Promise<PortResult<{ proposalId: string }, 'weekly_limit' | 'list_full'>>;
-  /** 慢信：送达回信（play 在一个事务里发信件卡片消息、更新状态、推送）。 */
+  /**
+   * 慢信：送达回信（play 在一个事务里发信件卡片消息、更新状态、推送）。
+   * 3.1 写明返回语义（T-093 / T-096）：ai-runtime 通常在 deliverAt 前约 10 分钟调用——此时 play 只保存正文、到点再送达，
+   * 返回的 messageId **是回信的 letterId 占位，不是消息 ID**；在 deliverAt 之后调用则立即送达，返回真实 messageId。
+   * 调用方不得依赖返回的 messageId 做后续操作（只看 ok）。同一 letterId + idempotencyKey 重复调用返回同一结果。
+   */
   deliverLetterReply(input: {
     letterId: string;
     body: string;
