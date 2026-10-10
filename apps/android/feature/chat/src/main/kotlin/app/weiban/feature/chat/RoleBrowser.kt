@@ -101,7 +101,10 @@ import java.util.Locale
             }
     Row(Modifier.fillMaxWidth().padding(WbSpace.S5), horizontalArrangement = Arrangement.SpaceBetween) {
         Text("通讯录", style = MaterialTheme.typography.headlineSmall)
-        TextButton(onClick = onAdd) { Text("添加角色") }
+        Row {
+            TextButton(onClick = { L6Overlays.openImport() }) { Text("导入聊天记录") }
+            TextButton(onClick = onAdd) { Text("添加角色") }
+        }
     }
     OutlinedTextField(query, { query = it.take(50) }, Modifier.fillMaxWidth().padding(horizontal = WbSpace.S5), label = { Text("搜索名字或备注") })
     if (contacts.isEmpty()) Text(if (state.initialized) "还没有找到角色" else "正在同步通讯录…", Modifier.padding(WbSpace.S5))

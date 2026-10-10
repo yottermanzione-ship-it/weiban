@@ -118,6 +118,11 @@ internal data class InformationNavigation(
     }
     var cardsPage by remember(owner, characterId) { mutableStateOf(false) }
     var searchPage by remember(owner, characterId) { mutableStateOf(false) }
+    var supplementPage by remember(owner, characterId) { mutableStateOf(false) }
+    if (supplementPage) {
+        SupplementPage(repository, owner, characterId) { supplementPage = false }
+        return
+    }
     if (cardsPage) {
         Column(Modifier.fillMaxSize()) { CardAlbumPage(repository, runtime, owner, characterId) { cardsPage = false } }
         return
@@ -156,6 +161,8 @@ internal data class InformationNavigation(
         TextButton(onClick = { timelinePage = true }, enabled = !actions.pending) { Text("TA 的近况 ›") }
         TextButton(onClick = { cardsPage = true }, enabled = !actions.pending) { Text("卡册 ›") }
         TextButton(onClick = { searchPage = true }, enabled = !actions.pending) { Text("查找聊天记录 ›") }
+        TextButton(onClick = { L6Overlays.pets.value = PetsOpen(characterId) }, enabled = !actions.pending) { Text("我们的宠物 ›") }
+        TextButton(onClick = { supplementPage = true }, enabled = !actions.pending) { Text("我的补充设定 ›") }
         companion.data?.let { InformationProactive(actions, companion, characterId, it) }
         TextButton(onClick = navigation.models, enabled = !actions.pending) { Text("模型选择") }
         VoiceToneRow(repository, owner, companion.data?.voiceId, !actions.pending) { voicePage = true }

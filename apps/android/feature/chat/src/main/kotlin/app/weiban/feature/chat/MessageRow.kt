@@ -157,6 +157,11 @@ import app.weiban.designsystem.tokens.WbSpace
             val permissions = if (content.cardKind == "call_permission") rememberCallPermissionFlow() else null
             val choose: (String) -> Unit = { id ->
                 if (id == "allow") permissions?.invoke()
+                // 角色提议一起领养：「去看看」进领养流程，角色已预选（T-082、pet.md 第 2 节）。
+                if (content.cardKind == "pet_proposal" && id == "go") {
+                    val target = content.ref?.id ?: ui.conversation.participants.find { it.kind == "character" }?.refId
+                    L6Overlays.pets.value = PetsOpen(target, adopt = true)
+                }
                 ui.choose(message, id)
             }
             Text(content.text)
@@ -179,6 +184,14 @@ import app.weiban.designsystem.tokens.WbSpace
         message.status == "normal" && content is ReceivedMessageContentLink -> LinkCardMessage(ui.repository, ui.owner, content)
         message.status == "normal" && content is ReceivedMessageContentCallRecord -> CallRecordMessage(content)
         message.status == "normal" && content is ReceivedMessageContentText -> LinkifiedText(content.text)
+        message.status == "normal" && content is ReceivedMessageContentSystem && content.code == "pet_adopted" -> {
+            val characterId = ui.conversation.participants.find { it.kind == "character" }?.refId
+            Text(
+                messageText(message),
+                Modifier.clickable { L6Overlays.pets.value = PetsOpen(characterId) },
+                color = colors.textLink,
+            )
+        }
         message.status == "normal" && content is ReceivedMessageContentSystem && content.code == "card_obtained" -> {
             // 「获得 XX 卡 ›」：点开卡片详情（M-13 动画在详情里播放）。
             val cardId = (content.params["cardId"] as? kotlinx.serialization.json.JsonPrimitive)?.content

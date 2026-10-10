@@ -12,6 +12,10 @@ import kotlinx.serialization.json.put
     OutlinedButton(onClick = { state.openPage("notifications") }) { Text("新消息通知") }
     OutlinedButton(onClick = { state.openPage("theme") }) { Text("主题") }
     OutlinedButton(onClick = { state.openPage("privacy") }) { Text("隐私") }
+    // 危险型行（account-deletion.md 第 2 节）。
+    TextButton(onClick = { state.openPage("delete-account") }) {
+        Text("注销账号", color = app.weiban.designsystem.LocalWeibanColors.current.textDanger)
+    }
 }
 
 @Composable internal fun MeServices(
@@ -23,6 +27,7 @@ import kotlinx.serialization.json.put
     OutlinedButton(onClick = { state.openPage("proactive") }) { Text("主动消息与免打扰") }
     Text("互动玩法")
     OutlinedButton(onClick = { state.openPage("period") }) { Text("经期日记") }
+    entry.onGrowth?.let { open -> OutlinedButton(onClick = { open("pets") }) { Text("宠物") } }
     // 陪伴分组（SVC-01）：卡册、成就、熟悉度。
     entry.onGrowth?.let { open ->
         Text("陪伴")

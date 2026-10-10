@@ -139,6 +139,7 @@ private class CharacterUi(
             RoleAvatar(repository, owner, RoleAvatarIdentity(role.characterId, role.name, role.avatar, contact?.customAvatarMediaId), 64.dp)
             Text(contact?.remark ?: role.name, style = MaterialTheme.typography.headlineSmall)
             if (contact?.remark != null) Text("名字：${role.name}")
+            if (role.personaUpdatedUnseen) PersonaUpdatedBadge(repository, owner, role.characterId) { profile.refresh() }
             Text(role.tagline)
             Text(role.intro)
             if (role.tags.isNotEmpty()) Text(role.tags.joinToString(" · "))

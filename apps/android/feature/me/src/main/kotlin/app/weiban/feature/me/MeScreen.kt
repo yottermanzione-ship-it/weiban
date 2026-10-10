@@ -91,6 +91,7 @@ import kotlinx.serialization.json.*
             "period" -> PeriodDiaryPage(repository, owner)
             "proactive" -> ProactiveDefaultsPage(state)
             "privacy" -> PrivacyPage(state)
+            "delete-account" -> AccountDeletionPage(state, onLogout)
             else -> HomePage(state, entry, onLogout)
         }
     }
@@ -334,6 +335,7 @@ private fun pageTitle(
         "period" -> "经期日记"
         "proactive" -> "主动消息与免打扰"
         "privacy" -> "隐私"
+        "delete-account" -> "注销账号"
         else -> "我"
     }
 

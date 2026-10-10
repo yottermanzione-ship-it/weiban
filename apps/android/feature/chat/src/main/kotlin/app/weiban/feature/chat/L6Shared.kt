@@ -59,6 +59,15 @@ internal data class ShareRequest(
 internal object L6Overlays {
     val share = MutableStateFlow<ShareRequest?>(null)
     val card = MutableStateFlow<CardOpen?>(null)
+    val pets = MutableStateFlow<PetsOpen?>(null)
+    val imports = MutableStateFlow<ImportOpen?>(null)
+
+    fun openImport(
+        kind: String = "new_character",
+        targetCharacterId: String? = null,
+    ) {
+        imports.value = ImportOpen(kind, targetCharacterId)
+    }
 
     fun shareMessages(
         conversationId: String,
@@ -114,6 +123,34 @@ internal object L6Overlays {
         cardId: String,
     ) {
         card.value = CardOpen(characterId, cardId)
+    }
+}
+
+/** 宠物浮层（T-086）：characterId 为某角色的宠物（聊天信息页「我们的宠物」）；adopt = 直接进领养流程。 */
+internal data class PetsOpen(
+    val characterId: String? = null,
+    val adopt: Boolean = false,
+    val nonce: Long = System.nanoTime(),
+)
+
+/** 导入浮层（T-086）：new_character = 导入聊天记录生成角色；supplement = 给某个角色导入补充设定。 */
+internal data class ImportOpen(
+    val kind: String,
+    val targetCharacterId: String?,
+    val nonce: Long = System.nanoTime(),
+)
+
+/** 宿主应用打开的页面（T-086）：浮层里需要跳到某个会话时由宿主切到「微伴」标签。 */
+object GrowthNavigation {
+    val conversation = MutableStateFlow<String?>(null)
+
+    fun openConversation(conversationId: String) {
+        conversation.value = conversationId
+    }
+
+    /** 我 › 服务 › 宠物（宿主调用）。 */
+    fun openPets() {
+        L6Overlays.pets.value = PetsOpen()
     }
 }
 
@@ -196,6 +233,10 @@ internal fun serialText(serialNo: Long): String = "No." + serialNo.toString().pa
 ) {
     val share by L6Overlays.share.collectAsState()
     val card by L6Overlays.card.collectAsState()
+    val pets by L6Overlays.pets.collectAsState()
+    val imports by L6Overlays.imports.collectAsState()
+    pets?.let { open -> key(open) { PetsOverlay(repository, runtime, owner, open) { L6Overlays.pets.value = null } } }
+    imports?.let { open -> key(open) { ImportOverlay(repository, runtime, owner, open) { L6Overlays.imports.value = null } } }
     card?.let { open -> CardDetailOverlay(repository, owner, open) { L6Overlays.card.value = null } }
     share?.let { request -> key(request) { ShareEditor(repository, runtime, owner, request) { L6Overlays.share.value = null } } }
     AchievementToasts(repository, owner)

@@ -28,6 +28,7 @@ import app.weiban.feature.chat.CallOverlay
 import app.weiban.feature.chat.CardAlbumsScreen
 import app.weiban.feature.chat.FamiliarityOverviewScreen
 import app.weiban.feature.chat.FavoritesScreen
+import app.weiban.feature.chat.GrowthNavigation
 import app.weiban.feature.chat.GrowthShareOverlay
 import app.weiban.feature.chat.ChatScreen
 import app.weiban.feature.chat.DiscoverScreen
@@ -270,6 +271,14 @@ private class NavigationUi(
         }, onboarding = true)
     } else {
         val owner = OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId)
+        // 浮层（导入完成后打开会话等）要求切到某个会话（T-086）。
+        val growthConversation by GrowthNavigation.conversation.collectAsState()
+        LaunchedEffect(growthConversation) {
+            growthConversation?.let {
+                navigation.open(it)
+                GrowthNavigation.conversation.value = null
+            }
+        }
         val callRoute by runtime.callRoute.collectAsState()
         LaunchedEffect(callRoute) {
             callRoute?.let {
@@ -370,7 +379,10 @@ private suspend fun finishOnboarding(
                 },
                 onMyStickers = { navigation.mePage = "stickers" },
                 onFavorites = { navigation.mePage = "favorites" },
-                onGrowth = { navigation.mePage = it },
+                onGrowth = { page ->
+                    // 宠物是全局浮层（T-086），其余是「我」里的页面。
+                    if (page == "pets") GrowthNavigation.openPets() else navigation.mePage = page
+                },
             ),
     )
 }

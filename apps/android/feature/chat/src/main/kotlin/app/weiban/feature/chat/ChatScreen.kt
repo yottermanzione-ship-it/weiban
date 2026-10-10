@@ -262,6 +262,8 @@ private fun systemMessage(content: ReceivedMessageContentSystem): String {
             }
         "group_dissolved" -> "群聊已解散"
         "card_obtained" -> cardObtainedMessage(::p)
+        "pet_adopted" -> "你和 ${p("characterName").ifEmpty { "TA" }} 一起领养了 ${p("petName")} · 去看看 ›"
+        "pet_renamed" -> "${p("from")} 改名为 ${p("to")}"
         "familiarity_level_up" -> "你和 ${p("characterName").ifEmpty { "TA" }} 的熟悉度升到了 L${p("level")} ${p("levelName")}"
         else -> "会话提示"
     }
