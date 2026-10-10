@@ -269,8 +269,26 @@
 - Spring 博客「Spring AI and TypeSafe Jev: Fast, Cheap, Structured Decisions」（state + 类型化问题、三类问题、置信度 0.35～0.70 视为需复核、无流式）：https://spring.io/blog/2026/09/21/spring-ai-typesafe-structured-judgment
 - 搜索结果摘要（选择题最多 255 个选项、置信度由概率分布形状得出、约 300 毫秒）：https://www.requesty.ai/blog/typesafe-jev-explained 、https://benchlm.ai/blog/posts/what-is-jev （第三方文章，未核实）
 
+## 10a. 实现说明（T-090）
+
+- **代码**：`apps/server/src/modules/ai-runtime/application/planner.ts`（`PlannerService.decide`）、管理端 `http/planner-admin.controller.ts`（契约 `PlannerAdminEndpoints`）、迁移 `0064_ai_planning`（`planner_config`、`planning_decisions`）。
+- **默认实现**：没有配置行时一律 `rules`（7.2 节「上线初期先设为 rules」）；管理员切到 `rules_model` 需带评测报告编号，写审计。`rules_model` 经 `generateText(purpose = behavior_planning, modelKeyOverride)` 调规划模型（未指定时 `qwen/qwen3.8-flash`；平台目录 `defaultFor: planner` 为不指定 override 时的默认）；`jev` 经 `ModelGatewayMediaPort.decide`（假上游 `fake-` 前缀可用，真实接口待配置后验证）。
+- **同一决策只问一次**：主动路径带 `decisionKey`（例 `slot:{date}:{characterId}:{sourceRef}`），调度器每 10 分钟重跑时直接复用已记录的决策，不重复计费。
+- **成本闸（4.3 节）近似实现**：ai-runtime 读不到用户当天聊天回复金额，改为「近 24 小时回复路径规划费用 ≥ 0.03 元」时回复路径改用规则版（`cost_guard`）。
+- **熔断**：进程内按实现统计（7.3 节阈值），打开时写审计 `planner.circuit_open`（管理员告警通道待接）。
+- **接入点**：
+  - 私聊回复：语音 / 表情包（`reply_form`），以及秒回关闭时的回复节奏（`reply_timing`）。
+  - 主动消息：日常事件分享的时段（`proactive_slot`），以及是否配图（`reply_form`）。
+  - 来电是否拨出（`call_slot`）。
+  - 朋友圈：发圈时段与是否配图（`moments_plan`）。
+  - 群里自己聊的时刻（`proactive_slot`）。
+  - 未接入的两类：`quirk`，私聊小巧思引擎尚未实现；`play_slot`，玩法模块未就绪。这两类可以调用，但目前没有调用方，按规则版处理。
+- **P-45**：识别按 6.1 节扩充词表、结束信号、否定 / 假设句排除，仍为规则层；静默期间语音不进入选项、不来电、主动消息延后（安全关怀跟进除外）。
+- **经期关怀**：改为经 `ProactiveSchedulerService.request()` 登记（sourceRef `care:{不透明键}:{日期}`），到点回调 `HealthCareService.sendPlanned` 现取数据生成发送。
+
 ## 11. 修订记录
 
 | 版本 | 日期 | 修改 | 修改人 |
 |---|---|---|---|
 | 1.0 | 2026-10-05 | 首版（T-022） | ai-lead |
+| 1.1 | 2026-10-10 | 新增 10a 实现说明（T-090） | ai-lead |
