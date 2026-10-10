@@ -62,9 +62,25 @@ import { CallLinkPage, CallProvider } from '../features/call.js';
 import { MyStickersPage } from '../features/stickers.js';
 import { VoicePickerPage } from '../features/voices.js';
 import { ToastHost } from '../features/toast.js';
+import {
+  AchievementWatcher,
+  AchievementsPage,
+  CardAlbumPage,
+  CardAlbumsPage,
+  FamiliarityOverviewPage,
+} from '../features/cards.js';
+import { FavoriteDetailPage, FavoritesPage } from '../features/favorites.js';
+import {
+  ConversationHitsPage,
+  ConversationSearchPage,
+  GlobalSearchPage,
+} from '../features/search.js';
+import { ShareEditorPage } from '../features/share.js';
 /** 这些页面自带返回按钮，不显示通用顶栏。 */
 const ownHeader = [
-  /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice)$/,
+  /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice|cards)$/,
+  /^\/(share|search)(\/|$)/,
+  /^\/me\/favorites/,
   /^\/services\/period/,
   /^\/(contacts\/(new|groups)|groups\/new|moments|me\/moments|me\/stickers|calls\/)/,
 ];
@@ -170,6 +186,9 @@ function Shell() {
                     '/leaderboard',
                     '/usage',
                     '/services/proactive',
+                    '/services/cards',
+                    '/services/achievements',
+                    '/services/familiarity',
                   ].includes(location.pathname)
                     ? '/services'
                     : ['/settings/security', '/settings/privacy', '/settings/general'].includes(
@@ -234,6 +253,16 @@ function Shell() {
           <Route path="/me/moments" element={<MyMomentsPage />} />
           <Route path="/characters/:characterId/anniversaries" element={<AnniversariesPage />} />
           <Route path="/me/stickers" element={<MyStickersPage />} />
+          <Route path="/me/favorites" element={<FavoritesPage />} />
+          <Route path="/me/favorites/:favoriteId" element={<FavoriteDetailPage />} />
+          <Route path="/services/cards" element={<CardAlbumsPage />} />
+          <Route path="/services/achievements" element={<AchievementsPage />} />
+          <Route path="/services/familiarity" element={<FamiliarityOverviewPage />} />
+          <Route path="/characters/:characterId/cards" element={<CardAlbumPage />} />
+          <Route path="/search" element={<GlobalSearchPage />} />
+          <Route path="/search/:conversationId" element={<ConversationHitsPage />} />
+          <Route path="/chat/:conversationId/search" element={<ConversationSearchPage />} />
+          <Route path="/share" element={<ShareEditorPage />} />
           <Route path="/characters/:characterId/voice" element={<VoicePickerPage />} />
           <Route path="/calls/:callId" element={<CallLinkPage />} />
           <Route path="/contacts" element={<ContactsPage />} />
@@ -241,7 +270,10 @@ function Shell() {
           <Route path="/characters/:characterId" element={<CharacterPage />} />
           <Route path="*" element={<Navigate to="/me" replace />} />
         </Routes>
-        {!onboarding && !location.pathname.startsWith('/chat/') && <TabBar />}
+        {!onboarding &&
+          !location.pathname.startsWith('/chat/') &&
+          !/^\/(share|search)(\/|$)/.test(location.pathname) && <TabBar />}
+        <AchievementWatcher />
         <ToastHost />
       </div>
     </CallProvider>

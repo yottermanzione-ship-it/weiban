@@ -1,10 +1,11 @@
 import { Link } from 'react-router-dom';
-import { CaretRight, Gear, Images, Smiley, Wallet } from '@phosphor-icons/react';
+import { CaretRight, Gear, Images, Smiley, Star, Wallet } from '@phosphor-icons/react';
 import { BillingEndpoints, IdentityEndpoints, ModelAccessEndpoints } from '@weiban/contracts';
 import { formatMoney } from '@weiban/client-core';
 import { useAuth } from '../app/auth.js';
 import { ProfileAvatar } from './profile-avatar.js';
 import { useRemote } from '../data/use-remote.js';
+import { useAchievementsDot, useCardsDot } from './cards.js';
 
 export function MePage() {
   const { session } = useAuth();
@@ -31,6 +32,11 @@ export function MePage() {
           {lowBalance && <span className="red-dot" aria-label="余额不足" />}
           <CaretRight />
         </Link>
+        <Link to="/me/favorites">
+          <Star size={24} />
+          收藏
+          <CaretRight />
+        </Link>
         <Link to="/me/moments">
           <Images size={24} />
           朋友圈
@@ -55,6 +61,8 @@ export function MePage() {
 export function ServicesPage() {
   const wallet = useRemote(BillingEndpoints.getWallet);
   const selection = useRemote(ModelAccessEndpoints.getSelection);
+  const cards = useCardsDot();
+  const achievements = useAchievementsDot();
   const lowBalance =
     wallet.data != null && wallet.data.availableMicros <= wallet.data.lowBalanceThresholdMicros;
 
@@ -92,6 +100,26 @@ export function ServicesPage() {
           </Link>
           <Link to="/usage" className="service-card">
             花费统计<span>按天/角色/用途</span>
+          </Link>
+        </div>
+      </section>
+
+      {/* 陪伴 */}
+      <section>
+        <h2 className="section-label">陪伴</h2>
+        <div className="service-grid">
+          <Link to="/services/cards" className="service-card">
+            卡册
+            {cards.any && <span className="red-dot" aria-label="有新卡片" />}
+            <span>和每个 TA 的纪念</span>
+          </Link>
+          <Link to="/services/achievements" className="service-card">
+            成就
+            {achievements.any && <span className="red-dot" aria-label="有新成就" />}
+            <span>一起经历过的事</span>
+          </Link>
+          <Link to="/services/familiarity" className="service-card">
+            熟悉度<span>和每个 TA 有多熟</span>
           </Link>
         </div>
       </section>

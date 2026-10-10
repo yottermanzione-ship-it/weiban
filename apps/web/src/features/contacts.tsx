@@ -357,6 +357,12 @@ export function CharacterPage({
           <small>›</small>
         </Link>
       )}
+      {!onboarding && contact?.status === 'active' && (
+        <Link className="panel row-link" to={`/characters/${characterId}/cards`}>
+          <span>卡册</span>
+          <small>›</small>
+        </Link>
+      )}
       {!onboarding && contact?.status === 'active' && profile.data?.kind === 'custom' && (
         <RelationsRow characterId={characterId} />
       )}

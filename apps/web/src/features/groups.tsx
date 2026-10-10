@@ -3,11 +3,9 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ChatEndpoints,
   ChatGroupEndpoints,
-  ChatSearchEndpoints,
   GROUP_MEMBER_LIMIT,
   GROUP_MIN_CHARACTERS,
   GroupCompanionEndpoints,
-  type MessageSearchHit,
 } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
 import { useChat } from '../app/chat.js';
@@ -194,9 +192,6 @@ export function GroupSettingsPage() {
   const [removing, setRemoving] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [title, setTitle] = useState('');
-  const [searching, setSearching] = useState(false);
-  const [keyword, setKeyword] = useState('');
-  const [hits, setHits] = useState<MessageSearchHit[] | null>(null);
   const [confirm, setConfirm] = useState<'clear' | 'dissolve' | null>(null);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
@@ -293,7 +288,7 @@ export function GroupSettingsPage() {
           群聊名称
           <small>{conversation.title ?? ''}</small>
         </button>
-        <button className="row-button" onClick={() => setSearching((v) => !v)}>
+        <button className="row-button" onClick={() => navigate(`/chat/${conversationId}/search`)}>
           查找聊天记录
         </button>
       </div>
@@ -334,35 +329,6 @@ export function GroupSettingsPage() {
               取消
             </button>
           </div>
-        </form>
-      )}
-      {searching && (
-        <form
-          className="panel stack"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!keyword.trim()) return;
-            setError('');
-            void api
-              .call(ChatSearchEndpoints.searchConversation, {
-                params: { conversationId },
-                query: { q: keyword.trim(), limit: 20 },
-              })
-              .then((r) => setHits(r.items))
-              .catch((err) => setError(friendlyError(err)));
-          }}
-        >
-          <label>
-            搜索
-            <input maxLength={50} value={keyword} onChange={(e) => setKeyword(e.target.value)} />
-          </label>
-          {hits && hits.length === 0 && <p className="hint">没有找到相关聊天记录</p>}
-          {hits?.map((hit) => (
-            <Link key={hit.messageId} to={`/chat/${conversationId}`} className="search-hit">
-              <small>{new Date(hit.createdAt).toLocaleString('zh-CN')}</small>
-              <span>{hit.snippet}</span>
-            </Link>
-          ))}
         </form>
       )}
       <div className="panel stack">

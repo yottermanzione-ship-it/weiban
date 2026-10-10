@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Camera, ChatCircle, Heart, Users } from '@phosphor-icons/react';
 import {
   IdentityEndpoints,
+  LibraryEndpoints,
   MediaEndpoints,
   MEDIA_LIMITS,
   MomentsEndpoints,
@@ -21,6 +22,8 @@ import { useCharacterNames } from '../data/character-names.js';
 import { VirtualList } from './virtual-list.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { UserAvatar } from './user-avatar.js';
+import { openShare } from './share.js';
+import { showToast } from './toast.js';
 
 /*
  * 朋友圈（SOC-07～SOC-09；设计 moments.md、social-l4.md 第 3 节）。
@@ -121,6 +124,7 @@ export function MomentCard({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const { register } = actors;
+  const navigate = useNavigate();
   useEffect(() => register(actorsOf(post)), [post, register]);
   const mine = post.author.kind === 'user';
   async function run(operation: () => Promise<MomentsPost | null>) {
@@ -162,6 +166,26 @@ export function MomentCard({
           <Link to={`/moments/posts/${post.postId}`}>
             <small>{timeText(post.createdAt)}</small>
           </Link>
+          <details className="moment-more">
+            <summary aria-label="更多">…</summary>
+            <button
+              onClick={() =>
+                void api
+                  .call(LibraryEndpoints.addFavorites, {
+                    body: { items: [{ kind: 'moments_post', postId: post.postId }] },
+                  })
+                  .then(() => showToast('已收藏'))
+                  .catch((e) => showToast(friendlyError(e)))
+              }
+            >
+              收藏
+            </button>
+            <button
+              onClick={() => openShare(navigate, { kind: 'moments_post', postId: post.postId })}
+            >
+              生成分享图
+            </button>
+          </details>
           {mine && post.visibility?.kind === 'selected' && (
             <button
               className="icon-button"

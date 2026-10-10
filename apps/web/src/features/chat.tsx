@@ -8,14 +8,16 @@ import {
   Camera,
   Phone,
 } from '@phosphor-icons/react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ChatActionEndpoints,
   ChatEndpoints,
   IdentityEndpoints,
   CharacterEndpoints,
   ModelAccessEndpoints,
+  LibraryEndpoints,
   MEDIA_LIMITS,
+  SHARE_IMAGE_MAX_ITEMS,
   type Conversation,
   type UserSendableContent,
   type Message,
@@ -53,6 +55,8 @@ import { useCall, useCallEntry } from './call.js';
 import { Dialog, showToast } from './toast.js';
 import { prepareImage, uploadMedia } from '../data/upload.js';
 import { ApiFailure } from '@weiban/client-core';
+import { SHARE_REJECT_TEXT, openShare } from './share.js';
+import { familiarityNames } from './growth.js';
 interface Upload {
   localId: string;
   kind: 'image' | 'voice';
@@ -146,6 +150,25 @@ function systemText(code: string, params: Record<string, string | number | boole
         : `你修改群名为「${p('title')}」`;
     case 'group_dissolved':
       return '群聊已解散';
+    case 'card_obtained': {
+      const serial = `No.${p('serialNo').padStart(3, '0')}`;
+      switch (params.kind) {
+        case 'anniversary':
+          return `今天是你们认识的第 ${p('daysKnown')} 天 · 获得纪念卡 ${serial} ›`;
+        case 'familiarity':
+          return `获得熟悉度卡 ${serial} ›`;
+        case 'holiday':
+          return `${p('holidayName')}快乐 · 获得节日卡 ${serial} ›`;
+        default:
+          return `获得瞬间卡 ${serial}「${p('title')}」 ›`;
+      }
+    }
+    case 'familiarity_level_up':
+      return `你和 ${p('characterName')} 的熟悉度升到了 L${p('level')} ${p('levelName') || familiarityNames[Number(params.level) - 1] || ''}`;
+    case 'pet_adopted':
+      return `你和 ${p('characterName')} 一起领养了 ${p('petName')}`;
+    case 'pet_renamed':
+      return `${p('from')} 改名为 ${p('to')}`;
     default:
       return '会话提示';
   }
@@ -328,6 +351,13 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const [textShown, setTextShown] = useState<Record<string, boolean>>({});
   const [micDenied, setMicDenied] = useState(false);
   const albumInput = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [params, setParams] = useSearchParams();
+  const targetSeq = Number(params.get('seq')) || 0;
+  const [scrollTarget, setScrollTarget] = useState<{ key: string; nonce: number } | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   useEffect(() => () => voicePlayer.stop(), []);
   const messages = chat.state.messages
@@ -350,6 +380,58 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     [chat.state.messages, id],
   );
   useTranscriptUnavailableNotice(myVoiceIds);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const { older: loadOlder } = chat;
+  // 搜索结果 / 收藏定位（search.md 第 4 节）：向前补读直到目标消息出现，停在距顶部 1/3 处并闪一下。
+  useEffect(() => {
+    if (!targetSeq) return;
+    let active = true;
+    const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+    void (async () => {
+      for (let attempt = 0; attempt < 60 && active; attempt++) {
+        const list = messagesRef.current;
+        const hit = list.find((m) => m.seq === targetSeq);
+        if (hit) {
+          setScrollTarget({ key: hit.messageId, nonce: Date.now() });
+          setFlash(hit.messageId);
+          window.setTimeout(() => setFlash(null), 1200);
+          break;
+        }
+        const oldest = list[0]?.seq;
+        if (oldest === undefined || oldest <= targetSeq) {
+          if (attempt > 10) {
+            showToast('这条消息已删除');
+            break;
+          }
+          await wait(300);
+          continue;
+        }
+        try {
+          const more = await loadOlder(id, oldest);
+          await wait(60);
+          if (!more && !messagesRef.current.some((m) => m.seq === targetSeq)) {
+            showToast('这条消息已删除');
+            break;
+          }
+        } catch {
+          await wait(500);
+        }
+      }
+      if (active)
+        setParams(
+          (current) => {
+            const next = new URLSearchParams(current);
+            next.delete('seq');
+            return next;
+          },
+          { replace: true },
+        );
+    })();
+    return () => {
+      active = false;
+    };
+  }, [targetSeq, id, loadOlder, setParams]);
   function patchUpload(localId: string, changes: Partial<Upload>) {
     setUploads((list) => list.map((u) => (u.localId === localId ? { ...u, ...changes } : u)));
   }
@@ -442,6 +524,19 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     const c = message.content;
     if (message.status !== 'normal' || !c)
       return <p className="message-bubble">{content(message)}</p>;
+    if (c.type === 'system' && c.code === 'card_obtained') {
+      const characterId = String(c.params.characterId ?? role?.refId ?? '');
+      return (
+        <p className="message-bubble">
+          <Link
+            className="text-link"
+            to={`/characters/${characterId}/cards?card=${String(c.params.cardId ?? '')}`}
+          >
+            {content(message)}
+          </Link>
+        </p>
+      );
+    }
     switch (c.type) {
       case 'contact_card':
         return <ContactCardBubble content={c} />;
@@ -550,6 +645,49 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
       setError(friendlyError(e));
     }
   }
+  const selectable = (message: Message) =>
+    message.status === 'normal' && message.senderKind !== 'system' && !!message.content;
+  const chosen = messages.filter((m) => selected.has(m.messageId));
+  const shareBlocked =
+    chosen.length > SHARE_IMAGE_MAX_ITEMS
+      ? `最多选择 ${SHARE_IMAGE_MAX_ITEMS} 条`
+      : chosen.some((m) => m.scope === 'adult' || m.labels?.includes('health'))
+        ? SHARE_REJECT_TEXT
+        : '';
+  function toggle(message: Message) {
+    if (!selectable(message)) return;
+    setSelected((set) => {
+      const next = new Set(set);
+      if (next.has(message.messageId)) next.delete(message.messageId);
+      else next.add(message.messageId);
+      return next;
+    });
+  }
+  function startSelect(message: Message) {
+    setSelecting(true);
+    setSelected(new Set([message.messageId]));
+    setPanel('none');
+  }
+  async function favoriteChosen() {
+    if (chosen.length === 0) return;
+    const items = chosen.slice(0, SHARE_IMAGE_MAX_ITEMS);
+    try {
+      await api.call(LibraryEndpoints.addFavorites, {
+        body: {
+          items: items.map((m) => ({
+            kind: 'message' as const,
+            conversationId: id,
+            messageId: m.messageId,
+          })),
+        },
+      });
+      showToast(items.length > 1 ? `已收藏 ${items.length} 条` : '已收藏');
+      setSelecting(false);
+      setSelected(new Set());
+    } catch (e) {
+      showToast(friendlyError(e));
+    }
+  }
   const senderOf = (message: Message) =>
     everyone.find((participant) => participant.participantId === message.senderParticipantId);
   return (
@@ -623,13 +761,30 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         estimate={90}
         bottom
         onBottom={setAtBottom}
+        scrollTo={scrollTarget}
+        rowClassName={(message) => (message.messageId === flash ? 'flash-row' : undefined)}
         render={(message) => {
           const sender = senderOf(message);
           const senderId = sender?.refId ?? role?.refId ?? '';
           return (
             <div
-              className={`message-row ${message.senderKind === 'user' && message.status === 'normal' ? 'mine' : ''} ${message.senderKind === 'system' || message.status === 'recalled' ? 'system-message' : ''}`}
+              className={`message-row ${message.senderKind === 'user' && message.status === 'normal' ? 'mine' : ''} ${message.senderKind === 'system' || message.status === 'recalled' ? 'system-message' : ''} ${selecting ? 'selecting' : ''}`}
+              onClickCapture={(event) => {
+                if (!selecting) return;
+                event.preventDefault();
+                event.stopPropagation();
+                toggle(message);
+              }}
             >
+              {selecting && selectable(message) && (
+                <input
+                  type="checkbox"
+                  className="select-box"
+                  aria-label="选择这条消息"
+                  checked={selected.has(message.messageId)}
+                  readOnly
+                />
+              )}
               <time>
                 {new Date(message.createdAt).toLocaleTimeString('zh-CN', {
                   hour: '2-digit',
@@ -665,7 +820,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
                         : '已送达'}
                     </small>
                   )}
-                  {message.status === 'normal' &&
+                  {!selecting &&
+                    message.status === 'normal' &&
                     message.senderKind !== 'system' &&
                     message.content &&
                     message.content.type !== 'action_card' &&
@@ -708,6 +864,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
                             message.content.type === 'sticker') && (
                             <button onClick={() => void addToStickers(message)}>添加到表情</button>
                           )}
+                        <button onClick={() => startSelect(message)}>多选</button>
                         <button onClick={() => void action(message, 'hide')}>删除</button>
                         {message.senderKind === 'user' && (
                           <button onClick={() => void action(message, 'recall')}>撤回</button>
@@ -828,7 +985,44 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           </div>
         </div>
       )}
-      <form className="message-composer" onSubmit={(event) => void submit(event)}>
+      {selecting && (
+        <div className="select-bar">
+          {shareBlocked && <small className="hint">{shareBlocked}</small>}
+          <div className="button-row">
+            <button
+              className="text-button"
+              onClick={() => {
+                setSelecting(false);
+                setSelected(new Set());
+              }}
+            >
+              取消
+            </button>
+            <small>已选 {chosen.length} 条</small>
+            <button disabled={chosen.length === 0} onClick={() => void favoriteChosen()}>
+              收藏
+            </button>
+            <button
+              className="primary"
+              disabled={chosen.length === 0 || !!shareBlocked}
+              onClick={() =>
+                openShare(navigate, {
+                  kind: 'messages',
+                  conversationId: id,
+                  messageIds: chosen.map((m) => m.messageId),
+                })
+              }
+            >
+              分享图
+            </button>
+          </div>
+        </div>
+      )}
+      <form
+        className="message-composer"
+        hidden={selecting}
+        onSubmit={(event) => void submit(event)}
+      >
         <button
           type="button"
           className="icon-button"

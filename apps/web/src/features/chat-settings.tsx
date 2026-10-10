@@ -285,6 +285,8 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
             <VoiceRow characterId={characterId} voiceId={companion.data.voiceId ?? null} />
             <Link to={`/characters/${characterId}/memories`}>TA 记住了什么</Link>
             <Link to={`/characters/${characterId}/timeline`}>TA 的近况</Link>
+            <Link to={`/characters/${characterId}/cards`}>卡册</Link>
+            <Link to={`/chat/${id}/search`}>查找聊天记录</Link>
           </>
         )}
       </div>

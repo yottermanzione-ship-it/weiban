@@ -1,31 +1,27 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { MagnifyingGlass } from '@phosphor-icons/react';
 import { useChat } from '../app/chat.js';
 import { VirtualList } from './virtual-list.js';
-import { useCharacterNames } from '../data/character-names.js';
 import { Name } from './chat.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { GroupAvatar } from './groups.js';
 export function ConversationListPage() {
   const { state, online, error } = useChat();
-  const [query, setQuery] = useState('');
-  const names = useCharacterNames(state.contacts.map((contact) => contact.characterId));
+  const navigate = useNavigate();
+  // 电脑浏览器：Ctrl / ⌘ + F 在会话列表页打开全局搜索（search.md 第 5 节）。
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        navigate('/search');
+      }
+    };
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, [navigate]);
   const items = state.conversations
-    .filter(
-      (item) =>
-        !item.state.hidden &&
-        (!query ||
-          item.title?.includes(query) ||
-          item.lastMessage?.text.includes(query) ||
-          item.participants.some(
-            (participant) =>
-              participant.kind === 'character' &&
-              ((names[participant.refId] || '').includes(query) ||
-                state.contacts
-                  .find((contact) => contact.characterId === participant.refId)
-                  ?.remark?.includes(query)),
-          )),
-    )
+    .filter((item) => !item.state.hidden)
     .sort(
       (a, b) =>
         Number(b.state.pinned) - Number(a.state.pinned) ||
@@ -48,14 +44,10 @@ export function ConversationListPage() {
           添加角色
         </Link>
       </div>
-      <label className="search-label">
-        搜索会话
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="角色、群名或消息内容"
-        />
-      </label>
+      <Link className="search-entry" to="/search">
+        <MagnifyingGlass size={16} aria-hidden />
+        搜索
+      </Link>
       {error && <p role="alert">{error}</p>}
       {!state.initialized && <p role="status">正在读取聊天…</p>}
       {state.initialized && items.length === 0 && (

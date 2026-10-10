@@ -1,18 +1,21 @@
 import { useEffect, useState, type ReactNode } from 'react';
 
-/** 轻提示（C 13 Toast）：任意位置调用 showToast，Shell 里的 ToastHost 显示 2 秒。 */
+/** 轻提示（C 13 Toast）：任意位置调用 showToast，Shell 里的 ToastHost 默认显示 2 秒（成就型 3 秒）。 */
 const EVENT = 'weiban:toast';
-export function showToast(text: string) {
-  window.dispatchEvent(new CustomEvent<string>(EVENT, { detail: text }));
+export function showToast(text: string, durationMs = 2000) {
+  window.dispatchEvent(
+    new CustomEvent<{ text: string; durationMs: number }>(EVENT, { detail: { text, durationMs } }),
+  );
 }
 export function ToastHost() {
   const [text, setText] = useState('');
   useEffect(() => {
     let timer = 0;
     const listener = (event: Event) => {
-      setText((event as CustomEvent<string>).detail);
+      const detail = (event as CustomEvent<{ text: string; durationMs: number }>).detail;
+      setText(detail.text);
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => setText(''), 2000);
+      timer = window.setTimeout(() => setText(''), detail.durationMs);
     };
     window.addEventListener(EVENT, listener);
     return () => {
