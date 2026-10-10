@@ -53,3 +53,12 @@
 - **红点**：`GET /play/letters/badge` = 已送达未读的信数；`GET /play/letters/:id` 第一次读后标已读。
 - **角色主动寄信**：`sendCharacterLetter`，直接送达；P-03 额度与预算由 ai-runtime 判断。
 - **删除角色**：进入回收期时删除在路上的回信（不再送达）；彻底删除时删除该角色的全部信件。
+
+## 5. 陪你专注（PLAY-06，T-094，迁移 0068）
+
+表：`focus_sessions`（每用户同一时间只能有一个 `in_progress`，靠部分唯一索引保证；「做什么」加密；`result` 只有 in_progress / completed / ended_early，没有「失败」；不存累计时长）。
+
+- **开始** `POST /play/focus`：5～120 分钟；clientRequestId 幂等；已有进行中 409 `focus_in_progress`（已过点、还没被结束的旧专注会先自动结束）。同一事务里投递到点任务 `play.focus_end`，并发 `play.focus_started{endsAt}`。
+- **结束**：到点由任务和每分钟扫描自动结束，记为 `completed`；用户 `POST /play/focus/:id/end` 提前结束记为 `ended_early`，幂等；已过点再点结束记为 completed。两种结束都发 `play.focus_ended{result, minutes}`（minutes 是本次实际时长，不做累计）。
+- **「用户正在专注」**：`GET /play/focus`、`PlayReadPort.getActiveFocus`（只返回进行中且 ends_at 未过的）。ai-runtime 的 `QuietStateService.getFocusUntil` / `GET /me/quiet-state.focusUntil` 已接上。
+- **删除角色**：进行中的专注照常计时到结束；彻底删除时删除记录；注销时全部删除。

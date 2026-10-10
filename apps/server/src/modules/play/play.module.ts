@@ -15,12 +15,14 @@ import { DailyQuestionService } from './application/daily-question.service.js';
 import { PlayJobs } from './application/play-jobs.js';
 import { PlayLifecycle } from './application/play-lifecycle.js';
 import { PlayPortsService } from './application/play-ports.js';
+import { FocusService } from './application/focus.service.js';
 import { LettersService } from './application/letters.service.js';
 import { WishlistService } from './application/wishlist.service.js';
 import {
   DailyQuestionAdminController,
   DailyQuestionController,
 } from './http/daily-question.controller.js';
+import { FocusController } from './http/focus.controller.js';
 import { LettersController } from './http/letters.controller.js';
 import { WishlistController } from './http/wishlist.controller.js';
 import {
@@ -37,6 +39,7 @@ import {
     DailyQuestionAdminController,
     WishlistController,
     LettersController,
+    FocusController,
   ],
   providers: [
     PlayContext,
@@ -44,6 +47,7 @@ import {
     DailyQuestionService,
     WishlistService,
     LettersService,
+    FocusService,
     PlayPortsService,
     PlayLifecycle,
     { provide: PLAY_READ_PORT, useExisting: PlayPortsService },

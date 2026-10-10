@@ -4,12 +4,13 @@
  * P-45 原文：「2 小时，或用户再次发来消息时提前结束（以先到者为准）；期间该用户的所有角色都不发语音、不主动来电」。
  * 识别：用户在任一会话发的文字里说自己不方便（开会、上课、在忙、别打电话、不方便听语音……）→ 静默 2 小时；
  * 之后用户再发任何一条消息 → 提前结束。规则版识别（行为规划决策层 T-090 可替换为更细的判断）。
- * 专注（PLAY-06）：play 模块尚未提供 PlayReadPort，focusUntil 暂为 null；接入后在 getQuietState 里读取。
+ * 专注（PLAY-06）：数据归 play，经 PlayReadPort.getActiveFocus 读取，focusUntil = 进行中专注的结束时间（T-094）。
  */
 import { Inject, Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import type { QuietState, UserQuietStatePort } from '@weiban/contracts';
+import type { PlayReadPort, QuietState, UserQuietStatePort } from '@weiban/contracts';
 import { CLOCK, DATABASE, type Clock, type Database, type DbTx } from '../../../platform/index.js';
+import { PLAY_READ_PORT } from '../../play/index.js';
 import { userQuietStates } from '../infra/db/schema.js';
 
 /** P-45：2 小时。 */
@@ -52,6 +53,7 @@ export class QuietStateService implements UserQuietStatePort {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(PLAY_READ_PORT) private readonly play: PlayReadPort,
   ) {}
 
   async getInconvenientUntil(userId: string): Promise<string | null> {
@@ -65,7 +67,16 @@ export class QuietStateService implements UserQuietStatePort {
   }
 
   async getQuietState(userId: string): Promise<QuietState> {
-    return { inconvenientUntil: await this.getInconvenientUntil(userId), focusUntil: null };
+    return {
+      inconvenientUntil: await this.getInconvenientUntil(userId),
+      focusUntil: await this.getFocusUntil(userId),
+    };
+  }
+
+  /** PLAY-06 第 3 条：用户正在专注时到何时为止（所有角色的主动消息、来电、群聊自发话题都要安静）；没有为 null。 */
+  async getFocusUntil(userId: string): Promise<string | null> {
+    const focus = await this.play.getActiveFocus(userId);
+    return focus?.endsAt ?? null;
   }
 
   /** 用户发了一条消息（任一会话）：说不方便 → 静默 2 小时；否则结束已有静默。 */

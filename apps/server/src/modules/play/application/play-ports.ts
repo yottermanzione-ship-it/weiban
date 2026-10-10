@@ -13,6 +13,7 @@ import type {
   WishlistItem,
 } from '@weiban/contracts';
 import { DailyQuestionService } from './daily-question.service.js';
+import { FocusService } from './focus.service.js';
 import { LettersService } from './letters.service.js';
 import { WishlistService } from './wishlist.service.js';
 
@@ -24,13 +25,13 @@ export class PlayPortsService implements PlayReadPort, PlayAgentPort {
     @Inject(DailyQuestionService) private readonly daily: DailyQuestionService,
     @Inject(WishlistService) private readonly wishlist: WishlistService,
     @Inject(LettersService) private readonly letters: LettersService,
+    @Inject(FocusService) private readonly focus: FocusService,
   ) {}
 
   // ---------- PlayReadPort ----------
 
-  /** T-094 交付前：没有进行中的专注。 */
-  async getActiveFocus(_userId: string): Promise<FocusSession | null> {
-    return null;
+  getActiveFocus(userId: string): Promise<FocusSession | null> {
+    return this.focus.getActiveFocus(userId);
   }
 
   listWishlist(userId: string, characterId: string): Promise<WishlistItem[]> {

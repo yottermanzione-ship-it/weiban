@@ -40,6 +40,7 @@ import { MediaModule } from '../media/index.js';
 import { MediaAiService, AI_USER_QUIET_STATE } from './application/media-ai.js';
 import { CallsModule } from '../calls/index.js';
 import { QuietStateService } from './application/quiet-state.js';
+import { PlayModule } from '../play/index.js';
 import { QuietStateController } from './http/quiet-state.controller.js';
 import { CharacterImageService } from './application/character-image.js';
 import { CallSchedulerService } from './application/call-scheduler.js';
@@ -79,6 +80,8 @@ import {
     MomentsModule,
     MediaModule,
     CallsModule,
+    // T-094：读「用户正在专注」（PlayReadPort.getActiveFocus）。
+    PlayModule,
   ],
   providers: [
     // T-090：行为规划决策层。

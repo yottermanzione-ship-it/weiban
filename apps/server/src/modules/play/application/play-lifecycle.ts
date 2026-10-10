@@ -22,6 +22,7 @@ import {
 import { DailyQuestionService } from './daily-question.service.js';
 import type { PlayFeature } from './play-feature.js';
 import { PLAY_DUE_SWEEP_JOB, PlayJobs } from './play-jobs.js';
+import { FocusService } from './focus.service.js';
 import { LettersService } from './letters.service.js';
 import { WishlistService } from './wishlist.service.js';
 
@@ -39,8 +40,9 @@ export class PlayLifecycle implements OnModuleInit {
     @Inject(DailyQuestionService) daily: DailyQuestionService,
     @Inject(WishlistService) wishlist: WishlistService,
     @Inject(LettersService) letters: LettersService,
+    @Inject(FocusService) focus: FocusService,
   ) {
-    this.features = [daily, wishlist, letters];
+    this.features = [daily, wishlist, letters, focus];
   }
 
   async onModuleInit(): Promise<void> {

@@ -11,6 +11,7 @@ import {
   customType,
   date,
   index,
+  integer,
   pgSchema,
   text,
   timestamp,
@@ -175,5 +176,33 @@ export const letters = playSchema.table(
     index('letters_user_box_idx').on(t.userId, t.direction, t.status, t.createdAt),
     index('letters_due_idx').on(t.status, t.replyState, t.deliverAt),
     index('letters_character_day_idx').on(t.userId, t.characterId, t.deliverLocalDate),
+  ],
+);
+
+// ---------- T-094 陪你专注（PLAY-06） ----------
+
+/**
+ * 专注记录。同一用户同一时间只能有一个进行中（部分唯一索引）。没有「失败」状态，不做累计时长统计（SAFE-08）。
+ * 「做什么」按用户数据密钥加密（AAD = play:focus:{id}）。
+ */
+export const focusSessions = playSchema.table(
+  'focus_sessions',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    plannedMinutes: integer('planned_minutes').notNull(),
+    noteCiphertext: bytes('note_ciphertext'),
+    startedAt: time('started_at').notNull(),
+    endsAt: time('ends_at').notNull(),
+    endedAt: time('ended_at'),
+    /** in_progress | completed | ended_early */
+    result: text('result').notNull(),
+    clientRequestId: uuid('client_request_id').notNull(),
+    updatedAt: time('updated_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('focus_sessions_request_idx').on(t.userId, t.clientRequestId),
+    index('focus_sessions_due_idx').on(t.result, t.endsAt),
   ],
 );
