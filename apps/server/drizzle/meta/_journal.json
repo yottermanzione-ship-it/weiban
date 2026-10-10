@@ -302,6 +302,20 @@
       "when": 1795200000000,
       "tag": "0052_growth_pets",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1795300000000,
+      "tag": "0053_library",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1795400000000,
+      "tag": "0054_chat_search_index",
+      "breakpoints": true
     }
   ]
 }

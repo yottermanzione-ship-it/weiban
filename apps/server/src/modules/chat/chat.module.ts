@@ -13,6 +13,8 @@ import { ChatController } from './http/chat.controller.js';
 import { ChatActionController, ChatGroupController } from './http/groups.controller.js';
 import { ChatActionService } from './application/actions.js';
 import { ChatGroupService } from './application/groups.js';
+import { ChatSearchService } from './application/search.js';
+import { ChatSearchController } from './http/search.controller.js';
 import {
   CHAT_ADMIN_PORT,
   CHAT_PARTICIPANT_PORT,
@@ -24,8 +26,9 @@ import {
 } from './tokens.js';
 @Module({
   imports: [IdentityModule, RealtimeModule, MediaModule],
-  controllers: [ChatController, ChatGroupController, ChatActionController],
+  controllers: [ChatSearchController, ChatController, ChatGroupController, ChatActionController],
   providers: [
+    ChatSearchService,
     ChatAdminService,
     ChatParticipantService,
     ChatReadService,

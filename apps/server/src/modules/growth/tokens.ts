@@ -17,3 +17,8 @@ export const GROWTH_PET_NAMING_PORT = Symbol('weiban.growth.pet-naming-port');
  * 类型 { addCharacterPhoto(input: { userId; characterId; mediaId; messageId }): Promise<void> }。T-077。
  */
 export const GROWTH_PET_ALBUM = Symbol('weiban.growth.pet-album');
+/**
+ * 服务器内部（非契约）：卡片归属查询，类型 { getCardCharacterId(userId, cardId): Promise<string | null> }。
+ * library 的卡片分享图要按卡片角色决定真人标注（T-078），由 app.module.ts 绑定到 LIBRARY_CARD_LOOKUP。
+ */
+export const GROWTH_CARD_LOOKUP = Symbol('weiban.growth.card-lookup');

@@ -56,8 +56,13 @@ import {
   MODEL_NOTIFICATION_READ_PORT,
   MODEL_GATEWAY_MEDIA_PORT,
 } from './modules/model-access/index.js';
-import { GrowthModule, GROWTH_HOLIDAY_SOURCE } from './modules/growth/index.js';
-import { MomentsModule } from './modules/moments/index.js';
+import { GrowthModule, GROWTH_HOLIDAY_SOURCE, GROWTH_CARD_LOOKUP } from './modules/growth/index.js';
+import { MomentsModule, MOMENTS_READ_PORT } from './modules/moments/index.js';
+import {
+  LibraryModule,
+  LIBRARY_MOMENTS_READ,
+  LIBRARY_CARD_LOOKUP,
+} from './modules/library/index.js';
 import { ProactiveModule, HOLIDAY_EVENT_PORT } from './modules/proactive/index.js';
 import {
   CallsModule,
@@ -223,6 +228,21 @@ class MediaCompositionModule {}
 })
 class GrowthHolidayCompositionModule {}
 
+/**
+ * T-078：library 收藏朋友圈动态、卡片分享图要读 moments 与 growth；library 不能 import 它们（上层白名单），
+ * 由这里绑定到 library 自己的令牌。
+ */
+@Global()
+@Module({
+  imports: [MomentsModule, GrowthModule],
+  providers: [
+    { provide: LIBRARY_MOMENTS_READ, useExisting: MOMENTS_READ_PORT },
+    { provide: LIBRARY_CARD_LOOKUP, useExisting: GROWTH_CARD_LOOKUP },
+  ],
+  exports: [LIBRARY_MOMENTS_READ, LIBRARY_CARD_LOOKUP],
+})
+class LibraryCompositionModule {}
+
 @Module({})
 export class AppModule {
   static forRoot(options: PlatformOptions): DynamicModule {
@@ -251,6 +271,8 @@ export class AppModule {
         GrowthHolidayCompositionModule,
         GrowthModule,
         MomentsModule,
+        LibraryCompositionModule,
+        LibraryModule,
         ProactiveModule,
         CallsModule,
         CallAgentCompositionModule,

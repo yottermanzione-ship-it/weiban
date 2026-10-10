@@ -8,6 +8,7 @@ export {
   GROWTH_PET_READ_PORT,
   GROWTH_PET_NAMING_PORT,
   GROWTH_PET_ALBUM,
+  GROWTH_CARD_LOOKUP,
 } from './tokens.js';
 export type { PetsService as GrowthPetAlbum } from './application/pets.service.js';
 export type { GrowthReadPort, GrowthCardPort, PetReadPort, PetNamingPort } from '@weiban/contracts';

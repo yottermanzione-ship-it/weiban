@@ -23,6 +23,7 @@ import { GrowthController } from './http/growth.controller.js';
 import {
   GROWTH_CARD_PORT,
   GROWTH_PET_ALBUM,
+  GROWTH_CARD_LOOKUP,
   GROWTH_PET_NAMING_PORT,
   GROWTH_PET_READ_PORT,
   GROWTH_READ_PORT,
@@ -53,6 +54,17 @@ import {
     { provide: GROWTH_SERVICE, useExisting: GrowthService },
     { provide: GROWTH_CARD_PORT, useExisting: CardsService },
     {
+      provide: GROWTH_CARD_LOOKUP,
+      inject: [CardsService],
+      useFactory: (cards: CardsService) => ({
+        getCardCharacterId: (userId: string, cardId: string) =>
+          cards
+            .getCard(userId, cardId)
+            .then((c) => c.characterId)
+            .catch(() => null),
+      }),
+    },
+    {
       provide: GROWTH_READ_PORT,
       inject: [GrowthService],
       useFactory: (growth: GrowthService): GrowthReadPort => ({
@@ -69,6 +81,7 @@ import {
     GROWTH_PET_READ_PORT,
     GROWTH_PET_NAMING_PORT,
     GROWTH_PET_ALBUM,
+    GROWTH_CARD_LOOKUP,
   ],
 })
 export class GrowthModule {}
