@@ -206,3 +206,43 @@ export const focusSessions = playSchema.table(
     index('focus_sessions_due_idx').on(t.result, t.endsAt),
   ],
 );
+
+// ---------- T-095 TA 的提醒（PLAY-07） ----------
+
+/**
+ * 提醒（每用户最多 P-44 条）。内容与预生成的说法按用户数据密钥加密（「健康」类必须加密，统一都加密）。
+ * 到点不调用模型：轮流使用 phrasings（未生成时用模板说法，phrasings_ready = false 等 ai-runtime 补生成）。
+ */
+export const reminders = playSchema.table(
+  'reminders',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    /** AAD = play:reminder:{id}:text */
+    textCiphertext: bytes('text_ciphertext').notNull(),
+    /** HH:mm（用户时区）。 */
+    time: text('time').notNull(),
+    /** 契约 ReminderRepeat（JSON 文本）。 */
+    repeat: text('repeat').notNull(),
+    health: boolean('health').notNull(),
+    bypassDoNotDisturb: boolean('bypass_do_not_disturb').notNull(),
+    enabled: boolean('enabled').notNull(),
+    /** JSON 字符串数组，AAD = play:reminder:{id}:phrasings；未生成为 null。 */
+    phrasingsCiphertext: bytes('phrasings_ciphertext'),
+    phrasingsReady: boolean('phrasings_ready').notNull(),
+    /** 下一次用第几条说法（轮流）。 */
+    phrasingCursor: integer('phrasing_cursor').notNull(),
+    nextFireAt: time('next_fire_at'),
+    lastFiredAt: time('last_fired_at'),
+    pausedByContactRemoval: boolean('paused_by_contact_removal').notNull(),
+    clientRequestId: uuid('client_request_id').notNull(),
+    createdAt: time('created_at').notNull(),
+    updatedAt: time('updated_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('reminders_request_idx').on(t.userId, t.clientRequestId),
+    index('reminders_user_idx').on(t.userId, t.createdAt),
+    index('reminders_due_idx').on(t.enabled, t.pausedByContactRemoval, t.nextFireAt),
+  ],
+);

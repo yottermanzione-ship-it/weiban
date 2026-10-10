@@ -17,6 +17,7 @@ import { PlayLifecycle } from './application/play-lifecycle.js';
 import { PlayPortsService } from './application/play-ports.js';
 import { FocusService } from './application/focus.service.js';
 import { LettersService } from './application/letters.service.js';
+import { RemindersService } from './application/reminders.service.js';
 import { WishlistService } from './application/wishlist.service.js';
 import {
   DailyQuestionAdminController,
@@ -24,12 +25,14 @@ import {
 } from './http/daily-question.controller.js';
 import { FocusController } from './http/focus.controller.js';
 import { LettersController } from './http/letters.controller.js';
+import { RemindersController } from './http/reminders.controller.js';
 import { WishlistController } from './http/wishlist.controller.js';
 import {
   PLAY_AGENT_PORT,
   PLAY_DAILY_ANSWER_STATUS,
   PLAY_READ_PORT,
   PLAY_WISHLIST_FOLLOW_UP,
+  PLAY_REMINDER_PHRASINGS,
 } from './tokens.js';
 
 @Module({
@@ -40,6 +43,7 @@ import {
     WishlistController,
     LettersController,
     FocusController,
+    RemindersController,
   ],
   providers: [
     PlayContext,
@@ -48,13 +52,21 @@ import {
     WishlistService,
     LettersService,
     FocusService,
+    RemindersService,
     PlayPortsService,
     PlayLifecycle,
     { provide: PLAY_READ_PORT, useExisting: PlayPortsService },
     { provide: PLAY_AGENT_PORT, useExisting: PlayPortsService },
     { provide: PLAY_DAILY_ANSWER_STATUS, useExisting: DailyQuestionService },
     { provide: PLAY_WISHLIST_FOLLOW_UP, useExisting: WishlistService },
+    { provide: PLAY_REMINDER_PHRASINGS, useExisting: RemindersService },
   ],
-  exports: [PLAY_READ_PORT, PLAY_AGENT_PORT, PLAY_DAILY_ANSWER_STATUS, PLAY_WISHLIST_FOLLOW_UP],
+  exports: [
+    PLAY_READ_PORT,
+    PLAY_AGENT_PORT,
+    PLAY_DAILY_ANSWER_STATUS,
+    PLAY_WISHLIST_FOLLOW_UP,
+    PLAY_REMINDER_PHRASINGS,
+  ],
 })
 export class PlayModule {}

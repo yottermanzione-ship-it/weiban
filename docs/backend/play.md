@@ -62,3 +62,12 @@
 - **结束**：到点由任务和每分钟扫描自动结束，记为 `completed`；用户 `POST /play/focus/:id/end` 提前结束记为 `ended_early`，幂等；已过点再点结束记为 completed。两种结束都发 `play.focus_ended{result, minutes}`（minutes 是本次实际时长，不做累计）。
 - **「用户正在专注」**：`GET /play/focus`、`PlayReadPort.getActiveFocus`（只返回进行中且 ends_at 未过的）。ai-runtime 的 `QuietStateService.getFocusUntil` / `GET /me/quiet-state.focusUntil` 已接上。
 - **删除角色**：进行中的专注照常计时到结束；彻底删除时删除记录；注销时全部删除。
+
+## 6. TA 的提醒（PLAY-07，T-095，迁移 0069）
+
+表：`reminders`（内容和预生成的说法都加密；`time` 是用户时区的 HH:mm；`repeat` 存契约 ReminderRepeat 的 JSON；`phrasing_cursor` 记录轮到第几条说法；`next_fire_at` 下次到点；`paused_by_contact_removal` 角色删除时暂停）。
+
+- **接口**：`/play/reminders` 列表 / 新建 / 编辑 / 删除。每个用户最多 10 条，超过返回 422 `limit_reached`；内容最多 20 字（契约校验）；clientRequestId 幂等。下次到点时间按用户时区算：不重复 / 每天 / 工作日（周一～五，不含法定节假日）/ 自选星期几。
+- **说法**：新建和修改都发 `play.reminder_saved{textChanged}`。改了内容时旧说法作废，先用模板说法，直到 ai-runtime 经 `setReminderPhrasings` 回写（最多 10 条，每条 ≤40 字，可含 `{称呼}`）。需要补生成的提醒用 `PLAY_REMINDER_PHRASINGS.listRemindersNeedingPhrasings(userId)` 取。
+- **到点**（1 分钟精度）：保存时在同一事务里投递精确任务 `play.reminder_fire`，另有每分钟扫描兜底。到点时不调用模型，不看余额和预算，不占 P-03 / P-04。除非勾选了「免打扰时段也提醒」，免打扰时段内跳过这一次。角色在私聊发一条普通文字消息（幂等键 `reminder:{id}:{到点时刻}`），说法轮流使用，`{称呼}` 替换为专属称呼，没有就用昵称。「健康」类消息带 `labels: ['health']`，push 和分享图按现有规则处理。晚到超过 30 分钟的（如停机）这次不补发，直接推进到下一次。
+- **删除角色**：该角色的提醒暂停（`pausedByContactRemoval`，`nextFireAt = null`）；恢复时重新计算下次到点；彻底删除时一并删除。注销时全部删除。

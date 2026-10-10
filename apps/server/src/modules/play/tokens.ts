@@ -70,3 +70,11 @@ export const PLAY_ACTIVE_HOURS = Symbol('weiban.play.active-hours');
 export interface PlayActiveHours {
   getActiveHours(userId: string): Promise<Set<number> | null>;
 }
+
+/** 服务器内部（非契约）：说法待补生成的提醒（保存时余额不足 / 模型故障，恢复后 T-096 补生成）。 */
+export const PLAY_REMINDER_PHRASINGS = Symbol('weiban.play.reminder-phrasings');
+export interface PlayReminderPhrasings {
+  listRemindersNeedingPhrasings(
+    userId: string,
+  ): Promise<Array<{ reminderId: string; characterId: string }>>;
+}

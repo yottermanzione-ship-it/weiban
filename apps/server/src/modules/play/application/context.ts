@@ -73,6 +73,16 @@ export class PlayContext {
     return profile?.timeZone || DEFAULT_TZ;
   }
 
+  /** 用户的推送与免打扰设置（ACC-03）。 */
+  async notificationSettings(userId: string, tx?: DbTx) {
+    return this.identity.getNotificationSettings(userId, tx as Tx | undefined);
+  }
+
+  /** 用户昵称（「{称呼}」没有专属称呼时用）。 */
+  async nickname(userId: string, tx?: DbTx): Promise<string | null> {
+    return (await this.identity.getProfile(userId, tx as Tx | undefined))?.nickname ?? null;
+  }
+
   /** 用户当地今天（YYYY-MM-DD）。 */
   async localToday(userId: string, tx?: DbTx): Promise<string> {
     return localDateIn(this.clock.now(), await this.timeZone(userId, tx));

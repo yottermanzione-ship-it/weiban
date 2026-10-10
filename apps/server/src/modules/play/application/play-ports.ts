@@ -15,6 +15,7 @@ import type {
 import { DailyQuestionService } from './daily-question.service.js';
 import { FocusService } from './focus.service.js';
 import { LettersService } from './letters.service.js';
+import { RemindersService } from './reminders.service.js';
 import { WishlistService } from './wishlist.service.js';
 
 type PendingReply = Awaited<ReturnType<PlayReadPort['listPendingLetterReplies']>>[number];
@@ -26,6 +27,7 @@ export class PlayPortsService implements PlayReadPort, PlayAgentPort {
     @Inject(WishlistService) private readonly wishlist: WishlistService,
     @Inject(LettersService) private readonly letters: LettersService,
     @Inject(FocusService) private readonly focus: FocusService,
+    @Inject(RemindersService) private readonly reminders: RemindersService,
   ) {}
 
   // ---------- PlayReadPort ----------
@@ -38,9 +40,8 @@ export class PlayPortsService implements PlayReadPort, PlayAgentPort {
     return this.wishlist.listForRuntime(userId, characterId);
   }
 
-  /** T-095 交付前：没有提醒。 */
-  async getReminder(_reminderId: string): Promise<Reminder | null> {
-    return null;
+  getReminder(reminderId: string): Promise<Reminder | null> {
+    return this.reminders.getReminder(reminderId);
   }
 
   listPendingLetterReplies(userId: string): Promise<PendingReply[]> {
@@ -86,10 +87,10 @@ export class PlayPortsService implements PlayReadPort, PlayAgentPort {
     return this.letters.sendCharacterLetter(input);
   }
 
-  async setReminderPhrasings(_input: {
+  setReminderPhrasings(input: {
     reminderId: string;
     phrasings: string[];
   }): Promise<PortResult<void, 'not_found'>> {
-    return { ok: false, error: 'not_found', message: '提醒尚未开放（T-095）' };
+    return this.reminders.setPhrasings(input);
   }
 }

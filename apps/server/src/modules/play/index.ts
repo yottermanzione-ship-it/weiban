@@ -6,10 +6,12 @@ export {
   PLAY_CARD_ISSUER,
   PLAY_WISHLIST_FOLLOW_UP,
   PLAY_ACTIVE_HOURS,
+  PLAY_REMINDER_PHRASINGS,
   WISHLIST_PROPOSAL_REF_KIND,
   WISHLIST_PROPOSAL_ACTIONS,
   type PlayDailyAnswerStatus,
   type PlayCardIssuer,
   type PlayWishlistFollowUp,
   type PlayActiveHours,
+  type PlayReminderPhrasings,
 } from './tokens.js';
