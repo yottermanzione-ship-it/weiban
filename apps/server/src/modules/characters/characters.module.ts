@@ -18,6 +18,8 @@ import { RelationAdminController, UserRelationController } from './http/relation
 import { CharacterRelationService } from './application/relations.js';
 import { CharacterWorkLinkService } from './application/work-links.js';
 import { WorkLinkAdminController } from './http/work-links.controller.js';
+import { CharacterSupplementService } from './application/supplements.js';
+import { CharacterSupplementController } from './http/supplements.controller.js';
 import {
   CHARACTER_READ_PORT,
   CHARACTER_NAME_READ_PORT,
@@ -28,12 +30,15 @@ import {
   CHARACTER_WORK_LINK_READ_PORT,
   CHARACTER_VOICE_READ_PORT,
   CHARACTER_REAL_PERSON_NAMES,
+  CHARACTER_SUPPLEMENT_PORT,
+  CHARACTER_SUPPLEMENT_CONFLICTS,
 } from './tokens.js';
 @Module({
   imports: [MediaModule, ChatModule, IdentityModule],
   controllers: [
     // CustomCharacterController 必须在 CharacterController 之前：GET /characters/custom 与 /characters/:characterId 同前缀。
     CustomCharacterController,
+    CharacterSupplementController,
     CharacterController,
     CharacterAdminController,
     ScenarioModeAdminController,
@@ -44,6 +49,9 @@ import {
     WorkLinkAdminController,
   ],
   providers: [
+    CharacterSupplementService,
+    { provide: CHARACTER_SUPPLEMENT_PORT, useExisting: CharacterSupplementService },
+    { provide: CHARACTER_SUPPLEMENT_CONFLICTS, useExisting: CharacterSupplementService },
     CharacterService,
     CharacterCheckWorker,
     CustomCharacterService,
@@ -71,6 +79,8 @@ import {
     CHARACTER_WORK_LINK_READ_PORT,
     CHARACTER_VOICE_READ_PORT,
     CHARACTER_REAL_PERSON_NAMES,
+    CHARACTER_SUPPLEMENT_PORT,
+    CHARACTER_SUPPLEMENT_CONFLICTS,
   ],
 })
 export class CharactersModule {}

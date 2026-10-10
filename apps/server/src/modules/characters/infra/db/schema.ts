@@ -201,3 +201,33 @@ export const defaultVoices = charactersSchema.table('default_voices', {
   voiceId: uuid('voice_id').notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
 });
+
+/** 我的补充设定（CHR-09，T-079，迁移 0055）：只对该用户生效；正文按用户数据密钥加密（AAD characters:supplement:{userId}:{characterId}）。 */
+export const userSupplements = charactersSchema.table(
+  'user_supplements',
+  {
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    textCiphertext: bytea('text_ciphertext').notNull(),
+    conflicts: jsonb('conflicts').notNull(),
+    plazaSource: jsonb('plaza_source'),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.characterId] })],
+);
+
+/** 「资料已更新」已读位置（CHR-10 第 4 条，T-079）：用户看过的人设版本。 */
+export const personaUpdateSeen = charactersSchema.table(
+  'persona_update_seen',
+  {
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    seenVersion: integer('seen_version').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.characterId] })],
+);

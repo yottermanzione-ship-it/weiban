@@ -405,7 +405,9 @@ export class PublicUpdateService implements PublicUpdateReadPort, OnModuleInit {
     for (const item of result.value.items) {
       if (created.length >= MAX_CANDIDATES) break;
       const key = sourceKeyOf(item.url);
-      const content = `${item.title}${item.snippet ? '：' + item.snippet : ''}`.trim().slice(0, 500);
+      const content = `${item.title}${item.snippet ? '：' + item.snippet : ''}`
+        .trim()
+        .slice(0, 500);
       if (!content) continue;
       const text = normalizeText(content);
       if (seenKeys.has(key) || seenTexts.some((t) => similar(t, text))) {
@@ -634,4 +636,3 @@ function decodeCursor(cursor: string): { at: Date; id: string } {
     throw new AppError('bad_request', '分页游标无效');
   return { at, id };
 }
-

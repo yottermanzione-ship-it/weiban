@@ -43,6 +43,7 @@ import { childFeaturesIn } from '../domain/child-features.js';
 import { categories, characters, personaVersions, relations } from '../infra/db/schema.js';
 import { CHARACTER_CONTACT_ACCESS, type CharacterContactAccess } from '../tokens.js';
 import type { CharacterEvaluator } from './evaluator.js';
+import { CharacterSupplementService } from './supplements.js';
 type Row = typeof characters.$inferSelect;
 const initialCategories = [
   ['celebrity', '明星'],
@@ -65,6 +66,9 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     @Optional()
     @Inject(CHARACTER_CONTACT_ACCESS)
     private readonly contacts: CharacterContactAccess | null,
+    @Optional()
+    @Inject(CharacterSupplementService)
+    private readonly supplements: CharacterSupplementService | null,
   ) {}
   async onModuleInit(): Promise<void> {
     this.registry.register(this);
@@ -583,7 +587,10 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       classification: c,
       showPublicSourceNotice: c.basis === 'real_person',
       personaVersion: row.personaVersion,
-      personaUpdatedUnseen: false,
+      personaUpdatedUnseen:
+        row.kind === 'preset' && this.supplements
+          ? await this.supplements.isUnseen(userId, row.id, row.personaVersion)
+          : false,
     };
   }
   async getProfile(userId: string, id: string): Promise<CharacterProfile> {
@@ -657,7 +664,8 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       .delete(characters)
       .where(eq(characters.ownerId, userId))
       .returning({ id: characters.id });
-    return removed.length + relationRows.length;
+    const extra = (await this.supplements?.purgeUser(userId)) ?? 0;
+    return removed.length + relationRows.length + extra;
   }
   async countUserData(userId: string): Promise<number> {
     const [row] = await this.database.db
@@ -668,7 +676,8 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       .select({ n: count() })
       .from(relations)
       .where(eq(relations.ownerUserId, userId));
-    return (row?.n ?? 0) + (rel?.n ?? 0);
+    const extra = (await this.supplements?.countUserData(userId)) ?? 0;
+    return (row?.n ?? 0) + (rel?.n ?? 0) + extra;
   }
   async listPersonaVersions(
     adminId: string,

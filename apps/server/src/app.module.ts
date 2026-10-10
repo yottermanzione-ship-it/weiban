@@ -63,6 +63,7 @@ import {
   LIBRARY_MOMENTS_READ,
   LIBRARY_CARD_LOOKUP,
 } from './modules/library/index.js';
+import { ImporterModule } from './modules/importer/index.js';
 import { ProactiveModule, HOLIDAY_EVENT_PORT } from './modules/proactive/index.js';
 import {
   CallsModule,
@@ -273,6 +274,7 @@ export class AppModule {
         MomentsModule,
         LibraryCompositionModule,
         LibraryModule,
+        ImporterModule,
         ProactiveModule,
         CallsModule,
         CallAgentCompositionModule,

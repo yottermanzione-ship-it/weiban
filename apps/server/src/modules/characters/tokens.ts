@@ -14,3 +14,10 @@ export const CHARACTER_RELATION_READ_PORT = Symbol('weiban.characters.relation-r
 export const CHARACTER_WORK_LINK_READ_PORT = Symbol('weiban.characters.work-link-read');
 export const CHARACTER_VOICE_READ_PORT = Symbol('weiban.characters.voice-read');
 export const CHARACTER_REAL_PERSON_NAMES = Symbol('weiban.characters.real-person-names');
+/** T-079：契约 CharacterSupplementPort（ai-runtime 读补充设定）。 */
+export const CHARACTER_SUPPLEMENT_PORT = Symbol('weiban.characters.supplement-port');
+/**
+ * T-079 服务器内部（非契约）：AI 检出补充设定冲突项后写入。
+ * 类型 { setConflicts(userId, characterId, conflicts: SupplementConflict[]): Promise<void> }。
+ */
+export const CHARACTER_SUPPLEMENT_CONFLICTS = Symbol('weiban.characters.supplement-conflicts');
