@@ -16,6 +16,7 @@ import {
   customType,
   index,
   integer,
+  jsonb,
   pgSchema,
   primaryKey,
   text,
@@ -189,6 +190,8 @@ export const usageRecords = modelAccessSchema.table(
     personaVersion: integer('persona_version'),
     promptTemplateVersion: text('prompt_template_version'),
     scenarioMode: text('scenario_mode'),
+    /** T-071：多媒体用量（ttsChars / asrSeconds / images / searchCalls），文本调用为空。 */
+    mediaUnits: jsonb('media_units').$type<Record<string, number>>(),
   },
   (t) => [
     uniqueIndex('usage_records_idempotency_key').on(t.idempotencyKey),

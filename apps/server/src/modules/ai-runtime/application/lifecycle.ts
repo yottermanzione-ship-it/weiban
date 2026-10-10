@@ -53,6 +53,8 @@ import {
   MOMENTS_REACT_JOB,
   type MomentsReactJob,
 } from './moments-ai.js';
+import { MediaAiService } from './media-ai.js';
+const TRANSCRIBE_VOICE_JOB = 'ai.transcribe_voice';
 @Injectable()
 export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap {
   constructor(
@@ -70,6 +72,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     @Inject(USER_DATA_REGISTRY) readonly registry: UserDataRegistry,
     @Inject(CHAT_READ_PORT) readonly chat: ChatReadPort,
     @Inject(CONTACTS_READ_PORT) readonly contacts: ContactsReadPort,
+    @Inject(MediaAiService) readonly mediaAi: MediaAiService,
   ) {}
   async onApplicationBootstrap(): Promise<void> {
     if (this.jobs.isReady)
@@ -124,6 +127,41 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     await this.jobs.schedule(PROACTIVE_TICK_JOB, '*/10 * * * *');
     await this.jobs.work(PROACTIVE_CLEANUP_JOB, () => this.proactive.cleanup());
     await this.jobs.schedule(PROACTIVE_CLEANUP_JOB, '23 * * * *');
+    // T-071 MED-03 第 3 条：用户语音（私聊或群聊）尽快转文字，写回 media（「转文字」按钮与群聊上下文用）。
+    await this.jobs.work<{ userId: string; messageId: string; conversationId: string }>(
+      TRANSCRIBE_VOICE_JOB,
+      async (j) => {
+        const message = await this.chat.getMessage(j.data.messageId, ['normal', 'adult']);
+        if (message?.content?.type !== 'voice') return;
+        const conversation = await this.chat.getConversation(j.data.conversationId);
+        const role =
+          conversation?.type === 'direct'
+            ? conversation.participants.find((member) => member.kind === 'character')
+            : undefined;
+        await this.mediaAi.transcribe(
+          {
+            userId: j.data.userId,
+            conversationId: j.data.conversationId,
+            ...(role ? { characterId: role.refId } : {}),
+          },
+          message.content.mediaId,
+        );
+      },
+      { pollingIntervalSeconds: 1, localConcurrency: 2 },
+    );
+    this.bus.subscribe({
+      consumer: 'ai.transcribe_voice',
+      eventType: 'chat.message_created',
+      handle: async (event) => {
+        const p = event.payload;
+        if (p.senderKind !== 'user' || !p.senderRefId || p.contentType !== 'voice') return;
+        await this.jobs.send(
+          TRANSCRIBE_VOICE_JOB,
+          { userId: p.senderRefId, messageId: p.messageId, conversationId: p.conversationId },
+          { singletonKey: `voice:${p.messageId}`, retryLimit: 3, retryBackoff: true },
+        );
+      },
+    });
     // P-06/P-09：记录用户在任一会话（私聊或群聊）发消息的时间。
     this.bus.subscribe({
       consumer: 'ai.proactive_activity',

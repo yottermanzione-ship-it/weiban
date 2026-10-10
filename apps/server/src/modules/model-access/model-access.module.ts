@@ -7,6 +7,9 @@ import { Module } from '@nestjs/common';
 import { BILLING_CHARGE_QUERY_PORT, BillingModule } from '../billing/index.js';
 import { POLICY_PORT } from '../policy/index.js';
 import { IdentityModule } from '../identity/index.js';
+import { MediaModule } from '../media/index.js';
+import { ModelGatewayMedia } from './application/media-gateway.js';
+import { OpenAiCompatibleMediaAdapter } from './infra/media-adapter.js';
 import { GenerationCache } from './application/generation-cache.js';
 import { GatewayMaintenance } from './application/gateway-maintenance.js';
 import { ModelGateway } from './application/gateway.js';
@@ -34,15 +37,18 @@ import {
   MODEL_PRICE_SOURCE,
   UPSTREAM_PROBE,
   WEB_SEARCH_PROVIDER,
+  MODEL_GATEWAY_MEDIA_PORT,
+  MEDIA_ADAPTER,
 } from './tokens.js';
 
 @Module({
-  imports: [BillingModule, IdentityModule],
+  imports: [BillingModule, IdentityModule, MediaModule],
   exports: [
     MODEL_GATEWAY_PORT,
     MODEL_NOTIFICATION_READ_PORT,
     ADULT_MODEL_READ_PORT,
     WEB_SEARCH_PROVIDER,
+    MODEL_GATEWAY_MEDIA_PORT,
   ],
   controllers: [ModelController, ModelAdminController],
   providers: [
@@ -52,6 +58,9 @@ import {
     GatewayMaintenance,
     { provide: MODEL_GATEWAY_PORT, useExisting: ModelGateway },
     GatewayWebSearchProvider,
+    ModelGatewayMedia,
+    { provide: MODEL_GATEWAY_MEDIA_PORT, useExisting: ModelGatewayMedia },
+    { provide: MEDIA_ADAPTER, useFactory: () => new OpenAiCompatibleMediaAdapter() },
     { provide: WEB_SEARCH_PROVIDER, useExisting: GatewayWebSearchProvider },
     { provide: TEXT_ADAPTER, useFactory: () => new OpenAiTextAdapter() },
     { provide: MODEL_GENERATION_POLICY, useExisting: POLICY_PORT },

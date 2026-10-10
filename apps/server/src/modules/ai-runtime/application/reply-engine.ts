@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import {
+  MessageContent,
   type ChatParticipantPort,
   type ModelGatewayPort,
   type GenerateTextInput,
@@ -12,6 +13,8 @@ import {
 import {
   AUDIT_LOG,
   CLOCK,
+  OUTBOX,
+  type Outbox,
   P02_SPLIT_BUBBLES,
   P28_INSTANT_REPLY_MIN_TYPING_MS,
   type AuditLog,
@@ -24,11 +27,14 @@ import { ReplyPlanStore, type ReplyPlan } from './plan-store.js';
 import { ReplyContext, ReplySnapshot } from './reply-context.js';
 import { callModelForCare, careFallback } from './safety-care.js';
 import { HEALTH_LABEL } from './health-care.js';
+import { MediaAiService } from './media-ai.js';
 import { outputAllowed, replyDelay, splitReply } from '../domain/reply-rules.js';
 const Result = z.object({
   bubbles: z.array(z.string().min(1).max(4000)).min(1).max(4),
   snapshot: ReplySnapshot,
   care: z.boolean(),
+  /** T-071：实际要发的内容（语音替换文字、附表情包 / 作品链接）；没有时按 bubbles 发文字。 */
+  contents: z.array(MessageContent).max(6).optional(),
 });
 @Injectable()
 export class ReplyEngine {
@@ -39,6 +45,8 @@ export class ReplyEngine {
     @Inject(CHAT_PARTICIPANT_PORT) readonly writer: ChatParticipantPort,
     @Inject(CLOCK) readonly clock: Clock,
     @Inject(AUDIT_LOG) readonly audit: AuditLog,
+    @Inject(MediaAiService) readonly mediaAi: MediaAiService,
+    @Inject(OUTBOX) readonly outbox: Outbox,
   ) {}
   async run(id: string): Promise<void> {
     if (!z.uuid().safeParse(id).success) return;
@@ -137,6 +145,66 @@ export class ReplyEngine {
     }
     if (inCare && !bubbles.every((b) => outputAllowed(b, snapshot.policy, false)))
       bubbles = careFallback(undefined, snapshot.careVariant, null);
+    // T-071 MED-04 第 2 条：识过图的回合，回复里出现名单外真人姓名 → 重写一次，仍不行用安全说法。
+    if (!inCare && snapshot.allowedNames) {
+      const bad = await this.mediaAi.offendingNames(
+        bubbles.join('\n'),
+        snapshot.allowedNames,
+        snapshot.userText,
+      );
+      if (bad.length) {
+        const retry = await callModelForCare(
+          this.gateway,
+          {
+            ...this.input(row, snapshot, 'names'),
+            messages: [
+              ...snapshot.messages,
+              {
+                role: 'system',
+                content: `上次回复说出了你不能认出的人（${bad.join('、')}）。图片里名单外的人不能说出或猜测身份。请重新回复，只按外观描述，不提这些名字。`,
+              },
+            ],
+          },
+          facts,
+        );
+        const again =
+          retry.ok && outputAllowed(retry.value.text, snapshot.policy, snapshot.scope === 'adult')
+            ? splitReply(retry.value.text, snapshot.splitBubbles)
+            : [];
+        bubbles =
+          again.length &&
+          !(
+            await this.mediaAi.offendingNames(
+              again.join('\n'),
+              snapshot.allowedNames,
+              snapshot.userText,
+            )
+          ).length
+            ? again
+            : ['图里的人我不太认得呢，你跟我说说？'];
+      }
+    }
+    // T-071：语音 / 表情包 / 作品链接（只在日常范围的普通回复里）。
+    let contents: MessageContent[] | null = null;
+    if (!inCare && row.kind === 'message' && snapshot.scope === 'normal') {
+      const history = await this.context.chat
+        .readMessages({ conversationId: row.conversationId, scopes: ['normal'], limit: 100 })
+        .catch(() => []);
+      contents = await this.mediaAi
+        .planExtras({
+          ctx: {
+            userId: row.userId,
+            characterId: row.characterId,
+            conversationId: row.conversationId,
+          },
+          triggerId: row.triggerId,
+          bubbles,
+          userText: snapshot.userText,
+          history,
+          voiceId: snapshot.voiceId,
+        })
+        .catch(() => null);
+    }
     await this.store.db.transaction(async (tx) => {
       if (!(await this.store.lock(tx, row.userId, row.conversationId))) return;
       const [current] = await tx.db
@@ -158,6 +226,7 @@ export class ReplyEngine {
         bubbles,
         snapshot: { ...snapshot, highRisk: facts.highRisk },
         care: inCare,
+        ...(contents ? { contents } : {}),
       });
       const delay = inCare
         ? 0
@@ -331,7 +400,10 @@ export class ReplyEngine {
           {
             conversationId: row.conversationId,
             senderParticipantId: result.snapshot.participantId,
-            content: { type: 'text', text: result.bubbles[row.nextBubble]! },
+            content: result.contents?.[row.nextBubble] ?? {
+              type: 'text',
+              text: result.bubbles[row.nextBubble]!,
+            },
             idempotencyKey: `reply:${row.triggerId}:${row.nextBubble}`,
             expectedScope: result.snapshot.scope,
             ...(result.snapshot.healthUsed ? { labels: [HEALTH_LABEL] } : {}),
@@ -345,8 +417,16 @@ export class ReplyEngine {
             .where(eq(replyPlans.id, row.id));
           return;
         }
+        // T-071：角色发出语音 → 成就第 11 号（ai_runtime.milestone voice_message_sent）。
+        if (posted.value.content?.type === 'voice')
+          await this.outbox.publish(tx, 'ai_runtime.milestone', 'ai_runtime', {
+            userId: row.userId,
+            characterId: row.characterId,
+            kind: 'voice_message_sent',
+            refId: posted.value.messageId,
+          });
         const nextBubble = row.nextBubble + 1;
-        const done = nextBubble >= result.bubbles.length;
+        const done = nextBubble >= (result.contents?.length ?? result.bubbles.length);
         const dueAt = new Date(
           this.clock.nowMs() + (result.care ? 0 : P02_SPLIT_BUBBLES.minIntervalMs),
         );

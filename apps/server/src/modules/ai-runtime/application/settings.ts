@@ -12,7 +12,9 @@ import {
   type ChatAdminPort,
   type AdultModelReadPort,
   type ScenarioMode,
+  type MediaAssetReadPort,
 } from '@weiban/contracts';
+import { MEDIA_ASSET_READ_PORT } from '../../media/index.js';
 import {
   AppError,
   CLOCK,
@@ -47,6 +49,7 @@ export class CompanionSettingsService {
     @Inject(CHAT_ADMIN_PORT) private readonly chat: ChatAdminPort,
     @Inject(ADULT_MODEL_READ_PORT) private readonly adultModels: AdultModelReadPort,
     @Inject(ReplyPlanStore) private readonly plans: ReplyPlanStore,
+    @Inject(MEDIA_ASSET_READ_PORT) private readonly assets: MediaAssetReadPort,
   ) {}
   private async guard(userId: string, characterId: string | null): Promise<void> {
     parseContract(Id, userId);
@@ -91,6 +94,7 @@ export class CompanionSettingsService {
       proactiveFrequency: (row?.proactiveFrequency ?? 'medium') as 'low' | 'medium' | 'high',
       proactiveCalls: row?.proactiveCalls ?? false,
       dailyLife: row?.dailyLife ?? true,
+      voiceId: row?.voiceId ?? null,
       updatedAt: (row?.updatedAt ?? this.clock.now()).toISOString(),
       inheritsDefaults: characterId !== null && !specific,
     };
@@ -189,6 +193,11 @@ export class CompanionSettingsService {
     }
     if (patch.scenarioMode && allowed && !allowed.items.some((m) => m.id === patch.scenarioMode))
       throw new AppError('bad_request', '该角色不允许此模式');
+    // T-071：音色只能选音色库里启用的音色（MED-03 第 1 条，非克隆）。
+    if (patch.voiceId) {
+      const voice = await this.assets.getVoice(patch.voiceId);
+      if (!voice || !voice.enabled) throw new AppError('bad_request', '音色不存在或已停用');
+    }
     const activeContacts = characterId ? [] : await this.contacts.listActiveContacts(userId);
     return this.db.transaction(async (tx) => {
       await this.lock(tx, userId);
@@ -207,6 +216,7 @@ export class CompanionSettingsService {
         proactiveFrequency: patch.proactiveFrequency ?? old.proactiveFrequency ?? 'medium',
         proactiveCalls: patch.proactiveCalls ?? old.proactiveCalls ?? false,
         dailyLife: patch.dailyLife ?? old.dailyLife ?? true,
+        voiceId: patch.voiceId === undefined ? (old.voiceId ?? null) : patch.voiceId,
         updatedAt: this.clock.now(),
       };
       if (characterId && patch.scenarioMode && patch.scenarioMode !== old.scenarioMode) {

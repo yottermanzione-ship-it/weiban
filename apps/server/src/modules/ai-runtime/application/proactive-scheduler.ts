@@ -25,6 +25,7 @@ import {
   type HolidayEventPort,
   type IdentityAccountStatusPort,
   type IdentityReadPort,
+  type MessageContent,
   type ModelGatewayPort,
   type PolicyPort,
   type ProactiveMessagePort,
@@ -59,6 +60,7 @@ import { proactivePlans, simulationStates, userChatActivity } from '../infra/db/
 import { CompanionSettingsService } from './settings.js';
 import { MemoryService } from './memory.js';
 import { SimulationService } from './simulation.js';
+import { MediaAiService } from './media-ai.js';
 
 // ---------------------------------------------------------------------------
 // 参数
@@ -95,7 +97,9 @@ export type ProactiveReason =
   | 'anniversary'
   | 'public_feed'
   | 'safety_follow_up'
-  | 'interactive_play';
+  | 'interactive_play'
+  /** T-071 MED-05：主动分享作品链接（计入 P-03 / P-04）；sourceRef = work:{workLinkId}:{周}。 */
+  | 'share_work';
 
 export interface ProactiveRequest {
   userId: string;
@@ -228,6 +232,7 @@ export class ProactiveSchedulerService {
     @Inject(CompanionSettingsService) private readonly settings: CompanionSettingsService,
     @Inject(MemoryService) private readonly memory: MemoryService,
     @Inject(SimulationService) private readonly simulation: SimulationService,
+    @Inject(MediaAiService) private readonly mediaAi: MediaAiService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -465,6 +470,30 @@ export class ProactiveSchedulerService {
           priority: 30,
           dueAt: new Date(nowMs + stableRandom(ctx.userId, characterId, 'absence') * 90 * 60_000),
         });
+
+      // T-071 MED-05：每周最多一次主动分享自己的作品（只来自作品链接库），时间稳定随机。
+      try {
+        const week = Math.floor(nowMs / (7 * 86_400_000));
+        const works = await this.mediaAi.listShareableWorks(characterId);
+        if (works.length && stableRandom(ctx.userId, characterId, `work:${week}`) < 0.5) {
+          const pick =
+            works[Math.floor(stableRandom(characterId, `pick:${week}`) * works.length)] ??
+            works[0]!;
+          const targetHour = 10 + stableRandom(ctx.userId, characterId, `wh:${week}`) * 11;
+          if (ctx.localHour >= Math.floor(targetHour))
+            await this.request({
+              userId: ctx.userId,
+              characterId,
+              reason: 'share_work',
+              sourceRef: `work:${pick.workLinkId}:${week}`,
+              topicKey: `work:${pick.workLinkId}`,
+              brief: `你想把自己的作品《${pick.title}》分享给对方。用一两句话自然地说为什么想分享，不要贴网址（链接卡片会单独发出），不夸大、不编造作品信息。`,
+              priority: 5,
+            });
+        }
+      } catch {
+        // 作品链接库不可读时跳过。
+      }
 
       // 日常事件分享（SIM-06）：从当天事件里挑，时间按稳定随机分散在当天，避免固定时刻。
       const events = await this.todayEvents(ctx, characterId);
@@ -720,6 +749,16 @@ export class ProactiveSchedulerService {
       await this.drop(plan, 'output_guard');
       return;
     }
+    // T-071 MED-05：作品分享附链接卡片；链接不可访问就不发这条主动消息（不得分享打不开的链接）。
+    let link: MessageContent | null = null;
+    if (plan.reason === 'share_work') {
+      const workLinkId = plan.sourceRef.split(':')[1] ?? '';
+      link = await this.mediaAi.pickWorkLink(plan.characterId, '', workLinkId).catch(() => null);
+      if (!link) {
+        await this.drop(plan, 'link_unreachable');
+        return;
+      }
+    }
     try {
       const sent = await this.db.transaction(async (tx) => {
         await tx.query(
@@ -753,6 +792,19 @@ export class ProactiveSchedulerService {
           );
           if (!posted.ok) throw new Error(`post_failed:${posted.error}`);
           firstId ??= posted.value.messageId;
+        }
+        if (link) {
+          const posted = await this.writer.postMessage(
+            {
+              conversationId: conversation.conversationId,
+              senderParticipantId: participant.participantId,
+              content: link,
+              idempotencyKey: `proactive:${plan.id}:link`,
+              expectedScope: conversation.contentScope,
+            },
+            tx,
+          );
+          if (!posted.ok) throw new Error(`post_failed:${posted.error}`);
         }
         await tx.db
           .update(proactivePlans)

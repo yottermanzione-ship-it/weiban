@@ -43,7 +43,19 @@ import { ChargeQueryUnavailableError } from './defaults.js';
 
 type CatalogRow = typeof modelCatalog.$inferSelect;
 type CatalogWrite = z.infer<typeof AdminCatalogEntryWrite>;
-export type DefaultUse = 'chat' | 'background' | 'vision';
+export type DefaultUse =
+  | 'chat'
+  | 'background'
+  | 'vision'
+  | 'planner'
+  | 'speech_synthesis'
+  | 'speech_recognition'
+  | 'image_generation'
+  | 'web_search';
+/** 模型故障提醒只关心这三类默认（ModelNotificationReadPort.previousDefaultFor）。 */
+const NOTIFY_USES = ['chat', 'background', 'vision'] as const;
+type NotifyUse = (typeof NOTIFY_USES)[number];
+const isNotifyUse = (u: string): u is NotifyUse => (NOTIFY_USES as readonly string[]).includes(u);
 
 /** 一个模型的当前事实：目录条目（可能不存在）+ 所属上游状态（上游可能已删除）。 */
 export interface ModelFacts {
@@ -211,8 +223,8 @@ export class CatalogService {
             modelKey: row.modelKey,
             available: isReason === null,
             reason: isReason ?? 'recovered',
-            ...(before.defaultFor.length
-              ? { previousDefaultFor: before.defaultFor as DefaultUse[] }
+            ...(before.defaultFor.some(isNotifyUse)
+              ? { previousDefaultFor: before.defaultFor.filter(isNotifyUse) }
               : {}),
           });
         }

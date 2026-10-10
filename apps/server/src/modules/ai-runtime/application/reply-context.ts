@@ -28,6 +28,7 @@ import { ReplyPlanStore, type ReplyPlan } from './plan-store.js';
 import { highRisk, REPLY_TEMPLATE_VERSION } from '../domain/reply-rules.js';
 import { HealthCareService } from './health-care.js';
 import { SocialService } from './social.js';
+import { MediaAiService } from './media-ai.js';
 export const ReplySnapshot = z.object({
   triggerAt: z.iso.datetime(),
   deadlineAt: z.iso.datetime(),
@@ -60,6 +61,12 @@ export const ReplySnapshot = z.object({
     isRealPerson: z.boolean(),
     romanceAllowed: z.boolean(),
   }),
+  /** T-071：本轮识过图时的认人名单（名单外真人姓名拦截用）；没识图为 null。 */
+  allowedNames: z.array(z.string()).nullable().default(null),
+  /** T-071：本轮用户说的话（含语音转写、图片 / 链接说明），用于语音请求、链接请求与人名拦截。 */
+  userText: z.string().default(''),
+  /** T-071：陪伴设置里的音色。 */
+  voiceId: z.string().nullable().default(null),
 });
 export type ReplySnapshot = z.infer<typeof ReplySnapshot>;
 @Injectable()
@@ -78,6 +85,7 @@ export class ReplyContext {
     @Inject(GroupChatService) readonly groupChat: GroupChatService,
     @Inject(HealthCareService) readonly healthCare: HealthCareService,
     @Inject(SocialService) readonly social: SocialService,
+    @Inject(MediaAiService) readonly mediaAi: MediaAiService,
   ) {}
   async build(row: ReplyPlan): Promise<ReplySnapshot | null> {
     const contact = await this.contacts.getActiveContact(row.userId, row.characterId);
@@ -154,17 +162,46 @@ export class ReplyContext {
       row.kind === 'greeting'
         ? await this.contacts.getPendingGreeting(row.userId, row.characterId)
         : null;
-    const userText =
-      history
-        .filter(
-          (m) =>
-            m.senderKind === 'user' &&
-            m.seq > (history.filter((r) => r.senderKind === 'character').at(-1)?.seq ?? 0) &&
-            m.content?.type === 'text',
-        )
-        .slice(-6)
-        .map((m) => (m.content?.type === 'text' ? m.content.text : ''))
-        .join('\n') + (greeting ?? '');
+    // T-071：本轮新消息里的语音先转文字、图片识图认人、表情包与链接读含义（MED-01/03/04/05）。
+    const mediaCtx = {
+      userId: row.userId,
+      characterId: row.characterId,
+      conversationId: row.conversationId,
+    };
+    const lastCharacterSeq = history.filter((r) => r.senderKind === 'character').at(-1)?.seq ?? 0;
+    const fresh = history
+      .filter((m) => m.senderKind === 'user' && m.seq > lastCharacterSeq && m.status === 'normal')
+      .slice(-6);
+    const rendered = new Map<string, string>();
+    const searchBlocks: string[] = [];
+    let allowedNames: string[] | null = null;
+    let freshPlain = fresh
+      .map((m) => (m.content?.type === 'text' ? m.content.text : ''))
+      .filter(Boolean)
+      .join('\n');
+    for (const m of fresh) {
+      if (m.content?.type === 'text') continue;
+      const out = await this.mediaAi
+        .render(mediaCtx, m, {
+          analyze: true,
+          selfName: role.profile.name,
+          aliases: role.profile.aliases,
+          isRealPerson: policy.isRealPerson,
+          userText: freshPlain,
+        })
+        .catch(() => null);
+      if (!out) continue;
+      rendered.set(m.messageId, out.text);
+      if (out.analysis) {
+        allowedNames = [...new Set([...(allowedNames ?? []), ...out.analysis.allowedNames])];
+        if (out.analysis.searchBlock) searchBlocks.push(out.analysis.searchBlock);
+      }
+    }
+    freshPlain = fresh
+      .map((m) => (m.content?.type === 'text' ? m.content.text : (rendered.get(m.messageId) ?? '')))
+      .filter(Boolean)
+      .join('\n');
+    const userText = freshPlain + (greeting ?? '');
     const risk = highRisk(userText);
     const priorCare = await this.store.db.query<{ n: string }>(
       "SELECT count(*) n FROM ai_runtime.reply_plans WHERE conversation_id=$1 AND care_until IS NOT NULL AND status IN ('done','sending')",
@@ -259,12 +296,36 @@ export class ReplyContext {
     );
     // Preserve selected rounds while bounding long or heavily split conversations.
     const perMessageChars = Math.max(1, Math.floor(80000 / Math.max(1, recent.length)));
-    for (const m of recent)
-      if (m.status === 'normal' && m.content?.type === 'text')
-        messages.push({
-          role: m.senderKind === 'user' ? 'user' : 'assistant',
-          content: m.content.text.slice(0, perMessageChars),
-        });
+    for (const block of searchBlocks) messages.push({ role: 'system', content: block });
+    if (allowedNames)
+      messages.push({
+        role: 'system',
+        content: `识图认人规则：图片里你只能认出这些人：${JSON.stringify(allowedNames)}（你自己和与你有公开关系的人）。名单外的人不说出、不猜测身份，只按外观描述。`,
+      });
+    for (const m of recent) {
+      if (m.status !== 'normal' || !m.content) continue;
+      let text: string | null;
+      if (m.content.type === 'text') text = m.content.text;
+      else if (rendered.has(m.messageId)) text = rendered.get(m.messageId)!;
+      else
+        text =
+          (
+            await this.mediaAi
+              .render(mediaCtx, m, {
+                analyze: false,
+                selfName: role.profile.name,
+                aliases: role.profile.aliases,
+                isRealPerson: policy.isRealPerson,
+                userText: '',
+              })
+              .catch(() => null)
+          )?.text ?? null;
+      if (!text) continue;
+      messages.push({
+        role: m.senderKind === 'user' ? 'user' : 'assistant',
+        content: text.slice(0, perMessageChars),
+      });
+    }
     if (row.kind === 'greeting')
       messages.push({
         role: 'user',
@@ -316,6 +377,9 @@ export class ReplyContext {
       addressAs: contact.addressAs,
       healthUsed: healthHint.healthUsed,
       policy,
+      allowedNames,
+      userText: userText.slice(0, 4000),
+      voiceId: settings.voiceId ?? null,
     });
   }
 }

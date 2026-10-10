@@ -260,6 +260,20 @@
       "when": 1794400000000,
       "tag": "0044_calls",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1794600000000,
+      "tag": "0046_companion_voice",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1794700000000,
+      "tag": "0047_media_usage_units",
+      "breakpoints": true
     }
   ]
 }

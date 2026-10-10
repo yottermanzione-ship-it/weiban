@@ -104,6 +104,8 @@ export class ModelResolver implements AdultModelReadPort {
     modelRole: ModelRole;
     purpose: ModelPurpose;
     characterId?: string;
+    /** T-071：消息带图片时同样要求识图能力（ChatMessageForModel.images）。 */
+    hasImages?: boolean;
   }): Promise<PortResult<ResolvedModel, GenerateError>> {
     const picked = await this.pick(input.userId, input.modelRole, input.characterId ?? null);
     if (!picked) return { ok: false, error: 'not_configured' };
@@ -117,7 +119,10 @@ export class ModelResolver implements AdultModelReadPort {
     };
     const first = checkUsable(facts);
     if (first) return { ok: false, error: first };
-    if (input.purpose === 'vision' && !facts.entry?.capabilities.includes('vision')) {
+    if (
+      (input.purpose === 'vision' || input.hasImages === true) &&
+      !facts.entry?.capabilities.includes('vision')
+    ) {
       const visionDefault = await this.catalog.defaultModel('vision');
       if (!visionDefault) return { ok: false, error: 'capability_missing' };
       const err = checkUsable(visionDefault);

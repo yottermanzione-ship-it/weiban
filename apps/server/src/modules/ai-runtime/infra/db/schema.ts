@@ -28,6 +28,8 @@ export const companionSettings = aiRuntimeSchema.table(
     proactiveFrequency: text('proactive_frequency').notNull().default('medium'),
     proactiveCalls: boolean('proactive_calls').notNull().default(false),
     dailyLife: boolean('daily_life').notNull().default(true),
+    /** T-071：该角色发语音 / 通话用的音色（media 音色库，非克隆）；null = 预设默认。 */
+    voiceId: uuid('voice_id'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
   (t) => [

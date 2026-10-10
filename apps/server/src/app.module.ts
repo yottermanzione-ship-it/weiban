@@ -8,6 +8,7 @@ import type {
   ContactsReadPort,
   ChatNotificationReadPort,
   CharacterNameReadPort,
+  ModelGatewayMediaPort,
   Tx,
 } from '@weiban/contracts';
 import {
@@ -50,15 +51,34 @@ import {
   MEDIA_REAL_PERSON_NAMES,
   type MediaMessageLookup,
 } from './modules/media/index.js';
-import { ModelAccessModule, MODEL_NOTIFICATION_READ_PORT } from './modules/model-access/index.js';
+import {
+  ModelAccessModule,
+  MODEL_NOTIFICATION_READ_PORT,
+  MODEL_GATEWAY_MEDIA_PORT,
+} from './modules/model-access/index.js';
 import { GrowthModule } from './modules/growth/index.js';
 import { MomentsModule } from './modules/moments/index.js';
 import { ProactiveModule } from './modules/proactive/index.js';
-import { CallsModule } from './modules/calls/index.js';
+import { CallsModule, CALL_SERVICE_STATUS, type CallServiceStatus } from './modules/calls/index.js';
 import { PlatformModule, type PlatformOptions } from './platform/index.js';
 
 @Global()
-@Module({ imports: [ModelAccessModule], exports: [ModelAccessModule] })
+@Module({
+  imports: [ModelAccessModule],
+  providers: [
+    // T-071：通话是否开通 = 语音识别与语音合成都已开通（MED-06 第 11 条；CallAgentPort 未绑定时 calls 仍视为未开通）。
+    {
+      provide: CALL_SERVICE_STATUS,
+      inject: [MODEL_GATEWAY_MEDIA_PORT],
+      useFactory: (media: ModelGatewayMediaPort): CallServiceStatus => ({
+        isVoiceCallEnabled: async () =>
+          (await media.isServiceEnabled('speech_recognition')) &&
+          (await media.isServiceEnabled('speech_synthesis')),
+      }),
+    },
+  ],
+  exports: [ModelAccessModule, CALL_SERVICE_STATUS],
+})
 class GatewayCompositionModule {}
 
 @Global()

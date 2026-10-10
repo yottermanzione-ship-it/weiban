@@ -28,6 +28,8 @@ import { MomentsAiService } from './application/moments-ai.js';
 import { MemorySharingController } from './http/memory-sharing.controller.js';
 import { MomentsModule } from '../moments/index.js';
 import { TimelineController } from './http/timeline.controller.js';
+import { MediaModule } from '../media/index.js';
+import { MediaAiService, AI_USER_QUIET_STATE, NullQuietState } from './application/media-ai.js';
 @Module({
   imports: [
     IdentityModule,
@@ -41,6 +43,7 @@ import { TimelineController } from './http/timeline.controller.js';
     HealthModule,
     BillingModule,
     MomentsModule,
+    MediaModule,
   ],
   providers: [
     CompanionSettingsService,
@@ -53,6 +56,9 @@ import { TimelineController } from './http/timeline.controller.js';
     TimelineListService,
     SocialService,
     MomentsAiService,
+    MediaAiService,
+    // P-45 静默：T-072 / T-090 提供真实实现后改为 useExisting。
+    { provide: AI_USER_QUIET_STATE, useClass: NullQuietState },
     { provide: SIMULATION_READ_PORT, useExisting: SimulationService },
     HealthCareService,
     ProactiveSchedulerService,
