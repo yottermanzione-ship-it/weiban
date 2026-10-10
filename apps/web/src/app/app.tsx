@@ -88,10 +88,23 @@ import {
   ReportPage,
   WorkPage,
 } from '../features/plaza.js';
+import {
+  DailyHistoryPage,
+  DailyQuestionPage,
+  FocusCapsule,
+  FocusPage,
+  LetterPage,
+  LettersPage,
+  ReminderEditPage,
+  RemindersPage,
+  WishlistPage,
+  WishlistsPage,
+  WriteLetterPage,
+} from '../features/play.js';
 /** 这些页面自带返回按钮，不显示通用顶栏。 */
 const ownHeader = [
   /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice|cards|supplement)$/,
-  /^\/(imports|pets|plaza)(\/|$)/,
+  /^\/(imports|pets|plaza|play)(\/|$)/,
   /^\/settings\/delete-account$/,
   /^\/(share|search)(\/|$)/,
   /^\/me\/favorites/,
@@ -180,6 +193,7 @@ function Shell() {
             <button onClick={() => void auth.logout()}>‹ 返回登录</button>
           </header>
         )}
+        <FocusCapsule />
         {offline && (
           <div role="status" className="offline">
             网络暂不可用，正在显示本机保存的内容
@@ -286,6 +300,16 @@ function Shell() {
           <Route path="/services/pets" element={<PetsPage />} />
           <Route path="/pets/adopt" element={<AdoptPage />} />
           <Route path="/pets/:petId" element={<PetPage />} />
+          <Route path="/play/daily" element={<DailyQuestionPage />} />
+          <Route path="/play/daily/history" element={<DailyHistoryPage />} />
+          <Route path="/play/wishlists" element={<WishlistsPage />} />
+          <Route path="/play/wishlists/:characterId" element={<WishlistPage />} />
+          <Route path="/play/letters" element={<LettersPage />} />
+          <Route path="/play/letters/new" element={<WriteLetterPage />} />
+          <Route path="/play/letters/:letterId" element={<LetterPage />} />
+          <Route path="/play/focus" element={<FocusPage />} />
+          <Route path="/play/reminders" element={<RemindersPage />} />
+          <Route path="/play/reminders/:reminderId" element={<ReminderEditPage />} />
           <Route path="/plaza/works/:workId" element={<WorkPage />} />
           <Route path="/plaza/authors/:authorId" element={<AuthorPage />} />
           <Route path="/plaza/me" element={<MyWorksPage />} />

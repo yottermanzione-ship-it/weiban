@@ -7,8 +7,11 @@ import {
   Image as ImageIcon,
   Camera,
   Phone,
+  EnvelopeSimple,
+  Timer,
 } from '@phosphor-icons/react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { DailyQuestionBubble, LetterBubble } from './play.js';
 import {
   ChatActionEndpoints,
   ChatEndpoints,
@@ -196,6 +199,10 @@ export function content(message: Message): string {
       return `[链接] ${message.content.title}`;
     case 'call_record':
       return `[语音通话] ${callRecordText(message.content)}`;
+    case 'letter':
+      return '[信件]';
+    case 'daily_question':
+      return `[每日一问] ${message.content.question}`;
     default:
       return '当前版本不支持此消息';
   }
@@ -550,6 +557,10 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     switch (c.type) {
       case 'contact_card':
         return <ContactCardBubble content={c} />;
+      case 'letter':
+        return <LetterBubble content={c} characterId={role?.refId ?? ''} />;
+      case 'daily_question':
+        return <DailyQuestionBubble content={c} />;
       case 'action_card':
         return (
           <ActionCardBubble
@@ -1120,6 +1131,26 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
             >
               <Phone size={28} />
               <small>语音通话</small>
+            </button>
+          )}
+          {!group && role && (
+            <button
+              type="button"
+              className="plus-cell"
+              onClick={() => navigate(`/play/letters/new?characterId=${role.refId}`)}
+            >
+              <EnvelopeSimple size={28} />
+              <small>写信</small>
+            </button>
+          )}
+          {!group && role && (
+            <button
+              type="button"
+              className="plus-cell"
+              onClick={() => navigate(`/play/focus?characterId=${role.refId}`)}
+            >
+              <Timer size={28} />
+              <small>陪我专注</small>
             </button>
           )}
         </div>

@@ -6,6 +6,7 @@ import { useAuth } from '../app/auth.js';
 import { ProfileAvatar } from './profile-avatar.js';
 import { useRemote } from '../data/use-remote.js';
 import { useAchievementsDot, useCardsDot } from './cards.js';
+import { PlayServiceCards } from './play.js';
 
 export function MePage() {
   const { session } = useAuth();
@@ -144,6 +145,7 @@ export function ServicesPage() {
           <Link to="/services/period" className="service-card">
             经期日记<span>加密保存，只有你授权的角色知道</span>
           </Link>
+          <PlayServiceCards />
         </div>
       </section>
     </main>

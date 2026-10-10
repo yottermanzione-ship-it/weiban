@@ -15,6 +15,7 @@ import { Name } from './chat.js';
 import { useCallEntry } from './call.js';
 import { VoiceRow } from './voices.js';
 import { PlazaPublishRow } from './plaza.js';
+import { WishlistRow } from './play.js';
 export function ChatSettingsPage() {
   const { conversationId = '' } = useParams();
   const { state } = useChat();
@@ -289,6 +290,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
             <Link to={`/characters/${characterId}/timeline`}>TA 的近况</Link>
             <Link to={`/characters/${characterId}/cards`}>卡册</Link>
             <PetRow characterId={characterId} />
+            <WishlistRow characterId={characterId} />
             <Link to={`/characters/${characterId}/supplement`}>我的补充设定</Link>
             <PlazaPublishRow characterId={characterId} />
             <Link to={`/chat/${id}/search`}>查找聊天记录</Link>
