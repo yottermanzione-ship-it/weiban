@@ -45,6 +45,7 @@ import {
   CHARACTER_NAME_READ_PORT,
   CHARACTER_CONTACT_ACCESS,
   CHARACTER_REAL_PERSON_NAMES,
+  CHARACTER_SUPPLEMENT_PORT,
 } from './modules/characters/index.js';
 import { HealthModule } from './modules/health/index.js';
 import { PolicyModule } from './modules/policy/index.js';
@@ -75,6 +76,7 @@ import {
   CALL_SERVICE_STATUS,
   type CallServiceStatus,
 } from './modules/calls/index.js';
+import { PlazaModule, PLAZA_PRESET_NAMES, PLAZA_SUPPLEMENT_READ } from './modules/plaza/index.js';
 import { PlatformModule, type PlatformOptions } from './platform/index.js';
 
 @Global()
@@ -254,6 +256,22 @@ class GrowthHolidayCompositionModule {}
 })
 class LibraryCompositionModule {}
 
+/**
+ * T-087：plaza 只经端口访问 characters / policy / ai-runtime，令牌定义在 plaza，由这里绑定。
+ * PLAZA_CHARACTERS（CharacterPlazaPort）与 PLAZA_CLASSIFICATION_POLICY 由 T-088 补绑定；
+ * PLAZA_PUBLISH_CHECK（PlazaPublishCheckPort）由 T-089 补绑定。未绑定时相关操作返回不可用，绝不跳过检查。
+ */
+@Global()
+@Module({
+  imports: [CharactersModule],
+  providers: [
+    { provide: PLAZA_PRESET_NAMES, useExisting: CHARACTER_NAME_READ_PORT },
+    { provide: PLAZA_SUPPLEMENT_READ, useExisting: CHARACTER_SUPPLEMENT_PORT },
+  ],
+  exports: [PLAZA_PRESET_NAMES, PLAZA_SUPPLEMENT_READ],
+})
+class PlazaCompositionModule {}
+
 @Module({})
 export class AppModule {
   static forRoot(options: PlatformOptions): DynamicModule {
@@ -288,6 +306,8 @@ export class AppModule {
         ProactiveModule,
         CallsModule,
         CallAgentCompositionModule,
+        PlazaCompositionModule,
+        PlazaModule,
       ],
     };
   }
