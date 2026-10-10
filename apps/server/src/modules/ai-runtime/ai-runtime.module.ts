@@ -52,7 +52,10 @@ import {
   AI_PERSONA_UPDATE_SUMMARIZER,
   AI_CARD_LINE_WRITER,
   AI_PLAZA_PUBLISH_CHECK,
+  AI_ACTIVE_HOURS,
 } from './tokens.js';
+import { ActiveHoursService } from './application/active-hours.js';
+import { PlayAiService } from './application/play-ai.js';
 import { PlazaPublishCheckService } from './application/plaza-check.js';
 import {
   SupplementedCharacterRead,
@@ -134,6 +137,10 @@ import {
       }),
       inject: [GROWTH_SERVICE],
     },
+    // T-096：玩法里角色怎么说话；给 play 的活跃时段。
+    PlayAiService,
+    ActiveHoursService,
+    { provide: AI_ACTIVE_HOURS, useExisting: ActiveHoursService },
     AiRuntimeLifecycle,
   ],
   exports: [
@@ -144,6 +151,7 @@ import {
     AI_PERSONA_UPDATE_SUMMARIZER,
     AI_CARD_LINE_WRITER,
     AI_PLAZA_PUBLISH_CHECK,
+    AI_ACTIVE_HOURS,
   ],
   controllers: [
     GroupCompanionController,

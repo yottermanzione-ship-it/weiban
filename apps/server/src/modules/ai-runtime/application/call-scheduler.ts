@@ -84,6 +84,8 @@ export class CallSchedulerService {
   async consider(ctx: { userId: string; localDate: string }, contacts: Contact[]): Promise<void> {
     const now = this.clock.now();
     if (await this.quiet.getInconvenientUntil(ctx.userId)) return;
+    // T-096 PLAY-06 第 3 条：用户正在专注时主动来电不拨出。
+    if (await this.quiet.getFocusUntil(ctx.userId).catch(() => null)) return;
     const [busy] = await this.db.db
       .select({ at: userChatActivity.lastAt })
       .from(userChatActivity)

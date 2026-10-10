@@ -308,6 +308,91 @@ export class MemoryService {
       if (inserted.length) await this.changed(tx, job, false, conversation.lastSeq);
     });
   }
+  /**
+   * T-096 PLAY-04 第 5 条：心愿清单项定了日期 → 一条「约定」（commitment，dueAt = 该日期）；取消日期或删除 → 约定一并取消。
+   * clientId = 清单项 ID（同用户同角色内唯一），不调用模型。返回约定记忆 ID（取消时为 null）。
+   */
+  async syncWishlistCommitment(
+    userId: string,
+    characterId: string,
+    itemId: string,
+    content: string | null,
+    dueAt: string | null,
+  ): Promise<string | null> {
+    const job = await this.guard(userId, characterId).catch(() => null);
+    if (!job) return null;
+    return this.db.transaction(async (tx) => {
+      await this.lock(tx, job);
+      const conversation = await this.chat.getConversation(job.conversationId, tx);
+      const [existing] = await tx.db
+        .select()
+        .from(memories)
+        .where(
+          and(this.where(userId, characterId, job.conversationId), eq(memories.clientId, itemId)),
+        )
+        .for('update');
+      const text = content?.trim().slice(0, 1000) ?? '';
+      if (!dueAt || !text || healthPrivate(text)) {
+        if (existing) {
+          await tx.db.delete(memories).where(eq(memories.id, existing.id));
+          await this.changed(tx, job, true, conversation?.lastSeq ?? 0);
+        }
+        return null;
+      }
+      const id = existing?.id ?? newId();
+      const data: z.infer<typeof MemoryPayload> = {
+        content: text,
+        category: 'commitment',
+        importance: 7,
+        dueAt,
+        visibility: 'only_this_character',
+        sharingClass: 'never',
+        status: 'current',
+        sourceMessageIds: [],
+        createdBy: 'extracted',
+      };
+      const ciphertext = await this.seal(tx, userId, id, data);
+      if (existing)
+        await tx.db
+          .update(memories)
+          .set({ ciphertext, updatedAt: this.clock.now() })
+          .where(eq(memories.id, id));
+      else
+        await tx.db.insert(memories).values({
+          id,
+          userId,
+          characterId,
+          conversationId: job.conversationId,
+          clientId: itemId,
+          scope: 'normal',
+          ciphertext,
+          createdAt: this.clock.now(),
+          updatedAt: this.clock.now(),
+        });
+      await this.changed(tx, job, !!existing, conversation?.lastSeq ?? 0);
+      return id;
+    });
+  }
+
+  /** T-096：按 clientId 找系统写入的记忆 ID（心愿约定与跟进去重用）。 */
+  async findIdByClientId(
+    userId: string,
+    characterId: string,
+    clientId: string,
+  ): Promise<string | null> {
+    const [row] = await this.db.db
+      .select({ id: memories.id })
+      .from(memories)
+      .where(
+        and(
+          eq(memories.userId, userId),
+          eq(memories.characterId, characterId),
+          eq(memories.clientId, clientId),
+        ),
+      );
+    return row?.id ?? null;
+  }
+
   async create(userId: string, characterId: string, input: unknown): Promise<MemoryEntry> {
     const body = parseContract(CreateMemoryRequest, input);
     if (healthPrivate(body.content)) throw new AppError('bad_request', '经期数据不进入角色记忆');

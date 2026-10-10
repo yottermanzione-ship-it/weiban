@@ -23,6 +23,7 @@ import {
   AI_CALL_AGENT_PORT,
   AI_IMPORT_ANALYZER,
   AI_PLAZA_PUBLISH_CHECK,
+  AI_ACTIVE_HOURS,
 } from './modules/ai-runtime/index.js';
 import { BillingModule } from './modules/billing/index.js';
 import {
@@ -86,7 +87,7 @@ import {
   CALL_SERVICE_STATUS,
   type CallServiceStatus,
 } from './modules/calls/index.js';
-import { PlayModule, PLAY_CARD_ISSUER } from './modules/play/index.js';
+import { PlayModule, PLAY_CARD_ISSUER, PLAY_ACTIVE_HOURS } from './modules/play/index.js';
 import {
   PlazaModule,
   PLAZA_CHARACTERS,
@@ -130,8 +131,10 @@ class GatewayCompositionModule {}
     { provide: CALL_AGENT_PORT, useExisting: AI_CALL_AGENT_PORT },
     { provide: IMPORTER_ANALYZER, useExisting: AI_IMPORT_ANALYZER },
     { provide: PLAZA_PUBLISH_CHECK, useExisting: AI_PLAZA_PUBLISH_CHECK },
+    // T-096：play 慢信送达时间用 P-06 学到的活跃小时（T-093 交接遗留）。
+    { provide: PLAY_ACTIVE_HOURS, useExisting: AI_ACTIVE_HOURS },
   ],
-  exports: [CALL_AGENT_PORT, IMPORTER_ANALYZER, PLAZA_PUBLISH_CHECK],
+  exports: [CALL_AGENT_PORT, IMPORTER_ANALYZER, PLAZA_PUBLISH_CHECK, PLAY_ACTIVE_HOURS],
 })
 class CallAgentCompositionModule {}
 

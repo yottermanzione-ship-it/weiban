@@ -10,6 +10,7 @@
  */
 import { Inject, Injectable } from '@nestjs/common';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
+import { QuietStateService } from './quiet-state.js';
 import { and, desc, eq, gte, ne } from 'drizzle-orm';
 import {
   type BillingReadPort,
@@ -177,6 +178,7 @@ export class GroupChatService {
     @Inject(HOLIDAY_EVENT_PORT) private readonly holidays: HolidayEventPort,
     @Inject(SimulationService) private readonly simulation: SimulationService,
     @Inject(PlannerService) private readonly planner: PlannerService,
+    @Inject(QuietStateService) private readonly quiet: QuietStateService,
   ) {}
 
   // =========================================================================
@@ -753,6 +755,8 @@ export class GroupChatService {
     if (!conversation || conversation.type !== 'group') return;
     const settings = await this.loadSettings(conversation.conversationId);
     if (!settings.selfChatEnabled) return;
+    // T-096 PLAY-06 第 3 条：用户正在专注时群聊自发话题不发起。
+    if (await this.quiet.getFocusUntil(job.userId).catch(() => null)) return;
     const last = await this.groups.getLastUserMessageAt(conversation.conversationId);
     const now = this.clock.now();
     if (!last || now.getTime() - Date.parse(last) > P20_SELF_CHAT.userActiveWithinDays * 86400_000)

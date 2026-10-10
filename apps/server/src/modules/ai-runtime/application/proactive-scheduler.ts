@@ -165,6 +165,16 @@ interface PetAlbum {
 /** 领养提议的来源前缀（sourceRef = pet_proposal:{characterId}）。 */
 export const PET_PROPOSAL_SOURCE = 'pet_proposal:';
 
+/**
+ * T-096 玩法（PLAY-04 / PLAY-05）经调度器登记、由 PlayAiService 处理的计划来源前缀：
+ * - play_wish_propose:{characterId}:{周一日期}：心愿提议（每角色每周 1 次）；
+ * - play_wish_follow:{itemId}：「我们那件事做了吗」（每项 1 次）；
+ * - play_letter_anniv:{anniversaryId}:{日期}：纪念日主动寄信（代替纪念日文字消息，计入 P-03）。
+ */
+export const PLAY_WISH_PROPOSE_SOURCE = 'play_wish_propose:';
+export const PLAY_WISH_FOLLOW_SOURCE = 'play_wish_follow:';
+export const PLAY_LETTER_ANNIV_SOURCE = 'play_letter_anniv:';
+
 interface UserContext {
   userId: string;
   timeZone: string;
@@ -523,7 +533,8 @@ export class ProactiveSchedulerService {
               userId: ctx.userId,
               characterId,
               reason: 'anniversary',
-              sourceRef: `anniversary:${a.id}:${ctx.localDate}`,
+              // T-096 PLAY-05 第 7 条：纪念日改为主动寄一封信（PlayAiService 处理；与 growth.anniversary_reached 同一来源键，不会重复）。
+              sourceRef: `${PLAY_LETTER_ANNIV_SOURCE}${a.id}:${ctx.localDate}`,
               brief: `今天是你们的纪念日「${a.label}」（认识第 ${known.daysKnown} 天），自然地提起并表达心意。`,
               isHoliday: true,
               priority: 100 + familiarity,
@@ -757,6 +768,20 @@ export class ProactiveSchedulerService {
         await this.drop(plan, 'chat_defer_timeout');
     // T-090 / behavior-planning.md 6.2：P-45「不方便」静默期间主动消息延后到静默结束之后（安全关怀跟进例外）。
     const quietUntil = await this.quiet.getInconvenientUntil(ctx.userId).catch(() => null);
+    // T-096 PLAY-06 第 3 条：用户正在专注 → 所有角色的主动消息按 P-09 同样延后（最长 60 分钟，超时放弃）；安全关怀跟进例外。
+    const focusUntil = await this.quiet.getFocusUntil(ctx.userId).catch(() => null);
+    if (focusUntil) {
+      for (const plan of due) {
+        if (plan.reason === 'safety_follow_up') continue;
+        if (!plan.deferredSince)
+          await this.db.db
+            .update(proactivePlans)
+            .set({ deferredSince: now, updatedAt: now })
+            .where(eq(proactivePlans.id, plan.id));
+        else if (now.getTime() - plan.deferredSince.getTime() > P09_DEFER.maxDeferMs)
+          await this.drop(plan, 'focus_defer_timeout');
+      }
+    }
 
     // 余额保留线 P-33 与后台预算（SIM-05 第 9 条）；安全关怀跟进例外。
     const spend = await this.billing.getSpendStatus(ctx.userId).catch(() => null);
@@ -769,7 +794,7 @@ export class ProactiveSchedulerService {
     for (const plan of due) {
       if (plan.deferredSince && now.getTime() - plan.deferredSince.getTime() > P09_DEFER.maxDeferMs)
         continue;
-      if (quietUntil && plan.reason !== 'safety_follow_up') continue;
+      if ((quietUntil || focusUntil) && plan.reason !== 'safety_follow_up') continue;
       const contact = contacts.find((c) => c.characterId === plan.characterId);
       if (!contact?.conversationId) {
         await this.drop(plan, 'contact_inactive');

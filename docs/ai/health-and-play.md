@@ -165,6 +165,24 @@
 4. **不计入** P-03、P-04；遵守免打扰，除非用户对该条勾选「免打扰时段也提醒」。用户归类为「健康」的提醒打 `health` 标记（第 2 节第 4 条）。
 5. 提醒到点由 ai-runtime 以该角色身份经 `ChatParticipantPort` 发出；提醒数据放在哪个模块、「健康」类提醒文字是否加密由架构定（第 6 节 CR-23）。
 
+### 5.6 实现说明（T-096，2026-10-11）
+
+代码在 `apps/server/src/modules/ai-runtime/application/play-ai.ts`（`PlayAiService`），数据都在 play 模块，只经 `PlayReadPort` / `PlayAgentPort` 和 play 的内部令牌读写。
+
+| 玩法 | 触发 | 用途 / 计费 | 失败时 |
+|---|---|---|---|
+| 每日一问 | `play.daily_answer_submitted` → 任务 | `chat_reply`，一次 JSON 调用出答案 + 接话 | 余额不足 → `markDailyAnswerWaitingBalance`；余额恢复后补揭晓 |
+| 心愿提议 | 每小时 `ai.play_tick`，决策层 `play_slot` 挑时段 → 调度器登记（`play_wish_propose:`，每角色每周一个来源键） | `proactive`，计入 P-03 / P-04，理由 `interactive_play` | 真人命中工作词表重写一次，仍命中放弃 |
+| 心愿跟进 | 同上，定了日期、未完成、今天或昨天到期（`play_wish_follow:`） | `proactive`，理由 `follow_up`；话题键与约定记忆的 SIM-07 跟进相同，两边只发一条 | 标记跟进失败（已问过）不发 |
+| 约定 | `play.wishlist_item_changed` | 不调用模型：`MemoryService.syncWishlistCommitment` 写 / 删 commitment 记忆（clientId = 清单项 ID） | — |
+| 慢信回信 | `play.letter_sent` → 送达前 10 分钟的延迟任务；每 5 分钟兜底扫描；余额恢复 | `chat_reply`，maxOutputTokens 1,500 | 不回写，信保持「在路上」 |
+| 纪念日寄信 | 调度器纪念日候选改为 `play_letter_anniv:` 来源（同时订阅 `growth.anniversary_reached`，同一来源键只登记一次） | `proactive`，计入 P-03 / P-04，理由 `anniversary` | 计划放弃（见交接遗留） |
+| 专注开始 / 结束 | `play.focus_started` / `play.focus_ended` | `chat_reply`，maxOutputTokens 150 | 提前结束命中惋惜词表或生成失败 → 固定说法「那先休息一下吧～」 |
+| 专注期间安静 | 调度器 `processDue`（按 P-09 延后，60 分钟超时放弃）、来电 `consider`、群聊 `runSelfChat` 都读 `QuietStateService.getFocusUntil` | — | — |
+| 提醒说法 | `play.reminder_saved`（textChanged） | `chat_reply`，一次 JSON 调用出 5 条 | 不回写，play 用模板；余额恢复后补生成 |
+
+活跃时段：`ActiveHoursService`（同 `learnActiveHours` 规则）经 `AI_ACTIVE_HOURS` 绑定为 play 的 `PLAY_ACTIVE_HOURS`。评测用例：`packages/ai-evals/cases/l7.ts`。
+
 ## 6. 需要架构配合的变更申请（汇总在 `runtime-overview.md` 第 15 节）
 
 | # | 申请 | 用途 |

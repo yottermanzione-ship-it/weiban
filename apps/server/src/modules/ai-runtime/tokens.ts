@@ -17,3 +17,5 @@ export const AI_PERSONA_UPDATE_SUMMARIZER = Symbol('weiban.ai-runtime.persona-up
 export const AI_CARD_LINE_WRITER = Symbol('weiban.ai-runtime.card-line-writer');
 /** 契约 PlazaPublishCheckPort（T-089）：app.module 绑定为 plaza 的 PLAZA_PUBLISH_CHECK。 */
 export const AI_PLAZA_PUBLISH_CHECK = Symbol('weiban.ai-runtime.plaza-publish-check');
+/** T-096 服务器内部：用户活跃时段（P-06），app.module 绑定为 play 的 PLAY_ACTIVE_HOURS（T-093 慢信送达时间）。 */
+export const AI_ACTIVE_HOURS = Symbol('weiban.ai-runtime.active-hours');

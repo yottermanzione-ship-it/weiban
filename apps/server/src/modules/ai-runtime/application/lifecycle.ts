@@ -59,6 +59,22 @@ import { CallSchedulerService } from './call-scheduler.js';
 import { PlannerService, PLANNER_CLEANUP_JOB } from './planner.js';
 import { CompanionSettingsService } from './settings.js';
 import { CARE_PLAN_PREFIX } from './health-care.js';
+import {
+  PlayAiService,
+  PLAY_DAILY_ANSWER_JOB,
+  PLAY_FOCUS_LINE_JOB,
+  PLAY_LETTER_REPLY_JOB,
+  PLAY_LETTER_SWEEP_JOB,
+  PLAY_RECOVER_JOB,
+  PLAY_REMINDER_PHRASINGS_JOB,
+  PLAY_TICK_JOB,
+  PLAY_USER_JOB,
+} from './play-ai.js';
+import {
+  PLAY_LETTER_ANNIV_SOURCE,
+  PLAY_WISH_FOLLOW_SOURCE,
+  PLAY_WISH_PROPOSE_SOURCE,
+} from './proactive-scheduler.js';
 const TRANSCRIBE_VOICE_JOB = 'ai.transcribe_voice';
 @Injectable()
 export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap {
@@ -82,6 +98,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     @Inject(CallSchedulerService) readonly calls: CallSchedulerService,
     @Inject(PlannerService) readonly planner: PlannerService,
     @Inject(CompanionSettingsService) readonly companion: CompanionSettingsService,
+    @Inject(PlayAiService) readonly playAi: PlayAiService,
   ) {}
   async onApplicationBootstrap(): Promise<void> {
     if (this.jobs.isReady)
@@ -128,6 +145,116 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     this.proactive.registerPlanHandler(CARE_PLAN_PREFIX, (input) =>
       this.healthCare.sendPlanned(input),
     );
+    // T-096 玩法里角色怎么说话：每日一问、心愿提议与跟进、慢信、陪你专注、提醒说法。
+    this.proactive.registerPlanHandler(PLAY_WISH_PROPOSE_SOURCE, (input) =>
+      this.playAi.sendWishProposal(input),
+    );
+    this.proactive.registerPlanHandler(PLAY_WISH_FOLLOW_SOURCE, (input) =>
+      this.playAi.sendWishFollowUp(input),
+    );
+    this.proactive.registerPlanHandler(PLAY_LETTER_ANNIV_SOURCE, (input) =>
+      this.playAi.sendAnniversaryLetter(input),
+    );
+    await this.jobs.work<{ answerId: string }>(PLAY_DAILY_ANSWER_JOB, (j) =>
+      this.playAi.runDailyAnswer(j.data.answerId),
+    );
+    await this.jobs.work<{ userId: string }>(
+      PLAY_LETTER_REPLY_JOB,
+      (j) => this.playAi.runLetterReplies(j.data.userId),
+      { localConcurrency: 2 },
+    );
+    await this.jobs.work(PLAY_LETTER_SWEEP_JOB, () => this.playAi.letterSweep());
+    await this.jobs.schedule(PLAY_LETTER_SWEEP_JOB, '*/5 * * * *');
+    await this.jobs.work<{
+      userId: string;
+      characterId: string;
+      focusId: string;
+      kind: 'start' | 'completed' | 'ended_early';
+      minutes: number;
+    }>(PLAY_FOCUS_LINE_JOB, (j) => this.playAi.runFocusLine(j.data), {
+      pollingIntervalSeconds: 1,
+    });
+    await this.jobs.work<{ userId: string; reminderId: string }>(PLAY_REMINDER_PHRASINGS_JOB, (j) =>
+      this.playAi.runReminderPhrasings(j.data.userId, j.data.reminderId),
+    );
+    await this.jobs.work<{ userId: string }>(PLAY_RECOVER_JOB, (j) =>
+      this.playAi.recover(j.data.userId),
+    );
+    await this.jobs.work(PLAY_TICK_JOB, () => this.playAi.tick());
+    await this.jobs.schedule(PLAY_TICK_JOB, '13 * * * *');
+    await this.jobs.work<{ userId: string }>(PLAY_USER_JOB, (j) =>
+      this.playAi.runForUser(j.data.userId),
+    );
+    this.bus.subscribe({
+      consumer: 'ai.play_daily_answer',
+      eventType: 'play.daily_answer_submitted',
+      handle: async (event) => {
+        await this.playAi.onDailyAnswerSubmitted(event.payload.answerId);
+      },
+    });
+    this.bus.subscribe({
+      consumer: 'ai.play_wishlist_changed',
+      eventType: 'play.wishlist_item_changed',
+      handle: async (event) => {
+        await this.playAi.onWishlistItemChanged(event.payload);
+      },
+    });
+    this.bus.subscribe({
+      consumer: 'ai.play_wishlist_completed',
+      eventType: 'play.wishlist_item_completed',
+      handle: async (event) => {
+        await this.playAi.onWishlistItemCompleted(event.payload);
+      },
+    });
+    this.bus.subscribe({
+      consumer: 'ai.play_letter_sent',
+      eventType: 'play.letter_sent',
+      handle: async (event) => {
+        await this.playAi.onLetterSent(event.payload);
+      },
+    });
+    this.bus.subscribe({
+      consumer: 'ai.play_anniversary_letter',
+      eventType: 'growth.anniversary_reached',
+      handle: async (event) => {
+        await this.playAi.onAnniversaryReached(event.payload);
+      },
+    });
+    this.bus.subscribe({
+      consumer: 'ai.play_focus_started',
+      eventType: 'play.focus_started',
+      handle: async (event) => {
+        const p = event.payload;
+        await this.playAi.onFocusEvent({
+          userId: p.userId,
+          characterId: p.characterId,
+          focusId: p.focusId,
+          kind: 'start',
+          minutes: 0,
+        });
+      },
+    });
+    this.bus.subscribe({
+      consumer: 'ai.play_focus_ended',
+      eventType: 'play.focus_ended',
+      handle: async (event) => {
+        const p = event.payload;
+        await this.playAi.onFocusEvent({
+          userId: p.userId,
+          characterId: p.characterId,
+          focusId: p.focusId,
+          kind: p.result,
+          minutes: p.minutes,
+        });
+      },
+    });
+    this.bus.subscribe({
+      consumer: 'ai.play_reminder_saved',
+      eventType: 'play.reminder_saved',
+      handle: async (event) => {
+        await this.playAi.onReminderSaved(event.payload);
+      },
+    });
     // T-090 / SAFE-03 第 5 条：分类变化 → 资格变「否」的成人模式（及不可恋爱的恋爱模式）立即切回日常并提示。
     this.bus.subscribe({
       consumer: 'ai.on_classification_changed',
@@ -556,6 +683,12 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
           'ai.recover_replies',
           { userId: event.payload.userId },
           { tx, retryLimit: 10, retryBackoff: true },
+        );
+        // T-096：补揭晓每日一问、补生成回信与提醒说法。
+        await this.jobs.send(
+          PLAY_RECOVER_JOB,
+          { userId: event.payload.userId },
+          { tx, retryLimit: 3, retryBackoff: true },
         );
       },
     });
