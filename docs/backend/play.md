@@ -29,3 +29,14 @@
 - **历史**：只列答过的，按日期倒序，游标分页 30 条。
 - **管理端** `/admin/play/questions`：列表（可按标签筛）、新增、编辑 / 上下架，写审计。
 - **删除**：注销清空回答与偏好；彻底删除角色时删除和该角色的回答。
+
+## 3. 心愿清单（PLAY-04，T-092，迁移 0066）
+
+表：`wishlist_items`（文字加密；`proposed_by_character`「TA 提议」；`due_date` 约定；`completed_at` / `first_completed_at`；`card_issued`；`followed_up_at`；`source_key` 幂等）、`wishlist_proposals`（角色提议，按用户当地周一计数）。
+
+- **接口**：`GET /play/wishlists`（通讯录里每个角色的总数 / 完成数）、`GET /play/wishlists/:characterId`、`POST .../items`（clientRequestId 幂等；满 50 项 422 `limit_reached`）、`PATCH /play/wishlist-items/:itemId`（文字、日期、打勾）、`DELETE`。两个入口同一张表，任何改动发 `data.changed(wishlist)`。
+- **约定**：新建 / 改文字或日期 / 删除都发 `play.wishlist_item_changed`（删除时 `dueDate = null`）；ai-runtime 据此写或取消「我们的约定」记忆，到期跟进按 SIM-07。
+- **打勾**：只有用户能打勾。第一次完成时，经 `PLAY_CARD_ISSUER`（装配入口绑定 growth 的 `GROWTH_CARD_PORT`，kind `play`，幂等键 `wish:{itemId}`）发瞬间卡，并发 `play.wishlist_item_completed{firstCompletion}`。取消完成不收回卡；再次完成不再发卡。
+- **角色提议**：`PlayAgentPort.createWishlistProposal`，每个角色每用户每周（用户当地时间周一起算）1 次，清单满时返回 `list_full`，同一幂等键重复调用返回原 proposalId。ai-runtime 发 `action_card`（cardKind `wishlist_proposal`，`ref = {kind:'wishlist_proposal', id: proposalId}`，按钮 actionId `add` / `skip`，常量见 `WISHLIST_PROPOSAL_ACTIONS`）。play 订阅 `chat.message_action_chosen`：点 `add` 时建项并标「TA 提议」；点 `skip`、清单已满或角色已删除时记为 declined。
+- **跟进标记**：`PLAY_WISHLIST_FOLLOW_UP.markWishlistFollowedUp(itemId)` 返回 false 表示该项已问过或已完成，不要再问。
+- **删除角色**：30 天回收期内清单保留，但接口返回「角色不在通讯录」；恢复后原样回来；彻底删除时一并删除。

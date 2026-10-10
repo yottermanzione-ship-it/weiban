@@ -168,3 +168,21 @@ export class PlayContext {
     });
   }
 }
+
+/** 某个当地日期所在周的周一（YYYY-MM-DD）。 */
+export function weekStartOf(localDate: string): string {
+  const d = new Date(`${localDate}T00:00:00Z`);
+  const offset = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - offset);
+  return d.toISOString().slice(0, 10);
+}
+
+/** 唯一索引冲突（PostgreSQL 23505），沿 cause 链查找。 */
+export function isUniqueViolation(error: unknown): boolean {
+  let e: unknown = error;
+  for (let i = 0; i < 4 && e; i++) {
+    if ((e as { code?: string }).code === '23505') return true;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
+}

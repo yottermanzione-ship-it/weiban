@@ -66,7 +66,12 @@ import {
   MODEL_NOTIFICATION_READ_PORT,
   MODEL_GATEWAY_MEDIA_PORT,
 } from './modules/model-access/index.js';
-import { GrowthModule, GROWTH_HOLIDAY_SOURCE, GROWTH_CARD_LOOKUP } from './modules/growth/index.js';
+import {
+  GrowthModule,
+  GROWTH_HOLIDAY_SOURCE,
+  GROWTH_CARD_LOOKUP,
+  GROWTH_CARD_PORT,
+} from './modules/growth/index.js';
 import { MomentsModule, MOMENTS_READ_PORT } from './modules/moments/index.js';
 import {
   LibraryModule,
@@ -81,7 +86,7 @@ import {
   CALL_SERVICE_STATUS,
   type CallServiceStatus,
 } from './modules/calls/index.js';
-import { PlayModule } from './modules/play/index.js';
+import { PlayModule, PLAY_CARD_ISSUER } from './modules/play/index.js';
 import {
   PlazaModule,
   PLAZA_CHARACTERS,
@@ -274,6 +279,18 @@ class GrowthHolidayCompositionModule {}
 class LibraryCompositionModule {}
 
 /**
+ * T-092 / T-093：play 发瞬间卡（心愿完成、第一次收到回信）要用 growth 的 GrowthCardPort；play 不能 import growth
+ * （上层白名单），由这里绑定到 play 自己的令牌。
+ */
+@Global()
+@Module({
+  imports: [GrowthModule],
+  providers: [{ provide: PLAY_CARD_ISSUER, useExisting: GROWTH_CARD_PORT }],
+  exports: [PLAY_CARD_ISSUER],
+})
+class PlayCompositionModule {}
+
+/**
  * T-087：plaza 只经端口访问 characters / policy / ai-runtime，令牌定义在 plaza，由这里绑定。
  * T-088：PLAZA_CHARACTERS 绑定 characters 的 CharacterPlazaPort；PLAZA_CLASSIFICATION_POLICY 绑定 policy 的
  * compareClassification（「只能更严」的唯一判定处）。PLAZA_PUBLISH_CHECK（PlazaPublishCheckPort）已由 T-089
@@ -358,6 +375,7 @@ export class AppModule {
         CallAgentCompositionModule,
         PlazaCompositionModule,
         PlazaModule,
+        PlayCompositionModule,
         PlayModule,
         PlazaOriginCompositionModule,
       ],

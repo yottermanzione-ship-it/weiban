@@ -22,6 +22,7 @@ import {
 import { DailyQuestionService } from './daily-question.service.js';
 import type { PlayFeature } from './play-feature.js';
 import { PLAY_DUE_SWEEP_JOB, PlayJobs } from './play-jobs.js';
+import { WishlistService } from './wishlist.service.js';
 
 @Injectable()
 export class PlayLifecycle implements OnModuleInit {
@@ -35,8 +36,9 @@ export class PlayLifecycle implements OnModuleInit {
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
     @Inject(PlayJobs) private readonly jobs: PlayJobs,
     @Inject(DailyQuestionService) daily: DailyQuestionService,
+    @Inject(WishlistService) wishlist: WishlistService,
   ) {
-    this.features = [daily];
+    this.features = [daily, wishlist];
   }
 
   async onModuleInit(): Promise<void> {

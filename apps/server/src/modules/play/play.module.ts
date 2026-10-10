@@ -15,25 +15,34 @@ import { DailyQuestionService } from './application/daily-question.service.js';
 import { PlayJobs } from './application/play-jobs.js';
 import { PlayLifecycle } from './application/play-lifecycle.js';
 import { PlayPortsService } from './application/play-ports.js';
+import { WishlistService } from './application/wishlist.service.js';
 import {
   DailyQuestionAdminController,
   DailyQuestionController,
 } from './http/daily-question.controller.js';
-import { PLAY_AGENT_PORT, PLAY_DAILY_ANSWER_STATUS, PLAY_READ_PORT } from './tokens.js';
+import { WishlistController } from './http/wishlist.controller.js';
+import {
+  PLAY_AGENT_PORT,
+  PLAY_DAILY_ANSWER_STATUS,
+  PLAY_READ_PORT,
+  PLAY_WISHLIST_FOLLOW_UP,
+} from './tokens.js';
 
 @Module({
   imports: [CharactersModule, ChatModule, ContactsModule, IdentityModule, RealtimeModule],
-  controllers: [DailyQuestionController, DailyQuestionAdminController],
+  controllers: [DailyQuestionController, DailyQuestionAdminController, WishlistController],
   providers: [
     PlayContext,
     PlayJobs,
     DailyQuestionService,
+    WishlistService,
     PlayPortsService,
     PlayLifecycle,
     { provide: PLAY_READ_PORT, useExisting: PlayPortsService },
     { provide: PLAY_AGENT_PORT, useExisting: PlayPortsService },
     { provide: PLAY_DAILY_ANSWER_STATUS, useExisting: DailyQuestionService },
+    { provide: PLAY_WISHLIST_FOLLOW_UP, useExisting: WishlistService },
   ],
-  exports: [PLAY_READ_PORT, PLAY_AGENT_PORT, PLAY_DAILY_ANSWER_STATUS],
+  exports: [PLAY_READ_PORT, PLAY_AGENT_PORT, PLAY_DAILY_ANSWER_STATUS, PLAY_WISHLIST_FOLLOW_UP],
 })
 export class PlayModule {}

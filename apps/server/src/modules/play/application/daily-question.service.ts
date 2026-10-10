@@ -40,7 +40,7 @@ import {
 } from '../../../platform/index.js';
 import { dailyAnswers, dailyPrefs, dailyQuestions } from '../infra/db/schema.js';
 import type { PlayDailyAnswerStatus } from '../tokens.js';
-import { PlayContext, type CharacterTraits } from './context.js';
+import { PlayContext, isUniqueViolation, type CharacterTraits } from './context.js';
 import type { PlayFeature } from './play-feature.js';
 
 type QuestionRow = typeof dailyQuestions.$inferSelect;
@@ -78,15 +78,6 @@ function decodeCursor(cursor: string | undefined): { a: string; b: string } | nu
   const [a, b] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
   if (!a || !b || !Id.safeParse(b).success) throw new AppError('bad_request', '分页游标不正确');
   return { a, b };
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  let e: unknown = error;
-  for (let i = 0; i < 4 && e; i++) {
-    if ((e as { code?: string }).code === '23505') return true;
-    e = (e as { cause?: unknown }).cause;
-  }
-  return false;
 }
 
 @Injectable()

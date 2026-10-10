@@ -13,12 +13,16 @@ import type {
   WishlistItem,
 } from '@weiban/contracts';
 import { DailyQuestionService } from './daily-question.service.js';
+import { WishlistService } from './wishlist.service.js';
 
 type PendingReply = Awaited<ReturnType<PlayReadPort['listPendingLetterReplies']>>[number];
 
 @Injectable()
 export class PlayPortsService implements PlayReadPort, PlayAgentPort {
-  constructor(@Inject(DailyQuestionService) private readonly daily: DailyQuestionService) {}
+  constructor(
+    @Inject(DailyQuestionService) private readonly daily: DailyQuestionService,
+    @Inject(WishlistService) private readonly wishlist: WishlistService,
+  ) {}
 
   // ---------- PlayReadPort ----------
 
@@ -27,9 +31,8 @@ export class PlayPortsService implements PlayReadPort, PlayAgentPort {
     return null;
   }
 
-  /** T-092 交付前：清单为空。 */
-  async listWishlist(_userId: string, _characterId: string): Promise<WishlistItem[]> {
-    return [];
+  listWishlist(userId: string, characterId: string): Promise<WishlistItem[]> {
+    return this.wishlist.listForRuntime(userId, characterId);
   }
 
   /** T-095 交付前：没有提醒。 */
@@ -55,13 +58,13 @@ export class PlayPortsService implements PlayReadPort, PlayAgentPort {
     return this.daily.setCharacterAnswer(input);
   }
 
-  async createWishlistProposal(_input: {
+  createWishlistProposal(input: {
     userId: string;
     characterId: string;
     text: string;
     idempotencyKey: string;
   }): Promise<PortResult<{ proposalId: string }, 'weekly_limit' | 'list_full'>> {
-    return { ok: false, error: 'weekly_limit', message: '心愿清单尚未开放（T-092）' };
+    return this.wishlist.createProposal(input);
   }
 
   async deliverLetterReply(_input: {
