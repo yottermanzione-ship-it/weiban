@@ -11,15 +11,18 @@
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { z } from 'zod';
-import { and, desc, eq, gt, inArray, isNull, lt, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, or } from 'drizzle-orm';
 import {
   ConversationSearchGroup,
   GlobalSearchResult,
   Id,
   MessageSearchHit,
   SearchKeyword,
+  type IdentityReadPort,
+  type Message,
   type MessageContent,
 } from '@weiban/contracts';
+import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import {
   AppError,
   DATABASE,
@@ -78,13 +81,106 @@ export class ChatSearchService {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     @Inject(ChatStore) private readonly store: ChatStore,
+    @Inject(IDENTITY_READ_PORT) private readonly identity: IdentityReadPort,
     @Optional() @Inject(CHAT_GROUP_DIRECTORY) private readonly directory?: ChatGroupDirectory,
   ) {}
+
+  private async ownConversation(tx: DbTx, userId: string, conversationId: string) {
+    parseContract(Id, conversationId);
+    await this.store.requireActive(tx, userId);
+    const [row] = await tx.db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, conversationId));
+    if (!row) throw new AppError('not_found', '会话不存在');
+    if (row.ownerUserId !== userId) throw new AppError('not_conversation_member', '不能访问此会话');
+    return row;
+  }
+
+  /** 3.1 locateByDate：date 按用户时区解释，返回当天及之后第一条可见消息的 seq。 */
+  async locateByDate(
+    userId: string,
+    conversationId: string,
+    date: string,
+  ): Promise<{ seq: number | null }> {
+    const profile = await this.identity.getProfile(userId);
+    const from = startOfLocalDay(date, profile?.timeZone ?? 'Asia/Shanghai');
+    return this.db.transaction(async (tx) => {
+      const row = await this.ownConversation(tx, userId, conversationId);
+      const view = await this.store.view(tx, row, userId);
+      let cursor = view.state.clearedThroughSeq;
+      for (;;) {
+        const batch = await tx.db
+          .select({ id: messages.id, seq: messages.seq })
+          .from(messages)
+          .where(
+            and(
+              eq(messages.conversationId, row.id),
+              gte(messages.createdAt, from),
+              gt(messages.seq, cursor),
+            ),
+          )
+          .orderBy(asc(messages.seq))
+          .limit(BATCH);
+        for (const m of batch) if (!view.hidden.has(m.id)) return { seq: m.seq };
+        if (batch.length < BATCH) return { seq: null };
+        cursor = batch.at(-1)!.seq;
+      }
+    });
+  }
+
+  /** 3.1 listByType：按类型 / 发送者列出（不含撤回、本人删除、已清空）。 */
+  async listByType(
+    userId: string,
+    conversationId: string,
+    query: {
+      contentType?: 'image' | 'link' | 'voice' | 'sticker';
+      senderParticipantId?: string;
+      beforeSeq?: number;
+      limit: number;
+    },
+  ): Promise<{ items: Message[]; hasMore: boolean }> {
+    if (!query.contentType && !query.senderParticipantId)
+      throw new AppError('bad_request', 'contentType 与 senderParticipantId 至少传一个');
+    return this.db.transaction(async (tx) => {
+      const row = await this.ownConversation(tx, userId, conversationId);
+      const view = await this.store.view(tx, row, userId);
+      const items: Message[] = [];
+      let cursor = query.beforeSeq;
+      for (;;) {
+        const batch: MessageRow[] = await tx.db
+          .select()
+          .from(messages)
+          .where(
+            and(
+              eq(messages.conversationId, row.id),
+              eq(messages.status, 'normal'),
+              gt(messages.seq, view.state.clearedThroughSeq),
+              cursor === undefined ? undefined : lt(messages.seq, cursor),
+              query.contentType ? eq(messages.contentType, query.contentType) : undefined,
+              query.senderParticipantId
+                ? eq(messages.senderParticipantId, query.senderParticipantId)
+                : undefined,
+            ),
+          )
+          .orderBy(desc(messages.seq))
+          .limit(BATCH);
+        for (const message of batch) {
+          if (view.hidden.has(message.id)) continue;
+          items.push(await this.store.message(tx, row, message, view));
+          if (items.length > query.limit)
+            return { items: items.slice(0, query.limit), hasMore: true };
+        }
+        if (batch.length < BATCH) return { items, hasMore: false };
+        cursor = batch.at(-1)!.seq;
+      }
+    });
+  }
 
   async searchConversation(
     userId: string,
     conversationId: string,
-    query: { q: string; beforeSeq?: number; limit: number },
+    query: { q: string; beforeSeq?: number; senderParticipantId?: string; limit: number },
   ): Promise<{ items: MessageSearchHit[]; hasMore: boolean }> {
     parseContract(Id, conversationId);
     const q = parseContract(SearchKeyword, query.q);
@@ -97,7 +193,15 @@ export class ChatSearchService {
       if (!row) throw new AppError('not_found', '会话不存在');
       if (row.ownerUserId !== userId)
         throw new AppError('not_conversation_member', '不能访问此会话');
-      const hits = await this.scan(tx, row, userId, q, query.limit + 1, query.beforeSeq);
+      const hits = await this.scan(
+        tx,
+        row,
+        userId,
+        q,
+        query.limit + 1,
+        query.beforeSeq,
+        query.senderParticipantId,
+      );
       return {
         items: hits.slice(0, query.limit),
         hasMore: hits.length > query.limit,
@@ -153,6 +257,7 @@ export class ChatSearchService {
     keyword: string,
     max: number,
     beforeSeq?: number,
+    senderParticipantId?: string,
   ): Promise<MessageSearchHit[]> {
     const view = await this.store.view(tx, row, userId);
     const needle = keyword.toLowerCase();
@@ -168,6 +273,7 @@ export class ChatSearchService {
             eq(messages.status, 'normal'),
             gt(messages.seq, view.state.clearedThroughSeq),
             cursor === undefined ? undefined : lt(messages.seq, cursor),
+            senderParticipantId ? eq(messages.senderParticipantId, senderParticipantId) : undefined,
             or(
               inArray(messages.contentType, SEARCHABLE_CONTENT_TYPES),
               isNull(messages.contentType),
@@ -198,4 +304,43 @@ export class ChatSearchService {
       cursor = batch.at(-1)!.seq;
     }
   }
+}
+
+/** 某时区当地日期 0 点对应的时刻（迭代处理夏令时）；时区不认识时按北京时间。 */
+export function startOfLocalDay(date: string, timeZone: string): Date {
+  let tz = timeZone;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+  } catch {
+    tz = 'Asia/Shanghai';
+  }
+  const f = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  const target = Date.UTC(y, m - 1, d);
+  let guess = target;
+  for (let i = 0; i < 3; i += 1) {
+    const map: Record<string, number> = {};
+    for (const p of f.formatToParts(new Date(guess))) map[p.type] = Number(p.value);
+    const localAsUtc = Date.UTC(
+      map.year!,
+      map.month! - 1,
+      map.day!,
+      map.hour!,
+      map.minute!,
+      map.second!,
+    );
+    const next = target - (localAsUtc - guess);
+    if (next === guess) break;
+    guess = next;
+  }
+  return new Date(guess);
 }

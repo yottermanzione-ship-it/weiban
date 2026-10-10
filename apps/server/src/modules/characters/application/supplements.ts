@@ -11,8 +11,13 @@ import {
   PersonaUpdateNote,
   SupplementConflict,
   UserSupplement,
+  type CharacterSupplementConflictsWritePort,
   type CharacterSupplementPort,
+  type PortResult,
+  type SyncPort,
 } from '@weiban/contracts';
+import { createHash } from 'node:crypto';
+import { SYNC_PORT } from '../../realtime/index.js';
 import { z } from 'zod';
 import {
   AppError,
@@ -39,8 +44,11 @@ const aad = (userId: string, characterId: string) =>
   `characters:supplement:${userId}:${characterId}`;
 
 @Injectable()
-export class CharacterSupplementService implements CharacterSupplementPort {
+export class CharacterSupplementService
+  implements CharacterSupplementPort, CharacterSupplementConflictsWritePort
+{
   constructor(
+    @Inject(SYNC_PORT) private readonly sync: SyncPort,
     @Inject(DATABASE) private readonly db: Database,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(ENVELOPE_CRYPTO) private readonly crypto: EnvelopeCrypto,
@@ -120,7 +128,13 @@ export class CharacterSupplementService implements CharacterSupplementPort {
     userId: string,
     characterId: string,
     text: string,
-    plazaSource: { workId: string; version: number; authorName: string },
+    plazaSource: {
+      workId: string;
+      version: number;
+      authorName: string;
+      /** 3.1：改版快照检出儿童特征（与预设分类取更严），只对这位用户生效。 */
+      childFeaturesDetected?: boolean;
+    },
   ): Promise<boolean> {
     try {
       await this.presetOrThrow(characterId);
@@ -155,13 +169,46 @@ export class CharacterSupplementService implements CharacterSupplementPort {
     return true;
   }
 
-  /** AI 检出冲突项后写入（服务器内部，T-081 经 CHARACTER_SUPPLEMENT_ADMIN 调用）。 */
-  async setConflicts(userId: string, characterId: string, conflicts: ConflictDto[]): Promise<void> {
+  /**
+   * 契约 3.1 CharacterSupplementConflictsWritePort：AI 检出冲突项后写入。
+   * expectedTextSha256 与当前原文不一致（用户又改过）返回 stale；写入后发 data.changed(supplement)。
+   */
+  async setConflicts(
+    userId: string,
+    characterId: string,
+    conflicts: ConflictDto[],
+    expectedTextSha256?: string,
+  ): Promise<PortResult<void, 'not_found' | 'stale'>> {
     const parsed = parseContract(z.array(SupplementConflict).max(50), conflicts);
-    await this.db.db
-      .update(userSupplements)
-      .set({ conflicts: parsed })
-      .where(and(eq(userSupplements.userId, userId), eq(userSupplements.characterId, characterId)));
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.db
+        .select()
+        .from(userSupplements)
+        .where(
+          and(eq(userSupplements.userId, userId), eq(userSupplements.characterId, characterId)),
+        )
+        .for('update');
+      if (!row) return { ok: false, error: 'not_found', message: '补充设定不存在' };
+      if (expectedTextSha256) {
+        const text = (
+          await this.crypto.open(userId, aad(userId, characterId), row.textCiphertext)
+        ).toString('utf8');
+        const current = createHash('sha256').update(text).digest('hex');
+        if (current !== expectedTextSha256.toLowerCase())
+          return { ok: false, error: 'stale', message: '补充设定已修改' };
+      }
+      await tx.db
+        .update(userSupplements)
+        .set({ conflicts: parsed })
+        .where(
+          and(eq(userSupplements.userId, userId), eq(userSupplements.characterId, characterId)),
+        );
+      await this.sync.appendUpdate(tx, userId, {
+        type: 'data.changed',
+        data: { section: 'supplement', characterId, itemId: null },
+      });
+      return { ok: true, value: undefined };
+    });
   }
 
   async remove(userId: string, characterId: string): Promise<void> {
@@ -180,6 +227,16 @@ export class CharacterSupplementService implements CharacterSupplementPort {
           action: 'deleted',
         });
     });
+  }
+
+  /** 3.1（积压 ㉝）：这位用户应用的预设改版是否检出儿童特征（运行时按更严处理）。 */
+  async variantChildFeaturesDetected(userId: string, characterId: string): Promise<boolean> {
+    const [row] = await this.db.db
+      .select({ plazaSource: userSupplements.plazaSource })
+      .from(userSupplements)
+      .where(and(eq(userSupplements.userId, userId), eq(userSupplements.characterId, characterId)));
+    const source = row?.plazaSource as { childFeaturesDetected?: boolean } | null | undefined;
+    return source?.childFeaturesDetected === true;
   }
 
   // ---------- 资料已更新 ----------

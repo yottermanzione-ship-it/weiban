@@ -229,6 +229,24 @@ export class CharacterWorkLinkService
     return { characterId, voiceId };
   }
 
+  /** 3.1 getDefaultVoice：后台下拉框显示当前默认音色；音色已停用或未设置时 voiceName = null。 */
+  async getDefaultVoice(
+    characterId: string,
+  ): Promise<{ characterId: string; voiceId: string | null; voiceName: string | null }> {
+    await this.assertPreset(characterId);
+    const [row] = await this.database.db
+      .select({ voiceId: defaultVoices.voiceId })
+      .from(defaultVoices)
+      .where(eq(defaultVoices.characterId, characterId));
+    if (!row) return { characterId, voiceId: null, voiceName: null };
+    const voice = await this.assets.getVoice(row.voiceId).catch(() => null);
+    return {
+      characterId,
+      voiceId: row.voiceId,
+      voiceName: voice && voice.enabled ? voice.name : null,
+    };
+  }
+
   // ---------- 可访问性检查 ----------
 
   private async checkOne(workLinkId: string): Promise<WorkLink> {

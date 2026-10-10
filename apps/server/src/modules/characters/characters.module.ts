@@ -3,6 +3,7 @@ import { ChatModule } from '../chat/index.js';
 import { MediaModule } from '../media/index.js';
 import { MODEL_GATEWAY_PORT, WEB_SEARCH_PROVIDER } from '../model-access/index.js';
 import { IdentityModule } from '../identity/index.js';
+import { RealtimeModule } from '../realtime/index.js';
 import { PublicUpdateService } from './application/public-updates.js';
 import { PublicUpdateAdminController } from './http/public-updates.controller.js';
 import { CharacterService } from './application/characters.js';
@@ -38,7 +39,7 @@ import {
   CHARACTER_CHILD_FEATURES_WRITER,
 } from './tokens.js';
 @Module({
-  imports: [MediaModule, ChatModule, IdentityModule],
+  imports: [MediaModule, ChatModule, IdentityModule, RealtimeModule],
   controllers: [
     // CustomCharacterController 必须在 CharacterController 之前：GET /characters/custom 与 /characters/:characterId 同前缀。
     CustomCharacterController,

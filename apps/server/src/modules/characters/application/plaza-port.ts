@@ -8,8 +8,8 @@
  * - 按新版本更新 / 管理员更正：分类只取更严的一边；分类变化照常发 characters.character_classification_changed，
  *   ai-runtime 收到后立即退出成人模式并提示（SAFE-03 第 5 条）。
  */
-import { Inject, Injectable, Optional } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   CharacterCard,
   CustomCharacterOrigin,
@@ -18,6 +18,7 @@ import {
   PlazaPresetVariantSnapshot,
   type CharacterClassificationInput,
   type CharacterPlazaPort,
+  type CharacterChildFeaturesWritePort,
   type PlazaSnapshot,
   type PlazaSnapshotClassification,
   type PortResult,
@@ -29,7 +30,9 @@ import {
   CLOCK,
   DATABASE,
   ENVELOPE_CRYPTO,
+  EVENT_BUS,
   newId,
+  type EventBus,
   type AuditLog,
   type Clock,
   type Database,
@@ -43,7 +46,7 @@ import {
   stripPresetCard,
   type CustomCharacterPayload,
 } from '../domain/custom-card.js';
-import { characters } from '../infra/db/schema.js';
+import { characters, userSupplements } from '../infra/db/schema.js';
 import { CHARACTER_PLAZA_ORIGIN_STATUS, type CharacterPlazaOriginStatus } from '../tokens.js';
 import { CharacterService } from './characters.js';
 import { CharacterSupplementService } from './supplements.js';
@@ -101,8 +104,11 @@ const sameClassification = (a: PlazaSnapshotClassification, b: PlazaSnapshotClas
   a.everPrivatePerson === b.everPrivatePerson;
 
 @Injectable()
-export class CharacterPlazaService implements CharacterPlazaPort {
+export class CharacterPlazaService
+  implements CharacterPlazaPort, CharacterChildFeaturesWritePort, OnModuleInit
+{
   constructor(
+    @Inject(EVENT_BUS) private readonly bus: EventBus,
     @Inject(DATABASE) private readonly db: Database,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(ENVELOPE_CRYPTO) private readonly crypto: EnvelopeCrypto,
@@ -113,6 +119,32 @@ export class CharacterPlazaService implements CharacterPlazaPort {
     @Inject(CHARACTER_PLAZA_ORIGIN_STATUS)
     private readonly originStatus?: CharacterPlazaOriginStatus,
   ) {}
+
+  /**
+   * 3.1（T-080 遗留 2，ADR-0024 补记第 4 条）：作者注销（plaza.work_removed reason = author_deleted）时，
+   * 清掉来源为该作品的复制品 / 改版补充设定里保存的作者旧广场昵称；来源标注仍显示「已注销用户」。
+   */
+  onModuleInit(): void {
+    this.bus.subscribe({
+      consumer: 'characters.on_plaza_work_removed',
+      eventType: 'plaza.work_removed',
+      handle: async (event, tx) => {
+        const p = event.payload;
+        if (p.reason !== 'author_deleted') return;
+        const db = tx.db;
+        await db
+          .update(characters)
+          .set({ plazaAuthorName: null })
+          .where(eq(characters.plazaWorkId, p.workId));
+        await db
+          .update(userSupplements)
+          .set({
+            plazaSource: sql`jsonb_set(${userSupplements.plazaSource}, '{authorName}', '""'::jsonb)`,
+          })
+          .where(sql`${userSupplements.plazaSource}->>'workId' = ${p.workId}`);
+      },
+    });
+  }
 
   // ---------- 读取 ----------
 
@@ -219,7 +251,9 @@ export class CharacterPlazaService implements CharacterPlazaPort {
         realPersonKind: preset.classification.realPersonKind,
         ageSetting: preset.classification.ageSetting,
         childAppearance: preset.classification.childAppearance,
-        childFeaturesDetected: preset.classification.childFeaturesDetected,
+        // 3.1（积压 ㉝）：快照里检出的儿童特征与预设分类取更严的一边，只写在这份复制品上。
+        childFeaturesDetected:
+          preset.classification.childFeaturesDetected || snapshot.childFeaturesDetected === true,
         everPrivatePerson: preset.row.everPrivatePerson,
       };
       payload = this.payloadFromPreset(preset.body, snapshot);
@@ -369,7 +403,17 @@ export class CharacterPlazaService implements CharacterPlazaPort {
     variantText: string;
     origin: { workId: string; version: number; authorName: string };
     idempotencyKey: string;
+    /**
+     * 3.1（积压 ㉝）：改版快照的 childFeaturesDetected（契约端口签名里没有这个参数，plaza 以展开方式附带；
+     * 已在交接里申请补进 CharacterPlazaPort）。与预设分类取更严的一边，存在这位用户的补充设定上，不写回预设角色。
+     */
+    childFeaturesDetected?: boolean;
   }): Promise<PortResult<void, 'not_found'>> {
+    const presetClassification = await this.characters
+      .getClassification(input.presetCharacterId)
+      .catch(() => null);
+    const childFeaturesDetected =
+      input.childFeaturesDetected === true || presetClassification?.childFeaturesDetected === true;
     const ok = await this.supplements.putFromPlaza(
       input.userId,
       input.presetCharacterId,
@@ -378,6 +422,7 @@ export class CharacterPlazaService implements CharacterPlazaPort {
         workId: input.origin.workId,
         version: input.origin.version,
         authorName: clip(input.origin.authorName, 12),
+        childFeaturesDetected,
       },
     );
     return ok ? { ok: true, value: undefined } : { ok: false, error: 'not_found' };

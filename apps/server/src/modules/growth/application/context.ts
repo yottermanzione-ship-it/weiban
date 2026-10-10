@@ -74,6 +74,7 @@ export class GrowthContext {
     characterId: string,
     tx?: DbTx,
   ): Promise<{ category: CharacterCategory; portraitFreeOnly: boolean }> {
+    // 3.1（积压 ㉓）：历史人物优先古风模板（cards.service pickFace），没有古风模板时仍只用无人物模板。
     const c = await this.characters.getClassification(characterId, tx as Tx | undefined);
     if (!c) return { category: 'private_person', portraitFreeOnly: true };
     const category: CharacterCategory =

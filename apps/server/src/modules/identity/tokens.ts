@@ -13,3 +13,6 @@ export const IDENTITY_DIRECTORY_PORT = Symbol('weiban.identity.directory-port');
 export const IDENTITY_ACCOUNT_STATUS_PORT = Symbol('weiban.identity.account-status-port');
 
 export const IDENTITY_SESSION_READ_PORT = Symbol('weiban.identity.session-read-port');
+
+/** 契约 3.1 IdentitySettingsWritePort：只开不关的全局来电开关（调用方 ai-runtime）。 */
+export const IDENTITY_SETTINGS_WRITE_PORT = Symbol('weiban.identity.settings-write-port');

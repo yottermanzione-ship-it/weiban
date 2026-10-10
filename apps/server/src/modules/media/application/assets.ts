@@ -43,6 +43,7 @@ import {
   type MediaMessageLookup,
   type MediaRealPersonNames,
   type MediaStickerCheck,
+  type MediaClassicalCardTemplates,
 } from '../tokens.js';
 import { MediaService } from './media.js';
 
@@ -59,7 +60,9 @@ function normalizeName(value: string): string {
 }
 
 @Injectable()
-export class MediaAssetService implements MediaAssetReadPort, MediaStickerCheck {
+export class MediaAssetService
+  implements MediaAssetReadPort, MediaStickerCheck, MediaClassicalCardTemplates
+{
   constructor(
     @Inject(DATABASE) private readonly database: Database,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -568,6 +571,7 @@ export class MediaAssetService implements MediaAssetReadPort, MediaStickerCheck 
       mediaId: row.mediaId,
       url,
       portraitFree: row.portraitFree,
+      classicalStyle: row.classicalStyle,
       enabled: row.enabled,
       updatedAt: row.updatedAt.toISOString(),
     };
@@ -600,6 +604,7 @@ export class MediaAssetService implements MediaAssetReadPort, MediaStickerCheck 
           kinds: [...new Set(body.kinds)],
           mediaId: body.mediaId,
           portraitFree: body.portraitFree,
+          classicalStyle: body.classicalStyle ?? false,
           enabled: body.enabled,
           createdAt: at,
           updatedAt: at,
@@ -624,6 +629,7 @@ export class MediaAssetService implements MediaAssetReadPort, MediaStickerCheck 
           ...(body.kinds !== undefined ? { kinds: [...new Set(body.kinds)] } : {}),
           ...(body.mediaId !== undefined ? { mediaId: body.mediaId } : {}),
           ...(body.portraitFree !== undefined ? { portraitFree: body.portraitFree } : {}),
+          ...(body.classicalStyle !== undefined ? { classicalStyle: body.classicalStyle } : {}),
           ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
           updatedAt: this.clock.now(),
         })
@@ -703,6 +709,20 @@ export class MediaAssetService implements MediaAssetReadPort, MediaStickerCheck 
       .orderBy(asc(cardTemplates.createdAt));
     return rows
       .filter((r) => r.kinds.includes(kind) && (!portraitFreeOnly || r.portraitFree))
+      .map((r) => ({ templateId: r.id, mediaId: r.mediaId }));
+  }
+
+  /** 3.1：古风卡面模板（历史人物优先）。 */
+  async listClassicalCardTemplates(
+    kind: string,
+  ): Promise<Array<{ templateId: string; mediaId: string }>> {
+    const rows = await this.database.db
+      .select()
+      .from(cardTemplates)
+      .where(and(eq(cardTemplates.enabled, true), eq(cardTemplates.classicalStyle, true)))
+      .orderBy(asc(cardTemplates.createdAt));
+    return rows
+      .filter((r) => r.kinds.includes(kind))
       .map((r) => ({ templateId: r.id, mediaId: r.mediaId }));
   }
 

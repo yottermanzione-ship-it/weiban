@@ -10,6 +10,8 @@ export {
   MEDIA_MESSAGE_LOOKUP,
   MEDIA_REAL_PERSON_NAMES,
   MEDIA_STORAGE_AUDIT,
+  MEDIA_CLASSICAL_CARD_TEMPLATES,
+  type MediaClassicalCardTemplates,
   type MediaStorageAudit,
   type MediaStickerCheck,
   type MediaSync,

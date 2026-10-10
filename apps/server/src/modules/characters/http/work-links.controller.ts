@@ -57,6 +57,10 @@ export class WorkLinkAdminController {
   ) {
     await this.links.adminDelete(me.userId, p.characterId, p.workLinkId);
   }
+  @Get('voice')
+  getVoice(@Param(new ContractPipe(W.getDefaultVoice.params!)) p: { characterId: string }) {
+    return this.links.getDefaultVoice(p.characterId);
+  }
   @Put('voice')
   setVoice(
     @CurrentPrincipal() me: AuthPrincipal,

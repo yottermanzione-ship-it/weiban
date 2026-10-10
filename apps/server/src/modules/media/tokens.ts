@@ -40,6 +40,15 @@ export interface MediaMessageLookup {
   ): Promise<{ mediaId: string } | null>;
 }
 
+/**
+ * 3.1（积压 ㉓）：古风卡面模板（GRW-05 第 2 条：历史人物可用古风插画）。MediaAssetReadPort.listCardTemplates 签名不变，
+ * growth 挑卡面时另经本令牌取 classicalStyle = true 的模板。提供方 media。
+ */
+export const MEDIA_CLASSICAL_CARD_TEMPLATES = Symbol('weiban.media.classical-card-templates');
+export interface MediaClassicalCardTemplates {
+  listClassicalCardTemplates(kind: string): Promise<Array<{ templateId: string; mediaId: string }>>;
+}
+
 export const MEDIA_REAL_PERSON_NAMES = Symbol('weiban.media.real-person-names');
 export interface MediaRealPersonNames {
   /** 已录入的真人角色（basis = real_person）的姓名。 */

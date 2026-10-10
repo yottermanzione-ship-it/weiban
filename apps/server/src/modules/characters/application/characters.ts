@@ -13,6 +13,7 @@ import {
   type CharacterClassification,
   type CharacterProfile,
   type MediaReadPort,
+  type PersonaUpdateSummarizerPort,
   type PersonaVersionSummary,
   type UserDataOwner,
 } from '@weiban/contracts';
@@ -42,7 +43,11 @@ import { deriveClassification, classificationCanChange } from '../../policy/inde
 import { childFeaturesIn } from '../domain/child-features.js';
 import { customToAdminWrite, type CustomCharacterPayload } from '../domain/custom-card.js';
 import { categories, characters, personaVersions, relations } from '../infra/db/schema.js';
-import { CHARACTER_CONTACT_ACCESS, type CharacterContactAccess } from '../tokens.js';
+import {
+  CHARACTER_CONTACT_ACCESS,
+  CHARACTER_PERSONA_SUMMARIZER,
+  type CharacterContactAccess,
+} from '../tokens.js';
 import type { CharacterEvaluator } from './evaluator.js';
 import { CharacterSupplementService } from './supplements.js';
 type Row = typeof characters.$inferSelect;
@@ -70,7 +75,45 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     @Optional()
     @Inject(CharacterSupplementService)
     private readonly supplements: CharacterSupplementService | null,
+    @Optional()
+    @Inject(CHARACTER_PERSONA_SUMMARIZER)
+    private readonly summarizer: PersonaUpdateSummarizerPort | null,
   ) {}
+
+  /**
+   * 3.1（积压 ㉖）：新人设版本的更新摘要。可选 AI 接入点（ADR-0028 方案 C）：未绑定、失败、超时（8 秒）或返回 null 时
+   * 用「资料已更新」兜底，不阻塞发布。第一个版本没有「更新」，不写摘要。
+   */
+  private async personaSummary(
+    adminId: string,
+    row: Row,
+    after: AdminCharacterWrite,
+    version: number,
+  ): Promise<string | null> {
+    if (version <= 1) return null;
+    const fallback = '资料已更新';
+    if (!this.summarizer) return fallback;
+    try {
+      const before = row.publishedCiphertext
+        ? ((await this.decode(row, true)).card as CharacterCard)
+        : null;
+      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000));
+      const text = await Promise.race([
+        this.summarizer.summarize({
+          adminId,
+          characterId: row.id,
+          before,
+          after: after.card as CharacterCard,
+          version,
+        }),
+        timeout,
+      ]);
+      const clean = text?.trim();
+      return clean ? clean.slice(0, 200) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
   async onModuleInit(): Promise<void> {
     this.registry.register(this);
     await this.database.db
@@ -424,6 +467,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       });
     }
     const version = row.publishedCiphertext ? row.personaVersion + 1 : 1;
+    const summary = await this.personaSummary(adminId, row, body, version);
     const sealed = await this.crypto.seal(
       row.ownerId ?? PLATFORM_KEY_OWNER,
       `character:${id}:published:${version}`,
@@ -456,6 +500,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
         publishedAt: this.clock.now(),
         modifiedBy: adminId,
         stabilityPassed: row.checks.personaStabilityPassed,
+        summary,
       });
       await this.outbox.publish(tx, 'characters.character_published', 'characters', {
         characterId: id,

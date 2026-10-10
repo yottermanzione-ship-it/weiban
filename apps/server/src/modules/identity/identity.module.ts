@@ -25,6 +25,7 @@ import {
   IDENTITY_DIRECTORY_PORT,
   IDENTITY_READ_PORT,
   IDENTITY_SESSION_READ_PORT,
+  IDENTITY_SETTINGS_WRITE_PORT,
 } from './tokens.js';
 
 @Module({
@@ -50,6 +51,7 @@ import {
     { provide: IDENTITY_READ_PORT, useExisting: SettingsService },
     { provide: IDENTITY_ACCOUNT_STATUS_PORT, useExisting: SettingsService },
     { provide: IDENTITY_DIRECTORY_PORT, useExisting: SettingsService },
+    { provide: IDENTITY_SETTINGS_WRITE_PORT, useExisting: SettingsService },
   ],
   exports: [
     SESSION_VERIFIER,
@@ -57,6 +59,7 @@ import {
     IDENTITY_SESSION_READ_PORT,
     IDENTITY_ACCOUNT_STATUS_PORT,
     IDENTITY_DIRECTORY_PORT,
+    IDENTITY_SETTINGS_WRITE_PORT,
     IdentityCommands,
   ],
 })

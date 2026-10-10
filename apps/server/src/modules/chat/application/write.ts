@@ -25,8 +25,10 @@ import {
 } from '../../../platform/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import {
+  MEDIA_READ_PORT,
   MEDIA_SYSTEM_PORT,
   MEDIA_STICKER_CHECK,
+  type MediaReadPort,
   type MediaStickerCheck,
   type MediaSystemPort,
 } from '../../media/index.js';
@@ -60,6 +62,7 @@ export class ChatWriteService {
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
     @Inject(MEDIA_SYSTEM_PORT) private readonly media: MediaSystemPort,
     @Inject(MEDIA_STICKER_CHECK) private readonly stickers: MediaStickerCheck,
+    @Inject(MEDIA_READ_PORT) private readonly mediaRead: MediaReadPort,
   ) {}
   async post(
     tx: DbTx,
@@ -67,7 +70,7 @@ export class ChatWriteService {
     input: PostMessageInput,
     senderKind?: 'system',
   ): Promise<PortResult<Message, PostMessageError>> {
-    const content = parseContract(MessageContent, input.content);
+    let content = parseContract(MessageContent, input.content);
     // labels 只接受服务器端发送方传入（participant 端口）；用户经 HTTP / WebSocket 发送时由 user.ts 构造输入，不会带上。
     const labels = normalizeLabels(input.labels);
     const idempotencyKey = input.idempotencyKey;
@@ -178,6 +181,11 @@ export class ChatWriteService {
       const ids = new Set(active.map((p) => p.id));
       mentionedParticipantIds = [...new Set(content.mentions)].filter((m) => ids.has(m));
     }
+    // 3.1（积压 ⑲）：图片消息从媒体记录填入字节数（客户端据此判断「添加到表情」是否可用）。
+    if (content.type === 'image' && content.sizeBytes == null) {
+      const sizeBytes = await this.imageSize(row.ownerUserId, content.mediaId);
+      if (sizeBytes !== null) content = { ...content, sizeBytes };
+    }
     const id = newId();
     const at = this.clock.now();
     const [current] = await tx.db
@@ -241,6 +249,14 @@ export class ChatWriteService {
     });
     return { ok: true, value };
   }
+  private async imageSize(ownerUserId: string, mediaId: string): Promise<number | null> {
+    try {
+      return (await this.mediaRead.getMedia(ownerUserId, mediaId)).sizeBytes;
+    } catch {
+      return null;
+    }
+  }
+
   private async invalidUserMedia(userId: string, content: MessageContent): Promise<string | null> {
     switch (content.type) {
       case 'image':

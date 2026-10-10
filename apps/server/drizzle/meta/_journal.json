@@ -407,6 +407,13 @@
       "when": 1796900000000,
       "tag": "0069_play_reminders",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1797100000000,
+      "tag": "0071_media_card_template_classical",
+      "breakpoints": true
     }
   ]
 }

@@ -1,3 +1,5 @@
+import type { CharacterChildFeaturesWritePort } from '@weiban/contracts';
+
 export const CHARACTER_READ_PORT = Symbol('weiban.characters.read');
 export const CHARACTER_NAME_READ_PORT = Symbol('weiban.characters.name-read');
 export const CHARACTER_EVALUATOR = Symbol('weiban.characters.evaluator');
@@ -17,10 +19,15 @@ export const CHARACTER_REAL_PERSON_NAMES = Symbol('weiban.characters.real-person
 /** T-079：契约 CharacterSupplementPort（ai-runtime 读补充设定）。 */
 export const CHARACTER_SUPPLEMENT_PORT = Symbol('weiban.characters.supplement-port');
 /**
- * T-079 服务器内部（非契约）：AI 检出补充设定冲突项后写入。
- * 类型 { setConflicts(userId, characterId, conflicts: SupplementConflict[]): Promise<void> }。
+ * 契约 3.1 CharacterSupplementConflictsWritePort（ports/characters.ts）：AI 检出补充设定冲突项后写入。
+ * 带 expectedTextSha256 且与当前原文不一致时返回 stale、不写入；写入后发 data.changed(supplement)。
  */
 export const CHARACTER_SUPPLEMENT_CONFLICTS = Symbol('weiban.characters.supplement-conflicts');
+/**
+ * 契约 3.1 PersonaUpdateSummarizerPort 的注入令牌（可选 AI 接入点，ADR-0028 方案 C）。
+ * 由装配入口绑定到 ai-runtime 的实现；未绑定 / 返回 null 时用管理员填写的摘要或「资料已更新」。
+ */
+export const CHARACTER_PERSONA_SUMMARIZER = Symbol('weiban.characters.persona-summarizer');
 /** T-088：契约 CharacterPlazaPort（调用方只有 plaza，装配入口绑定到 plaza 的 PLAZA_CHARACTERS）。 */
 export const CHARACTER_PLAZA_PORT = Symbol('weiban.characters.plaza-port');
 /**
@@ -41,10 +48,9 @@ export interface CharacterPlazaOriginStatus {
   }>;
 }
 /**
- * T-089 服务器内部（非契约）：广场发布前检测重跑儿童特征后，系统写回源角色 childFeaturesDetected（只能从否变是）。
- * 提供方 characters，调用方 ai-runtime。
+ * 契约 3.1 CharacterChildFeaturesWritePort（ports/characters.ts）：广场发布前检测重跑儿童特征后，
+ * 系统写回源角色 childFeaturesDetected（只能从否变是）。提供方 characters，调用方 ai-runtime。
  */
 export const CHARACTER_CHILD_FEATURES_WRITER = Symbol('weiban.characters.child-features-writer');
-export interface CharacterChildFeaturesWriter {
-  markChildFeaturesDetected(userId: string, characterId: string): Promise<boolean>;
-}
+/** 兼容旧名：等同契约 CharacterChildFeaturesWritePort。 */
+export type CharacterChildFeaturesWriter = CharacterChildFeaturesWritePort;

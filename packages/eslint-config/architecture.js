@@ -48,7 +48,7 @@ export const SERVER_MODULES = {
  * R2 补充：上层模块之间只允许下列单向依赖，其余上层 → 上层的 import 一律报错（反方向用事件）。
  * 依据：ADR-0024「后果」第 2 条、contracts-3.0-map.md 第 3 节、persona-plaza.md 第 2 节。
  * ai-runtime → proactive：T-053 / T-060 已在用（主动消息调度、健康关怀经 PROACTIVE_MESSAGE_PORT 发消息），
- * T-101 按总负责人要求登记，待架构负责人在 ADR-0024 补记。
+ * 决策出处见 ADR-0024「补记（2026-10-11，契约 3.1 收口）」第 1 条；library → moments 维持注入、不进白名单（同节第 2 条）。
  * 中层、底层同层之间不受此表限制（只由 R11 禁止循环）。
  */
 export const UPPER_LAYER_ALLOWED_DEPS = {

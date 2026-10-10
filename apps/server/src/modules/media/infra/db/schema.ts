@@ -107,6 +107,8 @@ export const cardTemplates = mediaSchema.table('card_templates', {
   kinds: jsonb('kinds').$type<string[]>().notNull(),
   mediaId: uuid('media_id').notNull(),
   portraitFree: boolean('portrait_free').notNull(),
+  /** 0071（契约 3.1）：古风插画。 */
+  classicalStyle: boolean('classical_style').notNull().default(false),
   enabled: boolean('enabled').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),

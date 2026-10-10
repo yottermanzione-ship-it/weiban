@@ -37,12 +37,27 @@ import {
 } from '../../policy/index.js';
 import { characters } from '../infra/db/schema.js';
 import { childFeaturesIn } from '../domain/child-features.js';
-import type { CustomCharacterPayload } from '../domain/custom-card.js';
+import { catchphrasesOf, type CustomCharacterPayload } from '../domain/custom-card.js';
 import { CharacterService } from './characters.js';
 
 /** 自定义角色的 draft_ciphertext 中存储的明文 JSON 结构（定义见 domain/custom-card.ts）。 */
 
+/**
+ * 3.1（T-098）：口头禅列表规则。同时传 catchphrase 与 catchphrases 以列表为准；只传 catchphrase 时只替换第一条、保留其余。
+ */
+function mergeCatchphrases(
+  current: string[],
+  catchphrase: string | null | undefined,
+  catchphrases: string[] | undefined,
+): string[] {
+  if (catchphrases !== undefined) return catchphrases;
+  if (catchphrase === undefined) return current;
+  if (!catchphrase) return current.slice(1);
+  return [catchphrase, ...current.slice(1)];
+}
+
 function buildPayload(body: UserCustomCharacterWrite): CustomCharacterPayload {
+  const phrases = mergeCatchphrases([], body.catchphrase, body.catchphrases);
   return {
     name: body.name,
     description: body.description,
@@ -53,7 +68,9 @@ function buildPayload(body: UserCustomCharacterWrite): CustomCharacterPayload {
       childAppearance: body.classification.childAppearance,
     },
     birthday: body.birthday ?? null,
-    catchphrase: body.catchphrase ?? null,
+    catchphrase: phrases[0] ?? null,
+    catchphrases: phrases,
+    speechStyle: body.speechStyle?.trim() || null,
     exampleDialogue: body.exampleDialogue ?? null,
     tags: body.tags ?? [],
     avatarMediaId: body.avatarMediaId ?? null,
@@ -65,6 +82,8 @@ function textsToCheck(payload: CustomCharacterPayload): string[] {
     payload.name,
     payload.description,
     payload.catchphrase ?? '',
+    ...catchphrasesOf(payload),
+    payload.speechStyle ?? '',
     payload.exampleDialogue ?? '',
   ].filter(Boolean);
 }
@@ -188,7 +207,17 @@ export class CustomCharacterService {
         : {}),
       ...(patch.tags !== undefined ? { tags: patch.tags ?? [] } : {}),
       ...(patch.avatarMediaId !== undefined ? { avatarMediaId: patch.avatarMediaId ?? null } : {}),
+      ...(patch.speechStyle !== undefined ? { speechStyle: patch.speechStyle.trim() || null } : {}),
     };
+    if (patch.catchphrase !== undefined || patch.catchphrases !== undefined) {
+      const phrases = mergeCatchphrases(
+        catchphrasesOf(existing),
+        patch.catchphrase,
+        patch.catchphrases,
+      );
+      merged.catchphrases = phrases;
+      merged.catchphrase = phrases[0] ?? null;
+    }
 
     if (patch.classification !== undefined) {
       if (
@@ -408,6 +437,8 @@ export class CustomCharacterService {
       personaUpdatedUnseen: false,
       description: payload.description,
       catchphrase: payload.catchphrase,
+      catchphrases: catchphrasesOf(payload),
+      speechStyle: payload.speechStyle ?? null,
       exampleDialogue: payload.exampleDialogue,
       childFeaturesDetected: row.childFeaturesDetected,
     };

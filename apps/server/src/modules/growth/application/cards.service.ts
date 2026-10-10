@@ -6,7 +6,7 @@
  * - 真人角色（含历史人物，保守处理）只用「不含人物」的模板（第 2 条、MED-02）。
  * - 获得后：私聊里一条系统提示 card_obtained、data.changed(cards)、growth.card_issued 事件、成就第 22、23 号。
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, asc, eq, max, sql } from 'drizzle-orm';
 import {
   CardAlbum,
@@ -32,7 +32,12 @@ import {
   type DbTx,
   type Outbox,
 } from '../../../platform/index.js';
-import { MEDIA_ASSET_READ_PORT, MEDIA_READ_PORT } from '../../media/index.js';
+import {
+  MEDIA_ASSET_READ_PORT,
+  MEDIA_CLASSICAL_CARD_TEMPLATES,
+  MEDIA_READ_PORT,
+  type MediaClassicalCardTemplates,
+} from '../../media/index.js';
 import {
   LEVEL_NAMES,
   addDays,
@@ -74,6 +79,9 @@ export class CardsService implements GrowthCardPort {
     @Inject(MEDIA_READ_PORT) private readonly media: MediaReadPort,
     @Inject(AchievementService) private readonly achievements: AchievementService,
     @Inject(GrowthContext) private readonly ctx: GrowthContext,
+    @Optional()
+    @Inject(MEDIA_CLASSICAL_CARD_TEMPLATES)
+    private readonly classical?: MediaClassicalCardTemplates,
   ) {}
 
   // ---------- GrowthCardPort（ai-runtime：名场面、宠物、玩法等） ----------
@@ -189,8 +197,14 @@ export class CardsService implements GrowthCardPort {
     serialNo: number,
   ): Promise<{ templateId: string | null; mediaId: string | null }> {
     if (input.faceMediaId) return { templateId: null, mediaId: input.faceMediaId };
-    const { portraitFreeOnly } = await this.ctx.classify(input.characterId, tx);
-    const list = await this.assets.listCardTemplates(input.kind, portraitFreeOnly).catch(() => []);
+    const { category, portraitFreeOnly } = await this.ctx.classify(input.characterId, tx);
+    // 3.1（积压 ㉓）：历史人物优先古风插画模板；其余真人只取无人物模板。
+    let list =
+      category === 'historical' && this.classical
+        ? await this.classical.listClassicalCardTemplates(input.kind).catch(() => [])
+        : [];
+    if (!list.length)
+      list = await this.assets.listCardTemplates(input.kind, portraitFreeOnly).catch(() => []);
     if (input.templateId) {
       const chosen = list.find((t) => t.templateId === input.templateId);
       if (chosen) return { templateId: chosen.templateId, mediaId: chosen.mediaId };

@@ -22,6 +22,7 @@ import {
   LINK_PREVIEW_PORT,
   MEDIA_STICKER_CHECK,
   MEDIA_STORAGE_AUDIT,
+  MEDIA_CLASSICAL_CARD_TEMPLATES,
 } from './tokens.js';
 @Module({
   controllers: [
@@ -40,6 +41,7 @@ import {
     { provide: MEDIA_TRANSCRIPT_PORT, useExisting: MediaService },
     { provide: MEDIA_ASSET_READ_PORT, useExisting: MediaAssetService },
     { provide: MEDIA_STICKER_CHECK, useExisting: MediaAssetService },
+    { provide: MEDIA_CLASSICAL_CARD_TEMPLATES, useExisting: MediaAssetService },
     { provide: LINK_PREVIEW_PORT, useExisting: LinkPreviewService },
     { provide: MEDIA_STORAGE_AUDIT, useExisting: MediaService },
     {
@@ -74,6 +76,7 @@ import {
     MEDIA_TRANSCRIPT_PORT,
     MEDIA_ASSET_READ_PORT,
     MEDIA_STICKER_CHECK,
+    MEDIA_CLASSICAL_CARD_TEMPLATES,
     LINK_PREVIEW_PORT,
     MEDIA_STORAGE_AUDIT,
   ],
