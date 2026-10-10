@@ -1,0 +1,90 @@
+/**
+ * 契约 PlayReadPort / PlayAgentPort 的实现（提供方 play，调用方 ai-runtime）。
+ * 每个玩法的实现放在各自服务里，这里只做转发；尚未交付的玩法（T-092～T-095）先返回安全的默认值，
+ * 交付时把对应方法改为转发到新服务即可（端口签名不变）。
+ */
+import { Inject, Injectable } from '@nestjs/common';
+import type {
+  FocusSession,
+  PlayAgentPort,
+  PlayReadPort,
+  PortResult,
+  Reminder,
+  WishlistItem,
+} from '@weiban/contracts';
+import { DailyQuestionService } from './daily-question.service.js';
+
+type PendingReply = Awaited<ReturnType<PlayReadPort['listPendingLetterReplies']>>[number];
+
+@Injectable()
+export class PlayPortsService implements PlayReadPort, PlayAgentPort {
+  constructor(@Inject(DailyQuestionService) private readonly daily: DailyQuestionService) {}
+
+  // ---------- PlayReadPort ----------
+
+  /** T-094 交付前：没有进行中的专注。 */
+  async getActiveFocus(_userId: string): Promise<FocusSession | null> {
+    return null;
+  }
+
+  /** T-092 交付前：清单为空。 */
+  async listWishlist(_userId: string, _characterId: string): Promise<WishlistItem[]> {
+    return [];
+  }
+
+  /** T-095 交付前：没有提醒。 */
+  async getReminder(_reminderId: string): Promise<Reminder | null> {
+    return null;
+  }
+
+  /** T-093 交付前：没有待生成的回信。 */
+  async listPendingLetterReplies(_userId: string): Promise<PendingReply[]> {
+    return [];
+  }
+
+  async getLetterBody(_letterId: string): Promise<string | null> {
+    return null;
+  }
+
+  // ---------- PlayAgentPort ----------
+
+  setDailyCharacterAnswer(input: {
+    answerId: string;
+    answer: string;
+  }): Promise<PortResult<void, 'not_found'>> {
+    return this.daily.setCharacterAnswer(input);
+  }
+
+  async createWishlistProposal(_input: {
+    userId: string;
+    characterId: string;
+    text: string;
+    idempotencyKey: string;
+  }): Promise<PortResult<{ proposalId: string }, 'weekly_limit' | 'list_full'>> {
+    return { ok: false, error: 'weekly_limit', message: '心愿清单尚未开放（T-092）' };
+  }
+
+  async deliverLetterReply(_input: {
+    letterId: string;
+    body: string;
+    idempotencyKey: string;
+  }): Promise<PortResult<{ messageId: string }, 'not_found' | 'contact_inactive'>> {
+    return { ok: false, error: 'not_found', message: '慢信尚未开放（T-093）' };
+  }
+
+  async sendCharacterLetter(_input: {
+    userId: string;
+    characterId: string;
+    body: string;
+    idempotencyKey: string;
+  }): Promise<PortResult<{ letterId: string }, 'contact_inactive'>> {
+    return { ok: false, error: 'contact_inactive', message: '慢信尚未开放（T-093）' };
+  }
+
+  async setReminderPhrasings(_input: {
+    reminderId: string;
+    phrasings: string[];
+  }): Promise<PortResult<void, 'not_found'>> {
+    return { ok: false, error: 'not_found', message: '提醒尚未开放（T-095）' };
+  }
+}

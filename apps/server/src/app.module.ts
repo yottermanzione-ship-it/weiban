@@ -81,6 +81,7 @@ import {
   CALL_SERVICE_STATUS,
   type CallServiceStatus,
 } from './modules/calls/index.js';
+import { PlayModule } from './modules/play/index.js';
 import {
   PlazaModule,
   PLAZA_CHARACTERS,
@@ -357,6 +358,7 @@ export class AppModule {
         CallAgentCompositionModule,
         PlazaCompositionModule,
         PlazaModule,
+        PlayModule,
         PlazaOriginCompositionModule,
       ],
     };
