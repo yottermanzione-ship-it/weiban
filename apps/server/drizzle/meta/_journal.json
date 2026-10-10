@@ -281,6 +281,20 @@
       "when": 1794800000000,
       "tag": "0048_call_ai",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1795000000000,
+      "tag": "0050_growth_cards_achievements",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1795100000000,
+      "tag": "0051_growth_contact_index_holidays",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@
  *
  * 改表结构：改这里 → `pnpm --filter @weiban/server db:generate` 生成迁移 → 手写对应的 .down.sql。
  */
+import { sql } from 'drizzle-orm';
 import {
   index,
   pgSchema,
@@ -36,6 +37,17 @@ export const holidays = proactiveSchema.table(
     /** 是否带恋爱含义（七夕、情人节等） */
     romantic: boolean('romantic').notNull().default(false),
     enabled: boolean('enabled').notNull().default(true),
+    /** 3.0.2（T-076，迁移 0051）：'traditional' | 'common'。 */
+    category: text('category').notNull().default('common'),
+    /** 节日当天和角色聊天是否发节日卡。 */
+    sendCard: boolean('send_card').notNull().default(true),
+    /** 指定的节日卡面模板（media.card_templates.id）；null = 自动挑选。 */
+    cardTemplateId: uuid('card_template_id'),
+    /** 适用角色分类；空数组 = 全部。 */
+    characterCategories: text('character_categories')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     createdAt: tz('created_at').notNull(),
     updatedAt: tz('updated_at').notNull(),
   },

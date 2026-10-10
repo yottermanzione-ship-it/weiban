@@ -4,28 +4,69 @@
  * 设计见 docs/product/prd-v1/06-simulation-proactive.md SIM-09。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, LocalDate, NoContent, Timestamp, defineEndpoint } from '../common.js';
+import {
+  API_PREFIX,
+  Id,
+  LocalDate,
+  NoContent,
+  Timestamp,
+  defineEndpoint,
+  tolerantEnum,
+} from '../common.js';
 
 // ---------- 节日/纪念日事件 ----------
 
 /**
  * 日期类型：
  * - once：某年某月某日（一次性，如某届活动）
- * - annual：每年固定月日（如元旦 1-1、圣诞 12-25）
+ * - annual：每年固定公历月日（如元旦 1-1、圣诞 12-25）
+ * - lunar_annual（3.0.2，T-076）：每年固定农历月日（如中秋 08-15），服务器换算成每年的公历日期；
+ *   不支持闰月；农历当月没有这一天（如小月的三十）的年份跳过。
  */
-export const HolidayDateType = z.enum(['once', 'annual']);
+export const HolidayDateType = z.enum(['once', 'annual', 'lunar_annual']);
 export type HolidayDateType = z.infer<typeof HolidayDateType>;
+
+/** 3.0.2：节日类型（`admin-content.md` 第 2 节，只用于筛选）。 */
+export const HolidayCategory = z.enum(['traditional', 'common']);
+export type HolidayCategory = z.infer<typeof HolidayCategory>;
+
+/**
+ * 3.0.2：节日适用的角色分类（由角色分类 basis / realPersonKind 推出）。空数组 = 全部角色。
+ * celebrity 公众人物、historical 历史人物、private_person 身边真人、fictional 虚构、original 原创。
+ */
+export const HolidayCharacterCategory = z.enum([
+  'celebrity',
+  'historical',
+  'private_person',
+  'fictional',
+  'original',
+]);
+export type HolidayCharacterCategory = z.infer<typeof HolidayCharacterCategory>;
+
+const HolidayDateValue = z
+  .string()
+  .regex(/^(\d{4}-\d{2}-\d{2}|\d{2}-\d{2})$/, '格式 YYYY-MM-DD 或 MM-DD');
 
 export const HolidayEvent = z.object({
   holidayId: Id,
   name: z.string().trim().min(1).max(100),
   dateType: HolidayDateType,
-  /** dateType = once 时为完整日期 YYYY-MM-DD；annual 时为 MM-DD。 */
-  dateValue: z.string().regex(/^(\d{4}-\d{2}-\d{2}|\d{2}-\d{2})$/, '格式 YYYY-MM-DD 或 MM-DD'),
+  /** dateType = once 时为完整日期 YYYY-MM-DD；annual 时为公历 MM-DD；lunar_annual 时为农历 MM-DD。 */
+  dateValue: HolidayDateValue,
   /** 是否带恋爱含义（七夕、情人节等），只在恋爱关系或恋爱情景模式时使用恋爱口吻。 */
   romantic: z.boolean(),
   /** 是否已启用（停用后不参与调度）。 */
   enabled: z.boolean(),
+  /** 3.0.2：节日类型。 */
+  category: tolerantEnum(HolidayCategory).default('common'),
+  /** 3.0.2：节日当天和角色聊天是否发节日卡（GRW-05），默认 true。 */
+  sendCard: z.boolean().default(true),
+  /** 3.0.2：节日卡用的卡面模板（素材库 holiday 类型）；null = 按角色分类自动挑选。 */
+  cardTemplateId: Id.nullable().default(null),
+  /** 3.0.2：适用角色分类；空数组 = 全部。 */
+  characterCategories: z.array(tolerantEnum(HolidayCharacterCategory)).default([]),
+  /** 3.0.2：从今天（北京时间）起最近两次对应的公历日期（农历节日用于展示「今年是 10 月 6 日」）。 */
+  upcomingDates: z.array(LocalDate).max(2).default([]),
   createdAt: Timestamp,
   updatedAt: Timestamp,
 });
@@ -35,8 +76,13 @@ export const CreateHolidayRequest = z
   .object({
     name: z.string().trim().min(1).max(100),
     dateType: HolidayDateType,
-    dateValue: z.string().regex(/^(\d{4}-\d{2}-\d{2}|\d{2}-\d{2})$/),
+    dateValue: HolidayDateValue,
     romantic: z.boolean().default(false),
+    /** 3.0.2 起的可选字段，不传取默认值。 */
+    category: HolidayCategory.optional(),
+    sendCard: z.boolean().optional(),
+    cardTemplateId: Id.nullable().optional(),
+    characterCategories: z.array(HolidayCharacterCategory).max(5).optional(),
   })
   .strict();
 export type CreateHolidayRequest = z.infer<typeof CreateHolidayRequest>;
@@ -44,12 +90,15 @@ export type CreateHolidayRequest = z.infer<typeof CreateHolidayRequest>;
 export const UpdateHolidayRequest = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),
-    dateValue: z
-      .string()
-      .regex(/^(\d{4}-\d{2}-\d{2}|\d{2}-\d{2})$/)
-      .optional(),
+    /** 3.0.2：允许修改日期规则；改规则时必须同时传 dateValue。 */
+    dateType: HolidayDateType.optional(),
+    dateValue: HolidayDateValue.optional(),
     romantic: z.boolean().optional(),
     enabled: z.boolean().optional(),
+    category: HolidayCategory.optional(),
+    sendCard: z.boolean().optional(),
+    cardTemplateId: Id.nullable().optional(),
+    characterCategories: z.array(HolidayCharacterCategory).max(5).optional(),
   })
   .strict();
 export type UpdateHolidayRequest = z.infer<typeof UpdateHolidayRequest>;
@@ -63,6 +112,12 @@ export const HolidayAdminEndpoints = {
     auth: 'admin',
     query: z.object({
       enabled: z
+        .enum(['true', 'false'])
+        .transform((v) => v === 'true')
+        .optional(),
+      /** 3.0.2：按节日类型、恋爱向筛选。 */
+      category: HolidayCategory.optional(),
+      romantic: z
         .enum(['true', 'false'])
         .transform((v) => v === 'true')
         .optional(),

@@ -76,6 +76,11 @@ export const Anniversary = z.object({
   date: LocalDate,
   /** 下一次触达的日期（系统纪念日为每年周年；自定义为 date 本身）；已过则为下一周年。 */
   nextOccurrence: LocalDate.nullable(),
+  /**
+   * 3.0.2（T-076）：自定义纪念日「每年提醒」（`l3-companion.md` 第 5 节）。true 时每年这天都算纪念日、
+   * nextOccurrence 为下一周年；系统纪念日恒为 false。旧服务器不返回时按 false。
+   */
+  repeatYearly: z.boolean().default(false),
 });
 export type Anniversary = z.infer<typeof Anniversary>;
 
@@ -97,8 +102,22 @@ export type DaysKnownInfo = z.infer<typeof DaysKnownInfo>;
 export const AddAnniversaryRequest = z.object({
   label: z.string().trim().min(1).max(30),
   date: LocalDate,
+  /** 3.0.2（T-076）：每年提醒，不传为 false。 */
+  repeatYearly: z.boolean().optional(),
 });
 export type AddAnniversaryRequest = z.infer<typeof AddAnniversaryRequest>;
+
+/** 3.0.2（T-076）：编辑自定义纪念日（GRW-04 第 4 条「添加、编辑、删除」）。至少传一个字段。 */
+export const UpdateAnniversaryRequest = z
+  .object({
+    label: z.string().trim().min(1).max(30).optional(),
+    date: LocalDate.optional(),
+    repeatYearly: z.boolean().optional(),
+  })
+  .refine((v) => v.label !== undefined || v.date !== undefined || v.repeatYearly !== undefined, {
+    message: '至少修改一项',
+  });
+export type UpdateAnniversaryRequest = z.infer<typeof UpdateAnniversaryRequest>;
 
 // ---------- 接口定义 ----------
 
@@ -140,6 +159,17 @@ export const GrowthEndpoints = {
     body: AddAnniversaryRequest,
     response: Anniversary,
     summary: '添加自定义纪念日（每角色最多 10 个，GRW-04 第 4 条）。超出时返回 bad_request。',
+  }),
+
+  updateAnniversary: defineEndpoint({
+    method: 'PATCH',
+    path: `${API_PREFIX}/growth/:characterId/anniversaries/:anniversaryId`,
+    auth: 'user',
+    params: z.object({ characterId: Id, anniversaryId: Id }),
+    body: UpdateAnniversaryRequest,
+    response: Anniversary,
+    summary:
+      '3.0.2：编辑自定义纪念日（名称、日期、每年提醒）；系统纪念日不可编辑（not_found）。GRW-04',
   }),
 
   removeAnniversary: defineEndpoint({

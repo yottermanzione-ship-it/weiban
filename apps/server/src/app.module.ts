@@ -56,9 +56,9 @@ import {
   MODEL_NOTIFICATION_READ_PORT,
   MODEL_GATEWAY_MEDIA_PORT,
 } from './modules/model-access/index.js';
-import { GrowthModule } from './modules/growth/index.js';
+import { GrowthModule, GROWTH_HOLIDAY_SOURCE } from './modules/growth/index.js';
 import { MomentsModule } from './modules/moments/index.js';
-import { ProactiveModule } from './modules/proactive/index.js';
+import { ProactiveModule, HOLIDAY_EVENT_PORT } from './modules/proactive/index.js';
 import {
   CallsModule,
   CALL_AGENT_PORT,
@@ -214,6 +214,15 @@ class PushCompositionModule {}
 })
 class MediaCompositionModule {}
 
+/** T-076：growth 发节日卡要读节日清单；growth 不能 import proactive（上层白名单），由这里绑定。 */
+@Global()
+@Module({
+  imports: [ProactiveModule],
+  providers: [{ provide: GROWTH_HOLIDAY_SOURCE, useExisting: HOLIDAY_EVENT_PORT }],
+  exports: [GROWTH_HOLIDAY_SOURCE],
+})
+class GrowthHolidayCompositionModule {}
+
 @Module({})
 export class AppModule {
   static forRoot(options: PlatformOptions): DynamicModule {
@@ -239,6 +248,7 @@ export class AppModule {
           imports: [CharactersModule],
           characterReadToken: CHARACTER_READ_PORT,
         }),
+        GrowthHolidayCompositionModule,
         GrowthModule,
         MomentsModule,
         ProactiveModule,

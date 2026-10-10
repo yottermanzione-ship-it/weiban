@@ -2,6 +2,7 @@
  * 熟悉度领域规则（GRW-03, P-25）。
  * 纯函数，不依赖任何 NestJS / DB / 平台代码，方便单元测试。
  */
+import { createHash } from 'node:crypto';
 import { P25_FAMILIARITY } from '../../../platform/index.js';
 
 // ---------- 等级与点数 ----------
@@ -103,8 +104,9 @@ export function computeNextOccurrence(
   dateStr: string,
   todayStr: string,
   kind: 'system' | 'custom',
+  repeatYearly = false,
 ): string | null {
-  if (kind === 'custom') {
+  if (kind === 'custom' && !repeatYearly) {
     // 自定义纪念日只返回当天日期本身；不循环。
     return dateStr >= todayStr ? dateStr : null;
   }
@@ -121,4 +123,71 @@ export function computeNextOccurrence(
     );
   }
   return candidate.toISOString().slice(0, 10);
+}
+
+// ---------- T-076：纪念卡、熟悉度卡用到的规则 ----------
+
+/** 等级名称（GRW-03 第 1 条）。 */
+export const LEVEL_NAMES: Record<number, string> = {
+  1: '初识',
+  2: '眼熟',
+  3: '熟络',
+  4: '老友',
+  5: '知己',
+};
+
+/**
+ * GRW-04 第 2 条：第 7、30、100、200、365 天，之后每 100 天和每个周年。
+ * 「之后每 100 天」按设计 `cards-familiarity.md` 3.2 的示例（第 400 天）取 100 的整数倍。
+ */
+export function isSystemAnniversaryDay(days: number): boolean {
+  if ([7, 30, 100, 200, 365].includes(days)) return true;
+  return days > 365 && (days % 100 === 0 || days % 365 === 0);
+}
+
+/** 1..maxDays 中的全部系统纪念日节点（升序）。 */
+export function systemAnniversaryDaysUpTo(maxDays: number): number[] {
+  const out: number[] = [];
+  for (let d = 1; d <= maxDays; d += 1) if (isSystemAnniversaryDay(d)) out.push(d);
+  return out;
+}
+
+/** 由种子生成稳定的 UUID（系统纪念日 ID 等需要 Id 格式又不存库的场合）。 */
+export function stableUuid(seed: string): string {
+  const h = createHash('sha1').update(seed).digest('hex');
+  const variant = ((parseInt(h[16]!, 16) & 0x3) | 0x8).toString(16);
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${variant}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
+
+export function addDays(localDate: string, days: number): string {
+  return new Date(Date.parse(localDate + 'T00:00:00Z') + days * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+}
+
+/** 认识第 N 天：knownSince 当天为第 1 天（按两个当地日期相减）。 */
+export function daysKnownOn(knownSince: string, localDate: string): number {
+  return (
+    Math.round(
+      (Date.parse(localDate + 'T00:00:00Z') - Date.parse(knownSince + 'T00:00:00Z')) / 86_400_000,
+    ) + 1
+  );
+}
+
+/** 当地日期所在周的周一（名场面每周最多 1 张）。 */
+export function weekStartOf(localDate: string): string {
+  const day = new Date(localDate + 'T00:00:00Z').getUTCDay(); // 0 = 周日
+  return addDays(localDate, -((day + 6) % 7));
+}
+
+/** 自定义纪念日今天是否到达（每年提醒的按月日比较；2 月 29 日在非闰年记在 2 月 28 日）。 */
+export function customAnniversaryHits(date: string, repeatYearly: boolean, today: string): boolean {
+  if (!repeatYearly) return date === today;
+  if (date > today) return false;
+  const md = date.slice(5);
+  const todayMd = today.slice(5);
+  if (md === todayMd) return true;
+  const year = Number(today.slice(0, 4));
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  return md === '02-29' && !leap && todayMd === '02-28';
 }

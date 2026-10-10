@@ -7,6 +7,12 @@ export interface UpcomingHoliday {
   date: string;
   daysAhead: number;
   romantic: boolean;
+  /** 3.0.2（T-076）：以下字段供 growth 发节日卡；不返回时按默认（发卡、自动挑卡面、全部角色）。 */
+  category?: 'traditional' | 'common';
+  sendCard?: boolean;
+  cardTemplateId?: string | null;
+  /** 空数组或不传 = 全部角色；取值同 HolidayCharacterCategory。 */
+  characterCategories?: string[];
 }
 
 /** 提供方 proactive；本地日期由调用方按用户 IANA 时区计算。 */

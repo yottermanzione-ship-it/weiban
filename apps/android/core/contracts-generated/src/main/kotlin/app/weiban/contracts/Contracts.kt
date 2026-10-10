@@ -50,12 +50,14 @@ typealias ActionCardKind = String
 data class AddAnniversaryRequest(
     @SerialName("label") val `label`: String,
     @SerialName("date") val `date`: LocalDate,
+    @SerialName("repeatYearly") val `repeatYearly`: Boolean? = null,
 )
 
 @Serializable
 data class AddAnniversaryRequestInput(
     @SerialName("label") val `label`: String,
     @SerialName("date") val `date`: LocalDate,
+    @SerialName("repeatYearly") val `repeatYearly`: Boolean? = null,
 )
 
 @Serializable
@@ -638,6 +640,7 @@ data class Anniversary(
     @SerialName("label") val `label`: String,
     @SerialName("date") val `date`: LocalDate,
     @SerialName("nextOccurrence") val `nextOccurrence`: LocalDate?,
+    @SerialName("repeatYearly") val `repeatYearly`: Boolean,
 )
 
 @Serializable
@@ -2076,6 +2079,10 @@ data class CreateHolidayRequest(
     @SerialName("dateType") val `dateType`: HolidayDateType,
     @SerialName("dateValue") val `dateValue`: String,
     @SerialName("romantic") val `romantic`: Boolean,
+    @SerialName("category") val `category`: HolidayCategory? = null,
+    @SerialName("sendCard") val `sendCard`: Boolean? = null,
+    @SerialName("cardTemplateId") val `cardTemplateId`: Id? = null,
+    @SerialName("characterCategories") val `characterCategories`: List<HolidayCharacterCategory>? = null,
 )
 
 @Serializable
@@ -2084,6 +2091,10 @@ data class CreateHolidayRequestInput(
     @SerialName("dateType") val `dateType`: HolidayDateType,
     @SerialName("dateValue") val `dateValue`: String,
     @SerialName("romantic") val `romantic`: Boolean? = null,
+    @SerialName("category") val `category`: HolidayCategory? = null,
+    @SerialName("sendCard") val `sendCard`: Boolean? = null,
+    @SerialName("cardTemplateId") val `cardTemplateId`: Id? = null,
+    @SerialName("characterCategories") val `characterCategories`: List<HolidayCharacterCategory>? = null,
 )
 
 @Serializable
@@ -4410,6 +4421,12 @@ data class GrowthEndpointsRemoveAnniversaryParams(
 typealias GrowthEndpointsRemoveAnniversaryResponse = JsonElement?
 
 @Serializable
+data class GrowthEndpointsUpdateAnniversaryParams(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("anniversaryId") val `anniversaryId`: Id,
+)
+
+@Serializable
 data class HealthEndpointsClearAllBody(
     @EncodeDefault
     @SerialName("confirm") val `confirm`: String = "CLEAR",
@@ -4474,6 +4491,8 @@ typealias HexColor = String
 @Serializable
 data class HolidayAdminEndpointsListQuery(
     @SerialName("enabled") val `enabled`: String? = null,
+    @SerialName("category") val `category`: HolidayCategory? = null,
+    @SerialName("romantic") val `romantic`: String? = null,
     @SerialName("limit") val `limit`: Long? = null,
     @SerialName("cursor") val `cursor`: String? = null,
 )
@@ -4489,6 +4508,10 @@ data class HolidayAdminEndpointsUpdateParams(
     @SerialName("holidayId") val `holidayId`: Id,
 )
 
+typealias HolidayCategory = String
+
+typealias HolidayCharacterCategory = String
+
 typealias HolidayDateType = String
 
 @Serializable
@@ -4499,6 +4522,11 @@ data class HolidayEvent(
     @SerialName("dateValue") val `dateValue`: String,
     @SerialName("romantic") val `romantic`: Boolean,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("category") val `category`: String,
+    @SerialName("sendCard") val `sendCard`: Boolean,
+    @SerialName("cardTemplateId") val `cardTemplateId`: Id?,
+    @SerialName("characterCategories") val `characterCategories`: List<String>,
+    @SerialName("upcomingDates") val `upcomingDates`: List<LocalDate>,
     @SerialName("createdAt") val `createdAt`: Timestamp,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
 )
@@ -7755,6 +7783,20 @@ data class UnsupportedUpdate(
 )
 
 @Serializable
+data class UpdateAnniversaryRequest(
+    @SerialName("label") val `label`: String? = null,
+    @SerialName("date") val `date`: LocalDate? = null,
+    @SerialName("repeatYearly") val `repeatYearly`: Boolean? = null,
+)
+
+@Serializable
+data class UpdateAnniversaryRequestInput(
+    @SerialName("label") val `label`: String? = null,
+    @SerialName("date") val `date`: LocalDate? = null,
+    @SerialName("repeatYearly") val `repeatYearly`: Boolean? = null,
+)
+
+@Serializable
 data class UpdateAuthorizationRequest(
     @SerialName("authorizedCharacterIds") val `authorizedCharacterIds`: List<Id>,
 )
@@ -7835,9 +7877,14 @@ data class UpdateCycleRequestInput(
 @Serializable
 data class UpdateHolidayRequest(
     @SerialName("name") val `name`: String? = null,
+    @SerialName("dateType") val `dateType`: HolidayDateType? = null,
     @SerialName("dateValue") val `dateValue`: String? = null,
     @SerialName("romantic") val `romantic`: Boolean? = null,
     @SerialName("enabled") val `enabled`: Boolean? = null,
+    @SerialName("category") val `category`: HolidayCategory? = null,
+    @SerialName("sendCard") val `sendCard`: Boolean? = null,
+    @SerialName("cardTemplateId") val `cardTemplateId`: Id? = null,
+    @SerialName("characterCategories") val `characterCategories`: List<HolidayCharacterCategory>? = null,
 )
 
 @Serializable
