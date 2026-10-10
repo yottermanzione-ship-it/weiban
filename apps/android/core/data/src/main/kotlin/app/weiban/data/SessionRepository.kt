@@ -213,9 +213,10 @@ class SessionRepository(
     suspend fun download(
         media: MediaObject,
         owner: OwnerRecord? = null,
+        audio: Boolean = false,
     ): ByteArray {
         val captured = capture(owner) ?: throw ApiFailure("unauthenticated", 401)
-        val bytes = api.download(media, expectedSession = captured)
+        val bytes = api.download(media, expectedSession = captured, audio = audio)
         return lock.withLock {
             if (current.value !== captured) throw ApiFailure("session_changed", 0)
             bytes

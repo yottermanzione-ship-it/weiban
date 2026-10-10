@@ -10,7 +10,7 @@ internal class ConversationUi(
     val runtime: ChatRuntime,
     val owner: OwnerRecord,
     var conversation: Conversation,
-    private val scope: CoroutineScope,
+    val scope: CoroutineScope,
 ) {
     var text by mutableStateOf("")
     var quoteId by mutableStateOf<String?>(null)
@@ -20,6 +20,7 @@ internal class ConversationUi(
     var openProfile: (ProfileTarget) -> Unit = {}
     var groupGreeting: String? = null
     var choosing by mutableStateOf(false)
+    lateinit var media: ChatMediaUi
 
     /** 卡片按钮（ADR-0026）：只能点一次；结果经 message.updated 同步回来。 */
     fun choose(

@@ -105,6 +105,7 @@ internal data class InformationNavigation(
     val contact = state.contacts.find { it.characterId == characterId }
     var memoryPage by remember(owner, characterId) { mutableStateOf(false) }
     var timelinePage by remember(owner, characterId) { mutableStateOf(false) }
+    var voicePage by remember(owner, characterId) { mutableStateOf(false) }
     if (memoryPage) {
         MemoryManagement(repository, owner, characterId) { memoryPage = false }
         return
@@ -124,6 +125,13 @@ internal data class InformationNavigation(
                 options = SessionCallOptions(owner = owner),
             )
         }
+    if (voicePage) {
+        VoiceTonePage(repository, owner, characterId, companion.data?.voiceId) {
+            voicePage = false
+            companion.refresh()
+        }
+        return
+    }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
@@ -137,6 +145,7 @@ internal data class InformationNavigation(
         TextButton(onClick = { timelinePage = true }, enabled = !actions.pending) { Text("TA 的近况 ›") }
         companion.data?.let { InformationProactive(actions, companion, characterId, it) }
         TextButton(onClick = navigation.models, enabled = !actions.pending) { Text("模型选择") }
+        VoiceToneRow(repository, owner, companion.data?.voiceId, !actions.pending) { voicePage = true }
         TextButton(onClick = { memoryPage = true }, enabled = !actions.pending) { Text("TA记住了什么") }
         InformationNames(actions, contact, characterId)
         (actions.error ?: companion.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }

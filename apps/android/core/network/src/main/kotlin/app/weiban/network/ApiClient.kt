@@ -138,10 +138,11 @@ class ApiClient(
             throw ApiFailure("invalid_response", 0)
         }
 
-    /** A media grant is bound to this API origin and path; never attach the bearer to its URL. */
+    /** A media grant is bound to this API origin and path; never attach the bearer to its URL. audio = 语音消息 / 试听（T-074）。 */
     suspend fun download(
         media: MediaObject,
         expectedSession: AuthResponse? = session.get(),
+        audio: Boolean = false,
     ): ByteArray =
         withContext(Dispatchers.IO) {
             val auth = expectedSession ?: throw ApiFailure("unauthenticated", 401)
@@ -152,12 +153,13 @@ class ApiClient(
                     Request
                         .Builder()
                         .url(url)
-                        .header("Accept", "image/webp")
+                        .header("Accept", if (audio) "audio/*" else "image/webp")
                         .build(),
                 ).awaitDecoded { response ->
                     if (session.get() !== auth) throw ApiFailure("session_changed", 0)
                     if (!response.isSuccessful) throw ApiFailure("media_unavailable", response.code)
-                    if (response.header("Content-Type")?.substringBefore(';') != "image/webp") throw ApiFailure("invalid_response", 0)
+                    val type = response.header("Content-Type")?.substringBefore(';').orEmpty()
+                    if (if (audio) !type.startsWith("audio/") else type != "image/webp") throw ApiFailure("invalid_response", 0)
                     val bytes = response.body?.byteStream()?.use { it.readBounded(10_485_761) } ?: byteArrayOf()
                     if (bytes.isEmpty() || bytes.size > 10_485_760) throw ApiFailure("invalid_response", 0)
                     if (session.get() !== auth) throw ApiFailure("session_changed", 0)

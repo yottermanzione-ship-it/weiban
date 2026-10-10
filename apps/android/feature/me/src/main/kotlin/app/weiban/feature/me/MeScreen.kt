@@ -260,6 +260,7 @@ import kotlinx.serialization.json.*
     Text("账号：${repository.auth.value?.user?.username.orEmpty()}")
     OutlinedButton(onClick = { page = "profile" }) { Text("我的资料") }
     entry.onMyMoments?.let { open -> OutlinedButton(onClick = open) { Text("朋友圈") } }
+    entry.onMyStickers?.let { open -> OutlinedButton(onClick = open) { Text("表情") } }
     OutlinedButton(onClick = { openPage("services") }) { Text("服务") }
     OutlinedButton(onClick = { openPage("settings") }) { Text("设置") }
     TextButton(enabled = !busy, onClick = {

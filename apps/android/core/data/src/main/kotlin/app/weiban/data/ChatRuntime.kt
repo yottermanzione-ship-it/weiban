@@ -302,6 +302,27 @@ class ChatRuntime(
         }
     }
 
+    /** L5：图片 / 语音 / 表情（媒体已上传，T-074）。与文字共用发送队列与重试。 */
+    suspend fun sendContent(
+        expected: OwnerRecord,
+        conversationId: String,
+        content: UserSendableContent,
+        quoteMessageId: String? = null,
+    ) {
+        val current = runnerFor(expected) ?: throw ApiFailure("sync_not_ready", 0)
+        withContext(NonCancellable) {
+            current.dispatch(
+                ClientSyncOperationEnqueue(
+                    conversationId = conversationId,
+                    body = SendMessageRequest(UUID.randomUUID().toString(), content, quoteMessageId),
+                    now = System.currentTimeMillis(),
+                ),
+            )
+            if (!current.active) throw ApiFailure("sync_not_ready", 0)
+            onQueued(expected)
+        }
+    }
+
     suspend fun retry(
         expected: OwnerRecord,
         conversationId: String,

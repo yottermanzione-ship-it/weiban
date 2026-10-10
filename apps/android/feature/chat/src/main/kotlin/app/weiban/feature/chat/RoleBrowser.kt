@@ -72,7 +72,7 @@ import java.util.Locale
         } else if (section == "groups") {
             GroupList(repository, owner, state, { section = "contacts" }, onOpenConversation)
         } else {
-            ContactsEntries(repository, owner, state, { section = "newFriends" }) { section = "groups" }
+            ContactsEntries(repository, owner, { section = "newFriends" }) { section = "groups" }
             ContactsList(repository, owner, state, { plaza = true }) { select(it) }
         }
     }

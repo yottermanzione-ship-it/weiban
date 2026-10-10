@@ -26,25 +26,27 @@ internal fun relationTypeName(type: String): String = relationTypes.find { it.fi
 
 internal fun closenessName(value: String): String = closenessLevels.find { it.first == value }?.second ?: ""
 
-/** 通讯录里的自定义角色 id（没有「自定义角色列表」接口，逐个读资料判断 kind，同网页做法）。 */
+/** 我的全部自定义角色（3.0.1：`GET /characters/custom`）。 */
 @Composable private fun customCharacterIds(
     repository: SessionRepository,
-    state: ClientSyncState,
-): Pair<List<String>, Map<String, CharacterProfile>> {
-    val ids = state.contacts.filter { it.status == "active" }.map { it.characterId }
-    val profiles = characterProfiles(repository, ids)
-    return ids.filter { profiles[it]?.kind == "custom" } to profiles
+    owner: OwnerRecord,
+): Pair<List<String>, Map<String, UserCustomCharacter>> {
+    val list =
+        remote("${owner.sessionId}:custom-characters") {
+            repository.call(Endpoints.userCustomEndpointsList, options = SessionCallOptions(owner = owner))
+        }
+    val items = list.data?.items.orEmpty()
+    return items.map { it.characterId } to items.associateBy { it.characterId }
 }
 
 /** 资料页「TA 认识的人 N 个 ›」：只有拥有 2 个及以上自定义角色时显示（social-l4.md 第 6 节）。 */
 @Composable internal fun CustomRelationsEntry(
     repository: SessionRepository,
     owner: OwnerRecord,
-    state: ClientSyncState,
     characterId: String,
     onOpen: () -> Unit,
 ) {
-    val (custom, _) = customCharacterIds(repository, state)
+    val (custom, _) = customCharacterIds(repository, owner)
     if (custom.size < 2) return
     val relations =
         remote("${owner.sessionId}:relations") {
@@ -62,7 +64,7 @@ internal fun closenessName(value: String): String = closenessLevels.find { it.fi
     onBack: () -> Unit,
 ) {
     val colors = LocalWeibanColors.current
-    val (custom, profiles) = customCharacterIds(repository, state)
+    val (custom, profiles) = customCharacterIds(repository, owner)
     val relations =
         remote("${owner.sessionId}:relations") {
             repository.call(Endpoints.userRelationEndpointsListMyRelations, options = SessionCallOptions(owner = owner))

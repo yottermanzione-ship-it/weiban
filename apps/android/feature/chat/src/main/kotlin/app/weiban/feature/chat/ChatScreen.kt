@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.weiban.contracts.*
@@ -221,6 +222,11 @@ internal fun messageText(message: Message): String =
             is ReceivedMessageContentSystem -> systemMessage(content)
             is ReceivedMessageContentContactCard -> "[名片] ${content.name}"
             is ReceivedMessageContentActionCard -> content.text
+            is ReceivedMessageContentImage -> "[图片]"
+            is ReceivedMessageContentSticker -> "[表情]"
+            is ReceivedMessageContentVoice -> "[语音] ${((content.durationMs + 500) / 1000).coerceIn(1, 60)}″"
+            is ReceivedMessageContentLink -> "[链接] ${content.title}"
+            is ReceivedMessageContentCallRecord -> "[语音通话] ${callRecordText(content)}"
             else -> "当前版本不支持此消息"
         }
     }
@@ -238,7 +244,12 @@ private fun systemMessage(content: ReceivedMessageContentSystem): String {
         "member_joined" -> if (by.isNotEmpty()) "$by 邀请 ${p("names")} 加入了群聊" else "你邀请 ${p("names")} 加入了群聊"
         "member_removed" -> "你将 ${p("name")} 移出了群聊"
         "member_left" -> "${p("name")} 退出了群聊"
-        "group_renamed" -> if (by.isNotEmpty()) "$by 修改群名为「${p("title")}」" else "你修改群名为「${p("title")}」"
+        "group_renamed" ->
+            if (p("reset") == "true") {
+                (if (by.isNotEmpty()) "$by " else "你") + "恢复了默认群名"
+            } else {
+                (if (by.isNotEmpty()) "$by " else "你") + "修改群名为「${p("title")}」"
+            }
         "group_dissolved" -> "群聊已解散"
         else -> "会话提示"
     }
@@ -280,7 +291,11 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val ui = remember(conversation.conversationId, owner) { ConversationUi(repository, runtime, owner, conversation, scope) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val ui =
+        remember(conversation.conversationId, owner) {
+            ConversationUi(repository, runtime, owner, conversation, scope).also { it.media = ChatMediaUi(context, it) }
+        }
     val group = conversation.isGroup()
     SideEffect {
         ui.conversation = conversation
@@ -312,6 +327,7 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
         runtime.focus(conversation.conversationId)
         onDispose { runtime.focus(null) }
     }
+    ChatMediaEffects(ui, messages, visible)
     LaunchedEffect(conversation.conversationId) { runtime.inspect(owner, conversation.conversationId) }
     val atBottom = !list.canScrollForward
     LaunchedEffect(messages.lastOrNull()?.messageId, pending.size) {
@@ -383,7 +399,7 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
                 verticalAlignment = Alignment.Top,
             ) {
                 Column(Modifier.weight(1f, fill = false), horizontalAlignment = Alignment.End) {
-                    Text((item.body.content as? UserSendableContentText)?.text ?: "拍了拍")
+                    PendingContent(ui, item.body.content)
                     Text(if (item.state == "failed") "发送失败" else "待发送", style = MaterialTheme.typography.bodySmall)
                     if (item.state == "failed") TextButton(onClick = { ui.retry(item.body.clientMsgId) }) { Text("重试") }
                 }
@@ -391,7 +407,35 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
                 MessageAvatar(ui.repository, ui.owner, avatars.user)
             }
         }
+        items(ui.media.sends, key = { "local:" + it.id }) { item -> LocalSendRow(ui, item, avatars) }
     }
+    ui.media.viewing?.let { start ->
+        ImageViewer(ui, viewerItems(messages), start) { ui.media.viewing = null }
+    }
+}
+
+/** 进入 / 离开聊天页：语音连播顺序、已播放红点、转写结果；离开或切到后台停止播放（media-l5.md 3.2）。 */
+@Composable private fun ChatMediaEffects(
+    ui: ConversationUi,
+    messages: List<Message>,
+    visible: Boolean,
+) {
+    val latest by rememberUpdatedState(messages)
+    SideEffect {
+        ui.media.player.nextOf = { id ->
+            val index = latest.indexOfFirst { it.messageId == id }
+            if (index >= 0) latest.getOrNull(index + 1) else null
+        }
+    }
+    val voiceIds = messages.filter { it.content is ReceivedMessageContentVoice && it.senderKind != "user" }.map { it.messageId }
+    LaunchedEffect(voiceIds) { ui.media.player.loadPlayed(voiceIds) }
+    LaunchedEffect(ui) { ui.media.watchTranscripts { latest } }
+    LaunchedEffect(ui) {
+        // 来电 / 通话开始：停止播放。
+        AppUpdates.updates.collect { if (it is UserUpdateCallUpdated) ui.media.player.stop() }
+    }
+    LaunchedEffect(visible) { if (!visible) ui.media.player.stop() }
+    DisposableEffect(ui) { onDispose { ui.media.release() } }
 }
 
 @Composable private fun Composer(
@@ -413,22 +457,58 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
             TextButton({ ui.quoteId = null }) { Text("取消") }
         }
     }
-    Row(Modifier.imePadding().padding(WbSpace.S5)) {
-        OutlinedTextField(ui.text, { next ->
-            if (next.length <= 4_000) {
-                val typedAt = next.length == ui.text.length + 1 && next.endsWith("@")
-                ui.text = next
-                if (typedAt && members.isNotEmpty()) {
-                    if (members.size == 1) {
-                        val only = members.first()
-                        ui.mention(avatars.roles[only.participantId]?.name?.ifBlank { null } ?: "角色", only.participantId)
-                    } else {
-                        picking = true
+    val media = ui.media
+    val focus = LocalFocusManager.current
+    Row(Modifier.imePadding().padding(WbSpace.S3), verticalAlignment = Alignment.CenterVertically) {
+        // 语音 / 键盘切换（C 5.1）。
+        TextButton(onClick = {
+            media.voiceMode = !media.voiceMode
+            media.panel = 0
+            if (media.voiceMode) focus.clearFocus()
+        }) { Text(if (media.voiceMode) "键盘" else "语音") }
+        Box(Modifier.weight(1f)) {
+            if (media.voiceMode) {
+                HoldToTalk(
+                    enabled = !ui.conversation.state.hidden,
+                    onStart = { media.player.stop() },
+                    onVoice = media::sendVoice,
+                    onNotice = media::toast,
+                )
+            } else {
+                OutlinedTextField(ui.text, { next ->
+                    if (next.length <= 4_000) {
+                        val typedAt = next.length == ui.text.length + 1 && next.endsWith("@")
+                        ui.text = next
+                        if (typedAt && members.isNotEmpty()) {
+                            if (members.size == 1) {
+                                val only = members.first()
+                                ui.mention(avatars.roles[only.participantId]?.name?.ifBlank { null } ?: "角色", only.participantId)
+                            } else {
+                                picking = true
+                            }
+                        }
                     }
-                }
+                }, Modifier.fillMaxWidth(), label = { Text("消息") }, maxLines = 5)
             }
-        }, Modifier.weight(1f), label = { Text("消息") }, maxLines = 5)
-        TextButton(enabled = ui.text.isNotBlank() && !ui.sending, onClick = ui::send) { Text("发送") }
+        }
+        TextButton(onClick = {
+            media.panel = if (media.panel == 1) 0 else 1
+            media.voiceMode = false
+            focus.clearFocus()
+        }) { Text("表情") }
+        if (!media.voiceMode && ui.text.isNotBlank()) {
+            TextButton(enabled = !ui.sending, onClick = ui::send) { Text("发送") }
+        } else {
+            TextButton(onClick = {
+                media.panel = if (media.panel == 2) 0 else 2
+                focus.clearFocus()
+            }) { Text("＋") }
+        }
+    }
+    BackHandler(media.panel != 0) { media.panel = 0 }
+    when (media.panel) {
+        1 -> StickerPanel(ui)
+        2 -> PlusPanel(ui)
     }
 }
 

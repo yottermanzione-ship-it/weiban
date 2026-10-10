@@ -23,6 +23,7 @@ import app.weiban.designsystem.tokens.WbSize
 import app.weiban.feature.auth.AuthScreen
 import app.weiban.feature.chat.ChatScreen
 import app.weiban.feature.chat.DiscoverScreen
+import app.weiban.feature.chat.MyStickersScreen
 import app.weiban.feature.chat.rememberMomentsBadge
 import app.weiban.feature.chat.RoleBrowser
 import app.weiban.feature.me.MeEntry
@@ -241,16 +242,25 @@ private suspend fun finishOnboarding(
     val owner = OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId)
     when (navigation.tab) {
         "我" ->
-            MeScreen(
-                runtime.repository,
-                onTheme = onTheme,
-                onLogout = onLogout,
-                entry =
-                    MeEntry(navigation.mePage, notificationControls(runtime, owner)) {
-                        navigation.tab = "发现"
-                        navigation.moments = "me"
-                    },
-            )
+            if (navigation.mePage == "stickers") {
+                MyStickersScreen(runtime.repository, owner) { navigation.mePage = null }
+            } else {
+                MeScreen(
+                    runtime.repository,
+                    onTheme = onTheme,
+                    onLogout = onLogout,
+                    entry =
+                        MeEntry(
+                            navigation.mePage,
+                            notificationControls(runtime, owner),
+                            onMyMoments = {
+                                navigation.tab = "发现"
+                                navigation.moments = "me"
+                            },
+                            onMyStickers = { navigation.mePage = "stickers" },
+                        ),
+                )
+            }
         "微伴" ->
             ChatScreen(
                 runtime.repository,

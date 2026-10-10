@@ -27,8 +27,7 @@ private class CharacterUi(
 
     /** 名片「不感兴趣」（CHR-04 第 4 条）：直接生效，不二次确认。 */
     fun dismiss() {
-        val referrer = referrerCharacterId ?: return
-        if (pending) return
+        if (referrerCharacterId == null || pending) return
         pending = true
         scope.launch {
             try {
@@ -38,7 +37,6 @@ private class CharacterUi(
                         params = mapOf("characterId" to characterId),
                         options = SessionCallOptions(owner = owner),
                     )
-                    repository.flags.set(owner, "card:dismissed:$characterId", referrer)
                     dismissed = true
                 }
             } finally {
@@ -154,7 +152,7 @@ private class CharacterUi(
         if (progress == null) {
             TextButton(onClick = { sub = "moments" }) { Text("朋友圈 ›") }
             if (contact?.conversationId != null && profile.data?.kind == "custom") {
-                CustomRelationsEntry(repository, owner, state, characterId) { sub = "relations" }
+                CustomRelationsEntry(repository, owner, characterId) { sub = "relations" }
             }
         }
         (ui.error ?: profile.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }

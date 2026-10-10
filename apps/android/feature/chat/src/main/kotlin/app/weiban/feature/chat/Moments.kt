@@ -142,7 +142,116 @@ private class MomentActions(
         }
         return
     }
-    MomentsList(repository, owner, state, page, onBack, { page = "post:$it" }) { composing = true }
+    if (page == "notifications") {
+        MomentsNotifications(repository, owner, state, { page = target }) { page = "post:$it" }
+        return
+    }
+    MomentsList(repository, owner, state, page, onBack, { page = "post:$it" }, { page = "notifications" }) { composing = true }
+}
+
+/** 朋友圈消息列表（3.0.1 `GET /moments/notifications`）：进入时清互动红点，点一条进动态详情。 */
+@Composable private fun MomentsNotifications(
+    repository: SessionRepository,
+    owner: OwnerRecord,
+    state: ClientSyncState,
+    onBack: () -> Unit,
+    onOpenPost: (String) -> Unit,
+) {
+    BackHandler(onBack = onBack)
+    val colors = LocalWeibanColors.current
+    val scope = rememberCoroutineScope()
+    val rows = remember(owner) { mutableStateListOf<MomentsNotification>() }
+    var cursor by remember(owner) { mutableStateOf<String?>(null) }
+    var finished by remember(owner) { mutableStateOf(false) }
+    var loading by remember(owner) { mutableStateOf(false) }
+    var failed by remember(owner) { mutableStateOf(false) }
+    val load: suspend () -> Unit = {
+        if (!loading && !finished) {
+            loading = true
+            failed = false
+            userAction({ failed = true }) {
+                val page =
+                    repository.call(
+                        Endpoints.momentsEndpointsListNotifications,
+                        query = buildMap<String, String> { cursor?.let { put("cursor", it) } },
+                        options = SessionCallOptions(owner = owner, networkOnly = true),
+                    )
+                rows.addAll(page.items.filter { incoming -> rows.none { it.notificationId == incoming.notificationId } })
+                cursor = page.nextCursor
+                finished = page.nextCursor == null
+            }
+            loading = false
+        }
+    }
+    LaunchedEffect(owner) {
+        load()
+        userAction({}) {
+            repository.call(
+                Endpoints.momentsEndpointsMarkSeen,
+                body = buildJsonObject { put("scope", "interactions") },
+                options = SessionCallOptions(owner = owner),
+            )
+        }
+    }
+    val actors = rows.flatMap { listOf(it.actor, it.post.author) }
+    val profiles = characterProfiles(repository, actors.filter { it.kind == "character" }.map { it.refId })
+    val names = MomentNames(state, profiles)
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("‹ 返回") }
+            Text("消息", style = MaterialTheme.typography.titleMedium)
+        }
+        if (rows.isEmpty() && finished) Text("暂无消息", Modifier.fillMaxWidth().padding(WbSpace.S8), color = colors.textSecondary)
+        LazyColumn(Modifier.weight(1f)) {
+            items(rows, key = { it.notificationId }) { item ->
+                val action =
+                    when (item.kind) {
+                        "like" -> "赞了你的动态"
+                        "reply" -> "回复了你：${item.text.orEmpty()}"
+                        "mention" -> "在评论中提到了你：${item.text.orEmpty()}"
+                        else -> "评论：${item.text.orEmpty()}"
+                    }
+                ListItem(
+                    leadingContent = {
+                        RoleAvatar(
+                            repository,
+                            owner,
+                            RoleAvatarIdentity(item.actor.refId, names.of(item.actor), profiles[item.actor.refId]?.avatar),
+                            WbSize.AvatarMd,
+                        )
+                    },
+                    headlineContent = { Text(names.of(item.actor)) },
+                    supportingContent = {
+                        Column {
+                            Text(action, maxLines = 2)
+                            Text(momentTime(item.createdAt), color = colors.textTertiary, style = MaterialTheme.typography.bodySmall)
+                        }
+                    },
+                    trailingContent = {
+                        val image = item.post.imageMediaId
+                        if (image != null) {
+                            MediaThumb(repository, owner, image, WbSize.AvatarMd)
+                        } else {
+                            Text(item.post.text.take(12), Modifier.width(72.dp), maxLines = 3, color = colors.textSecondary)
+                        }
+                    },
+                    modifier = Modifier.clickable { onOpenPost(item.postId) },
+                )
+                HorizontalDivider(color = colors.borderHairline)
+            }
+            item(key = "footer") {
+                Box(Modifier.fillMaxWidth().padding(WbSpace.S5), contentAlignment = Alignment.Center) {
+                    when {
+                        loading -> CircularProgressIndicator(Modifier.size(WbSize.ListIcon))
+                        failed -> Text("加载失败，点击重试", Modifier.clickable { scope.launch { load() } }, color = colors.textLink)
+                        !finished -> {
+                            LaunchedEffect(rows.size) { load() }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable private fun MomentsList(
@@ -152,6 +261,7 @@ private class MomentActions(
     mode: String,
     onBack: () -> Unit,
     onOpenPost: (String) -> Unit,
+    onNotifications: () -> Unit,
     onCompose: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -203,17 +313,7 @@ private class MomentActions(
         val interactions = badge?.unseenInteractionCount ?: 0
         if (mode == "feed" && interactions > 0) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                AssistChip(onClick = {
-                    scope.launch {
-                        userAction({}) {
-                            repository.call(
-                                Endpoints.momentsEndpointsMarkSeen,
-                                body = buildJsonObject { put("scope", "interactions") },
-                                options = SessionCallOptions(owner = owner),
-                            )
-                        }
-                    }
-                }, label = { Text("$interactions 条新消息") })
+                AssistChip(onClick = onNotifications, label = { Text("$interactions 条新消息") })
             }
         }
         actions.error?.let { Text(it, Modifier.padding(horizontal = WbSpace.S5), color = MaterialTheme.colorScheme.error) }

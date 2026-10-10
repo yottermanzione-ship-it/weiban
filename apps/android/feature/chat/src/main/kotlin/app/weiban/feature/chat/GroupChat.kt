@@ -545,12 +545,12 @@ private suspend fun updateGroupState(
             pending = true
             scope.launch {
                 groupAction({ error = it }) {
-                    // 清空 = 恢复成员名拼接（接口要求非空，提交拼接名）。
-                    val next = value.trim().ifEmpty { fallback }
+                    // 3.0.1：清空 = 提交 null，服务器恢复默认名并随成员变化自动更新。
+                    val next = value.trim()
                     repository.call(
                         Endpoints.chatGroupEndpointsRenameGroup,
                         params = mapOf("conversationId" to conversation.conversationId),
-                        body = buildJsonObject { put("title", next) },
+                        body = buildJsonObject { put("title", if (next.isEmpty()) JsonNull else JsonPrimitive(next)) },
                         options = SessionCallOptions(owner = owner),
                     )
                     runtime.refresh(owner)
