@@ -5,6 +5,7 @@ import {
   ApiError,
   AuthResponse,
   MediaObject,
+  ImportJob,
   type UserMediaPurpose,
 } from '@weiban/contracts';
 import { localStore } from './client.js';
@@ -100,4 +101,31 @@ export async function prepareImage(
     canvas.toBlob(resolve, 'image/jpeg', 0.86),
   );
   return { blob: blob ?? file, width: w, height: h };
+}
+
+/** 导入任务上传一份 .txt / .csv 或一张截图（契约 ImporterEndpoints.uploadFile，multipart 字段 file，保留原文件名）。 */
+export async function uploadImportFile(jobId: string, file: File): Promise<ImportJob> {
+  const bearer = await token();
+  const form = new FormData();
+  form.set('file', file, file.name || 'upload');
+  const response = await fetch(`${API_PREFIX}/imports/${encodeURIComponent(jobId)}/files`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${bearer}`, Accept: 'application/json' },
+    body: form,
+  }).catch(() => {
+    throw new ApiFailure('network_error', '网络暂不可用，请稍后重试', 0);
+  });
+  const raw: unknown = await response.json().catch(() => null);
+  if (response.ok) {
+    const parsed = ImportJob.safeParse(raw);
+    if (parsed.success) return parsed.data;
+    throw new ApiFailure('unsupported', '上传结果无法识别', response.status);
+  }
+  if (response.status === 401) window.dispatchEvent(new Event('weiban:unauthenticated'));
+  const error = ApiError.safeParse(raw);
+  throw new ApiFailure(
+    error.success ? error.data.error.code : 'unsupported',
+    error.success ? error.data.error.message : '上传失败，请稍后重试',
+    response.status,
+  );
 }

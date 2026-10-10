@@ -76,9 +76,15 @@ import {
   GlobalSearchPage,
 } from '../features/search.js';
 import { ShareEditorPage } from '../features/share.js';
+import { ImportListPage, ImportPage } from '../features/import.js';
+import { SupplementPage } from '../features/supplement.js';
+import { AccountDeletionPage } from '../features/account-deletion.js';
+import { AdoptPage, PetPage, PetsPage } from '../features/pets.js';
 /** 这些页面自带返回按钮，不显示通用顶栏。 */
 const ownHeader = [
-  /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice|cards)$/,
+  /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice|cards|supplement)$/,
+  /^\/(imports|pets)(\/|$)/,
+  /^\/settings\/delete-account$/,
   /^\/(share|search)(\/|$)/,
   /^\/me\/favorites/,
   /^\/services\/period/,
@@ -189,6 +195,7 @@ function Shell() {
                     '/services/cards',
                     '/services/achievements',
                     '/services/familiarity',
+                    '/services/pets',
                   ].includes(location.pathname)
                     ? '/services'
                     : ['/settings/security', '/settings/privacy', '/settings/general'].includes(
@@ -263,6 +270,14 @@ function Shell() {
           <Route path="/search/:conversationId" element={<ConversationHitsPage />} />
           <Route path="/chat/:conversationId/search" element={<ConversationSearchPage />} />
           <Route path="/share" element={<ShareEditorPage />} />
+          <Route path="/imports" element={<ImportListPage />} />
+          <Route path="/imports/new" element={<ImportPage />} />
+          <Route path="/imports/:jobId" element={<ImportPage />} />
+          <Route path="/characters/:characterId/supplement" element={<SupplementPage />} />
+          <Route path="/settings/delete-account" element={<AccountDeletionPage />} />
+          <Route path="/services/pets" element={<PetsPage />} />
+          <Route path="/pets/adopt" element={<AdoptPage />} />
+          <Route path="/pets/:petId" element={<PetPage />} />
           <Route path="/characters/:characterId/voice" element={<VoicePickerPage />} />
           <Route path="/calls/:callId" element={<CallLinkPage />} />
           <Route path="/contacts" element={<ContactsPage />} />

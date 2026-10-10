@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { PetRow } from './pets.js';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ChatEndpoints,
@@ -286,6 +287,8 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
             <Link to={`/characters/${characterId}/memories`}>TA 记住了什么</Link>
             <Link to={`/characters/${characterId}/timeline`}>TA 的近况</Link>
             <Link to={`/characters/${characterId}/cards`}>卡册</Link>
+            <PetRow characterId={characterId} />
+            <Link to={`/characters/${characterId}/supplement`}>我的补充设定</Link>
             <Link to={`/chat/${id}/search`}>查找聊天记录</Link>
           </>
         )}

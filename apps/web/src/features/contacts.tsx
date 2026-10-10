@@ -12,6 +12,7 @@ import { CharacterName } from './chat.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { ContactAvatarEditor } from './contact-avatar-editor.js';
 import { FamiliarityLine } from './growth.js';
+import { PersonaUpdateBadge } from './supplement.js';
 import { RecentRow } from './timeline.js';
 import { RelationsRow } from './relations.js';
 import { useNewFriendsDot } from './new-friends.js';
@@ -292,6 +293,9 @@ export function CharacterPage({
           <CharacterAvatar id={characterId} profile={profile.data} size={64} />
           <h2>{profile.data.name}</h2>
           {!onboarding && contact?.conversationId && <FamiliarityLine characterId={characterId} />}
+          {!onboarding && contact?.status === 'active' && (
+            <PersonaUpdateBadge characterId={characterId} />
+          )}
           <p>{profile.data.tagline}</p>
           <p>{profile.data.intro}</p>
           <p>{profile.data.tags.join(' · ')}</p>

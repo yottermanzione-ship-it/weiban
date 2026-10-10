@@ -231,6 +231,7 @@ function ActionCardBubble({
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
+  const navigateTo = useNavigate();
   if (message.content?.type !== 'action_card') return null;
   const chosen = message.actionChoice?.actionId;
   return (
@@ -251,7 +252,16 @@ function ActionCardBubble({
                   params: { conversationId: message.conversationId, messageId: message.messageId },
                   body: { actionId: action.actionId },
                 })
-                .then(onChosen)
+                .then((chosen) => {
+                  onChosen(chosen);
+                  // 角色提议一起领养（T-082）：「去看看」进入领养流程，角色已预选。
+                  if (
+                    message.content?.type === 'action_card' &&
+                    message.content.cardKind === 'pet_proposal' &&
+                    action.actionId === 'go'
+                  )
+                    navigateTo(`/pets/adopt?characterId=${message.content.ref?.id ?? ''}`);
+                })
                 .catch((e) => setError(friendlyError(e)))
                 .finally(() => setPending(false));
             }}

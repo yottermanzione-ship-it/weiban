@@ -138,6 +138,9 @@ export function ServicesPage() {
       <section>
         <h2 className="section-label">互动玩法</h2>
         <div className="service-grid">
+          <Link to="/services/pets" className="service-card">
+            宠物<span>和 TA 一起养一只小家伙</span>
+          </Link>
           <Link to="/services/period" className="service-card">
             经期日记<span>加密保存，只有你授权的角色知道</span>
           </Link>

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { IdentityEndpoints, MemorySharingEndpoints } from '@weiban/contracts';
-import { useAuth } from '../app/auth.js';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 
@@ -139,75 +139,6 @@ function ChangePasswordForm({ onDone }: { onDone: () => void }) {
       )}
       <button className="primary" disabled={pending}>
         保存新密码
-      </button>
-    </form>
-  );
-}
-
-function DeleteAccountSection() {
-  const auth = useAuth();
-  const [step, setStep] = useState<'idle' | 'confirm' | 'pending'>('idle');
-  const [error, setError] = useState('');
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const password = String(form.get('password'));
-    setStep('pending');
-    setError('');
-    try {
-      await api.call(IdentityEndpoints.deleteAccount, {
-        body: { password, confirm: 'DELETE' },
-      });
-      await auth.logout();
-    } catch (e) {
-      const msg = friendlyError(e);
-      // Per ACC-06 v1.4: password error keeps user logged in, stays on page
-      setError(msg.includes('invalid_credentials') ? '密码错误，请重新输入' : msg);
-      setStep('confirm');
-    }
-  }
-
-  if (step === 'idle') {
-    return (
-      <div className="panel rows">
-        <button className="danger-btn" onClick={() => setStep('confirm')}>
-          注销账号
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <form className="panel stack" onSubmit={(e) => void submit(e)}>
-      <h2>确认注销账号</h2>
-      <p className="warn">注销后所有聊天、记忆、余额将被删除，不可恢复。</p>
-      <label>
-        请输入密码确认
-        <input
-          type="password"
-          name="password"
-          required
-          autoComplete="current-password"
-          aria-describedby="delete-error"
-        />
-      </label>
-      {error && (
-        <p id="delete-error" role="alert" className="error">
-          {error}
-        </p>
-      )}
-      <button className="danger-btn primary" disabled={step === 'pending'}>
-        确认注销
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          setStep('idle');
-          setError('');
-        }}
-      >
-        取消
       </button>
     </form>
   );
@@ -440,5 +371,16 @@ export function ProactiveSettingsPage() {
       )}
       {message && <p role="status">{message}</p>}
     </main>
+  );
+}
+
+/** 注销入口（危险型行）→ 注销说明页（account-deletion.md）。 */
+function DeleteAccountSection() {
+  return (
+    <div className="panel rows">
+      <Link className="danger-btn" to="/settings/delete-account">
+        注销账号
+      </Link>
+    </div>
   );
 }

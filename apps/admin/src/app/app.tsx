@@ -23,6 +23,11 @@ import {
   VoiceLibraryPage,
   WorkLinksPage,
 } from '../features/media-library.js';
+import {
+  AccountDeletionsPage,
+  PendingDeletionBadge,
+  PetSpeciesPage,
+} from '../features/pets-deletions.js';
 export function App() {
   const [auth, setAuth] = useState<AuthResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -89,11 +94,14 @@ export function App() {
             ['/card-templates', '卡面模板库'],
             ['/work-links', '作品链接库'],
             ['/symptom-tags', '经期症状标签'],
+            ['/pet-species', '宠物图鉴'],
+            ['/account-deletions', '注销未完成'],
             ['/admin/alerts', '运行提醒'],
           ].map(([to, label]) => (
             <NavLink key={to} to={to!}>
               {label}
               {to === '/admin/alerts' && <AlertBadge />}
+              {to === '/account-deletions' && <PendingDeletionBadge />}
             </NavLink>
           ))}
         </nav>
@@ -126,6 +134,8 @@ export function App() {
             <Route path="/card-templates" element={<CardTemplatesPage />} />
             <Route path="/work-links" element={<WorkLinksPage />} />
             <Route path="/symptom-tags" element={<SymptomTagsPage />} />
+            <Route path="/pet-species" element={<PetSpeciesPage />} />
+            <Route path="/account-deletions" element={<AccountDeletionsPage />} />
             <Route path="/admin/alerts" element={<AlertsPage />} />
             <Route path="*" element={<Navigate to="/invites" replace />} />
           </Routes>

@@ -1,0 +1,363 @@
+/* L6 第二部分：导入、补充设定、注销、宠物（T-084）。只用设计令牌；动画只动 transform / opacity。 */
+
+.callout {
+  font-size: var(--wb-font-size-callout);
+}
+.entry-card {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-space-3);
+  padding: var(--wb-space-5);
+  border: 0;
+  border-radius: var(--wb-radius-md);
+  background: var(--wb-color-bg-surface);
+  text-align: left;
+}
+.entry-card > svg {
+  margin-left: auto;
+}
+.upload-area {
+  min-height: 120px;
+  border: 1.5px dashed var(--wb-color-border-strong);
+  border-radius: var(--wb-radius-md);
+  background: var(--wb-color-bg-surface);
+  color: var(--wb-color-text-secondary);
+}
+.file-preview,
+.format-sample {
+  margin: 0;
+  padding: var(--wb-space-4);
+  border-radius: var(--wb-radius-sm);
+  background: var(--wb-color-bg-page);
+  font-size: var(--wb-font-size-caption1);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+.char-count {
+  align-self: flex-end;
+}
+.shot-grid,
+.album-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--wb-space-2);
+}
+.shot-thumb {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wb-space-1);
+}
+.shot-thumb img,
+.album-cell img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--wb-radius-xs);
+}
+.shot-thumb figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--wb-font-size-caption1);
+}
+.shot-thumb .icon-button {
+  min-height: 28px;
+  padding: 0 var(--wb-space-2);
+}
+.progress-bar {
+  display: block;
+  width: min(100%, 280px);
+  height: 6px;
+  margin: var(--wb-space-3) auto;
+  border-radius: var(--wb-radius-full);
+  background: var(--wb-color-bg-skeleton);
+  overflow: hidden;
+}
+.progress-bar span {
+  display: block;
+  height: 100%;
+  background: var(--wb-color-brand-primary);
+  transform-origin: left;
+  transition: transform var(--wb-motion-duration-base);
+}
+.pad {
+  padding: 0 var(--wb-space-5) var(--wb-space-3);
+  margin: 0;
+}
+.dialogue-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wb-space-2);
+}
+.dialogue-line {
+  display: flex;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  min-height: 0;
+}
+.dialogue-line .message-bubble {
+  max-width: 75%;
+  background: var(--wb-color-bubble-other-bg);
+  color: var(--wb-color-bubble-other-text);
+  text-align: left;
+}
+.dialogue-line.mine {
+  justify-content: flex-end;
+}
+.dialogue-line.mine .message-bubble {
+  background: var(--wb-color-bubble-self-bg);
+  color: var(--wb-color-bubble-self-text);
+}
+.system-tip {
+  text-align: center;
+  font-size: var(--wb-font-size-caption1);
+  color: var(--wb-color-text-tertiary);
+}
+.check-row {
+  display: flex;
+  gap: var(--wb-space-3);
+  align-items: flex-start;
+  padding: var(--wb-space-4) var(--wb-space-5);
+}
+.persona-update {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wb-space-1);
+  font-size: var(--wb-font-size-caption1);
+  color: var(--wb-color-text-secondary);
+  min-height: 0;
+  padding: 0;
+}
+
+/* ---------- 注销 ---------- */
+.deletion-title {
+  font-size: var(--wb-font-size-title3);
+  font-weight: var(--wb-font-weight-semibold);
+}
+.deletion-list {
+  margin: 0;
+  padding: var(--wb-space-4) var(--wb-space-5) var(--wb-space-4) var(--wb-space-8);
+  font-size: var(--wb-font-size-subhead);
+  line-height: var(--wb-line-height-relaxed);
+}
+.numeric {
+  font-family: var(--wb-font-family-numeric);
+  font-variant-numeric: tabular-nums;
+}
+.deletion-done {
+  min-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--wb-space-4);
+  color: var(--wb-color-text-tertiary);
+}
+.deletion-done h1 {
+  color: var(--wb-color-text-primary);
+}
+
+/* ---------- 宠物 ---------- */
+.muted {
+  opacity: var(--wb-opacity-muted);
+}
+.pet-image {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: var(--wb-radius-md);
+  background: var(--wb-color-bg-page);
+  overflow: hidden;
+}
+.pet-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transition: opacity var(--wb-motion-duration-fast);
+}
+.pet-image-fallback {
+  font-size: var(--wb-font-size-caption1);
+  color: var(--wb-color-text-secondary);
+}
+.species-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--wb-space-4);
+}
+.species-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wb-space-2);
+  padding: var(--wb-space-4);
+  border: 0;
+  border-radius: var(--wb-radius-md);
+  background: var(--wb-color-bg-surface);
+  text-align: left;
+}
+.species-card .pet-image {
+  width: 100%;
+  aspect-ratio: 1;
+}
+.pet-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  margin: 0 calc(-1 * var(--wb-space-5));
+  background: var(--wb-color-brand-soft);
+}
+.pet-stage.small {
+  aspect-ratio: auto;
+  padding: var(--wb-space-5);
+}
+.pet-stage > span:first-child,
+.pet-stage > .pet-image {
+  width: 60%;
+  aspect-ratio: 1;
+}
+.pet-stage .pet-image {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+.stage-tag {
+  position: absolute;
+  top: var(--wb-space-4);
+  right: var(--wb-space-5);
+}
+.pet-reaction {
+  position: absolute;
+  bottom: var(--wb-space-5);
+  right: var(--wb-space-6);
+  padding: var(--wb-space-2) var(--wb-space-4);
+  border-radius: var(--wb-radius-md);
+  background: var(--wb-color-bg-surface);
+  font-size: var(--wb-font-size-footnote);
+  animation: pet-reaction 1.6s ease-out forwards;
+}
+@keyframes pet-reaction {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  80% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.pet-bounce {
+  display: block;
+  animation: pet-bounce var(--wb-motion-duration-base) ease-out;
+}
+@keyframes pet-bounce {
+  40% {
+    transform: translateY(-8px) scale(1.04);
+  }
+}
+.stage-strip,
+.appearance-row,
+.pet-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-space-4);
+}
+.pet-actions {
+  justify-content: space-around;
+  padding: var(--wb-space-4) 0;
+}
+.stage-thumb,
+.appearance-option,
+.pet-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--wb-space-1);
+  padding: 0;
+  border: 0;
+  background: none;
+  min-height: 0;
+}
+.appearance-option .pet-image {
+  border-radius: var(--wb-radius-full);
+  border: 2px solid transparent;
+}
+.appearance-option[aria-checked='true'] .pet-image {
+  border-color: var(--wb-color-brand-primary);
+}
+.pet-action-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--wb-radius-full);
+  background: var(--wb-color-brand-soft);
+  color: var(--wb-color-brand-on-soft);
+  transition: transform var(--wb-motion-duration-instant);
+}
+.pet-action:active .pet-action-icon {
+  transform: scale(0.92);
+}
+.pet-name {
+  font-size: var(--wb-font-size-title2);
+  font-weight: var(--wb-font-weight-semibold);
+  margin: var(--wb-space-4) 0 0;
+}
+.pet-with {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-space-2);
+}
+.pet-intimacy {
+  font-size: var(--wb-font-size-subhead);
+}
+.growth-steps {
+  display: flex;
+  justify-content: space-between;
+  list-style: none;
+  padding: 0 var(--wb-space-6);
+  margin: var(--wb-space-4) 0 0;
+}
+.growth-steps li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--wb-space-1);
+  color: var(--wb-color-text-tertiary);
+}
+.growth-steps li span {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--wb-radius-full);
+  border: 2px solid var(--wb-color-border-strong);
+}
+.growth-steps li.done {
+  color: var(--wb-color-text-primary);
+}
+.growth-steps li.done span {
+  background: var(--wb-color-brand-primary);
+  border-color: var(--wb-color-brand-primary);
+}
+.album-cell {
+  position: relative;
+  padding: 0;
+  border: 0;
+  background: var(--wb-color-bg-skeleton);
+  aspect-ratio: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+.album-source {
+  position: absolute;
+  left: var(--wb-space-2);
+  bottom: var(--wb-space-2);
+}
