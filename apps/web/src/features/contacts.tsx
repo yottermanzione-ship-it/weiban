@@ -14,8 +14,9 @@ import { ContactAvatarEditor } from './contact-avatar-editor.js';
 import { FamiliarityLine } from './growth.js';
 import { RecentRow } from './timeline.js';
 import { RelationsRow } from './relations.js';
-import { markDismissed, useNewFriendsDot } from './new-friends.js';
+import { useNewFriendsDot } from './new-friends.js';
 import { useMomentsBadge } from './moments.js';
+import { ProfileCallButton } from './call.js';
 export function ContactsPage() {
   const { state } = useChat();
   const newFriendsDot = useNewFriendsDot();
@@ -213,7 +214,6 @@ export function CharacterPage({
   const profile = useRemote(CharacterEndpoints.getProfile, { params: { characterId } });
   const { state, assertOwner, synchronize } = useChat();
   const contact = state.contacts.find((item) => item.characterId === characterId);
-  const { session } = useAuth();
   const [query] = useSearchParams();
   const referrer = onboarding ? null : query.get('ref');
   const fromGroup = onboarding ? null : query.get('group');
@@ -301,9 +301,12 @@ export function CharacterPage({
       {(error || profile.error) && <p role="alert">{error || profile.error}</p>}
       {message && <p role="status">{message}</p>}
       {contact?.conversationId ? (
-        <Link className="plain" to={`/chat/${contact.conversationId}`}>
-          发消息
-        </Link>
+        <>
+          <Link className="plain" to={`/chat/${contact.conversationId}`}>
+            发消息
+          </Link>
+          {!onboarding && <ProfileCallButton characterId={characterId} />}
+        </>
       ) : contact?.status === 'pending' ? (
         <p>等待通过好友申请</p>
       ) : (
@@ -336,7 +339,6 @@ export function CharacterPage({
                 void api
                   .call(ContactCardEndpoints.dismissRecommendation, { params: { characterId } })
                   .then(() => {
-                    markDismissed(session?.user.userId ?? '', characterId);
                     setMessage('好的，不会再推荐 TA');
                   })
                   .catch((e) => setError(friendlyError(e)))

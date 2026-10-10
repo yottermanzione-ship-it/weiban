@@ -33,7 +33,7 @@ export function notificationRoute(
   kind?: NotificationEnvelope['kind'],
 ): string | null {
   if (kind === 'admin_alert') return value === '/admin/alerts' ? value : null;
-  return /^\/chat\/[0-9a-f-]{36}$/i.test(value) ||
+  return /^\/(chat|calls|moments\/posts)\/[0-9a-f-]{36}$/i.test(value) ||
     ['/chat', '/wallet', '/models', '/services'].includes(value)
     ? value
     : null;

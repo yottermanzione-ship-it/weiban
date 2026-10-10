@@ -17,6 +17,12 @@ import { PublicUpdatesPage } from '../features/public-updates.js';
 import { HolidaysPage } from '../features/holidays.js';
 import { SymptomTagsPage } from '../features/symptom-tags.js';
 import { RelationsPage } from '../features/relations.js';
+import {
+  CardTemplatesPage,
+  StickerLibraryPage,
+  VoiceLibraryPage,
+  WorkLinksPage,
+} from '../features/media-library.js';
 export function App() {
   const [auth, setAuth] = useState<AuthResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -78,6 +84,10 @@ export function App() {
             ['/public-updates', '公开动态'],
             ['/holidays', '节日清单'],
             ['/relations', '关系网'],
+            ['/stickers', '表情包库'],
+            ['/voices', '音色库'],
+            ['/card-templates', '卡面模板库'],
+            ['/work-links', '作品链接库'],
             ['/symptom-tags', '经期症状标签'],
             ['/admin/alerts', '运行提醒'],
           ].map(([to, label]) => (
@@ -111,6 +121,10 @@ export function App() {
             <Route path="/public-updates" element={<PublicUpdatesPage />} />
             <Route path="/holidays" element={<HolidaysPage />} />
             <Route path="/relations" element={<RelationsPage />} />
+            <Route path="/stickers" element={<StickerLibraryPage />} />
+            <Route path="/voices" element={<VoiceLibraryPage />} />
+            <Route path="/card-templates" element={<CardTemplatesPage />} />
+            <Route path="/work-links" element={<WorkLinksPage />} />
             <Route path="/symptom-tags" element={<SymptomTagsPage />} />
             <Route path="/admin/alerts" element={<AlertsPage />} />
             <Route path="*" element={<Navigate to="/invites" replace />} />

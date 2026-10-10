@@ -308,12 +308,7 @@ export function GroupSettingsPage() {
                 api.call(ChatGroupEndpoints.renameGroup, {
                   params: { conversationId },
                   body: {
-                    title:
-                      value ||
-                      members
-                        .map((m) => nameOf(m.refId))
-                        .join('、')
-                        .slice(0, 40),
+                    title: value || null,
                   },
                 }),
               '已保存',

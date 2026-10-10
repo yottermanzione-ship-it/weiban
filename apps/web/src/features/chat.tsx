@@ -1,4 +1,13 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import {
+  Keyboard,
+  Microphone,
+  Smiley,
+  PlusCircle,
+  Image as ImageIcon,
+  Camera,
+  Phone,
+} from '@phosphor-icons/react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import {
   ChatActionEndpoints,
@@ -6,7 +15,9 @@ import {
   IdentityEndpoints,
   CharacterEndpoints,
   ModelAccessEndpoints,
+  MEDIA_LIMITS,
   type Conversation,
+  type UserSendableContent,
   type Message,
   type Participant,
 } from '@weiban/contracts';
@@ -20,6 +31,39 @@ import { HomeScreenGuide } from './home-screen-guide.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { UserAvatar } from './user-avatar.js';
 import { WhileAwayCard, useWhileAway } from './while-away.js';
+import {
+  CallRecordBubble,
+  HoldToTalk,
+  ImageBubble,
+  ImageViewer,
+  LinkCardBubble,
+  Linkified,
+  LocalImageBubble,
+  StickerBubble,
+  StickerPanel,
+  VoiceBubble,
+  addFavorite,
+  addToStickers,
+  callRecordText,
+  useTranscriptUnavailableNotice,
+  voicePlayer,
+  type RecordResult,
+} from './media.js';
+import { useCall, useCallEntry } from './call.js';
+import { Dialog, showToast } from './toast.js';
+import { prepareImage, uploadMedia } from '../data/upload.js';
+import { ApiFailure } from '@weiban/client-core';
+interface Upload {
+  localId: string;
+  kind: 'image' | 'voice';
+  blob: Blob;
+  url?: string;
+  width: number | null;
+  height: number | null;
+  durationMs?: number;
+  progress: number;
+  failed: boolean;
+}
 export function CharacterName({ id, fallback }: { id: string; fallback?: string | null }) {
   const profile = useRemote(CharacterEndpoints.getProfile, { params: { characterId: id } });
   return <>{fallback || profile.data?.name || '角色'}</>;
@@ -96,6 +140,7 @@ function systemText(code: string, params: Record<string, string | number | boole
     case 'member_left':
       return `${p('name')} 退出了群聊`;
     case 'group_renamed':
+      if (params.reset) return params.byName ? `${p('byName')} 恢复了默认群名` : '你恢复了默认群名';
       return params.byName
         ? `${p('byName')} 修改群名为「${p('title')}」`
         : `你修改群名为「${p('title')}」`;
@@ -118,6 +163,16 @@ export function content(message: Message): string {
       return `[名片] ${message.content.name}`;
     case 'action_card':
       return message.content.text;
+    case 'image':
+      return '[图片]';
+    case 'voice':
+      return `[语音] ${Math.max(1, Math.round(message.content.durationMs / 1000))}″`;
+    case 'sticker':
+      return '[表情]';
+    case 'link':
+      return `[链接] ${message.content.title}`;
+    case 'call_record':
+      return `[语音通话] ${callRecordText(message.content)}`;
     default:
       return '当前版本不支持此消息';
   }
@@ -264,11 +319,172 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const [quoteId, setQuoteId] = useState<string | null>(null);
   const [atBottom, setAtBottom] = useState(true);
   const [visible, setVisible] = useState(document.visibilityState === 'visible');
+  const callEntry = useCallEntry(group ? undefined : role?.refId);
+  const { start: startCall } = useCall();
+  const [mode, setMode] = useState<'text' | 'voice'>('text');
+  const [panel, setPanel] = useState<'none' | 'sticker' | 'plus'>('none');
+  const [uploads, setUploads] = useState<Upload[]>([]);
+  const [viewer, setViewer] = useState<number | null>(null);
+  const [textShown, setTextShown] = useState<Record<string, boolean>>({});
+  const [micDenied, setMicDenied] = useState(false);
+  const albumInput = useRef<HTMLInputElement>(null);
+  const cameraInput = useRef<HTMLInputElement>(null);
+  useEffect(() => () => voicePlayer.stop(), []);
   const messages = chat.state.messages
     .filter((item) => item.conversationId === id)
     .map((item) => overrides[item.messageId] ?? item)
     .sort((a, b) => a.seq - b.seq);
   const pending = chat.state.outbox.filter((item) => item.conversationId === id);
+  const images = messages.filter((m) => m.status === 'normal' && m.content?.type === 'image');
+  const next = (messageId: string) => {
+    const index = messages.findIndex((m) => m.messageId === messageId);
+    return index >= 0 ? messages[index + 1] : undefined;
+  };
+  const myVoiceIds = useMemo(
+    () =>
+      new Set(
+        chat.state.messages
+          .filter((m) => m.conversationId === id && m.senderKind === 'user')
+          .flatMap((m) => (m.content?.type === 'voice' ? [m.content.mediaId] : [])),
+      ),
+    [chat.state.messages, id],
+  );
+  useTranscriptUnavailableNotice(myVoiceIds);
+  function patchUpload(localId: string, changes: Partial<Upload>) {
+    setUploads((list) => list.map((u) => (u.localId === localId ? { ...u, ...changes } : u)));
+  }
+  function dropUpload(upload: Upload) {
+    if (upload.url) URL.revokeObjectURL(upload.url);
+    setUploads((list) => list.filter((u) => u.localId !== upload.localId));
+  }
+  async function runUpload(upload: Upload) {
+    patchUpload(upload.localId, { failed: false, progress: 0 });
+    try {
+      const media = await uploadMedia(
+        upload.kind === 'image' ? 'chat_image' : 'chat_voice',
+        upload.blob,
+        {
+          durationMs: upload.durationMs,
+          onProgress: (progress) => patchUpload(upload.localId, { progress }),
+        },
+      );
+      const body: UserSendableContent =
+        upload.kind === 'image'
+          ? {
+              type: 'image',
+              mediaId: media.mediaId,
+              width: media.width ?? upload.width,
+              height: media.height ?? upload.height,
+            }
+          : {
+              type: 'voice',
+              mediaId: media.mediaId,
+              durationMs: Math.round(upload.durationMs ?? 1000),
+              transcript: null,
+            };
+      await chat.sendContent(id, body);
+      dropUpload(upload);
+    } catch (e) {
+      if (e instanceof ApiFailure && e.status >= 400 && e.status < 500 && e.status !== 401) {
+        showToast(upload.kind === 'image' ? '这张图片无法发送' : friendlyError(e));
+        dropUpload(upload);
+      } else patchUpload(upload.localId, { failed: true });
+    }
+  }
+  async function pickImages(event: ChangeEvent<HTMLInputElement>) {
+    const files = [...(event.target.files ?? [])].slice(0, 9);
+    event.target.value = '';
+    setPanel('none');
+    const prepared: Upload[] = [];
+    for (const file of files) {
+      if (!(MEDIA_LIMITS.imageMimeTypes as readonly string[]).includes(file.type)) {
+        showToast('这张图片无法发送');
+        continue;
+      }
+      const image = await prepareImage(file);
+      if (image.blob.size > MEDIA_LIMITS.imageMaxBytes) {
+        showToast('这张图片无法发送');
+        continue;
+      }
+      prepared.push({
+        localId: crypto.randomUUID(),
+        kind: 'image',
+        blob: image.blob,
+        url: URL.createObjectURL(image.blob),
+        width: image.width,
+        height: image.height,
+        progress: 0,
+        failed: false,
+      });
+    }
+    setUploads((list) => [...list, ...prepared]);
+    for (const upload of prepared) await runUpload(upload);
+  }
+  function sendVoice(result: RecordResult) {
+    if (result.blob.size > MEDIA_LIMITS.voiceMaxBytes) {
+      showToast('语音太长，无法发送');
+      return;
+    }
+    const upload: Upload = {
+      localId: crypto.randomUUID(),
+      kind: 'voice',
+      blob: result.blob,
+      width: null,
+      height: null,
+      durationMs: result.durationMs,
+      progress: 0,
+      failed: false,
+    };
+    setUploads((list) => [...list, upload]);
+    void runUpload(upload);
+  }
+  function bubble(message: Message) {
+    const c = message.content;
+    if (message.status !== 'normal' || !c)
+      return <p className="message-bubble">{content(message)}</p>;
+    switch (c.type) {
+      case 'contact_card':
+        return <ContactCardBubble content={c} />;
+      case 'action_card':
+        return (
+          <ActionCardBubble
+            message={message}
+            onChosen={(chosen) => setOverrides((o) => ({ ...o, [chosen.messageId]: chosen }))}
+          />
+        );
+      case 'image':
+        return (
+          <ImageBubble
+            content={c}
+            onOpen={() => setViewer(images.findIndex((m) => m.messageId === message.messageId))}
+          />
+        );
+      case 'voice':
+        return (
+          <VoiceBubble message={message} next={next} showText={!!textShown[message.messageId]} />
+        );
+      case 'sticker':
+        return <StickerBubble content={c} />;
+      case 'link':
+        return <LinkCardBubble content={c} />;
+      case 'call_record':
+        return (
+          <CallRecordBubble
+            content={c}
+            name={role ? displayName(role.refId) : undefined}
+            onRedial={!group && role && callEntry ? () => startCall(role.refId) : undefined}
+          />
+        );
+      case 'text':
+        return (
+          <p className="message-bubble">
+            <Linkified text={c.text} />
+          </p>
+        );
+      default:
+        return <p className="message-bubble">{content(message)}</p>;
+    }
+  }
   const quote =
     messages.find((item) => item.messageId === quoteId && item.status === 'normal') ?? null;
   const lastVisibleSeq = messages.at(-1)?.seq ?? 0;
@@ -441,16 +657,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
                       引用：{message.quote.preview ?? '原消息已不可见'}
                     </small>
                   )}
-                  {message.content?.type === 'contact_card' && message.status === 'normal' ? (
-                    <ContactCardBubble content={message.content} />
-                  ) : message.content?.type === 'action_card' && message.status === 'normal' ? (
-                    <ActionCardBubble
-                      message={message}
-                      onChosen={(next) => setOverrides((o) => ({ ...o, [next.messageId]: next }))}
-                    />
-                  ) : (
-                    <p className="message-bubble">{content(message)}</p>
-                  )}
+                  {bubble(message)}
                   {!group && message.senderKind === 'user' && message.status === 'normal' && (
                     <small>
                       {conversation.peerReadSeq !== null && conversation.peerReadSeq >= message.seq
@@ -459,13 +666,48 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
                     </small>
                   )}
                   {message.status === 'normal' &&
-                    (message.content?.type === 'text' ||
-                      message.content?.type === 'contact_card') && (
+                    message.senderKind !== 'system' &&
+                    message.content &&
+                    message.content.type !== 'action_card' &&
+                    message.content.type !== 'call_record' && (
                       <details>
                         <summary aria-label="消息操作">•••</summary>
                         {message.content.type === 'text' && (
                           <button onClick={() => setQuoteId(message.messageId)}>引用</button>
                         )}
+                        {message.content.type === 'voice' && (
+                          <button
+                            onClick={() =>
+                              setTextShown((v) => ({
+                                ...v,
+                                [message.messageId]: !v[message.messageId],
+                              }))
+                            }
+                          >
+                            {textShown[message.messageId] ? '隐藏文字' : '转文字'}
+                          </button>
+                        )}
+                        {message.content.type === 'link' && (
+                          <button
+                            onClick={() => {
+                              const url = (message.content as { url: string }).url;
+                              void navigator.clipboard
+                                ?.writeText(url)
+                                .then(() => showToast('已复制'))
+                                .catch(() => showToast('复制失败'));
+                            }}
+                          >
+                            复制链接
+                          </button>
+                        )}
+                        {['text', 'image', 'link', 'voice'].includes(message.content.type) && (
+                          <button onClick={() => void addFavorite(message)}>收藏</button>
+                        )}
+                        {message.senderKind !== 'user' &&
+                          (message.content.type === 'image' ||
+                            message.content.type === 'sticker') && (
+                            <button onClick={() => void addToStickers(message)}>添加到表情</button>
+                          )}
                         <button onClick={() => void action(message, 'hide')}>删除</button>
                         {message.senderKind === 'user' && (
                           <button onClick={() => void action(message, 'recall')}>撤回</button>
@@ -482,7 +724,21 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         <div className="pending-message" key={item.body.clientMsgId}>
           <UserAvatar profile={userProfile.data} />
           <div className="message-details">
-            <p>{item.body.content.type === 'text' ? item.body.content.text : '拍了拍'}</p>
+            {item.body.content.type === 'image' ? (
+              <ImageBubble content={item.body.content} />
+            ) : item.body.content.type === 'sticker' ? (
+              <StickerBubble content={item.body.content} />
+            ) : (
+              <p>
+                {item.body.content.type === 'text'
+                  ? item.body.content.text
+                  : item.body.content.type === 'voice'
+                    ? `[语音] ${Math.max(1, Math.round(item.body.content.durationMs / 1000))}″`
+                    : item.body.content.type === 'link'
+                      ? item.body.content.title
+                      : '拍了拍'}
+              </p>
+            )}
             {item.state === 'failed' ? (
               <button
                 onClick={() =>
@@ -499,6 +755,52 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           </div>
         </div>
       ))}
+      {uploads.map((upload) => (
+        <div className="pending-message upload-message" key={upload.localId}>
+          <UserAvatar profile={userProfile.data} />
+          <div className="message-details">
+            {upload.kind === 'image' && upload.url ? (
+              <LocalImageBubble
+                url={upload.url}
+                width={upload.width}
+                height={upload.height}
+                progress={upload.progress}
+                failed={upload.failed}
+              />
+            ) : (
+              <p>
+                [语音] {Math.max(1, Math.round((upload.durationMs ?? 0) / 1000))}″
+                {!upload.failed && upload.progress < 100 && <span role="status"> 发送中…</span>}
+              </p>
+            )}
+            {upload.failed && (
+              <details className="upload-failed">
+                <summary aria-label="发送失败">
+                  <span className="send-failed">!</span>
+                </summary>
+                <button onClick={() => void runUpload(upload)}>重新发送</button>
+                <button onClick={() => dropUpload(upload)}>删除</button>
+              </details>
+            )}
+          </div>
+        </div>
+      ))}
+      {viewer !== null && (
+        <ImageViewer
+          images={images}
+          index={viewer}
+          onClose={() => setViewer(null)}
+          onDelete={(m) => void action(m, 'hide')}
+        />
+      )}
+      {micDenied && (
+        <Dialog
+          title="需要麦克风权限才能发语音"
+          actions={[{ label: '知道了', primary: true, onClick: () => setMicDenied(false) }]}
+        >
+          <p className="hint">请在浏览器地址栏左侧的网站设置里允许麦克风</p>
+        </Dialog>
+      )}
       {quote && (
         <div className="quote-preview">
           引用：{content(quote)} <button onClick={() => setQuoteId(null)}>取消引用</button>
@@ -527,28 +829,113 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         </div>
       )}
       <form className="message-composer" onSubmit={(event) => void submit(event)}>
-        <label>
-          消息
-          <input
-            ref={input}
-            value={text}
-            maxLength={4000}
-            onChange={(event) => {
-              const value = event.target.value;
-              setText(value);
-              if (cardOpen && whileAway.data) setAwayOpen(false);
-              if (group && value.endsWith('@') && value.length > text.length) {
-                if (members.length === 1) insertMention(members[0]!);
-                else if (members.length > 1) setPicking(true);
-              }
-            }}
-            autoComplete="off"
-          />
-        </label>
-        <button className="primary" disabled={sending || !text.trim()}>
-          发送
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={mode === 'text' ? '切换到按住说话' : '切换到键盘'}
+          onClick={() => {
+            setMode((m) => (m === 'text' ? 'voice' : 'text'));
+            setPanel('none');
+          }}
+        >
+          {mode === 'text' ? <Microphone size={24} /> : <Keyboard size={24} />}
         </button>
+        {mode === 'voice' ? (
+          <HoldToTalk onRecorded={sendVoice} onPermissionDenied={() => setMicDenied(true)} />
+        ) : (
+          <label>
+            消息
+            <input
+              ref={input}
+              value={text}
+              maxLength={4000}
+              onChange={(event) => {
+                const value = event.target.value;
+                setText(value);
+                if (cardOpen && whileAway.data) setAwayOpen(false);
+                if (group && value.endsWith('@') && value.length > text.length) {
+                  if (members.length === 1) insertMention(members[0]!);
+                  else if (members.length > 1) setPicking(true);
+                }
+              }}
+              autoComplete="off"
+            />
+          </label>
+        )}
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="表情"
+          aria-pressed={panel === 'sticker'}
+          onClick={() => setPanel((p) => (p === 'sticker' ? 'none' : 'sticker'))}
+        >
+          <Smiley size={24} />
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="更多功能"
+          aria-pressed={panel === 'plus'}
+          onClick={() => setPanel((p) => (p === 'plus' ? 'none' : 'plus'))}
+        >
+          <PlusCircle size={24} />
+        </button>
+        {mode === 'text' && (
+          <button className="primary" disabled={sending || !text.trim()}>
+            发送
+          </button>
+        )}
       </form>
+      {panel === 'sticker' && (
+        <StickerPanel
+          onPick={(sticker) =>
+            void chat
+              .sendContent(id, { type: 'sticker', ...sticker })
+              .catch((e) => setError(friendlyError(e)))
+          }
+        />
+      )}
+      {panel === 'plus' && (
+        <div className="plus-panel">
+          <button type="button" className="plus-cell" onClick={() => albumInput.current?.click()}>
+            <ImageIcon size={28} />
+            <small>相册</small>
+          </button>
+          <button type="button" className="plus-cell" onClick={() => cameraInput.current?.click()}>
+            <Camera size={28} />
+            <small>拍摄</small>
+          </button>
+          {!group && role && callEntry && (
+            <button
+              type="button"
+              className="plus-cell"
+              onClick={() => {
+                setPanel('none');
+                startCall(role.refId);
+              }}
+            >
+              <Phone size={28} />
+              <small>语音通话</small>
+            </button>
+          )}
+        </div>
+      )}
+      <input
+        ref={albumInput}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={(e) => void pickImages(e)}
+      />
+      <input
+        ref={cameraInput}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        hidden
+        onChange={(e) => void pickImages(e)}
+      />
     </main>
   );
 }

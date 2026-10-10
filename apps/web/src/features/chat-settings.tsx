@@ -5,11 +5,14 @@ import {
   CompanionEndpoints,
   ContactsEndpoints,
   IdentityEndpoints,
+  QuietStateEndpoints,
 } from '@weiban/contracts';
 import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import { Name } from './chat.js';
+import { useCallEntry } from './call.js';
+import { VoiceRow } from './voices.js';
 export function ChatSettingsPage() {
   const { conversationId = '' } = useParams();
   const { state } = useChat();
@@ -32,6 +35,8 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
   const companion = useRemote(CompanionEndpoints.getForCharacter, { params: { characterId } });
   const notification = useRemote(IdentityEndpoints.getNotificationSettings);
   const globalOff = notification.data?.proactiveMessagesEnabled === false;
+  const callEntry = useCallEntry(characterId);
+  const quiet = useRemote(QuietStateEndpoints.get, { networkOnly: true });
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
@@ -228,7 +233,39 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
                 </select>
               </label>
             )}
-            {/* 「TA 给我打电话」在 L5 来电功能上线前不显示（l3-companion.md 6.1）。 */}
+            {callEntry && (
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={
+                    notification.data?.proactiveCallsEnabled !== false &&
+                    (companion.data.proactiveCalls ?? false)
+                  }
+                  disabled={pending || notification.data?.proactiveCallsEnabled === false}
+                  onChange={(event) =>
+                    void change(() =>
+                      api.call(CompanionEndpoints.updateForCharacter, {
+                        params: { characterId },
+                        body: { proactiveCalls: event.target.checked },
+                      }),
+                    )
+                  }
+                />
+                TA 给我打电话
+              </label>
+            )}
+            {callEntry &&
+              quiet.data?.inconvenientUntil &&
+              new Date(quiet.data.inconvenientUntil).getTime() > Date.now() && (
+                <p className="hint">
+                  你说过现在不方便，
+                  {new Date(quiet.data.inconvenientUntil).toLocaleTimeString('zh-CN', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}{' '}
+                  前 TA 不会打电话、不发语音
+                </p>
+              )}
             <label className="check">
               <input
                 type="checkbox"
@@ -245,6 +282,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
               />
               TA 的日常（推演）
             </label>
+            <VoiceRow characterId={characterId} voiceId={companion.data.voiceId ?? null} />
             <Link to={`/characters/${characterId}/memories`}>TA 记住了什么</Link>
             <Link to={`/characters/${characterId}/timeline`}>TA 的近况</Link>
           </>

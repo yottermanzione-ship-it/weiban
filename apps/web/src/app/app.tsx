@@ -51,17 +51,22 @@ import {
   ComposeMomentPage,
   MomentDetailPage,
   MomentsFeedPage,
+  MomentsNotificationsPage,
   MyMomentsPage,
   useMomentsBadge,
 } from '../features/moments.js';
 import { NewFriendsPage, useNewFriendsDot } from '../features/new-friends.js';
 import { RelationsPage } from '../features/relations.js';
 import { UpdatePrompt } from './update-prompt.js';
+import { CallLinkPage, CallProvider } from '../features/call.js';
+import { MyStickersPage } from '../features/stickers.js';
+import { VoicePickerPage } from '../features/voices.js';
+import { ToastHost } from '../features/toast.js';
 /** 这些页面自带返回按钮，不显示通用顶栏。 */
 const ownHeader = [
-  /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations)$/,
+  /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice)$/,
   /^\/services\/period/,
-  /^\/(contacts\/(new|groups)|groups\/new|moments|me\/moments)/,
+  /^\/(contacts\/(new|groups)|groups\/new|moments|me\/moments|me\/stickers|calls\/)/,
 ];
 function TabBar() {
   const badge = useMomentsBadge();
@@ -135,101 +140,111 @@ function Shell() {
   if (firstProfile && location.pathname !== '/profile') return <Navigate to="/profile" replace />;
   const roots = ['/chat', '/contacts', '/discover', '/me'];
   return (
-    <div
-      className="app-shell"
-      key={`${auth.session.user.userId}:${auth.session.session.sessionId}`}
-    >
-      {firstProfile && (
-        <header className="topbar">
-          <button onClick={() => void auth.logout()}>‹ 返回登录</button>
-        </header>
-      )}
-      {offline && (
-        <div role="status" className="offline">
-          网络暂不可用，正在显示本机保存的内容
-        </div>
-      )}
-      {!onboarding &&
-        !roots.includes(location.pathname) &&
-        !location.pathname.startsWith('/chat/') &&
-        !ownHeader.some((pattern) => pattern.test(location.pathname)) && (
+    <CallProvider>
+      <div
+        className="app-shell"
+        key={`${auth.session.user.userId}:${auth.session.session.sessionId}`}
+      >
+        {firstProfile && (
           <header className="topbar">
-            <Link
-              to={
-                [
-                  '/wallet',
-                  '/models',
-                  '/ledger',
-                  '/prices',
-                  '/leaderboard',
-                  '/usage',
-                  '/services/proactive',
-                ].includes(location.pathname)
-                  ? '/services'
-                  : ['/settings/security', '/settings/privacy', '/settings/general'].includes(
-                        location.pathname,
-                      )
-                    ? '/settings'
-                    : '/me'
-              }
-              aria-label="返回"
-            >
-              <CaretLeft size={24} />
-              返回
-            </Link>
+            <button onClick={() => void auth.logout()}>‹ 返回登录</button>
           </header>
         )}
-      <Routes>
-        <Route
-          path="/"
-          element={
-            <Navigate to={auth.session.user.profileCompleted ? '/chat' : '/profile'} replace />
-          }
-        />
-        <Route path="/me" element={<MePage />} />
-        <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/services" element={<ServicesPage />} />
-        <Route path="/wallet" element={<WalletPage />} />
-        <Route path="/ledger" element={<LedgerPage />} />
-        <Route path="/prices" element={<PricesPage />} />
-        <Route path="/models" element={<ModelsPage />} />
-        <Route path="/leaderboard" element={<LeaderboardPage />} />
-        <Route path="/usage" element={<UsagePage />} />
-        <Route path="/characters/custom/new" element={<CreateCustomCharacterPage />} />
-        <Route path="/characters/custom/:characterId/edit" element={<EditCustomCharacterPage />} />
-        <Route path="/settings/security" element={<AccountSecurityPage />} />
-        <Route path="/settings/privacy" element={<PrivacySettingsPage />} />
-        <Route path="/settings/general" element={<GeneralSettingsPage />} />
-        <Route path="/services/proactive" element={<ProactiveSettingsPage />} />
-        <Route path="/services/period" element={<PeriodPage />} />
-        <Route path="/services/period/day/:date" element={<PeriodDayPage />} />
-        <Route path="/services/period/history" element={<PeriodHistoryPage />} />
-        <Route path="/services/period/authorization" element={<PeriodAuthorizationPage />} />
-        <Route path="/services/period/settings" element={<PeriodSettingsPage />} />
-        <Route path="/chat" element={<ConversationListPage />} />
-        <Route path="/chat/:conversationId" element={<ConversationPage />} />
-        <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />
-        <Route path="/characters/:characterId/memories" element={<MemoriesPage />} />
-        <Route path="/characters/:characterId/timeline" element={<TimelinePage />} />
-        <Route path="/characters/:characterId/moments" element={<CharacterMomentsPage />} />
-        <Route path="/characters/:characterId/relations" element={<RelationsPage />} />
-        <Route path="/contacts/new" element={<NewFriendsPage />} />
-        <Route path="/contacts/groups" element={<GroupListPage />} />
-        <Route path="/groups/new" element={<SelectMembersPage />} />
-        <Route path="/chat/:conversationId/group" element={<GroupSettingsPage />} />
-        <Route path="/moments" element={<MomentsFeedPage />} />
-        <Route path="/moments/new" element={<ComposeMomentPage />} />
-        <Route path="/moments/posts/:postId" element={<MomentDetailPage />} />
-        <Route path="/me/moments" element={<MyMomentsPage />} />
-        <Route path="/characters/:characterId/anniversaries" element={<AnniversariesPage />} />
-        <Route path="/contacts" element={<ContactsPage />} />
-        <Route path="/discover" element={<DiscoverPage />} />
-        <Route path="/characters/:characterId" element={<CharacterPage />} />
-        <Route path="*" element={<Navigate to="/me" replace />} />
-      </Routes>
-      {!onboarding && !location.pathname.startsWith('/chat/') && <TabBar />}
-    </div>
+        {offline && (
+          <div role="status" className="offline">
+            网络暂不可用，正在显示本机保存的内容
+          </div>
+        )}
+        {!onboarding &&
+          !roots.includes(location.pathname) &&
+          !location.pathname.startsWith('/chat/') &&
+          !ownHeader.some((pattern) => pattern.test(location.pathname)) && (
+            <header className="topbar">
+              <Link
+                to={
+                  [
+                    '/wallet',
+                    '/models',
+                    '/ledger',
+                    '/prices',
+                    '/leaderboard',
+                    '/usage',
+                    '/services/proactive',
+                  ].includes(location.pathname)
+                    ? '/services'
+                    : ['/settings/security', '/settings/privacy', '/settings/general'].includes(
+                          location.pathname,
+                        )
+                      ? '/settings'
+                      : '/me'
+                }
+                aria-label="返回"
+              >
+                <CaretLeft size={24} />
+                返回
+              </Link>
+            </header>
+          )}
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <Navigate to={auth.session.user.profileCompleted ? '/chat' : '/profile'} replace />
+            }
+          />
+          <Route path="/me" element={<MePage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/services" element={<ServicesPage />} />
+          <Route path="/wallet" element={<WalletPage />} />
+          <Route path="/ledger" element={<LedgerPage />} />
+          <Route path="/prices" element={<PricesPage />} />
+          <Route path="/models" element={<ModelsPage />} />
+          <Route path="/leaderboard" element={<LeaderboardPage />} />
+          <Route path="/usage" element={<UsagePage />} />
+          <Route path="/characters/custom/new" element={<CreateCustomCharacterPage />} />
+          <Route
+            path="/characters/custom/:characterId/edit"
+            element={<EditCustomCharacterPage />}
+          />
+          <Route path="/settings/security" element={<AccountSecurityPage />} />
+          <Route path="/settings/privacy" element={<PrivacySettingsPage />} />
+          <Route path="/settings/general" element={<GeneralSettingsPage />} />
+          <Route path="/services/proactive" element={<ProactiveSettingsPage />} />
+          <Route path="/services/period" element={<PeriodPage />} />
+          <Route path="/services/period/day/:date" element={<PeriodDayPage />} />
+          <Route path="/services/period/history" element={<PeriodHistoryPage />} />
+          <Route path="/services/period/authorization" element={<PeriodAuthorizationPage />} />
+          <Route path="/services/period/settings" element={<PeriodSettingsPage />} />
+          <Route path="/chat" element={<ConversationListPage />} />
+          <Route path="/chat/:conversationId" element={<ConversationPage />} />
+          <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />
+          <Route path="/characters/:characterId/memories" element={<MemoriesPage />} />
+          <Route path="/characters/:characterId/timeline" element={<TimelinePage />} />
+          <Route path="/characters/:characterId/moments" element={<CharacterMomentsPage />} />
+          <Route path="/characters/:characterId/relations" element={<RelationsPage />} />
+          <Route path="/contacts/new" element={<NewFriendsPage />} />
+          <Route path="/contacts/groups" element={<GroupListPage />} />
+          <Route path="/groups/new" element={<SelectMembersPage />} />
+          <Route path="/chat/:conversationId/group" element={<GroupSettingsPage />} />
+          <Route path="/moments" element={<MomentsFeedPage />} />
+          <Route path="/moments/new" element={<ComposeMomentPage />} />
+          <Route path="/moments/notifications" element={<MomentsNotificationsPage />} />
+          <Route path="/moments/posts/:postId" element={<MomentDetailPage />} />
+          <Route path="/me/moments" element={<MyMomentsPage />} />
+          <Route path="/characters/:characterId/anniversaries" element={<AnniversariesPage />} />
+          <Route path="/me/stickers" element={<MyStickersPage />} />
+          <Route path="/characters/:characterId/voice" element={<VoicePickerPage />} />
+          <Route path="/calls/:callId" element={<CallLinkPage />} />
+          <Route path="/contacts" element={<ContactsPage />} />
+          <Route path="/discover" element={<DiscoverPage />} />
+          <Route path="/characters/:characterId" element={<CharacterPage />} />
+          <Route path="*" element={<Navigate to="/me" replace />} />
+        </Routes>
+        {!onboarding && !location.pathname.startsWith('/chat/') && <TabBar />}
+        <ToastHost />
+      </div>
+    </CallProvider>
   );
 }
 export function App() {

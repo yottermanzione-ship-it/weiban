@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
-  CharacterEndpoints,
+  UserCustomEndpoints,
   UserRelationEndpoints,
   type CharacterRelation,
   type RelationCloseness,
@@ -34,30 +34,10 @@ export const closenessNames: Record<RelationCloseness, string> = {
 };
 const userTypes: RelationType[] = ['friend', 'family', 'groupmate', 'colleague', 'costar', 'other'];
 
-/** 通讯录里属于自定义角色的 ID（契约没有自定义角色列表接口，逐个读资料判断）。 */
+/** 我的全部自定义角色 ID（GET /characters/custom）。 */
 export function useCustomCharacterIds(): string[] | undefined {
-  const { state } = useChat();
-  const ids = state.contacts.map((c) => c.characterId);
-  const signature = JSON.stringify(ids);
-  const [result, setResult] = useState<string[]>();
-  useEffect(() => {
-    let active = true;
-    const list = JSON.parse(signature) as string[];
-    void Promise.all(
-      list.map((characterId) =>
-        api
-          .call(CharacterEndpoints.getProfile, { params: { characterId } })
-          .then((p) => (p.kind === 'custom' ? characterId : null))
-          .catch(() => null),
-      ),
-    ).then((values) => {
-      if (active) setResult(values.filter((v): v is string => !!v));
-    });
-    return () => {
-      active = false;
-    };
-  }, [signature]);
-  return result;
+  const remote = useRemote(UserCustomEndpoints.list);
+  return remote.data?.items.map((c) => c.characterId);
 }
 
 /** 资料页「TA 认识的人 N 个 ›」行：只有用户拥有 2 个及以上自定义角色、且本角色是自定义角色时显示。 */

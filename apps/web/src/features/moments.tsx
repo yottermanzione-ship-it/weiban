@@ -7,6 +7,7 @@ import {
   MEDIA_LIMITS,
   MomentsEndpoints,
   type MomentsActor,
+  type MomentsNotification,
   type MomentsBadge,
   type MomentsComment,
   type MomentsPost,
@@ -380,16 +381,9 @@ export function MomentsFeedPage() {
         </Link>
       </header>
       {badge && badge.unseenInteractionCount > 0 && (
-        <button
-          className="moments-pill"
-          onClick={() =>
-            void api
-              .call(MomentsEndpoints.markSeen, { body: { scope: 'interactions' } })
-              .catch(() => {})
-          }
-        >
+        <Link className="moments-pill" to="/moments/notifications">
           {badge.unseenInteractionCount} 条新消息
-        </button>
+        </Link>
       )}
       {list.items.length === 0 && list.error && (
         <div className="empty">
@@ -776,6 +770,92 @@ export function ComposeMomentPage() {
         <small>看不到的角色不会点赞评论，也不会在聊天里提起这条动态</small>
       </div>
       {error && <p role="alert">{error}</p>}
+    </main>
+  );
+}
+
+/** 朋友圈消息列表（谁点赞 / 评论 / 回复 / @ 了我）。进入即清互动红点。 */
+export function MomentsNotificationsPage() {
+  const actors = useActorName();
+  const [items, setItems] = useState<MomentsNotification[]>([]);
+  const [cursor, setCursor] = useState<string | null | undefined>(undefined);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const { register } = actors;
+  const load = useCallback(() => {
+    if (loading || cursor === null) return;
+    setLoading(true);
+    setError('');
+    void api
+      .call(MomentsEndpoints.listNotifications, {
+        query: { cursor: cursor ?? undefined, limit: 20 },
+        networkOnly: true,
+      })
+      .then((page) => {
+        setItems((prev) => [...prev, ...page.items]);
+        setCursor(page.nextCursor);
+        register(
+          page.items.flatMap((n) =>
+            [n.actor, n.post.author].filter((a) => a.kind === 'character').map((a) => a.refId),
+          ),
+        );
+      })
+      .catch((e) => setError(friendlyError(e)))
+      .finally(() => setLoading(false));
+  }, [cursor, loading, register]);
+  useEffect(() => {
+    load();
+    void api.call(MomentsEndpoints.markSeen, { body: { scope: 'interactions' } }).catch(() => {});
+    // 只在进入时加载第一页。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const verb: Record<string, string> = {
+    like: '赞了你的动态',
+    comment: '评论了动态',
+    reply: '回复了你',
+    mention: '在评论中提到了你',
+  };
+  return (
+    <main className="moments-page">
+      <header className="page-header">
+        <Link to="/moments">‹ 朋友圈</Link>
+        <h1>消息</h1>
+        <span />
+      </header>
+      {error && (
+        <p role="alert">
+          {error} <button onClick={load}>重试</button>
+        </p>
+      )}
+      {items.length === 0 && cursor === null && <p className="empty">暂无消息</p>}
+      <div className="panel rows">
+        {items.map((n) => (
+          <Link key={n.notificationId} className="role-row" to={`/moments/posts/${n.postId}`}>
+            <ActorAvatar actor={n.actor} profile={actors.profile} />
+            <span className="conversation-copy">
+              <strong>{actors.name(n.actor)}</strong>
+              <span>
+                {n.kind === 'like' ? (
+                  <Heart size={16} aria-label="赞" />
+                ) : (
+                  (n.text ?? verb[n.kind] ?? '')
+                )}
+              </span>
+              <small>{timeText(n.createdAt)}</small>
+            </span>
+            {n.post.imageMediaId ? (
+              <MomentImage mediaId={n.post.imageMediaId} single={false} />
+            ) : (
+              <small className="moments-notice-text">{n.post.text}</small>
+            )}
+          </Link>
+        ))}
+      </div>
+      {cursor !== null && items.length > 0 && (
+        <button className="text-button full" disabled={loading} onClick={load}>
+          {loading ? '正在读取…' : '查看更多'}
+        </button>
+      )}
     </main>
   );
 }
