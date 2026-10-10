@@ -1,4 +1,7 @@
 import { MemoryService } from './application/memory.js';
+import { PetAiService } from './application/pet-ai.js';
+import { CardLineService, MomentCardService } from './application/moment-cards.js';
+import { MOMENTS_PET_READ_PORT } from './application/moments-ai.js';
 import { MemoryController } from './http/memory.controller.js';
 import { Module } from '@nestjs/common';
 import { ChatModule } from '../chat/index.js';
@@ -15,7 +18,12 @@ import { CompanionSettingsService } from './application/settings.js';
 import { CompanionSettingsController } from './http/settings.controller.js';
 import { SimulationService, SIMULATION_READ_PORT } from './application/simulation.js';
 import { HealthCareService, HEALTH_CARE_FAMILIARITY } from './application/health-care.js';
-import { GrowthModule, GROWTH_SERVICE, type GrowthService } from '../growth/index.js';
+import {
+  GrowthModule,
+  GROWTH_PET_READ_PORT,
+  GROWTH_SERVICE,
+  type GrowthService,
+} from '../growth/index.js';
 import { ProactiveModule } from '../proactive/index.js';
 import { HealthModule } from '../health/index.js';
 import { BillingModule } from '../billing/index.js';
@@ -41,6 +49,7 @@ import {
   AI_USER_QUIET_STATE_PORT,
   AI_IMPORT_ANALYZER,
   AI_PERSONA_UPDATE_SUMMARIZER,
+  AI_CARD_LINE_WRITER,
 } from './tokens.js';
 import {
   SupplementedCharacterRead,
@@ -76,6 +85,12 @@ import {
     SupplementConflictService,
     PersonaUpdateSummaryService,
     { provide: AI_PERSONA_UPDATE_SUMMARIZER, useExisting: PersonaUpdateSummaryService },
+    // T-082：朋友圈晒宠物读宠物（T-066 预留令牌）；宠物 AI；名场面卡与卡片一句话。
+    { provide: MOMENTS_PET_READ_PORT, useExisting: GROWTH_PET_READ_PORT },
+    PetAiService,
+    CardLineService,
+    { provide: AI_CARD_LINE_WRITER, useExisting: CardLineService },
+    MomentCardService,
     CompanionSettingsService,
     MemoryService,
     ReplyPlanStore,
@@ -115,6 +130,7 @@ import {
     AI_USER_QUIET_STATE_PORT,
     AI_IMPORT_ANALYZER,
     AI_PERSONA_UPDATE_SUMMARIZER,
+    AI_CARD_LINE_WRITER,
   ],
   controllers: [
     GroupCompanionController,

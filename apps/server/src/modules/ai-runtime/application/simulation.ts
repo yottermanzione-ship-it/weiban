@@ -34,6 +34,8 @@ import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from '../../identity/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { PUBLIC_UPDATE_READ_PORT } from '../../characters/index.js';
+import { GROWTH_PET_READ_PORT } from '../../growth/index.js';
+import type { PetReadPort } from '@weiban/contracts';
 import { simulationStates, dailyEvents, moodStates } from '../infra/db/schema.js';
 
 // ---------------------------------------------------------------------------
@@ -129,6 +131,10 @@ export class SimulationService implements SimulationReadPort {
     @Optional()
     @Inject(PUBLIC_UPDATE_READ_PORT)
     private readonly publicUpdates?: PublicUpdateReadPort,
+    /** T-082 PLAY-02 第 7 条：共同领养的宠物可以出现在日常里（不额外增加事件数）。 */
+    @Optional()
+    @Inject(GROWTH_PET_READ_PORT)
+    private readonly pets?: PetReadPort,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -268,7 +274,10 @@ export class SimulationService implements SimulationReadPort {
     const updates =
       (await this.publicUpdates?.listEffective(characterId, today, { limit: 8, pastDays: 30 })) ??
       [];
-    const prompt = buildSimulationPrompt(today, MAX_EVENTS_PER_RUN, updates);
+    const activePets = (
+      (await this.pets?.listPetsForCharacter(userId, characterId).catch(() => [])) ?? []
+    ).filter((p) => p.status === 'active');
+    const prompt = buildSimulationPrompt(today, MAX_EVENTS_PER_RUN, updates, activePets);
 
     // 调用模型（走后台网关，simulation 用途，countAsBackground=true）
     const result = await this.gateway.generateText({
@@ -413,7 +422,13 @@ function buildSimulationPrompt(
   date: string,
   maxEvents: number,
   updates: EffectivePublicUpdate[] = [],
+  pets: Array<{ name: string; speciesName: string; stage: string }> = [],
 ): string {
+  const petNote = pets.length
+    ? `
+
+角色和用户共同领养了宠物：${pets.map((p) => `${p.name}（${p.speciesName}）`).join('、')}。今天的事件里可以有 0～1 件和宠物有关（照顾、遛、拍照等），算在事件总数里，不额外增加；宠物名字必须照写；不写宠物生病、受苦、想念用户之类的内容。`
+    : '';
   // 公开动态只作为「已审核事实」给推演对齐，不让模型补充细节（SIM-03 第 4 条）。
   const facts = updates.length
     ? `
@@ -447,7 +462,7 @@ ${updates
 - events 数组包含 3 到 ${maxEvents} 条，每条描述角色今天经历的一件具体事情。
 - 事件要贴近角色人设，真实可信，不要过于戏剧化。
 - overallMood 反映今天整体心情。
-- 只输出 JSON，不要有其他内容。${facts}`;
+- 只输出 JSON，不要有其他内容。${facts}${petNote}`;
 }
 
 // ---------------------------------------------------------------------------

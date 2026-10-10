@@ -7,6 +7,7 @@ import {
   index,
   integer,
   pgSchema,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -446,4 +447,33 @@ export const callAttempts = aiRuntimeSchema.table(
     unique('call_attempt_source_idx').on(t.userId, t.sourceRef),
     index('call_attempt_user_created_idx').on(t.userId, t.createdAt),
   ],
+);
+
+/** T-082 PLAY-02 第 2 条：角色提议领养（每用户每角色一次，拒绝或忽略后不再提）。 */
+export const petProposals = aiRuntimeSchema.table(
+  'pet_proposals',
+  {
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    proposedAt: timestamp('proposed_at', { withTimezone: true }).notNull(),
+    messageId: uuid('message_id'),
+    choice: text('choice'),
+    chosenAt: timestamp('chosen_at', { withTimezone: true }),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.characterId] })],
+);
+
+/** T-082 GRW-05：名场面每角色每周评估一次（weekKey = 用户当地该周周一日期）。 */
+export const momentCardAttempts = aiRuntimeSchema.table(
+  'moment_card_attempts',
+  {
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    weekKey: text('week_key').notNull(),
+    outcome: text('outcome').notNull(),
+    score: integer('score'),
+    cardId: uuid('card_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.characterId, t.weekKey] })],
 );

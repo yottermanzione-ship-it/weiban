@@ -52,6 +52,9 @@ const T066_TABLES = [
   // T-072：P-45 静默、来电记录
   'user_quiet_states',
   'call_attempts',
+  // T-082：领养提议（一次）、名场面评估记录
+  'pet_proposals',
+  'moment_card_attempts',
 ] as const;
 @Injectable()
 export class ReplyPlanStore {

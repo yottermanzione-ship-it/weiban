@@ -399,8 +399,9 @@ export class MomentsAiService {
       return {
         kind: 'pet',
         id: `${pet.petId}:${date}`,
-        label: '你和用户一起养的宠物',
-        brief: `${pet.name}（${pet.speciesName}），已经养了${pet.daysAdopted}天`,
+        label: '宠物日常',
+        // T-082 PLAY-02 第 7 条：只说宠物，不提用户；名字现取（改名后用新名字）。
+        brief: `${pet.name}（${pet.speciesName}），已经养了${pet.daysAdopted}天。只写宠物本身的可爱日常，不提到用户、不说是和谁一起养的，不写宠物想念谁。`,
         imageMediaIds: [pet.presetImageMediaId],
       };
     return null;

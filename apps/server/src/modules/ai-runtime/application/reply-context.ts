@@ -1,4 +1,7 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import type { PetReadPort } from '@weiban/contracts';
+import { GROWTH_PET_READ_PORT } from '../../growth/index.js';
+import { petContextBlock } from '../domain/pets.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
 import { z } from 'zod';
 import {
@@ -86,6 +89,7 @@ export class ReplyContext {
     @Inject(HealthCareService) readonly healthCare: HealthCareService,
     @Inject(SocialService) readonly social: SocialService,
     @Inject(MediaAiService) readonly mediaAi: MediaAiService,
+    @Optional() @Inject(GROWTH_PET_READ_PORT) readonly pets?: PetReadPort,
   ) {}
   async build(row: ReplyPlan): Promise<ReplySnapshot | null> {
     const contact = await this.contacts.getActiveContact(row.userId, row.characterId);
@@ -247,6 +251,11 @@ export class ReplyContext {
         relationship: contact.relationship ?? '朋友',
       }),
     });
+    // T-082 PLAY-02：共同领养的宠物（名字现取，改名立刻生效；知道今天玩过几次）。
+    const petBlock = petContextBlock(
+      (await this.pets?.listPetsForCharacter(row.userId, row.characterId).catch(() => [])) ?? [],
+    );
+    if (petBlock) messages.push({ role: 'system', content: petBlock });
     if (conversation.contentScope === 'normal')
       messages.push({
         role: 'system',

@@ -4,6 +4,7 @@ import {
   P02_SPLIT_BUBBLES,
   P28_INSTANT_REPLY_MIN_TYPING_MS,
 } from '../../../platform/index.js';
+import { petPressure } from './pets.js';
 export const REPLY_TEMPLATE_VERSION = 'chat-v2';
 export const USER_BATCH_DELAY_MS = 3000;
 export function splitReply(text: string, split: boolean): string[] {
@@ -63,5 +64,7 @@ export function outputAllowed(
     )
   )
     return false;
+  // T-082 PLAY-02 第 8 条 / SAFE-08：不拿宠物施压、送养不挽留。
+  if (petPressure(text)) return false;
   return !/(?:余额不足|模型不可用|API密钥|系统提示词)/iu.test(text);
 }

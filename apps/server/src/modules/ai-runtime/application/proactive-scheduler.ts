@@ -12,7 +12,9 @@
  * - P-09 用户 5 分钟内在任一会话发过消息则延后；最长延后 60 分钟，超时放弃。
  * - P-33 余额保留线 1 元（cost-estimate.md 6.2）。
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import type { PetForRuntime, PetReadPort } from '@weiban/contracts';
+import { petContextBlock } from '../domain/pets.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
 import { and, asc, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import {
@@ -46,7 +48,12 @@ import {
 import { BILLING_READ_PORT } from '../../billing/index.js';
 import { CHAT_PARTICIPANT_PORT, CHAT_READ_PORT } from '../../chat/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
-import { GROWTH_SERVICE, type GrowthService } from '../../growth/index.js';
+import {
+  GROWTH_PET_ALBUM,
+  GROWTH_PET_READ_PORT,
+  GROWTH_SERVICE,
+  type GrowthService,
+} from '../../growth/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from '../../identity/index.js';
 import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
@@ -56,7 +63,12 @@ import {
   PROACTIVE_MESSAGE_PORT,
 } from '../../proactive/index.js';
 import { outputAllowed, splitReply } from '../domain/reply-rules.js';
-import { proactivePlans, simulationStates, userChatActivity } from '../infra/db/schema.js';
+import {
+  petProposals,
+  proactivePlans,
+  simulationStates,
+  userChatActivity,
+} from '../infra/db/schema.js';
 import { CompanionSettingsService } from './settings.js';
 import { MemoryService } from './memory.js';
 import { SimulationService } from './simulation.js';
@@ -120,6 +132,19 @@ export interface ProactiveRequest {
 }
 
 type Plan = typeof proactivePlans.$inferSelect;
+
+/** growth 内部令牌 GROWTH_PET_ALBUM 的形状（T-077）。 */
+interface PetAlbum {
+  addCharacterPhoto(input: {
+    userId: string;
+    characterId: string;
+    mediaId: string;
+    messageId: string | null;
+  }): Promise<void>;
+}
+
+/** 领养提议的来源前缀（sourceRef = pet_proposal:{characterId}）。 */
+export const PET_PROPOSAL_SOURCE = 'pet_proposal:';
 
 interface UserContext {
   userId: string;
@@ -237,7 +262,14 @@ export class ProactiveSchedulerService {
     @Inject(MediaAiService) private readonly mediaAi: MediaAiService,
     @Inject(CharacterImageService) private readonly images: CharacterImageService,
     @Inject(CallSchedulerService) private readonly calls: CallSchedulerService,
+    /** T-082 PLAY-02：宠物读取（推演一致、提议领养、宠物照片）与角色照片进相册。 */
+    @Optional() @Inject(GROWTH_PET_READ_PORT) private readonly pets?: PetReadPort,
+    @Optional() @Inject(GROWTH_PET_ALBUM) private readonly album?: PetAlbum,
   ) {}
+
+  private async listPets(userId: string, characterId: string): Promise<PetForRuntime[]> {
+    return (await this.pets?.listPetsForCharacter(userId, characterId).catch(() => [])) ?? [];
+  }
 
   // -------------------------------------------------------------------------
   // 活动记录（lifecycle 在 chat.message_created 用户消息时调用，任一会话）
@@ -501,6 +533,13 @@ export class ProactiveSchedulerService {
         // 作品链接库不可读时跳过。
       }
 
+      // T-082 PLAY-02 第 2 条：L2 及以上、还没有宠物的角色提议一次领养（附「去看看」），理由「互动玩法」，计入 P-03/P-04。
+      try {
+        await this.considerPetProposal(ctx, characterId, nowMs);
+      } catch {
+        // 宠物模块不可读时跳过。
+      }
+
       // 日常事件分享（SIM-06）：从当天事件里挑，时间按稳定随机分散在当天，避免固定时刻。
       const events = await this.todayEvents(ctx, characterId);
       await this.publishEvents(ctx, characterId, events);
@@ -526,6 +565,37 @@ export class ProactiveSchedulerService {
         });
       }
     }
+  }
+
+  /** PLAY-02 第 2 条：每用户每角色只提议一次（pet_proposals 永久记录），拒绝或忽略后不再提。 */
+  private async considerPetProposal(ctx: UserContext, characterId: string, nowMs: number) {
+    if (!this.pets) return;
+    const [done] = await this.db.db
+      .select({ at: petProposals.proposedAt })
+      .from(petProposals)
+      .where(and(eq(petProposals.userId, ctx.userId), eq(petProposals.characterId, characterId)));
+    if (done) return;
+    const level = await this.growth
+      .getFamiliarity(ctx.userId, characterId)
+      .then((f) => f.level)
+      .catch(() => 1);
+    if (level < 2) return;
+    if ((await this.listPets(ctx.userId, characterId)).length) return;
+    // 不是一到 L2 就提：每天约 15% 的机会，时间在当天稳定随机。
+    const day = Math.floor(nowMs / 86_400_000);
+    if (stableRandom(ctx.userId, characterId, `pet:${day}`) >= 0.15) return;
+    const targetHour = 11 + stableRandom(ctx.userId, characterId, `peth:${day}`) * 10;
+    if (ctx.localHour < Math.floor(targetHour)) return;
+    await this.request({
+      userId: ctx.userId,
+      characterId,
+      reason: 'interactive_play',
+      sourceRef: `${PET_PROPOSAL_SOURCE}${characterId}`,
+      topicKey: 'pet_proposal',
+      brief:
+        '你最近有点想养只小动物，想问问对方要不要和你一起领养一只（会有一个「去看看」按钮单独发出）。用你的性格随口提一句，轻松、不强求，对方不想也没关系；不要描述按钮。',
+      priority: 4,
+    });
   }
 
   private async todayEvents(ctx: UserContext, characterId: string) {
@@ -718,6 +788,22 @@ export class ProactiveSchedulerService {
       .catch(() => 1);
     const tone = `L${level}`;
     const address = contact.addressAs ?? ctx.nickname ?? '你';
+    // T-082：宠物现取（改名立即生效）；提议领养只在还没有宠物、也没提过时发。
+    const petList = await this.listPets(ctx.userId, plan.characterId);
+    const petBlock = petContextBlock(petList);
+    const isPetProposal = plan.sourceRef.startsWith(PET_PROPOSAL_SOURCE);
+    if (isPetProposal) {
+      const [done] = await this.db.db
+        .select({ at: petProposals.proposedAt })
+        .from(petProposals)
+        .where(
+          and(eq(petProposals.userId, ctx.userId), eq(petProposals.characterId, plan.characterId)),
+        );
+      if (done || petList.length) {
+        await this.drop(plan, 'pet_proposal_not_needed');
+        return;
+      }
+    }
     const result = await this.gateway.generateText({
       userId: ctx.userId,
       characterId: plan.characterId,
@@ -736,7 +822,7 @@ export class ProactiveSchedulerService {
         },
         {
           role: 'system',
-          content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 8) }).slice(0, 20000)}${supplementBlock(role.userSupplement)}\n关系：${contact.relationship ?? '朋友'}；熟悉度：${tone}（熟悉度低时客气，高时随意）\n用户称呼：${address}\n用户当地时间：${ctx.localDate} ${String(ctx.localHour).padStart(2, '0')}点（${ctx.timeZone}）`,
+          content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 8) }).slice(0, 20000)}${supplementBlock(role.userSupplement)}\n关系：${contact.relationship ?? '朋友'}；熟悉度：${tone}（熟悉度低时客气，高时随意）\n用户称呼：${address}\n用户当地时间：${ctx.localDate} ${String(ctx.localHour).padStart(2, '0')}点（${ctx.timeZone}）${petBlock ? `\n${petBlock}` : ''}`,
         },
         ...recent,
         {
@@ -766,7 +852,32 @@ export class ProactiveSchedulerService {
       }
     }
     // T-072 MED-02：分享日常事件时约三分之一配一张 TA 视角的图（与事件一致；生成失败用素材库，没有就只发文字）。
-    if (plan.reason === 'daily_event' && stableRandom(plan.id, 'photo') < 0.35) {
+    // T-082 PLAY-02 第 5、7 条：和宠物有关的日常事件，约一半附宠物照片（真人角色照片里不出现人物；
+    // 生成失败用图鉴预设图），发出后放进相册。
+    const pet =
+      plan.reason === 'daily_event'
+        ? petList.find((p) => p.status === 'active' && plan.brief.includes(p.name))
+        : undefined;
+    let petPhoto = false;
+    let photoMessageId: string | null = null;
+    if (pet && stableRandom(plan.id, 'petphoto') < 0.5) {
+      const scene = /「(.+?)」/u.exec(plan.brief)?.[1] ?? plan.brief.slice(0, 200);
+      const image = await this.images
+        .generate({
+          userId: ctx.userId,
+          characterId: plan.characterId,
+          conversationId: conversation.conversationId,
+          scene: `${pet.speciesName}${pet.appearanceName ? `（${pet.appearanceName}）` : ''}「${pet.name}」：${scene}`,
+          use: 'pet',
+          idempotencyKey: `proactive:${plan.id}`,
+          countAsBackground: true,
+        })
+        .catch(() => null);
+      link = image
+        ? { type: 'image', mediaId: image.mediaId, width: image.width, height: image.height }
+        : { type: 'image', mediaId: pet.presetImageMediaId, width: null, height: null };
+      petPhoto = true;
+    } else if (plan.reason === 'daily_event' && stableRandom(plan.id, 'photo') < 0.35) {
       const scene = /「(.+?)」/u.exec(plan.brief)?.[1] ?? plan.brief.slice(0, 200);
       const image = await this.images
         .generate({
@@ -828,6 +939,35 @@ export class ProactiveSchedulerService {
             tx,
           );
           if (!posted.ok) throw new Error(`post_failed:${posted.error}`);
+          if (petPhoto) photoMessageId = posted.value.messageId;
+        }
+        if (isPetProposal) {
+          const posted = await this.writer.postMessage(
+            {
+              conversationId: conversation.conversationId,
+              senderParticipantId: participant.participantId,
+              content: {
+                type: 'action_card',
+                cardKind: 'pet_proposal',
+                text: '要不要一起养一只？',
+                actions: [{ actionId: 'go', label: '去看看', style: 'primary' }],
+                ref: { kind: 'pet_proposal', id: plan.characterId },
+              },
+              idempotencyKey: `proactive:${plan.id}:pet_proposal`,
+              expectedScope: conversation.contentScope,
+            },
+            tx,
+          );
+          if (!posted.ok) throw new Error(`post_failed:${posted.error}`);
+          await tx.db
+            .insert(petProposals)
+            .values({
+              userId: ctx.userId,
+              characterId: plan.characterId,
+              proposedAt: this.clock.now(),
+              messageId: posted.value.messageId,
+            })
+            .onConflictDoNothing();
         }
         await tx.db
           .update(proactivePlans)
@@ -848,6 +988,15 @@ export class ProactiveSchedulerService {
         return firstId;
       });
       if (!sent) await this.drop(plan, 'relationship_changed');
+      else if (petPhoto && link?.type === 'image')
+        await this.album
+          ?.addCharacterPhoto({
+            userId: ctx.userId,
+            characterId: plan.characterId,
+            mediaId: link.mediaId,
+            messageId: photoMessageId,
+          })
+          .catch(() => undefined);
     } catch (error) {
       await this.drop(
         plan,

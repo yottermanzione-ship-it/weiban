@@ -255,6 +255,21 @@ export class MemoryService {
     callId: string,
     content: string,
   ): Promise<void> {
+    await this.addEpisode(userId, characterId, callId, content, 'never');
+  }
+
+  /**
+   * 系统写入一条共同经历记忆（T-072 通话摘要；T-082 领养、起名、送养——宠物不是敏感信息，可 shareable）。
+   * clientId 为 UUID，同用户同角色内幂等。
+   */
+  async addEpisode(
+    userId: string,
+    characterId: string,
+    clientId: string,
+    content: string,
+    sharingClass: 'never' | 'shareable' | 'basic',
+  ): Promise<void> {
+    const callId = clientId;
     const text = content.trim().slice(0, 1000);
     if (!text || healthPrivate(text)) return;
     const job = await this.guard(userId, characterId).catch(() => null);
@@ -270,7 +285,7 @@ export class MemoryService {
         importance: 5,
         dueAt: null,
         visibility: 'only_this_character',
-        sharingClass: 'never',
+        sharingClass,
         status: 'past',
         sourceMessageIds: [],
         createdBy: 'extracted',

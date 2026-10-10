@@ -10,3 +10,8 @@ export const AI_IMPORT_ANALYZER = Symbol('weiban.ai-runtime.import-analyzer');
  * characters 不能 import ai-runtime；需要时由装配入口绑给 characters 自己定义的令牌。
  */
 export const AI_PERSONA_UPDATE_SUMMARIZER = Symbol('weiban.ai-runtime.persona-update-summarizer');
+/**
+ * T-082 服务器内部：卡片「角色写给你的一句话」（GRW-05，≤ 40 字），类型见 CardLineService.writeLine。
+ * growth 自己发的纪念 / 熟悉度 / 节日 / 宠物卡若要用 AI 写这句话，由装配入口绑给 growth 定义的令牌。
+ */
+export const AI_CARD_LINE_WRITER = Symbol('weiban.ai-runtime.card-line-writer');
