@@ -23,7 +23,12 @@ import app.weiban.data.OwnerRecord
 import app.weiban.designsystem.WeibanTheme
 import app.weiban.designsystem.tokens.WbSize
 import app.weiban.feature.auth.AuthScreen
+import app.weiban.feature.chat.AchievementsScreen
 import app.weiban.feature.chat.CallOverlay
+import app.weiban.feature.chat.CardAlbumsScreen
+import app.weiban.feature.chat.FamiliarityOverviewScreen
+import app.weiban.feature.chat.FavoritesScreen
+import app.weiban.feature.chat.GrowthShareOverlay
 import app.weiban.feature.chat.ChatScreen
 import app.weiban.feature.chat.DiscoverScreen
 import app.weiban.feature.chat.LocalCalls
@@ -288,6 +293,8 @@ private class NavigationUi(
                 }
                 // 通话页 / 来电页 / 通话中胶囊盖在所有页面上（design/pages/call.md）。
                 CallOverlay(runtime.repository, owner)
+                // 分享图编辑页、卡片详情、获得成就轻提示（T-085）。
+                GrowthShareOverlay(runtime.repository, runtime.chat, owner)
             }
         }
     }
@@ -319,24 +326,14 @@ private suspend fun finishOnboarding(
     val owner = OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId)
     when (navigation.tab) {
         "我" ->
-            if (navigation.mePage == "stickers") {
-                MyStickersScreen(runtime.repository, owner) { navigation.mePage = null }
-            } else {
-                MeScreen(
-                    runtime.repository,
-                    onTheme = onTheme,
-                    onLogout = onLogout,
-                    entry =
-                        MeEntry(
-                            navigation.mePage,
-                            notificationControls(runtime, owner),
-                            onMyMoments = {
-                                navigation.tab = "发现"
-                                navigation.moments = "me"
-                            },
-                            onMyStickers = { navigation.mePage = "stickers" },
-                        ),
-                )
+            when (navigation.mePage) {
+                "stickers" -> MyStickersScreen(runtime.repository, owner) { navigation.mePage = null }
+                "favorites" ->
+                    FavoritesScreen(runtime.repository, runtime.chat, owner, { navigation.mePage = null }, navigation::open)
+                "cards" -> CardAlbumsScreen(runtime.repository, runtime.chat, owner) { navigation.mePage = "services" }
+                "achievements" -> AchievementsScreen(runtime.repository, owner) { navigation.mePage = "services" }
+                "familiarity" -> FamiliarityOverviewScreen(runtime.repository, runtime.chat, owner) { navigation.mePage = "services" }
+                else -> MePage(runtime, owner, navigation, onTheme, onLogout)
             }
         "微伴" ->
             ChatScreen(
@@ -350,6 +347,32 @@ private suspend fun finishOnboarding(
             DiscoverScreen(runtime.repository, runtime.chat, owner, navigation.moments, { navigation.moments = it }, navigation::open)
         else -> key(navigation.tab) { RoleBrowser(runtime.repository, runtime.chat, owner, false, navigation::open) }
     }
+}
+
+@Composable private fun MePage(
+    runtime: WeibanApplication,
+    owner: OwnerRecord,
+    navigation: NavigationUi,
+    onTheme: (String) -> Unit,
+    onLogout: () -> Unit,
+) {
+    MeScreen(
+        runtime.repository,
+        onTheme = onTheme,
+        onLogout = onLogout,
+        entry =
+            MeEntry(
+                navigation.mePage,
+                notificationControls(runtime, owner),
+                onMyMoments = {
+                    navigation.tab = "发现"
+                    navigation.moments = "me"
+                },
+                onMyStickers = { navigation.mePage = "stickers" },
+                onFavorites = { navigation.mePage = "favorites" },
+                onGrowth = { navigation.mePage = it },
+            ),
+    )
 }
 
 private fun applyNotification(

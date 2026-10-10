@@ -14,12 +14,22 @@ import kotlinx.serialization.json.put
     OutlinedButton(onClick = { state.openPage("privacy") }) { Text("隐私") }
 }
 
-@Composable internal fun MeServices(state: MeState) {
+@Composable internal fun MeServices(
+    state: MeState,
+    entry: MeEntry = MeEntry(),
+) {
     OutlinedButton(onClick = { state.openPage("wallet") }) { Text("余额与账单") }
     OutlinedButton(onClick = { state.openPage("models") }) { Text("模型选择") }
     OutlinedButton(onClick = { state.openPage("proactive") }) { Text("主动消息与免打扰") }
     Text("互动玩法")
     OutlinedButton(onClick = { state.openPage("period") }) { Text("经期日记") }
+    // 陪伴分组（SVC-01）：卡册、成就、熟悉度。
+    entry.onGrowth?.let { open ->
+        Text("陪伴")
+        OutlinedButton(onClick = { open("cards") }) { Text("卡册") }
+        OutlinedButton(onClick = { open("achievements") }) { Text("成就") }
+        OutlinedButton(onClick = { open("familiarity") }) { Text("熟悉度") }
+    }
 }
 
 @Composable internal fun NotificationSettingsPage(

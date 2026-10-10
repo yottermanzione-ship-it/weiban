@@ -314,7 +314,7 @@ internal fun defaultGroupTitle(
             return
         }
         "search" -> {
-            GroupSearch(repository, owner, conversation) { sub = "main" }
+            ConversationSearchScreen(repository, owner, state, conversation.conversationId) { sub = "main" }
             return
         }
     }
@@ -568,51 +568,6 @@ private suspend fun updateGroupState(
         singleLine = true,
     )
     error?.let { Text(it, Modifier.padding(horizontal = WbSpace.S5), color = MaterialTheme.colorScheme.error) }
-}
-
-@Composable private fun GroupSearch(
-    repository: SessionRepository,
-    owner: OwnerRecord,
-    conversation: Conversation,
-    onBack: () -> Unit,
-) {
-    BackHandler(onBack = onBack)
-    val colors = LocalWeibanColors.current
-    val scope = rememberCoroutineScope()
-    var query by remember { mutableStateOf("") }
-    var hits by remember { mutableStateOf<List<MessageSearchHit>?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onBack) { Text("‹") }
-        OutlinedTextField(query, { query = it.take(50) }, Modifier.weight(1f), singleLine = true, label = { Text("搜索") })
-        TextButton(enabled = query.isNotBlank(), onClick = {
-            scope.launch {
-                userAction({ error = it }) {
-                    hits =
-                        repository
-                            .call(
-                                Endpoints.chatSearchEndpointsSearchConversation,
-                                params = mapOf("conversationId" to conversation.conversationId),
-                                query = mapOf("q" to query.trim()),
-                                options = SessionCallOptions(owner = owner, networkOnly = true),
-                            ).items
-                }
-            }
-        }) { Text("搜索") }
-    }
-    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    hits?.let { list ->
-        if (list.isEmpty()) Text("没有找到相关聊天记录", Modifier.padding(WbSpace.S5), color = colors.textSecondary)
-        LazyColumn {
-            items(list, key = { it.messageId }) { hit ->
-                ListItem(
-                    headlineContent = { Text(hit.snippet) },
-                    supportingContent = { Text(hit.createdAt.take(16).replace('T', ' '), color = colors.textTertiary) },
-                    modifier = Modifier.clickable(onClick = onBack),
-                )
-            }
-        }
-    }
 }
 
 @Composable internal fun GroupRow(

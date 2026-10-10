@@ -47,7 +47,22 @@ import kotlinx.serialization.json.*
         conversationId = id
         changed(id)
     }
+    var searching by rememberSaveable(owner.sessionId) { mutableStateOf(false) }
     BackHandler(conversationId != null) { if (information) information = false else select(null) }
+    // 搜索结果 / 收藏定位：打开对应会话，聊天页里再滚到那条消息（CHAT-12）。
+    val locate by MessageLocator.target.collectAsState()
+    LaunchedEffect(locate?.nonce) {
+        val target = locate ?: return@LaunchedEffect
+        if (state.conversations.none { it.conversationId == target.conversationId } && state.initialized) {
+            MessageLocator.consume(target)
+            return@LaunchedEffect
+        }
+        searching = false
+        profile = null
+        creating = null
+        information = false
+        select(target.conversationId)
+    }
     val activeConversationId = conversationId
     val selected = state.conversations.find { it.conversationId == activeConversationId }
     LaunchedEffect(state.initialized, activeConversationId, selected?.conversationId) {
@@ -81,7 +96,12 @@ import kotlinx.serialization.json.*
                     information = false
                     select(id)
                 }
-            selected == null -> ConversationList(repository, owner, state, select) { creating = "" }
+            selected == null && searching ->
+                GlobalSearchScreen(repository, owner, state, { searching = false }) { id ->
+                    searching = false
+                    select(id)
+                }
+            selected == null -> ConversationList(repository, owner, state, select, { searching = true }) { creating = "" }
             information && selected.isGroup() ->
                 GroupInformation(
                     repository,
@@ -116,9 +136,9 @@ import kotlinx.serialization.json.*
     owner: OwnerRecord,
     state: ClientSyncState,
     onSelect: (String) -> Unit,
+    onSearch: () -> Unit,
     onCreateGroup: () -> Unit,
 ) {
-    var search by rememberSaveable { mutableStateOf("") }
     val profiles =
         characterProfiles(
             repository,
@@ -129,24 +149,14 @@ import kotlinx.serialization.json.*
         Text("微伴", Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.headlineSmall)
         TextButton(onClick = onCreateGroup) { Text("发起群聊") }
     }
-    OutlinedTextField(
-        search,
-        { search = it },
-        Modifier.fillMaxWidth().padding(horizontal = WbSpace.S5),
-        label = { Text("搜索会话与消息") },
-    )
+    // 全局搜索入口（CHAT-12）：角色、群聊、聊天记录。
+    OutlinedButton(onClick = onSearch, modifier = Modifier.fillMaxWidth().padding(horizontal = WbSpace.S5)) { Text("搜索") }
     val conversations =
         state.conversations
             .filter { !it.state.hidden }
             .sortedWith(
                 compareByDescending<Conversation> { it.state.pinned }.thenByDescending { it.lastMessage?.createdAt ?: it.updatedAt },
-            ).filter {
-                search.isBlank() || title(state, it, names).contains(search, true) ||
-                    it.lastMessage
-                        ?.text
-                        .orEmpty()
-                        .contains(search, true)
-            }
+            )
     if (conversations.isEmpty()) {
         val emptyText = if (state.initialized) "添加喜欢的角色后，聊天会出现在这里" else "正在同步聊天…"
         Text(emptyText, Modifier.padding(WbSpace.S5))
@@ -251,7 +261,21 @@ private fun systemMessage(content: ReceivedMessageContentSystem): String {
                 (if (by.isNotEmpty()) "$by " else "你") + "修改群名为「${p("title")}」"
             }
         "group_dissolved" -> "群聊已解散"
+        "card_obtained" -> cardObtainedMessage(::p)
+        "familiarity_level_up" -> "你和 ${p("characterName").ifEmpty { "TA" }} 的熟悉度升到了 L${p("level")} ${p("levelName")}"
         else -> "会话提示"
+    }
+}
+
+/** 获得卡片的系统提示（GRW-05；cards-familiarity.md 第 2、4 节）。 */
+private fun cardObtainedMessage(p: (String) -> String): String {
+    val serial = p("serialNo").toLongOrNull()?.let { " " + serialText(it) } ?: ""
+    return when (p("kind")) {
+        "anniversary" ->
+            p("daysKnown").takeIf { it.isNotEmpty() }?.let { "今天是你们认识的第 $it 天 · 获得纪念卡$serial ›" } ?: "获得纪念卡$serial ›"
+        "familiarity" -> "获得熟悉度卡$serial ›"
+        "holiday" -> (p("holidayName").takeIf { it.isNotEmpty() }?.let { "${it}快乐 · " } ?: "") + "获得节日卡$serial ›"
+        else -> "获得瞬间卡「${p("title")}」 ›"
     }
 }
 
@@ -367,10 +391,74 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
     ui.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = WbSpace.S5)) }
     if (visible && typingActive) Text(typingText, Modifier.padding(horizontal = WbSpace.S5))
     MessageTimeline(ui, messages, pending, list, Modifier.weight(1f), avatars)
-    if (group && conversation.state.hidden) {
+    LocateEffects(ui, messages, list)
+    if (ui.selecting) {
+        SelectionBar(ui, messages)
+    } else if (group && conversation.state.hidden) {
         Text("你已不在该群聊中", Modifier.fillMaxWidth().padding(WbSpace.S5), style = MaterialTheme.typography.bodySmall)
     } else {
         Composer(ui, messages.find { it.messageId == ui.quoteId && it.status == "normal" }, avatars)
+    }
+}
+
+/** 定位到搜索 / 收藏指向的消息：先把附近的消息加载到本地，再滚到距顶部约 1/3 处并闪一下（CHAT-12）。 */
+@Composable private fun LocateEffects(
+    ui: ConversationUi,
+    messages: List<Message>,
+    list: androidx.compose.foundation.lazy.LazyListState,
+) {
+    val target by MessageLocator.target.collectAsState()
+    val latest by rememberUpdatedState(messages)
+    LaunchedEffect(target?.nonce) {
+        val locate = target?.takeIf { it.conversationId == ui.conversation.conversationId } ?: return@LaunchedEffect
+        MessageLocator.consume(locate)
+        ui.endSelection()
+        userAction({ ui.error = it }) {
+            ui.runtime.history.reveal(ui.owner, locate.conversationId, locate.seq, latest.firstOrNull()?.seq)
+        }
+        ui.highlightSeq = locate.seq
+    }
+    val highlight = ui.highlightSeq
+    LaunchedEffect(highlight, messages.size) {
+        val seq = highlight ?: return@LaunchedEffect
+        // 等进入页面时「滚到底部」先完成，再滚到目标。
+        delay(LOCATE_SETTLE_MS)
+        val index = latest.indexOfFirst { it.seq >= seq }
+        if (index >= 0) list.scrollToItem(index + 1, -list.layoutInfo.viewportSize.height / 3)
+        delay(LOCATE_FLASH_MS)
+        if (ui.highlightSeq == seq) ui.highlightSeq = null
+    }
+}
+
+private const val LOCATE_SETTLE_MS = 150L
+private const val LOCATE_FLASH_MS = 1_500L
+
+/** 多选底栏（CHAT-11、EXP-01）：收藏、分享图；分享图不可用时写明原因，不静默丢掉。 */
+@Composable private fun SelectionBar(
+    ui: ConversationUi,
+    messages: List<Message>,
+) {
+    BackHandler(onBack = ui::endSelection)
+    val colors = app.weiban.designsystem.LocalWeibanColors.current
+    val chosen = messages.filter { it.messageId in ui.selected }
+    val reason = shareBlockReason(chosen)
+    Column(Modifier.fillMaxWidth().imePadding().padding(WbSpace.S3)) {
+        if (chosen.isNotEmpty() && reason != null) {
+            Text(reason, color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+        }
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(WbSpace.S3),
+        ) {
+            TextButton(onClick = ui::endSelection) { Text("取消") }
+            Text("已选 ${chosen.size} 条", Modifier.weight(1f))
+            OutlinedButton(enabled = chosen.size in 1..SHARE_MAX_ITEMS, onClick = { ui.favoriteSelected(messages) }) { Text("收藏") }
+            Button(enabled = chosen.isNotEmpty() && reason == null, onClick = {
+                L6Overlays.shareMessages(ui.conversation.conversationId, chosen.sortedBy { it.seq }.map { it.messageId })
+                ui.endSelection()
+            }) { Text("分享图") }
+        }
     }
 }
 

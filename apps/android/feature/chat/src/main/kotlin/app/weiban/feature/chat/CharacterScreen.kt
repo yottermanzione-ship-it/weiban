@@ -99,6 +99,10 @@ private class CharacterUi(
             CharacterRelations(repository, owner, state, characterId) { sub = null }
             return
         }
+        "cards" -> {
+            CardAlbumPage(repository, runtime, owner, characterId) { sub = null }
+            return
+        }
     }
     val profile =
         remote(characterId) {
@@ -151,6 +155,8 @@ private class CharacterUi(
         }
         if (progress == null) {
             TextButton(onClick = { sub = "moments" }) { Text("朋友圈 ›") }
+            // 角色资料页 › 卡册（GRW-05；cards-familiarity.md 3.1）。
+            if (contact?.conversationId != null) TextButton(onClick = { sub = "cards" }) { Text("卡册 ›") }
             if (contact?.conversationId != null && profile.data?.kind == "custom") {
                 CustomRelationsEntry(repository, owner, characterId) { sub = "relations" }
             }

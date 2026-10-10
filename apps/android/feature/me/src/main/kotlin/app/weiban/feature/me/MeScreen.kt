@@ -87,7 +87,7 @@ import kotlinx.serialization.json.*
             "theme" -> ThemePage(state)
             "settings" -> MeSettings(state)
             "notifications" -> NotificationSettingsPage(state, entry.notifications)
-            "services" -> MeServices(state)
+            "services" -> MeServices(state, entry)
             "period" -> PeriodDiaryPage(repository, owner)
             "proactive" -> ProactiveDefaultsPage(state)
             "privacy" -> PrivacyPage(state)
@@ -260,6 +260,7 @@ import kotlinx.serialization.json.*
     Text("账号：${repository.auth.value?.user?.username.orEmpty()}")
     OutlinedButton(onClick = { page = "profile" }) { Text("我的资料") }
     entry.onMyMoments?.let { open -> OutlinedButton(onClick = open) { Text("朋友圈") } }
+    entry.onFavorites?.let { open -> OutlinedButton(onClick = open) { Text("收藏") } }
     entry.onMyStickers?.let { open -> OutlinedButton(onClick = open) { Text("表情") } }
     OutlinedButton(onClick = { openPage("services") }) { Text("服务") }
     OutlinedButton(onClick = { openPage("settings") }) { Text("设置") }

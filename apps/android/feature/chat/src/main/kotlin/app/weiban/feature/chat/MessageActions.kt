@@ -29,6 +29,15 @@ import kotlinx.coroutines.launch
             })
         }
         if (message.status == "normal") MediaActions(ui, message, onDismiss)
+        if (message.status == "normal" && message.senderKind != "system") {
+            // 多选：收藏、生成分享图（CHAT-11、EXP-01 第 1 条）。
+            DropdownMenuItem(text = { Text("多选") }, onClick = {
+                onDismiss()
+                ui.selecting = true
+                ui.selected.clear()
+                ui.selected.add(message.messageId)
+            })
+        }
         if (mine && message.status != "recalled") {
             DropdownMenuItem(text = { Text("撤回") }, onClick = {
                 onDismiss()

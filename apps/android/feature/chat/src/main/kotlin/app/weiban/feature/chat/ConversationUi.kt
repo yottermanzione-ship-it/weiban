@@ -22,6 +22,53 @@ internal class ConversationUi(
     var choosing by mutableStateOf(false)
     lateinit var media: ChatMediaUi
 
+    /** 多选（T-085）：多选收藏、生成分享图。 */
+    var selecting by mutableStateOf(false)
+    val selected = mutableStateListOf<String>()
+
+    /** 搜索 / 收藏定位后闪一下的那条消息 seq。 */
+    var highlightSeq by mutableStateOf<Long?>(null)
+
+    fun toggleSelected(messageId: String) {
+        if (messageId in selected) selected.remove(messageId) else selected.add(messageId)
+    }
+
+    fun endSelection() {
+        selecting = false
+        selected.clear()
+    }
+
+    /** 多选收藏（CHAT-11）：一次最多 30 条。 */
+    fun favoriteSelected(messages: List<Message>) {
+        val chosen = messages.filter { it.messageId in selected }.take(SHARE_MAX_ITEMS)
+        if (chosen.isEmpty()) return
+        scope.launch {
+            userAction({ media.toast("收藏失败，请稍后再试") }) {
+                repository.call(
+                    Endpoints.libraryEndpointsAddFavorites,
+                    body =
+                        kotlinx.serialization.json.buildJsonObject {
+                            put(
+                                "items",
+                                kotlinx.serialization.json.JsonArray(
+                                    chosen.map { message ->
+                                        kotlinx.serialization.json.buildJsonObject {
+                                            put("kind", kotlinx.serialization.json.JsonPrimitive("message"))
+                                            put("conversationId", kotlinx.serialization.json.JsonPrimitive(message.conversationId))
+                                            put("messageId", kotlinx.serialization.json.JsonPrimitive(message.messageId))
+                                        }
+                                    },
+                                ),
+                            )
+                        },
+                    options = SessionCallOptions(owner = owner),
+                )
+                media.toast("已收藏")
+                endSelection()
+            }
+        }
+    }
+
     /** 卡片按钮（ADR-0026）：只能点一次；结果经 message.updated 同步回来。 */
     fun choose(
         message: Message,

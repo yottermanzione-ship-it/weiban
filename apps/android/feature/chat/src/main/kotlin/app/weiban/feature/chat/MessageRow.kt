@@ -1,6 +1,7 @@
 package app.weiban.feature.chat
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -19,8 +20,6 @@ import app.weiban.designsystem.tokens.WbSpace
     avatars: MessageAvatars,
     message: Message,
 ) {
-    val repository = ui.repository
-    val owner = ui.owner
     val conversation = ui.conversation
     val group = conversation.isGroup()
     val context = LocalContext.current
@@ -50,8 +49,44 @@ import app.weiban.designsystem.tokens.WbSpace
             }
             else -> { -> menu = true }
         }
-    val press = Modifier.combinedClickable(onLongClick = { menu = true }, onClick = primary)
-    Column(Modifier.fillMaxWidth().padding(vertical = WbSpace.S3), horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
+    val selectable = message.status == "normal" && message.senderKind != "system"
+    val press =
+        if (ui.selecting) {
+            Modifier.combinedClickable(onLongClick = {}, onClick = { if (selectable) ui.toggleSelected(message.messageId) })
+        } else {
+            Modifier.combinedClickable(onLongClick = { menu = true }, onClick = primary)
+        }
+    val flash = if (ui.highlightSeq == message.seq) Modifier.background(LocalWeibanColors.current.brandSoft) else Modifier
+    Row(flash.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        if (ui.selecting) {
+            Checkbox(
+                checked = message.messageId in ui.selected,
+                enabled = selectable,
+                onCheckedChange = { ui.toggleSelected(message.messageId) },
+            )
+        }
+        MessageRowContent(ui, avatars, message, mine, group, press, openSender, Modifier.weight(1f))
+    }
+    MessageActions(ui, message, menu) { menu = false }
+}
+
+@Suppress("LongParameterList") // Split from MessageRow so the selection checkbox can sit beside the row.
+@Composable private fun MessageRowContent(
+    ui: ConversationUi,
+    avatars: MessageAvatars,
+    message: Message,
+    mine: Boolean,
+    group: Boolean,
+    press: Modifier,
+    openSender: () -> Unit,
+    modifier: Modifier,
+) {
+    val repository = ui.repository
+    val owner = ui.owner
+    val conversation = ui.conversation
+    val avatar = avatars.sender(message)
+    val content = message.content.takeIf { message.status == "normal" }
+    Column(modifier.fillMaxWidth().padding(vertical = WbSpace.S3), horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
@@ -86,7 +121,6 @@ import app.weiban.designsystem.tokens.WbSpace
         if (mine && !group && conversation.peerReadSeq?.let { it >= message.seq } == true) {
             Text("已读", style = MaterialTheme.typography.bodySmall)
         }
-        MessageActions(ui, message, menu) { menu = false }
     }
 }
 
@@ -145,6 +179,18 @@ import app.weiban.designsystem.tokens.WbSpace
         message.status == "normal" && content is ReceivedMessageContentLink -> LinkCardMessage(ui.repository, ui.owner, content)
         message.status == "normal" && content is ReceivedMessageContentCallRecord -> CallRecordMessage(content)
         message.status == "normal" && content is ReceivedMessageContentText -> LinkifiedText(content.text)
+        message.status == "normal" && content is ReceivedMessageContentSystem && content.code == "card_obtained" -> {
+            // 「获得 XX 卡 ›」：点开卡片详情（M-13 动画在详情里播放）。
+            val cardId = (content.params["cardId"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+            val characterId = ui.conversation.participants.find { it.kind == "character" }?.refId
+            Text(
+                messageText(message),
+                Modifier.clickable(enabled = cardId != null && characterId != null) {
+                    if (cardId != null && characterId != null) L6Overlays.openCard(characterId, cardId)
+                },
+                color = colors.textLink,
+            )
+        }
         else -> Text(messageText(message))
     }
 }

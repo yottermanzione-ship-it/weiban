@@ -116,6 +116,16 @@ internal data class InformationNavigation(
         CharacterTimeline(repository, owner, characterId, contact?.remark ?: names[characterId].orEmpty()) { timelinePage = false }
         return
     }
+    var cardsPage by remember(owner, characterId) { mutableStateOf(false) }
+    var searchPage by remember(owner, characterId) { mutableStateOf(false) }
+    if (cardsPage) {
+        Column(Modifier.fillMaxSize()) { CardAlbumPage(repository, runtime, owner, characterId) { cardsPage = false } }
+        return
+    }
+    if (searchPage) {
+        ConversationSearchScreen(repository, owner, state, conversation.conversationId) { searchPage = false }
+        return
+    }
     val scope = rememberCoroutineScope()
     val actions = remember(owner, conversation.conversationId) { InformationActions(repository, runtime, owner, scope) }
     val companion =
@@ -144,6 +154,8 @@ internal data class InformationNavigation(
         InformationPreferences(actions, conversation, companion, characterId)
         Text("和 TA 的相处", style = MaterialTheme.typography.titleSmall)
         TextButton(onClick = { timelinePage = true }, enabled = !actions.pending) { Text("TA 的近况 ›") }
+        TextButton(onClick = { cardsPage = true }, enabled = !actions.pending) { Text("卡册 ›") }
+        TextButton(onClick = { searchPage = true }, enabled = !actions.pending) { Text("查找聊天记录 ›") }
         companion.data?.let { InformationProactive(actions, companion, characterId, it) }
         TextButton(onClick = navigation.models, enabled = !actions.pending) { Text("模型选择") }
         VoiceToneRow(repository, owner, companion.data?.voiceId, !actions.pending) { voicePage = true }

@@ -54,6 +54,7 @@ private class MomentActions(
 ) {
     var pending by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
+    var notice by mutableStateOf<String?>(null)
     var replying by mutableStateOf<Pair<MomentsPost, MomentsComment?>?>(null)
 
     private val options get() = SessionCallOptions(owner = owner)
@@ -62,6 +63,7 @@ private class MomentActions(
         if (pending) return
         pending = true
         error = null
+        notice = null
         scope.launch {
             try {
                 userAction({ error = it }) { work() }
@@ -111,6 +113,30 @@ private class MomentActions(
             ),
         )
     }
+
+    /** 朋友圈「…」› 收藏（CHAT-11）。 */
+    fun favorite(post: MomentsPost) =
+        launchAction {
+            repository.call(
+                Endpoints.libraryEndpointsAddFavorites,
+                body =
+                    buildJsonObject {
+                        put(
+                            "items",
+                            buildJsonArray {
+                                add(
+                                    buildJsonObject {
+                                        put("kind", "moments_post")
+                                        put("postId", post.postId)
+                                    },
+                                )
+                            },
+                        )
+                    },
+                options = options,
+            )
+            notice = "已收藏"
+        }
 
     fun deletePost(post: MomentsPost) =
         launchAction {
@@ -317,6 +343,7 @@ private class MomentActions(
             }
         }
         actions.error?.let { Text(it, Modifier.padding(horizontal = WbSpace.S5), color = MaterialTheme.colorScheme.error) }
+        actions.notice?.let { Text(it, Modifier.padding(horizontal = WbSpace.S5), color = colors.textSecondary) }
         when {
             !pager.initialized && pager.failed ->
                 Column(Modifier.fillMaxWidth().padding(WbSpace.S8), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -399,6 +426,7 @@ private class MomentActions(
                 if (post.author.kind == "user") {
                     TextButton(onClick = { deletingPost = true }, enabled = !actions.pending) { Text("删除", color = colors.textLink) }
                 }
+                MomentMore(actions, post)
                 TextButton(onClick = { actions.like(post) }, enabled = !actions.pending) { Text(if (post.likedByMe) "取消" else "赞") }
                 TextButton(onClick = { actions.replying = post to null }, enabled = !actions.pending) { Text("评论") }
             }
@@ -445,6 +473,27 @@ private class MomentActions(
             },
             dismissButton = { TextButton(onClick = { deletingPost = false }) { Text("取消") } },
         )
+    }
+}
+
+/** 朋友圈「…」：收藏、生成分享图（EXP-01 第 1 条）。 */
+@Composable private fun MomentMore(
+    actions: MomentActions,
+    post: MomentsPost,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { open = true }, enabled = !actions.pending) { Text("…") }
+        DropdownMenu(open, { open = false }) {
+            DropdownMenuItem(text = { Text("收藏") }, onClick = {
+                open = false
+                actions.favorite(post)
+            })
+            DropdownMenuItem(text = { Text("生成分享图") }, onClick = {
+                open = false
+                L6Overlays.shareMoment(post.postId)
+            })
+        }
     }
 }
 
@@ -517,6 +566,7 @@ private class MomentActions(
                 }
         }
         actions.error?.let { Text(it, Modifier.padding(horizontal = WbSpace.S5), color = MaterialTheme.colorScheme.error) }
+        actions.notice?.let { Text(it, Modifier.padding(horizontal = WbSpace.S5), color = colors.textSecondary) }
         CommentBar(actions)
     }
 }
