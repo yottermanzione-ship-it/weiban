@@ -1,5 +1,14 @@
 # Codex 产品收口活动断点
 
+## 当前断点（2026-10-12 01:32，优先于下文）
+
+- 总经理无配置文件，允许后台自行接入或提供URL/API Key；已选择后台自行接入，不要求在聊天发送密钥。正式本机上游/模型/价格页实际登录、字段、密码框空值及刷新会话检查通过，零页面异常（local-model-config-ready-round1.log），未创建假供应商或写入真实密钥。open_in_codex请求打开localhost:8081/upstreams返回queued，不冒称已显示。docs/ops/local-deploy.md新增接入步骤：上游测试保存→同一模型键发布价格→目录选择实际模型ID/默认聊天后台/启用→实际聊天及用量验证。真实供应商仍未配置。
+- 源码检查点14f0ee9c6fc2e232c020073f63aa500ded311220，管理员/回滚业务仍5c8fd5a；14f仅测试修正。记忆复跑admin-private-memory-round2.log11项10通过1超时，不是通过。单独诊断memory-long-diagnostic-round1.log将命令上限120秒，1项通过10项筛选跳过，总61.30s，全部原批次/游标断言保留；未观察数据库锁等待。该批量集成测试65条真实加密消息及事件派发，现仅此项显式120秒，不调整运行时回复期限，完整套件仍待最新全量结论。
+- 完整网页round8/round9都25通过1失败：先是先前清空共用账号导致日期定位null；自行创建可见消息后定位成功，但旧测试错误要求已消费的seq参数留在URL。修正为验证真实flash-row高亮和消费后的会话地址，web-final-round10.log完整26项通过（1.9m）。后台admin-final-round8.log完整8项通过（41.2s），含真实密钥掩码/输入清空/缓存不含密钥、价目发布与模型启用，但上游为受控本机测试服务，不等于真实供应商可用。
+- 全仓final-typecheck-round8.log终态exit0；5个本次文件格式final-touched-format-round8.log通过，管理员业务lint/依赖前已通过。最新全量pnpm test日志full-tests-round8.log，现有句柄44600仍运行，切换到新Vitest工作进程，当前无失败输出也无汇总；不要重新启动、不要重置同库或当作通过。本次收集包含当时未提交、现已纳入14f的记忆超时修正，运行时保持5c8固定；后续仅网页E2E测试和文档变化，不改变该全量业务源码。完整结束后再执行生成一致性/适用lint与本机镜像升级。
+- 安卓最新HEAD源码已用git archive导入原容器weiban-closeout-android-linux-retry的新目录/work/android-final，SDK配置复用，尚未执行Gradle。归档在C:\wb-dev\closeout-logs\android-final-source.tar，容器/tmp/android-final-source.tar；原/work/android留缓存，不把旧121项结果当作新源码通过。等待后端全量结束后执行新目录测试，避免重负载影响真实时间断言。
+- AI审计确认当前包仅84题/7个suite且EvalCase只含5种category，README明确不覆盖完整19类。后续须补完整考题、运行条件及评测证据，不把剩余工作全归于用户尚未配置供应商。当前业务既定范围核查、客户端回归、本机升级、完整考题和实际模型、设备、离线/异机保管与独立审查仍待完成；目标保持活动，未暂停或完工。
+
 ## 当前断点（2026-10-12 01:24，优先于下文）
 
 - 总经理再次确认先在本机部署、不用服务器。localhost:8080/8081仍为正式本机入口，镜像7365975，原配置、密钥、账号及数据保留；最新修复待升级。共享目录main只读，开发副本C:\wb-dev\codex-closeout、codex/product-closeout。
