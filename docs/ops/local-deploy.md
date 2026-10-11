@@ -30,4 +30,6 @@ docker compose --project-name weiban-local --env-file C:\wb-local\runtime.env -f
 
 同日已升级至源码`e4f2180282aa95933df6d9aa2dc550d1349fa440`（素材用途、通话计时、评测登记和后台媒体代理），保留原账号、密钥与持久卷；迁移没有重复执行。双端登录/刷新及后台“日常照片”入口通过，跨入口非代理图片仍被原CSP拒绝。升级与浏览器证据为`local-deploy-upgrade-round1.log`、`local-upgrade-login-round1.log`、`local-upgrade-policy-ui-round1.log`；镜像ID与验证时间在仓库外`C:\wb-local\deployment-version.txt`。同域签名媒体实际上传/显示的回归在独立浏览器测试库完成，未给本机用户数据库注入测试角色或素材。
 
+23:54已再次升级至源码`7365975f5fa90e296eaac8d022eb3f63bcc1aeaa`，包含导入生日/头像/分类和自定义音色编辑/运行时选择。镜像构建、服务健康、双端实际登录/刷新及新网页资源送达通过；证据`local-custom-voice-upgrade-round1.log`、`local-custom-voice-login-round1.log`、`local-custom-voice-installed-ui-round1.log`。用户账号仍在初始昵称引导，未绕过引导或注入测试角色/音色；正向完整创建/试听测试在独立probe数据库完成。
+
 本机配置不自带供应商密钥、推送凭据或虚构角色数据。真实AI、语音、图片等服务需在后台配置并验证。备份应包含数据库、媒体卷与单独保存的原主密钥；恢复演练与外部上线另登记。本机首次构建、迁移、登录与重启持久化的实际结论以活动交接为准，不由本文预先宣称通过。
