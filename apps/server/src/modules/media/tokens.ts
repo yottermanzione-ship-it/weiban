@@ -1,4 +1,8 @@
-import type { SyncPort } from '@weiban/contracts';
+import type { IdentityAccountStatusPort, SyncPort } from '@weiban/contracts';
+
+/** 由装配入口绑定；私有媒体写入必须在同一事务中锁定账号状态。 */
+export const MEDIA_ACCOUNT_STATUS = Symbol('weiban.media.account-status');
+export type MediaAccountStatus = IdentityAccountStatusPort;
 
 export const MEDIA_STORAGE = Symbol('weiban.media.storage');
 export const MEDIA_READ_PORT = Symbol('weiban.media.read');

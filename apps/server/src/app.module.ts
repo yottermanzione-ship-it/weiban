@@ -48,7 +48,7 @@ import {
   type PushMessageSource,
 } from './modules/push/index.js';
 import { RealtimeModule, REALTIME_MESSAGE_SENDER, SYNC_PORT } from './modules/realtime/index.js';
-import { IdentityModule } from './modules/identity/index.js';
+import { IdentityModule, IDENTITY_ACCOUNT_STATUS_PORT } from './modules/identity/index.js';
 import {
   CharactersModule,
   CHARACTER_READ_PORT,
@@ -67,6 +67,8 @@ import { PolicyModule, compareClassification } from './modules/policy/index.js';
 import {
   MediaModule,
   MEDIA_SYNC,
+  MEDIA_ACCOUNT_STATUS,
+  type MediaAccountStatus,
   MEDIA_MESSAGE_LOOKUP,
   MEDIA_REAL_PERSON_NAMES,
   type MediaMessageLookup,
@@ -233,12 +235,22 @@ class ChatGroupDirectoryCompositionModule {}
 class PushCompositionModule {}
 
 /**
- * media（底层）需要的同步更新、消息读取、真人姓名（T-069）：media 不能 import realtime / chat / characters，
- * 由这里绑定，media 以可选注入使用。
+ * media（底层）需要的账号状态、同步更新、消息读取、真人姓名：不能直接 import 上层模块，
+ * 由这里绑定。账号状态为必需端口，其余能力保持可选注入。
  */
 @Global()
 @Module({
   providers: [
+    {
+      provide: MEDIA_ACCOUNT_STATUS,
+      inject: [ModuleRef],
+      useFactory: (ref: ModuleRef): MediaAccountStatus => ({
+        getAccountStatus: (userId, tx) =>
+          ref
+            .get<MediaAccountStatus>(IDENTITY_ACCOUNT_STATUS_PORT, { strict: false })
+            .getAccountStatus(userId, tx),
+      }),
+    },
     {
       provide: MEDIA_SYNC,
       inject: [ModuleRef],
@@ -280,7 +292,7 @@ class PushCompositionModule {}
       }),
     },
   ],
-  exports: [MEDIA_SYNC, MEDIA_REAL_PERSON_NAMES, MEDIA_MESSAGE_LOOKUP],
+  exports: [MEDIA_SYNC, MEDIA_REAL_PERSON_NAMES, MEDIA_MESSAGE_LOOKUP, MEDIA_ACCOUNT_STATUS],
 })
 class MediaCompositionModule {}
 
