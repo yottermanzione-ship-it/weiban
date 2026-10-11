@@ -38,6 +38,8 @@ export const EnvSchema = z.object({
   MEDIA_S3_ENDPOINT: z.url().optional(),
   MEDIA_S3_CREDENTIALS_FILE: z.string().min(1).optional(),
   MEDIA_S3_FORCE_PATH_STYLE: booleanFlag,
+  /** 本机部署显式允许回环媒体地址使用 HTTP；外部地址仍须 HTTPS。 */
+  ALLOW_LOCAL_HTTP: booleanFlag,
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   /** 进程角色（overview.md 第 6 节）：web 只开 HTTP；worker 只跑事件分发和任务；all 两者都做。 */
   APP_ROLE: z.enum(['web', 'worker', 'all']).default('all'),
@@ -155,11 +157,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       'MEDIA_S3_BUCKET / MEDIA_S3_CREDENTIALS_FILE：S3 存储必须配置桶和凭据文件',
     ]);
   }
-  if (
-    production &&
-    !e.MEDIA_PUBLIC_BASE_URL.startsWith('https://') &&
-    env['MEDIA_PUBLIC_BASE_URL']
-  ) {
+  const mediaUrl = new URL(e.MEDIA_PUBLIC_BASE_URL);
+  const localHttp =
+    e.ALLOW_LOCAL_HTTP && ['localhost', '127.0.0.1', '[::1]'].includes(mediaUrl.hostname);
+  if (production && mediaUrl.protocol !== 'https:' && !localHttp) {
     throw new ConfigError(['MEDIA_PUBLIC_BASE_URL：生产环境必须使用 HTTPS']);
   }
   return {

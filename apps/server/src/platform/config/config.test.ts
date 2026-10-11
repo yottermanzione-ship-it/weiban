@@ -67,9 +67,40 @@ describe('配置加载 loadConfig', () => {
       PLATFORM_KEK_FILE: '/run/secrets/kek',
       BILLING_PLATFORM_DAILY_CAP_MICROS: '100000000',
       DEBUG_LLM_PAYLOAD: '1',
+      MEDIA_PUBLIC_BASE_URL: 'https://media.example.com',
     });
     expect(prod.debugLlmPayload).toBe(false);
     expect(loadConfig({ DATABASE_URL: DB, DEBUG_LLM_PAYLOAD: '1' }).debugLlmPayload).toBe(true);
+  });
+
+  it('生产 HTTP 必须显式开启本机部署，且仅允许回环地址', () => {
+    const env = {
+      DATABASE_URL: DB,
+      NODE_ENV: 'production',
+      PLATFORM_KEK_FILE: '/run/secrets/kek',
+      BILLING_PLATFORM_DAILY_CAP_MICROS: '100000000',
+    };
+    expect(() => loadConfig(env)).toThrow(/MEDIA_PUBLIC_BASE_URL/);
+    for (const host of ['localhost', '127.0.0.1', '[::1]']) {
+      const url = `http://${host}:8080`;
+      expect(() => loadConfig({ ...env, MEDIA_PUBLIC_BASE_URL: url })).toThrow(/HTTPS/);
+      expect(
+        loadConfig({ ...env, MEDIA_PUBLIC_BASE_URL: url, ALLOW_LOCAL_HTTP: '1' }).media
+          .publicBaseUrl,
+      ).toBe(url);
+    }
+    for (const host of ['example.com', '10.0.0.1', '0.0.0.0', 'localhost.example.com']) {
+      expect(() =>
+        loadConfig({
+          ...env,
+          ALLOW_LOCAL_HTTP: 'true',
+          MEDIA_PUBLIC_BASE_URL: `http://${host}:8080`,
+        }),
+      ).toThrow(/HTTPS/);
+    }
+    expect(loadConfig({ ...env, MEDIA_PUBLIC_BASE_URL: 'https://example.com' }).nodeEnv).toBe(
+      'production',
+    );
   });
 
   it('主密钥文件支持 base64 与十六进制，长度不对报错', () => {

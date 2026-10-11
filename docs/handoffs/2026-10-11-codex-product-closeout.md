@@ -116,3 +116,13 @@ Claude 在周额度耗尽前，已提交后端 B1～B10；B11～B21 的未提交
 - 自定义角色的头像ID不再被映射器丢弃，创建/列表/资料/编辑返回真实短期链接；读取校验媒体归属和用途，允许自有custom_character_avatar与公开plaza_avatar/character_avatar。真实上传验证错误用途、他人私有ID拒绝、修改保留、清空恢复默认与公开广场头像继承。角色/试聊22项通过（custom-avatar-round3.log）；此前分类/装配一起31项通过（custom-avatar-round2.log）。
 - 网页添加头像裁剪上传、生日和外表儿童；编辑时提交完整分类，清空标签和示例对话不再变成undefined而被忽略。浏览器真实HTTP两项通过（custom-avatar-web-e2e-round1.log），网页生产构建通过（custom-avatar-web-build-round1.log）。Web/server类型检查与本轮全仓lint通过；最后公开素材兼容改动仍需全量核对。
 - 继续推进：最终全量回归；导入草稿生日/头像与音色覆盖；A12原子寄送恢复、导入归属并发/收藏失败清理；派发遗留、部署/设备/供应商及独立验收。所有结果均为开发自测。
+
+## 本机部署与队列复核（2026-10-11 18:22）
+
+- 总经理确认先在自己的电脑部署，不依赖外部服务器。新增deploy/local/Start-Weiban.ps1与Compose覆盖配置，沿用生产镜像和持久卷，项目weiban-local。真实入口http://localhost:8080与http://localhost:8081，仅127.0.0.1绑定；数据库不暴露宿主端口。开发与部署数据库独立。
+- 首轮镜像构建成功但迁移被生产媒体HTTPS校验拒绝（local-deploy-build-round1.log）。补显式ALLOW_LOCAL_HTTP回环白名单，外部HTTP仍拒绝，同时堵住生产未填写媒体地址却默许默认HTTP的配置遗漏；配置/密钥集合2文件11项通过，server类型检查和改动eslint通过。原有两个生产配置夹具改为显式HTTPS地址。
+- 第二轮真实生产镜像构建/68项迁移/服务健康通过（local-deploy-build-round2.log）。创建管理员weiban_admin，随机密码及入口存C:\wb-local\admin-login.json；数据库连接与加密主密钥在C:\wb-local\secrets。未把秘密写入Git、日志或模型工具输出；后续不得重新生成已使用主密钥。
+- 双端实际浏览器登录与刷新恢复会话通过，localhost安全上下文为true，控制台错误为空（local-browser-smoke-round2.log）。第一轮浏览器自测等待新账号主导航超时：新账号实际进入必填昵称引导，改为核对该页面，未修改产品绕过引导。脚本首次Windows ESM绝对路径格式错误已修正，非产品故障。
+- 重启postgres/app/caddy并通过SkipBuild启动检查，原管理员两种会话重新登录及刷新通过（local-deploy-restart-round1.log、local-browser-restart-round1.log）。本次只证明账号数据库持久化，不冒称媒体备份恢复或真实AI通过。服务保持运行，已请求在Codex打开用户端。
+- 最新服务端全量full-tests-round6.log为67文件中66通过、568项中567通过，唯一失败ai-runtime-queue恢复测试20秒内仅2条角色消息。原夹具单独复跑1项通过（queue-recheck-round1.log）；静态发现默认高贴合度可随机触发30–180秒已读延迟，可能干扰该非小巧思测试，原失败轮次没有直接配额行证据，因此原因仍为推断。夹具通过真实CompanionSettingsService将personaFit设置为1，保留20秒、四条消息与单次扣费断言；独立小巧思场景维持原有验证。修正后单项通过（queue-recheck-round2.log），最终全量仍待源码收口后重跑。
+- 后续：日常照片类别/历史插画素材过滤、55分钟提示验证、AI评测统一登记及编号；导入字段/音色与并发；A12/收藏失败清理；最终全量及安卓Linux回归；媒体备份恢复、真实供应商、设备与另一位审查者的独立验收。保持活动目标，项目未完成。
