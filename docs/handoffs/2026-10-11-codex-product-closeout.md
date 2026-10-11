@@ -139,3 +139,5 @@ Claude 在周额度耗尽前，已提交后端 B1～B10；B11～B21 的未提交
 - 下一步仍为导入草稿生日/头像及音色覆盖、导入并发/归属、A12原子寄送恢复与收藏失败清理；备份恢复演练、最终全量及安卓Linux回归、真实供应商/设备与另一位审查者验收。
 
 补充（18:49）：通话新增“模型回复仍阻塞时余额道别不得等待”场景，首轮失败（call-agent-pending-reply-round1.log），确认队列会拖延30秒目标。余额/ASR耗尽/59分半结束改为直接触发幂等道别，晚到回复及语音结果拒绝继续播放，语音异常仍发end。通话4项+评测8项通过（call-evals-round5.log），须在本批最终类型/lint复核。后台完整8项通过（admin-e2e-round2.log）；音色预览也使用同源路径。本批仍待本机镜像升级与对应记录。
+
+本机升级完成：源码检查点e4f2180282aa95933df6d9aa2dc550d1349fa440，生产镜像构建和服务健康通过（local-deploy-upgrade-round1.log），新迁移0项、原密钥及卷保留。两个入口实际登录/刷新/安全上下文通过（local-upgrade-login-round1.log），新后台日常照片入口可见（local-upgrade-policy-ui-round1.log）。外部未代理图片仍被原CSP拒绝为预期负向控制，并未把安全限制改为通过跨域图片；正向签名媒体由独立probe数据库E2E验证。镜像ID与验证时间保存C:\wb-local\deployment-version.txt。最终服务端类型检查call-agent-final-typecheck-round1.log与全仓lint/依赖media-calls-lint-final-round2.log通过。共享目录仍在main，既有dirty/untracked保留未修改；Claude会话文件mtime为09:04，未向其发送新消息。开发副本保持可恢复，项目目标继续活动，剩余项以T-103为准。

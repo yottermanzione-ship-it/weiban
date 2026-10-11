@@ -28,4 +28,6 @@ docker compose --project-name weiban-local --env-file C:\wb-local\runtime.env -f
 
 本次实际验证：生产镜像构建、68项数据库迁移、数据库/加密健康检查、两个入口浏览器登录、刷新恢复会话以及重启三个常驻服务后重新登录通过。浏览器确认localhost为安全上下文，未出现控制台错误。证据位于`C:\wb-dev\closeout-logs\local-deploy-build-round2.log`、`local-browser-smoke-round2.log`、`local-deploy-restart-round1.log`及`local-browser-restart-round1.log`。这些是开发自测，未替代真实AI、媒体恢复演练或设备验收。
 
+同日已升级至源码`e4f2180282aa95933df6d9aa2dc550d1349fa440`（素材用途、通话计时、评测登记和后台媒体代理），保留原账号、密钥与持久卷；迁移没有重复执行。双端登录/刷新及后台“日常照片”入口通过，跨入口非代理图片仍被原CSP拒绝。升级与浏览器证据为`local-deploy-upgrade-round1.log`、`local-upgrade-login-round1.log`、`local-upgrade-policy-ui-round1.log`；镜像ID与验证时间在仓库外`C:\wb-local\deployment-version.txt`。同域签名媒体实际上传/显示的回归在独立浏览器测试库完成，未给本机用户数据库注入测试角色或素材。
+
 本机配置不自带供应商密钥、推送凭据或虚构角色数据。真实AI、语音、图片等服务需在后台配置并验证。备份应包含数据库、媒体卷与单独保存的原主密钥；恢复演练与外部上线另登记。本机首次构建、迁移、登录与重启持久化的实际结论以活动交接为准，不由本文预先宣称通过。
