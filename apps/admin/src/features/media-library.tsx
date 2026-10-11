@@ -19,6 +19,7 @@ import {
   type WorkLink,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
+import { adminMediaUrl } from '../data/media-url.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { Feedback } from '../components/feedback.js';
 
@@ -280,7 +281,7 @@ function StickerPackEditor({ pack, onChanged }: { pack: StickerPack; onChanged()
       <div className="asset-grid">
         {pack.stickers.map((s) => (
           <figure key={s.stickerId}>
-            <img src={s.url} alt={s.description} loading="lazy" />
+            <img src={adminMediaUrl(s.url)} alt={s.description} loading="lazy" />
             <figcaption>{s.description}</figcaption>
             <button
               disabled={action.pending}
@@ -330,7 +331,7 @@ export function VoiceLibraryPage() {
       setPlaying(null);
       return;
     }
-    const element = new Audio(voice.sampleUrl);
+    const element = new Audio(adminMediaUrl(voice.sampleUrl));
     audio.current = element;
     element.onended = () => setPlaying(null);
     setPlaying(voice.voiceId);
@@ -504,6 +505,7 @@ export function VoiceLibraryPage() {
 // ---------- 卡面模板库 ----------
 
 const kindNames: Record<string, string> = {
+  daily_photo: '日常照片',
   anniversary: '纪念日',
   familiarity: '熟悉度',
   holiday: '节日',
@@ -552,8 +554,10 @@ export function CardTemplatesPage() {
   }
   return (
     <>
-      <h1>卡面模板库</h1>
-      <p className="inline-tip">「不含人物」的模板才会用在真人角色的卡片上。</p>
+      <h1>卡面与日常照片素材库</h1>
+      <p className="inline-tip">
+        日常照片用于聊天和朋友圈配图。真人配图只选「不含人物」的素材，历史人物配图还须为古风插画。
+      </p>
       {templates.error && (
         <p role="alert" className="error-banner">
           加载失败：{templates.error} <button onClick={templates.refresh}>重试</button>
@@ -575,7 +579,7 @@ export function CardTemplatesPage() {
             />
           </label>
           <fieldset>
-            <legend>用于哪些卡片（至少一种）</legend>
+            <legend>素材用途（至少一种）</legend>
             <div className="chip-list">
               {Object.entries(kindNames).map(([kind, label]) => (
                 <label key={kind} className="check">
@@ -646,7 +650,7 @@ export function CardTemplatesPage() {
       <div className="asset-grid">
         {templates.data?.items.map((t) => (
           <figure key={t.templateId}>
-            <img src={t.url} alt={t.name} loading="lazy" />
+            <img src={adminMediaUrl(t.url)} alt={t.name} loading="lazy" />
             <figcaption>
               {t.name} · {t.kinds.map((k) => kindNames[k] ?? k).join('、')}
               {t.portraitFree && <span className="tag">不含人物</span>}
@@ -928,7 +932,7 @@ function Cover({ mediaId }: { mediaId: string }) {
   return media.data ? (
     <img
       className="asset-thumb"
-      src={media.data.thumbnailUrl ?? media.data.url}
+      src={adminMediaUrl(media.data.thumbnailUrl ?? media.data.url)}
       alt=""
       loading="lazy"
     />

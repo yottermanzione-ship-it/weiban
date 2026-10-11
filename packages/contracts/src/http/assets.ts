@@ -217,7 +217,7 @@ export const VoiceAdminEndpoints = {
 
 // ---------- 卡面模板（GRW-05 第 2 条、ADM-04 第 3 条） ----------
 
-/** 卡片种类（与 growth 的 CardKind 一致，见 http/growth-cards.ts）。 */
+/** 素材用途：卡片种类见 growth-cards.ts；daily_photo 用于聊天/朋友圈日常配图。 */
 export const CardTemplateKind = z.enum([
   'anniversary',
   'familiarity',
@@ -225,6 +225,7 @@ export const CardTemplateKind = z.enum([
   'moment',
   'pet',
   'play',
+  'daily_photo',
 ]);
 
 /** 卡面模板。portraitFree = 不含人物，可用于真人角色（GRW-05 第 2 条）。 */

@@ -120,7 +120,7 @@ export class CharacterImageService {
         await this.files.deleteObject(generated.value.mediaId).catch(() => undefined);
       }
     }
-    return this.fromLibrary(input, policy.isRealPerson);
+    return this.fromLibrary(input, policy.isRealPerson, policy.isHistorical);
   }
 
   /** 人脸检查：识图模型判断；判断不了（未开通 / 失败）按「可能有人脸」处理，宁可不发。 */
@@ -154,10 +154,17 @@ export class CharacterImageService {
   private async fromLibrary(
     input: GenerateCharacterImageInput,
     portraitFreeOnly: boolean,
+    classicalStyleOnly: boolean,
   ): Promise<CharacterImageResult | null> {
     const kind =
-      input.use === 'card' ? (input.cardKind ?? 'moment') : input.use === 'pet' ? 'pet' : 'moment';
-    const list = await this.assets.listCardTemplates(kind, portraitFreeOnly).catch(() => []);
+      input.use === 'card'
+        ? (input.cardKind ?? 'moment')
+        : input.use === 'pet'
+          ? 'pet'
+          : 'daily_photo';
+    const list = await this.assets
+      .listCardTemplates(kind, portraitFreeOnly, classicalStyleOnly)
+      .catch(() => []);
     if (!list.length) return null;
     let h = 0;
     for (const ch of input.idempotencyKey) h = (h * 31 + ch.charCodeAt(0)) >>> 0;

@@ -4,6 +4,8 @@
 > 契约本身在 `packages/contracts/src/`（唯一准绳），变更记录见 `packages/contracts/README.md`「3.1」，决策见 ADR-0028。
 > 3.0 的对照表 `contracts-3.0-map.md` 仍有效（L4～L7 每张卡的基础契约）；本文只列 3.1 增量。
 
+产品收口补充⑱：管理素材类别`CardTemplateKind.daily_photo`用于聊天/朋友圈兜底图，后台与服务器同步部署，管理枚举按ADR-0028例外并入3.1；模板kinds为JSON，无需新迁移。`MediaAssetReadPort.listCardTemplates`新增可选`classicalStyleOnly`（省略为false），media实现过滤，ai-runtime历史人物传true并同时要求portraitFree。原有growth古风卡面令牌继续有效。
+
 ## 1. 先看结论
 
 1. **契约 3.1 已合入，全部向后兼容**：现有服务器、网页、安卓不改代码也能编译运行；新字段在实现前只是「不返回」，客户端按注释里的默认行为处理。

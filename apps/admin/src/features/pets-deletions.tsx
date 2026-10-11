@@ -12,6 +12,7 @@ import {
 } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
 import { api } from '../data/client.js';
+import { adminMediaUrl } from '../data/media-url.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { Feedback } from '../components/feedback.js';
 
@@ -236,7 +237,7 @@ export function PetSpeciesPage() {
                       {d.images[stage] ? (
                         <img
                           className="asset-thumb"
-                          src={d.images[stage]!.url}
+                          src={adminMediaUrl(d.images[stage]!.url)}
                           alt={`${d.name}${label}`}
                         />
                       ) : (
@@ -359,7 +360,7 @@ export function PetSpeciesPage() {
                         <td key={stage}>
                           <img
                             className="asset-thumb"
-                            src={a.images[stage].url}
+                            src={adminMediaUrl(a.images[stage].url)}
                             alt={`${a.name}${label}`}
                             loading="lazy"
                           />

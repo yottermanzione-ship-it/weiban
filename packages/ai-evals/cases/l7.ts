@@ -3,7 +3,8 @@ import type { EvalCase } from '../src/index.js';
 /**
  * T-096 五个玩法里角色怎么说话（PLAY-03～PLAY-07，health-and-play.md 第 5 节，eval-plan.md 3.18 L 组）。
  * input 以「【系统提示】」开头的模拟 play-ai.ts 发给模型的情境；memories 里的 play_block 模拟玩法上下文。
- * 角色：S-01 = 虚构角色；真人用例用 setup.character = 'R-01'（评测集角色表里的真人预设）。
+ * 角色：S-01 = 原创角色；R-01 = 评测计划中的虚构示例“林夏予”，假设按真人规则分类。
+ * 编号及分类以src/registry.ts为准，不是已上架真人预设。
  */
 const setup: EvalCase['setup'] = {
   character: 'S-01',

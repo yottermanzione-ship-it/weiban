@@ -61,6 +61,8 @@ export interface MediaAssetReadPort {
   listCardTemplates(
     kind: string,
     portraitFreeOnly: boolean,
+    /** 历史人物发图只允许古风插画；省略时不限制风格。 */
+    classicalStyleOnly?: boolean,
   ): Promise<Array<{ templateId: string; mediaId: string }>>;
 }
 

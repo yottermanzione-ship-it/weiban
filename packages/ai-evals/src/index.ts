@@ -16,6 +16,8 @@ export interface EvalCase {
   judgeRubric: string;
   hard: boolean;
 }
+export * from './registry.js';
+export * from './run.js';
 /** 只判可自动核实的输出规则；缺独立评审证据时禁止给质量通过结论。 */
 export function evaluateOutput(
   test: EvalCase,

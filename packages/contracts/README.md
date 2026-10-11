@@ -112,7 +112,7 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 - identity：端口 `IdentitySettingsWritePort.enableProactiveCalls`（⑰，ai-runtime 在来电询问点「可以」时打开全局来电开关；只开不关）。
 - 消息与聊天：`ImageContent.sizeBytes`（⑲）；`PLAY_SYSTEM_NOTICE_CODES`（㊲：focus_started、letter_sent、wishlist_item_completed 的 code 与参数）；`ChatSearchEndpoints.locateByDate`、`listByType`、会话内搜索 `senderParticipantId`（㉘）。
 - characters：`WorkLinkAdminEndpoints.getDefaultVoice`（⑲）；`UserCustomCharacterWrite.catchphrases / speechStyle` 与响应字段（T-098）；资料已更新红点起算点写进说明（㉕）；补充设定保存后冲突项异步写入并发 `data.changed(supplement)`；端口 `CharacterSupplementConflictsWritePort`、`CharacterChildFeaturesWritePort`（原服务器内部令牌转契约）、`PersonaUpdateSummarizerPort`（㉖，可选 AI 接入点）。
-- media 素材库：`CardTemplate.classicalStyle`（㉓）。
+- media 素材库：`CardTemplate.classicalStyle`（㉓）；收口补充`CardTemplateKind.daily_photo`（⑱），只出现在与服务器同步部署的管理端模板接口，按ADR-0028的管理枚举例外并入3.1。内部`MediaAssetReadPort.listCardTemplates`增加可选`classicalStyleOnly`，默认不限制风格，历史人物发图时要求古风且无肖像。
 - library：`FavoriteSource(message).seq`（㉘）、`Favorite.characterNameSnapshot / characterAvatarMediaIdSnapshot`（㉔）、`ShareRejectedDetails`（㉘，422 的 details 形状）。
 - growth：`PetAppearance.listed`（㉚）、事件 `growth.pet_naming_requested.speciesName`、端口 `CardCopywriterPort`（㉗，可选 AI 接入点）。
 - importer：`createJob.mergeIntoJobId`、`ImportJob.mergedIntoJobId`（㉕ 分批合并）、`ImportResult(supplement).conflicts / filteredCount`（㉕㉚）；`getJob` 说明更正为 `data.changed(imports)`。
