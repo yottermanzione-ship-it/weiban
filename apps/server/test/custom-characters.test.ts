@@ -382,14 +382,12 @@ describeDb('自定义角色 CHR-07 真实PG：创建、检测、更新、分类�
     const avatar = await upload(ownerToken, 'custom_character_avatar');
     const wrong = await upload(ownerToken, 'user_avatar');
     const other = await upload(otherToken, 'custom_character_avatar');
-    const publicAvatar = await app
-      .get<MediaSystemPort>(MEDIA_SYSTEM_PORT)
-      .putObject({
-        ownerUserId: null,
-        purpose: 'plaza_avatar',
-        bytes: image,
-        mimeType: 'image/png',
-      });
+    const publicAvatar = await app.get<MediaSystemPort>(MEDIA_SYSTEM_PORT).putObject({
+      ownerUserId: null,
+      purpose: 'plaza_avatar',
+      bytes: image,
+      mimeType: 'image/png',
+    });
     const body = {
       name: '上传头像角色',
       description:

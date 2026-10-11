@@ -168,8 +168,7 @@ export function canAddToStickers(message: Message): boolean {
     message.senderKind !== 'user' &&
     !!content &&
     (content.type === 'sticker' ||
-      (content.type === 'image' &&
-        (content.sizeBytes == null || content.sizeBytes < 1024 * 1024)))
+      (content.type === 'image' && (content.sizeBytes == null || content.sizeBytes < 1024 * 1024)))
   );
 }
 
