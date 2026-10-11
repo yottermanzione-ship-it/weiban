@@ -10,19 +10,44 @@ import org.junit.Test
 import java.util.concurrent.TimeUnit
 
 class ApiClientTest {
-    @Test fun rejectedSharePreservesServerMessageAndPerItemDetails() = runBlocking {
-        MockWebServer().use { server ->
-            server.enqueue(MockResponse().setResponseCode(422).setBody(
-                """{"error":{"code":"share_content_not_allowed","message":"部分内容不可分享","requestId":"01920000-0000-7000-8000-000000000099","details":{"rejected":[{"id":"01920000-0000-7000-8000-000000000098","reason":"adult_scope"}]}}}"""
-            ))
-            val api = ApiClient(server.url("/").toString())
-            api.authenticate(auth("test-token".repeat(4)))
-            val failure = runCatching { api.call(Endpoints.identityEndpointsMe) }.exceptionOrNull() as ApiFailure
-            assertEquals(422, failure.status)
-            assertEquals("部分内容不可分享", failure.message)
-            assertTrue(failure.details?.get("rejected").toString().contains("adult_scope"))
+    @Test fun rejectedSharePreservesServerMessageAndPerItemDetails() =
+        runBlocking {
+            MockWebServer().use { server ->
+                server.enqueue(
+                    MockResponse().setResponseCode(422).setBody(
+                        """
+                        {"error":{
+                          "code":"share_content_not_allowed","message":"部分内容不可分享",
+                          "requestId":"01920000-0000-7000-8000-000000000099",
+                          "details":{"rejected":[{
+                            "id":"01920000-0000-7000-8000-000000000098","reason":"adult_scope"
+                          }]}
+                        }}
+                        """.trimIndent(),
+                    ),
+                )
+                val api =
+                    ApiClient(
+                        server
+                            .url("/")
+                            .newBuilder()
+                            .host("127.0.0.1")
+                            .build()
+                            .toString(),
+                    )
+                api.authenticate(auth("test-token".repeat(4)))
+                val failure = runCatching { api.call(Endpoints.identityEndpointsMe) }.exceptionOrNull() as ApiFailure
+                assertEquals(422, failure.status)
+                assertEquals("部分内容不可分享", failure.message)
+                assertTrue(
+                    failure.details
+                        ?.get("rejected")
+                        .toString()
+                        .contains("adult_scope"),
+                )
+            }
         }
-    }
+
     private val user = CurrentUser("01920000-0000-7000-8000-000000000014", "test_user", "user", true, "2026-10-06T03:00:00.000Z")
 
     private fun auth(token: String) =
@@ -31,14 +56,31 @@ class ApiClientTest {
     @Test fun staleCapturedSessionCannotStartPostOrMediaRequestWithNewToken() =
         runBlocking {
             MockWebServer().use { server ->
-                val api = ApiClient(server.url("/").toString())
+                val api =
+                    ApiClient(
+                        server
+                            .url("/")
+                            .newBuilder()
+                            .host("127.0.0.1")
+                            .build()
+                            .toString(),
+                    )
                 val previous = auth("old-token-".repeat(4))
                 val current = auth("new-token-".repeat(4))
                 api.authenticate(previous)
                 api.authenticate(current)
                 val post = runCatching { api.call(Endpoints.identityEndpointsLogout, expectedSession = previous) }
                 assertEquals("session_changed", (post.exceptionOrNull() as ApiFailure).code)
-                val grant = media(server.url("/api/v1/media/01920000-0000-7000-8000-000000000099/content?token=grant").toString())
+                val grant =
+                    media(
+                        server
+                            .url(
+                                "/api/v1/media/01920000-0000-7000-8000-000000000099/content?token=grant",
+                            ).newBuilder()
+                            .host("127.0.0.1")
+                            .build()
+                            .toString(),
+                    )
                 val download = runCatching { api.download(grant, expectedSession = previous) }
                 assertEquals("session_changed", (download.exceptionOrNull() as ApiFailure).code)
                 assertEquals(0, server.requestCount)
@@ -63,7 +105,15 @@ class ApiClientTest {
                             """.trimIndent(),
                         ).setBodyDelay(300, TimeUnit.MILLISECONDS),
                 )
-                val api = ApiClient(server.url("/").toString())
+                val api =
+                    ApiClient(
+                        server
+                            .url("/")
+                            .newBuilder()
+                            .host("127.0.0.1")
+                            .build()
+                            .toString(),
+                    )
                 api.authenticate(auth("old-token-".repeat(4)))
                 val result = async(kotlinx.coroutines.Dispatchers.IO) { runCatching { api.call(Endpoints.identityEndpointsMe) } }
                 val request = server.takeRequest(5, TimeUnit.SECONDS)!!
@@ -83,8 +133,28 @@ class ApiClientTest {
         runBlocking {
             MockWebServer().use { target ->
                 MockWebServer().use { server ->
-                    server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", target.url("/leak")))
-                    val api = ApiClient(server.url("/").toString())
+                    server.enqueue(
+                        MockResponse()
+                            .setResponseCode(
+                                302,
+                            ).setHeader(
+                                "Location",
+                                target
+                                    .url("/leak")
+                                    .newBuilder()
+                                    .host("127.0.0.1")
+                                    .build(),
+                            ),
+                    )
+                    val api =
+                        ApiClient(
+                            server
+                                .url("/")
+                                .newBuilder()
+                                .host("127.0.0.1")
+                                .build()
+                                .toString(),
+                        )
                     api.authenticate(auth("secret-token".repeat(4)))
                     assertEquals(302, (runCatching { api.call(Endpoints.identityEndpointsMe) }.exceptionOrNull() as ApiFailure).status)
                     assertNull(target.takeRequest(100, TimeUnit.MILLISECONDS))
@@ -101,7 +171,15 @@ class ApiClientTest {
                             401,
                         ).setBody("""{"error":{"code":"unauthenticated","message":"expired","requestId":"native-test"}}"""),
                 )
-                val api = ApiClient(server.url("/").toString())
+                val api =
+                    ApiClient(
+                        server
+                            .url("/")
+                            .newBuilder()
+                            .host("127.0.0.1")
+                            .build()
+                            .toString(),
+                    )
                 api.authenticate(auth("token-".repeat(8)))
                 assertEquals(401, (runCatching { api.call(Endpoints.identityEndpointsMe) }.exceptionOrNull() as ApiFailure).status)
                 assertNull(api.current())
@@ -125,10 +203,26 @@ class ApiClientTest {
         runBlocking {
             MockWebServer().use { server ->
                 server.enqueue(MockResponse().setHeader("Content-Type", "image/webp").setBody("pic"))
-                val api = ApiClient(server.url("/").toString())
+                val api =
+                    ApiClient(
+                        server
+                            .url("/")
+                            .newBuilder()
+                            .host("127.0.0.1")
+                            .build()
+                            .toString(),
+                    )
                 api.authenticate(auth("private-bearer-".repeat(3)))
                 val path = "/api/v1/media/01920000-0000-7000-8000-000000000099/content?token=grant"
-                val grant = media(server.url(path).toString())
+                val grant =
+                    media(
+                        server
+                            .url(path)
+                            .newBuilder()
+                            .host("127.0.0.1")
+                            .build()
+                            .toString(),
+                    )
                 assertArrayEquals("pic".toByteArray(), api.download(grant))
                 assertNull(server.takeRequest().getHeader("Authorization"))
             }
@@ -138,16 +232,42 @@ class ApiClientTest {
         runBlocking {
             MockWebServer().use { server ->
                 MockWebServer().use { other ->
-                    val api = ApiClient(server.url("/").toString())
+                    val api =
+                        ApiClient(
+                            server
+                                .url("/")
+                                .newBuilder()
+                                .host("127.0.0.1")
+                                .build()
+                                .toString(),
+                        )
                     api.authenticate(auth("private-bearer-".repeat(3)))
                     val path = "/api/v1/media/01920000-0000-7000-8000-000000000099/content?token=grant"
                     assertTrue(
-                        runCatching { api.download(media(other.url(path).toString())) }.exceptionOrNull() is IllegalArgumentException,
+                        runCatching {
+                            api.download(
+                                media(
+                                    other
+                                        .url(path)
+                                        .newBuilder()
+                                        .host("127.0.0.1")
+                                        .build()
+                                        .toString(),
+                                ),
+                            )
+                        }.exceptionOrNull() is IllegalArgumentException,
                     )
                     assertTrue(
                         runCatching {
                             api.download(
-                                media(server.url("/leak?token=grant").toString()),
+                                media(
+                                    server
+                                        .url("/leak?token=grant")
+                                        .newBuilder()
+                                        .host("127.0.0.1")
+                                        .build()
+                                        .toString(),
+                                ),
                             )
                         }.exceptionOrNull() is IllegalArgumentException,
                     )
@@ -160,7 +280,15 @@ class ApiClientTest {
     @Test fun invalidCredentialsAndUnknownErrorsDoNotDropExistingSession() =
         runBlocking {
             MockWebServer().use { server ->
-                val api = ApiClient(server.url("/").toString())
+                val api =
+                    ApiClient(
+                        server
+                            .url("/")
+                            .newBuilder()
+                            .host("127.0.0.1")
+                            .build()
+                            .toString(),
+                    )
                 val existing = auth("private-bearer-".repeat(3))
                 api.authenticate(existing)
                 for (code in listOf("invalid_credentials", "future_error")) {
@@ -177,7 +305,15 @@ class ApiClientTest {
         runBlocking {
             MockWebServer().use { server ->
                 server.enqueue(MockResponse().setBody("{}").setBodyDelay(2, TimeUnit.SECONDS))
-                val api = ApiClient(server.url("/").toString())
+                val api =
+                    ApiClient(
+                        server
+                            .url("/")
+                            .newBuilder()
+                            .host("127.0.0.1")
+                            .build()
+                            .toString(),
+                    )
                 api.authenticate(auth("cancel-private-token".repeat(3)))
                 val request = async { api.call(Endpoints.identityEndpointsMe) }
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {

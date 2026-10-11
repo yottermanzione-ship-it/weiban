@@ -725,11 +725,17 @@ function DefaultVoice({ characterId, voices }: { characterId: string; voices: Ad
           onChange={(e) => setVoiceId(e.target.value)}
         >
           <option value="">平台默认</option>
+          {current.data?.voiceId && !voices.some((v) => v.voiceId === current.data?.voiceId) && (
+            <option value={current.data.voiceId} disabled>
+              当前音色（未在列表中）
+            </option>
+          )}
           {voices
-            .filter((v) => v.enabled)
+            .filter((v) => v.enabled || v.voiceId === current.data?.voiceId)
             .map((v) => (
-              <option key={v.voiceId} value={v.voiceId}>
+              <option key={v.voiceId} value={v.voiceId} disabled={!v.enabled}>
                 {v.name}
+                {!v.enabled ? '（已停用）' : ''}
               </option>
             ))}
         </select>

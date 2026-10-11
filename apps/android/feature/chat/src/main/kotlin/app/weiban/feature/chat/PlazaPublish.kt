@@ -789,8 +789,7 @@ private fun maskedDraftText(
 
 /**
  * 「改写」：推入单个字段的编辑（这里用弹窗），保存后重新生成草稿（系统对改动后的文字重新识别）。
- * 自定义角色写回 PATCH /characters/custom/:id；预设改版写回补充设定。说话方式和第 2 条以后的口头禅契约没有对应的可写字段，
- * 提示到网页修改。
+ * 自定义角色写回 PATCH /characters/custom/:id（包括说话方式和完整口头禅列表）；预设改版写回补充设定。
  */
 @Composable private fun RewriteDialog(
     repository: SessionRepository,
@@ -861,11 +860,23 @@ private fun maskedDraftText(
                                                             .map(::JsonPrimitive),
                                                     ),
                                                 )
-                                            key.startsWith("catchphrases.") && index != null && custom != null -> put(
-                                                "catchphrases",
-                                                JsonArray(custom.catchphrases.mapIndexed { i, phrase -> if (i == index) text.trim() else phrase }
-                                                    .filter { it.isNotBlank() }.map(::JsonPrimitive)),
-                                            )
+                                            key.startsWith("catchphrases.") && index != null && custom != null ->
+                                                put(
+                                                    "catchphrases",
+                                                    JsonArray(
+                                                        custom.catchphrases
+                                                            .mapIndexed { i, phrase ->
+                                                                if (i ==
+                                                                    index
+                                                                ) {
+                                                                    text.trim()
+                                                                } else {
+                                                                    phrase
+                                                                }
+                                                            }.filter { it.isNotBlank() }
+                                                            .map(::JsonPrimitive),
+                                                    ),
+                                                )
                                             else -> put(key, text.trim())
                                         }
                                     }

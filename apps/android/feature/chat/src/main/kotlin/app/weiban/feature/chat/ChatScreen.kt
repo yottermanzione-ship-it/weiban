@@ -39,6 +39,7 @@ import kotlinx.serialization.json.*
         }
     }
     var information by rememberSaveable(conversationId) { mutableStateOf(false) }
+    val composerDraft = rememberSaveable(owner.sessionId, conversationId) { mutableStateOf("") }
     // "": 从会话列表发起；characterId：从私聊聊天信息页发起（原角色锁定）。
     var creating by rememberSaveable(owner.sessionId) { mutableStateOf<String?>(null) }
     var profile by remember(owner.sessionId) { mutableStateOf<ProfileTarget?>(null) }
@@ -133,7 +134,16 @@ import kotlinx.serialization.json.*
                     ),
                 ) { select(null) }
             else ->
-                ConversationView(repository, runtime, owner, state, selected, { information = true }, { profile = it }) { select(null) }
+                ConversationView(
+                    repository,
+                    runtime,
+                    owner,
+                    state,
+                    selected,
+                    composerDraft,
+                    { information = true },
+                    { profile = it },
+                ) { select(null) }
         }
     }
 }
@@ -323,6 +333,7 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
     owner: OwnerRecord,
     state: ClientSyncState,
     conversation: Conversation,
+    composerDraft: MutableState<String>,
     onInformation: () -> Unit,
     onProfile: (ProfileTarget) -> Unit,
     onBack: () -> Unit,
@@ -331,7 +342,7 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
     val context = androidx.compose.ui.platform.LocalContext.current
     val ui =
         remember(conversation.conversationId, owner) {
-            ConversationUi(repository, runtime, owner, conversation, scope).also { it.media = ChatMediaUi(context, it) }
+            ConversationUi(repository, runtime, owner, conversation, scope, composerDraft).also { it.media = ChatMediaUi(context, it) }
         }
     val group = conversation.isGroup()
     SideEffect {

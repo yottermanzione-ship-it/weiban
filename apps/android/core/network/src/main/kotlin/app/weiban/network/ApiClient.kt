@@ -40,7 +40,9 @@ class ApiClient(
     private val root =
         baseUrl.toHttpUrl().also {
             require(it.username.isEmpty() && it.password.isEmpty() && it.query == null && it.fragment == null)
-            require(it.isHttps || it.host in setOf("localhost", "127.0.0.1", "10.0.2.2"))
+            require(it.isHttps || it.host in setOf("localhost", "127.0.0.1", "10.0.2.2")) {
+                "HTTPS required for API host ${it.host}"
+            }
         }
     private val session = AtomicReference<AuthResponse?>(null)
 

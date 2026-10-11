@@ -52,7 +52,15 @@ class SessionRepositoryTest {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LocalDatabase::class.java).build()
         server = MockWebServer()
         server.start()
-        api = ApiClient(server.url("/").toString())
+        api =
+            ApiClient(
+                server
+                    .url("/")
+                    .newBuilder()
+                    .host("127.0.0.1")
+                    .build()
+                    .toString(),
+            )
         vault = MemoryVault()
         repository = SessionRepository(api, db, vault)
     }
@@ -263,7 +271,12 @@ class SessionRepositoryTest {
                     3,
                     1,
                     1,
-                    server.url("/api/v1/media/$id/content?token=old-grant").toString(),
+                    server
+                        .url("/api/v1/media/$id/content?token=old-grant")
+                        .newBuilder()
+                        .host("127.0.0.1")
+                        .build()
+                        .toString(),
                     "2026-11-06T03:00:00.000Z",
                     "2026-10-06T03:00:00.000Z",
                 )

@@ -31,6 +31,7 @@ import java.util.Locale
     var section by rememberSaveable(owner.sessionId) { mutableStateOf("contacts") }
     // 角色广场的两个分页：从「添加角色」、通讯录进入时默认停在「预设角色」（PLZ-01 第 1 条）。
     var personaPlaza by rememberSaveable(owner.sessionId) { mutableStateOf(false) }
+    var ownCustom by rememberSaveable(owner.sessionId) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val progress = remember(repository, owner) { OnboardingProgress(repository, owner, scope) }
     LaunchedEffect(progress, onboarding) { if (onboarding) progress.load() }
@@ -67,12 +68,26 @@ import java.util.Locale
             if (!startAtPlaza) TextButton(onClick = { plaza = false }) { Text("返回通讯录") }
             // 一个入口、两个分页（persona-plaza.md 2.1）；新手引导时不显示「人设广场」。
             if (!onboarding) {
+                TextButton(onClick = { L6Overlays.customEditor.value = CustomEditorOpen(owner) }) { Text("手动创建角色") }
+                TextButton(onClick = { L6Overlays.openImport() }) { Text("导入聊天记录") }
                 Row(Modifier.fillMaxWidth().padding(horizontal = WbSpace.S5), horizontalArrangement = Arrangement.spacedBy(WbSpace.S2)) {
-                    FilterChip(selected = !personaPlaza, onClick = { personaPlaza = false }, label = { Text("预设角色") })
-                    FilterChip(selected = personaPlaza, onClick = { personaPlaza = true }, label = { Text("人设广场") })
+                    FilterChip(selected = !personaPlaza && !ownCustom, onClick = {
+                        personaPlaza = false
+                        ownCustom = false
+                    }, label = { Text("预设角色") })
+                    FilterChip(selected = personaPlaza, onClick = {
+                        personaPlaza = true
+                        ownCustom = false
+                    }, label = { Text("人设广场") })
+                    FilterChip(selected = ownCustom, onClick = {
+                        ownCustom = true
+                        personaPlaza = false
+                    }, label = { Text("我的角色") })
                 }
             }
-            if (personaPlaza && !onboarding) {
+            if (ownCustom && !onboarding) {
+                MyCustomCharacters(repository, owner) { select(it) }
+            } else if (personaPlaza && !onboarding) {
                 PlazaTab(repository, owner)
             } else {
                 CharacterCatalog(repository, owner) { select(it) }

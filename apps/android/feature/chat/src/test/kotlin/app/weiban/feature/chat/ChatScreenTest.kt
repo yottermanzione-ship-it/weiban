@@ -40,7 +40,15 @@ class ChatScreenTest {
     @Before fun setup() {
         server = MockWebServer()
         server.start()
-        val api = ApiClient(server.url("/").toString())
+        val api =
+            ApiClient(
+                server
+                    .url("/")
+                    .newBuilder()
+                    .host("127.0.0.1")
+                    .build()
+                    .toString(),
+            )
         server.shutdown()
         database = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LocalDatabase::class.java).build()
         val vault =
@@ -134,14 +142,17 @@ class ChatScreenTest {
                 .conversationId
         val restoration = StateRestorationTester(compose)
         restoration.setContent { NavigationHost(id) }
+        compose.onNode(hasSetTextAction()).performTextInput("导航恢复草稿")
         compose.onNodeWithText("发送", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("主导航").assertDoesNotExist()
         restoration.emulateSavedInstanceStateRestore()
+        compose.onNode(hasSetTextAction()).assertTextContains("导航恢复草稿")
         compose.onNodeWithText("发送", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("主导航").assertDoesNotExist()
         compose.onNodeWithText("聊天信息", useUnmergedTree = true).performClick()
         compose.onNodeWithText("主导航").assertDoesNotExist()
         compose.onNodeWithText("返回聊天", useUnmergedTree = true).performClick()
+        compose.onNode(hasSetTextAction()).assertTextContains("导航恢复草稿")
         compose.onNodeWithText("发送", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("主导航").assertDoesNotExist()
         compose.onNodeWithText("返回", useUnmergedTree = true).performClick()

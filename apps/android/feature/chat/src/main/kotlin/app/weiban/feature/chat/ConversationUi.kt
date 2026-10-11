@@ -11,8 +11,9 @@ internal class ConversationUi(
     val owner: OwnerRecord,
     var conversation: Conversation,
     val scope: CoroutineScope,
+    draft: MutableState<String>,
 ) {
-    var text by mutableStateOf("")
+    var text by draft
     var quoteId by mutableStateOf<String?>(null)
     var error by mutableStateOf<String?>(null)
     var sending by mutableStateOf(false)

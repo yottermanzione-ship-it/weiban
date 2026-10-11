@@ -150,6 +150,9 @@ class NotificationAvatarTest {
                 .newBuilder()
                 .host("127.0.0.1")
                 .build()
+                .newBuilder()
+                .host("127.0.0.1")
+                .build()
                 .toString(),
             "2026-11-06T03:00:00.000Z",
             fixture.time,

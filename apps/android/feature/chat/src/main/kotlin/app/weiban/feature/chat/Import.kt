@@ -268,9 +268,10 @@ private fun ImportStart(
         remote("${owner.sessionId}:imports") {
             repository.call(Endpoints.importerEndpointsListJobs, options = SessionCallOptions(owner = owner, networkOnly = true)).items
         }
-    val model = remote("${owner.sessionId}:import-model") {
-        repository.call(Endpoints.modelAccessEndpointsGetModelStatus, options = SessionCallOptions(owner = owner, networkOnly = true))
-    }
+    val model =
+        remote("${owner.sessionId}:import-model") {
+            repository.call(Endpoints.modelAccessEndpointsGetModelStatus, options = SessionCallOptions(owner = owner, networkOnly = true))
+        }
 
     fun create(
         sourceKind: String,
@@ -737,7 +738,12 @@ private fun DraftEditor(
             label = { Text("人设描述（至少 $DESCRIPTION_MIN 字）· 来自导入") },
             supportingText = { Text("${description.length} / $DESCRIPTION_MAX") },
         )
-        OutlinedTextField(catchphrase, { catchphrase = it.take(510) }, Modifier.fillMaxWidth(), label = { Text("口头禅（每行一条，最多 10 条，每条 50 字）") })
+        OutlinedTextField(
+            catchphrase,
+            { catchphrase = it.take(510) },
+            Modifier.fillMaxWidth(),
+            label = { Text("口头禅（每行一条，最多 10 条，每条 50 字）") },
+        )
         OutlinedTextField(speechStyle, { speechStyle = it.take(500) }, Modifier.fillMaxWidth(), label = { Text("说话方式") })
         OutlinedTextField(examples, { examples = it.take(DESCRIPTION_MAX) }, Modifier.fillMaxWidth(), label = { Text("示例对话（可选）· 来自导入") })
         OutlinedTextField(tags, { tags = it.take(200) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("标签（用逗号分隔）") })
@@ -768,26 +774,53 @@ private fun DraftEditor(
             scope.launch {
                 try {
                     userAction({ error = it }) {
-                        val editor = buildJsonObject {
-                            put("name", name)
-                            put("description", description)
-                            put("speechStyle", speechStyle)
-                            put("exampleDialogue", examples)
-                            put("catchphrases", JsonArray(catchphrase.lines().map { it.trim() }.filter { it.isNotEmpty() }.map(::JsonPrimitive)))
-                            put("tags", JsonArray(tags.split(',', '，', '、').map { it.trim() }.filter { it.isNotEmpty() }.map(::JsonPrimitive)))
-                        }
-                        val classification = JsonObject(result["suggestedClassification"].obj().orEmpty() + mapOf(
-                            "basis" to JsonPrimitive(basis),
-                            "realPersonKind" to if (basis == "real_person") JsonPrimitive(fields.realPersonKind) else JsonNull,
-                        ))
-                        repository.call(Endpoints.importerEndpointsSaveResultDraft,
+                        val editor =
+                            buildJsonObject {
+                                put("name", name)
+                                put("description", description)
+                                put("speechStyle", speechStyle)
+                                put("exampleDialogue", examples)
+                                put(
+                                    "catchphrases",
+                                    JsonArray(
+                                        catchphrase
+                                            .lines()
+                                            .map { it.trim() }
+                                            .filter { it.isNotEmpty() }
+                                            .map(::JsonPrimitive),
+                                    ),
+                                )
+                                put(
+                                    "tags",
+                                    JsonArray(
+                                        tags
+                                            .split(',', '，', '、')
+                                            .map { it.trim() }
+                                            .filter { it.isNotEmpty() }
+                                            .map(::JsonPrimitive),
+                                    ),
+                                )
+                            }
+                        val classification =
+                            JsonObject(
+                                result["suggestedClassification"].obj().orEmpty() +
+                                    mapOf(
+                                        "basis" to JsonPrimitive(basis),
+                                        "realPersonKind" to if (basis == "real_person") JsonPrimitive(fields.realPersonKind) else JsonNull,
+                                    ),
+                            )
+                        repository.call(
+                            Endpoints.importerEndpointsSaveResultDraft,
                             params = mapOf("jobId" to job.jobId),
                             body = JsonObject(result + mapOf("editorFields" to editor, "suggestedClassification" to classification)),
-                            options = SessionCallOptions(owner = owner, networkOnly = true))
+                            options = SessionCallOptions(owner = owner, networkOnly = true),
+                        )
                         error = null
                         importToast(context = context, text = "草稿已保存")
                     }
-                } finally { pending = false }
+                } finally {
+                    pending = false
+                }
             }
         }) { Text("保存草稿") }
         ContinueImport(job, pending)
@@ -822,7 +855,16 @@ private fun DraftEditor(
                                                 put("childAppearance", false)
                                             },
                                         )
-                                        put("catchphrases", JsonArray(catchphrase.lines().map { it.trim() }.filter { it.isNotEmpty() }.map(::JsonPrimitive)))
+                                        put(
+                                            "catchphrases",
+                                            JsonArray(
+                                                catchphrase
+                                                    .lines()
+                                                    .map { it.trim() }
+                                                    .filter { it.isNotEmpty() }
+                                                    .map(::JsonPrimitive),
+                                            ),
+                                        )
                                         put("speechStyle", speechStyle)
                                         if (examples.isNotBlank()) put("exampleDialogue", examples)
                                         if (tagList.isNotEmpty()) put("tags", JsonArray(tagList.map(::JsonPrimitive)))
@@ -873,20 +915,29 @@ private fun SupplementResult(
         if (filtered > 0) Text("$filtered 条不会生效", color = colors.textSecondary)
         (result["conflicts"] as? JsonArray).orEmpty().forEach { value ->
             val conflict = value.obj()
-            Text("${conflict?.get("field").str()}：导入内容「${conflict?.get("supplementValue").str()}」与公开资料「${conflict?.get("publicValue").str()}」冲突，以公开资料为准。", color = colors.textSecondary)
+            Text(
+                "${conflict?.get(
+                    "field",
+                ).str()}：导入内容「${conflict?.get("supplementValue").str()}」与公开资料「${conflict?.get("publicValue").str()}」冲突，以公开资料为准。",
+                color = colors.textSecondary,
+            )
         }
         OutlinedButton(enabled = !pending, onClick = {
             pending = true
             scope.launch {
                 try {
                     userAction({ importToast(context, it) }) {
-                        repository.call(Endpoints.importerEndpointsSaveResultDraft,
+                        repository.call(
+                            Endpoints.importerEndpointsSaveResultDraft,
                             params = mapOf("jobId" to job.jobId),
                             body = JsonObject(result + ("text" to JsonPrimitive(text))),
-                            options = SessionCallOptions(owner = owner, networkOnly = true))
+                            options = SessionCallOptions(owner = owner, networkOnly = true),
+                        )
                         importToast(context, "草稿已保存")
                     }
-                } finally { pending = false }
+                } finally {
+                    pending = false
+                }
             }
         }) { Text("保存草稿") }
         ContinueImport(job, pending)
@@ -945,7 +996,10 @@ private fun SupplementResult(
     }
 }
 
-@Composable private fun ContinueImport(job: ImportJob, pending: Boolean) {
+@Composable private fun ContinueImport(
+    job: ImportJob,
+    pending: Boolean,
+) {
     TextButton(enabled = !pending, onClick = {
         L6Overlays.imports.value = ImportOpen(job.kind, job.targetCharacterId, mergeIntoJobId = job.jobId)
     }) { Text("继续导入下一批（请先保存编辑）") }

@@ -76,9 +76,10 @@ private fun parseOrigin(origin: JsonElement): PlazaCopyOrigin? {
             )
         }
     val privatePerson = origin.data?.everPrivatePerson == true || role.classification.realPersonKind == "private_person"
-    val works = remote("${owner.sessionId}:plaza-row-works:$characterId") {
-        repository.call(Endpoints.plazaEndpointsListMyWorks, options = SessionCallOptions(owner = owner, networkOnly = true))
-    }
+    val works =
+        remote("${owner.sessionId}:plaza-row-works:$characterId") {
+            repository.call(Endpoints.plazaEndpointsListMyWorks, options = SessionCallOptions(owner = owner, networkOnly = true))
+        }
     val published = works.data?.items?.find { it.sourceCharacterId == characterId }
     if (privatePerson) {
         Column(Modifier.alpha(WbOpacity.Disabled)) {

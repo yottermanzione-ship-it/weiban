@@ -1,12 +1,12 @@
 package app.weiban.feature.chat
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -175,6 +175,7 @@ internal fun ConversationSearchScreen(
     val participants = conversation?.participants.orEmpty() + conversation?.group?.formerParticipants.orEmpty()
     val profiles = characterProfiles(repository, participants.filter { it.kind == "character" }.map { it.refId })
     val typed = remember { mutableStateListOf<Message>() }
+    var revision by remember { mutableLongStateOf(0L) }
     val hits = remember { mutableStateListOf<MessageSearchHit>() }
     var hasMore by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
@@ -182,50 +183,66 @@ internal fun ConversationSearchScreen(
 
     suspend fun load(more: Boolean) {
         val keyword = query.trim()
-        if (mode == "text" && keyword.isEmpty()) {
+        val requestedMode = mode
+        val requestedSender = sender
+        val requestedRevision = revision
+
+        fun current() = requestedRevision == revision && requestedMode == mode && requestedSender == sender && keyword == query.trim()
+        if (requestedMode == "text" && keyword.isEmpty()) {
             hits.clear()
             hasMore = false
+            loading = false
             return
         }
         loading = true
         error = null
-        userAction({ error = it }) {
-            if (mode != "text") {
-                val page = repository.call(
-                    Endpoints.chatSearchEndpointsListByType,
-                    params = mapOf("conversationId" to conversationId),
-                    query = buildMap {
-                        put("type", mode)
-                        put("limit", "20")
-                        if (more) typed.lastOrNull()?.let { put("beforeSeq", it.seq.toString()) }
-                    },
-                    options = SessionCallOptions(owner = owner, networkOnly = true),
-                )
+        userAction({ if (current()) error = it }) {
+            if (requestedMode != "text") {
+                val page =
+                    repository.call(
+                        Endpoints.chatSearchEndpointsListByType,
+                        params = mapOf("conversationId" to conversationId),
+                        query =
+                            buildMap {
+                                put("contentType", requestedMode)
+                                put("limit", "20")
+                                if (more) typed.lastOrNull()?.let { put("beforeSeq", it.seq.toString()) }
+                            },
+                        options = SessionCallOptions(owner = owner, networkOnly = true),
+                    )
+                if (!current()) return@userAction
                 if (!more) typed.clear()
                 typed.addAll(page.items.filter { message -> typed.none { it.messageId == message.messageId } })
                 hasMore = page.hasMore
             } else {
-            val page =
-                repository.call(
-                    Endpoints.chatSearchEndpointsSearchConversation,
-                    params = mapOf("conversationId" to conversationId),
-                    query =
-                        buildMap {
-                            put("q", keyword.take(50))
-                            put("limit", "20")
-                            sender?.let { put("senderParticipantId", it) }
-                            if (more) hits.lastOrNull()?.let { put("beforeSeq", it.seq.toString()) }
-                        },
-                    options = SessionCallOptions(owner = owner, networkOnly = true),
-                )
-            if (!more) hits.clear()
-            hits.addAll(page.items.filter { hit -> hits.none { it.messageId == hit.messageId } })
-            hasMore = page.hasMore
+                val page =
+                    repository.call(
+                        Endpoints.chatSearchEndpointsSearchConversation,
+                        params = mapOf("conversationId" to conversationId),
+                        query =
+                            buildMap {
+                                put("q", keyword.take(50))
+                                put("limit", "20")
+                                requestedSender?.let { put("senderParticipantId", it) }
+                                if (more) hits.lastOrNull()?.let { put("beforeSeq", it.seq.toString()) }
+                            },
+                        options = SessionCallOptions(owner = owner, networkOnly = true),
+                    )
+                if (!current()) return@userAction
+                if (!more) hits.clear()
+                hits.addAll(page.items.filter { hit -> hits.none { it.messageId == hit.messageId } })
+                hasMore = page.hasMore
             }
         }
-        loading = false
+        if (current()) loading = false
     }
     LaunchedEffect(query, mode, sender, conversationId) {
+        revision++
+        hits.clear()
+        typed.clear()
+        hasMore = false
+        error = null
+        loading = true
         delay(DEBOUNCE_MS)
         load(more = false)
     }
@@ -248,11 +265,13 @@ internal fun ConversationSearchScreen(
                 scope.launch {
                     loading = true
                     userAction({ error = it }) {
-                        val located = repository.call(
-                            Endpoints.chatSearchEndpointsLocateByDate,
-                            params = mapOf("conversationId" to conversationId), query = mapOf("date" to date),
-                            options = SessionCallOptions(owner = owner, networkOnly = true),
-                        )
+                        val located =
+                            repository.call(
+                                Endpoints.chatSearchEndpointsLocateByDate,
+                                params = mapOf("conversationId" to conversationId),
+                                query = mapOf("date" to date),
+                                options = SessionCallOptions(owner = owner, networkOnly = true),
+                            )
                         val seq = located.seq
                         if (seq == null) error = "该日期及之后没有聊天记录" else MessageLocator.request(conversationId, seq)
                     }
@@ -260,13 +279,18 @@ internal fun ConversationSearchScreen(
                 }
             }) { Text("定位") }
         }
-        if (conversation?.type == "group" && mode == "text") Row(
-            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = WbSpace.S5),
-        ) {
-            FilterChip(selected = sender == null, onClick = { sender = null }, label = { Text("全部成员") })
-            participants.distinctBy { it.participantId }.forEach { member ->
-                FilterChip(selected = sender == member.participantId, onClick = { sender = member.participantId },
-                    label = { Text(if (member.kind == "user") "我" else profiles[member.refId]?.name ?: "角色") })
+        if (conversation?.type == "group" && mode == "text") {
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = WbSpace.S5),
+            ) {
+                FilterChip(selected = sender == null, onClick = { sender = null }, label = { Text("全部成员") })
+                participants.distinctBy { it.participantId }.forEach { member ->
+                    FilterChip(
+                        selected = sender == member.participantId,
+                        onClick = { sender = member.participantId },
+                        label = { Text(if (member.kind == "user") "我" else profiles[member.refId]?.name ?: "角色") },
+                    )
+                }
             }
         }
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())

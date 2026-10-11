@@ -308,7 +308,7 @@ private fun FavoriteRow(
                             id,
                             favorite.characterNameSnapshot ?: profile?.name.orEmpty(),
                             profile?.avatar,
-                            favorite.characterAvatarSnapshotMediaId,
+                            favorite.characterAvatarMediaIdSnapshot,
                         ),
                         WbSize.AvatarMd,
                     )

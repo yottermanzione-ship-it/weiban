@@ -655,10 +655,9 @@ export function WorkPage() {
       navigate(`/plaza/publish?presetId=${w.snapshot.presetCharacterId}`);
       return;
     }
-    const name = w.snapshot.name;
     try {
       const mine = await api.call(UserCustomEndpoints.list, { networkOnly: true });
-      const match = mine.items.find((c) => c.name === name);
+      const match = mine.items.find((c) => c.characterId === w.sourceCharacterId);
       if (match) navigate(`/plaza/publish?characterId=${match.characterId}`);
       else showToast('请从这个角色的「聊天信息」发布新版本');
     } catch (e) {
@@ -1992,7 +1991,7 @@ function NewVersionSheet({
         {note && <p className="hint">更新说明：{note}</p>}
         <small className="hint">你们的聊天记录、记忆、熟悉度都不会变</small>
         <button className="primary" disabled={pending} onClick={() => void decide('update')}>
-          更新到新版本
+          更新到版本 {version}
         </button>
         <button className="text-button" disabled={pending} onClick={() => void decide('dismiss')}>
           暂不更新

@@ -54,7 +54,14 @@ class RoleAvatarTest {
             database = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LocalDatabase::class.java).build()
             repository =
                 SessionRepository(
-                    ApiClient(server.url("/").toString()),
+                    ApiClient(
+                        server
+                            .url("/")
+                            .newBuilder()
+                            .host("127.0.0.1")
+                            .build()
+                            .toString(),
+                    ),
                     database,
                     object : SessionVault {
                         var value: AuthResponse? = null
@@ -87,7 +94,12 @@ class RoleAvatarTest {
                 bytes.size.toLong(),
                 1,
                 1,
-                server.url("/api/v1/media/$privateId/content?token=picture-grant").toString(),
+                server
+                    .url("/api/v1/media/$privateId/content?token=picture-grant")
+                    .newBuilder()
+                    .host("127.0.0.1")
+                    .build()
+                    .toString(),
                 "2026-11-06T03:00:00.000Z",
                 "2026-10-06T03:00:00.000Z",
             )
@@ -106,7 +118,15 @@ class RoleAvatarTest {
             }
         val picture =
             CharacterAvatar(
-                CharacterAvatarImage(adminId, server.url("/unused-admin-picture").toString()),
+                CharacterAvatarImage(
+                    adminId,
+                    server
+                        .url("/unused-admin-picture")
+                        .newBuilder()
+                        .host("127.0.0.1")
+                        .build()
+                        .toString(),
+                ),
                 CharacterDisplay(emptyList(), null, "star", null),
             )
         val role = RoleAvatarIdentity("01920000-0000-7000-8000-00000000001f", "王一博", picture, privateId)

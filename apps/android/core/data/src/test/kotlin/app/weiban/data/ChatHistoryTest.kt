@@ -37,7 +37,15 @@ class ChatHistoryTest {
         runBlocking {
             server = MockWebServer()
             server.start()
-            val api = ApiClient(server.url("/").toString())
+            val api =
+                ApiClient(
+                    server
+                        .url("/")
+                        .newBuilder()
+                        .host("127.0.0.1")
+                        .build()
+                        .toString(),
+                )
             database = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LocalDatabase::class.java).build()
             repository =
                 SessionRepository(
