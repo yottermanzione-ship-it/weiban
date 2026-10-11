@@ -15,3 +15,4 @@ export { proactivePlans } from './infra/db/schema.js';
 export { SimulationService } from './application/simulation.js';
 export { CharacterImageService, type ImageUse } from './application/character-image.js';
 export { MediaAiService } from './application/media-ai.js';
+export { ProactiveSchedulerService } from './application/proactive-scheduler.js';

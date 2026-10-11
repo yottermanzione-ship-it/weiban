@@ -10,6 +10,15 @@ $runtimePath = [IO.Path]::GetFullPath($RuntimeRoot)
 $secretPath = Join-Path $runtimePath 'secrets'
 $configPath = Join-Path $runtimePath 'runtime.env'
 $utf8 = [Text.UTF8Encoding]::new($false)
+$existingVolumes = @(& docker volume ls --filter 'label=com.docker.compose.project=weiban-local' --format '{{.Name}}')
+if ($LASTEXITCODE -ne 0) { throw '无法检查本机数据卷；请先启动 Docker Desktop。' }
+if ($existingVolumes.Count -gt 0) {
+    foreach ($name in @('postgres-password', 'database-url', 'kek')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $secretPath $name))) {
+            throw "本机已有数据卷但缺少原秘密文件：$name。请恢复原配置和密钥，禁止生成替代密钥。"
+        }
+    }
+}
 New-Item -ItemType Directory -Force -Path $secretPath | Out-Null
 
 function New-RandomSecret {
