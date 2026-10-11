@@ -109,3 +109,10 @@ Claude 在周额度耗尽前，已提交后端 B1～B10；B11～B21 的未提交
 - 失败轮次保留：runtime6/7/11为错误HTTP断言或测试路径；runtime9等待Web进程消费任务失败，改显式真实worker处理器；网页1定位也命中分类说明，改精确textbox；安卓1测试漏SessionVault导入，补后通过。未修改生产拒绝状态或降低权限断言。
 - 下一步：修复已核实头像展示/媒体用途与归属校验缺口，核对网页生日/头像；A12寄送/恢复并发、导入归属并发、收藏快照失败清理、派发遗留、最终回归、部署/设备/供应商与独立验收。
 - 环境保持C:\wb-dev\codex-closeout、codex/product-closeout；后端测试库weiban_closeout_test，浏览器独立probe库。Linux安卓容器保留待全套回归。所有结果为开发自测，项目未完成。
+
+## 头像与编辑字段更新（2026-10-11 17:55）
+
+- 试聊检查点完整SHA：a9d8be9e10e765214f9cc71c32feb784568fa0d2。本轮后续禁止直接PATCH临时试聊快照，防止生成中的不可变人设被改写。
+- 自定义角色的头像ID不再被映射器丢弃，创建/列表/资料/编辑返回真实短期链接；读取校验媒体归属和用途，允许自有custom_character_avatar与公开plaza_avatar/character_avatar。真实上传验证错误用途、他人私有ID拒绝、修改保留、清空恢复默认与公开广场头像继承。角色/试聊22项通过（custom-avatar-round3.log）；此前分类/装配一起31项通过（custom-avatar-round2.log）。
+- 网页添加头像裁剪上传、生日和外表儿童；编辑时提交完整分类，清空标签和示例对话不再变成undefined而被忽略。浏览器真实HTTP两项通过（custom-avatar-web-e2e-round1.log），网页生产构建通过（custom-avatar-web-build-round1.log）。Web/server类型检查与本轮全仓lint通过；最后公开素材兼容改动仍需全量核对。
+- 继续推进：最终全量回归；导入草稿生日/头像与音色覆盖；A12原子寄送恢复、导入归属并发/收藏失败清理；派发遗留、部署/设备/供应商及独立验收。所有结果均为开发自测。

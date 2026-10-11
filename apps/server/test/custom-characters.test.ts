@@ -16,11 +16,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
+import sharp from 'sharp';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { AuthResponse, UserCustomCharacter } from '@weiban/contracts';
+import { AuthResponse, UserCustomCharacter, type MediaSystemPort } from '@weiban/contracts';
 import { AppModule } from '../src/app.module.js';
 import { JOB_QUEUE, TestClock, type JobQueue } from '../src/platform/index.js';
 import { IdentityCommands } from '../src/modules/identity/index.js';
+import { MEDIA_SYSTEM_PORT } from '../src/modules/media/index.js';
 import { CHARACTER_EVALUATOR } from '../src/modules/characters/testing.js';
 import { captureLogger, testConfig, testKekRing } from './support/fixtures.js';
 import { describeDb, resetTestDatabase } from './support/db.js';
@@ -361,5 +363,118 @@ describeDb('自定义角色 CHR-07 真实PG：创建、检测、更新、分类�
       .expect(200);
     // childFeaturesDetected 不会从 true 变成 false
     expect(UserCustomCharacter.parse(updated.body).childFeaturesDetected).toBe(true);
+  });
+  it('真实头像上传后创建/资料/列表/编辑保留，错误用途与他人头像拒绝，清空后恢复默认', async () => {
+    const image = await sharp({
+      create: { width: 8, height: 8, channels: 3, background: '#FF00AA' },
+    })
+      .png()
+      .toBuffer();
+    async function upload(token: string, purpose: string) {
+      return (
+        await http()
+          .post(`/api/v1/media?purpose=${purpose}`)
+          .set('Authorization', auth(token))
+          .attach('file', image, { filename: 'avatar.png', contentType: 'image/png' })
+          .expect(201)
+      ).body as { mediaId: string };
+    }
+    const avatar = await upload(ownerToken, 'custom_character_avatar');
+    const wrong = await upload(ownerToken, 'user_avatar');
+    const other = await upload(otherToken, 'custom_character_avatar');
+    const publicAvatar = await app
+      .get<MediaSystemPort>(MEDIA_SYSTEM_PORT)
+      .putObject({
+        ownerUserId: null,
+        purpose: 'plaza_avatar',
+        bytes: image,
+        mimeType: 'image/png',
+      });
+    const body = {
+      name: '上传头像角色',
+      description:
+        '这是一位喜欢观察日常生活的原创成年角色，性格温柔耐心，喜欢晴天散步和读书，说话自然简短，尊重别人边界，不编造真实经历。',
+      classification: {
+        basis: 'original',
+        realPersonKind: null,
+        ageSetting: 'adult',
+        childAppearance: false,
+      },
+      avatarMediaId: avatar.mediaId,
+    };
+    await http()
+      .post('/api/v1/characters/custom')
+      .set('Authorization', auth(ownerToken))
+      .send({ ...body, avatarMediaId: wrong.mediaId })
+      .expect(422);
+    await http()
+      .post('/api/v1/characters/custom')
+      .set('Authorization', auth(ownerToken))
+      .send({ ...body, avatarMediaId: other.mediaId })
+      .expect(404);
+    const created = UserCustomCharacter.parse(
+      (
+        await http()
+          .post('/api/v1/characters/custom')
+          .set('Authorization', auth(ownerToken))
+          .send(body)
+          .expect(200)
+      ).body,
+    );
+    expect(created.avatar.image?.mediaId).toBe(avatar.mediaId);
+    const inherited = await http()
+      .post('/api/v1/characters/custom')
+      .set('Authorization', auth(otherToken))
+      .send({ ...body, avatarMediaId: publicAvatar.mediaId })
+      .expect(200);
+    expect(inherited.body.avatar.image.mediaId).toBe(publicAvatar.mediaId);
+    const profile = await http()
+      .get(`/api/v1/characters/${created.characterId}`)
+      .set('Authorization', auth(ownerToken))
+      .expect(200);
+    expect(profile.body.avatar.image.mediaId).toBe(avatar.mediaId);
+    expect(profile.body.avatar.image.url).toContain(`/api/v1/media/${avatar.mediaId}/content`);
+    const list = await http()
+      .get('/api/v1/characters/custom')
+      .set('Authorization', auth(ownerToken))
+      .expect(200);
+    expect(
+      list.body.items.find(
+        (role: { characterId: string }) => role.characterId === created.characterId,
+      ).avatar.image.mediaId,
+    ).toBe(avatar.mediaId);
+    const edited = UserCustomCharacter.parse(
+      (
+        await http()
+          .patch(`/api/v1/characters/custom/${created.characterId}`)
+          .set('Authorization', auth(ownerToken))
+          .send({ name: '编辑后保留头像' })
+          .expect(200)
+      ).body,
+    );
+    expect(edited.avatar.image?.mediaId).toBe(avatar.mediaId);
+    await http()
+      .patch(`/api/v1/characters/custom/${created.characterId}`)
+      .set('Authorization', auth(ownerToken))
+      .send({ avatarMediaId: other.mediaId })
+      .expect(404);
+    const cleared = UserCustomCharacter.parse(
+      (
+        await http()
+          .patch(`/api/v1/characters/custom/${created.characterId}`)
+          .set('Authorization', auth(ownerToken))
+          .send({ avatarMediaId: null })
+          .expect(200)
+      ).body,
+    );
+    expect(cleared.avatar.image).toBeNull();
+    expect(
+      (
+        await http()
+          .get(`/api/v1/characters/${created.characterId}`)
+          .set('Authorization', auth(ownerToken))
+          .expect(200)
+      ).body.avatar.image,
+    ).toBeNull();
   });
 });

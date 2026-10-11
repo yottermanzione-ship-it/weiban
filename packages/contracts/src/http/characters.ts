@@ -247,7 +247,7 @@ export const UserCustomCharacterWrite = z.object({
   /** 示例对话（纯文本，多轮用换行分隔）。 */
   exampleDialogue: z.string().max(2000).optional(),
   tags: z.array(z.string().max(16)).max(10).optional(),
-  /** 头像媒体 ID（purpose = character_avatar）；null 使用默认头像。 */
+  /** 自定义头像媒体 ID（custom_character_avatar；可继承公开 plaza_avatar / character_avatar）；null 使用默认头像。 */
   avatarMediaId: Id.nullable().optional(),
 });
 export type UserCustomCharacterWrite = z.infer<typeof UserCustomCharacterWrite>;

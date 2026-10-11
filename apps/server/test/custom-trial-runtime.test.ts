@@ -171,6 +171,11 @@ describeDb('CHR-07 保存前试聊：真实会话/回复/关闭/授权/过期', 
   }
   it('保存前临时角色不出现在我的角色，不可添加好友，但真实消息能收到回复', async () => {
     const trial = await createTrial();
+    await http()
+      .patch(`/api/v1/characters/custom/${trial.characterId}`)
+      .set('Authorization', auth())
+      .send({ name: '试图改变临时快照' })
+      .expect(404);
     const list = await http()
       .get('/api/v1/characters/custom')
       .set('Authorization', auth())

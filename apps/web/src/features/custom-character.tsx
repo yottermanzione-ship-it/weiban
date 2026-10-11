@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ImporterEndpoints,
+  MediaEndpoints,
   UserCustomEndpoints,
   type AgeSetting,
   type CharacterBasis,
@@ -14,6 +15,7 @@ import { api } from '../data/client.js';
 import { friendlyError } from '../data/use-remote.js';
 import { useAuth } from '../app/auth.js';
 import { CharacterTrial } from './character-trial.js';
+import { AvatarEditor } from './avatar-editor.js';
 
 const basisOptions: { value: CharacterBasis; label: string; description: string }[] = [
   {
@@ -109,6 +111,10 @@ function CustomCharacterEditor({
   const [basis, setBasis] = useState<CharacterBasis>('original');
   const [realKind, setRealKind] = useState<RealPersonKind>('private_person');
   const [childAppearance, setChildAppearance] = useState(false);
+  const [birthday, setBirthday] = useState('');
+  const [avatarMediaId, setAvatarMediaId] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [uploadPending, setUploadPending] = useState(false);
   const [ageSetting, setAgeSetting] = useState<AgeSetting>('adult');
   const [catchphrase, setCatchphrase] = useState('');
   const [speechStyle, setSpeechStyle] = useState('');
@@ -147,6 +153,9 @@ function CustomCharacterEditor({
         setBasis(character.classification.basis);
         setRealKind(character.classification.realPersonKind ?? 'private_person');
         setChildAppearance(character.classification.childAppearance);
+        setBirthday(character.birthday ?? '');
+        setAvatarMediaId(character.avatar.image?.mediaId ?? null);
+        setAvatarUrl(character.avatar.image?.url ?? null);
         setAgeSetting(character.classification.ageSetting);
         setOriginalBasis(character.classification.basis);
         setOriginalAge(character.classification.ageSetting);
@@ -265,6 +274,7 @@ function CustomCharacterEditor({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pending || uploadPending) return;
     setPending(true);
     setError('');
     setMessage('');
@@ -293,12 +303,14 @@ function CustomCharacterEditor({
               realPersonKind:
                 basis === 'real_person' ? (imported?.realPersonKind ?? realKind) : null,
               ageSetting,
-              childAppearance: false,
+              childAppearance,
             },
+            birthday: birthday || null,
+            avatarMediaId,
             catchphrases,
             speechStyle,
-            exampleDialogue: exampleDialogue || undefined,
-            tags: tagList.length ? tagList : undefined,
+            exampleDialogue,
+            tags: tagList,
           },
         });
         if (result.childFeaturesDetected) setChildWarning(true);
@@ -312,10 +324,19 @@ function CustomCharacterEditor({
           body: {
             name: name || undefined,
             description: description || undefined,
+            classification: {
+              basis,
+              realPersonKind:
+                basis === 'real_person' ? (imported?.realPersonKind ?? realKind) : null,
+              ageSetting,
+              childAppearance,
+            },
+            birthday: birthday || null,
+            avatarMediaId,
             catchphrases,
             speechStyle,
-            exampleDialogue: exampleDialogue || undefined,
-            tags: tagList.length ? tagList : undefined,
+            exampleDialogue,
+            tags: tagList,
           },
         });
         if (result.childFeaturesDetected) setChildWarning(true);
@@ -343,6 +364,8 @@ function CustomCharacterEditor({
     try {
       const parsed = UserCustomTrialWrite.safeParse({
         sourceCharacterId: characterId,
+        birthday: birthday || null,
+        avatarMediaId,
         name,
         description,
         classification: {
@@ -414,6 +437,34 @@ function CustomCharacterEditor({
         </p>
       )}
       <form className="panel stack" onSubmit={(e) => void submit(e)}>
+        <fieldset disabled={pending || uploadPending}>
+          <legend>头像（可选）</legend>
+          {avatarUrl && <img src={avatarUrl} alt="角色头像" width={72} height={72} />}
+          <AvatarEditor
+            purpose="custom_character_avatar"
+            onPendingChange={setUploadPending}
+            onSaved={async (mediaId) => {
+              const media = await api.call(MediaEndpoints.getMedia, {
+                params: { mediaId },
+                networkOnly: true,
+              });
+              setAvatarMediaId(mediaId);
+              setAvatarUrl(media.url);
+            }}
+            onRestore={
+              avatarMediaId
+                ? () => {
+                    setAvatarMediaId(null);
+                    setAvatarUrl(null);
+                  }
+                : undefined
+            }
+          />
+        </fieldset>
+        <label>
+          生日（可选）
+          <input type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} />
+        </label>
         <label>
           名字 <span aria-hidden="true">*</span> {fromImport('name')}
           <input
@@ -495,6 +546,14 @@ function CustomCharacterEditor({
             );
           })}
         </fieldset>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={childAppearance}
+            onChange={(e) => setChildAppearance(e.target.checked)}
+          />
+          外表是儿童
+        </label>
 
         <label>
           人设描述 <span aria-hidden="true">*</span>（至少 50 字） {fromImport('description')}
@@ -568,14 +627,14 @@ function CustomCharacterEditor({
           />
         </label>
 
-        <button className="primary" disabled={loading || pending}>
+        <button className="primary" disabled={loading || pending || uploadPending}>
           {mode === 'create' ? '创建角色' : '保存'}
         </button>
       </form>
 
       <button
         className="panel full"
-        disabled={pending || loading || !!trial}
+        disabled={pending || loading || uploadPending || !!trial}
         onClick={() => void startTrial()}
       >
         保存前试聊

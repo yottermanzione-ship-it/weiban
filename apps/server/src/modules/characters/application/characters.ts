@@ -197,6 +197,13 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       throw new AppError('bad_request', '预设角色必须使用管理员预设头像');
     return { image: { mediaId: id, url: media.url }, display: body.avatar.display };
   }
+  async customAvatar(userId: string, mediaId: string | null) {
+    if (!mediaId) return null;
+    const media = await this.media.getMedia(userId, mediaId);
+    if (!['custom_character_avatar', 'plaza_avatar', 'character_avatar'].includes(media.purpose))
+      throw new AppError('bad_request', '请选择自定义角色头像', { status: 422 });
+    return { mediaId, url: media.url };
+  }
   private async validateAvatar(adminId: string, body: AdminCharacterWrite): Promise<void> {
     if (body.avatar.imageMediaId) await this.avatar(adminId, body);
     if (
@@ -640,19 +647,25 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       name: body.name,
       aliases: body.aliases,
       works: body.works,
-      avatar: await this.avatar(userId, {
-        ...body,
-        avatar: {
-          ...body.avatar,
-          display: {
-            ...body.avatar.display,
-            avatarPattern:
-              c.derived.isMinor && body.avatar.display.avatarPattern === 'heart'
-                ? 'star'
-                : body.avatar.display.avatarPattern,
-          },
-        },
-      }),
+      avatar:
+        row.kind === 'custom'
+          ? {
+              image: await this.customAvatar(userId, body.avatar.imageMediaId),
+              display: body.avatar.display,
+            }
+          : await this.avatar(userId, {
+              ...body,
+              avatar: {
+                ...body.avatar,
+                display: {
+                  ...body.avatar.display,
+                  avatarPattern:
+                    c.derived.isMinor && body.avatar.display.avatarPattern === 'heart'
+                      ? 'star'
+                      : body.avatar.display.avatarPattern,
+                },
+              },
+            }),
       tagline: body.tagline,
       tags: body.tags,
       categoryId: body.categoryId,

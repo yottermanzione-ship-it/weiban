@@ -171,7 +171,7 @@ export function customToAdminWrite(p: CustomCharacterPayload): AdminCharacterWri
     tags: p.tags.slice(0, 10),
     categoryId: null,
     avatar: {
-      imageMediaId: null,
+      imageMediaId: p.avatarMediaId ?? null,
       display: { supportColors: [], avatarText: null, avatarPattern: 'none', themeColor: null },
     },
     birthday: p.birthday,

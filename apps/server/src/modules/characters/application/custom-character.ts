@@ -112,6 +112,7 @@ export class CustomCharacterService {
   ): Promise<UserCustomCharacter> {
     parseContract(Id, userId);
     const payload = buildPayload(body);
+    await this.characterService.customAvatar(userId, payload.avatarMediaId);
     const detected =
       childFeaturesIn(textsToCheck(payload)) || trial?.childFeaturesDetected === true;
 
@@ -239,7 +240,7 @@ export class CustomCharacterService {
           eq(characters.kind, 'custom'),
         ),
       );
-    if (!current) throw new AppError('not_found', '角色不存在');
+    if (!current || current.isTrial) throw new AppError('not_found', '角色不存在');
 
     const rawPlain = await this.crypto.open(
       userId,
@@ -283,6 +284,8 @@ export class CustomCharacterService {
       merged.catchphrases = phrases;
       merged.catchphrase = phrases[0] ?? null;
     }
+    if (patch.avatarMediaId !== undefined)
+      await this.characterService.customAvatar(userId, merged.avatarMediaId);
 
     if (patch.classification !== undefined) {
       if (
@@ -441,7 +444,7 @@ export class CustomCharacterService {
       aliases: [],
       works: [],
       avatar: {
-        image: null,
+        image: await this.characterService.customAvatar(userId, payload.avatarMediaId ?? null),
         display: {
           supportColors: [],
           avatarText: null,
