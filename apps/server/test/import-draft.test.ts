@@ -11,6 +11,7 @@ import { AuthResponse, ImportResult, type ImportAnalyzerPort } from '@weiban/con
 import { AppModule } from '../src/app.module.js';
 import { IdentityCommands } from '../src/modules/identity/index.js';
 import { BillingAdminService } from '../src/modules/billing/testing.js';
+import { MediaAssetService } from '../src/modules/media/testing.js';
 import { IMPORTER_ANALYZER } from '../src/modules/importer/index.js';
 import { ImporterService } from '../src/modules/importer/testing.js';
 import { JOB_QUEUE, newId, type JobQueue } from '../src/platform/index.js';
@@ -51,6 +52,8 @@ describeDb('导入编辑草稿：真实 HTTP、PG 与媒体归属', () => {
   let token: string;
   let otherToken: string;
   let mediaDir: string;
+  let adminId: string;
+  let voiceId: string;
   const http = () => request(app.getHttpServer());
   const auth = (value: string) => `Bearer ${value}`;
   beforeAll(async () => {
@@ -75,6 +78,18 @@ describeDb('导入编辑草稿：真实 HTTP、PG 与媒体归属', () => {
     importer = app.get(ImporterService);
     const identity = app.get(IdentityCommands);
     const admin = await identity.createAdmin('import_admin', 'horse battery staple');
+    adminId = admin;
+    voiceId = (
+      await app.get(MediaAssetService).createVoice(admin, {
+        name: '导入测试音色',
+        tags: [],
+        sampleMediaId: null,
+        enabled: true,
+        providerVoiceKey: 'controlled-test',
+        modelKey: 'controlled-speech-test',
+        careFallbackMediaId: null,
+      })
+    ).voiceId;
     for (const name of ['import_owner', 'import_other']) {
       const userId = await identity.createAdmin(name, 'horse battery staple');
       await identity.setRole(name, 'user');
@@ -154,7 +169,7 @@ describeDb('导入编辑草稿：真实 HTTP、PG 与媒体归属', () => {
     const avatarMediaId = await upload(token, 'custom_character_avatar');
     const result = {
       ...generated,
-      editorFields: { ...fields, birthday: '2000-05-16', avatarMediaId },
+      editorFields: { ...fields, birthday: '2000-05-16', avatarMediaId, voiceId },
       suggestedClassification: {
         basis: 'real_person',
         realPersonKind: 'historical',
@@ -182,7 +197,10 @@ describeDb('导入编辑草稿：真实 HTTP、PG 与媒体归属', () => {
       '批次一',
       '批次二',
     ]);
-    const cleared = { ...result, editorFields: { ...fields, birthday: null, avatarMediaId: null } };
+    const cleared = {
+      ...result,
+      editorFields: { ...fields, birthday: null, avatarMediaId: null, voiceId: null },
+    };
     await http()
       .put(`/api/v1/imports/${jobId}/result`)
       .set('Authorization', auth(token))
@@ -249,5 +267,39 @@ describeDb('导入编辑草稿：真实 HTTP、PG 与媒体归属', () => {
       .expect(422);
     await importer.cancel(owner, jobId);
     await http().post('/api/v1/imports').set('Authorization', auth(token)).send(body).expect(404);
+  });
+  it('草稿音色须来自启用库；停用旧选择可保留或清空，不可新选', async () => {
+    const savedJob = await complete();
+    const draft = { ...generated, editorFields: { ...fields, voiceId } };
+    await http()
+      .put(`/api/v1/imports/${savedJob}/result`)
+      .set('Authorization', auth(token))
+      .send(draft)
+      .expect(200);
+    await app.get(MediaAssetService).updateVoice(adminId, voiceId, { enabled: false });
+    await http()
+      .put(`/api/v1/imports/${savedJob}/result`)
+      .set('Authorization', auth(token))
+      .send(draft)
+      .expect(200);
+    const newJob = await complete();
+    await http()
+      .put(`/api/v1/imports/${newJob}/result`)
+      .set('Authorization', auth(token))
+      .send(draft)
+      .expect(400);
+    await http()
+      .put(`/api/v1/imports/${newJob}/result`)
+      .set('Authorization', auth(token))
+      .send({ ...draft, editorFields: { ...fields, voiceId: newId() } })
+      .expect(400);
+    await http()
+      .put(`/api/v1/imports/${savedJob}/result`)
+      .set('Authorization', auth(token))
+      .send({ ...draft, editorFields: { ...fields, voiceId: null } })
+      .expect(200);
+    expect(await importer.getResult(owner, savedJob)).toMatchObject({
+      editorFields: { voiceId: null },
+    });
   });
 });

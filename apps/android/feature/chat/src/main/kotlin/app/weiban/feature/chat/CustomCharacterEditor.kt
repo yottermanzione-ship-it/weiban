@@ -62,6 +62,7 @@ internal class CustomCharacterDraft(
     var examples by mutableStateOf(existing?.exampleDialogue.orEmpty())
     var tags by mutableStateOf(existing?.tags.orEmpty().joinToString("，"))
     var avatarMediaId by mutableStateOf(existing?.avatar?.image?.mediaId)
+    var voiceId by mutableStateOf(existing?.voiceId)
     var basis by mutableStateOf(existing?.classification?.basis ?: "original")
     var age by mutableStateOf(existing?.classification?.ageSetting ?: "adult")
     var realKind by mutableStateOf(existing?.classification?.realPersonKind ?: "private_person")
@@ -106,6 +107,7 @@ internal class CustomCharacterDraft(
                 ),
             )
             put("avatarMediaId", avatarMediaId?.let(::JsonPrimitive) ?: JsonNull)
+            put("voiceId", voiceId?.let(::JsonPrimitive) ?: JsonNull)
             put(
                 "classification",
                 buildJsonObject {
@@ -217,6 +219,7 @@ internal class CustomCharacterDraft(
         Text(if (open.characterId == null) "创建自己的角色" else "编辑角色人设", style = MaterialTheme.typography.headlineSmall)
         CustomCharacterTextFields(draft)
         CustomCharacterClassification(draft)
+        DraftVoiceSelection(repository, open.owner, draft.voiceId, !pending) { draft.voiceId = it }
         Text("角色头像")
         PhotoCropper(enabled = !pending, onRestore = draft.avatarMediaId?.let { { draft.avatarMediaId = null } }) { bytes ->
             pending = true

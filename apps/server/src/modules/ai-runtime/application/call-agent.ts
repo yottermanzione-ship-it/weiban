@@ -425,7 +425,11 @@ export class CallAgentService implements CallAgentPort {
     if (!contact || contact.conversationId !== input.conversationId || !role || !policy)
       return { ok: false, error: 'not_available' };
     const settings = await this.settings.get(input.userId, input.characterId).catch(() => null);
-    const voiceId = await this.mediaAi.resolveVoice(input.characterId, settings?.voiceId ?? null);
+    const voiceId = await this.mediaAi.resolveVoice(
+      input.characterId,
+      settings?.voiceId ?? null,
+      role.profile.kind === 'custom' ? (role.card.data.social.voiceId ?? null) : null,
+    );
     if (!voiceId) return { ok: false, error: 'service_disabled' };
 
     const recent = await this.chat

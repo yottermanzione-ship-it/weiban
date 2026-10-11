@@ -16,6 +16,7 @@ import { friendlyError } from '../data/use-remote.js';
 import { useAuth } from '../app/auth.js';
 import { CharacterTrial } from './character-trial.js';
 import { AvatarEditor } from './avatar-editor.js';
+import { CharacterVoiceSelect } from './character-voice-select.js';
 
 const basisOptions: { value: CharacterBasis; label: string; description: string }[] = [
   {
@@ -72,6 +73,7 @@ function draftFields(result: ImportDraft, speaker: string | null) {
     exampleDialogue: result.editorFields?.exampleDialogue ?? examples,
     birthday: result.editorFields?.birthday ?? '',
     avatarMediaId: result.editorFields?.avatarMediaId ?? null,
+    voiceId: result.editorFields?.voiceId ?? null,
     tags: (result.editorFields?.tags ?? data.persona?.personaTagsCustom ?? [])
       .slice(0, 10)
       .join('，'),
@@ -116,6 +118,7 @@ function CustomCharacterEditor({
   const [birthday, setBirthday] = useState('');
   const [avatarMediaId, setAvatarMediaId] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [voiceId, setVoiceId] = useState<string | null>(null);
   const [uploadPending, setUploadPending] = useState(false);
   const [ageSetting, setAgeSetting] = useState<AgeSetting>('adult');
   const [catchphrase, setCatchphrase] = useState('');
@@ -158,6 +161,7 @@ function CustomCharacterEditor({
         setBirthday(character.birthday ?? '');
         setAvatarMediaId(character.avatar.image?.mediaId ?? null);
         setAvatarUrl(character.avatar.image?.url ?? null);
+        setVoiceId(character.voiceId ?? null);
         setAgeSetting(character.classification.ageSetting);
         setOriginalBasis(character.classification.basis);
         setOriginalAge(character.classification.ageSetting);
@@ -197,6 +201,7 @@ function CustomCharacterEditor({
         setTags(fields.tags);
         setBirthday(fields.birthday);
         setAvatarMediaId(fields.avatarMediaId);
+        setVoiceId(fields.voiceId);
         setAvatarUrl(null);
         setRealKind(result.suggestedClassification.realPersonKind ?? 'private_person');
         setChildAppearance(result.suggestedClassification.childAppearance);
@@ -262,6 +267,7 @@ function CustomCharacterEditor({
             exampleDialogue,
             birthday: birthday || null,
             avatarMediaId,
+            voiceId,
             catchphrases: catchphrase
               .split(/\r?\n/)
               .map((v) => v.trim())
@@ -324,6 +330,7 @@ function CustomCharacterEditor({
             },
             birthday: birthday || null,
             avatarMediaId,
+            voiceId,
             catchphrases,
             speechStyle,
             exampleDialogue,
@@ -349,6 +356,7 @@ function CustomCharacterEditor({
             },
             birthday: birthday || null,
             avatarMediaId,
+            voiceId,
             catchphrases,
             speechStyle,
             exampleDialogue,
@@ -382,6 +390,7 @@ function CustomCharacterEditor({
         sourceCharacterId: characterId,
         birthday: birthday || null,
         avatarMediaId,
+        voiceId,
         name,
         description,
         classification: {
@@ -481,6 +490,11 @@ function CustomCharacterEditor({
           生日（可选）
           <input type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} />
         </label>
+        <CharacterVoiceSelect
+          value={voiceId}
+          onChange={setVoiceId}
+          disabled={pending || uploadPending}
+        />
         <label>
           名字 <span aria-hidden="true">*</span> {fromImport('name')}
           <input

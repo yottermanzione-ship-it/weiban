@@ -8,7 +8,7 @@
  *   - 其他自定义角色由人设描述、说话方式、口头禅、示例对话、标签按固定模板补齐必填项。
  * 分类事实永远只看数据库列，不看这里的任何文字（hard-boundaries.md 第 2 节）。
  */
-import { CharacterCard, type AdminCharacterWrite } from '@weiban/contracts';
+import { CharacterCard, Id, type AdminCharacterWrite } from '@weiban/contracts';
 
 export interface CustomCharacterPayload {
   name: string;
@@ -24,6 +24,7 @@ export interface CustomCharacterPayload {
   exampleDialogue: string | null;
   tags: string[];
   avatarMediaId: string | null;
+  voiceId?: string | null;
   /** T-088：广场快照白名单中多出的字段。 */
   speechStyle?: string | null;
   catchphrases?: string[];
@@ -36,6 +37,13 @@ export interface CustomCharacterPayload {
 
 const CARE_FALLBACK =
   '如果你现在真的很难受，先联系一个你信任的人陪着你；也可以拨打心理援助热线 12356。遇到危险请马上拨打 110，需要急救请拨打 120。';
+
+/** 旧预设复制品继承快照音色；明确的null必须保留清空语义。 */
+export function voiceIdOf(p: CustomCharacterPayload): string | null {
+  const selected = p.voiceId === undefined ? p.presetCard?.data.social.voiceId : p.voiceId;
+  const parsed = Id.safeParse(selected);
+  return parsed.success ? parsed.data : null;
+}
 
 const SCENES = ['greeting', 'daily', 'praised', 'teased', 'comfort', 'refuseInCharacter'] as const;
 const GENERIC_LINES: Record<(typeof SCENES)[number], string> = {
@@ -178,7 +186,16 @@ export function customToAdminWrite(p: CustomCharacterPayload): AdminCharacterWri
     fanName: null,
     classification: p.classification as AdminCharacterWrite['classification'],
     fallbackGreetings: ['嗨，我们终于加上好友啦。'],
-    card: cardFor(p),
+    card: (() => {
+      const card = cardFor(p);
+      if (p.voiceId === undefined) return card;
+      const { voiceId: _previousVoice, ...social } = card.data.social;
+      void _previousVoice;
+      return {
+        ...card,
+        data: { ...card.data, social: { ...social, ...(p.voiceId ? { voiceId: p.voiceId } : {}) } },
+      };
+    })(),
   } as AdminCharacterWrite;
 }
 

@@ -18,7 +18,7 @@ import { CompanionSettingsService } from './settings.js';
 
 afterEach(() => vi.useRealTimers());
 
-async function openControlledSession(blockReply = false) {
+async function openControlledSession(blockReply = false, customVoiceId?: string) {
   let releaseReply: (() => void) | undefined;
   const reply = vi.fn(async () => {
     if (blockReply)
@@ -35,6 +35,8 @@ async function openControlledSession(blockReply = false) {
       ).match(/```json\s*([\s\S]*?)```/)![1]!,
     ).card,
   );
+  if (customVoiceId) card.data.social.voiceId = customVoiceId;
+  const resolveVoice = vi.fn(async () => customVoiceId ?? 'fixture-voice');
   let releaseAsr: (() => void) | undefined;
   const asr = {
     pushAudio: vi.fn(),
@@ -80,7 +82,12 @@ async function openControlledSession(blockReply = false) {
       { provide: BILLING_READ_PORT, useValue: { getSpendStatus: spend } },
       {
         provide: AI_CHARACTER_READ,
-        useValue: { getForRuntime: async () => ({ card, profile: { name: '计时测试角色' } }) },
+        useValue: {
+          getForRuntime: async () => ({
+            card,
+            profile: { name: '计时测试角色', kind: customVoiceId ? 'custom' : 'preset' },
+          }),
+        },
       },
       {
         provide: POLICY_PORT,
@@ -101,7 +108,7 @@ async function openControlledSession(blockReply = false) {
       { provide: CHAT_READ_PORT, useValue: { readMessages: async () => [] } },
       { provide: CLOCK, useValue: new TestClock('2026-10-11T10:00:00Z') },
       { provide: MemoryService, useValue: { context: async () => null } },
-      { provide: MediaAiService, useValue: { resolveVoice: async () => 'fixture-voice' } },
+      { provide: MediaAiService, useValue: { resolveVoice } },
       { provide: CompanionSettingsService, useValue: { get: async () => ({ voiceId: null }) } },
       { provide: DATABASE, useValue: {} },
     ],
@@ -124,6 +131,7 @@ async function openControlledSession(blockReply = false) {
   await vi.advanceTimersByTimeAsync(0);
   return {
     module,
+    resolveVoice,
     session,
     speech,
     spend,
@@ -133,6 +141,20 @@ async function openControlledSession(blockReply = false) {
     releaseReply: () => releaseReply?.(),
   };
 }
+
+it('自定义角色通话把已授权角色快照音色传入选择器和语音流端口', async () => {
+  const call = await openControlledSession(false, 'custom-library-voice');
+  try {
+    expect(call.resolveVoice).toHaveBeenCalledWith('role', null, 'custom-library-voice');
+    expect(call.speech).toHaveBeenCalledWith(
+      expect.objectContaining({ voiceId: 'custom-library-voice' }),
+    );
+  } finally {
+    await call.session.close({ durationSec: 0, outcome: 'ended' });
+    await call.collected;
+    await call.module.close();
+  }
+});
 
 it('55分钟前不提醒，到时仅提醒一次，59分半道别结束；关闭后无遗留计时器', async () => {
   const call = await openControlledSession();

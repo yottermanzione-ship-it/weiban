@@ -8155,6 +8155,7 @@ data class UserCustomCharacter(
     @SerialName("catchphrase") val `catchphrase`: String?,
     @SerialName("catchphrases") val `catchphrases`: List<String>? = null,
     @SerialName("speechStyle") val `speechStyle`: String? = null,
+    @SerialName("voiceId") val `voiceId`: Id? = null,
     @SerialName("exampleDialogue") val `exampleDialogue`: String?,
     @SerialName("childFeaturesDetected") val `childFeaturesDetected`: Boolean,
 )
@@ -8171,6 +8172,7 @@ data class UserCustomCharacterPatch(
     @SerialName("exampleDialogue") val `exampleDialogue`: String? = null,
     @SerialName("tags") val `tags`: List<String>? = null,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+    @SerialName("voiceId") val `voiceId`: Id? = null,
 )
 
 @Serializable
@@ -8185,6 +8187,7 @@ data class UserCustomCharacterPatchInput(
     @SerialName("exampleDialogue") val `exampleDialogue`: String? = null,
     @SerialName("tags") val `tags`: List<String>? = null,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+    @SerialName("voiceId") val `voiceId`: Id? = null,
 )
 
 @Serializable
@@ -8199,6 +8202,7 @@ data class UserCustomCharacterWrite(
     @SerialName("exampleDialogue") val `exampleDialogue`: String? = null,
     @SerialName("tags") val `tags`: List<String>? = null,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+    @SerialName("voiceId") val `voiceId`: Id? = null,
 )
 
 @Serializable
@@ -8213,6 +8217,7 @@ data class UserCustomCharacterWriteInput(
     @SerialName("exampleDialogue") val `exampleDialogue`: String? = null,
     @SerialName("tags") val `tags`: List<String>? = null,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+    @SerialName("voiceId") val `voiceId`: Id? = null,
 )
 
 @Serializable
@@ -8260,6 +8265,7 @@ data class UserCustomTrialWrite(
     @SerialName("exampleDialogue") val `exampleDialogue`: String? = null,
     @SerialName("tags") val `tags`: List<String>? = null,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+    @SerialName("voiceId") val `voiceId`: Id? = null,
     @SerialName("sourceCharacterId") val `sourceCharacterId`: Id? = null,
 )
 
@@ -8275,6 +8281,7 @@ data class UserCustomTrialWriteInput(
     @SerialName("exampleDialogue") val `exampleDialogue`: String? = null,
     @SerialName("tags") val `tags`: List<String>? = null,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+    @SerialName("voiceId") val `voiceId`: Id? = null,
     @SerialName("sourceCharacterId") val `sourceCharacterId`: Id? = null,
 )
 

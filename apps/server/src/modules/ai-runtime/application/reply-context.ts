@@ -75,6 +75,7 @@ export const ReplySnapshot = z.object({
   userText: z.string().default(''),
   /** T-071：陪伴设置里的音色。 */
   voiceId: z.string().nullable().default(null),
+  defaultVoiceId: z.string().nullable().default(null),
   personaFit: z.number().int().min(1).max(5).default(3),
   personaTags: z.array(z.string()).default([]),
   typoStyle: z.enum(['pinyin', 'none']).default('none'),
@@ -409,6 +410,8 @@ export class ReplyContext {
       allowedNames,
       userText: userText.slice(0, 4000),
       voiceId: settings.voiceId ?? null,
+      defaultVoiceId:
+        role.profile.kind === 'custom' ? (role.card.data.social.voiceId ?? null) : null,
       personaFit: settings.personaFit ?? 3,
       personaTags: role.card.data.persona.personaTags,
       typoStyle: role.card.data.speech.typoStyle ?? 'none',

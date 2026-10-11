@@ -249,6 +249,8 @@ export const UserCustomCharacterWrite = z.object({
   tags: z.array(z.string().max(16)).max(10).optional(),
   /** 自定义头像媒体 ID（custom_character_avatar；可继承公开 plaza_avatar / character_avatar）；null 使用默认头像。 */
   avatarMediaId: Id.nullable().optional(),
+  /** 默认音色，从启用中的音色库选择；null 清空。陪伴设置里的选择优先。 */
+  voiceId: Id.nullable().optional(),
 });
 export type UserCustomCharacterWrite = z.infer<typeof UserCustomCharacterWrite>;
 export const UserCustomTrialWrite = UserCustomCharacterWrite.extend({
@@ -268,6 +270,8 @@ export const UserCustomCharacter = CharacterProfile.extend({
   catchphrases: z.array(z.string()).optional(),
   /** 3.1：说话方式；未填为 null。 */
   speechStyle: z.string().nullable().optional(),
+  /** 自定义角色默认音色；旧服务器可省略，null 未选择。 */
+  voiceId: Id.nullable().optional(),
   exampleDialogue: z.string().nullable(),
   tags: z.array(z.string().max(16)),
   /**

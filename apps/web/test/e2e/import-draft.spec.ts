@@ -19,6 +19,7 @@ test('导入草稿生日、头像、分类保存重读并创建角色；清空�
   await page.goto(`/characters/custom/new?import=${job.jobId}`);
   await expect(page.getByRole('textbox', { name: /名字/ })).toHaveValue('导入测试');
   await page.getByLabel(/生日/).fill('2000-05-16');
+  await page.getByLabel('音色（可选）').selectOption({ label: '浏览器测试音色' });
   await page.getByLabel('真人类型').selectOption('historical');
   await page.getByLabel('外表是儿童').check();
   await page.getByRole('radio', { name: '未满 18 岁', exact: true }).check();
@@ -53,10 +54,12 @@ test('导入草稿生日、头像、分类保存重读并创建角色；清空�
   const saved = await response.json();
   expect(saved.editorFields.birthday).toBe('2000-05-16');
   expect(saved.editorFields.avatarMediaId).toBeTruthy();
+  expect(saved.editorFields.voiceId).toBeTruthy();
   expect(saved.suggestedClassification.childAppearance).toBe(true);
   expect(saved.suggestedClassification.realPersonKind).toBe('historical');
   await page.reload();
   await expect(page.getByLabel(/生日/)).toHaveValue('2000-05-16');
+  await expect(page.getByLabel('音色（可选）')).toHaveValue(saved.editorFields.voiceId);
   await expect(page.getByLabel('外表是儿童')).toBeChecked();
   await expect(page.getByLabel('真人类型')).toHaveValue('historical');
   await expect(page.getByRole('radio', { name: '未满 18 岁', exact: true })).toBeChecked();
@@ -82,6 +85,7 @@ test('导入草稿生日、头像、分类保存重读并创建角色；清空�
   expect(created.status()).toBe(200);
   const role = await created.json();
   expect(role.birthday).toBeNull();
+  expect(role.voiceId).toBe(saved.editorFields.voiceId);
   expect(role.avatar.image).toBeNull();
   expect(role.classification.childAppearance).toBe(true);
   expect(role.classification.ageSetting).toBe('minor');

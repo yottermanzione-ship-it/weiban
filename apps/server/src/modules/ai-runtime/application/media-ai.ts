@@ -75,6 +75,7 @@ export interface MediaCallContext {
   userId: string;
   characterId: string;
   conversationId: string;
+  defaultVoiceId?: string | null;
 }
 
 export interface ImageAnalysis {
@@ -548,7 +549,7 @@ export class MediaAiService {
     const until = await this.quiet.getInconvenientUntil(ctx.userId).catch(() => null);
     if (until && Date.parse(until) > this.clock.nowMs()) return null;
     if (!(await this.media.isServiceEnabled('speech_synthesis'))) return null;
-    const voiceId = await this.resolveVoice(ctx.characterId, input.voiceId);
+    const voiceId = await this.resolveVoice(ctx.characterId, input.voiceId, ctx.defaultVoiceId);
     if (!voiceId) return null;
     const text = input.bubbles.join('\n');
     const result = await this.media.synthesizeSpeech({
@@ -571,10 +572,15 @@ export class MediaAiService {
     };
   }
 
-  /** 陪伴设置的音色（启用中）→ 预设角色默认音色（启用中）→ 无。 */
-  async resolveVoice(characterId: string, preferred: string | null): Promise<string | null> {
+  /** 陪伴设置 → 已授权角色快照的默认音色 → 预设默认；每一项都必须仍启用。 */
+  async resolveVoice(
+    characterId: string,
+    preferred: string | null,
+    defaultVoiceId?: string | null,
+  ): Promise<string | null> {
     for (const id of [
       preferred,
+      defaultVoiceId,
       await this.voices.getDefaultVoiceId(characterId).catch(() => null),
     ]) {
       if (!id) continue;

@@ -30,6 +30,10 @@ class CustomCharacterTrialTest {
     @get:Rule val compose = createComposeRule()
     private val requests = ConcurrentLinkedQueue<RecordedRequest>()
     private val conversationId = "01920000-0000-7000-8000-000000000010"
+    private val voiceId = "01920000-0000-7000-8000-000000000023"
+    private val voicesJson get() = """{"items":[{
+      "voiceId":"$voiceId","name":"测试音色","tags":[],"sampleMediaId":null,"sampleUrl":null,"enabled":true
+    }]}"""
     private lateinit var server: MockWebServer
     private lateinit var database: LocalDatabase
     private lateinit var repository: SessionRepository
@@ -45,6 +49,7 @@ class CustomCharacterTrialTest {
                     requests.add(request)
                     val response =
                         when {
+                            request.path == "/api/v1/voices" -> voicesJson
                             request.method == "POST" && request.path == "/api/v1/characters/custom/trial" ->
                                 """{
                                   "characterId":"01920000-0000-7000-8000-000000000011",
@@ -115,6 +120,8 @@ class CustomCharacterTrialTest {
         val description = "这是一位喜欢日常生活的原创成年角色，性格温柔耐心，喜欢散步和读书，说话自然简短，对别人友善，并且尊重他人的个人边界。"
         compose.onNode(hasSetTextAction() and hasText("名字（必填）")).performTextInput(name)
         compose.onNode(hasSetTextAction() and hasText("人设描述（至少50字）")).performTextInput(description)
+        compose.onNodeWithText("音色：默认").performScrollTo().performClick()
+        compose.onNodeWithText("测试音色").performClick()
         compose.onNodeWithText("保存前试聊").performScrollTo().performClick()
         compose.waitUntil(10000) { requests.any { it.method == "GET" && it.path?.contains("/messages") == true } }
         compose.onNodeWithText("和$name 试聊").assertIsDisplayed()
@@ -127,6 +134,7 @@ class CustomCharacterTrialTest {
         val fields = Json.parseToJsonElement(created).jsonObject
         assertEquals(name, fields.getValue("name").jsonPrimitive.content)
         assertEquals(description, fields.getValue("description").jsonPrimitive.content)
+        assertEquals(voiceId, fields.getValue("voiceId").jsonPrimitive.content)
         assertFalse(requests.any { it.path == "/api/v1/characters/custom" })
         compose.onNodeWithText("结束试聊，返回编辑").performClick()
         compose.waitUntil(10000) { requests.any { it.method == "DELETE" } }
@@ -141,7 +149,7 @@ class CustomCharacterTrialTest {
         val avatarId = "01920000-0000-7000-8000-000000000022"
         val result = """{
           "kind":"new_character","draft":{"cardSchemaVersion":1,"data":{}},
-          "editorFields":{"name":"保存的导入角色","description":"","catchphrases":[],"speechStyle":"","exampleDialogue":"","tags":[],"birthday":"2000-05-16","avatarMediaId":"$avatarId"},
+          "editorFields":{"name":"保存的导入角色","description":"","catchphrases":[],"speechStyle":"","exampleDialogue":"","tags":[],"birthday":"2000-05-16","avatarMediaId":"$avatarId","voiceId":"$voiceId"},
           "suggestedClassification":{"basis":"real_person","realPersonKind":"historical","ageSetting":"minor","childAppearance":true},"detectedRealNames":[]
         }"""
         server.dispatcher =
@@ -151,6 +159,7 @@ class CustomCharacterTrialTest {
                     val response =
                         when {
                             request.method == "PUT" -> request.body.clone().readUtf8()
+                            request.path == "/api/v1/voices" -> voicesJson
                             request.path == "/api/v1/imports/$jobId/result" -> result
                             request.path == "/api/v1/imports/$jobId" ->
                                 """{
@@ -189,6 +198,7 @@ class CustomCharacterTrialTest {
         val fields = body.getValue("editorFields").jsonObject
         assertEquals(JsonNull, fields["birthday"])
         assertEquals(avatarId, fields.getValue("avatarMediaId").jsonPrimitive.content)
+        assertEquals(voiceId, fields.getValue("voiceId").jsonPrimitive.content)
         val classification = body.getValue("suggestedClassification").jsonObject
         assertEquals("historical", classification.getValue("realPersonKind").jsonPrimitive.content)
         assertEquals("minor", classification.getValue("ageSetting").jsonPrimitive.content)

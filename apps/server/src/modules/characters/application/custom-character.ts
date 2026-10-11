@@ -13,6 +13,7 @@ import {
   type UserCustomCharacter,
   type ChatAdminPort,
   type IdentityAccountStatusPort,
+  type MediaAssetReadPort,
   Id,
 } from '@weiban/contracts';
 import {
@@ -30,6 +31,7 @@ import {
 } from '../../../platform/index.js';
 import { CHAT_ADMIN_PORT } from '../../chat/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
+import { MEDIA_ASSET_READ_PORT } from '../../media/index.js';
 import {
   deriveClassification,
   classificationCanChange,
@@ -37,7 +39,7 @@ import {
 } from '../../policy/index.js';
 import { characters, trialSessions } from '../infra/db/schema.js';
 import { childFeaturesIn } from '../domain/child-features.js';
-import { catchphrasesOf, type CustomCharacterPayload } from '../domain/custom-card.js';
+import { catchphrasesOf, voiceIdOf, type CustomCharacterPayload } from '../domain/custom-card.js';
 import { CharacterService } from './characters.js';
 
 /** 自定义角色的 draft_ciphertext 中存储的明文 JSON 结构（定义见 domain/custom-card.ts）。 */
@@ -74,6 +76,7 @@ function buildPayload(body: UserCustomCharacterWrite): CustomCharacterPayload {
     exampleDialogue: body.exampleDialogue ?? null,
     tags: body.tags ?? [],
     avatarMediaId: body.avatarMediaId ?? null,
+    voiceId: body.voiceId ?? null,
   };
 }
 
@@ -98,6 +101,7 @@ export class CustomCharacterService {
     @Inject(CHAT_ADMIN_PORT) private readonly chatAdmin: ChatAdminPort,
     @Inject(IDENTITY_ACCOUNT_STATUS_PORT) private readonly accounts: IdentityAccountStatusPort,
     @Inject(CharacterService) private readonly characterService: CharacterService,
+    @Inject(MEDIA_ASSET_READ_PORT) private readonly assets: MediaAssetReadPort,
   ) {}
 
   async create(
@@ -113,6 +117,11 @@ export class CustomCharacterService {
     parseContract(Id, userId);
     const payload = buildPayload(body);
     await this.characterService.customAvatar(userId, payload.avatarMediaId);
+    const inheritedVoice = trial?.sourceCharacterId
+      ? (await this.get(userId, trial.sourceCharacterId)).voiceId
+      : null;
+    if (!trial?.sourceCharacterId || payload.voiceId !== inheritedVoice)
+      await this.assertVoice(payload.voiceId);
     const detected =
       childFeaturesIn(textsToCheck(payload)) || trial?.childFeaturesDetected === true;
 
@@ -273,6 +282,7 @@ export class CustomCharacterService {
         : {}),
       ...(patch.tags !== undefined ? { tags: patch.tags ?? [] } : {}),
       ...(patch.avatarMediaId !== undefined ? { avatarMediaId: patch.avatarMediaId ?? null } : {}),
+      ...(patch.voiceId !== undefined ? { voiceId: patch.voiceId } : {}),
       ...(patch.speechStyle !== undefined ? { speechStyle: patch.speechStyle.trim() || null } : {}),
     };
     if (patch.catchphrase !== undefined || patch.catchphrases !== undefined) {
@@ -286,6 +296,8 @@ export class CustomCharacterService {
     }
     if (patch.avatarMediaId !== undefined)
       await this.characterService.customAvatar(userId, merged.avatarMediaId);
+    if (patch.voiceId !== undefined && patch.voiceId !== voiceIdOf(existing))
+      await this.assertVoice(patch.voiceId);
 
     if (patch.classification !== undefined) {
       if (
@@ -468,8 +480,15 @@ export class CustomCharacterService {
       catchphrase: payload.catchphrase,
       catchphrases: catchphrasesOf(payload),
       speechStyle: payload.speechStyle ?? null,
+      voiceId: voiceIdOf(payload),
       exampleDialogue: payload.exampleDialogue,
       childFeaturesDetected: row.childFeaturesDetected,
     };
+  }
+
+  private async assertVoice(voiceId: string | null | undefined): Promise<void> {
+    if (!voiceId) return;
+    const voice = await this.assets.getVoice(voiceId);
+    if (!voice?.enabled) throw new AppError('bad_request', '音色不存在或已停用');
   }
 }

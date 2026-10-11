@@ -218,6 +218,7 @@ export class ReplyEngine {
             userId: row.userId,
             characterId: row.characterId,
             conversationId: row.conversationId,
+            defaultVoiceId: snapshot.defaultVoiceId,
           },
           triggerId: row.triggerId,
           bubbles,

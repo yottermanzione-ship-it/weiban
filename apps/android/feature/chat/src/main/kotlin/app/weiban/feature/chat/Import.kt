@@ -82,6 +82,7 @@ private class DraftFields(
     val birthday: String,
     val avatarMediaId: String?,
     val childAppearance: Boolean,
+    val voiceId: String?,
 )
 
 private fun draftFields(
@@ -133,6 +134,7 @@ private fun draftFields(
         birthday = editor?.get("birthday").str().orEmpty(),
         avatarMediaId = editor?.get("avatarMediaId").str(),
         childAppearance = classification?.get("childAppearance")?.jsonPrimitive?.booleanOrNull ?: false,
+        voiceId = editor?.get("voiceId").str(),
     )
 }
 
@@ -724,6 +726,7 @@ private fun DraftEditor(
     var basis by remember(job.jobId) { mutableStateOf(fields.basis) }
     var birthday by remember(job.jobId) { mutableStateOf(fields.birthday) }
     var avatarMediaId by remember(job.jobId) { mutableStateOf(fields.avatarMediaId) }
+    var voiceId by remember(job.jobId) { mutableStateOf(fields.voiceId) }
     var realKind by remember(job.jobId) { mutableStateOf(fields.realPersonKind) }
     var age by remember(job.jobId) { mutableStateOf(fields.ageSetting) }
     var childAppearance by remember(job.jobId) { mutableStateOf(fields.childAppearance) }
@@ -766,6 +769,7 @@ private fun DraftEditor(
             singleLine = true,
             label = { Text("生日（YYYY-MM-DD，可不填）") },
         )
+        DraftVoiceSelection(repository, owner, voiceId, !pending) { voiceId = it }
         Text("角色头像")
         PhotoCropper(enabled = !pending, onRestore = avatarMediaId?.let { { avatarMediaId = null } }) { bytes ->
             pending = true
@@ -825,6 +829,7 @@ private fun DraftEditor(
                                 put("exampleDialogue", examples)
                                 put("birthday", birthday.trim().takeIf(String::isNotEmpty)?.let(::JsonPrimitive) ?: JsonNull)
                                 put("avatarMediaId", avatarMediaId?.let(::JsonPrimitive) ?: JsonNull)
+                                put("voiceId", voiceId?.let(::JsonPrimitive) ?: JsonNull)
                                 put(
                                     "catchphrases",
                                     JsonArray(
@@ -894,6 +899,7 @@ private fun DraftEditor(
                                         put("description", description)
                                         put("birthday", birthday.trim().takeIf(String::isNotEmpty)?.let(::JsonPrimitive) ?: JsonNull)
                                         put("avatarMediaId", avatarMediaId?.let(::JsonPrimitive) ?: JsonNull)
+                                        put("voiceId", voiceId?.let(::JsonPrimitive) ?: JsonNull)
                                         put(
                                             "classification",
                                             buildJsonObject {

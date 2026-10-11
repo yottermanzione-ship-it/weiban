@@ -109,6 +109,7 @@ export const ImportResult = z.discriminatedUnion('kind', [
         /** 用户选择的生日和头像；省略兼容旧草稿，null 表示主动清空。 */
         birthday: LocalDate.nullable().optional(),
         avatarMediaId: Id.nullable().optional(),
+        voiceId: Id.nullable().optional(),
       })
       .optional(),
     /** 默认「真人 · 身边真人」（CHR-08 第 4 条）；改选原创 / 虚构需要声明，由自定义角色创建接口校验。 */

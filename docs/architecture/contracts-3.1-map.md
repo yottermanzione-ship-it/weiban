@@ -36,7 +36,7 @@
 | B2 | ⑲ | `http/chat.ts` `ImageContent.sizeBytes` | 用户发图、角色发图（含宠物照片）写消息时从媒体记录填字节数 | `modules/chat/application/`（发送校验处）、ai-runtime 发图处由 AI 批顺带 |
 | B3 | ㉘ | `http/chat-groups.ts` `locateByDate`、`listByType`、`searchConversation.senderParticipantId` | 两个新接口 + 搜索按发送者过滤；`locateByDate` 按 `Profile.timezone` 算当天起点；`listByType` 用已有 `content_type` 列 | `modules/chat/http/`、`application/search.ts` |
 | B4 | ⑲ | `http/character-extras.ts` `getDefaultVoice` | 读默认音色 + 经 `MediaAssetReadPort` 取名称 | `modules/characters/http/`（作品链接控制器） |
-| B5 | T-098 | `http/characters.ts` `catchphrases`、`speechStyle` | 自定义角色创建 / 修改写入角色卡 `speech.catchphrases`、`speech.tone`，响应返回；两者参与儿童特征检测 | `modules/characters/application/custom-character.ts` |
+| B5 | T-098 | `http/characters.ts` `catchphrases`、`speechStyle`、可选可空`voiceId` | 自定义角色创建 / 修改写入角色卡 `speech.catchphrases`、`speech.tone`，响应返回；两者参与儿童特征检测。音色ID进入私有快照和运行时`social.voiceId`，陪伴音色优先且合成前检查启用状态；导入草稿保留选择，null明确清空，无新增迁移 | `modules/characters/application/custom-character.ts` |
 | B6 | ㉕ | `ports/characters.ts` `CharacterSupplementConflictsWritePort` | 把内部令牌 `CHARACTER_SUPPLEMENT_CONFLICTS` 改为实现契约端口：加 `expectedTextSha256` 比对（不一致返回 `stale`），返回 `PortResult`，写入后发 `data.changed(section = supplement, characterId)` | `modules/characters/tokens.ts`、补充设定服务 |
 | B7 | ㉝ | `CharacterChildFeaturesWritePort`；`PlazaPresetVariantSnapshot.childFeaturesDetected` | 内部令牌改实现契约端口（签名已兼容，只改类型名）；`applyVariant` 时取快照与预设分类中更严的 `childFeaturesDetected`，存在用户这份补充设定 / 运行时分类上，不写回预设 | `modules/characters/application/plaza-port.ts` |
 | B8 | ㉖ | `PersonaUpdateSummarizerPort` | characters 定义令牌 `CHARACTER_PERSONA_SUMMARIZER`（`@Optional()` 注入）；管理员发布新人设版本时调用，null / 未绑定时用管理员摘要或「资料已更新」 | `modules/characters/`（发布人设版本处） |

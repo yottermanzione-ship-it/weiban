@@ -29,6 +29,7 @@ import {
   type BillingReadPort,
   type ImportDialogueLine,
   type MediaSystemPort,
+  type MediaAssetReadPort,
   type PushPort,
   type SyncPort,
   type Tx,
@@ -55,7 +56,7 @@ import {
   type UserDataRegistry,
 } from '../../../platform/index.js';
 import { BILLING_READ_PORT } from '../../billing/index.js';
-import { MEDIA_SYSTEM_PORT } from '../../media/index.js';
+import { MEDIA_SYSTEM_PORT, MEDIA_ASSET_READ_PORT } from '../../media/index.js';
 import { PUSH_PORT } from '../../push/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
 import { keepRecent, normalizeText, parseDialogue, speakerStats } from '../domain/parse.js';
@@ -109,6 +110,7 @@ export class ImporterService implements OnModuleInit {
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
     @Inject(BILLING_READ_PORT) private readonly billing: BillingReadPort,
     @Inject(MEDIA_SYSTEM_PORT) private readonly media: MediaSystemPort,
+    @Inject(MEDIA_ASSET_READ_PORT) private readonly assets: MediaAssetReadPort,
     @Optional() @Inject(PUSH_PORT) private readonly push?: PushPort,
     @Optional() @Inject(IMPORTER_ANALYZER) private readonly analyzer?: ImporterAnalyzer,
   ) {}
@@ -402,6 +404,29 @@ export class ImporterService implements OnModuleInit {
       if (!current) throw new AppError('not_found', '导入任务不存在');
       if (current.status !== 'completed' || current.mergedIntoJobId)
         throw new AppError('conflict', '这个导入任务不能编辑');
+      if (result.kind === 'new_character' && result.editorFields?.voiceId) {
+        const voice = await this.assets.getVoice(result.editorFields.voiceId);
+        if (!voice?.enabled) {
+          let previousVoiceId: string | null = null;
+          if (current.resultCiphertext) {
+            const plain = await this.crypto.open(
+              userId,
+              `importer:result:${jobId}`,
+              current.resultCiphertext,
+              tx,
+            );
+            try {
+              const previous = ImportResult.parse(JSON.parse(plain.toString('utf8')));
+              if (previous.kind === 'new_character')
+                previousVoiceId = previous.editorFields?.voiceId ?? null;
+            } finally {
+              plain.fill(0);
+            }
+          }
+          if (!voice || previousVoiceId !== result.editorFields.voiceId)
+            throw new AppError('bad_request', '音色不存在或已停用');
+        }
+      }
       const sealed = await this.crypto.seal(
         userId,
         `importer:result:${jobId}`,
