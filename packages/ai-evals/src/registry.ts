@@ -4,9 +4,10 @@ import { L3_CASES, L3_PROACTIVE_CASES } from '../cases/l3.js';
 import { L4_GROUP_CASES, L4_SOCIAL_CASES } from '../cases/l4.js';
 import { L6_PET_CASES } from '../cases/l6.js';
 import { L7_PLAY_CASES } from '../cases/l7.js';
+import { SAFETY_CARE_CASES } from '../cases/safety-care.js';
 
 /** 已落地的考题登记，不等于eval-plan全部19类已覆盖。 */
-export const EVAL_CASE_VERSION = '2026-10-11.1';
+export const EVAL_CASE_VERSION = '2026-10-12.1';
 export const EVAL_SUITES = {
   l2: L2_CASES,
   l3_simulation: L3_CASES,
@@ -15,6 +16,7 @@ export const EVAL_SUITES = {
   l4_social: L4_SOCIAL_CASES,
   l6_pet: L6_PET_CASES,
   l7_play: L7_PLAY_CASES,
+  safety_care: SAFETY_CARE_CASES,
 } as const;
 export const EVAL_CASES: readonly EvalCase[] = Object.values(EVAL_SUITES).flat();
 

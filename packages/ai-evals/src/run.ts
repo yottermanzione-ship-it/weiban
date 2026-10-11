@@ -1,4 +1,4 @@
-import { evaluateOutput } from './index.js';
+import { evaluateOutput, type EvalJudge } from './index.js';
 import { EVAL_CASES, EVAL_CASE_VERSION, resolveEvalCharacter } from './registry.js';
 
 export interface EvalObservation {
@@ -11,7 +11,9 @@ export interface EvalObservation {
   promptTemplateVersion: string;
   outputEvidenceRef: string;
   output: string;
-  judge?: { score: number; reviewer: string };
+  judge?: EvalJudge;
+  runtimeChecks?: Readonly<Record<string, boolean>>;
+  runtimeEvidenceRef?: string;
 }
 
 /** 只汇总已登记题；即使全通过也不是产品发布许可或独立验收。 */
@@ -26,7 +28,9 @@ export function summarizeEvalRun(observations: readonly EvalObservation[]) {
   }
   const results = EVAL_CASES.map((test) => {
     const row = rows.get(test.id);
-    const evaluated = row ? evaluateOutput(test, row.output, row.judge) : undefined;
+    const evaluated = row
+      ? evaluateOutput(test, row.output, row.judge, row.runtimeChecks)
+      : undefined;
     const validEvidence =
       row &&
       row.caseVersion === EVAL_CASE_VERSION &&
@@ -37,7 +41,8 @@ export function summarizeEvalRun(observations: readonly EvalObservation[]) {
       row.personaVersion > 0 &&
       row.modelKey.trim() &&
       row.promptTemplateVersion.trim() &&
-      row.outputEvidenceRef.trim();
+      row.outputEvidenceRef.trim() &&
+      (!test.requiredRuntimeChecks?.length || row.runtimeEvidenceRef?.trim());
     return {
       caseId: test.id,
       hard: test.hard,

@@ -6,6 +6,7 @@ import { L3_CASES, L3_PROACTIVE_CASES } from '../cases/l3.js';
 import { L4_GROUP_CASES, L4_SOCIAL_CASES } from '../cases/l4.js';
 import { L6_PET_CASES } from '../cases/l6.js';
 import { L7_PLAY_CASES } from '../cases/l7.js';
+import { SAFETY_CARE_CASES } from '../cases/safety-care.js';
 import {
   EVAL_CASES,
   EVAL_CASE_VERSION,
@@ -39,9 +40,10 @@ it('所有已实现阶段和主动/群聊/社交/宠物/玩法题都登记，编
     ...L4_SOCIAL_CASES,
     ...L6_PET_CASES,
     ...L7_PLAY_CASES,
+    ...SAFETY_CARE_CASES,
   ];
   expect(EVAL_CASES.map((test) => test.id)).toEqual(all.map((test) => test.id));
-  expect(Object.keys(EVAL_SUITES)).toHaveLength(7);
+  expect(Object.keys(EVAL_SUITES)).toHaveLength(8);
   expect(validateEvalRegistry()).toEqual([]);
   expect(new Set(EVAL_CASES.map((test) => test.id)).size).toBe(all.length);
   for (const role of EVAL_CHARACTERS.filter((role) => role.id.startsWith('S-'))) {
@@ -106,7 +108,16 @@ it('全部登记题有输出与评审依据时，只能标记登记题通过，�
   const records = EVAL_CASES.map((test) => ({
     ...observation(test.id),
     evalCharacterId: test.setup.character,
-    output: test.mustInclude.join(' ') || '测试回答',
+    output:
+      [...test.mustInclude, ...(test.mustIncludeAny ?? []).map((group) => group[0]!)].join(' ') ||
+      '测试回答',
+    judge: {
+      score: 4,
+      reviewer: 'fixture-independent-reviewer',
+      checks: Object.fromEntries((test.requiredJudgeChecks ?? []).map((key) => [key, true])),
+    },
+    runtimeChecks: Object.fromEntries((test.requiredRuntimeChecks ?? []).map((key) => [key, true])),
+    runtimeEvidenceRef: 'fixture-runtime-log',
   }));
   const result = summarizeEvalRun(records);
   expect(result).toMatchObject({
