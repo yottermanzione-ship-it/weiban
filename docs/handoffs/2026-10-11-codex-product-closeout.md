@@ -1,5 +1,14 @@
 # Codex 产品收口活动断点
 
+## 当前断点（2026-10-12 00:26，优先于下文）
+
+- 上轮为实质进展，本轮继续本机备份/恢复交付。核对安全规范发现cd1cfd0初版把KEK和数据库备份同目录，不符合`security-and-privacy.md`；已向总经理明确说明遗漏并纠正，初版不作为合规备份交付。两份旧备份的秘密与登录资料移至`C:\wb-key-custody\legacy-20261012`，原清单失效标记，原运行配置未改。Windows ACL首次命令导致身份文件无允许项，修正为明确SID授权后解密成功；仅本人/SYSTEM可读，未输出任何秘密。
+- `Backup-Weiban.ps1`现强制提供age公钥文件，加密数据库dump与媒体tar，成功目录仅2份age密文和格式2清单，KEK/口令/登录资料不复制。源应用镜像取实际运行镜像ID；可通过ProjectName备份隔离恢复项目。finally清理临时明文与容器dump，即使清理抛错也执行恢复启动。实际生产空媒体备份`local-encrypted-backup-round1.log`通过；目录`C:\wb-local\backups\20261012-001144-0ea9817b1c354ba78c3fe0e69f884962`。age官方1.3.2Windows包SHA256校验通过（官方值见本机部署文档）。仅公钥放运行目录，演练age身份暂在ACL保护的C:\wb-offline-keys；尚未离线或异机保管，不把目录名当作离线证明。
+- 非空数据只在隔离恢复项目写入：以原账号真实HTTP上传64×64PNG，得到加密媒体与用户/平台两条DEK；同一脚本加密备份（`local-nonempty-backup-round1.log`），全新项目恢复后原账号/原KEK实际签名下载并解密88字节图片，SHA256与备份前内容一致（`local-nonempty-restore-media-round1.log`）。正式本机数据库没有注入测试图片/DEK，仍保留其原状态。
+- 新增`Restore-Weiban.ps1`，只接受格式2清单且检查两份密文哈希，目标必须全新weiban-restore-*项目；另行提供原运行配置/KEK和age身份。解密、单事务恢复库、恢复媒体后启动app，未启动Caddy或开放端口，不替换正在使用的服务。实际执行全流程通过（`local-restore-script-round1.log`），经该脚本恢复后的实际登录/媒体解密及哈希一致再次通过（`local-restore-script-media-round1.log`）。损坏密文和已有卷拒绝，损坏路径未创建卷（`local-restore-refusal-round1.log`）。受控错误公钥使备份加密失败，未留下明文或成功清单，恢复启动命令成功（`local-backup-failure-round1.log`）。原生产双端健康/登录/刷新最终通过（`local-encrypted-backup-login-final.log`）。
+- 3个隔离探测项目容器/网络/6个数据卷已按精确项目标签核对后移除，临时解密dump/tar已删除；保留加密演练包与非秘密媒体哈希、脚本证据。组合清理命令曾被执行策略拒绝，拆为不删除卷的compose down、核对标签、明确卷名删除及LiteralPath明文删除后成功，没有绕过权限或触及生产卷。
+- 下一步：收藏快照失败/重复清理真实PG测试；扩展权限限制验证；最新全量服务端/网页/后台/Linux安卓；19类真实模型、设备和独立审查。异机/离线密钥保管、真实供应商和设备仍是外部验收项，不能写完工。全部为开发自测。
+
 ## 当前断点（2026-10-12 00:08，优先于下文）
 
 - 用户确认先在本机部署，不需要外部服务器；现有localhost:8080/8081继续运行。独立副本`C:\wb-dev\codex-closeout`、分支`codex/product-closeout`不变，共享main未修改。目标继续进行，未完成或暂停。

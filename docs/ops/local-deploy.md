@@ -15,12 +15,24 @@
 本机整套备份：
 
 ```powershell
-& .\deploy\local\Backup-Weiban.ps1
+& .\deploy\local\Backup-Weiban.ps1 -RecipientFile C:\wb-local\backup-recipient.txt -AgeExecutable C:\wb-tools\age-v1.3.2\age\age.exe
 ```
 
-应用会短暂停止以冻结写入，并在`finally`中恢复启动。数据库使用`pg_dump -Fc`，媒体以只读卷打包，备份原配置、原秘密文件、已有登录资料和部署版本，生成SHA256清单。默认保存到`C:\wb-local\backups`的唯一子目录；拒绝放在Git工作区内。备份包含密钥及登录资料，请仅放在本人控制的目录。失败目录没有完整清单，不应作为有效备份使用。
+应用会短暂停止以冻结写入，并在`finally`中恢复启动。数据库使用`pg_dump -Fc`，媒体以只读卷打包，随后用age公钥加密，生成SHA256清单；成功目录只有两份age密文及非秘密清单，不含KEK、数据库口令、登录资料或age私钥。默认保存到`C:\wb-local\backups`的唯一子目录；拒绝放在Git工作区内。失败目录没有完整清单，不应作为有效备份使用。`-ProjectName`支持隔离恢复演练，默认仅为`weiban-local`。
 
-00:06实际备份成功，8项清单校验通过，随后在无网络、无宿主机端口的独立PostgreSQL容器恢复数据库，`pg_restore --exit-on-error`通过；原库与恢复库均1个用户，`vector`和`pg_trgm`扩展均恢复。原应用自动启动后双端登录/刷新与健康检查通过（`local-backup-round1.log`、`local-backup-login-round1.log`）。备份目录为`C:\wb-local\backups\20261012-000607-5f3f466b4cf541f3b0e2cb0ae1612b84`。这不是完整灾难恢复验收：恢复库的应用解密、非空媒体读取及替换电脑后的恢复仍需演练；原应用登录成功只证明原服务恢复运行。
+本机age来自[官方v1.3.2发布](https://github.com/FiloSottile/age/releases/tag/v1.3.2)，Windows包校验官方SHA256为`f48d8f8f9ebe903ab5027ed067652f2cc1db94bc206976430133b905dcd8e8c7`。只有公钥接收者文件放在运行目录。原KEK另存密码管理器或离线介质；age解密身份也应离线保存并与KEK分开。本次演练身份暂在`C:\wb-offline-keys\local-backup.agekey`，ACL仅本人及SYSTEM；目录名不代表已经离线转存，异机/离线保管仍待总经理完成。
+
+只向全新隔离项目恢复，不覆盖正在使用的服务；需提供另行保存的原运行配置/KEK及age身份，并使用匹配的应用镜像：
+
+```powershell
+& .\deploy\local\Restore-Weiban.ps1 -BackupDirectory C:\安全数据备份目录 -IdentityFile C:\单独保管的身份文件 -ProjectName weiban-restore-check -AgeExecutable C:\wb-tools\age-v1.3.2\age\age.exe
+```
+
+恢复脚本只接受格式2的两份密文及匹配清单，拒绝已有目标卷；先解密、单事务恢复数据库与媒体，成功后启动app，不启动Caddy、不开放入口、不替换`weiban-local`。验证具体加密数据/媒体后再安排切换。失败保留隔离卷供检查，删除工作目录中的临时明文；不要向正在使用的项目执行`down -v`。
+
+00:06原备份/数据库恢复确曾通过，但原实现把秘密与数据库同目录，违反安全规范，不能作为合规交付。00:11已纠正：两份旧备份中的秘密与登录资料移至单独的`C:\wb-key-custody\legacy-20261012`，限制本人/SYSTEM访问，原清单标为`legacy-manifest.invalid.json`。新格式2加密备份为`C:\wb-local\backups\20261012-001144-0ea9817b1c354ba78c3fe0e69f884962`，证据`local-encrypted-backup-round1.log`。原本机用户尚未录入加密数据，不将其空媒体备份记为媒体恢复通过。
+
+非空媒体验证只在隔离恢复环境完成：真实HTTP上传64×64图片后加密备份，第二个全新项目恢复，使用原KEK和原账号登录、重新取得签名链接并实际解密下载88字节图片，SHA256与备份前内容一致。真实用户DEK及平台DEK共2条均经实际媒体接口使用。证据`local-nonempty-backup-round1.log`、`local-nonempty-restore-media-round1.log`；这验证本机恢复链路，不代表异机、异地或独立验收。
 
 本机覆盖配置显式设置`ALLOW_LOCAL_HTTP=1`，只允许媒体地址为`localhost`、`127.0.0.1`或`[::1]`时使用HTTP。生产默认要求HTTPS，包括未显式填写媒体地址的情况；外部HTTP地址不会因开启该选项而被放行。数据库及服务容器仍使用生产运行配置。
 
