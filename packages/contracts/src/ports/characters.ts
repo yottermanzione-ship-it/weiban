@@ -156,6 +156,22 @@ export interface CharacterChildFeaturesWritePort {
   markChildFeaturesDetected(userId: string, characterId: string): Promise<boolean>;
 }
 
+/** T-103：独立试聊会话授权。快照角色仅当前用户可用，不代表正式好友。 */
+export interface CharacterTrialReadPort {
+  getTrial(
+    input: { userId: string; characterId: string; conversationId: string },
+    tx?: Tx,
+  ): Promise<{ epoch: string; expiresAt: string } | null>;
+}
+
+/** T-103：characters 结束试聊时，同一事务清除 ai-runtime 的临时回复数据。由装配入口绑定。 */
+export interface CharacterTrialCleanupPort {
+  purgeTrial(
+    tx: Tx,
+    input: { userId: string; characterId: string; conversationId: string },
+  ): Promise<void>;
+}
+
 /**
  * 3.1（积压 ㉖）：「发布新版本」时生成人设更新摘要的可选 AI 接入点。提供方 ai-runtime（T-081 的 PersonaUpdateSummaryService）；
  * 调用方 characters（管理员发布预设角色新人设版本时）。characters 是底层，不 import ai-runtime：令牌定义在 characters，

@@ -47,6 +47,7 @@ import { CallSchedulerService } from './application/call-scheduler.js';
 import { CallAgentService } from './application/call-agent.js';
 import {
   AI_CALL_AGENT_PORT,
+  AI_TRIAL_CLEANUP_PORT,
   AI_USER_QUIET_STATE_PORT,
   AI_IMPORT_ANALYZER,
   AI_PERSONA_UPDATE_SUMMARIZER,
@@ -89,6 +90,7 @@ import {
     PlayModule,
   ],
   providers: [
+    { provide: AI_TRIAL_CLEANUP_PORT, useExisting: ReplyPlanStore },
     // T-090：行为规划决策层。
     PlannerService,
     // T-081：角色读取补上「我的补充设定」；导入分析；补充设定冲突项；人设更新摘要。
@@ -148,6 +150,7 @@ import {
     AiRuntimeLifecycle,
   ],
   exports: [
+    AI_TRIAL_CLEANUP_PORT,
     SIMULATION_READ_PORT,
     AI_CALL_AGENT_PORT,
     AI_USER_QUIET_STATE_PORT,

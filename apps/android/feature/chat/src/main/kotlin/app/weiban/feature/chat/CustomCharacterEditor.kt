@@ -208,6 +208,8 @@ internal class CustomCharacterDraft(
     val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var trial by remember { mutableStateOf<String?>(null) }
+    trial?.let { conversationId -> CharacterTrialDialog(repository, open.owner, conversationId, draft.name) { trial = null } }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
@@ -255,6 +257,28 @@ internal class CustomCharacterDraft(
                 }
             }
         }) { Text(if (pending) "正在保存…" else "保存角色") }
+        TextButton(enabled = !pending && trial == null, onClick = {
+            error = draft.validationError()
+            if (error == null) {
+                val body = JsonObject(draft.body() + open.characterId?.let { mapOf("sourceCharacterId" to JsonPrimitive(it)) }.orEmpty())
+                pending = true
+                scope.launch {
+                    try {
+                        userAction({ error = it }) {
+                            trial =
+                                repository
+                                    .call(
+                                        Endpoints.userCustomEndpointsDraftTrial,
+                                        body = body,
+                                        options = SessionCallOptions(owner = open.owner, networkOnly = true),
+                                    ).conversationId
+                        }
+                    } finally {
+                        pending = false
+                    }
+                }
+            }
+        }) { Text("保存前试聊") }
     }
 }
 
@@ -330,6 +354,13 @@ internal class CustomCharacterDraft(
     val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var trialConversationId by remember { mutableStateOf<String?>(null) }
+    trialConversationId?.let { conversationId ->
+        CharacterTrialDialog(repository, owner, conversationId, role.name) {
+            trialConversationId =
+                null
+        }
+    }
     Text("角色已保存", Modifier.padding(WbSpace.S5))
     if (role.childFeaturesDetected) Text("检测到儿童特征，相关功能会按未成年角色设置。", Modifier.padding(WbSpace.S5))
     TextButton(enabled = !pending, onClick = {
@@ -343,8 +374,7 @@ internal class CustomCharacterDraft(
                             params = mapOf("characterId" to role.characterId),
                             options = SessionCallOptions(owner = owner, networkOnly = true),
                         )
-                    onClose()
-                    GrowthNavigation.openConversation(trial.conversationId)
+                    trialConversationId = trial.conversationId
                 }
             } finally {
                 pending = false

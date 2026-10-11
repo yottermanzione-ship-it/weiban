@@ -6,14 +6,13 @@
  * - 试聊：创建或复用一个不绑定 contacts 的临时会话（CHR-07 第 6 条）。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gt } from 'drizzle-orm';
 import {
   type UserCustomCharacterWrite,
   type UserCustomCharacterPatch,
   type UserCustomCharacter,
   type ChatAdminPort,
-  type ChatReadPort,
-  type Tx,
+  type IdentityAccountStatusPort,
   Id,
 } from '@weiban/contracts';
 import {
@@ -29,13 +28,14 @@ import {
   type Database,
   type EnvelopeCrypto,
 } from '../../../platform/index.js';
-import { CHAT_ADMIN_PORT, CHAT_READ_PORT } from '../../chat/index.js';
+import { CHAT_ADMIN_PORT } from '../../chat/index.js';
+import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
 import {
   deriveClassification,
   classificationCanChange,
   compareClassification,
 } from '../../policy/index.js';
-import { characters } from '../infra/db/schema.js';
+import { characters, trialSessions } from '../infra/db/schema.js';
 import { childFeaturesIn } from '../domain/child-features.js';
 import { catchphrasesOf, type CustomCharacterPayload } from '../domain/custom-card.js';
 import { CharacterService } from './characters.js';
@@ -96,16 +96,27 @@ export class CustomCharacterService {
     @Inject(ENVELOPE_CRYPTO) private readonly crypto: EnvelopeCrypto,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(CHAT_ADMIN_PORT) private readonly chatAdmin: ChatAdminPort,
-    @Inject(CHAT_READ_PORT) private readonly chatRead: ChatReadPort,
+    @Inject(IDENTITY_ACCOUNT_STATUS_PORT) private readonly accounts: IdentityAccountStatusPort,
     @Inject(CharacterService) private readonly characterService: CharacterService,
   ) {}
 
-  async create(userId: string, body: UserCustomCharacterWrite): Promise<UserCustomCharacter> {
+  async create(
+    userId: string,
+    body: UserCustomCharacterWrite,
+    trial?: {
+      sourceCharacterId?: string;
+      sourceRevision?: number;
+      childFeaturesDetected?: boolean;
+      reuse?: boolean;
+    },
+  ): Promise<UserCustomCharacter> {
     parseContract(Id, userId);
     const payload = buildPayload(body);
-    const detected = childFeaturesIn(textsToCheck(payload));
+    const detected =
+      childFeaturesIn(textsToCheck(payload)) || trial?.childFeaturesDetected === true;
 
     const id = newId();
+    let actualId = id;
     const now = this.clock.now();
     const sealed = await this.crypto.seal(
       userId,
@@ -114,10 +125,46 @@ export class CustomCharacterService {
     );
 
     await this.database.transaction(async (tx) => {
+      if (trial) {
+        await tx.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended('ai_runtime:user:' || $1,0))",
+          [userId],
+        );
+        if ((await this.accounts.getAccountStatus(userId, tx)) !== 'active')
+          throw new AppError('unauthenticated', '账号已失效');
+        if (trial.sourceCharacterId) {
+          const [source] = await tx.db
+            .select()
+            .from(characters)
+            .where(and(eq(characters.id, trial.sourceCharacterId), eq(characters.ownerId, userId)))
+            .for('share');
+          if (!source || source.revision !== trial.sourceRevision)
+            throw new AppError('not_found', '角色版本已变化，请重新试聊');
+          if (trial.reuse) {
+            const [existing] = await tx.db
+              .select()
+              .from(trialSessions)
+              .where(
+                and(
+                  eq(trialSessions.userId, userId),
+                  eq(trialSessions.sourceCharacterId, source.id),
+                  eq(trialSessions.sourceRevision, source.revision),
+                  eq(trialSessions.reusable, true),
+                  gt(trialSessions.expiresAt, this.clock.now()),
+                ),
+              );
+            if (existing) {
+              actualId = existing.characterId;
+              return;
+            }
+          }
+        }
+      }
       await tx.db.insert(characters).values({
         id,
         kind: 'custom',
         ownerId: userId,
+        isTrial: trial !== undefined,
         status: 'active',
         name: payload.name,
         searchText: payload.name,
@@ -140,10 +187,28 @@ export class CustomCharacterService {
         createdAt: now,
         updatedAt: now,
       });
+      if (trial) {
+        const conversation = await this.chatAdmin.ensureDirectConversation(tx, {
+          userId,
+          characterId: id,
+          restoreHistory: false,
+          trialExpiresAt: new Date(now.getTime() + 30 * 60_000).toISOString(),
+        });
+        await tx.db.insert(trialSessions).values({
+          conversationId: conversation.conversationId,
+          characterId: id,
+          userId,
+          sourceCharacterId: trial.sourceCharacterId ?? null,
+          sourceRevision: trial.sourceRevision ?? null,
+          reusable: trial.reuse ?? false,
+          createdAt: now,
+          expiresAt: new Date(now.getTime() + 30 * 60_000),
+        });
+      }
       await this.audit.record(
         {
           module: 'characters',
-          action: 'custom.created',
+          action: trial ? 'custom.trial_created' : 'custom.created',
           actorType: 'user',
           actorId: userId,
           targetType: 'character',
@@ -153,7 +218,7 @@ export class CustomCharacterService {
       );
     });
 
-    return this.get(userId, id);
+    return this.get(userId, actualId);
   }
 
   async update(
@@ -321,57 +386,18 @@ export class CustomCharacterService {
     return this.get(userId, characterId);
   }
 
-  /**
-   * 开始或复用试聊会话（CHR-07 第 6 条）。
-   * 试聊会话不建立正式联系人关系，不写入长期记忆。
-   * 复用：若角色已有 trialConversationId 且会话存在，直接返回。
-   * 新建：用 ChatAdminPort.ensureDirectConversation（restoreHistory = false）创建独立会话。
-   */
-  async startTrial(userId: string, characterId: string): Promise<{ conversationId: string }> {
-    parseContract(Id, userId);
-    parseContract(Id, characterId);
-
-    const [row] = await this.database.db
-      .select()
-      .from(characters)
-      .where(
-        and(
-          eq(characters.id, characterId),
-          eq(characters.ownerId, userId),
-          eq(characters.kind, 'custom'),
-        ),
-      );
-    if (!row) throw new AppError('not_found', '角色不存在');
-
-    // Try to reuse existing trial conversation
-    if (row.trialConversationId) {
-      const existing = await this.chatRead.findDirectConversation(userId, characterId);
-      if (existing) return { conversationId: existing.conversationId };
-    }
-
-    // Create new trial conversation (ensureDirectConversation is idempotent, restoreHistory=false for trial)
-    const conv = await this.database.transaction(async (tx) => {
-      return this.chatAdmin.ensureDirectConversation(tx as unknown as Tx, {
-        userId,
-        characterId,
-        restoreHistory: false,
-      });
-    });
-
-    await this.database.db
-      .update(characters)
-      .set({ trialConversationId: conv.conversationId, updatedAt: this.clock.now() })
-      .where(eq(characters.id, characterId));
-
-    return { conversationId: conv.conversationId };
-  }
-
   /** 3.0.1：我的全部自定义角色，按创建时间倒序。 */
   async list(userId: string): Promise<{ items: UserCustomCharacter[] }> {
     const rows = await this.database.db
       .select({ id: characters.id })
       .from(characters)
-      .where(and(eq(characters.ownerId, userId), eq(characters.kind, 'custom')))
+      .where(
+        and(
+          eq(characters.ownerId, userId),
+          eq(characters.kind, 'custom'),
+          eq(characters.isTrial, false),
+        ),
+      )
       .orderBy(desc(characters.createdAt));
     const items: UserCustomCharacter[] = [];
     for (const row of rows) items.push(await this.get(userId, row.id));

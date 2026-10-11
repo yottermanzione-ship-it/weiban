@@ -9,6 +9,7 @@ import { PublicUpdateAdminController } from './http/public-updates.controller.js
 import { CharacterService } from './application/characters.js';
 import { CharacterCheckWorker } from './application/check-worker.js';
 import { CustomCharacterService } from './application/custom-character.js';
+import { CharacterTrialService } from './application/trials.js';
 import { GatewayCharacterEvaluator, EVALUATOR_GATEWAY } from './application/evaluator.js';
 import { ScenarioModeService } from './application/scenario-modes.js';
 import { CharacterController, CharacterAdminController } from './http/characters.controller.js';
@@ -25,6 +26,7 @@ import { CharacterSupplementService } from './application/supplements.js';
 import { CharacterSupplementController } from './http/supplements.controller.js';
 import {
   CHARACTER_READ_PORT,
+  CHARACTER_TRIAL_READ_PORT,
   CHARACTER_NAME_READ_PORT,
   CHARACTER_EVALUATOR,
   PUBLIC_UPDATE_READ_PORT,
@@ -61,6 +63,8 @@ import {
     CharacterService,
     CharacterCheckWorker,
     CustomCharacterService,
+    CharacterTrialService,
+    { provide: CHARACTER_TRIAL_READ_PORT, useExisting: CharacterTrialService },
     CharacterPlazaService,
     { provide: CHARACTER_PLAZA_PORT, useExisting: CharacterPlazaService },
     { provide: CHARACTER_CHILD_FEATURES_WRITER, useExisting: CharacterPlazaService },
@@ -81,6 +85,7 @@ import {
     { provide: EVALUATOR_GATEWAY, useExisting: MODEL_GATEWAY_PORT },
   ],
   exports: [
+    CHARACTER_TRIAL_READ_PORT,
     CHARACTER_READ_PORT,
     CHARACTER_NAME_READ_PORT,
     PUBLIC_UPDATE_READ_PORT,

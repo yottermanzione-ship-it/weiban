@@ -53,7 +53,7 @@ export class QuirkService {
   }
 
   async choose(row: ReplyPlan, snapshot: ReplySnapshot): Promise<QuirkAction> {
-    if (row.kind !== 'message') return NO_QUIRK;
+    if (row.kind !== 'message' || snapshot.trial) return NO_QUIRK;
     const options = allowedQuirks({
       fit: snapshot.personaFit,
       tags: snapshot.personaTags,

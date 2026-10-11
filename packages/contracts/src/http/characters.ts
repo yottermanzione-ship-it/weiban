@@ -251,6 +251,10 @@ export const UserCustomCharacterWrite = z.object({
   avatarMediaId: Id.nullable().optional(),
 });
 export type UserCustomCharacterWrite = z.infer<typeof UserCustomCharacterWrite>;
+export const UserCustomTrialWrite = UserCustomCharacterWrite.extend({
+  sourceCharacterId: Id.optional(),
+});
+export type UserCustomTrialWrite = z.infer<typeof UserCustomTrialWrite>;
 
 /** PATCH 请求：所有字段可选。 */
 export const UserCustomCharacterPatch = UserCustomCharacterWrite.partial();
@@ -316,6 +320,22 @@ export const UserCustomEndpoints = {
     params: customParams,
     response: z.object({ conversationId: Id }),
     summary: 'CHR-07 试聊：开始或复用试聊会话，试聊记录不保留',
+  }),
+  draftTrial: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/characters/custom/trial`,
+    auth: 'user',
+    body: UserCustomTrialWrite,
+    response: z.object({ characterId: Id, conversationId: Id, expiresAt: Timestamp }),
+    summary: 'CHR-07 保存前试聊：独立临时人设和会话，不创建正式角色或好友',
+  }),
+  endTrial: defineEndpoint({
+    method: 'DELETE',
+    path: `${API_PREFIX}/characters/custom/trial/:conversationId`,
+    auth: 'user',
+    params: z.object({ conversationId: Id }),
+    response: z.object({ ended: z.literal(true) }),
+    summary: 'CHR-07 结束试聊并清除临时会话、人设与回复计划；幂等',
   }),
 } as const;
 

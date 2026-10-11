@@ -3,6 +3,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import {
   ContentScope,
   Id,
+  Timestamp,
   SystemContent,
   type ChatAdminPort,
   type Conversation,
@@ -49,6 +50,7 @@ export class ChatAdminService implements ChatAdminPort {
     const tx = asDbTx(transaction);
     parseContract(Id, input.userId);
     parseContract(Id, input.characterId);
+    if (input.trialExpiresAt) parseContract(Timestamp, input.trialExpiresAt);
     await tx.query(
       "SELECT pg_advisory_xact_lock(hashtextextended('chat:direct:' || $1 || ':' || $2,0))",
       [input.userId, input.characterId],
@@ -95,6 +97,7 @@ export class ChatAdminService implements ChatAdminPort {
         ownerUserId: input.userId,
         type: 'direct',
         characterId: input.characterId,
+        trialExpiresAt: input.trialExpiresAt ? new Date(input.trialExpiresAt) : null,
         title: null,
         systemParticipantId: newId(),
         contentScope: 'normal',

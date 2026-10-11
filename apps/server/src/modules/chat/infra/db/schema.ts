@@ -29,6 +29,7 @@ export const conversations = chatSchema.table(
     contentScope: text('content_scope').notNull().default('normal'),
     lastSeq: seq('last_seq').notNull().default(0),
     archivedAt: time('archived_at'),
+    trialExpiresAt: time('trial_expires_at'),
     /** 拉群的角色（SOC-06）；用户建群与私聊为 null。 */
     createdByCharacterId: uuid('created_by_character_id'),
     /** 群名是否由用户 / 角色改过；false 时 title 是成员名拼接的快照。 */

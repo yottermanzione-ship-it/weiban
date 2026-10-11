@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, count, desc, eq, inArray, lte, ne, or } from 'drizzle-orm';
-import { Id, Timestamp, type IdentityAccountStatusPort } from '@weiban/contracts';
+import { Id, Timestamp, type IdentityAccountStatusPort, type Tx } from '@weiban/contracts';
 import {
   AppError,
+  asDbTx,
   CLOCK,
   DATABASE,
   ENVELOPE_CRYPTO,
@@ -293,6 +294,22 @@ export class ReplyPlanStore {
         retryBackoff: true,
       });
   }
+  async purgeTrial(
+    transaction: Tx,
+    input: { userId: string; characterId: string; conversationId: string },
+  ): Promise<void> {
+    const tx = asDbTx(transaction);
+    await tx.db
+      .delete(replyPlans)
+      .where(
+        and(
+          eq(replyPlans.userId, input.userId),
+          eq(replyPlans.conversationId, input.conversationId),
+          eq(replyPlans.characterId, input.characterId),
+        ),
+      );
+  }
+
   async purgeUser(userId: string): Promise<number> {
     return await this.db.transaction(async (tx) => {
       await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('ai_runtime:user:' || $1,0))", [

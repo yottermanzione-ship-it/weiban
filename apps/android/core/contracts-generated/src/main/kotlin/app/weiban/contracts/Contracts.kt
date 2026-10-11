@@ -8216,6 +8216,24 @@ data class UserCustomCharacterWriteInput(
 )
 
 @Serializable
+data class UserCustomEndpointsDraftTrialResponse(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("expiresAt") val `expiresAt`: Timestamp,
+)
+
+@Serializable
+data class UserCustomEndpointsEndTrialParams(
+    @SerialName("conversationId") val `conversationId`: Id,
+)
+
+@Serializable
+data class UserCustomEndpointsEndTrialResponse(
+    @EncodeDefault
+    @SerialName("ended") val `ended`: Boolean = true,
+)
+
+@Serializable
 data class UserCustomEndpointsListResponse(
     @SerialName("items") val `items`: List<UserCustomCharacter>,
 )
@@ -8228,6 +8246,36 @@ data class UserCustomEndpointsStartTrialResponse(
 @Serializable
 data class UserCustomEndpointsUpdateParams(
     @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class UserCustomTrialWrite(
+    @SerialName("name") val `name`: String,
+    @SerialName("description") val `description`: String,
+    @SerialName("classification") val `classification`: CharacterClassificationInput,
+    @SerialName("birthday") val `birthday`: LocalDate? = null,
+    @SerialName("catchphrase") val `catchphrase`: String? = null,
+    @SerialName("catchphrases") val `catchphrases`: List<String>? = null,
+    @SerialName("speechStyle") val `speechStyle`: String? = null,
+    @SerialName("exampleDialogue") val `exampleDialogue`: String? = null,
+    @SerialName("tags") val `tags`: List<String>? = null,
+    @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+    @SerialName("sourceCharacterId") val `sourceCharacterId`: Id? = null,
+)
+
+@Serializable
+data class UserCustomTrialWriteInput(
+    @SerialName("name") val `name`: String,
+    @SerialName("description") val `description`: String,
+    @SerialName("classification") val `classification`: CharacterClassificationInputInput,
+    @SerialName("birthday") val `birthday`: LocalDate? = null,
+    @SerialName("catchphrase") val `catchphrase`: String? = null,
+    @SerialName("catchphrases") val `catchphrases`: List<String>? = null,
+    @SerialName("speechStyle") val `speechStyle`: String? = null,
+    @SerialName("exampleDialogue") val `exampleDialogue`: String? = null,
+    @SerialName("tags") val `tags`: List<String>? = null,
+    @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+    @SerialName("sourceCharacterId") val `sourceCharacterId`: Id? = null,
 )
 
 typealias UserMediaPurpose = String

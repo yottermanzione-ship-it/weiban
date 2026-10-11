@@ -157,6 +157,7 @@ export class CharacterPlazaService
           eq(characters.id, characterId),
           eq(characters.ownerId, userId),
           eq(characters.kind, 'custom'),
+          eq(characters.isTrial, false),
         ),
       );
     return row ?? null;

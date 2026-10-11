@@ -97,6 +97,7 @@ export class ChatStore {
         .where(and(eq(hiddenMessages.userId, userId), eq(messages.conversationId, row.id)));
       for (const hiddenRow of rows) hidden.add(hiddenRow.id);
     }
+    if (row.trialExpiresAt) state.hidden = true;
     return { userId, state, hidden, scopes };
   }
   async content(

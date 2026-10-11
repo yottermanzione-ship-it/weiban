@@ -14,6 +14,7 @@ import type {
   PersonaUpdateSummarizerPort,
   CardCopywriterPort,
   SyncPort,
+  CharacterTrialCleanupPort,
 } from '@weiban/contracts';
 import {
   ContactsModule,
@@ -24,6 +25,7 @@ import {
 import {
   AiRuntimeModule,
   AI_CALL_AGENT_PORT,
+  AI_TRIAL_CLEANUP_PORT,
   AI_IMPORT_ANALYZER,
   AI_PLAZA_PUBLISH_CHECK,
   AI_ACTIVE_HOURS,
@@ -50,6 +52,7 @@ import { IdentityModule } from './modules/identity/index.js';
 import {
   CharactersModule,
   CHARACTER_READ_PORT,
+  CHARACTER_TRIAL_CLEANUP_PORT,
   CHARACTER_NAME_READ_PORT,
   CHARACTER_CONTACT_ACCESS,
   CHARACTER_REAL_PERSON_NAMES,
@@ -386,6 +389,16 @@ class PlazaOriginCompositionModule {}
       }),
     },
     {
+      provide: CHARACTER_TRIAL_CLEANUP_PORT,
+      inject: [ModuleRef],
+      useFactory: (ref: ModuleRef): CharacterTrialCleanupPort => ({
+        purgeTrial: (tx, input) =>
+          ref
+            .get<CharacterTrialCleanupPort>(AI_TRIAL_CLEANUP_PORT, { strict: false })
+            .purgeTrial(tx, input),
+      }),
+    },
+    {
       provide: GROWTH_CARD_COPYWRITER,
       inject: [ModuleRef],
       useFactory: (ref: ModuleRef): CardCopywriterPort => ({
@@ -394,7 +407,7 @@ class PlazaOriginCompositionModule {}
       }),
     },
   ],
-  exports: [CHARACTER_PERSONA_SUMMARIZER, GROWTH_CARD_COPYWRITER],
+  exports: [CHARACTER_PERSONA_SUMMARIZER, GROWTH_CARD_COPYWRITER, CHARACTER_TRIAL_CLEANUP_PORT],
 })
 class AiHookCompositionModule {}
 

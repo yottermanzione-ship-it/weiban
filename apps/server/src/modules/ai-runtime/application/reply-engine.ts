@@ -70,6 +70,10 @@ export class ReplyEngine {
       await this.store.cancel(id);
       return;
     }
+    if (snapshot.trial && (await this.context.currentEpoch(row, snapshot)) !== snapshot.epoch) {
+      await this.store.cancel(id);
+      return;
+    }
     const saved = await this.saveInput(row, snapshot);
     if (!saved) return;
     await this.writer.markRead({
@@ -201,6 +205,7 @@ export class ReplyEngine {
     if (
       !inCare &&
       row.kind === 'message' &&
+      !snapshot.trial &&
       snapshot.scope === 'normal' &&
       !['recall', 'typo'].includes(snapshot.quirk.kind)
     ) {
@@ -407,7 +412,9 @@ export class ReplyEngine {
     const result = Result.parse(await this.store.open(row, 'result'));
     const contact = await this.context.contacts.getActiveContact(row.userId, row.characterId);
     const conversation =
-      contact?.conversationId === row.conversationId
+      contact?.conversationId === row.conversationId ||
+      (result.snapshot.trial &&
+        (await this.context.currentEpoch(row, result.snapshot)) === result.snapshot.epoch)
         ? await this.context.chat.getConversation(row.conversationId)
         : null;
     const policy = conversation
@@ -444,8 +451,7 @@ export class ReplyEngine {
       });
     }
     if (
-      (await this.context.contacts.getActiveContactEpoch(row.userId, row.characterId))?.version !==
-        result.snapshot.epoch ||
+      (await this.context.currentEpoch(row, result.snapshot)) !== result.snapshot.epoch ||
       !conversation ||
       !policy ||
       conversation.contentScope !== result.snapshot.scope ||
@@ -491,8 +497,7 @@ export class ReplyEngine {
       const current = await this.store.get(row.id);
       if (
         current?.status !== 'sending' ||
-        (await this.context.contacts.getActiveContactEpoch(row.userId, row.characterId))
-          ?.version !== result.snapshot.epoch
+        (await this.context.currentEpoch(row, result.snapshot)) !== result.snapshot.epoch
       )
         return;
       if (
@@ -522,6 +527,7 @@ export class ReplyEngine {
           !pending ||
           pending.status !== 'sending' ||
           pending.nextBubble !== row.nextBubble ||
+          (await this.context.currentEpoch(row, result.snapshot, tx)) !== result.snapshot.epoch ||
           (await this.context.memory.revision(
             tx,
             row.userId,
@@ -540,11 +546,13 @@ export class ReplyEngine {
             },
             idempotencyKey: `reply:${row.triggerId}:${row.nextBubble}`,
             expectedScope: result.snapshot.scope,
-            ...(result.snapshot.healthUsed
-              ? { labels: [HEALTH_LABEL] }
-              : row.nextBubble === 0 && result.snapshot.quirk.kind === 'recall'
-                ? { labels: ['quirk_draft'] }
-                : {}),
+            ...(result.snapshot.trial
+              ? { labels: ['trial'] }
+              : result.snapshot.healthUsed
+                ? { labels: [HEALTH_LABEL] }
+                : row.nextBubble === 0 && result.snapshot.quirk.kind === 'recall'
+                  ? { labels: ['quirk_draft'] }
+                  : {}),
           },
           tx,
         );

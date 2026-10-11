@@ -7,10 +7,13 @@ import {
   type CharacterBasis,
   type ImportResult,
   type RealPersonKind,
+  UserCustomTrialWrite,
 } from '@weiban/contracts';
 import { ActiveImportsRow } from './import.js';
 import { api } from '../data/client.js';
 import { friendlyError } from '../data/use-remote.js';
+import { useAuth } from '../app/auth.js';
+import { CharacterTrial } from './character-trial.js';
 
 const basisOptions: { value: CharacterBasis; label: string; description: string }[] = [
   {
@@ -86,6 +89,12 @@ function CustomCharacterEditor({
   importJobId?: string | null;
 }) {
   const navigate = useNavigate();
+  const { session } = useAuth();
+  const [trial, setTrial] = useState<{
+    conversationId: string;
+    name: string;
+    owner: { userId: string; sessionId: string };
+  } | null>(null);
   const [imported, setImported] = useState<{
     realNames: string[];
     rawKept: boolean;
@@ -98,6 +107,8 @@ function CustomCharacterEditor({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [basis, setBasis] = useState<CharacterBasis>('original');
+  const [realKind, setRealKind] = useState<RealPersonKind>('private_person');
+  const [childAppearance, setChildAppearance] = useState(false);
   const [ageSetting, setAgeSetting] = useState<AgeSetting>('adult');
   const [catchphrase, setCatchphrase] = useState('');
   const [speechStyle, setSpeechStyle] = useState('');
@@ -134,6 +145,8 @@ function CustomCharacterEditor({
         setExampleDialogue(character.exampleDialogue ?? '');
         setTags(character.tags.join('，'));
         setBasis(character.classification.basis);
+        setRealKind(character.classification.realPersonKind ?? 'private_person');
+        setChildAppearance(character.classification.childAppearance);
         setAgeSetting(character.classification.ageSetting);
         setOriginalBasis(character.classification.basis);
         setOriginalAge(character.classification.ageSetting);
@@ -278,7 +291,7 @@ function CustomCharacterEditor({
             classification: {
               basis,
               realPersonKind:
-                basis === 'real_person' ? (imported?.realPersonKind ?? 'celebrity') : null,
+                basis === 'real_person' ? (imported?.realPersonKind ?? realKind) : null,
               ageSetting,
               childAppearance: false,
             },
@@ -323,13 +336,45 @@ function CustomCharacterEditor({
   }
 
   async function startTrial() {
-    if (!characterId) return;
+    if (!session) return;
+    const owner = { userId: session.user.userId, sessionId: session.session.sessionId };
     setPending(true);
+    setError('');
     try {
-      const result = await api.call(UserCustomEndpoints.startTrial, {
-        params: { characterId },
+      const parsed = UserCustomTrialWrite.safeParse({
+        sourceCharacterId: characterId,
+        name,
+        description,
+        classification: {
+          basis,
+          realPersonKind: basis === 'real_person' ? (imported?.realPersonKind ?? realKind) : null,
+          ageSetting,
+          childAppearance,
+        },
+        catchphrases: catchphrase
+          .split(/\r?\n/)
+          .map((v) => v.trim())
+          .filter(Boolean),
+        speechStyle,
+        exampleDialogue: exampleDialogue || undefined,
+        tags: tags
+          .split(/[,，、]/)
+          .map((v) => v.trim())
+          .filter(Boolean),
       });
-      navigate(`/chat/${result.conversationId}`);
+      if (!parsed.success) {
+        setError('请填写名字和至少50字的人设，检查口头禅与标签长度');
+        return;
+      }
+      if (imported && basis !== 'real_person' && !declared) {
+        setError('请先确认角色分类声明');
+        return;
+      }
+      const result = await api.call(UserCustomEndpoints.draftTrial, {
+        body: parsed.data,
+        networkOnly: true,
+      });
+      if (api.owns(owner)) setTrial({ conversationId: result.conversationId, name, owner });
     } catch (e) {
       setError(friendlyError(e));
     } finally {
@@ -528,11 +573,14 @@ function CustomCharacterEditor({
         </button>
       </form>
 
-      {mode === 'edit' && characterId && (
-        <button className="panel full" disabled={pending} onClick={() => void startTrial()}>
-          试聊
-        </button>
-      )}
+      <button
+        className="panel full"
+        disabled={pending || loading || !!trial}
+        onClick={() => void startTrial()}
+      >
+        保存前试聊
+      </button>
+      {trial && <CharacterTrial {...trial} onClose={() => setTrial(null)} />}
 
       {error && (
         <p role="alert" className="error">

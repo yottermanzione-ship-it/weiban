@@ -42,7 +42,13 @@ import { MEDIA_READ_PORT } from '../../media/index.js';
 import { deriveClassification, classificationCanChange } from '../../policy/index.js';
 import { childFeaturesIn } from '../domain/child-features.js';
 import { customToAdminWrite, type CustomCharacterPayload } from '../domain/custom-card.js';
-import { categories, characters, personaVersions, relations } from '../infra/db/schema.js';
+import {
+  categories,
+  characters,
+  personaVersions,
+  relations,
+  trialSessions,
+} from '../infra/db/schema.js';
 import {
   CHARACTER_CONTACT_ACCESS,
   CHARACTER_PERSONA_SUMMARIZER,
@@ -690,7 +696,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     const [row] = await (transaction ? query.for('share') : query);
     if (!row) return false;
     // 自定义角色（含广场复制品）只有创建者能添加（状态为 active，没有上架流程）。
-    if (row.kind === 'custom') return row.ownerId === userId;
+    if (row.kind === 'custom') return row.ownerId === userId && !row.isTrial;
     return row.status === 'published';
   }
   async getClassification(id: string, transaction?: Tx): Promise<CharacterClassification | null> {
@@ -729,6 +735,10 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     return (await this.decode(row, row.kind === 'preset', tx)).name;
   }
   async purgeUser(userId: string): Promise<number> {
+    const trials = await this.database.db
+      .delete(trialSessions)
+      .where(eq(trialSessions.userId, userId))
+      .returning({ id: trialSessions.conversationId });
     // 关系网：该用户为自定义角色设定的关系（T-063）；角色删除时也会级联删除。
     const relationRows = await this.database.db
       .delete(relations)
@@ -739,9 +749,13 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       .where(eq(characters.ownerId, userId))
       .returning({ id: characters.id });
     const extra = (await this.supplements?.purgeUser(userId)) ?? 0;
-    return removed.length + relationRows.length + extra;
+    return removed.length + relationRows.length + trials.length + extra;
   }
   async countUserData(userId: string): Promise<number> {
+    const [trials] = await this.database.db
+      .select({ n: count() })
+      .from(trialSessions)
+      .where(eq(trialSessions.userId, userId));
     const [row] = await this.database.db
       .select({ n: count() })
       .from(characters)
@@ -751,7 +765,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       .from(relations)
       .where(eq(relations.ownerUserId, userId));
     const extra = (await this.supplements?.countUserData(userId)) ?? 0;
-    return (row?.n ?? 0) + (rel?.n ?? 0) + extra;
+    return (row?.n ?? 0) + (rel?.n ?? 0) + (trials?.n ?? 0) + extra;
   }
   async listPersonaVersions(
     adminId: string,

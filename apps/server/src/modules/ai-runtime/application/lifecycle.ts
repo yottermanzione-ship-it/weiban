@@ -11,6 +11,8 @@ import {
 } from '../../../platform/index.js';
 import { CHAT_READ_PORT } from '../../chat/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
+import { CHARACTER_TRIAL_READ_PORT } from '../../characters/index.js';
+import type { CharacterTrialReadPort } from '@weiban/contracts';
 import {
   companionSettings,
   replyPlans,
@@ -79,6 +81,7 @@ const TRANSCRIBE_VOICE_JOB = 'ai.transcribe_voice';
 @Injectable()
 export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap {
   constructor(
+    @Inject(CHARACTER_TRIAL_READ_PORT) readonly trials: CharacterTrialReadPort,
     @Inject(ReplyPlanStore) readonly store: ReplyPlanStore,
     @Inject(ReplyEngine) readonly engine: ReplyEngine,
     @Inject(MemoryService) readonly memory: MemoryService,
@@ -507,7 +510,15 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         const role = conversation?.participants.find((member) => member.kind === 'character');
         if (!role) return;
         if (!(await this.store.lock(tx, p.senderRefId, p.conversationId))) return;
-        await this.simulation.markActive(tx, p.senderRefId, role.refId);
+        const contact = await this.contacts.getActiveContact(p.senderRefId, role.refId, tx);
+        if (contact) await this.simulation.markActive(tx, p.senderRefId, role.refId);
+        else if (
+          !(await this.trials.getTrial(
+            { userId: p.senderRefId, characterId: role.refId, conversationId: p.conversationId },
+            tx,
+          ))
+        )
+          return;
         await this.store.enqueue(tx, {
           userId: p.senderRefId,
           characterId: role.refId,

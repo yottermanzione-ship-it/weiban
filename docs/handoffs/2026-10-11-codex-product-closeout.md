@@ -98,3 +98,14 @@ Claude 在周额度耗尽前，已提交后端 B1～B10；B11～B21 的未提交
 - 新确认试聊缺口：没有正式好友的试聊被回复引擎取消，且保存前试聊、关闭清理缺失。ADR-0030登记独立快照和会话的实施方向，下一步实施后端、契约与端侧，不复用正式角色会话。
 - Linux 容器 weiban-closeout-android-linux-retry 暂保留（/work/android，SDK /opt/android-sdk）；数据库测试串行使用 weiban_closeout_test，浏览器使用独立 weiban_closeout_probe_test。不得重叠重置同一测试库。
 - 后续：试聊完整生命周期；A12原子寄送/恢复边界；导入并发/收藏失败清理；派发遗留逐条核实；最终全量与构建，部署/设备/供应商和另一位审查者的独立验收。所有以上通过统计仅为开发自测。
+
+## 当前断点（2026-10-11 17:45，优先于上文）
+
+- 小巧思已提交a8699c3；独立分支继续开发，共享main只读。总经理要求持续推进至产品完工。
+- 0078/0079实现独立临时角色、来源版本、30分钟到期及拒绝过期聊天写入。结束在用户/会话锁内清除回复计划、消息和快照。已保存角色并发启动复用，未保存编辑快照独立。分类变严/版本变化停止旧试聊，检测儿童标记继承。试聊不进入好友、广场、常规会话列表、长期记忆、推演、养成、推送或小巧思。
+- 真实数据库/HTTP：8项试聊与13项原有角色通过（trial-runtime-round12.log），覆盖生成中关闭、过期、正式历史保留、并发复用、跨用户拒绝、分类变严、儿童标记继承、注销清理。APP_ROLE=web只入队；注销通过真实请求/事件、显式真实worker处理器及回报验证，未宣称pg-boss自动消费通过。
+- 网页构建通过（trial-web-build-round1.log），真实HTTP完整流程1项通过（trial-web-e2e-round2.log）。安卓ktlint/detekt/assembleDebug及Compose/Room/HTTP测试服务器流程1项通过（trial-android-check-round2.log），JUnit零失败零跳过。APK20689194字节，17:41生成。真机及供应商模型未验证。
+- 全仓类型检查（trial-typecheck-round4.log）、lint（trial-lint-round1.log）、契约/Kotlin/icons/tokens一致性（trial-generated-check-round1.log）通过；最新检测标记测试另跑eslint通过。最新完整服务端/安卓回归待执行，旧64文件537项与Linux121项不能算最新源码通过。
+- 失败轮次保留：runtime6/7/11为错误HTTP断言或测试路径；runtime9等待Web进程消费任务失败，改显式真实worker处理器；网页1定位也命中分类说明，改精确textbox；安卓1测试漏SessionVault导入，补后通过。未修改生产拒绝状态或降低权限断言。
+- 下一步：修复已核实头像展示/媒体用途与归属校验缺口，核对网页生日/头像；A12寄送/恢复并发、导入归属并发、收藏快照失败清理、派发遗留、最终回归、部署/设备/供应商与独立验收。
+- 环境保持C:\wb-dev\codex-closeout、codex/product-closeout；后端测试库weiban_closeout_test，浏览器独立probe库。Linux安卓容器保留待全套回归。所有结果为开发自测，项目未完成。

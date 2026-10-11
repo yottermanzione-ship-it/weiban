@@ -4,3 +4,4 @@ export { CHARACTER_EVALUATOR, CHARACTER_CONTACT_ACCESS } from './tokens.js';
 export { childFeaturesIn } from './domain/child-features.js';
 
 export { CharacterCheckWorker } from './application/check-worker.js';
+export { CharacterTrialService } from './application/trials.js';

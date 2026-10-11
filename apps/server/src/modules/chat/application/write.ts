@@ -79,6 +79,8 @@ export class ChatWriteService {
     parseContract(Id, input.senderParticipantId);
     if (row.archivedAt)
       return { ok: false, error: 'not_conversation_member', message: '请先重新添加好友' };
+    if (row.trialExpiresAt && row.trialExpiresAt <= this.clock.now())
+      return { ok: false, error: 'not_conversation_member', message: '这次试聊已结束' };
     const [sender] = await tx.db
       .select()
       .from(participants)
@@ -222,7 +224,7 @@ export class ChatWriteService {
     if (!stored) throw new AppError('internal_error', '消息未能保存');
     await tx.db
       .update(userConversationStates)
-      .set({ hidden: false })
+      .set({ hidden: row.trialExpiresAt !== null })
       .where(eq(userConversationStates.conversationId, row.id));
     const value = await this.store.message(tx, current, stored, view);
     await this.sync.appendUpdate(tx, row.ownerUserId, {

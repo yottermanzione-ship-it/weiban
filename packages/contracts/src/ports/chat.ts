@@ -106,7 +106,12 @@ export interface ChatAdminPort {
    */
   ensureDirectConversation(
     tx: Tx,
-    input: { userId: string; characterId: string; restoreHistory: boolean },
+    input: {
+      userId: string;
+      characterId: string;
+      restoreHistory: boolean;
+      trialExpiresAt?: string;
+    },
   ): Promise<Conversation>;
   /** contacts 删除好友：停止收发并隐藏会话，保留历史供30天内恢复。 */
   archiveDirectConversation(tx: Tx, input: { userId: string; characterId: string }): Promise<void>;
