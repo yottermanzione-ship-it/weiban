@@ -739,7 +739,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     };
     expect(second.messages.some((m) => first.messages.some((f) => f.id === m.id))).toBe(false);
     response = '我听着呢\n今天过得怎么样？';
-  });
+  }, 120_000); // 65条真实加密消息及事件派发；验证批次完整性，不是单次回复延迟指标。
   it('后台预算失败保留游标待重试，注销清单包含记忆；彻底删除只清除旧会话', async () => {
     await user('后台余额失败也不能丢这条记忆');
     failure = 'budget_exceeded';

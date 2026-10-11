@@ -18,6 +18,13 @@ test('会话图片、链接和日期定位使用真实服务器接口', async ({
   await page.getByRole('link', { name: /测试陪伴角色/ }).click();
   await expect(page.getByRole('heading', { name: '测试陪伴角色' })).toBeVisible();
   const conversationId = new URL(page.url()).pathname.split('/')[2];
+  // 其他流程会真实清空同一账号的历史；本用例自行准备仍可见的消息。
+  await page.getByLabel('消息', { exact: true }).fill('日期定位独立测试消息');
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await expect(
+    page.locator('.message-bubble').filter({ hasText: '日期定位独立测试消息' }),
+  ).toHaveCount(1);
+  await expect(page.getByText('已送达', { exact: true })).toBeVisible();
   await page.goto(`/chat/${conversationId}/search`);
   for (const [label, type] of [
     ['图片', 'image'],
@@ -42,5 +49,7 @@ test('会话图片、链接和日期定位使用真实服务器接口', async ({
   expect(result.status()).toBe(200);
   const target = (await result.json()) as { seq: number | null };
   expect(target.seq).not.toBeNull();
-  await expect(page).toHaveURL(new RegExp(`/chat/${conversationId}\\?seq=${target.seq}$`));
+  // 定位参数被聊天页消费后清除，验证实际消息高亮而非短暂的URL。
+  await expect(page.locator('.flash-row')).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/chat/${conversationId}$`));
 });
