@@ -14,6 +14,8 @@ export interface EvalObservation {
   judge?: EvalJudge;
   runtimeChecks?: Readonly<Record<string, boolean>>;
   runtimeEvidenceRef?: string;
+  scenarioTemplateVersion?: string;
+  expandedInputEvidenceRef?: string;
 }
 
 /** 只汇总已登记题；即使全通过也不是产品发布许可或独立验收。 */
@@ -42,7 +44,9 @@ export function summarizeEvalRun(observations: readonly EvalObservation[]) {
       row.modelKey.trim() &&
       row.promptTemplateVersion.trim() &&
       row.outputEvidenceRef.trim() &&
-      (!test.requiredRuntimeChecks?.length || row.runtimeEvidenceRef?.trim());
+      (!test.requiredRuntimeChecks?.length || row.runtimeEvidenceRef?.trim()) &&
+      (test.inputKind !== 'neutral_scenario' ||
+        (row.scenarioTemplateVersion?.trim() && row.expandedInputEvidenceRef?.trim()));
     return {
       caseId: test.id,
       hard: test.hard,

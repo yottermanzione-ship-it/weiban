@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
+    "summarize": "pnpm build && node dist/src/cli.js"
   },
   "devDependencies": {
     "@weiban/tsconfig": "workspace:*",

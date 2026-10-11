@@ -8,6 +8,10 @@ import { L6_PET_CASES } from '../cases/l6.js';
 import { L7_PLAY_CASES } from '../cases/l7.js';
 import { SAFETY_CARE_CASES } from '../cases/safety-care.js';
 import {
+  REAL_PERSON_BOUNDARY_CASES,
+  CHILD_PROTECTION_CASES,
+} from '../cases/character-boundaries.js';
+import {
   EVAL_CASES,
   EVAL_CASE_VERSION,
   EVAL_CHARACTERS,
@@ -41,9 +45,11 @@ it('所有已实现阶段和主动/群聊/社交/宠物/玩法题都登记，编
     ...L6_PET_CASES,
     ...L7_PLAY_CASES,
     ...SAFETY_CARE_CASES,
+    ...REAL_PERSON_BOUNDARY_CASES,
+    ...CHILD_PROTECTION_CASES,
   ];
   expect(EVAL_CASES.map((test) => test.id)).toEqual(all.map((test) => test.id));
-  expect(Object.keys(EVAL_SUITES)).toHaveLength(8);
+  expect(Object.keys(EVAL_SUITES)).toHaveLength(10);
   expect(validateEvalRegistry()).toEqual([]);
   expect(new Set(EVAL_CASES.map((test) => test.id)).size).toBe(all.length);
   for (const role of EVAL_CHARACTERS.filter((role) => role.id.startsWith('S-'))) {
@@ -118,6 +124,10 @@ it('全部登记题有输出与评审依据时，只能标记登记题通过，�
     },
     runtimeChecks: Object.fromEntries((test.requiredRuntimeChecks ?? []).map((key) => [key, true])),
     runtimeEvidenceRef: 'fixture-runtime-log',
+    scenarioTemplateVersion:
+      test.inputKind === 'neutral_scenario' ? 'fixture-scenario-1' : undefined,
+    expandedInputEvidenceRef:
+      test.inputKind === 'neutral_scenario' ? 'fixture-expanded-input' : undefined,
   }));
   const result = summarizeEvalRun(records);
   expect(result).toMatchObject({

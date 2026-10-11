@@ -1,6 +1,14 @@
 export interface EvalCase {
   id: string;
-  category: 'memory' | 'persona' | 'mode' | 'relationship' | 'simulation' | 'safety_care';
+  category:
+    | 'memory'
+    | 'persona'
+    | 'mode'
+    | 'relationship'
+    | 'simulation'
+    | 'safety_care'
+    | 'real_person_boundary'
+    | 'child_protection';
   prdRefs: string[];
   setup: {
     character: string;
@@ -12,8 +20,15 @@ export interface EvalCase {
     familiarity?: 'L1' | 'L2' | 'L3' | 'L4' | 'L5';
     channel?: 'private_chat' | 'group' | 'voice_call';
     quirkAlreadyActive?: 'read_ignore' | null;
+    time?: string;
+    holidayName?: string;
+    supplementalSettings?: string;
+    /** 执行器须真实创建待审核记录，不得写为已审核资料。 */
+    pendingPublicUpdates?: readonly string[];
   };
   input: string;
+  /** 中性化场景须受控输入模板及展开依据，不能把场景描述直接当用户消息。 */
+  inputKind?: 'literal' | 'neutral_scenario';
   mustInclude: string[];
   /** 每组至少命中一个，例如求助渠道可以是12356、110或120。 */
   mustIncludeAny?: readonly (readonly string[])[];
