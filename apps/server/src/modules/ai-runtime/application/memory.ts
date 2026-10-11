@@ -845,7 +845,9 @@ export class MemoryService {
         (m.scope !== 'adult' || policy.adultModeEligible) &&
         !healthPrivate(m.content.text) &&
         // T-060：用经期摘要生成的消息（health 标记）不进入记忆。
-        !m.labels?.includes('health'),
+        !m.labels?.includes('health') &&
+        // A draft can be read by an earlier extraction job before its recall event arrives.
+        !m.labels?.includes('quirk_draft'),
     );
     const sourceMap = new Map(sources.map((m) => [m.messageId, m]));
     const lastSeq = history.at(-1)!.seq;

@@ -57,6 +57,7 @@ import {
 import { ActiveHoursService } from './application/active-hours.js';
 import { PlayAiService } from './application/play-ai.js';
 import { PlayContinuityStore } from './application/play-continuity.js';
+import { QuirkService } from './application/quirk-service.js';
 import { PlazaPublishCheckService } from './application/plaza-check.js';
 import {
   SupplementedCharacterRead,
@@ -141,6 +142,7 @@ import {
     // T-096：玩法里角色怎么说话；给 play 的活跃时段。
     PlayAiService,
     PlayContinuityStore,
+    QuirkService,
     ActiveHoursService,
     { provide: AI_ACTIVE_HOURS, useExisting: ActiveHoursService },
     AiRuntimeLifecycle,

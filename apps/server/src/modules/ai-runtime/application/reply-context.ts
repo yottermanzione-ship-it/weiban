@@ -33,6 +33,7 @@ import { highRisk, REPLY_TEMPLATE_VERSION } from '../domain/reply-rules.js';
 import { HealthCareService } from './health-care.js';
 import { SocialService } from './social.js';
 import { MediaAiService } from './media-ai.js';
+import { QuirkAction, NO_QUIRK } from '../domain/quirks.js';
 export const ReplySnapshot = z.object({
   triggerAt: z.iso.datetime(),
   deadlineAt: z.iso.datetime(),
@@ -71,6 +72,11 @@ export const ReplySnapshot = z.object({
   userText: z.string().default(''),
   /** T-071：陪伴设置里的音色。 */
   voiceId: z.string().nullable().default(null),
+  personaFit: z.number().int().min(1).max(5).default(3),
+  personaTags: z.array(z.string()).default([]),
+  typoStyle: z.enum(['pinyin', 'none']).default('none'),
+  timeZone: z.string().default('Asia/Shanghai'),
+  quirk: QuirkAction.default(NO_QUIRK),
 });
 export type ReplySnapshot = z.infer<typeof ReplySnapshot>;
 @Injectable()
@@ -320,7 +326,7 @@ export class ReplyContext {
         content: `识图认人规则：图片里你只能认出这些人：${JSON.stringify(allowedNames)}（你自己和与你有公开关系的人）。名单外的人不说出、不猜测身份，只按外观描述。`,
       });
     for (const m of recent) {
-      if (m.status !== 'normal' || !m.content) continue;
+      if (m.status !== 'normal' || !m.content || m.labels?.includes('quirk_draft')) continue;
       let text: string | null;
       if (m.content.type === 'text') text = m.content.text;
       else if (rendered.has(m.messageId)) text = rendered.get(m.messageId)!;
@@ -397,6 +403,10 @@ export class ReplyContext {
       allowedNames,
       userText: userText.slice(0, 4000),
       voiceId: settings.voiceId ?? null,
+      personaFit: settings.personaFit ?? 3,
+      personaTags: role.card.data.persona.personaTags,
+      typoStyle: role.card.data.speech.typoStyle ?? 'none',
+      timeZone: profile.timeZone,
     });
   }
 }

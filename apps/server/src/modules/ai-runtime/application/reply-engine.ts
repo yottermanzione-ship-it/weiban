@@ -30,6 +30,8 @@ import { callModelForCare, careFallback } from './safety-care.js';
 import { HEALTH_LABEL } from './health-care.js';
 import { MediaAiService } from './media-ai.js';
 import { PlannerService } from './planner.js';
+import { QuirkService } from './quirk-service.js';
+import { typoCorrection } from '../domain/quirks.js';
 import { outputAllowed, replyDelay, splitReply } from '../domain/reply-rules.js';
 const Result = z.object({
   bubbles: z.array(z.string().min(1).max(4000)).min(1).max(4),
@@ -37,6 +39,7 @@ const Result = z.object({
   care: z.boolean(),
   /** T-071：实际要发的内容（语音替换文字、附表情包 / 作品链接）；没有时按 bubbles 发文字。 */
   contents: z.array(MessageContent).max(6).optional(),
+  quirkDraftMessageId: z.uuid().optional(),
 });
 @Injectable()
 export class ReplyEngine {
@@ -50,6 +53,7 @@ export class ReplyEngine {
     @Inject(MediaAiService) readonly mediaAi: MediaAiService,
     @Inject(OUTBOX) readonly outbox: Outbox,
     @Inject(PlannerService) readonly planner: PlannerService,
+    @Inject(QuirkService) readonly quirks: QuirkService,
   ) {}
   async run(id: string): Promise<void> {
     if (!z.uuid().safeParse(id).success) return;
@@ -68,6 +72,11 @@ export class ReplyEngine {
     }
     const saved = await this.saveInput(row, snapshot);
     if (!saved) return;
+    await this.writer.markRead({
+      conversationId: row.conversationId,
+      participantId: snapshot.participantId,
+      readSeq: snapshot.lastUserSeq,
+    });
     const care = snapshot.highRisk || snapshot.careActive;
     let suspected = snapshot.suspected;
     if (suspected && !care) {
@@ -189,7 +198,12 @@ export class ReplyEngine {
     }
     // T-071：语音 / 表情包 / 作品链接（只在日常范围的普通回复里）。
     let contents: MessageContent[] | null = null;
-    if (!inCare && row.kind === 'message' && snapshot.scope === 'normal') {
+    if (
+      !inCare &&
+      row.kind === 'message' &&
+      snapshot.scope === 'normal' &&
+      !['recall', 'typo'].includes(snapshot.quirk.kind)
+    ) {
       const history = await this.context.chat
         .readMessages({ conversationId: row.conversationId, scopes: ['normal'], limit: 100 })
         .catch(() => []);
@@ -208,6 +222,27 @@ export class ReplyEngine {
           instant: snapshot.instantReply,
         })
         .catch(() => null);
+    }
+    if (!inCare && snapshot.quirk.kind === 'recall') {
+      const first = bubbles[0]!;
+      const draft =
+        '唔，' + [...first].slice(0, Math.max(1, Math.floor([...first].length / 2))).join('');
+      if (outputAllowed(draft, snapshot.policy, false))
+        contents = [
+          { type: 'text', text: draft },
+          ...bubbles.map((text) => ({ type: 'text' as const, text })),
+        ];
+      else snapshot.quirk.kind = 'none';
+    }
+    if (!inCare && snapshot.quirk.kind === 'typo') {
+      const change = typoCorrection(bubbles[0]!);
+      if (change && outputAllowed(change.text, snapshot.policy, false))
+        contents = [
+          { type: 'text', text: change.text },
+          { type: 'text', text: change.correction },
+          ...bubbles.slice(1).map((text) => ({ type: 'text' as const, text })),
+        ];
+      else snapshot.quirk.kind = 'none';
     }
     // T-090 reply_timing：秒回关闭时由决策层在 fast / normal / slow 间挑（仍在 P-01 上下限内）；秒回开启不加人为延迟。
     let timing: 'fast' | 'normal' | 'slow' = 'normal';
@@ -277,7 +312,12 @@ export class ReplyEngine {
               ),
             );
       const dueAt = new Date(
-        this.clock.nowMs() + Math.max(0, delay - (inCare ? 0 : P28_INSTANT_REPLY_MIN_TYPING_MS)),
+        Math.max(
+          this.clock.nowMs() + Math.max(0, delay - (inCare ? 0 : P28_INSTANT_REPLY_MIN_TYPING_MS)),
+          !inCare && snapshot.quirk.kind === 'read_delay' && snapshot.quirk.respondAt
+            ? Date.parse(snapshot.quirk.respondAt) - P28_INSTANT_REPLY_MIN_TYPING_MS
+            : 0,
+        ),
       );
       await tx.db
         .update(replyPlans)
@@ -329,8 +369,25 @@ export class ReplyEngine {
   }
   private async saveInput(row: ReplyPlan, snapshot: ReplySnapshot): Promise<boolean> {
     if (row.inputCiphertext) return true;
+    const proposed = await this.quirks
+      .choose(row, snapshot)
+      .catch(() => ({ kind: 'none' as const, respondAt: null, typingCycles: 0 }));
     return this.store.db.transaction(async (tx) => {
       if (!(await this.store.lock(tx, row.userId, row.conversationId))) return false;
+      const [current] = await tx.db
+        .select()
+        .from(replyPlans)
+        .where(eq(replyPlans.id, row.id))
+        .for('update');
+      if (!current || current.status !== 'generating' || current.leaseId !== row.leaseId)
+        return false;
+      snapshot.quirk = await this.quirks.reserve(tx, row, proposed, snapshot.timeZone);
+      if (snapshot.quirk.kind === 'read_delay')
+        snapshot.messages.push({
+          role: 'system',
+          content:
+            '本轮你有意稍等了一会儿再回复。按人设自然体现稍微晾了一下，不要假装没看到；不得冷落、责怪或操纵用户。',
+        });
       const cipher = await this.store.seal(tx, row, 'input', snapshot);
       const saved = await tx.db
         .update(replyPlans)
@@ -403,6 +460,26 @@ export class ReplyEngine {
       readSeq: result.snapshot.lastUserSeq,
     });
     if (!result.care) {
+      if (
+        row.nextBubble === 0 &&
+        result.snapshot.quirk.kind === 'shy_typing' &&
+        (await this.quirks.consumeTyping(row))
+      ) {
+        for (let i = 0; i < result.snapshot.quirk.typingCycles; i++) {
+          await this.writer.setTyping({
+            conversationId: row.conversationId,
+            participantId: result.snapshot.participantId,
+            state: 'start',
+          });
+          await new Promise<void>((resolve) => setTimeout(resolve, 300));
+          await this.writer.setTyping({
+            conversationId: row.conversationId,
+            participantId: result.snapshot.participantId,
+            state: 'stop',
+          });
+          await new Promise<void>((resolve) => setTimeout(resolve, 200));
+        }
+      }
       await this.writer.setTyping({
         conversationId: row.conversationId,
         participantId: result.snapshot.participantId,
@@ -418,6 +495,22 @@ export class ReplyEngine {
           ?.version !== result.snapshot.epoch
       )
         return;
+      if (
+        !result.care &&
+        row.nextBubble === 1 &&
+        result.snapshot.quirk.kind === 'recall' &&
+        result.quirkDraftMessageId
+      ) {
+        const recalled = await this.writer.recall({
+          conversationId: row.conversationId,
+          participantId: result.snapshot.participantId,
+          messageId: result.quirkDraftMessageId,
+        });
+        if (!recalled.ok && recalled.error === 'not_sender') {
+          await this.store.cancel(row.id);
+          return;
+        }
+      }
       await this.store.db.transaction(async (tx) => {
         if (!(await this.store.lock(tx, row.userId, row.conversationId))) return;
         const [pending] = await tx.db
@@ -447,7 +540,11 @@ export class ReplyEngine {
             },
             idempotencyKey: `reply:${row.triggerId}:${row.nextBubble}`,
             expectedScope: result.snapshot.scope,
-            ...(result.snapshot.healthUsed ? { labels: [HEALTH_LABEL] } : {}),
+            ...(result.snapshot.healthUsed
+              ? { labels: [HEALTH_LABEL] }
+              : row.nextBubble === 0 && result.snapshot.quirk.kind === 'recall'
+                ? { labels: ['quirk_draft'] }
+                : {}),
           },
           tx,
         );
@@ -467,6 +564,8 @@ export class ReplyEngine {
             refId: posted.value.messageId,
           });
         const nextBubble = row.nextBubble + 1;
+        if (row.nextBubble === 0 && result.snapshot.quirk.kind === 'recall')
+          result.quirkDraftMessageId = posted.value.messageId;
         const done = nextBubble >= (result.contents?.length ?? result.bubbles.length);
         const dueAt = new Date(
           this.clock.nowMs() + (result.care ? 0 : P02_SPLIT_BUBBLES.minIntervalMs),
@@ -478,7 +577,7 @@ export class ReplyEngine {
             status: done ? 'done' : 'sending',
             dueAt,
             inputCiphertext: done ? null : row.inputCiphertext,
-            resultCiphertext: done ? null : row.resultCiphertext,
+            resultCiphertext: done ? null : await this.store.seal(tx, row, 'result', result),
           })
           .where(
             and(

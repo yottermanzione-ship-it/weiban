@@ -59,6 +59,7 @@ const T066_TABLES = [
   'planning_decisions',
   'character_self_reports',
   'pending_anniversary_letters',
+  'quirk_actions',
 ] as const;
 @Injectable()
 export class ReplyPlanStore {
@@ -86,6 +87,18 @@ export class ReplyPlanStore {
     if (!(await this.lock(tx, input.userId, input.conversationId))) return;
     if (input.triggeredAt && !Timestamp.safeParse(input.triggeredAt).success)
       throw new AppError('bad_request', '无效触发时间');
+    // A new message must never wait behind a deliberate cold-shoulder delay, especially a plea for help.
+    if (input.kind === 'message')
+      await tx.query(
+        `UPDATE ai_runtime.reply_plans SET status='cancelled', input_ciphertext=NULL,
+          result_ciphertext=NULL, lease_id=NULL, lease_until=NULL
+         WHERE user_id=$1 AND conversation_id=$2 AND next_bubble=0
+           AND status IN ('generating','sending') AND id IN (
+             SELECT plan_id FROM ai_runtime.quirk_actions WHERE user_id=$1
+             AND kind IN ('read_delay','shy_typing')
+           )`,
+        [input.userId, input.conversationId],
+      );
     const dueAt = new Date(
       this.clock.nowMs() + (input.kind === 'message' ? USER_BATCH_DELAY_MS : 0),
     );

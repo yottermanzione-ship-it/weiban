@@ -535,6 +535,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
           p.senderKind === 'character'
             ? await this.chat.getMessage(p.messageId, ['normal', 'adult'])
             : null;
+        if (message?.labels?.includes('quirk_draft')) return;
         const promise =
           message?.content?.type === 'text' &&
           /记住了|我会记住|我记下了/u.test(message.content.text);

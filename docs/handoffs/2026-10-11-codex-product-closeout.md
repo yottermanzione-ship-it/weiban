@@ -13,6 +13,11 @@
 
 ### 安卓与最后静态检查续记
 
+- 新本地检查点：83b09b356b8d5abf25529a5d5a8ec8696bb0746c。未推送、未合并。
+- Linux 第三轮整个聊天模块 22 项通过，零跳过，76 秒；包含拍照取消/裁剪上传/换账号丢弃晚到结果、导航与草稿恢复、角色编辑器。日志 android-linux-round3.log、逐套件 XML 在 android-linux-round3-results。第二轮六项失败是缺少仓库 JSON 测试数据，补入后同断言通过；生产 FileProvider 未因 Windows 环境修改。
+- Linux 全 Android 单元测试继续执行中：容器 weiban-closeout-android-linux-retry，日志 /work/logs/android-linux-all-round4.log，完成标志 android-linux-all-round4.exit。
+- 已开始小巧思规则层，尚未接进回复链/持久配额；不得计功能完成。必须让新的求助/关怀消息取消待发送的冷落延迟，否则队列会被最长3分钟延迟阻塞。另确认原试聊只创建会话：ReplyContext.build 要求正式 active contact，试聊消息实际无法获得回复，T-103需修复真实生命周期及回复入口，不只改按钮。
+
 - Android 第八轮通过 ktlintCheck、detekt、assembleDebug；导航/草稿恢复 2 项与编辑器字段/分类/限制 4 项全部通过（android-round8.log）。修复实际的聊天草稿在聊天信息页返回后丢失问题；未删断言。
 - 手动创建之外增加「我的角色」列表，保存但未加通讯录的角色可以再次打开。编辑操作按 owner/session 隔离；来源复制品分类只可更严。
 - 最新 APK `C:\wb-dev\codex-closeout\apps\android\app\build\outputs\apk\debug\app-debug.apk`，20,659,139 字节，2026-10-11 13:03:54。不是设备运行验收证据。
@@ -82,3 +87,14 @@ Claude 在周额度耗尽前，已提交后端 B1～B10；B11～B21 的未提交
 - 服务端第四轮已有 201 批次恢复超时及独立 worker 推送失败。该轮并行运行多个端侧构建，先保留失败，待资源安静后独立复核；不得直接提高超时或登记为通过。
 - 只读核对：每日一问恢复查询实际已包含 pending 与 waiting_balance，不需要为此再加状态接口。仍需并发寄送/费用闸边界验证。
 - 额外发现待核对：安卓手动创建/完整编辑自定义角色入口（CHR-07）在源码中未找到，不能仅因旧任务卡声明完成而略过。需要按需求和设计确认并补齐。
+
+## 当前断点（2026-10-11 13:40，优先于上文旧进度）
+
+- 已提交客户端修正检查点：83b09b356b8d5abf25529a5d5a8ec8696bb0746c。含安卓手动创建/完整编辑、我的角色列表、完整字段、头像上传、聊天输入草稿恢复；不代表独立验收。
+- 固定源码、资源安静时全量64文件537项通过：full-tests-round5.log。此前资源争用/加载旧契约的失败日志仍保留，不能与后续新改动的全量通过混算。
+- 网页22个既有场景、新增真实HTTP搜索1项、后台7项分别通过（web-e2e-round2.log、web-search-e2e-round3.log、admin-e2e-round1.log）。
+- 安卓 Windows ktlint/detekt/assembleDebug 通过，最新 APK 为 app-debug.apk（20659139字节）；Linux 整套 Robolectric 30套件121项全通过、零跳过（android-linux-all-round5.log 和 android-linux-all-final-results）。Linux 运行修复的是资源位置及依赖缓存，未改生产 FileProvider 或跳过权限断言。设备实际走查尚未完成。
+- 本轮小巧思源码与0077迁移已接入回复链。真实回复测试18项通过（quirks-engine-round1.log），规则/配额/记忆3文件29项通过（quirks-memory-round2.log）；服务端类型检查、全仓lint通过。记忆新用例第一轮字段夹具错误已修正后复跑通过，不算生产问题。最新完整回归仍待执行。
+- 新确认试聊缺口：没有正式好友的试聊被回复引擎取消，且保存前试聊、关闭清理缺失。ADR-0030登记独立快照和会话的实施方向，下一步实施后端、契约与端侧，不复用正式角色会话。
+- Linux 容器 weiban-closeout-android-linux-retry 暂保留（/work/android，SDK /opt/android-sdk）；数据库测试串行使用 weiban_closeout_test，浏览器使用独立 weiban_closeout_probe_test。不得重叠重置同一测试库。
+- 后续：试聊完整生命周期；A12原子寄送/恢复边界；导入并发/收藏失败清理；派发遗留逐条核实；最终全量与构建，部署/设备/供应商和另一位审查者的独立验收。所有以上通过统计仅为开发自测。
