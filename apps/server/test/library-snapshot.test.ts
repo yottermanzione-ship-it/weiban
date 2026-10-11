@@ -383,4 +383,63 @@ describeDb('收藏头像快照：真实数据库、复制加密与回滚清理',
         .rows,
     ).toHaveLength(0);
   });
+
+  it('原头像物理删除且角色资料不可读后，收藏仍显示自己的名字和头像快照', async () => {
+    const image = await sharp({
+      create: { width: 64, height: 64, channels: 3, background: '#0088ff' },
+    })
+      .png()
+      .toBuffer();
+    const source = MediaObject.parse(
+      (
+        await http()
+          .post('/api/v1/media?purpose=custom_character_avatar')
+          .set('Authorization', `Bearer ${token}`)
+          .attach('file', image, { filename: 'removed-source.png', contentType: 'image/png' })
+          .expect(201)
+      ).body,
+    );
+    profiles.mockImplementationOnce(async () => [
+      { name: '删除前的角色名', avatar: { image: source } },
+    ]);
+    const favorite = (await app.get(LibraryService).addFavorites(owner, input())).items[0]!;
+    await app.get(MediaService).deleteObject(source.mediaId);
+    profiles.mockResolvedValue([]);
+    try {
+      await http()
+        .get(`/api/v1/media/${source.mediaId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+      const response = await http()
+        .get('/api/v1/library/favorites')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(
+        response.body.items.find(
+          (item: { favoriteId: string }) => item.favoriteId === favorite.favoriteId,
+        ),
+      ).toMatchObject({
+        characterNameSnapshot: '删除前的角色名',
+        characterAvatarMediaIdSnapshot: favorite.characterAvatarMediaIdSnapshot,
+      });
+      const media = MediaObject.parse(
+        (
+          await http()
+            .get(`/api/v1/media/${favorite.characterAvatarMediaIdSnapshot}`)
+            .set('Authorization', `Bearer ${token}`)
+            .expect(200)
+        ).body,
+      );
+      const url = new URL(media.url);
+      await http()
+        .get(url.pathname + url.search)
+        .expect(200);
+      await app.get(LibraryService).removeFavorite(owner, favorite.favoriteId);
+      expect(await copies()).toHaveLength(0);
+    } finally {
+      profiles.mockImplementation(async () => [
+        { name: '收藏时的角色名', avatar: { image: avatar } },
+      ]);
+    }
+  });
 });
