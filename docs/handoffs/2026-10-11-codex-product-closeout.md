@@ -1,5 +1,15 @@
 # Codex 产品收口活动断点
 
+## 当前断点（2026-10-12 07:57，优先于下文）
+
+- 上轮是实际进展（全量/安卓/本机升级、32题及草稿PR）；随后真人/儿童草稿在工作区停留，本轮先实查再续接。源码检查点**4cbbad62c03fed3113637a935759b6190a70dbe6**，分支codex/product-closeout、C:\wb-dev\codex-closeout；共享目录再次实查main，未修改。Claude既知JSONL仍2026-10-11 09:04:46/2213073字节，无新会话状态，不发送消息或启动代理。
+- 格式修正和文档已实际推送d4dc8c8d61b007265b2807017983999d618eaa13；新push run38162076437、PR run38162079880均真实completed/success。PR run日志github-green-d4dc8c8-clean.log证实**77文件619项通过、0失败0跳过**，411.64s，网页26项(59.0s)/后台8项(14.9s)、安卓BUILD SUCCESSFUL(3m22s)，生产镜像/迁移/双域HTTP/非空加密媒体/空卷恢复/非空目标拒绝演练通过。是d4源码的开发CI证据，不是独立审查或最新4c源码全部CI绿。原两次失败是前轮未修格式，保持历史，不反复rerun旧job。
+- 本轮登记真人20题（eval-plan 3.10）和儿童15题（3.11），总151题/10套，版本2026-10-12.2。真人跨日常/傲娇/恋爱重测传闻、时事、编造新闻、未审核候选、自拍和无资料代言；儿童5类场景×贴合度1/3/5，要求实际七夕上下文、补充设定保存但不覆盖儿童事实、待审上下文隔离/无人物图片请求等检查。中性儿童场景不存露骨文本，新增inputKind和模板/实际展开引用字段，缺引用仍待评审；未制作展开模板、受控R-01/C-01完整运行卡或真实执行器，不把题量当作质量通过。
+- 新增观察JSONL汇总命令（包build/summarize，tsconfig.build）及逐行类型校验，不增加依赖/SDK/密钥出口。CLI返回0仅为当前登记题记录检查通过、2待评审/缺题、1明确失败或输入错误；报告文件flag wx拒绝覆盖；错误只给行号/字段名、不回显输入。CLI不核实日志真伪或评审者独立性，也不执行模型/运行前置条件。源码首次build因never回调未显式类型导致unknown无法收窄失败，修正类型声明后通过，不改成any或省略验证。
+- 最新boundary-evals-round2.log **5文件20项通过**，625ms；boundary-evals-build-round2.log及typecheck-round2通过，全仓boundary-evals-lint-round2.log340模块1474依赖通过，包format-round2通过。已编译CLI实际5分支验证（boundary-evals-cli-round1.log）：空输入exit2、全题fixture记录exit0且scope registered_cases_only、拒绝覆盖、运行时false失败、无效输入不回显canary。verify-eval-cli.mjs及JSONL/报告在仓库外日志目录，文件名含fixture-not-quality；这些fixture不代表真实模型和独立评审。正式pnpm summarize命令实跑空文件（boundary-evals-cli-command-round1.log）返回2，151题待评审，报告另存唯一文件。
+- local-model-config-ready-round5.log本轮重新登录正式本机并实际GET列表，入口/刷新/密码框通过、0页面异常，上游仍0条。正式服务仍01:52已验证ba4b76b镜像，新增评测工具无apps依赖、未调整生产数据或发布假供应商，模型由用户后台自行配置的选择不变。真实供应商/角色卡/19类全部材料及执行器、设备、异机离线保管、独立审查仍缺。没有必要因仅评测包变更重跑相同服务端全量或重装同业务镜像。
+- 后续先推送新检查点并更新草稿PR/观察新CI，然后继续完整19类材料和真实执行路径。已找到SafetyCare纯函数及高风险分类在domain/reply-rules，可核查默认无供应商下的硬边界运行证据；目前仅阅读线索，不记发现漏洞或已验证缺陷。所有本轮本机句柄已终态；目标活动，仍有可独立推进工作，未暂停/阻塞/完工。
+
 ## 当前断点（2026-10-12 02:00，优先于下文）
 
 - 当前源码已推送GitHub独立分支codex/product-closeout，未修改或合并main；[草稿PR #19](https://github.com/yottermanzione-ship-it/weiban/pull/19)已建立并附着此任务，OPEN/draft，建立时head ccde929a0737376a8bea92a334db584663b1882e、base main。描述区分业务基线614项与后续评测包13项，完整19类和实际模型/设备/独立验收仍明确未完成。此PR作为持续接管检查点，不是产品完工请求。
