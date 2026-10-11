@@ -70,6 +70,8 @@ function draftFields(result: ImportDraft, speaker: string | null) {
     catchphrase: (result.editorFields?.catchphrases ?? data.speech?.catchphrases ?? []).join('\n'),
     speechStyle: result.editorFields?.speechStyle ?? data.speech?.tone ?? '',
     exampleDialogue: result.editorFields?.exampleDialogue ?? examples,
+    birthday: result.editorFields?.birthday ?? '',
+    avatarMediaId: result.editorFields?.avatarMediaId ?? null,
     tags: (result.editorFields?.tags ?? data.persona?.personaTagsCustom ?? [])
       .slice(0, 10)
       .join('，'),
@@ -193,6 +195,11 @@ function CustomCharacterEditor({
         setSpeechStyle(fields.speechStyle);
         setExampleDialogue(fields.exampleDialogue);
         setTags(fields.tags);
+        setBirthday(fields.birthday);
+        setAvatarMediaId(fields.avatarMediaId);
+        setAvatarUrl(null);
+        setRealKind(result.suggestedClassification.realPersonKind ?? 'private_person');
+        setChildAppearance(result.suggestedClassification.childAppearance);
         setBasis(result.suggestedClassification.basis);
         setAgeSetting(result.suggestedClassification.ageSetting);
         setImported({
@@ -205,6 +212,13 @@ function CustomCharacterEditor({
               .map(([k]) => k),
           ),
         });
+        if (fields.avatarMediaId) {
+          const media = await api.call(MediaEndpoints.getMedia, {
+            params: { mediaId: fields.avatarMediaId },
+            networkOnly: true,
+          });
+          if (active) setAvatarUrl(media.url);
+        }
       } catch (e) {
         if (active) setError(friendlyError(e));
       }
@@ -232,7 +246,8 @@ function CustomCharacterEditor({
   }
 
   async function saveImportDraft() {
-    if (!importJobId || !importDraft) return;
+    if (!importJobId || !importDraft || !session || pending || uploadPending) return;
+    const owner = { userId: session.user.userId, sessionId: session.session.sessionId };
     setPending(true);
     setError('');
     try {
@@ -245,6 +260,8 @@ function CustomCharacterEditor({
             description,
             speechStyle,
             exampleDialogue,
+            birthday: birthday || null,
+            avatarMediaId,
             catchphrases: catchphrase
               .split(/\r?\n/)
               .map((v) => v.trim())
@@ -258,17 +275,18 @@ function CustomCharacterEditor({
             ...importDraft.suggestedClassification,
             basis,
             ageSetting,
-            realPersonKind:
-              basis === 'real_person' ? (imported?.realPersonKind ?? 'private_person') : null,
+            childAppearance,
+            realPersonKind: basis === 'real_person' ? realKind : null,
           },
         },
       });
+      if (!api.owns(owner)) return;
       if (result.kind === 'new_character') setImportDraft(result);
       setMessage('草稿已保存，可以稍后继续编辑');
     } catch (e) {
-      setError(friendlyError(e));
+      if (api.owns(owner)) setError(friendlyError(e));
     } finally {
-      setPending(false);
+      if (api.owns(owner)) setPending(false);
     }
   }
 
@@ -300,8 +318,7 @@ function CustomCharacterEditor({
             description,
             classification: {
               basis,
-              realPersonKind:
-                basis === 'real_person' ? (imported?.realPersonKind ?? realKind) : null,
+              realPersonKind: basis === 'real_person' ? realKind : null,
               ageSetting,
               childAppearance,
             },
@@ -326,8 +343,7 @@ function CustomCharacterEditor({
             description: description || undefined,
             classification: {
               basis,
-              realPersonKind:
-                basis === 'real_person' ? (imported?.realPersonKind ?? realKind) : null,
+              realPersonKind: basis === 'real_person' ? realKind : null,
               ageSetting,
               childAppearance,
             },
@@ -370,7 +386,7 @@ function CustomCharacterEditor({
         description,
         classification: {
           basis,
-          realPersonKind: basis === 'real_person' ? (imported?.realPersonKind ?? realKind) : null,
+          realPersonKind: basis === 'real_person' ? realKind : null,
           ageSetting,
           childAppearance,
         },
@@ -504,6 +520,19 @@ function CustomCharacterEditor({
             );
           })}
           <p className="hint">选择「真人」的角色不会有成人模式，也不会生成 TA 的肖像。</p>
+          {basis === 'real_person' && (
+            <label>
+              真人类型
+              <select
+                value={realKind}
+                onChange={(e) => setRealKind(e.target.value as RealPersonKind)}
+              >
+                <option value="private_person">身边真人</option>
+                <option value="celebrity">公众人物</option>
+                <option value="historical">历史人物</option>
+              </select>
+            </label>
+          )}
           {imported && (
             <label className="check">
               <input
@@ -648,7 +677,10 @@ function CustomCharacterEditor({
       )}
       {importJobId && (
         <div className="stack">
-          <button disabled={pending || !importDraft} onClick={() => void saveImportDraft()}>
+          <button
+            disabled={pending || uploadPending || !importDraft}
+            onClick={() => void saveImportDraft()}
+          >
             保存草稿
           </button>
           <Link to={`/imports/new?mergeIntoJobId=${importJobId}`}>

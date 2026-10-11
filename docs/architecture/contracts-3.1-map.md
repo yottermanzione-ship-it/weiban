@@ -46,7 +46,7 @@
 | B12 | ㉚ | `http/pets.ts` `PetAppearance.listed`（迁移 0072） | 管理端外观单独上下架；用户端领养列表过滤；没有上架外观的物种视为下架 | `modules/growth/`（宠物） |
 | B13 | T-082 | 事件 `growth.pet_naming_requested.speciesName` | 发事件时带物种名称 | `modules/growth/`（宠物） |
 | B14 | ㉗ | `ports/social.ts` `CardCopywriterPort` | growth 定义令牌 `GROWTH_CARD_COPYWRITER`（可选注入）；发纪念 / 熟悉度 / 节日 / 心愿卡时调用，3 秒超时或 null 用模板 | `modules/growth/application/cards*.ts` |
-| B15 | ㉕ | `http/importer.ts` `mergeIntoJobId`、`mergedIntoJobId`（迁移 0073） | 校验目标（同用户、同 kind、同角色、已完成待编辑）；本批完成后按规则合并进目标草稿（新角色补空字段、合并示例；补充设定追加文字），本任务标 `mergedIntoJobId`；`ImportResult(supplement).conflicts / filteredCount` 从分析器结果透传 | `modules/importer/` |
+| B15 | ㉕ | `http/importer.ts` `mergeIntoJobId`、`mergedIntoJobId`（迁移 0073） | 校验目标（同用户、同 kind、同角色、已完成待编辑）；本批完成后按规则合并进目标草稿（新角色补空字段、合并示例；补充设定追加文字），本任务标 `mergedIntoJobId`；`ImportResult(supplement).conflicts / filteredCount` 从分析器结果透传；编辑字段保留生日/头像（可选可空，无新增迁移），保存时校验头像归属与用途 | `modules/importer/` |
 | B16 | ㉕ | `ports/push.ts` `PushRequest.kind = import` | push 接受 `import` 并映射到 `NotificationKind.import`；importer 导入完成推送改用 `import` | `modules/push/`、`modules/importer/` |
 | B17 | ㉚㉖ | `ModelStatus.visionAvailable`；`ModelQuotePort` | `GET /model/status` 返回识图可用；实现报价端口（解析模型 → `BillingQuotePort`），导出令牌 `MODEL_QUOTE_PORT` | `modules/model-access/` |
 | B18 | ㉖㉞ | `ports/billing.ts` `BillingQuotePort`、`BillingDailySpendReadPort` | 报价（只给 model-access，R9 同预留端口）；按用户当地日期、按用途汇总已结算金额，导出令牌 `BILLING_DAILY_SPEND_READ_PORT` | `modules/billing/` |

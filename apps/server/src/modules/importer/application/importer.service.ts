@@ -383,6 +383,16 @@ export class ImporterService implements OnModuleInit {
     if (result.kind !== job.kind) throw new AppError('bad_request', '结果类型与导入任务不符');
     if (result.kind === 'supplement' && result.targetCharacterId !== job.targetCharacterId)
       throw new AppError('bad_request', '补充设定的角色与导入任务不符');
+    if (
+      result.kind === 'new_character' &&
+      result.editorFields?.avatarMediaId &&
+      !(await this.media.canUse(userId, result.editorFields.avatarMediaId, [
+        'custom_character_avatar',
+        'plaza_avatar',
+        'character_avatar',
+      ]))
+    )
+      throw new AppError('not_found', '头像不可用');
     await this.db.transaction(async (tx) => {
       const [current] = await tx.db
         .select()

@@ -21,6 +21,8 @@ describe('分批导入的草稿合并', () => {
         speechStyle: '',
         exampleDialogue: '',
         tags: [],
+        birthday: '2000-05-16',
+        avatarMediaId: null,
       },
       detectedRealNames: [],
       suggestedClassification: {
@@ -32,7 +34,12 @@ describe('分批导入的草稿合并', () => {
     };
     const incoming = {
       ...original,
-      editorFields: { ...original.editorFields!, name: '分析器名字' },
+      editorFields: {
+        ...original.editorFields!,
+        name: '分析器名字',
+        birthday: null,
+        avatarMediaId: CHARACTER,
+      },
     };
     expect(mergeResults(original, incoming)).toMatchObject({ editorFields: original.editorFields });
   });

@@ -101,6 +101,8 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 **补登记（已在 3.0 之后实现，此前只写在交接里）**
 
+- 2026-10-11 导入编辑字段补齐：`ImportResult(new_character).editorFields` 增加可选、可空的 `birthday`（有效当地日期）和 `avatarMediaId`。省略兼容旧草稿，null 明确清空；分批合并保留原草稿的用户编辑字段。保存头像时检查归属及头像用途，最终创建角色继续执行既有分类和媒体校验。无数据库迁移。
+
 - 3.0.1 甲（L4 后端收尾 a5fd58f）：`NewFriendsEndpoints`（「新的朋友」列表）、`MomentsEndpoints.listNotifications`（朋友圈消息列表）、`UserCustomEndpoints.list`（自定义角色列表）、`renameGroup` 允许空名恢复默认、更新类型 `conversation.removed`（会话被彻底删除 / 群解散，客户端从本地删掉会话和消息）、`DataSection.new_friends`、通知上下文带 `labels`；`Message.labels` 登记服务器标签 `self_chat`（角色自发群聊话题，push 对「带 self_chat 且没有 @ 用户」的群消息不推送）。
 - 3.0.1 乙（T-063）：`Conversation.group.formerParticipants`（已退出 / 被移出的角色参与者，只用于渲染其历史消息的发送者，不是群成员）。
 - 3.0.1 丙（T-088，总负责人裁定）：端口 `ContactsWritePort.addForUser`（提供方 contacts，调用方 plaza）：「添加为我的角色」由服务器代用户走 CHR-03 添加流程。服务器内部接口，不影响线上格式。

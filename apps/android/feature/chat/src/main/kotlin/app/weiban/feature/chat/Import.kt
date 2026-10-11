@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import app.weiban.contracts.*
 import app.weiban.data.*
 import app.weiban.designsystem.LocalWeibanColors
+import app.weiban.designsystem.PhotoCropper
 import app.weiban.designsystem.tokens.WbSpace
 import app.weiban.network.ApiFailure
 import kotlinx.coroutines.CancellationException
@@ -78,6 +79,9 @@ private class DraftFields(
     val basis: String,
     val ageSetting: String,
     val detectedRealNames: List<String>,
+    val birthday: String,
+    val avatarMediaId: String?,
+    val childAppearance: Boolean,
 )
 
 private fun draftFields(
@@ -126,6 +130,9 @@ private fun draftFields(
         basis = classification?.get("basis").str() ?: "real_person",
         ageSetting = classification?.get("ageSetting").str() ?: "adult",
         detectedRealNames = result["detectedRealNames"].strings(),
+        birthday = editor?.get("birthday").str().orEmpty(),
+        avatarMediaId = editor?.get("avatarMediaId").str(),
+        childAppearance = classification?.get("childAppearance")?.jsonPrimitive?.booleanOrNull ?: false,
     )
 }
 
@@ -715,6 +722,11 @@ private fun DraftEditor(
     var examples by remember(job.jobId) { mutableStateOf(fields.exampleDialogue) }
     var tags by remember(job.jobId) { mutableStateOf(fields.tags) }
     var basis by remember(job.jobId) { mutableStateOf(fields.basis) }
+    var birthday by remember(job.jobId) { mutableStateOf(fields.birthday) }
+    var avatarMediaId by remember(job.jobId) { mutableStateOf(fields.avatarMediaId) }
+    var realKind by remember(job.jobId) { mutableStateOf(fields.realPersonKind) }
+    var age by remember(job.jobId) { mutableStateOf(fields.ageSetting) }
+    var childAppearance by remember(job.jobId) { mutableStateOf(fields.childAppearance) }
     var declared by remember(job.jobId) { mutableStateOf(false) }
     var pending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -747,6 +759,22 @@ private fun DraftEditor(
         OutlinedTextField(speechStyle, { speechStyle = it.take(500) }, Modifier.fillMaxWidth(), label = { Text("说话方式") })
         OutlinedTextField(examples, { examples = it.take(DESCRIPTION_MAX) }, Modifier.fillMaxWidth(), label = { Text("示例对话（可选）· 来自导入") })
         OutlinedTextField(tags, { tags = it.take(200) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("标签（用逗号分隔）") })
+        OutlinedTextField(
+            birthday,
+            { birthday = it.take(10) },
+            Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("生日（YYYY-MM-DD，可不填）") },
+        )
+        Text("角色头像")
+        PhotoCropper(enabled = !pending, onRestore = avatarMediaId?.let { { avatarMediaId = null } }) { bytes ->
+            pending = true
+            try {
+                avatarMediaId = uploadMedia(repository, owner, bytes, "image/png", "custom_character_avatar").mediaId
+            } finally {
+                pending = false
+            }
+        }
         Text("角色分类", style = MaterialTheme.typography.titleSmall)
         Row(horizontalArrangement = Arrangement.spacedBy(WbSpace.S3)) {
             for ((id, label) in listOf("real_person" to "真人", "original" to "原创", "fictional" to "虚构")) {
@@ -768,6 +796,21 @@ private fun DraftEditor(
         if (declared && basis != "real_person") {
             Text("请把草稿里的真实姓名等信息替换掉", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
         }
+        if (basis == "real_person") {
+            Row {
+                listOf("private_person" to "身边真人", "celebrity" to "公众人物", "historical" to "历史人物").forEach { (kind, label) ->
+                    FilterChip(selected = realKind == kind, onClick = { realKind = kind }, label = { Text(label) })
+                }
+            }
+        }
+        Row {
+            FilterChip(selected = age == "adult", onClick = { age = "adult" }, label = { Text("成年") })
+            FilterChip(selected = age == "minor", onClick = { age = "minor" }, label = { Text("未成年") })
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(childAppearance, onCheckedChange = { childAppearance = it })
+            Text("具有儿童外貌特征")
+        }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         OutlinedButton(enabled = !pending, onClick = {
             pending = true
@@ -780,6 +823,8 @@ private fun DraftEditor(
                                 put("description", description)
                                 put("speechStyle", speechStyle)
                                 put("exampleDialogue", examples)
+                                put("birthday", birthday.trim().takeIf(String::isNotEmpty)?.let(::JsonPrimitive) ?: JsonNull)
+                                put("avatarMediaId", avatarMediaId?.let(::JsonPrimitive) ?: JsonNull)
                                 put(
                                     "catchphrases",
                                     JsonArray(
@@ -806,7 +851,9 @@ private fun DraftEditor(
                                 result["suggestedClassification"].obj().orEmpty() +
                                     mapOf(
                                         "basis" to JsonPrimitive(basis),
-                                        "realPersonKind" to if (basis == "real_person") JsonPrimitive(fields.realPersonKind) else JsonNull,
+                                        "realPersonKind" to if (basis == "real_person") JsonPrimitive(realKind) else JsonNull,
+                                        "ageSetting" to JsonPrimitive(age),
+                                        "childAppearance" to JsonPrimitive(childAppearance),
                                     ),
                             )
                         repository.call(
@@ -845,14 +892,16 @@ private fun DraftEditor(
                                     buildJsonObject {
                                         put("name", name.trim())
                                         put("description", description)
+                                        put("birthday", birthday.trim().takeIf(String::isNotEmpty)?.let(::JsonPrimitive) ?: JsonNull)
+                                        put("avatarMediaId", avatarMediaId?.let(::JsonPrimitive) ?: JsonNull)
                                         put(
                                             "classification",
                                             buildJsonObject {
                                                 put("basis", basis)
-                                                val kind = if (basis == "real_person") JsonPrimitive(fields.realPersonKind) else JsonNull
+                                                val kind = if (basis == "real_person") JsonPrimitive(realKind) else JsonNull
                                                 put("realPersonKind", kind)
-                                                put("ageSetting", fields.ageSetting)
-                                                put("childAppearance", false)
+                                                put("ageSetting", age)
+                                                put("childAppearance", childAppearance)
                                             },
                                         )
                                         put(

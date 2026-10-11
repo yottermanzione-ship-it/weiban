@@ -135,4 +135,63 @@ class CustomCharacterTrialTest {
         compose.onNode(hasSetTextAction() and hasText("人设描述（至少50字）")).assertTextContains(description)
         assertTrue(requests.any { it.method == "DELETE" && it.path == "/api/v1/characters/custom/trial/$conversationId" })
     }
+
+    @Test fun reopenedImportPreservesAvatarAndClassificationAndSavesClearedBirthday() {
+        val jobId = "01920000-0000-7000-8000-000000000021"
+        val avatarId = "01920000-0000-7000-8000-000000000022"
+        val result = """{
+          "kind":"new_character","draft":{"cardSchemaVersion":1,"data":{}},
+          "editorFields":{"name":"保存的导入角色","description":"","catchphrases":[],"speechStyle":"","exampleDialogue":"","tags":[],"birthday":"2000-05-16","avatarMediaId":"$avatarId"},
+          "suggestedClassification":{"basis":"real_person","realPersonKind":"historical","ageSetting":"minor","childAppearance":true},"detectedRealNames":[]
+        }"""
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    requests.add(request)
+                    val response =
+                        when {
+                            request.method == "PUT" -> request.body.clone().readUtf8()
+                            request.path == "/api/v1/imports/$jobId/result" -> result
+                            request.path == "/api/v1/imports/$jobId" ->
+                                """{
+                      "jobId":"$jobId","kind":"new_character","targetCharacterId":null,"sourceKind":"text","status":"completed",
+                      "speakers":[],"selectedSpeaker":"旧名字","charCount":10,"truncated":false,"estimatedMicros":0,"progress":100,
+                      "keepRaw":false,"rawDeletedAt":"2026-10-11T08:00:00Z","failure":null,
+                      "createdAt":"2026-10-11T08:00:00Z","updatedAt":"2026-10-11T08:00:00Z"
+                    }"""
+                            else -> return MockResponse().setResponseCode(404)
+                        }
+                    return MockResponse().setHeader("Content-Type", "application/json").setBody(response)
+                }
+            }
+        compose.setContent {
+            WeibanTheme { ImportOverlay(repository, runtime, owner, ImportOpen("new_character", null, jobId = jobId)) {} }
+        }
+        compose.waitUntil(10000) { compose.onAllNodesWithText("名字 · 来自导入").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hasSetTextAction() and hasText("名字 · 来自导入")).assertTextContains("保存的导入角色")
+        compose
+            .onNode(
+                hasSetTextAction() and hasText("生日（YYYY-MM-DD，可不填）"),
+            ).performScrollTo()
+            .assertTextContains("2000-05-16")
+            .performTextClearance()
+        compose.onNodeWithText("保存草稿").performScrollTo().performClick()
+        compose.waitUntil(10000) { requests.any { it.method == "PUT" } }
+        val body =
+            Json
+                .parseToJsonElement(
+                    requests
+                        .first { it.method == "PUT" }
+                        .body
+                        .clone()
+                        .readUtf8(),
+                ).jsonObject
+        val fields = body.getValue("editorFields").jsonObject
+        assertEquals(JsonNull, fields["birthday"])
+        assertEquals(avatarId, fields.getValue("avatarMediaId").jsonPrimitive.content)
+        val classification = body.getValue("suggestedClassification").jsonObject
+        assertEquals("historical", classification.getValue("realPersonKind").jsonPrimitive.content)
+        assertEquals("minor", classification.getValue("ageSetting").jsonPrimitive.content)
+        assertTrue(classification.getValue("childAppearance").jsonPrimitive.boolean)
+    }
 }
