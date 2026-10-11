@@ -269,6 +269,9 @@ private fun systemMessage(content: ReceivedMessageContentSystem): String {
                 (if (by.isNotEmpty()) "$by " else "你") + "修改群名为「${p("title")}」"
             }
         "group_dissolved" -> "群聊已解散"
+        "focus_started" -> "你和 ${p("characterName").ifEmpty { "TA" }} 开始了 ${p("minutes")} 分钟专注"
+        "letter_sent" -> "你给 ${p("characterName").ifEmpty { "TA" }} 寄出了一封信"
+        "wishlist_item_completed" -> "心愿「${p("title")}」已完成" + if (p("cardIssued") == "true") " · 获得心愿卡" else ""
         "card_obtained" -> cardObtainedMessage(::p)
         "pet_adopted" -> "你和 ${p("characterName").ifEmpty { "TA" }} 一起领养了 ${p("petName")} · 去看看 ›"
         "pet_renamed" -> "${p("from")} 改名为 ${p("to")}"

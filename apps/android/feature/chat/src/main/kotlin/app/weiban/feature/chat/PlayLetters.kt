@@ -264,7 +264,11 @@ private val letterBoxes = listOf("received" to "收到的", "sent" to "寄出的
                             )
                         plazaToast(
                             context,
-                            if (result.replyDelayed) "信已寄出。TA 今天已经回过一封信了，这封的回信会晚一些到" else "信已寄出，TA 的回信在路上",
+                            when (result.replyDelayReason) {
+                                "already_replied_today" -> "信已寄出。TA 今天已经回过一封信了，这封的回信会晚一些到"
+                                "outside_active_window" -> "信已寄出，TA 会在方便联系你的时间回信"
+                                else -> if (result.replyDelayed) "信已寄出，回信会晚一些到" else "信已寄出，TA 的回信在路上"
+                            },
                         )
                         if (contacts.any { it.characterId == target && it.conversationId != null }) {
                             openChatWith(contacts, target)

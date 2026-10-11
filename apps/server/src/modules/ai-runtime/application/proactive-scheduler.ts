@@ -30,6 +30,7 @@ import {
   type IdentityReadPort,
   type MessageContent,
   type ModelGatewayPort,
+  type MediaReadPort,
   type PolicyPort,
   type ProactiveMessagePort,
 } from '@weiban/contracts';
@@ -56,6 +57,7 @@ import {
 } from '../../growth/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from '../../identity/index.js';
 import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
+import { MEDIA_READ_PORT } from '../../media/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import {
   DAILY_EVENT_PORT,
@@ -77,6 +79,7 @@ import { CharacterImageService } from './character-image.js';
 import { CallSchedulerService } from './call-scheduler.js';
 import { QuietStateService } from './quiet-state.js';
 import { PlannerService } from './planner.js';
+import { PlayContinuityStore } from './play-continuity.js';
 
 /**
  * T-090：其他服务（经期关怀等）经调度器登记的计划，到发送时由登记方自己生成并发送（内容现取，不存进计划）。
@@ -268,6 +271,7 @@ export function learnActiveHours(rows: { localDate: string; hour: number }[]): S
 @Injectable()
 export class ProactiveSchedulerService {
   constructor(
+    @Inject(PlayContinuityStore) private readonly continuity: PlayContinuityStore,
     @Inject(DATABASE) private readonly db: Database,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
@@ -293,6 +297,7 @@ export class ProactiveSchedulerService {
     @Inject(CallSchedulerService) private readonly calls: CallSchedulerService,
     @Inject(QuietStateService) private readonly quiet: QuietStateService,
     @Inject(PlannerService) private readonly planner: PlannerService,
+    @Inject(MEDIA_READ_PORT) private readonly mediaRead: MediaReadPort,
     /** T-082 PLAY-02：宠物读取（推演一致、提议领养、宠物照片）与角色照片进相册。 */
     @Optional() @Inject(GROWTH_PET_READ_PORT) private readonly pets?: PetReadPort,
     @Optional() @Inject(GROWTH_PET_ALBUM) private readonly album?: PetAlbum,
@@ -368,6 +373,8 @@ export class ProactiveSchedulerService {
   // 其他服务（健康关怀、玩法等）请求一条主动消息：只登记计划，发不发仍由调度规则决定。
   // -------------------------------------------------------------------------
   async request(input: ProactiveRequest, tx?: DbTx): Promise<boolean> {
+    if (!tx) return this.db.transaction((inner) => this.request(input, inner));
+    if ((await this.accounts.getAccountStatus(input.userId, tx)) !== 'active') return false;
     const profile = await this.identity.getProfile(input.userId);
     const tz = profile?.timeZone ?? 'Asia/Shanghai';
     const now = this.clock.now();
@@ -390,6 +397,9 @@ export class ProactiveSchedulerService {
     };
     const db = tx?.db ?? this.db.db;
     const inserted = await db.insert(proactivePlans).values(row).onConflictDoNothing().returning();
+    if (inserted[0]?.sourceRef.startsWith(PLAY_LETTER_ANNIV_SOURCE)) {
+      await this.continuity.keepLetter(inserted[0], tx);
+    }
     return inserted.length > 0;
   }
 
@@ -468,6 +478,11 @@ export class ProactiveSchedulerService {
     if (!(await this.inActiveWindow(ctx))) return;
 
     const contacts = await this.contacts.listActiveContacts(userId);
+    await this.continuity.restoreLetters(
+      userId,
+      ctx.localDate,
+      contacts.map((contact) => contact.characterId),
+    );
     await this.collectCandidates(ctx, contacts);
     await this.processDue(ctx, contacts);
     // T-072 主动来电（MED-07）：在同样的开关、免打扰、活跃时段判断之后登记；其余条件由来电调度判断。
@@ -1027,8 +1042,21 @@ export class ProactiveSchedulerService {
         })
         .catch(() => null);
       link = image
-        ? { type: 'image', mediaId: image.mediaId, width: image.width, height: image.height }
-        : { type: 'image', mediaId: pet.presetImageMediaId, width: null, height: null };
+        ? {
+            type: 'image',
+            mediaId: image.mediaId,
+            width: image.width,
+            height: image.height,
+            sizeBytes: image.sizeBytes,
+          }
+        : {
+            type: 'image',
+            mediaId: pet.presetImageMediaId,
+            width: null,
+            height: null,
+            sizeBytes: (await this.mediaRead.getMedia(ctx.userId, pet.presetImageMediaId))
+              .sizeBytes,
+          };
       petPhoto = true;
     } else if (plan.reason === 'daily_event' && (await this.wantEventPhoto(ctx, plan))) {
       const scene = /「(.+?)」/u.exec(plan.brief)?.[1] ?? plan.brief.slice(0, 200);
@@ -1044,7 +1072,13 @@ export class ProactiveSchedulerService {
         })
         .catch(() => null);
       if (image)
-        link = { type: 'image', mediaId: image.mediaId, width: image.width, height: image.height };
+        link = {
+          type: 'image',
+          mediaId: image.mediaId,
+          width: image.width,
+          height: image.height,
+          sizeBytes: image.sizeBytes,
+        };
     }
     try {
       const sent = await this.db.transaction(async (tx) => {
@@ -1200,6 +1234,14 @@ export class ProactiveSchedulerService {
   // 清理（联系人彻底删除、账号注销）
   // -------------------------------------------------------------------------
   async purgePair(tx: DbTx, userId: string, characterId: string): Promise<void> {
+    await tx.query(
+      'DELETE FROM ai_runtime.pending_anniversary_letters WHERE user_id=$1 AND character_id=$2',
+      [userId, characterId],
+    );
+    await tx.query(
+      'DELETE FROM ai_runtime.character_self_reports WHERE user_id=$1 AND character_id=$2',
+      [userId, characterId],
+    );
     await tx.db
       .delete(proactivePlans)
       .where(and(eq(proactivePlans.userId, userId), eq(proactivePlans.characterId, characterId)));

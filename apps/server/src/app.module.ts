@@ -11,6 +11,9 @@ import type {
   CharacterNameReadPort,
   ModelGatewayMediaPort,
   Tx,
+  PersonaUpdateSummarizerPort,
+  CardCopywriterPort,
+  SyncPort,
 } from '@weiban/contracts';
 import {
   ContactsModule,
@@ -24,6 +27,8 @@ import {
   AI_IMPORT_ANALYZER,
   AI_PLAZA_PUBLISH_CHECK,
   AI_ACTIVE_HOURS,
+  AI_PERSONA_UPDATE_SUMMARIZER,
+  AI_CARD_LINE_WRITER,
 } from './modules/ai-runtime/index.js';
 import { BillingModule } from './modules/billing/index.js';
 import {
@@ -51,6 +56,7 @@ import {
   CHARACTER_SUPPLEMENT_PORT,
   CHARACTER_PLAZA_PORT,
   CHARACTER_PLAZA_ORIGIN_STATUS,
+  CHARACTER_PERSONA_SUMMARIZER,
   type CharacterPlazaOriginStatus,
 } from './modules/characters/index.js';
 import { HealthModule } from './modules/health/index.js';
@@ -61,6 +67,7 @@ import {
   MEDIA_MESSAGE_LOOKUP,
   MEDIA_REAL_PERSON_NAMES,
   type MediaMessageLookup,
+  type MediaRealPersonNames,
 } from './modules/media/index.js';
 import {
   ModelAccessModule,
@@ -71,6 +78,7 @@ import {
   GrowthModule,
   GROWTH_HOLIDAY_SOURCE,
   GROWTH_CARD_LOOKUP,
+  GROWTH_CARD_COPYWRITER,
   GROWTH_CARD_PORT,
 } from './modules/growth/index.js';
 import { MomentsModule, MOMENTS_READ_PORT } from './modules/moments/index.js';
@@ -227,15 +235,31 @@ class PushCompositionModule {}
  */
 @Global()
 @Module({
-  imports: [RealtimeModule, ChatModule, CharactersModule],
   providers: [
-    { provide: MEDIA_SYNC, useExisting: SYNC_PORT },
-    { provide: MEDIA_REAL_PERSON_NAMES, useExisting: CHARACTER_REAL_PERSON_NAMES },
+    {
+      provide: MEDIA_SYNC,
+      inject: [ModuleRef],
+      useFactory: (ref: ModuleRef): Pick<SyncPort, 'appendUpdate'> => ({
+        appendUpdate: (tx, userId, update) =>
+          ref.get<SyncPort>(SYNC_PORT, { strict: false }).appendUpdate(tx, userId, update),
+      }),
+    },
+    {
+      provide: MEDIA_REAL_PERSON_NAMES,
+      inject: [ModuleRef],
+      useFactory: (ref: ModuleRef): MediaRealPersonNames => ({
+        listRealPersonNames: () =>
+          ref
+            .get<MediaRealPersonNames>(CHARACTER_REAL_PERSON_NAMES, { strict: false })
+            .listRealPersonNames(),
+      }),
+    },
     {
       provide: MEDIA_MESSAGE_LOOKUP,
-      inject: [CHAT_READ_PORT],
-      useFactory: (chat: ChatReadPort): MediaMessageLookup => ({
+      inject: [ModuleRef],
+      useFactory: (ref: ModuleRef): MediaMessageLookup => ({
         findMessageMedia: async (userId, conversationId, messageId) => {
+          const chat = ref.get<ChatReadPort>(CHAT_READ_PORT, { strict: false });
           const conversation = await chat.getConversation(conversationId);
           if (
             !conversation ||
@@ -342,6 +366,38 @@ class PlazaCompositionModule {}
 })
 class PlazaOriginCompositionModule {}
 
+/**
+ * 契约 3.1（ADR-0028 方案 C）：底层模块的可选 AI 接入点。characters 的人设更新摘要、growth 的卡片文案由 ai-runtime 实现，
+ * 绑定 ai-runtime 的真实实现；未生成文案时 characters / growth 按契约自行兜底。
+ * 另：IDENTITY_SETTINGS_WRITE_PORT、MODEL_QUOTE_PORT、BILLING_DAILY_SPEND_READ_PORT 已分别由 IdentityModule、
+ * ModelAccessModule、BillingModule 导出，ai-runtime 模块已 import 这三个模块，直接注入即可。
+ */
+@Global()
+@Module({
+  providers: [
+    {
+      provide: CHARACTER_PERSONA_SUMMARIZER,
+      inject: [ModuleRef],
+      useFactory: (ref: ModuleRef): PersonaUpdateSummarizerPort => ({
+        summarize: (input) =>
+          ref
+            .get<PersonaUpdateSummarizerPort>(AI_PERSONA_UPDATE_SUMMARIZER, { strict: false })
+            .summarize(input),
+      }),
+    },
+    {
+      provide: GROWTH_CARD_COPYWRITER,
+      inject: [ModuleRef],
+      useFactory: (ref: ModuleRef): CardCopywriterPort => ({
+        writeCardCopy: (input) =>
+          ref.get<CardCopywriterPort>(AI_CARD_LINE_WRITER, { strict: false }).writeCardCopy(input),
+      }),
+    },
+  ],
+  exports: [CHARACTER_PERSONA_SUMMARIZER, GROWTH_CARD_COPYWRITER],
+})
+class AiHookCompositionModule {}
+
 @Module({})
 export class AppModule {
   static forRoot(options: PlatformOptions): DynamicModule {
@@ -349,6 +405,7 @@ export class AppModule {
       module: AppModule,
       imports: [
         PlatformModule.forRoot(options),
+        AiHookCompositionModule,
         IdentityModule,
         RealtimeModule,
         ChatCompositionModule,

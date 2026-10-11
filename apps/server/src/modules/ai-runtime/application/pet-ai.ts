@@ -53,6 +53,7 @@ interface NamingJob {
   userId: string;
   characterId: string;
   requestId: string;
+  speciesName?: string;
 }
 interface PetEventJob {
   userId: string;
@@ -106,7 +107,12 @@ export class PetAiService implements OnModuleInit {
         const p = event.payload;
         await this.jobs.send(
           PET_NAMING_JOB,
-          { userId: p.userId, characterId: p.characterId, requestId: p.requestId },
+          {
+            userId: p.userId,
+            characterId: p.characterId,
+            requestId: p.requestId,
+            speciesName: p.speciesName,
+          },
           { tx, singletonKey: `pet-naming:${p.requestId}`, retryLimit: 2, retryBackoff: true },
         );
       },
@@ -181,7 +187,7 @@ export class PetAiService implements OnModuleInit {
         {
           role: 'system',
           content:
-            '你是这个角色，对方请你给你们一起领养的新宠物起名字。按你的性格和说话风格想 3 个名字，每个 1～8 个字、互不相同，' +
+            `你是这个角色，对方请你给你们一起领养的${job.speciesName ?? '新宠物'}起名字。按你的性格和说话风格想 3 个名字，每个 1～8 个字、互不相同，` +
             '不用真实人名、不含标点和表情；再写一句很短的话把名字递给对方（≤30 字，口语）。' +
             `已经用过的名字不要再用：${existing.join('、') || '无'}。` +
             '只输出 JSON：{"names":["","",""],"line":""}',

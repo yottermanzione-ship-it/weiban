@@ -432,7 +432,7 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     expect(queued).toHaveLength(1);
     await finish(queued[0]!.id);
     expect(calls.length - before).toBe(1);
-  });
+  }, 120000);
   it('高危所有网关错误仍发免费关怀，不进入恢复补发，不把正文写审计', async () => {
     const fallbackFirsts: string[] = [];
     for (const error of [

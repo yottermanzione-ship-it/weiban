@@ -1,6 +1,8 @@
 package app.weiban.feature.chat
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -149,7 +151,7 @@ internal fun GlobalSearchScreen(
 }
 
 /**
- * 会话内搜索（聊天信息页「查找聊天记录」）：按关键词翻页；「图片 / 链接」快速查找只覆盖本机已加载的消息（契约暂无按类型列出接口）。
+ * 会话内搜索（聊天信息页「查找聊天记录」）：按关键词翻页；日期定位与「图片 / 链接」按服务器分页查找。
  * 点开结果定位到该消息上下文。
  */
 @Suppress("LongMethod") // Search field, three quick filters and one paged list.
@@ -167,6 +169,12 @@ internal fun ConversationSearchScreen(
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf(initialQuery) }
     var mode by remember { mutableStateOf("text") }
+    var sender by remember { mutableStateOf<String?>(null) }
+    var date by remember { mutableStateOf("") }
+    val conversation = state.conversations.find { it.conversationId == conversationId }
+    val participants = conversation?.participants.orEmpty() + conversation?.group?.formerParticipants.orEmpty()
+    val profiles = characterProfiles(repository, participants.filter { it.kind == "character" }.map { it.refId })
+    val typed = remember { mutableStateListOf<Message>() }
     val hits = remember { mutableStateListOf<MessageSearchHit>() }
     var hasMore by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
@@ -174,7 +182,7 @@ internal fun ConversationSearchScreen(
 
     suspend fun load(more: Boolean) {
         val keyword = query.trim()
-        if (keyword.isEmpty()) {
+        if (mode == "text" && keyword.isEmpty()) {
             hits.clear()
             hasMore = false
             return
@@ -182,6 +190,21 @@ internal fun ConversationSearchScreen(
         loading = true
         error = null
         userAction({ error = it }) {
+            if (mode != "text") {
+                val page = repository.call(
+                    Endpoints.chatSearchEndpointsListByType,
+                    params = mapOf("conversationId" to conversationId),
+                    query = buildMap {
+                        put("type", mode)
+                        put("limit", "20")
+                        if (more) typed.lastOrNull()?.let { put("beforeSeq", it.seq.toString()) }
+                    },
+                    options = SessionCallOptions(owner = owner, networkOnly = true),
+                )
+                if (!more) typed.clear()
+                typed.addAll(page.items.filter { message -> typed.none { it.messageId == message.messageId } })
+                hasMore = page.hasMore
+            } else {
             val page =
                 repository.call(
                     Endpoints.chatSearchEndpointsSearchConversation,
@@ -190,6 +213,7 @@ internal fun ConversationSearchScreen(
                         buildMap {
                             put("q", keyword.take(50))
                             put("limit", "20")
+                            sender?.let { put("senderParticipantId", it) }
                             if (more) hits.lastOrNull()?.let { put("beforeSeq", it.seq.toString()) }
                         },
                     options = SessionCallOptions(owner = owner, networkOnly = true),
@@ -197,10 +221,11 @@ internal fun ConversationSearchScreen(
             if (!more) hits.clear()
             hits.addAll(page.items.filter { hit -> hits.none { it.messageId == hit.messageId } })
             hasMore = page.hasMore
+            }
         }
         loading = false
     }
-    LaunchedEffect(query) {
+    LaunchedEffect(query, mode, sender, conversationId) {
         delay(DEBOUNCE_MS)
         load(more = false)
     }
@@ -217,18 +242,39 @@ internal fun ConversationSearchScreen(
             FilterChip(selected = mode == "image", onClick = { mode = if (mode == "image") "text" else "image" }, label = { Text("图片") })
             FilterChip(selected = mode == "link", onClick = { mode = if (mode == "link") "text" else "link" }, label = { Text("链接") })
         }
+        Row(Modifier.fillMaxWidth().padding(horizontal = WbSpace.S5)) {
+            OutlinedTextField(date, { date = it.take(10) }, Modifier.weight(1f), label = { Text("日期 YYYY-MM-DD") }, singleLine = true)
+            TextButton(enabled = !loading && date.length == 10, onClick = {
+                scope.launch {
+                    loading = true
+                    userAction({ error = it }) {
+                        val located = repository.call(
+                            Endpoints.chatSearchEndpointsLocateByDate,
+                            params = mapOf("conversationId" to conversationId), query = mapOf("date" to date),
+                            options = SessionCallOptions(owner = owner, networkOnly = true),
+                        )
+                        val seq = located.seq
+                        if (seq == null) error = "该日期及之后没有聊天记录" else MessageLocator.request(conversationId, seq)
+                    }
+                    loading = false
+                }
+            }) { Text("定位") }
+        }
+        if (conversation?.type == "group" && mode == "text") Row(
+            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = WbSpace.S5),
+        ) {
+            FilterChip(selected = sender == null, onClick = { sender = null }, label = { Text("全部成员") })
+            participants.distinctBy { it.participantId }.forEach { member ->
+                FilterChip(selected = sender == member.participantId, onClick = { sender = member.participantId },
+                    label = { Text(if (member.kind == "user") "我" else profiles[member.refId]?.name ?: "角色") })
+            }
+        }
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         error?.let { Text(it, Modifier.padding(WbSpace.S5), color = MaterialTheme.colorScheme.error) }
         if (mode != "text") {
-            val local =
-                state.messages
-                    .filter { it.conversationId == conversationId && it.status == "normal" }
-                    .filter {
-                        if (mode == "image") it.content is ReceivedMessageContentImage else it.content is ReceivedMessageContentLink
-                    }.sortedByDescending { it.seq }
-            if (local.isEmpty()) Text("本机已加载的消息里没有找到，可以在聊天里往上翻加载更早的消息", Modifier.padding(WbSpace.S5), color = colors.textSecondary)
+            if (typed.isEmpty() && !loading && error == null) Text("没有找到相关记录", Modifier.padding(WbSpace.S5), color = colors.textSecondary)
             LazyColumn(Modifier.weight(1f)) {
-                items(local, key = { it.messageId }) { message ->
+                items(typed, key = { it.messageId }) { message ->
                     ListItem(
                         headlineContent = { Text(contentText(message.content), maxLines = 2) },
                         supportingContent = { Text(hitTime(message.createdAt), color = colors.textTertiary) },
@@ -236,6 +282,7 @@ internal fun ConversationSearchScreen(
                     )
                 }
             }
+            if (hasMore) TextButton(enabled = !loading, onClick = { scope.launch { load(more = true) } }) { Text("加载更多") }
             return@Column
         }
         if (query.isNotBlank() && !loading && hits.isEmpty() && error == null) {

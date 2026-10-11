@@ -3,7 +3,7 @@
  * 接口：StickerAdminEndpoints、VoiceAdminEndpoints、CardTemplateAdminEndpoints、WorkLinkAdminEndpoints；
  * 文件先经 MediaAdminEndpoints.adminUpload 上传，再登记到对应素材接口。
  */
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   CardTemplateAdminEndpoints,
   CharacterAdminEndpoints,
@@ -532,6 +532,7 @@ export function CardTemplatesPage() {
       kinds: kinds as CardTemplate['kinds'],
       mediaId,
       portraitFree: form.get('portraitFree') === 'on',
+      classicalStyle: form.get('classicalStyle') === 'on',
       enabled: form.get('enabled') === 'on',
     };
     const ok = await action.run(
@@ -619,6 +620,14 @@ export function CardTemplatesPage() {
           <label className="check">
             <input
               type="checkbox"
+              name="classicalStyle"
+              defaultChecked={editing === 'new' ? false : (editing.classicalStyle ?? false)}
+            />
+            古风插画（历史人物优先使用）
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
               name="enabled"
               defaultChecked={editing === 'new' ? true : editing.enabled}
             />
@@ -641,6 +650,7 @@ export function CardTemplatesPage() {
             <figcaption>
               {t.name} · {t.kinds.map((k) => kindNames[k] ?? k).join('、')}
               {t.portraitFree && <span className="tag">不含人物</span>}
+              {t.classicalStyle && <span className="tag">古风</span>}
               <span className={t.enabled ? 'tag success' : 'tag'}>
                 {t.enabled ? '启用' : '停用'}
               </span>
@@ -673,7 +683,11 @@ export function WorkLinksPage() {
       </label>
       {characterId && (
         <>
-          <DefaultVoice characterId={characterId} voices={voices.data?.items ?? []} />
+          <DefaultVoice
+            key={characterId}
+            characterId={characterId}
+            voices={voices.data?.items ?? []}
+          />
           <WorkLinkList key={characterId} characterId={characterId} />
         </>
       )}
@@ -683,7 +697,11 @@ export function WorkLinksPage() {
 
 function DefaultVoice({ characterId, voices }: { characterId: string; voices: AdminVoice[] }) {
   const action = useAction();
+  const current = useRemote(WorkLinkAdminEndpoints.getDefaultVoice, { params: { characterId } });
   const [voiceId, setVoiceId] = useState('');
+  useEffect(() => {
+    if (current.data) setVoiceId(current.data.voiceId ?? '');
+  }, [current.data]);
   return (
     <form
       className="panel inline"
@@ -701,7 +719,11 @@ function DefaultVoice({ characterId, voices }: { characterId: string; voices: Ad
     >
       <label>
         默认音色
-        <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)}>
+        <select
+          disabled={!current.data}
+          value={voiceId}
+          onChange={(e) => setVoiceId(e.target.value)}
+        >
           <option value="">平台默认</option>
           {voices
             .filter((v) => v.enabled)
@@ -712,8 +734,8 @@ function DefaultVoice({ characterId, voices }: { characterId: string; voices: Ad
             ))}
         </select>
       </label>
-      <button disabled={action.pending}>保存默认音色</button>
-      <Feedback message={action.message} error={action.error} />
+      <button disabled={action.pending || !current.data}>保存默认音色</button>
+      <Feedback message={action.message} error={action.error || current.error} />
     </form>
   );
 }

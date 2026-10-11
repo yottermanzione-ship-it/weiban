@@ -42,6 +42,8 @@ export const petAppearances = growthSchema.table(
     juniorMediaId: uuid('junior_media_id').notNull(),
     adultMediaId: uuid('adult_media_id').notNull(),
     sortOrder: integer('sort_order').notNull().default(0),
+    /** 0072（契约 3.1，积压 ㉚）：外观单独上下架；下架后不能再选它领养，已领养的不受影响。 */
+    listed: boolean('listed').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },
   (t) => [index('pet_appearances_species_idx').on(t.speciesId)],

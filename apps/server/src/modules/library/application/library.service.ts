@@ -20,6 +20,8 @@ import {
   ShareSource,
   ShareTemplate,
   type ChatReadPort,
+  type CharacterReadPort,
+  type MediaSystemPort,
   type Conversation,
   type MessageContent,
   type MomentsPost,
@@ -45,6 +47,8 @@ import {
   type UserDataRegistry,
 } from '../../../platform/index.js';
 import { CHAT_READ_PORT } from '../../chat/index.js';
+import { CHARACTER_READ_PORT } from '../../characters/index.js';
+import { MEDIA_SYSTEM_PORT } from '../../media/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
 import { favorites, shareGenerations, sharePreferences } from '../infra/db/schema.js';
@@ -125,6 +129,8 @@ export class LibraryService implements OnModuleInit {
     @Inject(CHAT_READ_PORT) private readonly chat: ChatReadPort,
     @Inject(POLICY_PORT) private readonly policy: PolicyPort,
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
+    @Inject(CHARACTER_READ_PORT) private readonly characters: CharacterReadPort,
+    @Inject(MEDIA_SYSTEM_PORT) private readonly mediaSystem: MediaSystemPort,
     @Optional() @Inject(LIBRARY_MOMENTS_READ) private readonly moments?: LibraryMomentsRead,
     @Optional() @Inject(LIBRARY_CARD_LOOKUP) private readonly cards?: LibraryCardLookup,
   ) {}
@@ -189,8 +195,18 @@ export class LibraryService implements OnModuleInit {
 
   async addFavorites(userId: string, input: unknown): Promise<{ items: FavoriteDto[] }> {
     const body = parseContract(AddFavoritesRequest, input);
-    type Pending = Omit<FavoriteRow, 'id' | 'createdAt' | 'contentCiphertext' | 'userId'> & {
+    type Pending = Omit<
+      FavoriteRow,
+      | 'id'
+      | 'createdAt'
+      | 'contentCiphertext'
+      | 'userId'
+      | 'characterNameSnapshot'
+      | 'characterAvatarMediaIdSnapshot'
+      | 'sourceSeq'
+    > & {
       content: MessageContent;
+      sourceSeq?: number | null;
     };
     const resolved: Array<{
       kind: 'message' | 'moments_post';
@@ -250,6 +266,7 @@ export class LibraryService implements OnModuleInit {
             scope: message.scope,
             labels: message.labels ?? [],
             sourceCreatedAt: new Date(message.createdAt),
+            sourceSeq: message.seq,
           },
         });
       } else {
@@ -278,58 +295,87 @@ export class LibraryService implements OnModuleInit {
       }
     }
 
-    const ids = await this.db.transaction(async (tx) => {
-      const ids: string[] = [];
-      const added: string[] = [];
-      for (const r of resolved) {
-        if (r.pending) {
-          const id = newId();
-          const { content, ...rest } = r.pending;
-          const sealed = await this.crypto.seal(
-            userId,
-            `library:favorite:${id}`,
-            JSON.stringify(content),
-            tx,
-          );
-          const inserted = await tx.db
-            .insert(favorites)
-            .values({
-              ...rest,
-              id,
+    // 3.1（积压 ㉔）：角色名字 / 头像快照。头像复制一份归本人所有（角色删除后仍可显示），收藏删除时一并删。
+    const snapshots = new Map<string, { name: string | null; avatarMediaId: string | null }>();
+    for (const r of resolved) {
+      const characterId = r.pending?.characterId;
+      if (!r.pending || !characterId || snapshots.has(`${r.kind}:${r.sourceId}`)) continue;
+      snapshots.set(`${r.kind}:${r.sourceId}`, await this.characterSnapshot(userId, characterId));
+    }
+    const unusedCopies: string[] = [];
+    const ids = await this.db
+      .transaction(async (tx) => {
+        const ids: string[] = [];
+        const added: string[] = [];
+        const processed = new Set<string>();
+        for (const r of resolved) {
+          const sourceKey = `${r.kind}:${r.sourceId}`;
+          if (processed.has(sourceKey)) continue;
+          processed.add(sourceKey);
+          if (r.pending) {
+            const id = newId();
+            const { content, ...rest } = r.pending;
+            const snap = snapshots.get(`${r.kind}:${r.sourceId}`);
+            const sealed = await this.crypto.seal(
               userId,
-              contentCiphertext: sealed,
-              createdAt: this.clock.now(),
-            })
-            .onConflictDoNothing()
-            .returning({ id: favorites.id });
-          if (inserted.length) added.push(id);
+              `library:favorite:${id}`,
+              JSON.stringify(content),
+              tx,
+            );
+            const inserted = await tx.db
+              .insert(favorites)
+              .values({
+                ...rest,
+                id,
+                userId,
+                contentCiphertext: sealed,
+                characterNameSnapshot: snap?.name ?? null,
+                characterAvatarMediaIdSnapshot: snap?.avatarMediaId ?? null,
+                sourceSeq: rest.sourceSeq ?? null,
+                createdAt: this.clock.now(),
+              })
+              .onConflictDoNothing()
+              .returning({ id: favorites.id });
+            if (inserted.length) added.push(id);
+            else if (snap?.avatarMediaId) unusedCopies.push(snap.avatarMediaId);
+          }
+          const [row] = await tx.db
+            .select({ id: favorites.id })
+            .from(favorites)
+            .where(
+              and(
+                eq(favorites.userId, userId),
+                eq(favorites.sourceKind, r.kind),
+                eq(favorites.sourceId, r.sourceId),
+              ),
+            );
+          if (row) ids.push(row.id);
         }
-        const [row] = await tx.db
-          .select({ id: favorites.id })
-          .from(favorites)
-          .where(
-            and(
-              eq(favorites.userId, userId),
-              eq(favorites.sourceKind, r.kind),
-              eq(favorites.sourceId, r.sourceId),
-            ),
-          );
-        if (row) ids.push(row.id);
-      }
-      if (added.length) {
-        const [count] = await tx.db
-          .select({ n: sql<number>`count(*)::int` })
-          .from(favorites)
-          .where(eq(favorites.userId, userId));
-        await this.outbox.publish(tx, 'library.favorite_added', 'library', {
-          userId,
-          favoriteIds: added,
-          totalFavorites: Math.max(1, count?.n ?? added.length),
-        });
-        await this.dataChanged(tx, userId, added.length === 1 ? added[0]! : null);
-      }
-      return ids;
-    });
+        if (added.length) {
+          const [count] = await tx.db
+            .select({ n: sql<number>`count(*)::int` })
+            .from(favorites)
+            .where(eq(favorites.userId, userId));
+          await this.outbox.publish(tx, 'library.favorite_added', 'library', {
+            userId,
+            favoriteIds: added,
+            totalFavorites: Math.max(1, count?.n ?? added.length),
+          });
+          await this.dataChanged(tx, userId, added.length === 1 ? added[0]! : null);
+        }
+        return ids;
+      })
+      .catch(async (error: unknown) => {
+        // 头像复制不参与收藏事务；回滚后收回本次所有快照，避免留下无收藏引用的媒体。
+        await Promise.all(
+          [...snapshots.values()].map(async (snapshot) => {
+            if (snapshot.avatarMediaId) await this.mediaSystem.deleteObject(snapshot.avatarMediaId);
+          }),
+        );
+        throw error;
+      });
+    for (const mediaId of unusedCopies)
+      await this.mediaSystem.deleteObject(mediaId).catch(() => {});
     const rows = ids.length
       ? await this.db.db
           .select()
@@ -351,10 +397,37 @@ export class LibraryService implements OnModuleInit {
       const removed = await tx.db
         .delete(favorites)
         .where(and(eq(favorites.userId, userId), eq(favorites.id, favoriteId)))
-        .returning({ id: favorites.id });
+        .returning({
+          id: favorites.id,
+          avatar: favorites.characterAvatarMediaIdSnapshot,
+        });
       // 重复取消不报错（幂等）。
-      if (removed.length) await this.dataChanged(tx, userId, favoriteId);
+      if (removed.length) {
+        if (removed[0]!.avatar)
+          await this.mediaSystem.deleteObject(removed[0]!.avatar, tx as unknown as Tx);
+        await this.dataChanged(tx, userId, favoriteId);
+      }
     });
+  }
+
+  /** 收藏时的角色名字与头像快照；头像复制一份归本人（用途 contact_avatar，随收藏删除）。读不到时为空。 */
+  private async characterSnapshot(
+    userId: string,
+    characterId: string,
+  ): Promise<{ name: string | null; avatarMediaId: string | null }> {
+    const [profile] = await this.characters.getProfiles(userId, [characterId]).catch(() => []);
+    if (!profile) return { name: null, avatarMediaId: null };
+    let avatarMediaId: string | null = null;
+    if (profile.avatar.image)
+      avatarMediaId = await this.mediaSystem
+        .copyObject({
+          mediaId: profile.avatar.image.mediaId,
+          ownerUserId: userId,
+          purpose: 'contact_avatar',
+        })
+        .then((m) => m.mediaId)
+        .catch(() => null);
+    return { name: profile.name.slice(0, 32), avatarMediaId };
   }
 
   // ---------- 分享图 ----------
@@ -615,6 +688,7 @@ export class LibraryService implements OnModuleInit {
             messageId: row.sourceId,
             senderKind: (row.senderKind ?? 'system') as 'user' | 'character' | 'system',
             senderRefId: row.senderRefId,
+            ...(row.sourceSeq ? { seq: row.sourceSeq } : {}),
           }
         : {
             kind: 'moments_post' as const,
@@ -627,6 +701,8 @@ export class LibraryService implements OnModuleInit {
       characterId: row.characterId,
       content: await this.openContent(row),
       extraImages: row.extraImages.slice(0, 9),
+      characterNameSnapshot: row.characterNameSnapshot,
+      characterAvatarMediaIdSnapshot: row.characterAvatarMediaIdSnapshot,
       shareable: !reason && row.senderKind !== 'system',
       notShareableReason: reason,
       sourceCreatedAt: row.sourceCreatedAt.toISOString(),
@@ -644,6 +720,13 @@ export class LibraryService implements OnModuleInit {
   private async purgeUser(userId: string): Promise<number> {
     return this.db.transaction(async (tx) => {
       let n = 0;
+      // 3.1：收藏头像快照（library 自己复制的媒体对象）一并删除。
+      const copies = await tx.db
+        .select({ mediaId: favorites.characterAvatarMediaIdSnapshot })
+        .from(favorites)
+        .where(eq(favorites.userId, userId));
+      for (const c of copies)
+        if (c.mediaId) await this.mediaSystem.deleteObject(c.mediaId, tx as unknown as Tx);
       for (const table of [favorites, sharePreferences, shareGenerations] as const) {
         const r = await tx.db.delete(table).where(eq(table.userId, userId));
         n += r.rowCount ?? 0;

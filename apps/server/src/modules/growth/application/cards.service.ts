@@ -12,6 +12,7 @@ import {
   CardAlbum,
   GrowthCard,
   Id,
+  type CardCopywriterPort,
   type CardKind,
   type GrowthCardPort,
   type MediaAssetReadPort,
@@ -48,6 +49,15 @@ import {
 import { cards, familiarity } from '../infra/db/schema.js';
 import { AchievementService } from './achievements.service.js';
 import { GrowthContext } from './context.js';
+import { GROWTH_CARD_COPYWRITER } from '../tokens.js';
+
+/** 3.1（积压 ㉗）：走 AI 文案的卡片（纪念 / 熟悉度 / 节日 / 心愿）；超时毫秒数。 */
+const COPYWRITER_TIMEOUT_MS = 3000;
+function wantsCopy(input: { kind: string; idempotencyKey: string }): boolean {
+  if (input.kind === 'anniversary' || input.kind === 'familiarity' || input.kind === 'holiday')
+    return true;
+  return input.kind === 'play' && input.idempotencyKey.startsWith('wish:');
+}
 
 type CardRow = typeof cards.$inferSelect;
 
@@ -79,6 +89,9 @@ export class CardsService implements GrowthCardPort {
     @Inject(MEDIA_READ_PORT) private readonly media: MediaReadPort,
     @Inject(AchievementService) private readonly achievements: AchievementService,
     @Inject(GrowthContext) private readonly ctx: GrowthContext,
+    @Optional()
+    @Inject(GROWTH_CARD_COPYWRITER)
+    private readonly copywriter?: CardCopywriterPort,
     @Optional()
     @Inject(MEDIA_CLASSICAL_CARD_TEMPLATES)
     private readonly classical?: MediaClassicalCardTemplates,
@@ -145,7 +158,8 @@ export class CardsService implements GrowthCardPort {
 
     const id = newId();
     const now = this.clock.now();
-    const title = input.title.trim().slice(0, 30) || '卡片';
+    const copy = await this.aiCopy(input);
+    const title = copy.title.trim().slice(0, 30) || '卡片';
     await tx.db.insert(cards).values({
       id,
       userId: input.userId,
@@ -153,7 +167,7 @@ export class CardsService implements GrowthCardPort {
       kind: input.kind,
       serialNo,
       title,
-      line: input.line.trim().slice(0, 60),
+      line: copy.line.trim().slice(0, 60),
       obtainedOn,
       templateId: face.templateId,
       mediaId: face.mediaId,
@@ -188,6 +202,38 @@ export class CardsService implements GrowthCardPort {
     );
     await this.ctx.dataChanged(tx, input.userId, 'cards', input.characterId, id);
     return { ok: true, value: { cardId: id, serialNo } };
+  }
+
+  /** 3.1：纪念 / 熟悉度 / 节日 / 心愿卡请 AI 改写文案；未绑定、超时、失败或返回 null 时用模板。 */
+  private async aiCopy(input: IssueCardInput): Promise<{ title: string; line: string }> {
+    const template = { title: input.title, line: input.line };
+    if (!this.copywriter || !wantsCopy(input)) return template;
+    const facts: Record<string, string | number> = {};
+    for (const [k, v] of Object.entries(input.noticeParams ?? {}))
+      if (typeof v === 'string' || typeof v === 'number') facts[k] = v;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const result = await Promise.race([
+        this.copywriter.writeCardCopy({
+          userId: input.userId,
+          characterId: input.characterId,
+          kind: input.kind,
+          templateTitle: input.title,
+          templateLine: input.line,
+          facts,
+          idempotencyKey: `growth-card-copy:${input.idempotencyKey}`.slice(0, 200),
+        }),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), COPYWRITER_TIMEOUT_MS);
+        }),
+      ]);
+      if (!result || !result.title.trim()) return template;
+      return { title: result.title.slice(0, 30), line: result.line.slice(0, 60) };
+    } catch {
+      return template;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   /** 卡面：调用方给了生成图就用；指定模板合规就用；否则在同类合规模板中按编号轮换；没有模板则为空（客户端用类型色占位）。 */

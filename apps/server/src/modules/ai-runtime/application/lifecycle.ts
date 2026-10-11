@@ -696,12 +696,22 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       consumer: 'ai.on_model_recovered',
       eventType: 'model_access.model_status_changed',
       handle: async (event, tx) => {
-        if (event.payload.available)
+        if (event.payload.available) {
           await this.jobs.send(
             'ai.recover_replies',
             {},
             { tx, retryLimit: 10, retryBackoff: true },
           );
+          const users = await tx.query<{ user_id: string }>(
+            'SELECT DISTINCT user_id FROM ai_runtime.simulation_states',
+          );
+          for (const user of users.rows)
+            await this.jobs.send(
+              PLAY_RECOVER_JOB,
+              { userId: user.user_id },
+              { tx, retryLimit: 3, retryBackoff: true },
+            );
+        }
       },
     });
   }

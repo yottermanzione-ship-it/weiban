@@ -44,6 +44,35 @@ export const companionSettings = aiRuntimeSchema.table(
 );
 
 const bytes = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
+export const characterSelfReports = aiRuntimeSchema.table(
+  'character_self_reports',
+  {
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    topicKey: text('topic_key').notNull(),
+    answerId: uuid('answer_id').notNull(),
+    scope: text('scope').$type<'normal' | 'adult'>().notNull(),
+    payloadCiphertext: bytes('payload_ciphertext').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.characterId, t.topicKey] }),
+    check('character_self_reports_scope_check', sql`${t.scope} IN ('normal', 'adult')`),
+  ],
+);
+
+export const pendingAnniversaryLetters = aiRuntimeSchema.table(
+  'pending_anniversary_letters',
+  {
+    planId: uuid('plan_id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    payloadCiphertext: bytes('payload_ciphertext').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [index('pending_anniversary_letters_user').on(t.userId)],
+);
 /**
  * pgvector 列（vector(256)）。fromDriver/toDriver 使用字符串字面量，
  * 应用层在查询时通过原生 sql 调用 <=> 操作符，不经过 Drizzle 操作符。

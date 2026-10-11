@@ -138,6 +138,8 @@ internal data class ImportOpen(
     val kind: String,
     val targetCharacterId: String?,
     val nonce: Long = System.nanoTime(),
+    val jobId: String? = null,
+    val mergeIntoJobId: String? = null,
 )
 
 /** 宿主应用打开的页面（T-086）：浮层里需要跳到某个会话时由宿主切到「微伴」标签。 */
@@ -151,6 +153,10 @@ object GrowthNavigation {
     /** 我 › 服务 › 宠物（宿主调用）。 */
     fun openPets() {
         L6Overlays.pets.value = PetsOpen()
+    }
+
+    fun openImport(jobId: String) {
+        L6Overlays.imports.value = ImportOpen("new_character", null, jobId = jobId)
     }
 }
 

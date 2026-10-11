@@ -8,6 +8,7 @@ import {
   type UserSupplement,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
+import { useUpdates } from '../data/updates.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { Dialog, showToast } from './toast.js';
 import { SupplementSourceNote, VariantPublishLink } from './plaza.js';
@@ -33,6 +34,15 @@ export function SupplementPage() {
   const [editing, setEditing] = useState<{ index: number; text: string } | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [revision, setRevision] = useState(0);
+  useUpdates((update) => {
+    const data = update.data as { section?: string; characterId?: string } | undefined;
+    if (
+      update.type === 'data.changed' &&
+      data?.section === 'supplement' &&
+      data.characterId === characterId
+    )
+      setRevision((value) => value + 1);
+  });
   const custom = profile.data?.kind === 'custom';
   useEffect(() => {
     let active = true;

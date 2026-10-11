@@ -15,16 +15,18 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   DraftCharacterCard,
+  SupplementConflict,
   type CharacterReadPort,
   type GenerateError,
   type ImportAnalyzerPort,
   type ImportDialogueLine,
   type ImportResult,
   type ModelGatewayPort,
+  type ModelQuotePort,
   type PortResult,
 } from '@weiban/contracts';
-import { CLOCK, LOGGER, type Clock, type Logger } from '../../../platform/index.js';
-import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
+import { AppError, CLOCK, LOGGER, type Clock, type Logger } from '../../../platform/index.js';
+import { MODEL_GATEWAY_PORT, MODEL_QUOTE_PORT } from '../../model-access/index.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 
 export const IMPORT_PROMPT_VERSION = 'import-v1';
@@ -36,14 +38,6 @@ const SCREENSHOT_PARALLEL = 4;
 /** 本人一侧（右侧气泡）的发言人名。 */
 export const SELF_SPEAKER = '我';
 const OTHER_SPEAKER = '对方';
-
-/**
- * 预计花费（微元）：价目表端口暂不提供「按用户所选模型报价」（见交接遗留），按 cost-estimate.md 第 5 节中档口径估算，宁高勿低。
- * 5 万字中档约 0.7 元 → 每字约 14 微元；合并与固定开销约 0.05 元；识图每张约 0.02 元（第 5 节「识图一次」上沿）。
- */
-const MICROS_PER_CHAR = 14;
-const MICROS_BASE = 50_000;
-const MICROS_PER_SCREENSHOT = 20_000;
 
 type Line = ImportDialogueLine;
 
@@ -171,15 +165,51 @@ export class ImportAiService implements ImportAnalyzerPort {
     @Inject(AI_CHARACTER_READ) private readonly characters: CharacterReadPort,
     @Inject(LOGGER) private readonly logger: Logger,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(MODEL_QUOTE_PORT) private readonly quotes: ModelQuotePort,
   ) {}
 
-  estimate(input: { userId: string; charCount: number; screenshotCount: number }): Promise<number> {
+  async estimate(input: {
+    userId: string;
+    charCount: number;
+    screenshotCount: number;
+  }): Promise<number> {
     const chars = Math.max(0, Math.min(input.charCount, 200_000));
-    return Promise.resolve(
-      Math.round(
-        MICROS_BASE + chars * MICROS_PER_CHAR + input.screenshotCount * MICROS_PER_SCREENSHOT,
-      ),
-    );
+    const count = Math.max(1, Math.ceil(chars / IMPORT_CHUNK_CHARS));
+    // 每块提取与一次合并分别报价，沿用真实调用的聊天模型和输出上限。
+    const requests = Array.from({ length: count }, (_, i) => ({
+      purpose: 'import_analysis' as const,
+      estimate: {
+        inputTokens:
+          Math.ceil(
+            Math.min(IMPORT_CHUNK_CHARS, Math.max(0, chars - i * IMPORT_CHUNK_CHARS)) / 1.5,
+          ) + 800,
+        outputTokens: 2000,
+      },
+    }));
+    requests.push({
+      purpose: 'import_analysis',
+      estimate: { inputTokens: Math.ceil(20_000 / 1.5), outputTokens: 2500 },
+    });
+    let amount = 0;
+    for (const request of requests) {
+      const quote = await this.quotes.quote({ userId: input.userId, ...request });
+      if (!quote.ok)
+        throw new AppError('model_unavailable', '当前模型不能报价，请检查模型及价目表', {
+          status: 422,
+        });
+      amount += quote.value.amountMicros;
+    }
+    for (let i = 0; i < Math.max(0, input.screenshotCount); i++) {
+      const quote = await this.quotes.quote({
+        userId: input.userId,
+        purpose: 'vision',
+        estimate: { inputTokens: 2000, outputTokens: 4000 },
+      });
+      if (!quote.ok)
+        throw new AppError('model_unavailable', '当前识图模型不能报价', { status: 422 });
+      amount += quote.value.amountMicros;
+    }
+    return amount;
   }
 
   // ---------------------------------------------------------------------------
@@ -720,12 +750,23 @@ export class ImportAiService implements ImportAnalyzerPort {
             `用户为角色「${role.profile.name}」导入了资料，下面是从中提取的线索和角色公开资料摘要。` +
             '请写一段「我的补充设定」（第二人称或客观描述均可，≤1500 字），补充说话方式、相处细节、经历等。' +
             '规则：与公开资料矛盾的地方以公开资料为准，不写进补充设定；不涉及年龄、分类、成人内容；不编造线索以外的信息。' +
-            '只输出 JSON：{"text":"..."}',
+            '把明确冲突的事实放在 conflicts 中，field 为字段名，publicValue 为公开事实，supplementValue 为导入说法；这些内容不进入 text。' +
+            'filteredCount 为因年龄、分类、成人资格或公开事实冲突而剔除的线索条数。' +
+            '只输出 JSON：{"text":"...","conflicts":[{"field":"","publicValue":"","supplementValue":""}],"filteredCount":0}',
         },
         {
           role: 'user',
           content: JSON.stringify({
             publicSummary: role.card.data.persona.summary,
+            publicProfile: role.card.data.profileExtra,
+            publicFacts: role.card.data.knowledge.entries
+              .filter(
+                (entry) =>
+                  entry.constant ||
+                  entry.confidence === 'verified' ||
+                  entry.confidence === 'fictionCanon',
+              )
+              .slice(0, 80),
             clues,
           }).slice(0, 20_000),
         },
@@ -733,10 +774,22 @@ export class ImportAiService implements ImportAnalyzerPort {
     });
     input.onProgress(95);
     if (!result.ok) return { ok: false, error: mapError(result.error) };
-    const text =
-      str(parseJsonObject(result.value.text)?.text, 5000) ??
-      result.value.text.trim().slice(0, 5000);
+    const parsed = parseJsonObject(result.value.text);
+    const text = str(parsed?.text, 5000);
     if (!text) return { ok: false, error: 'model_unavailable' };
-    return { ok: true, value: { kind: 'supplement', targetCharacterId: characterId, text } };
+    const conflicts = Array.isArray(parsed?.conflicts)
+      ? parsed.conflicts.slice(0, 50).flatMap((item) => {
+          const conflict = SupplementConflict.safeParse(item);
+          return conflict.success ? [conflict.data] : [];
+        })
+      : [];
+    const filteredCount =
+      typeof parsed?.filteredCount === 'number' && Number.isSafeInteger(parsed.filteredCount)
+        ? Math.max(conflicts.length, parsed.filteredCount, 0)
+        : conflicts.length;
+    return {
+      ok: true,
+      value: { kind: 'supplement', targetCharacterId: characterId, text, conflicts, filteredCount },
+    };
   }
 }

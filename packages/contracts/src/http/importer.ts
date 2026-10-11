@@ -89,6 +89,17 @@ export const ImportResult = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('new_character'),
     draft: DraftCharacterCard,
+    /** 用户在编辑器保存的表单值；与分析器生成的结构化角色卡分别保留，下一批不得覆盖。 */
+    editorFields: z
+      .object({
+        name: z.string().max(32),
+        description: z.string().max(2000),
+        catchphrases: z.array(z.string().max(50)).max(10),
+        speechStyle: z.string().max(500),
+        exampleDialogue: z.string().max(2000),
+        tags: z.array(z.string().max(20)).max(10),
+      })
+      .optional(),
     /** 默认「真人 · 身边真人」（CHR-08 第 4 条）；改选原创 / 虚构需要声明，由自定义角色创建接口校验。 */
     suggestedClassification: CharacterClassificationInput,
     /** 草稿里识别出的疑似真名，提示用户替换。 */

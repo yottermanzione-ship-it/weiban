@@ -1316,6 +1316,9 @@ export function MyWorksPage() {
                 <span className="work-row-main">
                   <span className="work-row-title">
                     {w.name}
+                    {(w.unreadCount ?? 0) > 0 && (
+                      <span className="red-dot" aria-label={`${w.unreadCount} 条未读`} />
+                    )}
                     <span className={w.status === 'listed' ? 'tag success' : 'tag danger'}>
                       {statusNames[w.status] ?? '未知状态'}
                     </span>
@@ -1323,6 +1326,7 @@ export function MyWorksPage() {
                   <span className="work-row-meta">
                     版本 {w.currentVersion} · 赞 {w.likeCount} · 添加 {w.adoptCount}
                   </span>
+                  {w.removedReason && <span className="hint">下架原因：{w.removedReason}</span>}
                 </span>
                 <span />
               </button>
@@ -1455,12 +1459,11 @@ export function PublishPage() {
     void api
       .call(PlazaEndpoints.listMyWorks, { networkOnly: true })
       .then((mine) => {
-        const name = profile.data?.name;
         const match = mine.items.find((w) =>
           source.kind === 'preset_variant'
             ? w.snapshot.kind === 'preset_variant' &&
               w.snapshot.presetCharacterId === source.presetCharacterId
-            : w.snapshot.kind === 'custom_character' && w.snapshot.name === name,
+            : w.snapshot.kind === 'custom_character' && w.sourceCharacterId === source.characterId,
         );
         if (!active || !match) return;
         setExisting(match);
@@ -1925,6 +1928,8 @@ function CustomPublishRow({
     params: { characterId },
     networkOnly: true,
   });
+  const works = useRemote(PlazaEndpoints.listMyWorks, { networkOnly: true });
+  const published = works.data?.items.find((work) => work.sourceCharacterId === characterId);
   const privatePerson = origin.data?.everPrivatePerson || privateKind;
   if (privatePerson)
     return (
@@ -1933,7 +1938,11 @@ function CustomPublishRow({
         <p className="hint">以身边的人为原型的角色不能发布，这是为了保护 TA 的隐私</p>
       </div>
     );
-  return <Link to={`/plaza/publish?characterId=${characterId}`}>发布到人设广场</Link>;
+  return (
+    <Link to={`/plaza/publish?characterId=${characterId}`}>
+      {published ? `已发布 · 版本 ${published.currentVersion} · 发布新版本` : '发布到人设广场'}
+    </Link>
+  );
 }
 
 /** 补充设定页底部「发布为改版」（只有预设角色且有补充设定时）。 */

@@ -10,6 +10,19 @@ import org.junit.Test
 import java.util.concurrent.TimeUnit
 
 class ApiClientTest {
+    @Test fun rejectedSharePreservesServerMessageAndPerItemDetails() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(422).setBody(
+                """{"error":{"code":"share_content_not_allowed","message":"部分内容不可分享","requestId":"01920000-0000-7000-8000-000000000099","details":{"rejected":[{"id":"01920000-0000-7000-8000-000000000098","reason":"adult_scope"}]}}}"""
+            ))
+            val api = ApiClient(server.url("/").toString())
+            api.authenticate(auth("test-token".repeat(4)))
+            val failure = runCatching { api.call(Endpoints.identityEndpointsMe) }.exceptionOrNull() as ApiFailure
+            assertEquals(422, failure.status)
+            assertEquals("部分内容不可分享", failure.message)
+            assertTrue(failure.details?.get("rejected").toString().contains("adult_scope"))
+        }
+    }
     private val user = CurrentUser("01920000-0000-7000-8000-000000000014", "test_user", "user", true, "2026-10-06T03:00:00.000Z")
 
     private fun auth(token: String) =

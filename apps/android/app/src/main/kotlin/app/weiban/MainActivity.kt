@@ -218,6 +218,10 @@ private class NavigationUi(
     fun route(value: String) {
         // 玩法页（如慢信推送 /play/letters/{id}）是全局浮层，不切换标签。
         if (value.startsWith("/play/") && PlayNavigation.openRoute(value)) return
+        if (value.startsWith("/imports/")) {
+            GrowthNavigation.openImport(value.removePrefix("/imports/"))
+            return
+        }
         conversationId = null
         mePage = null
         moments = null

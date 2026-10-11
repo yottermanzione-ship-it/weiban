@@ -268,6 +268,7 @@ internal class ChatMediaUi(
 
     /** 「添加到表情」：409 已经添加过了；422 表情已满（media-l5.md 5.2）。 */
     fun addToStickers(message: Message) {
+        if (!canAddToStickers(message)) return
         scope.launch {
             try {
                 repository.call(

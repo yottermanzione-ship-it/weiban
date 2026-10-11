@@ -41,8 +41,29 @@ function dateText(iso: string, full = false) {
 function useFavoriteNames(items: Favorite[]) {
   const { state } = useChat();
   const names = useCharacterNames(items.flatMap((f) => (f.characterId ? [f.characterId] : [])));
-  return (id: string | null) =>
-    id ? state.contacts.find((c) => c.characterId === id)?.remark || names[id] || '角色' : '我';
+  return (favorite: Favorite) =>
+    favorite.characterNameSnapshot ||
+    (favorite.characterId
+      ? state.contacts.find((c) => c.characterId === favorite.characterId)?.remark ||
+        names[favorite.characterId] ||
+        '角色'
+      : '我');
+}
+
+function FavoriteAvatar({ favorite, size }: { favorite: Favorite; size: number }) {
+  return favorite.characterAvatarMediaIdSnapshot ? (
+    <span
+      className="avatar"
+      style={{ width: size, height: size, overflow: 'hidden', borderRadius: '50%' }}
+    >
+      <MediaImg
+        mediaId={favorite.characterAvatarMediaIdSnapshot}
+        alt={favorite.characterNameSnapshot ?? '角色头像'}
+      />
+    </span>
+  ) : (
+    <CharacterAvatar id={favorite.characterId!} size={size} />
+  );
 }
 
 function groupTitle(favorite: Favorite, titles: Map<string, string>) {
@@ -127,7 +148,7 @@ function FavoriteCard({
       <button className="favorite-main" onClick={selecting ? onToggle : onOpen}>
         <span className="favorite-head">
           {favorite.characterId ? (
-            <CharacterAvatar id={favorite.characterId} size={24} />
+            <FavoriteAvatar favorite={favorite} size={24} />
           ) : (
             <UserAvatar profile={profile.data} size={24} />
           )}
@@ -269,6 +290,10 @@ export function FavoritesPage() {
       navigate(`/moments/posts/${source.postId}`);
       return;
     }
+    if (source.seq !== undefined) {
+      navigate(`/chat/${source.conversationId}?seq=${source.seq}`);
+      return;
+    }
     const local = chat.state.messages.find(
       (m) => m.messageId === source.messageId && m.status === 'normal',
     );
@@ -373,7 +398,7 @@ export function FavoritesPage() {
           <FavoriteCard
             key={favorite.favoriteId}
             favorite={favorite}
-            name={name(favorite.characterId)}
+            name={name(favorite)}
             group={groupTitle(favorite, titles)}
             keyword={keyword}
             selecting={selecting}
@@ -456,12 +481,12 @@ export function FavoriteDetailPage() {
       <div className="panel stack">
         <span className="favorite-head">
           {favorite.characterId ? (
-            <CharacterAvatar id={favorite.characterId} size={32} />
+            <FavoriteAvatar favorite={favorite} size={32} />
           ) : (
             <UserAvatar profile={profile.data} size={32} />
           )}
           <small>
-            {name(favorite.characterId)} · {dateText(favorite.sourceCreatedAt, true)}
+            {name(favorite)} · {dateText(favorite.sourceCreatedAt, true)}
           </small>
         </span>
         {favorite.content.type === 'image' ||

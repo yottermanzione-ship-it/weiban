@@ -329,6 +329,9 @@
       "version": "7",
       "when": 1795600000000,
       "tag": "0056_account_deletion",
+      "dependsOn": [
+        "0060_plaza"
+      ],
       "breakpoints": true
     },
     {
@@ -409,10 +412,52 @@
       "breakpoints": true
     },
     {
+      "idx": 70,
+      "version": "7",
+      "when": 1797000000000,
+      "tag": "0070_library_favorite_snapshots",
+      "breakpoints": true
+    },
+    {
       "idx": 71,
       "version": "7",
       "when": 1797100000000,
       "tag": "0071_media_card_template_classical",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1797200000000,
+      "tag": "0072_growth_pet_appearance_listed",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1797300000000,
+      "tag": "0073_importer_batch_merge",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1797400000000,
+      "tag": "0074_plaza_author_seen",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1797500000000,
+      "tag": "0075_ai_character_self_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1797600000000,
+      "tag": "0076_ai_pending_anniversary_letters",
       "breakpoints": true
     }
   ]

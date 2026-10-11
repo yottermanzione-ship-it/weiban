@@ -57,6 +57,8 @@ const T066_TABLES = [
   'moment_card_attempts',
   // T-090：行为规划决策记录
   'planning_decisions',
+  'character_self_reports',
+  'pending_anniversary_letters',
 ] as const;
 @Injectable()
 export class ReplyPlanStore {

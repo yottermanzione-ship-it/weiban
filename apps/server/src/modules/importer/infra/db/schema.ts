@@ -46,6 +46,9 @@ export const importJobs = importerSchema.table(
     failure: text('failure'),
     /** 分析结果（ImportResult JSON），按用户数据密钥加密（AAD importer:result:{jobId}）；用户保存的修改覆盖此列。 */
     resultCiphertext: bytes('result_ciphertext'),
+    /** 0073（契约 3.1，积压 ㉕）：分批导入——本批要合并进的目标任务、实际已合并进的任务（同用户，应用层校验）。 */
+    mergeIntoJobId: uuid('merge_into_job_id'),
+    mergedIntoJobId: uuid('merged_into_job_id'),
     createdAt: time('created_at').notNull(),
     updatedAt: time('updated_at').notNull(),
   },

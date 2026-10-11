@@ -116,6 +116,7 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 - library：`FavoriteSource(message).seq`（㉘）、`Favorite.characterNameSnapshot / characterAvatarMediaIdSnapshot`（㉔）、`ShareRejectedDetails`（㉘，422 的 details 形状）。
 - growth：`PetAppearance.listed`（㉚）、事件 `growth.pet_naming_requested.speciesName`、端口 `CardCopywriterPort`（㉗，可选 AI 接入点）。
 - importer：`createJob.mergeIntoJobId`、`ImportJob.mergedIntoJobId`（㉕ 分批合并）、`ImportResult(supplement).conflicts / filteredCount`（㉕㉚）；`getJob` 说明更正为 `data.changed(imports)`。
+- Codex 产品收口补充：`ImportResult(new_character).editorFields` 可选保存名字、人设描述、完整口头禅、说话方式、示例和标签；避免把表单值塞入结构化角色卡的无关字段。分批合并保留用户编辑值（包括刻意清空），旧响应未带此字段时按生成草稿初始化。JSON Schema、OpenAPI 和 Kotlin 生成物同步。
 - push：`PushRequest.kind` 新增 `import`（㉕）。
 - model-access / billing：`ModelStatus.visionAvailable`（㉚）；端口 `ModelQuotePort`（㉖，按用户所选模型报价，model-access 提供）、`BillingQuotePort`（只给 model-access）、`BillingDailySpendReadPort`（㉞，当日按用途花费）。
 - plaza：`PlazaPresetVariantSnapshot.childFeaturesDetected`（㉝）；`PlazaWorkDetail.sourceCharacterId / myAdoptedCharacterId / removedReason / unreadCount`（㊱）；`PlazaAdminEndpoints.getWork / listBans`（㊱）。

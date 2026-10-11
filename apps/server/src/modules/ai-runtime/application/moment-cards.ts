@@ -12,6 +12,8 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { and, eq, gte, isNotNull } from 'drizzle-orm';
 import type {
+  BillingReadPort,
+  CardCopywriterPort,
   CardKind,
   CharacterReadPort,
   ChatReadPort,
@@ -38,6 +40,8 @@ import { GROWTH_CARD_PORT } from '../../growth/index.js';
 import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
+import { BILLING_READ_PORT } from '../../billing/index.js';
+import { P33_BACKGROUND_RESERVE_MICROS } from '../../../platform/config/product-params.js';
 import { healthPrivate, sharingClass } from '../domain/memory.js';
 import { highRisk, outputAllowed } from '../domain/reply-rules.js';
 import { momentCardAttempts, replyPlans, simulationStates } from '../infra/db/schema.js';
@@ -66,12 +70,23 @@ export function weekStart(localDate: string): string {
 }
 
 @Injectable()
-export class CardLineService {
+export class CardLineService implements CardCopywriterPort {
   constructor(
     @Inject(MODEL_GATEWAY_PORT) private readonly gateway: ModelGatewayPort,
     @Inject(AI_CHARACTER_READ) private readonly characters: CharacterReadPort,
     @Inject(POLICY_PORT) private readonly policy: PolicyPort,
+    @Inject(BILLING_READ_PORT) private readonly billing: BillingReadPort,
   ) {}
+
+  async writeCardCopy(
+    input: Parameters<CardCopywriterPort['writeCardCopy']>[0],
+  ): ReturnType<CardCopywriterPort['writeCardCopy']> {
+    const line = await this.writeLine({
+      ...input,
+      context: `${input.templateTitle}；${input.templateLine}；${JSON.stringify(input.facts)}`,
+    });
+    return line ? { title: input.templateTitle, line } : null;
+  }
 
   /**
    * 角色写给用户的一句话（≤ 40 字）。context 为卡片主题（例「认识 100 天」「熟悉度到 L3」「我们的团子」）。
@@ -84,6 +99,8 @@ export class CardLineService {
     context: string;
     idempotencyKey: string;
   }): Promise<string | null> {
+    const spend = await this.billing.getSpendStatus(input.userId);
+    if (spend.depleted || spend.availableMicros < P33_BACKGROUND_RESERVE_MICROS) return null;
     const role = await this.characters.getForRuntime(input.userId, input.characterId);
     const policy = await this.policy.getCharacterPolicy(input.userId, input.characterId);
     if (!role || !policy) return null;
@@ -93,6 +110,7 @@ export class CardLineService {
       purpose: 'memory',
       billingOwner: 'user',
       modelRole: 'background',
+      countAsBackground: true,
       temperature: 0.8,
       maxOutputTokens: 80,
       idempotencyKey: input.idempotencyKey,

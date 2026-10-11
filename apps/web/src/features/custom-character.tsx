@@ -50,12 +50,7 @@ type ImportDraft = Extract<ImportResult, { kind: 'new_character' }>;
 /** 把导入生成的角色卡草稿摊平到编辑器的字段（CHR-08 第 4 条：默认「真人」）。 */
 function draftFields(result: ImportDraft, speaker: string | null) {
   const data = result.draft.data;
-  const description = [
-    data.persona?.summary,
-    data.persona?.personality,
-    data.persona?.background,
-    data.speech?.tone ? `说话方式：${data.speech.tone}` : undefined,
-  ]
+  const description = [data.persona?.summary, data.persona?.personality, data.persona?.background]
     .filter(Boolean)
     .join('\n')
     .slice(0, 2000);
@@ -65,17 +60,20 @@ function draftFields(result: ImportDraft, speaker: string | null) {
     .join('\n')
     .slice(0, 2000);
   return {
-    name: (speaker ?? '').slice(0, 32),
-    description,
-    catchphrase: (data.speech?.catchphrases ?? []).join('、').slice(0, 200),
-    exampleDialogue: examples,
-    tags: (data.persona?.personaTagsCustom ?? []).slice(0, 10).join('，'),
+    name: result.editorFields?.name ?? (speaker ?? '').slice(0, 32),
+    description: result.editorFields?.description ?? description,
+    catchphrase: (result.editorFields?.catchphrases ?? data.speech?.catchphrases ?? []).join('\n'),
+    speechStyle: result.editorFields?.speechStyle ?? data.speech?.tone ?? '',
+    exampleDialogue: result.editorFields?.exampleDialogue ?? examples,
+    tags: (result.editorFields?.tags ?? data.persona?.personaTagsCustom ?? [])
+      .slice(0, 10)
+      .join('，'),
   };
 }
 
 export function EditCustomCharacterPage() {
   const { characterId = '' } = useParams();
-  return <CustomCharacterEditor mode="edit" characterId={characterId} />;
+  return <CustomCharacterEditor key={characterId} mode="edit" characterId={characterId} />;
 }
 
 function CustomCharacterEditor({
@@ -95,12 +93,16 @@ function CustomCharacterEditor({
     fields: Set<string>;
   } | null>(null);
   const [declared, setDeclared] = useState(false);
+  const [importDraft, setImportDraft] = useState<ImportDraft | null>(null);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [basis, setBasis] = useState<CharacterBasis>('original');
   const [ageSetting, setAgeSetting] = useState<AgeSetting>('adult');
   const [catchphrase, setCatchphrase] = useState('');
+  const [speechStyle, setSpeechStyle] = useState('');
+  const [loading, setLoading] = useState(mode === 'edit');
+  const [loaded, setLoaded] = useState(mode === 'create');
   const [exampleDialogue, setExampleDialogue] = useState('');
   const [tags, setTags] = useState('');
   const [pending, setPending] = useState(false);
@@ -112,9 +114,41 @@ function CustomCharacterEditor({
   const [originalBasis, setOriginalBasis] = useState<CharacterBasis | null>(null);
   const [originalAge, setOriginalAge] = useState<AgeSetting | null>(null);
 
-  // NOTE: There is no GET endpoint for a single custom character in contracts v2.3.
-  // Edit mode opens with blank fields; the user re-fills what they want to change.
-  // A contract change request is filed in the handoff.
+  useEffect(() => {
+    if (mode !== 'edit' || !characterId) return;
+    let active = true;
+    void api
+      .call(UserCustomEndpoints.list, { networkOnly: true })
+      .then((result) => {
+        if (!active) return;
+        const character = result.items.find((item) => item.characterId === characterId);
+        if (!character) throw new Error('角色已不可用');
+        setName(character.name);
+        setDescription(character.description);
+        setCatchphrase(
+          (character.catchphrases ?? (character.catchphrase ? [character.catchphrase] : [])).join(
+            '\n',
+          ),
+        );
+        setSpeechStyle(character.speechStyle ?? '');
+        setExampleDialogue(character.exampleDialogue ?? '');
+        setTags(character.tags.join('，'));
+        setBasis(character.classification.basis);
+        setAgeSetting(character.classification.ageSetting);
+        setOriginalBasis(character.classification.basis);
+        setOriginalAge(character.classification.ageSetting);
+        setLoaded(true);
+      })
+      .catch((error) => {
+        if (active) setError(friendlyError(error));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [mode, characterId]);
 
   useEffect(() => {
     if (!importJobId) return;
@@ -129,10 +163,12 @@ function CustomCharacterEditor({
           }),
         ]);
         if (!active || result.kind !== 'new_character') return;
+        setImportDraft(result);
         const fields = draftFields(result, job.selectedSpeaker);
         setName(fields.name);
         setDescription(fields.description);
         setCatchphrase(fields.catchphrase);
+        setSpeechStyle(fields.speechStyle);
         setExampleDialogue(fields.exampleDialogue);
         setTags(fields.tags);
         setBasis(result.suggestedClassification.basis);
@@ -173,12 +209,61 @@ function CustomCharacterEditor({
     return originalAge === 'minor' && value === 'adult';
   }
 
+  async function saveImportDraft() {
+    if (!importJobId || !importDraft) return;
+    setPending(true);
+    setError('');
+    try {
+      const result = await api.call(ImporterEndpoints.saveResultDraft, {
+        params: { jobId: importJobId },
+        body: {
+          ...importDraft,
+          editorFields: {
+            name,
+            description,
+            speechStyle,
+            exampleDialogue,
+            catchphrases: catchphrase
+              .split(/\r?\n/)
+              .map((v) => v.trim())
+              .filter(Boolean),
+            tags: tags
+              .split(/[,，、]/)
+              .map((v) => v.trim())
+              .filter(Boolean),
+          },
+          suggestedClassification: {
+            ...importDraft.suggestedClassification,
+            basis,
+            ageSetting,
+            realPersonKind:
+              basis === 'real_person' ? (imported?.realPersonKind ?? 'private_person') : null,
+          },
+        },
+      });
+      if (result.kind === 'new_character') setImportDraft(result);
+      setMessage('草稿已保存，可以稍后继续编辑');
+    } catch (e) {
+      setError(friendlyError(e));
+    } finally {
+      setPending(false);
+    }
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
     setError('');
     setMessage('');
     try {
+      const catchphrases = catchphrase
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (catchphrases.length > 10 || catchphrases.some((line) => line.length > 50)) {
+        setError('最多 10 条口头禅，每条不超过 50 字');
+        return;
+      }
       const tagList = tags
         .split(/[,，、]/)
         .map((t) => t.trim())
@@ -197,7 +282,8 @@ function CustomCharacterEditor({
               ageSetting,
               childAppearance: false,
             },
-            catchphrase: catchphrase || undefined,
+            catchphrases,
+            speechStyle,
             exampleDialogue: exampleDialogue || undefined,
             tags: tagList.length ? tagList : undefined,
           },
@@ -213,7 +299,8 @@ function CustomCharacterEditor({
           body: {
             name: name || undefined,
             description: description || undefined,
-            catchphrase: catchphrase || undefined,
+            catchphrases,
+            speechStyle,
             exampleDialogue: exampleDialogue || undefined,
             tags: tagList.length ? tagList : undefined,
           },
@@ -250,6 +337,20 @@ function CustomCharacterEditor({
     }
   }
 
+  if (loading)
+    return (
+      <main>
+        <span className="spinner" role="status" />
+        正在读取角色…
+      </main>
+    );
+  if (!loaded)
+    return (
+      <main>
+        <p role="alert">{error || '角色已不可用'}</p>
+        <Link to="/">返回</Link>
+      </main>
+    );
   return (
     <main>
       <h1 className="page-title">{mode === 'create' ? '创建角色' : '编辑角色'}</h1>
@@ -374,9 +475,22 @@ function CustomCharacterEditor({
         )}
 
         <label>
+          说话方式（可选） {fromImport('speechStyle')}
+          <textarea
+            maxLength={500}
+            value={speechStyle}
+            onChange={(event) => {
+              setSpeechStyle(event.target.value);
+              touch('speechStyle');
+            }}
+          />
+        </label>
+        <label>
           口头禅（可选） {fromImport('catchphrase')}
-          <input
-            maxLength={200}
+          <textarea
+            rows={4}
+            maxLength={510}
+            placeholder="每行一条，最多 10 条，每条 50 字"
             value={catchphrase}
             onChange={(e) => {
               setCatchphrase(e.target.value);
@@ -409,7 +523,7 @@ function CustomCharacterEditor({
           />
         </label>
 
-        <button className="primary" disabled={pending}>
+        <button className="primary" disabled={loading || pending}>
           {mode === 'create' ? '创建角色' : '保存'}
         </button>
       </form>
@@ -424,6 +538,16 @@ function CustomCharacterEditor({
         <p role="alert" className="error">
           {error}
         </p>
+      )}
+      {importJobId && (
+        <div className="stack">
+          <button disabled={pending || !importDraft} onClick={() => void saveImportDraft()}>
+            保存草稿
+          </button>
+          <Link to={`/imports/new?mergeIntoJobId=${importJobId}`}>
+            继续导入下一批（请先保存编辑）
+          </Link>
+        </div>
       )}
       {message && <p role="status">{message}</p>}
     </main>

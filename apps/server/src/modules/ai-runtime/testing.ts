@@ -7,4 +7,6 @@ export { companionSettings, replyPlans } from './infra/db/schema.js';
 export { MemoryService, EXTRACT_MEMORY_JOB } from './application/memory.js';
 export { memories, memoryStates } from './infra/db/schema.js';
 export { ReplyContext } from './application/reply-context.js';
+export { PlayContinuityStore } from './application/play-continuity.js';
+export { proactivePlans } from './infra/db/schema.js';
 export { SimulationService } from './application/simulation.js';

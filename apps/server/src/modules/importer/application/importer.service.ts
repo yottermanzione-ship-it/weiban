@@ -83,6 +83,7 @@ const CreateBody = z.object({
   targetCharacterId: Id.nullable().optional(),
   sourceKind: ImportSourceKind,
   text: z.string().min(1).optional(),
+  mergeIntoJobId: Id.optional(),
 });
 
 export interface UploadedFile {
@@ -143,6 +144,7 @@ export class ImporterService implements OnModuleInit {
         and(eq(importJobs.userId, userId), eq(importJobs.clientRequestId, body.clientRequestId)),
       );
     if (existing) return this.dto(existing);
+    if (body.mergeIntoJobId) await this.checkMergeTarget(userId, body);
     const now = this.clock.now();
     const id = newId();
     const row = await this.db.transaction(async (tx) => {
@@ -154,6 +156,7 @@ export class ImporterService implements OnModuleInit {
           clientRequestId: body.clientRequestId,
           kind: body.kind,
           targetCharacterId: body.kind === 'supplement' ? (body.targetCharacterId ?? null) : null,
+          mergeIntoJobId: body.mergeIntoJobId ?? null,
           sourceKind: body.sourceKind,
           status: body.sourceKind === 'text' ? 'detecting' : 'collecting',
           createdAt: now,
@@ -381,6 +384,14 @@ export class ImporterService implements OnModuleInit {
     if (result.kind === 'supplement' && result.targetCharacterId !== job.targetCharacterId)
       throw new AppError('bad_request', '补充设定的角色与导入任务不符');
     await this.db.transaction(async (tx) => {
+      const [current] = await tx.db
+        .select()
+        .from(importJobs)
+        .where(and(eq(importJobs.id, jobId), eq(importJobs.userId, userId)))
+        .for('update');
+      if (!current) throw new AppError('not_found', '导入任务不存在');
+      if (current.status !== 'completed' || current.mergedIntoJobId)
+        throw new AppError('conflict', '这个导入任务不能编辑');
       const sealed = await this.crypto.seal(
         userId,
         `importer:result:${jobId}`,
@@ -537,6 +548,10 @@ export class ImporterService implements OnModuleInit {
           await this.deleteRawIn(tx, jobId);
           rawDeletedAt = rawDeletedAt ?? now;
         }
+        // 3.1（积压 ㉕）：分批导入——合并进目标任务的草稿；目标已删除 / 不再可编辑时按普通任务完成。
+        const mergedInto = current.mergeIntoJobId
+          ? await this.mergeIntoTarget(tx, current, value)
+          : null;
         await tx.db
           .update(importJobs)
           .set({
@@ -545,6 +560,7 @@ export class ImporterService implements OnModuleInit {
             failure: null,
             resultCiphertext: sealed,
             rawDeletedAt,
+            mergedIntoJobId: mergedInto,
             updatedAt: now,
           })
           .where(eq(importJobs.id, jobId));
@@ -805,13 +821,83 @@ export class ImporterService implements OnModuleInit {
     if (analysis) await this.notify(job, false);
   }
 
+  /** 3.1：「继续导入下一批」的目标校验（同用户、同 kind、同角色、已完成待编辑、自身不是被合并的批次）。 */
+  private async checkMergeTarget(
+    userId: string,
+    body: { kind: string; targetCharacterId?: string | null; mergeIntoJobId?: string },
+  ): Promise<void> {
+    const [target] = await this.db.db
+      .select()
+      .from(importJobs)
+      .where(and(eq(importJobs.id, body.mergeIntoJobId!), eq(importJobs.userId, userId)));
+    if (!target) throw new AppError('not_found', '要合并的导入任务不存在');
+    const sameCharacter =
+      body.kind !== 'supplement' || target.targetCharacterId === (body.targetCharacterId ?? null);
+    if (
+      target.kind !== body.kind ||
+      !sameCharacter ||
+      target.status !== 'completed' ||
+      !target.resultCiphertext ||
+      target.mergedIntoJobId
+    )
+      throw new AppError('bad_request', '这个导入任务不能继续合并', { status: 422 });
+  }
+
+  /** 把本批结果合并进目标任务的草稿；成功返回目标任务 ID。 */
+  private async mergeIntoTarget(
+    tx: DbTx,
+    job: JobRow,
+    incoming: ResultDto,
+  ): Promise<string | null> {
+    const [target] = await tx.db
+      .select()
+      .from(importJobs)
+      .where(and(eq(importJobs.id, job.mergeIntoJobId!), eq(importJobs.userId, job.userId)))
+      .for('update');
+    if (
+      !target ||
+      target.kind !== job.kind ||
+      target.mergedIntoJobId ||
+      (job.kind === 'supplement' && target.targetCharacterId !== job.targetCharacterId) ||
+      target.status !== 'completed' ||
+      !target.resultCiphertext
+    )
+      return null;
+    const plain = await this.crypto.open(
+      job.userId,
+      `importer:result:${target.id}`,
+      target.resultCiphertext,
+      tx,
+    );
+    let current: ResultDto;
+    try {
+      current = ImportResult.parse(JSON.parse(plain.toString('utf8')));
+    } finally {
+      plain.fill(0);
+    }
+    const merged = mergeResults(current, incoming);
+    if (!merged) return null;
+    const sealed = await this.crypto.seal(
+      job.userId,
+      `importer:result:${target.id}`,
+      JSON.stringify(merged),
+      tx,
+    );
+    await tx.db
+      .update(importJobs)
+      .set({ resultCiphertext: sealed, updatedAt: this.clock.now() })
+      .where(eq(importJobs.id, target.id));
+    await this.dataChanged(tx, job.userId, target.id);
+    return target.id;
+  }
+
   private async notify(job: JobRow, ok: boolean): Promise<void> {
     if (!this.push) return;
-    // 契约 PushRequest.kind 还没有 import（NotificationKind 已有），暂用 system，见交接说明。
+    // 3.1（积压 ㉕）：导入完成 / 失败用 import 类别（NotificationKind.import，deepLink /imports/{jobId}）。
     await this.push
       .send({
         userId: job.userId,
-        kind: 'system',
+        kind: 'import',
         title: ok ? '导入完成' : '导入没有完成',
         body: ok
           ? job.kind === 'supplement'
@@ -846,6 +932,7 @@ export class ImporterService implements OnModuleInit {
       keepRaw: row.keepRaw,
       rawDeletedAt: row.rawDeletedAt?.toISOString() ?? null,
       failure: row.failure,
+      mergedIntoJobId: row.mergedIntoJobId,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     });
@@ -915,4 +1002,80 @@ function splitByNames(text: string, names: Set<string>): ImportDialogueLine[] {
     else if (lines.length) lines[lines.length - 1]!.text += `\n${line}`;
   }
   return new Set(lines.map((l) => l.speaker)).size >= 2 ? lines : [];
+}
+
+const isEmpty = (v: unknown): boolean =>
+  v === undefined ||
+  v === null ||
+  (typeof v === 'string' && !v.trim()) ||
+  (Array.isArray(v) && v.length === 0);
+
+/** 深合并：目标里空的字段用新值补；两边都是对象时递归；数组按内容去重追加（withArrays = false 时不动非空数组）。 */
+function fillDeep(target: unknown, incoming: unknown, withArrays: boolean): unknown {
+  if (isEmpty(target)) return incoming === undefined ? target : incoming;
+  if (Array.isArray(target)) {
+    if (!withArrays || !Array.isArray(incoming)) return target;
+    const seen = new Set(target.map((x) => JSON.stringify(x)));
+    return [
+      ...target,
+      ...incoming.filter((x) => {
+        const key = JSON.stringify(x);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }),
+    ];
+  }
+  if (
+    typeof target === 'object' &&
+    target !== null &&
+    typeof incoming === 'object' &&
+    incoming !== null &&
+    !Array.isArray(incoming)
+  ) {
+    const out: Record<string, unknown> = { ...(target as Record<string, unknown>) };
+    for (const [k, v] of Object.entries(incoming as Record<string, unknown>))
+      out[k] = fillDeep(out[k], v, withArrays);
+    return out;
+  }
+  return target;
+}
+
+/**
+ * 3.1（积压 ㉕）分批合并规则：新角色——补全空字段、合并示例与记忆线索（数组去重追加），不覆盖已有内容；
+ * 补充设定——文字追加（上限 5000 字）、冲突项合并、过滤条数相加。合并后不符合契约时退回只补空字段；仍不行返回 null。
+ */
+export function mergeResults(current: ResultDto, incoming: ResultDto): ResultDto | null {
+  if (current.kind !== incoming.kind) return null;
+  if (current.kind === 'supplement' && incoming.kind === 'supplement') {
+    const text = [current.text.trim(), incoming.text.trim()]
+      .filter(Boolean)
+      .join('\n')
+      .slice(0, 5000);
+    const conflicts = [...(current.conflicts ?? []), ...(incoming.conflicts ?? [])];
+    const filtered = (current.filteredCount ?? 0) + (incoming.filteredCount ?? 0);
+    const parsed = ImportResult.safeParse({
+      ...current,
+      text,
+      ...(conflicts.length ? { conflicts } : {}),
+      ...(current.filteredCount !== undefined || incoming.filteredCount !== undefined
+        ? { filteredCount: filtered }
+        : {}),
+    });
+    return parsed.success ? parsed.data : null;
+  }
+  if (current.kind === 'new_character' && incoming.kind === 'new_character') {
+    for (const withArrays of [true, false]) {
+      const parsed = ImportResult.safeParse({
+        ...current,
+        draft: fillDeep(current.draft, incoming.draft, withArrays),
+        detectedRealNames: [
+          ...new Set([...current.detectedRealNames, ...incoming.detectedRealNames]),
+        ],
+      });
+      if (parsed.success) return parsed.data;
+    }
+    return current;
+  }
+  return null;
 }

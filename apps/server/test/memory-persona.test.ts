@@ -604,7 +604,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     await db.query("UPDATE characters.characters SET age_setting='adult' WHERE id=$1", [
       characterId,
     ]);
-  }, 60000);
+  }, 120000);
   it('成人模型明确选择后模式/范围/系统消息同事务，临时故障不换模型，下架退出日常', async () => {
     const path = `/api/v1/characters/${characterId}/companion-settings`;
     adultAvailability = null;

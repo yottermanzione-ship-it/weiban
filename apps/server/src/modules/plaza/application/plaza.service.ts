@@ -202,6 +202,12 @@ export class PlazaService {
     const w = await this.store.work(workId);
     if (!w || !(await this.store.visibleTo(w, viewerId)))
       throw new AppError('not_found', '作品不存在或已下架');
+    // 3.1（积压 ㊱）：作者打开自己的作品 → 更新已读位置（「我发布的」红点清零）。
+    if (w.authorUserId === viewerId)
+      await this.db.transaction(async (tx) => {
+        await tx.db.update(works).set({ authorSeenAt: this.clock.now() }).where(eq(works.id, w.id));
+        await this.store.badgeChanged(tx, viewerId, w.id);
+      });
     return this.store.detail(viewerId, w);
   }
 
@@ -220,7 +226,9 @@ export class PlazaService {
       .from(works)
       .where(eq(works.authorUserId, userId))
       .orderBy(desc(works.publishedAt));
-    return { items: await this.store.details(userId, rows) };
+    const details = await this.store.details(userId, rows);
+    const unread = await this.store.unreadCounts(userId, rows);
+    return { items: details.map((d) => ({ ...d, unreadCount: unread.get(d.workId) ?? 0 })) };
   }
 
   // ---------- 广场昵称 ----------
@@ -383,6 +391,9 @@ export class PlazaService {
         avatarMediaId:
           snapshot.classification.basis === 'real_person' ? null : snapshot.avatarMediaId,
       };
+    } else if (childFeaturesDetected) {
+      // 3.1（积压 ㉝）：改版文字检出儿童特征写进快照，应用改版时 characters 取更严的一边。
+      snapshot = { ...snapshot, childFeaturesDetected: true };
     }
     const spans: DraftSpanJson[] = result.value.spans.map((s, i) => ({
       spanId: `s${i + 1}`,

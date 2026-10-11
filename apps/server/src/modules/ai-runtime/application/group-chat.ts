@@ -63,7 +63,7 @@ import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import { INITIAL_MODES } from '../domain/persona.js';
 import { highRisk, outputAllowed } from '../domain/reply-rules.js';
-import { careFallback } from './safety-care.js';
+import { callModelForCare, careFallback } from './safety-care.js';
 import {
   groupCompanionSettings,
   groupInvites,
@@ -692,25 +692,28 @@ export class GroupChatService {
       (p) => p.kind === 'character' && p.refId === carer.characterId,
     );
     if (!direct || !participant) return;
-    const result = await this.gateway.generateText({
-      userId: job.userId,
-      characterId: carer.characterId,
-      conversationId: direct.conversationId,
-      purpose: 'safety_followup',
-      billingOwner: 'user',
-      modelRole: 'chat',
-      safetyPriority: true,
-      responseFormat: 'text',
-      maxOutputTokens: 300,
-      idempotencyKey: `ai:group-care:${job.triggerMessageId}`,
-      messages: [
-        {
-          role: 'system',
-          content: `你以角色口吻在私聊里关心刚才在群里流露出自伤念头的用户。语气温和真诚，不说教；建议对方联系身边信任的人或心理援助热线 12356，紧急时拨打 110/120；不提供任何方法；不在群里讨论。角色资料：${JSON.stringify({ persona: role?.card.data.persona, speech: role?.card.data.speech }).slice(0, 6000)}`,
-        },
-        { role: 'user', content: '（用户刚才在群里说了让人担心的话）' },
-      ],
-    });
+    const result = await callModelForCare(
+      this.gateway,
+      {
+        userId: job.userId,
+        characterId: carer.characterId,
+        conversationId: direct.conversationId,
+        purpose: 'safety_followup',
+        billingOwner: 'user',
+        modelRole: 'chat',
+        responseFormat: 'text',
+        maxOutputTokens: 300,
+        idempotencyKey: `ai:group-care:${job.triggerMessageId}`,
+        messages: [
+          {
+            role: 'system',
+            content: `你以角色口吻在私聊里关心刚才在群里流露出自伤念头的用户。语气温和真诚，不说教；建议对方联系身边信任的人或心理援助热线 12356，紧急时拨打 110/120；不提供任何方法；不在群里讨论。角色资料：${JSON.stringify({ persona: role?.card.data.persona, speech: role?.card.data.speech }).slice(0, 6000)}`,
+          },
+          { role: 'user', content: '（用户刚才在群里说了让人担心的话）' },
+        ],
+      },
+      { highRisk: true, careActive: false, suspected: false },
+    );
     const text =
       result.ok && result.value.text.trim()
         ? result.value.text.trim().slice(0, 600)

@@ -58,3 +58,6 @@ export const WEB_SEARCH_PROVIDER = Symbol('weiban.model-access.web-search');
 export const MODEL_GATEWAY_MEDIA_PORT = Symbol('weiban.model-access.gateway-media');
 /** T-071：多媒体上游适配器（默认 OpenAI 兼容 + 博查搜索）；测试可替换。 */
 export const MEDIA_ADAPTER = Symbol('weiban.model-access.media-adapter');
+
+/** 契约 3.1 ModelQuotePort：按用户所选模型报价（调用方 ai-runtime）。 */
+export const MODEL_QUOTE_PORT = Symbol('weiban.model-access.quote');

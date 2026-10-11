@@ -9,7 +9,7 @@
  *   应用改版的预设角色不在此列（补充设定不影响分类，预设分类由管理员在角色库维护）。
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, or, sql } from 'drizzle-orm';
 import {
   AdminPlazaReport,
   AdminPlazaWork,
@@ -40,6 +40,7 @@ import {
 } from '../domain/rules.js';
 import {
   adoptions,
+  authorProfiles,
   bans,
   comments,
   reports,
@@ -164,6 +165,42 @@ export class PlazaAdminService {
     const w = await this.store.work(workId);
     if (!w) throw new AppError('not_found', '作品不存在');
     return (await this.adminDtos(adminId, [w]))[0]!;
+  }
+
+  /** 3.1（积压 ㊱）：举报详情直接打开作品（含下架、作者停权中的作品）。 */
+  async getWork(adminId: string, workId: string): Promise<AdminWorkDto> {
+    return this.adminDto(adminId, workId);
+  }
+
+  /** 3.1（积压 ㊱）：当前仍在停权期内的用户（已到期、已恢复的不列），按停权时间倒序。 */
+  async listBans(input: { cursor?: string; limit: number }) {
+    const offset = decodeOffset(input.cursor);
+    const now = this.clock.now();
+    const rows = await this.db.db
+      .select({
+        userId: bans.userId,
+        until: bans.until,
+        permanent: bans.permanent,
+        reason: bans.reason,
+        createdAt: bans.createdAt,
+        nickname: authorProfiles.nickname,
+      })
+      .from(bans)
+      .leftJoin(authorProfiles, eq(authorProfiles.userId, bans.userId))
+      .where(or(eq(bans.permanent, true), gt(bans.until, now)))
+      .orderBy(desc(bans.createdAt), desc(bans.userId))
+      .limit(input.limit + 1)
+      .offset(offset);
+    return {
+      items: rows.slice(0, input.limit).map((r) => ({
+        userId: r.userId,
+        nickname: r.nickname ?? null,
+        until: r.permanent || !r.until ? ('permanent' as const) : r.until.toISOString(),
+        reason: r.reason.slice(0, 200),
+        bannedAt: r.createdAt.toISOString(),
+      })),
+      nextCursor: rows.length > input.limit ? encodeOffset(offset + input.limit) : null,
+    };
   }
 
   async getWorkVersion(workId: string, version: number) {

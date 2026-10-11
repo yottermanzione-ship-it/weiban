@@ -32,6 +32,7 @@ export interface MigrationStatus {
 interface JournalEntry {
   idx: number;
   tag: string;
+  dependsOn?: string[];
 }
 
 /** 读取迁移目录：按 journal 顺序返回每个迁移的 up / down SQL。 */
@@ -39,14 +40,33 @@ export function readMigrations(dir: string): MigrationFile[] {
   const journalPath = join(dir, 'meta', '_journal.json');
   if (!existsSync(journalPath)) return [];
   const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as { entries: JournalEntry[] };
-  return [...journal.entries]
-    .sort((a, b) => a.idx - b.idx)
-    .map(({ tag }) => {
-      const upSql = normalize(readFileSync(join(dir, `${tag}.sql`), 'utf8'));
-      const downPath = join(dir, `${tag}.down.sql`);
-      const downSql = existsSync(downPath) ? normalize(readFileSync(downPath, 'utf8')) : null;
-      return { tag, upSql, downSql, checksum: createHash('sha256').update(upSql).digest('hex') };
-    });
+  // 个别任务晚于编号对应阶段交付；显式依赖修正执行顺序，不改已执行 SQL 的校验和。
+  const entries = [...journal.entries].sort((a, b) => a.idx - b.idx);
+  const byTag = new Map(entries.map((entry) => [entry.tag, entry]));
+  if (byTag.size !== entries.length) throw new Error('迁移清单存在重复 tag');
+  const done = new Set<string>();
+  const visiting = new Set<string>();
+  const ordered: JournalEntry[] = [];
+  const visit = (entry: JournalEntry): void => {
+    if (done.has(entry.tag)) return;
+    if (visiting.has(entry.tag)) throw new Error(`迁移依赖存在循环：${entry.tag}`);
+    visiting.add(entry.tag);
+    for (const tag of entry.dependsOn ?? []) {
+      const dependency = byTag.get(tag);
+      if (!dependency) throw new Error(`迁移 ${entry.tag} 的依赖不存在：${tag}`);
+      visit(dependency);
+    }
+    visiting.delete(entry.tag);
+    done.add(entry.tag);
+    ordered.push(entry);
+  };
+  for (const entry of entries) visit(entry);
+  return ordered.map(({ tag }) => {
+    const upSql = normalize(readFileSync(join(dir, `${tag}.sql`), 'utf8'));
+    const downPath = join(dir, `${tag}.down.sql`);
+    const downSql = existsSync(downPath) ? normalize(readFileSync(downPath, 'utf8')) : null;
+    return { tag, upSql, downSql, checksum: createHash('sha256').update(upSql).digest('hex') };
+  });
 }
 
 function normalize(text: string): string {

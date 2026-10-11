@@ -71,6 +71,7 @@ private class DraftFields(
     val name: String,
     val description: String,
     val catchphrase: String,
+    val speechStyle: String,
     val exampleDialogue: String,
     val tags: String,
     val realPersonKind: String,
@@ -86,12 +87,12 @@ private fun draftFields(
     val data = result["draft"].obj()?.get("data").obj()
     val persona = data?.get("persona").obj()
     val speech = data?.get("speech").obj()
+    val editor = result["editorFields"].obj()
     val description =
         listOfNotNull(
             persona?.get("summary").str(),
             persona?.get("personality").str(),
             persona?.get("background").str(),
-            speech?.get("tone").str()?.let { "说话方式：$it" },
         ).filter { it.isNotBlank() }
             .joinToString("\n")
             .take(DESCRIPTION_MAX)
@@ -108,18 +109,16 @@ private fun draftFields(
             .take(DESCRIPTION_MAX)
     val classification = result["suggestedClassification"].obj()
     return DraftFields(
-        name = speaker.orEmpty().take(32),
-        description = description,
+        name = editor?.get("name").str() ?: speaker.orEmpty().take(32),
+        description = editor?.get("description").str() ?: description,
         catchphrase =
-            speech
-                ?.get("catchphrases")
+            (editor?.get("catchphrases") ?: speech?.get("catchphrases"))
                 .strings()
-                .joinToString("、")
-                .take(200),
-        exampleDialogue = examples,
+                .joinToString("\n"),
+        speechStyle = editor?.get("speechStyle").str() ?: speech?.get("tone").str().orEmpty(),
+        exampleDialogue = editor?.get("exampleDialogue").str() ?: examples,
         tags =
-            persona
-                ?.get("personaTagsCustom")
+            (editor?.get("tags") ?: persona?.get("personaTagsCustom"))
                 .strings()
                 .take(10)
                 .joinToString("，"),
@@ -160,7 +159,7 @@ internal fun ImportOverlay(
     onClose: () -> Unit,
 ) {
     val colors = LocalWeibanColors.current
-    var jobId by remember(open) { mutableStateOf<String?>(null) }
+    var jobId by remember(open) { mutableStateOf(open.jobId) }
     var job by remember(open) { mutableStateOf<ImportJob?>(null) }
     var created by remember(open) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -178,6 +177,12 @@ internal fun ImportOverlay(
                     )
             }
             val status = job?.status
+            val merged = job?.mergedIntoJobId
+            if (status == "completed" && merged != null) {
+                job = null
+                jobId = merged
+                return@LaunchedEffect
+            }
             if (status != "detecting" && status != "analyzing" && status != "collecting") {
                 delay(JOB_POLL_MS * 5)
             } else {
@@ -263,6 +268,9 @@ private fun ImportStart(
         remote("${owner.sessionId}:imports") {
             repository.call(Endpoints.importerEndpointsListJobs, options = SessionCallOptions(owner = owner, networkOnly = true)).items
         }
+    val model = remote("${owner.sessionId}:import-model") {
+        repository.call(Endpoints.modelAccessEndpointsGetModelStatus, options = SessionCallOptions(owner = owner, networkOnly = true))
+    }
 
     fun create(
         sourceKind: String,
@@ -281,6 +289,7 @@ private fun ImportStart(
                                 put("kind", open.kind)
                                 open.targetCharacterId?.let { put("targetCharacterId", it) }
                                 put("sourceKind", sourceKind)
+                                open.mergeIntoJobId?.let { put("mergeIntoJobId", it) }
                                 if (sourceKind == "text") put("text", text.take(IMPORT_MAX_CHARS * 2))
                             },
                         options = SessionCallOptions(owner = owner, networkOnly = true),
@@ -372,10 +381,10 @@ private fun ImportStart(
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("选择文件（.txt / .csv）") }
                 OutlinedButton(
-                    enabled = !pending,
+                    enabled = !pending && open.kind != "supplement" && model.data?.visionAvailable != false,
                     onClick = { shots.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("从相册选截图（最多 $IMPORT_MAX_SCREENSHOTS 张）") }
+                ) { Text(if (model.data?.visionAvailable == false) "当前模型不能识图，请先更换模型" else "从相册选截图（最多 $IMPORT_MAX_SCREENSHOTS 张）") }
                 val running = jobs.data.orEmpty().filter { it.kind == open.kind && it.status != "cancelled" }
                 if (running.isNotEmpty()) {
                     Text("进行中的导入", style = MaterialTheme.typography.titleSmall)
@@ -679,7 +688,7 @@ private fun ImportJobPage(
             }
         }
         data["kind"].str() == "supplement" -> SupplementResult(repository, owner, job, data, onClose)
-        else -> DraftEditor(repository, owner, job, draftFields(data, job.selectedSpeaker), onClose, onCreated)
+        else -> DraftEditor(repository, owner, job, data, draftFields(data, job.selectedSpeaker), onClose, onCreated)
     }
 }
 
@@ -690,15 +699,18 @@ private fun DraftEditor(
     repository: SessionRepository,
     owner: OwnerRecord,
     job: ImportJob,
+    result: JsonObject,
     fields: DraftFields,
     onClose: () -> Unit,
     onCreated: (String) -> Unit,
 ) {
+    val context = LocalContext.current
     val colors = LocalWeibanColors.current
     val scope = rememberCoroutineScope()
     var name by remember(job.jobId) { mutableStateOf(fields.name) }
     var description by remember(job.jobId) { mutableStateOf(fields.description) }
     var catchphrase by remember(job.jobId) { mutableStateOf(fields.catchphrase) }
+    var speechStyle by remember(job.jobId) { mutableStateOf(fields.speechStyle) }
     var examples by remember(job.jobId) { mutableStateOf(fields.exampleDialogue) }
     var tags by remember(job.jobId) { mutableStateOf(fields.tags) }
     var basis by remember(job.jobId) { mutableStateOf(fields.basis) }
@@ -725,7 +737,8 @@ private fun DraftEditor(
             label = { Text("人设描述（至少 $DESCRIPTION_MIN 字）· 来自导入") },
             supportingText = { Text("${description.length} / $DESCRIPTION_MAX") },
         )
-        OutlinedTextField(catchphrase, { catchphrase = it.take(200) }, Modifier.fillMaxWidth(), label = { Text("口头禅（可选）· 来自导入") })
+        OutlinedTextField(catchphrase, { catchphrase = it.take(510) }, Modifier.fillMaxWidth(), label = { Text("口头禅（每行一条，最多 10 条，每条 50 字）") })
+        OutlinedTextField(speechStyle, { speechStyle = it.take(500) }, Modifier.fillMaxWidth(), label = { Text("说话方式") })
         OutlinedTextField(examples, { examples = it.take(DESCRIPTION_MAX) }, Modifier.fillMaxWidth(), label = { Text("示例对话（可选）· 来自导入") })
         OutlinedTextField(tags, { tags = it.take(200) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("标签（用逗号分隔）") })
         Text("角色分类", style = MaterialTheme.typography.titleSmall)
@@ -750,6 +763,34 @@ private fun DraftEditor(
             Text("请把草稿里的真实姓名等信息替换掉", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        OutlinedButton(enabled = !pending, onClick = {
+            pending = true
+            scope.launch {
+                try {
+                    userAction({ error = it }) {
+                        val editor = buildJsonObject {
+                            put("name", name)
+                            put("description", description)
+                            put("speechStyle", speechStyle)
+                            put("exampleDialogue", examples)
+                            put("catchphrases", JsonArray(catchphrase.lines().map { it.trim() }.filter { it.isNotEmpty() }.map(::JsonPrimitive)))
+                            put("tags", JsonArray(tags.split(',', '，', '、').map { it.trim() }.filter { it.isNotEmpty() }.map(::JsonPrimitive)))
+                        }
+                        val classification = JsonObject(result["suggestedClassification"].obj().orEmpty() + mapOf(
+                            "basis" to JsonPrimitive(basis),
+                            "realPersonKind" to if (basis == "real_person") JsonPrimitive(fields.realPersonKind) else JsonNull,
+                        ))
+                        repository.call(Endpoints.importerEndpointsSaveResultDraft,
+                            params = mapOf("jobId" to job.jobId),
+                            body = JsonObject(result + mapOf("editorFields" to editor, "suggestedClassification" to classification)),
+                            options = SessionCallOptions(owner = owner, networkOnly = true))
+                        error = null
+                        importToast(context = context, text = "草稿已保存")
+                    }
+                } finally { pending = false }
+            }
+        }) { Text("保存草稿") }
+        ContinueImport(job, pending)
         Button(
             enabled = !pending && name.isNotBlank() && description.length >= DESCRIPTION_MIN,
             modifier = Modifier.fillMaxWidth(),
@@ -781,7 +822,8 @@ private fun DraftEditor(
                                                 put("childAppearance", false)
                                             },
                                         )
-                                        if (catchphrase.isNotBlank()) put("catchphrase", catchphrase)
+                                        put("catchphrases", JsonArray(catchphrase.lines().map { it.trim() }.filter { it.isNotEmpty() }.map(::JsonPrimitive)))
+                                        put("speechStyle", speechStyle)
                                         if (examples.isNotBlank()) put("exampleDialogue", examples)
                                         if (tagList.isNotEmpty()) put("tags", JsonArray(tagList.map(::JsonPrimitive)))
                                     },
@@ -827,6 +869,27 @@ private fun SupplementResult(
     ) {
         Text("下面的内容会加到你的补充设定里，只对你生效。涉及分类、年龄的内容不会生效。", color = colors.textSecondary)
         OutlinedTextField(text, { text = it.take(SUPPLEMENT_MAX) }, Modifier.fillMaxWidth(), label = { Text("补充设定") })
+        val filtered = result["filteredCount"]?.jsonPrimitive?.longOrNull ?: 0L
+        if (filtered > 0) Text("$filtered 条不会生效", color = colors.textSecondary)
+        (result["conflicts"] as? JsonArray).orEmpty().forEach { value ->
+            val conflict = value.obj()
+            Text("${conflict?.get("field").str()}：导入内容「${conflict?.get("supplementValue").str()}」与公开资料「${conflict?.get("publicValue").str()}」冲突，以公开资料为准。", color = colors.textSecondary)
+        }
+        OutlinedButton(enabled = !pending, onClick = {
+            pending = true
+            scope.launch {
+                try {
+                    userAction({ importToast(context, it) }) {
+                        repository.call(Endpoints.importerEndpointsSaveResultDraft,
+                            params = mapOf("jobId" to job.jobId),
+                            body = JsonObject(result + ("text" to JsonPrimitive(text))),
+                            options = SessionCallOptions(owner = owner, networkOnly = true))
+                        importToast(context, "草稿已保存")
+                    }
+                } finally { pending = false }
+            }
+        }) { Text("保存草稿") }
+        ContinueImport(job, pending)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = confirmed, onCheckedChange = { confirmed = it })
             Text("我已确认这些内容")
@@ -880,4 +943,10 @@ private fun SupplementResult(
             }
         }) { Text("添加") }
     }
+}
+
+@Composable private fun ContinueImport(job: ImportJob, pending: Boolean) {
+    TextButton(enabled = !pending, onClick = {
+        L6Overlays.imports.value = ImportOpen(job.kind, job.targetCharacterId, mergeIntoJobId = job.jobId)
+    }) { Text("继续导入下一批（请先保存编辑）") }
 }

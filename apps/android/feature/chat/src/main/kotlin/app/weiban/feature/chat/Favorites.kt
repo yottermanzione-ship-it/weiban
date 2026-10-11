@@ -143,8 +143,12 @@ fun FavoritesScreen(
     }
     val open: (Favorite) -> Unit = { favorite ->
         val target = favoriteMessage(favorite)
+        val seq = (favorite.source as? JsonObject)?.get("seq")?.jsonPrimitive?.longOrNull
         val local = target?.let { (cid, mid) -> state.messages.find { it.conversationId == cid && it.messageId == mid } }
-        if (local != null && state.conversations.any { it.conversationId == local.conversationId }) {
+        if (target != null && seq != null && state.conversations.any { it.conversationId == target.first }) {
+            MessageLocator.request(target.first, seq)
+            onOpenConversation(target.first)
+        } else if (local != null && state.conversations.any { it.conversationId == local.conversationId }) {
             MessageLocator.request(local.conversationId, local.seq)
             onOpenConversation(local.conversationId)
         } else {
@@ -297,7 +301,17 @@ private fun FavoriteRow(
                 if (selecting) Checkbox(checked = checked, onCheckedChange = { onToggle() })
                 val id = favorite.characterId
                 if (id != null && !favoriteIsMine(favorite)) {
-                    RoleAvatar(repository, owner, RoleAvatarIdentity(id, profile?.name.orEmpty(), profile?.avatar), WbSize.AvatarMd)
+                    RoleAvatar(
+                        repository,
+                        owner,
+                        RoleAvatarIdentity(
+                            id,
+                            favorite.characterNameSnapshot ?: profile?.name.orEmpty(),
+                            profile?.avatar,
+                            favorite.characterAvatarSnapshotMediaId,
+                        ),
+                        WbSize.AvatarMd,
+                    )
                 } else {
                     RoleAvatar(repository, owner, RoleAvatarIdentity(owner.userId, "我", null, user = true), WbSize.AvatarMd)
                 }
@@ -306,7 +320,8 @@ private fun FavoriteRow(
         headlineContent = { Text(highlighted(contentText(favorite.content), query), maxLines = 3) },
         supportingContent = {
             val lock = if (favorite.shareable) "" else "  🔒 不能生成分享图"
-            Text("$name · ${favorite.createdAt.take(10)}$lock", color = colors.textTertiary, style = MaterialTheme.typography.bodySmall)
+            val label = if (favoriteIsMine(favorite)) name else favorite.characterNameSnapshot ?: name
+            Text("$label · ${favorite.createdAt.take(10)}$lock", color = colors.textTertiary, style = MaterialTheme.typography.bodySmall)
         },
         trailingContent = {
             if (!selecting) {

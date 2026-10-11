@@ -19,7 +19,7 @@ import { CatalogService } from './application/catalog.js';
 import { EmptyPriceSource } from './application/defaults.js';
 import { ModelAccessLifecycle } from './application/lifecycle.js';
 import { UsageReconciliationService } from './application/reconciliation.js';
-import { ModelResolver, ModelStatusService } from './application/resolver.js';
+import { ModelQuoteService, ModelResolver, ModelStatusService } from './application/resolver.js';
 import { SelectionService } from './application/selection.js';
 import { UpstreamService } from './application/upstreams.js';
 import { AdminUsageService, UsageRecorder } from './application/usage.js';
@@ -39,6 +39,7 @@ import {
   WEB_SEARCH_PROVIDER,
   MODEL_GATEWAY_MEDIA_PORT,
   MEDIA_ADAPTER,
+  MODEL_QUOTE_PORT,
 } from './tokens.js';
 
 @Module({
@@ -49,6 +50,7 @@ import {
     ADULT_MODEL_READ_PORT,
     WEB_SEARCH_PROVIDER,
     MODEL_GATEWAY_MEDIA_PORT,
+    MODEL_QUOTE_PORT,
   ],
   controllers: [ModelController, ModelAdminController],
   providers: [
@@ -74,6 +76,8 @@ import {
     ModelResolver,
     { provide: ADULT_MODEL_READ_PORT, useExisting: ModelResolver },
     ModelStatusService,
+    ModelQuoteService,
+    { provide: MODEL_QUOTE_PORT, useExisting: ModelQuoteService },
     UsageRecorder,
     AdminUsageService,
     UsageReconciliationService,

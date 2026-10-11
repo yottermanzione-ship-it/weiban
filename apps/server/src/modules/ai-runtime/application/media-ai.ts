@@ -483,6 +483,7 @@ export class MediaAiService {
           mediaId: image.mediaId,
           width: image.width,
           height: image.height,
+          sizeBytes: image.sizeBytes,
         });
         changed = true;
       }

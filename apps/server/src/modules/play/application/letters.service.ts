@@ -32,6 +32,7 @@ import {
   OUTBOX,
   P05_DEFAULT_ACTIVE_WINDOW,
   newId,
+  asDbTx,
   parseContract,
   type Database,
   type DbTx,
@@ -222,7 +223,11 @@ export class LettersService implements PlayFeature, OnModuleInit {
   async sendLetter(
     userId: string,
     raw: unknown,
-  ): Promise<{ letter: Letter; replyDelayed: boolean }> {
+  ): Promise<{
+    letter: Letter;
+    replyDelayed: boolean;
+    replyDelayReason: 'already_replied_today' | 'outside_active_window' | null;
+  }> {
     const body: SendBody = parseContract(LetterEndpoints.sendLetter.body!, raw);
     const retry = await this.findByKey(userId, body.characterId, body.clientRequestId);
     if (retry) return this.sentResult(retry);
@@ -292,6 +297,17 @@ export class LettersService implements PlayFeature, OnModuleInit {
           characterId: body.characterId,
           letterId: id,
           deliverAt: plan.deliverAt.toISOString(),
+        });
+        await this.ctx.postPlayNotice(tx, {
+          userId,
+          characterId: body.characterId,
+          code: 'letter_sent',
+          params: {
+            letterId: id,
+            characterName: await this.ctx.characterName(userId, body.characterId, tx),
+            expectedAt: plan.deliverAt.toISOString(),
+          },
+          idempotencyKey: `play:letter_sent:${id}`,
         });
         await this.ctx.dataChanged(tx, userId, 'letters', body.characterId, id);
         const [saved] = await tx.db.select().from(letters).where(eq(letters.id, id));
@@ -395,12 +411,15 @@ export class LettersService implements PlayFeature, OnModuleInit {
   }
 
   /** 角色主动寄信（纪念日，PLAY-05 第 7 条）：直接送达（时机与额度由 ai-runtime 决定）。 */
-  async sendCharacterLetter(input: {
-    userId: string;
-    characterId: string;
-    body: string;
-    idempotencyKey: string;
-  }): Promise<PortResult<{ letterId: string }, 'contact_inactive'>> {
+  async sendCharacterLetter(
+    input: {
+      userId: string;
+      characterId: string;
+      body: string;
+      idempotencyKey: string;
+    },
+    sharedTx?: Tx,
+  ): Promise<PortResult<{ letterId: string }, 'contact_inactive'>> {
     const text = input.body.trim().slice(0, 4000);
     const existing = await this.findByKey(input.userId, input.characterId, input.idempotencyKey);
     if (existing) return { ok: true, value: { letterId: existing.id } };
@@ -408,7 +427,7 @@ export class LettersService implements PlayFeature, OnModuleInit {
       return { ok: false, error: 'contact_inactive', message: '角色不在通讯录中' };
     const timeZone = await this.ctx.timeZone(input.userId);
     try {
-      return await this.db.transaction(async (tx) => {
+      const run = async (tx: DbTx) => {
         const now = this.ctx.clock.now();
         const id = newId();
         await tx.db.insert(letters).values({
@@ -428,7 +447,8 @@ export class LettersService implements PlayFeature, OnModuleInit {
         const [row] = await tx.db.select().from(letters).where(eq(letters.id, id));
         await this.deliver(tx, row!, text);
         return { ok: true as const, value: { letterId: id } };
-      });
+      };
+      return sharedTx ? await run(asDbTx(sharedTx)) : await this.db.transaction(run);
     } catch (error) {
       if (isUniqueViolation(error)) {
         const again = await this.findByKey(input.userId, input.characterId, input.idempotencyKey);
@@ -643,7 +663,11 @@ export class LettersService implements PlayFeature, OnModuleInit {
     return { deliverAt: at, localDate: localDateIn(at, timeZone), delayed: true };
   }
 
-  private async sentResult(row: LetterRow): Promise<{ letter: Letter; replyDelayed: boolean }> {
+  private async sentResult(row: LetterRow): Promise<{
+    letter: Letter;
+    replyDelayed: boolean;
+    replyDelayReason: 'already_replied_today' | 'outside_active_window' | null;
+  }> {
     const [reply] = await this.db.db
       .select()
       .from(letters)
@@ -653,7 +677,33 @@ export class LettersService implements PlayFeature, OnModuleInit {
       !!row.sentAt &&
       reply.deliverAt.getTime() - row.sentAt.getTime() >
         PLAY_LIMITS.letterReplyDelayMaxHours * HOUR;
-    return { letter: await this.toDto(row, reply ?? null), replyDelayed: delayed };
+    // 3.1（积压 ㊲）：顺延原因——P-42 窗口内已有这个角色的其他回信 = 每天 1 封的限制；否则是活跃时段外。
+    let replyDelayReason: 'already_replied_today' | 'outside_active_window' | null = null;
+    if (delayed && reply && row.sentAt) {
+      const from = new Date(row.sentAt.getTime() + PLAY_LIMITS.letterReplyDelayMinHours * HOUR);
+      const to = new Date(row.sentAt.getTime() + PLAY_LIMITS.letterReplyDelayMaxHours * HOUR);
+      const [other] = await this.db.db
+        .select({ id: letters.id })
+        .from(letters)
+        .where(
+          and(
+            eq(letters.userId, row.userId),
+            eq(letters.characterId, row.characterId),
+            eq(letters.direction, 'from_character'),
+            isNotNull(letters.inReplyToLetterId),
+            sql`${letters.id} <> ${reply.id}`,
+            sql`${letters.deliverAt} >= ${from}`,
+            sql`${letters.deliverAt} <= ${to}`,
+          ),
+        )
+        .limit(1);
+      replyDelayReason = other ? 'already_replied_today' : 'outside_active_window';
+    }
+    return {
+      letter: await this.toDto(row, reply ?? null),
+      replyDelayed: delayed,
+      replyDelayReason,
+    };
   }
 
   private async findByKey(

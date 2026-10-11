@@ -11,6 +11,7 @@ import type {
   PortResult,
   Reminder,
   WishlistItem,
+  Tx,
 } from '@weiban/contracts';
 import { DailyQuestionService } from './daily-question.service.js';
 import { FocusService } from './focus.service.js';
@@ -78,13 +79,16 @@ export class PlayPortsService implements PlayReadPort, PlayAgentPort {
     return this.letters.deliverReply(input);
   }
 
-  sendCharacterLetter(input: {
-    userId: string;
-    characterId: string;
-    body: string;
-    idempotencyKey: string;
-  }): Promise<PortResult<{ letterId: string }, 'contact_inactive'>> {
-    return this.letters.sendCharacterLetter(input);
+  sendCharacterLetter(
+    input: {
+      userId: string;
+      characterId: string;
+      body: string;
+      idempotencyKey: string;
+    },
+    tx?: Tx,
+  ): Promise<PortResult<{ letterId: string }, 'contact_inactive'>> {
+    return this.letters.sendCharacterLetter(input, tx);
   }
 
   setReminderPhrasings(input: {

@@ -208,6 +208,8 @@ import kotlinx.serialization.json.*
                         presets[work.basedOnPresetId.orEmpty()],
                         status = plazaStatusNames[work.status] ?: "未知状态",
                     )
+                    if ((work.unreadCount ?: 0L) > 0L) Text("● ${work.unreadCount} 条未读", color = colors.textSecondary)
+                    work.removedReason?.let { Text("下架原因：$it", color = colors.textSecondary) }
                     HorizontalDivider()
                 }
             }
@@ -357,7 +359,7 @@ private class PublishUi {
                 mine.items.find { work ->
                     when (val snapshot = parseSnapshot(repository.api.json, work.snapshot)) {
                         is ParsedSnapshot.Variant -> isVariant && snapshot.value.presetCharacterId == subjectId
-                        is ParsedSnapshot.Custom -> !isVariant && snapshot.value.name == role.name
+                        is ParsedSnapshot.Custom -> !isVariant && work.sourceCharacterId == subjectId
                         null -> false
                     }
                 }
@@ -809,9 +811,10 @@ private fun maskedDraftText(
             isVariant -> (parsed as? ParsedSnapshot.Variant)?.value?.variantText.orEmpty()
             key == "name" -> custom?.name.orEmpty()
             key == "description" -> custom?.description.orEmpty()
+            key == "speechStyle" -> custom?.speechStyle.orEmpty()
             key == "exampleDialogue" -> custom?.exampleDialogue.orEmpty()
             key.startsWith("tags.") && index != null -> custom?.tags?.getOrNull(index).orEmpty()
-            key == "catchphrases.0" -> custom?.catchphrases?.firstOrNull().orEmpty()
+            key.startsWith("catchphrases.") && index != null -> custom?.catchphrases?.getOrNull(index).orEmpty()
             else -> null
         }
     var text by remember(span.spanId) { mutableStateOf(initial.orEmpty()) }
@@ -858,7 +861,11 @@ private fun maskedDraftText(
                                                             .map(::JsonPrimitive),
                                                     ),
                                                 )
-                                            key == "catchphrases.0" -> put("catchphrase", text.trim())
+                                            key.startsWith("catchphrases.") && index != null && custom != null -> put(
+                                                "catchphrases",
+                                                JsonArray(custom.catchphrases.mapIndexed { i, phrase -> if (i == index) text.trim() else phrase }
+                                                    .filter { it.isNotBlank() }.map(::JsonPrimitive)),
+                                            )
                                             else -> put(key, text.trim())
                                         }
                                     }

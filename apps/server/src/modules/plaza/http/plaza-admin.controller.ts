@@ -22,6 +22,19 @@ export class PlazaAdminController {
     return this.admin.listWorks(p.userId, query);
   }
 
+  @Get('works/:workId')
+  getWork(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Param(new ContractPipe(A.getWork.params!)) params: { workId: string },
+  ) {
+    return this.admin.getWork(p.userId, params.workId);
+  }
+
+  @Get('bans')
+  listBans(@Query(new ContractPipe(A.listBans.query!)) query: { cursor?: string; limit: number }) {
+    return this.admin.listBans(query);
+  }
+
   @Get('works/:workId/versions/:version')
   getVersion(
     @Param(new ContractPipe(A.getWorkVersion.params!)) params: { workId: string; version: number },

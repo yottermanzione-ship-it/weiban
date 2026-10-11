@@ -14,13 +14,14 @@ import { Inject, Injectable } from '@nestjs/common';
 import type {
   MediaAssetReadPort,
   MediaSystemPort,
+  MediaReadPort,
   ModelGatewayMediaPort,
   ModelGatewayPort,
   PolicyPort,
   CharacterReadPort,
 } from '@weiban/contracts';
 import { CHARACTER_READ_PORT } from '../../characters/index.js';
-import { MEDIA_ASSET_READ_PORT, MEDIA_SYSTEM_PORT } from '../../media/index.js';
+import { MEDIA_ASSET_READ_PORT, MEDIA_SYSTEM_PORT, MEDIA_READ_PORT } from '../../media/index.js';
 import { MODEL_GATEWAY_MEDIA_PORT, MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 
@@ -47,6 +48,7 @@ export interface CharacterImageResult {
   source: 'generated' | 'library';
   width: number | null;
   height: number | null;
+  sizeBytes?: number;
 }
 
 @Injectable()
@@ -58,6 +60,7 @@ export class CharacterImageService {
     @Inject(MEDIA_ASSET_READ_PORT) private readonly assets: MediaAssetReadPort,
     @Inject(POLICY_PORT) private readonly policy: PolicyPort,
     @Inject(CHARACTER_READ_PORT) private readonly characters: CharacterReadPort,
+    @Inject(MEDIA_READ_PORT) private readonly mediaRead: MediaReadPort,
   ) {}
 
   async generate(input: GenerateCharacterImageInput): Promise<CharacterImageResult | null> {
@@ -111,6 +114,8 @@ export class CharacterImageService {
             source: 'generated',
             width: 1024,
             height: 1024,
+            sizeBytes: (await this.mediaRead.getMedia(input.userId, generated.value.mediaId))
+              .sizeBytes,
           };
         await this.files.deleteObject(generated.value.mediaId).catch(() => undefined);
       }
@@ -157,6 +162,12 @@ export class CharacterImageService {
     let h = 0;
     for (const ch of input.idempotencyKey) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
     const pick = list[h % list.length]!;
-    return { mediaId: pick.mediaId, source: 'library', width: null, height: null };
+    return {
+      mediaId: pick.mediaId,
+      source: 'library',
+      width: null,
+      height: null,
+      sizeBytes: (await this.mediaRead.getMedia(input.userId, pick.mediaId)).sizeBytes,
+    };
   }
 }

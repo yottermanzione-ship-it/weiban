@@ -19,7 +19,9 @@ import java.util.concurrent.atomic.AtomicReference
 class ApiFailure(
     val code: String,
     val status: Int,
-) : IOException(code)
+    message: String? = null,
+    val details: Map<String, JsonElement>? = null,
+) : IOException(message ?: code)
 
 /** No credentials in logs, URLs or a logging interceptor. Every reply belongs to one auth object. */
 class ApiClient(
@@ -77,7 +79,7 @@ class ApiClient(
                             json.decodeFromJsonElement(ApiError.serializer(), ContractJson.normalize("ApiError", raw))
                         }.getOrNull()
                     if (error?.error?.code == "unauthenticated" && endpoint.auth != "none") session.compareAndSet(auth, null)
-                    throw ApiFailure(error?.error?.code ?: "unsupported", response.code)
+                    throw ApiFailure(error?.error?.code ?: "unsupported", response.code, error?.error?.message, error?.error?.details)
                 }
                 decode(endpoint, bytes, auth)
             }

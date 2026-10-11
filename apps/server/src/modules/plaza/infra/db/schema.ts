@@ -93,6 +93,8 @@ export const works = plazaSchema.table(
       .notNull()
       .default('listed'),
     removedReason: text('removed_reason'),
+    /** 0074（契约 3.1，积压 ㊱）：作者上次打开作品的时间；之后新增的点赞 + 评论计入「我发布的」红点 unreadCount。 */
+    authorSeenAt: time('author_seen_at'),
     likeCount: integer('like_count').notNull().default(0),
     adoptCount: integer('adopt_count').notNull().default(0),
     commentCount: integer('comment_count').notNull().default(0),

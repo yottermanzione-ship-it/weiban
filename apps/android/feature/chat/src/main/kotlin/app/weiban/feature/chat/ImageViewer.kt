@@ -115,7 +115,7 @@ internal fun ImageViewer(
                             menu = false
                             ui.media.favorite(current.message)
                         })
-                        if (current.message.senderKind != "user") {
+                        if (canAddToStickers(current.message)) {
                             DropdownMenuItem(text = { Text("添加到表情") }, onClick = {
                                 menu = false
                                 ui.media.addToStickers(current.message)
