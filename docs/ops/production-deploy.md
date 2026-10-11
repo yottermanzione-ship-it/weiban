@@ -23,6 +23,8 @@ postgres首次只建生产库并开启vector；migrate一次性任务持咨询�
 
 首次管理员：`docker compose ... exec app node dist/identity.js create-admin 管理员账号`，交互输入密码，不把密码写进参数。登录管理后台登记并测试供应商、核实价格后发布、再启用目录模型。种子价只是草稿，DeepSeek分时价格和所有真实供应商要先核实，不能直接计费。初始化验证：用户/管理两个域名静态页、`/health`、管理员登录、加余额、上游实测、建角色/真实评测和用户页面。
 
+数据库扩展权限（2026-10-12实际权限探测）：当前镜像PostgreSQL 18/pgvector 0.8.7中，`vector`为非trusted扩展，非管理员数据库所有者直接安装被拒绝，需DBA预装；预装后非管理员所有者可执行实际`vector(256)`建表和HNSW索引片段。`pg_trgm`为trusted扩展，具有数据库CREATE权限的非管理员所有者能安装，无该权限的角色被拒绝。Docker首启脚本负责vector，迁移0062负责pg_trgm；使用托管数据库或拆分迁移账号时，先让DBA安装扩展，另行授予迁移所需数据库/模式权限，不靠业务启动临时提权。证据`extension-pg-trgm-owner-round1.log`、`extension-vector-owner-round1.log`、`extension-preinstalled-vector-round1.log`、`extension-pg-trgm-no-create-round1.log`，均在独立临时库执行，探测库及NOLOGIN角色已删除；这不代表未来外部服务器的账号已配置或完整受限账号迁移已验收。
+
 ## 备份与恢复
 
 运维节点安装`age`（BSD-3-Clause）、Docker Compose和系统tar/sha256sum。age公钥在节点上，解密身份离线保存、与KEK分开。每日备份安排在维护窗口（该脚本暂停app后恢复原运行状态），并复制到独立异地存储：

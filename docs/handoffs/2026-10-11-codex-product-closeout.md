@@ -1,5 +1,12 @@
 # Codex 产品收口活动断点
 
+## 当前断点（2026-10-12 00:53，优先于下文）
+
+- 上轮媒体注销修复和21项检查是实质进展；本轮继续观察原全量执行句柄`91892`，没有重启。最后观察仍运行，Vitest工作进程已多次自然切换，日志`full-tests-round7.log`尚未产生最终汇总，不能登记全量通过。业务源码保持上一检查点；新增复现草稿不会被本次已收集的全量作为通过证据。
+- 扩展权限已用真实隔离库/NOLOGIN非管理员角色验证：DB所有者可安装trusted pg_trgm；同一角色安装非trusted vector被拒绝（要求superuser）；管理员预装后普通所有者可CREATE EXTENSION IF NOT EXISTS、建vector(256)表与HNSW索引；无数据库CREATE权限的角色安装pg_trgm被拒绝。4份日志为`extension-pg-trgm-owner-round1.log`、`extension-vector-owner-round1.log`、`extension-preinstalled-vector-round1.log`、`extension-pg-trgm-no-create-round1.log`。探测数据库`weiban_extension_probe`/`weiban_extension_readonly`和角色`weiban_extension_probe`/`weiban_extension_reader`已核对后删除，未碰完整回归库或生产库。条件已写入production-deploy，未来外部DB权限配置及全套受限账号迁移不因此视作完成。
+- 阅读其他seal路径发现自定义角色create/update及广场复制/writeRow仍在事务外生成用户密文，这是待复现风险，不冒称已验证的产品问题。准备了未提交的`custom-deletion-race.test.ts`4项：普通创建、试聊创建、编辑在真实头像权限读完后延迟至真实DELETE /me销毁DEK，再继续执行；已取得实际角色发布快照的广场添加在注销后执行。真实媒体权限与注销均不替换，只在头像读取返回处设置时序闸门；lint草稿通过`custom-deletion-race-lint-round1.log`，运行尚待全量释放数据库。另有characters/testing.ts新增CustomCharacterService测试出口未提交。继续接管先poll 91892，终态后运行草稿、根据实际失败修复，避免在同库并发reset或影响在跑的源码版本。
+- 其余断点不变：全量结论后仍需最新网页/后台/Linux安卓、本机镜像升级、完整真实模型、设备、离线/异机保管及另一位独立审查者。目标活动，未完工或暂停。
+
 ## 当前断点（2026-10-12 00:41，优先于下文）
 
 - 上轮加密备份/恢复为实质进展，本轮推进T-103收藏快照真实PG证据并修复注销并发。独立分支源码检查点`fe59bce957f91235885fd21577fdfa103f63f0e5`，媒体修复提交`50e530c393bb216dca97b418ab804ffce8cf5692`；共享目录实查仍main，未修改。正式本机镜像仍为7365975音色版本，本轮修复待完整回归后升级。
