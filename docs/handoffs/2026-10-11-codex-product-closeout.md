@@ -1,5 +1,14 @@
 # Codex 产品收口活动断点
 
+## 当前断点（2026-10-12 01:24，优先于下文）
+
+- 总经理再次确认先在本机部署、不用服务器。localhost:8080/8081仍为正式本机入口，镜像7365975，原配置、密钥、账号及数据保留；最新修复待升级。共享目录main只读，开发副本C:\wb-dev\codex-closeout、codex/product-closeout。
+- 管理员ID操作原先未限制preset，真实私有角色复现5项失败（admin-private-character-round1.log）：编辑/发布500、下架和版本读取200、回滚422。按契约预设角色维护范围，update/publish/listPersonaVersions/rollback先presetRow，unpublish在SQL限定kind；修复后5条路径404，私有密文/状态/DEK不变。
+- 正常预设生命周期另行复现回滚500：历史published密文直接写为draft，AAD不匹配；新版本在锁外分配，名字/介绍等未恢复。源码5c8fd5a237982e0760b1941db39f7924401fd6a8在FOR UPDATE锁内分配revision/personaVersion，分别seal新发布与草稿，恢复旧内容、搜索与分类字段，保留儿童识别/私人事实，校验历史稳定标志与当前结构/儿童头像规则，补发布/分类事件。真实HTTP回滚后实际运行时读取旧角色卡，两路并发回滚历史连续[5,4,3,2,1]；无契约或迁移新增。
+- admin-private-character-round6.log：3文件19项通过，27.39s（管理员6、分类8、注销5）；类型admin-private-typecheck-round2.log及全仓lint/依赖admin-private-lint-round2.log通过，340模块1474依赖。角色评估端口受控成功，不代表真实模型质量。round5失败是测试把catchphrases放到social而非契约speech，修正测试后通过，不算产品缺陷。
+- admin-private-character-round4.log：3文件25项，24通过1失败；memory-persona长消息批量抽取30秒超时。原因未判定，单独复跑admin-private-memory-round2.log句柄46793仍运行。最新完整网页web-final-round8.log句柄30580运行中，独立weiban_closeout_probe_test库。观察现有句柄终态后登记，不重启已运行任务。
+- 最新全量、后台浏览器、Linux安卓、本机升级、19类真实模型、设备、离线/异机密钥保管及独立审查待完成。全部开发自测，目标活动，未完工。
+
 ## 当前断点（2026-10-12 01:00，优先于下文）
 
 - 前轮媒体修复后完整`pnpm test`已真实结束：`full-tests-round7.log`74文件603项通过，耗时745.54s，句柄91892终态exit0，不再poll或当作仍运行。本次收集开始时源码为e38b89d（业务同fe59bce），不包含随后准备的角色注销复现测试；不能用于证明新修复8bea162的最新全量通过。
