@@ -1,5 +1,12 @@
 # Codex 产品收口活动断点
 
+## 当前断点（2026-10-12 02:00，优先于下文）
+
+- 当前源码已推送GitHub独立分支codex/product-closeout，未修改或合并main；[草稿PR #19](https://github.com/yottermanzione-ship-it/weiban/pull/19)已建立并附着此任务，OPEN/draft，建立时head ccde929a0737376a8bea92a334db584663b1882e、base main。描述区分业务基线614项与后续评测包13项，完整19类和实际模型/设备/独立验收仍明确未完成。此PR作为持续接管检查点，不是产品完工请求。
+- 首次push CI run38161611453/check失败，直接job日志github-check-job-round2.log证实停止在pnpm format:check：custom-characters.test.ts和web/features/media.tsx两处Prettier换行。不算业务测试失败（尚未进入测试）。本机之前只检查本轮5个文件，未覆盖这两处；现只修格式，无逻辑或断言改变，final-format-full-round9.log全仓格式终态exit0。运行中的run整体日志gh暂不可读，改取已失败job日志并清理ANSI后诊断，未重新触发旧job或关闭检查。
+- 02:00观测push run安卓构建与检查SUCCESS，PR run38161811798安卓job仍IN_PROGRESS；两轮check都FAILURE，修正尚待推送后的新CI，不登记CI绿。本机最新完整614/网页26/后台8/安卓123/类型lint生成证据仍以01:52明确源码范围为准；纯格式不要求重跑同业务全量。正式本机仍ba4b76b实际镜像，上游0条，已成功升级，未因草稿PR变更或重装。
+- 后续先推送格式及登记，观察新CI具体失败；同时继续不依赖配置的完整考题和执行证据工作，优先真人/儿童。没有发送Claude会话消息、没有创建独立用户线程或代理、没有合并。目标活动，未完工、暂停或阻塞。
+
 ## 当前断点（2026-10-12 01:52，优先于下文）
 
 - 上轮有业务修复/19项验证/34项浏览器与模型接入文档进展；本轮继续观察原全量句柄44600，真实终态exit0：full-tests-round8.log **76文件614项通过**，883.38s，开始01:24:53。运行时固定5c8fd5a，收集时包含后来14f0ee9提交的记忆测试上限修正；当前新评测包不在该全量证据内，不能把614用于新增考题质量通过。全仓final-typecheck-round8.log、final-lint-round8.log及final-generated-round8.log通过；契约3.1、888定义/323接口/1201 Kotlin定义一致，源生成未引入漂移。
