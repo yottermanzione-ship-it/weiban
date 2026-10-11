@@ -1,5 +1,16 @@
 # Codex 产品收口活动断点
 
+## 当前断点（2026-10-12 01:52，优先于下文）
+
+- 上轮有业务修复/19项验证/34项浏览器与模型接入文档进展；本轮继续观察原全量句柄44600，真实终态exit0：full-tests-round8.log **76文件614项通过**，883.38s，开始01:24:53。运行时固定5c8fd5a，收集时包含后来14f0ee9提交的记忆测试上限修正；当前新评测包不在该全量证据内，不能把614用于新增考题质量通过。全仓final-typecheck-round8.log、final-lint-round8.log及final-generated-round8.log通过；契约3.1、888定义/323接口/1201 Kotlin定义一致，源生成未引入漂移。
+- 当前源码**ba4b76be5918183485cc89a61a6cd2088a34fdeb**新增eval-plan 3.1安全关怀32题，登记合计116题/8个suite，版本2026-10-12.1。29号夸张作业抱怨单列非硬性过度反应对照；20号即时危险只允许110/120求助渠道。保留儿童/真人、熟悉度、群聊/通话、成人暂停与已触发小巧思前置设置，单题需必需评审项逐项真值及运行时真值与独立日志引用；明确失败不被高分覆盖，缺证据待评审。仅验证引用存在，不核实文件真伪或独立评审身份。判分器和登记最新3文件13项通过(safety-evals-round2.log)，类型safety-evals-typecheck-final.log、全仓safety-evals-lint-round1.log、最终局部safety-evals-eslint-final.log通过。fixture回答/评分/日志引用只证明工程状态分支，不是模型质量。完整19类考题和实际执行器仍未完成；后续优先真人/儿童及各组数量/运行前置条件，不以新32题替代完整要求。
+- 最新安卓内容（最后业务变更7365975，随后Android源未改）在容器新目录/work/android-final真实重建并运行全部testDebugUnitTest，句柄55475已exit0：android-linux-final-round6.log BUILD SUCCESSFUL 5m52s，250任务实际执行。 fresh XML31套件**123项、零失败/错误/跳过**，保存于C:\wb-dev\closeout-logs\android-linux-final-round6-results，tar.gz同名；原121项旧结果不冒充本轮123项。Linux日志有image decoder unimplemented警告，但XML全部零失败；这些是隔离环境单元/Robolectric/受控HTTP测试，不代表手机设备、真实厂商推送或图片主观品质验收。旧Windows APK/ktlint/detekt对应同一未改Android源码，仍需真实设备。
+- 升级前重新执行现有age加密备份成功，local-pre-upgrade-backup-round3.log，目录C:\wb-local\backups\20261012-014557-7041c1a89b2643fea220999cc32a2faf；仅加密数据库/媒体/清单，原KEK和age身份保持分开，应用finally自动恢复，后续双端database+crypto健康实查通过。离线/异机保管尚未完成，不因本轮备份记完成。
+- 正式本机已从旧736镜像升级到源码ba4b76b，local-upgrade-round8.log原句柄33930终态exit0。app镜像**sha256:4e1c868ca7155edc11c90cbb5114def50cd575c863c8789cf0116e11e4e384e7**，edge仍sha256:8d254f5d9dc5b488d8928049884a01ddbbf5c51ddfc5984e410f008b88e7b3ef（前端内容无新增业务变化）。实际容器dist/main.js检查presetRow及锁内persona版本分配均存在；最初误按未打包modules路径读文件失败，不算部署故障。app/postgres/caddy健康、迁移exit0；仅127.0.0.1:8080-8081，原账号/卷/密钥保留，无测试seed写入生产。
+- local-upgrade-smoke-round8.log双端健康/实际登录/刷新会话/安全上下文通过，0页面异常。local-model-config-ready-round4.log实际请求GET上游列表，**upstreamCount=0**，配置页/字段/密码框/刷新通过、0异常；真实供应商确未配置。旧ready脚本仅硬编码not_configured不作为该事实证明，round3误捕/upstreams HTML后加/api/过滤，round4才是实际列表证据。用户选择在后台自行录入，接入步骤在local-deploy，未要求聊天发密钥。后台是否可达不等于AI可用。
+- C:\wb-local\deployment-version.txt原内容混合旧行式和追加JSON，已另存deployment-history\pre-20261012-0151-version.txt，并改为唯一当前JSON：sourceCommit/image IDs/verifiedAt和真实配置状态。共享目录实查main，未修改；开发分支codex/product-closeout。当前运行/检查句柄均已终态，不再poll或复启。
+- 后续：继续完整19类考题及运行证据/执行路径，模型由用户后台配置后实际连接/聊天/费用与固定独立评审，契约映射剩余条目逐项审计；真实设备、厂商推送、离线/异机保管、独立审查分别登记。当前目标活动，全部开发自测，未完工或暂停；无重复阻塞，仍有不依赖外部资源的开发工作。
+
 ## 当前断点（2026-10-12 01:32，优先于下文）
 
 - 总经理无配置文件，允许后台自行接入或提供URL/API Key；已选择后台自行接入，不要求在聊天发送密钥。正式本机上游/模型/价格页实际登录、字段、密码框空值及刷新会话检查通过，零页面异常（local-model-config-ready-round1.log），未创建假供应商或写入真实密钥。open_in_codex请求打开localhost:8081/upstreams返回queued，不冒称已显示。docs/ops/local-deploy.md新增接入步骤：上游测试保存→同一模型键发布价格→目录选择实际模型ID/默认聊天后台/启用→实际聊天及用量验证。真实供应商仍未配置。
