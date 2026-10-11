@@ -128,13 +128,9 @@ export class CustomCharacterService {
     const id = newId();
     let actualId = id;
     const now = this.clock.now();
-    const sealed = await this.crypto.seal(
-      userId,
-      `character:${id}:draft:1`,
-      JSON.stringify(payload),
-    );
-
     await this.database.transaction(async (tx) => {
+      if (!trial && (await this.accounts.getAccountStatus(userId, tx)) !== 'active')
+        throw new AppError('unauthenticated', '账号已失效');
       if (trial) {
         await tx.query(
           "SELECT pg_advisory_xact_lock(hashtextextended('ai_runtime:user:' || $1,0))",
@@ -170,6 +166,12 @@ export class CustomCharacterService {
           }
         }
       }
+      const sealed = await this.crypto.seal(
+        userId,
+        `character:${id}:draft:1`,
+        JSON.stringify(payload),
+        tx,
+      );
       await tx.db.insert(characters).values({
         id,
         kind: 'custom',
@@ -349,13 +351,15 @@ export class CustomCharacterService {
     // childFeaturesDetected only ever increases
     const detected = childFeaturesIn(textsToCheck(merged)) || current.childFeaturesDetected;
     const revision = current.revision + 1;
-    const sealed = await this.crypto.seal(
-      userId,
-      `character:${characterId}:draft:${revision}`,
-      JSON.stringify(merged),
-    );
-
     await this.database.transaction(async (tx) => {
+      if ((await this.accounts.getAccountStatus(userId, tx)) !== 'active')
+        throw new AppError('unauthenticated', '账号已失效');
+      const sealed = await this.crypto.seal(
+        userId,
+        `character:${characterId}:draft:${revision}`,
+        JSON.stringify(merged),
+        tx,
+      );
       const [row] = await tx.db
         .update(characters)
         .set({
