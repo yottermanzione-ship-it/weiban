@@ -1,5 +1,17 @@
 # Codex 产品收口活动断点
 
+## 当前断点（2026-10-12 09:15，优先于下文）
+
+- 本轮为实际进展：续接60b82f4、读取完整CI及失败XML，新增共享材料、修复安卓测试资源顺序并把关怀识别更新送达本机。当前源码**20712ff0b4a47161f7dd7a8ba1f2007e1516fda6**，分支codex/product-closeout。共享main未修改，PR #19保持draft，不合并。
+- 60b82f4的PR run38187714439实际success，日志care-ci-green-60b82f4-clean.log：**81文件637项通过、0跳过**（434.28s）、网页26/后台8、生产镜像/迁移/双域HTTP/加密备份空卷恢复和非空拒绝通过；同源码push run38187711153失败在安卓，check本身success，不能笼统称两轮都绿。该CI不自动覆盖本轮68ad/207新增材料和测试调整。
+- 评测源码**68ad343510efddd805b1c180524976d0879e4e52**：新增3.3共享12场景，总163题/11套，版本2026-10-12.3。crossCharacter只用于源角色真实状态布置，目标memories/history空；分别布置关系、共享开关、仅源可见、健康/成人范围、群来源及改隐私后再读取。修正旧L4-S05把“未注入”秘密写入模拟目标上下文、G04/G05把私聊/成人种子写入群上下文的材料错误；改为源事实及必要运行检查，题编号不删，不把上下文隔离等同模型不复述。cross-character-evals-round1.log6文件24项、typecheck/eslint/build/format各round1通过，CLI再次实际5分支通过(cross-character-cli-round1.log)；fixture-only，不是实际共享链或质量结果。完整19类/执行器/受控角色卡仍待完成。
+- 原push安卓失败有实际XML：ChatScreenTest.externalConversationAndStateRestoreKeepTabsHiddenUntilExplicitBack的SessionRepository.cached在连接池已关闭后执行（care-ci-android-push.log、care-ci-android-failed-artifacts）。源@After比Compose规则清理早关Room。本轮以JUnit ExternalResource外包Compose规则，先退出Composition，再detach/cancelAndJoin后台scope并关闭DB/服务器；setup失败用initialized保护。**20712ff只改两个测试fixture，不改安卓业务、不删断言/跳过/吞异常**。
+- 验证历程保留：chat-teardown-round1因隔离目录未带根.editorconfig而报告原有wildcard；复制同一根规则到/work/.editorconfig后修正环境，没有改仓库lint。round2完整模块有ChatInformationTest wrong-thread/SlotTable失败（chat-info-failed-round2.xml）。尝试两类测试StandardTestDispatcher及直接测试依赖，round3卡在semantics遍历，线程快照chat-teardown-round3-threads.txt后最终OOM自行exit1，终止请求PID已不存在，不是成功终止或通过。依据[Compose官方effectContext说明](https://developer.android.com/reference/kotlin/androidx/compose/ui/test/AndroidComposeUiTestEnvironment)的实验未在当前BOM2025.10通过；已全部撤回，当前无新依赖/版本/调度器配置。不因实验失败提高堆或弱化断言。
+- 保留默认调度器、只调整资源顺序后round4两类6项通过，ktlintFormat/Check通过。Gradle --rerun确实重新执行同两类三轮，各37/38/38s，日志容器/work/logs/chat-teardown-repeat-{1,2,3}.log，句柄35919exit0。随后chat-teardown-full-round5.log完整聊天**8套件24项、0失败/错误/跳过**，1m18s，detekt通过；fresh XML保存chat-teardown-final-results及tar.gz。只是当前fixture局部验证，不能沿用旧123项为新整体安卓通过；下一次完整CI待新push。
+- 升级前age备份care-pre-upgrade-backup-round1.log实际成功，目录C:\wb-local\backups\20261012-090847-cb8de5774ed44be99feadf10daf53803，原KEK/身份仍分别保管。原服务自动恢复，无秘密输出。care-local-upgrade-round1.log句柄96126exit0，本机从ba4升级到**20712ff**，app镜像sha256:cb474600744841f1ec5edc9e473158fd223c03f5bd1a815495ac7d7334f21947；edge仍8d254f5d（前端无业务变更），迁移exit0，三服务健康，仅回环8080/8081，原账号/卷/密钥保留。Docker上下文排除apps/android，构建开始时仓库干净。
+- care-local-smoke-round1.log实际双端登录/刷新/健康/安全上下文通过，0页面异常；care-local-model-ready-round1.log实际列表0条，真实供应商仍未配置。容器dist/main.js highRisk函数块实查NFKC和拼音规则均存在，关怀更新已送达，不再称未部署；没有向生产创建测试角色/消息。部署记录已更新source20712ff/实际镜像ID和验证状态，旧JSON另存deployment-history/pre-care-20261012-version.txt。
+- 当前所有本机句柄均已终态，不重启旧进程；新源码207和资料68ad须连登记推送，更新PR/观察新CI。目标活动，未完工/暂停/阻塞。继续完整19类材料/真实执行路径、契约增量逐条完成审计；用户仍选择后台自行配置模型，之后才能实际供应商/费用/固定独立评审。设备/厂商推送、离线或异机保管、另一位独立审查分别未完成，不能以本轮测试代替。
+
 ## 当前断点（2026-10-12 08:17，优先于下文）
 
 - 本轮以实际工作区续接89863e7，前轮草稿PR和151题/CLI属于进展。PR run38186248665、push run38186246324已completed/success（89863e770e2a686f518bd2455fdf8bf7d4d58265），不是当前新增修复的CI结果。共享main未切分支或写入；当前开发源检查点**901c79611bdfad83785e72ca5db41b8571adff6e**。
