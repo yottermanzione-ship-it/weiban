@@ -13,7 +13,10 @@
 
 ### 本机 Docker 部署
 
-（部署后补记）
+- 回滚标签：`weiban-app:rollback-81349f5`、`weiban-edge:rollback-81349f5`。
+- 升级前 age 加密备份：`C:\wb-local\backups\20261012-233242-a9dd3359330f47d986af18472a938351`（需带 `-AgeExecutable C:\wb-tools\age-v1.3.2\age\age.exe`）。
+- 用 `deploy/local/Start-Weiban.ps1` 从 `C:\wb-dev\wb-int`（local/trunk 314ca3e）构建并升级；无新迁移。应用镜像 `sha256:22c7a8aa…`。`C:\wb-local\deployment-version.txt` 已更新，旧记录另存 `deployment-history\pre-local-model-314ca3e-20261012.json`。
+- 容器内 `node dist/setup-local-model.js --probe`：价目表 `local-mimo-v1` 发布（原无生效版本，共 3 条价格）；模型 `xiaomi/mimo-v2.6-flash` 登记并启用；普通用户只有 1 个：`lomjy3` +50 元；真实调用成功（约 6 秒，输入 14 / 输出 125 token，扣 1028 微元≈0.001 元），模型回复正常中文自我介绍。再运行一次：价目表跳过、目录原样更新、余额流水 ID 相同（未重复加）。两端 `/health` 200。未创建账号，未打印密钥。
 
 ## 改了哪些文件
 
@@ -27,7 +30,7 @@
 
 - MiMo 价格为暂定价，需拿到官方价后在管理后台新建价目表版本。
 - 模型未做人设评测，直接设为默认是本机开聊的临时做法。
-- 未写测试。
+- 未写测试；未在浏览器里实际和角色聊一轮（网关链路已真实调用验证，总经理可直接在网页上聊）。
 
 ## 需要总经理决定的事
 
