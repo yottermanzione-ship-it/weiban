@@ -9,7 +9,8 @@ export interface EvalCase {
     | 'safety_care'
     | 'real_person_boundary'
     | 'child_protection'
-    | 'cross_character_sharing';
+    | 'cross_character_sharing'
+    | 'time_awareness';
   prdRefs: string[];
   setup: {
     character: string;
@@ -22,6 +23,9 @@ export interface EvalCase {
     channel?: 'private_chat' | 'group' | 'voice_call';
     quirkAlreadyActive?: 'read_ignore' | null;
     time?: string;
+    /** 用户实际时区与消息时间须由执行器布置，不能只写进提示词。 */
+    timeZone?: string;
+    recentUserMessageTimes?: readonly string[];
     holidayName?: string;
     supplementalSettings?: string;
     /** 执行器须真实创建待审核记录，不得写为已审核资料。 */
