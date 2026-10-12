@@ -93,16 +93,32 @@ const COMMON_PASSWORDS = new Set([
   '1qaz2wsx3edc',
   'woaini1314',
   'woaini520',
+  '12345678',
+  '123456789',
+  '87654321',
+  '11111111',
+  '88888888',
+  '00000000',
+  'aaaaaaaa',
+  'password',
+  'qwertyui',
+  'qwerty123',
+  'abcd1234',
+  'abc12345',
+  'a1234567',
+  'iloveyou',
+  '1qaz2wsx',
+  'woaini520520',
 ]);
 
 /**
- * 契约已保证长度 10–128；这里再拦住明显弱的密码（返回 password_too_weak）：
- * 包含用户名、不同字符少于 5 个、常见弱密码。
+ * 契约已保证长度 8–128；这里再拦住明显弱的密码（返回 password_too_weak）：
+ * 包含用户名、常见弱密码。
+ * 2026-10-12 总经理调整：最短由 10 位改为 8 位，去掉「至少 5 个不同字符」这条。
  */
 export function passwordWeakness(password: string, username: string): string | null {
   const lower = password.toLowerCase();
   if (lower.includes(username.toLowerCase())) return '密码不能包含用户名';
-  if (new Set(password).size < 5) return '密码太简单：至少要有 5 个不同的字符';
   if (COMMON_PASSWORDS.has(lower)) return '密码太常见，请换一个';
   return null;
 }

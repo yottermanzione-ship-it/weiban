@@ -26,7 +26,8 @@ export const Username = z
   .string()
   .regex(/^[A-Za-z0-9_]{4,32}$/, '用户名为 4–32 位字母、数字或下划线');
 
-export const Password = z.string().min(10).max(128);
+/** 密码 8–128 位（2026-10-12 总经理调整：原最短 10 位）。 */
+export const Password = z.string().min(8).max(128);
 
 export const UserRole = z.enum(['user', 'admin']);
 export type UserRole = z.infer<typeof UserRole>;
@@ -62,7 +63,11 @@ export type AuthResponse = z.infer<typeof AuthResponse>;
 export const RegisterRequest = z.object({
   username: Username,
   password: Password,
-  inviteCode: z.string().min(6).max(64),
+  /**
+   * 选填（2026-10-12 总经理调整）：不填也能注册，但没有注册赠送余额；
+   * 填了就校验，无效报 invite_invalid。没填时省略该字段，不要传空字符串。
+   */
+  inviteCode: z.string().min(6).max(64).optional(),
   device: DeviceInfo,
 });
 
@@ -165,7 +170,8 @@ export const IdentityEndpoints = {
     auth: 'none',
     body: RegisterRequest,
     response: AuthResponse,
-    summary: '邀请码注册（ACC-01）。错误：invite_invalid、username_taken、password_too_weak',
+    summary:
+      '注册（ACC-01），邀请码选填。错误：invite_invalid（填了但无效）、username_taken、password_too_weak',
   }),
   login: defineEndpoint({
     method: 'POST',

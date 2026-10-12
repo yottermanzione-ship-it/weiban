@@ -119,18 +119,18 @@ function ChangePasswordForm({ onDone }: { onDone: () => void }) {
         <input type="password" name="oldPassword" required autoComplete="current-password" />
       </label>
       <label>
-        新密码（至少 10 位）
+        新密码（至少 8 位）
         <input
           type="password"
           name="newPassword"
-          minLength={10}
+          minLength={8}
           required
           autoComplete="new-password"
         />
       </label>
       <label>
         确认新密码
-        <input type="password" name="confirm" minLength={10} required autoComplete="new-password" />
+        <input type="password" name="confirm" minLength={8} required autoComplete="new-password" />
       </label>
       {error && (
         <p role="alert" className="error">

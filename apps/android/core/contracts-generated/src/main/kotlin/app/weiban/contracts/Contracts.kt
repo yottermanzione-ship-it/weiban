@@ -7118,7 +7118,7 @@ typealias RegisterPushDeviceRequestInput = JsonElement
 data class RegisterRequest(
     @SerialName("username") val `username`: Username,
     @SerialName("password") val `password`: Password,
-    @SerialName("inviteCode") val `inviteCode`: String,
+    @SerialName("inviteCode") val `inviteCode`: String? = null,
     @SerialName("device") val `device`: DeviceInfo,
 )
 
@@ -7126,7 +7126,7 @@ data class RegisterRequest(
 data class RegisterRequestInput(
     @SerialName("username") val `username`: Username,
     @SerialName("password") val `password`: Password,
-    @SerialName("inviteCode") val `inviteCode`: String,
+    @SerialName("inviteCode") val `inviteCode`: String? = null,
     @SerialName("device") val `device`: DeviceInfoInput,
 )
 

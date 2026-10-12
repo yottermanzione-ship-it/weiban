@@ -15,6 +15,8 @@ export function AuthPage() {
     setPending(true);
     setError('');
     const data = new FormData(event.currentTarget);
+    // 邀请码选填（2026-10-12）：没填就不带这个字段
+    const inviteCode = String(data.get('inviteCode') ?? '').trim();
     const body = {
       username: String(data.get('username') ?? ''),
       password: String(data.get('password') ?? ''),
@@ -28,7 +30,7 @@ export function AuthPage() {
     try {
       const result = register
         ? await api.call(IdentityEndpoints.register, {
-            body: { ...body, inviteCode: String(data.get('inviteCode') ?? '') },
+            body: { ...body, ...(inviteCode ? { inviteCode } : {}) },
           })
         : await api.call(IdentityEndpoints.login, { body: { ...body, kind: 'app' } });
       await auth.accept(result);
@@ -45,7 +47,7 @@ export function AuthPage() {
       <h1>微伴</h1>
       <p className="subtitle">把爱豆加进你的好友列表</p>
       <form onSubmit={(event) => void submit(event)} className="panel stack">
-        <h2>{register ? '邀请码注册' : '登录'}</h2>
+        <h2>{register ? '注册' : '登录'}</h2>
         <label>
           微伴号
           <input
@@ -64,16 +66,22 @@ export function AuthPage() {
             name="password"
             type="password"
             required
-            minLength={10}
+            minLength={8}
             maxLength={128}
             autoComplete={register ? 'new-password' : 'current-password'}
-            placeholder="至少 10 位"
+            placeholder="至少 8 位"
           />
         </label>
         {register && (
           <label>
-            邀请码
-            <input name="inviteCode" autoComplete="off" required minLength={6} maxLength={64} />
+            邀请码（选填）
+            <input
+              name="inviteCode"
+              autoComplete="off"
+              minLength={6}
+              maxLength={64}
+              placeholder="有就填，填了可得注册赠送"
+            />
           </label>
         )}
         {error && (
@@ -92,7 +100,7 @@ export function AuthPage() {
             setError('');
           }}
         >
-          {register ? '已有账号，去登录' : '有邀请码？注册账号'}
+          {register ? '已有账号，去登录' : '没有账号？注册'}
         </button>
       </form>
     </main>

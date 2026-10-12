@@ -42,14 +42,14 @@ private class AuthState(
 
     private fun valid(): Boolean {
         val validUsername = Regex("^[A-Za-z0-9_]{4,32}$").matches(username)
-        val validPassword = password.length in 10..128
-        return validUsername && validPassword && (!registering || invite.isNotBlank())
+        val validPassword = password.length in 8..128
+        return validUsername && validPassword
     }
 
     @Suppress("TooGenericExceptionCaught") // UI handles service/storage failures; cancellation is rethrown.
     fun submit() {
         if (!valid()) {
-            message = "请填写正确的用户名、密码和邀请码"
+            message = "请填写正确的用户名和密码（8–128 位）"
             return
         }
         busy = true
@@ -80,7 +80,7 @@ private class AuthState(
             put("username", username)
             put("password", capturedPassword)
             put("kind", "app")
-            if (registering)put("inviteCode", invite)
+            if (registering && invite.isNotBlank()) put("inviteCode", invite.trim())
             put(
                 "device",
                 buildJsonObject {
@@ -112,7 +112,7 @@ private class AuthState(
             if (registering) {
                 OutlinedTextField(invite, {
                     invite = it
-                }, label = { Text("邀请码") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
+                }, label = { Text("邀请码（选填）") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
             }
             message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Button(onClick = { submit() }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
@@ -130,7 +130,7 @@ private class AuthState(
                 registering = !registering
                 message = null
                 password = ""
-            }, enabled = !busy) { Text(if (registering) "已有账号，去登录" else "有邀请码？创建账号") }
+            }, enabled = !busy) { Text(if (registering) "已有账号，去登录" else "没有账号？创建账号") }
             Spacer(Modifier.weight(1f, fill = false))
         }
     }
@@ -163,7 +163,7 @@ private class AuthState(
                 Text("密码")
             },
             supportingText = {
-                Text("10–128 位")
+                Text("8–128 位")
             },
             singleLine = true,
             enabled = !busy,

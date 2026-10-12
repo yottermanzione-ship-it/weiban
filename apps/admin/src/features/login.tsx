@@ -47,7 +47,7 @@ export function LoginPage({ onLogin }: { onLogin: (auth: AuthResponse) => void }
             required
             type="password"
             autoComplete="current-password"
-            minLength={10}
+            minLength={8}
           />
         </label>
         {error && (
