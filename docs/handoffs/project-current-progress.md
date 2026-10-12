@@ -1,16 +1,16 @@
 # 微伴当前进度
 
-更新：2026-10-12 18:46。快速状态以本文为准，详细历史证据见 T-102、T-103 和活动交接。
+更新：2026-10-12 18:52。快速状态以本文为准，详细历史证据见 T-102、T-103 和活动交接。
 
 | 项目 | 当前状态 |
 |---|---|
 | 本机运行 | http://localhost:8080 用户端；http://localhost:8081 管理后台；新版双端登录/刷新/健康通过 |
-| 已部署业务 | a5c41cc09aaff01fa1f108fc36ae066dd27572f3；部署源码2271bd2d607bcb132932c27a557fe413e66bc7d3，含成人检查及首次配置后恢复 |
-| AI接入 | 15:43实际上游0条；后台URL/密码字段/价格/目录及成人内容检查复选框可用，用户自行填写 |
+| 已部署业务 | f8d5673bde1f41e9e26bd99ef6f9bb9d5668ada9；部署源码2485bc1993064096ec6d27c4f2c961ecb661ecf2，含群聊安全转开及停止接话 |
+| AI接入 | 18:51实际上游0条；后台URL/密码字段/价格/目录及成人内容检查复选框可用，用户自行填写 |
 | 完整PR CI | 38217389396：check成功，87文件665项、网页27/后台8及生产加密恢复通过；安卓失败 |
 | 同源push CI | 38217385274：安卓成功；网页头像主题颜色失败（26通过/1失败），并非全轮通过 |
 | Windows全量 | 87文件665项中664通过/1失败；推送回执2002ms超2000ms目标2ms，未放宽目标 |
-| 当前开发 | 群聊修复f8两轮完整CI成功，待升级本机；新安卓目录快照/750ms延迟用例及完整聊天25项通过，APK已生成 |
+| 当前开发 | 群聊f8两轮完整CI成功且本机升级/实查通过；安卓目录快照2485bc1已推送，新CI待终态，完整聊天25项和APK通过 |
 
 全部为开发自测；项目尚未完成，不等同于独立验收。
 
@@ -18,7 +18,7 @@
 
 - 副本 C:\wb-dev\codex-closeout，分支 codex/product-closeout。续接基线cb285ed36c082218a22832a39f0a7d46fce1f65a。新群聊业务尚未部署；共享main未修改。最新提交SHA通过git及PR19确认，不能把旧CI当新提交完整通过。
 - 首次设置/替换检查默认模型发布事务内 adult_checker_configured 事件，真实事件分发入队恢复任务；同一等待回复计划保留ID并递增retryEpoch。缺配置不发送未经检查内容。专用复核删除safetyPriority，不能继承关怀透支；原白名单保留。最新665项CI覆盖正确空capabilities夹具和新断言。
-- 本机镜像 app sha256:1c857b35e6e9a193698636363eb74cbf8bf0cef116aaf68fd1e6c707db52ac93；edge sha256:bd3b11eb5de19fcf0425b9ea848a447b87aa079acb76fb3de174e388bc0410c7。版本记录 C:\wb-local\deployment-version.txt；旧版本另存deployment-history。升级前加密备份20261012-151746-ccbf4979079540299ae212cf8b58d8bd。
+- 本机镜像 app sha256:1debba53f08f4d89795679396fee28711e8243e86ebe9b4738b50e15e678c5c0；edge sha256:bd3b11eb5de19fcf0425b9ea848a447b87aa079acb76fb3de174e388bc0410c7。版本记录 C:\wb-local\deployment-version.txt；旧a5另存deployment-history/pre-group-deflection-20261012.json。升级前加密备份20261012-184759-5ee1cb8c44444773af1e62b0a5495bae。
 - 升级证据 adult-checker-local-upgrade-round1.log、adult-checker-local-login-round1.log、adult-checker-local-config-round1.log，位于 C:\wb-dev\closeout-logs。原账号、卷、密钥保留；未创建模型/供应商、未调用真实AI。
 - Windows完整回归已终态1447.32s，失败是回执耗时断言，非未收到回执；同断言被waitFor重复等待至超时。Linux CI同用例通过；仍保留本机失败，不算满足全部时延验收。
 - 安卓PR失败XML证实列表宽320/高78、有下一页按钮且请求2条，但无角色子节点，先前补宽不能算全部关闭。另有旧19c联系人打开超时；两类原因仍待验证。当前cleanup修正只是消除代码中确定的关闭顺序/协程生命周期风险，不提前归因为全部超时根因。
@@ -34,6 +34,8 @@
 - 新750ms延迟目录响应用例保持原10秒和assertIsDisplayed，无点击/滚动才显示。首轮ktlint链调用格式失败、未执行测试；修正后的before-round2在原业务代码上1项通过1m8，因此未复现CI，不能宣称确定根因。保存对应XML。
 - 目录列表内容与分页按钮改为在组合时读取同一catalog响应，避免列表构建时再次读取可变holder；仅是降低不同步风险的结构调整，不宣称原数据观察机制必然错误或间歇性已修复。role-catalog-snapshot-full-round1实际BUILD SUCCESSFUL2m50，ktlint/detekt及assembleDebug通过；fresh XML8套25项零失败/错误/跳过。
 - 开发APK C:\wb-dev\closeout-logs\weiban-catalog-response-20261012.apk，SHA256 3A7EFCBC33A9D84C0E49084D61EDB99992E322200E94BD368DF1B1C02BFFDA3C。含目录快照和最新生成资源，未真机安装或证明全部安卓功能验收。
-- 无存活数据库/Gradle测试句柄。下一步提交/推送安卓修改并观察新CI；加密备份后升级已验证f8群聊业务、核对登录/配置/实际代码；再补主动/成人通话及群检查故障恢复。群故障后的自动恢复尚未验证，不把暂不发送当作完整恢复。不要因单轮绿色反复重跑无变化全量。
+- 2485bc1993064096ec6d27c4f2c961ecb661ecf2已提交/推送安卓修改；PR38238558450和push38238552326新CI已启动，待实际终态，不提前记通过。
+- group-deflection-pre-upgrade-backup-round1、local-upgrade-round1、local-login-round1、local-config-round1、local-binary-round1均终态成功：真实双端健康/登录/刷新与配置页无异常，18:51实际上游0条；容器dist/main.js含本次唯一新增stopChain逻辑，结合真实HTTP专项和完整f8 CI确认新代码送达。没有生产注入测试角色或模型、没有实际模型调用。原账号、数据卷、密钥保留。
+- 无存活数据库/Gradle/部署句柄。下一步观察2485新CI；补主动/成人通话及群检查故障恢复，再推进完整材料/执行路径。群故障后的自动恢复尚未验证，不把暂不发送当作完整恢复。安卓新结构调整不证明间歇性根因已确定。不要因单轮绿色反复重跑无变化全量。
 
 仍待完成：上述回归失败定位；群聊/主动/成人通话专项；完整19类AI材料、执行器与真实模型质量/费用；安卓真机及厂商推送；异机离线密钥保管；另一位审查者独立验收。现有287题/18套和模拟判分不证明这些事项完成。

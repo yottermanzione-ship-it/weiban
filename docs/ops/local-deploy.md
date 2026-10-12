@@ -77,4 +77,6 @@ docker compose --project-name weiban-local --env-file C:\wb-local\runtime.env -f
 
 目录用途「成人内容检查（仅 OpenRouter）」用于内部复核。先登记OpenRouter上游和对应价格，再启用检查模型并勾选该用途；调用只接受官方HTTPS OpenRouter路由及有成人资格的角色。该模型可以带adult_content能力，但不能同时作聊天/后台等生成默认。用户仍需另行选择成人生成模型；检查缺配置/故障/不合法JSON时，命中风险的回复等待。首次配置或替换检查默认/路由会入队恢复原等待计划。
 
-本机现为业务a5c41cc09aaff01fa1f108fc36ae066dd27572f3，部署源码2271bd2d607bcb132932c27a557fe413e66bc7d3。升级后真实双端登录/刷新/健康及上游、价格、目录、成人检查复选框通过，15:43实际上游0条。原账号、数据卷、密钥保留；升级前加密备份20261012-151746-ccbf4979079540299ae212cf8b58d8bd。镜像与证据见[当前进度](../handoffs/project-current-progress.md)和仓库外deployment-version.txt。真实模型/费用/质量尚未验证；URL/API Key由用户在后台填写。
+15:43历史部署检查点为业务a5c41cc09aaff01fa1f108fc36ae066dd27572f3，部署源码2271bd2d607bcb132932c27a557fe413e66bc7d3。升级后真实双端登录/刷新/健康及上游、价格、目录、成人检查复选框通过，15:43实际上游0条。原账号、数据卷、密钥保留；升级前加密备份20261012-151746-ccbf4979079540299ae212cf8b58d8bd。镜像与证据见[当前进度](../handoffs/project-current-progress.md)和仓库外deployment-version.txt。真实模型/费用/质量尚未验证；URL/API Key由用户在后台填写。
+
+2026-10-12 18:51已升级群聊安全转开业务f8d5673bde1f41e9e26bd99ef6f9bb9d5668ada9，部署源码2485bc1993064096ec6d27c4f2c961ecb661ecf2。原角色/账号/密钥保留；本机镜像与旧版本历史分别登记deployment-version.txt、deployment-history。升级前加密备份20261012-184759-5ee1cb8c44444773af1e62b0a5495bae；真实双端登录/刷新/健康、配置页面及容器新stopChain代码检查通过，实际上游仍0条。group-deflection-local-*日志在仓库外closeout-logs。群聊拒绝后只发送一条安全转开，不继续接话；检查故障恢复、实际模型效果和设备/独立验收另待验证。
