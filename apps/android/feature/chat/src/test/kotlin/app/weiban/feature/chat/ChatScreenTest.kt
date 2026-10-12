@@ -22,6 +22,8 @@ import kotlinx.serialization.json.*
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.*
 import org.junit.Assert.*
+import org.junit.rules.ExternalResource
+import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -29,7 +31,18 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class ChatScreenTest {
-    @get:Rule val compose = createComposeRule()
+    val compose = createComposeRule()
+
+    // Compose规则先取消并清理LaunchedEffect，之后才关闭它仍会读取的Room。
+    @get:Rule val resources =
+        RuleChain
+            .outerRule(
+                object : ExternalResource() {
+                    override fun after() {
+                        closeResources()
+                    }
+                },
+            ).around(compose)
     private lateinit var server: MockWebServer
     private lateinit var database: LocalDatabase
     private lateinit var repository: SessionRepository
@@ -93,11 +106,13 @@ class ChatScreenTest {
         return api.json.decodeFromJsonElement(ClientSyncState.serializer(), ContractJson.normalize("ClientSyncState", raw))
     }
 
-    @After fun close() {
-        runBlocking { runtime.detach() }
-        scope.cancel()
-        database.close()
-        server.close()
+    private fun closeResources() {
+        runBlocking {
+            if (::runtime.isInitialized) runtime.detach()
+            if (::scope.isInitialized) scope.coroutineContext[Job]?.cancelAndJoin()
+        }
+        if (::database.isInitialized) database.close()
+        if (::server.isInitialized) server.close()
     }
 
     @Test fun actualComposeOfflineSendCommitsRoomBeforeClearingAndSurvivesRestart() {
