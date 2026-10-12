@@ -16,6 +16,8 @@ import kotlinx.serialization.json.*
 import okhttp3.mockwebserver.*
 import org.junit.*
 import org.junit.Assert.*
+import org.junit.rules.ExternalResource
+import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -24,7 +26,17 @@ import java.util.concurrent.ConcurrentLinkedQueue
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class RoleBrowserTest {
-    @get:Rule val compose = createComposeRule()
+    val compose = createComposeRule()
+
+    @get:Rule val resources =
+        RuleChain
+            .outerRule(
+                object : ExternalResource() {
+                    override fun after() {
+                        closeResources()
+                    }
+                },
+            ).around(compose)
     private lateinit var server: MockWebServer
     private lateinit var database: LocalDatabase
     private lateinit var repository: SessionRepository
@@ -80,18 +92,19 @@ class RoleBrowserTest {
                 )
             repository.authenticate(auth)
             repository.saveSync(owner, SyncEngine.freshState().copy(initialized = true))
+            server.dispatcher = responses()
             runtime = ChatRuntime(repository, scope)
             assertTrue(runtime.attach(owner))
-            server.dispatcher = responses()
         }
 
-    @After fun close() =
+    private fun closeResources() {
         runBlocking {
-            runtime.detach()
-            scope.cancel()
-            server.close()
-            database.close()
+            if (::runtime.isInitialized) runtime.detach()
+            scope.coroutineContext[Job]?.cancelAndJoin()
         }
+        if (::database.isInitialized) database.close()
+        if (::server.isInitialized) server.close()
+    }
 
     private fun role(id: String) =
         CharacterProfile(

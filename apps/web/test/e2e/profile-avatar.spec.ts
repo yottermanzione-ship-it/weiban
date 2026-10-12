@@ -5,6 +5,9 @@ test('我和资料页统一64px昵称头像，私有图片失败后保持主题�
   await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+  await page.goto('/settings/general');
+  await page.getByRole('button', { name: '微伴粉', exact: true }).click();
+  await expect(page.getByRole('status')).toHaveText('主题已保存，会同步到其他设备');
   await page.goto('/profile');
   await page.getByLabel('头像', { exact: true }).setInputFiles({
     name: 'self.png',
@@ -31,15 +34,17 @@ test('我和资料页统一64px昵称头像，私有图片失败后保持主题�
   await expect(avatar).toContainText('其他');
   await expect(avatar.locator('img')).toHaveCount(0);
   await page.evaluate(() => {
-    document.documentElement.dataset.theme = 'pink';
     document.documentElement.dataset.scheme = 'dark';
   });
-  expect(
-    await avatar.evaluate((element) => {
-      const style = getComputedStyle(element);
-      return { bg: style.backgroundColor, fg: style.color, radius: style.borderRadius };
-    }),
-  ).toEqual({ bg: 'rgb(226, 221, 224)', fg: 'rgb(31, 26, 29)', radius: '7.68px' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'pink');
+  await expect
+    .poll(() =>
+      avatar.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { bg: style.backgroundColor, fg: style.color, radius: style.borderRadius };
+      }),
+    )
+    .toEqual({ bg: 'rgb(226, 221, 224)', fg: 'rgb(31, 26, 29)', radius: '7.68px' });
   await page.goto('/profile');
   await expect(avatar).toContainText('其他');
   expect(await avatar.evaluate((element) => element.getBoundingClientRect().width)).toBe(64);
