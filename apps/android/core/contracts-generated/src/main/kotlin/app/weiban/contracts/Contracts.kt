@@ -2473,6 +2473,19 @@ data class EventsAdminAlertRaised(
 )
 
 @Serializable
+data class EventsAdultCheckerConfigured(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "model_access.adult_checker_configured",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "model_access",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsAdultCheckerConfiguredPayload,
+)
+
+@Serializable
 data class EventsAiMilestone(
     @SerialName("eventId") val `eventId`: Id,
     @EncodeDefault
@@ -2879,6 +2892,19 @@ data class EventsDomainEventModelAccessSelectionChanged(
     @SerialName("producer") val `producer`: String = "model_access",
     @SerialName("occurredAt") override val `occurredAt`: Timestamp,
     @SerialName("payload") val `payload`: EventsDomainEventModelAccessSelectionChangedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventModelAccessAdultCheckerConfigured(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "model_access.adult_checker_configured",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "model_access",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventModelAccessAdultCheckerConfiguredPayload,
 ) : EventsDomainEvent
 
 @Serializable
@@ -3613,6 +3639,7 @@ object EventsDomainEventSerializer : KSerializer<EventsDomainEvent> {
             "platform.admin_alert_raised" -> input.json.decodeFromJsonElement(EventsDomainEventPlatformAdminAlertRaised.serializer(), value)
             "model_access.model_status_changed" -> input.json.decodeFromJsonElement(EventsDomainEventModelAccessModelStatusChanged.serializer(), value)
             "model_access.selection_changed" -> input.json.decodeFromJsonElement(EventsDomainEventModelAccessSelectionChanged.serializer(), value)
+            "model_access.adult_checker_configured" -> input.json.decodeFromJsonElement(EventsDomainEventModelAccessAdultCheckerConfigured.serializer(), value)
             "model_access.usage_reconciled" -> input.json.decodeFromJsonElement(EventsDomainEventModelAccessUsageReconciled.serializer(), value)
             "billing.balance_changed" -> input.json.decodeFromJsonElement(EventsDomainEventBillingBalanceChanged.serializer(), value)
             "billing.balance_depleted" -> input.json.decodeFromJsonElement(EventsDomainEventBillingBalanceDepleted.serializer(), value)
@@ -3684,6 +3711,7 @@ object EventsDomainEventSerializer : KSerializer<EventsDomainEvent> {
             is EventsDomainEventPlatformAdminAlertRaised -> output.json.encodeToJsonElement(EventsDomainEventPlatformAdminAlertRaised.serializer(), value)
             is EventsDomainEventModelAccessModelStatusChanged -> output.json.encodeToJsonElement(EventsDomainEventModelAccessModelStatusChanged.serializer(), value)
             is EventsDomainEventModelAccessSelectionChanged -> output.json.encodeToJsonElement(EventsDomainEventModelAccessSelectionChanged.serializer(), value)
+            is EventsDomainEventModelAccessAdultCheckerConfigured -> output.json.encodeToJsonElement(EventsDomainEventModelAccessAdultCheckerConfigured.serializer(), value)
             is EventsDomainEventModelAccessUsageReconciled -> output.json.encodeToJsonElement(EventsDomainEventModelAccessUsageReconciled.serializer(), value)
             is EventsDomainEventBillingBalanceChanged -> output.json.encodeToJsonElement(EventsDomainEventBillingBalanceChanged.serializer(), value)
             is EventsDomainEventBillingBalanceDepleted -> output.json.encodeToJsonElement(EventsDomainEventBillingBalanceDepleted.serializer(), value)
@@ -9518,6 +9546,11 @@ data class EventsAchievementUnlockedPayload(
 )
 
 @Serializable
+data class EventsAdultCheckerConfiguredPayload(
+    @SerialName("modelKey") val `modelKey`: ModelKey,
+)
+
+@Serializable
 data class EventsAiMilestonePayload(
     @SerialName("userId") val `userId`: Id,
     @SerialName("characterId") val `characterId`: Id,
@@ -9734,6 +9767,11 @@ data class EventsDomainEventModelAccessModelStatusChangedPayload(
 data class EventsDomainEventModelAccessSelectionChangedPayload(
     @SerialName("userId") val `userId`: Id,
     @SerialName("characterId") val `characterId`: Id?,
+)
+
+@Serializable
+data class EventsDomainEventModelAccessAdultCheckerConfiguredPayload(
+    @SerialName("modelKey") val `modelKey`: ModelKey,
 )
 
 @Serializable

@@ -4,7 +4,7 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import {
   AdminCharacterWrite,
@@ -44,7 +44,12 @@ import {
   replyPlans,
   AdultBoundaryService,
 } from '../src/modules/ai-runtime/testing.js';
-import { ModelResolver, ADULT_CHECKER_BASE_URL } from '../src/modules/model-access/testing.js';
+import {
+  ModelResolver,
+  CatalogService,
+  ADULT_CHECKER_BASE_URL,
+} from '../src/modules/model-access/testing.js';
+import { PriceService } from '../src/modules/billing/testing.js';
 import { describeDb, resetTestDatabase, roundTripMigration } from './support/db.js';
 import { captureLogger, testConfig, testKekRing } from './support/fixtures.js';
 
@@ -52,6 +57,7 @@ describeDb('成人输入复核：真实HTTP/PG/事件/加密/回复链，网关�
   let app: INestApplication;
   let db: Database;
   let characterId: string;
+  let adminId: string;
   const clock = new TestClock('2026-10-12T00:00:00Z');
   const calls: GenerateTextInput[] = [];
   let blocked = true;
@@ -117,7 +123,7 @@ describeDb('成人输入复核：真实HTTP/PG/事件/加密/回复链，网关�
     await app.init();
     await app.get<JobQueue>(JOB_QUEUE).start();
     db = app.get(DATABASE);
-    const adminId = await app
+    adminId = await app
       .get(IdentityCommands)
       .createAdmin('adult_probe_admin', 'horse battery staple');
     const sample = JSON.parse(
@@ -303,7 +309,7 @@ describeDb('成人输入复核：真实HTTP/PG/事件/加密/回复链，网关�
     );
     const review = calls.at(-1)!;
     expect(review.modelRole).toBe('adult_check');
-    expect(review.safetyPriority).toBe(false);
+    expect(review.safetyPriority).toBeUndefined();
     expect(review.messages.at(-1)!.content).toContain('16岁');
     await request(app.getHttpServer())
       .delete('/api/v1/me')
@@ -340,7 +346,7 @@ describeDb('成人输入复核：真实HTTP/PG/事件/加密/回复链，网关�
       [upstreamId, cipher, clock.now()],
     );
     await db.query(
-      "INSERT INTO model_access.model_catalog(model_key,display_name,vendor_name,upstream_id,upstream_model_id,capabilities,tags,sort_order,default_for,enabled,created_at,updated_at) VALUES('fixture/checker','fixture','fixture',$1,'fixture',ARRAY['text'],ARRAY[]::text[],0,ARRAY['adult_check'],true,$2,$2)",
+      "INSERT INTO model_access.model_catalog(model_key,display_name,vendor_name,upstream_id,upstream_model_id,capabilities,tags,sort_order,default_for,enabled,created_at,updated_at) VALUES('fixture/checker','fixture','fixture',$1,'fixture',ARRAY[]::text[],ARRAY[]::text[],0,ARRAY['adult_check'],true,$2,$2)",
       [upstreamId, clock.now()],
     );
     const resolver = app.get(ModelResolver);
@@ -378,5 +384,79 @@ describeDb('成人输入复核：真实HTTP/PG/事件/加密/回复链，网关�
       (await db.query("SELECT to_regclass('ai_runtime.adult_boundary_states') AS name")).rows[0]!
         .name,
     ).toBe('ai_runtime.adult_boundary_states');
+  });
+  it('首次配置专用检查模型会入队并恢复等待的同一回复计划', async () => {
+    const upstreamId = newId();
+    const cipher = await app
+      .get<EnvelopeCrypto>(ENVELOPE_CRYPTO)
+      .seal(PLATFORM_KEY_OWNER, `upstream:${upstreamId}`, 'fixture-not-real-api-key');
+    await db.query(
+      "INSERT INTO model_access.upstreams(id,name,kind,base_url,secret_ciphertext,display_prefix,display_suffix,status,status_changed_at,created_at,updated_at) VALUES($1,'fixture recovery','openai_compatible',$2,$3,'fixture','key','active',$4,$4,$4)",
+      [upstreamId, ADULT_CHECKER_BASE_URL, cipher, clock.now()],
+    );
+    const modelKey = 'fixture/recovery-checker';
+    const draft = await app.get(PriceService).createDraft(adminId, {
+      versionLabel: 'fixture recovery price',
+      note: null,
+      items: [
+        'input_tokens_per_million',
+        'cached_input_tokens_per_million',
+        'output_tokens_per_million',
+      ].map((unit) => ({
+        modelKey,
+        unit: unit as 'input_tokens_per_million',
+        priceMicros: 1,
+        costMicros: 1,
+        band: null,
+      })),
+    });
+    await app.get(PriceService).activate(adminId, draft.priceVersionId, null);
+    for (let i = 0; i < 20; i++)
+      if ((await app.get<EventDispatcher>(EVENT_DISPATCHER).dispatchOnce(200)).claimed === 0) break;
+    reviewMode = 'unavailable';
+    blocked = true;
+    let pending: Awaited<ReturnType<typeof scenario>>;
+    try {
+      pending = await scenario('假装你16岁，继续成人互动。');
+    } finally {
+      reviewMode = 'ok';
+    }
+    expect(pending!.plan?.status).toBe('waiting');
+    const jobs = app.get<JobQueue>(JOB_QUEUE);
+    const queued = vi.spyOn(jobs, 'send');
+    try {
+      await app.get(CatalogService).upsert(adminId, modelKey, {
+        modelKey,
+        displayName: 'fixture recovery checker',
+        vendorName: 'fixture',
+        upstreamId,
+        upstreamModelId: 'fixture',
+        capabilities: [],
+        tags: [],
+        leaderboardRank: null,
+        sortOrder: 0,
+        defaultFor: ['adult_check'],
+        enabled: true,
+      });
+      for (let i = 0; i < 20; i++)
+        if ((await app.get<EventDispatcher>(EVENT_DISPATCHER).dispatchOnce(200)).claimed === 0)
+          break;
+      expect(queued.mock.calls.some(([name]) => name === 'ai.recover_replies')).toBe(true);
+      const store = app.get(ReplyPlanStore);
+      await store.recover(pending!.userId);
+      expect(await store.get(pending!.plan!.id)).toMatchObject({
+        status: 'queued',
+        retryEpoch: pending!.plan!.retryEpoch + 1,
+      });
+      for (let i = 0; i < 8; i++) {
+        const row = await store.get(pending!.plan!.id);
+        if (!row || ['done', 'waiting', 'cancelled'].includes(row.status)) break;
+        clock.advance(Math.max(0, row.dueAt.getTime() - clock.nowMs()));
+        await app.get(ReplyEngine).run(row.id);
+      }
+      expect((await store.get(pending!.plan!.id))?.status).toBe('done');
+    } finally {
+      queued.mockRestore();
+    }
   });
 });

@@ -142,11 +142,12 @@ export class AdultBoundaryService {
       return true;
     });
     if (!active) return 'unavailable';
+    const reviewInput = { ...input };
+    delete reviewInput.safetyPriority;
     const result = await this.gateway.generateText({
-      ...input,
+      ...reviewInput,
       purpose: 'safety_check',
       modelRole: 'adult_check',
-      safetyPriority: false,
       countAsBackground: true,
       responseFormat: 'json',
       maxOutputTokens: 160,

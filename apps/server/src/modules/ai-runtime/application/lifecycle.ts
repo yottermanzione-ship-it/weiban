@@ -736,5 +736,12 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         }
       },
     });
+    this.bus.subscribe({
+      consumer: 'ai.on_adult_checker_configured',
+      eventType: 'model_access.adult_checker_configured',
+      handle: async (_event, tx) => {
+        await this.jobs.send('ai.recover_replies', {}, { tx, retryLimit: 10, retryBackoff: true });
+      },
+    });
   }
 }

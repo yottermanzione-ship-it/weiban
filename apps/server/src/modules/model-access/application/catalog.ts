@@ -231,6 +231,16 @@ export class CatalogService {
           });
         }
       }
+      if (
+        defaultFor.includes('adult_check') &&
+        (!before?.defaultFor.includes('adult_check') ||
+          upstreamChanged ||
+          before.upstreamModelId !== row.upstreamModelId)
+      ) {
+        await this.outbox.publish(tx, 'model_access.adult_checker_configured', 'model_access', {
+          modelKey: row.modelKey,
+        });
+      }
       return toAdminEntry(row);
     });
   }
