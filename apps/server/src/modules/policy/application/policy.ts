@@ -97,6 +97,13 @@ export class PolicyService implements PolicyPort {
       ),
     );
   }
+  /**
+   * 3.1（B7 遗留）：事务内的分类只看角色本身；这位用户应用的预设改版若检出儿童特征，
+   * 按用户视角的运行时分类（getForRuntime）再收紧一次。
+   */
+  private async userRomanceAllowed(input: { userId: string; characterId: string }) {
+    return (await this.getCharacterPolicy(input.userId, input.characterId))?.romanceAllowed ?? true;
+  }
   async checkRelationshipType(
     input: Parameters<PolicyPort['checkRelationshipType']>[0],
     transaction?: Tx,
@@ -114,7 +121,7 @@ export class PolicyService implements PolicyPort {
       );
     const classification = await this.characters.getClassification(input.characterId, transaction);
     const result: PolicyDecision = classification
-      ? decide(classification.derived.romanceAllowed)
+      ? decide(classification.derived.romanceAllowed && (await this.userRomanceAllowed(input)))
       : { allowed: false, reason: 'character_not_found' };
     if (!result.allowed)
       await this.audit.record(
@@ -139,7 +146,9 @@ export class PolicyService implements PolicyPort {
       const c = await this.characters.getClassification(input.characterId, transaction);
       const result: PolicyDecision = !c
         ? { allowed: false, reason: 'character_not_found' }
-        : c.derived.adultModeEligible
+        : c.derived.adultModeEligible &&
+            (await this.getCharacterPolicy(input.userId, input.characterId))?.adultModeEligible !==
+              false
           ? { allowed: true }
           : { allowed: false, reason: 'adult_mode_not_eligible' };
       if (!result.allowed)

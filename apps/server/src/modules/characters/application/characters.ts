@@ -700,9 +700,14 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     const body = await this.decode(row, row.kind === 'preset');
     const card = CharacterCard.safeParse(body.card);
     if (!card.success) return null;
+    // 3.1（B7 遗留）：这位用户应用的预设改版若检出儿童特征，运行时分类按更严处理（不写回预设角色）。
+    const variantChild =
+      row.kind === 'preset' && !row.childFeaturesDetected && this.supplements
+        ? await this.supplements.variantChildFeaturesDetected(userId, row.id)
+        : false;
     return {
       profile: await this.profile(userId, row),
-      classification: this.classify(row),
+      classification: this.classify(variantChild ? { ...row, childFeaturesDetected: true } : row),
       card: card.data,
       personaVersion: row.personaVersion,
       fallbackGreetings: body.fallbackGreetings,

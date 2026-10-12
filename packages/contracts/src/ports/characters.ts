@@ -105,6 +105,11 @@ export interface CharacterPlazaPort {
     variantText: string;
     origin: { workId: string; version: number; authorName: string };
     idempotencyKey: string;
+    /**
+     * 3.1：改版快照的 PlazaPresetVariantSnapshot.childFeaturesDetected（可选，省略视为 false）。
+     * 与预设分类取更严的一边，只存在这位用户的补充设定上，运行时分类按更严处理，不写回预设角色。
+     */
+    childFeaturesDetected?: boolean;
   }): Promise<PortResult<void, 'not_found'>>;
   /** 更新到新版本：替换人设类字段（分类只会更严）。 */
   updateFromSnapshot(input: {

@@ -1072,7 +1072,7 @@ export class PlazaService {
         throw new AppError('conflict', '将替换你现有的补充设定，请确认');
     }
     const r = await this.chars().applyVariant({
-      ...{ childFeaturesDetected: snapshot.childFeaturesDetected === true },
+      childFeaturesDetected: snapshot.childFeaturesDetected === true,
       userId,
       presetCharacterId: snapshot.presetCharacterId,
       variantText: snapshot.variantText,
@@ -1229,7 +1229,7 @@ export class PlazaService {
           throw new AppError('conflict', '你对补充设定的修改会被覆盖，请确认');
       }
       const r = await characters.applyVariant({
-        ...{ childFeaturesDetected: latest.snapshot.childFeaturesDetected === true },
+        childFeaturesDetected: latest.snapshot.childFeaturesDetected === true,
         userId,
         presetCharacterId: latest.snapshot.presetCharacterId,
         variantText: latest.snapshot.variantText,
