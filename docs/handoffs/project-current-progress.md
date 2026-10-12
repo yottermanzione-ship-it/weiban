@@ -34,8 +34,8 @@
 - 新750ms延迟目录响应用例保持原10秒和assertIsDisplayed，无点击/滚动才显示。首轮ktlint链调用格式失败、未执行测试；修正后的before-round2在原业务代码上1项通过1m8，因此未复现CI，不能宣称确定根因。保存对应XML。
 - 目录列表内容与分页按钮改为在组合时读取同一catalog响应，避免列表构建时再次读取可变holder；仅是降低不同步风险的结构调整，不宣称原数据观察机制必然错误或间歇性已修复。role-catalog-snapshot-full-round1实际BUILD SUCCESSFUL2m50，ktlint/detekt及assembleDebug通过；fresh XML8套25项零失败/错误/跳过。
 - 开发APK C:\wb-dev\closeout-logs\weiban-catalog-response-20261012.apk，SHA256 3A7EFCBC33A9D84C0E49084D61EDB99992E322200E94BD368DF1B1C02BFFDA3C。含目录快照和最新生成资源，未真机安装或证明全部安卓功能验收。
-- 2485bc1993064096ec6d27c4f2c961ecb661ecf2已提交/推送安卓修改；PR38238558450和push38238552326新CI已启动，待实际终态，不提前记通过。
+- 2485bc1993064096ec6d27c4f2c961ecb661ecf2已提交/推送安卓修改。push38238552326实际completed/success；PR38238558450实际completed/failure，check成功，安卓失败为actualContactsSearchUsesCanonicalNamesAndPendingCannotOpenChat第281行等待打开回调，25项中24通过，目录首屏/新增延迟用例均通过。日志ci-2485bc1-pr-full.log、ci-2485bc1-android-failed.log及ci-2485bc1-android-artifacts/XML已下载。不能把本次联系人失败误记为目录失败或把两类一起关闭。
 - group-deflection-pre-upgrade-backup-round1、local-upgrade-round1、local-login-round1、local-config-round1、local-binary-round1均终态成功：真实双端健康/登录/刷新与配置页无异常，18:51实际上游0条；容器dist/main.js含本次唯一新增stopChain逻辑，结合真实HTTP专项和完整f8 CI确认新代码送达。没有生产注入测试角色或模型、没有实际模型调用。原账号、数据卷、密钥保留。
-- 无存活数据库/Gradle/部署句柄。下一步观察2485新CI；补主动/成人通话及群检查故障恢复，再推进完整材料/执行路径。群故障后的自动恢复尚未验证，不把暂不发送当作完整恢复。安卓新结构调整不证明间歇性根因已确定。不要因单轮绿色反复重跑无变化全量。
+- 无存活数据库/Gradle/部署句柄。下一步联系人点击失败补点击前/后bounds和语义树诊断，再用实际证据定位。CharacterAction对已有conversationId直接调用onOpen，没有异步等待或loaded禁用；资料、熟悉度内容异步插入导致点击期间布局变化只是待证实线索，不能先断言根因。补主动/成人通话及群检查故障恢复，再推进完整材料/执行路径。群故障后的自动恢复尚未验证。安卓新结构调整不证明全部间歇性根因已确定，不反复重跑无变化全量。
 
 仍待完成：上述回归失败定位；群聊/主动/成人通话专项；完整19类AI材料、执行器与真实模型质量/费用；安卓真机及厂商推送；异机离线密钥保管；另一位审查者独立验收。现有287题/18套和模拟判分不证明这些事项完成。
