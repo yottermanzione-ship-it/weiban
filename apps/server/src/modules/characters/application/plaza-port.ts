@@ -411,8 +411,8 @@ export class CharacterPlazaService
     origin: { workId: string; version: number; authorName: string };
     idempotencyKey: string;
     /**
-     * 3.1（积压 ㉝）：改版快照的 childFeaturesDetected（契约端口签名里没有这个参数，plaza 以展开方式附带；
-     * 已在交接里申请补进 CharacterPlazaPort）。与预设分类取更严的一边，存在这位用户的补充设定上，不写回预设角色。
+     * 3.1（积压 ㉝）：改版快照的 childFeaturesDetected（CharacterPlazaPort 可选字段）。与预设分类取更严的一边，
+     * 记在这位用户的永久标记上（迁移 0083，只增不减），不写回预设角色。
      */
     childFeaturesDetected?: boolean;
   }): Promise<PortResult<void, 'not_found'>> {
@@ -431,6 +431,8 @@ export class CharacterPlazaService
         authorName: clip(input.origin.authorName, 12),
         childFeaturesDetected,
       },
+      // B7 遗留：标记第一次写入 → 按这位用户发分类变化事件，ai-runtime 立即把成人模式切回日常并提示。
+      (tx) => this.characters.userChildClassificationEvent(tx, input.presetCharacterId, input.userId),
     );
     return ok ? { ok: true, value: undefined } : { ok: false, error: 'not_found' };
   }

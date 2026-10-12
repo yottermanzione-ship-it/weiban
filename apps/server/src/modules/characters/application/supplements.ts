@@ -28,6 +28,7 @@ import {
   parseContract,
   type Clock,
   type Database,
+  type DbTx,
   type EnvelopeCrypto,
   type Outbox,
 } from '../../../platform/index.js';
@@ -35,6 +36,7 @@ import {
   characters,
   personaUpdateSeen,
   personaVersions,
+  userChildFeatureFlags,
   userSupplements,
 } from '../infra/db/schema.js';
 
@@ -135,6 +137,8 @@ export class CharacterSupplementService
       /** 3.1：改版快照检出儿童特征（与预设分类取更严），只对这位用户生效。 */
       childFeaturesDetected?: boolean;
     },
+    /** 儿童特征永久标记第一次写入时在同一事务里调用（发分类变化事件，让成人模式立即切回日常）。 */
+    onChildFlagAdded?: (tx: DbTx) => Promise<void>,
   ): Promise<boolean> {
     try {
       await this.presetOrThrow(characterId);
@@ -160,6 +164,15 @@ export class CharacterSupplementService
           target: [userSupplements.userId, userSupplements.characterId],
           set: { textCiphertext: sealed, conflicts: [], plazaSource, updatedAt: now },
         });
+      if (plazaSource.childFeaturesDetected === true) {
+        // 只增不减：独立表，用户改写 / 删除补充设定都不清除。
+        const added = await tx.db
+          .insert(userChildFeatureFlags)
+          .values({ userId, characterId, detectedAt: now })
+          .onConflictDoNothing()
+          .returning({ id: userChildFeatureFlags.characterId });
+        if (added.length && onChildFlagAdded) await onChildFlagAdded(tx);
+      }
       await this.outbox.publish(tx, 'characters.supplement_changed', 'characters', {
         userId,
         characterId,
@@ -229,14 +242,21 @@ export class CharacterSupplementService
     });
   }
 
-  /** 3.1（积压 ㉝）：这位用户应用的预设改版是否检出儿童特征（运行时按更严处理）。 */
+  /**
+   * 3.1（积压 ㉝ / B7 遗留）：这位用户是否套用过检出儿童特征的预设改版（运行时按更严处理）。
+   * 读独立的永久标记表（迁移 0083），一旦检出永不放松。
+   */
   async variantChildFeaturesDetected(userId: string, characterId: string): Promise<boolean> {
     const [row] = await this.db.db
-      .select({ plazaSource: userSupplements.plazaSource })
-      .from(userSupplements)
-      .where(and(eq(userSupplements.userId, userId), eq(userSupplements.characterId, characterId)));
-    const source = row?.plazaSource as { childFeaturesDetected?: boolean } | null | undefined;
-    return source?.childFeaturesDetected === true;
+      .select({ id: userChildFeatureFlags.characterId })
+      .from(userChildFeatureFlags)
+      .where(
+        and(
+          eq(userChildFeatureFlags.userId, userId),
+          eq(userChildFeatureFlags.characterId, characterId),
+        ),
+      );
+    return !!row;
   }
 
   // ---------- 资料已更新 ----------
@@ -316,7 +336,11 @@ export class CharacterSupplementService
       .delete(personaUpdateSeen)
       .where(eq(personaUpdateSeen.userId, userId))
       .returning({ id: personaUpdateSeen.characterId });
-    return a.length + b.length;
+    const c = await this.db.db
+      .delete(userChildFeatureFlags)
+      .where(eq(userChildFeatureFlags.userId, userId))
+      .returning({ id: userChildFeatureFlags.characterId });
+    return a.length + b.length + c.length;
   }
 
   async countUserData(userId: string): Promise<number> {
@@ -328,7 +352,11 @@ export class CharacterSupplementService
       .select({ id: personaUpdateSeen.characterId })
       .from(personaUpdateSeen)
       .where(eq(personaUpdateSeen.userId, userId));
-    return a.length + b.length;
+    const c = await this.db.db
+      .select({ id: userChildFeatureFlags.characterId })
+      .from(userChildFeatureFlags)
+      .where(eq(userChildFeatureFlags.userId, userId));
+    return a.length + b.length + c.length;
   }
 
   private async presetOrThrow(characterId: string) {

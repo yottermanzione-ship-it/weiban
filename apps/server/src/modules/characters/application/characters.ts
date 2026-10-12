@@ -371,6 +371,16 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     });
     return this.admin(adminId, await this.row(id));
   }
+  /**
+   * B7 遗留：某位用户套用了检出儿童特征的预设改版（永久标记第一次写入）。
+   * 按「检出儿童特征」重算分类，发 characters.character_classification_changed，ownerUserId 填这位用户，
+   * 只影响他与该角色的私聊 / 群（ai-runtime 按 ownerUserId 过滤）。预设本身已检出时无变化，不发。
+   */
+  async userChildClassificationEvent(tx: DbTx, id: string, userId: string): Promise<void> {
+    const [row] = await tx.db.select().from(characters).where(eq(characters.id, id));
+    if (!row || row.childFeaturesDetected) return;
+    await this.classificationEvent(tx, { ...row, childFeaturesDetected: true, ownerId: userId });
+  }
   async classificationEvent(tx: DbTx, row: Row): Promise<void> {
     const c = this.classify(row);
     await this.outbox.publish(tx, 'characters.character_classification_changed', 'characters', {

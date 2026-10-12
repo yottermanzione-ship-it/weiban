@@ -27,6 +27,7 @@
 | 0075 | AI · ai-runtime | 每日一问「角色自述」一致性存档（每用户 × 角色 × 话题一行：话题键、角色说法、来源 answerId；加密同记忆），并入 ai-runtime 删除清单（T-096 遗留 3） |
 | 0076 | AI · ai-runtime | 纪念日寄信待寄队列（余额不足 / 模型故障时保留，恢复后补寄；过期规则同 PRD「信不丢」）（T-096 遗留 2） |
 | 0077–0079 | 预留 | 3.1 实现中不够用时向总负责人申请 |
+| 0083 | 后端 · characters | `user_child_feature_flags`（用户 × 预设角色的儿童特征永久标记，只增不减；从 `user_supplements.plaza_source` 回填），并入 characters 删除清单（B7 遗留，2026-10-12 补登） |
 
 ## 3. 后端批（backend-lead）
 
@@ -110,3 +111,9 @@
 ## 2026-10-12 成人复核配套
 
 增加内部ModelRole adult_check与管理员目录defaultFor adult_check；用户选择接口仍仅chat/background/adult，不提供任意角色/模型覆盖。检查调用仅safety_check并带角色，专用平台默认不回落用户后台，限定HTTPS OpenRouter，角色必须有成人资格。普通真人/儿童日常检查不得借用此成人角色路径。无审查模型只能设该专用检查默认，生成默认继续禁止；0080约束和0081加密状态迁移含down并已实测回滚恢复。现有生成物保持3.1并同步JSON资源，未新增公共HTTP接口。功能尚待全量、多渠道和真实模型验收，开发自测见最新交接。
+
+## 2026-10-12 B7 遗留补登（后端负责人代架构登记）
+
+- 契约字段：`CharacterPlazaPort.applyVariant` 可选入参 `childFeaturesDetected`（省略为 false；纯内部端口，无 JSON Schema / OpenAPI / Kotlin 变化）。plaza 应用 / 更新预设改版时传改版快照的值；characters 与预设分类取更严。
+- 存储：独立表 `characters.user_child_feature_flags`（迁移 0083），一旦写入不随补充设定改写 / 删除清除；`getForRuntime` → policy 资格判断读它。
+- 事件语义补充：标记第一次写入时发 `characters.character_classification_changed`，预设角色也带 `ownerUserId`（= 这位用户），ai-runtime 按既有逻辑只把这位用户与该角色的成人 / 恋爱模式（私聊与群）切回日常并写系统提示。字段结构不变，只扩展 `ownerUserId` 的含义（`events.ts` 注释已补）。

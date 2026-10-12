@@ -48,3 +48,7 @@ T-079 / T-089 为赶进度，在 characters 里定义了只给 ai-runtime 用的
 - 组合根漏绑可选端口时没有报错，只会一直走兜底；`contracts-3.1-map.md` 列出了每个要绑的令牌，Codex 验收时按表核对。
 - 新增的可选响应字段让客户端多了「不带时怎么办」的分支（注释里都写了默认行为）。
 - 3.0.2 曾给非容错的响应枚举 `HolidayDateType` 加取值 `lunar_annual`，按版本规则本应升主版本；它只出现在管理后台接口，管理后台与服务器同仓库同时部署，不存在旧版本客户端，按 1.1 的先例记为例外，不升主版本。
+
+## 补记（2026-10-12，B7 遗留）
+
+`CharacterPlazaPort.applyVariant` 增加可选 `childFeaturesDetected`，属结论 3「先写后登」的情形，按 3.1 向后兼容规则登记。儿童特征按用户永久记录（迁移 0083），并借用 `characters.character_classification_changed` 的 `ownerUserId` 把影响范围限定到这位用户。明细见 `contracts-3.1-map.md` 末节。

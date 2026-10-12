@@ -270,6 +270,7 @@ export const CharacterUnpublished = event(
 /**
  * 分类或推导结果变化（SAFE-03 第 5 条）：ai-runtime 必须把资格变为「否」的成人模式会话强制切回日常。
  * ownerUserId：自定义角色的创建者；预设角色为 null（影响所有添加了它的用户）。
+ * 3.1（B7 遗留）：用户套用检出儿童特征的预设改版时，预设角色也会带 ownerUserId（= 这位用户），只影响这位用户。
  */
 export const CharacterClassificationChanged = event(
   'characters.character_classification_changed',

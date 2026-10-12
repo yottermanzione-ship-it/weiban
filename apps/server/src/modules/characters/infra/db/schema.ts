@@ -241,6 +241,22 @@ export const userSupplements = charactersSchema.table(
   (t) => [primaryKey({ columns: [t.userId, t.characterId] })],
 );
 
+/**
+ * 儿童特征永久标记（3.1 B7 遗留，迁移 0083）：这位用户套用过检出儿童特征的预设改版。
+ * 只增不减——用户改写 / 删除补充设定都不清除；policy 资格判断经 getForRuntime 读取。
+ */
+export const userChildFeatureFlags = charactersSchema.table(
+  'user_child_feature_flags',
+  {
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    detectedAt: timestamp('detected_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.characterId] })],
+);
+
 /** 「资料已更新」已读位置（CHR-10 第 4 条，T-079）：用户看过的人设版本。 */
 export const personaUpdateSeen = charactersSchema.table(
   'persona_update_seen',
