@@ -26,6 +26,7 @@ await build({
     'rotate-kek': 'src/cli/rotate-kek.ts',
     'seed-models': 'src/cli/seed-models.ts',
     'seed-presets': 'src/cli/seed-presets.ts',
+    'setup-local-model': 'src/cli/setup-local-model.ts',
   },
   outdir: 'dist',
   bundle: true,

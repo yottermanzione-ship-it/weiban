@@ -144,6 +144,15 @@ export class IdentityCommands {
     return user.id;
   }
 
+  /** 列出正常状态的普通用户（非管理员），供本机运维脚本（setup:local-model）使用。不返回敏感字段。 */
+  async listActiveRegularUsers(): Promise<Array<{ id: string; username: string }>> {
+    return this.database.db
+      .select({ id: users.id, username: users.username })
+      .from(users)
+      .where(sql`${users.role} = 'user' AND ${users.status} = 'active'`)
+      .orderBy(users.createdAt);
+  }
+
   /** 改角色。降为普通用户时作废其全部管理会话。 */
   async setRole(username: string, role: 'user' | 'admin'): Promise<void> {
     await this.database.transaction(async (tx) => {

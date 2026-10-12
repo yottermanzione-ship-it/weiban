@@ -19,3 +19,6 @@ export { WEB_SEARCH_PROVIDER } from './tokens.js';
 export type { WebSearchProvider } from './application/web-search.js';
 export { MODEL_GATEWAY_MEDIA_PORT } from './tokens.js';
 export { MODEL_QUOTE_PORT } from './tokens.js';
+/** 本机运维脚本（cli/setup-local-model.ts）以管理员身份走服务层登记目录、读上游。 */
+export { CatalogService } from './application/catalog.js';
+export { UpstreamService } from './application/upstreams.js';
