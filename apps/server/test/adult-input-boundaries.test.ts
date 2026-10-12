@@ -293,7 +293,11 @@ describeDb('成人输入复核：真实HTTP/PG/事件/加密/回复链，网关�
     };
   }
 
-  async function groupScenario(text: string, mode: 'adult' | 'normal' = 'adult') {
+  async function groupScenario(
+    text: string,
+    mode: 'adult' | 'normal' = 'adult',
+    switchTo?: 'daily' | 'adult' | readonly ('daily' | 'adult')[],
+  ) {
     const actor = await scenario('正常的原创成年对话。');
     const contacts = app.get(ContactsCommands);
     await contacts.add(actor.userId, { characterId: secondCharacterId, greeting: '你好' });
@@ -342,6 +346,14 @@ describeDb('成人输入复核：真实HTTP/PG/事件/加密/回复链，网关�
           name === 'ai.group_turn' && (payload as GroupJob).conversationId === group.conversationId,
       )?.[1] as GroupJob | undefined;
       expect(job).toBeDefined();
+      for (const targetMode of typeof switchTo === 'string' ? [switchTo] : (switchTo ?? [])) {
+        clock.advance(1);
+        await request(app.getHttpServer())
+          .patch(`/api/v1/groups/${group.conversationId}/companion-settings`)
+          .set('Authorization', `Bearer ${actor.token}`)
+          .send({ scenarioMode: targetMode })
+          .expect(200);
+      }
       await app.get(AiRuntimeLifecycle).groupChat.runTurn(job!);
       const history = await app.get<ChatReadPort>(CHAT_READ_PORT).readMessages({
         conversationId: group.conversationId,
@@ -474,6 +486,23 @@ describeDb('成人输入复核：真实HTTP/PG/事件/加密/回复链，网关�
       text: '这个话题先放一放，好吗？我们聊聊你今天过得怎么样。',
     });
   });
+  for (const switchCase of [
+    { from: 'adult' as const, to: 'daily' as const },
+    { from: 'normal' as const, to: 'adult' as const },
+    { from: 'adult' as const, to: ['daily', 'adult'] as const },
+  ]) {
+    it(`群回复已入队后${switchCase.from}切到${switchCase.to}不回应旧范围输入`, async () => {
+      blocked = false;
+      reviewMode = 'ok';
+      const result = await groupScenario(
+        '我们聊聊今天的一件小事。',
+        switchCase.from,
+        switchCase.to,
+      );
+      expect(result.calls).toHaveLength(0);
+      expect(result.replies).toHaveLength(0);
+    });
+  }
   it('成人群聊检查不可用时不生成或发送未检查内容', async () => {
     blocked = true;
     reviewMode = 'unavailable';

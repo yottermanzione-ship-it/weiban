@@ -412,6 +412,25 @@ export class GroupChatService {
     if (!members.length) return;
     const history = await this.history(conversation);
     const trigger = history.find((m) => m.messageId === job.triggerMessageId);
+    if (
+      !trigger ||
+      trigger.senderKind !== 'user' ||
+      trigger.status !== 'normal' ||
+      trigger.seq !== job.triggerSeq ||
+      trigger.scope !== conversation.contentScope
+    )
+      return;
+    // 切回同一范围也不能复活模式变更前的用户触发。
+    if (
+      history.some(
+        (message) =>
+          message.seq > trigger.seq &&
+          message.senderKind === 'system' &&
+          message.content?.type === 'system' &&
+          message.content.code === 'scenario_mode_changed',
+      )
+    )
+      return;
     const userText = trigger?.content?.type === 'text' ? trigger.content.text : '';
     const mentioned = new Set(
       trigger?.content?.type === 'text' ? (trigger.content.mentions ?? []) : [],
