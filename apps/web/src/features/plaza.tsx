@@ -740,12 +740,15 @@ export function WorkPage() {
           <ChatCircle size={20} /> {w.commentCount}
         </span>
         <span className="grow" />
+        {!w.isMine && w.kind === 'custom_character' && w.myAdoptedCharacterId && (
+          <AdoptedUpdateButton characterId={w.myAdoptedCharacterId} workId={workId} />
+        )}
         {w.isMine ? (
           <button disabled={pending} onClick={() => setSheet('menu')}>
             管理
           </button>
-        ) : adoptedCharacter ? (
-          <Link className="plain" to={`/characters/${adoptedCharacter}`}>
+        ) : (adoptedCharacter ?? w.myAdoptedCharacterId) ? (
+          <Link className="plain" to={`/characters/${adoptedCharacter ?? w.myAdoptedCharacterId}`}>
             已添加 · 去聊天
           </Link>
         ) : (
@@ -2014,6 +2017,34 @@ function NewVersionSheet({
               },
             },
           ]}
+        />
+      )}
+    </>
+  );
+}
+
+/** 3.1（积压 ㊱）：作品页里，我添加过的复制品有新版本时直接「更新到版本 N」。 */
+function AdoptedUpdateButton({ characterId, workId }: { characterId: string; workId: string }) {
+  const origin = useRemote(CustomCharacterOriginEndpoints.getOrigin, {
+    params: { characterId },
+    networkOnly: true,
+  });
+  const [open, setOpen] = useState(false);
+  const o = origin.data?.origin;
+  if (!o || o.kind !== 'plaza_copy' || o.workId !== workId || !o.newerVersionAvailable) return null;
+  const version = o.newerVersionAvailable;
+  return (
+    <>
+      <button onClick={() => setOpen(true)}>更新到版本 {version}</button>
+      {open && (
+        <NewVersionSheet
+          characterId={characterId}
+          workId={workId}
+          version={version}
+          onClose={(done) => {
+            setOpen(false);
+            if (done) origin.refresh();
+          }}
         />
       )}
     </>
