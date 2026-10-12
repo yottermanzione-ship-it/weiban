@@ -49,6 +49,8 @@ export const users = identitySchema.table(
     deletionRequestedAt: tz('deletion_requested_at'),
     /** 管理员最近一次「重新触发删除」的时间（security-and-privacy.md 5.1 第 2 条；T-023 新增）。 */
     deletionRetriggeredAt: tz('deletion_retriggered_at'),
+    /** 完成判定前的复核轮数（迁移 0056，T-080）：复核发现残留会重新投递该模块，超过上限停在「注销未完成」。 */
+    deletionRechecks: integer('deletion_rechecks').notNull().default(0),
   },
   (t) => [
     uniqueIndex('users_username_lower_key').on(sql`lower(${t.username})`),

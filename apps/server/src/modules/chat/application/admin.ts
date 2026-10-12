@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import {
   ContentScope,
   Id,
+  Timestamp,
   SystemContent,
   type ChatAdminPort,
   type Conversation,
@@ -49,6 +50,7 @@ export class ChatAdminService implements ChatAdminPort {
     const tx = asDbTx(transaction);
     parseContract(Id, input.userId);
     parseContract(Id, input.characterId);
+    if (input.trialExpiresAt) parseContract(Timestamp, input.trialExpiresAt);
     await tx.query(
       "SELECT pg_advisory_xact_lock(hashtextextended('chat:direct:' || $1 || ':' || $2,0))",
       [input.userId, input.characterId],
@@ -95,6 +97,7 @@ export class ChatAdminService implements ChatAdminPort {
         ownerUserId: input.userId,
         type: 'direct',
         characterId: input.characterId,
+        trialExpiresAt: input.trialExpiresAt ? new Date(input.trialExpiresAt) : null,
         title: null,
         systemParticipantId: newId(),
         contentScope: 'normal',
@@ -202,7 +205,13 @@ export class ChatAdminService implements ChatAdminPort {
       type: 'conversation.updated',
       data: { conversation },
     });
-    if (purge) await tx.db.delete(conversations).where(eq(conversations.id, row.id));
+    if (purge) {
+      await tx.db.delete(conversations).where(eq(conversations.id, row.id));
+      await this.sync.appendUpdate(tx, input.userId, {
+        type: 'conversation.removed',
+        data: { conversationId: row.id, reason: 'purged' },
+      });
+    }
   }
   async postSystemMessage(
     transaction: Tx | null,
@@ -249,7 +258,13 @@ export class ChatAdminService implements ChatAdminPort {
         const members = await tx.db
           .select()
           .from(participants)
-          .where(and(eq(participants.conversationId, row.id), eq(participants.kind, 'character')));
+          .where(
+            and(
+              eq(participants.conversationId, row.id),
+              eq(participants.kind, 'character'),
+              isNull(participants.leftAt),
+            ),
+          );
         if (!members.length) return 'denied' as const;
         for (const member of members) {
           const decision = await this.policy.checkAdultGeneration(

@@ -62,3 +62,31 @@ export function relevance(
     Math.exp(-Math.max(0, ageMs) / (30 * 86400000)) * 0.1
   );
 }
+
+export type MemorySharingLevel = 'off' | 'basic' | 'friends';
+/** MEM-07 第 2 条「永不共享类别」：健康身体、心理情绪、感情私事、家庭矛盾、经济状况。规则直接判，模型无法改写。 */
+const NEVER_SHARE =
+  /焦虑|抑郁|难过|崩溃|哭了|压力|情绪|心情不好|失恋|分手|恋爱|男朋友|女朋友|老公|老婆|暧昧|喜欢的人|吵架|离婚|家里.{0,4}(?:矛盾|闹)|父母.{0,4}(?:吵|不和)|欠钱|借钱|工资|存款|负债|贷款|没钱|医院|生病|身体|体检|怀孕|失眠|成人模式/u;
+/** MEM-07 第 2 条「可共享类别」：日常近况、兴趣爱好、近期计划（基础资料另算）。 */
+const SHAREABLE_CATEGORIES = new Set(['basic', 'preference', 'status', 'commitment']);
+/**
+ * 跨角色共享闸门（runtime-overview.md 5.5 节）：全部用代码判断，不交给模型。
+ * 关系网条件由调用方判断（只把有关系的角色作为来源）。
+ */
+export function memoryShareable(entry: MemoryEntryLike, level: MemorySharingLevel): boolean {
+  if (level === 'off') return false;
+  if (entry.visibility === 'only_this_character') return false;
+  if (entry.scope !== 'normal' || entry.status !== 'current') return false;
+  if (healthPrivate(entry.content) || NEVER_SHARE.test(entry.content)) return false;
+  if (sharingClass(entry.content, entry.sharingClass) === 'never') return false;
+  if (level === 'basic') return entry.sharingClass === 'basic';
+  return SHAREABLE_CATEGORIES.has(entry.category);
+}
+export interface MemoryEntryLike {
+  content: string;
+  category: string;
+  status: string;
+  scope: string;
+  visibility: string;
+  sharingClass: MemoryPayload['sharingClass'];
+}

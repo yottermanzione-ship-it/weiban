@@ -36,7 +36,106 @@ import {
   ProactiveSettingsPage,
 } from '../features/account-settings.js';
 import { api } from '../data/client.js';
+import { TimelinePage } from '../features/timeline.js';
+import { AnniversariesPage } from '../features/growth.js';
+import {
+  PeriodPage,
+  PeriodDayPage,
+  PeriodHistoryPage,
+  PeriodAuthorizationPage,
+  PeriodSettingsPage,
+} from '../features/period.js';
+import { GroupListPage, GroupSettingsPage, SelectMembersPage } from '../features/groups.js';
+import {
+  CharacterMomentsPage,
+  ComposeMomentPage,
+  MomentDetailPage,
+  MomentsFeedPage,
+  MomentsNotificationsPage,
+  MyMomentsPage,
+  useMomentsBadge,
+} from '../features/moments.js';
+import { NewFriendsPage, useNewFriendsDot } from '../features/new-friends.js';
+import { RelationsPage } from '../features/relations.js';
 import { UpdatePrompt } from './update-prompt.js';
+import { CallLinkPage, CallProvider } from '../features/call.js';
+import { MyStickersPage } from '../features/stickers.js';
+import { VoicePickerPage } from '../features/voices.js';
+import { ToastHost } from '../features/toast.js';
+import {
+  AchievementWatcher,
+  AchievementsPage,
+  CardAlbumPage,
+  CardAlbumsPage,
+  FamiliarityOverviewPage,
+} from '../features/cards.js';
+import { FavoriteDetailPage, FavoritesPage } from '../features/favorites.js';
+import {
+  ConversationHitsPage,
+  ConversationSearchPage,
+  GlobalSearchPage,
+} from '../features/search.js';
+import { ShareEditorPage } from '../features/share.js';
+import { ImportListPage, ImportPage } from '../features/import.js';
+import { SupplementPage } from '../features/supplement.js';
+import { AccountDeletionPage } from '../features/account-deletion.js';
+import { AdoptPage, PetPage, PetsPage } from '../features/pets.js';
+import {
+  AuthorPage,
+  MyWorksPage,
+  PlazaProfilePage,
+  PublishPage,
+  ReportPage,
+  WorkPage,
+} from '../features/plaza.js';
+import {
+  DailyHistoryPage,
+  DailyQuestionPage,
+  FocusCapsule,
+  FocusPage,
+  LetterPage,
+  LettersPage,
+  ReminderEditPage,
+  RemindersPage,
+  WishlistPage,
+  WishlistsPage,
+  WriteLetterPage,
+} from '../features/play.js';
+/** 这些页面自带返回按钮，不显示通用顶栏。 */
+const ownHeader = [
+  /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice|cards|supplement)$/,
+  /^\/(imports|pets|plaza|play)(\/|$)/,
+  /^\/settings\/delete-account$/,
+  /^\/(share|search)(\/|$)/,
+  /^\/me\/favorites/,
+  /^\/services\/period/,
+  /^\/(contacts\/(new|groups)|groups\/new|moments|me\/moments|me\/stickers|calls\/)/,
+];
+function TabBar() {
+  const badge = useMomentsBadge();
+  const friends = useNewFriendsDot();
+  const dot = (to: string) =>
+    (to === '/discover' && badge && badge.unseenPostCount + badge.unseenInteractionCount > 0) ||
+    (to === '/contacts' && friends);
+  return (
+    <nav className="tabbar" aria-label="主导航">
+      {(
+        [
+          ['/chat', '微伴', ChatsCircle],
+          ['/contacts', '通讯录', AddressBook],
+          ['/discover', '发现', Compass],
+          ['/me', '我', User],
+        ] as const
+      ).map(([to, label, Icon]) => (
+        <NavLink key={to} to={to}>
+          <Icon size={24} />
+          <span>{label}</span>
+          {dot(to) && <span className="red-dot" aria-label="有新内容" />}
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
 function Shell() {
   const auth = useAuth();
   const location = useLocation();
@@ -84,99 +183,153 @@ function Shell() {
   if (firstProfile && location.pathname !== '/profile') return <Navigate to="/profile" replace />;
   const roots = ['/chat', '/contacts', '/discover', '/me'];
   return (
-    <div
-      className="app-shell"
-      key={`${auth.session.user.userId}:${auth.session.session.sessionId}`}
-    >
-      {firstProfile && (
-        <header className="topbar">
-          <button onClick={() => void auth.logout()}>‹ 返回登录</button>
-        </header>
-      )}
-      {offline && (
-        <div role="status" className="offline">
-          网络暂不可用，正在显示本机保存的内容
-        </div>
-      )}
-      {!onboarding &&
-        !roots.includes(location.pathname) &&
-        !location.pathname.startsWith('/chat/') && (
+    <CallProvider>
+      <div
+        className="app-shell"
+        key={`${auth.session.user.userId}:${auth.session.session.sessionId}`}
+      >
+        {firstProfile && (
           <header className="topbar">
-            <Link
-              to={
-                [
-                  '/wallet',
-                  '/models',
-                  '/ledger',
-                  '/prices',
-                  '/leaderboard',
-                  '/usage',
-                  '/services/proactive',
-                ].includes(location.pathname)
-                  ? '/services'
-                  : ['/settings/security', '/settings/privacy', '/settings/general'].includes(
-                        location.pathname,
-                      )
-                    ? '/settings'
-                    : '/me'
-              }
-              aria-label="返回"
-            >
-              <CaretLeft size={24} />
-              返回
-            </Link>
+            <button onClick={() => void auth.logout()}>‹ 返回登录</button>
           </header>
         )}
-      <Routes>
-        <Route
-          path="/"
-          element={
-            <Navigate to={auth.session.user.profileCompleted ? '/chat' : '/profile'} replace />
-          }
-        />
-        <Route path="/me" element={<MePage />} />
-        <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/services" element={<ServicesPage />} />
-        <Route path="/wallet" element={<WalletPage />} />
-        <Route path="/ledger" element={<LedgerPage />} />
-        <Route path="/prices" element={<PricesPage />} />
-        <Route path="/models" element={<ModelsPage />} />
-        <Route path="/leaderboard" element={<LeaderboardPage />} />
-        <Route path="/usage" element={<UsagePage />} />
-        <Route path="/characters/custom/new" element={<CreateCustomCharacterPage />} />
-        <Route path="/characters/custom/:characterId/edit" element={<EditCustomCharacterPage />} />
-        <Route path="/settings/security" element={<AccountSecurityPage />} />
-        <Route path="/settings/privacy" element={<PrivacySettingsPage />} />
-        <Route path="/settings/general" element={<GeneralSettingsPage />} />
-        <Route path="/services/proactive" element={<ProactiveSettingsPage />} />
-        <Route path="/chat" element={<ConversationListPage />} />
-        <Route path="/chat/:conversationId" element={<ConversationPage />} />
-        <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />
-        <Route path="/characters/:characterId/memories" element={<MemoriesPage />} />
-        <Route path="/contacts" element={<ContactsPage />} />
-        <Route path="/discover" element={<DiscoverPage />} />
-        <Route path="/characters/:characterId" element={<CharacterPage />} />
-        <Route path="*" element={<Navigate to="/me" replace />} />
-      </Routes>
-      {!onboarding && !location.pathname.startsWith('/chat/') && (
-        <nav className="tabbar" aria-label="主导航">
-          {(
-            [
-              ['/chat', '微伴', ChatsCircle],
-              ['/contacts', '通讯录', AddressBook],
-              ['/discover', '发现', Compass],
-              ['/me', '我', User],
-            ] as const
-          ).map(([to, label, Icon]) => (
-            <NavLink key={to} to={to}>
-              <Icon size={24} />
-              <span>{label}</span>
-            </NavLink>
-          ))}
-        </nav>
-      )}
-    </div>
+        <FocusCapsule />
+        {offline && (
+          <div role="status" className="offline">
+            网络暂不可用，正在显示本机保存的内容
+          </div>
+        )}
+        {!onboarding &&
+          !roots.includes(location.pathname) &&
+          !location.pathname.startsWith('/chat/') &&
+          !ownHeader.some((pattern) => pattern.test(location.pathname)) && (
+            <header className="topbar">
+              <Link
+                to={
+                  [
+                    '/wallet',
+                    '/models',
+                    '/ledger',
+                    '/prices',
+                    '/leaderboard',
+                    '/usage',
+                    '/services/proactive',
+                    '/services/cards',
+                    '/services/achievements',
+                    '/services/familiarity',
+                    '/services/pets',
+                  ].includes(location.pathname)
+                    ? '/services'
+                    : ['/settings/security', '/settings/privacy', '/settings/general'].includes(
+                          location.pathname,
+                        )
+                      ? '/settings'
+                      : '/me'
+                }
+                aria-label="返回"
+              >
+                <CaretLeft size={24} />
+                返回
+              </Link>
+            </header>
+          )}
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <Navigate to={auth.session.user.profileCompleted ? '/chat' : '/profile'} replace />
+            }
+          />
+          <Route path="/me" element={<MePage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/services" element={<ServicesPage />} />
+          <Route path="/wallet" element={<WalletPage />} />
+          <Route path="/ledger" element={<LedgerPage />} />
+          <Route path="/prices" element={<PricesPage />} />
+          <Route path="/models" element={<ModelsPage />} />
+          <Route path="/leaderboard" element={<LeaderboardPage />} />
+          <Route path="/usage" element={<UsagePage />} />
+          <Route path="/characters/custom/new" element={<CreateCustomCharacterPage />} />
+          <Route
+            path="/characters/custom/:characterId/edit"
+            element={<EditCustomCharacterPage />}
+          />
+          <Route path="/settings/security" element={<AccountSecurityPage />} />
+          <Route path="/settings/privacy" element={<PrivacySettingsPage />} />
+          <Route path="/settings/general" element={<GeneralSettingsPage />} />
+          <Route path="/services/proactive" element={<ProactiveSettingsPage />} />
+          <Route path="/services/period" element={<PeriodPage />} />
+          <Route path="/services/period/day/:date" element={<PeriodDayPage />} />
+          <Route path="/services/period/history" element={<PeriodHistoryPage />} />
+          <Route path="/services/period/authorization" element={<PeriodAuthorizationPage />} />
+          <Route path="/services/period/settings" element={<PeriodSettingsPage />} />
+          <Route path="/chat" element={<ConversationListPage />} />
+          <Route path="/chat/:conversationId" element={<ConversationPage />} />
+          <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />
+          <Route path="/characters/:characterId/memories" element={<MemoriesPage />} />
+          <Route path="/characters/:characterId/timeline" element={<TimelinePage />} />
+          <Route path="/characters/:characterId/moments" element={<CharacterMomentsPage />} />
+          <Route path="/characters/:characterId/relations" element={<RelationsPage />} />
+          <Route path="/contacts/new" element={<NewFriendsPage />} />
+          <Route path="/contacts/groups" element={<GroupListPage />} />
+          <Route path="/groups/new" element={<SelectMembersPage />} />
+          <Route path="/chat/:conversationId/group" element={<GroupSettingsPage />} />
+          <Route path="/moments" element={<MomentsFeedPage />} />
+          <Route path="/moments/new" element={<ComposeMomentPage />} />
+          <Route path="/moments/notifications" element={<MomentsNotificationsPage />} />
+          <Route path="/moments/posts/:postId" element={<MomentDetailPage />} />
+          <Route path="/me/moments" element={<MyMomentsPage />} />
+          <Route path="/characters/:characterId/anniversaries" element={<AnniversariesPage />} />
+          <Route path="/me/stickers" element={<MyStickersPage />} />
+          <Route path="/me/favorites" element={<FavoritesPage />} />
+          <Route path="/me/favorites/:favoriteId" element={<FavoriteDetailPage />} />
+          <Route path="/services/cards" element={<CardAlbumsPage />} />
+          <Route path="/services/achievements" element={<AchievementsPage />} />
+          <Route path="/services/familiarity" element={<FamiliarityOverviewPage />} />
+          <Route path="/characters/:characterId/cards" element={<CardAlbumPage />} />
+          <Route path="/search" element={<GlobalSearchPage />} />
+          <Route path="/search/:conversationId" element={<ConversationHitsPage />} />
+          <Route path="/chat/:conversationId/search" element={<ConversationSearchPage />} />
+          <Route path="/share" element={<ShareEditorPage />} />
+          <Route path="/imports" element={<ImportListPage />} />
+          <Route path="/imports/new" element={<ImportPage />} />
+          <Route path="/imports/:jobId" element={<ImportPage />} />
+          <Route path="/characters/:characterId/supplement" element={<SupplementPage />} />
+          <Route path="/settings/delete-account" element={<AccountDeletionPage />} />
+          <Route path="/services/pets" element={<PetsPage />} />
+          <Route path="/pets/adopt" element={<AdoptPage />} />
+          <Route path="/pets/:petId" element={<PetPage />} />
+          <Route path="/play/daily" element={<DailyQuestionPage />} />
+          <Route path="/play/daily/history" element={<DailyHistoryPage />} />
+          <Route path="/play/wishlists" element={<WishlistsPage />} />
+          <Route path="/play/wishlists/:characterId" element={<WishlistPage />} />
+          <Route path="/play/letters" element={<LettersPage />} />
+          <Route path="/play/letters/new" element={<WriteLetterPage />} />
+          <Route path="/play/letters/:letterId" element={<LetterPage />} />
+          <Route path="/play/focus" element={<FocusPage />} />
+          <Route path="/play/reminders" element={<RemindersPage />} />
+          <Route path="/play/reminders/:reminderId" element={<ReminderEditPage />} />
+          <Route path="/plaza/works/:workId" element={<WorkPage />} />
+          <Route path="/plaza/authors/:authorId" element={<AuthorPage />} />
+          <Route path="/plaza/me" element={<MyWorksPage />} />
+          <Route path="/plaza/profile" element={<PlazaProfilePage />} />
+          <Route path="/plaza/publish" element={<PublishPage />} />
+          <Route path="/plaza/report" element={<ReportPage />} />
+          <Route path="/characters/:characterId/voice" element={<VoicePickerPage />} />
+          <Route path="/calls/:callId" element={<CallLinkPage />} />
+          <Route path="/contacts" element={<ContactsPage />} />
+          <Route path="/discover" element={<DiscoverPage />} />
+          <Route path="/characters/:characterId" element={<CharacterPage />} />
+          <Route path="*" element={<Navigate to="/me" replace />} />
+        </Routes>
+        {!onboarding &&
+          !location.pathname.startsWith('/chat/') &&
+          !/^\/(share|search)(\/|$)/.test(location.pathname) && <TabBar />}
+        <AchievementWatcher />
+        <ToastHost />
+      </div>
+    </CallProvider>
   );
 }
 export function App() {

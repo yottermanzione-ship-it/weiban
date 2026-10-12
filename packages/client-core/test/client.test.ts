@@ -27,6 +27,31 @@ function session(username = 'test_user') {
   });
 }
 const store = () => new IndexedLocalStore('weiban-test', new IDBFactory());
+it('保留服务器的错误说明和逐项拒绝原因', async () => {
+  const details = { rejected: [{ id, reason: 'health_label' }] };
+  const client = new ApiClient(store(), async () =>
+    Response.json(
+      {
+        error: {
+          code: 'share_content_not_allowed',
+          message: '所选内容不能分享',
+          requestId: id,
+          details,
+        },
+      },
+      { status: 422 },
+    ),
+  );
+  await client.authenticate(session());
+  await expect(
+    client.call(IdentityEndpoints.getProfile, { networkOnly: true }),
+  ).rejects.toMatchObject({
+    code: 'share_content_not_allowed',
+    message: '所选内容不能分享',
+    status: 422,
+    details,
+  });
+});
 it('令牌只存本地库；请求头携带，路径不带；响应先落库；断网从本地读', async () => {
   const db = store();
   const auth = session();

@@ -9,6 +9,7 @@ import {
   type UpdateHolidayRequest,
 } from '@weiban/contracts';
 import { and, asc, eq, gt } from 'drizzle-orm';
+import { isValidLunarMonthDay, lunarToSolar } from './lunar.js';
 import {
   AppError,
   CLOCK,
@@ -49,10 +50,7 @@ export class HolidayService implements HolidayEventPort {
     const result: UpcomingHoliday[] = [];
     const year = Number(fromDate.slice(0, 4));
     for (const row of rows) {
-      const dates =
-        row.dateType === 'once'
-          ? [row.dateValue]
-          : [year + '-' + row.dateValue, year + 1 + '-' + row.dateValue];
+      const dates = occurrences(row, year);
       for (const date of dates) {
         // 2 月 29 日在非闰年跳过，不滚动到 3 月。
         if (!LocalDate.safeParse(date).success) continue;
@@ -66,6 +64,10 @@ export class HolidayService implements HolidayEventPort {
             date,
             daysAhead: diff,
             romantic: row.romantic,
+            category: row.category === 'traditional' ? 'traditional' : 'common',
+            sendCard: row.sendCard,
+            cardTemplateId: row.cardTemplateId,
+            characterCategories: row.characterCategories,
           });
       }
     }
@@ -73,7 +75,13 @@ export class HolidayService implements HolidayEventPort {
       (a, b) => a.daysAhead - b.daysAhead || a.holidayId.localeCompare(b.holidayId),
     );
   }
-  async list(opts: { enabled?: boolean; cursor?: string; limit: number }) {
+  async list(opts: {
+    enabled?: boolean;
+    category?: string;
+    romantic?: boolean;
+    cursor?: string;
+    limit: number;
+  }) {
     if (opts.cursor && !Id.safeParse(opts.cursor).success)
       throw new AppError('bad_request', '分页游标无效');
     const rows = await this.db.db
@@ -82,6 +90,8 @@ export class HolidayService implements HolidayEventPort {
       .where(
         and(
           opts.enabled !== undefined ? eq(holidays.enabled, opts.enabled) : undefined,
+          opts.category !== undefined ? eq(holidays.category, opts.category) : undefined,
+          opts.romantic !== undefined ? eq(holidays.romantic, opts.romantic) : undefined,
           opts.cursor ? gt(holidays.id, opts.cursor) : undefined,
         ),
       )
@@ -89,29 +99,53 @@ export class HolidayService implements HolidayEventPort {
       .limit(opts.limit + 1);
     const hasMore = rows.length > opts.limit;
     if (hasMore) rows.pop();
-    return { items: rows.map(toDto), nextCursor: hasMore ? rows.at(-1)!.id : null };
+    const today = beijingToday(this.clock.now());
+    return {
+      items: rows.map((r) => toDto(r, today)),
+      nextCursor: hasMore ? rows.at(-1)!.id : null,
+    };
   }
   async create(input: CreateHolidayRequest) {
     validateDateValue(input.dateType, input.dateValue);
     const now = this.clock.now();
     const [row] = await this.db.db
       .insert(holidays)
-      .values({ id: newId(), ...input, enabled: true, createdAt: now, updatedAt: now })
+      .values({
+        id: newId(),
+        name: input.name,
+        dateType: input.dateType,
+        dateValue: input.dateValue,
+        romantic: input.romantic,
+        category: input.category ?? 'common',
+        sendCard: input.sendCard ?? true,
+        cardTemplateId: input.cardTemplateId ?? null,
+        characterCategories: [...new Set(input.characterCategories ?? [])],
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      })
       .returning();
-    return toDto(row!);
+    return toDto(row!, beijingToday(now));
   }
   async update(holidayId: string, input: UpdateHolidayRequest) {
     validateId(holidayId);
     const [existing] = await this.db.db.select().from(holidays).where(eq(holidays.id, holidayId));
     if (!existing) throw new AppError('not_found', '节日不存在');
-    if (input.dateValue) validateDateValue(existing.dateType, input.dateValue);
+    if (input.dateType && input.dateType !== existing.dateType && !input.dateValue)
+      throw new AppError('bad_request', '修改日期规则时必须同时填写日期');
+    if (input.dateValue) validateDateValue(input.dateType ?? existing.dateType, input.dateValue);
+    const { characterCategories, ...rest } = input;
     const [row] = await this.db.db
       .update(holidays)
-      .set({ ...input, updatedAt: this.clock.now() })
+      .set({
+        ...rest,
+        ...(characterCategories ? { characterCategories: [...new Set(characterCategories)] } : {}),
+        updatedAt: this.clock.now(),
+      })
       .where(eq(holidays.id, holidayId))
       .returning();
     if (!row) throw new AppError('not_found', '节日不存在');
-    return toDto(row);
+    return toDto(row, beijingToday(this.clock.now()));
   }
   async remove(holidayId: string): Promise<void> {
     validateId(holidayId);
@@ -124,6 +158,11 @@ function validateDateValue(type: string, value: string): void {
     validateDate(value);
     return;
   }
+  if (type === 'lunar_annual') {
+    if (!isValidLunarMonthDay(value))
+      throw new AppError('bad_request', '农历节日应为有效农历 MM-DD');
+    return;
+  }
   if (
     type !== 'annual' ||
     !/^\d{2}-\d{2}$/.test(value) ||
@@ -131,14 +170,38 @@ function validateDateValue(type: string, value: string): void {
   )
     throw new AppError('bad_request', '年度节日应为有效 MM-DD');
 }
-function toDto(row: typeof holidays.$inferSelect) {
+type HolidayRow = typeof holidays.$inferSelect;
+/** 某公历年及次年里该节日对应的公历日期（农历按 ICU 换算；2 月 29 日等不存在的日期由调用方跳过）。 */
+function occurrences(row: HolidayRow, year: number): string[] {
+  if (row.dateType === 'once') return [row.dateValue];
+  if (row.dateType === 'lunar_annual')
+    return [lunarToSolar(year, row.dateValue), lunarToSolar(year + 1, row.dateValue)].filter(
+      (d): d is string => d !== null,
+    );
+  return [year + '-' + row.dateValue, year + 1 + '-' + row.dateValue];
+}
+function beijingToday(now: Date): string {
+  return new Date(now.getTime() + 8 * 3_600_000).toISOString().slice(0, 10);
+}
+function toDto(row: HolidayRow, today: string) {
+  const upcomingDates = occurrences(row, Number(today.slice(0, 4)))
+    .filter((d) => LocalDate.safeParse(d).success && d >= today)
+    .slice(0, 2);
   return {
     holidayId: row.id,
     name: row.name,
-    dateType: row.dateType as 'once' | 'annual',
+    dateType: row.dateType as 'once' | 'annual' | 'lunar_annual',
     dateValue: row.dateValue,
     romantic: row.romantic,
     enabled: row.enabled,
+    category: (row.category === 'traditional' ? 'traditional' : 'common') as
+      'traditional' | 'common',
+    sendCard: row.sendCard,
+    cardTemplateId: row.cardTemplateId,
+    characterCategories: row.characterCategories as Array<
+      'celebrity' | 'historical' | 'private_person' | 'fictional' | 'original'
+    >,
+    upcomingDates,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

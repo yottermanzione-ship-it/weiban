@@ -20,6 +20,12 @@ export interface ReadMessagesInput {
   afterSeq?: number;
   beforeSeq?: number;
   limit: number;
+  /** 3.0（CR-21）：排除带任一标签的消息，例 ['health']（记忆整理、名场面、分享图）。 */
+  excludeLabels?: string[];
+  /** 3.0（AI 变更申请第 2 条）：排除指定消息（记忆删除后上下文跳过来源消息）。 */
+  excludeMessageIds?: string[];
+  /** 3.0：只取这些内容类型，例 ['text', 'voice']；不传为全部。 */
+  contentTypes?: string[];
 }
 
 export interface ChatReadPort {
@@ -30,6 +36,17 @@ export interface ChatReadPort {
   /** 结果按 seq 升序；不含正文被撤回的内容。 */
   readMessages(input: ReadMessagesInput): Promise<Message[]>;
   getMessage(messageId: string, scopes: ContentScope[]): Promise<Message | null>;
+}
+
+/** 3.0：群聊读取（提供方 chat，调用方 ai-runtime）。与 ChatReadPort 分开，避免改动已有实现。 */
+export interface ChatGroupReadPort {
+  /** 3.0：用户的群聊（可按某角色是否在群内过滤），供群聊调度、拉群去重（SOC-06 第 2 条）使用。 */
+  listGroupConversations(
+    userId: string,
+    filter?: { memberCharacterId?: string; exactMemberCharacterIds?: string[] },
+  ): Promise<Conversation[]>;
+  /** 3.0：用户在该会话最后一次发言时间（SOC-05 第 2 条「7 天内用户发过言」）。 */
+  getLastUserMessageAt(conversationId: string): Promise<string | null>;
 }
 
 export interface PostMessageInput {
@@ -46,7 +63,8 @@ export interface PostMessageInput {
   expectedScope?: ContentScope;
   /**
    * 服务器端标签（v2.5 新增）。
-   * 目前唯一已定义取值：'health'（使用了经期数据生成，PLAY-01 / health-data.md 第 5 节）。
+   * 已定义取值：'health'（经期数据）、'self_chat'（群里角色自己聊）、
+   * 'quirk_draft'（角色即将撤回的初稿，不推送、不进入长期记忆）。
    * 传入此字段后 chat 会原样写入 Message.labels 并随消息下发；
    * 只有通过此端口发送的消息才能携带，用户经 HTTP / WebSocket 发送的消息不能带。
    * 不认识的标签客户端忽略，不报错。
@@ -88,7 +106,12 @@ export interface ChatAdminPort {
    */
   ensureDirectConversation(
     tx: Tx,
-    input: { userId: string; characterId: string; restoreHistory: boolean },
+    input: {
+      userId: string;
+      characterId: string;
+      restoreHistory: boolean;
+      trialExpiresAt?: string;
+    },
   ): Promise<Conversation>;
   /** contacts 删除好友：停止收发并隐藏会话，保留历史供30天内恢复。 */
   archiveDirectConversation(tx: Tx, input: { userId: string; characterId: string }): Promise<void>;
@@ -118,6 +141,38 @@ export interface ChatAdminPort {
   ): Promise<PortResult<void, 'not_found' | 'adult_mode_not_eligible'>>;
 }
 
+/**
+ * 3.0：群聊管理（SOC-03、SOC-06）。提供方 chat；调用方 ai-runtime（角色拉群、角色提议改群名）、contacts（彻底删除角色时移出其所在群）。
+ * 群里的系统提示（group_created、member_joined、member_removed、group_renamed、group_invited_by_character）由 chat 自己写。
+ */
+export interface ChatGroupAdminPort {
+  /** 创建群（幂等键相同返回同一个群）。characterIds 不含用户；createdByCharacterId 为拉群者（SOC-06），用户建群为 null。 */
+  createGroupConversation(
+    tx: Tx | null,
+    input: {
+      ownerUserId: string;
+      characterIds: string[];
+      title: string | null;
+      createdByCharacterId: string | null;
+      idempotencyKey: string;
+    },
+  ): Promise<PortResult<Conversation, 'limit_reached' | 'invalid_members'>>;
+  addGroupMembers(
+    tx: Tx | null,
+    input: { conversationId: string; characterIds: string[]; byCharacterId: string | null },
+  ): Promise<PortResult<Conversation, 'not_found' | 'limit_reached'>>;
+  /** 角色按人设提议改群名（SOC-03 第 2 条）。 */
+  renameGroup(
+    tx: Tx | null,
+    input: { conversationId: string; title: string; byCharacterId: string | null },
+  ): Promise<PortResult<Conversation, 'not_found'>>;
+  /** contacts 彻底删除角色时：把该角色移出用户的所有群（不写「你将 XX 移出了群聊」，写 member_left）。 */
+  removeCharacterFromUserGroups(
+    tx: Tx,
+    input: { userId: string; characterId: string },
+  ): Promise<void>;
+}
+
 /** 提供方 chat；组合根把 WS 与 HTTP 连接到同一用户发送处理器。 */
 export interface ChatUserPort {
   sendMessage(
@@ -143,5 +198,7 @@ export interface ChatNotificationReadPort {
     recipientParticipantId: string;
     muted: boolean;
     content: MessageContent | null;
+    /** 3.0.1：服务器标签（health、self_chat 等），推送据此决定是否显示正文、是否推送。 */
+    labels?: string[];
   } | null>;
 }

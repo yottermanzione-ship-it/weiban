@@ -22,12 +22,33 @@ export type TextResult =
       retryable: boolean;
       usage?: TextUsage;
     };
+export interface AdapterMessage {
+  role: GenerateTextInput['messages'][number]['role'];
+  content: string;
+  images?: string[];
+}
+
+function wireMessages(messages: AdapterMessage[]): unknown[] {
+  return messages.map((m) =>
+    m.images?.length
+      ? {
+          role: m.role,
+          content: [
+            { type: 'text', text: m.content },
+            ...m.images.map((u) => ({ type: 'image_url', image_url: { url: u } })),
+          ],
+        }
+      : { role: m.role, content: m.content },
+  );
+}
+
 export interface TextAdapter {
   generate(input: {
     baseUrl: string;
     apiKey: string;
     model: string;
-    messages: GenerateTextInput['messages'];
+    /** T-071：images 为已读取的图片 data URL（网关经 MediaSystemPort 读取），按 OpenAI 多模态格式发送。 */
+    messages: AdapterMessage[];
     maxOutputTokens: number;
     temperature?: number;
     responseFormat?: 'text' | 'json';
@@ -89,7 +110,7 @@ export class OpenAiTextAdapter implements TextAdapter {
         },
         body: JSON.stringify({
           model: input.model,
-          messages: input.messages,
+          messages: wireMessages(input.messages),
           stream: false,
           max_tokens: input.maxOutputTokens,
           temperature: input.temperature,

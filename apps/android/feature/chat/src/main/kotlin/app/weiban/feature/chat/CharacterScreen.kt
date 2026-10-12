@@ -14,6 +14,7 @@ import app.weiban.network.ApiFailure
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.encodeToJsonElement
 
+@Suppress("LongParameterList") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
 private class CharacterUi(
     private val repository: SessionRepository,
     private val runtime: ChatRuntime,
@@ -21,7 +22,30 @@ private class CharacterUi(
     private val characterId: String,
     private val scope: CoroutineScope,
     initialGreeting: String,
+    private val referrerCharacterId: String? = null,
 ) {
+    var dismissed by mutableStateOf(false)
+
+    /** 名片「不感兴趣」（CHR-04 第 4 条）：直接生效，不二次确认。 */
+    fun dismiss() {
+        if (referrerCharacterId == null || pending) return
+        pending = true
+        scope.launch {
+            try {
+                userAction({ error = it }) {
+                    repository.call(
+                        Endpoints.contactCardEndpointsDismissRecommendation,
+                        params = mapOf("characterId" to characterId),
+                        options = SessionCallOptions(owner = owner),
+                    )
+                    dismissed = true
+                }
+            } finally {
+                pending = false
+            }
+        }
+    }
+
     var greeting by mutableStateOf(initialGreeting)
     var pending by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
@@ -40,7 +64,7 @@ private class CharacterUi(
                             Endpoints.contactsEndpointsAdd,
                             body =
                                 repository.api.json.encodeToJsonElement(
-                                    AddContactRequestInput(characterId, greeting.ifBlank { null }, mode),
+                                    AddContactRequestInput(characterId, greeting.ifBlank { null }, mode, referrerCharacterId),
                                 ),
                             options = SessionCallOptions(owner = owner),
                         )
@@ -64,7 +88,23 @@ private class CharacterUi(
     characterId: String,
     onOpenConversation: (String) -> Unit,
     progress: OnboardingProgress? = null,
+    referral: ProfileTarget? = null,
 ) {
+    var sub by remember(characterId) { mutableStateOf<String?>(null) }
+    when (sub) {
+        "moments" -> {
+            CharacterMoments(repository, owner, state, characterId) { sub = null }
+            return
+        }
+        "relations" -> {
+            CharacterRelations(repository, owner, state, characterId) { sub = null }
+            return
+        }
+        "cards" -> {
+            CardAlbumPage(repository, runtime, owner, characterId) { sub = null }
+            return
+        }
+    }
     val profile =
         remote(characterId) {
             repository.call(
@@ -75,7 +115,19 @@ private class CharacterUi(
         }
     val scope = rememberCoroutineScope()
     val ui =
-        remember(characterId, owner) { CharacterUi(repository, runtime, owner, characterId, scope, progress?.draft?.greeting.orEmpty()) }
+        remember(characterId, owner) {
+            CharacterUi(
+                repository,
+                runtime,
+                owner,
+                characterId,
+                scope,
+                progress?.draft?.greeting ?: referral?.greeting.orEmpty(),
+                referral?.referrerCharacterId,
+            )
+        }
+    val customEditor by L6Overlays.customEditor.collectAsState()
+    LaunchedEffect(customEditor) { if (customEditor == null) profile.refresh() }
     val contact = state.contacts.find { it.characterId == characterId } ?: ui.added
     Column(
         Modifier
@@ -90,6 +142,12 @@ private class CharacterUi(
             RoleAvatar(repository, owner, RoleAvatarIdentity(role.characterId, role.name, role.avatar, contact?.customAvatarMediaId), 64.dp)
             Text(contact?.remark ?: role.name, style = MaterialTheme.typography.headlineSmall)
             if (contact?.remark != null) Text("名字：${role.name}")
+            if (role.personaUpdatedUnseen) PersonaUpdatedBadge(repository, owner, role.characterId) { profile.refresh() }
+            // 复制来的角色：来源标注与新版本提示（PLZ-04 第 4 条、PLZ-05 第 4 条）。
+            if (role.kind == "custom") {
+                PlazaOriginNote(repository, owner, role.characterId)
+                CustomCharacterEditEntry(repository, owner, role.characterId)
+            }
             Text(role.tagline)
             Text(role.intro)
             if (role.tags.isNotEmpty()) Text(role.tags.joinToString(" · "))
@@ -97,11 +155,30 @@ private class CharacterUi(
             if (role.showPublicSourceNotice) Text("本角色根据公开资料创作，不代表本人", style = MaterialTheme.typography.bodySmall)
         }
         contact?.let {
-            Text("认识于 ${it.knownSince}")
+            if (it.conversationId != null) {
+                FamiliaritySummary(repository, owner, characterId)
+            } else {
+                Text("认识于 ${it.knownSince}")
+            }
             ContactAvatarEditor(repository, runtime, owner, it)
         }
+        if (progress == null) {
+            TextButton(onClick = { sub = "moments" }) { Text("朋友圈 ›") }
+            // 角色资料页 › 卡册（GRW-05；cards-familiarity.md 3.1）。
+            if (contact?.conversationId != null) TextButton(onClick = { sub = "cards" }) { Text("卡册 ›") }
+            if (contact?.conversationId != null && profile.data?.kind == "custom") {
+                CustomRelationsEntry(repository, owner, characterId) { sub = "relations" }
+            }
+        }
         (ui.error ?: profile.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        CharacterAction(contact, ui, profile.data != null, onOpenConversation, progress?.let { it::greet })
+        CharacterAction(contact, ui, profile.data, onOpenConversation, progress?.let { it::greet })
+        if (referral?.referrerCharacterId != null && contact == null) {
+            if (ui.dismissed) {
+                Text("好的，不会再推荐 TA", style = MaterialTheme.typography.bodySmall)
+            } else {
+                TextButton(onClick = ui::dismiss, enabled = !ui.pending) { Text("不感兴趣") }
+            }
+        }
         TextButton(onClick = {
             profile.refresh()
             scope.launch { userAction({ ui.error = it }) { runtime.refresh(owner) } }
@@ -113,17 +190,27 @@ private class CharacterUi(
 @Composable private fun CharacterAction(
     contact: Contact?,
     ui: CharacterUi,
-    loaded: Boolean,
+    role: CharacterProfile?,
     onOpen: (String) -> Unit,
     onGreetingChange: ((String) -> Unit)?,
 ) {
     val conversationId = contact?.conversationId
+    val loaded = role != null
     when {
-        conversationId != null ->
+        conversationId != null -> {
             Button(
                 onClick = { onOpen(conversationId) },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("发消息") }
+            // 资料页「语音通话」（MED-06 第 1 条）；平台未开通时不显示。
+            if (role != null && rememberCallEntry(role.characterId)) {
+                val dial = rememberDial()
+                OutlinedButton(
+                    onClick = { dial(role.characterId, contact?.remark ?: role.name) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("语音通话") }
+            }
+        }
         contact?.status == "pending" -> Text("等待通过好友申请")
         else -> {
             OutlinedTextField(ui.greeting, {

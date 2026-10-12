@@ -6,6 +6,8 @@ import {
   integer,
   pgSchema,
   text,
+  boolean,
+  primaryKey,
   timestamp,
   uniqueIndex,
   uuid,
@@ -76,10 +78,112 @@ export const anniversaries = growthSchema.table(
     label: text('label').notNull(),
     /** 用户本地日期，YYYY-MM-DD。 */
     date: date('date', { mode: 'string' }).notNull(),
+    /** 3.0.2（T-076，迁移 0051）：每年提醒。 */
+    repeatYearly: boolean('repeat_yearly').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }),
   },
   (t) => [
     index('anniversaries_user_char_idx').on(t.userId, t.characterId),
     check('anniversary_label_length', sql`char_length(${t.label}) BETWEEN 1 AND 30`),
   ],
 );
+
+// ---------- T-076：卡片与成就（迁移 0050–0051） ----------
+
+/**
+ * 卡片（GRW-05）。每个用户每个角色一本卡册，serial_no 为该卡册内的编号（No.001 起）。
+ * scene_week 只在「名场面」瞬间卡上有值（用户当地日期所在周的周一），部分唯一索引保证每角色每周最多 1 张。
+ * 删除角色彻底删除（contacts.contact_purged）时随之删除；成就不随之收回。
+ */
+export const cards = growthSchema.table(
+  'cards',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    /** anniversary | familiarity | holiday | moment | pet | play */
+    kind: text('kind').notNull(),
+    serialNo: integer('serial_no').notNull(),
+    title: text('title').notNull(),
+    line: text('line').notNull(),
+    obtainedOn: date('obtained_on', { mode: 'string' }).notNull(),
+    templateId: uuid('template_id'),
+    mediaId: uuid('media_id'),
+    sourceMessageIds: uuid('source_message_ids')
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    idempotencyKey: text('idempotency_key').notNull(),
+    sceneWeek: date('scene_week', { mode: 'string' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    uniqueIndex('cards_user_char_key_uq').on(t.userId, t.characterId, t.idempotencyKey),
+    uniqueIndex('cards_user_char_serial_uq').on(t.userId, t.characterId, t.serialNo),
+    uniqueIndex('cards_scene_week_uq')
+      .on(t.userId, t.characterId, t.sceneWeek)
+      .where(sql`${t.sceneWeek} IS NOT NULL`),
+    index('cards_user_char_idx').on(t.userId, t.characterId),
+  ],
+);
+
+/** 已获得的成就（GRW-06）。永不收回：删除角色时不删，只在注销账号时删除。 */
+export const achievementUnlocks = growthSchema.table(
+  'achievement_unlocks',
+  {
+    userId: uuid('user_id').notNull(),
+    achievementKey: text('achievement_key').notNull(),
+    no: integer('no').notNull(),
+    /** 触发时相关的角色（仅记录，不用于收回）。 */
+    characterId: uuid('character_id'),
+    unlockedAt: timestamp('unlocked_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.achievementKey] })],
+);
+
+/** 累计类成就的计数（只统计次数，不存内容，GRW-06 第 7 条）。 */
+export const achievementCounters = growthSchema.table(
+  'achievement_counters',
+  {
+    userId: uuid('user_id').notNull(),
+    counterKey: text('counter_key').notNull(),
+    value: integer('value').notNull().default(0),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.counterKey] })],
+);
+
+/**
+ * growth 自己的通讯录索引（纪念日每日扫描用；growth 不能读 contacts 的表）。
+ * 由 contacts 事件维护；last_checked_on = 上次扫描时的用户当地日期。
+ */
+export const contactIndex = growthSchema.table(
+  'contact_index',
+  {
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    knownSince: date('known_since', { mode: 'string' }).notNull(),
+    active: boolean('active').notNull().default(true),
+    lastCheckedOn: date('last_checked_on', { mode: 'string' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.characterId] }),
+    index('contact_index_active_idx').on(t.active),
+  ],
+);
+
+/** 一次性通知去重（自定义纪念日到达等），notice_key 自带日期。 */
+export const notices = growthSchema.table(
+  'notices',
+  {
+    userId: uuid('user_id').notNull(),
+    noticeKey: text('notice_key').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.noticeKey] })],
+);
+
+// T-077 宠物表（drizzle.config 只扫描 schema.ts，所以在这里转出）。
+export * from './pets-schema.js';

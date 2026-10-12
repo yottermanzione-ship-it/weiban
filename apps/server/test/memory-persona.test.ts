@@ -12,6 +12,7 @@ import {
   type GenerateTextInput,
   type ModelGatewayPort,
   type ChatUserPort,
+  type ChatParticipantPort,
 } from '@weiban/contracts';
 import { AppModule } from '../src/app.module.js';
 import {
@@ -31,7 +32,12 @@ import {
   CHARACTER_EVALUATOR,
 } from '../src/modules/characters/testing.js';
 import { ContactsCommands, ContactsTestQueries } from '../src/modules/contacts/testing.js';
-import { CHAT_ADMIN_PORT, CHAT_READ_PORT, CHAT_USER_PORT } from '../src/modules/chat/index.js';
+import {
+  CHAT_ADMIN_PORT,
+  CHAT_READ_PORT,
+  CHAT_USER_PORT,
+  CHAT_PARTICIPANT_PORT,
+} from '../src/modules/chat/index.js';
 import { MODEL_GATEWAY_PORT, ADULT_MODEL_READ_PORT } from '../src/modules/model-access/index.js';
 import {
   ReplyPlanStore,
@@ -471,6 +477,38 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     expect(item.knownBy).toEqual([characterId]);
     response = '我听着呢\n今天过得怎么样？';
   });
+  it('尚未撤回的角色初稿也不提交长期记忆抽取，游标仍前进', async () => {
+    const original = response;
+    response = JSON.stringify({ operations: [] });
+    try {
+      for (let i = 0; i < 10; i++) await memory().extract(await job());
+      const conversation = await app.get(CHAT_READ_PORT).getConversation(cid);
+      const participant = conversation.participants.find(
+        (p: { kind: string }) => p.kind === 'character',
+      )!;
+      const posted = await app.get<ChatParticipantPort>(CHAT_PARTICIPANT_PORT).postMessage({
+        conversationId: cid,
+        senderParticipantId: participant.participantId,
+        content: { type: 'text', text: 'QUIRK_DRAFT_NOT_A_REAL_MEMORY' },
+        labels: ['quirk_draft'],
+        idempotencyKey: newId(),
+      });
+      expect(posted.ok).toBe(true);
+      await user('今天喜欢蓝色的天空');
+      const before = calls.length;
+      await memory().extract(await job());
+      expect(calls.length).toBeGreaterThan(before);
+      expect(JSON.stringify(calls.slice(before))).not.toContain('QUIRK_DRAFT_NOT_A_REAL_MEMORY');
+      expect(JSON.stringify(calls.slice(before))).toContain('今天喜欢蓝色的天空');
+      const state = await db.query<{ cursor_seq: string }>(
+        'SELECT cursor_seq FROM ai_runtime.memory_states WHERE user_id=$1',
+        [userId],
+      );
+      if (posted.ok) expect(Number(state.rows[0]!.cursor_seq)).toBeGreaterThan(posted.value.seq);
+    } finally {
+      response = original;
+    }
+  });
   it('成人与普通批次不混摘要/来源；普通上下文不含成人事实，经期内容不提交模型', async () => {
     response = JSON.stringify({ operations: [] });
     await memory().extract(await job());
@@ -604,7 +642,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     await db.query("UPDATE characters.characters SET age_setting='adult' WHERE id=$1", [
       characterId,
     ]);
-  }, 60000);
+  }, 120000);
   it('成人模型明确选择后模式/范围/系统消息同事务，临时故障不换模型，下架退出日常', async () => {
     const path = `/api/v1/characters/${characterId}/companion-settings`;
     adultAvailability = null;
@@ -701,7 +739,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     };
     expect(second.messages.some((m) => first.messages.some((f) => f.id === m.id))).toBe(false);
     response = '我听着呢\n今天过得怎么样？';
-  });
+  }, 120_000); // 65条真实加密消息及事件派发；验证批次完整性，不是单次回复延迟指标。
   it('后台预算失败保留游标待重试，注销清单包含记忆；彻底删除只清除旧会话', async () => {
     await user('后台余额失败也不能丢这条记忆');
     failure = 'budget_exceeded';

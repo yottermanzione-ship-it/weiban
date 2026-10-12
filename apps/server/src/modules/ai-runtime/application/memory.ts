@@ -39,6 +39,8 @@ import {
   healthPrivate,
   sharingClass,
   relevance,
+  memoryShareable,
+  type MemorySharingLevel,
 } from '../domain/memory.js';
 import { embed, toVectorLiteral, VECTOR_DIM } from '../domain/vector-embed.js';
 import { ReplyPlanStore } from './plan-store.js';
@@ -87,6 +89,60 @@ export class MemoryService {
     @Inject(POLICY_PORT) readonly policy: PolicyPort,
     @Inject(ReplyPlanStore) readonly plans: ReplyPlanStore,
   ) {}
+  /** T-066：记忆页「谁知道」（MEM-07 第 5 条）。由 SocialService 注入，避免循环依赖。 */
+  private knownByResolver:
+    | ((
+        userId: string,
+        characterId: string,
+      ) => Promise<{ level: MemorySharingLevel; others: string[] }>)
+    | null = null;
+  setKnownByResolver(
+    fn: (
+      userId: string,
+      characterId: string,
+    ) => Promise<{ level: MemorySharingLevel; others: string[] }>,
+  ): void {
+    this.knownByResolver = fn;
+  }
+  /**
+   * T-066 MEM-07：从角色 source 的私聊记忆里取能传给别的角色的条目（闸门见 domain/memory.ts）。
+   * 每次现读，用户在 source 处删除 / 改为「仅 TA 知道」后立即不再共享。关系网条件由调用方保证。
+   */
+  async sharedFrom(
+    userId: string,
+    sourceCharacterId: string,
+    level: MemorySharingLevel,
+    query: string,
+    limit = 3,
+  ): Promise<MemoryEntry[]> {
+    if (level === 'off') return [];
+    const contact = await this.contacts.getActiveContact(userId, sourceCharacterId);
+    if (!contact?.conversationId) return [];
+    const rows = await this.db.db
+      .select()
+      .from(memories)
+      .where(
+        and(
+          this.where(userId, sourceCharacterId, contact.conversationId),
+          eq(memories.scope, 'normal'),
+        ),
+      )
+      .orderBy(asc(memories.id))
+      .limit(MAX_MEMORIES);
+    const out: MemoryEntry[] = [];
+    for (const row of rows) {
+      const entry = await this.open(row).catch(() => null);
+      if (entry && memoryShareable(entry, level)) out.push(entry);
+    }
+    const now = this.clock.nowMs();
+    return out
+      .sort(
+        (a, b) =>
+          relevance(b.content, query, b.importance, now - Date.parse(b.updatedAt)) -
+          relevance(a.content, query, a.importance, now - Date.parse(a.updatedAt)),
+      )
+      .slice(0, limit);
+  }
   private where(userId: string, characterId: string, conversationId: string) {
     return and(
       eq(memories.userId, userId),
@@ -179,12 +235,164 @@ export class MemoryService {
       const page = rows.slice(0, query.limit);
       const items: MemoryEntry[] = [];
       for (const row of page) items.push(await this.open(row, tx));
+      const known = await this.knownByResolver?.(userId, characterId).catch(() => null);
+      if (known?.others.length)
+        for (const item of items)
+          if (memoryShareable(item, known.level)) item.knownBy = [characterId, ...known.others];
       return {
         items,
         nextCursor: rows.length > query.limit ? page.at(-1)!.id : null,
       };
     });
   }
+  /**
+   * T-072 MEM-04 / MED-06 第 5 条：通话结束后的摘要写入记忆（类别 episode，记忆页可见、可删改）。
+   * 以 callId 作为客户端幂等键，同一通电话只写一条；经期等健康内容不写。
+   */
+  async addCallSummary(
+    userId: string,
+    characterId: string,
+    callId: string,
+    content: string,
+  ): Promise<void> {
+    await this.addEpisode(userId, characterId, callId, content, 'never');
+  }
+
+  /**
+   * 系统写入一条共同经历记忆（T-072 通话摘要；T-082 领养、起名、送养——宠物不是敏感信息，可 shareable）。
+   * clientId 为 UUID，同用户同角色内幂等。
+   */
+  async addEpisode(
+    userId: string,
+    characterId: string,
+    clientId: string,
+    content: string,
+    sharingClass: 'never' | 'shareable' | 'basic',
+  ): Promise<void> {
+    const callId = clientId;
+    const text = content.trim().slice(0, 1000);
+    if (!text || healthPrivate(text)) return;
+    const job = await this.guard(userId, characterId).catch(() => null);
+    if (!job) return;
+    await this.db.transaction(async (tx) => {
+      await this.lock(tx, job);
+      const conversation = await this.chat.getConversation(job.conversationId, tx);
+      if (!conversation) return;
+      const id = newId();
+      const data: z.infer<typeof MemoryPayload> = {
+        content: text,
+        category: 'episode',
+        importance: 5,
+        dueAt: null,
+        visibility: 'only_this_character',
+        sharingClass,
+        status: 'past',
+        sourceMessageIds: [],
+        createdBy: 'extracted',
+      };
+      const inserted = await tx.db
+        .insert(memories)
+        .values({
+          id,
+          userId,
+          characterId,
+          conversationId: job.conversationId,
+          clientId: callId,
+          scope: 'normal',
+          ciphertext: await this.seal(tx, userId, id, data),
+          createdAt: this.clock.now(),
+          updatedAt: this.clock.now(),
+        })
+        .onConflictDoNothing()
+        .returning({ id: memories.id });
+      if (inserted.length) await this.changed(tx, job, false, conversation.lastSeq);
+    });
+  }
+  /**
+   * T-096 PLAY-04 第 5 条：心愿清单项定了日期 → 一条「约定」（commitment，dueAt = 该日期）；取消日期或删除 → 约定一并取消。
+   * clientId = 清单项 ID（同用户同角色内唯一），不调用模型。返回约定记忆 ID（取消时为 null）。
+   */
+  async syncWishlistCommitment(
+    userId: string,
+    characterId: string,
+    itemId: string,
+    content: string | null,
+    dueAt: string | null,
+  ): Promise<string | null> {
+    const job = await this.guard(userId, characterId).catch(() => null);
+    if (!job) return null;
+    return this.db.transaction(async (tx) => {
+      await this.lock(tx, job);
+      const conversation = await this.chat.getConversation(job.conversationId, tx);
+      const [existing] = await tx.db
+        .select()
+        .from(memories)
+        .where(
+          and(this.where(userId, characterId, job.conversationId), eq(memories.clientId, itemId)),
+        )
+        .for('update');
+      const text = content?.trim().slice(0, 1000) ?? '';
+      if (!dueAt || !text || healthPrivate(text)) {
+        if (existing) {
+          await tx.db.delete(memories).where(eq(memories.id, existing.id));
+          await this.changed(tx, job, true, conversation?.lastSeq ?? 0);
+        }
+        return null;
+      }
+      const id = existing?.id ?? newId();
+      const data: z.infer<typeof MemoryPayload> = {
+        content: text,
+        category: 'commitment',
+        importance: 7,
+        dueAt,
+        visibility: 'only_this_character',
+        sharingClass: 'never',
+        status: 'current',
+        sourceMessageIds: [],
+        createdBy: 'extracted',
+      };
+      const ciphertext = await this.seal(tx, userId, id, data);
+      if (existing)
+        await tx.db
+          .update(memories)
+          .set({ ciphertext, updatedAt: this.clock.now() })
+          .where(eq(memories.id, id));
+      else
+        await tx.db.insert(memories).values({
+          id,
+          userId,
+          characterId,
+          conversationId: job.conversationId,
+          clientId: itemId,
+          scope: 'normal',
+          ciphertext,
+          createdAt: this.clock.now(),
+          updatedAt: this.clock.now(),
+        });
+      await this.changed(tx, job, !!existing, conversation?.lastSeq ?? 0);
+      return id;
+    });
+  }
+
+  /** T-096：按 clientId 找系统写入的记忆 ID（心愿约定与跟进去重用）。 */
+  async findIdByClientId(
+    userId: string,
+    characterId: string,
+    clientId: string,
+  ): Promise<string | null> {
+    const [row] = await this.db.db
+      .select({ id: memories.id })
+      .from(memories)
+      .where(
+        and(
+          eq(memories.userId, userId),
+          eq(memories.characterId, characterId),
+          eq(memories.clientId, clientId),
+        ),
+      );
+    return row?.id ?? null;
+  }
+
   async create(userId: string, characterId: string, input: unknown): Promise<MemoryEntry> {
     const body = parseContract(CreateMemoryRequest, input);
     if (healthPrivate(body.content)) throw new AppError('bad_request', '经期数据不进入角色记忆');
@@ -635,7 +843,11 @@ export class MemoryService {
         m.content?.type === 'text' &&
         m.senderKind !== 'system' &&
         (m.scope !== 'adult' || policy.adultModeEligible) &&
-        !healthPrivate(m.content.text),
+        !healthPrivate(m.content.text) &&
+        // T-060：用经期摘要生成的消息（health 标记）不进入记忆。
+        !m.labels?.includes('health') &&
+        // A draft can be read by an earlier extraction job before its recall event arrives.
+        !m.labels?.includes('quirk_draft'),
     );
     const sourceMap = new Map(sources.map((m) => [m.messageId, m]));
     const lastSeq = history.at(-1)!.seq;
@@ -785,7 +997,8 @@ export class MemoryService {
             ...new Set([...(old?.sourceMessageIds ?? []), ...operation.sourceMessageIds]),
           ].slice(-100),
           createdBy: old?.createdBy ?? 'extracted',
-          visibility: old?.visibility ?? 'only_this_character',
+          // T-066：自动提取的记忆默认「谁知道 = 默认」，能否共享由 sharingClass 闸门决定（MEM-07）。
+          visibility: old?.visibility ?? 'default',
           sharingClass: sharingClass(
             from.map(textOf).join('\n') + operation.content,
             operation.sharingClass,

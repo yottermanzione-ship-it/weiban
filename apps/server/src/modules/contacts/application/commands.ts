@@ -8,11 +8,13 @@ import {
   UpdateContactRequest,
   type CharacterReadPort,
   type ChatAdminPort,
+  type ChatGroupAdminPort,
   type IdentityAccountStatusPort,
   type IdentityReadPort,
   type MediaReadPort,
   type SyncPort,
   type PolicyPort,
+  type PortResult,
 } from '@weiban/contracts';
 import {
   AppError,
@@ -33,7 +35,7 @@ import {
   type Outbox,
 } from '../../../platform/index.js';
 import { CHARACTER_READ_PORT } from '../../characters/index.js';
-import { CHAT_ADMIN_PORT } from '../../chat/index.js';
+import { CHAT_ADMIN_PORT, CHAT_GROUP_ADMIN_PORT } from '../../chat/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from '../../identity/index.js';
 import { MEDIA_READ_PORT } from '../../media/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
@@ -57,6 +59,7 @@ export class ContactsCommands {
     @Inject(ENVELOPE_CRYPTO) private readonly crypto: EnvelopeCrypto,
     @Inject(CHARACTER_READ_PORT) private readonly characters: CharacterReadPort,
     @Inject(CHAT_ADMIN_PORT) private readonly chat: ChatAdminPort,
+    @Inject(CHAT_GROUP_ADMIN_PORT) private readonly chatGroups: ChatGroupAdminPort,
     @Inject(IDENTITY_ACCOUNT_STATUS_PORT) private readonly accounts: IdentityAccountStatusPort,
     @Inject(IDENTITY_READ_PORT) private readonly identity: IdentityReadPort,
     @Inject(MEDIA_READ_PORT) private readonly media: MediaReadPort,
@@ -95,6 +98,46 @@ export class ContactsCommands {
         .orderBy(contacts.characterId);
       return { items: rows.map(contactDto) };
     });
+  }
+  /**
+   * ContactsWritePort（T-088）：系统代用户添加（人设广场「添加为我的角色」）。同一套规则；
+   * 新复制的角色从未添加过，所以不会出现「恢复以前的记录」选择；已添加或等待通过时返回现有联系人（幂等）。
+   */
+  async addForUser(input: {
+    userId: string;
+    characterId: string;
+    idempotencyKey: string;
+  }): Promise<
+    PortResult<Contact, 'contact_limit_reached' | 'character_not_available' | 'unauthenticated'>
+  > {
+    try {
+      return { ok: true, value: await this.add(input.userId, { characterId: input.characterId }) };
+    } catch (error) {
+      if (error instanceof AppError) {
+        if (error.code === 'contact_exists' || error.code === 'restore_choice_required') {
+          const existing = await this.db.transaction((tx) =>
+            this.row(tx, input.userId, input.characterId),
+          );
+          if (existing && existing.status !== 'deleted')
+            return { ok: true, value: contactDto(existing) };
+          if (error.code === 'restore_choice_required')
+            return {
+              ok: true,
+              value: await this.add(input.userId, {
+                characterId: input.characterId,
+                restoreMode: 'fresh',
+              }),
+            };
+        }
+        if (
+          error.code === 'contact_limit_reached' ||
+          error.code === 'character_not_available' ||
+          error.code === 'unauthenticated'
+        )
+          return { ok: false, error: error.code, message: error.message };
+      }
+      throw error;
+    }
   }
   async add(userId: string, input: unknown): Promise<Contact> {
     const body = parseContract(AddContactRequest, input);
@@ -347,6 +390,11 @@ export class ContactsCommands {
   private async softRemoveTx(tx: DbTx, row: ContactRow): Promise<void> {
     const purgeAfter = new Date(this.clock.nowMs() + RETENTION_MS);
     const requestId = newId();
+    // CHR-06 第 2 条：删除后退出其所在群聊（群里显示「XX 退出了群聊」）；先于状态变更，名字仍可取到备注。
+    await this.chatGroups.removeCharacterFromUserGroups(tx, {
+      userId: row.userId,
+      characterId: row.characterId,
+    });
     await this.chat.archiveDirectConversation(tx, {
       userId: row.userId,
       characterId: row.characterId,
@@ -377,6 +425,10 @@ export class ContactsCommands {
     });
   }
   private async purgeTx(tx: DbTx, row: ContactRow): Promise<void> {
+    await this.chatGroups.removeCharacterFromUserGroups(tx, {
+      userId: row.userId,
+      characterId: row.characterId,
+    });
     await this.chat.purgeDirectConversation(tx, {
       userId: row.userId,
       characterId: row.characterId,

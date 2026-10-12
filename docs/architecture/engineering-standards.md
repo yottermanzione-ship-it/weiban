@@ -43,7 +43,7 @@ PRD 参数（P-01 起，编号以 PRD 第 5.1 节为准）在代码中**只在�
 | 规则 | 允许 | 禁止 |
 |---|---|---|
 | R1 公开出口 | `import { X } from '../chat'` | `import ... from '../chat/infra/db/schema'`；服务器代码使用路径别名（如 `@/modules/chat`），一律用相对路径，lint 对别名直接报错（否则 R1～R3 会悄悄失效） |
-| R2 层级方向 | 上层 → 中层 → 底层 → platform | 下层 import 上层 |
+| R2 层级方向 | 上层 → 中层 → 底层 → platform；上层之间只允许白名单内的单向依赖：plaza → ai-runtime、importer → ai-runtime、ai-runtime → moments / growth / play / proactive（ADR-0024 及其 2026-10-11 补记；library → moments 不在白名单，用注入） | 下层 import 上层；上层之间白名单外的 import |
 | R3 聊天不依赖 AI | — | `modules/chat/**` 出现任何对 `modules/ai-runtime` 的 import |
 | R4 模型出口唯一 | 只有 `modules/model-access/**` 可以 import 供应商 SDK 或向供应商域名发请求 | 其他模块、**`packages/ai-evals/**`**（T-014，见 3.3）直接调用模型 API |
 | R5 推送出口唯一 | 只有 `modules/push/**` 可以 import 推送 SDK | 其他模块直接发推送 |

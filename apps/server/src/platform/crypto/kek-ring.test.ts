@@ -16,6 +16,7 @@ describe('密钥文件集合配置', () => {
       );
       const config = loadConfig({
         NODE_ENV: 'production',
+        MEDIA_PUBLIC_BASE_URL: 'https://media.example.com',
         DATABASE_URL: 'postgres://example/db',
         BILLING_PLATFORM_DAILY_CAP_MICROS: '1000000',
         PLATFORM_KEK_RING_FILE: join(dir, 'ring'),

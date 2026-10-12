@@ -232,3 +232,111 @@ td button {
   color: var(--wb-color-text-on-brand);
   border-radius: var(--wb-radius-sm);
 }
+
+/* ---------- L3：公开动态、节日清单、症状标签（T-055） ---------- */
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wb-space-5);
+}
+.tag {
+  display: inline-block;
+  padding: 0 var(--wb-space-2);
+  border-radius: var(--wb-radius-sm);
+  font-size: var(--wb-font-size-caption1);
+  background: var(--wb-color-bg-page);
+  color: var(--wb-color-text-secondary);
+}
+.tag.success {
+  background: var(--wb-color-status-success-soft);
+  color: var(--wb-color-status-success);
+}
+.tag.warning {
+  background: var(--wb-color-status-warning-soft);
+  color: var(--wb-color-status-warning-text);
+}
+.tag.danger {
+  background: var(--wb-color-status-danger-soft);
+  color: var(--wb-color-status-danger);
+}
+.inline-tip {
+  background: var(--wb-color-brand-soft);
+  color: var(--wb-color-brand-on-soft);
+  border-radius: var(--wb-radius-sm);
+  padding: var(--wb-space-3) var(--wb-space-4);
+}
+.error-banner {
+  background: var(--wb-color-status-danger-soft);
+  color: var(--wb-color-text-danger);
+  border-radius: var(--wb-radius-sm);
+  padding: var(--wb-space-3) var(--wb-space-4);
+}
+button.danger {
+  color: var(--wb-color-text-danger);
+}
+.ellipsis {
+  max-width: 320px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+tr.past td {
+  color: var(--wb-color-text-tertiary);
+}
+.skeleton-line {
+  display: block;
+  height: 16px;
+  border-radius: var(--wb-radius-sm);
+  background: var(--wb-color-bg-skeleton);
+}
+
+/* 素材库（T-073） */
+.chip-list,
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wb-space-3);
+}
+.asset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--wb-space-4);
+  margin: var(--wb-space-4) 0;
+}
+.asset-grid figure {
+  margin: 0;
+  display: grid;
+  gap: var(--wb-space-2);
+  padding: var(--wb-space-3);
+  border: 1px solid var(--wb-color-border-hairline);
+  border-radius: var(--wb-radius-md);
+  background: var(--wb-color-bg-surface);
+}
+.asset-grid img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+  background: var(--wb-color-bg-page);
+  border-radius: var(--wb-radius-sm);
+}
+.asset-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: var(--wb-radius-xs);
+}
+.split-view {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 3fr;
+  gap: var(--wb-space-6);
+  align-items: start;
+}
+tr.selected td {
+  background: var(--wb-color-brand-soft);
+}
+.stage-upload {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wb-space-2);
+}

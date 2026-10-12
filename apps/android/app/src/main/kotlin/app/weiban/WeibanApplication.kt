@@ -15,7 +15,8 @@ import kotlinx.coroutines.sync.withLock
 
 class WeibanApplication :
     Application(),
-    NativePushHost {
+    NativePushHost,
+    CallHost {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val database by lazy { Room.databaseBuilder(this, LocalDatabase::class.java, "weiban-local.db").build() }
     val api by lazy { ApiClient(BuildConfig.API_BASE_URL) }
@@ -28,6 +29,37 @@ class WeibanApplication :
         )
     }
     override val push by lazy { NativePushRuntime(this, repository, transport, MainActivity::class.java) }
+
+    /** 未接来电通知点开后要进入的私聊（由界面消费）。 */
+    val callRoute = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
+    /** 语音通话（T-075）：应用级单例；通话中由前台服务保活。 */
+    val calls by lazy {
+        app.weiban.feature.chat
+            .CallController(this, repository, BuildConfig.API_BASE_URL)
+            .also { it.system = AppCallSystem(this) }
+    }
+
+    override fun onCallAction(
+        action: String,
+        sessionId: String,
+        callId: String,
+    ) {
+        scope.launch {
+            // 进程可能刚被通知拉起：先恢复登录状态再核对账号。
+            initialize()
+            if (repository.auth.value
+                    ?.session
+                    ?.sessionId != sessionId
+            ) {
+                return@launch
+            }
+            when (action) {
+                "decline" -> calls.declineFromNotice(callId)
+                "hangup" -> calls.hangUp()
+            }
+        }
+    }
 
     override suspend fun prepareNativePush() = initialize()
 
@@ -57,11 +89,15 @@ class WeibanApplication :
                     }
                 }
                 previous = next
+                calls.attach(next)
                 if (next == null) {
                     chat.detach()
                 } else {
                     chat.attach(next)
-                    if (changed) push.rebind()
+                    if (changed) {
+                        push.rebind()
+                        calls.restore()
+                    }
                     if (changed &&
                         chat.snapshot.value.state.outbox
                             .isNotEmpty()
@@ -71,5 +107,26 @@ class WeibanApplication :
                 }
             }
         }
+    }
+}
+
+/** 通话的系统层：前台服务常驻通知、撤销来电通知（platform 的 CallNotices）。 */
+private class AppCallSystem(
+    private val app: WeibanApplication,
+) : app.weiban.feature.chat.CallSystem {
+    override fun callStarted(view: app.weiban.feature.chat.CallView) {
+        val sessionId =
+            app.repository.auth.value
+                ?.session
+                ?.sessionId ?: return
+        CallNotices.startOngoing(app, MainActivity::class.java, sessionId, view.callId, view.name, view.connectedAtMs)
+    }
+
+    override fun callFinished() {
+        CallNotices.stopOngoing(app)
+    }
+
+    override fun dismissIncomingNotice(callId: String) {
+        CallNotices.dismissIncoming(app, callId)
     }
 }

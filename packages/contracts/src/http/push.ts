@@ -61,6 +61,10 @@ export const NotificationKind = z.enum([
   'balance',
   'system',
   'admin_alert',
+  // 3.0：朋友圈 @ 我（SOC-08 第 4 条）、慢信送达（PLAY-05 第 6 条）、导入完成（CHR-08 第 5 条）
+  'moments',
+  'letter',
+  'import',
 ]);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 

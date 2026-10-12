@@ -102,8 +102,17 @@ PlazaPublishCheckPort.checkBeforePublish({
 - 写回 `childFeaturesDetected` 需要 characters 已有的系统写入方法（D-L2-06 中儿童特征检测接入时已有），不新增。
 - 检测结果不落库（用户在确认页处理后，plaza 只保存最终快照）；ai-runtime 只在用量记录里留下调用记录，不留文字。
 
+## 4a. 实现（T-089）
+
+- 代码：`apps/server/src/modules/ai-runtime/application/plaza-check.ts`（`PlazaPublishCheckService`，令牌 `AI_PLAZA_PUBLISH_CHECK`），`app.module.ts` 的 CallAgentCompositionModule 绑定为 plaza 的 `PLAZA_PUBLISH_CHECK`。
+- 规则层先把全角字符、中文数字（含「幺、洞、拐、勾」）逐字归一化（长度不变，位置一一对应）再匹配；称谓式人名（「王老师」「小雨同学」）在示例对话、人设描述、改版设定中按规则直接标为 `third_party_name`。
+- 「我」的信息：昵称、城市（≥2 字）、生日（13 种日期写法）、专属称呼与备注名、「关于我」（≥4 字短语 + 4 字片段）、该角色全部记忆（数字、称谓、3/4 字片段；基本信息 / 重要的人 / 重要的日子 / 近况用 3 字）。角色本人名字、别名与预设公开关系网人物不标。
+- 模型层：每段 ≤ 2 万字一调，JSON 解析失败重试一次（幂等键带尝试序号），截止 30 秒；只把 normal 范围的记忆（最多 30 条，按 2 字片段重合度排序）交给模型。
+- 儿童特征：规则层（与 characters 同口径并补「X 周岁」「小学」等）+ 模型层，非「no」一律按「是」；自定义角色检出时经 characters 内部令牌 `CHARACTER_CHILD_FEATURES_WRITER` 系统写回 `childFeaturesDetected`（只能从否变是，发分类变化事件、写审计）。预设改版检出时只回传结果（预设角色的分类不因用户改版文字而改动）。
+
 ## 5. 修订记录
 
 | 版本 | 日期 | 修改 | 修改人 |
 |---|---|---|---|
 | 1.0 | 2026-10-05 | 首版（T-022） | ai-lead |
+| 1.1 | 2026-10-10 | 新增 4a 实现说明（T-089） | ai-lead |

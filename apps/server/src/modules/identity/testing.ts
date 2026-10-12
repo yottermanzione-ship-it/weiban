@@ -9,6 +9,7 @@ import { invites, loginThrottle, sessions, users } from './infra/db/schema.js';
 
 export { DEFAULT_NOTIFICATION_SETTINGS, DEFAULT_THEME } from './application/settings.js';
 export { normalizeInviteCode } from './domain/rules.js';
+export { DeletionService } from './application/deletion.js';
 
 export class IdentityTestQueries {
   constructor(private readonly database: Database) {}

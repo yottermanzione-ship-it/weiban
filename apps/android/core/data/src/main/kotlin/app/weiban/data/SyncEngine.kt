@@ -407,6 +407,21 @@ class SyncEngine(
                     effects += ClientSyncEffectSettings(section = update.data.section, characterId = update.data.characterId)
                 }
             is UserUpdateModelStatusUpdated -> effects += ClientSyncEffectModelStatus(status = update.data.status)
+            // 3.0: card choices replace the stored message; the rest are not sync-core state and go to screens.
+            is UserUpdateMessageUpdated -> upsert(update.data.message)
+            is UserUpdateCallUpdated,
+            is UserUpdateMediaTranscriptReady,
+            is UserUpdateMomentsBadgeUpdated,
+            is UserUpdateMomentsPostChanged,
+            is UserUpdateDataChanged,
+            -> AppUpdates.publish(update)
+            // 3.0.1: the conversation was physically deleted (group dissolved / direct purged).
+            is UserUpdateConversationRemoved ->
+                state =
+                    state.copy(
+                        conversations = state.conversations.filter { it.conversationId != update.data.conversationId },
+                        messages = state.messages.filter { it.conversationId != update.data.conversationId },
+                    )
             is UserUpdateUnsupported -> Unit
         }
     }

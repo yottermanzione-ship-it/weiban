@@ -43,6 +43,33 @@ it('每个迁移都有手写的回滚脚本', () => {
   expect(sqlFiles.length).toBe(files.length * 2);
 });
 
+it('注销迁移在广场建表后执行，保持原 SQL 的校验和校验', () => {
+  const tags = readMigrations(MIGRATIONS_DIR).map((file) => file.tag);
+  expect(tags.indexOf('0060_plaza')).toBeLessThan(tags.indexOf('0056_account_deletion'));
+  expect(tags).toContain('0074_plaza_author_seen');
+});
+
+it('无效或循环迁移依赖在执行任何 SQL 前被拒绝', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'weiban-mig-deps-'));
+  cpSync(MIGRATIONS_DIR, dir, { recursive: true });
+  const journal = join(dir, 'meta', '_journal.json');
+  writeFileSync(
+    journal,
+    JSON.stringify({ entries: [{ idx: 0, tag: 'a', dependsOn: ['missing'] }] }),
+  );
+  expect(() => readMigrations(dir)).toThrow('依赖不存在');
+  writeFileSync(
+    journal,
+    JSON.stringify({
+      entries: [
+        { idx: 0, tag: 'a', dependsOn: ['b'] },
+        { idx: 1, tag: 'b', dependsOn: ['a'] },
+      ],
+    }),
+  );
+  expect(() => readMigrations(dir)).toThrow('依赖存在循环');
+});
+
 describeDb('数据库迁移（真实 PostgreSQL）', () => {
   let url: string;
   beforeAll(async () => {

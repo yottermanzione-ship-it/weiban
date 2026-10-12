@@ -14,6 +14,8 @@ import kotlinx.serialization.json.*
 import okhttp3.mockwebserver.*
 import org.junit.*
 import org.junit.Assert.*
+import org.junit.rules.ExternalResource
+import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -23,7 +25,17 @@ import java.util.concurrent.atomic.AtomicBoolean
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class ChatInformationTest {
-    @get:Rule val compose = createComposeRule()
+    val compose = createComposeRule()
+
+    @get:Rule val resources =
+        RuleChain
+            .outerRule(
+                object : ExternalResource() {
+                    override fun after() {
+                        closeResources()
+                    }
+                },
+            ).around(compose)
     private lateinit var server: MockWebServer
     private lateinit var database: LocalDatabase
     private lateinit var repository: SessionRepository
@@ -46,7 +58,15 @@ class ChatInformationTest {
         runBlocking {
             server = MockWebServer()
             server.start()
-            val api = ApiClient(server.url("/").toString())
+            val api =
+                ApiClient(
+                    server
+                        .url("/")
+                        .newBuilder()
+                        .host("127.0.0.1")
+                        .build()
+                        .toString(),
+                )
             database = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LocalDatabase::class.java).build()
             repository =
                 SessionRepository(
@@ -128,12 +148,12 @@ class ChatInformationTest {
         }
     }
 
-    @After fun close() =
+    private fun closeResources() =
         runBlocking {
-            runtime.detach()
-            scope.cancel()
-            server.close()
-            database.close()
+            if (::runtime.isInitialized) runtime.detach()
+            scope.coroutineContext[Job]?.cancelAndJoin()
+            if (::server.isInitialized) server.close()
+            if (::database.isInitialized) database.close()
         }
 
     private fun responses() =

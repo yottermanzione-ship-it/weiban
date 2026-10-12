@@ -13,6 +13,27 @@ import { CharactersPage } from '../features/characters.js';
 import { UsagePage } from '../features/usage.js';
 import { BillingPage } from '../features/billing.js';
 import { ScenarioModesPage } from '../features/scenario-modes.js';
+import { PublicUpdatesPage } from '../features/public-updates.js';
+import { HolidaysPage } from '../features/holidays.js';
+import { SymptomTagsPage } from '../features/symptom-tags.js';
+import { RelationsPage } from '../features/relations.js';
+import {
+  CardTemplatesPage,
+  StickerLibraryPage,
+  VoiceLibraryPage,
+  WorkLinksPage,
+} from '../features/media-library.js';
+import {
+  AccountDeletionsPage,
+  PendingDeletionBadge,
+  PetSpeciesPage,
+} from '../features/pets-deletions.js';
+import {
+  DailyQuestionsPage,
+  PlannerPage,
+  PlazaAdminPage,
+  PlazaReportBadge,
+} from '../features/plaza-admin.js';
 export function App() {
   const [auth, setAuth] = useState<AuthResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,11 +92,26 @@ export function App() {
             ['/usage', '用量与费用'],
             ['/billing', '对账与平台花费'],
             ['/scenario-modes', '情景模式'],
+            ['/public-updates', '公开动态'],
+            ['/holidays', '节日清单'],
+            ['/relations', '关系网'],
+            ['/stickers', '表情包库'],
+            ['/voices', '音色库'],
+            ['/card-templates', '卡面模板库'],
+            ['/work-links', '作品链接库'],
+            ['/symptom-tags', '经期症状标签'],
+            ['/pet-species', '宠物图鉴'],
+            ['/account-deletions', '注销未完成'],
+            ['/plaza', '人设广场'],
+            ['/planner', '行为规划'],
+            ['/daily-questions', '每日一问题库'],
             ['/admin/alerts', '运行提醒'],
           ].map(([to, label]) => (
             <NavLink key={to} to={to!}>
               {label}
               {to === '/admin/alerts' && <AlertBadge />}
+              {to === '/account-deletions' && <PendingDeletionBadge />}
+              {to === '/plaza' && <PlazaReportBadge />}
             </NavLink>
           ))}
         </nav>
@@ -100,6 +136,19 @@ export function App() {
             <Route path="/usage" element={<UsagePage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/scenario-modes" element={<ScenarioModesPage />} />
+            <Route path="/public-updates" element={<PublicUpdatesPage />} />
+            <Route path="/holidays" element={<HolidaysPage />} />
+            <Route path="/relations" element={<RelationsPage />} />
+            <Route path="/stickers" element={<StickerLibraryPage />} />
+            <Route path="/voices" element={<VoiceLibraryPage />} />
+            <Route path="/card-templates" element={<CardTemplatesPage />} />
+            <Route path="/work-links" element={<WorkLinksPage />} />
+            <Route path="/symptom-tags" element={<SymptomTagsPage />} />
+            <Route path="/pet-species" element={<PetSpeciesPage />} />
+            <Route path="/account-deletions" element={<AccountDeletionsPage />} />
+            <Route path="/plaza" element={<PlazaAdminPage />} />
+            <Route path="/planner" element={<PlannerPage />} />
+            <Route path="/daily-questions" element={<DailyQuestionsPage />} />
             <Route path="/admin/alerts" element={<AlertsPage />} />
             <Route path="*" element={<Navigate to="/invites" replace />} />
           </Routes>

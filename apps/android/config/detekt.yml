@@ -3,6 +3,14 @@ complexity:
     ignorePrivate: true
   LongParameterList:
     functionThreshold: 8
+    # Compose 页面函数按状态参数平铺，长度和分支数随界面状态增长；只约束普通函数（2026-10-11 首次本机构建）。
+    ignoreAnnotated: ['Composable']
+  LongMethod:
+    ignoreAnnotated: ['Composable']
+  CyclomaticComplexMethod:
+    ignoreAnnotated: ['Composable']
+  ComplexCondition:
+    ignoreAnnotated: ['Composable']
 naming:
   FunctionNaming:
     ignoreAnnotated: ['Composable']
@@ -14,3 +22,5 @@ style:
     maxLineLength: 140
   MagicNumber:
     active: false
+  ReturnCount:
+    ignoreAnnotated: ['Composable']

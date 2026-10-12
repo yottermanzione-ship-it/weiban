@@ -40,6 +40,50 @@ test('普通用户不能登录后台', async ({ page }) => {
   await expect(page.getByRole('alert')).toBeVisible();
   await expect(page.getByRole('navigation', { name: '管理导航' })).toHaveCount(0);
 });
+
+test('日常照片真实上传保存，后台同域代理加载签名图片而不放宽CSP', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') errors.push(msg.text());
+  });
+  await login(page);
+  await page.getByRole('link', { name: '卡面模板库', exact: true }).click();
+  await page.getByRole('button', { name: '新增模板', exact: true }).click();
+  await page.getByLabel('名称', { exact: true }).fill('日常照片浏览器自测');
+  await page.getByLabel('日常照片', { exact: true }).check();
+  await page.getByLabel('不含人物（可用于真人角色）', { exact: true }).check();
+  await page.getByLabel(/卡面图片/).setInputFiles({
+    name: 'photo.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      await page.evaluate(() => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 32;
+        canvas.height = 32;
+        const context = canvas.getContext('2d')!;
+        context.fillStyle = '#0aa35a';
+        context.fillRect(0, 0, 32, 32);
+        return canvas.toDataURL('image/png').split(',')[1]!;
+      }),
+      'base64',
+    ),
+  });
+  await expect(page.getByRole('status')).toHaveText('图片已上传；保存后生效');
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  const image = page.getByRole('img', { name: '日常照片浏览器自测', exact: true });
+  await expect(image).toBeVisible();
+  await expect
+    .poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth))
+    .toBeGreaterThan(0);
+  const imageUrl = await image.evaluate((element: HTMLImageElement) => element.src);
+  expect(new URL(imageUrl).origin).toBe(new URL(page.url()).origin);
+  expect(new URL(imageUrl).searchParams.has('token')).toBe(true);
+  await page.reload();
+  await expect
+    .poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth))
+    .toBeGreaterThan(0);
+  expect(errors).toEqual([]);
+});
 test('余额提交丢失响应后手动重试，不重复赠送', async ({ page }) => {
   await login(page);
   await page.getByRole('link', { name: '用户与余额' }).click();

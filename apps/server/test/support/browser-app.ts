@@ -21,6 +21,9 @@ import { AppModule } from '../../src/app.module.js';
 import { configureHttpApp } from '../../src/main.js';
 import { SettingsService } from '../../src/modules/identity/testing.js';
 import { IdentityCommands } from '../../src/modules/identity/index.js';
+import { IMPORTER_ANALYZER } from '../../src/modules/importer/index.js';
+import { ImporterService } from '../../src/modules/importer/testing.js';
+import { MediaAssetService, MediaService } from '../../src/modules/media/testing.js';
 import { BillingAdminService } from '../../src/modules/billing/testing.js';
 import { newId, TestClock, loadConfig, createLogger } from '../../src/platform/index.js';
 import { AdminAlertService } from '../../src/modules/push/testing.js';
@@ -46,6 +49,33 @@ const fixture = await Test.createTestingModule({
     }),
   ],
 })
+  // Controlled analysis for browser field persistence; not a model-quality evaluation.
+  .overrideProvider(IMPORTER_ANALYZER)
+  .useValue({
+    estimate: async () => 0,
+    analyze: async () => ({
+      ok: true,
+      value: {
+        kind: 'new_character',
+        draft: {
+          cardSchemaVersion: 1,
+          data: {
+            persona: {
+              summary:
+                '这是一个性格开朗、乐于助人的成年角色，喜欢在日落时分散步，总能带给周围的人温暖与微笑，对生活充满热情，尊重他人的边界。',
+            },
+          },
+        },
+        suggestedClassification: {
+          basis: 'real_person',
+          realPersonKind: 'private_person',
+          ageSetting: 'adult',
+          childAppearance: false,
+        },
+        detectedRealNames: [],
+      },
+    }),
+  })
   .overrideProvider(CHARACTER_EVALUATOR)
   .useValue({
     evaluate: async () => ({
@@ -62,7 +92,37 @@ await app.get<JobQueue>(JOB_QUEUE).start();
 const commands = app.get(IdentityCommands);
 let chatUser = '';
 let guideUser = '';
+let importUser = '';
 const admin = await commands.createAdmin('browser_admin', 'correct horse battery');
+// Real playable WAV through encrypted media storage; a tone tests playback, not voice quality.
+const sampleRate = 8000;
+const wav = Buffer.alloc(44 + sampleRate * 10 * 2);
+wav.write('RIFF', 0);
+wav.writeUInt32LE(wav.length - 8, 4);
+wav.write('WAVEfmt ', 8);
+wav.writeUInt32LE(16, 16);
+wav.writeUInt16LE(1, 20);
+wav.writeUInt16LE(1, 22);
+wav.writeUInt32LE(sampleRate, 24);
+wav.writeUInt32LE(sampleRate * 2, 28);
+wav.writeUInt16LE(2, 32);
+wav.writeUInt16LE(16, 34);
+wav.write('data', 36);
+wav.writeUInt32LE(wav.length - 44, 40);
+for (let i = 0; i < sampleRate * 10; i++)
+  wav.writeInt16LE(Math.round(Math.sin((i * 2 * Math.PI * 440) / sampleRate) * 2000), 44 + i * 2);
+const voiceSample = await app
+  .get(MediaService)
+  .upload(admin, 'voice_sample', { buffer: wav, mimetype: 'audio/wav' }, { admin: true });
+await app.get(MediaAssetService).createVoice(admin, {
+  name: '浏览器测试音色',
+  tags: [],
+  sampleMediaId: voiceSample.mediaId,
+  enabled: true,
+  providerVoiceKey: 'controlled-test',
+  modelKey: 'controlled-speech-test',
+  careFallbackMediaId: null,
+});
 for (const [name, balance] of [
   ['browser_user', 50_000_000],
   ['browser_other', 1_000_000],
@@ -72,6 +132,7 @@ for (const [name, balance] of [
   const user = await commands.createAdmin(name, 'correct horse battery');
   if (name === 'browser_user') chatUser = user;
   if (name === 'browser_guide') guideUser = user;
+  if (name === 'browser_other') importUser = user;
   await commands.setRole(name, 'user');
   if (name === 'browser_other' || name === 'browser_guide')
     await app.get(SettingsService).updateProfile(user, { nickname: '其他用户' });
@@ -82,6 +143,17 @@ for (const [name, balance] of [
     idempotencyKey: newId(),
   });
 }
+const importer = app.get(ImporterService);
+const importJob = await importer.createJob(importUser, {
+  clientRequestId: newId(),
+  kind: 'new_character',
+  sourceKind: 'text',
+  text: '导入测试：你好\n另一个人：今天过得怎样',
+});
+await importer.detect(importJob.jobId);
+await importer.selectSpeaker(importUser, importJob.jobId, '导入测试');
+await importer.start(importUser, importJob.jobId, { keepRaw: false });
+await importer.analyze(importJob.jobId);
 await app.get<Database>(DATABASE).transaction(async (tx) => {
   for (let index = 0; index < 53; index++)
     await app.get(AdminAlertService).raise(tx, {

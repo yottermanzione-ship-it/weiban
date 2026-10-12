@@ -97,6 +97,16 @@ DELETE /me（密码 + confirm=DELETE）
 - 注销中的账号不能登录；用户名在账号行删除后才释放。
 - 重复投递安全：收件箱去重 + 账号已删除时忽略迟到的回报（有测试）。
 
+### 6.1 T-080 收口（迁移 0056）
+
+- **密码错误**：`DELETE /me` 返回 **403 `invalid_credentials`「密码错误」**（不是 401），会话不动，用户保持登录；连续输错按登录锁定规则返回 429 `account_locked`。
+- **完成判定（复核）**：所有模块回报后，先逐模块再调一次 `countUserData`；有残留的模块删掉其进度行并重新投递删除任务，`users.deletion_rechecks` 加一。超过 `MAX_DELETION_RECHECKS`（3 轮）仍有残留就不再自动投递，账号停在「注销未完成」，管理员重新触发时清零重来。
+- **完成时**：删除账号行 → `AuditLog.anonymizeUser`（审计里该用户的明文 ID：对象列换成哈希、操作人列置空并把哈希写进 `details.actorHash`）→ 审计 `user.deleted` → 投递 `identity.scrub_user_traces`（立即一次、1 小时后一次）：删除发件箱里已送达且载荷含该用户 ID 的事件，再做一次审计匿名化。
+- **管理接口（ADM-10）**：`GET /admin/account-deletions` 按申请时间从早到晚；`POST /admin/account-deletions/:userId/retry` 只重投未回报模块（含注销后新登记的模块），全部已回报则直接走完成判定；账号不存在或不在注销中 → 404（网页视为已删完）。没有撤销注销接口。审计只记用户 ID 哈希。
+- **广场作者注销（PLZ-06 第 4 条）**：plaza 删除清单在删作品前给别人的采用记录写 `plaza.adoptions.author_deleted_at`，复制品来源显示「已注销用户」。
+- **核验脚本**：`pnpm verify-user-purged <用户ID>`（= 服务器命令 `identity verify-purged`，实现 `application/purge-verifier.ts`）：① 各模块 `countUserData`；② 全库 uuid 列（及 text 型用户引用列）扫描，能发现漏登记的表；③ 账号行、数据密钥、审计明文 ID、已送达事件；④ 对象存储孤儿文件（媒体 `MEDIA_STORAGE_AUDIT`，存储键不分用户目录，口径是「全库无孤儿文件」）。有残留退出码 2。
+- **已登记删除清单的模块（20 个中 19 个）**：identity、realtime、push、media、model_access、billing、characters（含关系网、补充设定）、contacts（含名片推荐、新朋友状态）、chat（含群聊）、ai_runtime（含群聊 / 朋友圈 / 通话 / 宠物 / 规划各表）、proactive、moments、growth（含卡片、成就、宠物）、importer、library、health、calls、plaza、play（五个玩法）。policy 没有用户数据表，不登记。
+
 ## 7. 命令行脚本
 
 仓库根目录运行（开发）；生产构建后在 `apps/server` 下用 `node dist/identity.js <命令>`（需要 `DATABASE_URL` 等环境变量，与服务器相同）。

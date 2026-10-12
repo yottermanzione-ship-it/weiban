@@ -17,14 +17,17 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
   AdultModelReadPort,
+  BillingQuotePort,
   BillingReadPort,
   GenerateError,
   ModelPurpose,
+  ModelQuotePort,
   ModelRole,
   ModelStatus,
   PortResult,
+  UsageQuantities,
 } from '@weiban/contracts';
-import { BILLING_READ_PORT } from '../../billing/index.js';
+import { BILLING_QUOTE_PORT, BILLING_READ_PORT } from '../../billing/index.js';
 import { hasAdultContent, unavailableReason } from '../domain/rules.js';
 import { MODEL_ACCESS_POLICY, type ModelPolicy } from '../tokens.js';
 import { CatalogService, type ModelFacts } from './catalog.js';
@@ -74,6 +77,10 @@ export class ModelResolver implements AdultModelReadPort {
     role: ModelRole,
     characterId: string | null,
   ): Promise<{ facts: ModelFacts; source: 'override' | 'user' | 'platform_default' } | null> {
+    if (role === 'adult_check') {
+      const checker = await this.catalog.defaultModel('adult_check');
+      return checker ? { facts: checker, source: 'platform_default' } : null;
+    }
     const raw = await this.selection.raw(userId);
     const override = characterId ? await this.selection.rawOverride(userId, characterId) : null;
     const userChat = override
@@ -104,10 +111,46 @@ export class ModelResolver implements AdultModelReadPort {
     modelRole: ModelRole;
     purpose: ModelPurpose;
     characterId?: string;
+    /** T-071：消息带图片时同样要求识图能力（ChatMessageForModel.images）。 */
+    hasImages?: boolean;
+    /** T-090（CR-17）：只允许 purpose = behavior_planning；指定规划模型（不随用户的后台模型）。 */
+    modelKeyOverride?: string;
   }): Promise<PortResult<ResolvedModel, GenerateError>> {
-    const picked = await this.pick(input.userId, input.modelRole, input.characterId ?? null);
+    if (
+      input.modelRole === 'adult_check' &&
+      (input.purpose !== 'safety_check' || !input.characterId || input.modelKeyOverride)
+    )
+      return { ok: false, error: 'bad_request' };
+    let picked: { facts: ModelFacts } | null;
+    if (input.modelKeyOverride) {
+      if (input.purpose !== 'behavior_planning') return { ok: false, error: 'bad_request' };
+      picked = { facts: await this.catalog.fact(input.modelKeyOverride) };
+    } else if (input.purpose === 'behavior_planning') {
+      // 规划默认模型（defaultFor 含 planner）；平台未设置时沿用用户的后台模型。
+      const planner = await this.catalog.defaultModel('planner');
+      picked = planner
+        ? { facts: planner }
+        : await this.pick(input.userId, input.modelRole, input.characterId ?? null);
+    } else {
+      picked = await this.pick(input.userId, input.modelRole, input.characterId ?? null);
+    }
     if (!picked) return { ok: false, error: 'not_configured' };
     let facts = picked.facts;
+    if (input.modelRole === 'adult_check') {
+      let allowed = false;
+      try {
+        const url = new URL(facts.upstreamBaseUrl ?? '');
+        allowed =
+          url.protocol === 'https:' &&
+          url.hostname === 'openrouter.ai' &&
+          (!url.port || url.port === '443') &&
+          !url.username &&
+          !url.password;
+      } catch {
+        /* 没有有效上游地址时不放行，不回落到用户后台模型。 */
+      }
+      if (!allowed) return { ok: false, error: 'model_not_allowed' };
+    }
     let usedVisionDefault = false;
     const checkUsable = (f: ModelFacts): GenerateError | null => {
       const reason = unavailableReason(f.entry, f.upstreamStatus);
@@ -117,7 +160,10 @@ export class ModelResolver implements AdultModelReadPort {
     };
     const first = checkUsable(facts);
     if (first) return { ok: false, error: first };
-    if (input.purpose === 'vision' && !facts.entry?.capabilities.includes('vision')) {
+    if (
+      (input.purpose === 'vision' || input.hasImages === true) &&
+      !facts.entry?.capabilities.includes('vision')
+    ) {
       const visionDefault = await this.catalog.defaultModel('vision');
       if (!visionDefault) return { ok: false, error: 'capability_missing' };
       const err = checkUsable(visionDefault);
@@ -127,8 +173,11 @@ export class ModelResolver implements AdultModelReadPort {
     }
     const entry = facts.entry;
     if (!entry) return { ok: false, error: 'model_unavailable' };
+    // 规划模型一律不能是无审查模型（CR-17）。
+    if (input.purpose === 'behavior_planning' && hasAdultContent(entry.capabilities))
+      return { ok: false, error: 'model_not_allowed' };
     // 调用时的无审查模型闸门（billing.md 第 9 节第 2 条）
-    if (hasAdultContent(entry.capabilities)) {
+    if (input.modelRole === 'adult_check' || hasAdultContent(entry.capabilities)) {
       if (!input.characterId) return { ok: false, error: 'model_not_allowed' };
       const decision = await this.policy.checkModelForCharacter({
         userId: input.userId,
@@ -150,15 +199,100 @@ export class ModelResolver implements AdultModelReadPort {
   }
 }
 
+/** 报价时按用途选模型角色：聊天类用途用聊天模型，其余沿用后台模型（与网关调用方的惯例一致）。 */
+const CHAT_ROLE_PURPOSES: readonly ModelPurpose[] = [
+  'chat_reply',
+  'safety_check',
+  'safety_followup',
+  'vision',
+  'voice',
+  'image_generation',
+  'web_search',
+  'import_analysis',
+];
+
+/**
+ * 契约 3.1 ModelQuotePort（积压 ㉖）：按用户所选模型报价。先按用途 / 角色覆盖 / 平台默认解析模型（识图缺能力时改用默认识图模型），
+ * 再经 BillingQuotePort 按当前价目表计价。不调用上游、不冻结、不扣费。
+ */
+@Injectable()
+export class ModelQuoteService implements ModelQuotePort {
+  constructor(
+    @Inject(ModelResolver) private readonly resolver: ModelResolver,
+    @Inject(CatalogService) private readonly catalog: CatalogService,
+    @Inject(BILLING_QUOTE_PORT) private readonly billingQuote: BillingQuotePort,
+  ) {}
+
+  async quote(input: {
+    userId: string;
+    characterId?: string;
+    purpose: ModelPurpose;
+    estimate: UsageQuantities;
+  }): ReturnType<ModelQuotePort['quote']> {
+    let facts: ModelFacts | null = null;
+    if (input.purpose === 'behavior_planning') facts = await this.catalog.defaultModel('planner');
+    if (!facts) {
+      const role: ModelRole = CHAT_ROLE_PURPOSES.includes(input.purpose) ? 'chat' : 'background';
+      facts =
+        (await this.resolver.pick(input.userId, role, input.characterId ?? null))?.facts ?? null;
+    }
+    if (!facts) return { ok: false, error: 'not_configured' };
+    if (input.purpose === 'vision' && !facts.entry?.capabilities.includes('vision')) {
+      const visionDefault = await this.catalog.defaultModel('vision');
+      if (!visionDefault) return { ok: false, error: 'not_configured' };
+      facts = visionDefault;
+    }
+    const entry = facts.entry;
+    if (!entry) return { ok: false, error: 'model_removed' };
+    const reason = unavailableReason(entry, facts.upstreamStatus);
+    if (reason) return { ok: false, error: reason === 'model_removed' ? reason : 'not_configured' };
+    const priced = await this.billingQuote.quote(entry.modelKey, input.estimate);
+    if (!priced) return { ok: false, error: 'price_missing' };
+    return {
+      ok: true,
+      value: {
+        modelKey: entry.modelKey,
+        amountMicros: priced.amountMicros,
+        priceVersionId: priced.priceVersionId,
+      },
+    };
+  }
+}
+
 @Injectable()
 export class ModelStatusService {
   constructor(
     @Inject(ModelResolver) private readonly resolver: ModelResolver,
     @Inject(BILLING_READ_PORT) private readonly billing: BillingReadPort,
+    @Inject(CatalogService) private readonly catalog: CatalogService,
   ) {}
 
   /** GET /model/status：某角色（或全局）当前能否回复，用于私聊顶部横条。 */
   async getStatus(userId: string, characterId: string | null): Promise<ModelStatus> {
+    const base = await this.baseStatus(userId, characterId);
+    // 3.1（积压 ㉚）：识图可用 = 解析出的聊天模型有 vision 能力，或平台设置了默认识图模型。
+    return { ...base, visionAvailable: await this.visionAvailable(userId, characterId) };
+  }
+
+  private async visionAvailable(userId: string, characterId: string | null): Promise<boolean> {
+    try {
+      const picked = await this.resolver.pick(userId, 'chat', characterId);
+      if (
+        picked?.facts.entry?.capabilities.includes('vision') &&
+        unavailableReason(picked.facts.entry, picked.facts.upstreamStatus) === null
+      )
+        return true;
+      const visionDefault = await this.catalog.defaultModel('vision');
+      return (
+        !!visionDefault?.entry &&
+        unavailableReason(visionDefault.entry, visionDefault.upstreamStatus) === null
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private async baseStatus(userId: string, characterId: string | null): Promise<ModelStatus> {
     const picked = await this.resolver.pick(userId, 'chat', characterId);
     if (!picked) {
       return {

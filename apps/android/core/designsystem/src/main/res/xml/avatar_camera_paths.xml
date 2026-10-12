@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="avatar_camera" path="avatar-camera/" />
+    <!-- T-085：分享图交给系统分享面板前的临时文件。 -->
+    <cache-path name="share_images" path="share-images/" />
 </paths>

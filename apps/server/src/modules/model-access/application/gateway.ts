@@ -13,8 +13,11 @@ import {
   type BillingReservationPort,
   type IdentityDirectoryPort,
   type IdentityAccountStatusPort,
+  type MediaSystemPort,
 } from '@weiban/contracts';
-import { CLOCK, type Clock } from '../../../platform/index.js';
+import { APP_CONFIG, CLOCK, type AppConfig, type Clock } from '../../../platform/index.js';
+import { MEDIA_SYSTEM_PORT } from '../../media/index.js';
+import { isFakeModel } from '../infra/media-adapter.js';
 import { BILLING_RESERVATION_PORT } from '../../billing/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_DIRECTORY_PORT } from '../../identity/index.js';
 import {
@@ -26,7 +29,12 @@ import {
   type GenerationPolicy,
   type ModelPolicy,
 } from '../tokens.js';
-import { estimateTokens, type TextAdapter, type TextResult } from '../infra/text-adapter.js';
+import {
+  estimateTokens,
+  type AdapterMessage,
+  type TextAdapter,
+  type TextResult,
+} from '../infra/text-adapter.js';
 import {
   GenerationCache,
   requestHash,
@@ -67,6 +75,8 @@ export class ModelGateway implements ModelGatewayPort {
     @Inject(TEXT_ADAPTER) private readonly adapter: TextAdapter,
     @Inject(GATEWAY_RETRY_WAIT) private readonly wait: RetryWait,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(MEDIA_SYSTEM_PORT) private readonly media: MediaSystemPort,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
   getModelStatus(userId: string, characterId: string | null) {
     return this.status.getModelStatus(userId, characterId);
@@ -117,7 +127,8 @@ export class ModelGateway implements ModelGatewayPort {
       await this.cache.save(row, result, 'complete');
       return result;
     }
-    const resolved = await this.resolver.resolve(input);
+    const imageCount = input.messages.reduce((n, m) => n + (m.images?.length ?? 0), 0);
+    const resolved = await this.resolver.resolve({ ...input, hasImages: imageCount > 0 });
     if (!resolved.ok) {
       await this.cache.save(row, resolved, 'complete');
       return resolved;
@@ -141,7 +152,9 @@ export class ModelGateway implements ModelGatewayPort {
       modelKey: model.modelKey,
       characterId: input.characterId,
       estimate: {
-        inputTokens: estimateTokens(input.messages.map((m) => m.content).join('\n')),
+        // T-071：每张图按约 1000 token 估算（实际以上游返回的用量结算）。
+        inputTokens:
+          estimateTokens(input.messages.map((m) => m.content).join('\n')) + imageCount * 1000,
         outputTokens: maxOutputTokens,
       },
       idempotencyKey: `gateway:${row.id}`,
@@ -168,6 +181,8 @@ export class ModelGateway implements ModelGatewayPort {
     await this.cache.attach(row.id, usage.record.id, hold.holdId, model.upstreamId);
     await this.recorder.attachHold(usage.record.id, hold);
     const upstream = await this.upstreams.get(model.upstreamId);
+    const wire = await this.wireMessages(input);
+    const fake = isFakeModel(model.upstreamModelId, this.config.nodeEnv === 'production');
     let answer: TextResult = { ok: false, category: 'network_error', retryable: true };
     let retryCount = 0;
     // AbortSignal 超时覆盖读正文；performance 只测耗时，业务日期始终由 CLOCK 提供。
@@ -178,19 +193,21 @@ export class ModelGateway implements ModelGatewayPort {
     for (let attempt = 0; attempt <= 3; attempt++) {
       const remaining = Math.floor(budgetMs - (performance.now() - wallStart));
       if (remaining <= 0) break;
-      answer = await this.upstreams.withApiKey(model.upstreamId, (apiKey) =>
-        this.adapter.generate({
-          baseUrl: upstream.baseUrl,
-          apiKey,
-          model: model.upstreamModelId,
-          messages: input.messages,
-          maxOutputTokens,
-          temperature: input.temperature,
-          responseFormat: input.responseFormat,
-          idempotencyKey: `gateway:${row.id}`,
-          timeoutMs: Math.min(20000, remaining),
-        }),
-      );
+      answer = fake
+        ? fakeAnswer(input)
+        : await this.upstreams.withApiKey(model.upstreamId, (apiKey) =>
+            this.adapter.generate({
+              baseUrl: upstream.baseUrl,
+              apiKey,
+              model: model.upstreamModelId,
+              messages: wire,
+              maxOutputTokens,
+              temperature: input.temperature,
+              responseFormat: input.responseFormat,
+              idempotencyKey: `gateway:${row.id}`,
+              timeoutMs: Math.min(20000, remaining),
+            }),
+          );
       if (answer.ok || !answer.retryable || attempt === 3) break;
       const delay = [2000, 5000, 15000][attempt]! * (0.85 + Math.random() * 0.3);
       if (performance.now() - wallStart + delay >= budgetMs) break;
@@ -316,12 +333,41 @@ export class ModelGateway implements ModelGatewayPort {
     }
     return { ok: false, error: 'provider_unavailable' };
   }
+  /** T-071：把 images 读成 data URL（只在服务器内部，不落日志）。读取失败的图片跳过。 */
+  private async wireMessages(input: GenerateTextInput): Promise<AdapterMessage[]> {
+    const out: AdapterMessage[] = [];
+    for (const m of input.messages) {
+      if (!m.images?.length) {
+        out.push({ role: m.role, content: m.content });
+        continue;
+      }
+      const urls: string[] = [];
+      for (const ref of m.images) {
+        try {
+          const file = await this.media.readBytes(ref.mediaId);
+          if (!file.mimeType.startsWith('image/') || file.bytes.length > 8_000_000) continue;
+          urls.push(`data:${file.mimeType};base64,${Buffer.from(file.bytes).toString('base64')}`);
+        } catch {
+          // 媒体已删除：当作没有这张图。
+        }
+      }
+      out.push({ role: m.role, content: m.content, ...(urls.length ? { images: urls } : {}) });
+    }
+    return out;
+  }
   private valid(i: GenerateTextInput): boolean {
     return (
       Id.safeParse(i.userId).success &&
       ModelPurpose.safeParse(i.purpose).success &&
       BillingOwner.safeParse(i.billingOwner).success &&
-      ['chat', 'background', 'adult'].includes(i.modelRole) &&
+      ['chat', 'background', 'adult', 'adult_check'].includes(i.modelRole) &&
+      (i.modelRole !== 'adult_check' ||
+        (i.purpose === 'safety_check' && !!i.characterId && !i.safetyPriority)) &&
+      (i.modelKeyOverride === undefined ||
+        (i.purpose === 'behavior_planning' &&
+          typeof i.modelKeyOverride === 'string' &&
+          i.modelKeyOverride.length > 0 &&
+          i.modelKeyOverride.length <= 120)) &&
       typeof i.idempotencyKey === 'string' &&
       i.idempotencyKey.length > 0 &&
       i.idempotencyKey.length <= 200 &&
@@ -330,7 +376,14 @@ export class ModelGateway implements ModelGatewayPort {
       i.messages.length <= 500 &&
       i.messages.every(
         (m) =>
-          m && ['system', 'user', 'assistant'].includes(m.role) && typeof m.content === 'string',
+          m &&
+          ['system', 'user', 'assistant'].includes(m.role) &&
+          typeof m.content === 'string' &&
+          (m.images === undefined ||
+            (m.role === 'user' &&
+              Array.isArray(m.images) &&
+              m.images.length <= 4 &&
+              m.images.every((img) => Id.safeParse(img?.mediaId).success))),
       ) &&
       i.messages.reduce((n, m) => n + m.content.length, 0) <= 200000 &&
       (i.deadlineAt === undefined || Timestamp.safeParse(i.deadlineAt).success) &&
@@ -346,4 +399,29 @@ export class ModelGateway implements ModelGatewayPort {
       (i.billingOwner !== 'platform' || i.purpose.startsWith('admin_'))
     );
   }
+}
+
+/** 开发 / 测试假上游（upstreamModelId 以 fake- 开头，生产不启用）：确定性回答，用量按估算记。 */
+function fakeAnswer(input: GenerateTextInput): TextResult {
+  const text =
+    input.purpose === 'vision'
+      ? JSON.stringify({
+          description: '一张图片（假识图，未真正识别内容）',
+          people: [],
+          kind: 'photo',
+          textInImage: '',
+        })
+      : input.responseFormat === 'json'
+        ? '{}'
+        : '嗯嗯，我在呢（假回复）';
+  return {
+    ok: true,
+    text,
+    usage: {
+      inputTokens: estimateTokens(input.messages.map((m) => m.content).join('\n')),
+      cachedInputTokens: 0,
+      outputTokens: estimateTokens(text),
+      estimated: true,
+    },
+  };
 }

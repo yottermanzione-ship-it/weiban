@@ -134,7 +134,7 @@ export function CatalogPage() {
         </fieldset>
         <fieldset>
           <legend>平台默认</legend>
-          {(['chat', 'background', 'vision'] as const).map((v) => (
+          {(['chat', 'background', 'vision', 'adult_check'] as const).map((v) => (
             <label className="check" key={v}>
               <input
                 type="checkbox"
@@ -142,7 +142,14 @@ export function CatalogPage() {
                 value={v}
                 defaultChecked={editing?.defaultFor.includes(v) ?? false}
               />
-              {{ chat: '聊天', background: '后台', vision: '识图' }[v]}
+              {
+                {
+                  chat: '聊天',
+                  background: '后台',
+                  vision: '识图',
+                  adult_check: '成人内容检查（仅 OpenRouter）',
+                }[v]
+              }
             </label>
           ))}
         </fieldset>

@@ -7,6 +7,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import app.weiban.contracts.*
@@ -24,18 +25,24 @@ private class InformationActions(
     var pending by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
     var saved by mutableStateOf(false)
+    var notice by mutableStateOf<String?>(null)
 
     fun change(
         after: () -> Unit = {},
+        failed: () -> Unit = {},
         operation: suspend () -> Unit,
     ) {
         if (pending) return
         pending = true
         error = null
         saved = false
+        notice = null
         scope.launch {
             try {
-                userAction({ error = it }) {
+                userAction({
+                    error = it
+                    failed()
+                }) {
                     operation()
                     runtime.history.synchronize(owner)
                     saved = true
@@ -83,6 +90,7 @@ private class InformationActions(
 internal data class InformationNavigation(
     val back: () -> Unit,
     val models: () -> Unit = {},
+    val createGroup: () -> Unit = {},
 )
 
 @Composable internal fun ChatInformation(
@@ -97,8 +105,30 @@ internal data class InformationNavigation(
     val characterId = conversation.participants.find { it.kind == "character" }?.refId ?: return
     val contact = state.contacts.find { it.characterId == characterId }
     var memoryPage by remember(owner, characterId) { mutableStateOf(false) }
+    var timelinePage by remember(owner, characterId) { mutableStateOf(false) }
+    var voicePage by remember(owner, characterId) { mutableStateOf(false) }
     if (memoryPage) {
         MemoryManagement(repository, owner, characterId) { memoryPage = false }
+        return
+    }
+    val names = characterNames(repository, listOf(characterId))
+    if (timelinePage) {
+        CharacterTimeline(repository, owner, characterId, contact?.remark ?: names[characterId].orEmpty()) { timelinePage = false }
+        return
+    }
+    var cardsPage by remember(owner, characterId) { mutableStateOf(false) }
+    var searchPage by remember(owner, characterId) { mutableStateOf(false) }
+    var supplementPage by remember(owner, characterId) { mutableStateOf(false) }
+    if (supplementPage) {
+        SupplementPage(repository, owner, characterId) { supplementPage = false }
+        return
+    }
+    if (cardsPage) {
+        Column(Modifier.fillMaxSize()) { CardAlbumPage(repository, runtime, owner, characterId) { cardsPage = false } }
+        return
+    }
+    if (searchPage) {
+        ConversationSearchScreen(repository, owner, state, conversation.conversationId) { searchPage = false }
         return
     }
     val scope = rememberCoroutineScope()
@@ -111,19 +141,38 @@ internal data class InformationNavigation(
                 options = SessionCallOptions(owner = owner),
             )
         }
+    if (voicePage) {
+        VoiceTonePage(repository, owner, characterId, companion.data?.voiceId) {
+            voicePage = false
+            companion.refresh()
+        }
+        return
+    }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
     ) {
         TextButton(navigation.back, enabled = !actions.pending) { Text("返回聊天") }
         Text("聊天信息", style = MaterialTheme.typography.headlineSmall)
-        Text(title(state, conversation, characterNames(repository, listOf(characterId))))
+        TextButton(onClick = navigation.createGroup, enabled = !actions.pending) { Text("＋ 发起群聊") }
+        Text(title(state, conversation, names))
         InformationPreferences(actions, conversation, companion, characterId)
+        Text("和 TA 的相处", style = MaterialTheme.typography.titleSmall)
+        TextButton(onClick = { timelinePage = true }, enabled = !actions.pending) { Text("TA 的近况 ›") }
+        TextButton(onClick = { cardsPage = true }, enabled = !actions.pending) { Text("卡册 ›") }
+        TextButton(onClick = { searchPage = true }, enabled = !actions.pending) { Text("查找聊天记录 ›") }
+        TextButton(onClick = { L6Overlays.pets.value = PetsOpen(characterId) }, enabled = !actions.pending) { Text("我们的宠物 ›") }
+        // 心愿清单（PLAY-04）：和服务页是同一张清单。
+        TextButton(onClick = { PlayNav.open(PlayPage.Wishlist(characterId)) }, enabled = !actions.pending) { Text("心愿清单 ›") }
+        TextButton(onClick = { supplementPage = true }, enabled = !actions.pending) { Text("我的补充设定 ›") }
+        PlazaPublishRow(repository, owner, characterId, !actions.pending)
+        companion.data?.let { InformationProactive(actions, companion, characterId, it) }
         TextButton(onClick = navigation.models, enabled = !actions.pending) { Text("模型选择") }
+        VoiceToneRow(repository, owner, companion.data?.voiceId, !actions.pending) { voicePage = true }
         TextButton(onClick = { memoryPage = true }, enabled = !actions.pending) { Text("TA记住了什么") }
         InformationNames(actions, contact, characterId)
         (actions.error ?: companion.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        if (actions.saved) Text("已保存")
+        if (actions.saved) Text(actions.notice ?: "已保存")
         InformationRemoval(actions, conversation.conversationId, characterId, navigation.back, onRemoved)
     }
 }
@@ -285,4 +334,103 @@ internal data class InformationNavigation(
         }) { Text(mode.name) }
     }
     modes.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+}
+
+private val proactiveFrequencies = listOf("low" to "少", "medium" to "适中", "high" to "多")
+
+/** 主动消息（SIM-10、CHAT-13 第 2 条）：开关 + 三档频率，乐观更新，失败退回；另含「TA 的日常」（SIM-13）。 */
+@Composable private fun InformationProactive(
+    actions: InformationActions,
+    companion: NativeRemote<CompanionEndpointsGetForCharacterResponse>,
+    characterId: String,
+    settings: CompanionEndpointsGetForCharacterResponse,
+) {
+    val global =
+        remote("${actions.owner.sessionId}:notification-settings") {
+            actions.repository.call(
+                Endpoints.identityEndpointsGetNotificationSettings,
+                options = SessionCallOptions(owner = actions.owner, networkOnly = true),
+            )
+        }
+    val globalOff = global.data?.proactiveMessagesEnabled == false
+    var enabled by remember(settings.proactiveMessages) { mutableStateOf(settings.proactiveMessages ?: true) }
+    var frequency by remember(settings.proactiveFrequency) { mutableStateOf(settings.proactiveFrequency ?: "medium") }
+    var daily by remember(settings.dailyLife) { mutableStateOf(settings.dailyLife ?: true) }
+    InformationToggle("TA 主动找我", enabled && !globalOff, !actions.pending && !globalOff) { value ->
+        val before = enabled
+        enabled = value
+        actions.change(after = companion::refresh, failed = { enabled = before }) {
+            actions.call(Endpoints.companionEndpointsUpdateForCharacter, characterId, buildJsonObject { put("proactiveMessages", value) })
+        }
+    }
+    if (globalOff) {
+        Text("已在 我 › 服务 › 主动消息与免打扰 中关闭", style = MaterialTheme.typography.bodySmall)
+    } else if (enabled) {
+        Row(horizontalArrangement = Arrangement.spacedBy(WbSpace.S3)) {
+            Text("频率")
+            proactiveFrequencies.forEach { (id, label) ->
+                FilterChip(
+                    selected = frequency == id,
+                    enabled = !actions.pending,
+                    onClick = {
+                        if (frequency != id) {
+                            val before = frequency
+                            frequency = id
+                            actions.change(after = {
+                                actions.notice = "下一次主动消息开始生效"
+                                companion.refresh()
+                            }, failed = { frequency = before }) {
+                                actions.call(
+                                    Endpoints.companionEndpointsUpdateForCharacter,
+                                    characterId,
+                                    buildJsonObject { put("proactiveFrequency", id) },
+                                )
+                            }
+                        }
+                    },
+                    label = { Text(label) },
+                )
+            }
+        }
+    }
+    InformationCalls(actions, companion, characterId, settings, global.data?.proactiveCallsEnabled == false)
+    InformationToggle("TA 的日常", daily, !actions.pending) { value ->
+        val before = daily
+        daily = value
+        actions.change(after = companion::refresh, failed = { daily = before }) {
+            actions.call(Endpoints.companionEndpointsUpdateForCharacter, characterId, buildJsonObject { put("dailyLife", value) })
+        }
+    }
+}
+
+/**
+ * 「TA 给我打电话」（MED-07 第 1 条）：默认关闭；全局开关关闭时置灰。打开时检查通知与全屏通知权限（media-l5.md 7.4），
+ * 没有全屏通知权限时开关照常打开，下方说明「锁屏时只会收到通知」+「去设置」。
+ */
+@Composable private fun InformationCalls(
+    actions: InformationActions,
+    companion: NativeRemote<CompanionEndpointsGetForCharacterResponse>,
+    characterId: String,
+    settings: CompanionEndpointsGetForCharacterResponse,
+    globalOff: Boolean,
+) {
+    val context = LocalContext.current
+    val permissions = rememberCallPermissionFlow()
+    var enabled by remember(settings.proactiveCalls) { mutableStateOf(settings.proactiveCalls ?: false) }
+    InformationToggle("TA 给我打电话", enabled && !globalOff, !actions.pending && !globalOff) { value ->
+        val before = enabled
+        enabled = value
+        if (value) permissions()
+        actions.change(after = companion::refresh, failed = { enabled = before }) {
+            actions.call(Endpoints.companionEndpointsUpdateForCharacter, characterId, buildJsonObject { put("proactiveCalls", value) })
+        }
+    }
+    if (globalOff) {
+        Text("已在 我 › 服务 › 主动消息与免打扰 中关闭", style = MaterialTheme.typography.bodySmall)
+    } else if (enabled && !canUseFullScreen(context)) {
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("未允许全屏通知，锁屏时只会收到通知", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = { openFullScreenSettings(context) }) { Text("去设置") }
+        }
+    }
 }

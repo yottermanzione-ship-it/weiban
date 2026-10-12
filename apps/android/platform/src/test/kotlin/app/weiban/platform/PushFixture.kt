@@ -93,6 +93,9 @@ internal class PushFixture : AutoCloseable {
                         .newBuilder()
                         .host("127.0.0.1")
                         .build()
+                        .newBuilder()
+                        .host("127.0.0.1")
+                        .build()
                         .toString(),
                 ),
                 database,

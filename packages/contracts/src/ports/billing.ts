@@ -186,3 +186,29 @@ export interface BillingChargeQueryPort {
 }
 
 // v1.0：原 BillingPort（四个方法合在一起）删除，拆为上面两个端口。
+
+// ---------- 3.1（积压 ㉖ 计费报价、㉞ 当日聊天花费） ----------
+
+/**
+ * 3.1：按价目表报价（不冻结、不记账）。提供方：billing；调用方：**只有 model-access**（R9 同 BillingReservationPort 的理由：
+ * 价目表只经网关解释）。其他模块要估价用 `ModelQuotePort`（model-gateway.ts），由网关先解析用户所选模型再来这里报价。
+ * 当前价目表没有该模型价格时返回 null。
+ */
+export interface BillingQuotePort {
+  quote(
+    modelKey: string,
+    estimate: UsageQuantities,
+  ): Promise<{ amountMicros: number; priceVersionId: string } | null>;
+}
+
+/**
+ * 3.1：用户某一天按用途统计的已结算金额（不含已冻结未结算、已退款部分）。提供方：billing；任何模块可读（只读、只有金额）。
+ * 用途：行为规划成本闸「规划费用不超过当天聊天回复费用的 10%」（ai-runtime，docs/ai/behavior-planning.md 4.3 节）。
+ * localDate 按用户时区（调用方算好）；没有记录的用途不出现在结果里。
+ */
+export interface BillingDailySpendReadPort {
+  getUserDailySpendByPurpose(
+    userId: string,
+    localDate: string,
+  ): Promise<Partial<Record<ModelPurpose, number>>>;
+}

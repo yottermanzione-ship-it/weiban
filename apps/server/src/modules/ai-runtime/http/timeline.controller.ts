@@ -6,12 +6,25 @@ import {
   RequireAuth,
   type AuthPrincipal,
 } from '../../../platform/index.js';
-import { TimelineSummaryService } from '../application/timeline.js';
+import { TimelineListService, TimelineSummaryService } from '../application/timeline.js';
 
 @Controller('api/v1')
 @RequireAuth('user')
 export class TimelineController {
-  constructor(@Inject(TimelineSummaryService) private readonly timeline: TimelineSummaryService) {}
+  constructor(
+    @Inject(TimelineSummaryService) private readonly timeline: TimelineSummaryService,
+    @Inject(TimelineListService) private readonly list: TimelineListService,
+  ) {}
+
+  /** GET /api/v1/characters/:characterId/timeline（契约 3.0 listTimeline，T-066）。 */
+  @Get('characters/:characterId/timeline')
+  listTimeline(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Param(new ContractPipe(E.listTimeline.params!)) params: { characterId: string },
+    @Query(new ContractPipe(E.listTimeline.query!)) query: { cursor?: string; limit: number },
+  ) {
+    return this.list.list(p.userId, params.characterId, query);
+  }
 
   /**
    * GET /api/v1/conversations/:conversationId/timeline-summary

@@ -69,6 +69,8 @@ export interface FinishUsageInput {
   latencyMs: number;
   ttftMs?: number | null;
   retryCount: number;
+  /** T-071：多媒体用量（写入 usage_records.media_units）。 */
+  mediaUnits?: Record<string, number> | null;
 }
 
 @Injectable()
@@ -161,6 +163,7 @@ export class UsageRecorder {
         latencyMs: f.latencyMs,
         ttftMs: f.ttftMs ?? null,
         retryCount: f.retryCount,
+        ...(f.mediaUnits ? { mediaUnits: f.mediaUnits } : {}),
         completedAt: this.clock.now(),
       })
       .where(eq(usageRecords.id, id));

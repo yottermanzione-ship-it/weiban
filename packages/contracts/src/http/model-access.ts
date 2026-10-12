@@ -73,7 +73,7 @@ export const ModelRefState = ModelRef.extend({
 });
 
 /** 模型的三种用途（术语见 glossary：聊天模型、后台模型、成人模式模型）。 */
-export const ModelRole = z.enum(['chat', 'background', 'adult']);
+export const ModelRole = z.enum(['chat', 'background', 'adult', 'adult_check']);
 export type ModelRole = z.infer<typeof ModelRole>;
 
 export const ModelSelection = z.object({
@@ -121,6 +121,11 @@ export const ModelStatus = z.object({
     .nullable(),
   /** 角色单独设置的模型不可用、全局模型正常时为 true，界面显示「临时改用默认模型」按钮。 */
   canFallbackToDefault: z.boolean(),
+  /**
+   * 3.1（积压 ㉚）：识图能否使用（截图导入、发图给角色看）= 解析出的聊天模型有 vision 能力，
+   * 或平台设置了默认识图模型（defaultFor = vision）。客户端据此提前禁用截图导入入口；旧服务器不带时按 true（失败时再提示）。
+   */
+  visionAvailable: z.boolean().optional(),
 });
 export type ModelStatus = z.infer<typeof ModelStatus>;
 
@@ -188,7 +193,8 @@ export const UpstreamStatus = z.enum([
 export type UpstreamStatus = z.infer<typeof UpstreamStatus>;
 
 /** v1 只有 OpenAI 兼容接入；个别非兼容的语音 / 图片接口由 AI 负责人在适配器中处理并以新取值加入。 */
-export const UpstreamKind = z.enum(['openai_compatible']);
+/** 3.0：dashscope = 阿里云百炼原生接口（语音、图片）；bocha_search = 博查搜索；jev = TypeSafe AI Jev（CR-18，待配置后验证）。 */
+export const UpstreamKind = z.enum(['openai_compatible', 'dashscope', 'bocha_search', 'jev']);
 
 export const Upstream = z.object({
   upstreamId: Id,
@@ -240,8 +246,22 @@ export const AdminCatalogEntry = z.object({
    * v1.1：vision = 平台默认识图模型（pm-rulings-2 B5、PRD ADM-05 第 9 条）：用途为 vision 时，
    * 若用户（或角色覆盖）解析出的聊天模型没有 vision 能力，网关改用它，费用照常从用户余额扣；
    * 必须具备 vision 能力；未设置时网关返回 capability_missing（billing.md 3.2 节）。
+   * 3.0：planner = 行为规划默认模型（CR-17，只能用于 behavior_planning）；speech_synthesis / speech_recognition /
+   * image_generation / web_search = 平台提供的语音合成、语音识别、图片生成、联网搜索服务（MED，平台未设置即「未开通」）。
    */
-  defaultFor: z.array(z.enum(['chat', 'background', 'vision'])),
+  defaultFor: z.array(
+    z.enum([
+      'chat',
+      'background',
+      'vision',
+      'planner',
+      'adult_check',
+      'speech_synthesis',
+      'speech_recognition',
+      'image_generation',
+      'web_search',
+    ]),
+  ),
   enabled: z.boolean(),
   updatedAt: Timestamp,
 });

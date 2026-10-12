@@ -237,13 +237,26 @@ export const UserCustomCharacterWrite = z.object({
   birthday: LocalDate.nullable().optional(),
   /** 口头禅，显示在资料页，也参与儿童特征检测。 */
   catchphrase: z.string().max(200).optional(),
+  /**
+   * 3.1（T-098 申请）：完整口头禅列表（写入角色卡 speech.catchphrases）。同时传 catchphrase 与 catchphrases 时以列表为准，
+   * catchphrase 视为列表第一条；只传 catchphrase 时只替换第一条、保留其余。
+   */
+  catchphrases: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
+  /** 3.1（T-098 申请）：说话方式（语气、句子长短、习惯用语的自由描述，写入角色卡 speech.tone）。 */
+  speechStyle: z.string().trim().max(500).optional(),
   /** 示例对话（纯文本，多轮用换行分隔）。 */
   exampleDialogue: z.string().max(2000).optional(),
   tags: z.array(z.string().max(16)).max(10).optional(),
-  /** 头像媒体 ID（purpose = character_avatar）；null 使用默认头像。 */
+  /** 自定义头像媒体 ID（custom_character_avatar；可继承公开 plaza_avatar / character_avatar）；null 使用默认头像。 */
   avatarMediaId: Id.nullable().optional(),
+  /** 默认音色，从启用中的音色库选择；null 清空。陪伴设置里的选择优先。 */
+  voiceId: Id.nullable().optional(),
 });
 export type UserCustomCharacterWrite = z.infer<typeof UserCustomCharacterWrite>;
+export const UserCustomTrialWrite = UserCustomCharacterWrite.extend({
+  sourceCharacterId: Id.optional(),
+});
+export type UserCustomTrialWrite = z.infer<typeof UserCustomTrialWrite>;
 
 /** PATCH 请求：所有字段可选。 */
 export const UserCustomCharacterPatch = UserCustomCharacterWrite.partial();
@@ -253,6 +266,12 @@ export type UserCustomCharacterPatch = z.infer<typeof UserCustomCharacterPatch>;
 export const UserCustomCharacter = CharacterProfile.extend({
   description: z.string(),
   catchphrase: z.string().nullable(),
+  /** 3.1：完整口头禅列表；旧服务器不带时客户端只显示 catchphrase。 */
+  catchphrases: z.array(z.string()).optional(),
+  /** 3.1：说话方式；未填为 null。 */
+  speechStyle: z.string().nullable().optional(),
+  /** 自定义角色默认音色；旧服务器可省略，null 未选择。 */
+  voiceId: Id.nullable().optional(),
   exampleDialogue: z.string().nullable(),
   tags: z.array(z.string().max(16)),
   /**
@@ -266,6 +285,14 @@ export type UserCustomCharacter = z.infer<typeof UserCustomCharacter>;
 const customParams = z.object({ characterId: Id });
 
 export const UserCustomEndpoints = {
+  /** 3.0.1（L4 收尾）：我的自定义角色列表（「TA 认识的人」选人、管理）。 */
+  list: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/characters/custom`,
+    auth: 'user',
+    response: z.object({ items: z.array(UserCustomCharacter) }),
+    summary: '我创建的全部自定义角色，按创建时间倒序',
+  }),
   /** 创建自定义角色（CHR-07）；自动执行儿童特征检测后返回检测结果。 */
   create: defineEndpoint({
     method: 'POST',
@@ -297,6 +324,22 @@ export const UserCustomEndpoints = {
     params: customParams,
     response: z.object({ conversationId: Id }),
     summary: 'CHR-07 试聊：开始或复用试聊会话，试聊记录不保留',
+  }),
+  draftTrial: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/characters/custom/trial`,
+    auth: 'user',
+    body: UserCustomTrialWrite,
+    response: z.object({ characterId: Id, conversationId: Id, expiresAt: Timestamp }),
+    summary: 'CHR-07 保存前试聊：独立临时人设和会话，不创建正式角色或好友',
+  }),
+  endTrial: defineEndpoint({
+    method: 'DELETE',
+    path: `${API_PREFIX}/characters/custom/trial/:conversationId`,
+    auth: 'user',
+    params: z.object({ conversationId: Id }),
+    response: z.object({ ended: z.literal(true) }),
+    summary: 'CHR-07 结束试聊并清除临时会话、人设与回复计划；幂等',
   }),
 } as const;
 

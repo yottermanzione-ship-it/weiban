@@ -14,6 +14,7 @@ import type {
   IdentityAccountStatusPort,
   IdentityDirectoryPort,
   IdentityReadPort,
+  IdentitySettingsWritePort,
   NotificationSettings,
   Profile,
   UpdateProfileRequest,
@@ -101,7 +102,11 @@ function changedKeys<P extends object>(
 
 @Injectable()
 export class SettingsService
-  implements IdentityReadPort, IdentityAccountStatusPort, IdentityDirectoryPort
+  implements
+    IdentityReadPort,
+    IdentityAccountStatusPort,
+    IdentityDirectoryPort,
+    IdentitySettingsWritePort
 {
   constructor(
     @Inject(DATABASE) private readonly database: Database,
@@ -230,6 +235,38 @@ export class SettingsService
       });
       return toNotificationSettings(updated as NotificationRow);
     });
+  }
+
+  /**
+   * 契约 3.1 IdentitySettingsWritePort：只开不关的全局来电开关（MED-07 来电询问点「可以」）。
+   * 已开启时什么都不做；账号不存在或非 active 返回 false。打开时发 notification_settings_updated（→ settings.updated）。
+   */
+  async enableProactiveCalls(userId: string, transaction?: Tx): Promise<boolean> {
+    const run = async (tx: DbTx): Promise<boolean> => {
+      const [account] = await tx.db
+        .select({ status: users.status })
+        .from(users)
+        .where(eq(users.id, userId))
+        .for('share');
+      if (!account || account.status !== 'active') return false;
+      const [row] = await tx.db
+        .select()
+        .from(notificationSettings)
+        .where(eq(notificationSettings.userId, userId))
+        .for('update');
+      if (!row) return false;
+      if (row.proactiveCallsEnabled) return true;
+      await tx.db
+        .update(notificationSettings)
+        .set({ proactiveCallsEnabled: true, updatedAt: this.clock.now() })
+        .where(eq(notificationSettings.userId, userId));
+      await this.outbox.publish(tx, 'identity.notification_settings_updated', 'identity', {
+        userId,
+      });
+      return true;
+    };
+    if (transaction) return run(asDbTx(transaction));
+    return this.database.transaction(run);
   }
 
   // ---------- 界面偏好 ----------

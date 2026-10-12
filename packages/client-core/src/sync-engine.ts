@@ -594,6 +594,16 @@ export class SyncEngine {
       case 'model.status_updated':
         this.effects.push({ type: 'model-status', status: update.data.status });
         break;
+      case 'conversation.removed': {
+        // 3.0.1：会话已被物理删除（群解散 / 私聊彻底删除），本地一并删除。
+        const id = update.data.conversationId;
+        this.value.conversations = this.value.conversations.filter(
+          (item) => item.conversationId !== id,
+        );
+        this.value.messages = this.value.messages.filter((item) => item.conversationId !== id);
+        this.value.excluded = this.value.excluded.filter((item) => item.conversationId !== id);
+        break;
+      }
       case 'unsupported':
         break;
     }

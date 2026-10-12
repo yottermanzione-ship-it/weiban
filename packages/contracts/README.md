@@ -95,6 +95,50 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.1（2026-10-11，积压清理第一步：L3～L7 契约一次收口）
+
+依据：ADR-0028；实现清单与迁移号 `docs/architecture/contracts-3.1-map.md`；积压编号见 `docs/handoffs/2026-10-09-pm-dispatch-queue.md`。全部向后兼容：新响应字段一律可选，旧服务器不实现也能通过类型检查，旧客户端忽略。开发期间以「3.0.1」「3.0.2」名义做过的改动一并归入 3.1（版本规则没有补丁号；两次「3.0.1」也撞了号）。
+
+**补登记（已在 3.0 之后实现，此前只写在交接里）**
+
+- 2026-10-11 自定义默认音色：`UserCustomCharacterWrite`、PATCH/保存前试聊和响应，以及导入`editorFields`增加可选可空`voiceId`，只从启用中的音色库新选，null清空。停止使用已停用音色时仍可编辑其他字段；试聊的已有角色快照可保留其旧选择。语音选择优先级为陪伴设置→自定义角色默认→预设默认，合成时再次检查启用状态。旧角色卡中的示例代号不是库UUID，不作为响应ID返回；明确清空不继承旧快照。无数据库迁移。
+
+- 2026-10-11 导入编辑字段补齐：`ImportResult(new_character).editorFields` 增加可选、可空的 `birthday`（有效当地日期）和 `avatarMediaId`。省略兼容旧草稿，null 明确清空；分批合并保留原草稿的用户编辑字段。保存头像时检查归属及头像用途，最终创建角色继续执行既有分类和媒体校验。无数据库迁移。
+
+- 3.0.1 甲（L4 后端收尾 a5fd58f）：`NewFriendsEndpoints`（「新的朋友」列表）、`MomentsEndpoints.listNotifications`（朋友圈消息列表）、`UserCustomEndpoints.list`（自定义角色列表）、`renameGroup` 允许空名恢复默认、更新类型 `conversation.removed`（会话被彻底删除 / 群解散，客户端从本地删掉会话和消息）、`DataSection.new_friends`、通知上下文带 `labels`；`Message.labels` 登记服务器标签 `self_chat`（角色自发群聊话题，push 对「带 self_chat 且没有 @ 用户」的群消息不推送）。
+- 3.0.1 乙（T-063）：`Conversation.group.formerParticipants`（已退出 / 被移出的角色参与者，只用于渲染其历史消息的发送者，不是群成员）。
+- 3.0.1 丙（T-088，总负责人裁定）：端口 `ContactsWritePort.addForUser`（提供方 contacts，调用方 plaza）：「添加为我的角色」由服务器代用户走 CHR-03 添加流程。服务器内部接口，不影响线上格式。
+- 3.0.2（T-076）：`Anniversary.repeatYearly`、`AddAnniversaryRequest.repeatYearly`、`GrowthEndpoints.updateAnniversary`；节日清单 `HolidayDateType.lunar_annual`、`category`、`sendCard`、`cardTemplateId`、`characterCategories`、`upcomingDates` 与筛选参数；`UpcomingHoliday` 的发卡字段。`lunar_annual` 是给非容错响应枚举加取值，只出现在管理后台接口，按 ADR-0028 记为例外。
+- 端口参数（后端追加小项 d08a26d，总负责人指示）：`ProactiveMessagePort.canSendProactive / recordSent` 新增可选 `perCharacterLimit`（单角色每日上限按频率档位 1 / 3 / 5，默认 3；合计 P-04 = 8 不变）。
+
+**新增**
+
+- identity：端口 `IdentitySettingsWritePort.enableProactiveCalls`（⑰，ai-runtime 在来电询问点「可以」时打开全局来电开关；只开不关）。
+- 消息与聊天：`ImageContent.sizeBytes`（⑲）；`PLAY_SYSTEM_NOTICE_CODES`（㊲：focus_started、letter_sent、wishlist_item_completed 的 code 与参数）；`ChatSearchEndpoints.locateByDate`、`listByType`、会话内搜索 `senderParticipantId`（㉘）。
+- characters：`WorkLinkAdminEndpoints.getDefaultVoice`（⑲）；`UserCustomCharacterWrite.catchphrases / speechStyle` 与响应字段（T-098）；资料已更新红点起算点写进说明（㉕）；补充设定保存后冲突项异步写入并发 `data.changed(supplement)`；端口 `CharacterSupplementConflictsWritePort`、`CharacterChildFeaturesWritePort`（原服务器内部令牌转契约）、`PersonaUpdateSummarizerPort`（㉖，可选 AI 接入点）。
+- media 素材库：`CardTemplate.classicalStyle`（㉓）；收口补充`CardTemplateKind.daily_photo`（⑱），只出现在与服务器同步部署的管理端模板接口，按ADR-0028的管理枚举例外并入3.1。内部`MediaAssetReadPort.listCardTemplates`增加可选`classicalStyleOnly`，默认不限制风格，历史人物发图时要求古风且无肖像。
+- library：`FavoriteSource(message).seq`（㉘）、`Favorite.characterNameSnapshot / characterAvatarMediaIdSnapshot`（㉔）、`ShareRejectedDetails`（㉘，422 的 details 形状）。
+- growth：`PetAppearance.listed`（㉚）、事件 `growth.pet_naming_requested.speciesName`、端口 `CardCopywriterPort`（㉗，可选 AI 接入点）。
+- importer：`createJob.mergeIntoJobId`、`ImportJob.mergedIntoJobId`（㉕ 分批合并）、`ImportResult(supplement).conflicts / filteredCount`（㉕㉚）；`getJob` 说明更正为 `data.changed(imports)`。
+- Codex 产品收口补充：`ImportResult(new_character).editorFields` 可选保存名字、人设描述、完整口头禅、说话方式、示例和标签；避免把表单值塞入结构化角色卡的无关字段。分批合并保留用户编辑值（包括刻意清空），旧响应未带此字段时按生成草稿初始化。JSON Schema、OpenAPI 和 Kotlin 生成物同步。
+- push：`PushRequest.kind` 新增 `import`（㉕）。
+- model-access / billing：`ModelStatus.visionAvailable`（㉚）；端口 `ModelQuotePort`（㉖，按用户所选模型报价，model-access 提供）、`BillingQuotePort`（只给 model-access）、`BillingDailySpendReadPort`（㉞，当日按用途花费）。
+- plaza：`PlazaPresetVariantSnapshot.childFeaturesDetected`（㉝）；`PlazaWorkDetail.sourceCharacterId / myAdoptedCharacterId / removedReason / unreadCount`（㊱）；`PlazaAdminEndpoints.getWork / listBans`（㊱）。
+- ai-runtime：`PlannerConfigEntry.circuitOpenUntil`（㊱）；`updateConfig` 缺评测报告编号的状态码更正为 400。
+- play：寄信响应 `replyDelayReason`（㊲）；`PlayAgentPort.deliverLetterReply` 提前调用时的返回语义写明。
+- `DataSection` 新增 `supplement`（接收端容错，次版本）。
+
+Android 生成物已用 `pnpm android:generate` 重生成。
+
+### 3.0（2026-10-09，T-062：L4～L7 一次定稿）
+
+依据：ADR-0024～0027；对照表 `docs/architecture/contracts-3.0-map.md`。只新增，不删字段、不改已有含义；升主版本是因为给响应枚举新增了取值（`MediaObject.purpose` 同时改为接收端容错、`AdminCatalogEntry.defaultFor`、`UpstreamKind`）。
+
+- **消息**：新增 image、voice、sticker、link、contact_card、call_record、letter、daily_question、action_card；`TextContent.mentions`；`Message.actionChoice`；`Conversation.group`。用户可发 image / voice / sticker / link。
+- **新文件**：`http/chat-groups.ts`（群聊、卡片按钮、搜索）、`character-extras.ts`（关系网、补充设定、人设更新提示、作品链接、默认音色、自定义角色来源）、`assets.ts`（表情包、音色、卡面模板）、`moments.ts`、`calls.ts`（含音频流协议）、`growth-cards.ts`、`pets.ts`、`library.ts`、`importer.ts`、`plaza.ts`、`play.ts`、`ai-runtime-extras.ts`（共享开关、群聊陪伴设置、安静状态、行为规划管理）、`ports/social.ts`。
+- **扩展**：media（用途、语音、缩略图、转文字、链接预览）、health（默认值设置、一键清空、症状标签）、timeline（时间线列表）、contacts（名片「不感兴趣」）、companion（`voiceId`）、model-access（`defaultFor`、`UpstreamKind`）、模型网关（图片附件、`modelKeyOverride`、`ModelGatewayMediaPort`）、policy（`PolicyExtensionPort`）、chat 端口（`ChatGroupReadPort`、`ChatGroupAdminPort`、读取排除标签 / 消息）、characters 端口（关系网、作品链接、音色、`CharacterPlazaPort`）、media 端口。
+- **事件**：36 个（`events.ts`「3.0」段）；**更新类型**：message.updated、call.updated、media.transcript_ready、moments.badge_updated、moments.post_changed、data.changed；**通知种类**：moments、letter、import；**错误码** 12 个；`ModuleName` 新增 health、calls、plaza、play。
+
 ### 2.5（2026-10-09，L3 集成：T-050 / T-051 / T-052 / T-054 / T-058）
 
 各 L3 分支都以 2.5 新增接口，集成后统一为一个 2.5：growth（熟悉度）、simulation（推演）、timeline（你不在时卡片）、proactive（日报/节日/主动消息端口，ADR-0023）、health（经期日记契约）。只新增，不改旧字段。Android 生成物在合并后统一重生成。

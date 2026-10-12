@@ -27,3 +27,26 @@ suspend fun uploadAvatar(
         options = SessionCallOptions(owner = owner),
     )
 }
+
+/** 3.0：朋友圈等用户图片上传（purpose 由调用方给出，服务器按 UserMediaPurpose 校验）。 */
+suspend fun uploadMedia(
+    repository: SessionRepository,
+    owner: OwnerRecord,
+    bytes: ByteArray,
+    mimeType: String,
+    purpose: String,
+): MediaObject {
+    val extension = mimeType.substringAfter('/', "jpg")
+    val multipart =
+        MultipartBody
+            .Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("file", "upload.$extension", bytes.toRequestBody(mimeType.toMediaType()))
+            .build()
+    return repository.call(
+        Endpoints.mediaEndpointsUpload,
+        query = mapOf("purpose" to purpose),
+        multipart = multipart,
+        options = SessionCallOptions(owner = owner),
+    )
+}

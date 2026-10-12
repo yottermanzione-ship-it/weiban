@@ -16,6 +16,7 @@ import {
   customType,
   index,
   integer,
+  jsonb,
   pgSchema,
   primaryKey,
   text,
@@ -102,10 +103,10 @@ export const modelCatalog = modelAccessSchema.table(
   },
   (t) => [
     index('model_catalog_upstream_idx').on(t.upstreamId),
-    // 数据库兜底：无审查模型不能是平台默认模型（billing.md 3.2、第 9 节）
+    // 无审查模型只能用于专用检查默认，不能作为聊天/后台等生成默认。
     check(
       'model_catalog_adult_not_default',
-      sql`not ('adult_content' = any(${t.capabilities}) and cardinality(${t.defaultFor}) > 0)`,
+      sql`not ('adult_content' = any(${t.capabilities})) or ${t.defaultFor} <@ ARRAY['adult_check']::text[]`,
     ),
   ],
 );
@@ -189,6 +190,8 @@ export const usageRecords = modelAccessSchema.table(
     personaVersion: integer('persona_version'),
     promptTemplateVersion: text('prompt_template_version'),
     scenarioMode: text('scenario_mode'),
+    /** T-071：多媒体用量（ttsChars / asrSeconds / images / searchCalls），文本调用为空。 */
+    mediaUnits: jsonb('media_units').$type<Record<string, number>>(),
   },
   (t) => [
     uniqueIndex('usage_records_idempotency_key').on(t.idempotencyKey),

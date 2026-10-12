@@ -6,14 +6,14 @@
  * - 试聊：创建或复用一个不绑定 contacts 的临时会话（CHR-07 第 6 条）。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, gt } from 'drizzle-orm';
 import {
   type UserCustomCharacterWrite,
   type UserCustomCharacterPatch,
   type UserCustomCharacter,
   type ChatAdminPort,
-  type ChatReadPort,
-  type Tx,
+  type IdentityAccountStatusPort,
+  type MediaAssetReadPort,
   Id,
 } from '@weiban/contracts';
 import {
@@ -29,29 +29,37 @@ import {
   type Database,
   type EnvelopeCrypto,
 } from '../../../platform/index.js';
-import { CHAT_ADMIN_PORT, CHAT_READ_PORT } from '../../chat/index.js';
-import { deriveClassification, classificationCanChange } from '../../policy/index.js';
-import { characters } from '../infra/db/schema.js';
+import { CHAT_ADMIN_PORT } from '../../chat/index.js';
+import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
+import { MEDIA_ASSET_READ_PORT } from '../../media/index.js';
+import {
+  deriveClassification,
+  classificationCanChange,
+  compareClassification,
+} from '../../policy/index.js';
+import { characters, trialSessions } from '../infra/db/schema.js';
 import { childFeaturesIn } from '../domain/child-features.js';
+import { catchphrasesOf, voiceIdOf, type CustomCharacterPayload } from '../domain/custom-card.js';
+import { CharacterService } from './characters.js';
 
-/** 自定义角色的 draft_ciphertext 中存储的明文 JSON 结构。 */
-interface CustomCharacterPayload {
-  name: string;
-  description: string;
-  classification: {
-    basis: string;
-    realPersonKind: string | null;
-    ageSetting: string;
-    childAppearance: boolean;
-  };
-  birthday: string | null;
-  catchphrase: string | null;
-  exampleDialogue: string | null;
-  tags: string[];
-  avatarMediaId: string | null;
+/** 自定义角色的 draft_ciphertext 中存储的明文 JSON 结构（定义见 domain/custom-card.ts）。 */
+
+/**
+ * 3.1（T-098）：口头禅列表规则。同时传 catchphrase 与 catchphrases 以列表为准；只传 catchphrase 时只替换第一条、保留其余。
+ */
+function mergeCatchphrases(
+  current: string[],
+  catchphrase: string | null | undefined,
+  catchphrases: string[] | undefined,
+): string[] {
+  if (catchphrases !== undefined) return catchphrases;
+  if (catchphrase === undefined) return current;
+  if (!catchphrase) return current.slice(1);
+  return [catchphrase, ...current.slice(1)];
 }
 
 function buildPayload(body: UserCustomCharacterWrite): CustomCharacterPayload {
+  const phrases = mergeCatchphrases([], body.catchphrase, body.catchphrases);
   return {
     name: body.name,
     description: body.description,
@@ -62,10 +70,13 @@ function buildPayload(body: UserCustomCharacterWrite): CustomCharacterPayload {
       childAppearance: body.classification.childAppearance,
     },
     birthday: body.birthday ?? null,
-    catchphrase: body.catchphrase ?? null,
+    catchphrase: phrases[0] ?? null,
+    catchphrases: phrases,
+    speechStyle: body.speechStyle?.trim() || null,
     exampleDialogue: body.exampleDialogue ?? null,
     tags: body.tags ?? [],
     avatarMediaId: body.avatarMediaId ?? null,
+    voiceId: body.voiceId ?? null,
   };
 }
 
@@ -74,6 +85,8 @@ function textsToCheck(payload: CustomCharacterPayload): string[] {
     payload.name,
     payload.description,
     payload.catchphrase ?? '',
+    ...catchphrasesOf(payload),
+    payload.speechStyle ?? '',
     payload.exampleDialogue ?? '',
   ].filter(Boolean);
 }
@@ -86,27 +99,84 @@ export class CustomCharacterService {
     @Inject(ENVELOPE_CRYPTO) private readonly crypto: EnvelopeCrypto,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(CHAT_ADMIN_PORT) private readonly chatAdmin: ChatAdminPort,
-    @Inject(CHAT_READ_PORT) private readonly chatRead: ChatReadPort,
+    @Inject(IDENTITY_ACCOUNT_STATUS_PORT) private readonly accounts: IdentityAccountStatusPort,
+    @Inject(CharacterService) private readonly characterService: CharacterService,
+    @Inject(MEDIA_ASSET_READ_PORT) private readonly assets: MediaAssetReadPort,
   ) {}
 
-  async create(userId: string, body: UserCustomCharacterWrite): Promise<UserCustomCharacter> {
+  async create(
+    userId: string,
+    body: UserCustomCharacterWrite,
+    trial?: {
+      sourceCharacterId?: string;
+      sourceRevision?: number;
+      childFeaturesDetected?: boolean;
+      reuse?: boolean;
+    },
+  ): Promise<UserCustomCharacter> {
     parseContract(Id, userId);
     const payload = buildPayload(body);
-    const detected = childFeaturesIn(textsToCheck(payload));
+    await this.characterService.customAvatar(userId, payload.avatarMediaId);
+    const inheritedVoice = trial?.sourceCharacterId
+      ? (await this.get(userId, trial.sourceCharacterId)).voiceId
+      : null;
+    if (!trial?.sourceCharacterId || payload.voiceId !== inheritedVoice)
+      await this.assertVoice(payload.voiceId);
+    const detected =
+      childFeaturesIn(textsToCheck(payload)) || trial?.childFeaturesDetected === true;
 
     const id = newId();
+    let actualId = id;
     const now = this.clock.now();
-    const sealed = await this.crypto.seal(
-      userId,
-      `character:${id}:draft:1`,
-      JSON.stringify(payload),
-    );
-
     await this.database.transaction(async (tx) => {
+      if (!trial && (await this.accounts.getAccountStatus(userId, tx)) !== 'active')
+        throw new AppError('unauthenticated', '账号已失效');
+      if (trial) {
+        await tx.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended('ai_runtime:user:' || $1,0))",
+          [userId],
+        );
+        if ((await this.accounts.getAccountStatus(userId, tx)) !== 'active')
+          throw new AppError('unauthenticated', '账号已失效');
+        if (trial.sourceCharacterId) {
+          const [source] = await tx.db
+            .select()
+            .from(characters)
+            .where(and(eq(characters.id, trial.sourceCharacterId), eq(characters.ownerId, userId)))
+            .for('share');
+          if (!source || source.revision !== trial.sourceRevision)
+            throw new AppError('not_found', '角色版本已变化，请重新试聊');
+          if (trial.reuse) {
+            const [existing] = await tx.db
+              .select()
+              .from(trialSessions)
+              .where(
+                and(
+                  eq(trialSessions.userId, userId),
+                  eq(trialSessions.sourceCharacterId, source.id),
+                  eq(trialSessions.sourceRevision, source.revision),
+                  eq(trialSessions.reusable, true),
+                  gt(trialSessions.expiresAt, this.clock.now()),
+                ),
+              );
+            if (existing) {
+              actualId = existing.characterId;
+              return;
+            }
+          }
+        }
+      }
+      const sealed = await this.crypto.seal(
+        userId,
+        `character:${id}:draft:1`,
+        JSON.stringify(payload),
+        tx,
+      );
       await tx.db.insert(characters).values({
         id,
         kind: 'custom',
         ownerId: userId,
+        isTrial: trial !== undefined,
         status: 'active',
         name: payload.name,
         searchText: payload.name,
@@ -129,10 +199,28 @@ export class CustomCharacterService {
         createdAt: now,
         updatedAt: now,
       });
+      if (trial) {
+        const conversation = await this.chatAdmin.ensureDirectConversation(tx, {
+          userId,
+          characterId: id,
+          restoreHistory: false,
+          trialExpiresAt: new Date(now.getTime() + 30 * 60_000).toISOString(),
+        });
+        await tx.db.insert(trialSessions).values({
+          conversationId: conversation.conversationId,
+          characterId: id,
+          userId,
+          sourceCharacterId: trial.sourceCharacterId ?? null,
+          sourceRevision: trial.sourceRevision ?? null,
+          reusable: trial.reuse ?? false,
+          createdAt: now,
+          expiresAt: new Date(now.getTime() + 30 * 60_000),
+        });
+      }
       await this.audit.record(
         {
           module: 'characters',
-          action: 'custom.created',
+          action: trial ? 'custom.trial_created' : 'custom.created',
           actorType: 'user',
           actorId: userId,
           targetType: 'character',
@@ -142,7 +230,7 @@ export class CustomCharacterService {
       );
     });
 
-    return this.get(userId, id);
+    return this.get(userId, actualId);
   }
 
   async update(
@@ -163,7 +251,7 @@ export class CustomCharacterService {
           eq(characters.kind, 'custom'),
         ),
       );
-    if (!current) throw new AppError('not_found', '角色不存在');
+    if (!current || current.isTrial) throw new AppError('not_found', '角色不存在');
 
     const rawPlain = await this.crypto.open(
       userId,
@@ -177,6 +265,13 @@ export class CustomCharacterService {
       rawPlain.fill(0);
     }
 
+    // 分类以数据库列为准（管理员更正、按新版本更新可能已改得更严）。
+    existing.classification = {
+      basis: current.basis,
+      realPersonKind: current.realPersonKind,
+      ageSetting: current.ageSetting,
+      childAppearance: current.childAppearance,
+    };
     // Merge patch fields
     const merged: CustomCharacterPayload = {
       ...existing,
@@ -189,7 +284,22 @@ export class CustomCharacterService {
         : {}),
       ...(patch.tags !== undefined ? { tags: patch.tags ?? [] } : {}),
       ...(patch.avatarMediaId !== undefined ? { avatarMediaId: patch.avatarMediaId ?? null } : {}),
+      ...(patch.voiceId !== undefined ? { voiceId: patch.voiceId } : {}),
+      ...(patch.speechStyle !== undefined ? { speechStyle: patch.speechStyle.trim() || null } : {}),
     };
+    if (patch.catchphrase !== undefined || patch.catchphrases !== undefined) {
+      const phrases = mergeCatchphrases(
+        catchphrasesOf(existing),
+        patch.catchphrase,
+        patch.catchphrases,
+      );
+      merged.catchphrases = phrases;
+      merged.catchphrase = phrases[0] ?? null;
+    }
+    if (patch.avatarMediaId !== undefined)
+      await this.characterService.customAvatar(userId, merged.avatarMediaId);
+    if (patch.voiceId !== undefined && patch.voiceId !== voiceIdOf(existing))
+      await this.assertVoice(patch.voiceId);
 
     if (patch.classification !== undefined) {
       if (
@@ -211,6 +321,25 @@ export class CustomCharacterService {
           { status: 422 },
         );
       }
+      // 广场复制品：分类只能更严，任何横向修改（虚构 ↔ 原创、真人子类互换）也拒绝（hard-boundaries.md 第 6 节第 2 条）。
+      if (
+        current.originKind === 'plaza_copy' &&
+        compareClassification(
+          {
+            basis: current.basis as 'real_person' | 'fictional' | 'original',
+            realPersonKind: current.realPersonKind as
+              'celebrity' | 'historical' | 'private_person' | null,
+            ageSetting: current.ageSetting as 'minor' | 'adult',
+            childAppearance: current.childAppearance,
+          },
+          patch.classification,
+        ) === 'looser'
+      )
+        throw new AppError(
+          'classification_change_forbidden',
+          '从人设广场添加的角色，分类只能改得更严格',
+          { status: 422 },
+        );
       merged.classification = {
         basis: patch.classification.basis,
         realPersonKind: patch.classification.realPersonKind,
@@ -222,13 +351,15 @@ export class CustomCharacterService {
     // childFeaturesDetected only ever increases
     const detected = childFeaturesIn(textsToCheck(merged)) || current.childFeaturesDetected;
     const revision = current.revision + 1;
-    const sealed = await this.crypto.seal(
-      userId,
-      `character:${characterId}:draft:${revision}`,
-      JSON.stringify(merged),
-    );
-
     await this.database.transaction(async (tx) => {
+      if ((await this.accounts.getAccountStatus(userId, tx)) !== 'active')
+        throw new AppError('unauthenticated', '账号已失效');
+      const sealed = await this.crypto.seal(
+        userId,
+        `character:${characterId}:draft:${revision}`,
+        JSON.stringify(merged),
+        tx,
+      );
       const [row] = await tx.db
         .update(characters)
         .set({
@@ -248,6 +379,15 @@ export class CustomCharacterService {
         .where(and(eq(characters.id, characterId), eq(characters.revision, current.revision)))
         .returning();
       if (!row) throw new AppError('conflict', '角色已被修改，请刷新后重试');
+      // 分类或儿童特征变化：照常发 characters.character_classification_changed（ai-runtime 退出成人模式）。
+      if (
+        row.basis !== current.basis ||
+        row.realPersonKind !== current.realPersonKind ||
+        row.ageSetting !== current.ageSetting ||
+        row.childAppearance !== current.childAppearance ||
+        row.childFeaturesDetected !== current.childFeaturesDetected
+      )
+        await this.characterService.classificationEvent(tx, row);
       await this.audit.record(
         {
           module: 'characters',
@@ -265,51 +405,23 @@ export class CustomCharacterService {
     return this.get(userId, characterId);
   }
 
-  /**
-   * 开始或复用试聊会话（CHR-07 第 6 条）。
-   * 试聊会话不建立正式联系人关系，不写入长期记忆。
-   * 复用：若角色已有 trialConversationId 且会话存在，直接返回。
-   * 新建：用 ChatAdminPort.ensureDirectConversation（restoreHistory = false）创建独立会话。
-   */
-  async startTrial(userId: string, characterId: string): Promise<{ conversationId: string }> {
-    parseContract(Id, userId);
-    parseContract(Id, characterId);
-
-    const [row] = await this.database.db
-      .select()
+  /** 3.0.1：我的全部自定义角色，按创建时间倒序。 */
+  async list(userId: string): Promise<{ items: UserCustomCharacter[] }> {
+    const rows = await this.database.db
+      .select({ id: characters.id })
       .from(characters)
       .where(
         and(
-          eq(characters.id, characterId),
           eq(characters.ownerId, userId),
           eq(characters.kind, 'custom'),
+          eq(characters.isTrial, false),
         ),
-      );
-    if (!row) throw new AppError('not_found', '角色不存在');
-
-    // Try to reuse existing trial conversation
-    if (row.trialConversationId) {
-      const existing = await this.chatRead.findDirectConversation(userId, characterId);
-      if (existing) return { conversationId: existing.conversationId };
-    }
-
-    // Create new trial conversation (ensureDirectConversation is idempotent, restoreHistory=false for trial)
-    const conv = await this.database.transaction(async (tx) => {
-      return this.chatAdmin.ensureDirectConversation(tx as unknown as Tx, {
-        userId,
-        characterId,
-        restoreHistory: false,
-      });
-    });
-
-    await this.database.db
-      .update(characters)
-      .set({ trialConversationId: conv.conversationId, updatedAt: this.clock.now() })
-      .where(eq(characters.id, characterId));
-
-    return { conversationId: conv.conversationId };
+      )
+      .orderBy(desc(characters.createdAt));
+    const items: UserCustomCharacter[] = [];
+    for (const row of rows) items.push(await this.get(userId, row.id));
+    return { items };
   }
-
   /** Load and return UserCustomCharacter for the given owner+characterId. */
   async get(userId: string, characterId: string): Promise<UserCustomCharacter> {
     const [row] = await this.database.db
@@ -348,7 +460,7 @@ export class CustomCharacterService {
       aliases: [],
       works: [],
       avatar: {
-        image: null,
+        image: await this.characterService.customAvatar(userId, payload.avatarMediaId ?? null),
         display: {
           supportColors: [],
           avatarText: null,
@@ -370,8 +482,17 @@ export class CustomCharacterService {
       personaUpdatedUnseen: false,
       description: payload.description,
       catchphrase: payload.catchphrase,
+      catchphrases: catchphrasesOf(payload),
+      speechStyle: payload.speechStyle ?? null,
+      voiceId: voiceIdOf(payload),
       exampleDialogue: payload.exampleDialogue,
       childFeaturesDetected: row.childFeaturesDetected,
     };
+  }
+
+  private async assertVoice(voiceId: string | null | undefined): Promise<void> {
+    if (!voiceId) return;
+    const voice = await this.assets.getVoice(voiceId);
+    if (!voice?.enabled) throw new AppError('bad_request', '音色不存在或已停用');
   }
 }

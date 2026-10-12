@@ -7,15 +7,19 @@ import { Module } from '@nestjs/common';
 import { BILLING_CHARGE_QUERY_PORT, BillingModule } from '../billing/index.js';
 import { POLICY_PORT } from '../policy/index.js';
 import { IdentityModule } from '../identity/index.js';
+import { MediaModule } from '../media/index.js';
+import { ModelGatewayMedia } from './application/media-gateway.js';
+import { OpenAiCompatibleMediaAdapter } from './infra/media-adapter.js';
 import { GenerationCache } from './application/generation-cache.js';
 import { GatewayMaintenance } from './application/gateway-maintenance.js';
 import { ModelGateway } from './application/gateway.js';
+import { GatewayWebSearchProvider } from './application/web-search.js';
 import { OpenAiTextAdapter } from './infra/text-adapter.js';
 import { CatalogService } from './application/catalog.js';
 import { EmptyPriceSource } from './application/defaults.js';
 import { ModelAccessLifecycle } from './application/lifecycle.js';
 import { UsageReconciliationService } from './application/reconciliation.js';
-import { ModelResolver, ModelStatusService } from './application/resolver.js';
+import { ModelQuoteService, ModelResolver, ModelStatusService } from './application/resolver.js';
 import { SelectionService } from './application/selection.js';
 import { UpstreamService } from './application/upstreams.js';
 import { AdminUsageService, UsageRecorder } from './application/usage.js';
@@ -32,11 +36,22 @@ import {
   MODEL_ACCESS_POLICY,
   MODEL_PRICE_SOURCE,
   UPSTREAM_PROBE,
+  WEB_SEARCH_PROVIDER,
+  MODEL_GATEWAY_MEDIA_PORT,
+  MEDIA_ADAPTER,
+  MODEL_QUOTE_PORT,
 } from './tokens.js';
 
 @Module({
-  imports: [BillingModule, IdentityModule],
-  exports: [MODEL_GATEWAY_PORT, MODEL_NOTIFICATION_READ_PORT, ADULT_MODEL_READ_PORT],
+  imports: [BillingModule, IdentityModule, MediaModule],
+  exports: [
+    MODEL_GATEWAY_PORT,
+    MODEL_NOTIFICATION_READ_PORT,
+    ADULT_MODEL_READ_PORT,
+    WEB_SEARCH_PROVIDER,
+    MODEL_GATEWAY_MEDIA_PORT,
+    MODEL_QUOTE_PORT,
+  ],
   controllers: [ModelController, ModelAdminController],
   providers: [
     UpstreamService,
@@ -44,6 +59,11 @@ import {
     ModelGateway,
     GatewayMaintenance,
     { provide: MODEL_GATEWAY_PORT, useExisting: ModelGateway },
+    GatewayWebSearchProvider,
+    ModelGatewayMedia,
+    { provide: MODEL_GATEWAY_MEDIA_PORT, useExisting: ModelGatewayMedia },
+    { provide: MEDIA_ADAPTER, useFactory: () => new OpenAiCompatibleMediaAdapter() },
+    { provide: WEB_SEARCH_PROVIDER, useExisting: GatewayWebSearchProvider },
     { provide: TEXT_ADAPTER, useFactory: () => new OpenAiTextAdapter() },
     { provide: MODEL_GENERATION_POLICY, useExisting: POLICY_PORT },
     {
@@ -56,6 +76,8 @@ import {
     ModelResolver,
     { provide: ADULT_MODEL_READ_PORT, useExisting: ModelResolver },
     ModelStatusService,
+    ModelQuoteService,
+    { provide: MODEL_QUOTE_PORT, useExisting: ModelQuoteService },
     UsageRecorder,
     AdminUsageService,
     UsageReconciliationService,

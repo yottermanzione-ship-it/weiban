@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { GrowthEndpoints as E } from '@weiban/contracts';
 import {
   ContractPipe,
@@ -46,6 +56,16 @@ export class GrowthController {
     @Body(new ContractPipe(E.addAnniversary.body!)) body: unknown,
   ) {
     return this.service.addAnniversary(p.userId, params.characterId, body);
+  }
+
+  @Patch(':characterId/anniversaries/:anniversaryId')
+  updateAnniversary(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Param(new ContractPipe(E.updateAnniversary.params!))
+    params: { characterId: string; anniversaryId: string },
+    @Body(new ContractPipe(E.updateAnniversary.body!)) body: unknown,
+  ) {
+    return this.service.updateAnniversary(p.userId, params.characterId, params.anniversaryId, body);
   }
 
   @Delete(':characterId/anniversaries/:anniversaryId')

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { IdentityEndpoints } from '@weiban/contracts';
-import { useAuth } from '../app/auth.js';
+import { Link } from 'react-router-dom';
+import { IdentityEndpoints, MemorySharingEndpoints } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 
@@ -144,79 +144,11 @@ function ChangePasswordForm({ onDone }: { onDone: () => void }) {
   );
 }
 
-function DeleteAccountSection() {
-  const auth = useAuth();
-  const [step, setStep] = useState<'idle' | 'confirm' | 'pending'>('idle');
-  const [error, setError] = useState('');
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const password = String(form.get('password'));
-    setStep('pending');
-    setError('');
-    try {
-      await api.call(IdentityEndpoints.deleteAccount, {
-        body: { password, confirm: 'DELETE' },
-      });
-      await auth.logout();
-    } catch (e) {
-      const msg = friendlyError(e);
-      // Per ACC-06 v1.4: password error keeps user logged in, stays on page
-      setError(msg.includes('invalid_credentials') ? '密码错误，请重新输入' : msg);
-      setStep('confirm');
-    }
-  }
-
-  if (step === 'idle') {
-    return (
-      <div className="panel rows">
-        <button className="danger-btn" onClick={() => setStep('confirm')}>
-          注销账号
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <form className="panel stack" onSubmit={(e) => void submit(e)}>
-      <h2>确认注销账号</h2>
-      <p className="warn">注销后所有聊天、记忆、余额将被删除，不可恢复。</p>
-      <label>
-        请输入密码确认
-        <input
-          type="password"
-          name="password"
-          required
-          autoComplete="current-password"
-          aria-describedby="delete-error"
-        />
-      </label>
-      {error && (
-        <p id="delete-error" role="alert" className="error">
-          {error}
-        </p>
-      )}
-      <button className="danger-btn primary" disabled={step === 'pending'}>
-        确认注销
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          setStep('idle');
-          setError('');
-        }}
-      >
-        取消
-      </button>
-    </form>
-  );
-}
-
 // ---------- Privacy Settings ----------
 
 export function PrivacySettingsPage() {
   const remote = useRemote(IdentityEndpoints.getNotificationSettings);
+  const sharing = useRemote(MemorySharingEndpoints.get);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -251,7 +183,35 @@ export function PrivacySettingsPage() {
           允许角色拉我进群
         </label>
         <p className="hint">关闭后，角色不会自动把你加入群聊。</p>
-        <p className="hint">跨角色记忆共享（MEM-07）等更多隐私设置将在后续版本中添加。</p>
+      </div>
+      <div className="panel stack">
+        <label>
+          跨角色共享
+          <select
+            disabled={pending || !sharing.data}
+            value={sharing.data?.level ?? 'friends'}
+            onChange={(e) => {
+              const level = e.target.value as 'off' | 'basic' | 'friends';
+              setPending(true);
+              setError('');
+              void api
+                .call(MemorySharingEndpoints.update, { body: { level } })
+                .then(() => {
+                  sharing.refresh();
+                  setMessage('已保存');
+                })
+                .catch((err) => setError(friendlyError(err)))
+                .finally(() => setPending(false));
+            }}
+          >
+            <option value="friends">互相认识的角色之间可以聊起（默认）</option>
+            <option value="basic">只共享基础资料</option>
+            <option value="off">关闭</option>
+          </select>
+        </label>
+        <p className="hint">
+          开启后，互相认识的角色可能会转述你和另一个角色聊过的事；关闭后立即生效，其他角色不再使用转述来的记忆。
+        </p>
       </div>
       {error && (
         <p role="alert" className="error">
@@ -359,9 +319,6 @@ export function ProactiveSettingsPage() {
   return (
     <main>
       <h1 className="page-title">主动消息设置</h1>
-      <p className="hint notice">
-        设置已保存，实际主动能力随 L3 上线。当前设置会在功能上线后生效。
-      </p>
       {data && (
         <form key={data.updatedAt} className="panel stack" onSubmit={(e) => void save(e)}>
           <label className="check">
@@ -414,5 +371,16 @@ export function ProactiveSettingsPage() {
       )}
       {message && <p role="status">{message}</p>}
     </main>
+  );
+}
+
+/** 注销入口（危险型行）→ 注销说明页（account-deletion.md）。 */
+function DeleteAccountSection() {
+  return (
+    <div className="panel rows">
+      <Link className="danger-btn" to="/settings/delete-account">
+        注销账号
+      </Link>
+    </div>
   );
 }

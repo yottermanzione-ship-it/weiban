@@ -108,12 +108,13 @@ export class ChatParticipantService implements ChatParticipantPort {
       const row = await this.store.load(tx, input.conversationId);
       if (row.archivedAt) return null;
       const [participant] = await tx.db
-        .select({ id: participants.id })
+        .select({ id: participants.id, leftAt: participants.leftAt })
         .from(participants)
         .where(
           and(eq(participants.conversationId, row.id), eq(participants.id, input.participantId)),
         );
-      if (!participant) throw new AppError('not_conversation_member', '参与者不在此会话中');
+      if (!participant || participant.leftAt)
+        throw new AppError('not_conversation_member', '参与者不在此会话中');
       return row.ownerUserId;
     });
     if (userId)

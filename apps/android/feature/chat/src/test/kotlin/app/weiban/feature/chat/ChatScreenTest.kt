@@ -22,6 +22,8 @@ import kotlinx.serialization.json.*
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.*
 import org.junit.Assert.*
+import org.junit.rules.ExternalResource
+import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -29,7 +31,18 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class ChatScreenTest {
-    @get:Rule val compose = createComposeRule()
+    val compose = createComposeRule()
+
+    // Compose规则先取消并清理LaunchedEffect，之后才关闭它仍会读取的Room。
+    @get:Rule val resources =
+        RuleChain
+            .outerRule(
+                object : ExternalResource() {
+                    override fun after() {
+                        closeResources()
+                    }
+                },
+            ).around(compose)
     private lateinit var server: MockWebServer
     private lateinit var database: LocalDatabase
     private lateinit var repository: SessionRepository
@@ -40,7 +53,15 @@ class ChatScreenTest {
     @Before fun setup() {
         server = MockWebServer()
         server.start()
-        val api = ApiClient(server.url("/").toString())
+        val api =
+            ApiClient(
+                server
+                    .url("/")
+                    .newBuilder()
+                    .host("127.0.0.1")
+                    .build()
+                    .toString(),
+            )
         server.shutdown()
         database = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LocalDatabase::class.java).build()
         val vault =
@@ -85,11 +106,13 @@ class ChatScreenTest {
         return api.json.decodeFromJsonElement(ClientSyncState.serializer(), ContractJson.normalize("ClientSyncState", raw))
     }
 
-    @After fun close() {
-        runBlocking { runtime.detach() }
-        scope.cancel()
-        database.close()
-        server.close()
+    private fun closeResources() {
+        runBlocking {
+            if (::runtime.isInitialized) runtime.detach()
+            if (::scope.isInitialized) scope.coroutineContext[Job]?.cancelAndJoin()
+        }
+        if (::database.isInitialized) database.close()
+        if (::server.isInitialized) server.close()
     }
 
     @Test fun actualComposeOfflineSendCommitsRoomBeforeClearingAndSurvivesRestart() {
@@ -134,14 +157,17 @@ class ChatScreenTest {
                 .conversationId
         val restoration = StateRestorationTester(compose)
         restoration.setContent { NavigationHost(id) }
+        compose.onNode(hasSetTextAction()).performTextInput("导航恢复草稿")
         compose.onNodeWithText("发送", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("主导航").assertDoesNotExist()
         restoration.emulateSavedInstanceStateRestore()
+        compose.onNode(hasSetTextAction()).assertTextContains("导航恢复草稿")
         compose.onNodeWithText("发送", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("主导航").assertDoesNotExist()
         compose.onNodeWithText("聊天信息", useUnmergedTree = true).performClick()
         compose.onNodeWithText("主导航").assertDoesNotExist()
         compose.onNodeWithText("返回聊天", useUnmergedTree = true).performClick()
+        compose.onNode(hasSetTextAction()).assertTextContains("导航恢复草稿")
         compose.onNodeWithText("发送", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("主导航").assertDoesNotExist()
         compose.onNodeWithText("返回", useUnmergedTree = true).performClick()

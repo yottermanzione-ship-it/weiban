@@ -4,14 +4,46 @@ import { z } from 'zod';
 import { S3Client } from '@aws-sdk/client-s3';
 import { APP_CONFIG, ConfigError, type AppConfig } from '../../platform/index.js';
 import { MediaService } from './application/media.js';
+import { MediaAssetService } from './application/assets.js';
+import { LinkPreviewService } from './application/link-preview.js';
 import { DiskStorage, S3Storage } from './infra/storage.js';
-import { MediaController, MediaAdminController } from './http/media.controller.js';
-import { MEDIA_STORAGE, MEDIA_READ_PORT } from './tokens.js';
+import {
+  MediaController,
+  MediaAdminController,
+  LinkPreviewController,
+} from './http/media.controller.js';
+import { StickerController, AssetAdminController } from './http/assets.controller.js';
+import {
+  MEDIA_STORAGE,
+  MEDIA_READ_PORT,
+  MEDIA_SYSTEM_PORT,
+  MEDIA_TRANSCRIPT_PORT,
+  MEDIA_ASSET_READ_PORT,
+  LINK_PREVIEW_PORT,
+  MEDIA_STICKER_CHECK,
+  MEDIA_STORAGE_AUDIT,
+  MEDIA_CLASSICAL_CARD_TEMPLATES,
+} from './tokens.js';
 @Module({
-  controllers: [MediaController, MediaAdminController],
+  controllers: [
+    MediaController,
+    MediaAdminController,
+    LinkPreviewController,
+    StickerController,
+    AssetAdminController,
+  ],
   providers: [
     MediaService,
+    MediaAssetService,
+    LinkPreviewService,
     { provide: MEDIA_READ_PORT, useExisting: MediaService },
+    { provide: MEDIA_SYSTEM_PORT, useExisting: MediaService },
+    { provide: MEDIA_TRANSCRIPT_PORT, useExisting: MediaService },
+    { provide: MEDIA_ASSET_READ_PORT, useExisting: MediaAssetService },
+    { provide: MEDIA_STICKER_CHECK, useExisting: MediaAssetService },
+    { provide: MEDIA_CLASSICAL_CARD_TEMPLATES, useExisting: MediaAssetService },
+    { provide: LINK_PREVIEW_PORT, useExisting: LinkPreviewService },
+    { provide: MEDIA_STORAGE_AUDIT, useExisting: MediaService },
     {
       provide: MEDIA_STORAGE,
       inject: [APP_CONFIG],
@@ -38,6 +70,15 @@ import { MEDIA_STORAGE, MEDIA_READ_PORT } from './tokens.js';
       },
     },
   ],
-  exports: [MEDIA_READ_PORT],
+  exports: [
+    MEDIA_READ_PORT,
+    MEDIA_SYSTEM_PORT,
+    MEDIA_TRANSCRIPT_PORT,
+    MEDIA_ASSET_READ_PORT,
+    MEDIA_STICKER_CHECK,
+    MEDIA_CLASSICAL_CARD_TEMPLATES,
+    LINK_PREVIEW_PORT,
+    MEDIA_STORAGE_AUDIT,
+  ],
 })
 export class MediaModule {}

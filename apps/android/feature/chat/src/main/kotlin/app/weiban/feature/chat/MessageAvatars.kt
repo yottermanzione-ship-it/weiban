@@ -24,7 +24,8 @@ internal data class MessageAvatars(
     state: ClientSyncState,
     conversation: Conversation,
 ): MessageAvatars {
-    val characters = conversation.participants.filter { it.kind == "character" }
+    // 3.0.1：已退出 / 被移出的角色只用于渲染其历史消息（formerParticipants）。
+    val characters = (conversation.participants + conversation.group?.formerParticipants.orEmpty()).filter { it.kind == "character" }
     val profiles = characterProfiles(repository, characters.map { it.refId })
     var profile by remember(owner) { mutableStateOf<Profile?>(null) }
     LaunchedEffect(owner) { profile = userProfile(repository, owner) }

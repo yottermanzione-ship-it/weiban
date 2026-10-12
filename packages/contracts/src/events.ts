@@ -30,6 +30,11 @@ export const ModuleName = z.enum([
   'growth',
   'importer',
   'library',
+  // 3.0（T-062）
+  'health',
+  'calls',
+  'plaza',
+  'play',
 ]);
 export type ModuleName = z.infer<typeof ModuleName>;
 
@@ -164,6 +169,13 @@ export const ModelSelectionChanged = event(
   'model_access.selection_changed',
   'model_access',
   z.object({ userId: Id, characterId: Id.nullable() }),
+);
+
+/** 专用成人检查默认首次设置/替换/路由更新，恢复因检查缺配置而等待的回复。 */
+export const AdultCheckerConfigured = event(
+  'model_access.adult_checker_configured',
+  'model_access',
+  z.object({ modelKey: ModelKey }),
 );
 
 /**
@@ -388,6 +400,367 @@ export const ContentScopeChanged = event(
   z.object({ conversationId: Id, scope: ContentScope }),
 );
 
+// ---------- 3.0：L4～L7（T-062） ----------
+// 载荷只放 ID 和必要事实，不放聊天正文、信件、评论等文字（文件头规则）。
+
+/** 关系网变化（ADM-02、SOC-01）：ai-runtime 清理缓存；删除后两人不再互动。 */
+export const RelationChanged = event(
+  'characters.relation_changed',
+  'characters',
+  z.object({
+    relationId: Id,
+    characterAId: Id,
+    characterBId: Id,
+    /** 预设之间为 null；用户为自定义角色设定的关系为该用户。 */
+    ownerUserId: Id.nullable(),
+    action: z.enum(['created', 'updated', 'deleted']),
+  }),
+);
+
+/** 我的补充设定变化（CHR-09）：ai-runtime 从下一次回复起使用。 */
+export const SupplementChanged = event(
+  'characters.supplement_changed',
+  'characters',
+  z.object({ userId: Id, characterId: Id, action: z.enum(['saved', 'deleted']) }),
+);
+
+/** 群成员变化（含建群）。ai-runtime 检查群情景模式资格（SOC-03 第 4 条）；growth 判成就第 14、15 号。 */
+export const GroupMembersChanged = event(
+  'chat.group_members_changed',
+  'chat',
+  z.object({
+    conversationId: Id,
+    ownerUserId: Id,
+    addedCharacterIds: z.array(Id),
+    removedCharacterIds: z.array(Id),
+    /** created = 建群；user = 用户操作；character = 角色拉群（SOC-06）；system = 删除角色等。 */
+    cause: z.enum(['created', 'user', 'character', 'system']),
+    byCharacterId: Id.nullable(),
+  }),
+);
+
+export const GroupRenamed = event(
+  'chat.group_renamed',
+  'chat',
+  z.object({ conversationId: Id, ownerUserId: Id, byCharacterId: Id.nullable() }),
+);
+
+/** 用户「删除并退出」：群已物理删除。拉群者可在私聊中提起一次（SOC-06 第 3 条）。 */
+export const GroupDissolved = event(
+  'chat.group_dissolved',
+  'chat',
+  z.object({
+    conversationId: Id,
+    ownerUserId: Id,
+    createdByCharacterId: Id.nullable(),
+    memberCharacterIds: z.array(Id),
+  }),
+);
+
+/** 用户点了卡片消息的按钮（ADR-0026）。按 cardKind / ref 由所属模块处理。 */
+export const MessageActionChosen = event(
+  'chat.message_action_chosen',
+  'chat',
+  z.object({
+    conversationId: Id,
+    messageId: Id,
+    userId: Id,
+    /** 发出卡片的角色。 */
+    characterId: Id.nullable(),
+    cardKind: z.string(),
+    actionId: z.string(),
+    ref: z.object({ kind: z.string(), id: z.string() }).nullable(),
+  }),
+);
+
+/** 朋友圈动态发布（用户或角色）。ai-runtime 安排可见角色互动（P-29）；growth 判成就第 16 号。 */
+export const MomentsPostCreated = event(
+  'moments.post_created',
+  'moments',
+  z.object({
+    postId: Id,
+    ownerUserId: Id,
+    authorKind: z.enum(['user', 'character']),
+    authorCharacterId: Id.nullable(),
+    hasImages: z.boolean(),
+    /** 用户动态可见的角色；角色动态为空数组。 */
+    visibleCharacterIds: z.array(Id),
+  }),
+);
+
+export const MomentsCommentCreated = event(
+  'moments.comment_created',
+  'moments',
+  z.object({
+    postId: Id,
+    commentId: Id,
+    ownerUserId: Id,
+    postAuthorKind: z.enum(['user', 'character']),
+    postAuthorCharacterId: Id.nullable(),
+    authorKind: z.enum(['user', 'character']),
+    authorCharacterId: Id.nullable(),
+    replyToKind: z.enum(['user', 'character']).nullable(),
+    replyToCharacterId: Id.nullable(),
+    mentionsUser: z.boolean(),
+  }),
+);
+
+export const MomentsPostLiked = event(
+  'moments.post_liked',
+  'moments',
+  z.object({
+    postId: Id,
+    ownerUserId: Id,
+    postAuthorKind: z.enum(['user', 'character']),
+    likerKind: z.enum(['user', 'character']),
+    likerCharacterId: Id.nullable(),
+    /** 点赞后的角色点赞总数（成就第 18 号「人气王」）。 */
+    characterLikeCount: z.number().int().nonnegative(),
+  }),
+);
+
+/** ai-runtime 的里程碑（供 growth 判成就、发卡；不含内容）。 */
+export const AiMilestone = event(
+  'ai_runtime.milestone',
+  'ai_runtime',
+  z.object({
+    userId: Id,
+    characterId: Id,
+    kind: z.enum([
+      'proactive_message_sent', // 成就第 7 号
+      'memory_auto_created', // 成就第 8 号
+      'voice_message_sent', // 成就第 11 号
+      'group_invited_user', // 成就第 15 号、瞬间卡
+      'moments_replied_user', // 瞬间卡
+      'contact_card_sent',
+    ]),
+    refId: z.string().nullable(),
+  }),
+);
+
+/** 熟悉度升级（AI 变更申请第 8 条）：ai-runtime 解锁行为（来电询问、拉群）；growth 自己发熟悉度卡。 */
+export const FamiliarityLeveledUp = event(
+  'growth.familiarity_leveled_up',
+  'growth',
+  z.object({ userId: Id, characterId: Id, level: z.number().int().min(2).max(5) }),
+);
+
+/** 纪念日到达（用户时区当天）：ai-runtime 发纪念消息 / 寄信。 */
+export const AnniversaryReached = event(
+  'growth.anniversary_reached',
+  'growth',
+  z.object({
+    userId: Id,
+    characterId: Id,
+    anniversaryId: Id,
+    kind: z.enum(['system', 'custom']),
+    daysKnown: z.number().int().positive(),
+    date: LocalDate,
+  }),
+);
+
+export const CardIssued = event(
+  'growth.card_issued',
+  'growth',
+  z.object({
+    userId: Id,
+    characterId: Id,
+    cardId: Id,
+    kind: z.string(),
+    totalCards: z.number().int().positive(),
+  }),
+);
+
+export const AchievementUnlocked = event(
+  'growth.achievement_unlocked',
+  'growth',
+  z.object({ userId: Id, achievementKey: z.string(), no: z.number().int().positive() }),
+);
+
+export const PetAdopted = event(
+  'growth.pet_adopted',
+  'growth',
+  z.object({ userId: Id, characterId: Id, petId: Id, speciesId: Id }),
+);
+
+export const PetStageChanged = event(
+  'growth.pet_stage_changed',
+  'growth',
+  z.object({ userId: Id, characterId: Id, petId: Id, stage: z.enum(['baby', 'junior', 'adult']) }),
+);
+
+export const PetSentAway = event(
+  'growth.pet_sent_away',
+  'growth',
+  z.object({ userId: Id, characterId: Id, petId: Id }),
+);
+
+export const PetRenamed = event(
+  'growth.pet_renamed',
+  'growth',
+  z.object({ userId: Id, characterId: Id, petId: Id }),
+);
+
+/** 「让 TA 起名」：ai-runtime 生成 3 个候选名，经 PetNamingPort 回传，并以 pet_names 卡片消息发到私聊。 */
+export const PetNamingRequested = event(
+  'growth.pet_naming_requested',
+  'growth',
+  z.object({
+    userId: Id,
+    characterId: Id,
+    requestId: Id,
+    speciesId: Id,
+    appearanceId: Id,
+    /** 3.1（T-082 申请）：物种名称（如「猫」），起名提示用；旧事件不带。 */
+    speciesName: z.string().min(1).max(12).optional(),
+  }),
+);
+
+export const FavoriteAdded = event(
+  'library.favorite_added',
+  'library',
+  z.object({ userId: Id, favoriteIds: z.array(Id), totalFavorites: z.number().int().positive() }),
+);
+
+export const ShareImageGenerated = event(
+  'library.share_image_generated',
+  'library',
+  z.object({ userId: Id, template: z.string() }),
+);
+
+export const CallStarted = event(
+  'calls.call_started',
+  'calls',
+  z.object({
+    callId: Id,
+    userId: Id,
+    characterId: Id,
+    direction: z.enum(['outgoing', 'incoming']),
+  }),
+);
+
+export const CallAnswered = event(
+  'calls.call_answered',
+  'calls',
+  z.object({
+    callId: Id,
+    userId: Id,
+    characterId: Id,
+    direction: z.enum(['outgoing', 'incoming']),
+  }),
+);
+
+/** 通话结束：ai-runtime 未接 / 拒接后发一条消息、当天不再来电（MED-07 第 5 条）；growth 判成就、熟悉度。 */
+export const CallEnded = event(
+  'calls.call_ended',
+  'calls',
+  z.object({
+    callId: Id,
+    userId: Id,
+    characterId: Id,
+    conversationId: Id,
+    direction: z.enum(['outgoing', 'incoming']),
+    outcome: z.string(),
+    durationSec: z.number().int().nonnegative(),
+  }),
+);
+
+export const ImportJobCompleted = event(
+  'importer.job_completed',
+  'importer',
+  z.object({
+    userId: Id,
+    jobId: Id,
+    kind: z.enum(['new_character', 'supplement']),
+    ok: z.boolean(),
+  }),
+);
+
+export const PlazaWorkPublished = event(
+  'plaza.work_published',
+  'plaza',
+  z.object({ workId: Id, authorUserId: Id, kind: z.enum(['custom_character', 'preset_variant']) }),
+);
+
+export const PlazaWorkVersionPublished = event(
+  'plaza.work_version_published',
+  'plaza',
+  z.object({ workId: Id, authorUserId: Id, version: z.number().int().positive() }),
+);
+
+export const PlazaWorkRemoved = event(
+  'plaza.work_removed',
+  'plaza',
+  z.object({
+    workId: Id,
+    authorUserId: Id,
+    reason: z.enum(['author_unlisted', 'author_deleted', 'admin_removed', 'author_banned']),
+  }),
+);
+
+export const DailyAnswerSubmitted = event(
+  'play.daily_answer_submitted',
+  'play',
+  z.object({ userId: Id, characterId: Id, answerId: Id, questionId: Id, messageId: Id }),
+);
+
+/** 清单项变化：dueDate 变化时 ai-runtime 写 / 取消约定记忆（PLAY-04 第 5 条）。 */
+export const WishlistItemChanged = event(
+  'play.wishlist_item_changed',
+  'play',
+  z.object({
+    userId: Id,
+    characterId: Id,
+    itemId: Id,
+    action: z.enum(['created', 'updated', 'deleted']),
+    dueDate: LocalDate.nullable(),
+  }),
+);
+
+export const WishlistItemCompleted = event(
+  'play.wishlist_item_completed',
+  'play',
+  z.object({ userId: Id, characterId: Id, itemId: Id, firstCompletion: z.boolean() }),
+);
+
+/** 用户寄信：ai-runtime 在 deliverAt 前约 10 分钟生成回信。 */
+export const LetterSent = event(
+  'play.letter_sent',
+  'play',
+  z.object({ userId: Id, characterId: Id, letterId: Id, deliverAt: Timestamp }),
+);
+
+export const LetterDelivered = event(
+  'play.letter_delivered',
+  'play',
+  z.object({ userId: Id, characterId: Id, letterId: Id, firstReplyFromCharacter: z.boolean() }),
+);
+
+export const FocusStarted = event(
+  'play.focus_started',
+  'play',
+  z.object({ userId: Id, characterId: Id, focusId: Id, endsAt: Timestamp }),
+);
+
+export const FocusEnded = event(
+  'play.focus_ended',
+  'play',
+  z.object({
+    userId: Id,
+    characterId: Id,
+    focusId: Id,
+    result: z.enum(['completed', 'ended_early']),
+    minutes: z.number().int().nonnegative(),
+  }),
+);
+
+/** 提醒保存或内容修改：ai-runtime 生成 5 种说法（PLAY-07 第 3 条）。 */
+export const ReminderSaved = event(
+  'play.reminder_saved',
+  'play',
+  z.object({ userId: Id, characterId: Id, reminderId: Id, textChanged: z.boolean() }),
+);
+
 // ---------- 汇总 ----------
 
 export const DomainEvent = z.discriminatedUnion('type', [
@@ -401,6 +774,7 @@ export const DomainEvent = z.discriminatedUnion('type', [
   AdminAlertRaised,
   ModelStatusChanged,
   ModelSelectionChanged,
+  AdultCheckerConfigured,
   UsageReconciled,
   BalanceChanged,
   BalanceDepleted,
@@ -420,6 +794,43 @@ export const DomainEvent = z.discriminatedUnion('type', [
   MessageRecalled,
   ReadCursorMoved,
   ContentScopeChanged,
+  // 3.0
+  RelationChanged,
+  SupplementChanged,
+  GroupMembersChanged,
+  GroupRenamed,
+  GroupDissolved,
+  MessageActionChosen,
+  MomentsPostCreated,
+  MomentsCommentCreated,
+  MomentsPostLiked,
+  AiMilestone,
+  FamiliarityLeveledUp,
+  AnniversaryReached,
+  CardIssued,
+  AchievementUnlocked,
+  PetAdopted,
+  PetStageChanged,
+  PetSentAway,
+  PetRenamed,
+  PetNamingRequested,
+  FavoriteAdded,
+  ShareImageGenerated,
+  CallStarted,
+  CallAnswered,
+  CallEnded,
+  ImportJobCompleted,
+  PlazaWorkPublished,
+  PlazaWorkVersionPublished,
+  PlazaWorkRemoved,
+  DailyAnswerSubmitted,
+  WishlistItemChanged,
+  WishlistItemCompleted,
+  LetterSent,
+  LetterDelivered,
+  FocusStarted,
+  FocusEnded,
+  ReminderSaved,
 ]);
 export type DomainEvent = z.infer<typeof DomainEvent>;
 export type DomainEventType = DomainEvent['type'];

@@ -15,3 +15,7 @@ export { INITIAL_MODELS, initialPriceItems } from './domain/seed.js';
 export { MODEL_NOTIFICATION_READ_PORT } from './tokens.js';
 
 export { ADULT_MODEL_READ_PORT } from './tokens.js';
+export { WEB_SEARCH_PROVIDER } from './tokens.js';
+export type { WebSearchProvider } from './application/web-search.js';
+export { MODEL_GATEWAY_MEDIA_PORT } from './tokens.js';
+export { MODEL_QUOTE_PORT } from './tokens.js';

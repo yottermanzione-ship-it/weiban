@@ -29,6 +29,49 @@ class ChatHistory(
         if (runner(expected) === current) current.history(conversationId, beforeSeq, page)
     }
 
+    /**
+     * 搜索 / 收藏定位（CHAT-12，T-085）：把 seq 附近的消息加载到本地。
+     * earliest = 本地已有的最早 seq；从它往前连续翻页（每页 200，最多 10 页），保证时间线没有缺口；
+     * 太远时直接取 seq 前后一页。
+     */
+    @Suppress("ReturnCount") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
+    suspend fun reveal(
+        expected: OwnerRecord,
+        conversationId: String,
+        seq: Long,
+        earliest: Long?,
+    ) {
+        if (earliest != null && earliest <= seq) return
+        var before = earliest ?: (seq + REVEAL_AROUND)
+        var pages = 0
+        while (before > seq && before > 1 && pages < REVEAL_PAGES) {
+            val current = runner(expected) ?: return
+            val page =
+                repository.call(
+                    Endpoints.chatEndpointsListMessages,
+                    params = mapOf("conversationId" to conversationId),
+                    query = mapOf("beforeSeq" to before.toString(), "limit" to REVEAL_PAGE_SIZE.toString()),
+                    options = SessionCallOptions(networkOnly = true, owner = expected),
+                )
+            if (runner(expected) !== current) return
+            current.history(conversationId, before, page)
+            before = page.items.minOfOrNull { it.seq } ?: return
+            pages++
+        }
+        if (before > seq && before > 1) {
+            val current = runner(expected) ?: return
+            val around = seq + REVEAL_AROUND
+            val page =
+                repository.call(
+                    Endpoints.chatEndpointsListMessages,
+                    params = mapOf("conversationId" to conversationId),
+                    query = mapOf("beforeSeq" to around.toString(), "limit" to (REVEAL_AROUND * 2).toString()),
+                    options = SessionCallOptions(networkOnly = true, owner = expected),
+                )
+            if (runner(expected) === current) current.history(conversationId, around, page)
+        }
+    }
+
     suspend fun clear(
         expected: OwnerRecord,
         conversationId: String,
@@ -73,3 +116,7 @@ class ChatHistory(
         if (!matching || runner(expected) !== current || !current.active) throw ApiFailure("session_changed", 0)
     }
 }
+
+private const val REVEAL_PAGE_SIZE = 200
+private const val REVEAL_PAGES = 10
+private const val REVEAL_AROUND = 25L

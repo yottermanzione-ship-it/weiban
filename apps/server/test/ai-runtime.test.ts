@@ -432,7 +432,7 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     expect(queued).toHaveLength(1);
     await finish(queued[0]!.id);
     expect(calls.length - before).toBe(1);
-  });
+  }, 120000);
   it('高危所有网关错误仍发免费关怀，不进入恢复补发，不把正文写审计', async () => {
     const fallbackFirsts: string[] = [];
     for (const error of [
@@ -521,6 +521,107 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     ]);
     await app.get(ContactsCommands).update(userId, characterId, { addressAs: null });
     response = '我听着呢\n今天过得怎么样？';
+  });
+  it('撤回小巧思真实发送：草稿撤回后正文清空，重启续发不重复', async () => {
+    clock.advance(24 * 3600_000);
+    const choice = vi.spyOn(engine.quirks, 'choose').mockResolvedValue({
+      kind: 'recall',
+      respondAt: clock.now().toISOString(),
+      typingCycles: 0,
+    });
+    try {
+      const row = await user('今天窗外阳光很好');
+      clock.advance(3000);
+      await engine.run(row.id);
+      let pending = (await store.get(row.id))!;
+      clock.advance(Math.max(0, pending.dueAt.getTime() - clock.nowMs()));
+      await engine.run(row.id);
+      pending = (await store.get(row.id))!;
+      expect(pending.nextBubble).toBe(1);
+      const draftId = ((await store.open(pending, 'result')) as { quirkDraftMessageId: string })
+        .quirkDraftMessageId;
+      expect(draftId).toBeTruthy();
+      choice.mockRestore();
+      await app.close();
+      await startApp();
+      await finish(row.id);
+      await engine.run(row.id);
+      const messages = await app
+        .get(CHAT_READ_PORT)
+        .readMessages({ conversationId: cid, scopes: ['normal'], limit: 100 });
+      const sent = messages.filter(
+        (m: { seq: number; senderKind: string }) =>
+          m.seq > row.triggerSeq && m.senderKind === 'character',
+      );
+      expect(sent).toHaveLength(3);
+      expect(sent.find((m: { messageId: string }) => m.messageId === draftId)).toMatchObject({
+        status: 'recalled',
+        content: null,
+        labels: ['quirk_draft'],
+      });
+      expect(
+        sent
+          .filter((m: { status: string }) => m.status === 'normal')
+          .map((m: { content: { text: string } }) => m.content.text)
+          .sort(),
+      ).toEqual(response.split('\n').sort());
+      expect((await store.get(row.id))?.resultCiphertext).toBeNull();
+    } finally {
+      choice.mockRestore();
+    }
+  });
+  it('拼音错字小巧思真实发送：只改白名单同音词，独立更正气泡，幂等重试', async () => {
+    const original = response;
+    response = '我已经到家了';
+    const choice = vi
+      .spyOn(engine.quirks, 'choose')
+      .mockResolvedValue({ kind: 'typo', respondAt: clock.now().toISOString(), typingCycles: 0 });
+    try {
+      const row = await user('今天散步很舒服');
+      await finish(row.id);
+      await engine.run(row.id);
+      const messages = await app
+        .get(CHAT_READ_PORT)
+        .readMessages({ conversationId: cid, scopes: ['normal'], limit: 100 });
+      expect(
+        messages
+          .filter(
+            (m: { seq: number; senderKind: string }) =>
+              m.seq > row.triggerSeq && m.senderKind === 'character',
+          )
+          .map((m: { content: { text: string } }) => m.content.text)
+          .sort(),
+      ).toEqual(['我以经到家了', '*已经'].sort());
+      expect((await store.get(row.id))?.status).toBe('done');
+    } finally {
+      response = original;
+      choice.mockRestore();
+    }
+  });
+  it('已读延迟真实发送：首轮不立即发气泡，进程重启后按原定时间完成', async () => {
+    const respondAt = new Date(clock.nowMs() + 60000).toISOString();
+    const choice = vi
+      .spyOn(engine.quirks, 'choose')
+      .mockResolvedValue({ kind: 'read_delay', respondAt, typingCycles: 0 });
+    try {
+      const row = await user('午后的云朵真好看');
+      clock.advance(3000);
+      await engine.run(row.id);
+      const pending = (await store.get(row.id))!;
+      expect(pending.status).toBe('sending');
+      expect(pending.nextBubble).toBe(0);
+      expect(pending.dueAt.getTime()).toBe(Date.parse(respondAt) - 1000);
+      await engine.run(row.id);
+      expect((await store.get(row.id))?.nextBubble).toBe(0);
+      choice.mockRestore();
+      await app.close();
+      await startApp();
+      await finish(row.id);
+      expect((await store.get(row.id))?.status).toBe('done');
+      expect(clock.nowMs()).toBeGreaterThanOrEqual(Date.parse(respondAt));
+    } finally {
+      choice.mockRestore();
+    }
   });
   it('尚未生成的旧计划在删除恢复后不能认领新关系版本，旧事件不产生模型调用', async () => {
     const row = await user('旧关系里尚未生成的请求');

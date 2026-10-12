@@ -16,15 +16,28 @@ import kotlinx.serialization.json.*
 import okhttp3.mockwebserver.*
 import org.junit.*
 import org.junit.Assert.*
+import org.junit.rules.ExternalResource
+import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class RoleBrowserTest {
-    @get:Rule val compose = createComposeRule()
+    val compose = createComposeRule()
+
+    @get:Rule val resources =
+        RuleChain
+            .outerRule(
+                object : ExternalResource() {
+                    override fun after() {
+                        closeResources()
+                    }
+                },
+            ).around(compose)
     private lateinit var server: MockWebServer
     private lateinit var database: LocalDatabase
     private lateinit var repository: SessionRepository
@@ -32,9 +45,12 @@ class RoleBrowserTest {
     private lateinit var api: ApiClient
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val posts = ConcurrentLinkedQueue<AddContactRequestInput>()
+    private val requests = ConcurrentLinkedQueue<String>()
     private val opened = ConcurrentLinkedQueue<String>()
 
     @Volatile private var accepted = false
+
+    @Volatile private var catalogBodyDelayMs = 0L
     private val firstId = "01920000-0000-7000-8000-00000000001a"
     private val secondId = "01920000-0000-7000-8000-00000000001b"
     private val conversationId = "01920000-0000-7000-8000-000000000099"
@@ -49,7 +65,15 @@ class RoleBrowserTest {
         runBlocking {
             server = MockWebServer()
             server.start()
-            api = ApiClient(server.url("/").toString())
+            api =
+                ApiClient(
+                    server
+                        .url("/")
+                        .newBuilder()
+                        .host("127.0.0.1")
+                        .build()
+                        .toString(),
+                )
             database = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LocalDatabase::class.java).build()
             repository =
                 SessionRepository(
@@ -71,18 +95,19 @@ class RoleBrowserTest {
                 )
             repository.authenticate(auth)
             repository.saveSync(owner, SyncEngine.freshState().copy(initialized = true))
+            server.dispatcher = responses()
             runtime = ChatRuntime(repository, scope)
             assertTrue(runtime.attach(owner))
-            server.dispatcher = responses()
         }
 
-    @After fun close() =
+    private fun closeResources() {
         runBlocking {
-            runtime.detach()
-            scope.cancel()
-            server.close()
-            database.close()
+            if (::runtime.isInitialized) runtime.detach()
+            scope.coroutineContext[Job]?.cancelAndJoin()
         }
+        if (::database.isInitialized) database.close()
+        if (::server.isInitialized) server.close()
+    }
 
     private fun role(id: String) =
         CharacterProfile(
@@ -131,6 +156,7 @@ class RoleBrowserTest {
         object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val path = request.requestUrl!!.encodedPath
+                requests.add("${request.method} $path")
                 return when {
                     path == "/api/v1/contacts" && request.method == "POST" -> addResponse(request)
                     path == "/api/v1/sync/state" -> MockResponse().setBody("{\"latestUpdateSeq\":${if (accepted) 1 else 0}}")
@@ -173,12 +199,13 @@ class RoleBrowserTest {
                 profile.basis,
                 false,
             )
-        return MockResponse().setBody(
-            api.json.encodeToString(
-                CharacterEndpointsSearchPlazaResponse.serializer(),
-                CharacterEndpointsSearchPlazaResponse(listOf(summary), if (second) null else "next-page"),
-            ),
-        )
+        return MockResponse()
+            .setBody(
+                api.json.encodeToString(
+                    CharacterEndpointsSearchPlazaResponse.serializer(),
+                    CharacterEndpointsSearchPlazaResponse(listOf(summary), if (second) null else "next-page"),
+                ),
+            ).setBodyDelay(catalogBodyDelayMs, TimeUnit.MILLISECONDS)
     }
 
     private fun addResponse(request: RecordedRequest): MockResponse {
@@ -194,9 +221,28 @@ class RoleBrowserTest {
         }
     }
 
+    private fun awaitFirstRole() {
+        try {
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("纸飞机").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("纸飞机").assertIsDisplayed()
+        } catch (error: ComposeTimeoutException) {
+            // 只记录测试请求的路径，不包含Authorization或用户消息；原始超时作为cause保留。
+            throw AssertionError("首次角色未显示；请求数=${server.requestCount}；路径=${requests.toList()}\n${compose.onRoot().printToString()}", error)
+        }
+    }
+
+    @Test fun delayedCatalogResponseDisplaysFirstRoleWithoutInteraction() {
+        catalogBodyDelayMs = 750
+        compose.setContent { WeibanTheme { RoleBrowser(repository, runtime, owner, true, opened::add) } }
+        awaitFirstRole()
+        assertTrue(requests.any { it == "GET /api/v1/characters" })
+        assertTrue(posts.isEmpty())
+        assertTrue(opened.isEmpty())
+    }
+
     @Test fun actualPlazaPaginationGreetingAndRestoreChoiceUseRealHttp() {
         compose.setContent { WeibanTheme { RoleBrowser(repository, runtime, owner, true, opened::add) } }
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("纸飞机").fetchSemanticsNodes().isNotEmpty() }
+        awaitFirstRole()
         compose.onNodeWithText("下一页角色").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("星河").fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(hasText("星河") and !hasSetTextAction()).performClick()
@@ -231,7 +277,18 @@ class RoleBrowserTest {
         compose.onNodeWithText("返回").performClick()
         compose.onNode(hasSetTextAction()).performTextClearance()
         compose.onNodeWithText("小纸").performClick()
-        compose.onNodeWithText("发消息").performScrollTo().performClick()
+        val sendButton = compose.onNodeWithText("发消息").performScrollTo()
+        val beforeBounds = sendButton.fetchSemanticsNode().boundsInRoot
+        sendButton.performClick()
+        try {
+            compose.waitUntil(10_000) { opened.isNotEmpty() }
+        } catch (error: ComposeTimeoutException) {
+            val afterBounds = runCatching { sendButton.fetchSemanticsNode().boundsInRoot }.getOrNull()
+            throw AssertionError(
+                "发消息未打开；点击前=$beforeBounds；结束时=$afterBounds；请求路径=${requests.toList()}\n${compose.onRoot().printToString()}",
+                error,
+            )
+        }
         assertEquals(listOf(conversationId), opened.toList())
         assertTrue(posts.isEmpty())
     }
@@ -248,7 +305,7 @@ class RoleBrowserTest {
         compose.setContent { WeibanTheme { RoleBrowser(repository, runtime, owner, true, opened::add, onboarding = true) } }
         compose.onNodeWithText("先加一个你喜欢的 TA 吧").assertExists()
         compose.onNodeWithText("返回通讯录").assertDoesNotExist()
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("纸飞机").fetchSemanticsNodes().isNotEmpty() }
+        awaitFirstRole()
         compose.onNodeWithText("下一页角色").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("星河").fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(hasText("星河") and !hasSetTextAction()).performClick()
@@ -282,7 +339,7 @@ class RoleBrowserTest {
         compose.setContent {
             WeibanTheme { if (mounted) RoleBrowser(repository, runtime, owner, true, opened::add, onboarding = true) }
         }
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("纸飞机").fetchSemanticsNodes().isNotEmpty() }
+        awaitFirstRole()
         compose.onNode(hasText("纸飞机") and !hasSetTextAction()).performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("一起认识身边的世界").fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(hasSetTextAction()).performTextInput("很高兴认识你")

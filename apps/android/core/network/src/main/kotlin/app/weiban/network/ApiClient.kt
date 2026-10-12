@@ -19,7 +19,9 @@ import java.util.concurrent.atomic.AtomicReference
 class ApiFailure(
     val code: String,
     val status: Int,
-) : IOException(code)
+    message: String? = null,
+    val details: Map<String, JsonElement>? = null,
+) : IOException(message ?: code)
 
 /** No credentials in logs, URLs or a logging interceptor. Every reply belongs to one auth object. */
 class ApiClient(
@@ -38,7 +40,9 @@ class ApiClient(
     private val root =
         baseUrl.toHttpUrl().also {
             require(it.username.isEmpty() && it.password.isEmpty() && it.query == null && it.fragment == null)
-            require(it.isHttps || it.host in setOf("localhost", "127.0.0.1", "10.0.2.2"))
+            require(it.isHttps || it.host in setOf("localhost", "127.0.0.1", "10.0.2.2")) {
+                "HTTPS required for API host ${it.host}"
+            }
         }
     private val session = AtomicReference<AuthResponse?>(null)
 
@@ -77,7 +81,7 @@ class ApiClient(
                             json.decodeFromJsonElement(ApiError.serializer(), ContractJson.normalize("ApiError", raw))
                         }.getOrNull()
                     if (error?.error?.code == "unauthenticated" && endpoint.auth != "none") session.compareAndSet(auth, null)
-                    throw ApiFailure(error?.error?.code ?: "unsupported", response.code)
+                    throw ApiFailure(error?.error?.code ?: "unsupported", response.code, error?.error?.message, error?.error?.details)
                 }
                 decode(endpoint, bytes, auth)
             }
@@ -138,10 +142,11 @@ class ApiClient(
             throw ApiFailure("invalid_response", 0)
         }
 
-    /** A media grant is bound to this API origin and path; never attach the bearer to its URL. */
+    /** A media grant is bound to this API origin and path; never attach the bearer to its URL. audio = 语音消息 / 试听（T-074）。 */
     suspend fun download(
         media: MediaObject,
         expectedSession: AuthResponse? = session.get(),
+        audio: Boolean = false,
     ): ByteArray =
         withContext(Dispatchers.IO) {
             val auth = expectedSession ?: throw ApiFailure("unauthenticated", 401)
@@ -152,12 +157,13 @@ class ApiClient(
                     Request
                         .Builder()
                         .url(url)
-                        .header("Accept", "image/webp")
+                        .header("Accept", if (audio) "audio/*" else "image/webp")
                         .build(),
                 ).awaitDecoded { response ->
                     if (session.get() !== auth) throw ApiFailure("session_changed", 0)
                     if (!response.isSuccessful) throw ApiFailure("media_unavailable", response.code)
-                    if (response.header("Content-Type")?.substringBefore(';') != "image/webp") throw ApiFailure("invalid_response", 0)
+                    val type = response.header("Content-Type")?.substringBefore(';').orEmpty()
+                    if (if (audio) !type.startsWith("audio/") else type != "image/webp") throw ApiFailure("invalid_response", 0)
                     val bytes = response.body?.byteStream()?.use { it.readBounded(10_485_761) } ?: byteArrayOf()
                     if (bytes.isEmpty() || bytes.size > 10_485_760) throw ApiFailure("invalid_response", 0)
                     if (session.get() !== auth) throw ApiFailure("session_changed", 0)

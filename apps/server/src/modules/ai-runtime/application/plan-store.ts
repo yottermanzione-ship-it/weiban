@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, count, desc, eq, inArray, lte, ne, or } from 'drizzle-orm';
-import { Id, Timestamp, type IdentityAccountStatusPort } from '@weiban/contracts';
+import { Id, Timestamp, type IdentityAccountStatusPort, type Tx } from '@weiban/contracts';
 import {
   AppError,
+  asDbTx,
   CLOCK,
   DATABASE,
   ENVELOPE_CRYPTO,
@@ -17,12 +18,19 @@ import {
 import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
 import {
   companionSettings,
+  adultBoundaryStates,
   replyPlans,
   memories,
   memoryStates,
   simulationStates,
   dailyEvents,
   moodStates,
+  healthCareLedger,
+  proactivePlans,
+  userChatActivity,
+  groupCompanionSettings,
+  groupSelfChats,
+  groupInvites,
 } from '../infra/db/schema.js';
 import { USER_BATCH_DELAY_MS } from '../domain/reply-rules.js';
 export const GENERATE_REPLY_JOB = 'ai.generate_reply';
@@ -36,6 +44,25 @@ export interface EnqueueReply {
   kind: 'message' | 'greeting';
   triggeredAt?: string;
 }
+/** T-066 迁移 0038 的表（都按 user_id 归属）。 */
+const T066_TABLES = [
+  'memory_sharing_settings',
+  'chat_visits',
+  'joint_events',
+  'moments_plans',
+  'card_referrals',
+  // T-072：P-45 静默、来电记录
+  'user_quiet_states',
+  'call_attempts',
+  // T-082：领养提议（一次）、名场面评估记录
+  'pet_proposals',
+  'moment_card_attempts',
+  // T-090：行为规划决策记录
+  'planning_decisions',
+  'character_self_reports',
+  'pending_anniversary_letters',
+  'quirk_actions',
+] as const;
 @Injectable()
 export class ReplyPlanStore {
   constructor(
@@ -62,6 +89,18 @@ export class ReplyPlanStore {
     if (!(await this.lock(tx, input.userId, input.conversationId))) return;
     if (input.triggeredAt && !Timestamp.safeParse(input.triggeredAt).success)
       throw new AppError('bad_request', '无效触发时间');
+    // A new message must never wait behind a deliberate cold-shoulder delay, especially a plea for help.
+    if (input.kind === 'message')
+      await tx.query(
+        `UPDATE ai_runtime.reply_plans SET status='cancelled', input_ciphertext=NULL,
+          result_ciphertext=NULL, lease_id=NULL, lease_until=NULL
+         WHERE user_id=$1 AND conversation_id=$2 AND next_bubble=0
+           AND status IN ('generating','sending') AND id IN (
+             SELECT plan_id FROM ai_runtime.quirk_actions WHERE user_id=$1
+             AND kind IN ('read_delay','shy_typing')
+           )`,
+        [input.userId, input.conversationId],
+      );
     const dueAt = new Date(
       this.clock.nowMs() + (input.kind === 'message' ? USER_BATCH_DELAY_MS : 0),
     );
@@ -256,6 +295,31 @@ export class ReplyPlanStore {
         retryBackoff: true,
       });
   }
+  async purgeTrial(
+    transaction: Tx,
+    input: { userId: string; characterId: string; conversationId: string },
+  ): Promise<void> {
+    const tx = asDbTx(transaction);
+    await tx.db
+      .delete(adultBoundaryStates)
+      .where(
+        and(
+          eq(adultBoundaryStates.userId, input.userId),
+          eq(adultBoundaryStates.conversationId, input.conversationId),
+          eq(adultBoundaryStates.characterId, input.characterId),
+        ),
+      );
+    await tx.db
+      .delete(replyPlans)
+      .where(
+        and(
+          eq(replyPlans.userId, input.userId),
+          eq(replyPlans.conversationId, input.conversationId),
+          eq(replyPlans.characterId, input.characterId),
+        ),
+      );
+  }
+
   async purgeUser(userId: string): Promise<number> {
     return await this.db.transaction(async (tx) => {
       await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('ai_runtime:user:' || $1,0))", [
@@ -274,10 +338,72 @@ export class ReplyPlanStore {
         .returning();
       const f = await tx.db.delete(dailyEvents).where(eq(dailyEvents.userId, userId)).returning();
       const g = await tx.db.delete(moodStates).where(eq(moodStates.userId, userId)).returning();
-      return a.length + b.length + c.length + d.length + e.length + f.length + g.length;
+      const h = await tx.db
+        .delete(healthCareLedger)
+        .where(eq(healthCareLedger.userId, userId))
+        .returning();
+      const i = await tx.db
+        .delete(proactivePlans)
+        .where(eq(proactivePlans.userId, userId))
+        .returning();
+      const j = await tx.db
+        .delete(userChatActivity)
+        .where(eq(userChatActivity.userId, userId))
+        .returning();
+      const adult = await tx.db
+        .delete(adultBoundaryStates)
+        .where(eq(adultBoundaryStates.userId, userId))
+        .returning();
+      return (
+        adult.length +
+        a.length +
+        b.length +
+        c.length +
+        d.length +
+        e.length +
+        f.length +
+        g.length +
+        h.length +
+        i.length +
+        j.length +
+        (
+          await tx.db
+            .delete(groupCompanionSettings)
+            .where(eq(groupCompanionSettings.userId, userId))
+            .returning()
+        ).length +
+        (await tx.db.delete(groupSelfChats).where(eq(groupSelfChats.userId, userId)).returning())
+          .length +
+        (await tx.db.delete(groupInvites).where(eq(groupInvites.userId, userId)).returning())
+          .length +
+        (await this.purgeT066(tx, userId))
+      );
     });
   }
+  /** T-066 新表（迁移 0038）的注销清理。 */
+  private async purgeT066(tx: DbTx, userId: string): Promise<number> {
+    let n = 0;
+    for (const table of T066_TABLES)
+      n +=
+        (await tx.query(`DELETE FROM ai_runtime.${table} WHERE user_id=$1`, [userId])).rowCount ??
+        0;
+    return n;
+  }
   async countUserData(userId: string): Promise<number> {
+    const [adult] = await this.db.db
+      .select({ n: count() })
+      .from(adultBoundaryStates)
+      .where(eq(adultBoundaryStates.userId, userId));
+    let t066 = 0;
+    for (const table of T066_TABLES)
+      t066 += Number(
+        (
+          await this.db.query<{ n: string }>(
+            `SELECT count(*) n FROM ai_runtime.${table} WHERE user_id=$1`,
+            [userId],
+          )
+        ).rows[0]?.n ?? 0,
+      );
     const [a] = await this.db.db
       .select({ n: count() })
       .from(replyPlans)
@@ -306,7 +432,39 @@ export class ReplyPlanStore {
       .select({ n: count() })
       .from(moodStates)
       .where(eq(moodStates.userId, userId));
+    const [h] = await this.db.db
+      .select({ n: count() })
+      .from(healthCareLedger)
+      .where(eq(healthCareLedger.userId, userId));
+    const [i] = await this.db.db
+      .select({ n: count() })
+      .from(proactivePlans)
+      .where(eq(proactivePlans.userId, userId));
+    const [j] = await this.db.db
+      .select({ n: count() })
+      .from(userChatActivity)
+      .where(eq(userChatActivity.userId, userId));
+    const [k] = await this.db.db
+      .select({ n: count() })
+      .from(groupCompanionSettings)
+      .where(eq(groupCompanionSettings.userId, userId));
+    const [l] = await this.db.db
+      .select({ n: count() })
+      .from(groupSelfChats)
+      .where(eq(groupSelfChats.userId, userId));
+    const [m] = await this.db.db
+      .select({ n: count() })
+      .from(groupInvites)
+      .where(eq(groupInvites.userId, userId));
     return (
+      t066 +
+      (adult?.n ?? 0) +
+      (k?.n ?? 0) +
+      (l?.n ?? 0) +
+      (m?.n ?? 0) +
+      (i?.n ?? 0) +
+      (j?.n ?? 0) +
+      (h?.n ?? 0) +
       (a?.n ?? 0) +
       (b?.n ?? 0) +
       (c?.n ?? 0) +

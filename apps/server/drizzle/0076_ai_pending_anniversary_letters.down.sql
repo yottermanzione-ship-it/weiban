@@ -1,0 +1,1 @@
+DROP TABLE ai_runtime.pending_anniversary_letters;

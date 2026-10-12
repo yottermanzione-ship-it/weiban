@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import {
   Id,
   UpdateCompanionSettingsRequest,
@@ -12,7 +12,9 @@ import {
   type ChatAdminPort,
   type AdultModelReadPort,
   type ScenarioMode,
+  type MediaAssetReadPort,
 } from '@weiban/contracts';
+import { MEDIA_ASSET_READ_PORT } from '../../media/index.js';
 import {
   AppError,
   CLOCK,
@@ -47,6 +49,7 @@ export class CompanionSettingsService {
     @Inject(CHAT_ADMIN_PORT) private readonly chat: ChatAdminPort,
     @Inject(ADULT_MODEL_READ_PORT) private readonly adultModels: AdultModelReadPort,
     @Inject(ReplyPlanStore) private readonly plans: ReplyPlanStore,
+    @Inject(MEDIA_ASSET_READ_PORT) private readonly assets: MediaAssetReadPort,
   ) {}
   private async guard(userId: string, characterId: string | null): Promise<void> {
     parseContract(Id, userId);
@@ -91,6 +94,7 @@ export class CompanionSettingsService {
       proactiveFrequency: (row?.proactiveFrequency ?? 'medium') as 'low' | 'medium' | 'high',
       proactiveCalls: row?.proactiveCalls ?? false,
       dailyLife: row?.dailyLife ?? true,
+      voiceId: row?.voiceId ?? null,
       updatedAt: (row?.updatedAt ?? this.clock.now()).toISOString(),
       inheritsDefaults: characterId !== null && !specific,
     };
@@ -189,6 +193,11 @@ export class CompanionSettingsService {
     }
     if (patch.scenarioMode && allowed && !allowed.items.some((m) => m.id === patch.scenarioMode))
       throw new AppError('bad_request', '该角色不允许此模式');
+    // T-071：音色只能选音色库里启用的音色（MED-03 第 1 条，非克隆）。
+    if (patch.voiceId) {
+      const voice = await this.assets.getVoice(patch.voiceId);
+      if (!voice || !voice.enabled) throw new AppError('bad_request', '音色不存在或已停用');
+    }
     const activeContacts = characterId ? [] : await this.contacts.listActiveContacts(userId);
     return this.db.transaction(async (tx) => {
       await this.lock(tx, userId);
@@ -207,6 +216,7 @@ export class CompanionSettingsService {
         proactiveFrequency: patch.proactiveFrequency ?? old.proactiveFrequency ?? 'medium',
         proactiveCalls: patch.proactiveCalls ?? old.proactiveCalls ?? false,
         dailyLife: patch.dailyLife ?? old.dailyLife ?? true,
+        voiceId: patch.voiceId === undefined ? (old.voiceId ?? null) : patch.voiceId,
         updatedAt: this.clock.now(),
       };
       if (characterId && patch.scenarioMode && patch.scenarioMode !== old.scenarioMode) {
@@ -245,5 +255,64 @@ export class CompanionSettingsService {
       });
       return { ...values, updatedAt: values.updatedAt.toISOString(), inheritsDefaults: false };
     });
+  }
+
+  /**
+   * T-090 / SAFE-03 第 5 条：characters.character_classification_changed。
+   * 资格变为「否」的成人模式（以及不再允许恋爱的恋爱模式）立即切回日常、内容范围改回 normal，并写系统提示。
+   * ownerUserId 非空（自定义角色）只影响创建者；预设角色影响所有在该模式下的用户。
+   */
+  async onClassificationChanged(
+    tx: DbTx,
+    p: {
+      characterId: string;
+      ownerUserId: string | null;
+      adultModeEligible: boolean;
+      romanceAllowed: boolean;
+    },
+  ): Promise<void> {
+    const modes: string[] = [];
+    if (!p.adultModeEligible) modes.push('adult');
+    if (!p.romanceAllowed) modes.push('romance');
+    if (!modes.length) return;
+    const rows = await tx.db
+      .select()
+      .from(companionSettings)
+      .where(
+        and(
+          eq(companionSettings.characterId, p.characterId),
+          inArray(companionSettings.scenarioMode, modes),
+          p.ownerUserId ? eq(companionSettings.userId, p.ownerUserId) : undefined,
+        ),
+      );
+    const now = this.clock.now();
+    for (const row of rows) {
+      await tx.db
+        .update(companionSettings)
+        .set({ scenarioMode: 'daily', updatedAt: now })
+        .where(eq(companionSettings.id, row.id));
+      const contact = await this.contacts.getActiveContact(row.userId, p.characterId, tx);
+      if (contact?.conversationId) {
+        await this.chat.setContentScope(
+          { conversationId: contact.conversationId, scope: 'normal' },
+          tx,
+        );
+        await this.chat.postSystemMessage(tx, {
+          conversationId: contact.conversationId,
+          code: 'scenario_mode_changed',
+          params: {
+            mode: 'daily',
+            reason:
+              row.scenarioMode === 'adult' ? 'adult_mode_unavailable' : 'scenario_mode_unavailable',
+          },
+          idempotencyKey: `classification:${row.userId}:${p.characterId}:${now.getTime()}`,
+        });
+      }
+      await invalidateReplyPlans(tx, this.plans, row.userId, p.characterId);
+      await this.sync.appendUpdate(tx, row.userId, {
+        type: 'settings.updated',
+        data: { section: 'companion', characterId: p.characterId },
+      });
+    }
   }
 }

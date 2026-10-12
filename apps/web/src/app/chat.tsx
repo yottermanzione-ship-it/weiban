@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { freshSyncState, type LocalSyncState } from '@weiban/client-core';
-import { type SendMessageRequest } from '@weiban/contracts';
+import { type SendMessageRequest, type UserSendableContent } from '@weiban/contracts';
 import { useAuth } from './auth.js';
 import { resumeExistingPush } from '../notifications/client.js';
 import { ChatDriver } from '../data/chat-driver.js';
@@ -19,7 +19,9 @@ interface ChatContextValue {
   error: string;
   typing: Record<string, number>;
   focus(id: string | null): void;
-  send(id: string, text: string, quoteMessageId?: string): Promise<void>;
+  send(id: string, text: string, quoteMessageId?: string, mentions?: string[]): Promise<void>;
+  /** 3.0：发图片、语音、表情、链接（离线时排队，联网后发送）。 */
+  sendContent(id: string, content: UserSendableContent): Promise<void>;
   retry(id: string, clientMsgId: string): Promise<void>;
   older(id: string, beforeSeq: number): Promise<boolean>;
   clearHistory(id: string): Promise<void>;
@@ -124,11 +126,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         error,
         typing,
         focus,
-        send: async (id, text, quoteMessageId) => {
+        send: async (id, text, quoteMessageId, mentions) => {
           const body: SendMessageRequest = {
             clientMsgId: crypto.randomUUID(),
-            content: { type: 'text', text },
+            content: mentions?.length ? { type: 'text', text, mentions } : { type: 'text', text },
             quoteMessageId: quoteMessageId ?? null,
+          };
+          await current().dispatch({ type: 'enqueue', conversationId: id, body, now: Date.now() });
+        },
+        sendContent: async (id, content) => {
+          const body: SendMessageRequest = {
+            clientMsgId: crypto.randomUUID(),
+            content,
+            quoteMessageId: null,
           };
           await current().dispatch({ type: 'enqueue', conversationId: id, body, now: Date.now() });
         },

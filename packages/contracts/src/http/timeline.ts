@@ -7,7 +7,7 @@
  * v2.5（T-054）：新增。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, Timestamp, defineEndpoint } from '../common.js';
+import { API_PREFIX, Id, Timestamp, defineEndpoint, tolerantEnum } from '../common.js';
 
 // ---------- 事件类型 ----------
 
@@ -59,6 +59,33 @@ export const TimelineSummaryResponse = z.object({
 });
 export type TimelineSummaryResponse = z.infer<typeof TimelineSummaryResponse>;
 
+// ---------- 3.0：时间线列表（设计缺口第 5 条） ----------
+
+/** 时间线条目来源。新增取值是次版本变更（接收端容错）。 */
+export const TimelineEntrySource = z.enum([
+  'daily_event', // 推演日常事件
+  'moments_post', // 角色发的朋友圈
+  'character_interaction', // 和其他角色的互动（共同事件、互评）
+  'public_update', // 管理员审核生效的公开动态
+]);
+
+export const TimelineEntry = z.object({
+  entryId: Id,
+  source: tolerantEnum(TimelineEntrySource),
+  /** 事件发生时间（推演事件为其计划时刻）。 */
+  occurredAt: Timestamp,
+  kind: tolerantEnum(TimelineEventKind).nullable(),
+  summary: z.string().max(200),
+  moodAfter: tolerantEnum(TimelineMood).nullable(),
+  /** 涉及的其他角色（只列当前用户通讯录里的）。 */
+  withCharacterIds: z.array(Id),
+  /** 来源链接：朋友圈动态 ID、公开动态链接等；没有为 null。 */
+  ref: z
+    .object({ kind: z.enum(['moments_post', 'public_update', 'url']), id: z.string().max(2000) })
+    .nullable(),
+});
+export type TimelineEntry = z.infer<typeof TimelineEntry>;
+
 // ---------- 接口定义 ----------
 
 export const TimelineEndpoints = {
@@ -71,5 +98,19 @@ export const TimelineEndpoints = {
     response: TimelineSummaryResponse,
     summary:
       '获取「你不在时」摘要卡片（SIM-11/P-18）。离线不足 12 小时或无事件时 summary 为 null。',
+  }),
+  listTimeline: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/characters/:characterId/timeline`,
+    auth: 'user',
+    params: z.object({ characterId: Id }),
+    query: z.object({
+      cursor: z.string().optional(),
+      limit: z.coerce.number().int().min(1).max(50).default(20),
+    }),
+    response: z.object({ items: z.array(TimelineEntry), nextCursor: z.string().nullable() }),
+    summary:
+      '3.0：角色时间线（SIM-11，资料页「TA 的日常」）：日常事件、朋友圈、和其他角色的互动、公开动态，时间倒序分页。' +
+      '只含对当前用户可见的内容；不含成人模式与经期相关内容',
   }),
 } as const;

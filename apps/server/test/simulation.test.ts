@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import type {
   ContactsReadPort,
   IdentityAccountStatusPort,
+  IdentityReadPort,
   ModelGatewayPort,
 } from '@weiban/contracts';
 import {
@@ -12,13 +13,13 @@ import {
   type JobQueue,
   type EnvelopeCrypto,
 } from '../src/platform/index.js';
-import { Migrator } from '../src/platform/db/migrator.js';
+
 import { SimulationService, ReplyPlanStore } from '../src/modules/ai-runtime/testing.js';
 import {
   describeDb,
   resetTestDatabase,
+  roundTripMigration,
   requireTestDatabaseUrl,
-  MIGRATIONS_DIR,
 } from './support/db.js';
 
 describeDb('T-051 推演真实PG：迁移、预算、幂等、活跃与迟到注销', () => {
@@ -66,7 +67,8 @@ describeDb('T-051 推演真实PG：迁移、预算、幂等、活跃与迟到注
   beforeAll(async () => {
     await resetTestDatabase();
     db = new Database({ url: requireTestDatabaseUrl() });
-    service = new SimulationService(db, clock, jobs, gateway, accounts, contacts);
+    const identity = { getLastActiveAt: async () => null } as unknown as IdentityReadPort;
+    service = new SimulationService(db, clock, jobs, gateway, accounts, identity, contacts);
   });
   afterAll(async () => {
     await db?.close();
@@ -84,9 +86,7 @@ describeDb('T-051 推演真实PG：迁移、预算、幂等、活跃与迟到注
   });
 
   it('迁移已登记，实际回滚再执行后三张表可用', async () => {
-    const migrator = new Migrator(requireTestDatabaseUrl(), MIGRATIONS_DIR);
-    expect(await migrator.down()).toEqual(['0019_simulation_engine']);
-    expect(await migrator.up()).toEqual(['0019_simulation_engine']);
+    await roundTripMigration('0019_simulation_engine');
     expect(
       (await db.query("SELECT to_regclass('ai_runtime.daily_events') AS name")).rows[0],
     ).toEqual({ name: 'ai_runtime.daily_events' });

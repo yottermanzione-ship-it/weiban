@@ -5,7 +5,10 @@
  */
 export interface PushRequest {
   userId: string;
-  kind: 'model_status' | 'call' | 'system';
+  /**
+   * 3.1（积压 ㉕）：新增 `import`（导入完成 / 失败，deepLink `/imports/{jobId}`），对应通知种类 `NotificationKind.import`。
+   */
+  kind: 'model_status' | 'call' | 'system' | 'import';
   title: string;
   body: string;
   deepLink: string;

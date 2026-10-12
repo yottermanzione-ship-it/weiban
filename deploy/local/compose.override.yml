@@ -1,0 +1,18 @@
+# 本机运行复用生产镜像与持久卷，只覆盖访问地址和端口。
+services:
+  migrate:
+    environment:
+      ALLOW_LOCAL_HTTP: '1'
+      MEDIA_PUBLIC_BASE_URL: http://localhost:8080
+  app:
+    environment:
+      ALLOW_LOCAL_HTTP: '1'
+      MEDIA_PUBLIC_BASE_URL: http://localhost:8080
+  caddy:
+    environment:
+      WEB_DOMAIN: http://localhost:8080
+      ADMIN_DOMAIN: http://localhost:8081
+      ADMIN_PUBLIC_ORIGIN: http://localhost:8081
+    ports: !override
+      - '127.0.0.1:8080:8080'
+      - '127.0.0.1:8081:8081'

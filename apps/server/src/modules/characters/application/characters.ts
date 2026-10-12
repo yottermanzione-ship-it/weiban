@@ -13,6 +13,7 @@ import {
   type CharacterClassification,
   type CharacterProfile,
   type MediaReadPort,
+  type PersonaUpdateSummarizerPort,
   type PersonaVersionSummary,
   type UserDataOwner,
 } from '@weiban/contracts';
@@ -40,9 +41,21 @@ import {
 import { MEDIA_READ_PORT } from '../../media/index.js';
 import { deriveClassification, classificationCanChange } from '../../policy/index.js';
 import { childFeaturesIn } from '../domain/child-features.js';
-import { categories, characters, personaVersions } from '../infra/db/schema.js';
-import { CHARACTER_CONTACT_ACCESS, type CharacterContactAccess } from '../tokens.js';
+import { customToAdminWrite, type CustomCharacterPayload } from '../domain/custom-card.js';
+import {
+  categories,
+  characters,
+  personaVersions,
+  relations,
+  trialSessions,
+} from '../infra/db/schema.js';
+import {
+  CHARACTER_CONTACT_ACCESS,
+  CHARACTER_PERSONA_SUMMARIZER,
+  type CharacterContactAccess,
+} from '../tokens.js';
 import type { CharacterEvaluator } from './evaluator.js';
+import { CharacterSupplementService } from './supplements.js';
 type Row = typeof characters.$inferSelect;
 const initialCategories = [
   ['celebrity', '明星'],
@@ -65,7 +78,48 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     @Optional()
     @Inject(CHARACTER_CONTACT_ACCESS)
     private readonly contacts: CharacterContactAccess | null,
+    @Optional()
+    @Inject(CharacterSupplementService)
+    private readonly supplements: CharacterSupplementService | null,
+    @Optional()
+    @Inject(CHARACTER_PERSONA_SUMMARIZER)
+    private readonly summarizer: PersonaUpdateSummarizerPort | null,
   ) {}
+
+  /**
+   * 3.1（积压 ㉖）：新人设版本的更新摘要。可选 AI 接入点（ADR-0028 方案 C）：未绑定、失败、超时（8 秒）或返回 null 时
+   * 用「资料已更新」兜底，不阻塞发布。第一个版本没有「更新」，不写摘要。
+   */
+  private async personaSummary(
+    adminId: string,
+    row: Row,
+    after: AdminCharacterWrite,
+    version: number,
+  ): Promise<string | null> {
+    if (version <= 1) return null;
+    const fallback = '资料已更新';
+    if (!this.summarizer) return fallback;
+    try {
+      const before = row.publishedCiphertext
+        ? ((await this.decode(row, true)).card as CharacterCard)
+        : null;
+      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000));
+      const text = await Promise.race([
+        this.summarizer.summarize({
+          adminId,
+          characterId: row.id,
+          before,
+          after: after.card as CharacterCard,
+          version,
+        }),
+        timeout,
+      ]);
+      const clean = text?.trim();
+      return clean ? clean.slice(0, 200) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
   async onModuleInit(): Promise<void> {
     this.registry.register(this);
     await this.database.db
@@ -79,7 +133,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       .from(categories)
       .orderBy(categories.order, categories.id);
   }
-  private classify(row: Row): CharacterClassification {
+  classify(row: Row): CharacterClassification {
     return deriveClassification(
       {
         basis: row.basis as 'real_person' | 'fictional' | 'original',
@@ -93,6 +147,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     );
   }
   private async decode(row: Row, published = false, tx?: DbTx): Promise<AdminCharacterWrite> {
+    if (row.kind === 'custom') return customToAdminWrite(await this.customPayload(row, tx));
     const cipher = published ? row.publishedCiphertext : row.draftCiphertext;
     if (!cipher) throw new AppError('character_not_available', '角色尚未上架');
     const aad = published
@@ -105,9 +160,39 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       plain.fill(0);
     }
   }
+  /** T-088：预设改版「添加为新角色」时读取预设角色当前人设版本（只限已上架）。 */
+  async presetForCopy(id: string): Promise<{
+    row: Row;
+    body: AdminCharacterWrite;
+    classification: CharacterClassification;
+  } | null> {
+    const [row] = await this.database.db.select().from(characters).where(eq(characters.id, id));
+    if (!row || row.kind !== 'preset' || row.status !== 'published') return null;
+    return { row, body: await this.decode(row, true), classification: this.classify(row) };
+  }
+  /** 自定义角色（含广场复制品）的存储 payload（T-088）。 */
+  private async customPayload(row: Row, tx?: DbTx): Promise<CustomCharacterPayload> {
+    const plain = await this.crypto.open(
+      row.ownerId!,
+      `character:${row.id}:draft:${row.revision}`,
+      row.draftCiphertext,
+      tx,
+    );
+    try {
+      return JSON.parse(plain.toString('utf8')) as CustomCharacterPayload;
+    } finally {
+      plain.fill(0);
+    }
+  }
   private async row(id: string): Promise<Row> {
     const [row] = await this.database.db.select().from(characters).where(eq(characters.id, id));
     if (!row) throw new AppError('not_found', '找不到角色');
+    return row;
+  }
+  /** 管理员角色库维护只针对预设角色，不读取或覆盖用户私有草稿。 */
+  private async presetRow(id: string): Promise<Row> {
+    const row = await this.row(id);
+    if (row.kind !== 'preset') throw new AppError('not_found', '找不到角色');
     return row;
   }
   private async avatar(userId: string, body: AdminCharacterWrite) {
@@ -117,6 +202,13 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     if (media.purpose !== 'character_avatar')
       throw new AppError('bad_request', '预设角色必须使用管理员预设头像');
     return { image: { mediaId: id, url: media.url }, display: body.avatar.display };
+  }
+  async customAvatar(userId: string, mediaId: string | null) {
+    if (!mediaId) return null;
+    const media = await this.media.getMedia(userId, mediaId);
+    if (!['custom_character_avatar', 'plaza_avatar', 'character_avatar'].includes(media.purpose))
+      throw new AppError('bad_request', '请选择自定义角色头像', { status: 422 });
+    return { mediaId, url: media.url };
   }
   private async validateAvatar(adminId: string, body: AdminCharacterWrite): Promise<void> {
     if (body.avatar.imageMediaId) await this.avatar(adminId, body);
@@ -214,7 +306,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     return this.admin(adminId, await this.row(id));
   }
   async update(adminId: string, id: string, patch: AdminCharacterUpdate): Promise<AdminCharacter> {
-    const current = await this.row(id);
+    const current = await this.presetRow(id);
     const before = await this.decode(current);
     const body = AdminCharacterWrite.parse({ ...before, ...patch });
     if (
@@ -279,7 +371,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     });
     return this.admin(adminId, await this.row(id));
   }
-  private async classificationEvent(tx: DbTx, row: Row): Promise<void> {
+  async classificationEvent(tx: DbTx, row: Row): Promise<void> {
     const c = this.classify(row);
     await this.outbox.publish(tx, 'characters.character_classification_changed', 'characters', {
       characterId: row.id,
@@ -361,7 +453,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     });
   }
   async publish(adminId: string, id: string): Promise<AdminCharacter> {
-    const row = await this.row(id);
+    const row = await this.presetRow(id);
     const body = await this.decode(row);
     const structural = this.checks(body, row.revision);
     if (!structural.requiredFieldsComplete || !structural.hasFallbackGreeting)
@@ -394,6 +486,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       });
     }
     const version = row.publishedCiphertext ? row.personaVersion + 1 : 1;
+    const summary = await this.personaSummary(adminId, row, body, version);
     const sealed = await this.crypto.seal(
       row.ownerId ?? PLATFORM_KEY_OWNER,
       `character:${id}:published:${version}`,
@@ -426,6 +519,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
         publishedAt: this.clock.now(),
         modifiedBy: adminId,
         stabilityPassed: row.checks.personaStabilityPassed,
+        summary,
       });
       await this.outbox.publish(tx, 'characters.character_published', 'characters', {
         characterId: id,
@@ -455,7 +549,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       const [row] = await tx.db
         .update(characters)
         .set({ status: 'unpublished', updatedAt: this.clock.now() })
-        .where(eq(characters.id, id))
+        .where(and(eq(characters.id, id), eq(characters.kind, 'preset')))
         .returning();
       if (!row) throw new AppError('not_found', '找不到角色');
       await this.outbox.publish(tx, 'characters.character_unpublished', 'characters', {
@@ -559,19 +653,25 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       name: body.name,
       aliases: body.aliases,
       works: body.works,
-      avatar: await this.avatar(userId, {
-        ...body,
-        avatar: {
-          ...body.avatar,
-          display: {
-            ...body.avatar.display,
-            avatarPattern:
-              c.derived.isMinor && body.avatar.display.avatarPattern === 'heart'
-                ? 'star'
-                : body.avatar.display.avatarPattern,
-          },
-        },
-      }),
+      avatar:
+        row.kind === 'custom'
+          ? {
+              image: await this.customAvatar(userId, body.avatar.imageMediaId),
+              display: body.avatar.display,
+            }
+          : await this.avatar(userId, {
+              ...body,
+              avatar: {
+                ...body.avatar,
+                display: {
+                  ...body.avatar.display,
+                  avatarPattern:
+                    c.derived.isMinor && body.avatar.display.avatarPattern === 'heart'
+                      ? 'star'
+                      : body.avatar.display.avatarPattern,
+                },
+              },
+            }),
       tagline: body.tagline,
       tags: body.tags,
       categoryId: body.categoryId,
@@ -583,7 +683,10 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       classification: c,
       showPublicSourceNotice: c.basis === 'real_person',
       personaVersion: row.personaVersion,
-      personaUpdatedUnseen: false,
+      personaUpdatedUnseen:
+        row.kind === 'preset' && this.supplements
+          ? await this.supplements.isUnseen(userId, row.id, row.personaVersion)
+          : false,
     };
   }
   async getProfile(userId: string, id: string): Promise<CharacterProfile> {
@@ -610,7 +713,10 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     const db = transaction ? asDbTx(transaction).db : this.database.db;
     const query = db.select().from(characters).where(eq(characters.id, id));
     const [row] = await (transaction ? query.for('share') : query);
-    return !!row && row.status === 'published' && (row.kind === 'preset' || row.ownerId === userId);
+    if (!row) return false;
+    // 自定义角色（含广场复制品）只有创建者能添加（状态为 active，没有上架流程）。
+    if (row.kind === 'custom') return row.ownerId === userId && !row.isTrial;
+    return row.status === 'published';
   }
   async getClassification(id: string, transaction?: Tx): Promise<CharacterClassification | null> {
     const db = transaction ? asDbTx(transaction).db : this.database.db;
@@ -648,28 +754,43 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     return (await this.decode(row, row.kind === 'preset', tx)).name;
   }
   async purgeUser(userId: string): Promise<number> {
+    const trials = await this.database.db
+      .delete(trialSessions)
+      .where(eq(trialSessions.userId, userId))
+      .returning({ id: trialSessions.conversationId });
+    // 关系网：该用户为自定义角色设定的关系（T-063）；角色删除时也会级联删除。
+    const relationRows = await this.database.db
+      .delete(relations)
+      .where(eq(relations.ownerUserId, userId))
+      .returning({ id: relations.id });
     const removed = await this.database.db
       .delete(characters)
       .where(eq(characters.ownerId, userId))
       .returning({ id: characters.id });
-    return removed.length;
+    const extra = (await this.supplements?.purgeUser(userId)) ?? 0;
+    return removed.length + relationRows.length + trials.length + extra;
   }
   async countUserData(userId: string): Promise<number> {
+    const [trials] = await this.database.db
+      .select({ n: count() })
+      .from(trialSessions)
+      .where(eq(trialSessions.userId, userId));
     const [row] = await this.database.db
       .select({ n: count() })
       .from(characters)
       .where(eq(characters.ownerId, userId));
-    return row?.n ?? 0;
+    const [rel] = await this.database.db
+      .select({ n: count() })
+      .from(relations)
+      .where(eq(relations.ownerUserId, userId));
+    const extra = (await this.supplements?.countUserData(userId)) ?? 0;
+    return (row?.n ?? 0) + (rel?.n ?? 0) + (trials?.n ?? 0) + extra;
   }
   async listPersonaVersions(
     adminId: string,
     characterId: string,
   ): Promise<PersonaVersionSummary[]> {
-    const [character] = await this.database.db
-      .select()
-      .from(characters)
-      .where(eq(characters.id, characterId));
-    if (!character) throw new AppError('not_found', '找不到角色');
+    const character = await this.presetRow(characterId);
     const versions = await this.database.db
       .select()
       .from(personaVersions)
@@ -689,11 +810,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     characterId: string,
     version: number,
   ): Promise<AdminCharacter> {
-    const [character] = await this.database.db
-      .select()
-      .from(characters)
-      .where(eq(characters.id, characterId));
-    if (!character) throw new AppError('not_found', '找不到角色');
+    const character = await this.presetRow(characterId);
     if (!character.publishedCiphertext) {
       throw new AppError('bad_request', '角色从未上架，无法回滚', { status: 422 });
     }
@@ -710,54 +827,107 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       `character:${characterId}:published:${version}`,
       targetVersion.ciphertext,
     );
-    const newVersion = character.personaVersion + 1;
-    const sealed = await this.crypto.seal(
-      ownerId,
-      `character:${characterId}:published:${newVersion}`,
-      oldBody,
-    );
-    await this.database.transaction(async (tx) => {
-      const [locked] = await tx.db
-        .select()
-        .from(characters)
-        .where(eq(characters.id, characterId))
-        .for('update');
-      if (!locked) throw new AppError('not_found', '角色不存在');
-      await tx.db
-        .update(characters)
-        .set({
+    try {
+      const body = AdminCharacterWrite.parse(JSON.parse(oldBody.toString('utf8')));
+      if (!targetVersion.stabilityPassed)
+        throw new AppError('bad_request', '目标版本未通过人设稳定检查', { status: 422 });
+      await this.database.transaction(async (tx) => {
+        const [locked] = await tx.db
+          .select()
+          .from(characters)
+          .where(and(eq(characters.id, characterId), eq(characters.kind, 'preset')))
+          .for('update');
+        if (!locked) throw new AppError('not_found', '角色不存在');
+        const revision = locked.revision + 1;
+        const newVersion = locked.personaVersion + 1;
+        const detected = locked.childFeaturesDetected || childFeaturesIn(this.detectText(body));
+        const structural = this.checks(body, revision);
+        if (!structural.requiredFieldsComplete || !structural.hasFallbackGreeting)
+          throw new AppError('bad_request', '历史版本不符合当前发布要求', { status: 422 });
+        if (
+          this.classify({ ...locked, ...body.classification, childFeaturesDetected: detected })
+            .derived.isMinor &&
+          body.avatar.display.avatarPattern === 'heart'
+        )
+          throw new AppError('bad_request', '儿童角色不能使用爱心头像', { status: 422 });
+        const sealed = await this.crypto.seal(
+          ownerId,
+          `character:${characterId}:published:${newVersion}`,
+          JSON.stringify(body),
+          tx,
+        );
+        const draft = await this.crypto.seal(
+          ownerId,
+          `character:${characterId}:draft:${revision}`,
+          JSON.stringify(body),
+          tx,
+        );
+        const [updated] = await tx.db
+          .update(characters)
+          .set({
+            name: body.name,
+            searchText: [
+              body.name,
+              ...body.aliases,
+              ...body.works,
+              ...(body.card.data.profileExtra?.searchKeywords ?? []),
+            ].join('\n'),
+            categoryId: body.categoryId,
+            ...body.classification,
+            childFeaturesDetected: detected,
+            everPrivatePerson:
+              locked.everPrivatePerson || body.classification.realPersonKind === 'private_person',
+            revision,
+            publishedRevision: revision,
+            publishedChildFeaturesDetected: detected,
+            status: 'published',
+            personaVersion: newVersion,
+            draftCiphertext: draft,
+            publishedCiphertext: sealed,
+            checks: {
+              ...structural,
+              personaStabilityPassed: true,
+              hardBoundaryCasesPassed: true,
+              checked: true,
+            },
+            updatedAt: this.clock.now(),
+          })
+          .where(eq(characters.id, characterId))
+          .returning();
+        if (!updated) throw new AppError('not_found', '角色不存在');
+        await tx.db.insert(personaVersions).values({
+          characterId,
+          version: newVersion,
+          ciphertext: sealed,
+          publishedAt: this.clock.now(),
+          modifiedBy: adminId,
+          stabilityPassed: targetVersion.stabilityPassed,
+          summary: `回滚到版本 ${version}`,
+        });
+        await this.outbox.publish(tx, 'characters.persona_version_published', 'characters', {
+          characterId,
           personaVersion: newVersion,
-          draftCiphertext: targetVersion.ciphertext,
-          publishedCiphertext: sealed,
-          updatedAt: this.clock.now(),
-        })
-        .where(eq(characters.id, characterId));
-      await tx.db.insert(personaVersions).values({
-        characterId,
-        version: newVersion,
-        ciphertext: sealed,
-        publishedAt: this.clock.now(),
-        modifiedBy: adminId,
-        stabilityPassed: targetVersion.stabilityPassed,
-        summary: `回滚到版本 ${version}`,
+        });
+        await this.outbox.publish(tx, 'characters.character_published', 'characters', {
+          characterId,
+        });
+        await this.classificationEvent(tx, updated);
+        await this.audit.record(
+          {
+            module: 'characters',
+            action: 'preset.persona_rollback',
+            actorType: 'admin',
+            actorId: adminId,
+            targetType: 'character',
+            targetId: characterId,
+            details: { fromVersion: version, toVersion: newVersion },
+          },
+          tx,
+        );
       });
-      await this.outbox.publish(tx, 'characters.persona_version_published', 'characters', {
-        characterId,
-        personaVersion: newVersion,
-      });
-      await this.audit.record(
-        {
-          module: 'characters',
-          action: 'preset.persona_rollback',
-          actorType: 'admin',
-          actorId: adminId,
-          targetType: 'character',
-          targetId: characterId,
-          details: { fromVersion: version, toVersion: newVersion },
-        },
-        tx,
-      );
-    });
+    } finally {
+      oldBody.fill(0);
+    }
     return this.admin(adminId, await this.row(characterId));
   }
 }

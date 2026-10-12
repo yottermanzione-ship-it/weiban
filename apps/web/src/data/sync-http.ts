@@ -14,6 +14,7 @@ import {
   type FullSyncSnapshot,
   type SyncEffect,
 } from '@weiban/client-core';
+import { announceUpdate } from './updates.js';
 export async function syncHttp(
   api: ApiClient,
   effect: SyncEffect,
@@ -47,6 +48,7 @@ export async function syncHttp(
           ...options,
           query: { since: effect.since, limit: effect.limit },
         });
+        for (const item of page.items) announceUpdate(item);
         return [{ type: 'updates.page', page, now: Date.now() }];
       } catch (error) {
         if (error instanceof ApiFailure && error.code === 'sync_cursor_expired')

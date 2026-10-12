@@ -56,6 +56,20 @@ export function messageNotification(input: {
   sentAt: string;
 }) {
   const name = notificationText(input.name, 48) || '微伴';
+  // 慢信送达（PLAY-05 第 6 条，T-093）：角色寄来的信件卡片推送 kind = letter，不显示信的内容，点开到信箱里的这封信。
+  if (input.content?.type === 'letter' && input.content.direction === 'from_character')
+    return NotificationPayload.parse({
+      v: 1,
+      kind: 'letter',
+      collapseKey: `letter:${input.content.letterId}`,
+      title: name,
+      body: `${name} 给你寄来了一封信`,
+      count: 1,
+      deepLink: `/play/letters/${input.content.letterId}`,
+      conversationId: input.conversationId,
+      sound: input.settings.pushSoundEnabled && !input.muted && !input.quiet,
+      sentAt: input.sentAt,
+    });
   let body = `${name} 发来一条消息`;
   if (input.count > 1) body = `${name} 发来 ${input.count} 条消息`;
   else if (

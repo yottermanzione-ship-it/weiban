@@ -117,3 +117,43 @@ export interface PolicyPort {
     style?: 'classical_illustration' | 'unspecified';
   }): Promise<PolicyDecision>;
 }
+
+// ---------- 3.0（L4、L7） ----------
+
+/** 分类比较结果：stricter_or_equal = 新分类不比旧分类宽（可接受）；looser = 放宽（拒绝）。 */
+export type ClassificationComparison = 'stricter_or_equal' | 'looser';
+
+/** 一组分类事实（与 CharacterClassificationInput 同形 + 系统检测字段）。 */
+export interface ClassificationFacts {
+  basis: 'real_person' | 'fictional' | 'original';
+  realPersonKind: 'celebrity' | 'historical' | 'private_person' | null;
+  ageSetting: 'minor' | 'adult';
+  childAppearance: boolean;
+  childFeaturesDetected?: boolean;
+  everPrivatePerson?: boolean;
+}
+
+/** 提供方 policy（纯函数 + 审计）。 */
+export interface PolicyExtensionPort {
+  /**
+   * 「只能更严」的唯一判定处（hard-boundaries.md 第 6 节第 5、6 条）：plaza 发布新版本、管理员更正、
+   * characters 按新版本更新复制品时调用。规则：original / fictional → real_person 为更严；adult → minor 为更严；
+   * childAppearance、childFeaturesDetected、everPrivatePerson 只能 false → true；其余变化（含真人子类互换）视为 looser。
+   */
+  compareClassification(
+    previous: ClassificationFacts,
+    next: ClassificationFacts,
+  ): ClassificationComparison;
+  /** 群聊情景模式（SOC-03 第 4 条）：结果 = 每个成员 listAllowedScenarioModes 的交集。 */
+  listAllowedGroupScenarioModes(input: {
+    userId: string;
+    characterIds: string[];
+    candidates: ScenarioModeTraits[];
+  }): Promise<ScenarioModeTraits[]>;
+  /** 所有成员都具备资格才允许。 */
+  checkGroupScenarioMode(input: {
+    userId: string;
+    characterIds: string[];
+    mode: ScenarioModeTraits;
+  }): Promise<PolicyDecision>;
+}

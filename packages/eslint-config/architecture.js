@@ -18,7 +18,8 @@ export const LAYER_RANK = {
 /**
  * 模块目录名 → 所在层级与自己的 PostgreSQL schema。
  * schema 为 null 表示该模块没有自己的表（policy 只写 platform.audit_log，经平台内核写入）。
- * library 在 ADR-0004 分层图中未列出，暂按「上层」处理（待架构负责人确认）。
+ * L4～L7 模块（moments、calls、library、importer、plaza、play）的层级与 schema 以
+ * docs/architecture/contracts-3.0-map.md 第 3 节、ADR-0024 为准（T-101 登记）。
  */
 export const SERVER_MODULES = {
   identity: { layer: 'lower', schema: 'identity' },
@@ -32,12 +33,33 @@ export const SERVER_MODULES = {
   billing: { layer: 'middle', schema: 'billing' },
   policy: { layer: 'middle', schema: null },
   health: { layer: 'middle', schema: 'health' },
+  calls: { layer: 'middle', schema: 'calls' },
   'ai-runtime': { layer: 'upper', schema: 'ai_runtime' },
   proactive: { layer: 'upper', schema: 'proactive' },
   moments: { layer: 'upper', schema: 'moments' },
   growth: { layer: 'upper', schema: 'growth' },
   importer: { layer: 'upper', schema: 'importer' },
   library: { layer: 'upper', schema: 'library' },
+  plaza: { layer: 'upper', schema: 'plaza' },
+  play: { layer: 'upper', schema: 'play' },
+};
+
+/**
+ * R2 补充：上层模块之间只允许下列单向依赖，其余上层 → 上层的 import 一律报错（反方向用事件）。
+ * 依据：ADR-0024「后果」第 2 条、contracts-3.0-map.md 第 3 节、persona-plaza.md 第 2 节。
+ * ai-runtime → proactive：T-053 / T-060 已在用（主动消息调度、健康关怀经 PROACTIVE_MESSAGE_PORT 发消息），
+ * 决策出处见 ADR-0024「补记（2026-10-11，契约 3.1 收口）」第 1 条；library → moments 维持注入、不进白名单（同节第 2 条）。
+ * 中层、底层同层之间不受此表限制（只由 R11 禁止循环）。
+ */
+export const UPPER_LAYER_ALLOWED_DEPS = {
+  'ai-runtime': ['moments', 'growth', 'play', 'proactive'],
+  plaza: ['ai-runtime'],
+  importer: ['ai-runtime'],
+  proactive: [],
+  moments: [],
+  growth: [],
+  library: [],
+  play: [],
 };
 
 /** 不属于任何业务模块、业务模块也不能直接读写的 schema（R8）。 */

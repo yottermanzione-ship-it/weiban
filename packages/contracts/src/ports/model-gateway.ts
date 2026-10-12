@@ -68,10 +68,17 @@ export const SAFETY_OVERDRAFT_PURPOSES: readonly ModelPurpose[] = [
 export const BillingOwner = z.enum(['user', 'platform']);
 export type BillingOwner = z.infer<typeof BillingOwner>;
 
+/** 3.0：随消息附带的图片（识图，MED-04、MED-01 第 3 条）。网关经 MediaSystemPort 读取后交给上游，调用方不传字节。 */
+export interface ModelImageRef {
+  mediaId: string;
+  ownerUserId: string;
+}
+
 export interface ChatMessageForModel {
   role: 'system' | 'user' | 'assistant';
-  /** v0 只支持纯文本；多模态由 AI 负责人提出扩展。 */
   content: string;
+  /** 3.0：附带图片（只允许 role = user）。有图片时网关要求模型具备 vision 能力，否则改用平台默认识图模型（B5）。 */
+  images?: ModelImageRef[];
 }
 
 export interface GenerateTextInput {
@@ -113,6 +120,11 @@ export interface GenerateTextInput {
    * 记入用量记录，追查「变脸」用（AI 负责人申请，T-009 批准）。
    * v1.1：conversationKind（私聊 / 群聊）供管理后台用量明细显示（ADM-08）。
    */
+  /**
+   * 3.0（CR-17）：只允许与 purpose = behavior_planning 同时出现（否则 bad_request）；模型须在目录中 defaultFor 含 planner
+   * 或由行为规划配置指定。照常按用户余额扣费。
+   */
+  modelKeyOverride?: string;
   meta?: {
     personaVersion?: number;
     promptTemplateVersion?: string;
@@ -164,6 +176,26 @@ export interface ModelGatewayPort {
   }>;
 }
 
+/**
+ * 3.1（积压 ㉖）：按用户所选模型报价。提供方 model-access（网关先按用途 / 角色覆盖 / 平台默认解析模型，
+ * 再经 BillingQuotePort 按当前价目表计价）；调用方 ai-runtime（导入估价、行为规划成本闸等）。不调用上游、不冻结、不扣费。
+ * 单独成接口，新增它不影响已有网关实现。
+ */
+export interface ModelQuotePort {
+  quote(input: {
+    userId: string;
+    characterId?: string;
+    purpose: ModelPurpose;
+    /** 估算用量（输入 token 估算值 + maxOutputTokens 等），单位同 billing 的 UsageQuantities。 */
+    estimate: import('./billing.js').UsageQuantities;
+  }): Promise<
+    PortResult<
+      { modelKey: string; amountMicros: number; priceVersionId: string },
+      'not_configured' | 'model_removed' | 'price_missing'
+    >
+  >;
+}
+
 /** 模式设置用只读解析端口，不调用模型、不扣费、不返回上游配置。 */
 export interface AdultModelReadPort {
   getAdultModelStatus(
@@ -184,4 +216,136 @@ export interface ModelNotificationReadPort {
     tx?: import('./common.js').Tx,
     previousDefaultFor?: readonly ('chat' | 'background' | 'vision')[],
   ): Promise<string[]>;
+}
+
+// ---------- 3.0：多媒体与搜索、决策（L5、L7，AI 变更申请第 14、18 条，ADR-0025） ----------
+// 下列方法同样走 policy 检查、冻结 / 结算、用量记录；平台未设置对应 defaultFor 时返回 not_configured（= 平台未开通）。
+
+/** 公共计费字段。 */
+export interface MediaCallBase {
+  userId: string;
+  purpose: ModelPurpose;
+  billingOwner: BillingOwner;
+  characterId?: string;
+  conversationId?: string;
+  idempotencyKey: string;
+  countAsBackground?: boolean;
+}
+
+export interface MediaCallResult {
+  modelKey: string;
+  chargedMicros: number;
+  latencyMs: number;
+  usageRecordId: string;
+}
+
+/** 语音合成（角色语音消息、通话中整句合成；按 tts_10k_chars 计价）。 */
+export interface SynthesizeSpeechInput extends MediaCallBase {
+  text: string;
+  /** 音色库 voiceId（media）；网关解析成上游音色代号。 */
+  voiceId: string;
+  format: 'ogg_opus' | 'pcm16_24k';
+}
+
+/** 语音识别（用户语音消息；按 asr_minute 计价）。 */
+export interface TranscribeSpeechInput extends MediaCallBase {
+  mediaId: string;
+  ownerUserId: string;
+}
+
+/** 图片生成（按 image 计价）。调用前必须已过 PolicyPort.checkImageGeneration；生成后人脸复检由 AI 负责。 */
+export interface GenerateImageInput extends MediaCallBase {
+  prompt: string;
+  /** 画风（历史人物古风插画须为 classical_illustration）。 */
+  style: 'classical_illustration' | 'unspecified';
+  size: '1024x1024' | '768x1024' | '1024x768';
+  /** 结果作为哪个用户的媒体保存（purpose = generated_image）。 */
+  ownerUserId: string;
+}
+
+/** 联网搜索（按 search_call 计价）。 */
+export interface GatewayWebSearchInput extends MediaCallBase {
+  query: string;
+  maxResults: number;
+}
+
+export interface WebSearchResultItem {
+  title: string;
+  url: string;
+  snippet: string;
+  source: string | null;
+  publishedAt: string | null;
+}
+
+/** 实时语音识别流（通话中听用户，ADR-0025）：网关按分钟分段冻结与结算（长通话分段冻结）。 */
+export interface RealtimeAsrSession {
+  pushAudio(chunk: Uint8Array): void;
+  /** 识别结果（中间结果 final = false）。 */
+  results(): AsyncIterable<{ text: string; final: boolean }>;
+  /** 结束并按实际分钟结算。可重复调用。 */
+  close(): Promise<MediaCallResult>;
+}
+
+/** 流式语音合成（通话中角色说话）。abort 用于打断（MED-06 第 2 条），只结算已合成的字数。 */
+export interface StreamingTtsResult {
+  audio: AsyncIterable<Uint8Array>;
+  abort(): void;
+  done: Promise<PortResult<MediaCallResult, GenerateError>>;
+}
+
+/** 决策问题（CR-18：Jev 风格的类型化问题；默认实现也用同一形状）。 */
+export interface DecideQuestion {
+  questionId: string;
+  kind: 'yes_no' | 'choice' | 'scale';
+  prompt: string;
+  /** choice 的选项（≤ 255）；scale 的级数 2～10 用 scaleSize。 */
+  options?: string[];
+  scaleSize?: number;
+}
+
+export interface DecideInput extends MediaCallBase {
+  purpose: 'behavior_planning';
+  modelKey: string;
+  /** 经出境净化后的情境（behavior-planning.md 5.4）。 */
+  state: Record<string, unknown>;
+  questions: DecideQuestion[];
+  deadlineAt?: string;
+}
+
+export interface DecideOutput extends MediaCallResult {
+  answers: Array<{
+    questionId: string;
+    choice: string;
+    probabilities: Record<string, number>;
+    confidence: number;
+  }>;
+}
+
+/** 3.0：模型网关的多媒体扩展。提供方 model-access；调用方 ai-runtime、calls 不直接调用（经 CallAgentPort 由 ai-runtime 调）。 */
+export interface ModelGatewayMediaPort {
+  synthesizeSpeech(
+    input: SynthesizeSpeechInput,
+  ): Promise<PortResult<MediaCallResult & { mediaId: string; durationMs: number }, GenerateError>>;
+  transcribeSpeech(
+    input: TranscribeSpeechInput,
+  ): Promise<PortResult<MediaCallResult & { text: string }, GenerateError>>;
+  generateImage(
+    input: GenerateImageInput,
+  ): Promise<PortResult<MediaCallResult & { mediaId: string }, GenerateError>>;
+  webSearch(
+    input: GatewayWebSearchInput,
+  ): Promise<PortResult<MediaCallResult & { items: WebSearchResultItem[] }, GenerateError>>;
+  openRealtimeAsr(
+    input: MediaCallBase & { sampleRate: 16000 },
+  ): Promise<PortResult<RealtimeAsrSession, GenerateError>>;
+  streamSpeech(
+    input: Omit<SynthesizeSpeechInput, 'format'> & { format: 'pcm16_24k' },
+  ): Promise<PortResult<StreamingTtsResult, GenerateError>>;
+  /** 行为规划决策（CR-18）。 */
+  decide(input: DecideInput): Promise<PortResult<DecideOutput, GenerateError>>;
+  /** 某项平台服务是否已开通（入口显隐）。 */
+  isServiceEnabled(
+    service:
+      'speech_synthesis' | 'speech_recognition' | 'image_generation' | 'web_search' | 'vision',
+  ): Promise<boolean>;
 }

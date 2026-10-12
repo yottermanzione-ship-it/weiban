@@ -16,7 +16,7 @@ class NativePushRuntime(
     private val context: Context,
     private val repository: SessionRepository,
     private val transport: PushTransport,
-    activity: Class<*>,
+    private val activity: Class<*>,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     private val notices = NativeNotices(context, activity, repository.api.json)
@@ -65,6 +65,7 @@ class NativePushRuntime(
         }
     }
 
+    @Suppress("ReturnCount") // 首次本机构建（2026-10-11）：保留既有逻辑，复杂度待重构
     suspend fun deliver(
         owner: OwnerRecord,
         id: String,
@@ -73,6 +74,10 @@ class NativePushRuntime(
         val valid = notificationOwned(envelope, repository.auth.value, now()) && notificationRoute(envelope) != null
         if (!valid || !available || !permitted()) {
             repository.notifications.discard(owner, id)
+            return
+        }
+        if (envelope.kind == "call") {
+            deliverCall(owner, id, envelope)
             return
         }
         val appearance = display.prepare(owner, envelope)
@@ -84,6 +89,47 @@ class NativePushRuntime(
             }
         } finally {
             icon.recycle()
+        }
+    }
+
+    /** 来电推送：核对仍在响铃再发全屏来电通知（不受免打扰拦截，免打扰由服务器来电前判断）。 */
+    private suspend fun deliverCall(
+        owner: OwnerRecord,
+        id: String,
+        envelope: NotificationEnvelope,
+    ) {
+        val callId = envelope.deepLink.removePrefix("/calls/")
+        val call = fetchCall(repository, owner, callId)
+        if (call.state != "ringing" || call.direction != "incoming") {
+            repository.notifications.discard(owner, id)
+            return
+        }
+        val icon = avatar.load(owner, envelope.copy(conversationId = call.conversationId))
+        try {
+            repository.notifications.publish(owner, id) {
+                check(notificationOwned(envelope, repository.auth.value, now()) && permitted())
+                CallNotices.showIncoming(context, activity, owner, call, envelope.title, icon)
+            }
+        } finally {
+            icon.recycle()
+        }
+    }
+
+    /** 来电 31 秒后仍未接：留一条「未接来电」通知（media-l5.md 7.2）。 */
+    suspend fun missedCall(
+        owner: OwnerRecord,
+        callId: String,
+        conversationId: String,
+        name: String,
+    ) {
+        val auth = repository.auth.value
+        if (auth?.user?.userId != owner.userId || auth.session.sessionId != owner.sessionId || !permitted()) return
+        val call = fetchCall(repository, owner, callId)
+        CallNotices.dismissIncoming(context, callId)
+        if (call.state == "ended" &&
+            call.outcome == "missed"
+        ) {
+            CallNotices.showMissed(context, activity, owner, callId, conversationId, name)
         }
     }
 

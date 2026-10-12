@@ -50,6 +50,8 @@ export class HolidayAdminController {
   ) {
     return this.holiday.list({
       enabled: query.enabled,
+      category: query.category,
+      romantic: query.romantic,
       cursor: query.cursor,
       limit: query.limit,
     });

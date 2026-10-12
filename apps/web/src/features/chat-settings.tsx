@@ -1,10 +1,21 @@
 import { useState } from 'react';
+import { PetRow } from './pets.js';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChatEndpoints, CompanionEndpoints, ContactsEndpoints } from '@weiban/contracts';
+import {
+  ChatEndpoints,
+  CompanionEndpoints,
+  ContactsEndpoints,
+  IdentityEndpoints,
+  QuietStateEndpoints,
+} from '@weiban/contracts';
 import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import { Name } from './chat.js';
+import { useCallEntry } from './call.js';
+import { VoiceRow } from './voices.js';
+import { PlazaPublishRow } from './plaza.js';
+import { WishlistRow } from './play.js';
 export function ChatSettingsPage() {
   const { conversationId = '' } = useParams();
   const { state } = useChat();
@@ -25,6 +36,10 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
   const contact = state.contacts.find((item) => item.characterId === characterId);
   const modes = useRemote(CompanionEndpoints.listModes, { params: { characterId } });
   const companion = useRemote(CompanionEndpoints.getForCharacter, { params: { characterId } });
+  const notification = useRemote(IdentityEndpoints.getNotificationSettings);
+  const globalOff = notification.data?.proactiveMessagesEnabled === false;
+  const callEntry = useCallEntry(characterId);
+  const quiet = useRemote(QuietStateEndpoints.get, { networkOnly: true });
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
@@ -32,7 +47,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
   const [confirmation, setConfirmation] = useState<
     'clear' | 'remove' | 'purge' | 'purgeConfirmed' | null
   >(null);
-  async function change(operation: () => Promise<unknown>, after?: () => void) {
+  async function change(operation: () => Promise<unknown>, after?: () => void, success = '已保存') {
     setPending(true);
     setError('');
     setMessage('');
@@ -40,7 +55,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
       assertOwner();
       await operation();
       await synchronize();
-      setMessage('已保存');
+      setMessage(success);
       companion.refresh();
       after?.();
     } catch (e) {
@@ -56,6 +71,9 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
       <h2>
         <Name conversation={conversation} />
       </h2>
+      <Link className="plain" to={`/groups/new?with=${characterId}`} aria-label="发起群聊">
+        ＋ 发起群聊
+      </Link>
       <div className="panel stack">
         <label className="check">
           <input
@@ -174,8 +192,8 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
             <label className="check">
               <input
                 type="checkbox"
-                checked={companion.data.proactiveMessages ?? true}
-                disabled={pending}
+                checked={!globalOff && (companion.data.proactiveMessages ?? true)}
+                disabled={pending || globalOff}
                 onChange={(event) =>
                   void change(() =>
                     api.call(CompanionEndpoints.updateForCharacter, {
@@ -185,22 +203,30 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
                   )
                 }
               />
-              主动消息
+              TA 主动找我
             </label>
-            {companion.data.proactiveMessages !== false && (
+            {globalOff && (
+              <p className="hint">
+                已在 服务 › 主动消息与免打扰 中关闭 <Link to="/services/proactive">去设置</Link>
+              </p>
+            )}
+            {!globalOff && companion.data.proactiveMessages !== false && (
               <label>
                 主动消息频率
                 <select
                   disabled={pending}
                   value={companion.data.proactiveFrequency ?? 'medium'}
                   onChange={(event) =>
-                    void change(() =>
-                      api.call(CompanionEndpoints.updateForCharacter, {
-                        params: { characterId },
-                        body: {
-                          proactiveFrequency: event.target.value as 'low' | 'medium' | 'high',
-                        },
-                      }),
+                    void change(
+                      () =>
+                        api.call(CompanionEndpoints.updateForCharacter, {
+                          params: { characterId },
+                          body: {
+                            proactiveFrequency: event.target.value as 'low' | 'medium' | 'high',
+                          },
+                        }),
+                      undefined,
+                      '下一次主动消息开始生效',
                     )
                   }
                 >
@@ -210,22 +236,39 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
                 </select>
               </label>
             )}
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={companion.data.proactiveCalls ?? false}
-                disabled={pending}
-                onChange={(event) =>
-                  void change(() =>
-                    api.call(CompanionEndpoints.updateForCharacter, {
-                      params: { characterId },
-                      body: { proactiveCalls: event.target.checked },
-                    }),
-                  )
-                }
-              />
-              主动来电
-            </label>
+            {callEntry && (
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={
+                    notification.data?.proactiveCallsEnabled !== false &&
+                    (companion.data.proactiveCalls ?? false)
+                  }
+                  disabled={pending || notification.data?.proactiveCallsEnabled === false}
+                  onChange={(event) =>
+                    void change(() =>
+                      api.call(CompanionEndpoints.updateForCharacter, {
+                        params: { characterId },
+                        body: { proactiveCalls: event.target.checked },
+                      }),
+                    )
+                  }
+                />
+                TA 给我打电话
+              </label>
+            )}
+            {callEntry &&
+              quiet.data?.inconvenientUntil &&
+              new Date(quiet.data.inconvenientUntil).getTime() > Date.now() && (
+                <p className="hint">
+                  你说过现在不方便，
+                  {new Date(quiet.data.inconvenientUntil).toLocaleTimeString('zh-CN', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}{' '}
+                  前 TA 不会打电话、不发语音
+                </p>
+              )}
             <label className="check">
               <input
                 type="checkbox"
@@ -242,7 +285,15 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
               />
               TA 的日常（推演）
             </label>
+            <VoiceRow characterId={characterId} voiceId={companion.data.voiceId ?? null} />
             <Link to={`/characters/${characterId}/memories`}>TA 记住了什么</Link>
+            <Link to={`/characters/${characterId}/timeline`}>TA 的近况</Link>
+            <Link to={`/characters/${characterId}/cards`}>卡册</Link>
+            <PetRow characterId={characterId} />
+            <WishlistRow characterId={characterId} />
+            <Link to={`/characters/${characterId}/supplement`}>我的补充设定</Link>
+            <PlazaPublishRow characterId={characterId} />
+            <Link to={`/chat/${id}/search`}>查找聊天记录</Link>
           </>
         )}
       </div>

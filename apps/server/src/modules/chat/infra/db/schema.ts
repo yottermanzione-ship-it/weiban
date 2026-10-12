@@ -29,6 +29,13 @@ export const conversations = chatSchema.table(
     contentScope: text('content_scope').notNull().default('normal'),
     lastSeq: seq('last_seq').notNull().default(0),
     archivedAt: time('archived_at'),
+    trialExpiresAt: time('trial_expires_at'),
+    /** 拉群的角色（SOC-06）；用户建群与私聊为 null。 */
+    createdByCharacterId: uuid('created_by_character_id'),
+    /** 群名是否由用户 / 角色改过；false 时 title 是成员名拼接的快照。 */
+    titleCustomized: boolean('title_customized').notNull().default(false),
+    /** 建群幂等键（clientRequestId 或端口幂等键）。 */
+    createKey: text('create_key'),
     createdAt: time('created_at').notNull(),
     updatedAt: time('updated_at').notNull(),
   },
@@ -51,6 +58,8 @@ export const participants = chatSchema.table(
     refId: uuid('ref_id').notNull(),
     joinedAt: time('joined_at').notNull(),
     readSeq: seq('read_seq').notNull().default(0),
+    /** 群成员退出 / 被移出的时间；不为空即不再是成员（行保留用于渲染历史消息）。 */
+    leftAt: time('left_at'),
   },
   (t) => [
     uniqueIndex('participant_ref_idx').on(t.conversationId, t.kind, t.refId),
@@ -75,6 +84,11 @@ export const messages = chatSchema.table(
     scope: text('scope').notNull(),
     /** 服务器端标签（如 health）：只有 ChatParticipantPort.postMessage 能设置，用户发送的消息恒为 null。 */
     labels: text('labels').array(),
+    /** 明文内容类型（0030 起写入；旧消息为 null）。 */
+    contentType: text('content_type'),
+    /** action_card 上用户的选择（ADR-0026），只写一次。 */
+    actionId: text('action_id'),
+    actionChosenAt: time('action_chosen_at'),
     createdAt: time('created_at').notNull(),
     recalledAt: time('recalled_at'),
   },

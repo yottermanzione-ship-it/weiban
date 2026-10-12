@@ -8,6 +8,8 @@ export function VirtualList<T>({
   label,
   bottom = false,
   onBottom,
+  scrollTo,
+  rowClassName,
 }: {
   items: T[];
   itemKey(item: T): string;
@@ -16,6 +18,9 @@ export function VirtualList<T>({
   label: string;
   bottom?: boolean;
   onBottom?(value: boolean): void;
+  /** 定位到某一行（距顶部 1/3 处，search.md 第 4 节）；nonce 变化时执行一次。 */
+  scrollTo?: { key: string; nonce: number } | null;
+  rowClassName?(item: T): string | undefined;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const heights = useRef(new Map<string, number>());
@@ -34,6 +39,20 @@ export function VirtualList<T>({
   });
   const first = rows[0]?.key ?? '';
   const anchorTop = rows.find((row) => row.key === anchor.current?.key)?.top;
+  const targetTop = scrollTo ? rows.find((row) => row.key === scrollTo.key)?.top : undefined;
+  const handled = useRef(0);
+  useLayoutEffect(() => {
+    const element = root.current;
+    if (!element || !scrollTo || targetTop === undefined || handled.current === scrollTo.nonce)
+      return;
+    handled.current = scrollTo.nonce;
+    stick.current = false;
+    const offset = -Math.round(element.clientHeight / 3);
+    anchor.current = { key: scrollTo.key, offset };
+    element.scrollTop = Math.max(0, targetTop + offset);
+    onBottom?.(false);
+    setViewport({ top: element.scrollTop, height: element.clientHeight });
+  }, [scrollTo, targetTop, onBottom]);
   useLayoutEffect(() => {
     const element = root.current;
     if (!element) return;
@@ -98,6 +117,7 @@ export function VirtualList<T>({
               key={row.key}
               role="listitem"
               data-row-key={row.key}
+              className={rowClassName?.(row.item)}
               style={{ position: 'absolute', top: row.top, left: 0, right: 0 }}
             >
               {render(row.item)}

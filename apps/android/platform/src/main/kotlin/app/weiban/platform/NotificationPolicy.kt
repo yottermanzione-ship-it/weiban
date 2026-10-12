@@ -30,7 +30,22 @@ internal fun notificationRoute(envelope: NotificationEnvelope): String? {
         val id = route.removePrefix("/chat/")
         val valid = runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false)
         route.takeIf { valid && (envelope.conversationId == null || envelope.conversationId == id) }
+    } else if (route.startsWith("/moments/posts/")) {
+        // 角色在朋友圈评论里 @ 我（SOC-08 第 4 条）：点通知进入对应动态。
+        val id = route.removePrefix("/moments/posts/")
+        route.takeIf { runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false) }
+    } else if (route.startsWith("/play/letters/")) {
+        // 慢信送达（PLAY-05）：「XX 给你寄来了一封信」点击进入信件。
+        val id = route.removePrefix("/play/letters/")
+        route.takeIf { runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false) }
+    } else if (route.startsWith("/imports/")) {
+        val id = route.removePrefix("/imports/")
+        route.takeIf { envelope.kind == "import" && runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false) }
+    } else if (route.startsWith("/calls/")) {
+        // 角色来电（MED-07）：kind = call，打开前核对仍在响铃（T-070 交接）。
+        val id = route.removePrefix("/calls/")
+        route.takeIf { envelope.kind == "call" && runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false) }
     } else {
-        route.takeIf { it in listOf("/chat", "/wallet", "/models", "/services") }
+        route.takeIf { it in listOf("/chat", "/wallet", "/models", "/services", "/moments") }
     }
 }
