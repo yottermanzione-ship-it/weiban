@@ -432,7 +432,8 @@ export class CharacterPlazaService
         childFeaturesDetected,
       },
       // B7 遗留：标记第一次写入 → 按这位用户发分类变化事件，ai-runtime 立即把成人模式切回日常并提示。
-      (tx) => this.characters.userChildClassificationEvent(tx, input.presetCharacterId, input.userId),
+      (tx) =>
+        this.characters.userChildClassificationEvent(tx, input.presetCharacterId, input.userId),
     );
     return ok ? { ok: true, value: undefined } : { ok: false, error: 'not_found' };
   }
