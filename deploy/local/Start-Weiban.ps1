@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$RuntimeRoot = 'C:\wb-local',
     [switch]$PrepareOnly,
     [switch]$SkipBuild

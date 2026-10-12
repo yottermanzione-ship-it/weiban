@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)][string]$BackupDirectory,
     [Parameter(Mandatory = $true)][string]$IdentityFile,
     [string]$RuntimeRoot = 'C:\wb-local',

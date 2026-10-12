@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$RuntimeRoot = 'C:\wb-local',
     [string]$BackupRoot = 'C:\wb-local\backups',
     [ValidatePattern('^[a-z0-9][a-z0-9_-]*$')][string]$ProjectName = 'weiban-local',
