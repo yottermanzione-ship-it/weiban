@@ -215,7 +215,7 @@ private class CatalogUi {
     CatalogCategories(repository, ui)
     if (page.error != null) Text(page.error!!, Modifier.padding(WbSpace.S5))
     if (page.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-    LazyColumn(Modifier.weight(1f)) {
+    LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
         items(page.data?.items.orEmpty(), key = { it.characterId }) { role ->
             ListItem(
                 headlineContent = { Text(role.name) },

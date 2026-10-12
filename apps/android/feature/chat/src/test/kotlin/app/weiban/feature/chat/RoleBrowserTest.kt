@@ -207,6 +207,7 @@ class RoleBrowserTest {
     private fun awaitFirstRole() {
         try {
             compose.waitUntil(10_000) { compose.onAllNodesWithText("纸飞机").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("纸飞机").assertIsDisplayed()
         } catch (error: ComposeTimeoutException) {
             // 只记录测试请求的路径，不包含Authorization或用户消息；原始超时作为cause保留。
             throw AssertionError("首次角色未显示；请求数=${server.requestCount}；路径=${requests.toList()}\n${compose.onRoot().printToString()}", error)

@@ -1,5 +1,14 @@
 > 2026-10-12 09:15进度：关怀60b PR完整637项零跳过及网页/后台/恢复通过，push安卓失败有实际XML，fixture清理顺序20712ff已局部连续3轮及完整聊天24项验证，不冒称整体安卓绿。共享材料68ad新增12场景，总163题11套、24项工程测试，秘密源与目标上下文分开。正式本机已升级207并确认新识别函数、双端登录/刷新/健康；原数据保留，上游0条。新源码CI待推送/验证；完整19类及真实执行/供应商/设备/离线保管/独立审查仍进行中，全部开发自测。
 
+## 当前断点（2026-10-12 13:10，优先于下文）
+
+- 成人材料已实际提交/推送7731be4abf5fc9ab4c89bbfac544321f6887bd9f，287题/18套、版本2026-10-12.7，37项工程及类型/build/lint/格式/CLI七分支通过，尚非真实模型质量。当前新增代码是安卓列表布局修正，成人实际复核仍下一优先级，不把材料登记当运行链已实现。
+- 旧b835 push38205173070真实completed/failure：check成功、安卓24项中1项RoleBrowser首屏失败。新增诊断实际奏效：下载ci-b835-android-artifacts/XML，actualPlazaPaginationGreetingAndRestoreChoiceUseRealHttp显示请求数2（categories、characters），分页按钮已出现，但LazyColumn区域横向bounds为0（l=0/r=0），没有角色语义节点。原始超时cause保持；旧PR651项绿色不覆盖/抹去这次失败。
+- 修复具体横向布局风险：CharacterCatalog的LazyColumn从仅weight改为weight+fillMaxWidth，空载/数据到达时都有横向空间；不改变分页/接口/等待时限或失败重试。awaitFirstRole保留10秒与请求/语义树诊断，并补assertIsDisplayed，不拿节点存在代替首屏可见。role-catalog-width-round1.log+xml完整聊天8套24项零失败/错误/跳过、ktlintCheck/detekt和APK assembleDebug成功3m55；随后role-catalog-visible-round1.log+xml目标4项零失败/错误/跳过及ktlint通过1m6，首批角色实际可见。修正消除观察到的布局风险，仍须新CI观察，不断言所有间歇性均已关闭。
+- 新开发APK C:\wb-dev\closeout-logs\weiban-role-catalog-width-20261012.apk，SHA256 2F7D45075057C138A7B222D984013913F5A12F2D3D7F5D0DB5636F554284A9B1；APK含新业务布局，后续仅测试可见断言不改变APK业务。是开发签名包，未实机安装/设备验收。服务器/web业务未改，正式本机无需因安卓修改重建20712ff镜像。
+- 13:10旧7731 PR38206105738/push38206101551仍in_progress；PR安卓success，check网页测试中。不得将旧7731CI作为随后布局修改的完整证据，未重启任何已在运行的job。所有本机验证句柄已终态，无重复启动；共享main再次实查保持不变。
+- 下一步先推送布局批次、核实CI，再实际HTTP/PG复现成人输入/输出检查及专用路由线索，按证据修复；继续完整C/D/E与其余19类执行材料。成人检查未配置、真实模型/费用/人设质量、设备推送、异机离线保管与独立验收仍待完成。12:58实际上游列表0条，用户自行后台配置选择保留。全部开发自测，目标活动未完工。
+
 ## 当前断点（2026-10-12 13:00，优先于下文）
 
 - 从b8359a814f083bbfd4d6b6413ab9b66657784cca干净状态续接。其PR run38205176107真实completed/success（event pull_request）：ci-green-b8359a8-clean.log85文件651项/零跳过、网页27项54.1s/后台8项11s、安卓126零跳过/BUILD SUCCESSFUL4m58，生产镜像/迁移/双域HTTP/加密备份/空卷恢复和非空目标拒绝通过。push38205173070在12:59仍in_progress，不重启/记通过。新成人材料不在该绿色CI范围。
