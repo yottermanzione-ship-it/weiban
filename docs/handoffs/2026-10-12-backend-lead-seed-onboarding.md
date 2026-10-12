@@ -15,6 +15,14 @@
 
 本机检查：`pnpm typecheck`、`pnpm lint`、server / web 构建通过。按要求未写测试、未跑测试；安卓未编译。
 
+### 本机 Docker 部署（2026-10-12 23:15）
+
+- 回滚标签：`weiban-app:rollback-f5d899a`、`weiban-edge:rollback-f5d899a`。
+- 升级前 age 加密备份：`C:\wb-local\backups\20261012-231155-b85fbe774edf4979b68c6d24665978e4`。（第一次在 PowerShell 里把输出重定向导致脚本中途退出，留下空目录 `20261012-231136-…`，无清单，不是有效备份，可忽略。）
+- 用 `deploy/local/Start-Weiban.ps1` 从 `C:\wb-dev\wb-int`（local/trunk 80f2af0）构建并升级；无新迁移。应用镜像 `sha256:bce348f4…`。`C:\wb-local\deployment-version.txt` 已更新，旧记录另存 `deployment-history\pre-seed-presets-80f2af0-20261012.json`。
+- 容器内 `node dist/seed-presets.js`：9 个全部 created 并上架；再运行一次全部 skipped（可重复执行确认）。数据库 9 行均为 `preset / published / original / adult`，儿童特征未检出。
+- 以已有管理员登录调用角色广场接口 `GET /api/v1/characters`，返回 9 个角色；两端 `/health` 200；网页新脚本已含「先随便看看」。未创建账号、模型或供应商，未调用 AI。浏览器里人工点按引导页未做（总经理可直接刷新页面查看）。
+
 ## 改了哪些文件
 
 - `apps/server/src/cli/seed-presets.ts`（新）
