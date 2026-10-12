@@ -1,5 +1,19 @@
 # Codex 产品收口活动断点
 
+## 当前断点（2026-10-12 09:40，优先于下文）
+
+- 09:47新增诊断与验证：完整聊天组原样复跑（role-browser-full-baseline-round1.log+xml）24项中1失败，RoleBrowser.actualContactsSearchUsesCanonicalNamesAndPendingCannotOpenChat第243行，点击发消息后立即读取opened却为空；这是与首屏超时不同的点击回调等待缺口。只在既有精确列表断言前等待opened非空（同10秒上限），不改产品点击逻辑、不延长原首屏等待或删除pending/HTTP断言。role-browser-click-wait-round1.log+xml完整聊天24项零失败/错误/跳过、ktlintCheck/detekt通过，1m17；首屏间歇性仍未关闭。5d绿色CI的安卓日志实际126项零跳过，不沿用早期123项。
+
+
+- 09:42更新：5d PR run38192067428真实completed/success。ci-green-5d574-clean.log：83文件644项通过且零跳过检查通过，网页26项57.6s/后台8项14.7s，安卓BUILD SUCCESSFUL4m45s，生产镜像/迁移/双域HTTP/加密媒体/空卷恢复及非空目标拒绝通过。此绿色仅覆盖5d，不包含随后头像等待与失败artifact步骤；同提交push的RoleBrowser超时仍登记未关闭。
+
+
+- 已推送时间感源码5d574612bdd5cd210524e6cce2f2bff80e81c430。旧9bff PR run38191405141实际cancelled（随后提交触发），push38191401175实际failure：安卓success，网页25通过/1失败，角色头像上传后5秒未找到预览。没有截图/trace上传，gh run download只有安卓artifact；不能从该CI直接断言慢请求或产品故障。后端集成/零跳过成功但整轮不绿。
+- 原头像用例本机5次实际通过（avatar-ci-repro-round1.log）。新增6秒延迟转发真实POST（不伪造响应）在原等待方式实际失败，同一自然宽度断言（avatar-delayed-before-round1.log及仓库外trace）。改为先等待真实上传和媒体GET、核对201/200及相同mediaId，再保留512尺寸、保存重读/分类/清空断言。首轮状态码误写200导致6失败，按MediaController既有201纠正，avatar-delayed-after-round2.log正常/延迟各3次通过（6项，53.3s）。延迟对照证明旧测试等待有缺口，不证明原CI失败仅由慢请求造成。
+- avatar-web-full-round1.log全网页27项通过，1.5m，包含新延迟对照；web类型及专项eslint、格式通过，业务源码和本机镜像未改。CI新增仅在浏览器步骤失败时上传test-results截图/trace（沿用既有固定SHA artifact action，7天保留），为持续测试准备具体失败依据，不隐藏/重试失败。
+- 新5d push38192063929实际failure，安卓RoleBrowserTest.actualPlazaPaginationGreetingAndRestoreChoiceUseRealHttp在第一批角色出现前10秒ComposeTimeoutException（207行）；已读完整XML，ci-5d574-android-artifacts及job日志保留。另一个同提交PR38192067428安卓success，09:40其check仍生产演练中；不能笼统写同提交两轮绿色。原RoleBrowserTest在本机Linux单独4项通过/0失败/跳过（role-browser-baseline-round1.log+xml，44s），宿主/容器源码SHA256一致。未延长其等待、改断言或归咎业务，间歇性超时尚未关闭，下一步实际审计前置状态/请求与生命周期并做故障诊断。
+- 此轮为开发自测，未独立验收，目标活动未完工。共享main保持不变；模型由用户后台自行配置，未发送或创建密钥，正式本机仍20712ff。接着完成3.9主动语气/不操纵材料、完整19类执行路径与上述安卓间歇性诊断，真实模型/设备/异机离线保管/独立审查仍待证据。
+
 ## 当前断点（2026-10-12 09:31，优先于下文）
 
 - 本轮新增eval-plan 3.8时间感8题，登记171题/12套，版本2026-10-12.4。凌晨活跃三角色不告别、明确睡觉反向题、同一瞬间上海星期一/UTC星期日、当地01:20与元旦；时钟/用户时区/近期消息/节日须实际运行证据，不把setup文字当已布置。独立判分需排除冲突答案和变相告别，反向题允许晚安。尚未提供真实供应商/运行时执行器或独立评审，19类材料继续补齐。

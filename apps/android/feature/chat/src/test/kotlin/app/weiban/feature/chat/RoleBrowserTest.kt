@@ -240,6 +240,7 @@ class RoleBrowserTest {
         compose.onNode(hasSetTextAction()).performTextClearance()
         compose.onNodeWithText("小纸").performClick()
         compose.onNodeWithText("发消息").performScrollTo().performClick()
+        compose.waitUntil(10_000) { opened.isNotEmpty() }
         assertEquals(listOf(conversationId), opened.toList())
         assertTrue(posts.isEmpty())
     }
