@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { PetRow } from './pets.js';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ChatEndpoints,
   CompanionEndpoints,
   ContactsEndpoints,
   IdentityEndpoints,
+  ModelAccessEndpoints,
   QuietStateEndpoints,
 } from '@weiban/contracts';
 import { useChat } from '../app/chat.js';
@@ -15,7 +15,8 @@ import { Name } from './chat.js';
 import { useCallEntry } from './call.js';
 import { VoiceRow } from './voices.js';
 import { PlazaPublishRow } from './plaza.js';
-import { WishlistRow } from './play.js';
+import { WithTaRow } from './miniapps.js';
+import { MenuGroup, MenuRow } from './shell-kit.js';
 export function ChatSettingsPage() {
   const { conversationId = '' } = useParams();
   const { state } = useChat();
@@ -34,7 +35,10 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
   const { state, clearHistory, synchronize, assertOwner } = useChat();
   const conversation = state.conversations.find((item) => item.conversationId === id)!;
   const contact = state.contacts.find((item) => item.characterId === characterId);
-  const modes = useRemote(CompanionEndpoints.listModes, { params: { characterId } });
+  const models = useRemote(ModelAccessEndpoints.listModels);
+  const override = useRemote(ModelAccessEndpoints.getCharacterOverride, {
+    params: { characterId },
+  });
   const companion = useRemote(CompanionEndpoints.getForCharacter, { params: { characterId } });
   const notification = useRemote(IdentityEndpoints.getNotificationSettings);
   const globalOff = notification.data?.proactiveMessagesEnabled === false;
@@ -109,33 +113,22 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
         </label>
         {companion.data && (
           <>
+            <h3 className="group-label">聊天模型</h3>
+            <MenuGroup>
+              <MenuRow
+                to={`/characters/${characterId}/model`}
+                label="TA 用的模型"
+                value={
+                  override.data?.chat
+                    ? (models.data?.items.find((m) => m.modelKey === override.data?.chat?.modelKey)
+                        ?.displayName ?? override.data.chat.modelKey.split('/').pop())
+                    : '跟随默认'
+                }
+              />
+            </MenuGroup>
+            <h3 className="group-label">和 TA 一起用</h3>
+            <WithTaRow characterId={characterId} />
             <h3 className="group-label">和 TA 的相处</h3>
-            {modes.data && (
-              <label>
-                情景模式
-                <select
-                  disabled={pending}
-                  value={companion.data.scenarioMode ?? 'daily'}
-                  onChange={(event) =>
-                    void change(() =>
-                      api.call(CompanionEndpoints.updateForCharacter, {
-                        params: { characterId },
-                        body: {
-                          scenarioMode: event.target.value as
-                            'daily' | 'tsundere' | 'romance' | 'adult',
-                        },
-                      }),
-                    )
-                  }
-                >
-                  {modes.data.items.map((mode) => (
-                    <option key={mode.id} value={mode.id}>
-                      {mode.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
             <label>
               人设贴合度（
               {['极顺从', '顺从', '均衡', '贴合', '极贴合'][(companion.data.personaFit ?? 3) - 1]}
@@ -289,8 +282,6 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
             <Link to={`/characters/${characterId}/memories`}>TA 记住了什么</Link>
             <Link to={`/characters/${characterId}/timeline`}>TA 的近况</Link>
             <Link to={`/characters/${characterId}/cards`}>卡册</Link>
-            <PetRow characterId={characterId} />
-            <WishlistRow characterId={characterId} />
             <Link to={`/characters/${characterId}/supplement`}>我的补充设定</Link>
             <PlazaPublishRow characterId={characterId} />
             <Link to={`/chat/${id}/search`}>查找聊天记录</Link>

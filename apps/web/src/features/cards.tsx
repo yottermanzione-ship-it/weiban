@@ -57,6 +57,7 @@ import { CharacterAvatar } from './character-avatar.js';
 import { familiarityNames } from './growth.js';
 import { openShare } from './share.js';
 import { showToast } from './toast.js';
+import { useBack } from './shell-kit.js';
 
 /*
  * 卡册、熟悉度总览、成就页（GRW-03、GRW-05、GRW-06；设计 cards-familiarity.md、me-and-services.md 3.1/3.2）。
@@ -166,7 +167,7 @@ export function CardAlbumsPage() {
       {albums.data && items.length === 0 && (
         <div className="empty">
           <p>还没有角色，去添加一个吧</p>
-          <Link to="/discover">去角色广场</Link>
+          <Link to="/discover/plaza">去角色广场</Link>
         </div>
       )}
       {items.length > 0 && (
@@ -227,6 +228,7 @@ export function CardAlbumPage() {
   const { refresh } = album;
   const { markSeen } = useCardsDot();
   const name = useDisplayName([characterId]);
+  const back = useBack(`/characters/${characterId}`);
   useUpdates((update) => {
     if (
       update.type === 'data.changed' &&
@@ -242,6 +244,7 @@ export function CardAlbumPage() {
     if (album.data) markSeen(characterId, album.data.obtained.length);
   }, [album.data, characterId, markSeen]);
   const openId = params.get('card');
+  const view = params.get('view') === 'moments' ? 'moments' : 'cards';
   const openIndex = obtained.findIndex((c) => c.cardId === openId);
   const latest = obtained.reduce<string | null>(
     (max, c) => (!max || c.obtainedOn > max ? c.obtainedOn : max),
@@ -260,9 +263,9 @@ export function CardAlbumPage() {
   return (
     <main>
       <header className="page-header">
-        <Link to={`/characters/${characterId}`} aria-label="返回">
+        <button className="text-button" aria-label="返回" onClick={back}>
           <CaretLeft size={24} />
-        </Link>
+        </button>
         <h1>和 {name(characterId)} 的卡册</h1>
         <span />
       </header>
@@ -284,7 +287,45 @@ export function CardAlbumPage() {
             已收集 <strong>{obtained.length}</strong> 张
             {latest && <small className="hint"> 最近获得：{shortDate(latest)}</small>}
           </p>
-          <AlbumGroups album={album.data} obtained={obtained} onOpen={open} />
+          <div className="plaza-tabs" role="tablist">
+            <button
+              role="tab"
+              aria-selected={view === 'cards'}
+              onClick={() =>
+                setParams(
+                  (p) => {
+                    const next = new URLSearchParams(p);
+                    next.delete('view');
+                    return next;
+                  },
+                  { replace: true },
+                )
+              }
+            >
+              卡片
+            </button>
+            <button
+              role="tab"
+              aria-selected={view === 'moments'}
+              onClick={() =>
+                setParams(
+                  (p) => {
+                    const next = new URLSearchParams(p);
+                    next.set('view', 'moments');
+                    return next;
+                  },
+                  { replace: true },
+                )
+              }
+            >
+              我们的瞬间
+            </button>
+          </div>
+          {view === 'cards' ? (
+            <AlbumGroups album={album.data} obtained={obtained} onOpen={open} />
+          ) : (
+            <MomentsTimeline cards={obtained} onOpen={open} />
+          )}
         </>
       )}
       {openIndex >= 0 && (
@@ -486,7 +527,7 @@ export function FamiliarityOverviewPage() {
       {list.data && items.length === 0 && (
         <div className="empty">
           <p>还没有角色，去添加一个吧</p>
-          <Link to="/discover">去角色广场</Link>
+          <Link to="/discover/plaza">去角色广场</Link>
         </div>
       )}
       <div className="panel rows">
@@ -734,4 +775,28 @@ export function AchievementWatcher() {
     };
   }, [session?.user.userId]);
   return null;
+}
+
+/**
+ * 「我们的瞬间」视图（保留旧版好交互，docs/refactor/02 第 7.2 节）：
+ * 把已获得的卡片按获得日期排成一条时间线，像回看你们的「第一次……」。只用已有卡片数据。
+ */
+function MomentsTimeline({ cards, onOpen }: { cards: GrowthCard[]; onOpen(cardId: string): void }) {
+  const list = [...cards].sort(
+    (a, b) => a.obtainedOn.localeCompare(b.obtainedOn) || a.serialNo - b.serialNo,
+  );
+  if (list.length === 0) return <p className="empty">还没有瞬间，慢慢来</p>;
+  return (
+    <ol className="moments-line" aria-label="我们的瞬间">
+      {list.map((card) => (
+        <li key={card.cardId}>
+          <time dateTime={card.obtainedOn}>{shortDate(card.obtainedOn)}</time>
+          <button type="button" className="text-button" onClick={() => onOpen(card.cardId)}>
+            <strong>{card.title}</strong>
+          </button>
+          {card.line && <small className="hint">{card.line}</small>}
+        </li>
+      ))}
+    </ol>
+  );
 }

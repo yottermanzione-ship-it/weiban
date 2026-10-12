@@ -80,7 +80,7 @@ export function NewFriendsPage() {
     <main>
       <Link to="/contacts">‹ 通讯录</Link>
       <h1 className="page-title">新的朋友</h1>
-      <Link className="panel row-link" to="/discover">
+      <Link className="panel row-link" to="/discover/plaza">
         <MagnifyingGlass size={18} aria-hidden /> 搜索角色
       </Link>
       {error && <p role="alert">{error}</p>}

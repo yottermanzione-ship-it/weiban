@@ -9,6 +9,7 @@ import './app/l6.css';
 import './app/l6b.css';
 import './app/plaza.css';
 import './app/play.css';
+import './app/shell.css';
 import { App } from './app/app.js';
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

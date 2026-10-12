@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ComponentType,
+  type FormEvent,
+} from 'react';
 import {
   Keyboard,
   Microphone,
@@ -9,6 +17,13 @@ import {
   Phone,
   EnvelopeSimple,
   Timer,
+  Alarm,
+  DotsThree,
+  IdentificationCard,
+  ListChecks,
+  Sparkle,
+  SquaresFour,
+  type IconProps,
 } from '@phosphor-icons/react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { DailyQuestionBubble, LetterBubble } from './play.js';
@@ -61,6 +76,9 @@ import { prepareImage, uploadMedia } from '../data/upload.js';
 import { ApiFailure } from '@weiban/client-core';
 import { SHARE_REJECT_TEXT, openShare } from './share.js';
 import { familiarityNames } from './growth.js';
+import { ScenarioSheet, presetNames, presetSubtitle, useCurrentPreset } from './scenario.js';
+import { WithTaSheet } from './miniapps.js';
+import { comingSoonPath } from './shell-kit.js';
 interface Upload {
   localId: string;
   kind: 'image' | 'voice';
@@ -118,12 +136,6 @@ export function Name({ conversation }: { conversation: Conversation }) {
   );
 }
 
-const modeNames: Record<string, string> = {
-  daily: '日常',
-  tsundere: '傲娇',
-  romance: '恋爱',
-  adult: '成人',
-};
 function systemText(code: string, params: Record<string, string | number | boolean>): string {
   const p = (key: string) => String(params[key] ?? '');
   switch (code) {
@@ -136,11 +148,11 @@ function systemText(code: string, params: Record<string, string | number | boole
     case 'contact_accepted':
       return '已通过好友申请，现在可以开始聊天了';
     case 'scenario_mode_changed':
-      if (params.reason === 'adult_mode_unavailable') return '成人模式已不可用，已回到日常模式';
-      return `已切换到${modeNames[p('mode')] ?? '日常'}模式`;
+      if (params.reason === 'adult_mode_unavailable') return '私密预设已不可用，已回到日常聊天';
+      return `已切换到 ${presetNames[p('mode')] ?? '日常聊天'}`;
     case 'scenario_mode_switched':
-      if (params.reason === 'member_not_eligible') return '有新成员加入，群聊已回到日常模式';
-      return `已切换到${modeNames[p('mode')] ?? '日常'}模式`;
+      if (params.reason === 'member_not_eligible') return '有新成员加入，群聊已回到日常聊天';
+      return `已切换到 ${presetNames[p('mode')] ?? '日常聊天'}`;
     case 'group_created':
       return `你邀请 ${p('names')} 加入了群聊`;
     case 'group_invited_by_character':
@@ -300,16 +312,13 @@ export function ConversationPage() {
     focus(conversationId);
     return () => focus(null);
   }, [conversationId, focus]);
-  if (!conversation || (conversation.type === 'group' && conversation.state.hidden))
+  // 手动「不显示该聊天」只是从列表隐藏，照常能打开；群解散时服务器发 conversation.removed，本地会话直接消失。
+  if (!conversation)
     return (
       <main>
         <Link to="/chat">返回微伴</Link>
         <p role="status" className="empty">
-          {!chat.state.initialized
-            ? '正在打开聊天…'
-            : conversation
-              ? '这个群聊已解散'
-              : '会话不存在或已被删除'}
+          {!chat.state.initialized ? '正在打开聊天…' : '会话不存在、已解散或已被删除'}
         </p>
       </main>
     );
@@ -383,6 +392,21 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const [scrollTarget, setScrollTarget] = useState<{ key: string; nonce: number } | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
+  const [presetOpen, setPresetOpen] = useState(false);
+  const [withTa, setWithTa] = useState(false);
+  const [plusPage, setPlusPage] = useState(0);
+  const roleId = role?.refId;
+  const presetTarget = useMemo(
+    () =>
+      group
+        ? ({ kind: 'group', conversationId: id } as const)
+        : roleId
+          ? ({ kind: 'character', characterId: roleId } as const)
+          : null,
+    [group, id, roleId],
+  );
+  const preset = useCurrentPreset(presetTarget);
+  const presetLabel = group ? null : presetSubtitle(preset.mode);
   useEffect(() => () => voicePlayer.stop(), []);
   const messages = chat.state.messages
     .filter((item) => item.conversationId === id)
@@ -724,10 +748,34 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         <Link to="/chat" aria-label="返回微伴">
           ‹ 微伴
         </Link>
-        <h1>
-          <Name conversation={conversation} />
-        </h1>
-        <Link to={group ? `/chat/${id}/group` : `/chat/${id}/settings`}>聊天信息</Link>
+        <span className="nav-bar-title">
+          <h1>
+            <Name conversation={conversation} />
+          </h1>
+          {!group && typingNames.length > 0 && status.data?.available ? (
+            <small className="nav-subtitle" role="status">
+              对方正在输入…
+            </small>
+          ) : (
+            presetLabel && (
+              <button
+                type="button"
+                className="nav-subtitle"
+                aria-label={`情景预设：${presetLabel}，点击切换`}
+                onClick={() => setPresetOpen(true)}
+              >
+                {presetLabel} ›
+              </button>
+            )
+          )}
+        </span>
+        <Link
+          to={group ? `/chat/${id}/group` : `/chat/${id}/settings`}
+          aria-label="聊天信息"
+          className="nav-bar-icon"
+        >
+          <DotsThree size={24} weight="bold" />
+        </Link>
       </header>
       <HomeScreenGuide
         received={messages.some(
@@ -737,7 +785,6 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
             message.content !== null,
         )}
       />
-      {conversation.contentScope === 'adult' && <p className="hint">成人模式</p>}
       {!chat.online && <p className="offline">网络暂不可用，消息保存在本机，联网后继续发送</p>}
       {status.data && !status.data.available && (
         <p className="offline">
@@ -749,10 +796,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           </Link>
         </p>
       )}
-      {typingNames.length > 0 && status.data?.available && (
-        <p role="status">
-          {group ? `${typingNames.filter(Boolean).join('、')} 正在输入…` : '对方正在输入…'}
-        </p>
+      {group && typingNames.length > 0 && status.data?.available && (
+        <p role="status">{`${typingNames.filter(Boolean).join('、')} 正在输入…`}</p>
       )}
       {(error || chat.error) && <p role="alert">{error || chat.error}</p>}
       {whileAway.data && role && !group && (
@@ -1116,50 +1161,75 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         />
       )}
       {panel === 'plus' && (
-        <div className="plus-panel">
-          <button type="button" className="plus-cell" onClick={() => albumInput.current?.click()}>
-            <ImageIcon size={28} />
-            <small>相册</small>
-          </button>
-          <button type="button" className="plus-cell" onClick={() => cameraInput.current?.click()}>
-            <Camera size={28} />
-            <small>拍摄</small>
-          </button>
-          {!group && role && callEntry && (
-            <button
-              type="button"
-              className="plus-cell"
-              onClick={() => {
-                setPanel('none');
-                startCall(role.refId);
-              }}
-            >
-              <Phone size={28} />
-              <small>语音通话</small>
-            </button>
-          )}
-          {!group && role && (
-            <button
-              type="button"
-              className="plus-cell"
-              onClick={() => navigate(`/play/letters/new?characterId=${role.refId}`)}
-            >
-              <EnvelopeSimple size={28} />
-              <small>写信</small>
-            </button>
-          )}
-          {!group && role && (
-            <button
-              type="button"
-              className="plus-cell"
-              onClick={() => navigate(`/play/focus?characterId=${role.refId}`)}
-            >
-              <Timer size={28} />
-              <small>陪我专注</small>
-            </button>
-          )}
-        </div>
+        <PlusPanel
+          page={plusPage}
+          onPage={setPlusPage}
+          cells={[
+            { label: '相册', icon: ImageIcon, onClick: () => albumInput.current?.click() },
+            { label: '拍摄', icon: Camera, onClick: () => cameraInput.current?.click() },
+            ...(!group && role && callEntry
+              ? [
+                  {
+                    label: '语音通话',
+                    icon: Phone,
+                    onClick: () => {
+                      setPanel('none');
+                      startCall(role.refId);
+                    },
+                  },
+                ]
+              : []),
+            {
+              label: '情景预设',
+              icon: Sparkle,
+              dot: !!preset.mode && preset.mode !== 'daily' && preset.mode !== 'auto',
+              onClick: () => setPresetOpen(true),
+            },
+            ...(!group && role
+              ? [
+                  {
+                    label: '写信',
+                    icon: EnvelopeSimple,
+                    onClick: () => navigate(`/play/letters/new?characterId=${role.refId}`),
+                  },
+                  {
+                    label: '陪我专注',
+                    icon: Timer,
+                    onClick: () => navigate(`/play/focus?characterId=${role.refId}`),
+                  },
+                  {
+                    label: '提醒',
+                    icon: Alarm,
+                    onClick: () => navigate(`/play/reminders/new?characterId=${role.refId}`),
+                  },
+                  { label: '小程序', icon: SquaresFour, onClick: () => setWithTa(true) },
+                  {
+                    label: '心愿',
+                    icon: ListChecks,
+                    onClick: () => navigate(`/play/wishlists/${role.refId}`),
+                  },
+                ]
+              : []),
+            {
+              label: '名片',
+              icon: IdentificationCard,
+              onClick: () => navigate(comingSoonPath('card')),
+            },
+          ]}
+        />
       )}
+      {presetOpen && presetTarget && (
+        <ScenarioSheet
+          target={presetTarget}
+          current={preset.mode}
+          onClose={() => setPresetOpen(false)}
+          onChanged={() => {
+            preset.refresh();
+            setPanel('none');
+          }}
+        />
+      )}
+      {withTa && role && <WithTaSheet characterId={role.refId} onClose={() => setWithTa(false)} />}
       <input
         ref={albumInput}
         type="file"
@@ -1177,5 +1247,52 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         onChange={(e) => void pickImages(e)}
       />
     </main>
+  );
+}
+
+/** 聊天「+」面板：每页 4×2，左右滑动翻页，底部分页圆点（docs/refactor/02a 1.1）。 */
+function PlusPanel({
+  cells,
+  page,
+  onPage,
+}: {
+  cells: Array<{ label: string; icon: ComponentType<IconProps>; dot?: boolean; onClick(): void }>;
+  page: number;
+  onPage(page: number): void;
+}) {
+  const pages: (typeof cells)[] = [];
+  for (let i = 0; i < cells.length; i += 8) pages.push(cells.slice(i, i + 8));
+  return (
+    <div className="plus-pager">
+      <div
+        className="plus-pages"
+        onScroll={(event) => {
+          const el = event.currentTarget;
+          const next = Math.round(el.scrollLeft / Math.max(1, el.clientWidth));
+          if (next !== page) onPage(next);
+        }}
+      >
+        {pages.map((list, index) => (
+          <div className="plus-panel" key={index}>
+            {list.map(({ label, icon: Icon, dot, onClick }) => (
+              <button key={label} type="button" className="plus-cell" onClick={onClick}>
+                <span className="plus-cell-icon">
+                  <Icon size={28} />
+                </span>
+                {dot && <span className="red-dot" aria-label="现在开着别的预设" />}
+                <small>{label}</small>
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+      {pages.length > 1 && (
+        <div className="pager-dots" aria-hidden>
+          {pages.map((_, index) => (
+            <span key={index} aria-current={index === page} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

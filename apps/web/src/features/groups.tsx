@@ -29,7 +29,8 @@ function groupError(e: unknown): string {
 export function GroupListPage() {
   const { state } = useChat();
   const groups = state.conversations
-    .filter((c) => c.type === 'group' && !c.state.hidden)
+    // 「不显示该聊天」的群也在这里（隐藏≠退群）；解散的群服务器会删掉，本地不会再有。
+    .filter((c) => c.type === 'group')
     .sort((a, b) =>
       (b.lastMessage?.createdAt ?? b.updatedAt).localeCompare(
         a.lastMessage?.createdAt ?? a.updatedAt,
@@ -186,7 +187,6 @@ export function GroupSettingsPage() {
   const companion = useRemote(GroupCompanionEndpoints.getSettings, {
     params: { conversationId },
   });
-  const modes = useRemote(GroupCompanionEndpoints.listModes, { params: { conversationId } });
   const members = conversation ? groupMembers(conversation) : [];
   const names = useCharacterNames(members.map((m) => m.refId));
   const [removing, setRemoving] = useState(false);
@@ -196,7 +196,7 @@ export function GroupSettingsPage() {
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  if (!conversation || conversation.type !== 'group' || conversation.state.hidden)
+  if (!conversation || conversation.type !== 'group')
     return (
       <main>
         <Link to="/chat">返回微伴</Link>
@@ -368,35 +368,7 @@ export function GroupSettingsPage() {
       {companion.data && (
         <div className="panel stack">
           <h3 className="group-label">微伴</h3>
-          {modes.data && (
-            <label>
-              情景模式
-              <select
-                disabled={pending}
-                value={companion.data.scenarioMode}
-                onChange={(e) =>
-                  void change(
-                    () =>
-                      api.call(GroupCompanionEndpoints.updateSettings, {
-                        params: { conversationId },
-                        body: {
-                          scenarioMode: e.target.value as
-                            'daily' | 'tsundere' | 'romance' | 'adult',
-                        },
-                      }),
-                    '已保存',
-                    companion.refresh,
-                  )
-                }
-              >
-                {modes.data.items.map((mode) => (
-                  <option key={mode.id} value={mode.id}>
-                    {mode.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          <p className="hint">情景预设在聊天输入栏「+」里切换</p>
           <label className="check">
             <input
               type="checkbox"

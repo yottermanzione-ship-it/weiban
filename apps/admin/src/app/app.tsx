@@ -14,6 +14,7 @@ import { UsagePage } from '../features/usage.js';
 import { BillingPage } from '../features/billing.js';
 import { ScenarioModesPage } from '../features/scenario-modes.js';
 import { PublicUpdatesPage } from '../features/public-updates.js';
+import { AnnouncementsPage, ReleaseNotesPage, VersionPoliciesPage } from '../features/releases.js';
 import { HolidaysPage } from '../features/holidays.js';
 import { SymptomTagsPage } from '../features/symptom-tags.js';
 import { RelationsPage } from '../features/relations.js';
@@ -105,6 +106,9 @@ export function App() {
             ['/plaza', '人设广场'],
             ['/planner', '行为规划'],
             ['/daily-questions', '每日一问题库'],
+            ['/announcements', '公告管理'],
+            ['/release-notes', '更新说明'],
+            ['/version-policies', '版本策略'],
             ['/admin/alerts', '运行提醒'],
           ].map(([to, label]) => (
             <NavLink key={to} to={to!}>
@@ -149,6 +153,9 @@ export function App() {
             <Route path="/plaza" element={<PlazaAdminPage />} />
             <Route path="/planner" element={<PlannerPage />} />
             <Route path="/daily-questions" element={<DailyQuestionsPage />} />
+            <Route path="/announcements" element={<AnnouncementsPage />} />
+            <Route path="/release-notes" element={<ReleaseNotesPage />} />
+            <Route path="/version-policies" element={<VersionPoliciesPage />} />
             <Route path="/admin/alerts" element={<AlertsPage />} />
             <Route path="*" element={<Navigate to="/invites" replace />} />
           </Routes>

@@ -1393,7 +1393,10 @@ function ReminderForm({ reminder, onDone }: { reminder?: Reminder; onDone(): voi
   const [weekdays, setWeekdays] = useState<number[]>(
     reminder?.repeat.kind === 'weekly' ? reminder.repeat.weekdays : [1],
   );
-  const [characterId, setCharacterId] = useState<string | null>(reminder?.characterId ?? null);
+  const [query] = useSearchParams();
+  const [characterId, setCharacterId] = useState<string | null>(
+    reminder?.characterId ?? query.get('characterId'),
+  );
   const [health, setHealth] = useState(reminder?.health ?? false);
   const [bypass, setBypass] = useState(reminder?.bypassDoNotDisturb ?? false);
   const [medicineHint, setMedicineHint] = useState(false);

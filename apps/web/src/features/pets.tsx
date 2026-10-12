@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
+  Cat,
+  Dog,
+  HandTap,
+  Plant,
+  Rabbit,
+  UsersThree,
   CaretLeft,
   CaretRight,
   DotsThree,
@@ -27,6 +33,7 @@ import { prepareImage, uploadMedia } from '../data/upload.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { MediaImg } from './media.js';
 import { Dialog, showToast } from './toast.js';
+import { IconTile, NavBar } from './shell-kit.js';
 
 /*
  * 共同领养宠物（PLAY-02；设计 pet.md）。只奖励不惩罚：没有饥饿值、没有「今天还没喂」、没有上限提示。
@@ -109,6 +116,16 @@ export function PetsPage() {
   const name = useNames(items.map((p) => p.characterId));
   const contacts = useActiveContactIds();
   const full = active.length >= PET_LIMITS.activeTotal;
+  const navigate = useNavigate();
+  if (pets.data && items.length === 0 && !flag(GUIDE_SEEN))
+    return (
+      <PetGuide
+        onStart={() => {
+          setFlag(GUIDE_SEEN);
+          navigate('/pets/adopt');
+        }}
+      />
+    );
   const row = (pet: Pet, memory: boolean) => {
     const deleted = !memory && !contacts.has(pet.characterId);
     return (
@@ -144,7 +161,7 @@ export function PetsPage() {
           <PawPrint size={48} aria-hidden />
           <p>和 TA 一起养一只小家伙吧</p>
           <Link className="button primary" to="/pets/adopt">
-            选一个 TA
+            开始领养
           </Link>
         </div>
       ) : (
@@ -174,18 +191,133 @@ export function PetsPage() {
   );
 }
 
-// ---------- 领养流程 ----------
+// ---------- 首次引导（docs/refactor/02 第 6.3 节） ----------
+
+const GUIDE_SEEN = 'weiban:pet-guide-seen';
+const TIP_SEEN = 'weiban:pet-tip-seen';
+function flag(key: string) {
+  try {
+    return localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
+function setFlag(key: string) {
+  try {
+    localStorage.setItem(key, '1');
+  } catch {
+    // 无法记住时下次再显示
+  }
+}
+
+function PetGuide({ onStart }: { onStart(): void }) {
+  const { state } = useChat();
+  const hasContacts = state.contacts.some((c) => c.status === 'active' && c.conversationId);
+  return (
+    <main>
+      <section className="pet-guide" aria-label="宠物是什么">
+        <div className="pet-guide-art" aria-hidden>
+          <IconTile icon={Cat} tint="orange" size="lg" />
+          <IconTile icon={Dog} tint="gold" size="lg" />
+          <IconTile icon={Rabbit} tint="pink" size="lg" />
+        </div>
+        <h2>和 TA 一起养一只小家伙</h2>
+        <div className="guide-lines">
+          <p className="guide-line">
+            <UsersThree size={24} aria-hidden />
+            <span>
+              <strong>你们俩一起养</strong>
+              <small>TA 会在聊天里提起它、发它的照片</small>
+            </span>
+          </p>
+          <p className="guide-line">
+            <HandTap size={24} aria-hidden />
+            <span>
+              <strong>点一点就能互动</strong>
+              <small>喂食、玩耍、摸摸，不花余额</small>
+            </span>
+          </p>
+          <p className="guide-line">
+            <Plant size={24} aria-hidden />
+            <span>
+              <strong>它只会长大，不会生病挨饿</strong>
+              <small>不用每天打卡，想起来就来看看</small>
+            </span>
+          </p>
+        </div>
+        {hasContacts ? (
+          <button className="primary" onClick={onStart}>
+            开始领养
+          </button>
+        ) : (
+          <Link className="button primary" to="/discover/plaza">
+            先去添加一个 TA
+          </Link>
+        )}
+        <p className="hint center">每个 TA 可以一起养 1 只，最多 {PET_LIMITS.activeTotal} 只</p>
+      </section>
+    </main>
+  );
+}
+
+/** 从聊天里按 TA 打开：已有宠物 → 宠物主页；没有 → 领养页（TA 已选好）。 */
+export function PetWithPage() {
+  const { characterId = '' } = useParams();
+  const navigate = useNavigate();
+  const pets = useRemote(PetEndpoints.listPets, { query: { characterId }, networkOnly: true });
+  useEffect(() => {
+    if (!pets.data) return;
+    const pet = pets.data.items.find((p) => p.status === 'active');
+    navigate(pet ? `/pets/${pet.petId}` : `/pets/adopt?characterId=${characterId}`, {
+      replace: true,
+    });
+  }, [pets.data, characterId, navigate]);
+  return (
+    <main>
+      {pets.error ? (
+        <div className="empty">
+          <p>加载失败</p>
+          <button onClick={pets.refresh}>重试</button>
+        </div>
+      ) : (
+        <span className="spinner" role="status" />
+      )}
+    </main>
+  );
+}
+
+// ---------- 领养（一页完成，第 6.4 节） ----------
 
 export function AdoptPage() {
+  const [guided, setGuided] = useState(() => flag(GUIDE_SEEN));
+  if (!guided)
+    return (
+      <PetGuide
+        onStart={() => {
+          setFlag(GUIDE_SEEN);
+          setGuided(true);
+        }}
+      />
+    );
+  return <AdoptForm />;
+}
+
+function AdoptForm() {
   const navigate = useNavigate();
-  const [params, setParams] = useSearchParams();
-  const characterId = params.get('characterId');
+  const [params] = useSearchParams();
   const { state } = useChat();
   const pets = useRemote(PetEndpoints.listPets, { query: {} });
   const species = useRemote(PetEndpoints.listSpecies);
-  const [speciesId, setSpeciesId] = useState<string | null>(null);
-  const [appearanceId, setAppearanceId] = useState<string | null>(null);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const activePets = (pets.data?.items ?? []).filter((p) => p.status === 'active');
+  const taken = new Set(activePets.map((p) => p.characterId));
+  const candidates = state.contacts.filter(
+    (c) => c.status === 'active' && c.conversationId && !taken.has(c.characterId),
+  );
+  const name = useNames(state.contacts.map((c) => c.characterId));
+  const preset = params.get('characterId');
+  const [chosen, setChosen] = useState<string | null>(preset);
+  const characterId = chosen && candidates.some((c) => c.characterId === chosen) ? chosen : null;
+  const [pick, setPick] = useState<{ speciesId: string; appearanceId: string } | null>(null);
   const [petName, setPetName] = useState('');
   const [naming, setNaming] = useState<{
     requestId: string;
@@ -196,13 +328,11 @@ export function AdoptPage() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const requestKey = useRef(crypto.randomUUID());
-  const contacts = state.contacts.filter((c) => c.status === 'active' && c.conversationId);
-  const name = useNames(contacts.map((c) => c.characterId));
-  const activePets = (pets.data?.items ?? []).filter((p) => p.status === 'active');
   const chosenSpecies: PetSpecies | undefined = species.data?.items.find(
-    (s) => s.speciesId === speciesId,
+    (s) => s.speciesId === pick?.speciesId,
   );
-  const appearance = chosenSpecies?.appearances.find((a) => a.appearanceId === appearanceId);
+  const appearance = chosenSpecies?.appearances.find((a) => a.appearanceId === pick?.appearanceId);
+  const full = activePets.length >= PET_LIMITS.activeTotal;
 
   // 起名请求：轮询直到候选名回来（也随 data.changed(pets) 刷新）。
   const [namingRevision, setNamingRevision] = useState(0);
@@ -230,59 +360,12 @@ export function AdoptPage() {
     };
   }, [naming, namingRevision]);
 
-  const back = () => {
-    if (step > 1) setStep((s) => (s - 1) as 1 | 2);
-    else navigate(-1);
-  };
-
-  if (!characterId) {
-    return (
-      <main>
-        <header className="page-header">
-          <button className="text-button" aria-label="返回" onClick={() => navigate(-1)}>
-            <CaretLeft size={24} />
-          </button>
-          <h1>选一个 TA</h1>
-          <span />
-        </header>
-        {contacts.length === 0 && (
-          <div className="empty">
-            <p>还没有角色，去添加一个吧</p>
-            <Link to="/discover">去角色广场</Link>
-          </div>
-        )}
-        <div className="panel rows">
-          {contacts.map((c) => {
-            const has = activePets.find((p) => p.characterId === c.characterId);
-            return (
-              <button
-                key={c.characterId}
-                className="row-button role-row"
-                disabled={!!has || activePets.length >= PET_LIMITS.activeTotal}
-                onClick={() => setParams({ characterId: c.characterId }, { replace: true })}
-              >
-                <CharacterAvatar id={c.characterId} size={40} />
-                <span className="overview-name">
-                  {name(c.characterId)}
-                  {has && <small className="hint">已经有 {has.name} 了</small>}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {activePets.length >= PET_LIMITS.activeTotal && (
-          <p className="hint center">最多同时养 {PET_LIMITS.activeTotal} 只</p>
-        )}
-      </main>
-    );
-  }
-
   async function askName() {
-    if (!characterId || !speciesId || !appearanceId) return;
+    if (!characterId || !pick) return;
     setNamingNote(`${name(characterId)} 正在想名字…`);
     try {
       const r = await api.call(PetEndpoints.requestNames, {
-        body: { characterId, speciesId, appearanceId },
+        body: { characterId, speciesId: pick.speciesId, appearanceId: pick.appearanceId },
       });
       setNaming({ requestId: r.requestId, names: r.names, status: r.status });
       if (r.status === 'ready') setNamingNote('');
@@ -294,11 +377,18 @@ export function AdoptPage() {
       );
     }
   }
-
+  const nameLength = Array.from(petName.trim()).length;
+  const missing = !characterId
+    ? '先选和谁一起养'
+    : !pick
+      ? '先选一只'
+      : nameLength === 0
+        ? '先起个名字'
+        : nameLength > PET_LIMITS.nameMaxChars
+          ? `名字最多 ${PET_LIMITS.nameMaxChars} 个字`
+          : null;
   async function adopt() {
-    if (!characterId || !speciesId || !appearanceId) return;
-    const value = petName.trim();
-    if (!value || Array.from(value).length > PET_LIMITS.nameMaxChars) return;
+    if (missing || !characterId || !pick) return;
     setPending(true);
     setError('');
     try {
@@ -306,9 +396,9 @@ export function AdoptPage() {
         body: {
           clientRequestId: requestKey.current,
           characterId,
-          speciesId,
-          appearanceId,
-          name: value,
+          speciesId: pick.speciesId,
+          appearanceId: pick.appearanceId,
+          name: petName.trim(),
           namingRequestId: naming?.requestId ?? null,
         },
       });
@@ -323,97 +413,115 @@ export function AdoptPage() {
       setPending(false);
     }
   }
-
-  const nameLength = Array.from(petName.trim()).length;
   return (
     <main className="adopt-page">
-      <header className="page-header">
-        <button className="text-button" aria-label="返回" onClick={back}>
-          <CaretLeft size={24} />
-        </button>
-        <h1>{step === 1 ? `和 ${name(characterId)} 一起领养` : step === 2 ? '选外观' : '起名'}</h1>
-        <small className="hint">{step}/3</small>
-      </header>
-      {step === 1 && (
-        <>
-          {species.loading && !species.data && <span className="spinner" role="status" />}
-          {species.data?.items.length === 0 && <p className="empty">暂时没有可以领养的小家伙</p>}
-          <div className="species-grid">
-            {species.data?.items.map((s) => (
-              <button
-                key={s.speciesId}
-                className="species-card"
-                onClick={() => {
-                  setSpeciesId(s.speciesId);
-                  setAppearanceId(s.appearances[0]?.appearanceId ?? null);
-                  setStep(2);
-                }}
-              >
-                <PetImage url={s.appearances[0]?.images.baby.url ?? null} alt={s.name} />
-                <strong>{s.name}</strong>
-                <small className="hint clamp-2">{s.intro}</small>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-      {step === 2 && chosenSpecies && (
-        <div className="stack">
-          <div className="pet-stage">
-            <PetImage
-              key={appearance?.appearanceId}
-              url={appearance?.images.baby.url ?? null}
-              alt={chosenSpecies.name}
-            />
-          </div>
-          {appearance && (
-            <div className="stage-strip">
-              长大后：
-              {(['baby', 'junior', 'adult'] as const).map((stage) => (
-                <span key={stage} className="stage-thumb">
-                  <PetImage url={appearance.images[stage].url} alt={stageNames[stage]!} size={48} />
-                  <small>{stageNames[stage]}</small>
-                </span>
-              ))}
-            </div>
+      <NavBar title="一起领养" fallback="/services/pets" />
+      <div className="adopt-preview" aria-live="polite">
+        {appearance ? (
+          <PetImage url={appearance.images.baby.url} alt={appearance.name} size={96} />
+        ) : (
+          <span className="adopt-placeholder">选一只吧</span>
+        )}
+        <div>
+          <strong>{petName.trim() || '还没起名'}</strong>
+          {characterId ? (
+            <small className="hint pet-with">
+              <CharacterAvatar id={characterId} size={20} /> 和 {name(characterId)} 一起养
+            </small>
+          ) : (
+            <small className="hint">还没选和谁一起养</small>
           )}
-          <div className="appearance-row" role="radiogroup" aria-label="外观">
-            {chosenSpecies.appearances.map((a) => (
-              <button
-                key={a.appearanceId}
-                role="radio"
-                aria-checked={a.appearanceId === appearanceId}
-                className="appearance-option"
-                onClick={() => setAppearanceId(a.appearanceId)}
-              >
-                <PetImage url={a.images.baby.url} alt={a.name} size={64} />
-                <small>{a.name}</small>
-              </button>
-            ))}
-          </div>
-          <button className="primary" disabled={!appearance} onClick={() => setStep(3)}>
-            就选它了
-          </button>
+        </div>
+      </div>
+
+      <h2 className="adopt-step">① 和谁一起养</h2>
+      {pets.loading && !pets.data ? (
+        <div className="skeleton-row" role="status" />
+      ) : full || candidates.length === 0 ? (
+        <p className="hint">
+          {state.contacts.some((c) => c.status === 'active')
+            ? `每个 TA 只能一起养 1 只，最多同时养 ${PET_LIMITS.activeTotal} 只 · `
+            : '还没有角色 · '}
+          {state.contacts.some((c) => c.status === 'active') ? (
+            <Link to="/services/pets">去看看我的宠物</Link>
+          ) : (
+            <Link to="/discover/plaza">去角色广场</Link>
+          )}
+        </p>
+      ) : (
+        <div className="adopt-who" role="radiogroup" aria-label="和谁一起养">
+          {candidates.map((c) => (
+            <button
+              key={c.characterId}
+              type="button"
+              role="radio"
+              aria-checked={characterId === c.characterId}
+              onClick={() => setChosen(c.characterId)}
+            >
+              <CharacterAvatar id={c.characterId} size={48} />
+              {name(c.characterId)}
+            </button>
+          ))}
         </div>
       )}
-      {step === 3 && chosenSpecies && appearance && (
-        <div className="stack">
-          <div className="pet-stage small">
-            <PetImage url={appearance.images.baby.url} alt={chosenSpecies.name} size={160} />
-          </div>
-          <label>
-            给它起个名字
-            <input
-              value={petName}
-              maxLength={16}
-              onChange={(e) => setPetName(e.target.value)}
-              aria-invalid={nameLength > PET_LIMITS.nameMaxChars}
-            />
-          </label>
-          <small className={nameLength > PET_LIMITS.nameMaxChars ? 'error' : 'hint'}>
-            {nameLength}/{PET_LIMITS.nameMaxChars}
-            {nameLength > PET_LIMITS.nameMaxChars && ' 名字最多 8 个字'}
-          </small>
+
+      <h2 className="adopt-step">② 选一只</h2>
+      {species.loading && !species.data && <div className="skeleton-row" role="status" />}
+      {species.error && !species.data && (
+        <div className="empty">
+          <p>加载失败</p>
+          <button onClick={species.refresh}>重试</button>
+        </div>
+      )}
+      {species.data?.items.length === 0 && (
+        <div className="empty">
+          <p>小家伙们正在赶来，稍后再试试</p>
+          <button onClick={species.refresh}>重试</button>
+        </div>
+      )}
+      <div className="adopt-pets" role="radiogroup" aria-label="选一只">
+        {species.data?.items.flatMap((s) =>
+          s.appearances.map((a) => (
+            <button
+              key={a.appearanceId}
+              type="button"
+              role="radio"
+              aria-checked={pick?.appearanceId === a.appearanceId}
+              onClick={() => setPick({ speciesId: s.speciesId, appearanceId: a.appearanceId })}
+            >
+              <PetImage url={a.images.baby.url} alt={a.name} />
+              {a.name}
+            </button>
+          )),
+        )}
+      </div>
+      {appearance && (
+        <div className="stage-strip">
+          长大后：
+          {(['baby', 'junior', 'adult'] as const).map((stage) => (
+            <span key={stage} className="stage-thumb">
+              <PetImage url={appearance.images[stage].url} alt={stageNames[stage]!} size={48} />
+              <small>{stageNames[stage]}</small>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <h2 className="adopt-step">③ 起个名字</h2>
+      <div className="stack">
+        <label>
+          给它起个名字
+          <input
+            value={petName}
+            maxLength={16}
+            onChange={(e) => setPetName(e.target.value)}
+            aria-invalid={nameLength > PET_LIMITS.nameMaxChars}
+          />
+        </label>
+        <small className={nameLength > PET_LIMITS.nameMaxChars ? 'error' : 'hint'}>
+          {nameLength}/{PET_LIMITS.nameMaxChars}
+        </small>
+        {characterId && pick && (
           <button
             className="tonal"
             disabled={naming?.status === 'pending'}
@@ -421,32 +529,56 @@ export function AdoptPage() {
           >
             让 {name(characterId)} 起名
           </button>
-          {namingNote && <small className="hint">{namingNote}</small>}
-          {naming?.status === 'ready' && (
-            <div className="chip-row">
-              {naming.names.map((n) => (
-                <button
-                  key={n}
-                  className="chip"
-                  aria-selected={petName === n}
-                  onClick={() => setPetName(n)}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          )}
-          {error && <p role="alert">{error}</p>}
-          <button
-            className="primary"
-            disabled={pending || nameLength === 0 || nameLength > PET_LIMITS.nameMaxChars}
-            onClick={() => void adopt()}
-          >
-            完成领养
-          </button>
-        </div>
-      )}
+        )}
+        {namingNote && <small className="hint">{namingNote}</small>}
+        {naming?.status === 'ready' && (
+          <div className="chip-row">
+            {naming.names.map((n) => (
+              <button
+                key={n}
+                className="chip"
+                aria-selected={petName === n}
+                onClick={() => setPetName(n)}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {error && <p role="alert">{error}</p>}
+      <div className="adopt-footer">
+        <button className="primary" disabled={pending || !!missing} onClick={() => void adopt()}>
+          {missing ?? `和 ${name(characterId!)} 一起领养「${petName.trim()}」`}
+        </button>
+      </div>
     </main>
+  );
+}
+
+/** 领养后第一次进宠物主页的一次性新手提示（第 6.6 节）。 */
+function PetTip({ petName, who }: { petName: string; who: string }) {
+  const [open, setOpen] = useState(() => !flag(TIP_SEEN));
+  if (!open) return null;
+  return (
+    <div className="inline-tip" role="note">
+      <p>
+        点下面的按钮和{petName}玩
+        <br />
+        {who} 会在聊天里提起{petName}
+        <br />第 {PET_LIMITS.stageStartDay.junior} 天长成少年，第 {PET_LIMITS.stageStartDay.adult}{' '}
+        天长成成年
+      </p>
+      <button
+        className="text-button"
+        onClick={() => {
+          setFlag(TIP_SEEN);
+          setOpen(false);
+        }}
+      >
+        知道了
+      </button>
+    </div>
   );
 }
 
@@ -686,6 +818,7 @@ export function PetPage() {
       <p className="pet-intimacy">
         亲密值 <strong className="numeric">{pet.intimacy}</strong>
       </p>
+      {!readOnly && <PetTip petName={pet.name} who={who} />}
       {!readOnly && (
         <div className="pet-actions">
           {(

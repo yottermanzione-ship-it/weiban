@@ -1,4 +1,9 @@
 import { useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { Check } from '@phosphor-icons/react';
+import { ApiFailure } from '@weiban/client-core';
+import { NavBar } from './shell-kit.js';
+import { showToast } from './toast.js';
 import { ModelAccessEndpoints, type ModelRole } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
@@ -72,6 +77,87 @@ export function ModelsPage() {
           </div>
         ))}
       </div>
+    </main>
+  );
+}
+
+/** 聊天信息 › 聊天模型 › 为 TA 选模型（billing.md 6.1）。null = 跟随默认（服务 › 模型里的聊天模型）。 */
+export function CharacterModelPage() {
+  const { characterId = '' } = useParams();
+  const models = useRemote(ModelAccessEndpoints.listModels);
+  const selection = useRemote(ModelAccessEndpoints.getSelection);
+  const override = useRemote(ModelAccessEndpoints.getCharacterOverride, {
+    params: { characterId },
+    networkOnly: true,
+  });
+  const [pending, setPending] = useState(false);
+  const current = override.data?.chat?.modelKey ?? '';
+  const defaultName =
+    models.data?.items.find((m) => m.modelKey === selection.data?.chat?.modelKey)?.displayName ??
+    '平台默认';
+  async function choose(key: string) {
+    if (key === current) return;
+    setPending(true);
+    try {
+      await api.call(ModelAccessEndpoints.setCharacterOverride, {
+        params: { characterId },
+        body: { chat: key ? { modelKey: key } : null },
+      });
+      override.refresh();
+      showToast('已保存，下一条回复起使用');
+    } catch (e) {
+      showToast(
+        e instanceof ApiFailure && e.code === 'model_not_allowed'
+          ? '这个模型不能给 TA 用'
+          : friendlyError(e),
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+  const option = (key: string, title: string, note: string, disabled = false) => (
+    <button
+      key={key || 'default'}
+      type="button"
+      role="radio"
+      aria-checked={current === key}
+      className="menu-row"
+      disabled={pending || disabled}
+      onClick={() => void choose(key)}
+    >
+      <span className="menu-label">
+        {title}
+        <br />
+        <small className="hint">{note}</small>
+      </span>
+      {current === key && <Check size={20} weight="bold" aria-hidden />}
+    </button>
+  );
+  return (
+    <main>
+      <NavBar title="TA 用的模型" />
+      {(override.error || models.error) && <p role="alert">{override.error || models.error}</p>}
+      <div className="menu-group" role="radiogroup" aria-label="TA 用的模型">
+        {option('', '跟随默认', `现在是 ${defaultName}，在「服务 › 模型」里改`)}
+        {models.data?.items.map((model) =>
+          option(
+            model.modelKey,
+            model.displayName,
+            [
+              model.vendorName,
+              model.available ? '' : '暂不可用',
+              model.capabilities.includes('adult_content') ? '允许成人内容' : '',
+            ]
+              .filter(Boolean)
+              .join(' · '),
+            !model.available,
+          ),
+        )}
+      </div>
+      {override.data?.chat && !override.data.chat.available && (
+        <p className="error">TA 用的模型暂不可用，回复时会提示你临时改用默认模型</p>
+      )}
+      <p className="hint">只影响和 TA 的私聊；群聊里每个角色也按各自的设置回复。</p>
     </main>
   );
 }

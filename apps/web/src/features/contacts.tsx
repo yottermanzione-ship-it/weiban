@@ -19,48 +19,205 @@ import { useNewFriendsDot } from './new-friends.js';
 import { useMomentsBadge } from './moments.js';
 import { ProfileCallButton } from './call.js';
 import { PlazaOriginNote, PlazaTab } from './plaza.js';
+import {
+  Aperture,
+  DownloadSimple,
+  MagnifyingGlass,
+  PencilSimpleLine,
+  Sparkle,
+  SquaresFour,
+  UserPlus,
+  UsersFour,
+  UsersThree,
+} from '@phosphor-icons/react';
+import { useAchievementsDot, useCardsDot } from './cards.js';
+import { ComingSoonRow, IconTile, MenuGroup, MenuRow, NavBar, Sheet } from './shell-kit.js';
+/** 拼音首字母分组：用中文排序规则和每个字母的边界字比较（浏览器自带，不引第三方库）。 */
+const letterBounds = '阿八嚓哒妸发旮哈讥咔垃痳拏噢妑七呥扨它穵夕丫帀'.split('');
+const boundLetters = 'ABCDEFGHJKLMNOPQRSTWXYZ';
+const collator = new Intl.Collator('zh-CN-u-co-pinyin');
+function initialOf(name: string): string {
+  const first = name.trim().charAt(0);
+  if (!first) return '#';
+  if (/[a-z]/i.test(first)) return first.toUpperCase();
+  if (!/[一-鿿]/.test(first)) return '#';
+  let letter = '#';
+  for (let i = 0; i < letterBounds.length; i++) {
+    if (collator.compare(first, letterBounds[i]!) >= 0) letter = boundLetters[i]!;
+    else break;
+  }
+  return letter;
+}
+
+/** 新建角色的方式（通讯录固定行与会话列表 ⊕ 菜单共用）。 */
+export function NewCharacterSheet({ onClose }: { onClose(): void }) {
+  const navigate = useNavigate();
+  const go = (to: string) => {
+    onClose();
+    navigate(to);
+  };
+  return (
+    <Sheet title="新建角色" onClose={onClose} closeLabel="取消">
+      <div className="choice-rows">
+        <button type="button" className="choice-row" onClick={() => go('/characters/custom/new')}>
+          <IconTile icon={PencilSimpleLine} tint="brand" size="lg" />
+          <span>
+            <strong>自己写一个 TA</strong>
+            <small>填名字、性格、说话方式</small>
+          </span>
+        </button>
+        <button type="button" className="choice-row" onClick={() => go('/imports')}>
+          <IconTile icon={DownloadSimple} tint="teal" size="lg" />
+          <span>
+            <strong>从聊天记录生成 TA</strong>
+            <small>粘贴、上传文件或截图</small>
+          </span>
+        </button>
+        <button type="button" className="choice-row" onClick={() => go('/plaza')}>
+          <IconTile icon={UsersThree} tint="blue" size="lg" />
+          <span>
+            <strong>去人设广场挑一个</strong>
+            <small>看看大家创作的角色</small>
+          </span>
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
 export function ContactsPage() {
   const { state } = useChat();
   const newFriendsDot = useNewFriendsDot();
+  const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState('');
   const names = useCharacterNames(state.contacts.map((contact) => contact.characterId));
-  const contacts = [...state.contacts].sort((a, b) =>
-    (a.remark || names[a.characterId] || '').localeCompare(
-      b.remark || names[b.characterId] || '',
-      'zh-CN',
-    ),
+  const label = (c: (typeof state.contacts)[number]) => c.remark || names[c.characterId] || '';
+  const contacts = [...state.contacts]
+    .filter((c) => !query.trim() || label(c).includes(query.trim()))
+    .sort((a, b) => collator.compare(label(a), label(b)));
+  const groups = new Map<string, typeof contacts>();
+  for (const c of contacts) {
+    const letter = initialOf(label(c));
+    groups.set(letter, [...(groups.get(letter) ?? []), c]);
+  }
+  const ordered = [...groups.entries()].sort(([a], [b]) =>
+    a === '#' ? 1 : b === '#' ? -1 : a.localeCompare(b),
   );
   return (
     <main>
-      <h1 className="page-title">通讯录</h1>
-      <div className="panel rows">
-        <Link to="/contacts/new">
-          新的朋友
-          {newFriendsDot && <span className="red-dot" aria-label="有新的名片推荐" />}
-        </Link>
-        <Link to="/contacts/groups">群聊</Link>
-        <Link to="/discover">添加角色</Link>
-      </div>
-      <div className="panel rows">
-        {contacts.map((contact) => (
-          <Link
-            key={contact.characterId}
-            to={`/characters/${contact.characterId}`}
-            className="role-row"
-          >
-            <CharacterAvatar id={contact.characterId} />
-            <CharacterName id={contact.characterId} fallback={contact.remark} />
-            <small>{contact.status === 'pending' ? '等待通过好友申请' : ''}</small>
+      <NavBar
+        title="通讯录"
+        back={false}
+        right={
+          <Link className="nav-bar-icon" to="/discover/plaza" aria-label="添加角色">
+            <UserPlus size={24} />
           </Link>
-        ))}
-      </div>
+        }
+      />
+      <label className="search-entry">
+        <MagnifyingGlass size={16} aria-hidden />
+        <input
+          aria-label="搜索通讯录"
+          placeholder="搜索"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </label>
+      {!query && (
+        <MenuGroup>
+          <MenuRow
+            to="/contacts/new"
+            icon={UserPlus}
+            tint="orange"
+            label="新的朋友"
+            dot={newFriendsDot}
+          />
+          <MenuRow
+            onClick={() => setCreating(true)}
+            icon={PencilSimpleLine}
+            tint="brand"
+            label="新建角色"
+          />
+          <MenuRow to="/contacts/groups" icon={UsersFour} tint="teal" label="群聊" />
+          <MenuRow to="/discover/plaza" icon={Sparkle} tint="blue" label="角色广场" />
+          <ComingSoonRow id="tags" />
+          <ComingSoonRow id="official" />
+        </MenuGroup>
+      )}
+      {ordered.map(([letter, list]) => (
+        <section key={letter}>
+          <h2 className="letter-label">{letter}</h2>
+          <div className="menu-group">
+            {list.map((contact) => (
+              <Link
+                key={contact.characterId}
+                to={`/characters/${contact.characterId}`}
+                className="menu-row"
+              >
+                <CharacterAvatar id={contact.characterId} size={40} />
+                <span className="menu-label">
+                  <CharacterName id={contact.characterId} fallback={contact.remark} />
+                </span>
+                {contact.status === 'pending' && <small className="hint">等待通过</small>}
+              </Link>
+            ))}
+          </div>
+        </section>
+      ))}
       {state.initialized && state.contacts.length === 0 && <p className="empty">还没有添加角色</p>}
+      {contacts.length > 0 && <p className="contacts-count">{contacts.length} 个角色</p>}
+      {creating && <NewCharacterSheet onClose={() => setCreating(false)} />}
     </main>
   );
 }
+
+/** 发现（菜单列表，docs/refactor/02a 第 3 节；参照产品有、微伴暂不做的入口显示「暂未开放」）。 */
 export function DiscoverPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const plazaTab = searchParams.get('tab') === 'plaza';
-  const onboarding = searchParams.get('onboarding') === '1';
+  const [searchParams] = useSearchParams();
+  const cards = useCardsDot();
+  const achievements = useAchievementsDot();
+  if (searchParams.get('onboarding') === '1') return <RolePlazaPage onboarding />;
+  return (
+    <main>
+      <NavBar title="发现" back={false} />
+      <MenuGroup>
+        <MenuRow
+          to="/moments"
+          icon={Aperture}
+          tint="lilac"
+          label="朋友圈"
+          extra={<MomentsBadgeAvatars />}
+        />
+      </MenuGroup>
+      <MenuGroup>
+        <MenuRow to="/discover/plaza" icon={Sparkle} tint="blue" label="角色广场" />
+        <ComingSoonRow id="channels" />
+        <ComingSoonRow id="live" />
+      </MenuGroup>
+      <MenuGroup>
+        <ComingSoonRow id="scan" />
+        <ComingSoonRow id="listen" />
+      </MenuGroup>
+      <MenuGroup>
+        <ComingSoonRow id="topstories" />
+        <MenuRow to="/search" icon={MagnifyingGlass} tint="gold" label="搜一搜" />
+      </MenuGroup>
+      <MenuGroup>
+        <ComingSoonRow id="games" />
+        <MenuRow
+          to="/miniapps"
+          icon={SquaresFour}
+          tint="brand"
+          label="小程序"
+          dot={cards.any || achievements.any}
+        />
+      </MenuGroup>
+    </main>
+  );
+}
+
+/** 发现 › 角色广场（预设角色）；首次引导也用这一页。人设广场是小程序，底部链接过去。 */
+export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) {
   const draft = useOnboardingDraft(onboarding);
   const selected = draft.draft?.characterId;
   const [query, setQuery] = useState('');
@@ -98,126 +255,110 @@ export function DiscoverPage() {
     );
   return (
     <main>
-      {!onboarding && (
-        <Link className="panel row-link" to="/moments">
-          <span>朋友圈</span>
-          <MomentsBadgeAvatars />
-        </Link>
-      )}
-      <h1 className="page-title">角色广场</h1>
-      {!onboarding && (
-        <div className="plaza-tabs" role="tablist">
-          <button
-            role="tab"
-            aria-selected={!plazaTab}
-            onClick={() => setSearchParams({}, { replace: true })}
-          >
-            预设角色
-          </button>
-          <button
-            role="tab"
-            aria-selected={plazaTab}
-            onClick={() => setSearchParams({ tab: 'plaza' }, { replace: true })}
-          >
-            人设广场
-          </button>
-        </div>
-      )}
-      {!onboarding && plazaTab ? (
-        <PlazaTab />
+      {onboarding ? (
+        <h1 className="page-title">角色广场</h1>
       ) : (
-        <>
-          {onboarding && (
-            <p className="panel" role="note">
-              先加一个你喜欢的 TA 吧
-            </p>
-          )}
-          {onboarding && <OnboardingExits />}
-          {onboarding && draft.error && <p role="alert">{draft.error}</p>}
-          <form
-            className="message-composer"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setSearch(query);
-              setCursor(undefined);
-              setPrevious([]);
-            }}
-          >
-            <label>
-              搜索角色
-              <input
-                value={query}
-                maxLength={50}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
-            <button>搜索</button>
-          </form>
-          {roles.error && <p role="alert">{roles.error}</p>}
-          {roles.loading && <p role="status">正在读取角色…</p>}
-          <div className="panel rows">
-            {roles.data?.items.map((role) =>
-              onboarding ? (
-                <button
-                  key={role.characterId}
-                  className="role-row"
-                  aria-label={`选择${role.name}`}
-                  disabled={draft.saving}
-                  onClick={() => void draft.choose(role.characterId)}
-                >
-                  <CharacterAvatar id={role.characterId} profile={role} />
-                  <strong>{role.name}</strong>
-                  <small>
-                    {role.tagline}
-                    {role.added && ' · 已添加'}
-                  </small>
-                </button>
-              ) : (
-                <Link
-                  key={role.characterId}
-                  to={`/characters/${role.characterId}`}
-                  className="role-row"
-                >
-                  <CharacterAvatar id={role.characterId} profile={role} />
-                  <strong>{role.name}</strong>
-                  <small>
-                    {role.tagline}
-                    {role.added && ' · 已添加'}
-                  </small>
-                </Link>
-              ),
-            )}
-          </div>
-          {!roles.loading && roles.data?.items.length === 0 && (
-            <p className="empty">没有找到角色</p>
-          )}
-          {previous.length > 0 && (
+        <NavBar title="角色广场" fallback="/discover" />
+      )}
+      {onboarding && (
+        <p className="panel" role="note">
+          先加一个你喜欢的 TA 吧
+        </p>
+      )}
+      {onboarding && <OnboardingExits />}
+      {onboarding && draft.error && <p role="alert">{draft.error}</p>}
+      <form
+        className="message-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setSearch(query);
+          setCursor(undefined);
+          setPrevious([]);
+        }}
+      >
+        <label>
+          搜索角色
+          <input value={query} maxLength={50} onChange={(event) => setQuery(event.target.value)} />
+        </label>
+        <button>搜索</button>
+      </form>
+      {roles.error && <p role="alert">{roles.error}</p>}
+      {roles.loading && <p role="status">正在读取角色…</p>}
+      <div className="panel rows">
+        {roles.data?.items.map((role) =>
+          onboarding ? (
             <button
-              disabled={roles.loading}
-              onClick={() => {
-                setCursor(previous.at(-1));
-                setPrevious(previous.slice(0, -1));
-              }}
+              key={role.characterId}
+              className="role-row"
+              aria-label={`选择${role.name}`}
+              disabled={draft.saving}
+              onClick={() => void draft.choose(role.characterId)}
             >
-              上一页角色
+              <CharacterAvatar id={role.characterId} profile={role} />
+              <strong>{role.name}</strong>
+              <small>
+                {role.tagline}
+                {role.added && ' · 已添加'}
+              </small>
             </button>
-          )}
-          {roles.data?.nextCursor && (
-            <button
-              disabled={roles.loading}
-              onClick={() => {
-                setPrevious([...previous, cursor]);
-                setCursor(roles.data?.nextCursor ?? undefined);
-              }}
+          ) : (
+            <Link
+              key={role.characterId}
+              to={`/characters/${role.characterId}`}
+              className="role-row"
             >
-              下一页角色
-            </button>
-          )}
-        </>
+              <CharacterAvatar id={role.characterId} profile={role} />
+              <strong>{role.name}</strong>
+              <small>
+                {role.tagline}
+                {role.added && ' · 已添加'}
+              </small>
+            </Link>
+          ),
+        )}
+      </div>
+      {!roles.loading && roles.data?.items.length === 0 && <p className="empty">没有找到角色</p>}
+      {previous.length > 0 && (
+        <button
+          disabled={roles.loading}
+          onClick={() => {
+            setCursor(previous.at(-1));
+            setPrevious(previous.slice(0, -1));
+          }}
+        >
+          上一页角色
+        </button>
+      )}
+      {roles.data?.nextCursor && (
+        <button
+          disabled={roles.loading}
+          onClick={() => {
+            setPrevious([...previous, cursor]);
+            setCursor(roles.data?.nextCursor ?? undefined);
+          }}
+        >
+          下一页角色
+        </button>
+      )}
+      {!onboarding && (
+        <MenuGroup>
+          <MenuRow to="/plaza" icon={UsersThree} tint="blue" label="看看大家创作的角色" />
+        </MenuGroup>
       )}
     </main>
   );
 }
+
+/** 小程序「人设广场」首页（原角色广场的「人设广场」分页）。 */
+export function PersonaPlazaPage() {
+  return (
+    <main>
+      <NavBar title="人设广场" fallback="/miniapps" />
+      <PlazaTab />
+    </main>
+  );
+}
+
 /**
  * 首次引导的两个出口（2026-10-12 总经理试用反馈）：角色广场为空或没有喜欢的角色时不能卡住。
  * 「自己创建一个角色」与「先随便看看」都先结束引导（本机标记），之后仍可从通讯录「添加角色」加 TA。
