@@ -202,6 +202,34 @@ private fun parseOrigin(origin: JsonElement): PlazaCopyOrigin? {
     }
 }
 
+/** 3.1（W9）：作品页里，我添加过的复制品有新版本时直接「更新到版本 N」。 */
+@Composable internal fun AdoptedUpdateButton(
+    repository: SessionRepository,
+    owner: OwnerRecord,
+    characterId: String,
+    workId: String,
+) {
+    val origin =
+        remote("${owner.sessionId}:plaza-adopted-origin:$characterId") {
+            repository.call(
+                Endpoints.customCharacterOriginEndpointsGetOrigin,
+                params = mapOf("characterId" to characterId),
+                options = SessionCallOptions(owner = owner, networkOnly = true),
+            )
+        }
+    var open by remember { mutableStateOf(false) }
+    val copy = origin.data?.let { parseOrigin(it.origin) }
+    val newer = copy?.newerVersion
+    if (copy == null || copy.workId != workId || newer == null) return
+    TextButton(onClick = { open = true }) { Text("更新到版本 $newer") }
+    if (open) {
+        NewVersionDialog(repository, owner, characterId, workId, newer) { done ->
+            open = false
+            if (done) origin.refresh()
+        }
+    }
+}
+
 /** 复制来的自定义角色：资料页「来自人设广场 · 作者 XX · 版本 N」与「作者发布了新版本 ●」。 */
 @Composable internal fun PlazaOriginNote(
     repository: SessionRepository,

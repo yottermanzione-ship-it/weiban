@@ -649,7 +649,11 @@ private class WorkUi {
         TextButton(onClick = ::toggleLike) { Text((if (w.likedByMe) "已赞 " else "赞 ") + w.likeCount) }
         Text("评论 ${w.commentCount}", color = colors.textSecondary)
         Spacer(Modifier.weight(1f))
-        val adopted = ui.adoptedCharacter
+        val adopted = ui.adoptedCharacter ?: w.myAdoptedCharacterId.takeUnless { w.isMine }
+        val myCopy = w.myAdoptedCharacterId
+        if (!w.isMine && w.kind == "custom_character" && myCopy != null) {
+            AdoptedUpdateButton(repository, owner, myCopy, workId)
+        }
         when {
             w.isMine -> OutlinedButton(onClick = { sheet = "menu" }, enabled = !ui.pending) { Text("管理") }
             adopted != null ->
