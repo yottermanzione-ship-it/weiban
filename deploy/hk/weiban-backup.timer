@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Weiban backup daily at 04:00 Hong Kong time
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 Asia/Hong_Kong
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

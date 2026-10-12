@@ -103,6 +103,23 @@ describe('配置加载 loadConfig', () => {
     );
   });
 
+  it('无域名试运行：ALLOW_IP_HTTP 只放行 IPv4 地址的 HTTP 媒体地址', () => {
+    const env = {
+      DATABASE_URL: DB,
+      NODE_ENV: 'production',
+      PLATFORM_KEK_FILE: '/run/secrets/kek',
+      BILLING_PLATFORM_DAILY_CAP_MICROS: '100000000',
+    };
+    const url = 'http://203.0.113.10';
+    expect(() => loadConfig({ ...env, MEDIA_PUBLIC_BASE_URL: url })).toThrow(/HTTPS/);
+    expect(
+      loadConfig({ ...env, MEDIA_PUBLIC_BASE_URL: url, ALLOW_IP_HTTP: '1' }).media.publicBaseUrl,
+    ).toBe(url);
+    expect(() =>
+      loadConfig({ ...env, MEDIA_PUBLIC_BASE_URL: 'http://example.com', ALLOW_IP_HTTP: '1' }),
+    ).toThrow(/HTTPS/);
+  });
+
   it('主密钥文件支持 base64 与十六进制，长度不对报错', () => {
     const dir = mkdtempSync(join(tmpdir(), 'weiban-kek-'));
     const key = Buffer.alloc(32, 7);

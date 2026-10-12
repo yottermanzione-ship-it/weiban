@@ -1,0 +1,20 @@
+# 香港服务器“仅 IP、无 HTTPS”试运行：复用生产镜像与 compose.yml，只覆盖访问地址和端口。
+# 用户端：公网 http://<服务器IP>（80）。管理后台：只绑定服务器 127.0.0.1:8081，经 SSH 隧道访问。
+# 有域名后改回生产 Caddy（WEB_DOMAIN/ADMIN_DOMAIN 填域名、开放 443），去掉本文件。
+services:
+  migrate:
+    environment:
+      ALLOW_IP_HTTP: '1'
+      MEDIA_PUBLIC_BASE_URL: http://${WEB_HOST:?Set server IP}
+  app:
+    environment:
+      ALLOW_IP_HTTP: '1'
+      MEDIA_PUBLIC_BASE_URL: http://${WEB_HOST:?Set server IP}
+  caddy:
+    environment:
+      WEB_DOMAIN: ':80'
+      ADMIN_DOMAIN: ':8081'
+      ADMIN_PUBLIC_ORIGIN: ${ADMIN_PUBLIC_ORIGIN:?Set tunnel admin origin}
+    ports: !override
+      - '80:80'
+      - '127.0.0.1:8081:8081'
