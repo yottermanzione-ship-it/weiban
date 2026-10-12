@@ -1,5 +1,14 @@
 # T-103 既定产品范围遗留收口
 
+## 当前断点（2026-10-12 13:00，优先于下文）
+
+- 从b8359a814f083bbfd4d6b6413ab9b66657784cca干净状态续接。其PR run38205176107真实completed/success（event pull_request）：ci-green-b8359a8-clean.log85文件651项/零跳过、网页27项54.1s/后台8项11s、安卓126零跳过/BUILD SUCCESSFUL4m58，生产镜像/迁移/双域HTTP/加密备份/空卷恢复和非空目标拒绝通过。push38205173070在12:59仍in_progress，不重启/记通过。新成人材料不在该绿色CI范围。
+- 读取eval-plan3.12、ADR0007修订、hard-boundaries及runtime-overview9后新增A/B内容材料66题：六张成年原创卡各六类底线36题+未成年人/真人目标各六种变体12题；正常原创成年反向6题单独统计；真人/儿童不同模式/恋人关系/补充设定覆盖12题。总287题/18套、版本2026-10-12.7，18套仍不是完整19类。全部仅中性摘要，未生成露骨文本或真实模板/名人词表，缺scenarioTemplateVersion/expandedInputEvidenceRef保留待验。
+- adultBoundarySetup要求实际身份上下文、日常身份声明后切模式、多轮、补充设定保存、群全员有资格与adult scope；不拿说明塞history充当前置。A成人复核按规范记录adult_checker_route_verified（配置OpenRouter成人检查模型）；B日常少量诱导检查可走普通后台模型，单独restricted_character_checker_route_verified，真人私人恋爱情景仍无性内容，儿童另禁止恋爱称呼。评测判卷按eval-plan使用指定检查模型。这些字段不是已配置或已调用的声明，正常未命中检查的反向题不凭空要求调用，需检查实际路由策略。
+- adult-evals-round2.log10文件37项通过855ms，包类型/build-round2、全仓lint/deps340模块1474依赖、包最终格式通过；编译CLI round2实际七分支成功，登记287题，输出身份/1800逐轮数据仍仓库外fixture-not-quality。初轮后核对路由规范，将B与A分开并复测/重构建；没有实际供应商或独立评审，不宣称成人模式质量通过。
+- 本机adult-material-local-model-ready-round1.log12:58重新实际登录/读取上游列表，上游0条、配置页面/刷新通过、0页面异常。业务镜像仍20712ff，评测包无应用依赖无需重装；未改生产数据或创建模型/密钥，用户自行后台配置的选择保留。共享main未变。
+- 重点下一步真实HTTP/PG/回复链确认成人输入/输出复核：检索reply-engine的safety_check仅见疑似自伤分支，reply-context只查成人资格，outputAllowed主要词规则，resolver有purpose但未见独立成人检查路由；这是具体源码线索，尚未完整链路复现，不记为已确认缺陷或盲补正则。model-access HTTP模型闸门测试使用FakePolicy，不能单独证明真实角色分类变化/绕库的D组全范围。C内容去向、D系统闸门、E跨模式及其余19类材料和实际执行仍未完，设备/真实模型与费用/异机离线保管/独立验收仍待证据。全部开发自测，目标活动未完工。
+
 ## 当前断点（2026-10-12 10:13，优先于下文）
 
 - 续接基线a7c7c73824a3813b32ecba9554f1c759318daf3f，两轮PR38194024434/push38194021685实际completed/success。ci-green-a7c7c73-clean.log：84文件647项、零跳过检查通过，网页27项1.1m/后台8项15.1s、安卓JUnit126项零跳过/BUILD SUCCESSFUL3m55，生产镜像/迁移/双域HTTP/加密备份/空卷恢复及非空目标拒绝通过。这些属于a7开发CI，不能用来覆盖随后关系评测源码或关闭此前间歇性问题。Claude既知JSONL实查仍2026-10-11 09:04:46/2213073字节，无新消息；共享main不变。

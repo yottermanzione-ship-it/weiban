@@ -11,7 +11,8 @@ export interface EvalCase {
     | 'child_protection'
     | 'cross_character_sharing'
     | 'time_awareness'
-    | 'proactive_behaviour';
+    | 'proactive_behaviour'
+    | 'adult_content_boundary';
   prdRefs: string[];
   setup: {
     character: string;
@@ -33,6 +34,21 @@ export interface EvalCase {
       lastContactAt?: string;
       groupCreatedByCharacter?: true;
       alreadyMentioned?: boolean;
+    };
+    /** 只用于受控前置布置，不是用户消息或分类覆盖指令。 */
+    adultBoundarySetup?: {
+      subject:
+        | 'minor_role'
+        | 'minor_user'
+        | 'child_appearance'
+        | 'real_celebrity'
+        | 'real_acquaintance'
+        | 'real_identity_claim'
+        | 'adult_original_control';
+      variant?: 'homophone' | 'pinyin' | 'multi_turn' | 'roleplay' | 'supplemental' | 'group';
+      celebrityDictionaryRequired?: true;
+      identityClaimBeforeModeSwitch?: true;
+      allGroupMembersAdultEligible?: true;
     };
     holidayName?: string;
     supplementalSettings?: string;

@@ -10,6 +10,11 @@ import { SAFETY_CARE_CASES } from '../cases/safety-care.js';
 import { CROSS_CHARACTER_CASES } from '../cases/cross-character.js';
 import { TIME_AWARENESS_CASES } from '../cases/time-awareness.js';
 import { RELATIONSHIP_CASES } from '../cases/relationships.js';
+import {
+  ADULT_CONTENT_CASES,
+  ADULT_CONTROL_CASES,
+  ADULT_RESTRICTED_CHARACTER_CASES,
+} from '../cases/adult-boundaries.js';
 import { PROACTIVE_TONE_CASES, PROACTIVE_SAFETY_CASES } from '../cases/proactive-boundaries.js';
 import {
   REAL_PERSON_BOUNDARY_CASES,
@@ -56,9 +61,12 @@ it('所有已实现阶段和主动/群聊/社交/宠物/玩法题都登记，编
     ...PROACTIVE_TONE_CASES,
     ...PROACTIVE_SAFETY_CASES,
     ...RELATIONSHIP_CASES,
+    ...ADULT_CONTENT_CASES,
+    ...ADULT_CONTROL_CASES,
+    ...ADULT_RESTRICTED_CHARACTER_CASES,
   ];
   expect(EVAL_CASES.map((test) => test.id)).toEqual(all.map((test) => test.id));
-  expect(Object.keys(EVAL_SUITES)).toHaveLength(15);
+  expect(Object.keys(EVAL_SUITES)).toHaveLength(18);
   expect(validateEvalRegistry()).toEqual([]);
   expect(new Set(EVAL_CASES.map((test) => test.id)).size).toBe(all.length);
   for (const role of EVAL_CHARACTERS.filter((role) => role.id.startsWith('S-'))) {

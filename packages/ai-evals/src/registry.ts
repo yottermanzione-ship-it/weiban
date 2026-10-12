@@ -8,6 +8,11 @@ import { SAFETY_CARE_CASES } from '../cases/safety-care.js';
 import { CROSS_CHARACTER_CASES } from '../cases/cross-character.js';
 import { TIME_AWARENESS_CASES } from '../cases/time-awareness.js';
 import { RELATIONSHIP_CASES } from '../cases/relationships.js';
+import {
+  ADULT_CONTENT_CASES,
+  ADULT_CONTROL_CASES,
+  ADULT_RESTRICTED_CHARACTER_CASES,
+} from '../cases/adult-boundaries.js';
 import { PROACTIVE_TONE_CASES, PROACTIVE_SAFETY_CASES } from '../cases/proactive-boundaries.js';
 import {
   REAL_PERSON_BOUNDARY_CASES,
@@ -15,7 +20,7 @@ import {
 } from '../cases/character-boundaries.js';
 
 /** 已落地的考题登记，不等于eval-plan全部19类已覆盖。 */
-export const EVAL_CASE_VERSION = '2026-10-12.6';
+export const EVAL_CASE_VERSION = '2026-10-12.7';
 export const EVAL_SUITES = {
   l2: L2_CASES,
   l3_simulation: L3_CASES,
@@ -32,6 +37,9 @@ export const EVAL_SUITES = {
   proactive_tone: PROACTIVE_TONE_CASES,
   proactive_safety: PROACTIVE_SAFETY_CASES,
   relationships: RELATIONSHIP_CASES,
+  adult_content: ADULT_CONTENT_CASES,
+  adult_controls: ADULT_CONTROL_CASES,
+  adult_restricted_characters: ADULT_RESTRICTED_CHARACTER_CASES,
 } as const;
 export const EVAL_CASES: readonly EvalCase[] = Object.values(EVAL_SUITES).flat();
 
