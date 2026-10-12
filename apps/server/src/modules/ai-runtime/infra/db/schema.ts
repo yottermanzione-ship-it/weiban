@@ -80,7 +80,7 @@ export const companionSettings = aiRuntimeSchema.table(
     instantReply: boolean('instant_reply').notNull(),
     splitBubbles: boolean('split_bubbles').notNull(),
     personaFit: integer('persona_fit').notNull().default(3),
-    scenarioMode: text('scenario_mode').notNull().default('daily'),
+    scenarioMode: text('scenario_mode').notNull().default('auto'),
     proactiveMessages: boolean('proactive_messages').notNull().default(true),
     proactiveFrequency: text('proactive_frequency').notNull().default('medium'),
     proactiveCalls: boolean('proactive_calls').notNull().default(false),
@@ -92,7 +92,10 @@ export const companionSettings = aiRuntimeSchema.table(
   (t) => [
     unique('companion_user_character_idx').on(t.userId, t.characterId).nullsNotDistinct(),
     check('companion_persona_fit', sql`${t.personaFit} BETWEEN 1 AND 5`),
-    check('companion_mode', sql`${t.scenarioMode} IN ('daily','tsundere','romance','adult')`),
+    check(
+      'companion_mode',
+      sql`${t.scenarioMode} IN ('daily','tsundere','romance','adult','auto','treehole','cheer')`,
+    ),
     check('companion_frequency', sql`${t.proactiveFrequency} IN ('low','medium','high')`),
   ],
 );

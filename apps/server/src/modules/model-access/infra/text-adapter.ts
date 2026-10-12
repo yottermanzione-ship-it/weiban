@@ -18,7 +18,11 @@ export type TextResult =
         | 'invalid_key'
         | 'quota_exhausted'
         | 'content_rejected'
-        | 'bad_request';
+        | 'bad_request'
+        /** 正文为空（常见原因：推理模型的思考吃光了输出额度）。 */
+        | 'empty_output'
+        /** 要求 JSON 却因输出额度用完被截断。 */
+        | 'truncated';
       retryable: boolean;
       usage?: TextUsage;
     };
@@ -54,7 +58,54 @@ export interface TextAdapter {
     responseFormat?: 'text' | 'json';
     idempotencyKey: string;
     timeoutMs: number;
+    /** 思考开关：off = 按厂商发关闭思考的字段（默认）；default = 不发，用模型默认。 */
+    thinking?: 'off' | 'default';
   }): Promise<TextResult>;
+}
+
+/**
+ * 厂商思考开关的写法（docs/refactor/03 第 2.2 B 节）。按上游地址优先判断（同一模型在不同平台字段不同），
+ * 判断不出时按模型名；都不认识就不发任何字段，避免别家报 400。
+ */
+export type ThinkingControl = 'deepseek' | 'qwen' | 'openrouter' | 'none';
+export function thinkingControlFor(baseUrl: string, model: string): ThinkingControl {
+  const url = baseUrl.toLowerCase();
+  const id = model.toLowerCase();
+  if (url.includes('openrouter.ai')) return 'openrouter';
+  if (url.includes('deepseek.com')) return 'deepseek';
+  if (url.includes('dashscope') || url.includes('aliyuncs.com')) return 'qwen';
+  if (id.startsWith('deepseek')) return 'deepseek';
+  if (id.startsWith('qwen') || id.startsWith('qwq')) return 'qwen';
+  return 'none';
+}
+export function thinkingOffFields(control: ThinkingControl): Record<string, unknown> {
+  switch (control) {
+    case 'deepseek':
+      return { thinking: { type: 'disabled' } };
+    case 'qwen':
+      return { enable_thinking: false };
+    case 'openrouter':
+      return { reasoning: { enabled: false } };
+    default:
+      return {};
+  }
+}
+
+const REASONING_TAGS = 'think|thinking|reasoning';
+/**
+ * 剥掉混进正文的思考内容（旧版 reply_content.js 的做法）：成对的 <think>…</think>、
+ * 只有结束标记时去掉它之前的全部内容、结尾未闭合的开始标记、开头的「思考过程：」段。
+ */
+export function stripReasoning(text: string): string {
+  let out = text.replace(new RegExp(`<(${REASONING_TAGS})>[\\s\\S]*?</\\1>`, 'gi'), '');
+  const close = new RegExp(`</(?:${REASONING_TAGS})>`, 'i').exec(out);
+  if (close) out = out.slice(close.index + close[0].length);
+  out = out.replace(new RegExp(`<(?:${REASONING_TAGS})>[\\s\\S]*$`, 'i'), '');
+  out = out.replace(
+    /^\s*(?:思考过程|推理过程|内心思考|thinking(?: process)?|reasoning)\s*[:：][\s\S]*?\n\s*\n/i,
+    '',
+  );
+  return out.trim();
 }
 
 /** runtime-overview 2.5：中文字符×0.7，英文单词×1.3；符号计入保守的额外项。 */
@@ -98,6 +149,20 @@ function usageOf(raw: unknown, input: string, output: string): TextUsage {
 
 export class OpenAiTextAdapter implements TextAdapter {
   async generate(input: Parameters<TextAdapter['generate']>[0]): Promise<TextResult> {
+    const extra =
+      input.thinking === 'default'
+        ? {}
+        : thinkingOffFields(thinkingControlFor(input.baseUrl, input.model));
+    const first = await this.once(input, extra);
+    // 个别平台不认识关闭思考的字段会报 400：去掉字段再试一次。
+    if (!first.ok && first.category === 'bad_request' && Object.keys(extra).length)
+      return this.once(input, {});
+    return first;
+  }
+  private async once(
+    input: Parameters<TextAdapter['generate']>[0],
+    extra: Record<string, unknown>,
+  ): Promise<TextResult> {
     try {
       const response = await fetch(`${input.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
@@ -114,6 +179,7 @@ export class OpenAiTextAdapter implements TextAdapter {
           stream: false,
           max_tokens: input.maxOutputTokens,
           temperature: input.temperature,
+          ...extra,
           ...(input.responseFormat === 'json' ? { response_format: { type: 'json_object' } } : {}),
         }),
       });
@@ -173,17 +239,21 @@ export class OpenAiTextAdapter implements TextAdapter {
           retryable: false,
           ...(payload.usage ? { usage: usageOf(payload.usage, '', '') } : {}),
         };
-      if (typeof choice?.message?.content !== 'string')
+      const raw: unknown = choice?.message?.content;
+      if (raw !== undefined && raw !== null && typeof raw !== 'string')
         return { ok: false, category: 'provider_error', retryable: true };
-      return {
-        ok: true,
-        text: choice.message.content,
-        usage: usageOf(
-          payload.usage,
-          input.messages.map((m) => m.content).join('\n'),
-          choice.message.content,
-        ),
-      };
+      const rawText = typeof raw === 'string' ? raw : '';
+      const text = stripReasoning(rawText);
+      const usage = usageOf(
+        payload.usage,
+        input.messages.map((m) => m.content).join('\n'),
+        rawText,
+      );
+      // 空正文或 JSON 被截断：按失败处理（网关负责重试与降级），不能当成功静默返回。
+      if (!text) return { ok: false, category: 'empty_output', retryable: true, usage };
+      if (choice?.finish_reason === 'length' && input.responseFormat === 'json')
+        return { ok: false, category: 'truncated', retryable: true, usage };
+      return { ok: true, text, usage };
     } catch {
       return { ok: false, category: 'network_error', retryable: true };
     }

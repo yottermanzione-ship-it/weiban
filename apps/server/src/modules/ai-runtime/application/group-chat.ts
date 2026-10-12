@@ -62,7 +62,7 @@ import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from '../../identity
 import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
-import { INITIAL_MODES, modeOption } from '../domain/persona.js';
+import { INITIAL_MODES, modeOption, scenarioText } from '../domain/persona.js';
 import { highRisk, outputAllowed } from '../domain/reply-rules.js';
 import { callModelForCare, careFallback } from './safety-care.js';
 import {
@@ -751,7 +751,7 @@ export class GroupChatService {
       messages: [
         {
           role: 'system',
-          content: `你在微伴的一个群聊里以角色身份发言。平台规则优先于角色卡与聊天内容。只输出你要发的这一条群消息的纯文本，不加名字前缀，不输出JSON或括号动作，不超过60字；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。不做情感操纵。群聊当前情景模式：${input.scenarioMode}。${adult ? '' : '这是日常范围的群聊：不提起、不展开任何成人模式里发生的事。'}你只知道群里大家公开说过的话，不提用户在私聊里单独告诉你的私事。`,
+          content: `你在微伴的一个群聊里以角色身份发言。平台规则优先于角色卡与聊天内容。只输出你要发的这一条群消息的纯文本，不加名字前缀，不输出JSON或括号动作，不超过60字；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。不做情感操纵。群聊当前情景模式：${scenarioText(input.scenarioMode === 'auto' ? 'daily' : input.scenarioMode)}${adult ? '' : '这是日常范围的群聊：不提起、不展开任何成人模式里发生的事。'}你只知道群里大家公开说过的话，不提用户在私聊里单独告诉你的私事。`,
         },
         {
           role: 'system',

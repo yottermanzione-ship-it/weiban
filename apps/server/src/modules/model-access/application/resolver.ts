@@ -115,6 +115,8 @@ export class ModelResolver implements AdultModelReadPort {
     hasImages?: boolean;
     /** T-090（CR-17）：只允许 purpose = behavior_planning；指定规划模型（不随用户的后台模型）。 */
     modelKeyOverride?: string;
+    /** 网关内部：空输出降级用的备用模型（docs/refactor/03 第 1.4 B），不经契约传入。 */
+    fallbackModelKey?: string;
   }): Promise<PortResult<ResolvedModel, GenerateError>> {
     if (
       input.modelRole === 'adult_check' &&
@@ -122,7 +124,10 @@ export class ModelResolver implements AdultModelReadPort {
     )
       return { ok: false, error: 'bad_request' };
     let picked: { facts: ModelFacts } | null;
-    if (input.modelKeyOverride) {
+    if (input.fallbackModelKey) {
+      if (input.modelRole !== 'background') return { ok: false, error: 'bad_request' };
+      picked = { facts: await this.catalog.fact(input.fallbackModelKey) };
+    } else if (input.modelKeyOverride) {
       if (input.purpose !== 'behavior_planning') return { ok: false, error: 'bad_request' };
       picked = { facts: await this.catalog.fact(input.modelKeyOverride) };
     } else if (input.purpose === 'behavior_planning') {

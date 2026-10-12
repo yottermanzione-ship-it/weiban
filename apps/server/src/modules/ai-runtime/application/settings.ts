@@ -89,7 +89,8 @@ export class CompanionSettingsService {
       instantReply: row?.instantReply ?? false,
       splitBubbles: row?.splitBubbles ?? true,
       personaFit: row?.personaFit ?? 3,
-      scenarioMode: (row?.scenarioMode ?? 'daily') as ScenarioMode,
+      // 没有设置行 = 新账号默认：情景预设「自动」（docs/refactor/02 第 5.3 节，2026-10-13 AI 实现后启用）。
+      scenarioMode: (row?.scenarioMode ?? 'auto') as ScenarioMode,
       proactiveMessages: row?.proactiveMessages ?? true,
       proactiveFrequency: (row?.proactiveFrequency ?? 'medium') as 'low' | 'medium' | 'high',
       proactiveCalls: row?.proactiveCalls ?? false,
@@ -211,7 +212,7 @@ export class CompanionSettingsService {
         instantReply: patch.instantReply ?? old.instantReply,
         splitBubbles: patch.splitBubbles ?? old.splitBubbles,
         personaFit: patch.personaFit ?? old.personaFit ?? 3,
-        scenarioMode: patch.scenarioMode ?? old.scenarioMode ?? 'daily',
+        scenarioMode: patch.scenarioMode ?? old.scenarioMode ?? 'auto',
         proactiveMessages: patch.proactiveMessages ?? old.proactiveMessages ?? true,
         proactiveFrequency: patch.proactiveFrequency ?? old.proactiveFrequency ?? 'medium',
         proactiveCalls: patch.proactiveCalls ?? old.proactiveCalls ?? false,

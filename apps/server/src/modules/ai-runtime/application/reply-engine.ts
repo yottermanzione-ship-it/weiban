@@ -261,6 +261,7 @@ export class ReplyEngine {
           history,
           voiceId: snapshot.voiceId,
           instant: snapshot.instantReply,
+          quiet: snapshot.effectiveStyle === 'treehole',
         })
         .catch(() => null);
     }

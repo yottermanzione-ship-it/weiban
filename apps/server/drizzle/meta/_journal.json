@@ -527,6 +527,13 @@
       "when": 1798600000000,
       "tag": "0086_announcements_release_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1798700000000,
+      "tag": "0087_scenario_presets_ai",
+      "breakpoints": true
     }
   ]
 }

@@ -405,6 +405,8 @@ export class MediaAiService {
     voiceId: string | null;
     /** 秒回开启：决策层最多等 1 秒（PLAN-02 第 1 条）。 */
     instant?: boolean;
+    /** 情景预设「树洞分享」：不主动发语音和表情包（用户明确要语音时照发）。 */
+    quiet?: boolean;
   }): Promise<MessageContent[] | null> {
     const { ctx, bubbles } = input;
     const joined = bubbles.join('，');
@@ -433,7 +435,7 @@ export class MediaAiService {
       },
     };
     const timeoutMs = input.instant ? 1000 : 3000;
-    if (!wantVoice && shortEnough && ratioOk) {
+    if (!wantVoice && shortEnough && ratioOk && !input.quiet) {
       const until = await this.quiet.getInconvenientUntil(ctx.userId).catch(() => null);
       const quiet = !!until && Date.parse(until) > this.clock.nowMs();
       if (!quiet) {
@@ -500,7 +502,7 @@ export class MediaAiService {
     }
 
     // 表情包（MED-01 第 4 条）：最近 10 条气泡（含本次）里最多 2 个。
-    if (!changed) {
+    if (!changed && !input.quiet) {
       const windowPrev = mine.slice(-(STICKER_WINDOW - contents.length - 1));
       const stickersInWindow = windowPrev.filter((m) => m.content?.type === 'sticker').length;
       let wantSticker = false;

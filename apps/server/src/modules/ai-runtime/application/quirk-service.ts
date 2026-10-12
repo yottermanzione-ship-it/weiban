@@ -54,10 +54,13 @@ export class QuirkService {
 
   async choose(row: ReplyPlan, snapshot: ReplySnapshot): Promise<QuirkAction> {
     if (row.kind !== 'message' || snapshot.trial) return NO_QUIRK;
+    // 情景预设「树洞分享」（含自动判断为倾听）：小巧思全关（docs/refactor/03 第 4.2 节）。
+    if (snapshot.effectiveStyle === 'treehole') return NO_QUIRK;
     const options = allowedQuirks({
       fit: snapshot.personaFit,
       tags: snapshot.personaTags,
-      scenarioMode: snapshot.scenarioMode,
+      // 自动判断为斗嘴时按傲娇的小巧思（仍受次数上限）。
+      scenarioMode: snapshot.effectiveStyle === 'tsundere' ? 'tsundere' : snapshot.scenarioMode,
       scope: snapshot.scope,
       instantReply: snapshot.instantReply,
       care: snapshot.highRisk || snapshot.careActive,

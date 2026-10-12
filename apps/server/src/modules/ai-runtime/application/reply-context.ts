@@ -29,7 +29,14 @@ import { POLICY_PORT } from '../../policy/index.js';
 import { MemoryService } from './memory.js';
 import { PlayContinuityStore } from './play-continuity.js';
 import { publicKnowledge } from '../domain/knowledge.js';
-import { personaPrompt } from '../domain/persona.js';
+import { INITIAL_MODES, personaPrompt } from '../domain/persona.js';
+import {
+  autoScenarioStyle,
+  autoStylePrompt,
+  effectiveStyle,
+  type ScenarioStyle,
+} from '../domain/scenario.js';
+import { localHourIn, nowLine, todayLine } from '../domain/time-sense.js';
 import { CompanionSettingsService } from './settings.js';
 import { GroupChatService } from './group-chat.js';
 import { ReplyPlanStore, type ReplyPlan } from './plan-store.js';
@@ -51,6 +58,8 @@ export const ReplySnapshot = z.object({
   personaVersion: z.number().int(),
   memoryRevision: z.number().int().nonnegative().default(0),
   scenarioMode: ScenarioMode.default('daily'),
+  /** 情景预设本轮实际风格（自动按规则判断；docs/refactor/03 第 4 节）。 */
+  effectiveStyle: z.enum(['daily', 'treehole', 'cheer', 'tsundere']).default('daily'),
   promptTemplateVersion: z.string(),
   instantReply: z.boolean(),
   splitBubbles: z.boolean(),
@@ -233,6 +242,43 @@ export class ReplyContext {
       policy.adultModeEligible ? 'adult' : 'normal',
       userText,
     );
+    // 情景预设「自动」：规则判断本轮风格（安全关怀中不加风格提示；永不判断为恋爱 / 成人）。
+    const mode: ScenarioMode = settings.scenarioMode ?? 'daily';
+    const inCare = risk === 'high' || triggerHigh || active.rows.length > 0;
+    let autoResult: ScenarioStyle | null = null;
+    if (mode === 'auto' && !inCare) {
+      const allowedModes = await this.policy
+        .listAllowedScenarioModes({
+          userId: row.userId,
+          characterId: row.characterId,
+          candidates: INITIAL_MODES,
+          adminAllowlist: role.card.data.modes.adminAllowlist,
+        })
+        .catch(() => []);
+      const userTurns: string[] = [];
+      let turn: string[] = [];
+      for (const m of history) {
+        if (m.senderKind === 'system' || m.status !== 'normal') continue;
+        if (m.senderKind === 'user') {
+          if (m.content?.type === 'text') turn.push(m.content.text);
+        } else if (turn.length) {
+          userTurns.push(turn.join('\n'));
+          turn = [];
+        }
+      }
+      if (row.kind === 'message') userTurns.push(userText);
+      else if (turn.length) userTurns.push(turn.join('\n'));
+      autoResult = autoScenarioStyle({
+        userTurns,
+        localHour: localHourIn(this.clock.now(), profile.timeZone),
+        tsundereAllowed: allowedModes.some((m) => m.modeId === 'tsundere'),
+      });
+    }
+    const style = inCare ? 'daily' : effectiveStyle(mode, autoResult);
+    const autoStyle =
+      mode === 'auto' && autoResult
+        ? { style: autoResult, prompt: autoStylePrompt(autoResult) }
+        : null;
     const messages: ReplySnapshot['messages'] = [
       {
         role: 'system',
@@ -240,7 +286,7 @@ export class ReplyContext {
       },
       {
         role: 'system',
-        content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 12), modeOverride: role.card.data.modes.modeOverrides?.[settings.scenarioMode ?? 'daily'], safetyStyle: role.card.data.safetyStyle }).slice(0, 40000)}\n用户称呼：${contact.addressAs ?? profile.nickname ?? '你'}\n当地时区：${profile.timeZone}，当前UTC：${this.clock.now().toISOString()}${supplementBlock(role.userSupplement, 4000)}`,
+        content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 12), modeOverride: role.card.data.modes.modeOverrides?.[settings.scenarioMode ?? 'daily'], safetyStyle: role.card.data.safetyStyle }).slice(0, 40000)}\n用户称呼：${contact.addressAs ?? profile.nickname ?? '你'}\n${todayLine(this.clock.now(), profile.timeZone)}（精确时间见对话末尾）${supplementBlock(role.userSupplement, 4000)}`,
       },
     ];
     const localDate = new Intl.DateTimeFormat('en-CA', {
@@ -364,6 +410,21 @@ export class ReplyContext {
           ? `我添加了你，这是我的打招呼：${greeting}`
           : '我们成为好友了，请自然地打个招呼。',
       });
+    // 情景预设「自动」：每轮可能变，放在请求末尾（docs/refactor/03 第 4.2、4.3 节）。
+    if (autoStyle?.prompt) messages.push({ role: 'system', content: autoStyle.prompt });
+    // 时间放末尾（docs/refactor/03 第 2.2 A 节）：精确时间 + 距上一条消息多久。
+    const firstFreshSeq = fresh[0]?.seq ?? Number.POSITIVE_INFINITY;
+    const previous = history
+      .filter((m) => m.senderKind !== 'system' && m.seq < firstFreshSeq)
+      .at(-1);
+    messages.push({
+      role: 'system',
+      content: nowLine(
+        this.clock.now(),
+        profile.timeZone,
+        previous && fresh.length ? new Date(previous.createdAt) : null,
+      ),
+    });
     const deliveredAt = new Date(source?.createdAt ?? row.createdAt);
     // 停机时无法遵守原60秒；恢复后仍必须回复，重新给一次有界预算，而不是永久waiting。
     const triggerAt =
@@ -392,6 +453,7 @@ export class ReplyContext {
       personaVersion: role.personaVersion,
       memoryRevision: remembered.revision,
       scenarioMode: settings.scenarioMode ?? 'daily',
+      effectiveStyle: style,
       promptTemplateVersion: REPLY_TEMPLATE_VERSION,
       instantReply: settings.instantReply,
       splitBubbles: settings.splitBubbles,

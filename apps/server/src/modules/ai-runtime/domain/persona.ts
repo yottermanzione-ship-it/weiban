@@ -1,8 +1,9 @@
 import type { ScenarioModeTraits, ScenarioMode } from '@weiban/contracts';
+import { STYLE_TEXT } from './scenario.js';
 /**
  * 情景预设（docs/refactor/02 第 5.3 节），顺序即弹层顺序。
- * aiReady = false 的三个新预设（auto / treehole / cheer）在 AI 策略实现前按日常回复（见下方 MODES），
- * 下一张卡由 AI 负责人实现；allowlistFallback 让旧角色卡的管理员允许列表按 daily 判断它们。
+ * 三个新预设（auto / treehole / cheer）的 AI 策略见 domain/scenario.ts（2026-10-13 实现，aiReady = true）；
+ * allowlistFallback 让旧角色卡的管理员允许列表按 daily 判断它们。「自动」是新账号默认预设（settings.ts）。
  * 显示名「私密」等改名待产品更新 MODE-01 确认。
  */
 export const INITIAL_MODES: (ScenarioModeTraits & {
@@ -19,7 +20,7 @@ export const INITIAL_MODES: (ScenarioModeTraits & {
     description: 'TA 看你当下的状态自己调整',
     section: 'preset',
     recommended: true,
-    aiReady: false,
+    aiReady: true,
     containsRomance: false,
     containsAdultContent: false,
     allowlistFallback: 'daily',
@@ -50,7 +51,7 @@ export const INITIAL_MODES: (ScenarioModeTraits & {
     description: '多听少说，不评判',
     section: 'preset',
     recommended: false,
-    aiReady: false,
+    aiReady: true,
     containsRomance: false,
     containsAdultContent: false,
     allowlistFallback: 'daily',
@@ -71,7 +72,7 @@ export const INITIAL_MODES: (ScenarioModeTraits & {
     description: '给你打气，也会督促你',
     section: 'preset',
     recommended: false,
-    aiReady: false,
+    aiReady: true,
     containsRomance: false,
     containsAdultContent: false,
     allowlistFallback: 'daily',
@@ -111,11 +112,15 @@ const MODES = {
   tsundere: '傲娇只改变表达，用户求助仍要帮助，关怀时停止冷淡表现。',
   romance: '允许恋爱语气，仍是同一个角色，不升级用户选择的关系。',
   adult: '仅在当前同角色成人私聊内使用成人模式，不涉及未成年人或真实存在的人。',
-  // 以下三个新预设的策略和提示词由 AI 负责人下一张卡实现；在此之前与日常相同。
-  auto: '自然日常交流。',
-  treehole: '自然日常交流。',
-  cheer: '自然日常交流。',
+  // 三个新预设（domain/scenario.ts）：自动的本轮风格在请求末尾单独给出。
+  auto: '自动：平时自然日常交流；对话末尾若有「本轮风格」提示就按它调整语气。自动不会变成恋爱语气。',
+  treehole: `树洞分享——${STYLE_TEXT.treehole}`,
+  cheer: `加油打气——${STYLE_TEXT.cheer}`,
 } satisfies Record<ScenarioMode, string>;
+/** 群聊等只需要一句话描述当前预设的地方用。 */
+export function scenarioText(mode: ScenarioMode): string {
+  return MODES[mode] ?? MODES.daily;
+}
 export function personaPrompt(input: {
   fit: number;
   mode: ScenarioMode;

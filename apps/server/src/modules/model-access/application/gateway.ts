@@ -1,5 +1,5 @@
 /** 全系统调用上游的唯一出口：选型/闸门→占位→冻结→调用→保存结果→结算。 */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   BACKGROUND_PURPOSES,
   BUDGET_EXEMPT_PURPOSES,
@@ -58,8 +58,31 @@ const DEFAULT_TOKENS: Partial<Record<GenerateTextInput['purpose'], number>> = {
   vision: 600,
   import_analysis: 6000,
 };
+/**
+ * 调用方没传温度时的默认值（docs/refactor/03 第 2.2 B 节，沿用旧版）：
+ * 聊天类 0.9、创作类后台 0.8、整理类后台 0.2、判断类 0。
+ */
+const DEFAULT_TEMPERATURE: Partial<Record<GenerateTextInput['purpose'], number>> = {
+  chat_reply: 0.9,
+  proactive: 0.9,
+  safety_followup: 0.9,
+  simulation: 0.8,
+  moments: 0.8,
+  memory: 0.2,
+  import_analysis: 0.2,
+  behavior_planning: 0,
+  safety_check: 0,
+  vision: 0,
+};
+/** 空输出时允许换备用模型的用途：后台整理 / 创作类。聊天、规划（有规则兜底）、安全检查不换。 */
+const FALLBACK_PURPOSES: readonly GenerateTextInput['purpose'][] = [
+  'memory',
+  'simulation',
+  'moments',
+];
 @Injectable()
 export class ModelGateway implements ModelGatewayPort {
+  private readonly logger = new Logger('ModelGateway');
   constructor(
     @Inject(ModelResolver) private readonly resolver: ModelResolver,
     @Inject(ModelStatusService) private readonly status: ModelStatusService,
@@ -81,7 +104,13 @@ export class ModelGateway implements ModelGatewayPort {
   getModelStatus(userId: string, characterId: string | null) {
     return this.status.getModelStatus(userId, characterId);
   }
-  async generateText(input: GenerateTextInput): Promise<CachedResult> {
+  /**
+   * internal 只供网关自己的降级使用（不属于契约）：fallbackModelKey = 空输出后改用的备用模型。
+   */
+  async generateText(
+    input: GenerateTextInput,
+    internal?: { fallbackModelKey?: string },
+  ): Promise<CachedResult> {
     if (!this.valid(input) || (await this.accounts.getAccountStatus(input.userId)) !== 'active')
       return { ok: false, error: 'bad_request' };
     if (
@@ -128,7 +157,11 @@ export class ModelGateway implements ModelGatewayPort {
       return result;
     }
     const imageCount = input.messages.reduce((n, m) => n + (m.images?.length ?? 0), 0);
-    const resolved = await this.resolver.resolve({ ...input, hasImages: imageCount > 0 });
+    const resolved = await this.resolver.resolve({
+      ...input,
+      hasImages: imageCount > 0,
+      ...(internal?.fallbackModelKey ? { fallbackModelKey: internal.fallbackModelKey } : {}),
+    });
     if (!resolved.ok) {
       await this.cache.save(row, resolved, 'complete');
       return resolved;
@@ -190,6 +223,10 @@ export class ModelGateway implements ModelGatewayPort {
     const budgetMs = input.deadlineAt
       ? Math.max(0, Math.min(60000, Date.parse(input.deadlineAt) - this.clock.nowMs()))
       : 60000;
+    // 空输出 / 截断（docs/refactor/03 第 1.4 B「三步降级」第 2 步）：同模型只重试 1 次，输出额度 ×1.5（思考始终关）。
+    let outputBudget = maxOutputTokens;
+    let emptyRetried = false;
+    const temperature = input.temperature ?? DEFAULT_TEMPERATURE[input.purpose];
     for (let attempt = 0; attempt <= 3; attempt++) {
       const remaining = Math.floor(budgetMs - (performance.now() - wallStart));
       if (remaining <= 0) break;
@@ -201,14 +238,22 @@ export class ModelGateway implements ModelGatewayPort {
               apiKey,
               model: model.upstreamModelId,
               messages: wire,
-              maxOutputTokens,
-              temperature: input.temperature,
+              maxOutputTokens: outputBudget,
+              temperature,
               responseFormat: input.responseFormat,
-              idempotencyKey: `gateway:${row.id}`,
+              idempotencyKey: emptyRetried ? `gateway:${row.id}:e` : `gateway:${row.id}`,
               timeoutMs: Math.min(20000, remaining),
+              thinking: 'off',
             }),
           );
       if (answer.ok || !answer.retryable || attempt === 3) break;
+      if (answer.category === 'empty_output' || answer.category === 'truncated') {
+        if (emptyRetried) break;
+        emptyRetried = true;
+        outputBudget = Math.min(32000, Math.ceil(maxOutputTokens * 1.5));
+        retryCount++;
+        continue;
+      }
       const delay = [2000, 5000, 15000][attempt]! * (0.85 + Math.random() * 0.3);
       if (performance.now() - wallStart + delay >= budgetMs) break;
       await this.wait(Math.round(delay));
@@ -244,7 +289,19 @@ export class ModelGateway implements ModelGatewayPort {
         latencyMs,
         retryCount,
       });
-      if (category !== 'content_rejected' && category !== 'bad_request')
+      const emptyLike = category === 'empty_output' || category === 'truncated';
+      if (emptyLike) {
+        // 第 3 步：模型本身的问题（不是上游故障），不改上游状态；告警后台任务换备用模型再试一次。
+        this.logger.warn(
+          `model_empty_output purpose=${input.purpose} model=${model.modelKey} category=${category}`,
+        );
+        const fallback = await this.emptyOutputFallback(input, model.modelKey, internal);
+        if (fallback) {
+          await this.cache.save(row, fallback, 'complete');
+          return fallback;
+        }
+      }
+      if (category !== 'content_rejected' && category !== 'bad_request' && !emptyLike)
         await this.upstreams.reportStatus(
           model.upstreamId,
           category === 'invalid_key'
@@ -317,6 +374,36 @@ export class ModelGateway implements ModelGatewayPort {
     };
     await this.cache.save(row, complete, 'complete');
     return complete;
+  }
+  /**
+   * 三步降级第 3 步（docs/refactor/03 第 1.4 B）：只对后台整理类用途、且不是成人范围时，
+   * 改用平台默认后台模型（与当前不同时；否则平台默认聊天模型）再调用一次；聊天类用途永不换模型（MDL-04）。
+   * 备用调用是独立的一次网关调用（独立幂等键、冻结、用量记录），失败就返回 null 由调用方按原失败处理。
+   */
+  private async emptyOutputFallback(
+    input: GenerateTextInput,
+    currentModelKey: string,
+    internal?: { fallbackModelKey?: string },
+  ): Promise<CachedResult | null> {
+    if (internal?.fallbackModelKey) return null;
+    if (!FALLBACK_PURPOSES.includes(input.purpose) || input.modelRole !== 'background') return null;
+    if (input.meta?.scenarioMode === 'adult') return null;
+    const candidates = [
+      await this.catalog.defaultModel('background'),
+      await this.catalog.defaultModel('chat'),
+    ];
+    const target = candidates.find(
+      (f) =>
+        f?.entry &&
+        f.entry.modelKey !== currentModelKey &&
+        !f.entry.capabilities.includes('adult_content'),
+    );
+    if (!target?.entry) return null;
+    const result = await this.generateText(
+      { ...input, idempotencyKey: `${input.idempotencyKey}:fb`.slice(0, 200) },
+      { fallbackModelKey: target.entry.modelKey },
+    );
+    return result.ok ? result : null;
   }
   private async replay(first: GenerationRow): Promise<CachedResult> {
     let row = first;
