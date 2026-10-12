@@ -32,7 +32,7 @@ import { POLICY_PORT } from '../../policy/index.js';
 import { CHARACTER_READ_PORT } from '../../characters/index.js';
 import { CHAT_ADMIN_PORT } from '../../chat/index.js';
 import { ADULT_MODEL_READ_PORT } from '../../model-access/index.js';
-import { INITIAL_MODES } from '../domain/persona.js';
+import { INITIAL_MODES, modeOption } from '../domain/persona.js';
 import { ReplyPlanStore } from './plan-store.js';
 import { invalidateReplyPlans } from './invalidate.js';
 import { companionSettings } from '../infra/db/schema.js';
@@ -111,7 +111,7 @@ export class CompanionSettingsService {
     });
     return {
       items: INITIAL_MODES.filter((mode) => allowed.some((m) => m.modeId === mode.modeId)).map(
-        (mode) => ({ id: mode.modeId, name: mode.name }),
+        modeOption,
       ),
     };
   }

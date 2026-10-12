@@ -7,7 +7,7 @@
  */
 import { z } from 'zod';
 import { API_PREFIX, Id, Timestamp, cursorPage, defineEndpoint, tolerantEnum } from '../common.js';
-import { ScenarioMode } from './companion.js';
+import { ScenarioMode, ScenarioModeOption } from './companion.js';
 
 // ---------- 跨角色共享（MEM-07） ----------
 
@@ -78,7 +78,7 @@ export const GroupCompanionEndpoints = {
     path: `${API_PREFIX}/groups/:conversationId/scenario-modes`,
     auth: 'user',
     params: GroupParams,
-    response: z.object({ items: z.array(z.object({ id: ScenarioMode, name: z.string() })) }),
+    response: z.object({ items: z.array(ScenarioModeOption) }),
     summary: '本群可选的情景模式 = 所有成员都具备资格的模式（SOC-03 第 4 条）；不具备的不返回',
   }),
 } as const;

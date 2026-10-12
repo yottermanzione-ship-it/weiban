@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.1. Regenerate: pnpm android:generate
+// Contract 3.2. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.1"
+const val CONTRACT_VERSION: String = "3.2"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -162,6 +162,24 @@ data class AdminAlertFacts(
 typealias AdminAlertKind = String
 
 typealias AdminAlertSeverity = String
+
+@Serializable
+data class AdminAnnouncement(
+    @SerialName("title") val `title`: String,
+    @SerialName("body") val `body`: String,
+    @SerialName("platforms") val `platforms`: List<ReleasePlatform>,
+    @SerialName("startsAt") val `startsAt`: Timestamp?,
+    @SerialName("endsAt") val `endsAt`: Timestamp?,
+    @SerialName("popup") val `popup`: Boolean,
+    @SerialName("pinned") val `pinned`: Boolean,
+    @SerialName("announcementId") val `announcementId`: Id,
+    @SerialName("status") val `status`: String,
+    @SerialName("publishedAt") val `publishedAt`: Timestamp?,
+    @SerialName("withdrawnAt") val `withdrawnAt`: Timestamp?,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("readCount") val `readCount`: Long,
+)
 
 @Serializable
 data class AdminCatalogEntry(
@@ -423,6 +441,20 @@ data class AdminRelationWriteInput(
 )
 
 @Serializable
+data class AdminReleaseNote(
+    @SerialName("platform") val `platform`: ReleasePlatform,
+    @SerialName("version") val `version`: String,
+    @SerialName("versionCode") val `versionCode`: VersionCode,
+    @SerialName("title") val `title`: String,
+    @SerialName("body") val `body`: String,
+    @SerialName("releaseNoteId") val `releaseNoteId`: Id,
+    @SerialName("published") val `published`: Boolean,
+    @SerialName("publishedAt") val `publishedAt`: Timestamp?,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
 data class AdminScenarioMode(
     @SerialName("id") val `id`: String,
     @SerialName("name") val `name`: String,
@@ -647,11 +679,115 @@ data class Anniversary(
 )
 
 @Serializable
+data class Announcement(
+    @SerialName("title") val `title`: String,
+    @SerialName("body") val `body`: String,
+    @SerialName("platforms") val `platforms`: List<ReleasePlatform>,
+    @SerialName("startsAt") val `startsAt`: Timestamp?,
+    @SerialName("endsAt") val `endsAt`: Timestamp?,
+    @SerialName("popup") val `popup`: Boolean,
+    @SerialName("pinned") val `pinned`: Boolean,
+    @SerialName("announcementId") val `announcementId`: Id,
+    @SerialName("publishedAt") val `publishedAt`: Timestamp,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("readAt") val `readAt`: Timestamp?,
+)
+
+@Serializable
+data class AnnouncementAdminEndpointsCreateAnnouncementBody(
+    @SerialName("title") val `title`: String,
+    @SerialName("body") val `body`: String,
+    @SerialName("platforms") val `platforms`: List<ReleasePlatform>? = null,
+    @SerialName("startsAt") val `startsAt`: Timestamp? = null,
+    @SerialName("endsAt") val `endsAt`: Timestamp? = null,
+    @SerialName("popup") val `popup`: Boolean? = null,
+    @SerialName("pinned") val `pinned`: Boolean? = null,
+    @SerialName("publish") val `publish`: Boolean? = null,
+)
+
+@Serializable
+data class AnnouncementAdminEndpointsDeleteAnnouncementParams(
+    @SerialName("announcementId") val `announcementId`: Id,
+)
+
+@Serializable
+data class AnnouncementAdminEndpointsListAnnouncementsResponse(
+    @SerialName("items") val `items`: List<AdminAnnouncement>,
+)
+
+@Serializable
+data class AnnouncementAdminEndpointsPublishAnnouncementParams(
+    @SerialName("announcementId") val `announcementId`: Id,
+)
+
+@Serializable
+data class AnnouncementAdminEndpointsUpdateAnnouncementBody(
+    @SerialName("title") val `title`: String? = null,
+    @SerialName("body") val `body`: String? = null,
+    @SerialName("platforms") val `platforms`: List<ReleasePlatform>? = null,
+    @SerialName("startsAt") val `startsAt`: Timestamp? = null,
+    @SerialName("endsAt") val `endsAt`: Timestamp? = null,
+    @SerialName("popup") val `popup`: Boolean? = null,
+    @SerialName("pinned") val `pinned`: Boolean? = null,
+    @SerialName("resetReads") val `resetReads`: Boolean? = null,
+)
+
+@Serializable
+data class AnnouncementAdminEndpointsUpdateAnnouncementParams(
+    @SerialName("announcementId") val `announcementId`: Id,
+)
+
+@Serializable
+data class AnnouncementAdminEndpointsWithdrawAnnouncementParams(
+    @SerialName("announcementId") val `announcementId`: Id,
+)
+
+@Serializable
+data class AnnouncementEndpointsListAnnouncementsQuery(
+    @SerialName("platform") val `platform`: ReleasePlatform,
+)
+
+@Serializable
+data class AnnouncementEndpointsListAnnouncementsResponse(
+    @SerialName("items") val `items`: List<Announcement>,
+    @SerialName("unreadCount") val `unreadCount`: Long,
+)
+
+@Serializable
+data class AnnouncementEndpointsMarkAnnouncementsReadBody(
+    @SerialName("announcementIds") val `announcementIds`: List<Id>,
+)
+
+typealias AnnouncementStatus = String
+
+@Serializable
+data class AnnouncementWrite(
+    @SerialName("title") val `title`: String,
+    @SerialName("body") val `body`: String,
+    @SerialName("platforms") val `platforms`: List<ReleasePlatform>,
+    @SerialName("startsAt") val `startsAt`: Timestamp?,
+    @SerialName("endsAt") val `endsAt`: Timestamp?,
+    @SerialName("popup") val `popup`: Boolean,
+    @SerialName("pinned") val `pinned`: Boolean,
+)
+
+@Serializable
 data class ApiError(
     @SerialName("error") val `error`: ApiErrorError,
 )
 
 typealias AppTheme = String
+
+@Serializable
+data class AppVersionPolicy(
+    @SerialName("platform") val `platform`: ReleasePlatform,
+    @SerialName("latestVersion") val `latestVersion`: String?,
+    @SerialName("latestVersionCode") val `latestVersionCode`: Long?,
+    @SerialName("downloadUrl") val `downloadUrl`: String?,
+    @SerialName("minSupportedVersionCode") val `minSupportedVersionCode`: Long?,
+    @SerialName("forceUpdateMessage") val `forceUpdateMessage`: String?,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp?,
+)
 
 @Serializable
 data class ApprovePublicUpdateRequest(
@@ -1932,6 +2068,18 @@ data class ClientSyncState(
 )
 
 @Serializable
+data class ClientVersionQuery(
+    @SerialName("platform") val `platform`: ReleasePlatform,
+    @SerialName("versionCode") val `versionCode`: VersionCode,
+)
+
+@Serializable
+data class ClientVersionQueryInput(
+    @SerialName("platform") val `platform`: ReleasePlatform,
+    @SerialName("versionCode") val `versionCode`: VersionCode,
+)
+
+@Serializable
 data class CompanionEndpointsGetForCharacterParams(
     @SerialName("characterId") val `characterId`: Id,
 )
@@ -1958,7 +2106,7 @@ data class CompanionEndpointsListModesParams(
 
 @Serializable
 data class CompanionEndpointsListModesResponse(
-    @SerialName("items") val `items`: List<CompanionEndpointsListModesResponseItemsItem>,
+    @SerialName("items") val `items`: List<ScenarioModeOption>,
 )
 
 @Serializable
@@ -4396,7 +4544,7 @@ data class GroupCompanionEndpointsGetSettingsParams(
 
 @Serializable
 data class GroupCompanionEndpointsListModesResponse(
-    @SerialName("items") val `items`: List<GroupCompanionEndpointsListModesResponseItemsItem>,
+    @SerialName("items") val `items`: List<ScenarioModeOption>,
 )
 
 @Serializable
@@ -7163,6 +7311,96 @@ data class RelationParamsInput(
 typealias RelationType = String
 
 @Serializable
+data class ReleaseAdminEndpointsCreateReleaseNoteBody(
+    @SerialName("platform") val `platform`: ReleasePlatform,
+    @SerialName("version") val `version`: String,
+    @SerialName("versionCode") val `versionCode`: VersionCode,
+    @SerialName("title") val `title`: String? = null,
+    @SerialName("body") val `body`: String,
+    @SerialName("published") val `published`: Boolean? = null,
+)
+
+@Serializable
+data class ReleaseAdminEndpointsDeleteReleaseNoteParams(
+    @SerialName("releaseNoteId") val `releaseNoteId`: Id,
+)
+
+@Serializable
+data class ReleaseAdminEndpointsListReleaseNotesQuery(
+    @SerialName("platform") val `platform`: ReleasePlatform? = null,
+)
+
+@Serializable
+data class ReleaseAdminEndpointsListReleaseNotesResponse(
+    @SerialName("items") val `items`: List<AdminReleaseNote>,
+)
+
+@Serializable
+data class ReleaseAdminEndpointsListVersionPoliciesResponse(
+    @SerialName("items") val `items`: List<AppVersionPolicy>,
+)
+
+@Serializable
+data class ReleaseAdminEndpointsUpdateReleaseNoteBody(
+    @SerialName("version") val `version`: String? = null,
+    @SerialName("title") val `title`: String? = null,
+    @SerialName("body") val `body`: String? = null,
+    @SerialName("published") val `published`: Boolean? = null,
+)
+
+@Serializable
+data class ReleaseAdminEndpointsUpdateReleaseNoteParams(
+    @SerialName("releaseNoteId") val `releaseNoteId`: Id,
+)
+
+@Serializable
+data class ReleaseAdminEndpointsUpdateVersionPolicyBody(
+    @SerialName("latestVersion") val `latestVersion`: String?,
+    @SerialName("latestVersionCode") val `latestVersionCode`: Long?,
+    @SerialName("downloadUrl") val `downloadUrl`: String?,
+    @SerialName("minSupportedVersionCode") val `minSupportedVersionCode`: Long?,
+    @SerialName("forceUpdateMessage") val `forceUpdateMessage`: String?,
+)
+
+@Serializable
+data class ReleaseAdminEndpointsUpdateVersionPolicyParams(
+    @SerialName("platform") val `platform`: ReleasePlatform,
+)
+
+@Serializable
+data class ReleaseEndpointsCheckVersionResponse(
+    @SerialName("platform") val `platform`: ReleasePlatform,
+    @SerialName("latestVersion") val `latestVersion`: String?,
+    @SerialName("latestVersionCode") val `latestVersionCode`: Long?,
+    @SerialName("downloadUrl") val `downloadUrl`: String?,
+    @SerialName("minSupportedVersionCode") val `minSupportedVersionCode`: Long?,
+    @SerialName("updateAvailable") val `updateAvailable`: Boolean,
+    @SerialName("updateRequired") val `updateRequired`: Boolean,
+    @SerialName("forceUpdateMessage") val `forceUpdateMessage`: String?,
+    @SerialName("latestNote") val `latestNote`: ReleaseNote?,
+)
+
+@Serializable
+data class ReleaseEndpointsListReleaseNotesResponse(
+    @SerialName("items") val `items`: List<ReleaseNote>,
+    @SerialName("whatsNew") val `whatsNew`: List<ReleaseNote>,
+    @SerialName("lastSeenVersionCode") val `lastSeenVersionCode`: Long?,
+)
+
+@Serializable
+data class ReleaseNote(
+    @SerialName("platform") val `platform`: ReleasePlatform,
+    @SerialName("version") val `version`: String,
+    @SerialName("versionCode") val `versionCode`: VersionCode,
+    @SerialName("title") val `title`: String,
+    @SerialName("body") val `body`: String,
+    @SerialName("releaseNoteId") val `releaseNoteId`: Id,
+    @SerialName("publishedAt") val `publishedAt`: Timestamp,
+)
+
+typealias ReleasePlatform = String
+
+@Serializable
 data class Reminder(
     @SerialName("reminderId") val `reminderId`: Id,
     @SerialName("characterId") val `characterId`: Id,
@@ -7249,6 +7487,16 @@ data class ScenarioModeAdminEndpointsUpdateScenarioModeParams(
 )
 
 typealias ScenarioModeAppliesTo = String
+
+@Serializable
+data class ScenarioModeOption(
+    @SerialName("id") val `id`: ScenarioMode,
+    @SerialName("name") val `name`: String,
+    @SerialName("description") val `description`: String? = null,
+    @SerialName("section") val `section`: String? = null,
+    @SerialName("recommended") val `recommended`: Boolean? = null,
+    @SerialName("aiReady") val `aiReady`: Boolean? = null,
+)
 
 typealias SearchKeyword = String
 
@@ -8974,6 +9222,8 @@ object UserUpdatePayloadSerializer : KSerializer<UserUpdatePayload> {
 
 typealias Username = String
 
+typealias VersionCode = Long
+
 @Serializable
 data class Voice(
     @SerialName("voiceId") val `voiceId`: Id,
@@ -9497,12 +9747,6 @@ data class ClientSyncStateRecalledItem(
 data class ClientSyncStateExcludedItem(
     @SerialName("conversationId") val `conversationId`: Id,
     @SerialName("range") val `range`: ClientSyncStateExcludedItemRange,
-)
-
-@Serializable
-data class CompanionEndpointsListModesResponseItemsItem(
-    @SerialName("id") val `id`: ScenarioMode,
-    @SerialName("name") val `name`: String,
 )
 
 @Serializable
@@ -10560,12 +10804,6 @@ data class EventsWishlistItemCompletedPayload(
     @SerialName("characterId") val `characterId`: Id,
     @SerialName("itemId") val `itemId`: Id,
     @SerialName("firstCompletion") val `firstCompletion`: Boolean,
-)
-
-@Serializable
-data class GroupCompanionEndpointsListModesResponseItemsItem(
-    @SerialName("id") val `id`: ScenarioMode,
-    @SerialName("name") val `name`: String,
 )
 
 @Serializable

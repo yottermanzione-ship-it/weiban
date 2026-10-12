@@ -18,6 +18,11 @@ import { InviteService } from './application/invites.js';
 import { SessionService } from './application/sessions.js';
 import { SettingsService } from './application/settings.js';
 import { IdentityAdminController, IdentityController } from './http/identity.controller.js';
+import { AnnouncementService, ReleaseService } from './application/announcements.js';
+import {
+  AnnouncementAdminController,
+  AnnouncementController,
+} from './http/announcements.controller.js';
 import { LoginThrottle } from './infra/login-throttle.js';
 import { PasswordHasher } from './infra/password-hasher.js';
 import {
@@ -30,7 +35,12 @@ import {
 
 @Module({
   imports: [MediaModule],
-  controllers: [IdentityController, IdentityAdminController],
+  controllers: [
+    IdentityController,
+    IdentityAdminController,
+    AnnouncementController,
+    AnnouncementAdminController,
+  ],
   providers: [
     { provide: PASSWORD_HASHER, useValue: new PasswordHasher() },
     {
@@ -45,6 +55,8 @@ import {
     DeletionService,
     PurgeVerifier,
     IdentityCommands,
+    AnnouncementService,
+    ReleaseService,
     // 平台鉴权守卫按这个令牌找令牌校验器（kernel.md 第 10 节）
     { provide: SESSION_VERIFIER, useExisting: SessionService },
     { provide: IDENTITY_SESSION_READ_PORT, useExisting: SessionService },

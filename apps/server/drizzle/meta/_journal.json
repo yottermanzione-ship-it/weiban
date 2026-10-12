@@ -506,6 +506,27 @@
       "when": 1798300000000,
       "tag": "0083_user_child_feature_flags",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1798400000000,
+      "tag": "0084_builtin_pet_species",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1798500000000,
+      "tag": "0085_scenario_presets",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1798600000000,
+      "tag": "0086_announcements_release_notes",
+      "breakpoints": true
     }
   ]
 }

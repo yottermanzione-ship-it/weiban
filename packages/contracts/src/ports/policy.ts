@@ -38,6 +38,11 @@ export interface ScenarioModeTraits {
   modeId: string;
   containsRomance: boolean;
   containsAdultContent: boolean;
+  /**
+   * 3.2：管理员允许列表（角色卡 modes.adminAllowlist）没有单独列出本模式时，按这个模式是否在列表中判断。
+   * 用于新增的风格类预设（auto / treehole / cheer 跟随 daily），避免旧角色卡因列表里没有新 id 而看不到。
+   */
+  allowlistFallback?: string;
 }
 
 export type PolicyDenyReason =

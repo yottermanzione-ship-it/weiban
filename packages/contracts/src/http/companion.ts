@@ -8,8 +8,41 @@
 import { z } from 'zod';
 import { API_PREFIX, Id, Timestamp, defineEndpoint } from '../common.js';
 
-export const ScenarioMode = z.enum(['daily', 'tsundere', 'romance', 'adult']);
+/**
+ * 情景模式（界面叫「情景预设」，docs/refactor/02 第 5 节）。
+ * 3.2（换壳 UI 批次，次版本）新增 auto（自动）、treehole（树洞分享）、cheer（加油打气）三个可选值：
+ * AI 策略未实现前，服务器按 daily（日常）处理回复；客户端照常显示和切换。
+ * 客户端遇到不认识的值按 daily 显示（接收端容错）。
+ */
+export const ScenarioMode = z.enum([
+  'daily',
+  'tsundere',
+  'romance',
+  'adult',
+  'auto',
+  'treehole',
+  'cheer',
+]);
 export type ScenarioMode = z.infer<typeof ScenarioMode>;
+
+/**
+ * 情景预设弹层的一项。服务器按弹层顺序返回（自动、日常聊天、情侣暧昧、树洞分享、傲娇斗嘴、加油打气、私密），
+ * 只返回该角色（群聊：所有成员）有资格的项。3.2 新增的可选字段旧客户端忽略。
+ */
+export const ScenarioModeOption = z.object({
+  id: ScenarioMode,
+  /** 显示名（3.2 起：日常聊天 / 情侣暧昧 / 傲娇斗嘴 / 私密 等）。 */
+  name: z.string(),
+  /** 3.2：一句说明（「像朋友一样聊」）。 */
+  description: z.string().optional(),
+  /** 3.2：preset = 普通预设卡片；private = 弹层底部单独的「私密」一栏（成人内容）。 */
+  section: z.enum(['preset', 'private']).optional(),
+  /** 3.2：是否显示「推荐」角标（目前只有 auto）。 */
+  recommended: z.boolean().optional(),
+  /** 3.2：AI 是否已按该预设调整风格；false 表示暂按日常聊天回复（界面可照常显示）。 */
+  aiReady: z.boolean().optional(),
+});
+export type ScenarioModeOption = z.infer<typeof ScenarioModeOption>;
 export const ProactiveFrequency = z.enum(['low', 'medium', 'high']);
 export const CompanionSettings = z.object({
   /** 默认关闭秒回（CHAT-04 第 1 条）。 */
@@ -48,8 +81,8 @@ export const CompanionEndpoints = {
     path: `${API_PREFIX}/characters/:characterId/scenario-modes`,
     auth: 'user',
     params: z.object({ characterId: Id }),
-    response: z.object({ items: z.array(z.object({ id: ScenarioMode, name: z.string() })) }),
-    summary: '仅返回该角色有资格显示的情景模式',
+    response: z.object({ items: z.array(ScenarioModeOption) }),
+    summary: '仅返回该角色有资格显示的情景模式（情景预设），按弹层顺序',
   }),
   getDefaults: defineEndpoint({
     method: 'GET',

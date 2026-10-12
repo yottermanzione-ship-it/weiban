@@ -45,6 +45,7 @@ import {
   type MediaSync,
 } from '../tokens.js';
 import type { ObjectStorage } from '../infra/storage.js';
+import { isBuiltinKey, renderBuiltinSvg } from './builtin-art.js';
 type Row = typeof objects.$inferSelect;
 
 /** 素材库用途：所有者为空（平台），所有登录用户可读，只能管理员上传。 */
@@ -175,7 +176,7 @@ export class MediaService
 
   private async removeRow(row: Row): Promise<void> {
     await this.database.db.update(objects).set({ state: 'deleting' }).where(eq(objects.id, row.id));
-    await this.storage.delete(row.storageKey);
+    if (!isBuiltinKey(row.storageKey)) await this.storage.delete(row.storageKey);
     if (row.thumbStorageKey) await this.storage.delete(row.thumbStorageKey);
     await this.database.db.delete(objects).where(eq(objects.id, row.id));
   }
@@ -455,6 +456,11 @@ export class MediaService
     const row = await this.get(mediaId);
     if (row.ownerId !== null && row.ownerId !== grant.userId)
       throw new AppError('not_found', '找不到媒体');
+    if (isBuiltinKey(row.storageKey)) {
+      const body = renderBuiltinSvg(row.storageKey);
+      if (!body) throw new AppError('not_found', '找不到媒体');
+      return { body, mimeType: row.mimeType };
+    }
     const thumb = grant.v === 't' && row.thumbStorageKey;
     try {
       const cipher = await this.storage.get(thumb ? row.thumbStorageKey! : row.storageKey);
@@ -479,8 +485,17 @@ export class MediaService
     return row.ownerId === userId || (row.ownerId === null && LIBRARY_PURPOSES.has(row.purpose));
   }
 
+  /** 内置素材转 PNG（模型和复制品统一用位图，避免下游不认 SVG）。 */
+  private async builtinPng(storageKey: string): Promise<Buffer> {
+    const svg = renderBuiltinSvg(storageKey);
+    if (!svg) throw new AppError('not_found', '找不到媒体');
+    return sharp(svg).png().toBuffer();
+  }
+
   async readBytes(mediaId: string): Promise<{ bytes: Uint8Array; mimeType: string }> {
     const row = await this.get(mediaId);
+    if (isBuiltinKey(row.storageKey))
+      return { bytes: await this.builtinPng(row.storageKey), mimeType: 'image/png' };
     const cipher = await this.storage.get(row.storageKey);
     const bytes = await this.crypto.open(
       row.ownerId ?? PLATFORM_KEY_OWNER,
@@ -529,6 +544,20 @@ export class MediaService
   /** 复制对象（重新加密到新所有者），保留宽高、时长、缩略图与内容摘要。 */
   async copyRow(mediaId: string, ownerId: string | null, purpose: string): Promise<Row> {
     const source = await this.get(mediaId);
+    if (isBuiltinKey(source.storageKey))
+      return this.store({
+        ownerId,
+        purpose,
+        processed: {
+          body: await this.builtinPng(source.storageKey),
+          mimeType: 'image/png',
+          width: source.width,
+          height: source.height,
+          thumb: null,
+          durationMs: null,
+        },
+        transcriptStatus: null,
+      });
     const sourceOwner = source.ownerId ?? PLATFORM_KEY_OWNER;
     const body = await this.crypto.open(
       sourceOwner,
@@ -567,7 +596,7 @@ export class MediaService
     if (!row) return;
     const remove = async () => {
       try {
-        await this.storage.delete(row.storageKey);
+        if (!isBuiltinKey(row.storageKey)) await this.storage.delete(row.storageKey);
         if (row.thumbStorageKey) await this.storage.delete(row.thumbStorageKey);
         await this.database.db.delete(objects).where(eq(objects.id, row.id));
       } catch {

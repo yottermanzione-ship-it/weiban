@@ -62,7 +62,7 @@ import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from '../../identity
 import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
-import { INITIAL_MODES } from '../domain/persona.js';
+import { INITIAL_MODES, modeOption } from '../domain/persona.js';
 import { highRisk, outputAllowed } from '../domain/reply-rules.js';
 import { callModelForCare, careFallback } from './safety-care.js';
 import {
@@ -234,7 +234,7 @@ export class GroupChatService {
   async listModes(userId: string, conversationId: string) {
     const conversation = await this.ownedGroup(userId, conversationId);
     const allowed = await this.allowedModes(userId, this.memberIds(conversation));
-    return { items: allowed.map((m) => ({ id: m.modeId, name: m.name })) };
+    return { items: allowed.map(modeOption) };
   }
 
   private async allowedModes(userId: string, characterIds: string[]) {

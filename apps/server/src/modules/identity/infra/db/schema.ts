@@ -169,3 +169,88 @@ export const deletionProgress = identitySchema.table(
   },
   (t) => [primaryKey({ columns: [t.userId, t.module] })],
 );
+
+// ---------- 公告与更新说明（换壳 UI 批次，迁移 0086，docs/backend/announcements.md） ----------
+
+/** 公告。status：draft / published / withdrawn；platforms 空数组 = 所有平台。 */
+export const announcements = identitySchema.table(
+  'announcements',
+  {
+    id: uuid('id').primaryKey(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    platforms: text('platforms').array().notNull(),
+    startsAt: tz('starts_at'),
+    endsAt: tz('ends_at'),
+    popup: boolean('popup').notNull(),
+    pinned: boolean('pinned').notNull(),
+    status: text('status').notNull(),
+    publishedAt: tz('published_at'),
+    withdrawnAt: tz('withdrawn_at'),
+    createdBy: uuid('created_by'),
+    createdAt: tz('created_at').notNull(),
+    updatedAt: tz('updated_at').notNull(),
+  },
+  (t) => [index('announcements_status_idx').on(t.status, t.publishedAt)],
+);
+
+/** 公告已读回执（用户删除时级联删除）。 */
+export const announcementReads = identitySchema.table(
+  'announcement_reads',
+  {
+    announcementId: uuid('announcement_id')
+      .notNull()
+      .references(() => announcements.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    readAt: tz('read_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.announcementId, t.userId] }),
+    index('announcement_reads_user_idx').on(t.userId),
+  ],
+);
+
+/** 每个版本的更新说明；同平台同版本号唯一。 */
+export const releaseNotes = identitySchema.table(
+  'release_notes',
+  {
+    id: uuid('id').primaryKey(),
+    platform: text('platform').notNull(),
+    version: text('version').notNull(),
+    versionCode: integer('version_code').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    published: boolean('published').notNull(),
+    publishedAt: tz('published_at'),
+    createdAt: tz('created_at').notNull(),
+    updatedAt: tz('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('release_notes_platform_code_uq').on(t.platform, t.versionCode)],
+);
+
+/** 每个平台一行的版本策略。 */
+export const appVersionPolicies = identitySchema.table('app_version_policies', {
+  platform: text('platform').primaryKey(),
+  latestVersion: text('latest_version'),
+  latestVersionCode: integer('latest_version_code'),
+  downloadUrl: text('download_url'),
+  minSupportedVersionCode: integer('min_supported_version_code'),
+  forceUpdateMessage: text('force_update_message'),
+  updatedAt: tz('updated_at').notNull(),
+});
+
+/** 用户在某平台上看过的最高版本「本版新功能」（只前进）。 */
+export const releaseNoteSeen = identitySchema.table(
+  'release_note_seen',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    platform: text('platform').notNull(),
+    versionCode: integer('version_code').notNull(),
+    updatedAt: tz('updated_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.platform] })],
+);

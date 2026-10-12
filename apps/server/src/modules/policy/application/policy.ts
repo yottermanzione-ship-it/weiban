@@ -69,7 +69,10 @@ export class PolicyService implements PolicyPort {
     if (!p) return [];
     return input.candidates.filter(
       (m) =>
-        (!input.adminAllowlist || input.adminAllowlist.includes(m.modeId)) &&
+        (!input.adminAllowlist ||
+          input.adminAllowlist.includes(m.modeId) ||
+          (m.allowlistFallback !== undefined &&
+            input.adminAllowlist.includes(m.allowlistFallback))) &&
         (!m.containsAdultContent || p.adultModeEligible) &&
         (!m.containsRomance || p.romanceAllowed),
     );

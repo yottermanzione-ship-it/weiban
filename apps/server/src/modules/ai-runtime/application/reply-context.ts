@@ -5,6 +5,7 @@ import { petContextBlock } from '../domain/pets.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
 import { z } from 'zod';
 import {
+  ScenarioMode,
   type CharacterReadPort,
   type ChatReadPort,
   type ChatAdminPort,
@@ -49,7 +50,7 @@ export const ReplySnapshot = z.object({
   ),
   personaVersion: z.number().int(),
   memoryRevision: z.number().int().nonnegative().default(0),
-  scenarioMode: z.enum(['daily', 'tsundere', 'romance', 'adult']).default('daily'),
+  scenarioMode: ScenarioMode.default('daily'),
   promptTemplateVersion: z.string(),
   instantReply: z.boolean(),
   splitBubbles: z.boolean(),

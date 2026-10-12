@@ -95,6 +95,15 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.2（2026-10-13，换壳 UI 批次后端配套）
+
+全部向后兼容（只新增接口、新增可选字段、新增枚举值；安卓枚举是字符串别名，不认识的值按兜底处理）。说明见 `docs/handoffs/2026-10-13-backend-lead-ui-refresh.md`、`docs/backend/announcements.md`。
+
+- 新文件 `http/announcements.ts`：公告（`AnnouncementEndpoints`、`AnnouncementAdminEndpoints`）、更新说明与版本检查（`ReleaseEndpoints`、`ReleaseAdminEndpoints`）。数据归 identity（迁移 0086）。
+- `ScenarioMode` 新增 `auto` / `treehole` / `cheer`（AI 未实现前服务器按 daily 回复）；新增 `ScenarioModeOption`（listModes 响应项，可选字段 description / section / recommended / aiReady）。
+- 内部端口 `ScenarioModeTraits.allowlistFallback`（可选）：管理员允许列表未列出时按该模式判断。
+- 宠物图鉴不改契约：迁移 0084 预置 3 物种 × 3 外观的内置占位插画。
+
 ### 3.1（2026-10-11，积压清理第一步：L3～L7 契约一次收口）
 
 依据：ADR-0028；实现清单与迁移号 `docs/architecture/contracts-3.1-map.md`；积压编号见 `docs/handoffs/2026-10-09-pm-dispatch-queue.md`。全部向后兼容：新响应字段一律可选，旧服务器不实现也能通过类型检查，旧客户端忽略。开发期间以「3.0.1」「3.0.2」名义做过的改动一并归入 3.1（版本规则没有补丁号；两次「3.0.1」也撞了号）。

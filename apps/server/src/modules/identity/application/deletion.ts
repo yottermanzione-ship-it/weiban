@@ -360,7 +360,9 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
             + (SELECT count(*) FROM identity.profiles WHERE user_id = $1)
             + (SELECT count(*) FROM identity.notification_settings WHERE user_id = $1)
             + (SELECT count(*) FROM identity.preferences WHERE user_id = $1)
-            + (SELECT count(*) FROM identity.deletion_progress WHERE user_id = $1) AS n`,
+            + (SELECT count(*) FROM identity.deletion_progress WHERE user_id = $1)
+            + (SELECT count(*) FROM identity.announcement_reads WHERE user_id = $1)
+            + (SELECT count(*) FROM identity.release_note_seen WHERE user_id = $1) AS n`,
       [userId],
     );
     return Number(rows[0]?.n ?? 0);
