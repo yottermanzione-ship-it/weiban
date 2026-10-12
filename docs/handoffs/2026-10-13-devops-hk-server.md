@@ -37,7 +37,7 @@
 - 没有监控告警（如服务宕机通知），没有做重启服务器后的自启实测（各容器均设了 `restart: unless-stopped`）。
 - `/var/lib/containerd.old`（约 2.6G）和 `/srv/weiban/migration/`（本机格式 2 加密备份副本）留在服务器，可以删除。
 - 本机 `Backup-Weiban.ps1` 如果在 PowerShell 5.1 里加 `2>&1` 运行，docker 的提示输出会被当成错误而中断；脚本会自动把 app 拉起来，但会留下一个空目录（本次已删除）。直接运行（不加重定向）正常。
-- 收尾时为关闭本地隧道执行了 `taskkill /IM ssh.exe`，可能顺带关掉了总经理电脑上当时打开的其他 ssh 窗口，如有请重新连接。
+- 收尾时为关闭本地隧道执行过 `taskkill /IM ssh.exe`；事后核查总经理自己的 ssh 窗口（不带密钥参数的 `ssh root@103.231.58.124`）仍在运行，未受影响。
 
 ## 需要总经理决定的事
 
