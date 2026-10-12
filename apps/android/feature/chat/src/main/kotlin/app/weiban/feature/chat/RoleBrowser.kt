@@ -204,6 +204,8 @@ private class CatalogUi {
                     },
             )
         }
+    // 列表内容与分页按钮使用本次组合读取的同一份响应。
+    val catalog = page.data
     Text("角色广场 · 预设角色", Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.headlineSmall)
     Row(Modifier.fillMaxWidth().padding(horizontal = WbSpace.S5)) {
         OutlinedTextField(ui.query, { ui.query = it.take(50) }, Modifier.weight(1f), label = { Text("搜索名字、别名、作品") })
@@ -216,7 +218,7 @@ private class CatalogUi {
     if (page.error != null) Text(page.error!!, Modifier.padding(WbSpace.S5))
     if (page.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
     LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
-        items(page.data?.items.orEmpty(), key = { it.characterId }) { role ->
+        items(catalog?.items.orEmpty(), key = { it.characterId }) { role ->
             ListItem(
                 headlineContent = { Text(role.name) },
                 leadingContent = { RoleAvatar(repository, owner, RoleAvatarIdentity(role.characterId, role.name, role.avatar)) },
@@ -226,11 +228,11 @@ private class CatalogUi {
             )
             HorizontalDivider()
         }
-        if (!page.loading && page.data?.items?.isEmpty() == true) item { Text("没有找到角色", Modifier.padding(WbSpace.S5)) }
+        if (!page.loading && catalog?.items?.isEmpty() == true) item { Text("没有找到角色", Modifier.padding(WbSpace.S5)) }
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         if (ui.previous.isNotEmpty()) TextButton(onClick = { ui.back() }, enabled = !page.loading) { Text("上一页角色") }
-        page.data?.nextCursor?.let { next -> TextButton(onClick = { ui.next(next) }, enabled = !page.loading) { Text("下一页角色") } }
+        catalog?.nextCursor?.let { next -> TextButton(onClick = { ui.next(next) }, enabled = !page.loading) { Text("下一页角色") } }
         if (page.error != null) TextButton(onClick = { page.refresh() }) { Text("重试") }
     }
 }

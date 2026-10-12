@@ -22,6 +22,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -48,6 +49,8 @@ class RoleBrowserTest {
     private val opened = ConcurrentLinkedQueue<String>()
 
     @Volatile private var accepted = false
+
+    @Volatile private var catalogBodyDelayMs = 0L
     private val firstId = "01920000-0000-7000-8000-00000000001a"
     private val secondId = "01920000-0000-7000-8000-00000000001b"
     private val conversationId = "01920000-0000-7000-8000-000000000099"
@@ -196,12 +199,13 @@ class RoleBrowserTest {
                 profile.basis,
                 false,
             )
-        return MockResponse().setBody(
-            api.json.encodeToString(
-                CharacterEndpointsSearchPlazaResponse.serializer(),
-                CharacterEndpointsSearchPlazaResponse(listOf(summary), if (second) null else "next-page"),
-            ),
-        )
+        return MockResponse()
+            .setBody(
+                api.json.encodeToString(
+                    CharacterEndpointsSearchPlazaResponse.serializer(),
+                    CharacterEndpointsSearchPlazaResponse(listOf(summary), if (second) null else "next-page"),
+                ),
+            ).setBodyDelay(catalogBodyDelayMs, TimeUnit.MILLISECONDS)
     }
 
     private fun addResponse(request: RecordedRequest): MockResponse {
@@ -225,6 +229,15 @@ class RoleBrowserTest {
             // 只记录测试请求的路径，不包含Authorization或用户消息；原始超时作为cause保留。
             throw AssertionError("首次角色未显示；请求数=${server.requestCount}；路径=${requests.toList()}\n${compose.onRoot().printToString()}", error)
         }
+    }
+
+    @Test fun delayedCatalogResponseDisplaysFirstRoleWithoutInteraction() {
+        catalogBodyDelayMs = 750
+        compose.setContent { WeibanTheme { RoleBrowser(repository, runtime, owner, true, opened::add) } }
+        awaitFirstRole()
+        assertTrue(requests.any { it == "GET /api/v1/characters" })
+        assertTrue(posts.isEmpty())
+        assertTrue(opened.isEmpty())
     }
 
     @Test fun actualPlazaPaginationGreetingAndRestoreChoiceUseRealHttp() {
