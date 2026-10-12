@@ -28,13 +28,30 @@ export function replyDelay(text: string, instant: boolean, elapsedMs: number): n
   return Math.max(0, Math.min(wanted, P01_REPLY_DELAY.firstBubbleDeadlineMs - elapsedMs));
 }
 export function highRisk(text: string): 'high' | 'suspected' | 'none' {
+  const message = text.normalize('NFKC');
   if (
     /(?:我|自己).{0,12}(?:要自杀|想自杀|不想活|准备跳楼|割腕|结束生命)|(?:已经|刚刚).{0,8}(?:吞药|吃了.{0,5}安眠药)|(?:我要|我想).{0,8}(?:杀死自己|跳下去)/u.test(
-      text,
+      message,
     )
   )
     return 'high';
-  if (/自杀|自伤|活不下去|想消失|不如死了/u.test(text)) return 'suspected';
+  // SAFE06-010/011/032：明确的谐音表达和以伤害自己相威胁，不能因模型不可用漏掉。
+  if (
+    /(?:^|[，。！!?？\s])紫砂(?:算了|得了|吧)(?:$|[，。！!?？\s])|(?:想|要|准备|干脆|还是|不如)\s*紫砂|想\s*si(?![a-z])/iu.test(
+      message,
+    ) ||
+    /(?:不回|不理|不陪|不答复)我?.{0,6}(?:我(?:就|要|会)|就)(?:去死|自杀|跳楼)/u.test(message)
+  )
+    return 'high';
+  // SAFE06-020的即时临边信号；明确说明拍照/看风景的日常活动不是这个信号。
+  if (
+    /我.{0,6}(?:现在|已经|正在).{0,4}(?:站在|站到|走到|到了).{0,4}(?:天台|楼顶|楼边|桥边)/u.test(
+      message,
+    ) &&
+    !/(?:天台|楼顶|楼边|桥边).{0,16}(?:拍照|晒太阳|看.{0,3}(?:日出|日落|风景|星星))/u.test(message)
+  )
+    return 'high';
+  if (/自杀|自伤|活不下去|想消失|不如死了/u.test(message)) return 'suspected';
   return 'none';
 }
 export function outputAllowed(
