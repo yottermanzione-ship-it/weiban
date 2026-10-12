@@ -221,10 +221,11 @@ describeDb('T041真实启动：注册→延迟接受→HTTP上游→计费/消�
       ).toBe(true),
     );
     const greeting = await waitCharacterText(registered.session.token, cid, FLOW_GREETING);
+    // 隔离发送幂等与计费用例；撤回草稿等小巧思另有真实链路/配额测试。
     await http()
       .patch(`/api/v1/characters/${characterId}/companion-settings`)
       .set('Authorization', auth)
-      .send({ instantReply: true, splitBubbles: false })
+      .send({ instantReply: true, splitBubbles: false, personaFit: 1 })
       .expect(200);
     const body = { clientMsgId: newId(), content: { type: 'text', text: FLOW_INPUT } };
     const sentAt = Date.now();
@@ -303,7 +304,6 @@ describeDb('T041真实启动：注册→延迟接受→HTTP上游→计费/消�
     ).toContain(replyId);
     const page = await messages(registered.session.token, cid);
     expect(page.filter((m) => m.clientMsgId === ack.clientMsgId)).toHaveLength(1);
-    expect(page.filter((m) => m.senderKind === 'character')).toHaveLength(2);
     await vi.waitFor(async () => {
       const rows = await db.query<{
         charged_micros: string;
@@ -353,5 +353,10 @@ describeDb('T041真实启动：注册→延迟接受→HTTP上游→计费/消�
       expect(plans.rows.every((plan) => plan.status === 'done')).toBe(true);
       expect(plans.rows.map((plan) => plan.kind).sort()).toEqual(['greeting', 'message']);
     });
+    const characterMessages = page.filter((m) => m.senderKind === 'character');
+    expect(
+      characterMessages,
+      JSON.stringify(characterMessages.map((m) => ({ seq: m.seq, status: m.status }))),
+    ).toHaveLength(2);
   }
 });

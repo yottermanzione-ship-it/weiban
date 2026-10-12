@@ -277,6 +277,13 @@ class AgentSession implements CallAgentSession {
       result.ok && outputAllowed(result.value.text, this.info.policy, adult)
         ? result.value.text.replace(/[（(][^）)]{0,20}[）)]/gu, '').trim()
         : '';
+    if (adult && !result.ok && result.error === 'content_rejected') {
+      const deflect = this.info.role.card.data.safetyStyle.deflectStyle?.trim();
+      text =
+        deflect && outputAllowed(deflect, this.info.policy, false)
+          ? deflect
+          : '这个话题先放一放，好吗？我们聊聊你今天过得怎么样。';
+    }
     if (!text)
       text = this.careActive
         ? '我在这儿陪着你。先告诉我你现在安全吗？身边有信任的人可以陪你吗？也可以打 12356。'
