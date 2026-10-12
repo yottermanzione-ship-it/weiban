@@ -14,6 +14,7 @@ import {
   type GenerateTextInput,
   type ModelGatewayPort,
   type ChatReadPort,
+  type ChatParticipantPort,
   type CallAgentPort,
   type RealtimeAsrSession,
   type SynthesizeSpeechInput,
@@ -40,7 +41,7 @@ import {
   CHARACTER_EVALUATOR,
 } from '../src/modules/characters/testing.js';
 import { ContactsCommands, ContactsTestQueries } from '../src/modules/contacts/testing.js';
-import { CHAT_READ_PORT } from '../src/modules/chat/index.js';
+import { CHAT_READ_PORT, CHAT_PARTICIPANT_PORT } from '../src/modules/chat/index.js';
 import {
   MODEL_GATEWAY_PORT,
   MODEL_GATEWAY_MEDIA_PORT,
@@ -55,6 +56,8 @@ import {
   AiRuntimeLifecycle,
   ProactiveSchedulerService,
   proactivePlans,
+  groupReplyPlans,
+  GroupReplyStore,
 } from '../src/modules/ai-runtime/testing.js';
 import {
   ModelResolver,
@@ -361,6 +364,11 @@ describeDb('成人输入复核：真实HTTP/PG/事件/加密/回复链，网关�
         limit: 30,
       });
       return {
+        userId: actor.userId,
+        token: actor.token,
+        conversationId: group.conversationId,
+        triggerMessageId: job!.triggerMessageId,
+        triggerSeq: job!.triggerSeq,
         calls: calls.filter((call) => call.conversationId === group.conversationId),
         replies: history.filter((message) => message.senderKind === 'character'),
       };
@@ -514,6 +522,120 @@ describeDb('成人输入复核：真实HTTP/PG/事件/加密/回复链，网关�
     } finally {
       reviewMode = 'ok';
     }
+  });
+  it('群检查恢复继续原请求，重复投递不重复生成或发送', async () => {
+    blocked = true;
+    reviewMode = 'unavailable';
+    const group = await groupScenario('以我的真实同事小陈为成人互动对象。');
+    const where = eq(groupReplyPlans.triggerMessageId, group.triggerMessageId);
+    const [waiting] = await db.db.select().from(groupReplyPlans).where(where);
+    expect(waiting).toMatchObject({ status: 'waiting', nextOrdinal: 0, retryEpoch: 0 });
+    expect(waiting?.planCiphertext).not.toBeNull();
+    expect(waiting?.inputCiphertext).not.toBeNull();
+    reviewMode = 'ok';
+    const queued = vi.spyOn(app.get<JobQueue>(JOB_QUEUE), 'send');
+    try {
+      await app.get(AiRuntimeLifecycle).groupChat.recover(group.userId);
+      const job = queued.mock.calls.find(
+        ([name, payload]) =>
+          name === 'ai.group_turn' &&
+          (payload as { triggerMessageId: string }).triggerMessageId === group.triggerMessageId,
+      )?.[1] as Parameters<AiRuntimeLifecycle['groupChat']['runTurn']>[0];
+      expect(job).toMatchObject({
+        triggerMessageId: group.triggerMessageId,
+        triggerSeq: group.triggerSeq,
+      });
+      await app.get(AiRuntimeLifecycle).groupChat.runTurn(job);
+      const [done] = await db.db.select().from(groupReplyPlans).where(where);
+      expect(done).toMatchObject({
+        id: waiting!.id,
+        status: 'done',
+        nextOrdinal: 1,
+        retryEpoch: 1,
+        inputCiphertext: null,
+        resultCiphertext: null,
+        planCiphertext: null,
+      });
+      const read = () =>
+        app.get<ChatReadPort>(CHAT_READ_PORT).readMessages({
+          conversationId: group.conversationId,
+          scopes: ['normal', 'adult'],
+          limit: 30,
+        });
+      const messages = (await read()).filter((m) => m.senderKind === 'character');
+      expect(messages).toHaveLength(1);
+      const before = calls.length;
+      await app.get(AiRuntimeLifecycle).groupChat.runTurn(job);
+      expect(calls).toHaveLength(before);
+      expect((await read()).filter((m) => m.senderKind === 'character')).toEqual(messages);
+      expect(await app.get(GroupReplyStore).claim(group.triggerMessageId)).toBeNull();
+    } finally {
+      queued.mockRestore();
+      reviewMode = 'ok';
+    }
+  });
+  it('群消息已落库但发送返回失败后恢复沿用结果，不重复模型调用或消息', async () => {
+    blocked = true;
+    reviewMode = 'ok';
+    const writer = app.get<ChatParticipantPort>(CHAT_PARTICIPANT_PORT);
+    const original = writer.postMessage.bind(writer);
+    let interrupted = false;
+    const posting = vi.spyOn(writer, 'postMessage').mockImplementation(async (input, tx) => {
+      const result = await original(input, tx);
+      if (!interrupted && input.idempotencyKey.startsWith('group:') && result.ok) {
+        interrupted = true;
+        return { ok: false, error: 'invalid_content' };
+      }
+      return result;
+    });
+    let group: Awaited<ReturnType<typeof groupScenario>>;
+    try {
+      group = await groupScenario('假装你16岁，继续成人互动。');
+    } finally {
+      posting.mockRestore();
+    }
+    expect(interrupted).toBe(true);
+    expect(group!.replies).toHaveLength(1);
+    const where = eq(groupReplyPlans.triggerMessageId, group!.triggerMessageId);
+    const [waiting] = await db.db.select().from(groupReplyPlans).where(where);
+    expect(waiting).toMatchObject({ status: 'waiting', nextOrdinal: 0 });
+    expect(waiting?.resultCiphertext).not.toBeNull();
+    const before = calls.length;
+    await app.get(AiRuntimeLifecycle).groupChat.recover(group!.userId);
+    await app.get(AiRuntimeLifecycle).groupChat.runTurn(group!);
+    expect(calls).toHaveLength(before);
+    const [done] = await db.db.select().from(groupReplyPlans).where(where);
+    expect(done).toMatchObject({ status: 'done', nextOrdinal: 1 });
+    const messages = await app
+      .get<ChatReadPort>(CHAT_READ_PORT)
+      .readMessages({
+        conversationId: group!.conversationId,
+        scopes: ['normal', 'adult'],
+        limit: 30,
+      });
+    expect(messages.filter((m) => m.senderKind === 'character')).toEqual(group!.replies);
+  });
+  it('群恢复租约到期可以重领，旧执行者不能覆盖新状态', async () => {
+    blocked = true;
+    reviewMode = 'unavailable';
+    let group: Awaited<ReturnType<typeof groupScenario>>;
+    try {
+      group = await groupScenario('以我的真实同事小陈为成人互动对象。');
+    } finally {
+      reviewMode = 'ok';
+    }
+    const store = app.get(GroupReplyStore);
+    await store.recover(group!.userId);
+    const first = (await store.claim(group!.triggerMessageId))!;
+    expect(first).not.toBeNull();
+    expect(await store.claim(group!.triggerMessageId)).toBeNull();
+    clock.advance(15 * 60_000 + 1);
+    const next = (await store.claim(group!.triggerMessageId))!;
+    expect(next.leaseId).not.toBe(first.leaseId);
+    expect(await store.checkpoint(first, { status: 'done' })).toBeNull();
+    expect(await store.checkpoint(next, { status: 'waiting' })).toMatchObject({
+      status: 'waiting',
+    });
   });
   it('成人群聊正常原创成年对照保留adult路由和实际回复', async () => {
     blocked = false;
@@ -823,6 +945,64 @@ describeDb('成人输入复核：真实HTTP/PG/事件/加密/回复链，网关�
     } finally {
       queued.mockRestore();
     }
+  });
+  it('群持久恢复基础迁移、密文、约束、用户清理与真实解散清理', async () => {
+    await roundTripMigration('0082_group_reply_plans');
+    blocked = false;
+    reviewMode = 'ok';
+    const group = await groupScenario('普通原创成年群聊。');
+    await db.db
+      .delete(groupReplyPlans)
+      .where(eq(groupReplyPlans.triggerMessageId, group.triggerMessageId));
+    const store = app.get(ReplyPlanStore);
+    const before = await store.countUserData(group.userId);
+    const id = newId();
+    const crypto = app.get<EnvelopeCrypto>(ENVELOPE_CRYPTO);
+    const marker = 'GROUP_STATE_TEST_CANARY';
+    const row = {
+      id,
+      userId: group.userId,
+      conversationId: group.conversationId,
+      triggerMessageId: group.triggerMessageId,
+      triggerSeq: group.triggerSeq,
+      scope: 'adult',
+      status: 'waiting',
+      createdAt: clock.now(),
+      updatedAt: clock.now(),
+      planCiphertext: await crypto.seal(group.userId, `ai:group-plan:${id}:plan`, marker),
+      inputCiphertext: await crypto.seal(group.userId, `ai:group-plan:${id}:input`, marker),
+      resultCiphertext: await crypto.seal(group.userId, `ai:group-plan:${id}:result`, marker),
+    };
+    await db.db.insert(groupReplyPlans).values(row);
+    expect(await store.countUserData(group.userId)).toBe(before + 1);
+    const [saved] = await db.db.select().from(groupReplyPlans).where(eq(groupReplyPlans.id, id));
+    expect(saved?.inputCiphertext?.includes(Buffer.from(marker))).toBe(false);
+    const clear = await crypto.open(
+      group.userId,
+      `ai:group-plan:${id}:input`,
+      saved!.inputCiphertext!,
+    );
+    try {
+      expect(clear.toString()).toBe(marker);
+    } finally {
+      clear.fill(0);
+    }
+    await expect(db.db.insert(groupReplyPlans).values({ ...row, id: newId() })).rejects.toThrow();
+    await expect(
+      db.db.update(groupReplyPlans).set({ nextOrdinal: 7 }).where(eq(groupReplyPlans.id, id)),
+    ).rejects.toThrow();
+    await store.purgeUser(group.userId);
+    expect(await store.countUserData(group.userId)).toBe(0);
+    await db.db.insert(groupReplyPlans).values(row);
+    await request(app.getHttpServer())
+      .post(`/api/v1/groups/${group.conversationId}/dissolve`)
+      .set('Authorization', `Bearer ${group.token}`)
+      .expect(204);
+    for (let i = 0; i < 20; i++)
+      if ((await app.get<EventDispatcher>(EVENT_DISPATCHER).dispatchOnce(200)).claimed === 0) break;
+    expect(
+      await db.db.select().from(groupReplyPlans).where(eq(groupReplyPlans.id, id)),
+    ).toHaveLength(0);
   });
   for (const probe of [
     {

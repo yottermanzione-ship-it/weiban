@@ -30,6 +30,7 @@ import { HealthModule } from '../health/index.js';
 import { BillingModule } from '../billing/index.js';
 import { ProactiveSchedulerService } from './application/proactive-scheduler.js';
 import { GroupChatService } from './application/group-chat.js';
+import { GroupReplyStore } from './application/group-reply-store.js';
 import { GroupCompanionController } from './http/group-companion.controller.js';
 import { TimelineListService, TimelineSummaryService } from './application/timeline.js';
 import { SocialService } from './application/social.js';
@@ -135,6 +136,7 @@ import {
     HealthCareService,
     ProactiveSchedulerService,
     GroupChatService,
+    GroupReplyStore,
     {
       provide: HEALTH_CARE_FAMILIARITY,
       useFactory: (growth: GrowthService) => ({

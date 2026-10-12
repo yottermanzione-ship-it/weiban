@@ -119,15 +119,17 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       (j) => this.engine.run(j.data.planId),
       { pollingIntervalSeconds: 0.5, localConcurrency: 4 },
     );
-    await this.jobs.work<{ userId?: string }>('ai.recover_replies', (job) =>
-      this.store.recover(job.data.userId),
-    );
+    await this.jobs.work<{ userId?: string }>('ai.recover_replies', async (job) => {
+      await this.store.recover(job.data.userId);
+      await this.groupChat.recover(job.data.userId);
+    });
     await this.jobs.work<MemoryJob>(EXTRACT_MEMORY_JOB, (j) => this.memory.extract(j.data), {
       pollingIntervalSeconds: 0.5,
       localConcurrency: 2,
     });
     await this.jobs.work('ai.reconcile', async () => {
       await this.store.reconcile();
+      await this.groupChat.reconcile();
       await this.memory.reconcile();
     });
     await this.jobs.schedule('ai.reconcile', '* * * * *');

@@ -67,6 +67,7 @@ import { highRisk, outputAllowed } from '../domain/reply-rules.js';
 import { callModelForCare, careFallback } from './safety-care.js';
 import {
   groupCompanionSettings,
+  groupReplyPlans,
   groupInvites,
   groupSelfChats,
   simulationStates,
@@ -74,6 +75,7 @@ import {
 import { SimulationService } from './simulation.js';
 import { localParts } from './proactive-scheduler.js';
 import { PlannerService } from './planner.js';
+import { GroupReplyStore, type GroupReplyPlan } from './group-reply-store.js';
 
 // ---------------------------------------------------------------------------
 // 参数
@@ -122,6 +124,13 @@ interface Member {
 interface Speech {
   speaker: Member;
   reason: 'mentioned' | 'picked' | 'chain' | 'starter';
+}
+
+interface GroupCheckpoint {
+  queue: Speech[];
+  members: string[];
+  scenarioMode: ScenarioMode;
+  last: { member: Member; text: string } | null;
 }
 
 const CLOSENESS_WEIGHT: Record<string, number> = { close: 1, familiar: 0.6, acquaintance: 0.3 };
@@ -181,6 +190,7 @@ export class GroupChatService {
     @Inject(SimulationService) private readonly simulation: SimulationService,
     @Inject(PlannerService) private readonly planner: PlannerService,
     @Inject(QuietStateService) private readonly quiet: QuietStateService,
+    @Inject(GroupReplyStore) private readonly replies: GroupReplyStore,
   ) {}
 
   // =========================================================================
@@ -275,6 +285,7 @@ export class GroupChatService {
         .values(values)
         .onConflictDoUpdate({ target: groupCompanionSettings.conversationId, set: values });
       if (patch.scenarioMode && patch.scenarioMode !== old.scenarioMode) {
+        await this.replies.cancelConversation(tx, conversationId);
         const result = await this.chatAdmin.setContentScope(
           { conversationId, scope: patch.scenarioMode === 'adult' ? 'adult' : 'normal' },
           tx,
@@ -315,6 +326,7 @@ export class GroupChatService {
 
   /** 成员变化：当前模式有人不具备资格 → 自动回到日常并发系统提示（SOC-03 第 4 条）。 */
   async onMembersChanged(tx: DbTx, conversationId: string, ownerUserId: string): Promise<void> {
+    await this.replies.cancelConversation(tx, conversationId);
     const settings = await this.loadSettings(conversationId);
     if (settings.scenarioMode === 'daily') return;
     const conversation = await this.chat.getConversation(conversationId, tx);
@@ -346,6 +358,9 @@ export class GroupChatService {
     await tx.db
       .delete(groupCompanionSettings)
       .where(eq(groupCompanionSettings.conversationId, input.conversationId));
+    await tx.db
+      .delete(groupReplyPlans)
+      .where(eq(groupReplyPlans.conversationId, input.conversationId));
     await tx.db
       .delete(groupSelfChats)
       .where(eq(groupSelfChats.conversationId, input.conversationId));
@@ -390,6 +405,15 @@ export class GroupChatService {
     tx: DbTx,
     input: { conversationId: string; userId: string; messageId: string; seq: number },
   ): Promise<void> {
+    const conversation = await this.chat.getConversation(input.conversationId);
+    if (!conversation) return;
+    await this.replies.enqueue(tx, {
+      userId: input.userId,
+      conversationId: input.conversationId,
+      triggerMessageId: input.messageId,
+      triggerSeq: input.seq,
+      scope: conversation.contentScope,
+    });
     await this.jobs.send(
       GROUP_TURN_JOB,
       {
@@ -403,13 +427,41 @@ export class GroupChatService {
   }
 
   async runTurn(job: GroupTurnJob): Promise<void> {
+    const row = await this.replies.claim(job.triggerMessageId);
+    if (!row) return;
+    try {
+      await this.runClaimedTurn(job, row);
+    } catch (error) {
+      await this.replies.checkpoint(row, { status: 'waiting' });
+      throw error;
+    }
+  }
+
+  recover(userId?: string) {
+    return this.replies.recover(userId);
+  }
+  reconcile() {
+    return this.replies.reconcile();
+  }
+
+  private async runClaimedTurn(job: GroupTurnJob, row: GroupReplyPlan): Promise<void> {
+    const cancel = () => this.replies.checkpoint(row, { status: 'cancelled' });
     if ((await this.accounts.getAccountStatus(job.userId)) !== 'active') return;
     const conversation = await this.chat.getConversation(job.conversationId);
-    if (!conversation || conversation.type !== 'group') return;
+    if (!conversation || conversation.type !== 'group' || conversation.contentScope !== row.scope) {
+      await cancel();
+      return;
+    }
     // 用户又发了新消息：交给新消息的任务统一回应（连发只回一次）。
-    if (await this.newerUserMessage(conversation, job.triggerSeq)) return;
+    if (await this.newerUserMessage(conversation, job.triggerSeq)) {
+      await cancel();
+      return;
+    }
     const members = await this.loadMembers(job.userId, conversation);
-    if (!members.length) return;
+    if (!members.length) {
+      await cancel();
+      return;
+    }
     const history = await this.history(conversation);
     const trigger = history.find((m) => m.messageId === job.triggerMessageId);
     if (
@@ -418,8 +470,10 @@ export class GroupChatService {
       trigger.status !== 'normal' ||
       trigger.seq !== job.triggerSeq ||
       trigger.scope !== conversation.contentScope
-    )
+    ) {
+      await cancel();
       return;
+    }
     // 切回同一范围也不能复活模式变更前的用户触发。
     if (
       history.some(
@@ -429,17 +483,33 @@ export class GroupChatService {
           message.content?.type === 'system' &&
           message.content.code === 'scenario_mode_changed',
       )
-    )
+    ) {
+      await cancel();
       return;
+    }
     const userText = trigger?.content?.type === 'text' ? trigger.content.text : '';
     const mentioned = new Set(
       trigger?.content?.type === 'text' ? (trigger.content.mentions ?? []) : [],
     );
     const settings = await this.loadSettings(conversation.conversationId);
+    const saved = await this.replies.open<GroupCheckpoint>(row, 'plan');
+    if (
+      saved &&
+      (saved.scenarioMode !== settings.scenarioMode ||
+        saved.members.join(',') !==
+          members
+            .map((m) => m.participantId)
+            .sort()
+            .join(','))
+    ) {
+      await cancel();
+      return;
+    }
 
     // SAFE-06 第 5 条：群里出现高危表达 → 群里只简短关心，由最熟悉的角色在私聊跟进。
     if (highRisk(userText) === 'high') {
       await this.safetyHandoff(job, conversation, members, history);
+      await this.replies.checkpoint(row, { status: 'done' });
       return;
     }
 
@@ -473,7 +543,10 @@ export class GroupChatService {
     let responders = [...must, ...picked].slice(0, P19_GROUP.maxResponders);
     // 至少 1 个回应（SOC-04 第 5 条）。
     if (!responders.length && scored[0]) responders = [scored[0].member];
-    if (!responders.length) return;
+    if (!responders.length) {
+      await cancel();
+      return;
+    }
 
     const plan: Speech[] = responders.map((speaker) => ({
       speaker,
@@ -491,6 +564,15 @@ export class GroupChatService {
       purpose: 'chat_reply',
       topic: null,
       labels: [],
+      durable: {
+        row,
+        state: saved ?? {
+          queue: plan,
+          members: members.map((m) => m.participantId).sort(),
+          scenarioMode: settings.scenarioMode,
+          last: null,
+        },
+      },
     });
   }
 
@@ -510,15 +592,25 @@ export class GroupChatService {
     purpose: 'chat_reply' | 'proactive';
     topic: string | null;
     labels: string[];
+    durable?: { row: GroupReplyPlan; state: GroupCheckpoint };
   }): Promise<number> {
-    const queue = [...input.plan];
-    let sent = 0;
-    let last: { member: Member; text: string } | null = null;
+    const queue = [...(input.durable?.state.queue ?? input.plan)];
+    let sent = input.durable?.row.nextOrdinal ?? 0;
+    let last: { member: Member; text: string } | null = input.durable?.state.last ?? null;
+    let durable = input.durable;
     while (sent < input.maxMessages) {
-      let next = queue.shift();
+      let next = queue[0];
       if (!next && last)
         next = await this.pickChainSpeaker(input.userId, input.members, last, sent);
       if (!next) break;
+      if (!queue.length) queue.push(next);
+      if (durable) {
+        const updated = await this.replies.checkpoint(durable.row, {
+          plan: { ...durable.state, queue, last },
+        });
+        if (!updated) return sent;
+        durable = { ...durable, row: updated };
+      }
       if (await this.newerUserMessage(input.conversation, input.triggerSeq)) break;
       if (input.purpose === 'proactive' && !(await this.backgroundAllowed(input.userId))) break;
       const reply = await this.speak({
@@ -534,12 +626,28 @@ export class GroupChatService {
         topic: input.topic,
         labels: input.labels,
         triggerSeq: input.triggerSeq,
+        ...(durable ? { durable: durable.row } : {}),
       });
-      if (reply === null) break;
+      if (reply === null) {
+        if (durable) await this.replies.checkpoint(durable.row, { status: 'waiting' });
+        return sent;
+      }
       sent++;
+      queue.shift();
       last = { member: next.speaker, text: reply.text };
+      if (durable) {
+        const updated = await this.replies.checkpoint(durable.row, {
+          plan: { ...durable.state, queue, last },
+          nextOrdinal: sent,
+          input: null,
+          result: null,
+        });
+        if (!updated) return sent;
+        durable = { ...durable, row: updated };
+      }
       if (reply.stopChain) break;
     }
+    if (durable) await this.replies.checkpoint(durable.row, { status: 'done' });
     return sent;
   }
 
@@ -583,6 +691,7 @@ export class GroupChatService {
     topic: string | null;
     labels: string[];
     triggerSeq: number;
+    durable?: GroupReplyPlan;
   }): Promise<{ text: string; stopChain: boolean } | null> {
     const { conversation, speaker } = input;
     const role = await this.characters.getForRuntime(input.userId, speaker.characterId);
@@ -628,7 +737,7 @@ export class GroupChatService {
           : input.reason === 'chain'
             ? '接一下群里上一条消息，可以附和、调侃或抬杠，也可以 @ 别人。'
             : '你看到群里的新消息，自然地插一句。';
-    const request: GenerateTextInput = {
+    let request: GenerateTextInput = {
       userId: input.userId,
       characterId: speaker.characterId,
       conversationId: conversation.conversationId,
@@ -655,9 +764,28 @@ export class GroupChatService {
       ],
       meta: { conversationKind: 'group', scenarioMode: input.scenarioMode },
     };
-    const result = await this.adultBoundary.generate(request, adult);
+    if (input.durable) {
+      const frozen = await this.replies.open<GenerateTextInput>(input.durable, 'input');
+      if (frozen) request = frozen;
+      request = {
+        ...request,
+        idempotencyKey: `${request.idempotencyKey}:epoch:${input.durable.retryEpoch}`,
+      };
+      if (
+        !(await this.replies.checkpoint(input.durable, {
+          input: { ...request, idempotencyKey: `ai:${input.idempotencyKey}` },
+        }))
+      )
+        return null;
+    }
+    const cached = input.durable
+      ? await this.replies.open<{ text: string; stopChain: boolean }>(input.durable, 'result')
+      : null;
+    const result = cached
+      ? { ok: true as const, value: { text: cached.text } }
+      : await this.adultBoundary.generate(request, adult);
     if (!result.ok && !(adult && result.error === 'content_rejected')) return null;
-    const stopChain = !result.ok;
+    const stopChain = cached?.stopChain ?? !result.ok;
     const deflect = role.card.data.safetyStyle.deflectStyle?.trim();
     const sourceText = result.ok
       ? result.value.text
@@ -669,6 +797,11 @@ export class GroupChatService {
       .replace(new RegExp(`^${speaker.name}[：:]\\s*`), '')
       .slice(0, 300);
     if (!text || !outputAllowed(text, policy, adult)) return null;
+    if (
+      input.durable &&
+      !(await this.replies.checkpoint(input.durable, { result: { text, stopChain } }))
+    )
+      return null;
     // 节奏：正在输入 + 间隔（秒回约 0.5 秒，否则 2–8 秒），不会几个人同一秒发出。
     await this.writer.setTyping({
       conversationId: conversation.conversationId,
@@ -678,6 +811,7 @@ export class GroupChatService {
     try {
       await sleep(input.instant ? 500 : 2000 + Math.random() * 6000);
       if (await this.newerUserMessage(conversation, input.triggerSeq)) return null;
+      if (input.durable && !(await this.replies.checkpoint(input.durable, {}))) return null;
       const posted = await this.writer.postMessage({
         conversationId: conversation.conversationId,
         senderParticipantId: speaker.participantId,

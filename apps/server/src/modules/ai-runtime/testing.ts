@@ -3,6 +3,8 @@ export { ReplyPlanStore, type ReplyPlan } from './application/plan-store.js';
 export { ReplyEngine } from './application/reply-engine.js';
 export { AdultBoundaryService } from './application/adult-boundary.js';
 export { adultBoundaryStates } from './infra/db/schema.js';
+export { groupReplyPlans } from './infra/db/schema.js';
+export { GroupReplyStore } from './application/group-reply-store.js';
 export { AiRuntimeLifecycle } from './application/lifecycle.js';
 export { companionSettings, replyPlans } from './infra/db/schema.js';
 

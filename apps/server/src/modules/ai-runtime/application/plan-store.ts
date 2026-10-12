@@ -31,6 +31,7 @@ import {
   groupCompanionSettings,
   groupSelfChats,
   groupInvites,
+  groupReplyPlans,
 } from '../infra/db/schema.js';
 import { USER_BATCH_DELAY_MS } from '../domain/reply-rules.js';
 export const GENERATE_REPLY_JOB = 'ai.generate_reply';
@@ -355,6 +356,8 @@ export class ReplyPlanStore {
         .where(eq(adultBoundaryStates.userId, userId))
         .returning();
       return (
+        (await tx.db.delete(groupReplyPlans).where(eq(groupReplyPlans.userId, userId)).returning())
+          .length +
         adult.length +
         a.length +
         b.length +
@@ -390,6 +393,10 @@ export class ReplyPlanStore {
     return n;
   }
   async countUserData(userId: string): Promise<number> {
+    const [groupReplies] = await this.db.db
+      .select({ n: count() })
+      .from(groupReplyPlans)
+      .where(eq(groupReplyPlans.userId, userId));
     const [adult] = await this.db.db
       .select({ n: count() })
       .from(adultBoundaryStates)
@@ -458,6 +465,7 @@ export class ReplyPlanStore {
       .where(eq(groupInvites.userId, userId));
     return (
       t066 +
+      (groupReplies?.n ?? 0) +
       (adult?.n ?? 0) +
       (k?.n ?? 0) +
       (l?.n ?? 0) +
