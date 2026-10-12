@@ -20,8 +20,8 @@
 ## 输入文档
 
 开工前必须读：
-- `docs/product/prd-v1/08-simulation.md`（SIM-07、SIM-08，公开动态管理逻辑）
-- `docs/product/prd-v1/14-admin.md`（ADM-03、ADM-04）
+- `docs/product/prd-v1/06-simulation-proactive.md`（SIM-03 公开动态、SIM-09 节日清单）
+- `docs/product/prd-v1/13-admin.md`（ADM-03、ADM-04）
 - `docs/handoffs/2026-10-09-backend-lead-T-052.md`（T-052 交接，接口说明）
 - `packages/contracts/src/http/proactive.ts`（T-052 定义的契约）
 - `docs/team/dev-environment-notes.md`（本机环境，必读）

@@ -20,7 +20,7 @@
 ## 输入文档
 
 开工前必须读：
-- `docs/product/prd-v1/08-simulation.md`（SIM-10、SIM-11）
+- `docs/product/prd-v1/06-simulation-proactive.md`（SIM-10 开关、SIM-11 时间线与「你不在时」，P-18）
 - `docs/product/prd-v1/09-relationship-growth.md`（GRW-03、GRW-04）
 - `docs/handoffs/2026-10-09-backend-lead-T-050.md`（T-050 交接，growth 接口）
 - `docs/handoffs/2026-10-09-ai-lead-T-054.md`（T-054 交接，时间线接口）

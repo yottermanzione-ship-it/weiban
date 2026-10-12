@@ -20,7 +20,7 @@
 ## 输入文档
 
 开工前必须读：
-- `docs/product/prd-v1/08-simulation.md`（SIM-01、SIM-02、SIM-12、SIM-13，含规模与花费控制）
+- `docs/product/prd-v1/06-simulation-proactive.md`（SIM-01、SIM-02、SIM-12、SIM-13，含规模与花费控制）
 - `docs/ai/runtime-overview.md`、`docs/ai/eval-plan.md` 第 4 节（推演评测）
 - `docs/backend/billing.md`（后台每日上限、`countAsBackground`、`planning` 用途分组）
 - `docs/backend/model-access.md`（后台网关用途）

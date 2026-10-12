@@ -83,3 +83,9 @@
 ## 2026-10-11 L3～L7 39 张卡全部完成
 - T-080（a54e20d，0056）完成。积压清理第一步：架构契约 3.1 收口（分支 contracts-3.1，worktree C:\wb-dev\wb-c31）进行中
 - 之后：按 3.1 清单依次派后端 → AI → 网页 → 安卓实现；再更新 status.md、把 local/trunk 与共享文件夹 docs 同步、写总交接给 Codex
+
+## 2026-10-12 Codex 顶班成果并入后继续
+- Codex 顶班提交（codex/product-closeout，含 WIP 9933527）已快进并入 local/trunk；总经理定：Claude 主做，Codex 只顶班
+- 契约 3.1：后端 B1～B21 完成（d472ba3）；AI A1～A12 由 Codex 完成，B7 儿童特征读取（86bc165）；进行中 网页 W1～W11
+- 积压追加：㊳儿童特征标记永久从严（单独一列，后端）；套用改版后在聊会话即时退出成人模式；架构登记 childFeaturesDetected
+- Codex 留下待办：群聊故障自动恢复后续、主动/成人通话完整验证、安卓联系人间歇失败、19 类评测、真实模型、真机推送

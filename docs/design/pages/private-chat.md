@@ -93,6 +93,7 @@ NavBar、TypingIndicator、ModeIndicator、SystemBanner、InlineTip、WhileAwayC
 │ 心愿清单                 12 件  › │  v2.1 PLAY-04 → play.md 第 2 节
 ├─ 高级 ─────────────────────────┤
 │ 使用的模型        跟随全局默认   › │  MDL-02 → billing.md 6.1（单个角色）
+│ TA 的声音                 清亮  › │  v2.2 MED-03 第 1 条 → media-l5.md 第 6 节；平台未开通语音合成时不显示
 │ 我的补充设定                   ›  │  CHR-09；页内底部有「发布为改版」（persona-plaza.md 4.1）
 │ 发布到人设广场                 ›  │  v2.1 仅自定义角色（PLZ-02 第 1 条）；已发布时值为「已发布 · 版本 3」
 ├────────────────────────────────┤

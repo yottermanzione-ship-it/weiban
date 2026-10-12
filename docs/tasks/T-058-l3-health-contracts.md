@@ -15,12 +15,12 @@
 
 - 经期数据属于高度敏感隐私数据，整行用 DEK 加密（`docs/architecture/security-and-privacy.md` 5.1 节）。
 - `HealthReadPort` 只允许 `ai-runtime` 模块 import，模块边界规则须在此契约任务中一并提出（由运维在 T-059 中登记到 `architecture.js`）。
-- PRD `docs/product/prd-v1/07-health.md` 是主要需求来源。
+- PRD `docs/product/prd-v1/16-interactive-play.md` 是主要需求来源。
 
 ## 输入文档
 
 开工前必须读：
-- `docs/product/prd-v1/07-health.md`（PLAY-01，经期日记全文）
+- `docs/product/prd-v1/16-interactive-play.md`（PLAY-01，经期日记全文）
 - `docs/architecture/security-and-privacy.md`（5.1 节，DEK 加密）
 - `packages/contracts/src/`（现有契约结构）
 - `docs/team/dev-environment-notes.md`（本机环境，必读）

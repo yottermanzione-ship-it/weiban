@@ -21,7 +21,7 @@
 ## 输入文档
 
 开工前必须读：
-- `docs/product/prd-v1/08-simulation.md`（SIM-10、SIM-11，卡片展示逻辑）
+- `docs/product/prd-v1/06-simulation-proactive.md`（SIM-11「你不在时」卡片与时间线，P-18；SIM-10 主动消息开关）
 - `docs/product/prd-v1/09-relationship-growth.md`（GRW-03、GRW-04，熟悉度展示）
 - `docs/handoffs/2026-10-09-backend-lead-T-050.md`（T-050 交接，growth 接口）
 - `docs/handoffs/2026-10-09-ai-lead-T-054.md`（T-054 交接，时间线接口）

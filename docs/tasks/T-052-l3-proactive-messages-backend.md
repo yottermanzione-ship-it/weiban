@@ -5,7 +5,7 @@
 | 负责人 | backend-lead |
 | 派发人 | 项目总负责人 |
 | 日期 | 2026-10-09 |
-| 状态 | Codex 接续开发与自测中；独立验收待执行 |
+| 状态 | 待开始 |
 
 ## 目标
 
@@ -21,7 +21,7 @@
 ## 输入文档
 
 开工前必须读：
-- `docs/product/prd-v1/08-simulation.md`（SIM-06～SIM-09，公开动态与节日逻辑）
+- `docs/product/prd-v1/06-simulation-proactive.md`（SIM-03 公开动态，SIM-09 节日；主动消息理由见 SIM-05 第 1 条）
 - `docs/backend/billing.md`（`countAsBackground`，主动消息计费）
 - `packages/contracts/src/http/simulation.ts`（如 T-051 已建立，照此扩展；否则新建）
 - `docs/team/dev-environment-notes.md`（本机环境，必读）

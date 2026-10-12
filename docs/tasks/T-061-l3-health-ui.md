@@ -15,20 +15,20 @@
 
 - T-059（health 后端）提供所有接口，**必须先读其交接说明**。
 - T-060（AI 经期关怀）的消息会带 `labels: ['health']`，客户端收到此类消息时不在通知中显示正文（push 已处理），但聊天页内正常显示。
-- 首次进入经期日记页须展示隐私说明（本地加密存储、不用于训练等），用户确认后才能记录。
-- PRD `docs/product/prd-v1/07-health.md`（PLAY-01 第 1～4、8 条）是主要需求来源。
+- 首次进入经期日记页须展示说明，文案照 PLAY-01 第 1 条原文：「经期记录会加密保存，只有你授权的角色知道；不会出现在朋友圈、群聊、分享图里，也不会随角色发布到人设广场。预测仅供参考，不能用于避孕或医疗判断。」 用户确认后才能记录。
+- PRD `docs/product/prd-v1/16-interactive-play.md`（PLAY-01 第 1～4、8 条）是主要需求来源。
 
 ## 输入文档
 
 开工前必须读：
-- `docs/product/prd-v1/07-health.md`（PLAY-01 全文）
+- `docs/product/prd-v1/16-interactive-play.md`（PLAY-01 全文）
 - `docs/handoffs/2026-10-09-backend-lead-T-059.md`（T-059 交接，接口说明）
 - `packages/contracts/src/http/health.ts`（接口契约）
 - `docs/team/dev-environment-notes.md`（本机环境，必读）
 
 ## 范围
 
-- **可以改**：`apps/web/src/`（经期日记相关页面与组件）、`apps/android/src/`（对应 Compose 页面）。
+- **可以改**：`apps/web/src/`（经期日记相关页面与组件）、`apps/android/feature/**`（对应 Compose 页面）。
 - **不可以改**：`apps/server/**`、`packages/contracts/**`（只读）、`docs/quality/**`。
 - 服务页宫格入口：在「微伴服务」页新增「经期日记」入口图标与路由。
 
@@ -38,7 +38,7 @@
 2. **记录与编辑**：添加/修改经期开始/结束日期，附注（可选）。
 3. **预测展示**：下次预测日期，附「仅供参考，以实际情况为准」说明。
 4. **授权设置**：列出所有角色，可勾选授权（多选），授权后该角色可收到经期提醒。
-5. **首次隐私说明**：弹层，说明数据本地加密、不上传明文、不用于模型训练，用户点「我了解」后记录确认状态（本地持久化）。
+5. **首次说明**：弹层，文案照 PLAY-01 第 1 条原文（见「背景」），**不要**写「本地加密」「不用于训练」等 PRD 没有的承诺（数据是在服务器端加密，见 `docs/architecture/health-data.md`）；用户点「我了解」后记录确认状态。
 6. **服务页宫格入口**（网页 + 安卓）。
 
 ## 验收标准
@@ -55,8 +55,10 @@
 
 ## 交付物
 
-- 代码路径：`apps/web/src/`（L3 health 相关）、`apps/android/src/`（L3 health 相关）
+- 代码路径：`apps/web/src/`（L3 health 相关）、`apps/android/feature/**`（L3 health 相关）
 - 交接说明：`docs/handoffs/2026-10-09-web-lead-T-061.md`
 - 分支：从 main 新建 `T-061-l3-health-ui`，worktree 放 `C:\wb-dev\wb-t061`（网页负责人开工；安卓负责人在同一 worktree 内完成安卓部分）
 - PR 指向 main，描述末尾加：🤖 Generated with [Claude Code](https://claude.com/claude-code)
 - **不要合并，不要动 main**
+
+> 修订记录：2026-10-09 产品负责人更正——首次说明文案改为 PLAY-01 第 1 条原文（原卡写「本地加密、不用于训练」与 PRD 和 health-data.md 不符）；安卓路径改为 `apps/android/feature/**`；PRD 路径改为 `16-interactive-play.md`。

@@ -16,12 +16,12 @@
 - T-058（health 契约，architect）是本任务的前置依赖，**必须先读其交接说明**再开工。
 - 经期数据整行用用户 DEK 加密——不能明文存入数据库，`security-and-privacy.md` 5.1 节有详细要求。
 - `HealthReadPort` 只允许 `ai-runtime` 模块 import，本任务还须通知运维在 `architecture.js` 中登记边界规则。
-- PRD `docs/product/prd-v1/07-health.md`（PLAY-01）是主要需求来源。
+- PRD `docs/product/prd-v1/16-interactive-play.md`（PLAY-01）是主要需求来源。
 
 ## 输入文档
 
 开工前必须读：
-- `docs/product/prd-v1/07-health.md`（PLAY-01 全文）
+- `docs/product/prd-v1/16-interactive-play.md`（PLAY-01 全文）
 - `docs/architecture/security-and-privacy.md`（5.1 节，DEK 加密）
 - `docs/handoffs/2026-10-09-architect-T-058.md`（T-058 交接，接口定义）
 - `packages/contracts/src/http/health.ts`、`packages/contracts/src/ports/health.ts`（T-058 定义）
