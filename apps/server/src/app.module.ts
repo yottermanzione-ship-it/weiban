@@ -11,6 +11,8 @@ import type {
   CharacterNameReadPort,
   ModelGatewayMediaPort,
   Tx,
+  CardCopywriterPort,
+  PersonaUpdateSummarizerPort,
 } from '@weiban/contracts';
 import {
   ContactsModule,
@@ -51,6 +53,7 @@ import {
   CHARACTER_SUPPLEMENT_PORT,
   CHARACTER_PLAZA_PORT,
   CHARACTER_PLAZA_ORIGIN_STATUS,
+  CHARACTER_PERSONA_SUMMARIZER,
   type CharacterPlazaOriginStatus,
 } from './modules/characters/index.js';
 import { HealthModule } from './modules/health/index.js';
@@ -71,6 +74,7 @@ import {
   GrowthModule,
   GROWTH_HOLIDAY_SOURCE,
   GROWTH_CARD_LOOKUP,
+  GROWTH_CARD_COPYWRITER,
   GROWTH_CARD_PORT,
 } from './modules/growth/index.js';
 import { MomentsModule, MOMENTS_READ_PORT } from './modules/moments/index.js';
@@ -342,6 +346,29 @@ class PlazaCompositionModule {}
 })
 class PlazaOriginCompositionModule {}
 
+/**
+ * 契约 3.1（ADR-0028 方案 C）：底层模块的可选 AI 接入点。characters 的人设更新摘要、growth 的卡片文案由 ai-runtime 实现，
+ * AI 批（contracts-3.1-map.md A4 / A5）把下面两个 useValue 换成 useExisting 指向 ai-runtime 的实现。
+ * 目前先绑兜底实现（一律返回 null）：characters 写「资料已更新」，growth 用模板文案。
+ * 另：IDENTITY_SETTINGS_WRITE_PORT、MODEL_QUOTE_PORT、BILLING_DAILY_SPEND_READ_PORT 已分别由 IdentityModule、
+ * ModelAccessModule、BillingModule 导出，ai-runtime 模块已 import 这三个模块，直接注入即可。
+ */
+@Global()
+@Module({
+  providers: [
+    {
+      provide: CHARACTER_PERSONA_SUMMARIZER,
+      useValue: { summarize: async () => null } satisfies PersonaUpdateSummarizerPort,
+    },
+    {
+      provide: GROWTH_CARD_COPYWRITER,
+      useValue: { writeCardCopy: async () => null } satisfies CardCopywriterPort,
+    },
+  ],
+  exports: [CHARACTER_PERSONA_SUMMARIZER, GROWTH_CARD_COPYWRITER],
+})
+class AiHookCompositionModule {}
+
 @Module({})
 export class AppModule {
   static forRoot(options: PlatformOptions): DynamicModule {
@@ -349,6 +376,7 @@ export class AppModule {
       module: AppModule,
       imports: [
         PlatformModule.forRoot(options),
+        AiHookCompositionModule,
         IdentityModule,
         RealtimeModule,
         ChatCompositionModule,

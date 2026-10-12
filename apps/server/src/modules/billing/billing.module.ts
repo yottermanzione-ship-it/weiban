@@ -13,8 +13,11 @@ import { ReservationService } from './application/reservations.js';
 import { WalletService } from './application/wallet.js';
 import { BillingAdminController, BillingController } from './http/billing.controller.js';
 import { ChargeQueryService } from './application/charge-query.js';
+import { BillingQuoteService } from './application/quotes.js';
 import {
   BILLING_CHARGE_QUERY_PORT,
+  BILLING_DAILY_SPEND_READ_PORT,
+  BILLING_QUOTE_PORT,
   BILLING_READ_PORT,
   BILLING_RESERVATION_PORT,
 } from './tokens.js';
@@ -35,7 +38,16 @@ import {
     { provide: BILLING_READ_PORT, useExisting: WalletService },
     ChargeQueryService,
     { provide: BILLING_CHARGE_QUERY_PORT, useExisting: ChargeQueryService },
+    BillingQuoteService,
+    { provide: BILLING_QUOTE_PORT, useExisting: BillingQuoteService },
+    { provide: BILLING_DAILY_SPEND_READ_PORT, useExisting: BillingQuoteService },
   ],
-  exports: [BILLING_RESERVATION_PORT, BILLING_READ_PORT, BILLING_CHARGE_QUERY_PORT],
+  exports: [
+    BILLING_RESERVATION_PORT,
+    BILLING_READ_PORT,
+    BILLING_CHARGE_QUERY_PORT,
+    BILLING_QUOTE_PORT,
+    BILLING_DAILY_SPEND_READ_PORT,
+  ],
 })
 export class BillingModule {}

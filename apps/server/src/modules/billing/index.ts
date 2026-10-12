@@ -9,6 +9,8 @@
 export { BillingModule } from './billing.module.js';
 export {
   BILLING_CHARGE_QUERY_PORT,
+  BILLING_DAILY_SPEND_READ_PORT,
+  BILLING_QUOTE_PORT,
   BILLING_READ_PORT,
   BILLING_RESERVATION_PORT,
 } from './tokens.js';

@@ -222,7 +222,11 @@ export class LettersService implements PlayFeature, OnModuleInit {
   async sendLetter(
     userId: string,
     raw: unknown,
-  ): Promise<{ letter: Letter; replyDelayed: boolean }> {
+  ): Promise<{
+    letter: Letter;
+    replyDelayed: boolean;
+    replyDelayReason: 'already_replied_today' | 'outside_active_window' | null;
+  }> {
     const body: SendBody = parseContract(LetterEndpoints.sendLetter.body!, raw);
     const retry = await this.findByKey(userId, body.characterId, body.clientRequestId);
     if (retry) return this.sentResult(retry);
@@ -292,6 +296,17 @@ export class LettersService implements PlayFeature, OnModuleInit {
           characterId: body.characterId,
           letterId: id,
           deliverAt: plan.deliverAt.toISOString(),
+        });
+        await this.ctx.postPlayNotice(tx, {
+          userId,
+          characterId: body.characterId,
+          code: 'letter_sent',
+          params: {
+            letterId: id,
+            characterName: await this.ctx.characterName(userId, body.characterId, tx),
+            expectedAt: plan.deliverAt.toISOString(),
+          },
+          idempotencyKey: `play:letter_sent:${id}`,
         });
         await this.ctx.dataChanged(tx, userId, 'letters', body.characterId, id);
         const [saved] = await tx.db.select().from(letters).where(eq(letters.id, id));
@@ -643,7 +658,11 @@ export class LettersService implements PlayFeature, OnModuleInit {
     return { deliverAt: at, localDate: localDateIn(at, timeZone), delayed: true };
   }
 
-  private async sentResult(row: LetterRow): Promise<{ letter: Letter; replyDelayed: boolean }> {
+  private async sentResult(row: LetterRow): Promise<{
+    letter: Letter;
+    replyDelayed: boolean;
+    replyDelayReason: 'already_replied_today' | 'outside_active_window' | null;
+  }> {
     const [reply] = await this.db.db
       .select()
       .from(letters)
@@ -653,7 +672,33 @@ export class LettersService implements PlayFeature, OnModuleInit {
       !!row.sentAt &&
       reply.deliverAt.getTime() - row.sentAt.getTime() >
         PLAY_LIMITS.letterReplyDelayMaxHours * HOUR;
-    return { letter: await this.toDto(row, reply ?? null), replyDelayed: delayed };
+    // 3.1（积压 ㊲）：顺延原因——P-42 窗口内已有这个角色的其他回信 = 每天 1 封的限制；否则是活跃时段外。
+    let replyDelayReason: 'already_replied_today' | 'outside_active_window' | null = null;
+    if (delayed && reply && row.sentAt) {
+      const from = new Date(row.sentAt.getTime() + PLAY_LIMITS.letterReplyDelayMinHours * HOUR);
+      const to = new Date(row.sentAt.getTime() + PLAY_LIMITS.letterReplyDelayMaxHours * HOUR);
+      const [other] = await this.db.db
+        .select({ id: letters.id })
+        .from(letters)
+        .where(
+          and(
+            eq(letters.userId, row.userId),
+            eq(letters.characterId, row.characterId),
+            eq(letters.direction, 'from_character'),
+            isNotNull(letters.inReplyToLetterId),
+            sql`${letters.id} <> ${reply.id}`,
+            sql`${letters.deliverAt} >= ${from}`,
+            sql`${letters.deliverAt} <= ${to}`,
+          ),
+        )
+        .limit(1);
+      replyDelayReason = other ? 'already_replied_today' : 'outside_active_window';
+    }
+    return {
+      letter: await this.toDto(row, reply ?? null),
+      replyDelayed: delayed,
+      replyDelayReason,
+    };
   }
 
   private async findByKey(

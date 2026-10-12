@@ -192,11 +192,24 @@ export class WishlistService implements PlayFeature, PlayWishlistFollowUp, OnMod
           dueDate: dueChanged ? (body.dueDate ?? null) : current.dueDate,
         });
       if (completedNow) {
-        if (!current.cardIssued) {
-          const text =
-            body.text ?? (await this.openText(userId, itemAad(itemId), current.textCiphertext));
-          await this.issueCard(tx, userId, current.characterId, itemId, text);
-        }
+        const text =
+          body.text ?? (await this.openText(userId, itemAad(itemId), current.textCiphertext));
+        const card = !current.cardIssued
+          ? await this.issueCard(tx, userId, current.characterId, itemId, text)
+          : null;
+        // 3.1（积压 ㊲）：「{title} 已完成」系统提示（获得瞬间卡时加「· 获得瞬间卡」）。
+        await this.ctx.postPlayNotice(tx, {
+          userId,
+          characterId: current.characterId,
+          code: 'wishlist_item_completed',
+          params: {
+            itemId,
+            title: text.slice(0, 60),
+            cardIssued: !!card,
+            ...(card ? { cardId: card } : {}),
+          },
+          idempotencyKey: `play:wishlist_item_completed:${itemId}:${now.getTime()}`,
+        });
         await this.outbox.publish(tx, 'play.wishlist_item_completed', 'play', {
           userId,
           characterId: current.characterId,
@@ -464,8 +477,8 @@ export class WishlistService implements PlayFeature, PlayWishlistFollowUp, OnMod
     characterId: string,
     itemId: string,
     text: string,
-  ): Promise<void> {
-    if (!this.cards) return;
+  ): Promise<string | null> {
+    if (!this.cards) return null;
     const result = await this.cards.issueCard(tx as unknown as Tx, {
       userId,
       characterId,
@@ -477,11 +490,9 @@ export class WishlistService implements PlayFeature, PlayWishlistFollowUp, OnMod
       sourceMessageIds: [],
       idempotencyKey: `wish:${itemId}`,
     });
-    if (result.ok)
-      await tx.db
-        .update(wishlistItems)
-        .set({ cardIssued: true })
-        .where(eq(wishlistItems.id, itemId));
+    if (!result.ok) return null;
+    await tx.db.update(wishlistItems).set({ cardIssued: true }).where(eq(wishlistItems.id, itemId));
+    return result.value.cardId;
   }
 
   /** 同一用户同一角色的清单写入串行化（上限校验不被并发绕过）。 */

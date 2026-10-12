@@ -22,3 +22,8 @@ export const GROWTH_PET_ALBUM = Symbol('weiban.growth.pet-album');
  * library 的卡片分享图要按卡片角色决定真人标注（T-078），由 app.module.ts 绑定到 LIBRARY_CARD_LOOKUP。
  */
 export const GROWTH_CARD_LOOKUP = Symbol('weiban.growth.card-lookup');
+/**
+ * 契约 3.1 CardCopywriterPort（ports/social.ts）的注入令牌：卡片文案可选 AI 接入点（ADR-0028 方案 C）。
+ * 由装配入口绑定到 ai-runtime 的实现；未绑定、3 秒超时或返回 null 时用模板文案，不阻塞发卡。
+ */
+export const GROWTH_CARD_COPYWRITER = Symbol('weiban.growth.card-copywriter');

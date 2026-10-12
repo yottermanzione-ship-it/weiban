@@ -29,6 +29,7 @@ import {
   adoptions,
   authorProfiles,
   bans,
+  comments,
   likes,
   notices,
   workVersions,
@@ -239,6 +240,17 @@ export class PlazaStore {
     const originMap = new Map(origins.map((o) => [o.id, o]));
     const originProfiles = await this.profiles(origins.map((o) => o.authorUserId));
     const originBanned = await this.bannedSet(origins.map((o) => o.authorUserId));
+    // 3.1（积压 ㊱）：我从这个作品添加的角色（最近一次）。
+    const myAdoptions = await this.db.db
+      .select({
+        workId: adoptions.workId,
+        characterId: adoptions.characterId,
+        createdAt: adoptions.createdAt,
+      })
+      .from(adoptions)
+      .where(and(eq(adoptions.userId, viewerId), inArray(adoptions.workId, ids)))
+      .orderBy(asc(adoptions.createdAt));
+    const adoptedMap = new Map(myAdoptions.map((a) => [a.workId, a.characterId]));
     return rows.map((w, i) => {
       const mine = versions.filter((v) => v.workId === w.id);
       const current = mine.find((v) => v.version === w.currentVersion);
@@ -273,8 +285,45 @@ export class PlazaStore {
             }
           : null,
         isMine: w.authorUserId === viewerId,
+        sourceCharacterId: w.authorUserId === viewerId ? w.sourceCharacterId : null,
+        myAdoptedCharacterId: adoptedMap.get(w.id) ?? null,
+        removedReason:
+          w.authorUserId === viewerId && w.status === 'removed_by_admin'
+            ? (w.removedReason ?? null)
+            : null,
       };
     });
+  }
+
+  /** 3.1（积压 ㊱）：作者上次看过后各作品新增的点赞 + 评论数（不含作者自己的评论）。 */
+  async unreadCounts(authorUserId: string, rows: WorkRow[]): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    for (const w of rows) {
+      const since = w.authorSeenAt ?? w.publishedAt;
+      const [likeN] = await this.db.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(likes)
+        .where(
+          and(
+            eq(likes.workId, w.id),
+            sql`${likes.createdAt} > ${since}`,
+            sql`${likes.userId} <> ${authorUserId}`,
+          ),
+        );
+      const [commentN] = await this.db.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(comments)
+        .where(
+          and(
+            eq(comments.workId, w.id),
+            sql`${comments.createdAt} > ${since}`,
+            sql`${comments.deletedAt} is null`,
+            sql`${comments.authorUserId} <> ${authorUserId}`,
+          ),
+        );
+      out.set(w.id, (likeN?.n ?? 0) + (commentN?.n ?? 0));
+    }
+    return out;
   }
 
   async detail(viewerId: string, row: WorkRow): Promise<PlazaWorkDetail> {

@@ -7,7 +7,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import type {
   CharacterNameReadPort,
   CharacterReadPort,
+  ChatAdminPort,
   ChatParticipantPort,
+  PlaySystemNoticeCode,
   ChatReadPort,
   Contact,
   ContactsReadPort,
@@ -20,7 +22,7 @@ import type {
 } from '@weiban/contracts';
 import { AppError, CLOCK, type Clock, type DbTx } from '../../../platform/index.js';
 import { CHARACTER_NAME_READ_PORT, CHARACTER_READ_PORT } from '../../characters/index.js';
-import { CHAT_PARTICIPANT_PORT, CHAT_READ_PORT } from '../../chat/index.js';
+import { CHAT_ADMIN_PORT, CHAT_PARTICIPANT_PORT, CHAT_READ_PORT } from '../../chat/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
@@ -65,6 +67,7 @@ export class PlayContext {
     @Inject(CHAT_READ_PORT) private readonly chatRead: ChatReadPort,
     @Inject(CHAT_PARTICIPANT_PORT) private readonly chat: ChatParticipantPort,
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
+    @Inject(CHAT_ADMIN_PORT) private readonly chatAdmin: ChatAdminPort,
   ) {}
 
   /** 用户 IANA 时区（缺省 Asia/Shanghai）。 */
@@ -162,6 +165,32 @@ export class PlayContext {
       throw new AppError('character_not_available', result.message ?? '无法写入私聊');
     }
     return result.value;
+  }
+
+  /**
+   * 3.1（积压 ㊲）：玩法系统提示（PLAY_SYSTEM_NOTICE_CODES），经 ChatAdminPort.postSystemMessage 写进私聊，
+   * 只对用户可见、不进模型上下文。没有私聊或写入失败时跳过（不影响玩法本身）。
+   */
+  async postPlayNotice(
+    tx: DbTx,
+    input: {
+      userId: string;
+      characterId: string;
+      code: PlaySystemNoticeCode;
+      params: Record<string, string | number | boolean>;
+      idempotencyKey: string;
+    },
+  ): Promise<void> {
+    const conversation = await this.chatRead
+      .findDirectConversation(input.userId, input.characterId)
+      .catch(() => null);
+    if (!conversation) return;
+    await this.chatAdmin.postSystemMessage(tx as unknown as Tx, {
+      conversationId: conversation.conversationId,
+      code: input.code,
+      params: input.params,
+      idempotencyKey: input.idempotencyKey.slice(0, 200),
+    });
   }
 
   /** 「哪一块变了」通知（客户端重拉对应接口）。 */

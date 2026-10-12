@@ -5,12 +5,14 @@
  */
 import { Module } from '@nestjs/common';
 import { ChatModule } from '../chat/index.js';
+import { CharactersModule } from '../characters/index.js';
+import { MediaModule } from '../media/index.js';
 import { RealtimeModule } from '../realtime/index.js';
 import { LibraryService } from './application/library.service.js';
 import { LibraryController } from './http/library.controller.js';
 
 @Module({
-  imports: [ChatModule, RealtimeModule],
+  imports: [ChatModule, RealtimeModule, CharactersModule, MediaModule],
   controllers: [LibraryController],
   providers: [LibraryService],
 })

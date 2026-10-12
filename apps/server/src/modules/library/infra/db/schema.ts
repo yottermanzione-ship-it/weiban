@@ -42,6 +42,10 @@ export const favorites = librarySchema.table(
     /** 收藏时消息的服务器标签（health 不能进分享图）。 */
     labels: text('labels').array().notNull(),
     sourceCreatedAt: time('source_created_at').notNull(),
+    /** 0070（契约 3.1）：收藏时的角色名字 / 头像快照（头像是 library 复制的一份媒体对象）与原消息 seq。 */
+    characterNameSnapshot: text('character_name_snapshot'),
+    characterAvatarMediaIdSnapshot: uuid('character_avatar_media_id_snapshot'),
+    sourceSeq: integer('source_seq'),
     createdAt: time('created_at').notNull(),
   },
   (t) => [

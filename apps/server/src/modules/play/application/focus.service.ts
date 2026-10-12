@@ -103,6 +103,17 @@ export class FocusService implements PlayFeature, OnModuleInit {
           focusId: id,
           endsAt: endsAt.toISOString(),
         });
+        await this.ctx.postPlayNotice(tx, {
+          userId,
+          characterId: body.characterId,
+          code: 'focus_started',
+          params: {
+            sessionId: id,
+            minutes: body.minutes,
+            characterName: await this.ctx.characterName(userId, body.characterId, tx),
+          },
+          idempotencyKey: `play:focus_started:${id}`,
+        });
         await this.ctx.dataChanged(tx, userId, 'focus', body.characterId, id);
         const [saved] = await tx.db.select().from(focusSessions).where(eq(focusSessions.id, id));
         return saved!;

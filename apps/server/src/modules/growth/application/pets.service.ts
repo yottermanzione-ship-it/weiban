@@ -141,7 +141,8 @@ export class PetsService implements PetReadPort, PetNamingPort {
       .orderBy(asc(petAppearances.sortOrder), asc(petAppearances.createdAt));
     const out: PetSpecies[] = [];
     for (const s of rows) {
-      const own = appearances.filter((a) => a.speciesId === s.id);
+      // 3.1：用户端只返回上架外观；一个上架外观都没有的物种视为下架。
+      const own = appearances.filter((a) => a.speciesId === s.id && (!onlyListed || a.listed));
       if (!own.length) continue;
       out.push(
         PetSpecies.parse({
@@ -154,6 +155,7 @@ export class PetsService implements PetReadPort, PetNamingPort {
             own.map(async (a) => ({
               appearanceId: a.id,
               name: a.name,
+              listed: a.listed,
               images: {
                 baby: { mediaId: a.babyMediaId, url: await this.url(userId, a.babyMediaId) },
                 junior: { mediaId: a.juniorMediaId, url: await this.url(userId, a.juniorMediaId) },
@@ -247,6 +249,7 @@ export class PetsService implements PetReadPort, PetNamingPort {
       appearanceId?: string;
       name: string;
       imageMediaIds: { baby: string; junior: string; adult: string };
+      listed?: boolean;
     }>,
   ): Promise<void> {
     let order = 0;
@@ -261,6 +264,7 @@ export class PetsService implements PetReadPort, PetNamingPort {
             juniorMediaId: a.imageMediaIds.junior,
             adultMediaId: a.imageMediaIds.adult,
             sortOrder: order,
+            ...(a.listed !== undefined ? { listed: a.listed } : {}),
           })
           .where(
             and(eq(petAppearances.id, a.appearanceId), eq(petAppearances.speciesId, speciesId)),
@@ -277,6 +281,7 @@ export class PetsService implements PetReadPort, PetNamingPort {
         juniorMediaId: a.imageMediaIds.junior,
         adultMediaId: a.imageMediaIds.adult,
         sortOrder: order,
+        listed: a.listed ?? true,
         createdAt: this.clock.now(),
       });
     }
@@ -386,6 +391,7 @@ export class PetsService implements PetReadPort, PetNamingPort {
     if (!s || !s.listed) throw new AppError('bad_request', '这个物种暂时不能领养');
     const a = await this.appearance(runner, appearanceId);
     if (a.speciesId !== speciesId) throw new AppError('bad_request', '外观不属于该物种');
+    if (!a.listed) throw new AppError('bad_request', '这个外观暂时不能领养');
     return { species: s, appearance: a };
   }
 
@@ -410,7 +416,7 @@ export class PetsService implements PetReadPort, PetNamingPort {
     );
     const contact = await this.ctx.contacts.getActiveContact(userId, body.characterId);
     if (!contact) throw new AppError('not_found', '联系人不存在');
-    await this.checkSpecies(this.db.db, body.speciesId, body.appearanceId);
+    const { species } = await this.checkSpecies(this.db.db, body.speciesId, body.appearanceId);
     return this.db.transaction(async (tx) => {
       const id = newId();
       const now = this.clock.now();
@@ -424,6 +430,8 @@ export class PetsService implements PetReadPort, PetNamingPort {
         requestId: id,
         speciesId: body.speciesId,
         appearanceId: body.appearanceId,
+        // 3.1（T-082）：物种名称，起名提示用。
+        speciesName: species.name.slice(0, 12),
       });
       return this.namingDto(row!);
     });
