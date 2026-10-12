@@ -58,6 +58,14 @@ cat > /etc/docker/daemon.json <<JSON
 }
 JSON
 $APT install -y -q docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+# Docker 29 默认用 containerd 镜像存储，镜像层在 containerd 的 root 下而非 data-root，一并放数据盘。
+if ! grep -q '^root *=' /etc/containerd/config.toml 2>/dev/null; then
+  systemctl stop docker.socket docker containerd || true
+  install -d -m 0711 "$MOUNT_POINT/containerd"
+  if [[ -d /var/lib/containerd ]]; then cp -a /var/lib/containerd/. "$MOUNT_POINT/containerd/"; mv /var/lib/containerd /var/lib/containerd.old; fi
+  sed -i "1i root = \"$MOUNT_POINT/containerd\"" /etc/containerd/config.toml
+  systemctl start containerd
+fi
 systemctl enable --now docker
 systemctl restart docker
 
