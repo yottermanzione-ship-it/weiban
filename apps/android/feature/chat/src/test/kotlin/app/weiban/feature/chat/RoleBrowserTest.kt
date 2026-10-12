@@ -277,8 +277,18 @@ class RoleBrowserTest {
         compose.onNodeWithText("返回").performClick()
         compose.onNode(hasSetTextAction()).performTextClearance()
         compose.onNodeWithText("小纸").performClick()
-        compose.onNodeWithText("发消息").performScrollTo().performClick()
-        compose.waitUntil(10_000) { opened.isNotEmpty() }
+        val sendButton = compose.onNodeWithText("发消息").performScrollTo()
+        val beforeBounds = sendButton.fetchSemanticsNode().boundsInRoot
+        sendButton.performClick()
+        try {
+            compose.waitUntil(10_000) { opened.isNotEmpty() }
+        } catch (error: ComposeTimeoutException) {
+            val afterBounds = runCatching { sendButton.fetchSemanticsNode().boundsInRoot }.getOrNull()
+            throw AssertionError(
+                "发消息未打开；点击前=$beforeBounds；结束时=$afterBounds；请求路径=${requests.toList()}\n${compose.onRoot().printToString()}",
+                error,
+            )
+        }
         assertEquals(listOf(conversationId), opened.toList())
         assertTrue(posts.isEmpty())
     }

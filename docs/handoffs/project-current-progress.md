@@ -1,6 +1,6 @@
 # 微伴当前进度
 
-更新：2026-10-12 18:52。快速状态以本文为准，详细历史证据见 T-102、T-103 和活动交接。
+更新：2026-10-12 19:36。快速状态以本文为准，详细历史证据见 T-102、T-103 和活动交接。
 
 | 项目 | 当前状态 |
 |---|---|
@@ -10,7 +10,7 @@
 | 业务PR CI（2485） | 38238558450：check成功，87文件670项、网页27/后台8及生产加密恢复通过；安卓联系人打开回调1失败 |
 | 同源业务push CI（2485） | 38238552326完整success；仍保留PR联系人失败，不据单轮绿色关闭间歇性 |
 | Windows全量 | 87文件665项中664通过/1失败；推送回执2002ms超2000ms目标2ms，未放宽目标 |
-| 当前开发 | 群聊f8两轮完整CI成功且本机升级/实查通过；安卓目录快照2485bc1已推送，新CI待终态，完整聊天25项和APK通过 |
+| 当前开发 | 主动消息新增4项真实门禁专项，成人20项+关怀8项通过；安卓联系人诊断单项通过，间歇失败仍未关闭 |
 
 全部为开发自测；项目尚未完成，不等同于独立验收。
 
@@ -36,6 +36,10 @@
 - 开发APK C:\wb-dev\closeout-logs\weiban-catalog-response-20261012.apk，SHA256 3A7EFCBC33A9D84C0E49084D61EDB99992E322200E94BD368DF1B1C02BFFDA3C。含目录快照和最新生成资源，未真机安装或证明全部安卓功能验收。
 - 2485bc1993064096ec6d27c4f2c961ecb661ecf2已提交/推送安卓修改。push38238552326实际completed/success；PR38238558450实际completed/failure，check成功，安卓失败为actualContactsSearchUsesCanonicalNamesAndPendingCannotOpenChat第281行等待打开回调，25项中24通过，目录首屏/新增延迟用例均通过。日志ci-2485bc1-pr-full.log、ci-2485bc1-android-failed.log及ci-2485bc1-android-artifacts/XML已下载。不能把本次联系人失败误记为目录失败或把两类一起关闭。
 - group-deflection-pre-upgrade-backup-round1、local-upgrade-round1、local-login-round1、local-config-round1、local-binary-round1均终态成功：真实双端健康/登录/刷新与配置页无异常，18:51实际上游0条；容器dist/main.js含本次唯一新增stopChain逻辑，结合真实HTTP专项和完整f8 CI确认新代码送达。没有生产注入测试角色或模型、没有实际模型调用。原账号、数据卷、密钥保留。
+- 续接基线8d7029655278ccde6034140f43545ef2769b17a1。其PR38241072621实际completed/success；日志ci-8d70296-pr-full.log：87文件670项、网页27/后台8、安卓BUILD SUCCESSFUL4m44及生产加密恢复通过，不能用它覆盖本轮新测试。当前仅修改测试与诊断，本机业务仍f8、安卓业务仍2485，无需因测试更新重建运行镜像或APK。
+- 主动消息新增实际HTTP资料、管理员余额授权、陪伴开关；虚拟时钟满足当地9点后和P09超过5分钟，再由真实ProactiveScheduler.request/runForUser执行。没有替换预算/配额/账户/角色policy/聊天写入/加密；GW/成人可用性/发布评测继续受控。验证正常adult模型与实际adult消息、历史未成年目标输入先复核不生成、输出失败两次生成/两次检查后不寄送、检查不可用时停止。模型未配置后的主动计划按现有规则dropped，不宣称重新配置后自动恢复。
+- adult-proactive-boundaries-round1：19项通过62.97s；补故障后regression-round1为成人20项+关怀8项，28项通过83.51s。全仓lint/依赖341模块1486依赖、类型和最终格式另有日志。所有余额授权只发生在开发测试库，未实际付费或调用模型，不能证明真实费用/质量。
+- 联系人测试保留performScrollTo/performClick、10秒、精确唯一会话ID与无申请发送断言，捕获点按前/结束时bounds、请求路径和语义树，失败保留原ComposeTimeoutException cause。contact-click-diagnostic-round1的ktlint及真实单项通过57s，fresh XML1项零失败/错误/跳过12.943s；没有失败时界面证据，未将布局变化线索确认为根因，也未以该通过关闭CI间歇性。
 - 无存活数据库/Gradle/部署句柄。下一步联系人点击失败补点击前/后bounds和语义树诊断，再用实际证据定位。CharacterAction对已有conversationId直接调用onOpen，没有异步等待或loaded禁用；资料、熟悉度内容异步插入导致点击期间布局变化只是待证实线索，不能先断言根因。补主动/成人通话及群检查故障恢复，再推进完整材料/执行路径。群故障后的自动恢复尚未验证。安卓新结构调整不证明全部间歇性根因已确定，不反复重跑无变化全量。
 
 仍待完成：上述回归失败定位；群聊/主动/成人通话专项；完整19类AI材料、执行器与真实模型质量/费用；安卓真机及厂商推送；异机离线密钥保管；另一位审查者独立验收。现有287题/18套和模拟判分不证明这些事项完成。
