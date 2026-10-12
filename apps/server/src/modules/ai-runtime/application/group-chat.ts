@@ -502,7 +502,7 @@ export class GroupChatService {
       if (!next) break;
       if (await this.newerUserMessage(input.conversation, input.triggerSeq)) break;
       if (input.purpose === 'proactive' && !(await this.backgroundAllowed(input.userId))) break;
-      const text = await this.speak({
+      const reply = await this.speak({
         userId: input.userId,
         conversation: input.conversation,
         members: input.members,
@@ -516,9 +516,10 @@ export class GroupChatService {
         labels: input.labels,
         triggerSeq: input.triggerSeq,
       });
-      if (text === null) break;
+      if (reply === null) break;
       sent++;
-      last = { member: next.speaker, text };
+      last = { member: next.speaker, text: reply.text };
+      if (reply.stopChain) break;
     }
     return sent;
   }
@@ -563,7 +564,7 @@ export class GroupChatService {
     topic: string | null;
     labels: string[];
     triggerSeq: number;
-  }): Promise<string | null> {
+  }): Promise<{ text: string; stopChain: boolean } | null> {
     const { conversation, speaker } = input;
     const role = await this.characters.getForRuntime(input.userId, speaker.characterId);
     const policy = await this.policy.getCharacterPolicy(input.userId, speaker.characterId);
@@ -636,8 +637,15 @@ export class GroupChatService {
       meta: { conversationKind: 'group', scenarioMode: input.scenarioMode },
     };
     const result = await this.adultBoundary.generate(request, adult);
-    if (!result.ok) return null;
-    const text = result.value.text
+    if (!result.ok && !(adult && result.error === 'content_rejected')) return null;
+    const stopChain = !result.ok;
+    const deflect = role.card.data.safetyStyle.deflectStyle?.trim();
+    const sourceText = result.ok
+      ? result.value.text
+      : deflect && outputAllowed(deflect, policy, false)
+        ? deflect
+        : '这个话题先放一放，好吗？我们聊聊你今天过得怎么样。';
+    const text = sourceText
       .trim()
       .replace(new RegExp(`^${speaker.name}[：:]\\s*`), '')
       .slice(0, 300);
@@ -660,7 +668,7 @@ export class GroupChatService {
         ...(input.labels.length ? { labels: input.labels } : {}),
       });
       if (!posted.ok) return null;
-      return text;
+      return { text, stopChain };
     } finally {
       await this.writer.setTyping({
         conversationId: conversation.conversationId,
