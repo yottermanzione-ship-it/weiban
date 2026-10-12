@@ -23,6 +23,8 @@ import java.util.Locale
     startAtPlaza: Boolean,
     onOpenConversation: (String) -> Unit,
     onboarding: Boolean = false,
+    // 首次引导的出口（2026-10-12）：结束引导进入主界面；之后仍可从通讯录「添加角色」加 TA。
+    onLeaveOnboarding: () -> Unit = {},
 ) {
     var plaza by rememberSaveable(owner.sessionId) { mutableStateOf(startAtPlaza) }
     var ordinarySelection by rememberSaveable(owner.sessionId) { mutableStateOf<String?>(null) }
@@ -52,6 +54,16 @@ import java.util.Locale
     }
     Column(Modifier.fillMaxSize()) {
         if (!OnboardingHeader(onboarding, progress, scope)) return@Column
+        if (onboarding && selected == null) {
+            OnboardingExits(
+                enabled = !progress.saving,
+                onCreate = {
+                    L6Overlays.customEditor.value = CustomEditorOpen(owner)
+                    onLeaveOnboarding()
+                },
+                onSkip = onLeaveOnboarding,
+            )
+        }
         if (selected != null) {
             TextButton(onClick = { select(null) }, enabled = !progress.saving) { Text("返回") }
             CharacterScreen(
@@ -259,6 +271,22 @@ private class CatalogUi {
             }, label = { Text(category.name) })
         }
     }
+}
+
+@Composable private fun OnboardingExits(
+    enabled: Boolean,
+    onCreate: () -> Unit,
+    onSkip: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = WbSpace.S5), horizontalArrangement = Arrangement.spacedBy(WbSpace.S2)) {
+        TextButton(onClick = onCreate, enabled = enabled) { Text("自己创建一个角色") }
+        TextButton(onClick = onSkip, enabled = enabled) { Text("先随便看看") }
+    }
+    Text(
+        "之后也可以在「通讯录 → 添加角色」里加 TA",
+        Modifier.padding(horizontal = WbSpace.S5),
+        style = MaterialTheme.typography.bodySmall,
+    )
 }
 
 @Composable private fun OnboardingHeader(

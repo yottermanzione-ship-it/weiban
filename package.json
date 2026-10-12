@@ -32,6 +32,7 @@
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres",
+    "seed:presets": "pnpm --filter @weiban/server seed:presets",
     "db:psql": "docker compose exec postgres psql -U weiban -d weiban",
     "web:e2e": "pnpm --filter @weiban/web build && pnpm --filter @weiban/admin build && playwright test --config apps/web/playwright.config.ts",
     "admin:e2e": "pnpm --filter @weiban/admin build && playwright test --config apps/admin/playwright.config.ts",

@@ -19,3 +19,4 @@ export {
   CHARACTER_CHILD_FEATURES_WRITER,
   type CharacterChildFeaturesWriter,
 } from './tokens.js';
+export { seedPresetCharacters, type PresetSeedResult } from './application/preset-seed.js';

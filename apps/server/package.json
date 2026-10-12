@@ -16,6 +16,8 @@
     "db:status": "tsx src/cli/migrate.ts status",
     "identity": "tsx src/cli/identity.ts",
     "models:seed": "tsx src/cli/seed-models.ts",
+    "seed:presets": "tsx src/cli/seed-presets.ts",
+    "seed:presets:gen": "node scripts/gen-preset-samples.mjs",
     "crypto:rotate": "tsx src/cli/rotate-kek.ts"
   },
   "dependencies": {

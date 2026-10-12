@@ -125,6 +125,25 @@ export class IdentityCommands {
     });
   }
 
+  /**
+   * 查一个正常状态的管理员账号 ID（预设角色种子等运维脚本以它作为操作人）。
+   * 不传用户名时取最早创建的管理员；找不到时报错，不会创建账号。
+   */
+  async findAdminId(username?: string): Promise<string> {
+    const [user] = await this.database.db
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        username
+          ? sql`lower(${users.username}) = lower(${username}) AND ${users.role} = 'admin' AND ${users.status} = 'active'`
+          : sql`${users.role} = 'admin' AND ${users.status} = 'active'`,
+      )
+      .orderBy(users.createdAt)
+      .limit(1);
+    if (!user) throw new CommandError(username ? `找不到管理员 ${username}` : '还没有管理员账号');
+    return user.id;
+  }
+
   /** 改角色。降为普通用户时作废其全部管理会话。 */
   async setRole(username: string, role: 'user' | 'admin'): Promise<void> {
     await this.database.transaction(async (tx) => {

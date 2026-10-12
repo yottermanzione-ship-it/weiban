@@ -25,6 +25,7 @@ await build({
     identity: 'src/cli/identity.ts',
     'rotate-kek': 'src/cli/rotate-kek.ts',
     'seed-models': 'src/cli/seed-models.ts',
+    'seed-presets': 'src/cli/seed-presets.ts',
   },
   outdir: 'dist',
   bundle: true,

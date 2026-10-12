@@ -132,6 +132,7 @@ export function DiscoverPage() {
               先加一个你喜欢的 TA 吧
             </p>
           )}
+          {onboarding && <OnboardingExits />}
           {onboarding && draft.error && <p role="alert">{draft.error}</p>}
           <form
             className="message-composer"
@@ -215,6 +216,40 @@ export function DiscoverPage() {
         </>
       )}
     </main>
+  );
+}
+/**
+ * 首次引导的两个出口（2026-10-12 总经理试用反馈）：角色广场为空或没有喜欢的角色时不能卡住。
+ * 「自己创建一个角色」与「先随便看看」都先结束引导（本机标记），之后仍可从通讯录「添加角色」加 TA。
+ */
+function OnboardingExits() {
+  const { finishOnboarding } = useAuth();
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function leave(to: string) {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    const done = await finishOnboarding().catch(() => false);
+    setBusy(false);
+    if (!done) {
+      setError('暂时无法结束引导，请稍后重试');
+      return;
+    }
+    navigate(to, { replace: true });
+  }
+  return (
+    <div className="panel rows">
+      <button disabled={busy} onClick={() => void leave('/characters/custom/new')}>
+        自己创建一个角色
+      </button>
+      <button disabled={busy} onClick={() => void leave('/chat')}>
+        先随便看看
+      </button>
+      <small>之后也可以在「通讯录 → 添加角色」里加 TA</small>
+      {error && <p role="alert">{error}</p>}
+    </div>
   );
 }
 function MomentsBadgeAvatars() {

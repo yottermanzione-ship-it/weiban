@@ -275,7 +275,9 @@ private class NavigationUi(
         val owner = OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId)
         RoleBrowser(runtime.repository, runtime.chat, owner, true, { id ->
             scope.launch { finishOnboarding(runtime, owner, id, navigation::open) }
-        }, onboarding = true)
+        }, onboarding = true, onLeaveOnboarding = {
+            scope.launch { leaveOnboarding(runtime, owner) }
+        })
     } else {
         val owner = OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId)
         // 浮层（导入完成后打开会话等）要求切到某个会话（T-086）。
@@ -325,6 +327,21 @@ private suspend fun finishOnboarding(
 ) {
     try {
         if (runtime.repository.finishOnboarding(owner)) onOpen(conversationId)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        Toast.makeText(runtime, "无法保存引导进度，请重试", Toast.LENGTH_SHORT).show()
+    }
+}
+
+/** 首次引导里选「先随便看看」或「自己创建一个角色」：只结束引导，不打开会话。 */
+@Suppress("TooGenericExceptionCaught") // Storage failure leaves onboarding active and offers a visible retry message.
+private suspend fun leaveOnboarding(
+    runtime: WeibanApplication,
+    owner: OwnerRecord,
+) {
+    try {
+        runtime.repository.finishOnboarding(owner)
     } catch (error: CancellationException) {
         throw error
     } catch (_: Exception) {

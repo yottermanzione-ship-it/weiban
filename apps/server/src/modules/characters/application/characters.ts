@@ -462,6 +462,10 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       }
     });
   }
+  /** 预设角色当前草稿修订号（预设角色种子触发上架检查用）。 */
+  async presetRevision(id: string): Promise<number> {
+    return (await this.presetRow(id)).revision;
+  }
   async publish(adminId: string, id: string): Promise<AdminCharacter> {
     const row = await this.presetRow(id);
     const body = await this.decode(row);
