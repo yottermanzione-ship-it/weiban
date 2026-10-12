@@ -57,7 +57,9 @@ export interface EvalCase {
   };
   input: string;
   /** 中性化场景须受控输入模板及展开依据，不能把场景描述直接当用户消息。 */
-  inputKind?: 'literal' | 'neutral_scenario' | 'runtime_trigger';
+  inputKind?: 'literal' | 'neutral_scenario' | 'runtime_trigger' | 'conversation_script';
+  /** 真实逐轮发送并等待回复；不能把脚本一次性塞进history。 */
+  longConversation?: { turnCount: number; userInputs: readonly string[] };
   /** 例如退群已经提过一次后，预期完全没有第二条消息。 */
   expectedOutcome?: 'no_message';
   mustInclude: string[];

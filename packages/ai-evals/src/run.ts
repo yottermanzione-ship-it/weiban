@@ -1,4 +1,4 @@
-import { evaluateOutput, type EvalJudge } from './index.js';
+import { evaluateOutput, type EvalCase, type EvalJudge } from './index.js';
 import { EVAL_CASES, EVAL_CASE_VERSION, resolveEvalCharacter } from './registry.js';
 
 export interface EvalObservation {
@@ -16,6 +16,44 @@ export interface EvalObservation {
   runtimeEvidenceRef?: string;
   scenarioTemplateVersion?: string;
   expandedInputEvidenceRef?: string;
+  turns?: readonly EvalTurnObservation[];
+}
+
+export interface EvalTurnObservation {
+  turn: number;
+  input: string;
+  output: string;
+  outputEvidenceRef: string;
+  judge?: EvalJudge;
+}
+
+function evaluateTurns(test: EvalCase, row: EvalObservation) {
+  const script = test.longConversation;
+  if (!script) return { failures: [] as string[], incomplete: false };
+  const seen = new Set<number>();
+  const failures: string[] = [];
+  let incomplete = false;
+  for (const turn of row.turns ?? []) {
+    if (
+      !Number.isInteger(turn.turn) ||
+      turn.turn < 1 ||
+      turn.turn > script.turnCount ||
+      seen.has(turn.turn)
+    ) {
+      failures.push(`invalid_or_duplicate_turn:${turn.turn}`);
+      continue;
+    }
+    seen.add(turn.turn);
+    if (
+      !turn.outputEvidenceRef.trim() ||
+      turn.input !== script.userInputs[(turn.turn - 1) % script.userInputs.length]
+    )
+      incomplete = true;
+    const evaluated = evaluateOutput(test, turn.output, turn.judge, row.runtimeChecks);
+    failures.push(...evaluated.failures.map((failure) => `turn:${turn.turn}:${failure}`));
+    if (evaluated.status === 'needs_review') incomplete = true;
+  }
+  return { failures, incomplete: incomplete || seen.size !== script.turnCount };
 }
 
 /** 只汇总已登记题；即使全通过也不是产品发布许可或独立验收。 */
@@ -33,6 +71,7 @@ export function summarizeEvalRun(observations: readonly EvalObservation[]) {
     const evaluated = row
       ? evaluateOutput(test, row.output, row.judge, row.runtimeChecks)
       : undefined;
+    const turns = row ? evaluateTurns(test, row) : undefined;
     const validEvidence =
       row &&
       row.caseVersion === EVAL_CASE_VERSION &&
@@ -44,6 +83,7 @@ export function summarizeEvalRun(observations: readonly EvalObservation[]) {
       row.modelKey.trim() &&
       row.promptTemplateVersion.trim() &&
       row.outputEvidenceRef.trim() &&
+      !turns?.incomplete &&
       (!test.requiredRuntimeChecks?.length || row.runtimeEvidenceRef?.trim()) &&
       (test.inputKind !== 'neutral_scenario' ||
         (row.scenarioTemplateVersion?.trim() && row.expandedInputEvidenceRef?.trim()));
@@ -51,12 +91,12 @@ export function summarizeEvalRun(observations: readonly EvalObservation[]) {
       caseId: test.id,
       hard: test.hard,
       status:
-        evaluated?.status === 'failed'
+        evaluated?.status === 'failed' || !!turns?.failures.length
           ? ('failed' as const)
           : validEvidence && evaluated?.status === 'passed'
             ? ('passed' as const)
             : ('needs_review' as const),
-      failures: evaluated?.failures ?? [],
+      failures: [...(evaluated?.failures ?? []), ...(turns?.failures ?? [])],
       missingOutput: !row,
       missingEvidence: !!row && !validEvidence,
     };

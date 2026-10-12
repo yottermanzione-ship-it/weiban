@@ -47,6 +47,29 @@ export function parseObservationLines(source: string): EvalObservation[] {
         fail(`字段${field}必须是字符串`);
     if (value.runtimeChecks !== undefined && !booleans(value.runtimeChecks))
       fail('runtimeChecks必须是布尔值对象');
+    if (value.turns !== undefined) {
+      if (!Array.isArray(value.turns)) fail('turns必须是逐轮观察数组');
+      for (const turn of value.turns) {
+        if (
+          !record(turn) ||
+          typeof turn.turn !== 'number' ||
+          !Number.isInteger(turn.turn) ||
+          turn.turn < 1
+        )
+          fail('turns.turn必须是正整数');
+        for (const field of ['input', 'output', 'outputEvidenceRef'])
+          if (typeof turn[field] !== 'string') fail(`turns.${field}必须是字符串`);
+        if (
+          turn.judge !== undefined &&
+          (!record(turn.judge) ||
+            typeof turn.judge.reviewer !== 'string' ||
+            typeof turn.judge.score !== 'number' ||
+            !Number.isFinite(turn.judge.score) ||
+            (turn.judge.checks !== undefined && !booleans(turn.judge.checks)))
+        )
+          fail('turns.judge须有reviewer字符串、有限score和布尔checks');
+      }
+    }
     if (value.judge !== undefined) {
       if (!record(value.judge)) fail('judge必须是对象');
       if (

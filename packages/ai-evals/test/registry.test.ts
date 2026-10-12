@@ -9,6 +9,7 @@ import { L7_PLAY_CASES } from '../cases/l7.js';
 import { SAFETY_CARE_CASES } from '../cases/safety-care.js';
 import { CROSS_CHARACTER_CASES } from '../cases/cross-character.js';
 import { TIME_AWARENESS_CASES } from '../cases/time-awareness.js';
+import { RELATIONSHIP_CASES } from '../cases/relationships.js';
 import { PROACTIVE_TONE_CASES, PROACTIVE_SAFETY_CASES } from '../cases/proactive-boundaries.js';
 import {
   REAL_PERSON_BOUNDARY_CASES,
@@ -54,9 +55,10 @@ it('所有已实现阶段和主动/群聊/社交/宠物/玩法题都登记，编
     ...TIME_AWARENESS_CASES,
     ...PROACTIVE_TONE_CASES,
     ...PROACTIVE_SAFETY_CASES,
+    ...RELATIONSHIP_CASES,
   ];
   expect(EVAL_CASES.map((test) => test.id)).toEqual(all.map((test) => test.id));
-  expect(Object.keys(EVAL_SUITES)).toHaveLength(14);
+  expect(Object.keys(EVAL_SUITES)).toHaveLength(15);
   expect(validateEvalRegistry()).toEqual([]);
   expect(new Set(EVAL_CASES.map((test) => test.id)).size).toBe(all.length);
   for (const role of EVAL_CHARACTERS.filter((role) => role.id.startsWith('S-'))) {
@@ -138,6 +140,19 @@ it('全部登记题有输出与评审依据时，只能标记登记题通过，�
       test.inputKind === 'neutral_scenario' ? 'fixture-scenario-1' : undefined,
     expandedInputEvidenceRef:
       test.inputKind === 'neutral_scenario' ? 'fixture-expanded-input' : undefined,
+    turns: test.longConversation
+      ? Array.from({ length: test.longConversation.turnCount }, (_, i) => ({
+          turn: i + 1,
+          input: test.longConversation!.userInputs[i % test.longConversation!.userInputs.length]!,
+          output: 'fixture回答',
+          outputEvidenceRef: 'fixture-turn-output',
+          judge: {
+            score: 4,
+            reviewer: 'fixture-independent-reviewer',
+            checks: Object.fromEntries((test.requiredJudgeChecks ?? []).map((key) => [key, true])),
+          },
+        }))
+      : undefined,
   }));
   const result = summarizeEvalRun(records);
   expect(result).toMatchObject({
