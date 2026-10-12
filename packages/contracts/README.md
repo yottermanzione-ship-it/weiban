@@ -101,6 +101,10 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 **补登记（已在 3.0 之后实现，此前只写在交接里）**
 
+- 2026-10-11 自定义默认音色：`UserCustomCharacterWrite`、PATCH/保存前试聊和响应，以及导入`editorFields`增加可选可空`voiceId`，只从启用中的音色库新选，null清空。停止使用已停用音色时仍可编辑其他字段；试聊的已有角色快照可保留其旧选择。语音选择优先级为陪伴设置→自定义角色默认→预设默认，合成时再次检查启用状态。旧角色卡中的示例代号不是库UUID，不作为响应ID返回；明确清空不继承旧快照。无数据库迁移。
+
+- 2026-10-11 导入编辑字段补齐：`ImportResult(new_character).editorFields` 增加可选、可空的 `birthday`（有效当地日期）和 `avatarMediaId`。省略兼容旧草稿，null 明确清空；分批合并保留原草稿的用户编辑字段。保存头像时检查归属及头像用途，最终创建角色继续执行既有分类和媒体校验。无数据库迁移。
+
 - 3.0.1 甲（L4 后端收尾 a5fd58f）：`NewFriendsEndpoints`（「新的朋友」列表）、`MomentsEndpoints.listNotifications`（朋友圈消息列表）、`UserCustomEndpoints.list`（自定义角色列表）、`renameGroup` 允许空名恢复默认、更新类型 `conversation.removed`（会话被彻底删除 / 群解散，客户端从本地删掉会话和消息）、`DataSection.new_friends`、通知上下文带 `labels`；`Message.labels` 登记服务器标签 `self_chat`（角色自发群聊话题，push 对「带 self_chat 且没有 @ 用户」的群消息不推送）。
 - 3.0.1 乙（T-063）：`Conversation.group.formerParticipants`（已退出 / 被移出的角色参与者，只用于渲染其历史消息的发送者，不是群成员）。
 - 3.0.1 丙（T-088，总负责人裁定）：端口 `ContactsWritePort.addForUser`（提供方 contacts，调用方 plaza）：「添加为我的角色」由服务器代用户走 CHR-03 添加流程。服务器内部接口，不影响线上格式。
@@ -112,10 +116,11 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 - identity：端口 `IdentitySettingsWritePort.enableProactiveCalls`（⑰，ai-runtime 在来电询问点「可以」时打开全局来电开关；只开不关）。
 - 消息与聊天：`ImageContent.sizeBytes`（⑲）；`PLAY_SYSTEM_NOTICE_CODES`（㊲：focus_started、letter_sent、wishlist_item_completed 的 code 与参数）；`ChatSearchEndpoints.locateByDate`、`listByType`、会话内搜索 `senderParticipantId`（㉘）。
 - characters：`WorkLinkAdminEndpoints.getDefaultVoice`（⑲）；`UserCustomCharacterWrite.catchphrases / speechStyle` 与响应字段（T-098）；资料已更新红点起算点写进说明（㉕）；补充设定保存后冲突项异步写入并发 `data.changed(supplement)`；端口 `CharacterSupplementConflictsWritePort`、`CharacterChildFeaturesWritePort`（原服务器内部令牌转契约）、`PersonaUpdateSummarizerPort`（㉖，可选 AI 接入点）。
-- media 素材库：`CardTemplate.classicalStyle`（㉓）。
+- media 素材库：`CardTemplate.classicalStyle`（㉓）；收口补充`CardTemplateKind.daily_photo`（⑱），只出现在与服务器同步部署的管理端模板接口，按ADR-0028的管理枚举例外并入3.1。内部`MediaAssetReadPort.listCardTemplates`增加可选`classicalStyleOnly`，默认不限制风格，历史人物发图时要求古风且无肖像。
 - library：`FavoriteSource(message).seq`（㉘）、`Favorite.characterNameSnapshot / characterAvatarMediaIdSnapshot`（㉔）、`ShareRejectedDetails`（㉘，422 的 details 形状）。
 - growth：`PetAppearance.listed`（㉚）、事件 `growth.pet_naming_requested.speciesName`、端口 `CardCopywriterPort`（㉗，可选 AI 接入点）。
 - importer：`createJob.mergeIntoJobId`、`ImportJob.mergedIntoJobId`（㉕ 分批合并）、`ImportResult(supplement).conflicts / filteredCount`（㉕㉚）；`getJob` 说明更正为 `data.changed(imports)`。
+- Codex 产品收口补充：`ImportResult(new_character).editorFields` 可选保存名字、人设描述、完整口头禅、说话方式、示例和标签；避免把表单值塞入结构化角色卡的无关字段。分批合并保留用户编辑值（包括刻意清空），旧响应未带此字段时按生成草稿初始化。JSON Schema、OpenAPI 和 Kotlin 生成物同步。
 - push：`PushRequest.kind` 新增 `import`（㉕）。
 - model-access / billing：`ModelStatus.visionAvailable`（㉚）；端口 `ModelQuotePort`（㉖，按用户所选模型报价，model-access 提供）、`BillingQuotePort`（只给 model-access）、`BillingDailySpendReadPort`（㉞，当日按用途花费）。
 - plaza：`PlazaPresetVariantSnapshot.childFeaturesDetected`（㉝）；`PlazaWorkDetail.sourceCharacterId / myAdoptedCharacterId / removedReason / unreadCount`（㊱）；`PlazaAdminEndpoints.getWork / listBans`（㊱）。

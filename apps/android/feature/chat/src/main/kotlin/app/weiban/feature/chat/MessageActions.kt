@@ -9,6 +9,15 @@ import app.weiban.contracts.*
 import app.weiban.data.SessionCallOptions
 import kotlinx.coroutines.launch
 
+internal fun canAddToStickers(message: Message): Boolean {
+    if (message.senderKind != "character") return false
+    return when (val content = message.content) {
+        is ReceivedMessageContentSticker -> true
+        is ReceivedMessageContentImage -> content.sizeBytes?.let { it < 1_048_576L } ?: true
+        else -> false
+    }
+}
+
 @Composable internal fun MessageActions(
     ui: ConversationUi,
     message: Message,
@@ -92,10 +101,10 @@ import kotlinx.coroutines.launch
                 listOfNotNull(
                     item("保存图片") { ui.media.save(context, content.mediaId) },
                     item("收藏") { ui.media.favorite(message) },
-                    if (!mine) item("添加到表情") { ui.media.addToStickers(message) } else null,
+                    if (canAddToStickers(message)) item("添加到表情") { ui.media.addToStickers(message) } else null,
                 )
             is ReceivedMessageContentSticker ->
-                listOfNotNull(if (!mine) item("添加到表情") { ui.media.addToStickers(message) } else null)
+                listOfNotNull(if (canAddToStickers(message)) item("添加到表情") { ui.media.addToStickers(message) } else null)
             is ReceivedMessageContentVoice -> {
                 val shown = ui.media.transcripts[message.messageId]?.shown == true
                 listOf(

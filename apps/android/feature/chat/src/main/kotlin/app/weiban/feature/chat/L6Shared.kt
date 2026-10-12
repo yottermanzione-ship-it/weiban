@@ -61,6 +61,7 @@ internal object L6Overlays {
     val card = MutableStateFlow<CardOpen?>(null)
     val pets = MutableStateFlow<PetsOpen?>(null)
     val imports = MutableStateFlow<ImportOpen?>(null)
+    val customEditor = MutableStateFlow<CustomEditorOpen?>(null)
 
     fun openImport(
         kind: String = "new_character",
@@ -138,6 +139,8 @@ internal data class ImportOpen(
     val kind: String,
     val targetCharacterId: String?,
     val nonce: Long = System.nanoTime(),
+    val jobId: String? = null,
+    val mergeIntoJobId: String? = null,
 )
 
 /** 宿主应用打开的页面（T-086）：浮层里需要跳到某个会话时由宿主切到「微伴」标签。 */
@@ -151,6 +154,10 @@ object GrowthNavigation {
     /** 我 › 服务 › 宠物（宿主调用）。 */
     fun openPets() {
         L6Overlays.pets.value = PetsOpen()
+    }
+
+    fun openImport(jobId: String) {
+        L6Overlays.imports.value = ImportOpen("new_character", null, jobId = jobId)
     }
 }
 
@@ -236,12 +243,16 @@ internal fun serialText(serialNo: Long): String = "No." + serialNo.toString().pa
     val card by L6Overlays.card.collectAsState()
     val pets by L6Overlays.pets.collectAsState()
     val imports by L6Overlays.imports.collectAsState()
+    val customEditor by L6Overlays.customEditor.collectAsState()
     pets?.let { open -> key(open) { PetsOverlay(repository, runtime, owner, open) { L6Overlays.pets.value = null } } }
     imports?.let { open -> key(open) { ImportOverlay(repository, runtime, owner, open) { L6Overlays.imports.value = null } } }
     PlazaOverlay(repository, runtime, owner)
     PlayOverlay(repository, runtime, owner)
     card?.let { open -> CardDetailOverlay(repository, owner, open) { L6Overlays.card.value = null } }
     share?.let { request -> key(request) { ShareEditor(repository, runtime, owner, request) { L6Overlays.share.value = null } } }
+    customEditor?.takeIf { it.owner == owner }?.let { open ->
+        key(open) { CustomCharacterEditor(repository, runtime, open) { L6Overlays.customEditor.value = null } }
+    }
     AchievementToasts(repository, owner)
 }
 

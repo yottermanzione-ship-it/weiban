@@ -162,7 +162,21 @@ async function saveImage(mediaId: string) {
   }
 }
 
+export function canAddToStickers(message: Message): boolean {
+  const content = message.content;
+  return (
+    message.senderKind !== 'user' &&
+    !!content &&
+    (content.type === 'sticker' ||
+      (content.type === 'image' && (content.sizeBytes == null || content.sizeBytes < 1024 * 1024)))
+  );
+}
+
 export async function addToStickers(message: Message) {
+  if (!canAddToStickers(message)) {
+    showToast('只有小于 1 MB 的角色图片可以添加到表情');
+    return;
+  }
   try {
     await api.call(StickerEndpoints.addMySticker, {
       body: {
@@ -273,7 +287,7 @@ export function ImageViewer({
         <div className="viewer-menu" role="menu">
           {!isIPhone() && <button onClick={() => void saveImage(mediaId)}>保存图片</button>}
           <button onClick={() => void addFavorite(message)}>收藏</button>
-          {message.senderKind !== 'user' && (
+          {canAddToStickers(message) && (
             <button onClick={() => void addToStickers(message)}>添加到表情</button>
           )}
           {onDelete && (

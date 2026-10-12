@@ -19,6 +19,7 @@ export class ApiFailure extends Error {
     readonly code: string,
     message: string,
     readonly status: number,
+    readonly details?: ApiError['error']['details'],
   ) {
     super(message);
   }
@@ -168,6 +169,7 @@ export class ApiClient {
         code,
         error.success ? error.data.error.message : '操作未完成，请稍后重试',
         response.status,
+        error.success ? error.data.error.details : undefined,
       );
     }
     const data = endpoint.response.parse(raw);

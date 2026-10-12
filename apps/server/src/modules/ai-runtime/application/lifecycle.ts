@@ -11,8 +11,11 @@ import {
 } from '../../../platform/index.js';
 import { CHAT_READ_PORT } from '../../chat/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
+import { CHARACTER_TRIAL_READ_PORT } from '../../characters/index.js';
+import type { CharacterTrialReadPort } from '@weiban/contracts';
 import {
   companionSettings,
+  adultBoundaryStates,
   replyPlans,
   memories,
   memoryStates,
@@ -79,6 +82,7 @@ const TRANSCRIBE_VOICE_JOB = 'ai.transcribe_voice';
 @Injectable()
 export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap {
   constructor(
+    @Inject(CHARACTER_TRIAL_READ_PORT) readonly trials: CharacterTrialReadPort,
     @Inject(ReplyPlanStore) readonly store: ReplyPlanStore,
     @Inject(ReplyEngine) readonly engine: ReplyEngine,
     @Inject(MemoryService) readonly memory: MemoryService,
@@ -115,15 +119,17 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       (j) => this.engine.run(j.data.planId),
       { pollingIntervalSeconds: 0.5, localConcurrency: 4 },
     );
-    await this.jobs.work<{ userId?: string }>('ai.recover_replies', (job) =>
-      this.store.recover(job.data.userId),
-    );
+    await this.jobs.work<{ userId?: string }>('ai.recover_replies', async (job) => {
+      await this.store.recover(job.data.userId);
+      await this.groupChat.recover(job.data.userId);
+    });
     await this.jobs.work<MemoryJob>(EXTRACT_MEMORY_JOB, (j) => this.memory.extract(j.data), {
       pollingIntervalSeconds: 0.5,
       localConcurrency: 2,
     });
     await this.jobs.work('ai.reconcile', async () => {
       await this.store.reconcile();
+      await this.groupChat.reconcile();
       await this.memory.reconcile();
     });
     await this.jobs.schedule('ai.reconcile', '* * * * *');
@@ -507,7 +513,15 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         const role = conversation?.participants.find((member) => member.kind === 'character');
         if (!role) return;
         if (!(await this.store.lock(tx, p.senderRefId, p.conversationId))) return;
-        await this.simulation.markActive(tx, p.senderRefId, role.refId);
+        const contact = await this.contacts.getActiveContact(p.senderRefId, role.refId, tx);
+        if (contact) await this.simulation.markActive(tx, p.senderRefId, role.refId);
+        else if (
+          !(await this.trials.getTrial(
+            { userId: p.senderRefId, characterId: role.refId, conversationId: p.conversationId },
+            tx,
+          ))
+        )
+          return;
         await this.store.enqueue(tx, {
           userId: p.senderRefId,
           characterId: role.refId,
@@ -535,6 +549,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
           p.senderKind === 'character'
             ? await this.chat.getMessage(p.messageId, ['normal', 'adult'])
             : null;
+        if (message?.labels?.includes('quirk_draft')) return;
         const promise =
           message?.content?.type === 'text' &&
           /记住了|我会记住|我记下了/u.test(message.content.text);
@@ -631,6 +646,15 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         }
         if (conversationId)
           await tx.db
+            .delete(adultBoundaryStates)
+            .where(
+              and(
+                eq(adultBoundaryStates.userId, userId),
+                eq(adultBoundaryStates.conversationId, conversationId),
+              ),
+            );
+        if (conversationId)
+          await tx.db
             .delete(replyPlans)
             .where(
               and(eq(replyPlans.userId, userId), eq(replyPlans.conversationId, conversationId)),
@@ -696,12 +720,29 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       consumer: 'ai.on_model_recovered',
       eventType: 'model_access.model_status_changed',
       handle: async (event, tx) => {
-        if (event.payload.available)
+        if (event.payload.available) {
           await this.jobs.send(
             'ai.recover_replies',
             {},
             { tx, retryLimit: 10, retryBackoff: true },
           );
+          const users = await tx.query<{ user_id: string }>(
+            'SELECT DISTINCT user_id FROM ai_runtime.simulation_states',
+          );
+          for (const user of users.rows)
+            await this.jobs.send(
+              PLAY_RECOVER_JOB,
+              { userId: user.user_id },
+              { tx, retryLimit: 3, retryBackoff: true },
+            );
+        }
+      },
+    });
+    this.bus.subscribe({
+      consumer: 'ai.on_adult_checker_configured',
+      eventType: 'model_access.adult_checker_configured',
+      handle: async (_event, tx) => {
+        await this.jobs.send('ai.recover_replies', {}, { tx, retryLimit: 10, retryBackoff: true });
       },
     });
   }

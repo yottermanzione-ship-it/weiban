@@ -12,6 +12,7 @@ import {
 } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
 import { api } from '../data/client.js';
+import { adminMediaUrl } from '../data/media-url.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { Feedback } from '../components/feedback.js';
 
@@ -25,6 +26,7 @@ type StageKey = (typeof stages)[number][0];
 interface AppearanceDraft {
   appearanceId?: string;
   name: string;
+  listed?: boolean;
   images: Partial<Record<StageKey, { mediaId: string; url: string }>>;
 }
 
@@ -32,6 +34,7 @@ function toDrafts(species: PetSpecies | null): AppearanceDraft[] {
   return (species?.appearances ?? []).map((a) => ({
     appearanceId: a.appearanceId,
     name: a.name,
+    listed: a.listed ?? true,
     images: { baby: a.images.baby, junior: a.images.junior, adult: a.images.adult },
   }));
 }
@@ -99,6 +102,7 @@ export function PetSpeciesPage() {
       appearances: drafts.map((d) => ({
         ...(d.appearanceId ? { appearanceId: d.appearanceId } : {}),
         name: d.name.trim(),
+        listed: d.listed ?? true,
         imageMediaIds: {
           baby: d.images.baby?.mediaId ?? '',
           junior: d.images.junior?.mediaId ?? '',
@@ -212,6 +216,20 @@ export function PetSpeciesPage() {
                     }
                   />
                 </label>
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={d.listed ?? true}
+                    onChange={(event) =>
+                      setDrafts((items) =>
+                        items.map((item, position) =>
+                          position === index ? { ...item, listed: event.target.checked } : item,
+                        ),
+                      )
+                    }
+                  />
+                  这个外观上架
+                </label>
                 <div className="button-row">
                   {stages.map(([stage, label]) => (
                     <label key={stage} className="stage-upload">
@@ -219,7 +237,7 @@ export function PetSpeciesPage() {
                       {d.images[stage] ? (
                         <img
                           className="asset-thumb"
-                          src={d.images[stage]!.url}
+                          src={adminMediaUrl(d.images[stage]!.url)}
                           alt={`${d.name}${label}`}
                         />
                       ) : (
@@ -332,12 +350,17 @@ export function PetSpeciesPage() {
                 <tbody>
                   {selected.appearances.map((a) => (
                     <tr key={a.appearanceId}>
-                      <td>{a.name}</td>
+                      <td>
+                        {a.name}
+                        <span className={(a.listed ?? true) ? 'tag success' : 'tag'}>
+                          {(a.listed ?? true) ? '上架' : '已下架'}
+                        </span>
+                      </td>
                       {stages.map(([stage, label]) => (
                         <td key={stage}>
                           <img
                             className="asset-thumb"
-                            src={a.images[stage].url}
+                            src={adminMediaUrl(a.images[stage].url)}
                             alt={`${a.name}${label}`}
                             loading="lazy"
                           />

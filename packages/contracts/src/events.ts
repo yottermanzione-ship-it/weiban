@@ -171,6 +171,13 @@ export const ModelSelectionChanged = event(
   z.object({ userId: Id, characterId: Id.nullable() }),
 );
 
+/** 专用成人检查默认首次设置/替换/路由更新，恢复因检查缺配置而等待的回复。 */
+export const AdultCheckerConfigured = event(
+  'model_access.adult_checker_configured',
+  'model_access',
+  z.object({ modelKey: ModelKey }),
+);
+
 /**
  * v1.3（T-026）：对账第 ② 层（用量记录 ↔ 扣费）某一天的结果。model-access 用 BillingChargeQueryPort
  * 比对后发出；billing 订阅，写进当天的对账记录（ReconciliationRun 的 usageWithoutCharge 等字段），
@@ -767,6 +774,7 @@ export const DomainEvent = z.discriminatedUnion('type', [
   AdminAlertRaised,
   ModelStatusChanged,
   ModelSelectionChanged,
+  AdultCheckerConfigured,
   UsageReconciled,
   BalanceChanged,
   BalanceDepleted,

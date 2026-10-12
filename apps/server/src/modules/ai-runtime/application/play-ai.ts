@@ -12,6 +12,7 @@
  * TA 的提醒到点由 play 自己发出（不调用模型、不占额度）；这里只在保存时生成说法。
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { PlayContinuityStore } from './play-continuity.js';
 import { and, eq } from 'drizzle-orm';
 import type {
   CharacterReadPort,
@@ -131,6 +132,7 @@ interface Target {
 @Injectable()
 export class PlayAiService {
   constructor(
+    @Inject(PlayContinuityStore) private readonly continuity: PlayContinuityStore,
     @Inject(DATABASE) private readonly db: Database,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
@@ -335,6 +337,7 @@ export class PlayAiService {
       json: true,
       system: [
         '玩法「每日一问」：用户和你回答同一道题。你先给出你自己的答案（符合人设与公开资料，不编造与资料冲突的经历），',
+        await this.continuity.context(item.userId, item.characterId, t.contentScope),
         '再针对用户的回答在私聊里自然地接一句话（好奇、共鸣或追问一个小细节）。',
         '只输出 JSON：{"answer":"你的答案，1～3 句，≤150 字","followUp":"私聊里接的话，1～2 句，≤80 字"}。',
       ],
@@ -352,9 +355,19 @@ export class PlayAiService {
       return;
     }
     const parsed = parseJson<{ answer?: unknown; followUp?: unknown }>(result.text);
-    const answer = cleanLine(String(parsed?.answer ?? ''), 200);
+    let answer = cleanLine(String(parsed?.answer ?? ''), 200);
     const followUp = cleanLine(String(parsed?.followUp ?? ''), 200);
     if (!answer || !this.guardOk(t, answer)) return;
+    const remembered = await this.continuity.rememberAnswer(
+      item.userId,
+      item.characterId,
+      answerId,
+      item.question,
+      answer,
+      t.contentScope,
+    );
+    if (!remembered) return;
+    answer = remembered;
     const set = await this.playAgent.setDailyCharacterAnswer({ answerId, answer });
     if (!set.ok) return;
     if (followUp && this.guardOk(t, followUp))
@@ -818,26 +831,8 @@ export class PlayAiService {
       .trim()
       .slice(0, 4000);
     if (!letter || !this.guardOk(t, letter)) return { ok: false, reason: 'output_guard' };
-    // 先查额度再寄（寄信接口不共享事务），寄出后在事务里 recordSent 计入 P-03 / P-04。
-    const allowed = await this.quota
-      .canSendProactive(
-        input.userId,
-        input.characterId,
-        input.localDate,
-        input.perCharacterLimit,
-        true,
-      )
-      .catch(() => false);
-    if (!allowed) return { ok: false, reason: 'daily_limit' };
-    const sent = await this.playAgent.sendCharacterLetter({
-      userId: input.userId,
-      characterId: input.characterId,
-      body: letter,
-      idempotencyKey: `play:anniv:${input.planId}`,
-    });
-    if (!sent.ok) return { ok: false, reason: sent.error };
-    await this.db
-      .transaction(async (tx) => {
+    try {
+      const messageId = await this.db.transaction(async (tx) => {
         await this.quota.recordSent(
           input.userId,
           input.characterId,
@@ -848,9 +843,26 @@ export class PlayAiService {
           true,
           input.perCharacterLimit,
         );
-      })
-      .catch(() => undefined);
-    return { ok: true, messageId: sent.value.letterId };
+        const sent = await this.playAgent.sendCharacterLetter(
+          {
+            userId: input.userId,
+            characterId: input.characterId,
+            body: letter,
+            idempotencyKey: `play:anniv:${input.planId}`,
+          },
+          tx,
+        );
+        if (!sent.ok) throw new Error(`post_failed:${sent.error}`);
+        await tx.query(
+          'DELETE FROM ai_runtime.pending_anniversary_letters WHERE plan_id=$1 AND user_id=$2',
+          [input.planId, input.userId],
+        );
+        return sent.value.letterId;
+      });
+      return { ok: true, messageId };
+    } catch (error) {
+      return { ok: false, reason: errorReason(error) };
+    }
   }
 
   // =========================================================================
@@ -987,6 +999,7 @@ export class PlayAiService {
     const waiting = await this.daily.listDailyAnswersWaitingBalance(userId).catch(() => []);
     for (const w of waiting) await this.runDailyAnswer(w.answerId).catch(() => undefined);
     await this.runLetterReplies(userId);
+    await this.scheduler.runForUser(userId);
     const reminders = await this.phrasings.listRemindersNeedingPhrasings(userId).catch(() => []);
     for (const r of reminders)
       await this.runReminderPhrasings(userId, r.reminderId).catch(() => undefined);

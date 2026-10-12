@@ -6,8 +6,10 @@ import {
   CharacterSupplementEndpoints,
   IMPORT_LIMITS,
   ImporterEndpoints,
+  ModelAccessEndpoints,
   UserCustomEndpoints,
   type ImportJob,
+  type ImportResult,
 } from '@weiban/contracts';
 import { ApiFailure, formatMoney } from '@weiban/client-core';
 import type { z } from 'zod';
@@ -92,6 +94,14 @@ export function ImportPage() {
   const targetCharacterId = params.get('characterId');
   const [jobId, setJobId] = useState<string | null>(routeJobId ?? null);
   const { job, setJob, error } = useImportJob(jobId);
+  useEffect(() => {
+    setJob(null);
+    setJobId(routeJobId ?? null);
+  }, [routeJobId, setJob]);
+  useEffect(() => {
+    if (job?.status === 'completed' && job.mergedIntoJobId)
+      navigate(`/imports/${job.mergedIntoJobId}`, { replace: true });
+  }, [job, navigate]);
   const title = (job?.kind ?? kind) === 'supplement' ? '导入资料' : '导入聊天记录';
   return (
     <main className="import-page">
@@ -107,6 +117,7 @@ export function ImportPage() {
         <NewImport
           kind={kind}
           targetCharacterId={targetCharacterId}
+          mergeIntoJobId={params.get('mergeIntoJobId')}
           onCreated={(created) => {
             setJob(created);
             setJobId(created.jobId);
@@ -125,10 +136,12 @@ export function ImportPage() {
 function NewImport({
   kind,
   targetCharacterId,
+  mergeIntoJobId,
   onCreated,
 }: {
   kind: 'new_character' | 'supplement';
   targetCharacterId: string | null;
+  mergeIntoJobId: string | null;
   onCreated(job: ImportJob): void;
 }) {
   const [source, setSource] = useState<Source | null>(null);
@@ -141,6 +154,7 @@ function NewImport({
   const [error, setError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const supplement = kind === 'supplement';
+  const model = useRemote(ModelAccessEndpoints.getModelStatus, { networkOnly: true });
 
   async function pickFiles(event: ChangeEvent<HTMLInputElement>) {
     let picked = [...(event.target.files ?? [])];
@@ -175,6 +189,7 @@ function NewImport({
           clientRequestId: crypto.randomUUID(),
           kind,
           targetCharacterId: targetCharacterId ?? null,
+          mergeIntoJobId: mergeIntoJobId ?? undefined,
           sourceKind: source,
           text: source === 'text' ? text : undefined,
         },
@@ -222,9 +237,17 @@ function NewImport({
           <CaretRight />
         </button>
         {!supplement && (
-          <button className="entry-card" onClick={() => setSource('screenshots')}>
+          <button
+            className="entry-card"
+            disabled={model.data?.visionAvailable === false}
+            onClick={() => setSource('screenshots')}
+          >
             <strong>上传聊天截图</strong>
-            <small className="hint">最多 30 张</small>
+            <small className="hint">
+              {model.data?.visionAvailable === false
+                ? '当前模型不能识图，请先更换模型'
+                : '最多 30 张'}
+            </small>
             <CaretRight />
           </button>
         )}
@@ -512,6 +535,7 @@ function JobStep({ job, onJob }: { job: ImportJob; onJob(job: ImportJob): void }
           >
             去编辑草稿
           </button>
+          <ContinueImport job={job} />
         </div>
       );
     case 'failed':
@@ -680,12 +704,14 @@ function SupplementResult({ job }: { job: ImportJob }) {
   const [chosen, setChosen] = useState<Set<number>>(new Set());
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
+  const [result, setResult] = useState<Extract<ImportResult, { kind: 'supplement' }> | null>(null);
   useEffect(() => {
     let alive = true;
     void api
       .call(ImporterEndpoints.getResult, { params: { jobId: job.jobId }, networkOnly: true })
       .then((result) => {
         if (!alive || result.kind !== 'supplement') return;
+        setResult(result);
         const list = result.text
           .split(/\r?\n/)
           .map((l) => l.replace(/^[-·•\d.、\s]+/, '').trim())
@@ -701,6 +727,21 @@ function SupplementResult({ job }: { job: ImportJob }) {
     };
   }, [job.jobId]);
   const custom = profile.data?.kind === 'custom';
+  async function saveDraft() {
+    if (!result || !items) return;
+    setPending(true);
+    try {
+      await api.call(ImporterEndpoints.saveResultDraft, {
+        params: { jobId: job.jobId },
+        body: { ...result, text: items.filter((_, i) => chosen.has(i)).join('\n') },
+      });
+      showToast('草稿已保存');
+    } catch (e) {
+      setError(friendlyError(e));
+    } finally {
+      setPending(false);
+    }
+  }
   async function save() {
     if (!items) return;
     const picked = items.filter((_, i) => chosen.has(i));
@@ -761,6 +802,19 @@ function SupplementResult({ job }: { job: ImportJob }) {
         ))}
       </div>
       <p className="hint">涉及角色分类、年龄或成人模式的内容不会生效。</p>
+      {(result?.filteredCount ?? 0) > 0 && (
+        <p className="inline-tip">{result?.filteredCount} 条不会生效</p>
+      )}
+      {result?.conflicts?.map((conflict, i) => (
+        <p className="inline-tip" key={i}>
+          {conflict.field}：导入内容「{conflict.supplementValue}」与公开资料「{conflict.publicValue}
+          」冲突，以公开资料为准。
+        </p>
+      ))}
+      <button disabled={pending || !result} onClick={() => void saveDraft()}>
+        保存草稿
+      </button>
+      <ContinueImport job={job} />
       {error && <p role="alert">{error}</p>}
       <button
         className="primary"
@@ -771,6 +825,12 @@ function SupplementResult({ job }: { job: ImportJob }) {
       </button>
     </div>
   );
+}
+
+function ContinueImport({ job }: { job: ImportJob }) {
+  const query = new URLSearchParams({ kind: job.kind, mergeIntoJobId: job.jobId });
+  if (job.targetCharacterId) query.set('characterId', job.targetCharacterId);
+  return <Link to={`/imports/new?${query.toString()}`}>继续导入下一批</Link>;
 }
 
 // ---------- 进行中的导入 ----------

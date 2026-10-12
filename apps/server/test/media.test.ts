@@ -236,9 +236,14 @@ describeDb('media 最小版：权限、图片真实性、加密文件、签名�
       .set('Authorization', `Bearer ${otherToken}`)
       .expect(200);
     const audit = await db.query(
-      "SELECT * FROM platform.audit_log WHERE module='media' AND action='avatar.uploaded'",
+      "SELECT * FROM platform.audit_log WHERE module='media' AND action='asset.uploaded'",
     );
     expect(audit.rows).toHaveLength(1);
+    expect(audit.rows[0]).toMatchObject({
+      target_id: publicImage.mediaId,
+      actor_type: 'admin',
+      details: { purpose: 'character_avatar', sizeBytes: publicImage.sizeBytes },
+    });
     clock.advance(300001);
     const old = new URL(privateImage.url);
     await http()

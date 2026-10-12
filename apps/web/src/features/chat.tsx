@@ -49,6 +49,7 @@ import {
   VoiceBubble,
   addFavorite,
   addToStickers,
+  canAddToStickers,
   callRecordText,
   useTranscriptUnavailableNotice,
   voicePlayer,
@@ -126,6 +127,12 @@ const modeNames: Record<string, string> = {
 function systemText(code: string, params: Record<string, string | number | boolean>): string {
   const p = (key: string) => String(params[key] ?? '');
   switch (code) {
+    case 'focus_started':
+      return `开始和 ${p('characterName') || 'TA'} 专注 ${p('minutes')} 分钟`;
+    case 'letter_sent':
+      return `已给 ${p('characterName') || 'TA'} 寄出一封信`;
+    case 'wishlist_item_completed':
+      return `完成了心愿「${p('title')}」${params.cardIssued ? ' · 已获得瞬间卡' : ''}`;
     case 'contact_accepted':
       return '已通过好友申请，现在可以开始聊天了';
     case 'scenario_mode_changed':
@@ -880,11 +887,9 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
                         {['text', 'image', 'link', 'voice'].includes(message.content.type) && (
                           <button onClick={() => void addFavorite(message)}>收藏</button>
                         )}
-                        {message.senderKind !== 'user' &&
-                          (message.content.type === 'image' ||
-                            message.content.type === 'sticker') && (
-                            <button onClick={() => void addToStickers(message)}>添加到表情</button>
-                          )}
+                        {canAddToStickers(message) && (
+                          <button onClick={() => void addToStickers(message)}>添加到表情</button>
+                        )}
                         <button onClick={() => startSelect(message)}>多选</button>
                         <button onClick={() => void action(message, 'hide')}>删除</button>
                         {message.senderKind === 'user' && (

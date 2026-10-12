@@ -126,6 +126,8 @@ private class CharacterUi(
                 referral?.referrerCharacterId,
             )
         }
+    val customEditor by L6Overlays.customEditor.collectAsState()
+    LaunchedEffect(customEditor) { if (customEditor == null) profile.refresh() }
     val contact = state.contacts.find { it.characterId == characterId } ?: ui.added
     Column(
         Modifier
@@ -142,7 +144,10 @@ private class CharacterUi(
             if (contact?.remark != null) Text("名字：${role.name}")
             if (role.personaUpdatedUnseen) PersonaUpdatedBadge(repository, owner, role.characterId) { profile.refresh() }
             // 复制来的角色：来源标注与新版本提示（PLZ-04 第 4 条、PLZ-05 第 4 条）。
-            if (role.kind == "custom") PlazaOriginNote(repository, owner, role.characterId)
+            if (role.kind == "custom") {
+                PlazaOriginNote(repository, owner, role.characterId)
+                CustomCharacterEditEntry(repository, owner, role.characterId)
+            }
             Text(role.tagline)
             Text(role.intro)
             if (role.tags.isNotEmpty()) Text(role.tags.joinToString(" · "))

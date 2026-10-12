@@ -32,6 +32,7 @@ import {
   OUTBOX,
   P05_DEFAULT_ACTIVE_WINDOW,
   newId,
+  asDbTx,
   parseContract,
   type Database,
   type DbTx,
@@ -410,12 +411,15 @@ export class LettersService implements PlayFeature, OnModuleInit {
   }
 
   /** 角色主动寄信（纪念日，PLAY-05 第 7 条）：直接送达（时机与额度由 ai-runtime 决定）。 */
-  async sendCharacterLetter(input: {
-    userId: string;
-    characterId: string;
-    body: string;
-    idempotencyKey: string;
-  }): Promise<PortResult<{ letterId: string }, 'contact_inactive'>> {
+  async sendCharacterLetter(
+    input: {
+      userId: string;
+      characterId: string;
+      body: string;
+      idempotencyKey: string;
+    },
+    sharedTx?: Tx,
+  ): Promise<PortResult<{ letterId: string }, 'contact_inactive'>> {
     const text = input.body.trim().slice(0, 4000);
     const existing = await this.findByKey(input.userId, input.characterId, input.idempotencyKey);
     if (existing) return { ok: true, value: { letterId: existing.id } };
@@ -423,7 +427,7 @@ export class LettersService implements PlayFeature, OnModuleInit {
       return { ok: false, error: 'contact_inactive', message: '角色不在通讯录中' };
     const timeZone = await this.ctx.timeZone(input.userId);
     try {
-      return await this.db.transaction(async (tx) => {
+      const run = async (tx: DbTx) => {
         const now = this.ctx.clock.now();
         const id = newId();
         await tx.db.insert(letters).values({
@@ -443,7 +447,8 @@ export class LettersService implements PlayFeature, OnModuleInit {
         const [row] = await tx.db.select().from(letters).where(eq(letters.id, id));
         await this.deliver(tx, row!, text);
         return { ok: true as const, value: { letterId: id } };
-      });
+      };
+      return sharedTx ? await run(asDbTx(sharedTx)) : await this.db.transaction(run);
     } catch (error) {
       if (isUniqueViolation(error)) {
         const again = await this.findByKey(input.userId, input.characterId, input.idempotencyKey);

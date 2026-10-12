@@ -681,24 +681,14 @@ function ReportsTab({ onChanged }: { onChanged(): void }) {
     if (!detail || detail.target.kind !== 'work') return;
     let active = true;
     const workId = detail.target.workId;
-    // 契约没有「按 ID 取单个作品」的管理接口：从列表里找到该作品，再取当前版本快照。
-    void (async () => {
-      try {
-        let cursor: string | undefined;
-        for (let i = 0; i < 20; i += 1) {
-          const page = await api.call(PlazaAdminEndpoints.listWorks, { query: { cursor } });
-          const hit = page.items.find((w) => w.workId === workId);
-          if (hit) {
-            if (active) setWork(hit);
-            return;
-          }
-          if (!page.nextCursor) return;
-          cursor = page.nextCursor;
-        }
-      } catch {
-        /* 读不到时只显示作品 ID */
-      }
-    })();
+    void api
+      .call(PlazaAdminEndpoints.getWork, { params: { workId } })
+      .then((value) => {
+        if (active) setWork(value);
+      })
+      .catch((e) => {
+        if (active) setError(errorText(e));
+      });
     return () => {
       active = false;
     };
@@ -855,6 +845,12 @@ function ReportsTab({ onChanged }: { onChanged(): void }) {
 }
 
 function BansTab() {
+  const fetchBans = useCallback(
+    (cursor?: string) => api.call(PlazaAdminEndpoints.listBans, { query: { cursor, limit: 50 } }),
+    [],
+  );
+  const bans =
+    usePaged<z.infer<typeof PlazaAdminEndpoints.listBans.response>['items'][number]>(fetchBans);
   const [userId, setUserId] = useState('');
   const [period, setPeriod] = useState<'7' | '30' | 'permanent'>('7');
   const [reason, setReason] = useState('');
@@ -887,6 +883,7 @@ function BansTab() {
       }
       setConfirm(null);
       setReason('');
+      void bans.load();
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -916,6 +913,22 @@ function BansTab() {
         用户 ID 可以在「作品」抽屉里看到。停止期间，TA 的全部作品不展示，也不能发布和评论。
       </p>
       <Feedback message={message} error={confirm ? '' : error} />
+      {bans.error && <Feedback error={bans.error} />}
+      <div className="panel stack">
+        <h2>当前停权用户</h2>
+        {!bans.loading && bans.items.length === 0 && <p className="hint">没有停权中的用户</p>}
+        {bans.items.map((ban) => (
+          <button key={ban.userId} onClick={() => setUserId(ban.userId)}>
+            {ban.nickname ?? ban.userId} · {ban.until === 'permanent' ? '永久' : beijing(ban.until)}
+            <small>{ban.reason}</small>
+          </button>
+        ))}
+        {bans.cursor && (
+          <button disabled={bans.loading} onClick={() => void bans.load(bans.cursor ?? undefined)}>
+            加载更多
+          </button>
+        )}
+      </div>
       <div className="panel stack">
         <label>
           用户 ID
@@ -1063,6 +1076,7 @@ function PlannerConfig() {
             <th>置信度门槛</th>
             <th>最近评测</th>
             <th>更新时间（北京时间）</th>
+            <th>本机熔断至</th>
             <th />
           </tr>
         </thead>
@@ -1081,6 +1095,7 @@ function PlannerConfig() {
                 </td>
                 <td>{entry?.evalReportId ?? '—'}</td>
                 <td>{beijing(entry?.updatedAt)}</td>
+                <td>{beijing(entry?.circuitOpenUntil)}</td>
                 <td>›</td>
               </tr>
             );

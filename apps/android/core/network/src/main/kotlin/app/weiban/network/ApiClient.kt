@@ -19,7 +19,9 @@ import java.util.concurrent.atomic.AtomicReference
 class ApiFailure(
     val code: String,
     val status: Int,
-) : IOException(code)
+    message: String? = null,
+    val details: Map<String, JsonElement>? = null,
+) : IOException(message ?: code)
 
 /** No credentials in logs, URLs or a logging interceptor. Every reply belongs to one auth object. */
 class ApiClient(
@@ -38,7 +40,9 @@ class ApiClient(
     private val root =
         baseUrl.toHttpUrl().also {
             require(it.username.isEmpty() && it.password.isEmpty() && it.query == null && it.fragment == null)
-            require(it.isHttps || it.host in setOf("localhost", "127.0.0.1", "10.0.2.2"))
+            require(it.isHttps || it.host in setOf("localhost", "127.0.0.1", "10.0.2.2")) {
+                "HTTPS required for API host ${it.host}"
+            }
         }
     private val session = AtomicReference<AuthResponse?>(null)
 
@@ -77,7 +81,7 @@ class ApiClient(
                             json.decodeFromJsonElement(ApiError.serializer(), ContractJson.normalize("ApiError", raw))
                         }.getOrNull()
                     if (error?.error?.code == "unauthenticated" && endpoint.auth != "none") session.compareAndSet(auth, null)
-                    throw ApiFailure(error?.error?.code ?: "unsupported", response.code)
+                    throw ApiFailure(error?.error?.code ?: "unsupported", response.code, error?.error?.message, error?.error?.details)
                 }
                 decode(endpoint, bytes, auth)
             }

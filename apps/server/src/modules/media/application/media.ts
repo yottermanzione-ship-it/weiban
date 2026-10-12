@@ -36,7 +36,14 @@ import {
   type UserDataRegistry,
 } from '../../../platform/index.js';
 import { objects, userStickers } from '../infra/db/schema.js';
-import { MEDIA_STORAGE, MEDIA_SYNC, type MediaStorageAudit, type MediaSync } from '../tokens.js';
+import {
+  MEDIA_STORAGE,
+  MEDIA_SYNC,
+  MEDIA_ACCOUNT_STATUS,
+  type MediaAccountStatus,
+  type MediaStorageAudit,
+  type MediaSync,
+} from '../tokens.js';
 import type { ObjectStorage } from '../infra/storage.js';
 type Row = typeof objects.$inferSelect;
 
@@ -112,6 +119,7 @@ export class MediaService
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
+    @Inject(MEDIA_ACCOUNT_STATUS) private readonly accounts: MediaAccountStatus,
     @Optional() @Inject(MEDIA_SYNC) private readonly sync: MediaSync | null = null,
   ) {}
   async onModuleInit(): Promise<void> {
@@ -317,26 +325,32 @@ export class MediaService
       .returning();
     if (!row) throw new Error('媒体元数据写入失败');
     try {
-      await this.storage.put(
-        storageKey,
-        await this.crypto.seal(keyOwner, `media:${id}`, processed.body),
-      );
-      if (thumbStorageKey && processed.thumb)
+      return await this.database.transaction(async (tx) => {
+        // pending保留在事务外，进程中断后仍能按元数据回收对象；用户状态行锁
+        // 则覆盖DEK生成、文件写入和ready提交，注销不能在中间销毁再重建密钥。
+        if (input.ownerId && (await this.accounts.getAccountStatus(input.ownerId, tx)) !== 'active')
+          throw new AppError('unauthenticated', '账号已失效');
         await this.storage.put(
-          thumbStorageKey,
-          await this.crypto.seal(keyOwner, `media-thumb:${id}`, processed.thumb),
+          storageKey,
+          await this.crypto.seal(keyOwner, `media:${id}`, processed.body, tx),
         );
-      const [ready] = await this.database.db
-        .update(objects)
-        .set({ state: 'ready' })
-        .where(and(eq(objects.id, id), eq(objects.state, 'pending')))
-        .returning();
-      if (!ready) {
-        await this.storage.delete(storageKey);
-        if (thumbStorageKey) await this.storage.delete(thumbStorageKey);
-        throw new AppError('not_found', '媒体已删除');
-      }
-      return ready;
+        if (thumbStorageKey && processed.thumb)
+          await this.storage.put(
+            thumbStorageKey,
+            await this.crypto.seal(keyOwner, `media-thumb:${id}`, processed.thumb, tx),
+          );
+        const [ready] = await tx.db
+          .update(objects)
+          .set({ state: 'ready' })
+          .where(and(eq(objects.id, id), eq(objects.state, 'pending')))
+          .returning();
+        if (!ready) {
+          await this.storage.delete(storageKey);
+          if (thumbStorageKey) await this.storage.delete(thumbStorageKey);
+          throw new AppError('not_found', '媒体已删除');
+        }
+        return ready;
+      });
     } catch (error) {
       await this.storage.delete(storageKey).catch(() => undefined);
       if (thumbStorageKey) await this.storage.delete(thumbStorageKey).catch(() => undefined);

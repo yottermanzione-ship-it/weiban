@@ -299,67 +299,81 @@ export class LibraryService implements OnModuleInit {
     const snapshots = new Map<string, { name: string | null; avatarMediaId: string | null }>();
     for (const r of resolved) {
       const characterId = r.pending?.characterId;
-      if (!r.pending || !characterId) continue;
+      if (!r.pending || !characterId || snapshots.has(`${r.kind}:${r.sourceId}`)) continue;
       snapshots.set(`${r.kind}:${r.sourceId}`, await this.characterSnapshot(userId, characterId));
     }
     const unusedCopies: string[] = [];
-    const ids = await this.db.transaction(async (tx) => {
-      const ids: string[] = [];
-      const added: string[] = [];
-      for (const r of resolved) {
-        if (r.pending) {
-          const id = newId();
-          const { content, ...rest } = r.pending;
-          const snap = snapshots.get(`${r.kind}:${r.sourceId}`);
-          const sealed = await this.crypto.seal(
-            userId,
-            `library:favorite:${id}`,
-            JSON.stringify(content),
-            tx,
-          );
-          const inserted = await tx.db
-            .insert(favorites)
-            .values({
-              ...rest,
-              id,
+    const ids = await this.db
+      .transaction(async (tx) => {
+        const ids: string[] = [];
+        const added: string[] = [];
+        const processed = new Set<string>();
+        for (const r of resolved) {
+          const sourceKey = `${r.kind}:${r.sourceId}`;
+          if (processed.has(sourceKey)) continue;
+          processed.add(sourceKey);
+          if (r.pending) {
+            const id = newId();
+            const { content, ...rest } = r.pending;
+            const snap = snapshots.get(`${r.kind}:${r.sourceId}`);
+            const sealed = await this.crypto.seal(
               userId,
-              contentCiphertext: sealed,
-              characterNameSnapshot: snap?.name ?? null,
-              characterAvatarMediaIdSnapshot: snap?.avatarMediaId ?? null,
-              sourceSeq: rest.sourceSeq ?? null,
-              createdAt: this.clock.now(),
-            })
-            .onConflictDoNothing()
-            .returning({ id: favorites.id });
-          if (inserted.length) added.push(id);
-          else if (snap?.avatarMediaId) unusedCopies.push(snap.avatarMediaId);
+              `library:favorite:${id}`,
+              JSON.stringify(content),
+              tx,
+            );
+            const inserted = await tx.db
+              .insert(favorites)
+              .values({
+                ...rest,
+                id,
+                userId,
+                contentCiphertext: sealed,
+                characterNameSnapshot: snap?.name ?? null,
+                characterAvatarMediaIdSnapshot: snap?.avatarMediaId ?? null,
+                sourceSeq: rest.sourceSeq ?? null,
+                createdAt: this.clock.now(),
+              })
+              .onConflictDoNothing()
+              .returning({ id: favorites.id });
+            if (inserted.length) added.push(id);
+            else if (snap?.avatarMediaId) unusedCopies.push(snap.avatarMediaId);
+          }
+          const [row] = await tx.db
+            .select({ id: favorites.id })
+            .from(favorites)
+            .where(
+              and(
+                eq(favorites.userId, userId),
+                eq(favorites.sourceKind, r.kind),
+                eq(favorites.sourceId, r.sourceId),
+              ),
+            );
+          if (row) ids.push(row.id);
         }
-        const [row] = await tx.db
-          .select({ id: favorites.id })
-          .from(favorites)
-          .where(
-            and(
-              eq(favorites.userId, userId),
-              eq(favorites.sourceKind, r.kind),
-              eq(favorites.sourceId, r.sourceId),
-            ),
-          );
-        if (row) ids.push(row.id);
-      }
-      if (added.length) {
-        const [count] = await tx.db
-          .select({ n: sql<number>`count(*)::int` })
-          .from(favorites)
-          .where(eq(favorites.userId, userId));
-        await this.outbox.publish(tx, 'library.favorite_added', 'library', {
-          userId,
-          favoriteIds: added,
-          totalFavorites: Math.max(1, count?.n ?? added.length),
-        });
-        await this.dataChanged(tx, userId, added.length === 1 ? added[0]! : null);
-      }
-      return ids;
-    });
+        if (added.length) {
+          const [count] = await tx.db
+            .select({ n: sql<number>`count(*)::int` })
+            .from(favorites)
+            .where(eq(favorites.userId, userId));
+          await this.outbox.publish(tx, 'library.favorite_added', 'library', {
+            userId,
+            favoriteIds: added,
+            totalFavorites: Math.max(1, count?.n ?? added.length),
+          });
+          await this.dataChanged(tx, userId, added.length === 1 ? added[0]! : null);
+        }
+        return ids;
+      })
+      .catch(async (error: unknown) => {
+        // 头像复制不参与收藏事务；回滚后收回本次所有快照，避免留下无收藏引用的媒体。
+        await Promise.all(
+          [...snapshots.values()].map(async (snapshot) => {
+            if (snapshot.avatarMediaId) await this.mediaSystem.deleteObject(snapshot.avatarMediaId);
+          }),
+        );
+        throw error;
+      });
     for (const mediaId of unusedCopies)
       await this.mediaSystem.deleteObject(mediaId).catch(() => {});
     const rows = ids.length

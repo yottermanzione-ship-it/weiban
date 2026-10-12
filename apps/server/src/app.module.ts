@@ -11,8 +11,10 @@ import type {
   CharacterNameReadPort,
   ModelGatewayMediaPort,
   Tx,
-  CardCopywriterPort,
   PersonaUpdateSummarizerPort,
+  CardCopywriterPort,
+  SyncPort,
+  CharacterTrialCleanupPort,
 } from '@weiban/contracts';
 import {
   ContactsModule,
@@ -23,9 +25,12 @@ import {
 import {
   AiRuntimeModule,
   AI_CALL_AGENT_PORT,
+  AI_TRIAL_CLEANUP_PORT,
   AI_IMPORT_ANALYZER,
   AI_PLAZA_PUBLISH_CHECK,
   AI_ACTIVE_HOURS,
+  AI_PERSONA_UPDATE_SUMMARIZER,
+  AI_CARD_LINE_WRITER,
 } from './modules/ai-runtime/index.js';
 import { BillingModule } from './modules/billing/index.js';
 import {
@@ -43,10 +48,11 @@ import {
   type PushMessageSource,
 } from './modules/push/index.js';
 import { RealtimeModule, REALTIME_MESSAGE_SENDER, SYNC_PORT } from './modules/realtime/index.js';
-import { IdentityModule } from './modules/identity/index.js';
+import { IdentityModule, IDENTITY_ACCOUNT_STATUS_PORT } from './modules/identity/index.js';
 import {
   CharactersModule,
   CHARACTER_READ_PORT,
+  CHARACTER_TRIAL_CLEANUP_PORT,
   CHARACTER_NAME_READ_PORT,
   CHARACTER_CONTACT_ACCESS,
   CHARACTER_REAL_PERSON_NAMES,
@@ -61,9 +67,12 @@ import { PolicyModule, compareClassification } from './modules/policy/index.js';
 import {
   MediaModule,
   MEDIA_SYNC,
+  MEDIA_ACCOUNT_STATUS,
+  type MediaAccountStatus,
   MEDIA_MESSAGE_LOOKUP,
   MEDIA_REAL_PERSON_NAMES,
   type MediaMessageLookup,
+  type MediaRealPersonNames,
 } from './modules/media/index.js';
 import {
   ModelAccessModule,
@@ -226,20 +235,46 @@ class ChatGroupDirectoryCompositionModule {}
 class PushCompositionModule {}
 
 /**
- * media（底层）需要的同步更新、消息读取、真人姓名（T-069）：media 不能 import realtime / chat / characters，
- * 由这里绑定，media 以可选注入使用。
+ * media（底层）需要的账号状态、同步更新、消息读取、真人姓名：不能直接 import 上层模块，
+ * 由这里绑定。账号状态为必需端口，其余能力保持可选注入。
  */
 @Global()
 @Module({
-  imports: [RealtimeModule, ChatModule, CharactersModule],
   providers: [
-    { provide: MEDIA_SYNC, useExisting: SYNC_PORT },
-    { provide: MEDIA_REAL_PERSON_NAMES, useExisting: CHARACTER_REAL_PERSON_NAMES },
+    {
+      provide: MEDIA_ACCOUNT_STATUS,
+      inject: [ModuleRef],
+      useFactory: (ref: ModuleRef): MediaAccountStatus => ({
+        getAccountStatus: (userId, tx) =>
+          ref
+            .get<MediaAccountStatus>(IDENTITY_ACCOUNT_STATUS_PORT, { strict: false })
+            .getAccountStatus(userId, tx),
+      }),
+    },
+    {
+      provide: MEDIA_SYNC,
+      inject: [ModuleRef],
+      useFactory: (ref: ModuleRef): Pick<SyncPort, 'appendUpdate'> => ({
+        appendUpdate: (tx, userId, update) =>
+          ref.get<SyncPort>(SYNC_PORT, { strict: false }).appendUpdate(tx, userId, update),
+      }),
+    },
+    {
+      provide: MEDIA_REAL_PERSON_NAMES,
+      inject: [ModuleRef],
+      useFactory: (ref: ModuleRef): MediaRealPersonNames => ({
+        listRealPersonNames: () =>
+          ref
+            .get<MediaRealPersonNames>(CHARACTER_REAL_PERSON_NAMES, { strict: false })
+            .listRealPersonNames(),
+      }),
+    },
     {
       provide: MEDIA_MESSAGE_LOOKUP,
-      inject: [CHAT_READ_PORT],
-      useFactory: (chat: ChatReadPort): MediaMessageLookup => ({
+      inject: [ModuleRef],
+      useFactory: (ref: ModuleRef): MediaMessageLookup => ({
         findMessageMedia: async (userId, conversationId, messageId) => {
+          const chat = ref.get<ChatReadPort>(CHAT_READ_PORT, { strict: false });
           const conversation = await chat.getConversation(conversationId);
           if (
             !conversation ||
@@ -257,7 +292,7 @@ class PushCompositionModule {}
       }),
     },
   ],
-  exports: [MEDIA_SYNC, MEDIA_REAL_PERSON_NAMES, MEDIA_MESSAGE_LOOKUP],
+  exports: [MEDIA_SYNC, MEDIA_REAL_PERSON_NAMES, MEDIA_MESSAGE_LOOKUP, MEDIA_ACCOUNT_STATUS],
 })
 class MediaCompositionModule {}
 
@@ -348,8 +383,7 @@ class PlazaOriginCompositionModule {}
 
 /**
  * 契约 3.1（ADR-0028 方案 C）：底层模块的可选 AI 接入点。characters 的人设更新摘要、growth 的卡片文案由 ai-runtime 实现，
- * AI 批（contracts-3.1-map.md A4 / A5）把下面两个 useValue 换成 useExisting 指向 ai-runtime 的实现。
- * 目前先绑兜底实现（一律返回 null）：characters 写「资料已更新」，growth 用模板文案。
+ * 绑定 ai-runtime 的真实实现；未生成文案时 characters / growth 按契约自行兜底。
  * 另：IDENTITY_SETTINGS_WRITE_PORT、MODEL_QUOTE_PORT、BILLING_DAILY_SPEND_READ_PORT 已分别由 IdentityModule、
  * ModelAccessModule、BillingModule 导出，ai-runtime 模块已 import 这三个模块，直接注入即可。
  */
@@ -358,14 +392,34 @@ class PlazaOriginCompositionModule {}
   providers: [
     {
       provide: CHARACTER_PERSONA_SUMMARIZER,
-      useValue: { summarize: async () => null } satisfies PersonaUpdateSummarizerPort,
+      inject: [ModuleRef],
+      useFactory: (ref: ModuleRef): PersonaUpdateSummarizerPort => ({
+        summarize: (input) =>
+          ref
+            .get<PersonaUpdateSummarizerPort>(AI_PERSONA_UPDATE_SUMMARIZER, { strict: false })
+            .summarize(input),
+      }),
+    },
+    {
+      provide: CHARACTER_TRIAL_CLEANUP_PORT,
+      inject: [ModuleRef],
+      useFactory: (ref: ModuleRef): CharacterTrialCleanupPort => ({
+        purgeTrial: (tx, input) =>
+          ref
+            .get<CharacterTrialCleanupPort>(AI_TRIAL_CLEANUP_PORT, { strict: false })
+            .purgeTrial(tx, input),
+      }),
     },
     {
       provide: GROWTH_CARD_COPYWRITER,
-      useValue: { writeCardCopy: async () => null } satisfies CardCopywriterPort,
+      inject: [ModuleRef],
+      useFactory: (ref: ModuleRef): CardCopywriterPort => ({
+        writeCardCopy: (input) =>
+          ref.get<CardCopywriterPort>(AI_CARD_LINE_WRITER, { strict: false }).writeCardCopy(input),
+      }),
     },
   ],
-  exports: [CHARACTER_PERSONA_SUMMARIZER, GROWTH_CARD_COPYWRITER],
+  exports: [CHARACTER_PERSONA_SUMMARIZER, GROWTH_CARD_COPYWRITER, CHARACTER_TRIAL_CLEANUP_PORT],
 })
 class AiHookCompositionModule {}
 

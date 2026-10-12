@@ -260,7 +260,15 @@ export function GlobalSearchPage() {
 
 // ---------- 某个会话的命中列表（全局搜索推入 / 会话内搜索共用） ----------
 
-function HitList({ conversationId, keyword }: { conversationId: string; keyword: string }) {
+function HitList({
+  conversationId,
+  keyword,
+  senderParticipantId,
+}: {
+  conversationId: string;
+  keyword: string;
+  senderParticipantId?: string;
+}) {
   const { state } = useChat();
   const conversation = state.conversations.find((c) => c.conversationId === conversationId);
   const profile = useRemote(IdentityEndpoints.getProfile);
@@ -287,7 +295,7 @@ function HitList({ conversationId, keyword }: { conversationId: string; keyword:
     void api
       .call(ChatSearchEndpoints.searchConversation, {
         params: { conversationId },
-        query: { q: keyword, limit: 20 },
+        query: { q: keyword, limit: 20, senderParticipantId },
         networkOnly: true,
       })
       .then((r) => {
@@ -304,7 +312,7 @@ function HitList({ conversationId, keyword }: { conversationId: string; keyword:
     return () => {
       active = false;
     };
-  }, [conversationId, keyword, retry]);
+  }, [conversationId, keyword, retry, senderParticipantId]);
   function loadMore() {
     const last = hits.at(-1);
     if (!last) return;
@@ -312,7 +320,7 @@ function HitList({ conversationId, keyword }: { conversationId: string; keyword:
     void api
       .call(ChatSearchEndpoints.searchConversation, {
         params: { conversationId },
-        query: { q: keyword, beforeSeq: last.seq, limit: 20 },
+        query: { q: keyword, beforeSeq: last.seq, limit: 20, senderParticipantId },
         networkOnly: true,
       })
       .then((r) => {
@@ -419,33 +427,117 @@ export function ConversationSearchPage() {
   useEffect(() => {
     setParams(keyword ? { q: keyword } : {}, { replace: true });
   }, [keyword, setParams]);
-  const messages = useMemo(
-    () =>
-      chat.state.messages
-        .filter((m) => m.conversationId === conversationId && m.status === 'normal')
-        .sort((a, b) => a.seq - b.seq),
-    [chat.state.messages, conversationId],
+  const [senderParticipantId, setSenderParticipantId] = useState('');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [quickMore, setQuickMore] = useState(false);
+  const [quickLoading, setQuickLoading] = useState(false);
+  const [quickError, setQuickError] = useState('');
+  const [quickRetry, setQuickRetry] = useState(0);
+  const conversation = chat.state.conversations.find(
+    (item) => item.conversationId === conversationId,
   );
-  const images = messages.filter((m) => m.content?.type === 'image');
-  const links = messages.filter((m) => m.content?.type === 'link');
+  const members = [
+    ...(conversation?.participants ?? []),
+    ...(conversation?.group?.formerParticipants ?? []),
+  ];
+  const memberNames = useCharacterNames(
+    members.filter((member) => member.kind === 'character').map((member) => member.refId),
+  );
+  const quickKey = `${conversationId}:${mode}:${senderParticipantId}`;
+  const quickKeyRef = useRef(quickKey);
+  quickKeyRef.current = quickKey;
+  const dateRequestRef = useRef(0);
+  useEffect(
+    () => () => {
+      dateRequestRef.current++;
+    },
+    [conversationId],
+  );
+  useEffect(() => {
+    setMessages([]);
+    setQuickMore(false);
+    setQuickError('');
+    if (mode !== 'images' && mode !== 'links') return;
+    const controller = new AbortController();
+    setQuickLoading(true);
+    void api
+      .call(ChatSearchEndpoints.listByType, {
+        params: { conversationId },
+        query: {
+          contentType: mode === 'images' ? 'image' : 'link',
+          senderParticipantId: senderParticipantId || undefined,
+          limit: 50,
+        },
+        networkOnly: true,
+        signal: controller.signal,
+      })
+      .then((page) => {
+        if (controller.signal.aborted) return;
+        setMessages(page.items);
+        setQuickMore(page.hasMore);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setQuickError(friendlyError(error));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setQuickLoading(false);
+      });
+    return () => controller.abort();
+  }, [conversationId, mode, senderParticipantId, quickRetry]);
+  async function loadQuickMore() {
+    const last = messages.at(-1);
+    if (!last || quickLoading || (mode !== 'images' && mode !== 'links')) return;
+    const owner = quickKey;
+    setQuickLoading(true);
+    setQuickError('');
+    try {
+      const page = await api.call(ChatSearchEndpoints.listByType, {
+        params: { conversationId },
+        query: {
+          contentType: mode === 'images' ? 'image' : 'link',
+          senderParticipantId: senderParticipantId || undefined,
+          beforeSeq: last.seq,
+          limit: 50,
+        },
+        networkOnly: true,
+      });
+      if (owner === quickKeyRef.current) {
+        setMessages((items) => [...items, ...page.items]);
+        setQuickMore(page.hasMore);
+      }
+    } catch (error) {
+      if (owner === quickKeyRef.current) setQuickError(friendlyError(error));
+    } finally {
+      if (owner === quickKeyRef.current) setQuickLoading(false);
+    }
+  }
+  const images = messages.filter((message) => message.content?.type === 'image');
+  const links = messages.filter((message) => message.content?.type === 'link');
   const byMonth = useMemo(() => {
     const groups = new Map<string, Message[]>();
-    for (const m of [...images].reverse()) {
-      const d = new Date(m.createdAt);
-      const key = `${d.getFullYear()} 年 ${d.getMonth() + 1} 月`;
-      groups.set(key, [...(groups.get(key) ?? []), m]);
+    for (const message of images) {
+      const date = new Date(message.createdAt);
+      const key = `${date.getFullYear()} 年 ${date.getMonth() + 1} 月`;
+      groups.set(key, [...(groups.get(key) ?? []), message]);
     }
     return [...groups.entries()];
   }, [images]);
-  function jumpToDate(value: string) {
+  async function jumpToDate(value: string) {
+    const request = ++dateRequestRef.current;
     if (!value) return;
-    const target = messages.find((m) => {
-      const d = new Date(m.createdAt);
-      const local = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      return local === value;
-    });
-    if (target) navigate(locateLink(conversationId, target.seq));
-    else setDateHint('那天没有聊天记录');
+    setDateHint('正在查找…');
+    try {
+      const target = await api.call(ChatSearchEndpoints.locateByDate, {
+        params: { conversationId },
+        query: { date: value },
+        networkOnly: true,
+      });
+      if (request !== dateRequestRef.current) return;
+      if (target.seq !== null) navigate(locateLink(conversationId, target.seq));
+      else setDateHint('这个日期之后没有聊天记录');
+    } catch (error) {
+      if (request === dateRequestRef.current) setDateHint(friendlyError(error));
+    }
   }
   return (
     <main className="search-page">
@@ -479,8 +571,29 @@ export function ConversationSearchPage() {
           取消
         </button>
       </form>
+      {conversation?.type === 'group' && (
+        <label className="panel">
+          发送者
+          <select
+            value={senderParticipantId}
+            onChange={(event) => setSenderParticipantId(event.target.value)}
+          >
+            <option value="">全部成员</option>
+            {members.map((member) => (
+              <option key={member.participantId} value={member.participantId}>
+                {member.kind === 'user' ? '我' : (memberNames[member.refId] ?? '角色')}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {keyword ? (
-        <HitList conversationId={conversationId} keyword={keyword} />
+        <HitList
+          key={senderParticipantId}
+          conversationId={conversationId}
+          keyword={keyword}
+          senderParticipantId={senderParticipantId || undefined}
+        />
       ) : mode === 'none' ? (
         <div className="quick-find">
           <p className="hint center">快速查找</p>
@@ -514,6 +627,10 @@ export function ConversationSearchPage() {
               {dateHint && <small className="hint">{dateHint}</small>}
             </label>
           )}
+          {quickLoading && <span className="spinner" role="status" />}
+          {quickError && (
+            <button onClick={() => setQuickRetry((value) => value + 1)}>{quickError} · 重试</button>
+          )}
           {mode === 'images' &&
             (images.length === 0 ? (
               <p className="empty">还没有图片</p>
@@ -542,7 +659,7 @@ export function ConversationSearchPage() {
               <p className="empty">还没有链接</p>
             ) : (
               <div className="panel rows">
-                {[...links].reverse().map((m) =>
+                {links.map((m) =>
                   m.content?.type === 'link' ? (
                     <div key={m.messageId} className="link-row">
                       <a href={m.content.url} target="_blank" rel="noopener noreferrer">
@@ -559,6 +676,11 @@ export function ConversationSearchPage() {
                 )}
               </div>
             ))}
+          {quickMore && (
+            <button disabled={quickLoading} onClick={() => void loadQuickMore()}>
+              加载更多
+            </button>
+          )}
         </section>
       )}
     </main>

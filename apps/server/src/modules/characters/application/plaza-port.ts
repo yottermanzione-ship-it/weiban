@@ -18,6 +18,7 @@ import {
   PlazaPresetVariantSnapshot,
   type CharacterClassificationInput,
   type CharacterPlazaPort,
+  type IdentityAccountStatusPort,
   type CharacterChildFeaturesWritePort,
   type PlazaSnapshot,
   type PlazaSnapshotClassification,
@@ -40,6 +41,7 @@ import {
   type EnvelopeCrypto,
 } from '../../../platform/index.js';
 import { compareClassification } from '../../policy/index.js';
+import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
 import {
   catchphrasesOf,
   presetPersonaFields,
@@ -115,6 +117,7 @@ export class CharacterPlazaService
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(CharacterService) private readonly characters: CharacterService,
     @Inject(CharacterSupplementService) private readonly supplements: CharacterSupplementService,
+    @Inject(IDENTITY_ACCOUNT_STATUS_PORT) private readonly accounts: IdentityAccountStatusPort,
     @Optional()
     @Inject(CHARACTER_PLAZA_ORIGIN_STATUS)
     private readonly originStatus?: CharacterPlazaOriginStatus,
@@ -157,6 +160,7 @@ export class CharacterPlazaService
           eq(characters.id, characterId),
           eq(characters.ownerId, userId),
           eq(characters.kind, 'custom'),
+          eq(characters.isTrial, false),
         ),
       );
     return row ?? null;
@@ -267,12 +271,15 @@ export class CharacterPlazaService
 
     const id = newId();
     const now = this.clock.now();
-    const sealed = await this.crypto.seal(
-      userId,
-      `character:${id}:draft:1`,
-      JSON.stringify(payload),
-    );
     const created = await this.db.transaction(async (tx) => {
+      if ((await this.accounts.getAccountStatus(userId, tx)) !== 'active')
+        throw new AppError('unauthenticated', '账号已失效');
+      const sealed = await this.crypto.seal(
+        userId,
+        `character:${id}:draft:1`,
+        JSON.stringify(payload),
+        tx,
+      );
       const inserted = await tx.db
         .insert(characters)
         .values({
@@ -566,12 +573,15 @@ export class CharacterPlazaService
     },
   ): Promise<void> {
     const revision = row.revision + 1;
-    const sealed = await this.crypto.seal(
-      row.ownerId!,
-      `character:${row.id}:draft:${revision}`,
-      JSON.stringify(payload),
-    );
     await this.db.transaction(async (tx) => {
+      if ((await this.accounts.getAccountStatus(row.ownerId!, tx)) !== 'active')
+        throw new AppError('unauthenticated', '账号已失效');
+      const sealed = await this.crypto.seal(
+        row.ownerId!,
+        `character:${row.id}:draft:${revision}`,
+        JSON.stringify(payload),
+        tx,
+      );
       const [updated] = await tx.db
         .update(characters)
         .set({

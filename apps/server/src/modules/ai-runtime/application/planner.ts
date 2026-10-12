@@ -12,12 +12,14 @@
  * - 每次（选项 ≥ 2 时）写决策记录：决策、置信度、理由、实现、退回原因；涉及经期的理由只存固定代码 health_timing。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, gte, lt, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, type SQL } from 'drizzle-orm';
 import type {
   GenerateError,
   ModelGatewayMediaPort,
   ModelGatewayPort,
   PlanningDecisionType,
+  BillingDailySpendReadPort,
+  IdentityReadPort,
 } from '@weiban/contracts';
 import {
   AUDIT_LOG,
@@ -32,6 +34,8 @@ import {
   type Logger,
 } from '../../../platform/index.js';
 import { MODEL_GATEWAY_MEDIA_PORT, MODEL_GATEWAY_PORT } from '../../model-access/index.js';
+import { BILLING_DAILY_SPEND_READ_PORT } from '../../billing/index.js';
+import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import { plannerConfig, planningDecisions } from '../infra/db/schema.js';
 import { parseJsonObject } from './import-ai.js';
 import { ruleSpans } from './plaza-check.js';
@@ -63,11 +67,10 @@ export const DEFAULT_PLANNER_MODEL = 'qwen/qwen3.8-flash';
 /** 4.1 / 7.3 节：回复路径最多等 1 秒（秒回开启时）；主动路径 10 秒。 */
 export const REPLY_TIMEOUT_MS = 1_000;
 export const PROACTIVE_TIMEOUT_MS = 10_000;
-/**
- * 4.3 节当日比例闸的近似实现：ai-runtime 读不到用户当天聊天回复金额（没有对应只读端口），
- * 改为「本用户近 24 小时回复路径规划费用」超过该值时当天剩余时间用规则版（≈ 典型聊天费用的 10%，cost-estimate.md 5.1）。
- */
-export const REPLY_COST_GUARD_MICROS = 30_000;
+/** 4.3：当天规划费达到聊天回复费的 10% 后切回免费规则版。 */
+export function planningCostLimitReached(chatMicros: number, planningMicros: number): boolean {
+  return planningMicros * 10 >= chatMicros;
+}
 /** 7.1 节：决策记录保留 90 天。 */
 export const DECISION_RETENTION_DAYS = 90;
 export const PLANNER_CLEANUP_JOB = 'ai.planner_cleanup';
@@ -204,6 +207,10 @@ class Circuit {
     }
     return tripped;
   }
+
+  until(now: number): string | null {
+    return this.openUntil > now ? new Date(this.openUntil).toISOString() : null;
+  }
 }
 
 function clipReason(text: string): string {
@@ -247,6 +254,8 @@ export class PlannerService {
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(MODEL_GATEWAY_PORT) private readonly gateway: ModelGatewayPort,
     @Inject(MODEL_GATEWAY_MEDIA_PORT) private readonly media: ModelGatewayMediaPort,
+    @Inject(BILLING_DAILY_SPEND_READ_PORT) private readonly dailySpend: BillingDailySpendReadPort,
+    @Inject(IDENTITY_READ_PORT) private readonly identity: IdentityReadPort,
   ) {}
 
   // =========================================================================
@@ -308,7 +317,7 @@ export class PlannerService {
       result = rule('rules', null);
     } else if (!this.circuit(impl).allow(started)) {
       result = rule(impl, 'circuit_open');
-    } else if (req.path === 'reply' && (await this.costGuardTripped(req.userId))) {
+    } else if (await this.costGuardTripped(req.userId)) {
       result = rule(impl, 'cost_guard');
     } else {
       const timeoutMs =
@@ -392,19 +401,22 @@ export class PlannerService {
   }
 
   private async costGuardTripped(userId: string): Promise<boolean> {
-    const since = new Date(this.clock.nowMs() - 86_400_000);
-    const [row] = await this.db.db
-      .select({ total: sql<string>`coalesce(sum(${planningDecisions.chargedMicros}),0)` })
-      .from(planningDecisions)
-      .where(
-        and(
-          eq(planningDecisions.userId, userId),
-          eq(planningDecisions.path, 'reply'),
-          gte(planningDecisions.createdAt, since),
-        ),
-      )
-      .catch(() => [] as Array<{ total: string }>);
-    return Number(row?.total ?? 0) >= REPLY_COST_GUARD_MICROS;
+    try {
+      const timeZone = (await this.identity.getProfile(userId))?.timeZone ?? 'Asia/Shanghai';
+      const parts = new Intl.DateTimeFormat('en', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).formatToParts(this.clock.now());
+      const datePart = (type: string) => parts.find((part) => part.type === type)!.value;
+      const date = `${datePart('year')}-${datePart('month')}-${datePart('day')}`;
+      const spend = await this.dailySpend.getUserDailySpendByPurpose(userId, date);
+      return planningCostLimitReached(spend.chat_reply ?? 0, spend.behavior_planning ?? 0);
+    } catch {
+      // 费用或时区不能确认时保留免费规则版。
+      return true;
+    }
   }
 
   /** 3.2 / 3.3 节：便宜模型给各选项概率，confidence = 最高概率 − 第二高概率。 */
@@ -613,6 +625,7 @@ export class PlannerService {
       evalReportId: c.evalReportId,
       updatedBy: c.updatedBy,
       updatedAt: c.updatedAt.toISOString(),
+      circuitOpenUntil: this.circuits.get(c.implementation)?.until(this.clock.nowMs()) ?? null,
     };
   }
 

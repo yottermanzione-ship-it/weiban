@@ -701,6 +701,7 @@ export class MediaAssetService
   async listCardTemplates(
     kind: string,
     portraitFreeOnly: boolean,
+    classicalStyleOnly = false,
   ): Promise<Array<{ templateId: string; mediaId: string }>> {
     const rows = await this.database.db
       .select()
@@ -708,7 +709,12 @@ export class MediaAssetService
       .where(eq(cardTemplates.enabled, true))
       .orderBy(asc(cardTemplates.createdAt));
     return rows
-      .filter((r) => r.kinds.includes(kind) && (!portraitFreeOnly || r.portraitFree))
+      .filter(
+        (r) =>
+          r.kinds.includes(kind) &&
+          (!portraitFreeOnly || r.portraitFree) &&
+          (!classicalStyleOnly || r.classicalStyle),
+      )
       .map((r) => ({ templateId: r.id, mediaId: r.mediaId }));
   }
 

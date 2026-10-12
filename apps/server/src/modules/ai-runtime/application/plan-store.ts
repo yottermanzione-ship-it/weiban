@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, count, desc, eq, inArray, lte, ne, or } from 'drizzle-orm';
-import { Id, Timestamp, type IdentityAccountStatusPort } from '@weiban/contracts';
+import { Id, Timestamp, type IdentityAccountStatusPort, type Tx } from '@weiban/contracts';
 import {
   AppError,
+  asDbTx,
   CLOCK,
   DATABASE,
   ENVELOPE_CRYPTO,
@@ -17,6 +18,7 @@ import {
 import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
 import {
   companionSettings,
+  adultBoundaryStates,
   replyPlans,
   memories,
   memoryStates,
@@ -29,6 +31,7 @@ import {
   groupCompanionSettings,
   groupSelfChats,
   groupInvites,
+  groupReplyPlans,
 } from '../infra/db/schema.js';
 import { USER_BATCH_DELAY_MS } from '../domain/reply-rules.js';
 export const GENERATE_REPLY_JOB = 'ai.generate_reply';
@@ -57,6 +60,9 @@ const T066_TABLES = [
   'moment_card_attempts',
   // T-090：行为规划决策记录
   'planning_decisions',
+  'character_self_reports',
+  'pending_anniversary_letters',
+  'quirk_actions',
 ] as const;
 @Injectable()
 export class ReplyPlanStore {
@@ -84,6 +90,18 @@ export class ReplyPlanStore {
     if (!(await this.lock(tx, input.userId, input.conversationId))) return;
     if (input.triggeredAt && !Timestamp.safeParse(input.triggeredAt).success)
       throw new AppError('bad_request', '无效触发时间');
+    // A new message must never wait behind a deliberate cold-shoulder delay, especially a plea for help.
+    if (input.kind === 'message')
+      await tx.query(
+        `UPDATE ai_runtime.reply_plans SET status='cancelled', input_ciphertext=NULL,
+          result_ciphertext=NULL, lease_id=NULL, lease_until=NULL
+         WHERE user_id=$1 AND conversation_id=$2 AND next_bubble=0
+           AND status IN ('generating','sending') AND id IN (
+             SELECT plan_id FROM ai_runtime.quirk_actions WHERE user_id=$1
+             AND kind IN ('read_delay','shy_typing')
+           )`,
+        [input.userId, input.conversationId],
+      );
     const dueAt = new Date(
       this.clock.nowMs() + (input.kind === 'message' ? USER_BATCH_DELAY_MS : 0),
     );
@@ -278,6 +296,31 @@ export class ReplyPlanStore {
         retryBackoff: true,
       });
   }
+  async purgeTrial(
+    transaction: Tx,
+    input: { userId: string; characterId: string; conversationId: string },
+  ): Promise<void> {
+    const tx = asDbTx(transaction);
+    await tx.db
+      .delete(adultBoundaryStates)
+      .where(
+        and(
+          eq(adultBoundaryStates.userId, input.userId),
+          eq(adultBoundaryStates.conversationId, input.conversationId),
+          eq(adultBoundaryStates.characterId, input.characterId),
+        ),
+      );
+    await tx.db
+      .delete(replyPlans)
+      .where(
+        and(
+          eq(replyPlans.userId, input.userId),
+          eq(replyPlans.conversationId, input.conversationId),
+          eq(replyPlans.characterId, input.characterId),
+        ),
+      );
+  }
+
   async purgeUser(userId: string): Promise<number> {
     return await this.db.transaction(async (tx) => {
       await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('ai_runtime:user:' || $1,0))", [
@@ -308,7 +351,14 @@ export class ReplyPlanStore {
         .delete(userChatActivity)
         .where(eq(userChatActivity.userId, userId))
         .returning();
+      const adult = await tx.db
+        .delete(adultBoundaryStates)
+        .where(eq(adultBoundaryStates.userId, userId))
+        .returning();
       return (
+        (await tx.db.delete(groupReplyPlans).where(eq(groupReplyPlans.userId, userId)).returning())
+          .length +
+        adult.length +
         a.length +
         b.length +
         c.length +
@@ -343,6 +393,14 @@ export class ReplyPlanStore {
     return n;
   }
   async countUserData(userId: string): Promise<number> {
+    const [groupReplies] = await this.db.db
+      .select({ n: count() })
+      .from(groupReplyPlans)
+      .where(eq(groupReplyPlans.userId, userId));
+    const [adult] = await this.db.db
+      .select({ n: count() })
+      .from(adultBoundaryStates)
+      .where(eq(adultBoundaryStates.userId, userId));
     let t066 = 0;
     for (const table of T066_TABLES)
       t066 += Number(
@@ -407,6 +465,8 @@ export class ReplyPlanStore {
       .where(eq(groupInvites.userId, userId));
     return (
       t066 +
+      (groupReplies?.n ?? 0) +
+      (adult?.n ?? 0) +
       (k?.n ?? 0) +
       (l?.n ?? 0) +
       (m?.n ?? 0) +

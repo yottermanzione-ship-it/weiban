@@ -39,6 +39,7 @@ import kotlinx.serialization.json.*
         }
     }
     var information by rememberSaveable(conversationId) { mutableStateOf(false) }
+    val composerDraft = rememberSaveable(owner.sessionId, conversationId) { mutableStateOf("") }
     // "": 从会话列表发起；characterId：从私聊聊天信息页发起（原角色锁定）。
     var creating by rememberSaveable(owner.sessionId) { mutableStateOf<String?>(null) }
     var profile by remember(owner.sessionId) { mutableStateOf<ProfileTarget?>(null) }
@@ -133,7 +134,16 @@ import kotlinx.serialization.json.*
                     ),
                 ) { select(null) }
             else ->
-                ConversationView(repository, runtime, owner, state, selected, { information = true }, { profile = it }) { select(null) }
+                ConversationView(
+                    repository,
+                    runtime,
+                    owner,
+                    state,
+                    selected,
+                    composerDraft,
+                    { information = true },
+                    { profile = it },
+                ) { select(null) }
         }
     }
 }
@@ -269,6 +279,9 @@ private fun systemMessage(content: ReceivedMessageContentSystem): String {
                 (if (by.isNotEmpty()) "$by " else "你") + "修改群名为「${p("title")}」"
             }
         "group_dissolved" -> "群聊已解散"
+        "focus_started" -> "你和 ${p("characterName").ifEmpty { "TA" }} 开始了 ${p("minutes")} 分钟专注"
+        "letter_sent" -> "你给 ${p("characterName").ifEmpty { "TA" }} 寄出了一封信"
+        "wishlist_item_completed" -> "心愿「${p("title")}」已完成" + if (p("cardIssued") == "true") " · 获得心愿卡" else ""
         "card_obtained" -> cardObtainedMessage(::p)
         "pet_adopted" -> "你和 ${p("characterName").ifEmpty { "TA" }} 一起领养了 ${p("petName")} · 去看看 ›"
         "pet_renamed" -> "${p("from")} 改名为 ${p("to")}"
@@ -320,6 +333,7 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
     owner: OwnerRecord,
     state: ClientSyncState,
     conversation: Conversation,
+    composerDraft: MutableState<String>,
     onInformation: () -> Unit,
     onProfile: (ProfileTarget) -> Unit,
     onBack: () -> Unit,
@@ -328,7 +342,7 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
     val context = androidx.compose.ui.platform.LocalContext.current
     val ui =
         remember(conversation.conversationId, owner) {
-            ConversationUi(repository, runtime, owner, conversation, scope).also { it.media = ChatMediaUi(context, it) }
+            ConversationUi(repository, runtime, owner, conversation, scope, composerDraft).also { it.media = ChatMediaUi(context, it) }
         }
     val group = conversation.isGroup()
     SideEffect {

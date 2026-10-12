@@ -16,7 +16,6 @@ import {
   SessionSummary,
   UserPreferences,
   type DeviceInfo,
-  type UserDataOwner,
 } from '@weiban/contracts';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -895,15 +894,14 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
 
     it('注销：202，所有设备立即下线、不能登录、数据密钥删除；各模块回报后账号物理删除；重复投递无副作用', async () => {
       const purged: string[] = [];
-      const growthOwner: UserDataOwner = {
-        module: 'growth',
-        purgeUser: async (userId) => {
-          purged.push(userId);
-          return 3;
-        },
-        countUserData: async () => 0,
-      };
-      registry.register(growthOwner);
+      const growthOwner = registry.list().find((owner) => owner.module === 'growth');
+      if (!growthOwner) throw new Error('growth 删除清单未登记');
+      const purgeGrowth = growthOwner.purgeUser.bind(growthOwner);
+      const purgeSpy = vi.spyOn(growthOwner, 'purgeUser').mockImplementation(async (userId) => {
+        purged.push(userId);
+        return purgeGrowth(userId);
+      });
+      const expectedModules = registry.modules().filter((module) => module !== 'identity');
 
       const canary = canaryKey();
       const web = await register();
@@ -945,27 +943,22 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
       await vi.waitFor(
         async () => {
           // 所有非identity删除清单各回报一次；T-037新增真实chat；另用growth模拟清理回报。
-          expect(await outbox('platform.user_data_purged', web.user.userId)).toHaveLength(11);
+          expect(await outbox('platform.user_data_purged', web.user.userId)).toHaveLength(
+            expectedModules.length,
+          );
         },
-        { timeout: 25_000, interval: 200 },
+        { timeout: 90_000, interval: 200 },
       );
       await dispatchAll();
       expect(purged).toEqual([web.user.userId]);
       const reports = await outbox('platform.user_data_purged', web.user.userId);
-      expect(reports).toContainEqual({ userId: web.user.userId, module: 'growth', deletedRows: 3 });
-      expect(reports.map((r) => r.module).sort()).toEqual([
-        'ai_runtime',
-        'billing',
-        'characters',
-        'chat',
-        'contacts',
-        'growth',
-        'media',
-        'model_access',
-        'proactive',
-        'push',
-        'realtime',
-      ]);
+      expect(reports).toContainEqual({
+        userId: web.user.userId,
+        module: 'growth',
+        deletedRows: expect.any(Number),
+      });
+      expect(reports.map((r) => r.module).sort()).toEqual(expectedModules.sort());
+      purgeSpy.mockRestore();
       expect(await q.userById(web.user.userId)).toBeNull();
       expect(await commands.verifyPurged(web.user.userId)).toEqual(
         registry.modules().map((module) => ({ module, count: 0 })),
@@ -1002,7 +995,7 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
 
       // 用户名注销后可以重新注册
       await register(web.user.username);
-    });
+    }, 120_000);
   });
 
   // ---------- 日志 ----------

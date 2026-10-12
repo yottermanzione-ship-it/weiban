@@ -55,6 +55,15 @@ internal fun SupplementPage(
     val imports by L6Overlays.imports.collectAsState()
     // 导入浮层关闭后重新拉取（导入结果可能已追加进来）。
     LaunchedEffect(imports) { if (imports == null) supplement.refresh() }
+    LaunchedEffect(characterId, owner) {
+        AppUpdates.updates.collect { update ->
+            if (update is UserUpdateDataChanged && update.data.section == "supplement" &&
+                update.data.characterId == characterId
+            ) {
+                supplement.refresh()
+            }
+        }
+    }
     var editing by remember { mutableStateOf<Int?>(null) }
     var draft by remember { mutableStateOf("") }
     var clearing by remember { mutableStateOf(false) }

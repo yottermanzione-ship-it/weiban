@@ -22,7 +22,7 @@ import {
   UserDataRegistry,
   type JobQueue,
 } from '../src/platform/index.js';
-import { Migrator } from '../src/platform/db/migrator.js';
+
 import {
   ProactiveGuards,
   ProactiveMessageService,
@@ -35,8 +35,8 @@ import {
 import {
   describeDb,
   resetTestDatabase,
+  roundTripMigration,
   requireTestDatabaseUrl,
-  MIGRATIONS_DIR,
 } from './support/db.js';
 
 describeDb('T-052 proactive 真实PG：事务配额、日报、节日和删除', () => {
@@ -171,9 +171,7 @@ describeDb('T-052 proactive 真实PG：事务配额、日报、节日和删除',
   });
   it('真实执行迁移 down/up，注册清理队列与账号删除清单', async () => {
     await lifecycle.onModuleInit();
-    const migrator = new Migrator(requireTestDatabaseUrl(), MIGRATIONS_DIR);
-    expect(await migrator.down()).toEqual(['0021_proactive']);
-    expect(await migrator.up()).toEqual(['0021_proactive']);
+    await roundTripMigration('0021_proactive');
     expect(jobs.schedule).toHaveBeenCalledWith('proactive.prune_daily_events', '30 * * * *');
     expect(registry.list().some((v) => v.module === 'proactive')).toBe(true);
     expect((await holidays.list({ limit: 100 })).items.map((v) => v.name)).not.toContain('中秋节');

@@ -123,8 +123,11 @@ describe('消息与发送', () => {
 
 describe('Q-003 接收端容忍未知类型，发送端保持严格', () => {
   it('未知消息类型解析为 unsupported，保留原类型名', () => {
-    const parsed = Message.parse({ ...textMessage, content: { type: 'image', mediaId: ID } });
-    expect(parsed.content).toEqual({ type: 'unsupported', originalType: 'image' });
+    const parsed = Message.parse({
+      ...textMessage,
+      content: { type: 'future_message', mediaId: ID },
+    });
+    expect(parsed.content).toEqual({ type: 'unsupported', originalType: 'future_message' });
   });
 
   it('已知类型但内容非法时仍然报错（不掩盖服务器错误）', () => {
@@ -178,7 +181,7 @@ describe('Q-003 接收端容忍未知类型，发送端保持严格', () => {
         updateSeq: 9,
         occurredAt: NOW,
         type: 'message.created',
-        data: { message: { ...textMessage, content: { type: 'sticker', stickerId: 's1' } } },
+        data: { message: { ...textMessage, content: { type: 'future_message', assetId: 's1' } } },
       },
     });
     expect(frame.type).toBe('update');

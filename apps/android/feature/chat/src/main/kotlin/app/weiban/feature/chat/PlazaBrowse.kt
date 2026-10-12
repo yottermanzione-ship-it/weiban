@@ -560,14 +560,13 @@ private class WorkUi {
             is ParsedSnapshot.Variant -> PlazaNav.open(PlazaPage.Publish(null, parsed.value.presetCharacterId))
             is ParsedSnapshot.Custom ->
                 scope.launch {
-                    // 契约没有作品的来源角色 ID：按名字匹配我的自定义角色（与网页 T-097 相同）。
                     userAction({ plazaToast(context, it) }) {
                         val mine =
                             repository.call(
                                 Endpoints.userCustomEndpointsList,
                                 options = SessionCallOptions(owner = owner, networkOnly = true),
                             )
-                        val match = mine.items.find { it.name == parsed.value.name }
+                        val match = mine.items.find { it.characterId == w.sourceCharacterId }
                         if (match != null) {
                             PlazaNav.open(PlazaPage.Publish(match.characterId, null))
                         } else {

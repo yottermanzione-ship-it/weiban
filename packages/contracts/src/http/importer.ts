@@ -8,7 +8,15 @@
  * 开始分析（可离开页面，完成后推送通知）→ 取结果：新角色草稿进入自定义角色编辑器 / 补充设定文字进入确认页。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, NoContent, Timestamp, defineEndpoint, tolerantEnum } from '../common.js';
+import {
+  API_PREFIX,
+  Id,
+  LocalDate,
+  NoContent,
+  Timestamp,
+  defineEndpoint,
+  tolerantEnum,
+} from '../common.js';
 import { DraftCharacterCard } from '../character-card.js';
 import { CharacterClassificationInput } from './characters.js';
 import { SupplementConflict } from './character-extras.js';
@@ -89,6 +97,21 @@ export const ImportResult = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('new_character'),
     draft: DraftCharacterCard,
+    /** 用户在编辑器保存的表单值；与分析器生成的结构化角色卡分别保留，下一批不得覆盖。 */
+    editorFields: z
+      .object({
+        name: z.string().max(32),
+        description: z.string().max(2000),
+        catchphrases: z.array(z.string().max(50)).max(10),
+        speechStyle: z.string().max(500),
+        exampleDialogue: z.string().max(2000),
+        tags: z.array(z.string().max(20)).max(10),
+        /** 用户选择的生日和头像；省略兼容旧草稿，null 表示主动清空。 */
+        birthday: LocalDate.nullable().optional(),
+        avatarMediaId: Id.nullable().optional(),
+        voiceId: Id.nullable().optional(),
+      })
+      .optional(),
     /** 默认「真人 · 身边真人」（CHR-08 第 4 条）；改选原创 / 虚构需要声明，由自定义角色创建接口校验。 */
     suggestedClassification: CharacterClassificationInput,
     /** 草稿里识别出的疑似真名，提示用户替换。 */

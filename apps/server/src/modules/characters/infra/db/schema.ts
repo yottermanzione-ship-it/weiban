@@ -56,6 +56,7 @@ export const characters = charactersSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
     /** 试聊会话（CHR-07 第 6 条），nullable；试聊不建立正式联系人关系。 */
     trialConversationId: uuid('trial_conversation_id'),
+    isTrial: boolean('is_trial').notNull().default(false),
     /** T-088（迁移 0063）：自定义角色来源。plaza_copy 的分类只能更严（数据库触发器）。 */
     originKind: text('origin_kind').$type<'created' | 'plaza_copy'>().notNull().default('created'),
     originImportJobId: uuid('origin_import_job_id'),
@@ -70,6 +71,20 @@ export const characters = charactersSchema.table(
     index('characters_plaza_idx').on(t.status, t.categoryId),
   ],
 );
+export const trialSessions = charactersSchema.table('trial_sessions', {
+  conversationId: uuid('conversation_id').primaryKey(),
+  characterId: uuid('character_id')
+    .notNull()
+    .unique()
+    .references(() => characters.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull(),
+  sourceCharacterId: uuid('source_character_id'),
+  sourceRevision: integer('source_revision'),
+  reusable: boolean('reusable').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
+});
+
 export const personaVersions = charactersSchema.table(
   'persona_versions',
   {

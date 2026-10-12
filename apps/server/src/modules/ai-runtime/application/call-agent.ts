@@ -12,8 +12,10 @@
  * - 结束：整理通话摘要写入记忆（MEM-04），记忆页可见。
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { AdultBoundaryService } from './adult-boundary.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
 import type {
+  GenerateTextInput,
   BillingReadPort,
   CallAgentPort,
   CallAgentSession,
@@ -53,6 +55,8 @@ const FAREWELL_AT_MS = 59 * 60_000 + 30_000;
 /** 余额检查间隔与「约 1 分钟」的保守阈值（微元）。 */
 const BALANCE_CHECK_MS = 20_000;
 const LOW_BALANCE_MICROS = 300_000;
+/** 20秒余额轮询 + 最多10秒道别，满足耗尽后30秒内结束。 */
+const FAREWELL_TIMEOUT_MS = 10_000;
 
 /** 简单的异步队列：生产方 push，消费方 for await；end 后迭代结束。 */
 class AsyncQueue<T> {
@@ -82,6 +86,7 @@ class AsyncQueue<T> {
 }
 
 interface SessionDeps {
+  adultBoundary: AdultBoundaryService;
   gateway: ModelGatewayPort;
   media: ModelGatewayMediaPort;
   billing: BillingReadPort;
@@ -90,6 +95,7 @@ interface SessionDeps {
 }
 
 interface SessionInfo {
+  scope: 'normal' | 'adult';
   callId: string;
   userId: string;
   characterId: string;
@@ -133,7 +139,7 @@ class AgentSession implements CallAgentSession {
     void this.listen();
     this.timers.push(
       setTimeout(() => this.enqueue(() => this.remind()), REMIND_AT_MS),
-      setTimeout(() => this.enqueue(() => this.farewell('time_limit')), FAREWELL_AT_MS),
+      setTimeout(() => void this.farewell('time_limit'), FAREWELL_AT_MS),
       setInterval(() => void this.checkBalance(), BALANCE_CHECK_MS),
     );
   }
@@ -186,14 +192,14 @@ class AgentSession implements CallAgentSession {
       const text = r.text.trim().slice(0, 1000);
       this.enqueue(() => this.respond(text));
     }
-    if (!this.closed) this.enqueue(() => this.farewell('insufficient_balance'));
+    if (!this.closed) await this.farewell('insufficient_balance');
   }
 
   private async checkBalance(): Promise<void> {
     if (this.closed || this.ending) return;
     const spend = await this.deps.billing.getSpendStatus(this.info.userId).catch(() => null);
     if (spend && (spend.depleted || spend.availableMicros < LOW_BALANCE_MICROS))
-      this.enqueue(() => this.farewell('insufficient_balance'));
+      await this.farewell('insufficient_balance');
   }
 
   private systemPrompt(): ChatMessageForModel[] {
@@ -241,27 +247,43 @@ class AgentSession implements CallAgentSession {
         : []),
     ];
     const n = this.turnNo++;
-    const result = await callModelForCare(
-      this.deps.gateway,
-      {
-        userId: this.info.userId,
-        characterId: this.info.characterId,
-        conversationId: this.info.conversationId,
-        purpose: 'chat_reply',
-        billingOwner: 'user',
-        modelRole: 'chat',
-        messages,
-        maxOutputTokens: 200,
-        responseFormat: 'text',
-        idempotencyKey: `call:${this.info.callId}:${this.startedAt}:turn:${n}`,
-        meta: { personaVersion: this.info.role.personaVersion, conversationKind: 'direct' },
+    const adult = this.info.scope === 'adult' && !this.careActive;
+    const request: GenerateTextInput = {
+      userId: this.info.userId,
+      characterId: this.info.characterId,
+      conversationId: this.info.conversationId,
+      purpose: 'chat_reply',
+      billingOwner: 'user',
+      modelRole: adult ? 'adult' : 'chat',
+      messages,
+      maxOutputTokens: 200,
+      responseFormat: 'text',
+      idempotencyKey: `call:${this.info.callId}:${this.startedAt}:turn:${n}`,
+      meta: {
+        personaVersion: this.info.role.personaVersion,
+        conversationKind: 'direct',
+        scenarioMode: adult ? 'adult' : 'daily',
       },
-      { highRisk: this.careActive, careActive: this.careActive, suspected: risk === 'suspected' },
-    );
+    };
+    const result = adult
+      ? await this.deps.adultBoundary.generate(request, true)
+      : await callModelForCare(this.deps.gateway, request, {
+          highRisk: this.careActive,
+          careActive: this.careActive,
+          suspected: risk === 'suspected',
+        });
+    if (this.closed || this.ending) return;
     let text =
-      result.ok && outputAllowed(result.value.text, this.info.policy, false)
+      result.ok && outputAllowed(result.value.text, this.info.policy, adult)
         ? result.value.text.replace(/[（(][^）)]{0,20}[）)]/gu, '').trim()
         : '';
+    if (adult && !result.ok && result.error === 'content_rejected') {
+      const deflect = this.info.role.card.data.safetyStyle.deflectStyle?.trim();
+      text =
+        deflect && outputAllowed(deflect, this.info.policy, false)
+          ? deflect
+          : '这个话题先放一放，好吗？我们聊聊你今天过得怎么样。';
+    }
     if (!text)
       text = this.careActive
         ? '我在这儿陪着你。先告诉我你现在安全吗？身边有信任的人可以陪你吗？也可以打 12356。'
@@ -288,11 +310,22 @@ class AgentSession implements CallAgentSession {
         ? '时间差不多啦，今天就先聊到这儿，我们回头再聊，拜拜～'
         : '电话这边好像要断了，我们先挂啦，回头打字接着聊，拜拜～';
     this.turns.push({ role: 'assistant', content: text });
-    // 道别最多 25 秒（MDL-10 第 5 条要求 30 秒内）。
-    await Promise.race([
-      this.speak(text, this.turnNo++, true),
-      new Promise<void>((r) => setTimeout(r, 25_000)),
-    ]);
+    // 包含余额轮询的最坏等待后，道别仍须在30秒总时限内结束。
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        this.speak(text, this.turnNo++, true),
+        new Promise<void>((r) => {
+          timeout = setTimeout(r, FAREWELL_TIMEOUT_MS);
+          this.timers.push(timeout);
+        }),
+      ]);
+    } catch {
+      // 语音服务故障也必须按既定结局结束通话。
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      this.current?.abort();
+    }
     this.signalQ.push({ kind: 'end', outcome });
   }
 
@@ -310,6 +343,10 @@ class AgentSession implements CallAgentSession {
       idempotencyKey: `call:${this.info.callId}:${this.startedAt}:tts:${n}`,
     });
     if (!tts.ok) return;
+    if (this.closed || (this.ending && !force)) {
+      tts.value.abort();
+      return;
+    }
     this.current = tts.value;
     this.signalQ.push({ kind: 'speaking', speaking: true });
     try {
@@ -361,6 +398,7 @@ class AgentSession implements CallAgentSession {
 @Injectable()
 export class CallAgentService implements CallAgentPort {
   constructor(
+    @Inject(AdultBoundaryService) private readonly adultBoundary: AdultBoundaryService,
     @Inject(MODEL_GATEWAY_PORT) private readonly gateway: ModelGatewayPort,
     @Inject(MODEL_GATEWAY_MEDIA_PORT) private readonly media: ModelGatewayMediaPort,
     @Inject(BILLING_READ_PORT) private readonly billing: BillingReadPort,
@@ -407,11 +445,21 @@ export class CallAgentService implements CallAgentPort {
     if (!contact || contact.conversationId !== input.conversationId || !role || !policy)
       return { ok: false, error: 'not_available' };
     const settings = await this.settings.get(input.userId, input.characterId).catch(() => null);
-    const voiceId = await this.mediaAi.resolveVoice(input.characterId, settings?.voiceId ?? null);
+    const scope =
+      settings?.scenarioMode === 'adult' && policy.adultModeEligible ? 'adult' : 'normal';
+    const voiceId = await this.mediaAi.resolveVoice(
+      input.characterId,
+      settings?.voiceId ?? null,
+      role.profile.kind === 'custom' ? (role.card.data.social.voiceId ?? null) : null,
+    );
     if (!voiceId) return { ok: false, error: 'service_disabled' };
 
     const recent = await this.chat
-      .readMessages({ conversationId: input.conversationId, scopes: ['normal'], limit: 30 })
+      .readMessages({
+        conversationId: input.conversationId,
+        scopes: scope === 'adult' ? ['normal', 'adult'] : ['normal'],
+        limit: 30,
+      })
       .catch(() => []);
     const history: ChatMessageForModel[] = recent
       .filter((m) => m.status === 'normal' && m.content?.type === 'text')
@@ -421,7 +469,7 @@ export class CallAgentService implements CallAgentPort {
         content: m.content?.type === 'text' ? m.content.text.slice(0, 300) : '',
       }));
     const remembered = await this.memory
-      .context(input.userId, input.characterId, 'normal', history.map((h) => h.content).join('\n'))
+      .context(input.userId, input.characterId, scope, history.map((h) => h.content).join('\n'))
       .catch(() => null);
     const memoryBlock =
       remembered && (remembered.items.length || remembered.summary)
@@ -449,6 +497,7 @@ export class CallAgentService implements CallAgentPort {
       };
     const session = new AgentSession(
       {
+        adultBoundary: this.adultBoundary,
         gateway: this.gateway,
         media: this.media,
         billing: this.billing,
@@ -457,6 +506,7 @@ export class CallAgentService implements CallAgentPort {
       },
       {
         ...input,
+        scope,
         voiceId,
         role,
         policy,

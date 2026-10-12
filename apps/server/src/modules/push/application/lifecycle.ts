@@ -101,6 +101,8 @@ export class PushLifecycle implements OnModuleInit, OnApplicationBootstrap {
           const context = await this.source.current(userId, event.payload.messageId, tx);
           if (
             !context ||
+            context.labels?.includes('quirk_draft') ||
+            context.labels?.includes('trial') ||
             (await this.sync.isViewingConversation(userId, context.conversationId, tx))
           )
             continue;

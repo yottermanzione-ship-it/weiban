@@ -76,13 +76,20 @@ private fun parseOrigin(origin: JsonElement): PlazaCopyOrigin? {
             )
         }
     val privatePerson = origin.data?.everPrivatePerson == true || role.classification.realPersonKind == "private_person"
+    val works =
+        remote("${owner.sessionId}:plaza-row-works:$characterId") {
+            repository.call(Endpoints.plazaEndpointsListMyWorks, options = SessionCallOptions(owner = owner, networkOnly = true))
+        }
+    val published = works.data?.items?.find { it.sourceCharacterId == characterId }
     if (privatePerson) {
         Column(Modifier.alpha(WbOpacity.Disabled)) {
             Text("发布到人设广场")
             PlazaFootnote("以身边的人为原型的角色不能发布，这是为了保护 TA 的隐私")
         }
     } else {
-        TextButton(onClick = { PlazaNav.open(PlazaPage.Publish(characterId, null)) }, enabled = enabled) { Text("发布到人设广场 ›") }
+        TextButton(onClick = { PlazaNav.open(PlazaPage.Publish(characterId, null)) }, enabled = enabled) {
+            Text(published?.let { "已发布 · 版本 ${it.currentVersion} · 发布新版本 ›" } ?: "发布到人设广场 ›")
+        }
     }
 }
 
@@ -159,7 +166,7 @@ private fun parseOrigin(origin: JsonElement): PlazaCopyOrigin? {
                 Text("你们的聊天记录、记忆、熟悉度都不会变", color = colors.textTertiary, style = MaterialTheme.typography.bodySmall)
             }
         },
-        confirmButton = { Button(onClick = { decide("update") }, enabled = !pending) { Text("更新到新版本") } },
+        confirmButton = { Button(onClick = { decide("update") }, enabled = !pending) { Text("更新到版本 $version") } },
         dismissButton = { TextButton(onClick = { decide("dismiss") }, enabled = !pending) { Text("暂不更新") } },
     )
     if (overwrite) {

@@ -90,12 +90,24 @@ jobs:
         run: node .github/scripts/check-test-report.mjs test-results/vitest-report.json
 
       - name: 网页生产构建与真实浏览器测试
+        id: browser_tests
         env:
           TEST_DATABASE_URL: postgres://weiban:weiban_dev_only@127.0.0.1:5432/weiban_test
         run: |
           pnpm exec playwright install --with-deps chromium
           pnpm web:e2e
           pnpm admin:e2e
+
+      - name: 保存失败浏览器的截图与请求轨迹
+        if: failure() && steps.browser_tests.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-failure-evidence
+          path: |
+            apps/web/test-results/
+            apps/admin/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: 生产容器与加密备份恢复演练
         run: |

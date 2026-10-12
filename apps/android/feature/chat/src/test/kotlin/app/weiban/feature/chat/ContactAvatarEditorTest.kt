@@ -71,7 +71,14 @@ class ContactAvatarEditorTest {
             database = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LocalDatabase::class.java).build()
             repository =
                 SessionRepository(
-                    ApiClient(server.url("/").toString()),
+                    ApiClient(
+                        server
+                            .url("/")
+                            .newBuilder()
+                            .host("127.0.0.1")
+                            .build()
+                            .toString(),
+                    ),
                     database,
                     object : SessionVault {
                         var saved: AuthResponse? = null
@@ -162,7 +169,12 @@ class ContactAvatarEditorTest {
                 1024,
                 512,
                 512,
-                server.url("/api/v1/media/$mediaId/content?token=fixture").toString(),
+                server
+                    .url("/api/v1/media/$mediaId/content?token=fixture")
+                    .newBuilder()
+                    .host("127.0.0.1")
+                    .build()
+                    .toString(),
                 "2026-11-06T03:00:00.000Z",
                 time,
             )

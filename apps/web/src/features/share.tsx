@@ -9,6 +9,7 @@ import {
   IdentityEndpoints,
   MediaEndpoints,
   ShareEndpoints,
+  ShareRejectedDetails,
   ShareSource as ShareSourceSchema,
   type ShareImageData,
   type ShareTemplate,
@@ -129,9 +130,30 @@ export function ShareEditorPage() {
       })
       .catch((e) => {
         if (!active) return;
-        if (e instanceof ApiFailure && e.status === 422) {
-          showToast(SHARE_REJECT_TEXT);
-          navigate(-1);
+        if (e instanceof ApiFailure && e.code === 'share_content_not_allowed') {
+          const rejected = ShareRejectedDetails.safeParse(e.details);
+          const ids =
+            request.kind === 'messages'
+              ? request.messageIds
+              : request.kind === 'favorites'
+                ? request.favoriteIds
+                : [];
+          const reasons: Record<string, string> = {
+            adult_scope: '成人模式内容',
+            health_label: '健康相关内容',
+            recalled: '消息已撤回',
+            not_found: '内容已不可用',
+          };
+          setError(
+            rejected.success
+              ? rejected.data.rejected
+                  .map((item) => {
+                    const index = ids.indexOf(item.id);
+                    return `${index >= 0 ? `第 ${index + 1} 条` : '所选内容'}：${reasons[item.reason] ?? '无法用于分享图'}`;
+                  })
+                  .join('；')
+              : SHARE_REJECT_TEXT,
+          );
         } else setError(friendlyError(e));
       });
     void api

@@ -311,13 +311,16 @@ export interface PlayAgentPort {
     body: string;
     idempotencyKey: string;
   }): Promise<PortResult<{ messageId: string }, 'not_found' | 'contact_inactive'>>;
-  /** 慢信：角色主动寄信（纪念日，计入 P-03）。 */
-  sendCharacterLetter(input: {
-    userId: string;
-    characterId: string;
-    body: string;
-    idempotencyKey: string;
-  }): Promise<PortResult<{ letterId: string }, 'contact_inactive'>>;
+  /** 慢信：角色主动寄信（纪念日，计入 P-03）；可与主动额度共享事务。 */
+  sendCharacterLetter(
+    input: {
+      userId: string;
+      characterId: string;
+      body: string;
+      idempotencyKey: string;
+    },
+    tx?: Tx,
+  ): Promise<PortResult<{ letterId: string }, 'contact_inactive'>>;
   /** TA 的提醒：5 种说法（每条 ≤ 40 字，可含 {称呼}）。 */
   setReminderPhrasings(input: {
     reminderId: string;

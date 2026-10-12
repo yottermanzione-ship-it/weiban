@@ -18,6 +18,8 @@ import {
   type CharacterCard,
   type CharacterReadPort,
   type CharacterSupplementPort,
+  type CharacterSupplementConflictsWritePort,
+  type PersonaUpdateSummarizerPort,
   type ModelGatewayPort,
 } from '@weiban/contracts';
 import {
@@ -40,10 +42,6 @@ export const SUPPLEMENT_CONFLICT_JOB = 'ai.supplement_conflicts';
 const PROMPT_VERSION = 'supplement-conflict-v1';
 
 type Conflict = z.infer<typeof SupplementConflict>;
-interface ConflictWriter {
-  setConflicts(userId: string, characterId: string, conflicts: Conflict[]): Promise<void>;
-}
-
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 
 /** 公开资料摘要（只取会和补充设定冲突的事实类字段）。 */
@@ -79,7 +77,7 @@ export class SupplementConflictService implements OnModuleInit {
     private readonly supplements?: CharacterSupplementPort,
     @Optional()
     @Inject(CHARACTER_SUPPLEMENT_CONFLICTS)
-    private readonly writer?: ConflictWriter,
+    private readonly writer?: CharacterSupplementConflictsWritePort,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -160,7 +158,7 @@ export class SupplementConflictService implements OnModuleInit {
     // 期间用户又改了补充设定：放弃本次结果（新事件会再触发）。
     const latest = await this.supplements.getSupplement(userId, characterId);
     if (!latest || hash(latest) !== textHash) return;
-    await this.writer.setConflicts(userId, characterId, conflicts);
+    await this.writer.setConflicts(userId, characterId, conflicts, textHash);
   }
 }
 
@@ -201,7 +199,7 @@ export function ruleSummary(before: CharacterCard | null, after: CharacterCard):
 }
 
 @Injectable()
-export class PersonaUpdateSummaryService {
+export class PersonaUpdateSummaryService implements PersonaUpdateSummarizerPort {
   constructor(@Inject(MODEL_GATEWAY_PORT) private readonly gateway: ModelGatewayPort) {}
 
   /** 生成一句更新摘要（≤ 200 字）。adminId 为发布的管理员（平台账户计费）。 */
@@ -211,7 +209,7 @@ export class PersonaUpdateSummaryService {
     before: CharacterCard | null;
     after: CharacterCard;
     version: number;
-  }): Promise<string> {
+  }): Promise<string | null> {
     const rule = ruleSummary(input.before, input.after);
     if (rule) return rule;
     const result = await this.gateway.generateText({
@@ -237,8 +235,6 @@ export class PersonaUpdateSummaryService {
         },
       ],
     });
-    return result.ok && result.value.text.trim()
-      ? result.value.text.trim().slice(0, 200)
-      : '资料已更新';
+    return result.ok && result.value.text.trim() ? result.value.text.trim().slice(0, 200) : null;
   }
 }

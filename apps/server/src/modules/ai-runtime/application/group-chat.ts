@@ -9,6 +9,7 @@
  * 说明见 docs/ai/runtime-overview.md 第 7 节「T-065 实现差异」。
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { AdultBoundaryService } from './adult-boundary.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
 import { QuietStateService } from './quiet-state.js';
 import { and, desc, eq, gte, ne } from 'drizzle-orm';
@@ -63,9 +64,10 @@ import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import { INITIAL_MODES } from '../domain/persona.js';
 import { highRisk, outputAllowed } from '../domain/reply-rules.js';
-import { careFallback } from './safety-care.js';
+import { callModelForCare, careFallback } from './safety-care.js';
 import {
   groupCompanionSettings,
+  groupReplyPlans,
   groupInvites,
   groupSelfChats,
   simulationStates,
@@ -73,6 +75,7 @@ import {
 import { SimulationService } from './simulation.js';
 import { localParts } from './proactive-scheduler.js';
 import { PlannerService } from './planner.js';
+import { GroupReplyStore, type GroupReplyPlan } from './group-reply-store.js';
 
 // ---------------------------------------------------------------------------
 // 参数
@@ -123,6 +126,13 @@ interface Speech {
   reason: 'mentioned' | 'picked' | 'chain' | 'starter';
 }
 
+interface GroupCheckpoint {
+  queue: Speech[];
+  members: string[];
+  scenarioMode: ScenarioMode;
+  last: { member: Member; text: string } | null;
+}
+
 const CLOSENESS_WEIGHT: Record<string, number> = { close: 1, familiar: 0.6, acquaintance: 0.3 };
 const CLOSENESS_TEXT: Record<string, string> = {
   close: '亲密',
@@ -157,6 +167,7 @@ function relevance(text: string, topics: string[]): number {
 @Injectable()
 export class GroupChatService {
   constructor(
+    @Inject(AdultBoundaryService) private readonly adultBoundary: AdultBoundaryService,
     @Inject(DATABASE) private readonly db: Database,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
@@ -179,6 +190,7 @@ export class GroupChatService {
     @Inject(SimulationService) private readonly simulation: SimulationService,
     @Inject(PlannerService) private readonly planner: PlannerService,
     @Inject(QuietStateService) private readonly quiet: QuietStateService,
+    @Inject(GroupReplyStore) private readonly replies: GroupReplyStore,
   ) {}
 
   // =========================================================================
@@ -273,6 +285,7 @@ export class GroupChatService {
         .values(values)
         .onConflictDoUpdate({ target: groupCompanionSettings.conversationId, set: values });
       if (patch.scenarioMode && patch.scenarioMode !== old.scenarioMode) {
+        await this.replies.cancelConversation(tx, conversationId);
         const result = await this.chatAdmin.setContentScope(
           { conversationId, scope: patch.scenarioMode === 'adult' ? 'adult' : 'normal' },
           tx,
@@ -313,6 +326,7 @@ export class GroupChatService {
 
   /** 成员变化：当前模式有人不具备资格 → 自动回到日常并发系统提示（SOC-03 第 4 条）。 */
   async onMembersChanged(tx: DbTx, conversationId: string, ownerUserId: string): Promise<void> {
+    await this.replies.cancelConversation(tx, conversationId);
     const settings = await this.loadSettings(conversationId);
     if (settings.scenarioMode === 'daily') return;
     const conversation = await this.chat.getConversation(conversationId, tx);
@@ -344,6 +358,9 @@ export class GroupChatService {
     await tx.db
       .delete(groupCompanionSettings)
       .where(eq(groupCompanionSettings.conversationId, input.conversationId));
+    await tx.db
+      .delete(groupReplyPlans)
+      .where(eq(groupReplyPlans.conversationId, input.conversationId));
     await tx.db
       .delete(groupSelfChats)
       .where(eq(groupSelfChats.conversationId, input.conversationId));
@@ -388,6 +405,15 @@ export class GroupChatService {
     tx: DbTx,
     input: { conversationId: string; userId: string; messageId: string; seq: number },
   ): Promise<void> {
+    const conversation = await this.chat.getConversation(input.conversationId);
+    if (!conversation) return;
+    await this.replies.enqueue(tx, {
+      userId: input.userId,
+      conversationId: input.conversationId,
+      triggerMessageId: input.messageId,
+      triggerSeq: input.seq,
+      scope: conversation.contentScope,
+    });
     await this.jobs.send(
       GROUP_TURN_JOB,
       {
@@ -401,24 +427,89 @@ export class GroupChatService {
   }
 
   async runTurn(job: GroupTurnJob): Promise<void> {
+    const row = await this.replies.claim(job.triggerMessageId);
+    if (!row) return;
+    try {
+      await this.runClaimedTurn(job, row);
+    } catch (error) {
+      await this.replies.checkpoint(row, { status: 'waiting' });
+      throw error;
+    }
+  }
+
+  recover(userId?: string) {
+    return this.replies.recover(userId);
+  }
+  reconcile() {
+    return this.replies.reconcile();
+  }
+
+  private async runClaimedTurn(job: GroupTurnJob, row: GroupReplyPlan): Promise<void> {
+    const cancel = () => this.replies.checkpoint(row, { status: 'cancelled' });
     if ((await this.accounts.getAccountStatus(job.userId)) !== 'active') return;
     const conversation = await this.chat.getConversation(job.conversationId);
-    if (!conversation || conversation.type !== 'group') return;
+    if (!conversation || conversation.type !== 'group' || conversation.contentScope !== row.scope) {
+      await cancel();
+      return;
+    }
     // 用户又发了新消息：交给新消息的任务统一回应（连发只回一次）。
-    if (await this.newerUserMessage(conversation, job.triggerSeq)) return;
+    if (await this.newerUserMessage(conversation, job.triggerSeq)) {
+      await cancel();
+      return;
+    }
     const members = await this.loadMembers(job.userId, conversation);
-    if (!members.length) return;
+    if (!members.length) {
+      await cancel();
+      return;
+    }
     const history = await this.history(conversation);
     const trigger = history.find((m) => m.messageId === job.triggerMessageId);
+    if (
+      !trigger ||
+      trigger.senderKind !== 'user' ||
+      trigger.status !== 'normal' ||
+      trigger.seq !== job.triggerSeq ||
+      trigger.scope !== conversation.contentScope
+    ) {
+      await cancel();
+      return;
+    }
+    // 切回同一范围也不能复活模式变更前的用户触发。
+    if (
+      history.some(
+        (message) =>
+          message.seq > trigger.seq &&
+          message.senderKind === 'system' &&
+          message.content?.type === 'system' &&
+          message.content.code === 'scenario_mode_changed',
+      )
+    ) {
+      await cancel();
+      return;
+    }
     const userText = trigger?.content?.type === 'text' ? trigger.content.text : '';
     const mentioned = new Set(
       trigger?.content?.type === 'text' ? (trigger.content.mentions ?? []) : [],
     );
     const settings = await this.loadSettings(conversation.conversationId);
+    const saved = await this.replies.open<GroupCheckpoint>(row, 'plan');
+    if (
+      saved &&
+      (saved.scenarioMode !== settings.scenarioMode ||
+        saved.members.join(',') !==
+          members
+            .map((m) => m.participantId)
+            .sort()
+            .join(','))
+    ) {
+      await cancel();
+      return;
+    }
 
     // SAFE-06 第 5 条：群里出现高危表达 → 群里只简短关心，由最熟悉的角色在私聊跟进。
     if (highRisk(userText) === 'high') {
       await this.safetyHandoff(job, conversation, members, history);
+      await this.replies.checkpoint(row, { status: 'done' });
       return;
     }
 
@@ -452,7 +543,10 @@ export class GroupChatService {
     let responders = [...must, ...picked].slice(0, P19_GROUP.maxResponders);
     // 至少 1 个回应（SOC-04 第 5 条）。
     if (!responders.length && scored[0]) responders = [scored[0].member];
-    if (!responders.length) return;
+    if (!responders.length) {
+      await cancel();
+      return;
+    }
 
     const plan: Speech[] = responders.map((speaker) => ({
       speaker,
@@ -470,6 +564,15 @@ export class GroupChatService {
       purpose: 'chat_reply',
       topic: null,
       labels: [],
+      durable: {
+        row,
+        state: saved ?? {
+          queue: plan,
+          members: members.map((m) => m.participantId).sort(),
+          scenarioMode: settings.scenarioMode,
+          last: null,
+        },
+      },
     });
   }
 
@@ -489,18 +592,28 @@ export class GroupChatService {
     purpose: 'chat_reply' | 'proactive';
     topic: string | null;
     labels: string[];
+    durable?: { row: GroupReplyPlan; state: GroupCheckpoint };
   }): Promise<number> {
-    const queue = [...input.plan];
-    let sent = 0;
-    let last: { member: Member; text: string } | null = null;
+    const queue = [...(input.durable?.state.queue ?? input.plan)];
+    let sent = input.durable?.row.nextOrdinal ?? 0;
+    let last: { member: Member; text: string } | null = input.durable?.state.last ?? null;
+    let durable = input.durable;
     while (sent < input.maxMessages) {
-      let next = queue.shift();
+      let next = queue[0];
       if (!next && last)
         next = await this.pickChainSpeaker(input.userId, input.members, last, sent);
       if (!next) break;
+      if (!queue.length) queue.push(next);
+      if (durable) {
+        const updated = await this.replies.checkpoint(durable.row, {
+          plan: { ...durable.state, queue, last },
+        });
+        if (!updated) return sent;
+        durable = { ...durable, row: updated };
+      }
       if (await this.newerUserMessage(input.conversation, input.triggerSeq)) break;
       if (input.purpose === 'proactive' && !(await this.backgroundAllowed(input.userId))) break;
-      const text = await this.speak({
+      const reply = await this.speak({
         userId: input.userId,
         conversation: input.conversation,
         members: input.members,
@@ -513,11 +626,28 @@ export class GroupChatService {
         topic: input.topic,
         labels: input.labels,
         triggerSeq: input.triggerSeq,
+        ...(durable ? { durable: durable.row } : {}),
       });
-      if (text === null) break;
+      if (reply === null) {
+        if (durable) await this.replies.checkpoint(durable.row, { status: 'waiting' });
+        return sent;
+      }
       sent++;
-      last = { member: next.speaker, text };
+      queue.shift();
+      last = { member: next.speaker, text: reply.text };
+      if (durable) {
+        const updated = await this.replies.checkpoint(durable.row, {
+          plan: { ...durable.state, queue, last },
+          nextOrdinal: sent,
+          input: null,
+          result: null,
+        });
+        if (!updated) return sent;
+        durable = { ...durable, row: updated };
+      }
+      if (reply.stopChain) break;
     }
+    if (durable) await this.replies.checkpoint(durable.row, { status: 'done' });
     return sent;
   }
 
@@ -561,7 +691,8 @@ export class GroupChatService {
     topic: string | null;
     labels: string[];
     triggerSeq: number;
-  }): Promise<string | null> {
+    durable?: GroupReplyPlan;
+  }): Promise<{ text: string; stopChain: boolean } | null> {
     const { conversation, speaker } = input;
     const role = await this.characters.getForRuntime(input.userId, speaker.characterId);
     const policy = await this.policy.getCharacterPolicy(input.userId, speaker.characterId);
@@ -606,7 +737,7 @@ export class GroupChatService {
           : input.reason === 'chain'
             ? '接一下群里上一条消息，可以附和、调侃或抬杠，也可以 @ 别人。'
             : '你看到群里的新消息，自然地插一句。';
-    const request: GenerateTextInput = {
+    let request: GenerateTextInput = {
       userId: input.userId,
       characterId: speaker.characterId,
       conversationId: conversation.conversationId,
@@ -633,13 +764,44 @@ export class GroupChatService {
       ],
       meta: { conversationKind: 'group', scenarioMode: input.scenarioMode },
     };
-    const result = await this.gateway.generateText(request);
-    if (!result.ok) return null;
-    const text = result.value.text
+    if (input.durable) {
+      const frozen = await this.replies.open<GenerateTextInput>(input.durable, 'input');
+      if (frozen) request = frozen;
+      request = {
+        ...request,
+        idempotencyKey: `${request.idempotencyKey}:epoch:${input.durable.retryEpoch}`,
+      };
+      if (
+        !(await this.replies.checkpoint(input.durable, {
+          input: { ...request, idempotencyKey: `ai:${input.idempotencyKey}` },
+        }))
+      )
+        return null;
+    }
+    const cached = input.durable
+      ? await this.replies.open<{ text: string; stopChain: boolean }>(input.durable, 'result')
+      : null;
+    const result = cached
+      ? { ok: true as const, value: { text: cached.text } }
+      : await this.adultBoundary.generate(request, adult);
+    if (!result.ok && !(adult && result.error === 'content_rejected')) return null;
+    const stopChain = cached?.stopChain ?? !result.ok;
+    const deflect = role.card.data.safetyStyle.deflectStyle?.trim();
+    const sourceText = result.ok
+      ? result.value.text
+      : deflect && outputAllowed(deflect, policy, false)
+        ? deflect
+        : '这个话题先放一放，好吗？我们聊聊你今天过得怎么样。';
+    const text = sourceText
       .trim()
       .replace(new RegExp(`^${speaker.name}[：:]\\s*`), '')
       .slice(0, 300);
     if (!text || !outputAllowed(text, policy, adult)) return null;
+    if (
+      input.durable &&
+      !(await this.replies.checkpoint(input.durable, { result: { text, stopChain } }))
+    )
+      return null;
     // 节奏：正在输入 + 间隔（秒回约 0.5 秒，否则 2–8 秒），不会几个人同一秒发出。
     await this.writer.setTyping({
       conversationId: conversation.conversationId,
@@ -649,6 +811,7 @@ export class GroupChatService {
     try {
       await sleep(input.instant ? 500 : 2000 + Math.random() * 6000);
       if (await this.newerUserMessage(conversation, input.triggerSeq)) return null;
+      if (input.durable && !(await this.replies.checkpoint(input.durable, {}))) return null;
       const posted = await this.writer.postMessage({
         conversationId: conversation.conversationId,
         senderParticipantId: speaker.participantId,
@@ -658,7 +821,7 @@ export class GroupChatService {
         ...(input.labels.length ? { labels: input.labels } : {}),
       });
       if (!posted.ok) return null;
-      return text;
+      return { text, stopChain };
     } finally {
       await this.writer.setTyping({
         conversationId: conversation.conversationId,
@@ -692,25 +855,28 @@ export class GroupChatService {
       (p) => p.kind === 'character' && p.refId === carer.characterId,
     );
     if (!direct || !participant) return;
-    const result = await this.gateway.generateText({
-      userId: job.userId,
-      characterId: carer.characterId,
-      conversationId: direct.conversationId,
-      purpose: 'safety_followup',
-      billingOwner: 'user',
-      modelRole: 'chat',
-      safetyPriority: true,
-      responseFormat: 'text',
-      maxOutputTokens: 300,
-      idempotencyKey: `ai:group-care:${job.triggerMessageId}`,
-      messages: [
-        {
-          role: 'system',
-          content: `你以角色口吻在私聊里关心刚才在群里流露出自伤念头的用户。语气温和真诚，不说教；建议对方联系身边信任的人或心理援助热线 12356，紧急时拨打 110/120；不提供任何方法；不在群里讨论。角色资料：${JSON.stringify({ persona: role?.card.data.persona, speech: role?.card.data.speech }).slice(0, 6000)}`,
-        },
-        { role: 'user', content: '（用户刚才在群里说了让人担心的话）' },
-      ],
-    });
+    const result = await callModelForCare(
+      this.gateway,
+      {
+        userId: job.userId,
+        characterId: carer.characterId,
+        conversationId: direct.conversationId,
+        purpose: 'safety_followup',
+        billingOwner: 'user',
+        modelRole: 'chat',
+        responseFormat: 'text',
+        maxOutputTokens: 300,
+        idempotencyKey: `ai:group-care:${job.triggerMessageId}`,
+        messages: [
+          {
+            role: 'system',
+            content: `你以角色口吻在私聊里关心刚才在群里流露出自伤念头的用户。语气温和真诚，不说教；建议对方联系身边信任的人或心理援助热线 12356，紧急时拨打 110/120；不提供任何方法；不在群里讨论。角色资料：${JSON.stringify({ persona: role?.card.data.persona, speech: role?.card.data.speech }).slice(0, 6000)}`,
+          },
+          { role: 'user', content: '（用户刚才在群里说了让人担心的话）' },
+        ],
+      },
+      { highRisk: true, careActive: false, suspected: false },
+    );
     const text =
       result.ok && result.value.text.trim()
         ? result.value.text.trim().slice(0, 600)

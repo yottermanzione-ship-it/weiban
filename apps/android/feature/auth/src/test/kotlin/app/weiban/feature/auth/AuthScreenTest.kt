@@ -29,7 +29,15 @@ class AuthScreenTest {
         server = MockWebServer()
         server.start()
         database = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LocalDatabase::class.java).build()
-        val api = ApiClient(server.url("/").toString())
+        val api =
+            ApiClient(
+                server
+                    .url("/")
+                    .newBuilder()
+                    .host("127.0.0.1")
+                    .build()
+                    .toString(),
+            )
         val vault =
             object : SessionVault {
                 var stored: AuthResponse? = null

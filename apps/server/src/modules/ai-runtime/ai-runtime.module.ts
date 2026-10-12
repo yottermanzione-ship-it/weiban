@@ -10,6 +10,7 @@ import { ModelAccessModule } from '../model-access/index.js';
 import { ReplyPlanStore } from './application/plan-store.js';
 import { ReplyContext } from './application/reply-context.js';
 import { ReplyEngine } from './application/reply-engine.js';
+import { AdultBoundaryService } from './application/adult-boundary.js';
 import { AiRuntimeLifecycle } from './application/lifecycle.js';
 import { IdentityModule } from '../identity/index.js';
 import { ContactsModule } from '../contacts/index.js';
@@ -29,6 +30,7 @@ import { HealthModule } from '../health/index.js';
 import { BillingModule } from '../billing/index.js';
 import { ProactiveSchedulerService } from './application/proactive-scheduler.js';
 import { GroupChatService } from './application/group-chat.js';
+import { GroupReplyStore } from './application/group-reply-store.js';
 import { GroupCompanionController } from './http/group-companion.controller.js';
 import { TimelineListService, TimelineSummaryService } from './application/timeline.js';
 import { SocialService } from './application/social.js';
@@ -47,6 +49,7 @@ import { CallSchedulerService } from './application/call-scheduler.js';
 import { CallAgentService } from './application/call-agent.js';
 import {
   AI_CALL_AGENT_PORT,
+  AI_TRIAL_CLEANUP_PORT,
   AI_USER_QUIET_STATE_PORT,
   AI_IMPORT_ANALYZER,
   AI_PERSONA_UPDATE_SUMMARIZER,
@@ -56,6 +59,8 @@ import {
 } from './tokens.js';
 import { ActiveHoursService } from './application/active-hours.js';
 import { PlayAiService } from './application/play-ai.js';
+import { PlayContinuityStore } from './application/play-continuity.js';
+import { QuirkService } from './application/quirk-service.js';
 import { PlazaPublishCheckService } from './application/plaza-check.js';
 import {
   SupplementedCharacterRead,
@@ -87,6 +92,7 @@ import {
     PlayModule,
   ],
   providers: [
+    { provide: AI_TRIAL_CLEANUP_PORT, useExisting: ReplyPlanStore },
     // T-090：行为规划决策层。
     PlannerService,
     // T-081：角色读取补上「我的补充设定」；导入分析；补充设定冲突项；人设更新摘要。
@@ -111,6 +117,7 @@ import {
     ReplyPlanStore,
     ReplyContext,
     ReplyEngine,
+    AdultBoundaryService,
     SimulationService,
     TimelineSummaryService,
     TimelineListService,
@@ -129,6 +136,7 @@ import {
     HealthCareService,
     ProactiveSchedulerService,
     GroupChatService,
+    GroupReplyStore,
     {
       provide: HEALTH_CARE_FAMILIARITY,
       useFactory: (growth: GrowthService) => ({
@@ -139,11 +147,14 @@ import {
     },
     // T-096：玩法里角色怎么说话；给 play 的活跃时段。
     PlayAiService,
+    PlayContinuityStore,
+    QuirkService,
     ActiveHoursService,
     { provide: AI_ACTIVE_HOURS, useExisting: ActiveHoursService },
     AiRuntimeLifecycle,
   ],
   exports: [
+    AI_TRIAL_CLEANUP_PORT,
     SIMULATION_READ_PORT,
     AI_CALL_AGENT_PORT,
     AI_USER_QUIET_STATE_PORT,

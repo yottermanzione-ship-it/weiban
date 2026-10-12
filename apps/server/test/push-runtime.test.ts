@@ -408,7 +408,7 @@ describeDb('push主应用端口、模型故障目标与独立worker真实HTTP', 
     worker = await module.init();
     db = worker.get(DATABASE);
     const started = performance.now();
-    await vi.waitFor(
+    const delivered = await vi.waitFor(
       async () => {
         const [row] = (
           await db.query<{ status: string; accepted_at: Date; created_at: Date }>(
@@ -417,10 +417,12 @@ describeDb('push主应用端口、模型故障目标与独立worker真实HTTP', 
           )
         ).rows;
         expect(row!.status).toBe('delivered');
-        expect(row!.accepted_at.getTime() - row!.created_at.getTime()).toBeLessThan(2000);
+        return row!;
       },
       { timeout: 10000, interval: 50 },
     );
+    // 回执时间落库后不再变化，时延失败立即报告，不在waitFor中重试固定数值。
+    expect(delivered.accepted_at.getTime() - delivered.created_at.getTime()).toBeLessThan(2000);
     expect(performance.now() - started).toBeLessThan(2000);
     // worker也会恢复此前持久化的模型告警；只按本条delivery的稳定通知ID验证重投。
     const receivedForDelivery = () =>

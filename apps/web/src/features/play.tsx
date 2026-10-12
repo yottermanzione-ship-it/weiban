@@ -863,7 +863,15 @@ export function WriteLetterPage() {
       const result = await api.call(LetterEndpoints.sendLetter, {
         body: { clientRequestId: requestId.current, characterId, body: body.trim() },
       });
-      showToast(result.replyDelayed ? '已寄出，这封的回信会晚一些到' : '已寄出');
+      showToast(
+        result.replyDelayReason === 'already_replied_today'
+          ? '已寄出，TA 今天已回过信，这封的回信会晚一些到'
+          : result.replyDelayReason === 'outside_active_window'
+            ? '已寄出，回信会在你通常活跃的时段送达'
+            : result.replyDelayed
+              ? '已寄出，这封的回信会晚一些到'
+              : '已寄出',
+      );
       const conversationId = friends.find((f) => f.characterId === characterId)?.conversationId;
       navigate(conversationId ? `/chat/${conversationId}` : '/play/letters', { replace: true });
     } catch (e) {

@@ -27,6 +27,20 @@ export async function resetTestDatabase(): Promise<void> {
   await new Migrator(url, MIGRATIONS_DIR).up();
 }
 
+/** 回滚指定迁移及其后续迁移，再恢复完整结构；不假设被测模块总是最新迁移。 */
+export async function roundTripMigration(tag: string): Promise<void> {
+  const migrator = new Migrator(requireTestDatabaseUrl(), MIGRATIONS_DIR);
+  const applied = (await migrator.status()).filter((entry) => entry.applied);
+  const index = applied.findIndex((entry) => entry.tag === tag);
+  if (index < 0) throw new Error(`被测迁移未执行：${tag}`);
+  const rolledBack = await migrator.down(applied.length - index);
+  if (!rolledBack.includes(tag)) throw new Error(`未回滚被测迁移：${tag}`);
+  const restored = await migrator.up();
+  if (!restored.includes(tag) || restored.length !== rolledBack.length) {
+    throw new Error(`迁移恢复不完整：${tag}`);
+  }
+}
+
 export async function dropEverything(url: string): Promise<void> {
   const client = new pg.Client({ connectionString: url });
   try {

@@ -4,6 +4,8 @@
 > 契约本身在 `packages/contracts/src/`（唯一准绳），变更记录见 `packages/contracts/README.md`「3.1」，决策见 ADR-0028。
 > 3.0 的对照表 `contracts-3.0-map.md` 仍有效（L4～L7 每张卡的基础契约）；本文只列 3.1 增量。
 
+产品收口补充⑱：管理素材类别`CardTemplateKind.daily_photo`用于聊天/朋友圈兜底图，后台与服务器同步部署，管理枚举按ADR-0028例外并入3.1；模板kinds为JSON，无需新迁移。`MediaAssetReadPort.listCardTemplates`新增可选`classicalStyleOnly`（省略为false），media实现过滤，ai-runtime历史人物传true并同时要求portraitFree。原有growth古风卡面令牌继续有效。
+
 ## 1. 先看结论
 
 1. **契约 3.1 已合入，全部向后兼容**：现有服务器、网页、安卓不改代码也能编译运行；新字段在实现前只是「不返回」，客户端按注释里的默认行为处理。
@@ -34,7 +36,7 @@
 | B2 | ⑲ | `http/chat.ts` `ImageContent.sizeBytes` | 用户发图、角色发图（含宠物照片）写消息时从媒体记录填字节数 | `modules/chat/application/`（发送校验处）、ai-runtime 发图处由 AI 批顺带 |
 | B3 | ㉘ | `http/chat-groups.ts` `locateByDate`、`listByType`、`searchConversation.senderParticipantId` | 两个新接口 + 搜索按发送者过滤；`locateByDate` 按 `Profile.timezone` 算当天起点；`listByType` 用已有 `content_type` 列 | `modules/chat/http/`、`application/search.ts` |
 | B4 | ⑲ | `http/character-extras.ts` `getDefaultVoice` | 读默认音色 + 经 `MediaAssetReadPort` 取名称 | `modules/characters/http/`（作品链接控制器） |
-| B5 | T-098 | `http/characters.ts` `catchphrases`、`speechStyle` | 自定义角色创建 / 修改写入角色卡 `speech.catchphrases`、`speech.tone`，响应返回；两者参与儿童特征检测 | `modules/characters/application/custom-character.ts` |
+| B5 | T-098 | `http/characters.ts` `catchphrases`、`speechStyle`、可选可空`voiceId` | 自定义角色创建 / 修改写入角色卡 `speech.catchphrases`、`speech.tone`，响应返回；两者参与儿童特征检测。音色ID进入私有快照和运行时`social.voiceId`，陪伴音色优先且合成前检查启用状态；导入草稿保留选择，null明确清空，无新增迁移 | `modules/characters/application/custom-character.ts` |
 | B6 | ㉕ | `ports/characters.ts` `CharacterSupplementConflictsWritePort` | 把内部令牌 `CHARACTER_SUPPLEMENT_CONFLICTS` 改为实现契约端口：加 `expectedTextSha256` 比对（不一致返回 `stale`），返回 `PortResult`，写入后发 `data.changed(section = supplement, characterId)` | `modules/characters/tokens.ts`、补充设定服务 |
 | B7 | ㉝ | `CharacterChildFeaturesWritePort`；`PlazaPresetVariantSnapshot.childFeaturesDetected` | 内部令牌改实现契约端口（签名已兼容，只改类型名）；`applyVariant` 时取快照与预设分类中更严的 `childFeaturesDetected`，存在用户这份补充设定 / 运行时分类上，不写回预设 | `modules/characters/application/plaza-port.ts` |
 | B8 | ㉖ | `PersonaUpdateSummarizerPort` | characters 定义令牌 `CHARACTER_PERSONA_SUMMARIZER`（`@Optional()` 注入）；管理员发布新人设版本时调用，null / 未绑定时用管理员摘要或「资料已更新」 | `modules/characters/`（发布人设版本处） |
@@ -44,7 +46,7 @@
 | B12 | ㉚ | `http/pets.ts` `PetAppearance.listed`（迁移 0072） | 管理端外观单独上下架；用户端领养列表过滤；没有上架外观的物种视为下架 | `modules/growth/`（宠物） |
 | B13 | T-082 | 事件 `growth.pet_naming_requested.speciesName` | 发事件时带物种名称 | `modules/growth/`（宠物） |
 | B14 | ㉗ | `ports/social.ts` `CardCopywriterPort` | growth 定义令牌 `GROWTH_CARD_COPYWRITER`（可选注入）；发纪念 / 熟悉度 / 节日 / 心愿卡时调用，3 秒超时或 null 用模板 | `modules/growth/application/cards*.ts` |
-| B15 | ㉕ | `http/importer.ts` `mergeIntoJobId`、`mergedIntoJobId`（迁移 0073） | 校验目标（同用户、同 kind、同角色、已完成待编辑）；本批完成后按规则合并进目标草稿（新角色补空字段、合并示例；补充设定追加文字），本任务标 `mergedIntoJobId`；`ImportResult(supplement).conflicts / filteredCount` 从分析器结果透传 | `modules/importer/` |
+| B15 | ㉕ | `http/importer.ts` `mergeIntoJobId`、`mergedIntoJobId`（迁移 0073） | 校验目标（同用户、同 kind、同角色、已完成待编辑）；本批完成后按规则合并进目标草稿（新角色补空字段、合并示例；补充设定追加文字），本任务标 `mergedIntoJobId`；`ImportResult(supplement).conflicts / filteredCount` 从分析器结果透传；编辑字段保留生日/头像（可选可空，无新增迁移），保存时校验头像归属与用途 | `modules/importer/` |
 | B16 | ㉕ | `ports/push.ts` `PushRequest.kind = import` | push 接受 `import` 并映射到 `NotificationKind.import`；importer 导入完成推送改用 `import` | `modules/push/`、`modules/importer/` |
 | B17 | ㉚㉖ | `ModelStatus.visionAvailable`；`ModelQuotePort` | `GET /model/status` 返回识图可用；实现报价端口（解析模型 → `BillingQuotePort`），导出令牌 `MODEL_QUOTE_PORT` | `modules/model-access/` |
 | B18 | ㉖㉞ | `ports/billing.ts` `BillingQuotePort`、`BillingDailySpendReadPort` | 报价（只给 model-access，R9 同预留端口）；按用户当地日期、按用途汇总已结算金额，导出令牌 `BILLING_DAILY_SPEND_READ_PORT` | `modules/billing/` |
@@ -104,3 +106,7 @@
 | P-36 / P-37 | 已挪进 `platform/config/product-params.ts`，health 与 ai-runtime 改为引用（本次一并完成） |
 | T-080 媒体按用户目录 vs 孤儿核验 | `security-and-privacy.md` 第 6 节已改写为「全库无孤儿文件」，TD-031 |
 | 安卓 detekt 放宽 | TD-028（Compose 豁免转为规范，42 处 `@Suppress` 记债） |
+
+## 2026-10-12 成人复核配套
+
+增加内部ModelRole adult_check与管理员目录defaultFor adult_check；用户选择接口仍仅chat/background/adult，不提供任意角色/模型覆盖。检查调用仅safety_check并带角色，专用平台默认不回落用户后台，限定HTTPS OpenRouter，角色必须有成人资格。普通真人/儿童日常检查不得借用此成人角色路径。无审查模型只能设该专用检查默认，生成默认继续禁止；0080约束和0081加密状态迁移含down并已实测回滚恢复。现有生成物保持3.1并同步JSON资源，未新增公共HTTP接口。功能尚待全量、多渠道和真实模型验收，开发自测见最新交接。

@@ -16,6 +16,60 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 export const aiRuntimeSchema = pgSchema('ai_runtime');
+/** 群回复持久恢复状态；计划、当前输入和已生成结果按用户密钥加密。 */
+export const groupReplyPlans = aiRuntimeSchema.table(
+  'group_reply_plans',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    conversationId: uuid('conversation_id').notNull(),
+    triggerMessageId: uuid('trigger_message_id').notNull(),
+    triggerSeq: bigint('trigger_seq', { mode: 'number' }).notNull(),
+    scope: text('scope').notNull(),
+    status: text('status').notNull(),
+    nextOrdinal: integer('next_ordinal').notNull().default(0),
+    retryEpoch: integer('retry_epoch').notNull().default(0),
+    planCiphertext: customType<{ data: Buffer }>({ dataType: () => 'bytea' })('plan_ciphertext'),
+    inputCiphertext: customType<{ data: Buffer }>({ dataType: () => 'bytea' })('input_ciphertext'),
+    resultCiphertext: customType<{ data: Buffer }>({ dataType: () => 'bytea' })(
+      'result_ciphertext',
+    ),
+    leaseId: uuid('lease_id'),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('group_reply_plans_user_id_conversation_id_trigger_message_id_key').on(
+      t.userId,
+      t.conversationId,
+      t.triggerMessageId,
+    ),
+    index('group_reply_waiting_idx').on(t.userId, t.status, t.updatedAt),
+    check('group_reply_trigger_positive', sql`${t.triggerSeq} > 0`),
+    check('group_reply_scope', sql`${t.scope} IN ('normal','adult')`),
+    check(
+      'group_reply_status',
+      sql`${t.status} IN ('queued','generating','waiting','done','cancelled')`,
+    ),
+    check('group_reply_ordinal', sql`${t.nextOrdinal} >= 0 AND ${t.nextOrdinal} <= 6`),
+    check('group_reply_retry_epoch', sql`${t.retryEpoch} >= 0`),
+  ],
+);
+/** 触发证据加密保存，后续成人回合持续检查，注销时删除。 */
+export const adultBoundaryStates = aiRuntimeSchema.table(
+  'adult_boundary_states',
+  {
+    userId: uuid('user_id').notNull(),
+    conversationId: uuid('conversation_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    evidenceCiphertext: customType<{ data: Buffer }>({ dataType: () => 'bytea' })(
+      'evidence_ciphertext',
+    ).notNull(),
+    triggeredAt: timestamp('triggered_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.conversationId, t.characterId] })],
+);
 /** null characterId 表示用户全局默认；单独设置整份快照不随默认变化。 */
 export const companionSettings = aiRuntimeSchema.table(
   'companion_settings',
@@ -44,6 +98,35 @@ export const companionSettings = aiRuntimeSchema.table(
 );
 
 const bytes = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
+export const characterSelfReports = aiRuntimeSchema.table(
+  'character_self_reports',
+  {
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    topicKey: text('topic_key').notNull(),
+    answerId: uuid('answer_id').notNull(),
+    scope: text('scope').$type<'normal' | 'adult'>().notNull(),
+    payloadCiphertext: bytes('payload_ciphertext').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.characterId, t.topicKey] }),
+    check('character_self_reports_scope_check', sql`${t.scope} IN ('normal', 'adult')`),
+  ],
+);
+
+export const pendingAnniversaryLetters = aiRuntimeSchema.table(
+  'pending_anniversary_letters',
+  {
+    planId: uuid('plan_id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    payloadCiphertext: bytes('payload_ciphertext').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [index('pending_anniversary_letters_user').on(t.userId)],
+);
 /**
  * pgvector 列（vector(256)）。fromDriver/toDriver 使用字符串字面量，
  * 应用层在查询时通过原生 sql 调用 <=> 操作符，不经过 Drizzle 操作符。

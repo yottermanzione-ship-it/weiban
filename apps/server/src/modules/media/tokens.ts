@@ -1,4 +1,8 @@
-import type { SyncPort } from '@weiban/contracts';
+import type { IdentityAccountStatusPort, SyncPort } from '@weiban/contracts';
+
+/** 由装配入口绑定；私有媒体写入必须在同一事务中锁定账号状态。 */
+export const MEDIA_ACCOUNT_STATUS = Symbol('weiban.media.account-status');
+export type MediaAccountStatus = IdentityAccountStatusPort;
 
 export const MEDIA_STORAGE = Symbol('weiban.media.storage');
 export const MEDIA_READ_PORT = Symbol('weiban.media.read');
@@ -41,8 +45,9 @@ export interface MediaMessageLookup {
 }
 
 /**
- * 3.1（积压 ㉓）：古风卡面模板（GRW-05 第 2 条：历史人物可用古风插画）。MediaAssetReadPort.listCardTemplates 签名不变，
+ * 3.1（积压 ㉓）：古风卡面模板（GRW-05 第 2 条：历史人物可用古风插画）。growth继续使用原令牌，
  * growth 挑卡面时另经本令牌取 classicalStyle = true 的模板。提供方 media。
+ * ⑱产品收口后，ai-runtime发图使用契约listCardTemplates的可选古风过滤，并同时保留真人无肖像限制。
  */
 export const MEDIA_CLASSICAL_CARD_TEMPLATES = Symbol('weiban.media.classical-card-templates');
 export interface MediaClassicalCardTemplates {

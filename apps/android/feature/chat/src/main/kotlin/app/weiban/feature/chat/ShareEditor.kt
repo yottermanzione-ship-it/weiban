@@ -73,6 +73,7 @@ private class ShareMaterials(
 private class ShareEditorState {
     var materials by mutableStateOf<ShareMaterials?>(null)
     var loadFailed by mutableStateOf(false)
+    var rejected by mutableStateOf<String?>(null)
     var template by mutableStateOf("pink_filter")
     var defaultTemplate by mutableStateOf("pink_filter")
     var showMe by mutableStateOf(false)
@@ -106,6 +107,7 @@ internal fun ShareEditor(
     BackHandler(onBack = onClose)
     LaunchedEffect(request, editor.revision) {
         editor.loadFailed = false
+        editor.rejected = null
         try {
             val loaded = prepareMaterials(repository, runtime, owner, request)
             editor.defaultTemplate = loaded.defaultTemplate
@@ -120,9 +122,24 @@ internal fun ShareEditor(
             throw error
         } catch (error: ApiFailure) {
             if (error.code == "share_content_not_allowed" || error.status == 422) {
-                // 以服务器为准（C 5.6）：提示原因并返回上一页。
-                Toast.makeText(context, SHARE_REJECT_TEXT, Toast.LENGTH_SHORT).show()
-                onClose()
+                val source = request.source
+                val ids =
+                    ((source["messageIds"] ?: source["favoriteIds"]) as? JsonArray)
+                        .orEmpty()
+                        .mapNotNull { it.jsonPrimitive.contentOrNull }
+                val reasons =
+                    (error.details?.get("rejected") as? JsonArray).orEmpty().map { value ->
+                        val reason = (value as? JsonObject)?.get("reason")?.jsonPrimitive?.contentOrNull
+                        val index = ids.indexOf((value as? JsonObject)?.get("id")?.jsonPrimitive?.contentOrNull)
+                        (if (index >= 0) "第 ${index + 1} 条：" else "内容：") +
+                            when (reason) {
+                                "adult_scope" -> "成人模式内容"
+                                "health_label" -> "健康相关内容"
+                                "recalled" -> "消息已撤回"
+                                else -> "内容不可用于分享"
+                            }
+                    }
+                editor.rejected = reasons.joinToString("\n").ifEmpty { error.message ?: SHARE_REJECT_TEXT }
             } else {
                 editor.loadFailed = true
             }
@@ -173,6 +190,12 @@ internal fun ShareEditor(
             }
             Box(Modifier.weight(1f).fillMaxWidth().background(colors.bgPage), contentAlignment = Alignment.Center) {
                 when {
+                    editor.rejected != null ->
+                        Text(
+                            editor.rejected.orEmpty(),
+                            Modifier.padding(WbSpace.S5),
+                            color = MaterialTheme.colorScheme.error,
+                        )
                     editor.loadFailed -> RetryBlock("内容加载失败") { editor.revision++ }
                     materials == null -> CircularProgressIndicator(Modifier.size(16.dp))
                     editor.renderFailed && editor.preview == null -> RetryBlock("生成失败") { editor.revision++ }

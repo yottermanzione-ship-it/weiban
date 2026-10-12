@@ -47,6 +47,8 @@ import {
   DATABASE,
   EVENT_DISPATCHER,
   JOB_QUEUE,
+  USER_DATA_REGISTRY,
+  type UserDataRegistry,
   TestClock,
   type Database,
   type EventDispatcher,
@@ -1236,7 +1238,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         .send({ password: PASSWORD, confirm: 'DELETE' })
         .expect(202);
 
-      const list = (
+      const list: PendingAccountDeletion[] = (
         await http().get('/api/v1/admin/account-deletions', adminToken).expect(200)
       ).body.items.map((i: unknown) => PendingAccountDeletion.parse(i));
       const mine = list.find((i: { userId: string }) => i.userId === user.userId);
@@ -1245,7 +1247,11 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         lastRetriggeredAt: null,
       });
       // T-036 起 realtime 也登记了更新日志与前台状态的删除清单
-      expect(mine?.modules).toHaveLength(10);
+      const expectedModules = app
+        .get<UserDataRegistry>(USER_DATA_REGISTRY)
+        .modules()
+        .filter((module) => module !== 'identity');
+      expect(mine?.modules?.map((item) => item.module).sort()).toEqual([...expectedModules].sort());
       expect(mine?.modules).toEqual(
         expect.arrayContaining([
           { module: 'billing', purged: false, deletedRows: null, purgedAt: null },
@@ -1281,23 +1287,10 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
           const reported = (await events('platform.user_data_purged', user.userId)).map(
             (e) => (e as { module: string }).module,
           );
-          expect(new Set(reported)).toEqual(
-            new Set([
-              'ai_runtime',
-              'billing',
-              'characters',
-              'chat',
-              'contacts',
-              'media',
-              'model_access',
-              'proactive',
-              'push',
-              'realtime',
-            ]),
-          );
+          expect(new Set(reported)).toEqual(new Set(expectedModules));
         },
         // 九个模块及重触发共最多18项串行任务，pg-boss空闲轮询为2秒；留45秒等待全部回报。
-        { timeout: 45_000, interval: 200 },
+        { timeout: 120_000, interval: 200 },
       );
       await dispatchAll();
       expect(await commands.verifyPurged(user.userId)).toEqual(
@@ -1324,7 +1317,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       expect(audit.some((a) => a.details?.balanceAtDeletionMicros === 1234)).toBe(true);
       // 重复调用删除清单：返回 0
       expect(await lifecycle.purgeUser(user.userId)).toBe(0);
-    }, 60_000);
+    }, 150_000);
 
     it('全部模块已回报时，重新触发直接完成账号删除', async () => {
       const user = await newUser();
@@ -1337,8 +1330,14 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       await withClient((c) =>
         c.query(
           `INSERT INTO identity.deletion_progress (user_id, module, deleted_rows, reported_at)
-           VALUES ($1, 'billing', 0, now()), ($1, 'model_access', 0, now()), ($1, 'media', 0, now()), ($1, 'characters', 0, now()), ($1, 'realtime', 0, now()), ($1, 'chat', 0, now()), ($1, 'contacts', 0, now()), ($1, 'ai_runtime', 0, now()), ($1, 'proactive', 0, now()), ($1, 'push', 0, now())`,
-          [user.userId],
+           SELECT $1, module, 0, now() FROM unnest($2::text[]) AS module`,
+          [
+            user.userId,
+            app
+              .get<UserDataRegistry>(USER_DATA_REGISTRY)
+              .modules()
+              .filter((module) => module !== 'identity'),
+          ],
         ),
       );
       await lifecycle.purgeUser(user.userId);

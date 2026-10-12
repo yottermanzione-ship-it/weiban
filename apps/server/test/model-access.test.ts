@@ -965,6 +965,7 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         available: true,
         reason: null,
         canFallbackToDefault: false,
+        visionAvailable: true,
       });
       expect(await statusSvc.getModelStatus(u.userId, null)).toEqual({
         available: true,
@@ -984,6 +985,7 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         available: false,
         reason: 'provider_unavailable',
         canFallbackToDefault: true,
+        visionAvailable: true,
       });
       await upstreamsSvc.reportStatus(own.upstreamId, 'active', 'probe');
       await addModel('test/status-model', own.upstreamId, { enabled: false });

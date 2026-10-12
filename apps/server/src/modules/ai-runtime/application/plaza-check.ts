@@ -14,6 +14,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type {
   CharacterReadPort,
+  CharacterChildFeaturesWritePort,
   CharacterRelationReadPort,
   ContactsReadPort,
   GenerateError,
@@ -29,7 +30,6 @@ import { CLOCK, LOGGER, type Clock, type Logger } from '../../../platform/index.
 import {
   CHARACTER_CHILD_FEATURES_WRITER,
   CHARACTER_RELATION_READ_PORT,
-  type CharacterChildFeaturesWriter,
 } from '../../characters/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { IDENTITY_READ_PORT } from '../../identity/index.js';
@@ -429,7 +429,7 @@ export class PlazaPublishCheckService implements PlazaPublishCheckPort {
     @Inject(CLOCK) private readonly clock: Clock,
     @Optional()
     @Inject(CHARACTER_CHILD_FEATURES_WRITER)
-    private readonly childWriter?: CharacterChildFeaturesWriter,
+    private readonly childWriter?: CharacterChildFeaturesWritePort,
   ) {}
 
   async checkBeforePublish(input: CheckInput): Promise<PortResult<CheckValue, CheckError>> {

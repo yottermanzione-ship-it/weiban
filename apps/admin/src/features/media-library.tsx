@@ -3,7 +3,7 @@
  * 接口：StickerAdminEndpoints、VoiceAdminEndpoints、CardTemplateAdminEndpoints、WorkLinkAdminEndpoints；
  * 文件先经 MediaAdminEndpoints.adminUpload 上传，再登记到对应素材接口。
  */
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   CardTemplateAdminEndpoints,
   CharacterAdminEndpoints,
@@ -19,6 +19,7 @@ import {
   type WorkLink,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
+import { adminMediaUrl } from '../data/media-url.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { Feedback } from '../components/feedback.js';
 
@@ -280,7 +281,7 @@ function StickerPackEditor({ pack, onChanged }: { pack: StickerPack; onChanged()
       <div className="asset-grid">
         {pack.stickers.map((s) => (
           <figure key={s.stickerId}>
-            <img src={s.url} alt={s.description} loading="lazy" />
+            <img src={adminMediaUrl(s.url)} alt={s.description} loading="lazy" />
             <figcaption>{s.description}</figcaption>
             <button
               disabled={action.pending}
@@ -330,7 +331,7 @@ export function VoiceLibraryPage() {
       setPlaying(null);
       return;
     }
-    const element = new Audio(voice.sampleUrl);
+    const element = new Audio(adminMediaUrl(voice.sampleUrl));
     audio.current = element;
     element.onended = () => setPlaying(null);
     setPlaying(voice.voiceId);
@@ -504,6 +505,7 @@ export function VoiceLibraryPage() {
 // ---------- 卡面模板库 ----------
 
 const kindNames: Record<string, string> = {
+  daily_photo: '日常照片',
   anniversary: '纪念日',
   familiarity: '熟悉度',
   holiday: '节日',
@@ -532,6 +534,7 @@ export function CardTemplatesPage() {
       kinds: kinds as CardTemplate['kinds'],
       mediaId,
       portraitFree: form.get('portraitFree') === 'on',
+      classicalStyle: form.get('classicalStyle') === 'on',
       enabled: form.get('enabled') === 'on',
     };
     const ok = await action.run(
@@ -551,8 +554,10 @@ export function CardTemplatesPage() {
   }
   return (
     <>
-      <h1>卡面模板库</h1>
-      <p className="inline-tip">「不含人物」的模板才会用在真人角色的卡片上。</p>
+      <h1>卡面与日常照片素材库</h1>
+      <p className="inline-tip">
+        日常照片用于聊天和朋友圈配图。真人配图只选「不含人物」的素材，历史人物配图还须为古风插画。
+      </p>
       {templates.error && (
         <p role="alert" className="error-banner">
           加载失败：{templates.error} <button onClick={templates.refresh}>重试</button>
@@ -574,7 +579,7 @@ export function CardTemplatesPage() {
             />
           </label>
           <fieldset>
-            <legend>用于哪些卡片（至少一种）</legend>
+            <legend>素材用途（至少一种）</legend>
             <div className="chip-list">
               {Object.entries(kindNames).map(([kind, label]) => (
                 <label key={kind} className="check">
@@ -619,6 +624,14 @@ export function CardTemplatesPage() {
           <label className="check">
             <input
               type="checkbox"
+              name="classicalStyle"
+              defaultChecked={editing === 'new' ? false : (editing.classicalStyle ?? false)}
+            />
+            古风插画（历史人物优先使用）
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
               name="enabled"
               defaultChecked={editing === 'new' ? true : editing.enabled}
             />
@@ -637,10 +650,11 @@ export function CardTemplatesPage() {
       <div className="asset-grid">
         {templates.data?.items.map((t) => (
           <figure key={t.templateId}>
-            <img src={t.url} alt={t.name} loading="lazy" />
+            <img src={adminMediaUrl(t.url)} alt={t.name} loading="lazy" />
             <figcaption>
               {t.name} · {t.kinds.map((k) => kindNames[k] ?? k).join('、')}
               {t.portraitFree && <span className="tag">不含人物</span>}
+              {t.classicalStyle && <span className="tag">古风</span>}
               <span className={t.enabled ? 'tag success' : 'tag'}>
                 {t.enabled ? '启用' : '停用'}
               </span>
@@ -673,7 +687,11 @@ export function WorkLinksPage() {
       </label>
       {characterId && (
         <>
-          <DefaultVoice characterId={characterId} voices={voices.data?.items ?? []} />
+          <DefaultVoice
+            key={characterId}
+            characterId={characterId}
+            voices={voices.data?.items ?? []}
+          />
           <WorkLinkList key={characterId} characterId={characterId} />
         </>
       )}
@@ -683,7 +701,11 @@ export function WorkLinksPage() {
 
 function DefaultVoice({ characterId, voices }: { characterId: string; voices: AdminVoice[] }) {
   const action = useAction();
+  const current = useRemote(WorkLinkAdminEndpoints.getDefaultVoice, { params: { characterId } });
   const [voiceId, setVoiceId] = useState('');
+  useEffect(() => {
+    if (current.data) setVoiceId(current.data.voiceId ?? '');
+  }, [current.data]);
   return (
     <form
       className="panel inline"
@@ -701,19 +723,29 @@ function DefaultVoice({ characterId, voices }: { characterId: string; voices: Ad
     >
       <label>
         默认音色
-        <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)}>
+        <select
+          disabled={!current.data}
+          value={voiceId}
+          onChange={(e) => setVoiceId(e.target.value)}
+        >
           <option value="">平台默认</option>
+          {current.data?.voiceId && !voices.some((v) => v.voiceId === current.data?.voiceId) && (
+            <option value={current.data.voiceId} disabled>
+              当前音色（未在列表中）
+            </option>
+          )}
           {voices
-            .filter((v) => v.enabled)
+            .filter((v) => v.enabled || v.voiceId === current.data?.voiceId)
             .map((v) => (
-              <option key={v.voiceId} value={v.voiceId}>
+              <option key={v.voiceId} value={v.voiceId} disabled={!v.enabled}>
                 {v.name}
+                {!v.enabled ? '（已停用）' : ''}
               </option>
             ))}
         </select>
       </label>
-      <button disabled={action.pending}>保存默认音色</button>
-      <Feedback message={action.message} error={action.error} />
+      <button disabled={action.pending || !current.data}>保存默认音色</button>
+      <Feedback message={action.message} error={action.error || current.error} />
     </form>
   );
 }
@@ -900,7 +932,7 @@ function Cover({ mediaId }: { mediaId: string }) {
   return media.data ? (
     <img
       className="asset-thumb"
-      src={media.data.thumbnailUrl ?? media.data.url}
+      src={adminMediaUrl(media.data.thumbnailUrl ?? media.data.url)}
       alt=""
       loading="lazy"
     />

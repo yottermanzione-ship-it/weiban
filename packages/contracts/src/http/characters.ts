@@ -247,10 +247,16 @@ export const UserCustomCharacterWrite = z.object({
   /** 示例对话（纯文本，多轮用换行分隔）。 */
   exampleDialogue: z.string().max(2000).optional(),
   tags: z.array(z.string().max(16)).max(10).optional(),
-  /** 头像媒体 ID（purpose = character_avatar）；null 使用默认头像。 */
+  /** 自定义头像媒体 ID（custom_character_avatar；可继承公开 plaza_avatar / character_avatar）；null 使用默认头像。 */
   avatarMediaId: Id.nullable().optional(),
+  /** 默认音色，从启用中的音色库选择；null 清空。陪伴设置里的选择优先。 */
+  voiceId: Id.nullable().optional(),
 });
 export type UserCustomCharacterWrite = z.infer<typeof UserCustomCharacterWrite>;
+export const UserCustomTrialWrite = UserCustomCharacterWrite.extend({
+  sourceCharacterId: Id.optional(),
+});
+export type UserCustomTrialWrite = z.infer<typeof UserCustomTrialWrite>;
 
 /** PATCH 请求：所有字段可选。 */
 export const UserCustomCharacterPatch = UserCustomCharacterWrite.partial();
@@ -264,6 +270,8 @@ export const UserCustomCharacter = CharacterProfile.extend({
   catchphrases: z.array(z.string()).optional(),
   /** 3.1：说话方式；未填为 null。 */
   speechStyle: z.string().nullable().optional(),
+  /** 自定义角色默认音色；旧服务器可省略，null 未选择。 */
+  voiceId: Id.nullable().optional(),
   exampleDialogue: z.string().nullable(),
   tags: z.array(z.string().max(16)),
   /**
@@ -316,6 +324,22 @@ export const UserCustomEndpoints = {
     params: customParams,
     response: z.object({ conversationId: Id }),
     summary: 'CHR-07 试聊：开始或复用试聊会话，试聊记录不保留',
+  }),
+  draftTrial: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/characters/custom/trial`,
+    auth: 'user',
+    body: UserCustomTrialWrite,
+    response: z.object({ characterId: Id, conversationId: Id, expiresAt: Timestamp }),
+    summary: 'CHR-07 保存前试聊：独立临时人设和会话，不创建正式角色或好友',
+  }),
+  endTrial: defineEndpoint({
+    method: 'DELETE',
+    path: `${API_PREFIX}/characters/custom/trial/:conversationId`,
+    auth: 'user',
+    params: z.object({ conversationId: Id }),
+    response: z.object({ ended: z.literal(true) }),
+    summary: 'CHR-07 结束试聊并清除临时会话、人设与回复计划；幂等',
   }),
 } as const;
 

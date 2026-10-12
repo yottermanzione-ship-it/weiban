@@ -24,6 +24,7 @@ import type {
   ModelGatewayPort,
   CharacterReadPort,
   PolicyPort,
+  IdentitySettingsWritePort,
 } from '@weiban/contracts';
 import { CLOCK, DATABASE, newId, type Clock, type Database } from '../../../platform/index.js';
 import { BILLING_READ_PORT } from '../../billing/index.js';
@@ -34,6 +35,7 @@ import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { GROWTH_SERVICE, type GrowthService } from '../../growth/index.js';
 import { MODEL_GATEWAY_MEDIA_PORT, MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
+import { IDENTITY_SETTINGS_WRITE_PORT } from '../../identity/index.js';
 import { outputAllowed } from '../domain/reply-rules.js';
 import { callAttempts, proactivePlans, userChatActivity } from '../infra/db/schema.js';
 import { QuietStateService } from './quiet-state.js';
@@ -78,6 +80,8 @@ export class CallSchedulerService {
     @Inject(CompanionSettingsService) private readonly settings: CompanionSettingsService,
     @Inject(QuietStateService) private readonly quiet: QuietStateService,
     @Inject(PlannerService) private readonly planner: PlannerService,
+    @Inject(IDENTITY_SETTINGS_WRITE_PORT)
+    private readonly identitySettings: IdentitySettingsWritePort,
   ) {}
 
   /** 调度器用户级任务里调用：最多发起一通来电。 */
@@ -311,8 +315,7 @@ export class CallSchedulerService {
   /** 用户点了「可以」：为该角色开启主动来电。 */
   async onPermissionChosen(userId: string, characterId: string, actionId: string): Promise<void> {
     if (actionId !== 'allow') return;
-    await this.settings
-      .update(userId, characterId, { proactiveCalls: true })
-      .catch(() => undefined);
+    if (!(await this.identitySettings.enableProactiveCalls(userId))) return;
+    await this.settings.update(userId, characterId, { proactiveCalls: true });
   }
 }

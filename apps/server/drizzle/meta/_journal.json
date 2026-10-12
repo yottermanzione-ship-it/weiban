@@ -329,6 +329,7 @@
       "version": "7",
       "when": 1795600000000,
       "tag": "0056_account_deletion",
+      "dependsOn": ["0060_plaza"],
       "breakpoints": true
     },
     {
@@ -434,6 +435,69 @@
       "version": "7",
       "when": 1797300000000,
       "tag": "0073_importer_batch_merge",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1797400000000,
+      "tag": "0074_plaza_author_seen",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1797500000000,
+      "tag": "0075_ai_character_self_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1797600000000,
+      "tag": "0076_ai_pending_anniversary_letters",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1797700000000,
+      "tag": "0077_ai_quirk_actions",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1797800000000,
+      "tag": "0078_character_trial_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1797900000000,
+      "tag": "0079_chat_trial_expiry",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1798000000000,
+      "tag": "0080_adult_checker_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1798100000000,
+      "tag": "0081_adult_boundary_states",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1798200000000,
+      "tag": "0082_group_reply_plans",
       "breakpoints": true
     }
   ]
