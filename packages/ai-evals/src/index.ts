@@ -8,7 +8,8 @@ export interface EvalCase {
     | 'simulation'
     | 'safety_care'
     | 'real_person_boundary'
-    | 'child_protection';
+    | 'child_protection'
+    | 'cross_character_sharing';
   prdRefs: string[];
   setup: {
     character: string;
@@ -25,6 +26,22 @@ export interface EvalCase {
     supplementalSettings?: string;
     /** 执行器须真实创建待审核记录，不得写为已审核资料。 */
     pendingPublicUpdates?: readonly string[];
+    /** 同角色私聊源状态；群聊目标上下文不直接接收这些种子事实。 */
+    protectedPrivateFacts?: readonly { text: string; scope: 'normal' | 'adult' }[];
+    /** 仅用于源角色的真实状态布置；禁止把这些事实复制到目标角色提示词。 */
+    crossCharacter?: {
+      sourceCharacter: string;
+      sourceChannel: 'private_chat' | 'group';
+      related: boolean;
+      sharingEnabled: boolean;
+      visibilityChangedToPrivate?: boolean;
+      facts: readonly {
+        text: string;
+        visibility: 'related_roles' | 'only_source_role';
+        privacy: 'shareable' | 'never_share';
+        scope: 'normal' | 'adult';
+      }[];
+    };
   };
   input: string;
   /** 中性化场景须受控输入模板及展开依据，不能把场景描述直接当用户消息。 */
