@@ -32,6 +32,7 @@ class RoleBrowserTest {
     private lateinit var api: ApiClient
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val posts = ConcurrentLinkedQueue<AddContactRequestInput>()
+    private val requests = ConcurrentLinkedQueue<String>()
     private val opened = ConcurrentLinkedQueue<String>()
 
     @Volatile private var accepted = false
@@ -139,6 +140,7 @@ class RoleBrowserTest {
         object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val path = request.requestUrl!!.encodedPath
+                requests.add("${request.method} $path")
                 return when {
                     path == "/api/v1/contacts" && request.method == "POST" -> addResponse(request)
                     path == "/api/v1/sync/state" -> MockResponse().setBody("{\"latestUpdateSeq\":${if (accepted) 1 else 0}}")
@@ -202,9 +204,18 @@ class RoleBrowserTest {
         }
     }
 
+    private fun awaitFirstRole() {
+        try {
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("纸飞机").fetchSemanticsNodes().isNotEmpty() }
+        } catch (error: ComposeTimeoutException) {
+            // 只记录测试请求的路径，不包含Authorization或用户消息；原始超时作为cause保留。
+            throw AssertionError("首次角色未显示；请求数=${server.requestCount}；路径=${requests.toList()}\n${compose.onRoot().printToString()}", error)
+        }
+    }
+
     @Test fun actualPlazaPaginationGreetingAndRestoreChoiceUseRealHttp() {
         compose.setContent { WeibanTheme { RoleBrowser(repository, runtime, owner, true, opened::add) } }
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("纸飞机").fetchSemanticsNodes().isNotEmpty() }
+        awaitFirstRole()
         compose.onNodeWithText("下一页角色").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("星河").fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(hasText("星河") and !hasSetTextAction()).performClick()
@@ -257,7 +268,7 @@ class RoleBrowserTest {
         compose.setContent { WeibanTheme { RoleBrowser(repository, runtime, owner, true, opened::add, onboarding = true) } }
         compose.onNodeWithText("先加一个你喜欢的 TA 吧").assertExists()
         compose.onNodeWithText("返回通讯录").assertDoesNotExist()
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("纸飞机").fetchSemanticsNodes().isNotEmpty() }
+        awaitFirstRole()
         compose.onNodeWithText("下一页角色").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("星河").fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(hasText("星河") and !hasSetTextAction()).performClick()
@@ -291,7 +302,7 @@ class RoleBrowserTest {
         compose.setContent {
             WeibanTheme { if (mounted) RoleBrowser(repository, runtime, owner, true, opened::add, onboarding = true) }
         }
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("纸飞机").fetchSemanticsNodes().isNotEmpty() }
+        awaitFirstRole()
         compose.onNode(hasText("纸飞机") and !hasSetTextAction()).performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("一起认识身边的世界").fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(hasSetTextAction()).performTextInput("很高兴认识你")

@@ -36,7 +36,19 @@ test('导入草稿生日、头像、分类保存重读并创建角色；清空�
       document.querySelector('canvas')?.getContext('2d')?.getImageData(256, 256, 1, 1).data[3] ===
       255,
   );
+  const uploaded = page.waitForResponse(
+    (r) => new URL(r.url()).pathname === '/api/v1/media' && r.request().method() === 'POST',
+  );
+  const metadata = page.waitForResponse(
+    (r) =>
+      /^\/api\/v1\/media\/[^/]+$/.test(new URL(r.url()).pathname) && r.request().method() === 'GET',
+  );
   await page.getByRole('button', { name: '完成裁剪并上传', exact: true }).click();
+  const [uploadResponse, metadataResponse] = await Promise.all([uploaded, metadata]);
+  expect(uploadResponse.status()).toBe(201);
+  expect(metadataResponse.status()).toBe(200);
+  const uploadedMedia = await uploadResponse.json();
+  expect(new URL(metadataResponse.url()).pathname).toBe(`/api/v1/media/${uploadedMedia.mediaId}`);
   await expect(page.getByRole('img', { name: '角色头像', exact: true })).toHaveJSProperty(
     'naturalWidth',
     512,

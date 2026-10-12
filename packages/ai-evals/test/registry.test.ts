@@ -9,6 +9,7 @@ import { L7_PLAY_CASES } from '../cases/l7.js';
 import { SAFETY_CARE_CASES } from '../cases/safety-care.js';
 import { CROSS_CHARACTER_CASES } from '../cases/cross-character.js';
 import { TIME_AWARENESS_CASES } from '../cases/time-awareness.js';
+import { PROACTIVE_TONE_CASES, PROACTIVE_SAFETY_CASES } from '../cases/proactive-boundaries.js';
 import {
   REAL_PERSON_BOUNDARY_CASES,
   CHILD_PROTECTION_CASES,
@@ -51,9 +52,11 @@ it('所有已实现阶段和主动/群聊/社交/宠物/玩法题都登记，编
     ...CHILD_PROTECTION_CASES,
     ...CROSS_CHARACTER_CASES,
     ...TIME_AWARENESS_CASES,
+    ...PROACTIVE_TONE_CASES,
+    ...PROACTIVE_SAFETY_CASES,
   ];
   expect(EVAL_CASES.map((test) => test.id)).toEqual(all.map((test) => test.id));
-  expect(Object.keys(EVAL_SUITES)).toHaveLength(12);
+  expect(Object.keys(EVAL_SUITES)).toHaveLength(14);
   expect(validateEvalRegistry()).toEqual([]);
   expect(new Set(EVAL_CASES.map((test) => test.id)).size).toBe(all.length);
   for (const role of EVAL_CHARACTERS.filter((role) => role.id.startsWith('S-'))) {
@@ -119,8 +122,11 @@ it('全部登记题有输出与评审依据时，只能标记登记题通过，�
     ...observation(test.id),
     evalCharacterId: test.setup.character,
     output:
-      [...test.mustInclude, ...(test.mustIncludeAny ?? []).map((group) => group[0]!)].join(' ') ||
-      '测试回答',
+      test.expectedOutcome === 'no_message'
+        ? ''
+        : [...test.mustInclude, ...(test.mustIncludeAny ?? []).map((group) => group[0]!)].join(
+            ' ',
+          ) || '测试回答',
     judge: {
       score: 4,
       reviewer: 'fixture-independent-reviewer',

@@ -7,13 +7,14 @@ import { L7_PLAY_CASES } from '../cases/l7.js';
 import { SAFETY_CARE_CASES } from '../cases/safety-care.js';
 import { CROSS_CHARACTER_CASES } from '../cases/cross-character.js';
 import { TIME_AWARENESS_CASES } from '../cases/time-awareness.js';
+import { PROACTIVE_TONE_CASES, PROACTIVE_SAFETY_CASES } from '../cases/proactive-boundaries.js';
 import {
   REAL_PERSON_BOUNDARY_CASES,
   CHILD_PROTECTION_CASES,
 } from '../cases/character-boundaries.js';
 
 /** 已落地的考题登记，不等于eval-plan全部19类已覆盖。 */
-export const EVAL_CASE_VERSION = '2026-10-12.4';
+export const EVAL_CASE_VERSION = '2026-10-12.5';
 export const EVAL_SUITES = {
   l2: L2_CASES,
   l3_simulation: L3_CASES,
@@ -27,6 +28,8 @@ export const EVAL_SUITES = {
   child_protection: CHILD_PROTECTION_CASES,
   cross_character_sharing: CROSS_CHARACTER_CASES,
   time_awareness: TIME_AWARENESS_CASES,
+  proactive_tone: PROACTIVE_TONE_CASES,
+  proactive_safety: PROACTIVE_SAFETY_CASES,
 } as const;
 export const EVAL_CASES: readonly EvalCase[] = Object.values(EVAL_SUITES).flat();
 

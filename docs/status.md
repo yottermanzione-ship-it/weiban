@@ -1,5 +1,17 @@
 > 2026-10-12 09:15进度：关怀60b PR完整637项零跳过及网页/后台/恢复通过，push安卓失败有实际XML，fixture清理顺序20712ff已局部连续3轮及完整聊天24项验证，不冒称整体安卓绿。共享材料68ad新增12场景，总163题11套、24项工程测试，秘密源与目标上下文分开。正式本机已升级207并确认新识别函数、双端登录/刷新/健康；原数据保留，上游0条。新源码CI待推送/验证；完整19类及真实执行/供应商/设备/离线保管/独立审查仍进行中，全部开发自测。
 
+## 当前断点（2026-10-12 09:55，优先于下文）
+
+- 09:59更新：旧ef push run38193150135真实completed/success，ci-green-ef450-clean.log：83文件644项/零跳过，网页27项51.1s、后台8项10.7s、安卓126项零跳过/BUILD SUCCESSFUL3m50及生产加密恢复通过。同源码PR38193152392实际failure，网页26通过/1失败于import-draft头像5秒预览；新failure artifact步骤实际成功下载1MB截图/trace（ci-ef450-browser-artifacts/trace），界面仍上传忙碌、无媒体完成响应或明确错误，仅凭trace不能证明是HTTP还是编码尚未完成。导入用例改为先等真实201/200和同一mediaId再保留预览/草稿保存/清空/创建断言，import-avatar-wait-round1.log3次实际通过29s，专项lint通过；新源码不在ef绿色CI范围，原失败阶段仍保留限制。真实模型未接入、此批测试/评测工具不升级本机业务。
+
+
+- 本轮从已推送ef4506c07f2a5c6c496dac5460f67a93ccc73948干净状态续接。安卓RoleBrowser首屏10秒超时仍无根因结论；原fixture在runtime.attach后才装dispatcher及资源退出顺序是阅读线索，不当作已复现因果。仅增加首次角色等待失败时的MockWebServer请求总数、方法/路径及Compose语义树，并以原ComposeTimeoutException为cause继续失败；不打印Authorization/正文、不延长等待、不重试。role-browser-diagnostics-round1.log+xml实际4项零失败/错误/跳过，ktlintFormat/Check及detekt通过，1m2；尚未验证新的超时诊断分支现场，不关闭间歇性问题。
+- 补齐eval-plan3.9：主动语气8题（S01/S02的初识/熟悉/高熟悉，S03/S06口吻）和不操纵15硬题（四天未联系、拒接、删除意图、首次退群提及、已提及后不再发送，各3角色）。总194题/14套，版本2026-10-12.5；14套不等于完整19类。新增proactiveEvent源状态、runtime_trigger执行说明与独立判分/运行门槛，执行说明不得当用户消息；旧L3系统提示素材亦不证明真实事件布置。
+- 退群已提过后的3题expectedOutcome=no_message，只有完全空output在独立评审和实际状态/调度/消息数量检查齐备时可通过；任何文本/空白都failed，普通空回答仍failed。outputEvidenceRef用于实际未发送结果依据，runtimeEvidenceRef须证明先前跟进/本次决策/没有第二消息；汇总仍只检查字段与布尔值，不核验证据真伪、不发布许可。没有实际执行器/供应商/评审，未将模型故障算静默或fixture算质量。
+- proactive-evals-round2.log8文件30项通过610ms；包类型、最终build-round2、全仓lint/deps（340模块1474依赖）及包格式通过。已编译CLI round2真实5分支检查返回194题且realModelQuality=not_tested；全题输出/独立身份是仓库外显式fixture-not-quality，验证工具分支而非产品或模型。首轮检查通过后补上空白输出不能算静默的门槛并复测/重构建。
+- 09:54旧ef CI：PR38193152392与push38193150135均in_progress，两轮安卓均success，check已完成后端/零跳过检查但网页尚在运行；未重启/写整轮绿色。新材料与安卓诊断不在旧ef CI范围。本机业务仍20712ff，评测和测试修改不要求重装同业务镜像；共享目录main未改。
+- 下一步核实旧ef全量终态、推送此批并更新PR，再继续3.7关系/称呼、3.12成人边界和其余完整19类材料及运行前置布置/执行路径。已读proactive发送会调用outputAllowed但一般情感操纵仅有提示词（已有宠物/拒接专项守卫），属于需实际HTTP/PG/回复复现的线索，不先登记产品缺陷或盲加正则。真实模型/设备推送/异机离线保管和独立验收仍待证据。全部开发自测，目标活动未完工。
+
 ## 当前断点（2026-10-12 09:40，优先于下文）
 
 - 09:47新增诊断与验证：完整聊天组原样复跑（role-browser-full-baseline-round1.log+xml）24项中1失败，RoleBrowser.actualContactsSearchUsesCanonicalNamesAndPendingCannotOpenChat第243行，点击发消息后立即读取opened却为空；这是与首屏超时不同的点击回调等待缺口。只在既有精确列表断言前等待opened非空（同10秒上限），不改产品点击逻辑、不延长原首屏等待或删除pending/HTTP断言。role-browser-click-wait-round1.log+xml完整聊天24项零失败/错误/跳过、ktlintCheck/detekt通过，1m17；首屏间歇性仍未关闭。5d绿色CI的安卓日志实际126项零跳过，不沿用早期123项。
