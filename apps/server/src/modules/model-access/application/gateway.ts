@@ -360,7 +360,9 @@ export class ModelGateway implements ModelGatewayPort {
       Id.safeParse(i.userId).success &&
       ModelPurpose.safeParse(i.purpose).success &&
       BillingOwner.safeParse(i.billingOwner).success &&
-      ['chat', 'background', 'adult'].includes(i.modelRole) &&
+      ['chat', 'background', 'adult', 'adult_check'].includes(i.modelRole) &&
+      (i.modelRole !== 'adult_check' ||
+        (i.purpose === 'safety_check' && !!i.characterId && !i.safetyPriority)) &&
       (i.modelKeyOverride === undefined ||
         (i.purpose === 'behavior_planning' &&
           typeof i.modelKeyOverride === 'string' &&

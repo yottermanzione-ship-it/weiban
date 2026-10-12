@@ -12,8 +12,10 @@
  * - 结束：整理通话摘要写入记忆（MEM-04），记忆页可见。
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { AdultBoundaryService } from './adult-boundary.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
 import type {
+  GenerateTextInput,
   BillingReadPort,
   CallAgentPort,
   CallAgentSession,
@@ -84,6 +86,7 @@ class AsyncQueue<T> {
 }
 
 interface SessionDeps {
+  adultBoundary: AdultBoundaryService;
   gateway: ModelGatewayPort;
   media: ModelGatewayMediaPort;
   billing: BillingReadPort;
@@ -92,6 +95,7 @@ interface SessionDeps {
 }
 
 interface SessionInfo {
+  scope: 'normal' | 'adult';
   callId: string;
   userId: string;
   characterId: string;
@@ -243,26 +247,34 @@ class AgentSession implements CallAgentSession {
         : []),
     ];
     const n = this.turnNo++;
-    const result = await callModelForCare(
-      this.deps.gateway,
-      {
-        userId: this.info.userId,
-        characterId: this.info.characterId,
-        conversationId: this.info.conversationId,
-        purpose: 'chat_reply',
-        billingOwner: 'user',
-        modelRole: 'chat',
-        messages,
-        maxOutputTokens: 200,
-        responseFormat: 'text',
-        idempotencyKey: `call:${this.info.callId}:${this.startedAt}:turn:${n}`,
-        meta: { personaVersion: this.info.role.personaVersion, conversationKind: 'direct' },
+    const adult = this.info.scope === 'adult' && !this.careActive;
+    const request: GenerateTextInput = {
+      userId: this.info.userId,
+      characterId: this.info.characterId,
+      conversationId: this.info.conversationId,
+      purpose: 'chat_reply',
+      billingOwner: 'user',
+      modelRole: adult ? 'adult' : 'chat',
+      messages,
+      maxOutputTokens: 200,
+      responseFormat: 'text',
+      idempotencyKey: `call:${this.info.callId}:${this.startedAt}:turn:${n}`,
+      meta: {
+        personaVersion: this.info.role.personaVersion,
+        conversationKind: 'direct',
+        scenarioMode: adult ? 'adult' : 'daily',
       },
-      { highRisk: this.careActive, careActive: this.careActive, suspected: risk === 'suspected' },
-    );
+    };
+    const result = adult
+      ? await this.deps.adultBoundary.generate(request, true)
+      : await callModelForCare(this.deps.gateway, request, {
+          highRisk: this.careActive,
+          careActive: this.careActive,
+          suspected: risk === 'suspected',
+        });
     if (this.closed || this.ending) return;
     let text =
-      result.ok && outputAllowed(result.value.text, this.info.policy, false)
+      result.ok && outputAllowed(result.value.text, this.info.policy, adult)
         ? result.value.text.replace(/[（(][^）)]{0,20}[）)]/gu, '').trim()
         : '';
     if (!text)
@@ -379,6 +391,7 @@ class AgentSession implements CallAgentSession {
 @Injectable()
 export class CallAgentService implements CallAgentPort {
   constructor(
+    @Inject(AdultBoundaryService) private readonly adultBoundary: AdultBoundaryService,
     @Inject(MODEL_GATEWAY_PORT) private readonly gateway: ModelGatewayPort,
     @Inject(MODEL_GATEWAY_MEDIA_PORT) private readonly media: ModelGatewayMediaPort,
     @Inject(BILLING_READ_PORT) private readonly billing: BillingReadPort,
@@ -425,6 +438,8 @@ export class CallAgentService implements CallAgentPort {
     if (!contact || contact.conversationId !== input.conversationId || !role || !policy)
       return { ok: false, error: 'not_available' };
     const settings = await this.settings.get(input.userId, input.characterId).catch(() => null);
+    const scope =
+      settings?.scenarioMode === 'adult' && policy.adultModeEligible ? 'adult' : 'normal';
     const voiceId = await this.mediaAi.resolveVoice(
       input.characterId,
       settings?.voiceId ?? null,
@@ -433,7 +448,11 @@ export class CallAgentService implements CallAgentPort {
     if (!voiceId) return { ok: false, error: 'service_disabled' };
 
     const recent = await this.chat
-      .readMessages({ conversationId: input.conversationId, scopes: ['normal'], limit: 30 })
+      .readMessages({
+        conversationId: input.conversationId,
+        scopes: scope === 'adult' ? ['normal', 'adult'] : ['normal'],
+        limit: 30,
+      })
       .catch(() => []);
     const history: ChatMessageForModel[] = recent
       .filter((m) => m.status === 'normal' && m.content?.type === 'text')
@@ -443,7 +462,7 @@ export class CallAgentService implements CallAgentPort {
         content: m.content?.type === 'text' ? m.content.text.slice(0, 300) : '',
       }));
     const remembered = await this.memory
-      .context(input.userId, input.characterId, 'normal', history.map((h) => h.content).join('\n'))
+      .context(input.userId, input.characterId, scope, history.map((h) => h.content).join('\n'))
       .catch(() => null);
     const memoryBlock =
       remembered && (remembered.items.length || remembered.summary)
@@ -471,6 +490,7 @@ export class CallAgentService implements CallAgentPort {
       };
     const session = new AgentSession(
       {
+        adultBoundary: this.adultBoundary,
         gateway: this.gateway,
         media: this.media,
         billing: this.billing,
@@ -479,6 +499,7 @@ export class CallAgentService implements CallAgentPort {
       },
       {
         ...input,
+        scope,
         voiceId,
         role,
         policy,

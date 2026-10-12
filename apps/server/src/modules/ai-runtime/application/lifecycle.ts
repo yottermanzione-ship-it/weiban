@@ -15,6 +15,7 @@ import { CHARACTER_TRIAL_READ_PORT } from '../../characters/index.js';
 import type { CharacterTrialReadPort } from '@weiban/contracts';
 import {
   companionSettings,
+  adultBoundaryStates,
   replyPlans,
   memories,
   memoryStates,
@@ -641,6 +642,15 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
               and(eq(memoryStates.userId, userId), eq(memoryStates.conversationId, conversationId)),
             );
         }
+        if (conversationId)
+          await tx.db
+            .delete(adultBoundaryStates)
+            .where(
+              and(
+                eq(adultBoundaryStates.userId, userId),
+                eq(adultBoundaryStates.conversationId, conversationId),
+              ),
+            );
         if (conversationId)
           await tx.db
             .delete(replyPlans)

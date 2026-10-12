@@ -18,6 +18,7 @@ import {
 import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
 import {
   companionSettings,
+  adultBoundaryStates,
   replyPlans,
   memories,
   memoryStates,
@@ -300,6 +301,15 @@ export class ReplyPlanStore {
   ): Promise<void> {
     const tx = asDbTx(transaction);
     await tx.db
+      .delete(adultBoundaryStates)
+      .where(
+        and(
+          eq(adultBoundaryStates.userId, input.userId),
+          eq(adultBoundaryStates.conversationId, input.conversationId),
+          eq(adultBoundaryStates.characterId, input.characterId),
+        ),
+      );
+    await tx.db
       .delete(replyPlans)
       .where(
         and(
@@ -340,7 +350,12 @@ export class ReplyPlanStore {
         .delete(userChatActivity)
         .where(eq(userChatActivity.userId, userId))
         .returning();
+      const adult = await tx.db
+        .delete(adultBoundaryStates)
+        .where(eq(adultBoundaryStates.userId, userId))
+        .returning();
       return (
+        adult.length +
         a.length +
         b.length +
         c.length +
@@ -375,6 +390,10 @@ export class ReplyPlanStore {
     return n;
   }
   async countUserData(userId: string): Promise<number> {
+    const [adult] = await this.db.db
+      .select({ n: count() })
+      .from(adultBoundaryStates)
+      .where(eq(adultBoundaryStates.userId, userId));
     let t066 = 0;
     for (const table of T066_TABLES)
       t066 += Number(
@@ -439,6 +458,7 @@ export class ReplyPlanStore {
       .where(eq(groupInvites.userId, userId));
     return (
       t066 +
+      (adult?.n ?? 0) +
       (k?.n ?? 0) +
       (l?.n ?? 0) +
       (m?.n ?? 0) +

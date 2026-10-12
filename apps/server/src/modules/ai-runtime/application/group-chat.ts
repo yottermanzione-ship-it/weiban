@@ -9,6 +9,7 @@
  * 说明见 docs/ai/runtime-overview.md 第 7 节「T-065 实现差异」。
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { AdultBoundaryService } from './adult-boundary.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
 import { QuietStateService } from './quiet-state.js';
 import { and, desc, eq, gte, ne } from 'drizzle-orm';
@@ -157,6 +158,7 @@ function relevance(text: string, topics: string[]): number {
 @Injectable()
 export class GroupChatService {
   constructor(
+    @Inject(AdultBoundaryService) private readonly adultBoundary: AdultBoundaryService,
     @Inject(DATABASE) private readonly db: Database,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
@@ -633,7 +635,7 @@ export class GroupChatService {
       ],
       meta: { conversationKind: 'group', scenarioMode: input.scenarioMode },
     };
-    const result = await this.gateway.generateText(request);
+    const result = await this.adultBoundary.generate(request, adult);
     if (!result.ok) return null;
     const text = result.value.text
       .trim()

@@ -73,7 +73,7 @@ export const ModelRefState = ModelRef.extend({
 });
 
 /** 模型的三种用途（术语见 glossary：聊天模型、后台模型、成人模式模型）。 */
-export const ModelRole = z.enum(['chat', 'background', 'adult']);
+export const ModelRole = z.enum(['chat', 'background', 'adult', 'adult_check']);
 export type ModelRole = z.infer<typeof ModelRole>;
 
 export const ModelSelection = z.object({
@@ -255,6 +255,7 @@ export const AdminCatalogEntry = z.object({
       'background',
       'vision',
       'planner',
+      'adult_check',
       'speech_synthesis',
       'speech_recognition',
       'image_generation',

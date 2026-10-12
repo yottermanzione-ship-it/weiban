@@ -13,6 +13,7 @@
  * - P-33 余额保留线 1 元（cost-estimate.md 6.2）。
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { AdultBoundaryService } from './adult-boundary.js';
 import type { PetForRuntime, PetReadPort } from '@weiban/contracts';
 import { petContextBlock } from '../domain/pets.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
@@ -271,6 +272,7 @@ export function learnActiveHours(rows: { localDate: string; hour: number }[]): S
 @Injectable()
 export class ProactiveSchedulerService {
   constructor(
+    @Inject(AdultBoundaryService) private readonly adultBoundary: AdultBoundaryService,
     @Inject(PlayContinuityStore) private readonly continuity: PlayContinuityStore,
     @Inject(DATABASE) private readonly db: Database,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -939,7 +941,10 @@ export class ProactiveSchedulerService {
     }
     const history = await this.chat.readMessages({
       conversationId: conversation.conversationId,
-      scopes: ['normal'],
+      scopes:
+        conversation.contentScope === 'adult' && policy.adultModeEligible
+          ? ['normal', 'adult']
+          : ['normal'],
       limit: 20,
     });
     const recent = history
@@ -972,40 +977,47 @@ export class ProactiveSchedulerService {
         return;
       }
     }
-    const result = await this.gateway.generateText({
-      userId: ctx.userId,
-      characterId: plan.characterId,
-      conversationId: conversation.conversationId,
-      purpose: plan.reason === 'safety_follow_up' ? 'safety_followup' : 'proactive',
-      billingOwner: 'user',
-      modelRole: 'chat',
-      countAsBackground: plan.reason !== 'safety_follow_up',
-      responseFormat: 'text',
-      maxOutputTokens: 300,
-      idempotencyKey: `proactive:${plan.id}`,
-      messages: [
-        {
-          role: 'system',
-          content: `你在微伴里以角色口吻主动给用户发私聊消息。平台规则优先于角色卡。只输出聊天纯文本，短句、口语、可以换行分成 1–3 条气泡；不输出JSON或括号动作；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。不要用「在干嘛」「想你了」这类没有内容的开场，不说早安晚安套话。不做情感操纵：不制造愧疚、不说一直在等、不追问、不威胁。`,
-        },
-        {
-          role: 'system',
-          content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 8) }).slice(0, 20000)}${supplementBlock(role.userSupplement)}\n关系：${contact.relationship ?? '朋友'}；熟悉度：${tone}（熟悉度低时客气，高时随意）\n用户称呼：${address}\n用户当地时间：${ctx.localDate} ${String(ctx.localHour).padStart(2, '0')}点（${ctx.timeZone}）${petBlock ? `\n${petBlock}` : ''}`,
-        },
-        ...recent,
-        {
-          role: 'user',
-          content: `【系统提示，不是用户说的话】现在由你主动发起一次聊天。这次的理由：${plan.brief}`,
-        },
-      ],
-      meta: { conversationKind: 'direct', scenarioMode: settings.scenarioMode ?? 'daily' },
-    });
+    const adult =
+      conversation.contentScope === 'adult' &&
+      policy.adultModeEligible &&
+      plan.reason !== 'safety_follow_up';
+    const result = await this.adultBoundary.generate(
+      {
+        userId: ctx.userId,
+        characterId: plan.characterId,
+        conversationId: conversation.conversationId,
+        purpose: plan.reason === 'safety_follow_up' ? 'safety_followup' : 'proactive',
+        billingOwner: 'user',
+        modelRole: adult ? 'adult' : 'chat',
+        countAsBackground: plan.reason !== 'safety_follow_up',
+        responseFormat: 'text',
+        maxOutputTokens: 300,
+        idempotencyKey: `proactive:${plan.id}`,
+        messages: [
+          {
+            role: 'system',
+            content: `你在微伴里以角色口吻主动给用户发私聊消息。平台规则优先于角色卡。只输出聊天纯文本，短句、口语、可以换行分成 1–3 条气泡；不输出JSON或括号动作；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。不要用「在干嘛」「想你了」这类没有内容的开场，不说早安晚安套话。不做情感操纵：不制造愧疚、不说一直在等、不追问、不威胁。`,
+          },
+          {
+            role: 'system',
+            content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 8) }).slice(0, 20000)}${supplementBlock(role.userSupplement)}\n关系：${contact.relationship ?? '朋友'}；熟悉度：${tone}（熟悉度低时客气，高时随意）\n用户称呼：${address}\n用户当地时间：${ctx.localDate} ${String(ctx.localHour).padStart(2, '0')}点（${ctx.timeZone}）${petBlock ? `\n${petBlock}` : ''}`,
+          },
+          ...recent,
+          {
+            role: 'user',
+            content: `【系统提示，不是用户说的话】现在由你主动发起一次聊天。这次的理由：${plan.brief}`,
+          },
+        ],
+        meta: { conversationKind: 'direct', scenarioMode: settings.scenarioMode ?? 'daily' },
+      },
+      adult,
+    );
     if (!result.ok) {
       await this.drop(plan, `model_${result.error}`);
       return;
     }
     const bubbles = splitReply(result.value.text, settings.splitBubbles).slice(0, 3);
-    if (!bubbles.length || !bubbles.every((b) => outputAllowed(b, policy, false))) {
+    if (!bubbles.length || !bubbles.every((b) => outputAllowed(b, policy, adult))) {
       await this.drop(plan, 'output_guard');
       return;
     }

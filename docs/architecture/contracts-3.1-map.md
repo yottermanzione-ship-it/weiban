@@ -106,3 +106,7 @@
 | P-36 / P-37 | 已挪进 `platform/config/product-params.ts`，health 与 ai-runtime 改为引用（本次一并完成） |
 | T-080 媒体按用户目录 vs 孤儿核验 | `security-and-privacy.md` 第 6 节已改写为「全库无孤儿文件」，TD-031 |
 | 安卓 detekt 放宽 | TD-028（Compose 豁免转为规范，42 处 `@Suppress` 记债） |
+
+## 2026-10-12 成人复核配套
+
+增加内部ModelRole adult_check与管理员目录defaultFor adult_check；用户选择接口仍仅chat/background/adult，不提供任意角色/模型覆盖。检查调用仅safety_check并带角色，专用平台默认不回落用户后台，限定HTTPS OpenRouter，角色必须有成人资格。普通真人/儿童日常检查不得借用此成人角色路径。无审查模型只能设该专用检查默认，生成默认继续禁止；0080约束和0081加密状态迁移含down并已实测回滚恢复。现有生成物保持3.1并同步JSON资源，未新增公共HTTP接口。功能尚待全量、多渠道和真实模型验收，开发自测见最新交接。

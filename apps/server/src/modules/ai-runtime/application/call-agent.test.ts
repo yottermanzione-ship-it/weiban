@@ -11,6 +11,7 @@ import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { MODEL_GATEWAY_MEDIA_PORT, MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { CallAgentService } from './call-agent.js';
+import { AdultBoundaryService } from './adult-boundary.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 import { MemoryService } from './memory.js';
 import { MediaAiService } from './media-ai.js';
@@ -67,6 +68,14 @@ async function openControlledSession(blockReply = false, customVoiceId?: string)
   const module = await Test.createTestingModule({
     providers: [
       CallAgentService,
+      {
+        provide: AdultBoundaryService,
+        useValue: {
+          generate: async () => {
+            throw Error('普通通话不得走成人生成');
+          },
+        },
+      },
       {
         provide: MODEL_GATEWAY_PORT,
         useValue: { generateText: reply },

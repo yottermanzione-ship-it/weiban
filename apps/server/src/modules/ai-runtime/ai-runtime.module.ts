@@ -10,6 +10,7 @@ import { ModelAccessModule } from '../model-access/index.js';
 import { ReplyPlanStore } from './application/plan-store.js';
 import { ReplyContext } from './application/reply-context.js';
 import { ReplyEngine } from './application/reply-engine.js';
+import { AdultBoundaryService } from './application/adult-boundary.js';
 import { AiRuntimeLifecycle } from './application/lifecycle.js';
 import { IdentityModule } from '../identity/index.js';
 import { ContactsModule } from '../contacts/index.js';
@@ -115,6 +116,7 @@ import {
     ReplyPlanStore,
     ReplyContext,
     ReplyEngine,
+    AdultBoundaryService,
     SimulationService,
     TimelineSummaryService,
     TimelineListService,

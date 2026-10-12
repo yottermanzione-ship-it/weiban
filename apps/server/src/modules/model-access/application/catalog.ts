@@ -3,7 +3,7 @@
  * 用户端模型列表（只列启用的），以及给选择 / 状态 / 网关用的查询。
  *
  * 规则：
- * - 无审查（adult_content）模型不能设为任何平台默认（422 model_not_allowed；数据库 CHECK 兜底）；
+ * - 无审查模型不能设为生成默认；仅专用 adult_check 例外，调用时仍须成人资格与OpenRouter路由。
  * - 默认识图模型必须具备 vision 能力；停用的模型不能是默认；
  * - 每种默认最多一个：设新默认时自动从原默认模型上摘掉（同一事务、审计里记下），
  *   所有目录写入经一把事务级咨询锁串行，避免并发设两个默认；
@@ -48,6 +48,7 @@ export type DefaultUse =
   | 'background'
   | 'vision'
   | 'planner'
+  | 'adult_check'
   | 'speech_synthesis'
   | 'speech_recognition'
   | 'image_generation'
@@ -62,6 +63,7 @@ export interface ModelFacts {
   modelKey: string;
   entry: CatalogRow | null;
   upstreamStatus: UpstreamStatus | null;
+  upstreamBaseUrl?: string | null;
 }
 
 /** 目录写入串行化的咨询锁键（任意固定数字）。 */
@@ -112,7 +114,7 @@ export class CatalogService {
     const capabilities = [...new Set(body.capabilities)];
     const defaultFor = [...new Set(body.defaultFor)];
     const tags = [...new Set(body.tags)];
-    if (defaultFor.length > 0 && hasAdultContent(capabilities)) {
+    if (defaultFor.some((use) => use !== 'adult_check') && hasAdultContent(capabilities)) {
       throw new AppError('model_not_allowed', '无审查（允许成人内容）模型不能设为平台默认模型', {
         status: 422,
       });
@@ -237,7 +239,10 @@ export class CatalogService {
 
   async listModels(capability?: string): Promise<ModelInfo[]> {
     const rows = await this.database.db
-      .select({ entry: modelCatalog, upstreamStatus: upstreams.status })
+      .select({
+        entry: modelCatalog,
+        upstreamStatus: upstreams.status,
+      })
       .from(modelCatalog)
       .leftJoin(upstreams, eq(upstreams.id, modelCatalog.upstreamId))
       .where(eq(modelCatalog.enabled, true))
@@ -267,7 +272,11 @@ export class CatalogService {
     const out = new Map<string, ModelFacts>();
     if (keys.length === 0) return out;
     const rows = await this.database.db
-      .select({ entry: modelCatalog, upstreamStatus: upstreams.status })
+      .select({
+        entry: modelCatalog,
+        upstreamStatus: upstreams.status,
+        upstreamBaseUrl: upstreams.baseUrl,
+      })
       .from(modelCatalog)
       .leftJoin(upstreams, eq(upstreams.id, modelCatalog.upstreamId))
       .where(inArray(modelCatalog.modelKey, keys));
@@ -277,6 +286,7 @@ export class CatalogService {
         modelKey: r.entry.modelKey,
         entry: r.entry,
         upstreamStatus: (r.upstreamStatus as UpstreamStatus | null) ?? null,
+        upstreamBaseUrl: r.upstreamBaseUrl,
       });
     }
     return out;
@@ -290,7 +300,11 @@ export class CatalogService {
   /** 平台默认模型（每种最多一个；只算启用的）。 */
   async defaultModel(use: DefaultUse): Promise<ModelFacts | null> {
     const rows = await this.database.db
-      .select({ entry: modelCatalog, upstreamStatus: upstreams.status })
+      .select({
+        entry: modelCatalog,
+        upstreamStatus: upstreams.status,
+        upstreamBaseUrl: upstreams.baseUrl,
+      })
       .from(modelCatalog)
       .leftJoin(upstreams, eq(upstreams.id, modelCatalog.upstreamId))
       .where(sql`${use}::text = any(${modelCatalog.defaultFor}) and ${modelCatalog.enabled}`)
@@ -302,6 +316,7 @@ export class CatalogService {
       modelKey: r.entry.modelKey,
       entry: r.entry,
       upstreamStatus: (r.upstreamStatus as UpstreamStatus | null) ?? null,
+      upstreamBaseUrl: r.upstreamBaseUrl,
     };
   }
 

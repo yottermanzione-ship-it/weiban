@@ -77,6 +77,10 @@ export class ModelResolver implements AdultModelReadPort {
     role: ModelRole,
     characterId: string | null,
   ): Promise<{ facts: ModelFacts; source: 'override' | 'user' | 'platform_default' } | null> {
+    if (role === 'adult_check') {
+      const checker = await this.catalog.defaultModel('adult_check');
+      return checker ? { facts: checker, source: 'platform_default' } : null;
+    }
     const raw = await this.selection.raw(userId);
     const override = characterId ? await this.selection.rawOverride(userId, characterId) : null;
     const userChat = override
@@ -112,6 +116,11 @@ export class ModelResolver implements AdultModelReadPort {
     /** T-090（CR-17）：只允许 purpose = behavior_planning；指定规划模型（不随用户的后台模型）。 */
     modelKeyOverride?: string;
   }): Promise<PortResult<ResolvedModel, GenerateError>> {
+    if (
+      input.modelRole === 'adult_check' &&
+      (input.purpose !== 'safety_check' || !input.characterId || input.modelKeyOverride)
+    )
+      return { ok: false, error: 'bad_request' };
     let picked: { facts: ModelFacts } | null;
     if (input.modelKeyOverride) {
       if (input.purpose !== 'behavior_planning') return { ok: false, error: 'bad_request' };
@@ -127,6 +136,21 @@ export class ModelResolver implements AdultModelReadPort {
     }
     if (!picked) return { ok: false, error: 'not_configured' };
     let facts = picked.facts;
+    if (input.modelRole === 'adult_check') {
+      let allowed = false;
+      try {
+        const url = new URL(facts.upstreamBaseUrl ?? '');
+        allowed =
+          url.protocol === 'https:' &&
+          url.hostname === 'openrouter.ai' &&
+          (!url.port || url.port === '443') &&
+          !url.username &&
+          !url.password;
+      } catch {
+        /* 没有有效上游地址时不放行，不回落到用户后台模型。 */
+      }
+      if (!allowed) return { ok: false, error: 'model_not_allowed' };
+    }
     let usedVisionDefault = false;
     const checkUsable = (f: ModelFacts): GenerateError | null => {
       const reason = unavailableReason(f.entry, f.upstreamStatus);
@@ -153,7 +177,7 @@ export class ModelResolver implements AdultModelReadPort {
     if (input.purpose === 'behavior_planning' && hasAdultContent(entry.capabilities))
       return { ok: false, error: 'model_not_allowed' };
     // 调用时的无审查模型闸门（billing.md 第 9 节第 2 条）
-    if (hasAdultContent(entry.capabilities)) {
+    if (input.modelRole === 'adult_check' || hasAdultContent(entry.capabilities)) {
       if (!input.characterId) return { ok: false, error: 'model_not_allowed' };
       const decision = await this.policy.checkModelForCharacter({
         userId: input.userId,

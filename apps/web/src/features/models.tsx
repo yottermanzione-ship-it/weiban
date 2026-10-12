@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { ModelAccessEndpoints, type ModelRole } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
-const roleLabels: Record<ModelRole, string> = {
+type UserModelRole = Exclude<ModelRole, 'adult_check'>;
+const roleLabels: Record<UserModelRole, string> = {
   chat: '聊天模型',
   background: '后台模型',
   adult: '成人模式模型',
@@ -12,7 +13,7 @@ export function ModelsPage() {
   const selection = useRemote(ModelAccessEndpoints.getSelection);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
-  async function choose(role: ModelRole, key: string) {
+  async function choose(role: UserModelRole, key: string) {
     setPending(true);
     try {
       await api.call(ModelAccessEndpoints.updateSelection, {

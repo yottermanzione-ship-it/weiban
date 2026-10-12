@@ -16,6 +16,20 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 export const aiRuntimeSchema = pgSchema('ai_runtime');
+/** 触发证据加密保存，后续成人回合持续检查，注销时删除。 */
+export const adultBoundaryStates = aiRuntimeSchema.table(
+  'adult_boundary_states',
+  {
+    userId: uuid('user_id').notNull(),
+    conversationId: uuid('conversation_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    evidenceCiphertext: customType<{ data: Buffer }>({ dataType: () => 'bytea' })(
+      'evidence_ciphertext',
+    ).notNull(),
+    triggeredAt: timestamp('triggered_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.conversationId, t.characterId] })],
+);
 /** null characterId 表示用户全局默认；单独设置整份快照不随默认变化。 */
 export const companionSettings = aiRuntimeSchema.table(
   'companion_settings',
