@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.weiban.contracts.*
@@ -137,11 +138,21 @@ private class CharacterUi(
             .padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
     ) {
-        if (profile.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+        // 固定布局：进度条占位、头部定高、主操作紧随其后；资料异步到达时「发消息」等按钮不跳位。
+        Box(Modifier.fillMaxWidth().height(4.dp)) {
+            if (profile.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+        CharacterHeader(repository, owner, profile.data, contact)
+        CharacterAction(contact, ui, profile.data, onOpenConversation, progress?.let { it::greet })
+        if (referral?.referrerCharacterId != null && contact == null) {
+            if (ui.dismissed) {
+                Text("好的，不会再推荐 TA", style = MaterialTheme.typography.bodySmall)
+            } else {
+                TextButton(onClick = ui::dismiss, enabled = !ui.pending) { Text("不感兴趣") }
+            }
+        }
+        (ui.error ?: profile.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         profile.data?.let { role ->
-            RoleAvatar(repository, owner, RoleAvatarIdentity(role.characterId, role.name, role.avatar, contact?.customAvatarMediaId), 64.dp)
-            Text(contact?.remark ?: role.name, style = MaterialTheme.typography.headlineSmall)
-            if (contact?.remark != null) Text("名字：${role.name}")
             if (role.personaUpdatedUnseen) PersonaUpdatedBadge(repository, owner, role.characterId) { profile.refresh() }
             // 复制来的角色：来源标注与新版本提示（PLZ-04 第 4 条、PLZ-05 第 4 条）。
             if (role.kind == "custom") {
@@ -170,21 +181,37 @@ private class CharacterUi(
                 CustomRelationsEntry(repository, owner, characterId) { sub = "relations" }
             }
         }
-        (ui.error ?: profile.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        CharacterAction(contact, ui, profile.data, onOpenConversation, progress?.let { it::greet })
-        if (referral?.referrerCharacterId != null && contact == null) {
-            if (ui.dismissed) {
-                Text("好的，不会再推荐 TA", style = MaterialTheme.typography.bodySmall)
-            } else {
-                TextButton(onClick = ui::dismiss, enabled = !ui.pending) { Text("不感兴趣") }
-            }
-        }
         TextButton(onClick = {
             profile.refresh()
             scope.launch { userAction({ ui.error = it }) { runtime.refresh(owner) } }
         }) { Text("刷新资料") }
     }
     if (ui.restore) RestoreContact(ui)
+}
+
+/** 资料页头部：定高 64dp，资料未到时用同尺寸占位，避免下方按钮随加载移动。 */
+@Composable private fun CharacterHeader(
+    repository: SessionRepository,
+    owner: OwnerRecord,
+    role: CharacterProfile?,
+    contact: Contact?,
+) {
+    Row(
+        Modifier.fillMaxWidth().height(64.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WbSpace.S3),
+    ) {
+        Box(Modifier.size(64.dp)) {
+            if (role != null) {
+                val identity = RoleAvatarIdentity(role.characterId, role.name, role.avatar, contact?.customAvatarMediaId)
+                RoleAvatar(repository, owner, identity, 64.dp)
+            }
+        }
+        Column {
+            Text(contact?.remark ?: role?.name.orEmpty(), style = MaterialTheme.typography.headlineSmall, maxLines = 1)
+            if (contact?.remark != null && role != null) Text("名字：${role.name}", maxLines = 1)
+        }
+    }
 }
 
 @Composable private fun CharacterAction(
