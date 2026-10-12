@@ -1,6 +1,17 @@
 # Codex 产品收口活动断点
 
+## 当前断点（2026-10-12 08:17，优先于下文）
+
+- 本轮以实际工作区续接89863e7，前轮草稿PR和151题/CLI属于进展。PR run38186248665、push run38186246324已completed/success（89863e770e2a686f518bd2455fdf8bf7d4d58265），不是当前新增修复的CI结果。共享main未切分支或写入；当前开发源检查点**901c79611bdfad83785e72ca5db41b8571adff6e**。
+- 新care-missing-signals.test.ts用真实AppModule/HTTP登录发送、PG/加密角色和聊天、事件派发及ReplyEngine，只有角色发布评估和ModelGateway受控返回故障。每个场景新账号/会话，排除此前care状态；020即时临边、032伤害威胁、010谐音在provider_unavailable/not_configured下共6项均真实waiting，未发兜底；夸张作业2项对照正常（care-missing-signals-round2.log，18.70s）。首次round1误取已取消greeting计划导致8项失败，修为kind=message才获有效6失败/2通过证据，不把fixture错误记成产品缺陷。
+- 修复highRisk：NFKC归一识别谐音/拼音、明确伤害威胁和即时临边表达；明确拍照/看风景场景不按新临边信号处理，原明确自伤仍优先。未改疑似模型复核或safetyPriority设置规则，不新增契约/依赖。3条纯规则测试含普通紫砂器物、英语词、夸张作业、威胁否定与旧疑似层级。round3实际HTTP/PG关联8项及规则3项全过（24.61s），证明上述网关故障错误分支发完整关怀，不等待恢复；不是实际供应商质量/所有32题都已通过。
+- 关联care-regression-round1.log **7文件47项通过**，206.08s，含旧真实回复/恢复/队列、小巧思、通话与安全透支矩阵。业务源运行期间冻结；只补了新测试ChatReadPort静态类型。类型首两轮因get token未泛型导致any参数错误，补history读取类型后care-typecheck-round3.log通过；不靠any或降低规则。纯规则测试初放根集成目录违反R10，关联终态后移到模块domain目录，care-rules-final.log新路径3项通过；care-lint-round2.log全仓340模块1474依赖通过，care-format-round1.log全仓格式通过。此位置/类型修正不变业务或断言，不重跑同内容47项；后续最新CI仍要观察。
+- 当前正式本机仍ba4b76b旧镜像，关怀识别修复**尚未部署**；原账号/密钥/上游0条状态和既有恢复证据保留。后续推送/更新草稿PR，待最新全量CI结论后升级本机并验证，不把代码提交当作已送达本机。全量CI、真实供应商、完整19类材料/执行器、受控R-01/C-01卡、设备/厂商、离线异机保管与独立验收仍待完成。目标活动，全部开发自测，未完成或阻塞。
+
 ## 当前断点（2026-10-12 07:57，优先于下文）
+
+- 续审计：4c源码及登记已实际推送**89863e770e2a686f518bd2455fdf8bf7d4d58265**，PR #19仍OPEN/draft且描述更新151题/CLI。新PR run38186248665、push run38186246324在08:01仍in_progress，未重启或记通过。旧d4绿色结论保留其独立范围。
+- 直接调用当前highRisk纯函数检查32题，care-classification-audit-round2.log实际完成exit0；SAFE06-010（谐音）、020（天台即时危险）、032（以伤害相威胁）都返回none。根目录tsx不在bin，首诊失败，改用server工作区已有tsx成功，没有新增依赖。ReplyEngine仅high/suspected或已在care的快照进入检查/兜底，普通调用失败则wait。此为具体规则/调用链线索，尚未真实PG聊天复现，不把规则检查等同完整关怀失败或已修复；下一步针对020/032实际provider_unavailable/无模型场景复现并按证据修复，29夸张作业对照应保留适度反应。当前业务源码未为此改动，本条暂在本地文档等待下次代码批次一起提交。
 
 - 上轮是实际进展（全量/安卓/本机升级、32题及草稿PR）；随后真人/儿童草稿在工作区停留，本轮先实查再续接。源码检查点**4cbbad62c03fed3113637a935759b6190a70dbe6**，分支codex/product-closeout、C:\wb-dev\codex-closeout；共享目录再次实查main，未修改。Claude既知JSONL仍2026-10-11 09:04:46/2213073字节，无新会话状态，不发送消息或启动代理。
 - 格式修正和文档已实际推送d4dc8c8d61b007265b2807017983999d618eaa13；新push run38162076437、PR run38162079880均真实completed/success。PR run日志github-green-d4dc8c8-clean.log证实**77文件619项通过、0失败0跳过**，411.64s，网页26项(59.0s)/后台8项(14.9s)、安卓BUILD SUCCESSFUL(3m22s)，生产镜像/迁移/双域HTTP/非空加密媒体/空卷恢复/非空目标拒绝演练通过。是d4源码的开发CI证据，不是独立审查或最新4c源码全部CI绿。原两次失败是前轮未修格式，保持历史，不反复rerun旧job。
