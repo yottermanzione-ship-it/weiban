@@ -45,7 +45,7 @@ import kotlinx.serialization.json.buildJsonObject
             .filter { it.enabled }
     if (items.isEmpty()) return
     val name = voiceId?.let { id -> items.find { it.voiceId == id }?.name } ?: "默认"
-    TextButton(onClick = onOpen, enabled = enabled) { Text("TA 的声音  $name ›") }
+    app.weiban.designsystem.MenuRow("TA 的声音", value = name, enabled = enabled, onClick = onOpen)
 }
 
 /**

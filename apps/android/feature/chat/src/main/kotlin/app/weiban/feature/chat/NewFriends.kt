@@ -9,7 +9,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.background
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.weiban.contracts.*
+import app.weiban.core.designsystem.R as DsR
+import app.weiban.designsystem.pressMenu
+import app.weiban.designsystem.pressable
+import app.weiban.designsystem.wbText
 import app.weiban.data.*
 import app.weiban.designsystem.LocalWeibanColors
 import app.weiban.designsystem.LocalWeibanModeColors
@@ -81,20 +88,23 @@ internal fun rememberNewFriends(
             runCatching { ChronoUnit.HOURS.between(Instant.parse(item.createdAt), now) < 72 }.getOrDefault(true)
         }
     val older = visible - recent.toSet()
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onBack) { Text("‹ 返回") }
-        Text("新的朋友", style = MaterialTheme.typography.titleMedium)
-    }
-    OutlinedButton(onClick = onSearch, modifier = Modifier.fillMaxWidth().padding(horizontal = WbSpace.S5)) { Text("搜索角色") }
-    error?.let { Text(it, Modifier.padding(horizontal = WbSpace.S5), color = MaterialTheme.colorScheme.error) }
+    app.weiban.designsystem.WbNavBar("新的朋友", onBack) { app.weiban.designsystem.NavAction("添加角色", onSearch) }
+    LaunchedEffect(error) { error?.let { app.weiban.designsystem.WbToast.show(it) } }
     when {
-        list == null -> LinearProgressIndicator(Modifier.fillMaxWidth().padding(WbSpace.S5))
-        visible.isEmpty() -> Text("还没有新朋友 · TA 的朋友们会通过名片介绍给你", Modifier.padding(WbSpace.S5), color = colors.textSecondary)
+        list == null -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.brandPrimary)
+        visible.isEmpty() ->
+            app.weiban.designsystem.EmptyState(
+                "还没有新朋友",
+                DsR.drawable.wb_person,
+                "TA 的朋友们会通过名片介绍给你",
+                "去角色广场看看",
+                onAction = onSearch,
+            )
         else ->
             LazyColumn {
                 listOf("近三天" to recent, "更早" to older).forEach { (heading, rows) ->
                     if (rows.isNotEmpty()) {
-                        item(key = heading) { Text(heading, Modifier.padding(WbSpace.S3), color = colors.textSecondary) }
+                        item(key = heading) { app.weiban.designsystem.GroupHeader(heading) }
                         items(rows, key = { it.itemId }) { item ->
                             NewFriendRow(repository, owner, state, item, profiles, ::nameOf, onProfile) {
                                 removed = removed + item.itemId
@@ -142,49 +152,57 @@ internal fun rememberNewFriends(
             "pending" -> "pending"
             else -> item.status
         }
-    ListItem(
-        headlineContent = { Text(name) },
-        supportingContent = { Text(source, color = colors.textSecondary) },
-        leadingContent = {
-            RoleAvatar(
-                repository,
-                owner,
-                RoleAvatarIdentity(item.characterId, name, profiles[item.characterId]?.avatar, contact?.customAvatarMediaId),
-                WbSize.AvatarLg,
-            )
-        },
-        trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                when (status) {
-                    "added" -> Text("已添加", color = colors.textTertiary)
-                    "pending" -> Text("等待中", color = colors.textTertiary)
-                    "dismissed" -> Text("已忽略", color = colors.textTertiary)
-                    else -> Button(onClick = { onProfile(target) }) { Text("添加") }
-                }
-                TextButton(onClick = { removing = true }) { Text("删除", color = colors.textTertiary) }
-            }
-        },
-        modifier = Modifier.clickable { onProfile(target) },
-    )
-    if (removing) {
-        AlertDialog(
-            onDismissRequest = { removing = false },
-            title = { Text("删除这条记录？") },
-            text = { Text("只删除这条记录，不影响通讯录") },
-            confirmButton = {
-                TextButton(onClick = {
-                    removing = false
-                    onRemove()
-                }) { Text("删除", color = colors.textDanger) }
-            },
-            dismissButton = { TextButton(onClick = { removing = false }) { Text("取消") } },
+    val mode = LocalWeibanModeColors.current
+    var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    // 新的朋友（规格 4.7）：行高 72，头像 46 圆角 6 → 12 → 名字 17 + 4 + 状态 13；右侧行内小按钮；长按删除。
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(72.dp)
+            .background(colors.bgSurface)
+            .pressMenu({ onProfile(target) }, { menuAt = it })
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RoleAvatar(
+            repository,
+            owner,
+            RoleAvatarIdentity(item.characterId, name, profiles[item.characterId]?.avatar, contact?.customAvatarMediaId),
+            46.dp,
+            6.dp,
         )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, style = wbText(17.sp, color = colors.textPrimary), maxLines = 1)
+            Spacer(Modifier.height(4.dp))
+            Text(source, style = wbText(13.sp, color = colors.textSecondary), maxLines = 1)
+        }
+        when (status) {
+            "added" -> Text("已添加", style = wbText(14.sp, color = colors.textSecondary))
+            "pending" -> Text("等待通过", style = wbText(14.sp, color = mode.uiPending))
+            "dismissed" -> Text("已忽略", style = wbText(14.sp, color = colors.textPlaceholder))
+            else -> app.weiban.designsystem.InlineButton("添加") { onProfile(target) }
+        }
     }
-    HorizontalDivider(color = colors.borderHairline)
+    Box(Modifier.fillMaxWidth().padding(start = 74.dp).height(app.weiban.designsystem.hairline).background(colors.borderHairline))
+    menuAt?.let { at ->
+        app.weiban.designsystem.LongPressMenu(at, listOf(app.weiban.designsystem.MenuItem("删除", danger = true) { removing = true })) { menuAt = null }
+    }
+    if (removing) {
+        app.weiban.designsystem.WbConfirm("只删除这条记录，不影响通讯录", "删除", danger = true, onDismiss = { removing = false }) {
+            removing = false
+            onRemove()
+        }
+    }
 }
 
-/** 通讯录顶部固定行（02a 2 节）：新的朋友（红点 = 服务器 unseenCount）/ 新建角色 / 群聊 / 角色广场 / 标签* / 公众号*。 */
-@Composable internal fun ContactsEntries(
+/**
+ * 通讯录顶部固定行（规格 4.6）：高 56，图标槽 44 内放 40 彩色方块（圆角 4）+ 白图标；文字 17；分割线缩进 72。
+ * 新的朋友（数字角标 = 服务器 unseenCount）/ 新建角色 / 群聊 / 角色广场 / 标签* / 公众号*。
+ */
+@Suppress("UNUSED_PARAMETER") // onComingSoon：旧调用处保留；「暂未开放」改为轻提示。
+@Composable
+internal fun ContactsEntries(
     repository: SessionRepository,
     owner: OwnerRecord,
     onNewFriends: () -> Unit,
@@ -193,20 +211,46 @@ internal fun rememberNewFriends(
     onPlaza: () -> Unit,
     onComingSoon: (String) -> Unit,
 ) {
-    val unseen = rememberNewFriends(repository, owner)?.unseenCount ?: 0
-    app.weiban.designsystem.MenuGroup {
-        app.weiban.designsystem.MenuRow(
-            "新的朋友",
-            "＋",
-            app.weiban.designsystem.Tint.Orange,
-            value = if (unseen > 0) unseen.toString() else null,
-            dot = unseen > 0,
-            onClick = onNewFriends,
-        )
-        app.weiban.designsystem.MenuRow("新建角色", "✎", app.weiban.designsystem.Tint.Green, onClick = onNewRole)
-        app.weiban.designsystem.MenuRow("群聊", "☰", app.weiban.designsystem.Tint.Green, onClick = onGroups)
-        app.weiban.designsystem.MenuRow("角色广场", "☺", app.weiban.designsystem.Tint.Orange, onClick = onPlaza)
-        app.weiban.designsystem.ComingSoonRow("tags", onOpen = onComingSoon)
-        app.weiban.designsystem.ComingSoonRow("official", onOpen = onComingSoon)
+    val unseen = (rememberNewFriends(repository, owner)?.unseenCount ?: 0).toInt()
+    val colors = LocalWeibanColors.current
+    val mode = LocalWeibanModeColors.current
+    Column(Modifier.fillMaxWidth().background(colors.bgSurface)) {
+        FixedRow("新的朋友", DsR.drawable.wb_person, mode.tintOrange, 24, unseen, onClick = onNewFriends)
+        FixedRow("新建角色", DsR.drawable.wb_add, colors.brandPrimary, 22, 0, onClick = onNewRole)
+        FixedRow("群聊", DsR.drawable.wb_chat_pair, colors.brandPrimary, 22, 0, onClick = onGroups)
+        FixedRow("角色广场", DsR.drawable.wb_drawn_people, mode.tintBlue, 22, 0, onClick = onPlaza)
+        FixedRow("标签", DsR.drawable.wb_tag, mode.tintBlue, 22, 0) { app.weiban.designsystem.ComingSoon.notice("tags") }
+        FixedRow("公众号", DsR.drawable.wb_contacts_official, mode.tintBlue, 22, 0, last = true) {
+            app.weiban.designsystem.ComingSoon.notice("official")
+        }
     }
+}
+
+@Composable private fun FixedRow(
+    label: String,
+    icon: Int,
+    tint: androidx.compose.ui.graphics.Color,
+    iconSize: Int,
+    badge: Int,
+    last: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val colors = LocalWeibanColors.current
+    Row(
+        Modifier.fillMaxWidth().height(56.dp).pressable(onClick = onClick).padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.size(40.dp).background(tint, androidx.compose.foundation.shape.RoundedCornerShape(4.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                app.weiban.designsystem.WbIcon(icon, iconSize.dp, androidx.compose.ui.graphics.Color.White)
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(label, Modifier.weight(1f), style = wbText(17.sp, color = colors.textPrimary))
+        if (badge > 0) app.weiban.designsystem.CountBadge(badge, stroke = androidx.compose.ui.graphics.Color.Transparent)
+    }
+    if (!last) Box(Modifier.fillMaxWidth().padding(start = 72.dp).height(app.weiban.designsystem.hairline).background(colors.borderHairline))
 }

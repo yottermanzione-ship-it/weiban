@@ -555,14 +555,7 @@ private fun GroupMembers(
     value: String,
     onClick: () -> Unit,
 ) {
-    val colors = LocalWeibanColors.current
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = WbSize.SettingRow).clickable(onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, Modifier.weight(1f))
-        Text("$value ›", color = colors.textSecondary, maxLines = 1)
-    }
+    app.weiban.designsystem.MenuRow(label, value = value, onClick = onClick)
 }
 
 @Composable private fun GroupToggle(
@@ -571,8 +564,5 @@ private fun GroupMembers(
     enabled: Boolean,
     onChange: (Boolean) -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange, enabled = enabled)
-    }
+    app.weiban.designsystem.MenuSwitchRow(label, checked, enabled, onChange = onChange)
 }

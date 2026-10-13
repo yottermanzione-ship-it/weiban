@@ -1,5 +1,6 @@
 package app.weiban.feature.chat
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -9,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.weiban.contracts.*
 import app.weiban.data.OwnerRecord
 import app.weiban.data.SessionCallOptions
@@ -46,14 +48,7 @@ import kotlinx.serialization.json.put
         }
     val key = override.data?.chat?.modelKey
     val value = if (key == null) "跟随默认" else models.data?.find { it.modelKey == key }?.displayName ?: key
-    Row(
-        Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onOpen).padding(vertical = WbSpace.S3),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("TA 用的模型", Modifier.weight(1f))
-        Text(value, color = LocalWeibanColors.current.textSecondary)
-        Text(" ›", color = LocalWeibanColors.current.textTertiary)
-    }
+    app.weiban.designsystem.MenuRow("TA 用的模型", value = value, enabled = enabled, onClick = onOpen)
 }
 
 /** 为 TA 选模型（GET/PUT /model/character-overrides/:characterId；chat = null 跟随默认）。 */
@@ -141,17 +136,24 @@ import kotlinx.serialization.json.put
 }
 
 /** 聊天信息「和 TA 一起用」一行小程序图标（按 TA 的小程序，当前 TA 已选好）。 */
+/** 「和 TA 一起用」一行（规格 4.5 块 5）：左右 16、上下 12，图标 40 间距 16 横排，最多 5 个，末尾「更多 ›」。 */
 @Composable internal fun TogetherRow(characterId: String) {
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(WbSpace.S4)) {
-        items(MiniApp.perTaApps, key = { it.id }) { app ->
-            Column(
-                Modifier.clickable { MiniAppNavigation.open(app.id, characterId) }.padding(vertical = WbSpace.S2),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(WbSpace.S1),
-            ) {
-                MiniAppGlyph(app, 40.dp)
-                Text(app.title, style = MaterialTheme.typography.labelSmall)
-            }
+    val colors = LocalWeibanColors.current
+    var more by remember { mutableStateOf(false) }
+    Row(
+        Modifier.fillMaxWidth().background(colors.bgSurface).padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MiniApp.perTaApps.take(5).forEach { app ->
+            Box(Modifier.clickableNoRipple { MiniAppNavigation.open(app.id, characterId) }) { MiniAppGlyph(app, 40.dp) }
         }
+        Spacer(Modifier.weight(1f))
+        Text(
+            "更多 ›",
+            Modifier.clickableNoRipple { more = true },
+            style = app.weiban.designsystem.wbText(14.sp, color = colors.textSecondary),
+        )
     }
+    if (more) TogetherSheet(characterId, { more = false })
 }
