@@ -1,6 +1,9 @@
 package app.weiban.feature.chat
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import app.weiban.contracts.Contact
@@ -49,9 +52,9 @@ import kotlinx.serialization.json.*
             }
         }
     }
-    TextButton(onClick = { expanded = !expanded }, enabled = !pending) { Text("设置头像") }
+    app.weiban.designsystem.MenuRow("设置备注和头像", enabled = !pending) { expanded = !expanded }
     if (!expanded) return
-    Column {
+    Column(Modifier.padding(16.dp)) {
         Text("上传的头像只有你自己能看到")
         PhotoCropper(
             enabled = !pending,

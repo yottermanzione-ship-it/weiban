@@ -1,9 +1,10 @@
 package app.weiban.feature.chat
 
+import app.weiban.designsystem.ToastKind
+import app.weiban.designsystem.WbToast
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
-import android.widget.Toast
 import androidx.compose.runtime.*
 import app.weiban.contracts.*
 import app.weiban.data.AppUpdates
@@ -70,7 +71,10 @@ internal class ChatMediaUi(
     }
 
     fun toast(text: String) {
-        Toast.makeText(app, text, Toast.LENGTH_SHORT).show()
+        WbToast.show(
+            text,
+            if (text.startsWith("已")) ToastKind.Success else ToastKind.None,
+        )
     }
 
     private val options get() = SessionCallOptions(owner = owner)

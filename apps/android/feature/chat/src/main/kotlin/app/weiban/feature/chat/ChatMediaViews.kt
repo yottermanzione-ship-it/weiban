@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.weiban.contracts.*
 import app.weiban.data.OwnerRecord
 import app.weiban.data.SessionRepository
@@ -43,10 +44,12 @@ import app.weiban.designsystem.tokens.WbSpace
 private val STICKER_EDGE = 120.dp
 private val LINK_COVER = 48.dp
 private const val THUMB_DECODE_EDGE = 720
-private const val VOICE_MIN_WIDTH = 72
+private const val VOICE_BASE_WIDTH = 86
+private const val VOICE_PER_SECOND = 4
+private const val VOICE_MIN_WIDTH = 108
 private const val VOICE_MAX_WIDTH = 220
 
-/** 图片在聊天里的显示尺寸：按接口宽高等比，最长边 200（ImageMessageMax）。 */
+/** 图片在聊天里的显示尺寸（规格 4.4.5）：按原图比例，最小 80、最大 150。 */
 internal fun imageBox(
     width: Long?,
     height: Long?,
@@ -55,7 +58,7 @@ internal fun imageBox(
     val w = (width ?: 0L).toFloat()
     val h = (height ?: 0L).toFloat()
     if (w <= 0f || h <= 0f) return max to max
-    val ratio = (w / h).coerceIn(0.4f, 2.5f)
+    val ratio = (w / h).coerceIn(80f / 150f, 150f / 80f)
     return if (ratio >= 1f) max to max / ratio else max * ratio to max
 }
 
@@ -74,7 +77,7 @@ internal fun imageBox(
     val state = rememberMediaBitmap(repository, owner, mediaId, thumbnail, THUMB_DECODE_EDGE)
     val opacity by animateFloatAsState(if (state.bitmap == null) 0f else 1f, tween(WbMotion.FastMs), label = "图片淡入")
     Box(
-        modifier.size(width, height).clip(RoundedCornerShape(WbRadius.Sm)).background(colors.bgSkeleton),
+        modifier.size(width, height).clip(RoundedCornerShape(WbRadius.Md)).background(colors.bgSkeleton),
         contentAlignment = Alignment.Center,
     ) {
         val bitmap = state.bitmap
@@ -112,13 +115,18 @@ internal fun imageBox(
     ChatPicture(repository, owner, mediaId, edge, edge, modifier, thumbnail = false, contentScale = ContentScale.Fit)
 }
 
-/** 语音条：宽度随时长变化；播放中声波闪动；未播放红点；失败感叹号；下方转写块（C 4.2、media-l5.md 3.2～3.3）。 */
+/**
+ * 语音气泡（规格 4.4.5）：气泡色同文字气泡，内距 14×9；宽 = 86 + 秒数（1–30）× 4，最小 108、最大 220；
+ * 波纹 22×18 + 8 + 时长「5''」16/500；我发的波纹在右、时长在左并镜像；播放中 #1F7A32，出错 #E84040 + 「重试」。
+ */
 @Composable internal fun VoiceMessage(
     ui: ConversationUi,
     message: Message,
     content: ReceivedMessageContentVoice,
+    modifier: Modifier = Modifier,
 ) {
     val colors = LocalWeibanColors.current
+    val mode = app.weiban.designsystem.LocalWeibanModeColors.current
     val player = ui.media.player
     val mine = message.senderKind == "user"
     val playing = player.playingId == message.messageId
@@ -126,54 +134,41 @@ internal fun imageBox(
     val failed = player.failed[message.messageId] == true
     val unplayed = !mine && player.played[message.messageId] == false
     val seconds = ((content.durationMs + 500) / 1000).coerceIn(1, 60)
-    val width = (VOICE_MIN_WIDTH + (VOICE_MAX_WIDTH - VOICE_MIN_WIDTH) * seconds / 60).toInt().dp
-    val pulse =
-        if (playing) {
-            val transition = rememberInfiniteTransition(label = "声波")
-            transition.animateFloat(0.3f, 1f, infiniteRepeatable(tween(WbMotion.BaseMs * 2), RepeatMode.Reverse), label = "声波透明度").value
-        } else {
-            1f
+    val width = (VOICE_BASE_WIDTH + seconds.coerceAtMost(30) * VOICE_PER_SECOND).toInt().coerceIn(VOICE_MIN_WIDTH, VOICE_MAX_WIDTH).dp
+    val tint =
+        when {
+            failed -> mode.uiVoiceError
+            playing -> mode.uiVoicePlaying
+            mine -> colors.bubbleSelfText
+            else -> colors.textPrimary
         }
-    Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Bubble(mine, modifier.width(width), padding = PaddingValues(horizontal = 14.dp, vertical = 9.dp)) {
             Row(
-                Modifier.width(width),
+                Modifier.fillMaxWidth(),
                 horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val wave =
-                    if (failed) {
-                        "!"
-                    } else if (mine) {
-                        "·)))"
-                    } else {
-                        "(((·"
+                val duration = "$seconds''"
+                if (mine) {
+                    if (loading) CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
+                    Text(if (failed) "重试" else duration, style = app.weiban.designsystem.wbText(16.sp, 500, tint))
+                    Spacer(Modifier.width(8.dp))
+                    VoiceWaves(playing, tint, mirrored = true)
+                } else {
+                    VoiceWaves(playing, tint, mirrored = false)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (failed) "重试" else duration, style = app.weiban.designsystem.wbText(16.sp, 500, tint))
+                    if (loading) {
+                        Spacer(Modifier.width(4.dp))
+                        CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
                     }
-                val waveColor = if (failed) colors.textDanger else LocalContentColor.current
-                if (mine) Text("$seconds″  ", fontFamily = FontFamily.Monospace)
-                Text(wave, Modifier.alpha(pulse), color = waveColor)
-                if (!mine) Text("  $seconds″", fontFamily = FontFamily.Monospace)
-                if (loading) {
-                    Spacer(Modifier.width(WbSpace.S2))
-                    CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
                 }
             }
-            if (unplayed) {
-                Spacer(Modifier.width(WbSpace.S2))
-                Box(Modifier.size(8.dp).clip(CircleShape).background(colors.textDanger))
-            }
         }
-        ui.media.transcripts[message.messageId]?.takeIf { it.shown }?.let { view ->
-            HorizontalDivider(Modifier.padding(vertical = WbSpace.S2).width(width), color = colors.borderHairline)
-            when {
-                view.text != null -> Text(view.text, style = MaterialTheme.typography.bodyMedium)
-                view.status == "pending" ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 1.5.dp)
-                        Text(" 转换中…", color = colors.textSecondary)
-                    }
-                else -> Text("无法转换", color = colors.textTertiary)
-            }
+        if (unplayed) {
+            Spacer(Modifier.width(6.dp))
+            Box(Modifier.size(8.dp).clip(CircleShape).background(colors.textDanger))
         }
     }
 }
@@ -237,9 +232,12 @@ internal fun callRecordText(content: ReceivedMessageContentCallRecord): String {
 }
 
 @Composable internal fun CallRecordMessage(content: ReceivedMessageContentCallRecord) {
-    val colors = LocalWeibanColors.current
     val text = callRecordText(content)
-    Text("☏ $text", color = if (text == "未接来电") colors.textDanger else LocalContentColor.current)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        app.weiban.designsystem.WbIcon(app.weiban.core.designsystem.R.drawable.wb_drawn_phone, 18.dp, LocalContentColor.current)
+        Spacer(Modifier.width(8.dp))
+        Text(text, style = app.weiban.designsystem.wbText(15.sp, 400, LocalContentColor.current))
+    }
 }
 
 /** 文字里的链接可点（text.link），点开走唤起 App / 浏览器（media-l5.md 4.2）。 */
@@ -275,25 +273,19 @@ internal fun callRecordText(content: ReceivedMessageContentCallRecord): String {
     val colors = LocalWeibanColors.current
     var choosing by remember { mutableStateOf(false) }
     Row(
-        Modifier.fillMaxWidth().padding(vertical = WbSpace.S3),
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (item.failed) {
-            Box(
-                Modifier
-                    .size(20.dp)
-                    .clip(CircleShape)
-                    .background(colors.textDanger)
-                    .clickable { choosing = true },
-                contentAlignment = Alignment.Center,
-            ) { Text("!", color = colors.textOnBrand) }
-            Spacer(Modifier.width(WbSpace.S3))
+            SendStatus(true) { choosing = true }
+        } else if (item.uploading && item.kind != "image") {
+            SendStatus(false) {}
         }
         if (item.kind == "image") {
             val (w, h) = imageBox(item.width.toLong(), item.height.toLong())
             Box(
-                Modifier.size(w, h).clip(RoundedCornerShape(WbRadius.Sm)).background(colors.bgSkeleton),
+                Modifier.size(w, h).clip(RoundedCornerShape(WbRadius.Md)).background(colors.bgSkeleton),
                 contentAlignment = Alignment.Center,
             ) {
                 item.preview?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
@@ -311,44 +303,27 @@ internal fun callRecordText(content: ReceivedMessageContentCallRecord): String {
                 }
             }
         } else {
-            Surface(color = colors.bubbleSelfBg, shape = RoundedCornerShape(WbRadius.Bubble)) {
-                Row(Modifier.padding(WbSpace.S5), verticalAlignment = Alignment.CenterVertically) {
-                    var slow by remember { mutableStateOf(false) }
-                    LaunchedEffect(item.uploading) {
-                        slow = false
-                        if (item.uploading) {
-                            kotlinx.coroutines.delay(1_000)
-                            slow = true
-                        }
-                    }
-                    if (slow && item.uploading) {
-                        CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
-                        Spacer(Modifier.width(WbSpace.S2))
-                    }
-                    Text("${((item.durationMs + 500) / 1000).coerceIn(1, 60)}″  ·)))", color = colors.bubbleSelfText)
+            val seconds = ((item.durationMs + 500) / 1000).coerceIn(1, 60)
+            val width = (VOICE_BASE_WIDTH + seconds.coerceAtMost(30) * VOICE_PER_SECOND).toInt().coerceIn(VOICE_MIN_WIDTH, VOICE_MAX_WIDTH).dp
+            Bubble(true, Modifier.width(width), padding = PaddingValues(horizontal = 14.dp, vertical = 9.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                    Text("$seconds''", style = app.weiban.designsystem.wbText(16.sp, 500, colors.bubbleSelfText))
+                    Spacer(Modifier.width(8.dp))
+                    VoiceWaves(false, colors.bubbleSelfText, mirrored = true)
                 }
             }
         }
-        Spacer(Modifier.width(WbSpace.S3))
-        MessageAvatar(ui.repository, ui.owner, avatars.user)
+        Spacer(Modifier.width(6.dp))
+        RoleAvatar(ui.repository, ui.owner, avatars.user, 40.dp, 4.dp)
     }
     if (choosing) {
-        AlertDialog(
-            onDismissRequest = { choosing = false },
-            title = { Text(if (item.kind == "image") "图片未发送" else "语音未发送") },
-            confirmButton = {
-                TextButton(onClick = {
-                    choosing = false
-                    ui.media.retry(item)
-                }) { Text("重新发送") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    choosing = false
-                    ui.media.remove(item)
-                }) { Text("删除", color = colors.textDanger) }
-            },
-        )
+        app.weiban.designsystem.ActionSheet(
+            listOf(
+                app.weiban.designsystem.SheetAction("重新发送") { ui.media.retry(item) },
+                app.weiban.designsystem.SheetAction("删除", danger = true) { ui.media.remove(item) },
+            ),
+            if (item.kind == "image") "图片未发送" else "语音未发送",
+        ) { choosing = false }
     }
 }
 
@@ -363,8 +338,8 @@ internal fun callRecordText(content: ReceivedMessageContentCallRecord): String {
             val (w, h) = imageBox(content.width, content.height)
             ChatPicture(ui.repository, ui.owner, content.mediaId, w, h)
         }
-        is UserSendableContentSticker -> StickerMessage(ui.repository, ui.owner, content.mediaId)
-        is UserSendableContentVoice -> Text("${((content.durationMs + 500) / 1000).coerceIn(1, 60)}″  ·)))")
+        is UserSendableContentSticker -> StickerMessage(ui.repository, ui.owner, content.mediaId, edge = 108.dp)
+        is UserSendableContentVoice -> Text("${((content.durationMs + 500) / 1000).coerceIn(1, 60)}''")
         is UserSendableContentLink -> Text(content.title)
         else -> Text("拍了拍")
     }

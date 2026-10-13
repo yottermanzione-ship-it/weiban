@@ -87,7 +87,7 @@ import java.util.Locale
             )
         }
         if (selected != null) {
-            WbNavBar("", { if (!progress.saving) select(null) })
+            WbNavBar("详细资料", { if (!progress.saving) select(null) })
             CharacterScreen(
                 repository,
                 runtime,

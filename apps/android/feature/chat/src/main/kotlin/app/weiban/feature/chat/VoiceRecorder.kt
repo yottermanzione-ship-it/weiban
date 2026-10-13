@@ -23,7 +23,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import app.weiban.designsystem.LocalWeibanColors
 import app.weiban.designsystem.tokens.WbRadius
@@ -160,7 +166,11 @@ internal fun HoldToTalk(
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (!granted) explaining = true
         }
-    val cancelDistance = with(LocalDensity.current) { 80.dp.toPx() }
+    // 手指离开屏幕底部 150 以上进入取消态（规格 4.4.9）。
+    val cancelDistance = with(LocalDensity.current) { 150.dp.toPx() }
+    val screenHeight = with(LocalDensity.current) { androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.height.toFloat() }
+    var origin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
     val send by rememberUpdatedState(onVoice)
     val notice by rememberUpdatedState(onNotice)
     val started by rememberUpdatedState(onStart)
@@ -180,9 +190,16 @@ internal fun HoldToTalk(
     Box(
         Modifier
             .fillMaxWidth()
-            .height(WbSize.InputBarMin - WbSpace.S3)
-            .background(if (recording) colors.bgPressed else colors.bgInputField, RoundedCornerShape(WbRadius.Sm))
-            .pointerInput(enabled) {
+            .height(40.dp)
+            .onGloballyPositioned { origin = it.positionInWindow() }
+            .background(
+                when {
+                    !recording -> colors.bgInputField
+                    dark -> androidx.compose.ui.graphics.Color(0xFF2C2C2E)
+                    else -> androidx.compose.ui.graphics.Color(0xFFE0E0E0)
+                },
+                RoundedCornerShape(8.dp),
+            ).pointerInput(enabled) {
                 if (!enabled) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown()
@@ -201,7 +218,7 @@ internal fun HoldToTalk(
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        cancelling = down.position.y - change.position.y > cancelDistance
+                        cancelling = screenHeight - (origin.y + change.position.y) > cancelDistance
                         if (!change.pressed) break
                         change.consume()
                     }
@@ -223,26 +240,12 @@ internal fun HoldToTalk(
             },
         contentAlignment = Alignment.Center,
     ) {
-        Text(if (recording) "松开 发送" else "按住 说话", style = MaterialTheme.typography.titleSmall)
+        Text(
+            if (recording) "松开发送" else "按住说话",
+            style = app.weiban.designsystem.wbText(15.sp, 500, if (recording) colors.brandPrimary else colors.textSecondary),
+        )
     }
-    if (recording) {
-        Popup(alignment = Alignment.Center) {
-            Surface(color = colors.bgScrim, shape = RoundedCornerShape(WbRadius.Md)) {
-                Column(Modifier.padding(WbSpace.S8), horizontalAlignment = Alignment.CenterHorizontally) {
-                    val seconds = elapsed / 1000
-                    Text(
-                        if (elapsed >= COUNTDOWN_FROM_MS) "还可以说 ${(MAX_VOICE_MS - elapsed) / 1000} 秒" else "$seconds″",
-                        color = colors.textOnBrand,
-                        style = MaterialTheme.typography.headlineSmall,
-                    )
-                    Text(
-                        if (cancelling) "松开手指，取消发送" else "手指上滑，取消发送",
-                        color = if (cancelling) colors.textDanger else colors.textOnBrand,
-                    )
-                }
-            }
-        }
-    }
+    if (recording) RecordingOverlay(cancelling, elapsed)
     if (explaining) {
         AlertDialog(
             onDismissRequest = { explaining = false },
@@ -266,4 +269,84 @@ internal fun consumeRecording(file: File): ByteArray {
     } finally {
         file.delete()
     }
+}
+
+/**
+ * 录音遮罩（规格 4.4.9）：全屏 record.mask；中间偏上录音气泡 210×86、圆角 22（取消态变灰）+ 下方旋转小方块尖角；
+ * 气泡内 28 根柱子正弦起伏（760ms 循环，只改 scaleY）；气泡下方 24 提示文字 14/500。
+ */
+@Composable private fun RecordingOverlay(
+    cancelling: Boolean,
+    elapsed: Long,
+) {
+    val mode = app.weiban.designsystem.LocalWeibanModeColors.current
+    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "录音波形")
+    val phase by transition.animateFloat(
+        0f,
+        (2 * Math.PI).toFloat(),
+        androidx.compose.animation.core.infiniteRepeatable(
+            androidx.compose.animation.core.tween(app.weiban.designsystem.tokens.WbMotion.RecordWaveMs, easing = androidx.compose.animation.core.LinearEasing),
+        ),
+        label = "波形相位",
+    )
+    val bubble = if (cancelling) mode.uiRecordBubbleCancel else mode.uiRecordBubble
+    Popup(popupPositionProvider = FullScreenPopup, properties = androidx.compose.ui.window.PopupProperties(focusable = false)) {
+        Box(Modifier.fillMaxSize().background(mode.uiRecordMask)) {
+            Column(
+                Modifier.align(androidx.compose.ui.BiasAlignment(0f, -0.04f)),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(contentAlignment = Alignment.TopCenter) {
+                    Box(
+                        Modifier
+                            .padding(top = 75.dp)
+                            .size(24.dp)
+                            .graphicsLayer { rotationZ = 45f }
+                            .background(bubble, RoundedCornerShape(4.dp)),
+                    )
+                    Box(
+                        Modifier
+                            .size(210.dp, 86.dp)
+                            .shadow(12.dp, RoundedCornerShape(22.dp))
+                            .background(bubble, RoundedCornerShape(22.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Row(Modifier.size(126.dp, 34.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            repeat(WAVE_BARS) { i ->
+                                val scale = 0.25f + 0.75f * ((kotlin.math.sin(phase + i * 0.55f) + 1f) / 2f)
+                                Box(
+                                    Modifier
+                                        .width(3.3.dp)
+                                        .fillMaxHeight()
+                                        .graphicsLayer { scaleY = scale }
+                                        .background(mode.uiRecordWave, RoundedCornerShape(2.dp)),
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    when {
+                        cancelling -> "松开手指，取消发送"
+                        elapsed >= COUNTDOWN_FROM_MS -> "还可以说 ${(MAX_VOICE_MS - elapsed) / 1000} 秒"
+                        else -> "手指上滑，取消发送"
+                    },
+                    style = app.weiban.designsystem.wbText(14.sp, 500, if (cancelling) mode.uiRecordCancelText else androidx.compose.ui.graphics.Color(0xB3FFFFFF)),
+                )
+            }
+        }
+    }
+}
+
+private const val WAVE_BARS = 28
+
+/** 铺满窗口的浮层位置（左上角对齐窗口）。 */
+private object FullScreenPopup : androidx.compose.ui.window.PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: androidx.compose.ui.unit.IntRect,
+        windowSize: androidx.compose.ui.unit.IntSize,
+        layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+        popupContentSize: androidx.compose.ui.unit.IntSize,
+    ): androidx.compose.ui.unit.IntOffset = androidx.compose.ui.unit.IntOffset.Zero
 }

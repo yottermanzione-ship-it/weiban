@@ -7,6 +7,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -14,7 +15,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import app.weiban.core.designsystem.R as DsR
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.weiban.contracts.*
@@ -77,13 +81,22 @@ import kotlinx.serialization.json.*
     }
     if (newRole) NewRoleSheet(owner) { newRole = false }
     Column(Modifier.fillMaxSize()) {
-        if (!online) Text(error ?: "正在连接…", Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.bodySmall)
+        if (!online) {
+            Text(
+                error ?: "正在连接…",
+                Modifier
+                    .fillMaxWidth()
+                    .background(app.weiban.designsystem.LocalWeibanModeColors.current.statusWarningSoft)
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                style = app.weiban.designsystem.wbText(13.sp, color = app.weiban.designsystem.LocalWeibanModeColors.current.statusWarningText),
+            )
+        }
         val target = profile
         val creatingFrom = creating
         when {
             target != null -> {
                 BackHandler { profile = null }
-                TextButton(onClick = { profile = null }) { Text("‹ 返回") }
+                app.weiban.designsystem.WbNavBar("详细资料", { profile = null })
                 CharacterScreen(
                     repository,
                     runtime,
@@ -360,14 +373,21 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
     if (ui.scenarioOpen) {
         ScenarioSheet(repository, owner, presetTarget, preset.mode, { ui.scenarioOpen = false }) { refreshPreset() }
     }
-    val heading = title(state, conversation, names) + if (group) "（${conversation.characterMembers().size + 1}）" else ""
+    val baseTitle = title(state, conversation, names) + if (group) "(${conversation.characterMembers().size + 1})" else ""
+    // 对方输入时私聊标题直接换成「对方正在输入...」（规格 4.4.1）；群聊放在副标题。
+    val heading = if (!group && visible && typingActive) "对方正在输入..." else baseTitle
     val subtitle =
         when {
+            group && visible && typingActive -> typingText
             group -> null
-            visible && typingActive -> typingText
             else -> presetSubtitle(preset.mode)
         }
-    ChatHeader(heading, subtitle, onBack, onInformation) { ui.scenarioOpen = true }
+    val otherUnread =
+        state.conversations
+            .filter { it.conversationId != conversation.conversationId && !it.state.hidden && !it.state.muted }
+            .sumOf { it.unreadCount }
+            .toInt()
+    ChatHeader(ui, heading, subtitle, otherUnread, onBack, onInformation, messages)
     val whileAway =
         rememberWhileAway(
             repository,
@@ -380,8 +400,7 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
             messages.lastOrNull()?.messageId,
         )
     WhileAwayCard(whileAway) { ui.text = it }
-    ui.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = WbSpace.S5)) }
-    if (group && visible && typingActive) Text(typingText, Modifier.padding(horizontal = WbSpace.S5))
+    ui.error?.let { NoticeStrip(it) { ui.error = null } }
     MessageTimeline(ui, messages, pending, list, Modifier.weight(1f), avatars)
     LocateEffects(ui, messages, list)
     if (ui.selecting) {
@@ -423,7 +442,7 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
 private const val LOCATE_SETTLE_MS = 150L
 private const val LOCATE_FLASH_MS = 1_500L
 
-/** 多选底栏（CHAT-11、EXP-01）：收藏、分享图；分享图不可用时写明原因，不静默丢掉。 */
+/** 多选底栏（规格 4.4.7）：底 bg.bar，高 56，「收藏 / 分享图 / 删除」均分，图标 24 + 字 12。 */
 @Composable private fun SelectionBar(
     ui: ConversationUi,
     messages: List<Message>,
@@ -432,26 +451,84 @@ private const val LOCATE_FLASH_MS = 1_500L
     val colors = app.weiban.designsystem.LocalWeibanColors.current
     val chosen = messages.filter { it.messageId in ui.selected }
     val reason = shareBlockReason(chosen)
-    Column(Modifier.fillMaxWidth().imePadding().padding(WbSpace.S3)) {
+    var confirmDelete by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().background(colors.bgTabBar)) {
+        Box(Modifier.fillMaxWidth().height(app.weiban.designsystem.hairline).background(colors.borderHairline))
         if (chosen.isNotEmpty() && reason != null) {
-            Text(reason, color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+            Text(
+                reason,
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                style = app.weiban.designsystem.wbText(12.sp, color = colors.textSecondary),
+            )
         }
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WbSpace.S3),
-        ) {
-            TextButton(onClick = ui::endSelection) { Text("取消") }
-            Text("已选 ${chosen.size} 条", Modifier.weight(1f))
-            OutlinedButton(enabled = chosen.size in 1..SHARE_MAX_ITEMS, onClick = { ui.favoriteSelected(messages) }) { Text("收藏") }
-            Button(enabled = chosen.isNotEmpty() && reason == null, onClick = {
+        Row(Modifier.fillMaxWidth().height(56.dp)) {
+            SelectionAction("收藏", DsR.drawable.wb_star, chosen.size in 1..SHARE_MAX_ITEMS) { ui.favoriteSelected(messages) }
+            SelectionAction("分享图", DsR.drawable.wb_share, chosen.isNotEmpty() && reason == null) {
                 L6Overlays.shareMessages(ui.conversation.conversationId, chosen.sortedBy { it.seq }.map { it.messageId })
                 ui.endSelection()
-            }) { Text("分享图") }
+            }
+            SelectionAction("删除", DsR.drawable.wb_delete, chosen.isNotEmpty()) { confirmDelete = true }
         }
+    }
+    if (confirmDelete) {
+        app.weiban.designsystem.ActionSheet(
+            listOf(
+                app.weiban.designsystem.SheetAction("删除", danger = true) {
+                    val ids = chosen.map { it.messageId }
+                    ui.endSelection()
+                    ui.scope.launch {
+                        userAction({ ui.error = it }) {
+                            ids.forEach { id ->
+                                ui.repository.call(
+                                    Endpoints.chatEndpointsHideMessage,
+                                    params = mapOf("conversationId" to ui.conversation.conversationId, "messageId" to id),
+                                    options = SessionCallOptions(owner = ui.owner),
+                                )
+                            }
+                        }
+                    }
+                },
+            ),
+            "删除选中的 ${chosen.size} 条消息？只从你的聊天里删除",
+        ) { confirmDelete = false }
     }
 }
 
+@Composable private fun RowScope.SelectionAction(
+    label: String,
+    icon: Int,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = app.weiban.designsystem.LocalWeibanColors.current
+    val tint = if (enabled) colors.textPrimary else colors.textPlaceholder
+    Column(
+        Modifier.weight(1f).fillMaxHeight().clickableNoRipple { if (enabled) onClick() },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        app.weiban.designsystem.WbIcon(icon, 24.dp, tint)
+        Spacer(Modifier.height(2.dp))
+        Text(label, style = app.weiban.designsystem.wbText(12.sp, color = tint))
+    }
+}
+
+/** 聊天顶部通栏提示（第 5.4 节「余额不足 / 模型不可用横条」样式）：底 #FFF1C7，字 13 #E08A00。 */
+@Composable private fun NoticeStrip(
+    text: String,
+    onClose: () -> Unit,
+) {
+    val mode = app.weiban.designsystem.LocalWeibanModeColors.current
+    Row(
+        Modifier.fillMaxWidth().background(mode.statusWarningSoft).clickableNoRipple(onClose).padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, Modifier.weight(1f), style = app.weiban.designsystem.wbText(13.sp, color = mode.statusWarningText))
+        app.weiban.designsystem.WbIcon(DsR.drawable.wb_close, 14.dp, mode.statusWarningText)
+    }
+}
+
+/** 消息区（规格 4.4.2）：底 bg.page，内距 左右 6、上 10、下 8；相邻两条间隔 > 5 分钟才显示时间条。 */
 @Composable private fun MessageTimeline(
     ui: ConversationUi,
     messages: List<Message>,
@@ -460,31 +537,32 @@ private const val LOCATE_FLASH_MS = 1_500L
     modifier: Modifier,
     avatars: MessageAvatars,
 ) {
-    LazyColumn(state = list, modifier = modifier.fillMaxWidth(), contentPadding = PaddingValues(WbSpace.S5)) {
+    val colors = app.weiban.designsystem.LocalWeibanColors.current
+    LazyColumn(
+        state = list,
+        modifier = modifier.fillMaxWidth().background(colors.bgChat),
+        contentPadding = PaddingValues(start = 6.dp, top = 10.dp, end = 6.dp, bottom = 8.dp),
+    ) {
         item(key = "older") {
-            TextButton(
-                enabled = !ui.loadingHistory && messages.firstOrNull()?.seq?.let { it > 1 } == true,
-                onClick = { ui.older(messages.first().seq) },
-            ) { Text(if (ui.loadingHistory) "正在加载…" else "更早的消息") }
-        }
-        items(messages, key = { it.messageId }) { message ->
-            MessageRow(ui, avatars, message)
-        }
-        items(pending, key = { it.body.clientMsgId }) { item ->
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = WbSpace.S3),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.Top,
-            ) {
-                Column(Modifier.weight(1f, fill = false), horizontalAlignment = Alignment.End) {
-                    PendingContent(ui, item.body.content)
-                    Text(if (item.state == "failed") "发送失败" else "待发送", style = MaterialTheme.typography.bodySmall)
-                    if (item.state == "failed") TextButton(onClick = { ui.retry(item.body.clientMsgId) }) { Text("重试") }
-                }
-                Spacer(Modifier.width(WbSpace.S3))
-                MessageAvatar(ui.repository, ui.owner, avatars.user)
+            val canLoad = !ui.loadingHistory && messages.firstOrNull()?.seq?.let { it > 1 } == true
+            if (ui.loadingHistory || canLoad) {
+                Text(
+                    if (ui.loadingHistory) "正在加载…" else "查看更早的消息",
+                    Modifier.fillMaxWidth().clickableNoRipple { if (canLoad) ui.older(messages.first().seq) }.padding(vertical = 8.dp),
+                    style = app.weiban.designsystem.wbText(13.sp, color = colors.textLink),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
             }
         }
+        itemsIndexed(messages, key = { _, message -> message.messageId }) { index, message ->
+            Column {
+                if (app.weiban.designsystem.WbTime.needsDivider(messages.getOrNull(index - 1)?.createdAt, message.createdAt)) {
+                    TimeDivider(message.createdAt)
+                }
+                MessageRow(ui, avatars, message)
+            }
+        }
+        items(pending, key = { it.body.clientMsgId }) { item -> PendingRow(ui, avatars, item) }
         items(ui.media.sends, key = { "local:" + it.id }) { item -> LocalSendRow(ui, item, avatars) }
     }
     ui.media.viewing?.let { start ->
@@ -529,64 +607,146 @@ private const val LOCATE_FLASH_MS = 1_500L
             picking = false
         }
     }
-    quote?.let { quoted ->
-        Row {
-            Text("引用：${messageText(quoted).take(60)}", Modifier.weight(1f).padding(WbSpace.S5))
-            TextButton({ ui.quoteId = null }) { Text("取消") }
-        }
-    }
+    val colors = app.weiban.designsystem.LocalWeibanColors.current
     val media = ui.media
     val focus = LocalFocusManager.current
-    Row(Modifier.imePadding().padding(WbSpace.S3), verticalAlignment = Alignment.CenterVertically) {
-        // 语音 / 键盘切换（C 5.1）。
-        TextButton(onClick = {
-            media.voiceMode = !media.voiceMode
-            media.panel = 0
-            if (media.voiceMode) focus.clearFocus()
-        }) { Text(if (media.voiceMode) "键盘" else "语音") }
-        Box(Modifier.weight(1f)) {
-            if (media.voiceMode) {
-                HoldToTalk(
-                    enabled = true,
-                    onStart = { media.player.stop() },
-                    onVoice = media::sendVoice,
-                    onNotice = media::toast,
-                )
-            } else {
-                OutlinedTextField(ui.text, { next ->
-                    if (next.length <= 4_000) {
-                        val typedAt = next.length == ui.text.length + 1 && next.endsWith("@")
-                        ui.text = next
-                        if (typedAt && members.isNotEmpty()) {
-                            if (members.size == 1) {
-                                val only = members.first()
-                                ui.mention(avatars.roles[only.participantId]?.name?.ifBlank { null } ?: "角色", only.participantId)
-                            } else {
-                                picking = true
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    Column(Modifier.fillMaxWidth().background(colors.bgInputBar).imePadding()) {
+        quote?.let { quoted -> QuoteBar(quoted, avatars) { ui.quoteId = null } }
+        Box(Modifier.fillMaxWidth().height(0.5.dp).background(colors.borderHairline))
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.Bottom) {
+            // 语音 / 键盘切换（4.4.8 ①）。
+            ComposerIcon(if (media.voiceMode) DsR.drawable.wb_keyboard else DsR.drawable.wb_chat_voice_mode, if (media.voiceMode) "键盘" else "语音") {
+                media.voiceMode = !media.voiceMode
+                media.panel = 0
+                if (media.voiceMode) focus.clearFocus() else keyboard?.show()
+            }
+            Spacer(Modifier.width(6.dp))
+            Box(Modifier.weight(1f).heightIn(min = 40.dp), contentAlignment = Alignment.Center) {
+                if (media.voiceMode) {
+                    HoldToTalk(
+                        enabled = true,
+                        onStart = { media.player.stop() },
+                        onVoice = media::sendVoice,
+                        onNotice = media::toast,
+                    )
+                } else {
+                    ComposerField(ui, if (members.isEmpty()) "输入消息" else "输入消息，@成员") { next ->
+                        if (next.length <= 4_000) {
+                            val typedAt = next.length == ui.text.length + 1 && next.endsWith("@")
+                            ui.text = next
+                            if (typedAt && members.isNotEmpty()) {
+                                if (members.size == 1) {
+                                    val only = members.first()
+                                    ui.mention(avatars.roles[only.participantId]?.name?.ifBlank { null } ?: "角色", only.participantId)
+                                } else {
+                                    picking = true
+                                }
                             }
                         }
                     }
-                }, Modifier.fillMaxWidth(), label = { Text("消息") }, maxLines = 5)
+                }
+            }
+            Spacer(Modifier.width(6.dp))
+            ComposerIcon(if (media.panel == 1) DsR.drawable.wb_keyboard else DsR.drawable.wb_smile, "表情") {
+                if (media.panel == 1) {
+                    media.panel = 0
+                    keyboard?.show()
+                } else {
+                    media.panel = 1
+                    media.voiceMode = false
+                    focus.clearFocus()
+                }
+            }
+            if (!media.voiceMode && ui.text.isNotBlank()) {
+                Box(Modifier.height(40.dp).padding(start = 2.dp), contentAlignment = Alignment.Center) {
+                    app.weiban.designsystem.SmallBrandButton("发送", enabled = !ui.sending, onClick = ui::send)
+                }
+            } else {
+                ComposerIcon(if (media.panel == 2) DsR.drawable.wb_keyboard else DsR.drawable.wb_add_circle, "更多功能") {
+                    if (media.panel == 2) {
+                        media.panel = 0
+                        keyboard?.show()
+                    } else {
+                        media.panel = 2
+                        focus.clearFocus()
+                    }
+                }
             }
         }
-        TextButton(onClick = {
-            media.panel = if (media.panel == 1) 0 else 1
-            media.voiceMode = false
-            focus.clearFocus()
-        }) { Text("表情") }
-        if (!media.voiceMode && ui.text.isNotBlank()) {
-            TextButton(enabled = !ui.sending, onClick = ui::send) { Text("发送") }
-        } else {
-            TextButton(onClick = {
-                media.panel = if (media.panel == 2) 0 else 2
-                focus.clearFocus()
-            }) { Text("＋") }
+        BackHandler(media.panel != 0) { media.panel = 0 }
+        when (media.panel) {
+            1 -> StickerPanel(ui)
+            2 -> PlusPanel(ui)
         }
     }
-    BackHandler(media.panel != 0) { media.panel = 0 }
-    when (media.panel) {
-        1 -> StickerPanel(ui)
-        2 -> PlusPanel(ui)
+}
+
+/** 输入栏图标键 40×40，图标 28 着色 text.primary。 */
+@Composable private fun ComposerIcon(
+    icon: Int,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Box(Modifier.size(40.dp).clickableNoRipple(onClick), contentAlignment = Alignment.Center) {
+        app.weiban.designsystem.WbIcon(icon, 28.dp, app.weiban.designsystem.LocalWeibanColors.current.textPrimary, contentDescription = label)
+    }
+}
+
+/** 输入框（4.4.8 ②）：高 40（多行向上长，最多 4 行），白底圆角 8，内距 12×10；回车 = 发送，发送后不收键盘。 */
+@Composable private fun ComposerField(
+    ui: ConversationUi,
+    placeholder: String,
+    onChange: (String) -> Unit,
+) {
+    val colors = app.weiban.designsystem.LocalWeibanColors.current
+    androidx.compose.foundation.text.BasicTextField(
+        ui.text,
+        onChange,
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 40.dp)
+            .background(colors.bgInputField, androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        textStyle = app.weiban.designsystem.wbText(17.sp, 400, colors.textPrimary, 1.3f),
+        cursorBrush = androidx.compose.ui.graphics.SolidColor(colors.brandPrimary),
+        maxLines = 4,
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Send),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSend = { ui.send() }),
+        decorationBox = { inner ->
+            Box(contentAlignment = Alignment.CenterStart) {
+                if (ui.text.isEmpty()) {
+                    Text(placeholder, style = app.weiban.designsystem.wbText(17.sp, 400, colors.textPlaceholder, 1.3f), maxLines = 1)
+                }
+                inner()
+            }
+        },
+    )
+}
+
+/** 引用条（4.4.8）：底 quote.bar.bg，内距 12×6；3×30 竖条 brand → 8 → 引用人 12/600 brand + 内容 13 #555（超 30 字截断）→ 关闭 18。 */
+@Composable private fun QuoteBar(
+    quoted: Message,
+    avatars: MessageAvatars,
+    onClose: () -> Unit,
+) {
+    val colors = app.weiban.designsystem.LocalWeibanColors.current
+    val who = if (quoted.senderKind == "user") "我" else avatars.roles[quoted.senderParticipantId]?.name.orEmpty()
+    val text = messageText(quoted).let { if (it.length > 30) it.take(30) + "..." else it }
+    Row(Modifier.fillMaxWidth().background(colors.brandSoft).padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(3.dp, 30.dp).background(colors.brandPrimary, androidx.compose.foundation.shape.RoundedCornerShape(2.dp)))
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            if (who.isNotEmpty()) Text(who, style = app.weiban.designsystem.wbText(12.sp, 600, colors.brandPrimary), maxLines = 1)
+            Text(
+                text,
+                style = app.weiban.designsystem.wbText(13.sp, 400, if (androidx.compose.foundation.isSystemInDarkTheme()) colors.textSecondary else Color(0xFF555555)),
+                maxLines = 1,
+            )
+        }
+        Box(Modifier.size(32.dp).clickableNoRipple(onClose), contentAlignment = Alignment.Center) {
+            app.weiban.designsystem.WbIcon(DsR.drawable.wb_close, 18.dp, colors.textSecondary)
+        }
     }
 }
 
@@ -622,36 +782,69 @@ internal fun groupGreeting(
     conversation: Conversation,
 ): String = "我们在『${title(state, conversation)}』群里见过".take(50)
 
-/** 聊天标题栏（02a 1.1）：‹ 返回 · 标题 + 副标题（正在输入… > 当前情景预设，点副标题打开情景预设）· ··· 聊天信息。 */
+/**
+ * 聊天顶栏（规格 4.4.1）：左 返回 + 其他会话未读药丸；标题（对方输入时换成「对方正在输入...」）；
+ * 副标题 = 当前情景预设（非日常聊天时，点了打开情景预设）；右 more.svg → 聊天信息。多选时左「取消」、标题「已选择 N 条」。
+ */
 @Composable private fun ChatHeader(
+    ui: ConversationUi,
     heading: String,
     subtitle: String?,
+    otherUnread: Int,
     onBack: () -> Unit,
     onInformation: () -> Unit,
-    onPreset: () -> Unit,
+    messages: List<Message>,
 ) {
     val colors = app.weiban.designsystem.LocalWeibanColors.current
-    Box(Modifier.fillMaxWidth().heightIn(min = 52.dp).background(colors.bgNavBar)) {
-        Text(
-            "‹",
-            Modifier.align(Alignment.CenterStart).clickable(onClick = onBack).padding(horizontal = WbSpace.S5, vertical = WbSpace.S2),
-            style = MaterialTheme.typography.headlineMedium,
+    if (ui.selecting) {
+        val count = messages.count { it.messageId in ui.selected }
+        app.weiban.designsystem.WbNavBar("已选择 $count 条", leading = {
+            Text(
+                "取消",
+                Modifier.clickableNoRipple(ui::endSelection).padding(horizontal = 16.dp, vertical = 12.dp),
+                style = app.weiban.designsystem.wbText(16.sp, 400, colors.textPrimary),
+            )
+        })
+        return
+    }
+    app.weiban.designsystem.WbNavBar(
+        heading,
+        subtitle = subtitle,
+        onSubtitle = { ui.scenarioOpen = true },
+        leading = { BackWithUnread(otherUnread, onBack) },
+    ) {
+        app.weiban.designsystem.NavIcon(DsR.drawable.wb_more, "聊天信息", size = 24.dp, onClick = onInformation)
+    }
+}
+
+/** 返回键 + 未读药丸（3.2）：箭头 → 6 → 药丸（高 20.6、内距 6.9、数字 16）；为 0 时只留箭头。 */
+@Composable private fun BackWithUnread(
+    count: Int,
+    onBack: () -> Unit,
+) {
+    val colors = app.weiban.designsystem.LocalWeibanColors.current
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    Row(
+        Modifier.fillMaxHeight().widthIn(max = 108.dp).clickableNoRipple(onBack).padding(start = 17.4.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        androidx.compose.material3.Icon(
+            androidx.compose.ui.res.painterResource(DsR.drawable.wb_back_crop),
+            "返回",
+            Modifier.size(9.4.dp, 17.7.dp),
+            tint = colors.textPrimary,
         )
-        Column(Modifier.align(Alignment.Center).padding(horizontal = 72.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(heading, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-            subtitle?.let {
-                Text(
-                    it,
-                    Modifier.clickable(onClick = onPreset),
-                    color = colors.textSecondary,
-                    style = MaterialTheme.typography.labelSmall,
-                )
+        if (count > 0) {
+            Spacer(Modifier.width(6.dp))
+            Box(
+                Modifier
+                    .height(20.6.dp)
+                    .background(if (dark) colors.borderStrong else colors.borderHairline, androidx.compose.foundation.shape.CircleShape)
+                    .padding(horizontal = 6.9.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(if (count > 99) "99+" else count.toString(), style = app.weiban.designsystem.wbText(16.sp, 400, colors.textPrimary, 1f))
             }
         }
-        Text(
-            "···",
-            Modifier.align(Alignment.CenterEnd).clickable(onClick = onInformation).padding(horizontal = WbSpace.S5, vertical = WbSpace.S3),
-            style = MaterialTheme.typography.titleLarge,
-        )
     }
 }
