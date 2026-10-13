@@ -4,7 +4,11 @@
  * ModelResolver、UpstreamService.withApiKey / reportStatus、UsageRecorder、ModelStatusService。
  */
 import { Module } from '@nestjs/common';
-import { BILLING_CHARGE_QUERY_PORT, BillingModule } from '../billing/index.js';
+import {
+  BILLING_CHARGE_QUERY_PORT,
+  BILLING_MODEL_RATE_PORT,
+  BillingModule,
+} from '../billing/index.js';
 import { POLICY_PORT } from '../policy/index.js';
 import { IdentityModule } from '../identity/index.js';
 import { MediaModule } from '../media/index.js';
@@ -16,7 +20,7 @@ import { ModelGateway } from './application/gateway.js';
 import { GatewayWebSearchProvider } from './application/web-search.js';
 import { OpenAiTextAdapter } from './infra/text-adapter.js';
 import { CatalogService } from './application/catalog.js';
-import { EmptyPriceSource } from './application/defaults.js';
+import { ModelAdminService, RatePriceSource } from './application/models.js';
 import { ModelAccessLifecycle } from './application/lifecycle.js';
 import { UsageReconciliationService } from './application/reconciliation.js';
 import { ModelQuoteService, ModelResolver, ModelStatusService } from './application/resolver.js';
@@ -35,6 +39,7 @@ import {
   GATEWAY_RETRY_WAIT,
   MODEL_ACCESS_POLICY,
   MODEL_PRICE_SOURCE,
+  MODEL_RATE_PORT,
   UPSTREAM_PROBE,
   WEB_SEARCH_PROVIDER,
   MODEL_GATEWAY_MEDIA_PORT,
@@ -85,8 +90,11 @@ import {
     { provide: UPSTREAM_PROBE, useFactory: () => new OpenAiCompatibleProbe() },
     // policy 模块（D-L0-11）上线后改为 useExisting: policy 的 PolicyPort 令牌
     { provide: MODEL_ACCESS_POLICY, useExisting: POLICY_PORT },
-    // billing 读价目表的端口方法批准后改为真实实现（见交接说明契约变更申请）
-    { provide: MODEL_PRICE_SOURCE, useClass: EmptyPriceSource },
+    // v3.3：价目表读价走 billing 的模型倍率端口（ADR-0032）
+    { provide: MODEL_RATE_PORT, useExisting: BILLING_MODEL_RATE_PORT },
+    RatePriceSource,
+    { provide: MODEL_PRICE_SOURCE, useExisting: RatePriceSource },
+    ModelAdminService,
     { provide: MODEL_ACCESS_CHARGE_QUERY, useExisting: BILLING_CHARGE_QUERY_PORT },
   ],
 })

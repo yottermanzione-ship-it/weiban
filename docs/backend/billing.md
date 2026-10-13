@@ -136,3 +136,12 @@ await this.billing.release({ holdId, reason, upstreamUsage?, usageRecordId? }); 
 ## 契约 1.3 配套（T-028接续）
 
 `BILLING_CHARGE_QUERY_PORT` 提供按用量ID查扣费、按北京日分页查扣费及当前有价模型键。`upstreamId` 在结算/平台吸收时写入流水。账户列表从identity目录端口取用户名。订阅用量对账事件，仅接受更晚的checkedAt；①③层重跑保留②层结果和runId。80%预算及①③层异常通过同事务发件箱发送管理员提醒，载荷不含用户资料。迁移0005同时修复注销active冻结未归还平台预算的问题（Q-011）；保留已结算成本，不修改旧迁移。
+
+## 契约 3.3：积分制与模型倍率（ADR-0032，2026-10-13）
+
+- **积分**：账本仍按微元记，1 积分 = 10,000 微元（契约 `MICROS_PER_POINT`）。钱包、流水、用量汇总、价目表、管理端账户概况的响应都带 `*Points`（= 微元 ÷ 10,000，最多 4 位小数，界面最多显示 2 位）。流水带 `usageRecordId`（扣费类），用于积分明细「每条消息」页调 chat 的 `POST /messages/by-usage` 取摘要。
+- **钱包设置**：`PATCH /billing/wallet/settings` 可传 `lowBalanceThresholdPoints` / `backgroundDailyLimitPoints`（同时传微元时以微元为准）。
+- **管理员加扣**：`AdminAdjustmentRequest` 的 `amountMicros` 与 `points` 二选一（都不传或都传 400）；后台按积分输入时传 `points`，其余规则（幂等、扣减不超过可用余额、审计）不变。
+- **充值档位**：表 `billing.settings`（0088），键 `recharge_options` 存 `{ tiers: [{ tierId, priceMicros, bonusPercent }], contactHint }`；没有配置时默认 10 / 30 / 100 元、不赠送。`GET /billing/recharge-options`（用户）、`GET/PUT /admin/billing/recharge-options`（后台，写审计 `recharge_options.updated`）。`paymentEnabled` 恒为 false（第一版不开真实支付）；赠送积分 = 到账积分 × 比例 ÷ 100 向下取整（只展示，实际到账仍由管理员加）。
+- **平台每日上限只约束平台账户**：`estimateAndReserve` 只对 `account.kind = platform` 做原子预留；用户冻结的 `reserved_cost_micros` 记 0，结算不计入平台已结算成本（0088 之前已预留的冻结照常归还）。平台吸收（失败调用仍被上游收费）仍计入。`platform-summary.todayCostMicros` 因此只含平台账户与平台吸收的成本。
+- **模型倍率端口** `BillingModelRatePort`（`application/model-rates.ts`，令牌 `BILLING_MODEL_RATE_PORT`，只给 model-access）：`getActiveTokenRates` 读当前生效价目表三项 token 全天价；`publishModelTokenRates` 在一个事务里锁当前生效版本 → 复制全部价格 → 替换该模型三项价格（含其分时价）→ 新版本（标签 `rates-时间`，备注「模型倍率：模型键」）立即发布，原版本停用，写审计 `price_version.rates_published`；价格与当前完全相同时不发新版本。

@@ -2,13 +2,15 @@
  * 管理端：账户列表、加 / 扣余额（必填原因、幂等、审计，billing.md 8.1）、某用户完整流水、上游账单录入、平台花费。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  AdminAccountSummary,
-  AdminAdjustmentRequest,
-  AdminLedgerEntry,
-  IdentityAccountStatusPort,
-  IdentityDirectoryPort,
-  UpstreamBill,
+import {
+  microsToPoints,
+  pointsToMicros,
+  type AdminAccountSummary,
+  type AdminAdjustmentRequest,
+  type AdminLedgerEntry,
+  type IdentityAccountStatusPort,
+  type IdentityDirectoryPort,
+  type UpstreamBill,
 } from '@weiban/contracts';
 import { and, desc, eq } from 'drizzle-orm';
 import type { z } from 'zod';
@@ -91,14 +93,19 @@ export class BillingAdminService {
         await this.directory.getUsernames(rows.slice(offset, offset + 500).map((r) => r.user_id)),
       );
     }
-    return rows.map((r) => ({
-      userId: r.user_id,
-      username: usernames[r.user_id] ?? '',
-      balanceMicros: Number(r.balance),
-      heldMicros: Number(r.held),
-      spentLast30DaysMicros: Math.max(0, Number(r.spent ?? 0)),
-      updatedAt: new Date(r.updated_at).toISOString(),
-    }));
+    return rows.map((r) => {
+      const spent = Math.max(0, Number(r.spent ?? 0));
+      return {
+        userId: r.user_id,
+        username: usernames[r.user_id] ?? '',
+        balanceMicros: Number(r.balance),
+        heldMicros: Number(r.held),
+        spentLast30DaysMicros: spent,
+        balancePoints: microsToPoints(Number(r.balance)),
+        spentLast30DaysPoints: microsToPoints(spent),
+        updatedAt: new Date(r.updated_at).toISOString(),
+      };
+    });
   }
 
   /**
@@ -109,9 +116,17 @@ export class BillingAdminService {
     if ((await this.status.getAccountStatus(userId)) !== 'active') {
       throw new AppError('not_found', '用户不存在或正在注销');
     }
+    // v3.3：amountMicros 与 points 二选一（后台按积分输入，1 积分 = 10,000 微元）。
+    if ((req.amountMicros === undefined) === (req.points === undefined)) {
+      throw new AppError('bad_request', 'amountMicros 与 points 必须且只能传一个');
+    }
+    const amountMicros = req.amountMicros ?? pointsToMicros(req.points ?? 0);
+    if (!Number.isSafeInteger(amountMicros) || amountMicros <= 0) {
+      throw new AppError('bad_request', '金额必须大于 0');
+    }
     const key = `admin:${userId}:${req.idempotencyKey}`;
     const type = req.direction === 'grant' ? 'admin_grant' : 'admin_deduct';
-    const signed = req.direction === 'grant' ? req.amountMicros : -req.amountMicros;
+    const signed = req.direction === 'grant' ? amountMicros : -amountMicros;
     return this.database.transaction(async (tx) => {
       const account = await this.ledger.lockUserAccount(tx, userId);
       const existing = await this.ledger.findByIdempotencyKey(tx, key);
@@ -121,7 +136,7 @@ export class BillingAdminService {
         }
         return toAdminLedgerEntry(existing);
       }
-      if (type === 'admin_deduct' && req.amountMicros > available(account)) {
+      if (type === 'admin_deduct' && amountMicros > available(account)) {
         throw new AppError('insufficient_balance', '扣减额不能超过用户的可用余额');
       }
       const { entry } = await this.ledger.postEntry(tx, account, {

@@ -91,6 +91,10 @@ export const messages = chatSchema.table(
     actionChosenAt: time('action_chosen_at'),
     createdAt: time('created_at').notNull(),
     recalledAt: time('recalled_at'),
+    /** v3.3（0088）：生成这条消息消耗的金额（微元，Message.pointsCost = ÷ 10,000）；没有扣费为 null。 */
+    chargedMicros: bigint('charged_micros', { mode: 'number' }),
+    /** v3.3（0088）：生成这条消息的那次调用（model-access 用量记录 ID）。 */
+    usageRecordId: uuid('usage_record_id'),
   },
   (t) => [
     uniqueIndex('message_seq_idx').on(t.conversationId, t.seq),

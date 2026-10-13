@@ -125,3 +125,10 @@
 ## Codex 接续：D-L0-09 文本网关
 
 其他模块从公开出口注入 `MODEL_GATEWAY_PORT`。计费冻结/结算仍只有本模块可调用。实现和运维命令见 [`2026-10-05-codex-T-029.md`](../handoffs/2026-10-05-codex-T-029.md)。网关结果缓存和用量记录分开；前者24h用户DEK加密，后者不保存正文。默认 `MODEL_GENERATION_POLICY` 拒绝成人生成，真实 policy 上线后用同一闸门替换。异步维护注册在worker/all进程；关闭后台任务的测试可手动触发 `GatewayMaintenance`。
+
+## 契约 3.3：后台「模型」合并接口（ADR-0032，2026-10-13）
+
+- `GET /admin/model/models`：目录条目 + 当前生效价目表的倍率（`rates` 售价、`costRates` 成本，元 / 百万 token）、`hasTimeBands`、`pointsPerReply`（`cost-estimate.md` 7.2 标准回复）。语音、图片等非 token 计价模型 `rates = null`。
+- `PUT /admin/model/models/:modelKey`（模型键 URL 编码）：`rates` 非空时先经 `BillingModelRatePort.publishModelTokenRates` 发布新价目表版本（`costRates` 缺省 = 售价），再走原 `CatalogService.upsert`（全部目录规则不变，含「启用须有价格」）。目录保存失败时新价格保留，管理员修正后重试。
+- 模型价格来源 `MODEL_PRICE_SOURCE` 改为 `RatePriceSource`（读 billing 当前价目表），用户端 `GET /model/models` 的 `priceTier` 不再恒为「中等」，并新增 `pointsPerReply`。
+- 旧接口 `catalog`、`price-versions` 保留给高级操作（分时价、历史版本）。

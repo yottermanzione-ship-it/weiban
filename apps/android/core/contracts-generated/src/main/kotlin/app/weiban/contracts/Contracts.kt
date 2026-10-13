@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.2. Regenerate: pnpm android:generate
+// Contract 3.3. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.2"
+const val CONTRACT_VERSION: String = "3.3"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -116,13 +116,16 @@ data class AdminAccountSummary(
     @SerialName("balanceMicros") val `balanceMicros`: MoneyMicros,
     @SerialName("heldMicros") val `heldMicros`: Long,
     @SerialName("spentLast30DaysMicros") val `spentLast30DaysMicros`: Long,
+    @SerialName("balancePoints") val `balancePoints`: Points? = null,
+    @SerialName("spentLast30DaysPoints") val `spentLast30DaysPoints`: NonNegativePoints? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
 )
 
 @Serializable
 data class AdminAdjustmentRequest(
     @SerialName("direction") val `direction`: String,
-    @SerialName("amountMicros") val `amountMicros`: PositiveMoneyMicros,
+    @SerialName("amountMicros") val `amountMicros`: PositiveMoneyMicros? = null,
+    @SerialName("points") val `points`: Double? = null,
     @SerialName("reason") val `reason`: String,
     @SerialName("idempotencyKey") val `idempotencyKey`: String,
 )
@@ -130,7 +133,8 @@ data class AdminAdjustmentRequest(
 @Serializable
 data class AdminAdjustmentRequestInput(
     @SerialName("direction") val `direction`: String,
-    @SerialName("amountMicros") val `amountMicros`: PositiveMoneyMicros,
+    @SerialName("amountMicros") val `amountMicros`: PositiveMoneyMicros? = null,
+    @SerialName("points") val `points`: Double? = null,
     @SerialName("reason") val `reason`: String,
     @SerialName("idempotencyKey") val `idempotencyKey`: String,
 )
@@ -337,8 +341,10 @@ data class AdminLedgerEntry(
     @SerialName("characterId") val `characterId`: Id?,
     @SerialName("note") val `note`: String?,
     @SerialName("createdAt") val `createdAt`: Timestamp,
-    @SerialName("costMicros") val `costMicros`: Long?,
+    @SerialName("points") val `points`: Points? = null,
+    @SerialName("balanceAfterPoints") val `balanceAfterPoints`: Points? = null,
     @SerialName("usageRecordId") val `usageRecordId`: Id?,
+    @SerialName("costMicros") val `costMicros`: Long?,
     @SerialName("priceVersionId") val `priceVersionId`: Id?,
     @SerialName("operatorUserId") val `operatorUserId`: Id?,
     @SerialName("absorbed") val `absorbed`: Boolean,
@@ -346,6 +352,60 @@ data class AdminLedgerEntry(
 )
 
 typealias AdminMediaPurpose = String
+
+@Serializable
+data class AdminModel(
+    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("vendorName") val `vendorName`: String,
+    @SerialName("upstreamId") val `upstreamId`: Id,
+    @SerialName("upstreamModelId") val `upstreamModelId`: String,
+    @SerialName("capabilities") val `capabilities`: List<ModelCapability>,
+    @SerialName("tags") val `tags`: List<String>,
+    @SerialName("leaderboardRank") val `leaderboardRank`: Long?,
+    @SerialName("sortOrder") val `sortOrder`: Long,
+    @SerialName("defaultFor") val `defaultFor`: List<String>,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("rates") val `rates`: ModelRates?,
+    @SerialName("costRates") val `costRates`: ModelRates?,
+    @SerialName("hasTimeBands") val `hasTimeBands`: Boolean,
+    @SerialName("pointsPerReply") val `pointsPerReply`: Double?,
+)
+
+@Serializable
+data class AdminModelWrite(
+    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("vendorName") val `vendorName`: String,
+    @SerialName("upstreamId") val `upstreamId`: Id,
+    @SerialName("upstreamModelId") val `upstreamModelId`: String,
+    @SerialName("capabilities") val `capabilities`: List<ModelCapability>,
+    @SerialName("tags") val `tags`: List<String>,
+    @SerialName("leaderboardRank") val `leaderboardRank`: Long?,
+    @SerialName("sortOrder") val `sortOrder`: Long,
+    @SerialName("defaultFor") val `defaultFor`: List<String>,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("rates") val `rates`: ModelRates?,
+    @SerialName("costRates") val `costRates`: ModelRates? = null,
+)
+
+@Serializable
+data class AdminModelWriteInput(
+    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("vendorName") val `vendorName`: String,
+    @SerialName("upstreamId") val `upstreamId`: Id,
+    @SerialName("upstreamModelId") val `upstreamModelId`: String,
+    @SerialName("capabilities") val `capabilities`: List<ModelCapability>,
+    @SerialName("tags") val `tags`: List<String>,
+    @SerialName("leaderboardRank") val `leaderboardRank`: Long?,
+    @SerialName("sortOrder") val `sortOrder`: Long,
+    @SerialName("defaultFor") val `defaultFor`: List<String>,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("rates") val `rates`: ModelRatesInput?,
+    @SerialName("costRates") val `costRates`: ModelRatesInput? = null,
+)
 
 @Serializable
 data class AdminPlazaReport(
@@ -397,6 +457,7 @@ data class AdminPriceItem(
     @SerialName("unit") val `unit`: PriceUnit,
     @SerialName("priceMicros") val `priceMicros`: Long,
     @SerialName("band") val `band`: PriceTimeBand?,
+    @SerialName("points") val `points`: NonNegativePoints? = null,
     @SerialName("costMicros") val `costMicros`: Long,
 )
 
@@ -406,6 +467,7 @@ data class AdminPriceItemInput(
     @SerialName("unit") val `unit`: PriceUnit,
     @SerialName("priceMicros") val `priceMicros`: Long,
     @SerialName("band") val `band`: PriceTimeBandInput?,
+    @SerialName("points") val `points`: NonNegativePoints? = null,
     @SerialName("costMicros") val `costMicros`: Long,
 )
 
@@ -912,6 +974,7 @@ data class BillingAdminEndpointsUpdatePriceDraftParams(
 data class BillingEndpointsGetUsageSummaryResponse(
     @SerialName("rows") val `rows`: List<UsageSummaryRow>,
     @SerialName("totalMicros") val `totalMicros`: Long,
+    @SerialName("totalPoints") val `totalPoints`: NonNegativePoints? = null,
 )
 
 @Serializable
@@ -1556,6 +1619,16 @@ data class CharacterSupplementEndpointsPutSupplementParams(
 )
 
 @Serializable
+data class ChargedMessage(
+    @SerialName("usageRecordId") val `usageRecordId`: Id,
+    @SerialName("messageId") val `messageId`: Id,
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("excerpt") val `excerpt`: String,
+    @SerialName("pointsCost") val `pointsCost`: Double,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
 data class ChatActionEndpointsChooseMessageActionBody(
     @SerialName("actionId") val `actionId`: String,
 )
@@ -1564,6 +1637,16 @@ data class ChatActionEndpointsChooseMessageActionBody(
 data class ChatActionEndpointsChooseMessageActionParams(
     @SerialName("conversationId") val `conversationId`: Id,
     @SerialName("messageId") val `messageId`: Id,
+)
+
+@Serializable
+data class ChatEndpointsListChargedMessagesBody(
+    @SerialName("usageRecordIds") val `usageRecordIds`: List<Id>,
+)
+
+@Serializable
+data class ChatEndpointsListChargedMessagesResponse(
+    @SerialName("items") val `items`: List<ChargedMessage>,
 )
 
 @Serializable
@@ -4904,6 +4987,9 @@ data class LedgerEntry(
     @SerialName("characterId") val `characterId`: Id?,
     @SerialName("note") val `note`: String?,
     @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("points") val `points`: Points? = null,
+    @SerialName("balanceAfterPoints") val `balanceAfterPoints`: Points? = null,
+    @SerialName("usageRecordId") val `usageRecordId`: Id? = null,
 )
 
 typealias LedgerEntryType = String
@@ -5255,6 +5341,8 @@ data class Message(
     @SerialName("createdAt") val `createdAt`: Timestamp,
     @SerialName("recalledAt") val `recalledAt`: Timestamp?,
     @SerialName("actionChoice") val `actionChoice`: MessageActionChoice? = null,
+    @SerialName("pointsCost") val `pointsCost`: Double? = null,
+    @SerialName("usageRecordId") val `usageRecordId`: Id? = null,
 )
 
 @Serializable
@@ -5484,6 +5572,11 @@ data class ModelAccessAdminEndpointsListCatalogResponse(
 )
 
 @Serializable
+data class ModelAccessAdminEndpointsListModelsResponse(
+    @SerialName("items") val `items`: List<AdminModel>,
+)
+
+@Serializable
 data class ModelAccessAdminEndpointsListUpstreamsResponse(
     @SerialName("items") val `items`: List<Upstream>,
 )
@@ -5505,6 +5598,11 @@ data class ModelAccessAdminEndpointsTestUpstreamParams(
 
 @Serializable
 data class ModelAccessAdminEndpointsUpsertCatalogEntryParams(
+    @SerialName("modelKey") val `modelKey`: String,
+)
+
+@Serializable
+data class ModelAccessAdminEndpointsUpsertModelParams(
     @SerialName("modelKey") val `modelKey`: String,
 )
 
@@ -5574,11 +5672,26 @@ data class ModelInfo(
     @SerialName("tags") val `tags`: List<String>,
     @SerialName("leaderboardRank") val `leaderboardRank`: Long?,
     @SerialName("available") val `available`: Boolean,
+    @SerialName("pointsPerReply") val `pointsPerReply`: Double? = null,
 )
 
 typealias ModelKey = String
 
 typealias ModelPurpose = String
+
+@Serializable
+data class ModelRates(
+    @SerialName("input") val `input`: Double,
+    @SerialName("output") val `output`: Double,
+    @SerialName("cache") val `cache`: Double,
+)
+
+@Serializable
+data class ModelRatesInput(
+    @SerialName("input") val `input`: Double,
+    @SerialName("output") val `output`: Double,
+    @SerialName("cache") val `cache`: Double,
+)
 
 @Serializable
 data class ModelRef(
@@ -5781,6 +5894,8 @@ data class NewFriendsEndpointsRemoveParams(
 )
 
 typealias NoContent = JsonElement?
+
+typealias NonNegativePoints = Double
 
 @Serializable
 data class NotificationEnvelope(
@@ -6649,6 +6764,8 @@ typealias PlazaWorkKind = String
 
 typealias PlazaWorkStatus = String
 
+typealias Points = Double
+
 typealias PortraitPolicy = String
 
 typealias PositiveMoneyMicros = Long
@@ -6735,6 +6852,7 @@ data class PublicPriceItem(
     @SerialName("unit") val `unit`: PriceUnit,
     @SerialName("priceMicros") val `priceMicros`: Long,
     @SerialName("band") val `band`: PriceTimeBand?,
+    @SerialName("points") val `points`: NonNegativePoints? = null,
 )
 
 @Serializable
@@ -7226,6 +7344,23 @@ object ReceivedUserUpdatePayloadSerializer : KSerializer<ReceivedUserUpdatePaylo
         output.encodeJsonElement(element)
     }
 }
+
+@Serializable
+data class RechargeOptions(
+    @SerialName("paymentEnabled") val `paymentEnabled`: Boolean,
+    @SerialName("tiers") val `tiers`: List<RechargeTier>,
+    @SerialName("contactHint") val `contactHint`: String,
+    @SerialName("pointsPerYuan") val `pointsPerYuan`: Long,
+)
+
+@Serializable
+data class RechargeTier(
+    @SerialName("tierId") val `tierId`: String,
+    @SerialName("priceMicros") val `priceMicros`: PositiveMoneyMicros,
+    @SerialName("points") val `points`: NonNegativePoints,
+    @SerialName("bonusPercent") val `bonusPercent`: Double,
+    @SerialName("bonusPoints") val `bonusPoints`: NonNegativePoints,
+)
 
 @Serializable
 data class RecognizedDialogueLine(
@@ -8318,6 +8453,18 @@ data class UpdateProfileRequestInput(
     @SerialName("timeZone") val `timeZone`: TimeZone? = null,
 )
 
+@Serializable
+data class UpdateRechargeOptionsRequest(
+    @SerialName("tiers") val `tiers`: List<UpdateRechargeOptionsRequestTiersItem>,
+    @SerialName("contactHint") val `contactHint`: String,
+)
+
+@Serializable
+data class UpdateRechargeOptionsRequestInput(
+    @SerialName("tiers") val `tiers`: List<UpdateRechargeOptionsRequestInputTiersItem>,
+    @SerialName("contactHint") val `contactHint`: String,
+)
+
 typealias UpdateSeq = Long
 
 @Serializable
@@ -8334,12 +8481,16 @@ data class UpdateUserPreferencesRequestInput(
 data class UpdateWalletSettingsRequest(
     @SerialName("lowBalanceThresholdMicros") val `lowBalanceThresholdMicros`: Long? = null,
     @SerialName("backgroundDailyLimitMicros") val `backgroundDailyLimitMicros`: Long? = null,
+    @SerialName("lowBalanceThresholdPoints") val `lowBalanceThresholdPoints`: NonNegativePoints? = null,
+    @SerialName("backgroundDailyLimitPoints") val `backgroundDailyLimitPoints`: NonNegativePoints? = null,
 )
 
 @Serializable
 data class UpdateWalletSettingsRequestInput(
     @SerialName("lowBalanceThresholdMicros") val `lowBalanceThresholdMicros`: Long? = null,
     @SerialName("backgroundDailyLimitMicros") val `backgroundDailyLimitMicros`: Long? = null,
+    @SerialName("lowBalanceThresholdPoints") val `lowBalanceThresholdPoints`: NonNegativePoints? = null,
+    @SerialName("backgroundDailyLimitPoints") val `backgroundDailyLimitPoints`: NonNegativePoints? = null,
 )
 
 @Serializable
@@ -8395,6 +8546,7 @@ data class UsageSummaryRow(
     @SerialName("key") val `key`: String,
     @SerialName("amountMicros") val `amountMicros`: Long,
     @SerialName("calls") val `calls`: Long,
+    @SerialName("points") val `points`: NonNegativePoints? = null,
 )
 
 @Serializable
@@ -9285,6 +9437,10 @@ data class Wallet(
     @SerialName("availableMicros") val `availableMicros`: MoneyMicros,
     @SerialName("lowBalanceThresholdMicros") val `lowBalanceThresholdMicros`: Long,
     @SerialName("backgroundBudget") val `backgroundBudget`: WalletBackgroundBudget,
+    @SerialName("balancePoints") val `balancePoints`: Points? = null,
+    @SerialName("heldPoints") val `heldPoints`: NonNegativePoints? = null,
+    @SerialName("availablePoints") val `availablePoints`: Points? = null,
+    @SerialName("lowBalanceThresholdPoints") val `lowBalanceThresholdPoints`: NonNegativePoints? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
 )
 
@@ -11223,6 +11379,20 @@ data class UpdateNotificationSettingsRequestInputDoNotDisturb(
 )
 
 @Serializable
+data class UpdateRechargeOptionsRequestTiersItem(
+    @SerialName("tierId") val `tierId`: String,
+    @SerialName("priceMicros") val `priceMicros`: PositiveMoneyMicros,
+    @SerialName("bonusPercent") val `bonusPercent`: Double,
+)
+
+@Serializable
+data class UpdateRechargeOptionsRequestInputTiersItem(
+    @SerialName("tierId") val `tierId`: String,
+    @SerialName("priceMicros") val `priceMicros`: PositiveMoneyMicros,
+    @SerialName("bonusPercent") val `bonusPercent`: Double,
+)
+
+@Serializable
 data class UserSupplementPlazaSource(
     @SerialName("workId") val `workId`: Id,
     @SerialName("version") val `version`: Long,
@@ -11441,6 +11611,8 @@ data class WalletBackgroundBudget(
     @SerialName("dailyLimitMicros") val `dailyLimitMicros`: Long,
     @SerialName("spentTodayMicros") val `spentTodayMicros`: Long,
     @SerialName("resetsAt") val `resetsAt`: Timestamp,
+    @SerialName("dailyLimitPoints") val `dailyLimitPoints`: NonNegativePoints? = null,
+    @SerialName("spentTodayPoints") val `spentTodayPoints`: NonNegativePoints? = null,
 )
 
 @Serializable

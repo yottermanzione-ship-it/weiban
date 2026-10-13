@@ -171,9 +171,11 @@ export class ReservationService implements BillingReservationPort {
         }
       }
 
-      // 平台每日上限：原子预留（安全透支也不例外，6.6 第 3 条）
+      // 平台每日上限：原子预留。v3.3（ADR-0032）：只约束平台账户（管理员侧任务）；
+      // 用户钱包付费的调用（含后台推演、主动消息、朋友圈、记忆整理）由用户积分承担，不再占用平台预算。
       const budgetDay = localDate(now, PLATFORM_TIME_ZONE);
-      if (!(await this.budget.reserve(tx, budgetDay, reservedCost))) {
+      const usesPlatformBudget = kind === 'platform';
+      if (usesPlatformBudget && !(await this.budget.reserve(tx, budgetDay, reservedCost))) {
         return fail('budget_exceeded', '平台今日总花费已达上限');
       }
 
@@ -190,7 +192,7 @@ export class ReservationService implements BillingReservationPort {
         createdAt: now,
         expiresAt: new Date(now.getTime() + HOLD_TTL_MS),
         budgetDay,
-        reservedCostMicros: reservedCost,
+        reservedCostMicros: usesPlatformBudget ? reservedCost : 0,
         countsAsBackground: counts,
         backgroundDay,
         safetyOverdraft: usedSafetyOverdraft,
@@ -289,12 +291,15 @@ export class ReservationService implements BillingReservationPort {
         hold.countsAsBackground ? amount : 0,
         amount,
       );
-      await this.budget.settle(
-        tx,
-        hold.budgetDay,
-        wasActive ? hold.reservedCostMicros : 0,
-        priced.costMicros,
-      );
+      // v3.3：用户钱包付费的调用不计入平台预算；0088 之前创建、仍预留着平台预算的冻结照常归还。
+      if (account.kind === 'platform' || hold.reservedCostMicros > 0) {
+        await this.budget.settle(
+          tx,
+          hold.budgetDay,
+          wasActive ? hold.reservedCostMicros : 0,
+          account.kind === 'platform' ? priced.costMicros : 0,
+        );
+      }
       return {
         ledgerEntryId: entry.id,
         amountMicros: amount,

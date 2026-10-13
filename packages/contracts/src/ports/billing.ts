@@ -187,6 +187,41 @@ export interface BillingChargeQueryPort {
 
 // v1.0：原 BillingPort（四个方法合在一起）删除，拆为上面两个端口。
 
+// ---------- 3.3（积分制与模型倍率，ADR-0032） ----------
+
+/** 3.3：一个模型的 token 单价（微元 / 百万 token）。没有单独缓存价时 cachedInput 为 null（按输入价计）。 */
+export interface ModelTokenPrices {
+  inputPerMillionMicros: number;
+  cachedInputPerMillionMicros: number | null;
+  outputPerMillionMicros: number;
+}
+
+/** 3.3：当前生效价目表里一个模型的 token 价格（全天价；有分时价时 hasTimeBands = true）。 */
+export interface ActiveModelTokenRates {
+  price: ModelTokenPrices;
+  cost: ModelTokenPrices;
+  hasTimeBands: boolean;
+}
+
+/**
+ * 3.3：模型倍率端口。提供方 billing；调用方**只有 model-access**（后台「模型」页一次保存目录与倍率；
+ * 模型列表推算价格档位、约每条积分）。价目表仍归 billing（版本、冻结引用价目表版本都不变）。
+ */
+export interface BillingModelRatePort {
+  /** 当前生效价目表里这些模型的 token 全天价；没有价格的模型不在结果里。 */
+  getActiveTokenRates(modelKeys: readonly string[]): Promise<Map<string, ActiveModelTokenRates>>;
+  /**
+   * 复制当前生效价目表，把该模型的输入 / 缓存 / 输出三项价格（含它们的分时价）替换为给定的全天价，
+   * 生成新版本并立即发布（同一事务，写审计）。价格与当前完全相同时不发新版本，返回当前版本 ID。
+   */
+  publishModelTokenRates(input: {
+    operatorUserId: string;
+    modelKey: string;
+    price: ModelTokenPrices;
+    cost: ModelTokenPrices;
+  }): Promise<{ priceVersionId: string; published: boolean }>;
+}
+
 // ---------- 3.1（积压 ㉖ 计费报价、㉞ 当日聊天花费） ----------
 
 /**

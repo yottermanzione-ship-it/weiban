@@ -7,6 +7,10 @@
  * v1.1（T-020）：SpendCategory 新增 planning 并改为接收端容错；AdminLedgerEntry 新增 safetyOverdraft。
  * v1.3（T-026）：ReconciliationRun 新增 usageReconciledAt、usageAmountMismatch；发布价目表写明不支持预约生效、
  * 不再检查「启用模型缺价」；AdminAccountSummary.username 的来源写明。
+ * v3.3（2026-10-13 积分制，ADR-0032）：用户端统一按「积分」显示，1 元 = 100 积分，1 积分 = 10,000 微元
+ * （MICROS_PER_POINT）。账本仍按微元记账，不改；用户端响应新增可选的 *Points 字段（= 微元 ÷ 10,000，
+ * 最多 4 位小数，界面按 06-old-ui-spec 第 6.1 节最多显示 2 位）。新增充值档位（第一版不开真实支付）、
+ * 管理员按积分加扣、价目表的积分单价。
  */
 import { z } from 'zod';
 import {
@@ -28,6 +32,26 @@ export const MoneyMicros = z.number().int();
 export const PositiveMoneyMicros = z.number().int().positive();
 
 export const MICROS_PER_YUAN = 1_000_000 as const;
+
+/** v3.3：1 积分 = 10,000 微元（1 元 = 100 积分，ADR-0032）。 */
+export const MICROS_PER_POINT = 10_000 as const;
+/** v3.3：1 元 = 100 积分。 */
+export const POINTS_PER_YUAN = 100 as const;
+
+/** v3.3：积分数（可正可负、可带小数：= 微元 ÷ 10,000，最多 4 位小数）。 */
+export const Points = z.number();
+/** v3.3：非负积分。 */
+export const NonNegativePoints = z.number().nonnegative();
+
+/** v3.3：微元 → 积分（精确到 0.0001 积分，不丢精度）。客户端显示时再按最多 2 位小数格式化。 */
+export function microsToPoints(micros: number): number {
+  return Math.round(micros) / MICROS_PER_POINT;
+}
+
+/** v3.3：积分 → 微元（四舍五入到整数微元）。 */
+export function pointsToMicros(points: number): number {
+  return Math.round(points * MICROS_PER_POINT);
+}
 
 /**
  * 计费用途分组（用量页按此分类）。由服务器从 ports/model-gateway.ts 的 ModelPurpose 换算，
@@ -60,7 +84,16 @@ export const Wallet = z.object({
     spentTodayMicros: z.number().int().nonnegative(),
     /** 下一次重置时间（用户时区的次日 0 点）。 */
     resetsAt: Timestamp,
+    /** v3.3：dailyLimitMicros 的积分值。 */
+    dailyLimitPoints: NonNegativePoints.optional(),
+    /** v3.3：spentTodayMicros 的积分值。 */
+    spentTodayPoints: NonNegativePoints.optional(),
   }),
+  /** v3.3：积分（= 对应微元 ÷ 10,000）。用户端只显示积分。 */
+  balancePoints: Points.optional(),
+  heldPoints: NonNegativePoints.optional(),
+  availablePoints: Points.optional(),
+  lowBalanceThresholdPoints: NonNegativePoints.optional(),
   updatedAt: Timestamp,
 });
 export type Wallet = z.infer<typeof Wallet>;
@@ -68,6 +101,9 @@ export type Wallet = z.infer<typeof Wallet>;
 export const UpdateWalletSettingsRequest = z.object({
   lowBalanceThresholdMicros: z.number().int().nonnegative().optional(),
   backgroundDailyLimitMicros: z.number().int().nonnegative().optional(),
+  /** v3.3：按积分设置（与 *Micros 同时传时以 *Micros 为准）。 */
+  lowBalanceThresholdPoints: NonNegativePoints.optional(),
+  backgroundDailyLimitPoints: NonNegativePoints.optional(),
 });
 
 // ---------- 流水 ----------
@@ -95,6 +131,15 @@ export const LedgerEntry = z.object({
   /** 管理员操作的原因 / 冲正说明。 */
   note: z.string().max(200).nullable(),
   createdAt: Timestamp,
+  /** v3.3：amountMicros 的积分值（扣费为负）。每条扣费 = 一次调用消耗的积分（合计，不分输入 / 输出 / 缓存）。 */
+  points: Points.optional(),
+  /** v3.3：balanceAfterMicros 的积分值。 */
+  balanceAfterPoints: Points.optional(),
+  /**
+   * v3.3：扣费类流水对应的调用（用量记录 ID）。积分明细「每条消息」页用它向 chat 查消息摘要
+   * （ChatEndpoints.listChargedMessages）。非扣费类为 null。
+   */
+  usageRecordId: Id.nullable().optional(),
 });
 export type LedgerEntry = z.infer<typeof LedgerEntry>;
 
@@ -127,6 +172,8 @@ export const PublicPriceItem = z.object({
   priceMicros: z.number().int().nonnegative(),
   /** null = 全天同价；否则只在该时段生效，其余时段取同模型同单位、band 为 null 的那条。 */
   band: PriceTimeBand.nullable(),
+  /** v3.3：priceMicros 的积分值（每单位多少积分；token 单位即「每百万 token 多少积分」）。 */
+  points: NonNegativePoints.optional(),
 });
 
 export const PriceTable = z.object({
@@ -150,6 +197,52 @@ export const UsageSummaryRow = z.object({
   key: z.string(),
   amountMicros: z.number().int().nonnegative(),
   calls: z.number().int().nonnegative(),
+  /** v3.3：amountMicros 的积分值。 */
+  points: NonNegativePoints.optional(),
+});
+
+// ---------- 充值（v3.3） ----------
+
+/**
+ * v3.3：充值档位（06-old-ui-spec 6.3）。档位和价格**只来自服务器**，客户端只传档位编号。
+ * 赠送：bonusPoints = 赠送的积分（由后台按档位配置的赠送比例算好）。
+ */
+export const RechargeTier = z.object({
+  tierId: z.string().min(1).max(32),
+  /** 支付金额（微元）。 */
+  priceMicros: PositiveMoneyMicros,
+  /** 到账积分（不含赠送）= priceMicros ÷ 10,000。 */
+  points: NonNegativePoints,
+  /** 赠送比例（百分比，0～100）。 */
+  bonusPercent: z.number().min(0).max(100),
+  /** 赠送积分 = points × bonusPercent ÷ 100（向下取整到整数积分）。 */
+  bonusPoints: NonNegativePoints,
+});
+export type RechargeTier = z.infer<typeof RechargeTier>;
+
+export const RechargeOptions = z.object({
+  /** 是否开放真实支付。第一版恒为 false：充值页按钮改为「联系管理员充值」。 */
+  paymentEnabled: z.boolean(),
+  tiers: z.array(RechargeTier),
+  /** 联系管理员的说明（后台配置，例「加微信 xxx，备注用户名」）。 */
+  contactHint: z.string().max(200),
+  /** 固定 100：1 元 = 100 积分。 */
+  pointsPerYuan: z.number().int().positive(),
+});
+export type RechargeOptions = z.infer<typeof RechargeOptions>;
+
+/** v3.3：后台修改充值配置（档位按顺序展示；tierId 不能重复）。 */
+export const UpdateRechargeOptionsRequest = z.object({
+  tiers: z
+    .array(
+      z.object({
+        tierId: z.string().min(1).max(32),
+        priceMicros: PositiveMoneyMicros,
+        bonusPercent: z.number().min(0).max(100),
+      }),
+    )
+    .max(12),
+  contactHint: z.string().max(200),
 });
 
 // ---------- 用户端接口 ----------
@@ -197,8 +290,18 @@ export const BillingEndpoints = {
     response: z.object({
       rows: z.array(UsageSummaryRow),
       totalMicros: z.number().int().nonnegative(),
+      /** v3.3：totalMicros 的积分值。 */
+      totalPoints: NonNegativePoints.optional(),
     }),
     summary: '按天 / 角色 / 用途 / 模型汇总的花费（用量页）',
+  }),
+  getRechargeOptions: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/billing/recharge-options`,
+    auth: 'user',
+    response: RechargeOptions,
+    summary:
+      'v3.3：充值档位（价格、到账积分、赠送积分）与联系管理员说明。第一版 paymentEnabled = false，不开真实支付',
   }),
 } as const;
 
@@ -211,6 +314,9 @@ export const AdminAccountSummary = z.object({
   balanceMicros: MoneyMicros,
   heldMicros: z.number().int().nonnegative(),
   spentLast30DaysMicros: z.number().int().nonnegative(),
+  /** v3.3：balanceMicros / spentLast30DaysMicros 的积分值。 */
+  balancePoints: Points.optional(),
+  spentLast30DaysPoints: NonNegativePoints.optional(),
   updatedAt: Timestamp,
 });
 
@@ -226,9 +332,15 @@ export const AdminLedgerEntry = LedgerEntry.extend({
   safetyOverdraft: z.boolean(),
 });
 
+/**
+ * v3.3：amountMicros 与 points 二选一（后台按积分输入时传 points，服务器换算为微元 = points × 10,000）；
+ * 两个都不传或都传 → 400。
+ */
 export const AdminAdjustmentRequest = z.object({
   direction: z.enum(['grant', 'deduct']),
-  amountMicros: PositiveMoneyMicros,
+  amountMicros: PositiveMoneyMicros.optional(),
+  /** v3.3：按积分加 / 扣（> 0，最多 4 位小数）。 */
+  points: z.number().positive().optional(),
   reason: z.string().min(2).max(200),
   /** 后台页面生成的幂等键，重复提交只记一次。 */
   idempotencyKey: z.string().min(8).max(64),
@@ -394,6 +506,22 @@ export const BillingAdminEndpoints = {
         z.object({ upstreamId: Id, costMicros: z.number().int().nonnegative() }),
       ),
     }),
-    summary: '平台今日成本、每日上限、平台账户、各上游近 30 天成本',
+    summary:
+      '平台今日成本、每日上限、平台账户、各上游近 30 天成本。v3.3：每日上限只约束平台账户（管理员侧任务），用户钱包付费的调用不再占用平台预算（ADR-0032）',
+  }),
+  getRechargeOptions: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/billing/recharge-options`,
+    auth: 'admin',
+    response: RechargeOptions,
+    summary: 'v3.3：读取充值档位与赠送比例配置',
+  }),
+  updateRechargeOptions: defineEndpoint({
+    method: 'PUT',
+    path: `${API_PREFIX}/admin/billing/recharge-options`,
+    auth: 'admin',
+    body: UpdateRechargeOptionsRequest,
+    response: RechargeOptions,
+    summary: 'v3.3：修改充值档位、赠送比例与联系管理员说明（写审计日志）',
   }),
 } as const;

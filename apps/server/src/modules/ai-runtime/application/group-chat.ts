@@ -786,6 +786,11 @@ export class GroupChatService {
       : await this.adultBoundary.generate(request, adult);
     if (!result.ok && !(adult && result.error === 'content_rejected')) return null;
     const stopChain = cached?.stopChain ?? !result.ok;
+    // v3.3（积分制）：群聊发言消耗的积分记在消息上（重放缓存时已扣过费，不重复记）。
+    const charge =
+      !cached && result.ok && 'chargedMicros' in result.value
+        ? { usageRecordId: result.value.usageRecordId, chargedMicros: result.value.chargedMicros }
+        : null;
     const deflect = role.card.data.safetyStyle.deflectStyle?.trim();
     const sourceText = result.ok
       ? result.value.text
@@ -819,6 +824,7 @@ export class GroupChatService {
         idempotencyKey: input.idempotencyKey,
         expectedScope: conversation.contentScope,
         ...(input.labels.length ? { labels: input.labels } : {}),
+        ...(charge && charge.chargedMicros > 0 ? { charge } : {}),
       });
       if (!posted.ok) return null;
       return { text, stopChain };

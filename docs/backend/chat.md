@@ -11,3 +11,9 @@ T-037；模块 apps/server/src/modules/chat。只操作自己的chat schema；�
 adult范围切换与每一条新消息重新检查真实policy。CharacterReadPort.getClassification及PolicyPort.checkAdultGeneration支持调用方事务，角色分类行共享锁一直保留到消息提交，阻止分类改变与写入交错。用户发送和范围切换的资格拒绝先提交审计，再由外层报告失败。chat不直接查询characters表，也不依赖AI运行时。网络请求不能指定消息scope。
 
 账号删除清单物理删除所属会话、参与者、消息、个人状态和隐藏记录；账号状态共享行锁阻止删除期间迟到发送重建数据。迁移0010_chat同时提供回滚脚本。当前检查属于开发自测，独立验收由其他审查者完成；客户端聊天驱动、好友流程、AI回复与推送仍待后续任务。
+
+## 契约 3.3：消息消耗积分（ADR-0032，2026-10-13）
+
+- `chat.messages` 新增 `charged_micros`、`usage_record_id`（0088）。只有角色发言（`ChatParticipantPort.postMessage` 的 `charge`，发送者为角色）会写入；`Message.pointsCost = charged_micros ÷ 10,000`，带 `usageRecordId`。
+- ai-runtime 写入方：私聊回复（`reply-engine.ts`，一次回复里各次调用合计，记在第一个正式气泡；撤回小巧思时记在第二个气泡）、主动消息（第一个气泡）、群聊发言（重放缓存时不记，避免重复）。
+- `POST /api/v1/messages/by-usage`（`application/charges.ts`）：按用量记录 ID（最多 100 个）查当前用户自己会话里的消息摘要（前 30 字；成人范围、撤回、非文字为「[消息]」）与消耗积分。

@@ -10,6 +10,8 @@ import { PlatformBudget } from './application/platform-budget.js';
 import { PriceService } from './application/prices.js';
 import { ReconciliationService } from './application/reconciliation.js';
 import { ReservationService } from './application/reservations.js';
+import { ModelRateService } from './application/model-rates.js';
+import { RechargeService } from './application/recharge.js';
 import { WalletService } from './application/wallet.js';
 import { BillingAdminController, BillingController } from './http/billing.controller.js';
 import { ChargeQueryService } from './application/charge-query.js';
@@ -17,6 +19,7 @@ import { BillingQuoteService } from './application/quotes.js';
 import {
   BILLING_CHARGE_QUERY_PORT,
   BILLING_DAILY_SPEND_READ_PORT,
+  BILLING_MODEL_RATE_PORT,
   BILLING_QUOTE_PORT,
   BILLING_READ_PORT,
   BILLING_RESERVATION_PORT,
@@ -41,8 +44,12 @@ import {
     BillingQuoteService,
     { provide: BILLING_QUOTE_PORT, useExisting: BillingQuoteService },
     { provide: BILLING_DAILY_SPEND_READ_PORT, useExisting: BillingQuoteService },
+    RechargeService,
+    ModelRateService,
+    { provide: BILLING_MODEL_RATE_PORT, useExisting: ModelRateService },
   ],
   exports: [
+    BILLING_MODEL_RATE_PORT,
     BILLING_RESERVATION_PORT,
     BILLING_READ_PORT,
     BILLING_CHARGE_QUERY_PORT,

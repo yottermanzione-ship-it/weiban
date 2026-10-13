@@ -219,6 +219,13 @@ export class ChatWriteService {
         contentType: content.type,
         createdAt: at,
         recalledAt: null,
+        // v3.3：只有角色发言（participant 端口）能带扣费信息
+        ...(input.charge && sender?.kind === 'character'
+          ? {
+              chargedMicros: Math.max(0, Math.round(input.charge.chargedMicros)),
+              usageRecordId: input.charge.usageRecordId,
+            }
+          : {}),
       })
       .returning();
     if (!stored) throw new AppError('internal_error', '消息未能保存');

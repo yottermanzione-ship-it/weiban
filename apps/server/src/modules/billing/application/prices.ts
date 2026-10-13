@@ -5,7 +5,7 @@
  */
 import { Inject, Injectable } from '@nestjs/common';
 import type { PriceTable, PriceUnit } from '@weiban/contracts';
-import { AdminPriceVersion } from '@weiban/contracts';
+import { AdminPriceVersion, microsToPoints } from '@weiban/contracts';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
@@ -90,6 +90,7 @@ export class PriceService {
         unit: i.unit as PriceUnit,
         priceMicros: i.priceMicros,
         band: (i.band as PriceBand | null) ?? null,
+        points: microsToPoints(i.priceMicros),
       })),
     };
   }

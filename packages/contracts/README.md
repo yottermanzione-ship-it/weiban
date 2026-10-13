@@ -95,6 +95,16 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.3（2026-10-13，积分制与模型倍率，ADR-0032）
+
+全部向后兼容（只新增接口、新增可选字段；`AdminAdjustmentRequest.amountMicros` 由必填改为与新字段 `points` 二选一，旧调用方照常传 amountMicros 不受影响）。说明见 `docs/handoffs/2026-10-13-backend-lead-points-upstream.md`、`docs/decisions/ADR-0032-points-and-upstream-pool.md`。
+
+- `http/billing.ts`：`MICROS_PER_POINT`（1 积分 = 10,000 微元）、`POINTS_PER_YUAN`、`microsToPoints` / `pointsToMicros`；钱包、流水、用量汇总、价目表、管理端账户概况新增可选 `*Points` 字段；`LedgerEntry.usageRecordId`；`UpdateWalletSettingsRequest` 可按积分设置；`AdminAdjustmentRequest.points`（按积分加扣）；充值档位 `RechargeTier` / `RechargeOptions`，用户端 `getRechargeOptions`、后台 `getRechargeOptions` / `updateRechargeOptions`（第一版 `paymentEnabled = false`）。
+- `http/model-access.ts`：`ModelRates`（输入 / 输出 / 缓存倍率 = 元 / 百万 token）、`AdminModel` / `AdminModelWrite`，后台合并接口 `listModels` / `upsertModel`；`ModelInfo.pointsPerReply`。
+- `http/chat.ts`：`Message.pointsCost` / `usageRecordId`；`ChargedMessage` 与 `listChargedMessages`（按调用查消息摘要）。
+- 端口：`PostMessageInput.charge`（chat）；新端口 `BillingModelRatePort`（billing 提供，只有 model-access 调用）。
+- 行为变化（不改字段）：用户钱包付费的调用不再占用平台每日成本上限，平台上限只约束平台账户（管理员侧任务）。
+
 ### 3.2（2026-10-13，换壳 UI 批次后端配套）
 
 全部向后兼容（只新增接口、新增可选字段、新增枚举值；安卓枚举是字符串别名，不认识的值按兜底处理）。说明见 `docs/handoffs/2026-10-13-backend-lead-ui-refresh.md`、`docs/backend/announcements.md`。

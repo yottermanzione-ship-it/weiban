@@ -3,13 +3,15 @@
  * 钱包按需创建（billing.md 8.3 第 3 条）：用户第一次打开余额页时还没有钱包就建一个余额 0 的。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  BillingReadPort,
-  IdentityReadPort,
-  LedgerEntry,
-  SpendStatus,
-  UsageSummaryQuery,
-  Wallet,
+import {
+  microsToPoints,
+  pointsToMicros,
+  type BillingReadPort,
+  type IdentityReadPort,
+  type LedgerEntry,
+  type SpendStatus,
+  type UsageSummaryQuery,
+  type Wallet,
 } from '@weiban/contracts';
 import { and, desc, eq, gt, lt, or, type SQL } from 'drizzle-orm';
 import type { z } from 'zod';
@@ -74,6 +76,9 @@ export function toLedgerEntry(row: LedgerRow): LedgerEntry {
     characterId: row.characterId,
     note: row.reason,
     createdAt: row.createdAt.toISOString(),
+    points: microsToPoints(row.amountMicros),
+    balanceAfterPoints: microsToPoints(row.balanceAfterMicros),
+    usageRecordId: row.type === 'charge' ? row.usageRecordId : null,
   };
 }
 
@@ -101,8 +106,26 @@ export class WalletService implements BillingReadPort {
 
   async updateSettings(
     userId: string,
-    patch: { lowBalanceThresholdMicros?: number; backgroundDailyLimitMicros?: number },
+    input: {
+      lowBalanceThresholdMicros?: number;
+      backgroundDailyLimitMicros?: number;
+      lowBalanceThresholdPoints?: number;
+      backgroundDailyLimitPoints?: number;
+    },
   ): Promise<Wallet> {
+    // v3.3：可按积分设置；同时传时以微元为准。
+    const patch = {
+      lowBalanceThresholdMicros:
+        input.lowBalanceThresholdMicros ??
+        (input.lowBalanceThresholdPoints !== undefined
+          ? pointsToMicros(input.lowBalanceThresholdPoints)
+          : undefined),
+      backgroundDailyLimitMicros:
+        input.backgroundDailyLimitMicros ??
+        (input.backgroundDailyLimitPoints !== undefined
+          ? pointsToMicros(input.backgroundDailyLimitPoints)
+          : undefined),
+    };
     const timeZone = await this.timeZoneOf(userId);
     return this.database.transaction(async (tx) => {
       let account = await this.ledger.lockUserAccount(tx, userId, timeZone);
@@ -159,8 +182,9 @@ export class WalletService implements BillingReadPort {
     userId: string,
     query: UsageQuery,
   ): Promise<{
-    rows: Array<{ key: string; amountMicros: number; calls: number }>;
+    rows: Array<{ key: string; amountMicros: number; calls: number; points: number }>;
     totalMicros: number;
+    totalPoints: number;
   }> {
     const span = daysBetween(query.from, query.to);
     if (span < 0 || span >= MAX_SUMMARY_DAYS) {
@@ -171,7 +195,7 @@ export class WalletService implements BillingReadPort {
       .select({ id: accounts.id })
       .from(accounts)
       .where(eq(accounts.userId, userId));
-    if (!account) return { rows: [], totalMicros: 0 };
+    if (!account) return { rows: [], totalMicros: 0, totalPoints: 0 };
     const keyExpr: Record<UsageQuery['groupBy'], string> = {
       day: `to_char((created_at AT TIME ZONE $4)::date, 'YYYY-MM-DD')`,
       character: `coalesce(character_id::text, 'none')`,
@@ -201,9 +225,10 @@ export class WalletService implements BillingReadPort {
       merged.set(key, acc);
     }
     const result = [...merged.entries()]
-      .map(([key, v]) => ({ key, ...v }))
+      .map(([key, v]) => ({ key, ...v, points: microsToPoints(v.amountMicros) }))
       .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-    return { rows: result, totalMicros: result.reduce((s, r) => s + r.amountMicros, 0) };
+    const totalMicros = result.reduce((s, r) => s + r.amountMicros, 0);
+    return { rows: result, totalMicros, totalPoints: microsToPoints(totalMicros) };
   }
 
   // ---------- BillingReadPort ----------
@@ -238,16 +263,23 @@ export class WalletService implements BillingReadPort {
     const now = this.clock.now();
     const today = localDate(now, account.timeZone);
     const spent = await this.reservations.backgroundSpent(tx, account.id, today);
+    const avail = available(account);
     return {
       balanceMicros: account.balanceMicros,
       heldMicros: account.heldMicros,
-      availableMicros: available(account),
+      availableMicros: avail,
       lowBalanceThresholdMicros: account.lowBalanceThresholdMicros,
       backgroundBudget: {
         dailyLimitMicros: account.backgroundDailyLimitMicros,
         spentTodayMicros: spent,
         resetsAt: nextLocalMidnight(now, account.timeZone).toISOString(),
+        dailyLimitPoints: microsToPoints(account.backgroundDailyLimitMicros),
+        spentTodayPoints: microsToPoints(spent),
       },
+      balancePoints: microsToPoints(account.balanceMicros),
+      heldPoints: microsToPoints(account.heldMicros),
+      availablePoints: microsToPoints(avail),
+      lowBalanceThresholdPoints: microsToPoints(account.lowBalanceThresholdMicros),
       updatedAt: account.updatedAt.toISOString(),
     };
   }

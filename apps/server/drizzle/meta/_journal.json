@@ -534,6 +534,13 @@
       "when": 1798700000000,
       "tag": "0087_scenario_presets_ai",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1798800000000,
+      "tag": "0088_points_rates",
+      "breakpoints": true
     }
   ]
 }

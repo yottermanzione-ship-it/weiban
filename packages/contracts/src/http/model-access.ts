@@ -6,6 +6,9 @@
  * 安全规则：任何响应都不包含上游密钥原文或密文，只有前 4 后 4 位掩码（docs/architecture/security-and-privacy.md 第 3 节）。
  * 价格不在本文件：见 http/billing.ts（价目表归 billing 模块）。模型清单、标签、排行榜数据由 AI 负责人维护（docs/ai/model-catalog.md）。
  * v1.1（T-020）：默认识图模型（defaultFor 新增 vision）；管理后台用量与费用查询（ADM-08，billing.md 10.1 节）。
+ * v3.3（2026-10-13，ADR-0032）：后台「模型」页用**倍率**表达价格（输入 / 输出 / 缓存三个倍率，数值 = 每百万 token
+ * 的人民币价格）。新增合并接口 listModels / upsertModel（目录 + 倍率一次保存，后端自动生成并发布新价目表版本），
+ * 取代分别维护「模型目录」和「价目表」；旧的 catalog / price-versions 接口保留给高级操作。ModelInfo 新增「约每条积分」。
  */
 import { z } from 'zod';
 import {
@@ -58,6 +61,11 @@ export const ModelInfo = z.object({
   leaderboardRank: z.number().int().positive().nullable(),
   /** 当前是否可用（上游故障时为 false，下架的模型不出现在列表中）。 */
   available: z.boolean(),
+  /**
+   * v3.3：约每条回复消耗多少积分（按 cost-estimate.md 7.2「标准回复」用量和当前售价估算，1 元 = 100 积分）。
+   * 用户端价目表只显示这个数；当前价目表没有该模型的 token 价格时为 null。
+   */
+  pointsPerReply: z.number().nonnegative().nullable().optional(),
 });
 export type ModelInfo = z.infer<typeof ModelInfo>;
 
@@ -269,6 +277,43 @@ export type AdminCatalogEntry = z.infer<typeof AdminCatalogEntry>;
 
 export const AdminCatalogEntryWrite = AdminCatalogEntry.omit({ updatedAt: true });
 
+// ---------- 管理后台：模型（目录 + 倍率合并，v3.3） ----------
+
+/**
+ * v3.3：模型倍率（ADR-0032）。三个数值 = **每百万 token 的人民币价格（元）**，最多 4 位小数。
+ * input = 未命中缓存的输入，output = 输出，cache = 命中缓存的输入。
+ * 1 元 = 100 积分，所以用户每百万 token 消耗的积分 = 倍率 × 100。
+ */
+export const ModelRates = z.object({
+  input: z.number().nonnegative().max(100_000),
+  output: z.number().nonnegative().max(100_000),
+  cache: z.number().nonnegative().max(100_000),
+});
+export type ModelRates = z.infer<typeof ModelRates>;
+
+/** v3.3：后台「模型」页的一行 = 目录条目 + 当前生效价目表里的倍率。 */
+export const AdminModel = AdminCatalogEntry.extend({
+  /** 售价倍率（用户被扣的钱）；当前生效价目表里没有该模型的 token 价格时为 null（例：语音、图片模型）。 */
+  rates: ModelRates.nullable(),
+  /** 成本倍率（上游收平台的钱，对账用）；默认与售价相同（个人测试阶段加价系数 1.00）。 */
+  costRates: ModelRates.nullable(),
+  /** 当前价目表里这个模型有分时价（例 DeepSeek 夜间半价）：用倍率保存后会变成全天统一价。 */
+  hasTimeBands: z.boolean(),
+  /** 约每条回复消耗多少积分（cost-estimate.md 7.2「标准回复」），rates 为 null 时为 null。 */
+  pointsPerReply: z.number().nonnegative().nullable(),
+});
+export type AdminModel = z.infer<typeof AdminModel>;
+
+export const AdminModelWrite = AdminCatalogEntryWrite.extend({
+  /**
+   * 售价倍率。传 null = 不改价目表（语音、图片等非 token 计价的模型在「价目表版本」高级页维护）。
+   * 与当前价格不同时，后端复制当前生效价目表、替换这个模型的输入 / 输出 / 缓存三项价格，生成新版本并立即发布。
+   */
+  rates: ModelRates.nullable(),
+  /** 成本倍率；不传或 null = 与售价倍率相同。 */
+  costRates: ModelRates.nullable().optional(),
+});
+
 export const ModelAccessAdminEndpoints = {
   listUpstreams: defineEndpoint({
     method: 'GET',
@@ -327,6 +372,24 @@ export const ModelAccessAdminEndpoints = {
     response: AdminCatalogEntry,
     summary:
       '新增或修改模型目录条目；改指上游、停用都记审计日志。path 中的 modelKey 需 URL 编码。v1.3：保存为启用（enabled = true）时，当前生效价目表没有该模型的价格 → 422 model_unavailable（BillingChargeQueryPort.listActivePricedModelKeys，billing.md 4.1 节）',
+  }),
+  listModels: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/models`,
+    auth: 'admin',
+    response: z.object({ items: z.array(AdminModel) }),
+    summary:
+      'v3.3：后台「模型」页：目录条目 + 倍率（输入 / 输出 / 缓存，元 / 百万 token）+ 约每条积分',
+  }),
+  upsertModel: defineEndpoint({
+    method: 'PUT',
+    path: `${API_PREFIX}/admin/model/models/:modelKey`,
+    auth: 'admin',
+    params: z.object({ modelKey: z.string() }),
+    body: AdminModelWrite,
+    response: AdminModel,
+    summary:
+      'v3.3：新增或修改模型（目录 + 倍率一次保存）。倍率有变化时先自动生成并发布新价目表版本，再保存目录；path 中的 modelKey 需 URL 编码。其余规则同 upsertCatalogEntry',
   }),
 } as const;
 

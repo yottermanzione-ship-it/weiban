@@ -331,8 +331,28 @@ export const Message = z.object({
   recalledAt: Timestamp.nullable(),
   /** 3.0：action_card 消息上用户的选择（只能选一次）；未选或不是卡片消息时不返回或为 null。 */
   actionChoice: z.object({ actionId: z.string(), chosenAt: Timestamp }).nullable().optional(),
+  /**
+   * v3.3（积分制，ADR-0032）：生成这条消息消耗的积分（合计，不分输入 / 输出 / 缓存；1 元 = 100 积分）。
+   * 一次回复拆成多个气泡时记在第一个气泡上，其余气泡不带。用户消息、系统消息、没有扣费的消息不带或为 null。
+   * 界面规则：聊天页不显示积分数（06-old-ui-spec 6.1），供积分明细与用量页使用。
+   */
+  pointsCost: z.number().nonnegative().nullable().optional(),
+  /** v3.3：生成这条消息的那次调用（用量记录 ID），与 LedgerEntry.usageRecordId 对应；没有时不带。 */
+  usageRecordId: Id.nullable().optional(),
 });
 export type Message = z.infer<typeof Message>;
+
+/** v3.3：积分明细「每条消息」页：按调用查对应的消息摘要。 */
+export const ChargedMessage = z.object({
+  usageRecordId: Id,
+  messageId: Id,
+  conversationId: Id,
+  /** 角色回复的前 30 个字；撤回、非文字消息为「[消息]」，成人范围消息为「[消息]」。 */
+  excerpt: z.string().max(40),
+  pointsCost: z.number().nonnegative(),
+  createdAt: Timestamp,
+});
+export type ChargedMessage = z.infer<typeof ChargedMessage>;
 
 /** 会话列表中的最后一条消息摘要。成人范围消息是否显示为「[消息]」以 PRD v1.2 为准。 */
 export const MessagePreview = z.object({
@@ -559,5 +579,14 @@ export const ChatEndpoints = {
     params: ConversationParams,
     response: UserConversationState,
     summary: '清空聊天记录（只删显示，记忆和养成保留，CHAT-13 第 8 条）',
+  }),
+  listChargedMessages: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/messages/by-usage`,
+    auth: 'user',
+    body: z.object({ usageRecordIds: z.array(Id).min(1).max(100) }),
+    response: z.object({ items: z.array(ChargedMessage) }),
+    summary:
+      'v3.3：按调用（LedgerEntry.usageRecordId）查对应消息的摘要与消耗积分（积分明细「每条消息」页）。只返回当前用户自己会话里的消息；查不到的 ID 不出现',
   }),
 } as const;

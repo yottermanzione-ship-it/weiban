@@ -36,6 +36,9 @@ export interface UpstreamProbe {
  * （已提契约变更申请，见交接说明），默认实现返回空，档位显示「中等」。
  */
 export const MODEL_PRICE_SOURCE = Symbol('weiban.model-access.price-source');
+
+/** v3.3：模型倍率（契约 BillingModelRatePort），绑定 billing 的 BILLING_MODEL_RATE_PORT。 */
+export const MODEL_RATE_PORT = Symbol('weiban.model-access.model-rate');
 export interface ModelPriceSource {
   textPrices(modelKeys: readonly string[]): Promise<Map<string, ModelTextPrices>>;
 }

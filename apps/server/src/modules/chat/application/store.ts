@@ -6,6 +6,7 @@ import {
   Id,
   Message,
   MessageContent,
+  microsToPoints,
   UserConversationState,
   type ContentScope,
   type IdentityAccountStatusPort,
@@ -166,6 +167,12 @@ export class ChatStore {
               actionId: stored.actionId,
               chosenAt: stored.actionChosenAt.toISOString(),
             },
+          }
+        : {}),
+      ...(stored.chargedMicros !== null && stored.chargedMicros !== undefined
+        ? {
+            pointsCost: microsToPoints(stored.chargedMicros),
+            usageRecordId: stored.usageRecordId,
           }
         : {}),
     });

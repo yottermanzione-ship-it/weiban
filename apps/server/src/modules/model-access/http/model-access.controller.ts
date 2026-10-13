@@ -34,6 +34,7 @@ import {
   type AuthPrincipal,
 } from '../../../platform/index.js';
 import { CatalogService } from '../application/catalog.js';
+import { ModelAdminService } from '../application/models.js';
 import { ModelStatusService } from '../application/resolver.js';
 import { SelectionService } from '../application/selection.js';
 import { UpstreamService } from '../application/upstreams.js';
@@ -119,7 +120,29 @@ export class ModelAdminController {
     @Inject(UpstreamService) private readonly upstreams: UpstreamService,
     @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(AdminUsageService) private readonly usage: AdminUsageService,
+    @Inject(ModelAdminService) private readonly models: ModelAdminService,
   ) {}
+
+  // ---------- 模型（目录 + 倍率，v3.3） ----------
+
+  @Get('models')
+  @RequireAuth(A.listModels.auth)
+  async listAdminModels() {
+    return { items: await this.models.list() };
+  }
+
+  @Put('models/:modelKey')
+  @RequireAuth(A.upsertModel.auth)
+  upsertModel(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(schema(A.upsertModel.params))) params: { modelKey: string },
+    @Body(new ContractPipe(schema(A.upsertModel.body))) body: Out<typeof A.upsertModel.body>,
+  ) {
+    if (!ModelKey.safeParse(params.modelKey).success) {
+      throw new AppError('bad_request', '模型键格式不正确（路径中的 / 需要 URL 编码为 %2F）');
+    }
+    return this.models.upsert(me.userId, params.modelKey, body);
+  }
 
   // ---------- 上游 ----------
 

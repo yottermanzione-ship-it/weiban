@@ -31,7 +31,12 @@ import {
   type DbTx,
   type Outbox,
 } from '../../../platform/index.js';
-import { hasAdultContent, priceTier, unavailableReason } from '../domain/rules.js';
+import {
+  hasAdultContent,
+  priceTier,
+  standardReplyMicros,
+  unavailableReason,
+} from '../domain/rules.js';
 import { modelCatalog, upstreams } from '../infra/db/schema.js';
 import {
   MODEL_ACCESS_CHARGE_QUERY,
@@ -261,11 +266,17 @@ export class CatalogService {
       ? rows.filter((r) => r.entry.capabilities.includes(capability))
       : rows;
     const prices = await this.prices.textPrices(visible.map((r) => r.entry.modelKey));
+    const perReply = (key: string) => {
+      const p = prices.get(key);
+      // 约每条积分 = 标准回复微元 ÷ 10,000，保留 2 位小数（v3.3，ADR-0032）
+      return p ? Math.round(standardReplyMicros(p) / 100) / 100 : null;
+    };
     return visible.map(({ entry, upstreamStatus }) => ({
       modelKey: entry.modelKey,
       displayName: entry.displayName,
       vendorName: entry.vendorName,
       priceTier: priceTier(prices.get(entry.modelKey)),
+      pointsPerReply: perReply(entry.modelKey),
       capabilities: entry.capabilities as ModelCapability[],
       tags: entry.tags,
       leaderboardRank: entry.leaderboardRank,

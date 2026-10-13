@@ -17,3 +17,6 @@ export const BILLING_QUOTE_PORT = Symbol('weiban.billing.quote-port');
 
 /** 契约 3.1 BillingDailySpendReadPort（用户当地某天按用途的已结算金额）：任何模块可读。 */
 export const BILLING_DAILY_SPEND_READ_PORT = Symbol('weiban.billing.daily-spend-read-port');
+
+/** 契约 3.3 BillingModelRatePort（模型倍率：读 / 发布 token 价格）。只给 model-access 注入。 */
+export const BILLING_MODEL_RATE_PORT = Symbol('weiban.billing.model-rate-port');

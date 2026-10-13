@@ -70,6 +70,11 @@ export interface PostMessageInput {
    * 不认识的标签客户端忽略，不报错。
    */
   labels?: string[];
+  /**
+   * v3.3（积分制）：生成这条消息的调用消耗（ai-runtime 从 GenerateTextOutput 取得）。chat 原样记在消息上，
+   * 下发为 Message.pointsCost / usageRecordId。一次回复拆成多个气泡时只在第一个气泡上传。
+   */
+  charge?: { usageRecordId: string | null; chargedMicros: number };
 }
 
 export type PostMessageError =

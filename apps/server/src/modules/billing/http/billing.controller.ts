@@ -2,7 +2,18 @@
  * billing 的 HTTP 接口，一一对应契约 BillingEndpoints / BillingAdminEndpoints
  * （packages/contracts/src/http/billing.ts）。请求参数一律用契约里的 schema 校验。
  */
-import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+} from '@nestjs/common';
 import {
   BillingAdminEndpoints,
   BillingEndpoints,
@@ -20,6 +31,7 @@ import {
 import { BillingAdminService } from '../application/admin.js';
 import { PriceService } from '../application/prices.js';
 import { ReconciliationService } from '../application/reconciliation.js';
+import { RechargeService } from '../application/recharge.js';
 import { WalletService } from '../application/wallet.js';
 
 const E = BillingEndpoints;
@@ -37,7 +49,14 @@ export class BillingController {
   constructor(
     @Inject(WalletService) private readonly wallet: WalletService,
     @Inject(PriceService) private readonly prices: PriceService,
+    @Inject(RechargeService) private readonly recharge: RechargeService,
   ) {}
+
+  @Get('recharge-options')
+  @RequireAuth(E.getRechargeOptions.auth)
+  rechargeOptions() {
+    return this.recharge.get();
+  }
 
   @Get('wallet')
   @RequireAuth(E.getWallet.auth)
@@ -87,7 +106,24 @@ export class BillingAdminController {
     @Inject(BillingAdminService) private readonly admin: BillingAdminService,
     @Inject(PriceService) private readonly prices: PriceService,
     @Inject(ReconciliationService) private readonly reconciliation: ReconciliationService,
+    @Inject(RechargeService) private readonly recharge: RechargeService,
   ) {}
+
+  @Get('recharge-options')
+  @RequireAuth(A.getRechargeOptions.auth)
+  rechargeOptions() {
+    return this.recharge.get();
+  }
+
+  @Put('recharge-options')
+  @RequireAuth(A.updateRechargeOptions.auth)
+  updateRechargeOptions(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(A.updateRechargeOptions.body)))
+    body: Out<typeof A.updateRechargeOptions.body>,
+  ) {
+    return this.recharge.update(me.userId, body);
+  }
 
   @Get('accounts')
   @RequireAuth(A.listAccounts.auth)

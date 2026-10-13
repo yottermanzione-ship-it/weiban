@@ -1016,6 +1016,11 @@ export class ProactiveSchedulerService {
       await this.drop(plan, `model_${result.error}`);
       return;
     }
+    // v3.3（积分制）：这条主动消息消耗的积分记在第一个气泡上（Message.pointsCost）。
+    const charge = {
+      usageRecordId: result.value.usageRecordId,
+      chargedMicros: result.value.chargedMicros,
+    };
     const bubbles = splitReply(result.value.text, settings.splitBubbles).slice(0, 3);
     if (!bubbles.length || !bubbles.every((b) => outputAllowed(b, policy, adult))) {
       await this.drop(plan, 'output_guard');
@@ -1120,6 +1125,7 @@ export class ProactiveSchedulerService {
               content: { type: 'text', text: bubbles[i]! },
               idempotencyKey: `proactive:${plan.id}:${i}`,
               expectedScope: conversation.contentScope,
+              ...(i === 0 && charge.chargedMicros > 0 ? { charge } : {}),
             },
             tx,
           );

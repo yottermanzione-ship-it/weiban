@@ -41,6 +41,10 @@ const Result = z.object({
   /** T-071：实际要发的内容（语音替换文字、附表情包 / 作品链接）；没有时按 bubbles 发文字。 */
   contents: z.array(MessageContent).max(6).optional(),
   quirkDraftMessageId: z.uuid().optional(),
+  /** v3.3：这次回复消耗（各次调用合计），发第一个正式气泡时交给 chat。 */
+  charge: z
+    .object({ usageRecordId: z.string().nullable(), chargedMicros: z.number().nonnegative() })
+    .optional(),
 });
 @Injectable()
 export class ReplyEngine {
@@ -83,11 +87,14 @@ export class ReplyEngine {
       participantId: snapshot.participantId,
       readSeq: snapshot.lastUserSeq,
     });
+    // v3.3（积分制）：累计这次回复各次调用扣的钱，记在第一个气泡上（Message.pointsCost）。
+    const charge = { usageRecordId: null as string | null, chargedMicros: 0 };
+    const gw = trackCharges(this.gateway, charge);
     const care = snapshot.highRisk || snapshot.careActive;
     let suspected = snapshot.suspected;
     if (suspected && !care) {
       const check = await callModelForCare(
-        this.gateway,
+        gw,
         {
           ...this.input(row, snapshot, 'check'),
           purpose: 'safety_check',
@@ -125,7 +132,7 @@ export class ReplyEngine {
         ? { ok: false, error: inputReview === 'blocked' ? 'content_rejected' : 'not_configured' }
         : snapshot.forceCareFallback
           ? { ok: false, error: 'policy_denied' }
-          : await callModelForCare(this.gateway, this.input(row, snapshot, 'reply'), facts);
+          : await callModelForCare(gw, this.input(row, snapshot, 'reply'), facts);
     let adultOutput =
       adult && answer.ok
         ? await this.adultBoundary.review(
@@ -140,7 +147,7 @@ export class ReplyEngine {
         adultOutput === 'blocked')
     ) {
       answer = await callModelForCare(
-        this.gateway,
+        gw,
         {
           ...this.input(row, snapshot, 'guard'),
           messages: [
@@ -205,7 +212,7 @@ export class ReplyEngine {
       );
       if (bad.length) {
         const retry = await callModelForCare(
-          this.gateway,
+          gw,
           {
             ...this.input(row, snapshot, 'names'),
             messages: [
@@ -337,6 +344,7 @@ export class ReplyEngine {
         snapshot: { ...snapshot, highRisk: facts.highRisk },
         care: inCare,
         ...(contents ? { contents } : {}),
+        ...(charge.chargedMicros > 0 ? { charge } : {}),
       });
       const elapsed = this.clock.nowMs() - Date.parse(snapshot.triggerAt);
       const base = inCare ? 0 : replyDelay(bubbles.join(''), snapshot.instantReply, elapsed);
@@ -583,6 +591,10 @@ export class ReplyEngine {
             },
             idempotencyKey: `reply:${row.triggerId}:${row.nextBubble}`,
             expectedScope: result.snapshot.scope,
+            ...(result.charge &&
+            row.nextBubble === (result.snapshot.quirk.kind === 'recall' && !result.care ? 1 : 0)
+              ? { charge: result.charge }
+              : {}),
             ...(result.snapshot.trial
               ? { labels: ['trial'] }
               : result.snapshot.healthUsed
@@ -641,4 +653,29 @@ export class ReplyEngine {
       });
     }
   }
+}
+
+/** v3.3：包一层网关，累计成功调用的扣费；回复类调用（reply / guard / names）的用量记录 ID 记为这次回复的调用。 */
+function trackCharges(
+  gateway: ModelGatewayPort,
+  sink: { usageRecordId: string | null; chargedMicros: number },
+): ModelGatewayPort {
+  return new Proxy(gateway, {
+    get(target, prop, receiver) {
+      if (prop === 'generateText')
+        return async (input: GenerateTextInput) => {
+          const result = await target.generateText(input);
+          if (result.ok) {
+            sink.chargedMicros += Math.max(0, result.value.chargedMicros);
+            if (/:(reply|guard|names)$/.test(input.idempotencyKey))
+              sink.usageRecordId = result.value.usageRecordId;
+          }
+          return result;
+        };
+      const value: unknown = Reflect.get(target, prop, receiver);
+      return typeof value === 'function'
+        ? (value as (...a: unknown[]) => unknown).bind(target)
+        : value;
+    },
+  });
 }

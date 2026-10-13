@@ -266,3 +266,11 @@ export const reconciliationRuns = billingSchema.table(
   },
   (t) => [uniqueIndex('reconciliation_runs_run_date_key').on(t.runDate)],
 );
+
+/** v3.3（0088，ADR-0032）：计费的后台配置（键值）。recharge_options = 充值档位、赠送比例、联系管理员说明。 */
+export const billingSettings = billingSchema.table('settings', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').notNull(),
+  updatedAt: tz('updated_at').notNull(),
+  updatedBy: uuid('updated_by'),
+});
