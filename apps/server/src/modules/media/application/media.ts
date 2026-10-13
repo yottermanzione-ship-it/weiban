@@ -470,7 +470,8 @@ export class MediaService
       const want = builtinFormat(accept);
       if (want === 'webp')
         return { body: await sharp(body).webp().toBuffer(), mimeType: 'image/webp' };
-      if (want === 'png') return { body: await sharp(body).png().toBuffer(), mimeType: 'image/png' };
+      if (want === 'png')
+        return { body: await sharp(body).png().toBuffer(), mimeType: 'image/png' };
       return { body, mimeType: row.mimeType };
     }
     const thumb = grant.v === 't' && row.thumbStorageKey;
