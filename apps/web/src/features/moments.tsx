@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Camera, ChatCircle, Heart, Users } from '@phosphor-icons/react';
 import {
   IdentityEndpoints,
   LibraryEndpoints,
@@ -23,10 +22,20 @@ import { VirtualList } from './virtual-list.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { UserAvatar } from './user-avatar.js';
 import { openShare } from './share.js';
-import { showToast } from './toast.js';
+import { showToast, Dialog } from './toast.js';
+import { OldIcon } from './old-icons.js';
+import {
+  ActionSheet,
+  EmptyState,
+  GroupHeader,
+  MenuGroup,
+  NavBar,
+  NavIcon,
+  CheckCircle,
+} from './shell-kit.js';
 
 /*
- * 朋友圈（SOC-07～SOC-09；设计 moments.md、social-l4.md 第 3 节）。
+ * 朋友圈（SOC-07～SOC-09；视觉按 docs/refactor/06-old-ui-spec.md 4.11）。
  * 新动态不推送：发现页入口用 getBadge 显示红点，收到 moments.badge_updated 时更新。
  */
 
@@ -94,225 +103,6 @@ function MomentImage({ mediaId, single }: { mediaId: string; single: boolean }) 
     </span>
   );
 }
-
-function ActorAvatar({ actor, profile }: { actor: MomentsActor; profile: ActorNames['profile'] }) {
-  return actor.kind === 'user' ? (
-    <UserAvatar profile={profile} />
-  ) : (
-    <Link to={`/characters/${actor.refId}`}>
-      <CharacterAvatar id={actor.refId} size={40} />
-    </Link>
-  );
-}
-
-/** 一条动态（C 10.1）。 */
-export function MomentCard({
-  post,
-  actors,
-  onChange,
-  onDeleted,
-  full = false,
-}: {
-  post: MomentsPost;
-  actors: ActorNames;
-  onChange(post: MomentsPost): void;
-  onDeleted?(): void;
-  full?: boolean;
-}) {
-  const [replying, setReplying] = useState<MomentsComment | null | undefined>(undefined);
-  const [text, setText] = useState('');
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState('');
-  const { register } = actors;
-  const navigate = useNavigate();
-  useEffect(() => register(actorsOf(post)), [post, register]);
-  const mine = post.author.kind === 'user';
-  async function run(operation: () => Promise<MomentsPost | null>) {
-    setPending(true);
-    setError('');
-    try {
-      const next = await operation();
-      if (next) onChange(next);
-    } catch (e) {
-      setError(friendlyError(e));
-    } finally {
-      setPending(false);
-    }
-  }
-  const visibleComments = full ? post.comments : post.comments.slice(-20);
-  return (
-    <article className="moment-card">
-      <ActorAvatar actor={post.author} profile={actors.profile} />
-      <div className="moment-body">
-        <strong className="moment-author">{actors.name(post.author)}</strong>
-        {post.text && <p className={full ? '' : 'clamp-6'}>{post.text}</p>}
-        {post.images.length > 0 && (
-          <div className={`moment-images count-${Math.min(post.images.length, 4)}`}>
-            {post.images.map((image) => (
-              <MomentImage
-                key={image.mediaId}
-                mediaId={image.mediaId}
-                single={post.images.length === 1}
-              />
-            ))}
-          </div>
-        )}
-        {post.link && (
-          <a className="moment-link" href={post.link.url} target="_blank" rel="noreferrer noopener">
-            {post.link.title}
-          </a>
-        )}
-        <div className="moment-meta">
-          <Link to={`/moments/posts/${post.postId}`}>
-            <small>{timeText(post.createdAt)}</small>
-          </Link>
-          <details className="moment-more">
-            <summary aria-label="更多">…</summary>
-            <button
-              onClick={() =>
-                void api
-                  .call(LibraryEndpoints.addFavorites, {
-                    body: { items: [{ kind: 'moments_post', postId: post.postId }] },
-                  })
-                  .then(() => showToast('已收藏'))
-                  .catch((e) => showToast(friendlyError(e)))
-              }
-            >
-              收藏
-            </button>
-            <button
-              onClick={() => openShare(navigate, { kind: 'moments_post', postId: post.postId })}
-            >
-              生成分享图
-            </button>
-          </details>
-          {mine && post.visibility?.kind === 'selected' && (
-            <button
-              className="icon-button"
-              aria-label="部分可见"
-              onClick={() => setError(`仅 ${post.visibility?.characterIds.length ?? 0} 个角色可见`)}
-            >
-              <Users size={16} />
-            </button>
-          )}
-          {mine && onDeleted && (
-            <button
-              className="text-button"
-              disabled={pending}
-              onClick={() => {
-                if (!window.confirm('删除这条朋友圈？')) return;
-                void api
-                  .call(MomentsEndpoints.deletePost, { params: { postId: post.postId } })
-                  .then(onDeleted)
-                  .catch((e) => setError(friendlyError(e)));
-              }}
-            >
-              删除
-            </button>
-          )}
-          <span className="moment-actions">
-            <button
-              className="icon-button"
-              aria-label={post.likedByMe ? '取消赞' : '赞'}
-              aria-pressed={post.likedByMe}
-              disabled={pending}
-              onClick={() =>
-                void run(() =>
-                  api.call(post.likedByMe ? MomentsEndpoints.unlike : MomentsEndpoints.like, {
-                    params: { postId: post.postId },
-                  }),
-                )
-              }
-            >
-              <Heart size={18} weight={post.likedByMe ? 'fill' : 'regular'} />
-            </button>
-            <button className="icon-button" aria-label="评论" onClick={() => setReplying(null)}>
-              <ChatCircle size={18} />
-            </button>
-          </span>
-        </div>
-        {(post.likes.length > 0 || post.comments.length > 0) && (
-          <div className="moment-feedback">
-            {post.likes.length > 0 && (
-              <p className="moment-likes">
-                <Heart size={14} aria-hidden /> {post.likes.map((a) => actors.name(a)).join('，')}
-              </p>
-            )}
-            {visibleComments.map((c) => (
-              <p key={c.commentId} className="moment-comment">
-                <button className="text-button" onClick={() => setReplying(c)}>
-                  <strong>{actors.name(c.author)}</strong>
-                  {c.replyTo && (
-                    <>
-                      {' '}
-                      回复 <strong>{actors.name(c.replyTo)}</strong>
-                    </>
-                  )}
-                  ：{c.text}
-                </button>
-                {c.author.kind === 'user' && (
-                  <button
-                    className="text-button danger"
-                    aria-label="删除评论"
-                    onClick={() =>
-                      void run(() =>
-                        api.call(MomentsEndpoints.deleteComment, {
-                          params: { postId: post.postId, commentId: c.commentId },
-                        }),
-                      )
-                    }
-                  >
-                    删除
-                  </button>
-                )}
-              </p>
-            ))}
-            {!full && post.comments.length > visibleComments.length && (
-              <Link to={`/moments/posts/${post.postId}`}>查看全部评论</Link>
-            )}
-          </div>
-        )}
-        {replying !== undefined && (
-          <form
-            className="message-composer"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!text.trim()) return;
-              void run(async () => {
-                const next = await api.call(MomentsEndpoints.comment, {
-                  params: { postId: post.postId },
-                  body: {
-                    clientRequestId: crypto.randomUUID(),
-                    text: text.trim(),
-                    replyToCommentId: replying?.commentId ?? null,
-                  },
-                });
-                setText('');
-                setReplying(undefined);
-                return next;
-              });
-            }}
-          >
-            <label>
-              {replying ? `回复 ${actors.name(replying.author)}` : '评论'}
-              <input
-                autoFocus
-                maxLength={500}
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-              />
-            </label>
-            <button className="primary" disabled={pending || !text.trim()}>
-              发送
-            </button>
-          </form>
-        )}
-        {error && <small role="alert">{error}</small>}
-      </div>
-    </article>
-  );
-}
-
 /** 列表加载器：游标原样回传；收到 moments.post_changed 时重拉单条。 */
 function usePostList(
   fetchPage: (
@@ -377,10 +167,350 @@ function LoadMore({ onVisible }: { onVisible(): void }) {
   return <p className="hint center">正在读取…</p>;
 }
 
+function ActorAvatar({
+  actor,
+  profile,
+  size = 42,
+}: {
+  actor: MomentsActor;
+  profile: ActorNames['profile'];
+  size?: number;
+}) {
+  return actor.kind === 'user' ? (
+    <Link to="/me/moments" className="moment-avatar">
+      <UserAvatar profile={profile} size={size} radius={4} />
+    </Link>
+  ) : (
+    <Link to={`/characters/${actor.refId}`} className="moment-avatar">
+      <CharacterAvatar id={actor.refId} size={size} radius={4} />
+    </Link>
+  );
+}
+
+/** 一条动态（4.11 动态卡）。 */
+export function MomentCard({
+  post,
+  actors,
+  onChange,
+  onDeleted,
+  full = false,
+}: {
+  post: MomentsPost;
+  actors: ActorNames;
+  onChange(post: MomentsPost): void;
+  onDeleted?(): void;
+  full?: boolean;
+}) {
+  const [replying, setReplying] = useState<MomentsComment | null | undefined>(undefined);
+  const [text, setText] = useState('');
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState('');
+  const [menu, setMenu] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [commentMenu, setCommentMenu] = useState<MomentsComment | null>(null);
+  const { register } = actors;
+  const navigate = useNavigate();
+  useEffect(() => register(actorsOf(post)), [post, register]);
+  const mine = post.author.kind === 'user';
+  async function run(operation: () => Promise<MomentsPost | null>) {
+    setPending(true);
+    setError('');
+    try {
+      const next = await operation();
+      if (next) onChange(next);
+    } catch (e) {
+      setError(friendlyError(e));
+    } finally {
+      setPending(false);
+    }
+  }
+  const visibleComments = full ? post.comments : post.comments.slice(-20);
+  const like = () =>
+    void run(() =>
+      api.call(post.likedByMe ? MomentsEndpoints.unlike : MomentsEndpoints.like, {
+        params: { postId: post.postId },
+      }),
+    );
+  return (
+    <article className="moment-card">
+      <ActorAvatar actor={post.author} profile={actors.profile} />
+      <div className="moment-body">
+        <strong className="moment-author">{actors.name(post.author)}</strong>
+        {post.text && <p className={`moment-text ${full ? '' : 'clamp-6'}`}>{post.text}</p>}
+        {post.images.length > 0 && (
+          <div className={`moment-images ${post.images.length === 1 ? 'single' : 'grid'}`}>
+            {post.images.map((image) => (
+              <MomentImage
+                key={image.mediaId}
+                mediaId={image.mediaId}
+                single={post.images.length === 1}
+              />
+            ))}
+          </div>
+        )}
+        {post.link && (
+          <a className="moment-link" href={post.link.url} target="_blank" rel="noreferrer noopener">
+            <OldIcon name="wechat/link" size={20} />
+            <span>{post.link.title}</span>
+          </a>
+        )}
+        <div className="moment-meta">
+          <Link to={`/moments/posts/${post.postId}`}>
+            <small>{timeText(post.createdAt)}</small>
+          </Link>
+          {mine && post.visibility?.kind === 'selected' && (
+            <button
+              type="button"
+              className="moment-visibility"
+              aria-label="部分可见"
+              onClick={() =>
+                showToast(`仅 ${post.visibility?.characterIds.length ?? 0} 个角色可见`)
+              }
+            >
+              <OldIcon name="drawn/people" size={14} />
+            </button>
+          )}
+          {mine && onDeleted && (
+            <button
+              type="button"
+              className="moment-delete"
+              disabled={pending}
+              onClick={() => setConfirmDelete(true)}
+            >
+              删除
+            </button>
+          )}
+          <span className="moment-more-host">
+            {menu && (
+              <span className="moment-pop" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={pending}
+                  onClick={() => {
+                    setMenu(false);
+                    like();
+                  }}
+                >
+                  <OldIcon name={post.likedByMe ? 'wechat/like_filled' : 'wechat/like'} size={18} />
+                  {post.likedByMe ? '取消' : '赞'}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenu(false);
+                    setReplying(null);
+                  }}
+                >
+                  <OldIcon name="wechat/chat" size={18} />
+                  评论
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenu(false);
+                    void api
+                      .call(LibraryEndpoints.addFavorites, {
+                        body: { items: [{ kind: 'moments_post', postId: post.postId }] },
+                      })
+                      .then(() => showToast('已收藏', 2000, 'success'))
+                      .catch((e) => showToast(friendlyError(e)));
+                  }}
+                >
+                  <OldIcon name="wechat/star" size={18} />
+                  收藏
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenu(false);
+                    openShare(navigate, { kind: 'moments_post', postId: post.postId });
+                  }}
+                >
+                  <OldIcon name="wechat/share" size={18} />
+                  分享
+                </button>
+              </span>
+            )}
+            <button
+              type="button"
+              className="moment-dots"
+              aria-label="赞和评论"
+              aria-expanded={menu}
+              onClick={() => setMenu((v) => !v)}
+            >
+              <i />
+              <i />
+            </button>
+          </span>
+        </div>
+        {(post.likes.length > 0 || post.comments.length > 0) && (
+          <div className="moment-feedback">
+            {post.likes.length > 0 && (
+              <p className="moment-likes">
+                <OldIcon name="wechat/like" size={14} />
+                <span>{post.likes.map((a) => actors.name(a)).join('、')}</span>
+              </p>
+            )}
+            {visibleComments.map((c) => (
+              <p key={c.commentId} className="moment-comment">
+                <button
+                  type="button"
+                  onClick={() => (c.author.kind === 'user' ? setCommentMenu(c) : setReplying(c))}
+                  onContextMenu={(event) => {
+                    if (c.author.kind !== 'user') return;
+                    event.preventDefault();
+                    setCommentMenu(c);
+                  }}
+                >
+                  <b>{actors.name(c.author)}</b>
+                  {c.replyTo && (
+                    <>
+                      回复<b>{actors.name(c.replyTo)}</b>
+                    </>
+                  )}
+                  ：{c.text}
+                </button>
+              </p>
+            ))}
+            {!full && post.comments.length > visibleComments.length && (
+              <Link className="moment-all" to={`/moments/posts/${post.postId}`}>
+                查看全部评论
+              </Link>
+            )}
+          </div>
+        )}
+        {replying !== undefined && (
+          <form
+            className="moment-reply"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!text.trim()) return;
+              void run(async () => {
+                const next = await api.call(MomentsEndpoints.comment, {
+                  params: { postId: post.postId },
+                  body: {
+                    clientRequestId: crypto.randomUUID(),
+                    text: text.trim(),
+                    replyToCommentId: replying?.commentId ?? null,
+                  },
+                });
+                setText('');
+                setReplying(undefined);
+                return next;
+              });
+            }}
+          >
+            <input
+              autoFocus
+              maxLength={500}
+              value={text}
+              aria-label="评论"
+              placeholder={replying ? `回复${actors.name(replying.author)}：` : '评论'}
+              onChange={(e) => setText(e.target.value)}
+              onBlur={() => !text && window.setTimeout(() => setReplying(undefined), 150)}
+            />
+            <button className="wx-send" disabled={pending || !text.trim()}>
+              发送
+            </button>
+          </form>
+        )}
+        {error && <small role="alert">{error}</small>}
+      </div>
+      {confirmDelete && onDeleted && (
+        <Dialog
+          actions={[
+            { label: '取消', onClick: () => setConfirmDelete(false) },
+            {
+              label: '删除',
+              danger: true,
+              onClick: () => {
+                setConfirmDelete(false);
+                void api
+                  .call(MomentsEndpoints.deletePost, { params: { postId: post.postId } })
+                  .then(onDeleted)
+                  .catch((e) => setError(friendlyError(e)));
+              },
+            },
+          ]}
+        >
+          <p>删除这条朋友圈？</p>
+        </Dialog>
+      )}
+      {commentMenu && (
+        <ActionSheet
+          onClose={() => setCommentMenu(null)}
+          items={[
+            {
+              label: '删除',
+              danger: true,
+              onClick: () =>
+                void run(() =>
+                  api.call(MomentsEndpoints.deleteComment, {
+                    params: { postId: post.postId, commentId: commentMenu.commentId },
+                  }),
+                ),
+            },
+          ]}
+        />
+      )}
+    </article>
+  );
+}
+
+const coverGradients = [
+  ['#6E8EAE', '#C9D6DF'],
+  ['#6D597A', '#B56576'],
+  ['#52796F', '#94B49F'],
+  ['#B08968', '#E6CCB2'],
+  ['#4A6FA5', '#9FB8D4'],
+  ['#9A8C98', '#C9ADA7'],
+  ['#5F7470', '#A4B8AE'],
+  ['#BC6C25', '#E9B872'],
+  ['#3D5A80', '#98C1D9'],
+  ['#7B6D8D', '#C4B2CE'],
+] as const;
+function coverFor(name: string) {
+  let hash = 0;
+  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return coverGradients[hash % coverGradients.length]!;
+}
+
+/** 朋友圈封面（4.11）：高 370，预设渐变 + 底部压暗；头像 70 探出封面 23.4。 */
+function MomentsCover({
+  name,
+  avatar,
+  to,
+}: {
+  name: string;
+  avatar: ReactNode;
+  to: string;
+}) {
+  const [top, bottom] = coverFor(name);
+  return (
+    <div className="moments-cover-wrap">
+      <div className="moments-cover" style={{ backgroundImage: `linear-gradient(${top}, ${bottom})` }}>
+        <i className="moments-cover-shade" />
+        <Link className="moments-cover-name" to={to}>
+          {name}
+        </Link>
+      </div>
+      <Link className="moments-cover-avatar" to={to} aria-label={`${name}的资料`}>
+        {avatar}
+      </Link>
+    </div>
+  );
+}
+
 /** 发现 › 朋友圈。 */
 export function MomentsFeedPage() {
   const actors = useActorName();
   const badge = useMomentsBadge();
+  const navigate = useNavigate();
+  const [cameraMenu, setCameraMenu] = useState(false);
   const fetchPage = useCallback(
     (cursor: string | undefined) =>
       api.call(MomentsEndpoints.listFeed, { query: { cursor, limit: 10 }, networkOnly: true }),
@@ -390,50 +520,79 @@ export function MomentsFeedPage() {
   useEffect(() => {
     void api.call(MomentsEndpoints.markSeen, { body: { scope: 'posts' } }).catch(() => {});
   }, []);
-  type Row = MomentsPost | { postId: '__more__' } | { postId: '__end__' };
+  type Row =
+    | MomentsPost
+    | { postId: '__cover__' }
+    | { postId: '__more__' }
+    | { postId: '__end__' | '__empty__' };
   const rows: Row[] = [
+    { postId: '__cover__' },
     ...list.items,
-    ...(list.done ? [{ postId: '__end__' as const }] : [{ postId: '__more__' as const }]),
+    ...(list.done
+      ? [{ postId: list.items.length ? ('__end__' as const) : ('__empty__' as const) }]
+      : [{ postId: '__more__' as const }]),
   ];
+  const nickname = actors.profile?.nickname || '我';
   return (
-    <main className="moments-page">
-      <header className="page-header">
-        <Link to="/discover">‹ 发现</Link>
-        <h1>朋友圈</h1>
-        <Link to="/moments/new" aria-label="发朋友圈">
-          <Camera size={22} />
-        </Link>
-      </header>
-      {badge && badge.unseenInteractionCount > 0 && (
-        <Link className="moments-pill" to="/moments/notifications">
-          {badge.unseenInteractionCount} 条新消息
-        </Link>
-      )}
-      {list.items.length === 0 && list.error && (
-        <div className="empty">
-          <p>加载失败</p>
-          <button onClick={() => void list.load()}>重试</button>
-        </div>
-      )}
-      {list.items.length === 0 && list.done && (
-        <p className="empty">还没有朋友圈，等 TA 们分享生活吧</p>
-      )}
+    <main className="moments-page moments-feed">
+      <NavBar
+        transparent
+        fallback="/discover"
+        right={
+          <button
+            type="button"
+            className="nav-bar-icon"
+            aria-label="发朋友圈"
+            onClick={() => setCameraMenu(true)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              navigate('/moments/new');
+            }}
+          >
+            <OldIcon name="wechat/camera" size={24} />
+          </button>
+        }
+      />
       <VirtualList
         items={rows}
         itemKey={(item) => item.postId}
         label="朋友圈"
         estimate={260}
         render={(item) =>
-          item.postId === '__more__' ? (
+          item.postId === '__cover__' ? (
+            <>
+              <MomentsCover
+                name={nickname}
+                avatar={<UserAvatar profile={actors.profile} size={70} radius={8} />}
+                to="/me/moments"
+              />
+              {badge && badge.unseenInteractionCount > 0 && (
+                <div className="moments-new-wrap">
+                  <Link className="moments-new" to="/moments/notifications">
+                    <UserAvatar profile={actors.profile} size={28} radius={4} />
+                    {badge.unseenInteractionCount}条新消息
+                  </Link>
+                </div>
+              )}
+              {list.items.length === 0 && list.error && (
+                <div className="empty">
+                  <p>加载失败</p>
+                  <button onClick={() => void list.load()}>重试</button>
+                </div>
+              )}
+            </>
+          ) : item.postId === '__more__' ? (
             list.error ? (
-              <button className="text-button" onClick={() => void list.load()}>
+              <button className="text-button full" onClick={() => void list.load()}>
                 加载失败，点击重试
               </button>
             ) : (
               <LoadMore onVisible={() => void list.load()} />
             )
           ) : item.postId === '__end__' ? (
-            <p className="hint center">没有更多了</p>
+            <p className="hint center moments-end">没有更多了</p>
+          ) : item.postId === '__empty__' ? (
+            <p className="moments-empty">暂时没有动态</p>
           ) : (
             <MomentCard
               post={item as MomentsPost}
@@ -444,6 +603,16 @@ export function MomentsFeedPage() {
           )
         }
       />
+      {cameraMenu && (
+        <ActionSheet
+          onClose={() => setCameraMenu(false)}
+          items={[
+            { label: '拍摄', onClick: () => navigate('/moments/new?pick=camera') },
+            { label: '从相册选择', onClick: () => navigate('/moments/new?pick=album') },
+            { label: '只发文字', onClick: () => navigate('/moments/new') },
+          ]}
+        />
+      )}
     </main>
   );
 }
@@ -457,12 +626,15 @@ function dateParts(iso: string): { key: string; label: string } {
   return { key, label: `${d.getDate()} ${d.getMonth() + 1}月` };
 }
 
-/** 个人朋友圈相册页（资料页 › 朋友圈；我 › 朋友圈）。 */
+/** 个人朋友圈相册页（资料页 › 朋友圈；我 › 朋友圈）：同样有封面。 */
 function Album({
   title,
   mine,
   fetchPage,
   back,
+  name,
+  avatar,
+  profileLink,
 }: {
   title: string;
   mine: boolean;
@@ -470,6 +642,9 @@ function Album({
     cursor: string | undefined,
   ): Promise<{ items: MomentsPost[]; nextCursor: string | null }>;
   back: string;
+  name: string;
+  avatar: ReactNode;
+  profileLink: string;
 }) {
   const list = usePostList(fetchPage);
   const sentinel = useRef<HTMLDivElement>(null);
@@ -485,27 +660,22 @@ function Album({
   }, [load, done, error]);
   let previous = '';
   return (
-    <main>
-      <header className="page-header">
-        <Link to={back}>‹ 返回</Link>
-        <h1>{title}</h1>
-        {mine ? (
-          <Link to="/moments/new" aria-label="发朋友圈">
-            <Camera size={22} />
-          </Link>
-        ) : (
-          <span />
-        )}
-      </header>
+    <main className="moments-album">
+      <NavBar
+        transparent
+        title={mine ? undefined : title}
+        fallback={back}
+        right={mine ? <NavIcon name="wechat/camera" label="发朋友圈" to="/moments/new" size={24} /> : undefined}
+      />
+      <MomentsCover name={name} avatar={avatar} to={profileLink} />
       {list.items.length === 0 && list.loading && (
         <div className="stack" role="status" aria-label="正在读取">
-          <div className="skeleton-row" />
           <div className="skeleton-row" />
           <div className="skeleton-row" />
         </div>
       )}
       {list.items.length === 0 && list.done && (
-        <p className="empty">{mine ? '你还没有发过朋友圈' : 'TA 还没有发过朋友圈'}</p>
+        <p className="moments-empty">{mine ? '你还没有发过朋友圈' : 'TA 还没有发过朋友圈'}</p>
       )}
       <div className="album">
         {list.items.map((post) => {
@@ -550,27 +720,40 @@ export function CharacterMomentsPage() {
   );
   return (
     <Album
-      title={`${name} 的朋友圈`}
+      title={`${name}的朋友圈`}
       mine={false}
       fetchPage={fetchPage}
       back={`/characters/${characterId}`}
+      name={name}
+      avatar={<CharacterAvatar id={characterId} size={70} radius={8} />}
+      profileLink={`/characters/${characterId}`}
     />
   );
 }
 
 export function MyMomentsPage() {
+  const profile = useRemote(IdentityEndpoints.getProfile);
   const fetchPage = useCallback(
     (cursor: string | undefined) =>
       api.call(MomentsEndpoints.listMyPosts, { query: { cursor, limit: 10 }, networkOnly: true }),
     [],
   );
-  return <Album title="我的朋友圈" mine fetchPage={fetchPage} back="/me" />;
+  return (
+    <Album
+      title="我的朋友圈"
+      mine
+      fetchPage={fetchPage}
+      back="/me"
+      name={profile.data?.nickname || '我'}
+      avatar={<UserAvatar profile={profile.data} size={70} radius={8} />}
+      profileLink="/profile"
+    />
+  );
 }
 
-/** 动态详情页（social-l4.md 3.2）。 */
+/** 动态详情页（4.11 详情页）。 */
 export function MomentDetailPage() {
   const { postId = '' } = useParams();
-  const navigate = useNavigate();
   const actors = useActorName();
   const [post, setPost] = useState<MomentsPost | null>();
   const [error, setError] = useState('');
@@ -598,15 +781,9 @@ export function MomentDetailPage() {
     else setRevision((v) => v + 1);
   });
   return (
-    <main>
-      <header className="page-header">
-        <button className="text-button" onClick={() => navigate(-1)}>
-          ‹ 返回
-        </button>
-        <h1>详情</h1>
-        <span />
-      </header>
-      {post === null && <p className="empty">该动态已删除</p>}
+    <main className="moment-detail">
+      <NavBar title="详情" fallback="/moments" />
+      {post === null && <EmptyState icon="wechat/picture" title="该动态已删除" />}
       {error && !post && (
         <div className="empty">
           <p>加载失败</p>
@@ -631,7 +808,7 @@ interface Picked {
   preview: string;
 }
 
-/** 发朋友圈（moments.md 第 5 节、social-l4.md 3.4、3.5）。 */
+/** 发朋友圈（moments.md 第 5 节；4.11 发表页）。 */
 export function ComposeMomentPage() {
   const navigate = useNavigate();
   const { state } = useChat();
@@ -645,12 +822,22 @@ export function ComposeMomentPage() {
   const [requestId] = useState(() => crypto.randomUUID());
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
+  const [leaving, setLeaving] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   useEffect(() => () => images.forEach((i) => URL.revokeObjectURL(i.preview)), [images]);
+  useEffect(() => {
+    const pick = new URLSearchParams(window.location.search).get('pick');
+    if (pick && fileInput.current) {
+      if (pick === 'camera') fileInput.current.setAttribute('capture', 'environment');
+      fileInput.current.click();
+    }
+  }, []);
   const nameOf = (id: string) =>
     contacts.find((c) => c.characterId === id)?.remark || names[id] || '角色';
   function pick(event: ChangeEvent<HTMLInputElement>) {
     const files = [...(event.target.files ?? [])];
     event.target.value = '';
+    event.target.removeAttribute('capture');
     const valid = files.filter(
       (f) =>
         (MEDIA_LIMITS.imageMimeTypes as readonly string[]).includes(f.type) &&
@@ -693,107 +880,141 @@ export function ComposeMomentPage() {
   }
   const dirty = text.trim().length > 0 || images.length > 0;
   return (
-    <main>
-      <header className="page-header">
+    <main className="moment-compose">
+      <NavBar
+        left={
+          <button
+            type="button"
+            className="text-button text-action plain-text"
+            onClick={() => (dirty ? setLeaving(true) : navigate(-1))}
+          >
+            取消
+          </button>
+        }
+        right={
+          <button
+            type="button"
+            className="primary"
+            disabled={pending || !dirty || (visibility === 'selected' && selected.length === 0)}
+            onClick={() => void publish()}
+          >
+            {pending ? '发表中' : '发表'}
+          </button>
+        }
+      />
+      <div className="compose-card">
+        <textarea
+          aria-label="这一刻的想法"
+          placeholder="这一刻的想法..."
+          maxLength={2000}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
+        <div className="image-picker">
+          {images.map((image, index) => (
+            <span key={image.preview} className="picked-image">
+              <img src={image.preview} alt="" />
+              <button
+                type="button"
+                aria-label="移除图片"
+                onClick={() => setImages((prev) => prev.filter((_, i) => i !== index))}
+              >
+                <OldIcon name="wechat/close" size={18} />
+              </button>
+            </span>
+          ))}
+          {images.length < 9 && (
+            <button
+              type="button"
+              className="picked-image add-image"
+              aria-label="添加图片"
+              onClick={() => fileInput.current?.click()}
+            >
+              <OldIcon name="wechat/add" size={28} />
+            </button>
+          )}
+          <input
+            ref={fileInput}
+            type="file"
+            accept={MEDIA_LIMITS.imageMimeTypes.join(',')}
+            multiple
+            hidden
+            onChange={pick}
+          />
+        </div>
+      </div>
+      <GroupHeader>谁可以看</GroupHeader>
+      <MenuGroup>
         <button
-          className="text-button"
+          type="button"
+          className="menu-row"
           onClick={() => {
-            if (!dirty || window.confirm('不保留此次编辑？')) navigate(-1);
+            setVisibility('all');
+            setChoosing(false);
           }}
         >
-          取消
-        </button>
-        <h1>发朋友圈</h1>
-        <button
-          className="primary"
-          disabled={pending || !dirty || (visibility === 'selected' && selected.length === 0)}
-          onClick={() => void publish()}
-        >
-          {pending ? '发表中…' : '发表'}
-        </button>
-      </header>
-      <label>
-        这一刻的想法
-        <textarea maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} />
-      </label>
-      <div className="image-picker">
-        {images.map((image, index) => (
-          <span key={image.preview} className="moment-image">
-            <img src={image.preview} alt="" />
-            <button
-              className="member-remove"
-              aria-label="移除图片"
-              onClick={() => setImages((prev) => prev.filter((_, i) => i !== index))}
-            >
-              ×
-            </button>
+          <span className="menu-text">
+            <span className="menu-label">公开</span>
+            <small className="menu-subtitle">所有角色可见</small>
           </span>
-        ))}
-        {images.length < 9 && (
-          <label className="moment-image add-image">
-            ＋
-            <input
-              type="file"
-              accept={MEDIA_LIMITS.imageMimeTypes.join(',')}
-              multiple
-              hidden
-              onChange={pick}
-            />
-          </label>
-        )}
-      </div>
-      <div className="panel stack">
-        <h2 className="group-label">谁可以看</h2>
-        <label className="check">
-          <input
-            type="radio"
-            name="visibility"
-            checked={visibility === 'all'}
-            onChange={() => setVisibility('all')}
-          />
-          全部角色
-        </label>
-        <label className="check">
-          <input
-            type="radio"
-            name="visibility"
-            checked={visibility === 'selected'}
-            onChange={() => {
-              setVisibility('selected');
-              setChoosing(true);
-            }}
-          />
-          部分角色可见
-        </label>
-        {visibility === 'selected' && (
-          <button className="text-button" onClick={() => setChoosing((v) => !v)}>
-            {selected.length ? selected.map(nameOf).join('、') : '选择角色'} ›
-          </button>
-        )}
-        {choosing && visibility === 'selected' && (
-          <div className="rows">
-            {contacts.map((c) => (
-              <label key={c.characterId} className="role-row check-row">
-                <input
-                  type="checkbox"
-                  checked={selected.includes(c.characterId)}
-                  onChange={(e) =>
-                    setSelected((v) =>
-                      e.target.checked
-                        ? [...v, c.characterId]
-                        : v.filter((id) => id !== c.characterId),
-                    )
-                  }
-                />
+          <CheckCircle checked={visibility === 'all'} />
+        </button>
+        <button
+          type="button"
+          className="menu-row"
+          onClick={() => {
+            setVisibility('selected');
+            setChoosing(true);
+          }}
+        >
+          <span className="menu-text">
+            <span className="menu-label">部分可见</span>
+            <small className="menu-subtitle">
+              {selected.length ? selected.map(nameOf).join('、') : '选中的角色可见'}
+            </small>
+          </span>
+          <CheckCircle checked={visibility === 'selected'} />
+        </button>
+      </MenuGroup>
+      {choosing && visibility === 'selected' && (
+        <MenuGroup>
+          {contacts.map((c) => {
+            const checked = selected.includes(c.characterId);
+            return (
+              <button
+                key={c.characterId}
+                type="button"
+                className="menu-row select-row"
+                onClick={() =>
+                  setSelected((v) =>
+                    checked ? v.filter((id) => id !== c.characterId) : [...v, c.characterId],
+                  )
+                }
+              >
+                <CheckCircle checked={checked} />
                 <CharacterAvatar id={c.characterId} size={40} />
-                {nameOf(c.characterId)}
-              </label>
-            ))}
-          </div>
-        )}
-        <small>看不到的角色不会点赞评论，也不会在聊天里提起这条动态</small>
-      </div>
-      {error && <p role="alert">{error}</p>}
+                <span className="menu-label">{nameOf(c.characterId)}</span>
+              </button>
+            );
+          })}
+        </MenuGroup>
+      )}
+      <p className="hint page-note">看不到的角色不会点赞评论，也不会在聊天里提起这条动态</p>
+      {error && (
+        <p role="alert" className="notice-bar">
+          {error}
+        </p>
+      )}
+      {leaving && (
+        <Dialog
+          actions={[
+            { label: '继续编辑', onClick: () => setLeaving(false) },
+            { label: '不保留', danger: true, onClick: () => navigate(-1) },
+          ]}
+        >
+          <p>不保留此次编辑？</p>
+        </Dialog>
+      )}
     </main>
   );
 }
@@ -840,27 +1061,29 @@ export function MomentsNotificationsPage() {
     mention: '在评论中提到了你',
   };
   return (
-    <main className="moments-page">
-      <header className="page-header">
-        <Link to="/moments">‹ 朋友圈</Link>
-        <h1>消息</h1>
-        <span />
-      </header>
+    <main className="moments-notices">
+      <NavBar title="消息" fallback="/moments" />
       {error && (
-        <p role="alert">
+        <p role="alert" className="notice-bar">
           {error} <button onClick={load}>重试</button>
         </p>
       )}
-      {items.length === 0 && cursor === null && <p className="empty">暂无消息</p>}
-      <div className="panel rows">
+      {items.length === 0 && cursor === null && (
+        <EmptyState icon="wechat/chat" title="暂无消息" />
+      )}
+      <MenuGroup>
         {items.map((n) => (
-          <Link key={n.notificationId} className="role-row" to={`/moments/posts/${n.postId}`}>
-            <ActorAvatar actor={n.actor} profile={actors.profile} />
-            <span className="conversation-copy">
-              <strong>{actors.name(n.actor)}</strong>
+          <Link key={n.notificationId} className="notice-row" to={`/moments/posts/${n.postId}`}>
+            {n.actor.kind === 'user' ? (
+              <UserAvatar profile={actors.profile} size={46} radius={6} />
+            ) : (
+              <CharacterAvatar id={n.actor.refId} size={46} radius={6} />
+            )}
+            <span className="notice-copy">
+              <b>{actors.name(n.actor)}</b>
               <span>
                 {n.kind === 'like' ? (
-                  <Heart size={16} aria-label="赞" />
+                  <OldIcon name="wechat/like" size={16} label="赞" />
                 ) : (
                   (n.text ?? verb[n.kind] ?? '')
                 )}
@@ -874,7 +1097,7 @@ export function MomentsNotificationsPage() {
             )}
           </Link>
         ))}
-      </div>
+      </MenuGroup>
       {cursor !== null && items.length > 0 && (
         <button className="text-button full" disabled={loading} onClick={load}>
           {loading ? '正在读取…' : '查看更多'}

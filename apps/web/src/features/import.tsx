@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { BookOpen, CaretLeft, CaretRight, Warning } from '@phosphor-icons/react';
+import { BookOpen, CaretLeft, CaretRight, Warning } from './old-icons.js';
 import {
   CharacterEndpoints,
   CharacterSupplementEndpoints,

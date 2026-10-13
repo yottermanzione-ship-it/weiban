@@ -5,10 +5,12 @@ import { useRemote } from '../data/use-remote.js';
 export function UserAvatar({
   profile,
   size = 40,
+  radius = 4,
   imageClassName,
 }: {
   profile?: Profile;
   size?: number;
+  radius?: number;
   imageClassName?: string;
 }) {
   const letters = avatarLetters(profile?.nickname ?? '我');
@@ -20,7 +22,7 @@ export function UserAvatar({
       style={{
         width: size,
         height: size,
-        borderRadius: size * 0.12,
+        borderRadius: radius,
         fontSize: size * (Array.from(letters).length === 1 ? 0.44 : 0.34),
       }}
     >

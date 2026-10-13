@@ -1,36 +1,34 @@
 /*
- * 微伴小程序（docs/refactor/02 第 4 节）：11 个专属功能共用一个外壳。
+ * 微伴小程序（docs/refactor/02 第 4 节；视觉按 06-old-ui-spec 5.1）：11 个专属功能共用一个外壳。
  * - 外壳：右上胶囊（··· 更多 | ◯ 回到打开前的位置），从底部升起，不显示标签栏。
  * - 入口：发现 › 小程序（主页）、会话列表下拉、聊天「+」› 小程序、聊天信息「和 TA 一起用」。
  * - 最近使用 / 我的小程序只存本机（首版不跨设备同步）；经期日记默认不进最近使用。
+ * - 图标：48×48 圆角 12 点缀色方块 + 白色线框图标；慢信直接用原图 mail.png。
  */
-import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { OldIcon, OldImage } from './old-icons.js';
 import {
-  Alarm,
-  Cards,
-  ChatCircleDots,
-  Circle,
-  DotsThree,
-  DownloadSimple,
-  EnvelopeSimple,
-  FlowerLotus,
-  HourglassMedium,
-  ListChecks,
-  MagnifyingGlass,
-  Medal,
-  PawPrint,
-  UsersThree,
-  type IconProps,
-} from '@phosphor-icons/react';
-import { IconTile, NavBar, Sheet, type Tint } from './shell-kit.js';
+  GroupHeader,
+  IconTile,
+  LongPressMenu,
+  MenuGroup,
+  MenuRow,
+  NavBar,
+  Sheet,
+  useLongPress,
+  type ActionItem,
+  type Tint,
+} from './shell-kit.js';
 import { showToast } from './toast.js';
 
 export interface MiniApp {
   id: string;
   name: string;
   desc: string;
-  icon: ComponentType<IconProps>;
+  /** 白色线框图标（old-ui 素材名）；image = 原色图标（慢信）。 */
+  icon: string;
+  image?: string;
   tint: Tint;
   home: string;
   /** 按 TA：从聊天里打开时直接进入当前 TA 那一页。 */
@@ -47,8 +45,8 @@ export const miniApps: MiniApp[] = [
     id: 'cards',
     name: '卡册',
     desc: '和 TA 的每一个特别时刻',
-    icon: Cards,
-    tint: 'pink',
+    icon: 'drawn/cards',
+    tint: 'red',
     home: '/services/cards',
     taPath: (id) => `/characters/${id}/cards`,
     match: [/^\/services\/cards$/, /^\/characters\/[^/]+\/cards$/],
@@ -58,7 +56,7 @@ export const miniApps: MiniApp[] = [
     id: 'achievements',
     name: '成就',
     desc: '一起走过的里程碑',
-    icon: Medal,
+    icon: 'wechat/star',
     tint: 'gold',
     home: '/services/achievements',
     match: [/^\/services\/achievements$/],
@@ -68,7 +66,7 @@ export const miniApps: MiniApp[] = [
     id: 'pets',
     name: '宠物',
     desc: '和 TA 一起养一只小家伙',
-    icon: PawPrint,
+    icon: 'drawn/paw',
     tint: 'orange',
     home: '/services/pets',
     taPath: (id) => `/pets/with/${id}`,
@@ -79,7 +77,7 @@ export const miniApps: MiniApp[] = [
     id: 'daily',
     name: '每日一问',
     desc: '每天一个问题，说给 TA 听',
-    icon: ChatCircleDots,
+    icon: 'wechat/chat',
     tint: 'gold',
     home: '/play/daily',
     match: [/^\/play\/daily(\/|$)/],
@@ -89,8 +87,8 @@ export const miniApps: MiniApp[] = [
     id: 'wishlist',
     name: '心愿清单',
     desc: '想和 TA 一起做的事',
-    icon: ListChecks,
-    tint: 'teal',
+    icon: 'wechat/check',
+    tint: 'green',
     home: '/play/wishlists',
     taPath: (id) => `/play/wishlists/${id}`,
     match: [/^\/play\/wishlists(\/|$)/],
@@ -100,8 +98,9 @@ export const miniApps: MiniApp[] = [
     id: 'letters',
     name: '慢信',
     desc: '写一封慢慢寄到的信',
-    icon: EnvelopeSimple,
-    tint: 'lilac',
+    icon: 'drawn/letter',
+    image: 'wechat/mail.png',
+    tint: 'orange',
     home: '/play/letters',
     taPath: (id) => `/play/letters/new?characterId=${id}`,
     match: [/^\/play\/letters(\/|$)/],
@@ -111,8 +110,8 @@ export const miniApps: MiniApp[] = [
     id: 'focus',
     name: '陪你专注',
     desc: '让 TA 陪你专心一会儿',
-    icon: HourglassMedium,
-    tint: 'pink',
+    icon: 'drawn/hourglass',
+    tint: 'purple',
     home: '/play/focus',
     taPath: (id) => `/play/focus?characterId=${id}`,
     match: [/^\/play\/focus$/],
@@ -122,7 +121,7 @@ export const miniApps: MiniApp[] = [
     id: 'reminders',
     name: 'TA 的提醒',
     desc: '让 TA 到点叫你',
-    icon: Alarm,
+    icon: 'wechat/bell',
     tint: 'blue',
     home: '/play/reminders',
     taPath: (id) => `/play/reminders/new?characterId=${id}`,
@@ -133,8 +132,8 @@ export const miniApps: MiniApp[] = [
     id: 'period',
     name: '经期日记',
     desc: '记录身体，也让 TA 懂你',
-    icon: FlowerLotus,
-    tint: 'pink',
+    icon: 'drawn/flower',
+    tint: 'red',
     home: '/services/period',
     match: [/^\/services\/period(\/|$)/],
     data: '加密保存的经期记录，只有你授权的 TA 知道',
@@ -144,7 +143,7 @@ export const miniApps: MiniApp[] = [
     id: 'plaza',
     name: '人设广场',
     desc: '看看大家创作的角色',
-    icon: UsersThree,
+    icon: 'drawn/people',
     tint: 'blue',
     home: '/plaza',
     match: [/^\/plaza(\/|$)/],
@@ -154,8 +153,8 @@ export const miniApps: MiniApp[] = [
     id: 'import',
     name: '导入角色',
     desc: '用聊天记录生成一个 TA',
-    icon: DownloadSimple,
-    tint: 'teal',
+    icon: 'drawn/import',
+    tint: 'cyan',
     home: '/imports',
     match: [/^\/imports(\/|$)/],
     data: '你上传的聊天记录（生成完成后可删除）',
@@ -165,6 +164,15 @@ export const miniApps: MiniApp[] = [
 export const appById = (id: string) => miniApps.find((app) => app.id === id);
 export function miniAppFor(pathname: string): MiniApp | undefined {
   return miniApps.find((app) => app.match.some((pattern) => pattern.test(pathname)));
+}
+
+/** 小程序图标（48 圆角 12；聊天信息页一行用 40 圆角 10，由样式缩小）。 */
+export function MiniAppIcon({ app }: { app: MiniApp }) {
+  return app.image ? (
+    <OldImage name={app.image} size={48} className="miniapp-mail" />
+  ) : (
+    <IconTile icon={app.icon} tint={app.tint} size="lg" />
+  );
 }
 
 // ---------- 本机偏好：最近使用、我的小程序 ----------
@@ -232,6 +240,16 @@ export function useMiniAppPrefs() {
         mineIds.includes(app.id) ? mineIds.filter((id) => id !== app.id) : [...mineIds, app.id],
       );
     },
+    moveToFront(app: MiniApp) {
+      write(MINE, [app.id, ...mineIds.filter((id) => id !== app.id)]);
+    },
+    /** 拖动排序：把 app 放到 target 的位置。 */
+    moveTo(app: MiniApp, target: MiniApp) {
+      const list = mineIds.filter((id) => id !== app.id);
+      const index = list.indexOf(target.id);
+      list.splice(index < 0 ? list.length : index, 0, app.id);
+      write(MINE, list);
+    },
     removeRecent,
     inRecentAllowed: (app: MiniApp) => !excludedFromRecent(app),
     toggleRecentAllowed(app: MiniApp) {
@@ -250,63 +268,99 @@ export function MiniAppCell({
   app,
   to,
   onPick,
+  onMenu,
+  wiggle = false,
 }: {
   app: MiniApp;
   to?: string;
   onPick?: () => void;
+  onMenu?: (at: { x: number; y: number }) => void;
+  wiggle?: boolean;
 }) {
+  const press = useLongPress((at) => onMenu?.(at));
   const body = (
     <>
-      <IconTile icon={app.icon} tint={app.tint} size="lg" />
+      <MiniAppIcon app={app} />
       <small>{app.name}</small>
     </>
   );
+  const className = `miniapp-cell ${wiggle ? 'wiggle' : ''}`;
+  const handlers = onMenu ? press : {};
   return onPick ? (
-    <button type="button" className="miniapp-cell" onClick={onPick}>
+    <button type="button" className={className} data-app={app.id} onClick={onPick} {...handlers}>
       {body}
     </button>
   ) : (
-    <Link className="miniapp-cell" to={to ?? app.home}>
+    <Link className={className} data-app={app.id} to={to ?? app.home} {...handlers}>
       {body}
     </Link>
   );
 }
 
-/** 搜索 + 最近使用 + 我的小程序（发现 › 小程序与下拉面板共用）。 */
-export function MiniAppBrowser({ onOpen }: { onOpen?: (app: MiniApp) => void }) {
+/** 发现 › 小程序（5.1）：搜索条、最近使用横排、我的小程序白卡宫格、「整理」拖动排序。 */
+export function MiniAppsHomePage() {
   const prefs = useMiniAppPrefs();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
-  const open = (app: MiniApp) => {
-    onOpen?.(app);
-    navigate(app.home);
-  };
+  const [sorting, setSorting] = useState(false);
+  const [menu, setMenu] = useState<{ at: { x: number; y: number }; items: ActionItem[] } | null>(
+    null,
+  );
+  const dragging = useRef<MiniApp | null>(null);
+  const open = (app: MiniApp) => navigate(app.home);
   const hits = query.trim()
     ? miniApps.filter((app) => (app.name + app.desc).includes(query.trim()))
     : null;
   return (
-    <div className="stack">
-      <label className="search-entry">
-        <MagnifyingGlass size={16} aria-hidden />
-        <input
-          aria-label="搜索小程序"
-          placeholder="搜索小程序"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      </label>
+    <main>
+      <NavBar
+        title="小程序"
+        fallback="/discover"
+        right={
+          !hits && (
+            <button
+              type="button"
+              className="text-button text-action"
+              onClick={() => setSorting((v) => !v)}
+            >
+              {sorting ? '完成' : '整理'}
+            </button>
+          )
+        }
+      />
+      <div className="search-strip">
+        <label className="search-entry">
+          <OldIcon name="wechat/search" size={17} />
+          <input
+            aria-label="搜索小程序"
+            placeholder="搜索小程序"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </label>
+      </div>
       {hits ? (
-        <div className="miniapp-grid">
+        <MenuGroup>
           {hits.map((app) => (
-            <MiniAppCell key={app.id} app={app} onPick={() => open(app)} />
+            <MenuRow
+              key={app.id}
+              onClick={() => open(app)}
+              icon={app.image ?? app.icon}
+              tint={app.tint}
+              tile={!app.image}
+              image={app.image}
+              iconSize={24}
+              label={app.name}
+              subtitle={app.desc}
+            />
           ))}
-          {hits.length === 0 && <p className="hint">没有找到小程序</p>}
-        </div>
+          {hits.length === 0 && <p className="empty">没有找到小程序</p>}
+        </MenuGroup>
       ) : (
         <>
           {prefs.recent.length > 0 && (
             <>
-              <h2 className="miniapp-section">最近使用</h2>
+              <GroupHeader>最近使用</GroupHeader>
               <div className="miniapp-recent">
                 {prefs.recent.map((app) => (
                   <MiniAppCell key={app.id} app={app} onPick={() => open(app)} />
@@ -314,36 +368,80 @@ export function MiniAppBrowser({ onOpen }: { onOpen?: (app: MiniApp) => void }) 
               </div>
             </>
           )}
-          <h2 className="miniapp-section">我的小程序</h2>
-          <div className="miniapp-grid">
-            {prefs.mine.map((app) => (
-              <MiniAppCell key={app.id} app={app} onPick={() => open(app)} />
-            ))}
+          <GroupHeader right={sorting ? '按住图标拖到新位置' : undefined}>我的小程序</GroupHeader>
+          <div
+            className="miniapp-card"
+            onPointerUp={(event) => {
+              const app = dragging.current;
+              dragging.current = null;
+              if (!sorting || !app) return;
+              const target = (document.elementFromPoint(event.clientX, event.clientY) as Element | null)
+                ?.closest<HTMLElement>('[data-app]')
+                ?.dataset.app;
+              const to = target ? appById(target) : undefined;
+              if (to && to.id !== app.id) prefs.moveTo(app, to);
+            }}
+          >
+            <div className="miniapp-grid">
+              {prefs.mine.map((app) => (
+                <span
+                  key={app.id}
+                  onPointerDown={(event) => {
+                    if (!sorting) return;
+                    event.preventDefault();
+                    dragging.current = app;
+                  }}
+                >
+                  <MiniAppCell
+                    app={app}
+                    wiggle={sorting}
+                    onPick={() => !sorting && open(app)}
+                    onMenu={
+                      sorting
+                        ? undefined
+                        : (at) =>
+                            setMenu({
+                              at,
+                              items: [
+                                { label: '移到最前', onClick: () => prefs.moveToFront(app) },
+                                { label: '移出我的小程序', onClick: () => prefs.toggleMine(app) },
+                              ],
+                            })
+                    }
+                  />
+                </span>
+              ))}
+            </div>
           </div>
           {prefs.mine.length < miniApps.length && (
             <>
-              <h2 className="miniapp-section">更多小程序</h2>
-              <div className="miniapp-grid">
-                {miniApps
-                  .filter((app) => !prefs.inMine(app))
-                  .map((app) => (
-                    <MiniAppCell key={app.id} app={app} onPick={() => open(app)} />
-                  ))}
+              <GroupHeader>更多小程序</GroupHeader>
+              <div className="miniapp-card">
+                <div className="miniapp-grid">
+                  {miniApps
+                    .filter((app) => !prefs.inMine(app))
+                    .map((app) => (
+                      <MiniAppCell
+                        key={app.id}
+                        app={app}
+                        onPick={() => open(app)}
+                        onMenu={(at) =>
+                          setMenu({
+                            at,
+                            items: [
+                              { label: '添加到我的小程序', onClick: () => prefs.toggleMine(app) },
+                            ],
+                          })
+                        }
+                      />
+                    ))}
+                </div>
               </div>
             </>
           )}
         </>
       )}
-    </div>
-  );
-}
-
-/** 发现 › 小程序。 */
-export function MiniAppsHomePage() {
-  return (
-    <main>
-      <NavBar title="小程序" fallback="/discover" />
-      <MiniAppBrowser />
+      {menu && <LongPressMenu at={menu.at} items={menu.items} onClose={() => setMenu(null)} />}
     </main>
   );
 }
@@ -351,7 +449,7 @@ export function MiniAppsHomePage() {
 // ---------- 外壳 ----------
 
 /**
- * 小程序外壳：胶囊固定右上。◯ 一步回到打开小程序之前的页面（按浏览器历史退回到进入前的那一条）。
+ * 小程序外壳：胶囊固定右上（5.1：88×32 白底 + 0.5 线框）。◯ 一步回到打开小程序之前的页面。
  * 进入时的历史位置在挂载时记下；Shell 以 app.id 为 key，换小程序即重新计算。
  */
 export function MiniAppFrame({ app, children }: { app: MiniApp; children: ReactNode }) {
@@ -372,70 +470,42 @@ export function MiniAppFrame({ app, children }: { app: MiniApp; children: ReactN
     <div className="miniapp-frame">
       <div className="capsule" role="group" aria-label={`${app.name} 小程序`}>
         <button type="button" aria-label="更多" onClick={() => setMore(true)}>
-          <DotsThree size={20} weight="bold" />
+          <OldIcon name="wechat/more" size={20} />
         </button>
         <i aria-hidden />
         <button type="button" aria-label="关闭小程序" onClick={close}>
-          <Circle size={16} weight="bold" />
+          <OldIcon name="drawn/capsule_close" size={20} />
         </button>
       </div>
       {children}
       {more && (
-        <Sheet title={app.name} onClose={() => setMore(false)} closeLabel="取消">
-          <div className="menu-group">
-            <button
-              type="button"
-              className="menu-row"
-              onClick={() => {
+        <MoreSheet
+          items={[
+            {
+              label: prefs.inMine(app) ? '从我的小程序移除' : '添加到我的小程序',
+              onClick: () => {
                 prefs.toggleMine(app);
                 showToast(prefs.inMine(app) ? '已从我的小程序移除' : '已添加到我的小程序');
-                setMore(false);
-              }}
-            >
-              <span className="menu-label">
-                {prefs.inMine(app) ? '从我的小程序移除' : '添加到我的小程序'}
-              </span>
-            </button>
-            <button
-              type="button"
-              className="menu-row"
-              onClick={() => {
+              },
+            },
+            {
+              label: prefs.inRecentAllowed(app) ? '不在最近使用中显示' : '在最近使用中显示',
+              onClick: () => {
                 prefs.toggleRecentAllowed(app);
                 showToast(prefs.inRecentAllowed(app) ? '不再显示在最近使用' : '会显示在最近使用');
-                setMore(false);
-              }}
-            >
-              <span className="menu-label">
-                {prefs.inRecentAllowed(app) ? '不在最近使用中显示' : '在最近使用中显示'}
-              </span>
-            </button>
-            <button
-              type="button"
-              className="menu-row"
-              onClick={() => {
-                setMore(false);
-                setAbout(true);
-              }}
-            >
-              <span className="menu-label">关于这个小程序</span>
-            </button>
-            <button
-              type="button"
-              className="menu-row"
-              onClick={() => {
-                setMore(false);
-                navigate(app.home, { replace: true });
-              }}
-            >
-              <span className="menu-label">重新进入</span>
-            </button>
-          </div>
-        </Sheet>
+              },
+            },
+            { label: '关于这个小程序', onClick: () => setAbout(true) },
+            { label: '重新进入', onClick: () => navigate(app.home, { replace: true }) },
+          ]}
+          title={app.name}
+          onClose={() => setMore(false)}
+        />
       )}
       {about && (
         <Sheet title="关于这个小程序" onClose={() => setAbout(false)}>
           <div className="coming-soon-body">
-            <IconTile icon={app.icon} tint={app.tint} size="lg" />
+            <MiniAppIcon app={app} />
             <h2>{app.name}</h2>
             <p>{app.desc}</p>
             <p className="hint">会用到：{app.data}。数据只在微伴里，不会给第三方。</p>
@@ -446,15 +516,51 @@ export function MiniAppFrame({ app, children }: { app: MiniApp; children: ReactN
   );
 }
 
+function MoreSheet({
+  title,
+  items,
+  onClose,
+}: {
+  title: string;
+  items: ActionItem[];
+  onClose(): void;
+}) {
+  return (
+    <Sheet title={title} onClose={onClose} closeLabel="取消">
+      <MenuGroup>
+        {items.map((item, index) => (
+          <MenuRow
+            key={index}
+            label={item.label}
+            chevron={false}
+            onClick={() => {
+              onClose();
+              item.onClick();
+            }}
+          />
+        ))}
+      </MenuGroup>
+    </Sheet>
+  );
+}
+
 // ---------- 和 TA 一起用 ----------
 
 const taApps = () => miniApps.filter((app) => app.taPath);
 
-/** 聊天「+」› 小程序：半屏，只列按 TA 的小程序，当前 TA 已选好。 */
-export function WithTaSheet({ characterId, onClose }: { characterId: string; onClose(): void }) {
+/** 聊天「+」› 小程序：半屏（5.1），只列按 TA 的小程序，当前 TA 已选好。 */
+export function WithTaSheet({
+  characterId,
+  name,
+  onClose,
+}: {
+  characterId: string;
+  name?: string;
+  onClose(): void;
+}) {
   const navigate = useNavigate();
   return (
-    <Sheet title="和 TA 一起用" onClose={onClose}>
+    <Sheet title={`和 ${name ?? 'TA'} 一起用`} onClose={onClose} half>
       <div className="miniapp-grid">
         {taApps().map((app) => (
           <MiniAppCell
@@ -467,20 +573,27 @@ export function WithTaSheet({ characterId, onClose }: { characterId: string; onC
           />
         ))}
       </div>
-      <Link className="text-button" to="/miniapps" onClick={onClose}>
-        全部小程序 ›
-      </Link>
+      <p className="center">
+        <Link className="text-button" to="/miniapps" onClick={onClose}>
+          全部小程序 ›
+        </Link>
+      </p>
     </Sheet>
   );
 }
 
-/** 聊天信息页「和 TA 一起用」一行图标。 */
+/** 聊天信息页「和 TA 一起用」一行图标（4.5：40×40，最多 5 个，末尾「更多 ›」）。 */
 export function WithTaRow({ characterId }: { characterId: string }) {
   return (
     <div className="miniapp-row" aria-label="和 TA 一起用">
-      {taApps().map((app) => (
-        <MiniAppCell key={app.id} app={app} to={app.taPath!(characterId)} />
-      ))}
+      {taApps()
+        .slice(0, 5)
+        .map((app) => (
+          <MiniAppCell key={app.id} app={app} to={app.taPath!(characterId)} />
+        ))}
+      <Link className="more" to="/miniapps">
+        更多 ›
+      </Link>
     </div>
   );
 }

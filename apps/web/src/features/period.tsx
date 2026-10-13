@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { CaretLeft, CaretRight, Lock } from '@phosphor-icons/react';
+import { CaretLeft, CaretRight, Lock } from './old-icons.js';
 import {
   HealthEndpoints,
   HealthTagEndpoints,

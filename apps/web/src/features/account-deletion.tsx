@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CaretLeft, CheckCircle } from '@phosphor-icons/react';
+import { CaretLeft, CheckCircle } from './old-icons.js';
 import { BillingEndpoints, IdentityEndpoints } from '@weiban/contracts';
 import { ApiFailure, formatMoney } from '@weiban/client-core';
 import { useAuth } from '../app/auth.js';

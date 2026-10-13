@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Camera, ChatCircle, Megaphone } from '@phosphor-icons/react';
+import { Camera, ChatCircle, Megaphone } from './old-icons.js';
 import {
   CompanionEndpoints,
   DailyEventEndpoints,

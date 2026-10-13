@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { MagnifyingGlass } from '@phosphor-icons/react';
+import { MagnifyingGlass } from './old-icons.js';
 import { NewFriendsEndpoints, type NewFriendItem } from '@weiban/contracts';
 import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';

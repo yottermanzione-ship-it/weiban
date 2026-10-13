@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { CaretLeft } from '@phosphor-icons/react';
+import { CaretLeft } from './old-icons.js';
 import {
   CharacterEndpoints,
   CharacterSupplementEndpoints,

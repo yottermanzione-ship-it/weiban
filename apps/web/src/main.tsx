@@ -10,7 +10,12 @@ import './app/l6b.css';
 import './app/plaza.css';
 import './app/play.css';
 import './app/shell.css';
+import './app/old-ui.css';
+import './app/chat-old.css';
+import './app/pages-old.css';
 import { App } from './app/app.js';
+import { applyDisplayPrefs } from './data/display-prefs.js';
+applyDisplayPrefs();
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>

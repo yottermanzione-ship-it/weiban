@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
-import { ChatsCircle, AddressBook, Compass, User, CaretLeft } from '@phosphor-icons/react';
-import { IdentityEndpoints } from '@weiban/contracts';
+import { OldIcon } from '../features/old-icons.js';
+import { BackArrow } from '../features/shell-kit.js';
+import { useChat } from './chat.js';
 import { ConversationListPage } from '../features/conversation-list.js';
 import { ConversationPage } from '../features/chat.js';
 import { MemoriesPage } from '../features/memories.js';
@@ -42,7 +43,6 @@ import {
   GeneralSettingsPage,
   ProactiveSettingsPage,
 } from '../features/account-settings.js';
-import { api } from '../data/client.js';
 import { TimelinePage } from '../features/timeline.js';
 import { AnniversariesPage } from '../features/growth.js';
 import {
@@ -122,38 +122,64 @@ const ownHeader = [
   /^\/(services|settings)$/,
   /^\/settings\/(about|announcements|release-notes)$/,
   /^\/characters\/[^/]+\/model$/,
+  // 旧版界面（06-old-ui-spec）改用 NavBar 的页面
+  /^\/settings\/(security|privacy|general)$/,
+  /^\/services\/proactive$/,
+  /^\/characters\/[^/]+$/,
+  /^\/profile$/,
 ];
 function TopBack({ fallback }: { fallback: string }) {
   const back = useBack(fallback);
   return (
     <button type="button" className="text-button" onClick={back} aria-label="返回">
-      <CaretLeft size={24} />
+      <BackArrow />
       返回
     </button>
   );
 }
-function TabBar() {
+/** 底部标签栏（规格 4.1）：位图图标整体着色，10 号字，角标。 */
+function TabBar({ hidden }: { hidden: boolean }) {
   const badge = useMomentsBadge();
   const friends = useNewFriendsDot();
   const announcements = useAnnouncementUnread();
-  const dot = (to: string) =>
-    (to === '/discover' && badge && badge.unseenPostCount + badge.unseenInteractionCount > 0) ||
-    (to === '/contacts' && friends) ||
-    (to === '/me' && announcements > 0);
+  const { state } = useChat();
+  const unread = state.conversations
+    .filter((c) => !c.state.muted && !c.state.hidden)
+    .reduce((total, c) => total + c.unreadCount, 0);
+  const tabs = [
+    { to: '/chat', label: '微伴', index: 0, count: unread, dot: false },
+    { to: '/contacts', label: '通讯录', index: 1, count: 0, dot: friends },
+    {
+      to: '/discover',
+      label: '发现',
+      index: 2,
+      count: badge?.unseenInteractionCount ?? 0,
+      dot: !!badge && badge.unseenPostCount > 0,
+    },
+    { to: '/me', label: '我', index: 3, count: 0, dot: announcements > 0 },
+  ];
   return (
-    <nav className="tabbar" aria-label="主导航">
-      {(
-        [
-          ['/chat', '微伴', ChatsCircle],
-          ['/contacts', '通讯录', AddressBook],
-          ['/discover', '发现', Compass],
-          ['/me', '我', User],
-        ] as const
-      ).map(([to, label, Icon]) => (
-        <NavLink key={to} to={to}>
-          <Icon size={24} />
-          <span>{label}</span>
-          {dot(to) && <span className="red-dot" aria-label="有新内容" />}
+    <nav className={`tabbar ${hidden ? 'hidden' : ''}`} aria-label="主导航">
+      {tabs.map((tab) => (
+        <NavLink key={tab.to} to={tab.to}>
+          {({ isActive }) => (
+            <>
+              <span className="tab-icon">
+                <OldIcon
+                  name={`../tab/main_page_index${tab.index}_${isActive ? 'pre' : 'nor'}.png`}
+                  size={28}
+                />
+                {tab.count > 0 ? (
+                  <span className="tab-badge" aria-label={`${tab.count} 条未读`}>
+                    {tab.count > 99 ? '99+' : tab.count}
+                  </span>
+                ) : (
+                  tab.dot && <span className="tab-dot" aria-label="有新内容" />
+                )}
+              </span>
+              <span>{tab.label}</span>
+            </>
+          )}
         </NavLink>
       ))}
     </nav>
@@ -173,25 +199,6 @@ function Shell() {
       window.removeEventListener('offline', update);
     };
   }, []);
-  useEffect(() => {
-    if (!auth.session) return;
-    let active = true;
-    const refresh = () =>
-      void api
-        .call(IdentityEndpoints.getPreferences)
-        .then((p) => {
-          if (active) document.documentElement.dataset.theme = p.theme;
-        })
-        .catch(() => {});
-    refresh();
-    window.addEventListener('focus', refresh);
-    window.addEventListener('weiban:settings-updated', refresh);
-    return () => {
-      active = false;
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('weiban:settings-updated', refresh);
-    };
-  }, [auth.session]);
   if (auth.loading)
     return (
       <main className="empty" role="status">
@@ -206,17 +213,14 @@ function Shell() {
   if (firstProfile && location.pathname !== '/profile') return <Navigate to="/profile" replace />;
   const roots = ['/chat', '/contacts', '/discover', '/me'];
   const miniApp = onboarding ? undefined : miniAppFor(location.pathname);
+  // 旧版（微信）规则：标签栏只在四个标签页出现（规格 4.1）。
+  const showTabs = !onboarding && !miniApp && roots.includes(location.pathname);
   return (
     <CallProvider>
       <div
-        className="app-shell"
+        className={`app-shell ${showTabs ? 'with-tabs' : ''}`}
         key={`${auth.session.user.userId}:${auth.session.session.sessionId}`}
       >
-        {firstProfile && (
-          <header className="topbar">
-            <button onClick={() => void auth.logout()}>‹ 返回登录</button>
-          </header>
-        )}
         <FocusCapsule />
         {offline && (
           <div role="status" className="offline">
@@ -367,10 +371,7 @@ function Shell() {
             routes
           );
         })()}
-        {!onboarding &&
-          !miniApp &&
-          !location.pathname.startsWith('/chat/') &&
-          !/^\/(share|search)(\/|$)/.test(location.pathname) && <TabBar />}
+        {showTabs && <TabBar hidden={false} />}
         <AchievementWatcher />
         {!firstProfile && <ReleaseCenter />}
         <ToastHost />

@@ -11,7 +11,7 @@ import {
   Sparkle,
   Sun,
   type IconProps,
-} from '@phosphor-icons/react';
+} from './old-icons.js';
 import { TimelineEndpoints, type TimelineSummaryResponse } from '@weiban/contracts';
 import { api } from '../data/client.js';
 

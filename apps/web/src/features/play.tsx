@@ -10,7 +10,7 @@ import {
   PencilSimple,
   Plus,
   Timer,
-} from '@phosphor-icons/react';
+} from './old-icons.js';
 import {
   DailyQuestionEndpoints,
   FocusEndpoints,

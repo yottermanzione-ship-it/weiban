@@ -1,21 +1,29 @@
 import { useEffect, useState, type ReactNode } from 'react';
 
-/** 轻提示（C 13 Toast）：任意位置调用 showToast，Shell 里的 ToastHost 默认显示 2 秒（成就型 3 秒）。 */
+/*
+ * 轻提示（规格 3.11）：屏幕正中深色块，停留 2 秒；可带 ✓ / ! / ✕ / i 图标。
+ * 任意位置调用 showToast，Shell 里的 ToastHost 显示。
+ */
+export type ToastKind = 'success' | 'warning' | 'error' | 'info';
 const EVENT = 'weiban:toast';
-export function showToast(text: string, durationMs = 2000) {
-  window.dispatchEvent(
-    new CustomEvent<{ text: string; durationMs: number }>(EVENT, { detail: { text, durationMs } }),
-  );
+interface ToastDetail {
+  text: string;
+  durationMs: number;
+  kind?: ToastKind;
 }
+export function showToast(text: string, durationMs = 2000, kind?: ToastKind) {
+  window.dispatchEvent(new CustomEvent<ToastDetail>(EVENT, { detail: { text, durationMs, kind } }));
+}
+const glyph: Record<ToastKind, string> = { success: '✓', warning: '!', error: '✕', info: 'i' };
 export function ToastHost() {
-  const [text, setText] = useState('');
+  const [toast, setToast] = useState<(ToastDetail & { id: number }) | null>(null);
   useEffect(() => {
     let timer = 0;
     const listener = (event: Event) => {
-      const detail = (event as CustomEvent<{ text: string; durationMs: number }>).detail;
-      setText(detail.text);
+      const detail = (event as CustomEvent<ToastDetail>).detail;
+      setToast({ ...detail, id: Date.now() });
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => setText(''), detail.durationMs);
+      timer = window.setTimeout(() => setToast(null), detail.durationMs);
     };
     window.addEventListener(EVENT, listener);
     return () => {
@@ -23,34 +31,50 @@ export function ToastHost() {
       window.clearTimeout(timer);
     };
   }, []);
-  if (!text) return null;
+  if (!toast) return null;
+  const short = Array.from(toast.text).length <= 8;
   return (
-    <div role="status" className="toast">
-      {text}
+    <div
+      key={toast.id}
+      role="status"
+      className={`toast ${short && toast.kind ? 'short' : 'long'} ${toast.kind ? 'with-icon' : ''}`}
+    >
+      {toast.kind && (
+        <span className={`toast-icon ${toast.kind}`} aria-hidden>
+          {glyph[toast.kind]}
+        </span>
+      )}
+      <span>{toast.text}</span>
     </div>
   );
 }
 
-/** 简单确认 / 说明弹窗（C 11 Dialog）。 */
+/**
+ * 确认框（规格 3.9）：白底圆角 12；无标题时正文居中 17；底部两个等宽按钮，中间竖线。
+ * primary = 确认键（普通操作用 link 色）；danger = 危险操作红字。
+ */
 export function Dialog({
   title,
   children,
   actions,
 }: {
-  title: string;
+  title?: string;
   children?: ReactNode;
-  actions: Array<{ label: string; primary?: boolean; onClick(): void }>;
+  actions: Array<{ label: string; primary?: boolean; danger?: boolean; onClick(): void }>;
 }) {
   return (
     <div className="dialog-scrim">
-      <div className="dialog" role="dialog" aria-label={title}>
-        <strong>{title}</strong>
-        {children}
-        <div className="button-row">
+      <div className={`dialog ${title ? 'titled' : ''}`} role="dialog" aria-label={title}>
+        <div className="dialog-body">
+          {title && <strong>{title}</strong>}
+          {children}
+        </div>
+        <div className="dialog-actions">
           {actions.map((action) => (
             <button
               key={action.label}
-              className={action.primary ? 'primary' : ''}
+              type="button"
+              className={action.danger ? 'danger' : action.primary ? 'confirm' : ''}
               onClick={action.onClick}
             >
               {action.label}

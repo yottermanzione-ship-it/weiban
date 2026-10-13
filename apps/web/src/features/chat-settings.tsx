@@ -1,3 +1,7 @@
+/*
+ * 聊天信息页（docs/refactor/06-old-ui-spec.md 4.5）：旧版行样式 + 新版条目（导航树 1.2）。
+ * 成员区 → 查找聊天记录 → 免打扰 / 置顶 → 聊天模型 → 和 TA 一起用 → 和 TA 的相处 → 高级 → 背景 → 清空。
+ */
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
@@ -11,12 +15,31 @@ import {
 import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
-import { Name } from './chat.js';
+import { CharacterName } from './chat.js';
+import { CharacterAvatar } from './character-avatar.js';
 import { useCallEntry } from './call.js';
 import { VoiceRow } from './voices.js';
 import { PlazaPublishRow } from './plaza.js';
 import { WithTaRow } from './miniapps.js';
-import { MenuGroup, MenuRow } from './shell-kit.js';
+import { OldIcon } from './old-icons.js';
+import {
+  ActionSheet,
+  GroupHeader,
+  MenuGroup,
+  MenuRow,
+  NavBar,
+  Sheet,
+  SwitchRow,
+} from './shell-kit.js';
+import { Dialog, showToast } from './toast.js';
+
+const fitNames = ['极顺从', '顺从', '均衡', '贴合', '极贴合'];
+const frequencyNames: Record<string, string> = {
+  low: '少（每天最多 1 次）',
+  medium: '适中（默认）',
+  high: '多',
+};
+
 export function ChatSettingsPage() {
   const { conversationId = '' } = useParams();
   const { state } = useChat();
@@ -25,12 +48,13 @@ export function ChatSettingsPage() {
   if (!conversation || !role)
     return (
       <main>
-        <p>会话不存在或已被删除</p>
-        <Link to="/chat">返回微伴</Link>
+        <NavBar title="聊天信息" fallback="/chat" />
+        <p className="empty">会话不存在或已被删除</p>
       </main>
     );
   return <Settings key={conversationId} id={conversationId} characterId={role.refId} />;
 }
+
 function Settings({ id, characterId }: { id: string; characterId: string }) {
   const { state, clearHistory, synchronize, assertOwner } = useChat();
   const conversation = state.conversations.find((item) => item.conversationId === id)!;
@@ -47,19 +71,20 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
+  const [sheet, setSheet] = useState<'fit' | 'proactive' | 'addressAs' | 'relationship' | null>(
+    null,
+  );
   const [confirmation, setConfirmation] = useState<
     'clear' | 'remove' | 'purge' | 'purgeConfirmed' | null
   >(null);
-  async function change(operation: () => Promise<unknown>, after?: () => void, success = '已保存') {
+  async function change(operation: () => Promise<unknown>, after?: () => void, success?: string) {
     setPending(true);
     setError('');
-    setMessage('');
     try {
       assertOwner();
       await operation();
       await synchronize();
-      setMessage(success);
+      if (success) showToast(success, 2000, 'success');
       companion.refresh();
       after?.();
     } catch (e) {
@@ -68,321 +93,390 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
       setPending(false);
     }
   }
+  const updateCompanion = (body: Record<string, unknown>, success?: string) =>
+    void change(
+      () => api.call(CompanionEndpoints.updateForCharacter, { params: { characterId }, body }),
+      undefined,
+      success,
+    );
+  const updateContact = (body: { addressAs?: string | null; relationship?: string }) =>
+    void change(
+      () =>
+        api.call(ContactsEndpoints.update, {
+          params: { characterId },
+          body: {
+            remark: contact?.remark ?? null,
+            addressAs: body.addressAs !== undefined ? body.addressAs : (contact?.addressAs ?? null),
+            relationship: body.relationship ?? contact?.relationship ?? '朋友',
+          },
+        }),
+      () => setSheet(null),
+      '已保存',
+    );
+  const data = companion.data;
+  const modelName = override.data?.chat
+    ? (models.data?.items.find((m) => m.modelKey === override.data?.chat?.modelKey)?.displayName ??
+      override.data.chat.modelKey.split('/').pop())
+    : '跟随默认';
   return (
-    <main>
-      <Link to={`/chat/${id}`}>返回聊天</Link>
-      <h1 className="page-title">聊天信息</h1>
-      <h2>
-        <Name conversation={conversation} />
-      </h2>
-      <Link className="plain" to={`/groups/new?with=${characterId}`} aria-label="发起群聊">
-        ＋ 发起群聊
-      </Link>
-      <div className="panel stack">
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={conversation.state.muted}
-            disabled={pending}
-            onChange={(event) =>
-              void change(() =>
-                api.call(ChatEndpoints.updateState, {
-                  params: { conversationId: id },
-                  body: { muted: event.target.checked },
-                }),
-              )
-            }
-          />
-          消息免打扰
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={conversation.state.pinned}
-            disabled={pending}
-            onChange={(event) =>
-              void change(() =>
-                api.call(ChatEndpoints.updateState, {
-                  params: { conversationId: id },
-                  body: { pinned: event.target.checked },
-                }),
-              )
-            }
-          />
-          置顶聊天
-        </label>
-        {companion.data && (
-          <>
-            <h3 className="group-label">聊天模型</h3>
+    <main className="chat-info-page">
+      <NavBar title="聊天信息" fallback={`/chat/${id}`} />
+      <div className="member-panel">
+        <Link className="member-cell" to={`/characters/${characterId}`}>
+          <CharacterAvatar id={characterId} size={46} radius={6} />
+          <small>
+            <CharacterName id={characterId} fallback={contact?.remark} />
+          </small>
+        </Link>
+        <Link
+          className="member-cell"
+          to={`/groups/new?with=${characterId}`}
+          aria-label="发起群聊"
+        >
+          <span className="member-action">
+            <OldIcon name="wechat/add" size={26} />
+          </span>
+          <small>添加</small>
+        </Link>
+      </div>
+      <MenuGroup>
+        <MenuRow to={`/chat/${id}/search`} label="查找聊天记录" />
+      </MenuGroup>
+      <MenuGroup>
+        <SwitchRow
+          label="消息免打扰"
+          checked={conversation.state.muted}
+          disabled={pending}
+          onChange={(muted) =>
+            void change(() =>
+              api.call(ChatEndpoints.updateState, {
+                params: { conversationId: id },
+                body: { muted },
+              }),
+            )
+          }
+        />
+        <SwitchRow
+          label="置顶聊天"
+          checked={conversation.state.pinned}
+          disabled={pending}
+          onChange={(pinned) =>
+            void change(() =>
+              api.call(ChatEndpoints.updateState, {
+                params: { conversationId: id },
+                body: { pinned },
+              }),
+            )
+          }
+        />
+      </MenuGroup>
+      {data && (
+        <>
+          <GroupHeader>聊天模型</GroupHeader>
+          <MenuGroup>
+            <MenuRow to={`/characters/${characterId}/model`} label="TA 用的模型" value={modelName} />
+          </MenuGroup>
+          <GroupHeader>和 TA 一起用</GroupHeader>
+          <MenuGroup>
+            <WithTaRow characterId={characterId} />
+          </MenuGroup>
+          <GroupHeader>和 TA 的相处</GroupHeader>
+          <MenuGroup>
+            <MenuRow
+              label="人设贴合度"
+              value={fitNames[(data.personaFit ?? 3) - 1]}
+              onClick={() => setSheet('fit')}
+            />
+            <SwitchRow
+              label="秒回"
+              checked={data.instantReply}
+              disabled={pending}
+              onChange={(instantReply) => updateCompanion({ instantReply })}
+            />
+            <SwitchRow
+              label="拆条"
+              subtitle="一次回复拆成几条，一句一个气泡"
+              checked={data.splitBubbles}
+              disabled={pending}
+              onChange={(splitBubbles) => updateCompanion({ splitBubbles })}
+            />
+            <MenuRow
+              label="主动消息"
+              value={
+                globalOff
+                  ? '已全局关闭'
+                  : data.proactiveMessages === false
+                    ? '关闭'
+                    : (frequencyNames[data.proactiveFrequency ?? 'medium'] ?? '适中').replace(
+                        /（.*）/,
+                        '',
+                      )
+              }
+              onClick={() => setSheet('proactive')}
+            />
+            <MenuRow
+              label="TA 怎么叫我"
+              value={contact?.addressAs || '未设置'}
+              onClick={() => setSheet('addressAs')}
+            />
+            <MenuRow
+              label="关系类型"
+              value={contact?.relationship || '朋友'}
+              onClick={() => setSheet('relationship')}
+            />
+            <SwitchRow
+              label="TA 的日常"
+              subtitle="TA 会有自己的生活节奏（推演）"
+              checked={data.dailyLife ?? true}
+              disabled={pending}
+              onChange={(dailyLife) => updateCompanion({ dailyLife })}
+            />
+          </MenuGroup>
+          <GroupHeader>高级</GroupHeader>
+          <MenuGroup>
+            <VoiceRow characterId={characterId} voiceId={data.voiceId ?? null} />
+            <MenuRow to={`/characters/${characterId}/supplement`} label="我的补充设定" />
+            <PlazaPublishRow characterId={characterId} />
+          </MenuGroup>
+        </>
+      )}
+      <MenuGroup>
+        <MenuRow
+          label="设置当前聊天背景"
+          onClick={() => showToast('聊天背景暂未开放', 2000, 'info')}
+        />
+      </MenuGroup>
+      <MenuGroup>
+        <MenuRow
+          label="清空聊天记录"
+          danger
+          chevron={false}
+          center
+          disabled={pending}
+          onClick={() => setConfirmation('clear')}
+        />
+      </MenuGroup>
+      <MenuGroup>
+        <MenuRow
+          label="删除角色"
+          danger
+          chevron={false}
+          center
+          disabled={pending}
+          onClick={() => setConfirmation('remove')}
+        />
+        <MenuRow
+          label="永久删除角色和数据"
+          danger
+          chevron={false}
+          center
+          disabled={pending}
+          onClick={() => setConfirmation('purge')}
+        />
+      </MenuGroup>
+      {(error || companion.error) && (
+        <p role="alert" className="notice-bar">
+          {error || companion.error}
+        </p>
+      )}
+      {sheet === 'fit' && data && (
+        <ActionSheet
+          title="人设贴合度：越贴合越像原角色，越顺从越听你的"
+          onClose={() => setSheet(null)}
+          items={fitNames.map((name, index) => ({
+            label: `${name}${(data.personaFit ?? 3) === index + 1 ? ' ✓' : ''}`,
+            onClick: () => updateCompanion({ personaFit: index + 1 }),
+          }))}
+        />
+      )}
+      {sheet === 'proactive' && data && (
+        <Sheet title="主动消息" onClose={() => setSheet(null)} closeLabel="完成">
+          <MenuGroup>
+            <SwitchRow
+              label="TA 主动找我"
+              subtitle={globalOff ? '已在 服务 › 主动消息与免打扰 中关闭' : undefined}
+              checked={!globalOff && (data.proactiveMessages ?? true)}
+              disabled={pending || globalOff}
+              onChange={(proactiveMessages) => updateCompanion({ proactiveMessages })}
+            />
+          </MenuGroup>
+          {!globalOff && data.proactiveMessages !== false && (
+            <>
+              <GroupHeader>频率</GroupHeader>
+              <MenuGroup>
+                {(['low', 'medium', 'high'] as const).map((value) => (
+                  <MenuRow
+                    key={value}
+                    label={frequencyNames[value]}
+                    chevron={false}
+                    right={
+                      (data.proactiveFrequency ?? 'medium') === value ? (
+                        <OldIcon name="wechat/check" size={22} className="ink-brand" />
+                      ) : undefined
+                    }
+                    onClick={() =>
+                      updateCompanion({ proactiveFrequency: value }, '下一次主动消息开始生效')
+                    }
+                  />
+                ))}
+              </MenuGroup>
+            </>
+          )}
+          {callEntry && (
             <MenuGroup>
-              <MenuRow
-                to={`/characters/${characterId}/model`}
-                label="TA 用的模型"
-                value={
-                  override.data?.chat
-                    ? (models.data?.items.find((m) => m.modelKey === override.data?.chat?.modelKey)
-                        ?.displayName ?? override.data.chat.modelKey.split('/').pop())
-                    : '跟随默认'
+              <SwitchRow
+                label="TA 给我打电话"
+                checked={
+                  notification.data?.proactiveCallsEnabled !== false &&
+                  (data.proactiveCalls ?? false)
                 }
+                disabled={pending || notification.data?.proactiveCallsEnabled === false}
+                onChange={(proactiveCalls) => updateCompanion({ proactiveCalls })}
               />
             </MenuGroup>
-            <h3 className="group-label">和 TA 一起用</h3>
-            <WithTaRow characterId={characterId} />
-            <h3 className="group-label">和 TA 的相处</h3>
-            <label>
-              人设贴合度（
-              {['极顺从', '顺从', '均衡', '贴合', '极贴合'][(companion.data.personaFit ?? 3) - 1]}
-              ）
-              <input
-                type="range"
-                min={1}
-                max={5}
-                step={1}
-                value={companion.data.personaFit ?? 3}
-                disabled={pending}
-                onChange={(event) =>
-                  void change(() =>
-                    api.call(CompanionEndpoints.updateForCharacter, {
-                      params: { characterId },
-                      body: { personaFit: Number(event.target.value) },
-                    }),
-                  )
-                }
-              />
-            </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={companion.data.instantReply}
-                disabled={pending}
-                onChange={(event) =>
-                  void change(() =>
-                    api.call(CompanionEndpoints.updateForCharacter, {
-                      params: { characterId },
-                      body: { instantReply: event.target.checked },
-                    }),
-                  )
-                }
-              />
-              秒回
-            </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={companion.data.splitBubbles}
-                disabled={pending}
-                onChange={(event) =>
-                  void change(() =>
-                    api.call(CompanionEndpoints.updateForCharacter, {
-                      params: { characterId },
-                      body: { splitBubbles: event.target.checked },
-                    }),
-                  )
-                }
-              />
-              拆条
-            </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={!globalOff && (companion.data.proactiveMessages ?? true)}
-                disabled={pending || globalOff}
-                onChange={(event) =>
-                  void change(() =>
-                    api.call(CompanionEndpoints.updateForCharacter, {
-                      params: { characterId },
-                      body: { proactiveMessages: event.target.checked },
-                    }),
-                  )
-                }
-              />
-              TA 主动找我
-            </label>
-            {globalOff && (
+          )}
+          {callEntry &&
+            quiet.data?.inconvenientUntil &&
+            new Date(quiet.data.inconvenientUntil).getTime() > Date.now() && (
               <p className="hint">
-                已在 服务 › 主动消息与免打扰 中关闭 <Link to="/services/proactive">去设置</Link>
+                你说过现在不方便，
+                {new Date(quiet.data.inconvenientUntil).toLocaleTimeString('zh-CN', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}{' '}
+                前 TA 不会打电话、不发语音
               </p>
             )}
-            {!globalOff && companion.data.proactiveMessages !== false && (
-              <label>
-                主动消息频率
-                <select
-                  disabled={pending}
-                  value={companion.data.proactiveFrequency ?? 'medium'}
-                  onChange={(event) =>
-                    void change(
-                      () =>
-                        api.call(CompanionEndpoints.updateForCharacter, {
-                          params: { characterId },
-                          body: {
-                            proactiveFrequency: event.target.value as 'low' | 'medium' | 'high',
-                          },
-                        }),
-                      undefined,
-                      '下一次主动消息开始生效',
-                    )
-                  }
-                >
-                  <option value="low">少（每天最多 1 次）</option>
-                  <option value="medium">适中（默认）</option>
-                  <option value="high">多</option>
-                </select>
-              </label>
-            )}
-            {callEntry && (
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={
-                    notification.data?.proactiveCallsEnabled !== false &&
-                    (companion.data.proactiveCalls ?? false)
-                  }
-                  disabled={pending || notification.data?.proactiveCallsEnabled === false}
-                  onChange={(event) =>
-                    void change(() =>
-                      api.call(CompanionEndpoints.updateForCharacter, {
-                        params: { characterId },
-                        body: { proactiveCalls: event.target.checked },
-                      }),
-                    )
-                  }
-                />
-                TA 给我打电话
-              </label>
-            )}
-            {callEntry &&
-              quiet.data?.inconvenientUntil &&
-              new Date(quiet.data.inconvenientUntil).getTime() > Date.now() && (
-                <p className="hint">
-                  你说过现在不方便，
-                  {new Date(quiet.data.inconvenientUntil).toLocaleTimeString('zh-CN', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}{' '}
-                  前 TA 不会打电话、不发语音
-                </p>
-              )}
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={companion.data.dailyLife ?? true}
-                disabled={pending}
-                onChange={(event) =>
-                  void change(() =>
-                    api.call(CompanionEndpoints.updateForCharacter, {
-                      params: { characterId },
-                      body: { dailyLife: event.target.checked },
-                    }),
-                  )
+          {globalOff && (
+            <p className="hint">
+              <Link to="/services/proactive">去设置 ›</Link>
+            </p>
+          )}
+        </Sheet>
+      )}
+      {(sheet === 'addressAs' || sheet === 'relationship') && (
+        <FieldSheet
+          title={sheet === 'addressAs' ? 'TA 怎么叫我' : '关系类型'}
+          initial={
+            sheet === 'addressAs' ? (contact?.addressAs ?? '') : (contact?.relationship ?? '朋友')
+          }
+          maxLength={sheet === 'addressAs' ? 20 : 30}
+          required={sheet === 'relationship'}
+          pending={pending}
+          onClose={() => setSheet(null)}
+          onSave={(value) =>
+            sheet === 'addressAs'
+              ? updateContact({ addressAs: value || null })
+              : updateContact({ relationship: value || '朋友' })
+          }
+        />
+      )}
+      {confirmation === 'clear' && (
+        <ActionSheet
+          title="只清空聊天记录显示，TA的记忆和养成数据会保留"
+          onClose={() => setConfirmation(null)}
+          items={[
+            {
+              label: '清空聊天记录',
+              danger: true,
+              onClick: () => void change(() => clearHistory(id), undefined, '已清空'),
+            },
+          ]}
+        />
+      )}
+      {confirmation && confirmation !== 'clear' && (
+        <Dialog
+          title={confirmation === 'remove' ? '删除角色' : '永久删除'}
+          actions={[
+            { label: '取消', onClick: () => setConfirmation(null) },
+            {
+              label: '删除',
+              danger: true,
+              onClick: () => {
+                if (confirmation === 'purge') {
+                  setConfirmation('purgeConfirmed');
+                  return;
                 }
-              />
-              TA 的日常（推演）
-            </label>
-            <VoiceRow characterId={characterId} voiceId={companion.data.voiceId ?? null} />
-            <Link to={`/characters/${characterId}/memories`}>TA 记住了什么</Link>
-            <Link to={`/characters/${characterId}/timeline`}>TA 的近况</Link>
-            <Link to={`/characters/${characterId}/cards`}>卡册</Link>
-            <Link to={`/characters/${characterId}/supplement`}>我的补充设定</Link>
-            <PlazaPublishRow characterId={characterId} />
-            <Link to={`/chat/${id}/search`}>查找聊天记录</Link>
-          </>
-        )}
-      </div>
-      <form
-        className="panel stack"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const form = new FormData(event.currentTarget);
-          void change(() =>
-            api.call(ContactsEndpoints.update, {
-              params: { characterId },
-              body: {
-                remark: String(form.get('remark') || '') || null,
-                addressAs: String(form.get('addressAs') || '') || null,
-                relationship: String(form.get('relationship') || '朋友'),
-              },
-            }),
-          );
-        }}
-      >
-        <label>
-          备注名
-          <input name="remark" maxLength={20} defaultValue={contact?.remark ?? ''} />
-        </label>
-        <label>
-          TA怎么叫我
-          <input name="addressAs" maxLength={20} defaultValue={contact?.addressAs ?? ''} />
-        </label>
-        <label>
-          我们的关系
-          <input
-            name="relationship"
-            maxLength={30}
-            defaultValue={contact?.relationship ?? '朋友'}
-            required
-          />
-        </label>
-        <button disabled={pending}>保存称呼和关系</button>
-      </form>
-      {(error || companion.error) && <p role="alert">{error || companion.error}</p>}
-      {message && <p role="status">{message}</p>}
-      <div className="panel rows">
-        <button disabled={pending} onClick={() => setConfirmation('clear')}>
-          清空聊天记录
-        </button>
-        <button disabled={pending} onClick={() => setConfirmation('remove')}>
-          删除角色
-        </button>
-        <button disabled={pending} onClick={() => setConfirmation('purge')}>
-          永久删除角色和数据
-        </button>
-      </div>
-      {confirmation && (
-        <div
-          role="dialog"
-          aria-label={confirmation === 'clear' ? '清空聊天记录' : '删除角色'}
-          className="panel"
-        >
-          <p>
-            {confirmation === 'clear'
-              ? '只清空聊天记录显示，TA的记忆和养成数据会保留'
-              : confirmation === 'remove'
-                ? '角色和聊天将从列表移除，30天内重新添加可恢复'
-                : confirmation === 'purge'
-                  ? '这会永久删除聊天记录、记忆和养成数据，无法恢复'
-                  : '再次确认永久删除：重新添加也无法恢复这些数据'}
-          </p>
-          <button
-            disabled={pending}
-            onClick={() => {
-              if (confirmation === 'purge') {
-                setConfirmation('purgeConfirmed');
-                return;
-              }
-              void change(
-                async () => {
-                  if (confirmation === 'clear') await clearHistory(id);
-                  else {
-                    await api.call(ContactsEndpoints.remove, {
+                void change(
+                  () =>
+                    api.call(ContactsEndpoints.remove, {
                       params: { characterId },
                       query: { mode: confirmation === 'remove' ? 'soft' : 'purge' },
-                    });
-                  }
-                },
-                () => {
-                  setConfirmation(null);
-                  if (confirmation !== 'clear') navigate('/contacts');
-                },
-              );
-            }}
-          >
-            确认
-          </button>
-          <button disabled={pending} onClick={() => setConfirmation(null)}>
-            取消
-          </button>
-        </div>
+                    }),
+                  () => {
+                    setConfirmation(null);
+                    navigate('/contacts');
+                  },
+                );
+              },
+            },
+          ]}
+        >
+          <p>
+            {confirmation === 'remove'
+              ? '角色和聊天将从列表移除，30天内重新添加可恢复'
+              : confirmation === 'purge'
+                ? '这会永久删除聊天记录、记忆和养成数据，无法恢复'
+                : '再次确认永久删除：重新添加也无法恢复这些数据'}
+          </p>
+        </Dialog>
       )}
     </main>
+  );
+}
+
+/** 单个文字字段的编辑弹层（顶部「取消 / 完成」，规格 4.14）。 */
+export function FieldSheet({
+  title,
+  initial,
+  maxLength,
+  required = false,
+  pending = false,
+  placeholder,
+  onClose,
+  onSave,
+}: {
+  title: string;
+  initial: string;
+  maxLength: number;
+  required?: boolean;
+  pending?: boolean;
+  placeholder?: string;
+  onClose(): void;
+  onSave(value: string): void;
+}) {
+  const [value, setValue] = useState(initial);
+  return (
+    <Sheet
+      title={title}
+      onClose={onClose}
+      closeLabel="取消"
+      action={
+        <button
+          type="button"
+          className="small-primary primary"
+          disabled={pending || (required && !value.trim())}
+          onClick={() => onSave(value.trim())}
+        >
+          完成
+        </button>
+      }
+    >
+      <div className="field-sheet">
+        <input
+          autoFocus
+          value={value}
+          maxLength={maxLength}
+          placeholder={placeholder}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !(required && !value.trim())) onSave(value.trim());
+          }}
+        />
+        <small>
+          {Array.from(value).length}/{maxLength}
+        </small>
+      </div>
+    </Sheet>
   );
 }

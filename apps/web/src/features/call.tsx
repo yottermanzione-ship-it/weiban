@@ -14,7 +14,7 @@ import {
   MicrophoneSlash,
   Phone,
   PhoneDisconnect,
-} from '@phosphor-icons/react';
+} from './old-icons.js';
 import {
   CALL_LIMITS,
   CallEndpoints,

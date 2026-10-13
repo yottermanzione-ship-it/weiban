@@ -1,48 +1,68 @@
 /*
- * 换壳通用部件（docs/refactor/02-wechat-shell-and-miniprograms.md、02a-navigation-tree.md）：
- * 标题栏、菜单行（图标方块）、底部弹层、气泡菜单、「暂未开放」页。只用设计令牌（app/shell.css）。
+ * 旧版界面通用组件（docs/refactor/06-old-ui-spec.md 第 3 节）：顶栏、菜单行、分组、分组标题、开关行、
+ * 底部弹层、操作列表、浅色长按菜单、⊕ 深色菜单、勾选圈、空状态、文字切换、「暂未开放」。
+ * 只用设计令牌（app/old-ui.css），动画只用 transform / opacity。
  */
-import { useEffect, type ComponentType, type ReactNode } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  Aperture,
-  BookOpenText,
-  Broadcast,
-  CaretLeft,
-  CaretRight,
-  Cardholder,
-  Eye,
-  GameController,
-  HandHeart,
-  IdentificationCard,
-  Hash,
-  Megaphone,
-  PuzzlePiece,
-  QrCode,
-  Scan,
-  ShieldCheck,
-  Smiley,
-  Storefront,
-  Tag,
-  Wallet,
-  type IconProps,
-} from '@phosphor-icons/react';
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { OldIcon, OldImage, type IconProps } from './old-icons.js';
+import { showToast } from './toast.js';
 
-export type Tint = 'pink' | 'gold' | 'orange' | 'teal' | 'lilac' | 'blue' | 'gray' | 'brand';
+export type Tint =
+  | 'pink'
+  | 'red'
+  | 'gold'
+  | 'orange'
+  | 'teal'
+  | 'green'
+  | 'lilac'
+  | 'purple'
+  | 'blue'
+  | 'cyan'
+  | 'indigo'
+  | 'coral'
+  | 'gray'
+  | 'brand';
 
-/** 圆角方块图标（点缀色铺底 + 白色线框图标）。 */
+export type IconSource = ComponentType<IconProps> | string;
+
+function Glyph({ icon, size }: { icon: IconSource; size: number }) {
+  if (typeof icon === 'string')
+    return /\.(png|webp)$/.test(icon) ? (
+      <OldImage name={icon} size={size} />
+    ) : (
+      <OldIcon name={icon} size={size} />
+    );
+  const Icon = icon;
+  return <Icon size={size} />;
+}
+
+/**
+ * 彩色方块 + 白色图标（旧版「彩底白图」）。
+ * sm = 24（菜单行，圆角 6）；md = 40（通讯录固定行，圆角 4）；lg = 48（小程序图标，圆角 12）。
+ */
 export function IconTile({
-  icon: Icon,
+  icon,
   tint,
   size = 'sm',
 }: {
-  icon: ComponentType<IconProps>;
+  icon: IconSource;
   tint: Tint;
-  size?: 'sm' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'row';
 }) {
+  const glyph = { sm: 17, md: 22, lg: 26, row: 26 }[size];
   return (
     <span className={`icon-tile tint-${tint} ${size}`} aria-hidden>
-      <Icon size={size === 'lg' ? 28 : 20} weight="regular" />
+      <Glyph icon={icon} size={glyph} />
     </span>
   );
 }
@@ -57,39 +77,49 @@ export function useBack(fallback = '/chat') {
   };
 }
 
-/** 统一标题栏：‹ 返回 · 标题（可带副标题）· 右侧操作。 */
+/** 返回箭头（back.svg 裁掉留白后的可见部分 9.4×17.7，规格 3.1）。 */
+export function BackArrow() {
+  return <OldIcon name="wechat/back_crop" width={9.4} height={17.7} className="back-arrow" />;
+}
+
+/** 顶栏（规格 3.1）：高 56，标题 17 / 500 居中，左返回、右图标按钮。 */
 export function NavBar({
   title,
   subtitle,
   right,
+  left,
   back = true,
   fallback,
   onBack,
+  transparent = false,
 }: {
-  title: ReactNode;
+  title?: ReactNode;
   subtitle?: ReactNode;
   right?: ReactNode;
+  left?: ReactNode;
   back?: boolean;
   fallback?: string;
   onBack?: () => void;
+  transparent?: boolean;
 }) {
   const goBack = useBack(fallback);
   return (
-    <header className="nav-bar">
+    <header className={`nav-bar ${transparent ? 'transparent' : ''}`}>
       <span className="nav-bar-side">
-        {back && (
-          <button
-            type="button"
-            className="nav-bar-back"
-            aria-label="返回"
-            onClick={onBack ?? goBack}
-          >
-            <CaretLeft size={24} />
-          </button>
-        )}
+        {left ??
+          (back && (
+            <button
+              type="button"
+              className="nav-bar-back"
+              aria-label="返回"
+              onClick={onBack ?? goBack}
+            >
+              <BackArrow />
+            </button>
+          ))}
       </span>
       <span className="nav-bar-title">
-        <h1>{title}</h1>
+        {title != null && <h1>{title}</h1>}
         {subtitle}
       </span>
       <span className="nav-bar-side end">{right}</span>
@@ -97,63 +127,261 @@ export function NavBar({
   );
 }
 
-/** 菜单列表的一行（发现页、通讯录固定行、我页）。 */
+/** 顶栏右侧图标按钮（26，最小 40×48）。 */
+export function NavIcon({
+  name,
+  label,
+  to,
+  onClick,
+  size = 26,
+}: {
+  name: string;
+  label: string;
+  to?: string;
+  onClick?: () => void;
+  size?: number;
+}) {
+  return to ? (
+    <Link className="nav-bar-icon" to={to} aria-label={label}>
+      <OldIcon name={name} size={size} />
+    </Link>
+  ) : (
+    <button type="button" className="nav-bar-icon" aria-label={label} onClick={onClick}>
+      <OldIcon name={name} size={size} />
+    </button>
+  );
+}
+
+/** 行尾箭头 chevron_right.svg 18。 */
+export function Chevron() {
+  return <OldIcon name="wechat/chevron_right" size={18} className="menu-caret" />;
+}
+
+/**
+ * 菜单行（规格 3.3）。图标两种：
+ * - 默认：透明底彩色线图（icon 按 tint 着色，或 image 原色）；
+ * - tile：彩色方块 + 白图标。
+ */
 export function MenuRow({
   to,
   onClick,
   icon,
   tint = 'brand',
+  iconColor,
+  image,
+  iconSize = 22,
+  tile = false,
   label,
+  subtitle,
   value,
   dot,
+  badge,
   extra,
+  right,
+  danger = false,
+  chevron = true,
+  center = false,
+  disabled = false,
 }: {
   to?: string;
   onClick?: () => void;
-  icon?: ComponentType<IconProps>;
+  icon?: IconSource;
   tint?: Tint;
+  iconColor?: string;
+  image?: string;
+  iconSize?: number;
+  tile?: boolean;
   label: ReactNode;
+  subtitle?: ReactNode;
   value?: ReactNode;
   dot?: boolean;
+  badge?: ReactNode;
   extra?: ReactNode;
+  right?: ReactNode;
+  danger?: boolean;
+  chevron?: boolean;
+  center?: boolean;
+  disabled?: boolean;
 }) {
   const body = (
     <>
-      {icon && <IconTile icon={icon} tint={tint} />}
-      <span className="menu-label">{label}</span>
+      {image ? (
+        <span className="menu-icon">
+          <OldImage name={image} size={iconSize} />
+        </span>
+      ) : icon ? (
+        tile ? (
+          <IconTile icon={icon} tint={tint} />
+        ) : (
+          <span className={`menu-icon ink-${tint}`} style={iconColor ? { color: iconColor } : undefined}>
+            <Glyph icon={icon} size={iconSize} />
+          </span>
+        )
+      ) : null}
+      <span className={`menu-text ${center ? 'center' : ''}`}>
+        <span className="menu-label">
+          {label}
+          {badge}
+          {dot && <span className="red-dot" aria-label="有新内容" />}
+        </span>
+        {subtitle != null && <small className="menu-subtitle">{subtitle}</small>}
+      </span>
       {extra}
-      {dot && <span className="red-dot" aria-label="有新内容" />}
       {value != null && <span className="menu-value">{value}</span>}
-      <CaretRight size={16} className="menu-caret" aria-hidden />
+      {right}
+      {chevron && !center && <Chevron />}
     </>
   );
-  return to ? (
-    <Link className="menu-row" to={to}>
+  const className = `menu-row ${subtitle != null ? 'two-line' : ''} ${danger ? 'danger' : ''}`;
+  return to && !disabled ? (
+    <Link className={className} to={to}>
       {body}
     </Link>
   ) : (
-    <button type="button" className="menu-row" onClick={onClick}>
+    <button type="button" className={className} onClick={onClick} disabled={disabled}>
       {body}
     </button>
   );
 }
 
-export function MenuGroup({ children }: { children: ReactNode }) {
-  return <div className="menu-group">{children}</div>;
+/** 分组（规格 3.4）：通栏白卡，组间 8 灰缝。 */
+export function MenuGroup({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={`menu-group ${className ?? ''}`}>{children}</div>;
 }
 
-/** 底部弹层（从下升起，只动 transform / opacity）。点遮罩或 Esc 关闭。 */
-export function Sheet({
-  title,
-  onClose,
-  children,
-  closeLabel = '关闭',
+/** 分组标题（规格 3.5）：高 35.7，文字贴底。 */
+export function GroupHeader({ children, right }: { children: ReactNode; right?: ReactNode }) {
+  return (
+    <h2 className="group-header">
+      <span>{children}</span>
+      {right && <small>{right}</small>}
+    </h2>
+  );
+}
+
+/** iOS 式胶囊开关（规格 3.6），51×31。 */
+export function Switch({
+  checked,
+  onChange,
+  disabled,
+  label,
 }: {
-  title?: ReactNode;
-  onClose(): void;
-  children: ReactNode;
-  closeLabel?: string;
+  checked: boolean;
+  onChange(value: boolean): void;
+  disabled?: boolean;
+  label?: string;
 }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      className="ios-switch"
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onChange(!checked);
+      }}
+    >
+      <i />
+    </button>
+  );
+}
+
+/** 开关行（规格 3.6）。 */
+export function SwitchRow({
+  label,
+  subtitle,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: ReactNode;
+  subtitle?: ReactNode;
+  checked: boolean;
+  disabled?: boolean;
+  onChange(value: boolean): void;
+}) {
+  return (
+    <div className={`switch-row ${subtitle ? 'with-subtitle' : ''}`}>
+      <span className="switch-text">
+        <span>{label}</span>
+        {subtitle && <small>{subtitle}</small>}
+      </span>
+      <Switch
+        checked={checked}
+        disabled={disabled}
+        onChange={onChange}
+        label={typeof label === 'string' ? label : undefined}
+      />
+    </div>
+  );
+}
+
+/** 勾选圈（规格 3.15）。 */
+export function CheckCircle({ checked, disabled }: { checked: boolean; disabled?: boolean }) {
+  return (
+    <span className={`check-circle ${checked ? 'on' : ''} ${disabled ? 'disabled' : ''}`} aria-hidden>
+      {checked && <OldIcon name="wechat/check" size={18} />}
+    </span>
+  );
+}
+
+/** 空状态（规格 3.16）。 */
+export function EmptyState({
+  icon = 'wechat/chat',
+  title,
+  desc,
+  action,
+}: {
+  icon?: string;
+  title: ReactNode;
+  desc?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="empty-state" role="status">
+      <OldIcon name={icon} size={72} />
+      <p className="empty-title">{title}</p>
+      {desc && <p className="empty-desc">{desc}</p>}
+      {action}
+    </div>
+  );
+}
+
+/** 一排文字切换（规格 5 表）：选中 15 / 500 + 下方 2 高绿色短线。 */
+export function TextTabs<T extends string>({
+  items,
+  value,
+  onChange,
+  right,
+}: {
+  items: Array<{ value: T; label: string }>;
+  value: T;
+  onChange(value: T): void;
+  right?: ReactNode;
+}) {
+  return (
+    <div className="text-tabs" role="tablist">
+      {items.map((item) => (
+        <button
+          key={item.value}
+          type="button"
+          role="tab"
+          aria-selected={item.value === value}
+          onClick={() => onChange(item.value)}
+        >
+          {item.label}
+        </button>
+      ))}
+      {right && <span className="text-tabs-right">{right}</span>}
+    </div>
+  );
+}
+
+function useEscape(onClose: () => void) {
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -161,40 +389,179 @@ export function Sheet({
     window.addEventListener('keydown', listener);
     return () => window.removeEventListener('keydown', listener);
   }, [onClose]);
+}
+
+/**
+ * 底部弹层（规格 5 表）：白底、顶部圆角 12、无把手；标题栏高 56：左「取消」/ 中标题 / 右操作。
+ * 从底部升起（只动 transform）。点遮罩或 Esc 关闭。
+ */
+export function Sheet({
+  title,
+  onClose,
+  children,
+  closeLabel = '关闭',
+  action,
+  half = false,
+}: {
+  title?: ReactNode;
+  onClose(): void;
+  children: ReactNode;
+  closeLabel?: string;
+  action?: ReactNode;
+  half?: boolean;
+}) {
+  useEscape(onClose);
+  const closeIcon = closeLabel === '✕' || closeLabel === '关闭';
   return (
     <div className="sheet-scrim" onClick={onClose}>
       <div
-        className="sheet-panel"
+        className={`sheet-panel ${half ? 'half' : ''}`}
         role="dialog"
         aria-label={typeof title === 'string' ? title : undefined}
         onClick={(event) => event.stopPropagation()}
       >
-        {title && (
+        {title != null && (
           <header className="sheet-head">
+            <span className="sheet-head-side">
+              {!closeIcon && (
+                <button type="button" className="sheet-text-button" onClick={onClose}>
+                  {closeLabel}
+                </button>
+              )}
+            </span>
             <strong>{title}</strong>
-            <button type="button" className="text-button" onClick={onClose}>
-              {closeLabel}
-            </button>
+            <span className="sheet-head-side end">
+              {action ??
+                (closeIcon && (
+                  <button
+                    type="button"
+                    className="nav-bar-icon"
+                    aria-label="关闭"
+                    onClick={onClose}
+                  >
+                    <OldIcon name="wechat/close" size={22} />
+                  </button>
+                ))}
+            </span>
           </header>
         )}
-        {children}
+        <div className="sheet-body">{children}</div>
       </div>
     </div>
   );
 }
 
-/** 右上角气泡菜单（⊕）。 */
+export interface ActionItem {
+  label: ReactNode;
+  danger?: boolean;
+  onClick(): void;
+}
+
+/** 底部操作列表（规格 3.10）。 */
+export function ActionSheet({
+  items,
+  onClose,
+  title,
+}: {
+  items: ActionItem[];
+  onClose(): void;
+  title?: ReactNode;
+}) {
+  useEscape(onClose);
+  return (
+    <div className="sheet-scrim action-scrim" onClick={onClose}>
+      <div className="action-sheet" role="menu" onClick={(event) => event.stopPropagation()}>
+        <div className="action-group">
+          {title && <p className="action-title">{title}</p>}
+          {items.map((item, index) => (
+            <button
+              key={index}
+              type="button"
+              role="menuitem"
+              className={item.danger ? 'danger' : ''}
+              onClick={() => {
+                onClose();
+                item.onClick();
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="action-group">
+          <button type="button" onClick={onClose}>
+            取消
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 浅色长按菜单（规格 3.7）：在手指位置弹出，宽 168，每项 52；不压暗背景。 */
+export function LongPressMenu({
+  at,
+  items,
+  onClose,
+}: {
+  at: { x: number; y: number };
+  items: ActionItem[];
+  onClose(): void;
+}) {
+  useEscape(onClose);
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: at.x, top: at.y });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    setPos({
+      left: Math.max(12, Math.min(at.x, window.innerWidth - w - 12)),
+      top: Math.max(12, Math.min(at.y, window.innerHeight - h - 12)),
+    });
+  }, [at.x, at.y]);
+  return (
+    <div className="pop-scrim" onClick={onClose} onContextMenu={(e) => e.preventDefault()}>
+      <div
+        ref={ref}
+        className="light-menu"
+        role="menu"
+        style={{ left: pos.left, top: pos.top }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        {items.map((item, index) => (
+          <button
+            key={index}
+            type="button"
+            role="menuitem"
+            className={item.danger ? 'danger' : ''}
+            onClick={() => {
+              onClose();
+              item.onClick();
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** 右上角 ⊕ 深色菜单（规格 4.2）。 */
 export function PopMenu({
   items,
   onClose,
 }: {
-  items: Array<{ label: string; icon: ComponentType<IconProps>; onClick(): void }>;
+  items: Array<{ label: string; icon: IconSource; onClick(): void }>;
   onClose(): void;
 }) {
+  useEscape(onClose);
   return (
     <div className="pop-scrim" onClick={onClose}>
       <div className="pop-menu" role="menu" onClick={(event) => event.stopPropagation()}>
-        {items.map(({ label, icon: Icon, onClick }) => (
+        {items.map(({ label, icon, onClick }) => (
           <button
             key={label}
             type="button"
@@ -204,7 +571,7 @@ export function PopMenu({
               onClick();
             }}
           >
-            <Icon size={22} aria-hidden />
+            <Glyph icon={icon} size={19} />
             {label}
           </button>
         ))}
@@ -213,48 +580,104 @@ export function PopMenu({
   );
 }
 
+/**
+ * 长按（触屏 500ms）或右键：回调带手指位置；长按后吞掉这次点击。
+ */
+export function useLongPress(onLongPress: (at: { x: number; y: number }) => void) {
+  const timer = useRef(0);
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const fired = useRef(false);
+  const cancel = () => {
+    window.clearTimeout(timer.current);
+    start.current = null;
+  };
+  return {
+    onPointerDown(event: ReactPointerEvent) {
+      if (event.pointerType === 'mouse') return;
+      fired.current = false;
+      const at = { x: event.clientX, y: event.clientY };
+      start.current = at;
+      timer.current = window.setTimeout(() => {
+        fired.current = true;
+        onLongPress(at);
+      }, 500);
+    },
+    onPointerMove(event: ReactPointerEvent) {
+      if (
+        start.current &&
+        Math.hypot(event.clientX - start.current.x, event.clientY - start.current.y) > 10
+      )
+        cancel();
+    },
+    onPointerUp: cancel,
+    onPointerCancel: cancel,
+    onContextMenu(event: ReactMouseEvent) {
+      event.preventDefault();
+      cancel();
+      fired.current = true;
+      onLongPress({ x: event.clientX, y: event.clientY });
+      window.setTimeout(() => (fired.current = false), 400);
+    },
+    onClickCapture(event: ReactMouseEvent) {
+      if (fired.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        fired.current = false;
+      }
+    },
+  };
+}
+
 // ---------- 暂未开放 ----------
 
 /**
- * 参照产品有、微伴暂时用不上的入口（总经理 2026-10-13 要求：都放上，点进去是统一的「暂未开放」页）。
- * 新增入口只在这里登记。
+ * 参照产品有、微伴暂时用不上的入口（总经理 2026-10-13 要求：都放上，标为「暂未开放」）。
+ * 旧版规格 8 表：点了只弹轻提示，不跳页。新增入口只在这里登记。
  */
 export const comingSoon = {
-  channels: { name: '视频号', icon: Aperture, tint: 'orange' },
-  live: { name: '直播', icon: Broadcast, tint: 'pink' },
-  scan: { name: '扫一扫', icon: Scan, tint: 'blue' },
-  listen: { name: '听书', icon: BookOpenText, tint: 'orange' },
-  topstories: { name: '看一看', icon: Eye, tint: 'gold' },
-  games: { name: '游戏', icon: GameController, tint: 'lilac' },
-  qrcode: { name: '二维码名片', icon: QrCode, tint: 'gray' },
-  cards: { name: '卡包', icon: Cardholder, tint: 'blue' },
-  pay: { name: '收付款', icon: Wallet, tint: 'teal' },
-  status: { name: '状态', icon: Smiley, tint: 'gold' },
-  tags: { name: '标签', icon: Tag, tint: 'blue' },
-  official: { name: '公众号', icon: Megaphone, tint: 'blue' },
-  shop: { name: '购物', icon: Storefront, tint: 'orange' },
-  teen: { name: '青少年模式', icon: ShieldCheck, tint: 'teal' },
-  care: { name: '关怀模式', icon: HandHeart, tint: 'pink' },
-  plugins: { name: '插件', icon: PuzzlePiece, tint: 'lilac' },
-  topics: { name: '话题', icon: Hash, tint: 'gray' },
-  card: { name: '发送名片', icon: IdentificationCard, tint: 'blue' },
-} as const satisfies Record<string, { name: string; icon: ComponentType<IconProps>; tint: Tint }>;
+  channels: { name: '视频号', icon: 'wechat/finder', tint: 'orange' },
+  live: { name: '直播', icon: 'color/color_live', tint: 'red' },
+  scan: { name: '扫一扫', icon: 'wechat/discover_scan', tint: 'blue' },
+  listen: { name: '听一听', icon: 'wechat/discover_listen', tint: 'orange' },
+  topstories: { name: '看一看', icon: 'color/color_look', tint: 'gold' },
+  shake: { name: '摇一摇', icon: 'color/color_shake', tint: 'blue' },
+  games: { name: '游戏', icon: 'color/color_game', tint: 'purple' },
+  shop: { name: '购物', icon: 'wechat/store', tint: 'orange' },
+  qrcode: { name: '二维码名片', icon: 'wechat/qr_code.png', tint: 'gray' },
+  cards: { name: '卡包', icon: 'wechat/card.png', tint: 'blue' },
+  pay: { name: '收付款', icon: 'wechat/transfer', tint: 'green' },
+  status: { name: '状态', icon: 'wechat/smile', tint: 'gold' },
+  tags: { name: '标签', icon: 'wechat/tag', tint: 'blue' },
+  official: { name: '公众号', icon: 'wechat/contacts_official', tint: 'blue' },
+  teen: { name: '青少年模式', icon: 'wechat/info', tint: 'green' },
+  care: { name: '关怀模式', icon: 'wechat/heart', tint: 'red' },
+  plugins: { name: '插件', icon: 'wechat/grid', tint: 'purple' },
+  topics: { name: '话题', icon: 'wechat/tag', tint: 'gray' },
+  card: { name: '发送名片', icon: 'wechat/person', tint: 'blue' },
+} as const satisfies Record<string, { name: string; icon: string; tint: Tint }>;
 export type ComingSoonKey = keyof typeof comingSoon;
 export const comingSoonPath = (key: ComingSoonKey) => `/coming-soon/${key}`;
+export function showComingSoon(key: ComingSoonKey) {
+  showToast(`${comingSoon[key].name}暂未开放`, 2000, 'info');
+}
 
-/** 菜单里的「暂未开放」行。 */
+/** 菜单里的「暂未开放」行：点了弹轻提示。 */
 export function ComingSoonRow({ id, withIcon = true }: { id: ComingSoonKey; withIcon?: boolean }) {
   const item = comingSoon[id];
+  const image = /\.(png|webp)$/.test(item.icon);
   return (
     <MenuRow
-      to={comingSoonPath(id)}
-      icon={withIcon ? item.icon : undefined}
+      onClick={() => showComingSoon(id)}
+      icon={withIcon && !image ? item.icon : undefined}
+      image={withIcon && image ? item.icon : undefined}
       tint={item.tint}
       label={item.name}
+      value="暂未开放"
     />
   );
 }
 
+/** 旧链接 /coming-soon/:feature 的落地页（外部链接、推送打开时仍可能进来）。 */
 export function ComingSoonPage() {
   const { feature = '' } = useParams();
   const item = (comingSoon as Record<string, (typeof comingSoon)[ComingSoonKey]>)[feature];
@@ -263,14 +686,16 @@ export function ComingSoonPage() {
   return (
     <main className="coming-soon">
       <NavBar title={name} fallback="/discover" />
-      <div className="coming-soon-body">
-        {item && <IconTile icon={item.icon} tint={item.tint} size="lg" />}
-        <h2>{name}暂未开放</h2>
-        <p className="hint">微伴还在长大，这个功能以后再见。先去和 TA 聊聊吧。</p>
-        <button type="button" className="primary" onClick={back}>
-          返回
-        </button>
-      </div>
+      <EmptyState
+        icon={item && !/\.(png|webp)$/.test(item.icon) ? item.icon : 'wechat/info'}
+        title={`${name}暂未开放`}
+        desc="微伴还在长大，这个功能以后再见。先去和 TA 聊聊吧。"
+        action={
+          <button type="button" className="primary" onClick={back}>
+            返回
+          </button>
+        }
+      />
     </main>
   );
 }

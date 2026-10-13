@@ -6,6 +6,7 @@ import { api } from '../data/client.js';
 import { AvatarEditor } from './avatar-editor.js';
 import { ProfileAvatar } from './profile-avatar.js';
 import { useAuth } from '../app/auth.js';
+import { GroupHeader, MenuGroup, NavBar } from './shell-kit.js';
 export function ProfilePage() {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -66,79 +67,118 @@ export function ProfilePage() {
     }
   }
   return (
-    <main>
-      <h1 className="page-title">{firstUse ? 'TA 该怎么称呼你？' : '我的资料'}</h1>
-      <form className="panel stack" onSubmit={(e) => void submit(e)}>
-        <label>
-          昵称
-          <input
-            disabled={!loaded}
-            value={form.nickname}
-            onChange={(e) => setForm({ ...form, nickname: e.target.value })}
-            required
-            maxLength={20}
+    <main className="profile-edit">
+      <NavBar
+        title={firstUse ? 'TA 该怎么称呼你？' : '我的资料'}
+        back={!firstUse}
+        fallback="/me"
+        left={
+          firstUse ? (
+            <button type="button" className="text-button text-action" onClick={() => void auth.logout()}>
+              返回登录
+            </button>
+          ) : undefined
+        }
+        right={
+          !firstUse && (
+            <button
+              type="submit"
+              form="profile-form"
+              className="text-button text-action"
+              disabled={!loaded || pending || remote.loading}
+            >
+              保存
+            </button>
+          )
+        }
+      />
+      <form id="profile-form" className="profile-form" onSubmit={(e) => void submit(e)}>
+        <div className="avatar-block">
+          <ProfileAvatar profile={remote.data} />
+          <span className="hint">头像会显示在聊天和朋友圈里</span>
+        </div>
+        <MenuGroup className="avatar-editor-group">
+          <AvatarEditor
+            onSaved={async (mediaId) => {
+              await api.call(IdentityEndpoints.updateProfile, {
+                body: { avatarMediaId: mediaId },
+              });
+              remote.refresh();
+              setMessage('头像已保存');
+            }}
           />
-        </label>
-        <details open={firstUse ? undefined : true}>
-          <summary>补充更多资料（可选）</summary>
-          <div className="stack">
-            <ProfileAvatar profile={remote.data} />
-            <AvatarEditor
-              onSaved={async (mediaId) => {
-                await api.call(IdentityEndpoints.updateProfile, {
-                  body: { avatarMediaId: mediaId },
-                });
-                remote.refresh();
-                setMessage('头像已保存');
-              }}
+        </MenuGroup>
+        <div className="field-rows">
+          <label className="field-row">
+            <span>昵称</span>
+            <input
+              disabled={!loaded}
+              value={form.nickname}
+              onChange={(e) => setForm({ ...form, nickname: e.target.value })}
+              required
+              maxLength={20}
+              placeholder="TA 会这样称呼你"
             />
-            <label>
-              生日
-              <input
-                disabled={!loaded}
-                type="date"
-                value={form.birthday}
-                onChange={(e) => setForm({ ...form, birthday: e.target.value })}
-              />
-            </label>
-            <label>
-              性别
-              <select
-                disabled={!loaded}
-                value={form.gender}
-                onChange={(e) => setForm({ ...form, gender: e.target.value })}
-              >
-                <option value="unspecified">不填写</option>
-                <option value="female">女</option>
-                <option value="male">男</option>
-                <option value="other">其他</option>
-              </select>
-            </label>
-            <label>
-              所在城市
-              <input
-                disabled={!loaded}
-                value={form.city}
-                onChange={(e) => setForm({ ...form, city: e.target.value })}
-                maxLength={32}
-              />
-            </label>
-            <label>
-              关于我
-              <textarea
-                disabled={!loaded}
-                value={form.about}
-                onChange={(e) => setForm({ ...form, about: e.target.value })}
-                maxLength={500}
-              />
-            </label>
-            <p className="hint">这些信息所有角色都会知道。</p>
+          </label>
+        </div>
+        <GroupHeader>{firstUse ? '补充更多资料（可选）' : '更多资料'}</GroupHeader>
+        <div className="field-rows">
+          <label className="field-row">
+            <span>生日</span>
+            <input
+              disabled={!loaded}
+              type="date"
+              value={form.birthday}
+              onChange={(e) => setForm({ ...form, birthday: e.target.value })}
+            />
+          </label>
+          <label className="field-row">
+            <span>性别</span>
+            <select
+              disabled={!loaded}
+              value={form.gender}
+              onChange={(e) => setForm({ ...form, gender: e.target.value })}
+            >
+              <option value="unspecified">不填写</option>
+              <option value="female">女</option>
+              <option value="male">男</option>
+              <option value="other">其他</option>
+            </select>
+          </label>
+          <label className="field-row">
+            <span>地区</span>
+            <input
+              disabled={!loaded}
+              value={form.city}
+              onChange={(e) => setForm({ ...form, city: e.target.value })}
+              maxLength={32}
+              placeholder="所在城市"
+            />
+          </label>
+          <label className="field-row top">
+            <span>关于我</span>
+            <textarea
+              disabled={!loaded}
+              value={form.about}
+              onChange={(e) => setForm({ ...form, about: e.target.value })}
+              maxLength={500}
+              placeholder="说说你自己"
+            />
+          </label>
+        </div>
+        <p className="hint page-note">这些信息所有角色都会知道。</p>
+        {firstUse && (
+          <div className="page-bottom">
+            <button className="primary full" disabled={!loaded || pending || remote.loading}>
+              下一步
+            </button>
           </div>
-        </details>
-        <button className="primary" disabled={!loaded || pending || remote.loading}>
-          {firstUse ? '下一步' : '保存'}
-        </button>
-        <p role="status">{message || remote.error}</p>
+        )}
+        {(message || remote.error) && (
+          <p role="status" className="hint page-note center">
+            {message || remote.error}
+          </p>
+        )}
       </form>
     </main>
   );

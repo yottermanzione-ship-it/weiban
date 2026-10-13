@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Pause, Play } from '@phosphor-icons/react';
+import { Pause, Play } from './old-icons.js';
 import { CompanionEndpoints, VoiceEndpoints } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Share, PlusSquare, House } from '@phosphor-icons/react';
+import { Share, PlusSquare, House } from './old-icons.js';
+import { MenuGroup, MenuRow } from './shell-kit.js';
 
 const seenKey = 'weiban:home-screen-guide-seen';
 function device() {
@@ -50,9 +51,9 @@ export function HomeScreenGuide({
   return (
     <>
       {manual && (
-        <button className="panel full" onClick={() => setOpen(true)}>
-          添加到主屏幕
-        </button>
+        <MenuGroup>
+          <MenuRow label="添加到主屏幕" onClick={() => setOpen(true)} />
+        </MenuGroup>
       )}
       <dialog
         ref={dialog}

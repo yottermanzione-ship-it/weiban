@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
-import { Lock } from '@phosphor-icons/react';
+import { Lock } from './old-icons.js';
 import type { z } from 'zod';
 import {
   CharacterEndpoints,

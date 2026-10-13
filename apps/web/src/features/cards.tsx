@@ -39,7 +39,7 @@ import {
   Ticket,
   UsersThree,
   Image as ImageIcon,
-} from '@phosphor-icons/react';
+} from './old-icons.js';
 import {
   GrowthCardEndpoints,
   type Achievement,

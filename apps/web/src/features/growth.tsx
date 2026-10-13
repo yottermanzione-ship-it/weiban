@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { CaretRight } from '@phosphor-icons/react';
+import { CaretRight } from './old-icons.js';
 import { GrowthEndpoints, type Anniversary } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';

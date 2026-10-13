@@ -14,7 +14,7 @@ import {
   Sparkle,
   Sun,
   type IconProps,
-} from '@phosphor-icons/react';
+} from './old-icons.js';
 import {
   CompanionEndpoints,
   GroupCompanionEndpoints,

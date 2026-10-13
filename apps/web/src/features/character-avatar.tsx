@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Flower, Heart, Moon, MusicNote, Star } from '@phosphor-icons/react';
+import { Flower, Heart, Moon, MusicNote, Star } from './old-icons.js';
 import { CharacterEndpoints, MediaEndpoints, type CharacterSummary } from '@weiban/contracts';
 import { avatarForeground, avatarLetters, avatarPaletteIndex } from '@weiban/client-core';
 import { useAuth } from '../app/auth.js';
@@ -11,10 +11,13 @@ export function CharacterAvatar({
   id,
   profile,
   size = 48,
+  radius = 4,
 }: {
   id: string;
   profile?: AvatarRole;
   size?: number;
+  /** 旧版圆角（规格 3.12）：列表 / 聊天 4，群成员与「我」页 6，资料页 8。 */
+  radius?: number;
 }) {
   const { session } = useAuth();
   const { state } = useChat();
@@ -23,19 +26,33 @@ export function CharacterAvatar({
     (contact) => contact.characterId === id,
   )?.customAvatarMediaId;
   return profile?.characterId === id ? (
-    <Artwork key={`${ownerKey}:${id}`} role={profile} privateId={privateId} size={size} />
+    <Artwork
+      key={`${ownerKey}:${id}`}
+      role={profile}
+      privateId={privateId}
+      size={size}
+      radius={radius}
+    />
   ) : (
-    <RequestedAvatar key={`${ownerKey}:${id}`} id={id} privateId={privateId} size={size} />
+    <RequestedAvatar
+      key={`${ownerKey}:${id}`}
+      id={id}
+      privateId={privateId}
+      size={size}
+      radius={radius}
+    />
   );
 }
 function RequestedAvatar({
   id,
   privateId,
   size,
+  radius,
 }: {
   id: string;
   privateId?: string | null;
   size: number;
+  radius: number;
 }) {
   const remote = useRemote(CharacterEndpoints.getProfile, { params: { characterId: id } });
   return (
@@ -44,6 +61,7 @@ function RequestedAvatar({
       id={id}
       privateId={privateId}
       size={size}
+      radius={radius}
     />
   );
 }
@@ -52,11 +70,13 @@ function Artwork({
   id = role?.characterId ?? '',
   privateId,
   size,
+  radius,
 }: {
   role?: AvatarRole;
   id?: string;
   privateId?: string | null;
   size: number;
+  radius: number;
 }) {
   const display = role?.avatar.display;
   const letters = avatarLetters(role?.name ?? '', display?.avatarText);
@@ -74,7 +94,7 @@ function Artwork({
       style={{
         width: size,
         height: size,
-        borderRadius: size * 0.12,
+        borderRadius: radius,
         background,
         color,
         fontSize: size * (Array.from(letters).length === 1 ? 0.44 : 0.34),

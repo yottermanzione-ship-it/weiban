@@ -5,13 +5,13 @@ import {
   LinkSimple,
   MusicNotes,
   VideoCamera,
-  WarningCircle,
   X,
   CaretLeft,
   CaretRight,
-  Phone,
-  PhoneX,
-} from '@phosphor-icons/react';
+  OldIcon,
+} from './old-icons.js';
+import { ActionSheet } from './shell-kit.js';
+import { Dialog } from './toast.js';
 import {
   LibraryEndpoints,
   MediaEndpoints,
@@ -39,11 +39,14 @@ export const isIPhone = () =>
 
 // ---------- 图片 ----------
 
-/** 按接口给的宽高算出占位尺寸（最长边不超过 image-message-max，约 200）。 */
-function boxSize(width: number | null, height: number | null, max = 200) {
+/** 图片气泡尺寸（4.4.5）：最小 80×80，最大 150×150，按原图比例。 */
+function boxSize(width: number | null, height: number | null, max = 150, min = 80) {
   if (!width || !height) return { width: max, height: max };
   const scale = Math.min(1, max / Math.max(width, height));
-  return { width: Math.round(width * scale), height: Math.round(height * scale) };
+  return {
+    width: Math.max(min, Math.round(width * scale)),
+    height: Math.max(min, Math.round(height * scale)),
+  };
 }
 
 export function MediaImg({
@@ -145,7 +148,7 @@ export function LocalImageBubble({
 }
 
 /** 保存图片：先取最新链接，再下载（网页无法写相册；iPhone 提示长按保存）。 */
-async function saveImage(mediaId: string) {
+export async function saveImage(mediaId: string) {
   try {
     const media = await api.call(MediaEndpoints.getMedia, { params: { mediaId } });
     const response = await fetch(media.url, { credentials: 'omit' });
@@ -261,7 +264,14 @@ export function ImageViewer({
           •••
         </button>
       </header>
-      <div className="viewer-stage" onClick={onClose}>
+      <div
+        className="viewer-stage"
+        onClick={onClose}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          setMenu(true);
+        }}
+      >
         <MediaImg key={mediaId} mediaId={mediaId} thumbnail={false} className="viewer-image" />
       </div>
       {current > 0 && (
@@ -284,24 +294,30 @@ export function ImageViewer({
       )}
       {isIPhone() && <p className="viewer-hint">长按图片保存</p>}
       {menu && (
-        <div className="viewer-menu" role="menu">
-          {!isIPhone() && <button onClick={() => void saveImage(mediaId)}>保存图片</button>}
-          <button onClick={() => void addFavorite(message)}>收藏</button>
-          {canAddToStickers(message) && (
-            <button onClick={() => void addToStickers(message)}>添加到表情</button>
-          )}
-          {onDelete && (
-            <button
-              onClick={() => {
-                onDelete(message);
-                onClose();
-              }}
-            >
-              删除
-            </button>
-          )}
-          <button onClick={() => setMenu(false)}>取消</button>
-        </div>
+        <ActionSheet
+          onClose={() => setMenu(false)}
+          items={[
+            ...(!isIPhone()
+              ? [{ label: '保存图片', onClick: () => void saveImage(mediaId) }]
+              : []),
+            { label: '收藏', onClick: () => void addFavorite(message) },
+            ...(canAddToStickers(message)
+              ? [{ label: '添加到表情', onClick: () => void addToStickers(message) }]
+              : []),
+            ...(onDelete
+              ? [
+                  {
+                    label: '删除',
+                    danger: true,
+                    onClick: () => {
+                      onDelete(message);
+                      onClose();
+                    },
+                  },
+                ]
+              : []),
+          ]}
+        />
       )}
     </div>
   );
@@ -327,10 +343,10 @@ export function LinkCardBubble({ content }: { content: ContentOf<'link'> }) {
         ? VideoCamera
         : LinkSimple;
   return (
-    <a className="link-card" href={content.url} target="_blank" rel="noopener noreferrer">
-      <strong>{content.title}</strong>
+    <a className="wx-card link-card" href={content.url} target="_blank" rel="noopener noreferrer">
+      <strong className="wx-card-title">{content.title}</strong>
       <span className="link-card-body">
-        {content.description && <small>{content.description}</small>}
+        {content.description && <small className="wx-card-text">{content.description}</small>}
         <span className="link-card-cover">
           {content.coverMediaId ? (
             <MediaImg mediaId={content.coverMediaId} />
@@ -339,7 +355,7 @@ export function LinkCardBubble({ content }: { content: ContentOf<'link'> }) {
           )}
         </span>
       </span>
-      {content.source && <small className="link-card-source">{content.source}</small>}
+      <small className="wx-card-source">{content.source || '链接'}</small>
     </a>
   );
 }
@@ -378,7 +394,7 @@ export function callRecordText(content: ContentOf<'call_record'>, name?: string)
     case 'time_limit':
       return `通话时长 ${formatDuration(content.durationSec)}`;
     case 'insufficient_balance':
-      return '余额不足，通话已结束';
+      return '积分不足，通话已结束';
     case 'missed':
     case 'declined':
       if (content.direction === 'incoming')
@@ -396,25 +412,47 @@ export function callRecordText(content: ContentOf<'call_record'>, name?: string)
 export function CallRecordBubble({
   content,
   name,
+  mine = false,
   onRedial,
 }: {
   content: ContentOf<'call_record'>;
   name?: string;
+  mine?: boolean;
   onRedial?(): void;
 }) {
+  const [confirm, setConfirm] = useState(false);
   const missed =
     content.direction === 'incoming' &&
     ['missed', 'declined', 'cancelled'].includes(content.outcome);
-  const Icon = missed ? PhoneX : Phone;
   return (
-    <button
-      type="button"
-      className={`message-bubble call-record ${missed ? 'missed' : ''}`}
-      onClick={onRedial}
-      disabled={!onRedial}
-    >
-      <Icon size={16} aria-hidden /> {callRecordText(content, name)}
-    </button>
+    <>
+      <button
+        type="button"
+        className={`wx-bubble wx-call ${mine ? 'mine' : ''} ${missed ? 'missed' : ''}`}
+        onClick={() => onRedial && setConfirm(true)}
+        disabled={!onRedial}
+      >
+        <OldIcon name="drawn/phone" size={18} />
+        <span>{callRecordText(content, name)}</span>
+      </button>
+      {confirm && onRedial && (
+        <Dialog
+          actions={[
+            { label: '取消', onClick: () => setConfirm(false) },
+            {
+              label: '呼叫',
+              primary: true,
+              onClick: () => {
+                setConfirm(false);
+                onRedial();
+              },
+            },
+          ]}
+        >
+          <p>再次发起语音通话？</p>
+        </Dialog>
+      )}
+    </>
   );
 }
 
@@ -557,8 +595,8 @@ export function VoiceBubble({
   const failed = player.failed.has(message.messageId);
   const unplayed = !mine && !player.played.has(message.messageId);
   const seconds = Math.max(1, Math.round(content.durationMs / 1000));
-  // 宽度随时长增长（60 秒封顶），不跳动。
-  const width = `calc(var(--wb-space-10) * 2 + ${Math.min(60, seconds) * 2}px)`;
+  // 宽 = 86 + 秒数（1–30 截断）× 4，最小 108、最大 220（4.4.5）。
+  const width = Math.max(108, Math.min(220, 86 + Math.min(30, seconds) * 4));
   const text = content.transcript
     ? content.transcript
     : transcript?.status === 'ready'
@@ -569,21 +607,18 @@ export function VoiceBubble({
       <span className={`voice-line ${mine ? 'mine' : ''}`}>
         <button
           type="button"
-          className={`message-bubble voice-bubble ${playing ? 'playing' : ''}`}
+          className={`wx-bubble wx-voice ${mine ? 'mine' : ''} ${playing ? 'playing' : ''} ${failed ? 'failed' : ''}`}
           style={{ width }}
           aria-label={`语音 ${seconds} 秒，${playing ? '暂停' : '播放'}`}
           onClick={() => void player.play(message, next)}
         >
-          {failed ? (
-            <WarningCircle size={16} className="danger-icon" aria-hidden />
-          ) : (
-            <span className="voice-wave" aria-hidden>
-              <i />
-              <i />
-              <i />
-            </span>
-          )}
-          <span className="numeric">{seconds}″</span>
+          <span className="wx-voice-wave" aria-hidden>
+            <i />
+            <i />
+            <i />
+          </span>
+          <span className="wx-voice-len numeric">{seconds}&apos;&apos;</span>
+          {failed && <span className="wx-voice-retry">重试</span>}
         </button>
         {unplayed && <span className="red-dot voice-dot" aria-label="未播放" />}
       </span>
@@ -694,19 +729,22 @@ export function HoldToTalk({
     if (recorder.current?.state === 'recording') recorder.current.stop();
   }
   const left = Math.max(0, 60 - Math.floor(elapsed / 1000));
+  const active = state !== 'idle';
   return (
     <>
       <button
         type="button"
-        className={`hold-to-talk ${state !== 'idle' ? 'active' : ''}`}
+        className={`wx-hold ${active ? 'active' : ''}`}
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId);
           held.current = true;
+          // 按下立即开始录音（4.4.9），不等长按判定。
           void start(e.clientY);
         }}
         onPointerMove={(e) => {
           if (state === 'idle') return;
-          const cancel = startY.current - e.clientY > 60;
+          // 手指离开底部 150 以上进入取消态。
+          const cancel = window.innerHeight - e.clientY > 150 || startY.current - e.clientY > 150;
           cancelled.current = cancel;
           setState(cancel ? 'cancel' : 'recording');
         }}
@@ -717,29 +755,31 @@ export function HoldToTalk({
         }}
         onContextMenu={(e) => e.preventDefault()}
       >
-        {state === 'idle' ? '按住 说话' : '松开 发送'}
+        {active ? '松开发送' : '按住说话'}
       </button>
-      {state !== 'idle' && (
-        <div className={`record-overlay ${state === 'cancel' ? 'cancel' : ''}`} role="status">
-          <span className="voice-wave large" aria-hidden>
-            <i />
-            <i />
-            <i />
-          </span>
-          <span>
+      {active && (
+        <div className={`wx-record ${state === 'cancel' ? 'cancel' : ''}`} role="status">
+          <div className="wx-record-bubble">
+            <span className="wx-record-wave" aria-hidden>
+              {Array.from({ length: 28 }, (_, i) => (
+                <i key={i} style={{ animationDelay: `${-((i * 97) % 760)}ms` }} />
+              ))}
+            </span>
+          </div>
+          <p className="wx-record-hint">
             {state === 'cancel'
               ? '松开手指，取消发送'
               : left <= 10
                 ? `还可以说 ${left} 秒`
                 : '手指上滑，取消发送'}
-          </span>
+          </p>
         </div>
       )}
     </>
   );
 }
 
-// ---------- 表情面板 ----------
+// ---------- 表情面板（4.4.11） ----------
 
 export function StickerPanel({
   onPick,
@@ -762,65 +802,92 @@ export function StickerPanel({
       mine.refresh();
   });
   const pack = packs.data?.items.find((p) => p.packId === tab);
+  const builtIn = ['wechat/heart', 'wechat/star'];
   return (
-    <div className="sticker-panel">
-      <div className="sticker-tabs" role="tablist">
-        <button role="tab" aria-selected={tab === 'mine'} onClick={() => setTab('mine')}>
-          我的表情
+    <div className="wx-sticker">
+      <div className="wx-sticker-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-label="我添加的表情"
+          aria-selected={tab === 'mine'}
+          onClick={() => setTab('mine')}
+        >
+          <OldIcon name="wechat/smile" size={22} />
         </button>
-        {packs.data?.items.map((p) => (
+        {packs.data?.items.map((p, index) => (
           <button
             key={p.packId}
+            type="button"
             role="tab"
+            aria-label={p.name}
             aria-selected={tab === p.packId}
             onClick={() => setTab(p.packId)}
           >
-            {p.name}
+            {p.stickers[0] && index >= builtIn.length ? (
+              <img src={p.stickers[0].url} alt="" loading="lazy" decoding="async" />
+            ) : (
+              <OldIcon name={builtIn[index] ?? 'wechat/star'} size={20} />
+            )}
           </button>
         ))}
+        <Link className="wx-sticker-tab-link" to="/me/stickers" aria-label="添加表情">
+          <OldIcon name="wechat/add" size={20} />
+        </Link>
+        <Link className="wx-sticker-tab-link end" to="/me/stickers" aria-label="我添加的表情">
+          <OldIcon name="wechat/more" size={20} />
+        </Link>
       </div>
-      <div className="sticker-grid">
-        {tab === 'mine' && (
-          <Link className="sticker-cell add" to="/me/stickers" aria-label="管理我的表情">
-            ＋
-          </Link>
-        )}
-        {tab === 'mine' &&
-          mine.data?.items.map((s) => (
+      <div className="wx-sticker-body">
+        {tab === 'mine' && <p className="wx-sticker-caption">添加的单个表情</p>}
+        <div className="wx-sticker-grid">
+          {tab === 'mine' && (
+            <Link className="wx-sticker-cell add" to="/me/stickers" aria-label="添加表情">
+              <OldIcon name="wechat/add" size={28} />
+            </Link>
+          )}
+          {tab === 'mine' &&
+            mine.data?.items.map((s) => (
+              <button
+                key={s.stickerId}
+                type="button"
+                className="wx-sticker-cell"
+                onClick={() =>
+                  onPick({
+                    stickerId: s.stickerId,
+                    source: 'user',
+                    mediaId: s.mediaId,
+                    description: null,
+                  })
+                }
+              >
+                <img src={s.url} alt="表情" loading="lazy" decoding="async" />
+              </button>
+            ))}
+          {pack?.stickers.map((s) => (
             <button
               key={s.stickerId}
-              className="sticker-cell"
+              type="button"
+              className="wx-sticker-cell"
+              aria-label={s.description}
               onClick={() =>
                 onPick({
                   stickerId: s.stickerId,
-                  source: 'user',
+                  source: 'library',
                   mediaId: s.mediaId,
-                  description: null,
+                  description: s.description,
                 })
               }
             >
-              <img src={s.url} alt="表情" loading="lazy" decoding="async" />
+              <img src={s.url} alt={s.description} loading="lazy" decoding="async" />
             </button>
           ))}
-        {pack?.stickers.map((s) => (
-          <button
-            key={s.stickerId}
-            className="sticker-cell"
-            aria-label={s.description}
-            onClick={() =>
-              onPick({
-                stickerId: s.stickerId,
-                source: 'library',
-                mediaId: s.mediaId,
-                description: s.description,
-              })
-            }
-          >
-            <img src={s.url} alt={s.description} loading="lazy" decoding="async" />
-          </button>
-        ))}
+        </div>
+        {(packs.loading || mine.loading) && !packs.data && (
+          <p className="wx-sticker-caption center">加载中…</p>
+        )}
+        {(packs.error || mine.error) && !packs.data && <p className="hint center">表情加载失败</p>}
       </div>
-      {(packs.error || mine.error) && !packs.data && <p className="hint">表情加载失败</p>}
     </div>
   );
 }

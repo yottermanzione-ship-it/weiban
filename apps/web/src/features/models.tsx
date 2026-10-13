@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Check } from '@phosphor-icons/react';
+import { Check } from './old-icons.js';
 import { ApiFailure } from '@weiban/client-core';
 import { NavBar } from './shell-kit.js';
 import { showToast } from './toast.js';

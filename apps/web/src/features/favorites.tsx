@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { CaretLeft, Lock, MagnifyingGlass } from '@phosphor-icons/react';
+import { CaretLeft, Lock, MagnifyingGlass } from './old-icons.js';
 import {
   IdentityEndpoints,
   LibraryEndpoints,

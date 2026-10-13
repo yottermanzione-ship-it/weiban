@@ -15,7 +15,7 @@ import {
   Plus,
   TennisBall,
   Fish,
-} from '@phosphor-icons/react';
+} from './old-icons.js';
 import {
   PET_LIMITS,
   PetEndpoints,
