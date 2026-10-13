@@ -237,9 +237,7 @@ internal fun defaultGroupTitle(
             .sortedByDescending { it.lastMessage?.createdAt ?: it.updatedAt }
     val profiles = characterProfiles(repository, groups.flatMap { group -> group.characterMembers().map { it.refId } })
     val names = profiles.mapValues { it.value.name }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onBack) { Text("‹ 返回") }
-        Text("群聊", style = MaterialTheme.typography.titleMedium)
+    app.weiban.designsystem.WbNavBar("群聊", onBack) {
     }
     if (groups.isEmpty()) {
         Text("还没有群聊 · 在会话列表可以发起群聊", Modifier.padding(WbSpace.S5), color = colors.textSecondary)
@@ -325,8 +323,7 @@ internal fun defaultGroupTitle(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
     ) {
-        TextButton(onClick = onBack, enabled = !pending) { Text("‹ 返回群聊") }
-        Text("聊天信息（${members.size + 1}）", style = MaterialTheme.typography.headlineSmall)
+        app.weiban.designsystem.WbNavBar("聊天信息(${members.size + 1})", { if (!pending) onBack() })
         GroupMembers(repository, owner, state, conversation, pending, onProfile, onAdd = { sub = "add" }) { characterId ->
             act {
                 repository.call(
@@ -518,9 +515,7 @@ private fun GroupMembers(
     var pending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val fallback = defaultGroupTitle(state, conversation, names)
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onBack, enabled = !pending) { Text("‹") }
-        Text("群聊名称", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+    app.weiban.designsystem.WbNavBar("群聊名称", onBack) {
         Button(enabled = !pending && value.trim() != original, onClick = {
             pending = true
             scope.launch {

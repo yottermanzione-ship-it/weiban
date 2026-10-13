@@ -94,9 +94,7 @@ internal fun closenessName(value: String): String = closenessLevels.find { it.fi
     }
     BackHandler(onBack = onBack)
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(WbSpace.S3)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("‹ 返回") }
-            Text("TA 认识的人", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+        app.weiban.designsystem.WbNavBar("TA 认识的人", onBack) {
             TextButton(onClick = { adding = true }, enabled = available.isNotEmpty()) { Text("＋") }
         }
         if (relations.loading && relations.data == null) LinearProgressIndicator(Modifier.fillMaxWidth())

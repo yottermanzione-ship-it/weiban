@@ -78,8 +78,7 @@ private class MemoryActions(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
     ) {
-        TextButton(onBack, enabled = !actions.pending) { Text("返回聊天信息") }
-        Text("TA记住了什么", style = MaterialTheme.typography.headlineSmall)
+        app.weiban.designsystem.WbNavBar("TA 记得的事", { if (!actions.pending) onBack() })
         Text("删除后旧消息不会重新记下这条信息；再次主动提起时可以重新记下。")
         MemoryCreation(actions, records::refresh)
         records.data?.items?.forEach { entry -> key(entry.memoryId) { MemoryEditor(entry, actions, records::refresh) } }

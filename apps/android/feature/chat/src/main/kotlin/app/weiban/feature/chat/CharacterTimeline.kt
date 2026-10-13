@@ -84,9 +84,7 @@ private class TimelinePager(
     }
     LaunchedEffect(nearEnd, pager.initialized) { if (nearEnd && pager.initialized && !pager.failed) pager.next() }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onBack) { Text("‹ 返回") }
-            Text("${name.ifBlank { "TA" }} 的近况", style = MaterialTheme.typography.titleMedium)
+        app.weiban.designsystem.WbNavBar("${name.ifBlank { "TA" }} 的近况", onBack) {
         }
         when {
             !pager.initialized && pager.failed ->

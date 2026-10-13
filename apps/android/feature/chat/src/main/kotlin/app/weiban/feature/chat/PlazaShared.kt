@@ -434,9 +434,7 @@ private suspend fun loadPlazaImage(url: String): ImageBitmap? =
     title: String,
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = PlazaNav::back) { Text("‹ 返回") }
-        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+    app.weiban.designsystem.WbNavBar(title, PlazaNav::back) {
         trailing()
         CapsuleSpace()
     }

@@ -156,9 +156,7 @@ fun FavoritesScreen(
         }
     }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("‹ 返回") }
-            Text("收藏", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+        app.weiban.designsystem.WbNavBar("收藏", onBack) {
             TextButton(onClick = {
                 selecting = !selecting
                 selected.clear()

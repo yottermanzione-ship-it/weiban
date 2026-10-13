@@ -188,7 +188,7 @@ internal class CustomCharacterDraft(
     BackHandler(onBack = onClose)
     Surface(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-            TextButton(onClick = onClose) { Text("‹ 返回") }
+            app.weiban.designsystem.WbNavBar("自定义角色", onClose)
             val result = saved
             val fields = draft
             when {

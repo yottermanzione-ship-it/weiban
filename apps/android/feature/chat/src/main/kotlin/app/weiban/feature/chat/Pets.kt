@@ -274,9 +274,7 @@ private fun petTint(label: String): Tint =
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onBack) { Text("‹ 返回") }
-        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+    app.weiban.designsystem.WbNavBar(title, onBack) {
         trailing?.let { Text(it, Modifier.padding(horizontal = WbSpace.S5), color = LocalWeibanColors.current.textSecondary) }
         CapsuleSpace()
     }

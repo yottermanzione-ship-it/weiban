@@ -216,9 +216,7 @@ internal fun openChatWith(
     onBack: () -> Unit = PlayNav::back,
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onBack) { Text("‹ 返回") }
-        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+    app.weiban.designsystem.WbNavBar(title, onBack) {
         trailing()
         CapsuleSpace()
     }

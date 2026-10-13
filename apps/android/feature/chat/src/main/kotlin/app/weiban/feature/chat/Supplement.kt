@@ -107,9 +107,7 @@ internal fun SupplementPage(
             }
         }
     }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onBack) { Text("‹ 返回") }
-        Text("我的补充设定", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+    app.weiban.designsystem.WbNavBar("我的补充设定", onBack) {
     }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WbSpace.S5),

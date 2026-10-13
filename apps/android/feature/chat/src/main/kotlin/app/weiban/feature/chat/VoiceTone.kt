@@ -92,9 +92,7 @@ import kotlinx.serialization.json.buildJsonObject
         }
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WbSpace.S5)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("‹") }
-            Text("TA 的声音", style = MaterialTheme.typography.titleMedium)
+        app.weiban.designsystem.WbNavBar("TA 的声音", onBack) {
         }
         when {
             voices.loading && voices.data == null ->

@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import app.weiban.contracts.*
 import app.weiban.data.*
 import app.weiban.designsystem.LocalWeibanColors
@@ -74,7 +75,7 @@ internal fun GlobalSearchScreen(
     val names = profiles.mapValues { it.value.name }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("‹") }
+            Box(Modifier.height(56.dp)) { app.weiban.designsystem.BackArrow(onBack) }
             OutlinedTextField(query, { query = it.take(50) }, Modifier.weight(1f), singleLine = true, label = { Text("搜索") })
             Spacer(Modifier.width(WbSpace.S3))
         }
@@ -248,7 +249,7 @@ internal fun ConversationSearchScreen(
     }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("‹") }
+            Box(Modifier.height(56.dp)) { app.weiban.designsystem.BackArrow(onBack) }
             OutlinedTextField(query, {
                 query = it.take(50)
                 mode = "text"

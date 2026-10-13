@@ -55,9 +55,7 @@ private fun shortDate(value: String): String = LocalDate.parse(value).let { "${i
     onBack: () -> Unit,
     action: (@Composable () -> Unit)? = null,
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onBack) { Text("‹ 经期日记") }
-        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+    app.weiban.designsystem.WbNavBar(title, onBack) {
         action?.invoke()
     }
 }

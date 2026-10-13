@@ -107,9 +107,7 @@ private const val STICKER_LIMIT = 300
             }
         }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("‹ 返回") }
-            Text("我的表情", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+        app.weiban.designsystem.WbNavBar("我的表情", onBack) {
             if (stickers.isNotEmpty()) TextButton(onClick = { organizing = !organizing }) { Text(if (organizing) "完成" else "整理") }
         }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
