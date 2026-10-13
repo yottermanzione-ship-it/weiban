@@ -105,7 +105,7 @@ export function classificationText(c: {
 function dateText(iso: string) {
   return new Date(iso).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' });
 }
-function timeText(iso: string): string {
+export function timeText(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 60000;
   if (diff < 1) return '刚刚';
   if (diff < 60) return `${Math.floor(diff)} 分钟前`;
@@ -115,12 +115,12 @@ function timeText(iso: string): string {
 function code(error: unknown) {
   return error instanceof ApiFailure ? error.code : '';
 }
-function authorName(author: PlazaAuthor) {
+export function authorName(author: PlazaAuthor) {
   return author.deleted ? '已注销用户' : author.nickname;
 }
 
 /** 广场头像：有公开图用图，否则非肖像默认头像（default-avatar.md 第 3 节，按 ID 取应援色）。 */
-function PlazaAvatar({
+export function PlazaAvatar({
   id,
   name,
   url,
@@ -209,7 +209,8 @@ export function usePlazaBadge() {
 
 // ---------- 广场分页（PLZ-01） ----------
 
-export function PlazaTab() {
+/** embedded：放进「角色广场」两个 tab 页里，「我发布的」入口移到页面标题栏。 */
+export function PlazaTab({ embedded = false }: { embedded?: boolean } = {}) {
   const badge = usePlazaBadge();
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
@@ -218,17 +219,19 @@ export function PlazaTab() {
   const [basis, setBasis] = useState<'' | CharacterBasis>('');
   const filters = { search, sort, kind, basis };
   return (
-    <section aria-label="人设广场">
-      <div className="page-header">
-        <span />
-        <span />
-        <Link to="/plaza/me" className="icon-button" aria-label="我发布的">
-          <UserList size={24} />
-          {badge && badge.myWorksUnseen + badge.reportResultsUnseen > 0 && (
-            <span className="red-dot" aria-label="有新消息" />
-          )}
-        </Link>
-      </div>
+    <section aria-label="自定义角色">
+      {!embedded && (
+        <div className="page-header">
+          <span />
+          <span />
+          <Link to="/plaza/me" className="icon-button" aria-label="我发布的">
+            <UserList size={24} />
+            {badge && badge.myWorksUnseen + badge.reportResultsUnseen > 0 && (
+              <span className="red-dot" aria-label="有新消息" />
+            )}
+          </Link>
+        </div>
+      )}
       <form
         className="message-composer"
         role="search"

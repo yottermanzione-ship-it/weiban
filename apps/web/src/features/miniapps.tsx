@@ -140,16 +140,6 @@ export const miniApps: MiniApp[] = [
     privateByDefault: true,
   },
   {
-    id: 'plaza',
-    name: '人设广场',
-    desc: '看看大家创作的角色',
-    icon: 'drawn/people',
-    tint: 'blue',
-    home: '/plaza',
-    match: [/^\/plaza(\/|$)/],
-    data: '你发布、点赞和添加的作品',
-  },
-  {
     id: 'import',
     name: '导入角色',
     desc: '用聊天记录生成一个 TA',

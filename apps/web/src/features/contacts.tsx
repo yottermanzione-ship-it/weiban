@@ -15,6 +15,7 @@ import { useAuth } from '../app/auth.js';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import { useOnboardingDraft } from '../data/onboarding-draft.js';
+import { AddFriendEntries } from './role-plaza.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { useStars } from '../data/stars.js';
 import { CharacterName } from './chat.js';
@@ -36,7 +37,7 @@ import {
   ActionSheet,
   ComingSoonRow,
   EmptyState,
-  IconTile,
+  GroupHeader,
   LongPressMenu,
   MenuGroup,
   MenuRow,
@@ -63,49 +64,6 @@ function initialOf(name: string): string {
     else break;
   }
   return letter;
-}
-
-/** 新建角色的方式（4.6：ActionSheet 变体，每项 72 高 + 40 彩色方块）。 */
-export function NewCharacterSheet({ onClose }: { onClose(): void }) {
-  const navigate = useNavigate();
-  const go = (to: string) => {
-    onClose();
-    navigate(to);
-  };
-  return (
-    <div className="sheet-scrim action-scrim" onClick={onClose}>
-      <div className="action-sheet" role="menu" onClick={(e) => e.stopPropagation()}>
-        <div className="action-group choice-rows">
-          <button type="button" className="choice-row" onClick={() => go('/characters/custom/new')}>
-            <IconTile icon="wechat/note" tint="green" size="md" />
-            <span>
-              <strong>自己写一个 TA</strong>
-              <small>填名字、性格、说话方式</small>
-            </span>
-          </button>
-          <button type="button" className="choice-row" onClick={() => go('/imports')}>
-            <IconTile icon="wechat/chat" tint="orange" size="md" />
-            <span>
-              <strong>从聊天记录生成 TA</strong>
-              <small>粘贴、上传文件或截图</small>
-            </span>
-          </button>
-          <button type="button" className="choice-row" onClick={() => go('/plaza')}>
-            <IconTile icon="wechat/person" tint="blue" size="md" />
-            <span>
-              <strong>去人设广场挑一个</strong>
-              <small>看看大家创作的角色</small>
-            </span>
-          </button>
-        </div>
-        <div className="action-group">
-          <button type="button" onClick={onClose}>
-            取消
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function ContactRow({
@@ -421,7 +379,7 @@ export function ContactsPage() {
   );
 }
 
-/** 发现（4.8）：朋友圈、角色广场、搜一搜、小程序；参照产品有、微伴暂不做的入口标「暂未开放」。 */
+/** 发现（4.8）：朋友圈、角色广场、搜一搜、小程序；用不上的入口照常显示，点了提示「暂未开放」。 */
 export function DiscoverPage() {
   const [searchParams] = useSearchParams();
   const cards = useCardsDot();
@@ -459,7 +417,7 @@ export function DiscoverPage() {
         />
       </MenuGroup>
       <MenuGroup>
-        <MenuRow to="/discover/plaza" icon="drawn/people" tint="orange" label="角色广场" />
+        <MenuRow to="/plaza" icon="drawn/people" tint="orange" label="角色广场" />
         <ComingSoonRow id="live" />
       </MenuGroup>
       <MenuGroup>
@@ -489,7 +447,10 @@ export function DiscoverPage() {
   );
 }
 
-/** 发现 › 角色广场（预设角色）；首次引导也用这一页。人设广场是小程序，底部链接过去。 */
+/**
+ * 通讯录 › 添加朋友（10-14 裁定 2.3）：搜索 + 顶部「角色广场」「角色创建」两行 + 推荐角色列表；
+ * 首次引导（onboarding）也用这一页的列表部分。
+ */
 export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) {
   const draft = useOnboardingDraft(onboarding);
   const selected = draft.draft?.characterId;
@@ -531,9 +492,9 @@ export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) 
   return (
     <main className="role-plaza">
       <NavBar
-        title="角色广场"
+        title={onboarding ? '角色广场' : '添加朋友'}
         back={!onboarding}
-        fallback="/discover"
+        fallback="/contacts"
         subtitle={
           onboarding ? <small className="nav-subtitle">先加一个你喜欢的 TA 吧</small> : undefined
         }
@@ -553,7 +514,7 @@ export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) 
           <OldIcon name="wechat/search" size={17} />
           <input
             aria-label="搜索角色"
-            placeholder="搜索角色"
+            placeholder={onboarding ? '搜索角色' : '搜索角色名'}
             value={query}
             maxLength={50}
             enterKeyHint="search"
@@ -561,6 +522,8 @@ export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) 
           />
         </label>
       </form>
+      {!onboarding && !search && <AddFriendEntries />}
+      {!onboarding && <GroupHeader>{search ? '搜索结果' : '推荐角色'}</GroupHeader>}
       {roles.error && <p role="alert">{roles.error}</p>}
       {roles.loading && (
         <p role="status" className="empty">
@@ -627,11 +590,6 @@ export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) 
             </button>
           )}
         </div>
-      )}
-      {!onboarding && (
-        <MenuGroup>
-          <MenuRow to="/plaza" icon="drawn/people" tint="blue" label="看看大家创作的角色" />
-        </MenuGroup>
       )}
     </main>
   );
@@ -755,6 +713,15 @@ export function CharacterPage({
     null,
   );
   const greetInput = useRef<HTMLInputElement>(null);
+  // 从角色广场点「添加到通讯录」过来（?add=1）：资料读到后直接打开打招呼弹层
+  const autoAdd = !onboarding && query.get('add') === '1';
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (!autoAdd || autoOpened.current || !profile.data || !state.initialized || contact) return;
+    autoOpened.current = true;
+    setSheet('greet');
+    window.setTimeout(() => greetInput.current?.focus(), 50);
+  }, [autoAdd, profile.data, state.initialized, contact]);
   useEffect(() => {
     if (!onboarding || !state.initialized || !contact?.conversationId) return;
     let active = true;

@@ -646,7 +646,11 @@ export function useLongPress(onLongPress: (at: { x: number; y: number }) => void
       const touch = event.touches[0];
       if (touch) moveTo(touch.clientX, touch.clientY);
     },
-    onTouchEnd: cancel,
+    onTouchEnd(event: ReactTouchEvent) {
+      // 长按已弹菜单：阻止抬手后浏览器补发的点击（否则会立刻点到菜单遮罩把菜单关掉，或进入会话）
+      if (fired.current && event.cancelable) event.preventDefault();
+      cancel();
+    },
     onTouchCancel: cancel,
     onPointerDown(event: ReactPointerEvent) {
       if (event.pointerType !== 'mouse' || event.button !== 0) return;

@@ -160,8 +160,10 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
     };
     const up = () => {
       const start = drag.current;
+      // 只管鼠标；触屏抬手时也会先发 pointerup，不能在这里把触屏的下拉状态清掉
+      if (!start?.mouse) return;
       drag.current = null;
-      if (start?.mouse && start.active) release();
+      if (start.active) release();
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -175,6 +177,23 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
   useEffect(() => {
     const state = wheel.current;
     return () => window.clearTimeout(state.timer);
+  }, []);
+  // 关键：下拉时必须阻止浏览器自己的滚动手势。否则浏览器一旦接管，touchmove 会被降到每秒约 5 次，
+  // 列表一顿一顿地跟手（总经理反馈「反馈很奇怪」的主要原因）。React 的 onTouchMove 是被动监听不能阻止，
+  // 所以这里单独挂一个非被动监听，只在「列表在顶端、手指往下」时阻止。
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const onMove = (event: TouchEvent) => {
+      const start = drag.current;
+      const touch = event.touches[0];
+      if (!start || start.mouse || !touch || !event.cancelable) return;
+      const dy = touch.clientY - start.y;
+      const dx = Math.abs(touch.clientX - start.x);
+      if (start.active || (dy > 0 && dy > dx && listAtTop(list))) event.preventDefault();
+    };
+    list.addEventListener('touchmove', onMove, { passive: false });
+    return () => list.removeEventListener('touchmove', onMove);
   }, []);
 
   return (

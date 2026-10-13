@@ -250,7 +250,7 @@ function PetGuide({ onStart }: { onStart(): void }) {
             开始领养
           </button>
         ) : (
-          <Link className="button primary" to="/discover/plaza">
+          <Link className="button primary" to="/plaza">
             先去添加一个 TA
           </Link>
         )}
@@ -445,7 +445,7 @@ function AdoptForm() {
           {state.contacts.some((c) => c.status === 'active') ? (
             <Link to="/services/pets">去看看我的宠物</Link>
           ) : (
-            <Link to="/discover/plaza">去角色广场</Link>
+            <Link to="/plaza">去角色广场</Link>
           )}
         </p>
       ) : (

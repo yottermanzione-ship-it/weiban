@@ -167,7 +167,7 @@ export function CardAlbumsPage() {
       {albums.data && items.length === 0 && (
         <div className="empty">
           <p>还没有角色，去添加一个吧</p>
-          <Link to="/discover/plaza">去角色广场</Link>
+          <Link to="/plaza">去角色广场</Link>
         </div>
       )}
       {items.length > 0 && (
@@ -527,7 +527,7 @@ export function FamiliarityOverviewPage() {
       {list.data && items.length === 0 && (
         <div className="empty">
           <p>还没有角色，去添加一个吧</p>
-          <Link to="/discover/plaza">去角色广场</Link>
+          <Link to="/plaza">去角色广场</Link>
         </div>
       )}
       <div className="panel rows">

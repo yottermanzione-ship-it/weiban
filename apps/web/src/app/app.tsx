@@ -7,13 +7,7 @@ import { ConversationListPage } from '../features/conversation-list.js';
 import { ConversationPage } from '../features/chat.js';
 import { MemoriesPage } from '../features/memories.js';
 import { ChatSettingsPage } from '../features/chat-settings.js';
-import {
-  ContactsPage,
-  DiscoverPage,
-  CharacterPage,
-  PersonaPlazaPage,
-  RolePlazaPage,
-} from '../features/contacts.js';
+import { ContactsPage, DiscoverPage, CharacterPage, RolePlazaPage } from '../features/contacts.js';
 import { ComingSoonPage, useBack } from '../features/shell-kit.js';
 import { MiniAppFrame, MiniAppsHomePage, miniAppFor } from '../features/miniapps.js';
 import {
@@ -97,6 +91,15 @@ import {
   WorkPage,
 } from '../features/plaza.js';
 import {
+  OfficialRolePage,
+  RoleCreatePage,
+  RolePlazaHubPage,
+  RoleRequestDetailPage,
+  RoleRequestFormPage,
+  RoleRequestListPage,
+  useRoleRequestBadge,
+} from '../features/role-plaza.js';
+import {
   DailyHistoryPage,
   DailyQuestionPage,
   FocusCapsule,
@@ -112,7 +115,7 @@ import {
 /** 这些页面自带返回按钮，不显示通用顶栏。 */
 const ownHeader = [
   /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice|cards|supplement)$/,
-  /^\/(imports|pets|plaza|play)(\/|$)/,
+  /^\/(imports|pets|plaza|play|roles|role-requests)(\/|$)/,
   /^\/settings\/delete-account$/,
   /^\/(share|search)(\/|$)/,
   /^\/me\/favorites/,
@@ -143,6 +146,7 @@ function TopBack({ fallback }: { fallback: string }) {
 function TabBar({ hidden }: { hidden: boolean }) {
   const badge = useMomentsBadge();
   const friends = useNewFriendsDot();
+  const roleRequests = useRoleRequestBadge();
   const announcements = useAnnouncementUnread();
   const { state } = useChat();
   const unread = state.conversations
@@ -150,7 +154,7 @@ function TabBar({ hidden }: { hidden: boolean }) {
     .reduce((total, c) => total + c.unreadCount, 0);
   const tabs = [
     { to: '/chat', label: '微伴', index: 0, count: unread, dot: false },
-    { to: '/contacts', label: '通讯录', index: 1, count: 0, dot: friends },
+    { to: '/contacts', label: '通讯录', index: 1, count: 0, dot: friends || roleRequests > 0 },
     {
       to: '/discover',
       label: '发现',
@@ -349,9 +353,14 @@ function Shell() {
               <Route path="/calls/:callId" element={<CallLinkPage />} />
               <Route path="/coming-soon/:feature" element={<ComingSoonPage />} />
               <Route path="/miniapps" element={<MiniAppsHomePage />} />
-              <Route path="/discover/plaza" element={<RolePlazaPage />} />
+              <Route path="/discover/plaza" element={<Navigate to="/plaza" replace />} />
               <Route path="/contacts/add" element={<RolePlazaPage />} />
-              <Route path="/plaza" element={<PersonaPlazaPage />} />
+              <Route path="/plaza" element={<RolePlazaHubPage />} />
+              <Route path="/plaza/official/:characterId" element={<OfficialRolePage />} />
+              <Route path="/roles/create" element={<RoleCreatePage />} />
+              <Route path="/role-requests" element={<RoleRequestListPage />} />
+              <Route path="/role-requests/new" element={<RoleRequestFormPage />} />
+              <Route path="/role-requests/:requestId" element={<RoleRequestDetailPage />} />
               <Route path="/pets/with/:characterId" element={<PetWithPage />} />
               <Route path="/characters/:characterId/model" element={<CharacterModelPage />} />
               <Route path="/settings/about" element={<AboutPage />} />
