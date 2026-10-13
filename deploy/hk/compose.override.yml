@@ -10,9 +10,6 @@ services:
     environment:
       ALLOW_IP_HTTP: '1'
       MEDIA_PUBLIC_BASE_URL: http://${WEB_HOST:?Set server IP}
-    # ADR-0031：经内部网络 weiban-llm 访问 sub2api（http://sub2api:8080）。
-    # 网络由 deploy/hk/sub2api/setup.sh 创建（docker network create --internal weiban-llm）。
-    networks: [private, outbound, llm]
   caddy:
     environment:
       WEB_DOMAIN: ':80'
@@ -21,7 +18,3 @@ services:
     ports: !override
       - '80:80'
       - '127.0.0.1:8081:8081'
-networks:
-  llm:
-    external: true
-    name: weiban-llm
