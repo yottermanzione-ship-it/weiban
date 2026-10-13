@@ -251,3 +251,103 @@ export type ProfileRow = typeof authorProfiles.$inferSelect;
 export type CommentRow = typeof comments.$inferSelect;
 export type ReportRow = typeof reports.$inferSelect;
 export type AdoptionRow = typeof adoptions.$inferSelect;
+
+// ---------- 3.5：「微伴角色」tab 与申请制作（迁移 0090） ----------
+
+/** 官方预设角色的点赞（characterId 指 characters 的预设角色，跨模块不加外键）。 */
+export const officialLikes = plazaSchema.table(
+  'official_likes',
+  {
+    characterId: uuid('character_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    createdAt: time('created_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.characterId, t.userId] }),
+    index('official_likes_user_idx').on(t.userId),
+  ],
+);
+
+export const officialComments = plazaSchema.table(
+  'official_comments',
+  {
+    id: uuid('id').primaryKey(),
+    characterId: uuid('character_id').notNull(),
+    authorUserId: uuid('author_user_id').notNull(),
+    clientRequestId: uuid('client_request_id').notNull(),
+    replyToCommentId: uuid('reply_to_comment_id'),
+    replyToUserId: uuid('reply_to_user_id'),
+    text: text('text').notNull(),
+    createdAt: time('created_at').notNull(),
+    deletedAt: time('deleted_at'),
+    deletedBy: text('deleted_by').$type<'commenter' | 'admin'>(),
+  },
+  (t) => [
+    uniqueIndex('official_comments_client_idx').on(t.authorUserId, t.clientRequestId),
+    index('official_comments_character_idx').on(t.characterId, t.createdAt, t.id),
+    index('official_comments_created_idx').on(t.createdAt),
+  ],
+);
+
+export type RoleRequestStatusValue =
+  'pending' | 'in_progress' | 'completed' | 'rejected' | 'cancelled';
+
+export interface RoleRequestHistoryJson {
+  status: RoleRequestStatusValue;
+  message: string | null;
+  at: string;
+  by: 'user' | 'admin';
+}
+
+/**
+ * 角色制作申请。内容是用户主动提交给官方制作的资料（管理员要读），明文保存；
+ * 参考图在 media（purpose = role_request_image，只有本人可读，管理员经详情取短期链接）。
+ */
+export const roleRequests = plazaSchema.table(
+  'role_requests',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    clientRequestId: uuid('client_request_id').notNull(),
+    roleName: text('role_name').notNull(),
+    basis: text('basis').$type<'real_person' | 'fictional' | 'original'>(),
+    categoryId: text('category_id'),
+    sourceWork: text('source_work').notNull().default(''),
+    referenceText: text('reference_text').notNull().default(''),
+    referenceMediaIds: uuid('reference_media_ids')
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    note: text('note').notNull().default(''),
+    status: text('status').$type<RoleRequestStatusValue>().notNull().default('pending'),
+    adminMessage: text('admin_message'),
+    characterId: uuid('character_id'),
+    addedToContacts: boolean('added_to_contacts').notNull().default(false),
+    pointsCost: integer('points_cost').notNull().default(0),
+    pointsCharged: integer('points_charged').notNull().default(0),
+    handledBy: uuid('handled_by'),
+    history: jsonb('history')
+      .$type<RoleRequestHistoryJson[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** 状态变化后用户还没看过（红点）。 */
+    userUnseen: boolean('user_unseen').notNull().default(false),
+    createdAt: time('created_at').notNull(),
+    updatedAt: time('updated_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('role_requests_client_idx').on(t.userId, t.clientRequestId),
+    index('role_requests_user_idx').on(t.userId, t.createdAt),
+    index('role_requests_status_idx').on(t.status, t.createdAt),
+  ],
+);
+
+/** plaza 的键值设置（键 role_request_config）。 */
+export const plazaSettings = plazaSchema.table('settings', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').notNull(),
+  updatedAt: time('updated_at').notNull(),
+});
+
+export type OfficialCommentRow = typeof officialComments.$inferSelect;
+export type RoleRequestRow = typeof roleRequests.$inferSelect;

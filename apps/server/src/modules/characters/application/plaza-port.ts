@@ -9,10 +9,13 @@
  *   ai-runtime 收到后立即退出成人模式并提示（SAFE-03 第 5 条）。
  */
 import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, ilike, sql, type SQL } from 'drizzle-orm';
 import {
   CharacterCard,
+  CharacterSummary,
   CustomCharacterOrigin,
+  type CharacterProfile,
+  type PlazaOfficialPersona,
   PlazaCustomCharacterSnapshot,
   type AdminCharacterWrite,
   PlazaPresetVariantSnapshot,
@@ -669,6 +672,53 @@ export class CharacterPlazaService
         newerVersionAvailable: status.newerVersionAvailable,
       },
       everPrivatePerson: row.everPrivatePerson,
+    };
+  }
+
+  // ---------- 3.5：角色广场「微伴角色」tab ----------
+
+  async listOfficialIds(query: { q?: string; categoryId?: string }): Promise<string[]> {
+    const filters: SQL[] = [eq(characters.kind, 'preset'), eq(characters.status, 'published')];
+    if (query.categoryId) filters.push(eq(characters.categoryId, query.categoryId));
+    if (query.q)
+      filters.push(ilike(characters.searchText, `%${query.q.replace(/[\\%_]/g, '\\$&')}%`));
+    const rows = await this.db.db
+      .select({ id: characters.id })
+      .from(characters)
+      .where(and(...filters))
+      .orderBy(asc(characters.id))
+      .limit(1000);
+    return rows.map((r) => r.id);
+  }
+
+  async getOfficialCards(userId: string, characterIds: string[]) {
+    const profiles = await this.characters.getProfiles(userId, characterIds);
+    const byId = new Map(
+      profiles
+        .filter((p) => p.kind === 'preset')
+        .map((p) => [p.characterId, CharacterSummary.parse(p)] as const),
+    );
+    return characterIds.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
+  }
+
+  async getOfficialProfile(
+    userId: string,
+    characterId: string,
+  ): Promise<{ profile: CharacterProfile; persona: PlazaOfficialPersona } | null> {
+    const preset = await this.characters.presetForCopy(characterId);
+    if (!preset) return null;
+    const profile = await this.characters.getProfile(userId, characterId);
+    const card = CharacterCard.safeParse(preset.body.card);
+    const d = card.success ? card.data.data : null;
+    // 只摘公开的几项并截断，不返回背景细节、示例对话、禁用词、熟悉度成长等完整提示词内容。
+    return {
+      profile,
+      persona: {
+        summary: clip(d?.persona.summary ?? profile.intro, 300),
+        personality: clip(d?.persona.personality ?? '', 300),
+        speechStyle: clip(d?.speech.tone ?? '', 200),
+        catchphrases: (d?.speech.catchphrases ?? []).slice(0, 5).map((c) => clip(c, 50)),
+      },
     };
   }
 }

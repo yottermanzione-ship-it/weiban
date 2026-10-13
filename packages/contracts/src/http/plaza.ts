@@ -17,7 +17,13 @@ import {
   defineEndpoint,
   tolerantEnum,
 } from '../common.js';
-import { AgeSetting, CharacterBasis, RealPersonKind } from './characters.js';
+import {
+  AgeSetting,
+  CharacterBasis,
+  CharacterProfile,
+  CharacterSummary,
+  RealPersonKind,
+} from './characters.js';
 
 /** P-35：评论长度上限。 */
 export const PLAZA_COMMENT_MAX_CHARS = 200 as const;
@@ -676,5 +682,141 @@ export const PlazaAdminEndpoints = {
       }),
     ),
     summary: '3.1：当前仍在停权期内的用户（已到期、已恢复的不列）',
+  }),
+} as const;
+
+// ---------- 3.5：角色广场「微伴角色」tab（官方预设角色，总经理 10-14 裁定 2.3） ----------
+
+/**
+ * 公开的基本人设（让人了解个大概）：只摘人设卡里的简介、性格、说话方式与少量口头禅，各自截断；
+ * 不包含背景细节、示例对话、禁用词、熟悉度成长等完整提示词内容。
+ */
+export const PlazaOfficialPersona = z.object({
+  summary: z.string().max(300),
+  personality: z.string().max(300),
+  speechStyle: z.string().max(200),
+  catchphrases: z.array(z.string().max(50)).max(5),
+});
+export type PlazaOfficialPersona = z.infer<typeof PlazaOfficialPersona>;
+
+/** 「微伴角色」列表卡片：角色卡片（character.added = 我已添加）+ 广场互动计数。 */
+export const PlazaOfficialCard = z.object({
+  character: CharacterSummary,
+  likeCount: z.number().int().nonnegative(),
+  commentCount: z.number().int().nonnegative(),
+  likedByMe: z.boolean(),
+});
+export type PlazaOfficialCard = z.infer<typeof PlazaOfficialCard>;
+
+/** 「微伴角色」详情：资料页基础信息 + 基本人设 + 互动计数。 */
+export const PlazaOfficialDetail = z.object({
+  character: CharacterProfile,
+  persona: PlazaOfficialPersona,
+  likeCount: z.number().int().nonnegative(),
+  commentCount: z.number().int().nonnegative(),
+  likedByMe: z.boolean(),
+});
+export type PlazaOfficialDetail = z.infer<typeof PlazaOfficialDetail>;
+
+/** hot = 点赞 + 2×评论；most_liked = 点赞数；default = 角色库默认顺序。 */
+export const PlazaOfficialSort = z.enum(['hot', 'most_liked', 'default']);
+
+export const ListPlazaOfficialQuery = z.object({
+  q: z.string().trim().min(1).max(50).optional(),
+  categoryId: z.string().max(40).optional(),
+  sort: PlazaOfficialSort.default('hot'),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+
+const OfficialParams = z.object({ characterId: Id });
+const OfficialLikeResult = z.object({
+  likeCount: z.number().int().nonnegative(),
+  likedByMe: z.boolean(),
+});
+
+/**
+ * 「微伴角色」tab 接口。「添加」走现有添加流程 ContactsEndpoints.add（POST /contacts），不在这里。
+ * 评论与「自定义角色」作品评论同一规则：先设置广场昵称（409 conflict）、被停权 403 plaza_publish_forbidden、
+ * clientRequestId 幂等、只有一层回复。删除评论复用 PlazaEndpoints.deleteComment（DELETE /plaza/comments/:commentId，
+ * 官方角色下的评论只有评论者本人能删）；管理员删除复用 PlazaAdminEndpoints.deleteComment。
+ */
+export const PlazaOfficialEndpoints = {
+  list: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/plaza/official`,
+    auth: 'user',
+    query: ListPlazaOfficialQuery,
+    response: cursorPage(PlazaOfficialCard),
+    summary:
+      '3.5：角色广场「微伴角色」tab：已上架的官方预设角色，按名字 / 别名 / 作品名搜索、按分类筛选、按热门 / 点赞 / 默认排序',
+  }),
+  get: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/plaza/official/:characterId`,
+    auth: 'user',
+    params: OfficialParams,
+    response: PlazaOfficialDetail,
+    summary: '3.5：官方角色详情（基本人设摘要，不含完整提示词）；未上架返回 404 not_found',
+  }),
+  like: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/plaza/official/:characterId/like`,
+    auth: 'user',
+    params: OfficialParams,
+    response: OfficialLikeResult,
+    summary: '3.5：点赞官方角色（每人每角色一次，幂等）',
+  }),
+  unlike: defineEndpoint({
+    method: 'DELETE',
+    path: `${API_PREFIX}/plaza/official/:characterId/like`,
+    auth: 'user',
+    params: OfficialParams,
+    response: OfficialLikeResult,
+    summary: '3.5：取消点赞（幂等）',
+  }),
+  listComments: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/plaza/official/:characterId/comments`,
+    auth: 'user',
+    params: OfficialParams,
+    query: z.object({ cursor: z.string().optional() }),
+    response: cursorPage(PlazaComment),
+    summary: '3.5：官方角色下的评论（按时间正序）',
+  }),
+  addComment: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/plaza/official/:characterId/comments`,
+    auth: 'user',
+    params: OfficialParams,
+    body: z.object({
+      clientRequestId: Id,
+      text: z.string().trim().min(1).max(PLAZA_COMMENT_MAX_CHARS),
+      replyToCommentId: Id.nullable().optional(),
+    }),
+    response: PlazaComment,
+    summary:
+      '3.5：评论 / 回复官方角色；未设置广场昵称 409 conflict；被停权 403 plaza_publish_forbidden；clientRequestId 幂等',
+  }),
+} as const;
+
+export const AdminPlazaOfficialComment = z.object({
+  commentId: Id,
+  characterId: Id,
+  authorUserId: Id,
+  authorNickname: z.string().nullable(),
+  text: z.string().max(PLAZA_COMMENT_MAX_CHARS),
+  createdAt: Timestamp,
+});
+
+export const PlazaOfficialAdminEndpoints = {
+  listComments: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/plaza/official/comments`,
+    auth: 'admin',
+    query: z.object({ characterId: Id.optional(), cursor: z.string().optional() }),
+    response: cursorPage(AdminPlazaOfficialComment),
+    summary:
+      '3.5：官方角色下的评论（最新在前，不含已删除）；删除用 PlazaAdminEndpoints.deleteComment',
   }),
 } as const;

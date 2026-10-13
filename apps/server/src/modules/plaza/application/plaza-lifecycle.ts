@@ -24,12 +24,15 @@ import {
   comments,
   likes,
   notices,
+  officialComments,
+  officialLikes,
   publishDrafts,
   reports,
   works,
 } from '../infra/db/schema.js';
 import { PlazaService } from './plaza.service.js';
 import { PlazaStore } from './plaza-store.js';
+import { RoleRequestService } from './role-requests.service.js';
 
 export const PLAZA_DRAFT_SWEEP_JOB = 'plaza.draft_sweep';
 
@@ -41,6 +44,7 @@ export class PlazaLifecycle implements OnModuleInit {
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
     @Inject(MEDIA_SYSTEM_PORT) private readonly media: MediaSystemPort,
+    @Inject(RoleRequestService) private readonly roleRequests: RoleRequestService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -136,6 +140,24 @@ export class PlazaLifecycle implements OnModuleInit {
       ).length;
       n += (await tx.db.delete(bans).where(eq(bans.userId, userId)).returning({ id: bans.userId }))
         .length;
+      // 3.5：官方角色下的点赞、评论（别人回复我的评论去掉对我的引用）与角色制作申请（连同参考图）。
+      n += (
+        await tx.db
+          .delete(officialLikes)
+          .where(eq(officialLikes.userId, userId))
+          .returning({ id: officialLikes.characterId })
+      ).length;
+      n += (
+        await tx.db
+          .delete(officialComments)
+          .where(eq(officialComments.authorUserId, userId))
+          .returning({ id: officialComments.id })
+      ).length;
+      await tx.db
+        .update(officialComments)
+        .set({ replyToUserId: null })
+        .where(eq(officialComments.replyToUserId, userId));
+      n += await this.roleRequests.purgeUser(tx, userId);
       const profile = await tx.db
         .delete(authorProfiles)
         .where(eq(authorProfiles.userId, userId))
@@ -166,6 +188,19 @@ export class PlazaLifecycle implements OnModuleInit {
       one(db.select({ n: count() }).from(bans).where(eq(bans.userId, userId))),
       one(db.select({ n: count() }).from(authorProfiles).where(eq(authorProfiles.userId, userId))),
       one(db.select({ n: count() }).from(works).where(eq(works.originAuthorUserId, userId))),
+      one(db.select({ n: count() }).from(officialLikes).where(eq(officialLikes.userId, userId))),
+      one(
+        db
+          .select({ n: count() })
+          .from(officialComments)
+          .where(
+            or(
+              eq(officialComments.authorUserId, userId),
+              eq(officialComments.replyToUserId, userId),
+            ),
+          ),
+      ),
+      this.roleRequests.countUserData(userId),
     ]);
     return parts.reduce((a, b) => a + b, 0);
   }

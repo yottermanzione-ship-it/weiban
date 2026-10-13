@@ -170,6 +170,8 @@ export const DataSection = z.enum([
   'new_friends',
   /** 3.1：补充设定（含异步检出的冲突项）变化；characterId = 该预设角色、itemId = null，重新拉 GET /characters/:id/supplement。 */
   'supplement',
+  /** 3.5：角色制作申请状态变化（itemId = requestId），重新拉 GET /role-requests。 */
+  'role_requests',
 ]);
 export type DataSection = z.infer<typeof DataSection>;
 

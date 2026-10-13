@@ -95,6 +95,15 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.5（2026-10-14，角色广场两个 tab 与申请制作，总经理 10-14 裁定 2.3）
+
+全部向后兼容（只新增接口、新增枚举值、端口新增可选方法）。说明见 `docs/handoffs/2026-10-14-backend-lead-role-request-plaza.md`。
+
+- `http/plaza.ts`：「微伴角色」tab——`PlazaOfficialPersona`、`PlazaOfficialCard`、`PlazaOfficialDetail`、`ListPlazaOfficialQuery`，接口 `PlazaOfficialEndpoints`（列表、详情、点赞 / 取消、评论列表 / 发表）与 `PlazaOfficialAdminEndpoints.listComments`；删除评论复用原有 `PlazaEndpoints.deleteComment` / `PlazaAdminEndpoints.deleteComment`。
+- 新文件 `http/role-requests.ts`：申请制作——`RoleRequest`、`RoleRequestStatus`、`RoleRequestConfig`（`pointsCost` 预留，默认 0）、`CreateRoleRequest`，用户端 `RoleRequestEndpoints`、管理端 `RoleRequestAdminEndpoints`。
+- `MediaPurpose` / `UserMediaPurpose` 新增 `role_request_image`；`DataSection` 新增 `role_requests`（客户端按容错枚举处理）。
+- 端口 `CharacterPlazaPort` 新增可选 `listOfficialIds`、`getOfficialCards`、`getOfficialProfile`。
+
 ### 3.4（2026-10-13，上游账号池与用量监控，ADR-0032 第二批）
 
 全部向后兼容（只新增接口、新增可选字段、新增请求枚举值 `AdminUsageDimension.hour`）。说明见 `docs/handoffs/2026-10-13-backend-lead-points-upstream.md`。

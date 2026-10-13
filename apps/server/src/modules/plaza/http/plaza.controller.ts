@@ -19,6 +19,7 @@ import {
   RequireAuth,
   type AuthPrincipal,
 } from '../../../platform/index.js';
+import { PlazaOfficialService } from '../application/plaza-official.service.js';
 import { PlazaService } from '../application/plaza.service.js';
 
 const workParams = new ContractPipe(E.getWork.params!);
@@ -27,7 +28,10 @@ const cursorQuery = new ContractPipe(E.listNotices.query!);
 @Controller('api/v1/plaza')
 @RequireAuth('user')
 export class PlazaController {
-  constructor(@Inject(PlazaService) private readonly plaza: PlazaService) {}
+  constructor(
+    @Inject(PlazaService) private readonly plaza: PlazaService,
+    @Inject(PlazaOfficialService) private readonly official: PlazaOfficialService,
+  ) {}
 
   @Get('works')
   listWorks(@CurrentPrincipal() p: AuthPrincipal, @Query() query: unknown) {
@@ -160,6 +164,8 @@ export class PlazaController {
     @CurrentPrincipal() p: AuthPrincipal,
     @Param(new ContractPipe(E.deleteComment.params!)) params: { commentId: string },
   ) {
+    // 3.5：先按「微伴角色」tab 官方角色下的评论处理，找不到再按作品评论处理。
+    if ((await this.official.deleteOwnComment(p.userId, params.commentId)) !== null) return;
     await this.plaza.deleteComment(p.userId, params.commentId);
   }
 

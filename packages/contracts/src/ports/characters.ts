@@ -4,9 +4,14 @@ import type {
   CharacterClassification,
   CharacterClassificationInput,
   CharacterProfile,
+  CharacterSummary,
 } from '../http/characters.js';
 import type { CharacterRelation, SupplementConflict } from '../http/character-extras.js';
-import type { PlazaSnapshot, PlazaSnapshotClassification } from '../http/plaza.js';
+import type {
+  PlazaOfficialPersona,
+  PlazaSnapshot,
+  PlazaSnapshotClassification,
+} from '../http/plaza.js';
 
 /** 通知显示专用：只返回名字，不加载头像或向调用方提供角色卡上下文，不派生供应商调用。 */
 export interface CharacterNameReadPort {
@@ -128,6 +133,18 @@ export interface CharacterPlazaPort {
   getPlazaOrigin(characterId: string): Promise<{ workId: string; version: number } | null>;
   /** 自定义角色当前分类（发布新版本时与上一版比较）。 */
   getSnapshotClassification(characterId: string): Promise<PlazaSnapshotClassification | null>;
+  /**
+   * 3.5（角色广场「微伴角色」tab）：符合条件的已上架预设角色 ID（角色库默认顺序，最多 1000 个）。
+   * 可选：未实现时「微伴角色」tab 返回 service_unavailable。
+   */
+  listOfficialIds?(query: { q?: string; categoryId?: string }): Promise<string[]>;
+  /** 3.5：按给定顺序返回这些已上架预设角色的卡片（不存在 / 未上架的跳过）。 */
+  getOfficialCards?(userId: string, characterIds: string[]): Promise<CharacterSummary[]>;
+  /** 3.5：已上架预设角色的资料 + 公开的基本人设摘要；不存在 / 未上架返回 null。 */
+  getOfficialProfile?(
+    userId: string,
+    characterId: string,
+  ): Promise<{ profile: CharacterProfile; persona: PlazaOfficialPersona } | null>;
 }
 
 /** 补充设定写入（importer 导入结果确认、plaza 应用改版之外的系统写入）。提供方 characters。 */

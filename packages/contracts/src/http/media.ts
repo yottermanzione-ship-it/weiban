@@ -38,6 +38,8 @@ export const MediaPurpose = z.enum([
   'card_template',
   'pet_art',
   'plaza_avatar',
+  /** 3.5：角色制作申请的参考图（只有上传者本人可读；管理员经申请详情取短期链接）。 */
+  'role_request_image',
 ]);
 export type MediaPurpose = z.infer<typeof MediaPurpose>;
 
@@ -52,6 +54,7 @@ export const UserMediaPurpose = z.enum([
   'pet_photo',
   'import_screenshot',
   'custom_character_avatar',
+  'role_request_image',
 ]);
 
 /** 3.0：只能由管理员上传的素材库用途。 */

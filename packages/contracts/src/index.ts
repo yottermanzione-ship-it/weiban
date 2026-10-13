@@ -36,6 +36,7 @@ export * from './http/pets.js';
 export * from './http/library.js';
 export * from './http/importer.js';
 export * from './http/plaza.js';
+export * from './http/role-requests.js';
 export * from './http/play.js';
 export * from './http/ai-runtime-extras.js';
 export * from './http/announcements.js';

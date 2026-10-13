@@ -55,6 +55,7 @@ import {
   type PlazaCharacters,
   type PlazaClassificationPolicy,
 } from '../tokens.js';
+import { PlazaOfficialService } from './plaza-official.service.js';
 import { PlazaService } from './plaza.service.js';
 import { PlazaStore } from './plaza-store.js';
 
@@ -101,6 +102,7 @@ export class PlazaAdminService {
     @Optional()
     @Inject(PLAZA_CLASSIFICATION_POLICY)
     private readonly policy?: PlazaClassificationPolicy,
+    @Optional() @Inject(PlazaOfficialService) private readonly official?: PlazaOfficialService,
   ) {}
 
   private get db() {
@@ -539,7 +541,27 @@ export class PlazaAdminService {
   async deleteComment(adminId: string, commentId: string, input: unknown): Promise<void> {
     const { reason } = parseContract(Reason, input);
     const [c] = await this.db.db.select().from(comments).where(eq(comments.id, commentId));
-    if (!c) throw new AppError('not_found', '评论不存在');
+    if (!c) {
+      // 3.5：「微伴角色」tab 官方角色下的评论。
+      const oc = await this.official?.findComment(commentId);
+      if (!oc) throw new AppError('not_found', '评论不存在');
+      await this.db.transaction(async (tx) => {
+        await this.official!.softDelete(oc.id, 'admin', tx);
+        await this.audit.record(
+          {
+            module: 'plaza',
+            action: 'plaza.comment_deleted',
+            actorType: 'admin',
+            actorId: adminId,
+            targetType: 'plaza_official_comment',
+            targetId: commentId,
+            details: { reason, characterId: oc.characterId },
+          },
+          tx,
+        );
+      });
+      return;
+    }
     await this.db.transaction(async (tx) => {
       await this.plaza.softDeleteComment(c.id, c.workId, 'admin', tx);
       await this.audit.record(

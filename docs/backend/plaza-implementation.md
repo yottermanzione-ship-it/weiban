@@ -33,3 +33,11 @@ plaza **不 import characters**：所有对角色的访问经令牌注入的契�
 - （T-088 已解决）「添加为我的角色」创建角色后由服务器经 `ContactsWritePort.addForUser` 走 CHR-03 添加流程；「应用改版」时未添加该预设角色也会先添加。
 - 预设改版作品卡片的 `avatarUrl` 为 null，客户端按 `basedOnPresetId` 显示预设角色头像。
 - `pg_trgm` 需要数据库允许 `CREATE EXTENSION`（本机 Docker 的超级用户可以；生产库需运维确认）。
+
+## 3.5 补充：「微伴角色」tab 与申请制作（2026-10-14，迁移 0090）
+
+接口清单与交接见 `docs/handoffs/2026-10-14-backend-lead-role-request-plaza.md`，契约见 `packages/contracts/src/http/plaza.ts`（PlazaOfficial*）与 `http/role-requests.ts`。
+
+- **微伴角色**（`application/plaza-official.service.ts`）：角色数据仍归 characters，plaza 经 `CharacterPlazaPort` 新增的可选方法读取（`listOfficialIds` 只取已上架预设角色 ID、`getOfficialCards`、`getOfficialProfile`）。点赞 / 评论存 `plaza.official_likes` / `plaza.official_comments`，计数实时 count（预设角色数量级小）。排序在 plaza 内存里做（hot = 点赞 + 2×评论），分页用 offset 游标。基本人设只摘人设卡 `persona.summary / personality`、`speech.tone`、前 5 条口头禅并截断，不返回完整提示词。
+- **申请制作**（`application/role-requests.service.ts`）：表 `plaza.role_requests`，配置在 `plaza.settings`（键 `role_request_config`，默认开放、价格 0、同时未完成上限 3）。提交按用户加 advisory 锁保证上限；`clientRequestId` 幂等。管理员操作在行锁内做状态转换 + 审计，事务提交后再推送（system 类，deepLink `/role-requests/{id}`），推送失败不影响状态。完成时先经 `ContactsWritePort.addForUser`（幂等键 = requestId）加通讯录，失败也照常完成（`addedToContacts = false`）。
+- 注销：`PlazaLifecycle.purgeUser` 一并删除官方角色点赞 / 评论、制作申请与参考图。

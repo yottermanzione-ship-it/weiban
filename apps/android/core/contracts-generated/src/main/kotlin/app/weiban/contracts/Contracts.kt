@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.4. Regenerate: pnpm android:generate
+// Contract 3.5. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.4"
+const val CONTRACT_VERSION: String = "3.5"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -411,6 +411,16 @@ data class AdminModelWriteInput(
 )
 
 @Serializable
+data class AdminPlazaOfficialComment(
+    @SerialName("commentId") val `commentId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("authorUserId") val `authorUserId`: Id,
+    @SerialName("authorNickname") val `authorNickname`: String?,
+    @SerialName("text") val `text`: String,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
 data class AdminPlazaReport(
     @SerialName("reportId") val `reportId`: Id,
     @SerialName("reporterUserId") val `reporterUserId`: Id,
@@ -517,6 +527,31 @@ data class AdminReleaseNote(
     @SerialName("publishedAt") val `publishedAt`: Timestamp?,
     @SerialName("createdAt") val `createdAt`: Timestamp,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class AdminRoleRequest(
+    @SerialName("requestId") val `requestId`: Id,
+    @SerialName("roleName") val `roleName`: String,
+    @SerialName("basis") val `basis`: String?,
+    @SerialName("categoryId") val `categoryId`: String?,
+    @SerialName("sourceWork") val `sourceWork`: String,
+    @SerialName("referenceText") val `referenceText`: String,
+    @SerialName("referenceImages") val `referenceImages`: List<RoleRequestImage>,
+    @SerialName("note") val `note`: String,
+    @SerialName("status") val `status`: String,
+    @SerialName("adminMessage") val `adminMessage`: String?,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("addedToContacts") val `addedToContacts`: Boolean,
+    @SerialName("pointsCost") val `pointsCost`: Long,
+    @SerialName("pointsCharged") val `pointsCharged`: Long,
+    @SerialName("unseen") val `unseen`: Boolean,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("username") val `username`: String?,
+    @SerialName("handledBy") val `handledBy`: Id?,
+    @SerialName("history") val `history`: List<AdminRoleRequestHistoryItem>,
 )
 
 @Serializable
@@ -2451,6 +2486,30 @@ data class CreatePublicUpdateRequestInput(
     @SerialName("effectiveDate") val `effectiveDate`: LocalDate,
     @SerialName("sourceUrl") val `sourceUrl`: String,
     @SerialName("status") val `status`: String? = null,
+)
+
+@Serializable
+data class CreateRoleRequest(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("roleName") val `roleName`: String,
+    @SerialName("basis") val `basis`: CharacterBasis? = null,
+    @SerialName("categoryId") val `categoryId`: String? = null,
+    @SerialName("sourceWork") val `sourceWork`: String? = null,
+    @SerialName("referenceText") val `referenceText`: String? = null,
+    @SerialName("referenceImageIds") val `referenceImageIds`: List<Id>? = null,
+    @SerialName("note") val `note`: String? = null,
+)
+
+@Serializable
+data class CreateRoleRequestInput(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("roleName") val `roleName`: String,
+    @SerialName("basis") val `basis`: CharacterBasis? = null,
+    @SerialName("categoryId") val `categoryId`: String? = null,
+    @SerialName("sourceWork") val `sourceWork`: String? = null,
+    @SerialName("referenceText") val `referenceText`: String? = null,
+    @SerialName("referenceImageIds") val `referenceImageIds`: List<Id>? = null,
+    @SerialName("note") val `note`: String? = null,
 )
 
 @Serializable
@@ -5206,6 +5265,24 @@ data class ListMessagesQueryInput(
 )
 
 @Serializable
+data class ListPlazaOfficialQuery(
+    @SerialName("q") val `q`: String? = null,
+    @SerialName("categoryId") val `categoryId`: String? = null,
+    @SerialName("sort") val `sort`: PlazaOfficialSort,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long,
+)
+
+@Serializable
+data class ListPlazaOfficialQueryInput(
+    @SerialName("q") val `q`: String? = null,
+    @SerialName("categoryId") val `categoryId`: String? = null,
+    @SerialName("sort") val `sort`: PlazaOfficialSort? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
 data class ListPlazaWorksQuery(
     @SerialName("q") val `q`: String? = null,
     @SerialName("sort") val `sort`: PlazaSort,
@@ -6750,6 +6827,80 @@ data class PlazaNotice(
 )
 
 @Serializable
+data class PlazaOfficialAdminEndpointsListCommentsQuery(
+    @SerialName("characterId") val `characterId`: Id? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+)
+
+@Serializable
+data class PlazaOfficialAdminEndpointsListCommentsResponse(
+    @SerialName("items") val `items`: List<AdminPlazaOfficialComment>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class PlazaOfficialCard(
+    @SerialName("character") val `character`: CharacterSummary,
+    @SerialName("likeCount") val `likeCount`: Long,
+    @SerialName("commentCount") val `commentCount`: Long,
+    @SerialName("likedByMe") val `likedByMe`: Boolean,
+)
+
+@Serializable
+data class PlazaOfficialDetail(
+    @SerialName("character") val `character`: CharacterProfile,
+    @SerialName("persona") val `persona`: PlazaOfficialPersona,
+    @SerialName("likeCount") val `likeCount`: Long,
+    @SerialName("commentCount") val `commentCount`: Long,
+    @SerialName("likedByMe") val `likedByMe`: Boolean,
+)
+
+@Serializable
+data class PlazaOfficialEndpointsAddCommentBody(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("text") val `text`: String,
+    @SerialName("replyToCommentId") val `replyToCommentId`: Id? = null,
+)
+
+@Serializable
+data class PlazaOfficialEndpointsGetParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class PlazaOfficialEndpointsLikeResponse(
+    @SerialName("likeCount") val `likeCount`: Long,
+    @SerialName("likedByMe") val `likedByMe`: Boolean,
+)
+
+@Serializable
+data class PlazaOfficialEndpointsListResponse(
+    @SerialName("items") val `items`: List<PlazaOfficialCard>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class PlazaOfficialEndpointsListCommentsQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+)
+
+@Serializable
+data class PlazaOfficialEndpointsListCommentsResponse(
+    @SerialName("items") val `items`: List<PlazaComment>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class PlazaOfficialPersona(
+    @SerialName("summary") val `summary`: String,
+    @SerialName("personality") val `personality`: String,
+    @SerialName("speechStyle") val `speechStyle`: String,
+    @SerialName("catchphrases") val `catchphrases`: List<String>,
+)
+
+typealias PlazaOfficialSort = String
+
+@Serializable
 data class PlazaPresetVariantSnapshot(
     @EncodeDefault
     @SerialName("kind") val `kind`: String = "preset_variant",
@@ -7702,6 +7853,104 @@ data class ReviewNoteRequest(
 data class ReviewNoteRequestInput(
     @SerialName("note") val `note`: String? = null,
 )
+
+@Serializable
+data class RoleRequest(
+    @SerialName("requestId") val `requestId`: Id,
+    @SerialName("roleName") val `roleName`: String,
+    @SerialName("basis") val `basis`: String?,
+    @SerialName("categoryId") val `categoryId`: String?,
+    @SerialName("sourceWork") val `sourceWork`: String,
+    @SerialName("referenceText") val `referenceText`: String,
+    @SerialName("referenceImages") val `referenceImages`: List<RoleRequestImage>,
+    @SerialName("note") val `note`: String,
+    @SerialName("status") val `status`: String,
+    @SerialName("adminMessage") val `adminMessage`: String?,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("addedToContacts") val `addedToContacts`: Boolean,
+    @SerialName("pointsCost") val `pointsCost`: Long,
+    @SerialName("pointsCharged") val `pointsCharged`: Long,
+    @SerialName("unseen") val `unseen`: Boolean,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class RoleRequestAdminEndpointsAcceptBody(
+    @SerialName("message") val `message`: String? = null,
+)
+
+@Serializable
+data class RoleRequestAdminEndpointsCompleteBody(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("message") val `message`: String? = null,
+    @SerialName("addToContacts") val `addToContacts`: Boolean? = null,
+)
+
+@Serializable
+data class RoleRequestAdminEndpointsGetParams(
+    @SerialName("requestId") val `requestId`: Id,
+)
+
+@Serializable
+data class RoleRequestAdminEndpointsListQuery(
+    @SerialName("status") val `status`: RoleRequestStatus? = null,
+    @SerialName("userId") val `userId`: Id? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class RoleRequestAdminEndpointsListResponse(
+    @SerialName("items") val `items`: List<AdminRoleRequest>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+    @SerialName("pendingCount") val `pendingCount`: Long,
+)
+
+@Serializable
+data class RoleRequestAdminEndpointsProgressBody(
+    @SerialName("message") val `message`: String,
+)
+
+@Serializable
+data class RoleRequestAdminEndpointsRejectBody(
+    @SerialName("message") val `message`: String,
+)
+
+@Serializable
+data class RoleRequestConfig(
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("pointsCost") val `pointsCost`: Long,
+    @SerialName("maxOpenPerUser") val `maxOpenPerUser`: Long,
+)
+
+@Serializable
+data class RoleRequestConfigInput(
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("pointsCost") val `pointsCost`: Long,
+    @SerialName("maxOpenPerUser") val `maxOpenPerUser`: Long,
+)
+
+@Serializable
+data class RoleRequestEndpointsListMineQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class RoleRequestEndpointsListMineResponse(
+    @SerialName("items") val `items`: List<RoleRequest>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+    @SerialName("unseenCount") val `unseenCount`: Long,
+)
+
+@Serializable
+data class RoleRequestImage(
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("url") val `url`: String?,
+)
+
+typealias RoleRequestStatus = String
 
 typealias ScenarioMode = String
 
@@ -9842,6 +10091,13 @@ data class AdminPlazaWorkRemixOf(
     @SerialName("name") val `name`: String,
     @SerialName("authorNickname") val `authorNickname`: String,
     @SerialName("available") val `available`: Boolean,
+)
+
+@Serializable
+data class AdminRoleRequestHistoryItem(
+    @SerialName("status") val `status`: String,
+    @SerialName("message") val `message`: String?,
+    @SerialName("at") val `at`: Timestamp,
 )
 
 @Serializable
