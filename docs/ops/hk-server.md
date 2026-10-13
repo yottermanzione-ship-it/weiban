@@ -86,9 +86,43 @@ bash deploy/prod/scripts/restore.sh /srv/weiban/backups/weiban-某份 /临时放
 
 数据盘 `/dev/vdb1` 挂在 `/srv/weiban`（fstab 用 UUID）：`docker/`（Docker 数据，含数据库与媒体卷）、`containerd/`（镜像层）、`backups/`、`secrets/`（0700）、`keys/`（只有备份公钥）、`src/`（部署源码）、`runtime.env`。系统盘只放操作系统。
 
-## 七、安全现状
+## 七、sub2api 模型中转（ADR-0031 验证阶段，2026-10-13 部署）
+
+**打开 sub2api 后台**（PowerShell，窗口保持打开）：
+
+```powershell
+ssh -i ~/.ssh/weiban_deploy -N -L 9090:127.0.0.1:8090 root@103.231.58.124
+```
+
+浏览器开 <http://localhost:9090>。管理员邮箱和密码在服务器文件 `/srv/weiban/secrets/sub2api-admin.txt`，查看方法：
+
+```powershell
+ssh -i ~/.ssh/weiban_deploy root@103.231.58.124 "cat /srv/weiban/secrets/sub2api-admin.txt"
+```
+
+首次登录后：阅读并**亲自确认**《部署与运营合规承诺》（不确认，所有管理功能都被锁定）→ 开启两步验证（2FA）→ 再录入上游密钥。只接正规按量付费的 API Key，不接 Claude/ChatGPT 等订阅账号。
+
+**桌面快捷方式**：桌面右键 → 新建 → 快捷方式，“对象位置”填下面一行，名称填「sub2api 后台」。双击后会打开一个黑色窗口（这就是隧道，别关），再用浏览器开 <http://localhost:9090>：
+
+```text
+C:\Windows\System32\OpenSSH\ssh.exe -i %USERPROFILE%\.ssh\weiban_deploy -N -L 9090:127.0.0.1:8090 root@103.231.58.124
+```
+
+微伴后台同理，把 `9090:127.0.0.1:8090` 换成 `9081:127.0.0.1:8081`，浏览器开 <http://localhost:9081>。
+
+**服务器上的位置**：`/srv/weiban/sub2api/`（`compose.yml`、`.env` 秘密 600、`data/`、`postgres_data/`、`redis_data/`），独立 Compose 项目 `sub2api`，镜像固定 `weishaw/sub2api:0.2.15`、`postgres:18.6-alpine`、`redis:8.10.2-alpine`；只绑 `127.0.0.1:8090`；微伴 app 经内部网络 `weiban-llm` 用 `http://sub2api:8080` 访问。每日备份同时加密备份 sub2api 数据库（`sub2api.dump.age`）。`.env` 里的 JWT/TOTP 密钥与数据库口令不在备份内，和 KEK 一样需另行保管。
+
+```bash
+cd /srv/weiban/sub2api && docker compose -p sub2api ps        # 状态
+docker compose -p sub2api logs --tail 100 sub2api               # 日志
+```
+
+升级：改 `deploy/hk/sub2api/compose.yml` 的版本号 → 先备份 → `bash deploy/hk/sub2api/setup.sh`。**不要用后台的“在线升级”按钮。**
+
+## 八、安全现状
 
 - 防火墙 ufw 只放行 22、80（443 预留未开）；后台只绑定服务器 127.0.0.1，数据库只在容器内部网络。
+- 注意（2026-10-13 发现）：有人另装了宝塔面板并在 ufw 加开 20、21、443、888、11823、39000-40000，见 sub2api 交接。
 - fail2ban 保护 SSH：10 分钟内失败 5 次封 1 小时。
 - 系统自动安装安全更新（unattended-upgrades）。
 - 尚未做（需总经理同意）：禁用 SSH 密码登录、改 SSH 端口、改 root 密码。

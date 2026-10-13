@@ -23,7 +23,14 @@ trap resume EXIT
 mv -- "$bundle/database.dump.age.partial" "$bundle/database.dump.age"
 "${compose[@]}" run --rm --no-deps -T --entrypoint tar app -C /app/.data/media -cf - . | age -R "$RECIPIENT_FILE" > "$bundle/media.tar.age.partial"
 mv -- "$bundle/media.tar.age.partial" "$bundle/media.tar.age"
-(cd -- "$bundle" && sha256sum database.dump.age media.tar.age > SHA256SUMS)
+files=(database.dump.age media.tar.age)
+# ADR-0031：sub2api 自己的数据库（含上游密钥）一并加密备份；未部署则跳过。
+if docker ps --format '{{.Names}}' | grep -qx sub2api-postgres; then
+  docker exec sub2api-postgres pg_dump -U sub2api -d sub2api --format=custom | age -R "$RECIPIENT_FILE" > "$bundle/sub2api.dump.age.partial"
+  mv -- "$bundle/sub2api.dump.age.partial" "$bundle/sub2api.dump.age"
+  files+=(sub2api.dump.age)
+fi
+(cd -- "$bundle" && sha256sum "${files[@]}" > SHA256SUMS)
 printf '%s\n' 'weiban-backup-v1' "created_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)" 'storage=disk' 'kek_backup=separate-required' > "$bundle/manifest.txt"
 echo "已完成加密备份：$bundle"
 # 保留最近 KEEP 份完整备份；删除超过 1 天仍未完成的残留目录。
