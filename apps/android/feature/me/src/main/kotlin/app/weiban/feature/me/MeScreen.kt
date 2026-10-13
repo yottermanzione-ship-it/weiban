@@ -1,16 +1,32 @@
 package app.weiban.feature.me
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 import app.weiban.contracts.*
 import app.weiban.data.OwnerRecord
 import app.weiban.data.SessionRepository
+import app.weiban.designsystem.ComingSoonPage
+import app.weiban.designsystem.ComingSoonRow
+import app.weiban.designsystem.LocalWeibanColors
+import app.weiban.designsystem.MenuGroup
+import app.weiban.designsystem.MenuRow
+import app.weiban.designsystem.Tint
+import app.weiban.designsystem.WbNavBar
+import app.weiban.designsystem.tokens.WbRadius
 import app.weiban.designsystem.tokens.WbSpace
 import kotlinx.serialization.json.*
 
@@ -40,29 +56,50 @@ import kotlinx.serialization.json.*
     LaunchedEffect(state) { state.perform { state.load() } }
     LaunchedEffect(state, entry.page) { if (!firstProfile) entry.page?.let(state::openPage) }
     with(state) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(WbSpace.S5),
-            verticalArrangement = Arrangement.spacedBy(WbSpace.S5),
-        ) {
-            if (firstProfile) TextButton(onClick = onLogout) { Text("‹ 返回登录") }
-            if (page != "me" && !firstProfile) {
-                TextButton(onClick = {
-                    page = "me"
-                    message = null
-                }) { Text("‹ 返回") }
-            }
-            Text(
-                pageTitle(page, firstProfile),
-                style = MaterialTheme.typography.headlineSmall,
-            )
-            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            MePageBody(state, entry, onLogout)
+        BackHandler(page != "me" && !firstProfile) { back() }
+        val current = page
+        if (current.startsWith("coming:")) {
+            ComingSoonPage(current.removePrefix("coming:"), ::back)
+            return@with
         }
+        Column(Modifier.fillMaxSize().background(LocalWeibanColors.current.bgPage)) {
+            if (!firstProfile && current != "me") WbNavBar(pageTitle(current, false), ::back)
+            Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState())) {
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                message?.let { Text(it, Modifier.padding(horizontal = WbSpace.S5), color = MaterialTheme.colorScheme.error) }
+                if (current in menuPages && !firstProfile) {
+                    MenuPageBody(state, entry, onLogout)
+                } else {
+                    Column(Modifier.fillMaxWidth().padding(WbSpace.S5), verticalArrangement = Arrangement.spacedBy(WbSpace.S5)) {
+                        if (firstProfile) {
+                            TextButton(onClick = onLogout) { Text("‹ 返回登录") }
+                            Text(pageTitle(current, true), style = MaterialTheme.typography.headlineSmall)
+                        }
+                        MePageBody(state, entry, onLogout)
+                    }
+                }
+                Spacer(Modifier.height(WbSpace.S8))
+            }
+        }
+    }
+}
+
+/** 菜单式页面（整宽菜单行，不加内边距）。 */
+private val menuPages = setOf("me", "settings", "account", "general", "about", "announcements", "release-notes")
+
+@Composable private fun MenuPageBody(
+    state: MeState,
+    entry: MeEntry,
+    onLogout: () -> Unit,
+) {
+    when (state.page) {
+        "settings" -> MeSettings(state, onLogout)
+        "account" -> AccountPage(state)
+        "general" -> GeneralPage(state)
+        "about" -> AboutPage(state)
+        "announcements" -> AnnouncementsPage(state)
+        "release-notes" -> ReleaseNotesPage(state)
+        else -> HomePage(state, entry)
     }
 }
 
@@ -85,14 +122,12 @@ import kotlinx.serialization.json.*
                 Text("成人模式模型未设置时不能开启成人模式；具体对话仍受角色与账号规则约束。")
             }
             "theme" -> ThemePage(state)
-            "settings" -> MeSettings(state)
             "notifications" -> NotificationSettingsPage(state, entry.notifications)
             "services" -> MeServices(state, entry)
             "period" -> PeriodDiaryPage(repository, owner)
             "proactive" -> ProactiveDefaultsPage(state)
             "privacy" -> PrivacyPage(state)
             "delete-account" -> AccountDeletionPage(state, onLogout)
-            else -> HomePage(state, entry, onLogout)
         }
     }
 }
@@ -245,33 +280,99 @@ import kotlinx.serialization.json.*
         }
     }
 
+/** 我页（02a 第 4 节）：头部 + 服务 ｜ 收藏 · 朋友圈 · 视频号* · 卡包* · 表情 ｜ 设置。 */
 @Composable private fun HomePage(
     state: MeState,
     entry: MeEntry,
-    onLogout: () -> Unit,
 ) = with(state) {
-    SavedAvatar(repository, owner, profile)
-    Text(
-        profile?.nickname ?: repository.auth.value
-            ?.user
-            ?.username
-            .orEmpty(),
-        style = MaterialTheme.typography.titleLarge,
-    )
-    Text("账号：${repository.auth.value?.user?.username.orEmpty()}")
-    OutlinedButton(onClick = { page = "profile" }) { Text("我的资料") }
-    entry.onMyMoments?.let { open -> OutlinedButton(onClick = open) { Text("朋友圈") } }
-    entry.onFavorites?.let { open -> OutlinedButton(onClick = open) { Text("收藏") } }
-    entry.onMyStickers?.let { open -> OutlinedButton(onClick = open) { Text("表情") } }
-    OutlinedButton(onClick = { openPage("services") }) { Text("服务") }
-    OutlinedButton(onClick = { openPage("settings") }) { Text("设置") }
-    TextButton(enabled = !busy, onClick = {
-        perform {
-            load()
-            message = "已刷新"
+    val colors = LocalWeibanColors.current
+    val unread by ReleaseCenter.announcements.collectAsState()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(colors.bgSurface)
+            .clickable { openPage("profile") }
+            .padding(start = WbSpace.S7, end = WbSpace.S5, top = WbSpace.S9, bottom = WbSpace.S7),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WbSpace.S5),
+    ) {
+        SavedAvatar(repository, owner, profile)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WbSpace.S2)) {
+            Text(
+                profile?.nickname ?: repository.auth.value
+                    ?.user
+                    ?.username
+                    .orEmpty(),
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            Text("微伴号：${repository.auth.value?.user?.username.orEmpty()}", color = colors.textSecondary)
+            Text(
+                "+ 状态",
+                Modifier
+                    .clip(RoundedCornerShape(WbRadius.Full))
+                    .border(1.dp, colors.borderHairline, RoundedCornerShape(WbRadius.Full))
+                    .clickable { openPage("coming:status") }
+                    .padding(horizontal = WbSpace.S3, vertical = WbSpace.S1),
+                color = colors.textSecondary,
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
-    }) { Text("刷新") }
-    TextButton(onClick = onLogout) { Text("退出登录") }
+        Text("▦", Modifier.clickable { openPage("coming:qrcode") }.padding(WbSpace.S3), color = colors.textSecondary)
+        Text("›", color = colors.textTertiary, style = MaterialTheme.typography.titleLarge)
+    }
+    MenuGroup { MenuRow("服务", "✓", Tint.Green) { openPage("services") } }
+    MenuGroup {
+        entry.onFavorites?.let { MenuRow("收藏", "★", Tint.Orange, onClick = it) }
+        entry.onMyMoments?.let { MenuRow("朋友圈", "◈", Tint.Blue, onClick = it) }
+        ComingSoonRow("channels") { openPage("coming:$it") }
+        ComingSoonRow("cards") { openPage("coming:$it") }
+        entry.onMyStickers?.let { MenuRow("表情", "☺", Tint.Gold, onClick = it) }
+    }
+    MenuGroup { MenuRow("设置", "⚙", Tint.Blue, dot = (unread?.unreadCount ?: 0) > 0) { openPage("settings") } }
+}
+
+/** 设置：账号与安全 ｜ 青少年模式* · 关怀模式* ｜ 主动消息与免打扰 · 隐私 · 通用 ｜ 推送 ｜ 关于微伴 · 插件* ｜ 退出登录。 */
+@Composable internal fun MeSettings(
+    state: MeState,
+    onLogout: () -> Unit,
+) {
+    val unread by ReleaseCenter.announcements.collectAsState()
+    val coming: (String) -> Unit = { state.openPage("coming:$it") }
+    MenuGroup { MenuRow("账号与安全") { state.openPage("account") } }
+    MenuGroup {
+        ComingSoonRow("teen", withIcon = false, onOpen = coming)
+        ComingSoonRow("care", withIcon = false, onOpen = coming)
+    }
+    MenuGroup {
+        MenuRow("主动消息与免打扰") { state.openPage("proactive") }
+        MenuRow("隐私") { state.openPage("privacy") }
+        MenuRow("通用") { state.openPage("general") }
+    }
+    MenuGroup { MenuRow("推送") { state.openPage("notifications") } }
+    MenuGroup {
+        MenuRow("关于微伴", value = ReleaseCenter.versionName, dot = (unread?.unreadCount ?: 0) > 0) { state.openPage("about") }
+        ComingSoonRow("plugins", withIcon = false, onOpen = coming)
+    }
+    MenuGroup { MenuRow("退出登录", danger = true, onClick = onLogout) }
+}
+
+@Composable private fun AccountPage(state: MeState) {
+    MenuGroup {
+        MenuRow(
+            "微伴号",
+            value =
+                state.repository.auth.value
+                    ?.user
+                    ?.username
+                    .orEmpty(),
+        )
+        MenuRow("我的资料") { state.openPage("profile") }
+    }
+    MenuGroup { MenuRow("注销账号", danger = true) { state.openPage("delete-account") } }
+}
+
+@Composable private fun GeneralPage(state: MeState) {
+    MenuGroup { MenuRow("主题") { state.openPage("theme") } }
 }
 
 @Composable private fun ModelChoices(
@@ -320,24 +421,30 @@ import kotlinx.serialization.json.*
         }
     }
 
+private val pageTitles =
+    mapOf(
+        "profile" to "我的资料",
+        "wallet" to "余额与账单",
+        "models" to "模型选择",
+        "theme" to "主题",
+        "settings" to "设置",
+        "account" to "账号与安全",
+        "general" to "通用",
+        "about" to "关于微伴",
+        "announcements" to "公告",
+        "release-notes" to "更新日志",
+        "notifications" to "推送",
+        "services" to "服务",
+        "period" to "经期日记",
+        "proactive" to "主动消息与免打扰",
+        "privacy" to "隐私",
+        "delete-account" to "注销账号",
+    )
+
 private fun pageTitle(
     page: String,
     firstProfile: Boolean,
-): String =
-    when (page) {
-        "profile" -> if (firstProfile) "TA 该怎么称呼你？" else "我的资料"
-        "wallet" -> "余额与账单"
-        "models" -> "模型选择"
-        "theme" -> "主题"
-        "settings" -> "设置"
-        "notifications" -> "新消息通知"
-        "services" -> "服务"
-        "period" -> "经期日记"
-        "proactive" -> "主动消息与免打扰"
-        "privacy" -> "隐私"
-        "delete-account" -> "注销账号"
-        else -> "我"
-    }
+): String = if (firstProfile && page == "profile") "TA 该怎么称呼你？" else pageTitles[page] ?: "我"
 
 @Composable private fun ModelDefault(
     state: MeState,

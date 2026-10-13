@@ -1,7 +1,9 @@
 package app.weiban.feature.chat
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,6 +14,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.weiban.contracts.*
@@ -49,6 +52,9 @@ import kotlinx.serialization.json.*
         changed(id)
     }
     var searching by rememberSaveable(owner.sessionId) { mutableStateOf(false) }
+    // 会话列表上的二级页：plaza（⊕ › 添加角色）/ coming:<key>（暂未开放）。
+    var listPage by rememberSaveable(owner.sessionId) { mutableStateOf<String?>(null) }
+    var newRole by remember { mutableStateOf(false) }
     BackHandler(conversationId != null) { if (information) information = false else select(null) }
     // 搜索结果 / 收藏定位：打开对应会话，聊天页里再滚到那条消息（CHAT-12）。
     val locate by MessageLocator.target.collectAsState()
@@ -69,6 +75,7 @@ import kotlinx.serialization.json.*
     LaunchedEffect(state.initialized, activeConversationId, selected?.conversationId) {
         if (state.initialized && activeConversationId != null && selected == null) select(null)
     }
+    if (newRole) NewRoleSheet(owner) { newRole = false }
     Column(Modifier.fillMaxSize()) {
         if (!online) Text(error ?: "正在连接…", Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.bodySmall)
         val target = profile
@@ -102,7 +109,28 @@ import kotlinx.serialization.json.*
                     searching = false
                     select(id)
                 }
-            selected == null -> ConversationList(repository, owner, state, select, { searching = true }) { creating = "" }
+            selected == null && listPage == "plaza" ->
+                RolePlazaPage(repository, runtime, owner, { listPage = null }) { id ->
+                    listPage = null
+                    select(id)
+                }
+            selected == null && listPage != null ->
+                app.weiban.designsystem.ComingSoonPage(listPage.orEmpty().removePrefix("coming:")) { listPage = null }
+            selected == null ->
+                ConversationList(
+                    repository,
+                    owner,
+                    state,
+                    select,
+                    ListActions(
+                        search = { searching = true },
+                        createGroup = { creating = "" },
+                        addRole = { listPage = "plaza" },
+                        newRole = { newRole = true },
+                        importRole = { MiniAppNavigation.open(MiniApp.Import.id) },
+                        comingSoon = { listPage = "coming:$it" },
+                    ),
+                )
             information && selected.isGroup() ->
                 GroupInformation(
                     repository,
@@ -148,59 +176,206 @@ import kotlinx.serialization.json.*
     }
 }
 
+/** 会话列表的入口动作（⊕ 菜单、搜索）。 */
+internal class ListActions(
+    val search: () -> Unit,
+    val createGroup: () -> Unit,
+    val addRole: () -> Unit,
+    val newRole: () -> Unit,
+    val importRole: () -> Unit,
+    val comingSoon: (String) -> Unit,
+)
+
+/** 会话列表（02a 第 1 节）：标题「微伴（未读）」+ 右上 ⊕ 菜单；搜索；长按会话 → 置顶 / 标为未读 / 消息免打扰 / 不显示该聊天。 */
 @Composable private fun ConversationList(
     repository: SessionRepository,
     owner: OwnerRecord,
     state: ClientSyncState,
     onSelect: (String) -> Unit,
-    onSearch: () -> Unit,
-    onCreateGroup: () -> Unit,
+    actions: ListActions,
 ) {
+    val colors = app.weiban.designsystem.LocalWeibanColors.current
     val profiles =
         characterProfiles(
             repository,
             state.contacts.map { it.characterId } + state.conversations.flatMap { c -> c.characterMembers().map { it.refId } },
         )
     val names = profiles.mapValues { it.value.name }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Text("微伴", Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.headlineSmall)
-        TextButton(onClick = onCreateGroup) { Text("发起群聊") }
-    }
-    // 全局搜索入口（CHAT-12）：角色、群聊、聊天记录。
-    OutlinedButton(onClick = onSearch, modifier = Modifier.fillMaxWidth().padding(horizontal = WbSpace.S5)) { Text("搜索") }
     val conversations =
         state.conversations
             .filter { !it.state.hidden }
             .sortedWith(
                 compareByDescending<Conversation> { it.state.pinned }.thenByDescending { it.lastMessage?.createdAt ?: it.updatedAt },
             )
-    if (conversations.isEmpty()) {
-        val emptyText = if (state.initialized) "添加喜欢的角色后，聊天会出现在这里" else "正在同步聊天…"
-        Text(emptyText, Modifier.padding(WbSpace.S5))
+    val unread = conversations.filter { !it.state.muted }.sumOf { it.unreadCount }
+    var menu by remember { mutableStateOf(false) }
+    var pressed by remember { mutableStateOf<Conversation?>(null) }
+    val scope = rememberCoroutineScope()
+    var error by remember { mutableStateOf<String?>(null) }
+    Column(Modifier.fillMaxSize().background(colors.bgPage)) {
+        app.weiban.designsystem.WbNavBar(if (unread > 0) "微伴（$unread）" else "微伴") {
+            Box {
+                app.weiban.designsystem.NavAction("⊕") { menu = true }
+                app.weiban.designsystem.PopMenu(
+                    menu,
+                    { menu = false },
+                    listOf(
+                        "发起群聊" to actions.createGroup,
+                        "添加角色" to actions.addRole,
+                        "新建角色" to actions.newRole,
+                        "导入角色" to actions.importRole,
+                        "扫一扫" to { actions.comingSoon("scan") },
+                        "收付款" to { actions.comingSoon("pay") },
+                    ),
+                )
+            }
+        }
+        // 全局搜索入口（CHAT-12）：角色、群聊、聊天记录。
+        Text(
+            "⌕ 搜索",
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = WbSpace.S3, vertical = WbSpace.S2)
+                .background(
+                    colors.bgSurface,
+                    androidx.compose.foundation.shape
+                        .RoundedCornerShape(app.weiban.designsystem.tokens.WbRadius.Sm),
+                ).clickable(onClick = actions.search)
+                .padding(WbSpace.S3),
+            color = colors.textPlaceholder,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+        error?.let { Text(it, Modifier.padding(horizontal = WbSpace.S5), color = MaterialTheme.colorScheme.error) }
+        if (conversations.isEmpty()) {
+            val emptyText = if (state.initialized) "添加喜欢的角色后，聊天会出现在这里" else "正在同步聊天…"
+            Text(emptyText, Modifier.padding(WbSpace.S5), color = colors.textSecondary)
+        }
+        ConversationRows(repository, owner, state, conversations, profiles, names, onSelect) { pressed = it }
     }
+    pressed?.let { conversation ->
+        val change: (suspend () -> Unit) -> Unit = { work ->
+            pressed = null
+            error = null
+            scope.launch { userAction({ error = it }) { work() } }
+        }
+        val update: (String, Boolean) -> Unit = { field, value ->
+            change {
+                repository.call(
+                    Endpoints.chatEndpointsUpdateState,
+                    params = mapOf("conversationId" to conversation.conversationId),
+                    body = buildJsonObject { put(field, value) },
+                    options = SessionCallOptions(owner = owner),
+                )
+            }
+        }
+        AlertDialog(
+            onDismissRequest = { pressed = null },
+            title = { Text(title(state, conversation, names)) },
+            text = {
+                Column {
+                    TextButton(onClick = { update("pinned", !conversation.state.pinned) }) {
+                        Text(if (conversation.state.pinned) "取消置顶" else "置顶该聊天")
+                    }
+                    TextButton(onClick = {
+                        change {
+                            repository.call(
+                                Endpoints.chatEndpointsMarkUnread,
+                                params = mapOf("conversationId" to conversation.conversationId),
+                                options = SessionCallOptions(owner = owner),
+                            )
+                        }
+                    }) { Text("标为未读") }
+                    TextButton(onClick = { update("muted", !conversation.state.muted) }) {
+                        Text(if (conversation.state.muted) "开启新消息提醒" else "消息免打扰")
+                    }
+                    TextButton(onClick = { update("hidden", true) }) { Text("不显示该聊天") }
+                }
+            },
+            confirmButton = { TextButton(onClick = { pressed = null }) { Text("取消") } },
+        )
+    }
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun ConversationRows(
+    repository: SessionRepository,
+    owner: OwnerRecord,
+    state: ClientSyncState,
+    conversations: List<Conversation>,
+    profiles: Map<String, CharacterProfile>,
+    names: Map<String, String>,
+    onSelect: (String) -> Unit,
+    onLongPress: (Conversation) -> Unit,
+) {
+    val colors = app.weiban.designsystem.LocalWeibanColors.current
+    val mode = app.weiban.designsystem.LocalWeibanModeColors.current
     LazyColumn {
         items(conversations, key = { it.conversationId }) { conversation ->
-            ListItem(
-                headlineContent = { Text(title(state, conversation, names)) },
-                leadingContent = { ConversationAvatar(repository, owner, state, conversation, profiles) },
-                supportingContent = { Text(conversation.lastMessage?.text ?: "开始聊天", maxLines = 1) },
-                trailingContent = {
-                    Text(
-                        if (conversation.unreadCount >
-                            0
-                        ) {
-                            conversation.unreadCount.toString()
-                        } else if (conversation.state.muted) {
-                            "免打扰"
-                        } else {
-                            ""
-                        },
-                    )
-                },
-                modifier = Modifier.clickable { onSelect(conversation.conversationId) },
-            )
-            HorizontalDivider()
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(if (conversation.state.pinned) colors.bgSurfacePinned else colors.bgSurface)
+                    .combinedClickable(
+                        onClick = { onSelect(conversation.conversationId) },
+                        onLongClick = { onLongPress(conversation) },
+                    ).padding(horizontal = WbSpace.S5, vertical = WbSpace.S4),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(WbSpace.S4),
+            ) {
+                BadgedBox(badge = {
+                    when {
+                        conversation.unreadCount > 0 && conversation.state.muted -> Badge(containerColor = mode.badgeUnread)
+                        conversation.unreadCount > 0 ->
+                            Badge(containerColor = mode.badgeUnread) { Text(conversation.unreadCount.coerceAtMost(99).toString()) }
+                        conversation.state.markedUnread -> Badge(containerColor = mode.badgeUnread)
+                    }
+                }) {
+                    ConversationAvatar(repository, owner, state, conversation, profiles)
+                }
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            title(state, conversation, names),
+                            Modifier.weight(1f),
+                            maxLines = 1,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            conversation.lastMessage
+                                ?.createdAt
+                                ?.let(::listTime)
+                                .orEmpty(),
+                            color = colors.textTertiary,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            conversation.lastMessage?.text ?: "开始聊天",
+                            Modifier.weight(1f),
+                            maxLines = 1,
+                            color = colors.textSecondary,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        if (conversation.state.muted) Text("🔕", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+            HorizontalDivider(Modifier.padding(start = 72.dp), color = colors.borderHairline)
         }
+    }
+}
+
+/** 会话列表时间：今天显示时分，其余显示月/日。 */
+private fun listTime(timestamp: String): String {
+    val instant = runCatching { java.time.Instant.parse(timestamp) }.getOrNull() ?: return ""
+    val zone = java.time.ZoneId.systemDefault()
+    val date = instant.atZone(zone)
+    return if (date.toLocalDate() == java.time.LocalDate.now(zone)) {
+        "%02d:%02d".format(java.util.Locale.ROOT, date.hour, date.minute)
+    } else {
+        "${date.monthValue}/${date.dayOfMonth}"
     }
 }
 
@@ -266,7 +441,7 @@ private fun systemMessage(content: ReceivedMessageContentSystem): String {
         "contact_accepted" -> "已通过好友申请，现在可以开始聊天了"
         "scenario_mode_changed" -> scenarioModeMessage(content)
         "scenario_mode_switched" ->
-            if (p("reason") == "member_not_eligible") "有新成员加入，群聊已回到日常模式" else scenarioModeMessage(content)
+            if (p("reason") == "member_not_eligible") "有新成员加入，群聊已回到日常聊天" else scenarioModeMessage(content)
         "group_created" -> "你邀请 ${p("names")} 加入了群聊"
         "group_invited_by_character" -> "${p("name")} 邀请你和 ${p("names")} 加入了群聊"
         "member_joined" -> if (by.isNotEmpty()) "$by 邀请 ${p("names")} 加入了群聊" else "你邀请 ${p("names")} 加入了群聊"
@@ -304,16 +479,10 @@ private fun cardObtainedMessage(p: (String) -> String): String {
 
 private fun scenarioModeMessage(content: ReceivedMessageContentSystem): String {
     if ((content.params["reason"] as? JsonPrimitive)?.contentOrNull == "adult_mode_unavailable") {
-        return "成人模式已不可用，已回到日常模式"
+        return "私密预设已不可用，已回到日常聊天"
     }
-    val mode =
-        when ((content.params["mode"] as? JsonPrimitive)?.contentOrNull) {
-            "tsundere" -> "傲娇"
-            "romance" -> "恋爱"
-            "adult" -> "成人"
-            else -> "日常"
-        }
-    return "已切换到${mode}模式"
+    val mode = (content.params["mode"] as? JsonPrimitive)?.contentOrNull
+    return "已切换到 " + (presetNames[mode] ?: "日常聊天")
 }
 
 @Suppress("TooGenericExceptionCaught") // UI operation boundary reports failures and preserves cancellation.
@@ -394,12 +563,28 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
             }
         }
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        TextButton(onBack) { Text("返回") }
-        val heading = title(state, conversation, names) + if (group) "（${conversation.characterMembers().size + 1}）" else ""
-        Text(heading, Modifier.padding(WbSpace.S5), style = MaterialTheme.typography.titleMedium)
-        TextButton(onInformation) { Text("聊天信息") }
+    val presetTarget =
+        remember(conversation.conversationId) {
+            val characterId = conversation.participants.find { it.kind == "character" }?.refId
+            if (group || characterId == null) ScenarioTarget.Group(conversation.conversationId) else ScenarioTarget.Character(characterId)
+        }
+    val preset = rememberCurrentPreset(repository, owner, presetTarget)
+    val refreshPreset by rememberUpdatedState(preset.refresh)
+    SideEffect { ui.presetMode = preset.mode }
+    LaunchedEffect(presetTarget) {
+        AppUpdates.updates.collect { if (it is UserUpdateDataChanged && it.data.section == "companion") refreshPreset() }
     }
+    if (ui.scenarioOpen) {
+        ScenarioSheet(repository, owner, presetTarget, preset.mode, { ui.scenarioOpen = false }) { refreshPreset() }
+    }
+    val heading = title(state, conversation, names) + if (group) "（${conversation.characterMembers().size + 1}）" else ""
+    val subtitle =
+        when {
+            group -> null
+            visible && typingActive -> typingText
+            else -> presetSubtitle(preset.mode)
+        }
+    ChatHeader(heading, subtitle, onBack, onInformation) { ui.scenarioOpen = true }
     val whileAway =
         rememberWhileAway(
             repository,
@@ -412,17 +597,12 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
             messages.lastOrNull()?.messageId,
         )
     WhileAwayCard(whileAway) { ui.text = it }
-    if (group && conversation.state.hidden) {
-        Text("这个群聊已解散", Modifier.padding(WbSpace.S5))
-    }
     ui.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = WbSpace.S5)) }
-    if (visible && typingActive) Text(typingText, Modifier.padding(horizontal = WbSpace.S5))
+    if (group && visible && typingActive) Text(typingText, Modifier.padding(horizontal = WbSpace.S5))
     MessageTimeline(ui, messages, pending, list, Modifier.weight(1f), avatars)
     LocateEffects(ui, messages, list)
     if (ui.selecting) {
         SelectionBar(ui, messages)
-    } else if (group && conversation.state.hidden) {
-        Text("你已不在该群聊中", Modifier.fillMaxWidth().padding(WbSpace.S5), style = MaterialTheme.typography.bodySmall)
     } else {
         Composer(ui, messages.find { it.messageId == ui.quoteId && it.status == "normal" }, avatars)
     }
@@ -584,7 +764,7 @@ private const val LOCATE_FLASH_MS = 1_500L
         Box(Modifier.weight(1f)) {
             if (media.voiceMode) {
                 HoldToTalk(
-                    enabled = !ui.conversation.state.hidden,
+                    enabled = true,
                     onStart = { media.player.stop() },
                     onVoice = media::sendVoice,
                     onNotice = media::toast,
@@ -658,3 +838,37 @@ internal fun groupGreeting(
     state: ClientSyncState,
     conversation: Conversation,
 ): String = "我们在『${title(state, conversation)}』群里见过".take(50)
+
+/** 聊天标题栏（02a 1.1）：‹ 返回 · 标题 + 副标题（正在输入… > 当前情景预设，点副标题打开情景预设）· ··· 聊天信息。 */
+@Composable private fun ChatHeader(
+    heading: String,
+    subtitle: String?,
+    onBack: () -> Unit,
+    onInformation: () -> Unit,
+    onPreset: () -> Unit,
+) {
+    val colors = app.weiban.designsystem.LocalWeibanColors.current
+    Box(Modifier.fillMaxWidth().heightIn(min = 52.dp).background(colors.bgNavBar)) {
+        Text(
+            "‹",
+            Modifier.align(Alignment.CenterStart).clickable(onClick = onBack).padding(horizontal = WbSpace.S5, vertical = WbSpace.S2),
+            style = MaterialTheme.typography.headlineMedium,
+        )
+        Column(Modifier.align(Alignment.Center).padding(horizontal = 72.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(heading, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+            subtitle?.let {
+                Text(
+                    it,
+                    Modifier.clickable(onClick = onPreset),
+                    color = colors.textSecondary,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
+        Text(
+            "···",
+            Modifier.align(Alignment.CenterEnd).clickable(onClick = onInformation).padding(horizontal = WbSpace.S5, vertical = WbSpace.S3),
+            style = MaterialTheme.typography.titleLarge,
+        )
+    }
+}

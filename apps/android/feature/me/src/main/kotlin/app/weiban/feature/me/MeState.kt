@@ -77,7 +77,17 @@ internal class MeState(
         onTheme(prefs.theme)
     }
 
+    /** 页面返回栈（设置 › 关于微伴 › 公告 逐层返回）。 */
+    private val history = mutableListOf<String>()
+
+    fun back() {
+        page = history.removeLastOrNull() ?: "me"
+        message = null
+    }
+
     fun openPage(next: String) {
+        if (next == page) return
+        if (next == "me") history.clear() else history += page
         page = next
         when (next) {
             "wallet" ->

@@ -8,18 +8,25 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import app.weiban.contracts.*
 import app.weiban.data.AppUpdates
 import app.weiban.data.OwnerRecord
@@ -132,10 +139,23 @@ internal class StickerLibrary(
     }
 }
 
-/** 「+」面板（C 5.3）：相册（系统照片选择器，最多 9 张）、拍摄。语音通话入口在 T-075。 */
+/** 「+」面板的一格。 */
+private class PanelItem(
+    val label: String,
+    val glyph: String,
+    val dot: Boolean = false,
+    val onClick: () -> Unit,
+)
+
+/**
+ * 「+」面板（02a 1.1）：每页 4×2，左右翻页 + 分页圆点。
+ * 私聊：相册 · 拍摄 · 语音通话 · 情景预设 / 写信 · 陪我专注 · 提醒 · 小程序 ｜ 心愿 · 名片*；群聊：相册 · 拍摄 · 情景预设 · 名片*。
+ */
 @Composable internal fun PlusPanel(ui: ConversationUi) {
     val context = LocalContext.current
     var photo by remember { mutableStateOf<File?>(null) }
+    var taApps by remember { mutableStateOf(false) }
+    var comingSoon by remember { mutableStateOf<String?>(null) }
     val characterId =
         ui.conversation.participants
             .find { it.kind == "character" }
@@ -160,70 +180,125 @@ internal class StickerLibrary(
                 ui.media.sendImages(listOf(Uri.fromFile(file)))
             }
         }
-    Row(
-        Modifier.fillMaxWidth().height(PANEL_HEIGHT / 2).padding(WbSpace.S5),
-        horizontalArrangement = Arrangement.spacedBy(WbSpace.S8),
-    ) {
-        PanelButton("相册") { gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
-        PanelButton("拍摄") {
-            val capture =
-                try {
-                    chatCameraCapture(context)
-                } catch (_: IOException) {
-                    null
-                } catch (_: IllegalArgumentException) {
-                    null
-                }
-            if (capture == null) {
-                ui.media.toast("照片暂时无法保存，请从相册选择")
-            } else {
-                photo = capture.first
-                try {
-                    camera.launch(capture.second)
-                } catch (_: ActivityNotFoundException) {
-                    photo = null
-                    ui.media.toast("没有可用的相机，请从相册选择")
+    val shoot: () -> Unit = {
+        val capture =
+            try {
+                chatCameraCapture(context)
+            } catch (_: IOException) {
+                null
+            } catch (_: IllegalArgumentException) {
+                null
+            }
+        if (capture == null) {
+            ui.media.toast("照片暂时无法保存，请从相册选择")
+        } else {
+            photo = capture.first
+            try {
+                camera.launch(capture.second)
+            } catch (_: ActivityNotFoundException) {
+                photo = null
+                ui.media.toast("没有可用的相机，请从相册选择")
+            }
+        }
+    }
+    val close: (() -> Unit) -> () -> Unit = { action ->
+        {
+            ui.media.panel = 0
+            action()
+        }
+    }
+    val presetDot = ui.presetMode != null && ui.presetMode != "daily" && ui.presetMode != "auto"
+    val items =
+        buildList {
+            add(PanelItem("相册", "▦") { gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
+            add(PanelItem("拍摄", "◉", onClick = shoot))
+            // 语音通话（MED-06 第 1、11 条）：只在私聊、平台开通语音服务时显示。
+            if (callable && characterId != null) {
+                add(PanelItem("语音通话", "✆") { dial(characterId, names[characterId].orEmpty().ifEmpty { "角色" }) })
+            }
+            add(PanelItem("情景预设", "✦", presetDot) { ui.scenarioOpen = true })
+            // 写信、陪我专注、提醒、小程序、心愿（PLAY-03～06）：只在私聊里出现。
+            if (characterId != null) {
+                add(PanelItem("写信", "✉", onClick = close { MiniAppNavigation.open(MiniApp.Letters.id, characterId) }))
+                add(PanelItem("陪我专注", "⌛", onClick = close { MiniAppNavigation.open(MiniApp.Focus.id, characterId) }))
+                add(PanelItem("提醒", "⏰", onClick = close { MiniAppNavigation.open(MiniApp.Reminders.id, characterId) }))
+                add(PanelItem("小程序", "◇") { taApps = true })
+                add(PanelItem("心愿", "☑", onClick = close { MiniAppNavigation.open(MiniApp.Wishlist.id, characterId) }))
+            }
+            add(PanelItem("名片", "☷") { comingSoon = "card" })
+        }
+    val pages = items.chunked(PANEL_PAGE_SIZE)
+    val pager = rememberPagerState { pages.size }
+    Column(Modifier.fillMaxWidth().height(PANEL_HEIGHT)) {
+        HorizontalPager(pager, Modifier.weight(1f)) { index ->
+            Column(Modifier.fillMaxSize().padding(horizontal = WbSpace.S5, vertical = WbSpace.S3)) {
+                pages[index].chunked(PANEL_COLUMNS).forEach { row ->
+                    Row(Modifier.fillMaxWidth()) {
+                        row.forEach { item -> PanelButton(item, Modifier.weight(1f)) }
+                        repeat(PANEL_COLUMNS - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
                 }
             }
         }
-        // 语音通话（MED-06 第 1、11 条）：只在私聊、平台开通语音服务时显示。
-        if (callable && characterId != null) PanelButton("语音通话") { dial(characterId, names[characterId].orEmpty().ifEmpty { "角色" }) }
-        // 写信、陪我专注（PLAY-05、PLAY-06）：只在私聊里出现。
-        if (characterId != null) {
-            PanelButton("写信") {
-                ui.media.panel = 0
-                PlayNav.stack.value = listOf(PlayPage.LetterWrite(characterId))
+        if (pages.size > 1) {
+            Row(Modifier.fillMaxWidth().padding(bottom = WbSpace.S3), horizontalArrangement = Arrangement.Center) {
+                repeat(pages.size) { index ->
+                    val colors = LocalWeibanColors.current
+                    Box(
+                        Modifier
+                            .padding(horizontal = WbSpace.S1)
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(if (pager.currentPage == index) colors.textSecondary else colors.borderHairline),
+                    )
+                }
             }
-            PanelButton("陪我专注") {
-                ui.media.panel = 0
-                PlayNav.stack.value = listOf(PlayPage.Focus(characterId))
-            }
+        }
+    }
+    if (taApps && characterId != null) {
+        TogetherSheet(characterId, { taApps = false }) { ui.media.panel = 0 }
+    }
+    comingSoon?.let { key ->
+        Dialog(onDismissRequest = { comingSoon = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            app.weiban.designsystem.ComingSoonPage(key) { comingSoon = null }
+        }
+    }
+}
+
+private const val PANEL_PAGE_SIZE = 8
+private const val PANEL_COLUMNS = 4
+
+/** 「和 TA 一起用」半屏（「+」› 小程序）：只列按 TA 的小程序，当前 TA 已选好。 */
+@Composable internal fun TogetherSheet(
+    characterId: String,
+    onDismiss: () -> Unit,
+    onOpened: () -> Unit = {},
+) {
+    app.weiban.designsystem.WbSheet("和 TA 一起用", onDismiss) {
+        MiniAppGrid(MiniApp.perTaApps) { app ->
+            onDismiss()
+            onOpened()
+            MiniAppNavigation.open(app.id, characterId)
         }
     }
 }
 
 @Composable private fun PanelButton(
-    label: String,
-    onClick: () -> Unit,
+    item: PanelItem,
+    modifier: Modifier,
 ) {
     val colors = LocalWeibanColors.current
-    val glyph =
-        when (label) {
-            "相册" -> "▦"
-            "拍摄" -> "◉"
-            "写信" -> "✉"
-            "陪我专注" -> "◷"
-            else -> "✆"
+    Column(modifier.padding(vertical = WbSpace.S2), horizontalAlignment = Alignment.CenterHorizontally) {
+        BadgedBox(badge = { if (item.dot) Badge(containerColor = app.weiban.designsystem.LocalWeibanModeColors.current.badgeUnread) }) {
+            Surface(
+                color = colors.bgSurface,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.size(WbSize.GridCell - WbSpace.S7).clickable(onClick = item.onClick),
+            ) {
+                Box(contentAlignment = Alignment.Center) { Text(item.glyph, style = MaterialTheme.typography.headlineSmall) }
+            }
         }
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Surface(
-            color = colors.bgSurface,
-            shape = MaterialTheme.shapes.medium,
-            modifier = Modifier.size(WbSize.GridCell - WbSpace.S5).clickable(onClick = onClick),
-        ) {
-            Box(contentAlignment = Alignment.Center) { Text(glyph, style = MaterialTheme.typography.headlineSmall) }
-        }
-        Text(label, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+        Text(item.label, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
     }
 }
 

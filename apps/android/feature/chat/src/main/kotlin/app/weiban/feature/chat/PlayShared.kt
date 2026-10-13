@@ -70,6 +70,7 @@ internal sealed interface PlayPage {
 
     data class ReminderEdit(
         val reminderId: String?,
+        val characterId: String? = null,
     ) : PlayPage
 }
 
@@ -308,7 +309,7 @@ internal fun openChatWith(
                     is PlayPage.LetterRead -> LetterReadPage(repository, runtime, owner, page.letterId)
                     is PlayPage.Focus -> FocusPage(repository, runtime, owner, page.characterId)
                     PlayPage.Reminders -> RemindersPage(repository, runtime, owner)
-                    is PlayPage.ReminderEdit -> ReminderEditPage(repository, runtime, owner, page.reminderId)
+                    is PlayPage.ReminderEdit -> ReminderEditPage(repository, runtime, owner, page.reminderId, page.characterId)
                 }
             }
         }

@@ -258,3 +258,17 @@ private val weekdays = listOf("一", "二", "三", "四", "五", "六", "日")
         Text("● 已记录   ◌ 预测（仅供参考）", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
     }
 }
+
+/** 小程序「经期日记」：由宿主放进小程序外壳（docs/refactor/02 第 4 节）。 */
+@Composable fun PeriodMiniApp(
+    repository: SessionRepository,
+    owner: OwnerRecord,
+    onClose: () -> Unit,
+) {
+    app.weiban.designsystem.ShellPage("经期日记", onClose) {
+        Column(
+            Modifier.fillMaxWidth().padding(app.weiban.designsystem.tokens.WbSpace.S5),
+            verticalArrangement = Arrangement.spacedBy(app.weiban.designsystem.tokens.WbSpace.S5),
+        ) { PeriodDiaryPage(repository, owner) }
+    }
+}

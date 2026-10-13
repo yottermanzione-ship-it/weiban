@@ -147,6 +147,9 @@ internal data class ImportOpen(
 object GrowthNavigation {
     val conversation = MutableStateFlow<String?>(null)
 
+    // 「先去添加一个 TA」（宠物引导页没有角色时）：宿主切到 通讯录 › 角色广场。值为请求时间，0 = 无请求。
+    val addRole = MutableStateFlow(0L)
+
     fun openConversation(conversationId: String) {
         conversation.value = conversationId
     }
@@ -238,6 +241,7 @@ internal fun serialText(serialNo: Long): String = "No." + serialNo.toString().pa
     repository: SessionRepository,
     runtime: ChatRuntime,
     owner: OwnerRecord,
+    periodPage: @Composable () -> Unit = {},
 ) {
     val share by L6Overlays.share.collectAsState()
     val card by L6Overlays.card.collectAsState()
@@ -246,6 +250,7 @@ internal fun serialText(serialNo: Long): String = "No." + serialNo.toString().pa
     val customEditor by L6Overlays.customEditor.collectAsState()
     pets?.let { open -> key(open) { PetsOverlay(repository, runtime, owner, open) { L6Overlays.pets.value = null } } }
     imports?.let { open -> key(open) { ImportOverlay(repository, runtime, owner, open) { L6Overlays.imports.value = null } } }
+    MiniHostOverlay(repository, runtime, owner, periodPage)
     PlazaOverlay(repository, runtime, owner)
     PlayOverlay(repository, runtime, owner)
     card?.let { open -> CardDetailOverlay(repository, owner, open) { L6Overlays.card.value = null } }

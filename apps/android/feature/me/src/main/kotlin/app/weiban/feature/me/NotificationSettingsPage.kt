@@ -8,16 +8,6 @@ import app.weiban.data.DeviceNotificationControls
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-@Composable internal fun MeSettings(state: MeState) {
-    OutlinedButton(onClick = { state.openPage("notifications") }) { Text("新消息通知") }
-    OutlinedButton(onClick = { state.openPage("theme") }) { Text("主题") }
-    OutlinedButton(onClick = { state.openPage("privacy") }) { Text("隐私") }
-    // 危险型行（account-deletion.md 第 2 节）。
-    TextButton(onClick = { state.openPage("delete-account") }) {
-        Text("注销账号", color = app.weiban.designsystem.LocalWeibanColors.current.textDanger)
-    }
-}
-
 @Composable internal fun MeServices(
     state: MeState,
     entry: MeEntry = MeEntry(),

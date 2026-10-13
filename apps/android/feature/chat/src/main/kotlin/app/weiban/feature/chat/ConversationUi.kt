@@ -21,6 +21,10 @@ internal class ConversationUi(
     var openProfile: (ProfileTarget) -> Unit = {}
     var groupGreeting: String? = null
     var choosing by mutableStateOf(false)
+
+    // 情景预设：当前预设（副标题、「+」面板小红点）与弹层开关。
+    var presetMode by mutableStateOf<String?>(null)
+    var scenarioOpen by mutableStateOf(false)
     lateinit var media: ChatMediaUi
 
     /** 多选（T-085）：多选收藏、生成分享图。 */

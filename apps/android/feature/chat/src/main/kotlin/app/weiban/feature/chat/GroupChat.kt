@@ -233,7 +233,7 @@ internal fun defaultGroupTitle(
     val colors = LocalWeibanColors.current
     val groups =
         state.conversations
-            .filter { it.isGroup() && !it.state.hidden }
+            .filter { it.isGroup() }
             .sortedByDescending { it.lastMessage?.createdAt ?: it.updatedAt }
     val profiles = characterProfiles(repository, groups.flatMap { group -> group.characterMembers().map { it.refId } })
     val names = profiles.mapValues { it.value.name }
@@ -327,10 +327,6 @@ internal fun defaultGroupTitle(
     ) {
         TextButton(onClick = onBack, enabled = !pending) { Text("‹ 返回群聊") }
         Text("聊天信息（${members.size + 1}）", style = MaterialTheme.typography.headlineSmall)
-        if (conversation.state.hidden) {
-            Text("这个群聊已解散")
-            return@Column
-        }
         GroupMembers(repository, owner, state, conversation, pending, onProfile, onAdd = { sub = "add" }) { characterId ->
             act {
                 repository.call(
@@ -440,14 +436,6 @@ private fun GroupMembers(
                 options = SessionCallOptions(owner = owner),
             )
         }
-    val modes =
-        remote("${owner.sessionId}:group-modes:$id:${conversation.characterMembers().size}") {
-            repository.call(
-                Endpoints.groupCompanionEndpointsListModes,
-                params = mapOf("conversationId" to id),
-                options = SessionCallOptions(owner = owner),
-            )
-        }
     val update: (JsonObject) -> Unit = { body ->
         act {
             repository.call(
@@ -461,17 +449,6 @@ private fun GroupMembers(
     }
     val current = settings.data ?: return
     Text("微伴", style = MaterialTheme.typography.titleSmall)
-    Text("情景模式")
-    Row(horizontalArrangement = Arrangement.spacedBy(WbSpace.S3)) {
-        modes.data?.items?.forEach { mode ->
-            FilterChip(
-                selected = current.scenarioMode == mode.id,
-                enabled = !pending,
-                onClick = { if (current.scenarioMode != mode.id) update(buildJsonObject { put("scenarioMode", mode.id) }) },
-                label = { Text(mode.name) },
-            )
-        }
-    }
     GroupToggle("角色自己聊天", current.selfChatEnabled, !pending) { value -> update(buildJsonObject { put("selfChatEnabled", value) }) }
     GroupToggle("秒回", current.instantReply, !pending) { value -> update(buildJsonObject { put("instantReply", value) }) }
 }

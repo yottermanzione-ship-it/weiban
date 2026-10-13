@@ -322,6 +322,7 @@ private val reminderQuickFills = listOf("喝水", "吃药", "休息一下", "早
     runtime: ChatRuntime,
     owner: OwnerRecord,
     reminderId: String?,
+    preset: String? = null,
 ) {
     val context = LocalContext.current
     val colors = LocalWeibanColors.current
@@ -336,7 +337,7 @@ private val reminderQuickFills = listOf("喝水", "吃药", "休息一下", "早
     var text by remember { mutableStateOf("") }
     var time by remember { mutableStateOf("08:00") }
     var repeat by remember { mutableStateOf(RepeatValue("daily")) }
-    var characterId by remember { mutableStateOf(contacts.firstOrNull()?.characterId) }
+    var characterId by remember { mutableStateOf(preset ?: contacts.firstOrNull()?.characterId) }
     var health by remember { mutableStateOf(false) }
     var bypass by remember { mutableStateOf(false) }
     var enabled by remember { mutableStateOf(true) }

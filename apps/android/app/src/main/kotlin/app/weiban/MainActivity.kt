@@ -40,6 +40,9 @@ import app.weiban.feature.chat.RoleBrowser
 import app.weiban.feature.chat.rememberMomentsBadge
 import app.weiban.feature.me.MeEntry
 import app.weiban.feature.me.MeScreen
+import app.weiban.feature.me.PeriodMiniApp
+import app.weiban.feature.me.ReleaseCenter
+import app.weiban.feature.me.ReleasePopups
 import app.weiban.network.ApiClient
 import app.weiban.platform.CallNotices
 import app.weiban.platform.NotificationTarget
@@ -63,6 +66,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        ReleaseCenter.versionCode = BuildConfig.VERSION_CODE.toLong()
+        ReleaseCenter.versionName = BuildConfig.VERSION_NAME
         val runtime = application as WeibanApplication
         setContent { WeibanRoot(runtime) }
         lifecycleScope.launch {
@@ -207,6 +212,9 @@ private class NavigationUi(
     var conversationId by mutableStateOf(initialConversation)
     var mePage by mutableStateOf<String?>(null)
 
+    // 通讯录 › 角色广场 的打开请求（宠物引导「先去添加一个 TA」）。
+    var plazaRequest by mutableLongStateOf(0L)
+
     /** 发现页里打开的朋友圈：feed / me / post:<id>；null = 发现首页。 */
     var moments by mutableStateOf<String?>(null)
 
@@ -288,6 +296,15 @@ private class NavigationUi(
                 GrowthNavigation.conversation.value = null
             }
         }
+        val addRole by GrowthNavigation.addRole.collectAsState()
+        LaunchedEffect(addRole) {
+            if (addRole > 0) {
+                navigation.conversationId = null
+                navigation.tab = "通讯录"
+                navigation.plazaRequest = addRole
+                GrowthNavigation.addRole.value = 0L
+            }
+        }
         val callRoute by runtime.callRoute.collectAsState()
         LaunchedEffect(callRoute) {
             callRoute?.let {
@@ -300,7 +317,8 @@ private class NavigationUi(
                 Scaffold(bottomBar = {
                     if (navigation.conversationId == null) {
                         val badge = rememberMomentsBadge(runtime.repository, owner)
-                        Tabs(navigation.tab, (badge?.unseenPostCount ?: 0) > 0) {
+                        val announcements by ReleaseCenter.announcements.collectAsState()
+                        Tabs(navigation.tab, (badge?.unseenPostCount ?: 0) > 0, (announcements?.unreadCount ?: 0) > 0) {
                             navigation.tab = it
                             navigation.mePage = null
                             navigation.moments = null
@@ -312,7 +330,14 @@ private class NavigationUi(
                 // 通话页 / 来电页 / 通话中胶囊盖在所有页面上（design/pages/call.md）。
                 CallOverlay(runtime.repository, owner)
                 // 分享图编辑页、卡片详情、获得成就轻提示（T-085）。
-                GrowthShareOverlay(runtime.repository, runtime.chat, owner)
+                GrowthShareOverlay(runtime.repository, runtime.chat, owner) {
+                    PeriodMiniApp(runtime.repository, owner) {
+                        app.weiban.feature.chat.MiniAppNavigation
+                            .close()
+                    }
+                }
+                // 公告 / 本版新功能 / 强制更新弹窗（契约 3.2）。
+                ReleasePopups(runtime.repository, owner)
             }
         }
     }
@@ -378,7 +403,10 @@ private suspend fun leaveOnboarding(
             ) { navigation.conversationId = it }
         "发现" ->
             DiscoverScreen(runtime.repository, runtime.chat, owner, navigation.moments, { navigation.moments = it }, navigation::open)
-        else -> key(navigation.tab) { RoleBrowser(runtime.repository, runtime.chat, owner, false, navigation::open) }
+        else ->
+            key(navigation.tab) {
+                RoleBrowser(runtime.repository, runtime.chat, owner, false, navigation::open, plazaRequest = navigation.plazaRequest)
+            }
     }
 }
 
@@ -439,6 +467,7 @@ private fun applyNotification(
 @Composable private fun Tabs(
     tab: String,
     discoverDot: Boolean,
+    meDot: Boolean,
     onSelect: (String) -> Unit,
 ) {
     NavigationBar {
@@ -446,7 +475,7 @@ private fun applyNotification(
             val selected = tab == label
             NavigationBarItem(selected = selected, onClick = { onSelect(label) }, icon = {
                 // 朋友圈新动态不推送，只在「发现」标签显示红点（SOC-07 第 7 条）。
-                BadgedBox(badge = { if (label == "发现" && discoverDot) Badge() }) {
+                BadgedBox(badge = { if ((label == "发现" && discoverDot) || (label == "我" && meDot)) Badge() }) {
                     Icon(painterResource(tabIcon(label, selected)), null, Modifier.size(WbSize.ListIcon))
                 }
             }, label = { Text(label) })

@@ -183,27 +183,30 @@ internal fun rememberNewFriends(
     HorizontalDivider(color = colors.borderHairline)
 }
 
-/** 通讯录顶部「新的朋友」「群聊」两行（CHR-05）；红点数 = 服务器 unseenCount。 */
+/** 通讯录顶部固定行（02a 2 节）：新的朋友（红点 = 服务器 unseenCount）/ 新建角色 / 群聊 / 角色广场 / 标签* / 公众号*。 */
 @Composable internal fun ContactsEntries(
     repository: SessionRepository,
     owner: OwnerRecord,
     onNewFriends: () -> Unit,
     onGroups: () -> Unit,
+    onNewRole: () -> Unit,
+    onPlaza: () -> Unit,
+    onComingSoon: (String) -> Unit,
 ) {
-    val colors = LocalWeibanColors.current
     val unseen = rememberNewFriends(repository, owner)?.unseenCount ?: 0
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onNewFriends).padding(WbSpace.S5),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("新的朋友", Modifier.weight(1f))
-        if (unseen > 0) Badge(containerColor = LocalWeibanModeColors.current.badgeUnread) { Text(unseen.toString()) }
-        Text(" ›", color = colors.textSecondary)
+    app.weiban.designsystem.MenuGroup {
+        app.weiban.designsystem.MenuRow(
+            "新的朋友",
+            "＋",
+            app.weiban.designsystem.Tint.Orange,
+            value = if (unseen > 0) unseen.toString() else null,
+            dot = unseen > 0,
+            onClick = onNewFriends,
+        )
+        app.weiban.designsystem.MenuRow("新建角色", "✎", app.weiban.designsystem.Tint.Green, onClick = onNewRole)
+        app.weiban.designsystem.MenuRow("群聊", "☰", app.weiban.designsystem.Tint.Green, onClick = onGroups)
+        app.weiban.designsystem.MenuRow("角色广场", "☺", app.weiban.designsystem.Tint.Orange, onClick = onPlaza)
+        app.weiban.designsystem.ComingSoonRow("tags", onOpen = onComingSoon)
+        app.weiban.designsystem.ComingSoonRow("official", onOpen = onComingSoon)
     }
-    HorizontalDivider(color = colors.borderHairline)
-    Row(Modifier.fillMaxWidth().clickable(onClick = onGroups).padding(WbSpace.S5), verticalAlignment = Alignment.CenterVertically) {
-        Text("群聊", Modifier.weight(1f))
-        Text("›", color = colors.textSecondary)
-    }
-    HorizontalDivider(color = colors.borderHairline)
 }

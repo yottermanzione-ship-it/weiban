@@ -107,6 +107,11 @@ internal data class InformationNavigation(
     var memoryPage by remember(owner, characterId) { mutableStateOf(false) }
     var timelinePage by remember(owner, characterId) { mutableStateOf(false) }
     var voicePage by remember(owner, characterId) { mutableStateOf(false) }
+    var modelPage by remember(owner, characterId) { mutableStateOf(false) }
+    if (modelPage) {
+        CharacterModelPage(repository, owner, characterId) { modelPage = false }
+        return
+    }
     if (memoryPage) {
         MemoryManagement(repository, owner, characterId) { memoryPage = false }
         return
@@ -116,15 +121,10 @@ internal data class InformationNavigation(
         CharacterTimeline(repository, owner, characterId, contact?.remark ?: names[characterId].orEmpty()) { timelinePage = false }
         return
     }
-    var cardsPage by remember(owner, characterId) { mutableStateOf(false) }
     var searchPage by remember(owner, characterId) { mutableStateOf(false) }
     var supplementPage by remember(owner, characterId) { mutableStateOf(false) }
     if (supplementPage) {
         SupplementPage(repository, owner, characterId) { supplementPage = false }
-        return
-    }
-    if (cardsPage) {
-        Column(Modifier.fillMaxSize()) { CardAlbumPage(repository, runtime, owner, characterId) { cardsPage = false } }
         return
     }
     if (searchPage) {
@@ -148,26 +148,24 @@ internal data class InformationNavigation(
         }
         return
     }
+    app.weiban.designsystem.WbNavBar("聊天信息", { if (!actions.pending) navigation.back() })
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
     ) {
-        TextButton(navigation.back, enabled = !actions.pending) { Text("返回聊天") }
-        Text("聊天信息", style = MaterialTheme.typography.headlineSmall)
         TextButton(onClick = navigation.createGroup, enabled = !actions.pending) { Text("＋ 发起群聊") }
         Text(title(state, conversation, names))
         InformationPreferences(actions, conversation, companion, characterId)
+        Text("聊天模型", style = MaterialTheme.typography.titleSmall)
+        CharacterModelRow(repository, owner, characterId, !actions.pending) { modelPage = true }
+        Text("和 TA 一起用", style = MaterialTheme.typography.titleSmall)
+        TogetherRow(characterId)
         Text("和 TA 的相处", style = MaterialTheme.typography.titleSmall)
         TextButton(onClick = { timelinePage = true }, enabled = !actions.pending) { Text("TA 的近况 ›") }
-        TextButton(onClick = { cardsPage = true }, enabled = !actions.pending) { Text("卡册 ›") }
         TextButton(onClick = { searchPage = true }, enabled = !actions.pending) { Text("查找聊天记录 ›") }
-        TextButton(onClick = { L6Overlays.pets.value = PetsOpen(characterId) }, enabled = !actions.pending) { Text("我们的宠物 ›") }
-        // 心愿清单（PLAY-04）：和服务页是同一张清单。
-        TextButton(onClick = { PlayNav.open(PlayPage.Wishlist(characterId)) }, enabled = !actions.pending) { Text("心愿清单 ›") }
         TextButton(onClick = { supplementPage = true }, enabled = !actions.pending) { Text("我的补充设定 ›") }
         PlazaPublishRow(repository, owner, characterId, !actions.pending)
         companion.data?.let { InformationProactive(actions, companion, characterId, it) }
-        TextButton(onClick = navigation.models, enabled = !actions.pending) { Text("模型选择") }
         VoiceToneRow(repository, owner, companion.data?.voiceId, !actions.pending) { voicePage = true }
         TextButton(onClick = { memoryPage = true }, enabled = !actions.pending) { Text("TA记住了什么") }
         InformationNames(actions, contact, characterId)
@@ -310,14 +308,6 @@ internal data class InformationNavigation(
     characterId: String,
     settings: CompanionEndpointsGetForCharacterResponse,
 ) {
-    val modes =
-        remote("${actions.owner.sessionId}:modes:$characterId") {
-            actions.repository.call(
-                Endpoints.companionEndpointsListModes,
-                params = mapOf("characterId" to characterId),
-                options = SessionCallOptions(owner = actions.owner),
-            )
-        }
     var fit by remember(settings.personaFit) { mutableFloatStateOf((settings.personaFit ?: 3).toFloat()) }
     Text("人设贴合度：${fit.toInt()}（1更顺从，5更贴合人设）")
     Slider(fit, { fit = it }, valueRange = 1f..5f, steps = 3, enabled = !actions.pending, onValueChangeFinished = {
@@ -325,15 +315,6 @@ internal data class InformationNavigation(
             actions.call(Endpoints.companionEndpointsUpdateForCharacter, characterId, buildJsonObject { put("personaFit", fit.toInt()) })
         }
     })
-    Text("情景模式")
-    modes.data?.items?.forEach { mode ->
-        TextButton(enabled = !actions.pending && settings.scenarioMode != mode.id, onClick = {
-            actions.change(after = companion::refresh) {
-                actions.call(Endpoints.companionEndpointsUpdateForCharacter, characterId, buildJsonObject { put("scenarioMode", mode.id) })
-            }
-        }) { Text(mode.name) }
-    }
-    modes.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 }
 
 private val proactiveFrequencies = listOf("low" to "少", "medium" to "适中", "high" to "多")
