@@ -34,11 +34,22 @@ import app.weiban.core.designsystem.R
 /** 页面自己画到状态栏下（「我」页头卡、朋友圈封面、通话页）；根布局据此不再留出状态栏。 */
 val LocalImmersive = staticCompositionLocalOf<MutableState<Int>> { mutableIntStateOf(0) }
 
+/** 二级页（带返回键的页面）在显示期间收起底部标签栏（规格 4.1：标签栏只在四个标签页出现）。 */
+val LocalHideTabBar = staticCompositionLocalOf<MutableState<Int>> { mutableIntStateOf(0) }
+
+@Composable fun HideTabBar() {
+    val counter = LocalHideTabBar.current
+    DisposableEffect(counter) {
+        counter.value += 1
+        onDispose { counter.value -= 1 }
+    }
+}
+
 /** 声明本页沉浸到状态栏；lightIcons = 状态栏用白色图标（深色背景时）。 */
 @Composable fun ImmersiveStatusBar(lightIcons: Boolean = false) {
     val counter = LocalImmersive.current
     val view = LocalView.current
-    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val dark = app.weiban.designsystem.LocalWbDark.current
     DisposableEffect(counter, lightIcons) {
         counter.value += 1
         val window = (view.context as? Activity)?.window
@@ -66,8 +77,9 @@ val LocalImmersive = staticCompositionLocalOf<MutableState<Int>> { mutableIntSta
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val colors = LocalWeibanColors.current
-    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val dark = app.weiban.designsystem.LocalWbDark.current
     val tint = contentColor ?: colors.textPrimary
+    if (onBack != null || leading != null) HideTabBar()
     Box(Modifier.fillMaxWidth().height(56.dp).background(background ?: colors.bgNavBar)) {
         Column(
             Modifier.align(Alignment.Center).padding(horizontal = 96.dp),

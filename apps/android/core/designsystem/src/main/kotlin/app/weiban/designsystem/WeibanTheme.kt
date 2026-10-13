@@ -21,10 +21,26 @@ val LocalWeibanColors = staticCompositionLocalOf { WbColorSets.GreenLight }
     theme: String = "green",
     content: @Composable () -> Unit,
 ) {
-    val dark = isSystemInDarkTheme()
+    val system = isSystemInDarkTheme()
+    val dark =
+        when (DisplayPrefs.darkMode) {
+            "light" -> false
+            "dark" -> true
+            else -> system
+        }
+    // 状态栏图标随深浅色（本机「深色模式」设置可能与系统不同）。
+    val view = androidx.compose.ui.platform.LocalView.current
+    SideEffect {
+        (view.context as? android.app.Activity)?.window?.let { window ->
+            androidx.core.view.WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !dark
+            androidx.core.view.WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !dark
+        }
+    }
+    val density = androidx.compose.ui.platform.LocalDensity.current
     val colors = WbColorSets.theme(WbThemeId.Green, dark) // v3 令牌只有一个主题（粉色已删除）
     val popup = WbColorSets.mode(dark).uiPopupBg
     val immersive = remember { mutableIntStateOf(0) }
+    val hideTabBar = remember { mutableIntStateOf(0) }
     val scheme =
         if (dark) {
             darkColorScheme(
@@ -83,6 +99,10 @@ val LocalWeibanColors = staticCompositionLocalOf { WbColorSets.GreenLight }
         LocalWeibanColors provides colors,
         LocalWeibanModeColors provides if (dark) WbColorSets.ModeDark else WbColorSets.ModeLight,
         LocalImmersive provides immersive,
+        LocalHideTabBar provides hideTabBar,
+        LocalWbDark provides dark,
+        androidx.compose.ui.platform.LocalDensity provides
+            androidx.compose.ui.unit.Density(density.density, density.fontScale * DisplayPrefs.fontScale),
     ) {
         MaterialTheme(colorScheme = scheme, typography = typography, shapes = shapes, content = content)
     }

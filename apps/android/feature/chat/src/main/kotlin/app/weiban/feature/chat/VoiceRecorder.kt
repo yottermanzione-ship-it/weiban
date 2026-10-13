@@ -170,7 +170,7 @@ internal fun HoldToTalk(
     val cancelDistance = with(LocalDensity.current) { 150.dp.toPx() }
     val screenHeight = with(LocalDensity.current) { androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.height.toFloat() }
     var origin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val dark = app.weiban.designsystem.LocalWbDark.current
     val send by rememberUpdatedState(onVoice)
     val notice by rememberUpdatedState(onNotice)
     val started by rememberUpdatedState(onStart)

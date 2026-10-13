@@ -1,27 +1,39 @@
 package app.weiban.feature.me
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.weiban.contracts.Endpoints
+import app.weiban.core.designsystem.R as DsR
 import app.weiban.data.DeviceNotificationControls
+import app.weiban.designsystem.LocalWeibanColors
+import app.weiban.designsystem.LocalWeibanModeColors
+import app.weiban.designsystem.MenuGroup
+import app.weiban.designsystem.MenuRow
+import app.weiban.designsystem.MenuSwitchRow
+import app.weiban.designsystem.WbPoints
+import app.weiban.designsystem.wbText
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * 我 › 服务（瘦身，docs/refactor/02 第 4.5 节）：钱包卡（余额、聊天模型）+ 模型与花费 + 偏好。
- * 卡册、成就、宠物、玩法、经期日记都搬进了「发现 › 小程序」。
+ * 我 › 服务（规格 4.9「服务页」）：纯菜单列表——钱包（积分 · 模型）｜ 模型与花费（积分明细 · 价目表 · 模型排行榜 · 后台预算）｜
+ * 偏好（主动消息与免打扰 · 聊天偏好 · 熟悉度总览）。
  */
 @Composable internal fun MeServices(
     state: MeState,
     entry: MeEntry = MeEntry(),
 ) {
-    val colors = app.weiban.designsystem.LocalWeibanColors.current
+    val mode = LocalWeibanModeColors.current
+    val colors = LocalWeibanColors.current
     LaunchedEffect(state.owner) {
         if (state.selection == null || state.models.isEmpty()) {
             state.perform {
@@ -32,76 +44,58 @@ import kotlinx.serialization.json.put
     }
     val chatKey = state.selection?.chat?.modelKey
     val chatModel = if (chatKey == null) "平台默认" else state.models.find { it.modelKey == chatKey }?.displayName ?: chatKey
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(app.weiban.designsystem.tokens.WbSpace.S5)
-            .clip(RoundedCornerShape(app.weiban.designsystem.tokens.WbRadius.Lg))
-            .background(colors.brandPrimary)
-            .padding(app.weiban.designsystem.tokens.WbSpace.S5),
-    ) {
-        Column(Modifier.weight(1f).clickable { state.openPage("wallet") }) {
-            Text("余额", color = colors.textOnBrand, style = MaterialTheme.typography.bodySmall)
-            Text(
-                "¥ " + (state.wallet?.availableMicros?.let(::yuan) ?: "--"),
-                color = colors.textOnBrand,
-                style = MaterialTheme.typography.headlineSmall,
-            )
+    MenuGroup {
+        MenuRow("积分", icon = DsR.drawable.wb_membership, iconSize = 23.dp, value = state.wallet?.let { WbPoints.text(it.availablePoints) }) {
+            state.openPage("wallet")
         }
-        Column(Modifier.weight(1f).clickable { state.openPage("models") }) {
-            Text("聊天模型", color = colors.textOnBrand, style = MaterialTheme.typography.bodySmall)
-            Text(chatModel, color = colors.textOnBrand, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-        }
+        MenuRow("模型", icon = DsR.drawable.wb_grid, iconTint = mode.tintBlue, value = chatModel) { state.openPage("models") }
     }
-    app.weiban.designsystem.MenuGroup("模型与花费") {
-        app.weiban.designsystem.MenuRow("余额明细与后台预算") { state.openPage("wallet") }
-        app.weiban.designsystem.MenuRow("模型选择") { state.openPage("models") }
+    MenuGroup {
+        MenuRow("积分明细", icon = DsR.drawable.wb_note, iconTint = mode.tintOrange) { state.openPage("ledger") }
+        MenuRow("价目表", icon = DsR.drawable.wb_tag, iconTint = colors.brandPrimary) { state.openPage("prices") }
+        MenuRow("模型排行榜", icon = DsR.drawable.wb_star, iconTint = mode.tintGold) { state.openPage("leaderboard") }
+        MenuRow("后台预算", icon = DsR.drawable.wb_bell, iconTint = mode.tintCyan) { state.openPage("usage") }
     }
-    app.weiban.designsystem.MenuGroup("偏好") {
-        app.weiban.designsystem.MenuRow("主动消息与免打扰") { state.openPage("proactive") }
-        entry.onGrowth?.let { open -> app.weiban.designsystem.MenuRow("熟悉度总览") { open("familiarity") } }
+    MenuGroup {
+        MenuRow("主动消息与免打扰", icon = DsR.drawable.wb_chat, iconTint = colors.brandPrimary) { state.openPage("proactive") }
+        MenuRow("聊天偏好", icon = DsR.drawable.wb_smile, iconTint = mode.tintGold) { state.openPage("general") }
+        entry.onGrowth?.let { open -> MenuRow("熟悉度总览", icon = DsR.drawable.wb_heart, iconTint = mode.tintPink) { open("familiarity") } }
     }
 }
 
+/** 新消息通知（规格 4.10「通知」子页）：本设备推送 ｜ 声音 · 通知显示消息内容 ｜ 免打扰时段。 */
 @Composable internal fun NotificationSettingsPage(
     state: MeState,
     controls: DeviceNotificationControls?,
 ) {
-    Text(controls?.status ?: "此设备暂不支持消息通知")
-    if (controls != null) {
-        Row {
-            OutlinedButton(enabled = controls.available && !controls.busy, onClick = controls.enable) {
-                Text(if (controls.enabled) "重新连接" else "开启通知")
-            }
-            if (controls.enabled) TextButton(enabled = !controls.busy, onClick = controls.disable) { Text("关闭通知") }
+    val colors = LocalWeibanColors.current
+    MenuGroup("本设备") {
+        MenuRow(controls?.status ?: "此设备暂不支持消息通知")
+        if (controls != null) {
+            MenuRow(if (controls.enabled) "重新连接" else "开启通知", enabled = controls.available && !controls.busy, onClick = controls.enable)
+            if (controls.enabled) MenuRow("关闭通知", enabled = !controls.busy, onClick = controls.disable)
         }
+        controls?.systemSettings?.let { open -> MenuRow("系统通知设置", onClick = open) }
     }
-    controls?.systemSettings?.let { open -> TextButton(onClick = open) { Text("系统通知设置") } }
     state.notificationSettings?.let { settings ->
-        ListItem(headlineContent = { Text("声音") }, trailingContent = {
-            Switch(checked = settings.pushSoundEnabled, enabled = !state.busy, onCheckedChange = { enabled ->
+        MenuGroup("提醒方式") {
+            MenuSwitchRow("声音", settings.pushSoundEnabled, !state.busy) { enabled ->
                 state.perform {
                     state.notificationSettings =
-                        state.call(
-                            Endpoints.identityEndpointsUpdateNotificationSettings,
-                            buildJsonObject { put("pushSoundEnabled", enabled) },
-                        )
+                        state.call(Endpoints.identityEndpointsUpdateNotificationSettings, buildJsonObject { put("pushSoundEnabled", enabled) })
                 }
-            })
-        })
-        ListItem(headlineContent = { Text("通知显示消息内容") }, trailingContent = {
-            Switch(checked = settings.pushShowContent, enabled = !state.busy, onCheckedChange = { enabled ->
+            }
+            MenuSwitchRow("通知显示消息内容", settings.pushShowContent, !state.busy, subtitle = "关闭后，通知只显示新消息提醒") { enabled ->
                 state.perform {
                     state.notificationSettings =
-                        state.call(
-                            Endpoints.identityEndpointsUpdateNotificationSettings,
-                            buildJsonObject { put("pushShowContent", enabled) },
-                        )
+                        state.call(Endpoints.identityEndpointsUpdateNotificationSettings, buildJsonObject { put("pushShowContent", enabled) })
                 }
-            })
-        })
-        Text("关闭消息内容后，通知只显示新消息提醒。")
+            }
+        }
         QuietHoursSettings(state)
+    }
+    if (state.notificationSettings == null) {
+        Text("正在读取…", Modifier.padding(16.dp), style = wbText(14.sp, color = colors.textSecondary))
     }
 }
 
@@ -133,13 +127,38 @@ import kotlinx.serialization.json.put
                 )
         }
     }
-    ListItem(headlineContent = { Text("免打扰时段") }, trailingContent = {
-        Switch(checked = quiet.enabled, enabled = !state.busy, onCheckedChange = { save(it, quiet.start, quiet.end) })
-    })
-    OutlinedTextField(value = start, onValueChange = { start = it }, label = { Text("开始时间") }, singleLine = true, enabled = !state.busy)
-    OutlinedTextField(value = end, onValueChange = { end = it }, label = { Text("结束时间") }, singleLine = true, enabled = !state.busy)
     val timesValid = valid.matches(start) && valid.matches(end)
-    if (!timesValid) Text("请填写 24 小时制时间，例如 22:00。")
-    Text("按账号时区执行；开始与结束相同时全天静音。")
-    OutlinedButton(enabled = !state.busy && timesValid, onClick = { save(quiet.enabled, start, end) }) { Text("保存免打扰时段") }
+    MenuGroup("免打扰时段") {
+        MenuSwitchRow("免打扰时段", quiet.enabled, !state.busy, subtitle = "按账号时区执行；开始与结束相同时全天静音") {
+            save(it, quiet.start, quiet.end)
+        }
+        TimeRow("开始时间", start, !state.busy) { start = it.take(5) }
+        TimeRow("结束时间", end, !state.busy) { end = it.take(5) }
+        MenuRow(
+            if (timesValid) "保存时段" else "请填写 24 小时制时间，例如 22:00",
+            enabled = !state.busy && timesValid,
+        ) { save(quiet.enabled, start, end) }
+    }
+}
+
+@Composable private fun TimeRow(
+    label: String,
+    value: String,
+    enabled: Boolean,
+    onChange: (String) -> Unit,
+) {
+    val colors = LocalWeibanColors.current
+    Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), style = wbText(17.sp, color = colors.textPrimary))
+        BasicTextField(
+            value,
+            onChange,
+            Modifier.width(80.dp).background(colors.bgPage, RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
+            enabled = enabled,
+            singleLine = true,
+            textStyle = wbText(16.sp, color = colors.textPrimary),
+            cursorBrush = SolidColor(colors.brandPrimary),
+        )
+    }
+    Box(Modifier.fillMaxWidth().padding(start = 16.dp).height(0.5.dp).background(colors.borderHairline))
 }

@@ -367,7 +367,7 @@ private fun ColumnScope.ContactsList(
 ) {
     val itemHeight = with(androidx.compose.ui.platform.LocalDensity.current) { 16.dp.toPx() }
     val jump by rememberUpdatedState(onJump)
-    val color = if (androidx.compose.foundation.isSystemInDarkTheme()) LocalWeibanColors.current.textSecondary else androidx.compose.ui.graphics.Color(0xFF555555)
+    val color = if (app.weiban.designsystem.LocalWbDark.current) LocalWeibanColors.current.textSecondary else androidx.compose.ui.graphics.Color(0xFF555555)
     Column(
         modifier
             .width(24.dp)

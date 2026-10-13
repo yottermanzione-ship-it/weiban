@@ -71,6 +71,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        app.weiban.designsystem.DisplayPrefs.init(this)
         ReleaseCenter.versionCode = BuildConfig.VERSION_CODE.toLong()
         ReleaseCenter.versionName = BuildConfig.VERSION_NAME
         val runtime = application as WeibanApplication
@@ -330,6 +331,7 @@ private class NavigationUi(
                     navigation.tab = "微伴"
                 }
                 val immersive by app.weiban.designsystem.LocalImmersive.current
+                val hideTabBar by app.weiban.designsystem.LocalHideTabBar.current
                 val snapshot by runtime.chat.snapshot.collectAsState()
                 val chatUnread =
                     if (snapshot.owner == owner) {
@@ -344,7 +346,7 @@ private class NavigationUi(
                     containerColor = app.weiban.designsystem.LocalWeibanColors.current.bgNavBar,
                     contentWindowInsets = WindowInsets.navigationBars,
                     bottomBar = {
-                        if (navigation.conversationId == null && !app.weiban.feature.chat.PullPanelState.open) {
+                        if (navigation.conversationId == null && hideTabBar == 0 && !app.weiban.feature.chat.PullPanelState.open) {
                             val badge = rememberMomentsBadge(runtime.repository, owner)
                             val announcements by ReleaseCenter.announcements.collectAsState()
                             Tabs(

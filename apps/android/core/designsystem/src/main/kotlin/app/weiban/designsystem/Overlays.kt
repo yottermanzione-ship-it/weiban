@@ -325,7 +325,7 @@ data class MenuItem(
     items: List<MenuItem>,
 ) {
     val mode = LocalWeibanModeColors.current
-    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val dark = app.weiban.designsystem.LocalWbDark.current
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,

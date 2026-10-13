@@ -740,7 +740,7 @@ private const val LOCATE_FLASH_MS = 1_500L
             if (who.isNotEmpty()) Text(who, style = app.weiban.designsystem.wbText(12.sp, 600, colors.brandPrimary), maxLines = 1)
             Text(
                 text,
-                style = app.weiban.designsystem.wbText(13.sp, 400, if (androidx.compose.foundation.isSystemInDarkTheme()) colors.textSecondary else Color(0xFF555555)),
+                style = app.weiban.designsystem.wbText(13.sp, 400, if (app.weiban.designsystem.LocalWbDark.current) colors.textSecondary else Color(0xFF555555)),
                 maxLines = 1,
             )
         }
@@ -823,7 +823,7 @@ internal fun groupGreeting(
     onBack: () -> Unit,
 ) {
     val colors = app.weiban.designsystem.LocalWeibanColors.current
-    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val dark = app.weiban.designsystem.LocalWbDark.current
     Row(
         Modifier.fillMaxHeight().widthIn(max = 108.dp).clickableNoRipple(onBack).padding(start = 17.4.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
