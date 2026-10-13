@@ -11,6 +11,7 @@ import {
   type ComponentType,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type TouchEvent as ReactTouchEvent,
   type ReactNode,
 } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -586,42 +587,88 @@ export function PopMenu({
   );
 }
 
+const LONG_PRESS_MS = 500;
+const PRESS_SLOP = 10;
+
 /**
- * 长按（触屏 500ms）或右键：回调带手指位置；长按后吞掉这次点击。
+ * 长按（按住 500ms 不动）或右键：回调带手指位置；长按后吞掉随之而来的点击。轻点照常触发点击（进入页面）。
+ * 总经理 2026-10-14 反馈「轻点就弹菜单」：部分手机内置浏览器（如社交 App 内置网页）抬手时不发 pointerup，
+ * 旧写法的计时器没被取消，轻点后 0.5 秒照样弹菜单。现改为：触屏用 touch 事件（抬手 touchend 一定会发），
+ * 鼠标用 pointer 事件；抬手、移动超过 10 像素、点击、页面滚动、组件卸载都会取消计时；
+ * 计时到点时再确认手指仍按着才弹。
  */
 export function useLongPress(onLongPress: (at: { x: number; y: number }) => void) {
   const timer = useRef(0);
   const start = useRef<{ x: number; y: number } | null>(null);
   const fired = useRef(false);
+  const callback = useRef(onLongPress);
+  useLayoutEffect(() => {
+    callback.current = onLongPress;
+  });
+  useEffect(() => {
+    const onScroll = () => {
+      window.clearTimeout(timer.current);
+      start.current = null;
+    };
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll, { capture: true });
+      window.clearTimeout(timer.current);
+    };
+  }, []);
   const cancel = () => {
     window.clearTimeout(timer.current);
     start.current = null;
   };
+  const begin = (x: number, y: number) => {
+    window.clearTimeout(timer.current);
+    fired.current = false;
+    start.current = { x, y };
+    timer.current = window.setTimeout(() => {
+      if (!start.current) return;
+      start.current = null;
+      fired.current = true;
+      navigator.vibrate?.(10);
+      callback.current({ x, y });
+    }, LONG_PRESS_MS);
+  };
+  const moveTo = (x: number, y: number) => {
+    if (start.current && Math.hypot(x - start.current.x, y - start.current.y) > PRESS_SLOP)
+      cancel();
+  };
   return {
+    onTouchStart(event: ReactTouchEvent) {
+      const touch = event.touches[0];
+      if (!touch || event.touches.length > 1) return cancel();
+      begin(touch.clientX, touch.clientY);
+    },
+    onTouchMove(event: ReactTouchEvent) {
+      const touch = event.touches[0];
+      if (touch) moveTo(touch.clientX, touch.clientY);
+    },
+    onTouchEnd: cancel,
+    onTouchCancel: cancel,
     onPointerDown(event: ReactPointerEvent) {
-      if (event.pointerType === 'mouse') return;
-      fired.current = false;
-      const at = { x: event.clientX, y: event.clientY };
-      start.current = at;
-      timer.current = window.setTimeout(() => {
-        fired.current = true;
-        onLongPress(at);
-      }, 500);
+      if (event.pointerType !== 'mouse' || event.button !== 0) return;
+      begin(event.clientX, event.clientY);
     },
     onPointerMove(event: ReactPointerEvent) {
-      if (
-        start.current &&
-        Math.hypot(event.clientX - start.current.x, event.clientY - start.current.y) > 10
-      )
-        cancel();
+      if (event.pointerType === 'mouse') moveTo(event.clientX, event.clientY);
     },
-    onPointerUp: cancel,
+    onPointerUp(event: ReactPointerEvent) {
+      if (event.pointerType === 'mouse') cancel();
+    },
+    onPointerLeave(event: ReactPointerEvent) {
+      if (event.pointerType === 'mouse') cancel();
+    },
     onPointerCancel: cancel,
     onContextMenu(event: ReactMouseEvent) {
       event.preventDefault();
+      // 安卓长按会在计时器之后再发一次 contextmenu：已经弹过就不再弹
+      if (fired.current) return;
       cancel();
       fired.current = true;
-      onLongPress({ x: event.clientX, y: event.clientY });
+      callback.current({ x: event.clientX, y: event.clientY });
       window.setTimeout(() => (fired.current = false), 400);
     },
     onClickCapture(event: ReactMouseEvent) {
@@ -629,7 +676,7 @@ export function useLongPress(onLongPress: (at: { x: number; y: number }) => void
         event.preventDefault();
         event.stopPropagation();
         fired.current = false;
-      }
+      } else cancel();
     },
   };
 }
@@ -637,8 +684,8 @@ export function useLongPress(onLongPress: (at: { x: number; y: number }) => void
 // ---------- 暂未开放 ----------
 
 /**
- * 参照产品有、微伴暂时用不上的入口（总经理 2026-10-13 要求：都放上，标为「暂未开放」）。
- * 旧版规格 8 表：点了只弹轻提示，不跳页。新增入口只在这里登记。
+ * 参照产品有、微伴暂时用不上的入口（总经理 2026-10-13 要求：都放上）。
+ * 2026-10-14 裁定：入口正常显示、不加标记，点击才弹轻提示「暂未开放」，不跳页。新增入口只在这里登记。
  */
 export const comingSoon = {
   channels: { name: '视频号', icon: 'wechat/finder', tint: 'orange' },
@@ -660,25 +707,43 @@ export const comingSoon = {
   plugins: { name: '插件', icon: 'wechat/grid', tint: 'purple' },
   topics: { name: '话题', icon: 'wechat/tag', tint: 'gray' },
   card: { name: '发送名片', icon: 'wechat/person', tint: 'blue' },
+  chatOnly: { name: '仅聊天的朋友', icon: 'wechat/contacts_chat_only.webp', tint: 'orange' },
+  services: { name: '服务号', icon: 'wechat/contacts_official', tint: 'cyan' },
+  workContacts: { name: '企业微信联系人', icon: 'wechat/contacts_enterprise.webp', tint: 'blue' },
 } as const satisfies Record<string, { name: string; icon: string; tint: Tint }>;
 export type ComingSoonKey = keyof typeof comingSoon;
 export const comingSoonPath = (key: ComingSoonKey) => `/coming-soon/${key}`;
-export function showComingSoon(key: ComingSoonKey) {
-  showToast(`${comingSoon[key].name}暂未开放`, 2000, 'info');
+/** 点了用不上的入口：只弹轻提示「暂未开放」（总经理 2026-10-14：入口本身不加标记）。 */
+export function showComingSoon() {
+  showToast('暂未开放', 2000, 'info');
 }
 
-/** 菜单里的「暂未开放」行：点了弹轻提示。 */
-export function ComingSoonRow({ id, withIcon = true }: { id: ComingSoonKey; withIcon?: boolean }) {
+/** 菜单里用不上的入口：外观和普通行一样，点了弹轻提示。 */
+export function ComingSoonRow({
+  id,
+  withIcon = true,
+  tile = false,
+  chevron = true,
+  iconSize,
+}: {
+  id: ComingSoonKey;
+  withIcon?: boolean;
+  tile?: boolean;
+  chevron?: boolean;
+  iconSize?: number;
+}) {
   const item = comingSoon[id];
   const image = /\.(png|webp)$/.test(item.icon);
   return (
     <MenuRow
-      onClick={() => showComingSoon(id)}
+      onClick={showComingSoon}
       icon={withIcon && !image ? item.icon : undefined}
       image={withIcon && image ? item.icon : undefined}
+      iconSize={iconSize}
+      tile={tile}
+      chevron={chevron}
       tint={item.tint}
       label={item.name}
-      value="暂未开放"
     />
   );
 }

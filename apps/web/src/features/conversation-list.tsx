@@ -1,6 +1,7 @@
 /*
  * 会话列表（docs/refactor/06-old-ui-spec.md 4.2）：行高 72、头像 48 圆角 4、未读角标、
  * 左滑三键（标为未读 / 不显示 / 删除）、浅色长按菜单、下拉出现小程序面板（4.3）。
+ * 手感（总经理 2026-10-14）：轻点进入会话；长按（或右键）才弹菜单；左滑露出按钮；有一行展开时轻点任意行只收起。
  */
 import {
   useEffect,
@@ -18,9 +19,15 @@ import { VirtualList } from './virtual-list.js';
 import { Name } from './chat.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { GroupAvatar } from './groups.js';
-import { NewCharacterSheet } from './contacts.js';
 import { OldIcon } from './old-icons.js';
-import { EmptyState, LongPressMenu, PopMenu, useLongPress, type ActionItem } from './shell-kit.js';
+import {
+  EmptyState,
+  LongPressMenu,
+  PopMenu,
+  showComingSoon,
+  useLongPress,
+  type ActionItem,
+} from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 import { PullMiniApps } from './pull-panel.js';
 import { listTime } from './time-format.js';
@@ -39,12 +46,17 @@ function useMinuteTick() {
 /** 左滑露出按钮（180ms easeOut；甩动 > 250 像素/秒直接展开 / 收起；同时只展开一行）。 */
 function SwipeRow({
   open,
+  othersOpen,
   onOpenChange,
+  onCloseOthers,
   actions,
   children,
 }: {
   open: boolean;
+  /** 别的行正展开着：这一行的轻点只负责把它收起（微信做法），不进入会话。 */
+  othersOpen: boolean;
   onOpenChange(open: boolean): void;
+  onCloseOthers(): void;
   actions: Array<{ label: string; kind: 'read' | 'hide' | 'delete'; onClick(): void }>;
   children: ReactNode;
 }) {
@@ -62,6 +74,7 @@ function SwipeRow({
   useEffect(() => set(open ? -width : 0, false), [open, width]);
   function down(event: ReactPointerEvent) {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
+    swallow.current = false;
     start.current = { x: event.clientX, y: event.clientY, t: Date.now(), active: false };
     last.current = { x: event.clientX, t: Date.now() };
   }
@@ -124,10 +137,13 @@ function SwipeRow({
           set(open ? -width : 0, false);
         }}
         onClickCapture={(event) => {
-          if (swallow.current || open) {
+          if (swallow.current || open || othersOpen) {
             event.preventDefault();
             event.stopPropagation();
-            if (!swallow.current) onOpenChange(false);
+            if (!swallow.current) {
+              if (open) onOpenChange(false);
+              else onCloseOthers();
+            }
             swallow.current = false;
           }
         }}
@@ -203,7 +219,6 @@ export function ConversationListPage() {
   const navigate = useNavigate();
   useMinuteTick();
   const [menu, setMenu] = useState(false);
-  const [creating, setCreating] = useState(false);
   const [target, setTarget] = useState<{ item: Conversation; at: { x: number; y: number } } | null>(
     null,
   );
@@ -319,7 +334,7 @@ export function ConversationListPage() {
               title="还没有对话"
               desc="去添加一位角色，聊起来"
               action={
-                <Link className="button primary" to="/discover/plaza">
+                <Link className="button primary" to="/contacts/add">
                   去添加角色
                 </Link>
               }
@@ -334,7 +349,9 @@ export function ConversationListPage() {
           render={(item) => (
             <SwipeRow
               open={swiped === item.conversationId}
+              othersOpen={swiped !== null && swiped !== item.conversationId}
               onOpenChange={(open) => setSwiped(open ? item.conversationId : null)}
+              onCloseOthers={() => setSwiped(null)}
               actions={[
                 {
                   label: hasUnread(item) ? '标为已读' : '标为未读',
@@ -356,17 +373,12 @@ export function ConversationListPage() {
           onClose={() => setMenu(false)}
           items={[
             { label: '发起群聊', icon: 'wechat/chat', onClick: () => navigate('/groups/new') },
-            {
-              label: '添加角色',
-              icon: 'wechat/add_circle',
-              onClick: () => navigate('/discover/plaza'),
-            },
-            { label: '新建角色', icon: 'wechat/person', onClick: () => setCreating(true) },
-            { label: '导入角色', icon: 'wechat/note', onClick: () => navigate('/imports') },
+            { label: '添加朋友', icon: 'wechat/person', onClick: () => navigate('/contacts/add') },
+            { label: '扫一扫', icon: 'wechat/discover_scan', onClick: showComingSoon },
+            { label: '收付款', icon: 'wechat/transfer', onClick: showComingSoon },
           ]}
         />
       )}
-      {creating && <NewCharacterSheet onClose={() => setCreating(false)} />}
       {target && (
         <LongPressMenu
           at={target.at}

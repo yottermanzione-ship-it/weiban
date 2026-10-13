@@ -1,10 +1,13 @@
 /*
- * 会话列表下拉出现小程序面板（docs/refactor/06-old-ui-spec.md 4.3，按微信手势与动画）。
- * - 列表在最顶端时继续下拉：整块跟手下移（阻尼 0.5），手指下移 ≥ 24 出现三个小圆点，≥ 80 圆点变实心并轻震；
- *   松手不到 80 → 200ms 弹回；到 80 → 打开面板（列表下移到只露出底部 64 高的一条、面板内容淡入、标签栏收起）。
- * - 触屏用手指；电脑浏览器可按住鼠标往下拖，或在列表顶端继续向上滚动滚轮。
- * - 收起：点底部露出条、按返回（打开时写一条历史记录）、Esc、或在面板里向上滑超过 60。
- * - 手势过程中直接改 DOM 的 transform / opacity，不触发 React 重渲染；面板首次打开前已用 visibility 预渲染。
+ * 会话列表下拉出现小程序面板（06-old-ui-spec 4.3；总经理 2026-10-14 反馈：照微信的阻尼、阈值、回弹与半拉提示）。
+ * - 列表在最顶端时继续下拉：整块（标题栏 + 列表）跟手下移，位移按「橡皮筋」曲线衰减（越拉越沉）；
+ *   上方露出深色面板底色和三个小圆点：圆点随下拉渐显并向两侧散开，拉过一半出现「继续下拉进入小程序」，
+ *   到阈值后圆点变大变亮、提示改为「松开进入小程序」并轻震。
+ * - 松手：没到阈值 → 带一点回弹的动画收回；到了 → 列表滑到底部只露出 64 高的一条，面板内容淡入、标签栏收起。
+ * - 触屏用手指；电脑可按住鼠标往下拖，或在列表顶端用滚轮 / 触控板继续向上滚
+ *   （从下面惯性滚到顶的那一下不算，需停顿后再滚）。
+ * - 收起：点底部露出条、浏览器返回（打开时写一条历史记录）、Esc、或在面板里向上滑超过 60。
+ * - 手势过程中直接改 DOM 的 transform / opacity，不触发 React 重渲染。
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -12,11 +15,19 @@ import { OldIcon } from './old-icons.js';
 import { LongPressMenu, type ActionItem } from './shell-kit.js';
 import { MiniAppCell, useMiniAppPrefs, type MiniApp } from './miniapps.js';
 
-const DAMPING = 0.5;
-const DOTS_FROM = 24;
-const THRESHOLD = 80;
-const MAX_FINGER = 220;
+/** 手指移动多少像素后才算下拉（避免和点按、左滑冲突）。 */
+const SLOP = 8;
+/** 到阈值需要的「位移」（不是手指距离）；手指约需拉 150 像素。 */
+const THRESHOLD = 96;
 const TAIL = 64;
+/** 鼠标滚轮：两次滚动间隔超过它算新的一次滚动。 */
+const WHEEL_GAP = 260;
+
+/** 橡皮筋：手指距离 → 列表位移。开始约 0.75 倍跟手，越往下越沉。 */
+function rubber(finger: number, height: number) {
+  const limit = Math.max(240, height * 0.55);
+  return limit * (1 - 1 / ((finger * 0.75) / limit + 1));
+}
 
 function listAtTop(root: HTMLElement | null) {
   const list = root?.querySelector<HTMLElement>('.virtual-list');
@@ -28,29 +39,36 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
   const navigate = useNavigate();
   const open = (location.state as { miniPanel?: boolean } | null)?.miniPanel === true;
   const listRef = useRef<HTMLDivElement>(null);
-  const dotsRef = useRef<HTMLDivElement>(null);
+  const hintRef = useRef<HTMLDivElement>(null);
   const finger = useRef(0);
+  const offset = useRef(0);
   const armed = useRef(false);
   const drag = useRef<{ y: number; x: number; active: boolean; mouse: boolean } | null>(null);
   const moved = useRef(false);
-  const wheelTimer = useRef(0);
+  const wheel = useRef({ last: 0, blocked: false, timer: 0 });
   const [visible, setVisible] = useState(open);
 
+  /** 按手指距离画出当前状态（只改 transform / opacity）。 */
   const paint = useCallback((value: number, dragging: boolean) => {
     finger.current = value;
     const list = listRef.current;
-    const dots = dotsRef.current;
+    const hint = hintRef.current;
+    const y = value > 0 ? rubber(value, list?.clientHeight ?? 600) : 0;
+    offset.current = y;
     if (list) {
       list.classList.toggle('dragging', dragging);
-      list.style.transform = value > 0 ? `translateY(${value * DAMPING}px)` : '';
+      list.style.transform = y > 0 ? `translateY(${y}px)` : '';
     }
-    if (dots) {
-      const t = Math.max(0, Math.min(1, (value - DOTS_FROM) / (THRESHOLD - DOTS_FROM)));
-      dots.style.opacity = String(value >= DOTS_FROM ? t : 0);
-      dots.style.transform = `translateY(${Math.max(0, (value * DAMPING) / 2 - 3)}px)`;
-      dots.style.setProperty('--dots-gap', `${12 * t}px`);
-      const nowArmed = value >= THRESHOLD;
-      dots.classList.toggle('armed', nowArmed);
+    if (hint) {
+      const t = Math.max(0, Math.min(1, y / THRESHOLD));
+      hint.classList.toggle('dragging', dragging);
+      hint.style.opacity = String(t < 0.12 ? 0 : Math.min(1, (t - 0.12) / 0.5));
+      // 提示块居中在露出的深色区域里
+      hint.style.transform = `translateY(${Math.max(0, y / 2 - 18)}px)`;
+      hint.style.setProperty('--dots-gap', `${4 + 10 * t}px`);
+      hint.classList.toggle('half', t >= 0.5);
+      const nowArmed = y >= THRESHOLD;
+      hint.classList.toggle('armed', nowArmed);
       if (nowArmed && !armed.current) navigator.vibrate?.(10);
       armed.current = nowArmed;
     }
@@ -66,18 +84,27 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
   }, [navigate, location.pathname]);
 
   const release = useCallback(() => {
-    const reached = finger.current >= THRESHOLD;
+    const reached = offset.current >= THRESHOLD;
     const list = listRef.current;
+    const hint = hintRef.current;
     list?.classList.remove('dragging');
+    hint?.classList.remove('dragging');
     if (reached) {
       finger.current = 0;
-      if (dotsRef.current) dotsRef.current.style.opacity = '0';
       armed.current = false;
+      if (hint) {
+        hint.style.opacity = '0';
+        hint.classList.remove('armed', 'half');
+      }
       openPanel();
     } else {
       list?.classList.add('bounce');
+      hint?.classList.add('bounce');
       paint(0, false);
-      window.setTimeout(() => list?.classList.remove('bounce'), 220);
+      window.setTimeout(() => {
+        list?.classList.remove('bounce');
+        hint?.classList.remove('bounce');
+      }, 360);
     }
   }, [openPanel, paint]);
 
@@ -87,16 +114,17 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
     if (!list) return;
     if (open) {
       setVisible(true);
-      list.classList.remove('dragging', 'closing');
-      const distance = window.innerHeight - TAIL - list.offsetTop;
-      list.style.transform = `translateY(${Math.max(0, distance)}px)`;
+      list.classList.remove('dragging', 'closing', 'bounce');
+      const top = list.getBoundingClientRect().top - offset.current;
+      offset.current = 0;
+      list.style.transform = `translateY(${Math.max(0, window.innerHeight - TAIL - top)}px)`;
     } else {
       list.classList.add('closing');
       list.style.transform = '';
       const timer = window.setTimeout(() => {
         list.classList.remove('closing');
         setVisible(false);
-      }, 260);
+      }, 320);
       return () => window.clearTimeout(timer);
     }
   }, [open]);
@@ -113,21 +141,22 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
     return () => window.removeEventListener('keydown', onKey);
   }, [open, close]);
 
-  // 鼠标拖拽：在窗口上跟踪，松开后吞掉这次点击。
+  // 鼠标拖拽：在窗口上跟踪（拖出列表也不断），松开后吞掉这次点击。
   useEffect(() => {
     const move = (event: PointerEvent) => {
       const start = drag.current;
       if (!start?.mouse) return;
       const dy = event.clientY - start.y;
+      const dx = Math.abs(event.clientX - start.x);
       if (!start.active) {
-        if (dy > 6) start.active = true;
-        else if (dy < -6) {
+        if (dy > SLOP && dy > dx) start.active = true;
+        else if (dy < -SLOP || dx > SLOP) {
           drag.current = null;
           return;
         } else return;
       }
       moved.current = true;
-      paint(Math.min(MAX_FINGER, Math.max(0, dy)), true);
+      paint(Math.max(0, dy - SLOP), true);
     };
     const up = () => {
       const start = drag.current;
@@ -136,18 +165,30 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
     return () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
     };
   }, [paint, release]);
+  useEffect(() => {
+    const state = wheel.current;
+    return () => window.clearTimeout(state.timer);
+  }, []);
 
   return (
     <>
-      <div ref={dotsRef} className="pull-dots" aria-hidden style={{ opacity: 0 }}>
-        <i />
-        <i />
-        <i />
+      <div ref={hintRef} className="pull-hint" aria-hidden style={{ opacity: 0 }}>
+        <span className="pull-dots">
+          <i />
+          <i />
+          <i />
+        </span>
+        <span className="pull-hint-text">
+          <span className="more">继续下拉进入小程序</span>
+          <span className="go">松开进入小程序</span>
+        </span>
       </div>
       <MiniPanel open={open} visible={visible} onClose={close} />
       <button
@@ -165,7 +206,10 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
         aria-hidden={open}
         onTouchStart={(event) => {
           const touch = event.touches[0];
-          if (!touch || open || !listAtTop(listRef.current)) return;
+          if (!touch || event.touches.length > 1 || open || !listAtTop(listRef.current)) {
+            drag.current = null;
+            return;
+          }
           drag.current = { y: touch.clientY, x: touch.clientX, active: false, mouse: false };
         }}
         onTouchMove={(event) => {
@@ -175,13 +219,13 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
           const dy = touch.clientY - start.y;
           const dx = Math.abs(touch.clientX - start.x);
           if (!start.active) {
-            if (dy > 8 && dy > dx && listAtTop(listRef.current)) start.active = true;
-            else if (dy < 0 || dx > 8) {
+            if (dy > SLOP && dy > dx && listAtTop(listRef.current)) start.active = true;
+            else if (dy < -SLOP || dx > SLOP) {
               drag.current = null;
               return;
             } else return;
           }
-          paint(Math.min(MAX_FINGER, Math.max(0, dy)), true);
+          paint(Math.max(0, dy - SLOP), true);
         }}
         onTouchEnd={() => {
           const start = drag.current;
@@ -189,8 +233,9 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
           if (start?.active) release();
         }}
         onTouchCancel={() => {
+          const start = drag.current;
           drag.current = null;
-          paint(0, false);
+          if (start?.active) release();
         }}
         onPointerDown={(event) => {
           if (event.pointerType !== 'mouse' || event.button !== 0 || open) return;
@@ -207,14 +252,25 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
         }}
         onDragStart={(event) => event.preventDefault()}
         onWheel={(event) => {
-          if (open || event.deltaY >= 0 || !listAtTop(listRef.current)) {
-            if (finger.current > 0 && event.deltaY > 0) paint(0, false);
-            return;
-          }
-          // 滚轮在顶端继续向上：累积成「下拉」，停顿 200ms 后按松手处理。
-          paint(Math.min(MAX_FINGER, finger.current + Math.min(40, -event.deltaY) * 0.6), true);
-          window.clearTimeout(wheelTimer.current);
-          wheelTimer.current = window.setTimeout(release, 200);
+          if (open) return;
+          const w = wheel.current;
+          const now = Date.now();
+          const fresh = now - w.last > WHEEL_GAP;
+          w.last = now;
+          const top = listAtTop(listRef.current);
+          // 从下面滚上来、惯性滚到顶的这一串不算下拉；停顿一下再滚才算
+          if (fresh) w.blocked = !top;
+          else if (!top) w.blocked = true;
+          if (finger.current > 0 && event.deltaY > 0) {
+            paint(Math.max(0, finger.current - event.deltaY), true);
+          } else if (event.deltaY < 0 && top && !w.blocked) {
+            paint(finger.current + Math.min(60, -event.deltaY), true);
+          } else return;
+          window.clearTimeout(w.timer);
+          // 停止滚动 250ms 后按「松手」处理
+          w.timer = window.setTimeout(() => {
+            if (finger.current > 0) release();
+          }, 250);
         }}
       >
         {children}

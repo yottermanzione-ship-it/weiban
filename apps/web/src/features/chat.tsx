@@ -908,7 +908,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     const forward = {
       label: '转发',
       icon: 'wechat/share',
-      onClick: () => showToast('转发暂未开放', 2000, 'info'),
+      onClick: () => showToast('暂未开放', 2000, 'info'),
     };
     const toStickers = canAddToStickers(message)
       ? [{ label: '收藏到表情', icon: 'wechat/smile', onClick: () => void addToStickers(message) }]
@@ -1242,7 +1242,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           dot: !!preset.mode && preset.mode !== 'daily',
           onClick: () => setPresetOpen(true),
         },
-        { label: '名片', icon: 'wechat/person', onClick: () => showComingSoon('card') },
+        { label: '名片', icon: 'wechat/person', onClick: () => showComingSoon() },
       ]
     : [
         { label: '照片', icon: 'wechat/album', onClick: () => albumInput.current?.click() },
@@ -1294,7 +1294,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
               },
             ]
           : []),
-        { label: '名片', icon: 'wechat/person', onClick: () => showComingSoon('card') },
+        { label: '名片', icon: 'wechat/person', onClick: () => showComingSoon() },
       ];
 
   return (

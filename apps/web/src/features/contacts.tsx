@@ -131,12 +131,116 @@ function ContactRow({
   );
 }
 
+const INDEX_LETTERS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '#'];
+
+/**
+ * 右侧字母索引（照微信，总经理 2026-10-14 反馈）：固定在右侧、在标题栏与标签栏之间垂直居中；
+ * 始终列出 ↑ ☆ A–Z #（字号 10、每格 16 高）；按住上下滑动逐个定位，左侧弹出放大字母气泡，当前字母绿底白字。
+ * 没有对应分组的字母定位到后面最近的分组（再没有就前面最近的）。
+ */
+function LetterIndex({
+  starred,
+  present,
+  onJump,
+}: {
+  starred: boolean;
+  present: string[];
+  onJump(letter: string): void;
+}) {
+  const letters = ['↑', ...(starred ? ['☆'] : []), ...INDEX_LETTERS];
+  const column = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState<{ letter: string; index: number } | null>(null);
+  const last = useRef('');
+  const hideTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(hideTimer.current), []);
+  const resolve = (letter: string) => {
+    if (letter === '↑' || present.includes(letter)) return letter;
+    const order = letters.slice(1);
+    const at = order.indexOf(letter);
+    return (
+      order.slice(at + 1).find((l) => present.includes(l)) ??
+      order
+        .slice(0, at)
+        .reverse()
+        .find((l) => present.includes(l))
+    );
+  };
+  const pick = (clientY: number) => {
+    const el = column.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const index = Math.max(
+      0,
+      Math.min(
+        letters.length - 1,
+        Math.floor(((clientY - rect.top) / rect.height) * letters.length),
+      ),
+    );
+    const letter = letters[index]!;
+    window.clearTimeout(hideTimer.current);
+    setActive({ letter, index });
+    if (letter === last.current) return;
+    last.current = letter;
+    navigator.vibrate?.(5);
+    const target = resolve(letter);
+    if (target) onJump(target);
+  };
+  const end = () => {
+    last.current = '';
+    window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(() => setActive(null), 250);
+  };
+  return (
+    <div className="letter-index-rail">
+      <div
+        ref={column}
+        className="letter-index"
+        role="navigation"
+        aria-label="字母索引"
+        onPointerDown={(event) => {
+          event.preventDefault();
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+          pick(event.clientY);
+        }}
+        onPointerMove={(event) => {
+          if (event.currentTarget.hasPointerCapture?.(event.pointerId)) pick(event.clientY);
+        }}
+        onPointerUp={end}
+        onPointerCancel={end}
+      >
+        {letters.map((letter) => (
+          <button
+            key={letter}
+            type="button"
+            tabIndex={-1}
+            className={active?.letter === letter && letter !== '↑' ? 'on' : ''}
+            aria-label={letter === '☆' ? '星标朋友' : letter === '↑' ? '回到顶部' : letter}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') onJump(resolve(letter) ?? letter);
+            }}
+          >
+            {letter === '↑' ? <OldIcon name="wechat/search" size={10} /> : letter}
+          </button>
+        ))}
+        {active && active.letter !== '↑' && (
+          <span
+            className="letter-bubble"
+            aria-hidden
+            style={{ transform: `translateY(${active.index * 16 - 17}px)` }}
+          >
+            {active.letter}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ContactsPage() {
   const { state, synchronize } = useChat();
   const navigate = useNavigate();
   const newFriendsDot = useNewFriendsDot();
   const stars = useStars();
-  const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState('');
   const [menu, setMenu] = useState<{ id: string; at: { x: number; y: number } } | null>(null);
   const [remarking, setRemarking] = useState<string | null>(null);
@@ -159,10 +263,15 @@ export function ContactsPage() {
     ...(starred.length && !query ? [['☆', starred] as [string, typeof contacts]] : []),
     ...ordered,
   ];
-  const jump = (letter: string) =>
+  const jump = (letter: string) => {
+    if (letter === '↑') {
+      window.scrollTo({ top: 0 });
+      return;
+    }
     document
       .getElementById(`letter-${letter === '☆' ? 'star' : letter}`)
       ?.scrollIntoView({ block: 'start' });
+  };
   const menuItems = (id: string): ActionItem[] => {
     const contact = state.contacts.find((c) => c.characterId === id);
     return [
@@ -182,7 +291,7 @@ export function ContactsPage() {
         right={
           <>
             <NavIcon name="wechat/search" label="搜索" to="/search" />
-            <NavIcon name="wechat/add_circle" label="添加角色" to="/discover/plaza" />
+            <NavIcon name="wechat/add_circle" label="添加朋友" to="/contacts/add" />
           </>
         }
       />
@@ -198,43 +307,39 @@ export function ContactsPage() {
         </label>
       </div>
       {!query && (
-        <MenuGroup className="contact-fixed">
-          <MenuRow
-            to="/contacts/new"
-            icon="wechat/person"
-            tint="orange"
-            tile
-            label="新的朋友"
-            chevron={false}
-            right={newFriendsDot ? <span className="red-dot" aria-label="有新的朋友" /> : undefined}
-          />
-          <MenuRow
-            onClick={() => setCreating(true)}
-            icon="wechat/add"
-            tint="green"
-            tile
-            label="新建角色"
-            chevron={false}
-          />
-          <MenuRow
-            to="/contacts/groups"
-            icon="wechat/chat_pair"
-            tint="green"
-            tile
-            label="群聊"
-            chevron={false}
-          />
-          <MenuRow
-            to="/discover/plaza"
-            icon="drawn/people"
-            tint="blue"
-            tile
-            label="角色广场"
-            chevron={false}
-          />
-          <ComingSoonRow id="tags" />
-          <ComingSoonRow id="official" />
-        </MenuGroup>
+        <>
+          <MenuGroup className="contact-fixed">
+            <MenuRow
+              to="/contacts/new"
+              icon="wechat/person"
+              tint="orange"
+              tile
+              label="新的朋友"
+              chevron={false}
+              right={
+                newFriendsDot ? <span className="red-dot" aria-label="有新的朋友" /> : undefined
+              }
+            />
+            <ComingSoonRow id="chatOnly" iconSize={40} chevron={false} />
+            <MenuRow
+              to="/contacts/groups"
+              icon="wechat/chat_pair"
+              tint="green"
+              tile
+              label="群聊"
+              chevron={false}
+            />
+            <ComingSoonRow id="tags" tile chevron={false} />
+            <ComingSoonRow id="official" tile chevron={false} />
+            <ComingSoonRow id="services" tile chevron={false} />
+          </MenuGroup>
+          <h2 className="group-header letter-header static">
+            <span>我的企业</span>
+          </h2>
+          <MenuGroup className="contact-fixed">
+            <ComingSoonRow id="workContacts" iconSize={40} chevron={false} />
+          </MenuGroup>
+        </>
       )}
       {sections.map(([letter, list]) => (
         <section key={letter} id={`letter-${letter === '☆' ? 'star' : letter}`}>
@@ -257,32 +362,14 @@ export function ContactsPage() {
       {state.initialized && state.contacts.length === 0 && (
         <EmptyState icon="wechat/person" title="还没有添加角色" desc="去角色广场挑一位 TA 吧" />
       )}
-      {contacts.length > 0 && <p className="contacts-count">{contacts.length} 个角色</p>}
+      {contacts.length > 0 && <p className="contacts-count">{contacts.length} 个朋友</p>}
       {sections.length > 0 && (
-        <nav
-          className="letter-index"
-          aria-label="字母索引"
-          onPointerMove={(event) => {
-            if (event.buttons === 0 && event.pointerType === 'mouse') return;
-            const el = document.elementFromPoint(event.clientX, event.clientY);
-            const letter = (el as HTMLElement | null)?.dataset?.letter;
-            if (letter) jump(letter);
-          }}
-        >
-          {sections.map(([letter]) => (
-            <button
-              key={letter}
-              type="button"
-              data-letter={letter}
-              onClick={() => jump(letter)}
-              aria-label={letter === '☆' ? '星标朋友' : letter}
-            >
-              {letter}
-            </button>
-          ))}
-        </nav>
+        <LetterIndex
+          starred={sections.some(([letter]) => letter === '☆')}
+          present={sections.map(([letter]) => letter)}
+          onJump={jump}
+        />
       )}
-      {creating && <NewCharacterSheet onClose={() => setCreating(false)} />}
       {menu && (
         <LongPressMenu at={menu.at} items={menuItems(menu.id)} onClose={() => setMenu(null)} />
       )}

@@ -26,6 +26,7 @@ import {
 import { ChatProvider } from './chat.js';
 import { AuthProvider, useAuth } from './auth.js';
 import { AuthPage } from '../features/auth-page.js';
+import { SplashScreen, useSplash } from '../features/splash.js';
 import { MePage, ServicesPage } from '../features/me.js';
 import { ProfilePage } from '../features/profile.js';
 import { SettingsPage } from '../features/settings.js';
@@ -116,7 +117,7 @@ const ownHeader = [
   /^\/(share|search)(\/|$)/,
   /^\/me\/favorites/,
   /^\/services\/period/,
-  /^\/(contacts\/(new|groups)|groups\/new|moments|me\/moments|me\/stickers|calls\/)/,
+  /^\/(contacts\/(new|groups|add)|groups\/new|moments|me\/moments|me\/stickers|calls\/)/,
   // 换壳后用统一标题栏 NavBar 的页面
   /^\/(coming-soon|miniapps|discover\/plaza)(\/|$)/,
   /^\/(services|settings)$/,
@@ -200,12 +201,8 @@ function Shell() {
       window.removeEventListener('offline', update);
     };
   }, []);
-  if (auth.loading)
-    return (
-      <main className="empty" role="status">
-        正在打开微伴…
-      </main>
-    );
+  // 加载中由上层的启动页盖住
+  if (auth.loading) return null;
   if (!auth.session) return <AuthPage />;
   const firstProfile = !auth.session.user.profileCompleted;
   const onboarding = auth.onboarding || firstProfile || searchParams.get('onboarding') === '1';
@@ -353,6 +350,7 @@ function Shell() {
               <Route path="/coming-soon/:feature" element={<ComingSoonPage />} />
               <Route path="/miniapps" element={<MiniAppsHomePage />} />
               <Route path="/discover/plaza" element={<RolePlazaPage />} />
+              <Route path="/contacts/add" element={<RolePlazaPage />} />
               <Route path="/plaza" element={<PersonaPlazaPage />} />
               <Route path="/pets/with/:characterId" element={<PetWithPage />} />
               <Route path="/characters/:characterId/model" element={<CharacterModelPage />} />
@@ -381,12 +379,19 @@ function Shell() {
     </CallProvider>
   );
 }
+/** 启动页盖在最上层：至少 1.2 秒、且登录状态恢复完成后淡出。 */
+function Splash() {
+  const auth = useAuth();
+  const phase = useSplash(!auth.loading);
+  return phase === 'done' ? null : <SplashScreen fading={phase === 'fading'} />;
+}
 export function App() {
   return (
     <AuthProvider>
       <UpdatePrompt />
       <ChatProvider>
         <Shell />
+        <Splash />
       </ChatProvider>
     </AuthProvider>
   );

@@ -241,6 +241,13 @@ label.field-row {
   height: 40px;
   margin-right: var(--wb-space-4);
 }
+.contact-fixed .menu-icon {
+  width: 40px;
+  height: 40px;
+  margin-right: var(--wb-space-4);
+  overflow: hidden;
+  border-radius: var(--wb-radius-xs);
+}
 .contact-fixed .menu-row + .menu-row::before {
   left: 72px;
 }
@@ -258,6 +265,8 @@ label.field-row {
   position: relative;
   display: flex;
   align-items: center;
+  -webkit-touch-callout: none;
+  user-select: none;
   height: var(--wb-size-contact-row);
   padding: 0 var(--wb-space-6) 0 var(--wb-space-5);
   color: var(--wb-color-text-primary);
@@ -293,25 +302,67 @@ label.field-row {
   color: var(--wb-color-text-secondary);
   font-size: var(--wb-font-size-body);
 }
-.letter-index {
+/* 右侧字母索引：轨道占满标题栏与标签栏之间，索引列在其中垂直居中（照微信）。 */
+.letter-index-rail {
   position: fixed;
-  top: 50%;
+  top: calc(env(safe-area-inset-top) + var(--wb-size-nav-bar));
+  bottom: calc(var(--wb-size-tab-bar) + 1px + env(safe-area-inset-bottom));
   right: max(0px, calc(50vw - var(--wb-size-content-max-width) / 2));
   z-index: var(--wb-z-index-sticky);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+.letter-index {
+  position: relative;
   display: grid;
-  width: 24px;
-  transform: translateY(-50%);
+  width: 22px;
+  padding: 0 2px;
+  pointer-events: auto;
   touch-action: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 .letter-index button {
+  display: grid;
+  place-items: center;
+  width: 16px;
   height: 16px;
   min-height: 0;
+  margin: 0 auto;
   padding: 0;
   border: 0;
+  border-radius: var(--wb-radius-full);
   background: none;
-  color: #555;
+  color: var(--wb-color-text-secondary);
   font-size: var(--wb-font-size-micro);
   font-weight: var(--wb-font-weight-medium);
+  line-height: 1;
+}
+.letter-index button.on {
+  background: var(--wb-color-brand-primary);
+  color: var(--wb-color-text-on-brand);
+}
+.letter-bubble {
+  position: absolute;
+  top: 0;
+  right: 36px;
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  border-radius: var(--wb-radius-full);
+  background: var(--wb-color-ui-toast-bg);
+  color: #fff;
+  font-size: var(--wb-font-size-title1);
+  font-weight: var(--wb-font-weight-medium);
+  pointer-events: none;
+}
+.contacts-page section[id^='letter-'] {
+  scroll-margin-top: calc(var(--wb-size-nav-bar) - 1px);
+}
+.letter-header.static {
+  position: static;
 }
 
 /* ---------- 资料页（4.12） ---------- */
@@ -1066,107 +1117,140 @@ label.field-row {
   color: #fff;
 }
 
-/* ---------- 登录（4.14） ---------- */
-.old-auth {
-  position: relative;
-  display: grid;
+/* ---------- 登录（10-14 反馈 1.2：照社交应用账号密码登录页） ---------- */
+.wx-auth {
+  display: flex;
+  flex-direction: column;
   min-height: 100dvh;
-  padding: 24px 32px;
-  overflow: hidden;
-  background: var(--wb-color-bg-page);
-  text-align: center;
-}
-.auth-watermark {
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(rgba(237, 237, 237, 0.9), rgba(237, 237, 237, 0.72), rgba(237, 237, 237, 0.95)),
-    url('/assets/old-ui/brand/weiban_logo.png') center / min(260px, 60vw) no-repeat;
-  pointer-events: none;
-}
-.auth-content {
-  position: relative;
-  display: grid;
-  justify-items: center;
-  align-content: start;
-  width: 100%;
-  max-width: 360px;
-  margin: 0 auto;
-}
-.auth-logo {
-  width: 96px;
-  height: 96px;
-  border-radius: 24px;
-  box-shadow: 0 8px 24px rgba(35, 200, 107, 0.16);
-}
-.auth-wordmark {
-  margin-top: 20px;
-  color: #1f2933;
-  font-size: 36px;
-  font-weight: var(--wb-font-weight-regular);
-}
-.auth-form {
-  display: grid;
-  gap: 14px;
-  width: 100%;
-  margin-top: 40px;
+  padding: env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + var(--wb-space-6));
+  background: var(--wb-color-bg-surface);
   text-align: left;
 }
-.line-field {
-  gap: 4px;
-  color: var(--wb-color-text-secondary);
-  font-size: var(--wb-font-size-footnote);
+.wx-auth-top {
+  display: flex;
+  align-items: center;
+  height: var(--wb-size-nav-bar);
+  padding: 0 var(--wb-space-2);
 }
-.line-field input {
-  min-height: 40px;
-  padding: 6px 0;
+.wx-auth-title {
+  margin: var(--wb-space-8) var(--wb-space-6) 40px;
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-title2);
+  font-weight: var(--wb-font-weight-medium);
+  text-align: center;
+}
+.wx-auth-form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 0 var(--wb-space-6);
+}
+.wx-auth-fields {
+  border-top: 0.5px solid var(--wb-color-border-hairline);
+}
+.wx-auth-field {
+  display: flex;
+  align-items: center;
+  height: 56px;
+  margin: 0;
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-body);
+}
+.wx-auth-field span {
+  flex: none;
+  width: 88px;
+}
+.wx-auth-field input {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
   border: 0;
-  border-bottom: 1px solid var(--wb-color-border-strong);
   border-radius: 0;
   background: transparent;
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-body);
 }
-.line-field input:focus {
+.wx-auth-field input::placeholder {
+  color: var(--wb-color-text-placeholder);
+}
+.wx-auth-field input:focus {
   outline: none;
-  border-bottom-color: var(--wb-color-brand-primary);
 }
-.auth-error {
-  margin: 0;
+.wx-auth-note {
+  margin: var(--wb-space-4) 0 0;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+  line-height: var(--wb-line-height-normal);
+}
+.wx-auth-link {
+  align-self: flex-start;
+  min-height: 0;
+  margin-top: var(--wb-space-5);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--wb-color-text-link);
+  font-size: var(--wb-font-size-subhead);
+}
+.wx-auth-error {
+  margin: var(--wb-space-4) 0 0;
   color: var(--wb-color-text-danger);
   font-size: var(--wb-font-size-footnote);
 }
-.auth-submit,
-button.primary.auth-submit {
-  min-height: 50px;
-  margin-top: 26px;
-  border-radius: 25px;
+.wx-auth-bottom {
+  display: grid;
+  justify-items: center;
+  gap: var(--wb-space-5);
+  margin-top: auto;
+  padding-top: var(--wb-space-8);
+}
+.wx-auth-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wb-space-2);
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+}
+.wx-auth-check .check-circle {
+  width: 16px;
+  height: 16px;
+}
+.wx-auth-submit,
+button.primary.wx-auth-submit {
+  width: 184px;
+  min-height: 48px;
+  border-radius: var(--wb-radius-md);
   font-size: var(--wb-font-size-body);
+  font-weight: var(--wb-font-weight-medium);
 }
-.auth-links {
+.wx-auth-foot {
   display: flex;
-  justify-content: center;
-  gap: var(--wb-space-6);
+  align-items: center;
+  gap: var(--wb-space-4);
+  margin: var(--wb-space-4) 0 0;
 }
-.auth-links .text-button {
-  font-size: var(--wb-font-size-subhead);
+.wx-auth-foot button {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--wb-color-text-link);
+  font-size: var(--wb-font-size-footnote);
 }
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-scheme='light']) .auth-watermark {
-    background:
-      linear-gradient(rgba(17, 17, 17, 0.9), rgba(17, 17, 17, 0.72), rgba(17, 17, 17, 0.95)),
-      url('/assets/old-ui/brand/weiban_logo.png') center / min(260px, 60vw) no-repeat;
-  }
-  :root:not([data-scheme='light']) .auth-wordmark {
-    color: var(--wb-color-text-primary);
-  }
-}
-:root[data-scheme='dark'] .auth-watermark {
-  background:
-    linear-gradient(rgba(17, 17, 17, 0.9), rgba(17, 17, 17, 0.72), rgba(17, 17, 17, 0.95)),
-    url('/assets/old-ui/brand/weiban_logo.png') center / min(260px, 60vw) no-repeat;
-}
-:root[data-scheme='dark'] .auth-wordmark {
-  color: var(--wb-color-text-primary);
+.wx-auth-foot i {
+  width: 0.5px;
+  height: 12px;
+  background: var(--wb-color-border-strong);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1413,4 +1497,81 @@ button.primary.auth-submit {
   background: var(--wb-color-ui-button-disabled-bg);
   color: var(--wb-color-ui-button-disabled-text);
   opacity: 1;
+}
+
+/* ---------- 启动页（10-14 反馈 1.1） ---------- */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--wb-z-index-toast) + 1);
+  display: grid;
+  grid-template-rows: 1fr auto;
+  justify-items: center;
+  padding: env(safe-area-inset-top) var(--wb-space-5) calc(env(safe-area-inset-bottom) + 56px);
+  background: var(--wb-color-bg-surface);
+  transition: opacity 250ms var(--wb-motion-easing-standard);
+}
+.splash.fading {
+  opacity: 0;
+  pointer-events: none;
+}
+.splash-brand {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: var(--wb-space-3);
+  padding-bottom: 12vh;
+  animation: splash-in 420ms var(--wb-motion-easing-decelerate) both;
+}
+.splash-brand img {
+  width: 88px;
+  height: 88px;
+  margin-bottom: var(--wb-space-3);
+  border-radius: 22px;
+}
+.splash-brand strong {
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-title2);
+  font-weight: var(--wb-font-weight-medium);
+  letter-spacing: 0.2em;
+}
+.splash-brand span {
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+}
+.splash-progress {
+  position: relative;
+  width: 120px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: var(--wb-radius-full);
+  background: var(--wb-color-bg-pressed);
+}
+.splash-progress i {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--wb-color-brand-primary);
+  transform-origin: left center;
+  animation: splash-progress 1200ms var(--wb-motion-easing-standard) both;
+}
+@keyframes splash-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+}
+@keyframes splash-progress {
+  from {
+    transform: scaleX(0.05);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .splash-brand,
+  .splash-progress i {
+    animation: none;
+  }
 }

@@ -241,10 +241,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
         </>
       )}
       <MenuGroup>
-        <MenuRow
-          label="设置当前聊天背景"
-          onClick={() => showToast('聊天背景暂未开放', 2000, 'info')}
-        />
+        <MenuRow label="设置当前聊天背景" onClick={() => showToast('暂未开放', 2000, 'info')} />
       </MenuGroup>
       <MenuGroup>
         <MenuRow

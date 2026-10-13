@@ -930,6 +930,9 @@ label.search-entry:focus-within {
 
 /* ---------- 会话列表（4.2） ---------- */
 .chat-list-page {
+  position: relative;
+  /* 下拉时列表上方露出的是小程序面板的深色底 */
+  background: var(--wb-color-ui-pull-panel-bg);
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -979,7 +982,7 @@ label.search-entry:focus-within {
   transition-duration: var(--wb-motion-duration-base);
 }
 .pull-list.bounce {
-  transition-duration: 200ms;
+  transition: transform var(--wb-motion-duration-page) var(--wb-motion-easing-spring);
 }
 .pull-list .search-strip {
   margin: 0;
@@ -997,6 +1000,9 @@ label.search-entry:focus-within {
   position: relative;
   display: flex;
   align-items: center;
+  /* 长按只弹微伴自己的菜单，不出系统的链接预览 / 选字 */
+  -webkit-touch-callout: none;
+  user-select: none;
   height: var(--wb-size-list-row);
   padding: 0 var(--wb-space-5);
   background: var(--wb-color-bg-surface);
@@ -1099,25 +1105,60 @@ label.search-entry:focus-within {
 }
 
 /* ---------- 下拉小程序面板（4.3） ---------- */
-.pull-dots {
+.pull-hint {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   z-index: 0;
-  display: flex;
-  justify-content: center;
-  gap: var(--dots-gap, 0px);
+  display: grid;
+  justify-items: center;
+  gap: var(--wb-space-3);
+  padding-top: calc(env(safe-area-inset-top) + var(--wb-space-2));
   pointer-events: none;
+  will-change: transform, opacity;
+}
+.pull-hint.bounce {
+  transition:
+    transform var(--wb-motion-duration-page) var(--wb-motion-easing-spring),
+    opacity var(--wb-motion-duration-fast) linear;
+}
+.pull-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--dots-gap, 4px);
+  height: 8px;
 }
 .pull-dots i {
   width: 6px;
   height: 6px;
   border-radius: var(--wb-radius-full);
-  background: var(--wb-color-text-placeholder);
+  background: rgba(255, 255, 255, 0.45);
+  transition: transform var(--wb-motion-duration-fast) var(--wb-motion-easing-spring);
 }
-.pull-dots.armed i {
-  background: var(--wb-color-text-secondary);
+.pull-hint.armed .pull-dots i {
+  background: rgba(255, 255, 255, 0.9);
+  transform: scale(1.35);
+}
+.pull-hint-text {
+  position: relative;
+  width: 100%;
+  height: 18px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: var(--wb-font-size-caption1);
+}
+.pull-hint-text span {
+  position: absolute;
+  left: 50%;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateX(-50%);
+  transition: opacity var(--wb-motion-duration-fast);
+}
+.pull-hint.half:not(.armed) .pull-hint-text .more,
+.pull-hint.armed .pull-hint-text .go {
+  opacity: 1;
 }
 .pull-panel {
   position: fixed;
