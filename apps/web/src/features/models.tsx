@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Check } from './old-icons.js';
+import { OldIcon } from './old-icons.js';
 import { ApiFailure } from '@weiban/client-core';
-import { NavBar } from './shell-kit.js';
+import { GroupHeader, MenuGroup, MenuRow, NavBar } from './shell-kit.js';
+import { perReplyText } from './wallet.js';
 import { showToast } from './toast.js';
 import { ModelAccessEndpoints, type ModelRole } from '@weiban/contracts';
 import { api } from '../data/client.js';
@@ -13,72 +14,87 @@ const roleLabels: Record<UserModelRole, string> = {
   background: '后台模型',
   adult: '成人模式模型',
 };
+/** 模型页（5.4）：设置页式单选列表，分组「聊天模型」「后台模型」「成人模式模型」，选中右侧 ✓。 */
 export function ModelsPage() {
   const models = useRemote(ModelAccessEndpoints.listModels);
   const selection = useRemote(ModelAccessEndpoints.getSelection);
   const [pending, setPending] = useState(false);
-  const [message, setMessage] = useState('');
   async function choose(role: UserModelRole, key: string) {
+    if ((selection.data?.[role]?.modelKey ?? '') === key) return;
     setPending(true);
     try {
       await api.call(ModelAccessEndpoints.updateSelection, {
         body: { [role]: key ? { modelKey: key } : null },
       });
       selection.refresh();
-      setMessage('已保存，下次回复起使用新的模型');
+      showToast('已保存，下次回复起使用新的模型', 2000, 'success');
     } catch (e) {
-      setMessage(friendlyError(e));
+      showToast(friendlyError(e));
     } finally {
       setPending(false);
     }
   }
   return (
     <main>
-      <h1 className="page-title">模型</h1>
-      <div className="panel stack">
-        {(['chat', 'background', 'adult'] as const).map((role) => (
-          <label key={role}>
-            {roleLabels[role]}
-            <select
-              disabled={pending || !selection.data}
-              value={selection.data?.[role]?.modelKey ?? ''}
-              onChange={(e) => void choose(role, e.target.value)}
-            >
-              <option value="">
-                {role === 'chat' ? '平台默认' : role === 'background' ? '沿用聊天模型' : '未设置'}
-              </option>
-              {models.data?.items
-                .filter((m) => role === 'adult' || !m.capabilities.includes('adult_content'))
-                .map((model) => (
-                  <option key={model.modelKey} value={model.modelKey} disabled={!model.available}>
-                    {model.displayName}
-                    {model.available ? '' : '（暂不可用）'}
-                    {model.capabilities.includes('adult_content') ? ' · 允许成人内容' : ''}
-                  </option>
-                ))}
-            </select>
+      <NavBar title="模型" fallback="/services" />
+      {(['chat', 'background', 'adult'] as const).map((role) => {
+        const current = selection.data?.[role]?.modelKey ?? '';
+        const list =
+          models.data?.items.filter(
+            (m) => role === 'adult' || !m.capabilities.includes('adult_content'),
+          ) ?? [];
+        return (
+          <section key={role}>
+            <GroupHeader>{roleLabels[role]}</GroupHeader>
+            <MenuGroup>
+              <MenuRow
+                label={
+                  role === 'chat' ? '平台默认' : role === 'background' ? '沿用聊天模型' : '未设置'
+                }
+                chevron={false}
+                disabled={pending || !selection.data}
+                right={current === '' ? <Tick /> : undefined}
+                onClick={() => void choose(role, '')}
+              />
+              {list.map((model) => (
+                <MenuRow
+                  key={model.modelKey}
+                  label={model.displayName}
+                  subtitle={[
+                    perReplyText(model),
+                    model.vendorName,
+                    ...model.tags,
+                    model.available ? '' : '暂不可用',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                  chevron={false}
+                  disabled={pending || !model.available}
+                  right={current === model.modelKey ? <Tick /> : undefined}
+                  onClick={() => void choose(role, model.modelKey)}
+                />
+              ))}
+            </MenuGroup>
             {selection.data?.[role] && !selection.data[role]!.available && (
-              <span className="error">已选模型暂不可用，请重新选择</span>
+              <p className="error page-note">已选模型暂不可用，请重新选择</p>
             )}
-          </label>
-        ))}
-        <p className="hint">后台模型未设置时沿用聊天模型。成人模式模型未设置时不能开启成人模式。</p>
-        <p role="status">{message || selection.error || models.error}</p>
-      </div>
-      <h2>模型目录</h2>
-      <div className="panel rows">
-        {models.data?.items.map((model) => (
-          <div key={model.modelKey}>
-            <strong>{model.displayName}</strong>
-            <p>
-              {model.vendorName} · {model.tags.join(' · ') || '聊天模型'}
-            </p>
-            <small>{model.available ? '可用' : '暂不可用'}</small>
-          </div>
-        ))}
-      </div>
+          </section>
+        );
+      })}
+      <p className="hint page-note">
+        后台模型未设置时沿用聊天模型。成人模式模型未设置时不能开启成人模式。
+      </p>
+      {(selection.error || models.error) && (
+        <p role="alert" className="notice-bar">
+          {selection.error || models.error}
+        </p>
+      )}
     </main>
   );
+}
+
+function Tick() {
+  return <OldIcon name="wechat/check" size={22} className="ink-brand" />;
 }
 
 /** 聊天信息 › 聊天模型 › 为 TA 选模型（billing.md 6.1）。null = 跟随默认（服务 › 模型里的聊天模型）。 */
@@ -104,7 +120,7 @@ export function CharacterModelPage() {
         body: { chat: key ? { modelKey: key } : null },
       });
       override.refresh();
-      showToast('已保存，下一条回复起使用');
+      showToast('已保存，下一条回复起使用', 2000, 'success');
     } catch (e) {
       showToast(
         e instanceof ApiFailure && e.code === 'model_not_allowed'
@@ -115,49 +131,43 @@ export function CharacterModelPage() {
       setPending(false);
     }
   }
-  const option = (key: string, title: string, note: string, disabled = false) => (
-    <button
-      key={key || 'default'}
-      type="button"
-      role="radio"
-      aria-checked={current === key}
-      className="menu-row"
-      disabled={pending || disabled}
-      onClick={() => void choose(key)}
-    >
-      <span className="menu-label">
-        {title}
-        <br />
-        <small className="hint">{note}</small>
-      </span>
-      {current === key && <Check size={20} weight="bold" aria-hidden />}
-    </button>
-  );
   return (
     <main>
       <NavBar title="TA 用的模型" />
       {(override.error || models.error) && <p role="alert">{override.error || models.error}</p>}
-      <div className="menu-group" role="radiogroup" aria-label="TA 用的模型">
-        {option('', '跟随默认', `现在是 ${defaultName}，在「服务 › 模型」里改`)}
-        {models.data?.items.map((model) =>
-          option(
-            model.modelKey,
-            model.displayName,
-            [
+      <GroupHeader>聊天模型</GroupHeader>
+      <MenuGroup>
+        <MenuRow
+          label="跟随默认"
+          subtitle={`现在是 ${defaultName}，在「服务 › 模型」里改`}
+          chevron={false}
+          disabled={pending}
+          right={current === '' ? <Tick /> : undefined}
+          onClick={() => void choose('')}
+        />
+        {models.data?.items.map((model) => (
+          <MenuRow
+            key={model.modelKey}
+            label={model.displayName}
+            subtitle={[
+              perReplyText(model),
               model.vendorName,
               model.available ? '' : '暂不可用',
               model.capabilities.includes('adult_content') ? '允许成人内容' : '',
             ]
               .filter(Boolean)
-              .join(' · '),
-            !model.available,
-          ),
-        )}
-      </div>
+              .join(' · ')}
+            chevron={false}
+            disabled={pending || !model.available}
+            right={current === model.modelKey ? <Tick /> : undefined}
+            onClick={() => void choose(model.modelKey)}
+          />
+        ))}
+      </MenuGroup>
       {override.data?.chat && !override.data.chat.available && (
-        <p className="error">TA 用的模型暂不可用，回复时会提示你临时改用默认模型</p>
+        <p className="error page-note">TA 用的模型暂不可用，回复时会提示你临时改用默认模型</p>
       )}
-      <p className="hint">只影响和 TA 的私聊；群聊里每个角色也按各自的设置回复。</p>
+      <p className="hint page-note">只影响和 TA 的私聊；群聊里每个角色也按各自的设置回复。</p>
     </main>
   );
 }

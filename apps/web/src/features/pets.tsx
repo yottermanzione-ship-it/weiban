@@ -234,7 +234,7 @@ function PetGuide({ onStart }: { onStart(): void }) {
             <HandTap size={24} aria-hidden />
             <span>
               <strong>点一点就能互动</strong>
-              <small>喂食、玩耍、摸摸，不花余额</small>
+              <small>喂食、玩耍、摸摸，不花积分</small>
             </span>
           </p>
           <p className="guide-line">
@@ -372,7 +372,7 @@ function AdoptForm() {
     } catch (e) {
       setNamingNote(
         e instanceof ApiFailure && e.code === 'insufficient_balance'
-          ? `余额不足，${name(characterId)} 暂时没法起名，你可以先自己起一个`
+          ? `积分不足，${name(characterId)} 暂时没法起名，你可以先自己起一个`
           : friendlyError(e),
       );
     }

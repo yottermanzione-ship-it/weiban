@@ -84,7 +84,7 @@ export function CharacterVoiceSelect({
       )}
       {error && <p role="alert">{error}</p>}
       <p className="hint">
-        从音色库选择合成音色。保存后用于语音消息和通话；聊天设置中单独选的音色优先。试听不扣余额。
+        从音色库选择合成音色。保存后用于语音消息和通话；聊天设置中单独选的音色优先。试听不扣积分。
       </p>
     </section>
   );

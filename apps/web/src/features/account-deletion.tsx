@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CaretLeft, CheckCircle } from './old-icons.js';
 import { BillingEndpoints, IdentityEndpoints } from '@weiban/contracts';
-import { ApiFailure, formatMoney } from '@weiban/client-core';
+import { ApiFailure } from '@weiban/client-core';
+import { pointsText } from './points.js';
 import { useAuth } from '../app/auth.js';
 import { api } from '../data/client.js';
 import { useRemote } from '../data/use-remote.js';
@@ -17,7 +18,7 @@ const deletedItems = [
   '所有聊天记录和 TA 们的记忆',
   '你创建和导入的角色、导入的原始记录',
   '你上传的头像和图片',
-  '余额和余额明细',
+  '积分和积分明细',
   '卡片、成就、宠物',
   '经期日记',
   '提醒、心愿清单、每日一问的回答、信件',
@@ -71,7 +72,7 @@ export function AccountDeletionPage() {
     const timer = window.setTimeout(() => setLockedUntil(0), Math.max(0, lockedUntil - Date.now()));
     return () => window.clearTimeout(timer);
   }, [lockedUntil]);
-  const balance = wallet.data?.balanceMicros ?? 0;
+  const balance = wallet.data?.balancePoints ?? 0;
 
   async function submit() {
     if (!password || pending) return;
@@ -133,7 +134,7 @@ export function AccountDeletionPage() {
       <div className="panel stack">
         {balance > 0 && (
           <p>
-            剩余余额 <strong className="numeric">{formatMoney(balance)}</strong> 将作废
+            剩余积分 <strong className="numeric">{pointsText(balance)}</strong> 将作废
           </p>
         )}
         <p className="hint">

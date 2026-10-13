@@ -260,7 +260,7 @@ export function DailyQuestionPage() {
                 <p className="play-reveal">{answered.characterAnswer}</p>
               ) : answered.characterAnswerStatus === 'waiting_balance' ? (
                 <p className="hint">
-                  余额不足，TA 暂时没法回答 <Link to="/wallet">查看余额</Link>
+                  积分不足，TA 暂时没法回答 <Link to="/wallet">查看积分</Link>
                 </p>
               ) : (
                 <p className="hint" role="status">
@@ -357,7 +357,7 @@ export function DailyHistoryPage() {
                 <span className="section-label">我的回答</span>
                 <p>{item.userAnswer}</p>
                 <span className="section-label">{nameOf(item.characterId)} 的回答</span>
-                <p>{item.characterAnswer ?? '余额不足，TA 暂时没法回答'}</p>
+                <p>{item.characterAnswer ?? '积分不足，TA 暂时没法回答'}</p>
               </div>
             )}
           </div>

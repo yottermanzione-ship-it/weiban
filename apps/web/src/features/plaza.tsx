@@ -82,7 +82,7 @@ const neverPublished = [
   '导入时的原始聊天记录和截图',
   '经期日记等健康数据',
   '宠物',
-  '余额与花费',
+  '积分与花费',
   '用户为自定义角色之间设定的关系',
 ];
 const circled = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
@@ -1888,7 +1888,7 @@ export function PublishPage() {
       {classification && <p className="hint">分类：{classificationText(classification)}</p>}
       {balanceShort && (
         <p role="alert">
-          余额不足，暂时不能发布 <Link to="/wallet">查看余额</Link>
+          积分不足，暂时不能发布 <Link to="/wallet">查看积分</Link>
         </p>
       )}
       {error && <p role="alert">{error}</p>}

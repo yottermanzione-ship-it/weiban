@@ -11,7 +11,9 @@ import {
   type ImportJob,
   type ImportResult,
 } from '@weiban/contracts';
-import { ApiFailure, formatMoney } from '@weiban/client-core';
+import { ApiFailure } from '@weiban/client-core';
+import { microsToPoints } from '@weiban/contracts';
+import { pointsText } from './points.js';
 import type { z } from 'zod';
 import type { RecognizedDialogueLine } from '@weiban/contracts';
 import { api } from '../data/client.js';
@@ -30,7 +32,7 @@ type Source = 'text' | 'file' | 'screenshots';
 
 const failureText: Record<string, string> = {
   format_unrecognized: '没认出是谁在说话',
-  insufficient_balance: '余额不足',
+  insufficient_balance: '积分不足',
   model_unavailable: '模型服务暂时不可用',
   vision_unavailable: '当前模型不能识别图片，请先在 我 › 服务 › 模型 更换',
   internal: '出了点问题，请稍后重试',
@@ -399,7 +401,7 @@ function JobStep({ job, onJob }: { job: ImportJob; onJob(job: ImportJob): void }
       onJob(await work());
     } catch (e) {
       if (e instanceof ApiFailure && e.code === 'insufficient_balance')
-        setError('余额不足，暂时不能生成');
+        setError('积分不足，暂时不能生成');
       else setError(friendlyError(e));
     } finally {
       setPending(false);
@@ -478,10 +480,12 @@ function JobStep({ job, onJob }: { job: ImportJob; onJob(job: ImportJob): void }
             <div className="switch-row">
               预计花费
               <strong>
-                {job.estimatedMicros === null ? '—' : `约 ${formatMoney(job.estimatedMicros)}`}
+                {job.estimatedMicros === null
+                  ? '—'
+                  : `约 ${pointsText(microsToPoints(job.estimatedMicros))}`}
               </strong>
             </div>
-            <p className="hint pad">按当前模型和价目表估算，实际以余额明细为准</p>
+            <p className="hint pad">按当前模型和价目表估算，实际以积分明细为准</p>
             <div className="switch-row">
               预计用时
               <span>
@@ -492,7 +496,7 @@ function JobStep({ job, onJob }: { job: ImportJob; onJob(job: ImportJob): void }
           {error && (
             <p role="alert">
               {error}
-              {error.startsWith('余额不足') && <Link to="/wallet"> 查看余额</Link>}
+              {error.startsWith('积分不足') && <Link to="/wallet"> 查看积分</Link>}
             </p>
           )}
           <button
@@ -559,7 +563,7 @@ function JobStep({ job, onJob }: { job: ImportJob; onJob(job: ImportJob): void }
           ) : (
             <>
               <p>没能生成草稿：{failureText[job.failure ?? 'internal'] ?? failureText.internal}</p>
-              {job.failure === 'insufficient_balance' && <Link to="/wallet">查看余额</Link>}
+              {job.failure === 'insufficient_balance' && <Link to="/wallet">查看积分</Link>}
               <div className="button-row">
                 <button
                   className="primary"
