@@ -5,10 +5,12 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
-import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,8 +19,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import app.weiban.contracts.AuthResponse
+import app.weiban.core.designsystem.R as DsR
 import app.weiban.contracts.Endpoints
 import app.weiban.data.OwnerRecord
 import app.weiban.designsystem.WeibanTheme
@@ -170,7 +175,8 @@ private suspend fun restoreSession(runtime: WeibanApplication) {
         restored = true
     }
     WeibanTheme(theme) {
-        Surface(Modifier.fillMaxSize()) {
+        Surface(Modifier.fillMaxSize(), color = app.weiban.designsystem.LocalWeibanColors.current.bgPage) {
+            Box(Modifier.fillMaxSize()) {
             when {
                 !restored -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 auth == null -> AuthScreen(runtime.repository)
@@ -186,6 +192,9 @@ private suspend fun restoreSession(runtime: WeibanApplication) {
                         }
                         SignedIn(runtime, auth!!, { theme = it }, logout)
                     }
+            }
+                // 轻提示（规格 3.11）盖在所有页面上。
+                app.weiban.designsystem.ToastHost()
             }
         }
     }
@@ -278,14 +287,16 @@ private class NavigationUi(
     }
     val scope = rememberCoroutineScope()
     if (!auth.user.profileCompleted) {
-        MeScreen(runtime.repository, true, onTheme, onLogout)
+        Box(Modifier.fillMaxSize().systemBarsPadding()) { MeScreen(runtime.repository, true, onTheme, onLogout) }
     } else if (onboarding) {
         val owner = OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId)
-        RoleBrowser(runtime.repository, runtime.chat, owner, true, { id ->
-            scope.launch { finishOnboarding(runtime, owner, id, navigation::open) }
-        }, onboarding = true, onLeaveOnboarding = {
-            scope.launch { leaveOnboarding(runtime, owner) }
-        })
+        Box(Modifier.fillMaxSize().systemBarsPadding()) {
+            RoleBrowser(runtime.repository, runtime.chat, owner, true, { id ->
+                scope.launch { finishOnboarding(runtime, owner, id, navigation::open) }
+            }, onboarding = true, onLeaveOnboarding = {
+                scope.launch { leaveOnboarding(runtime, owner) }
+            })
+        }
     } else {
         val owner = OwnerRecord(userId = auth.user.userId, sessionId = auth.session.sessionId)
         // 浮层（导入完成后打开会话等）要求切到某个会话（T-086）。
@@ -314,18 +325,46 @@ private class NavigationUi(
         }
         CompositionLocalProvider(LocalCalls provides runtime.calls) {
             Box(Modifier.fillMaxSize()) {
-                Scaffold(bottomBar = {
-                    if (navigation.conversationId == null) {
-                        val badge = rememberMomentsBadge(runtime.repository, owner)
-                        val announcements by ReleaseCenter.announcements.collectAsState()
-                        Tabs(navigation.tab, (badge?.unseenPostCount ?: 0) > 0, (announcements?.unreadCount ?: 0) > 0) {
-                            navigation.tab = it
-                            navigation.mePage = null
-                            navigation.moments = null
-                        }
+                // 不在「微伴」标签时，系统返回先回到「微伴」（规格 4.1）；各页面自己的返回优先。
+                BackHandler(navigation.tab != "微伴" && navigation.mePage == null && navigation.moments == null) {
+                    navigation.tab = "微伴"
+                }
+                val immersive by app.weiban.designsystem.LocalImmersive.current
+                val snapshot by runtime.chat.snapshot.collectAsState()
+                val chatUnread =
+                    if (snapshot.owner == owner) {
+                        snapshot.state.conversations
+                            .filter { !it.state.hidden && !it.state.muted }
+                            .sumOf { it.unreadCount }
+                            .toInt()
+                    } else {
+                        0
                     }
-                }) { padding ->
-                    Box(Modifier.padding(padding)) { SignedInPage(runtime, auth, navigation, onTheme, onLogout) }
+                Scaffold(
+                    containerColor = app.weiban.designsystem.LocalWeibanColors.current.bgNavBar,
+                    contentWindowInsets = WindowInsets.navigationBars,
+                    bottomBar = {
+                        if (navigation.conversationId == null && !app.weiban.feature.chat.PullPanelState.open) {
+                            val badge = rememberMomentsBadge(runtime.repository, owner)
+                            val announcements by ReleaseCenter.announcements.collectAsState()
+                            Tabs(
+                                navigation.tab,
+                                TabBadges(chatUnread, (badge?.unseenInteractionCount ?: 0L).toInt(), (badge?.unseenPostCount ?: 0) > 0),
+                                (announcements?.unreadCount ?: 0) > 0,
+                            ) {
+                                navigation.tab = it
+                                navigation.mePage = null
+                                navigation.moments = null
+                            }
+                        }
+                    },
+                ) { padding ->
+                    Box(
+                        Modifier
+                            .padding(padding)
+                            .consumeWindowInsets(padding)
+                            .then(if (immersive > 0) Modifier else Modifier.statusBarsPadding()),
+                    ) { SignedInPage(runtime, auth, navigation, onTheme, onLogout) }
                 }
                 // 通话页 / 来电页 / 通话中胶囊盖在所有页面上（design/pages/call.md）。
                 CallOverlay(runtime.repository, owner)
@@ -355,7 +394,7 @@ private suspend fun finishOnboarding(
     } catch (error: CancellationException) {
         throw error
     } catch (_: Exception) {
-        Toast.makeText(runtime, "无法保存引导进度，请重试", Toast.LENGTH_SHORT).show()
+        app.weiban.designsystem.WbToast.show("无法保存引导进度，请重试", app.weiban.designsystem.ToastKind.Warning)
     }
 }
 
@@ -370,7 +409,7 @@ private suspend fun leaveOnboarding(
     } catch (error: CancellationException) {
         throw error
     } catch (_: Exception) {
-        Toast.makeText(runtime, "无法保存引导进度，请重试", Toast.LENGTH_SHORT).show()
+        app.weiban.designsystem.WbToast.show("无法保存引导进度，请重试", app.weiban.designsystem.ToastKind.Warning)
     }
 }
 
@@ -456,7 +495,7 @@ private fun applyNotification(
         if (address != null && auth.user.role == "admin") {
             runCatching { runtime.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(address)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         } else {
-            Toast.makeText(runtime, "暂时无法打开管理提醒", Toast.LENGTH_SHORT).show()
+            app.weiban.designsystem.WbToast.show("暂时无法打开管理提醒", app.weiban.designsystem.ToastKind.Warning)
         }
     } else {
         navigation.route(target.route)
@@ -464,21 +503,67 @@ private fun applyNotification(
     runtime.push.navigation.consume(target)
 }
 
+/** 标签栏角标：「微伴」= 非免打扰会话未读总数；「发现」= 朋友圈未读互动数（无互动但有新动态时红点）。 */
+private data class TabBadges(
+    val chat: Int,
+    val discover: Int,
+    val discoverDot: Boolean,
+)
+
+/**
+ * 底部标签栏（规格 4.1）：底 bg.bar，顶部 1 物理像素线；位图图标显示在 28×28 内并整体着色（未选 tab.icon、选中 brand）；
+ * 文字 10（选中 500）；不做切换动画。
+ */
 @Composable private fun Tabs(
     tab: String,
-    discoverDot: Boolean,
+    badges: TabBadges,
     meDot: Boolean,
     onSelect: (String) -> Unit,
 ) {
-    NavigationBar {
-        for (label in listOf("微伴", "通讯录", "发现", "我")) {
-            val selected = tab == label
-            NavigationBarItem(selected = selected, onClick = { onSelect(label) }, icon = {
-                // 朋友圈新动态不推送，只在「发现」标签显示红点（SOC-07 第 7 条）。
-                BadgedBox(badge = { if ((label == "发现" && discoverDot) || (label == "我" && meDot)) Badge() }) {
-                    Icon(painterResource(tabIcon(label, selected)), null, Modifier.size(WbSize.ListIcon))
+    val colors = app.weiban.designsystem.LocalWeibanColors.current
+    val mode = app.weiban.designsystem.LocalWeibanModeColors.current
+    Column(Modifier.fillMaxWidth().background(colors.bgTabBar).windowInsetsPadding(WindowInsets.navigationBars)) {
+        Box(Modifier.fillMaxWidth().height(app.weiban.designsystem.hairline).background(mode.uiTabLine))
+        Row(Modifier.fillMaxWidth().height(WbSize.TabBar)) {
+            for (label in listOf("微伴", "通讯录", "发现", "我")) {
+                val selected = tab == label
+                val tint = if (selected) colors.brandPrimary else mode.uiTabIcon
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clickable(indication = null, interactionSource = null) { onSelect(label) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Box {
+                        Icon(painterResource(tabIcon(label, selected)), label, Modifier.size(28.dp), tint = tint)
+                        val count =
+                            when (label) {
+                                "微伴" -> badges.chat
+                                "发现" -> badges.discover
+                                else -> 0
+                            }
+                        val dot = (label == "发现" && count == 0 && badges.discoverDot) || (label == "我" && meDot)
+                        if (count > 0) {
+                            app.weiban.designsystem.CountBadge(
+                                count,
+                                Modifier.align(Alignment.TopEnd).offset(x = 10.dp, y = (-4).dp),
+                                small = true,
+                                stroke = colors.bgTabBar,
+                            )
+                        } else if (dot) {
+                            app.weiban.designsystem.DotBadge(
+                                10.dp,
+                                colors.bgTabBar,
+                                Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-2).dp),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(2.dp))
+                    Text(label, style = app.weiban.designsystem.wbText(10.sp, if (selected) 500 else 400, tint, 1.15f))
                 }
-            }, label = { Text(label) })
+            }
         }
     }
 }
@@ -488,8 +573,8 @@ private fun tabIcon(
     selected: Boolean,
 ): Int =
     when (label) {
-        "微伴" -> if (selected) R.drawable.ic_chat_fill else R.drawable.ic_chat_regular
-        "通讯录" -> if (selected) R.drawable.ic_contacts_fill else R.drawable.ic_contacts_regular
-        "发现" -> if (selected) R.drawable.ic_discover_fill else R.drawable.ic_discover_regular
-        else -> if (selected) R.drawable.ic_me_fill else R.drawable.ic_me_regular
+        "微伴" -> if (selected) DsR.drawable.wb_tab_chat_pre else DsR.drawable.wb_tab_chat_nor
+        "通讯录" -> if (selected) DsR.drawable.wb_tab_contacts_pre else DsR.drawable.wb_tab_contacts_nor
+        "发现" -> if (selected) DsR.drawable.wb_tab_discover_pre else DsR.drawable.wb_tab_discover_nor
+        else -> if (selected) DsR.drawable.wb_tab_me_pre else DsR.drawable.wb_tab_me_nor
     }

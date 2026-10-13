@@ -16,7 +16,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import app.weiban.core.designsystem.R as DsR
 import app.weiban.data.OwnerRecord
+import app.weiban.designsystem.MiniAppIcon
+import app.weiban.designsystem.tintColor
+import app.weiban.designsystem.wbText
+import app.weiban.designsystem.ActionSheet
+import app.weiban.designsystem.SheetAction
+import app.weiban.designsystem.WbConfirm
+import app.weiban.designsystem.WbIcon
+import app.weiban.designsystem.pressMenu
 import app.weiban.data.SessionRepository
 import app.weiban.designsystem.IconTile
 import app.weiban.designsystem.LocalWeibanColors
@@ -51,18 +61,42 @@ internal enum class MiniApp(
     val data: String,
     /** 默认不进最近使用（经期日记）。 */
     val privateByDefault: Boolean = false,
+    /** 旧版风格图标（规格 5.1）：点缀色方块 + 白色线框图标。 */
+    val icon: Int = DsR.drawable.wb_discover_mini_program,
+    /** 图标本身是彩色图（慢信 mail.png），直接显示原图。 */
+    val original: Boolean = false,
 ) {
-    Cards("cards", "卡册", "和 TA 的每一个特别时刻", "▤", Tint.Pink, true, "你和每个 TA 获得的卡片、纪念日与熟悉度"),
-    Achievements("achievements", "成就", "一起走过的里程碑", "✪", Tint.Gold, false, "你的成就进度"),
-    Pets("pets", "宠物", "和 TA 一起养一只小家伙", "❀", Tint.Orange, true, "你和 TA 一起养的宠物、互动记录与相册"),
-    Daily("daily", "每日一问", "每天一个问题，说给 TA 听", "?", Tint.Gold, false, "你的回答，以及你选择发给哪个 TA"),
-    Wishlist("wishlist", "心愿清单", "想和 TA 一起做的事", "☑", Tint.Teal, true, "你和每个 TA 的心愿"),
-    Letters("letters", "慢信", "写一封慢慢寄到的信", "✉", Tint.Lilac, true, "你和 TA 之间的信件"),
-    Focus("focus", "陪你专注", "让 TA 陪你专心一会儿", "⌛", Tint.Pink, true, "专注时长与陪你的 TA"),
-    Reminders("reminders", "TA 的提醒", "让 TA 到点叫你", "⏰", Tint.Blue, true, "你设置的提醒内容与时间"),
-    Period("period", "经期日记", "记录身体，也让 TA 懂你", "✿", Tint.Pink, false, "加密保存的经期记录，只有你授权的 TA 知道", true),
-    Plaza("plaza", "人设广场", "看看大家创作的角色", "☷", Tint.Blue, false, "你发布、点赞和添加的作品"),
-    Import("import", "导入角色", "用聊天记录生成一个 TA", "⇩", Tint.Teal, false, "你上传的聊天记录（生成完成后可删除）"),
+    Cards("cards", "卡册", "和 TA 的每一个特别时刻", "▤", Tint.Pink, true, "你和每个 TA 获得的卡片、纪念日与熟悉度", icon = DsR.drawable.wb_drawn_cards),
+    Achievements("achievements", "成就", "一起走过的里程碑", "✪", Tint.Gold, false, "你的成就进度", icon = DsR.drawable.wb_star),
+    Pets("pets", "宠物", "和 TA 一起养一只小家伙", "❀", Tint.Orange, true, "你和 TA 一起养的宠物、互动记录与相册", icon = DsR.drawable.wb_drawn_paw),
+    Daily("daily", "每日一问", "每天一个问题，说给 TA 听", "?", Tint.Gold, false, "你的回答，以及你选择发给哪个 TA", icon = DsR.drawable.wb_chat),
+    Wishlist("wishlist", "心愿清单", "想和 TA 一起做的事", "☑", Tint.Teal, true, "你和每个 TA 的心愿", icon = DsR.drawable.wb_check),
+    Letters(
+        "letters",
+        "慢信",
+        "写一封慢慢寄到的信",
+        "✉",
+        Tint.Orange,
+        true,
+        "你和 TA 之间的信件",
+        icon = DsR.drawable.wb_mail,
+        original = true,
+    ),
+    Focus("focus", "陪你专注", "让 TA 陪你专心一会儿", "⌛", Tint.Lilac, true, "专注时长与陪你的 TA", icon = DsR.drawable.wb_drawn_hourglass),
+    Reminders("reminders", "TA 的提醒", "让 TA 到点叫你", "⏰", Tint.Blue, true, "你设置的提醒内容与时间", icon = DsR.drawable.wb_bell),
+    Period(
+        "period",
+        "经期日记",
+        "记录身体，也让 TA 懂你",
+        "✿",
+        Tint.Pink,
+        false,
+        "加密保存的经期记录，只有你授权的 TA 知道",
+        true,
+        icon = DsR.drawable.wb_drawn_flower,
+    ),
+    Plaza("plaza", "人设广场", "看看大家创作的角色", "☷", Tint.Blue, false, "你发布、点赞和添加的作品", icon = DsR.drawable.wb_drawn_people),
+    Import("import", "导入角色", "用聊天记录生成一个 TA", "⇩", Tint.Cyan, false, "你上传的聊天记录（生成完成后可删除）", icon = DsR.drawable.wb_drawn_import),
     ;
 
     companion object {
@@ -112,19 +146,42 @@ object MiniAppNavigation {
     }
 }
 
-/** 小程序宫格的一格：圆角方块图标 + 名字。 */
+/** 小程序图标（规格 5.1）：48 圆角 12（下拉面板、主页），40 圆角 10（聊天信息页一行）。 */
+@Composable internal fun MiniAppGlyph(
+    app: MiniApp,
+    size: androidx.compose.ui.unit.Dp = 48.dp,
+) {
+    MiniAppIcon(app.icon, tintColor(app.tint), size, app.original)
+}
+
+/** 小程序宫格的一格：图标 48 → 8 → 名字 12。 */
 @Composable internal fun MiniAppCell(
     app: MiniApp,
     modifier: Modifier = Modifier,
+    nameColor: androidx.compose.ui.graphics.Color = LocalWeibanColors.current.textPrimary,
+    onLongPress: ((androidx.compose.ui.geometry.Offset) -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     Column(
-        modifier.clickable(onClick = onClick).padding(vertical = WbSpace.S3),
+        modifier
+            .then(
+                if (onLongPress != null) {
+                    Modifier.pressMenu(onClick, onLongPress, pressedColor = false)
+                } else {
+                    Modifier.clickable(indication = null, interactionSource = null, onClick = onClick)
+                },
+            ).padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(WbSpace.S2),
     ) {
-        IconTile(app.glyph, app.tint, 52.dp)
-        Text(app.title, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center, maxLines = 1)
+        MiniAppGlyph(app)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            app.title,
+            style = wbText(12.sp, color = nameColor),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -133,7 +190,7 @@ object MiniAppNavigation {
     apps: List<MiniApp>,
     onOpen: (MiniApp) -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = WbSpace.S3)) {
+    Column(Modifier.fillMaxWidth().background(LocalWeibanColors.current.bgSurface).padding(horizontal = WbSpace.S3, vertical = 6.dp)) {
         apps.chunked(4).forEach { row ->
             Row(Modifier.fillMaxWidth()) {
                 row.forEach { app -> MiniAppCell(app, Modifier.weight(1f)) { onOpen(app) } }
@@ -239,6 +296,11 @@ internal object MiniAppPrefs {
         save(MINE, mineIds.orEmpty())
     }
 
+    fun moveToFront(app: MiniApp) {
+        mineIds = listOf(app.id) + mine.map { it.id }.filter { it != app.id }
+        save(MINE, mineIds.orEmpty())
+    }
+
     fun toggleRecent(app: MiniApp) {
         if (app.privateByDefault) {
             showPrivate = if (app.id in showPrivate) showPrivate - app.id else showPrivate + app.id
@@ -310,36 +372,27 @@ internal val LocalCapsuleInset = compositionLocalOf { 0.dp }
         Capsule(Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = WbSpace.S2, end = WbSpace.S3), { more = true }, onClose)
     }
     if (more) {
-        WbSheet(null, { more = false }) {
-            val prefs = MiniAppPrefs
-            MenuGroup {
-                MenuRow(if (app in prefs.mine) "从我的小程序移除" else "添加到我的小程序") {
-                    more = false
-                    prefs.toggleMine(app)
-                }
-                MenuRow(if (prefs.inRecent(app)) "不在最近使用中显示" else "在最近使用中显示") {
-                    more = false
+        val prefs = MiniAppPrefs
+        ActionSheet(
+            listOf(
+                SheetAction(if (app in prefs.mine) "从我的小程序移除" else "添加到我的小程序") { prefs.toggleMine(app) },
+                SheetAction(if (prefs.inRecent(app)) "不在最近使用中显示" else "在最近使用中显示") {
                     prefs.toggleRecent(app)
-                }
-                MenuRow("关于这个小程序") {
-                    more = false
-                    about = true
-                }
-                MenuRow("重新进入") {
-                    more = false
-                    onReenter()
-                }
-            }
-            TextButton(onClick = { more = false }, modifier = Modifier.fillMaxWidth()) { Text("取消") }
-        }
+                },
+                SheetAction("关于这个小程序") { about = true },
+                SheetAction("重新进入", onClick = onReenter),
+            ),
+            app.title,
+        ) { more = false }
     }
     if (about) {
-        AlertDialog(
-            onDismissRequest = { about = false },
-            title = { Text(app.title) },
-            text = { Text("${app.desc}\n\n会用到的数据：${app.data}") },
-            confirmButton = { TextButton(onClick = { about = false }) { Text("知道了") } },
-        )
+        WbConfirm(
+            "${app.desc}\n\n会用到的数据：${app.data}",
+            "知道了",
+            title = app.title,
+            cancel = null,
+            onDismiss = { about = false },
+        ) { about = false }
     }
 }
 
@@ -350,18 +403,23 @@ private val CAPSULE_INSET = 104.dp
     onMore: () -> Unit,
     onClose: () -> Unit,
 ) {
+    // 胶囊（规格 5.1）：88×32，全圆角，白底 + 0.5 线框；左 more.svg、右 capsule_close.svg（20），中间 0.5×18 竖线。
     val colors = LocalWeibanColors.current
     val shape = RoundedCornerShape(WbRadius.Full)
     Row(
         modifier
-            .height(32.dp)
+            .size(88.dp, 32.dp)
             .clip(shape)
             .background(colors.bgSurface)
-            .border(1.dp, colors.borderHairline, shape),
+            .border(0.5.dp, colors.borderStrong, shape),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("···", Modifier.clickable(onClick = onMore).padding(horizontal = WbSpace.S4), style = MaterialTheme.typography.titleSmall)
-        Box(Modifier.width(1.dp).height(16.dp).background(colors.borderHairline))
-        Text("◯", Modifier.clickable(onClick = onClose).padding(horizontal = WbSpace.S4), style = MaterialTheme.typography.titleSmall)
+        Box(Modifier.weight(1f).fillMaxHeight().clickable(onClick = onMore), contentAlignment = Alignment.Center) {
+            WbIcon(DsR.drawable.wb_more, 20.dp, colors.textPrimary, contentDescription = "更多")
+        }
+        Box(Modifier.width(0.5.dp).height(18.dp).background(colors.borderHairline))
+        Box(Modifier.weight(1f).fillMaxHeight().clickable(onClick = onClose), contentAlignment = Alignment.Center) {
+            WbIcon(DsR.drawable.wb_drawn_capsule_close, 20.dp, colors.textPrimary, contentDescription = "关闭")
+        }
     }
 }

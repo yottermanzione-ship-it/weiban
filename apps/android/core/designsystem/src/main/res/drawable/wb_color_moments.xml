@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group android:rotation="0" android:pivotX="12" android:pivotY="12">
+        <path android:pathData="M 12 4.2 Q16.6 6.1 15.4 10.6 Q13.9 10.9 12 9.6 Z" android:strokeColor="#FF4A90D9" android:strokeWidth="1.5" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    </group>
+    <group android:rotation="60" android:pivotX="12" android:pivotY="12">
+        <path android:pathData="M 12 4.2 Q16.6 6.1 15.4 10.6 Q13.9 10.9 12 9.6 Z" android:strokeColor="#FF8E6FCF" android:strokeWidth="1.5" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    </group>
+    <group android:rotation="120" android:pivotX="12" android:pivotY="12">
+        <path android:pathData="M 12 4.2 Q16.6 6.1 15.4 10.6 Q13.9 10.9 12 9.6 Z" android:strokeColor="#FFE8503A" android:strokeWidth="1.5" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    </group>
+    <group android:rotation="180" android:pivotX="12" android:pivotY="12">
+        <path android:pathData="M 12 4.2 Q16.6 6.1 15.4 10.6 Q13.9 10.9 12 9.6 Z" android:strokeColor="#FFF08519" android:strokeWidth="1.5" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    </group>
+    <group android:rotation="240" android:pivotX="12" android:pivotY="12">
+        <path android:pathData="M 12 4.2 Q16.6 6.1 15.4 10.6 Q13.9 10.9 12 9.6 Z" android:strokeColor="#FFF2C230" android:strokeWidth="1.5" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    </group>
+    <group android:rotation="300" android:pivotX="12" android:pivotY="12">
+        <path android:pathData="M 12 4.2 Q16.6 6.1 15.4 10.6 Q13.9 10.9 12 9.6 Z" android:strokeColor="#FF4CAF50" android:strokeWidth="1.5" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    </group>
+</vector>

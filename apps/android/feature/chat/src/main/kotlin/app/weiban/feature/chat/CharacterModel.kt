@@ -149,7 +149,7 @@ import kotlinx.serialization.json.put
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(WbSpace.S1),
             ) {
-                IconTile(app.glyph, app.tint, 44.dp)
+                MiniAppGlyph(app, 40.dp)
                 Text(app.title, style = MaterialTheme.typography.labelSmall)
             }
         }

@@ -23,6 +23,8 @@ val LocalWeibanColors = staticCompositionLocalOf { WbColorSets.GreenLight }
 ) {
     val dark = isSystemInDarkTheme()
     val colors = WbColorSets.theme(WbThemeId.Green, dark) // v3 令牌只有一个主题（粉色已删除）
+    val popup = WbColorSets.mode(dark).uiPopupBg
+    val immersive = remember { mutableIntStateOf(0) }
     val scheme =
         if (dark) {
             darkColorScheme(
@@ -44,6 +46,11 @@ val LocalWeibanColors = staticCompositionLocalOf { WbColorSets.GreenLight }
                 outlineVariant = colors.borderHairline,
                 scrim = colors.bgScrim,
                 error = colors.textDanger,
+                surfaceContainerLowest = popup,
+                surfaceContainerLow = popup,
+                surfaceContainer = popup,
+                surfaceContainerHigh = popup,
+                surfaceContainerHighest = colors.bgInputField,
             )
         } else {
             lightColorScheme(
@@ -65,11 +72,17 @@ val LocalWeibanColors = staticCompositionLocalOf { WbColorSets.GreenLight }
                 outlineVariant = colors.borderHairline,
                 scrim = colors.bgScrim,
                 error = colors.textDanger,
+                surfaceContainerLowest = popup,
+                surfaceContainerLow = popup,
+                surfaceContainer = popup,
+                surfaceContainerHigh = popup,
+                surfaceContainerHighest = colors.bgInputField,
             )
         }
     CompositionLocalProvider(
         LocalWeibanColors provides colors,
         LocalWeibanModeColors provides if (dark) WbColorSets.ModeDark else WbColorSets.ModeLight,
+        LocalImmersive provides immersive,
     ) {
         MaterialTheme(colorScheme = scheme, typography = typography, shapes = shapes, content = content)
     }

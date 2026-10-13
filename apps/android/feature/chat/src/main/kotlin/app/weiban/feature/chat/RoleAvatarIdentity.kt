@@ -40,6 +40,7 @@ data class RoleAvatarIdentity(
     owner: OwnerRecord,
     role: RoleAvatarIdentity,
     size: Dp = 48.dp,
+    radius: Dp = size * WbRadius.AvatarRatio,
 ) {
     val auth by repository.auth.collectAsState()
     val authorized = auth?.user?.userId == owner.userId && auth?.session?.sessionId == owner.sessionId
@@ -71,7 +72,7 @@ data class RoleAvatarIdentity(
             baseStyle
         }
     Box(
-        Modifier.size(size).clip(RoundedCornerShape(size * WbRadius.AvatarRatio)).clearAndSetSemantics {
+        Modifier.size(size).clip(RoundedCornerShape(radius)).clearAndSetSemantics {
             contentDescription = "${name.ifEmpty { "角色" }}头像"
         },
     ) {
