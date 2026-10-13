@@ -440,7 +440,7 @@ private fun bubbleTemplate(
     original: Boolean,
 ): Float {
     val w = SHARE_WIDTH
-    val pink = WbColorSets.PinkLight
+    val pink = WbColorSets.GreenLight // v3 令牌删除了粉色主题
     val stickerHeight = stickerSize(p, input.label).second
     if (!p.dry) {
         if (original) {

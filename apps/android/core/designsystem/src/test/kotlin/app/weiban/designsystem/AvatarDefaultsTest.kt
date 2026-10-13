@@ -61,12 +61,8 @@ class AvatarDefaultsTest {
 
     @Test fun generatedUserColorsKeepTheFixedNeutralBackgroundInBothModes() {
         for (colors in listOf(WbColorSets.GreenLight, WbColorSets.GreenDark)) {
-            assertEquals(0xFFD9D9D9.toInt(), colors.bgUserAvatar.toArgb())
-            assertEquals(0xFF1A1A1A.toInt(), colors.textUserAvatar.toArgb())
-        }
-        for (colors in listOf(WbColorSets.PinkLight, WbColorSets.PinkDark)) {
-            assertEquals(0xFFE2DDE0.toInt(), colors.bgUserAvatar.toArgb())
-            assertEquals(0xFF1F1A1D.toInt(), colors.textUserAvatar.toArgb())
+            assertEquals(0xFFEDEDED.toInt(), colors.bgUserAvatar.toArgb())
+            assertEquals(0xFFBBBBBB.toInt(), colors.textUserAvatar.toArgb())
         }
     }
 }

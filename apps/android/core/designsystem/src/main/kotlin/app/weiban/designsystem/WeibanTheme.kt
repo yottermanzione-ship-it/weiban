@@ -22,7 +22,7 @@ val LocalWeibanColors = staticCompositionLocalOf { WbColorSets.GreenLight }
     content: @Composable () -> Unit,
 ) {
     val dark = isSystemInDarkTheme()
-    val colors = WbColorSets.theme(if (theme == "pink")WbThemeId.Pink else WbThemeId.Green, dark)
+    val colors = WbColorSets.theme(WbThemeId.Green, dark) // v3 令牌只有一个主题（粉色已删除）
     val scheme =
         if (dark) {
             darkColorScheme(

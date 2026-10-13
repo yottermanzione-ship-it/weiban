@@ -538,7 +538,7 @@ private suspend fun prepareMaterials(
                     }
                 }.awaitAll()
                 .toMap()
-        val pink = WbColorSets.PinkLight
+        val pink = WbColorSets.GreenLight // v3 令牌删除了粉色主题
         val meHidden = SharePerson("我", "我", pink.bgUserAvatar.toArgb(), pink.textUserAvatar.toArgb(), null)
         val meShown =
             if (data.items.any { it.senderKind == "user" }) {

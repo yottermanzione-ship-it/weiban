@@ -1,5 +1,5 @@
 // 由 scripts/build-tokens.mjs 从 docs/design/tokens.json 生成，请勿手改。
-// 令牌版本 2.1.0
+// 令牌版本 3.0.0
 package app.weiban.designsystem.tokens
 
 import androidx.compose.animation.core.CubicBezierEasing
@@ -74,6 +74,9 @@ data class WbModeColors(
     val tintPink: Color,
     val tintTeal: Color,
     val tintGray: Color,
+    val tintCyan: Color,
+    val tintIndigo: Color,
+    val tintCoral: Color,
     val familiarityL1: Color,
     val familiarityL2: Color,
     val familiarityL3: Color,
@@ -104,192 +107,153 @@ data class WbModeColors(
     val callDecline: Color,
     val callControl: Color,
     val callControlActive: Color,
+    val callControlIconActive: Color,
+    val callAvatarOverlay: Color,
     val overlayMenu: Color,
-    val overlayViewer: Color
+    val overlayViewer: Color,
+    val uiChevron: Color,
+    val uiSwipeRead: Color,
+    val uiSwipeHide: Color,
+    val uiMentionBg: Color,
+    val uiMentionText: Color,
+    val uiMentionBorder: Color,
+    val uiMenuLine: Color,
+    val uiPopupBg: Color,
+    val uiPopupLine: Color,
+    val uiPopupText: Color,
+    val uiToastBg: Color,
+    val uiTabLine: Color,
+    val uiTabIcon: Color,
+    val uiTimeDivider: Color,
+    val uiSystemText: Color,
+    val uiSearchPlaceholder: Color,
+    val uiAvatarGroupFallback: Color,
+    val uiMomentsSocialBg: Color,
+    val uiMomentsNewMsgBg: Color,
+    val uiRecordMask: Color,
+    val uiRecordBubble: Color,
+    val uiRecordBubbleCancel: Color,
+    val uiRecordCancelText: Color,
+    val uiRecordWave: Color,
+    val uiVoicePlaying: Color,
+    val uiVoiceError: Color,
+    val uiPullPanelBg: Color,
+    val uiPending: Color,
+    val uiStar: Color,
+    val uiButtonDisabledBg: Color,
+    val uiButtonDisabledText: Color,
+    val uiBrandDisabled: Color,
+    val uiFrameWide: Color
 )
 
 /** 主题标识。id 与网页 data-theme 相同 */
 enum class WbThemeId(val id: String, val displayName: String) {
-    Green("green", "默认"),
-    Pink("pink", "微伴粉");
+    Green("green", "默认");
     companion object { val Default = Green }
 }
 
 object WbColorSets {
     val GreenLight = WbThemeColors(
-        bgUserAvatar = Color(0xFFD9D9D9),
+        bgUserAvatar = Color(0xFFEDEDED),
         bgPage = Color(0xFFEDEDED),
         bgChat = Color(0xFFEDEDED),
         bgSurface = Color(0xFFFFFFFF),
-        bgSurfacePinned = Color(0xFFF7F7F7),
+        bgSurfacePinned = Color(0xFFEDEDED),
         bgElevated = Color(0xFFFFFFFF),
         bgInputField = Color(0xFFFFFFFF),
-        bgInputBar = Color(0xFFF7F7F7),
+        bgInputBar = Color(0xFFEDEDED),
         bgNavBar = Color(0xFFEDEDED),
         bgTabBar = Color(0xFFF7F7F7),
         bgScrim = Color(0x80000000),
         bgPressed = Color(0x0D000000),
         bgSkeleton = Color(0xFFE5E5E5),
-        textUserAvatar = Color(0xFF1A1A1A),
-        textPrimary = Color(0xFF1A1A1A),
-        textSecondary = Color(0xFF6B6B6B),
-        textTertiary = Color(0xFF8C8C8C),
-        textPlaceholder = Color(0xFFADADAD),
+        textUserAvatar = Color(0xFFBBBBBB),
+        textPrimary = Color(0xE6000000),
+        textSecondary = Color(0x8C000000),
+        textTertiary = Color(0x4D000000),
+        textPlaceholder = Color(0x4D000000),
         textOnBrand = Color(0xFFFFFFFF),
-        textLink = Color(0xFF4F6592),
-        textNameInMoments = Color(0xFF4F6592),
-        textDanger = Color(0xFFF04848),
+        textLink = Color(0xFF576B95),
+        textNameInMoments = Color(0xFF576B95),
+        textDanger = Color(0xFFFA5151),
         borderHairline = Color(0x1A000000),
-        borderStrong = Color(0xFFD9D9D9),
-        borderFocus = Color(0xFF0AA35A),
-        brandPrimary = Color(0xFF0AA35A),
-        brandPrimaryPressed = Color(0xFF088F4D),
-        brandSoft = Color(0xFFE8F7EF),
-        brandOnSoft = Color(0xFF0A7A43),
-        brandAccent = Color(0xFF8F72D9),
-        bubbleSelfBg = Color(0xFFA0E37C),
-        bubbleSelfText = Color(0xFF1A1A1A),
+        borderStrong = Color(0x26000000),
+        borderFocus = Color(0xFF07C160),
+        brandPrimary = Color(0xFF07C160),
+        brandPrimaryPressed = Color(0xFF38CD7F),
+        brandSoft = Color(0xFFE8F5E9),
+        brandOnSoft = Color(0xFF176B38),
+        brandAccent = Color(0xFF7B61D9),
+        bubbleSelfBg = Color(0xFF95EC69),
+        bubbleSelfText = Color(0xFF111111),
         bubbleOtherBg = Color(0xFFFFFFFF),
-        bubbleOtherText = Color(0xFF1A1A1A),
+        bubbleOtherText = Color(0xE6000000),
         bubbleQuoteBg = Color(0x0D000000),
-        bubbleQuoteText = Color(0xFF6B6B6B)
+        bubbleQuoteText = Color(0x8C000000)
     )
     val GreenDark = WbThemeColors(
-        bgUserAvatar = Color(0xFFD9D9D9),
+        bgUserAvatar = Color(0xFFEDEDED),
         bgPage = Color(0xFF111111),
         bgChat = Color(0xFF111111),
         bgSurface = Color(0xFF191919),
-        bgSurfacePinned = Color(0xFF232323),
+        bgSurfacePinned = Color(0xFF232326),
         bgElevated = Color(0xFF2C2C2C),
-        bgInputField = Color(0xFF2C2C2C),
-        bgInputBar = Color(0xFF191919),
-        bgNavBar = Color(0xFF111111),
-        bgTabBar = Color(0xFF191919),
+        bgInputField = Color(0xFF191919),
+        bgInputBar = Color(0xFF111111),
+        bgNavBar = Color(0xFF202020),
+        bgTabBar = Color(0xFF202020),
         bgScrim = Color(0x99000000),
-        bgPressed = Color(0x0FFFFFFF),
-        bgSkeleton = Color(0xFF262626),
-        textUserAvatar = Color(0xFF1A1A1A),
-        textPrimary = Color(0xFFE6E6E6),
-        textSecondary = Color(0xFFADADAD),
-        textTertiary = Color(0xFF8C8C8C),
-        textPlaceholder = Color(0xFF6B6B6B),
+        bgPressed = Color(0x0DFFFFFF),
+        bgSkeleton = Color(0xFF2C2C2C),
+        textUserAvatar = Color(0xFFBBBBBB),
+        textPrimary = Color(0xCCFFFFFF),
+        textSecondary = Color(0x80FFFFFF),
+        textTertiary = Color(0x4DFFFFFF),
+        textPlaceholder = Color(0x4DFFFFFF),
         textOnBrand = Color(0xFFFFFFFF),
-        textLink = Color(0xFF8DA0CC),
-        textNameInMoments = Color(0xFF8DA0CC),
-        textDanger = Color(0xFFFF6B6B),
-        borderHairline = Color(0x14FFFFFF),
-        borderStrong = Color(0xFF4D4D4D),
-        borderFocus = Color(0xFF3CC783),
-        brandPrimary = Color(0xFF0AA35A),
-        brandPrimaryPressed = Color(0xFF088F4D),
-        brandSoft = Color(0x2E0AA35A),
-        brandOnSoft = Color(0xFF5FD39A),
-        brandAccent = Color(0xFFC9B5F5),
-        bubbleSelfBg = Color(0xFF3BAA6A),
-        bubbleSelfText = Color(0xFF1A1A1A),
-        bubbleOtherBg = Color(0xFF2C2C2C),
-        bubbleOtherText = Color(0xFFE6E6E6),
+        textLink = Color(0xFF7D90A9),
+        textNameInMoments = Color(0xFF7D90A9),
+        textDanger = Color(0xFFFA5151),
+        borderHairline = Color(0x0DFFFFFF),
+        borderStrong = Color(0x26FFFFFF),
+        borderFocus = Color(0xFF07C160),
+        brandPrimary = Color(0xFF07C160),
+        brandPrimaryPressed = Color(0xFF059A4C),
+        brandSoft = Color(0xFF1E2A21),
+        brandOnSoft = Color(0xFF07C160),
+        brandAccent = Color(0xFF7B61D9),
+        bubbleSelfBg = Color(0xFF3EB575),
+        bubbleSelfText = Color(0xFF111111),
+        bubbleOtherBg = Color(0xFF191919),
+        bubbleOtherText = Color(0xCCFFFFFF),
         bubbleQuoteBg = Color(0x0FFFFFFF),
-        bubbleQuoteText = Color(0xFFADADAD)
-    )
-    val PinkLight = WbThemeColors(
-        bgUserAvatar = Color(0xFFE2DDE0),
-        bgPage = Color(0xFFF6F3F5),
-        bgChat = Color(0xFFF7F2F4),
-        bgSurface = Color(0xFFFFFFFF),
-        bgSurfacePinned = Color(0xFFFBF9FA),
-        bgElevated = Color(0xFFFFFFFF),
-        bgInputField = Color(0xFFFFFFFF),
-        bgInputBar = Color(0xFFF6F3F5),
-        bgNavBar = Color(0xFFF6F3F5),
-        bgTabBar = Color(0xFFFBF9FA),
-        bgScrim = Color(0x73140C10),
-        bgPressed = Color(0x0F1F1A1D),
-        bgSkeleton = Color(0xFFEEEAEC),
-        textUserAvatar = Color(0xFF1F1A1D),
-        textPrimary = Color(0xFF1F1A1D),
-        textSecondary = Color(0xFF655F63),
-        textTertiary = Color(0xFF857E83),
-        textPlaceholder = Color(0xFFA8A1A6),
-        textOnBrand = Color(0xFFFFFFFF),
-        textLink = Color(0xFFA32457),
-        textNameInMoments = Color(0xFF4E5F8C),
-        textDanger = Color(0xFFF04848),
-        borderHairline = Color(0x1A1F1A1D),
-        borderStrong = Color(0xFFE2DDE0),
-        borderFocus = Color(0xFFE0457B),
-        brandPrimary = Color(0xFFE0457B),
-        brandPrimaryPressed = Color(0xFFC7346A),
-        brandSoft = Color(0xFFFFE6EE),
-        brandOnSoft = Color(0xFFA32457),
-        brandAccent = Color(0xFF8F72D9),
-        bubbleSelfBg = Color(0xFFFFD6E3),
-        bubbleSelfText = Color(0xFF1F1A1D),
-        bubbleOtherBg = Color(0xFFFFFFFF),
-        bubbleOtherText = Color(0xFF1F1A1D),
-        bubbleQuoteBg = Color(0x0D1F1A1D),
-        bubbleQuoteText = Color(0xFF655F63)
-    )
-    val PinkDark = WbThemeColors(
-        bgUserAvatar = Color(0xFFE2DDE0),
-        bgPage = Color(0xFF0B0A0C),
-        bgChat = Color(0xFF121013),
-        bgSurface = Color(0xFF1C1A1E),
-        bgSurfacePinned = Color(0xFF262329),
-        bgElevated = Color(0xFF262329),
-        bgInputField = Color(0xFF262329),
-        bgInputBar = Color(0xFF1C1A1E),
-        bgNavBar = Color(0xFF0B0A0C),
-        bgTabBar = Color(0xFF1C1A1E),
-        bgScrim = Color(0x99000000),
-        bgPressed = Color(0x14FFFFFF),
-        bgSkeleton = Color(0xFF262329),
-        textUserAvatar = Color(0xFF1F1A1D),
-        textPrimary = Color(0xFFEDE8EC),
-        textSecondary = Color(0xFFA8A1A6),
-        textTertiary = Color(0xFF857E83),
-        textPlaceholder = Color(0xFF655F63),
-        textOnBrand = Color(0xFFFFFFFF),
-        textLink = Color(0xFFFFB3CA),
-        textNameInMoments = Color(0xFF9AABD6),
-        textDanger = Color(0xFFFF6B6B),
-        borderHairline = Color(0x1AFFFFFF),
-        borderStrong = Color(0xFF4A4448),
-        borderFocus = Color(0xFFF784A8),
-        brandPrimary = Color(0xFFE0457B),
-        brandPrimaryPressed = Color(0xFFC7346A),
-        brandSoft = Color(0x2EE0457B),
-        brandOnSoft = Color(0xFFFFB3CA),
-        brandAccent = Color(0xFFC9B5F5),
-        bubbleSelfBg = Color(0xFF8A3358),
-        bubbleSelfText = Color(0xFFFFFFFF),
-        bubbleOtherBg = Color(0xFF262329),
-        bubbleOtherText = Color(0xFFEDE8EC),
-        bubbleQuoteBg = Color(0x0FFFFFFF),
-        bubbleQuoteText = Color(0xFFA8A1A6)
+        bubbleQuoteText = Color(0x80FFFFFF)
     )
     val ModeLight = WbModeColors(
-        statusSuccess = Color(0xFF2BA471),
-        statusSuccessSoft = Color(0xFFE2F5EC),
-        statusWarning = Color(0xFFE8892B),
-        statusWarningSoft = Color(0xFFFDF0E1),
-        statusWarningText = Color(0xFF8A4B0F),
-        statusDanger = Color(0xFFF04848),
+        statusSuccess = Color(0xFF07C160),
+        statusSuccessSoft = Color(0xFFE8F5E9),
+        statusWarning = Color(0xFFFA9D3B),
+        statusWarningSoft = Color(0xFFFFF1C7),
+        statusWarningText = Color(0xFFE08A00),
+        statusDanger = Color(0xFFFA5151),
         statusDangerSoft = Color(0xFFFDE7E7),
-        statusInfo = Color(0xFF3B7FE0),
+        statusInfo = Color(0xFF2782D7),
         statusInfoSoft = Color(0xFFE6F0FD),
-        badgeUnread = Color(0xFFF04848),
+        badgeUnread = Color(0xFFFA5151),
         badgeOnUnread = Color(0xFFFFFFFF),
-        badgeMuted = Color(0xFFC4C4C4),
-        amountIncome = Color(0xFF2BA471),
-        amountExpense = Color(0xFF1A1A1A),
-        tintOrange = Color(0xFFE8892B),
-        tintBlue = Color(0xFF3B7FE0),
-        tintGold = Color(0xFFD9A23A),
-        tintLilac = Color(0xFF8F72D9),
-        tintPink = Color(0xFFE0457B),
-        tintTeal = Color(0xFF2BA471),
+        badgeMuted = Color(0xFFFA5151),
+        amountIncome = Color(0xFF07C160),
+        amountExpense = Color(0xE6000000),
+        tintOrange = Color(0xFFFA9D3B),
+        tintBlue = Color(0xFF2782D7),
+        tintGold = Color(0xFFF6BE00),
+        tintLilac = Color(0xFF7B61D9),
+        tintPink = Color(0xFFFA5151),
+        tintTeal = Color(0xFF07C160),
         tintGray = Color(0xFF8C8C8C),
+        tintCyan = Color(0xFF10A8E5),
+        tintIndigo = Color(0xFF6467F0),
+        tintCoral = Color(0xFFF26B51),
         familiarityL1 = Color(0xFFADADAD),
         familiarityL2 = Color(0xFFF784A8),
         familiarityL3 = Color(0xFFE0457B),
@@ -312,39 +276,77 @@ object WbColorSets {
         modeRomance = Color(0xFFE0457B),
         modeAdult = Color(0xFF6B6B6B),
         modeCustom = Color(0xFF8F72D9),
-        callBgTop = Color(0xFF26262B),
-        callBgBottom = Color(0xFF111113),
+        callBgTop = Color(0xFF1A1A1A),
+        callBgBottom = Color(0xFF1A1A1A),
         callText = Color(0xFFFFFFFF),
-        callTextSecondary = Color(0xADFFFFFF),
-        callAccept = Color(0xFF2BA471),
-        callDecline = Color(0xFFF04848),
-        callControl = Color(0x24FFFFFF),
+        callTextSecondary = Color(0xB3FFFFFF),
+        callAccept = Color(0xFF07C160),
+        callDecline = Color(0xFFE64A45),
+        callControl = Color(0x59000000),
         callControlActive = Color(0xFFFFFFFF),
-        overlayMenu = Color(0xFF262626),
-        overlayViewer = Color(0xFF000000)
+        callControlIconActive = Color(0xFF111111),
+        callAvatarOverlay = Color(0x8C000000),
+        overlayMenu = Color(0xFF4C4C4C),
+        overlayViewer = Color(0xFF000000),
+        uiChevron = Color(0xFFC8C8C8),
+        uiSwipeRead = Color(0xFF1989FA),
+        uiSwipeHide = Color(0xFFFA9D3B),
+        uiMentionBg = Color(0xFFFFF1C7),
+        uiMentionText = Color(0xFFE08A00),
+        uiMentionBorder = Color(0xFFFFC44D),
+        uiMenuLine = Color(0x33FFFFFF),
+        uiPopupBg = Color(0xFFFFFFFF),
+        uiPopupLine = Color(0xFFE5E5E5),
+        uiPopupText = Color(0xFF181818),
+        uiToastBg = Color(0xEA202020),
+        uiTabLine = Color(0xFFD1D1D1),
+        uiTabIcon = Color(0xFF191919),
+        uiTimeDivider = Color(0xFF888888),
+        uiSystemText = Color(0xFF999999),
+        uiSearchPlaceholder = Color(0xFFC5C5C5),
+        uiAvatarGroupFallback = Color(0xFFFF8800),
+        uiMomentsSocialBg = Color(0xFFF3F3F3),
+        uiMomentsNewMsgBg = Color(0xFF5F5F5F),
+        uiRecordMask = Color(0xAD000000),
+        uiRecordBubble = Color(0xFF91EF6D),
+        uiRecordBubbleCancel = Color(0xFFEDEDED),
+        uiRecordCancelText = Color(0xFFFF7A7A),
+        uiRecordWave = Color(0x99333333),
+        uiVoicePlaying = Color(0xFF1F7A32),
+        uiVoiceError = Color(0xFFE84040),
+        uiPullPanelBg = Color(0xFF2C2C2E),
+        uiPending = Color(0xFFFFBB00),
+        uiStar = Color(0xFFFFC300),
+        uiButtonDisabledBg = Color(0xFFE1E1E1),
+        uiButtonDisabledText = Color(0xFFBBBBBB),
+        uiBrandDisabled = Color(0xFF9BE6BD),
+        uiFrameWide = Color(0xFFF4F5F7)
     )
     val ModeDark = WbModeColors(
-        statusSuccess = Color(0xFF4CC38A),
-        statusSuccessSoft = Color(0x2E2BA471),
-        statusWarning = Color(0xFFF5B36B),
-        statusWarningSoft = Color(0x29E8892B),
-        statusWarningText = Color(0xFFF5B36B),
-        statusDanger = Color(0xFFFF6B6B),
-        statusDangerSoft = Color(0x2EF04848),
-        statusInfo = Color(0xFF6FA3F0),
-        statusInfoSoft = Color(0x2E3B7FE0),
-        badgeUnread = Color(0xFFF04848),
+        statusSuccess = Color(0xFF07C160),
+        statusSuccessSoft = Color(0xFF1E2A21),
+        statusWarning = Color(0xFFC87D2F),
+        statusWarningSoft = Color(0xFF4A3A12),
+        statusWarningText = Color(0xFFE08A00),
+        statusDanger = Color(0xFFFA5151),
+        statusDangerSoft = Color(0x2EFA5151),
+        statusInfo = Color(0xFF2782D7),
+        statusInfoSoft = Color(0x2E2782D7),
+        badgeUnread = Color(0xFFFA5151),
         badgeOnUnread = Color(0xFFFFFFFF),
-        badgeMuted = Color(0xFF6B6B6B),
-        amountIncome = Color(0xFF4CC38A),
-        amountExpense = Color(0xFFE6E6E6),
-        tintOrange = Color(0xFFF5B36B),
-        tintBlue = Color(0xFF6FA3F0),
-        tintGold = Color(0xFFD9A23A),
-        tintLilac = Color(0xFFC9B5F5),
-        tintPink = Color(0xFFF784A8),
-        tintTeal = Color(0xFF4CC38A),
-        tintGray = Color(0xFFADADAD),
+        badgeMuted = Color(0xFFFA5151),
+        amountIncome = Color(0xFF07C160),
+        amountExpense = Color(0xCCFFFFFF),
+        tintOrange = Color(0xFFFA9D3B),
+        tintBlue = Color(0xFF2782D7),
+        tintGold = Color(0xFFF6BE00),
+        tintLilac = Color(0xFF7B61D9),
+        tintPink = Color(0xFFFA5151),
+        tintTeal = Color(0xFF07C160),
+        tintGray = Color(0xFF8C8C8C),
+        tintCyan = Color(0xFF10A8E5),
+        tintIndigo = Color(0xFF6467F0),
+        tintCoral = Color(0xFFF26B51),
         familiarityL1 = Color(0xFF8C8C8C),
         familiarityL2 = Color(0xFFFFB3CA),
         familiarityL3 = Color(0xFFF784A8),
@@ -367,20 +369,54 @@ object WbColorSets {
         modeRomance = Color(0xFFF784A8),
         modeAdult = Color(0xFFADADAD),
         modeCustom = Color(0xFFC9B5F5),
-        callBgTop = Color(0xFF26262B),
-        callBgBottom = Color(0xFF111113),
+        callBgTop = Color(0xFF1A1A1A),
+        callBgBottom = Color(0xFF1A1A1A),
         callText = Color(0xFFFFFFFF),
-        callTextSecondary = Color(0xADFFFFFF),
-        callAccept = Color(0xFF2BA471),
-        callDecline = Color(0xFFF04848),
-        callControl = Color(0x24FFFFFF),
+        callTextSecondary = Color(0xB3FFFFFF),
+        callAccept = Color(0xFF07C160),
+        callDecline = Color(0xFFE64A45),
+        callControl = Color(0x59000000),
         callControlActive = Color(0xFFFFFFFF),
-        overlayMenu = Color(0xFF2C2C2C),
-        overlayViewer = Color(0xFF000000)
+        callControlIconActive = Color(0xFF111111),
+        callAvatarOverlay = Color(0x8C000000),
+        overlayMenu = Color(0xFF4C4C4C),
+        overlayViewer = Color(0xFF000000),
+        uiChevron = Color(0xFFC8C8C8),
+        uiSwipeRead = Color(0xFF1989FA),
+        uiSwipeHide = Color(0xFFC87D2F),
+        uiMentionBg = Color(0xFF4A3A12),
+        uiMentionText = Color(0xFFE08A00),
+        uiMentionBorder = Color(0xFFFFC44D),
+        uiMenuLine = Color(0x33FFFFFF),
+        uiPopupBg = Color(0xFF2C2C2C),
+        uiPopupLine = Color(0xFF3A3A3A),
+        uiPopupText = Color(0xFFFFFFFF),
+        uiToastBg = Color(0xEA202020),
+        uiTabLine = Color(0x33FFFFFF),
+        uiTabIcon = Color(0xFFEDEDED),
+        uiTimeDivider = Color(0xFF8E8E93),
+        uiSystemText = Color(0xFF999999),
+        uiSearchPlaceholder = Color(0x4DFFFFFF),
+        uiAvatarGroupFallback = Color(0xFFFF8800),
+        uiMomentsSocialBg = Color(0xFF242426),
+        uiMomentsNewMsgBg = Color(0xFF5F5F5F),
+        uiRecordMask = Color(0xAD000000),
+        uiRecordBubble = Color(0xFF91EF6D),
+        uiRecordBubbleCancel = Color(0xFFEDEDED),
+        uiRecordCancelText = Color(0xFFFF7A7A),
+        uiRecordWave = Color(0x99333333),
+        uiVoicePlaying = Color(0xFF1F7A32),
+        uiVoiceError = Color(0xFFE84040),
+        uiPullPanelBg = Color(0xFF2C2C2E),
+        uiPending = Color(0xFFCC9C00),
+        uiStar = Color(0xFFFFC300),
+        uiButtonDisabledBg = Color(0xFF2C2C2C),
+        uiButtonDisabledText = Color(0xFFBBBBBB),
+        uiBrandDisabled = Color(0xFF9BE6BD),
+        uiFrameWide = Color(0xFF111111)
     )
     fun theme(id: WbThemeId, dark: Boolean): WbThemeColors = when (id) {
         WbThemeId.Green -> if (dark) GreenDark else GreenLight
-        WbThemeId.Pink -> if (dark) PinkDark else PinkLight
     }
     fun mode(dark: Boolean): WbModeColors = if (dark) ModeDark else ModeLight
 }
@@ -406,7 +442,7 @@ object WbSupportPalette {
 
 /** 分享图固定色 */
 object WbShare {
-    val Logo = Color(0xFFE0457B)
+    val Logo = Color(0xFF07C160)
     val StickerBg = Color(0xFFFFFFFF)
     val StickerBorder = Color(0xFFFFB3CA)
     val StickerText = Color(0xFF1F1A1D)
@@ -417,11 +453,13 @@ object WbShare {
 
 /** 字号（sp，已随系统字体缩放；应用内字体大小设置再乘 WbFontScale） */
 object WbFontSize {
+    val Micro = 10.sp
     val Caption2 = 11.sp
     val Caption1 = 12.sp
     val Footnote = 13.sp
     val Subhead = 14.sp
     val Callout = 15.sp
+    val BodySmall = 16.sp
     val Body = 17.sp
     val Headline = 17.sp
     val Title3 = 20.sp
@@ -431,9 +469,9 @@ object WbFontSize {
     val EmojiOnly = 40.sp
 }
 object WbLineHeight {
-    const val Tight = 1.25f
-    const val Normal = 1.45f
-    const val Relaxed = 1.7f
+    const val Tight = 1.2f
+    const val Normal = 1.35f
+    const val Relaxed = 1.45f
 }
 object WbFontWeight {
     val Regular = FontWeight(400)
@@ -461,38 +499,43 @@ object WbSpace {
 object WbRadius {
     val Xs = 4.dp
     val Sm = 6.dp
-    val Bubble = 6.dp
-    val Md = 12.dp
-    val Lg = 16.dp
-    val Xl = 20.dp
+    val Bubble = 8.dp
+    val Md = 8.dp
+    val Lg = 12.dp
+    val Xl = 14.dp
     val Full = 999.dp
-    const val AvatarRatio = 0.12f
+    const val AvatarRatio = 0.1f
 }
 object WbSize {
     val AdminMinWidth = 1200.dp
     val AdminContentMaxWidth = 1440.dp
-    val TouchTarget = 44.dp
-    val NavBar = 44.dp
-    val TabBar = 50.dp
-    val InputBarMin = 56.dp
+    val TouchTarget = 40.dp
+    val NavBar = 56.dp
+    val TabBar = 56.dp
+    val InputBarMin = 52.dp
     val ListRow = 72.dp
     val ContactRow = 56.dp
     val SettingRow = 56.dp
     val BubbleTail = 6.dp
     val ListIcon = 24.dp
     val GridIcon = 28.dp
-    val GridCell = 88.dp
+    val GridCell = 58.dp
     val WalletCard = 128.dp
     val AvatarXs = 24.dp
-    val AvatarSm = 32.dp
+    val AvatarSm = 28.dp
     val AvatarMd = 40.dp
     val AvatarLg = 48.dp
     val AvatarXl = 64.dp
-    val AvatarXxl = 96.dp
-    const val BubbleMaxWidthRatio = 0.70f
-    val ImageMessageMax = 200.dp
+    val AvatarXxl = 70.dp
+    const val BubbleMaxWidthRatio = 0.68f
+    val ImageMessageMax = 150.dp
     val ContentMaxWidth = 640.dp
     val SidebarWidth = 360.dp
+    val TwoLineRow = 72.dp
+    val GroupGap = 8.dp
+    val GroupHeader = 35.7.dp
+    val MiniAppIcon = 48.dp
+    val CallAvatar = 168.dp
 }
 
 /** 阴影用 elevation 近似（浮层专用） */
@@ -505,13 +548,17 @@ object WbElevation {
 
 object WbMotion {
     const val InstantMs = 100
+    const val MenuMs = 120
     const val FastMs = 160
-    const val BaseMs = 240
+    const val SwipeMs = 180
+    const val BaseMs = 250
     const val PageMs = 300
     const val SlowMs = 420
+    const val RecordWaveMs = 760
+    const val VoiceWaveMs = 900
     const val TypingCycleMs = 1200
     const val RingCycleMs = 1800
-    val Standard = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+    val Standard = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)
     val Decelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
     val Accelerate = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
     val Spring = CubicBezierEasing(0.34f, 1.36f, 0.64f, 1f)
