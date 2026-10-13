@@ -128,11 +128,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
             <CharacterName id={characterId} fallback={contact?.remark} />
           </small>
         </Link>
-        <Link
-          className="member-cell"
-          to={`/groups/new?with=${characterId}`}
-          aria-label="发起群聊"
-        >
+        <Link className="member-cell" to={`/groups/new?with=${characterId}`} aria-label="发起群聊">
           <span className="member-action">
             <OldIcon name="wechat/add" size={26} />
           </span>
@@ -174,7 +170,11 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
         <>
           <GroupHeader>聊天模型</GroupHeader>
           <MenuGroup>
-            <MenuRow to={`/characters/${characterId}/model`} label="TA 用的模型" value={modelName} />
+            <MenuRow
+              to={`/characters/${characterId}/model`}
+              label="TA 用的模型"
+              value={modelName}
+            />
           </MenuGroup>
           <GroupHeader>和 TA 一起用</GroupHeader>
           <MenuGroup>

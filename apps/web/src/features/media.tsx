@@ -297,9 +297,7 @@ export function ImageViewer({
         <ActionSheet
           onClose={() => setMenu(false)}
           items={[
-            ...(!isIPhone()
-              ? [{ label: '保存图片', onClick: () => void saveImage(mediaId) }]
-              : []),
+            ...(!isIPhone() ? [{ label: '保存图片', onClick: () => void saveImage(mediaId) }] : []),
             { label: '收藏', onClick: () => void addFavorite(message) },
             ...(canAddToStickers(message)
               ? [{ label: '添加到表情', onClick: () => void addToStickers(message) }]

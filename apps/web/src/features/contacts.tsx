@@ -664,9 +664,9 @@ export function CharacterPage({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [restore, setRestore] = useState(false);
-  const [sheet, setSheet] = useState<
-    'remark' | 'intro' | 'greet' | 'more' | 'relationship' | null
-  >(null);
+  const [sheet, setSheet] = useState<'remark' | 'intro' | 'greet' | 'more' | 'relationship' | null>(
+    null,
+  );
   const greetInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!onboarding || !state.initialized || !contact?.conversationId) return;

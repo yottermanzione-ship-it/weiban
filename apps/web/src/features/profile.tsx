@@ -74,7 +74,11 @@ export function ProfilePage() {
         fallback="/me"
         left={
           firstUse ? (
-            <button type="button" className="text-button text-action" onClick={() => void auth.logout()}>
+            <button
+              type="button"
+              className="text-button text-action"
+              onClick={() => void auth.logout()}
+            >
               返回登录
             </button>
           ) : undefined

@@ -47,12 +47,7 @@ export function MePage() {
         />
       </MenuGroup>
       <MenuGroup>
-        <MenuRow
-          to="/me/favorites"
-          image="color/color_favorites.svg"
-          iconSize={23}
-          label="收藏"
-        />
+        <MenuRow to="/me/favorites" image="color/color_favorites.svg" iconSize={23} label="收藏" />
         <MenuRow to="/me/moments" icon="wechat/picture" tint="blue" label="朋友圈" />
         <ComingSoonRow id="channels" />
         <ComingSoonRow id="cards" />
@@ -120,7 +115,12 @@ export function ServicesPage() {
       </MenuGroup>
       <GroupHeader>偏好</GroupHeader>
       <MenuGroup>
-        <MenuRow to="/services/proactive" icon="wechat/chat" tint="green" label="主动消息与免打扰" />
+        <MenuRow
+          to="/services/proactive"
+          icon="wechat/chat"
+          tint="green"
+          label="主动消息与免打扰"
+        />
         <MenuRow to="/services/familiarity" icon="wechat/heart" tint="red" label="熟悉度总览" />
       </MenuGroup>
       <p className="hint page-note center">卡册、宠物、每日一问等玩法在「发现 › 小程序」</p>

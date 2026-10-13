@@ -14,6 +14,19 @@ import { friendlyError, useRemote } from '../data/use-remote.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { Name, groupMembers } from './chat.js';
+import { OldIcon } from './old-icons.js';
+import { listTime } from './time-format.js';
+import {
+  ActionSheet,
+  CheckCircle,
+  EmptyState,
+  MenuGroup,
+  MenuRow,
+  NavBar,
+  SwitchRow,
+} from './shell-kit.js';
+import { Dialog } from './toast.js';
+import { FieldSheet } from './chat-settings.js';
 
 function groupError(e: unknown): string {
   if (e instanceof ApiFailure && e.status === 422 && e.code === 'limit_reached')
@@ -38,37 +51,53 @@ export function GroupListPage() {
     );
   return (
     <main>
-      <Link to="/contacts">‹ 通讯录</Link>
-      <h1 className="page-title">群聊</h1>
+      <NavBar title="群聊" fallback="/contacts" />
       {groups.length === 0 ? (
-        <div className="empty">
-          <p>还没有群聊</p>
-          <p className="hint">在会话列表右上角「发起群聊」可以建群</p>
-        </div>
+        <EmptyState
+          icon="wechat/chat_pair"
+          title="还没有群聊"
+          desc="在会话列表右上角「发起群聊」可以建群"
+        />
       ) : (
         <>
-          <div className="panel rows">
+          <MenuGroup className="group-list">
             {groups.map((g) => (
-              <Link key={g.conversationId} to={`/chat/${g.conversationId}`} className="role-row">
-                <GroupAvatar ids={groupMembers(g).map((m) => m.refId)} />
-                <Name conversation={g} />
+              <Link key={g.conversationId} to={`/chat/${g.conversationId}`} className="group-row">
+                <GroupAvatar ids={groupMembers(g).map((m) => m.refId)} size={44} />
+                <span className="group-row-text">
+                  <span>
+                    <Name conversation={g} />
+                  </span>
+                  <small>{groupMembers(g).length + 1} 位成员</small>
+                </span>
+                <small className="group-row-time">
+                  {listTime(g.lastMessage?.createdAt ?? g.updatedAt)}
+                </small>
+                <OldIcon name="wechat/chevron_right" size={20} className="menu-caret" />
               </Link>
             ))}
-          </div>
-          <p className="hint center">{groups.length} 个群聊</p>
+          </MenuGroup>
+          <p className="contacts-count">{groups.length} 个群聊</p>
         </>
       )}
     </main>
   );
 }
 
-/** 群头像：最多 4 个成员头像拼成宫格。 */
-export function GroupAvatar({ ids }: { ids: string[] }) {
+/** 群头像：最多 4 个成员头像拼成宫格；没有成员时橙底白色群组图标（3.12）。 */
+export function GroupAvatar({ ids, size = 48 }: { ids: string[]; size?: number }) {
+  const cell = Math.floor((size - 4) / 2);
   return (
-    <span className="group-avatar" aria-hidden>
-      {ids.slice(0, 4).map((id) => (
-        <CharacterAvatar key={id} id={id} size={22} />
-      ))}
+    <span
+      className={`group-avatar ${ids.length === 0 ? 'empty' : ''}`}
+      style={{ width: size, height: size, gridTemplateColumns: `repeat(2, ${cell}px)` }}
+      aria-hidden
+    >
+      {ids.length === 0 ? (
+        <OldIcon name="wechat/chat_pair" size={Math.round(size * 0.52)} />
+      ) : (
+        ids.slice(0, 4).map((id) => <CharacterAvatar key={id} id={id} size={cell} radius={2} />)
+      )}
     </span>
   );
 }
@@ -133,47 +162,81 @@ export function SelectMembersPage() {
     }
   }
   return (
-    <main>
-      <header className="page-header">
-        <button className="text-button" onClick={() => navigate(-1)}>
-          取消
-        </button>
-        <h1>{addTo ? '添加成员' : '发起群聊'}</h1>
-        <button className="primary" disabled={pending || !enough} onClick={() => void done()}>
-          完成{total > 0 ? `(${addTo ? picked.length : total})` : ''}
-        </button>
-      </header>
-      <label className="search-label">
-        搜索
-        <input value={query} onChange={(e) => setQuery(e.target.value)} />
-      </label>
-      {full && <p className="hint">群里最多 {GROUP_MEMBER_LIMIT} 个角色</p>}
-      {error && <p role="alert">{error}</p>}
-      {contacts.length === 0 && <p className="empty">通讯录里还没有角色</p>}
-      <div className="panel rows">
+    <main className="select-members">
+      <NavBar
+        title={addTo ? '添加成员' : '发起群聊'}
+        left={
+          <button
+            type="button"
+            className="text-button text-action plain-text"
+            onClick={() => navigate(-1)}
+          >
+            取消
+          </button>
+        }
+        right={
+          <button className="primary" disabled={pending || !enough} onClick={() => void done()}>
+            完成{total > 0 ? `(${addTo ? picked.length : total})` : ''}
+          </button>
+        }
+      />
+      {picked.length > 0 && (
+        <div className="picked-strip">
+          {picked.map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setPicked((v) => v.filter((x) => x !== id))}
+              aria-label={`取消选择${nameOf(id)}`}
+            >
+              <CharacterAvatar id={id} size={44} radius={6} />
+              <small>{nameOf(id)}</small>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="search-strip">
+        <label className="search-entry">
+          <OldIcon name="wechat/search" size={17} />
+          <input
+            placeholder="搜索"
+            aria-label="搜索"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </label>
+      </div>
+      {full && <p className="hint page-note">群里最多 {GROUP_MEMBER_LIMIT} 个角色</p>}
+      {error && (
+        <p role="alert" className="notice-bar">
+          {error}
+        </p>
+      )}
+      {contacts.length === 0 && <EmptyState icon="wechat/person" title="通讯录里还没有角色" />}
+      <MenuGroup>
         {list.map((c) => {
           const isLocked = locked.includes(c.characterId);
           const checked = isLocked || picked.includes(c.characterId);
+          const disabled = isLocked || (!checked && full);
           return (
-            <label key={c.characterId} className="role-row check-row">
-              <input
-                type="checkbox"
-                checked={checked}
-                disabled={isLocked || (!checked && full)}
-                onChange={(e) =>
-                  setPicked((v) =>
-                    e.target.checked
-                      ? [...v, c.characterId]
-                      : v.filter((id) => id !== c.characterId),
-                  )
-                }
-              />
-              <CharacterAvatar id={c.characterId} size={40} />
-              {nameOf(c.characterId)}
-            </label>
+            <button
+              key={c.characterId}
+              type="button"
+              className="select-row"
+              disabled={disabled}
+              onClick={() =>
+                setPicked((v) =>
+                  checked ? v.filter((id) => id !== c.characterId) : [...v, c.characterId],
+                )
+              }
+            >
+              <CheckCircle checked={checked} disabled={isLocked} />
+              <CharacterAvatar id={c.characterId} size={46} radius={6} />
+              <span>{nameOf(c.characterId)}</span>
+            </button>
           );
         })}
-      </div>
+      </MenuGroup>
     </main>
   );
 }
@@ -199,7 +262,7 @@ export function GroupSettingsPage() {
   if (!conversation || conversation.type !== 'group')
     return (
       <main>
-        <Link to="/chat">返回微伴</Link>
+        <NavBar title="聊天信息" fallback="/chat" />
         <p className="empty">{state.initialized ? '这个群聊已解散' : '正在读取…'}</p>
       </main>
     );
@@ -222,10 +285,9 @@ export function GroupSettingsPage() {
     }
   }
   return (
-    <main>
-      <Link to={`/chat/${conversationId}`}>‹ 返回群聊</Link>
-      <h1 className="page-title">聊天信息（{members.length + 1}）</h1>
-      <div className="panel member-grid">
+    <main className="chat-info-page">
+      <NavBar title={`聊天信息 (${members.length + 1})`} fallback={`/chat/${conversationId}`} />
+      <div className="member-panel">
         {members.map((m) => (
           <div key={m.participantId} className="member-cell">
             {removing && members.length > 1 && (
@@ -247,14 +309,14 @@ export function GroupSettingsPage() {
               </button>
             )}
             <Link to={`/characters/${m.refId}`}>
-              <CharacterAvatar id={m.refId} size={48} />
+              <CharacterAvatar id={m.refId} size={46} radius={6} />
             </Link>
             <small>{nameOf(m.refId)}</small>
           </div>
         ))}
         {!removing && (
           <Link
-            className="member-cell member-action"
+            className="member-cell"
             aria-label="添加成员"
             to={`/groups/new?add=${conversationId}`}
             aria-disabled={members.length >= GROUP_MEMBER_LIMIT}
@@ -262,206 +324,187 @@ export function GroupSettingsPage() {
               if (members.length >= GROUP_MEMBER_LIMIT) e.preventDefault();
             }}
           >
-            ＋
+            <span className="member-action">
+              <OldIcon name="wechat/add" size={26} />
+            </span>
+            <small>添加</small>
           </Link>
         )}
         <button
-          className="member-cell member-action"
+          type="button"
+          className="member-cell"
           aria-label={removing ? '完成' : '移出成员'}
           disabled={!removing && members.length <= 1}
           onClick={() => setRemoving((v) => !v)}
         >
-          {removing ? '完成' : '−'}
+          <span className="member-action">{removing ? '✓' : '−'}</span>
+          <small>{removing ? '完成' : '移出'}</small>
         </button>
       </div>
       {members.length <= 1 && (
-        <p className="hint">群里至少要有 1 个角色，不想要这个群可以「删除并退出」</p>
+        <p className="hint page-note">群里至少要有 1 个角色，不想要这个群可以「删除并退出」</p>
       )}
-      <div className="panel rows">
-        <button
-          className="row-button"
+      <MenuGroup>
+        <MenuRow
+          label="群聊名称"
+          value={conversation.title ?? '未命名'}
           onClick={() => {
             setTitle(conversation.group?.titleCustomized ? (conversation.title ?? '') : '');
             setRenaming(true);
           }}
-        >
-          群聊名称
-          <small>{conversation.title ?? ''}</small>
-        </button>
-        <button className="row-button" onClick={() => navigate(`/chat/${conversationId}/search`)}>
-          查找聊天记录
-        </button>
-      </div>
+        />
+      </MenuGroup>
+      <MenuGroup>
+        <MenuRow to={`/chat/${conversationId}/search`} label="查找聊天记录" />
+      </MenuGroup>
+      <MenuGroup>
+        <SwitchRow
+          label="消息免打扰"
+          checked={conversation.state.muted}
+          disabled={pending}
+          onChange={(muted) =>
+            void change(() =>
+              api.call(ChatEndpoints.updateState, { params: { conversationId }, body: { muted } }),
+            )
+          }
+        />
+        <SwitchRow
+          label="置顶聊天"
+          checked={conversation.state.pinned}
+          disabled={pending}
+          onChange={(pinned) =>
+            void change(() =>
+              api.call(ChatEndpoints.updateState, {
+                params: { conversationId },
+                body: { pinned },
+              }),
+            )
+          }
+        />
+      </MenuGroup>
+      {companion.data && (
+        <MenuGroup>
+          <SwitchRow
+            label="角色自己聊天"
+            subtitle="开启后，你不在时群里的角色也会偶尔聊几句"
+            checked={companion.data.selfChatEnabled}
+            disabled={pending}
+            onChange={(selfChatEnabled) =>
+              void change(
+                () =>
+                  api.call(GroupCompanionEndpoints.updateSettings, {
+                    params: { conversationId },
+                    body: { selfChatEnabled },
+                  }),
+                '已保存',
+                companion.refresh,
+              )
+            }
+          />
+          <SwitchRow
+            label="秒回"
+            checked={companion.data.instantReply}
+            disabled={pending}
+            onChange={(instantReply) =>
+              void change(
+                () =>
+                  api.call(GroupCompanionEndpoints.updateSettings, {
+                    params: { conversationId },
+                    body: { instantReply },
+                  }),
+                '已保存',
+                companion.refresh,
+              )
+            }
+          />
+        </MenuGroup>
+      )}
+      {companion.error && !companion.data && <p role="alert">{companion.error}</p>}
+      {message && (
+        <p role="status" className="hint page-note">
+          {message}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="notice-bar">
+          {error}
+        </p>
+      )}
+      <MenuGroup>
+        <MenuRow
+          label="清空聊天记录"
+          danger
+          center
+          chevron={false}
+          disabled={pending}
+          onClick={() => setConfirm('clear')}
+        />
+      </MenuGroup>
+      <MenuGroup>
+        <MenuRow
+          label="删除并退出"
+          danger
+          center
+          chevron={false}
+          disabled={pending}
+          onClick={() => setConfirm('dissolve')}
+        />
+      </MenuGroup>
       {renaming && (
-        <form
-          className="panel stack"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const value = title.trim();
+        <FieldSheet
+          title="群聊名称"
+          initial={title}
+          maxLength={16}
+          pending={pending}
+          placeholder={members.map((m) => nameOf(m.refId)).join('、')}
+          onClose={() => setRenaming(false)}
+          onSave={(value) =>
             void change(
               () =>
                 api.call(ChatGroupEndpoints.renameGroup, {
                   params: { conversationId },
-                  body: {
-                    title: value || null,
-                  },
+                  body: { title: value || null },
                 }),
               '已保存',
               () => setRenaming(false),
-            );
-          }}
-        >
-          <label>
-            群聊名称
-            <input
-              maxLength={16}
-              value={title}
-              placeholder={members.map((m) => nameOf(m.refId)).join('、')}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </label>
-          <small>清空后保存 = 恢复默认名</small>
-          <div className="button-row">
-            <button className="primary" disabled={pending}>
-              完成
-            </button>
-            <button type="button" onClick={() => setRenaming(false)}>
-              取消
-            </button>
-          </div>
-        </form>
+            )
+          }
+        />
       )}
-      <div className="panel stack">
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={conversation.state.muted}
-            disabled={pending}
-            onChange={(e) =>
-              void change(() =>
-                api.call(ChatEndpoints.updateState, {
-                  params: { conversationId },
-                  body: { muted: e.target.checked },
-                }),
-              )
-            }
-          />
-          消息免打扰
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={conversation.state.pinned}
-            disabled={pending}
-            onChange={(e) =>
-              void change(() =>
-                api.call(ChatEndpoints.updateState, {
-                  params: { conversationId },
-                  body: { pinned: e.target.checked },
-                }),
-              )
-            }
-          />
-          置顶聊天
-        </label>
-      </div>
-      {companion.data && (
-        <div className="panel stack">
-          <h3 className="group-label">微伴</h3>
-          <p className="hint">情景预设在聊天输入栏「+」里切换</p>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={companion.data.selfChatEnabled}
-              disabled={pending}
-              onChange={(e) =>
-                void change(
-                  () =>
-                    api.call(GroupCompanionEndpoints.updateSettings, {
-                      params: { conversationId },
-                      body: { selfChatEnabled: e.target.checked },
-                    }),
-                  '已保存',
-                  companion.refresh,
-                )
-              }
-            />
-            角色自己聊天
-          </label>
-          <small>开启后，你不在时群里的角色也会偶尔聊几句</small>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={companion.data.instantReply}
-              disabled={pending}
-              onChange={(e) =>
-                void change(
-                  () =>
-                    api.call(GroupCompanionEndpoints.updateSettings, {
-                      params: { conversationId },
-                      body: { instantReply: e.target.checked },
-                    }),
-                  '已保存',
-                  companion.refresh,
-                )
-              }
-            />
-            秒回
-          </label>
-        </div>
+      {confirm === 'clear' && (
+        <ActionSheet
+          title="清空这个群的聊天记录？"
+          onClose={() => setConfirm(null)}
+          items={[
+            {
+              label: '清空聊天记录',
+              danger: true,
+              onClick: () => void change(() => clearHistory(conversationId), '已清空'),
+            },
+          ]}
+        />
       )}
-      {companion.error && !companion.data && <p role="alert">{companion.error}</p>}
-      {message && <p role="status">{message}</p>}
-      {error && <p role="alert">{error}</p>}
-      <div className="panel rows">
-        <button className="row-button" disabled={pending} onClick={() => setConfirm('clear')}>
-          清空聊天记录
-        </button>
-        <button
-          className="row-button danger"
-          disabled={pending}
-          onClick={() => setConfirm('dissolve')}
+      {confirm === 'dissolve' && (
+        <Dialog
+          actions={[
+            { label: '取消', onClick: () => setConfirm(null) },
+            {
+              label: '删除并退出',
+              danger: true,
+              onClick: () =>
+                void change(
+                  () => api.call(ChatGroupEndpoints.dissolveGroup, { params: { conversationId } }),
+                  '已退出',
+                  () => {
+                    setConfirm(null);
+                    navigate('/chat', { replace: true });
+                  },
+                ),
+            },
+          ]}
         >
-          删除并退出
-        </button>
-      </div>
-      {confirm && (
-        <div
-          role="dialog"
-          aria-label={confirm === 'clear' ? '清空聊天记录' : '删除并退出'}
-          className="panel"
-        >
-          <p>
-            {confirm === 'clear'
-              ? '清空这个群的聊天记录？'
-              : '删除并退出后，这个群会解散，聊天记录也会删除'}
-          </p>
-          <button
-            className="danger"
-            disabled={pending}
-            onClick={() =>
-              void change(
-                async () => {
-                  if (confirm === 'clear') await clearHistory(conversationId);
-                  else
-                    await api.call(ChatGroupEndpoints.dissolveGroup, {
-                      params: { conversationId },
-                    });
-                },
-                confirm === 'clear' ? '已清空' : '已退出',
-                () => {
-                  setConfirm(null);
-                  if (confirm === 'dissolve') navigate('/chat', { replace: true });
-                },
-              )
-            }
-          >
-            确认
-          </button>
-          <button disabled={pending} onClick={() => setConfirm(null)}>
-            取消
-          </button>
-        </div>
+          <p>删除并退出后，这个群会解散，聊天记录也会删除</p>
+        </Dialog>
       )}
     </main>
   );

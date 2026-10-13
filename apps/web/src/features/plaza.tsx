@@ -1,13 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import {
-  CaretLeft,
-  ChatCircle,
-  DotsThree,
-  Heart,
-  Storefront,
-  UserList,
-} from './old-icons.js';
+import { CaretLeft, ChatCircle, DotsThree, Heart, Storefront, UserList } from './old-icons.js';
 import { z } from 'zod';
 import {
   CharacterEndpoints,

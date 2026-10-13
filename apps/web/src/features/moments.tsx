@@ -480,19 +480,14 @@ function coverFor(name: string) {
 }
 
 /** 朋友圈封面（4.11）：高 370，预设渐变 + 底部压暗；头像 70 探出封面 23.4。 */
-function MomentsCover({
-  name,
-  avatar,
-  to,
-}: {
-  name: string;
-  avatar: ReactNode;
-  to: string;
-}) {
+function MomentsCover({ name, avatar, to }: { name: string; avatar: ReactNode; to: string }) {
   const [top, bottom] = coverFor(name);
   return (
     <div className="moments-cover-wrap">
-      <div className="moments-cover" style={{ backgroundImage: `linear-gradient(${top}, ${bottom})` }}>
+      <div
+        className="moments-cover"
+        style={{ backgroundImage: `linear-gradient(${top}, ${bottom})` }}
+      >
         <i className="moments-cover-shade" />
         <Link className="moments-cover-name" to={to}>
           {name}
@@ -665,7 +660,11 @@ function Album({
         transparent
         title={mine ? undefined : title}
         fallback={back}
-        right={mine ? <NavIcon name="wechat/camera" label="发朋友圈" to="/moments/new" size={24} /> : undefined}
+        right={
+          mine ? (
+            <NavIcon name="wechat/camera" label="发朋友圈" to="/moments/new" size={24} />
+          ) : undefined
+        }
       />
       <MomentsCover name={name} avatar={avatar} to={profileLink} />
       {list.items.length === 0 && list.loading && (
@@ -1068,9 +1067,7 @@ export function MomentsNotificationsPage() {
           {error} <button onClick={load}>重试</button>
         </p>
       )}
-      {items.length === 0 && cursor === null && (
-        <EmptyState icon="wechat/chat" title="暂无消息" />
-      )}
+      {items.length === 0 && cursor === null && <EmptyState icon="wechat/chat" title="暂无消息" />}
       <MenuGroup>
         {items.map((n) => (
           <Link key={n.notificationId} className="notice-row" to={`/moments/posts/${n.postId}`}>

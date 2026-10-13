@@ -42,67 +42,70 @@ export function AuthPage() {
     }
   }
   return (
-    <main className="auth-page">
-      <img src="/icon.svg" className="brand-logo" alt="" />
-      <h1>微伴</h1>
-      <p className="subtitle">把爱豆加进你的好友列表</p>
-      <form onSubmit={(event) => void submit(event)} className="panel stack">
-        <h2>{register ? '注册' : '登录'}</h2>
-        <label>
-          微伴号
-          <input
-            name="username"
-            autoComplete="username"
-            required
-            minLength={4}
-            maxLength={32}
-            pattern="[A-Za-z0-9_]+"
-            placeholder="4–32 位字母、数字或下划线"
-          />
-        </label>
-        <label>
-          密码
-          <input
-            name="password"
-            type="password"
-            required
-            minLength={8}
-            maxLength={128}
-            autoComplete={register ? 'new-password' : 'current-password'}
-            placeholder="至少 8 位"
-          />
-        </label>
-        {register && (
-          <label>
-            邀请码（选填）
+    <main className="auth-page old-auth">
+      <div className="auth-watermark" aria-hidden />
+      <div className="auth-content">
+        <img src="/assets/old-ui/brand/weiban_logo.png" className="auth-logo" alt="" />
+        <h1 className="auth-wordmark">微伴</h1>
+        <form onSubmit={(event) => void submit(event)} className="auth-form">
+          <label className="line-field">
+            <span>微伴号</span>
             <input
-              name="inviteCode"
-              autoComplete="off"
-              minLength={6}
-              maxLength={64}
-              placeholder="有就填，填了可得注册赠送"
+              name="username"
+              autoComplete="username"
+              required
+              minLength={4}
+              maxLength={32}
+              pattern="[A-Za-z0-9_]+"
+              placeholder="4–32 位字母、数字或下划线"
             />
           </label>
-        )}
-        {error && (
-          <p role="alert" className="error">
-            {error}
-          </p>
-        )}
-        <button className="primary" disabled={pending}>
-          {pending ? '请稍候' : register ? '注册' : '登录'}
-        </button>
-        <button
-          type="button"
-          className="plain"
-          onClick={() => {
-            setRegister(!register);
-            setError('');
-          }}
-        >
-          {register ? '已有账号，去登录' : '没有账号？注册'}
-        </button>
-      </form>
+          <label className="line-field">
+            <span>密码</span>
+            <input
+              name="password"
+              type="password"
+              required
+              minLength={8}
+              maxLength={128}
+              autoComplete={register ? 'new-password' : 'current-password'}
+              placeholder="至少 8 位"
+            />
+          </label>
+          {register && (
+            <label className="line-field">
+              <span>邀请码（选填）</span>
+              <input
+                name="inviteCode"
+                autoComplete="off"
+                minLength={6}
+                maxLength={64}
+                placeholder="有就填，填了可得注册赠送"
+              />
+            </label>
+          )}
+          {error && (
+            <p role="alert" className="auth-error">
+              {error}
+            </p>
+          )}
+          <button className="primary auth-submit" disabled={pending}>
+            {pending ? '请稍候' : register ? '注册' : '登录'}
+          </button>
+          <div className="auth-links">
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => {
+                setRegister(!register);
+                setError('');
+              }}
+            >
+              {register ? '已有账号，去登录' : '注册新账号'}
+            </button>
+          </div>
+        </form>
+      </div>
     </main>
   );
 }

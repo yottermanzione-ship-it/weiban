@@ -8,13 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  CaretDown,
-  Microphone,
-  MicrophoneSlash,
-  Phone,
-  PhoneDisconnect,
-} from './old-icons.js';
+import { CaretDown, OldIcon } from './old-icons.js';
 import {
   CALL_LIMITS,
   CallEndpoints,
@@ -316,7 +310,7 @@ async function askMicrophone(): Promise<MediaStream | null> {
 
 function endText(outcome: string | null, durationSec: number) {
   if (outcome === 'time_limit') return '通话已达到时长上限';
-  if (outcome === 'insufficient_balance') return '余额不足，通话已结束';
+  if (outcome === 'insufficient_balance') return '积分不足，通话已结束';
   if (outcome === 'declined' || outcome === 'missed') return '对方未接听';
   if (outcome === 'failed') return '网络中断，通话已结束';
   if (durationSec > 0) return `通话结束 ${formatDuration(durationSec)}`;
@@ -553,7 +547,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
           className="call-capsule"
           onClick={() => (view.detached ? void reattach() : patch({ minimized: false }))}
         >
-          通话中 {formatDuration(view.durationSec)} · 点击返回
+          通话中 {formatDuration(view.durationSec)}
         </button>
       )}
       {view && !view.minimized && (
@@ -594,15 +588,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
       )}
       {dialog === 'balance' && (
         <Dialog
-          title="余额不足，暂时无法通话"
+          title="积分不足，暂时无法通话"
           actions={[
             { label: '取消', onClick: () => setDialog(null) },
             {
-              label: '查看余额',
+              label: '去充值',
               primary: true,
               onClick: () => {
                 setDialog(null);
-                navigate('/wallet');
+                navigate('/wallet/recharge');
               },
             },
           ]}
@@ -620,6 +614,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** 回铃（4.13）：呼出等待时循环播放 realtime_call_ringback.mp3，来电时同样响铃。 */
+function useRingback(on: boolean) {
+  useEffect(() => {
+    if (!on) return;
+    const audio = new Audio('/assets/old-ui/audio/realtime_call_ringback.mp3');
+    audio.loop = true;
+    void audio.play().catch(() => {});
+    return () => {
+      audio.pause();
+      audio.src = '';
+    };
+  }, [on]);
+}
+
+/** 通话页（4.13）：头像放大模糊铺底 + 压暗；名字 28 / 600；状态行；168 大头像；三键控制区。 */
 function CallScreen({
   view,
   remark,
@@ -645,36 +654,40 @@ function CallScreen({
     params: { characterId: view.call.characterId },
   });
   const name = remark || profile.data?.name || '角色';
-  const ringing = view.phase === 'outgoing' || view.phase === 'incoming';
+  useRingback(view.phase === 'outgoing' || view.phase === 'incoming');
   const status =
     view.phase === 'ended'
       ? view.endText
       : view.reconnecting
         ? '网络不佳，正在重连…'
         : view.phase === 'outgoing'
-          ? '正在呼叫…'
+          ? '等待对方接受邀请'
           : view.phase === 'incoming'
             ? '邀请你语音通话'
             : view.detached
               ? '点击下方按钮继续通话'
-              : formatDuration(view.durationSec);
+              : `通话中 ${formatDuration(view.durationSec)}`;
   return (
     <div
-      className={`call-screen ${view.phase === 'ended' ? 'ending' : ''}`}
+      className={`call-screen wx-call-screen ${view.phase === 'ended' ? 'ending' : ''}`}
       role="dialog"
       aria-label="语音通话"
     >
+      <div className="wx-call-backdrop" aria-hidden>
+        <CharacterAvatar id={view.call.characterId} size={168} radius={0} />
+      </div>
+      <i className="wx-call-shade" aria-hidden />
       {view.phase === 'active' && (
         <button className="call-minimize" aria-label="缩小" onClick={onMinimize}>
           <CaretDown size={24} />
         </button>
       )}
-      <div className="call-person">
-        <span className={`call-avatar ${ringing ? 'ringing' : ''}`}>
-          <CharacterAvatar id={view.call.characterId} size={96} />
-        </span>
-        <strong className="call-name">{name}</strong>
-        <span className="call-status numeric">{status}</span>
+      <div className="wx-call-top">
+        <strong className="wx-call-name">{name}</strong>
+        <span className="wx-call-status numeric">{status}</span>
+        {view.phase !== 'ended' && view.phase !== 'incoming' && (
+          <span className="wx-call-note">离开此页即挂断</span>
+        )}
         {view.phase === 'active' && view.speaking && (
           <span className="voice-wave call-wave" aria-label="对方正在说话">
             <i />
@@ -683,65 +696,42 @@ function CallScreen({
           </span>
         )}
       </div>
+      <span className={`wx-call-avatar ${view.phase === 'incoming' ? 'ringing' : ''}`}>
+        <CharacterAvatar id={view.call.characterId} size={168} radius={18} />
+      </span>
       {view.phase !== 'ended' && (
-        <div className="call-controls">
+        <div className={`wx-call-controls ${view.phase === 'incoming' ? 'incoming' : ''}`}>
           {view.phase === 'incoming' ? (
             <>
-              <CallButton
-                label="拒绝"
-                kind="decline"
-                onClick={onDecline}
-                icon={<PhoneDisconnect size={32} />}
-              />
-              <CallButton
-                label="接听"
-                kind="accept"
-                onClick={onAnswer}
-                icon={<Phone size={32} />}
-              />
+              <CallButton label="拒绝" kind="decline" onClick={onDecline} icon="drawn/hangup" />
+              <CallButton label="接听" kind="accept" onClick={onAnswer} icon="drawn/phone" />
             </>
           ) : view.phase === 'outgoing' ? (
-            <CallButton
-              label="取消"
-              kind="decline"
-              onClick={onHangUp}
-              icon={<PhoneDisconnect size={32} />}
-            />
-          ) : view.detached ? (
             <>
               <CallButton
-                label="挂断"
-                kind="decline"
-                onClick={onHangUp}
-                icon={<PhoneDisconnect size={32} />}
+                label={view.muted ? '麦克风已关' : '麦克风已开'}
+                kind={view.muted ? 'off' : 'on'}
+                onClick={onMute}
+                icon={view.muted ? 'drawn/mic_off' : 'drawn/mic'}
               />
-              <CallButton
-                label="继续"
-                kind="accept"
-                onClick={onReattach}
-                icon={<Phone size={32} />}
-              />
+              <CallButton label="取消" kind="decline" onClick={onHangUp} icon="drawn/hangup" />
+              <CallButton label="收起" kind="off" onClick={onOpenChat} icon="wechat/chevron_down" />
+            </>
+          ) : view.detached ? (
+            <>
+              <CallButton label="挂断" kind="decline" onClick={onHangUp} icon="drawn/hangup" />
+              <CallButton label="继续" kind="accept" onClick={onReattach} icon="drawn/phone" />
             </>
           ) : (
             <>
               <CallButton
-                label={view.muted ? '取消静音' : '静音'}
-                kind={view.muted ? 'active' : 'control'}
+                label={view.muted ? '麦克风已关' : '麦克风已开'}
+                kind={view.muted ? 'off' : 'on'}
                 onClick={onMute}
-                icon={view.muted ? <MicrophoneSlash size={28} /> : <Microphone size={28} />}
+                icon={view.muted ? 'drawn/mic_off' : 'drawn/mic'}
               />
-              <CallButton
-                label="挂断"
-                kind="decline"
-                onClick={onHangUp}
-                icon={<PhoneDisconnect size={32} />}
-              />
-              <CallButton
-                label="聊天"
-                kind="control"
-                onClick={onOpenChat}
-                icon={<CaretDown size={28} />}
-              />
+              <CallButton label="挂断" kind="decline" onClick={onHangUp} icon="drawn/hangup" />
+              <CallButton label="收起" kind="off" onClick={onOpenChat} icon="wechat/chevron_down" />
             </>
           )}
         </div>
@@ -757,14 +747,14 @@ function CallButton({
   onClick,
 }: {
   label: string;
-  kind: 'accept' | 'decline' | 'control' | 'active';
-  icon: ReactNode;
+  kind: 'accept' | 'decline' | 'on' | 'off';
+  icon: string;
   onClick(): void;
 }) {
   return (
-    <span className="call-button-wrap">
-      <button className={`call-button ${kind}`} aria-label={label} onClick={onClick}>
-        {icon}
+    <span className="wx-call-key">
+      <button className={`wx-call-round ${kind}`} aria-label={label} onClick={onClick}>
+        <OldIcon name={icon} size={28} />
       </button>
       <small>{label}</small>
     </span>
@@ -804,7 +794,8 @@ export function ProfileCallButton({ characterId }: { characterId: string }) {
   const { start } = useCall();
   if (!show) return null;
   return (
-    <button className="plain" onClick={() => start(characterId)}>
+    <button className="profile-action" onClick={() => start(characterId)}>
+      <OldIcon name="wechat/voice_call" size={20} />
       语音通话
     </button>
   );

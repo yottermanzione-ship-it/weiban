@@ -282,7 +282,9 @@ function MiniPanel({
                           { label: '移出最近使用', onClick: () => prefs.removeRecent(app) },
                           ...(prefs.inMine(app)
                             ? []
-                            : [{ label: '添加到我的小程序', onClick: () => prefs.toggleMine(app) }]),
+                            : [
+                                { label: '添加到我的小程序', onClick: () => prefs.toggleMine(app) },
+                              ]),
                         ],
                       })
                     }

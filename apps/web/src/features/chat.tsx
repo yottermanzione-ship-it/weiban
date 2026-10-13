@@ -351,9 +351,12 @@ function BubbleMenu({
   onClose(): void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [place, setPlace] = useState<{ left: number; top: number; arrow: number; below: boolean }>(
-    { left: -9999, top: -9999, arrow: 0, below: false },
-  );
+  const [place, setPlace] = useState<{ left: number; top: number; arrow: number; below: boolean }>({
+    left: -9999,
+    top: -9999,
+    arrow: 0,
+    below: false,
+  });
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -1014,7 +1017,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   pending.forEach((item, index) =>
     rows.push({ kind: 'pending', key: `pending:${item.body.clientMsgId}`, index }),
   );
-  for (const upload of uploads) rows.push({ kind: 'upload', key: `upload:${upload.localId}`, upload });
+  for (const upload of uploads)
+    rows.push({ kind: 'upload', key: `upload:${upload.localId}`, upload });
   const lastMine = [...messages]
     .reverse()
     .find((m) => m.senderKind === 'user' && m.status === 'normal');
@@ -1344,9 +1348,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
             message.content !== null,
         )}
       />
-      {!chat.online && (
-        <p className="notice-bar">网络暂不可用，消息保存在本机，联网后继续发送</p>
-      )}
+      {!chat.online && <p className="notice-bar">网络暂不可用，消息保存在本机，联网后继续发送</p>}
       {status.data && !status.data.available && (
         <p className="notice-bar">
           {status.data.reason === 'insufficient_balance'
@@ -1358,7 +1360,10 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         </p>
       )}
       {group && typingNames.length > 0 && status.data?.available && (
-        <p className="wx-typing" role="status">{`${typingNames.filter(Boolean).join('、')} 正在输入...`}</p>
+        <p
+          className="wx-typing"
+          role="status"
+        >{`${typingNames.filter(Boolean).join('、')} 正在输入...`}</p>
       )}
       {(error || chat.error) && (
         <p role="alert" className="notice-bar">
@@ -1566,7 +1571,10 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
                 } else setPanel('plus');
               }}
             >
-              <OldIcon name={panel === 'plus' ? 'wechat/keyboard' : 'wechat/add_circle'} size={28} />
+              <OldIcon
+                name={panel === 'plus' ? 'wechat/keyboard' : 'wechat/add_circle'}
+                size={28}
+              />
             </button>
           )}
         </form>

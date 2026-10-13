@@ -2,19 +2,9 @@
  * 情景预设（docs/refactor/02 第 5 节）：聊天「+」面板与私聊副标题打开同一个弹层。
  * 顺序、资格、说明都以服务器 listModes 为准（section = private 放底部「私密」一栏；没资格的不返回）。
  */
-import { useState, type ComponentType } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  ArrowFatUp,
-  Check,
-  Heart,
-  Lightning,
-  LockSimple,
-  Moon,
-  Sparkle,
-  Sun,
-  type IconProps,
-} from './old-icons.js';
+import { OldIcon } from './old-icons.js';
 import {
   CompanionEndpoints,
   GroupCompanionEndpoints,
@@ -25,7 +15,7 @@ import {
 import { ApiFailure } from '@weiban/client-core';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
-import { Sheet } from './shell-kit.js';
+import { GroupHeader, IconTile, MenuGroup, MenuRow, Sheet, type Tint } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 
 export type ScenarioTarget =
@@ -41,14 +31,15 @@ export const presetNames: Record<string, string> = {
   cheer: '加油打气',
   adult: '私密',
 };
-const presetIcons: Record<string, ComponentType<IconProps>> = {
-  auto: Sparkle,
-  daily: Sun,
-  romance: Heart,
-  treehole: Moon,
-  tsundere: Lightning,
-  cheer: ArrowFatUp,
-  adult: LockSimple,
+/** 情景预设图标（5.3）：40 彩色方块 + 白图标；情侣暧昧是唯一用心形的地方。 */
+const presetLook: Record<string, { icon: string; tint: Tint }> = {
+  auto: { icon: 'drawn/scenario_sparkle', tint: 'green' },
+  daily: { icon: 'wechat/smile', tint: 'orange' },
+  romance: { icon: 'wechat/heart', tint: 'red' },
+  treehole: { icon: 'wechat/note', tint: 'purple' },
+  tsundere: { icon: 'wechat/chat', tint: 'gold' },
+  cheer: { icon: 'wechat/star', tint: 'blue' },
+  adult: { icon: 'wechat/info', tint: 'gray' },
 };
 /** 私聊副标题：日常聊天不显示；成人内容显示「私密」。 */
 export function presetSubtitle(mode: string | undefined): string | null {
@@ -166,27 +157,29 @@ export function ScenarioSheet({
     if (!introSeen()) return setPrompt('intro');
     return apply('adult');
   }
-  const card = (option: ScenarioModeOption, wide = false) => {
-    const Icon = presetIcons[option.id] ?? Sun;
+  const row = (option: ScenarioModeOption) => {
+    const look = presetLook[option.id] ?? presetLook.daily!;
     const selected = option.id === (current ?? 'daily');
     return (
-      <button
+      <MenuRow
         key={option.id}
-        type="button"
-        role="radio"
-        aria-checked={selected}
-        className={`preset-card ${wide ? 'wide' : ''}`}
         disabled={pending}
+        chevron={false}
         onClick={() => void choose(option)}
-      >
-        <strong>
-          <Icon size={20} aria-hidden />
-          {option.name || presetNames[option.id]}
-          {option.recommended && <span className="tag">推荐</span>}
-        </strong>
-        {option.description && <small>{option.description}</small>}
-        {selected && <Check size={18} weight="bold" className="preset-check" aria-hidden />}
-      </button>
+        label={
+          <>
+            <IconTile icon={look.icon} tint={look.tint} size="md" />
+            <span className="row-name">
+              {option.name || presetNames[option.id]}
+              {option.recommended && <span className="mini-tag">推荐</span>}
+            </span>
+          </>
+        }
+        subtitle={option.description || undefined}
+        right={
+          selected ? <OldIcon name="wechat/check" size={22} className="ink-brand" /> : undefined
+        }
+      />
     );
   };
   return (
@@ -198,27 +191,21 @@ export function ScenarioSheet({
           <button onClick={modes.refresh}>重试</button>
         </div>
       )}
-      <div className="preset-grid" role="radiogroup" aria-label="情景预设">
-        {presets.map((option) => card(option, option.id === 'auto'))}
-      </div>
+      <MenuGroup className="preset-list">{presets.map((option) => row(option))}</MenuGroup>
       {privates.length > 0 && (
         <>
-          <h3 className="preset-section">私密</h3>
-          <div className="menu-group">
+          <GroupHeader>私密</GroupHeader>
+          <MenuGroup>
             {privates.map((option) => (
-              <button
+              <MenuRow
                 key={option.id}
-                type="button"
-                className="menu-row"
                 disabled={pending}
+                label="成人内容"
+                value={option.id === current ? '已开启' : '未开启'}
                 onClick={() => void choose(option)}
-              >
-                <LockSimple size={20} aria-hidden />
-                <span className="menu-label">成人内容</span>
-                <span className="menu-value">{option.id === current ? '已开启' : '未开启'}</span>
-              </button>
+              />
             ))}
-          </div>
+          </MenuGroup>
         </>
       )}
       {prompt === 'model' && (

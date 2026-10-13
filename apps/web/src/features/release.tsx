@@ -208,7 +208,7 @@ export function AboutPage() {
     <main>
       <NavBar title="关于微伴" fallback="/settings" />
       <div className="coming-soon-body">
-        <img className="brand-logo" src="/icon.svg" alt="" />
+        <img className="brand-logo" src="/assets/old-ui/brand/weiban_logo.png" alt="" />
         <h2>微伴</h2>
         <p className="hint">
           版本 {WEB_VERSION}（构建 {WEB_BUILD}）

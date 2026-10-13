@@ -62,19 +62,28 @@ export default defineConfig({
         start_url: '/',
         display: 'standalone',
         background_color: '#ededed',
-        theme_color: '#0aa35a',
+        theme_color: '#ededed',
         icons: [
-          { src: '/generated/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/Icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/Icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
           {
-            src: '/generated/icon-512.png',
+            src: '/Icon-maskable-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+          {
+            src: '/Icon-maskable-512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable',
+            purpose: 'maskable',
           },
         ],
       },
       injectManifest: {
+        // 旧版素材（assets/old-ui，含 1.6MB 字体子集）不进预缓存，按需加载。
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globIgnores: ['assets/old-ui/**'],
       },
     }),
   ],

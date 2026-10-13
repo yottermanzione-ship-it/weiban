@@ -66,7 +66,7 @@ self.addEventListener('push', (event) => {
           body: notice.body,
           tag,
           silent: !notice.sound,
-          icon: '/generated/icon-192.png',
+          icon: '/Icon-192.png',
           data: notice,
         });
       } catch {

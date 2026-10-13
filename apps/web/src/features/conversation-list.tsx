@@ -91,8 +91,7 @@ function SwipeRow({
     const dt = Math.max(1, Date.now() - last.current.t + 16);
     const velocity = ((event.clientX - last.current.x) / dt) * 1000;
     const position = Math.max(-width, Math.min(0, dx + (open ? -width : 0)));
-    const next =
-      velocity < -250 ? true : velocity > 250 ? false : Math.abs(position) > width / 2;
+    const next = velocity < -250 ? true : velocity > 250 ? false : Math.abs(position) > width / 2;
     set(next ? -width : 0, false);
     onOpenChange(next);
   }

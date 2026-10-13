@@ -131,7 +131,10 @@ export function SettingsPage() {
       setPending(false);
     }
   }
-  async function updateNotification(body: { pushShowContent?: boolean; pushSoundEnabled?: boolean }) {
+  async function updateNotification(body: {
+    pushShowContent?: boolean;
+    pushSoundEnabled?: boolean;
+  }) {
     setPending(true);
     try {
       await api.call(IdentityEndpoints.updateNotificationSettings, { body });
@@ -194,10 +197,7 @@ export function SettingsPage() {
           value={fontScales.find((f) => f.value === font)?.label}
           onClick={() => setChoice('font')}
         />
-        <MenuRow
-          label="聊天背景"
-          onClick={() => showToast('聊天背景暂未开放', 2000, 'info')}
-        />
+        <MenuRow label="聊天背景" onClick={() => showToast('聊天背景暂未开放', 2000, 'info')} />
         <ComingSoonRow id="teen" withIcon={false} />
         <ComingSoonRow id="care" withIcon={false} />
         <ComingSoonRow id="plugins" withIcon={false} />

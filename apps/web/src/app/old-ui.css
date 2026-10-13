@@ -37,10 +37,6 @@ body {
 main {
   min-height: 100dvh;
 }
-.app-shell > main,
-.miniapp-frame > main {
-  padding-top: var(--wb-space-5);
-}
 
 /* ---------- 通用顶栏（没有自带标题栏的页面） ---------- */
 .topbar {
@@ -59,9 +55,6 @@ main {
   padding: 0 var(--wb-space-3) 0 17.4px;
   color: var(--wb-color-text-primary);
   font-size: 0;
-}
-.topbar + main {
-  padding-top: var(--wb-space-5);
 }
 .topbar + main > .page-title:first-child {
   position: sticky;
@@ -327,8 +320,8 @@ input[type='radio']::after {
 input[type='checkbox'].select-box:checked,
 input[type='radio']:checked {
   border-color: var(--wb-color-brand-primary);
-  background: var(--wb-color-brand-primary)
-    url('/assets/old-ui/icons/wechat/check.svg') center / 18px no-repeat;
+  background: var(--wb-color-brand-primary) url('/assets/old-ui/icons/wechat/check.svg') center /
+    18px no-repeat;
   background-blend-mode: normal;
 }
 input[type='radio']:checked {

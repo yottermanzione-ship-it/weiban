@@ -375,9 +375,9 @@ export function MiniAppsHomePage() {
               const app = dragging.current;
               dragging.current = null;
               if (!sorting || !app) return;
-              const target = (document.elementFromPoint(event.clientX, event.clientY) as Element | null)
-                ?.closest<HTMLElement>('[data-app]')
-                ?.dataset.app;
+              const target = (
+                document.elementFromPoint(event.clientX, event.clientY) as Element | null
+              )?.closest<HTMLElement>('[data-app]')?.dataset.app;
               const to = target ? appById(target) : undefined;
               if (to && to.id !== app.id) prefs.moveTo(app, to);
             }}

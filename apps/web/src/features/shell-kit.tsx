@@ -213,7 +213,10 @@ export function MenuRow({
         tile ? (
           <IconTile icon={icon} tint={tint} />
         ) : (
-          <span className={`menu-icon ink-${tint}`} style={iconColor ? { color: iconColor } : undefined}>
+          <span
+            className={`menu-icon ink-${tint}`}
+            style={iconColor ? { color: iconColor } : undefined}
+          >
             <Glyph icon={icon} size={iconSize} />
           </span>
         )
@@ -323,7 +326,10 @@ export function SwitchRow({
 /** 勾选圈（规格 3.15）。 */
 export function CheckCircle({ checked, disabled }: { checked: boolean; disabled?: boolean }) {
   return (
-    <span className={`check-circle ${checked ? 'on' : ''} ${disabled ? 'disabled' : ''}`} aria-hidden>
+    <span
+      className={`check-circle ${checked ? 'on' : ''} ${disabled ? 'disabled' : ''}`}
+      aria-hidden
+    >
       {checked && <OldIcon name="wechat/check" size={18} />}
     </span>
   );
