@@ -5,8 +5,7 @@ import { api } from '../data/client.js';
 import { LoginPage } from '../features/login.js';
 import { InvitesPage } from '../features/invites.js';
 import { AccountsPage } from '../features/accounts.js';
-import { UpstreamsPage } from '../features/upstreams.js';
-import { CatalogPage } from '../features/catalog.js';
+import { ModelManagementPage } from '../features/model-management.js';
 import { PricesPage } from '../features/prices.js';
 import { AlertsPage, AlertBadge } from '../features/alerts.js';
 import { CharactersPage } from '../features/characters.js';
@@ -86,11 +85,9 @@ export function App() {
           {[
             ['/characters', '角色库'],
             ['/invites', '邀请码'],
-            ['/upstreams', '上游管理'],
-            ['/catalog', '模型目录'],
-            ['/prices', '价目表'],
-            ['/accounts', '用户与余额'],
-            ['/usage', '用量与费用'],
+            ['/model', '模型管理'],
+            ['/accounts', '用户与积分'],
+            ['/usage', '用户用量对账'],
             ['/billing', '对账与平台花费'],
             ['/scenario-modes', '情景模式'],
             ['/public-updates', '公开动态'],
@@ -135,8 +132,10 @@ export function App() {
             <Route path="/prices" element={<PricesPage />} />
             <Route path="/invites" element={<InvitesPage />} />
             <Route path="/accounts" element={<AccountsPage />} />
-            <Route path="/upstreams" element={<UpstreamsPage />} />
-            <Route path="/catalog" element={<CatalogPage />} />
+            <Route path="/model" element={<ModelManagementPage />} />
+            {/* 旧入口：上游管理、模型目录并入「模型管理」（06-old-ui-spec 9.8） */}
+            <Route path="/upstreams" element={<Navigate to="/model?tab=upstreams" replace />} />
+            <Route path="/catalog" element={<Navigate to="/model?tab=models" replace />} />
             <Route path="/usage" element={<UsagePage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/scenario-modes" element={<ScenarioModesPage />} />
