@@ -787,3 +787,17 @@ button.plain-btn {
   justify-content: center;
   gap: var(--wb-space-5);
 }
+/* 制作申请（10-14 裁定 2.3） */
+.pre-wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.thumb-link {
+  display: inline-block;
+  margin: 0 var(--wb-space-2) var(--wb-space-2) 0;
+}
+.thumb-link img {
+  display: block;
+  object-fit: cover;
+  border-radius: var(--wb-radius-sm);
+}

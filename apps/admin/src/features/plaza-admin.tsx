@@ -9,6 +9,9 @@ import {
   AdminPlazaReport,
   AdminPlazaWork,
   AdminDailyQuestion,
+  AdminPlazaOfficialComment,
+  CharacterAdminEndpoints,
+  PlazaOfficialAdminEndpoints,
   DailyQuestionAdminEndpoints,
   PlannerAdminEndpoints,
   PlannerConfigEntry,
@@ -23,6 +26,7 @@ import { Feedback } from '../components/feedback.js';
 type Work = z.infer<typeof AdminPlazaWork>;
 type Report = z.infer<typeof AdminPlazaReport>;
 type Question = z.infer<typeof AdminDailyQuestion>;
+type OfficialComment = z.infer<typeof AdminPlazaOfficialComment>;
 type PlannerEntry = z.infer<typeof PlannerConfigEntry>;
 type Decision = z.infer<typeof PlanningDecisionRecord>;
 
@@ -159,16 +163,17 @@ function SnapshotView({ snapshot }: { snapshot: PlazaSnapshot }) {
 // ---------- 人设广场管理（ADM-09） ----------
 
 export function PlazaAdminPage() {
-  const [tab, setTab] = useState<'works' | 'reports' | 'bans'>('works');
+  const [tab, setTab] = useState<'works' | 'official' | 'reports' | 'bans'>('works');
   const pending = useRemote(PlazaAdminEndpoints.listReports, { query: { status: 'pending' } });
   const pendingCount = pending.data?.items.length ?? 0;
   return (
     <>
-      <h1>人设广场</h1>
+      <h1>角色广场</h1>
       <div className="card-tabs" role="tablist">
         {(
           [
-            ['works', '作品'],
+            ['works', '自定义角色作品'],
+            ['official', '微伴角色评论'],
             ['reports', pendingCount > 0 ? `举报 ${pendingCount}` : '举报'],
             ['bans', '发布权限'],
           ] as const
@@ -185,8 +190,130 @@ export function PlazaAdminPage() {
         ))}
       </div>
       {tab === 'works' && <WorksTab />}
+      {tab === 'official' && <OfficialCommentsTab />}
       {tab === 'reports' && <ReportsTab onChanged={pending.refresh} />}
       {tab === 'bans' && <BansTab />}
+    </>
+  );
+}
+
+/** 「微伴角色」（官方预设角色）下的评论：最新在前，可按角色筛选、删除（原因必填，复用评论删除接口）。 */
+function OfficialCommentsTab() {
+  const characters = useRemote(CharacterAdminEndpoints.list, {});
+  const names = new Map(characters.data?.items.map((c) => [c.characterId, c.name]) ?? []);
+  const [characterId, setCharacterId] = useState('');
+  const fetchPage = useCallback(
+    (cursor?: string) =>
+      api.call(PlazaOfficialAdminEndpoints.listComments, {
+        query: { characterId: characterId || undefined, cursor },
+      }),
+    [characterId],
+  );
+  const list = usePaged<OfficialComment>(fetchPage);
+  const [target, setTarget] = useState<OfficialComment | null>(null);
+  const [reason, setReason] = useState('');
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  async function remove() {
+    if (!target) return;
+    setPending(true);
+    setError('');
+    try {
+      await api.call(PlazaAdminEndpoints.deleteComment, {
+        params: { commentId: target.commentId },
+        body: { reason: reason.trim() },
+      });
+      list.setItems((prev) => prev.filter((c) => c.commentId !== target.commentId));
+      setTarget(null);
+      setReason('');
+      setMessage('评论已删除');
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setPending(false);
+    }
+  }
+  return (
+    <>
+      <div className="panel inline">
+        <label>
+          角色
+          <select value={characterId} onChange={(e) => setCharacterId(e.target.value)}>
+            <option value="">全部微伴角色</option>
+            {characters.data?.items
+              .filter((c) => c.status === 'published')
+              .map((c) => (
+                <option key={c.characterId} value={c.characterId}>
+                  {c.name}
+                </option>
+              ))}
+          </select>
+        </label>
+      </div>
+      <Feedback message={message} />
+      {list.error && (
+        <p role="alert" className="error-banner">
+          加载失败：{list.error} <button onClick={() => void list.load()}>重试</button>
+        </p>
+      )}
+      {list.loading && list.items.length === 0 && <div className="skeleton-line" role="status" />}
+      {!list.loading && !list.error && list.items.length === 0 && (
+        <p className="hint">还没有评论</p>
+      )}
+      {list.items.length > 0 && (
+        <table>
+          <thead>
+            <tr>
+              <th>角色</th>
+              <th>评论者</th>
+              <th>内容</th>
+              <th>时间（北京时间）</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.items.map((c) => (
+              <tr key={c.commentId}>
+                <td>{names.get(c.characterId) ?? c.characterId}</td>
+                <td>
+                  {c.authorNickname ?? '已注销用户'}
+                  <br />
+                  <small className="hint">{c.authorUserId}</small>
+                </td>
+                <td className="pre-wrap">{c.text}</td>
+                <td>{beijing(c.createdAt)}</td>
+                <td>
+                  <button className="danger" onClick={() => setTarget(c)}>
+                    删除
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {list.cursor && (
+        <button disabled={list.loading} onClick={() => void list.load(list.cursor ?? undefined)}>
+          加载更多
+        </button>
+      )}
+      {target && (
+        <ConfirmBox
+          title="删除这条评论？"
+          confirmLabel={pending ? '正在删除…' : '删除'}
+          disabled={pending || !reason.trim()}
+          error={error}
+          onCancel={() => setTarget(null)}
+          onConfirm={() => void remove()}
+        >
+          <p className="pre-wrap">「{target.text}」</p>
+          <label>
+            原因（必填）
+            <textarea maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} />
+          </label>
+        </ConfirmBox>
+      )}
     </>
   );
 }
