@@ -85,7 +85,7 @@ import kotlinx.serialization.json.*
 }
 
 /** 菜单式页面（整宽菜单行，不加内边距）。 */
-private val menuPages = setOf("me", "settings", "account", "general", "about", "announcements", "release-notes")
+private val menuPages = setOf("me", "services", "settings", "account", "general", "about", "announcements", "release-notes")
 
 @Composable private fun MenuPageBody(
     state: MeState,
@@ -94,6 +94,7 @@ private val menuPages = setOf("me", "settings", "account", "general", "about", "
 ) {
     when (state.page) {
         "settings" -> MeSettings(state, onLogout)
+        "services" -> MeServices(state, entry)
         "account" -> AccountPage(state)
         "general" -> GeneralPage(state)
         "about" -> AboutPage(state)
@@ -123,7 +124,6 @@ private val menuPages = setOf("me", "settings", "account", "general", "about", "
             }
             "theme" -> ThemePage(state)
             "notifications" -> NotificationSettingsPage(state, entry.notifications)
-            "services" -> MeServices(state, entry)
             "period" -> PeriodDiaryPage(repository, owner)
             "proactive" -> ProactiveDefaultsPage(state)
             "privacy" -> PrivacyPage(state)

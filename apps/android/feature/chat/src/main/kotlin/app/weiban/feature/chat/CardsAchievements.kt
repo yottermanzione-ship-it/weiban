@@ -56,6 +56,7 @@ private const val BADGE_COLUMNS = 4
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = onBack) { Text("‹ 返回") }
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+        CapsuleSpace()
     }
 }
 
@@ -175,6 +176,13 @@ internal fun CardAlbumPage(
         data?.let { repository.flags.set(owner, seenKey(characterId), it.obtained.size.toString()) }
     }
     PageHeader("和 $name 的卡册", onBack)
+    // 「卡片 / 我们的瞬间」两个视图（旧版好交互，放进卡册小程序）。
+    var moments by androidx.compose.runtime.saveable
+        .rememberSaveable(characterId) { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().padding(horizontal = WbSpace.S5), horizontalArrangement = Arrangement.spacedBy(WbSpace.S2)) {
+        FilterChip(selected = !moments, onClick = { moments = false }, label = { Text("卡片") })
+        FilterChip(selected = moments, onClick = { moments = true }, label = { Text("我们的瞬间") })
+    }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S4),
@@ -184,6 +192,10 @@ internal fun CardAlbumPage(
             data == null -> RetryRow(album.error ?: "加载失败", album::refresh)
         }
         val value = data ?: return@Column
+        if (moments) {
+            MomentsTimeline(repository, owner, value.obtained) { L6Overlays.openCard(characterId, it) }
+            return@Column
+        }
         Text("已收集 ${value.obtained.size} 张", style = MaterialTheme.typography.titleLarge)
         value.obtained.maxByOrNull { it.obtainedOn }?.let {
             Text("最近获得：${it.obtainedOn}", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
@@ -599,6 +611,41 @@ fun FamiliarityOverviewScreen(
                 color = colors.textTertiary,
                 style = MaterialTheme.typography.bodySmall,
             )
+        }
+    }
+}
+
+/** 卡册「我们的瞬间」：按获得日期排成时间线，点一条打开卡片详情。 */
+@Composable private fun MomentsTimeline(
+    repository: SessionRepository,
+    owner: OwnerRecord,
+    cards: List<GrowthCard>,
+    onOpen: (String) -> Unit,
+) {
+    val colors = LocalWeibanColors.current
+    if (cards.isEmpty()) {
+        Text("还没有一起的瞬间，多聊聊吧", color = colors.textSecondary)
+        return
+    }
+    cards.sortedByDescending { it.obtainedOn }.groupBy { it.obtainedOn.take(7) }.forEach { (month, items) ->
+        Text(month.replace("-", " 年 ") + " 月", style = MaterialTheme.typography.titleSmall, color = colors.textSecondary)
+        items.forEach { card ->
+            Row(
+                Modifier.fillMaxWidth().clickable { onOpen(card.cardId) }.padding(vertical = WbSpace.S2),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(WbSpace.S4),
+            ) {
+                Box(Modifier.size(10.dp).clip(CircleShape).background(cardTone(card.kind)))
+                CardFace(repository, owner, card, Modifier.size(48.dp, 64.dp).clip(RoundedCornerShape(WbRadius.Sm)), 160)
+                Column(Modifier.weight(1f)) {
+                    Text(card.title, maxLines = 1)
+                    Text(
+                        "${card.obtainedOn} · ${cardKindName(card.kind)}",
+                        color = colors.textSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
         }
     }
 }

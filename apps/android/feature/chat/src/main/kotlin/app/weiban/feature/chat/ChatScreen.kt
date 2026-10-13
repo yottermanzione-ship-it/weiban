@@ -250,7 +250,9 @@ internal class ListActions(
             val emptyText = if (state.initialized) "添加喜欢的角色后，聊天会出现在这里" else "正在同步聊天…"
             Text(emptyText, Modifier.padding(WbSpace.S5), color = colors.textSecondary)
         }
-        ConversationRows(repository, owner, state, conversations, profiles, names, onSelect) { pressed = it }
+        PullToMiniApps(repository, owner) {
+            ConversationRows(repository, owner, state, conversations, profiles, names, onSelect) { pressed = it }
+        }
     }
     pressed?.let { conversation ->
         val change: (suspend () -> Unit) -> Unit = { work ->

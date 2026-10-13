@@ -438,6 +438,7 @@ private suspend fun loadPlazaImage(url: String): ImageBitmap? =
         TextButton(onClick = PlazaNav::back) { Text("‹ 返回") }
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
         trailing()
+        CapsuleSpace()
     }
 }
 

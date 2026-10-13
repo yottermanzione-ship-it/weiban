@@ -250,6 +250,7 @@ internal fun ImportOverlay(
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = onBack) { Text("‹ 返回") }
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+        CapsuleSpace()
     }
 }
 

@@ -220,6 +220,7 @@ internal fun openChatWith(
         TextButton(onClick = onBack) { Text("‹ 返回") }
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
         trailing()
+        CapsuleSpace()
     }
 }
 
@@ -296,25 +297,38 @@ internal fun openChatWith(
     if (page == null) return
     val colors = LocalWeibanColors.current
     BackHandler(onBack = PlayNav::back)
-    Surface(Modifier.fillMaxSize(), color = colors.bgPage) {
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-            key(stack.size, page) {
-                when (page) {
-                    is PlayPage.Daily -> DailyQuestionPage(repository, runtime, owner, page.characterId)
-                    is PlayPage.DailyHistory -> DailyHistoryPage(repository, runtime, owner, page.answerId)
-                    PlayPage.Wishlists -> WishlistsPage(repository, runtime, owner)
-                    is PlayPage.Wishlist -> WishlistPage(repository, runtime, owner, page.characterId)
-                    PlayPage.Letters -> LettersPage(repository, runtime, owner)
-                    is PlayPage.LetterWrite -> LetterWritePage(repository, runtime, owner, page.characterId)
-                    is PlayPage.LetterRead -> LetterReadPage(repository, runtime, owner, page.letterId)
-                    is PlayPage.Focus -> FocusPage(repository, runtime, owner, page.characterId)
-                    PlayPage.Reminders -> RemindersPage(repository, runtime, owner)
-                    is PlayPage.ReminderEdit -> ReminderEditPage(repository, runtime, owner, page.reminderId, page.characterId)
+    val first = stack.first()
+    MiniAppFrame(playApp(first), PlayNav::close, { PlayNav.stack.value = listOf(first) }) {
+        Surface(Modifier.fillMaxSize(), color = colors.bgPage) {
+            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+                key(stack.size, page) {
+                    when (page) {
+                        is PlayPage.Daily -> DailyQuestionPage(repository, runtime, owner, page.characterId)
+                        is PlayPage.DailyHistory -> DailyHistoryPage(repository, runtime, owner, page.answerId)
+                        PlayPage.Wishlists -> WishlistsPage(repository, runtime, owner)
+                        is PlayPage.Wishlist -> WishlistPage(repository, runtime, owner, page.characterId)
+                        PlayPage.Letters -> LettersPage(repository, runtime, owner)
+                        is PlayPage.LetterWrite -> LetterWritePage(repository, runtime, owner, page.characterId)
+                        is PlayPage.LetterRead -> LetterReadPage(repository, runtime, owner, page.letterId)
+                        is PlayPage.Focus -> FocusPage(repository, runtime, owner, page.characterId)
+                        PlayPage.Reminders -> RemindersPage(repository, runtime, owner)
+                        is PlayPage.ReminderEdit -> ReminderEditPage(repository, runtime, owner, page.reminderId, page.characterId)
+                    }
                 }
             }
         }
     }
 }
+
+/** 玩法页属于哪个小程序（按返回栈第一页）。 */
+private fun playApp(page: PlayPage): MiniApp =
+    when (page) {
+        is PlayPage.Daily, is PlayPage.DailyHistory -> MiniApp.Daily
+        PlayPage.Wishlists, is PlayPage.Wishlist -> MiniApp.Wishlist
+        PlayPage.Letters, is PlayPage.LetterWrite, is PlayPage.LetterRead -> MiniApp.Letters
+        is PlayPage.Focus -> MiniApp.Focus
+        PlayPage.Reminders, is PlayPage.ReminderEdit -> MiniApp.Reminders
+    }
 
 /** 收起专注页后顶部显示的专注胶囊（play.md 第 5 节）：倒计时按服务器 endsAt。 */
 @Composable private fun FocusCapsule(

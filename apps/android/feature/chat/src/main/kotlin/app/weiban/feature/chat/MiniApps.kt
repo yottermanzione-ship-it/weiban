@@ -1,20 +1,32 @@
 package app.weiban.feature.chat
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.weiban.data.OwnerRecord
 import app.weiban.data.SessionRepository
 import app.weiban.designsystem.IconTile
 import app.weiban.designsystem.LocalWeibanColors
+import app.weiban.designsystem.MenuGroup
+import app.weiban.designsystem.MenuRow
 import app.weiban.designsystem.Tint
+import app.weiban.designsystem.WbNavBar
+import app.weiban.designsystem.WbSheet
+import app.weiban.designsystem.tokens.WbMotion
+import app.weiban.designsystem.tokens.WbRadius
 import app.weiban.designsystem.tokens.WbSpace
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -142,26 +154,28 @@ object MiniAppNavigation {
     val current = open ?: return
     val close: () -> Unit = { MiniHostNav.open.value = null }
     BackHandler(onBack = close)
-    Surface(Modifier.fillMaxSize(), color = LocalWeibanColors.current.bgPage) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .background(LocalWeibanColors.current.bgPage)
-                .statusBarsPadding()
-                .navigationBarsPadding(),
-        ) {
-            key(current) {
-                when (current.app) {
-                    MiniApp.Cards ->
-                        current.characterId?.let { CardAlbumPage(repository, runtime, owner, it, close) }
-                            ?: CardAlbumsScreen(repository, runtime, owner, close)
-                    MiniApp.Achievements -> AchievementsScreen(repository, owner, close)
-                    MiniApp.Plaza -> {
-                        app.weiban.designsystem.WbNavBar("人设广场", close)
-                        PlazaTab(repository, owner)
+    MiniAppFrame(current.app, close, { MiniHostNav.open.value = current.copy(nonce = System.nanoTime()) }) {
+        Surface(Modifier.fillMaxSize(), color = LocalWeibanColors.current.bgPage) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .background(LocalWeibanColors.current.bgPage)
+                    .statusBarsPadding()
+                    .navigationBarsPadding(),
+            ) {
+                key(current) {
+                    when (current.app) {
+                        MiniApp.Cards ->
+                            current.characterId?.let { CardAlbumPage(repository, runtime, owner, it, close) }
+                                ?: CardAlbumsScreen(repository, runtime, owner, close)
+                        MiniApp.Achievements -> AchievementsScreen(repository, owner, close)
+                        MiniApp.Plaza -> {
+                            WbNavBar("人设广场", close)
+                            PlazaTab(repository, owner)
+                        }
+                        MiniApp.Period -> periodPage()
+                        else -> Unit
                     }
-                    MiniApp.Period -> periodPage()
-                    else -> Unit
                 }
             }
         }
@@ -258,4 +272,96 @@ internal object MiniAppPrefs {
 ): MiniAppPrefs {
     LaunchedEffect(owner) { MiniAppPrefs.load(repository, owner) }
     return MiniAppPrefs
+}
+
+/** 小程序外壳里，标题栏右侧给胶囊让出的宽度（各小程序页头末尾留空）。 */
+internal val LocalCapsuleInset = compositionLocalOf { 0.dp }
+
+/** 页头末尾给胶囊留空（不在小程序里时宽度为 0）。 */
+@Composable internal fun RowScope.CapsuleSpace() {
+    Spacer(Modifier.width(LocalCapsuleInset.current))
+}
+
+/**
+ * 小程序外壳（方案 4.2）：右上胶囊「··· | ◯」，从底部升起（只动 transform），盖住底部标签栏。
+ * ◯ 一步回到打开小程序之前的页面；··· 菜单：添加到 / 移出我的小程序、不在 / 在最近使用中显示、关于这个小程序、重新进入。
+ */
+@Composable internal fun MiniAppFrame(
+    app: MiniApp,
+    onClose: () -> Unit,
+    onReenter: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val reduceMotion =
+        remember {
+            android.provider.Settings.Global.getFloat(
+                context.contentResolver,
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f,
+            ) == 0f
+        }
+    val rise = remember { Animatable(if (reduceMotion) 0f else 1f) }
+    LaunchedEffect(app) { rise.animateTo(0f, tween(WbMotion.PageMs, easing = WbMotion.Decelerate)) }
+    var more by remember { mutableStateOf(false) }
+    var about by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxSize().graphicsLayer { translationY = rise.value * size.height }) {
+        CompositionLocalProvider(LocalCapsuleInset provides CAPSULE_INSET) { content() }
+        Capsule(Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = WbSpace.S2, end = WbSpace.S3), { more = true }, onClose)
+    }
+    if (more) {
+        WbSheet(null, { more = false }) {
+            val prefs = MiniAppPrefs
+            MenuGroup {
+                MenuRow(if (app in prefs.mine) "从我的小程序移除" else "添加到我的小程序") {
+                    more = false
+                    prefs.toggleMine(app)
+                }
+                MenuRow(if (prefs.inRecent(app)) "不在最近使用中显示" else "在最近使用中显示") {
+                    more = false
+                    prefs.toggleRecent(app)
+                }
+                MenuRow("关于这个小程序") {
+                    more = false
+                    about = true
+                }
+                MenuRow("重新进入") {
+                    more = false
+                    onReenter()
+                }
+            }
+            TextButton(onClick = { more = false }, modifier = Modifier.fillMaxWidth()) { Text("取消") }
+        }
+    }
+    if (about) {
+        AlertDialog(
+            onDismissRequest = { about = false },
+            title = { Text(app.title) },
+            text = { Text("${app.desc}\n\n会用到的数据：${app.data}") },
+            confirmButton = { TextButton(onClick = { about = false }) { Text("知道了") } },
+        )
+    }
+}
+
+private val CAPSULE_INSET = 104.dp
+
+@Composable private fun Capsule(
+    modifier: Modifier,
+    onMore: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val colors = LocalWeibanColors.current
+    val shape = RoundedCornerShape(WbRadius.Full)
+    Row(
+        modifier
+            .height(32.dp)
+            .clip(shape)
+            .background(colors.bgSurface)
+            .border(1.dp, colors.borderHairline, shape),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("···", Modifier.clickable(onClick = onMore).padding(horizontal = WbSpace.S4), style = MaterialTheme.typography.titleSmall)
+        Box(Modifier.width(1.dp).height(16.dp).background(colors.borderHairline))
+        Text("◯", Modifier.clickable(onClick = onClose).padding(horizontal = WbSpace.S4), style = MaterialTheme.typography.titleSmall)
+    }
 }

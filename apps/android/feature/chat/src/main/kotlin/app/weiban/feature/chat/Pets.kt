@@ -278,6 +278,7 @@ private fun petTint(label: String): Tint =
         TextButton(onClick = onBack) { Text("‹ 返回") }
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
         trailing?.let { Text(it, Modifier.padding(horizontal = WbSpace.S5), color = LocalWeibanColors.current.textSecondary) }
+        CapsuleSpace()
     }
 }
 

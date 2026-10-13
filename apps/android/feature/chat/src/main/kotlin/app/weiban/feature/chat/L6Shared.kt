@@ -248,8 +248,26 @@ internal fun serialText(serialNo: Long): String = "No." + serialNo.toString().pa
     val pets by L6Overlays.pets.collectAsState()
     val imports by L6Overlays.imports.collectAsState()
     val customEditor by L6Overlays.customEditor.collectAsState()
-    pets?.let { open -> key(open) { PetsOverlay(repository, runtime, owner, open) { L6Overlays.pets.value = null } } }
-    imports?.let { open -> key(open) { ImportOverlay(repository, runtime, owner, open) { L6Overlays.imports.value = null } } }
+    pets?.let { open ->
+        key(open) {
+            val close = { L6Overlays.pets.value = null }
+            MiniAppFrame(MiniApp.Pets, close, { L6Overlays.pets.value = open.copy(nonce = System.nanoTime()) }) {
+                PetsOverlay(repository, runtime, owner, open, close)
+            }
+        }
+    }
+    imports?.let { open ->
+        key(open) {
+            val close = { L6Overlays.imports.value = null }
+            if (open.kind == "new_character" && open.jobId == null) {
+                MiniAppFrame(MiniApp.Import, close, { L6Overlays.imports.value = open.copy(nonce = System.nanoTime()) }) {
+                    ImportOverlay(repository, runtime, owner, open, close)
+                }
+            } else {
+                ImportOverlay(repository, runtime, owner, open, close)
+            }
+        }
+    }
     MiniHostOverlay(repository, runtime, owner, periodPage)
     PlazaOverlay(repository, runtime, owner)
     PlayOverlay(repository, runtime, owner)

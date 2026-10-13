@@ -38,19 +38,31 @@ import kotlinx.serialization.json.*
     val page = stack.lastOrNull() ?: return
     val colors = LocalWeibanColors.current
     BackHandler(onBack = PlazaNav::back)
-    Surface(Modifier.fillMaxSize(), color = colors.bgPage) {
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-            key(stack.size, page) {
-                when (page) {
-                    is PlazaPage.Work -> WorkPage(repository, runtime, owner, page.workId)
-                    is PlazaPage.Author -> AuthorPage(repository, owner, page.authorId)
-                    is PlazaPage.Report -> ReportPage(repository, owner, page)
-                    PlazaPage.Profile -> PlazaProfilePage(repository, owner)
-                    PlazaPage.MyWorks -> MyWorksPage(repository, owner)
-                    is PlazaPage.Publish -> PublishPage(repository, owner, page)
+    val host by MiniHostNav.open.collectAsState()
+    val body: @Composable () -> Unit = {
+        Surface(Modifier.fillMaxSize(), color = colors.bgPage) {
+            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+                key(stack.size, page) {
+                    when (page) {
+                        is PlazaPage.Work -> WorkPage(repository, runtime, owner, page.workId)
+                        is PlazaPage.Author -> AuthorPage(repository, owner, page.authorId)
+                        is PlazaPage.Report -> ReportPage(repository, owner, page)
+                        PlazaPage.Profile -> PlazaProfilePage(repository, owner)
+                        PlazaPage.MyWorks -> MyWorksPage(repository, owner)
+                        is PlazaPage.Publish -> PublishPage(repository, owner, page)
+                    }
                 }
             }
         }
+    }
+    // 从「人设广场」小程序进来的页面也带胶囊，◯ 一步关掉整个小程序。
+    if (host?.app == MiniApp.Plaza) {
+        MiniAppFrame(MiniApp.Plaza, {
+            PlazaNav.close()
+            MiniHostNav.open.value = null
+        }, PlazaNav::close, body)
+    } else {
+        body()
     }
 }
 

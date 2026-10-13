@@ -1,48 +1,65 @@
 package app.weiban.feature.me
 
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import app.weiban.contracts.Endpoints
 import app.weiban.data.DeviceNotificationControls
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+/**
+ * 我 › 服务（瘦身，docs/refactor/02 第 4.5 节）：钱包卡（余额、聊天模型）+ 模型与花费 + 偏好。
+ * 卡册、成就、宠物、玩法、经期日记都搬进了「发现 › 小程序」。
+ */
 @Composable internal fun MeServices(
     state: MeState,
     entry: MeEntry = MeEntry(),
 ) {
-    OutlinedButton(onClick = { state.openPage("wallet") }) { Text("余额与账单") }
-    OutlinedButton(onClick = { state.openPage("models") }) { Text("模型选择") }
-    OutlinedButton(onClick = { state.openPage("proactive") }) { Text("主动消息与免打扰") }
-    Text("互动玩法")
-    OutlinedButton(onClick = { state.openPage("period") }) { Text("经期日记") }
-    entry.onGrowth?.let { open -> OutlinedButton(onClick = { open("pets") }) { Text("宠物") } }
-    // 五个玩法（SVC-01、PLAY-03～07）：信箱有未读来信时红点；每日一问不显示红点。
-    entry.onGrowth?.let { open ->
-        var unread by remember { mutableLongStateOf(0L) }
-        LaunchedEffect(state.owner) {
-            runCatching {
-                unread =
-                    state.repository
-                        .call(
-                            Endpoints.letterEndpointsGetBadge,
-                            options = app.weiban.data.SessionCallOptions(owner = state.owner, networkOnly = true),
-                        ).unreadCount
+    val colors = app.weiban.designsystem.LocalWeibanColors.current
+    LaunchedEffect(state.owner) {
+        if (state.selection == null || state.models.isEmpty()) {
+            state.perform {
+                state.models = state.call(Endpoints.modelAccessEndpointsListModels).items
+                state.selection = state.call(Endpoints.modelAccessEndpointsGetSelection)
             }
         }
-        OutlinedButton(onClick = { open("play:daily") }) { Text("每日一问") }
-        OutlinedButton(onClick = { open("play:wishlists") }) { Text("心愿清单") }
-        OutlinedButton(onClick = { open("play:letters") }) { Text(if (unread > 0) "信箱 ●" else "信箱") }
-        OutlinedButton(onClick = { open("play:focus") }) { Text("陪你专注") }
-        OutlinedButton(onClick = { open("play:reminders") }) { Text("TA 的提醒") }
     }
-    // 陪伴分组（SVC-01）：卡册、成就、熟悉度。
-    entry.onGrowth?.let { open ->
-        Text("陪伴")
-        OutlinedButton(onClick = { open("cards") }) { Text("卡册") }
-        OutlinedButton(onClick = { open("achievements") }) { Text("成就") }
-        OutlinedButton(onClick = { open("familiarity") }) { Text("熟悉度") }
+    val chatKey = state.selection?.chat?.modelKey
+    val chatModel = if (chatKey == null) "平台默认" else state.models.find { it.modelKey == chatKey }?.displayName ?: chatKey
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(app.weiban.designsystem.tokens.WbSpace.S5)
+            .clip(RoundedCornerShape(app.weiban.designsystem.tokens.WbRadius.Lg))
+            .background(colors.brandPrimary)
+            .padding(app.weiban.designsystem.tokens.WbSpace.S5),
+    ) {
+        Column(Modifier.weight(1f).clickable { state.openPage("wallet") }) {
+            Text("余额", color = colors.textOnBrand, style = MaterialTheme.typography.bodySmall)
+            Text(
+                "¥ " + (state.wallet?.availableMicros?.let(::yuan) ?: "--"),
+                color = colors.textOnBrand,
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        }
+        Column(Modifier.weight(1f).clickable { state.openPage("models") }) {
+            Text("聊天模型", color = colors.textOnBrand, style = MaterialTheme.typography.bodySmall)
+            Text(chatModel, color = colors.textOnBrand, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+        }
+    }
+    app.weiban.designsystem.MenuGroup("模型与花费") {
+        app.weiban.designsystem.MenuRow("余额明细与后台预算") { state.openPage("wallet") }
+        app.weiban.designsystem.MenuRow("模型选择") { state.openPage("models") }
+    }
+    app.weiban.designsystem.MenuGroup("偏好") {
+        app.weiban.designsystem.MenuRow("主动消息与免打扰") { state.openPage("proactive") }
+        entry.onGrowth?.let { open -> app.weiban.designsystem.MenuRow("熟悉度总览") { open("familiarity") } }
     }
 }
 

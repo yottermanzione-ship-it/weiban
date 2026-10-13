@@ -26,15 +26,40 @@
 12. **公告 / 本版新功能 / 强制更新**（`feature/me/ReleaseCenter.kt`）：打开应用与回到前台时拉取；弹窗顺序：必须更新（不可关闭，「去下载」打开后台配置的下载地址）→ 本版新功能（关闭时 `release-notes/seen`）→ 未读弹窗公告（从旧到新，关闭即已读）。`versionCode` 用 `BuildConfig.VERSION_CODE`。未读红点：底部「我」→「设置」→「关于微伴」→「公告」。新页：关于微伴（版本、构建号、公告、更新日志、检查更新）、公告（进入即全部已读）、更新日志。
 13. **小程序登记表与宿主**（`MiniApps.kt`，为第二批铺路）：11 个小程序的名字 / 说明 / 图标 / 颜色 / 按 TA 入口与网页 `miniApps` 表一致；统一入口 `MiniAppNavigation.open(id, characterId)`；没有自己浮层的卡册、成就、人设广场、经期日记由新的宿主浮层显示；发现 › 小程序主页（搜索 / 最近使用 / 我的小程序）。
 
+### 第二批（P1 / P2）
+
+1. **小程序外壳**（`MiniAppFrame`）：11 个小程序统一套外壳——右上胶囊「··· | ◯」、从底部升起（只动 transform，系统关闭动画时不播放）、盖住底部标签栏。◯ 一步回到打开小程序之前的页面（会话列表、私聊、发现…）；··· 菜单：添加到 / 移出我的小程序、不在 / 在最近使用中显示、关于这个小程序（一句话 + 用到的数据）、重新进入。「发给 TA」按方案 P3 不显示。
+2. **发现 › 小程序主页**：搜索、最近使用（最多 8 个，本机按账号记录）、我的小程序宫格（默认 11 个；移出的放「更多小程序」）。经期日记默认不进最近使用，可在它的 ··· 里打开。
+3. **我 › 服务瘦身**：钱包卡（余额、聊天模型）+「模型与花费」（余额明细与后台预算、模型选择）+「偏好」（主动消息与免打扰、熟悉度总览）。卡册 / 成就 / 宠物 / 玩法 / 经期日记搬进小程序；成就新红点挂在「发现 › 小程序」行。
+4. **和 TA 一起用**：聊天信息页一行小程序图标；「+」› 小程序半屏（第一批已做），都只列按 TA 的 6 个，当前 TA 已选好。
+5. **会话列表下拉小程序面板**（`PullPanel.kt`）：列表在最顶端继续下拉，列表跟手下移（只改 transform，阻尼 0.5）；超过 80dp 松手 → 面板铺满（同一个小程序浏览部件），底部露出「微伴」一条；点那一条、上滑或返回收起。不做模糊背景。
+6. **卡册「我们的瞬间」**：TA 的卡册顶部「卡片 / 我们的瞬间」切换，瞬间按获得日期按月排成时间线，点一条打开卡片详情。
+7. 说明文档：`docs/android/ui-shell.md`（通用部件、小程序外壳怎么接、情景预设、公告与强制更新、发版时 versionCode 规则）。
+
+## 编译结果与安装包
+
+- 本机一次：`./gradlew --continue ktlintCheck detekt assembleDebug` → BUILD SUCCESSFUL（两批各一次）。
+- 调试安装包：`C:\wb-dev\wb-ui-and\apps\android\app\build\outputs\apk\debug\app-debug.apk`（`versionCode = 1`，`versionName = 0.1.0`）。
+- 契约生成物未改，`pnpm android:generate:check` 一致。
+
 ## 改了哪些文件
 
-- 新增：`core/designsystem/.../ShellKit.kt`、`Tint.kt`、`ComingSoon.kt`；`feature/chat/.../Discover.kt`、`MiniApps.kt`、`Scenario.kt`、`CharacterModel.kt`；`feature/me/.../ReleaseCenter.kt`
-- 修改：`app/.../MainActivity.kt`；`feature/chat/.../ChatScreen.kt`、`ComposerPanels.kt`、`ConversationUi.kt`、`ChatInformation.kt`、`GroupChat.kt`、`RoleBrowser.kt`、`NewFriends.kt`、`Moments.kt`（发现页移出）、`Pets.kt`、`L6Shared.kt`、`PlayShared.kt`、`PlayFocusReminders.kt`；`feature/me/.../MeScreen.kt`、`MeState.kt`、`NotificationSettingsPage.kt`、`PeriodDiary.kt`
+- 新增：`core/designsystem/.../ShellKit.kt`、`Tint.kt`、`ComingSoon.kt`；`feature/chat/.../Discover.kt`、`MiniApps.kt`、`Scenario.kt`、`CharacterModel.kt`、`PullPanel.kt`；`feature/me/.../ReleaseCenter.kt`；`docs/android/ui-shell.md`
+- 修改：`app/.../MainActivity.kt`；`feature/chat/.../ChatScreen.kt`、`ComposerPanels.kt`、`ConversationUi.kt`、`ChatInformation.kt`、`GroupChat.kt`、`RoleBrowser.kt`、`NewFriends.kt`、`Moments.kt`（发现页移出）、`Pets.kt`、`L6Shared.kt`、`PlayShared.kt`、`PlayFocusReminders.kt`、`PlazaBrowse.kt`、`PlazaShared.kt`、`Import.kt`、`CardsAchievements.kt`；`feature/me/.../MeScreen.kt`、`MeState.kt`、`NotificationSettingsPage.kt`、`PeriodDiary.kt`
 - 文档：本文件
 
 ## 遗留问题
 
-（第二批完成后补全）
+- **没有测试、没有实机看过页面**（按授权）。交 Codex 验收时重点看：小程序 ◯ 是否一步回到打开前的页面（含从人设广场进作品页、玩法内多层页面）；下拉手势在中低端机是否跟手、是否误触发；长按会话菜单；情景预设私密栏资格与首次说明；隐藏群聊能打开；公告弹窗只弹一次、「本版新功能」关闭后不再弹；强制更新弹窗不可关闭。
+- **内置宠物插画在安卓上显示不出原图**：后端内置素材 `GET /media/:id/content` 返回 SVG，而安卓图片下载只接受 `image/webp`（防止解码任意格式）。安卓先显示「圆底 + 小动物符号」占位（按物种 / 外观名推断），不影响领养。需要后端在内置素材内容接口按 `Accept: image/webp` 返回 WebP（服务器已有 sharp 转换），或给安卓单独的位图地址——请项目总负责人转后端。
+- **隐藏的会话在重新全量同步后会从本机消失**：`GET /conversations` 不返回 `hidden` 会话，安卓全量同步（换设备、同步游标过期）后，被手动隐藏的群在「通讯录 › 群聊」里也找不到，直到有新消息自动取消隐藏。网页同样受影响。建议后端给列表接口加「包含隐藏」参数或在群聊列表单独返回——属接口变更，需架构评估。
+- 「我 › 服务 › 模型与花费」里网页有的「价目表 / 模型排行榜 / 花费统计」安卓原来就没有页面，本次只放了已有的「余额明细与后台预算」「模型选择」，没新做这三页。
+- 「自动」卡片下「现在：偏向倾听」需要接口返回当前判断（AI 交接已说明需契约变更），未做。
+- 会话长按菜单没做「删除该聊天」、左滑「标为未读 / 删除」；通讯录字母索引条、长按联系人菜单（发消息 / 设置备注 / 删除）未做；小程序宫格长按整理（拖动排序）、最近使用长按移出未做（可在 ··· 菜单里移出）。
+- 「名片」格子指向「暂未开放」：用户发名片不在 `UserSendableContent` 里，需要接口变更申请（与网页一致）。
+- 角色资料页、群聊信息页、聊天信息页下半部分（贴合度、主动消息、称呼等）只换了标题栏，内部仍是旧样式，未按 02a 1.2 改成整组菜单行。
+- 图标用的是系统自带符号字符（与原有「+」面板一致），没有引入 Phosphor 图标库；如设计要求统一图标，需要引入图标资源（可单独排一张卡）。
+- 小程序最近使用、我的小程序只存本机，不跨设备（方案第 11 节第 6 条待架构评估）。
 
 ## 需要总经理决定的事
 
@@ -42,4 +67,7 @@
 
 ## 给其他负责人的交接
 
-（第二批完成后补全）
+- **给后端**（经总负责人转）：① 内置宠物素材内容接口请支持返回 WebP（安卓只解码 WebP）；② 评估让会话列表能取回被隐藏的会话（见遗留问题）。
+- **给运维 / 发版**：安卓每次发版要把 `apps/android/app/build.gradle.kts` 的 `versionCode` 加 1，并在管理后台「更新说明」「版本策略（安卓）」里填同一个版本号和下载地址；「最低可用版本号」大于用户手机上的 versionCode 时，用户会看到不可关闭的「需要更新」弹窗。
+- **给设计**：安卓新增部件（标题栏、菜单行、图标方块、胶囊、情景预设卡片、暂未开放页、新建角色弹层）只用现有令牌；图标暂用符号字符，见遗留问题。
+- **给 Codex（验收）**：见「遗留问题」第一条；安装包路径见上。
