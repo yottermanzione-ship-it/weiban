@@ -480,7 +480,8 @@ export const ChatEndpoints = {
     path: `${API_PREFIX}/conversations`,
     auth: 'user',
     response: z.object({ items: z.array(Conversation) }),
-    summary: '会话列表（全量；增量变化走同步更新）。客户端排序：置顶在前，其余按最后消息时间倒序',
+    summary:
+      '会话列表（全量；增量变化走同步更新）。含用户隐藏的会话（state.hidden = true，客户端在会话列表里过滤，通讯录群聊等仍可找到）。客户端排序：置顶在前，其余按最后消息时间倒序',
   }),
   getConversation: defineEndpoint({
     method: 'GET',

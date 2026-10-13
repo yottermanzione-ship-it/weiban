@@ -211,9 +211,10 @@ export class ChatReadService implements ChatReadPort {
         .for('share');
       const items: Conversation[] = [];
       for (const row of rows) {
-        if (row.archivedAt) continue;
-        const value = await this.store.conversation(tx, row);
-        if (!value.state.hidden) items.push(value);
+        // 已归档、试聊会话不返回；用户手动隐藏的会话照常返回（state.hidden = true，
+        // 客户端在会话列表里过滤），否则全量同步后客户端会把它删掉，「通讯录 › 群聊」也找不到。
+        if (row.archivedAt || row.trialExpiresAt) continue;
+        items.push(await this.store.conversation(tx, row));
       }
       items.sort(
         (a, b) =>

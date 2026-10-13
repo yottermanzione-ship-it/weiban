@@ -10,6 +10,7 @@ import {
   Res,
   Inject,
   HttpCode,
+  Headers,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
@@ -77,10 +78,12 @@ export class MediaController {
   async content(
     @Param(params) p: { mediaId: string },
     @Query(new ContractPipe(MediaEndpoints.download.query!)) q: { token: string },
+    @Headers('accept') accept: string | undefined,
     @Res() res: Response,
   ) {
-    const media = await this.media.download(p.mediaId, q.token);
+    const media = await this.media.download(p.mediaId, q.token, accept);
     res.setHeader('Content-Type', media.mimeType);
+    res.setHeader('Vary', 'Accept');
     res.setHeader('Content-Length', media.body.length);
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');

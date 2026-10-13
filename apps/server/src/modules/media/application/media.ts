@@ -433,7 +433,15 @@ export class MediaService
     return this.linkFor(row, userId, 'o', new Date(this.clock.nowMs() + LINK_TTL_MS));
   }
 
-  async download(mediaId: string, token: string): Promise<{ body: Buffer; mimeType: string }> {
+  /**
+   * @param accept 请求的 Accept 头。内置素材平时给 SVG；客户端只要位图时
+   * （Accept 有 image/webp 或 image/png 但没有 image/svg+xml，例如安卓）现场转 WebP / PNG。
+   */
+  async download(
+    mediaId: string,
+    token: string,
+    accept?: string,
+  ): Promise<{ body: Buffer; mimeType: string }> {
     if (!token || token.length > 1000 || !/^[A-Za-z0-9_-]+$/.test(token))
       throw new AppError('forbidden', '访问链接无效');
     let grant: { userId: string; expiresAt: number; v?: 'o' | 't' };
@@ -459,6 +467,10 @@ export class MediaService
     if (isBuiltinKey(row.storageKey)) {
       const body = renderBuiltinSvg(row.storageKey);
       if (!body) throw new AppError('not_found', '找不到媒体');
+      const want = builtinFormat(accept);
+      if (want === 'webp')
+        return { body: await sharp(body).webp().toBuffer(), mimeType: 'image/webp' };
+      if (want === 'png') return { body: await sharp(body).png().toBuffer(), mimeType: 'image/png' };
       return { body, mimeType: row.mimeType };
     }
     const thumb = grant.v === 't' && row.thumbStorageKey;
@@ -733,4 +745,13 @@ export class MediaService
   async appendUpdate(tx: DbTx, userId: string, update: Parameters<MediaSync['appendUpdate']>[2]) {
     if (this.sync) await this.sync.appendUpdate(tx, userId, update);
   }
+}
+
+/** 内置素材按 Accept 选格式：接受 SVG（或没写 Accept）给 SVG，否则优先 WebP、其次 PNG。 */
+function builtinFormat(accept: string | undefined): 'svg' | 'webp' | 'png' {
+  const a = (accept ?? '').toLowerCase();
+  if (!a || a.includes('image/svg+xml')) return 'svg';
+  if (a.includes('image/webp')) return 'webp';
+  if (a.includes('image/png')) return 'png';
+  return 'svg';
 }
