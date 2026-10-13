@@ -11,7 +11,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   ADMIN_USAGE_EXPORT_MAX_ROWS,
+  microsToPoints,
   type AdminUsageDimension,
+  type AdminUsageOverview,
   type AdminUsageFilter,
   type AdminUsageRecord,
   type AdminUsageSummary,
@@ -32,7 +34,7 @@ import {
   type Database,
 } from '../../../platform/index.js';
 import { USAGE_DAY_TIME_ZONE, decodeCursor, encodeCursor } from '../domain/rules.js';
-import { usageRecords } from '../infra/db/schema.js';
+import { upstreams, usageRecords } from '../infra/db/schema.js';
 
 type UsageRow = typeof usageRecords.$inferSelect;
 
@@ -135,6 +137,14 @@ export class UsageRecorder {
     return row ?? null;
   }
 
+  /** v3.4：失败切换后改记实际调用的账号与上游模型名。 */
+  async setUpstream(id: string, upstreamId: string, upstreamModelId: string): Promise<void> {
+    await this.database.db
+      .update(usageRecords)
+      .set({ upstreamId, upstreamModelId })
+      .where(eq(usageRecords.id, id));
+  }
+
   /** 冻结成功后记下冻结 ID、价目表版本、是否动用安全透支。 */
   async attachHold(
     id: string,
@@ -217,6 +227,7 @@ const DIMENSION_SQL: Record<AdminUsageDimension, SQL> = {
   purpose: sql`${usageRecords.purpose}`,
   upstream: sql`${usageRecords.upstreamId}::text`,
   day: sql`to_char(${usageRecords.createdAt} at time zone ${sql.raw(`'${USAGE_DAY_TIME_ZONE}'`)}, 'YYYY-MM-DD')`,
+  hour: sql`to_char(${usageRecords.createdAt} at time zone ${sql.raw(`'${USAGE_DAY_TIME_ZONE}'`)}, 'YYYY-MM-DD HH24')`,
 };
 
 const TOTALS_SQL = sql`
@@ -231,7 +242,8 @@ const TOTALS_SQL = sql`
   coalesce(sum(${usageRecords.chargedMicros})
     filter (where ${usageRecords.billingOwner} = 'user' and ${usageRecords.status} = 'succeeded'), 0)::bigint as charged_micros,
   coalesce(sum(${usageRecords.costMicros}), 0)::bigint as cost_micros,
-  coalesce(sum(${usageRecords.absorbedCostMicros}), 0)::bigint as absorbed_cost_micros`;
+  coalesce(sum(${usageRecords.absorbedCostMicros}), 0)::bigint as absorbed_cost_micros,
+  coalesce(sum(${usageRecords.latencyMs}), 0)::bigint as latency_ms`;
 
 type TotalsRow = Record<
   | 'calls'
@@ -243,13 +255,22 @@ type TotalsRow = Record<
   | 'estimated_tokens'
   | 'charged_micros'
   | 'cost_micros'
-  | 'absorbed_cost_micros',
+  | 'absorbed_cost_micros'
+  | 'latency_ms',
   string | number | null
 >;
 
 function toTotals(r: TotalsRow | undefined): AdminUsageTotals {
   const n = (v: string | number | null | undefined) => Number(v ?? 0);
+  const calls = n(r?.calls);
+  // usage_records.input_tokens 是未命中缓存的输入（与价目表单位一致），命中率 = 命中 ÷（未命中 + 命中）
+  const inputAll = n(r?.input_tokens) + n(r?.cached_input_tokens);
   return {
+    // v3.4 用量监控
+    chargedPoints: microsToPoints(n(r?.charged_micros)),
+    avgLatencyMs: calls > 0 ? Math.round(n(r?.latency_ms) / calls) : 0,
+    failureRate: calls > 0 ? n(r?.failed_calls) / calls : 0,
+    cacheHitRate: inputAll > 0 ? n(r?.cached_input_tokens) / inputAll : 0,
     calls: n(r?.calls),
     failedCalls: n(r?.failed_calls),
     inputTokens: n(r?.input_tokens),
@@ -288,6 +309,8 @@ export function toAdminRecord(row: UsageRow): AdminUsageRecord {
     absorbedCostMicros: row.absorbedCostMicros,
     priceVersionId: row.priceVersionId,
     safetyOverdraft: row.safetyOverdraft,
+    chargedPoints: microsToPoints(row.chargedMicros),
+    upstreamModelId: row.upstreamModelId.slice(0, 128),
   };
 }
 
@@ -296,6 +319,7 @@ export class AdminUsageService {
   constructor(
     @Inject(DATABASE) private readonly database: Database,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   async summary(req: {
@@ -362,6 +386,82 @@ export class AdminUsageService {
     return {
       items: page.map(toAdminRecord),
       nextCursor: rows.length > req.limit && last ? encodeCursor(last.createdAt, last.id) : null,
+    };
+  }
+
+  /**
+   * v3.4：用量看板概览（06-old-ui-spec 9.3）：所选时段与上一个等长时段的合计、账号可用情况、
+   * 最近 24 小时错误（按账号 + 模型 + 错误类型合并）。
+   */
+  async overview(req: {
+    from: string;
+    to: string;
+    upstreamIds?: string[];
+    modelKeys?: string[];
+  }): Promise<AdminUsageOverview> {
+    const from = new Date(req.from);
+    const to = new Date(req.to);
+    const span = to.getTime() - from.getTime();
+    const filter = (f: Date, t: Date): AdminUsageFilter => ({
+      from: f.toISOString(),
+      to: t.toISOString(),
+      ...(req.upstreamIds ? { upstreamIds: req.upstreamIds } : {}),
+      ...(req.modelKeys ? { modelKeys: req.modelKeys } : {}),
+    });
+    const totalsOf = async (f: AdminUsageFilter) =>
+      toTotals(
+        (
+          await this.database.db.execute<TotalsRow>(
+            sql`select ${TOTALS_SQL} from ${usageRecords} where ${this.where(f)}`,
+          )
+        ).rows[0],
+      );
+    const totals = await totalsOf(filter(from, to));
+    const previousTotals =
+      span > 0
+        ? await totalsOf(filter(new Date(from.getTime() - span), from))
+        : toTotals(undefined);
+    const now = this.clock.now();
+    const accounts = await this.database.db
+      .select({
+        enabled: upstreams.enabled,
+        status: upstreams.status,
+        cooldownUntil: upstreams.cooldownUntil,
+      })
+      .from(upstreams);
+    let available = 0;
+    let abnormal = 0;
+    let disabled = 0;
+    for (const a of accounts) {
+      if (!a.enabled) disabled++;
+      else if (a.status === 'active' && !(a.cooldownUntil && a.cooldownUntil > now)) available++;
+      else abnormal++;
+    }
+    const since = new Date(now.getTime() - 86_400_000);
+    const errors = await this.database.db
+      .select({
+        upstreamId: usageRecords.upstreamId,
+        modelKey: usageRecords.modelKey,
+        errorCode: sql<string>`coalesce(${usageRecords.errorCode}, 'unknown')`,
+        count: sql<string>`count(*)`,
+        lastAt: sql<Date>`max(${usageRecords.createdAt})`,
+      })
+      .from(usageRecords)
+      .where(and(eq(usageRecords.status, 'failed'), gte(usageRecords.createdAt, since)))
+      .groupBy(usageRecords.upstreamId, usageRecords.modelKey, sql`3`)
+      .orderBy(sql`count(*) desc`)
+      .limit(50);
+    return {
+      totals,
+      previousTotals,
+      accounts: { total: accounts.length, available, abnormal, disabled },
+      recentErrors: errors.map((e) => ({
+        upstreamId: e.upstreamId,
+        modelKey: e.modelKey,
+        errorCode: String(e.errorCode).slice(0, 64),
+        count: Number(e.count),
+        lastAt: new Date(e.lastAt).toISOString(),
+      })),
     };
   }
 

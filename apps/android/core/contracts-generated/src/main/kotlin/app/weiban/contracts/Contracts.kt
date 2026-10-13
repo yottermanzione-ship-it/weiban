@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.3. Regenerate: pnpm android:generate
+// Contract 3.4. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.3"
+const val CONTRACT_VERSION: String = "3.4"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -371,6 +371,7 @@ data class AdminModel(
     @SerialName("costRates") val `costRates`: ModelRates?,
     @SerialName("hasTimeBands") val `hasTimeBands`: Boolean,
     @SerialName("pointsPerReply") val `pointsPerReply`: Double?,
+    @SerialName("routes") val `routes`: List<ModelRoute>? = null,
 )
 
 @Serializable
@@ -388,6 +389,7 @@ data class AdminModelWrite(
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("rates") val `rates`: ModelRates?,
     @SerialName("costRates") val `costRates`: ModelRates? = null,
+    @SerialName("routes") val `routes`: List<ModelRoute>? = null,
 )
 
 @Serializable
@@ -405,6 +407,7 @@ data class AdminModelWriteInput(
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("rates") val `rates`: ModelRatesInput?,
     @SerialName("costRates") val `costRates`: ModelRatesInput? = null,
+    @SerialName("routes") val `routes`: List<ModelRouteInput>? = null,
 )
 
 @Serializable
@@ -612,6 +615,14 @@ data class AdminUsageFilterInput(
 )
 
 @Serializable
+data class AdminUsageOverview(
+    @SerialName("totals") val `totals`: AdminUsageTotals,
+    @SerialName("previousTotals") val `previousTotals`: AdminUsageTotals,
+    @SerialName("accounts") val `accounts`: AdminUsageOverviewAccounts,
+    @SerialName("recentErrors") val `recentErrors`: List<AdminUsageOverviewRecentErrorsItem>,
+)
+
+@Serializable
 data class AdminUsageRecord(
     @SerialName("usageRecordId") val `usageRecordId`: Id,
     @SerialName("createdAt") val `createdAt`: Timestamp,
@@ -636,6 +647,8 @@ data class AdminUsageRecord(
     @SerialName("absorbedCostMicros") val `absorbedCostMicros`: Long,
     @SerialName("priceVersionId") val `priceVersionId`: Id?,
     @SerialName("safetyOverdraft") val `safetyOverdraft`: Boolean,
+    @SerialName("chargedPoints") val `chargedPoints`: Double? = null,
+    @SerialName("upstreamModelId") val `upstreamModelId`: String? = null,
 )
 
 @Serializable
@@ -673,6 +686,10 @@ data class AdminUsageSummaryRow(
     @SerialName("chargedMicros") val `chargedMicros`: Long,
     @SerialName("costMicros") val `costMicros`: Long,
     @SerialName("absorbedCostMicros") val `absorbedCostMicros`: Long,
+    @SerialName("chargedPoints") val `chargedPoints`: Double? = null,
+    @SerialName("avgLatencyMs") val `avgLatencyMs`: Double? = null,
+    @SerialName("failureRate") val `failureRate`: Double? = null,
+    @SerialName("cacheHitRate") val `cacheHitRate`: Double? = null,
     @SerialName("keys") val `keys`: List<String>,
 )
 
@@ -688,6 +705,10 @@ data class AdminUsageTotals(
     @SerialName("chargedMicros") val `chargedMicros`: Long,
     @SerialName("costMicros") val `costMicros`: Long,
     @SerialName("absorbedCostMicros") val `absorbedCostMicros`: Long,
+    @SerialName("chargedPoints") val `chargedPoints`: Double? = null,
+    @SerialName("avgLatencyMs") val `avgLatencyMs`: Double? = null,
+    @SerialName("failureRate") val `failureRate`: Double? = null,
+    @SerialName("cacheHitRate") val `cacheHitRate`: Double? = null,
 )
 
 @Serializable
@@ -2438,6 +2459,14 @@ data class CreateUpstreamRequest(
     @SerialName("kind") val `kind`: UpstreamKind,
     @SerialName("baseUrl") val `baseUrl`: String,
     @SerialName("apiKey") val `apiKey`: String,
+    @SerialName("provider") val `provider`: String? = null,
+    @SerialName("priority") val `priority`: Long? = null,
+    @SerialName("weight") val `weight`: Long? = null,
+    @SerialName("maxConcurrency") val `maxConcurrency`: Long? = null,
+    @SerialName("rpmLimit") val `rpmLimit`: Long? = null,
+    @SerialName("enabled") val `enabled`: Boolean? = null,
+    @SerialName("note") val `note`: String? = null,
+    @SerialName("saveOnTestFailure") val `saveOnTestFailure`: Boolean? = null,
 )
 
 @Serializable
@@ -2446,6 +2475,14 @@ data class CreateUpstreamRequestInput(
     @SerialName("kind") val `kind`: UpstreamKind,
     @SerialName("baseUrl") val `baseUrl`: String,
     @SerialName("apiKey") val `apiKey`: String,
+    @SerialName("provider") val `provider`: String? = null,
+    @SerialName("priority") val `priority`: Long? = null,
+    @SerialName("weight") val `weight`: Long? = null,
+    @SerialName("maxConcurrency") val `maxConcurrency`: Long? = null,
+    @SerialName("rpmLimit") val `rpmLimit`: Long? = null,
+    @SerialName("enabled") val `enabled`: Boolean? = null,
+    @SerialName("note") val `note`: String? = null,
+    @SerialName("saveOnTestFailure") val `saveOnTestFailure`: Boolean? = null,
 )
 
 @Serializable
@@ -4611,6 +4648,22 @@ data class FocusSession(
     @SerialName("result") val `result`: String,
 )
 
+@Serializable
+data class GatewayLimits(
+    @SerialName("perUserConcurrency") val `perUserConcurrency`: Long?,
+    @SerialName("perUserRpm") val `perUserRpm`: Long?,
+    @SerialName("failureThreshold") val `failureThreshold`: Long,
+    @SerialName("cooldownSeconds") val `cooldownSeconds`: Long,
+)
+
+@Serializable
+data class GatewayLimitsInput(
+    @SerialName("perUserConcurrency") val `perUserConcurrency`: Long?,
+    @SerialName("perUserRpm") val `perUserRpm`: Long?,
+    @SerialName("failureThreshold") val `failureThreshold`: Long,
+    @SerialName("cooldownSeconds") val `cooldownSeconds`: Long,
+)
+
 typealias Gender = String
 
 @Serializable
@@ -5562,6 +5615,11 @@ data class MessageSearchHit(
 typealias MessageStatus = String
 
 @Serializable
+data class ModelAccessAdminEndpointsBatchUpstreamsResponse(
+    @SerialName("items") val `items`: List<Upstream>,
+)
+
+@Serializable
 data class ModelAccessAdminEndpointsDeleteUpstreamParams(
     @SerialName("upstreamId") val `upstreamId`: Id,
 )
@@ -5574,6 +5632,11 @@ data class ModelAccessAdminEndpointsListCatalogResponse(
 @Serializable
 data class ModelAccessAdminEndpointsListModelsResponse(
     @SerialName("items") val `items`: List<AdminModel>,
+)
+
+@Serializable
+data class ModelAccessAdminEndpointsListUpstreamModelsParams(
+    @SerialName("upstreamId") val `upstreamId`: Id,
 )
 
 @Serializable
@@ -5593,6 +5656,11 @@ data class ModelAccessAdminEndpointsRotateUpstreamKeyParams(
 
 @Serializable
 data class ModelAccessAdminEndpointsTestUpstreamParams(
+    @SerialName("upstreamId") val `upstreamId`: Id,
+)
+
+@Serializable
+data class ModelAccessAdminEndpointsUpdateUpstreamParams(
     @SerialName("upstreamId") val `upstreamId`: Id,
 )
 
@@ -5628,6 +5696,14 @@ data class ModelAccessAdminUsageEndpointsListUsageRecordsBody(
 data class ModelAccessAdminUsageEndpointsListUsageRecordsResponse(
     @SerialName("items") val `items`: List<AdminUsageRecord>,
     @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class ModelAccessAdminUsageEndpointsUsageOverviewBody(
+    @SerialName("from") val `from`: Timestamp,
+    @SerialName("to") val `to`: Timestamp,
+    @SerialName("upstreamIds") val `upstreamIds`: List<Id>? = null,
+    @SerialName("modelKeys") val `modelKeys`: List<ModelKey>? = null,
 )
 
 @Serializable
@@ -5711,6 +5787,24 @@ data class ModelRefState(
 )
 
 typealias ModelRole = String
+
+@Serializable
+data class ModelRoute(
+    @SerialName("upstreamId") val `upstreamId`: Id,
+    @SerialName("upstreamModelId") val `upstreamModelId`: String,
+    @SerialName("priority") val `priority`: Long,
+    @SerialName("weight") val `weight`: Long,
+    @SerialName("enabled") val `enabled`: Boolean,
+)
+
+@Serializable
+data class ModelRouteInput(
+    @SerialName("upstreamId") val `upstreamId`: Id,
+    @SerialName("upstreamModelId") val `upstreamModelId`: String,
+    @SerialName("priority") val `priority`: Long,
+    @SerialName("weight") val `weight`: Long,
+    @SerialName("enabled") val `enabled`: Boolean,
+)
 
 @Serializable
 data class ModelSelection(
@@ -8468,6 +8562,32 @@ data class UpdateRechargeOptionsRequestInput(
 typealias UpdateSeq = Long
 
 @Serializable
+data class UpdateUpstreamRequest(
+    @SerialName("name") val `name`: String? = null,
+    @SerialName("baseUrl") val `baseUrl`: String? = null,
+    @SerialName("provider") val `provider`: String? = null,
+    @SerialName("priority") val `priority`: Long? = null,
+    @SerialName("weight") val `weight`: Long? = null,
+    @SerialName("maxConcurrency") val `maxConcurrency`: Long? = null,
+    @SerialName("rpmLimit") val `rpmLimit`: Long? = null,
+    @SerialName("enabled") val `enabled`: Boolean? = null,
+    @SerialName("note") val `note`: String? = null,
+)
+
+@Serializable
+data class UpdateUpstreamRequestInput(
+    @SerialName("name") val `name`: String? = null,
+    @SerialName("baseUrl") val `baseUrl`: String? = null,
+    @SerialName("provider") val `provider`: String? = null,
+    @SerialName("priority") val `priority`: Long? = null,
+    @SerialName("weight") val `weight`: Long? = null,
+    @SerialName("maxConcurrency") val `maxConcurrency`: Long? = null,
+    @SerialName("rpmLimit") val `rpmLimit`: Long? = null,
+    @SerialName("enabled") val `enabled`: Boolean? = null,
+    @SerialName("note") val `note`: String? = null,
+)
+
+@Serializable
 data class UpdateUserPreferencesRequest(
     @SerialName("theme") val `theme`: AppTheme? = null,
 )
@@ -8503,6 +8623,33 @@ data class Upstream(
     @SerialName("status") val `status`: UpstreamStatus,
     @SerialName("statusChangedAt") val `statusChangedAt`: Timestamp,
     @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("provider") val `provider`: String? = null,
+    @SerialName("priority") val `priority`: Long? = null,
+    @SerialName("weight") val `weight`: Long? = null,
+    @SerialName("maxConcurrency") val `maxConcurrency`: Long? = null,
+    @SerialName("rpmLimit") val `rpmLimit`: Long? = null,
+    @SerialName("enabled") val `enabled`: Boolean? = null,
+    @SerialName("note") val `note`: String? = null,
+    @SerialName("cooldownUntil") val `cooldownUntil`: Timestamp? = null,
+    @SerialName("consecutiveFailures") val `consecutiveFailures`: Long? = null,
+    @SerialName("lastError") val `lastError`: String? = null,
+    @SerialName("lastUsedAt") val `lastUsedAt`: Timestamp? = null,
+    @SerialName("lastTestedAt") val `lastTestedAt`: Timestamp? = null,
+    @SerialName("inFlight") val `inFlight`: Long? = null,
+    @SerialName("todayCalls") val `todayCalls`: Long? = null,
+    @SerialName("todayCostMicros") val `todayCostMicros`: Long? = null,
+)
+
+@Serializable
+data class UpstreamBatchRequest(
+    @SerialName("upstreamIds") val `upstreamIds`: List<Id>,
+    @SerialName("action") val `action`: String,
+)
+
+@Serializable
+data class UpstreamBatchRequestInput(
+    @SerialName("upstreamIds") val `upstreamIds`: List<Id>,
+    @SerialName("action") val `action`: String,
 )
 
 @Serializable
@@ -8517,6 +8664,11 @@ data class UpstreamBill(
 )
 
 typealias UpstreamKind = String
+
+@Serializable
+data class UpstreamModelList(
+    @SerialName("items") val `items`: List<UpstreamModelListItemsItem>,
+)
 
 typealias UpstreamStatus = String
 
@@ -9690,6 +9842,23 @@ data class AdminPlazaWorkRemixOf(
     @SerialName("name") val `name`: String,
     @SerialName("authorNickname") val `authorNickname`: String,
     @SerialName("available") val `available`: Boolean,
+)
+
+@Serializable
+data class AdminUsageOverviewAccounts(
+    @SerialName("total") val `total`: Long,
+    @SerialName("available") val `available`: Long,
+    @SerialName("abnormal") val `abnormal`: Long,
+    @SerialName("disabled") val `disabled`: Long,
+)
+
+@Serializable
+data class AdminUsageOverviewRecentErrorsItem(
+    @SerialName("upstreamId") val `upstreamId`: Id,
+    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("errorCode") val `errorCode`: String,
+    @SerialName("count") val `count`: Long,
+    @SerialName("lastAt") val `lastAt`: Timestamp,
 )
 
 @Serializable
@@ -11390,6 +11559,11 @@ data class UpdateRechargeOptionsRequestInputTiersItem(
     @SerialName("tierId") val `tierId`: String,
     @SerialName("priceMicros") val `priceMicros`: PositiveMoneyMicros,
     @SerialName("bonusPercent") val `bonusPercent`: Double,
+)
+
+@Serializable
+data class UpstreamModelListItemsItem(
+    @SerialName("id") val `id`: String,
 )
 
 @Serializable

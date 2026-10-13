@@ -9,6 +9,9 @@
  * v3.3（2026-10-13，ADR-0032）：后台「模型」页用**倍率**表达价格（输入 / 输出 / 缓存三个倍率，数值 = 每百万 token
  * 的人民币价格）。新增合并接口 listModels / upsertModel（目录 + 倍率一次保存，后端自动生成并发布新价目表版本），
  * 取代分别维护「模型目录」和「价目表」；旧的 catalog / price-versions 接口保留给高级操作。ModelInfo 新增「约每条积分」。
+ * v3.4（2026-10-13，ADR-0032 第二批）：上游账号池——一行上游 = 一个上游账号（同一服务商可多个），新增服务商、
+ * 优先级、权重、并发 / 每分钟请求上限、启用、冷却与健康字段；模型路由（一个模型 → 多个账号）；修改账号、批量操作、
+ * 拉取账号可用模型；每用户并发 / 频率上限与健康参数；用量看板（平均延迟、失败率、缓存命中率、积分、按小时、概览）。
  */
 import { z } from 'zod';
 import {
@@ -204,6 +207,23 @@ export type UpstreamStatus = z.infer<typeof UpstreamStatus>;
 /** 3.0：dashscope = 阿里云百炼原生接口（语音、图片）；bocha_search = 博查搜索；jev = TypeSafe AI Jev（CR-18，待配置后验证）。 */
 export const UpstreamKind = z.enum(['openai_compatible', 'dashscope', 'bocha_search', 'jev']);
 
+/** v3.4：上游账号的调度参数（可空 = 不限）。 */
+const UpstreamLimitFields = {
+  /** 服务商标识（后台下拉：xiaomi_mimo / dashscope / deepseek / moonshot / zhipu / openrouter / openai_compatible…），只用于分组展示。 */
+  provider: z.string().min(1).max(40),
+  /** 优先级：数字小的先用；同一模型多个账号时先在最小优先级的一组里按权重分流。 */
+  priority: z.number().int().min(0).max(1000),
+  /** 权重（同优先级内按比例分流），1～1000。 */
+  weight: z.number().int().min(1).max(1000),
+  /** 同时进行中的调用上限；null = 不限。 */
+  maxConcurrency: z.number().int().min(1).max(10_000).nullable(),
+  /** 每分钟请求上限；null = 不限。 */
+  rpmLimit: z.number().int().min(1).max(100_000).nullable(),
+  /** 停用后不再分配调用（进行中的调用不受影响）。 */
+  enabled: z.boolean(),
+  note: z.string().max(200).nullable(),
+};
+
 export const Upstream = z.object({
   upstreamId: Id,
   /** 展示名，例「DeepSeek 官方」「阿里云百炼」「OpenRouter」。 */
@@ -215,6 +235,26 @@ export const Upstream = z.object({
   status: UpstreamStatus,
   statusChangedAt: Timestamp,
   createdAt: Timestamp,
+  // ---- v3.4 上游账号池（旧服务器不带，客户端按默认值处理）----
+  provider: UpstreamLimitFields.provider.optional(),
+  priority: UpstreamLimitFields.priority.optional(),
+  weight: UpstreamLimitFields.weight.optional(),
+  maxConcurrency: UpstreamLimitFields.maxConcurrency.optional(),
+  rpmLimit: UpstreamLimitFields.rpmLimit.optional(),
+  enabled: z.boolean().optional(),
+  note: UpstreamLimitFields.note.optional(),
+  /** 连续失败后自动暂停到这个时间（期间不分配调用）；null = 没有暂停。 */
+  cooldownUntil: Timestamp.nullable().optional(),
+  consecutiveFailures: z.number().int().nonnegative().optional(),
+  /** 最近一次失败的类别（网关内部错误码，不含上游原文），例 rate_limited / quota_exhausted / invalid_key。 */
+  lastError: z.string().max(64).nullable().optional(),
+  lastUsedAt: Timestamp.nullable().optional(),
+  lastTestedAt: Timestamp.nullable().optional(),
+  /** 当前进行中的调用数（本进程内存计数）。 */
+  inFlight: z.number().int().nonnegative().optional(),
+  /** 今天（北京时间）的调用次数与上游成本（微元）。 */
+  todayCalls: z.number().int().nonnegative().optional(),
+  todayCostMicros: z.number().int().nonnegative().optional(),
 });
 export type Upstream = z.infer<typeof Upstream>;
 
@@ -224,6 +264,43 @@ export const CreateUpstreamRequest = z.object({
   baseUrl: z.url(),
   /** 密钥原文，只在此请求和 rotateKey 请求中出现。服务器去除首尾空白后先做连通测试。 */
   apiKey: z.string().min(8).max(512),
+  // ---- v3.4（可省，省略时：provider = kind、priority 1、weight 100、不限并发 / 频率、启用）----
+  provider: UpstreamLimitFields.provider.optional(),
+  priority: UpstreamLimitFields.priority.optional(),
+  weight: UpstreamLimitFields.weight.optional(),
+  maxConcurrency: UpstreamLimitFields.maxConcurrency.optional(),
+  rpmLimit: UpstreamLimitFields.rpmLimit.optional(),
+  enabled: z.boolean().optional(),
+  note: UpstreamLimitFields.note.optional(),
+  /**
+   * v3.4：连通测试失败也保存（状态按失败原因记为异常，06-old-ui-spec 9.4「测试不通过也允许保存」）。
+   * 不传 / false 时保持原规则：测试失败 422 upstream_test_failed，不保存。
+   */
+  saveOnTestFailure: z.boolean().optional(),
+});
+
+/** v3.4：修改上游账号（不含密钥；换密钥用 rotateUpstreamKey）。只改传了的字段。 */
+export const UpdateUpstreamRequest = z.object({
+  name: z.string().min(1).max(40).optional(),
+  baseUrl: z.url().optional(),
+  provider: UpstreamLimitFields.provider.optional(),
+  priority: UpstreamLimitFields.priority.optional(),
+  weight: UpstreamLimitFields.weight.optional(),
+  maxConcurrency: UpstreamLimitFields.maxConcurrency.optional(),
+  rpmLimit: UpstreamLimitFields.rpmLimit.optional(),
+  enabled: z.boolean().optional(),
+  note: UpstreamLimitFields.note.optional(),
+});
+
+/** v3.4：批量操作上游账号。 */
+export const UpstreamBatchRequest = z.object({
+  upstreamIds: z.array(Id).min(1).max(100),
+  action: z.enum(['test', 'enable', 'disable']),
+});
+
+/** v3.4：从上游账号拉取到的可用模型（OpenAI 兼容 GET {baseUrl}/models 的 id 列表）。 */
+export const UpstreamModelList = z.object({
+  items: z.array(z.object({ id: z.string().max(200) })),
 });
 
 export const UpstreamTestFailure = z.enum([
@@ -277,6 +354,20 @@ export type AdminCatalogEntry = z.infer<typeof AdminCatalogEntry>;
 
 export const AdminCatalogEntryWrite = AdminCatalogEntry.omit({ updatedAt: true });
 
+/**
+ * v3.4：模型路由——这个模型可以走哪些上游账号（按优先级、权重调度，失败自动切换到下一个）。
+ * 目录条目的 upstreamId / upstreamModelId 是「主路由」（优先级最小、权重最大的那条）的镜像，旧接口照常可用。
+ */
+export const ModelRoute = z.object({
+  upstreamId: Id,
+  /** 该账号那边的模型名（不同服务商同一模型可能叫法不同）。 */
+  upstreamModelId: z.string().min(1).max(128),
+  priority: z.number().int().min(0).max(1000),
+  weight: z.number().int().min(1).max(1000),
+  enabled: z.boolean(),
+});
+export type ModelRoute = z.infer<typeof ModelRoute>;
+
 // ---------- 管理后台：模型（目录 + 倍率合并，v3.3） ----------
 
 /**
@@ -301,6 +392,8 @@ export const AdminModel = AdminCatalogEntry.extend({
   hasTimeBands: z.boolean(),
   /** 约每条回复消耗多少积分（cost-estimate.md 7.2「标准回复」），rates 为 null 时为 null。 */
   pointsPerReply: z.number().nonnegative().nullable(),
+  /** v3.4：模型路由（按优先级升序）。 */
+  routes: z.array(ModelRoute).optional(),
 });
 export type AdminModel = z.infer<typeof AdminModel>;
 
@@ -312,7 +405,25 @@ export const AdminModelWrite = AdminCatalogEntryWrite.extend({
   rates: ModelRates.nullable(),
   /** 成本倍率；不传或 null = 与售价倍率相同。 */
   costRates: ModelRates.nullable().optional(),
+  /**
+   * v3.4：模型路由（整体替换，至少 1 条、账号不能重复）。不传 = 只保证 upstreamId / upstreamModelId 这条路由存在。
+   * 传了时 upstreamId / upstreamModelId 以路由里的主路由为准（服务器自动同步）。
+   */
+  routes: z.array(ModelRoute).min(1).max(20).optional(),
 });
+
+/** v3.4：每用户限流与健康参数（后台「模型管理」设置）。 */
+export const GatewayLimits = z.object({
+  /** 每个用户同时进行中的模型调用上限；null = 不限。超出时这次调用按「模型暂时不可用」返回。 */
+  perUserConcurrency: z.number().int().min(1).max(1000).nullable(),
+  /** 每个用户每分钟模型调用上限；null = 不限。 */
+  perUserRpm: z.number().int().min(1).max(100_000).nullable(),
+  /** 账号连续失败多少次后自动暂停。 */
+  failureThreshold: z.number().int().min(1).max(100),
+  /** 自动暂停多少秒后再试。 */
+  cooldownSeconds: z.number().int().min(10).max(86_400),
+});
+export type GatewayLimits = z.infer<typeof GatewayLimits>;
 
 export const ModelAccessAdminEndpoints = {
   listUpstreams: defineEndpoint({
@@ -355,6 +466,48 @@ export const ModelAccessAdminEndpoints = {
     params: z.object({ upstreamId: Id }),
     response: NoContent,
     summary: '删除上游；仍有启用的模型指向它时 409 conflict',
+  }),
+  updateUpstream: defineEndpoint({
+    method: 'PATCH',
+    path: `${API_PREFIX}/admin/model/upstreams/:upstreamId`,
+    auth: 'admin',
+    params: z.object({ upstreamId: Id }),
+    body: UpdateUpstreamRequest,
+    response: Upstream,
+    summary:
+      'v3.4：修改上游账号（名称、地址、服务商、优先级、权重、并发 / 频率上限、启用、备注）；改地址会清空冷却并按「需要重新测试」处理；写审计',
+  }),
+  batchUpstreams: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/model/upstreams/batch`,
+    auth: 'admin',
+    body: UpstreamBatchRequest,
+    response: z.object({ items: z.array(Upstream) }),
+    summary: 'v3.4：批量测试 / 启用 / 停用上游账号，返回操作后的账号',
+  }),
+  listUpstreamModels: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/upstreams/:upstreamId/models`,
+    auth: 'admin',
+    params: z.object({ upstreamId: Id }),
+    response: UpstreamModelList,
+    summary:
+      'v3.4：从该账号拉取可用模型列表（添加模型向导第 ② 步）；拉不到时 422 upstream_test_failed（details.reason），界面允许手填',
+  }),
+  getGatewayLimits: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/limits`,
+    auth: 'admin',
+    response: GatewayLimits,
+    summary: 'v3.4：每用户并发 / 每分钟上限与账号健康参数',
+  }),
+  updateGatewayLimits: defineEndpoint({
+    method: 'PUT',
+    path: `${API_PREFIX}/admin/model/limits`,
+    auth: 'admin',
+    body: GatewayLimits,
+    response: GatewayLimits,
+    summary: 'v3.4：修改每用户限流与账号健康参数（写审计）',
   }),
   listCatalog: defineEndpoint({
     method: 'GET',
@@ -400,6 +553,7 @@ export const ModelAccessAdminEndpoints = {
 // 任何响应都不含消息内容、提示词或模型输出。
 
 /** 分组维度。day 按北京时间自然日（与供应商账单日一致，billing.md 第 7 节）。 */
+/** v3.4：新增 hour（北京时间「YYYY-MM-DD HH」，趋势图按小时）。 */
 export const AdminUsageDimension = z.enum([
   'user',
   'character',
@@ -407,6 +561,7 @@ export const AdminUsageDimension = z.enum([
   'purpose',
   'upstream',
   'day',
+  'hour',
 ]);
 export type AdminUsageDimension = z.infer<typeof AdminUsageDimension>;
 
@@ -439,6 +594,15 @@ export const AdminUsageTotals = z.object({
   chargedMicros: z.number().int().nonnegative(),
   costMicros: z.number().int().nonnegative(),
   absorbedCostMicros: z.number().int().nonnegative(),
+  // ---- v3.4 用量监控 ----
+  /** 用户扣除的积分（= chargedMicros ÷ 10,000）。 */
+  chargedPoints: z.number().nonnegative().optional(),
+  /** 平均耗时（毫秒，含失败调用）。 */
+  avgLatencyMs: z.number().nonnegative().optional(),
+  /** 失败率 0～1。 */
+  failureRate: z.number().min(0).max(1).optional(),
+  /** 缓存命中率 0～1 = 命中缓存的输入 token ÷（未命中 + 命中的输入 token）。 */
+  cacheHitRate: z.number().min(0).max(1).optional(),
 });
 export type AdminUsageTotals = z.infer<typeof AdminUsageTotals>;
 
@@ -499,8 +663,38 @@ export const AdminUsageRecord = z.object({
   priceVersionId: Id.nullable(),
   /** 这次扣费动用了安全优先透支（billing.md 6.6 节）。 */
   safetyOverdraft: z.boolean(),
+  /** v3.4：用户扣除的积分。 */
+  chargedPoints: z.number().nonnegative().optional(),
+  /** v3.4：实际调用的上游模型名。 */
+  upstreamModelId: z.string().max(128).optional(),
 });
 export type AdminUsageRecord = z.infer<typeof AdminUsageRecord>;
+
+/** v3.4：用量看板概览（06-old-ui-spec 9.3）。 */
+export const AdminUsageOverview = z.object({
+  totals: AdminUsageTotals,
+  /** 上一个等长时段的合计（「较昨日」）。 */
+  previousTotals: AdminUsageTotals,
+  accounts: z.object({
+    total: z.number().int().nonnegative(),
+    /** 启用、状态正常且不在暂停中的账号数。 */
+    available: z.number().int().nonnegative(),
+    /** 启用但状态异常或暂停中的账号数。 */
+    abnormal: z.number().int().nonnegative(),
+    disabled: z.number().int().nonnegative(),
+  }),
+  /** 最近 24 小时失败调用，按「账号 + 模型 + 错误类型」合并计数（最多 50 组，次数从多到少）。 */
+  recentErrors: z.array(
+    z.object({
+      upstreamId: Id,
+      modelKey: ModelKey,
+      errorCode: z.string().max(64),
+      count: z.number().int().positive(),
+      lastAt: Timestamp,
+    }),
+  ),
+});
+export type AdminUsageOverview = z.infer<typeof AdminUsageOverview>;
 
 /** 导出上限：一次最多导出的明细行数，超过时 truncated = true，请缩小筛选范围。 */
 export const ADMIN_USAGE_EXPORT_MAX_ROWS = 50_000 as const;
@@ -534,5 +728,19 @@ export const ModelAccessAdminUsageEndpoints = {
     response: z.object({ items: z.array(AdminUsageRecord), truncated: z.boolean() }),
     summary:
       '导出明细（最多 ADMIN_USAGE_EXPORT_MAX_ROWS 行，管理后台转成 CSV）；每次导出写审计日志（ADM-08 第 6 条）',
+  }),
+  usageOverview: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/model/usage/overview`,
+    auth: 'admin',
+    body: z.object({
+      from: Timestamp,
+      to: Timestamp,
+      upstreamIds: z.array(Id).min(1).max(50).optional(),
+      modelKeys: z.array(ModelKey).min(1).max(50).optional(),
+    }),
+    response: AdminUsageOverview,
+    summary:
+      'v3.4：用量看板概览：汇总（调用、成功率、token、上游成本、用户扣除积分、平均耗时、缓存命中率）、上一时段对比、可用账号数、最近 24 小时错误（只读查询）',
   }),
 } as const;

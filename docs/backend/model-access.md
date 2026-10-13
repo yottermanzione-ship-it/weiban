@@ -132,3 +132,16 @@
 - `PUT /admin/model/models/:modelKey`（模型键 URL 编码）：`rates` 非空时先经 `BillingModelRatePort.publishModelTokenRates` 发布新价目表版本（`costRates` 缺省 = 售价），再走原 `CatalogService.upsert`（全部目录规则不变，含「启用须有价格」）。目录保存失败时新价格保留，管理员修正后重试。
 - 模型价格来源 `MODEL_PRICE_SOURCE` 改为 `RatePriceSource`（读 billing 当前价目表），用户端 `GET /model/models` 的 `priceTier` 不再恒为「中等」，并新增 `pointsPerReply`。
 - 旧接口 `catalog`、`price-versions` 保留给高级操作（分时价、历史版本）。
+
+## 契约 3.4：上游账号池与用量监控（ADR-0032 第二批，2026-10-13）
+
+借鉴 sub2api 的账号池设计（只读其源码学思路，未复制代码）。
+
+- **表（0089）**：`upstreams` 一行 = 一个上游账号，新增 `provider / priority / weight / max_concurrency / rpm_limit / enabled / note / cooldown_until / consecutive_failures / last_error / last_used_at`；新表 `model_routes(model_key, upstream_id, upstream_model_id, priority, weight, enabled)`（迁移时把每个目录条目的主上游写成第一条路由）；新表 `settings`（`gateway_limits`）。
+- **调度**（`application/scheduler.ts`）：候选 = 该模型启用路由 × 启用账号；状态正常且不在暂停中的在前，暂停到期但仍标「不可用」的排最后（试探）；先比路由优先级、再比账号优先级，组内用加权一致性散列排序（分数 = −ln(u) / (路由权重 × 账号权重)，u = 散列「会话 ID | 模型 | 账号」）：同一会话稳定落在同一账号（粘性，利于缓存命中），无会话时按权重随机。
+- **网关**（`gateway.ts` 的 `callUpstreams`）：先占每用户槽位（每用户并发 / 每分钟上限，超出直接 `provider_unavailable`，不冻结不扣费）；冻结一次；按候选顺序占账号槽位（账号并发 / 每分钟上限，满了跳到下一个；全满记 `account_limited` 失败，不算账号故障）；可切换的失败（`network_error / provider_error / rate_limited / quota_exhausted / invalid_key / timeout`）立即换下一个账号（不等待），用量记录与生成缓存改记实际账号；只剩最后一个账号时沿用原 2 / 5 / 15 秒退避。
+- **健康**：成功清零连续失败、清暂停，状态非正常则恢复；失败累加，达到阈值（默认 3 次）暂停（默认 300 秒）并标 `unavailable`；`invalid_key / quota_exhausted` 立即标对应状态并暂停。`GatewayMaintenance` 每分钟探测启用、暂停到期、24 小时内变为不可用的账号，连通即恢复。手动测试通过也清暂停。
+- **模型可用性**：`CatalogService.routeStatus` —— 任一启用路由指向「启用且正常」的账号即可用；单个账号故障不再发 `model_status_changed`，只有经它路由、且没有别的正常账号的模型才发。旧接口 `upsertCatalogEntry` 保存后同步主路由（0～1 条路由时替换，多条时更新 / 补上）；`upsertModel` 传 `routes` 时整体替换，目录主上游 = 主路由（媒体网关仍按目录主上游调用）。
+- **限流计数在进程内存**（单实例部署够用；多实例需改共享存储）。
+- **用量监控**（`usage.ts`）：汇总新增 `chargedPoints / avgLatencyMs / failureRate / cacheHitRate`，维度新增 `hour`；明细新增 `chargedPoints / upstreamModelId`；`POST /admin/model/usage/overview` 给看板（本期与上一等长时段、账号可用数、最近 24 小时错误按账号 + 模型 + 错误合并）。
+- **新接口**：`PATCH /admin/model/upstreams/:id`、`POST /admin/model/upstreams/batch`、`GET /admin/model/upstreams/:id/models`（拉取账号可用模型）、`GET/PUT /admin/model/limits`、`POST /admin/model/usage/overview`；创建账号可带调度参数与 `saveOnTestFailure`。

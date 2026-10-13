@@ -41,7 +41,8 @@ import {
   type GenerationRow,
   type CachedResult,
 } from './generation-cache.js';
-import { ModelResolver, ModelStatusService } from './resolver.js';
+import { ModelResolver, ModelStatusService, type ResolvedModel } from './resolver.js';
+import { FAILOVER_CATEGORIES, UpstreamScheduler, type RouteCandidate } from './scheduler.js';
 import { UpstreamService } from './upstreams.js';
 import { UsageRecorder } from './usage.js';
 import { CatalogService } from './catalog.js';
@@ -95,6 +96,7 @@ export class ModelGateway implements ModelGatewayPort {
     @Inject(MODEL_GENERATION_POLICY) private readonly policy: GenerationPolicy,
     @Inject(MODEL_ACCESS_POLICY) private readonly modelPolicy: ModelPolicy,
     @Inject(CatalogService) private readonly catalog: CatalogService,
+    @Inject(UpstreamScheduler) private readonly scheduler: UpstreamScheduler,
     @Inject(TEXT_ADAPTER) private readonly adapter: TextAdapter,
     @Inject(GATEWAY_RETRY_WAIT) private readonly wait: RetryWait,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -167,11 +169,59 @@ export class ModelGateway implements ModelGatewayPort {
       return resolved;
     }
     const model = resolved.value;
+    // v3.4（ADR-0032）：上游账号池——按优先级 / 权重 / 粘性会话排出候选账号，失败自动切换。
+    let candidates = await this.scheduler.plan(model.modelKey, input.conversationId ?? null);
+    if (candidates.length === 0) {
+      // 没有路由（理论上 0089 已迁移）：沿用目录上的主上游，状态必须正常
+      const primary = await this.upstreams.get(model.upstreamId).catch(() => null);
+      const now = this.clock.nowMs();
+      if (
+        primary &&
+        primary.enabled &&
+        primary.status === 'active' &&
+        !(primary.cooldownUntil && primary.cooldownUntil.getTime() > now)
+      )
+        candidates = [
+          {
+            upstreamId: primary.id,
+            upstreamModelId: model.upstreamModelId,
+            baseUrl: primary.baseUrl,
+            maxConcurrency: primary.maxConcurrency,
+            rpmLimit: primary.rpmLimit,
+            probing: false,
+          },
+        ];
+    }
+    if (candidates.length === 0 || !(await this.scheduler.acquireUser(input.userId))) {
+      // 没有可用账号，或超过每用户并发 / 每分钟上限：按「模型暂时不可用」返回，不冻结、不扣费
+      const result: CachedResult = { ok: false, error: 'provider_unavailable' };
+      await this.cache.save(row, result, 'complete');
+      return result;
+    }
+    try {
+      return await this.callUpstreams(input, internal, row, model, candidates, imageCount);
+    } finally {
+      this.scheduler.releaseUser(input.userId);
+    }
+  }
+
+  /** 冻结 → 按候选账号调用（失败切换）→ 记账。v3.4 从 generateText 拆出。 */
+  private async callUpstreams(
+    input: GenerateTextInput,
+    internal: { fallbackModelKey?: string } | undefined,
+    row: GenerationRow,
+    model: ResolvedModel,
+    candidates: RouteCandidate[],
+    imageCount: number,
+  ): Promise<CachedResult> {
     const maxOutputTokens = input.maxOutputTokens ?? DEFAULT_TOKENS[input.purpose] ?? 8000;
     const startedAt = this.clock.now();
+    const first = candidates[0]!;
     const usage = await this.recorder.start({
       input: { ...input, idempotencyKey: `gateway:${row.id}` },
       ...model,
+      upstreamId: first.upstreamId,
+      upstreamModelId: first.upstreamModelId,
       countsAsBackground:
         !BUDGET_EXEMPT_PURPOSES.includes(input.purpose) &&
         (BACKGROUND_PURPOSES.includes(input.purpose) || input.countAsBackground === true),
@@ -211,11 +261,10 @@ export class ModelGateway implements ModelGatewayPort {
       return result;
     }
     const hold = reserve.value;
-    await this.cache.attach(row.id, usage.record.id, hold.holdId, model.upstreamId);
+    await this.cache.attach(row.id, usage.record.id, hold.holdId, first.upstreamId);
     await this.recorder.attachHold(usage.record.id, hold);
-    const upstream = await this.upstreams.get(model.upstreamId);
     const wire = await this.wireMessages(input);
-    const fake = isFakeModel(model.upstreamModelId, this.config.nodeEnv === 'production');
+    const production = this.config.nodeEnv === 'production';
     let answer: TextResult = { ok: false, category: 'network_error', retryable: true };
     let retryCount = 0;
     // AbortSignal 超时覆盖读正文；performance 只测耗时，业务日期始终由 CLOCK 提供。
@@ -227,37 +276,78 @@ export class ModelGateway implements ModelGatewayPort {
     let outputBudget = maxOutputTokens;
     let emptyRetried = false;
     const temperature = input.temperature ?? DEFAULT_TEMPERATURE[input.purpose];
-    for (let attempt = 0; attempt <= 3; attempt++) {
-      const remaining = Math.floor(budgetMs - (performance.now() - wallStart));
-      if (remaining <= 0) break;
-      answer = fake
-        ? fakeAnswer(input)
-        : await this.upstreams.withApiKey(model.upstreamId, (apiKey) =>
-            this.adapter.generate({
-              baseUrl: upstream.baseUrl,
-              apiKey,
-              model: model.upstreamModelId,
-              messages: wire,
-              maxOutputTokens: outputBudget,
-              temperature,
-              responseFormat: input.responseFormat,
-              idempotencyKey: emptyRetried ? `gateway:${row.id}:e` : `gateway:${row.id}`,
-              timeoutMs: Math.min(20000, remaining),
-              thinking: 'off',
-            }),
-          );
-      if (answer.ok || !answer.retryable || attempt === 3) break;
-      if (answer.category === 'empty_output' || answer.category === 'truncated') {
-        if (emptyRetried) break;
-        emptyRetried = true;
-        outputBudget = Math.min(32000, Math.ceil(maxOutputTokens * 1.5));
+    // v3.4：当前账号下标、占用的账号槽位、是否因本地限流（账号并发 / 频率已满）而失败
+    let idx = 0;
+    let held: string | null = null;
+    let localLimit = false;
+    const maxAttempts = 3 + candidates.length - 1;
+    try {
+      for (let attempt = 0; attempt <= maxAttempts; attempt++) {
+        const remaining = Math.floor(budgetMs - (performance.now() - wallStart));
+        if (remaining <= 0) break;
+        if (held === null) {
+          let found = -1;
+          for (let i = idx; i < candidates.length; i++) {
+            if (this.scheduler.acquireAccount(candidates[i]!)) {
+              found = i;
+              break;
+            }
+          }
+          if (found < 0) {
+            answer = { ok: false, category: 'rate_limited', retryable: false };
+            localLimit = true;
+            break;
+          }
+          idx = found;
+          held = candidates[idx]!.upstreamId;
+        }
+        const c = candidates[idx]!;
+        answer = isFakeModel(c.upstreamModelId, production)
+          ? fakeAnswer(input)
+          : await this.upstreams.withApiKey(c.upstreamId, (apiKey) =>
+              this.adapter.generate({
+                baseUrl: c.baseUrl,
+                apiKey,
+                model: c.upstreamModelId,
+                messages: wire,
+                maxOutputTokens: outputBudget,
+                temperature,
+                responseFormat: input.responseFormat,
+                idempotencyKey: emptyRetried ? `gateway:${row.id}:e` : `gateway:${row.id}`,
+                timeoutMs: Math.min(20000, remaining),
+                thinking: 'off',
+              }),
+            );
+        if (answer.ok) break;
+        // 失败切换：换下一个账号立即再试（不等待），并记这个账号一次失败
+        if (FAILOVER_CATEGORIES.includes(answer.category) && idx + 1 < candidates.length) {
+          await this.scheduler.recordFailure(c.upstreamId, answer.category).catch(() => undefined);
+          this.scheduler.releaseAccount(c.upstreamId);
+          held = null;
+          idx++;
+          retryCount++;
+          continue;
+        }
+        if (!answer.retryable || attempt === maxAttempts) break;
+        if (answer.category === 'empty_output' || answer.category === 'truncated') {
+          if (emptyRetried) break;
+          emptyRetried = true;
+          outputBudget = Math.min(32000, Math.ceil(maxOutputTokens * 1.5));
+          retryCount++;
+          continue;
+        }
+        const delay = [2000, 5000, 15000][Math.min(attempt, 2)]! * (0.85 + Math.random() * 0.3);
+        if (performance.now() - wallStart + delay >= budgetMs) break;
+        await this.wait(Math.round(delay));
         retryCount++;
-        continue;
       }
-      const delay = [2000, 5000, 15000][attempt]! * (0.85 + Math.random() * 0.3);
-      if (performance.now() - wallStart + delay >= budgetMs) break;
-      await this.wait(Math.round(delay));
-      retryCount++;
+    } finally {
+      if (held !== null) this.scheduler.releaseAccount(held);
+    }
+    const final = candidates[idx]!;
+    if (final.upstreamId !== first.upstreamId || final.upstreamModelId !== first.upstreamModelId) {
+      await this.recorder.setUpstream(usage.record.id, final.upstreamId, final.upstreamModelId);
+      await this.cache.attach(row.id, usage.record.id, hold.holdId, final.upstreamId);
     }
     const latencyMs = Math.round(performance.now() - wallStart);
     if (!answer.ok) {
@@ -274,12 +364,12 @@ export class ModelGateway implements ModelGatewayPort {
           : undefined,
         usageRecordId: usage.record.id,
         startedAt: startedAt.toISOString(),
-        upstreamId: model.upstreamId,
+        upstreamId: final.upstreamId,
       });
       await this.recorder.writeReleaseSnapshot(usage.record.id, release);
       await this.recorder.finish(usage.record.id, {
         status: 'failed',
-        errorCode: category,
+        errorCode: localLimit ? 'account_limited' : category,
         ...(answer.usage ?? {
           inputTokens: 0,
           cachedInputTokens: 0,
@@ -301,17 +391,14 @@ export class ModelGateway implements ModelGatewayPort {
           return fallback;
         }
       }
-      if (category !== 'content_rejected' && category !== 'bad_request' && !emptyLike)
-        await this.upstreams.reportStatus(
-          model.upstreamId,
-          category === 'invalid_key'
-            ? 'invalid'
-            : category === 'quota_exhausted'
-              ? 'quota_exhausted'
-              : 'unavailable',
-          'gateway',
-          category === 'rate_limited' ? 'provider_error' : category,
-        );
+      // v3.4：账号健康按连续失败阈值处理（ADR-0032），本地限流不算账号故障
+      if (
+        !localLimit &&
+        category !== 'content_rejected' &&
+        category !== 'bad_request' &&
+        !emptyLike
+      )
+        await this.scheduler.recordFailure(final.upstreamId, category);
       const result: CachedResult = {
         ok: false,
         error:
@@ -324,6 +411,7 @@ export class ModelGateway implements ModelGatewayPort {
       await this.cache.save(row, result, 'complete');
       return result;
     }
+    await this.scheduler.recordSuccess(final.upstreamId).catch(() => undefined);
     const result: CachedResult = {
       ok: true,
       value: {

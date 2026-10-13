@@ -42,6 +42,7 @@ const DIM_LABELS: Record<AdminUsageDimension, string> = {
   purpose: '用途',
   upstream: '上游',
   day: '日期',
+  hour: '小时',
 };
 
 function formatMicros(n: number): string {

@@ -51,6 +51,20 @@ export const upstreams = modelAccessSchema.table(
     keyRotatedAt: tz('key_rotated_at'),
     createdAt: tz('created_at').notNull(),
     updatedAt: tz('updated_at').notNull(),
+    // ---- v3.4（0089）上游账号池：调度与健康 ----
+    /** 服务商标识（分组展示用）。 */
+    provider: text('provider').notNull().default('openai_compatible'),
+    priority: integer('priority').notNull().default(1),
+    weight: integer('weight').notNull().default(100),
+    maxConcurrency: integer('max_concurrency'),
+    rpmLimit: integer('rpm_limit'),
+    enabled: boolean('enabled').notNull().default(true),
+    note: text('note'),
+    /** 连续失败达到阈值后暂停到这个时间。 */
+    cooldownUntil: tz('cooldown_until'),
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    lastError: text('last_error'),
+    lastUsedAt: tz('last_used_at'),
   },
   (t) => [
     check(
@@ -110,6 +124,38 @@ export const modelCatalog = modelAccessSchema.table(
     ),
   ],
 );
+
+/**
+ * v3.4（0089）：模型路由——一个模型可以走多个上游账号（按优先级、权重调度，失败自动切换）。
+ * model_catalog.upstream_id / upstream_model_id 是主路由的镜像（旧接口、媒体网关仍读它）。
+ */
+export const modelRoutes = modelAccessSchema.table(
+  'model_routes',
+  {
+    modelKey: text('model_key').notNull(),
+    upstreamId: uuid('upstream_id')
+      .notNull()
+      .references(() => upstreams.id, { onDelete: 'cascade' }),
+    upstreamModelId: text('upstream_model_id').notNull(),
+    priority: integer('priority').notNull().default(1),
+    weight: integer('weight').notNull().default(100),
+    enabled: boolean('enabled').notNull().default(true),
+    createdAt: tz('created_at').notNull(),
+    updatedAt: tz('updated_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.modelKey, t.upstreamId] }),
+    index('model_routes_upstream_idx').on(t.upstreamId),
+  ],
+);
+
+/** v3.4（0089）：model-access 的后台配置（键值）。gateway_limits = 每用户限流与健康参数。 */
+export const modelAccessSettings = modelAccessSchema.table('settings', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').notNull(),
+  updatedAt: tz('updated_at').notNull(),
+  updatedBy: uuid('updated_by'),
+});
 
 /** 用户的全局模型选择（聊天 / 后台 / 成人模式）。为空表示未设置。 */
 export const selections = modelAccessSchema.table('selections', {
@@ -199,6 +245,7 @@ export const usageRecords = modelAccessSchema.table(
     index('usage_records_user_created_idx').on(t.userId, t.createdAt),
     index('usage_records_character_created_idx').on(t.characterId, t.createdAt),
     index('usage_records_model_created_idx').on(t.modelKey, t.createdAt),
+    index('usage_records_upstream_created_idx').on(t.upstreamId, t.createdAt),
     check('usage_records_status_check', sql`${t.status} in ('pending', 'succeeded', 'failed')`),
     check('usage_records_owner_check', sql`${t.billingOwner} in ('user', 'platform')`),
     check(

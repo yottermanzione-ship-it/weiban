@@ -15,6 +15,7 @@ import {
   type AdminModel,
   type BillingModelRatePort,
   type ModelRates,
+  type ModelRoute,
   type ModelTokenPrices,
 } from '@weiban/contracts';
 import type { z } from 'zod';
@@ -53,6 +54,7 @@ export function pointsPerReply(p: ModelTokenPrices | undefined): number | null {
 export function toAdminModel(
   entry: AdminCatalogEntry,
   rates: ActiveModelTokenRates | undefined,
+  routes?: ModelRoute[],
 ): AdminModel {
   return {
     ...entry,
@@ -60,7 +62,17 @@ export function toAdminModel(
     costRates: rates ? pricesToRates(rates.cost) : null,
     hasTimeBands: rates?.hasTimeBands ?? false,
     pointsPerReply: pointsPerReply(rates?.price),
+    routes: routes ?? [],
   };
+}
+
+/** 主路由 = 启用的路由里优先级最小、权重最大的那条（没有启用的就取第一条）。 */
+export function primaryRoute(routes: ModelRoute[]): ModelRoute {
+  const sorted = [...routes].sort(
+    (a, b) =>
+      Number(b.enabled) - Number(a.enabled) || a.priority - b.priority || b.weight - a.weight,
+  );
+  return sorted[0]!;
 }
 
 @Injectable()
@@ -72,12 +84,19 @@ export class ModelAdminService {
 
   async list(): Promise<AdminModel[]> {
     const entries = await this.catalog.adminList();
-    const rates = await this.rates.getActiveTokenRates(entries.map((e) => e.modelKey));
-    return entries.map((e) => toAdminModel(e, rates.get(e.modelKey)));
+    const keys = entries.map((e) => e.modelKey);
+    const rates = await this.rates.getActiveTokenRates(keys);
+    const routes = await this.catalog.routes(keys);
+    return entries.map((e) => toAdminModel(e, rates.get(e.modelKey), routes.get(e.modelKey)));
   }
 
   async upsert(adminId: string, pathKey: string, body: Write): Promise<AdminModel> {
-    const { rates, costRates, ...entry } = body;
+    const { rates, costRates, routes, ...rest } = body;
+    // v3.4：传了路由时，目录上的上游 = 主路由（旧接口与媒体网关仍读它）
+    const primary = routes ? primaryRoute(routes) : null;
+    const entry = primary
+      ? { ...rest, upstreamId: primary.upstreamId, upstreamModelId: primary.upstreamModelId }
+      : rest;
     if (rates && pathKey === body.modelKey) {
       await this.rates.publishModelTokenRates({
         operatorUserId: adminId,
@@ -87,8 +106,10 @@ export class ModelAdminService {
       });
     }
     const saved = await this.catalog.upsert(adminId, pathKey, entry);
+    if (routes) await this.catalog.replaceRoutes(adminId, saved.modelKey, routes);
     const current = await this.rates.getActiveTokenRates([saved.modelKey]);
-    return toAdminModel(saved, current.get(saved.modelKey));
+    const savedRoutes = await this.catalog.routes([saved.modelKey]);
+    return toAdminModel(saved, current.get(saved.modelKey), savedRoutes.get(saved.modelKey));
   }
 }
 

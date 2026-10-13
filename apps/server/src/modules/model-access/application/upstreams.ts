@@ -8,7 +8,7 @@
  */
 import { Inject, Injectable } from '@nestjs/common';
 import type { AdminAlertFacts, Upstream, UpstreamKind, UpstreamStatus } from '@weiban/contracts';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, ne, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   APP_CONFIG,
@@ -39,7 +39,15 @@ import {
   upstreamAad,
   type UpstreamTestFailure,
 } from '../domain/rules.js';
-import { modelCatalog, upstreamStatus, upstreams } from '../infra/db/schema.js';
+import {
+  modelCatalog,
+  modelRoutes,
+  upstreamStatus,
+  upstreams,
+  usageRecords,
+} from '../infra/db/schema.js';
+import { beijingDay, beijingDayRange } from '../domain/rules.js';
+import { fetchUpstreamModels } from '../infra/upstream-probe.js';
 import { UPSTREAM_PROBE, type UpstreamProbe } from '../tokens.js';
 
 type UpstreamRow = typeof upstreams.$inferSelect;
@@ -48,7 +56,10 @@ type Kind = z.infer<typeof UpstreamKind>;
 /** 上游状态变化的来源（记在 upstream_status.source）。 */
 export type StatusSource = 'created' | 'admin_test' | 'key_rotated' | 'gateway' | 'probe';
 
-export function toUpstream(row: UpstreamRow): Upstream {
+export function toUpstream(
+  row: UpstreamRow,
+  extra?: { inFlight?: number; todayCalls?: number; todayCostMicros?: number },
+): Upstream {
   return {
     upstreamId: row.id,
     name: row.name,
@@ -58,7 +69,33 @@ export function toUpstream(row: UpstreamRow): Upstream {
     status: row.status as UpstreamStatus,
     statusChangedAt: row.statusChangedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
+    provider: row.provider,
+    priority: row.priority,
+    weight: row.weight,
+    maxConcurrency: row.maxConcurrency,
+    rpmLimit: row.rpmLimit,
+    enabled: row.enabled,
+    note: row.note,
+    cooldownUntil: row.cooldownUntil?.toISOString() ?? null,
+    consecutiveFailures: row.consecutiveFailures,
+    lastError: row.lastError,
+    lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
+    lastTestedAt: row.lastTestedAt?.toISOString() ?? null,
+    ...(extra?.inFlight !== undefined ? { inFlight: extra.inFlight } : {}),
+    ...(extra?.todayCalls !== undefined ? { todayCalls: extra.todayCalls } : {}),
+    ...(extra?.todayCostMicros !== undefined ? { todayCostMicros: extra.todayCostMicros } : {}),
   };
+}
+
+/** v3.4：上游账号的调度参数（创建 / 修改共用）。 */
+export interface UpstreamPoolFields {
+  provider?: string;
+  priority?: number;
+  weight?: number;
+  maxConcurrency?: number | null;
+  rpmLimit?: number | null;
+  enabled?: boolean;
+  note?: string | null;
 }
 
 @Injectable()
@@ -78,22 +115,53 @@ export class UpstreamService {
     this.log = logger.child({ module: 'model_access' });
   }
 
-  async list(): Promise<Upstream[]> {
+  /** 账号列表（v3.4 带今日调用数、今日成本；inFlight 由调用方从调度器取）。 */
+  async list(inFlight?: (upstreamId: string) => number): Promise<Upstream[]> {
     const rows = await this.database.db
       .select()
       .from(upstreams)
-      .orderBy(asc(upstreams.createdAt), asc(upstreams.id));
-    return rows.map(toUpstream);
+      .orderBy(asc(upstreams.priority), asc(upstreams.createdAt), asc(upstreams.id));
+    const today = await this.todayStats();
+    return rows.map((row) =>
+      toUpstream(row, {
+        ...(inFlight ? { inFlight: inFlight(row.id) } : {}),
+        todayCalls: today.get(row.id)?.calls ?? 0,
+        todayCostMicros: today.get(row.id)?.cost ?? 0,
+      }),
+    );
+  }
+
+  /** 今天（北京时间）各账号的调用次数与成本。 */
+  private async todayStats(): Promise<Map<string, { calls: number; cost: number }>> {
+    const { from } = beijingDayRange(beijingDay(this.clock.now()));
+    const rows = await this.database.db
+      .select({
+        upstreamId: usageRecords.upstreamId,
+        calls: sql<string>`count(*)`,
+        cost: sql<string>`coalesce(sum(${usageRecords.costMicros} + ${usageRecords.absorbedCostMicros}), 0)`,
+      })
+      .from(usageRecords)
+      .where(and(gte(usageRecords.createdAt, from), ne(usageRecords.status, 'pending')))
+      .groupBy(usageRecords.upstreamId);
+    return new Map(
+      rows.map((r) => [r.upstreamId, { calls: Number(r.calls), cost: Number(r.cost) }]),
+    );
   }
 
   async create(
     adminId: string,
-    input: { name: string; kind: Kind; baseUrl: string; apiKey: string },
+    input: {
+      name: string;
+      kind: Kind;
+      baseUrl: string;
+      apiKey: string;
+      saveOnTestFailure?: boolean;
+    } & UpstreamPoolFields,
   ): Promise<Upstream> {
     const baseUrl = this.checkBaseUrl(input.baseUrl);
     const apiKey = this.checkKey(input.apiKey);
     const failure = await this.runProbe(input.kind, baseUrl, apiKey);
-    if (failure) {
+    if (failure && !input.saveOnTestFailure) {
       await this.audit.record({
         module: 'model_access',
         action: 'upstream.test_failed',
@@ -107,6 +175,7 @@ export class UpstreamService {
     const id = newId();
     const now = this.clock.now();
     const mask = maskParts(apiKey);
+    const initial = statusAfterTest(failure);
     return this.database.transaction(async (tx) => {
       const sealed = await this.crypto.seal(PLATFORM_KEY_OWNER, upstreamAad(id), apiKey, tx);
       const [row] = await tx.db
@@ -119,20 +188,28 @@ export class UpstreamService {
           secretCiphertext: sealed,
           displayPrefix: mask.prefix,
           displaySuffix: mask.suffix,
-          status: 'active',
+          status: initial,
           statusChangedAt: now,
           lastTestedAt: now,
           createdAt: now,
           updatedAt: now,
+          provider: input.provider ?? input.kind,
+          priority: input.priority ?? 1,
+          weight: input.weight ?? 100,
+          maxConcurrency: input.maxConcurrency ?? null,
+          rpmLimit: input.rpmLimit ?? null,
+          enabled: input.enabled ?? true,
+          note: input.note ?? null,
+          lastError: failure,
         })
         .returning();
       await tx.db.insert(upstreamStatus).values({
         id: newId(),
         upstreamId: id,
         fromStatus: null,
-        toStatus: 'active',
+        toStatus: initial,
         source: 'created',
-        failure: null,
+        failure,
         changedAt: now,
       });
       await this.audit.record(
@@ -149,6 +226,121 @@ export class UpstreamService {
       );
       return toUpstream(must(row));
     });
+  }
+
+  /** v3.4：修改账号（不含密钥）。改地址会清空暂停与连续失败。 */
+  async update(
+    adminId: string,
+    upstreamId: string,
+    patch: UpstreamPoolFields & { name?: string; baseUrl?: string },
+  ): Promise<Upstream> {
+    const baseUrl = patch.baseUrl !== undefined ? this.checkBaseUrl(patch.baseUrl) : undefined;
+    return this.database.transaction(async (tx) => {
+      const before = await this.lock(tx, upstreamId);
+      const set: Partial<UpstreamRow> = { updatedAt: this.clock.now() };
+      if (patch.name !== undefined) set.name = patch.name;
+      if (baseUrl !== undefined && baseUrl !== before.baseUrl) {
+        set.baseUrl = baseUrl;
+        set.cooldownUntil = null;
+        set.consecutiveFailures = 0;
+      }
+      if (patch.provider !== undefined) set.provider = patch.provider;
+      if (patch.priority !== undefined) set.priority = patch.priority;
+      if (patch.weight !== undefined) set.weight = patch.weight;
+      if (patch.maxConcurrency !== undefined) set.maxConcurrency = patch.maxConcurrency;
+      if (patch.rpmLimit !== undefined) set.rpmLimit = patch.rpmLimit;
+      if (patch.enabled !== undefined) set.enabled = patch.enabled;
+      if (patch.note !== undefined) set.note = patch.note;
+      await tx.db.update(upstreams).set(set).where(eq(upstreams.id, upstreamId));
+      await this.audit.record(
+        {
+          module: 'model_access',
+          action: 'upstream.updated',
+          actorType: 'admin',
+          actorId: adminId,
+          targetType: 'upstream',
+          targetId: upstreamId,
+          details: { ...patch, ...(baseUrl !== undefined ? { baseUrl } : {}) },
+        },
+        tx,
+      );
+      if (patch.enabled !== undefined && patch.enabled !== before.enabled)
+        await this.publishModelAvailability(tx, upstreamId, patch.enabled);
+      return this.getIn(tx, upstreamId);
+    });
+  }
+
+  /** v3.4：批量测试 / 启用 / 停用。 */
+  async batch(
+    adminId: string,
+    upstreamIds: string[],
+    action: 'test' | 'enable' | 'disable',
+  ): Promise<Upstream[]> {
+    const out: Upstream[] = [];
+    for (const id of [...new Set(upstreamIds)]) {
+      out.push(
+        action === 'test'
+          ? await this.test(adminId, id)
+          : await this.update(adminId, id, { enabled: action === 'enable' }),
+      );
+    }
+    return out;
+  }
+
+  /** v3.4：从账号拉取可用模型列表；失败 422 upstream_test_failed。 */
+  async models(upstreamId: string): Promise<{ items: Array<{ id: string }> }> {
+    const row = await this.get(upstreamId);
+    const result = await this.withApiKey(upstreamId, (apiKey) =>
+      fetchUpstreamModels({ baseUrl: row.baseUrl, apiKey }),
+    );
+    if (!result.ok) throw testFailed(result.reason);
+    return { items: result.ids.map((id) => ({ id })) };
+  }
+
+  /**
+   * 账号可用性翻转时，对「经它路由、且没有别的正常账号」的启用模型发 model_status_changed
+   * （一个模型有多个账号时，单个账号故障不算模型不可用）。
+   */
+  private async publishModelAvailability(tx: DbTx, upstreamId: string, isUp: boolean) {
+    const routed = await tx.db
+      .select({ modelKey: modelRoutes.modelKey })
+      .from(modelRoutes)
+      .innerJoin(modelCatalog, eq(modelCatalog.modelKey, modelRoutes.modelKey))
+      .where(
+        and(
+          eq(modelRoutes.upstreamId, upstreamId),
+          eq(modelRoutes.enabled, true),
+          eq(modelCatalog.enabled, true),
+        ),
+      );
+    const primary = await tx.db
+      .select({ modelKey: modelCatalog.modelKey })
+      .from(modelCatalog)
+      .where(and(eq(modelCatalog.upstreamId, upstreamId), eq(modelCatalog.enabled, true)));
+    const keys = [...new Set([...routed, ...primary].map((r) => r.modelKey))];
+    if (keys.length === 0) return;
+    const others = await tx.db
+      .select({ modelKey: modelRoutes.modelKey })
+      .from(modelRoutes)
+      .innerJoin(upstreams, eq(upstreams.id, modelRoutes.upstreamId))
+      .where(
+        and(
+          inArray(modelRoutes.modelKey, keys),
+          ne(modelRoutes.upstreamId, upstreamId),
+          eq(modelRoutes.enabled, true),
+          eq(upstreams.enabled, true),
+          eq(upstreams.status, 'active'),
+        ),
+      );
+    const covered = new Set(others.map((o) => o.modelKey));
+    for (const modelKey of keys) {
+      if (covered.has(modelKey)) continue;
+      await this.outbox.publish(tx, 'model_access.model_status_changed', 'model_access', {
+        modelKey,
+        available: isUp,
+        reason: isUp ? 'recovered' : 'provider_unavailable',
+      });
+    }
   }
 
   /** 更换密钥：先用新密钥测试，成功才替换；失败 422，旧密钥不变。 */
@@ -187,6 +379,9 @@ export class UpstreamService {
           keyRotatedAt: now,
           lastTestedAt: now,
           updatedAt: now,
+          cooldownUntil: null,
+          consecutiveFailures: 0,
+          lastError: null,
         })
         .where(eq(upstreams.id, upstreamId));
       await this.applyStatus(tx, row, 'active', 'key_rotated', null);
@@ -219,7 +414,11 @@ export class UpstreamService {
       const locked = await this.lock(tx, upstreamId);
       await tx.db
         .update(upstreams)
-        .set({ lastTestedAt: this.clock.now() })
+        .set({
+          lastTestedAt: this.clock.now(),
+          // 手动测试通过 = 管理员确认恢复：清空暂停与连续失败
+          ...(failure ? { lastError: failure } : { cooldownUntil: null, consecutiveFailures: 0 }),
+        })
         .where(eq(upstreams.id, upstreamId));
       await this.applyStatus(tx, locked, statusAfterTest(failure), 'admin_test', failure);
       await this.audit.record(
@@ -347,19 +546,7 @@ export class UpstreamService {
     });
     const wasUp = row.status === 'active';
     const isUp = next === 'active';
-    if (wasUp !== isUp) {
-      const models = await tx.db
-        .select({ modelKey: modelCatalog.modelKey })
-        .from(modelCatalog)
-        .where(and(eq(modelCatalog.upstreamId, row.id), eq(modelCatalog.enabled, true)));
-      for (const { modelKey } of models) {
-        await this.outbox.publish(tx, 'model_access.model_status_changed', 'model_access', {
-          modelKey,
-          available: isUp,
-          reason: isUp ? 'recovered' : 'provider_unavailable',
-        });
-      }
-    }
+    if (wasUp !== isUp && row.enabled) await this.publishModelAvailability(tx, row.id, isUp);
     await this.audit.record(
       {
         module: 'model_access',

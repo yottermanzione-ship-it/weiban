@@ -95,6 +95,15 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.4（2026-10-13，上游账号池与用量监控，ADR-0032 第二批）
+
+全部向后兼容（只新增接口、新增可选字段、新增请求枚举值 `AdminUsageDimension.hour`）。说明见 `docs/handoffs/2026-10-13-backend-lead-points-upstream.md`。
+
+- `Upstream` 新增可选：`provider`、`priority`、`weight`、`maxConcurrency`、`rpmLimit`、`enabled`、`note`、`cooldownUntil`、`consecutiveFailures`、`lastError`、`lastUsedAt`、`lastTestedAt`、`inFlight`、`todayCalls`、`todayCostMicros`；`CreateUpstreamRequest` 可带同名调度参数与 `saveOnTestFailure`。
+- 新接口：`updateUpstream`（PATCH）、`batchUpstreams`、`listUpstreamModels`、`getGatewayLimits` / `updateGatewayLimits`、`usageOverview`。
+- `ModelRoute`；`AdminModel.routes`、`AdminModelWrite.routes`（一个模型多个账号）。
+- `AdminUsageTotals` 新增可选 `chargedPoints`、`avgLatencyMs`、`failureRate`、`cacheHitRate`；`AdminUsageRecord` 新增可选 `chargedPoints`、`upstreamModelId`；`AdminUsageOverview`。
+
 ### 3.3（2026-10-13，积分制与模型倍率，ADR-0032）
 
 全部向后兼容（只新增接口、新增可选字段；`AdminAdjustmentRequest.amountMicros` 由必填改为与新字段 `points` 二选一，旧调用方照常传 amountMicros 不受影响）。说明见 `docs/handoffs/2026-10-13-backend-lead-points-upstream.md`、`docs/decisions/ADR-0032-points-and-upstream-pool.md`。

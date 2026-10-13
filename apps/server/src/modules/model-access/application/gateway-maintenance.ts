@@ -35,7 +35,8 @@ export class GatewayMaintenance implements OnModuleInit {
     await this.jobs.work('model_access.recover_generations', () => this.recover());
     await this.jobs.schedule('model_access.recover_generations', '* * * * *');
     await this.jobs.work('model_access.probe_upstreams', () => this.probeUpstreams());
-    await this.jobs.schedule('model_access.probe_upstreams', '*/5 * * * *');
+    // v3.4：每分钟探测（账号暂停到期后尽快恢复）
+    await this.jobs.schedule('model_access.probe_upstreams', '* * * * *');
   }
   async recover(): Promise<void> {
     const old = await this.database.db
@@ -100,6 +101,9 @@ export class GatewayMaintenance implements OnModuleInit {
       );
     for (const upstream of failed) {
       if (this.clock.nowMs() - upstream.statusChangedAt.getTime() > 86400000) continue;
+      // v3.4：停用的账号不探测；暂停未到期的账号等到期再探测
+      if (!upstream.enabled) continue;
+      if (upstream.cooldownUntil && upstream.cooldownUntil.getTime() > this.clock.nowMs()) continue;
       const result = await this.upstreamService.withApiKey(upstream.id, (apiKey) =>
         this.probe.test({
           kind: 'openai_compatible',
@@ -111,8 +115,13 @@ export class GatewayMaintenance implements OnModuleInit {
         .update(upstreams)
         .set({ lastTestedAt: this.clock.now() })
         .where(eq(upstreams.id, upstream.id));
-      if (result.ok) await this.upstreamService.reportStatus(upstream.id, 'active', 'probe');
-      else if (result.reason === 'invalid_key' || result.reason === 'insufficient_balance')
+      if (result.ok) {
+        await this.database.db
+          .update(upstreams)
+          .set({ cooldownUntil: null, consecutiveFailures: 0 })
+          .where(eq(upstreams.id, upstream.id));
+        await this.upstreamService.reportStatus(upstream.id, 'active', 'probe');
+      } else if (result.reason === 'invalid_key' || result.reason === 'insufficient_balance')
         await this.upstreamService.reportStatus(
           upstream.id,
           result.reason === 'invalid_key' ? 'invalid' : 'quota_exhausted',

@@ -35,6 +35,8 @@ import {
 } from '../../../platform/index.js';
 import { CatalogService } from '../application/catalog.js';
 import { ModelAdminService } from '../application/models.js';
+import { GatewayLimitsService } from '../application/limits.js';
+import { UpstreamScheduler } from '../application/scheduler.js';
 import { ModelStatusService } from '../application/resolver.js';
 import { SelectionService } from '../application/selection.js';
 import { UpstreamService } from '../application/upstreams.js';
@@ -121,7 +123,64 @@ export class ModelAdminController {
     @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(AdminUsageService) private readonly usage: AdminUsageService,
     @Inject(ModelAdminService) private readonly models: ModelAdminService,
+    @Inject(UpstreamScheduler) private readonly scheduler: UpstreamScheduler,
+    @Inject(GatewayLimitsService) private readonly limits: GatewayLimitsService,
   ) {}
+
+  // ---------- 上游账号池（v3.4） ----------
+
+  @Patch('upstreams/:upstreamId')
+  @RequireAuth(A.updateUpstream.auth)
+  updateUpstream(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(schema(A.updateUpstream.params))) params: { upstreamId: string },
+    @Body(new ContractPipe(schema(A.updateUpstream.body))) body: Out<typeof A.updateUpstream.body>,
+  ): Promise<Upstream> {
+    return this.upstreams.update(me.userId, params.upstreamId, body);
+  }
+
+  @Post('upstreams/batch')
+  @HttpCode(200)
+  @RequireAuth(A.batchUpstreams.auth)
+  async batchUpstreams(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(A.batchUpstreams.body))) body: Out<typeof A.batchUpstreams.body>,
+  ) {
+    return { items: await this.upstreams.batch(me.userId, body.upstreamIds, body.action) };
+  }
+
+  @Get('upstreams/:upstreamId/models')
+  @RequireAuth(A.listUpstreamModels.auth)
+  listUpstreamModels(
+    @Param(new ContractPipe(schema(A.listUpstreamModels.params))) params: { upstreamId: string },
+  ) {
+    return this.upstreams.models(params.upstreamId);
+  }
+
+  @Get('limits')
+  @RequireAuth(A.getGatewayLimits.auth)
+  getLimits() {
+    return this.limits.get();
+  }
+
+  @Put('limits')
+  @RequireAuth(A.updateGatewayLimits.auth)
+  updateLimits(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(A.updateGatewayLimits.body)))
+    body: Out<typeof A.updateGatewayLimits.body>,
+  ) {
+    return this.limits.update(me.userId, body);
+  }
+
+  @Post('usage/overview')
+  @HttpCode(200)
+  @RequireAuth(U.usageOverview.auth)
+  usageOverview(
+    @Body(new ContractPipe(schema(U.usageOverview.body))) body: Out<typeof U.usageOverview.body>,
+  ) {
+    return this.usage.overview(body);
+  }
 
   // ---------- 模型（目录 + 倍率，v3.3） ----------
 
@@ -149,7 +208,7 @@ export class ModelAdminController {
   @Get('upstreams')
   @RequireAuth(A.listUpstreams.auth)
   async listUpstreams() {
-    return { items: await this.upstreams.list() };
+    return { items: await this.upstreams.list((id) => this.scheduler.inFlight(id)) };
   }
 
   @Post('upstreams')

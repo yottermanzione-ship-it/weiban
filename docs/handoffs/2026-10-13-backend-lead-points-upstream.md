@@ -18,7 +18,9 @@
 
 ### 第二批（裁定 4，契约 3.4，迁移 0089）
 
-见下方「第二批」一节（第二批提交时补全）。
+1. **上游账号池**：一个服务商可登记多个账号；模型可配多个账号（路由），按优先级 → 权重调度，同一会话尽量落在同一账号（粘性，利于缓存命中）；失败立即切换到下一个账号；连续失败 3 次自动暂停 5 分钟，密钥失效 / 额度耗尽立即摘除，后台每分钟探测恢复；每账号、每用户的并发与每分钟上限。
+2. **用量监控**：按用户 / 模型 / 上游账号 / 天 / 小时聚合的调用数、积分消耗、上游成本、平均耗时、失败率、缓存命中率；调用明细带积分与实际上游模型名；看板概览接口。
+3. 实现说明见 `docs/backend/model-access.md`「契约 3.4」一节；设计取舍见 ADR-0032 第 4 条。
 
 ## 改了哪些文件（第一批）
 
@@ -52,12 +54,41 @@
 | `GET /api/v1/admin/model/models` | 后台「模型」标签 | 目录字段 + `rates`、`costRates`（元 / 百万 token）、`hasTimeBands`、`pointsPerReply` |
 | `PUT /api/v1/admin/model/models/:modelKey` | 添加 / 编辑模型（向导保存） | 目录字段 + `rates`（null = 不改价）、`costRates`（可省 = 同售价）；模型键需 URL 编码 |
 
+## 改了哪些文件（第二批）
+
+- 契约：`packages/contracts/src/http/model-access.ts`、`src/version.ts`（3.4）、`README.md`
+- 迁移：`apps/server/drizzle/0089_upstream_pool.sql` / `.down.sql`、`meta/_journal.json`
+- model-access：`application/{scheduler(新),limits(新),gateway,gateway-maintenance,upstreams,catalog,models,usage}.ts`、`infra/{db/schema,upstream-probe}.ts`、`http/model-access.controller.ts`、`model-access.module.ts`
+- 管理后台：`apps/admin/src/features/usage.tsx` 只补了新维度 hour 的中文名（保证类型检查通过，页面改造仍归网页负责人）
+- 安卓生成物、`docs/backend/model-access.md`
+
+## 接口清单（第二批，给后台「模型管理」页，06-old-ui-spec 第 9 节）
+
+| 接口 | 页面 | 说明 |
+|---|---|---|
+| `GET /api/v1/admin/model/upstreams` | 上游账号表 | 每行新增 provider、priority、weight、maxConcurrency、rpmLimit、enabled、note、cooldownUntil、consecutiveFailures、lastError、lastUsedAt、lastTestedAt、inFlight、todayCalls、todayCostMicros。状态显示：enabled=false →「已停用」；status≠active 或 cooldownUntil 未到 →「异常」，原因看 lastError |
+| `POST /api/v1/admin/model/upstreams` | 添加账号 | 可带调度参数；`saveOnTestFailure: true` = 测试不通过也保存（状态记异常） |
+| `PATCH /api/v1/admin/model/upstreams/:id` | 编辑账号 | 名称、地址、服务商、优先级、权重、并发 / 每分钟上限（null = 不限）、启用、备注 |
+| `PUT /api/v1/admin/model/upstreams/:id/key` | 更换密钥 | 不变 |
+| `POST /api/v1/admin/model/upstreams/:id/test` | 测试 | 不变（通过时清暂停） |
+| `POST /api/v1/admin/model/upstreams/batch` | 批量测试 / 启用 / 停用 | `{ upstreamIds, action: 'test' / 'enable' / 'disable' }` → `{ items }` |
+| `GET /api/v1/admin/model/upstreams/:id/models` | 添加模型向导第 ② 步 | `{ items: [{ id }] }`；失败 422 upstream_test_failed，界面允许手填 |
+| `GET / PUT /api/v1/admin/model/models` | 模型标签 | 第一批接口，新增 `routes: [{ upstreamId, upstreamModelId, priority, weight, enabled }]`（PUT 时整体替换，至少 1 条） |
+| `GET / PUT /api/v1/admin/model/limits` | 设置（表头问号说明里的数值） | `{ perUserConcurrency, perUserRpm, failureThreshold, cooldownSeconds }` |
+| `POST /api/v1/admin/model/usage/overview` | 概览：汇总数字、可用账号、最近错误 | `{ from, to, upstreamIds?, modelKeys? }` → totals / previousTotals / accounts / recentErrors |
+| `POST /api/v1/admin/model/usage/summary` | 趋势图、模型分布、账号排行 | 维度新增 `hour`；合计新增 chargedPoints、avgLatencyMs、failureRate、cacheHitRate |
+| `POST /api/v1/admin/model/usage/records` / `export` | 调用记录 | 每条新增 chargedPoints、upstreamModelId |
+
 ## 遗留问题
 
 - 消息上的积分只覆盖私聊回复、主动消息、群聊发言；朋友圈、通话、宠物、玩法等的消耗只在积分明细（流水）里，不挂在消息上。
 - 私聊回复记的是「这次回复」各次调用的合计，但输入审查 / 成人边界检查、行为规划、语音 / 表情等附加调用走各自路径，计入流水但不计入该消息的 `pointsCost`。
 - 倍率保存会把该模型的分时价改为全天价（ADR-0032 代价）。
 - 安卓生成物已更新；Kotlin 侧未编译验证（未改安卓业务代码，新增字段全部可空）。
+- 第二批：并发 / 频率 / 粘性计数在进程内存，服务重启清零，多实例部署前须改共享存储。
+- 第二批：语音、图片、搜索（media-gateway）仍按目录主上游调用，没有接入账号池与失败切换。
+- 第二批：每用户限流超出时用户看到的是「模型暂时不可用」（契约没有专门的错误码）。
+- 未写、未跑任何测试（总经理裁定）。Codex 验收时建议重点看：失败切换后结算记的上游、暂停与恢复、旧目录接口与路由同步、0088 / 0089 迁移在已有数据上的执行、平台每日上限范围变化。
 
 ## 需要总经理决定的事
 

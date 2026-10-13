@@ -21,6 +21,8 @@ import { GatewayWebSearchProvider } from './application/web-search.js';
 import { OpenAiTextAdapter } from './infra/text-adapter.js';
 import { CatalogService } from './application/catalog.js';
 import { ModelAdminService, RatePriceSource } from './application/models.js';
+import { GatewayLimitsService } from './application/limits.js';
+import { UpstreamScheduler } from './application/scheduler.js';
 import { ModelAccessLifecycle } from './application/lifecycle.js';
 import { UsageReconciliationService } from './application/reconciliation.js';
 import { ModelQuoteService, ModelResolver, ModelStatusService } from './application/resolver.js';
@@ -60,6 +62,8 @@ import {
   controllers: [ModelController, ModelAdminController],
   providers: [
     UpstreamService,
+    GatewayLimitsService,
+    UpstreamScheduler,
     GenerationCache,
     ModelGateway,
     GatewayMaintenance,

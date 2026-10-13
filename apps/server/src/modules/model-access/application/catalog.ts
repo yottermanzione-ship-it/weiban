@@ -14,10 +14,11 @@ import type {
   AdminCatalogEntry,
   ModelCapability,
   ModelInfo,
+  ModelRoute,
   UpstreamStatus,
 } from '@weiban/contracts';
 import { AdminCatalogEntryWrite } from '@weiban/contracts';
-import { asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   AUDIT_LOG,
@@ -37,7 +38,7 @@ import {
   standardReplyMicros,
   unavailableReason,
 } from '../domain/rules.js';
-import { modelCatalog, upstreams } from '../infra/db/schema.js';
+import { modelCatalog, modelRoutes, upstreams } from '../infra/db/schema.js';
 import {
   MODEL_ACCESS_CHARGE_QUERY,
   MODEL_PRICE_SOURCE,
@@ -195,6 +196,8 @@ export class CatalogService {
             .values({ ...values, createdAt: now })
             .returning();
       if (!row) throw new Error('数据库没有返回写入的行');
+      if (upstream)
+        await this.syncPrimaryRoute(tx, row.modelKey, row.upstreamId, row.upstreamModelId);
 
       await this.audit.record(
         {
@@ -262,9 +265,14 @@ export class CatalogService {
       .leftJoin(upstreams, eq(upstreams.id, modelCatalog.upstreamId))
       .where(eq(modelCatalog.enabled, true))
       .orderBy(asc(modelCatalog.sortOrder), asc(modelCatalog.modelKey));
-    const visible = capability
+    const visible0 = capability
       ? rows.filter((r) => r.entry.capabilities.includes(capability))
       : rows;
+    const routed = await this.routeStatus(visible0.map((r) => r.entry.modelKey));
+    const visible = visible0.map((r) => ({
+      ...r,
+      upstreamStatus: routed.get(r.entry.modelKey) ?? r.upstreamStatus,
+    }));
     const prices = await this.prices.textPrices(visible.map((r) => r.entry.modelKey));
     const perReply = (key: string) => {
       const p = prices.get(key);
@@ -302,15 +310,161 @@ export class CatalogService {
       .leftJoin(upstreams, eq(upstreams.id, modelCatalog.upstreamId))
       .where(inArray(modelCatalog.modelKey, keys));
     for (const key of keys) out.set(key, { modelKey: key, entry: null, upstreamStatus: null });
+    const routed = await this.routeStatus(rows.map((r) => r.entry.modelKey));
     for (const r of rows) {
       out.set(r.entry.modelKey, {
         modelKey: r.entry.modelKey,
         entry: r.entry,
-        upstreamStatus: (r.upstreamStatus as UpstreamStatus | null) ?? null,
+        upstreamStatus:
+          routed.get(r.entry.modelKey) ?? (r.upstreamStatus as UpstreamStatus | null) ?? null,
         upstreamBaseUrl: r.upstreamBaseUrl,
       });
     }
     return out;
+  }
+
+  // ---------- v3.4 模型路由（一个模型 → 多个上游账号） ----------
+
+  /**
+   * 按路由算模型可用性：有任一启用路由指向「启用且状态正常」的账号 → active，否则 unavailable。
+   * 没有路由的模型不在结果里（调用方沿用主上游状态）。暂停（cooldown）是短暂的，不算模型不可用。
+   */
+  async routeStatus(modelKeys: readonly string[]): Promise<Map<string, UpstreamStatus>> {
+    const keys = [...new Set(modelKeys)];
+    const out = new Map<string, UpstreamStatus>();
+    if (keys.length === 0) return out;
+    const rows = await this.database.db
+      .select({
+        modelKey: modelRoutes.modelKey,
+        up: sql<boolean>`bool_or(${modelRoutes.enabled} and ${upstreams.enabled} and ${upstreams.status} = 'active')`,
+      })
+      .from(modelRoutes)
+      .innerJoin(upstreams, eq(upstreams.id, modelRoutes.upstreamId))
+      .where(inArray(modelRoutes.modelKey, keys))
+      .groupBy(modelRoutes.modelKey);
+    for (const r of rows) out.set(r.modelKey, r.up ? 'active' : 'unavailable');
+    return out;
+  }
+
+  /** 一批模型的路由（按优先级升序、权重降序）。 */
+  async routes(modelKeys: readonly string[]): Promise<Map<string, ModelRoute[]>> {
+    const keys = [...new Set(modelKeys)];
+    const out = new Map<string, ModelRoute[]>();
+    if (keys.length === 0) return out;
+    const rows = await this.database.db
+      .select()
+      .from(modelRoutes)
+      .where(inArray(modelRoutes.modelKey, keys))
+      .orderBy(asc(modelRoutes.priority), sql`${modelRoutes.weight} desc`);
+    for (const r of rows) {
+      const list = out.get(r.modelKey) ?? [];
+      list.push({
+        upstreamId: r.upstreamId,
+        upstreamModelId: r.upstreamModelId,
+        priority: r.priority,
+        weight: r.weight,
+        enabled: r.enabled,
+      });
+      out.set(r.modelKey, list);
+    }
+    return out;
+  }
+
+  /** 整体替换某模型的路由（后台「模型」向导）。账号必须存在、不能重复。 */
+  async replaceRoutes(adminId: string, modelKey: string, routes: ModelRoute[]): Promise<void> {
+    const ids = routes.map((r) => r.upstreamId);
+    if (new Set(ids).size !== ids.length) {
+      throw new AppError('bad_request', '同一个上游账号在路由里出现了两次', { status: 422 });
+    }
+    await this.database.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock($1)', [CATALOG_LOCK_KEY]);
+      const found = await tx.db
+        .select({ id: upstreams.id })
+        .from(upstreams)
+        .where(inArray(upstreams.id, ids));
+      if (found.length !== ids.length) {
+        throw new AppError('bad_request', '路由里有不存在的上游账号', { status: 422 });
+      }
+      const now = this.clock.now();
+      await tx.db.delete(modelRoutes).where(eq(modelRoutes.modelKey, modelKey));
+      await tx.db.insert(modelRoutes).values(
+        routes.map((r) => ({
+          modelKey,
+          upstreamId: r.upstreamId,
+          upstreamModelId: r.upstreamModelId,
+          priority: r.priority,
+          weight: r.weight,
+          enabled: r.enabled,
+          createdAt: now,
+          updatedAt: now,
+        })),
+      );
+      await this.audit.record(
+        {
+          module: 'model_access',
+          action: 'catalog.routes_replaced',
+          actorType: 'admin',
+          actorId: adminId,
+          targetType: 'model',
+          targetId: modelKey,
+          details: { routes },
+        },
+        tx,
+      );
+    });
+  }
+
+  /**
+   * 旧接口（upsertCatalogEntry）保存后保证主路由存在：模型只有 0～1 条路由时替换为这一条；
+   * 已有多条时更新 / 补上这个账号（优先级取现有最小值）。
+   */
+  private async syncPrimaryRoute(
+    tx: DbTx,
+    modelKey: string,
+    upstreamId: string,
+    upstreamModelId: string,
+  ): Promise<void> {
+    const existing = await tx.db
+      .select()
+      .from(modelRoutes)
+      .where(eq(modelRoutes.modelKey, modelKey));
+    const now = this.clock.now();
+    if (existing.length <= 1) {
+      const only = existing[0];
+      if (only && only.upstreamId === upstreamId && only.upstreamModelId === upstreamModelId)
+        return;
+      await tx.db.delete(modelRoutes).where(eq(modelRoutes.modelKey, modelKey));
+      await tx.db.insert(modelRoutes).values({
+        modelKey,
+        upstreamId,
+        upstreamModelId,
+        priority: only?.priority ?? 1,
+        weight: only?.weight ?? 100,
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      return;
+    }
+    const mine = existing.find((r) => r.upstreamId === upstreamId);
+    if (mine) {
+      if (mine.upstreamModelId !== upstreamModelId)
+        await tx.db
+          .update(modelRoutes)
+          .set({ upstreamModelId, updatedAt: now })
+          .where(and(eq(modelRoutes.modelKey, modelKey), eq(modelRoutes.upstreamId, upstreamId)));
+      return;
+    }
+    await tx.db.insert(modelRoutes).values({
+      modelKey,
+      upstreamId,
+      upstreamModelId,
+      priority: Math.min(...existing.map((r) => r.priority)),
+      weight: 100,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
+    });
   }
 
   async fact(modelKey: string): Promise<ModelFacts> {
@@ -333,10 +487,12 @@ export class CatalogService {
       .limit(1);
     const r = rows[0];
     if (!r) return null;
+    const routed = await this.routeStatus([r.entry.modelKey]);
     return {
       modelKey: r.entry.modelKey,
       entry: r.entry,
-      upstreamStatus: (r.upstreamStatus as UpstreamStatus | null) ?? null,
+      upstreamStatus:
+        routed.get(r.entry.modelKey) ?? (r.upstreamStatus as UpstreamStatus | null) ?? null,
       upstreamBaseUrl: r.upstreamBaseUrl,
     };
   }
