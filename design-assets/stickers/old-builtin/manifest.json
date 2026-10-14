@@ -1,0 +1,86 @@
+{
+  "packName": "微伴预设表情",
+  "source": "旧版微伴 server/lib/chat/sticker_catalog.js 的 SVG_STICKERS，原项目代码生成的16张基础表情",
+  "items": [
+    {
+      "file": "laugh.svg",
+      "description": "大笑：开心、大笑、觉得很好玩",
+      "sha256": "c89188687d7265f44dc725f80b0035f1e3a8eec36b62d3d9290b57cefd897dc2"
+    },
+    {
+      "file": "smile.svg",
+      "description": "微笑：温和高兴、友善、打招呼",
+      "sha256": "71110233a230d550d2d94c28fc800ff475f41e09d48c93784d1493e248ea80e3"
+    },
+    {
+      "file": "cry.svg",
+      "description": "哭了：难过、想哭、委屈",
+      "sha256": "7194c8f044d26eb82c87b99e0825d38f7c4a1a7b82e3d8daf17d97bf021406f9"
+    },
+    {
+      "file": "pout.svg",
+      "description": "失落：有点失落、闷闷的、提不起劲",
+      "sha256": "58e13dd39e3784bd019c1605d07d1c63348903bd15f48cc41fbae1b56b399de8"
+    },
+    {
+      "file": "angry.svg",
+      "description": "生气：生气、不满、被惹到了",
+      "sha256": "f22559a6a6556a2580d5e3e952ea87c86ef9439c003032d49bf5167b72e91378"
+    },
+    {
+      "file": "eyeroll.svg",
+      "description": "翻白眼：无语带火、懒得解释、翻白眼",
+      "sha256": "280bb55d086e76b4f2342872d26fed702de80efc38e9ad27898b0e95f393c5d1"
+    },
+    {
+      "file": "shy.svg",
+      "description": "脸红：害羞、不好意思、被夸了",
+      "sha256": "80fec0866a6a93375f571166bc866dac1a1aa99a1728a47cd08064fc6aea4e62"
+    },
+    {
+      "file": "facepalm.svg",
+      "description": "捂脸：尴尬、不知道怎么接、想捂脸",
+      "sha256": "75eb31c2375ec801a8709d6ff118f1a02d07c73731ae73b7f2753735bf3e4e77"
+    },
+    {
+      "file": "heart.svg",
+      "description": "比心：喜欢、心动、表达爱意",
+      "sha256": "72ba3eaa5f47d915d210855611e5b4aca17380aa2c5dc1f46473f2fca0b460e3"
+    },
+    {
+      "file": "kiss.svg",
+      "description": "亲亲：亲一下、撒娇、亲密",
+      "sha256": "ec325ce1176eee4265f0378d1c1e21271328815abce592ac5bb25a33b94e50da"
+    },
+    {
+      "file": "silent.svg",
+      "description": "沉默：一时语塞、沉默、不想说话",
+      "sha256": "72d26cd42a0abd36979fe5d2ad6d3da8d22c8e9867e2a53da16a1202f1265209"
+    },
+    {
+      "file": "shock.svg",
+      "description": "震惊：惊讶、没想到、愣住了",
+      "sha256": "38e6da4d64874060bfb74837066800eca26248822a1a17518b0e45ddf91cd3b6"
+    },
+    {
+      "file": "hug.svg",
+      "description": "抱抱：安慰、心疼、想抱抱对方",
+      "sha256": "f94179ef7b7af7e41c1226d1d94d3f7288c27442747c19c5cbcc67a457e92f06"
+    },
+    {
+      "file": "proud.svg",
+      "description": "得意：得意、炫耀、觉得自己很棒",
+      "sha256": "c7d53bd37d473addf73138bf3314d38c7c4d451cc766e013bdb54734568e9e5c"
+    },
+    {
+      "file": "sleepy.svg",
+      "description": "困了：困、累、想睡觉",
+      "sha256": "bd3d71287b901d660054d97199b92ddd5b607713f1bc810474ad6d346928bd32"
+    },
+    {
+      "file": "ok.svg",
+      "description": "好的：同意、收到、没问题",
+      "sha256": "a3a26118ee532adbdef1892c0849bb207d6b6f8b91f2e9c8118942da8af59520"
+    }
+  ]
+}
