@@ -1,12 +1,12 @@
 /*
- * 启动页（总经理 2026-10-14 反馈 1.1）：打开网址先显示品牌 + 加载进度，至少停留 1.2 秒、
+ * 启动页（总经理 2026-10-14 G1.1）：沿用旧版灰底品牌，去掉进度条，至少停留 1.3 秒、
  * 同时等登录状态恢复完成，再淡出进入登录页或主页。只在整页打开时出现一次，站内切页不出现。
  * 动画只用 transform / opacity。
  */
 import { useEffect, useState } from 'react';
 
-/** 启动页最短停留时间（总经理要求 1～2 秒）。 */
-const MIN_MS = 1200;
+/** 最短品牌停留时间；登录状态恢复更慢时继续等待。 */
+const MIN_MS = 1300;
 const FADE_MS = 250;
 
 /** ready 为真且已停留够最短时间后，返回 'fading'，再过淡出时间返回 'done'。 */
@@ -34,10 +34,6 @@ export function SplashScreen({ fading }: { fading: boolean }) {
       <div className="splash-brand">
         <img src="/assets/old-ui/brand/icon.png" alt="" width={88} height={88} />
         <strong>微伴</strong>
-        <span>有 TA 陪你聊天</span>
-      </div>
-      <div className="splash-progress" aria-hidden>
-        <i />
       </div>
     </div>
   );
