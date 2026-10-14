@@ -95,6 +95,14 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.6（2026-10-14，聊天链路第一批：请求结构与缓存统计）
+
+全部向后兼容（只新增可选字段、端口 meta 新增可选项）。说明见 `docs/refactor/09-chat-pipeline.md`、`docs/handoffs/2026-10-14-ai-lead-chat-pipeline.md`。
+
+- `http/model-access.ts`：新增 `SystemMessageMode`（`multi` / `single_system` / `no_system`）；`AdminCatalogEntry`（及 `AdminCatalogEntryWrite`、`AdminModel`、`AdminModelWrite`）新增可选 `systemMessageMode`，写入时不传 = 保持原值。
+- `AdminUsageTotals` 新增可选 `stablePrefixRate`（理论可缓存占比）；`AdminUsageRecord` 新增可选 `stablePrefixTokens`。
+- 端口 `GenerateTextInput.meta` 新增可选 `stablePrefixChars`。
+
 ### 3.5（2026-10-14，角色广场两个 tab 与申请制作，总经理 10-14 裁定 2.3）
 
 全部向后兼容（只新增接口、新增枚举值、端口新增可选方法）。说明见 `docs/handoffs/2026-10-14-backend-lead-role-request-plaza.md`。

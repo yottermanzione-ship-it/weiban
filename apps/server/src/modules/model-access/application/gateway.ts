@@ -18,6 +18,8 @@ import {
 import { APP_CONFIG, CLOCK, type AppConfig, type Clock } from '../../../platform/index.js';
 import { MEDIA_SYSTEM_PORT } from '../../media/index.js';
 import { isFakeModel } from '../infra/media-adapter.js';
+import { applySystemMessageMode } from '../domain/system-messages.js';
+import { simulatePrefixCache } from '../domain/prefix-cache.js';
 import { BILLING_RESERVATION_PORT } from '../../billing/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_DIRECTORY_PORT } from '../../identity/index.js';
 import {
@@ -263,7 +265,8 @@ export class ModelGateway implements ModelGatewayPort {
     const hold = reserve.value;
     await this.cache.attach(row.id, usage.record.id, hold.holdId, first.upstreamId);
     await this.recorder.attachHold(usage.record.id, hold);
-    const wire = await this.wireMessages(input);
+    // v3.6：按模型目录的系统消息放法改写（docs/refactor/09 第 5 节）
+    const wire = applySystemMessageMode(await this.wireMessages(input), model.systemMessageMode);
     const production = this.config.nodeEnv === 'production';
     let answer: TextResult = { ok: false, category: 'network_error', retryable: true };
     let retryCount = 0;
@@ -303,7 +306,7 @@ export class ModelGateway implements ModelGatewayPort {
         }
         const c = candidates[idx]!;
         answer = isFakeModel(c.upstreamModelId, production)
-          ? fakeAnswer(input)
+          ? fakeAnswer(input, wire)
           : await this.upstreams.withApiKey(c.upstreamId, (apiKey) =>
               this.adapter.generate({
                 baseUrl: c.baseUrl,
@@ -576,8 +579,8 @@ export class ModelGateway implements ModelGatewayPort {
   }
 }
 
-/** 开发 / 测试假上游（upstreamModelId 以 fake- 开头，生产不启用）：确定性回答，用量按估算记。 */
-function fakeAnswer(input: GenerateTextInput): TextResult {
+/** 开发 / 测试假上游（upstreamModelId 以 fake- 开头，生产不启用）：确定性回答，用量按估算记（含前缀缓存模拟）。 */
+function fakeAnswer(input: GenerateTextInput, wire: AdapterMessage[]): TextResult {
   const text =
     input.purpose === 'vision'
       ? JSON.stringify({
@@ -589,12 +592,16 @@ function fakeAnswer(input: GenerateTextInput): TextResult {
       : input.responseFormat === 'json'
         ? '{}'
         : '嗯嗯，我在呢（假回复）';
+  const cache = simulatePrefixCache(
+    `${input.userId}:${input.characterId ?? ''}:${input.purpose}`,
+    wire,
+  );
   return {
     ok: true,
     text,
     usage: {
-      inputTokens: estimateTokens(input.messages.map((m) => m.content).join('\n')),
-      cachedInputTokens: 0,
+      inputTokens: cache.total - cache.cached,
+      cachedInputTokens: cache.cached,
       outputTokens: estimateTokens(text),
       estimated: true,
     },

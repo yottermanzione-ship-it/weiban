@@ -5,7 +5,7 @@ import {
   P28_INSTANT_REPLY_MIN_TYPING_MS,
 } from '../../../platform/index.js';
 import { petPressure } from './pets.js';
-export const REPLY_TEMPLATE_VERSION = 'chat-v2';
+export const REPLY_TEMPLATE_VERSION = 'chat-v3';
 export const USER_BATCH_DELAY_MS = 3000;
 export function splitReply(text: string, split: boolean): string[] {
   const clean = text.trim();

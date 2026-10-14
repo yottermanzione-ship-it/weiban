@@ -43,6 +43,14 @@ import {
   type MemorySharingLevel,
 } from '../domain/memory.js';
 import { embed, toVectorLiteral, VECTOR_DIM } from '../domain/vector-embed.js';
+import {
+  MAX_SEGMENTS,
+  SummarySegment,
+  nextWindowStart,
+  pickResident,
+  renderStableMemory,
+  type WindowTurn,
+} from '../domain/memory-window.js';
 import { ReplyPlanStore } from './plan-store.js';
 import { invalidateReplyPlans } from './invalidate.js';
 export const EXTRACT_MEMORY_JOB = 'ai.extract_memory';
@@ -57,7 +65,18 @@ type Row = typeof memories.$inferSelect;
 type State = typeof memoryStates.$inferSelect;
 
 /** 分段摘要（现有滚动层）。 */
-const Summaries = z.object({ normal: z.string().max(4000), adult: z.string().max(4000) });
+const Summaries = z.object({
+  normal: z.string().max(4000),
+  adult: z.string().max(4000),
+  /** 0091 起：按批次的摘要片段（带覆盖到的消息序号），窗口前移按它挑摘要（docs/refactor/09 第 8 节）。 */
+  segments: z.array(SummarySegment).max(MAX_SEGMENTS).optional(),
+});
+/** 冻结的稳定记忆块。 */
+const WindowBlock = z.object({
+  normal: z.string(),
+  adult: z.string(),
+  residentIds: z.array(z.string()),
+});
 /** 日/月摘要条目。 */
 const SummaryEntry = z.object({
   /** 格式：YYYY-MM-DD（日摘要）或 YYYY-MM（月摘要）。 */
@@ -458,6 +477,9 @@ export class MemoryService {
           ? {
               barrierSeq: Math.max(state.barrierSeq, barrierSeq),
               cursorSeq: Math.max(state.cursorSeq, barrierSeq),
+              // 0091：被改删的记忆可能在稳定记忆块里，块作废、边界不早于删除屏障
+              windowStartSeq: Math.max(state.windowStartSeq, barrierSeq),
+              windowBlockCiphertext: null,
               pendingCount: 0,
               summaryCiphertext: null,
               dailySummariesCiphertext: null,
@@ -527,7 +549,32 @@ export class MemoryService {
       await this.changed(tx, job, true, conversation?.lastSeq ?? 0);
     });
   }
-  async context(userId: string, characterId: string, scope: 'normal' | 'adult', query: string) {
+  /** 0091：原文起点（窗口边界与删除屏障取大），回复上下文据此决定读多少历史。 */
+  async windowFloor(userId: string, characterId: string): Promise<number> {
+    const job = await this.guard(userId, characterId);
+    const [row] = await this.db.db
+      .select({ w: memoryStates.windowStartSeq, b: memoryStates.barrierSeq })
+      .from(memoryStates)
+      .where(
+        and(
+          eq(memoryStates.userId, userId),
+          eq(memoryStates.characterId, characterId),
+          eq(memoryStates.conversationId, job.conversationId),
+        ),
+      );
+    return Math.max(row?.w ?? 0, row?.b ?? 0);
+  }
+  /**
+   * 回复 / 通话 / 抽取用的记忆上下文。传 window（私聊回复）时同时维护分段稳定窗口：
+   * 需要时前移摘要边界并重算稳定记忆块（不改 revision，不打断进行中的回复）。
+   */
+  async context(
+    userId: string,
+    characterId: string,
+    scope: 'normal' | 'adult',
+    query: string,
+    window?: { turns: WindowTurn[] },
+  ) {
     const job = await this.guard(userId, characterId);
     return this.db.transaction(async (tx) => {
       await this.lock(tx, job);
@@ -626,6 +673,9 @@ export class MemoryService {
 
       // Segment summaries (existing rolling layer)
       let segmentSummary = '';
+      let segments: SummarySegment[] | null = null;
+      let legacyNormal = '';
+      let legacyAdult = '';
       if (state.summaryCiphertext) {
         const bytes = await this.crypto.open(
           userId,
@@ -636,6 +686,9 @@ export class MemoryService {
         try {
           const data = Summaries.parse(JSON.parse(bytes.toString('utf8')));
           segmentSummary = scope === 'adult' ? `${data.normal}\n${data.adult}` : data.normal;
+          segments = data.segments?.length ? data.segments : null;
+          legacyNormal = data.normal;
+          legacyAdult = `${data.normal}\n${data.adult}`;
         } finally {
           bytes.fill(0);
         }
@@ -643,6 +696,8 @@ export class MemoryService {
 
       // Layered summaries: daily + monthly
       let dailySummary = '';
+      let dailyEntries: z.infer<typeof SummaryEntries> = [];
+      let monthlyEntries: z.infer<typeof SummaryEntries> = [];
       if (state.dailySummariesCiphertext) {
         const bytes = await this.crypto.open(
           userId,
@@ -652,6 +707,7 @@ export class MemoryService {
         );
         try {
           const entries = SummaryEntries.parse(JSON.parse(bytes.toString('utf8')));
+          dailyEntries = entries;
           // Return the 3 most recent daily entries relevant to scope
           dailySummary = entries
             .slice(-3)
@@ -673,6 +729,7 @@ export class MemoryService {
         );
         try {
           const entries = SummaryEntries.parse(JSON.parse(bytes.toString('utf8')));
+          monthlyEntries = entries;
           // Return the 2 most relevant monthly entries
           monthlySummary = entries
             .slice(-2)
@@ -687,7 +744,88 @@ export class MemoryService {
       const summary = [segmentSummary, dailySummary, monthlySummary]
         .filter(Boolean)
         .join('\n===\n');
-      return { revision: state.revision, barrierSeq: state.barrierSeq, items, summary };
+      // ---- 0091：分段稳定窗口（docs/refactor/09 第 8 节）----
+      let windowStart = Math.max(state.windowStartSeq, state.barrierSeq);
+      let stableBlock = '';
+      let residentIds: string[] = [];
+      if (window) {
+        let block: z.infer<typeof WindowBlock> | null = null;
+        if (state.windowBlockCiphertext) {
+          const bytes = await this.crypto.open(
+            userId,
+            `ai:window:${state.id}`,
+            state.windowBlockCiphertext,
+            tx,
+          );
+          try {
+            const parsed = WindowBlock.safeParse(JSON.parse(bytes.toString('utf8')));
+            block = parsed.success ? parsed.data : null;
+          } finally {
+            bytes.fill(0);
+          }
+        }
+        const moved = nextWindowStart({
+          windowStart,
+          turns: window.turns,
+          segments,
+          cursorSeq: state.cursorSeq,
+        });
+        if (moved !== null) {
+          windowStart = moved;
+          block = null;
+        }
+        if (!block) {
+          const all = decoded.map((m) => ({ ...m, dueAt: m.dueAt ?? null }));
+          const variant = (s: 'normal' | 'adult') => {
+            const resident = pickResident(all, s);
+            return {
+              resident,
+              text: renderStableMemory({
+                scope: s,
+                resident,
+                windowStart,
+                segments,
+                legacySummary: s === 'adult' ? legacyAdult : legacyNormal,
+                daily: dailyEntries,
+                monthly: monthlyEntries,
+              }),
+            };
+          };
+          const normal = variant('normal');
+          const adult = variant('adult');
+          block = {
+            normal: normal.text,
+            adult: adult.text,
+            residentIds: [
+              ...new Set([...normal.resident, ...adult.resident].map((m) => m.memoryId)),
+            ],
+          };
+          await tx.db
+            .update(memoryStates)
+            .set({
+              windowStartSeq: windowStart,
+              windowBlockCiphertext: await this.crypto.seal(
+                userId,
+                `ai:window:${state.id}`,
+                JSON.stringify(block),
+                tx,
+              ),
+            })
+            .where(eq(memoryStates.id, state.id));
+        }
+        stableBlock = scope === 'adult' ? block.adult : block.normal;
+        residentIds = block.residentIds;
+      }
+      return {
+        revision: state.revision,
+        barrierSeq: state.barrierSeq,
+        /** 原文从这个序号之后开始发送（窗口边界与删除屏障取大）。 */
+        rawFromSeq: windowStart,
+        items,
+        summary,
+        stableBlock,
+        residentIds,
+      };
     });
   }
   async revision(
@@ -1040,8 +1178,14 @@ export class MemoryService {
       }
       let summaryCiphertext = now.summaryCiphertext;
       // A batch containing adult messages is never summarized into normal context.
-      if (extracted.summary && !healthPrivate(extracted.summary)) {
-        let summaries = { normal: '', adult: '' };
+      // 0091：每批都记一个摘要片段（没有可写的摘要也记空片段），表示「到 lastSeq 为止已整理过」，
+      // 窗口前移按片段结尾挑边界，原文与摘要不重叠（docs/refactor/09 第 8 节）。
+      const segmentText =
+        extracted.summary && !healthPrivate(extracted.summary)
+          ? extracted.summary.slice(0, 250)
+          : '';
+      if (segmentText || now.summaryCiphertext || sources.length) {
+        let summaries: z.infer<typeof Summaries> = { normal: '', adult: '' };
         if (now.summaryCiphertext) {
           const bytes = await this.crypto.open(
             job.userId,
@@ -1055,9 +1199,20 @@ export class MemoryService {
             bytes.fill(0);
           }
         }
-        const summaryScope = sources.some((m) => m.scope === 'adult') ? 'adult' : 'normal';
-        summaries[summaryScope] =
-          `${summaries[summaryScope]}\n${extracted.summary.slice(0, 250)}`.slice(-4000);
+        const summaryScope: 'normal' | 'adult' = sources.some((m) => m.scope === 'adult')
+          ? 'adult'
+          : 'normal';
+        if (segmentText)
+          summaries[summaryScope] = `${summaries[summaryScope]}\n${segmentText}`.slice(-4000);
+        summaries.segments = [
+          ...(summaries.segments ?? []),
+          {
+            toSeq: lastSeq,
+            scope: summaryScope,
+            at: this.clock.now().toISOString().slice(0, 10),
+            text: segmentText,
+          },
+        ].slice(-MAX_SEGMENTS);
         summaryCiphertext = await this.crypto.seal(
           job.userId,
           `ai:summary:${now.id}`,

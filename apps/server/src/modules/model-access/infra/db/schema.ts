@@ -112,6 +112,8 @@ export const modelCatalog = modelAccessSchema.table(
     /** 平台默认用途：chat / background / vision，每种最多一个（部分唯一索引不好表达数组，由代码在行锁下保证）。 */
     defaultFor: text('default_for').array().notNull(),
     enabled: boolean('enabled').notNull(),
+    /** v3.6（0091）：系统消息放法 multi / single_system / no_system（docs/refactor/09 第 5 节）。 */
+    systemMessageMode: text('system_message_mode').notNull().default('multi'),
     createdAt: tz('created_at').notNull(),
     updatedAt: tz('updated_at').notNull(),
   },
@@ -121,6 +123,10 @@ export const modelCatalog = modelAccessSchema.table(
     check(
       'model_catalog_adult_not_default',
       sql`not ('adult_content' = any(${t.capabilities})) or ${t.defaultFor} <@ ARRAY['adult_check']::text[]`,
+    ),
+    check(
+      'model_catalog_system_message_mode',
+      sql`${t.systemMessageMode} IN ('multi','single_system','no_system')`,
     ),
   ],
 );
@@ -236,6 +242,8 @@ export const usageRecords = modelAccessSchema.table(
     personaVersion: integer('persona_version'),
     promptTemplateVersion: text('prompt_template_version'),
     scenarioMode: text('scenario_mode'),
+    /** v3.6（0091）：请求「稳定开头」的估算 token 数（meta.stablePrefixChars 折算），没有标记为空。 */
+    stablePrefixTokens: integer('stable_prefix_tokens'),
     /** T-071：多媒体用量（ttsChars / asrSeconds / images / searchCalls），文本调用为空。 */
     mediaUnits: jsonb('media_units').$type<Record<string, number>>(),
   },

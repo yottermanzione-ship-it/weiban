@@ -37,6 +37,8 @@ import { USAGE_DAY_TIME_ZONE, decodeCursor, encodeCursor } from '../domain/rules
 import { upstreams, usageRecords } from '../infra/db/schema.js';
 
 type UsageRow = typeof usageRecords.$inferSelect;
+/** v3.6：稳定开头字符数 → 估算 token（中文为主，约 0.7～0.8 token / 字，取 0.75）。 */
+const PREFIX_TOKENS_PER_CHAR = 0.75;
 
 // ---------- 网关写入（D-L0-09 使用） ----------
 
@@ -120,6 +122,10 @@ export class UsageRecorder {
         personaVersion: s.input.meta?.personaVersion ?? null,
         promptTemplateVersion: s.input.meta?.promptTemplateVersion ?? null,
         scenarioMode: s.input.meta?.scenarioMode ?? null,
+        stablePrefixTokens:
+          typeof s.input.meta?.stablePrefixChars === 'number' && s.input.meta.stablePrefixChars > 0
+            ? Math.round(s.input.meta.stablePrefixChars * PREFIX_TOKENS_PER_CHAR)
+            : null,
       })
       .onConflictDoNothing({ target: usageRecords.idempotencyKey })
       .returning();
@@ -243,7 +249,10 @@ const TOTALS_SQL = sql`
     filter (where ${usageRecords.billingOwner} = 'user' and ${usageRecords.status} = 'succeeded'), 0)::bigint as charged_micros,
   coalesce(sum(${usageRecords.costMicros}), 0)::bigint as cost_micros,
   coalesce(sum(${usageRecords.absorbedCostMicros}), 0)::bigint as absorbed_cost_micros,
-  coalesce(sum(${usageRecords.latencyMs}), 0)::bigint as latency_ms`;
+  coalesce(sum(${usageRecords.latencyMs}), 0)::bigint as latency_ms,
+  coalesce(sum(${usageRecords.stablePrefixTokens}), 0)::bigint as stable_prefix_tokens,
+  coalesce(sum(${usageRecords.inputTokens} + ${usageRecords.cachedInputTokens})
+    filter (where ${usageRecords.stablePrefixTokens} is not null), 0)::bigint as marked_input_tokens`;
 
 type TotalsRow = Record<
   | 'calls'
@@ -256,7 +265,9 @@ type TotalsRow = Record<
   | 'charged_micros'
   | 'cost_micros'
   | 'absorbed_cost_micros'
-  | 'latency_ms',
+  | 'latency_ms'
+  | 'stable_prefix_tokens'
+  | 'marked_input_tokens',
   string | number | null
 >;
 
@@ -271,6 +282,11 @@ function toTotals(r: TotalsRow | undefined): AdminUsageTotals {
     avgLatencyMs: calls > 0 ? Math.round(n(r?.latency_ms) / calls) : 0,
     failureRate: calls > 0 ? n(r?.failed_calls) / calls : 0,
     cacheHitRate: inputAll > 0 ? n(r?.cached_input_tokens) / inputAll : 0,
+    // v3.6：理论可缓存占比（估算的稳定开头 ÷ 带标记调用的实际输入），估算偏差可能略超 1，封顶
+    stablePrefixRate:
+      n(r?.marked_input_tokens) > 0
+        ? Math.min(1, n(r?.stable_prefix_tokens) / n(r?.marked_input_tokens))
+        : 0,
     calls: n(r?.calls),
     failedCalls: n(r?.failed_calls),
     inputTokens: n(r?.input_tokens),
@@ -311,6 +327,7 @@ export function toAdminRecord(row: UsageRow): AdminUsageRecord {
     safetyOverdraft: row.safetyOverdraft,
     chargedPoints: microsToPoints(row.chargedMicros),
     upstreamModelId: row.upstreamModelId.slice(0, 128),
+    stablePrefixTokens: row.stablePrefixTokens ?? null,
   };
 }
 

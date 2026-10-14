@@ -414,6 +414,9 @@ export class ReplyEngine {
         promptTemplateVersion: snapshot.promptTemplateVersion,
         conversationKind: 'direct',
         scenarioMode: snapshot.scenarioMode,
+        ...(snapshot.stablePrefixChars > 0
+          ? { stablePrefixChars: snapshot.stablePrefixChars }
+          : {}),
       },
     };
   }

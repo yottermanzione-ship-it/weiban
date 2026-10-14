@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.5. Regenerate: pnpm android:generate
+// Contract 3.6. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.5"
+const val CONTRACT_VERSION: String = "3.6"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -198,6 +198,7 @@ data class AdminCatalogEntry(
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
 )
 
@@ -214,6 +215,7 @@ data class AdminCatalogEntryWrite(
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
 )
 
 @Serializable
@@ -229,6 +231,7 @@ data class AdminCatalogEntryWriteInput(
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
 )
 
 @Serializable
@@ -366,6 +369,7 @@ data class AdminModel(
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
     @SerialName("rates") val `rates`: ModelRates?,
     @SerialName("costRates") val `costRates`: ModelRates?,
@@ -387,6 +391,7 @@ data class AdminModelWrite(
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("rates") val `rates`: ModelRates?,
     @SerialName("costRates") val `costRates`: ModelRates? = null,
     @SerialName("routes") val `routes`: List<ModelRoute>? = null,
@@ -405,6 +410,7 @@ data class AdminModelWriteInput(
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("rates") val `rates`: ModelRatesInput?,
     @SerialName("costRates") val `costRates`: ModelRatesInput? = null,
     @SerialName("routes") val `routes`: List<ModelRouteInput>? = null,
@@ -684,6 +690,7 @@ data class AdminUsageRecord(
     @SerialName("safetyOverdraft") val `safetyOverdraft`: Boolean,
     @SerialName("chargedPoints") val `chargedPoints`: Double? = null,
     @SerialName("upstreamModelId") val `upstreamModelId`: String? = null,
+    @SerialName("stablePrefixTokens") val `stablePrefixTokens`: Long? = null,
 )
 
 @Serializable
@@ -725,6 +732,7 @@ data class AdminUsageSummaryRow(
     @SerialName("avgLatencyMs") val `avgLatencyMs`: Double? = null,
     @SerialName("failureRate") val `failureRate`: Double? = null,
     @SerialName("cacheHitRate") val `cacheHitRate`: Double? = null,
+    @SerialName("stablePrefixRate") val `stablePrefixRate`: Double? = null,
     @SerialName("keys") val `keys`: List<String>,
 )
 
@@ -744,6 +752,7 @@ data class AdminUsageTotals(
     @SerialName("avgLatencyMs") val `avgLatencyMs`: Double? = null,
     @SerialName("failureRate") val `failureRate`: Double? = null,
     @SerialName("cacheHitRate") val `cacheHitRate`: Double? = null,
+    @SerialName("stablePrefixRate") val `stablePrefixRate`: Double? = null,
 )
 
 @Serializable
@@ -8523,6 +8532,8 @@ data class SystemContent(
     @SerialName("code") val `code`: String,
     @SerialName("params") val `params`: Map<String, SystemContentParamsValue>,
 )
+
+typealias SystemMessageMode = String
 
 @Serializable
 data class TextContent(

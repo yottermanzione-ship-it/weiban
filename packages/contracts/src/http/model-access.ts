@@ -315,6 +315,16 @@ export const UpstreamTestFailedDetails = z.object({ reason: UpstreamTestFailure 
 
 // ---------- 管理后台：模型目录 ----------
 
+/**
+ * v3.6：系统消息放法（docs/refactor/09-chat-pipeline.md 第 5 节）。不同平台对「多条 / 中间插入的系统消息」支持不一：
+ * - multi：原样发送（默认）；
+ * - single_system：只保留第一条系统消息，其余系统消息改成用户消息（开头注明「系统提示，不是用户说的话」），相邻同角色合并；
+ * - no_system：连第一条也改成用户消息（个别不认 system 角色的模型）。
+ * 上架新模型时用评测集验证该选哪种。
+ */
+export const SystemMessageMode = z.enum(['multi', 'single_system', 'no_system']);
+export type SystemMessageMode = z.infer<typeof SystemMessageMode>;
+
 export const AdminCatalogEntry = z.object({
   modelKey: ModelKey,
   displayName: z.string().min(1).max(60),
@@ -348,6 +358,8 @@ export const AdminCatalogEntry = z.object({
     ]),
   ),
   enabled: z.boolean(),
+  /** v3.6：系统消息放法；写入时不传 = 保持原值（新建默认 multi）。 */
+  systemMessageMode: SystemMessageMode.optional(),
   updatedAt: Timestamp,
 });
 export type AdminCatalogEntry = z.infer<typeof AdminCatalogEntry>;
@@ -603,6 +615,11 @@ export const AdminUsageTotals = z.object({
   failureRate: z.number().min(0).max(1).optional(),
   /** 缓存命中率 0～1 = 命中缓存的输入 token ÷（未命中 + 命中的输入 token）。 */
   cacheHitRate: z.number().min(0).max(1).optional(),
+  /**
+   * v3.6：理论可缓存占比 0～1 = 带「稳定开头」标记的调用里，稳定开头的估算 token ÷ 这些调用的全部输入 token
+   * （目前只有私聊回复带标记）。与 cacheHitRate 对照：命中率明显低于它，说明上游没吃到缓存（换了账号、开头被改动等）。
+   */
+  stablePrefixRate: z.number().min(0).max(1).optional(),
 });
 export type AdminUsageTotals = z.infer<typeof AdminUsageTotals>;
 
@@ -667,6 +684,8 @@ export const AdminUsageRecord = z.object({
   chargedPoints: z.number().nonnegative().optional(),
   /** v3.4：实际调用的上游模型名。 */
   upstreamModelId: z.string().max(128).optional(),
+  /** v3.6：这次请求「稳定开头」的估算 token 数；没有标记的调用为 null。 */
+  stablePrefixTokens: z.number().int().nonnegative().nullable().optional(),
 });
 export type AdminUsageRecord = z.infer<typeof AdminUsageRecord>;
 

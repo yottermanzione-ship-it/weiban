@@ -130,6 +130,11 @@ export interface GenerateTextInput {
     promptTemplateVersion?: string;
     scenarioMode?: string;
     conversationKind?: 'direct' | 'group';
+    /**
+     * v3.6：messages 开头「稳定部分」的字符数（两次请求之间不变、可命中前缀缓存的部分）。
+     * 网关折算成估算 token 写入用量记录，供「理论可缓存占比」统计（docs/refactor/09-chat-pipeline.md 第 6 节）。
+     */
+    stablePrefixChars?: number;
   };
 }
 

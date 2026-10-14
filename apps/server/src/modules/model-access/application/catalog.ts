@@ -15,6 +15,7 @@ import type {
   ModelCapability,
   ModelInfo,
   ModelRoute,
+  SystemMessageMode,
   UpstreamStatus,
 } from '@weiban/contracts';
 import { AdminCatalogEntryWrite } from '@weiban/contracts';
@@ -88,6 +89,7 @@ export function toAdminEntry(row: CatalogRow): AdminCatalogEntry {
     sortOrder: row.sortOrder,
     defaultFor: row.defaultFor as DefaultUse[],
     enabled: row.enabled,
+    systemMessageMode: row.systemMessageMode as SystemMessageMode,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -183,6 +185,8 @@ export class CatalogService {
         sortOrder: body.sortOrder,
         defaultFor,
         enabled: body.enabled,
+        // v3.6：不传 = 保持原值（旧后台页面不认识这个字段）
+        systemMessageMode: body.systemMessageMode ?? before?.systemMessageMode ?? 'multi',
         updatedAt: now,
       };
       const [row] = before

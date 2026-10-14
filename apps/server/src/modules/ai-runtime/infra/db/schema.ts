@@ -184,6 +184,13 @@ export const memoryStates = aiRuntimeSchema.table(
     lastDailyAt: timestamp('last_daily_at', { withTimezone: true }),
     /** 上次合并月摘要的时间，用于判断是否需要触发月汇总。 */
     lastMonthlyAt: timestamp('last_monthly_at', { withTimezone: true }),
+    /**
+     * 0091：分段稳定窗口的摘要边界（docs/refactor/09 第 8 节）。序号 ≤ 它的原文不再发送，由稳定记忆块里的摘要代替。
+     * 与 barrierSeq（删除屏障）取较大值作为原文起点。
+     */
+    windowStartSeq: bigint('window_start_seq', { mode: 'number' }).notNull().default(0),
+    /** 0091：冻结的稳定记忆块（加密 JSON {normal, adult}），只在窗口前移 / 记忆被改删时重算。 */
+    windowBlockCiphertext: bytes('window_block_ciphertext'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
   (t) => [

@@ -25,8 +25,10 @@ import type {
   ModelRole,
   ModelStatus,
   PortResult,
+  SystemMessageMode,
   UsageQuantities,
 } from '@weiban/contracts';
+import { asSystemMessageMode } from '../domain/system-messages.js';
 import { BILLING_QUOTE_PORT, BILLING_READ_PORT } from '../../billing/index.js';
 import { hasAdultContent, unavailableReason } from '../domain/rules.js';
 import { MODEL_ACCESS_POLICY, type ModelPolicy } from '../tokens.js';
@@ -38,6 +40,8 @@ export interface ResolvedModel {
   upstreamId: string;
   upstreamModelId: string;
   capabilities: string[];
+  /** v3.6：系统消息放法（model_catalog.system_message_mode）。 */
+  systemMessageMode: SystemMessageMode;
   /** 这次因为识图改用了平台默认识图模型。 */
   usedVisionDefault: boolean;
 }
@@ -198,6 +202,7 @@ export class ModelResolver implements AdultModelReadPort {
         upstreamId: entry.upstreamId,
         upstreamModelId: entry.upstreamModelId,
         capabilities: entry.capabilities,
+        systemMessageMode: asSystemMessageMode(entry.systemMessageMode),
         usedVisionDefault,
       },
     };
