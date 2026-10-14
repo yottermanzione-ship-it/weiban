@@ -967,22 +967,18 @@ label.search-entry:focus-within {
 .pull-list {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  /* 和小程序面板同层、排在它后面：下拉时列表盖在面板上，面板从列表上方露出来 */
+  z-index: calc(var(--wb-z-index-tab-bar) - 1);
   display: flex;
   flex-direction: column;
   background: var(--wb-color-bg-page);
-  transition: transform var(--wb-motion-duration-page) var(--wb-motion-easing-standard);
+  /* 位移由脚本里的弹簧逐帧推进，不能再加 CSS 过渡（会把跟手拖慢） */
   will-change: transform;
   overscroll-behavior-y: contain;
 }
-.pull-list.dragging {
-  transition: none;
-}
-.pull-list.closing {
-  transition-duration: var(--wb-motion-duration-base);
-}
-.pull-list.bounce {
-  transition: transform var(--wb-motion-duration-page) var(--wb-motion-easing-spring);
+.pull-list.lifted {
+  overflow: hidden;
+  border-radius: var(--wb-radius-lg) var(--wb-radius-lg) 0 0;
 }
 .pull-list .search-strip {
   margin: 0;
@@ -1068,6 +1064,8 @@ label.search-entry:focus-within {
   position: relative;
   overflow: hidden;
   touch-action: pan-y;
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 .swipe-track {
   position: relative;
@@ -1083,16 +1081,21 @@ label.search-entry:focus-within {
   inset: 0 0 0 auto;
   display: flex;
 }
+/* 旧版 swipe_action_row：每个 68 宽、撑满行高、白字 15 */
 .swipe-actions button {
+  flex: none;
   width: 68px;
   min-height: 0;
   height: 100%;
-  padding: 0 var(--wb-space-2);
+  padding: 0 var(--wb-space-1);
   border: 0;
   border-radius: 0;
   color: #fff;
-  font-size: var(--wb-font-size-footnote);
-  line-height: 1.15;
+  font-size: var(--wb-font-size-subhead);
+  line-height: 1.2;
+}
+.swipe-actions button:active {
+  opacity: var(--wb-opacity-pressed);
 }
 .swipe-actions .read {
   background: var(--wb-color-ui-swipe-read);
@@ -1110,7 +1113,7 @@ label.search-entry:focus-within {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 0;
+  z-index: calc(var(--wb-z-index-tab-bar) - 1);
   display: grid;
   justify-items: center;
   gap: var(--wb-space-3);
@@ -1169,8 +1172,9 @@ label.search-entry:focus-within {
   max-width: var(--wb-size-content-max-width);
   margin: 0 auto;
   padding-top: calc(env(safe-area-inset-top) + 16px);
-  padding-bottom: 64px;
+  padding-bottom: 120px;
   background: var(--wb-color-ui-pull-panel-bg);
+  touch-action: none;
   color: rgba(255, 255, 255, 0.9);
   visibility: hidden;
 }
@@ -1182,34 +1186,17 @@ label.search-entry:focus-within {
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  opacity: 0;
-  transform: translateY(-24px);
-  transition:
-    opacity var(--wb-motion-duration-base) var(--wb-motion-easing-standard),
-    transform var(--wb-motion-duration-base) var(--wb-motion-easing-standard);
-}
-.pull-panel.open .pull-panel-inner {
-  opacity: 1;
-  transform: none;
-  transition-delay: 50ms;
+  /* 随下拉进度淡入、从上方落下（--pull-progress 由脚本逐帧写入） */
+  opacity: var(--pull-progress, 0);
+  transform: translateY(calc((1 - var(--pull-progress, 0)) * -32px))
+    scale(calc(0.94 + 0.06 * var(--pull-progress, 0)));
+  transform-origin: top center;
 }
 .pull-panel h2 {
   margin: 0 0 var(--wb-space-4);
   font-size: var(--wb-font-size-headline);
   font-weight: var(--wb-font-weight-medium);
   text-align: center;
-}
-.pull-panel .search-entry {
-  flex: none;
-  margin: 0 var(--wb-space-5);
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.5);
-}
-.pull-panel .search-entry input {
-  color: rgba(255, 255, 255, 0.9);
-}
-.pull-panel .search-entry input::placeholder {
-  color: rgba(255, 255, 255, 0.5);
 }
 .pull-scroll {
   flex: 1;
@@ -1218,42 +1205,71 @@ label.search-entry:focus-within {
   overscroll-behavior-y: contain;
   padding: 0 0 var(--wb-space-6);
 }
-.pull-section {
-  margin: 24px 0 12px var(--wb-space-5);
-  color: rgba(255, 255, 255, 0.5);
-  font-size: var(--wb-font-size-subhead);
-  font-weight: var(--wb-font-weight-regular);
-}
 .pull-panel .miniapp-grid {
-  padding: 0;
+  padding: var(--wb-space-4) var(--wb-space-2) 0;
 }
 .pull-panel .miniapp-cell {
   color: rgba(255, 255, 255, 0.8);
+  -webkit-touch-callout: none;
+  user-select: none;
+  touch-action: none;
 }
+.pull-grid-cell {
+  position: relative;
+  transition: transform var(--wb-motion-duration-fast) var(--wb-motion-easing-standard);
+}
+.pull-grid-cell.lifted {
+  z-index: 2;
+  transform: scale(1.12);
+  transition: none;
+}
+.pull-grid-cell.drop-target {
+  opacity: 0.5;
+}
+.pull-tip {
+  margin: var(--wb-space-6) 0 0;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: var(--wb-font-size-caption1);
+  text-align: center;
+}
+/* 打开后底部露出的那一条（高 120，透明盖在下移的聊天列表上）：上滑或轻点收起 */
 .pull-tail {
   position: fixed;
   right: 0;
   bottom: 0;
   left: 0;
   z-index: calc(var(--wb-z-index-tab-bar) + 1);
-  display: grid;
-  place-items: center;
+  display: flex;
+  justify-content: center;
   max-width: var(--wb-size-content-max-width);
-  height: 64px;
+  height: 120px;
   margin: 0 auto;
+  padding: 0;
   border: 0;
-  border-radius: var(--wb-radius-lg) var(--wb-radius-lg) 0 0;
-  background: var(--wb-color-bg-surface);
-  color: var(--wb-color-text-primary);
-  font-size: var(--wb-font-size-headline);
-  font-weight: var(--wb-font-weight-medium);
-  opacity: 0;
+  border-radius: 0;
+  background: transparent;
+  touch-action: none;
   pointer-events: none;
-  transition: opacity var(--wb-motion-duration-fast);
+  visibility: hidden;
 }
-.pull-panel.open + .pull-tail {
-  opacity: 1;
+.pull-tail.shown {
   pointer-events: auto;
+  visibility: visible;
+}
+.pull-tail-grip {
+  width: 36px;
+  height: 4px;
+  margin-top: 6px;
+  border-radius: var(--wb-radius-full);
+  background: var(--wb-color-border-strong);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 /* ---------- 小程序宫格与外壳（5.1） ---------- */

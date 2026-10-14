@@ -3,13 +3,7 @@
  * 左滑三键（标为未读 / 不显示 / 删除）、浅色长按菜单、下拉出现小程序面板（4.3）。
  * 手感（总经理 2026-10-14）：轻点进入会话；长按（或右键）才弹菜单；左滑露出按钮；有一行展开时轻点任意行只收起。
  */
-import {
-  useEffect,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-  type ReactNode,
-} from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ChatEndpoints, type Conversation } from '@weiban/contracts';
 import { useChat } from '../app/chat.js';
@@ -25,11 +19,11 @@ import {
   LongPressMenu,
   PopMenu,
   showComingSoon,
-  useLongPress,
   type ActionItem,
 } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 import { PullMiniApps } from './pull-panel.js';
+import { useRowGesture } from './row-gesture.js';
 import { listTime } from './time-format.js';
 
 const SWIPE_BUTTON = 68;
@@ -43,12 +37,17 @@ function useMinuteTick() {
   }, []);
 }
 
-/** 左滑露出按钮（180ms easeOut；甩动 > 250 像素/秒直接展开 / 收起；同时只展开一行）。 */
+/**
+ * 左滑露出按钮（参考旧版 swipe_action_row：按钮贴右撑满行高、每个 68 宽，前景完整盖住按钮；
+ * 跟手、松手吸附 180ms easeOut、甩动直接展开 / 收起；同时只展开一行）。
+ * 点按 / 长按 / 横滑 / 竖滚由 useRowGesture 状态机区分，互不串台。
+ */
 function SwipeRow({
   open,
   othersOpen,
   onOpenChange,
   onCloseOthers,
+  onLongPress,
   actions,
   children,
 }: {
@@ -57,60 +56,24 @@ function SwipeRow({
   othersOpen: boolean;
   onOpenChange(open: boolean): void;
   onCloseOthers(): void;
+  onLongPress(at: { x: number; y: number }): void;
   actions: Array<{ label: string; kind: 'read' | 'hide' | 'delete'; onClick(): void }>;
   children: ReactNode;
 }) {
+  const host = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const width = actions.length * SWIPE_BUTTON;
-  const start = useRef<{ x: number; y: number; t: number; active: boolean } | null>(null);
-  const last = useRef({ x: 0, t: 0 });
-  const swallow = useRef(false);
-  const set = (x: number, dragging: boolean) => {
-    const el = track.current;
-    if (!el) return;
-    el.classList.toggle('dragging', dragging);
-    el.style.transform = x ? `translateX(${x}px)` : '';
-  };
-  useEffect(() => set(open ? -width : 0, false), [open, width]);
-  function down(event: ReactPointerEvent) {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    swallow.current = false;
-    start.current = { x: event.clientX, y: event.clientY, t: Date.now(), active: false };
-    last.current = { x: event.clientX, t: Date.now() };
-  }
-  function move(event: ReactPointerEvent) {
-    const s = start.current;
-    if (!s) return;
-    const dx = event.clientX - s.x;
-    const dy = event.clientY - s.y;
-    if (!s.active) {
-      if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) {
-        s.active = true;
-        (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
-      } else if (Math.abs(dy) > 8) {
-        start.current = null;
-        return;
-      } else return;
-    }
-    swallow.current = true;
-    last.current = { x: event.clientX, t: Date.now() };
-    set(Math.max(-width, Math.min(0, dx + (open ? -width : 0))), true);
-  }
-  function up(event: ReactPointerEvent) {
-    const s = start.current;
-    start.current = null;
-    if (!s?.active) return;
-    const dx = event.clientX - s.x;
-    const dt = Math.max(1, Date.now() - last.current.t + 16);
-    const velocity = ((event.clientX - last.current.x) / dt) * 1000;
-    const position = Math.max(-width, Math.min(0, dx + (open ? -width : 0)));
-    const next = velocity < -250 ? true : velocity > 250 ? false : Math.abs(position) > width / 2;
-    set(next ? -width : 0, false);
-    onOpenChange(next);
-  }
+  useRowGesture(host, track, {
+    swipeWidth: width,
+    open,
+    othersOpen,
+    onOpenChange,
+    onCloseOthers,
+    onLongPress,
+  });
   return (
-    <div className="swipe-host">
-      <div className="swipe-actions" aria-hidden={!open}>
+    <div ref={host} className="swipe-host">
+      <div className="swipe-actions" aria-hidden={!open} style={{ width }}>
         {actions.map((action) => (
           <button
             key={action.label}
@@ -126,42 +89,14 @@ function SwipeRow({
           </button>
         ))}
       </div>
-      <div
-        ref={track}
-        className="swipe-track"
-        onPointerDown={down}
-        onPointerMove={move}
-        onPointerUp={up}
-        onPointerCancel={() => {
-          start.current = null;
-          set(open ? -width : 0, false);
-        }}
-        onClickCapture={(event) => {
-          if (swallow.current || open || othersOpen) {
-            event.preventDefault();
-            event.stopPropagation();
-            if (!swallow.current) {
-              if (open) onOpenChange(false);
-              else onCloseOthers();
-            }
-            swallow.current = false;
-          }
-        }}
-      >
+      <div ref={track} className="swipe-track">
         {children}
       </div>
     </div>
   );
 }
 
-function ConversationRow({
-  item,
-  onMenu,
-}: {
-  item: Conversation;
-  onMenu(item: Conversation, at: { x: number; y: number }): void;
-}) {
-  const press = useLongPress((at) => onMenu(item, at));
+function ConversationRow({ item }: { item: Conversation }) {
   const muted = item.state.muted;
   const unread = item.unreadCount;
   const marked = item.state.markedUnread && unread === 0;
@@ -173,7 +108,6 @@ function ConversationRow({
       to={`/chat/${item.conversationId}`}
       className={`conv-row ${item.state.pinned ? 'pinned' : ''}`}
       draggable={false}
-      {...press}
     >
       <span className="avatar-badge-host">
         {item.type === 'group' ? (
@@ -352,6 +286,7 @@ export function ConversationListPage() {
               othersOpen={swiped !== null && swiped !== item.conversationId}
               onOpenChange={(open) => setSwiped(open ? item.conversationId : null)}
               onCloseOthers={() => setSwiped(null)}
+              onLongPress={(at) => setTarget({ item, at })}
               actions={[
                 {
                   label: hasUnread(item) ? '标为已读' : '标为未读',
@@ -363,7 +298,7 @@ export function ConversationListPage() {
                 { label: '删除', kind: 'delete', onClick: () => setDeleting(item) },
               ]}
             >
-              <ConversationRow item={item} onMenu={(it, at) => setTarget({ item: it, at })} />
+              <ConversationRow item={item} />
             </SwipeRow>
           )}
         />

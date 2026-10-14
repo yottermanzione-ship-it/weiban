@@ -220,9 +220,26 @@ export function useMiniAppPrefs() {
     .filter((app): app is MiniApp => !!app && !excludedFromRecent(app));
   const mineIds = read(MINE) ?? miniApps.map((app) => app.id);
   const mine = mineIds.map(appById).filter((app): app is MiniApp => !!app);
+  /** 下拉面板用：全部小程序按用户排好的顺序（「我的小程序」顺序在前，其余按登记顺序接在后面；不能删除）。 */
+  const ordered = [...mine, ...miniApps.filter((app) => !mineIds.includes(app.id))];
+  const orderedIds = ordered.map((app) => app.id);
   return {
     recent,
     mine,
+    ordered,
+    /** 下拉面板排序：移到最前。 */
+    orderFront(app: MiniApp) {
+      write(MINE, [app.id, ...orderedIds.filter((id) => id !== app.id)]);
+    },
+    /** 下拉面板排序：拖到 target 的位置。 */
+    orderMove(app: MiniApp, target: MiniApp) {
+      const from = orderedIds.indexOf(app.id);
+      const to = orderedIds.indexOf(target.id);
+      if (from < 0 || to < 0 || from === to) return;
+      const list = orderedIds.filter((id) => id !== app.id);
+      list.splice(to, 0, app.id);
+      write(MINE, list);
+    },
     inMine: (app: MiniApp) => mineIds.includes(app.id),
     toggleMine(app: MiniApp) {
       write(
