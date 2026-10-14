@@ -3,6 +3,7 @@
  * 左上 ×、居中大标题、「账号 / 密码」两行带分隔线的表单、灰色说明、蓝色文字链接、
  * 「登录后同步最近的聊天记录」勾选、绿色「同意并登录」大按钮、最底「找回密码 | 更多」。
  * 注册入口在「更多」里；用不上的入口（手机号登录、找回密码）点了提示「暂未开放」。
+ * 总经理 10-14 确认（Q12）：未登录先显示微信那种欢迎页——品牌 + 底部「登录」「注册」两个按钮；登录页左上 × 回到欢迎页。
  */
 import { useRef, useState, type FormEvent } from 'react';
 import { IdentityEndpoints } from '@weiban/contracts';
@@ -14,6 +15,7 @@ import { OldIcon } from './old-icons.js';
 import { ActionSheet, CheckCircle, showComingSoon } from './shell-kit.js';
 
 export function AuthPage() {
+  const [welcome, setWelcome] = useState(true);
   const [register, setRegister] = useState(false);
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
@@ -57,19 +59,49 @@ export function AuthPage() {
       setPending(false);
     }
   }
+  if (welcome)
+    return (
+      <main className="auth-page wx-welcome">
+        <div className="wx-welcome-brand">
+          <img src="/assets/old-ui/brand/icon.png" alt="" width={72} height={72} />
+          <strong>微伴</strong>
+          <span>有 TA 陪你聊天</span>
+        </div>
+        <div className="wx-welcome-actions">
+          <button
+            type="button"
+            className="primary"
+            onClick={() => {
+              switchMode(false);
+              setWelcome(false);
+            }}
+          >
+            登录
+          </button>
+          <button
+            type="button"
+            className="wx-welcome-secondary"
+            onClick={() => {
+              switchMode(true);
+              setWelcome(false);
+            }}
+          >
+            注册
+          </button>
+        </div>
+      </main>
+    );
   return (
     <main className="auth-page wx-auth">
       <div className="wx-auth-top">
         <button
           type="button"
           className="nav-bar-icon"
-          aria-label={register ? '返回登录' : '清空'}
+          aria-label="返回"
           onClick={() => {
-            if (register) switchMode(false);
-            else {
-              form.current?.reset();
-              setError('');
-            }
+            form.current?.reset();
+            setError('');
+            setWelcome(true);
           }}
         >
           <OldIcon name="wechat/close" size={24} />

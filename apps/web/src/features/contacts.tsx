@@ -416,24 +416,23 @@ export function DiscoverPage() {
           }
         />
       </MenuGroup>
+      {/* 总经理 10-14 确认（Q7）：角色广场放在朋友圈下面单独一组；Q6：不要摇一摇、购物 */}
       <MenuGroup>
         <MenuRow to="/plaza" icon="drawn/people" tint="orange" label="角色广场" />
+      </MenuGroup>
+      <MenuGroup>
+        <ComingSoonRow id="channels" />
         <ComingSoonRow id="live" />
       </MenuGroup>
       <MenuGroup>
         <ComingSoonRow id="scan" />
-        <ComingSoonRow id="shake" />
+        <ComingSoonRow id="listen" />
       </MenuGroup>
       <MenuGroup>
         <ComingSoonRow id="topstories" />
         <MenuRow to="/search" icon="wechat/discover_search.png" tint="red" label="搜一搜" />
       </MenuGroup>
       <MenuGroup>
-        <ComingSoonRow id="channels" />
-        <ComingSoonRow id="listen" />
-      </MenuGroup>
-      <MenuGroup>
-        <ComingSoonRow id="shop" />
         <ComingSoonRow id="games" />
         <MenuRow
           to="/miniapps"

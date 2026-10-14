@@ -1783,3 +1783,251 @@ button.primary.wx-auth-submit {
   background: var(--wb-color-bg-scrim);
   color: #fff;
 }
+
+/* ---------- 全局搜索（10-14 总对照表 T1.2：照微信搜索页） ---------- */
+.wx-search {
+  padding-top: 0;
+}
+.wx-search-head {
+  position: sticky;
+  top: 0;
+  z-index: var(--wb-z-index-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--wb-space-3);
+  height: var(--wb-size-nav-bar);
+  margin: 0 calc(-1 * var(--wb-space-5));
+  padding: env(safe-area-inset-top) 0 0 var(--wb-space-3);
+  background: var(--wb-color-bg-nav-bar);
+}
+label.wx-search-box {
+  display: flex;
+  flex: 1;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--wb-space-2);
+  min-width: 0;
+  height: 36px;
+  margin: 0;
+  padding: 0 var(--wb-space-3);
+  border-radius: var(--wb-radius-md);
+  background: var(--wb-color-bg-surface);
+  color: var(--wb-color-ui-search-placeholder);
+}
+.wx-search-box input {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-body);
+}
+.wx-search-box input:focus,
+.wx-search-box input:focus-visible {
+  outline: none;
+  border: 0;
+  box-shadow: none;
+}
+.wx-search-box input::-webkit-search-cancel-button {
+  display: none;
+}
+.wx-search-box input::placeholder {
+  color: var(--wb-color-ui-search-placeholder);
+}
+.wx-search-scope {
+  flex: none;
+  min-height: 0;
+  padding: 2px var(--wb-space-2);
+  border: 0;
+  border-radius: var(--wb-radius-sm);
+  background: var(--wb-color-brand-soft);
+  color: var(--wb-color-brand-on-soft);
+  font-size: var(--wb-font-size-footnote);
+}
+.wx-search-clear {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--wb-radius-full);
+  background: var(--wb-color-text-placeholder);
+  color: #fff;
+}
+.wx-search-cancel {
+  flex: none;
+  align-self: center;
+  min-height: 0;
+  height: var(--wb-size-nav-bar);
+  padding: 0 var(--wb-space-4) 0 var(--wb-space-1);
+  border: 0;
+  background: none;
+  color: var(--wb-color-text-link);
+  font-size: var(--wb-font-size-body);
+  line-height: 1;
+}
+.wx-search-scopes {
+  padding: 40px 0 0;
+  text-align: center;
+}
+.wx-search-scopes p {
+  margin: 0 0 var(--wb-space-6);
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-subhead);
+}
+.wx-search-scopes div {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  row-gap: var(--wb-space-6);
+  padding: 0 var(--wb-space-6);
+}
+.wx-search-scopes button {
+  position: relative;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--wb-color-text-link);
+  font-size: var(--wb-font-size-body);
+}
+.wx-search-scopes button:not(:nth-child(3n + 1))::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 14px;
+  border-left: 0.5px solid var(--wb-color-border-strong);
+  transform: translateY(-50%);
+}
+.wx-search-tip {
+  margin: 40px 0 0;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-subhead);
+  text-align: center;
+}
+.wx-search-group {
+  margin: var(--wb-space-3) calc(-1 * var(--wb-space-5)) 0;
+  background: var(--wb-color-bg-surface);
+}
+.wx-search-group h2 {
+  margin: 0;
+  padding: var(--wb-space-3) var(--wb-space-5) var(--wb-space-2);
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+  font-weight: var(--wb-font-weight-regular);
+}
+.wx-search-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--wb-space-4);
+  min-height: 64px;
+  padding: var(--wb-space-3) var(--wb-space-5);
+  color: var(--wb-color-text-primary);
+}
+.wx-search-row::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 72px;
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
+}
+.wx-search-row:active {
+  background: var(--wb-color-bg-pressed);
+}
+.wx-search-text {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.wx-search-text > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wx-search-text small,
+.wx-search-time {
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+}
+.wx-search-time {
+  flex: none;
+  align-self: flex-start;
+}
+.wx-search-more {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-space-2);
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--wb-space-5);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--wb-color-text-link);
+  font-size: var(--wb-font-size-subhead);
+}
+.wx-search-more .menu-caret {
+  margin-left: auto;
+}
+
+/* ---------- 欢迎页（10-14 确认 Q12：照微信「登录 / 注册」两按钮） ---------- */
+.wx-welcome {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  padding: env(safe-area-inset-top) var(--wb-space-6) calc(env(safe-area-inset-bottom) + 48px);
+  background: var(--wb-color-bg-surface);
+}
+.wx-welcome-brand {
+  display: grid;
+  flex: 1;
+  align-content: center;
+  justify-items: center;
+  gap: var(--wb-space-3);
+  padding-bottom: 10vh;
+}
+.wx-welcome-brand img {
+  border-radius: 18px;
+}
+.wx-welcome-brand strong {
+  margin-top: var(--wb-space-2);
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-title2);
+  font-weight: var(--wb-font-weight-medium);
+  letter-spacing: 0.2em;
+}
+.wx-welcome-brand span {
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+}
+.wx-welcome-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--wb-space-4);
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+}
+.wx-welcome-actions button {
+  min-height: 48px;
+  border-radius: var(--wb-radius-md);
+  font-size: var(--wb-font-size-body);
+  font-weight: var(--wb-font-weight-medium);
+}
+.wx-welcome-actions .wx-welcome-secondary {
+  border: 0;
+  background: var(--wb-color-bg-page);
+  color: var(--wb-color-brand-primary);
+}

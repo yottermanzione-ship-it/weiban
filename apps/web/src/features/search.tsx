@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { CaretLeft, CaretRight } from './old-icons.js';
+import { CaretLeft } from './old-icons.js';
 import {
   ChatSearchEndpoints,
   IdentityEndpoints,
+  LibraryEndpoints,
+  MomentsEndpoints,
+  type Favorite,
+  type MomentsPost,
   type Conversation,
   type GlobalSearchResult,
   type Message,
@@ -18,6 +22,8 @@ import { UserAvatar } from './user-avatar.js';
 import { GroupAvatar } from './groups.js';
 import { Name } from './chat.js';
 import { MediaImg as LazyMedia } from './media.js';
+import { OldIcon } from './old-icons.js';
+import { Chevron } from './shell-kit.js';
 
 /*
  * 聊天搜索（search.md；CHAT-12）。只搜文字内容；结果点开都定位到那条消息的上下文
@@ -63,195 +69,365 @@ function ConversationAvatar({ conversation }: { conversation: Conversation }) {
   );
 }
 
-// ---------- 全局搜索 ----------
+// ---------- 全局搜索（总经理 10-14 总对照表 T1.2：照微信搜索页，皮肤用旧版） ----------
+
+type Scope = 'all' | 'characters' | 'groups' | 'messages' | 'moments' | 'favorites';
+const scopes: Array<{ key: Exclude<Scope, 'all'>; label: string }> = [
+  { key: 'characters', label: '角色' },
+  { key: 'groups', label: '群聊' },
+  { key: 'messages', label: '聊天记录' },
+  { key: 'moments', label: '朋友圈' },
+  { key: 'favorites', label: '收藏' },
+];
+const isScope = (value: string | null): value is Scope =>
+  value === 'all' || scopes.some((s) => s.key === value);
+
+function favoriteText(favorite: Favorite): string {
+  const content = favorite.content as { type: string; text?: string; title?: string };
+  if (content.type === 'text' && content.text) return content.text;
+  if (content.title) return content.title;
+  return (
+    { image: '[图片]', voice: '[语音]', sticker: '[表情]', link: '[链接]' }[content.type] ??
+    '[收藏]'
+  );
+}
 
 export function GlobalSearchPage() {
   const navigate = useNavigate();
   const { state } = useChat();
   const [params, setParams] = useSearchParams();
   const initial = params.get('q') ?? '';
+  const fromUrl = params.get('scope');
+  const [scope, setScope] = useState<Scope>(isScope(fromUrl) ? fromUrl : 'all');
   const [input, setInput] = useState(initial);
   const [keyword, setKeyword] = useState(initial.trim());
   const [result, setResult] = useState<GlobalSearchResult | null>(null);
+  const [moments, setMoments] = useState<MomentsPost[] | null>(null);
+  const [favorites, setFavorites] = useState<Favorite[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const [retry, setRetry] = useState(0);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const names = useCharacterNames(result?.characterIds ?? []);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const names = useCharacterNames([
+    ...(result?.characterIds ?? []),
+    ...(moments ?? []).filter((p) => p.author.kind === 'character').map((p) => p.author.refId),
+  ]);
   useEffect(() => {
     const timer = window.setTimeout(() => setKeyword(input.trim().slice(0, 50)), 300);
     return () => window.clearTimeout(timer);
   }, [input]);
   useEffect(() => {
-    setParams(keyword ? { q: keyword } : {}, { replace: true });
+    const next: Record<string, string> = {};
+    if (keyword) next.q = keyword;
+    if (scope !== 'all') next.scope = scope;
+    setParams(next, { replace: true });
     if (!keyword) {
       setResult(null);
+      setMoments(null);
+      setFavorites(null);
       return;
     }
     let active = true;
     const controller = new AbortController();
+    const want = (s: Scope) => scope === 'all' || scope === s;
     setLoading(true);
     setFailed(false);
-    void api
-      .call(ChatSearchEndpoints.searchAll, {
-        query: { q: keyword },
-        networkOnly: true,
-        signal: controller.signal,
-      })
-      .then((r) => {
-        if (active) {
-          setResult(r);
-          setExpanded({});
-        }
-      })
-      .catch(() => {
-        if (active) setFailed(true);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+    const jobs: Array<Promise<unknown>> = [];
+    if (want('characters') || want('groups') || want('messages'))
+      jobs.push(
+        api
+          .call(ChatSearchEndpoints.searchAll, {
+            query: { q: keyword },
+            networkOnly: true,
+            signal: controller.signal,
+          })
+          .then((r) => active && setResult(r)),
+      );
+    else setResult(null);
+    // 朋友圈没有服务器搜索：取最近 60 条动态在本机按文字筛选
+    if (want('moments'))
+      jobs.push(
+        (async () => {
+          const found: MomentsPost[] = [];
+          let cursor: string | undefined;
+          for (let page = 0; page < 2; page++) {
+            const r = await api.call(MomentsEndpoints.listFeed, {
+              query: { cursor, limit: 30 },
+              networkOnly: true,
+              signal: controller.signal,
+            });
+            found.push(...r.items.filter((p) => p.text.includes(keyword)));
+            if (!r.nextCursor) break;
+            cursor = r.nextCursor;
+          }
+          if (active) setMoments(found);
+        })(),
+      );
+    else setMoments(null);
+    if (want('favorites'))
+      jobs.push(
+        api
+          .call(LibraryEndpoints.listFavorites, {
+            query: { q: keyword, limit: 20 },
+            networkOnly: true,
+            signal: controller.signal,
+          })
+          .then((r) => active && setFavorites(r.items)),
+      );
+    else setFavorites(null);
+    setExpanded({});
+    void Promise.allSettled(jobs).then((settled) => {
+      if (!active) return;
+      setLoading(false);
+      if (settled.length > 0 && settled.every((s) => s.status === 'rejected')) setFailed(true);
+    });
     return () => {
       active = false;
       controller.abort();
     };
-  }, [keyword, retry, setParams]);
+  }, [keyword, retry, scope, setParams]);
   const conversation = (id: string) => state.conversations.find((c) => c.conversationId === id);
   const nameOf = (id: string) =>
     state.contacts.find((c) => c.characterId === id)?.remark || names[id] || '角色';
+  const show = (s: Scope) => scope === 'all' || scope === s;
+  const limit = (key: string, list: unknown[]) =>
+    scope !== 'all' || expanded[key] ? list.length : 3;
+  const counts = {
+    characters: show('characters') ? (result?.characterIds.length ?? 0) : 0,
+    groups: show('groups') ? (result?.groupConversationIds.length ?? 0) : 0,
+    messages: show('messages') ? (result?.messages.length ?? 0) : 0,
+    moments: moments?.length ?? 0,
+    favorites: favorites?.length ?? 0,
+  };
   const empty =
-    result &&
-    result.characterIds.length === 0 &&
-    result.groupConversationIds.length === 0 &&
-    result.messages.length === 0;
-  const limit = (key: string, list: unknown[]) => (expanded[key] ? list.length : 3);
+    !!keyword && !loading && !failed && Object.values(counts).every((count) => count === 0);
+  const more = (key: string, total: number, label: string) =>
+    scope === 'all' &&
+    total > 3 &&
+    !expanded[key] && (
+      <button
+        type="button"
+        className="wx-search-more"
+        onClick={() => setExpanded((v) => ({ ...v, [key]: true }))}
+      >
+        <OldIcon name="wechat/search" size={15} />
+        更多{label}
+        <Chevron />
+      </button>
+    );
+  const scopeLabel = scopes.find((s) => s.key === scope)?.label;
   return (
-    <main className="search-page">
+    <main className="search-page wx-search">
       <form
-        className="search-bar"
+        className="wx-search-head"
+        role="search"
         onSubmit={(e: FormEvent) => {
           e.preventDefault();
           setKeyword(input.trim().slice(0, 50));
         }}
       >
-        <label className="search-label">
-          搜索
+        <label className="wx-search-box">
+          <OldIcon name="wechat/search" size={16} />
+          {scopeLabel && (
+            <button
+              type="button"
+              className="wx-search-scope"
+              aria-label={`取消只搜${scopeLabel}`}
+              onClick={() => {
+                setScope('all');
+                inputRef.current?.focus();
+              }}
+            >
+              {scopeLabel}
+            </button>
+          )}
           <input
+            ref={inputRef}
             autoFocus
             type="search"
+            enterKeyHint="search"
+            aria-label="搜索"
             value={input}
             maxLength={50}
             onChange={(e) => setInput(e.target.value)}
             placeholder="搜索"
           />
+          {input && (
+            <button
+              type="button"
+              className="wx-search-clear"
+              aria-label="清除"
+              onClick={() => {
+                setInput('');
+                setKeyword('');
+                inputRef.current?.focus();
+              }}
+            >
+              <OldIcon name="wechat/close" size={12} />
+            </button>
+          )}
         </label>
-        <button type="button" className="text-button" onClick={() => navigate(-1)}>
+        <button type="button" className="wx-search-cancel" onClick={() => navigate(-1)}>
           取消
         </button>
       </form>
-      {!keyword && <p className="hint center">搜索角色、群聊、聊天记录</p>}
+      {!keyword && scope === 'all' && (
+        <section className="wx-search-scopes" aria-label="搜索指定内容">
+          <p>搜索指定内容</p>
+          <div>
+            {scopes.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => {
+                  setScope(s.key);
+                  inputRef.current?.focus();
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+      {!keyword && scope !== 'all' && <p className="wx-search-tip">搜索{scopeLabel}，输入关键词</p>}
       {loading && <span className="spinner" role="status" aria-label="正在搜索" />}
       {failed && (
-        <button className="plain full" onClick={() => setRetry((v) => v + 1)}>
+        <button type="button" className="plain full" onClick={() => setRetry((v) => v + 1)}>
           搜索失败，点击重试
         </button>
       )}
       {empty && <p className="empty">没有找到「{keyword}」相关结果</p>}
-      {result && result.characterIds.length > 0 && (
-        <section>
-          <h2 className="section-label">角色</h2>
-          <div className="panel rows">
-            {result.characterIds.slice(0, limit('c', result.characterIds)).map((id) => {
-              const contact = state.contacts.find((c) => c.characterId === id);
-              return (
-                <Link key={id} to={`/characters/${id}`}>
-                  <CharacterAvatar id={id} size={40} />
-                  <span className="overview-name">
+      {result && counts.characters > 0 && (
+        <section className="wx-search-group">
+          <h2>角色</h2>
+          {result.characterIds.slice(0, limit('c', result.characterIds)).map((id) => {
+            const contact = state.contacts.find((c) => c.characterId === id);
+            return (
+              <Link key={id} to={`/characters/${id}`} className="wx-search-row">
+                <CharacterAvatar id={id} size={40} />
+                <span className="wx-search-text">
+                  <span>
                     <Highlight text={nameOf(id)} keyword={keyword} />
-                    {contact?.remark && names[id] && (
-                      <small className="hint">
-                        名字：
-                        <Highlight text={names[id]} keyword={keyword} />
-                      </small>
-                    )}
                   </span>
-                </Link>
-              );
-            })}
-          </div>
-          {result.characterIds.length > 3 && !expanded.c && (
-            <button className="plain full" onClick={() => setExpanded((v) => ({ ...v, c: true }))}>
-              查看更多角色 ›
-            </button>
-          )}
-        </section>
-      )}
-      {result && result.groupConversationIds.length > 0 && (
-        <section>
-          <h2 className="section-label">群聊</h2>
-          <div className="panel rows">
-            {result.groupConversationIds
-              .slice(0, limit('g', result.groupConversationIds))
-              .map((id) => {
-                const group = conversation(id);
-                return (
-                  <Link key={id} to={`/chat/${id}`}>
-                    {group && <ConversationAvatar conversation={group} />}
-                    <span className="overview-name">
-                      {group ? <Name conversation={group} /> : '群聊'}
-                    </span>
-                  </Link>
-                );
-              })}
-          </div>
-          {result.groupConversationIds.length > 3 && !expanded.g && (
-            <button className="plain full" onClick={() => setExpanded((v) => ({ ...v, g: true }))}>
-              查看更多群聊 ›
-            </button>
-          )}
-        </section>
-      )}
-      {result && result.messages.length > 0 && (
-        <section>
-          <h2 className="section-label">聊天记录</h2>
-          <div className="panel rows">
-            {result.messages.slice(0, limit('m', result.messages)).map((group) => {
-              const item = conversation(group.conversationId);
-              const single = group.matchCount === 1;
-              return (
-                <Link
-                  key={group.conversationId}
-                  to={
-                    single
-                      ? locateLink(group.conversationId, group.latestHit.seq)
-                      : `/search/${group.conversationId}?q=${encodeURIComponent(keyword)}`
-                  }
-                  className="search-result-row"
-                >
-                  {item && <ConversationAvatar conversation={item} />}
-                  <span className="overview-name">
-                    {item ? <Name conversation={item} /> : '会话'}
-                    <small className="hint">
-                      {single ? (
-                        <Highlight text={group.latestHit.snippet} keyword={keyword} />
-                      ) : (
-                        `${group.matchCount} 条相关聊天记录`
-                      )}
+                  {contact?.remark && names[id] && (
+                    <small>
+                      昵称：
+                      <Highlight text={names[id]} keyword={keyword} />
                     </small>
-                  </span>
-                  {single ? (
-                    <small className="hint">{shortDate(group.latestHit.createdAt)}</small>
-                  ) : (
-                    <CaretRight />
                   )}
+                </span>
+              </Link>
+            );
+          })}
+          {more('c', counts.characters, '角色')}
+        </section>
+      )}
+      {result && counts.groups > 0 && (
+        <section className="wx-search-group">
+          <h2>群聊</h2>
+          {result.groupConversationIds
+            .slice(0, limit('g', result.groupConversationIds))
+            .map((id) => {
+              const group = conversation(id);
+              return (
+                <Link key={id} to={`/chat/${id}`} className="wx-search-row">
+                  {group && <ConversationAvatar conversation={group} />}
+                  <span className="wx-search-text">
+                    <span>{group ? <Name conversation={group} /> : '群聊'}</span>
+                  </span>
                 </Link>
               );
             })}
-          </div>
-          {result.messages.length > 3 && !expanded.m && (
-            <button className="plain full" onClick={() => setExpanded((v) => ({ ...v, m: true }))}>
-              查看更多聊天记录 ›
-            </button>
-          )}
+          {more('g', counts.groups, '群聊')}
+        </section>
+      )}
+      {result && counts.messages > 0 && (
+        <section className="wx-search-group">
+          <h2>聊天记录</h2>
+          {result.messages.slice(0, limit('m', result.messages)).map((group) => {
+            const item = conversation(group.conversationId);
+            const single = group.matchCount === 1;
+            return (
+              <Link
+                key={group.conversationId}
+                to={
+                  single
+                    ? locateLink(group.conversationId, group.latestHit.seq)
+                    : `/search/${group.conversationId}?q=${encodeURIComponent(keyword)}`
+                }
+                className="wx-search-row"
+              >
+                {item && <ConversationAvatar conversation={item} />}
+                <span className="wx-search-text">
+                  <span>{item ? <Name conversation={item} /> : '会话'}</span>
+                  <small>
+                    {single ? (
+                      <Highlight text={group.latestHit.snippet} keyword={keyword} />
+                    ) : (
+                      `${group.matchCount} 条相关聊天记录`
+                    )}
+                  </small>
+                </span>
+                {single && (
+                  <small className="wx-search-time">{shortDate(group.latestHit.createdAt)}</small>
+                )}
+              </Link>
+            );
+          })}
+          {more('m', counts.messages, '聊天记录')}
+        </section>
+      )}
+      {moments && counts.moments > 0 && (
+        <section className="wx-search-group">
+          <h2>朋友圈</h2>
+          {moments.slice(0, limit('p', moments)).map((post) => (
+            <Link key={post.postId} to={`/moments/posts/${post.postId}`} className="wx-search-row">
+              {post.author.kind === 'character' ? (
+                <CharacterAvatar id={post.author.refId} size={40} />
+              ) : (
+                <UserAvatar size={40} />
+              )}
+              <span className="wx-search-text">
+                <span>{post.author.kind === 'character' ? nameOf(post.author.refId) : '我'}</span>
+                <small>
+                  <Highlight text={post.text} keyword={keyword} />
+                </small>
+              </span>
+              <small className="wx-search-time">{shortDate(post.createdAt)}</small>
+            </Link>
+          ))}
+          {more('p', counts.moments, '朋友圈')}
+        </section>
+      )}
+      {favorites && counts.favorites > 0 && (
+        <section className="wx-search-group">
+          <h2>收藏</h2>
+          {favorites.slice(0, limit('f', favorites)).map((favorite) => (
+            <Link
+              key={favorite.favoriteId}
+              to={`/me/favorites/${favorite.favoriteId}`}
+              className="wx-search-row"
+            >
+              {favorite.characterId ? (
+                <CharacterAvatar id={favorite.characterId} size={40} />
+              ) : (
+                <UserAvatar size={40} />
+              )}
+              <span className="wx-search-text">
+                <span>
+                  {favorite.characterNameSnapshot ??
+                    (favorite.characterId ? nameOf(favorite.characterId) : '我')}
+                </span>
+                <small>
+                  <Highlight text={favoriteText(favorite)} keyword={keyword} />
+                </small>
+              </span>
+              <small className="wx-search-time">{shortDate(favorite.createdAt)}</small>
+            </Link>
+          ))}
+          {more('f', counts.favorites, '收藏')}
         </section>
       )}
     </main>
