@@ -261,7 +261,7 @@ function Shell() {
             )}
           {(() => {
             const routes = (
-              <Routes>
+              <Routes location={location}>
                 <Route
                   path="/"
                   element={
