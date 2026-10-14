@@ -1511,10 +1511,9 @@ button.primary.wx-auth-submit {
   inset: 0;
   z-index: calc(var(--wb-z-index-toast) + 1);
   display: grid;
-  grid-template-rows: 1fr auto;
-  justify-items: center;
-  padding: env(safe-area-inset-top) var(--wb-space-5) calc(env(safe-area-inset-bottom) + 56px);
-  background: var(--wb-color-bg-surface);
+  place-items: center;
+  padding: env(safe-area-inset-top) 28px env(safe-area-inset-bottom);
+  background: #ededed;
   transition: opacity 250ms var(--wb-motion-easing-standard);
 }
 .splash.fading {
@@ -1525,41 +1524,20 @@ button.primary.wx-auth-submit {
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: var(--wb-space-3);
-  padding-bottom: 12vh;
+  gap: 18px;
   animation: splash-in 420ms var(--wb-motion-easing-decelerate) both;
 }
 .splash-brand img {
   width: 88px;
   height: 88px;
-  margin-bottom: var(--wb-space-3);
-  border-radius: 22px;
+  border-radius: 20px;
+  box-shadow: 0 4px 20px rgb(0 0 0 / 8%);
 }
 .splash-brand strong {
-  color: var(--wb-color-text-primary);
-  font-size: var(--wb-font-size-title2);
-  font-weight: var(--wb-font-weight-medium);
-  letter-spacing: 0.2em;
-}
-.splash-brand span {
-  color: var(--wb-color-text-secondary);
-  font-size: var(--wb-font-size-footnote);
-}
-.splash-progress {
-  position: relative;
-  width: 120px;
-  height: 3px;
-  overflow: hidden;
-  border-radius: var(--wb-radius-full);
-  background: var(--wb-color-bg-pressed);
-}
-.splash-progress i {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: var(--wb-color-brand-primary);
-  transform-origin: left center;
-  animation: splash-progress 1200ms var(--wb-motion-easing-standard) both;
+  color: #181818;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 2px;
 }
 @keyframes splash-in {
   from {
@@ -1567,17 +1545,8 @@ button.primary.wx-auth-submit {
     transform: translateY(12px) scale(0.96);
   }
 }
-@keyframes splash-progress {
-  from {
-    transform: scaleX(0.05);
-  }
-  to {
-    transform: scaleX(1);
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .splash-brand,
-  .splash-progress i {
+  .splash-brand {
     animation: none;
   }
 }

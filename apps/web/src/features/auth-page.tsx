@@ -1,8 +1,8 @@
 /*
  * 登录 / 注册（总经理 2026-10-14 反馈 1.2：完全照社交应用的「账号密码登录」页）：
  * 左上 ×、居中大标题、「账号 / 密码」两行带分隔线的表单、灰色说明、蓝色文字链接、
- * 「登录后同步最近的聊天记录」勾选、绿色「同意并登录」大按钮、最底「找回密码 | 更多」。
- * 注册入口在「更多」里；用不上的入口（手机号登录、找回密码）点了提示「暂未开放」。
+ * 「登录后同步最近的聊天记录」勾选、绿色「同意并登录」大按钮、最底「找回密码 | 注册」。
+ * 注册 / 登录直接切换，不使用「更多」菜单；用不上的入口（手机号登录、找回密码）提示「暂未开放」。
  * 总经理 10-14 确认（Q12）：未登录先显示微信那种欢迎页——品牌 + 底部「登录」「注册」两个按钮；登录页左上 × 回到欢迎页。
  */
 import { useRef, useState, type FormEvent } from 'react';
@@ -12,7 +12,7 @@ import { api } from '../data/client.js';
 import { useAuth } from '../app/auth.js';
 import { friendlyError } from '../data/use-remote.js';
 import { OldIcon } from './old-icons.js';
-import { ActionSheet, CheckCircle, showComingSoon } from './shell-kit.js';
+import { CheckCircle, showComingSoon } from './shell-kit.js';
 
 export function AuthPage() {
   const [welcome, setWelcome] = useState(true);
@@ -20,7 +20,6 @@ export function AuthPage() {
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   const [sync, setSync] = useState(true);
-  const [more, setMore] = useState(false);
   const form = useRef<HTMLFormElement>(null);
   const auth = useAuth();
   const navigate = useNavigate();
@@ -181,25 +180,12 @@ export function AuthPage() {
               找回密码
             </button>
             <i aria-hidden />
-            <button type="button" onClick={() => setMore(true)}>
-              更多
+            <button type="button" onClick={() => switchMode(!register)}>
+              {register ? '已有账号，登录' : '注册'}
             </button>
           </p>
         </div>
       </form>
-      {more && (
-        <ActionSheet
-          onClose={() => setMore(false)}
-          items={
-            register
-              ? [{ label: '已有微伴号，去登录', onClick: () => switchMode(false) }]
-              : [
-                  { label: '注册新的微伴号', onClick: () => switchMode(true) },
-                  { label: '用手机号登录', onClick: showComingSoon },
-                ]
-          }
-        />
-      )}
     </main>
   );
 }
