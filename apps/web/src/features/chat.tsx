@@ -69,7 +69,33 @@ import { familiarityNames } from './growth.js';
 import { ScenarioSheet, presetNames, presetSubtitle, useCurrentPreset } from './scenario.js';
 import { WithTaSheet } from './miniapps.js';
 import { OldIcon } from './old-icons.js';
-import { BackArrow, CheckCircle, Sheet, MenuGroup, MenuRow, showComingSoon } from './shell-kit.js';
+import {
+  BackArrow,
+  CheckCircle,
+  Sheet,
+  MenuGroup,
+  MenuRow,
+  showComingSoon,
+  useLongPress,
+} from './shell-kit.js';
+
+function BubblePress({
+  children,
+  onPress,
+}: {
+  children: ReactNode;
+  onPress(target: Element, x: number): void;
+}) {
+  const element = useRef<HTMLDivElement>(null);
+  const handlers = useLongPress(({ x }) => {
+    if (element.current) onPress(element.current, x);
+  });
+  return (
+    <div ref={element} className="wx-msg-bubble" {...handlers}>
+      {children}
+    </div>
+  );
+}
 import { dividerTime, needsDivider } from './time-format.js';
 interface Upload {
   localId: string;
@@ -964,44 +990,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     const bubbleEl = target.closest('.wx-msg-bubble') ?? target;
     setMenu({ message, anchor: bubbleEl.getBoundingClientRect(), x });
   }
-  const pressTimer = useRef(0);
-  const pressFired = useRef(false);
-  /** 长按 500ms（触屏）或右键打开气泡菜单。 */
-  const pressHandlers = (message: Message) => ({
-    onPointerDown(event: React.PointerEvent) {
-      if (event.pointerType === 'mouse') return;
-      pressFired.current = false;
-      const target = event.currentTarget;
-      const x = event.clientX;
-      window.clearTimeout(pressTimer.current);
-      pressTimer.current = window.setTimeout(() => {
-        pressFired.current = true;
-        openMenu(message, target, x);
-      }, 500);
-    },
-    onPointerMove() {
-      window.clearTimeout(pressTimer.current);
-    },
-    onPointerUp() {
-      window.clearTimeout(pressTimer.current);
-    },
-    onPointerCancel() {
-      window.clearTimeout(pressTimer.current);
-    },
-    onContextMenu(event: React.MouseEvent) {
-      event.preventDefault();
-      openMenu(message, event.currentTarget, event.clientX);
-    },
-    onClickCapture(event: React.MouseEvent) {
-      if (pressFired.current) {
-        event.preventDefault();
-        event.stopPropagation();
-        pressFired.current = false;
-      }
-    },
-  });
 
-  // 消息 + 本机待发 + 上传中 合成一个列表（都在同一个虚拟滚动里）。
   const rows: Row[] = [];
   if (older && messages.length > 0) rows.push({ kind: 'older', key: '__older__' });
   let previousAt: string | undefined;
@@ -1022,6 +1011,20 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     .find((m) => m.senderKind === 'user' && m.status === 'normal');
   const myAvatar = <UserAvatar profile={userProfile.data} size={40} radius={4} />;
 
+  const olderRequest = useRef(false);
+  function fetchOlder() {
+    if (!older || olderRequest.current || !messages.length) return;
+    olderRequest.current = true;
+    setLoadingOlder(true);
+    void chat
+      .older(id, messages[0]!.seq)
+      .then(setOlder)
+      .catch((e) => setError(friendlyError(e)))
+      .finally(() => {
+        olderRequest.current = false;
+        setLoadingOlder(false);
+      });
+  }
   function renderRow(row: Row) {
     if (row.kind === 'older')
       return (
@@ -1030,14 +1033,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
             type="button"
             className="text-button"
             disabled={loadingOlder}
-            onClick={() => {
-              setLoadingOlder(true);
-              void chat
-                .older(id, messages[0]!.seq)
-                .then(setOlder)
-                .catch((e) => setError(friendlyError(e)))
-                .finally(() => setLoadingOlder(false));
-            }}
+            onClick={fetchOlder}
           >
             {loadingOlder ? '正在读取…' : '查看更早的消息'}
           </button>
@@ -1212,9 +1208,9 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
               </button>
             )}
             <div className="wx-msg-line">
-              <div className="wx-msg-bubble" {...pressHandlers(message)}>
+              <BubblePress onPress={(target, x) => openMenu(message, target, x)}>
                 {bubble(message)}
-              </div>
+              </BubblePress>
             </div>
             {!group && mine && message.messageId === lastMine?.messageId && (
               <small className="wx-read">
@@ -1388,6 +1384,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           estimate={64}
           bottom
           onBottom={setAtBottom}
+          onStart={fetchOlder}
+          anchorItem={(row) => row.kind === 'message'}
           scrollTo={scrollTarget}
           rowClassName={(row) =>
             row.kind === 'message' && row.message.messageId === flash ? 'flash-row' : undefined

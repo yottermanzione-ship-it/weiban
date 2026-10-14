@@ -1,3 +1,4 @@
+import { SearchField } from './search-field.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { CaretLeft, Lock, MagnifyingGlass } from './old-icons.js';
@@ -339,16 +340,16 @@ export function FavoritesPage() {
         </span>
       </header>
       {searchOpen && (
-        <label className="search-label">
-          搜索收藏
-          <input
+        <div className="search-strip">
+          <SearchField
+            aria-label="搜索收藏"
             autoFocus
             value={input}
             maxLength={50}
             onChange={(e) => setInput(e.target.value)}
             placeholder="搜索文字和朋友圈"
           />
-        </label>
+        </div>
       )}
       {filters.length > 0 && (
         <div className="chip-row" role="tablist" aria-label="按角色筛选">

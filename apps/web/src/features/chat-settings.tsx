@@ -20,7 +20,6 @@ import { CharacterAvatar } from './character-avatar.js';
 import { useCallEntry } from './call.js';
 import { VoiceRow } from './voices.js';
 import { PlazaPublishRow } from './plaza.js';
-import { WithTaRow } from './miniapps.js';
 import { OldIcon } from './old-icons.js';
 import {
   ActionSheet,
@@ -70,6 +69,30 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
   const quiet = useRemote(QuietStateEndpoints.get, { networkOnly: true });
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);
+  const [switchBusy, setSwitchBusy] = useState<Record<string, boolean>>({});
+  const [switchValues, setSwitchValues] = useState<Record<string, boolean>>({});
+  async function toggle(key: string, value: boolean, operation: () => Promise<unknown>) {
+    if (switchBusy[key]) return;
+    const had = Object.hasOwn(switchValues, key);
+    const before = switchValues[key];
+    setSwitchBusy((items) => ({ ...items, [key]: true }));
+    setSwitchValues((items) => ({ ...items, [key]: value }));
+    setError('');
+    try {
+      assertOwner();
+      await operation();
+    } catch (e) {
+      setSwitchValues((items) => {
+        const next = { ...items };
+        if (had) next[key] = before!;
+        else delete next[key];
+        return next;
+      });
+      setError(friendlyError(e));
+    } finally {
+      setSwitchBusy((items) => ({ ...items, [key]: false }));
+    }
+  }
   const [error, setError] = useState('');
   const [sheet, setSheet] = useState<'fit' | 'proactive' | 'addressAs' | 'relationship' | null>(
     null,
@@ -141,10 +164,10 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
       <MenuGroup>
         <SwitchRow
           label="消息免打扰"
-          checked={conversation.state.muted}
-          disabled={pending}
+          checked={switchValues.muted ?? conversation.state.muted}
+          disabled={!!switchBusy.muted}
           onChange={(muted) =>
-            void change(() =>
+            void toggle('muted', muted, () =>
               api.call(ChatEndpoints.updateState, {
                 params: { conversationId: id },
                 body: { muted },
@@ -154,10 +177,10 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
         />
         <SwitchRow
           label="置顶聊天"
-          checked={conversation.state.pinned}
-          disabled={pending}
+          checked={switchValues.pinned ?? conversation.state.pinned}
+          disabled={!!switchBusy.pinned}
           onChange={(pinned) =>
-            void change(() =>
+            void toggle('pinned', pinned, () =>
               api.call(ChatEndpoints.updateState, {
                 params: { conversationId: id },
                 body: { pinned },
@@ -176,10 +199,6 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
               value={modelName}
             />
           </MenuGroup>
-          <GroupHeader>和 TA 一起用</GroupHeader>
-          <MenuGroup>
-            <WithTaRow characterId={characterId} />
-          </MenuGroup>
           <GroupHeader>和 TA 的相处</GroupHeader>
           <MenuGroup>
             <MenuRow
@@ -189,16 +208,30 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
             />
             <SwitchRow
               label="秒回"
-              checked={data.instantReply}
-              disabled={pending}
-              onChange={(instantReply) => updateCompanion({ instantReply })}
+              checked={switchValues.instantReply ?? data.instantReply}
+              disabled={!!switchBusy.instantReply}
+              onChange={(instantReply) =>
+                void toggle('instantReply', instantReply, () =>
+                  api.call(CompanionEndpoints.updateForCharacter, {
+                    params: { characterId },
+                    body: { instantReply },
+                  }),
+                )
+              }
             />
             <SwitchRow
               label="拆条"
               subtitle="一次回复拆成几条，一句一个气泡"
-              checked={data.splitBubbles}
-              disabled={pending}
-              onChange={(splitBubbles) => updateCompanion({ splitBubbles })}
+              checked={switchValues.splitBubbles ?? data.splitBubbles}
+              disabled={!!switchBusy.splitBubbles}
+              onChange={(splitBubbles) =>
+                void toggle('splitBubbles', splitBubbles, () =>
+                  api.call(CompanionEndpoints.updateForCharacter, {
+                    params: { characterId },
+                    body: { splitBubbles },
+                  }),
+                )
+              }
             />
             <MenuRow
               label="主动消息"
@@ -227,9 +260,16 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
             <SwitchRow
               label="TA 的日常"
               subtitle="TA 会有自己的生活节奏（推演）"
-              checked={data.dailyLife ?? true}
-              disabled={pending}
-              onChange={(dailyLife) => updateCompanion({ dailyLife })}
+              checked={switchValues.dailyLife ?? data.dailyLife ?? true}
+              disabled={!!switchBusy.dailyLife}
+              onChange={(dailyLife) =>
+                void toggle('dailyLife', dailyLife, () =>
+                  api.call(CompanionEndpoints.updateForCharacter, {
+                    params: { characterId },
+                    body: { dailyLife },
+                  }),
+                )
+              }
             />
           </MenuGroup>
           <GroupHeader>高级</GroupHeader>
@@ -292,12 +332,21 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
             <SwitchRow
               label="TA 主动找我"
               subtitle={globalOff ? '已在 服务 › 主动消息与免打扰 中关闭' : undefined}
-              checked={!globalOff && (data.proactiveMessages ?? true)}
-              disabled={pending || globalOff}
-              onChange={(proactiveMessages) => updateCompanion({ proactiveMessages })}
+              checked={
+                !globalOff && (switchValues.proactiveMessages ?? data.proactiveMessages ?? true)
+              }
+              disabled={!!switchBusy.proactiveMessages || globalOff}
+              onChange={(proactiveMessages) =>
+                void toggle('proactiveMessages', proactiveMessages, () =>
+                  api.call(CompanionEndpoints.updateForCharacter, {
+                    params: { characterId },
+                    body: { proactiveMessages },
+                  }),
+                )
+              }
             />
           </MenuGroup>
-          {!globalOff && data.proactiveMessages !== false && (
+          {!globalOff && (switchValues.proactiveMessages ?? data.proactiveMessages) !== false && (
             <>
               <GroupHeader>频率</GroupHeader>
               <MenuGroup>
@@ -325,10 +374,19 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
                 label="TA 给我打电话"
                 checked={
                   notification.data?.proactiveCallsEnabled !== false &&
-                  (data.proactiveCalls ?? false)
+                  (switchValues.proactiveCalls ?? data.proactiveCalls ?? false)
                 }
-                disabled={pending || notification.data?.proactiveCallsEnabled === false}
-                onChange={(proactiveCalls) => updateCompanion({ proactiveCalls })}
+                disabled={
+                  !!switchBusy.proactiveCalls || notification.data?.proactiveCallsEnabled === false
+                }
+                onChange={(proactiveCalls) =>
+                  void toggle('proactiveCalls', proactiveCalls, () =>
+                    api.call(CompanionEndpoints.updateForCharacter, {
+                      params: { characterId },
+                      body: { proactiveCalls },
+                    }),
+                  )
+                }
               />
             </MenuGroup>
           )}

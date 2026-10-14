@@ -5,7 +5,9 @@ export async function copyText(value: string): Promise<boolean> {
   const fallback = () => {
     const focus = document.activeElement as HTMLElement | null;
     const selection = window.getSelection();
-    const ranges = selection ? Array.from({ length: selection.rangeCount }, (_, i) => selection.getRangeAt(i).cloneRange()) : [];
+    const ranges = selection
+      ? Array.from({ length: selection.rangeCount }, (_, i) => selection.getRangeAt(i).cloneRange())
+      : [];
     const field = document.createElement('textarea');
     field.value = value;
     field.setAttribute('aria-label', '复制文本');
@@ -26,10 +28,16 @@ export async function copyText(value: string): Promise<boolean> {
   let copied = false;
   try {
     if (window.isSecureContext && navigator.clipboard?.writeText) {
-      try { await navigator.clipboard.writeText(value); copied = true; }
-      catch { copied = fallback(); }
+      try {
+        await navigator.clipboard.writeText(value);
+        copied = true;
+      } catch {
+        copied = fallback();
+      }
     } else copied = fallback();
-  } catch { /* Report failure when the browser denies both methods. */ }
+  } catch {
+    /* Report failure when the browser denies both methods. */
+  }
   showToast(copied ? '已复制' : '复制失败，请重试', 2000, copied ? 'success' : 'error');
   return copied;
 }
