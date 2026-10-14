@@ -25,7 +25,9 @@ import {
   examplesText,
   pinnedExamples,
   safetyStyleText,
+  scenarioNote,
   speechText,
+  AUTHOR_NOTE_DEPTH,
 } from '../domain/character-prompt.js';
 import {
   memoryLine,
@@ -282,7 +284,13 @@ function buildNew(
     { title: '相关公开资料', text: lorebookText(lore.triggered) },
     { title: '', text: nowLine(now, TZ, previousAt) },
   ];
-  const out = assemblePrompt({ macros: { user: '你', char: NAME }, head, history: chat, tail });
+  const out = assemblePrompt({
+    macros: { user: '你', char: NAME },
+    head,
+    history: chat,
+    inserts: [{ depth: AUTHOR_NOTE_DEPTH, order: 1, text: scenarioNote(card, 'daily', null) }],
+    tail,
+  });
   return { messages: out.messages, stable: out.stats.stablePrefixChars, moved: moved !== null };
 }
 

@@ -101,10 +101,21 @@ export const CardKnowledgeEntry = z.strictObject({
   validTo: LocalDate.optional(),
   sources: z.array(CardSource).max(20).optional(),
   confidence: z.enum(['verified', 'singleSource', 'fictionCanon', 'userSource']),
+  /** 3.7：这条被触发后，它的正文不再用来触发别的条目（世界书「防递归」）。 */
+  preventRecursion: z.boolean().optional(),
 });
 export const CardKnowledge = z.strictObject({
   entries: z.array(CardKnowledgeEntry).max(500),
   unknownPolicy: text,
+  /**
+   * 3.7 世界书设置（docs/refactor/09-chat-pipeline.md 第 7.2 节），都可不填，用运行时默认值：
+   * scanDepth = 扫描最近几条消息找关键词（默认 4）；constantBudget / triggeredBudget = 常驻条目 / 触发条目的字数上限
+   * （默认 900 / 1200）；recursive = 触发条目的正文能否再触发别的条目（默认 true，只扩 1 层）。
+   */
+  scanDepth: z.number().int().min(1).max(20).optional(),
+  constantBudget: z.number().int().min(0).max(4000).optional(),
+  triggeredBudget: z.number().int().min(0).max(4000).optional(),
+  recursive: z.boolean().optional(),
 });
 export const CardSimulation = z.strictObject({
   dailyActivities: strings.min(8),
@@ -191,6 +202,30 @@ export const CardProfileExtra = z.strictObject({
     .optional(),
   searchKeywords: strings.optional(),
 });
+/**
+ * 3.7：提示词写法（借鉴酒馆角色卡，docs/refactor/09-chat-pipeline.md 第 7.1 节）。全部可选，全部受平台规则约束：
+ * 运行时把它们包在「角色作者的写作要求」里，并紧跟一句「与平台规则冲突时以平台规则为准」，不能替换平台守则。
+ */
+export const CardPrompting = z.strictObject({
+  /** 角色作者的补充写作要求，放在稳定开头（角色资料之后）。 */
+  systemNote: z.string().max(1500).optional(),
+  /** 后置指令（酒馆 post_history_instructions）：每轮放在请求最末尾，模型最重视。 */
+  postHistoryInstructions: z.string().max(1000).optional(),
+  /** 角色笔记（酒馆 depth prompt）：插在聊天记录倒数第 depth 条消息之前（默认 4），提醒模型保持人设。 */
+  characterNote: z
+    .strictObject({
+      text: z.string().min(1).max(1000),
+      depth: z.number().int().min(1).max(20).optional(),
+    })
+    .optional(),
+  /**
+   * 示例对话保留策略：pinned = 固定几条常驻稳定开头（默认）；situational = 常驻 + 按情境（深夜、安慰、被逗等）
+   * 在结尾补 1 条；off = 不发示例。exampleCount = 常驻条数（默认 6，0～12）。
+   */
+  exampleMode: z.enum(['pinned', 'situational', 'off']).optional(),
+  exampleCount: z.number().int().min(0).max(12).optional(),
+});
+
 export const CardAdmin = z.strictObject({
   creatorNotes: optionalText,
   sourceList: z
@@ -220,6 +255,8 @@ export const WeibanCardData = z.strictObject({
   safetyStyle: CardSafetyStyle,
   profileExtra: CardProfileExtra,
   admin: CardAdmin,
+  /** 3.7：提示词写法（可选）。 */
+  prompting: CardPrompting.optional(),
 });
 export type WeibanCardData = z.infer<typeof WeibanCardData>;
 export const CharacterCard = z.strictObject({
@@ -244,6 +281,7 @@ export const DraftCharacterCard = z.strictObject({
     safetyStyle: CardSafetyStyle.partial().optional(),
     profileExtra: CardProfileExtra.partial().optional(),
     admin: CardAdmin.partial().optional(),
+    prompting: CardPrompting.optional(),
   }),
 });
 export type DraftCharacterCard = z.infer<typeof DraftCharacterCard>;

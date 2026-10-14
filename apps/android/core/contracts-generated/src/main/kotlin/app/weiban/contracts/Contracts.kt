@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.6. Regenerate: pnpm android:generate
+// Contract 3.7. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.6"
+const val CONTRACT_VERSION: String = "3.7"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -1296,6 +1296,10 @@ typealias CardKind = String
 data class CardKnowledge(
     @SerialName("entries") val `entries`: List<CardKnowledgeEntry>,
     @SerialName("unknownPolicy") val `unknownPolicy`: String,
+    @SerialName("scanDepth") val `scanDepth`: Long? = null,
+    @SerialName("constantBudget") val `constantBudget`: Long? = null,
+    @SerialName("triggeredBudget") val `triggeredBudget`: Long? = null,
+    @SerialName("recursive") val `recursive`: Boolean? = null,
 )
 
 @Serializable
@@ -1313,6 +1317,7 @@ data class CardKnowledgeEntry(
     @SerialName("validTo") val `validTo`: LocalDate? = null,
     @SerialName("sources") val `sources`: List<CardSource>? = null,
     @SerialName("confidence") val `confidence`: String,
+    @SerialName("preventRecursion") val `preventRecursion`: Boolean? = null,
 )
 
 @Serializable
@@ -1351,6 +1356,15 @@ data class CardProfileExtra(
     @SerialName("fanNameUsage") val `fanNameUsage`: String? = null,
     @SerialName("worksDetail") val `worksDetail`: List<CardProfileExtraWorksDetailItem>? = null,
     @SerialName("searchKeywords") val `searchKeywords`: List<String>? = null,
+)
+
+@Serializable
+data class CardPrompting(
+    @SerialName("systemNote") val `systemNote`: String? = null,
+    @SerialName("postHistoryInstructions") val `postHistoryInstructions`: String? = null,
+    @SerialName("characterNote") val `characterNote`: CardPromptingCharacterNote? = null,
+    @SerialName("exampleMode") val `exampleMode`: String? = null,
+    @SerialName("exampleCount") val `exampleCount`: Long? = null,
 )
 
 @Serializable
@@ -9882,6 +9896,7 @@ data class WeibanCardData(
     @SerialName("safetyStyle") val `safetyStyle`: CardSafetyStyle,
     @SerialName("profileExtra") val `profileExtra`: CardProfileExtra,
     @SerialName("admin") val `admin`: CardAdmin,
+    @SerialName("prompting") val `prompting`: CardPrompting? = null,
 )
 
 @Serializable
@@ -10237,6 +10252,12 @@ data class CardProfileExtraWorksDetailItem(
 )
 
 @Serializable
+data class CardPromptingCharacterNote(
+    @SerialName("text") val `text`: String,
+    @SerialName("depth") val `depth`: Long? = null,
+)
+
+@Serializable
 data class CardRecognitionSelfPublicImagesItem(
     @SerialName("title") val `title`: String,
     @SerialName("kind") val `kind`: String,
@@ -10372,6 +10393,7 @@ data class DraftCharacterCardData(
     @SerialName("safetyStyle") val `safetyStyle`: DraftCharacterCardDataSafetyStyle? = null,
     @SerialName("profileExtra") val `profileExtra`: DraftCharacterCardDataProfileExtra? = null,
     @SerialName("admin") val `admin`: DraftCharacterCardDataAdmin? = null,
+    @SerialName("prompting") val `prompting`: CardPrompting? = null,
 )
 
 @Serializable
@@ -12118,6 +12140,10 @@ data class DraftCharacterCardDataSpeech(
 data class DraftCharacterCardDataKnowledge(
     @SerialName("entries") val `entries`: List<CardKnowledgeEntry>? = null,
     @SerialName("unknownPolicy") val `unknownPolicy`: String? = null,
+    @SerialName("scanDepth") val `scanDepth`: Long? = null,
+    @SerialName("constantBudget") val `constantBudget`: Long? = null,
+    @SerialName("triggeredBudget") val `triggeredBudget`: Long? = null,
+    @SerialName("recursive") val `recursive`: Boolean? = null,
 )
 
 @Serializable

@@ -113,7 +113,7 @@ const MODES = {
   romance: '允许恋爱语气，仍是同一个角色，不升级用户选择的关系。',
   adult: '仅在当前同角色成人私聊内使用成人模式，不涉及未成年人或真实存在的人。',
   // 三个新预设（domain/scenario.ts）：自动的本轮风格在请求末尾单独给出。
-  auto: '自动：平时自然日常交流；对话末尾若有「本轮风格」提示就按它调整语气。自动不会变成恋爱语气。',
+  auto: '自动：平时自然日常交流；对话里若有「本轮风格」提示就按它调整语气。自动不会变成恋爱语气。',
   treehole: `树洞分享——${STYLE_TEXT.treehole}`,
   cheer: `加油打气——${STYLE_TEXT.cheer}`,
 } satisfies Record<ScenarioMode, string>;

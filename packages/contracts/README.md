@@ -95,6 +95,14 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.7（2026-10-14，聊天链路第二批：角色卡提示词写法与世界书设置）
+
+全部向后兼容（只新增可选字段）。说明见 `docs/refactor/09-chat-pipeline.md` 第 7 节、`docs/ai/character-card-spec.md` 1.1。
+
+- `character-card.ts`：新增 `CardPrompting`（`systemNote`、`postHistoryInstructions`、`characterNote{text, depth}`、`exampleMode`、`exampleCount`），`WeibanCardData.prompting` 与 `DraftCharacterCard.data.prompting` 可选。
+- `CardKnowledge` 新增可选 `scanDepth`、`constantBudget`、`triggeredBudget`、`recursive`；`CardKnowledgeEntry` 新增可选 `preventRecursion`。
+- 注意：卡片对象是严格对象（拒绝未知字段），旧版客户端若在本地校验卡片会拒绝带新字段的卡；安卓已重新生成，网页 / 管理后台直接引用本包。
+
 ### 3.6（2026-10-14，聊天链路第一批：请求结构与缓存统计）
 
 全部向后兼容（只新增可选字段、端口 meta 新增可选项）。说明见 `docs/refactor/09-chat-pipeline.md`、`docs/handoffs/2026-10-14-ai-lead-chat-pipeline.md`。

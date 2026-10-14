@@ -30,11 +30,12 @@ import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { MemoryService } from './memory.js';
 import { PlayContinuityStore } from './play-continuity.js';
-import { lorebook, lorebookText } from '../domain/knowledge.js';
+import { DEFAULT_LOREBOOK, lorebook, lorebookText } from '../domain/knowledge.js';
 import {
   assemblePrompt,
   takeWithin,
   type ChatTurnMessage,
+  type DepthInsert,
   type PromptSection,
 } from '../domain/prompt-assembly.js';
 import {
@@ -42,7 +43,13 @@ import {
   examplesText,
   pinnedExamples,
   safetyStyleText,
+  scenarioNote,
+  situationalExample,
+  situationalExampleText,
   speechText,
+  AUTHOR_GUARD,
+  AUTHOR_NOTE_DEPTH,
+  CHARACTER_NOTE_DEPTH,
 } from '../domain/character-prompt.js';
 import { memoryLine, type WindowTurn } from '../domain/memory-window.js';
 import { INITIAL_MODES, personaPrompt } from '../domain/persona.js';
@@ -328,9 +335,10 @@ export class ReplyContext {
       month: '2-digit',
       day: '2-digit',
     }).format(this.clock.now());
+    const prompting = card.prompting;
     const recentForScan = history
       .filter((m) => m.senderKind !== 'system' && m.status === 'normal')
-      .slice(-LORE_SCAN_MESSAGES)
+      .slice(-(card.knowledge.scanDepth ?? LORE_SCAN_MESSAGES))
       .map((m) => (m.content?.type === 'text' ? m.content.text : (rendered.get(m.messageId) ?? '')))
       .join('\n');
     const lore = lorebook(
@@ -338,8 +346,19 @@ export class ReplyContext {
       `${recentForScan}\n${userText}`,
       localDate,
       policy.isRealPerson,
+      {
+        constantChars: card.knowledge.constantBudget ?? DEFAULT_LOREBOOK.constantChars,
+        triggeredChars: card.knowledge.triggeredBudget ?? DEFAULT_LOREBOOK.triggeredChars,
+        recursionDepth: card.knowledge.recursive === false ? 0 : DEFAULT_LOREBOOK.recursionDepth,
+      },
+      (entry) => entry.preventRecursion === true,
     );
-    const pinned = pinnedExamples(card.examples);
+    // 示例对话保留策略（酒馆「示例常驻 / 逐步挤出」的取舍，docs/refactor/09 第 7.3 节）
+    const exampleMode = prompting?.exampleMode ?? 'pinned';
+    const pinned =
+      exampleMode === 'off'
+        ? []
+        : pinnedExamples(card.examples, { max: prompting?.exampleCount ?? 6 });
     const selfReports = await this.continuity.context(
       row.userId,
       row.characterId,
@@ -379,6 +398,13 @@ export class ReplyContext {
         }`,
       },
       { title: '需要关怀或岔开话题时', text: safetyStyleText(card) },
+      {
+        title: '角色作者的写作要求',
+        text: prompting?.systemNote
+          ? `${prompting.systemNote}
+${AUTHOR_GUARD}`
+          : '',
+      },
       { title: '', text: supplementBlock(role.userSupplement, 4000).trim() },
       { title: '', text: selfReports },
       { title: '记忆', text: remembered.stableBlock },
@@ -464,6 +490,30 @@ export class ReplyContext {
     const previous = history
       .filter((m) => m.senderKind !== 'system' && m.seq < firstFreshSeq)
       .at(-1);
+    // 情境示例：深夜 / 安慰 / 被逗 / 打招呼时在结尾补 1 条不在开头里的示例
+    const hour = localHourIn(this.clock.now(), profile.timeZone);
+    const extraExample =
+      exampleMode === 'situational'
+        ? situationalExample(card.examples, pinned, [
+            ...(row.kind === 'greeting' ? ['greeting'] : []),
+            ...(inCare || style === 'treehole' ? ['comfort'] : []),
+            ...(style === 'tsundere' ? ['teased'] : []),
+            ...(hour >= 23 || hour < 5 ? ['lateNight'] : []),
+            ...(/好看|厉害|真棒|太强|佩服|好帅|好美/u.test(userText) ? ['praised'] : []),
+          ])
+        : null;
+    // 深度插入（酒馆 @depth）：角色笔记 + 作者注释式的情景风格提示，固定在倒数第 N 条消息之前。
+    // 位置随聊天往后挪，只影响最近几条消息的缓存；离模型回答更近，长对话里人设不易走样。
+    const inserts: DepthInsert[] = [];
+    if (prompting?.characterNote)
+      inserts.push({
+        depth: prompting.characterNote.depth ?? CHARACTER_NOTE_DEPTH,
+        order: 0,
+        text: `【角色笔记】${prompting.characterNote.text}
+${AUTHOR_GUARD}`,
+      });
+    const styleNote = inCare ? null : scenarioNote(card, mode, autoStyle?.prompt ?? null);
+    if (styleNote) inserts.push({ depth: AUTHOR_NOTE_DEPTH, order: 1, text: styleNote });
     const tail: PromptSection[] = [
       {
         title: '这轮可能用得上的记忆',
@@ -488,8 +538,7 @@ export class ReplyContext {
           ? `识图认人规则：图片里你只能认出这些人：${JSON.stringify(allowedNames)}（你自己和与你有公开关系的人）。名单外的人不说出、不猜测身份，只按外观描述。`
           : '',
       },
-      // 情景预设「自动」：每轮可能变，放在请求末尾（docs/refactor/03 第 4.2、4.3 节）。
-      { title: '', text: autoStyle?.prompt ?? '' },
+      { title: '', text: extraExample ? situationalExampleText(extraExample) : '' },
       // 时间放末尾（docs/refactor/03 第 2.2 A 节）：精确时间 + 距上一条消息多久。
       {
         title: '',
@@ -499,11 +548,20 @@ export class ReplyContext {
           previous && fresh.length ? new Date(previous.createdAt) : null,
         ),
       },
+      // 后置指令（酒馆 post-history instructions）：请求最末尾，模型最重视；仍受平台规则约束。
+      {
+        title: '角色作者的补充要求',
+        text: prompting?.postHistoryInstructions
+          ? `${prompting.postHistoryInstructions}
+${AUTHOR_GUARD}`
+          : '',
+      },
     ];
     const assembled = assemblePrompt({
       macros: { user: userName, char: role.profile.name },
       head,
       history: chat,
+      inserts,
       tail,
     });
     const messages: ReplySnapshot['messages'] = assembled.messages;
