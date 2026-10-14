@@ -507,18 +507,16 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const memberNames = useCharacterNames(
     group ? everyone.filter((p) => p.kind === 'character').map((p) => p.refId) : [],
   );
+  const roleProfile = useRemote(
+    CharacterEndpoints.getProfile,
+    { params: { characterId: role?.refId ?? '' } },
+    !!role,
+  );
   const displayName = (characterId: string) =>
     chat.state.contacts.find((c) => c.characterId === characterId)?.remark ||
     memberNames[characterId] ||
+    (characterId === role?.refId ? roleProfile.data?.name : null) ||
     '角色';
-  const roleProfile = useRemote(CharacterEndpoints.getProfile, {
-    params: { characterId: role?.refId ?? '' },
-  });
-  const roleName = role
-    ? chat.state.contacts.find((c) => c.characterId === role.refId)?.remark ||
-      roleProfile.data?.name ||
-      'TA'
-    : 'TA';
   const status = useRemote(ModelAccessEndpoints.getModelStatus, {
     query: { characterId: group ? undefined : role?.refId },
   });

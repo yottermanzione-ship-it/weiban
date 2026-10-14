@@ -1,4 +1,5 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 
@@ -7,11 +8,13 @@ const manifest = JSON.parse(await readFile(new URL('manifest.json', root), 'utf8
 const apply = process.argv.includes('--apply');
 const journalArg = process.argv.indexOf('--journal');
 const journalPath =
-  journalArg >= 0 ? process.argv[journalArg + 1] : 'old-stickers-import.local.json';
+  journalArg >= 0 ? process.argv[journalArg + 1] : '.data/old-stickers-import.local.json';
 if (!journalPath) throw new Error('--journal needs a path');
 const prepared = [];
 for (const item of manifest.items) {
-  const svg = await readFile(new URL(item.file, root));
+  const svg = Buffer.from(
+    (await readFile(new URL(item.file, root), 'utf8')).replaceAll('\r\n', '\n'),
+  );
   if (createHash('sha256').update(svg).digest('hex') !== item.sha256)
     throw new Error('素材校验失败');
   prepared.push({ ...item, png: await sharp(svg).png().toBuffer() });
@@ -60,6 +63,7 @@ if (!apply) {
     }
     if (journal.origin !== base.origin || journal.packId !== pack.packId)
       throw new Error('导入记录属于另一个服务器或包，请指定新的 --journal');
+    await mkdir(dirname(journalPath), { recursive: true });
     let added = 0,
       skipped = 0;
     for (const item of prepared) {
@@ -79,7 +83,8 @@ if (!apply) {
         if (!uuid(media.mediaId)) throw new Error('上传未返回有效媒体 ID');
         mediaId = media.mediaId;
         journal.media[item.sha256] = mediaId;
-        await writeFile(journalPath, JSON.stringify(journal, null, 2) + '\n');
+        await writeFile(journalPath + '.tmp', JSON.stringify(journal, null, 2) + '\n');
+        await rename(journalPath + '.tmp', journalPath);
       }
       const sticker = await request(
         `/api/v1/admin/stickers/packs/${pack.packId}/stickers`,
