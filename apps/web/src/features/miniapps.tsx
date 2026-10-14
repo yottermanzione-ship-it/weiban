@@ -481,7 +481,7 @@ export function MiniAppFrame({ app, children }: { app: MiniApp; children: ReactN
         </button>
         <i aria-hidden />
         <button type="button" aria-label="关闭小程序" onClick={close}>
-          <OldIcon name="drawn/capsule_close" size={20} />
+          <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" strokeWidth="1.6" /><circle cx="10" cy="10" r="2.8" fill="currentColor" /></svg>
         </button>
       </div>
       {children}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
+import { RouteMotion } from '../features/route-motion.js';
 import { OldIcon } from '../features/old-icons.js';
 import { BackArrow } from '../features/shell-kit.js';
 import { useChat } from './chat.js';
@@ -257,7 +258,7 @@ function Shell() {
               />
             </header>
           )}
-        {(() => {
+        <RouteMotion>{(() => {
           const routes = (
             <Routes>
               <Route
@@ -379,7 +380,7 @@ function Shell() {
           ) : (
             routes
           );
-        })()}
+        })()}</RouteMotion>
         {showTabs && <TabBar hidden={false} />}
         <AchievementWatcher />
         {!firstProfile && <ReleaseCenter />}

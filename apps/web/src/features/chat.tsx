@@ -60,6 +60,7 @@ import {
   type RecordResult,
 } from './media.js';
 import { useCall, useCallEntry } from './call.js';
+import { copyText } from './copy-text.js';
 import { Dialog, showToast } from './toast.js';
 import { prepareImage, uploadMedia } from '../data/upload.js';
 import { ApiFailure } from '@weiban/client-core';
@@ -884,10 +885,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const senderOf = (message: Message) =>
     everyone.find((participant) => participant.participantId === message.senderParticipantId);
   function copy(value: string) {
-    void navigator.clipboard
-      ?.writeText(value)
-      .then(() => showToast('已复制', 2000, 'success'))
-      .catch(() => showToast('复制失败'));
+    void copyText(value);
   }
   /** 气泡长按菜单项目（4.4.7）。 */
   function menuItems(message: Message): BubbleMenuItem[] {

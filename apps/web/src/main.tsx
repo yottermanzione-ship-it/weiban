@@ -26,3 +26,4 @@ createRoot(document.getElementById('root')!).render(
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   void navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
+import './app/common-fixes.css';
