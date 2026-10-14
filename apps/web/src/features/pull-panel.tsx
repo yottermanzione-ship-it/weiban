@@ -266,7 +266,8 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
           d.active = true;
           d.startY = py - (dy > 0 ? SLOP : -SLOP);
           stopAnim.current();
-          velocity.current.reset(y.current);
+          // 速度按手指算（阻尼后的位移会把甩动速度压小）
+          velocity.current.reset(py);
         } else if (Math.abs(dx) > SLOP) {
           drag.current = null;
           return false;
@@ -280,7 +281,7 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
         const next = full + delta;
         paint(next > full ? full + rubberband(next - full, 200, 0.4) : Math.max(0, next));
       }
-      velocity.current.push(y.current);
+      velocity.current.push(py);
       swallowClick.current = true;
       return true;
     },
