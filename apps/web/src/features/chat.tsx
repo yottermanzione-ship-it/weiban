@@ -1123,7 +1123,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
                 >
                   !
                 </button>
-              ) : item.state === 'queued' && item.attempts > 0 ? (
+              ) : item.state === 'pending' && item.failures > 0 ? (
                 <span className="wx-sending" role="status" aria-label="网络异常，等待重试" />
               ) : null}
               <div className="wx-msg-bubble">
@@ -1359,7 +1359,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         { label: '红包', icon: 'wechat/red_packet', onClick: showComingSoon },
         { label: '转账', icon: 'wechat/transfer', onClick: showComingSoon },
         { label: '名片', icon: 'wechat/person', onClick: showComingSoon },
-        { label: '音乐', icon: 'drawn/music', onClick: showComingSoon },
+        { label: '音乐', icon: 'wechat/discover_listen', onClick: showComingSoon },
       ];
 
   return (
@@ -1373,15 +1373,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           <BackWithUnread excludeId={id} />
         )}
         <span className="wx-chat-title">
-          <h1>
-            {selecting ? (
-              `已选择 ${chosen.length} 条`
-            ) : typing ? (
-              <Name conversation={conversation} />
-            ) : (
-              <Name conversation={conversation} />
-            )}
-          </h1>
+          <h1>{selecting ? `已选择 ${chosen.length} 条` : <Name conversation={conversation} />}</h1>
           {!selecting && typing && (
             <small className="nav-subtitle" role="status">
               对方正在输入…
