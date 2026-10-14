@@ -8,6 +8,8 @@ export function VirtualList<T>({
   label,
   bottom = false,
   onBottom,
+  onStart,
+  anchorItem,
   scrollTo,
   rowClassName,
 }: {
@@ -18,13 +20,15 @@ export function VirtualList<T>({
   label: string;
   bottom?: boolean;
   onBottom?(value: boolean): void;
+  onStart?(): void;
+  anchorItem?(item: T): boolean;
   /** 定位到某一行（距顶部 1/3 处，search.md 第 4 节）；nonce 变化时执行一次。 */
   scrollTo?: { key: string; nonce: number } | null;
   rowClassName?(item: T): string | undefined;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const heights = useRef(new Map<string, number>());
-  const previous = useRef({ first: '', height: 0 });
+  const previous = useRef({ first: '', height: 0, revision: -1 });
   const stick = useRef(bottom);
   const anchor = useRef<{ key: string; offset: number } | null>(null);
   const [viewport, setViewport] = useState({ top: 0, height: 600 });
@@ -56,13 +60,24 @@ export function VirtualList<T>({
   useLayoutEffect(() => {
     const element = root.current;
     if (!element) return;
+    if (
+      previous.current.first === first &&
+      previous.current.height === total &&
+      previous.current.revision === revision
+    )
+      return;
     if (previous.current.first && previous.current.first !== first && anchorTop !== undefined)
       stick.current = false;
-    if (bottom && stick.current) element.scrollTop = element.scrollHeight;
-    else if (anchorTop !== undefined && anchor.current)
-      element.scrollTop = anchorTop + anchor.current.offset;
+    const desired =
+      bottom && stick.current
+        ? Math.max(0, element.scrollHeight - element.clientHeight)
+        : anchorTop !== undefined && anchor.current
+          ? anchorTop + anchor.current.offset
+          : element.scrollTop;
+    // Writing even the same scrollTop cancels Safari momentum; compensate only actual layout shifts.
+    if (Math.abs(element.scrollTop - desired) > 1) element.scrollTop = desired;
     onBottom?.(stick.current);
-    previous.current = { first, height: total };
+    previous.current = { first, height: total, revision };
     setViewport({ top: element.scrollTop, height: element.clientHeight });
   }, [first, total, bottom, revision, anchorTop, onBottom]);
   useLayoutEffect(() => {
@@ -99,8 +114,12 @@ export function VirtualList<T>({
         const element = event.currentTarget;
         stick.current =
           bottom && element.scrollHeight - element.scrollTop - element.clientHeight < 96;
-        const row = rows.find((row) => row.top + row.height > element.scrollTop);
+        const row = rows.find(
+          (row) =>
+            row.top + row.height > element.scrollTop && (!anchorItem || anchorItem(row.item)),
+        );
         if (row) anchor.current = { key: row.key, offset: element.scrollTop - row.top };
+        if (element.scrollTop <= 48) onStart?.();
         onBottom?.(stick.current);
         setViewport({ top: element.scrollTop, height: element.clientHeight });
       }}

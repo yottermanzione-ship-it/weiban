@@ -261,7 +261,7 @@ export function ImageViewer({
           {current + 1} / {images.length}
         </span>
         <button className="viewer-button" aria-label="更多" onClick={() => setMenu((v) => !v)}>
-          •••
+          <OldIcon name="wechat/more" size={24} />
         </button>
       </header>
       <div

@@ -1,3 +1,4 @@
+import { SearchField } from './search-field.js';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
@@ -196,15 +197,12 @@ export function SelectMembersPage() {
         </div>
       )}
       <div className="search-strip">
-        <label className="search-entry">
-          <OldIcon name="wechat/search" size={17} />
-          <input
-            placeholder="搜索"
-            aria-label="搜索"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </label>
+        <SearchField
+          placeholder="搜索"
+          aria-label="搜索"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
       {full && <p className="hint page-note">群里最多 {GROUP_MEMBER_LIMIT} 个角色</p>}
       {error && (
@@ -257,6 +255,29 @@ export function GroupSettingsPage() {
   const [title, setTitle] = useState('');
   const [confirm, setConfirm] = useState<'clear' | 'dissolve' | null>(null);
   const [pending, setPending] = useState(false);
+  const [switchBusy, setSwitchBusy] = useState<Record<string, boolean>>({});
+  const [switchValues, setSwitchValues] = useState<Record<string, boolean>>({});
+  async function toggle(key: string, value: boolean, operation: () => Promise<unknown>) {
+    const had = Object.hasOwn(switchValues, key);
+    const before = switchValues[key];
+    setSwitchBusy((items) => ({ ...items, [key]: true }));
+    setSwitchValues((items) => ({ ...items, [key]: value }));
+    setError('');
+    try {
+      assertOwner();
+      await operation();
+    } catch (e) {
+      setSwitchValues((items) => {
+        const next = { ...items };
+        if (had) next[key] = before!;
+        else delete next[key];
+        return next;
+      });
+      setError(groupError(e));
+    } finally {
+      setSwitchBusy((items) => ({ ...items, [key]: false }));
+    }
+  }
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   if (!conversation || conversation.type !== 'group')
@@ -360,20 +381,20 @@ export function GroupSettingsPage() {
       <MenuGroup>
         <SwitchRow
           label="消息免打扰"
-          checked={conversation.state.muted}
-          disabled={pending}
+          checked={switchValues.muted ?? conversation.state.muted}
+          disabled={!!switchBusy.muted}
           onChange={(muted) =>
-            void change(() =>
+            void toggle('muted', muted, () =>
               api.call(ChatEndpoints.updateState, { params: { conversationId }, body: { muted } }),
             )
           }
         />
         <SwitchRow
           label="置顶聊天"
-          checked={conversation.state.pinned}
-          disabled={pending}
+          checked={switchValues.pinned ?? conversation.state.pinned}
+          disabled={!!switchBusy.pinned}
           onChange={(pinned) =>
-            void change(() =>
+            void toggle('pinned', pinned, () =>
               api.call(ChatEndpoints.updateState, {
                 params: { conversationId },
                 body: { pinned },
@@ -387,33 +408,27 @@ export function GroupSettingsPage() {
           <SwitchRow
             label="角色自己聊天"
             subtitle="开启后，你不在时群里的角色也会偶尔聊几句"
-            checked={companion.data.selfChatEnabled}
-            disabled={pending}
+            checked={switchValues.selfChatEnabled ?? companion.data.selfChatEnabled}
+            disabled={!!switchBusy.selfChatEnabled}
             onChange={(selfChatEnabled) =>
-              void change(
-                () =>
-                  api.call(GroupCompanionEndpoints.updateSettings, {
-                    params: { conversationId },
-                    body: { selfChatEnabled },
-                  }),
-                '已保存',
-                companion.refresh,
+              void toggle('selfChatEnabled', selfChatEnabled, () =>
+                api.call(GroupCompanionEndpoints.updateSettings, {
+                  params: { conversationId },
+                  body: { selfChatEnabled },
+                }),
               )
             }
           />
           <SwitchRow
             label="秒回"
-            checked={companion.data.instantReply}
-            disabled={pending}
+            checked={switchValues.instantReply ?? companion.data.instantReply}
+            disabled={!!switchBusy.instantReply}
             onChange={(instantReply) =>
-              void change(
-                () =>
-                  api.call(GroupCompanionEndpoints.updateSettings, {
-                    params: { conversationId },
-                    body: { instantReply },
-                  }),
-                '已保存',
-                companion.refresh,
+              void toggle('instantReply', instantReply, () =>
+                api.call(GroupCompanionEndpoints.updateSettings, {
+                  params: { conversationId },
+                  body: { instantReply },
+                }),
               )
             }
           />

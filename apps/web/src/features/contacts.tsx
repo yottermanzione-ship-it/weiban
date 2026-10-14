@@ -1,3 +1,4 @@
+import { SearchField } from './search-field.js';
 /*
  * 通讯录（规格 4.6）、发现（4.8）、角色广场（5.2）、角色资料页（4.12）。
  */
@@ -254,15 +255,12 @@ export function ContactsPage() {
         }
       />
       <div className="search-strip">
-        <label className="search-entry">
-          <OldIcon name="wechat/search" size={17} />
-          <input
-            aria-label="搜索通讯录"
-            placeholder="搜索"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </label>
+        <SearchField
+          aria-label="搜索通讯录"
+          placeholder="搜索"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
       {!query && (
         <>
@@ -509,56 +507,60 @@ export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) 
           setPrevious([]);
         }}
       >
-        <label className="search-entry">
-          <OldIcon name="wechat/search" size={17} />
-          <input
-            aria-label="搜索角色"
-            placeholder={onboarding ? '搜索角色' : '搜索角色名'}
-            value={query}
-            maxLength={50}
-            enterKeyHint="search"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
+        <SearchField
+          aria-label="搜索角色"
+          placeholder={onboarding ? '搜索角色' : '搜索角色名'}
+          value={query}
+          maxLength={50}
+          enterKeyHint="search"
+          onChange={(event) => setQuery(event.target.value)}
+        />
       </form>
       {!onboarding && !search && <AddFriendEntries />}
       {!onboarding && <GroupHeader>{search ? '搜索结果' : '推荐角色'}</GroupHeader>}
       {roles.error && <p role="alert">{roles.error}</p>}
-      {roles.loading && (
-        <p role="status" className="empty">
-          正在读取角色…
-        </p>
+      {roles.loading && !roles.data && (
+        <div className="role-loading" role="status" aria-label="正在读取角色">
+          {[0, 1, 2, 3].map((n) => (
+            <div className="role-skeleton" key={n}>
+              <i />
+              <span />
+            </div>
+          ))}
+        </div>
       )}
-      <MenuGroup>
-        {roles.data?.items.map((role) =>
-          onboarding ? (
-            <MenuRow
-              key={role.characterId}
-              disabled={draft.saving}
-              onClick={() => void draft.choose(role.characterId)}
-              label={
-                <>
-                  <CharacterAvatar id={role.characterId} profile={role} size={40} />
-                  <span className="row-name">{role.name}</span>
-                </>
-              }
-              subtitle={`${role.tagline}${role.added ? ' · 已添加' : ''}`}
-            />
-          ) : (
-            <MenuRow
-              key={role.characterId}
-              to={`/characters/${role.characterId}`}
-              label={
-                <>
-                  <CharacterAvatar id={role.characterId} profile={role} size={40} />
-                  <span className="row-name">{role.name}</span>
-                </>
-              }
-              subtitle={`${role.tagline}${role.added ? ' · 已添加' : ''}`}
-            />
-          ),
-        )}
-      </MenuGroup>
+      {!!roles.data?.items.length && (
+        <MenuGroup>
+          {roles.data?.items.map((role) =>
+            onboarding ? (
+              <MenuRow
+                key={role.characterId}
+                disabled={draft.saving}
+                onClick={() => void draft.choose(role.characterId)}
+                label={
+                  <>
+                    <CharacterAvatar id={role.characterId} profile={role} size={40} />
+                    <span className="row-name">{role.name}</span>
+                  </>
+                }
+                subtitle={`${role.tagline}${role.added ? ' · 已添加' : ''}`}
+              />
+            ) : (
+              <MenuRow
+                key={role.characterId}
+                to={`/characters/${role.characterId}`}
+                label={
+                  <>
+                    <CharacterAvatar id={role.characterId} profile={role} size={40} />
+                    <span className="row-name">{role.name}</span>
+                  </>
+                }
+                subtitle={`${role.tagline}${role.added ? ' · 已添加' : ''}`}
+              />
+            ),
+          )}
+        </MenuGroup>
+      )}
       {!roles.loading && roles.data?.items.length === 0 && (
         <EmptyState icon="wechat/search" title="没有找到角色" />
       )}

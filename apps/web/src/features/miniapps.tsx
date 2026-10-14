@@ -1,3 +1,4 @@
+import { SearchField } from './search-field.js';
 /*
  * 微伴小程序（docs/refactor/02 第 4 节；视觉按 06-old-ui-spec 5.1）：11 个专属功能共用一个外壳。
  * - 外壳：右上胶囊（··· 更多 | ◯ 回到打开前的位置），从底部升起，不显示标签栏。
@@ -336,15 +337,12 @@ export function MiniAppsHomePage() {
         }
       />
       <div className="search-strip">
-        <label className="search-entry">
-          <OldIcon name="wechat/search" size={17} />
-          <input
-            aria-label="搜索小程序"
-            placeholder="搜索小程序"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </label>
+        <SearchField
+          aria-label="搜索小程序"
+          placeholder="搜索小程序"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
       {hits ? (
         <MenuGroup>
@@ -481,7 +479,10 @@ export function MiniAppFrame({ app, children }: { app: MiniApp; children: ReactN
         </button>
         <i aria-hidden />
         <button type="button" aria-label="关闭小程序" onClick={close}>
-          <OldIcon name="drawn/capsule_close" size={20} />
+          <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden>
+            <circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" strokeWidth="1.6" />
+            <circle cx="10" cy="10" r="2.8" fill="currentColor" />
+          </svg>
         </button>
       </div>
       {children}
