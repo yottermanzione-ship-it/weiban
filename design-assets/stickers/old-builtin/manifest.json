@@ -5,12 +5,12 @@
     {
       "file": "laugh.svg",
       "description": "大笑：开心、大笑、觉得很好玩",
-      "sha256": "c89188687d7265f44dc725f80b0035f1e3a8eec36b62d3d9290b57cefd897dc2"
+      "sha256": "1205374d6c62659ca00b6959bf8054fed47af9d0fc70ffa8a94c8b1dbdca3c29"
     },
     {
       "file": "smile.svg",
       "description": "微笑：温和高兴、友善、打招呼",
-      "sha256": "71110233a230d550d2d94c28fc800ff475f41e09d48c93784d1493e248ea80e3"
+      "sha256": "f1bbb2c92de52e875aa0872acab0fd0190b7b7b3f2f2900142ac34bb89112676"
     },
     {
       "file": "cry.svg",
@@ -20,12 +20,12 @@
     {
       "file": "pout.svg",
       "description": "失落：有点失落、闷闷的、提不起劲",
-      "sha256": "58e13dd39e3784bd019c1605d07d1c63348903bd15f48cc41fbae1b56b399de8"
+      "sha256": "9c8edd5cbb16beca1a312ef92949d86acf0b638fb21abd44fadb45ed4e82f194"
     },
     {
       "file": "angry.svg",
       "description": "生气：生气、不满、被惹到了",
-      "sha256": "f22559a6a6556a2580d5e3e952ea87c86ef9439c003032d49bf5167b72e91378"
+      "sha256": "389a88425bd28bc37e01065719a0dcbc0fa1d7afff75c27d1a4305a8eadce712"
     },
     {
       "file": "eyeroll.svg",
@@ -35,7 +35,7 @@
     {
       "file": "shy.svg",
       "description": "脸红：害羞、不好意思、被夸了",
-      "sha256": "80fec0866a6a93375f571166bc866dac1a1aa99a1728a47cd08064fc6aea4e62"
+      "sha256": "d6e8a5c586eb10f9fe8f81ce4ba96383b1c2d39896f029abfd8848c2a2daa70b"
     },
     {
       "file": "facepalm.svg",
@@ -60,7 +60,7 @@
     {
       "file": "shock.svg",
       "description": "震惊：惊讶、没想到、愣住了",
-      "sha256": "38e6da4d64874060bfb74837066800eca26248822a1a17518b0e45ddf91cd3b6"
+      "sha256": "c1b0fb051a1feff4c8412bf060a7df6c6076063af733de8002a2cbeee7f5ba26"
     },
     {
       "file": "hug.svg",
@@ -70,7 +70,7 @@
     {
       "file": "proud.svg",
       "description": "得意：得意、炫耀、觉得自己很棒",
-      "sha256": "c7d53bd37d473addf73138bf3314d38c7c4d451cc766e013bdb54734568e9e5c"
+      "sha256": "f21123460ae1dcdfd992654335b90c538e3921ba2a2a46122a48c74ee87f370b"
     },
     {
       "file": "sleepy.svg",
