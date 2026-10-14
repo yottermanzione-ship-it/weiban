@@ -962,3 +962,84 @@
     animation: none;
   }
 }
+/* A4 basic chat interactions; the existing dark bubble menu is replaced here. */
+.bubble-menu {
+  width: 240px;
+  background: var(--wb-color-bg-surface);
+  color: var(--wb-color-text-primary);
+  border-radius: 10px;
+}
+.bubble-menu-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+.bubble-menu button {
+  width: 80px;
+  height: 64px;
+  gap: 6px;
+  color: var(--wb-color-text-primary);
+  font-size: 13px;
+}
+.bubble-menu-row + .bubble-menu-row {
+  border-top: 0.5px solid var(--wb-color-border-hairline);
+}
+.bubble-menu button + button::before {
+  border-color: var(--wb-color-border-hairline);
+  top: 18px;
+  height: 28px;
+}
+.bubble-menu-arrow {
+  border-top-color: var(--wb-color-bg-surface);
+}
+.bubble-menu.below .bubble-menu-arrow {
+  border-bottom-color: var(--wb-color-bg-surface);
+}
+.wx-quote {
+  max-width: 100%;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--wb-color-bg-input);
+  color: var(--wb-color-text-secondary);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.wx-msg-row.mine .wx-quote {
+  align-self: flex-end;
+}
+.wx-quote span {
+  display: -webkit-box;
+  color: inherit;
+  -webkit-line-clamp: 2;
+}
+.wx-quote-bar {
+  margin: 0 56px 8px;
+  padding: 7px 10px;
+  border-radius: 5px;
+  background: var(--wb-color-bg-input);
+  color: var(--wb-color-text-secondary);
+}
+.wx-quote-bar b {
+  color: inherit;
+  font-weight: 400;
+  font-size: 14px;
+}
+.wx-quote-bar b::after {
+  content: '：';
+}
+.wx-quote-bar b + span {
+  font-size: 14px;
+  color: inherit;
+}
+.wx-wish-result {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  width: 100%;
+  border-radius: 5px;
+  background: var(--wb-color-bg-page);
+  color: var(--wb-color-text-secondary);
+  font-size: 15px;
+}
