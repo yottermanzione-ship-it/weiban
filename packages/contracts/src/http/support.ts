@@ -231,3 +231,30 @@ export const SupportAdminEndpoints = {
     summary: '3.8：重新打开（resolved → open，不通知用户）；写审计',
   }),
 } as const;
+
+// ---------- 3.9：设置 › 插件（总对照表 Q10，节点 T4.10.9） ----------
+
+/** 插件。目前只有外部渠道接入（真微信 / QQ / 微博），都还没开放；真正的接入在下一张任务卡做。 */
+export const PluginId = z.enum(['wechat', 'qq', 'weibo']);
+export type PluginId = z.infer<typeof PluginId>;
+
+/** coming_soon = 即将推出（点了提示）；available = 可以开启；enabled = 已开启。 */
+export const PluginStatus = z.enum(['coming_soon', 'available', 'enabled']);
+
+export const Plugin = z.object({
+  pluginId: tolerantEnum(PluginId),
+  name: z.string().max(20),
+  description: z.string().max(100),
+  status: tolerantEnum(PluginStatus),
+});
+export type Plugin = z.infer<typeof Plugin>;
+
+export const PluginEndpoints = {
+  list: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/plugins`,
+    auth: 'user',
+    response: z.object({ items: z.array(Plugin) }),
+    summary: '3.9：设置 › 插件列表（微信 / QQ / 微博接入，目前都是 coming_soon）',
+  }),
+} as const;

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import type { PetReadPort } from '@weiban/contracts';
+import type { PetReadPort, UserStatusReadPort } from '@weiban/contracts';
 import { GROWTH_PET_READ_PORT } from '../../growth/index.js';
 import { petContextBlock } from '../domain/pets.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
@@ -26,7 +26,8 @@ import {
 import { CHAT_ADMIN_PORT, CHAT_READ_PORT } from '../../chat/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { CHARACTER_TRIAL_READ_PORT } from '../../characters/index.js';
-import { IDENTITY_READ_PORT } from '../../identity/index.js';
+import { IDENTITY_READ_PORT, IDENTITY_USER_STATUS_PORT } from '../../identity/index.js';
+import { userStatusLine } from '../domain/user-status.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { MemoryService } from './memory.js';
 import { PlayContinuityStore } from './play-continuity.js';
@@ -157,6 +158,8 @@ export class ReplyContext {
     @Inject(SocialService) readonly social: SocialService,
     @Inject(MediaAiService) readonly mediaAi: MediaAiService,
     @Optional() @Inject(GROWTH_PET_READ_PORT) readonly pets?: PetReadPort,
+    /** 3.9（Q11）：用户「我的状态」。 */
+    @Optional() @Inject(IDENTITY_USER_STATUS_PORT) readonly userStatus?: UserStatusReadPort,
   ) {}
   async build(row: ReplyPlan): Promise<ReplySnapshot | null> {
     const contact = await this.contacts.getActiveContact(row.userId, row.characterId);
@@ -539,6 +542,14 @@ ${AUTHOR_GUARD}`,
           : '',
       },
       { title: '', text: extraExample ? situationalExampleText(extraExample) : '' },
+      // 3.9（Q11）：用户当前状态（未过期才有）。
+      {
+        title: '',
+        text: userStatusLine(
+          (await this.userStatus?.getUserStatus(row.userId).catch(() => null)) ?? null,
+          this.clock.now(),
+        ),
+      },
       // 时间放末尾（docs/refactor/03 第 2.2 A 节）：精确时间 + 距上一条消息多久。
       {
         title: '',

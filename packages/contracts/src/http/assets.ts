@@ -29,6 +29,16 @@ export const StickerPack = z.object({
   enabled: z.boolean(),
   stickers: z.array(LibrarySticker),
   updatedAt: Timestamp,
+  /** 3.9（总对照表 Q2）：是否在表情商店上架。旧服务器不返回时按 false。 */
+  inStore: z.boolean().optional(),
+  /** 3.9：商店排序（小的在前）。 */
+  storeOrder: z.number().int().optional(),
+  /** 3.9：商店简介。 */
+  intro: z.string().max(100).optional(),
+  /** 3.9：商店封面用哪个表情（null = 第一个）。 */
+  coverStickerId: Id.nullable().optional(),
+  /** 3.9：用户端——这个包是我从商店添加的（false = 平台默认显示的包）。 */
+  addedFromStore: z.boolean().optional(),
 });
 export type StickerPack = z.infer<typeof StickerPack>;
 
@@ -49,7 +59,7 @@ export const StickerEndpoints = {
     path: `${API_PREFIX}/stickers/packs`,
     auth: 'user',
     response: z.object({ items: z.array(StickerPack) }),
-    summary: '用户可用的内置表情包（userVisible 且 enabled）',
+    summary: '用户可用的内置表情包（userVisible 且 enabled）；3.9 起也包含我从表情商店添加的包（addedFromStore = true，排在后面）',
   }),
   listMyStickers: defineEndpoint({
     method: 'GET',
@@ -95,7 +105,91 @@ export const StickerPackWrite = z.object({
   characterIds: z.array(Id),
   userVisible: z.boolean(),
   enabled: z.boolean(),
+  /** 3.9：商店上架 / 下架（下架后已添加的用户仍可使用；停用 enabled = false 才对所有人不可用）。 */
+  inStore: z.boolean().optional(),
+  storeOrder: z.number().int().min(0).max(100_000).optional(),
+  intro: z.string().trim().max(100).optional(),
+  coverStickerId: Id.nullable().optional(),
 });
+
+// ---------- 3.9：表情商店（总对照表 Q2，节点 T1.13.3） ----------
+
+/** 商店里的一个表情包（列表卡片）。 */
+export const StickerStorePack = z.object({
+  packId: Id,
+  name: z.string().min(1).max(20),
+  intro: z.string().max(100),
+  /** 封面（封面表情或第一个表情）的短期链接；包里没有表情时为 null。 */
+  coverUrl: z.url().nullable(),
+  stickerCount: z.number().int().nonnegative(),
+  /** 我是否已添加（平台默认显示的包也算已添加，不能移除）。 */
+  added: z.boolean(),
+  /** 平台默认显示的包（userVisible）：人人都有，不需要添加。 */
+  builtIn: z.boolean(),
+  updatedAt: Timestamp,
+});
+export type StickerStorePack = z.infer<typeof StickerStorePack>;
+
+export const StickerStorePackDetail = StickerStorePack.extend({
+  stickers: z.array(LibrarySticker),
+});
+export type StickerStorePackDetail = z.infer<typeof StickerStorePackDetail>;
+
+const StorePackParams = z.object({ packId: Id });
+
+export const StickerStoreEndpoints = {
+  listPacks: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/sticker-store/packs`,
+    auth: 'user',
+    response: z.object({ items: z.array(StickerStorePack) }),
+    summary: '3.9：表情商店列表（已上架且启用的包，按后台排序）',
+  }),
+  getPack: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/sticker-store/packs/:packId`,
+    auth: 'user',
+    params: StorePackParams,
+    response: StickerStorePackDetail,
+    summary: '3.9：表情包详情（全部表情）；未上架且我没添加过的 404',
+  }),
+  addPack: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/me/sticker-packs/:packId`,
+    auth: 'user',
+    params: StorePackParams,
+    response: StickerStorePackDetail,
+    summary:
+      '3.9：添加到我的表情（免费；已添加幂等）。未上架或已停用 404。之后 GET /stickers/packs 会包含它，发 data.changed(stickers)',
+  }),
+  removePack: defineEndpoint({
+    method: 'DELETE',
+    path: `${API_PREFIX}/me/sticker-packs/:packId`,
+    auth: 'user',
+    params: StorePackParams,
+    response: NoContent,
+    summary: '3.9：移除我添加的表情包（已发出的消息不受影响；没添加过也返回 204）；发 data.changed(stickers)',
+  }),
+  reorderMyPacks: defineEndpoint({
+    method: 'PUT',
+    path: `${API_PREFIX}/me/sticker-packs/order`,
+    auth: 'user',
+    body: z.object({ packIds: z.array(Id).max(200) }),
+    response: NoContent,
+    summary: '3.9：整理我添加的表情包顺序（只排我添加的；没列出的排在后面）',
+  }),
+} as const;
+
+export const StickerStoreAdminEndpoints = {
+  reorderStore: defineEndpoint({
+    method: 'PUT',
+    path: `${API_PREFIX}/admin/stickers/store-order`,
+    auth: 'admin',
+    body: z.object({ packIds: z.array(Id).max(500) }),
+    response: NoContent,
+    summary: '3.9：表情商店排序（按给定顺序写 storeOrder = 0, 1, 2…）；上下架用 PATCH /admin/stickers/packs/:packId 的 inStore；写审计',
+  }),
+} as const;
 
 export const StickerAdminEndpoints = {
   listPacks: defineEndpoint({
