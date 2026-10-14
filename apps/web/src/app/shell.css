@@ -989,9 +989,6 @@ label.search-entry:focus-within {
   min-height: 0;
   overscroll-behavior-y: contain;
 }
-.chat-list-empty {
-  flex: none;
-}
 .conv-row {
   position: relative;
   display: flex;
