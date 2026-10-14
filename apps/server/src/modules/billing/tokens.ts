@@ -20,3 +20,6 @@ export const BILLING_DAILY_SPEND_READ_PORT = Symbol('weiban.billing.daily-spend-
 
 /** 契约 3.3 BillingModelRatePort（模型倍率：读 / 发布 token 价格）。只给 model-access 注入。 */
 export const BILLING_MODEL_RATE_PORT = Symbol('weiban.billing.model-rate-port');
+
+/** 契约 3.8 BillingServiceFeePort（固定金额服务费：冻结 / 扣除 / 退回）。调用方：plaza 申请制作。 */
+export const BILLING_SERVICE_FEE_PORT = Symbol('weiban.billing.service-fee-port');

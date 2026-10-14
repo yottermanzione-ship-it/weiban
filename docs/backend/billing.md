@@ -145,3 +145,11 @@ await this.billing.release({ holdId, reason, upstreamUsage?, usageRecordId? }); 
 - **充值档位**：表 `billing.settings`（0088），键 `recharge_options` 存 `{ tiers: [{ tierId, priceMicros, bonusPercent }], contactHint }`；没有配置时默认 10 / 30 / 100 元、不赠送。`GET /billing/recharge-options`（用户）、`GET/PUT /admin/billing/recharge-options`（后台，写审计 `recharge_options.updated`）。`paymentEnabled` 恒为 false（第一版不开真实支付）；赠送积分 = 到账积分 × 比例 ÷ 100 向下取整（只展示，实际到账仍由管理员加）。
 - **平台每日上限只约束平台账户**：`estimateAndReserve` 只对 `account.kind = platform` 做原子预留；用户冻结的 `reserved_cost_micros` 记 0，结算不计入平台已结算成本（0088 之前已预留的冻结照常归还）。平台吸收（失败调用仍被上游收费）仍计入。`platform-summary.todayCostMicros` 因此只含平台账户与平台吸收的成本。
 - **模型倍率端口** `BillingModelRatePort`（`application/model-rates.ts`，令牌 `BILLING_MODEL_RATE_PORT`，只给 model-access）：`getActiveTokenRates` 读当前生效价目表三项 token 全天价；`publishModelTokenRates` 在一个事务里锁当前生效版本 → 复制全部价格 → 替换该模型三项价格（含其分时价）→ 新版本（标签 `rates-时间`，备注「模型倍率：模型键」）立即发布，原版本停用，写审计 `price_version.rates_published`；价格与当前完全相同时不发新版本。
+
+## 契约 3.8：服务费（总对照表 Q5，2026-10-14）
+
+- 新端口 `BillingServiceFeePort`（令牌 `BILLING_SERVICE_FEE_PORT`，实现 `application/service-fees.ts`）：固定金额的冻结 `hold` / 扣除 `settle` / 退回 `release` / 查询 `get`，全部幂等。目前唯一调用方是 plaza 申请制作。
+- 表 `billing.fee_holds`（迁移 0092）：和模型冻结 `holds` 分开，因为服务费**不过期**（申请可能几天才处理完），也不查价目表、不占平台每日预算、不计入后台每日上限、不允许透支。
+- 冻结计入 `accounts.held_micros`；对账第 ① 层 `held_micros = holds 有效合计 + fee_holds 有效合计`（`reconciliation.ts` 已改）。超过 1 小时的 fee_holds 不算「卡住的冻结」。
+- 扣除写一条 `charge` 流水：`purpose = service_fee`、`usage_record_id` 为空、`cost_micros = 0`、`reason` = 调用方给的说明（例「申请制作：某角色」）。用户端 `LedgerEntry.category = 'service'`（`SpendCategory` 新增，接收端容错）。model-access 的用量对账只看 `usage_record_id IS NOT NULL` 的扣费，不受影响。
+- 注销：账户删除时 `fee_holds` 随外键级联删除。

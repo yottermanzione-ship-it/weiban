@@ -95,6 +95,16 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.8（2026-10-14，总对照表 Q5 申请制作扣积分、Q9 帮助与反馈 / 投诉）
+
+全部向后兼容（只新增接口、新增枚举值、新增端口）。说明见 `docs/handoffs/2026-10-14-backend-lead-q-features.md`、`docs/backend/support.md`、`docs/backend/billing.md`「契约 3.8」。
+
+- 新端口 `BillingServiceFeePort`（`ports/billing.ts`，含 `ServiceFeeKind`、`ServiceFeeHoldInput`、`ServiceFeeHold`）：固定金额服务费的冻结 / 扣除 / 退回，调用方 plaza。
+- `SpendCategory` 新增 `service`（流水分类，接收端容错）。
+- `http/role-requests.ts`：`pointsCost` 默认 200 积分并真实生效——提交冻结（不足 422 `insufficient_balance`）、完成扣除（`pointsCharged = pointsCost`）、被拒或撤回退回。字段不变，只改说明。
+- 新文件 `http/support.ts`：`SupportTicket`、`CreateSupportTicket`、`FeedbackCategory`、`ComplaintTargetType`、`ComplaintReason`、`SupportTicketStatus`，用户端 `SupportEndpoints`、管理端 `SupportAdminEndpoints`。
+- `MediaPurpose` / `UserMediaPurpose` 新增 `support_image`；`DataSection` 新增 `support`；`Events.ModuleName` 新增 `support`。
+
 ### 3.7（2026-10-14，聊天链路第二批：角色卡提示词写法与世界书设置）
 
 全部向后兼容（只新增可选字段）。说明见 `docs/refactor/09-chat-pipeline.md` 第 7 节、`docs/ai/character-card-spec.md` 1.1。

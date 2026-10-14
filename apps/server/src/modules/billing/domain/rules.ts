@@ -72,8 +72,12 @@ export const PURPOSE_CATEGORY: Record<ModelPurpose, SpendCategory> = {
   admin_upstream_test: 'admin',
 };
 
+/** 3.8：服务费流水（BillingServiceFeePort.settle）的 purpose。 */
+export const SERVICE_FEE_PURPOSE = 'service_fee';
+
 export function categoryOf(purpose: string | null): SpendCategory | null {
   if (!purpose) return null;
+  if (purpose === SERVICE_FEE_PURPOSE) return 'service';
   return (PURPOSE_CATEGORY as Record<string, SpendCategory | undefined>)[purpose] ?? null;
 }
 

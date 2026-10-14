@@ -93,8 +93,10 @@ export class ReconciliationService {
 
     const held = await db.query<{ id: string; held: string; active: string | null }>(
       `SELECT a.id, a.held_micros AS held,
-              (SELECT sum(h.amount_micros) FROM billing.holds h
-                WHERE h.account_id = a.id AND h.status = 'active') AS active
+              coalesce((SELECT sum(h.amount_micros) FROM billing.holds h
+                WHERE h.account_id = a.id AND h.status = 'active'), 0)
+              + coalesce((SELECT sum(f.amount_micros) FROM billing.fee_holds f
+                WHERE f.account_id = a.id AND f.status = 'active'), 0) AS active
          FROM billing.accounts a`,
     );
     const heldMismatches = held.rows

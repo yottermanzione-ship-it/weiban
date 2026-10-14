@@ -274,3 +274,34 @@ export const billingSettings = billingSchema.table('settings', {
   updatedAt: tz('updated_at').notNull(),
   updatedBy: uuid('updated_by'),
 });
+
+/**
+ * 3.8（0092，总对照表 Q5）：服务费冻结（BillingServiceFeePort）。固定金额、不过期，直到调用方扣除或退回。
+ * 冻结计入 accounts.held_micros（对账第 ① 层把它和 holds 一起算）；扣除时写一条 charge 流水（purpose = service_fee）。
+ */
+export const feeHolds = billingSchema.table(
+  'fee_holds',
+  {
+    id: uuid('id').primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    /** 服务种类（契约 ServiceFeeKind）。 */
+    kind: text('kind').notNull(),
+    amountMicros: money('amount_micros').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    /** 用户可见说明（写到扣费流水的 reason）。 */
+    note: text('note').notNull(),
+    /** active / settled / released */
+    status: text('status').notNull(),
+    createdAt: tz('created_at').notNull(),
+    closedAt: tz('closed_at'),
+    ledgerEntryId: uuid('ledger_entry_id'),
+  },
+  (t) => [
+    uniqueIndex('fee_holds_idempotency_key_key').on(t.idempotencyKey),
+    index('fee_holds_account_status_idx').on(t.accountId, t.status),
+    check('fee_holds_status_check', sql`${t.status} in ('active', 'settled', 'released')`),
+    check('fee_holds_amount_positive', sql`${t.amountMicros} > 0`),
+  ],
+);

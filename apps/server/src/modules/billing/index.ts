@@ -14,6 +14,7 @@ export {
   BILLING_QUOTE_PORT,
   BILLING_READ_PORT,
   BILLING_RESERVATION_PORT,
+  BILLING_SERVICE_FEE_PORT,
 } from './tokens.js';
 /** 本机运维脚本（cli/setup-local-model.ts）以管理员身份走服务层发布价目表、加余额。 */
 export { PriceService } from './application/prices.js';

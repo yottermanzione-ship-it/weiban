@@ -6,7 +6,8 @@
  * 默认自动走添加流程加到该用户通讯录）或拒绝（rejected，留言必填）。用户在 pending 时可撤回（cancelled）。
  * 每次状态变化：写申请留言、发 data.changed(role_requests) 刷新红点，并推送一条系统通知（deepLink /role-requests/{id}）。
  *
- * 扣积分：预留。`RoleRequestConfig.pointsCost` 默认 0（不扣）；申请上记录当时的 pointsCost 与实际扣的 pointsCharged（目前恒为 0）。
+ * 扣积分（3.8，总对照表 Q5）：`RoleRequestConfig.pointsCost` 默认 200 积分（2 元）。提交时冻结（可用积分不足 422 insufficient_balance），
+ * 完成时扣除（pointsCharged = pointsCost，积分明细里一条分类 service 的扣费），被拒或撤回时退回（pointsCharged = 0）。
  */
 import { z } from 'zod';
 import {
@@ -60,9 +61,9 @@ export const RoleRequest = z.object({
   characterId: Id.nullable(),
   /** 完成时是否已自动加入通讯录（false 表示需要用户自己点「添加」，例如通讯录已满）。 */
   addedToContacts: z.boolean(),
-  /** 提交时的制作价格（积分）；目前恒为 0。 */
+  /** 提交时的制作价格（积分）；0 表示免费。 */
   pointsCost: z.number().int().nonnegative(),
-  /** 实际扣除的积分；目前恒为 0。 */
+  /** 实际扣除的积分：完成后 = pointsCost；未完成、被拒、撤回为 0。 */
   pointsCharged: z.number().int().nonnegative(),
   /** 状态变化后我还没看过（红点）。 */
   unseen: z.boolean(),
@@ -74,7 +75,7 @@ export type RoleRequest = z.infer<typeof RoleRequest>;
 export const RoleRequestConfig = z.object({
   /** 是否开放申请；关闭时提交返回 403 forbidden。 */
   enabled: z.boolean(),
-  /** 每次申请的积分价格（预留，默认 0 = 不扣）。 */
+  /** 每次申请的积分价格（默认 200；0 = 免费）。提交时冻结、完成扣除、被拒或撤回退回。 */
   pointsCost: z.number().int().nonnegative().max(1_000_000),
   /** 同一用户同时未完成（pending + in_progress）的申请上限。 */
   maxOpenPerUser: z.number().int().min(1).max(50),
@@ -101,7 +102,7 @@ export const RoleRequestEndpoints = {
     path: `${API_PREFIX}/role-requests/config`,
     auth: 'user',
     response: RoleRequestConfig,
-    summary: '3.5：申请制作是否开放、价格（积分，目前 0）、同时未完成上限',
+    summary: '3.5：申请制作是否开放、价格（积分，默认 200）、同时未完成上限',
   }),
   create: defineEndpoint({
     method: 'POST',
@@ -111,6 +112,7 @@ export const RoleRequestEndpoints = {
     response: RoleRequest,
     summary:
       '3.5：提交角色制作申请（clientRequestId 幂等）。未开放 403 forbidden；未完成申请达上限 409 conflict；' +
+      '3.8：可用积分不足 422 insufficient_balance（details.pointsCost），成功时冻结 pointsCost 积分；' +
       '参考图不是本人上传的 role_request_image 时 400 bad_request',
   }),
   listMine: defineEndpoint({
@@ -141,7 +143,8 @@ export const RoleRequestEndpoints = {
     auth: 'user',
     params: RequestParams,
     response: RoleRequest,
-    summary: '3.5：撤回申请（只有 pending 可撤回，否则 409 conflict；已撤回再撤回幂等）',
+    summary:
+      '3.5：撤回申请（只有 pending 可撤回，否则 409 conflict；已撤回再撤回幂等）；3.8：退回冻结的积分',
   }),
   markAllSeen: defineEndpoint({
     method: 'POST',
@@ -230,7 +233,8 @@ export const RoleRequestAdminEndpoints = {
     }),
     response: AdminRoleRequest,
     summary:
-      '3.5：完成并关联角色（角色不存在或未上架 422 character_not_available）；通知用户；写审计。已完成再提交同一角色幂等',
+      '3.5：完成并关联角色（角色不存在或未上架 422 character_not_available）；通知用户；写审计。已完成再提交同一角色幂等；' +
+      '3.8：扣除冻结的积分',
   }),
   reject: defineEndpoint({
     method: 'POST',
@@ -239,7 +243,7 @@ export const RoleRequestAdminEndpoints = {
     params: RequestParams,
     body: z.object({ message: z.string().trim().min(1).max(500) }),
     response: AdminRoleRequest,
-    summary: '3.5：拒绝（原因必填，展示给用户）；通知用户；写审计',
+    summary: '3.5：拒绝（原因必填，展示给用户）；通知用户；写审计；3.8：退回冻结的积分',
   }),
   getConfig: defineEndpoint({
     method: 'GET',
@@ -254,6 +258,6 @@ export const RoleRequestAdminEndpoints = {
     auth: 'admin',
     body: RoleRequestConfig,
     response: RoleRequestConfig,
-    summary: '3.5：修改申请制作配置（pointsCost 目前只记录不扣，见交接说明）；写审计',
+    summary: '3.5：修改申请制作配置（3.8：pointsCost 只影响之后的新申请）；写审计',
   }),
 } as const;

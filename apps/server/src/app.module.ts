@@ -101,6 +101,7 @@ import {
   type CallServiceStatus,
 } from './modules/calls/index.js';
 import { PlayModule, PLAY_CARD_ISSUER, PLAY_ACTIVE_HOURS } from './modules/play/index.js';
+import { SupportModule } from './modules/support/index.js';
 import {
   PlazaModule,
   PLAZA_CHARACTERS,
@@ -463,6 +464,7 @@ export class AppModule {
         PlayCompositionModule,
         PlayModule,
         PlazaOriginCompositionModule,
+        SupportModule,
       ],
     };
   }

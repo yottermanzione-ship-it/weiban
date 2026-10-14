@@ -66,6 +66,8 @@ export const SpendCategory = z.enum([
   'safety',
   'admin',
   'planning',
+  /** 3.8：固定价格的服务费（申请制作等），流水 note 写明具体服务。 */
+  'service',
 ]);
 
 // ---------- 钱包 ----------

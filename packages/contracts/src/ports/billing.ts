@@ -247,3 +247,43 @@ export interface BillingDailySpendReadPort {
     localDate: string,
   ): Promise<Partial<Record<ModelPurpose, number>>>;
 }
+
+// ---------- 3.8（总经理 10-14 总对照表 Q5：申请制作扣积分） ----------
+
+/** 3.8：固定价格的服务费用途。新增取值是次版本变更。 */
+export type ServiceFeeKind = 'role_request';
+
+export interface ServiceFeeHoldInput {
+  userId: string;
+  kind: ServiceFeeKind;
+  /** 冻结金额（正整数微元；积分 × MICROS_PER_POINT）。 */
+  amountMicros: number;
+  /** 幂等键：同一个键重复冻结返回同一个冻结（不同金额抛异常）。建议 `{kind}:{userId}:{clientRequestId}`。 */
+  idempotencyKey: string;
+  /** 用户可见的说明，写到扣费流水的 note（例「申请制作：某角色」），最多 100 字。 */
+  note: string;
+}
+
+export interface ServiceFeeHold {
+  holdId: string;
+  amountMicros: number;
+  /** active = 冻结中；settled = 已扣除；released = 已退回。 */
+  status: 'active' | 'settled' | 'released';
+}
+
+/**
+ * 3.8：服务费端口（固定金额的冻结 / 扣除 / 退回）。提供方：billing；调用方：plaza（申请制作）。
+ * 与 BillingReservationPort（按模型价目表、有过期时间、只给网关）分开：服务费按固定积分价，冻结**不过期**，
+ * 直到调用方扣除或退回。冻结计入账户 held（可用余额相应减少）；扣除时写一条 charge 流水（purpose = service_fee，
+ * 用户端分类 service），退回不写流水。三个方法都幂等。
+ */
+export interface BillingServiceFeePort {
+  /** 冻结。可用余额不足返回 insufficient_balance（不透支、不记 insufficient_since）。 */
+  hold(input: ServiceFeeHoldInput): Promise<PortResult<ServiceFeeHold, 'insufficient_balance'>>;
+  /** 扣除（active → settled）；已扣除再调返回同一结果；已退回的抛异常。 */
+  settle(holdId: string): Promise<{ ledgerEntryId: string; amountMicros: number }>;
+  /** 退回（active → released）；已退回再调什么都不做；已扣除的抛异常。 */
+  release(holdId: string): Promise<void>;
+  /** 查冻结状态；不存在返回 null。 */
+  get(holdId: string): Promise<ServiceFeeHold | null>;
+}

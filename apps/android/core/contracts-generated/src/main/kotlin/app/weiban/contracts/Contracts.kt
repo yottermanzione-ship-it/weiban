@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.7. Regenerate: pnpm android:generate
+// Contract 3.8. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.7"
+const val CONTRACT_VERSION: String = "3.8"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -623,6 +623,28 @@ data class AdminScenarioModeUpdateInput(
     @SerialName("hasAdultContent") val `hasAdultContent`: Boolean? = null,
     @SerialName("enabled") val `enabled`: Boolean? = null,
     @SerialName("sortOrder") val `sortOrder`: Long? = null,
+)
+
+@Serializable
+data class AdminSupportTicket(
+    @SerialName("ticketId") val `ticketId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("category") val `category`: String?,
+    @SerialName("target") val `target`: AdminSupportTicketTarget?,
+    @SerialName("reason") val `reason`: String?,
+    @SerialName("text") val `text`: String,
+    @SerialName("images") val `images`: List<SupportImage>,
+    @SerialName("conversationId") val `conversationId`: Id?,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("status") val `status`: String,
+    @SerialName("replies") val `replies`: List<SupportReply>,
+    @SerialName("unseen") val `unseen`: Boolean,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("resolvedAt") val `resolvedAt`: Timestamp?,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("username") val `username`: String?,
+    @SerialName("handledBy") val `handledBy`: Id?,
 )
 
 typealias AdminUsageCallStatus = String
@@ -2290,6 +2312,10 @@ data class CompanionSettings(
     @SerialName("voiceId") val `voiceId`: Id? = null,
 )
 
+typealias ComplaintReason = String
+
+typealias ComplaintTargetType = String
+
 @Serializable
 data class ConfirmPublishRequest(
     @SerialName("draftId") val `draftId`: Id,
@@ -2533,6 +2559,32 @@ data class CreateRoleRequestInput(
     @SerialName("referenceText") val `referenceText`: String? = null,
     @SerialName("referenceImageIds") val `referenceImageIds`: List<Id>? = null,
     @SerialName("note") val `note`: String? = null,
+)
+
+@Serializable
+data class CreateSupportTicket(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("kind") val `kind`: SupportTicketKind,
+    @SerialName("category") val `category`: FeedbackCategory? = null,
+    @SerialName("target") val `target`: CreateSupportTicketTarget? = null,
+    @SerialName("reason") val `reason`: ComplaintReason? = null,
+    @SerialName("text") val `text`: String,
+    @SerialName("imageIds") val `imageIds`: List<Id>? = null,
+    @SerialName("conversationId") val `conversationId`: Id? = null,
+    @SerialName("characterId") val `characterId`: Id? = null,
+)
+
+@Serializable
+data class CreateSupportTicketInput(
+    @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("kind") val `kind`: SupportTicketKind,
+    @SerialName("category") val `category`: FeedbackCategory? = null,
+    @SerialName("target") val `target`: CreateSupportTicketInputTarget? = null,
+    @SerialName("reason") val `reason`: ComplaintReason? = null,
+    @SerialName("text") val `text`: String? = null,
+    @SerialName("imageIds") val `imageIds`: List<Id>? = null,
+    @SerialName("conversationId") val `conversationId`: Id? = null,
+    @SerialName("characterId") val `characterId`: Id? = null,
 )
 
 @Serializable
@@ -4699,6 +4751,8 @@ data class Favorite(
 )
 
 typealias FavoriteSource = JsonElement
+
+typealias FeedbackCategory = String
 
 @Serializable
 data class FocusEndpointsEndParams(
@@ -8512,6 +8566,90 @@ data class SupplementConflictInput(
 )
 
 @Serializable
+data class SupportAdminEndpointsGetParams(
+    @SerialName("ticketId") val `ticketId`: Id,
+)
+
+@Serializable
+data class SupportAdminEndpointsListQuery(
+    @SerialName("kind") val `kind`: SupportTicketKind? = null,
+    @SerialName("status") val `status`: SupportTicketStatus? = null,
+    @SerialName("userId") val `userId`: Id? = null,
+    @SerialName("targetId") val `targetId`: Id? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class SupportAdminEndpointsListResponse(
+    @SerialName("items") val `items`: List<AdminSupportTicket>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+    @SerialName("openCount") val `openCount`: Long,
+)
+
+@Serializable
+data class SupportAdminEndpointsReplyBody(
+    @SerialName("text") val `text`: String,
+    @SerialName("resolve") val `resolve`: Boolean? = null,
+)
+
+@Serializable
+data class SupportEndpointsAddReplyBody(
+    @SerialName("text") val `text`: String,
+)
+
+@Serializable
+data class SupportEndpointsListMineQuery(
+    @SerialName("kind") val `kind`: SupportTicketKind? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class SupportEndpointsListMineResponse(
+    @SerialName("items") val `items`: List<SupportTicket>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+    @SerialName("unseenCount") val `unseenCount`: Long,
+)
+
+@Serializable
+data class SupportImage(
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("url") val `url`: String?,
+)
+
+@Serializable
+data class SupportReply(
+    @SerialName("replyId") val `replyId`: Id,
+    @SerialName("from") val `from`: String,
+    @SerialName("text") val `text`: String,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class SupportTicket(
+    @SerialName("ticketId") val `ticketId`: Id,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("category") val `category`: String?,
+    @SerialName("target") val `target`: SupportTicketTarget?,
+    @SerialName("reason") val `reason`: String?,
+    @SerialName("text") val `text`: String,
+    @SerialName("images") val `images`: List<SupportImage>,
+    @SerialName("conversationId") val `conversationId`: Id?,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("status") val `status`: String,
+    @SerialName("replies") val `replies`: List<SupportReply>,
+    @SerialName("unseen") val `unseen`: Boolean,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("resolvedAt") val `resolvedAt`: Timestamp?,
+)
+
+typealias SupportTicketKind = String
+
+typealias SupportTicketStatus = String
+
+@Serializable
 data class SymptomTag(
     @SerialName("tagId") val `tagId`: Id,
     @SerialName("name") val `name`: String,
@@ -10127,6 +10265,12 @@ data class AdminRoleRequestHistoryItem(
 )
 
 @Serializable
+data class AdminSupportTicketTarget(
+    @SerialName("type") val `type`: String,
+    @SerialName("id") val `id`: Id,
+)
+
+@Serializable
 data class AdminUsageOverviewAccounts(
     @SerialName("total") val `total`: Long,
     @SerialName("available") val `available`: Long,
@@ -10368,6 +10512,18 @@ data class ConversationGroup(
     @SerialName("titleCustomized") val `titleCustomized`: Boolean,
     @SerialName("memberLimit") val `memberLimit`: Long,
     @SerialName("formerParticipants") val `formerParticipants`: List<Participant>? = null,
+)
+
+@Serializable
+data class CreateSupportTicketTarget(
+    @SerialName("type") val `type`: ComplaintTargetType,
+    @SerialName("id") val `id`: Id,
+)
+
+@Serializable
+data class CreateSupportTicketInputTarget(
+    @SerialName("type") val `type`: ComplaintTargetType,
+    @SerialName("id") val `id`: Id,
 )
 
 @Serializable
@@ -11807,6 +11963,12 @@ data class ServerUnsupportedFrameData(
 data class ShareRejectedDetailsRejectedItem(
     @SerialName("id") val `id`: Id,
     @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class SupportTicketTarget(
+    @SerialName("type") val `type`: String,
+    @SerialName("id") val `id`: Id,
 )
 
 typealias SystemContentParamsValue = JsonElement

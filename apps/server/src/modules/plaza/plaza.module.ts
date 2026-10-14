@@ -6,6 +6,7 @@
  *   PLAZA_PUBLISH_CHECK（ai-runtime，T-089）、PLAZA_CLASSIFICATION_POLICY（policy，T-088）。
  */
 import { Module } from '@nestjs/common';
+import { BillingModule } from '../billing/index.js';
 import { ContactsModule } from '../contacts/index.js';
 import { IdentityModule } from '../identity/index.js';
 import { MediaModule } from '../media/index.js';
@@ -30,7 +31,7 @@ import {
 import { PLAZA_ORIGIN_STATUS } from './tokens.js';
 
 @Module({
-  imports: [ContactsModule, IdentityModule, MediaModule, PushModule, RealtimeModule],
+  imports: [BillingModule, ContactsModule, IdentityModule, MediaModule, PushModule, RealtimeModule],
   controllers: [
     PlazaOfficialController,
     PlazaOfficialAdminController,

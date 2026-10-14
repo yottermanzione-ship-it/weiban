@@ -41,6 +41,8 @@ export * from './http/play.js';
 export * from './http/ai-runtime-extras.js';
 export * from './http/announcements.js';
 export * from './http/public-updates.js';
+// 3.8（总对照表 Q 清单）
+export * from './http/support.js';
 
 // WebSocket 帧
 export * from './ws.js';

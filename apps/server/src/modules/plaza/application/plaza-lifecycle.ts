@@ -35,6 +35,8 @@ import { PlazaStore } from './plaza-store.js';
 import { RoleRequestService } from './role-requests.service.js';
 
 export const PLAZA_DRAFT_SWEEP_JOB = 'plaza.draft_sweep';
+/** 0092（Q5）：已结束但积分仍冻结的申请制作，补做扣除 / 退回。 */
+export const PLAZA_ROLE_REQUEST_FEE_SWEEP_JOB = 'plaza.role_request_fee_sweep';
 
 @Injectable()
 export class PlazaLifecycle implements OnModuleInit {
@@ -55,6 +57,10 @@ export class PlazaLifecycle implements OnModuleInit {
     });
     await this.jobs.work(PLAZA_DRAFT_SWEEP_JOB, () => this.sweepDrafts());
     await this.jobs.schedule(PLAZA_DRAFT_SWEEP_JOB, '23 * * * *');
+    await this.jobs.work(PLAZA_ROLE_REQUEST_FEE_SWEEP_JOB, async () => {
+      await this.roleRequests.sweepFees();
+    });
+    await this.jobs.schedule(PLAZA_ROLE_REQUEST_FEE_SWEEP_JOB, '*/10 * * * *');
   }
 
   async sweepDrafts(): Promise<void> {
