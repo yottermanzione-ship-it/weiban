@@ -79,7 +79,12 @@ export class RechargeService {
     if (!parsed.success) throw new AppError('bad_request', '充值金额须为5至10000元，最多两位小数');
     const priceMicros = parsed.data.amountFen * 10_000;
     const options = await this.get();
-    return { priceMicros, points: priceMicros / MICROS_PER_POINT, paymentEnabled: false as const, contactHint: options.contactHint };
+    return {
+      priceMicros,
+      points: priceMicros / MICROS_PER_POINT,
+      paymentEnabled: false as const,
+      contactHint: options.contactHint,
+    };
   }
 
   async update(

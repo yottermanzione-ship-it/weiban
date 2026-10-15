@@ -1545,27 +1545,88 @@ function toWrite(m: AdminModel) {
   };
 }
 
-function LeaderboardSourceEditor() {
+export function LeaderboardSourceEditor() {
   const remote = useRemote(ModelAccessAdminEndpoints.getLeaderboardSource);
-  const [form, setForm] = useState({ label: '', url: 'https://arena.ai/leaderboard/chat/text', asOf: '' });
+  const [form, setForm] = useState({
+    label: '',
+    url: 'https://arena.ai/leaderboard/chat/text',
+    asOf: '',
+  });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const toast = useToast();
-  useEffect(() => { if (remote.data) setForm({ ...remote.data, asOf: remote.data.asOf ?? '' }); }, [remote.data]);
+  useEffect(() => {
+    if (remote.data) setForm({ ...remote.data, asOf: remote.data.asOf ?? '' });
+  }, [remote.data]);
   async function save(event: FormEvent) {
-    event.preventDefault(); setPending(true); setError('');
+    event.preventDefault();
+    setPending(true);
+    setError('');
     try {
-      await api.call(ModelAccessAdminEndpoints.updateLeaderboardSource, { body: { ...form, asOf: form.asOf || null } });
-      remote.refresh(); toast.show('榜单来源已保存');
-    } catch (e) { setError(errorText(e)); } finally { setPending(false); }
+      await api.call(ModelAccessAdminEndpoints.updateLeaderboardSource, {
+        body: { ...form, asOf: form.asOf || null },
+      });
+      remote.refresh();
+      toast.show('榜单来源已保存');
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setPending(false);
+    }
   }
-  return <form className="mm-panel" onSubmit={e => void save(e)}>
-    <h3>用户模型榜单来源</h3><p className="hint">名次使用下方模型的排行榜名次；来源仅支持Arena官方HTTPS链接，不自动抓取榜单。热门人数由真实全局聊天选择统计。</p>
-    <label>来源名称<input required maxLength={80} value={form.label} onChange={e => setForm({...form,label:e.target.value})} /></label>
-    <label>官方链接<input required type="url" value={form.url} onChange={e => setForm({...form,url:e.target.value})} /></label>
-    <label>参考日期<input type="date" value={form.asOf} onChange={e => setForm({...form,asOf:e.target.value})} /></label>
-    <Feedback error={error || remote.error} /><button type="submit" disabled={pending || remote.loading}>保存榜单来源</button>
-  </form>;
+  return (
+    <form className="mm-panel" onSubmit={(e) => void save(e)}>
+      <h3>用户模型榜单来源</h3>
+      <p className="hint">
+        名次使用下方模型的排行榜名次；来源仅支持Arena官方HTTPS链接，不自动抓取榜单。热门人数由真实全局聊天选择统计。
+      </p>
+      <label>
+        来源名称
+        <input
+          required
+          maxLength={80}
+          value={form.label}
+          onChange={(e) => setForm({ ...form, label: e.target.value })}
+        />
+      </label>
+      <label>
+        官方链接
+        <input
+          required
+          type="url"
+          value={form.url}
+          onChange={(e) => setForm({ ...form, url: e.target.value })}
+        />
+      </label>
+      <label>
+        参考日期
+        <input
+          type="date"
+          value={form.asOf}
+          onChange={(e) => setForm({ ...form, asOf: e.target.value })}
+        />
+      </label>
+      <Feedback error={error || remote.error} />
+      {toast.node}
+      <button type="submit" disabled={pending || remote.loading}>
+        保存榜单来源
+      </button>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => {
+          setForm(
+            remote.data
+              ? { ...remote.data, asOf: remote.data.asOf ?? '' }
+              : { label: '', url: 'https://arena.ai/leaderboard/chat/text', asOf: '' },
+          );
+          setError('');
+        }}
+      >
+        取消修改
+      </button>
+    </form>
+  );
 }
 
 function ModelsTab({

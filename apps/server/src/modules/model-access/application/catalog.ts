@@ -39,7 +39,13 @@ import {
   standardReplyMicros,
   unavailableReason,
 } from '../domain/rules.js';
-import { modelCatalog, modelRoutes, upstreams, selections, modelAccessSettings } from '../infra/db/schema.js';
+import {
+  modelCatalog,
+  modelRoutes,
+  upstreams,
+  selections,
+  modelAccessSettings,
+} from '../infra/db/schema.js';
 import {
   MODEL_ACCESS_CHARGE_QUERY,
   MODEL_PRICE_SOURCE,
@@ -107,22 +113,53 @@ export class CatalogService {
 
   // ---------- 管理后台 ----------
   async leaderboardSource() {
-    const [row] = await this.database.db.select().from(modelAccessSettings).where(eq(modelAccessSettings.key, 'leaderboard_source'));
+    const [row] = await this.database.db
+      .select()
+      .from(modelAccessSettings)
+      .where(eq(modelAccessSettings.key, 'leaderboard_source'));
     const source = ModelLeaderboardSource.safeParse(row?.value);
     return source.success ? source.data : null;
   }
   async setLeaderboardSource(operatorUserId: string, input: unknown) {
     const source = ModelLeaderboardSource.parse(input);
-    await this.database.transaction(async tx => {
-      await tx.db.insert(modelAccessSettings).values({ key:'leaderboard_source', value:source, updatedAt:this.clock.now(), updatedBy:operatorUserId }).onConflictDoUpdate({target:modelAccessSettings.key,set:{value:source,updatedAt:this.clock.now(),updatedBy:operatorUserId}});
-      await this.audit.record({ module:'model-access',action:'leaderboard_source.updated',actorType:'admin',actorId:operatorUserId,targetType:'model_settings',targetId:null },tx);
+    await this.database.transaction(async (tx) => {
+      await tx.db
+        .insert(modelAccessSettings)
+        .values({
+          key: 'leaderboard_source',
+          value: source,
+          updatedAt: this.clock.now(),
+          updatedBy: operatorUserId,
+        })
+        .onConflictDoUpdate({
+          target: modelAccessSettings.key,
+          set: { value: source, updatedAt: this.clock.now(), updatedBy: operatorUserId },
+        });
+      await this.audit.record(
+        {
+          module: 'model-access',
+          action: 'leaderboard_source.updated',
+          actorType: 'admin',
+          actorId: operatorUserId,
+          targetType: 'model_settings',
+          targetId: null,
+        },
+        tx,
+      );
     });
     return source;
   }
   async leaderboardInfo() {
     const source = await this.leaderboardSource();
-    const popular = await this.database.db.select({ modelKey:selections.chatModelKey, users:sql<number>`cast(count(*) as integer)` }).from(selections).where(sql`${selections.chatModelKey} IS NOT NULL`).groupBy(selections.chatModelKey);
-    return { source, popular: popular.filter((r):r is {modelKey:string;users:number}=>r.modelKey!==null) };
+    const popular = await this.database.db
+      .select({ modelKey: selections.chatModelKey, users: sql<number>`cast(count(*) as integer)` })
+      .from(selections)
+      .where(sql`${selections.chatModelKey} IS NOT NULL`)
+      .groupBy(selections.chatModelKey);
+    return {
+      source,
+      popular: popular.filter((r): r is { modelKey: string; users: number } => r.modelKey !== null),
+    };
   }
 
   async adminList(): Promise<AdminCatalogEntry[]> {

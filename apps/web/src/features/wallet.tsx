@@ -105,53 +105,112 @@ export function RechargePage() {
   const [contact, setContact] = useState<{ hint: string; points?: number } | null>(null);
   const data = options.data;
   const custom = selected === 'custom';
-  const tier = data?.tiers.find(t => t.tierId === selected) ?? data?.tiers[0];
+  const tier = data?.tiers.find((t) => t.tierId === selected) ?? data?.tiers[0];
   const validDecimal = /^\d+(\.\d{1,2})?$/.test(amount.trim());
   const [whole = '', decimal = ''] = amount.trim().split('.');
   const fen = validDecimal ? Number(whole) * 100 + Number(decimal.padEnd(2, '0')) : NaN;
   const valid = Number.isSafeInteger(fen) && fen >= RECHARGE_MIN_FEN && fen <= RECHARGE_MAX_FEN;
   async function quote() {
     if (pending || !data || (custom && !valid)) return;
-    setPending(true); setError('');
+    setPending(true);
+    setError('');
     try {
       if (custom) {
         const result = await api.call(BillingEndpoints.quoteRecharge, { body: { amountFen: fen } });
         setContact({ hint: result.contactHint, points: result.points });
       } else setContact({ hint: data.contactHint || '请联系管理员充值', points: tier?.points });
-    } catch (e) { setError(friendlyError(e)); }
-    finally { setPending(false); }
+    } catch (e) {
+      setError(friendlyError(e));
+    } finally {
+      setPending(false);
+    }
   }
-  return <main className="recharge-page">
-    <NavBar title="充值" fallback="/wallet" />
-    <p className="recharge-section">选择金额</p>
-    <div className="recharge-tiers" role="radiogroup" aria-label="选择金额">
-      {data?.tiers.map(t => <button key={t.tierId} type="button" role="radio"
-        aria-checked={!custom && t.tierId === tier?.tierId}
-        className={`recharge-tier ${!custom && t.tierId === tier?.tierId ? 'on' : ''}`}
-        disabled={pending} onClick={() => setSelected(t.tierId)}>
-        <span className="recharge-points"><b>{pointsText(t.points)}</b>{t.bonusPoints > 0 && <small>送 {formatPoints(t.bonusPoints)} 积分</small>}</span>
-        <span className="recharge-price tabular">{yuanText(t.priceMicros)}</span>
-      </button>)}
-      <button type="button" role="radio" aria-checked={custom} disabled={pending}
-        className={`recharge-tier ${custom ? 'on' : ''}`} onClick={() => setSelected('custom')}>自定义金额</button>
-    </div>
-    {custom && <div className="field-rows"><label className="field-row"><span>金额（元）</span>
-      <input aria-label="自定义充值金额" inputMode="decimal" value={amount} maxLength={12} disabled={pending}
-        onChange={e => { setAmount(e.target.value); setError(''); }} placeholder="最低5元" />
-    </label><p className="hint page-note">5～10,000元，最多两位小数</p>
-    {amount && !valid && <p role="alert" className="error page-note">请输入5～10,000元的金额，最多两位小数</p>}</div>}
-    {options.loading && <p className="empty">正在读取档位…</p>}
-    <div className="recharge-bottom"><button type="button" className="primary full"
-      disabled={!data || pending || (custom ? !valid : !tier)} onClick={() => void quote()}>
-      {pending ? '正在确认金额…' : '联系管理员充值'}</button>
-      <p className="recharge-note">积分仅用于本应用内的 AI 对话、通话等消耗，不可提现、不可转让。1 元 = 100 积分。</p>
-    </div>
-    {(error || options.error) && <p role="alert" className="notice-bar">{error || options.error}</p>}
-    {contact && <Dialog actions={[{ label: '知道了', primary: true, onClick: () => setContact(null) }]}>
-      {contact.points != null && <p>充值金额对应 {pointsText(contact.points)}</p>}
-      <p>{contact.hint}</p><p className="hint">尚未支付或到账</p>
-    </Dialog>}
-  </main>;
+  return (
+    <main className="recharge-page">
+      <NavBar title="充值" fallback="/wallet" />
+      <p className="recharge-section">选择金额</p>
+      <div className="recharge-tiers" role="radiogroup" aria-label="选择金额">
+        {data?.tiers.map((t) => (
+          <button
+            key={t.tierId}
+            type="button"
+            role="radio"
+            aria-checked={!custom && t.tierId === tier?.tierId}
+            className={`recharge-tier ${!custom && t.tierId === tier?.tierId ? 'on' : ''}`}
+            disabled={pending}
+            onClick={() => setSelected(t.tierId)}
+          >
+            <span className="recharge-points">
+              <b>{pointsText(t.points)}</b>
+              {t.bonusPoints > 0 && <small>送 {formatPoints(t.bonusPoints)} 积分</small>}
+            </span>
+            <span className="recharge-price tabular">{yuanText(t.priceMicros)}</span>
+          </button>
+        ))}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={custom}
+          disabled={pending}
+          className={`recharge-tier ${custom ? 'on' : ''}`}
+          onClick={() => setSelected('custom')}
+        >
+          自定义金额
+        </button>
+      </div>
+      {custom && (
+        <div className="field-rows">
+          <label className="field-row">
+            <span>金额（元）</span>
+            <input
+              aria-label="自定义充值金额"
+              inputMode="decimal"
+              value={amount}
+              maxLength={12}
+              disabled={pending}
+              onChange={(e) => {
+                setAmount(e.target.value);
+                setError('');
+              }}
+              placeholder="最低5元"
+            />
+          </label>
+          <p className="hint page-note">5～10,000元，最多两位小数</p>
+          {amount && !valid && (
+            <p role="alert" className="error page-note">
+              请输入5～10,000元的金额，最多两位小数
+            </p>
+          )}
+        </div>
+      )}
+      {options.loading && <p className="empty">正在读取档位…</p>}
+      <div className="recharge-bottom">
+        <button
+          type="button"
+          className="primary full"
+          disabled={!data || pending || (custom ? !valid : !tier)}
+          onClick={() => void quote()}
+        >
+          {pending ? '正在确认金额…' : '联系管理员充值'}
+        </button>
+        <p className="recharge-note">
+          积分仅用于本应用内的 AI 对话、通话等消耗，不可提现、不可转让。1 元 = 100 积分。
+        </p>
+      </div>
+      {(error || options.error) && (
+        <p role="alert" className="notice-bar">
+          {error || options.error}
+        </p>
+      )}
+      {contact && (
+        <Dialog actions={[{ label: '知道了', primary: true, onClick: () => setContact(null) }]}>
+          {contact.points != null && <p>充值金额对应 {pointsText(contact.points)}</p>}
+          <p>{contact.hint}</p>
+          <p className="hint">尚未支付或到账</p>
+        </Dialog>
+      )}
+    </main>
+  );
 }
 
 // ---------- 积分明细（6.4） ----------
@@ -471,7 +530,7 @@ export function PricesPage() {
     <main>
       <NavBar title="AI 模型价格" fallback="/wallet" />
       {section('聊天模型', chat)}
-      {section('成人模式模型', adult)}
+      {section('私密模式模型', adult)}
       <p className="hint page-note">
         「约每条」按一次普通回复估算，实际按字数多少略有浮动；每条消息的实际消耗可在积分明细里查看。
       </p>

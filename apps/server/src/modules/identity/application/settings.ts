@@ -41,7 +41,13 @@ import {
 } from '../../../platform/index.js';
 import { isValidTimeZone } from '../domain/rules.js';
 import { MEDIA_READ_PORT, MEDIA_SYSTEM_PORT } from '../../media/index.js';
-import { notificationSettings, preferences, profiles, users, loginAliases } from '../infra/db/schema.js';
+import {
+  notificationSettings,
+  preferences,
+  profiles,
+  users,
+  loginAliases,
+} from '../infra/db/schema.js';
 
 type ProfileRow = typeof profiles.$inferSelect;
 type NotificationRow = typeof notificationSettings.$inferSelect;
@@ -144,7 +150,12 @@ export class SettingsService
   // ---------- 资料 ----------
 
   private aliasValue(row: typeof users.$inferSelect) {
-    return { username: row.currentAlias ?? row.username, nextChangeAt: row.aliasChangedAt ? new Date(row.aliasChangedAt.getTime() + 7 * 86400_000).toISOString() : null };
+    return {
+      username: row.currentAlias ?? row.username,
+      nextChangeAt: row.aliasChangedAt
+        ? new Date(row.aliasChangedAt.getTime() + 7 * 86400_000).toISOString()
+        : null,
+    };
   }
   async getAlias(userId: string) {
     const [row] = await this.database.db.select().from(users).where(eq(users.id, userId));
@@ -155,23 +166,59 @@ export class SettingsService
     const parsed = Username.safeParse(username);
     if (!parsed.success) throw new AppError('bad_request', '微伴号格式不正确');
     const normalized = parsed.data.toLowerCase();
-    return this.database.transaction(async tx => {
+    return this.database.transaction(async (tx) => {
       const [row] = await tx.db.select().from(users).where(eq(users.id, userId)).for('update');
       if (!row || row.status !== 'active') throw new AppError('not_found', '账号不存在');
-      if ((row.currentAlias ?? row.username).toLowerCase() === normalized) return this.aliasValue(row);
+      if ((row.currentAlias ?? row.username).toLowerCase() === normalized)
+        return this.aliasValue(row);
       const now = this.clock.now();
       const next = row.aliasChangedAt ? row.aliasChangedAt.getTime() + 7 * 86400_000 : 0;
-      if (now.getTime() < next) throw new AppError('rate_limited', '每周只能修改一次微伴号', { status: 429, details: { nextChangeAt: new Date(next).toISOString() } });
+      if (now.getTime() < next)
+        throw new AppError('rate_limited', '每周只能修改一次微伴号', {
+          status: 429,
+          details: { nextChangeAt: new Date(next).toISOString() },
+        });
       // Reserve original name too, including accounts introduced by an older CLI/import path.
-      await tx.db.insert(loginAliases).values({ alias: row.username.toLowerCase(), userId, createdAt: row.createdAt }).onConflictDoNothing();
-      const [legacy] = await tx.db.select({ id: users.id }).from(users).where(sql`lower(${users.username}) = ${normalized}`).limit(1);
+      await tx.db
+        .insert(loginAliases)
+        .values({ alias: row.username.toLowerCase(), userId, createdAt: row.createdAt })
+        .onConflictDoNothing();
+      const [legacy] = await tx.db
+        .select({ id: users.id })
+        .from(users)
+        .where(sql`lower(${users.username}) = ${normalized}`)
+        .limit(1);
       if (legacy && legacy.id !== userId) throw new AppError('username_taken', '微伴号已被占用');
-      await tx.db.insert(loginAliases).values({ alias: normalized, userId, createdAt: now }).onConflictDoNothing();
-      const [owner] = await tx.db.select().from(loginAliases).where(eq(loginAliases.alias, normalized));
+      await tx.db
+        .insert(loginAliases)
+        .values({ alias: normalized, userId, createdAt: now })
+        .onConflictDoNothing();
+      const [owner] = await tx.db
+        .select()
+        .from(loginAliases)
+        .where(eq(loginAliases.alias, normalized));
       if (owner?.userId !== userId) throw new AppError('username_taken', '微伴号已被占用');
-      const [updated] = await tx.db.update(users).set({ currentAlias: parsed.data, aliasChangedAt: now, updatedAt: now }).where(eq(users.id, userId)).returning();
-      await this.audit.record({ module: 'identity', action: 'alias.updated', actorType: 'user', actorId: userId, targetType: 'user', targetId: userId, details: { previous: row.currentAlias ?? row.username, username: parsed.data } }, tx);
-      await this.outbox.publish(tx, 'identity.profile_updated', 'identity', { userId, changedFields: ['username'] });
+      const [updated] = await tx.db
+        .update(users)
+        .set({ currentAlias: parsed.data, aliasChangedAt: now, updatedAt: now })
+        .where(eq(users.id, userId))
+        .returning();
+      await this.audit.record(
+        {
+          module: 'identity',
+          action: 'alias.updated',
+          actorType: 'user',
+          actorId: userId,
+          targetType: 'user',
+          targetId: userId,
+          details: { previous: row.currentAlias ?? row.username, username: parsed.data },
+        },
+        tx,
+      );
+      await this.outbox.publish(tx, 'identity.profile_updated', 'identity', {
+        userId,
+        changedFields: ['username'],
+      });
       return this.aliasValue(updated!);
     });
   }
@@ -381,7 +428,10 @@ export class SettingsService
     if (userIds.length > 500) throw new AppError('bad_request', '一次最多查询 500 个用户 ID');
     if (userIds.length === 0) return {};
     const rows = await this.database.db
-      .select({ id: users.id, username: sql<string>`coalesce(${users.currentAlias}, ${users.username})` })
+      .select({
+        id: users.id,
+        username: sql<string>`coalesce(${users.currentAlias}, ${users.username})`,
+      })
       .from(users)
       .where(inArray(users.id, [...new Set(userIds)]));
     return Object.fromEntries(rows.map((row) => [row.id, row.username]));

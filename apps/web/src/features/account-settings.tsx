@@ -47,7 +47,9 @@ export function AccountSecurityPage() {
   return (
     <main>
       <NavBar title="账号与安全" fallback="/settings" />
-      <MenuGroup><AccountAliasRow /></MenuGroup>
+      <MenuGroup>
+        <AccountAliasRow />
+      </MenuGroup>
       <MenuGroup>
         <MenuRow
           label="修改密码"
@@ -231,7 +233,11 @@ export function PrivacySettingsPage() {
   return (
     <main>
       <NavBar title="隐私" fallback="/settings" />
-      <MenuGroup>{["朋友权限","黑名单","不让TA看我的朋友圈","不看TA的朋友圈"].map(label=><MenuRow key={label} label={label} onClick={()=>showToast("暂未开放",2000,"info")} />)}</MenuGroup>
+      <MenuGroup>
+        {['朋友权限', '黑名单', '不让TA看我的朋友圈', '不看TA的朋友圈'].map((label) => (
+          <MenuRow key={label} label={label} onClick={() => showToast('暂未开放', 2000, 'info')} />
+        ))}
+      </MenuGroup>
       <MenuGroup>
         <SwitchRow
           label="允许角色拉我进群"
@@ -285,7 +291,9 @@ export function GeneralSettingsPage() {
   return (
     <main>
       <NavBar title="通用" fallback="/settings" />
-      <MenuGroup><HistoryRecoveryRow /></MenuGroup>
+      <MenuGroup>
+        <HistoryRecoveryRow />
+      </MenuGroup>
       <MenuGroup>
         <MenuRow label="深色模式" value={schemeNames[scheme]} onClick={() => setChoice('scheme')} />
         <MenuRow

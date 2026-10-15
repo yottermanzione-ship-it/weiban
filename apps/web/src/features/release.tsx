@@ -65,34 +65,13 @@ function useAnnouncementList() {
 
 // ---------- 启动检查与弹窗 ----------
 
-type Popup =
-  | { kind: 'required'; message: string | null }
-  | { kind: 'whatsNew'; notes: ReleaseNote[] }
-  | { kind: 'announcement'; item: Announcement };
+type Popup = { kind: 'announcement'; item: Announcement };
 
 /** 挂在已登录的 Shell 里。 */
 export function ReleaseCenter() {
   const [queue, setQueue] = useState<Popup[]>([]);
   const run = useCallback(async () => {
     const next: Popup[] = [];
-    try {
-      const check = await api.call(ReleaseEndpoints.checkVersion, {
-        query: { platform, versionCode: WEB_BUILD },
-        networkOnly: true,
-      });
-      if (check.updateRequired) next.push({ kind: 'required', message: check.forceUpdateMessage });
-    } catch {
-      // 检查失败不打扰
-    }
-    try {
-      const notes = await api.call(ReleaseEndpoints.listReleaseNotes, {
-        query: { platform, versionCode: WEB_BUILD },
-        networkOnly: true,
-      });
-      if (notes.whatsNew.length > 0) next.push({ kind: 'whatsNew', notes: notes.whatsNew });
-    } catch {
-      // 同上
-    }
     try {
       const items = await loadAnnouncements();
       for (const item of items
@@ -103,7 +82,7 @@ export function ReleaseCenter() {
       // 同上
     }
     setQueue((current) => {
-      const key = (p: Popup) => (p.kind === 'announcement' ? p.item.announcementId : p.kind);
+      const key = (p: Popup) => p.item.announcementId;
       const seen = new Set(current.map(key));
       return [...current, ...next.filter((p) => !seen.has(key(p)))];
     });
@@ -119,49 +98,6 @@ export function ReleaseCenter() {
   const popup = queue[0];
   if (!popup) return null;
   const dismiss = () => setQueue((q) => q.slice(1));
-  if (popup.kind === 'required')
-    return (
-      <Dialog
-        title="需要更新到新版本"
-        actions={[{ label: '刷新', primary: true, onClick: () => window.location.reload() }]}
-      >
-        <p className="hint">
-          {popup.message ?? '当前版本已停止使用，刷新页面即可更新到最新版本。'}
-        </p>
-      </Dialog>
-    );
-  if (popup.kind === 'whatsNew')
-    return (
-      <Dialog
-        title="本版新功能"
-        actions={[
-          {
-            label: '知道了',
-            primary: true,
-            onClick: () => {
-              void api
-                .call(ReleaseEndpoints.markReleaseNotesSeen, {
-                  body: { platform, versionCode: WEB_BUILD },
-                })
-                .catch(() => {});
-              dismiss();
-            },
-          },
-        ]}
-      >
-        <div className="announcement-body">
-          {popup.notes.map((note) => (
-            <section key={note.releaseNoteId} className="release-note">
-              <strong>
-                {note.version}
-                {note.title ? ` · ${note.title}` : ''}
-              </strong>
-              <p>{note.body}</p>
-            </section>
-          ))}
-        </div>
-      </Dialog>
-    );
   return (
     <Dialog
       title={popup.item.title}

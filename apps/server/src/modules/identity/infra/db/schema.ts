@@ -87,11 +87,17 @@ export const sessions = identitySchema.table(
 );
 
 /** 我的资料（ACC-02），每个用户一行，注册时写入默认值。 */
-export const loginAliases = identitySchema.table('login_aliases', {
-  alias: text('alias').primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  createdAt: tz('created_at').notNull(),
-}, (t) => [index('login_aliases_user_idx').on(t.userId)]);
+export const loginAliases = identitySchema.table(
+  'login_aliases',
+  {
+    alias: text('alias').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: tz('created_at').notNull(),
+  },
+  (t) => [index('login_aliases_user_idx').on(t.userId)],
+);
 
 export const profiles = identitySchema.table('profiles', {
   userId: uuid('user_id')

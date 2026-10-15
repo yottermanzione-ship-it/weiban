@@ -6,7 +6,7 @@
 
 建议仅一条迁移（根会话已分配0096）：users加currentAlias nullable、aliasChangedAt nullable；新增identity.login_aliases（lowercase alias主键、userId FK级联、createdAt），回填所有既有username。注册在同事务保留初始登录名；改号在user行锁内检查7×24小时、申请新alias唯一占用，历史alias永久归该user以保旧账号登录且不允许被他人抢走。本人复用旧alias仍受每周限制，完全未变则幂等不耗次数；唯一约束处理跨用户并发。全部按现有Username字符规则/大小写不敏感，不可改userId/密码/session。
 
-新增GET/PATCH /me/alias返回当前别名、nextChangeAt；PATCH只收username（别名）。CurrentUser.username仍为可用于登录的名称，输出currentAlias??原username，旧客户端无新必填字段；原数据库username不变。登录先解析别名/原名到同一用户，限频使用该用户原username对应的旧账户限频键，防历史alias绕开账户限频；原用户名仍兼容。当前用户/重新登录/恢复/管理员目录均输出同一当前别名，管理员原名或历史名检索仍能定位同userId。注销级联清alias，管理员审计记录变更及原userId，不改业务关联。
+新增GET/PATCH /me/alias返回当前别名、nextChangeAt；PATCH只收username（别名）。CurrentUser.username仍为可用于登录的名称，输出currentAlias??原username，旧客户端无新必填字段；原数据库username不变。登录先解析别名/原名到同一用户，限频使用该用户原username对应的旧账户限频键，防历史alias绕开账户限频；原用户名仍兼容。当前用户/重新登录/恢复/管理员目录均输出同一当前别名，管理员目录按同userId显示当前别名；CLI原名或历史名查询仍能定位同userId（现有网页管理员目录没有用户名搜索接口，不新增搜索）。注销级联清alias，管理员审计记录变更及原userId，不改业务关联。
 
 模型：既有modelCatalog.leaderboardRank为管理员排序，继续复用；公开单一排行榜，不加角色扮演/成人筛选。来源说明放现有model_access.settings的leaderboard_source键（标签、官方https URL、更新日期），新增小型读/管理员写接口及现有后台配置入口，无需迁移。热门数统计已有selections.chatModelKey的当前选用人数（每user一行，排除平台默认null），诚实标注“当前全局聊天模型选择”，不当调用量/实时Arena排名。可并列后台配置榜/热门榜，普通选择仍只chat，不造新模型路由。
 

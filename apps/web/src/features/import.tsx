@@ -485,7 +485,7 @@ function JobStep({ job, onJob }: { job: ImportJob; onJob(job: ImportJob): void }
                   : `约 ${pointsText(microsToPoints(job.estimatedMicros))}`}
               </strong>
             </div>
-            <p className="hint pad">按当前模型和价目表估算，实际以积分明细为准</p>
+            <p className="hint pad">按当前模型和 AI 模型价格估算，实际以积分明细为准</p>
             <div className="switch-row">
               预计用时
               <span>

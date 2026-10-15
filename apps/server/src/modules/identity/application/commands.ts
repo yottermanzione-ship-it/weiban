@@ -72,7 +72,9 @@ export class IdentityCommands {
           updatedAt: now,
         });
         await this.settings.createDefaults(tx, userId, timeZone);
-        await tx.db.insert(loginAliases).values({ alias: username.toLowerCase(), userId, createdAt: now });
+        await tx.db
+          .insert(loginAliases)
+          .values({ alias: username.toLowerCase(), userId, createdAt: now });
         await this.audit.record(
           {
             module: 'identity',
@@ -101,7 +103,9 @@ export class IdentityCommands {
       const [user] = await tx.db
         .select()
         .from(users)
-        .where(sql`(lower(${users.username}) = lower(${username}) OR EXISTS (SELECT 1 FROM ${loginAliases} a WHERE a.user_id = ${users.id} AND a.alias = lower(${username})))`)
+        .where(
+          sql`(lower(${users.username}) = lower(${username}) OR EXISTS (SELECT 1 FROM ${loginAliases} a WHERE a.user_id = ${users.id} AND a.alias = lower(${username})))`,
+        )
         .for('update');
       if (!user || user.status !== 'active') throw new CommandError(`找不到账号 ${username}`);
       await tx.db
@@ -148,7 +152,10 @@ export class IdentityCommands {
   /** 列出正常状态的普通用户（非管理员），供本机运维脚本（setup:local-model）使用。不返回敏感字段。 */
   async listActiveRegularUsers(): Promise<Array<{ id: string; username: string }>> {
     return this.database.db
-      .select({ id: users.id, username: sql<string>`coalesce(${users.currentAlias}, ${users.username})` })
+      .select({
+        id: users.id,
+        username: sql<string>`coalesce(${users.currentAlias}, ${users.username})`,
+      })
       .from(users)
       .where(sql`${users.role} = 'user' AND ${users.status} = 'active'`)
       .orderBy(users.createdAt);
@@ -160,7 +167,9 @@ export class IdentityCommands {
       const [user] = await tx.db
         .select()
         .from(users)
-        .where(sql`(lower(${users.username}) = lower(${username}) OR EXISTS (SELECT 1 FROM ${loginAliases} a WHERE a.user_id = ${users.id} AND a.alias = lower(${username})))`)
+        .where(
+          sql`(lower(${users.username}) = lower(${username}) OR EXISTS (SELECT 1 FROM ${loginAliases} a WHERE a.user_id = ${users.id} AND a.alias = lower(${username})))`,
+        )
         .for('update');
       if (!user || user.status !== 'active') throw new CommandError(`找不到账号 ${username}`);
       await tx.db

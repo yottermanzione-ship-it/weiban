@@ -152,7 +152,9 @@ export class AccountService {
           updatedAt: now,
         });
         await this.settings.createDefaults(tx, userId, input.device.timeZone);
-        await tx.db.insert(loginAliases).values({ alias: input.username.toLowerCase(), userId, createdAt: now });
+        await tx.db
+          .insert(loginAliases)
+          .values({ alias: input.username.toLowerCase(), userId, createdAt: now });
         if (code !== null) {
           await tx.db
             .update(invites)
@@ -310,7 +312,12 @@ export class AccountService {
     const [row] = await executor.db
       .select()
       .from(users)
-      .where(or(sql`lower(${users.username}) = lower(${username})`, sql`EXISTS (SELECT 1 FROM ${loginAliases} a WHERE a.user_id = ${users.id} AND a.alias = lower(${username}))`));
+      .where(
+        or(
+          sql`lower(${users.username}) = lower(${username})`,
+          sql`EXISTS (SELECT 1 FROM ${loginAliases} a WHERE a.user_id = ${users.id} AND a.alias = lower(${username}))`,
+        ),
+      );
     return row ?? null;
   }
 

@@ -140,7 +140,7 @@ export function UsagePage() {
       {editing && wallet.data && (
         <FieldSheet
           title="积分提醒线（积分）"
-          initial={String(wallet.data.lowBalanceThresholdPoints ?? "")}
+          initial={String(wallet.data.lowBalanceThresholdPoints ?? '')}
           maxLength={10}
           required
           pending={pending}

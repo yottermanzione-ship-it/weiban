@@ -17,7 +17,9 @@ export class SyncRunner {
   private lifetime = new AbortController();
   private stopped = false;
   private snapshots = 0;
-  get snapshotRevision(): number { return this.snapshots; }
+  get snapshotRevision(): number {
+    return this.snapshots;
+  }
 
   constructor(
     initial: unknown,
@@ -28,7 +30,9 @@ export class SyncRunner {
   get state(): LocalSyncState {
     return this.engine.state;
   }
-  get isRebuilding(): boolean { return this.engine.isRebuilding; }
+  get isRebuilding(): boolean {
+    return this.engine.isRebuilding;
+  }
   get active(): boolean {
     return !this.stopped;
   }

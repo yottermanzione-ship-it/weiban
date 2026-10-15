@@ -234,8 +234,15 @@ export const RechargeOptions = z.object({
 export type RechargeOptions = z.infer<typeof RechargeOptions>;
 export const RECHARGE_MIN_FEN = 500;
 export const RECHARGE_MAX_FEN = 1_000_000;
-export const RechargeQuoteRequest = z.object({ amountFen: z.number().int().min(RECHARGE_MIN_FEN).max(RECHARGE_MAX_FEN) }).strict();
-export const RechargeQuote = z.object({ priceMicros: PositiveMoneyMicros, points: NonNegativePoints, paymentEnabled: z.literal(false), contactHint: z.string().max(200) });
+export const RechargeQuoteRequest = z
+  .object({ amountFen: z.number().int().min(RECHARGE_MIN_FEN).max(RECHARGE_MAX_FEN) })
+  .strict();
+export const RechargeQuote = z.object({
+  priceMicros: PositiveMoneyMicros,
+  points: NonNegativePoints,
+  paymentEnabled: z.literal(false),
+  contactHint: z.string().max(200),
+});
 
 /** v3.3：后台修改充值配置（档位按顺序展示；tierId 不能重复）。 */
 export const UpdateRechargeOptionsRequest = z.object({
@@ -254,7 +261,14 @@ export const UpdateRechargeOptionsRequest = z.object({
 // ---------- 用户端接口 ----------
 
 export const BillingEndpoints = {
-  quoteRecharge: defineEndpoint({ method: 'POST', path: `${API_PREFIX}/billing/recharge-quote`, auth: 'user', body: RechargeQuoteRequest, response: RechargeQuote, summary: '3.14：只读自定义充值报价，5~10000元、整数分，不创建订单或到账' }),
+  quoteRecharge: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/billing/recharge-quote`,
+    auth: 'user',
+    body: RechargeQuoteRequest,
+    response: RechargeQuote,
+    summary: '3.14：只读自定义充值报价，5~10000元、整数分，不创建订单或到账',
+  }),
   getWallet: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/billing/wallet`,
