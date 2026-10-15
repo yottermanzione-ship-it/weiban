@@ -1,6 +1,6 @@
 # A4 第二批：消息转发开发交接
 
-独立 worktree `C:\wb-dev\wb-a4-forward`、分支 `codex/chat-forward`、基线 `8ac8d1f`。中途保护提交 `dda18da`、`d6e58a8`。本批为开发自查，不是独立质量验收；没有合主线、修改共享目录、GitHub 操作或部署。
+独立 worktree `C:\wb-dev\wb-a4-forward`、分支 `codex/chat-forward`、基线 `8ac8d1f`。完整实现提交 `1030dc0296727d49a0d2ea6797e70c75d6d13be6`；中途保护提交 `dda18da4ecdbfa58398f4c8fee29c40115e30418`、`d6e58a8bf181f2ecacf45710bbad67cd6490c05b`。本批为开发自查，不是独立质量验收；没有合主线、修改共享目录、GitHub 操作或部署。
 
 ## 已实现
 
@@ -34,6 +34,8 @@
 ## 检查与限制
 
 相关 contracts/client-core/server/web typecheck、受影响 ESLint、依赖边界检查通过；contracts generate/build、server/web 生产 build 通过。client-core 没有 build 脚本，只有 typecheck；第一次尝试该不存在命令的错误已核实，未记为通过。安卓生成及 --check 通过，未编译。没有写测试或跑测试套件。
+
+最终 server/web typecheck 与生产 build 再次通过（网页构建号 413396）；受影响 ESLint、依赖边界、生成物 check、Prettier 与 `git diff --check 8ac8d1f..HEAD`、工作区差异空白检查通过。临时文件没有进入提交。
 
 本机 Docker daemon 不可用，没有可复用临时 PostgreSQL。因此新端点真实 HTTP、迁移、事务回滚、跨目标并发/重复请求以及媒体权限失败均未实际执行，只完成编译与源码核对；上线前应在有数据库的开发环境复核。未调用收费模型，媒体识别与真实角色回复、香港端到端、Safari 真机长按/滑动未验证。新卡超过 3 项媒体时余项保留并可查看，AI按未识别说明降级。尚未再次转发合并记录，不做无限嵌套。生产 build 保留既有大包提示。
 
