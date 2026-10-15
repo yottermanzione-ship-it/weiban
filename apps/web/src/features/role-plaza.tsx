@@ -5,8 +5,8 @@ import { SearchField } from './search-field.js';
  *   两边都能点赞、评论、添加、查看基本人设。其他所有角色广场入口统一到这一页。
  * - 角色创建（/roles/create）：自定义人设 / 聊天导入 / 申请制作。
  *   申请制作（/role-requests/new）：提交表单 → 我的申请（/role-requests）→ 申请详情（/role-requests/:id，推送会打开它）。
- *   状态变化有红点（data.changed(role_requests)）；扣积分预留（价格目前 0，不扣）。
- * 契约：PlazaOfficialEndpoints、RoleRequestEndpoints（3.5）。
+ *   状态变化有红点（data.changed(role_requests)）；按真实会员免费次数计价，超额200积分冻结，完成扣除，拒绝/撤回退回。
+ * 契约：PlazaOfficialEndpoints、RoleRequestEndpoints（3.15）。
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -782,6 +782,7 @@ export function RoleRequestFormPage() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [expiredKey, setExpiredKey] = useState(false);
+  const [blockedKey, setBlockedKey] = useState(false);
   const requestId = useRef(crypto.randomUUID());
   const file = useRef<HTMLInputElement>(null);
   const previews = useRef<string[]>([]);
@@ -810,7 +811,7 @@ export function RoleRequestFormPage() {
     }
   }
   async function submit() {
-    if (!roleName.trim() || !config.data || expiredKey) return;
+    if (!roleName.trim() || !config.data || blockedKey) return;
     setPending(true);
     setError('');
     try {
@@ -839,6 +840,7 @@ export function RoleRequestFormPage() {
         setError('免费次数或报价已变化，请核对更新后的金额，再点提交确认。');
       } else if (code(e) === 'conflict' && details?.reason === 'request_id_expired') {
         setExpiredKey(!!details.canRenew);
+        setBlockedKey(true);
         setError(
           details.canRenew
             ? '旧提交编号已失效。请明确更换新编号，核对报价后再提交；不会自动扣费。'
@@ -996,6 +998,7 @@ export function RoleRequestFormPage() {
             onClick={() => {
               requestId.current = crypto.randomUUID();
               setExpiredKey(false);
+              setBlockedKey(false);
               config.refresh();
               setError('已更换新编号。请核对报价后再次提交确认。');
             }}
@@ -1006,7 +1009,7 @@ export function RoleRequestFormPage() {
         <button
           className="primary"
           disabled={
-            pending || uploading || expiredKey || !config.data || config.loading || !roleName.trim()
+            pending || uploading || blockedKey || !config.data || config.loading || !roleName.trim()
           }
         >
           {pending
@@ -1118,6 +1121,9 @@ export function RoleRequestDetailPage() {
             />
             {data.sourceWork && <MenuRow label="出处" chevron={false} value={data.sourceWork} />}
             <MenuRow label="提交时间" chevron={false} value={dateText(data.createdAt)} />
+            {data.freeQuotaApplied && (
+              <MenuRow label="申请费用" chevron={false} value="使用免费次数" />
+            )}
             {data.pointsCost > 0 && (
               <MenuRow
                 label="积分"
