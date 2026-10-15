@@ -34,9 +34,11 @@ export class MembershipService implements IdentityMembershipReadPort {
     const [user] = input ? await query.for('share') : await query;
     if (!user || user.status !== 'active') throw new AppError('not_found', '账号不存在');
     const [row] = await db.select().from(memberships).where(eq(memberships.userId, userId));
+    const checkedAt = this.clock.now();
     return {
+      checkedAt: checkedAt.toISOString(),
       tier:
-        row?.proPlusUntil && row.proPlusUntil.getTime() > this.clock.nowMs() ? 'pro_plus' : 'free',
+        row?.proPlusUntil && row.proPlusUntil.getTime() > checkedAt.getTime() ? 'pro_plus' : 'free',
       expiresAt: row?.proPlusUntil?.toISOString() ?? null,
       updatedAt: row?.updatedAt.toISOString() ?? null,
     };

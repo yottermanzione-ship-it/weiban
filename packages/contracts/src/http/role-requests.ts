@@ -63,6 +63,8 @@ export const RoleRequest = z.object({
   addedToContacts: z.boolean(),
   /** 提交时的制作价格（积分）；0 表示免费。 */
   pointsCost: z.number().int().nonnegative(),
+  /** 3.15：本申请成功提交时占一次免费名额；拒绝/撤回不退次数。旧数据缺省false。 */
+  freeQuotaApplied: z.boolean().optional(),
   /** 实际扣除的积分：完成后 = pointsCost；未完成、被拒、撤回为 0。 */
   pointsCharged: z.number().int().nonnegative(),
   /** 状态变化后我还没看过（红点）。 */
@@ -82,9 +84,23 @@ export const RoleRequestConfig = z.object({
 });
 export type RoleRequestConfig = z.infer<typeof RoleRequestConfig>;
 
+export const RoleRequestQuota = z.object({
+  quotedAt: Timestamp,
+  tier: z.enum(['free', 'pro_plus']),
+  limit: z.literal(5),
+  used: z.number().int().nonnegative(),
+  remaining: z.number().int().nonnegative(),
+  nextPointsCost: z.union([z.literal(0), z.literal(200)]),
+  periodStart: Timestamp,
+  periodEnd: Timestamp,
+  timeZone: z.literal('Asia/Shanghai'),
+});
+export type RoleRequestQuota = z.infer<typeof RoleRequestQuota>;
 export const CreateRoleRequest = z.object({
   /** 客户端生成的幂等键：同一键重复提交返回同一申请。 */
   clientRequestId: Id,
+  /** 3.15：确认本次0/200积分；旧客户端需要收费时必须更新确认，不偷偷冻结。 */
+  expectedPointsCost: z.union([z.literal(0), z.literal(200)]).optional(),
   roleName: z.string().trim().min(1).max(32),
   basis: CharacterBasis.nullable().optional(),
   categoryId: z.string().max(40).nullable().optional(),
@@ -101,8 +117,8 @@ export const RoleRequestEndpoints = {
     method: 'GET',
     path: `${API_PREFIX}/role-requests/config`,
     auth: 'user',
-    response: RoleRequestConfig,
-    summary: '3.5：申请制作是否开放、价格（积分，默认 200）、同时未完成上限',
+    response: RoleRequestConfig.extend({ quota: RoleRequestQuota }),
+    summary: '3.15：真实会员/本期免费次数/0或200积分报价，周期固定北京时间自然月或周一自然周',
   }),
   create: defineEndpoint({
     method: 'POST',

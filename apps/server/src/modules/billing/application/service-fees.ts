@@ -13,10 +13,12 @@ import type {
   PortResult,
   ServiceFeeHold,
   ServiceFeeHoldInput,
+  Tx,
 } from '@weiban/contracts';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   CLOCK,
+  asDbTx,
   DATABASE,
   newId,
   type Clock,
@@ -26,7 +28,7 @@ import {
 import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import { safeTimeZone } from '../domain/local-time.js';
 import { SERVICE_FEE_PURPOSE } from '../domain/rules.js';
-import { feeHolds } from '../infra/db/schema.js';
+import { accounts, feeHolds } from '../infra/db/schema.js';
 import { available, Ledger } from './ledger.js';
 import { BillingUsageError } from './reservations.js';
 
@@ -45,13 +47,16 @@ export class ServiceFeeService implements BillingServiceFeePort {
 
   async hold(
     input: ServiceFeeHoldInput,
+    transaction?: Tx,
   ): Promise<PortResult<ServiceFeeHold, 'insufficient_balance'>> {
     if (!KINDS.has(input.kind)) throw new BillingUsageError(`未知服务费种类 ${input.kind}`);
     if (!Number.isSafeInteger(input.amountMicros) || input.amountMicros <= 0)
       throw new BillingUsageError('服务费金额必须是正整数微元');
     if (!input.idempotencyKey) throw new BillingUsageError('服务费冻结缺少幂等键');
-    const timeZone = safeTimeZone((await this.identity.getProfile(input.userId))?.timeZone);
-    return this.database.transaction(async (tx) => {
+    const timeZone = safeTimeZone(
+      (await this.identity.getProfile(input.userId, transaction))?.timeZone,
+    );
+    const run = async (tx: DbTx) => {
       const account = await this.ledger.lockUserAccount(tx, input.userId, timeZone);
       const [existing] = await tx.db
         .select()
@@ -79,7 +84,8 @@ export class ServiceFeeService implements BillingServiceFeePort {
       await tx.db.insert(feeHolds).values(row);
       await this.ledger.changeHeld(tx, account, input.amountMicros);
       return { ok: true as const, value: toDto(row) };
-    });
+    };
+    return transaction ? run(asDbTx(transaction)) : this.database.transaction(run);
   }
 
   async settle(holdId: string): Promise<{ ledgerEntryId: string; amountMicros: number }> {
@@ -108,9 +114,10 @@ export class ServiceFeeService implements BillingServiceFeePort {
     });
   }
 
-  async release(holdId: string): Promise<void> {
-    const first = await this.find(holdId);
-    await this.database.transaction(async (tx) => {
+  async release(holdId: string, transaction?: Tx): Promise<void> {
+    const run = async (tx: DbTx) => {
+      const [first] = await tx.db.select().from(feeHolds).where(eq(feeHolds.id, holdId));
+      if (!first) throw new BillingUsageError('服务费冻结不存在');
       const account = await this.ledger.lockAccountById(tx, first.accountId);
       const hold = await this.lock(tx, holdId);
       if (hold.status === 'released') return;
@@ -120,9 +127,24 @@ export class ServiceFeeService implements BillingServiceFeePort {
         .update(feeHolds)
         .set({ status: 'released', closedAt: this.clock.now() })
         .where(eq(feeHolds.id, hold.id));
-    });
+    };
+    if (transaction) return run(asDbTx(transaction));
+    return this.database.transaction(run);
   }
-
+  async getByKey(userId: string, key: string, transaction?: Tx): Promise<ServiceFeeHold | null> {
+    const [row] = await (transaction ? asDbTx(transaction).db : this.database.db)
+      .select({ hold: feeHolds })
+      .from(feeHolds)
+      .innerJoin(accounts, eq(accounts.id, feeHolds.accountId))
+      .where(
+        and(
+          eq(accounts.userId, userId),
+          eq(accounts.kind, 'user'),
+          eq(feeHolds.idempotencyKey, key),
+        ),
+      );
+    return row ? toDto(row.hold) : null;
+  }
   async get(holdId: string): Promise<ServiceFeeHold | null> {
     const [row] = await this.database.db.select().from(feeHolds).where(eq(feeHolds.id, holdId));
     return row ? toDto(row) : null;

@@ -11,7 +11,7 @@
  *   失败只记日志，由每 10 分钟的清扫（PlazaLifecycle）补做，所以钱不会卡在冻结里。
  */
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { and, asc, count, desc, eq, inArray, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, lt, inArray, type SQL } from 'drizzle-orm';
 import {
   CreateRoleRequest,
   RoleRequestConfig,
@@ -22,6 +22,8 @@ import {
   type MediaReadPort,
   type MediaSystemPort,
   type BillingServiceFeePort,
+  type IdentityMembershipReadPort,
+  type RoleRequestQuota,
   type PushPort,
   type RoleRequest,
   type SyncPort,
@@ -31,6 +33,10 @@ import {
 import { z } from 'zod';
 import {
   AUDIT_LOG,
+  localDate,
+  localParts,
+  addDays,
+  startOfLocalDay,
   AppError,
   newId,
   parseContract,
@@ -39,7 +45,7 @@ import {
 } from '../../../platform/index.js';
 import { BILLING_SERVICE_FEE_PORT } from '../../billing/index.js';
 import { CONTACTS_WRITE_PORT } from '../../contacts/index.js';
-import { IDENTITY_DIRECTORY_PORT } from '../../identity/index.js';
+import { IDENTITY_DIRECTORY_PORT, IDENTITY_MEMBERSHIP_READ_PORT } from '../../identity/index.js';
 import { MEDIA_READ_PORT, MEDIA_SYSTEM_PORT } from '../../media/index.js';
 import { PUSH_PORT } from '../../push/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
@@ -94,6 +100,7 @@ export class RoleRequestService {
     @Inject(MEDIA_SYSTEM_PORT) private readonly media: MediaSystemPort,
     @Inject(MEDIA_READ_PORT) private readonly mediaRead: MediaReadPort,
     @Inject(CONTACTS_WRITE_PORT) private readonly contactsWrite: ContactsWritePort,
+    @Inject(IDENTITY_MEMBERSHIP_READ_PORT) private readonly membership: IdentityMembershipReadPort,
     @Optional() @Inject(PUSH_PORT) private readonly push?: PushPort,
     @Optional() @Inject(IDENTITY_DIRECTORY_PORT) private readonly directory?: IdentityDirectoryPort,
     @Optional() @Inject(PLAZA_CHARACTERS) private readonly characters?: PlazaCharacters,
@@ -115,11 +122,13 @@ export class RoleRequestService {
       .from(plazaSettings)
       .where(eq(plazaSettings.key, CONFIG_KEY));
     const parsed = RoleRequestConfig.safeParse(row?.value);
-    return parsed.success ? parsed.data : DEFAULT_CONFIG;
+    return { ...(parsed.success ? parsed.data : DEFAULT_CONFIG), pointsCost: 200 };
   }
 
   async updateConfig(adminId: string, input: unknown): Promise<RoleRequestConfig> {
     const body = parseContract(RoleRequestConfig, input);
+    if (body.pointsCost !== 200)
+      throw new AppError('bad_request', '超额制作申请固定200积分，免费次数由系统计算');
     await this.db.transaction(async (tx) => {
       await tx.db
         .insert(plazaSettings)
@@ -146,83 +155,151 @@ export class RoleRequestService {
 
   // ---------- 用户端 ----------
 
+  async quota(userId: string, tx?: DbTx): Promise<RoleRequestQuota> {
+    const member = await this.membership.getMembership(userId, tx);
+    const now = new Date(member.checkedAt),
+      zone = 'Asia/Shanghai' as const,
+      date = localDate(now, zone);
+    const startDate =
+      member.tier === 'pro_plus'
+        ? addDays(date, 1 - localParts(now, zone).weekday)
+        : date.slice(0, 7) + '-01';
+    const endDate =
+      member.tier === 'pro_plus'
+        ? addDays(startDate, 7)
+        : (() => {
+            const [y, m] = startDate.split('-').map(Number);
+            return new Date(Date.UTC(y!, m!, 1)).toISOString().slice(0, 10);
+          })();
+    const start = startOfLocalDay(startDate, zone),
+      end = startOfLocalDay(endDate, zone);
+    const [row] = await (tx?.db ?? this.db.db)
+      .select({ n: count() })
+      .from(roleRequests)
+      .where(
+        and(
+          eq(roleRequests.userId, userId),
+          eq(roleRequests.freeQuotaApplied, true),
+          gte(roleRequests.createdAt, start),
+          lt(roleRequests.createdAt, end),
+        ),
+      );
+    const used = row?.n ?? 0,
+      remaining = Math.max(0, 5 - used);
+    return {
+      quotedAt: member.checkedAt,
+      tier: member.tier,
+      limit: 5,
+      used,
+      remaining,
+      nextPointsCost: remaining > 0 ? 0 : 200,
+      periodStart: start.toISOString(),
+      periodEnd: end.toISOString(),
+      timeZone: zone,
+    };
+  }
+  async userConfig(userId: string) {
+    return { ...(await this.getConfig()), quota: await this.quota(userId) };
+  }
   async create(userId: string, input: unknown): Promise<RoleRequest> {
     const body = parseContract(CreateRoleRequest, input);
     const existing = await this.byClientId(userId, body.clientRequestId);
     if (existing) return this.toDto(existing);
-    const config = await this.getConfig();
-    if (!config.enabled) throw new AppError('forbidden', '申请制作暂未开放');
     const imageIds = [...new Set(body.referenceImageIds ?? [])];
     for (const id of imageIds)
       if (!(await this.media.canUse(userId, id, ['role_request_image'])))
         throw new AppError('bad_request', '参考图无效，请重新上传');
-    // 先看一眼未完成上限，避免明知会被拒还去冻结积分（事务里还会再查一次）。
-    await this.assertOpenBelowLimit(this.db, userId, config.maxOpenPerUser);
-    // Q5：先冻结积分（幂等键按 clientRequestId，重试返回同一个冻结），再建申请；建申请失败就退回。
-    const cost = config.pointsCost;
-    let feeHoldId: string | null = null;
-    if (cost > 0) {
-      if (!this.fees) throw new AppError('service_unavailable', '积分服务暂不可用，请稍后再试');
-      const held = await this.fees.hold({
-        userId,
-        kind: 'role_request',
-        amountMicros: pointsToMicros(cost),
-        idempotencyKey: `role_request:${userId}:${body.clientRequestId}`,
-        note: `申请制作：${body.roleName}`.slice(0, 100),
-      });
-      if (!held.ok)
-        throw new AppError('insufficient_balance', `积分不足：申请制作需要 ${cost} 积分`, {
-          details: { pointsCost: cost },
+    const row = await this.db.transaction(async (tx) => {
+      await tx.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended('plaza:role_request:' || $1, 0))",
+        [userId],
+      );
+      const again = await this.byClientId(userId, body.clientRequestId, tx);
+      if (again) return again;
+      const config = await this.getConfig();
+      if (!config.enabled) throw new AppError('forbidden', '申请制作暂未开放');
+      await this.assertOpenBelowLimit(tx, userId, config.maxOpenPerUser);
+      const quota = await this.quota(userId, tx),
+        cost = quota.nextPointsCost;
+      if (body.expectedPointsCost !== undefined ? body.expectedPointsCost !== cost : cost > 0)
+        throw new AppError('conflict', '免费次数或价格已变化，请刷新并重新确认', {
+          status: 409,
+          details: { reason: 'price_changed', pointsCost: cost },
         });
-      feeHoldId = held.value.holdId;
-    }
-    const now = this.clock.now();
-    let row: RoleRequestRow;
-    try {
-      row = await this.db.transaction(async (tx) => {
-        // 同一用户的提交串行化，保证「同时未完成上限」不被并发绕过。
-        await tx.query(
-          "SELECT pg_advisory_xact_lock(hashtextextended('plaza:role_request:' || $1, 0))",
-          [userId],
+      if (!this.fees) throw new AppError('service_unavailable', '积分服务暂不可用，请稍后再试');
+      const key = `role_request:${userId}:${body.clientRequestId}`;
+      const orphan = await this.fees.getByKey(userId, key, tx);
+      if (orphan && orphan.status !== 'active')
+        throw new AppError(
+          'conflict',
+          orphan.status === 'settled'
+            ? '旧申请编号已有扣款，请联系管理员核对，不要重复提交'
+            : '上次申请未提交成功，此编号已关闭，请换新编号后再次确认',
+          {
+            status: 409,
+            details: { reason: 'request_id_expired', canRenew: orphan.status === 'released' },
+          },
         );
-        const again = await this.byClientId(userId, body.clientRequestId, tx);
-        if (again) return again;
-        await this.assertOpenBelowLimit(tx, userId, config.maxOpenPerUser);
-        const history: RoleRequestHistoryJson[] = [
-          { status: 'pending', message: null, at: now.toISOString(), by: 'user' },
-        ];
-        const [created] = await tx.db
-          .insert(roleRequests)
-          .values({
-            id: newId(),
+      let feeHoldId: string | null = null;
+      if (cost === 0 && orphan) await this.fees.release(orphan.holdId, tx);
+      if (cost > 0) {
+        if (orphan && orphan.amountMicros !== pointsToMicros(cost))
+          throw new AppError('conflict', '旧冻结金额不匹配，请联系管理员核对', {
+            status: 409,
+            details: { reason: 'request_id_expired', canRenew: false },
+          });
+        const held = await this.fees.hold(
+          {
             userId,
-            clientRequestId: body.clientRequestId,
-            roleName: body.roleName,
-            basis: body.basis ?? null,
-            categoryId: body.categoryId ?? null,
-            sourceWork: body.sourceWork ?? '',
-            referenceText: body.referenceText ?? '',
-            referenceMediaIds: imageIds,
-            note: body.note ?? '',
-            status: 'pending',
-            // Q5：记录当时价格；冻结中，完成时才扣（pointsCharged 届时写入）。
-            pointsCost: cost,
-            pointsCharged: 0,
-            feeHoldId,
-            feeState: feeHoldId ? 'held' : 'none',
-            history,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .returning();
-        await this.changed(tx, userId, created!.id);
-        return created!;
-      });
-    } catch (e) {
-      // 没建成申请：退回刚冻结的积分（同一 clientRequestId 已有申请时不会走到这里）。
-      if (feeHoldId) await this.fees?.release(feeHoldId).catch(() => undefined);
-      throw e;
-    }
+            kind: 'role_request',
+            amountMicros: pointsToMicros(cost),
+            idempotencyKey: key,
+            note: `申请制作：${body.roleName}`.slice(0, 100),
+          },
+          tx,
+        );
+        if (!held.ok)
+          throw new AppError('insufficient_balance', '积分不足：申请制作需要200积分', {
+            details: { pointsCost: cost },
+          });
+        if (held.value.status !== 'active')
+          throw new AppError('conflict', '旧申请编号不可复用，请联系管理员核对', {
+            status: 409,
+          });
+        feeHoldId = held.value.holdId;
+      }
+      const now = new Date(quota.quotedAt);
+      const history: RoleRequestHistoryJson[] = [
+        { status: 'pending', message: null, at: now.toISOString(), by: 'user' },
+      ];
+      const [created] = await tx.db
+        .insert(roleRequests)
+        .values({
+          id: newId(),
+          userId,
+          clientRequestId: body.clientRequestId,
+          roleName: body.roleName,
+          basis: body.basis ?? null,
+          categoryId: body.categoryId ?? null,
+          sourceWork: body.sourceWork ?? '',
+          referenceText: body.referenceText ?? '',
+          referenceMediaIds: imageIds,
+          note: body.note ?? '',
+          status: 'pending',
+          // Q5：记录当时价格；冻结中，完成时才扣（pointsCharged 届时写入）。
+          pointsCost: cost,
+          freeQuotaApplied: cost === 0,
+          pointsCharged: 0,
+          feeHoldId,
+          feeState: feeHoldId ? 'held' : 'none',
+          history,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      await this.changed(tx, userId, created!.id);
+      return created!;
+    });
     return this.toDto(row);
   }
 
@@ -660,6 +737,7 @@ export class RoleRequestService {
       characterId: row.characterId,
       addedToContacts: row.addedToContacts,
       pointsCost: row.pointsCost,
+      freeQuotaApplied: row.freeQuotaApplied,
       pointsCharged: row.pointsCharged,
       unseen: row.userUnseen,
       createdAt: row.createdAt.toISOString(),

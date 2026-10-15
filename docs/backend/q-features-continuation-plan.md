@@ -42,3 +42,5 @@ media.sticker_packs加旧契约的商店元数据（in_store、store_order、des
 根会话已分配0097_memberships、0098_role_request_free_quota、0099_user_statuses、0100_sticker_store（各含down/journal）。support/插件/聊天标题不需新迁移。所有新增及配套端点统一契约3.15、必要安卓生成，不改安卓UI或构建，不写/跑测试套件。不SSH/部署/GitHub/自行合主线，不新增代理。完整前端实际组件GUI含失败控制，冻结涵盖所有Vite依赖与格式化；真实DB/收费/会员到期等与样例证据分开登记。
 
 旧独立冻结兼容已获根会话批准：BillingServiceFeePort增加受限getByKey(userId,key,tx?)及同Tx release。用户advisory锁内先查已存在申请并返回；expectedPointsCost确认变化先拒绝，无退款等提交副作用；无申请才查本人旧hold，active+免费则同事务退旧hold并建免费单，active+收费复用原hold。released孤儿不改变幂等语义，拒绝旧请求编号并在UI明确要求换新编号重新确认，绝不自动无限重试；settled孤儿拒绝并提示管理员人工核对，不重收/不重开。新路径冻结与申请同事务回滚，避免再产生孤儿，失败同键可再试。
+
+计价边界补充（根会话批准）：会员读取在取得用户共享锁并读会员行后取唯一Clock.checkedAt，quota以同一时刻返回quotedAt，申请createdAt/history也用quotedAt。按服务器开始受理时间计入自然周期，不取客户端时钟，也不在账户冻结等待后另换周期。

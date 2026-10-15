@@ -2,6 +2,8 @@
 import { z } from 'zod';
 import { API_PREFIX, Id, Timestamp, defineEndpoint } from '../common.js';
 export const Membership = z.object({
+  /** 服务端取得账号锁后的统一核算时刻，内部额度决策复用。 */
+  checkedAt: Timestamp,
   tier: z.enum(['free', 'pro_plus']),
   expiresAt: Timestamp.nullable(),
   updatedAt: Timestamp.nullable(),
