@@ -64,7 +64,7 @@ export interface IdentitySettingsWritePort {
 }
 
 /**
- * 3.9（总对照表 Q11）：用户「我的状态」读取端口。提供方：identity；调用方：ai-runtime（私聊回复的动态结尾、主动消息调度）。
+ * 3.15（总对照表 Q11）：用户「我的状态」读取端口。提供方：identity；调用方：ai-runtime（私聊回复的动态结尾）。
  * 只返回未过期的状态；没有或已过期返回 null。单独成接口，新增它不影响已有实现。
  */
 export interface UserStatusReadPort {
