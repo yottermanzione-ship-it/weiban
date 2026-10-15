@@ -569,6 +569,13 @@
       "when": 1799159200000,
       "tag": "0092_service_fees_support",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1799245600000,
+      "tag": "0093_chat_forward",
+      "breakpoints": true
     }
   ]
 }

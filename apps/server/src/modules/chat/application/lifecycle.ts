@@ -26,7 +26,8 @@ export class ChatLifecycle implements OnModuleInit {
         (SELECT count(*) FROM chat.participants p JOIN chat.conversations c ON c.id=p.conversation_id WHERE c.owner_user_id=$1)+
         (SELECT count(*) FROM chat.messages m JOIN chat.conversations c ON c.id=m.conversation_id WHERE c.owner_user_id=$1)+
         (SELECT count(*) FROM chat.user_conversation_states WHERE user_id=$1)+
-        (SELECT count(*) FROM chat.hidden_messages WHERE user_id=$1) AS n`,
+        (SELECT count(*) FROM chat.hidden_messages WHERE user_id=$1)+
+        (SELECT count(*) FROM chat.forward_receipts WHERE user_id=$1) AS n`,
         [userId],
       );
       // 所有子表都是本schema内外键，随所属会话物理删除；不保留可恢复的账号残留。
@@ -41,7 +42,8 @@ export class ChatLifecycle implements OnModuleInit {
       (SELECT count(*) FROM chat.participants WHERE kind='user' AND ref_id=$1)+
       (SELECT count(*) FROM chat.messages m JOIN chat.conversations c ON c.id=m.conversation_id WHERE c.owner_user_id=$1)+
       (SELECT count(*) FROM chat.user_conversation_states WHERE user_id=$1)+
-      (SELECT count(*) FROM chat.hidden_messages WHERE user_id=$1) AS n`,
+      (SELECT count(*) FROM chat.hidden_messages WHERE user_id=$1)+
+      (SELECT count(*) FROM chat.forward_receipts WHERE user_id=$1) AS n`,
       [userId],
     );
     return Number(result.rows[0]!.n);

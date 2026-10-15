@@ -15,6 +15,7 @@
  * - 计费：所有调用经模型网关（语音按字数 / 分钟，识图按 token，搜索按次）。
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { forwardedRecordText } from './content-text.js';
 import {
   type CharacterNameReadPort,
   type CharacterRelationReadPort,
@@ -178,6 +179,8 @@ export class MediaAiService {
     if (!c) return null;
     const mine = m.senderKind === 'character';
     switch (c.type) {
+      case 'forwarded_record':
+        return { text: forwardedRecordText(c) };
       case 'text':
         return { text: c.text };
       case 'voice': {

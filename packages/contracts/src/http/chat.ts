@@ -233,19 +233,30 @@ export const ActionCardContent = z.object({
  */
 /** 3.10：非递归聊天记录快照；动作类在服务器转换为静态文字。 */
 export const ForwardSnapshotContent = z.discriminatedUnion('type', [
-  TextContent, ImageContent, VoiceContent, StickerContent, LinkContent,
-  ContactCardContent, LetterContent, DailyQuestionContent,
+  TextContent,
+  ImageContent,
+  VoiceContent,
+  StickerContent,
+  LinkContent,
+  ContactCardContent,
+  LetterContent,
+  DailyQuestionContent,
 ]);
 export type ForwardSnapshotContent = z.infer<typeof ForwardSnapshotContent>;
 export const ForwardedRecordContent = z.object({
   type: z.literal('forwarded_record'),
   title: z.string().min(1).max(200),
-  items: z.array(z.object({
-    senderName: z.string().min(1).max(100),
-    senderKind: ParticipantKind,
-    createdAt: Timestamp,
-    content: ForwardSnapshotContent,
-  })).min(2).max(50),
+  items: z
+    .array(
+      z.object({
+        senderName: z.string().min(1).max(100),
+        senderKind: ParticipantKind,
+        createdAt: Timestamp,
+        content: ForwardSnapshotContent,
+      }),
+    )
+    .min(2)
+    .max(50),
 });
 export type ForwardedRecordContent = z.infer<typeof ForwardedRecordContent>;
 
@@ -473,7 +484,12 @@ export const UpdateConversationStateRequest = z.object({
 
 // ---------- 接口 ----------
 
-export const FORWARD_LIMITS = { messages: 50, targets: 10, textChars: 20_000, snapshotBytes: 524_288 } as const;
+export const FORWARD_LIMITS = {
+  messages: 50,
+  targets: 10,
+  textChars: 20_000,
+  snapshotBytes: 524_288,
+} as const;
 export const ForwardMessagesRequest = z.object({
   clientRequestId: ClientMsgId,
   messageIds: z.array(Id).min(1).max(FORWARD_LIMITS.messages),
@@ -482,10 +498,17 @@ export const ForwardMessagesRequest = z.object({
 });
 export type ForwardMessagesRequest = z.infer<typeof ForwardMessagesRequest>;
 export const ForwardMessagesResponse = z.object({
-  results: z.array(z.discriminatedUnion('ok', [
-    z.object({ ok: z.literal(true), conversationId: Id, messageIds: z.array(Id).min(1).max(50) }),
-    z.object({ ok: z.literal(false), conversationId: Id, error: z.string(), message: z.string() }),
-  ])),
+  results: z.array(
+    z.discriminatedUnion('ok', [
+      z.object({ ok: z.literal(true), conversationId: Id, messageIds: z.array(Id).min(1).max(50) }),
+      z.object({
+        ok: z.literal(false),
+        conversationId: Id,
+        error: z.string(),
+        message: z.string(),
+      }),
+    ]),
+  ),
 });
 export type ForwardMessagesResponse = z.infer<typeof ForwardMessagesResponse>;
 
@@ -533,8 +556,10 @@ export const ChatEndpoints = {
   forwardMessages: defineEndpoint({
     method: 'POST',
     path: `${API_PREFIX}/conversations/:conversationId/forward`,
-    auth: 'user', params: ConversationParams,
-    body: ForwardMessagesRequest, response: ForwardMessagesResponse,
+    auth: 'user',
+    params: ConversationParams,
+    body: ForwardMessagesRequest,
+    response: ForwardMessagesResponse,
     summary: '3.10：按真实可见源消息转发；每目标事务、请求幂等；单条强制逐条，合并记录不递归',
   }),
   listConversations: defineEndpoint({

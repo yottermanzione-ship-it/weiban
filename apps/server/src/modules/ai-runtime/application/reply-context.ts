@@ -438,7 +438,7 @@ ${AUTHOR_GUARD}`
       if (!text) continue;
       chat.push({
         role: m.senderKind === 'user' ? 'user' : 'assistant',
-        content: text.slice(0, MAX_MESSAGE_CHARS),
+        content: text.slice(0, m.content.type === 'forwarded_record' ? 32_000 : MAX_MESSAGE_CHARS),
       });
     }
     if (row.kind === 'greeting')

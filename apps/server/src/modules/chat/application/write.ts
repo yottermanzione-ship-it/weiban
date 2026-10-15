@@ -76,20 +76,29 @@ export class ChatWriteService {
   }
   /** Only the server source-ID forwarding service calls this. Never exposed through sendMessage. */
   async postForward(tx: DbTx, row: ConversationRow, input: PostMessageInput) {
-    const content = input.content.type === 'forwarded_record'
-      ? ForwardedRecordContent.parse(input.content)
-      : ForwardSnapshotContent.parse(input.content);
-    const items = content.type === 'forwarded_record' ? content.items.map((i) => i.content) : [content];
+    const content =
+      input.content.type === 'forwarded_record'
+        ? ForwardedRecordContent.parse(input.content)
+        : ForwardSnapshotContent.parse(input.content);
+    const items =
+      content.type === 'forwarded_record' ? content.items.map((i) => i.content) : [content];
     for (const item of items) {
-      const ids = item.type === 'image' || item.type === 'voice' || item.type === 'sticker'
-        ? [item.mediaId] : item.type === 'link' && item.coverMediaId ? [item.coverMediaId] : [];
+      const ids =
+        item.type === 'image' || item.type === 'voice' || item.type === 'sticker'
+          ? [item.mediaId]
+          : item.type === 'link' && item.coverMediaId
+            ? [item.coverMediaId]
+            : [];
       for (const id of ids) await this.mediaRead.getMedia(row.ownerUserId, id);
     }
     return this.write(tx, row, { ...input, content }, undefined, true);
   }
   private async write(
-    tx: DbTx, row: ConversationRow, input: PostMessageInput,
-    senderKind: 'system' | undefined, verifiedForward: boolean,
+    tx: DbTx,
+    row: ConversationRow,
+    input: PostMessageInput,
+    senderKind: 'system' | undefined,
+    verifiedForward: boolean,
   ): Promise<PortResult<Message, PostMessageError>> {
     let content = parseContract(MessageContent, input.content);
     // labels 只接受服务器端发送方传入（participant 端口）；用户经 HTTP / WebSocket 发送时由 user.ts 构造输入，不会带上。
@@ -155,6 +164,8 @@ export class ChatWriteService {
     }
     // L5（T-069）：用户发的图片、语音、表情、链接封面必须是本人可用的媒体（MediaSystemPort.canUse）。
     if (sender?.kind === 'user' && !verifiedForward) {
+      if (content.type === 'forwarded_record')
+        return { ok: false, error: 'invalid_content', message: '聊天记录只能从真实源消息转发' };
       const invalid = await this.invalidUserMedia(sender.refId, content);
       if (invalid) return { ok: false, error: 'invalid_content', message: invalid };
     }
