@@ -1,6 +1,6 @@
 /*
  * 聊天信息页（docs/refactor/06-old-ui-spec.md 4.5）：旧版行样式 + 新版条目（导航树 1.2）。
- * 成员区 → 查找聊天记录 → 免打扰 / 置顶 → 聊天模型 → 和 TA 一起用 → 和 TA 的相处 → 高级 → 背景 → 清空。
+ * 成员区 → 查找聊天记录 → 免打扰 / 置顶 → 聊天模型 → 和 TA 的相处 → 高级 → 背景 → 清空。
  */
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';

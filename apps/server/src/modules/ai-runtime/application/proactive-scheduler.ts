@@ -13,6 +13,7 @@
  * - P-33 余额保留线 1 元（cost-estimate.md 6.2）。
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { userNickname, userNamingContext } from '../domain/user-naming.js';
 import { AdultBoundaryService } from './adult-boundary.js';
 import type { PetForRuntime, PetReadPort } from '@weiban/contracts';
 import { petContextBlock } from '../domain/pets.js';
@@ -960,7 +961,7 @@ export class ProactiveSchedulerService {
       .then((f) => f.level)
       .catch(() => 1);
     const tone = `L${level}`;
-    const address = contact.addressAs ?? ctx.nickname ?? '你';
+    const address = userNickname(ctx.nickname);
     // T-082：宠物现取（改名立即生效）；提议领养只在还没有宠物、也没提过时发。
     const petList = await this.listPets(ctx.userId, plan.characterId);
     const petBlock = petContextBlock(petList);
@@ -1000,7 +1001,7 @@ export class ProactiveSchedulerService {
           },
           {
             role: 'system',
-            content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 8) }).slice(0, 20000)}${supplementBlock(role.userSupplement)}\n关系：${contact.relationship ?? '朋友'}；熟悉度：${tone}（熟悉度低时客气，高时随意）\n用户称呼：${address}\n用户当地时间：${ctx.localDate} ${String(ctx.localHour).padStart(2, '0')}点（${ctx.timeZone}）${petBlock ? `\n${petBlock}` : ''}`,
+            content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 8) }).slice(0, 20000)}${supplementBlock(role.userSupplement)}\n关系：${contact.relationship ?? '朋友'}；熟悉度：${tone}（熟悉度低时客气，高时随意）\n${userNamingContext(address)}\n用户当地时间：${ctx.localDate} ${String(ctx.localHour).padStart(2, '0')}点（${ctx.timeZone}）${petBlock ? `\n${petBlock}` : ''}`,
           },
           ...recent,
           {
