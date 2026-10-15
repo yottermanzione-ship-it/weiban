@@ -260,6 +260,7 @@ export class ChatStore {
           ? {
               createdByCharacterId: row.createdByCharacterId,
               titleCustomized: row.titleCustomized,
+              avatarMediaId: row.groupAvatarMediaId ?? null,
               memberLimit: GROUP_MEMBER_LIMIT,
               formerParticipants: former.map((p) => ({
                 participantId: p.id,

@@ -38,6 +38,7 @@ export function AvatarEditor({
     setY(crop.y);
   });
   const canvas = useRef<HTMLCanvasElement>(null);
+  const groupUpload = useRef<{ key: string; mediaId: string } | null>(null);
   useEffect(() => {
     if (!source) return;
     let active = true;
@@ -116,12 +117,16 @@ export function AvatarEditor({
         ),
       );
       if (!owner || !api.owns(owner)) throw new ApiFailure('session_changed', '登录状态已改变', 0);
-      const media = await api.call(MediaEndpoints.upload, {
-        query: { purpose },
-        file: blob,
-      });
+      const uploadKey = JSON.stringify([source, zoom, x, y, owner.userId, owner.sessionId]);
+      const media =
+        purpose === 'group_avatar' && groupUpload.current?.key === uploadKey
+          ? { mediaId: groupUpload.current.mediaId }
+          : await api.call(MediaEndpoints.upload, { query: { purpose }, file: blob });
+      if (purpose === 'group_avatar')
+        groupUpload.current = { key: uploadKey, mediaId: media.mediaId };
       if (!api.owns(owner)) throw new ApiFailure('session_changed', '登录状态已改变', 0);
       await onSaved(media.mediaId);
+      groupUpload.current = null;
       setSource('');
     } catch (e) {
       setError(friendlyError(e));

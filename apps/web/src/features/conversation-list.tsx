@@ -14,12 +14,7 @@ import { Name } from './chat.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { GroupAvatar } from './groups.js';
 import { OldIcon } from './old-icons.js';
-import {
-  LongPressMenu,
-  PopMenu,
-  showComingSoon,
-  type ActionItem,
-} from './shell-kit.js';
+import { LongPressMenu, PopMenu, showComingSoon, type ActionItem } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 import { PullMiniApps } from './pull-panel.js';
 import { useRowGesture } from './row-gesture.js';
@@ -112,6 +107,7 @@ function ConversationRow({ item }: { item: Conversation }) {
         {item.type === 'group' ? (
           <GroupAvatar
             ids={item.participants.filter((p) => p.kind === 'character').map((p) => p.refId)}
+            mediaId={item.group?.avatarMediaId}
           />
         ) : (
           <CharacterAvatar id={characterId} size={48} radius={4} />

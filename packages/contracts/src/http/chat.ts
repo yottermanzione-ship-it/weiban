@@ -435,6 +435,8 @@ export const Conversation = z.object({
       createdByCharacterId: Id.nullable(),
       /** 群名是否由用户改过；false 时客户端可按成员名拼接显示。 */
       titleCustomized: z.boolean(),
+      /** 3.11：本人群聊头像；无值/旧响应回退成员拼图。 */
+      avatarMediaId: Id.nullable().optional(),
       /** 角色成员上限（P-21）。 */
       memberLimit: z.number().int().positive(),
       /**

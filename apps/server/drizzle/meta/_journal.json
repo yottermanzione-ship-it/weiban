@@ -576,6 +576,13 @@
       "when": 1799245600000,
       "tag": "0093_chat_forward",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1799332000000,
+      "tag": "0094_group_avatar",
+      "breakpoints": true
     }
   ]
 }
