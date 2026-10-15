@@ -21,6 +21,9 @@ import { API_PREFIX, Id, Timestamp, defineEndpoint, tolerantEnum } from '../comm
  * 3.0 起响应中用接收端容错解析（不认识的用途按「其他」处理）。
  */
 export const MediaPurpose = z.enum([
+  'moments_cover',
+  /** 3.11：用户设置群头像，仅上传者本人可读。 */
+  'group_avatar',
   'user_avatar',
   'contact_avatar',
   'character_avatar',
@@ -47,6 +50,8 @@ export type MediaPurpose = z.infer<typeof MediaPurpose>;
 
 /** 用户可自行上传的用途；character_avatar 只能由管理员上传。 */
 export const UserMediaPurpose = z.enum([
+  'moments_cover',
+  'group_avatar',
   'user_avatar',
   'contact_avatar',
   'chat_image',

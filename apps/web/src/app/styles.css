@@ -296,6 +296,9 @@ textarea {
   background: var(--wb-color-overlay-viewer);
   color: var(--wb-color-text-on-brand);
 }
+.avatar-crop-dialog label {
+  color: var(--wb-color-text-on-brand);
+}
 
 .user-avatar {
   width: var(--wb-size-avatar-xl);

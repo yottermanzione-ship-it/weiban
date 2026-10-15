@@ -569,6 +569,34 @@
       "when": 1799159200000,
       "tag": "0092_service_fees_support",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1799245600000,
+      "tag": "0093_chat_forward",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1799332000000,
+      "tag": "0094_group_avatar",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1799333000000,
+      "tag": "0095_moments_cover",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1799334000000,
+      "tag": "0096_login_aliases",
+      "breakpoints": true
     }
   ]
 }

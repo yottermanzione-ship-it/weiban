@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { MagnifyingGlass } from './old-icons.js';
-import { NewFriendsEndpoints, type NewFriendItem } from '@weiban/contracts';
+import { NewFriendsEndpoints, RoleRequestEndpoints, type NewFriendItem } from '@weiban/contracts';
 import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import { useUpdates } from '../data/updates.js';
 import { CharacterAvatar } from './character-avatar.js';
+import { StatusTag, useRoleRequestBadge } from './role-plaza.js';
+import { NavBar, MenuGroup, MenuRow, GroupHeader } from './shell-kit.js';
 
 /*
  * 新的朋友（CHR-04、CHR-05；social-l4.md 第 4 节）。
@@ -35,7 +37,55 @@ export function useNewFriends() {
 /** 通讯录「新的朋友」行与底部标签的红点：服务器给的未看过名片推荐数。 */
 export function useNewFriendsDot(): boolean {
   const { data } = useNewFriends();
-  return (data?.unseenCount ?? 0) > 0;
+  const requests = useRoleRequestBadge();
+  return (data?.unseenCount ?? 0) > 0 || requests > 0;
+}
+
+function RoleRequestsSection() {
+  const requests = useRemote(RoleRequestEndpoints.listMine, {
+    query: { limit: 5 },
+    networkOnly: true,
+  });
+  useUpdates((update) => {
+    if (
+      update.type === 'data.changed' &&
+      (update.data as { section?: string })?.section === 'role_requests'
+    )
+      requests.refresh();
+  });
+  return (
+    <section>
+      <GroupHeader>申请制作</GroupHeader>
+      <MenuGroup>
+        {requests.data?.items.map((item) => (
+          <MenuRow
+            key={item.requestId}
+            to={`/role-requests/${item.requestId}`}
+            label={item.roleName}
+            subtitle={item.adminMessage || `提交于 ${item.createdAt.slice(0, 10)}`}
+            value={<StatusTag status={item.status} />}
+            dot={item.unseen}
+          />
+        ))}
+        <MenuRow
+          to="/role-requests"
+          label="我的制作申请"
+          subtitle={requests.data?.items.length === 0 ? '还没有制作申请' : '查看全部申请与进度'}
+        />
+      </MenuGroup>
+      {requests.loading && (
+        <p role="status" className="page-note hint">
+          正在读取申请…
+        </p>
+      )}
+      {requests.error && (
+        <div role="alert" className="page-note">
+          <p>{requests.error}</p>
+          <button onClick={requests.refresh}>重试</button>
+        </div>
+      )}
+    </section>
+  );
 }
 
 const statusText: Record<string, string | null> = {
@@ -78,8 +128,8 @@ export function NewFriendsPage() {
   }
   return (
     <main>
-      <Link to="/contacts">‹ 通讯录</Link>
-      <h1 className="page-title">新的朋友</h1>
+      <NavBar title="新的朋友" fallback="/contacts" />
+      <RoleRequestsSection />
       <Link className="panel row-link" to="/plaza">
         <MagnifyingGlass size={18} aria-hidden /> 搜索角色
       </Link>

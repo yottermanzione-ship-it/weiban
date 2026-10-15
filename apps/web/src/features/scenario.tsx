@@ -29,7 +29,7 @@ export const presetNames: Record<string, string> = {
   treehole: '树洞分享',
   tsundere: '傲娇斗嘴',
   cheer: '加油打气',
-  adult: '私密',
+  adult: '私密模式',
 };
 /** 情景预设图标（5.3）：40 彩色方块 + 白图标；情侣暧昧是唯一用心形的地方。 */
 const presetLook: Record<string, { icon: string; tint: Tint }> = {
@@ -68,15 +68,6 @@ export function useCurrentPreset(target: ScenarioTarget | null) {
     mode: mode as ScenarioMode | undefined,
     refresh: target?.kind === 'group' ? group.refresh : character.refresh,
   };
-}
-
-const ADULT_INTRO_SEEN = 'weiban:private-preset-intro-seen';
-function introSeen() {
-  try {
-    return localStorage.getItem(ADULT_INTRO_SEEN) === '1';
-  } catch {
-    return false;
-  }
 }
 
 export function ScenarioSheet({
@@ -154,8 +145,7 @@ export function ScenarioSheet({
     } catch {
       // 读不到时交给服务器判断
     }
-    if (!introSeen()) return setPrompt('intro');
-    return apply('adult');
+    return setPrompt('intro');
   }
   const row = (option: ScenarioModeOption) => {
     const look = presetLook[option.id] ?? presetLook.daily!;
@@ -194,13 +184,13 @@ export function ScenarioSheet({
       <MenuGroup className="preset-list">{presets.map((option) => row(option))}</MenuGroup>
       {privates.length > 0 && (
         <>
-          <GroupHeader>私密</GroupHeader>
+          <GroupHeader>私密模式</GroupHeader>
           <MenuGroup>
             {privates.map((option) => (
               <MenuRow
                 key={option.id}
                 disabled={pending}
-                label="成人内容"
+                label="私密模式"
                 value={option.id === current ? '已开启' : '未开启'}
                 onClick={() => void choose(option)}
               />
@@ -210,29 +200,24 @@ export function ScenarioSheet({
       )}
       {prompt === 'model' && (
         <Dialog
-          title="还没有选择成人模式模型"
+          title="还没有选择私密模式模型"
           actions={[
             { label: '取消', onClick: () => setPrompt(null) },
             { label: '去选择', primary: true, onClick: () => navigate('/models') },
           ]}
         >
-          <p className="hint">开启前，请先在「服务 › 模型」中选择成人模式模型</p>
+          <p className="hint">开启将切换到付费模型，请先在「服务 › 模型」中选择私密模式模型</p>
         </Dialog>
       )}
       {prompt === 'intro' && (
         <Dialog
-          title="只在你们俩之间"
+          title="开启私密模式"
           actions={[
             { label: '取消', onClick: () => setPrompt(null) },
             {
               label: '开启',
               primary: true,
               onClick: () => {
-                try {
-                  localStorage.setItem(ADULT_INTRO_SEEN, '1');
-                } catch {
-                  // 无法记住时下次再说明一次
-                }
                 setPrompt(null);
                 void apply('adult');
               },
@@ -240,7 +225,8 @@ export function ScenarioSheet({
           ]}
         >
           <p className="hint">
-            这里的内容只留在你和 TA 之间：不会出现在朋友圈、其他角色那里、分享图和推送里。
+            开启后将切换到付费模型，按实际用量消耗积分。这里的内容只留在你和 TA
+            之间：不会出现在朋友圈、其他角色那里、分享图和推送里。
           </p>
         </Dialog>
       )}

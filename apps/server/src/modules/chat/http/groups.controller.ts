@@ -30,6 +30,14 @@ export class ChatGroupController {
   ) {
     return this.groups.renameForUser(p.userId, params.conversationId, body.title);
   }
+  @Patch(':conversationId/avatar')
+  avatar(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Param(new ContractPipe(G.updateAvatar.params!)) params: { conversationId: string },
+    @Body(new ContractPipe(G.updateAvatar.body!)) body: { mediaId: string | null },
+  ) {
+    return this.groups.setAvatarForUser(p.userId, params.conversationId, body.mediaId);
+  }
   @Post(':conversationId/members')
   @HttpCode(200)
   add(

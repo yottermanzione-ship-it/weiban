@@ -1,14 +1,13 @@
 /**
- * 3.9：状态（总经理 10-14 总对照表 Q11，节点 T4.11「我的状态」、资料页角色状态）。
+ * 3.9：状态（总经理 10-14 总对照表 Q11，节点 T4.11「我的状态」）。
  *
  * - 我的状态：数据归 identity。用户选一个预设状态（可加自定义文字）并设有效期；过期后自动视为没有状态。
- *   角色能读到（ai-runtime 经 UserStatusReadPort）：私聊回复会自然地关心一句；「想静静」这类安静状态下主动消息每天最多 1 条。
+ *   角色能读到（ai-runtime 经 UserStatusReadPort）：私聊回复可自然读取已有状态，不新增主动任务。
  *   修改后服务器发 settings.updated(section = profile)，其他设备重新拉 GET /me/status。
- * - 角色状态：数据来自 ai-runtime 推演的当天日常事件（不额外调用模型），资料页显示一句话。
+ * - 角色状态沿已有TimelineEndpoints.getStatus，不在此重复定义。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, NoContent, Timestamp, defineEndpoint, tolerantEnum } from '../common.js';
-import { TimelineEventKind, TimelineMood } from './timeline.js';
+import { API_PREFIX, NoContent, Timestamp, defineEndpoint, tolerantEnum } from '../common.js';
 
 export const UserStatusPreset = z.enum([
   'studying', // 学习中
@@ -107,28 +106,3 @@ export const UserStatusEndpoints = {
   }),
 } as const;
 
-// ---------- 角色状态 ----------
-
-export const CharacterStatus = z.object({
-  characterId: Id,
-  /** 一句话状态（例「在图书馆赶论文」），来自当天最近一件日常事件；没有事件时按心情给一句。 */
-  text: z.string().max(40),
-  /** 对应日常事件的种类；按心情生成时为 null。 */
-  kind: tolerantEnum(TimelineEventKind).nullable(),
-  mood: tolerantEnum(TimelineMood),
-  /** 状态来源事件的时间；按心情生成时为 null。 */
-  updatedAt: Timestamp.nullable(),
-});
-export type CharacterStatus = z.infer<typeof CharacterStatus>;
-
-export const CharacterStatusEndpoints = {
-  get: defineEndpoint({
-    method: 'GET',
-    path: `${API_PREFIX}/characters/:characterId/status`,
-    auth: 'user',
-    params: z.object({ characterId: Id }),
-    response: CharacterStatus,
-    summary:
-      '3.9：角色的当前状态（资料页显示）。不在我通讯录里的角色 404；不调用模型，不含成人模式与经期相关内容',
-  }),
-} as const;

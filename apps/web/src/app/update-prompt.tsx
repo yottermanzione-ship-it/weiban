@@ -1,77 +1,72 @@
-import { useEffect, useRef, useState } from 'react';
-export function UpdatePrompt() {
-  const [waiting, setWaiting] = useState<ServiceWorker | null>(null);
-  const accepted = useRef(false);
-  const [updating, setUpdating] = useState(false);
-  const [error, setError] = useState('');
-  const deadline = useRef<number | undefined>(undefined);
+import { useEffect } from 'react';
+/** 页打开时接续上次已准备的版本；页面使用中发现的新版本等下次刷新，不显示版本提示。 */
+export function ServiceWorkerRefresh() {
   useEffect(() => {
     if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return;
-    let active = true;
-    let registration: ServiceWorkerRegistration | undefined;
-    const update = () => {
-      if (!registration) return;
-      if (registration.waiting) setWaiting(registration.waiting);
-      const installing = registration.installing;
-      if (installing)
-        installing.addEventListener('statechange', () => {
-          if (active && installing.state === 'installed' && navigator.serviceWorker.controller)
-            setWaiting(registration?.waiting ?? null);
-        });
+    // 只有用户明确刷新才切换，不在普通打开后等待异步更新强制打断输入。
+    if (
+      (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)
+        ?.type !== 'reload'
+    )
+      return;
+    const started = Date.now();
+    let interacted = false;
+    const interaction = () => {
+      interacted = true;
     };
+    for (const event of ['pointerdown', 'keydown', 'input'])
+      document.addEventListener(event, interaction, true);
+    const safe = () =>
+      !interacted &&
+      Date.now() - started < 2000 &&
+      document.visibilityState === 'visible' &&
+      !(
+        document.activeElement instanceof HTMLElement &&
+        document.activeElement.matches('input,textarea,select,[contenteditable=true]')
+      );
+    let active = true,
+      accepted = false;
+    let deadline: number | undefined;
     const changed = () => {
-      if (accepted.current) {
-        window.clearTimeout(deadline.current);
+      if (accepted) {
+        window.clearTimeout(deadline);
         window.location.reload();
       }
     };
     navigator.serviceWorker.addEventListener('controllerchange', changed);
-    void navigator.serviceWorker.ready.then((value) => {
-      if (!active) return;
-      registration = value;
-      update();
-      registration.addEventListener('updatefound', update);
-    });
+    void navigator.serviceWorker.ready
+      .then(async (registration) => {
+        const waiting = registration.waiting;
+        if (!active || !safe() || !waiting || !navigator.serviceWorker.controller) return;
+        const pending: Promise<void>[] = [];
+        window.dispatchEvent(
+          new CustomEvent('weiban:before-update', {
+            detail: { waitUntil: (work: Promise<void>) => pending.push(work) },
+          }),
+        );
+        await Promise.allSettled(pending);
+        if (!active || !safe()) {
+          window.dispatchEvent(new Event('weiban:update-failed'));
+          return;
+        }
+        accepted = true;
+        deadline = window.setTimeout(() => {
+          accepted = false;
+          window.dispatchEvent(new Event('weiban:update-failed'));
+        }, 10_000);
+        waiting.postMessage({ type: 'SKIP_WAITING' });
+      })
+      .catch(() => {
+        if (active) window.dispatchEvent(new Event('weiban:update-failed'));
+      });
     return () => {
+      for (const event of ['pointerdown', 'keydown', 'input'])
+        document.removeEventListener(event, interaction, true);
       active = false;
-      registration?.removeEventListener('updatefound', update);
+      accepted = false;
+      window.clearTimeout(deadline);
       navigator.serviceWorker.removeEventListener('controllerchange', changed);
-      window.clearTimeout(deadline.current);
     };
   }, []);
-  return waiting ? (
-    <div className="update-prompt" role="status">
-      <span>新版本已准备好</span>
-      <button
-        disabled={updating}
-        onClick={() =>
-          void (async () => {
-            setUpdating(true);
-            setError('');
-            accepted.current = true;
-            const pending: Promise<void>[] = [];
-            window.dispatchEvent(
-              new CustomEvent('weiban:before-update', {
-                detail: { waitUntil: (work: Promise<void>) => pending.push(work) },
-              }),
-            );
-            await Promise.allSettled(pending);
-            waiting.postMessage({ type: 'SKIP_WAITING' });
-            deadline.current = window.setTimeout(() => {
-              accepted.current = false;
-              setUpdating(false);
-              setError('更新暂未完成，请重试');
-              window.dispatchEvent(new Event('weiban:update-failed'));
-            }, 10_000);
-          })()
-        }
-      >
-        {updating ? '正在更新…' : '更新'}
-      </button>
-      <button disabled={updating} onClick={() => setWaiting(null)}>
-        稍后
-      </button>
-      {error && <span role="alert">{error}</span>}
-    </div>
-  ) : null;
+  return null;
 }

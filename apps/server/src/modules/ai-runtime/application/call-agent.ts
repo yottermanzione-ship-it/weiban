@@ -12,6 +12,8 @@
  * - 结束：整理通话摘要写入记忆（MEM-04），记忆页可见。
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { userNickname, userNamingContext } from '../domain/user-naming.js';
+import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import { AdultBoundaryService } from './adult-boundary.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
 import type {
@@ -26,6 +28,7 @@ import type {
   ChatMessageForModel,
   ChatReadPort,
   ContactsReadPort,
+  IdentityReadPort,
   ModelGatewayMediaPort,
   ModelGatewayPort,
   PolicyPort,
@@ -211,7 +214,7 @@ class AgentSession implements CallAgentSession {
       },
       {
         role: 'system',
-        content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 8), safetyStyle: role.card.data.safetyStyle }).slice(0, 20000)}${supplementBlock(role.userSupplement)}\n用户称呼：${this.info.addressAs}`,
+        content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 8), safetyStyle: role.card.data.safetyStyle }).slice(0, 20000)}${supplementBlock(role.userSupplement)}\n${userNamingContext(this.info.addressAs)}`,
       },
       ...(this.info.memoryBlock
         ? [{ role: 'system' as const, content: this.info.memoryBlock }]
@@ -412,6 +415,7 @@ export class CallAgentService implements CallAgentPort {
     @Inject(CompanionSettingsService) private readonly settings: CompanionSettingsService,
     // 不注入 CallSchedulerService：它依赖 calls 的 CallSessionPort，而 calls 构造时依赖本服务，会形成循环。
     @Inject(DATABASE) private readonly db: Database,
+    @Inject(IDENTITY_READ_PORT) private readonly identity: IdentityReadPort,
   ) {}
 
   private async reasonFor(callId: string): Promise<string | null> {
@@ -444,6 +448,7 @@ export class CallAgentService implements CallAgentPort {
     const policy = await this.policy.getCharacterPolicy(input.userId, input.characterId);
     if (!contact || contact.conversationId !== input.conversationId || !role || !policy)
       return { ok: false, error: 'not_available' };
+    const profile = await this.identity.getProfile(input.userId);
     const settings = await this.settings.get(input.userId, input.characterId).catch(() => null);
     const scope =
       settings?.scenarioMode === 'adult' && policy.adultModeEligible ? 'adult' : 'normal';
@@ -510,7 +515,7 @@ export class CallAgentService implements CallAgentPort {
         voiceId,
         role,
         policy,
-        addressAs: contact.addressAs ?? '你',
+        addressAs: userNickname(profile?.nickname),
         callReason: input.direction === 'incoming' ? await this.reasonFor(input.callId) : null,
         history,
         memoryBlock,

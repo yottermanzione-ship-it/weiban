@@ -17,6 +17,7 @@ import {
   type ModelGatewayPort,
   type ChatReadPort,
   Id,
+  TimelineMood,
   Timestamp,
   type TimelineSummaryResponse,
   type TimelineEntry,
@@ -29,7 +30,7 @@ import { MOMENTS_READ_PORT } from '../../moments/index.js';
 import { PUBLIC_UPDATE_READ_PORT } from '../../characters/index.js';
 import { SocialService } from './social.js';
 import { CLOCK, DATABASE, AppError, type Clock, type Database } from '../../../platform/index.js';
-import { chatVisits, dailyEvents } from '../infra/db/schema.js';
+import { chatVisits, dailyEvents, moodStates } from '../infra/db/schema.js';
 import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { CHAT_READ_PORT } from '../../chat/index.js';
 import {
@@ -249,6 +250,21 @@ export class TimelineListService {
     @Inject(PUBLIC_UPDATE_READ_PORT)
     private readonly publicUpdates?: PublicUpdateReadPort,
   ) {}
+
+  async getStatus(userId: string, characterId: string) {
+    if (!Id.safeParse(characterId).success) throw new AppError('bad_request', '角色 ID 不正确');
+    if (!(await this.contacts.getActiveContact(userId, characterId)))
+      throw new AppError('not_found', '好友不存在');
+    const [row] = await this.db.db
+      .select()
+      .from(moodStates)
+      .where(and(eq(moodStates.userId, userId), eq(moodStates.characterId, characterId)))
+      .limit(1);
+    const mood = TimelineMood.safeParse(row?.mood);
+    return mood.success && row
+      ? { mood: mood.data, updatedAt: row.updatedAt.toISOString() }
+      : { mood: null, updatedAt: null };
+  }
 
   async list(
     userId: string,

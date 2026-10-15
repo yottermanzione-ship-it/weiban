@@ -21,12 +21,15 @@ import type {
   UpdateUserPreferencesRequest,
   UserPreferences,
   MediaReadPort,
+  MediaSystemPort,
 } from '@weiban/contracts';
-import { UpdateNotificationSettingsRequest } from '@weiban/contracts';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { UpdateNotificationSettingsRequest, Username } from '@weiban/contracts';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   AppError,
+  AUDIT_LOG,
+  type AuditLog,
   asDbTx,
   CLOCK,
   DATABASE,
@@ -37,8 +40,14 @@ import {
   type Outbox,
 } from '../../../platform/index.js';
 import { isValidTimeZone } from '../domain/rules.js';
-import { MEDIA_READ_PORT } from '../../media/index.js';
-import { notificationSettings, preferences, profiles, users } from '../infra/db/schema.js';
+import { MEDIA_READ_PORT, MEDIA_SYSTEM_PORT } from '../../media/index.js';
+import {
+  notificationSettings,
+  preferences,
+  profiles,
+  users,
+  loginAliases,
+} from '../infra/db/schema.js';
 
 type ProfileRow = typeof profiles.$inferSelect;
 type NotificationRow = typeof notificationSettings.$inferSelect;
@@ -64,6 +73,7 @@ export function toProfile(row: ProfileRow): Profile {
   return {
     nickname: row.nickname,
     avatarMediaId: row.avatarMediaId,
+    momentsCoverMediaId: row.momentsCoverMediaId ?? null,
     birthday: row.birthday,
     gender: row.gender as Profile['gender'],
     city: row.city,
@@ -113,6 +123,8 @@ export class SettingsService
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(MEDIA_READ_PORT) private readonly media: MediaReadPort,
+    @Inject(MEDIA_SYSTEM_PORT) private readonly mediaSystem: MediaSystemPort,
+    @Inject(AUDIT_LOG) private readonly audit: AuditLog,
   ) {}
 
   /** 注册时在同一事务写入资料、通知设置、界面偏好的默认值。 */
@@ -136,6 +148,80 @@ export class SettingsService
   }
 
   // ---------- 资料 ----------
+
+  private aliasValue(row: typeof users.$inferSelect) {
+    return {
+      username: row.currentAlias ?? row.username,
+      nextChangeAt: row.aliasChangedAt
+        ? new Date(row.aliasChangedAt.getTime() + 7 * 86400_000).toISOString()
+        : null,
+    };
+  }
+  async getAlias(userId: string) {
+    const [row] = await this.database.db.select().from(users).where(eq(users.id, userId));
+    if (!row || row.status !== 'active') throw new AppError('not_found', '账号不存在');
+    return this.aliasValue(row);
+  }
+  async updateAlias(userId: string, username: string) {
+    const parsed = Username.safeParse(username);
+    if (!parsed.success) throw new AppError('bad_request', '微伴号格式不正确');
+    const normalized = parsed.data.toLowerCase();
+    return this.database.transaction(async (tx) => {
+      const [row] = await tx.db.select().from(users).where(eq(users.id, userId)).for('update');
+      if (!row || row.status !== 'active') throw new AppError('not_found', '账号不存在');
+      if ((row.currentAlias ?? row.username).toLowerCase() === normalized)
+        return this.aliasValue(row);
+      const now = this.clock.now();
+      const next = row.aliasChangedAt ? row.aliasChangedAt.getTime() + 7 * 86400_000 : 0;
+      if (now.getTime() < next)
+        throw new AppError('rate_limited', '每周只能修改一次微伴号', {
+          status: 429,
+          details: { nextChangeAt: new Date(next).toISOString() },
+        });
+      // Reserve original name too, including accounts introduced by an older CLI/import path.
+      await tx.db
+        .insert(loginAliases)
+        .values({ alias: row.username.toLowerCase(), userId, createdAt: row.createdAt })
+        .onConflictDoNothing();
+      const [legacy] = await tx.db
+        .select({ id: users.id })
+        .from(users)
+        .where(sql`lower(${users.username}) = ${normalized}`)
+        .limit(1);
+      if (legacy && legacy.id !== userId) throw new AppError('username_taken', '微伴号已被占用');
+      await tx.db
+        .insert(loginAliases)
+        .values({ alias: normalized, userId, createdAt: now })
+        .onConflictDoNothing();
+      const [owner] = await tx.db
+        .select()
+        .from(loginAliases)
+        .where(eq(loginAliases.alias, normalized));
+      if (owner?.userId !== userId) throw new AppError('username_taken', '微伴号已被占用');
+      const [updated] = await tx.db
+        .update(users)
+        .set({ currentAlias: parsed.data, aliasChangedAt: now, updatedAt: now })
+        .where(eq(users.id, userId))
+        .returning();
+      await this.audit.record(
+        {
+          module: 'identity',
+          action: 'alias.updated',
+          actorType: 'user',
+          actorId: userId,
+          targetType: 'user',
+          targetId: userId,
+          details: { previous: row.currentAlias ?? row.username, username: parsed.data },
+        },
+        tx,
+      );
+      await this.outbox.publish(tx, 'identity.profile_updated', 'identity', {
+        userId,
+        changedFields: ['username'],
+      });
+      return this.aliasValue(updated!);
+    });
+  }
 
   async getProfile(userId: string, input?: Tx): Promise<Profile | null> {
     const [row] = await (input ? asDbTx(input).db : this.database.db)
@@ -167,6 +253,11 @@ export class SettingsService
         .where(eq(profiles.userId, userId))
         .for('update');
       if (!row) throw new AppError('not_found', '账号不存在');
+      if (
+        patch.momentsCoverMediaId &&
+        !(await this.mediaSystem.canUse(userId, patch.momentsCoverMediaId, ['moments_cover']))
+      )
+        throw new AppError('bad_request', '请使用本人上传的朋友圈封面');
       const current = toProfile(row);
       const changed = changedKeys(current, patch);
       if (changed.length === 0) return current;
@@ -177,6 +268,14 @@ export class SettingsService
         .set(set)
         .where(eq(profiles.userId, userId))
         .returning();
+      if (changed.includes('momentsCoverMediaId') && row.momentsCoverMediaId) {
+        const [used] = await tx.db
+          .select({ userId: profiles.userId })
+          .from(profiles)
+          .where(eq(profiles.momentsCoverMediaId, row.momentsCoverMediaId))
+          .limit(1);
+        if (!used) await this.mediaSystem.deleteObject(row.momentsCoverMediaId, tx);
+      }
       await this.outbox.publish(tx, 'identity.profile_updated', 'identity', {
         userId,
         changedFields: changed.map(String),
@@ -329,7 +428,10 @@ export class SettingsService
     if (userIds.length > 500) throw new AppError('bad_request', '一次最多查询 500 个用户 ID');
     if (userIds.length === 0) return {};
     const rows = await this.database.db
-      .select({ id: users.id, username: users.username })
+      .select({
+        id: users.id,
+        username: sql<string>`coalesce(${users.currentAlias}, ${users.username})`,
+      })
       .from(users)
       .where(inArray(users.id, [...new Set(userIds)]));
     return Object.fromEntries(rows.map((row) => [row.id, row.username]));

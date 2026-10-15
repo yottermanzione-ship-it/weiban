@@ -175,7 +175,6 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
         hint.classList.toggle('half', t >= 0.5);
         const nowArmed = !openRef.current && value >= THRESHOLD;
         hint.classList.toggle('armed', nowArmed);
-        if (nowArmed && !armed.current) navigator.vibrate?.(10);
         armed.current = nowArmed;
       }
     },
@@ -580,7 +579,6 @@ function GridCell({
         state = 'lifted';
         swallow = true;
         el.classList.add('lifted');
-        navigator.vibrate?.(10);
       }, LIFT_MS);
     };
     /** 返回 true = 本图标接管这次移动。 */

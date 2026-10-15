@@ -1,0 +1,29 @@
+[
+  {
+    "path": "/api/v1/moments/badge/seen",
+    "method": "POST",
+    "body": {
+      "scope": "posts"
+    }
+  },
+  {
+    "path": "/api/v1/media",
+    "purpose": "moments_cover",
+    "bytes": 39172,
+    "mediaId": "4020b1e7-a465-442c-83f2-737e7f9485a2"
+  },
+  {
+    "path": "/api/v1/me/profile",
+    "method": "PATCH",
+    "body": {
+      "momentsCoverMediaId": "4020b1e7-a465-442c-83f2-737e7f9485a2"
+    }
+  },
+  {
+    "path": "/api/v1/me/profile",
+    "method": "PATCH",
+    "body": {
+      "momentsCoverMediaId": "4020b1e7-a465-442c-83f2-737e7f9485a2"
+    }
+  }
+]

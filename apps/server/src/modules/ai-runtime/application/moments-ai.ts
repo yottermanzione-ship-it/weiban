@@ -485,9 +485,7 @@ export class MomentsAiService {
     const userId = payload.ownerUserId;
     if (payload.authorKind === 'user') {
       // SOC-09 第 3 条：可见角色按熟悉度决定点赞、评论；至少 1 个 L2+ 角色互动。
-      const ids = payload.visibleCharacterIds.length
-        ? payload.visibleCharacterIds
-        : (await this.contacts.listActiveContacts(userId)).map((c) => c.characterId);
+      const ids = payload.visibleCharacterIds;
       const scored: { id: string; level: number }[] = [];
       for (const id of ids) {
         const level = await this.growth
@@ -618,8 +616,10 @@ export class MomentsAiService {
       }))
     )
       return;
-    const post = await this.moments.getPost(userId, job.postId);
+    const post = await this.moments.getPostVisibleToCharacter(userId, job.postId, characterId);
     if (!post) return;
+    if (job.replyToCommentId && !post.comments.some((c) => c.commentId === job.replyToCommentId))
+      return;
     if (job.like || job.action === 'like')
       await this.writer.like({
         ownerUserId: userId,
@@ -687,6 +687,26 @@ export class MomentsAiService {
       .getFamiliarity(userId, characterId)
       .then((f) => f.level)
       .catch(() => 1);
+    const current = await this.moments.getPostVisibleToCharacter(userId, post.postId, characterId);
+    if (
+      !current ||
+      (job.replyToCommentId && !current.comments.some((c) => c.commentId === job.replyToCommentId))
+    )
+      return null;
+    if (
+      current.text !== post.text ||
+      JSON.stringify(current.comments) !== JSON.stringify(post.comments)
+    )
+      return null;
+    post = current;
+    const target = job.replyToCommentId
+      ? post.comments.find((c) => c.commentId === job.replyToCommentId)
+      : null;
+    if (
+      target?.author.kind === 'character' &&
+      !(await this.moments.getPostVisibleToCharacter(userId, post.postId, target.author.refId))
+    )
+      return null;
     const thread = post.comments
       .slice(-12)
       .map(

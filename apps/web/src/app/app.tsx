@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
+import { RouteMotion } from '../features/route-motion.js';
 import { OldIcon } from '../features/old-icons.js';
 import { BackArrow } from '../features/shell-kit.js';
 import { useChat } from './chat.js';
@@ -59,7 +60,7 @@ import {
 } from '../features/moments.js';
 import { NewFriendsPage, useNewFriendsDot } from '../features/new-friends.js';
 import { RelationsPage } from '../features/relations.js';
-import { UpdatePrompt } from './update-prompt.js';
+import { ServiceWorkerRefresh } from './update-prompt.js';
 import { CallLinkPage, CallProvider } from '../features/call.js';
 import { MyStickersPage } from '../features/stickers.js';
 import { VoicePickerPage } from '../features/voices.js';
@@ -229,157 +230,162 @@ function Shell() {
             网络暂不可用，正在显示本机保存的内容
           </div>
         )}
-        {!onboarding &&
-          !miniApp &&
-          !roots.includes(location.pathname) &&
-          !location.pathname.startsWith('/chat/') &&
-          !ownHeader.some((pattern) => pattern.test(location.pathname)) && (
-            <header className="topbar">
-              <TopBack
-                fallback={
-                  [
-                    '/wallet',
-                    '/models',
-                    '/ledger',
-                    '/prices',
-                    '/leaderboard',
-                    '/usage',
-                    '/services/proactive',
-                    '/services/familiarity',
-                  ].includes(location.pathname)
-                    ? '/services'
-                    : ['/settings/security', '/settings/privacy', '/settings/general'].includes(
-                          location.pathname,
-                        )
-                      ? '/settings'
-                      : '/me'
-                }
-              />
-            </header>
-          )}
-        {(() => {
-          const routes = (
-            <Routes>
-              <Route
-                path="/"
-                element={
-                  <Navigate
-                    to={auth.session.user.profileCompleted ? '/chat' : '/profile'}
-                    replace
-                  />
-                }
-              />
-              <Route path="/me" element={<MePage />} />
-              <Route path="/profile" element={<ProfilePage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/services" element={<ServicesPage />} />
-              <Route path="/wallet" element={<WalletPage />} />
-              <Route path="/wallet/recharge" element={<RechargePage />} />
-              <Route path="/ledger" element={<LedgerPage />} />
-              <Route path="/prices" element={<PricesPage />} />
-              <Route path="/models" element={<ModelsPage />} />
-              <Route path="/leaderboard" element={<LeaderboardPage />} />
-              <Route path="/usage" element={<UsagePage />} />
-              <Route path="/characters/custom/new" element={<CreateCustomCharacterPage />} />
-              <Route
-                path="/characters/custom/:characterId/edit"
-                element={<EditCustomCharacterPage />}
-              />
-              <Route path="/settings/security" element={<AccountSecurityPage />} />
-              <Route path="/settings/privacy" element={<PrivacySettingsPage />} />
-              <Route path="/settings/general" element={<GeneralSettingsPage />} />
-              <Route path="/services/proactive" element={<ProactiveSettingsPage />} />
-              <Route path="/services/period" element={<PeriodPage />} />
-              <Route path="/services/period/day/:date" element={<PeriodDayPage />} />
-              <Route path="/services/period/history" element={<PeriodHistoryPage />} />
-              <Route path="/services/period/authorization" element={<PeriodAuthorizationPage />} />
-              <Route path="/services/period/settings" element={<PeriodSettingsPage />} />
-              <Route path="/chat" element={<ConversationListPage />} />
-              <Route path="/chat/:conversationId" element={<ConversationPage />} />
-              <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />
-              <Route path="/characters/:characterId/memories" element={<MemoriesPage />} />
-              <Route path="/characters/:characterId/timeline" element={<TimelinePage />} />
-              <Route path="/characters/:characterId/moments" element={<CharacterMomentsPage />} />
-              <Route path="/characters/:characterId/relations" element={<RelationsPage />} />
-              <Route path="/contacts/new" element={<NewFriendsPage />} />
-              <Route path="/contacts/groups" element={<GroupListPage />} />
-              <Route path="/groups/new" element={<SelectMembersPage />} />
-              <Route path="/chat/:conversationId/group" element={<GroupSettingsPage />} />
-              <Route path="/moments" element={<MomentsFeedPage />} />
-              <Route path="/moments/new" element={<ComposeMomentPage />} />
-              <Route path="/moments/notifications" element={<MomentsNotificationsPage />} />
-              <Route path="/moments/posts/:postId" element={<MomentDetailPage />} />
-              <Route path="/me/moments" element={<MyMomentsPage />} />
-              <Route
-                path="/characters/:characterId/anniversaries"
-                element={<AnniversariesPage />}
-              />
-              <Route path="/me/stickers" element={<MyStickersPage />} />
-              <Route path="/me/favorites" element={<FavoritesPage />} />
-              <Route path="/me/favorites/:favoriteId" element={<FavoriteDetailPage />} />
-              <Route path="/services/cards" element={<CardAlbumsPage />} />
-              <Route path="/services/achievements" element={<AchievementsPage />} />
-              <Route path="/services/familiarity" element={<FamiliarityOverviewPage />} />
-              <Route path="/characters/:characterId/cards" element={<CardAlbumPage />} />
-              <Route path="/search" element={<GlobalSearchPage />} />
-              <Route path="/search/:conversationId" element={<ConversationHitsPage />} />
-              <Route path="/chat/:conversationId/search" element={<ConversationSearchPage />} />
-              <Route path="/share" element={<ShareEditorPage />} />
-              <Route path="/imports" element={<ImportListPage />} />
-              <Route path="/imports/new" element={<ImportPage />} />
-              <Route path="/imports/:jobId" element={<ImportPage />} />
-              <Route path="/characters/:characterId/supplement" element={<SupplementPage />} />
-              <Route path="/settings/delete-account" element={<AccountDeletionPage />} />
-              <Route path="/services/pets" element={<PetsPage />} />
-              <Route path="/pets/adopt" element={<AdoptPage />} />
-              <Route path="/pets/:petId" element={<PetPage />} />
-              <Route path="/play/daily" element={<DailyQuestionPage />} />
-              <Route path="/play/daily/history" element={<DailyHistoryPage />} />
-              <Route path="/play/wishlists" element={<WishlistsPage />} />
-              <Route path="/play/wishlists/:characterId" element={<WishlistPage />} />
-              <Route path="/play/letters" element={<LettersPage />} />
-              <Route path="/play/letters/new" element={<WriteLetterPage />} />
-              <Route path="/play/letters/:letterId" element={<LetterPage />} />
-              <Route path="/play/focus" element={<FocusPage />} />
-              <Route path="/play/reminders" element={<RemindersPage />} />
-              <Route path="/play/reminders/:reminderId" element={<ReminderEditPage />} />
-              <Route path="/plaza/works/:workId" element={<WorkPage />} />
-              <Route path="/plaza/authors/:authorId" element={<AuthorPage />} />
-              <Route path="/plaza/me" element={<MyWorksPage />} />
-              <Route path="/plaza/profile" element={<PlazaProfilePage />} />
-              <Route path="/plaza/publish" element={<PublishPage />} />
-              <Route path="/plaza/report" element={<ReportPage />} />
-              <Route path="/characters/:characterId/voice" element={<VoicePickerPage />} />
-              <Route path="/calls/:callId" element={<CallLinkPage />} />
-              <Route path="/coming-soon/:feature" element={<ComingSoonPage />} />
-              <Route path="/miniapps" element={<MiniAppsHomePage />} />
-              <Route path="/discover/plaza" element={<Navigate to="/plaza" replace />} />
-              <Route path="/contacts/add" element={<RolePlazaPage />} />
-              <Route path="/plaza" element={<RolePlazaHubPage />} />
-              <Route path="/plaza/official/:characterId" element={<OfficialRolePage />} />
-              <Route path="/roles/create" element={<RoleCreatePage />} />
-              <Route path="/role-requests" element={<RoleRequestListPage />} />
-              <Route path="/role-requests/new" element={<RoleRequestFormPage />} />
-              <Route path="/role-requests/:requestId" element={<RoleRequestDetailPage />} />
-              <Route path="/pets/with/:characterId" element={<PetWithPage />} />
-              <Route path="/characters/:characterId/model" element={<CharacterModelPage />} />
-              <Route path="/settings/about" element={<AboutPage />} />
-              <Route path="/settings/announcements" element={<AnnouncementsPage />} />
-              <Route path="/settings/release-notes" element={<ReleaseNotesPage />} />
-              <Route path="/contacts" element={<ContactsPage />} />
-              <Route path="/discover" element={<DiscoverPage />} />
-              <Route path="/characters/:characterId" element={<CharacterPage />} />
-              <Route path="*" element={<Navigate to="/me" replace />} />
-            </Routes>
-          );
-          return miniApp ? (
-            <MiniAppFrame key={miniApp.id} app={miniApp}>
-              {routes}
-            </MiniAppFrame>
-          ) : (
-            routes
-          );
-        })()}
+        <RouteMotion>
+          {!onboarding &&
+            !miniApp &&
+            !roots.includes(location.pathname) &&
+            !location.pathname.startsWith('/chat/') &&
+            !ownHeader.some((pattern) => pattern.test(location.pathname)) && (
+              <header className="topbar">
+                <TopBack
+                  fallback={
+                    [
+                      '/wallet',
+                      '/models',
+                      '/ledger',
+                      '/prices',
+                      '/leaderboard',
+                      '/usage',
+                      '/services/proactive',
+                      '/services/familiarity',
+                    ].includes(location.pathname)
+                      ? '/services'
+                      : ['/settings/security', '/settings/privacy', '/settings/general'].includes(
+                            location.pathname,
+                          )
+                        ? '/settings'
+                        : '/me'
+                  }
+                />
+              </header>
+            )}
+          {(() => {
+            const routes = (
+              <Routes location={location}>
+                <Route
+                  path="/"
+                  element={
+                    <Navigate
+                      to={auth.session.user.profileCompleted ? '/chat' : '/profile'}
+                      replace
+                    />
+                  }
+                />
+                <Route path="/me" element={<MePage />} />
+                <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/services" element={<ServicesPage />} />
+                <Route path="/wallet" element={<WalletPage />} />
+                <Route path="/wallet/recharge" element={<RechargePage />} />
+                <Route path="/ledger" element={<LedgerPage />} />
+                <Route path="/prices" element={<PricesPage />} />
+                <Route path="/models" element={<ModelsPage />} />
+                <Route path="/leaderboard" element={<LeaderboardPage />} />
+                <Route path="/usage" element={<UsagePage />} />
+                <Route path="/characters/custom/new" element={<CreateCustomCharacterPage />} />
+                <Route
+                  path="/characters/custom/:characterId/edit"
+                  element={<EditCustomCharacterPage />}
+                />
+                <Route path="/settings/security" element={<AccountSecurityPage />} />
+                <Route path="/settings/privacy" element={<PrivacySettingsPage />} />
+                <Route path="/settings/general" element={<GeneralSettingsPage />} />
+                <Route path="/services/proactive" element={<ProactiveSettingsPage />} />
+                <Route path="/services/period" element={<PeriodPage />} />
+                <Route path="/services/period/day/:date" element={<PeriodDayPage />} />
+                <Route path="/services/period/history" element={<PeriodHistoryPage />} />
+                <Route
+                  path="/services/period/authorization"
+                  element={<PeriodAuthorizationPage />}
+                />
+                <Route path="/services/period/settings" element={<PeriodSettingsPage />} />
+                <Route path="/chat" element={<ConversationListPage />} />
+                <Route path="/chat/:conversationId" element={<ConversationPage />} />
+                <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />
+                <Route path="/characters/:characterId/memories" element={<MemoriesPage />} />
+                <Route path="/characters/:characterId/timeline" element={<TimelinePage />} />
+                <Route path="/characters/:characterId/moments" element={<CharacterMomentsPage />} />
+                <Route path="/characters/:characterId/relations" element={<RelationsPage />} />
+                <Route path="/contacts/new" element={<NewFriendsPage />} />
+                <Route path="/contacts/groups" element={<GroupListPage />} />
+                <Route path="/groups/new" element={<SelectMembersPage />} />
+                <Route path="/chat/:conversationId/group" element={<GroupSettingsPage />} />
+                <Route path="/moments" element={<MomentsFeedPage />} />
+                <Route path="/moments/new" element={<ComposeMomentPage />} />
+                <Route path="/moments/notifications" element={<MomentsNotificationsPage />} />
+                <Route path="/moments/posts/:postId" element={<MomentDetailPage />} />
+                <Route path="/me/moments" element={<MyMomentsPage />} />
+                <Route
+                  path="/characters/:characterId/anniversaries"
+                  element={<AnniversariesPage />}
+                />
+                <Route path="/me/stickers" element={<MyStickersPage />} />
+                <Route path="/me/favorites" element={<FavoritesPage />} />
+                <Route path="/me/favorites/:favoriteId" element={<FavoriteDetailPage />} />
+                <Route path="/services/cards" element={<CardAlbumsPage />} />
+                <Route path="/services/achievements" element={<AchievementsPage />} />
+                <Route path="/services/familiarity" element={<FamiliarityOverviewPage />} />
+                <Route path="/characters/:characterId/cards" element={<CardAlbumPage />} />
+                <Route path="/search" element={<GlobalSearchPage />} />
+                <Route path="/search/:conversationId" element={<ConversationHitsPage />} />
+                <Route path="/chat/:conversationId/search" element={<ConversationSearchPage />} />
+                <Route path="/share" element={<ShareEditorPage />} />
+                <Route path="/imports" element={<ImportListPage />} />
+                <Route path="/imports/new" element={<ImportPage />} />
+                <Route path="/imports/:jobId" element={<ImportPage />} />
+                <Route path="/characters/:characterId/supplement" element={<SupplementPage />} />
+                <Route path="/settings/delete-account" element={<AccountDeletionPage />} />
+                <Route path="/services/pets" element={<PetsPage />} />
+                <Route path="/pets/adopt" element={<AdoptPage />} />
+                <Route path="/pets/:petId" element={<PetPage />} />
+                <Route path="/play/daily" element={<DailyQuestionPage />} />
+                <Route path="/play/daily/history" element={<DailyHistoryPage />} />
+                <Route path="/play/wishlists" element={<WishlistsPage />} />
+                <Route path="/play/wishlists/:characterId" element={<WishlistPage />} />
+                <Route path="/play/letters" element={<LettersPage />} />
+                <Route path="/play/letters/new" element={<WriteLetterPage />} />
+                <Route path="/play/letters/:letterId" element={<LetterPage />} />
+                <Route path="/play/focus" element={<FocusPage />} />
+                <Route path="/play/reminders" element={<RemindersPage />} />
+                <Route path="/play/reminders/:reminderId" element={<ReminderEditPage />} />
+                <Route path="/plaza/works/:workId" element={<WorkPage />} />
+                <Route path="/plaza/authors/:authorId" element={<AuthorPage />} />
+                <Route path="/plaza/me" element={<MyWorksPage />} />
+                <Route path="/plaza/profile" element={<PlazaProfilePage />} />
+                <Route path="/plaza/publish" element={<PublishPage />} />
+                <Route path="/plaza/report" element={<ReportPage />} />
+                <Route path="/characters/:characterId/voice" element={<VoicePickerPage />} />
+                <Route path="/calls/:callId" element={<CallLinkPage />} />
+                <Route path="/coming-soon/:feature" element={<ComingSoonPage />} />
+                <Route path="/miniapps" element={<MiniAppsHomePage />} />
+                <Route path="/discover/plaza" element={<Navigate to="/plaza" replace />} />
+                <Route path="/contacts/add" element={<RolePlazaPage />} />
+                <Route path="/plaza" element={<RolePlazaHubPage />} />
+                <Route path="/plaza/official/:characterId" element={<OfficialRolePage />} />
+                <Route path="/roles/create" element={<RoleCreatePage />} />
+                <Route path="/role-requests" element={<RoleRequestListPage />} />
+                <Route path="/role-requests/new" element={<RoleRequestFormPage />} />
+                <Route path="/role-requests/:requestId" element={<RoleRequestDetailPage />} />
+                <Route path="/pets/with/:characterId" element={<PetWithPage />} />
+                <Route path="/characters/:characterId/model" element={<CharacterModelPage />} />
+                <Route path="/settings/about" element={<AboutPage />} />
+                <Route path="/settings/announcements" element={<AnnouncementsPage />} />
+                <Route path="/settings/release-notes" element={<ReleaseNotesPage />} />
+                <Route path="/contacts" element={<ContactsPage />} />
+                <Route path="/discover" element={<DiscoverPage />} />
+                <Route path="/characters/:characterId" element={<CharacterPage />} />
+                <Route path="*" element={<Navigate to="/me" replace />} />
+              </Routes>
+            );
+            return miniApp ? (
+              <MiniAppFrame key={miniApp.id} app={miniApp}>
+                {routes}
+              </MiniAppFrame>
+            ) : (
+              routes
+            );
+          })()}
+        </RouteMotion>
         {showTabs && <TabBar hidden={false} />}
         <AchievementWatcher />
         {!firstProfile && <ReleaseCenter />}
@@ -397,7 +403,7 @@ function Splash() {
 export function App() {
   return (
     <AuthProvider>
-      <UpdatePrompt />
+      <ServiceWorkerRefresh />
       <ChatProvider>
         <Shell />
         <Splash />

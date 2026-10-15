@@ -1,3 +1,4 @@
+import { SearchField } from './search-field.js';
 /*
  * 通讯录（规格 4.6）、发现（4.8）、角色广场（5.2）、角色资料页（4.12）。
  */
@@ -20,6 +21,7 @@ import { useCharacterNames } from '../data/character-names.js';
 import { useStars } from '../data/stars.js';
 import { CharacterName } from './chat.js';
 import { CharacterAvatar } from './character-avatar.js';
+import { CharacterStatus } from './character-status.js';
 import { ContactAvatarEditor } from './contact-avatar-editor.js';
 import { FamiliarityLine } from './growth.js';
 import { PersonaUpdateBadge } from './supplement.js';
@@ -38,14 +40,11 @@ import {
   ComingSoonRow,
   EmptyState,
   GroupHeader,
-  LongPressMenu,
   MenuGroup,
   MenuRow,
   NavBar,
   NavIcon,
   Sheet,
-  useLongPress,
-  type ActionItem,
 } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 
@@ -70,16 +69,13 @@ function ContactRow({
   characterId,
   remark,
   pending,
-  onMenu,
 }: {
   characterId: string;
   remark: string | null;
   pending: boolean;
-  onMenu(at: { x: number; y: number }): void;
 }) {
-  const press = useLongPress(onMenu);
   return (
-    <Link to={`/characters/${characterId}`} className="contact-row" {...press}>
+    <Link to={`/characters/${characterId}`} className="contact-row">
       <CharacterAvatar id={characterId} size={40} radius={4} />
       <span className="contact-name">
         <CharacterName id={characterId} fallback={remark} />
@@ -139,7 +135,6 @@ function LetterIndex({
     setActive({ letter, index });
     if (letter === last.current) return;
     last.current = letter;
-    navigator.vibrate?.(5);
     const target = resolve(letter);
     if (target) onJump(target);
   };
@@ -195,14 +190,10 @@ function LetterIndex({
 }
 
 export function ContactsPage() {
-  const { state, synchronize } = useChat();
-  const navigate = useNavigate();
+  const { state } = useChat();
   const newFriendsDot = useNewFriendsDot();
   const stars = useStars();
   const [query, setQuery] = useState('');
-  const [menu, setMenu] = useState<{ id: string; at: { x: number; y: number } } | null>(null);
-  const [remarking, setRemarking] = useState<string | null>(null);
-  const [removing, setRemoving] = useState<string | null>(null);
   const names = useCharacterNames(state.contacts.map((contact) => contact.characterId));
   const label = (c: (typeof state.contacts)[number]) => c.remark || names[c.characterId] || '';
   const contacts = [...state.contacts]
@@ -230,17 +221,6 @@ export function ContactsPage() {
       .getElementById(`letter-${letter === '☆' ? 'star' : letter}`)
       ?.scrollIntoView({ block: 'start' });
   };
-  const menuItems = (id: string): ActionItem[] => {
-    const contact = state.contacts.find((c) => c.characterId === id);
-    return [
-      ...(contact?.conversationId
-        ? [{ label: '发消息', onClick: () => navigate(`/chat/${contact.conversationId}`) }]
-        : []),
-      { label: '设置备注', onClick: () => setRemarking(id) },
-      { label: '删除', danger: true, onClick: () => setRemoving(id) },
-    ];
-  };
-  const remarkContact = state.contacts.find((c) => c.characterId === remarking);
   return (
     <main className="contacts-page">
       <NavBar
@@ -254,15 +234,12 @@ export function ContactsPage() {
         }
       />
       <div className="search-strip">
-        <label className="search-entry">
-          <OldIcon name="wechat/search" size={17} />
-          <input
-            aria-label="搜索通讯录"
-            placeholder="搜索"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </label>
+        <SearchField
+          aria-label="搜索通讯录"
+          placeholder="搜索"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
       {!query && (
         <>
@@ -287,7 +264,6 @@ export function ContactsPage() {
               label="群聊"
               chevron={false}
             />
-            <ComingSoonRow id="tags" tile chevron={false} />
             <ComingSoonRow id="official" tile chevron={false} />
             <ComingSoonRow id="services" tile chevron={false} />
           </MenuGroup>
@@ -311,7 +287,6 @@ export function ContactsPage() {
                 characterId={contact.characterId}
                 remark={contact.remark}
                 pending={contact.status === 'pending'}
-                onMenu={(at) => setMenu({ id: contact.characterId, at })}
               />
             ))}
           </div>
@@ -327,53 +302,6 @@ export function ContactsPage() {
           present={sections.map(([letter]) => letter)}
           onJump={jump}
         />
-      )}
-      {menu && (
-        <LongPressMenu at={menu.at} items={menuItems(menu.id)} onClose={() => setMenu(null)} />
-      )}
-      {remarking && (
-        <FieldSheet
-          title="设置备注"
-          initial={remarkContact?.remark ?? ''}
-          maxLength={20}
-          onClose={() => setRemarking(null)}
-          onSave={(value) => {
-            const id = remarking;
-            setRemarking(null);
-            void api
-              .call(ContactsEndpoints.update, {
-                params: { characterId: id },
-                body: { remark: value || null },
-              })
-              .then(() => synchronize())
-              .then(() => showToast('已保存', 2000, 'success'))
-              .catch((e) => showToast(friendlyError(e)));
-          }}
-        />
-      )}
-      {removing && (
-        <Dialog
-          actions={[
-            { label: '取消', onClick: () => setRemoving(null) },
-            {
-              label: '删除',
-              danger: true,
-              onClick: () => {
-                const id = removing;
-                setRemoving(null);
-                void api
-                  .call(ContactsEndpoints.remove, {
-                    params: { characterId: id },
-                    query: { mode: 'soft' },
-                  })
-                  .then(() => synchronize())
-                  .catch((e) => showToast(friendlyError(e)));
-              },
-            },
-          ]}
-        >
-          <p>删除后角色和聊天将从列表移除，30 天内重新添加可恢复</p>
-        </Dialog>
       )}
     </main>
   );
@@ -430,7 +358,12 @@ export function DiscoverPage() {
       </MenuGroup>
       <MenuGroup>
         <ComingSoonRow id="topstories" />
-        <MenuRow to="/search" icon="wechat/discover_search.png" tint="red" label="搜一搜" />
+        <MenuRow
+          icon="wechat/discover_search.png"
+          tint="red"
+          label="搜一搜"
+          onClick={() => showToast('暂未开放', 2000, 'info')}
+        />
       </MenuGroup>
       <MenuGroup>
         <ComingSoonRow id="games" />
@@ -509,56 +442,60 @@ export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) 
           setPrevious([]);
         }}
       >
-        <label className="search-entry">
-          <OldIcon name="wechat/search" size={17} />
-          <input
-            aria-label="搜索角色"
-            placeholder={onboarding ? '搜索角色' : '搜索角色名'}
-            value={query}
-            maxLength={50}
-            enterKeyHint="search"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
+        <SearchField
+          aria-label="搜索角色"
+          placeholder={onboarding ? '搜索角色' : '搜索角色名'}
+          value={query}
+          maxLength={50}
+          enterKeyHint="search"
+          onChange={(event) => setQuery(event.target.value)}
+        />
       </form>
       {!onboarding && !search && <AddFriendEntries />}
       {!onboarding && <GroupHeader>{search ? '搜索结果' : '推荐角色'}</GroupHeader>}
       {roles.error && <p role="alert">{roles.error}</p>}
-      {roles.loading && (
-        <p role="status" className="empty">
-          正在读取角色…
-        </p>
+      {roles.loading && !roles.data && (
+        <div className="role-loading" role="status" aria-label="正在读取角色">
+          {[0, 1, 2, 3].map((n) => (
+            <div className="role-skeleton" key={n}>
+              <i />
+              <span />
+            </div>
+          ))}
+        </div>
       )}
-      <MenuGroup>
-        {roles.data?.items.map((role) =>
-          onboarding ? (
-            <MenuRow
-              key={role.characterId}
-              disabled={draft.saving}
-              onClick={() => void draft.choose(role.characterId)}
-              label={
-                <>
-                  <CharacterAvatar id={role.characterId} profile={role} size={40} />
-                  <span className="row-name">{role.name}</span>
-                </>
-              }
-              subtitle={`${role.tagline}${role.added ? ' · 已添加' : ''}`}
-            />
-          ) : (
-            <MenuRow
-              key={role.characterId}
-              to={`/characters/${role.characterId}`}
-              label={
-                <>
-                  <CharacterAvatar id={role.characterId} profile={role} size={40} />
-                  <span className="row-name">{role.name}</span>
-                </>
-              }
-              subtitle={`${role.tagline}${role.added ? ' · 已添加' : ''}`}
-            />
-          ),
-        )}
-      </MenuGroup>
+      {!!roles.data?.items.length && (
+        <MenuGroup>
+          {roles.data?.items.map((role) =>
+            onboarding ? (
+              <MenuRow
+                key={role.characterId}
+                disabled={draft.saving}
+                onClick={() => void draft.choose(role.characterId)}
+                label={
+                  <>
+                    <CharacterAvatar id={role.characterId} profile={role} size={40} />
+                    <span className="row-name">{role.name}</span>
+                  </>
+                }
+                subtitle={`${role.tagline}${role.added ? ' · 已添加' : ''}`}
+              />
+            ) : (
+              <MenuRow
+                key={role.characterId}
+                to={`/characters/${role.characterId}`}
+                label={
+                  <>
+                    <CharacterAvatar id={role.characterId} profile={role} size={40} />
+                    <span className="row-name">{role.name}</span>
+                  </>
+                }
+                subtitle={`${role.tagline}${role.added ? ' · 已添加' : ''}`}
+              />
+            ),
+          )}
+        </MenuGroup>
+      )}
       {!roles.loading && roles.data?.items.length === 0 && (
         <EmptyState icon="wechat/search" title="没有找到角色" />
       )}
@@ -751,7 +688,7 @@ export function CharacterPage({
       await synchronize();
       setRestore(false);
       setSheet(null);
-      showToast('已发送好友申请', 2000, 'success');
+      showToast('已发送验证申请，等待对方通过', 2000, 'success');
       profile.refresh();
     } catch (e) {
       if (e instanceof ApiFailure && e.code === 'restore_choice_required') setRestore(true);
@@ -769,11 +706,7 @@ export function CharacterPage({
     void api
       .call(ContactsEndpoints.update, {
         params: { characterId },
-        body: {
-          remark: body.remark !== undefined ? body.remark : (contact?.remark ?? null),
-          addressAs: contact?.addressAs ?? null,
-          relationship: body.relationship ?? contact?.relationship ?? '朋友',
-        },
+        body,
       })
       .then(() => synchronize())
       .then(() => {
@@ -805,6 +738,11 @@ export function CharacterPage({
         <div className="profile-head-text">
           <h2>
             <span>{contact?.remark || data?.name || '角色资料'}</span>
+            <CharacterStatus
+              key={characterId}
+              characterId={characterId}
+              enabled={!onboarding && active}
+            />
             {contact && (
               <button
                 type="button"
@@ -844,7 +782,7 @@ export function CharacterPage({
             right={<MomentThumbs characterId={characterId} />}
           />
           {contact?.conversationId && <RecentRow characterId={characterId} />}
-          <MenuRow to={`/characters/${characterId}/memories`} label="TA 记得的事" />
+          <MenuRow to={`/characters/${characterId}/memories`} label="我们的记忆" />
         </MenuGroup>
       )}
       <MenuGroup>
@@ -857,7 +795,7 @@ export function CharacterPage({
           />
         )}
         <MenuRow
-          label="简介与作品"
+          label="简介"
           subtitle={data?.intro || data?.tagline || undefined}
           onClick={() => setSheet('intro')}
         />
@@ -967,11 +905,10 @@ export function CharacterPage({
         />
       )}
       {sheet === 'intro' && data && (
-        <Sheet title="简介与作品" onClose={() => setSheet(null)}>
+        <Sheet title="简介" onClose={() => setSheet(null)}>
           <div className="intro-sheet">
             {data.tagline && <p className="intro-tagline">{data.tagline}</p>}
             {data.intro && <p>{data.intro}</p>}
-            {data.tags.length > 0 && <p className="hint">{data.tags.join(' · ')}</p>}
             {data.showPublicSourceNotice && <small>本角色根据公开资料创作，不代表本人</small>}
           </div>
         </Sheet>

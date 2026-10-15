@@ -21,6 +21,7 @@ import {
   IdentityEndpoints,
   CharacterEndpoints,
   ModelAccessEndpoints,
+  MediaExtraEndpoints,
   LibraryEndpoints,
   MEDIA_LIMITS,
   SHARE_IMAGE_MAX_ITEMS,
@@ -60,15 +61,43 @@ import {
   type RecordResult,
 } from './media.js';
 import { useCall, useCallEntry } from './call.js';
+import { copyText } from './copy-text.js';
 import { Dialog, showToast } from './toast.js';
 import { prepareImage, uploadMedia } from '../data/upload.js';
 import { ApiFailure } from '@weiban/client-core';
 import { SHARE_REJECT_TEXT, openShare } from './share.js';
 import { familiarityNames } from './growth.js';
-import { ScenarioSheet, presetNames, presetSubtitle, useCurrentPreset } from './scenario.js';
-import { WithTaSheet } from './miniapps.js';
+import { ScenarioSheet, presetNames, useCurrentPreset } from './scenario.js';
+import { ChatAvatarLink } from './chat-avatar-link.js';
+import { ForwardPicker, ForwardedRecordBubble } from './chat-forward.js';
 import { OldIcon } from './old-icons.js';
-import { BackArrow, CheckCircle, Sheet, MenuGroup, MenuRow, showComingSoon } from './shell-kit.js';
+import {
+  BackArrow,
+  CheckCircle,
+  Sheet,
+  MenuGroup,
+  MenuRow,
+  showComingSoon,
+  useLongPress,
+} from './shell-kit.js';
+
+function BubblePress({
+  children,
+  onPress,
+}: {
+  children: ReactNode;
+  onPress(target: Element, x: number): void;
+}) {
+  const element = useRef<HTMLDivElement>(null);
+  const handlers = useLongPress(({ x }) => {
+    if (element.current) onPress(element.current, x);
+  });
+  return (
+    <div ref={element} className="wx-msg-bubble" {...handlers}>
+      {children}
+    </div>
+  );
+}
 import { dividerTime, needsDivider } from './time-format.js';
 interface Upload {
   localId: string;
@@ -213,6 +242,8 @@ export function content(message: Message): string {
       return '[信件]';
     case 'daily_question':
       return `[每日一问] ${message.content.question}`;
+    case 'forwarded_record':
+      return `[聊天记录] ${message.content.title}`;
     default:
       return '当前版本不支持此消息';
   }
@@ -254,40 +285,49 @@ function ActionCardBubble({
   return (
     <div className="wx-card action-card">
       <p className="wx-card-text">{message.content.text}</p>
-      <div className="wx-card-actions">
-        {message.content.actions.map((action) => (
-          <button
-            key={action.actionId}
-            type="button"
-            className={action.style === 'primary' ? 'primary' : ''}
-            disabled={pending || !!chosen}
-            aria-pressed={chosen === action.actionId}
-            onClick={() => {
-              setPending(true);
-              setError('');
-              void api
-                .call(ChatActionEndpoints.chooseMessageAction, {
-                  params: { conversationId: message.conversationId, messageId: message.messageId },
-                  body: { actionId: action.actionId },
-                })
-                .then((chosen) => {
-                  onChosen(chosen);
-                  // 角色提议一起领养（T-082）：「去看看」进入领养流程，角色已预选。
-                  if (
-                    message.content?.type === 'action_card' &&
-                    message.content.cardKind === 'pet_proposal' &&
-                    action.actionId === 'go'
-                  )
-                    navigateTo(`/pets/adopt?characterId=${message.content.ref?.id ?? ''}`);
-                })
-                .catch((e) => setError(friendlyError(e)))
-                .finally(() => setPending(false));
-            }}
-          >
-            {chosen === action.actionId ? `已选择：${action.label}` : action.label}
-          </button>
-        ))}
-      </div>
+      {chosen && message.content.cardKind === 'wishlist_proposal' ? (
+        <div className="wx-wish-result" role="status">
+          {chosen === 'add' ? '已加入' : '未加入'}
+        </div>
+      ) : (
+        <div className="wx-card-actions">
+          {message.content.actions.map((action) => (
+            <button
+              key={action.actionId}
+              type="button"
+              className={action.style === 'primary' ? 'primary' : ''}
+              disabled={pending || !!chosen}
+              aria-pressed={chosen === action.actionId}
+              onClick={() => {
+                setPending(true);
+                setError('');
+                void api
+                  .call(ChatActionEndpoints.chooseMessageAction, {
+                    params: {
+                      conversationId: message.conversationId,
+                      messageId: message.messageId,
+                    },
+                    body: { actionId: action.actionId },
+                  })
+                  .then((chosen) => {
+                    onChosen(chosen);
+                    // 角色提议一起领养（T-082）：「去看看」进入领养流程，角色已预选。
+                    if (
+                      message.content?.type === 'action_card' &&
+                      message.content.cardKind === 'pet_proposal' &&
+                      action.actionId === 'go'
+                    )
+                      navigateTo(`/pets/adopt?characterId=${message.content.ref?.id ?? ''}`);
+                  })
+                  .catch((e) => setError(friendlyError(e)))
+                  .finally(() => setPending(false));
+              }}
+            >
+              {chosen === action.actionId ? `已选择：${action.label}` : action.label}
+            </button>
+          ))}
+        </div>
+      )}
       {error && <small role="alert">{error}</small>}
     </div>
   );
@@ -336,7 +376,7 @@ interface BubbleMenuItem {
 }
 
 /**
- * 气泡长按菜单（规格 3.8）：深色块，每格 58×50（白色图标 22 + 字 12），一行最多 5 个；
+ * 气泡长按菜单（规格 3.8）：浅色块，两行每行 3 格；
  * 默认在气泡上方 6，空间不够时在下方 4；三角跟着手指横向位置。
  */
 function BubbleMenu({
@@ -375,7 +415,7 @@ function BubbleMenu({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
   const rows: BubbleMenuItem[][] = [];
-  for (let i = 0; i < items.length; i += 5) rows.push(items.slice(i, i + 5));
+  for (let i = 0; i < items.length; i += 3) rows.push(items.slice(i, i + 3));
   return (
     <div className="pop-scrim" onClick={onClose} onContextMenu={(e) => e.preventDefault()}>
       <div
@@ -397,7 +437,29 @@ function BubbleMenu({
                   item.onClick();
                 }}
               >
-                <OldIcon name={item.icon} size={22} />
+                {item.icon === 'smile-plus' ? (
+                  <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden>
+                    <circle
+                      cx="10"
+                      cy="10"
+                      r="7"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.7"
+                    />
+                    <circle cx="7.5" cy="8.5" r=".9" />
+                    <circle cx="12.5" cy="8.5" r=".9" />
+                    <path
+                      d="M7 12q3 3 6 0M19 15v7m-3.5-3.5h7"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.7"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                ) : (
+                  <OldIcon name={item.icon} size={22} />
+                )}
                 <span>{item.label}</span>
               </button>
             ))}
@@ -448,18 +510,16 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const memberNames = useCharacterNames(
     group ? everyone.filter((p) => p.kind === 'character').map((p) => p.refId) : [],
   );
+  const roleProfile = useRemote(
+    CharacterEndpoints.getProfile,
+    { params: { characterId: role?.refId ?? '' } },
+    !!role,
+  );
   const displayName = (characterId: string) =>
     chat.state.contacts.find((c) => c.characterId === characterId)?.remark ||
     memberNames[characterId] ||
+    (characterId === role?.refId ? roleProfile.data?.name : null) ||
     '角色';
-  const roleProfile = useRemote(CharacterEndpoints.getProfile, {
-    params: { characterId: role?.refId ?? '' },
-  });
-  const roleName = role
-    ? chat.state.contacts.find((c) => c.characterId === role.refId)?.remark ||
-      roleProfile.data?.name ||
-      'TA'
-    : 'TA';
   const status = useRemote(ModelAccessEndpoints.getModelStatus, {
     query: { characterId: group ? undefined : role?.refId },
   });
@@ -505,13 +565,13 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const navigate = useNavigate();
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [forwarding, setForwarding] = useState(false);
   const [params, setParams] = useSearchParams();
   const targetSeq = Number(params.get('seq')) || 0;
   const [scrollTarget, setScrollTarget] = useState<{ key: string; nonce: number } | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const [presetOpen, setPresetOpen] = useState(false);
-  const [withTa, setWithTa] = useState(false);
   const [plusPage, setPlusPage] = useState(0);
   const [menu, setMenu] = useState<{
     message: Message;
@@ -529,7 +589,6 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     [group, id, roleId],
   );
   const preset = useCurrentPreset(presetTarget);
-  const presetLabel = group ? null : presetSubtitle(preset.mode);
   useEffect(() => () => voicePlayer.stop(), []);
   const messages = chat.state.messages
     .filter((item) => item.conversationId === id)
@@ -700,17 +759,10 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   function bubble(message: Message) {
     const c = message.content;
     const mine = message.senderKind === 'user';
-    const quoteBlock = message.quote && (
-      <span className="wx-quote">
-        <b>{message.quote.preview ? '引用' : ''}</b>
-        <span>{message.quote.preview ?? '原消息已不可见'}</span>
-      </span>
-    );
     const textBubble = (children: ReactNode, extra = '') => (
       <div
         className={`wx-bubble ${mine ? 'mine' : ''} ${mentionedMe(message) ? 'mention' : ''} ${extra}`}
       >
-        {quoteBlock}
         <span className="wx-bubble-text">{children}</span>
       </div>
     );
@@ -718,6 +770,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     switch (c.type) {
       case 'contact_card':
         return <ContactCardBubble content={c} />;
+      case 'forwarded_record':
+        return <ForwardedRecordBubble content={c} message={message} />;
       case 'letter':
         return (
           <div className="wx-card-wrap">
@@ -884,10 +938,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const senderOf = (message: Message) =>
     everyone.find((participant) => participant.participantId === message.senderParticipantId);
   function copy(value: string) {
-    void navigator.clipboard
-      ?.writeText(value)
-      .then(() => showToast('已复制', 2000, 'success'))
-      .catch(() => showToast('复制失败'));
+    void copyText(value);
   }
   /** 气泡长按菜单项目（4.4.7）。 */
   function menuItems(message: Message): BubbleMenuItem[] {
@@ -897,9 +948,11 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     const canRecall = mine && Date.now() - new Date(message.createdAt).getTime() < 120_000;
     const fav = { label: '收藏', icon: 'wechat/star', onClick: () => void addFavorite(message) };
     const multi = { label: '多选', icon: 'wechat/check', onClick: () => startSelect(message) };
-    const recall = canRecall
-      ? [{ label: '撤回', icon: 'wechat/undo', onClick: () => void action(message, 'recall') }]
-      : [];
+    const quoteItem = {
+      label: '引用',
+      icon: 'wechat/reply',
+      onClick: () => setQuoteId(message.messageId),
+    };
     const del = {
       label: '删除',
       icon: 'wechat/delete',
@@ -908,102 +961,102 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     const forward = {
       label: '转发',
       icon: 'wechat/share',
-      onClick: () => showToast('暂未开放', 2000, 'info'),
+      onClick: () => startSelect(message),
     };
-    const toStickers = canAddToStickers(message)
-      ? [{ label: '收藏到表情', icon: 'wechat/smile', onClick: () => void addToStickers(message) }]
-      : [];
+    const shareSlot = canRecall
+      ? { label: '撤回', icon: 'wechat/undo', onClick: () => void action(message, 'recall') }
+      : forward;
+    const stickerItem = {
+      label: '表情',
+      icon: 'smile-plus',
+      onClick: () => void addToStickers(message),
+    };
     switch (c.type) {
       case 'text':
         return [
           { label: '复制', icon: 'wechat/copy', onClick: () => copy(c.text) },
-          forward,
+          shareSlot,
           fav,
-          { label: '引用', icon: 'wechat/reply', onClick: () => setQuoteId(message.messageId) },
+          quoteItem,
           multi,
-          ...recall,
           del,
         ];
       case 'image':
         return [
           { label: '保存', icon: 'drawn/save', onClick: () => void saveImage(c.mediaId) },
-          forward,
+          shareSlot,
           fav,
-          ...toStickers,
+          canAddToStickers(message) ? stickerItem : quoteItem,
           multi,
-          ...recall,
           del,
         ];
       case 'voice':
         return [
           {
-            label: textShown[message.messageId] ? '隐藏文字' : '转文字',
+            label: textShown[message.messageId] ? '收起文字' : '转文字',
             icon: 'drawn/voice_to_text',
             onClick: () =>
               setTextShown((v) => ({ ...v, [message.messageId]: !v[message.messageId] })),
           },
+          canRecall
+            ? shareSlot
+            : {
+                label: '复制',
+                icon: 'wechat/copy',
+                onClick: () => {
+                  if (c.transcript) copy(c.transcript);
+                  else
+                    void api
+                      .call(MediaExtraEndpoints.getTranscript, { params: { mediaId: c.mediaId } })
+                      .then((result) => {
+                        if (result.status === 'ready' && result.text) copy(result.text);
+                        else showToast('暂时没有可复制的语音文字');
+                      })
+                      .catch((e) => showToast(friendlyError(e)));
+                },
+              },
           fav,
+          quoteItem,
           multi,
-          ...recall,
           del,
         ];
       case 'sticker':
-        return [...toStickers, multi, ...recall, del];
+        return [
+          { label: '保存', icon: 'drawn/save', onClick: () => void saveImage(c.mediaId) },
+          shareSlot,
+          fav,
+          canAddToStickers(message) ? stickerItem : quoteItem,
+          multi,
+          del,
+        ];
       case 'link':
         return [
-          { label: '复制链接', icon: 'wechat/link', onClick: () => copy(c.url) },
+          { label: '复制', icon: 'wechat/link', onClick: () => copy(c.url) },
+          shareSlot,
           fav,
+          quoteItem,
           multi,
           del,
         ];
       default:
-        return [multi, del];
+        return [
+          { label: '复制', icon: 'wechat/copy', onClick: () => copy(content(message)) },
+          shareSlot,
+          fav,
+          quoteItem,
+          multi,
+          del,
+        ];
     }
   }
+
   function openMenu(message: Message, target: Element, x: number) {
     if (selecting || !selectable(message)) return;
     if (message.content?.type === 'action_card' || message.content?.type === 'call_record') return;
     const bubbleEl = target.closest('.wx-msg-bubble') ?? target;
     setMenu({ message, anchor: bubbleEl.getBoundingClientRect(), x });
   }
-  const pressTimer = useRef(0);
-  const pressFired = useRef(false);
-  /** 长按 500ms（触屏）或右键打开气泡菜单。 */
-  const pressHandlers = (message: Message) => ({
-    onPointerDown(event: React.PointerEvent) {
-      if (event.pointerType === 'mouse') return;
-      pressFired.current = false;
-      const target = event.currentTarget;
-      const x = event.clientX;
-      window.clearTimeout(pressTimer.current);
-      pressTimer.current = window.setTimeout(() => {
-        pressFired.current = true;
-        openMenu(message, target, x);
-      }, 500);
-    },
-    onPointerMove() {
-      window.clearTimeout(pressTimer.current);
-    },
-    onPointerUp() {
-      window.clearTimeout(pressTimer.current);
-    },
-    onPointerCancel() {
-      window.clearTimeout(pressTimer.current);
-    },
-    onContextMenu(event: React.MouseEvent) {
-      event.preventDefault();
-      openMenu(message, event.currentTarget, event.clientX);
-    },
-    onClickCapture(event: React.MouseEvent) {
-      if (pressFired.current) {
-        event.preventDefault();
-        event.stopPropagation();
-        pressFired.current = false;
-      }
-    },
-  });
 
-  // 消息 + 本机待发 + 上传中 合成一个列表（都在同一个虚拟滚动里）。
   const rows: Row[] = [];
   if (older && messages.length > 0) rows.push({ kind: 'older', key: '__older__' });
   let previousAt: string | undefined;
@@ -1024,6 +1077,20 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     .find((m) => m.senderKind === 'user' && m.status === 'normal');
   const myAvatar = <UserAvatar profile={userProfile.data} size={40} radius={4} />;
 
+  const olderRequest = useRef(false);
+  function fetchOlder() {
+    if (!older || olderRequest.current || !messages.length) return;
+    olderRequest.current = true;
+    setLoadingOlder(true);
+    void chat
+      .older(id, messages[0]!.seq)
+      .then(setOlder)
+      .catch((e) => setError(friendlyError(e)))
+      .finally(() => {
+        olderRequest.current = false;
+        setLoadingOlder(false);
+      });
+  }
   function renderRow(row: Row) {
     if (row.kind === 'older')
       return (
@@ -1032,14 +1099,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
             type="button"
             className="text-button"
             disabled={loadingOlder}
-            onClick={() => {
-              setLoadingOlder(true);
-              void chat
-                .older(id, messages[0]!.seq)
-                .then(setOlder)
-                .catch((e) => setError(friendlyError(e)))
-                .finally(() => setLoadingOlder(false));
-            }}
+            onClick={fetchOlder}
           >
             {loadingOlder ? '正在读取…' : '查看更早的消息'}
           </button>
@@ -1067,9 +1127,9 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
                 >
                   !
                 </button>
-              ) : (
-                <span className="wx-sending" role="status" aria-label="发送中" />
-              )}
+              ) : item.state === 'pending' && item.failures > 0 ? (
+                <span className="wx-sending" role="status" aria-label="网络异常，等待重试" />
+              ) : null}
               <div className="wx-msg-bubble">
                 {c.type === 'image' ? (
                   <ImageBubble content={c} />
@@ -1106,9 +1166,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
                   onRetry={() => void runUpload(upload)}
                   onDrop={() => dropUpload(upload)}
                 />
-              ) : (
-                upload.progress < 100 && <span className="wx-sending" role="status" />
-              )}
+              ) : null}
               <div className="wx-msg-bubble">
                 {upload.kind === 'image' && upload.url ? (
                   <LocalImageBubble
@@ -1151,8 +1209,12 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
               >
                 {content(message)}
               </Link>
-            ) : message.status === 'recalled' && message.senderKind === 'user' ? (
-              '你撤回了一条消息'
+            ) : message.status === 'recalled' ? (
+              message.senderKind === 'user' ? (
+                '你撤回了一条消息'
+              ) : (
+                `${displayName(senderOf(message)?.refId ?? role?.refId ?? '')} 撤回了一条消息`
+              )
             ) : (
               content(message)
             )}
@@ -1184,24 +1246,17 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           {mine ? (
             myAvatar
           ) : (
-            <Link
-              className="wx-avatar-link"
+            <ChatAvatarLink
               to={`/characters/${senderId}${group && conversation.title ? `?group=${encodeURIComponent(conversation.title)}` : ''}`}
-              aria-label="查看资料"
-              onDoubleClick={(event) => {
-                // 双击角色头像 = 拍一拍（4.4.3）。
-                event.preventDefault();
-                if (!sender) return;
-                void chat
-                  .sendContent(id, { type: 'nudge', targetParticipantId: sender.participantId })
-                  .catch((e) => setError(friendlyError(e)));
-              }}
-              onClick={(event) => {
-                if (event.detail > 1) event.preventDefault();
+              onNudge={() => {
+                if (sender)
+                  void chat
+                    .sendContent(id, { type: 'nudge', targetParticipantId: sender.participantId })
+                    .catch((e) => setError(friendlyError(e)));
               }}
             >
               <CharacterAvatar id={senderId} size={40} radius={4} />
-            </Link>
+            </ChatAvatarLink>
           )}
           <div className="wx-msg-main">
             {group && !mine && (
@@ -1214,10 +1269,27 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
               </button>
             )}
             <div className="wx-msg-line">
-              <div className="wx-msg-bubble" {...pressHandlers(message)}>
+              <BubblePress onPress={(target, x) => openMenu(message, target, x)}>
                 {bubble(message)}
-              </div>
+              </BubblePress>
             </div>
+            {message.quote && (
+              <div className="wx-quote">
+                <span>
+                  {(() => {
+                    const original = messages.find(
+                      (item) => item.messageId === message.quote?.messageId,
+                    );
+                    return original
+                      ? original.senderKind === 'user'
+                        ? (userProfile.data?.nickname ?? '我')
+                        : displayName(senderOf(original)?.refId ?? role?.refId ?? '')
+                      : '引用消息';
+                  })()}
+                  ：{message.quote.preview ?? '原消息已不可见'}
+                </span>
+              </div>
+            )}
             {!group && mine && message.messageId === lastMine?.messageId && (
               <small className="wx-read">
                 {conversation.peerReadSeq !== null && conversation.peerReadSeq >= message.seq
@@ -1236,33 +1308,20 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     ? [
         { label: '照片', icon: 'wechat/album', onClick: () => albumInput.current?.click() },
         { label: '拍摄', icon: 'wechat/camera', onClick: () => cameraInput.current?.click() },
-        {
-          label: '情景预设',
-          icon: 'drawn/scenario_sparkle',
-          dot: !!preset.mode && preset.mode !== 'daily',
-          onClick: () => setPresetOpen(true),
-        },
+        { label: '语音通话', icon: 'wechat/voice_call', onClick: showComingSoon },
+        { label: '位置', icon: 'wechat/location', onClick: showComingSoon },
+        { label: '红包', icon: 'wechat/red_packet', onClick: showComingSoon },
+        { label: '转账', icon: 'wechat/transfer', onClick: showComingSoon },
         { label: '名片', icon: 'wechat/person', onClick: () => showComingSoon() },
+        { label: '收藏', icon: 'wechat/star', onClick: showComingSoon },
       ]
     : [
-        { label: '照片', icon: 'wechat/album', onClick: () => albumInput.current?.click() },
+        { label: '相册', icon: 'wechat/album', onClick: () => albumInput.current?.click() },
         { label: '拍摄', icon: 'wechat/camera', onClick: () => cameraInput.current?.click() },
-        ...(role && callEntry
-          ? [
-              {
-                label: '语音通话',
-                icon: 'wechat/voice_call',
-                onClick: () => {
-                  setPanel('none');
-                  startCall(role.refId);
-                },
-              },
-            ]
-          : []),
         {
           label: '情景预设',
           icon: 'drawn/scenario_sparkle',
-          dot: !!preset.mode && preset.mode !== 'daily',
+          dot: !!preset.mode && preset.mode !== 'auto',
           onClick: () => setPresetOpen(true),
         },
         ...(role
@@ -1278,23 +1337,32 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
                 onClick: () => navigate(`/play/focus?characterId=${role.refId}`),
               },
               {
-                label: '提醒',
-                icon: 'wechat/bell',
-                onClick: () => navigate(`/play/reminders/new?characterId=${role.refId}`),
-              },
-              {
-                label: '小程序',
-                icon: 'wechat/discover_mini_program',
-                onClick: () => setWithTa(true),
-              },
-              {
                 label: '心愿',
                 icon: 'wechat/star',
                 onClick: () => navigate(`/play/wishlists/${role.refId}`),
               },
+              {
+                label: '提醒',
+                icon: 'wechat/bell',
+                onClick: () => navigate(`/play/reminders/new?characterId=${role.refId}`),
+              },
             ]
           : []),
-        { label: '名片', icon: 'wechat/person', onClick: () => showComingSoon() },
+        {
+          label: '语音通话',
+          icon: 'wechat/voice_call',
+          onClick: () => {
+            if (role && callEntry) {
+              setPanel('none');
+              startCall(role.refId);
+            } else showToast('语音通话需先开通语音服务并配置域名，暂未开放', 3000, 'info');
+          },
+        },
+        { label: '位置', icon: 'wechat/location', onClick: showComingSoon },
+        { label: '红包', icon: 'wechat/red_packet', onClick: showComingSoon },
+        { label: '转账', icon: 'wechat/transfer', onClick: showComingSoon },
+        { label: '名片', icon: 'wechat/person', onClick: showComingSoon },
+        { label: '音乐', icon: 'wechat/discover_listen', onClick: showComingSoon },
       ];
 
   return (
@@ -1308,24 +1376,11 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           <BackWithUnread excludeId={id} />
         )}
         <span className="wx-chat-title">
-          <h1>
-            {selecting ? (
-              `已选择 ${chosen.length} 条`
-            ) : typing ? (
-              <span role="status">对方正在输入...</span>
-            ) : (
-              <Name conversation={conversation} />
-            )}
-          </h1>
-          {!selecting && presetLabel && (
-            <button
-              type="button"
-              className="nav-subtitle"
-              aria-label={`情景预设：${presetLabel}，点击切换`}
-              onClick={() => setPresetOpen(true)}
-            >
-              {presetLabel}
-            </button>
+          <h1>{selecting ? `已选择 ${chosen.length} 条` : <Name conversation={conversation} />}</h1>
+          {!selecting && typing && (
+            <small className="nav-subtitle" role="status">
+              对方正在输入…
+            </small>
           )}
         </span>
         {selecting ? (
@@ -1390,6 +1445,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           estimate={64}
           bottom
           onBottom={setAtBottom}
+          onStart={fetchOlder}
+          anchorItem={(row) => row.kind === 'message'}
           scrollTo={scrollTarget}
           rowClassName={(row) =>
             row.kind === 'message' && row.message.messageId === flash ? 'flash-row' : undefined
@@ -1413,26 +1470,6 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           <p className="hint">请在浏览器地址栏左侧的网站设置里允许麦克风</p>
         </Dialog>
       )}
-      {quote && !selecting && (
-        <div className="wx-quote-bar">
-          <i aria-hidden />
-          <span>
-            <b>
-              {quote.senderKind === 'user'
-                ? (userProfile.data?.nickname ?? '我')
-                : displayName(senderOf(quote)?.refId ?? role?.refId ?? '')}
-            </b>
-            <span>
-              {Array.from(content(quote)).length > 30
-                ? `${Array.from(content(quote)).slice(0, 30).join('')}...`
-                : content(quote)}
-            </span>
-          </span>
-          <button type="button" aria-label="取消引用" onClick={() => setQuoteId(null)}>
-            <OldIcon name="wechat/close" size={18} />
-          </button>
-        </div>
-      )}
       {picking && (
         <Sheet title="选择提醒的人" onClose={() => setPicking(false)} closeLabel="取消">
           <MenuGroup>
@@ -1455,6 +1492,24 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
       {selecting ? (
         <div className="wx-select-bar">
           {shareBlocked && <small className="wx-select-hint">{shareBlocked}</small>}
+          <button
+            type="button"
+            disabled={chosen.length === 0}
+            onClick={() => {
+              if (chosen.length > 50) {
+                showToast('一次最多转发 50 条消息');
+                return;
+              }
+              if (chosen.some((m) => m.content?.type === 'forwarded_record')) {
+                showToast('聊天记录暂不支持再次转发，请选择原消息');
+                return;
+              }
+              setForwarding(true);
+            }}
+          >
+            <OldIcon name="wechat/share" size={24} />
+            转发
+          </button>
           <button
             type="button"
             disabled={chosen.length === 0}
@@ -1579,6 +1634,25 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           )}
         </form>
       )}
+      {quote && !selecting && (
+        <div className="wx-quote-bar">
+          <span>
+            <b>
+              {quote.senderKind === 'user'
+                ? (userProfile.data?.nickname ?? '我')
+                : displayName(senderOf(quote)?.refId ?? role?.refId ?? '')}
+            </b>
+            <span>
+              {Array.from(content(quote)).length > 30
+                ? `${Array.from(content(quote)).slice(0, 30).join('')}...`
+                : content(quote)}
+            </span>
+          </span>
+          <button type="button" aria-label="取消引用" onClick={() => setQuoteId(null)}>
+            <OldIcon name="wechat/close" size={18} />
+          </button>
+        </div>
+      )}
       {panel === 'sticker' && !selecting && (
         <StickerPanel
           onPick={(sticker) =>
@@ -1610,8 +1684,21 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           }}
         />
       )}
-      {withTa && role && (
-        <WithTaSheet characterId={role.refId} name={roleName} onClose={() => setWithTa(false)} />
+      {forwarding && (
+        <ForwardPicker
+          messages={chosen}
+          conversations={chat.state.conversations}
+          contacts={chat.state.contacts}
+          onClose={() => setForwarding(false)}
+          onComplete={() => {
+            setForwarding(false);
+            endSelect();
+            showToast('已转发', 2000, 'success');
+          }}
+          onSend={(body) =>
+            api.call(ChatEndpoints.forwardMessages, { params: { conversationId: id }, body })
+          }
+        />
       )}
       <input
         ref={albumInput}

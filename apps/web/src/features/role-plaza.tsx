@@ -1,3 +1,4 @@
+import { SearchField } from './search-field.js';
 /*
  * 总经理 2026-10-14 裁定 2.3：通讯录右上「添加朋友」下的两个入口。
  * - 角色广场（/plaza）：一个页面两个 tab ——「自定义角色」（用户分享，原人设广场）与「微伴角色」（官方制作）；
@@ -203,17 +204,14 @@ function OfficialList() {
           setSearch(query.trim());
         }}
       >
-        <label className="search-entry">
-          <OldIcon name="wechat/search" size={17} />
-          <input
-            aria-label="搜索微伴角色"
-            placeholder="搜索名字、别名或作品"
-            value={query}
-            maxLength={50}
-            enterKeyHint="search"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
+        <SearchField
+          aria-label="搜索微伴角色"
+          placeholder="搜索名字、别名或作品"
+          value={query}
+          maxLength={50}
+          enterKeyHint="search"
+          onChange={(event) => setQuery(event.target.value)}
+        />
       </form>
       <div className="plaza-filter">
         <select
@@ -650,7 +648,7 @@ const basisNames: Record<string, string> = {
   fictional: '虚构角色',
   original: '原创',
 };
-function StatusTag({ status }: { status: string }) {
+export function StatusTag({ status }: { status: string }) {
   return <span className={`request-status ${status}`}>{statusNames[status] ?? '处理中'}</span>;
 }
 function dateText(iso: string) {

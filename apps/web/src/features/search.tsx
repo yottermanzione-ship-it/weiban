@@ -23,7 +23,8 @@ import { GroupAvatar } from './groups.js';
 import { Name } from './chat.js';
 import { MediaImg as LazyMedia } from './media.js';
 import { OldIcon } from './old-icons.js';
-import { Chevron } from './shell-kit.js';
+import { Chevron, NavBar, useBack } from './shell-kit.js';
+import { SearchField } from './search-field.js';
 
 /*
  * 聊天搜索（search.md；CHAT-12）。只搜文字内容；结果点开都定位到那条消息的上下文
@@ -63,7 +64,7 @@ export function locateLink(conversationId: string, seq: number) {
 function ConversationAvatar({ conversation }: { conversation: Conversation }) {
   const ids = conversation.participants.filter((p) => p.kind === 'character').map((p) => p.refId);
   return conversation.type === 'group' ? (
-    <GroupAvatar ids={ids} />
+    <GroupAvatar ids={ids} mediaId={conversation.group?.avatarMediaId} />
   ) : (
     <CharacterAvatar id={ids[0] ?? conversation.conversationId} size={40} />
   );
@@ -93,7 +94,7 @@ function favoriteText(favorite: Favorite): string {
 }
 
 export function GlobalSearchPage() {
-  const navigate = useNavigate();
+  const back = useBack('/chat');
   const { state } = useChat();
   const [params, setParams] = useSearchParams();
   const initial = params.get('q') ?? '';
@@ -227,32 +228,30 @@ export function GlobalSearchPage() {
           setKeyword(input.trim().slice(0, 50));
         }}
       >
-        <label className="wx-search-box">
-          <OldIcon name="wechat/search" size={16} />
-          {scopeLabel && (
-            <button
-              type="button"
-              className="wx-search-scope"
-              aria-label={`取消只搜${scopeLabel}`}
-              onClick={() => {
-                setScope('all');
-                inputRef.current?.focus();
-              }}
-            >
-              {scopeLabel}
-            </button>
-          )}
-          <input
-            ref={inputRef}
-            autoFocus
-            type="search"
-            enterKeyHint="search"
-            aria-label="搜索"
-            value={input}
-            maxLength={50}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="搜索"
-          />
+        <SearchField
+          inputRef={inputRef}
+          autoFocus
+          enterKeyHint="search"
+          value={input}
+          maxLength={50}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="搜索"
+          prefix={
+            scopeLabel && (
+              <button
+                type="button"
+                className="wx-search-scope"
+                aria-label={`取消只搜${scopeLabel}`}
+                onClick={() => {
+                  setScope('all');
+                  inputRef.current?.focus();
+                }}
+              >
+                {scopeLabel}
+              </button>
+            )
+          }
+        >
           {input && (
             <button
               type="button"
@@ -267,8 +266,8 @@ export function GlobalSearchPage() {
               <OldIcon name="wechat/close" size={12} />
             </button>
           )}
-        </label>
-        <button type="button" className="wx-search-cancel" onClick={() => navigate(-1)}>
+        </SearchField>
+        <button type="button" className="wx-search-cancel" onClick={back}>
           取消
         </button>
       </form>
@@ -589,6 +588,7 @@ type QuickMode = 'none' | 'date' | 'images' | 'links';
 export function ConversationSearchPage() {
   const { conversationId = '' } = useParams();
   const navigate = useNavigate();
+  const back = useBack(`/chat/${conversationId}/settings`);
   const chat = useChat();
   const [params, setParams] = useSearchParams();
   const [input, setInput] = useState(params.get('q') ?? '');
@@ -716,34 +716,27 @@ export function ConversationSearchPage() {
     }
   }
   return (
-    <main className="search-page">
+    <main className="search-page wx-search">
+      <NavBar title="查找聊天记录" onBack={back} />
       <form
-        className="search-bar"
+        className="wx-search-head"
         onSubmit={(e) => {
           e.preventDefault();
           setKeyword(input.trim().slice(0, 50));
         }}
       >
-        <label className="search-label">
-          搜索
-          <input
-            ref={inputRef}
-            autoFocus
-            type="search"
-            value={input}
-            maxLength={50}
-            onChange={(e) => {
-              setInput(e.target.value);
-              setMode('none');
-            }}
-            placeholder="搜索"
-          />
-        </label>
-        <button
-          type="button"
-          className="text-button"
-          onClick={() => navigate(`/chat/${conversationId}`)}
-        >
+        <SearchField
+          inputRef={inputRef}
+          autoFocus
+          value={input}
+          maxLength={50}
+          placeholder="搜索"
+          onChange={(e) => {
+            setInput(e.target.value);
+            setMode('none');
+          }}
+        />
+        <button type="button" className="wx-search-cancel" onClick={back}>
           取消
         </button>
       </form>

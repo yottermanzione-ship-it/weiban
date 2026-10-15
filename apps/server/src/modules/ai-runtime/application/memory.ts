@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { readableMessageText } from './content-text.js';
 import { and, asc, count, eq, gt, isNull, lte, or } from 'drizzle-orm';
 import { z } from 'zod';
 import {
@@ -978,10 +979,10 @@ export class MemoryService {
     const sources = history.filter(
       (m) =>
         m.status === 'normal' &&
-        m.content?.type === 'text' &&
+        (m.content?.type === 'text' || m.content?.type === 'forwarded_record') &&
         m.senderKind !== 'system' &&
         (m.scope !== 'adult' || policy.adultModeEligible) &&
-        !healthPrivate(m.content.text) &&
+        !healthPrivate(textOf(m)) &&
         // T-060：用经期摘要生成的消息（health 标记）不进入记忆。
         !m.labels?.includes('health') &&
         // A draft can be read by an earlier extraction job before its recall event arrives.
@@ -1026,7 +1027,7 @@ export class MemoryService {
                   id: m.messageId,
                   scope: m.scope,
                   sender: m.senderKind,
-                  text: m.content?.type === 'text' ? m.content.text : '',
+                  text: textOf(m),
                 })),
               }),
             },
@@ -1390,5 +1391,5 @@ export class MemoryService {
   }
 }
 function textOf(message: Message): string {
-  return message.content?.type === 'text' ? message.content.text : '';
+  return readableMessageText(message);
 }

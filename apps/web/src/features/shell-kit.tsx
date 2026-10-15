@@ -628,7 +628,6 @@ export function useLongPress(onLongPress: (at: { x: number; y: number }) => void
       if (!start.current) return;
       start.current = null;
       fired.current = true;
-      navigator.vibrate?.(10);
       callback.current({ x, y });
     }, LONG_PRESS_MS);
   };
@@ -695,7 +694,7 @@ export const comingSoon = {
   channels: { name: '视频号', icon: 'wechat/finder', tint: 'orange' },
   live: { name: '直播', icon: 'color/color_live', tint: 'red' },
   scan: { name: '扫一扫', icon: 'wechat/discover_scan', tint: 'blue' },
-  listen: { name: '听一听', icon: 'wechat/discover_listen', tint: 'orange' },
+  listen: { name: '听书', icon: 'wechat/discover_listen', tint: 'orange' },
   topstories: { name: '看一看', icon: 'color/color_look', tint: 'gold' },
   shake: { name: '摇一摇', icon: 'color/color_shake', tint: 'blue' },
   games: { name: '游戏', icon: 'color/color_game', tint: 'purple' },

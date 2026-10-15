@@ -918,6 +918,143 @@
   border-bottom: 7px solid var(--wb-color-overlay-menu);
 }
 
+.custom-group-avatar {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+}
+.custom-group-avatar > .media-frame,
+.custom-group-avatar > .media-broken {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.custom-group-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.wx-forward-card {
+  display: grid;
+  gap: 6px;
+  width: min(260px, 68vw);
+  padding: 14px 14px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: #fff;
+  color: #191919;
+  text-align: left;
+  font-size: 14px;
+}
+.wx-forward-card strong {
+  font-size: 16px;
+  font-weight: 500;
+}
+.wx-forward-card > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #888;
+}
+.wx-forward-card small {
+  margin-top: 5px;
+  padding-top: 7px;
+  border-top: 1px solid #eee;
+  color: #999;
+  font-size: 11px;
+}
+.wx-forward-record {
+  min-height: 65vh;
+  padding: 0 18px 24px;
+  background: #fff;
+  text-align: left;
+}
+.wx-forward-record article {
+  padding: 18px 0;
+  border-bottom: 1px solid #eee;
+}
+.wx-forward-record article > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: #888;
+  font-size: 13px;
+  text-align: left;
+}
+.wx-forward-record article > header strong {
+  font-weight: 400;
+}
+.wx-forward-record p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+  text-align: left;
+}
+.wx-forward-picker {
+  min-height: 65vh;
+  padding: 8px 16px 24px;
+}
+.wx-forward-summary {
+  color: #888;
+  font-size: 13px;
+}
+.wx-forward-picker > input {
+  box-sizing: border-box;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  padding: 10px 12px;
+  background: #f2f2f2;
+  font-size: 16px;
+}
+.wx-forward-tabs {
+  display: flex;
+  margin-top: 14px;
+  border-bottom: 1px solid #eee;
+}
+.wx-forward-tabs button {
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding: 12px 4px;
+  font-size: 15px;
+  color: #888;
+}
+.wx-forward-tabs button[aria-pressed='true'] {
+  color: #07a457;
+  border-bottom: 2px solid #07a457;
+}
+.wx-forward-targets > button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+  font-size: 16px;
+  color: #191919;
+}
+.wx-forward-targets > button:disabled {
+  opacity: 0.65;
+}
+.wx-forward-group {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 5px;
+  background: #ddd;
+}
+.wx-forward-error {
+  color: #c43d36;
+  font-size: 14px;
+}
 /* 多选工具栏（4.4.7） */
 .wx-select-bar {
   position: relative;
@@ -961,4 +1098,85 @@
   .bubble-menu {
     animation: none;
   }
+}
+/* A4 basic chat interactions; the existing dark bubble menu is replaced here. */
+.bubble-menu {
+  width: 240px;
+  background: var(--wb-color-bg-surface);
+  color: var(--wb-color-text-primary);
+  border-radius: 10px;
+}
+.bubble-menu-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+.bubble-menu button {
+  width: 80px;
+  height: 64px;
+  gap: 6px;
+  color: var(--wb-color-text-primary);
+  font-size: 13px;
+}
+.bubble-menu-row + .bubble-menu-row {
+  border-top: 0.5px solid var(--wb-color-border-hairline);
+}
+.bubble-menu button + button::before {
+  border-color: var(--wb-color-border-hairline);
+  top: 18px;
+  height: 28px;
+}
+.bubble-menu-arrow {
+  border-top-color: var(--wb-color-bg-surface);
+}
+.bubble-menu.below .bubble-menu-arrow {
+  border-bottom-color: var(--wb-color-bg-surface);
+}
+.wx-quote {
+  max-width: 100%;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--wb-color-bubble-quote-bg);
+  color: var(--wb-color-text-secondary);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.wx-msg-row.mine .wx-quote {
+  align-self: flex-end;
+}
+.wx-quote span {
+  display: -webkit-box;
+  color: inherit;
+  -webkit-line-clamp: 2;
+}
+.wx-quote-bar {
+  margin: 0 56px 8px;
+  padding: 7px 10px;
+  border-radius: 5px;
+  background: var(--wb-color-bubble-quote-bg);
+  color: var(--wb-color-text-secondary);
+}
+.wx-quote-bar b {
+  color: inherit;
+  font-weight: 400;
+  font-size: 14px;
+}
+.wx-quote-bar b::after {
+  content: '：';
+}
+.wx-quote-bar b + span {
+  font-size: 14px;
+  color: inherit;
+}
+.wx-wish-result {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  width: 100%;
+  border-radius: 5px;
+  background: var(--wb-color-bg-page);
+  color: var(--wb-color-text-secondary);
+  font-size: 15px;
 }

@@ -3,7 +3,7 @@
  */
 import { Inject, Injectable } from '@nestjs/common';
 import type { AuthResponse, CurrentUser, DeviceInfo, SessionKind } from '@weiban/contracts';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
 import {
   AppError,
   AUDIT_LOG,
@@ -27,7 +27,7 @@ import {
   throttleKey,
   isValidTimeZone,
 } from '../domain/rules.js';
-import { invites, profiles, users } from '../infra/db/schema.js';
+import { invites, profiles, users, loginAliases } from '../infra/db/schema.js';
 import { LoginThrottle } from '../infra/login-throttle.js';
 import { PasswordHasher } from '../infra/password-hasher.js';
 import { invalidTimeZone, SettingsService } from './settings.js';
@@ -152,6 +152,9 @@ export class AccountService {
           updatedAt: now,
         });
         await this.settings.createDefaults(tx, userId, input.device.timeZone);
+        await tx.db
+          .insert(loginAliases)
+          .values({ alias: input.username.toLowerCase(), userId, createdAt: now });
         if (code !== null) {
           await tx.db
             .update(invites)
@@ -188,12 +191,12 @@ export class AccountService {
 
   async login(input: LoginInput, ip: string): Promise<AuthResponse> {
     if (!isValidTimeZone(input.device.timeZone)) throw invalidTimeZone('device.timeZone');
-    const keys = [throttleKey('username', input.username), throttleKey('ip', ip)];
+    const user = await this.findUserByUsername(this.database, input.username);
+    const keys = [throttleKey('username', user?.username ?? input.username), throttleKey('ip', ip)];
     // 锁定期间连正确密码也不接受，也不去校验密码
     if (await this.throttle.isLocked(keys)) {
       throw new AppError('account_locked', '连续输错次数太多，请 15 分钟后再试');
     }
-    const user = await this.findUserByUsername(this.database, input.username);
     let ok = false;
     if (user && user.status === 'active') {
       ok = await this.hasher.verify(user.passwordHash, input.password);
@@ -309,18 +312,25 @@ export class AccountService {
     const [row] = await executor.db
       .select()
       .from(users)
-      .where(sql`lower(${users.username}) = lower(${username})`);
+      .where(
+        or(
+          sql`lower(${users.username}) = lower(${username})`,
+          sql`EXISTS (SELECT 1 FROM ${loginAliases} a WHERE a.user_id = ${users.id} AND a.alias = lower(${username}))`,
+        ),
+      );
     return row ?? null;
   }
 
   private async toCurrentUser(executor: Database | DbTx, user: UserRow): Promise<CurrentUser> {
+    const [latest] = await executor.db.select().from(users).where(eq(users.id, user.id));
+    user = latest ?? user;
     const [profile] = await executor.db
       .select({ nickname: profiles.nickname })
       .from(profiles)
       .where(eq(profiles.userId, user.id));
     return {
       userId: user.id,
-      username: user.username,
+      username: user.currentAlias ?? user.username,
       role: user.role === 'admin' ? 'admin' : 'user',
       profileCompleted: !!profile?.nickname,
       createdAt: user.createdAt.toISOString(),

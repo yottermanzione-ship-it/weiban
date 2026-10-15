@@ -1,0 +1,192 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/me/profile"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/alias"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/billing/wallet"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/profile"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/library/favorites",
+    "query": {
+      "limit": 20
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/:characterId",
+    "params": {
+      "characterId": "10000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/:characterId",
+    "params": {
+      "characterId": "10000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/:characterId",
+    "params": {
+      "characterId": "10000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/:characterId",
+    "params": {
+      "characterId": "10000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/:characterId",
+    "params": {
+      "characterId": "10000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/media/:mediaId",
+    "params": {
+      "mediaId": "10000000-0000-4000-8000-000000000021"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/media/:mediaId",
+    "params": {
+      "mediaId": "10000000-0000-4000-8000-000000000022"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/media/:mediaId",
+    "params": {
+      "mediaId": "10000000-0000-4000-8000-000000000022"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/models"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/selection"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/leaderboard-info"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/model/selection",
+    "body": {
+      "chat": null
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/selection"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/leaderboard-info"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/model/selection",
+    "body": {
+      "chat": {
+        "modelKey": "demo/one"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/selection"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/leaderboard-info"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/billing/wallet"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/selection"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/models"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/models"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/billing/wallet"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/selection"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/models"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/models"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/selection"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/leaderboard-info"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/billing/recharge-options"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/billing/recharge-quote",
+    "body": {
+      "amountFen": 501
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/profile"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/alias"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/billing/wallet"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/notification-settings"
+  }
+]

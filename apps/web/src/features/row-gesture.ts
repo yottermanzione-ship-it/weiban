@@ -78,7 +78,6 @@ export function useRowGesture(
         if (kind !== 'pending') return;
         kind = 'long';
         swallowClick = true;
-        navigator.vibrate?.(10);
         o().onLongPress({ x, y });
       }, LONG_MS);
     };

@@ -12,11 +12,13 @@ export function AvatarEditor({
   purpose = 'user_avatar',
   onPendingChange,
   onRestore,
+  label = '头像',
 }: {
   onSaved: (mediaId: string) => Promise<void>;
   purpose?: z.infer<typeof UserMediaPurpose>;
   onPendingChange?: (pending: boolean) => void;
   onRestore?: () => void;
+  label?: string;
 }) {
   const { session } = useAuth();
   const owner = session
@@ -38,6 +40,7 @@ export function AvatarEditor({
     setY(crop.y);
   });
   const canvas = useRef<HTMLCanvasElement>(null);
+  const groupUpload = useRef<{ key: string; mediaId: string } | null>(null);
   useEffect(() => {
     if (!source) return;
     let active = true;
@@ -116,12 +119,17 @@ export function AvatarEditor({
         ),
       );
       if (!owner || !api.owns(owner)) throw new ApiFailure('session_changed', '登录状态已改变', 0);
-      const media = await api.call(MediaEndpoints.upload, {
-        query: { purpose },
-        file: blob,
-      });
+      const uploadKey = JSON.stringify([source, zoom, x, y, owner.userId, owner.sessionId]);
+      const media =
+        (purpose === 'group_avatar' || purpose === 'moments_cover') &&
+        groupUpload.current?.key === uploadKey
+          ? { mediaId: groupUpload.current.mediaId }
+          : await api.call(MediaEndpoints.upload, { query: { purpose }, file: blob });
+      if (purpose === 'group_avatar' || purpose === 'moments_cover')
+        groupUpload.current = { key: uploadKey, mediaId: media.mediaId };
       if (!api.owns(owner)) throw new ApiFailure('session_changed', '登录状态已改变', 0);
       await onSaved(media.mediaId);
+      groupUpload.current = null;
       setSource('');
     } catch (e) {
       setError(friendlyError(e));
@@ -133,12 +141,12 @@ export function AvatarEditor({
   return (
     <section className="stack">
       <button type="button" disabled={pending} onClick={() => setChoosing(true)}>
-        选择头像
+        选择{label}
       </button>
       <input
         hidden
         ref={gallery}
-        aria-label="头像"
+        aria-label={label}
         type="file"
         disabled={pending}
         accept={MEDIA_LIMITS.imageMimeTypes.join(',')}
@@ -155,8 +163,8 @@ export function AvatarEditor({
         onChange={select}
       />
       {choosing && (
-        <AvatarDialog onDismiss={() => setChoosing(false)}>
-          <h2>选择头像来源</h2>
+        <AvatarDialog label={label} onDismiss={() => setChoosing(false)}>
+          <h2>选择{label}来源</h2>
           <button
             type="button"
             onClick={() => {
@@ -184,7 +192,7 @@ export function AvatarEditor({
                 onRestore();
               }}
             >
-              恢复默认头像
+              恢复默认{label}
             </button>
           )}
           <button type="button" onClick={() => setChoosing(false)}>
@@ -193,8 +201,13 @@ export function AvatarEditor({
         </AvatarDialog>
       )}
       {source && (
-        <AvatarDialog crop busy={pending} onDismiss={() => setSource('')}>
-          <h2>调整头像</h2>
+        <AvatarDialog label={label} crop busy={pending} onDismiss={() => setSource('')}>
+          <h2>调整{label}</h2>
+          {error && (
+            <p role="alert" className="error">
+              {error}
+            </p>
+          )}
           <p>拖动调整位置，双指缩放；也可展开精细调整。</p>
           <canvas
             {...gesture}
@@ -202,7 +215,7 @@ export function AvatarEditor({
             ref={canvas}
             width={512}
             height={512}
-            aria-label="头像裁剪预览"
+            aria-label={`${label}裁剪预览`}
           />
           <details>
             <summary>精细调整（可选）</summary>
@@ -253,7 +266,7 @@ export function AvatarEditor({
           </button>
         </AvatarDialog>
       )}
-      {error && (
+      {error && !source && (
         <p role="alert" className="error">
           {error}
         </p>

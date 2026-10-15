@@ -668,6 +668,32 @@ label.field-row {
   position: relative;
   height: 370px;
   background-size: cover;
+  background-position: center;
+}
+.moments-cover-image {
+  position: absolute;
+  inset: 0;
+}
+.moments-cover-image .media-frame,
+.moments-cover-image img {
+  width: 100%;
+  height: 100%;
+}
+.moments-cover-image img {
+  object-fit: cover;
+}
+.moments-change-cover {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+.moments-cover-name {
+  z-index: 1;
 }
 .moments-cover-shade {
   position: absolute;
@@ -901,9 +927,17 @@ label.field-row {
   gap: 6px;
   margin-top: 8px;
 }
-.moment-reply input {
+.moment-reply textarea {
   flex: 1;
   min-height: 36px;
+  max-height: 140px;
+  resize: vertical;
+  background: var(--wb-color-bg-page);
+}
+.sheet-body > .moment-reply {
+  margin: 0;
+  padding: 12px;
+  flex-wrap: wrap;
 }
 .album {
   display: grid;
@@ -1511,10 +1545,9 @@ button.primary.wx-auth-submit {
   inset: 0;
   z-index: calc(var(--wb-z-index-toast) + 1);
   display: grid;
-  grid-template-rows: 1fr auto;
-  justify-items: center;
-  padding: env(safe-area-inset-top) var(--wb-space-5) calc(env(safe-area-inset-bottom) + 56px);
-  background: var(--wb-color-bg-surface);
+  place-items: center;
+  padding: env(safe-area-inset-top) 28px env(safe-area-inset-bottom);
+  background: #ededed;
   transition: opacity 250ms var(--wb-motion-easing-standard);
 }
 .splash.fading {
@@ -1525,41 +1558,20 @@ button.primary.wx-auth-submit {
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: var(--wb-space-3);
-  padding-bottom: 12vh;
+  gap: 18px;
   animation: splash-in 420ms var(--wb-motion-easing-decelerate) both;
 }
 .splash-brand img {
   width: 88px;
   height: 88px;
-  margin-bottom: var(--wb-space-3);
-  border-radius: 22px;
+  border-radius: 20px;
+  box-shadow: 0 4px 20px rgb(0 0 0 / 8%);
 }
 .splash-brand strong {
-  color: var(--wb-color-text-primary);
-  font-size: var(--wb-font-size-title2);
-  font-weight: var(--wb-font-weight-medium);
-  letter-spacing: 0.2em;
-}
-.splash-brand span {
-  color: var(--wb-color-text-secondary);
-  font-size: var(--wb-font-size-footnote);
-}
-.splash-progress {
-  position: relative;
-  width: 120px;
-  height: 3px;
-  overflow: hidden;
-  border-radius: var(--wb-radius-full);
-  background: var(--wb-color-bg-pressed);
-}
-.splash-progress i {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: var(--wb-color-brand-primary);
-  transform-origin: left center;
-  animation: splash-progress 1200ms var(--wb-motion-easing-standard) both;
+  color: #181818;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 2px;
 }
 @keyframes splash-in {
   from {
@@ -1567,22 +1579,89 @@ button.primary.wx-auth-submit {
     transform: translateY(12px) scale(0.96);
   }
 }
-@keyframes splash-progress {
-  from {
-    transform: scaleX(0.05);
-  }
-  to {
-    transform: scaleX(1);
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .splash-brand,
-  .splash-progress i {
+  .splash-brand {
     animation: none;
   }
 }
 
 /* ---------- 角色广场两个 tab、角色创建、申请制作（10-14 裁定 2.3） ---------- */
+.role-plaza-hub > .text-tabs {
+  gap: 0;
+  margin: 0;
+  padding: 0;
+}
+.role-plaza-hub > .text-tabs > button {
+  flex: 1;
+  font-size: 17px;
+  font-family: inherit;
+}
+.character-status {
+  flex: none;
+  font-size: 21px;
+  line-height: 1.2;
+  margin-left: 6px;
+}
+.memory-owner {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 16px;
+  background: var(--wb-color-bg-surface);
+  color: inherit;
+  text-decoration: none;
+}
+.memory-owner > span:last-child {
+  display: grid;
+  gap: 4px;
+}
+.memory-owner small,
+.memory-entry small {
+  color: var(--wb-color-text-secondary);
+  font-size: 12px;
+}
+.memory-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: var(--wb-color-bg-surface);
+  padding: 14px 16px;
+  text-align: left;
+  color: var(--wb-color-text-primary);
+}
+.memory-entry + .memory-entry {
+  border-top: 1px solid var(--wb-color-border-hairline);
+}
+.memory-entry-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  line-height: 1.6;
+}
+.memory-form {
+  padding: 16px;
+  text-align: left;
+}
+.memory-form fieldset {
+  border: 0;
+  padding: 0;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.memory-form label {
+  display: grid;
+  gap: 8px;
+}
+.memory-form textarea {
+  min-height: 180px;
+  max-height: 45dvh;
+  resize: vertical;
+  line-height: 1.6;
+}
 .role-plaza-hub .plaza-filter,
 .role-plaza-hub .plaza-filter select {
   flex-wrap: nowrap;
@@ -2030,4 +2109,60 @@ label.wx-search-box {
   border: 0;
   background: var(--wb-color-bg-page);
   color: var(--wb-color-brand-primary);
+}
+
+/* A9: 收藏快照直接在列表内阅读，避免沿用旧详情入口的横排主按钮布局。 */
+.favorite-card.simple-favorite {
+  flex-direction: column;
+  align-items: stretch;
+  margin: 8px 16px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.simple-favorite .favorite-head {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 4px 8px;
+  font-size: 14px;
+}
+.simple-favorite .favorite-head time {
+  grid-column: 2;
+  font-size: 12px;
+}
+.simple-favorite > .text-button {
+  align-self: flex-end;
+}
+.simple-favorite > div,
+.simple-favorite details {
+  min-width: 0;
+}
+.simple-favorite img,
+.simple-favorite audio {
+  max-width: 100%;
+}
+.simple-favorite .favorite-record summary {
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--wb-color-bg-page);
+  cursor: pointer;
+}
+.simple-favorite p {
+  margin: 0;
+}
+
+.simple-favorite .favorite-extra-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.favorite-image-sheet .media-frame {
+  display: block;
+  width: 100%;
+}
+.favorite-image-sheet img {
+  display: block;
+  width: 100%;
+  max-height: 70dvh;
+  object-fit: contain;
 }

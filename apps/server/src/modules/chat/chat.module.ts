@@ -7,6 +7,7 @@ import { ChatParticipantService } from './application/participant.js';
 import { ChatReadService } from './application/read.js';
 import { ChatUserService } from './application/user.js';
 import { ChatWriteService } from './application/write.js';
+import { ChatForwardService } from './application/forward.js';
 import { ChatStore } from './application/store.js';
 import { ChatLifecycle } from './application/lifecycle.js';
 import { ChatController } from './http/chat.controller.js';
@@ -43,6 +44,7 @@ import {
     ChatReadService,
     ChatUserService,
     ChatWriteService,
+    ChatForwardService,
     ChatStore,
     ChatLifecycle,
     ChatGroupService,

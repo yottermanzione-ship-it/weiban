@@ -9,6 +9,8 @@
  * 说明见 docs/ai/runtime-overview.md 第 7 节「T-065 实现差异」。
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { readableMessageText } from './content-text.js';
+import { userNickname } from '../domain/user-naming.js';
 import { AdultBoundaryService } from './adult-boundary.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
 import { QuietStateService } from './quiet-state.js';
@@ -209,6 +211,45 @@ export class GroupChatService {
 
   private memberIds(conversation: Conversation): string[] {
     return conversation.participants.filter((p) => p.kind === 'character').map((p) => p.refId);
+  }
+
+  /** Recheck between awaited stages: a removed group/changed roster must not start another paid turn. */
+  private async stillActive(
+    conversation: Conversation,
+    userId: string,
+    proactive: boolean,
+    mode: ScenarioMode,
+  ): Promise<boolean> {
+    const current = await this.chat.getConversation(conversation.conversationId);
+    if (
+      !current ||
+      current.type !== 'group' ||
+      current.contentScope !== conversation.contentScope ||
+      !current.participants.some((p) => p.kind === 'user' && p.refId === userId)
+    )
+      return false;
+    const signature = (c: Conversation) =>
+      c.participants
+        .map((p) => p.participantId)
+        .sort()
+        .join(',');
+    if (signature(current) !== signature(conversation)) return false;
+    const settings = await this.loadSettings(conversation.conversationId);
+    return settings.scenarioMode === mode && (!proactive || settings.selfChatEnabled);
+  }
+  private async typingIfPresent(
+    input: Parameters<ChatParticipantPort['setTyping']>[0],
+  ): Promise<void> {
+    try {
+      await this.writer.setTyping(input);
+    } catch (error) {
+      if (
+        error instanceof AppError &&
+        ['not_found', 'not_conversation_member', 'unauthenticated'].includes(error.code)
+      )
+        return;
+      throw error;
+    }
   }
 
   async getSettings(userId: string, conversationId: string) {
@@ -487,7 +528,7 @@ export class GroupChatService {
       await cancel();
       return;
     }
-    const userText = trigger?.content?.type === 'text' ? trigger.content.text : '';
+    const userText = trigger ? readableMessageText(trigger) : '';
     const mentioned = new Set(
       trigger?.content?.type === 'text' ? (trigger.content.mentions ?? []) : [],
     );
@@ -599,6 +640,17 @@ export class GroupChatService {
     let last: { member: Member; text: string } | null = input.durable?.state.last ?? null;
     let durable = input.durable;
     while (sent < input.maxMessages) {
+      if (
+        !(await this.stillActive(
+          input.conversation,
+          input.userId,
+          input.purpose === 'proactive',
+          input.settings.scenarioMode,
+        ))
+      ) {
+        if (durable) await this.replies.checkpoint(durable.row, { status: 'cancelled' });
+        return sent;
+      }
       let next = queue[0];
       if (!next && last)
         next = await this.pickChainSpeaker(input.userId, input.members, last, sent);
@@ -694,6 +746,15 @@ export class GroupChatService {
     durable?: GroupReplyPlan;
   }): Promise<{ text: string; stopChain: boolean } | null> {
     const { conversation, speaker } = input;
+    if (
+      !(await this.stillActive(
+        conversation,
+        input.userId,
+        input.purpose === 'proactive',
+        input.scenarioMode,
+      ))
+    )
+      return null;
     const role = await this.characters.getForRuntime(input.userId, speaker.characterId);
     const policy = await this.policy.getCharacterPolicy(input.userId, speaker.characterId);
     if (!role || !policy) return null;
@@ -706,13 +767,11 @@ export class GroupChatService {
       return p?.kind === 'user' ? (profile?.nickname ?? '用户') : '已退群的成员';
     };
     const transcript = history
-      .filter(
-        (m) => m.senderKind !== 'system' && m.status === 'normal' && m.content?.type === 'text',
-      )
+      .filter((m) => m.senderKind !== 'system' && m.status === 'normal' && !!readableMessageText(m))
       .slice(-30)
       .map(
         (m) =>
-          `${nameOf(m.senderParticipantId)}：${m.content?.type === 'text' ? m.content.text.slice(0, 300) : ''}`,
+          `${nameOf(m.senderParticipantId)}：${readableMessageText(m).slice(0, m.content?.type === 'forwarded_record' ? 32_000 : 300)}`,
       )
       .join('\n');
     // SOC-01 第 5 条：注入与每个群成员的关系；没有关系 = 不认识，不能编造共同经历。
@@ -781,6 +840,15 @@ export class GroupChatService {
     const cached = input.durable
       ? await this.replies.open<{ text: string; stopChain: boolean }>(input.durable, 'result')
       : null;
+    if (
+      !(await this.stillActive(
+        conversation,
+        input.userId,
+        input.purpose === 'proactive',
+        input.scenarioMode,
+      ))
+    )
+      return null;
     const result = cached
       ? { ok: true as const, value: { text: cached.text } }
       : await this.adultBoundary.generate(request, adult);
@@ -808,13 +876,32 @@ export class GroupChatService {
     )
       return null;
     // 节奏：正在输入 + 间隔（秒回约 0.5 秒，否则 2–8 秒），不会几个人同一秒发出。
-    await this.writer.setTyping({
+    if (
+      !(await this.stillActive(
+        conversation,
+        input.userId,
+        input.purpose === 'proactive',
+        input.scenarioMode,
+      ))
+    )
+      return null;
+    // Group deletion can race this ephemeral notification; it must not resurrect the job.
+    await this.typingIfPresent({
       conversationId: conversation.conversationId,
       participantId: speaker.participantId,
       state: 'start',
     });
     try {
       await sleep(input.instant ? 500 : 2000 + Math.random() * 6000);
+      if (
+        !(await this.stillActive(
+          conversation,
+          input.userId,
+          input.purpose === 'proactive',
+          input.scenarioMode,
+        ))
+      )
+        return null;
       if (await this.newerUserMessage(conversation, input.triggerSeq)) return null;
       if (input.durable && !(await this.replies.checkpoint(input.durable, {}))) return null;
       const posted = await this.writer.postMessage({
@@ -829,7 +916,7 @@ export class GroupChatService {
       if (!posted.ok) return null;
       return { text, stopChain };
     } finally {
-      await this.writer.setTyping({
+      await this.typingIfPresent({
         conversationId: conversation.conversationId,
         participantId: speaker.participantId,
         state: 'stop',
@@ -861,6 +948,7 @@ export class GroupChatService {
       (p) => p.kind === 'character' && p.refId === carer.characterId,
     );
     if (!direct || !participant) return;
+    const profile = await this.identity.getProfile(job.userId).catch(() => null);
     const result = await callModelForCare(
       this.gateway,
       {
@@ -886,9 +974,11 @@ export class GroupChatService {
     const text =
       result.ok && result.value.text.trim()
         ? result.value.text.trim().slice(0, 600)
-        : careFallback(role?.card.data.safetyStyle.careFallbackText, 0, contact.addressAs).join(
-            '\n',
-          );
+        : careFallback(
+            role?.card.data.safetyStyle.careFallbackText,
+            0,
+            userNickname(profile?.nickname),
+          ).join('\n');
     await this.writer.postMessage({
       conversationId: direct.conversationId,
       senderParticipantId: participant.participantId,
@@ -942,6 +1032,7 @@ export class GroupChatService {
     // T-090 proactive_slot：规则版时刻附近挑一个小时（或今天不聊），每群每天只问一次。
     const ruleHour = 9 + (h % 13);
     const hours = [...new Set([ruleHour, Math.max(9, ruleHour - 2), Math.min(21, ruleHour + 2)])];
+    if (!(await this.stillActive(conversation, job.userId, true, settings.scenarioMode))) return;
     const slot = await this.planner.decide({
       userId: job.userId,
       conversationId: conversation.conversationId,
@@ -961,6 +1052,7 @@ export class GroupChatService {
       idempotencyKey: `selfchat:${conversation.conversationId}:${local.date}`,
       decisionKey: `selfchat:${conversation.conversationId}:${local.date}`,
     });
+    if (!(await this.stillActive(conversation, job.userId, true, settings.scenarioMode))) return;
     if (slot.choice === 'skip_today' || local.hour !== Number(slot.choice.slice(1))) return;
     if (!(await this.backgroundAllowed(job.userId))) return;
     // 刚有人在聊就不插自发话题。
@@ -983,19 +1075,30 @@ export class GroupChatService {
     }
     if (!best) return;
     // 账本：每群每天最多 1 次（唯一约束保证并发下也只有一次）。
-    const inserted = await this.db.db
-      .insert(groupSelfChats)
-      .values({
-        conversationId: conversation.conversationId,
-        userId: job.userId,
-        localDate: local.date,
-        starterCharacterId: best.member.characterId,
-        sourceRef: `event:${best.id}`,
-        messages: 0,
-        createdAt: now,
-      })
-      .onConflictDoNothing()
-      .returning();
+    const inserted = await this.db.transaction(async (tx) => {
+      // ChatReadPort locks the row in this transaction. Dissolve either precedes this
+      // insert (then it is skipped) or follows it (then its outbox cleanup removes it).
+      const live = await this.chat.getConversation(conversation.conversationId, tx);
+      if (
+        !live ||
+        live.type !== 'group' ||
+        !live.participants.some((p) => p.kind === 'user' && p.refId === job.userId)
+      )
+        return [];
+      return tx.db
+        .insert(groupSelfChats)
+        .values({
+          conversationId: conversation.conversationId,
+          userId: job.userId,
+          localDate: local.date,
+          starterCharacterId: best.member.characterId,
+          sourceRef: `event:${best.id}`,
+          messages: 0,
+          createdAt: now,
+        })
+        .onConflictDoNothing()
+        .returning();
+    });
     if (!inserted.length) return;
     const sent = await this.runChain({
       userId: job.userId,

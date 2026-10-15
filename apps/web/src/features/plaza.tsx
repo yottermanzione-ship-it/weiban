@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { SearchField } from './search-field.js';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CaretLeft, ChatCircle, DotsThree, Heart, Storefront, UserList } from './old-icons.js';
 import { z } from 'zod';
@@ -233,18 +234,21 @@ export function PlazaTab({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       )}
       <form
-        className="message-composer"
+        className="search-strip"
         role="search"
         onSubmit={(event) => {
           event.preventDefault();
           setSearch(query.trim());
         }}
       >
-        <label>
-          搜索角色、标签、作者、基于的角色
-          <input value={query} maxLength={50} onChange={(e) => setQuery(e.target.value)} />
-        </label>
-        <button>搜索</button>
+        <SearchField
+          aria-label="搜索自定义角色"
+          placeholder="搜索角色、标签、作者、基于的角色"
+          value={query}
+          maxLength={50}
+          enterKeyHint="search"
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </form>
       <div className="plaza-filter">
         <select

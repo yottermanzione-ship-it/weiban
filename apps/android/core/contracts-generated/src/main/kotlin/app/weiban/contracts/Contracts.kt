@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.8. Regenerate: pnpm android:generate
+// Contract 3.14. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,13 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.8"
+const val CONTRACT_VERSION: String = "3.14"
+
+@Serializable
+data class AccountAlias(
+    @SerialName("username") val `username`: Username,
+    @SerialName("nextChangeAt") val `nextChangeAt`: Timestamp?,
+)
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -1774,6 +1780,11 @@ data class ChatGroupEndpointsRemoveMemberParams(
 @Serializable
 data class ChatGroupEndpointsRenameGroupBody(
     @SerialName("title") val `title`: String?,
+)
+
+@Serializable
+data class ChatGroupEndpointsUpdateAvatarBody(
+    @SerialName("mediaId") val `mediaId`: Id?,
 )
 
 @Serializable
@@ -4785,6 +4796,152 @@ data class FocusSession(
 )
 
 @Serializable
+data class ForwardMessagesRequest(
+    @SerialName("clientRequestId") val `clientRequestId`: ClientMsgId,
+    @SerialName("messageIds") val `messageIds`: List<Id>,
+    @SerialName("targetConversationIds") val `targetConversationIds`: List<Id>,
+    @SerialName("mode") val `mode`: String,
+)
+
+@Serializable
+data class ForwardMessagesRequestInput(
+    @SerialName("clientRequestId") val `clientRequestId`: ClientMsgId,
+    @SerialName("messageIds") val `messageIds`: List<Id>,
+    @SerialName("targetConversationIds") val `targetConversationIds`: List<Id>,
+    @SerialName("mode") val `mode`: String,
+)
+
+@Serializable
+data class ForwardMessagesResponse(
+    @SerialName("results") val `results`: List<ForwardMessagesResponseResultsItem>,
+)
+
+@Serializable(with = ForwardSnapshotContentSerializer::class)
+sealed interface ForwardSnapshotContent {
+    val `type`: String
+}
+
+@Serializable
+data class ForwardSnapshotContentText(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "text",
+    @SerialName("text") val `text`: String,
+    @SerialName("mentions") val `mentions`: List<Id>? = null,
+) : ForwardSnapshotContent
+
+@Serializable
+data class ForwardSnapshotContentImage(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "image",
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("width") val `width`: Long?,
+    @SerialName("height") val `height`: Long?,
+    @SerialName("sizeBytes") val `sizeBytes`: Long? = null,
+) : ForwardSnapshotContent
+
+@Serializable
+data class ForwardSnapshotContentVoice(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "voice",
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("durationMs") val `durationMs`: Long,
+    @SerialName("transcript") val `transcript`: String?,
+) : ForwardSnapshotContent
+
+@Serializable
+data class ForwardSnapshotContentSticker(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "sticker",
+    @SerialName("stickerId") val `stickerId`: Id,
+    @SerialName("source") val `source`: String,
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("description") val `description`: String?,
+) : ForwardSnapshotContent
+
+@Serializable
+data class ForwardSnapshotContentLink(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "link",
+    @SerialName("url") val `url`: String,
+    @SerialName("title") val `title`: String,
+    @SerialName("source") val `source`: String?,
+    @SerialName("description") val `description`: String?,
+    @SerialName("coverMediaId") val `coverMediaId`: Id?,
+    @SerialName("appHint") val `appHint`: String,
+) : ForwardSnapshotContent
+
+@Serializable
+data class ForwardSnapshotContentContactCard(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "contact_card",
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("recommenderCharacterId") val `recommenderCharacterId`: Id,
+) : ForwardSnapshotContent
+
+@Serializable
+data class ForwardSnapshotContentLetter(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "letter",
+    @SerialName("letterId") val `letterId`: Id,
+    @SerialName("direction") val `direction`: String,
+    @SerialName("body") val `body`: String,
+) : ForwardSnapshotContent
+
+@Serializable
+data class ForwardSnapshotContentDailyQuestion(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "daily_question",
+    @SerialName("answerId") val `answerId`: Id,
+    @SerialName("questionId") val `questionId`: Id,
+    @SerialName("date") val `date`: String,
+    @SerialName("question") val `question`: String,
+    @SerialName("answer") val `answer`: String,
+) : ForwardSnapshotContent
+
+object ForwardSnapshotContentSerializer : KSerializer<ForwardSnapshotContent> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("ForwardSnapshotContent")
+    override fun deserialize(decoder: Decoder): ForwardSnapshotContent {
+        val input = decoder as JsonDecoder
+        var value = input.decodeJsonElement().jsonObject
+        val tag = value["type"]?.jsonPrimitive?.content
+        return when (tag) {
+            "text" -> input.json.decodeFromJsonElement(ForwardSnapshotContentText.serializer(), value)
+            "image" -> input.json.decodeFromJsonElement(ForwardSnapshotContentImage.serializer(), value)
+            "voice" -> input.json.decodeFromJsonElement(ForwardSnapshotContentVoice.serializer(), value)
+            "sticker" -> input.json.decodeFromJsonElement(ForwardSnapshotContentSticker.serializer(), value)
+            "link" -> input.json.decodeFromJsonElement(ForwardSnapshotContentLink.serializer(), value)
+            "contact_card" -> input.json.decodeFromJsonElement(ForwardSnapshotContentContactCard.serializer(), value)
+            "letter" -> input.json.decodeFromJsonElement(ForwardSnapshotContentLetter.serializer(), value)
+            "daily_question" -> input.json.decodeFromJsonElement(ForwardSnapshotContentDailyQuestion.serializer(), value)
+            else -> throw SerializationException("Unknown discriminator")
+        }
+    }
+    override fun serialize(encoder: Encoder, value: ForwardSnapshotContent) {
+        val output = encoder as JsonEncoder
+        val element = when (value) {
+            is ForwardSnapshotContentText -> output.json.encodeToJsonElement(ForwardSnapshotContentText.serializer(), value)
+            is ForwardSnapshotContentImage -> output.json.encodeToJsonElement(ForwardSnapshotContentImage.serializer(), value)
+            is ForwardSnapshotContentVoice -> output.json.encodeToJsonElement(ForwardSnapshotContentVoice.serializer(), value)
+            is ForwardSnapshotContentSticker -> output.json.encodeToJsonElement(ForwardSnapshotContentSticker.serializer(), value)
+            is ForwardSnapshotContentLink -> output.json.encodeToJsonElement(ForwardSnapshotContentLink.serializer(), value)
+            is ForwardSnapshotContentContactCard -> output.json.encodeToJsonElement(ForwardSnapshotContentContactCard.serializer(), value)
+            is ForwardSnapshotContentLetter -> output.json.encodeToJsonElement(ForwardSnapshotContentLetter.serializer(), value)
+            is ForwardSnapshotContentDailyQuestion -> output.json.encodeToJsonElement(ForwardSnapshotContentDailyQuestion.serializer(), value)
+        }
+        output.encodeJsonElement(element)
+    }
+}
+
+@Serializable
+data class ForwardedRecordContent(
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "forwarded_record",
+    @SerialName("title") val `title`: String,
+    @SerialName("items") val `items`: List<ForwardedRecordContentItemsItem>,
+)
+
+@Serializable
 data class GatewayLimits(
     @SerialName("perUserConcurrency") val `perUserConcurrency`: Long?,
     @SerialName("perUserRpm") val `perUserRpm`: Long?,
@@ -5061,6 +5218,11 @@ data class IdentityEndpointsListSessionsResponse(
 @Serializable
 data class IdentityEndpointsRevokeSessionParams(
     @SerialName("sessionId") val `sessionId`: Id,
+)
+
+@Serializable
+data class IdentityEndpointsUpdateAliasBody(
+    @SerialName("username") val `username`: Username,
 )
 
 @Serializable
@@ -5678,6 +5840,14 @@ data class MessageContentActionCard(
     @SerialName("ref") val `ref`: MessageContentActionCardRef?,
 ) : MessageContent
 
+@Serializable
+data class MessageContentForwardedRecord(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "forwarded_record",
+    @SerialName("title") val `title`: String,
+    @SerialName("items") val `items`: List<MessageContentForwardedRecordItemsItem>,
+) : MessageContent
+
 object MessageContentSerializer : KSerializer<MessageContent> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("MessageContent")
     override fun deserialize(decoder: Decoder): MessageContent {
@@ -5697,6 +5867,7 @@ object MessageContentSerializer : KSerializer<MessageContent> {
             "letter" -> input.json.decodeFromJsonElement(MessageContentLetter.serializer(), value)
             "daily_question" -> input.json.decodeFromJsonElement(MessageContentDailyQuestion.serializer(), value)
             "action_card" -> input.json.decodeFromJsonElement(MessageContentActionCard.serializer(), value)
+            "forwarded_record" -> input.json.decodeFromJsonElement(MessageContentForwardedRecord.serializer(), value)
             else -> throw SerializationException("Unknown discriminator")
         }
     }
@@ -5715,6 +5886,7 @@ object MessageContentSerializer : KSerializer<MessageContent> {
             is MessageContentLetter -> output.json.encodeToJsonElement(MessageContentLetter.serializer(), value)
             is MessageContentDailyQuestion -> output.json.encodeToJsonElement(MessageContentDailyQuestion.serializer(), value)
             is MessageContentActionCard -> output.json.encodeToJsonElement(MessageContentActionCard.serializer(), value)
+            is MessageContentForwardedRecord -> output.json.encodeToJsonElement(MessageContentForwardedRecord.serializer(), value)
         }
         output.encodeJsonElement(element)
     }
@@ -5777,6 +5949,8 @@ data class ModelAccessAdminEndpointsBatchUpstreamsResponse(
 data class ModelAccessAdminEndpointsDeleteUpstreamParams(
     @SerialName("upstreamId") val `upstreamId`: Id,
 )
+
+typealias ModelAccessAdminEndpointsGetLeaderboardSourceResponse = ModelLeaderboardSource?
 
 @Serializable
 data class ModelAccessAdminEndpointsListCatalogResponse(
@@ -5906,6 +6080,26 @@ data class ModelInfo(
 )
 
 typealias ModelKey = String
+
+@Serializable
+data class ModelLeaderboardInfo(
+    @SerialName("source") val `source`: ModelLeaderboardSource?,
+    @SerialName("popular") val `popular`: List<ModelLeaderboardInfoPopularItem>,
+)
+
+@Serializable
+data class ModelLeaderboardSource(
+    @SerialName("label") val `label`: String,
+    @SerialName("url") val `url`: String,
+    @SerialName("asOf") val `asOf`: LocalDate?,
+)
+
+@Serializable
+data class ModelLeaderboardSourceInput(
+    @SerialName("label") val `label`: String,
+    @SerialName("url") val `url`: String,
+    @SerialName("asOf") val `asOf`: LocalDate?,
+)
 
 typealias ModelPurpose = String
 
@@ -7149,6 +7343,7 @@ typealias ProactiveFrequency = String
 data class Profile(
     @SerialName("nickname") val `nickname`: String?,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id?,
+    @SerialName("momentsCoverMediaId") val `momentsCoverMediaId`: Id? = null,
     @SerialName("birthday") val `birthday`: LocalDate?,
     @SerialName("gender") val `gender`: Gender,
     @SerialName("city") val `city`: String?,
@@ -7423,6 +7618,14 @@ data class ReceivedMessageContentActionCard(
 ) : ReceivedMessageContent
 
 @Serializable
+data class ReceivedMessageContentForwardedRecord(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "forwarded_record",
+    @SerialName("title") val `title`: String,
+    @SerialName("items") val `items`: List<ReceivedMessageContentForwardedRecordItemsItem>,
+) : ReceivedMessageContent
+
+@Serializable
 data class ReceivedMessageContentUnsupported(
     @EncodeDefault
     @SerialName("type") override val `type`: String = "unsupported",
@@ -7448,6 +7651,7 @@ object ReceivedMessageContentSerializer : KSerializer<ReceivedMessageContent> {
             "letter" -> input.json.decodeFromJsonElement(ReceivedMessageContentLetter.serializer(), value)
             "daily_question" -> input.json.decodeFromJsonElement(ReceivedMessageContentDailyQuestion.serializer(), value)
             "action_card" -> input.json.decodeFromJsonElement(ReceivedMessageContentActionCard.serializer(), value)
+            "forwarded_record" -> input.json.decodeFromJsonElement(ReceivedMessageContentForwardedRecord.serializer(), value)
             "unsupported" -> input.json.decodeFromJsonElement(ReceivedMessageContentUnsupported.serializer(), value)
             else -> { require(tag != null) { "Missing discriminator" }; value = JsonObject(value + mapOf("type" to JsonPrimitive("unsupported"), "originalType" to JsonPrimitive(tag))); input.json.decodeFromJsonElement(ReceivedMessageContentUnsupported.serializer(), value) }
         }
@@ -7467,6 +7671,7 @@ object ReceivedMessageContentSerializer : KSerializer<ReceivedMessageContent> {
             is ReceivedMessageContentLetter -> output.json.encodeToJsonElement(ReceivedMessageContentLetter.serializer(), value)
             is ReceivedMessageContentDailyQuestion -> output.json.encodeToJsonElement(ReceivedMessageContentDailyQuestion.serializer(), value)
             is ReceivedMessageContentActionCard -> output.json.encodeToJsonElement(ReceivedMessageContentActionCard.serializer(), value)
+            is ReceivedMessageContentForwardedRecord -> output.json.encodeToJsonElement(ReceivedMessageContentForwardedRecord.serializer(), value)
             is ReceivedMessageContentUnsupported -> output.json.encodeToJsonElement(ReceivedMessageContentUnsupported.serializer(), value)
         }
         output.encodeJsonElement(element)
@@ -7673,6 +7878,20 @@ data class RechargeOptions(
     @SerialName("tiers") val `tiers`: List<RechargeTier>,
     @SerialName("contactHint") val `contactHint`: String,
     @SerialName("pointsPerYuan") val `pointsPerYuan`: Long,
+)
+
+@Serializable
+data class RechargeQuote(
+    @SerialName("priceMicros") val `priceMicros`: PositiveMoneyMicros,
+    @SerialName("points") val `points`: NonNegativePoints,
+    @EncodeDefault
+    @SerialName("paymentEnabled") val `paymentEnabled`: Boolean = false,
+    @SerialName("contactHint") val `contactHint`: String,
+)
+
+@Serializable
+data class RechargeQuoteRequest(
+    @SerialName("amountFen") val `amountFen`: Long,
 )
 
 @Serializable
@@ -8706,6 +8925,17 @@ data class TextContentInput(
 typealias TimeZone = String
 
 @Serializable
+data class TimelineEndpointsGetStatusParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class TimelineEndpointsGetStatusResponse(
+    @SerialName("mood") val `mood`: TimelineMood?,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp?,
+)
+
+@Serializable
 data class TimelineEndpointsGetSummaryParams(
     @SerialName("conversationId") val `conversationId`: Id,
 )
@@ -8941,6 +9171,7 @@ data class UpdateNotificationSettingsRequestInput(
 data class UpdateProfileRequest(
     @SerialName("nickname") val `nickname`: String? = null,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+    @SerialName("momentsCoverMediaId") val `momentsCoverMediaId`: Id? = null,
     @SerialName("birthday") val `birthday`: LocalDate? = null,
     @SerialName("gender") val `gender`: Gender? = null,
     @SerialName("city") val `city`: String? = null,
@@ -8952,6 +9183,7 @@ data class UpdateProfileRequest(
 data class UpdateProfileRequestInput(
     @SerialName("nickname") val `nickname`: String? = null,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+    @SerialName("momentsCoverMediaId") val `momentsCoverMediaId`: Id? = null,
     @SerialName("birthday") val `birthday`: LocalDate? = null,
     @SerialName("gender") val `gender`: Gender? = null,
     @SerialName("city") val `city`: String? = null,
@@ -10510,6 +10742,7 @@ data class ClientSyncStateExcludedItem(
 data class ConversationGroup(
     @SerialName("createdByCharacterId") val `createdByCharacterId`: Id?,
     @SerialName("titleCustomized") val `titleCustomized`: Boolean,
+    @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
     @SerialName("memberLimit") val `memberLimit`: Long,
     @SerialName("formerParticipants") val `formerParticipants`: List<Participant>? = null,
 )
@@ -11576,6 +11809,16 @@ data class EventsWishlistItemCompletedPayload(
     @SerialName("firstCompletion") val `firstCompletion`: Boolean,
 )
 
+typealias ForwardMessagesResponseResultsItem = JsonElement
+
+@Serializable
+data class ForwardedRecordContentItemsItem(
+    @SerialName("senderName") val `senderName`: String,
+    @SerialName("senderKind") val `senderKind`: ParticipantKind,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("content") val `content`: ForwardSnapshotContent,
+)
+
 @Serializable
 data class GrowthCardFace(
     @SerialName("templateId") val `templateId`: Id?,
@@ -11619,10 +11862,24 @@ data class MessageContentActionCardRef(
 )
 
 @Serializable
+data class MessageContentForwardedRecordItemsItem(
+    @SerialName("senderName") val `senderName`: String,
+    @SerialName("senderKind") val `senderKind`: ParticipantKind,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("content") val `content`: ForwardSnapshotContent,
+)
+
+@Serializable
 data class MessagePageCoverageExcludedRangesItem(
     @SerialName("fromSeq") val `fromSeq`: Seq,
     @SerialName("throughSeq") val `throughSeq`: Seq,
     @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class ModelLeaderboardInfoPopularItem(
+    @SerialName("modelKey") val `modelKey`: String,
+    @SerialName("users") val `users`: Long,
 )
 
 @Serializable
@@ -11725,6 +11982,14 @@ data class ReceivedMessageContentActionCardActionsItem(
 data class ReceivedMessageContentActionCardRef(
     @SerialName("kind") val `kind`: String,
     @SerialName("id") val `id`: String,
+)
+
+@Serializable
+data class ReceivedMessageContentForwardedRecordItemsItem(
+    @SerialName("senderName") val `senderName`: String,
+    @SerialName("senderKind") val `senderKind`: ParticipantKind,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("content") val `content`: ForwardSnapshotContent,
 )
 
 @Serializable

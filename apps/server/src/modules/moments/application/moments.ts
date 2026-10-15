@@ -451,6 +451,21 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
 
   // ---------- MomentsReadPort ----------
 
+  async getPostVisibleToCharacter(
+    ownerUserId: string,
+    postId: string,
+    characterId: string,
+  ): Promise<MomentsPost | null> {
+    parseContract(Id, ownerUserId);
+    parseContract(Id, characterId);
+    return this.db.transaction(async (tx) => {
+      const check = await this.characterAccess(tx, ownerUserId, postId, characterId);
+      if (!check.ok) return null;
+      const active = await this.activeIds(ownerUserId);
+      return (await this.build(tx.db, ownerUserId, [check.row], active))[0] ?? null;
+    });
+  }
+
   async getPost(ownerUserId: string, postId: string): Promise<MomentsPost | null> {
     parseContract(Id, ownerUserId);
     if (!Id.safeParse(postId).success) return null;
@@ -664,6 +679,16 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
       if (input.replyToCommentId) {
         try {
           reply = await this.replyTarget(tx.db, row.id, input.replyToCommentId);
+          if (reply.authorKind === 'character') {
+            const targetAccess = await this.characterAccess(
+              tx,
+              input.ownerUserId,
+              row.id,
+              reply.authorRefId,
+            );
+            if (!targetAccess.ok)
+              return { ok: false, error: 'not_visible', message: '被回复的角色已不可见' };
+          }
         } catch {
           return { ok: false, error: 'not_found', message: '被回复的评论不存在' };
         }
@@ -793,6 +818,16 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
     if (!row) return { ok: false, error: 'not_found', message: '动态不存在' };
     if (!(await this.contacts.getActiveContact(ownerUserId, characterId, tx as unknown as Tx)))
       return { ok: false, error: 'not_visible', message: '角色不在通讯录中' };
+    if (
+      row.authorKind === 'character' &&
+      (!row.authorCharacterId ||
+        !(await this.contacts.getActiveContact(
+          ownerUserId,
+          row.authorCharacterId,
+          tx as unknown as Tx,
+        )))
+    )
+      return { ok: false, error: 'not_visible', message: '动态作者已不在通讯录中' };
     if (row.authorKind === 'user' && row.visibilityKind === 'selected') {
       const [allowed] = await tx.db
         .select({ id: visibility.characterId })

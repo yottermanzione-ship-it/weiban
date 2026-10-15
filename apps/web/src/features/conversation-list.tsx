@@ -14,13 +14,7 @@ import { Name } from './chat.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { GroupAvatar } from './groups.js';
 import { OldIcon } from './old-icons.js';
-import {
-  EmptyState,
-  LongPressMenu,
-  PopMenu,
-  showComingSoon,
-  type ActionItem,
-} from './shell-kit.js';
+import { LongPressMenu, PopMenu, showComingSoon, type ActionItem } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 import { PullMiniApps } from './pull-panel.js';
 import { useRowGesture } from './row-gesture.js';
@@ -60,10 +54,10 @@ function SwipeRow({
   actions: Array<{ label: string; kind: 'read' | 'hide' | 'delete'; onClick(): void }>;
   children: ReactNode;
 }) {
-  const host = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const width = actions.length * SWIPE_BUTTON;
-  useRowGesture(host, track, {
+  // 手势只归前景行；右侧操作按钮必须收到自己的点击，不能被收起行的捕获监听吞掉。
+  useRowGesture(track, track, {
     swipeWidth: width,
     open,
     othersOpen,
@@ -72,7 +66,7 @@ function SwipeRow({
     onLongPress,
   });
   return (
-    <div ref={host} className="swipe-host">
+    <div className="swipe-host">
       <div className="swipe-actions" aria-hidden={!open} style={{ width }}>
         {actions.map((action) => (
           <button
@@ -113,6 +107,7 @@ function ConversationRow({ item }: { item: Conversation }) {
         {item.type === 'group' ? (
           <GroupAvatar
             ids={item.participants.filter((p) => p.kind === 'character').map((p) => p.refId)}
+            mediaId={item.group?.avatarMediaId}
           />
         ) : (
           <CharacterAvatar id={characterId} size={48} radius={4} />
@@ -216,9 +211,10 @@ export function ConversationListPage() {
       label: item.state.pinned ? '取消置顶' : '置顶该聊天',
       onClick: () => void act(() => patch(item, { pinned: !item.state.pinned })),
     },
-    ...(hasUnread(item)
-      ? []
-      : [{ label: '标为未读', onClick: () => void act(() => markUnread(item)) }]),
+    {
+      label: hasUnread(item) ? '标为已读' : '标为未读',
+      onClick: () => void act(() => (hasUnread(item) ? markRead(item) : markUnread(item))),
+    },
     {
       label: item.state.muted ? '允许消息通知' : '消息免打扰',
       onClick: () => void act(() => patch(item, { muted: !item.state.muted })),
@@ -261,20 +257,6 @@ export function ConversationListPage() {
             正在读取聊天…
           </p>
         )}
-        {state.initialized && items.length === 0 && (
-          <div className="chat-list-empty">
-            <EmptyState
-              icon="wechat/chat"
-              title="还没有对话"
-              desc="去添加一位角色，聊起来"
-              action={
-                <Link className="button primary" to="/contacts/add">
-                  去添加角色
-                </Link>
-              }
-            />
-          </div>
-        )}
         <VirtualList
           items={items}
           itemKey={(item) => item.conversationId}
@@ -286,7 +268,10 @@ export function ConversationListPage() {
               othersOpen={swiped !== null && swiped !== item.conversationId}
               onOpenChange={(open) => setSwiped(open ? item.conversationId : null)}
               onCloseOthers={() => setSwiped(null)}
-              onLongPress={(at) => setTarget({ item, at })}
+              onLongPress={(at) => {
+                setSwiped(null);
+                setTarget({ item, at });
+              }}
               actions={[
                 {
                   label: hasUnread(item) ? '标为已读' : '标为未读',

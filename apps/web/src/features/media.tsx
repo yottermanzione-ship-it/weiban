@@ -261,7 +261,7 @@ export function ImageViewer({
           {current + 1} / {images.length}
         </span>
         <button className="viewer-button" aria-label="更多" onClick={() => setMenu((v) => !v)}>
-          •••
+          <OldIcon name="wechat/more" size={24} />
         </button>
       </header>
       <div
@@ -791,7 +791,7 @@ export function StickerPanel({
 }) {
   const packs = useRemote(StickerEndpoints.listPacks);
   const mine = useRemote(StickerEndpoints.listMyStickers);
-  const [tab, setTab] = useState<string>('mine');
+  const [tab, setTab] = useState<string>('preset');
   useUpdates((update) => {
     if (
       update.type === 'data.changed' &&
@@ -799,7 +799,10 @@ export function StickerPanel({
     )
       mine.refresh();
   });
-  const pack = packs.data?.items.find((p) => p.packId === tab);
+  const firstPack =
+    packs.data?.items.find((p) => p.name === '微伴预设表情') ?? packs.data?.items[0];
+  const activeTab = tab === 'preset' ? (firstPack?.packId ?? 'mine') : tab;
+  const pack = packs.data?.items.find((p) => p.packId === activeTab);
   const builtIn = ['wechat/heart', 'wechat/star'];
   return (
     <div className="wx-sticker">
@@ -808,7 +811,7 @@ export function StickerPanel({
           type="button"
           role="tab"
           aria-label="我添加的表情"
-          aria-selected={tab === 'mine'}
+          aria-selected={activeTab === 'mine'}
           onClick={() => setTab('mine')}
         >
           <OldIcon name="wechat/smile" size={22} />
@@ -819,7 +822,7 @@ export function StickerPanel({
             type="button"
             role="tab"
             aria-label={p.name}
-            aria-selected={tab === p.packId}
+            aria-selected={activeTab === p.packId}
             onClick={() => setTab(p.packId)}
           >
             {p.stickers[0] && index >= builtIn.length ? (

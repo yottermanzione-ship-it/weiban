@@ -26,6 +26,7 @@ interface ChatContextValue {
   older(id: string, beforeSeq: number): Promise<boolean>;
   clearHistory(id: string): Promise<void>;
   synchronize(): Promise<void>;
+  restoreHistory(): Promise<void>;
   assertOwner(): void;
 }
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -149,6 +150,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         },
         clearHistory: (id) => current().clearHistory(id),
         synchronize: () => current().synchronize(),
+        restoreHistory: () => current().restoreHistory(),
         assertOwner: () => {
           current();
         },
