@@ -668,6 +668,32 @@ label.field-row {
   position: relative;
   height: 370px;
   background-size: cover;
+  background-position: center;
+}
+.moments-cover-image {
+  position: absolute;
+  inset: 0;
+}
+.moments-cover-image .media-frame,
+.moments-cover-image img {
+  width: 100%;
+  height: 100%;
+}
+.moments-cover-image img {
+  object-fit: cover;
+}
+.moments-change-cover {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+.moments-cover-name {
+  z-index: 1;
 }
 .moments-cover-shade {
   position: absolute;
@@ -901,9 +927,17 @@ label.field-row {
   gap: 6px;
   margin-top: 8px;
 }
-.moment-reply input {
+.moment-reply textarea {
   flex: 1;
   min-height: 36px;
+  max-height: 140px;
+  resize: vertical;
+  background: var(--wb-color-bg-page);
+}
+.sheet-body > .moment-reply {
+  margin: 0;
+  padding: 12px;
+  flex-wrap: wrap;
 }
 .album {
   display: grid;

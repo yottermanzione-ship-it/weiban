@@ -21,6 +21,8 @@ import { useCharacterNames } from '../data/character-names.js';
 import { VirtualList } from './virtual-list.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { UserAvatar } from './user-avatar.js';
+import { AvatarEditor } from './avatar-editor.js';
+import { MediaImg } from './media.js';
 import { openShare } from './share.js';
 import { showToast, Dialog } from './toast.js';
 import { OldIcon } from './old-icons.js';
@@ -32,6 +34,7 @@ import {
   NavBar,
   NavIcon,
   CheckCircle,
+  Sheet,
 } from './shell-kit.js';
 
 /*
@@ -232,10 +235,28 @@ export function MomentCard({
       }),
     );
   return (
-    <article className="moment-card">
+    <article
+      className="moment-card"
+      onContextMenu={(event) => {
+        const target = event.target;
+        const contentTarget =
+          target instanceof Element &&
+          (target === event.currentTarget ||
+            target.classList.contains('moment-body') ||
+            target.closest('.moment-text, .moment-images'));
+        if (mine && onDeleted && contentTarget) {
+          event.preventDefault();
+          setConfirmDelete(true);
+        }
+      }}
+    >
       <ActorAvatar actor={post.author} profile={actors.profile} />
       <div className="moment-body">
-        <strong className="moment-author">{actors.name(post.author)}</strong>
+        <strong className="moment-author">
+          <Link to={mine ? '/me/moments' : `/characters/${post.author.refId}`}>
+            {actors.name(post.author)}
+          </Link>
+        </strong>
         {post.text && <p className={`moment-text ${full ? '' : 'clamp-6'}`}>{post.text}</p>}
         {post.images.length > 0 && (
           <div className={`moment-images ${post.images.length === 1 ? 'single' : 'grid'}`}>
@@ -361,6 +382,7 @@ export function MomentCard({
                   type="button"
                   onClick={() => (c.author.kind === 'user' ? setCommentMenu(c) : setReplying(c))}
                   onContextMenu={(event) => {
+                    event.stopPropagation();
                     if (c.author.kind !== 'user') return;
                     event.preventDefault();
                     setCommentMenu(c);
@@ -384,39 +406,53 @@ export function MomentCard({
           </div>
         )}
         {replying !== undefined && (
-          <form
-            className="moment-reply"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!text.trim()) return;
-              void run(async () => {
-                const next = await api.call(MomentsEndpoints.comment, {
-                  params: { postId: post.postId },
-                  body: {
-                    clientRequestId: crypto.randomUUID(),
-                    text: text.trim(),
-                    replyToCommentId: replying?.commentId ?? null,
-                  },
-                });
+          <Sheet
+            title={replying ? `回复${actors.name(replying.author)}` : '评论'}
+            closeLabel="取消"
+            half
+            onClose={() => {
+              if (!pending) {
                 setText('');
                 setReplying(undefined);
-                return next;
-              });
+              }
             }}
           >
-            <input
-              autoFocus
-              maxLength={500}
-              value={text}
-              aria-label="评论"
-              placeholder={replying ? `回复${actors.name(replying.author)}：` : '评论'}
-              onChange={(e) => setText(e.target.value)}
-              onBlur={() => !text && window.setTimeout(() => setReplying(undefined), 150)}
-            />
-            <button className="wx-send" disabled={pending || !text.trim()}>
-              发送
-            </button>
-          </form>
+            <form
+              className="moment-reply"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!text.trim()) return;
+                void run(async () => {
+                  const next = await api.call(MomentsEndpoints.comment, {
+                    params: { postId: post.postId },
+                    body: {
+                      clientRequestId: crypto.randomUUID(),
+                      text: text.trim(),
+                      replyToCommentId: replying?.commentId ?? null,
+                    },
+                  });
+                  setText('');
+                  setReplying(undefined);
+                  return next;
+                });
+              }}
+            >
+              <textarea
+                autoFocus
+                rows={2}
+                disabled={pending}
+                maxLength={500}
+                value={text}
+                aria-label="评论"
+                placeholder={replying ? `回复${actors.name(replying.author)}：` : '评论'}
+                onChange={(e) => setText(e.target.value)}
+              />
+              <button className="wx-send" disabled={pending || !text.trim()}>
+                发送
+              </button>
+              {error && <small role="alert">{error}</small>}
+            </form>
+          </Sheet>
         )}
         {error && <small role="alert">{error}</small>}
       </div>
@@ -480,23 +516,92 @@ function coverFor(name: string) {
 }
 
 /** 朋友圈封面（4.11）：高 370，预设渐变 + 底部压暗；头像 70 探出封面 23.4。 */
-function MomentsCover({ name, avatar, to }: { name: string; avatar: ReactNode; to: string }) {
+function MomentsCover({
+  name,
+  avatar,
+  to,
+  editable = false,
+}: {
+  name: string;
+  avatar: ReactNode;
+  to: string;
+  editable?: boolean;
+}) {
   const [top, bottom] = coverFor(name);
+  const profile = useRemote(IdentityEndpoints.getProfile, {}, editable);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const { assertOwner } = useChat();
+  const coverId = editable ? profile.data?.momentsCoverMediaId : null;
+  async function save(mediaId: string | null) {
+    assertOwner();
+    await api.call(IdentityEndpoints.updateProfile, { body: { momentsCoverMediaId: mediaId } });
+    window.dispatchEvent(new Event('weiban:settings-updated'));
+    setError('');
+    showToast(mediaId ? '已更换封面' : '已恢复默认封面', 2000, 'success');
+  }
   return (
-    <div className="moments-cover-wrap">
-      <div
-        className="moments-cover"
-        style={{ backgroundImage: `linear-gradient(${top}, ${bottom})` }}
-      >
-        <i className="moments-cover-shade" />
-        <Link className="moments-cover-name" to={to}>
-          {name}
+    <>
+      <div className="moments-cover-wrap">
+        <div
+          className="moments-cover"
+          style={{ backgroundImage: `linear-gradient(${top}, ${bottom})` }}
+        >
+          {coverId && (
+            <div className="moments-cover-image">
+              <MediaImg key={coverId} mediaId={coverId} thumbnail={false} alt="朋友圈封面" />
+            </div>
+          )}
+          <i className="moments-cover-shade" />
+          {editable && (
+            <button
+              className="moments-change-cover"
+              aria-label="换封面"
+              onClick={() => setOpen(true)}
+            />
+          )}
+          <Link className="moments-cover-name" to={to}>
+            {name}
+          </Link>
+        </div>
+        <Link className="moments-cover-avatar" to={to} aria-label={`${name}的资料`}>
+          {avatar}
         </Link>
       </div>
-      <Link className="moments-cover-avatar" to={to} aria-label={`${name}的资料`}>
-        {avatar}
-      </Link>
-    </div>
+      {open && (
+        <Sheet
+          title="换封面"
+          closeLabel="完成"
+          onClose={() => {
+            if (!busy) setOpen(false);
+          }}
+        >
+          <section className="panel stack">
+            <fieldset disabled={busy}>
+              <AvatarEditor
+                purpose="moments_cover"
+                label="封面"
+                onSaved={save}
+                onPendingChange={setBusy}
+                onRestore={
+                  coverId
+                    ? () => {
+                        setBusy(true);
+                        setError('');
+                        void save(null)
+                          .catch((e) => setError(friendlyError(e)))
+                          .finally(() => setBusy(false));
+                      }
+                    : undefined
+                }
+              />
+            </fieldset>
+            {error && <p role="alert">{error}</p>}
+          </section>
+        </Sheet>
+      )}
+    </>
   );
 }
 
@@ -541,6 +646,7 @@ export function MomentsFeedPage() {
             onClick={() => setCameraMenu(true)}
             onContextMenu={(event) => {
               event.preventDefault();
+              event.stopPropagation();
               navigate('/moments/new');
             }}
           >
@@ -557,6 +663,7 @@ export function MomentsFeedPage() {
           item.postId === '__cover__' ? (
             <>
               <MomentsCover
+                editable
                 name={nickname}
                 avatar={<UserAvatar profile={actors.profile} size={70} radius={8} />}
                 to="/me/moments"
@@ -666,7 +773,7 @@ function Album({
           ) : undefined
         }
       />
-      <MomentsCover name={name} avatar={avatar} to={profileLink} />
+      <MomentsCover name={name} avatar={avatar} to={profileLink} editable={mine} />
       {list.items.length === 0 && list.loading && (
         <div className="stack" role="status" aria-label="正在读取">
           <div className="skeleton-row" />

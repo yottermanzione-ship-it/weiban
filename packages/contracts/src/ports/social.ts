@@ -14,6 +14,12 @@ import type { FocusSession, Reminder, WishlistItem } from '../http/play.js';
 // ---------- moments（提供方 moments，调用方 ai-runtime） ----------
 
 export interface MomentsReadPort {
+  /** 3.13：同最终互动权限检查，未获可见权限不返回正文。 */
+  getPostVisibleToCharacter(
+    ownerUserId: string,
+    postId: string,
+    characterId: string,
+  ): Promise<MomentsPost | null>;
   getPost(ownerUserId: string, postId: string): Promise<MomentsPost | null>;
   /** 角色最近的动态（避免重复、P-16 计数）。 */
   listCharacterPosts(
