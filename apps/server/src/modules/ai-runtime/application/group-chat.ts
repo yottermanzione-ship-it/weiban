@@ -1032,6 +1032,7 @@ export class GroupChatService {
     // T-090 proactive_slot：规则版时刻附近挑一个小时（或今天不聊），每群每天只问一次。
     const ruleHour = 9 + (h % 13);
     const hours = [...new Set([ruleHour, Math.max(9, ruleHour - 2), Math.min(21, ruleHour + 2)])];
+    if (!(await this.stillActive(conversation, job.userId, true, settings.scenarioMode))) return;
     const slot = await this.planner.decide({
       userId: job.userId,
       conversationId: conversation.conversationId,
