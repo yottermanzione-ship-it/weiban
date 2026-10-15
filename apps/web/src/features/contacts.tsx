@@ -359,7 +359,12 @@ export function DiscoverPage() {
       </MenuGroup>
       <MenuGroup>
         <ComingSoonRow id="topstories" />
-        <MenuRow to="/search" icon="wechat/discover_search.png" tint="red" label="搜一搜" />
+        <MenuRow
+          icon="wechat/discover_search.png"
+          tint="red"
+          label="搜一搜"
+          onClick={() => showToast('暂未开放', 2000, 'info')}
+        />
       </MenuGroup>
       <MenuGroup>
         <ComingSoonRow id="games" />

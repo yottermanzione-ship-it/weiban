@@ -4,11 +4,13 @@ export function AvatarDialog({
   crop = false,
   busy = false,
   onDismiss,
+  label = '头像',
 }: {
   children: ReactNode;
   crop?: boolean;
   busy?: boolean;
   onDismiss: () => void;
+  label?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -23,7 +25,7 @@ export function AvatarDialog({
     <dialog
       ref={ref}
       className={crop ? 'avatar-crop-dialog stack' : 'avatar-source-dialog stack'}
-      aria-label={crop ? '调整头像' : '选择头像来源'}
+      aria-label={crop ? `调整${label}` : `选择${label}来源`}
       onCancel={(event) => {
         event.preventDefault();
         if (!busy) onDismiss();

@@ -91,6 +91,7 @@ export const profiles = identitySchema.table('profiles', {
     .references(() => users.id, { onDelete: 'cascade' }),
   nickname: text('nickname'),
   avatarMediaId: uuid('avatar_media_id'),
+  momentsCoverMediaId: uuid('moments_cover_media_id'),
   birthday: date('birthday', { mode: 'string' }),
   gender: text('gender').notNull(),
   city: text('city'),

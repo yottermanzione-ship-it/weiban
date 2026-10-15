@@ -21,6 +21,7 @@ import type {
   UpdateUserPreferencesRequest,
   UserPreferences,
   MediaReadPort,
+  MediaSystemPort,
 } from '@weiban/contracts';
 import { UpdateNotificationSettingsRequest } from '@weiban/contracts';
 import { and, asc, eq, inArray } from 'drizzle-orm';
@@ -37,7 +38,7 @@ import {
   type Outbox,
 } from '../../../platform/index.js';
 import { isValidTimeZone } from '../domain/rules.js';
-import { MEDIA_READ_PORT } from '../../media/index.js';
+import { MEDIA_READ_PORT, MEDIA_SYSTEM_PORT } from '../../media/index.js';
 import { notificationSettings, preferences, profiles, users } from '../infra/db/schema.js';
 
 type ProfileRow = typeof profiles.$inferSelect;
@@ -64,6 +65,7 @@ export function toProfile(row: ProfileRow): Profile {
   return {
     nickname: row.nickname,
     avatarMediaId: row.avatarMediaId,
+    momentsCoverMediaId: row.momentsCoverMediaId ?? null,
     birthday: row.birthday,
     gender: row.gender as Profile['gender'],
     city: row.city,
@@ -113,6 +115,7 @@ export class SettingsService
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(MEDIA_READ_PORT) private readonly media: MediaReadPort,
+    @Inject(MEDIA_SYSTEM_PORT) private readonly mediaSystem: MediaSystemPort,
   ) {}
 
   /** 注册时在同一事务写入资料、通知设置、界面偏好的默认值。 */
@@ -167,6 +170,11 @@ export class SettingsService
         .where(eq(profiles.userId, userId))
         .for('update');
       if (!row) throw new AppError('not_found', '账号不存在');
+      if (
+        patch.momentsCoverMediaId &&
+        !(await this.mediaSystem.canUse(userId, patch.momentsCoverMediaId, ['moments_cover']))
+      )
+        throw new AppError('bad_request', '请使用本人上传的朋友圈封面');
       const current = toProfile(row);
       const changed = changedKeys(current, patch);
       if (changed.length === 0) return current;
@@ -177,6 +185,14 @@ export class SettingsService
         .set(set)
         .where(eq(profiles.userId, userId))
         .returning();
+      if (changed.includes('momentsCoverMediaId') && row.momentsCoverMediaId) {
+        const [used] = await tx.db
+          .select({ userId: profiles.userId })
+          .from(profiles)
+          .where(eq(profiles.momentsCoverMediaId, row.momentsCoverMediaId))
+          .limit(1);
+        if (!used) await this.mediaSystem.deleteObject(row.momentsCoverMediaId, tx);
+      }
       await this.outbox.publish(tx, 'identity.profile_updated', 'identity', {
         userId,
         changedFields: changed.map(String),

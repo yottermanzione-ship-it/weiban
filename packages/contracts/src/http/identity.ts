@@ -97,6 +97,8 @@ export const Gender = z.enum(['female', 'male', 'other', 'unspecified']);
 const profileFields = {
   nickname: z.string().min(1).max(20).nullable(),
   avatarMediaId: Id.nullable(),
+  /** 3.13：本人朋友圈封面，旧响应缺失时仍显示默认。 */
+  momentsCoverMediaId: Id.nullable().optional(),
   birthday: LocalDate.nullable(),
   /** 新账号为 unspecified。 */
   gender: Gender,
