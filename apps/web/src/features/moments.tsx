@@ -238,7 +238,13 @@ export function MomentCard({
     <article
       className="moment-card"
       onContextMenu={(event) => {
-        if (mine && onDeleted) {
+        const target = event.target;
+        const contentTarget =
+          target instanceof Element &&
+          (target === event.currentTarget ||
+            target.classList.contains('moment-body') ||
+            target.closest('.moment-text, .moment-images'));
+        if (mine && onDeleted && contentTarget) {
           event.preventDefault();
           setConfirmDelete(true);
         }
@@ -246,7 +252,11 @@ export function MomentCard({
     >
       <ActorAvatar actor={post.author} profile={actors.profile} />
       <div className="moment-body">
-        <strong className="moment-author">{actors.name(post.author)}</strong>
+        <strong className="moment-author">
+          <Link to={mine ? '/me/moments' : `/characters/${post.author.refId}`}>
+            {actors.name(post.author)}
+          </Link>
+        </strong>
         {post.text && <p className={`moment-text ${full ? '' : 'clamp-6'}`}>{post.text}</p>}
         {post.images.length > 0 && (
           <div className={`moment-images ${post.images.length === 1 ? 'single' : 'grid'}`}>
@@ -372,6 +382,7 @@ export function MomentCard({
                   type="button"
                   onClick={() => (c.author.kind === 'user' ? setCommentMenu(c) : setReplying(c))}
                   onContextMenu={(event) => {
+                    event.stopPropagation();
                     if (c.author.kind !== 'user') return;
                     event.preventDefault();
                     setCommentMenu(c);
@@ -635,6 +646,7 @@ export function MomentsFeedPage() {
             onClick={() => setCameraMenu(true)}
             onContextMenu={(event) => {
               event.preventDefault();
+              event.stopPropagation();
               navigate('/moments/new');
             }}
           >

@@ -699,6 +699,14 @@ export class MomentsAiService {
     )
       return null;
     post = current;
+    const target = job.replyToCommentId
+      ? post.comments.find((c) => c.commentId === job.replyToCommentId)
+      : null;
+    if (
+      target?.author.kind === 'character' &&
+      !(await this.moments.getPostVisibleToCharacter(userId, post.postId, target.author.refId))
+    )
+      return null;
     const thread = post.comments
       .slice(-12)
       .map(

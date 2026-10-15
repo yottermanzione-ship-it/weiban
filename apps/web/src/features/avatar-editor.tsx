@@ -203,6 +203,11 @@ export function AvatarEditor({
       {source && (
         <AvatarDialog label={label} crop busy={pending} onDismiss={() => setSource('')}>
           <h2>调整{label}</h2>
+          {error && (
+            <p role="alert" className="error">
+              {error}
+            </p>
+          )}
           <p>拖动调整位置，双指缩放；也可展开精细调整。</p>
           <canvas
             {...gesture}
@@ -261,7 +266,7 @@ export function AvatarEditor({
           </button>
         </AvatarDialog>
       )}
-      {error && (
+      {error && !source && (
         <p role="alert" className="error">
           {error}
         </p>

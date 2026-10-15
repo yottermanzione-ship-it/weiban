@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.12. Regenerate: pnpm android:generate
+// Contract 3.13. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.12"
+const val CONTRACT_VERSION: String = "3.13"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -7310,6 +7310,7 @@ typealias ProactiveFrequency = String
 data class Profile(
     @SerialName("nickname") val `nickname`: String?,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id?,
+    @SerialName("momentsCoverMediaId") val `momentsCoverMediaId`: Id? = null,
     @SerialName("birthday") val `birthday`: LocalDate?,
     @SerialName("gender") val `gender`: Gender,
     @SerialName("city") val `city`: String?,
@@ -9123,6 +9124,7 @@ data class UpdateNotificationSettingsRequestInput(
 data class UpdateProfileRequest(
     @SerialName("nickname") val `nickname`: String? = null,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+    @SerialName("momentsCoverMediaId") val `momentsCoverMediaId`: Id? = null,
     @SerialName("birthday") val `birthday`: LocalDate? = null,
     @SerialName("gender") val `gender`: Gender? = null,
     @SerialName("city") val `city`: String? = null,
@@ -9134,6 +9136,7 @@ data class UpdateProfileRequest(
 data class UpdateProfileRequestInput(
     @SerialName("nickname") val `nickname`: String? = null,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+    @SerialName("momentsCoverMediaId") val `momentsCoverMediaId`: Id? = null,
     @SerialName("birthday") val `birthday`: LocalDate? = null,
     @SerialName("gender") val `gender`: Gender? = null,
     @SerialName("city") val `city`: String? = null,

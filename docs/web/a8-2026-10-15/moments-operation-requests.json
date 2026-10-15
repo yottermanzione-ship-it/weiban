@@ -1,0 +1,85 @@
+[
+  {
+    "path": "/api/v1/moments/badge/seen",
+    "method": "POST",
+    "body": {
+      "scope": "posts"
+    }
+  },
+  {
+    "path": "/api/v1/media",
+    "purpose": "moments_cover",
+    "bytes": 39172,
+    "mediaId": "4020b1e7-a465-442c-83f2-737e7f9485a2"
+  },
+  {
+    "path": "/api/v1/me/profile",
+    "method": "PATCH",
+    "body": {
+      "momentsCoverMediaId": "4020b1e7-a465-442c-83f2-737e7f9485a2"
+    }
+  },
+  {
+    "path": "/api/v1/me/profile",
+    "method": "PATCH",
+    "body": {
+      "momentsCoverMediaId": "4020b1e7-a465-442c-83f2-737e7f9485a2"
+    }
+  },
+  {
+    "path": "/api/v1/me/profile",
+    "method": "PATCH",
+    "body": {
+      "momentsCoverMediaId": null
+    }
+  },
+  {
+    "path": "/api/v1/moments/badge/seen",
+    "method": "POST",
+    "body": {
+      "scope": "posts"
+    }
+  },
+  {
+    "path": "/api/v1/moments/posts/:postId/comments",
+    "method": "POST",
+    "body": {
+      "clientRequestId": "54a07fe0-7e61-48d3-a7c5-39472a618337",
+      "text": "带上外套，一起看日落。",
+      "replyToCommentId": null
+    },
+    "params": {
+      "postId": "33333333-3333-4333-8333-333333333333"
+    }
+  },
+  {
+    "path": "/api/v1/moments/posts/:postId/comments/:commentId",
+    "method": "DELETE",
+    "params": {
+      "postId": "33333333-3333-4333-8333-333333333333",
+      "commentId": "d2bae68f-611a-49f1-a501-44249cbe64f2"
+    }
+  },
+  {
+    "path": "/api/v1/moments/posts",
+    "method": "POST",
+    "body": {
+      "clientRequestId": "b078fefa-b730-4239-b51c-b8fb3677d8e9",
+      "text": "A8 本地可见性操作样例",
+      "imageMediaIds": [],
+      "visibility": {
+        "kind": "selected",
+        "characterIds": [
+          "11111111-1111-4111-8111-111111111111"
+        ]
+      }
+    }
+  },
+  {
+    "path": "/api/v1/moments/badge/seen",
+    "method": "POST",
+    "body": {
+      "scope": "posts"
+    }
+  }
+]

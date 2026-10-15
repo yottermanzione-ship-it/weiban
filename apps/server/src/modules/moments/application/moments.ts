@@ -818,6 +818,16 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
     if (!row) return { ok: false, error: 'not_found', message: '动态不存在' };
     if (!(await this.contacts.getActiveContact(ownerUserId, characterId, tx as unknown as Tx)))
       return { ok: false, error: 'not_visible', message: '角色不在通讯录中' };
+    if (
+      row.authorKind === 'character' &&
+      (!row.authorCharacterId ||
+        !(await this.contacts.getActiveContact(
+          ownerUserId,
+          row.authorCharacterId,
+          tx as unknown as Tx,
+        )))
+    )
+      return { ok: false, error: 'not_visible', message: '动态作者已不在通讯录中' };
     if (row.authorKind === 'user' && row.visibilityKind === 'selected') {
       const [allowed] = await tx.db
         .select({ id: visibility.characterId })
