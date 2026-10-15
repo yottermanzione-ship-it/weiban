@@ -734,7 +734,11 @@ export function CharacterPage({
         <div className="profile-head-text">
           <h2>
             <span>{contact?.remark || data?.name || '角色资料'}</span>
-            <CharacterStatus characterId={characterId} enabled={!onboarding && active} />
+            <CharacterStatus
+              key={characterId}
+              characterId={characterId}
+              enabled={!onboarding && active}
+            />
             {contact && (
               <button
                 type="button"

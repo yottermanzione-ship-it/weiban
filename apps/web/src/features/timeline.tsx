@@ -188,9 +188,9 @@ export function TimelinePage() {
   return (
     <main>
       <NavBar title="TA 的动态" fallback={`/characters/${characterId}`} />
-      <h1 className="page-title">
-        <CharacterName id={characterId} fallback={contact?.remark} /> 的动态
-      </h1>
+      <p className="hint page-note">
+        <CharacterName id={characterId} fallback={contact?.remark} />
+      </p>
       {companion.data?.dailyLife === false && (
         <p className="inline-tip">
           你关闭了 TA 的动态，不会有新的动态{' '}
