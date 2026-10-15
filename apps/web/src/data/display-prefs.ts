@@ -12,6 +12,14 @@ export const fontScales = [
 ] as const;
 const SCHEME_KEY = 'weiban:scheme';
 const FONT_KEY = 'weiban:font-scale';
+const STATUS_KEY = 'weiban:character-status';
+export function getCharacterStatusVisible() {
+  return read(STATUS_KEY) !== 'hidden';
+}
+export function setCharacterStatusVisible(visible: boolean) {
+  write(STATUS_KEY, visible ? 'shown' : 'hidden');
+  window.dispatchEvent(new Event('weiban:display-prefs'));
+}
 function read(key: string): string | null {
   try {
     return localStorage.getItem(key);

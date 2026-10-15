@@ -648,7 +648,7 @@ const basisNames: Record<string, string> = {
   fictional: '虚构角色',
   original: '原创',
 };
-function StatusTag({ status }: { status: string }) {
+export function StatusTag({ status }: { status: string }) {
   return <span className={`request-status ${status}`}>{statusNames[status] ?? '处理中'}</span>;
 }
 function dateText(iso: string) {

@@ -1,0 +1,20 @@
+[
+  {
+    "path": "/api/v1/characters/:characterId/memories",
+    "method": "POST",
+    "body": {
+      "clientMemoryId": "1af1fadb-67b8-4375-822a-f62d376a4cb5",
+      "content": "喜欢清晨散步，周末想再看海。",
+      "category": "basic"
+    }
+  },
+  {
+    "path": "/api/v1/characters/:characterId/memories",
+    "method": "POST",
+    "body": {
+      "clientMemoryId": "1af1fadb-67b8-4375-822a-f62d376a4cb5",
+      "content": "喜欢清晨散步，周末想再看海。",
+      "category": "basic"
+    }
+  }
+]

@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.11. Regenerate: pnpm android:generate
+// Contract 3.12. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.11"
+const val CONTRACT_VERSION: String = "3.12"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -8875,6 +8875,17 @@ data class TextContentInput(
 )
 
 typealias TimeZone = String
+
+@Serializable
+data class TimelineEndpointsGetStatusParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class TimelineEndpointsGetStatusResponse(
+    @SerialName("mood") val `mood`: TimelineMood?,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp?,
+)
 
 @Serializable
 data class TimelineEndpointsGetSummaryParams(

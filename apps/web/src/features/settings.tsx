@@ -14,6 +14,8 @@ import {
   fontScales,
   getFontScale,
   getScheme,
+  getCharacterStatusVisible,
+  setCharacterStatusVisible,
   setFontScale,
   setScheme,
   type Scheme,
@@ -108,6 +110,7 @@ export function SettingsPage() {
   const [pending, setPending] = useState(false);
   const [scheme, setSchemeState] = useState(getScheme);
   const [font, setFont] = useState(getFontScale);
+  const [statusVisible, setStatusVisible] = useState(getCharacterStatusVisible);
   const [sound, setSound] = useState(readSound);
   const [choice, setChoice] = useState<'scheme' | 'font' | 'sound' | null>(null);
   const [logout, setLogout] = useState(false);
@@ -191,6 +194,15 @@ export function SettingsPage() {
       </MenuGroup>
       <GroupHeader>通用</GroupHeader>
       <MenuGroup>
+        <SwitchRow
+          label="角色状态表情"
+          subtitle="在资料昵称旁显示当天已有的状态"
+          checked={statusVisible}
+          onChange={(visible) => {
+            setCharacterStatusVisible(visible);
+            setStatusVisible(visible);
+          }}
+        />
         <MenuRow label="深色模式" value={schemeNames[scheme]} onClick={() => setChoice('scheme')} />
         <MenuRow
           label="字体大小"

@@ -89,6 +89,14 @@ export type TimelineEntry = z.infer<typeof TimelineEntry>;
 // ---------- 接口定义 ----------
 
 export const TimelineEndpoints = {
+  getStatus: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/characters/:characterId/status`,
+    auth: 'user',
+    params: z.object({ characterId: Id }),
+    response: z.object({ mood: TimelineMood.nullable(), updatedAt: Timestamp.nullable() }),
+    summary: '3.12：本人active好友的已有推演心情；纯只读，无状态返回null，不触发模型或摘要',
+  }),
   getSummary: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/conversations/:conversationId/timeline-summary`,

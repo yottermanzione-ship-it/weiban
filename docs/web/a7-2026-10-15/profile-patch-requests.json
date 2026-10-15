@@ -1,0 +1,9 @@
+[
+  {
+    "path": "/api/v1/contacts/:characterId",
+    "method": "PATCH",
+    "body": {
+      "relationship": "好友"
+    }
+  }
+]
