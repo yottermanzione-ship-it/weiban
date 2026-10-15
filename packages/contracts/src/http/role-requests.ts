@@ -6,7 +6,7 @@
  * 默认自动走添加流程加到该用户通讯录）或拒绝（rejected，留言必填）。用户在 pending 时可撤回（cancelled）。
  * 每次状态变化：写申请留言、发 data.changed(role_requests) 刷新红点，并推送一条系统通知（deepLink /role-requests/{id}）。
  *
- * 扣积分（3.8，总对照表 Q5）：`RoleRequestConfig.pointsCost` 默认 200 积分（2 元）。提交时冻结（可用积分不足 422 insufficient_balance），
+ * 扣积分（3.8，总对照表 Q5）：免费次数内不冻结；超额固定200积分（2 元），与申请在同事务冻结（可用积分不足 422 insufficient_balance），
  * 完成时扣除（pointsCharged = pointsCost，积分明细里一条分类 service 的扣费），被拒或撤回时退回（pointsCharged = 0）。
  */
 import { z } from 'zod';
@@ -77,7 +77,7 @@ export type RoleRequest = z.infer<typeof RoleRequest>;
 export const RoleRequestConfig = z.object({
   /** 是否开放申请；关闭时提交返回 403 forbidden。 */
   enabled: z.boolean(),
-  /** 每次申请的积分价格（默认 200；0 = 免费）。提交时冻结、完成扣除、被拒或撤回退回。 */
+  /** 超额固定200积分；免费按quota判断。后台提交非200会拒绝，提交冻结、完成扣、拒绝撤回退款。 */
   pointsCost: z.number().int().nonnegative().max(1_000_000),
   /** 同一用户同时未完成（pending + in_progress）的申请上限。 */
   maxOpenPerUser: z.number().int().min(1).max(50),
@@ -274,6 +274,6 @@ export const RoleRequestAdminEndpoints = {
     auth: 'admin',
     body: RoleRequestConfig,
     response: RoleRequestConfig,
-    summary: '3.5：修改申请制作配置（3.8：pointsCost 只影响之后的新申请）；写审计',
+    summary: '3.15：修改开放/未完成上限；超额价格固定200，拒绝其它价格；写审计',
   }),
 } as const;

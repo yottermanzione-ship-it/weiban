@@ -2,7 +2,7 @@
  * 素材库（ADM-04 第 1～3 条）与用户自定义表情（MED-01 第 3 条）。契约：http/assets.ts、ports/media.ts MediaAssetReadPort。
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { and, asc, count, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   AdminVoiceWrite,
   CardTemplateWrite,
@@ -14,6 +14,7 @@ import {
   type LibrarySticker,
   type MediaAssetReadPort,
   type StickerPack,
+  type StickerStorePackDetail,
   type UserSticker,
   type Voice,
 } from '@weiban/contracts';
@@ -34,6 +35,7 @@ import {
   libraryStickers,
   objects,
   stickerPacks,
+  userStickerPacks,
   userStickers,
   voices,
 } from '../infra/db/schema.js';
@@ -113,6 +115,10 @@ export class MediaAssetService
         characterIds: pack.characterIds,
         userVisible: pack.userVisible,
         enabled: pack.enabled,
+        inStore: pack.inStore,
+        storeOrder: pack.storeOrder,
+        intro: pack.intro,
+        coverStickerId: pack.coverStickerId,
         stickers: items,
         updatedAt: pack.updatedAt.toISOString(),
       });
@@ -121,12 +127,157 @@ export class MediaAssetService
   }
 
   async listUserPacks(userId: string): Promise<{ items: StickerPack[] }> {
+    const installed = await this.database.db
+      .select()
+      .from(userStickerPacks)
+      .where(eq(userStickerPacks.userId, userId))
+      .orderBy(asc(userStickerPacks.sortOrder), asc(userStickerPacks.addedAt));
     const rows = await this.database.db
       .select()
       .from(stickerPacks)
-      .where(and(eq(stickerPacks.enabled, true), eq(stickerPacks.userVisible, true)))
+      .where(eq(stickerPacks.enabled, true))
       .orderBy(asc(stickerPacks.createdAt));
-    return { items: await this.packsWithStickers(rows, userId) };
+    const builtIn = rows.filter((p) => p.userVisible),
+      added = installed.flatMap((i) => {
+        const p = rows.find((p) => p.id === i.packId && !p.userVisible);
+        return p ? [p] : [];
+      });
+    const packs = await this.packsWithStickers([...builtIn, ...added], userId);
+    return { items: packs.map((p) => ({ ...p, addedFromStore: !p.userVisible })) };
+  }
+  private async storeDto(pack: PackRow, userId: string): Promise<StickerStorePackDetail> {
+    const [full] = await this.packsWithStickers([pack], userId);
+    const [mine] = await this.database.db
+      .select()
+      .from(userStickerPacks)
+      .where(and(eq(userStickerPacks.userId, userId), eq(userStickerPacks.packId, pack.id)));
+    return {
+      packId: pack.id,
+      name: pack.name,
+      intro: pack.intro,
+      coverUrl:
+        (full?.stickers.find((s) => s.stickerId === pack.coverStickerId) ?? full?.stickers[0])
+          ?.url ?? null,
+      stickerCount: full?.stickers.length ?? 0,
+      added: pack.userVisible || !!mine,
+      builtIn: pack.userVisible,
+      enabled: pack.enabled,
+      inStore: pack.inStore,
+      updatedAt: pack.updatedAt.toISOString(),
+      stickers: full?.stickers ?? [],
+    };
+  }
+  async storeAdded(userId: string) {
+    const rows = await this.database.db.select({ pack: stickerPacks }).from(userStickerPacks)
+      .innerJoin(stickerPacks, eq(stickerPacks.id, userStickerPacks.packId))
+      .where(eq(userStickerPacks.userId, userId))
+      .orderBy(asc(userStickerPacks.sortOrder), asc(userStickerPacks.addedAt));
+    return { items: await Promise.all(rows.map(({ pack }) => this.storeDto(pack, userId))) };
+  }
+  async storeList(userId: string) {
+    const packs = await this.database.db
+      .select()
+      .from(stickerPacks)
+      .where(and(eq(stickerPacks.enabled, true), eq(stickerPacks.inStore, true)))
+      .orderBy(asc(stickerPacks.storeOrder), asc(stickerPacks.createdAt));
+    return { items: await Promise.all(packs.map((p) => this.storeDto(p, userId))) };
+  }
+  async storeGet(userId: string, packId: string) {
+    const [pack] = await this.database.db
+      .select()
+      .from(stickerPacks)
+      .where(and(eq(stickerPacks.id, packId), eq(stickerPacks.enabled, true)));
+    if (!pack) throw new AppError('not_found', '表情包不存在或已停用');
+    const dto = await this.storeDto(pack, userId);
+    if (!pack.inStore && !dto.added) throw new AppError('not_found', '表情包未上架');
+    return dto;
+  }
+  private async storeUserLock(tx: DbTx, userId: string) {
+    await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('media:store:' || $1,0))", [
+      userId,
+    ]);
+  }
+  async storeAdd(userId: string, packId: string) {
+    await this.database.transaction(async (tx) => {
+      await this.storeUserLock(tx, userId);
+      const [pack] = await tx.db
+        .select()
+        .from(stickerPacks)
+        .where(eq(stickerPacks.id, packId))
+        .for('update');
+      if (!pack || !pack.enabled) throw new AppError('not_found', '表情包不存在或已停用');
+      const [existing] = await tx.db
+        .select()
+        .from(userStickerPacks)
+        .where(and(eq(userStickerPacks.userId, userId), eq(userStickerPacks.packId, packId)));
+      if (existing || pack.userVisible) return;
+      if (!pack.inStore) throw new AppError('not_found', '表情包未上架');
+      const [total] = await tx.db
+        .select({ n: count() })
+        .from(userStickerPacks)
+        .where(eq(userStickerPacks.userId, userId));
+      if ((total?.n ?? 0) >= 200) throw new AppError('bad_request', '最多添加200个表情包');
+      const added = await tx.db
+        .insert(userStickerPacks)
+        .values({ userId, packId, sortOrder: total?.n ?? 0, addedAt: this.clock.now() })
+        .onConflictDoNothing()
+        .returning();
+      if (added.length) await this.stickersChanged(tx, userId, packId);
+    });
+    return this.storeGet(userId, packId);
+  }
+  async storeRemove(userId: string, packId: string) {
+    await this.database.transaction(async (tx) => {
+      await this.storeUserLock(tx, userId);
+      const [pack] = await tx.db.select().from(stickerPacks).where(eq(stickerPacks.id, packId));
+      if (pack?.userVisible) throw new AppError('bad_request', '内置表情包不能移除');
+      const rows = await tx.db
+        .delete(userStickerPacks)
+        .where(and(eq(userStickerPacks.userId, userId), eq(userStickerPacks.packId, packId)))
+        .returning();
+      if (rows.length) await this.stickersChanged(tx, userId, packId);
+    });
+  }
+  async storeOrder(userId: string, ids: string[]) {
+    if (new Set(ids).size !== ids.length) throw new AppError('bad_request', '表情包顺序重复');
+    await this.database.transaction(async (tx) => {
+      await this.storeUserLock(tx, userId);
+      const all = await tx.db
+        .select()
+        .from(userStickerPacks)
+        .where(eq(userStickerPacks.userId, userId))
+        .orderBy(asc(userStickerPacks.sortOrder), asc(userStickerPacks.addedAt));
+      if (ids.some((id) => !all.some((p) => p.packId === id)))
+        throw new AppError('bad_request', '只能排列本人已添加的表情包');
+      const order = [...ids, ...all.filter((p) => !ids.includes(p.packId)).map((p) => p.packId)];
+      for (const [sortOrder, packId] of order.entries())
+        await tx.db
+          .update(userStickerPacks)
+          .set({ sortOrder })
+          .where(and(eq(userStickerPacks.userId, userId), eq(userStickerPacks.packId, packId)));
+      await this.stickersChanged(tx, userId, null);
+    });
+  }
+  async storeAdminOrder(adminId: string, ids: string[]) {
+    if (new Set(ids).size !== ids.length) throw new AppError('bad_request', '商店顺序重复');
+    await this.database.transaction(async (tx) => {
+      await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('media:store:admin',0))");
+      const all = await tx.db
+        .select()
+        .from(stickerPacks)
+        .orderBy(asc(stickerPacks.storeOrder), asc(stickerPacks.createdAt));
+      if (ids.some((id) => !all.some((p) => p.id === id)))
+        throw new AppError('bad_request', '表情包不存在');
+      const order = [...ids, ...all.filter((p) => !ids.includes(p.id)).map((p) => p.id)];
+      for (const [storeOrder, id] of order.entries())
+        await tx.db
+          .update(stickerPacks)
+          .set({ storeOrder, updatedAt: this.clock.now() })
+          .where(eq(stickerPacks.id, id));
+      await this.auditAdmin(tx, adminId, 'sticker_store.reordered', 'sticker_pack', null, {
+        packIds: ids,
+      });
+    });
   }
 
   async adminListPacks(adminId: string): Promise<{ items: StickerPack[] }> {
@@ -149,6 +300,7 @@ export class MediaAssetService
 
   async createPack(adminId: string, input: unknown): Promise<StickerPack> {
     const body = parseContract(StickerPackWrite, input);
+    if (body.coverStickerId) throw new AppError('bad_request', '请先添加本包表情后再设置封面');
     const id = newId();
     const at = this.clock.now();
     await this.database.transaction(async (tx) => {
@@ -157,6 +309,10 @@ export class MediaAssetService
         name: body.name,
         characterIds: [...new Set(body.characterIds)],
         userVisible: body.userVisible,
+        inStore: body.inStore ?? false,
+        storeOrder: body.storeOrder ?? 0,
+        intro: body.intro ?? '',
+        coverStickerId: null,
         enabled: body.enabled,
         createdAt: at,
         updatedAt: at,
@@ -171,6 +327,26 @@ export class MediaAssetService
   async updatePack(adminId: string, packId: string, input: unknown): Promise<StickerPack> {
     const body = parseContract(StickerPackWrite.partial(), input);
     await this.database.transaction(async (tx) => {
+      const [pack] = await tx.db
+        .select()
+        .from(stickerPacks)
+        .where(eq(stickerPacks.id, packId))
+        .for('update');
+      if (!pack) throw new AppError('not_found', '表情包不存在');
+      if (body.coverStickerId) {
+        const [cover] = await tx.db
+          .select()
+          .from(libraryStickers)
+          .where(
+            and(
+              eq(libraryStickers.id, body.coverStickerId),
+              eq(libraryStickers.packId, packId),
+              isNull(libraryStickers.deletedAt),
+            ),
+          );
+        if (!cover) throw new AppError('bad_request', '封面须为本包未删除的表情');
+      }
+
       const [row] = await tx.db
         .update(stickerPacks)
         .set({
@@ -180,6 +356,10 @@ export class MediaAssetService
             : {}),
           ...(body.userVisible !== undefined ? { userVisible: body.userVisible } : {}),
           ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+          ...(body.inStore !== undefined ? { inStore: body.inStore } : {}),
+          ...(body.storeOrder !== undefined ? { storeOrder: body.storeOrder } : {}),
+          ...(body.intro !== undefined ? { intro: body.intro } : {}),
+          ...(body.coverStickerId !== undefined ? { coverStickerId: body.coverStickerId } : {}),
           updatedAt: this.clock.now(),
         })
         .where(eq(stickerPacks.id, packId))
@@ -426,7 +606,10 @@ export class MediaAssetService
           eq(libraryStickers.id, input.stickerId),
           isNull(libraryStickers.deletedAt),
           eq(stickerPacks.enabled, true),
-          eq(stickerPacks.userVisible, true),
+          or(
+            eq(stickerPacks.userVisible, true),
+            sql`EXISTS (SELECT 1 FROM ${userStickerPacks} usp WHERE usp.user_id = ${userId} AND usp.pack_id = ${stickerPacks.id})`,
+          ),
         ),
       );
     return !!row && row.mediaId === input.mediaId;
@@ -737,7 +920,7 @@ export class MediaAssetService
     adminId: string,
     action: string,
     targetType: string,
-    targetId: string,
+    targetId: string | null,
     details: Record<string, unknown>,
   ): Promise<void> {
     await this.audit.record(

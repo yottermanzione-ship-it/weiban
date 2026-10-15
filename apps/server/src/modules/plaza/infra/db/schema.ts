@@ -348,6 +348,7 @@ export const roleRequests = plazaSchema.table(
     index('role_requests_user_idx').on(t.userId, t.createdAt),
     index('role_requests_status_idx').on(t.status, t.createdAt),
     index('role_requests_fee_idx').on(t.feeState),
+    index('role_requests_free_quota_idx').on(t.userId,t.createdAt).where(sql`${t.freeQuotaApplied} = true`),
   ],
 );
 

@@ -18,6 +18,8 @@ import {
   CardTemplateAdminEndpoints as T,
   StickerAdminEndpoints as SA,
   StickerEndpoints as S,
+  StickerStoreEndpoints as ST,
+  StickerStoreAdminEndpoints as STA,
   VoiceAdminEndpoints as VA,
 } from '@weiban/contracts';
 import {
@@ -32,6 +34,36 @@ import { MediaAssetService } from '../application/assets.js';
 @RequireAuth('user')
 export class StickerController {
   constructor(@Inject(MediaAssetService) private readonly assets: MediaAssetService) {}
+  @Get('me/sticker-packs') storeAdded(@CurrentPrincipal() me: AuthPrincipal) {
+    return this.assets.storeAdded(me.userId);
+  }
+  @Get('sticker-store/packs') storeList(@CurrentPrincipal() me: AuthPrincipal) {
+    return this.assets.storeList(me.userId);
+  }
+  @Get('sticker-store/packs/:packId') storeGet(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(ST.getPack.params!)) p: { packId: string },
+  ) {
+    return this.assets.storeGet(me.userId, p.packId);
+  }
+  @Post('me/sticker-packs/:packId') @HttpCode(200) storeAdd(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(ST.addPack.params!)) p: { packId: string },
+  ) {
+    return this.assets.storeAdd(me.userId, p.packId);
+  }
+  @Delete('me/sticker-packs/:packId') @HttpCode(204) async storeRemove(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(ST.removePack.params!)) p: { packId: string },
+  ) {
+    await this.assets.storeRemove(me.userId, p.packId);
+  }
+  @Put('me/sticker-packs/order') @HttpCode(204) async storeOrder(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(ST.reorderMyPacks.body!)) body: { packIds: string[] },
+  ) {
+    await this.assets.storeOrder(me.userId, body.packIds);
+  }
   @Get('stickers/packs')
   listPacks(@CurrentPrincipal() me: AuthPrincipal) {
     return this.assets.listUserPacks(me.userId);
@@ -77,6 +109,12 @@ export class StickerController {
 @RequireAuth('admin')
 export class AssetAdminController {
   constructor(@Inject(MediaAssetService) private readonly assets: MediaAssetService) {}
+  @Put('stickers/store-order') @HttpCode(204) async storeOrder(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(STA.reorderStore.body!)) body: { packIds: string[] },
+  ) {
+    await this.assets.storeAdminOrder(me.userId, body.packIds);
+  }
   // 表情包
   @Get('stickers/packs')
   listPacks(@CurrentPrincipal() me: AuthPrincipal) {

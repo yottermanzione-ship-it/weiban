@@ -1,5 +1,5 @@
 /**
- * 3.9：状态（总经理 10-14 总对照表 Q11，节点 T4.11「我的状态」）。
+ * 3.15：状态（总经理 10-14 总对照表 Q11，节点 T4.11「我的状态」）。
  *
  * - 我的状态：数据归 identity。用户选一个预设状态（可加自定义文字）并设有效期；过期后自动视为没有状态。
  *   角色能读到（ai-runtime 经 UserStatusReadPort）：私聊回复可自然读取已有状态，不新增主动任务。
@@ -86,7 +86,7 @@ export const UserStatusEndpoints = {
     path: `${API_PREFIX}/me/status`,
     auth: 'user',
     response: z.object({ status: UserStatus.nullable() }),
-    summary: '3.9：我的状态（没有或已过期为 null）',
+    summary: '3.15：我的状态（没有或已过期为 null）',
   }),
   set: defineEndpoint({
     method: 'PUT',
@@ -95,14 +95,14 @@ export const UserStatusEndpoints = {
     body: SetUserStatusRequest,
     response: z.object({ status: UserStatus }),
     summary:
-      '3.9：设置我的状态（custom 没有 text 时 400 bad_request）；发 settings.updated(profile)。角色在下一次回复 / 主动消息时看到',
+      '3.15：设置我的状态（custom 没有 text 时 400 bad_request）；发 settings.updated(profile)。角色在下一次回复 / 主动消息时看到',
   }),
   clear: defineEndpoint({
     method: 'DELETE',
     path: `${API_PREFIX}/me/status`,
     auth: 'user',
     response: NoContent,
-    summary: '3.9：清除我的状态（没有也返回 204）；发 settings.updated(profile)',
+    summary: '3.15：清除我的状态（没有也返回 204）；发 settings.updated(profile)',
   }),
 } as const;
 

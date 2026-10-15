@@ -1,5 +1,5 @@
 /**
- * 3.9（总对照表 Q11）：我的状态（契约 UserStatusEndpoints、UserStatusReadPort）。
+ * 3.15（总对照表 Q11）：我的状态（契约 UserStatusEndpoints、UserStatusReadPort）。
  * 每个用户最多一条，过期后读取时视为没有（不需要清理任务；下次设置时覆盖）。
  * 设置 / 清除后发 identity.profile_updated（changedFields = ['status']），realtime 写 settings.updated(profile)，
  * 其他设备重新拉 GET /me/status。账号删除时随外键级联删除。

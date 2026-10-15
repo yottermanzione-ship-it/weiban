@@ -620,6 +620,13 @@
       "when": 1799334300000,
       "tag": "0099_user_statuses",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1799334400000,
+      "tag": "0100_sticker_store",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,2 @@
+ALTER TABLE media.sticker_packs ADD COLUMN in_store boolean NOT NULL DEFAULT false, ADD COLUMN store_order integer NOT NULL DEFAULT 0, ADD COLUMN intro text NOT NULL DEFAULT '', ADD COLUMN cover_sticker_id uuid;
+CREATE TABLE media.user_sticker_packs (user_id uuid NOT NULL, pack_id uuid NOT NULL REFERENCES media.sticker_packs(id) ON DELETE CASCADE, sort_order integer NOT NULL, added_at timestamptz NOT NULL, PRIMARY KEY(user_id,pack_id));

@@ -1,4 +1,4 @@
-/** 3.9：我的状态（契约 UserStatusEndpoints）。 */
+/** 3.15：我的状态（契约 UserStatusEndpoints）。 */
 import { Body, Controller, Delete, Get, HttpCode, Inject, Put } from '@nestjs/common';
 import { UserStatusEndpoints as E } from '@weiban/contracts';
 import {

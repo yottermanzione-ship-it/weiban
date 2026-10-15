@@ -6,7 +6,7 @@
  *   加到该用户通讯录（幂等键 = requestId）；通讯录已满等失败时仍标记完成，addedToContacts = false，用户自己点「添加」。
  * - 每次状态变化：写 history、置 user_unseen、发 data.changed(role_requests)，并推送一条 system 通知（deepLink /role-requests/{id}）。
  *   推送失败不影响状态变化（推送在事务提交后发，失败只记日志）。
- * - 扣积分（3.8，总对照表 Q5，默认 200 积分）：提交时经 BillingServiceFeePort 冻结（可用积分不足 → 422 insufficient_balance，
+ * - 3.15：成功提交前按真实会员/北京时间自然周期算免费次数；免费不冻结，超额固定200，与申请同事务经BillingServiceFeePort冻结（可用积分不足 → 422 insufficient_balance，
  *   不建申请）；完成时扣除（pointsCharged = pointsCost），被拒或撤回时退回。扣除 / 退回在状态变化提交后调用，
  *   失败只记日志，由每 10 分钟的清扫（PlazaLifecycle）补做，所以钱不会卡在冻结里。
  */

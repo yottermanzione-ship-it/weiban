@@ -1,5 +1,5 @@
 /**
- * 3.9（总对照表 Q11）：把用户「我的状态」写成私聊动态结尾里的一行（docs/refactor/09 第 4 节「动态结尾」）。
+ * 3.15（总对照表 Q11）：把用户「我的状态」写成私聊动态结尾里的一行（docs/refactor/09 第 4 节「动态结尾」）。
  * 只在有未过期状态时出现；放在动态结尾，不影响稳定开头的缓存。
  */
 import { USER_STATUS_PRESETS, type UserStatus } from '@weiban/contracts';

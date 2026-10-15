@@ -1,3 +1,4 @@
+import { PluginsController } from './http/plugins.controller.js';
 import { MembershipService } from './application/membership.js';
 import { MembershipController } from './http/membership.controller.js';
 import { IDENTITY_MEMBERSHIP_READ_PORT } from './tokens.js';
@@ -48,6 +49,7 @@ import { UserStatusController } from './http/user-status.controller.js';
     AnnouncementAdminController,
     UserStatusController,
     MembershipController,
+    PluginsController,
   ],
   providers: [
     { provide: PASSWORD_HASHER, useValue: new PasswordHasher() },
