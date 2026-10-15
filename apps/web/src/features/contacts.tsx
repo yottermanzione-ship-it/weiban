@@ -135,7 +135,6 @@ function LetterIndex({
     setActive({ letter, index });
     if (letter === last.current) return;
     last.current = letter;
-    navigator.vibrate?.(5);
     const target = resolve(letter);
     if (target) onJump(target);
   };

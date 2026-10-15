@@ -2110,3 +2110,59 @@ label.wx-search-box {
   background: var(--wb-color-bg-page);
   color: var(--wb-color-brand-primary);
 }
+
+/* A9: 收藏快照直接在列表内阅读，避免沿用旧详情入口的横排主按钮布局。 */
+.favorite-card.simple-favorite {
+  flex-direction: column;
+  align-items: stretch;
+  margin: 8px 16px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.simple-favorite .favorite-head {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 4px 8px;
+  font-size: 14px;
+}
+.simple-favorite .favorite-head time {
+  grid-column: 2;
+  font-size: 12px;
+}
+.simple-favorite > .text-button {
+  align-self: flex-end;
+}
+.simple-favorite > div,
+.simple-favorite details {
+  min-width: 0;
+}
+.simple-favorite img,
+.simple-favorite audio {
+  max-width: 100%;
+}
+.simple-favorite .favorite-record summary {
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--wb-color-bg-page);
+  cursor: pointer;
+}
+.simple-favorite p {
+  margin: 0;
+}
+
+.simple-favorite .favorite-extra-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.favorite-image-sheet .media-frame {
+  display: block;
+  width: 100%;
+}
+.favorite-image-sheet img {
+  display: block;
+  width: 100%;
+  max-height: 70dvh;
+  object-fit: contain;
+}

@@ -52,6 +52,7 @@ export const CurrentUser = z.object({
   profileCompleted: z.boolean(),
   createdAt: Timestamp,
 });
+export const AccountAlias = z.object({ username: Username, nextChangeAt: Timestamp.nullable() });
 export type CurrentUser = z.infer<typeof CurrentUser>;
 
 export const AuthResponse = z.object({
@@ -166,6 +167,21 @@ export type UpdateUserPreferencesRequest = z.infer<typeof UpdateUserPreferencesR
 // ---------- 接口 ----------
 
 export const IdentityEndpoints = {
+  getAlias: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/me/alias`,
+    auth: 'user',
+    response: AccountAlias,
+    summary: '3.14：当前微伴号与下次可改时间',
+  }),
+  updateAlias: defineEndpoint({
+    method: 'PATCH',
+    path: `${API_PREFIX}/me/alias`,
+    auth: 'user',
+    body: z.object({ username: Username }).strict(),
+    response: AccountAlias,
+    summary: '3.14：每7×24小时修改一次；原名/历史名仍可登录且不能被他人占用',
+  }),
   register: defineEndpoint({
     method: 'POST',
     path: `${API_PREFIX}/auth/register`,

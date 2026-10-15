@@ -15,6 +15,7 @@ import { pointsText } from './points.js';
 export function MePage() {
   const { session } = useAuth();
   const profile = useRemote(IdentityEndpoints.getProfile);
+  const alias = useRemote(IdentityEndpoints.getAlias);
   const wallet = useRemote(BillingEndpoints.getWallet);
   const announcements = useAnnouncementUnread();
   const lowBalance =
@@ -27,7 +28,7 @@ export function MePage() {
         <ProfileAvatar profile={profile.data} />
         <span className="me-head-text">
           <h2>{profile.data?.nickname ?? '填写你的昵称'}</h2>
-          <p>微伴号：{session?.user.username}</p>
+          <p>微伴号：{alias.data?.username ?? session?.user.username}</p>
           {wallet.data && (
             <span className="points-chip">
               <OldImage name="wechat/membership.webp" size={14} />
@@ -48,7 +49,7 @@ export function MePage() {
       </MenuGroup>
       <MenuGroup>
         <MenuRow to="/me/favorites" image="color/color_favorites.svg" iconSize={23} label="收藏" />
-        <MenuRow to="/me/moments" icon="wechat/picture" tint="blue" label="朋友圈" />
+        <MenuRow to="/moments" icon="wechat/picture" tint="blue" label="朋友圈" />
         <ComingSoonRow id="channels" />
         <ComingSoonRow id="cards" />
         <MenuRow to="/me/stickers" icon="wechat/smile" tint="gold" label="表情" />
@@ -109,9 +110,9 @@ export function ServicesPage() {
       <GroupHeader>模型与花费</GroupHeader>
       <MenuGroup>
         <MenuRow to="/ledger" icon="wechat/note" tint="orange" label="积分明细" />
-        <MenuRow to="/prices" icon="wechat/tag" tint="green" label="价目表" />
+        <MenuRow to="/prices" icon="wechat/tag" tint="green" label="AI 模型价格" />
         <MenuRow to="/leaderboard" icon="wechat/star" tint="gold" label="模型排行榜" />
-        <MenuRow to="/usage" icon="wechat/bell" tint="cyan" label="用量与后台预算" />
+        <MenuRow to="/usage" icon="wechat/bell" tint="cyan" label="用量" />
       </MenuGroup>
       <GroupHeader>偏好</GroupHeader>
       <MenuGroup>

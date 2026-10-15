@@ -1,19 +1,14 @@
 /*
- * 公告、本版新功能、强制刷新（契约 3.2；后端说明 docs/backend/announcements.md）。
- * 打开应用与回到前台时拉取；弹窗依次：必须更新（不可关闭）→ 本版新功能 → 未读弹窗公告（从旧到新）。
+ * 公告与手动更新日志（契约 3.2；后端说明 docs/backend/announcements.md）。
+ * 网页不再显示版本提示；打开应用与回到前台只读取未读公告。
  * 网页版本号 = 构建号 __WEB_BUILD__（vite.config.ts 注入，每次打包递增）。
  */
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import {
-  AnnouncementEndpoints,
-  ReleaseEndpoints,
-  type Announcement,
-  type ReleaseNote,
-} from '@weiban/contracts';
+import { AnnouncementEndpoints, ReleaseEndpoints, type Announcement } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { MenuGroup, MenuRow, NavBar } from './shell-kit.js';
-import { Dialog, showToast } from './toast.js';
+import { Dialog } from './toast.js';
 
 export const WEB_BUILD = __WEB_BUILD__;
 export const WEB_VERSION = __WEB_VERSION__;
@@ -65,34 +60,13 @@ function useAnnouncementList() {
 
 // ---------- 启动检查与弹窗 ----------
 
-type Popup =
-  | { kind: 'required'; message: string | null }
-  | { kind: 'whatsNew'; notes: ReleaseNote[] }
-  | { kind: 'announcement'; item: Announcement };
+type Popup = { kind: 'announcement'; item: Announcement };
 
 /** 挂在已登录的 Shell 里。 */
 export function ReleaseCenter() {
   const [queue, setQueue] = useState<Popup[]>([]);
   const run = useCallback(async () => {
     const next: Popup[] = [];
-    try {
-      const check = await api.call(ReleaseEndpoints.checkVersion, {
-        query: { platform, versionCode: WEB_BUILD },
-        networkOnly: true,
-      });
-      if (check.updateRequired) next.push({ kind: 'required', message: check.forceUpdateMessage });
-    } catch {
-      // 检查失败不打扰
-    }
-    try {
-      const notes = await api.call(ReleaseEndpoints.listReleaseNotes, {
-        query: { platform, versionCode: WEB_BUILD },
-        networkOnly: true,
-      });
-      if (notes.whatsNew.length > 0) next.push({ kind: 'whatsNew', notes: notes.whatsNew });
-    } catch {
-      // 同上
-    }
     try {
       const items = await loadAnnouncements();
       for (const item of items
@@ -103,7 +77,7 @@ export function ReleaseCenter() {
       // 同上
     }
     setQueue((current) => {
-      const key = (p: Popup) => (p.kind === 'announcement' ? p.item.announcementId : p.kind);
+      const key = (p: Popup) => p.item.announcementId;
       const seen = new Set(current.map(key));
       return [...current, ...next.filter((p) => !seen.has(key(p)))];
     });
@@ -119,49 +93,6 @@ export function ReleaseCenter() {
   const popup = queue[0];
   if (!popup) return null;
   const dismiss = () => setQueue((q) => q.slice(1));
-  if (popup.kind === 'required')
-    return (
-      <Dialog
-        title="需要更新到新版本"
-        actions={[{ label: '刷新', primary: true, onClick: () => window.location.reload() }]}
-      >
-        <p className="hint">
-          {popup.message ?? '当前版本已停止使用，刷新页面即可更新到最新版本。'}
-        </p>
-      </Dialog>
-    );
-  if (popup.kind === 'whatsNew')
-    return (
-      <Dialog
-        title="本版新功能"
-        actions={[
-          {
-            label: '知道了',
-            primary: true,
-            onClick: () => {
-              void api
-                .call(ReleaseEndpoints.markReleaseNotesSeen, {
-                  body: { platform, versionCode: WEB_BUILD },
-                })
-                .catch(() => {});
-              dismiss();
-            },
-          },
-        ]}
-      >
-        <div className="announcement-body">
-          {popup.notes.map((note) => (
-            <section key={note.releaseNoteId} className="release-note">
-              <strong>
-                {note.version}
-                {note.title ? ` · ${note.title}` : ''}
-              </strong>
-              <p>{note.body}</p>
-            </section>
-          ))}
-        </div>
-      </Dialog>
-    );
   return (
     <Dialog
       title={popup.item.title}
@@ -186,24 +117,6 @@ export function ReleaseCenter() {
 /** 我 › 设置 › 关于微伴。 */
 export function AboutPage() {
   const unreadCount = useAnnouncementUnread();
-  const [checking, setChecking] = useState(false);
-  async function check() {
-    setChecking(true);
-    try {
-      const result = await api.call(ReleaseEndpoints.checkVersion, {
-        query: { platform, versionCode: WEB_BUILD },
-        networkOnly: true,
-      });
-      if (result.updateAvailable || result.updateRequired) {
-        showToast(`发现新版本 ${result.latestVersion ?? ''}，正在刷新…`);
-        window.setTimeout(() => window.location.reload(), 800);
-      } else showToast('已是最新版本');
-    } catch (e) {
-      showToast(friendlyError(e));
-    } finally {
-      setChecking(false);
-    }
-  }
   return (
     <main>
       <NavBar title="关于微伴" fallback="/settings" />
@@ -217,7 +130,6 @@ export function AboutPage() {
       <MenuGroup>
         <MenuRow to="/settings/announcements" label="公告" dot={unreadCount > 0} />
         <MenuRow to="/settings/release-notes" label="更新日志" />
-        <MenuRow onClick={() => void check()} label={checking ? '正在检查…' : '检查更新'} />
       </MenuGroup>
     </main>
   );

@@ -61,6 +61,12 @@ export class ModelController {
     @Inject(ModelStatusService) private readonly status: ModelStatusService,
   ) {}
 
+  @Get('leaderboard-info')
+  @RequireAuth(E.getLeaderboardInfo.auth)
+  leaderboardInfo() {
+    return this.catalog.leaderboardInfo();
+  }
+
   @Get('models')
   @RequireAuth(E.listModels.auth)
   async listModels(
@@ -118,6 +124,21 @@ export class ModelController {
 
 @Controller('api/v1/admin/model')
 export class ModelAdminController {
+  @Get('leaderboard-source')
+  @RequireAuth(A.getLeaderboardSource.auth)
+  leaderboardSource() {
+    return this.catalog.leaderboardSource();
+  }
+
+  @Put('leaderboard-source')
+  @RequireAuth(A.updateLeaderboardSource.auth)
+  updateLeaderboardSource(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(A.updateLeaderboardSource.body)))
+    body: Out<typeof A.updateLeaderboardSource.body>,
+  ) {
+    return this.catalog.setLeaderboardSource(me.userId, body);
+  }
   constructor(
     @Inject(UpstreamService) private readonly upstreams: UpstreamService,
     @Inject(CatalogService) private readonly catalog: CatalogService,

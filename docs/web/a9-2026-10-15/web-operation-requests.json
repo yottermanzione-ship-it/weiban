@@ -1,0 +1,242 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/me/profile"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/billing/wallet"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/billing/usage-summary",
+    "query": {
+      "from": "2026-10-16",
+      "to": "2026-10-16",
+      "groupBy": "character"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/billing/usage-summary",
+    "query": {
+      "from": "2026-10-16",
+      "to": "2026-10-16",
+      "groupBy": "category"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/billing/wallet"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/:characterId",
+    "params": {
+      "characterId": "10000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/:characterId",
+    "params": {
+      "characterId": "10000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/billing/usage-summary",
+    "query": {
+      "from": "2026-10-10",
+      "to": "2026-10-16",
+      "groupBy": "character"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/billing/usage-summary",
+    "query": {
+      "from": "2026-10-10",
+      "to": "2026-10-16",
+      "groupBy": "category"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/models"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/selection"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/leaderboard-info"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/model/selection",
+    "body": {
+      "chat": {
+        "modelKey": "demo/one"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/selection"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/leaderboard-info"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/model/selection",
+    "body": {
+      "chat": {
+        "modelKey": "demo/two"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/profile"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/library/favorites",
+    "query": {
+      "limit": 20
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/:characterId",
+    "params": {
+      "characterId": "10000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/:characterId",
+    "params": {
+      "characterId": "10000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/:characterId",
+    "params": {
+      "characterId": "10000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/:characterId",
+    "params": {
+      "characterId": "10000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/library/favorites/:favoriteId",
+    "params": {
+      "favoriteId": "10000000-0000-4000-8000-000000000011"
+    }
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/library/favorites/:favoriteId",
+    "params": {
+      "favoriteId": "10000000-0000-4000-8000-000000000011"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/library/favorites",
+    "query": {
+      "limit": 20
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/alias"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/profile"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/me/profile",
+    "body": {
+      "nickname": "小微新昵称"
+    }
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/me/profile",
+    "body": {
+      "nickname": "小微新昵称"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/profile"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/me/alias",
+    "body": {
+      "username": "xiaowei_new"
+    }
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/me/alias",
+    "body": {
+      "username": "xiaowei_new"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/alias"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/profile"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/profile"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/billing/wallet"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/notification-settings"
+  },
+  {
+    "path": "ChatDriver.restoreHistory",
+    "fixture": true
+  },
+  {
+    "path": "ChatDriver.restoreHistory",
+    "fixture": true
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/notification-settings"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/memory-sharing"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/notification-settings"
+  }
+]

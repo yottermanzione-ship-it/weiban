@@ -192,7 +192,7 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
     ];
     return {
       userId: user.id,
-      username: user.username,
+      username: user.currentAlias ?? user.username,
       requestedAt: (user.deletionRequestedAt ?? user.updatedAt).toISOString(),
       lastRetriggeredAt: user.deletionRetriggeredAt?.toISOString() ?? null,
       modules: modules.map((module) => {
@@ -357,6 +357,7 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
     const { rows } = await tx.query<{ n: number }>(
       `SELECT (SELECT count(*) FROM identity.users WHERE id = $1)
             + (SELECT count(*) FROM identity.sessions WHERE user_id = $1)
+            + (SELECT count(*) FROM identity.login_aliases WHERE user_id = $1)
             + (SELECT count(*) FROM identity.profiles WHERE user_id = $1)
             + (SELECT count(*) FROM identity.notification_settings WHERE user_id = $1)
             + (SELECT count(*) FROM identity.preferences WHERE user_id = $1)
