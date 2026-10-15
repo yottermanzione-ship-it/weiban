@@ -19,7 +19,7 @@ export function CharacterStatus({
   enabled: boolean;
 }) {
   const [visible, setVisible] = useState(getCharacterStatusVisible);
-  const [now, setNow] = useState(() => new Date());
+  const [, setNow] = useState(() => new Date());
   useEffect(() => {
     const refresh = () => {
       setVisible(getCharacterStatusVisible());
@@ -43,6 +43,7 @@ export function CharacterStatus({
   );
   const updated = status.data?.updatedAt ? new Date(status.data.updatedAt) : null;
   const mood = status.data?.mood;
+  const now = new Date();
   if (
     !enabled ||
     !visible ||

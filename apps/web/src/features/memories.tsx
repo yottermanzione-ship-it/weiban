@@ -71,7 +71,7 @@ export function MemoriesPage() {
             <CharacterAvatar id={characterId} size={44} />
             <span>
               <CharacterName id={characterId} fallback={contact.remark} />
-              <small>只属于你和 TA 的记忆</small>
+              <small>你和 TA 共同记下的事</small>
             </span>
           </Link>
           <p className="hint page-note">
@@ -121,7 +121,7 @@ export function MemoriesPage() {
                         {entry.createdAt.slice(0, 10)}
                       </small>
                       <small>
-                        {entry.scope === 'adult' ? '来自成人模式' : '来自日常'} · 仅这位角色知道
+                        {entry.scope === 'adult' ? '来自私密模式' : '来自日常'} · 此角色的记忆
                       </small>
                     </button>
                   ))}
