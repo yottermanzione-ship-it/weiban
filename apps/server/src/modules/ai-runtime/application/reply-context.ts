@@ -1,4 +1,5 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { readableMessageText } from './content-text.js';
 import type { PetReadPort } from '@weiban/contracts';
 import { GROWTH_PET_READ_PORT } from '../../growth/index.js';
 import { petContextBlock } from '../domain/pets.js';
@@ -438,7 +439,7 @@ ${AUTHOR_GUARD}`
       if (!text) continue;
       chat.push({
         role: m.senderKind === 'user' ? 'user' : 'assistant',
-        content: text.slice(0, MAX_MESSAGE_CHARS),
+        content: text.slice(0, m.content.type === 'forwarded_record' ? 32_000 : MAX_MESSAGE_CHARS),
       });
     }
     if (row.kind === 'greeting')
@@ -699,9 +700,9 @@ ${AUTHOR_GUARD}`
           m.seq > lastCharacter &&
           m.senderKind === 'user' &&
           m.status === 'normal' &&
-          m.content?.type === 'text',
+          !!readableMessageText(m),
       )
-      .map((m) => (m.content?.type === 'text' ? m.content.text : ''))
+      .map((m) => readableMessageText(m))
       .join('\n');
     const risk = highRisk(userText);
     const care = await this.store.db.query<{ active: boolean; n: string }>(
@@ -735,11 +736,14 @@ ${AUTHOR_GUARD}`
         },
         ...history
           .filter(
-            (m) => m.status === 'normal' && m.content?.type === 'text' && m.senderKind !== 'system',
+            (m) => m.status === 'normal' && !!readableMessageText(m) && m.senderKind !== 'system',
           )
           .map((m) => ({
             role: m.senderKind === 'user' ? 'user' : 'assistant',
-            content: m.content?.type === 'text' ? m.content.text.slice(0, 4000) : '',
+            content: readableMessageText(m).slice(
+              0,
+              m.content?.type === 'forwarded_record' ? 32_000 : 4000,
+            ),
           })),
       ],
       personaVersion: role.personaVersion,

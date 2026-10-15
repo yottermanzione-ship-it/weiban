@@ -9,6 +9,7 @@
  * 说明见 docs/ai/runtime-overview.md 第 7 节「T-065 实现差异」。
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { readableMessageText } from './content-text.js';
 import { AdultBoundaryService } from './adult-boundary.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
 import { QuietStateService } from './quiet-state.js';
@@ -487,7 +488,7 @@ export class GroupChatService {
       await cancel();
       return;
     }
-    const userText = trigger?.content?.type === 'text' ? trigger.content.text : '';
+    const userText = trigger ? readableMessageText(trigger) : '';
     const mentioned = new Set(
       trigger?.content?.type === 'text' ? (trigger.content.mentions ?? []) : [],
     );
@@ -706,13 +707,11 @@ export class GroupChatService {
       return p?.kind === 'user' ? (profile?.nickname ?? '用户') : '已退群的成员';
     };
     const transcript = history
-      .filter(
-        (m) => m.senderKind !== 'system' && m.status === 'normal' && m.content?.type === 'text',
-      )
+      .filter((m) => m.senderKind !== 'system' && m.status === 'normal' && !!readableMessageText(m))
       .slice(-30)
       .map(
         (m) =>
-          `${nameOf(m.senderParticipantId)}：${m.content?.type === 'text' ? m.content.text.slice(0, 300) : ''}`,
+          `${nameOf(m.senderParticipantId)}：${readableMessageText(m).slice(0, m.content?.type === 'forwarded_record' ? 32_000 : 300)}`,
       )
       .join('\n');
     // SOC-01 第 5 条：注入与每个群成员的关系；没有关系 = 不认识，不能编造共同经历。

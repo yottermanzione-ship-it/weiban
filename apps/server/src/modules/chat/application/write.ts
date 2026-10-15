@@ -2,6 +2,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   ClientMsgId,
+  ForwardSnapshotContent,
+  ForwardedRecordContent,
   Id,
   MessageContent,
   type Message,
@@ -70,6 +72,34 @@ export class ChatWriteService {
     input: PostMessageInput,
     senderKind?: 'system',
   ): Promise<PortResult<Message, PostMessageError>> {
+    return this.write(tx, row, input, senderKind, false);
+  }
+  /** Only the server source-ID forwarding service calls this. Never exposed through sendMessage. */
+  async postForward(tx: DbTx, row: ConversationRow, input: PostMessageInput) {
+    const content =
+      input.content.type === 'forwarded_record'
+        ? ForwardedRecordContent.parse(input.content)
+        : ForwardSnapshotContent.parse(input.content);
+    const items =
+      content.type === 'forwarded_record' ? content.items.map((i) => i.content) : [content];
+    for (const item of items) {
+      const ids =
+        item.type === 'image' || item.type === 'voice' || item.type === 'sticker'
+          ? [item.mediaId]
+          : item.type === 'link' && item.coverMediaId
+            ? [item.coverMediaId]
+            : [];
+      for (const id of ids) await this.mediaRead.getMedia(row.ownerUserId, id);
+    }
+    return this.write(tx, row, { ...input, content }, undefined, true);
+  }
+  private async write(
+    tx: DbTx,
+    row: ConversationRow,
+    input: PostMessageInput,
+    senderKind: 'system' | undefined,
+    verifiedForward: boolean,
+  ): Promise<PortResult<Message, PostMessageError>> {
     let content = parseContract(MessageContent, input.content);
     // labels 只接受服务器端发送方传入（participant 端口）；用户经 HTTP / WebSocket 发送时由 user.ts 构造输入，不会带上。
     const labels = normalizeLabels(input.labels);
@@ -111,6 +141,14 @@ export class ChatWriteService {
         ),
       );
     if (existing) {
+      // A completed forward returns its atomic receipt before entering writer. An occupied
+      // derived key here therefore belongs to another send, never pretend it is this forward.
+      if (verifiedForward)
+        return {
+          ok: false,
+          error: 'invalid_content',
+          message: '转发请求编号已被占用，请重新选择消息发起转发',
+        };
       const value = await this.store.message(tx, row, existing, view);
       // 幂等重试只确认原消息，不能借旧键取回本人已隐藏/清空的正文。
       if (existing.seq <= view.state.clearedThroughSeq || view.hidden.has(existing.id)) {
@@ -133,7 +171,9 @@ export class ChatWriteService {
         return { ok: false, error: 'invalid_content', message: '拍一拍目标不在此会话中' };
     }
     // L5（T-069）：用户发的图片、语音、表情、链接封面必须是本人可用的媒体（MediaSystemPort.canUse）。
-    if (sender?.kind === 'user') {
+    if (sender?.kind === 'user' && !verifiedForward) {
+      if (content.type === 'forwarded_record')
+        return { ok: false, error: 'invalid_content', message: '聊天记录只能从真实源消息转发' };
       const invalid = await this.invalidUserMedia(sender.refId, content);
       if (invalid) return { ok: false, error: 'invalid_content', message: invalid };
     }

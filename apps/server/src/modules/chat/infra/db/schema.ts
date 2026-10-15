@@ -16,6 +16,20 @@ const bytes = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
 const seq = (name: string) => bigint(name, { mode: 'number' });
 const time = (name: string) => timestamp(name, { withTimezone: true });
 export const chatSchema = pgSchema('chat');
+/** Per-target receipts: committed atomically with forwarded messages; cascade with target deletion. */
+export const forwardReceipts = chatSchema.table(
+  'forward_receipts',
+  {
+    userId: uuid('user_id').notNull(),
+    requestId: uuid('request_id').notNull(),
+    targetId: uuid('target_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    fingerprint: text('fingerprint').notNull(),
+    messageIds: uuid('message_ids').array().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.requestId, t.targetId] })],
+);
 /** 产品的私聊/角色群都属于单个用户；不同用户与同一角色的会话完全隔离。 */
 export const conversations = chatSchema.table(
   'conversations',

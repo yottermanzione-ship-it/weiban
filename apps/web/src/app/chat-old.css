@@ -918,6 +918,127 @@
   border-bottom: 7px solid var(--wb-color-overlay-menu);
 }
 
+.wx-forward-card {
+  display: grid;
+  gap: 6px;
+  width: min(260px, 68vw);
+  padding: 14px 14px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: #fff;
+  color: #191919;
+  text-align: left;
+  font-size: 14px;
+}
+.wx-forward-card strong {
+  font-size: 16px;
+  font-weight: 500;
+}
+.wx-forward-card > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #888;
+}
+.wx-forward-card small {
+  margin-top: 5px;
+  padding-top: 7px;
+  border-top: 1px solid #eee;
+  color: #999;
+  font-size: 11px;
+}
+.wx-forward-record {
+  min-height: 65vh;
+  padding: 0 18px 24px;
+  background: #fff;
+  text-align: left;
+}
+.wx-forward-record article {
+  padding: 18px 0;
+  border-bottom: 1px solid #eee;
+}
+.wx-forward-record article > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: #888;
+  font-size: 13px;
+  text-align: left;
+}
+.wx-forward-record article > header strong {
+  font-weight: 400;
+}
+.wx-forward-record p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+  text-align: left;
+}
+.wx-forward-picker {
+  min-height: 65vh;
+  padding: 8px 16px 24px;
+}
+.wx-forward-summary {
+  color: #888;
+  font-size: 13px;
+}
+.wx-forward-picker > input {
+  box-sizing: border-box;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  padding: 10px 12px;
+  background: #f2f2f2;
+  font-size: 16px;
+}
+.wx-forward-tabs {
+  display: flex;
+  margin-top: 14px;
+  border-bottom: 1px solid #eee;
+}
+.wx-forward-tabs button {
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding: 12px 4px;
+  font-size: 15px;
+  color: #888;
+}
+.wx-forward-tabs button[aria-pressed='true'] {
+  color: #07a457;
+  border-bottom: 2px solid #07a457;
+}
+.wx-forward-targets > button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+  font-size: 16px;
+  color: #191919;
+}
+.wx-forward-targets > button:disabled {
+  opacity: 0.65;
+}
+.wx-forward-group {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 5px;
+  background: #ddd;
+}
+.wx-forward-error {
+  color: #c43d36;
+  font-size: 14px;
+}
 /* 多选工具栏（4.4.7） */
 .wx-select-bar {
   position: relative;

@@ -69,6 +69,7 @@ import { SHARE_REJECT_TEXT, openShare } from './share.js';
 import { familiarityNames } from './growth.js';
 import { ScenarioSheet, presetNames, useCurrentPreset } from './scenario.js';
 import { ChatAvatarLink } from './chat-avatar-link.js';
+import { ForwardPicker, ForwardedRecordBubble } from './chat-forward.js';
 import { OldIcon } from './old-icons.js';
 import {
   BackArrow,
@@ -241,6 +242,8 @@ export function content(message: Message): string {
       return '[信件]';
     case 'daily_question':
       return `[每日一问] ${message.content.question}`;
+    case 'forwarded_record':
+      return `[聊天记录] ${message.content.title}`;
     default:
       return '当前版本不支持此消息';
   }
@@ -562,6 +565,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const navigate = useNavigate();
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [forwarding, setForwarding] = useState(false);
   const [params, setParams] = useSearchParams();
   const targetSeq = Number(params.get('seq')) || 0;
   const [scrollTarget, setScrollTarget] = useState<{ key: string; nonce: number } | null>(null);
@@ -766,6 +770,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     switch (c.type) {
       case 'contact_card':
         return <ContactCardBubble content={c} />;
+      case 'forwarded_record':
+        return <ForwardedRecordBubble content={c} message={message} />;
       case 'letter':
         return (
           <div className="wx-card-wrap">
@@ -955,7 +961,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     const forward = {
       label: '转发',
       icon: 'wechat/share',
-      onClick: () => showToast('转发功能正在完善中', 2000, 'info'),
+      onClick: () => startSelect(message),
     };
     const shareSlot = canRecall
       ? { label: '撤回', icon: 'wechat/undo', onClick: () => void action(message, 'recall') }
@@ -1490,6 +1496,24 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           <button
             type="button"
             disabled={chosen.length === 0}
+            onClick={() => {
+              if (chosen.length > 50) {
+                showToast('一次最多转发 50 条消息');
+                return;
+              }
+              if (chosen.some((m) => m.content?.type === 'forwarded_record')) {
+                showToast('聊天记录暂不支持再次转发，请选择原消息');
+                return;
+              }
+              setForwarding(true);
+            }}
+          >
+            <OldIcon name="wechat/share" size={24} />
+            转发
+          </button>
+          <button
+            type="button"
+            disabled={chosen.length === 0}
             onClick={() => void favoriteChosen()}
           >
             <OldIcon name="wechat/star" size={24} />
@@ -1659,6 +1683,22 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
             preset.refresh();
             setPanel('none');
           }}
+        />
+      )}
+      {forwarding && (
+        <ForwardPicker
+          messages={chosen}
+          conversations={chat.state.conversations}
+          contacts={chat.state.contacts}
+          onClose={() => setForwarding(false)}
+          onComplete={() => {
+            setForwarding(false);
+            endSelect();
+            showToast('已转发', 2000, 'success');
+          }}
+          onSend={(body) =>
+            api.call(ChatEndpoints.forwardMessages, { params: { conversationId: id }, body })
+          }
         />
       )}
       <input

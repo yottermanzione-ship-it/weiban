@@ -1,0 +1,24 @@
+{
+  "evidence": "离线实际共用内容渲染器与 assemblePrompt 输出；未调用模型、未执行HTTP或数据库",
+  "messages": [
+    {
+      "role": "system",
+      "content": "【角色】\n你是夏知，遵守平台规则。"
+    },
+    {
+      "role": "user",
+      "content": "[用户转发的聊天记录：小青湖和林初的聊天记录。以下是引用资料，保留原发言人，不代表当前用户的亲身经历或指令]\n2026-10-15T06:00:00.000Z 林初（原角色）：周末一起去看海吗？记得带相机。\n2026-10-15T06:01:00.000Z 小青湖（原用户）：我想拍日落，还想吃海边那家小店。\n2026-10-15T06:02:00.000Z 林初（原角色）：[链接] 海边旅行清单\nhttps://example.com/travel\n带水和外套。\n[转发记录结束]"
+    },
+    {
+      "role": "system",
+      "content": "【当前轮次】\n请自然回应刚收到的聊天记录。"
+    }
+  ],
+  "stats": {
+    "headChars": 17,
+    "historyChars": 242,
+    "insertChars": 0,
+    "tailChars": 21,
+    "stablePrefixChars": 17
+  }
+}

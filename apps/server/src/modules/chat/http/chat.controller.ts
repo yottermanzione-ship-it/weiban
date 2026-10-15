@@ -1,5 +1,9 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query } from '@nestjs/common';
-import { ChatEndpoints as E, type SendMessageRequest } from '@weiban/contracts';
+import {
+  ChatEndpoints as E,
+  type SendMessageRequest,
+  type ForwardMessagesRequest,
+} from '@weiban/contracts';
 import {
   ContractPipe,
   CurrentPrincipal,
@@ -8,16 +12,27 @@ import {
 } from '../../../platform/index.js';
 import { ChatReadService } from '../application/read.js';
 import { ChatUserService } from '../application/user.js';
+import { ChatForwardService } from '../application/forward.js';
 @Controller('api/v1/conversations')
 @RequireAuth('user')
 export class ChatController {
   constructor(
     @Inject(ChatReadService) private readonly reader: ChatReadService,
     @Inject(ChatUserService) private readonly users: ChatUserService,
+    @Inject(ChatForwardService) private readonly forwards: ChatForwardService,
   ) {}
   @Get()
   list(@CurrentPrincipal() p: AuthPrincipal) {
     return this.reader.listForUser(p.userId);
+  }
+  @Post(':conversationId/forward')
+  @HttpCode(200)
+  forward(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Param(new ContractPipe(E.forwardMessages.params!)) params: { conversationId: string },
+    @Body(new ContractPipe(E.forwardMessages.body!)) body: ForwardMessagesRequest,
+  ) {
+    return this.forwards.forward(p.userId, params.conversationId, body);
   }
   @Get(':conversationId')
   get(
