@@ -57,6 +57,9 @@ export class BillingController {
   rechargeOptions() {
     return this.recharge.get();
   }
+  @Post('recharge-quote')
+  @RequireAuth(E.quoteRecharge.auth)
+  quoteRecharge(@Body(new ContractPipe(schema(E.quoteRecharge.body))) body: Out<typeof E.quoteRecharge.body>) { return this.recharge.quote(body); }
 
   @Get('wallet')
   @RequireAuth(E.getWallet.auth)

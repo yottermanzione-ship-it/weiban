@@ -7,6 +7,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   MICROS_PER_POINT,
   POINTS_PER_YUAN,
+  RechargeQuoteRequest,
   type RechargeOptions,
   type UpdateRechargeOptionsRequest,
 } from '@weiban/contracts';
@@ -72,6 +73,13 @@ export class RechargeService {
       .from(billingSettings)
       .where(eq(billingSettings.key, KEY));
     return toRechargeOptions((row?.value as StoredOptions | undefined) ?? DEFAULT_OPTIONS);
+  }
+  async quote(input: unknown) {
+    const parsed = RechargeQuoteRequest.safeParse(input);
+    if (!parsed.success) throw new AppError('bad_request', '充值金额须为5至10000元，最多两位小数');
+    const priceMicros = parsed.data.amountFen * 10_000;
+    const options = await this.get();
+    return { priceMicros, points: priceMicros / MICROS_PER_POINT, paymentEnabled: false as const, contactHint: options.contactHint };
   }
 
   async update(

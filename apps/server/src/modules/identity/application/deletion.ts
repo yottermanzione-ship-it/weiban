@@ -192,7 +192,7 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
     ];
     return {
       userId: user.id,
-      username: user.username,
+      username: user.currentAlias ?? user.username,
       requestedAt: (user.deletionRequestedAt ?? user.updatedAt).toISOString(),
       lastRetriggeredAt: user.deletionRetriggeredAt?.toISOString() ?? null,
       modules: modules.map((module) => {

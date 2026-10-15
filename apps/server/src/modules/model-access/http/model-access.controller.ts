@@ -63,6 +63,14 @@ export class ModelController {
 
   @Get('models')
   @RequireAuth(E.listModels.auth)
+  leaderboardPlaceholder() {}
+
+  @Get('leaderboard-info')
+  @RequireAuth(E.getLeaderboardInfo.auth)
+  leaderboardInfo() { return this.catalog.leaderboardInfo(); }
+
+  @Get('models')
+  @RequireAuth(E.listModels.auth)
   async listModels(
     @Query(new ContractPipe(schema(E.listModels.query))) query: Out<typeof E.listModels.query>,
   ) {

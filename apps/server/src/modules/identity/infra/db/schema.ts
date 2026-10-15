@@ -36,6 +36,8 @@ export const users = identitySchema.table(
   {
     id: uuid('id').primaryKey(),
     username: text('username').notNull(),
+    currentAlias: text('current_alias'),
+    aliasChangedAt: tz('alias_changed_at'),
     /** argon2id 哈希（PHC 字符串，含盐和参数）。 */
     passwordHash: text('password_hash').notNull(),
     /** user / admin */
@@ -85,6 +87,12 @@ export const sessions = identitySchema.table(
 );
 
 /** 我的资料（ACC-02），每个用户一行，注册时写入默认值。 */
+export const loginAliases = identitySchema.table('login_aliases', {
+  alias: text('alias').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: tz('created_at').notNull(),
+});
+
 export const profiles = identitySchema.table('profiles', {
   userId: uuid('user_id')
     .primaryKey()

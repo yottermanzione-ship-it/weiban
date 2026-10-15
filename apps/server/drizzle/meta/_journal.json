@@ -590,6 +590,13 @@
       "when": 1799333000000,
       "tag": "0095_moments_cover",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1799334000000,
+      "tag": "0096_login_aliases",
+      "breakpoints": true
     }
   ]
 }

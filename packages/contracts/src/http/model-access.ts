@@ -26,6 +26,8 @@ import {
 import { BillingOwner, ModelPurpose } from '../ports/model-gateway.js';
 
 // ---------- 模型目录 ----------
+export const ModelLeaderboardSource = z.object({ label: z.string().trim().min(1).max(80), url: z.url().refine(value => { const url = new URL(value); return url.protocol === 'https:' && ['arena.ai','www.arena.ai','lmarena.ai','www.lmarena.ai'].includes(url.hostname); }, '来源须为Arena官方HTTPS链接'), asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable() });
+export const ModelLeaderboardInfo = z.object({ source: ModelLeaderboardSource.nullable(), popular: z.array(z.object({ modelKey: z.string(), users: z.number().int().nonnegative() })) });
 
 /** 平台内的模型键，例 "deepseek/deepseek-v4-pro"。用户选择、价目表、用量都用它。 */
 export const ModelKey = z
@@ -141,6 +143,7 @@ export const ModelStatus = z.object({
 export type ModelStatus = z.infer<typeof ModelStatus>;
 
 export const ModelAccessEndpoints = {
+  getLeaderboardInfo: defineEndpoint({ method:'GET', path:`${API_PREFIX}/model/leaderboard-info`, auth:'user', response: ModelLeaderboardInfo, summary:'3.14：管理员榜单来源与当前全局聊天模型选择人数（非调用量）' }),
   listModels: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/model/models`,
@@ -438,6 +441,8 @@ export const GatewayLimits = z.object({
 export type GatewayLimits = z.infer<typeof GatewayLimits>;
 
 export const ModelAccessAdminEndpoints = {
+  getLeaderboardSource: defineEndpoint({ method:'GET', path:`${API_PREFIX}/admin/model/leaderboard-source`, auth:'admin', response: ModelLeaderboardSource.nullable(), summary:'3.14：榜单来源配置' }),
+  updateLeaderboardSource: defineEndpoint({ method:'PUT', path:`${API_PREFIX}/admin/model/leaderboard-source`, auth:'admin', body: ModelLeaderboardSource, response: ModelLeaderboardSource, summary:'3.14：管理员维护Arena榜单来源/日期；模型名次沿原leaderboardRank' }),
   listUpstreams: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/admin/model/upstreams`,
