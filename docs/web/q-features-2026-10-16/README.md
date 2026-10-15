@@ -8,7 +8,7 @@
 pnpm exec vite --config q-preview.config.ts --host 127.0.0.1
 ```
 
-网页：http://127.0.0.1:5190/q-preview.html#/me/status  
+网页：http://127.0.0.1:5190/q-preview.html#/me/status
 后台：http://127.0.0.1:5190/q-preview.html?admin=1#/admin-support
 
 样例只在专用origin的localStorage键weiban:q-preview-20261016保存无敏感虚构数据，没有生产身份、真实工单、钱包或支付。实际API全部由专用模块mock；截图上传XMLHttpRequest未mock，不应以此样例验证上传链。顶部外置请求面板可读出模拟method/path/params/body。网页全套生产CSS与后台自己的生产CSS分开加载，含构建常量及useRemote相对client别名。未挂载整个App/Auth/ChatProvider，整壳和真实登录/同步未验证；App新路由ownHeader仅源码核对。
