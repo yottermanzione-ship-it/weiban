@@ -30,11 +30,15 @@ import { BillingOwner, ModelPurpose } from '../ports/model-gateway.js';
 export const ModelLeaderboardSource = z.object({
   label: z.string().trim().min(1).max(80),
   url: z.url().refine((value) => {
-    const url = new URL(value);
-    return (
-      url.protocol === 'https:' &&
-      ['arena.ai', 'www.arena.ai', 'lmarena.ai', 'www.lmarena.ai'].includes(url.hostname)
-    );
+    try {
+      const url = new URL(value);
+      return (
+        url.protocol === 'https:' &&
+        ['arena.ai', 'www.arena.ai', 'lmarena.ai', 'www.lmarena.ai'].includes(url.hostname)
+      );
+    } catch {
+      return false;
+    }
   }, '来源须为Arena官方HTTPS链接'),
   asOf: LocalDate.nullable(),
 });

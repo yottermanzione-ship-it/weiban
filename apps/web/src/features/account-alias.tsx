@@ -1,3 +1,4 @@
+import { ApiFailure } from '@weiban/client-core';
 import { useState } from 'react';
 import { IdentityEndpoints, Username } from '@weiban/contracts';
 import { useAuth } from '../app/auth.js';
@@ -71,6 +72,12 @@ function AliasSheet({
       onSaved();
       showToast(unchanged ? '微伴号未变更' : '微伴号已修改', 2000, 'success');
     } catch (e) {
+      if (
+        e instanceof ApiFailure &&
+        e.code === 'rate_limited' &&
+        typeof e.details?.nextChangeAt === 'string'
+      )
+        setNext(e.details.nextChangeAt);
       setError(friendlyError(e));
     } finally {
       setPending(false);

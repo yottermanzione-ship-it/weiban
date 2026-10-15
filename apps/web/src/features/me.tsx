@@ -15,6 +15,7 @@ import { pointsText } from './points.js';
 export function MePage() {
   const { session } = useAuth();
   const profile = useRemote(IdentityEndpoints.getProfile);
+  const alias = useRemote(IdentityEndpoints.getAlias);
   const wallet = useRemote(BillingEndpoints.getWallet);
   const announcements = useAnnouncementUnread();
   const lowBalance =
@@ -27,7 +28,7 @@ export function MePage() {
         <ProfileAvatar profile={profile.data} />
         <span className="me-head-text">
           <h2>{profile.data?.nickname ?? '填写你的昵称'}</h2>
-          <p>微伴号：{session?.user.username}</p>
+          <p>微伴号：{alias.data?.username ?? session?.user.username}</p>
           {wallet.data && (
             <span className="points-chip">
               <OldImage name="wechat/membership.webp" size={14} />

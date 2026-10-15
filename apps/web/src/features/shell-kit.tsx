@@ -628,7 +628,6 @@ export function useLongPress(onLongPress: (at: { x: number; y: number }) => void
       if (!start.current) return;
       start.current = null;
       fired.current = true;
-      navigator.vibrate?.(10);
       callback.current({ x, y });
     }, LONG_PRESS_MS);
   };

@@ -15,7 +15,7 @@ import { CharacterAvatar } from './character-avatar.js';
 import { UserAvatar } from './user-avatar.js';
 import { CallRecordBubble, ImageBubble, LinkCardBubble, MediaImg, StickerBubble } from './media.js';
 import { shareText } from './share-render.js';
-import { NavBar } from './shell-kit.js';
+import { NavBar, Sheet } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 
 function FavoriteVoice({ mediaId, transcript }: { mediaId: string; transcript?: string | null }) {
@@ -28,7 +28,7 @@ function FavoriteVoice({ mediaId, transcript }: { mediaId: string; transcript?: 
     </div>
   );
 }
-function FavoriteBody({ favorite }: { favorite: Favorite }) {
+function FavoriteContent({ favorite }: { favorite: Favorite }) {
   const content = favorite.content;
   if (content.type === 'forwarded_record')
     return (
@@ -44,7 +44,11 @@ function FavoriteBody({ favorite }: { favorite: Favorite }) {
                 <time>{new Date(item.createdAt).toLocaleString('zh-CN')}</time>
               </header>
               {item.content.type === 'image' ? (
-                <ImageBubble content={item.content} />
+                <FavoriteImage
+                  mediaId={item.content.mediaId}
+                  width={item.content.width}
+                  height={item.content.height}
+                />
               ) : item.content.type === 'link' ? (
                 <LinkCardBubble content={item.content} />
               ) : item.content.type === 'sticker' ? (
@@ -63,7 +67,10 @@ function FavoriteBody({ favorite }: { favorite: Favorite }) {
       </details>
     );
   if (content.type === 'call_record') return <CallRecordBubble content={content} />;
-  if (content.type === 'image') return <ImageBubble content={content} />;
+  if (content.type === 'image')
+    return (
+      <FavoriteImage mediaId={content.mediaId} width={content.width} height={content.height} />
+    );
   if (content.type === 'sticker') return <StickerBubble content={content} />;
   if (content.type === 'link') return <LinkCardBubble content={content} />;
   if (content.type === 'voice')
@@ -71,9 +78,46 @@ function FavoriteBody({ favorite }: { favorite: Favorite }) {
   return (
     <div>
       <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{shareText(content)}</p>
-      {favorite.extraImages.map((id) => (
-        <MediaImg key={id} mediaId={id} />
-      ))}
+    </div>
+  );
+}
+function FavoriteImage({
+  mediaId,
+  width = null,
+  height = null,
+}: {
+  mediaId: string;
+  width?: number | null;
+  height?: number | null;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <ImageBubble
+        content={{ type: 'image', mediaId, width, height }}
+        onOpen={() => setOpen(true)}
+      />
+      {open && (
+        <Sheet title="查看图片" closeLabel="返回" onClose={() => setOpen(false)}>
+          <div className="favorite-image-sheet">
+            <MediaImg mediaId={mediaId} thumbnail={false} />
+          </div>
+        </Sheet>
+      )}
+    </>
+  );
+}
+function FavoriteBody({ favorite }: { favorite: Favorite }) {
+  return (
+    <div className="favorite-content">
+      <FavoriteContent favorite={favorite} />
+      {favorite.extraImages.length > 0 && (
+        <div className="favorite-extra-images">
+          {favorite.extraImages.map((id, i) => (
+            <FavoriteImage key={id + ':' + i} mediaId={id} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -103,7 +147,7 @@ export function FavoritesPage() {
   const items = [...(remote.data?.items ?? []), ...extra].filter(
     (f, i, all) => all.findIndex((x) => x.favoriteId === f.favoriteId) === i,
   );
-  const names = useCharacterNames(items.flatMap(f => f.characterId ? [f.characterId] : []));
+  const names = useCharacterNames(items.flatMap((f) => (f.characterId ? [f.characterId] : [])));
   async function more() {
     if (!cursor || pending) return;
     setPending(true);
@@ -146,7 +190,7 @@ export function FavoritesPage() {
     <main>
       <NavBar title="收藏" fallback="/me" />
       {items.map((f) => (
-        <article className="favorite-card" key={f.favoriteId}>
+        <article className="favorite-card simple-favorite" key={f.favoriteId}>
           <div className="favorite-head">
             {f.characterAvatarMediaIdSnapshot ? (
               <span className="avatar" style={{ width: 32, height: 32 }}>

@@ -71,7 +71,23 @@ export function ModelsPage() {
   );
   return (
     <main>
-      <NavBar title="模型" fallback="/services" right={info.data?.source ? <a className="text-action" href={info.data.source.url} target="_blank" rel="noreferrer" aria-label={`榜单来源：${info.data.source.label}`}>来源</a> : undefined} />
+      <NavBar
+        title="模型"
+        fallback="/services"
+        right={
+          info.data?.source ? (
+            <a
+              className="text-action"
+              href={info.data.source.url}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`榜单来源：${info.data.source.label}`}
+            >
+              来源
+            </a>
+          ) : undefined
+        }
+      />
       <GroupHeader>聊天模型</GroupHeader>
       <MenuGroup>
         <MenuRow

@@ -9,6 +9,21 @@ export function ServiceWorkerRefresh() {
         ?.type !== 'reload'
     )
       return;
+    const started = Date.now();
+    let interacted = false;
+    const interaction = () => {
+      interacted = true;
+    };
+    for (const event of ['pointerdown', 'keydown', 'input'])
+      document.addEventListener(event, interaction, true);
+    const safe = () =>
+      !interacted &&
+      Date.now() - started < 2000 &&
+      document.visibilityState === 'visible' &&
+      !(
+        document.activeElement instanceof HTMLElement &&
+        document.activeElement.matches('input,textarea,select,[contenteditable=true]')
+      );
     let active = true,
       accepted = false;
     let deadline: number | undefined;
@@ -22,7 +37,7 @@ export function ServiceWorkerRefresh() {
     void navigator.serviceWorker.ready
       .then(async (registration) => {
         const waiting = registration.waiting;
-        if (!active || !waiting || !navigator.serviceWorker.controller) return;
+        if (!active || !safe() || !waiting || !navigator.serviceWorker.controller) return;
         const pending: Promise<void>[] = [];
         window.dispatchEvent(
           new CustomEvent('weiban:before-update', {
@@ -30,7 +45,7 @@ export function ServiceWorkerRefresh() {
           }),
         );
         await Promise.allSettled(pending);
-        if (!active) {
+        if (!active || !safe()) {
           window.dispatchEvent(new Event('weiban:update-failed'));
           return;
         }
@@ -45,6 +60,8 @@ export function ServiceWorkerRefresh() {
         if (active) window.dispatchEvent(new Event('weiban:update-failed'));
       });
     return () => {
+      for (const event of ['pointerdown', 'keydown', 'input'])
+        document.removeEventListener(event, interaction, true);
       active = false;
       accepted = false;
       window.clearTimeout(deadline);

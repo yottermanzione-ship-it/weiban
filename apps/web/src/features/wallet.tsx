@@ -19,7 +19,7 @@ import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterAvatar } from './character-avatar.js';
-import { OldIcon, OldImage } from './old-icons.js';
+import { OldImage } from './old-icons.js';
 import {
   Chevron,
   EmptyState,

@@ -34,6 +34,7 @@ export class ChatDriver {
   private bootstrapping = false;
   private polling = false;
   private syncFailures = 0;
+  private restoring = false;
   private canSync = false;
   private focusId: string | null = null;
   private reconnectAttempt = 0;
@@ -180,41 +181,61 @@ export class ChatDriver {
       !navigator.onLine
     )
       throw new Error('请联网后再恢复聊天记录');
-    if (runner.isRebuilding) throw new Error('聊天记录正在同步，请稍后重试');
-    // 先终止旧网络回调，沿过期游标的既有快照链重建；保留待发消息与清除边界。
+    if (this.restoring || runner.isRebuilding) throw new Error('聊天记录正在同步，请稍后重试');
+    this.restoring = true;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 30_000);
     const revision = runner.snapshotRevision,
       failures = this.syncFailures;
-    await runner.dispatch({ type: 'offline' });
-    await runner.dispatch({ type: 'cursor.expired' });
-    const deadline = Date.now() + 30_000;
-    while (runner.snapshotRevision <= revision || runner.isRebuilding) {
+    try {
+      // 中止旧网络回调，复用过期游标重建；保留待发消息和清除边界。
+      await runner.dispatch({ type: 'offline' });
+      await runner.dispatch({ type: 'cursor.expired' });
+      while (runner.snapshotRevision <= revision || runner.isRebuilding) {
+        if (
+          this.stopped ||
+          this.paused ||
+          this.runner !== runner ||
+          !runner.active ||
+          !navigator.onLine ||
+          this.syncFailures !== failures ||
+          !this.api.owns(this.owner) ||
+          controller.signal.aborted
+        )
+          throw new Error('聊天记录恢复暂未完成，请联网后重试');
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
+      }
+      await this.synchronize(controller.signal);
+    } catch (error) {
+      // 失败/超时终止本轮快照，下一次点击可真正重试，不留下重建锁。
       if (
-        this.stopped ||
-        this.paused ||
-        this.runner !== runner ||
-        !runner.active ||
-        !navigator.onLine ||
-        this.syncFailures !== failures ||
-        !this.api.owns(this.owner) ||
-        Date.now() >= deadline
+        !this.stopped &&
+        !this.paused &&
+        this.runner === runner &&
+        runner.active &&
+        this.api.owns(this.owner)
       )
-        throw new Error('聊天记录恢复暂未完成，请联网后重试');
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
+        await runner.dispatch({ type: 'offline' });
+      throw error;
+    } finally {
+      window.clearTimeout(timer);
+      controller.abort();
+      this.restoring = false;
     }
-    await this.synchronize();
   }
-  async synchronize(): Promise<void> {
+  async synchronize(signal: AbortSignal = this.lifetime.signal): Promise<void> {
     const runner = this.runner;
     if (!runner || this.stopped || this.paused || !runner.active || !this.api.owns(this.owner))
       throw new Error('聊天尚未准备好');
     const state = await this.api.call(SyncEndpoints.getState, {
       networkOnly: true,
-      signal: this.lifetime.signal,
+      signal,
     });
     await this.reconnect(state.latestUpdateSeq);
     const deadline = Date.now() + 10_000;
     while (!runner.state.initialized || runner.state.lastUpdateSeq < state.latestUpdateSeq) {
       if (
+        signal.aborted ||
         this.stopped ||
         this.paused ||
         !runner.active ||

@@ -1,19 +1,14 @@
 /*
- * 公告、本版新功能、强制刷新（契约 3.2；后端说明 docs/backend/announcements.md）。
- * 打开应用与回到前台时拉取；弹窗依次：必须更新（不可关闭）→ 本版新功能 → 未读弹窗公告（从旧到新）。
+ * 公告与手动更新日志（契约 3.2；后端说明 docs/backend/announcements.md）。
+ * 网页不再显示版本提示；打开应用与回到前台只读取未读公告。
  * 网页版本号 = 构建号 __WEB_BUILD__（vite.config.ts 注入，每次打包递增）。
  */
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import {
-  AnnouncementEndpoints,
-  ReleaseEndpoints,
-  type Announcement,
-  type ReleaseNote,
-} from '@weiban/contracts';
+import { AnnouncementEndpoints, ReleaseEndpoints, type Announcement } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { MenuGroup, MenuRow, NavBar } from './shell-kit.js';
-import { Dialog, showToast } from './toast.js';
+import { Dialog } from './toast.js';
 
 export const WEB_BUILD = __WEB_BUILD__;
 export const WEB_VERSION = __WEB_VERSION__;
@@ -122,24 +117,6 @@ export function ReleaseCenter() {
 /** 我 › 设置 › 关于微伴。 */
 export function AboutPage() {
   const unreadCount = useAnnouncementUnread();
-  const [checking, setChecking] = useState(false);
-  async function check() {
-    setChecking(true);
-    try {
-      const result = await api.call(ReleaseEndpoints.checkVersion, {
-        query: { platform, versionCode: WEB_BUILD },
-        networkOnly: true,
-      });
-      if (result.updateAvailable || result.updateRequired) {
-        showToast(`发现新版本 ${result.latestVersion ?? ''}，正在刷新…`);
-        window.setTimeout(() => window.location.reload(), 800);
-      } else showToast('已是最新版本');
-    } catch (e) {
-      showToast(friendlyError(e));
-    } finally {
-      setChecking(false);
-    }
-  }
   return (
     <main>
       <NavBar title="关于微伴" fallback="/settings" />
@@ -153,7 +130,6 @@ export function AboutPage() {
       <MenuGroup>
         <MenuRow to="/settings/announcements" label="公告" dot={unreadCount > 0} />
         <MenuRow to="/settings/release-notes" label="更新日志" />
-        <MenuRow onClick={() => void check()} label={checking ? '正在检查…' : '检查更新'} />
       </MenuGroup>
     </main>
   );
