@@ -17,6 +17,7 @@ import {
   type PortResult,
   type SyncPort,
   type Tx,
+  type MediaSystemPort,
 } from '@weiban/contracts';
 import {
   AppError,
@@ -32,6 +33,7 @@ import {
   type Outbox,
 } from '../../../platform/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
+import { MEDIA_SYSTEM_PORT } from '../../media/index.js';
 import {
   conversations,
   messages,
@@ -54,6 +56,7 @@ export class ChatGroupService implements ChatGroupAdminPort, ChatGroupReadPort {
     @Inject(ChatWriteService) private readonly writer: ChatWriteService,
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
     @Inject(OUTBOX) private readonly outbox: Outbox,
+    @Inject(MEDIA_SYSTEM_PORT) private readonly media: MediaSystemPort,
     @Optional()
     @Inject(CHAT_GROUP_DIRECTORY)
     private readonly groupDirectory: ChatGroupDirectory | null,
@@ -73,6 +76,33 @@ export class ChatGroupService implements ChatGroupAdminPort, ChatGroupReadPort {
   }
 
   // ---------- 用户接口（ChatGroupEndpoints） ----------
+
+  private async lockAvatars(tx: DbTx, userId: string): Promise<void> {
+    await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('chat:group-avatar:' || $1,0))", [userId]);
+  }
+  private async removeUnusedAvatar(tx: DbTx, userId: string, mediaId: string | null): Promise<void> {
+    if (!mediaId) return;
+    const [used] = await tx.db.select({ id: conversations.id }).from(conversations).where(and(
+      eq(conversations.ownerUserId, userId), eq(conversations.groupAvatarMediaId, mediaId),
+    )).limit(1);
+    if (!used) await this.media.deleteObject(mediaId, tx);
+  }
+  async setAvatarForUser(userId: string, conversationId: string, mediaId: string | null): Promise<Conversation> {
+    if (mediaId !== null) parseContract(Id, mediaId);
+    return this.db.transaction(async (tx) => {
+      await this.lockAvatars(tx, userId);
+      const row = await this.loadGroup(tx, conversationId, userId);
+      if (row.groupAvatarMediaId === mediaId) return this.store.conversation(tx, row);
+      if (mediaId && !(await this.media.canUse(userId, mediaId, ['group_avatar'])))
+        throw new AppError('bad_request', '请使用本人上传的群头像图片');
+      const [updated] = await tx.db.update(conversations).set({ groupAvatarMediaId: mediaId, updatedAt: this.clock.now() }).where(eq(conversations.id, row.id)).returning();
+      if (!updated) throw new AppError('not_found', '群聊不存在');
+      const value = await this.store.conversation(tx, updated);
+      await this.sync.appendUpdate(tx, userId, { type: 'conversation.updated', data: { conversation: value } });
+      await this.removeUnusedAvatar(tx, userId, row.groupAvatarMediaId);
+      return value;
+    });
+  }
 
   async createForUser(userId: string, input: unknown): Promise<Conversation> {
     const body = parseContract(CreateGroupRequest, input);
@@ -136,6 +166,7 @@ export class ChatGroupService implements ChatGroupAdminPort, ChatGroupReadPort {
   async dissolveForUser(userId: string, conversationId: string): Promise<void> {
     parseContract(Id, conversationId);
     await this.db.transaction(async (tx) => {
+      await this.lockAvatars(tx, userId);
       let row: ConversationRow;
       try {
         row = await this.store.load(tx, conversationId, userId);
@@ -164,6 +195,7 @@ export class ChatGroupService implements ChatGroupAdminPort, ChatGroupReadPort {
         data: { conversation },
       });
       await tx.db.delete(conversations).where(eq(conversations.id, row.id));
+      await this.removeUnusedAvatar(tx, userId, row.groupAvatarMediaId);
       await this.sync.appendUpdate(tx, userId, {
         type: 'conversation.removed',
         data: { conversationId: row.id, reason: 'group_dissolved' },

@@ -27,6 +27,14 @@ export type CreateGroupRequest = z.infer<typeof CreateGroupRequest>;
 export const GroupParams = z.object({ conversationId: Id });
 
 export const ChatGroupEndpoints = {
+  updateAvatar: defineEndpoint({
+    method: 'PATCH',
+    path: `${API_PREFIX}/groups/:conversationId/avatar`,
+    auth: 'user', params: GroupParams,
+    body: z.object({ mediaId: Id.nullable() }),
+    response: Conversation,
+    summary: '3.11：设置本人群头像（本人group_avatar媒体）；null恢复成员拼图，发conversation.updated',
+  }),
   createGroup: defineEndpoint({
     method: 'POST',
     path: `${API_PREFIX}/groups`,

@@ -39,6 +39,7 @@ export const conversations = chatSchema.table(
     type: text('type').notNull(),
     characterId: uuid('character_id'),
     title: text('title'),
+    groupAvatarMediaId: uuid('group_avatar_media_id'),
     systemParticipantId: uuid('system_participant_id').notNull(),
     contentScope: text('content_scope').notNull().default('normal'),
     lastSeq: seq('last_seq').notNull().default(0),
