@@ -1,3 +1,4 @@
+import { SupportRow } from './support.js';
 import { HistoryRecoveryRow } from './history-recovery.js';
 /*
  * 设置（docs/refactor/06-old-ui-spec.md 4.10）：每组前有分组标题；普通行 MenuRow，带说明的开关用 SwitchRow；
@@ -197,7 +198,7 @@ export function SettingsPage() {
       <MenuGroup>
         <SwitchRow
           label="角色状态表情"
-          subtitle="在资料昵称旁显示当天已有的状态"
+          subtitle="在资料昵称和私聊标题旁显示当天已有的状态"
           checked={statusVisible}
           onChange={(visible) => {
             setCharacterStatusVisible(visible);
@@ -214,10 +215,11 @@ export function SettingsPage() {
         <MenuRow label="聊天背景" onClick={() => showToast('暂未开放', 2000, 'info')} />
         <ComingSoonRow id="teen" withIcon={false} />
         <ComingSoonRow id="care" withIcon={false} />
-        <ComingSoonRow id="plugins" withIcon={false} />
+        <MenuRow to="/settings/plugins" label="插件" />
       </MenuGroup>
       <GroupHeader>关于</GroupHeader>
       <MenuGroup>
+        <SupportRow />
         <MenuRow to="/settings/about" label="关于微伴" dot={announcements > 0} />
       </MenuGroup>
       <HomeScreenGuide manual />

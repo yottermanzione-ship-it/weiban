@@ -160,7 +160,7 @@ export class ReplyContext {
     @Inject(SocialService) readonly social: SocialService,
     @Inject(MediaAiService) readonly mediaAi: MediaAiService,
     @Optional() @Inject(GROWTH_PET_READ_PORT) readonly pets?: PetReadPort,
-    /** 3.9（Q11）：用户「我的状态」。 */
+    /** 3.15（Q11）：用户「我的状态」。 */
     @Optional() @Inject(IDENTITY_USER_STATUS_PORT) readonly userStatus?: UserStatusReadPort,
   ) {}
   async build(row: ReplyPlan): Promise<ReplySnapshot | null> {
@@ -544,7 +544,7 @@ ${AUTHOR_GUARD}`,
           : '',
       },
       { title: '', text: extraExample ? situationalExampleText(extraExample) : '' },
-      // 3.9（Q11）：用户当前状态（未过期才有）。
+      // 3.15（Q11）：用户当前状态（未过期才有）。
       {
         title: '',
         text: userStatusLine(

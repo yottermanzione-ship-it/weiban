@@ -853,6 +853,11 @@ export function CharacterPage({
           )}
         </MenuGroup>
       )}
+      {!onboarding && data && (
+        <MenuGroup>
+          <MenuRow to={`/support/new?targetType=character&targetId=${characterId}`} label="投诉" />
+        </MenuGroup>
+      )}
       {data?.showPublicSourceNotice && (
         <p className="hint page-note">本角色根据公开资料创作，不代表本人</p>
       )}

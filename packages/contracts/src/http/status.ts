@@ -95,7 +95,7 @@ export const UserStatusEndpoints = {
     body: SetUserStatusRequest,
     response: z.object({ status: UserStatus }),
     summary:
-      '3.15：设置我的状态（custom 没有 text 时 400 bad_request）；发 settings.updated(profile)。角色在下一次回复 / 主动消息时看到',
+      '3.15：设置我的状态（custom 没有 text 时 400 bad_request）；发 settings.updated(profile)。角色在下一次私聊回复时可自然参考',
   }),
   clear: defineEndpoint({
     method: 'DELETE',
@@ -105,4 +105,3 @@ export const UserStatusEndpoints = {
     summary: '3.15：清除我的状态（没有也返回 204）；发 settings.updated(profile)',
   }),
 } as const;
-

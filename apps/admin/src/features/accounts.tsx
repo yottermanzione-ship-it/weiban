@@ -1,3 +1,4 @@
+import { MembershipEditor } from './membership.js';
 /**
  * 用户与积分（06-old-ui-spec 第 6、9 节；契约 3.3）：账号积分概况、按积分加 / 扣、流水、充值档位配置。
  * 涉及用户的金额同时写积分和折合元（1 元 = 100 积分）。
@@ -59,6 +60,7 @@ function AccountDetails({ account, refresh }: { account: Account; refresh: () =>
   }
   return (
     <section className="panel stack">
+      <MembershipEditor key={account.userId} userId={account.userId} />
       <h2>{account.username || '已注销账号'} · 积分操作</h2>
       <form className="form-grid" onSubmit={(e) => void adjust(e)}>
         <label>

@@ -168,7 +168,9 @@ export class MediaAssetService
     };
   }
   async storeAdded(userId: string) {
-    const rows = await this.database.db.select({ pack: stickerPacks }).from(userStickerPacks)
+    const rows = await this.database.db
+      .select({ pack: stickerPacks })
+      .from(userStickerPacks)
       .innerJoin(stickerPacks, eq(stickerPacks.id, userStickerPacks.packId))
       .where(eq(userStickerPacks.userId, userId))
       .orderBy(asc(userStickerPacks.sortOrder), asc(userStickerPacks.addedAt));

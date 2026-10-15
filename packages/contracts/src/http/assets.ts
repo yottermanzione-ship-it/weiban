@@ -59,7 +59,8 @@ export const StickerEndpoints = {
     path: `${API_PREFIX}/stickers/packs`,
     auth: 'user',
     response: z.object({ items: z.array(StickerPack) }),
-    summary: '用户可用的内置表情包（userVisible 且 enabled）；3.15 起也包含我从表情商店添加的包（addedFromStore = true，排在后面）',
+    summary:
+      '用户可用的内置表情包（userVisible 且 enabled）；3.15 起也包含我从表情商店添加的包（addedFromStore = true，排在后面）',
   }),
   listMyStickers: defineEndpoint({
     method: 'GET',
@@ -142,7 +143,9 @@ const StorePackParams = z.object({ packId: Id });
 
 export const StickerStoreEndpoints = {
   listAdded: defineEndpoint({
-    method: 'GET', path: `${API_PREFIX}/me/sticker-packs`, auth: 'user',
+    method: 'GET',
+    path: `${API_PREFIX}/me/sticker-packs`,
+    auth: 'user',
     response: z.object({ items: z.array(StickerStorePack) }),
     summary: '安装管理（含停用或下架的已添加包）；发送列表仍过滤停用包',
   }),
@@ -176,7 +179,8 @@ export const StickerStoreEndpoints = {
     auth: 'user',
     params: StorePackParams,
     response: NoContent,
-    summary: '3.15：移除我添加的表情包（已发出的消息不受影响；没添加过也返回 204）；发 data.changed(stickers)',
+    summary:
+      '3.15：移除我添加的表情包（已发出的消息不受影响；没添加过也返回 204）；发 data.changed(stickers)',
   }),
   reorderMyPacks: defineEndpoint({
     method: 'PUT',
@@ -195,7 +199,8 @@ export const StickerStoreAdminEndpoints = {
     auth: 'admin',
     body: z.object({ packIds: z.array(Id).max(500) }),
     response: NoContent,
-    summary: '3.15：表情商店排序（按给定顺序写 storeOrder = 0, 1, 2…）；上下架用 PATCH /admin/stickers/packs/:packId 的 inStore；写审计',
+    summary:
+      '3.15：表情商店排序（按给定顺序写 storeOrder = 0, 1, 2…）；上下架用 PATCH /admin/stickers/packs/:packId 的 inStore；写审计',
   }),
 } as const;
 

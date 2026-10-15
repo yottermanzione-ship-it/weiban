@@ -97,6 +97,9 @@ export function MyStickersPage() {
           {editing ? '完成' : '整理'}
         </button>
       </header>
+      <p>
+        <Link to="/sticker-store">表情商店与我的表情包</Link>
+      </p>
       {remote.loading && !remote.data && (
         <p role="status" className="empty">
           正在读取…

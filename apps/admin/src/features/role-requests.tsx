@@ -1,7 +1,7 @@
 /**
  * 角色创建 › 申请制作的后台处理（总经理 10-14 裁定 2.3；契约 RoleRequestAdminEndpoints 3.5）。
  * 列表（按状态筛选，待处理最早在前）→ 详情：接单 / 填进度 / 完成并选已上架预设角色（默认自动加到用户通讯录）/ 拒绝；
- * 另有「价格与开关」：是否开放、每次积分价格（预留，目前只记录不扣）、每人同时未完成上限。
+ * 另有「价格与开关」：是否开放、超额固定200积分（免费按真实档位额度）、每人同时未完成上限。
  * 所有写操作服务器写审计。
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -506,7 +506,7 @@ function ConfigPanel() {
       const saved = await api.call(RoleRequestAdminEndpoints.updateConfig, {
         body: {
           enabled: current.enabled,
-          pointsCost: Number(current.pointsCost) || 0,
+          pointsCost: 200,
           maxOpenPerUser: Number(current.maxOpenPerUser) || 1,
         },
       });
@@ -534,19 +534,9 @@ function ConfigPanel() {
         />
         开放申请（关闭后用户端入口提示「暂未开放」）
       </label>
-      <label>
-        每次申请价格（积分）
-        <input
-          type="number"
-          min={0}
-          max={1_000_000}
-          value={current.pointsCost}
-          onChange={(e) => setForm({ ...current, pointsCost: e.target.value })}
-        />
-      </label>
-      <small className="hint">
-        扣积分方式尚未确定：目前只记录价格、不实际扣除（用户端会显示价格）。建议保持 0。
-      </small>
+      <p>
+        免费用户每自然月5次，PRO+每自然周5次；超额固定200积分。提交冻结、完成扣除、拒绝或撤回退款。
+      </p>
       <label>
         每人同时未完成的申请上限
         <input

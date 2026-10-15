@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.14. Regenerate: pnpm android:generate
+// Contract 3.15. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.14"
+const val CONTRACT_VERSION: String = "3.15"
 
 @Serializable
 data class AccountAlias(
@@ -556,6 +556,7 @@ data class AdminRoleRequest(
     @SerialName("characterId") val `characterId`: Id?,
     @SerialName("addedToContacts") val `addedToContacts`: Boolean,
     @SerialName("pointsCost") val `pointsCost`: Long,
+    @SerialName("freeQuotaApplied") val `freeQuotaApplied`: Boolean? = null,
     @SerialName("pointsCharged") val `pointsCharged`: Long,
     @SerialName("unseen") val `unseen`: Boolean,
     @SerialName("createdAt") val `createdAt`: Timestamp,
@@ -2551,6 +2552,7 @@ data class CreatePublicUpdateRequestInput(
 @Serializable
 data class CreateRoleRequest(
     @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("expectedPointsCost") val `expectedPointsCost`: CreateRoleRequestExpectedPointsCost? = null,
     @SerialName("roleName") val `roleName`: String,
     @SerialName("basis") val `basis`: CharacterBasis? = null,
     @SerialName("categoryId") val `categoryId`: String? = null,
@@ -2563,6 +2565,7 @@ data class CreateRoleRequest(
 @Serializable
 data class CreateRoleRequestInput(
     @SerialName("clientRequestId") val `clientRequestId`: Id,
+    @SerialName("expectedPointsCost") val `expectedPointsCost`: CreateRoleRequestInputExpectedPointsCost? = null,
     @SerialName("roleName") val `roleName`: String,
     @SerialName("basis") val `basis`: CharacterBasis? = null,
     @SerialName("categoryId") val `categoryId`: String? = null,
@@ -5631,6 +5634,24 @@ data class MediaTranscript(
     @SerialName("text") val `text`: String?,
 )
 
+@Serializable
+data class Membership(
+    @SerialName("checkedAt") val `checkedAt`: Timestamp,
+    @SerialName("tier") val `tier`: String,
+    @SerialName("expiresAt") val `expiresAt`: Timestamp?,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp?,
+)
+
+@Serializable
+data class MembershipAdminEndpointsGetParams(
+    @SerialName("userId") val `userId`: Id,
+)
+
+@Serializable
+data class MembershipAdminEndpointsSetParams(
+    @SerialName("userId") val `userId`: Id,
+)
+
 typealias MemoryCategory = String
 
 @Serializable
@@ -7280,6 +7301,23 @@ typealias PlazaWorkKind = String
 
 typealias PlazaWorkStatus = String
 
+@Serializable
+data class Plugin(
+    @SerialName("pluginId") val `pluginId`: String,
+    @SerialName("name") val `name`: String,
+    @SerialName("description") val `description`: String,
+    @SerialName("status") val `status`: String,
+)
+
+@Serializable
+data class PluginEndpointsListResponse(
+    @SerialName("items") val `items`: List<Plugin>,
+)
+
+typealias PluginId = String
+
+typealias PluginStatus = String
+
 typealias Points = Double
 
 typealias PortraitPolicy = String
@@ -8165,6 +8203,7 @@ data class RoleRequest(
     @SerialName("characterId") val `characterId`: Id?,
     @SerialName("addedToContacts") val `addedToContacts`: Boolean,
     @SerialName("pointsCost") val `pointsCost`: Long,
+    @SerialName("freeQuotaApplied") val `freeQuotaApplied`: Boolean? = null,
     @SerialName("pointsCharged") val `pointsCharged`: Long,
     @SerialName("unseen") val `unseen`: Boolean,
     @SerialName("createdAt") val `createdAt`: Timestamp,
@@ -8228,6 +8267,14 @@ data class RoleRequestConfigInput(
 )
 
 @Serializable
+data class RoleRequestEndpointsGetConfigResponse(
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("pointsCost") val `pointsCost`: Long,
+    @SerialName("maxOpenPerUser") val `maxOpenPerUser`: Long,
+    @SerialName("quota") val `quota`: RoleRequestQuota,
+)
+
+@Serializable
 data class RoleRequestEndpointsListMineQuery(
     @SerialName("cursor") val `cursor`: String? = null,
     @SerialName("limit") val `limit`: Long? = null,
@@ -8244,6 +8291,21 @@ data class RoleRequestEndpointsListMineResponse(
 data class RoleRequestImage(
     @SerialName("mediaId") val `mediaId`: Id,
     @SerialName("url") val `url`: String?,
+)
+
+@Serializable
+data class RoleRequestQuota(
+    @SerialName("quotedAt") val `quotedAt`: Timestamp,
+    @SerialName("tier") val `tier`: String,
+    @EncodeDefault
+    @SerialName("limit") val `limit`: Long = 5,
+    @SerialName("used") val `used`: Long,
+    @SerialName("remaining") val `remaining`: Long,
+    @SerialName("nextPointsCost") val `nextPointsCost`: RoleRequestQuotaNextPointsCost,
+    @SerialName("periodStart") val `periodStart`: Timestamp,
+    @SerialName("periodEnd") val `periodEnd`: Timestamp,
+    @EncodeDefault
+    @SerialName("timeZone") val `timeZone`: String = "Asia/Shanghai",
 )
 
 typealias RoleRequestStatus = String
@@ -8612,6 +8674,25 @@ data class SessionSummary(
     @SerialName("current") val `current`: Boolean,
 )
 
+@Serializable
+data class SetMembership(
+    @SerialName("expiresAt") val `expiresAt`: Timestamp?,
+)
+
+@Serializable
+data class SetUserStatusRequest(
+    @SerialName("preset") val `preset`: UserStatusPreset,
+    @SerialName("text") val `text`: String? = null,
+    @SerialName("duration") val `duration`: SetUserStatusRequestDuration? = null,
+)
+
+@Serializable
+data class SetUserStatusRequestInput(
+    @SerialName("preset") val `preset`: UserStatusPreset,
+    @SerialName("text") val `text`: String? = null,
+    @SerialName("duration") val `duration`: SetUserStatusRequestInputDuration? = null,
+)
+
 typealias SettingsSection = String
 
 @Serializable
@@ -8694,6 +8775,10 @@ data class StickerAdminEndpointsUpdatePackBody(
     @SerialName("characterIds") val `characterIds`: List<Id>? = null,
     @SerialName("userVisible") val `userVisible`: Boolean? = null,
     @SerialName("enabled") val `enabled`: Boolean? = null,
+    @SerialName("inStore") val `inStore`: Boolean? = null,
+    @SerialName("storeOrder") val `storeOrder`: Long? = null,
+    @SerialName("intro") val `intro`: String? = null,
+    @SerialName("coverStickerId") val `coverStickerId`: Id? = null,
 )
 
 @Serializable
@@ -8752,6 +8837,11 @@ data class StickerPack(
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("stickers") val `stickers`: List<LibrarySticker>,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("inStore") val `inStore`: Boolean? = null,
+    @SerialName("storeOrder") val `storeOrder`: Long? = null,
+    @SerialName("intro") val `intro`: String? = null,
+    @SerialName("coverStickerId") val `coverStickerId`: Id? = null,
+    @SerialName("addedFromStore") val `addedFromStore`: Boolean? = null,
 )
 
 @Serializable
@@ -8760,6 +8850,10 @@ data class StickerPackWrite(
     @SerialName("characterIds") val `characterIds`: List<Id>,
     @SerialName("userVisible") val `userVisible`: Boolean,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("inStore") val `inStore`: Boolean? = null,
+    @SerialName("storeOrder") val `storeOrder`: Long? = null,
+    @SerialName("intro") val `intro`: String? = null,
+    @SerialName("coverStickerId") val `coverStickerId`: Id? = null,
 )
 
 @Serializable
@@ -8768,6 +8862,64 @@ data class StickerPackWriteInput(
     @SerialName("characterIds") val `characterIds`: List<Id>,
     @SerialName("userVisible") val `userVisible`: Boolean,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("inStore") val `inStore`: Boolean? = null,
+    @SerialName("storeOrder") val `storeOrder`: Long? = null,
+    @SerialName("intro") val `intro`: String? = null,
+    @SerialName("coverStickerId") val `coverStickerId`: Id? = null,
+)
+
+@Serializable
+data class StickerStoreAdminEndpointsReorderStoreBody(
+    @SerialName("packIds") val `packIds`: List<Id>,
+)
+
+@Serializable
+data class StickerStoreEndpointsGetPackParams(
+    @SerialName("packId") val `packId`: Id,
+)
+
+@Serializable
+data class StickerStoreEndpointsListAddedResponse(
+    @SerialName("items") val `items`: List<StickerStorePack>,
+)
+
+@Serializable
+data class StickerStoreEndpointsListPacksResponse(
+    @SerialName("items") val `items`: List<StickerStorePack>,
+)
+
+@Serializable
+data class StickerStoreEndpointsReorderMyPacksBody(
+    @SerialName("packIds") val `packIds`: List<Id>,
+)
+
+@Serializable
+data class StickerStorePack(
+    @SerialName("packId") val `packId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("intro") val `intro`: String,
+    @SerialName("coverUrl") val `coverUrl`: String?,
+    @SerialName("stickerCount") val `stickerCount`: Long,
+    @SerialName("added") val `added`: Boolean,
+    @SerialName("builtIn") val `builtIn`: Boolean,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("inStore") val `inStore`: Boolean,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class StickerStorePackDetail(
+    @SerialName("packId") val `packId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("intro") val `intro`: String,
+    @SerialName("coverUrl") val `coverUrl`: String?,
+    @SerialName("stickerCount") val `stickerCount`: Long,
+    @SerialName("added") val `added`: Boolean,
+    @SerialName("builtIn") val `builtIn`: Boolean,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("inStore") val `inStore`: Boolean,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("stickers") val `stickers`: List<LibrarySticker>,
 )
 
 @Serializable
@@ -9730,6 +9882,29 @@ object UserSendableContentInputSerializer : KSerializer<UserSendableContentInput
         output.encodeJsonElement(element)
     }
 }
+
+@Serializable
+data class UserStatus(
+    @SerialName("preset") val `preset`: String,
+    @SerialName("text") val `text`: String?,
+    @SerialName("label") val `label`: String,
+    @SerialName("emoji") val `emoji`: String,
+    @SerialName("quiet") val `quiet`: Boolean,
+    @SerialName("setAt") val `setAt`: Timestamp,
+    @SerialName("expiresAt") val `expiresAt`: Timestamp?,
+)
+
+@Serializable
+data class UserStatusEndpointsGetResponse(
+    @SerialName("status") val `status`: UserStatus?,
+)
+
+@Serializable
+data class UserStatusEndpointsSetResponse(
+    @SerialName("status") val `status`: UserStatus,
+)
+
+typealias UserStatusPreset = String
 
 @Serializable
 data class UserSticker(
@@ -10746,6 +10921,10 @@ data class ConversationGroup(
     @SerialName("memberLimit") val `memberLimit`: Long,
     @SerialName("formerParticipants") val `formerParticipants`: List<Participant>? = null,
 )
+
+typealias CreateRoleRequestExpectedPointsCost = JsonElement
+
+typealias CreateRoleRequestInputExpectedPointsCost = JsonElement
 
 @Serializable
 data class CreateSupportTicketTarget(
@@ -12109,6 +12288,8 @@ data class ReconciliationRunUpstreamDiffsItem(
     @SerialName("flagged") val `flagged`: Boolean,
 )
 
+typealias RoleRequestQuotaNextPointsCost = JsonElement
+
 @Serializable
 data class ServerAuthOkFrameData(
     @SerialName("userId") val `userId`: Id,
@@ -12223,6 +12404,10 @@ data class ServerTypingFrameData(
 data class ServerUnsupportedFrameData(
     @SerialName("originalType") val `originalType`: String,
 )
+
+typealias SetUserStatusRequestDuration = JsonElement
+
+typealias SetUserStatusRequestInputDuration = JsonElement
 
 @Serializable
 data class ShareRejectedDetailsRejectedItem(

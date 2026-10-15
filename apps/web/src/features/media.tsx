@@ -796,8 +796,10 @@ export function StickerPanel({
     if (
       update.type === 'data.changed' &&
       (update.data as { section?: string } | undefined)?.section === 'stickers'
-    )
+    ) {
       mine.refresh();
+      packs.refresh();
+    }
   });
   const firstPack =
     packs.data?.items.find((p) => p.name === '微伴预设表情') ?? packs.data?.items[0];
@@ -832,7 +834,7 @@ export function StickerPanel({
             )}
           </button>
         ))}
-        <Link className="wx-sticker-tab-link" to="/me/stickers" aria-label="添加表情">
+        <Link className="wx-sticker-tab-link" to="/sticker-store" aria-label="表情商店">
           <OldIcon name="wechat/add" size={20} />
         </Link>
         <Link className="wx-sticker-tab-link end" to="/me/stickers" aria-label="我添加的表情">
