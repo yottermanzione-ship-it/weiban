@@ -2,95 +2,54 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { OldIcon } from './old-icons.js';
 import { ApiFailure } from '@weiban/client-core';
-import { GroupHeader, MenuGroup, MenuRow, NavBar } from './shell-kit.js';
+import { GroupHeader, MenuGroup, MenuRow, NavBar, TextTabs } from './shell-kit.js';
 import { perReplyText } from './wallet.js';
 import { showToast } from './toast.js';
-import { ModelAccessEndpoints, type ModelRole } from '@weiban/contracts';
+import { ModelAccessEndpoints } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
-type UserModelRole = Exclude<ModelRole, 'adult_check'>;
-const roleLabels: Record<UserModelRole, string> = {
-  chat: '聊天模型',
-  background: '后台模型',
-  adult: '成人模式模型',
-};
-/** 模型页（5.4）：设置页式单选列表，分组「聊天模型」「后台模型」「成人模式模型」，选中右侧 ✓。 */
+/** 全局聊天模型；榜单和热门选用共用同一真实选择入口。 */
 export function ModelsPage() {
   const models = useRemote(ModelAccessEndpoints.listModels);
   const selection = useRemote(ModelAccessEndpoints.getSelection);
+  const info = useRemote(ModelAccessEndpoints.getLeaderboardInfo);
+  const [tab, setTab] = useState<'rank' | 'popular'>('rank');
   const [pending, setPending] = useState(false);
-  async function choose(role: UserModelRole, key: string) {
-    if ((selection.data?.[role]?.modelKey ?? '') === key) return;
+  const current = selection.data?.chat?.modelKey ?? '';
+  const all = models.data?.items.filter(m => !m.capabilities.includes('adult_content')) ?? [];
+  const counts = new Map(info.data?.popular.map(p => [p.modelKey, p.users]));
+  const ranked = tab === 'rank'
+    ? all.filter(m => m.leaderboardRank != null).sort((a,b) => a.leaderboardRank! - b.leaderboardRank!)
+    : all.filter(m => (counts.get(m.modelKey) ?? 0) > 0).sort((a,b) => counts.get(b.modelKey)! - counts.get(a.modelKey)! || a.displayName.localeCompare(b.displayName));
+  async function choose(key: string) {
+    if (pending || key === current) return;
     setPending(true);
     try {
-      await api.call(ModelAccessEndpoints.updateSelection, {
-        body: { [role]: key ? { modelKey: key } : null },
-      });
-      selection.refresh();
+      await api.call(ModelAccessEndpoints.updateSelection, { body: { chat: key ? { modelKey: key } : null } });
+      selection.refresh(); info.refresh();
       showToast('已保存，下次回复起使用新的模型', 2000, 'success');
-    } catch (e) {
-      showToast(friendlyError(e));
-    } finally {
-      setPending(false);
-    }
+    } catch (e) { showToast(friendlyError(e)); }
+    finally { setPending(false); }
   }
-  return (
-    <main>
-      <NavBar title="模型" fallback="/services" />
-      {(['chat', 'background', 'adult'] as const).map((role) => {
-        const current = selection.data?.[role]?.modelKey ?? '';
-        const list =
-          models.data?.items.filter(
-            (m) => role === 'adult' || !m.capabilities.includes('adult_content'),
-          ) ?? [];
-        return (
-          <section key={role}>
-            <GroupHeader>{roleLabels[role]}</GroupHeader>
-            <MenuGroup>
-              <MenuRow
-                label={
-                  role === 'chat' ? '平台默认' : role === 'background' ? '沿用聊天模型' : '未设置'
-                }
-                chevron={false}
-                disabled={pending || !selection.data}
-                right={current === '' ? <Tick /> : undefined}
-                onClick={() => void choose(role, '')}
-              />
-              {list.map((model) => (
-                <MenuRow
-                  key={model.modelKey}
-                  label={model.displayName}
-                  subtitle={[
-                    perReplyText(model),
-                    model.vendorName,
-                    ...model.tags,
-                    model.available ? '' : '暂不可用',
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                  chevron={false}
-                  disabled={pending || !model.available}
-                  right={current === model.modelKey ? <Tick /> : undefined}
-                  onClick={() => void choose(role, model.modelKey)}
-                />
-              ))}
-            </MenuGroup>
-            {selection.data?.[role] && !selection.data[role]!.available && (
-              <p className="error page-note">已选模型暂不可用，请重新选择</p>
-            )}
-          </section>
-        );
-      })}
-      <p className="hint page-note">
-        后台模型未设置时沿用聊天模型。成人模式模型未设置时不能开启成人模式。
-      </p>
-      {(selection.error || models.error) && (
-        <p role="alert" className="notice-bar">
-          {selection.error || models.error}
-        </p>
-      )}
-    </main>
-  );
+  const row = (model: (typeof all)[number], rank?: number) => <MenuRow key={model.modelKey}
+    label={<>{rank != null && <span className="rank-no">{rank}</span>}{model.displayName}</>}
+    subtitle={[perReplyText(model), model.vendorName, tab === 'popular' && rank != null ? `${counts.get(model.modelKey)} 人选用` : '', model.available ? '' : '暂不可用'].filter(Boolean).join(' · ')}
+    chevron={false} disabled={pending || !selection.data || !model.available}
+    right={current === model.modelKey ? <Tick /> : undefined} onClick={() => void choose(model.modelKey)} />;
+  return <main>
+    <NavBar title="模型" fallback="/services" />
+    <GroupHeader>聊天模型</GroupHeader><MenuGroup><MenuRow label="平台默认" chevron={false}
+      disabled={pending || !selection.data} right={current === '' ? <Tick /> : undefined} onClick={() => void choose('')} /></MenuGroup>
+    <TextTabs items={[{value:'rank', label:'模型排行榜'}, {value:'popular', label:'热门榜'}]} value={tab} onChange={setTab} />
+    {tab === 'rank' ? <p className="hint page-note">管理员维护的模型排名。{info.data?.source
+      ? <a href={info.data.source.url} target="_blank" rel="noreferrer">参考来源：{info.data.source.label}{info.data.source.asOf ? `（${info.data.source.asOf}）` : ''}</a>
+      : '榜单来源待配置'}</p> : <p className="hint page-note">按当前全局聊天模型选用人数排序，不含角色单独设置。</p>}
+    <MenuGroup>{ranked.map((m,i) => row(m, tab === 'rank' ? m.leaderboardRank! : i+1))}</MenuGroup>
+    {!models.loading && !info.loading && ranked.length === 0 && <p className="empty">{tab === 'rank' ? '暂未配置模型排名' : '还没有选用数据'}</p>}
+    <GroupHeader>全部可选聊天模型</GroupHeader><MenuGroup>{all.map(m => row(m))}</MenuGroup>
+    {selection.data?.chat && !selection.data.chat.available && <p className="error page-note">已选模型暂不可用，请重新选择</p>}
+    {(models.error || selection.error || info.error) && <p role="alert" className="notice-bar">{models.error || selection.error || info.error}</p>}
+  </main>;
 }
 
 function Tick() {

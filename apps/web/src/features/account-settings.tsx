@@ -1,3 +1,5 @@
+import { AccountAliasRow } from './account-alias.js';
+import { HistoryRecoveryRow } from './history-recovery.js';
 /*
  * 设置子页（docs/refactor/06-old-ui-spec.md 4.10）：账号与安全、隐私、通用、主动消息与免打扰。
  * 同样用 GroupHeader + MenuRow / SwitchRow。粉色主题已删除（tokens v3），通用页只留深色模式与字体大小（本机）。
@@ -45,6 +47,7 @@ export function AccountSecurityPage() {
   return (
     <main>
       <NavBar title="账号与安全" fallback="/settings" />
+      <MenuGroup><AccountAliasRow /></MenuGroup>
       <MenuGroup>
         <MenuRow
           label="修改密码"
@@ -228,6 +231,7 @@ export function PrivacySettingsPage() {
   return (
     <main>
       <NavBar title="隐私" fallback="/settings" />
+      <MenuGroup>{["朋友权限","黑名单","不让TA看我的朋友圈","不看TA的朋友圈"].map(label=><MenuRow key={label} label={label} onClick={()=>showToast("暂未开放",2000,"info")} />)}</MenuGroup>
       <MenuGroup>
         <SwitchRow
           label="允许角色拉我进群"
@@ -281,6 +285,7 @@ export function GeneralSettingsPage() {
   return (
     <main>
       <NavBar title="通用" fallback="/settings" />
+      <MenuGroup><HistoryRecoveryRow /></MenuGroup>
       <MenuGroup>
         <MenuRow label="深色模式" value={schemeNames[scheme]} onClick={() => setChoice('scheme')} />
         <MenuRow

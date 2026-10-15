@@ -33,6 +33,7 @@ export class ChatDriver {
   private replaced = false;
   private bootstrapping = false;
   private polling = false;
+  private syncFailures = 0;
   private canSync = false;
   private focusId: string | null = null;
   private reconnectAttempt = 0;
@@ -69,6 +70,7 @@ export class ChatDriver {
       },
       failed: () => {
         if (this.stopped) return;
+        this.syncFailures++;
         if (this.runner?.active === false) {
           this.stop();
           this.observer.connection(false);
@@ -166,6 +168,23 @@ export class ChatDriver {
       throw new Error('聊天会话已改变');
     await runner.clearHistory(id, confirmed.clearedThroughSeq);
     if (!runner.active) throw new Error('聊天未保存，请重新打开微伴');
+  }
+  async restoreHistory(): Promise<void> {
+    const runner=this.runner;
+    if(!runner || this.stopped || this.paused || !runner.active || !this.api.owns(this.owner) || !navigator.onLine)
+      throw new Error('请联网后再恢复聊天记录');
+    if(runner.isRebuilding) throw new Error('聊天记录正在同步，请稍后重试');
+    // 先终止旧网络回调，沿过期游标的既有快照链重建；保留待发消息与清除边界。
+    const revision=runner.snapshotRevision, failures=this.syncFailures;
+    await runner.dispatch({type:'offline'});
+    await runner.dispatch({type:'cursor.expired'});
+    const deadline=Date.now()+30_000;
+    while(runner.snapshotRevision <= revision || runner.isRebuilding) {
+      if(this.stopped || this.paused || this.runner!==runner || !runner.active || !navigator.onLine || this.syncFailures!==failures || !this.api.owns(this.owner) || Date.now()>=deadline)
+        throw new Error('聊天记录恢复暂未完成，请联网后重试');
+      await new Promise<void>(resolve=>window.setTimeout(resolve,50));
+    }
+    await this.synchronize();
   }
   async synchronize(): Promise<void> {
     const runner = this.runner;

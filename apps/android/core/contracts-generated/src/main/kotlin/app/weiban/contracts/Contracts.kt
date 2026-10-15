@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.13. Regenerate: pnpm android:generate
+// Contract 3.14. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,13 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.13"
+const val CONTRACT_VERSION: String = "3.14"
+
+@Serializable
+data class AccountAlias(
+    @SerialName("username") val `username`: Username,
+    @SerialName("nextChangeAt") val `nextChangeAt`: Timestamp?,
+)
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -5215,6 +5221,11 @@ data class IdentityEndpointsRevokeSessionParams(
 )
 
 @Serializable
+data class IdentityEndpointsUpdateAliasBody(
+    @SerialName("username") val `username`: Username,
+)
+
+@Serializable
 data class ImageContent(
     @EncodeDefault
     @SerialName("type") val `type`: String = "image",
@@ -5939,6 +5950,8 @@ data class ModelAccessAdminEndpointsDeleteUpstreamParams(
     @SerialName("upstreamId") val `upstreamId`: Id,
 )
 
+typealias ModelAccessAdminEndpointsGetLeaderboardSourceResponse = ModelLeaderboardSource?
+
 @Serializable
 data class ModelAccessAdminEndpointsListCatalogResponse(
     @SerialName("items") val `items`: List<AdminCatalogEntry>,
@@ -6067,6 +6080,26 @@ data class ModelInfo(
 )
 
 typealias ModelKey = String
+
+@Serializable
+data class ModelLeaderboardInfo(
+    @SerialName("source") val `source`: ModelLeaderboardSource?,
+    @SerialName("popular") val `popular`: List<ModelLeaderboardInfoPopularItem>,
+)
+
+@Serializable
+data class ModelLeaderboardSource(
+    @SerialName("label") val `label`: String,
+    @SerialName("url") val `url`: String,
+    @SerialName("asOf") val `asOf`: String?,
+)
+
+@Serializable
+data class ModelLeaderboardSourceInput(
+    @SerialName("label") val `label`: String,
+    @SerialName("url") val `url`: String,
+    @SerialName("asOf") val `asOf`: String?,
+)
 
 typealias ModelPurpose = String
 
@@ -7845,6 +7878,20 @@ data class RechargeOptions(
     @SerialName("tiers") val `tiers`: List<RechargeTier>,
     @SerialName("contactHint") val `contactHint`: String,
     @SerialName("pointsPerYuan") val `pointsPerYuan`: Long,
+)
+
+@Serializable
+data class RechargeQuote(
+    @SerialName("priceMicros") val `priceMicros`: PositiveMoneyMicros,
+    @SerialName("points") val `points`: NonNegativePoints,
+    @EncodeDefault
+    @SerialName("paymentEnabled") val `paymentEnabled`: Boolean = false,
+    @SerialName("contactHint") val `contactHint`: String,
+)
+
+@Serializable
+data class RechargeQuoteRequest(
+    @SerialName("amountFen") val `amountFen`: Long,
 )
 
 @Serializable
@@ -11827,6 +11874,12 @@ data class MessagePageCoverageExcludedRangesItem(
     @SerialName("fromSeq") val `fromSeq`: Seq,
     @SerialName("throughSeq") val `throughSeq`: Seq,
     @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class ModelLeaderboardInfoPopularItem(
+    @SerialName("modelKey") val `modelKey`: String,
+    @SerialName("users") val `users`: Long,
 )
 
 @Serializable

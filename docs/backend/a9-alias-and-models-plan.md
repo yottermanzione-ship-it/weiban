@@ -1,8 +1,10 @@
-# A9 最小改号、模型榜与充值方案（待主会话核准改号）
+# A9 最小改号、模型榜与充值方案（已核准）
+
+根会话已批准按本最小方案实施，迁移0096、契约3.14。
 
 当前账号 `identity.users.id` 是不可变业务/会话归属；`users.username` 既是原登录名又被CurrentUser显示为微伴号。登录经AccountService.findUserByUsername，密码、会话、恢复和业务数据都按userId。不直接覆盖原username。
 
-建议仅一条迁移（待主会话分配0096）：users加currentAlias nullable、aliasChangedAt nullable；新增identity.login_aliases（lowercase alias主键、userId FK级联、createdAt），回填所有既有username。注册在同事务保留初始登录名；改号在user行锁内检查7×24小时、申请新alias唯一占用，历史alias永久归该user以保旧账号登录且不允许被他人抢走。本人复用旧alias仍受每周限制，完全未变则幂等不耗次数；唯一约束处理跨用户并发。全部按现有Username字符规则/大小写不敏感，不可改userId/密码/session。
+建议仅一条迁移（根会话已分配0096）：users加currentAlias nullable、aliasChangedAt nullable；新增identity.login_aliases（lowercase alias主键、userId FK级联、createdAt），回填所有既有username。注册在同事务保留初始登录名；改号在user行锁内检查7×24小时、申请新alias唯一占用，历史alias永久归该user以保旧账号登录且不允许被他人抢走。本人复用旧alias仍受每周限制，完全未变则幂等不耗次数；唯一约束处理跨用户并发。全部按现有Username字符规则/大小写不敏感，不可改userId/密码/session。
 
 新增GET/PATCH /me/alias返回当前别名、nextChangeAt；PATCH只收username（别名）。CurrentUser.username仍为可用于登录的名称，输出currentAlias??原username，旧客户端无新必填字段；原数据库username不变。登录先解析别名/原名到同一用户，限频使用该用户原username对应的旧账户限频键，防历史alias绕开账户限频；原用户名仍兼容。当前用户/重新登录/恢复/管理员目录均输出同一当前别名，管理员原名或历史名检索仍能定位同userId。注销级联清alias，管理员审计记录变更及原userId，不改业务关联。
 

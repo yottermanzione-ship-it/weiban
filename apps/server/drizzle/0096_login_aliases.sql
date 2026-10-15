@@ -7,3 +7,5 @@ CREATE TABLE "identity"."login_aliases" (
 );
 INSERT INTO "identity"."login_aliases" ("alias", "user_id", "created_at")
 SELECT lower("username"), "id", "created_at" FROM "identity"."users";
+
+CREATE INDEX "login_aliases_user_idx" ON "identity"."login_aliases" ("user_id");

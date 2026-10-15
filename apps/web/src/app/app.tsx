@@ -60,7 +60,7 @@ import {
 } from '../features/moments.js';
 import { NewFriendsPage, useNewFriendsDot } from '../features/new-friends.js';
 import { RelationsPage } from '../features/relations.js';
-import { UpdatePrompt } from './update-prompt.js';
+import { ServiceWorkerRefresh } from './update-prompt.js';
 import { CallLinkPage, CallProvider } from '../features/call.js';
 import { MyStickersPage } from '../features/stickers.js';
 import { VoicePickerPage } from '../features/voices.js';
@@ -403,7 +403,7 @@ function Splash() {
 export function App() {
   return (
     <AuthProvider>
-      <UpdatePrompt />
+      <ServiceWorkerRefresh />
       <ChatProvider>
         <Shell />
         <Splash />

@@ -16,6 +16,8 @@ export class SyncEngine {
   get state(): LocalSyncState {
     return structuredClone(this.value);
   }
+  /** 供恢复入口等待快照真正提交，不以旧游标冒充完成。 */
+  get isRebuilding(): boolean { return this.rebuilding; }
   private online = false;
   private pulling = false;
   private rebuilding = false;

@@ -1,3 +1,4 @@
+import { HistoryRecoveryRow } from './history-recovery.js';
 /*
  * 设置（docs/refactor/06-old-ui-spec.md 4.10）：每组前有分组标题；普通行 MenuRow，带说明的开关用 SwitchRow；
  * 选择类（深色模式、字体大小、提示音）用单列单选弹层，选中项右侧绿色 ✓。
@@ -209,6 +210,7 @@ export function SettingsPage() {
           value={fontScales.find((f) => f.value === font)?.label}
           onClick={() => setChoice('font')}
         />
+        <HistoryRecoveryRow />
         <MenuRow label="聊天背景" onClick={() => showToast('暂未开放', 2000, 'info')} />
         <ComingSoonRow id="teen" withIcon={false} />
         <ComingSoonRow id="care" withIcon={false} />

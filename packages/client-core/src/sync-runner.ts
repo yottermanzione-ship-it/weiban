@@ -16,6 +16,8 @@ export class SyncRunner {
   private queue: Promise<void> = Promise.resolve();
   private lifetime = new AbortController();
   private stopped = false;
+  private snapshots = 0;
+  get snapshotRevision(): number { return this.snapshots; }
 
   constructor(
     initial: unknown,
@@ -26,6 +28,7 @@ export class SyncRunner {
   get state(): LocalSyncState {
     return this.engine.state;
   }
+  get isRebuilding(): boolean { return this.engine.isRebuilding; }
   get active(): boolean {
     return !this.stopped;
   }
@@ -40,7 +43,9 @@ export class SyncRunner {
         this.lifetime = new AbortController();
       }
       engine.apply(operation);
-    }, guard);
+    }, guard).then(() => {
+      if (operation.type === 'snapshot' && !this.stopped && !guard?.aborted) this.snapshots++;
+    });
   }
   history(conversationId: string, beforeSeq: number, page: unknown): Promise<void> {
     return this.mutate((engine) => engine.history(conversationId, beforeSeq, page));

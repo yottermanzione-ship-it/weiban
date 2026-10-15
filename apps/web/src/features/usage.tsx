@@ -1,6 +1,6 @@
 /*
- * 用量统计（docs/refactor/06-old-ui-spec.md 6.5）：今天 / 7 天 / 30 天；大数字区；按角色、按用途；
- * 底部「每日后台预算」与「积分提醒线」。只用接口的 *Points 字段。
+ * 用量（docs/refactor/06-old-ui-spec.md 6.5）：今天 / 7 天 / 30 天；大数字区；按角色、按用途；
+ * 底部「积分提醒线」。只用接口的 *Points 字段。
  */
 import { useState } from 'react';
 import { BillingEndpoints } from '@weiban/contracts';
@@ -29,7 +29,7 @@ type Range = 'today' | '7' | '30';
 
 export function UsagePage() {
   const [range, setRange] = useState<Range>('today');
-  const [editing, setEditing] = useState<'budget' | 'threshold' | null>(null);
+  const [editing, setEditing] = useState<'threshold' | null>(null);
   const [pending, setPending] = useState(false);
   const from = localDay(range === 'today' ? 0 : Number(range) - 1);
   const to = localDay();
@@ -53,10 +53,7 @@ export function UsagePage() {
     setPending(true);
     try {
       await api.call(BillingEndpoints.updateWalletSettings, {
-        body:
-          editing === 'budget'
-            ? { backgroundDailyLimitPoints: points }
-            : { lowBalanceThresholdPoints: points },
+        body: { lowBalanceThresholdPoints: points },
       });
       wallet.refresh();
       setEditing(null);
@@ -69,7 +66,7 @@ export function UsagePage() {
   }
   return (
     <main className="usage-page">
-      <NavBar title="用量统计" fallback="/wallet" />
+      <NavBar title="用量" fallback="/wallet" />
       <TextTabs<Range>
         items={[
           { value: 'today', label: '今天' },
@@ -127,27 +124,14 @@ export function UsagePage() {
       {byCategory.data && byCategory.data.rows.length === 0 && (
         <p className="empty">这段时间还没有消耗</p>
       )}
-      <GroupHeader>后台预算</GroupHeader>
+      <GroupHeader>积分提醒</GroupHeader>
       <MenuGroup>
-        <MenuRow
-          label="每日后台预算"
-          subtitle={
-            wallet.data
-              ? `今日已用 ${pointsText(wallet.data.backgroundBudget.spentTodayPoints)}`
-              : undefined
-          }
-          value={wallet.data ? pointsText(wallet.data.backgroundBudget.dailyLimitPoints) : '—'}
-          onClick={() => setEditing('budget')}
-        />
         <MenuRow
           label="积分提醒线"
           value={wallet.data ? pointsText(wallet.data.lowBalanceThresholdPoints) : '—'}
           onClick={() => setEditing('threshold')}
         />
       </MenuGroup>
-      <p className="hint page-note">
-        后台预算限制角色在你不在时（主动消息、日常推演等）每天最多花多少积分；用完后台活动当天暂停。
-      </p>
       {(byCategory.error || byCharacter.error) && (
         <p role="alert" className="notice-bar">
           {byCategory.error || byCharacter.error}
@@ -155,12 +139,8 @@ export function UsagePage() {
       )}
       {editing && wallet.data && (
         <FieldSheet
-          title={editing === 'budget' ? '每日后台预算（积分）' : '积分提醒线（积分）'}
-          initial={String(
-            (editing === 'budget'
-              ? wallet.data.backgroundBudget.dailyLimitPoints
-              : wallet.data.lowBalanceThresholdPoints) ?? '',
-          )}
+          title="积分提醒线（积分）"
+          initial={String(wallet.data.lowBalanceThresholdPoints ?? "")}
           maxLength={10}
           required
           pending={pending}

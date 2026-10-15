@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { Share, PlusSquare, House } from './old-icons.js';
 import { MenuGroup, MenuRow } from './shell-kit.js';
 
 const seenKey = 'weiban:home-screen-guide-seen';
@@ -47,7 +46,7 @@ export function HomeScreenGuide({
       else element.removeAttribute('open');
     }
   }, [open]);
-  if (!phone) return null;
+  if (!phone && !manual) return null;
   return (
     <>
       {manual && (
@@ -69,46 +68,23 @@ export function HomeScreenGuide({
         onClose={() => setOpen(false)}
       >
         <h2 id="home-screen-title">
-          {!supported
+          {!phone ? '添加到主屏幕' : !supported
             ? '消息提醒说明'
             : installed
               ? '主屏幕与消息提醒'
               : '添加到主屏幕，才能收到 TA 的消息提醒'}
         </h2>
-        {!supported ? (
+        {phone && !supported ? (
           <p>当前系统版本收不到推送，消息会在打开微伴时显示</p>
         ) : installed ? (
           <p>你已从主屏幕打开微伴，可在新消息通知中开启提醒。</p>
         ) : (
           <>
+            <p>请在 iPhone 的 Safari 中打开微伴，按下面的步骤操作。</p>
             <ol className="home-screen-steps">
-              <li>
-                <Share size={24} aria-hidden="true" />
-                <span>点 Safari 底部的「分享」按钮</span>
-              </li>
-              <li>
-                <PlusSquare size={24} aria-hidden="true" />
-                <span>选「添加到主屏幕」</span>
-              </li>
-              <li>
-                <House size={24} aria-hidden="true" />
-                <span>从主屏幕打开微伴</span>
-              </li>
+              {['点 Safari 的「···」菜单','点「分享」','在分享菜单中向下滑动','找不到时，点「更多 / 编辑操作」','选择「添加到主屏幕」'].map((step,i)=><li key={step} style={{display:'block'}}><SafariStep step={i} /><span>{step}</span></li>)}
             </ol>
-            <div
-              className="safari-illustration"
-              role="img"
-              aria-label="Safari 底部工具栏示意：中间的向上箭头是分享按钮"
-            >
-              <span>‹</span>
-              <span>›</span>
-              <span className="safari-share">
-                <Share size={28} />
-                分享
-              </span>
-              <span>书签</span>
-              <span>标签页</span>
-            </div>
+            <p className="hint">以上为操作示意图。部分 Safari 布局可直接点分享按钮；添加后从主屏幕打开微伴。</p>
             <p className="hint">添加后，从主屏幕打开微伴，再到设置中开启此设备通知。</p>
           </>
         )}
@@ -118,4 +94,13 @@ export function HomeScreenGuide({
       </dialog>
     </>
   );
+}
+
+/** 原生SVG操作示意，不模拟系统截图。 */
+function SafariStep({step}:{step:number}) {
+  const titles=['···','分享','向下滑动','更多 / 编辑操作','添加到主屏幕'];
+  return <svg viewBox="0 0 280 72" width="100%" role="img" aria-label={titles[step]+'操作示意'} style={{display:'block',maxWidth:280,margin:'8px 0'}}>
+    <rect x="2" y="2" width="276" height="68" rx="12" fill="var(--bg-page, #f2f2f7)" stroke="var(--line, #bbb)" />
+    {step===0?<text x="140" y="45" textAnchor="middle" fill="var(--ink, #222)" fontSize="32">···</text>:step===1?<path d="M128 32v21h24V32 M140 42V16 M131 25l9-9 9 9" fill="none" stroke="#1677cc" strokeWidth="3" />:step===2?<path d="M140 16v37 M128 41l12 12 12-12" stroke="#1677cc" fill="none" strokeWidth="3" />:<text x="140" y="42" textAnchor="middle" fill="#1677cc" fontSize="18">{titles[step]}</text>}
+  </svg>;
 }
