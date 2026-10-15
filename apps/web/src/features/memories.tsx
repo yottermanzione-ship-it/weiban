@@ -4,6 +4,10 @@ import { MemoryEndpoints, type MemoryEntry } from '@weiban/contracts';
 import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
+import { CharacterAvatar } from './character-avatar.js';
+import { CharacterName } from './chat.js';
+import { NavBar, NavIcon, MenuGroup, GroupHeader, Sheet, EmptyState } from './shell-kit.js';
+import { Dialog } from './toast.js';
 const categories = {
   basic: '关于我',
   preference: '偏好',
@@ -25,8 +29,9 @@ export function MemoriesPage() {
     params: { characterId },
     query: { limit: 50, ...(afterId ? { afterId } : {}) },
   });
+  const [editing, setEditing] = useState<MemoryEntry | 'new' | null>(null);
+  const [removing, setRemoving] = useState<MemoryEntry | null>(null);
   const [busy, setBusy] = useState(false);
-  const [draftId, setDraftId] = useState(() => crypto.randomUUID());
   const [error, setError] = useState('');
   async function change(operation: () => Promise<unknown>) {
     setBusy(true);
@@ -34,6 +39,8 @@ export function MemoriesPage() {
     try {
       assertOwner();
       await operation();
+      setEditing(null);
+      setRemoving(null);
       records.refresh();
     } catch (e) {
       setError(friendlyError(e));
@@ -41,163 +48,257 @@ export function MemoriesPage() {
       setBusy(false);
     }
   }
-  if (!contact)
-    return (
-      <main>
-        <p>好友不存在或已被删除</p>
-        <Link to="/contacts">返回通讯录</Link>
-      </main>
-    );
+  const open = (entry: MemoryEntry | 'new') => {
+    setError('');
+    setEditing(entry);
+  };
   return (
-    <main>
-      <Link to={`/chat/${contact.conversationId}/settings`}>返回聊天信息</Link>
-      <h1 className="page-title">TA记住了什么</h1>
-      <p>
-        你可以修改、删除，或告诉TA想记住的事。删除后旧消息不会再被用来记下它；再次主动提起时可以重新记下。
-      </p>
-      <form
-        className="panel stack"
-        onChange={() => setDraftId(crypto.randomUUID())}
-        onSubmit={(event) => {
-          event.preventDefault();
-          const form = event.currentTarget;
-          const values = new FormData(form);
-          void change(async () => {
-            await api.call(MemoryEndpoints.create, {
-              networkOnly: true,
-              params: { characterId },
-              body: {
-                clientMemoryId: draftId,
-                content: String(values.get('content') ?? ''),
-                category: String(values.get('category')) as MemoryEntry['category'],
-              },
-            });
-            form.reset();
-            setDraftId(crypto.randomUUID());
-          });
-        }}
-      >
-        <label>
-          我想让TA记住…
-          <textarea name="content" required maxLength={1000} />
-        </label>
-        <label>
-          分类
-          <select name="category">
-            {Object.entries(categories).map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button disabled={busy}>添加记忆</button>
-      </form>
-      {records.loading && <p role="status">正在读取…</p>}
-      {(error || records.error) && <p role="alert">{error || records.error}</p>}
-      {records.data?.items.length === 0 && <p>还没有记下的事情</p>}
-      {records.data?.items.map((entry) => (
-        <MemoryEditor
-          key={entry.memoryId}
-          entry={entry}
+    <main className="memories-page">
+      <NavBar
+        title="我们的记忆"
+        fallback={`/characters/${characterId}`}
+        right={
+          contact ? (
+            <NavIcon name="wechat/add" label="添加记忆" onClick={() => open('new')} />
+          ) : undefined
+        }
+      />
+      {!contact ? (
+        <EmptyState icon="wechat/person" title="好友不存在或已被删除" />
+      ) : (
+        <>
+          <Link className="memory-owner" to={`/characters/${characterId}`}>
+            <CharacterAvatar id={characterId} size={44} />
+            <span>
+              <CharacterName id={characterId} fallback={contact.remark} />
+              <small>只属于你和 TA 的记忆</small>
+            </span>
+          </Link>
+          <p className="hint page-note">
+            你可以修改、删除，或告诉 TA
+            想记住的事。删除后旧消息不会再被用来记下它；再次主动提起时可以重新记下。
+          </p>
+          {records.loading && (
+            <p role="status" className="empty">
+              正在读取…
+            </p>
+          )}
+          {records.error && (
+            <div className="empty" role="alert">
+              <p>{records.error}</p>
+              <button onClick={records.refresh}>重试</button>
+            </div>
+          )}
+          {error && !editing && !removing && (
+            <p role="alert" className="notice-bar">
+              {error}
+            </p>
+          )}
+          {records.data?.items.length === 0 && !records.loading && (
+            <EmptyState
+              icon="wechat/note"
+              title="还没有记下的事情"
+              desc="点右上角，告诉 TA 一件你想记住的事"
+            />
+          )}
+          {Object.entries(categories).map(([category, label]) => {
+            const entries = records.data?.items.filter((e) => e.category === category) ?? [];
+            return entries.length ? (
+              <section key={category}>
+                <GroupHeader>{label}</GroupHeader>
+                <MenuGroup>
+                  {entries.map((entry) => (
+                    <button
+                      type="button"
+                      className="memory-entry"
+                      key={entry.memoryId}
+                      onClick={() => open(entry)}
+                    >
+                      <span className="memory-entry-content">{entry.content}</span>
+                      <small>
+                        {entry.status === 'past' ? '过去' : '现在'} ·{' '}
+                        {entry.createdBy === 'user_manual' ? '你告诉 TA 的' : '从聊天中记下'} ·{' '}
+                        {entry.createdAt.slice(0, 10)}
+                      </small>
+                      <small>
+                        {entry.scope === 'adult' ? '来自成人模式' : '来自日常'} · 仅这位角色知道
+                      </small>
+                    </button>
+                  ))}
+                </MenuGroup>
+              </section>
+            ) : null;
+          })}
+          {(afterId || records.data?.nextCursor) && (
+            <nav className="pager-row">
+              <button disabled={busy || !afterId} onClick={() => setAfterId(undefined)}>
+                第一页
+              </button>
+              <button
+                disabled={busy || !records.data?.nextCursor}
+                onClick={() => setAfterId(records.data?.nextCursor ?? undefined)}
+              >
+                下一页
+              </button>
+            </nav>
+          )}
+        </>
+      )}
+      {editing && (
+        <MemorySheet
+          key={editing === 'new' ? 'new' : editing.memoryId}
+          entry={editing === 'new' ? null : editing}
           busy={busy}
-          save={(content, status) =>
+          error={error}
+          onClose={() => {
+            if (!busy) setEditing(null);
+          }}
+          onDelete={() => {
+            if (editing !== 'new') setRemoving(editing);
+          }}
+          onSave={(content, category, status, clientMemoryId) =>
             void change(() =>
-              api.call(MemoryEndpoints.update, {
-                networkOnly: true,
-                params: { characterId, memoryId: entry.memoryId },
-                body: { content, status },
-              }),
-            )
-          }
-          remove={() =>
-            void change(() =>
-              api.call(MemoryEndpoints.remove, {
-                networkOnly: true,
-                params: { characterId, memoryId: entry.memoryId },
-              }),
+              editing === 'new'
+                ? api.call(MemoryEndpoints.create, {
+                    networkOnly: true,
+                    params: { characterId },
+                    body: { clientMemoryId, content, category },
+                  })
+                : api.call(MemoryEndpoints.update, {
+                    networkOnly: true,
+                    params: { characterId, memoryId: editing.memoryId },
+                    body: { content, status },
+                  }),
             )
           }
         />
-      ))}
-      <nav>
-        <button disabled={busy || !afterId} onClick={() => setAfterId(undefined)}>
-          第一页
-        </button>
-        <button
-          disabled={busy || !records.data?.nextCursor}
-          onClick={() => setAfterId(records.data?.nextCursor ?? undefined)}
+      )}
+      {removing && (
+        <Dialog
+          title="删除记忆"
+          actions={[
+            {
+              label: '取消',
+              onClick: () => {
+                if (!busy) setRemoving(null);
+              },
+            },
+            {
+              label: busy ? '正在删除…' : '删除',
+              danger: true,
+              onClick: () => {
+                if (!busy)
+                  void change(() =>
+                    api.call(MemoryEndpoints.remove, {
+                      networkOnly: true,
+                      params: { characterId, memoryId: removing.memoryId },
+                    }),
+                  );
+              },
+            },
+          ]}
         >
-          下一页
-        </button>
-      </nav>
+          <p>确认让 TA 忘记这条？旧消息不会再被用来记下它。</p>
+          {error && <p role="alert">{error}</p>}
+        </Dialog>
+      )}
     </main>
   );
 }
-function MemoryEditor({
+function MemorySheet({
   entry,
   busy,
-  save,
-  remove,
+  error,
+  onClose,
+  onSave,
+  onDelete,
 }: {
-  entry: MemoryEntry;
+  entry: MemoryEntry | null;
   busy: boolean;
-  save: (text: string, status: MemoryEntry['status']) => void;
-  remove: () => void;
+  error: string;
+  onClose(): void;
+  onDelete(): void;
+  onSave(
+    content: string,
+    category: MemoryEntry['category'],
+    status: MemoryEntry['status'],
+    id: string,
+  ): void;
 }) {
-  const [confirm, setConfirm] = useState(false);
+  const [content, setContent] = useState(entry?.content ?? '');
+  const [category, setCategory] = useState<MemoryEntry['category']>(entry?.category ?? 'basic');
+  const [status, setStatus] = useState<MemoryEntry['status']>(entry?.status ?? 'current');
+  const [id, setId] = useState(() => crypto.randomUUID());
   return (
-    <form
-      className="panel stack"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const form = new FormData(event.currentTarget);
-        save(
-          String(form.get('content') ?? ''),
-          String(form.get('status')) as MemoryEntry['status'],
-        );
-      }}
-    >
-      <h2>{categories[entry.category]}</h2>
-      <label>
-        内容
-        <textarea
-          key={entry.updatedAt}
-          name="content"
-          defaultValue={entry.content}
-          required
-          maxLength={1000}
-        />
-      </label>
-      <label>
-        状态
-        <select key={entry.updatedAt} name="status" defaultValue={entry.status}>
-          <option value="current">现在</option>
-          <option value="past">过去</option>
-        </select>
-      </label>
-      <p>
-        {entry.createdBy === 'user_manual' ? '你告诉TA的' : '从聊天中记下'} ·{' '}
-        {entry.scope === 'adult' ? '来自成人模式' : '来自日常'} · 仅这位角色知道
-      </p>
-      <p>记下日期：{entry.createdAt.slice(0, 10)}</p>
-      <div>
-        <button disabled={busy}>保存修改</button>
-        <button type="button" disabled={busy} onClick={() => setConfirm(true)}>
-          删除
+    <Sheet
+      title={entry ? '编辑记忆' : '添加记忆'}
+      closeLabel="取消"
+      onClose={onClose}
+      action={
+        <button
+          className="small-primary primary"
+          disabled={busy || !content.trim()}
+          onClick={() => onSave(content.trim(), category, status, id)}
+        >
+          完成
         </button>
-      </div>
-      {confirm && (
-        <div role="dialog" aria-label="删除记忆">
-          <p>确认让TA忘记这条？</p>
-          <button type="button" disabled={busy} onClick={remove}>
-            确认删除
-          </button>
-          <button type="button" disabled={busy} onClick={() => setConfirm(false)}>
-            取消
-          </button>
-        </div>
-      )}
-    </form>
+      }
+    >
+      <form
+        className="memory-form"
+        onChange={() => setId(crypto.randomUUID())}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!busy && content.trim()) onSave(content.trim(), category, status, id);
+        }}
+      >
+        <fieldset disabled={busy}>
+          <label>
+            内容
+            <textarea
+              aria-label="记忆内容"
+              value={content}
+              required
+              maxLength={1000}
+              onChange={(e) => setContent(e.target.value)}
+            />
+          </label>
+          <small className="hint">{content.length}/1000</small>
+          {!entry ? (
+            <label>
+              分类
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value as MemoryEntry['category'])}
+              >
+                {Object.entries(categories).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <>
+              <p className="hint">{categories[entry.category]}</p>
+              <label>
+                状态
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as MemoryEntry['status'])}
+                >
+                  <option value="current">现在</option>
+                  <option value="past">过去</option>
+                </select>
+              </label>
+              <button type="button" className="danger" onClick={onDelete}>
+                删除这条记忆
+              </button>
+            </>
+          )}
+          {error && <p role="alert">{error}</p>}
+        </fieldset>
+      </form>
+    </Sheet>
   );
 }

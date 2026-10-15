@@ -16,6 +16,14 @@ export class TimelineController {
     @Inject(TimelineListService) private readonly list: TimelineListService,
   ) {}
 
+  @Get('characters/:characterId/status')
+  getStatus(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Param(new ContractPipe(E.getStatus.params!)) params: { characterId: string },
+  ) {
+    return this.list.getStatus(p.userId, params.characterId);
+  }
+
   /** GET /api/v1/characters/:characterId/timeline（契约 3.0 listTimeline，T-066）。 */
   @Get('characters/:characterId/timeline')
   listTimeline(

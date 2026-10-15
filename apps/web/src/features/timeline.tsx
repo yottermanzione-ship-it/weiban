@@ -14,6 +14,7 @@ import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { CharacterName } from './chat.js';
 import { KindIcon } from './while-away.js';
+import { NavBar } from './shell-kit.js';
 
 /** 页面内部统一的条目形状：优先来自时间线列表接口（契约 3.0），服务器未提供时退回日常事件接口。 */
 interface Item {
@@ -134,7 +135,7 @@ function TimelineItem({ item, onAsk }: { item: Item; onAsk?(text: string): void 
   );
 }
 
-/** 时间线页「TA 的近况」（while-away-timeline.md 第 3 节、l3-companion.md 第 3 节）。 */
+/** 时间线页「TA 的动态」（while-away-timeline.md 第 3 节、l3-companion.md 第 3 节）。 */
 export function TimelinePage() {
   const { characterId = '' } = useParams();
   const navigate = useNavigate();
@@ -186,13 +187,13 @@ export function TimelinePage() {
     : undefined;
   return (
     <main>
-      <Link to={`/characters/${characterId}`}>‹ 返回资料</Link>
+      <NavBar title="TA 的动态" fallback={`/characters/${characterId}`} />
       <h1 className="page-title">
-        <CharacterName id={characterId} fallback={contact?.remark} /> 的近况
+        <CharacterName id={characterId} fallback={contact?.remark} /> 的动态
       </h1>
       {companion.data?.dailyLife === false && (
         <p className="inline-tip">
-          你关闭了 TA 的日常，不会有新的近况{' '}
+          你关闭了 TA 的动态，不会有新的动态{' '}
           {contact?.conversationId && (
             <Link to={`/chat/${contact.conversationId}/settings`}>去开启</Link>
           )}
@@ -212,7 +213,7 @@ export function TimelinePage() {
         </div>
       )}
       {items.length === 0 && !loading && !error && done && (
-        <p className="empty">TA 的近况会出现在这里</p>
+        <p className="empty">TA 的动态会出现在这里</p>
       )}
       {groups.map(([date, list]) => (
         <section key={date}>
@@ -236,7 +237,7 @@ export function TimelinePage() {
   );
 }
 
-/** 资料页「TA 的近况」行：右侧显示最近一条事件文字。 */
+/** 资料页「TA 的动态」行：右侧显示最近一条事件文字。 */
 export function RecentRow({ characterId }: { characterId: string }) {
   const [latest, setLatest] = useState('');
   useEffect(() => {
@@ -252,7 +253,7 @@ export function RecentRow({ characterId }: { characterId: string }) {
   }, [characterId]);
   return (
     <Link className="panel row-link" to={`/characters/${characterId}/timeline`}>
-      <span>TA 的近况</span>
+      <span>TA 的动态</span>
       <small className="row-value">{latest}</small>
     </Link>
   );
