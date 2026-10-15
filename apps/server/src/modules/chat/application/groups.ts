@@ -78,16 +78,30 @@ export class ChatGroupService implements ChatGroupAdminPort, ChatGroupReadPort {
   // ---------- 用户接口（ChatGroupEndpoints） ----------
 
   private async lockAvatars(tx: DbTx, userId: string): Promise<void> {
-    await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('chat:group-avatar:' || $1,0))", [userId]);
+    await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('chat:group-avatar:' || $1,0))", [
+      userId,
+    ]);
   }
-  private async removeUnusedAvatar(tx: DbTx, userId: string, mediaId: string | null): Promise<void> {
+  private async removeUnusedAvatar(
+    tx: DbTx,
+    userId: string,
+    mediaId: string | null,
+  ): Promise<void> {
     if (!mediaId) return;
-    const [used] = await tx.db.select({ id: conversations.id }).from(conversations).where(and(
-      eq(conversations.ownerUserId, userId), eq(conversations.groupAvatarMediaId, mediaId),
-    )).limit(1);
+    const [used] = await tx.db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(
+        and(eq(conversations.ownerUserId, userId), eq(conversations.groupAvatarMediaId, mediaId)),
+      )
+      .limit(1);
     if (!used) await this.media.deleteObject(mediaId, tx);
   }
-  async setAvatarForUser(userId: string, conversationId: string, mediaId: string | null): Promise<Conversation> {
+  async setAvatarForUser(
+    userId: string,
+    conversationId: string,
+    mediaId: string | null,
+  ): Promise<Conversation> {
     if (mediaId !== null) parseContract(Id, mediaId);
     return this.db.transaction(async (tx) => {
       await this.lockAvatars(tx, userId);
@@ -95,10 +109,17 @@ export class ChatGroupService implements ChatGroupAdminPort, ChatGroupReadPort {
       if (row.groupAvatarMediaId === mediaId) return this.store.conversation(tx, row);
       if (mediaId && !(await this.media.canUse(userId, mediaId, ['group_avatar'])))
         throw new AppError('bad_request', '请使用本人上传的群头像图片');
-      const [updated] = await tx.db.update(conversations).set({ groupAvatarMediaId: mediaId, updatedAt: this.clock.now() }).where(eq(conversations.id, row.id)).returning();
+      const [updated] = await tx.db
+        .update(conversations)
+        .set({ groupAvatarMediaId: mediaId, updatedAt: this.clock.now() })
+        .where(eq(conversations.id, row.id))
+        .returning();
       if (!updated) throw new AppError('not_found', '群聊不存在');
       const value = await this.store.conversation(tx, updated);
-      await this.sync.appendUpdate(tx, userId, { type: 'conversation.updated', data: { conversation: value } });
+      await this.sync.appendUpdate(tx, userId, {
+        type: 'conversation.updated',
+        data: { conversation: value },
+      });
       await this.removeUnusedAvatar(tx, userId, row.groupAvatarMediaId);
       return value;
     });

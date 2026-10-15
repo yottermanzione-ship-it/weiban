@@ -64,7 +64,7 @@ export function locateLink(conversationId: string, seq: number) {
 function ConversationAvatar({ conversation }: { conversation: Conversation }) {
   const ids = conversation.participants.filter((p) => p.kind === 'character').map((p) => p.refId);
   return conversation.type === 'group' ? (
-    <GroupAvatar ids={ids} />
+    <GroupAvatar ids={ids} mediaId={conversation.group?.avatarMediaId} />
   ) : (
     <CharacterAvatar id={ids[0] ?? conversation.conversationId} size={40} />
   );

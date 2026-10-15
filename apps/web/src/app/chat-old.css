@@ -918,6 +918,22 @@
   border-bottom: 7px solid var(--wb-color-overlay-menu);
 }
 
+.custom-group-avatar {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+}
+.custom-group-avatar > .media-frame,
+.custom-group-avatar > .media-broken {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.custom-group-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 .wx-forward-card {
   display: grid;
   gap: 6px;

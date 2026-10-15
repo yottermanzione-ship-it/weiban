@@ -30,10 +30,12 @@ export const ChatGroupEndpoints = {
   updateAvatar: defineEndpoint({
     method: 'PATCH',
     path: `${API_PREFIX}/groups/:conversationId/avatar`,
-    auth: 'user', params: GroupParams,
+    auth: 'user',
+    params: GroupParams,
     body: z.object({ mediaId: Id.nullable() }),
     response: Conversation,
-    summary: '3.11：设置本人群头像（本人group_avatar媒体）；null恢复成员拼图，发conversation.updated',
+    summary:
+      '3.11：设置本人群头像（本人group_avatar媒体）；null恢复成员拼图，发conversation.updated',
   }),
   createGroup: defineEndpoint({
     method: 'POST',

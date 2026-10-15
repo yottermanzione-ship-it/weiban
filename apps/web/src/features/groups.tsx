@@ -25,9 +25,12 @@ import {
   MenuRow,
   NavBar,
   SwitchRow,
+  Sheet,
 } from './shell-kit.js';
 import { Dialog } from './toast.js';
 import { FieldSheet } from './chat-settings.js';
+import { AvatarEditor } from './avatar-editor.js';
+import { MediaImg } from './media.js';
 
 function groupError(e: unknown): string {
   if (e instanceof ApiFailure && e.status === 422 && e.code === 'limit_reached')
@@ -64,7 +67,11 @@ export function GroupListPage() {
           <MenuGroup className="group-list">
             {groups.map((g) => (
               <Link key={g.conversationId} to={`/chat/${g.conversationId}`} className="group-row">
-                <GroupAvatar ids={groupMembers(g).map((m) => m.refId)} size={44} />
+                <GroupAvatar
+                  ids={groupMembers(g).map((m) => m.refId)}
+                  mediaId={g.group?.avatarMediaId}
+                  size={44}
+                />
                 <span className="group-row-text">
                   <span>
                     <Name conversation={g} />
@@ -86,7 +93,21 @@ export function GroupListPage() {
 }
 
 /** 群头像：最多 4 个成员头像拼成宫格；没有成员时橙底白色群组图标（3.12）。 */
-export function GroupAvatar({ ids, size = 48 }: { ids: string[]; size?: number }) {
+export function GroupAvatar({
+  ids,
+  mediaId,
+  size = 48,
+}: {
+  ids: string[];
+  mediaId?: string | null;
+  size?: number;
+}) {
+  if (mediaId)
+    return (
+      <span className="group-avatar custom-group-avatar" style={{ width: size, height: size }}>
+        <MediaImg key={mediaId} mediaId={mediaId} alt="群头像" />
+      </span>
+    );
   const cell = Math.floor((size - 4) / 2);
   return (
     <span
@@ -252,6 +273,9 @@ export function GroupSettingsPage() {
   const names = useCharacterNames(members.map((m) => m.refId));
   const [removing, setRemoving] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [avatarOpen, setAvatarOpen] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
   const [title, setTitle] = useState('');
   const [confirm, setConfirm] = useState<'clear' | 'dissolve' | null>(null);
   const [pending, setPending] = useState(false);
@@ -303,6 +327,27 @@ export function GroupSettingsPage() {
       setError(groupError(e));
     } finally {
       setPending(false);
+    }
+  }
+  async function updateAvatar(mediaId: string | null) {
+    assertOwner();
+    await api.call(ChatGroupEndpoints.updateAvatar, {
+      params: { conversationId },
+      body: { mediaId },
+    });
+    await synchronize();
+    setAvatarError('');
+    setMessage(mediaId ? '已设置群头像' : '已恢复成员拼图');
+  }
+  async function restoreAvatar() {
+    setAvatarBusy(true);
+    setAvatarError('');
+    try {
+      await updateAvatar(null);
+    } catch (e) {
+      setAvatarError(groupError(e));
+    } finally {
+      setAvatarBusy(false);
     }
   }
   return (
@@ -367,6 +412,17 @@ export function GroupSettingsPage() {
       )}
       <MenuGroup>
         <MenuRow
+          label="群头像"
+          onClick={() => setAvatarOpen(true)}
+          right={
+            <GroupAvatar
+              ids={members.map((m) => m.refId)}
+              mediaId={conversation.group?.avatarMediaId}
+              size={40}
+            />
+          }
+        />
+        <MenuRow
           label="群聊名称"
           value={conversation.title ?? '未命名'}
           onClick={() => {
@@ -406,7 +462,7 @@ export function GroupSettingsPage() {
       {companion.data && (
         <MenuGroup>
           <SwitchRow
-            label="角色自己聊天"
+            label="角色自主聊天"
             subtitle="开启后，你不在时群里的角色也会偶尔聊几句"
             checked={switchValues.selfChatEnabled ?? companion.data.selfChatEnabled}
             disabled={!!switchBusy.selfChatEnabled}
@@ -485,6 +541,34 @@ export function GroupSettingsPage() {
             )
           }
         />
+      )}
+      {avatarOpen && (
+        <Sheet
+          title="群头像"
+          onClose={() => {
+            if (!avatarBusy) setAvatarOpen(false);
+          }}
+          closeLabel="完成"
+        >
+          <section className="panel stack">
+            <GroupAvatar
+              ids={members.map((m) => m.refId)}
+              mediaId={conversation.group?.avatarMediaId}
+              size={96}
+            />
+            <fieldset disabled={avatarBusy}>
+              <AvatarEditor
+                purpose="group_avatar"
+                onSaved={updateAvatar}
+                onPendingChange={setAvatarBusy}
+                onRestore={
+                  conversation.group?.avatarMediaId ? () => void restoreAvatar() : undefined
+                }
+              />
+            </fieldset>
+            {avatarError && <p role="alert">{avatarError}</p>}
+          </section>
+        </Sheet>
       )}
       {confirm === 'clear' && (
         <ActionSheet

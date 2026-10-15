@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.10. Regenerate: pnpm android:generate
+// Contract 3.11. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.10"
+const val CONTRACT_VERSION: String = "3.11"
 
 @Serializable
 data class AccountDeletionModuleProgress(
@@ -1774,6 +1774,11 @@ data class ChatGroupEndpointsRemoveMemberParams(
 @Serializable
 data class ChatGroupEndpointsRenameGroupBody(
     @SerialName("title") val `title`: String?,
+)
+
+@Serializable
+data class ChatGroupEndpointsUpdateAvatarBody(
+    @SerialName("mediaId") val `mediaId`: Id?,
 )
 
 @Serializable
@@ -10676,6 +10681,7 @@ data class ClientSyncStateExcludedItem(
 data class ConversationGroup(
     @SerialName("createdByCharacterId") val `createdByCharacterId`: Id?,
     @SerialName("titleCustomized") val `titleCustomized`: Boolean,
+    @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
     @SerialName("memberLimit") val `memberLimit`: Long,
     @SerialName("formerParticipants") val `formerParticipants`: List<Participant>? = null,
 )

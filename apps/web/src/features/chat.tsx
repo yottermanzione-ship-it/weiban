@@ -1308,13 +1308,12 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     ? [
         { label: '照片', icon: 'wechat/album', onClick: () => albumInput.current?.click() },
         { label: '拍摄', icon: 'wechat/camera', onClick: () => cameraInput.current?.click() },
-        {
-          label: '情景预设',
-          icon: 'drawn/scenario_sparkle',
-          dot: !!preset.mode && preset.mode !== 'auto',
-          onClick: () => setPresetOpen(true),
-        },
+        { label: '语音通话', icon: 'wechat/voice_call', onClick: showComingSoon },
+        { label: '位置', icon: 'wechat/location', onClick: showComingSoon },
+        { label: '红包', icon: 'wechat/red_packet', onClick: showComingSoon },
+        { label: '转账', icon: 'wechat/transfer', onClick: showComingSoon },
         { label: '名片', icon: 'wechat/person', onClick: () => showComingSoon() },
+        { label: '收藏', icon: 'wechat/star', onClick: showComingSoon },
       ]
     : [
         { label: '相册', icon: 'wechat/album', onClick: () => albumInput.current?.click() },
