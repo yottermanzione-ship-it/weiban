@@ -180,9 +180,10 @@ export class ChatForwardService {
               mode === 'merged'
                 ? [...new Set(sourceMessages.flatMap((m) => m.labels ?? []))]
                 : (sourceMessages[index]!.labels ?? []);
-            const labels = sourceLabels.includes('health')
-              ? ['health', ...sourceLabels.filter((l) => l !== 'health').slice(0, 7)]
-              : sourceLabels;
+            // Never discard source privacy/future policy labels to fit the writer limit.
+            const labels = [...new Set(['forwarded', ...sourceLabels])];
+            if (labels.length > 8)
+              throw new AppError('bad_request', '这组消息的范围标签过多，请减少选择后转发');
             const result = await this.writer.postForward(tx, target, {
               conversationId: targetId,
               senderParticipantId: sender.id,
@@ -223,11 +224,16 @@ export class ChatForwardService {
   ): ForwardSnapshotContent {
     switch (c.type) {
       case 'forwarded_record':
-        throw new AppError('bad_request', '聊天记录暂不支持再次转发，请展开后选择原消息');
+        throw new AppError('bad_request', '聊天记录暂不支持再次转发，请在原聊天中选择原始消息');
       case 'system':
         throw new AppError('bad_request', '系统提示不能转发');
       case 'text':
         return { type: 'text', text: c.text };
+      case 'letter':
+        // Reusing the letter ID would falsely label the new recipient as the original addressee.
+        return { type: 'text', text: c.body };
+      case 'daily_question':
+        return { type: 'text', text: `[每日一问] ${c.question}\n${c.answer}` };
       case 'nudge':
         return {
           type: 'text',
@@ -241,7 +247,7 @@ export class ChatForwardService {
       case 'call_record':
         return {
           type: 'text',
-          text: `[通话记录] ${c.direction === 'outgoing' ? '呼出' : '呼入'}，${c.outcome}，${c.durationSec} 秒`,
+          text: `[通话记录] ${c.direction === 'outgoing' ? '呼出' : '呼入'}，${({ completed: '已结束', missed: '未接', declined: '已拒绝', cancelled: '已取消', failed: '未接通', insufficient_balance: '积分不足', time_limit: '时长已到' } as Record<string, string>)[c.outcome] ?? '结果未知'}，${c.durationSec} 秒`,
         };
       default:
         return c;

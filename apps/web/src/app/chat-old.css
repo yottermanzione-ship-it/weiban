@@ -951,6 +951,7 @@
   min-height: 65vh;
   padding: 0 18px 24px;
   background: #fff;
+  text-align: left;
 }
 .wx-forward-record article {
   padding: 18px 0;
@@ -963,6 +964,7 @@
   margin-bottom: 10px;
   color: #888;
   font-size: 13px;
+  text-align: left;
 }
 .wx-forward-record article > header strong {
   font-weight: 400;
@@ -972,6 +974,7 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.6;
+  text-align: left;
 }
 .wx-forward-picker {
   min-height: 65vh;

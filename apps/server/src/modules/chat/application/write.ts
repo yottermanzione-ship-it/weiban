@@ -141,6 +141,14 @@ export class ChatWriteService {
         ),
       );
     if (existing) {
+      // A completed forward returns its atomic receipt before entering writer. An occupied
+      // derived key here therefore belongs to another send, never pretend it is this forward.
+      if (verifiedForward)
+        return {
+          ok: false,
+          error: 'invalid_content',
+          message: '转发请求编号已被占用，请重新选择消息发起转发',
+        };
       const value = await this.store.message(tx, row, existing, view);
       // 幂等重试只确认原消息，不能借旧键取回本人已隐藏/清空的正文。
       if (existing.seq <= view.state.clearedThroughSeq || view.hidden.has(existing.id)) {
