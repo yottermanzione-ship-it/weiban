@@ -69,11 +69,18 @@ export class IdentityController {
 
   @Get('me/alias')
   @RequireAuth('user')
-  getAlias(@CurrentPrincipal() me: AuthPrincipal) { return this.settings.getAlias(me.userId); }
+  getAlias(@CurrentPrincipal() me: AuthPrincipal) {
+    return this.settings.getAlias(me.userId);
+  }
 
   @Patch('me/alias')
   @RequireAuth('user')
-  updateAlias(@CurrentPrincipal() me: AuthPrincipal, @Body(new ContractPipe(schema(E.updateAlias.body))) body: Body<typeof E.updateAlias>) { return this.settings.updateAlias(me.userId, body.username); }
+  updateAlias(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(E.updateAlias.body))) body: Body<typeof E.updateAlias>,
+  ) {
+    return this.settings.updateAlias(me.userId, body.username);
+  }
 
   @Post('auth/register')
   @RequireAuth(E.register.auth)

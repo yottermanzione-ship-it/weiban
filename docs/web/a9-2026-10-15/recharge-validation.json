@@ -1,0 +1,26 @@
+[
+  {
+    "amount": "4.99",
+    "enabled": false
+  },
+  {
+    "amount": "5.001",
+    "enabled": false
+  },
+  {
+    "amount": "5",
+    "enabled": true
+  },
+  {
+    "amount": "5.01",
+    "enabled": true
+  },
+  {
+    "amount": "10000",
+    "enabled": true
+  },
+  {
+    "amount": "10000.01",
+    "enabled": false
+  }
+]

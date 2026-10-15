@@ -29,17 +29,11 @@ import { BillingOwner, ModelPurpose } from '../ports/model-gateway.js';
 // ---------- 模型目录 ----------
 export const ModelLeaderboardSource = z.object({
   label: z.string().trim().min(1).max(80),
-  url: z.url().refine((value) => {
-    try {
-      const url = new URL(value);
-      return (
-        url.protocol === 'https:' &&
-        ['arena.ai', 'www.arena.ai', 'lmarena.ai', 'www.lmarena.ai'].includes(url.hostname)
-      );
-    } catch {
-      return false;
-    }
-  }, '来源须为Arena官方HTTPS链接'),
+  url: z.url({
+    protocol: /^https$/,
+    hostname: /^(www\.)?(arena|lmarena)\.ai$/,
+    error: '来源须为Arena官方HTTPS链接',
+  }),
   asOf: LocalDate.nullable(),
 });
 export const ModelLeaderboardInfo = z.object({

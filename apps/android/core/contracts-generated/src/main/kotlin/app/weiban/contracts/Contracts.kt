@@ -6091,14 +6091,14 @@ data class ModelLeaderboardInfo(
 data class ModelLeaderboardSource(
     @SerialName("label") val `label`: String,
     @SerialName("url") val `url`: String,
-    @SerialName("asOf") val `asOf`: String?,
+    @SerialName("asOf") val `asOf`: LocalDate?,
 )
 
 @Serializable
 data class ModelLeaderboardSourceInput(
     @SerialName("label") val `label`: String,
     @SerialName("url") val `url`: String,
-    @SerialName("asOf") val `asOf`: String?,
+    @SerialName("asOf") val `asOf`: LocalDate?,
 )
 
 typealias ModelPurpose = String

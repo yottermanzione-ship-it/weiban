@@ -1,0 +1,37 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/leaderboard-source"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/model/leaderboard-source",
+    "body": {
+      "label": "Arena 文本榜",
+      "url": "https://example.com/fake",
+      "asOf": null
+    }
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/model/leaderboard-source",
+    "body": {
+      "label": "Arena 文本榜",
+      "url": "https://arena.ai/leaderboard/chat/text",
+      "asOf": "2026-10-16"
+    }
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/model/leaderboard-source",
+    "body": {
+      "label": "Arena 文本榜",
+      "url": "https://arena.ai/leaderboard/chat/text",
+      "asOf": "2026-10-16"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/leaderboard-source"
+  }
+]
