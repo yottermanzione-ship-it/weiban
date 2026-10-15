@@ -94,9 +94,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
     }
   }
   const [error, setError] = useState('');
-  const [sheet, setSheet] = useState<'fit' | 'proactive' | 'addressAs' | 'relationship' | null>(
-    null,
-  );
+  const [sheet, setSheet] = useState<'fit' | 'proactive' | 'relationship' | null>(null);
   const [confirmation, setConfirmation] = useState<
     'clear' | 'remove' | 'purge' | 'purgeConfirmed' | null
   >(null);
@@ -122,16 +120,12 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
       undefined,
       success,
     );
-  const updateContact = (body: { addressAs?: string | null; relationship?: string }) =>
+  const updateRelationship = (relationship: string) =>
     void change(
       () =>
         api.call(ContactsEndpoints.update, {
           params: { characterId },
-          body: {
-            remark: contact?.remark ?? null,
-            addressAs: body.addressAs !== undefined ? body.addressAs : (contact?.addressAs ?? null),
-            relationship: body.relationship ?? contact?.relationship ?? '朋友',
-          },
+          body: { relationship },
         }),
       () => setSheet(null),
       '已保存',
@@ -246,11 +240,6 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
                       )
               }
               onClick={() => setSheet('proactive')}
-            />
-            <MenuRow
-              label="TA 怎么叫我"
-              value={contact?.addressAs || '未设置'}
-              onClick={() => setSheet('addressAs')}
             />
             <MenuRow
               label="关系类型"
@@ -409,21 +398,15 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
           )}
         </Sheet>
       )}
-      {(sheet === 'addressAs' || sheet === 'relationship') && (
+      {sheet === 'relationship' && (
         <FieldSheet
-          title={sheet === 'addressAs' ? 'TA 怎么叫我' : '关系类型'}
-          initial={
-            sheet === 'addressAs' ? (contact?.addressAs ?? '') : (contact?.relationship ?? '朋友')
-          }
-          maxLength={sheet === 'addressAs' ? 20 : 30}
-          required={sheet === 'relationship'}
+          title="关系类型"
+          initial={contact?.relationship ?? '朋友'}
+          maxLength={30}
+          required
           pending={pending}
           onClose={() => setSheet(null)}
-          onSave={(value) =>
-            sheet === 'addressAs'
-              ? updateContact({ addressAs: value || null })
-              : updateContact({ relationship: value || '朋友' })
-          }
+          onSave={(value) => updateRelationship(value || '朋友')}
         />
       )}
       {confirmation === 'clear' && (
