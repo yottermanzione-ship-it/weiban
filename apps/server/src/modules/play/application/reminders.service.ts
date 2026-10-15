@@ -490,12 +490,7 @@ export class RemindersService implements PlayFeature, PlayReminderPhrasings, OnM
     }
     if (!pool.length) pool = TEMPLATES;
     const index = row.phrasingCursor % pool.length;
-    const contact = await this.ctx.contacts.getActiveContact(
-      row.userId,
-      row.characterId,
-      tx as unknown as Tx,
-    );
-    const addressAs = contact?.addressAs || (await this.ctx.nickname(row.userId, tx)) || '你';
+    const addressAs = (await this.ctx.nickname(row.userId, tx))?.trim() || '你';
     const text = pool[index]!.replaceAll('{称呼}', addressAs).replaceAll('{内容}', content);
     return { text: text.slice(0, 500), nextCursor: (index + 1) % pool.length };
   }

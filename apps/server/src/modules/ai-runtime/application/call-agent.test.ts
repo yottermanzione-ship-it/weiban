@@ -8,6 +8,7 @@ import { CLOCK, DATABASE, TestClock } from '../../../platform/index.js';
 import { BILLING_READ_PORT } from '../../billing/index.js';
 import { CHAT_READ_PORT } from '../../chat/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
+import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import { MODEL_GATEWAY_MEDIA_PORT, MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { CallAgentService } from './call-agent.js';
@@ -89,6 +90,7 @@ async function openControlledSession(blockReply = false, customVoiceId?: string)
         },
       },
       { provide: BILLING_READ_PORT, useValue: { getSpendStatus: spend } },
+      { provide: IDENTITY_READ_PORT, useValue: { getProfile: async () => ({ nickname: '朋友' }) } },
       {
         provide: AI_CHARACTER_READ,
         useValue: {

@@ -10,6 +10,7 @@
  */
 import { Inject, Injectable } from '@nestjs/common';
 import { readableMessageText } from './content-text.js';
+import { userNickname } from '../domain/user-naming.js';
 import { AdultBoundaryService } from './adult-boundary.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
 import { QuietStateService } from './quiet-state.js';
@@ -860,6 +861,7 @@ export class GroupChatService {
       (p) => p.kind === 'character' && p.refId === carer.characterId,
     );
     if (!direct || !participant) return;
+    const profile = await this.identity.getProfile(job.userId).catch(() => null);
     const result = await callModelForCare(
       this.gateway,
       {
@@ -885,9 +887,11 @@ export class GroupChatService {
     const text =
       result.ok && result.value.text.trim()
         ? result.value.text.trim().slice(0, 600)
-        : careFallback(role?.card.data.safetyStyle.careFallbackText, 0, contact.addressAs).join(
-            '\n',
-          );
+        : careFallback(
+            role?.card.data.safetyStyle.careFallbackText,
+            0,
+            userNickname(profile?.nickname),
+          ).join('\n');
     await this.writer.postMessage({
       conversationId: direct.conversationId,
       senderParticipantId: participant.participantId,
