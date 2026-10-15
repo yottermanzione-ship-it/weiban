@@ -270,7 +270,7 @@ export const releaseNoteSeen = identitySchema.table(
   (t) => [primaryKey({ columns: [t.userId, t.platform] })],
 );
 
-/** 3.9（0093，总对照表 Q11）：我的状态，每个用户最多一行；过期后读取时视为没有。 */
+/** 3.15（0099，总对照表 Q11）：我的状态，每个用户最多一行；过期后读取时视为没有。 */
 export const userStatuses = identitySchema.table('user_statuses', {
   userId: uuid('user_id')
     .primaryKey()
@@ -279,4 +279,14 @@ export const userStatuses = identitySchema.table('user_statuses', {
   text: text('text'),
   setAt: tz('set_at').notNull(),
   expiresAt: tz('expires_at'),
+});
+
+/** 0097：最小真实PRO+有效期，默认没有记录即Free。 */
+export const memberships = identitySchema.table('memberships', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  proPlusUntil: tz('pro_plus_until'),
+  grantedBy: uuid('granted_by').references(() => users.id, { onDelete: 'set null' }),
+  updatedAt: tz('updated_at').notNull(),
 });

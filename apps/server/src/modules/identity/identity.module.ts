@@ -1,3 +1,6 @@
+import { MembershipService } from './application/membership.js';
+import { MembershipController } from './http/membership.controller.js';
+import { IDENTITY_MEMBERSHIP_READ_PORT } from './tokens.js';
 /**
  * identity 模块装配（D-L0-06）。说明见 docs/backend/identity.md。
  */
@@ -44,6 +47,7 @@ import { UserStatusController } from './http/user-status.controller.js';
     AnnouncementController,
     AnnouncementAdminController,
     UserStatusController,
+    MembershipController,
   ],
   providers: [
     { provide: PASSWORD_HASHER, useValue: new PasswordHasher() },
@@ -68,6 +72,8 @@ import { UserStatusController } from './http/user-status.controller.js';
     { provide: IDENTITY_ACCOUNT_STATUS_PORT, useExisting: SettingsService },
     { provide: IDENTITY_DIRECTORY_PORT, useExisting: SettingsService },
     { provide: IDENTITY_SETTINGS_WRITE_PORT, useExisting: SettingsService },
+    MembershipService,
+    { provide: IDENTITY_MEMBERSHIP_READ_PORT, useExisting: MembershipService },
     UserStatusService,
     { provide: IDENTITY_USER_STATUS_PORT, useExisting: UserStatusService },
   ],
@@ -79,6 +85,7 @@ import { UserStatusController } from './http/user-status.controller.js';
     IDENTITY_DIRECTORY_PORT,
     IDENTITY_SETTINGS_WRITE_PORT,
     IDENTITY_USER_STATUS_PORT,
+    IDENTITY_MEMBERSHIP_READ_PORT,
     IdentityCommands,
   ],
 })

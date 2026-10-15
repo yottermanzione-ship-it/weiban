@@ -1,0 +1,1 @@
+CREATE TABLE identity.memberships (user_id uuid PRIMARY KEY REFERENCES identity.users(id) ON DELETE CASCADE, pro_plus_until timestamptz, granted_by uuid REFERENCES identity.users(id) ON DELETE SET NULL, updated_at timestamptz NOT NULL);

@@ -70,3 +70,8 @@ export interface IdentitySettingsWritePort {
 export interface UserStatusReadPort {
   getUserStatus(userId: string): Promise<UserStatus | null>;
 }
+
+/** 3.15：提供方identity；按服务端Clock计算档位，可加入调用方事务。 */
+export interface IdentityMembershipReadPort {
+  getMembership(userId: string, tx?: Tx): Promise<import('../http/membership.js').Membership>;
+}

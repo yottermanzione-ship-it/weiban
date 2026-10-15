@@ -329,7 +329,9 @@
       "version": "7",
       "when": 1795600000000,
       "tag": "0056_account_deletion",
-      "dependsOn": ["0060_plaza"],
+      "dependsOn": [
+        "0060_plaza"
+      ],
       "breakpoints": true
     },
     {
@@ -596,6 +598,20 @@
       "version": "7",
       "when": 1799334000000,
       "tag": "0096_login_aliases",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1799334100000,
+      "tag": "0097_memberships",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1799334300000,
+      "tag": "0099_user_statuses",
       "breakpoints": true
     }
   ]

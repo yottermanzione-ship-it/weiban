@@ -15,6 +15,8 @@ import {
 import { eq } from 'drizzle-orm';
 import {
   AppError,
+  nextLocalMidnight,
+  safeTimeZone,
   CLOCK,
   DATABASE,
   OUTBOX,
@@ -23,31 +25,11 @@ import {
   type Database,
   type Outbox,
 } from '../../../platform/index.js';
-import { profiles, userStatuses } from '../infra/db/schema.js';
+import { profiles, users, userStatuses } from '../infra/db/schema.js';
 
 type StatusRow = typeof userStatuses.$inferSelect;
 
 const DEFAULT_MINUTES = 24 * 60;
-
-/** 从 now 到 timeZone 当地今天结束（次日 0 点）还有多少毫秒。 */
-function msUntilLocalMidnight(now: Date, timeZone: string): number {
-  let tzSafe = timeZone;
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone });
-  } catch {
-    tzSafe = 'Asia/Shanghai';
-  }
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tzSafe,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(now);
-  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? '0');
-  const elapsed = ((get('hour') % 24) * 3600 + get('minute') * 60 + get('second')) * 1000;
-  return Math.max(60_000, 24 * 3600_000 - elapsed - now.getMilliseconds());
-}
 
 export function toUserStatus(row: StatusRow): UserStatus {
   const meta = USER_STATUS_PRESETS.find((p) => p.preset === row.preset) ?? {
@@ -89,8 +71,14 @@ export class UserStatusService implements UserStatusReadPort {
     const body = parseContract(SetUserStatusRequest, input);
     const text = body.text?.trim() || null;
     if (body.preset === 'custom' && !text) throw new AppError('bad_request', '请写下你的状态');
-    const now = this.clock.now();
     const row = await this.database.transaction(async (tx) => {
+      const [user] = await tx.db
+        .select({ status: users.status })
+        .from(users)
+        .where(eq(users.id, userId))
+        .for('update');
+      if (!user || user.status !== 'active') throw new AppError('not_found', '账号不存在');
+      const now = this.clock.now();
       let expiresAt: Date | null;
       const d = body.duration ?? { kind: 'minutes' as const, minutes: DEFAULT_MINUTES };
       if (d.kind === 'forever') expiresAt = null;
@@ -100,7 +88,7 @@ export class UserStatusService implements UserStatusReadPort {
           .select({ timeZone: profiles.timeZone })
           .from(profiles)
           .where(eq(profiles.userId, userId));
-        expiresAt = new Date(now.getTime() + msUntilLocalMidnight(now, p?.timeZone ?? 'Asia/Shanghai'));
+        expiresAt = nextLocalMidnight(now, safeTimeZone(p?.timeZone));
       }
       const values = { userId, preset: body.preset, text, setAt: now, expiresAt };
       const [saved] = await tx.db
@@ -122,6 +110,12 @@ export class UserStatusService implements UserStatusReadPort {
 
   async clear(userId: string): Promise<void> {
     await this.database.transaction(async (tx) => {
+      const [user] = await tx.db
+        .select({ status: users.status })
+        .from(users)
+        .where(eq(users.id, userId))
+        .for('update');
+      if (!user || user.status !== 'active') throw new AppError('not_found', '账号不存在');
       const gone = await tx.db
         .delete(userStatuses)
         .where(eq(userStatuses.userId, userId))

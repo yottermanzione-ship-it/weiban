@@ -19,3 +19,5 @@ export const IDENTITY_SETTINGS_WRITE_PORT = Symbol('weiban.identity.settings-wri
 
 /** 契约 3.9 UserStatusReadPort：我的状态（调用方 ai-runtime）。 */
 export const IDENTITY_USER_STATUS_PORT = Symbol('weiban.identity.user-status-port');
+
+export const IDENTITY_MEMBERSHIP_READ_PORT = Symbol('identity.membership.read');
