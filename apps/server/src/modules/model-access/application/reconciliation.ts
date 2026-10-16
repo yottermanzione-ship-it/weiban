@@ -165,7 +165,10 @@ export class UsageReconciliationService {
     const amountMismatch: string[] = [];
     for (const r of records) {
       const cs = byUsage.get(r.id) ?? [];
-      if (r.status === 'succeeded' && !cs.some((c) => !c.absorbed)) usageWithoutCharge.push(r.id);
+      if (r.status === 'succeeded' && !cs.some((c) => !c.absorbed)) {
+        usageWithoutCharge.push(r.id);
+        continue;
+      }
       if (!snapshotMatches(r, cs, r.holdId ? states.get(r.holdId) : undefined))
         amountMismatch.push(r.id);
     }

@@ -344,7 +344,8 @@ export const AdminAccountSummary = z.object({
 
 /** 管理后台看到的流水：比用户多成本价、操作人、是否平台吸收。 */
 export const AdminLedgerEntry = LedgerEntry.extend({
-  costMicros: z.number().int().nonnegative().nullable(),
+  /** 3.16：成本冲正可为负，不对旧流水取绝对值。 */
+  costMicros: z.number().int().nullable(),
   usageRecordId: Id.nullable(),
   priceVersionId: Id.nullable(),
   operatorUserId: Id.nullable(),
@@ -409,11 +410,19 @@ export const ReconciliationRun = z.object({
       periodEnd: LocalDate,
       billedMicros: z.number().int().nonnegative(),
       computedCostMicros: z.number().int().nonnegative(),
+      /** 3.16：成本冲正可能使当期净额为负；旧computedCostMicros仅保留非负兼容值。 */
+      netComputedCostMicros: MoneyMicros.optional(),
+      unknownCostCalls: z.number().int().nonnegative().optional(),
+      uncertainCostMicros: z.number().int().nonnegative().optional(),
       diffRatio: z.number(),
       flagged: z.boolean(),
     }),
   ),
   absorbedMicros: z.number().int().nonnegative(),
+  /** 3.16：当期平台吸收净额（含冲正），风险上界不计入此数。 */
+  netAbsorbedMicros: MoneyMicros.optional(),
+  unknownCostCalls: z.number().int().nonnegative().optional(),
+  uncertainCostMicros: z.number().int().nonnegative().optional(),
   /**
    * v1.3：第 ② 层（用量记录 ↔ 扣费）由 model-access 比对、用事件 model_access.usage_reconciled 交回
    * （billing.md 8.2 节）。usageReconciledAt 为 null 表示当天第 ② 层还没有结果，此时
