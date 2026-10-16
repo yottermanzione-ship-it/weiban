@@ -8,7 +8,7 @@
  *   P-33 余额保留线 1 元。
  * 说明见 docs/ai/runtime-overview.md 第 7 节「T-065 实现差异」。
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { readableMessageText } from './content-text.js';
 import { userNickname } from '../domain/user-naming.js';
 import { AdultBoundaryService } from './adult-boundary.js';
@@ -61,7 +61,7 @@ import {
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { GROWTH_SERVICE, type GrowthService } from '../../growth/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from '../../identity/index.js';
-import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
+import { MODEL_GATEWAY_PORT, MODEL_PLATFORM_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import { INITIAL_MODES, modeOption, scenarioText } from '../domain/persona.js';
@@ -193,6 +193,9 @@ export class GroupChatService {
     @Inject(PlannerService) private readonly planner: PlannerService,
     @Inject(QuietStateService) private readonly quiet: QuietStateService,
     @Inject(GroupReplyStore) private readonly replies: GroupReplyStore,
+    @Optional()
+    @Inject(MODEL_PLATFORM_GATEWAY_PORT)
+    private readonly platform?: import('@weiban/contracts').ModelGatewayPlatformPort,
   ) {}
 
   // =========================================================================
@@ -970,6 +973,7 @@ export class GroupChatService {
         ],
       },
       { highRisk: true, careActive: false, suspected: false },
+      this.platform,
     );
     const text =
       result.ok && result.value.text.trim()

@@ -37,6 +37,7 @@ import {
   MODEL_NOTIFICATION_READ_PORT,
   MODEL_ACCESS_CHARGE_QUERY,
   MODEL_GATEWAY_PORT,
+  MODEL_PLATFORM_GATEWAY_PORT,
   MODEL_GENERATION_POLICY,
   TEXT_ADAPTER,
   GATEWAY_RETRY_WAIT,
@@ -54,6 +55,7 @@ import {
   imports: [BillingModule, IdentityModule, MediaModule],
   exports: [
     MODEL_GATEWAY_PORT,
+    MODEL_PLATFORM_GATEWAY_PORT,
     MODEL_NOTIFICATION_READ_PORT,
     ADULT_MODEL_READ_PORT,
     WEB_SEARCH_PROVIDER,
@@ -70,6 +72,7 @@ import {
     ModelGateway,
     GatewayMaintenance,
     { provide: MODEL_GATEWAY_PORT, useExisting: ModelGateway },
+    { provide: MODEL_PLATFORM_GATEWAY_PORT, useExisting: ModelGateway },
     GatewayWebSearchProvider,
     ModelGatewayMedia,
     { provide: MODEL_GATEWAY_MEDIA_PORT, useExisting: ModelGatewayMedia },

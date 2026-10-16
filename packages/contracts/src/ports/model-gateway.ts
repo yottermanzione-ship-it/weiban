@@ -33,6 +33,8 @@ export const ModelPurpose = z.enum([
   'admin_upstream_test', // 管理员：上游连通测试与恢复探测
   'safety_followup', // v1.1：安全关怀次日跟进（SAFE-06 第 6 条），不受后台预算限制
   'behavior_planning', // v1.1：行为规划决策层（PRD PLAN-03）；是否计入后台预算看 countAsBackground
+  'small_v',
+  'search_candidates',
 ]);
 export type ModelPurpose = z.infer<typeof ModelPurpose>;
 
@@ -116,6 +118,8 @@ export interface GenerateTextInput {
    * 只能让调用更受限：BACKGROUND_PURPOSES 中的用途不传也照样计入；BUDGET_EXEMPT_PURPOSES 中的用途忽略此项。
    */
   countAsBackground?: boolean;
+  /** 服务端逐入口确认的角色自主生态任务；不从purpose/background自动推断。 */
+  ecologyTask?: boolean;
   /**
    * 记入用量记录，追查「变脸」用（AI 负责人申请，T-009 批准）。
    * v1.1：conversationKind（私聊 / 群聊）供管理后台用量明细显示（ADM-08）。
@@ -181,6 +185,15 @@ export interface ModelGatewayPort {
   }>;
 }
 
+/** 3.16：仅服务器可信业务注入，不作为HTTP请求字段；普通聊天不能借用平台账户。 */
+export interface ModelGatewayPlatformPort {
+  generatePlatformText(
+    input: Omit<GenerateTextInput, 'billingOwner' | 'safetyPriority' | 'purpose'> & {
+      purpose: 'safety_check' | 'safety_followup' | 'small_v' | 'search_candidates';
+    },
+  ): Promise<PortResult<GenerateTextOutput, GenerateError>>;
+}
+
 /**
  * 3.1（积压 ㉖）：按用户所选模型报价。提供方 model-access（网关先按用途 / 角色覆盖 / 平台默认解析模型，
  * 再经 BillingQuotePort 按当前价目表计价）；调用方 ai-runtime（导入估价、行为规划成本闸等）。不调用上游、不冻结、不扣费。
@@ -235,6 +248,7 @@ export interface MediaCallBase {
   conversationId?: string;
   idempotencyKey: string;
   countAsBackground?: boolean;
+  ecologyTask?: boolean;
 }
 
 export interface MediaCallResult {

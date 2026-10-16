@@ -551,9 +551,14 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       ceiling: { usage: estimate, evidence: boundsEvidence(model.billingBounds) },
       idempotencyKey: key,
       countAsBackground: base.countAsBackground,
+      ecologyTask: base.ecologyTask,
     });
     if (!reserve.ok) {
       const error = reserve.error === 'price_missing' ? 'model_unavailable' : reserve.error;
+      await this.recorder.writeReleaseSnapshot(usage.record.id, {
+        absorbedCostMicros: 0,
+        costKnown: true,
+      });
       await this.recorder.finish(usage.record.id, {
         status: 'failed',
         errorCode: error,
@@ -645,7 +650,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     const release = await this.billing.release({
       holdId: charge.holdId,
       reason: category === 'content_rejected' ? 'call_rejected' : 'call_failed',
-      upstreamUsage,
+      upstreamUsage: charge.sent ? upstreamUsage : {},
       usageRecordId: charge.usageRecordId,
       startedAt: charge.startedAt.toISOString(),
       upstreamId: charge.model.upstreamId,

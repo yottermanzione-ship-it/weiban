@@ -1,8 +1,8 @@
-/** safetyPriority 唯一设置点；普通疑似消息的回复不能借用安全透支。 */
+/** 安全检查/跟进走可信平台端口；普通高危聊天仍由用户计费，保留规则兜底。 */
 import {
-  SAFETY_OVERDRAFT_PURPOSES,
   type GenerateTextInput,
   type ModelGatewayPort,
+  type ModelGatewayPlatformPort,
 } from '@weiban/contracts';
 export interface CareFacts {
   highRisk: boolean;
@@ -12,15 +12,17 @@ export interface CareFacts {
 export function callModelForCare(
   gateway: ModelGatewayPort,
   input: GenerateTextInput,
-  facts: CareFacts,
+  _facts: CareFacts,
+  platform?: ModelGatewayPlatformPort,
 ) {
-  const allowed =
-    input.billingOwner === 'user' &&
-    SAFETY_OVERDRAFT_PURPOSES.includes(input.purpose) &&
-    (facts.highRisk || facts.careActive || (facts.suspected && input.purpose === 'safety_check'));
   const clean = { ...input };
   delete clean.safetyPriority;
-  return gateway.generateText(allowed ? { ...clean, safetyPriority: true } : clean);
+  if (clean.purpose === 'safety_check' || clean.purpose === 'safety_followup') {
+    return platform
+      ? platform.generatePlatformText({ ...clean, purpose: clean.purpose })
+      : Promise.resolve({ ok: false as const, error: 'not_configured' as const });
+  }
+  return gateway.generateText(clean);
 }
 const FACTS =
   '请联系身边信任的人陪着你，可以拨打12356心理援助热线；如果眼下有危险，立即拨打110或120。';

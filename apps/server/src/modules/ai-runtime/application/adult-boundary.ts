@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
@@ -8,6 +8,7 @@ import type {
   GenerateTextInput,
   IdentityAccountStatusPort,
   ModelGatewayPort,
+  ModelGatewayPlatformPort,
 } from '@weiban/contracts';
 import {
   CLOCK,
@@ -18,7 +19,7 @@ import {
   type Database,
 } from '../../../platform/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
-import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
+import { MODEL_GATEWAY_PORT, MODEL_PLATFORM_GATEWAY_PORT } from '../../model-access/index.js';
 import { CHARACTER_REAL_PERSON_NAMES } from '../../characters/index.js';
 import { adultBoundaryStates } from '../infra/db/schema.js';
 
@@ -44,6 +45,9 @@ export class AdultBoundaryService {
     @Inject(MODEL_GATEWAY_PORT) private readonly gateway: ModelGatewayPort,
     @Inject(CHARACTER_REAL_PERSON_NAMES)
     private readonly realNames: { listRealPersonNames(): Promise<string[]> },
+    @Optional()
+    @Inject(MODEL_PLATFORM_GATEWAY_PORT)
+    private readonly platform?: ModelGatewayPlatformPort,
   ) {}
 
   inputText(input: GenerateTextInput): string {
@@ -61,6 +65,10 @@ export class AdultBoundaryService {
     input: GenerateTextInput,
     adult: boolean,
   ): Promise<PortResult<GenerateTextOutput, GenerateError>> {
+    if (input.purpose === 'safety_followup')
+      return this.platform
+        ? this.platform.generatePlatformText({ ...input, purpose: 'safety_followup' })
+        : { ok: false, error: 'not_configured' };
     if (!adult) return this.gateway.generateText(input);
     const before = await this.review(input, this.inputText(input), 'input');
     if (before !== 'allowed')
@@ -144,7 +152,8 @@ export class AdultBoundaryService {
     if (!active) return 'unavailable';
     const reviewInput = { ...input };
     delete reviewInput.safetyPriority;
-    const result = await this.gateway.generateText({
+    if (!this.platform) return 'unavailable';
+    const result = await this.platform.generatePlatformText({
       ...reviewInput,
       purpose: 'safety_check',
       modelRole: 'adult_check',

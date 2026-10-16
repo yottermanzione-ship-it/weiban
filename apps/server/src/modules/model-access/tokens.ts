@@ -44,6 +44,7 @@ export interface ModelPriceSource {
 }
 
 export const MODEL_GATEWAY_PORT = Symbol('weiban.model-access.gateway');
+export const MODEL_PLATFORM_GATEWAY_PORT = Symbol('weiban.model-access.platform-gateway');
 export const TEXT_ADAPTER = Symbol('weiban.model-access.text-adapter');
 export const MODEL_GENERATION_POLICY = Symbol('weiban.model-access.adult-generation-policy');
 export type GenerationPolicy = Pick<PolicyPort, 'checkAdultGeneration'>;

@@ -70,6 +70,8 @@ export const PURPOSE_CATEGORY: Record<ModelPurpose, SpendCategory> = {
   admin_public_update_search: 'admin',
   admin_eval: 'admin',
   admin_upstream_test: 'admin',
+  small_v: 'safety',
+  search_candidates: 'safety',
 };
 
 /** 3.8：服务费流水（BillingServiceFeePort.settle）的 purpose。 */

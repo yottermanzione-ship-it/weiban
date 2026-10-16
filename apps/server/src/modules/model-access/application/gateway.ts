@@ -15,6 +15,7 @@ import {
   type IdentityAccountStatusPort,
   type MediaSystemPort,
   type ReserveInput,
+  type ModelGatewayPlatformPort,
 } from '@weiban/contracts';
 import { APP_CONFIG, CLOCK, type AppConfig, type Clock } from '../../../platform/index.js';
 import { MEDIA_SYSTEM_PORT } from '../../media/index.js';
@@ -57,6 +58,7 @@ type GatewayInternal = {
   billingPlan?: TextCeiling;
   priceVersionId?: string;
   retry?: boolean;
+  trustedPlatform?: boolean;
 };
 
 const DEFAULT_TOKENS: Partial<Record<GenerateTextInput['purpose'], number>> = {
@@ -119,14 +121,39 @@ export class ModelGateway implements ModelGatewayPort {
   getModelStatus(userId: string, characterId: string | null) {
     return this.status.getModelStatus(userId, characterId);
   }
+  async generatePlatformText(
+    input: Parameters<ModelGatewayPlatformPort['generatePlatformText']>[0],
+  ): Promise<CachedResult> {
+    const caps = {
+      safety_check: 300,
+      safety_followup: 400,
+      small_v: 800,
+      search_candidates: 500,
+    } as const;
+    if (!(input.purpose in caps)) return { ok: false, error: 'bad_request' };
+    const cap = caps[input.purpose];
+    return this.generateText(
+      {
+        ...input,
+        billingOwner: 'platform',
+        safetyPriority: false,
+        maxOutputTokens: Math.min(input.maxOutputTokens ?? cap, cap),
+      },
+      { trustedPlatform: true },
+    );
+  }
   /**
    * internal 只供网关自己的降级使用（不属于契约）：fallbackModelKey = 空输出后改用的备用模型。
    */
   async generateText(input: GenerateTextInput, internal?: GatewayInternal): Promise<CachedResult> {
-    if (!this.valid(input) || (await this.accounts.getAccountStatus(input.userId)) !== 'active')
+    if (
+      !this.valid(input, internal?.trustedPlatform === true) ||
+      (await this.accounts.getAccountStatus(input.userId)) !== 'active'
+    )
       return { ok: false, error: 'bad_request' };
     if (
       input.billingOwner === 'platform' &&
+      !internal?.trustedPlatform &&
       !(await this.directory.listAdminUserIds()).includes(input.userId)
     )
       return { ok: false, error: 'bad_request' };
@@ -163,6 +190,14 @@ export class ModelGateway implements ModelGatewayPort {
       return result;
     }
     const row = claim.row;
+    if (
+      (input.purpose === 'small_v' || input.purpose === 'search_candidates') &&
+      !(await this.bounds?.consumePurpose(input.userId, input.purpose))
+    ) {
+      const result: CachedResult = { ok: false, error: 'budget_exceeded' };
+      await this.cache.save(row, result, 'complete');
+      return result;
+    }
     if (input.deadlineAt && Date.parse(input.deadlineAt) <= this.clock.nowMs()) {
       const result: CachedResult = { ok: false, error: 'provider_unavailable' };
       await this.cache.save(row, result, 'complete');
@@ -213,7 +248,13 @@ export class ModelGateway implements ModelGatewayPort {
       ...verified.ceiling,
       pricingModels: [model.modelKey],
     };
-    if (internal?.billingPlan && !internal.billingPlan.pricingModels?.includes(model.modelKey)) {
+    if (
+      internal?.billingPlan &&
+      (!internal.billingPlan.pricingModels?.includes(model.modelKey) ||
+        (Object.keys(verified.ceiling.usage) as (keyof typeof verified.ceiling.usage)[]).some(
+          (unit) => (verified.ceiling.usage[unit] ?? 0) > (internal.billingPlan!.usage[unit] ?? 0),
+        ))
+    ) {
       const result: CachedResult = { ok: false, error: 'model_unavailable' };
       await this.cache.save(row, result, 'complete');
       return result;
@@ -346,6 +387,7 @@ export class ModelGateway implements ModelGatewayPort {
           ceiling,
           idempotencyKey: key,
           countAsBackground: input.countAsBackground,
+          ecologyTask: input.ecologyTask,
           reservePlatformRisk: ordinal > 0 || internal?.retry === true,
           priceVersionId,
         });
@@ -468,7 +510,7 @@ export class ModelGateway implements ModelGatewayPort {
               ? 'call_rejected'
               : 'call_failed'
             : 'cancelled',
-          upstreamUsage: known ? answer.usage : undefined,
+          upstreamUsage: !sent ? {} : known ? answer.usage : undefined,
           usageRecordId: usage.record.id,
           startedAt: startedAt.toISOString(),
           upstreamId: route.upstreamId,
@@ -507,7 +549,19 @@ export class ModelGateway implements ModelGatewayPort {
         }
         if (empty && !emptyRetried) {
           emptyRetried = true;
-          outputBudget = Math.min(32000, Math.ceil(maximum * 1.5));
+          const platformCap =
+            input.purpose === 'safety_check'
+              ? 300
+              : input.purpose === 'safety_followup'
+                ? 400
+                : input.purpose === 'small_v'
+                  ? 800
+                  : 500;
+          outputBudget = Math.min(
+            32000,
+            Math.ceil(maximum * 1.5),
+            internal?.trustedPlatform ? platformCap : Infinity,
+          );
           continue;
         }
         if (empty || !answer.retryable) break;
@@ -630,7 +684,7 @@ export class ModelGateway implements ModelGatewayPort {
     }
     return out;
   }
-  private valid(i: GenerateTextInput): boolean {
+  private valid(i: GenerateTextInput, trustedPlatform = false): boolean {
     return (
       Id.safeParse(i.userId).success &&
       ModelPurpose.safeParse(i.purpose).success &&
@@ -671,7 +725,14 @@ export class ModelGateway implements ModelGatewayPort {
       (i.responseFormat === undefined || ['text', 'json'].includes(i.responseFormat)) &&
       (!i.safetyPriority ||
         (i.billingOwner === 'user' && SAFETY_OVERDRAFT_PURPOSES.includes(i.purpose))) &&
-      (i.billingOwner !== 'platform' || i.purpose.startsWith('admin_'))
+      (i.billingOwner !== 'platform' ||
+        i.purpose.startsWith('admin_') ||
+        (trustedPlatform &&
+          ['safety_check', 'safety_followup', 'small_v', 'search_candidates'].includes(
+            i.purpose,
+          ))) &&
+      (!['safety_check', 'safety_followup', 'small_v', 'search_candidates'].includes(i.purpose) ||
+        trustedPlatform)
     );
   }
 }
