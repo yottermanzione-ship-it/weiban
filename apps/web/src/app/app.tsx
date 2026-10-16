@@ -2,6 +2,7 @@ import { SupportPage, SupportCreatePage, SupportDetailPage } from '../features/s
 import { StickerStorePage, StickerStoreDetailPage } from '../features/sticker-store.js';
 import { UserStatusPage } from '../features/user-status.js';
 import { PluginsPage } from '../features/plugins.js';
+import { EcologyInsufficientNotice } from '../features/ecology-insufficient-notice.js';
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { RouteMotion } from '../features/route-motion.js';
@@ -404,6 +405,12 @@ function Shell() {
         <AchievementWatcher />
         {!firstProfile && <ReleaseCenter />}
         <ToastHost />
+        {!firstProfile && !onboarding && (
+          <EcologyInsufficientNotice
+            userId={auth.session.user.userId}
+            sessionId={auth.session.session.sessionId}
+          />
+        )}
       </div>
     </CallProvider>
   );

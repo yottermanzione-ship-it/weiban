@@ -13,7 +13,7 @@ import {
   type UsageSummaryQuery,
   type Wallet,
 } from '@weiban/contracts';
-import { and, desc, eq, gt, lt, or, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gt, isNotNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   AppError,
@@ -94,6 +94,34 @@ export class WalletService implements BillingReadPort {
 
   private async timeZoneOf(userId: string): Promise<string> {
     return safeTimeZone((await this.identity.getProfile(userId))?.timeZone);
+  }
+
+  /** 单条条件UPDATE持行锁，等待者重新检查pending，跨设备只返回一次。 */
+  async consumeEcologyInsufficientNotice(userId: string) {
+    const [consumed] = await this.database.db
+      .update(accounts)
+      .set({
+        ecologyNoticePending: false,
+        updatedAt: this.clock.now(),
+        version: sql`${accounts.version} + 1`,
+      })
+      .where(
+        and(
+          eq(accounts.userId, userId),
+          eq(accounts.kind, 'user'),
+          eq(accounts.ecologyNoticePending, true),
+          isNotNull(accounts.ecologyInsufficientSince),
+        ),
+      )
+      .returning({ since: accounts.ecologyInsufficientSince });
+    return {
+      notice: consumed?.since
+        ? {
+            message: '积分不足，角色暂停了日常与主动消息',
+            insufficientSince: consumed.since.toISOString(),
+          }
+        : null,
+    };
   }
 
   async getWallet(userId: string): Promise<Wallet> {
