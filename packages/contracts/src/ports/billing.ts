@@ -180,6 +180,10 @@ export interface UsageCharge {
    * absorbed = true 时是平台吸收的成本（= release 返回的 absorbedCostMicros）。
    */
   amountMicros: number;
+  /** 3.16：原流水有符号余额变动；扣款负、冲正正。新对账不得对冲正取绝对值。 */
+  signedAmountMicros?: number;
+  /** 3.16：关联冻结，旧实现可能不提供。 */
+  holdId?: string | null;
   /** 成本金额（微元）。 */
   costMicros: number;
   absorbed: boolean;
@@ -195,6 +199,16 @@ export interface UsageChargePage {
   nextCursor: string | null;
 }
 
+/** 3.16：即使未产生扣费流水，也可读取权威关闭快照；不改账、不清待核风险。 */
+export interface UsageBillingState {
+  holdId: string;
+  accountKind: 'user' | 'platform';
+  usageRecordId: string | null;
+  status: 'active' | 'expired' | 'released' | 'settled';
+  settlement: SettleOutput | null;
+  release: ReleaseOutput | null;
+}
+
 /**
  * v1.3（T-026）：计费只读查询端口。提供方：billing；只读，不受 R9 限制，目前只有 model-access 需要。
  * 单独成接口（不并入 BillingReadPort），新增它不影响 BillingReadPort 已有的实现；billing 可以让同一个服务
@@ -207,6 +221,8 @@ export interface UsageChargePage {
  * - 启用模型前检查价目表：model-access 启用模型目录条目时，确认当前生效价目表里有这个模型的价格。
  */
 export interface BillingChargeQueryPort {
+  /** 3.16提供方必须接入；可选仅兼容旧组合根，缺失时新对账明确不可用。最多1000个ID。 */
+  getBillingStatesByHoldIds?(holdIds: readonly string[]): Promise<UsageBillingState[]>;
   /** 按用量记录 ID 查扣费（一次最多 1,000 个 ID，超过抛异常）；没有扣费的 ID 不出现在结果里。 */
   getChargesByUsageRecordIds(usageRecordIds: readonly string[]): Promise<UsageCharge[]>;
   /**

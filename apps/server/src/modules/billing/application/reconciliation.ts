@@ -47,6 +47,9 @@ type RunRow = typeof reconciliationRuns.$inferSelect;
 const BILL_LOOKBACK_DAYS = 35;
 
 export interface ReconciliationDetails {
+  netAbsorbedMicros?: number;
+  unknownCostCalls?: number;
+  uncertainCostMicros?: number;
   balanceMismatches: Array<{ accountId: string; balanceMicros: number; ledgerSumMicros: number }>;
   heldMismatches: Array<{ accountId: string; heldMicros: number; activeHoldsMicros: number }>;
   overdrawnAccounts: Array<{ accountId: string; userId: string | null; balanceMicros: number }>;
@@ -131,6 +134,7 @@ export class ReconciliationService {
         WHERE absorbed AND created_at >= $1 AND created_at < $2`,
       [dayStart, dayEnd],
     );
+    const dayRisk = await this.unknownRisk(date, date);
 
     // ③ 上游账单
     const threshold = this.config.billing.upstreamDiffRatio;
@@ -156,20 +160,27 @@ export class ReconciliationService {
         ],
       );
       const computed = Number(rows[0]?.cost ?? 0);
-      const base = Math.max(bill.amountMicros, computed, 1);
+      const risk = await this.unknownRisk(bill.periodStart, bill.periodEnd, bill.upstreamId);
+      const base = Math.max(bill.amountMicros, Math.abs(computed), 1);
       const diffRatio = Math.abs(bill.amountMicros - computed) / base;
       upstreamDiffs.push({
         upstreamId: bill.upstreamId,
         periodStart: bill.periodStart,
         periodEnd: bill.periodEnd,
         billedMicros: bill.amountMicros,
-        computedCostMicros: computed,
+        computedCostMicros: Math.max(0, computed),
+        netComputedCostMicros: computed,
+        unknownCostCalls: risk.count,
+        uncertainCostMicros: risk.amount,
         diffRatio: Math.round(diffRatio * 10_000) / 10_000,
-        flagged: diffRatio > threshold,
+        flagged: diffRatio > threshold || risk.count > 0,
       });
     }
 
     const details: ReconciliationDetails = {
+      netAbsorbedMicros: Number(absorbed.rows[0]?.total ?? 0),
+      unknownCostCalls: dayRisk.count,
+      uncertainCostMicros: dayRisk.amount,
       balanceMismatches,
       heldMismatches,
       overdrawnAccounts,
@@ -194,7 +205,11 @@ export class ReconciliationService {
       diffRatioThreshold: threshold,
       createdAt: now,
     };
-    const flagged = !ledgerConsistent || row.staleHolds > 0 || upstreamDiffs.some((d) => d.flagged);
+    const flagged =
+      !ledgerConsistent ||
+      row.staleHolds > 0 ||
+      dayRisk.count > 0 ||
+      upstreamDiffs.some((d) => d.flagged);
     let persisted = row;
     await db.transaction(async (tx) => {
       const [saved] = await tx.db
@@ -237,6 +252,8 @@ export class ReconciliationService {
               overdrawnAccounts: overdrawnAccounts.length,
               staleHolds: row.staleHolds,
               flaggedBills: upstreamDiffs.filter((d) => d.flagged).length,
+              unknownCostCalls: dayRisk.count,
+              uncertainCostMicros: dayRisk.amount,
             },
           },
           tx,
@@ -347,6 +364,7 @@ export class ReconciliationService {
   }
 
   private toRun(row: RunRow): Run {
+    const details = row.details as ReconciliationDetails;
     return {
       runId: row.id,
       date: row.runDate,
@@ -358,7 +376,22 @@ export class ReconciliationService {
       usageAmountMismatch: row.usageAmountMismatch,
       upstreamDiffs: row.upstreamDiffs as Run['upstreamDiffs'],
       absorbedMicros: row.absorbedMicros,
+      netAbsorbedMicros: details.netAbsorbedMicros ?? row.absorbedMicros,
+      unknownCostCalls: details.unknownCostCalls ?? 0,
+      uncertainCostMicros: details.uncertainCostMicros ?? 0,
       createdAt: row.createdAt.toISOString(),
     };
+  }
+
+  private async unknownRisk(from: string, to: string, upstreamId?: string) {
+    const { rows } = await this.database.query<{ count: string; amount: string }>(
+      `SELECT count(*) AS count,
+              coalesce(sum((risk_snapshot->>'uncertainMicros')::bigint),0) AS amount
+         FROM billing.holds
+        WHERE risk_snapshot->>'phase'='unknown' AND budget_day >= $1 AND budget_day <= $2
+          ${upstreamId ? "AND risk_snapshot->>'upstreamId'=$3" : ''}`,
+      upstreamId ? [from, to, upstreamId] : [from, to],
+    );
+    return { count: Number(rows[0]?.count ?? 0), amount: Number(rows[0]?.amount ?? 0) };
   }
 }
