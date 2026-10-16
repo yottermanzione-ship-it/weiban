@@ -4,8 +4,8 @@
  * 冻结时在同一事务里执行一条带条件的 UPDATE：
  *   reserved += 预留成本 WHERE settled + reserved + 预留成本 <= cap
  * 更新到 0 行 = 超上限。这一行的行锁让并发请求排队检查，不会同时通过。
- * 结算：reserved −= 预留、settled += 实际成本（实际成本可能略高于预留，允许小幅超出，以估算偏差为界）。
- * 解冻 / 过期：归还预留；平台吸收的失败调用成本计入 settled。
+ * 结算：reserved −= 预留、settled += 已核成本。供应商超报/迟到差额如实记账并告警，不补扣用户。
+ * 未发送解冻归还预留；已发送未知用量转uncertain单列占用，过期不提前释放。
  */
 import { Inject, Injectable } from '@nestjs/common';
 import {
@@ -85,13 +85,22 @@ export class PlatformBudget {
     actualCostMicros: number,
   ): Promise<void> {
     await this.ensureDay(tx, day);
-    await tx.query(
+    const { rows } = await tx.query<{ cap: string; used: string; alerted: Date | null }>(
       `UPDATE billing.platform_daily_budget
           SET reserved_cost_micros = GREATEST(reserved_cost_micros - $2, 0),
               settled_cost_micros = settled_cost_micros + $3
-        WHERE budget_day = $1`,
+        WHERE budget_day = $1
+        RETURNING cap_micros AS cap, settled_cost_micros + reserved_cost_micros + uncertain_cost_micros AS used, alert_sent_at AS alerted`,
       [day, reservedMicros, actualCostMicros],
     );
+    const row = rows[0];
+    if (
+      row &&
+      !row.alerted &&
+      Number(row.cap) > 0 &&
+      Number(row.used) >= Number(row.cap) * PLATFORM_BUDGET_ALERT_RATIO
+    )
+      await this.alert(tx, day, Number(row.used), Number(row.cap));
   }
 
   /** 保守风险与实际成本分列；转入来源只能是调用前保存的上限。调用方在hold锁内保证幂等。 */

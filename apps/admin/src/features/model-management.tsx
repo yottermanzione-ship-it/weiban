@@ -1885,7 +1885,7 @@ export function ModelWizard({
   const first = routes[0];
   useEffect(() => {
     const id = first?.upstreamId;
-    if (!id || remote.id === id) return;
+    if (!id) return;
     let active = true;
     setRemote({ id, items: null, error: '' });
     void api
@@ -1906,7 +1906,7 @@ export function ModelWizard({
     return () => {
       active = false;
     };
-  }, [first?.upstreamId, remote.id]);
+  }, [first?.upstreamId]);
   const patchRoute = (index: number, patch: Partial<EditableRoute>) =>
     setRoutes((list) =>
       list.map((r, i) =>
@@ -2071,9 +2071,12 @@ export function ModelWizard({
               <summary>
                 计费上限 ·{' '}
                 {r.billingBoundsDraft.trim()
-                  ? r.billingBounds?.pauseReason
-                    ? '待核风险，已暂停'
-                    : '请核对配置'
+                  ? r.billingBounds &&
+                    r.billingBoundsDraft === JSON.stringify(r.billingBounds, null, 2)
+                    ? r.billingBounds.pauseReason
+                      ? '待核风险，已暂停'
+                      : '已配置'
+                    : '编辑草稿（未保存）'
                   : '需配置计费上限'}
               </summary>
               <p className="hint">
@@ -2257,8 +2260,8 @@ export function ModelWizard({
         </div>
         <p className="hint">
           {model?.pointsPerReply != null
-            ? `当前约每条 ${pts(model.pointsPerReply)} 积分；保存后按新售价自动重算。`
-            : '保存后按「标准回复」自动算出约每条积分。'}
+            ? `当前标准用量示例 ${pts(model.pointsPerReply)} 积分；不是预留额，也不承诺每条花费。保存后按新售价重算示例。`
+            : '保存后按标准用量计算示例；不是预留额，也不承诺每条花费。'}
           三项都不填 = 不改价目表（语音、图片等非 token 计价模型在「价目表版本」里维护）。
         </p>
         <button type="button" className="link-text" onClick={() => setShowCost((v) => !v)}>

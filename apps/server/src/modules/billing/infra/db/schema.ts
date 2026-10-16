@@ -202,7 +202,10 @@ export const platformDailyBudget = billingSchema.table(
     /** 当天是否已发过 80% 提醒。 */
     alertSentAt: tz('alert_sent_at'),
   },
-  (t) => [check('platform_daily_budget_reserved_nonnegative', sql`${t.reservedCostMicros} >= 0`)],
+  (t) => [
+    check('platform_daily_budget_reserved_nonnegative', sql`${t.reservedCostMicros} >= 0`),
+    check('platform_daily_budget_uncertain_nonnegative', sql`${t.uncertainCostMicros} >= 0`),
+  ],
 );
 
 /** 价目表版本。任一时刻只有一个 active；已生效过的版本不可修改。 */
