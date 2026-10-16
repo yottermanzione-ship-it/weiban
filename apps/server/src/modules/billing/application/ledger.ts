@@ -10,6 +10,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { LedgerEntryType } from '@weiban/contracts';
 import { and, eq } from 'drizzle-orm';
 import {
+  AppError,
   CLOCK,
   newId,
   OUTBOX,
@@ -179,6 +180,8 @@ export class Ledger {
     const before = account.balanceMicros - held;
     const balance = account.balanceMicros + entry.amountMicros;
     const after = balance - held;
+    if (account.kind === 'user' && entry.amountMicros < 0 && after < 0)
+      throw new AppError('insufficient_balance', '积分不足，保留余额与其它任务冻结');
     const row: LedgerRow = {
       id: newId(),
       accountId: account.id,
@@ -251,6 +254,9 @@ export class Ledger {
         heldMicros: held,
         insufficientSince,
         lowNotifiedOn,
+        ...(userId && entry.amountMicros > 0
+          ? { ecologyInsufficientSince: null, ecologyNoticePending: false }
+          : {}),
         updatedAt: now,
         version: account.version + 1,
       })

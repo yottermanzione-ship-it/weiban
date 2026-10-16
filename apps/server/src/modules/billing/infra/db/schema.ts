@@ -47,6 +47,8 @@ export const accounts = billingSchema.table(
     timeZone: text('time_zone').notNull(),
     /** 最近一次因余额不足拒绝冻结的时间；发出 balance_restored 后清空（billing.md 6.3 第 3 条）。 */
     insufficientSince: tz('insufficient_since'),
+    ecologyInsufficientSince: tz('ecology_insufficient_since'),
+    ecologyNoticePending: boolean('ecology_notice_pending').notNull().default(false),
     /** 最近一次发出 balance_low 的当地日期（同一天最多一次）。 */
     lowNotifiedOn: date('low_notified_on', { mode: 'string' }),
     createdAt: tz('created_at').notNull(),
@@ -149,6 +151,13 @@ export const holds = billingSchema.table(
     ledgerEntryId: uuid('ledger_entry_id'),
     releaseReason: text('release_reason'),
     absorbedCostMicros: money('absorbed_cost_micros'),
+    /** 3.16：冻结依据/确定结算结果；旧hold为空，不能补造上限证明。 */
+    limitSnapshot: jsonb('limit_snapshot').$type<{
+      usage: import('@weiban/contracts').UsageQuantities;
+      evidence: string;
+    }>(),
+    settlementSnapshot:
+      jsonb('settlement_snapshot').$type<import('@weiban/contracts').SettleOutput>(),
   },
   (t) => [
     uniqueIndex('holds_idempotency_key_key').on(t.idempotencyKey),
@@ -157,7 +166,7 @@ export const holds = billingSchema.table(
       .on(t.expiresAt)
       .where(sql`${t.status} = 'active'`),
     check('holds_status_check', sql`${t.status} in ('active', 'settled', 'released', 'expired')`),
-    check('holds_amount_positive', sql`${t.amountMicros} > 0`),
+    check('holds_amount_nonnegative', sql`${t.amountMicros} >= 0`),
   ],
 );
 

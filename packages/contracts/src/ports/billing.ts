@@ -34,11 +34,12 @@ export interface ReserveInput {
   characterId?: string;
   /** 估算用量：输入 token 估算值 + maxOutputTokens 等。 */
   estimate: UsageQuantities;
+  /** 3.16：由网关核准路由得出的可计费上限；缺失时拒绝新冻结，旧estimate不再充当上限。 */
+  ceiling?: { usage: UsageQuantities; evidence: string };
   /** 与网关调用的幂等键相同：重复调用返回同一个冻结。 */
   idempotencyKey: string;
   /**
-   * v1.1：安全优先透支（billing.md 6.6 节）。网关只在 GenerateTextInput.safetyPriority 合法时传 true；
-   * billing 再校验一次（purpose ∈ SAFETY_OVERDRAFT_PURPOSES、account 为 user），不满足则按普通冻结处理。
+   * 3.16兼容字段：已取消透支，传true也不能获得额外可用余额。
    */
   safetyOverdraft?: boolean;
   /** v1.1：按后台功能计入后台每日上限（规则同 GenerateTextInput.countAsBackground）。 */
@@ -78,6 +79,13 @@ export interface SettleOutput {
   amountMicros: number;
   costMicros: number;
   balanceAfterMicros: number;
+  /** 3.16：成本归属和理论少收分开；两份ledger成本之和=已知供应商成本。 */
+  chargedCostMicros?: number;
+  absorbedCostMicros?: number;
+  theoreticalMicros?: number;
+  waivedMicros?: number;
+  costKnown?: boolean;
+  unpricedUnits?: string[];
 }
 
 export interface ReleaseInput {

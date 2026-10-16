@@ -36,7 +36,7 @@ import {
   PLATFORM_TIME_ZONE,
   startOfLocalDay,
 } from '../domain/local-time.js';
-import { OVERDRAFT_ALERT_MARGIN_MICROS, STALE_HOLD_MS } from '../domain/rules.js';
+import { STALE_HOLD_MS } from '../domain/rules.js';
 import { reconciliationRuns, upstreamBills } from '../infra/db/schema.js';
 import { ReservationService } from './reservations.js';
 
@@ -112,7 +112,7 @@ export class ReconciliationService {
       [new Date(now.getTime() - STALE_HOLD_MS)],
     );
 
-    const floor = -(this.reservations.safetyOverdraftLimitMicros + OVERDRAFT_ALERT_MARGIN_MICROS);
+    const floor = 0; // 取消透支；任何用户负余额都须核对，历史金额不自动追扣。
     const overdrawn = await db.query<{ id: string; user_id: string | null; balance: string }>(
       `SELECT id, user_id, balance_micros AS balance FROM billing.accounts
         WHERE kind = 'user' AND balance_micros < $1`,

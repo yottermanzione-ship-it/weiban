@@ -5,7 +5,6 @@
 import {
   BACKGROUND_PURPOSES,
   BUDGET_EXEMPT_PURPOSES,
-  SAFETY_OVERDRAFT_PURPOSES,
   type ModelPurpose,
   type PriceUnit,
   type SpendCategory as SpendCategorySchema,
@@ -23,7 +22,8 @@ import { localParts, PLATFORM_TIME_ZONE } from './local-time.js';
  * 安全优先透支上限的默认值：2 元。数字的唯一定义处是 billing.md 6.6 第 2 条，这里是它在代码中的映射；
  * 可用环境变量 BILLING_SAFETY_OVERDRAFT_LIMIT_MICROS 覆盖（platform 配置）。
  */
-export const SAFETY_OVERDRAFT_LIMIT_MICROS_DEFAULT = 2_000_000;
+/** @deprecated 3.16兼容导出，透支已取消；配置不能恢复该权限。 */
+export const SAFETY_OVERDRAFT_LIMIT_MICROS_DEFAULT = 0;
 
 /** 对账第 ① 层：用户钱包余额低于 −(透支上限 + 1 元) 标红（billing.md 6.6 第 7 条、8.2 节）。 */
 export const OVERDRAFT_ALERT_MARGIN_MICROS = 1_000_000;
@@ -92,14 +92,13 @@ export function countsAsBackground(purpose: ModelPurpose, countAsBackground?: bo
 }
 
 /** 安全优先透支的资格（billing.md 6.6 第 1 条，billing 这一侧的校验）。 */
+/** 兼容旧调用/测试导出；3.16后任何用途都不能透支。 */
 export function safetyOverdraftEligible(
-  purpose: ModelPurpose,
-  accountKind: 'user' | 'platform',
-  requested: boolean | undefined,
+  _purpose: ModelPurpose,
+  _accountKind: string,
+  _requested?: boolean,
 ): boolean {
-  return (
-    requested === true && accountKind === 'user' && SAFETY_OVERDRAFT_PURPOSES.includes(purpose)
-  );
+  return false;
 }
 
 // ---------- 价格 ----------
@@ -211,7 +210,9 @@ export function priceUsage(
 /** 用量是否全部为非负有限数。 */
 export function validUsage(usage: UsageQuantities): boolean {
   return Object.values(usage).every(
-    (v) => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= 0),
+    (v) =>
+      v === undefined ||
+      (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= Number.MAX_SAFE_INTEGER),
   );
 }
 
@@ -237,4 +238,57 @@ export function validatePriceItems(items: readonly PriceRow[]): string[] {
     if (!hasBase.has(key)) problems.push(`${key.replace('|', ' ')} 有时段价但缺少全天价`);
   }
   return problems;
+}
+
+/** 3.16：所有可能时段取上界；输入/缓存按较高单价覆盖同一输入总量。与strict缺价校验不同。 */
+export function priceUsageCeiling(
+  rows: readonly PriceRow[],
+  usage: UsageQuantities,
+): PriceResult & { unpricedUnits: PriceUnit[] } {
+  const maximum = (unit: PriceUnit, candidates: readonly PriceRow[]): PriceRow | null => {
+    if (!candidates.length) return null;
+    return {
+      ...candidates[0]!,
+      unit,
+      band: null,
+      priceMicros: Math.max(...candidates.map((r) => r.priceMicros)),
+      costMicros: Math.max(...candidates.map((r) => r.costMicros)),
+    };
+  };
+  const upper: PriceRow[] = [];
+  for (const { unit } of QUANTITY_UNITS) {
+    const candidates =
+      unit === 'input_tokens_per_million'
+        ? rows.filter(
+            (r) =>
+              r.unit === 'input_tokens_per_million' || r.unit === 'cached_input_tokens_per_million',
+          )
+        : rows.filter((r) => r.unit === unit);
+    const row = maximum(unit, candidates);
+    if (row) upper.push(row);
+  }
+  const input = (usage.inputTokens ?? 0) + (usage.cachedInputTokens ?? 0);
+  if (
+    input > 0 &&
+    (!Number.isSafeInteger(Math.ceil(input)) ||
+      !rows.some((r) => r.unit === 'input_tokens_per_million'))
+  )
+    return {
+      ok: false,
+      missingUnit: 'input_tokens_per_million',
+      unpricedUnits: ['input_tokens_per_million'],
+    };
+  return priceUsage(
+    upper,
+    { ...usage, inputTokens: input, cachedInputTokens: 0 },
+    new Date(0),
+    true,
+  );
+}
+
+/** 确定成本分摊：按实际收取售价占理论售价的比例向下分给付款账户，余数全归平台；绝不把少收利润当成本。 */
+export function splitSettlementCost(cost: number, charged: number, theoretical: number) {
+  const chargedCost =
+    theoretical > 0 ? Number((BigInt(cost) * BigInt(charged)) / BigInt(theoretical)) : 0;
+  return { chargedCostMicros: chargedCost, absorbedCostMicros: cost - chargedCost };
 }
