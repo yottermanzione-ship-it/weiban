@@ -196,6 +196,19 @@ export class UsageRecorder {
         ),
       );
   }
+  async interruptedMedia(): Promise<UsageRow[]> {
+    return this.database.db
+      .select()
+      .from(usageRecords)
+      .where(
+        and(
+          eq(usageRecords.status, 'pending'),
+          like(usageRecords.idempotencyKey, 'media:%'),
+          lt(usageRecords.createdAt, new Date(this.clock.nowMs() - 120000)),
+        ),
+      )
+      .limit(100);
+  }
 
   /** v3.4：失败切换后改记实际调用的账号与上游模型名。 */
   async setUpstream(id: string, upstreamId: string, upstreamModelId: string): Promise<void> {

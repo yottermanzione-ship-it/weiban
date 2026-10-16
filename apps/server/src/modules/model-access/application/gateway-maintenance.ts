@@ -1,5 +1,5 @@
 /** 回收不确定在途冻结、恢复已保存结果的结算、清除24h结果、探测临时故障上游。 */
-import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
 import type { BillingReservationPort } from '@weiban/contracts';
 import { and, eq, inArray, lt, ne } from 'drizzle-orm';
 import {
@@ -17,6 +17,7 @@ import { GenerationCache } from './generation-cache.js';
 import { ModelGateway } from './gateway.js';
 import { UpstreamService } from './upstreams.js';
 import { UsageRecorder } from './usage.js';
+import { ModelGatewayMedia } from './media-gateway.js';
 
 @Injectable()
 export class GatewayMaintenance implements OnModuleInit {
@@ -30,6 +31,7 @@ export class GatewayMaintenance implements OnModuleInit {
     @Inject(UsageRecorder) private readonly recorder: UsageRecorder,
     @Inject(BILLING_RESERVATION_PORT) private readonly billing: BillingReservationPort,
     @Inject(UPSTREAM_PROBE) private readonly probe: UpstreamProbe,
+    @Optional() @Inject(ModelGatewayMedia) private readonly mediaGateway?: ModelGatewayMedia,
   ) {}
   async onModuleInit(): Promise<void> {
     await this.jobs.work('model_access.recover_generations', () => this.recover());
@@ -51,11 +53,19 @@ export class GatewayMaintenance implements OnModuleInit {
       .limit(100);
     for (const row of old) {
       if (row.phase === 'result') {
-        await this.gateway.finalize(row, await this.cache.open(row));
+        const result = await this.cache.open(row);
+        if (result && typeof result === 'object' && 'mediaSettlement' in result) {
+          if (!this.mediaGateway) throw new Error('媒体结算恢复服务不可用');
+          await this.mediaGateway.restoreMediaResult(row, result);
+        } else await this.gateway.finalize(row, result);
         continue;
       }
       // 每个attempt独立恢复；不能只解冻最后一次而丢失前次供应商风险。
       const records = await this.recorder.pendingForGeneration(row.id);
+      if (row.usageRecordId && !records.some((record) => record.id === row.usageRecordId)) {
+        const record = await this.recorder.byId(row.usageRecordId);
+        if (record?.status === 'pending') records.push(record);
+      }
       for (const record of records) {
         const holdId = record.holdId ?? (row.usageRecordId === record.id ? row.holdId : null);
         if (holdId) {
@@ -79,6 +89,28 @@ export class GatewayMaintenance implements OnModuleInit {
         });
       }
       await this.cache.save(row, { ok: false, error: 'provider_unavailable' }, 'complete');
+    }
+    // 流式调用没有generation结果缓存；也必须持久恢复中断风险与后台待核状态。
+    for (const record of await this.recorder.interruptedMedia()) {
+      if (record.holdId) {
+        const release = await this.billing.release({
+          holdId: record.holdId,
+          reason: 'call_failed',
+          usageRecordId: record.id,
+          upstreamId: record.upstreamId,
+        });
+        await this.recorder.writeReleaseSnapshot(record.id, release);
+      }
+      await this.recorder.finish(record.id, {
+        status: 'failed',
+        errorCode: 'interrupted',
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        estimated: false,
+        latencyMs: 0,
+        retryCount: 0,
+      });
     }
     await this.database.db
       .delete(generationResults)
