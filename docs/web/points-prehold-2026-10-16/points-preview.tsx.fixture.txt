@@ -1,0 +1,14 @@
+import {useEffect,useState} from 'react';
+import {createRoot} from 'react-dom/client';
+import {HashRouter,Link,Routes,Route} from 'react-router-dom';
+import {ModelManagementPage} from '../admin/src/features/model-management.js';
+import {UsagePage} from '../admin/src/features/usage.js';
+import {PricesPage} from './src/features/wallet.js';
+import {JobStep} from './src/features/import.js';
+import {ToastHost} from './src/features/toast.js';
+import {state,configure,template,job} from './points-preview-api';
+const admin=!new URLSearchParams(location.search).has('web');
+await import('../../docs/design/tokens.css');
+if(admin)await import('../admin/src/app/styles.css');else for(const path of ['styles','media-call','l6','l6b','plaza','play','shell','old-ui','chat-old','pages-old','common-fixes'])await import('./src/app/'+path+'.css');
+function Preview(){const [,tick]=useState(0);useEffect(()=>{const callback=()=>tick(value=>value+1);window.addEventListener('points-preview',callback);return()=>window.removeEventListener('points-preview',callback);},[]);return <><aside style={{padding:12,background:'white',color:'#222',borderBottom:'1px solid #aaa'}}><strong>积分开发组件样例：无真实HTTP/数据库/模型/钱包操作</strong><nav style={{display:'flex',gap:12,flexWrap:'wrap'}}>{admin?<><Link to="/models?tab=models">模型与计费上限</Link><Link to="/models?tab=overview">用量概览</Link><Link to="/models?tab=records">实际记录组件</Link><Link to="/usage">旧用量页</Link><a href="/points-preview.html?web=1#/prices">网页价格/导入</a></>:<><Link to="/prices">AI模型价格</Link><Link to="/import">导入确认</Link><a href="/points-preview.html#/models?tab=models">后台样例</a></>}</nav><label><input type="checkbox" checked={!!state.fail} onChange={event=>configure({fail:event.target.checked})}/>下一次写入失败</label><details><summary>可复制的无效供应商占位模板（仅样例，不作为上线证据）</summary><pre style={{whiteSpace:'pre-wrap',userSelect:'text'}}>{template}</pre></details><details><summary>外置模拟请求记录（{state.logs.length}）</summary><pre id="request-records" style={{maxHeight:260,overflow:'auto',whiteSpace:'pre-wrap',fontSize:11}}>{JSON.stringify(state.logs,null,2)}</pre></details></aside><div style={admin?{padding:20}:{maxWidth:480,margin:'auto'}}><Routes><Route path="/models" element={<ModelManagementPage/>}/><Route path="/usage" element={<UsagePage/>}/><Route path="/prices" element={<PricesPage/>}/><Route path="/import" element={<main><h2>真实导入确认组件（整体导入链未挂载）</h2><JobStep job={job} onJob={()=>{}}/></main>}/><Route path="*" element={<p>请使用上方导航。</p>}/></Routes></div><ToastHost/></>;}
+createRoot(document.getElementById('root')!).render(<HashRouter><Preview/></HashRouter>);

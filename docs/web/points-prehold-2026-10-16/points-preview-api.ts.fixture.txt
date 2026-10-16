@@ -1,0 +1,34 @@
+import {ApiFailure} from '@weiban/client-core';
+import {RouteBillingBounds} from '@weiban/contracts';
+export const ids={user:'20000000-0000-4000-8000-000000000001',upstream:'30000000-0000-4000-8000-000000000001',backup:'30000000-0000-4000-8000-000000000002',job:'40000000-0000-4000-8000-000000000001'};
+const now=()=>new Date().toISOString();
+const initialModel={modelKey:'preview/model',displayName:'开发样例模型',vendorName:'开发样例',upstreamId:ids.upstream,upstreamModelId:'preview-text',capabilities:[],tags:[],leaderboardRank:null,sortOrder:1,defaultFor:['chat'],enabled:true,rates:{input:1,output:2,cache:0.5},costRates:{input:1,output:2,cache:0.5},hasTimeBands:false,pointsPerReply:0.28,systemMessageMode:'multi',billingBounds:null,routes:[{upstreamId:ids.upstream,upstreamModelId:'preview-text',priority:1,weight:100,enabled:true,billingBounds:null}]};
+const key='weiban:points-preview-20261016';
+export const state:any=JSON.parse(localStorage.getItem(key)||'null')||{model:initialModel,logs:[],fail:false};
+export function save(){localStorage.setItem(key,JSON.stringify(state));window.dispatchEvent(new Event('points-preview'));}
+export function configure(patch:any){Object.assign(state,patch);save();}
+export const template=JSON.stringify({format:'billing-bounds-v1',sourceUrl:'https://example.com/developer-preview-only',checkedAt:'2026-10-15T00:00:00.000Z',text:{contextTokens:32768,maxOutputTokens:4096,totalOutputIncludesReasoning:true,outputParameter:'max_tokens',maxImages:0}},null,2);
+const totals={calls:3,failedCalls:1,inputTokens:100,cachedInputTokens:0,outputTokens:60,totalTokens:160,estimatedTokens:20,chargedMicros:0,chargedPoints:0,costMicros:12000,absorbedCostMicros:12000,unknownCostCalls:2,uncertainCostMicros:500000,avgLatencyMs:80,failureRate:1/3,cacheHitRate:0};
+const record={usageRecordId:'50000000-0000-4000-8000-000000000001',createdAt:now(),userId:ids.user,characterId:null,conversationKind:'direct',purpose:'chat_reply',billingOwner:'user',modelKey:'preview/model',upstreamId:ids.upstream,upstreamModelId:'preview-text',inputTokens:100,cachedInputTokens:0,outputTokens:60,estimated:true,latencyMs:80,ttftMs:30,status:'succeeded',errorCode:null,retryCount:0,chargedMicros:0,chargedPoints:0,costMicros:12000,absorbedCostMicros:12000,costKnown:false,uncertainCostMicros:500000,priceVersionId:null,safetyOverdraft:false,stablePrefixTokens:null};
+export const job:any={jobId:ids.job,kind:'new_character',sourceKind:'text',status:'ready',charCount:2400,messageCount:20,speakers:[],selectedSpeaker:'夏知',estimatedMicros:5000000,truncated:false,progress:0,createdAt:now(),updatedAt:now()};
+export const localStore:any={};
+export const api:any={cached:async()=>undefined,captureOwner:()=>({userId:ids.user,sessionId:ids.job}),owner$:{subscribe:()=>()=>{}},call:async(endpoint:any,options:any={})=>{
+ const path=endpoint.path,method=endpoint.method,body=options.body??{},params=options.params??{};
+ state.logs.push({method,path,body:structuredClone(body),params:structuredClone(params),at:now()});save();await new Promise(resolve=>setTimeout(resolve,120));
+ if(method!=='GET'&&state.fail){state.fail=false;save();throw new ApiFailure('conflict','开发样例保存失败，请重试；草稿保留',409);}
+ if(path==='/api/v1/admin/model/upstreams')return {items:[ids.upstream,ids.backup].map((id,index)=>({upstreamId:id,name:index?'备用样例账号':'主样例账号',kind:'openai_compatible',baseUrl:'https://example.com/developer-preview-only',enabled:true,status:'active',cooldownUntil:null,consecutiveFailures:0,maxConcurrency:2,rpmLimit:30,modelsCount:1,createdAt:now(),updatedAt:now()}))};
+ if(path.endsWith('/upstreams/:upstreamId/models'))return {items:[{id:'preview-text'},{id:'preview-other'}]};
+ if(path==='/api/v1/admin/model/models')return {items:[state.model]};
+ if(path==='/api/v1/admin/model/models/:modelKey'){
+   for(const route of body.routes??[]){if(route.billingBounds){const parsed=RouteBillingBounds.safeParse(route.billingBounds);if(!parsed.success||Date.parse(parsed.data.checkedAt)>Date.now())throw new ApiFailure('bad_request','开发样例：计费上限或核准时间不正确',422);}}
+   state.model={...state.model,...body,hasTimeBands:false,pointsPerReply:0.28};save();return state.model;
+ }
+ if(path==='/api/v1/admin/model/leaderboard-source')return {label:'开发样例占位来源',url:'https://arena.ai/leaderboard/chat/text',asOf:'2026-10-15'};
+ if(path.endsWith('/usage/overview'))return {totals,previousTotals:totals,accounts:{total:2,available:2,abnormal:0,disabled:0},recentErrors:[]};
+ if(path.endsWith('/usage/summary'))return {totals,rows:[{...totals,keys:body.groupBy?.map((dimension:string)=>dimension==='day'?'2026-10-16':dimension==='upstream'?ids.upstream:dimension==='user'?ids.user:'preview/model')??['2026-10-16']}],truncated:false};
+ if(path.endsWith('/usage/records'))return {items:[record],nextCursor:null};
+ if(path.endsWith('/usage/export'))return {items:[record],truncated:false};
+ if(path==='/api/v1/model/models')return {items:[{...state.model,available:true,unavailableReason:null,priceTier:'cheap'}]};
+ if(path.includes('/imports/')||path.includes('/import/'))throw new ApiFailure('insufficient_balance','开发样例：积分不足，余额不变，未调用模型',422);
+ throw new ApiFailure('unsupported','开发样例未模拟 '+method+' '+path,400);
+}};

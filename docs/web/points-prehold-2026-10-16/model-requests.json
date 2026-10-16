@@ -1,0 +1,188 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/leaderboard-source",
+    "body": {},
+    "params": {},
+    "at": "2026-10-16T14:25:19.721Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/upstreams",
+    "body": {},
+    "params": {},
+    "at": "2026-10-16T14:25:19.721Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/models",
+    "body": {},
+    "params": {},
+    "at": "2026-10-16T14:25:19.721Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/upstreams/:upstreamId/models",
+    "body": {},
+    "params": {
+      "upstreamId": "30000000-0000-4000-8000-000000000001"
+    },
+    "at": "2026-10-16T14:25:28.705Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/upstreams/:upstreamId/models",
+    "body": {},
+    "params": {
+      "upstreamId": "30000000-0000-4000-8000-000000000001"
+    },
+    "at": "2026-10-16T14:26:03.779Z"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/model/models/:modelKey",
+    "body": {
+      "modelKey": "preview/model",
+      "displayName": "开发样例模型",
+      "vendorName": "开发样例",
+      "upstreamId": "30000000-0000-4000-8000-000000000001",
+      "upstreamModelId": "preview-text",
+      "billingBounds": {
+        "format": "billing-bounds-v1",
+        "sourceUrl": "https://example.com/developer-preview-only",
+        "checkedAt": "2026-10-15T00:00:00.000Z",
+        "text": {
+          "contextTokens": 32768,
+          "maxOutputTokens": 4096,
+          "totalOutputIncludesReasoning": true,
+          "outputParameter": "max_tokens",
+          "maxImages": 0
+        }
+      },
+      "capabilities": [],
+      "tags": [],
+      "leaderboardRank": null,
+      "sortOrder": 1,
+      "defaultFor": [
+        "chat"
+      ],
+      "enabled": true,
+      "rates": {
+        "input": 1,
+        "output": 2,
+        "cache": 0.5
+      },
+      "routes": [
+        {
+          "upstreamId": "30000000-0000-4000-8000-000000000001",
+          "upstreamModelId": "preview-text",
+          "priority": 1,
+          "weight": 100,
+          "enabled": true,
+          "billingBounds": {
+            "format": "billing-bounds-v1",
+            "sourceUrl": "https://example.com/developer-preview-only",
+            "checkedAt": "2026-10-15T00:00:00.000Z",
+            "text": {
+              "contextTokens": 32768,
+              "maxOutputTokens": 4096,
+              "totalOutputIncludesReasoning": true,
+              "outputParameter": "max_tokens",
+              "maxImages": 0
+            }
+          }
+        }
+      ]
+    },
+    "params": {
+      "modelKey": "preview%2Fmodel"
+    },
+    "at": "2026-10-16T14:26:04.377Z"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/model/models/:modelKey",
+    "body": {
+      "modelKey": "preview/model",
+      "displayName": "开发样例模型",
+      "vendorName": "开发样例",
+      "upstreamId": "30000000-0000-4000-8000-000000000001",
+      "upstreamModelId": "preview-text",
+      "billingBounds": {
+        "format": "billing-bounds-v1",
+        "sourceUrl": "https://example.com/developer-preview-only",
+        "checkedAt": "2026-10-15T00:00:00.000Z",
+        "text": {
+          "contextTokens": 32768,
+          "maxOutputTokens": 4096,
+          "totalOutputIncludesReasoning": true,
+          "outputParameter": "max_tokens",
+          "maxImages": 0
+        }
+      },
+      "capabilities": [],
+      "tags": [],
+      "leaderboardRank": null,
+      "sortOrder": 1,
+      "defaultFor": [
+        "chat"
+      ],
+      "enabled": true,
+      "rates": {
+        "input": 1,
+        "output": 2,
+        "cache": 0.5
+      },
+      "routes": [
+        {
+          "upstreamId": "30000000-0000-4000-8000-000000000001",
+          "upstreamModelId": "preview-text",
+          "priority": 1,
+          "weight": 100,
+          "enabled": true,
+          "billingBounds": {
+            "format": "billing-bounds-v1",
+            "sourceUrl": "https://example.com/developer-preview-only",
+            "checkedAt": "2026-10-15T00:00:00.000Z",
+            "text": {
+              "contextTokens": 32768,
+              "maxOutputTokens": 4096,
+              "totalOutputIncludesReasoning": true,
+              "outputParameter": "max_tokens",
+              "maxImages": 0
+            }
+          }
+        }
+      ]
+    },
+    "params": {
+      "modelKey": "preview%2Fmodel"
+    },
+    "at": "2026-10-16T14:26:08.998Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/models",
+    "body": {},
+    "params": {},
+    "at": "2026-10-16T14:26:09.128Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/upstreams/:upstreamId/models",
+    "body": {},
+    "params": {
+      "upstreamId": "30000000-0000-4000-8000-000000000001"
+    },
+    "at": "2026-10-16T14:26:12.703Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/upstreams/:upstreamId/models",
+    "body": {},
+    "params": {
+      "upstreamId": "30000000-0000-4000-8000-000000000002"
+    },
+    "at": "2026-10-16T14:26:20.177Z"
+  }
+]

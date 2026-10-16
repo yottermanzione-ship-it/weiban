@@ -1,0 +1,5 @@
+import {defineConfig} from 'vite';
+import react from '@vitejs/plugin-react';
+import {fileURLToPath} from 'node:url';
+const mock=fileURLToPath(new URL('./points-preview-api.ts',import.meta.url));
+export default defineConfig({define:{__WEB_BUILD__:'999999',__WEB_VERSION__:JSON.stringify('points-preview')},plugins:[{name:'points-api',enforce:'pre',resolveId(id,importer){if(id.endsWith('/data/client.js')||(id==='./client.js'&&importer?.replaceAll(String.fromCharCode(92),'/').match(/\/(web|admin)\/src\/data\//)))return mock;}},react()],server:{host:'127.0.0.1',port:5193,strictPort:true,fs:{allow:['../..']}}});
