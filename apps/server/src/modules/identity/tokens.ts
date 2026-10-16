@@ -16,3 +16,8 @@ export const IDENTITY_SESSION_READ_PORT = Symbol('weiban.identity.session-read-p
 
 /** 契约 3.1 IdentitySettingsWritePort：只开不关的全局来电开关（调用方 ai-runtime）。 */
 export const IDENTITY_SETTINGS_WRITE_PORT = Symbol('weiban.identity.settings-write-port');
+
+/** 契约 3.15 UserStatusReadPort：我的状态（调用方 ai-runtime）。 */
+export const IDENTITY_USER_STATUS_PORT = Symbol('weiban.identity.user-status-port');
+
+export const IDENTITY_MEMBERSHIP_READ_PORT = Symbol('identity.membership.read');

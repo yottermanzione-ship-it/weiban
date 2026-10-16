@@ -813,6 +813,11 @@ export function WorkPage() {
               举报
             </Link>
           )}
+          {!w.isMine && (
+            <Link className="plain" to={`/support/new?targetType=plaza_work&targetId=${workId}`}>
+              向官方投诉
+            </Link>
+          )}
           <button onClick={() => setSheet(null)}>取消</button>
         </div>
       )}

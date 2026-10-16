@@ -6,7 +6,7 @@
  * 默认自动走添加流程加到该用户通讯录）或拒绝（rejected，留言必填）。用户在 pending 时可撤回（cancelled）。
  * 每次状态变化：写申请留言、发 data.changed(role_requests) 刷新红点，并推送一条系统通知（deepLink /role-requests/{id}）。
  *
- * 扣积分（3.8，总对照表 Q5）：`RoleRequestConfig.pointsCost` 默认 200 积分（2 元）。提交时冻结（可用积分不足 422 insufficient_balance），
+ * 扣积分（3.8，总对照表 Q5）：免费次数内不冻结；超额固定200积分（2 元），与申请在同事务冻结（可用积分不足 422 insufficient_balance），
  * 完成时扣除（pointsCharged = pointsCost，积分明细里一条分类 service 的扣费），被拒或撤回时退回（pointsCharged = 0）。
  */
 import { z } from 'zod';
@@ -63,6 +63,8 @@ export const RoleRequest = z.object({
   addedToContacts: z.boolean(),
   /** 提交时的制作价格（积分）；0 表示免费。 */
   pointsCost: z.number().int().nonnegative(),
+  /** 3.15：本申请成功提交时占一次免费名额；拒绝/撤回不退次数。旧数据缺省false。 */
+  freeQuotaApplied: z.boolean().optional(),
   /** 实际扣除的积分：完成后 = pointsCost；未完成、被拒、撤回为 0。 */
   pointsCharged: z.number().int().nonnegative(),
   /** 状态变化后我还没看过（红点）。 */
@@ -75,16 +77,30 @@ export type RoleRequest = z.infer<typeof RoleRequest>;
 export const RoleRequestConfig = z.object({
   /** 是否开放申请；关闭时提交返回 403 forbidden。 */
   enabled: z.boolean(),
-  /** 每次申请的积分价格（默认 200；0 = 免费）。提交时冻结、完成扣除、被拒或撤回退回。 */
+  /** 超额固定200积分；免费按quota判断。后台提交非200会拒绝，提交冻结、完成扣、拒绝撤回退款。 */
   pointsCost: z.number().int().nonnegative().max(1_000_000),
   /** 同一用户同时未完成（pending + in_progress）的申请上限。 */
   maxOpenPerUser: z.number().int().min(1).max(50),
 });
 export type RoleRequestConfig = z.infer<typeof RoleRequestConfig>;
 
+export const RoleRequestQuota = z.object({
+  quotedAt: Timestamp,
+  tier: z.enum(['free', 'pro_plus']),
+  limit: z.literal(5),
+  used: z.number().int().nonnegative(),
+  remaining: z.number().int().nonnegative(),
+  nextPointsCost: z.union([z.literal(0), z.literal(200)]),
+  periodStart: Timestamp,
+  periodEnd: Timestamp,
+  timeZone: z.literal('Asia/Shanghai'),
+});
+export type RoleRequestQuota = z.infer<typeof RoleRequestQuota>;
 export const CreateRoleRequest = z.object({
   /** 客户端生成的幂等键：同一键重复提交返回同一申请。 */
   clientRequestId: Id,
+  /** 3.15：确认本次0/200积分；旧客户端需要收费时必须更新确认，不偷偷冻结。 */
+  expectedPointsCost: z.union([z.literal(0), z.literal(200)]).optional(),
   roleName: z.string().trim().min(1).max(32),
   basis: CharacterBasis.nullable().optional(),
   categoryId: z.string().max(40).nullable().optional(),
@@ -101,8 +117,8 @@ export const RoleRequestEndpoints = {
     method: 'GET',
     path: `${API_PREFIX}/role-requests/config`,
     auth: 'user',
-    response: RoleRequestConfig,
-    summary: '3.5：申请制作是否开放、价格（积分，默认 200）、同时未完成上限',
+    response: RoleRequestConfig.extend({ quota: RoleRequestQuota }),
+    summary: '3.15：真实会员/本期免费次数/0或200积分报价，周期固定北京时间自然月或周一自然周',
   }),
   create: defineEndpoint({
     method: 'POST',
@@ -258,6 +274,6 @@ export const RoleRequestAdminEndpoints = {
     auth: 'admin',
     body: RoleRequestConfig,
     response: RoleRequestConfig,
-    summary: '3.5：修改申请制作配置（3.8：pointsCost 只影响之后的新申请）；写审计',
+    summary: '3.15：修改开放/未完成上限；超额价格固定200，拒绝其它价格；写审计',
   }),
 } as const;

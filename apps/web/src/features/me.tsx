@@ -1,3 +1,4 @@
+import { MyStatusRow } from './user-status.js';
 /*
  * 我（docs/refactor/06-old-ui-spec.md 4.9）：没有顶栏，白色头卡从状态栏下开始；
  * 分组菜单用透明底彩色线图。服务页改为纯菜单列表（不做宫格）。
@@ -48,6 +49,7 @@ export function MePage() {
         />
       </MenuGroup>
       <MenuGroup>
+        <MyStatusRow />
         <MenuRow to="/me/favorites" image="color/color_favorites.svg" iconSize={23} label="收藏" />
         <MenuRow to="/moments" icon="wechat/picture" tint="blue" label="朋友圈" />
         <ComingSoonRow id="channels" />
@@ -122,6 +124,7 @@ export function ServicesPage() {
           tint="green"
           label="主动消息与免打扰"
         />
+        <MenuRow to="/settings/plugins" label="插件" />
         <MenuRow to="/services/familiarity" icon="wechat/heart" tint="red" label="熟悉度总览" />
       </MenuGroup>
       <p className="hint page-note center">卡册、宠物、每日一问等玩法在「发现 › 小程序」</p>

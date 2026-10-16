@@ -17,8 +17,8 @@ export class RoleRequestController {
   constructor(@Inject(RoleRequestService) private readonly requests: RoleRequestService) {}
 
   @Get('config')
-  config() {
-    return this.requests.getConfig();
+  config(@CurrentPrincipal() me: AuthPrincipal) {
+    return this.requests.userConfig(me.userId);
   }
 
   @Post('seen')

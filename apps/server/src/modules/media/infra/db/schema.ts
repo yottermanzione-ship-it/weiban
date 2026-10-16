@@ -9,6 +9,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 export const mediaSchema = pgSchema('media');
 const bytea = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
@@ -51,6 +52,10 @@ export const stickerPacks = mediaSchema.table('sticker_packs', {
   enabled: boolean('enabled').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
+  inStore: boolean('in_store').notNull().default(false),
+  storeOrder: integer('store_order').notNull().default(0),
+  intro: text('intro').notNull().default(''),
+  coverStickerId: uuid('cover_sticker_id'),
 });
 
 /** 0041：表情包库中的表情。删除为软删除（已发出的消息仍能显示，媒体对象不删）。 */
@@ -113,3 +118,17 @@ export const cardTemplates = mediaSchema.table('card_templates', {
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
 });
+
+/** 0100：用户从商店添加的包，内置包不需复制关系。 */
+export const userStickerPacks = mediaSchema.table(
+  'user_sticker_packs',
+  {
+    userId: uuid('user_id').notNull(),
+    packId: uuid('pack_id')
+      .notNull()
+      .references(() => stickerPacks.id, { onDelete: 'cascade' }),
+    sortOrder: integer('sort_order').notNull(),
+    addedAt: timestamp('added_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.packId] })],
+);

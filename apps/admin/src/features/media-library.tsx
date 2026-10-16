@@ -114,6 +114,10 @@ export function StickerLibraryPage() {
       characterIds,
       userVisible: form.get('userVisible') === 'on',
       enabled: form.get('enabled') === 'on',
+      inStore: form.get('inStore') === 'on',
+      storeOrder: Number(form.get('storeOrder') || 0),
+      intro: String(form.get('intro') || '').trim(),
+      coverStickerId: String(form.get('coverStickerId') || '') || null,
     };
     const ok = await action.run(
       () =>
@@ -150,7 +154,11 @@ export function StickerLibraryPage() {
         新建分类
       </button>
       {editing && (
-        <form className="panel" onSubmit={(e) => void savePack(e)}>
+        <form
+          key={editing === 'new' ? 'new' : editing.packId}
+          className="panel"
+          onSubmit={(e) => void savePack(e)}
+        >
           <label>
             分类名称
             <input
@@ -179,6 +187,47 @@ export function StickerLibraryPage() {
               defaultChecked={editing === 'new' ? true : editing.enabled}
             />
             启用
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              name="inStore"
+              defaultChecked={editing === 'new' ? false : editing.inStore}
+            />
+            在表情商店上架
+          </label>
+          <label>
+            商店排序（小的在前）
+            <input
+              type="number"
+              name="storeOrder"
+              min={0}
+              max={100000}
+              defaultValue={editing === 'new' ? 0 : (editing.storeOrder ?? 0)}
+            />
+          </label>
+          <label>
+            商店介绍
+            <textarea
+              name="intro"
+              maxLength={100}
+              defaultValue={editing === 'new' ? '' : (editing.intro ?? '')}
+            />
+          </label>
+          <label>
+            封面表情
+            <select
+              name="coverStickerId"
+              defaultValue={editing === 'new' ? '' : (editing.coverStickerId ?? '')}
+            >
+              <option value="">默认首张</option>
+              {editing !== 'new' &&
+                editing.stickers.map((sticker) => (
+                  <option key={sticker.stickerId} value={sticker.stickerId}>
+                    {sticker.description}
+                  </option>
+                ))}
+            </select>
           </label>
           <div className="button-row">
             <button className="primary" disabled={action.pending}>
@@ -210,7 +259,8 @@ export function StickerLibraryPage() {
                 <span className={p.enabled ? 'tag success' : 'tag'}>
                   {p.enabled ? '启用' : '停用'}
                 </span>
-                {p.userVisible && <span className="tag">用户可见</span>}
+                {p.userVisible && <span className="tag">默认可用</span>}
+                {p.inStore && <span className="tag">商店上架 · 排序{p.storeOrder}</span>}
               </td>
               <td>
                 <button onClick={() => setSelected(p.packId)}>管理表情</button>

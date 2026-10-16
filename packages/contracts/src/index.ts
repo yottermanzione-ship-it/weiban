@@ -43,6 +43,7 @@ export * from './http/announcements.js';
 export * from './http/public-updates.js';
 // 3.8（总对照表 Q 清单）
 export * from './http/support.js';
+export * from './http/status.js';
 
 // WebSocket 帧
 export * from './ws.js';
@@ -54,3 +55,5 @@ export * as Events from './events.js';
 export * from './ports/index.js';
 
 // v0.2：原生桥 bridge.ts 已删除（安卓改为 Kotlin 原生客户端，ADR-0011），网页与安卓之间没有桥。
+
+export * from './http/membership.js';

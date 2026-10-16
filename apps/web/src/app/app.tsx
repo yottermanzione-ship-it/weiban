@@ -1,3 +1,7 @@
+import { SupportPage, SupportCreatePage, SupportDetailPage } from '../features/support.js';
+import { StickerStorePage, StickerStoreDetailPage } from '../features/sticker-store.js';
+import { UserStatusPage } from '../features/user-status.js';
+import { PluginsPage } from '../features/plugins.js';
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { RouteMotion } from '../features/route-motion.js';
@@ -115,6 +119,9 @@ import {
 } from '../features/play.js';
 /** 这些页面自带返回按钮，不显示通用顶栏。 */
 const ownHeader = [
+  /^\/(sticker-store|support)(\/|$)/,
+  /^\/me\/status$/,
+  /^\/settings\/plugins$/,
   /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice|cards|supplement)$/,
   /^\/(imports|pets|plaza|play|roles|role-requests)(\/|$)/,
   /^\/settings\/delete-account$/,
@@ -319,6 +326,13 @@ function Shell() {
                   path="/characters/:characterId/anniversaries"
                   element={<AnniversariesPage />}
                 />
+                <Route path="/sticker-store" element={<StickerStorePage />} />
+                <Route path="/sticker-store/:packId" element={<StickerStoreDetailPage />} />
+                <Route path="/support" element={<SupportPage />} />
+                <Route path="/support/new" element={<SupportCreatePage />} />
+                <Route path="/support/tickets/:ticketId" element={<SupportDetailPage />} />
+                <Route path="/me/status" element={<UserStatusPage />} />
+                <Route path="/settings/plugins" element={<PluginsPage />} />
                 <Route path="/me/stickers" element={<MyStickersPage />} />
                 <Route path="/me/favorites" element={<FavoritesPage />} />
                 <Route path="/me/favorites/:favoriteId" element={<FavoriteDetailPage />} />

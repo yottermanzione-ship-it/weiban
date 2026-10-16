@@ -35,7 +35,7 @@ import {
   type EnvelopeCrypto,
   type UserDataRegistry,
 } from '../../../platform/index.js';
-import { objects, userStickers } from '../infra/db/schema.js';
+import { objects, userStickers, userStickerPacks } from '../infra/db/schema.js';
 import {
   MEDIA_STORAGE,
   MEDIA_SYNC,
@@ -685,6 +685,10 @@ export class MediaService
   // ---------- 注销 ----------
 
   async purgeUser(userId: string): Promise<number> {
+    const packs = await this.database.db
+      .delete(userStickerPacks)
+      .where(eq(userStickerPacks.userId, userId))
+      .returning();
     const stickers = await this.database.db
       .delete(userStickers)
       .where(eq(userStickers.userId, userId))
@@ -692,7 +696,7 @@ export class MediaService
     const rows = await this.database.db.select().from(objects).where(eq(objects.ownerId, userId));
     // 先删对象再删元数据；存储失败抛出，保留记录供注销重试，不能静默丢失清理位置。
     for (const row of rows) await this.removeRow(row);
-    return rows.length + stickers.length;
+    return rows.length + stickers.length + packs.length;
   }
   async countUserData(userId: string): Promise<number> {
     const [a] = await this.database.db
@@ -703,7 +707,11 @@ export class MediaService
       .select({ n: count() })
       .from(userStickers)
       .where(eq(userStickers.userId, userId));
-    return (a?.n ?? 0) + (b?.n ?? 0);
+    const [c] = await this.database.db
+      .select({ n: count() })
+      .from(userStickerPacks)
+      .where(eq(userStickerPacks.userId, userId));
+    return (a?.n ?? 0) + (b?.n ?? 0) + (c?.n ?? 0);
   }
 
   /** 注销核验（MediaStorageAudit）：存储里没有元数据行对应的文件。 */

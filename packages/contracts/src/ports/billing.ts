@@ -10,7 +10,7 @@
  * （按用量记录 ID 查扣费、按北京日期列出扣费、列出当前价目表有价格的模型键）。
  */
 import type { ModelPurpose } from './model-gateway.js';
-import type { PortResult } from './common.js';
+import type { PortResult, Tx } from './common.js';
 
 /** 计费账户：用户钱包，或平台账户（管理员侧任务）。 */
 export type BillingAccountRef = { kind: 'user'; userId: string } | { kind: 'platform' };
@@ -279,11 +279,16 @@ export interface ServiceFeeHold {
  */
 export interface BillingServiceFeePort {
   /** 冻结。可用余额不足返回 insufficient_balance（不透支、不记 insufficient_since）。 */
-  hold(input: ServiceFeeHoldInput): Promise<PortResult<ServiceFeeHold, 'insufficient_balance'>>;
+  hold(
+    input: ServiceFeeHoldInput,
+    tx?: Tx,
+  ): Promise<PortResult<ServiceFeeHold, 'insufficient_balance'>>;
   /** 扣除（active → settled）；已扣除再调返回同一结果；已退回的抛异常。 */
   settle(holdId: string): Promise<{ ledgerEntryId: string; amountMicros: number }>;
   /** 退回（active → released）；已退回再调什么都不做；已扣除的抛异常。 */
-  release(holdId: string): Promise<void>;
+  release(holdId: string, tx?: Tx): Promise<void>;
+  /** 3.15：只返回指定用户本人键的冻结；仅用于旧孤儿兼容，不改变hold幂等含义。 */
+  getByKey(userId: string, idempotencyKey: string, tx?: Tx): Promise<ServiceFeeHold | null>;
   /** 查冻结状态；不存在返回 null。 */
   get(holdId: string): Promise<ServiceFeeHold | null>;
 }

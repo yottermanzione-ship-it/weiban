@@ -1,0 +1,43 @@
+import {ApiFailure} from '@weiban/client-core';
+export const ids={a:'10000000-0000-4000-8000-000000000001',b:'10000000-0000-4000-8000-000000000002',user:'20000000-0000-4000-8000-000000000001'};
+const key='weiban:q-preview-20261016';
+const now=()=>new Date().toISOString();
+const initial={status:null,tickets:[],installed:[],mode:'free',fail:'',membership:null,requests:[],logs:[]};
+export let state:any=JSON.parse(localStorage.getItem(key)||'null')||initial;
+export function save(){localStorage.setItem(key,JSON.stringify(state));window.dispatchEvent(new Event('q-preview'));}
+export function configure(patch:any){Object.assign(state,patch);save();}
+const changed=(section:string,itemId:string|null=null)=>window.dispatchEvent(new CustomEvent('weiban:update',{detail:{type:'data.changed',data:{section,itemId}}}));
+const pack=(id:string)=>({packId:id,name:id===ids.a?'夏知的小表情':'月光表情包',intro:'开发样例表情',coverUrl:'/Icon-192.png',stickerCount:1,added:state.installed.includes(id),builtIn:false,enabled:true,inStore:true,updatedAt:now(),userVisible:false,characterIds:[],stickers:[{stickerId:id,mediaId:id,url:'/Icon-192.png',description:'打招呼',packId:id}]});
+function quota(){return {quotedAt:now(),tier:state.mode==='pro'?'pro_plus':'free',limit:5,used:state.mode==='free'||state.mode==='pro'||state.mode==='change'?0:5,remaining:state.mode==='free'||state.mode==='pro'||state.mode==='change'?5:0,nextPointsCost:state.mode==='free'||state.mode==='pro'||state.mode==='change'?0:200,periodStart:'2026-10-01T00:00:00.000Z',periodEnd:'2026-11-01T00:00:00.000Z',timeZone:'Asia/Shanghai'};}
+export const localStore:any={};
+export const api:any={cached:async()=>undefined,captureOwner:()=>({userId:ids.user,sessionId:ids.a}),owner$: {subscribe:()=>()=>{}},call:async(e:any,o:any={})=>{
+ const path=e.path,method=e.method,body=o.body??{},params=o.params??{};
+ state.logs.push({method,path,params,body:structuredClone(body),at:now()});save();await new Promise(r=>setTimeout(r,180));
+ if(method!=='GET'&&state.fail){const fail=state.fail;state.fail='';save();throw new ApiFailure('conflict',fail,409);}
+ if(path==='/api/v1/me/status'){if(method==='GET')return {status:state.status&&(!state.status.expiresAt||Date.parse(state.status.expiresAt)>Date.now())?state.status:null};if(method==='DELETE'){state.status=null;save();return;}state.status={preset:body.preset,text:body.text,label:body.text||({happy:'开心',working:'工作中'} as any)[body.preset]||'当前状态',emoji:'😊',quiet:false,setAt:now(),expiresAt:body.duration?.kind==='forever'?null:new Date(Date.now()+3600000).toISOString()};save();return {status:state.status};}
+ if(path==='/api/v1/plugins')return {items:['wechat','qq','weibo'].map((pluginId,i)=>({pluginId,name:['微信','QQ','微博'][i],description:'外部渠道接入尚未开放',status:'coming_soon'}))};
+ if(path.endsWith('/characters/:characterId/status'))return {mood:'happy',updatedAt:now()};
+ if(path==='/api/v1/sticker-store/packs')return {items:[pack(ids.a),pack(ids.b)]};
+ if(path==='/api/v1/sticker-store/packs/:packId')return pack(params.packId);
+ if(path==='/api/v1/me/sticker-packs')return {items:state.installed.map(pack)};
+ if(path==='/api/v1/me/sticker-packs/order'){state.installed=body.packIds;save();changed('stickers');return;}
+ if(path==='/api/v1/me/sticker-packs/:packId'){if(method==='DELETE')state.installed=state.installed.filter((id:string)=>id!==params.packId);else if(!state.installed.includes(params.packId))state.installed.push(params.packId);save();changed('stickers');return pack(params.packId);}
+ if(path==='/api/v1/stickers/packs')return {items:state.installed.map(pack)};
+ if(path==='/api/v1/me/stickers')return {items:[]};
+ if(path==='/api/v1/characters/categories')return {items:[]};
+ if(path==='/api/v1/role-requests/config')return {enabled:true,pointsCost:200,maxOpenPerUser:3,quota:quota()};
+ if(path==='/api/v1/role-requests'&&method==='POST'){
+ if(state.mode==='change'){state.mode='paid';save();throw new ApiFailure('conflict','报价变化',409,{reason:'price_changed'});}
+ if(state.mode==='insufficient')throw new ApiFailure('insufficient_balance','积分不足，余额未改变',422);
+ if(state.mode==='expired')throw new ApiFailure('conflict','旧编号已退款',409,{reason:'request_id_expired',canRenew:true});
+ const old=state.requests.find((r:any)=>r.clientRequestId===body.clientRequestId);if(old)return old;
+ const r={...body,requestId:crypto.randomUUID(),pointsCost:body.expectedPointsCost,status:'pending',createdAt:now()};state.requests.push(r);save();return r;}
+ if(path==='/api/v1/support/tickets'&&method==='POST'){const old=state.tickets.find((t:any)=>t.clientRequestId===body.clientRequestId);if(old)return old;const t={...body,ticketId:crypto.randomUUID(),category:body.category??null,target:body.target??null,reason:body.reason??null,text:body.text||'投诉',images:[],conversationId:null,characterId:null,status:'open',replies:[],unseen:false,createdAt:now(),updatedAt:now(),resolvedAt:null,userId:ids.user,username:'样例用户',handledBy:null};state.tickets.unshift(t);save();return t;}
+ if(path==='/api/v1/support/tickets'||path==='/api/v1/admin/support/tickets')return {items:state.tickets,nextCursor:null,hasMore:false,unseenCount:state.tickets.filter((t:any)=>t.unseen).length,openCount:state.tickets.filter((t:any)=>t.status==='open').length};
+ if(path.includes('/support/tickets/:ticketId')){const t=state.tickets.find((t:any)=>t.ticketId===params.ticketId);if(!t)throw new ApiFailure('not_found','请先提交一条反馈',404);if(method==='GET'){t.unseen=false;save();return t;}if(path.endsWith('/replies')||path.endsWith('/reply')){t.replies.push({replyId:crypto.randomUUID(),from:path.includes('/admin/')?'admin':'user',text:body.text,createdAt:now()});t.status=body.resolve?'resolved':path.includes('/admin/')?'replied':'open';t.unseen=path.includes('/admin/');}else if(path.endsWith('/resolve'))t.status='resolved';else if(path.endsWith('/reopen'))t.status='open';save();changed('support',t.ticketId);return t;}
+ if(path.endsWith('/users/:userId/membership')){if(method==='PUT'){state.membership=body.expiresAt;save();}return {checkedAt:now(),tier:state.membership&&Date.parse(state.membership)>Date.now()?'pro_plus':'free',expiresAt:state.membership,updatedAt:now()};}
+ if(path==='/api/v1/admin/stickers/packs')return {items:[pack(ids.a),pack(ids.b)]};
+ if(path==='/api/v1/admin/characters')return {items:[]};
+ if(path==='/api/v1/admin/stickers/packs/:packId')return {...pack(params.packId),...body};
+ throw new ApiFailure('unsupported','样例未模拟：'+method+' '+path,400);
+}};

@@ -1,3 +1,4 @@
+import { ChatHeading } from './chat-heading.js';
 /*
  * 私聊 / 群聊页（docs/refactor/06-old-ui-spec.md 4.4）：返回键 + 未读药丸、一句一个气泡（每条带头像和尖角）、
  * 时间条（间隔 > 5 分钟）、气泡长按深色菜单、输入栏（语音 / 输入框 / 表情 / ＋ 或发送）、按住说话、
@@ -1375,14 +1376,17 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         ) : (
           <BackWithUnread excludeId={id} />
         )}
-        <span className="wx-chat-title">
-          <h1>{selecting ? `已选择 ${chosen.length} 条` : <Name conversation={conversation} />}</h1>
-          {!selecting && typing && (
-            <small className="nav-subtitle" role="status">
-              对方正在输入…
-            </small>
-          )}
-        </span>
+        <ChatHeading
+          name={selecting ? `已选择 ${chosen.length} 条` : <Name conversation={conversation} />}
+          characterId={selecting ? undefined : role?.refId}
+          active={
+            !selecting &&
+            !!role &&
+            chat.state.contacts.some((c) => c.characterId === role.refId && c.status === 'active')
+          }
+          group={group}
+          typing={!selecting && !!typing}
+        />
         {selecting ? (
           <span />
         ) : (

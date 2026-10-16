@@ -95,6 +95,10 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.15（2026-10-16，q-features 接续）
+
+旧q分支3.9预留内容适配到主线3.14后统一发布为3.15：用户当前状态、表情商店安装/管理/发送资格、插件三项coming_soon、真实最小会员有效期与管理员授予；角色心情保留A7 TimelineEndpoints.getStatus，不注册旧同URL异响应接口。制作申请配置附真实quota，提交expectedPointsCost确认0/200，免费次数标志与同Tx服务费hold/release/getByKey端口配套。没有完整会员支付权益、赠分、模型档位或角色生态全局开关。JSON Schema/OpenAPI及安卓生成配套；迁移0097~0100未执行、GUI与真实DB/扣费未验，见docs/handoffs/2026-10-16-q-features.md。
+
 ### 3.10（2026-10-15，A4 消息转发）
 
 新增源消息 ID 转发接口 `ChatEndpoints.forwardMessages`，服务端生成非递归 `forwarded_record` 加密快照；普通 `UserSendableContent` 不接受该类型。逐目标事务结果与请求幂等、单条强制逐条、50 条 / 10 目标 / 20,000 正文字上限；详见 `docs/backend/chat-forward.md`。JSON Schema、OpenAPI 与安卓契约生成物同步；老客户端保留未知类型容错。本分支跳过 q-features 尚未合入的 3.9 预留版本。

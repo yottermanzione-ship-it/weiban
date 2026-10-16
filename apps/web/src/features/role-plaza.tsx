@@ -5,8 +5,8 @@ import { SearchField } from './search-field.js';
  *   两边都能点赞、评论、添加、查看基本人设。其他所有角色广场入口统一到这一页。
  * - 角色创建（/roles/create）：自定义人设 / 聊天导入 / 申请制作。
  *   申请制作（/role-requests/new）：提交表单 → 我的申请（/role-requests）→ 申请详情（/role-requests/:id，推送会打开它）。
- *   状态变化有红点（data.changed(role_requests)）；扣积分预留（价格目前 0，不扣）。
- * 契约：PlazaOfficialEndpoints、RoleRequestEndpoints（3.5）。
+ *   状态变化有红点（data.changed(role_requests)）；按真实会员免费次数计价，超额200积分冻结，完成扣除，拒绝/撤回退回。
+ * 契约：PlazaOfficialEndpoints、RoleRequestEndpoints（3.15）。
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -701,8 +701,10 @@ export function RoleRequestListPage() {
       <NavBar title="申请制作" fallback="/roles/create" />
       <div className="request-intro">
         <p>说说你想要的角色，官方会为你制作，做好后自动加到你的通讯录。</p>
-        {config.data && config.data.pointsCost > 0 && (
-          <p className="hint">每次申请需要 {config.data.pointsCost} 积分</p>
+        {config.data && (
+          <p className="hint">
+            本期剩余 {config.data.quota.remaining} 次免费申请，超出每次200积分。
+          </p>
         )}
         <Link
           className={`button primary ${enabled ? '' : 'disabled'}`}
@@ -779,6 +781,8 @@ export function RoleRequestFormPage() {
   const [uploading, setUploading] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
+  const [expiredKey, setExpiredKey] = useState(false);
+  const [blockedKey, setBlockedKey] = useState(false);
   const requestId = useRef(crypto.randomUUID());
   const file = useRef<HTMLInputElement>(null);
   const previews = useRef<string[]>([]);
@@ -807,13 +811,14 @@ export function RoleRequestFormPage() {
     }
   }
   async function submit() {
-    if (!roleName.trim()) return;
+    if (!roleName.trim() || !config.data || blockedKey) return;
     setPending(true);
     setError('');
     try {
       const created = await api.call(RoleRequestEndpoints.create, {
         body: {
           clientRequestId: requestId.current,
+          expectedPointsCost: config.data.quota.nextPointsCost,
           roleName: roleName.trim(),
           basis: basis || null,
           categoryId: categoryId || null,
@@ -826,11 +831,23 @@ export function RoleRequestFormPage() {
       showToast('已提交', 2000, 'success');
       navigate(`/role-requests/${created.requestId}`, { replace: true });
     } catch (e) {
-      if (code(e) === 'forbidden') setError('申请制作暂未开放');
-      else if (code(e) === 'conflict')
+      const details =
+        e instanceof ApiFailure
+          ? (e.details as { reason?: string; canRenew?: boolean } | undefined)
+          : undefined;
+      if (code(e) === 'conflict' && details?.reason === 'price_changed') {
+        config.refresh();
+        setError('免费次数或报价已变化，请核对更新后的金额，再点提交确认。');
+      } else if (code(e) === 'conflict' && details?.reason === 'request_id_expired') {
+        setExpiredKey(!!details.canRenew);
+        setBlockedKey(true);
         setError(
-          `你还有未完成的申请（最多同时 ${config.data?.maxOpenPerUser ?? ''} 个），等它们完成后再提交吧`,
+          details.canRenew
+            ? '旧提交编号已失效。请明确更换新编号，核对报价后再提交；不会自动扣费。'
+            : '旧申请资金状态需要管理员核对，请勿重复提交，联系帮助与反馈。',
         );
+      } else if (code(e) === 'forbidden') setError('申请制作暂未开放');
+      else if (code(e) === 'conflict') setError(friendlyError(e));
       else setError(friendlyError(e));
     } finally {
       setPending(false);
@@ -863,87 +880,90 @@ export function RoleRequestFormPage() {
             onChange={(e) => setRoleName(e.target.value)}
           />
         </label>
-        <label>
-          类型
-          <select value={basis} onChange={(e) => setBasis(e.target.value as '' | CharacterBasis)}>
-            <option value="">不确定</option>
-            <option value="real_person">真人</option>
-            <option value="fictional">虚构角色（动漫、游戏、影视…）</option>
-            <option value="original">原创</option>
-          </select>
-        </label>
-        <label>
-          分类
-          <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-            <option value="">不选</option>
-            {categories.data?.items.map((c) => (
-              <option key={c.categoryId} value={c.categoryId}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          出处 / 作品
-          <input
-            value={sourceWork}
-            maxLength={60}
-            placeholder="例如某部动漫、游戏、电视剧"
-            onChange={(e) => setSourceWork(e.target.value)}
-          />
-        </label>
-        <label>
-          参考资料
-          <textarea
-            value={referenceText}
-            maxLength={3000}
-            rows={6}
-            placeholder="人物介绍、性格、说话方式、你希望 TA 怎样和你相处……也可以贴链接"
-            onChange={(e) => setReferenceText(e.target.value)}
-          />
-          <span className="hint char-count">{chars(referenceText)} / 3000</span>
-        </label>
-        <div className="request-images">
-          <span>参考图（选填，最多 {ROLE_REQUEST_MAX_IMAGES} 张）</span>
-          <div className="request-image-grid">
-            {images.map((image) => (
-              <span key={image.mediaId} className="request-image">
-                <img src={image.preview} alt="参考图" />
+        <details>
+          <summary>补充资料（选填）</summary>
+          <label>
+            类型
+            <select value={basis} onChange={(e) => setBasis(e.target.value as '' | CharacterBasis)}>
+              <option value="">不确定</option>
+              <option value="real_person">真人</option>
+              <option value="fictional">虚构角色（动漫、游戏、影视…）</option>
+              <option value="original">原创</option>
+            </select>
+          </label>
+          <label>
+            分类
+            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+              <option value="">不选</option>
+              {categories.data?.items.map((c) => (
+                <option key={c.categoryId} value={c.categoryId}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            出处 / 作品
+            <input
+              value={sourceWork}
+              maxLength={60}
+              placeholder="例如某部动漫、游戏、电视剧"
+              onChange={(e) => setSourceWork(e.target.value)}
+            />
+          </label>
+          <label>
+            参考资料
+            <textarea
+              value={referenceText}
+              maxLength={3000}
+              rows={6}
+              placeholder="人物介绍、性格、说话方式、你希望 TA 怎样和你相处……也可以贴链接"
+              onChange={(e) => setReferenceText(e.target.value)}
+            />
+            <span className="hint char-count">{chars(referenceText)} / 3000</span>
+          </label>
+          <div className="request-images">
+            <span>参考图（选填，最多 {ROLE_REQUEST_MAX_IMAGES} 张）</span>
+            <div className="request-image-grid">
+              {images.map((image) => (
+                <span key={image.mediaId} className="request-image">
+                  <img src={image.preview} alt="参考图" />
+                  <button
+                    type="button"
+                    aria-label="移除这张图"
+                    onClick={() => {
+                      setImages((prev) => prev.filter((i) => i.mediaId !== image.mediaId));
+                    }}
+                  >
+                    <OldIcon name="wechat/close" size={14} />
+                  </button>
+                </span>
+              ))}
+              {images.length < ROLE_REQUEST_MAX_IMAGES && (
                 <button
                   type="button"
-                  aria-label="移除这张图"
-                  onClick={() => {
-                    setImages((prev) => prev.filter((i) => i.mediaId !== image.mediaId));
-                  }}
+                  className="request-image add"
+                  aria-label="添加参考图"
+                  disabled={uploading}
+                  onClick={() => file.current?.click()}
                 >
-                  <OldIcon name="wechat/close" size={14} />
+                  {uploading ? '上传中' : <OldIcon name="wechat/add" size={28} />}
                 </button>
-              </span>
-            ))}
-            {images.length < ROLE_REQUEST_MAX_IMAGES && (
-              <button
-                type="button"
-                className="request-image add"
-                aria-label="添加参考图"
-                disabled={uploading}
-                onClick={() => file.current?.click()}
-              >
-                {uploading ? '上传中' : <OldIcon name="wechat/add" size={28} />}
-              </button>
-            )}
+              )}
+            </div>
+            <input
+              ref={file}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={(e) => {
+                if (e.target.files?.length) void pick(e.target.files);
+                e.target.value = '';
+              }}
+            />
           </div>
-          <input
-            ref={file}
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            onChange={(e) => {
-              if (e.target.files?.length) void pick(e.target.files);
-              e.target.value = '';
-            }}
-          />
-        </div>
+        </details>
         <label>
           补充说明
           <textarea
@@ -954,16 +974,49 @@ export function RoleRequestFormPage() {
             onChange={(e) => setNote(e.target.value)}
           />
         </label>
-        {config.data && config.data.pointsCost > 0 && (
-          <p className="hint">本次申请需要 {config.data.pointsCost} 积分</p>
+        {config.data && (
+          <div className="hint">
+            <p>
+              {config.data.quota.tier === 'pro_plus' ? 'PRO+每周5次' : '免费用户每月5次'}，本期剩余{' '}
+              {config.data.quota.remaining} 次。本次{' '}
+              {config.data.quota.nextPointsCost === 0 ? '免费' : '冻结200积分'}。
+            </p>
+            <p>
+              按服务器受理时间计入北京时间自然月／周一开始的自然周。成功提交占次数，拒绝或撤回不返次数；收费申请完成扣除，拒绝或撤回退回冻结积分。
+            </p>
+          </div>
         )}
         {error && (
           <p role="alert" className="error">
             {error}
           </p>
         )}
-        <button className="primary" disabled={pending || uploading || !roleName.trim()}>
-          {pending ? '正在提交…' : '提交申请'}
+        {expiredKey && (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => {
+              requestId.current = crypto.randomUUID();
+              setExpiredKey(false);
+              setBlockedKey(false);
+              config.refresh();
+              setError('已更换新编号。请核对报价后再次提交确认。');
+            }}
+          >
+            更换新编号
+          </button>
+        )}
+        <button
+          className="primary"
+          disabled={
+            pending || uploading || blockedKey || !config.data || config.loading || !roleName.trim()
+          }
+        >
+          {pending
+            ? '正在提交…'
+            : config.data?.quota.nextPointsCost === 200
+              ? '确认冻结200积分并提交'
+              : '免费提交申请'}
         </button>
       </form>
     </main>
@@ -1068,6 +1121,9 @@ export function RoleRequestDetailPage() {
             />
             {data.sourceWork && <MenuRow label="出处" chevron={false} value={data.sourceWork} />}
             <MenuRow label="提交时间" chevron={false} value={dateText(data.createdAt)} />
+            {data.freeQuotaApplied && (
+              <MenuRow label="申请费用" chevron={false} value="使用免费次数" />
+            )}
             {data.pointsCost > 0 && (
               <MenuRow
                 label="积分"

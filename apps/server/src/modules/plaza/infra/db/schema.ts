@@ -325,6 +325,7 @@ export const roleRequests = plazaSchema.table(
     addedToContacts: boolean('added_to_contacts').notNull().default(false),
     pointsCost: integer('points_cost').notNull().default(0),
     pointsCharged: integer('points_charged').notNull().default(0),
+    freeQuotaApplied: boolean('free_quota_applied').notNull().default(false),
     /** 0092（Q5）：billing 服务费冻结 ID；价格为 0 时为空。 */
     feeHoldId: uuid('fee_hold_id'),
     /** 0092：none（不收费）/ held（冻结中）/ settled（已扣除）/ released（已退回）。 */
@@ -347,6 +348,9 @@ export const roleRequests = plazaSchema.table(
     index('role_requests_user_idx').on(t.userId, t.createdAt),
     index('role_requests_status_idx').on(t.status, t.createdAt),
     index('role_requests_fee_idx').on(t.feeState),
+    index('role_requests_free_quota_idx')
+      .on(t.userId, t.createdAt)
+      .where(sql`${t.freeQuotaApplied} = true`),
   ],
 );
 

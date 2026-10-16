@@ -1,3 +1,4 @@
+import { SupportAdminPage, SupportBadge } from '../features/support.js';
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { IdentityEndpoints, type AuthResponse } from '@weiban/contracts';
@@ -103,6 +104,7 @@ export function App() {
             ['/account-deletions', '注销未完成'],
             ['/plaza', '角色广场'],
             ['/role-requests', '制作申请'],
+            ['/support', '帮助反馈与投诉'],
             ['/planner', '行为规划'],
             ['/daily-questions', '每日一问题库'],
             ['/announcements', '公告管理'],
@@ -116,6 +118,7 @@ export function App() {
               {to === '/account-deletions' && <PendingDeletionBadge />}
               {to === '/plaza' && <PlazaReportBadge />}
               {to === '/role-requests' && <RoleRequestBadge />}
+              {to === '/support' && <SupportBadge />}
             </NavLink>
           ))}
         </nav>
@@ -153,6 +156,7 @@ export function App() {
             <Route path="/pet-species" element={<PetSpeciesPage />} />
             <Route path="/account-deletions" element={<AccountDeletionsPage />} />
             <Route path="/plaza" element={<PlazaAdminPage />} />
+            <Route path="/support" element={<SupportAdminPage />} />
             <Route path="/role-requests" element={<RoleRequestsPage />} />
             <Route path="/planner" element={<PlannerPage />} />
             <Route path="/daily-questions" element={<DailyQuestionsPage />} />
