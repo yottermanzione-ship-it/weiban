@@ -117,9 +117,7 @@ function AccountDetails({ account, refresh }: { account: Account; refresh: () =>
 /** 充值档位与联系管理员说明（用户端充值页显示；第一版不开真实支付）。 */
 function RechargeConfig() {
   const options = useRemote(BillingAdminEndpoints.getRechargeOptions);
-  const [rows, setRows] = useState<Array<{ tierId: string; yuan: string; bonus: string }> | null>(
-    null,
-  );
+  const [rows, setRows] = useState<Array<{ tierId: string; yuan: string }> | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
@@ -130,7 +128,6 @@ function RechargeConfig() {
     data?.tiers.map((t) => ({
       tierId: t.tierId,
       yuan: String(t.priceMicros / 1_000_000),
-      bonus: String(t.bonusPercent),
     })) ??
     [];
   const contact = hint ?? data?.contactHint ?? '';
@@ -145,7 +142,7 @@ function RechargeConfig() {
           tiers: list.map((r) => ({
             tierId: r.tierId.trim(),
             priceMicros: Math.round(Number(r.yuan) * 1_000_000),
-            bonusPercent: Number(r.bonus || 0),
+            bonusPercent: 0,
           })),
           contactHint: contact,
         },
@@ -164,8 +161,8 @@ function RechargeConfig() {
     <section className="panel stack">
       <h2>充值档位</h2>
       <p className="hint">
-        用户端「充值」页按这里的档位显示（价格 ÷ 1 元 = 100 积分 +
-        赠送）。第一版不开真实支付，按钮为「联系管理员充值」，弹窗显示下方说明。
+        用户端「充值」页按这里的档位显示，1元 = 100积分，不赠送积分。
+        当前按钮为「联系管理员充值」，弹窗显示下方说明。
       </p>
       <table>
         <thead>
@@ -173,7 +170,6 @@ function RechargeConfig() {
             <th>档位编号</th>
             <th>价格（元）</th>
             <th>到账积分</th>
-            <th>赠送比例（%）</th>
             <th />
           </tr>
         </thead>
@@ -194,22 +190,7 @@ function RechargeConfig() {
                   onChange={(e) => update(index, { yuan: e.target.value })}
                 />
               </td>
-              <td>
-                {pts(Number(r.yuan) * 100)}
-                {Number(r.bonus) > 0 && (
-                  <span className="hint">
-                    {' '}
-                    + 送 {pts(Math.floor((Number(r.yuan) * 100 * Number(r.bonus)) / 100))}
-                  </span>
-                )}
-              </td>
-              <td>
-                <input
-                  value={r.bonus}
-                  inputMode="decimal"
-                  onChange={(e) => update(index, { bonus: e.target.value })}
-                />
-              </td>
+              <td>{pts(Number(r.yuan) * 100)}</td>
               <td>
                 <button
                   type="button"
@@ -227,9 +208,7 @@ function RechargeConfig() {
         <button
           type="button"
           disabled={list.length >= 12}
-          onClick={() =>
-            setRows([...list, { tierId: `t${list.length + 1}`, yuan: '10', bonus: '0' }])
-          }
+          onClick={() => setRows([...list, { tierId: `t${list.length + 1}`, yuan: '10' }])}
         >
           + 添加档位
         </button>

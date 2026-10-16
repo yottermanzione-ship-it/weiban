@@ -216,8 +216,9 @@ export const RechargeTier = z.object({
   /** 到账积分（不含赠送）= priceMicros ÷ 10,000。 */
   points: NonNegativePoints,
   /** 赠送比例（百分比，0～100）。 */
+  /** @deprecated 11 C8：对外恒为0，保留响应兼容旧客户端。 */
   bonusPercent: z.number().min(0).max(100),
-  /** 赠送积分 = points × bonusPercent ÷ 100（向下取整到整数积分）。 */
+  /** 11 C8：对外恒为0。 */
   bonusPoints: NonNegativePoints,
 });
 export type RechargeTier = z.infer<typeof RechargeTier>;

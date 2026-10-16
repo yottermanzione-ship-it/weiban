@@ -1,5 +1,7 @@
 # 账号模块 identity 实现说明（apps/server/src/modules/identity）
 
+> 2026-10-16按11 C8覆盖旧说明：开放注册，邀请码功能停用；旧inviteCode仅兼容忽略，不校验/使用邀请码，不产生任何新增赠分。HTTP/CLI生成入口拒绝，旧列表为空；历史邀请码表保留。下文旧邀请码/赠分设计为历史背景，实施与自查见 `docs/handoffs/2026-10-16-codex-stop-gifts.md`。
+
 > 负责人：后端负责人 · v1.0 · 2026-10-05 · 来源任务：T-018（D-L0-06）；v1.1 T-023（契约 1.2：邀请码注册赠送、账号状态端口、注销管理接口）
 > 读者：要用登录身份、资料、设置的其他模块负责人；运维（命令行脚本）；质量负责人。
 > 规则来源（本文不重复）：接口以 `packages/contracts/src/http/identity.ts` 为准；安全规则 `docs/architecture/security-and-privacy.md` 第 2、5 节；ADR-0006；内核用法 `docs/backend/kernel.md`。
