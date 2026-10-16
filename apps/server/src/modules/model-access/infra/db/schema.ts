@@ -236,6 +236,8 @@ export const usageRecords = modelAccessSchema.table(
     ledgerEntryId: uuid('ledger_entry_id'),
     chargedMicros: money('charged_micros').notNull(),
     costMicros: money('cost_micros').notNull(),
+    costKnown: boolean('cost_known').notNull().default(false),
+    uncertainCostMicros: money('uncertain_cost_micros').notNull().default(0),
     absorbedCostMicros: money('absorbed_cost_micros').notNull(),
     /** 冻结动用了安全优先透支（billing.md 6.6）。 */
     safetyOverdraft: boolean('safety_overdraft').notNull(),

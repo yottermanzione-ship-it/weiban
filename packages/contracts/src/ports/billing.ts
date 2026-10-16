@@ -89,6 +89,7 @@ export interface SettleOutput {
   theoreticalMicros?: number;
   waivedMicros?: number;
   costKnown?: boolean;
+  uncertainCostMicros?: number;
   unpricedUnits?: string[];
 }
 
@@ -109,6 +110,7 @@ export interface ReleaseOutput {
   absorbedCostMicros: number;
   /** 3.16：未知用量/缺价格不能被解释成已知零成本。 */
   costKnown?: boolean;
+  uncertainCostMicros?: number;
   unpricedUnits?: string[];
 }
 
@@ -130,12 +132,22 @@ export interface SpendStatus {
  * 而不是按变量名猜（Q-009）。
  */
 export interface CallRiskSnapshot {
- phase:'reserved'|'sent'|'unknown'|'resolved';costUpperMicros:number;uncertainMicros:number;
- usageRecordId?:string;upstreamId?:string;upstreamModelId?:string;sentAt?:string;
+  phase: 'reserved' | 'sent' | 'unknown' | 'resolved';
+  costUpperMicros: number;
+  uncertainMicros: number;
+  usageRecordId?: string;
+  upstreamId?: string;
+  upstreamModelId?: string;
+  sentAt?: string;
 }
 export interface BillingReservationPort {
- /** 3.16：外部请求发出前原子标记，只允许active未过期且从未发出的hold。重复返回false，不可重发。 */
- beginCall?(input:{holdId:string;usageRecordId:string;upstreamId:string;upstreamModelId:string}):Promise<boolean>;
+  /** 3.16：外部请求发出前原子标记，只允许active未过期且从未发出的hold。重复返回false，不可重发。 */
+  beginCall?(input: {
+    holdId: string;
+    usageRecordId: string;
+    upstreamId: string;
+    upstreamModelId: string;
+  }): Promise<boolean>;
 
   /**
    * 原子地冻结用户（或平台账户）的钱，同时预留平台每日成本预算（billing.md 第 7 节，Q-007）；

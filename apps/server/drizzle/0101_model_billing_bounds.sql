@@ -1,5 +1,9 @@
 ALTER TABLE model_access.model_catalog ADD COLUMN billing_bounds jsonb;
 ALTER TABLE model_access.model_routes ADD COLUMN billing_bounds jsonb;
+ALTER TABLE model_access.usage_records ADD COLUMN cost_known boolean NOT NULL DEFAULT false;
+ALTER TABLE model_access.usage_records ADD COLUMN uncertain_cost_micros bigint NOT NULL DEFAULT 0 CHECK (uncertain_cost_micros >= 0);
+-- 旧已结算金额保留，旧估算用量不冒充供应商已核成本。
+UPDATE model_access.usage_records SET cost_known = true WHERE snapshot_at IS NOT NULL AND NOT estimated;
 CREATE TABLE model_access.generation_attempts (
  id uuid PRIMARY KEY,generation_id uuid NOT NULL,user_id uuid NOT NULL,ordinal integer NOT NULL,
  model_key text NOT NULL,upstream_id uuid NOT NULL,upstream_model_id text NOT NULL,usage_record_id uuid,hold_id uuid,phase text NOT NULL,

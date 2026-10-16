@@ -676,6 +676,8 @@ export type AdminUsageFilter = z.infer<typeof AdminUsageFilter>;
 
 /** 一组调用的合计。金额为微元：charged = 用户被扣（售价），cost = 平台成本（成本价），absorbedCost = 失败调用由平台吸收的成本。 */
 export const AdminUsageTotals = z.object({
+  unknownCostCalls: z.number().int().nonnegative().optional(),
+  uncertainCostMicros: z.number().int().nonnegative().optional(),
   calls: z.number().int().nonnegative(),
   failedCalls: z.number().int().nonnegative(),
   inputTokens: z.number().int().nonnegative(),
@@ -733,6 +735,8 @@ export type AdminUsageSummary = z.infer<typeof AdminUsageSummary>;
 
 /** 一次调用的明细（ADM-08 第 5 条）。没有任何内容字段。 */
 export const AdminUsageRecord = z.object({
+  costKnown: z.boolean().optional(),
+  uncertainCostMicros: z.number().int().nonnegative().optional(),
   usageRecordId: Id,
   createdAt: Timestamp,
   /** 发起调用的用户；平台账户的调用为发起操作的管理员。 */

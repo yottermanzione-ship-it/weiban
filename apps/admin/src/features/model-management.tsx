@@ -582,9 +582,13 @@ function OverviewTab({
           sub={t ? `输入 ${shortNum(t.inputTokens)} · 输出 ${shortNum(t.outputTokens)}` : undefined}
         />
         <Stat
-          title="上游成本"
+          title="上游已核成本"
           value={t ? yuan(t.costMicros) : '—'}
-          sub={t && t.absorbedCostMicros ? `平台吸收 ${yuan(t.absorbedCostMicros)}` : undefined}
+          sub={
+            t
+              ? `${t.unknownCostCalls ?? '未知'} 笔待核 · 风险上限 ${yuan(t.uncertainCostMicros ?? 0)}（不计实际成本）`
+              : undefined
+          }
         />
         <Stat
           title="用户扣除"
@@ -667,7 +671,10 @@ function OverviewTab({
                 <tr key={r.keys[0]}>
                   <td>{upstreamName(r.keys[0]!)}</td>
                   <td>{nf.format(r.calls)}</td>
-                  <td>{yuan(r.costMicros)}</td>
+                  <td>
+                    {yuan(r.costMicros)}（已核）；{r.unknownCostCalls ?? '未知'} 笔待核 / 风险{' '}
+                    {yuan(r.uncertainCostMicros ?? 0)}
+                  </td>
                   <td className={(r.failureRate ?? 0) > 0.05 ? 'danger-text' : ''}>
                     {pct(r.failureRate ?? (r.calls ? r.failedCalls / r.calls : 0))}
                   </td>
@@ -748,7 +755,10 @@ function OverviewTab({
                     {pts(r.chargedPoints)} 积分{' '}
                     <span className="hint">≈ {yuan(r.chargedMicros)}</span>
                   </td>
-                  <td>{yuan(r.costMicros)}</td>
+                  <td>
+                    {yuan(r.costMicros)}（已核）；{r.unknownCostCalls ?? '未知'} 笔待核 / 风险{' '}
+                    {yuan(r.uncertainCostMicros ?? 0)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -2464,7 +2474,9 @@ function RecordsTab({
                 <td>{nf.format(x.inputTokens)}</td>
                 <td>{nf.format(x.outputTokens)}</td>
                 <td>{nf.format(x.latencyMs)} ms</td>
-                <td>{yuan(x.costMicros, 4)}</td>
+                <td>
+                  {yuan(x.costMicros, 4)}（已核部分）{x.costKnown !== true ? ' · 待核' : ''}
+                </td>
                 <td>{(x.chargedPoints ?? 0).toFixed(2)} 积分</td>
                 <td>
                   {x.status === 'succeeded'
@@ -2539,8 +2551,13 @@ function RecordsTab({
               {detail.latencyMs} ms{detail.ttftMs != null ? ` · 首字 ${detail.ttftMs} ms` : ''} ·
               重试 {detail.retryCount} 次
             </dd>
-            <dt>上游成本</dt>
-            <dd>{yuan(detail.costMicros, 4)}</dd>
+            <dt>上游已核成本</dt>
+            <dd>
+              {yuan(detail.costMicros, 4)}
+              {detail.costKnown !== true ? '（仅已核部分，仍待核）' : ''}
+            </dd>
+            <dt>待核风险上限（不计实际成本）</dt>
+            <dd>{yuan(detail.uncertainCostMicros ?? 0, 4)}</dd>
             <dt>用户扣除</dt>
             <dd>
               {(detail.chargedPoints ?? 0).toFixed(2)} 积分（≈ {yuan(detail.chargedMicros, 4)}）

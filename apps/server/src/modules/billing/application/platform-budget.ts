@@ -94,31 +94,82 @@ export class PlatformBudget {
   }
 
   /** 保守风险与实际成本分列；转入来源只能是调用前保存的上限。调用方在hold锁内保证幂等。 */
-  async moveToUnknown(tx:DbTx,day:string,reserved:number,uncertain:number,risk:{holdId:string;modelKey:string;upstreamId:string;upstreamModelId:string;sentAt:string;costUpperMicros:number}){
-    await this.ensureDay(tx,day);
-    await tx.query('UPDATE billing.platform_daily_budget SET reserved_cost_micros=GREATEST(reserved_cost_micros-$2,0),uncertain_cost_micros=uncertain_cost_micros+$3 WHERE budget_day=$1',[day,reserved,uncertain]);
-    await this.outbox.publish(tx,'billing.call_cost_unknown','billing',{...risk,uncertainMicros:uncertain});
-    await this.audit.record({module:'billing',action:'prehold.unknown_risk',actorType:'system',targetType:'hold',targetId:risk.holdId,details:{...risk,budgetDay:day,reservedTransferredMicros:reserved,uncertainMicros:uncertain}},tx);
-    const status=await this.today(tx,day);
-    if(status.settled+status.reserved+status.uncertain>status.cap)await this.alert(tx,day,status.settled+status.reserved+status.uncertain,status.cap);
+  async moveToUnknown(
+    tx: DbTx,
+    day: string,
+    reserved: number,
+    uncertain: number,
+    risk: {
+      holdId: string;
+      modelKey: string;
+      upstreamId: string;
+      upstreamModelId: string;
+      sentAt: string;
+      costUpperMicros: number;
+    },
+  ) {
+    await this.ensureDay(tx, day);
+    await tx.query(
+      'UPDATE billing.platform_daily_budget SET reserved_cost_micros=GREATEST(reserved_cost_micros-$2,0),uncertain_cost_micros=uncertain_cost_micros+$3 WHERE budget_day=$1',
+      [day, reserved, uncertain],
+    );
+    await this.outbox.publish(tx, 'billing.call_cost_unknown', 'billing', {
+      ...risk,
+      uncertainMicros: uncertain,
+    });
+    await this.audit.record(
+      {
+        module: 'billing',
+        action: 'prehold.unknown_risk',
+        actorType: 'system',
+        targetType: 'hold',
+        targetId: risk.holdId,
+        details: {
+          ...risk,
+          budgetDay: day,
+          reservedTransferredMicros: reserved,
+          uncertainMicros: uncertain,
+        },
+      },
+      tx,
+    );
+    const status = await this.today(tx, day);
+    if (status.settled + status.reserved + status.uncertain > status.cap)
+      await this.alert(tx, day, status.settled + status.reserved + status.uncertain, status.cap);
   }
-  async resolveUnknown(tx:DbTx,day:string,uncertain:number){
-    if(!uncertain)return;
-    const result = await tx.query('UPDATE billing.platform_daily_budget SET uncertain_cost_micros=uncertain_cost_micros-$2 WHERE budget_day=$1 AND uncertain_cost_micros >= $2 RETURNING budget_day',[day,uncertain]);
+  async resolveUnknown(tx: DbTx, day: string, uncertain: number) {
+    if (!uncertain) return;
+    const result = await tx.query(
+      'UPDATE billing.platform_daily_budget SET uncertain_cost_micros=uncertain_cost_micros-$2 WHERE budget_day=$1 AND uncertain_cost_micros >= $2 RETURNING budget_day',
+      [day, uncertain],
+    );
     if (!result.rows.length) throw new Error('未知成本风险账不一致，拒绝释放风险占用');
   }
 
   /** 今天（北京时间）已结算的成本与上限。 */
-  async today(tx: DbTx, day: string): Promise<{ settled: number; reserved: number; uncertain:number; cap: number }> {
-    const { rows } = await tx.query<{ settled: string; reserved: string; uncertain:string; cap: string }>(
+  async today(
+    tx: DbTx,
+    day: string,
+  ): Promise<{ settled: number; reserved: number; uncertain: number; cap: number }> {
+    const { rows } = await tx.query<{
+      settled: string;
+      reserved: string;
+      uncertain: string;
+      cap: string;
+    }>(
       `SELECT settled_cost_micros AS settled, reserved_cost_micros AS reserved, uncertain_cost_micros AS uncertain, cap_micros AS cap
          FROM billing.platform_daily_budget WHERE budget_day = $1`,
       [day],
     );
     const row = rows[0];
     return row
-      ? { settled: Number(row.settled), reserved: Number(row.reserved), uncertain:Number(row.uncertain), cap: Number(row.cap) }
-      : { settled: 0, reserved: 0, uncertain:0, cap: this.config.billing.platformDailyCapMicros };
+      ? {
+          settled: Number(row.settled),
+          reserved: Number(row.reserved),
+          uncertain: Number(row.uncertain),
+          cap: Number(row.cap),
+        }
+      : { settled: 0, reserved: 0, uncertain: 0, cap: this.config.billing.platformDailyCapMicros };
   }
 
   /**

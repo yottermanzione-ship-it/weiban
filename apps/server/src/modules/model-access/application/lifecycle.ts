@@ -5,7 +5,7 @@
  * 删除清单范围：该用户的全局模型选择、角色单独模型、用量记录（含 user_id = 该用户的平台账户调用记录，
  * 即该管理员发起的 admin_* 调用）。上游与模型目录是平台数据，不属于任何用户。
  */
-import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
 import type { UserDataOwner } from '@weiban/contracts';
 import { and, count, eq } from 'drizzle-orm';
 import {
@@ -28,6 +28,7 @@ import {
   platformPurposeLimits,
 } from '../infra/db/schema.js';
 import { UsageReconciliationService } from './reconciliation.js';
+import { BillingBoundsService } from './billing-bounds.js';
 
 /** 每天 3:45（北京时间）对前一天做用量对账（billing.md 8.2 第 ② 层；billing 的第 ①③ 层在 3:30）。 */
 export const RECONCILE_USAGE_JOB = 'model_access.reconcile_usage';
@@ -43,10 +44,24 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(UsageReconciliationService)
     private readonly reconciliation: UsageReconciliationService,
+    @Optional() @Inject(BillingBoundsService) private readonly billingBounds?: BillingBoundsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
     this.registry.register(this);
+    this.bus.subscribe({
+      consumer: 'model_access.on_call_cost_unknown',
+      eventType: 'billing.call_cost_unknown',
+      handle: async (event, tx) => {
+        if (!this.billingBounds) throw new Error('计费边界服务不可用，未知风险事件不得确认');
+        await this.billingBounds.pauseUnknown(
+          event.payload.modelKey,
+          event.payload,
+          { checkedAt: event.payload.sentAt },
+          tx,
+        );
+      },
+    });
     this.bus.subscribe({
       consumer: 'model_access.on_contact_purged',
       eventType: 'contacts.contact_purged',

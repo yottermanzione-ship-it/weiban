@@ -188,7 +188,14 @@ export class UsageRecorder {
   /** settle 返回后写金额快照（副本；权威在 billing 流水）。可重复调用（修复任务补写）。 */
   async writeSettleSnapshot(
     id: string,
-    s: { ledgerEntryId: string; amountMicros: number; costMicros: number },
+    s: {
+      ledgerEntryId: string;
+      amountMicros: number;
+      costMicros: number;
+      absorbedCostMicros?: number;
+      costKnown?: boolean;
+      uncertainCostMicros?: number;
+    },
   ): Promise<void> {
     await this.database.db
       .update(usageRecords)
@@ -196,18 +203,26 @@ export class UsageRecorder {
         ledgerEntryId: s.ledgerEntryId,
         chargedMicros: s.amountMicros,
         costMicros: s.costMicros,
+        absorbedCostMicros: s.absorbedCostMicros ?? 0,
+        costKnown: s.costKnown === true,
+        uncertainCostMicros: s.uncertainCostMicros ?? 0,
         snapshotAt: this.clock.now(),
       })
       .where(eq(usageRecords.id, id));
   }
 
   /** release 返回后写平台吸收成本快照。 */
-  async writeReleaseSnapshot(id: string, s: { absorbedCostMicros: number }): Promise<void> {
+  async writeReleaseSnapshot(
+    id: string,
+    s: { absorbedCostMicros: number; costKnown?: boolean; uncertainCostMicros?: number },
+  ): Promise<void> {
     await this.database.db
       .update(usageRecords)
       .set({
         absorbedCostMicros: s.absorbedCostMicros,
         costMicros: s.absorbedCostMicros,
+        costKnown: s.costKnown === true,
+        uncertainCostMicros: s.uncertainCostMicros ?? 0,
         snapshotAt: this.clock.now(),
       })
       .where(eq(usageRecords.id, id));
@@ -237,6 +252,8 @@ const DIMENSION_SQL: Record<AdminUsageDimension, SQL> = {
 };
 
 const TOTALS_SQL = sql`
+  count(*) filter (where not ${usageRecords.costKnown})::bigint as unknown_cost_calls,
+  coalesce(sum(${usageRecords.uncertainCostMicros}), 0)::bigint as uncertain_cost_micros,
   count(*)::bigint as calls,
   count(*) filter (where ${usageRecords.status} = 'failed')::bigint as failed_calls,
   coalesce(sum(${usageRecords.inputTokens}), 0)::bigint as input_tokens,
@@ -255,6 +272,8 @@ const TOTALS_SQL = sql`
     filter (where ${usageRecords.stablePrefixTokens} is not null), 0)::bigint as marked_input_tokens`;
 
 type TotalsRow = Record<
+  | 'unknown_cost_calls'
+  | 'uncertain_cost_micros'
   | 'calls'
   | 'failed_calls'
   | 'input_tokens'
@@ -278,6 +297,8 @@ function toTotals(r: TotalsRow | undefined): AdminUsageTotals {
   const inputAll = n(r?.input_tokens) + n(r?.cached_input_tokens);
   return {
     // v3.4 用量监控
+    unknownCostCalls: n(r?.unknown_cost_calls),
+    uncertainCostMicros: n(r?.uncertain_cost_micros),
     chargedPoints: microsToPoints(n(r?.charged_micros)),
     avgLatencyMs: calls > 0 ? Math.round(n(r?.latency_ms) / calls) : 0,
     failureRate: calls > 0 ? n(r?.failed_calls) / calls : 0,
@@ -302,6 +323,8 @@ function toTotals(r: TotalsRow | undefined): AdminUsageTotals {
 
 export function toAdminRecord(row: UsageRow): AdminUsageRecord {
   return {
+    costKnown: row.costKnown,
+    uncertainCostMicros: row.uncertainCostMicros,
     usageRecordId: row.id,
     createdAt: row.createdAt.toISOString(),
     userId: row.userId,

@@ -11,6 +11,7 @@ import {
   type Database,
   type Clock,
   type AuditLog,
+  type DbTx,
 } from '../../../platform/index.js';
 import { modelRoutes, modelCatalog, platformPurposeLimits } from '../infra/db/schema.js';
 import { localDate } from '../../../platform/time/local-time.js';
@@ -36,9 +37,9 @@ export class BillingBoundsService {
       .from(modelRoutes)
       .where(and(eq(modelRoutes.modelKey, modelKey), eq(modelRoutes.upstreamId, upstreamId)));
     const [catalog] = await this.db.db
-        .select()
-        .from(modelCatalog)
-        .where(eq(modelCatalog.modelKey, modelKey));
+      .select()
+      .from(modelCatalog)
+      .where(eq(modelCatalog.modelKey, modelKey));
     if (!catalog?.enabled || (route && !route.enabled)) return null;
     let raw: unknown = route?.upstreamModelId === upstreamModelId ? route.billingBounds : null;
     if (!route) {
@@ -90,9 +91,10 @@ export class BillingBoundsService {
   async pauseUnknown(
     modelKey: string,
     route: { upstreamId: string; upstreamModelId: string },
-    bounds: RouteBillingBounds,
+    bounds: Pick<RouteBillingBounds, 'checkedAt'>,
+    transaction?: DbTx,
   ) {
-    await this.db.transaction(async (tx) => {
+    const pause = async (tx: DbTx) => {
       await tx.query('SELECT pg_advisory_xact_lock($1)', [CATALOG_LOCK_KEY]);
       const routes = await tx.db
         .select()
@@ -164,7 +166,9 @@ export class BillingBoundsService {
         },
         tx,
       );
-    });
+    };
+    if (transaction) await pause(transaction);
+    else await this.db.transaction(pause);
   }
 
   /** 北京自然日+自然分钟窗口，用户别名/进程重启不刷新额度。仅首次逻辑请求调用，cache重放不消耗。 */
