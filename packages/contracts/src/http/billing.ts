@@ -261,6 +261,15 @@ export const UpdateRechargeOptionsRequest = z.object({
 // ---------- 用户端接口 ----------
 
 export const BillingEndpoints = {
+  consumeEcologyInsufficientNotice: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/billing/ecology-insufficient-notice/consume`,
+    auth: 'user',
+    response: z.object({
+      notice: z.object({ message: z.string().max(200), insufficientSince: Timestamp }).nullable(),
+    }),
+    summary: '3.16：原子消费当前账号生态积分不足提醒；至多一次，余额不变，无待提醒时notice=null',
+  }),
   quoteRecharge: defineEndpoint({
     method: 'POST',
     path: `${API_PREFIX}/billing/recharge-quote`,

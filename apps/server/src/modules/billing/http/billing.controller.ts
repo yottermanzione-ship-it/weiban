@@ -52,6 +52,12 @@ export class BillingController {
     @Inject(RechargeService) private readonly recharge: RechargeService,
   ) {}
 
+  @Post('ecology-insufficient-notice/consume')
+  @RequireAuth(E.consumeEcologyInsufficientNotice.auth)
+  consumeEcologyInsufficientNotice(@CurrentPrincipal() me: AuthPrincipal) {
+    return this.wallet.consumeEcologyInsufficientNotice(me.userId);
+  }
+
   @Get('recharge-options')
   @RequireAuth(E.getRechargeOptions.auth)
   rechargeOptions() {
