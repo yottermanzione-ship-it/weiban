@@ -9,6 +9,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import {
   ModelAccessAdminEndpoints,
   ModelAccessAdminUsageEndpoints,
+  RouteBillingBounds,
   type AdminModel,
   type AdminUsageFilter,
   type AdminUsageOverview,
@@ -1549,6 +1550,7 @@ function toWrite(m: AdminModel) {
     sortOrder: m.sortOrder,
     defaultFor: m.defaultFor,
     enabled: m.enabled,
+    billingBounds: m.billingBounds ?? null,
     rates: m.rates,
     costRates: m.costRates,
     ...(m.routes?.length ? { routes: m.routes } : {}),
@@ -1721,7 +1723,7 @@ function ModelsTab({
             <th>能力</th>
             <th>默认给谁用</th>
             <th>售价（元/百万 token）</th>
-            <th>约每条</th>
+            <th>标准用量示例（非预留额）</th>
             <th>状态</th>
             <th>操作</th>
           </tr>
@@ -1755,6 +1757,14 @@ function ModelsTab({
                   <span className={`tag ${m.enabled ? 'success' : ''}`}>
                     {m.enabled ? '上架' : '下架'}
                   </span>
+                  {!(m.routes?.length
+                    ? m.routes.some(
+                        (route) =>
+                          route.enabled && route.billingBounds && !route.billingBounds.pauseReason,
+                      )
+                    : m.billingBounds && !m.billingBounds.pauseReason) && (
+                    <span className="tag warning">需配置计费上限</span>
+                  )}
                 </td>
                 <td className="mm-actions">
                   <button type="button" className="link-text" onClick={() => setEditing(m)}>
@@ -1820,7 +1830,7 @@ function ratesFrom(form: FormData, prefix: string): ModelRates | null {
   return { input: Number(input || 0), output: Number(output || 0), cache: Number(cache || 0) };
 }
 
-function ModelWizard({
+export function ModelWizard({
   model,
   upstreams,
   onClose,
@@ -1838,6 +1848,7 @@ function ModelWizard({
           {
             upstreamId: model.upstreamId,
             upstreamModelId: model.upstreamModelId,
+            billingBounds: model.billingBounds ?? null,
             priority: 1,
             weight: 100,
             enabled: true,
@@ -1852,7 +1863,13 @@ function ModelWizard({
             enabled: true,
           },
         ];
-  const [routes, setRoutes] = useState<ModelRoute[]>(initialRoutes);
+  type EditableRoute = ModelRoute & { billingBoundsDraft: string };
+  const [routes, setRoutes] = useState<EditableRoute[]>(
+    initialRoutes.map((route) => ({
+      ...route,
+      billingBoundsDraft: route.billingBounds ? JSON.stringify(route.billingBounds, null, 2) : '',
+    })),
+  );
   const [remote, setRemote] = useState<{ id: string; items: string[] | null; error: string }>({
     id: '',
     items: null,
@@ -1890,8 +1907,21 @@ function ModelWizard({
       active = false;
     };
   }, [first?.upstreamId, remote.id]);
-  const patchRoute = (index: number, patch: Partial<ModelRoute>) =>
-    setRoutes((list) => list.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+  const patchRoute = (index: number, patch: Partial<EditableRoute>) =>
+    setRoutes((list) =>
+      list.map((r, i) =>
+        i === index
+          ? {
+              ...r,
+              ...patch,
+              ...((patch.upstreamId !== undefined && patch.upstreamId !== r.upstreamId) ||
+              (patch.upstreamModelId !== undefined && patch.upstreamModelId !== r.upstreamModelId)
+                ? { billingBounds: null, billingBoundsDraft: '' }
+                : {}),
+            }
+          : r,
+      ),
+    );
   const move = (index: number, delta: number) =>
     setRoutes((list) => {
       const next = [...list];
@@ -1900,7 +1930,24 @@ function ModelWizard({
       return next.map((r, i) => ({ ...r, priority: i + 1 }));
     });
   async function save(form: FormData) {
-    const ordered = routes.map((r, i) => ({ ...r, priority: r.priority || i + 1 }));
+    let ordered: ModelRoute[];
+    try {
+      ordered = routes.map(({ billingBoundsDraft, ...route }, index) => {
+        let billingBounds: RouteBillingBounds | null = null;
+        if (billingBoundsDraft.trim()) {
+          const parsed = RouteBillingBounds.safeParse(JSON.parse(billingBoundsDraft));
+          if (!parsed.success)
+            throw new Error(
+              `第${index + 1}条路由的计费上限格式不正确：${parsed.error.issues.map((issue) => issue.path.join('.') + ' ' + issue.message).join('；')}`,
+            );
+          billingBounds = parsed.data;
+        }
+        return { ...route, priority: route.priority || index + 1, billingBounds };
+      });
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : '计费上限JSON格式不正确');
+      return;
+    }
     const primary = ordered[0]!;
     const rates = ratesFrom(form, 'r_');
     const cost = showCost ? ratesFrom(form, 'c_') : null;
@@ -1916,6 +1963,7 @@ function ModelWizard({
           vendorName: String(form.get('vendorName')),
           upstreamId: primary.upstreamId,
           upstreamModelId: primary.upstreamModelId,
+          billingBounds: primary.billingBounds ?? null,
           capabilities: capabilities as AdminModel['capabilities'],
           tags: String(form.get('tags') ?? '')
             .split(/[,，、\s]+/)
@@ -1961,6 +2009,9 @@ function ModelWizard({
         }}
       >
         <h3>① 上游账号（按顺序切换）</h3>
+        <p className="hint">
+          每条路由必须先核准供应商计费上限；缺少配置时可以保存，但不会调用模型。旧路由部署前也须逐条配置。预留按保守上限计算，最终按真实有效用量结算。
+        </p>
         {routes.map((r, index) => (
           <div key={index} className="mm-route">
             <select
@@ -2016,6 +2067,33 @@ function ModelWizard({
             >
               ✕
             </button>
+            <details style={{ gridColumn: '1 / -1' }}>
+              <summary>
+                计费上限 ·{' '}
+                {r.billingBoundsDraft.trim()
+                  ? r.billingBounds?.pauseReason
+                    ? '待核风险，已暂停'
+                    : '请核对配置'
+                  : '需配置计费上限'}
+              </summary>
+              <p className="hint">
+                仅填写已核实的供应商官方HTTPS资料、核准时间与上限。文本需完整上下文、含推理的总输出及实际输出参数；ASR按每请求计费粒度取整。不能把经验估算当上限。存在未知成本时，编辑配置不会清除待核风险，须先按证据核清。
+              </p>
+              <label>
+                第{index + 1}条路由计费上限 JSON
+                <textarea
+                  rows={10}
+                  aria-label={`第${index + 1}条路由计费上限 JSON`}
+                  value={r.billingBoundsDraft}
+                  onChange={(event) =>
+                    patchRoute(index, { billingBoundsDraft: event.target.value })
+                  }
+                />
+              </label>
+              <p className="hint">
+                格式：format=billing-bounds-v1，sourceUrl、checkedAt必填；按用途提供text、tts、asr、image、search或decision。留空会清除该路由上限并阻止新调用。换上游或模型名会清空旧证据。
+              </p>
+            </details>
           </div>
         ))}
         <button
@@ -2033,6 +2111,7 @@ function ModelWizard({
                 priority: list.length + 1,
                 weight: 100,
                 enabled: true,
+                billingBoundsDraft: '',
               },
             ])
           }

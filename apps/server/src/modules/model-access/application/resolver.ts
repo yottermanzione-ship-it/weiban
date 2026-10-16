@@ -14,7 +14,7 @@
  * - 用途 vision：先按 modelRole 解析，模型没有 vision 能力时改用平台默认识图模型，没有则 capability_missing。
  * 选中的模型下架 / 上游故障时**不自动换**（MDL-04），直接返回 model_unavailable / provider_unavailable。
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type {
   AdultModelReadPort,
   BillingQuotePort,
@@ -34,6 +34,7 @@ import { hasAdultContent, unavailableReason } from '../domain/rules.js';
 import { MODEL_ACCESS_POLICY, type ModelPolicy } from '../tokens.js';
 import { CatalogService, type ModelFacts } from './catalog.js';
 import { SelectionService } from './selection.js';
+import { BillingBoundsService } from './billing-bounds.js';
 
 export interface ResolvedModel {
   modelKey: string;
@@ -248,6 +249,7 @@ export class ModelQuoteService implements ModelQuotePort {
     @Inject(ModelResolver) private readonly resolver: ModelResolver,
     @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(BILLING_QUOTE_PORT) private readonly billingQuote: BillingQuotePort,
+    @Optional() @Inject(BillingBoundsService) private readonly bounds?: BillingBoundsService,
   ) {}
 
   async quote(input: {
@@ -273,7 +275,30 @@ export class ModelQuoteService implements ModelQuotePort {
     if (!entry) return { ok: false, error: 'model_removed' };
     const reason = unavailableReason(entry, facts.upstreamStatus);
     if (reason) return { ok: false, error: reason === 'model_removed' ? reason : 'not_configured' };
-    const priced = await this.billingQuote.quote(entry.modelKey, input.estimate);
+    const proofs = (await this.bounds?.profiles(entry.modelKey)) ?? [];
+    const texts = proofs.flatMap((proof) => (proof.text ? [proof.text] : []));
+    let upper: UsageQuantities;
+    if (texts.length) {
+      const requested = input.estimate.outputTokens ?? 600;
+      const possible = texts.filter((text) => text.maxOutputTokens >= requested);
+      if (!possible.length) return { ok: false, error: 'price_missing' };
+      upper = {
+        inputTokens: Math.max(...possible.map((text) => text.contextTokens)),
+        outputTokens: Math.max(
+          ...possible.map((text) =>
+            Math.min(text.maxOutputTokens, 32000, Math.ceil(requested * 1.5)),
+          ),
+        ),
+      };
+    } else if (input.purpose === 'behavior_planning' && proofs.some((proof) => proof.decision)) {
+      upper = {
+        inputTokens: Math.max(
+          ...proofs.flatMap((proof) => (proof.decision ? [proof.decision.maxInputTokens] : [])),
+        ),
+        outputTokens: 0,
+      };
+    } else return { ok: false, error: 'price_missing' };
+    const priced = await this.billingQuote.quote(entry.modelKey, upper);
     if (!priced) return { ok: false, error: 'price_missing' };
     return {
       ok: true,
@@ -292,6 +317,8 @@ export class ModelStatusService {
     @Inject(ModelResolver) private readonly resolver: ModelResolver,
     @Inject(BILLING_READ_PORT) private readonly billing: BillingReadPort,
     @Inject(CatalogService) private readonly catalog: CatalogService,
+    @Optional() @Inject(ModelQuoteService) private readonly quotes?: ModelQuoteService,
+    @Optional() @Inject(BillingBoundsService) private readonly bounds?: BillingBoundsService,
   ) {}
 
   /** GET /model/status：某角色（或全局）当前能否回复，用于私聊顶部横条。 */
@@ -308,11 +335,16 @@ export class ModelStatusService {
         picked?.facts.entry?.capabilities.includes('vision') &&
         unavailableReason(picked.facts.entry, picked.facts.upstreamStatus) === null
       )
-        return true;
+        return ((await this.bounds?.profiles(picked.facts.entry.modelKey)) ?? []).some(
+          (proof) => (proof.text?.maxImages ?? 0) > 0,
+        );
       const visionDefault = await this.catalog.defaultModel('vision');
       return (
         !!visionDefault?.entry &&
-        unavailableReason(visionDefault.entry, visionDefault.upstreamStatus) === null
+        unavailableReason(visionDefault.entry, visionDefault.upstreamStatus) === null &&
+        ((await this.bounds?.profiles(visionDefault.entry.modelKey)) ?? []).some(
+          (proof) => (proof.text?.maxImages ?? 0) > 0,
+        )
       );
     } catch {
       return false;
@@ -342,7 +374,20 @@ export class ModelStatusService {
       return { characterId, available: false, reason, canFallbackToDefault };
     }
     const spend = await this.billing.getSpendStatus(userId);
-    if (spend.insufficient) {
+    const quote = await this.quotes?.quote({
+      userId,
+      ...(characterId ? { characterId } : {}),
+      purpose: 'chat_reply',
+      estimate: { outputTokens: 600 },
+    });
+    if (!quote?.ok)
+      return {
+        characterId,
+        available: false,
+        reason: 'not_configured',
+        canFallbackToDefault: false,
+      };
+    if (quote.value.amountMicros > 0 && spend.availableMicros < quote.value.amountMicros) {
       return {
         characterId,
         available: false,

@@ -88,6 +88,22 @@ export class BillingBoundsService {
       },
     };
   }
+  /** 报价/可用性用已启用且核准的全部可能路由，不以用户消息长度经验估费。 */
+  async profiles(modelKey: string): Promise<RouteBillingBounds[]> {
+    const routes = await this.db.db
+      .select()
+      .from(modelRoutes)
+      .where(eq(modelRoutes.modelKey, modelKey));
+    const tuples = routes.length
+      ? routes
+      : await this.db.db.select().from(modelCatalog).where(eq(modelCatalog.modelKey, modelKey));
+    const profiles: RouteBillingBounds[] = [];
+    for (const tuple of tuples) {
+      const proof = await this.get(modelKey, tuple.upstreamId, tuple.upstreamModelId);
+      if (proof) profiles.push(proof);
+    }
+    return profiles;
+  }
   async pauseUnknown(
     modelKey: string,
     route: { upstreamId: string; upstreamModelId: string },

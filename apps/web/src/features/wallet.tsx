@@ -502,7 +502,9 @@ export function LedgerPage() {
 // ---------- 价目表（6.5） ----------
 
 export function perReplyText(model: Pick<ModelInfo, 'pointsPerReply'>) {
-  return model.pointsPerReply == null ? '—' : `约每条 ${formatPoints(model.pointsPerReply)} 积分`;
+  return model.pointsPerReply == null
+    ? '—'
+    : `标准用量示例 ${formatPoints(model.pointsPerReply)} 积分`;
 }
 
 export function PricesPage() {
@@ -532,7 +534,7 @@ export function PricesPage() {
       {section('聊天模型', chat)}
       {section('私密模式模型', adult)}
       <p className="hint page-note">
-        「约每条」按一次普通回复估算，实际按字数多少略有浮动；每条消息的实际消耗可在积分明细里查看。
+        标准用量示例供比较单价，不是每条消息的报价。任务按已核上下文与输出上限预留，可能明显高于实际花费；最终按真实有效用量结算，多余预留退回。
       </p>
       {models.error && (
         <p role="alert" className="notice-bar">
