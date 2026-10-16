@@ -1,5 +1,7 @@
 # q-features 组件样例恢复与待验证记录
 
+> 后续执行更新：2026-10-16主会话已恢复浏览器并完成组件交互自查，见 browser-check.md、01～31截图及操作JSON。下面“没有GUI截图”为初次阻塞历史记录。导航已改为中文按钮，报价变化样例已修正为先免费0、失败后变200；保存快照已同步。
+
 2026-10-16浏览器宿主不可用。主会话用实际URL创建IAB仍返回notavailable，Codex打开浏览器为queued。**没有GUI截图或通过结论。** 入口HTTP200仅证明Vite静态HTML/模块可取，不是产品API/数据库验证。
 
 当前本地4文件保留在apps/web/q-preview*，Vite端口5190。此目录为同一时刻的可恢复文本快照，扩展名fixture.txt不参与生产编译。先读本说明，再在独立worktree运行本目录restore-preview.ps1（参数Worktree，默认C:\wb-dev\wb-qfeat），之后到apps/web执行命令：

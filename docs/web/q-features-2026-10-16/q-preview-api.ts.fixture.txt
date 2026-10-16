@@ -8,7 +8,7 @@ export function save(){localStorage.setItem(key,JSON.stringify(state));window.di
 export function configure(patch:any){Object.assign(state,patch);save();}
 const changed=(section:string,itemId:string|null=null)=>window.dispatchEvent(new CustomEvent('weiban:update',{detail:{type:'data.changed',data:{section,itemId}}}));
 const pack=(id:string)=>({packId:id,name:id===ids.a?'夏知的小表情':'月光表情包',intro:'开发样例表情',coverUrl:'/Icon-192.png',stickerCount:1,added:state.installed.includes(id),builtIn:false,enabled:true,inStore:true,updatedAt:now(),userVisible:false,characterIds:[],stickers:[{stickerId:id,mediaId:id,url:'/Icon-192.png',description:'打招呼',packId:id}]});
-function quota(){return {quotedAt:now(),tier:state.mode==='pro'?'pro_plus':'free',limit:5,used:state.mode==='free'||state.mode==='pro'?0:5,remaining:state.mode==='free'||state.mode==='pro'?5:0,nextPointsCost:state.mode==='free'||state.mode==='pro'?0:200,periodStart:'2026-10-01T00:00:00.000Z',periodEnd:'2026-11-01T00:00:00.000Z',timeZone:'Asia/Shanghai'};}
+function quota(){return {quotedAt:now(),tier:state.mode==='pro'?'pro_plus':'free',limit:5,used:state.mode==='free'||state.mode==='pro'||state.mode==='change'?0:5,remaining:state.mode==='free'||state.mode==='pro'||state.mode==='change'?5:0,nextPointsCost:state.mode==='free'||state.mode==='pro'||state.mode==='change'?0:200,periodStart:'2026-10-01T00:00:00.000Z',periodEnd:'2026-11-01T00:00:00.000Z',timeZone:'Asia/Shanghai'};}
 export const localStore:any={};
 export const api:any={cached:async()=>undefined,captureOwner:()=>({userId:ids.user,sessionId:ids.a}),owner$: {subscribe:()=>()=>{}},call:async(e:any,o:any={})=>{
  const path=e.path,method=e.method,body=o.body??{},params=o.params??{};

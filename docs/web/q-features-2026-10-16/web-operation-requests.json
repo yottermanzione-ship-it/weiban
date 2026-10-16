@@ -1,0 +1,655 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/me/status",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:43:10.032Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/status",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:54:02.458Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/status",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:54:02.464Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/status",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:56:09.056Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sticker-store/packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:56:18.142Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/sticker-packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:56:18.143Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sticker-store/packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:57:09.232Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/sticker-packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:57:09.233Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sticker-store/packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:57:12.871Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/sticker-packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:57:12.871Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sticker-store/packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:57:22.465Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/sticker-packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:57:22.465Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/plugins",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:57:33.928Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/status",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:57:51.404Z"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/me/status",
+    "params": {},
+    "body": {
+      "preset": "custom",
+      "text": "今天想散步",
+      "duration": {
+        "kind": "forever"
+      }
+    },
+    "at": "2026-10-16T03:58:10.025Z"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/me/status",
+    "params": {},
+    "body": {
+      "preset": "custom",
+      "text": "今天想散步",
+      "duration": {
+        "kind": "forever"
+      }
+    },
+    "at": "2026-10-16T03:58:20.231Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/status",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:58:20.426Z"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/me/status",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:58:38.467Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/status",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:58:38.655Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/support/tickets",
+    "params": {},
+    "body": {
+      "clientRequestId": "13ec83ed-ec5a-4e09-b63c-980e7e7ecfe1",
+      "kind": "feedback",
+      "category": "bug",
+      "text": "开发自查：页面导航按钮需要中文说明",
+      "imageIds": []
+    },
+    "at": "2026-10-16T03:58:47.918Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/support/tickets",
+    "params": {},
+    "body": {
+      "clientRequestId": "13ec83ed-ec5a-4e09-b63c-980e7e7ecfe1",
+      "kind": "feedback",
+      "category": "bug",
+      "text": "开发自查：页面导航按钮需要中文说明",
+      "imageIds": []
+    },
+    "at": "2026-10-16T03:58:48.597Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/support/tickets/:ticketId",
+    "params": {
+      "ticketId": "30454d41-0f19-4d39-b395-25e4cc49b46e"
+    },
+    "body": {},
+    "at": "2026-10-16T03:58:48.799Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/support/tickets/:ticketId/replies",
+    "params": {
+      "ticketId": "30454d41-0f19-4d39-b395-25e4cc49b46e"
+    },
+    "body": {
+      "text": "补充：这是可恢复的本地开发样例"
+    },
+    "at": "2026-10-16T03:58:54.905Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/support/tickets/:ticketId",
+    "params": {
+      "ticketId": "30454d41-0f19-4d39-b395-25e4cc49b46e"
+    },
+    "body": {},
+    "at": "2026-10-16T03:58:55.099Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/support/tickets",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:58:55.476Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/support/tickets",
+    "params": {},
+    "body": {
+      "clientRequestId": "dfefc4f6-0902-485a-934d-88ca7444ddc0",
+      "kind": "complaint",
+      "target": {
+        "type": "character",
+        "id": "10000000-0000-4000-8000-000000000001"
+      },
+      "reason": "other",
+      "text": "开发自查：投诉入口样例",
+      "imageIds": []
+    },
+    "at": "2026-10-16T03:59:07.564Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/support/tickets/:ticketId",
+    "params": {
+      "ticketId": "f3033b1f-d245-4f97-9cb1-978a91e6a162"
+    },
+    "body": {},
+    "at": "2026-10-16T03:59:07.760Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sticker-store/packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:59:08.456Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/sticker-packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:59:08.456Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sticker-store/packs/:packId",
+    "params": {
+      "packId": "10000000-0000-4000-8000-000000000001"
+    },
+    "body": {},
+    "at": "2026-10-16T03:59:09.058Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/me/sticker-packs/:packId",
+    "params": {
+      "packId": "10000000-0000-4000-8000-000000000001"
+    },
+    "body": {},
+    "at": "2026-10-16T03:59:15.861Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/me/sticker-packs/:packId",
+    "params": {
+      "packId": "10000000-0000-4000-8000-000000000001"
+    },
+    "body": {},
+    "at": "2026-10-16T03:59:16.261Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sticker-store/packs/:packId",
+    "params": {
+      "packId": "10000000-0000-4000-8000-000000000001"
+    },
+    "body": {},
+    "at": "2026-10-16T03:59:16.447Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sticker-store/packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:59:33.347Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/sticker-packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:59:33.347Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sticker-store/packs/:packId",
+    "params": {
+      "packId": "10000000-0000-4000-8000-000000000002"
+    },
+    "body": {},
+    "at": "2026-10-16T03:59:33.918Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/me/sticker-packs/:packId",
+    "params": {
+      "packId": "10000000-0000-4000-8000-000000000002"
+    },
+    "body": {},
+    "at": "2026-10-16T03:59:34.329Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sticker-store/packs/:packId",
+    "params": {
+      "packId": "10000000-0000-4000-8000-000000000002"
+    },
+    "body": {},
+    "at": "2026-10-16T03:59:34.519Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sticker-store/packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:59:34.983Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/sticker-packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:59:34.984Z"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/me/sticker-packs/order",
+    "params": {},
+    "body": {
+      "packIds": [
+        "10000000-0000-4000-8000-000000000002",
+        "10000000-0000-4000-8000-000000000001"
+      ]
+    },
+    "at": "2026-10-16T03:59:39.431Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sticker-store/packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:59:39.620Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/sticker-packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:59:39.620Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/stickers/packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:59:44.376Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/stickers",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:59:44.376Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sticker-store/packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:59:55.867Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/sticker-packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T03:59:55.867Z"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/me/sticker-packs/:packId",
+    "params": {
+      "packId": "10000000-0000-4000-8000-000000000002"
+    },
+    "body": {},
+    "at": "2026-10-16T03:59:56.847Z"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/me/sticker-packs/:packId",
+    "params": {
+      "packId": "10000000-0000-4000-8000-000000000002"
+    },
+    "body": {},
+    "at": "2026-10-16T04:00:02.125Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/sticker-store/packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:00:02.314Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me/sticker-packs",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:00:02.314Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/plugins",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:00:02.859Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/:characterId/status",
+    "params": {
+      "characterId": "10000000-0000-4000-8000-000000000001"
+    },
+    "body": {},
+    "at": "2026-10-16T04:00:12.247Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/:characterId/status",
+    "params": {
+      "characterId": "10000000-0000-4000-8000-000000000001"
+    },
+    "body": {},
+    "at": "2026-10-16T04:00:21.017Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/role-requests/config",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:00:26.674Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/categories",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:00:26.674Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/role-requests",
+    "params": {},
+    "body": {
+      "clientRequestId": "30c8320d-067e-4cb9-8ac8-1090b4330875",
+      "expectedPointsCost": 0,
+      "roleName": "自查免费角色",
+      "basis": null,
+      "categoryId": null
+    },
+    "at": "2026-10-16T04:00:38.347Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/role-requests/config",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:00:39.011Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/categories",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:00:39.011Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/role-requests",
+    "params": {},
+    "body": {
+      "clientRequestId": "ac87fefa-b659-4238-b1a2-d8028a954948",
+      "expectedPointsCost": 0,
+      "roleName": "自查会员角色",
+      "basis": null,
+      "categoryId": null
+    },
+    "at": "2026-10-16T04:00:47.481Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/role-requests/config",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:00:48.061Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/categories",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:00:48.062Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/role-requests",
+    "params": {},
+    "body": {
+      "clientRequestId": "92c105a0-2c5e-49fd-b3cb-efc2f83aaaa7",
+      "expectedPointsCost": 200,
+      "roleName": "自查收费角色",
+      "basis": null,
+      "categoryId": null
+    },
+    "at": "2026-10-16T04:00:48.870Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/role-requests/config",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:01:13.005Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/categories",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:01:13.005Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/role-requests",
+    "params": {},
+    "body": {
+      "clientRequestId": "73f2f40e-0b8d-4aef-8386-3397eaddb600",
+      "expectedPointsCost": 0,
+      "roleName": "报价变化保留这个名字",
+      "basis": null,
+      "categoryId": null,
+      "note": "我需要重新确认收费"
+    },
+    "at": "2026-10-16T04:01:13.565Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/role-requests/config",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:01:13.761Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/role-requests",
+    "params": {},
+    "body": {
+      "clientRequestId": "73f2f40e-0b8d-4aef-8386-3397eaddb600",
+      "expectedPointsCost": 200,
+      "roleName": "报价变化保留这个名字",
+      "basis": null,
+      "categoryId": null,
+      "note": "我需要重新确认收费"
+    },
+    "at": "2026-10-16T04:01:20.012Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/role-requests/config",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:01:20.517Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/categories",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:01:20.517Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/role-requests",
+    "params": {},
+    "body": {
+      "clientRequestId": "6046c616-00ae-4d91-b711-3091848e8ab5",
+      "expectedPointsCost": 200,
+      "roleName": "余额不足也保留",
+      "basis": null,
+      "categoryId": null
+    },
+    "at": "2026-10-16T04:01:21.065Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/role-requests/config",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:01:30.874Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/characters/categories",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:01:30.875Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/role-requests",
+    "params": {},
+    "body": {
+      "clientRequestId": "db98e546-ee80-44ed-9487-9329e5c2deb7",
+      "expectedPointsCost": 200,
+      "roleName": "旧编号换号保留",
+      "basis": null,
+      "categoryId": null
+    },
+    "at": "2026-10-16T04:01:31.154Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/role-requests/config",
+    "params": {},
+    "body": {},
+    "at": "2026-10-16T04:01:31.687Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/role-requests",
+    "params": {},
+    "body": {
+      "clientRequestId": "1b29e5ca-575d-4622-95d4-5266aa7244ad",
+      "expectedPointsCost": 200,
+      "roleName": "旧编号换号保留",
+      "basis": null,
+      "categoryId": null
+    },
+    "at": "2026-10-16T04:01:32.384Z"
+  }
+]
