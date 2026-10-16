@@ -387,7 +387,7 @@ function ShotThumb({
 
 // ---------- 按任务状态显示对应一步 ----------
 
-function JobStep({ job, onJob }: { job: ImportJob; onJob(job: ImportJob): void }) {
+export function JobStep({ job, onJob }: { job: ImportJob; onJob(job: ImportJob): void }) {
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');

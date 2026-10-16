@@ -18,7 +18,11 @@ import type {
   SystemMessageMode,
   UpstreamStatus,
 } from '@weiban/contracts';
-import { AdminCatalogEntryWrite, ModelLeaderboardSource } from '@weiban/contracts';
+import {
+  AdminCatalogEntryWrite,
+  ModelLeaderboardSource,
+  RouteBillingBounds,
+} from '@weiban/contracts';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
@@ -172,6 +176,7 @@ export class CatalogService {
   }
 
   async upsert(adminId: string, pathKey: string, body: CatalogWrite): Promise<AdminCatalogEntry> {
+    this.validateBillingBounds(body.billingBounds);
     if (pathKey !== body.modelKey) {
       throw new AppError('bad_request', '路径里的模型键与请求体不一致');
     }
@@ -446,6 +451,7 @@ export class CatalogService {
 
   /** 整体替换某模型的路由（后台「模型」向导）。账号必须存在、不能重复。 */
   async replaceRoutes(adminId: string, modelKey: string, routes: ModelRoute[]): Promise<void> {
+    for (const route of routes) this.validateBillingBounds(route.billingBounds);
     const ids = routes.map((r) => r.upstreamId);
     if (new Set(ids).size !== ids.length) {
       throw new AppError('bad_request', '同一个上游账号在路由里出现了两次', { status: 422 });
@@ -497,6 +503,17 @@ export class CatalogService {
         tx,
       );
     });
+  }
+
+  validateBillingBounds(bounds: RouteBillingBounds | null | undefined): void {
+    if (bounds == null) return;
+    const parsed = RouteBillingBounds.safeParse(bounds);
+    if (!parsed.success || Date.parse(parsed.data.checkedAt) > this.clock.nowMs())
+      throw new AppError(
+        'bad_request',
+        '计费上限格式不正确或核准时间在服务器未来，请核实后再保存',
+        { status: 422 },
+      );
   }
 
   /**

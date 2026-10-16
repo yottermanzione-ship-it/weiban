@@ -92,6 +92,8 @@ export class ModelAdminService {
 
   async upsert(adminId: string, pathKey: string, body: Write): Promise<AdminModel> {
     const { rates, costRates, routes, ...rest } = body;
+    this.catalog.validateBillingBounds(body.billingBounds);
+    for (const route of routes ?? []) this.catalog.validateBillingBounds(route.billingBounds);
     // v3.4：传了路由时，目录上的上游 = 主路由（旧接口与媒体网关仍读它）
     const primary = routes ? primaryRoute(routes) : null;
     const entry = primary
