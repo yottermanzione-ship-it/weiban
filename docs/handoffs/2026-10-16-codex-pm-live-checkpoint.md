@@ -9,6 +9,10 @@
 - 未执行0101/0102，下一空闲0103；无SSH部署。部署前须逐路由真实核准bounds，现网页压缩录音ASR不可用、冻结context上限可能偏大；会员档位/权益、全局生态开关、小V与候选业务仍未完成。
 - 下一任务卡docs/tasks/2026-10-16-model-routing-ecology-continuation.md：先源码核查与逐场景矩阵交PM审，再分小块实施。仍一次一个子代理/任务独立worktree，不在积分副本继续开新批。
 
+### 下一任务已续派（22:39）
+
+原/root/chat_forward完成积分后，已用followup续派至新副本 **C:\wb-dev\wb-model-ecology / codex/model-routing-ecology**，基线077849a。先只读核查并提交docs/backend/model-routing-ecology-plan.md场景矩阵给PM核准；当前未批准改契约/业务、未占0103。不能去旧积分副本续写，也不另派第二代理。根初核旧通知主动消息默认true，不能当首次未选择的全局生态开关；background沿角色聊天、planner未配回退、vision兜底仍真实待改。C8会员生态覆盖旧C3免费池全场景收费冲突，付款必须服务端真实权益，不让客户端meta指定平台补贴。原有平台安全入口与积分冻结闭环不重做。
+
 ## 以下保留旧断点
 
 这是开发接管断点，不是产品完成或独立验收。香港本轮未SSH/部署，仍按此前审计0da5835/迁移0090；不再查总经理交给他人的异常IP。D盘拔除未影响当前C盘项目/工作树/pnpm store。
