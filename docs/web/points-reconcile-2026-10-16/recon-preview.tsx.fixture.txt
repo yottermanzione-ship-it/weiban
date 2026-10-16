@@ -1,0 +1,22 @@
+import {createRoot} from 'react-dom/client';
+import {BillingPage} from './src/features/billing';
+import {api} from './src/data/client';
+import {BillingAdminEndpoints,ModelAccessAdminEndpoints} from '@weiban/contracts';
+import '../../docs/design/tokens.css';
+import './src/app/styles.css';
+const upstream='10000000-0000-4000-8000-000000000001';
+const base={ledgerConsistent:true,staleHolds:0,usageWithoutCharge:0,chargeWithoutUsage:0,usageReconciledAt:'2026-10-16T00:00:00Z',usageAmountMismatch:0,absorbedMicros:0,createdAt:'2026-10-16T00:00:00Z'};
+const diff={upstreamId:upstream,periodStart:'2026-10-13',periodEnd:'2026-10-15',billedMicros:0,computedCostMicros:0,diffRatio:0};
+const rows=[
+ {...base,runId:'10000000-0000-4000-8000-000000000002',date:'2026-10-16',netAbsorbedMicros:0,unknownCostCalls:1,uncertainCostMicros:200000,upstreamDiffs:[{...diff,flagged:true,netComputedCostMicros:0,unknownCostCalls:1,uncertainCostMicros:200000}]},
+ {...base,runId:'10000000-0000-4000-8000-000000000003',date:'2026-10-15',netAbsorbedMicros:-200000,unknownCostCalls:0,uncertainCostMicros:0,upstreamDiffs:[{...diff,flagged:true,netComputedCostMicros:-200000,unknownCostCalls:0,uncertainCostMicros:0,diffRatio:1}]},
+ {...base,runId:'10000000-0000-4000-8000-000000000004',date:'2026-10-14',upstreamDiffs:[{...diff,flagged:false}]},
+];
+let fail=true;const requests:unknown[]=[];
+api.call=async(e:any,request:any)=>{
+ if(e===ModelAccessAdminEndpoints.listUpstreams)return {items:[{upstreamId:upstream,name:'本地样例上游'}]} as never;
+ if(e===BillingAdminEndpoints.getPlatformSummary)return {todayCostMicros:0,dailyCapMicros:1000000,platformAccountBalanceMicros:0,last30DaysCostByUpstream:[]} as never;
+ if(e===BillingAdminEndpoints.listReconciliation){requests.push(request.query);document.getElementById('requests')!.textContent=JSON.stringify(requests,null,2);if(fail){fail=false;throw new Error('开发样例查询失败');}return {items:rows} as never;}
+ throw new Error('样例未实现该写入，不连接真实后端');
+};
+createRoot(document.getElementById('root')!).render(<div style={{padding:24}}><p>开发自查：真实对账组件、模拟响应，非数据库/真实账单验收。</p><details><summary>查询记录</summary><pre id="requests"/></details><BillingPage/></div>);
