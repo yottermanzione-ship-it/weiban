@@ -4,7 +4,6 @@
  *   pnpm --filter @weiban/server identity create-admin <用户名> [--tz Asia/Shanghai]
  *   pnpm --filter @weiban/server identity reset-password <用户名>
  *   pnpm --filter @weiban/server identity set-role <用户名> <user|admin>
- *   pnpm --filter @weiban/server identity create-invite [--days 7] [--bonus 10]
  *   pnpm --filter @weiban/server identity verify-purged <用户ID>
  *   pnpm --filter @weiban/server identity sweep-sessions
  *
@@ -26,8 +25,6 @@ const USAGE = `用法：
   identity create-admin <用户名> [--tz 时区]   创建管理员（随后输入密码）
   identity reset-password <用户名>            重置密码（随后输入新密码；该账号所有设备下线、解除锁定）
   identity set-role <用户名> <user|admin>     改角色（降为 user 时作废其管理会话）
-  identity create-invite [--days 天数] [--bonus 元]
-                                              生成一个邀请码（不填天数则永不过期；--bonus 注册赠送余额，单位元）
   identity verify-purged <用户ID>             注销核验：删除清单、全库扫描、审计 / 事件、对象存储（有残留时退出码 2）
   identity sweep-sessions                     清扫已过期的会话`;
 
@@ -70,6 +67,9 @@ async function main(): Promise<void> {
     process.stdout.write(`${USAGE}\n`);
     return;
   }
+  if (command === 'create-invite') {
+    throw new CommandError('邀请码功能已停用，请直接注册');
+  }
   loadLocalEnv();
   const config = loadConfig();
   const logger = createLogger({ level: 'warn' });
@@ -104,19 +104,6 @@ async function main(): Promise<void> {
         }
         await commands.setRole(username, role);
         out(`已把 ${username} 设为 ${role}`);
-        break;
-      }
-      case 'create-invite': {
-        const days = option(args, '--days');
-        const bonusYuan = option(args, '--bonus');
-        const bonusMicros = bonusYuan === undefined ? 0 : Math.round(Number(bonusYuan) * 1_000_000);
-        const invite = await commands.createInvite(
-          days === undefined ? null : Number(days),
-          bonusMicros,
-        );
-        out(`邀请码：${invite.code}`);
-        if (bonusMicros > 0) out(`注册赠送：${bonusMicros / 1_000_000} 元`);
-        out(`有效期至：${invite.expiresAt ?? '永不过期'}`);
         break;
       }
       case 'verify-purged': {

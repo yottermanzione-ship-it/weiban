@@ -86,7 +86,6 @@ export function App() {
         <nav aria-label="管理导航">
           {[
             ['/characters', '角色库'],
-            ['/invites', '邀请码'],
             ['/model', '模型管理'],
             ['/accounts', '用户与积分'],
             ['/usage', '用户用量对账'],
@@ -133,7 +132,7 @@ export function App() {
         </header>
         <main>
           <Routes>
-            <Route path="/" element={<Navigate to="/invites" replace />} />
+            <Route path="/" element={<Navigate to="/characters" replace />} />
             <Route path="/characters" element={<CharactersPage />} />
             <Route path="/prices" element={<PricesPage />} />
             <Route path="/invites" element={<InvitesPage />} />
@@ -164,7 +163,7 @@ export function App() {
             <Route path="/release-notes" element={<ReleaseNotesPage />} />
             <Route path="/version-policies" element={<VersionPoliciesPage />} />
             <Route path="/admin/alerts" element={<AlertsPage />} />
-            <Route path="*" element={<Navigate to="/invites" replace />} />
+            <Route path="*" element={<Navigate to="/characters" replace />} />
           </Routes>
         </main>
       </div>

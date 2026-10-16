@@ -1,5 +1,5 @@
 /**
- * 账号：注册（邀请码选填）、登录、退出、注销申请（ACC-01、ACC-06）。规则见 docs/backend/identity.md 第 4、5 节。
+ * 账号：开放注册、登录、退出、注销申请；邀请码及新增赠分按11 C8停用。
  */
 import { Inject, Injectable } from '@nestjs/common';
 import type { AuthResponse, CurrentUser, DeviceInfo, SessionKind } from '@weiban/contracts';
@@ -21,13 +21,8 @@ import {
   type Logger,
   type Outbox,
 } from '../../../platform/index.js';
-import {
-  normalizeInviteCode,
-  passwordWeakness,
-  throttleKey,
-  isValidTimeZone,
-} from '../domain/rules.js';
-import { invites, profiles, users, loginAliases } from '../infra/db/schema.js';
+import { passwordWeakness, throttleKey, isValidTimeZone } from '../domain/rules.js';
+import { profiles, users, loginAliases } from '../infra/db/schema.js';
 import { LoginThrottle } from '../infra/login-throttle.js';
 import { PasswordHasher } from '../infra/password-hasher.js';
 import { invalidTimeZone, SettingsService } from './settings.js';
@@ -45,7 +40,7 @@ const REGISTER_RETRY_WINDOW_MS = 10 * 60 * 1000;
 export interface RegisterInput {
   username: string;
   password: string;
-  /** 选填（2026-10-12 总经理调整）。 */
+  /** @deprecated 旧客户端兼容字段，忽略，不校验或消耗邀请码。 */
   inviteCode?: string | undefined;
   device: DeviceInfo;
 }
@@ -87,7 +82,7 @@ export class AccountService {
   // ---------- 注册 ----------
 
   /**
-   * 注册（邀请码选填）。返回 created = false 表示这是同一次注册的重试（账号刚建好、密码也对；带码时码须是它用掉的），
+   * 返回 created = false 表示这是同一次注册的重试（账号刚建好、密码也对），
    * 此时不新建账号，只给这台设备发一个新会话。
    */
   async register(
@@ -102,42 +97,22 @@ export class AccountService {
     const weakness = passwordWeakness(input.password, input.username);
     if (weakness) throw new AppError('password_too_weak', weakness);
 
-    // 邀请码选填（2026-10-12 总经理调整）：没填或只填了空白都按「无邀请码」处理
-    const rawCode = input.inviteCode?.trim();
-    const code = rawCode ? normalizeInviteCode(rawCode) : null;
     const passwordHash = await this.hasher.hash(input.password);
 
-    let outcome: { response: AuthResponse; created: boolean } | 'invite_invalid';
+    let outcome: { response: AuthResponse; created: boolean };
     try {
       outcome = await this.database.transaction(async (tx) => {
         const now = this.clock.now();
-        // 锁住邀请码行：同一个码并发注册时排队，只有第一个能用掉它
-        const [invite] = code
-          ? await tx.db.select().from(invites).where(eq(invites.code, code)).for('update')
-          : [];
         const existing = await this.findUserByUsername(tx, input.username);
 
         // 重试判断不依赖邀请码：同一用户名的账号刚刚（10 分钟内）建好、仍是正常状态、密码也对
         // → 视为同一次注册的重试（客户端没收到响应又重发），只给这台设备发新会话。
-        // 带码时额外要求码正是被这个账号用掉的，避免拿别的码「重试」。
         if (existing && existing.status === 'active') {
           const fresh = now.getTime() - existing.createdAt.getTime() <= REGISTER_RETRY_WINDOW_MS;
-          const codeMatches = code === null || invite?.usedBy === existing.id;
-          if (
-            fresh &&
-            codeMatches &&
-            (await this.hasher.verify(existing.passwordHash, input.password))
-          ) {
+          if (fresh && (await this.hasher.verify(existing.passwordHash, input.password))) {
             const session = await this.sessions.create(tx, existing.id, 'app', input.device);
             return { response: await this.authResponse(tx, existing, session), created: false };
           }
-        }
-        if (code !== null) {
-          const usable =
-            invite &&
-            invite.usedAt === null &&
-            (invite.expiresAt === null || invite.expiresAt.getTime() > now.getTime());
-          if (!usable) return 'invite_invalid' as const;
         }
         if (existing) throw new AppError('username_taken', '用户名已被占用');
 
@@ -155,34 +130,18 @@ export class AccountService {
         await tx.db
           .insert(loginAliases)
           .values({ alias: input.username.toLowerCase(), userId, createdAt: now });
-        if (code !== null) {
-          await tx.db
-            .update(invites)
-            .set({ usedAt: now, usedBy: userId })
-            .where(and(eq(invites.code, code), sql`${invites.usedAt} is null`));
-        }
         const session = await this.sessions.create(tx, userId, 'app', input.device);
-        // 邀请码设了注册赠送时事件带上 signupBonus（不带码本身），billing 订阅后记 admin_grant（billing.md 8.3）；
-        // 没填邀请码不送余额
-        const bonus = invite?.bonusMicros ?? 0;
         await this.outbox.publish(tx, 'identity.user_registered', 'identity', {
           userId,
-          ...(invite && bonus > 0
-            ? { signupBonus: { amountMicros: bonus, grantedByUserId: invite.createdBy } }
-            : {}),
         });
         const [user] = await tx.db.select().from(users).where(eq(users.id, userId));
         this.log.info({ userId }, '新用户注册');
         return { response: await this.authResponse(tx, user as UserRow, session), created: true };
       });
     } catch (error) {
-      // 两个请求同时用不同邀请码注册同一个用户名：后到的撞上唯一索引
+      // 两个请求同时注册同一个用户名：后到的撞上唯一索引
       if (isUniqueViolation(error)) throw new AppError('username_taken', '用户名已被占用');
       throw error;
-    }
-    if (outcome === 'invite_invalid') {
-      await this.throttle.recordFailure([ipKey]);
-      throw new AppError('invite_invalid', '邀请码无效、已被使用或已过期');
     }
     return outcome;
   }

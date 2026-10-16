@@ -1,0 +1,16 @@
+[
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/register",
+    "body": {
+      "username": "fixture_account",
+      "password": "[已隐藏]",
+      "device": {
+        "platform": "web",
+        "name": "网页版",
+        "appVersion": "0.1.0",
+        "timeZone": "Asia/Shanghai"
+      }
+    }
+  }
+]

@@ -32,8 +32,6 @@ export function AuthPage() {
     setPending(true);
     setError('');
     const data = new FormData(event.currentTarget);
-    // 邀请码选填（2026-10-12）：没填就不带这个字段
-    const inviteCode = String(data.get('inviteCode') ?? '').trim();
     const body = {
       username: String(data.get('username') ?? ''),
       password: String(data.get('password') ?? ''),
@@ -47,7 +45,7 @@ export function AuthPage() {
     try {
       const result = register
         ? await api.call(IdentityEndpoints.register, {
-            body: { ...body, ...(inviteCode ? { inviteCode } : {}) },
+            body,
           })
         : await api.call(IdentityEndpoints.login, { body: { ...body, kind: 'app' } });
       await auth.accept(result);
@@ -133,18 +131,6 @@ export function AuthPage() {
               placeholder={register ? '设置密码，至少 8 位' : '请填写密码'}
             />
           </label>
-          {register && (
-            <label className="wx-auth-field">
-              <span>邀请码</span>
-              <input
-                name="inviteCode"
-                autoComplete="off"
-                minLength={6}
-                maxLength={64}
-                placeholder="选填，填了可得注册赠送"
-              />
-            </label>
-          )}
         </div>
         <p className="wx-auth-note">
           {register
