@@ -249,7 +249,7 @@ export class BillingAdminService {
       .where(eq(accounts.kind, 'platform'));
     const { rows } = await this.database.query<{ upstream_id: string; cost: string }>(
       `SELECT upstream_id, sum(cost_micros) AS cost FROM billing.ledger_entries
-        WHERE upstream_id IS NOT NULL AND type = 'charge' AND created_at >= $1
+        WHERE upstream_id IS NOT NULL AND (type = 'charge' OR (type = 'adjustment' AND idempotency_key LIKE 'cost_resolution:%' AND amount_micros = 0)) AND created_at >= $1
         GROUP BY upstream_id ORDER BY upstream_id`,
       [new Date(now.getTime() - 30 * DAY_MS)],
     );

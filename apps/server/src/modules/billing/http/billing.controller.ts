@@ -33,6 +33,7 @@ import { PriceService } from '../application/prices.js';
 import { ReconciliationService } from '../application/reconciliation.js';
 import { RechargeService } from '../application/recharge.js';
 import { WalletService } from '../application/wallet.js';
+import { CostResolutionService } from '../application/cost-resolution.js';
 
 const E = BillingEndpoints;
 const A = BillingAdminEndpoints;
@@ -116,11 +117,24 @@ export class BillingController {
 @Controller('api/v1/admin/billing')
 export class BillingAdminController {
   constructor(
+    @Inject(CostResolutionService) private readonly costResolution: CostResolutionService,
     @Inject(BillingAdminService) private readonly admin: BillingAdminService,
     @Inject(PriceService) private readonly prices: PriceService,
     @Inject(ReconciliationService) private readonly reconciliation: ReconciliationService,
     @Inject(RechargeService) private readonly recharge: RechargeService,
   ) {}
+
+  @Post('holds/:holdId/cost-resolution')
+  @RequireAuth(A.resolveUnknownCost.auth)
+  resolveUnknownCost(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(schema(A.resolveUnknownCost.params)))
+    params: Out<typeof A.resolveUnknownCost.params>,
+    @Body(new ContractPipe(schema(A.resolveUnknownCost.body)))
+    body: Out<typeof A.resolveUnknownCost.body>,
+  ) {
+    return this.costResolution.resolve(params.holdId, body, me.userId);
+  }
 
   @Get('recharge-options')
   @RequireAuth(A.getRechargeOptions.auth)

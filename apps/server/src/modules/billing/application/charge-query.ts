@@ -21,6 +21,7 @@ interface ChargeRow {
   usage_record_id: string;
   id: string;
   amount: string;
+  idempotency_key: string;
   hold_id: string | null;
   cost: string | null;
   absorbed: boolean;
@@ -29,7 +30,7 @@ interface ChargeRow {
   created_text: string;
 }
 
-const SELECT = `SELECT usage_record_id, id, hold_id, amount_micros AS amount, cost_micros AS cost, absorbed, safety_overdraft,
+const SELECT = `SELECT usage_record_id, id, hold_id, idempotency_key, amount_micros AS amount, cost_micros AS cost, absorbed, safety_overdraft,
        to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_iso,
        to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_text
   FROM billing.ledger_entries`;
@@ -40,6 +41,8 @@ function toCharge(r: ChargeRow): UsageCharge {
     ledgerEntryId: r.id,
     amountMicros: Math.abs(Number(r.amount)),
     signedAmountMicros: Number(r.amount),
+    costCorrection:
+      r.idempotency_key.startsWith('cost_resolution:') && !r.absorbed && Number(r.amount) === 0,
     holdId: r.hold_id,
     costMicros: Number(r.cost ?? 0),
     absorbed: r.absorbed,
@@ -90,7 +93,7 @@ export class ChargeQueryService implements BillingChargeQueryPort {
     }
     if (usageRecordIds.length === 0) return [];
     const { rows } = await this.database.query<ChargeRow>(
-      `${SELECT} WHERE type = 'charge' AND usage_record_id = ANY($1::uuid[]) ORDER BY created_at, id`,
+      `${SELECT} WHERE (type = 'charge' OR (type = 'adjustment' AND idempotency_key LIKE 'cost_resolution:%' AND amount_micros = 0)) AND usage_record_id = ANY($1::uuid[]) ORDER BY created_at, id`,
       [usageRecordIds],
     );
     return rows.map(toCharge);
@@ -125,7 +128,7 @@ export class ChargeQueryService implements BillingChargeQueryPort {
       after = 'AND (created_at, id) > ($4::timestamptz, $5::uuid)';
     }
     const { rows } = await this.database.query<ChargeRow>(
-      `${SELECT} WHERE type = 'charge' AND usage_record_id IS NOT NULL
+      `${SELECT} WHERE (type = 'charge' OR (type = 'adjustment' AND idempotency_key LIKE 'cost_resolution:%' AND amount_micros = 0)) AND usage_record_id IS NOT NULL
          AND created_at >= $1 AND created_at < $2 ${after}
          ORDER BY created_at, id LIMIT $3`,
       params,

@@ -152,7 +152,7 @@ export class ReconciliationService {
     for (const bill of bills) {
       const { rows } = await db.query<{ cost: string | null }>(
         `SELECT sum(cost_micros) AS cost FROM billing.ledger_entries
-          WHERE upstream_id = $1 AND type = 'charge' AND created_at >= $2 AND created_at < $3`,
+          WHERE upstream_id = $1 AND (type = 'charge' OR (type = 'adjustment' AND idempotency_key LIKE 'cost_resolution:%' AND amount_micros = 0)) AND created_at >= $2 AND created_at < $3`,
         [
           bill.upstreamId,
           startOfLocalDay(bill.periodStart, PLATFORM_TIME_ZONE),
@@ -340,7 +340,7 @@ export class ReconciliationService {
     }>(
       `SELECT usage_record_id, id, amount_micros AS amount, cost_micros AS cost, absorbed, safety_overdraft
          FROM billing.ledger_entries
-        WHERE type = 'charge' AND usage_record_id = ANY($1::uuid[])
+        WHERE (type = 'charge' OR (type = 'adjustment' AND idempotency_key LIKE 'cost_resolution:%' AND amount_micros = 0)) AND usage_record_id = ANY($1::uuid[])
         ORDER BY created_at, id`,
       [usageRecordIds],
     );
