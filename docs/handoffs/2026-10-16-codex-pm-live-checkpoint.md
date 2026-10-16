@@ -1,5 +1,16 @@
 # Codex主会话进行中断点（2026-10-16）
 
+## 最新覆盖（22:38）
+
+- 积分整批交付9216c019ba687a91d58ec4f02021dc696e4dd09c，已合local/trunk **69f18e9685a6b62c45b7b61e8e65baea62c12546**，共享main已ff。下文“未合入/待收口”是旧断点，仅作历史。
+- 新增主会话独立codex/unknown-cost-resolution / C:\wb-dev\wb-unknown-resolution（79a0683/8d5605c/b548c8d/50c845c），已并入整批。管理员凭证核实只追加成本差额、不补扣用户；平台成功用零金额adjustment不破坏原charge唯一索引，事件读当前权威快照，极迟settle保留已核成本。操作/限制见docs/ops/unknown-cost-resolution.md。
+- 主会话实际GUI12PNG+3请求JSON+2空console记录。保存失败草稿、双路由配置、换模型清证据、待核风险、窄屏导入不足已点。发现并修复模型列表effect永久加载，复点通过。5193已停、临时源码删，恢复备份留docs；5190原样例不动。
+- 最终相关contracts/server/admin/web/client-core类型、69文件eslint、依赖389/1689、server/web/admin/contracts构建及契约/Android生成检查通过。契约3.16/408接口/321路径，web415592；只登记开发自查。详见docs/handoffs/2026-10-16-points-prehold.md，不据源码检查声称PG/实际资金/供应商/并发或独立验收通过。
+- 未执行0101/0102，下一空闲0103；无SSH部署。部署前须逐路由真实核准bounds，现网页压缩录音ASR不可用、冻结context上限可能偏大；会员档位/权益、全局生态开关、小V与候选业务仍未完成。
+- 下一任务卡docs/tasks/2026-10-16-model-routing-ecology-continuation.md：先源码核查与逐场景矩阵交PM审，再分小块实施。仍一次一个子代理/任务独立worktree，不在积分副本继续开新批。
+
+## 以下保留旧断点
+
 这是开发接管断点，不是产品完成或独立验收。香港本轮未SSH/部署，仍按此前审计0da5835/迁移0090；不再查总经理交给他人的异常IP。D盘拔除未影响当前C盘项目/工作树/pnpm store。
 
 ## 已真正合主线
