@@ -4,4 +4,4 @@
 
 不分配新迁移，不写跑测试套件。只修改identity/recharge契约兼容说明，不与积分子代理改全局3.16版本/事件契约。相关typecheck/lint/build/生成与浏览器开发自查完成后由主会话合入；不部署。模型网关与积分冻结仍由原代理分支接续，此任务不声明其完成。
 
-开发及自测已完成，范围与证据见 `docs/handoffs/2026-10-16-codex-stop-gifts.md`；待主会话合入登记。不等同独立验收或线上完成。
+开发及自测已完成，交付de579fb已合入local/trunk并快进共享main；范围与证据见 `docs/handoffs/2026-10-16-codex-stop-gifts.md`。不等同独立验收或线上完成。
