@@ -164,6 +164,9 @@ export const holds = billingSchema.table(
   (t) => [
     uniqueIndex('holds_idempotency_key_key').on(t.idempotencyKey),
     index('holds_account_status_idx').on(t.accountId, t.status),
+    index('holds_unknown_route_idx')
+      .on(sql`(${t.riskSnapshot}->>'upstreamId')`, sql`(${t.riskSnapshot}->>'upstreamModelId')`)
+      .where(sql`${t.riskSnapshot}->>'phase' = 'unknown'`),
     index('holds_active_expires_idx')
       .on(t.expiresAt)
       .where(sql`${t.status} = 'active'`),

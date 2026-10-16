@@ -249,6 +249,13 @@ export class ReservationService implements BillingReservationPort {
         hold.riskSnapshot?.phase !== 'reserved'
       )
         return false;
+      await this.lockCallRoute(tx, input.upstreamId, input.upstreamModelId);
+      const unresolved = await tx.query<{ id: string }>(
+        `SELECT id FROM billing.holds WHERE risk_snapshot->>'phase'='unknown'
+         AND risk_snapshot->>'upstreamId'=$1 AND risk_snapshot->>'upstreamModelId'=$2 LIMIT 1`,
+        [input.upstreamId, input.upstreamModelId],
+      );
+      if (unresolved.rows.length) return false;
       await tx.db
         .update(holds)
         .set({
@@ -612,6 +619,8 @@ export class ReservationService implements BillingReservationPort {
       return { snapshot, remainingReserved: reserved };
     }
     if (known) {
+      if (snapshot.upstreamId && snapshot.upstreamModelId)
+        await this.lockCallRoute(tx, snapshot.upstreamId, snapshot.upstreamModelId);
       if (snapshot.phase === 'unknown')
         await this.budget.resolveUnknown(tx, hold.budgetDay, snapshot.uncertainMicros);
       return {
@@ -630,6 +639,7 @@ export class ReservationService implements BillingReservationPort {
       return { snapshot, remainingReserved: reserved };
     }
     const uncertainMicros = Math.max(0, snapshot.costUpperMicros - knownCost);
+    await this.lockCallRoute(tx, snapshot.upstreamId, snapshot.upstreamModelId);
     await this.budget.moveToUnknown(tx, hold.budgetDay, reserved, uncertainMicros, {
       holdId: hold.id,
       modelKey: hold.modelKey,
@@ -642,6 +652,14 @@ export class ReservationService implements BillingReservationPort {
       snapshot: { ...snapshot, phase: 'unknown' as const, uncertainMicros },
       remainingReserved: 0,
     };
+  }
+
+  /** 顺序固定：账户→hold→路由→预算；与未知风险提交串行，outbox停机也不能绕过。 */
+  private async lockCallRoute(tx: DbTx, upstreamId: string, upstreamModelId: string) {
+    await tx.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('billing:call-route:' || $1 || ':' || $2, 0))",
+      [upstreamId, upstreamModelId],
+    );
   }
 
   /** 今天（用户当地日期）后台已结算 + 当前后台冻结。 */
