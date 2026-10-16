@@ -41,7 +41,6 @@ import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { BILLING_READ_PORT } from '../../billing/index.js';
-import { P33_BACKGROUND_RESERVE_MICROS } from '../../../platform/config/product-params.js';
 import { healthPrivate, sharingClass } from '../domain/memory.js';
 import { highRisk, outputAllowed } from '../domain/reply-rules.js';
 import { momentCardAttempts, replyPlans, simulationStates } from '../infra/db/schema.js';
@@ -99,8 +98,8 @@ export class CardLineService implements CardCopywriterPort {
     context: string;
     idempotencyKey: string;
   }): Promise<string | null> {
-    const spend = await this.billing.getSpendStatus(input.userId);
-    if (spend.depleted || spend.availableMicros < P33_BACKGROUND_RESERVE_MICROS) return null;
+    const spend = await this.billing.getSpendStatus(input.userId).catch(() => null);
+    if (!spend) return null; // 实际额度交给已核上限冻结。
     const role = await this.characters.getForRuntime(input.userId, input.characterId);
     const policy = await this.policy.getCharacterPolicy(input.userId, input.characterId);
     if (!role || !policy) return null;
@@ -108,6 +107,7 @@ export class CardLineService implements CardCopywriterPort {
       userId: input.userId,
       characterId: input.characterId,
       purpose: 'memory',
+      ecologyTask: true,
       billingOwner: 'user',
       modelRole: 'background',
       countAsBackground: true,
@@ -275,6 +275,7 @@ export class MomentCardService implements OnModuleInit {
       characterId,
       conversationId: contact.conversationId,
       purpose: 'memory',
+      ecologyTask: true,
       billingOwner: 'user',
       modelRole: 'background',
       responseFormat: 'json',

@@ -55,7 +55,13 @@ export interface MediaAdapter {
   decide(
     t: MediaTarget,
     input: { state: Record<string, unknown>; questions: DecideAdapterQuestion[] },
-  ): Promise<MediaAdapterResult<{ answers: DecideAdapterAnswer[]; inputTokens: number }>>;
+  ): Promise<
+    MediaAdapterResult<{
+      answers: DecideAdapterAnswer[];
+      inputTokens: number;
+      inputTokensEstimated?: boolean;
+    }>
+  >;
   synthesize(
     t: MediaTarget,
     input: { text: string; voice: string; format: 'ogg_opus' | 'pcm16_24k' | 'wav' },
@@ -178,7 +184,13 @@ export class OpenAiCompatibleMediaAdapter implements MediaAdapter {
   async decide(
     t: MediaTarget,
     input: { state: Record<string, unknown>; questions: DecideAdapterQuestion[] },
-  ): Promise<MediaAdapterResult<{ answers: DecideAdapterAnswer[]; inputTokens: number }>> {
+  ): Promise<
+    MediaAdapterResult<{
+      answers: DecideAdapterAnswer[];
+      inputTokens: number;
+      inputTokensEstimated?: boolean;
+    }>
+  > {
     if (t.kind !== 'jev') return { ok: false, category: 'bad_request' };
     try {
       const response = await fetch(url(t.baseUrl, '/v1/judge'), {
@@ -220,10 +232,21 @@ export class OpenAiCompatibleMediaAdapter implements MediaAdapter {
         });
       }
       const inputTokens =
-        typeof payload.usage?.input_tokens === 'number'
-          ? payload.usage.input_tokens
+        Number.isSafeInteger(payload.usage?.input_tokens) &&
+        Number(payload.usage?.input_tokens) >= 0
+          ? Number(payload.usage?.input_tokens)
           : Math.ceil(JSON.stringify(input.state).length / 2);
-      return { ok: true, value: { answers, inputTokens } };
+      return {
+        ok: true,
+        value: {
+          answers,
+          inputTokens,
+          inputTokensEstimated: !(
+            Number.isSafeInteger(payload.usage?.input_tokens) &&
+            Number(payload.usage?.input_tokens) >= 0
+          ),
+        },
+      };
     } catch {
       return { ok: false, category: 'network_error' };
     }
@@ -358,6 +381,7 @@ export class OpenAiCompatibleMediaAdapter implements MediaAdapter {
           prompt: input.prompt,
           size: input.size,
           n: 1,
+          quality: 'standard',
           response_format: 'b64_json',
         }),
       });
@@ -422,7 +446,13 @@ export class FakeMediaAdapter implements MediaAdapter {
   async decide(
     _t: MediaTarget,
     input: { state: Record<string, unknown>; questions: DecideAdapterQuestion[] },
-  ): Promise<MediaAdapterResult<{ answers: DecideAdapterAnswer[]; inputTokens: number }>> {
+  ): Promise<
+    MediaAdapterResult<{
+      answers: DecideAdapterAnswer[];
+      inputTokens: number;
+      inputTokensEstimated?: boolean;
+    }>
+  > {
     const answers = input.questions.map((q) => {
       const opts = q.options.length ? q.options : ['yes', 'no'];
       const probabilities: Record<string, number> = {};
@@ -439,7 +469,11 @@ export class FakeMediaAdapter implements MediaAdapter {
     });
     return {
       ok: true,
-      value: { answers, inputTokens: Math.ceil(JSON.stringify(input.state).length / 2) },
+      value: {
+        answers,
+        inputTokens: Math.ceil(JSON.stringify(input.state).length / 2),
+        inputTokensEstimated: true,
+      },
     };
   }
 

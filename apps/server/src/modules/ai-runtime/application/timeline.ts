@@ -169,6 +169,7 @@ export class TimelineSummaryService {
       responseFormat: 'text',
       idempotencyKey,
       countAsBackground: true,
+      ecologyTask: true,
     });
 
     // 后台预算耗尽或其他错误时静默返回空摘要

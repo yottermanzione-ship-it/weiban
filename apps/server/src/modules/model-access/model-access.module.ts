@@ -1,3 +1,4 @@
+import { BillingBoundsService } from './application/billing-bounds.js';
 /**
  * model-access 模块装配（D-L0-08 后端部分）。说明见 docs/backend/model-access.md。
  * D-L0-09（AI 负责人）在本模块内加入上游适配器与模型网关（ModelGatewayPort），复用这里的
@@ -36,6 +37,7 @@ import {
   MODEL_NOTIFICATION_READ_PORT,
   MODEL_ACCESS_CHARGE_QUERY,
   MODEL_GATEWAY_PORT,
+  MODEL_PLATFORM_GATEWAY_PORT,
   MODEL_GENERATION_POLICY,
   TEXT_ADAPTER,
   GATEWAY_RETRY_WAIT,
@@ -53,6 +55,7 @@ import {
   imports: [BillingModule, IdentityModule, MediaModule],
   exports: [
     MODEL_GATEWAY_PORT,
+    MODEL_PLATFORM_GATEWAY_PORT,
     MODEL_NOTIFICATION_READ_PORT,
     ADULT_MODEL_READ_PORT,
     WEB_SEARCH_PROVIDER,
@@ -61,6 +64,7 @@ import {
   ],
   controllers: [ModelController, ModelAdminController],
   providers: [
+    BillingBoundsService,
     UpstreamService,
     GatewayLimitsService,
     UpstreamScheduler,
@@ -68,6 +72,7 @@ import {
     ModelGateway,
     GatewayMaintenance,
     { provide: MODEL_GATEWAY_PORT, useExisting: ModelGateway },
+    { provide: MODEL_PLATFORM_GATEWAY_PORT, useExisting: ModelGateway },
     GatewayWebSearchProvider,
     ModelGatewayMedia,
     { provide: MODEL_GATEWAY_MEDIA_PORT, useExisting: ModelGatewayMedia },

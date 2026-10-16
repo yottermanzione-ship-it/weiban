@@ -12,7 +12,7 @@
  * 只读 billing（经 BillingChargeQueryPort），不改任何钱；不自动修复金额不一致。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import type { UsageCharge } from '@weiban/contracts';
+import type { UsageBillingState, UsageCharge } from '@weiban/contracts';
 import { and, gte, inArray, lt } from 'drizzle-orm';
 import {
   AUDIT_LOG,
@@ -91,25 +91,49 @@ export class UsageReconciliationService {
         ),
       );
 
-    // ② 补写缺失的金额快照
+    if (!this.charges.getBillingStatesByHoldIds) throw new ChargeQueryUnavailableError();
+    const states = new Map<string, UsageBillingState>();
+    const holdIds = [...new Set(records.flatMap((r) => (r.holdId ? [r.holdId] : [])))];
+    for (let i = 0; i < holdIds.length; i += ID_BATCH) {
+      for (const state of await this.charges.getBillingStatesByHoldIds(
+        holdIds.slice(i, i + ID_BATCH),
+      ))
+        states.set(state.holdId, state);
+    }
+    // 按ID取齐全生命周期流水；同日只出现一个成本分量时也必须补齐跨日分量。
+    const byUsage = await this.chargesFor(records.map((r) => r.id));
+    // ② 只从权威关闭快照修复；历史无快照时保守重建，绝不变成“已核成本”。
     const missing = records.filter((r) => r.snapshotAt === null);
     let snapshotsRepaired = 0;
     if (missing.length > 0) {
-      const found = await this.chargesFor(missing.map((r) => r.id));
       for (const r of missing) {
-        const cs = found.get(r.id) ?? [];
-        const charge = cs.find((c) => !c.absorbed);
-        const absorbed = cs.find((c) => c.absorbed);
-        if (r.status === 'succeeded' && charge) {
+        const cs = byUsage.get(r.id) ?? [];
+        const state = r.holdId ? states.get(r.holdId) : undefined;
+        if (state?.usageRecordId && state.usageRecordId !== r.id) continue;
+        const charge = cs.find((c) => !c.absorbed && !c.costCorrection);
+        const total = totals(cs);
+        if (!total.valid) continue;
+        if (r.status === 'succeeded' && state?.status === 'settled' && state.settlement) {
+          await this.recorder.writeSettleSnapshot(r.id, state.settlement);
+          snapshotsRepaired += 1;
+        } else if (r.status === 'failed' && state?.status === 'released' && state.release) {
+          await this.recorder.writeReleaseSnapshot(r.id, state.release);
+          snapshotsRepaired += 1;
+        } else if (state && (state.status === 'active' || state.status === 'expired')) {
+          continue;
+        } else if (r.status === 'succeeded' && charge) {
           await this.recorder.writeSettleSnapshot(r.id, {
             ledgerEntryId: charge.ledgerEntryId,
-            amountMicros: charge.amountMicros,
-            costMicros: charge.costMicros,
+            amountMicros: r.billingOwner === 'platform' ? total.allAmount : total.primaryAmount,
+            costMicros: total.cost,
+            absorbedCostMicros: total.absorbedCost,
+            costKnown: false,
           });
           snapshotsRepaired += 1;
-        } else if (r.status === 'failed' && absorbed) {
+        } else if (r.status === 'failed' && cs.length && !total.primary.length) {
           await this.recorder.writeReleaseSnapshot(r.id, {
-            absorbedCostMicros: absorbed.amountMicros,
+            absorbedCostMicros: total.absorbedCost,
+            costKnown: false,
           });
           snapshotsRepaired += 1;
         }
@@ -128,7 +152,6 @@ export class UsageReconciliationService {
     }
 
     // ③ 当天的扣费 + 跨零点的补查
-    const byUsage = new Map<string, UsageCharge[]>();
     const dayCharges: UsageCharge[] = [];
     let cursor: string | undefined;
     do {
@@ -136,29 +159,18 @@ export class UsageReconciliationService {
       dayCharges.push(...page.items);
       cursor = page.nextCursor ?? undefined;
     } while (cursor);
-    for (const c of dayCharges) push(byUsage, c);
-    const notFoundToday = records.filter((r) => !byUsage.has(r.id)).map((r) => r.id);
-    // 这些 ID 当天没有任何扣费，所以补查结果不会与上面重复
-    for (const cs of (await this.chargesFor(notFoundToday)).values()) {
-      for (const c of cs) push(byUsage, c);
-    }
 
     // ④ 比对
     const usageWithoutCharge: string[] = [];
     const amountMismatch: string[] = [];
     for (const r of records) {
       const cs = byUsage.get(r.id) ?? [];
-      if (r.status === 'succeeded') {
-        const charge = cs.find((c) => !c.absorbed);
-        if (!charge) usageWithoutCharge.push(r.id);
-        else if (!snapshotMatches(r, charge)) amountMismatch.push(r.id);
-      } else {
-        const absorbed = cs.find((c) => c.absorbed);
-        if (cs.some((c) => !c.absorbed))
-          amountMismatch.push(r.id); // 失败调用不应向用户收费
-        else if (absorbed && absorbed.amountMicros !== r.absorbedCostMicros)
-          amountMismatch.push(r.id);
+      if (r.status === 'succeeded' && !cs.some((c) => !c.absorbed)) {
+        usageWithoutCharge.push(r.id);
+        continue;
       }
+      if (!snapshotMatches(r, cs, r.holdId ? states.get(r.holdId) : undefined))
+        amountMismatch.push(r.id);
     }
     // 当天的扣费找不到对应的（已结束）用量记录：先看本地是否有这条记录（可能在别的日期创建）
     const ourIds = new Set(records.map((r) => r.id));
@@ -171,7 +183,10 @@ export class UsageReconciliationService {
         if (ourIds.has(c.usageRecordId)) return false;
         const row = known.get(c.usageRecordId);
         if (!row) return true;
-        return c.absorbed ? row.status !== 'failed' : row.status !== 'succeeded';
+        // 成功也可能有平台成本分摊；失败则不应出现主扣费。
+        return c.absorbed
+          ? row.status !== 'failed' && row.status !== 'succeeded'
+          : row.status !== 'succeeded';
       })
       .map((c) => c.ledgerEntryId);
 
@@ -248,10 +263,62 @@ function push(map: Map<string, UsageCharge[]>, c: UsageCharge): void {
   else map.set(c.usageRecordId, [c]);
 }
 
-function snapshotMatches(r: UsageRow, c: UsageCharge): boolean {
-  return (
-    r.chargedMicros === c.amountMicros &&
-    r.costMicros === c.costMicros &&
-    (r.ledgerEntryId === null || r.ledgerEntryId === c.ledgerEntryId)
-  );
+function totals(cs: UsageCharge[]) {
+  const primary = cs.filter((c) => !c.absorbed && !c.costCorrection);
+  const cost = cs.reduce((n, c) => n + c.costMicros, 0);
+  const absorbedCost = cs.filter((c) => c.absorbed).reduce((n, c) => n + c.costMicros, 0);
+  const charge = (c: UsageCharge) => -(c.signedAmountMicros ?? -c.amountMicros);
+  const allAmount = cs.reduce((n, c) => n + charge(c), 0);
+  const primaryAmount = primary.reduce((n, c) => n + charge(c), 0);
+  return {
+    primary,
+    cost,
+    absorbedCost,
+    allAmount,
+    primaryAmount,
+    valid:
+      cs.every((c) => Number.isSafeInteger(c.costMicros) && Number.isSafeInteger(charge(c))) &&
+      [cost, absorbedCost, allAmount, primaryAmount].every(Number.isSafeInteger),
+  };
+}
+
+function snapshotMatches(r: UsageRow, cs: UsageCharge[], state?: UsageBillingState): boolean {
+  const total = totals(cs);
+  if (!total.valid || (state?.usageRecordId && state.usageRecordId !== r.id)) return false;
+  if (cs.some((c) => c.holdId && r.holdId && c.holdId !== r.holdId)) return false;
+  if (state && state.accountKind !== r.billingOwner) return false;
+  if (r.status === 'succeeded') {
+    if (total.primary.length !== 1) return false;
+    const charge = total.primary[0]!;
+    const amount = r.billingOwner === 'platform' ? total.allAmount : total.primaryAmount;
+    const snapshot = state?.settlement;
+    if (state && state.status !== 'settled') return false;
+    if (
+      snapshot &&
+      (snapshot.amountMicros !== amount ||
+        snapshot.costMicros !== total.cost ||
+        snapshot.ledgerEntryId !== charge.ledgerEntryId ||
+        (snapshot.absorbedCostMicros ?? 0) !== total.absorbedCost ||
+        r.costKnown !== (snapshot.costKnown === true) ||
+        r.uncertainCostMicros !== (snapshot.uncertainCostMicros ?? 0))
+    )
+      return false;
+    return (
+      r.chargedMicros === amount &&
+      r.costMicros === total.cost &&
+      r.absorbedCostMicros === total.absorbedCost &&
+      (r.ledgerEntryId === null || r.ledgerEntryId === charge.ledgerEntryId)
+    );
+  }
+  if (total.primary.length || r.chargedMicros !== 0) return false;
+  const snapshot = state?.release;
+  if (state && state.status !== 'released') return false;
+  if (
+    snapshot &&
+    (snapshot.absorbedCostMicros !== total.cost ||
+      r.costKnown !== (snapshot.costKnown === true) ||
+      r.uncertainCostMicros !== (snapshot.uncertainCostMicros ?? 0))
+  )
+    return false;
+  return r.absorbedCostMicros === total.absorbedCost && r.costMicros === total.cost;
 }

@@ -10,6 +10,7 @@ export { ModelAccessModule } from './model-access.module.js';
 export { MODEL_ACCESS_POLICY, type ModelPolicy } from './tokens.js';
 
 export { MODEL_GATEWAY_PORT } from './tokens.js';
+export { MODEL_PLATFORM_GATEWAY_PORT } from './tokens.js';
 export { INITIAL_MODELS, initialPriceItems } from './domain/seed.js';
 
 export { MODEL_NOTIFICATION_READ_PORT } from './tokens.js';

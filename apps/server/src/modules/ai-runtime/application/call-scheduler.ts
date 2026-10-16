@@ -47,7 +47,7 @@ export const P10_CALLS = { perCharacter: 1, total: 3, windowMs: 7 * 86_400_000, 
 /** P-09：用户 5 分钟内发过消息。 */
 const P09_BUSY_MS = 5 * 60_000;
 /** P-33：余额保留线 1 元。 */
-const P33_FLOOR_MICROS = 1_000_000;
+
 const COUNTED = ['started', 'completed', 'missed', 'declined', 'failed'];
 /** 各触发理由在当天被选中拨出的概率：T-090 起作为决策层 call_slot 的规则版与退路。 */
 const TRIGGER_CHANCE: Record<string, number> = {
@@ -102,7 +102,7 @@ export class CallSchedulerService {
       .limit(1);
     if (busy) return;
     const spend = await this.billing.getSpendStatus(ctx.userId).catch(() => null);
-    if (!spend || spend.depleted || spend.availableMicros < P33_FLOOR_MICROS) return;
+    if (!spend) return; // 开场模型先做真实上限冻结，失败不发起来电。
     if (
       !(await this.media.isServiceEnabled('speech_recognition')) ||
       !(await this.media.isServiceEnabled('speech_synthesis'))
@@ -250,6 +250,7 @@ export class CallSchedulerService {
         billingOwner: 'user',
         modelRole: 'chat',
         countAsBackground: true,
+        ecologyTask: true,
         responseFormat: 'text',
         maxOutputTokens: 80,
         idempotencyKey: `call-after:${p.callId}`,

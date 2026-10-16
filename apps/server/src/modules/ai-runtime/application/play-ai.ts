@@ -261,6 +261,7 @@ export class PlayAiService {
       billingOwner: 'user',
       modelRole: 'chat',
       countAsBackground: input.background,
+      ecologyTask: input.background,
       responseFormat: input.json ? 'json' : 'text',
       maxOutputTokens: input.maxTokens,
       idempotencyKey: input.key.slice(0, 200),

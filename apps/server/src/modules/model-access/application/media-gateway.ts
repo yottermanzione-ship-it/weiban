@@ -10,7 +10,7 @@
  * 流式调用（实时识别、流式合成）每段 / 每次独立记账，幂等键由调用方保证唯一。
  * 假上游：目录模型 upstreamModelId 以 fake- 开头且非生产环境时走 FakeMediaAdapter，计费照常。
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
   BACKGROUND_PURPOSES,
   BUDGET_EXEMPT_PURPOSES,
@@ -39,6 +39,7 @@ import {
   type TranscribeSpeechInput,
   type UsageQuantities,
   type WebSearchResultItem,
+  type RouteBillingBounds,
 } from '@weiban/contracts';
 import { APP_CONFIG, CLOCK, type AppConfig, type Clock } from '../../../platform/index.js';
 import { BILLING_RESERVATION_PORT } from '../../billing/index.js';
@@ -55,10 +56,12 @@ import {
 } from '../infra/media-adapter.js';
 import { MEDIA_ADAPTER } from '../tokens.js';
 import { CatalogService, type DefaultUse, type ModelFacts } from './catalog.js';
-import { GenerationCache } from './generation-cache.js';
+import { GenerationCache, requestHash, type GenerationRow } from './generation-cache.js';
 import { UpstreamService } from './upstreams.js';
 import { UsageRecorder } from './usage.js';
 import { unavailableReason } from '../domain/rules.js';
+import { BillingBoundsService, boundsEvidence } from './billing-bounds.js';
+import { pcmWavSeconds, roundAsr } from '../domain/media-billing-bounds.js';
 
 type Service = 'speech_synthesis' | 'speech_recognition' | 'image_generation' | 'web_search';
 
@@ -67,6 +70,7 @@ interface Resolved {
   upstreamId: string;
   upstreamModelId: string;
   fake: boolean;
+  billingBounds: RouteBillingBounds;
 }
 
 /** 一次已冻结、尚未结算的计费段。 */
@@ -76,16 +80,24 @@ interface Charge {
   model: Resolved;
   startedAt: Date;
   wallStart: number;
+  attemptId: string;
+  sent: boolean;
 }
 
 type CallOutcome<T> =
-  | { ok: true; value: T; actual: UsageQuantities }
+  | { ok: true; value: T; actual: UsageQuantities; actualKnown?: boolean }
   | { ok: false; category: MediaFailure; actual?: UsageQuantities };
+
+type PendingMediaResult = {
+  ok: true;
+  value: Record<string, unknown>;
+  mediaSettlement: { charge: Charge; actual: UsageQuantities; actualKnown: boolean };
+};
 
 /** 实时识别：16 kHz PCM16 单声道，每秒 32000 字节。 */
 const PCM16K_BYTES_PER_SECOND = 32_000;
 /** 每段冻结 1 分钟（ADR-0025「长通话分段冻结」）。 */
-const ASR_SEGMENT_SECONDS = 60;
+
 /** 断句：说话后静音 700 毫秒，或单句超过 15 秒。 */
 const SILENCE_MS = 700;
 const MAX_UTTERANCE_SECONDS = 15;
@@ -100,6 +112,7 @@ function unitsOf(q: UsageQuantities): Record<string, number> {
 @Injectable()
 export class ModelGatewayMedia implements ModelGatewayMediaPort {
   private readonly fakeAdapter = new FakeMediaAdapter();
+  private readonly activeGenerations = new WeakMap<object, GenerationRow>();
 
   constructor(
     @Inject(CatalogService) private readonly catalog: CatalogService,
@@ -115,6 +128,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     @Inject(MEDIA_ADAPTER) private readonly adapter: MediaAdapter,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Optional() @Inject(BillingBoundsService) private readonly bounds?: BillingBoundsService,
   ) {}
 
   // ---------- 服务开通 ----------
@@ -124,7 +138,22 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       'speech_synthesis' | 'speech_recognition' | 'image_generation' | 'web_search' | 'vision',
   ): Promise<boolean> {
     const facts = await this.catalog.defaultModel(service);
-    return !!facts && unavailableReason(facts.entry, facts.upstreamStatus) === null;
+    if (!facts?.entry || unavailableReason(facts.entry, facts.upstreamStatus) !== null)
+      return false;
+    const bounds = await this.bounds?.get(
+      facts.entry.modelKey,
+      facts.entry.upstreamId,
+      facts.entry.upstreamModelId,
+    );
+    return !!(service === 'speech_synthesis'
+      ? bounds?.tts
+      : service === 'speech_recognition'
+        ? bounds?.asr
+        : service === 'image_generation'
+          ? bounds?.image
+          : service === 'web_search'
+            ? bounds?.search
+            : bounds?.text);
   }
 
   // ---------- 非流式 ----------
@@ -139,7 +168,8 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       if (!voice || !voice.enabled) return { ok: false, error: 'bad_request' };
       const model = await this.resolve('speech_synthesis', voice.modelKey);
       if (!model.ok) return model;
-      const chars = [...text].length;
+      const chars = this.ttsUnits(model.value, text);
+      if (chars === null) return { ok: false, error: 'model_unavailable' };
       return this.run(input, model.value, { ttsChars: chars }, async (target, adapter) => {
         const result = await adapter.synthesize(target, {
           text,
@@ -183,9 +213,13 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       const info = await this.mediaRead
         .getMedia(input.ownerUserId, input.mediaId)
         .catch(() => null);
-      const seconds = Math.max(1, Math.ceil((info?.durationMs ?? 60_000) / 1000));
+      const file = await this.media.readBytes(input.mediaId);
+      const duration = pcmWavSeconds(file.bytes);
+      const profile = model.value.billingBounds.asr;
+      if (!info || duration === null || !profile || duration > profile.maxSeconds)
+        return { ok: false, error: 'model_unavailable' };
+      const seconds = roundAsr(duration, profile.billingStepSeconds);
       return this.run(input, model.value, { asrSeconds: seconds }, async (target, adapter) => {
-        const file = await this.media.readBytes(input.mediaId);
         const result = await adapter.transcribe(target, file);
         if (!result.ok) return result;
         return { ok: true, value: { text: result.value.text }, actual: { asrSeconds: seconds } };
@@ -202,6 +236,8 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     return this.cached('image', input, async () => {
       const model = await this.resolve('image_generation', null);
       if (!model.ok) return model;
+      if (!model.value.billingBounds.image?.sizes.includes(input.size))
+        return { ok: false, error: 'model_unavailable' };
       return this.run(input, model.value, { images: 1 }, async (target, adapter) => {
         const styled =
           input.style === 'classical_illustration' ? `古风插画风格，非写实。${prompt}` : prompt;
@@ -227,6 +263,8 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     return this.cached('search', input, async () => {
       const model = await this.resolve('web_search', null);
       if (!model.ok) return model;
+      const search = model.value.billingBounds.search;
+      if (!search || max > search.maxResults) return { ok: false, error: 'model_unavailable' };
       return this.run(input, model.value, { searchCalls: 1 }, async (target, adapter) => {
         const result = await adapter.search(target, { query, maxResults: max });
         if (!result.ok) return result;
@@ -256,13 +294,20 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       if (reason === 'provider_unavailable') return { ok: false, error: 'provider_unavailable' };
       if (facts.entry.capabilities.includes('adult_content'))
         return { ok: false, error: 'model_not_allowed' };
+      const billingBounds = await this.bounds?.get(
+        facts.entry.modelKey,
+        facts.entry.upstreamId,
+        facts.entry.upstreamModelId,
+      );
+      if (!billingBounds?.decision) return { ok: false, error: 'model_unavailable' };
       const model: Resolved = {
         modelKey: facts.entry.modelKey,
         upstreamId: facts.entry.upstreamId,
         upstreamModelId: facts.entry.upstreamModelId,
         fake: isFakeModel(facts.entry.upstreamModelId, this.config.nodeEnv === 'production'),
+        billingBounds,
       };
-      const estimateTokens = Math.ceil(JSON.stringify(input.state).length / 2) + 200;
+      const estimateTokens = billingBounds.decision.maxInputTokens;
       const questions = input.questions.map((q) => ({
         questionId: q.questionId,
         kind: q.kind,
@@ -280,6 +325,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
             ok: true,
             value: { answers: result.value.answers },
             actual: { inputTokens: result.value.inputTokens, outputTokens: 0 },
+            actualKnown: result.value.inputTokensEstimated !== true,
           };
         },
       );
@@ -294,7 +340,18 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     if (!(await this.precheck(input))) return { ok: false, error: 'bad_request' };
     const model = await this.resolve('speech_recognition', null);
     if (!model.ok) return model;
-    const first = await this.reserve(input, model.value, { asrSeconds: ASR_SEGMENT_SECONDS }, 0);
+    const profile = model.value.billingBounds.asr!;
+    const first = await this.reserve(
+      input,
+      model.value,
+      {
+        asrSeconds: roundAsr(
+          Math.min(MAX_UTTERANCE_SECONDS, profile.maxSeconds),
+          profile.billingStepSeconds,
+        ),
+      },
+      0,
+    );
     if (!first.ok) return first;
     return { ok: true, value: new RealtimeAsr(this, input, model.value, first.value) };
   }
@@ -308,9 +365,14 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     if (!voice || !voice.enabled) return { ok: false, error: 'bad_request' };
     const model = await this.resolve('speech_synthesis', voice.modelKey);
     if (!model.ok) return model;
-    const chars = [...text].length;
+    const chars = this.ttsUnits(model.value, text);
+    if (chars === null) return { ok: false, error: 'model_unavailable' };
     const charge = await this.reserve(input, model.value, { ttsChars: chars }, 0);
     if (!charge.ok) return charge;
+    if (!(await this.beginCharge(charge.value))) {
+      await this.fail(charge.value, 'provider_error');
+      return { ok: false, error: 'model_unavailable' };
+    }
     const controller = new AbortController();
     const started = await this.withTarget(model.value, (target, adapter) =>
       adapter.synthesizeStream(target, { text, voice: voice.providerVoiceKey }, controller.signal),
@@ -322,32 +384,50 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       await this.fail(charge.value, started.category);
       return { ok: false, error: this.mapError(started.category) };
     }
-    // 中文约每秒 4 字：24 kHz PCM16 每字约 12000 字节；打断时按已收到的音频折算字数。
-    const expectedBytes = chars * 12_000;
-    let received = 0;
     let settle!: (v: PortResult<MediaCallResult, GenerateError>) => void;
     const done = new Promise<PortResult<MediaCallResult, GenerateError>>((r) => (settle = r));
-    const finish = async () => {
-      const used = controller.signal.aborted
-        ? Math.min(chars, Math.max(1, Math.ceil((chars * received) / expectedBytes)))
-        : chars;
-      settle(await this.succeed(charge.value, { ttsChars: used }));
-    };
+    let finishing: Promise<void> | null = null;
+    let delivered = false;
+    const finish = () =>
+      (finishing ??= (async () => {
+        // 打断或未自然读完没有供应商实际用量，不能拿音频字节经验折算收费。
+        if (completed && !controller.signal.aborted && !delivered) {
+          await this.fail(charge.value, 'provider_error', { ttsChars: chars });
+          settle({ ok: false, error: 'provider_unavailable' });
+          return;
+        }
+        settle(
+          await this.succeed(
+            charge.value,
+            { ttsChars: chars },
+            completed && !controller.signal.aborted,
+          ),
+        );
+      })());
     const source = started.value;
+    let completed = false;
     async function* audio(): AsyncIterable<Uint8Array> {
       try {
         for await (const chunk of source) {
           if (controller.signal.aborted) break;
-          received += chunk.length;
+          delivered ||= chunk.length > 0;
           yield chunk;
         }
+        completed = !controller.signal.aborted;
       } finally {
         await finish();
       }
     }
     return {
       ok: true,
-      value: { audio: audio(), abort: () => controller.abort(), done },
+      value: {
+        audio: audio(),
+        abort: () => {
+          controller.abort();
+          void finish();
+        },
+        done,
+      },
     };
   }
 
@@ -389,6 +469,20 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     if (reason === 'model_removed' || !facts.entry)
       return { ok: false, error: 'model_unavailable' };
     if (reason === 'provider_unavailable') return { ok: false, error: 'provider_unavailable' };
+    const billingBounds = await this.bounds?.get(
+      facts.entry.modelKey,
+      facts.entry.upstreamId,
+      facts.entry.upstreamModelId,
+    );
+    const profile =
+      service === 'speech_synthesis'
+        ? billingBounds?.tts
+        : service === 'speech_recognition'
+          ? billingBounds?.asr
+          : service === 'image_generation'
+            ? billingBounds?.image
+            : billingBounds?.search;
+    if (!billingBounds || !profile) return { ok: false, error: 'model_unavailable' };
     return {
       ok: true,
       value: {
@@ -396,6 +490,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         upstreamId: facts.entry.upstreamId,
         upstreamModelId: facts.entry.upstreamModelId,
         fake: isFakeModel(facts.entry.upstreamModelId, this.config.nodeEnv === 'production'),
+        billingBounds,
       },
     };
   }
@@ -425,7 +520,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     estimate: UsageQuantities,
     segment: number,
   ): Promise<PortResult<Charge, GenerateError>> {
-    const key = `media:${base.idempotencyKey}${segment ? `:seg${segment}` : ''}`;
+    const key = `media:${base.userId}:${boundsEvidence([base.idempotencyKey, model.modelKey, base.purpose])}${segment ? `:seg${segment}` : ''}`;
     const usage = await this.recorder.start({
       input: {
         userId: base.userId,
@@ -453,11 +548,17 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       modelKey: model.modelKey,
       characterId: base.characterId,
       estimate,
+      ceiling: { usage: estimate, evidence: boundsEvidence(model.billingBounds) },
       idempotencyKey: key,
       countAsBackground: base.countAsBackground,
+      ecologyTask: base.ecologyTask,
     });
     if (!reserve.ok) {
       const error = reserve.error === 'price_missing' ? 'model_unavailable' : reserve.error;
+      await this.recorder.writeReleaseSnapshot(usage.record.id, {
+        absorbedCostMicros: 0,
+        costKnown: true,
+      });
       await this.recorder.finish(usage.record.id, {
         status: 'failed',
         errorCode: error,
@@ -471,6 +572,21 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       return { ok: false, error };
     }
     await this.recorder.attachHold(usage.record.id, reserve.value);
+    const attemptId = await this.recorder.startAttempt({
+      generationId: this.activeGenerations.get(base)?.id ?? usage.record.id,
+      userId: base.userId,
+      ordinal: 0,
+      modelKey: model.modelKey,
+      upstreamId: model.upstreamId,
+      upstreamModelId: model.upstreamModelId,
+      usageRecordId: usage.record.id,
+      holdId: reserve.value.holdId,
+      boundSnapshot: {
+        bounds: model.billingBounds,
+        usage: estimate,
+        priceVersionId: reserve.value.priceVersionId,
+      },
+    });
     return {
       ok: true,
       value: {
@@ -479,6 +595,8 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         model,
         startedAt,
         wallStart: performance.now(),
+        attemptId,
+        sent: false,
       },
     };
   }
@@ -486,12 +604,14 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
   async succeed(
     charge: Charge,
     actual: UsageQuantities,
+    actualKnown = true,
   ): Promise<PortResult<MediaCallResult, GenerateError>> {
     const latencyMs = Math.round(performance.now() - charge.wallStart);
     const settled = await this.billing.settle({
       holdId: charge.holdId,
       usageRecordId: charge.usageRecordId,
       actual,
+      actualKnown,
       startedAt: charge.startedAt.toISOString(),
       upstreamId: charge.model.upstreamId,
     });
@@ -500,12 +620,17 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       inputTokens: 0,
       cachedInputTokens: 0,
       outputTokens: 0,
-      estimated: false,
+      estimated: !actualKnown,
       latencyMs,
       retryCount: 0,
       mediaUnits: unitsOf(actual),
     });
     await this.recorder.writeSettleSnapshot(charge.usageRecordId, settled);
+    await this.recorder.finishAttempt(charge.attemptId, actual, actualKnown, null);
+    if (!actualKnown)
+      await this.bounds!.pauseUnknown(charge.model.modelKey, charge.model, {
+        checkedAt: charge.startedAt.toISOString(),
+      });
     return {
       ok: true,
       value: {
@@ -525,12 +650,22 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     const release = await this.billing.release({
       holdId: charge.holdId,
       reason: category === 'content_rejected' ? 'call_rejected' : 'call_failed',
-      upstreamUsage,
+      upstreamUsage: charge.sent ? upstreamUsage : {},
       usageRecordId: charge.usageRecordId,
       startedAt: charge.startedAt.toISOString(),
       upstreamId: charge.model.upstreamId,
     });
     await this.recorder.writeReleaseSnapshot(charge.usageRecordId, release);
+    await this.recorder.finishAttempt(
+      charge.attemptId,
+      upstreamUsage ?? null,
+      release.costKnown === true,
+      category,
+    );
+    if (charge.sent && release.costKnown !== true)
+      await this.bounds!.pauseUnknown(charge.model.modelKey, charge.model, {
+        checkedAt: charge.startedAt.toISOString(),
+      });
     await this.recorder.finish(charge.usageRecordId, {
       status: 'failed',
       errorCode: category,
@@ -542,7 +677,11 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       retryCount: 0,
       ...(upstreamUsage ? { mediaUnits: unitsOf(upstreamUsage) } : {}),
     });
-    if (!charge.model.fake && !['content_rejected', 'bad_request'].includes(category))
+    if (
+      charge.sent &&
+      !charge.model.fake &&
+      !['content_rejected', 'bad_request'].includes(category)
+    )
       await this.upstreams.reportStatus(
         charge.model.upstreamId,
         category === 'invalid_key'
@@ -581,6 +720,18 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
   ): Promise<PortResult<T & MediaCallResult, GenerateError>> {
     const charge = await this.reserve(base, model, estimate, 0);
     if (!charge.ok) return charge;
+    const generation = this.activeGenerations.get(base);
+    if (generation)
+      await this.cache.attach(
+        generation.id,
+        charge.value.usageRecordId,
+        charge.value.holdId,
+        model.upstreamId,
+      );
+    if (!(await this.beginCharge(charge.value))) {
+      await this.fail(charge.value, 'provider_error');
+      return { ok: false, error: 'model_unavailable' };
+    }
     let outcome: CallOutcome<T>;
     try {
       outcome = await this.withTarget(model, call);
@@ -591,9 +742,103 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       await this.fail(charge.value, outcome.category, outcome.actual);
       return { ok: false, error: this.mapError(outcome.category) };
     }
-    const done = await this.succeed(charge.value, outcome.actual);
+    if (generation) {
+      const pending: PendingMediaResult = {
+        ok: true,
+        value: outcome.value as Record<string, unknown>,
+        mediaSettlement: {
+          charge: charge.value,
+          actual: outcome.actual,
+          actualKnown: outcome.actualKnown !== false,
+        },
+      };
+      await this.cache.save(generation, pending as never, 'result');
+      return this.restoreMediaResult(generation, pending) as Promise<
+        PortResult<T & MediaCallResult, GenerateError>
+      >;
+    }
+    const done = await this.succeed(charge.value, outcome.actual, outcome.actualKnown !== false);
     if (!done.ok) return done;
     return { ok: true, value: { ...outcome.value, ...done.value } };
+  }
+
+  /** 加密缓存先存供应商结果；崩溃后只重放结算，不再次调用媒体供应商。 */
+  async restoreMediaResult(
+    row: GenerationRow,
+    source: unknown,
+  ): Promise<PortResult<Record<string, unknown> & MediaCallResult, GenerateError>> {
+    const pending = source as PendingMediaResult;
+    if (!pending.ok || !pending.mediaSettlement || !pending.value)
+      throw new Error('媒体结算缓存缺失');
+    const { charge, actual, actualKnown } = pending.mediaSettlement;
+    charge.startedAt = new Date(charge.startedAt);
+    charge.wallStart =
+      performance.now() - Math.max(0, this.clock.nowMs() - charge.startedAt.getTime());
+    if (row.holdId !== charge.holdId || row.usageRecordId !== charge.usageRecordId)
+      throw new Error('媒体结算缓存关联不一致');
+    const settled = await this.succeed(charge, actual, actualKnown);
+    const complete = settled.ok
+      ? { ok: true as const, value: { ...pending.value, ...settled.value } }
+      : settled;
+    await this.cache.save(row, complete as never, 'complete');
+    return complete;
+  }
+
+  async beginCharge(charge: Charge): Promise<boolean> {
+    const current = await this.bounds?.get(
+      charge.model.modelKey,
+      charge.model.upstreamId,
+      charge.model.upstreamModelId,
+    );
+    if (
+      !current ||
+      boundsEvidence(current) !== boundsEvidence(charge.model.billingBounds) ||
+      !this.billing.beginCall
+    )
+      return false;
+    charge.sent = await this.billing.beginCall({
+      holdId: charge.holdId,
+      usageRecordId: charge.usageRecordId,
+      upstreamId: charge.model.upstreamId,
+      upstreamModelId: charge.model.upstreamModelId,
+    });
+    if (charge.sent) await this.recorder.markAttemptSent(charge.attemptId);
+    return charge.sent;
+  }
+
+  async cancelCharge(charge: Charge): Promise<void> {
+    const release = await this.billing.release({
+      holdId: charge.holdId,
+      reason: 'cancelled',
+      usageRecordId: charge.usageRecordId,
+    });
+    await this.recorder.writeReleaseSnapshot(charge.usageRecordId, release);
+    await this.recorder.finishAttempt(
+      charge.attemptId,
+      null,
+      release.costKnown === true,
+      'cancelled',
+    );
+    await this.recorder.finish(charge.usageRecordId, {
+      status: 'failed',
+      errorCode: 'cancelled',
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+      estimated: false,
+      latencyMs: 0,
+      retryCount: 0,
+    });
+  }
+
+  private ttsUnits(model: Resolved, text: string): number | null {
+    const profile = model.billingBounds.tts;
+    if (!profile || Buffer.byteLength(text, 'utf8') > profile.maxTextBytes) return null;
+    return profile.counting === 'codepoints'
+      ? [...text].length
+      : profile.counting === 'utf16'
+        ? text.length
+        : Buffer.byteLength(text, 'utf8');
   }
 
   /** 非流式调用的 24 小时幂等（复用文本网关的结果缓存，键加 media: 前缀以免与文本冲突）。 */
@@ -608,10 +853,15 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       idempotencyKey: `media:${kind}:${input.idempotencyKey}`,
     } as unknown as GenerateTextInput;
     const claim = await this.cache.claim(pseudo);
+    if (claim.row.requestHash !== requestHash(pseudo)) return { ok: false, error: 'bad_request' };
     if (!claim.created) {
       for (let i = 0; i < 900; i++) {
         const row = await this.cache.get(claim.row.id);
         if (!row) break;
+        if (row.phase === 'result')
+          return this.restoreMediaResult(row, await this.cache.open(row)) as Promise<
+            PortResult<T, GenerateError>
+          >;
         if (row.phase === 'complete')
           return (await this.cache.open(row)) as unknown as PortResult<T, GenerateError>;
         if (this.clock.nowMs() - row.createdAt.getTime() > 120_000) break;
@@ -620,10 +870,16 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       return { ok: false, error: 'provider_unavailable' };
     }
     let result: PortResult<T, GenerateError>;
+    this.activeGenerations.set(input, claim.row);
     try {
       result = await fn();
     } catch {
+      // 若结果已落盘，保留result阶段供恢复，不用失败覆盖已成功的供应商结果。
+      const stored = await this.cache.get(claim.row.id);
+      if (stored?.phase === 'result') return { ok: false, error: 'provider_unavailable' };
       result = { ok: false, error: 'provider_unavailable' };
+    } finally {
+      this.activeGenerations.delete(input);
     }
     await this.cache.save(claim.row, result as never, 'complete');
     return result;
@@ -640,7 +896,6 @@ class RealtimeAsr implements RealtimeAsrSession {
   private utteranceBytes = 0;
   private silenceMs = 0;
   private speaking = false;
-  private totalBytes = 0;
   private segment = 0;
   private charge: Charge | null;
   private closed = false;
@@ -649,7 +904,7 @@ class RealtimeAsr implements RealtimeAsrSession {
   private wake: (() => void) | null = null;
   private ended = false;
   private chargedMicros = 0;
-
+  private lastUsageId: string;
   constructor(
     private readonly gateway: ModelGatewayMedia,
     private readonly base: MediaCallBase,
@@ -657,14 +912,25 @@ class RealtimeAsr implements RealtimeAsrSession {
     first: Charge,
   ) {
     this.charge = first;
+    this.lastUsageId = first.usageRecordId;
   }
-
   pushAudio(chunk: Uint8Array): void {
     if (this.closed || this.ended || !chunk.length) return;
+    // 有界PCM帧；一个大chunk也必须拆帧，不能越过已核单请求时长。
+    if (chunk.length % 2 || chunk.length > PCM16K_BYTES_PER_SECOND * 60) {
+      void this.close();
+      return;
+    }
     const data = new Uint8Array(chunk);
-    this.chain = this.chain.then(() => this.accept(data)).catch(() => undefined);
+    this.chain = this.chain
+      .then(async () => {
+        for (let offset = 0; offset < data.length && !this.ended; offset += 3200)
+          await this.accept(data.slice(offset, offset + 3200));
+      })
+      .catch(() => {
+        this.emit(null);
+      });
   }
-
   async *results(): AsyncIterable<{ text: string; final: boolean }> {
     for (;;) {
       const next = this.queue.shift();
@@ -673,15 +939,13 @@ class RealtimeAsr implements RealtimeAsrSession {
         continue;
       }
       if (this.ended) return;
-      await new Promise<void>((r) => (this.wake = r));
+      await new Promise<void>((resolve) => (this.wake = resolve));
     }
   }
-
   close(): Promise<MediaCallResult> {
     this.closing ??= this.finish();
     return this.closing;
   }
-
   private emit(item: { text: string; final: boolean } | null): void {
     if (item) this.queue.push(item);
     else this.ended = true;
@@ -689,83 +953,77 @@ class RealtimeAsr implements RealtimeAsrSession {
     this.wake = null;
     wake?.();
   }
-
   private async accept(chunk: Uint8Array): Promise<void> {
-    const before = this.totalBytes;
-    this.totalBytes += chunk.length;
-    // 跨过分钟边界：结算这一分钟，冻结下一分钟。
-    const boundary = (this.segment + 1) * ASR_SEGMENT_SECONDS * PCM16K_BYTES_PER_SECOND;
-    if (before < boundary && this.totalBytes >= boundary && this.charge) {
-      const done = await this.gateway.succeed(this.charge, { asrSeconds: ASR_SEGMENT_SECONDS });
-      if (done.ok) this.chargedMicros += done.value.chargedMicros;
-      this.segment++;
-      const next = await this.gateway.reserve(
-        this.base,
-        this.model,
-        { asrSeconds: ASR_SEGMENT_SECONDS },
-        this.segment,
-      );
-      this.charge = next.ok ? next.value : null;
-      if (!next.ok) {
-        await this.flush();
-        this.emit(null);
-        return;
-      }
-    }
-    // 能量断句。
     const view = new DataView(chunk.buffer, chunk.byteOffset, chunk.byteLength);
     let sum = 0;
-    const samples = Math.floor(chunk.length / 2);
-    for (let i = 0; i < samples; i++) {
-      const v = view.getInt16(i * 2, true);
-      sum += v * v;
+    const samples = chunk.length / 2;
+    for (let index = 0; index < samples; index++) {
+      const value = view.getInt16(index * 2, true);
+      sum += value * value;
     }
     const rms = samples ? Math.sqrt(sum / samples) : 0;
-    const chunkMs = (chunk.length / PCM16K_BYTES_PER_SECOND) * 1000;
     if (rms >= SPEECH_RMS) {
       this.speaking = true;
       this.silenceMs = 0;
-    } else if (this.speaking) this.silenceMs += chunkMs;
+    } else if (this.speaking) this.silenceMs += (chunk.length / PCM16K_BYTES_PER_SECOND) * 1000;
     if (this.speaking) {
       this.utterance.push(chunk);
       this.utteranceBytes += chunk.length;
     }
+    const maximumSeconds = Math.min(
+      MAX_UTTERANCE_SECONDS,
+      this.model.billingBounds.asr!.maxSeconds,
+    );
     if (
       this.speaking &&
       (this.silenceMs >= SILENCE_MS ||
-        this.utteranceBytes >= MAX_UTTERANCE_SECONDS * PCM16K_BYTES_PER_SECOND)
+        this.utteranceBytes >= maximumSeconds * PCM16K_BYTES_PER_SECOND)
     )
       await this.flush();
   }
-
   private async flush(): Promise<void> {
-    if (!this.utteranceBytes) return;
+    if (!this.utteranceBytes || this.ended) return;
     const pcm = new Uint8Array(Buffer.concat(this.utterance));
     this.utterance = [];
     this.utteranceBytes = 0;
     this.speaking = false;
     this.silenceMs = 0;
+    const profile = this.model.billingBounds.asr!;
+    const actual = {
+      asrSeconds: roundAsr(pcm.length / PCM16K_BYTES_PER_SECOND, profile.billingStepSeconds),
+    };
+    if (!this.charge) {
+      const next = await this.gateway.reserve(this.base, this.model, actual, ++this.segment);
+      if (!next.ok) {
+        this.emit(null);
+        return;
+      }
+      this.charge = next.value;
+    }
+    const charge = this.charge;
+    this.charge = null;
+    this.lastUsageId = charge.usageRecordId;
+    if (!(await this.gateway.beginCharge(charge))) {
+      await this.gateway.cancelCharge(charge);
+      this.emit(null);
+      return;
+    }
     const result = await this.gateway.transcribePcm(this.model, pcm).catch(() => null);
-    if (result?.ok && result.value.text.trim())
-      this.emit({ text: result.value.text.trim(), final: true });
+    if (!result?.ok) {
+      await this.gateway.fail(charge, result?.category ?? 'provider_error');
+      this.emit(null);
+      return;
+    }
+    const done = await this.gateway.succeed(charge, actual);
+    if (done.ok) this.chargedMicros += done.value.chargedMicros;
+    if (result.value.text.trim()) this.emit({ text: result.value.text.trim(), final: true });
   }
-
   private async finish(): Promise<MediaCallResult> {
     this.closed = true;
     await this.chain;
-    await this.flush().catch(() => undefined);
-    let usageRecordId = this.charge?.usageRecordId ?? '';
+    await this.flush();
     if (this.charge) {
-      const usedBytes =
-        this.totalBytes - this.segment * ASR_SEGMENT_SECONDS * PCM16K_BYTES_PER_SECOND;
-      const seconds = Math.max(1, Math.ceil(usedBytes / PCM16K_BYTES_PER_SECOND));
-      const done = await this.gateway.succeed(this.charge, {
-        asrSeconds: Math.min(ASR_SEGMENT_SECONDS, seconds),
-      });
-      if (done.ok) {
-        this.chargedMicros += done.value.chargedMicros;
-        usageRecordId = done.value.usageRecordId;
-      }
+      await this.gateway.cancelCharge(this.charge);
       this.charge = null;
     }
     this.emit(null);
@@ -773,7 +1031,7 @@ class RealtimeAsr implements RealtimeAsrSession {
       modelKey: this.model.modelKey,
       chargedMicros: this.chargedMicros,
       latencyMs: 0,
-      usageRecordId,
+      usageRecordId: this.lastUsageId,
     };
   }
 }

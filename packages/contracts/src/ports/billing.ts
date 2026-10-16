@@ -34,15 +34,22 @@ export interface ReserveInput {
   characterId?: string;
   /** 估算用量：输入 token 估算值 + maxOutputTokens 等。 */
   estimate: UsageQuantities;
+  /** 3.16：由网关核准路由得出的可计费上限；缺失时拒绝新冻结，旧estimate不再充当上限。 */
+  ceiling?: { usage: UsageQuantities; evidence: string; pricingModels?: string[] };
+  /** 网关自动重试预留供应商风险；不是客户端可选的付款钱包。 */
+  reservePlatformRisk?: boolean;
+  /** 同一逻辑请求后续attempt沿用首次已生效且不可变的价目表。 */
+  priceVersionId?: string;
   /** 与网关调用的幂等键相同：重复调用返回同一个冻结。 */
   idempotencyKey: string;
   /**
-   * v1.1：安全优先透支（billing.md 6.6 节）。网关只在 GenerateTextInput.safetyPriority 合法时传 true；
-   * billing 再校验一次（purpose ∈ SAFETY_OVERDRAFT_PURPOSES、account 为 user），不满足则按普通冻结处理。
+   * 3.16兼容字段：已取消透支，传true也不能获得额外可用余额。
    */
   safetyOverdraft?: boolean;
   /** v1.1：按后台功能计入后台每日上限（规则同 GenerateTextInput.countAsBackground）。 */
   countAsBackground?: boolean;
+  /** 3.16：服务端明确的角色自主生态任务，独立于dailyLimit分类；仅此来源余额不足记一次生态提示。 */
+  ecologyTask?: boolean;
 }
 
 export interface ReserveOutput {
@@ -63,6 +70,8 @@ export interface SettleInput {
   /** model-access 的用量记录 ID：同一个 ID 只扣一次（幂等）。 */
   usageRecordId: string;
   actual: UsageQuantities;
+  /** 3.16：供应商未报有效用量且无核准精确本地计数时false，不按经验估算扣用户。 */
+  actualKnown?: boolean;
   /** 调用开始时刻（ISO 8601），用于选择分时价。 */
   startedAt: string;
   /**
@@ -78,6 +87,14 @@ export interface SettleOutput {
   amountMicros: number;
   costMicros: number;
   balanceAfterMicros: number;
+  /** 3.16：成本归属和理论少收分开；两份ledger成本之和=已知供应商成本。 */
+  chargedCostMicros?: number;
+  absorbedCostMicros?: number;
+  theoreticalMicros?: number;
+  waivedMicros?: number;
+  costKnown?: boolean;
+  uncertainCostMicros?: number;
+  unpricedUnits?: string[];
 }
 
 export interface ReleaseInput {
@@ -95,6 +112,10 @@ export interface ReleaseInput {
 export interface ReleaseOutput {
   /** 失败调用仍被上游收费时由平台吸收的成本（微元）；没有则为 0。 */
   absorbedCostMicros: number;
+  /** 3.16：未知用量/缺价格不能被解释成已知零成本。 */
+  costKnown?: boolean;
+  uncertainCostMicros?: number;
+  unpricedUnits?: string[];
 }
 
 export interface SpendStatus {
@@ -114,7 +135,32 @@ export interface SpendStatus {
  * engineering-standards.md 第 3.1 节）。v1.0 从原 BillingPort 拆出，让 lint 能按「谁 import 了它」检查，
  * 而不是按变量名猜（Q-009）。
  */
+export interface CallRiskSnapshot {
+  phase: 'reserved' | 'sent' | 'unknown' | 'resolved';
+  costUpperMicros: number;
+  uncertainMicros: number;
+  usageRecordId?: string;
+  upstreamId?: string;
+  upstreamModelId?: string;
+  sentAt?: string;
+  /** 人工核实只追加成本差额，不追扣用户。 */
+  resolution?: {
+    costMicros: number;
+    evidenceUrl: string;
+    reason: string;
+    operatorUserId: string;
+    resolvedAt: string;
+  };
+}
 export interface BillingReservationPort {
+  /** 3.16：外部请求发出前原子标记，只允许active未过期且从未发出的hold。重复返回false，不可重发。 */
+  beginCall?(input: {
+    holdId: string;
+    usageRecordId: string;
+    upstreamId: string;
+    upstreamModelId: string;
+  }): Promise<boolean>;
+
   /**
    * 原子地冻结用户（或平台账户）的钱，同时预留平台每日成本预算（billing.md 第 7 节，Q-007）；
    * 任一不够即整体失败，不留半个冻结。
@@ -142,6 +188,12 @@ export interface UsageCharge {
    * absorbed = true 时是平台吸收的成本（= release 返回的 absorbedCostMicros）。
    */
   amountMicros: number;
+  /** 3.16：原流水有符号余额变动；扣款负、冲正正。新对账不得对冲正取绝对值。 */
+  signedAmountMicros?: number;
+  /** 平台成功调用的零金额成本校正，不是第二笔售价扣费。 */
+  costCorrection?: boolean;
+  /** 3.16：关联冻结，旧实现可能不提供。 */
+  holdId?: string | null;
   /** 成本金额（微元）。 */
   costMicros: number;
   absorbed: boolean;
@@ -157,6 +209,18 @@ export interface UsageChargePage {
   nextCursor: string | null;
 }
 
+/** 3.16：即使未产生扣费流水，也可读取权威关闭快照；不改账、不清待核风险。 */
+export interface UsageBillingState {
+  holdId: string;
+  accountKind: 'user' | 'platform';
+  usageRecordId: string | null;
+  status: 'active' | 'expired' | 'released' | 'settled';
+  settlement: SettleOutput | null;
+  release: ReleaseOutput | null;
+  expiresAt?: string;
+  risk?: CallRiskSnapshot | null;
+}
+
 /**
  * v1.3（T-026）：计费只读查询端口。提供方：billing；只读，不受 R9 限制，目前只有 model-access 需要。
  * 单独成接口（不并入 BillingReadPort），新增它不影响 BillingReadPort 已有的实现；billing 可以让同一个服务
@@ -169,6 +233,8 @@ export interface UsageChargePage {
  * - 启用模型前检查价目表：model-access 启用模型目录条目时，确认当前生效价目表里有这个模型的价格。
  */
 export interface BillingChargeQueryPort {
+  /** 3.16提供方必须接入；可选仅兼容旧组合根，缺失时新对账明确不可用。最多1000个ID。 */
+  getBillingStatesByHoldIds?(holdIds: readonly string[]): Promise<UsageBillingState[]>;
   /** 按用量记录 ID 查扣费（一次最多 1,000 个 ID，超过抛异常）；没有扣费的 ID 不出现在结果里。 */
   getChargesByUsageRecordIds(usageRecordIds: readonly string[]): Promise<UsageCharge[]>;
   /**

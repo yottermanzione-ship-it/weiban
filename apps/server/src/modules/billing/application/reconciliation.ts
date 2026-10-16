@@ -36,7 +36,7 @@ import {
   PLATFORM_TIME_ZONE,
   startOfLocalDay,
 } from '../domain/local-time.js';
-import { OVERDRAFT_ALERT_MARGIN_MICROS, STALE_HOLD_MS } from '../domain/rules.js';
+import { STALE_HOLD_MS } from '../domain/rules.js';
 import { reconciliationRuns, upstreamBills } from '../infra/db/schema.js';
 import { ReservationService } from './reservations.js';
 
@@ -47,6 +47,9 @@ type RunRow = typeof reconciliationRuns.$inferSelect;
 const BILL_LOOKBACK_DAYS = 35;
 
 export interface ReconciliationDetails {
+  netAbsorbedMicros?: number;
+  unknownCostCalls?: number;
+  uncertainCostMicros?: number;
   balanceMismatches: Array<{ accountId: string; balanceMicros: number; ledgerSumMicros: number }>;
   heldMismatches: Array<{ accountId: string; heldMicros: number; activeHoldsMicros: number }>;
   overdrawnAccounts: Array<{ accountId: string; userId: string | null; balanceMicros: number }>;
@@ -112,7 +115,7 @@ export class ReconciliationService {
       [new Date(now.getTime() - STALE_HOLD_MS)],
     );
 
-    const floor = -(this.reservations.safetyOverdraftLimitMicros + OVERDRAFT_ALERT_MARGIN_MICROS);
+    const floor = 0; // 取消透支；任何用户负余额都须核对，历史金额不自动追扣。
     const overdrawn = await db.query<{ id: string; user_id: string | null; balance: string }>(
       `SELECT id, user_id, balance_micros AS balance FROM billing.accounts
         WHERE kind = 'user' AND balance_micros < $1`,
@@ -131,6 +134,7 @@ export class ReconciliationService {
         WHERE absorbed AND created_at >= $1 AND created_at < $2`,
       [dayStart, dayEnd],
     );
+    const dayRisk = await this.unknownRisk(date, date);
 
     // ③ 上游账单
     const threshold = this.config.billing.upstreamDiffRatio;
@@ -147,8 +151,10 @@ export class ReconciliationService {
     const upstreamDiffs: Run['upstreamDiffs'] = [];
     for (const bill of bills) {
       const { rows } = await db.query<{ cost: string | null }>(
-        `SELECT sum(cost_micros) AS cost FROM billing.ledger_entries
-          WHERE upstream_id = $1 AND type = 'charge' AND created_at >= $2 AND created_at < $3`,
+        `SELECT sum(l.cost_micros) AS cost FROM billing.ledger_entries l
+          LEFT JOIN billing.holds h ON h.id = l.hold_id
+          WHERE l.upstream_id = $1 AND (l.type = 'charge' OR (l.type = 'adjustment' AND starts_with(l.idempotency_key, 'cost_resolution:') AND l.amount_micros = 0))
+            AND COALESCE(h.created_at, l.created_at) >= $2 AND COALESCE(h.created_at, l.created_at) < $3`,
         [
           bill.upstreamId,
           startOfLocalDay(bill.periodStart, PLATFORM_TIME_ZONE),
@@ -156,20 +162,27 @@ export class ReconciliationService {
         ],
       );
       const computed = Number(rows[0]?.cost ?? 0);
-      const base = Math.max(bill.amountMicros, computed, 1);
+      const risk = await this.unknownRisk(bill.periodStart, bill.periodEnd, bill.upstreamId);
+      const base = Math.max(bill.amountMicros, Math.abs(computed), 1);
       const diffRatio = Math.abs(bill.amountMicros - computed) / base;
       upstreamDiffs.push({
         upstreamId: bill.upstreamId,
         periodStart: bill.periodStart,
         periodEnd: bill.periodEnd,
         billedMicros: bill.amountMicros,
-        computedCostMicros: computed,
+        computedCostMicros: Math.max(0, computed),
+        netComputedCostMicros: computed,
+        unknownCostCalls: risk.count,
+        uncertainCostMicros: risk.amount,
         diffRatio: Math.round(diffRatio * 10_000) / 10_000,
-        flagged: diffRatio > threshold,
+        flagged: diffRatio > threshold || risk.count > 0,
       });
     }
 
     const details: ReconciliationDetails = {
+      netAbsorbedMicros: Number(absorbed.rows[0]?.total ?? 0),
+      unknownCostCalls: dayRisk.count,
+      uncertainCostMicros: dayRisk.amount,
       balanceMismatches,
       heldMismatches,
       overdrawnAccounts,
@@ -194,7 +207,11 @@ export class ReconciliationService {
       diffRatioThreshold: threshold,
       createdAt: now,
     };
-    const flagged = !ledgerConsistent || row.staleHolds > 0 || upstreamDiffs.some((d) => d.flagged);
+    const flagged =
+      !ledgerConsistent ||
+      row.staleHolds > 0 ||
+      dayRisk.count > 0 ||
+      upstreamDiffs.some((d) => d.flagged);
     let persisted = row;
     await db.transaction(async (tx) => {
       const [saved] = await tx.db
@@ -237,6 +254,8 @@ export class ReconciliationService {
               overdrawnAccounts: overdrawnAccounts.length,
               staleHolds: row.staleHolds,
               flaggedBills: upstreamDiffs.filter((d) => d.flagged).length,
+              unknownCostCalls: dayRisk.count,
+              uncertainCostMicros: dayRisk.amount,
             },
           },
           tx,
@@ -323,7 +342,7 @@ export class ReconciliationService {
     }>(
       `SELECT usage_record_id, id, amount_micros AS amount, cost_micros AS cost, absorbed, safety_overdraft
          FROM billing.ledger_entries
-        WHERE type = 'charge' AND usage_record_id = ANY($1::uuid[])
+        WHERE (type = 'charge' OR (type = 'adjustment' AND starts_with(idempotency_key, 'cost_resolution:') AND amount_micros = 0)) AND usage_record_id = ANY($1::uuid[])
         ORDER BY created_at, id`,
       [usageRecordIds],
     );
@@ -347,6 +366,7 @@ export class ReconciliationService {
   }
 
   private toRun(row: RunRow): Run {
+    const details = row.details as ReconciliationDetails;
     return {
       runId: row.id,
       date: row.runDate,
@@ -358,7 +378,22 @@ export class ReconciliationService {
       usageAmountMismatch: row.usageAmountMismatch,
       upstreamDiffs: row.upstreamDiffs as Run['upstreamDiffs'],
       absorbedMicros: row.absorbedMicros,
+      netAbsorbedMicros: details.netAbsorbedMicros ?? row.absorbedMicros,
+      unknownCostCalls: details.unknownCostCalls ?? 0,
+      uncertainCostMicros: details.uncertainCostMicros ?? 0,
       createdAt: row.createdAt.toISOString(),
     };
+  }
+
+  private async unknownRisk(from: string, to: string, upstreamId?: string) {
+    const { rows } = await this.database.query<{ count: string; amount: string }>(
+      `SELECT count(*) AS count,
+              coalesce(sum((risk_snapshot->>'uncertainMicros')::bigint),0) AS amount
+         FROM billing.holds
+        WHERE risk_snapshot->>'phase'='unknown' AND budget_day >= $1 AND budget_day <= $2
+          ${upstreamId ? "AND risk_snapshot->>'upstreamId'=$3" : ''}`,
+      upstreamId ? [from, to, upstreamId] : [from, to],
+    );
+    return { count: Number(rows[0]?.count ?? 0), amount: Number(rows[0]?.amount ?? 0) };
   }
 }

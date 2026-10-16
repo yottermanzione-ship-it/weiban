@@ -10,19 +10,19 @@
  *
  * 对外：generate() 给私聊配图、朋友圈配图、卡片画面（T-076 / T-082 经 ai-runtime 调用）、宠物照片（T-082）共用。
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type {
   MediaAssetReadPort,
   MediaSystemPort,
   MediaReadPort,
   ModelGatewayMediaPort,
-  ModelGatewayPort,
+  ModelGatewayPlatformPort,
   PolicyPort,
   CharacterReadPort,
 } from '@weiban/contracts';
 import { CHARACTER_READ_PORT } from '../../characters/index.js';
 import { MEDIA_ASSET_READ_PORT, MEDIA_SYSTEM_PORT, MEDIA_READ_PORT } from '../../media/index.js';
-import { MODEL_GATEWAY_MEDIA_PORT, MODEL_GATEWAY_PORT } from '../../model-access/index.js';
+import { MODEL_GATEWAY_MEDIA_PORT, MODEL_PLATFORM_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 
 export type ImageUse = 'chat' | 'moments' | 'card' | 'pet';
@@ -41,6 +41,7 @@ export interface GenerateCharacterImageInput {
   idempotencyKey: string;
   /** 系统主动发起（朋友圈、主动分享）计入后台预算。 */
   countAsBackground?: boolean;
+  ecologyTask?: boolean;
 }
 
 export interface CharacterImageResult {
@@ -54,13 +55,15 @@ export interface CharacterImageResult {
 @Injectable()
 export class CharacterImageService {
   constructor(
-    @Inject(MODEL_GATEWAY_PORT) private readonly gateway: ModelGatewayPort,
     @Inject(MODEL_GATEWAY_MEDIA_PORT) private readonly media: ModelGatewayMediaPort,
     @Inject(MEDIA_SYSTEM_PORT) private readonly files: MediaSystemPort,
     @Inject(MEDIA_ASSET_READ_PORT) private readonly assets: MediaAssetReadPort,
     @Inject(POLICY_PORT) private readonly policy: PolicyPort,
     @Inject(CHARACTER_READ_PORT) private readonly characters: CharacterReadPort,
     @Inject(MEDIA_READ_PORT) private readonly mediaRead: MediaReadPort,
+    @Optional()
+    @Inject(MODEL_PLATFORM_GATEWAY_PORT)
+    private readonly platform?: ModelGatewayPlatformPort,
   ) {}
 
   async generate(input: GenerateCharacterImageInput): Promise<CharacterImageResult | null> {
@@ -103,6 +106,7 @@ export class CharacterImageService {
         ownerUserId: input.userId,
         idempotencyKey: `img:${input.idempotencyKey}`,
         ...(input.countAsBackground ? { countAsBackground: true } : {}),
+        ecologyTask: input.ecologyTask,
       });
       if (generated.ok) {
         // MED-02：真人角色（含历史人物）生成后人脸检查，有人脸就丢弃。
@@ -125,16 +129,17 @@ export class CharacterImageService {
 
   /** 人脸检查：识图模型判断；判断不了（未开通 / 失败）按「可能有人脸」处理，宁可不发。 */
   private async noFace(input: GenerateCharacterImageInput, mediaId: string): Promise<boolean> {
-    const result = await this.gateway.generateText({
+    if (!this.platform) return false;
+    const result = await this.platform.generatePlatformText({
       userId: input.userId,
       characterId: input.characterId,
-      purpose: 'vision',
-      billingOwner: 'user',
+      purpose: 'safety_check',
       modelRole: 'chat',
       responseFormat: 'text',
       maxOutputTokens: 5,
       idempotencyKey: `img-face:${mediaId}`,
       ...(input.countAsBackground ? { countAsBackground: true } : {}),
+      ecologyTask: input.ecologyTask,
       messages: [
         {
           role: 'system',

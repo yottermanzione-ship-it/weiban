@@ -1,0 +1,74 @@
+{
+  "requests": [
+    {
+      "user": "A",
+      "path": "/api/v1/billing/ecology-insufficient-notice/consume",
+      "networkOnly": true,
+      "fail": false,
+      "delay": false,
+      "hasNotice": true
+    },
+    {
+      "user": "A",
+      "path": "/api/v1/billing/ecology-insufficient-notice/consume",
+      "networkOnly": true,
+      "fail": false,
+      "delay": false,
+      "hasNotice": false
+    },
+    {
+      "user": "A",
+      "path": "/api/v1/billing/ecology-insufficient-notice/consume",
+      "networkOnly": true,
+      "fail": true,
+      "delay": false,
+      "hasNotice": false
+    },
+    {
+      "user": "A",
+      "path": "/api/v1/billing/ecology-insufficient-notice/consume",
+      "networkOnly": true,
+      "fail": false,
+      "delay": false,
+      "hasNotice": true
+    },
+    {
+      "user": "A",
+      "path": "/api/v1/billing/ecology-insufficient-notice/consume",
+      "networkOnly": true,
+      "fail": false,
+      "delay": true,
+      "hasNotice": true
+    },
+    {
+      "user": "B",
+      "path": "/api/v1/billing/ecology-insufficient-notice/consume",
+      "networkOnly": true,
+      "fail": false,
+      "delay": false,
+      "hasNotice": false
+    },
+    {
+      "user": "B",
+      "path": "/api/v1/billing/ecology-insufficient-notice/consume",
+      "networkOnly": true,
+      "fail": false,
+      "delay": false,
+      "hasNotice": true
+    }
+  ],
+  "toasts": [
+    {
+      "owner": "A",
+      "text": "积分不足，角色暂停了日常与主动消息"
+    },
+    {
+      "owner": "A",
+      "text": "积分不足，角色暂停了日常与主动消息"
+    },
+    {
+      "owner": "B",
+      "text": "积分不足，角色暂停了日常与主动消息"
+    }
+  ]
+}

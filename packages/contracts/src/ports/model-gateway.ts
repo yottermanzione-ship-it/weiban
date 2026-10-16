@@ -33,6 +33,8 @@ export const ModelPurpose = z.enum([
   'admin_upstream_test', // 管理员：上游连通测试与恢复探测
   'safety_followup', // v1.1：安全关怀次日跟进（SAFE-06 第 6 条），不受后台预算限制
   'behavior_planning', // v1.1：行为规划决策层（PRD PLAN-03）；是否计入后台预算看 countAsBackground
+  'small_v',
+  'search_candidates',
 ]);
 export type ModelPurpose = z.infer<typeof ModelPurpose>;
 
@@ -48,15 +50,13 @@ export const BACKGROUND_PURPOSES: readonly ModelPurpose[] = [
 ];
 
 /**
- * 不受用户后台每日上限约束、但仍从余额扣费的用途（安全优先）。对它们传 countAsBackground 无效。
+ * 不受用户后台每日上限约束的安全用途。3.16由可信平台能力支付，不从用户余额扣费。
  * v1.1：加入 safety_followup（AI 负责人变更申请第 12 条，T-020 批准）。
  */
 export const BUDGET_EXEMPT_PURPOSES: readonly ModelPurpose[] = ['safety_check', 'safety_followup'];
 
 /**
- * 可以使用「安全优先透支」的用途（PRD MDL-10 第 6 条、pm-rulings-2 B4，billing.md 6.6 节）。
- * 只有 GenerateTextInput.safetyPriority = true、用途在此列表、billingOwner = user 三者同时满足时才生效；
- * 其他组合带 safetyPriority = true 一律返回 bad_request。
+ * 旧字段兼容列表。3.16已取消用户透支；此列表不再赋予额度或平台付款权限。
  */
 export const SAFETY_OVERDRAFT_PURPOSES: readonly ModelPurpose[] = [
   'chat_reply',
@@ -64,7 +64,7 @@ export const SAFETY_OVERDRAFT_PURPOSES: readonly ModelPurpose[] = [
   'safety_followup',
 ];
 
-/** 计费账户：user = 用户钱包；platform = 平台账户（只用于 admin_* 用途）。 */
+/** 计费账户：user = 用户钱包；platform仅管理员工具或独立可信平台能力，不能由HTTP客户端自选。 */
 export const BillingOwner = z.enum(['user', 'platform']);
 export type BillingOwner = z.infer<typeof BillingOwner>;
 
@@ -82,7 +82,7 @@ export interface ChatMessageForModel {
 }
 
 export interface GenerateTextInput {
-  /** 发起调用的用户；billingOwner = platform 时为发起操作的管理员。 */
+  /** 发起调用的真实用户；可信平台用途也按此ID归属、限频和审计。 */
   userId: string;
   purpose: ModelPurpose;
   billingOwner: BillingOwner;
@@ -96,7 +96,7 @@ export interface GenerateTextInput {
   /** 涉及具体会话时必填。 */
   conversationId?: string;
   messages: ChatMessageForModel[];
-  /** 最大输出 token；不传时网关按用途取默认值。冻结金额按它估算。 */
+  /** 最大输出token；不传按用途取默认值，须处于核准供应商总输出边界内。冻结不用经验估算。 */
   maxOutputTokens?: number;
   /** 可选调用方绝对截止时间（ISO），预算包含网关重试；AI用它保证首气泡期限。 */
   deadlineAt?: string;
@@ -106,8 +106,7 @@ export interface GenerateTextInput {
   /** 幂等键：同一键在 24 小时内重复调用，返回第一次的结果，不再冻结、不再扣费。 */
   idempotencyKey: string;
   /**
-   * 安全优先（v1.1，billing.md 6.6 节）：只有 ai-runtime 在安全关怀规则预筛命中高危信号（SAFE-06）时可以传 true。
-   * 效果：可用余额不足时允许透支到单独的小额上限；不突破平台每日总上限；每次实际透支写审计日志。
+   * 旧安全优先标记兼容字段，3.16不再允许用户透支，也不凭此标记获得平台付款权限。
    */
   safetyPriority?: boolean;
   /**
@@ -116,6 +115,8 @@ export interface GenerateTextInput {
    * 只能让调用更受限：BACKGROUND_PURPOSES 中的用途不传也照样计入；BUDGET_EXEMPT_PURPOSES 中的用途忽略此项。
    */
   countAsBackground?: boolean;
+  /** 服务端逐入口确认的角色自主生态任务；不从purpose/background自动推断。 */
+  ecologyTask?: boolean;
   /**
    * 记入用量记录，追查「变脸」用（AI 负责人申请，T-009 批准）。
    * v1.1：conversationKind（私聊 / 群聊）供管理后台用量明细显示（ADM-08）。
@@ -181,6 +182,15 @@ export interface ModelGatewayPort {
   }>;
 }
 
+/** 3.16：仅服务器可信业务注入，不作为HTTP请求字段；普通聊天不能借用平台账户。 */
+export interface ModelGatewayPlatformPort {
+  generatePlatformText(
+    input: Omit<GenerateTextInput, 'billingOwner' | 'safetyPriority' | 'purpose'> & {
+      purpose: 'safety_check' | 'safety_followup' | 'small_v' | 'search_candidates';
+    },
+  ): Promise<PortResult<GenerateTextOutput, GenerateError>>;
+}
+
 /**
  * 3.1（积压 ㉖）：按用户所选模型报价。提供方 model-access（网关先按用途 / 角色覆盖 / 平台默认解析模型，
  * 再经 BillingQuotePort 按当前价目表计价）；调用方 ai-runtime（导入估价、行为规划成本闸等）。不调用上游、不冻结、不扣费。
@@ -235,6 +245,7 @@ export interface MediaCallBase {
   conversationId?: string;
   idempotencyKey: string;
   countAsBackground?: boolean;
+  ecologyTask?: boolean;
 }
 
 export interface MediaCallResult {

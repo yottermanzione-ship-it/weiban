@@ -8,7 +8,7 @@
  *   P-33 余额保留线 1 元。
  * 说明见 docs/ai/runtime-overview.md 第 7 节「T-065 实现差异」。
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { readableMessageText } from './content-text.js';
 import { userNickname } from '../domain/user-naming.js';
 import { AdultBoundaryService } from './adult-boundary.js';
@@ -61,7 +61,7 @@ import {
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { GROWTH_SERVICE, type GrowthService } from '../../growth/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from '../../identity/index.js';
-import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
+import { MODEL_GATEWAY_PORT, MODEL_PLATFORM_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import { INITIAL_MODES, modeOption, scenarioText } from '../domain/persona.js';
@@ -85,7 +85,7 @@ import { GroupReplyStore, type GroupReplyPlan } from './group-reply-store.js';
 export const P19_GROUP = { maxResponders: 3, maxConsecutiveCharacterMessages: 6 };
 export const P20_SELF_CHAT = { perGroupPerDay: 1, maxMessages: 10, userActiveWithinDays: 7 };
 export const P22_INVITE_WINDOW_DAYS = 7;
-const P33_BALANCE_FLOOR_MICROS = 1_000_000;
+
 const INVITER_MIN_FAMILIARITY = 3;
 /** 用户连发时等多久再回应（与私聊 CHAT-04 第 5 条一致的「停下来」判断）。 */
 const USER_BATCH_DELAY_MS = 3000;
@@ -193,6 +193,9 @@ export class GroupChatService {
     @Inject(PlannerService) private readonly planner: PlannerService,
     @Inject(QuietStateService) private readonly quiet: QuietStateService,
     @Inject(GroupReplyStore) private readonly replies: GroupReplyStore,
+    @Optional()
+    @Inject(MODEL_PLATFORM_GATEWAY_PORT)
+    private readonly platform?: import('@weiban/contracts').ModelGatewayPlatformPort,
   ) {}
 
   // =========================================================================
@@ -803,7 +806,7 @@ export class GroupChatService {
       purpose: input.purpose,
       billingOwner: 'user',
       modelRole: adult ? 'adult' : 'chat',
-      ...(input.purpose === 'proactive' ? { countAsBackground: true } : {}),
+      ...(input.purpose === 'proactive' ? { countAsBackground: true, ecologyTask: true } : {}),
       responseFormat: 'text',
       maxOutputTokens: 200,
       idempotencyKey: `ai:${input.idempotencyKey}`,
@@ -970,6 +973,7 @@ export class GroupChatService {
         ],
       },
       { highRisk: true, careActive: false, suspected: false },
+      this.platform,
     );
     const text =
       result.ok && result.value.text.trim()
@@ -1301,6 +1305,7 @@ export class GroupChatService {
       billingOwner: 'user',
       modelRole: 'background',
       countAsBackground: true,
+      ecologyTask: true,
       responseFormat: 'text',
       maxOutputTokens: 30,
       idempotencyKey: `ai:invite-title:${userId}:${job.sourceRef}`,
@@ -1430,11 +1435,6 @@ export class GroupChatService {
   /** 后台功能门槛：P-33 余额保留线与当天后台预算（cost-estimate.md 6.2）。 */
   private async backgroundAllowed(userId: string): Promise<boolean> {
     const spend = await this.billing.getSpendStatus(userId).catch(() => null);
-    return (
-      !!spend &&
-      !spend.depleted &&
-      spend.availableMicros >= P33_BALANCE_FLOOR_MICROS &&
-      spend.backgroundRemainingTodayMicros > 0
-    );
+    return !!spend; // 实际上限与后台预算由冻结事务判断，零价任务不受余额地板误挡。
   }
 }

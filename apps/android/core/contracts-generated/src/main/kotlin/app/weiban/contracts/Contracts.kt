@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.15. Regenerate: pnpm android:generate
+// Contract 3.16. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.15"
+const val CONTRACT_VERSION: String = "3.16"
 
 @Serializable
 data class AccountAlias(
@@ -205,6 +205,7 @@ data class AdminCatalogEntry(
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
+    @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
 )
 
@@ -222,6 +223,7 @@ data class AdminCatalogEntryWrite(
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
+    @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
 )
 
 @Serializable
@@ -238,6 +240,7 @@ data class AdminCatalogEntryWriteInput(
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
+    @SerialName("billingBounds") val `billingBounds`: RouteBillingBoundsInput? = null,
 )
 
 @Serializable
@@ -376,6 +379,7 @@ data class AdminModel(
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
+    @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
     @SerialName("rates") val `rates`: ModelRates?,
     @SerialName("costRates") val `costRates`: ModelRates?,
@@ -398,6 +402,7 @@ data class AdminModelWrite(
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
+    @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
     @SerialName("rates") val `rates`: ModelRates?,
     @SerialName("costRates") val `costRates`: ModelRates? = null,
     @SerialName("routes") val `routes`: List<ModelRoute>? = null,
@@ -417,6 +422,7 @@ data class AdminModelWriteInput(
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
+    @SerialName("billingBounds") val `billingBounds`: RouteBillingBoundsInput? = null,
     @SerialName("rates") val `rates`: ModelRatesInput?,
     @SerialName("costRates") val `costRates`: ModelRatesInput? = null,
     @SerialName("routes") val `routes`: List<ModelRouteInput>? = null,
@@ -694,6 +700,8 @@ data class AdminUsageOverview(
 
 @Serializable
 data class AdminUsageRecord(
+    @SerialName("costKnown") val `costKnown`: Boolean? = null,
+    @SerialName("uncertainCostMicros") val `uncertainCostMicros`: Long? = null,
     @SerialName("usageRecordId") val `usageRecordId`: Id,
     @SerialName("createdAt") val `createdAt`: Timestamp,
     @SerialName("userId") val `userId`: Id,
@@ -747,6 +755,8 @@ data class AdminUsageSummaryRequestInput(
 
 @Serializable
 data class AdminUsageSummaryRow(
+    @SerialName("unknownCostCalls") val `unknownCostCalls`: Long? = null,
+    @SerialName("uncertainCostMicros") val `uncertainCostMicros`: Long? = null,
     @SerialName("calls") val `calls`: Long,
     @SerialName("failedCalls") val `failedCalls`: Long,
     @SerialName("inputTokens") val `inputTokens`: Long,
@@ -767,6 +777,8 @@ data class AdminUsageSummaryRow(
 
 @Serializable
 data class AdminUsageTotals(
+    @SerialName("unknownCostCalls") val `unknownCostCalls`: Long? = null,
+    @SerialName("uncertainCostMicros") val `uncertainCostMicros`: Long? = null,
     @SerialName("calls") val `calls`: Long,
     @SerialName("failedCalls") val `failedCalls`: Long,
     @SerialName("inputTokens") val `inputTokens`: Long,
@@ -1054,6 +1066,25 @@ data class BillingAdminEndpointsListReconciliationResponse(
 )
 
 @Serializable
+data class BillingAdminEndpointsResolveUnknownCostBody(
+    @SerialName("costMicros") val `costMicros`: Long,
+    @SerialName("evidenceUrl") val `evidenceUrl`: String,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class BillingAdminEndpointsResolveUnknownCostParams(
+    @SerialName("holdId") val `holdId`: Id,
+)
+
+@Serializable
+data class BillingAdminEndpointsResolveUnknownCostResponse(
+    @SerialName("holdId") val `holdId`: Id,
+    @SerialName("costMicros") val `costMicros`: Long,
+    @SerialName("resolvedAt") val `resolvedAt`: Timestamp,
+)
+
+@Serializable
 data class BillingAdminEndpointsUpdatePriceDraftBody(
     @SerialName("note") val `note`: String? = null,
     @SerialName("items") val `items`: List<AdminPriceItemInput>? = null,
@@ -1062,6 +1093,11 @@ data class BillingAdminEndpointsUpdatePriceDraftBody(
 @Serializable
 data class BillingAdminEndpointsUpdatePriceDraftParams(
     @SerialName("priceVersionId") val `priceVersionId`: Id,
+)
+
+@Serializable
+data class BillingEndpointsConsumeEcologyInsufficientNoticeResponse(
+    @SerialName("notice") val `notice`: BillingEndpointsConsumeEcologyInsufficientNoticeResponseNotice?,
 )
 
 @Serializable
@@ -2993,6 +3029,32 @@ data class EventsCallAnswered(
 )
 
 @Serializable
+data class EventsCallCostResolved(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "billing.call_cost_resolved",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "billing",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsCallCostResolvedPayload,
+)
+
+@Serializable
+data class EventsCallCostUnknown(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "billing.call_cost_unknown",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "billing",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsCallCostUnknownPayload,
+)
+
+@Serializable
 data class EventsCallEnded(
     @SerialName("eventId") val `eventId`: Id,
     @EncodeDefault
@@ -3386,6 +3448,32 @@ data class EventsDomainEventBillingBalanceLow(
     @SerialName("producer") val `producer`: String = "billing",
     @SerialName("occurredAt") override val `occurredAt`: Timestamp,
     @SerialName("payload") val `payload`: EventsDomainEventBillingBalanceLowPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventBillingCallCostUnknown(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "billing.call_cost_unknown",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "billing",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventBillingCallCostUnknownPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventBillingCallCostResolved(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "billing.call_cost_resolved",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "billing",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventBillingCallCostResolvedPayload,
 ) : EventsDomainEvent
 
 @Serializable
@@ -4061,6 +4149,8 @@ object EventsDomainEventSerializer : KSerializer<EventsDomainEvent> {
             "billing.balance_depleted" -> input.json.decodeFromJsonElement(EventsDomainEventBillingBalanceDepleted.serializer(), value)
             "billing.balance_restored" -> input.json.decodeFromJsonElement(EventsDomainEventBillingBalanceRestored.serializer(), value)
             "billing.balance_low" -> input.json.decodeFromJsonElement(EventsDomainEventBillingBalanceLow.serializer(), value)
+            "billing.call_cost_unknown" -> input.json.decodeFromJsonElement(EventsDomainEventBillingCallCostUnknown.serializer(), value)
+            "billing.call_cost_resolved" -> input.json.decodeFromJsonElement(EventsDomainEventBillingCallCostResolved.serializer(), value)
             "characters.character_published" -> input.json.decodeFromJsonElement(EventsDomainEventCharactersCharacterPublished.serializer(), value)
             "characters.character_unpublished" -> input.json.decodeFromJsonElement(EventsDomainEventCharactersCharacterUnpublished.serializer(), value)
             "characters.character_classification_changed" -> input.json.decodeFromJsonElement(EventsDomainEventCharactersCharacterClassificationChanged.serializer(), value)
@@ -4133,6 +4223,8 @@ object EventsDomainEventSerializer : KSerializer<EventsDomainEvent> {
             is EventsDomainEventBillingBalanceDepleted -> output.json.encodeToJsonElement(EventsDomainEventBillingBalanceDepleted.serializer(), value)
             is EventsDomainEventBillingBalanceRestored -> output.json.encodeToJsonElement(EventsDomainEventBillingBalanceRestored.serializer(), value)
             is EventsDomainEventBillingBalanceLow -> output.json.encodeToJsonElement(EventsDomainEventBillingBalanceLow.serializer(), value)
+            is EventsDomainEventBillingCallCostUnknown -> output.json.encodeToJsonElement(EventsDomainEventBillingCallCostUnknown.serializer(), value)
+            is EventsDomainEventBillingCallCostResolved -> output.json.encodeToJsonElement(EventsDomainEventBillingCallCostResolved.serializer(), value)
             is EventsDomainEventCharactersCharacterPublished -> output.json.encodeToJsonElement(EventsDomainEventCharactersCharacterPublished.serializer(), value)
             is EventsDomainEventCharactersCharacterUnpublished -> output.json.encodeToJsonElement(EventsDomainEventCharactersCharacterUnpublished.serializer(), value)
             is EventsDomainEventCharactersCharacterClassificationChanged -> output.json.encodeToJsonElement(EventsDomainEventCharactersCharacterClassificationChanged.serializer(), value)
@@ -6164,6 +6256,7 @@ data class ModelRoute(
     @SerialName("priority") val `priority`: Long,
     @SerialName("weight") val `weight`: Long,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
 )
 
 @Serializable
@@ -6173,6 +6266,7 @@ data class ModelRouteInput(
     @SerialName("priority") val `priority`: Long,
     @SerialName("weight") val `weight`: Long,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("billingBounds") val `billingBounds`: RouteBillingBoundsInput? = null,
 )
 
 @Serializable
@@ -7967,6 +8061,9 @@ data class ReconciliationRun(
     @SerialName("chargeWithoutUsage") val `chargeWithoutUsage`: Long,
     @SerialName("upstreamDiffs") val `upstreamDiffs`: List<ReconciliationRunUpstreamDiffsItem>,
     @SerialName("absorbedMicros") val `absorbedMicros`: Long,
+    @SerialName("netAbsorbedMicros") val `netAbsorbedMicros`: MoneyMicros? = null,
+    @SerialName("unknownCostCalls") val `unknownCostCalls`: Long? = null,
+    @SerialName("uncertainCostMicros") val `uncertainCostMicros`: Long? = null,
     @SerialName("usageReconciledAt") val `usageReconciledAt`: Timestamp? = null,
     @SerialName("usageAmountMismatch") val `usageAmountMismatch`: Long? = null,
     @SerialName("createdAt") val `createdAt`: Timestamp,
@@ -8309,6 +8406,38 @@ data class RoleRequestQuota(
 )
 
 typealias RoleRequestStatus = String
+
+@Serializable
+data class RouteBillingBounds(
+    @EncodeDefault
+    @SerialName("format") val `format`: String = "billing-bounds-v1",
+    @EncodeDefault
+    @SerialName("pauseReason") val `pauseReason`: String? = "usage_unknown",
+    @SerialName("sourceUrl") val `sourceUrl`: String,
+    @SerialName("checkedAt") val `checkedAt`: Timestamp,
+    @SerialName("text") val `text`: RouteBillingBoundsText? = null,
+    @SerialName("tts") val `tts`: RouteBillingBoundsTts? = null,
+    @SerialName("asr") val `asr`: RouteBillingBoundsAsr? = null,
+    @SerialName("image") val `image`: RouteBillingBoundsImage? = null,
+    @SerialName("search") val `search`: RouteBillingBoundsSearch? = null,
+    @SerialName("decision") val `decision`: RouteBillingBoundsDecision? = null,
+)
+
+@Serializable
+data class RouteBillingBoundsInput(
+    @EncodeDefault
+    @SerialName("format") val `format`: String = "billing-bounds-v1",
+    @EncodeDefault
+    @SerialName("pauseReason") val `pauseReason`: String? = "usage_unknown",
+    @SerialName("sourceUrl") val `sourceUrl`: String,
+    @SerialName("checkedAt") val `checkedAt`: Timestamp,
+    @SerialName("text") val `text`: RouteBillingBoundsInputText? = null,
+    @SerialName("tts") val `tts`: RouteBillingBoundsInputTts? = null,
+    @SerialName("asr") val `asr`: RouteBillingBoundsInputAsr? = null,
+    @SerialName("image") val `image`: RouteBillingBoundsInputImage? = null,
+    @SerialName("search") val `search`: RouteBillingBoundsInputSearch? = null,
+    @SerialName("decision") val `decision`: RouteBillingBoundsInputDecision? = null,
+)
 
 typealias ScenarioMode = String
 
@@ -10709,6 +10838,12 @@ data class BillingAdminEndpointsGetPlatformSummaryResponseLast30DaysCostByUpstre
 )
 
 @Serializable
+data class BillingEndpointsConsumeEcologyInsufficientNoticeResponseNotice(
+    @SerialName("message") val `message`: String,
+    @SerialName("insufficientSince") val `insufficientSince`: Timestamp,
+)
+
+@Serializable
 data class CallStreamClientFrameHelloData(
     @EncodeDefault
     @SerialName("inputSampleRate") val `inputSampleRate`: Long = 16000,
@@ -11030,6 +11165,29 @@ data class EventsCallAnsweredPayload(
 )
 
 @Serializable
+data class EventsCallCostResolvedPayload(
+    @SerialName("holdId") val `holdId`: Id,
+    @SerialName("usageRecordId") val `usageRecordId`: Id,
+    @SerialName("status") val `status`: String,
+    @SerialName("chargedMicros") val `chargedMicros`: Long,
+    @SerialName("costMicros") val `costMicros`: Long,
+    @SerialName("absorbedCostMicros") val `absorbedCostMicros`: Long,
+    @SerialName("ledgerEntryId") val `ledgerEntryId`: Id?,
+    @SerialName("resolvedAt") val `resolvedAt`: Timestamp,
+)
+
+@Serializable
+data class EventsCallCostUnknownPayload(
+    @SerialName("holdId") val `holdId`: Id,
+    @SerialName("modelKey") val `modelKey`: String,
+    @SerialName("upstreamId") val `upstreamId`: Id,
+    @SerialName("upstreamModelId") val `upstreamModelId`: String,
+    @SerialName("sentAt") val `sentAt`: Timestamp,
+    @SerialName("costUpperMicros") val `costUpperMicros`: Long,
+    @SerialName("uncertainMicros") val `uncertainMicros`: Long,
+)
+
+@Serializable
 data class EventsCallEndedPayload(
     @SerialName("callId") val `callId`: Id,
     @SerialName("userId") val `userId`: Id,
@@ -11235,6 +11393,29 @@ data class EventsDomainEventBillingBalanceLowPayload(
     @SerialName("userId") val `userId`: Id,
     @SerialName("availableMicros") val `availableMicros`: Long,
     @SerialName("thresholdMicros") val `thresholdMicros`: Long,
+)
+
+@Serializable
+data class EventsDomainEventBillingCallCostUnknownPayload(
+    @SerialName("holdId") val `holdId`: Id,
+    @SerialName("modelKey") val `modelKey`: String,
+    @SerialName("upstreamId") val `upstreamId`: Id,
+    @SerialName("upstreamModelId") val `upstreamModelId`: String,
+    @SerialName("sentAt") val `sentAt`: Timestamp,
+    @SerialName("costUpperMicros") val `costUpperMicros`: Long,
+    @SerialName("uncertainMicros") val `uncertainMicros`: Long,
+)
+
+@Serializable
+data class EventsDomainEventBillingCallCostResolvedPayload(
+    @SerialName("holdId") val `holdId`: Id,
+    @SerialName("usageRecordId") val `usageRecordId`: Id,
+    @SerialName("status") val `status`: String,
+    @SerialName("chargedMicros") val `chargedMicros`: Long,
+    @SerialName("costMicros") val `costMicros`: Long,
+    @SerialName("absorbedCostMicros") val `absorbedCostMicros`: Long,
+    @SerialName("ledgerEntryId") val `ledgerEntryId`: Id?,
+    @SerialName("resolvedAt") val `resolvedAt`: Timestamp,
 )
 
 @Serializable
@@ -12284,11 +12465,100 @@ data class ReconciliationRunUpstreamDiffsItem(
     @SerialName("periodEnd") val `periodEnd`: LocalDate,
     @SerialName("billedMicros") val `billedMicros`: Long,
     @SerialName("computedCostMicros") val `computedCostMicros`: Long,
+    @SerialName("netComputedCostMicros") val `netComputedCostMicros`: MoneyMicros? = null,
+    @SerialName("unknownCostCalls") val `unknownCostCalls`: Long? = null,
+    @SerialName("uncertainCostMicros") val `uncertainCostMicros`: Long? = null,
     @SerialName("diffRatio") val `diffRatio`: Double,
     @SerialName("flagged") val `flagged`: Boolean,
 )
 
 typealias RoleRequestQuotaNextPointsCost = JsonElement
+
+@Serializable
+data class RouteBillingBoundsText(
+    @SerialName("contextTokens") val `contextTokens`: Long,
+    @SerialName("maxOutputTokens") val `maxOutputTokens`: Long,
+    @EncodeDefault
+    @SerialName("totalOutputIncludesReasoning") val `totalOutputIncludesReasoning`: Boolean = true,
+    @SerialName("outputParameter") val `outputParameter`: String,
+    @SerialName("maxImages") val `maxImages`: Long,
+)
+
+@Serializable
+data class RouteBillingBoundsTts(
+    @SerialName("maxTextBytes") val `maxTextBytes`: Long,
+    @SerialName("counting") val `counting`: String,
+)
+
+@Serializable
+data class RouteBillingBoundsAsr(
+    @SerialName("maxSeconds") val `maxSeconds`: Long,
+    @SerialName("billingStepSeconds") val `billingStepSeconds`: Long,
+)
+
+@Serializable
+data class RouteBillingBoundsImage(
+    @SerialName("sizes") val `sizes`: List<String>,
+    @EncodeDefault
+    @SerialName("quality") val `quality`: String = "standard",
+    @EncodeDefault
+    @SerialName("count") val `count`: Long = 1,
+)
+
+@Serializable
+data class RouteBillingBoundsSearch(
+    @SerialName("maxResults") val `maxResults`: Long,
+    @EncodeDefault
+    @SerialName("billableCalls") val `billableCalls`: Long = 1,
+)
+
+@Serializable
+data class RouteBillingBoundsDecision(
+    @SerialName("maxInputTokens") val `maxInputTokens`: Long,
+)
+
+@Serializable
+data class RouteBillingBoundsInputText(
+    @SerialName("contextTokens") val `contextTokens`: Long,
+    @SerialName("maxOutputTokens") val `maxOutputTokens`: Long,
+    @EncodeDefault
+    @SerialName("totalOutputIncludesReasoning") val `totalOutputIncludesReasoning`: Boolean = true,
+    @SerialName("outputParameter") val `outputParameter`: String,
+    @SerialName("maxImages") val `maxImages`: Long,
+)
+
+@Serializable
+data class RouteBillingBoundsInputTts(
+    @SerialName("maxTextBytes") val `maxTextBytes`: Long,
+    @SerialName("counting") val `counting`: String,
+)
+
+@Serializable
+data class RouteBillingBoundsInputAsr(
+    @SerialName("maxSeconds") val `maxSeconds`: Long,
+    @SerialName("billingStepSeconds") val `billingStepSeconds`: Long,
+)
+
+@Serializable
+data class RouteBillingBoundsInputImage(
+    @SerialName("sizes") val `sizes`: List<String>,
+    @EncodeDefault
+    @SerialName("quality") val `quality`: String = "standard",
+    @EncodeDefault
+    @SerialName("count") val `count`: Long = 1,
+)
+
+@Serializable
+data class RouteBillingBoundsInputSearch(
+    @SerialName("maxResults") val `maxResults`: Long,
+    @EncodeDefault
+    @SerialName("billableCalls") val `billableCalls`: Long = 1,
+)
+
+@Serializable
+data class RouteBillingBoundsInputDecision(
+    @SerialName("maxInputTokens") val `maxInputTokens`: Long,
+)
 
 @Serializable
 data class ServerAuthOkFrameData(

@@ -90,6 +90,8 @@ function exportCsv(items: AdminUsageRecord[], truncated: boolean): void {
     '平台吸收(微元)',
     '价目表版本',
     '安全透支',
+    '成本是否已核',
+    '待核风险上限(微元)',
   ].join(',');
   const rows = items.map((r) =>
     [
@@ -114,6 +116,8 @@ function exportCsv(items: AdminUsageRecord[], truncated: boolean): void {
       r.absorbedCostMicros,
       r.priceVersionId ?? '',
       r.safetyOverdraft ? '是' : '否',
+      r.costKnown === true ? '是' : '待核',
+      r.uncertainCostMicros ?? 0,
     ]
       .map((v) => `"${String(v).replace(/"/g, '""')}"`)
       .join(','),
@@ -314,7 +318,7 @@ export function UsagePage() {
               <span className="stat-value">{formatMicros(totals.chargedMicros)}</span>
             </div>
             <div className="stat-tile">
-              <span className="stat-label">平台成本</span>
+              <span className="stat-label">已核成本（含已核部分）</span>
               <span className="stat-value">{formatMicros(totals.costMicros)}</span>
             </div>
             <div className="stat-tile">
@@ -322,6 +326,10 @@ export function UsagePage() {
               <span className="stat-value">{formatMicros(totals.absorbedCostMicros)}</span>
             </div>
           </div>
+          <p>
+            另有 {totals.unknownCostCalls ?? '未知'} 笔成本待核，风险上限{' '}
+            {formatMicros(totals.uncertainCostMicros ?? 0)}。风险占用不计入实际成本。
+          </p>
           {summary.truncated && (
             <p className="text-warn">分组行数超过上限，已截断，请缩小筛选范围。</p>
           )}
@@ -353,7 +361,10 @@ export function UsagePage() {
                     <td className="num">{formatNum(row.outputTokens)}</td>
                     <td className="num">{formatNum(row.totalTokens)}</td>
                     <td className="num">{formatMicros(row.chargedMicros)}</td>
-                    <td className="num">{formatMicros(row.costMicros)}</td>
+                    <td className="num">
+                      {formatMicros(row.costMicros)}（已核）；{row.unknownCostCalls ?? '未知'}{' '}
+                      笔待核 / 风险 {formatMicros(row.uncertainCostMicros ?? 0)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -391,7 +402,12 @@ export function UsagePage() {
                     <td className="num">{formatNum(r.inputTokens)}</td>
                     <td className="num">{formatNum(r.outputTokens)}</td>
                     <td className="num">{formatMicros(r.chargedMicros)}</td>
-                    <td className="num">{formatMicros(r.costMicros)}</td>
+                    <td className="num">
+                      {formatMicros(r.costMicros)}（已核部分）
+                      {r.costKnown !== true && (
+                        <span> · 待核，风险上限 {formatMicros(r.uncertainCostMicros ?? 0)}</span>
+                      )}
+                    </td>
                     <td>{r.status === 'succeeded' ? '成功' : `失败(${r.errorCode ?? ''})`}</td>
                   </tr>
                 ))}

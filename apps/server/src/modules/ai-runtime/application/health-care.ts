@@ -340,6 +340,7 @@ export class HealthCareService {
       billingOwner: 'user',
       modelRole: 'background',
       countAsBackground: true,
+      ecologyTask: true,
       responseFormat: 'text',
       maxOutputTokens: 200,
       // 幂等键只含不透明周期 ID 与名额，不含日期和 health 字样。

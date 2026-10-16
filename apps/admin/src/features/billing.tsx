@@ -188,6 +188,7 @@ export function BillingPage() {
                 <th className="num">多扣费</th>
                 <th className="num">金额不一致</th>
                 <th className="num">平台吸收</th>
+                <th>待核成本</th>
                 <th>上游账单偏差</th>
               </tr>
             </thead>
@@ -202,7 +203,19 @@ export function BillingPage() {
                   <td className="num">{item.usageWithoutCharge}</td>
                   <td className="num">{item.chargeWithoutUsage}</td>
                   <td className="num">{item.usageAmountMismatch ?? 0}</td>
-                  <td className="num">{formatMicros(item.absorbedMicros)}</td>
+                  <td className="num">
+                    {formatMicros(item.netAbsorbedMicros ?? item.absorbedMicros)}
+                  </td>
+                  <td>
+                    {(item.unknownCostCalls ?? 0) > 0 ? (
+                      <strong className="text-warn">
+                        {item.unknownCostCalls}笔待核，风险上界{' '}
+                        {formatMicros(item.uncertainCostMicros ?? 0)}（未计实际成本）
+                      </strong>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                   <td>
                     {item.upstreamDiffs.length === 0
                       ? '—'
@@ -215,8 +228,15 @@ export function BillingPage() {
                                   d.upstreamId}
                               </strong>
                               ：账单 {formatMicros(d.billedMicros)} / 计算{' '}
-                              {formatMicros(d.computedCostMicros)}
+                              {formatMicros(d.netComputedCostMicros ?? d.computedCostMicros)}
                               （偏差 {(d.diffRatio * 100).toFixed(1)}%）
+                              {(d.unknownCostCalls ?? 0) > 0 && (
+                                <span>
+                                  {' '}
+                                  · {d.unknownCostCalls}笔成本待核，风险上界{' '}
+                                  {formatMicros(d.uncertainCostMicros ?? 0)}，尚不能确认账单一致
+                                </span>
+                              )}
                             </div>
                           ))}
                     {item.upstreamDiffs.length > 0 &&

@@ -18,7 +18,11 @@ import type {
   SystemMessageMode,
   UpstreamStatus,
 } from '@weiban/contracts';
-import { AdminCatalogEntryWrite, ModelLeaderboardSource } from '@weiban/contracts';
+import {
+  AdminCatalogEntryWrite,
+  ModelLeaderboardSource,
+  RouteBillingBounds,
+} from '@weiban/contracts';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
@@ -80,7 +84,7 @@ export interface ModelFacts {
 }
 
 /** 目录写入串行化的咨询锁键（任意固定数字）。 */
-const CATALOG_LOCK_KEY = 72_270_008;
+export const CATALOG_LOCK_KEY = 72_270_008;
 
 export function toAdminEntry(row: CatalogRow): AdminCatalogEntry {
   return {
@@ -96,6 +100,7 @@ export function toAdminEntry(row: CatalogRow): AdminCatalogEntry {
     defaultFor: row.defaultFor as DefaultUse[],
     enabled: row.enabled,
     systemMessageMode: row.systemMessageMode as SystemMessageMode,
+    billingBounds: row.billingBounds,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -171,6 +176,7 @@ export class CatalogService {
   }
 
   async upsert(adminId: string, pathKey: string, body: CatalogWrite): Promise<AdminCatalogEntry> {
+    this.validateBillingBounds(body.billingBounds);
     if (pathKey !== body.modelKey) {
       throw new AppError('bad_request', '路径里的模型键与请求体不一致');
     }
@@ -242,6 +248,13 @@ export class CatalogService {
         enabled: body.enabled,
         // v3.6：不传 = 保持原值（旧后台页面不认识这个字段）
         systemMessageMode: body.systemMessageMode ?? before?.systemMessageMode ?? 'multi',
+        billingBounds:
+          body.billingBounds !== undefined
+            ? body.billingBounds
+            : before?.upstreamId === body.upstreamId &&
+                before.upstreamModelId === body.upstreamModelId
+              ? before.billingBounds
+              : null,
         updatedAt: now,
       };
       const [row] = before
@@ -256,7 +269,13 @@ export class CatalogService {
             .returning();
       if (!row) throw new Error('数据库没有返回写入的行');
       if (upstream)
-        await this.syncPrimaryRoute(tx, row.modelKey, row.upstreamId, row.upstreamModelId);
+        await this.syncPrimaryRoute(
+          tx,
+          row.modelKey,
+          row.upstreamId,
+          row.upstreamModelId,
+          body.billingBounds,
+        );
 
       await this.audit.record(
         {
@@ -420,6 +439,7 @@ export class CatalogService {
       list.push({
         upstreamId: r.upstreamId,
         upstreamModelId: r.upstreamModelId,
+        billingBounds: r.billingBounds,
         priority: r.priority,
         weight: r.weight,
         enabled: r.enabled,
@@ -431,6 +451,7 @@ export class CatalogService {
 
   /** 整体替换某模型的路由（后台「模型」向导）。账号必须存在、不能重复。 */
   async replaceRoutes(adminId: string, modelKey: string, routes: ModelRoute[]): Promise<void> {
+    for (const route of routes) this.validateBillingBounds(route.billingBounds);
     const ids = routes.map((r) => r.upstreamId);
     if (new Set(ids).size !== ids.length) {
       throw new AppError('bad_request', '同一个上游账号在路由里出现了两次', { status: 422 });
@@ -444,6 +465,10 @@ export class CatalogService {
       if (found.length !== ids.length) {
         throw new AppError('bad_request', '路由里有不存在的上游账号', { status: 422 });
       }
+      const beforeRoutes = await tx.db
+        .select()
+        .from(modelRoutes)
+        .where(eq(modelRoutes.modelKey, modelKey));
       const now = this.clock.now();
       await tx.db.delete(modelRoutes).where(eq(modelRoutes.modelKey, modelKey));
       await tx.db.insert(modelRoutes).values(
@@ -451,6 +476,13 @@ export class CatalogService {
           modelKey,
           upstreamId: r.upstreamId,
           upstreamModelId: r.upstreamModelId,
+          billingBounds:
+            r.billingBounds !== undefined
+              ? r.billingBounds
+              : (beforeRoutes.find(
+                  (old) =>
+                    old.upstreamId === r.upstreamId && old.upstreamModelId === r.upstreamModelId,
+                )?.billingBounds ?? null),
           priority: r.priority,
           weight: r.weight,
           enabled: r.enabled,
@@ -473,6 +505,17 @@ export class CatalogService {
     });
   }
 
+  validateBillingBounds(bounds: RouteBillingBounds | null | undefined): void {
+    if (bounds == null) return;
+    const parsed = RouteBillingBounds.safeParse(bounds);
+    if (!parsed.success || Date.parse(parsed.data.checkedAt) > this.clock.nowMs())
+      throw new AppError(
+        'bad_request',
+        '计费上限格式不正确或核准时间在服务器未来，请核实后再保存',
+        { status: 422 },
+      );
+  }
+
   /**
    * 旧接口（upsertCatalogEntry）保存后保证主路由存在：模型只有 0～1 条路由时替换为这一条；
    * 已有多条时更新 / 补上这个账号（优先级取现有最小值）。
@@ -482,6 +525,7 @@ export class CatalogService {
     modelKey: string,
     upstreamId: string,
     upstreamModelId: string,
+    billingBounds?: import('@weiban/contracts').RouteBillingBounds | null,
   ): Promise<void> {
     const existing = await tx.db
       .select()
@@ -490,13 +534,20 @@ export class CatalogService {
     const now = this.clock.now();
     if (existing.length <= 1) {
       const only = existing[0];
-      if (only && only.upstreamId === upstreamId && only.upstreamModelId === upstreamModelId)
+      if (only && only.upstreamId === upstreamId && only.upstreamModelId === upstreamModelId) {
+        if (billingBounds !== undefined)
+          await tx.db
+            .update(modelRoutes)
+            .set({ billingBounds, updatedAt: now })
+            .where(and(eq(modelRoutes.modelKey, modelKey), eq(modelRoutes.upstreamId, upstreamId)));
         return;
+      }
       await tx.db.delete(modelRoutes).where(eq(modelRoutes.modelKey, modelKey));
       await tx.db.insert(modelRoutes).values({
         modelKey,
         upstreamId,
         upstreamModelId,
+        billingBounds: billingBounds ?? null,
         priority: only?.priority ?? 1,
         weight: only?.weight ?? 100,
         enabled: true,
@@ -507,10 +558,10 @@ export class CatalogService {
     }
     const mine = existing.find((r) => r.upstreamId === upstreamId);
     if (mine) {
-      if (mine.upstreamModelId !== upstreamModelId)
+      if (mine.upstreamModelId !== upstreamModelId || billingBounds !== undefined)
         await tx.db
           .update(modelRoutes)
-          .set({ upstreamModelId, updatedAt: now })
+          .set({ upstreamModelId, updatedAt: now, billingBounds: billingBounds ?? null })
           .where(and(eq(modelRoutes.modelKey, modelKey), eq(modelRoutes.upstreamId, upstreamId)));
       return;
     }

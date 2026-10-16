@@ -1,10 +1,11 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   MessageContent,
   type ChatParticipantPort,
   type ModelGatewayPort,
+  type ModelGatewayPlatformPort,
   type GenerateTextInput,
   type GenerateTextOutput,
   type PortResult,
@@ -22,7 +23,7 @@ import {
   type Clock,
 } from '../../../platform/index.js';
 import { CHAT_PARTICIPANT_PORT } from '../../chat/index.js';
-import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
+import { MODEL_GATEWAY_PORT, MODEL_PLATFORM_GATEWAY_PORT } from '../../model-access/index.js';
 import { replyPlans } from '../infra/db/schema.js';
 import { ReplyPlanStore, type ReplyPlan } from './plan-store.js';
 import { ReplyContext, ReplySnapshot } from './reply-context.js';
@@ -60,6 +61,7 @@ export class ReplyEngine {
     @Inject(OUTBOX) readonly outbox: Outbox,
     @Inject(PlannerService) readonly planner: PlannerService,
     @Inject(QuirkService) readonly quirks: QuirkService,
+    @Optional() @Inject(MODEL_PLATFORM_GATEWAY_PORT) readonly platform?: ModelGatewayPlatformPort,
   ) {}
   async run(id: string): Promise<void> {
     if (!z.uuid().safeParse(id).success) return;
@@ -111,6 +113,7 @@ export class ReplyEngine {
           maxOutputTokens: 20,
         },
         { highRisk: false, careActive: false, suspected: true },
+        this.platform,
       );
       suspected = check.ok && check.value.text.trim() === 'HIGH';
     }

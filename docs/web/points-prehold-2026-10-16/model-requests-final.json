@@ -1,0 +1,462 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/leaderboard-source",
+    "body": {},
+    "params": {},
+    "at": "2026-10-16T14:25:19.721Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/upstreams",
+    "body": {},
+    "params": {},
+    "at": "2026-10-16T14:25:19.721Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/models",
+    "body": {},
+    "params": {},
+    "at": "2026-10-16T14:25:19.721Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/upstreams/:upstreamId/models",
+    "body": {},
+    "params": {
+      "upstreamId": "30000000-0000-4000-8000-000000000001"
+    },
+    "at": "2026-10-16T14:25:28.705Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/upstreams/:upstreamId/models",
+    "body": {},
+    "params": {
+      "upstreamId": "30000000-0000-4000-8000-000000000001"
+    },
+    "at": "2026-10-16T14:26:03.779Z"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/model/models/:modelKey",
+    "body": {
+      "modelKey": "preview/model",
+      "displayName": "开发样例模型",
+      "vendorName": "开发样例",
+      "upstreamId": "30000000-0000-4000-8000-000000000001",
+      "upstreamModelId": "preview-text",
+      "billingBounds": {
+        "format": "billing-bounds-v1",
+        "sourceUrl": "https://example.com/developer-preview-only",
+        "checkedAt": "2026-10-15T00:00:00.000Z",
+        "text": {
+          "contextTokens": 32768,
+          "maxOutputTokens": 4096,
+          "totalOutputIncludesReasoning": true,
+          "outputParameter": "max_tokens",
+          "maxImages": 0
+        }
+      },
+      "capabilities": [],
+      "tags": [],
+      "leaderboardRank": null,
+      "sortOrder": 1,
+      "defaultFor": [
+        "chat"
+      ],
+      "enabled": true,
+      "rates": {
+        "input": 1,
+        "output": 2,
+        "cache": 0.5
+      },
+      "routes": [
+        {
+          "upstreamId": "30000000-0000-4000-8000-000000000001",
+          "upstreamModelId": "preview-text",
+          "priority": 1,
+          "weight": 100,
+          "enabled": true,
+          "billingBounds": {
+            "format": "billing-bounds-v1",
+            "sourceUrl": "https://example.com/developer-preview-only",
+            "checkedAt": "2026-10-15T00:00:00.000Z",
+            "text": {
+              "contextTokens": 32768,
+              "maxOutputTokens": 4096,
+              "totalOutputIncludesReasoning": true,
+              "outputParameter": "max_tokens",
+              "maxImages": 0
+            }
+          }
+        }
+      ]
+    },
+    "params": {
+      "modelKey": "preview%2Fmodel"
+    },
+    "at": "2026-10-16T14:26:04.377Z"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/model/models/:modelKey",
+    "body": {
+      "modelKey": "preview/model",
+      "displayName": "开发样例模型",
+      "vendorName": "开发样例",
+      "upstreamId": "30000000-0000-4000-8000-000000000001",
+      "upstreamModelId": "preview-text",
+      "billingBounds": {
+        "format": "billing-bounds-v1",
+        "sourceUrl": "https://example.com/developer-preview-only",
+        "checkedAt": "2026-10-15T00:00:00.000Z",
+        "text": {
+          "contextTokens": 32768,
+          "maxOutputTokens": 4096,
+          "totalOutputIncludesReasoning": true,
+          "outputParameter": "max_tokens",
+          "maxImages": 0
+        }
+      },
+      "capabilities": [],
+      "tags": [],
+      "leaderboardRank": null,
+      "sortOrder": 1,
+      "defaultFor": [
+        "chat"
+      ],
+      "enabled": true,
+      "rates": {
+        "input": 1,
+        "output": 2,
+        "cache": 0.5
+      },
+      "routes": [
+        {
+          "upstreamId": "30000000-0000-4000-8000-000000000001",
+          "upstreamModelId": "preview-text",
+          "priority": 1,
+          "weight": 100,
+          "enabled": true,
+          "billingBounds": {
+            "format": "billing-bounds-v1",
+            "sourceUrl": "https://example.com/developer-preview-only",
+            "checkedAt": "2026-10-15T00:00:00.000Z",
+            "text": {
+              "contextTokens": 32768,
+              "maxOutputTokens": 4096,
+              "totalOutputIncludesReasoning": true,
+              "outputParameter": "max_tokens",
+              "maxImages": 0
+            }
+          }
+        }
+      ]
+    },
+    "params": {
+      "modelKey": "preview%2Fmodel"
+    },
+    "at": "2026-10-16T14:26:08.998Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/models",
+    "body": {},
+    "params": {},
+    "at": "2026-10-16T14:26:09.128Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/upstreams/:upstreamId/models",
+    "body": {},
+    "params": {
+      "upstreamId": "30000000-0000-4000-8000-000000000001"
+    },
+    "at": "2026-10-16T14:26:12.703Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/upstreams/:upstreamId/models",
+    "body": {},
+    "params": {
+      "upstreamId": "30000000-0000-4000-8000-000000000002"
+    },
+    "at": "2026-10-16T14:26:20.177Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/model/usage/overview",
+    "body": {
+      "from": "2026-10-15T16:00:00.000Z",
+      "to": "2026-10-16T14:26:45.414Z"
+    },
+    "params": {},
+    "at": "2026-10-16T14:26:45.414Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/model/usage/summary",
+    "body": {
+      "filter": {
+        "from": "2026-10-15T16:00:00.000Z",
+        "to": "2026-10-16T14:26:45.414Z"
+      },
+      "groupBy": [
+        "hour",
+        "upstream"
+      ],
+      "sort": "key_asc",
+      "limit": 1000
+    },
+    "params": {},
+    "at": "2026-10-16T14:26:45.414Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/model/usage/summary",
+    "body": {
+      "filter": {
+        "from": "2026-10-15T16:00:00.000Z",
+        "to": "2026-10-16T14:26:45.414Z"
+      },
+      "groupBy": [
+        "model"
+      ],
+      "sort": "charged_desc",
+      "limit": 50
+    },
+    "params": {},
+    "at": "2026-10-16T14:26:45.414Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/model/usage/summary",
+    "body": {
+      "filter": {
+        "from": "2026-10-15T16:00:00.000Z",
+        "to": "2026-10-16T14:26:45.414Z"
+      },
+      "groupBy": [
+        "upstream"
+      ],
+      "sort": "charged_desc",
+      "limit": 50
+    },
+    "params": {},
+    "at": "2026-10-16T14:26:45.414Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/model/usage/summary",
+    "body": {
+      "filter": {
+        "from": "2026-10-15T16:00:00.000Z",
+        "to": "2026-10-16T14:26:45.414Z"
+      },
+      "groupBy": [
+        "user"
+      ],
+      "sort": "charged_desc",
+      "limit": 10
+    },
+    "params": {},
+    "at": "2026-10-16T14:26:45.414Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/model/usage/records",
+    "body": {
+      "filter": {
+        "from": "2026-10-09T16:00:00.000Z",
+        "to": "2026-10-16T14:26:00.000Z"
+      },
+      "limit": 50
+    },
+    "params": {},
+    "at": "2026-10-16T14:26:57.108Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/model/usage/summary",
+    "body": {
+      "filter": {
+        "from": "2026-10-09T14:27:00.000Z",
+        "to": "2026-10-16T14:27:00.000Z"
+      },
+      "groupBy": [
+        "day"
+      ],
+      "sort": "key_asc"
+    },
+    "params": {},
+    "at": "2026-10-16T14:27:25.163Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/model/usage/records",
+    "body": {
+      "filter": {
+        "from": "2026-10-09T14:27:00.000Z",
+        "to": "2026-10-16T14:27:00.000Z"
+      },
+      "limit": 50
+    },
+    "params": {},
+    "at": "2026-10-16T14:27:30.928Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/model/models",
+    "body": {},
+    "params": {},
+    "at": "2026-10-16T14:27:40.661Z"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/imports/:jobId/start",
+    "body": {
+      "keepRaw": true
+    },
+    "params": {
+      "jobId": "40000000-0000-4000-8000-000000000001"
+    },
+    "at": "2026-10-16T14:28:10.862Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/leaderboard-source",
+    "body": {},
+    "params": {},
+    "at": "2026-10-16T14:29:54.973Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/upstreams",
+    "body": {},
+    "params": {},
+    "at": "2026-10-16T14:29:54.974Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/models",
+    "body": {},
+    "params": {},
+    "at": "2026-10-16T14:29:54.974Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/upstreams/:upstreamId/models",
+    "body": {},
+    "params": {
+      "upstreamId": "30000000-0000-4000-8000-000000000001"
+    },
+    "at": "2026-10-16T14:30:02.236Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/upstreams/:upstreamId/models",
+    "body": {},
+    "params": {
+      "upstreamId": "30000000-0000-4000-8000-000000000001"
+    },
+    "at": "2026-10-16T14:30:16.654Z"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/model/models/:modelKey",
+    "body": {
+      "modelKey": "preview/model",
+      "displayName": "开发样例模型",
+      "vendorName": "开发样例",
+      "upstreamId": "30000000-0000-4000-8000-000000000001",
+      "upstreamModelId": "preview-text",
+      "billingBounds": {
+        "format": "billing-bounds-v1",
+        "sourceUrl": "https://example.com/developer-preview-only",
+        "checkedAt": "2026-10-15T00:00:00.000Z",
+        "text": {
+          "contextTokens": 32768,
+          "maxOutputTokens": 4096,
+          "totalOutputIncludesReasoning": true,
+          "outputParameter": "max_tokens",
+          "maxImages": 0
+        }
+      },
+      "capabilities": [],
+      "tags": [],
+      "leaderboardRank": null,
+      "sortOrder": 1,
+      "defaultFor": [
+        "chat"
+      ],
+      "enabled": true,
+      "rates": {
+        "input": 1,
+        "output": 2,
+        "cache": 0.5
+      },
+      "routes": [
+        {
+          "upstreamId": "30000000-0000-4000-8000-000000000001",
+          "upstreamModelId": "preview-text",
+          "priority": 1,
+          "weight": 100,
+          "enabled": true,
+          "billingBounds": {
+            "format": "billing-bounds-v1",
+            "sourceUrl": "https://example.com/developer-preview-only",
+            "checkedAt": "2026-10-15T00:00:00.000Z",
+            "text": {
+              "contextTokens": 32768,
+              "maxOutputTokens": 4096,
+              "totalOutputIncludesReasoning": true,
+              "outputParameter": "max_tokens",
+              "maxImages": 0
+            }
+          }
+        },
+        {
+          "upstreamId": "30000000-0000-4000-8000-000000000002",
+          "upstreamModelId": "preview-text",
+          "priority": 2,
+          "weight": 100,
+          "enabled": true,
+          "billingBounds": {
+            "format": "billing-bounds-v1",
+            "sourceUrl": "https://example.com/developer-preview-only",
+            "checkedAt": "2026-10-15T00:00:00.000Z",
+            "text": {
+              "contextTokens": 32768,
+              "maxOutputTokens": 4096,
+              "totalOutputIncludesReasoning": true,
+              "outputParameter": "max_tokens",
+              "maxImages": 0
+            }
+          }
+        }
+      ]
+    },
+    "params": {
+      "modelKey": "preview%2Fmodel"
+    },
+    "at": "2026-10-16T14:30:31.022Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/models",
+    "body": {},
+    "params": {},
+    "at": "2026-10-16T14:30:31.159Z"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/model/upstreams/:upstreamId/models",
+    "body": {},
+    "params": {
+      "upstreamId": "30000000-0000-4000-8000-000000000001"
+    },
+    "at": "2026-10-16T14:30:37.736Z"
+  }
+]

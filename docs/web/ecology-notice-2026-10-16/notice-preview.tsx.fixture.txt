@@ -1,0 +1,24 @@
+import {StrictMode,useState} from 'react';
+import {createRoot} from 'react-dom/client';
+import {EcologyInsufficientNotice} from './src/features/ecology-insufficient-notice';
+import {ToastHost} from './src/features/toast';
+import {api} from './src/data/client';
+import '../../docs/design/tokens.css';
+import './src/app/styles.css';
+import './src/app/old-ui.css';
+let activeOwner='A',pending:Record<string,boolean>={A:true,B:false},fail=false,delay=false;
+const requests:unknown[]=[],toasts:unknown[]=[];let finish:(()=>void)|undefined;
+const update=()=>{document.getElementById('requests')!.textContent=JSON.stringify({requests,toasts},null,2);};
+window.addEventListener('weiban:toast',((event:CustomEvent)=>{toasts.push({owner:activeOwner,text:event.detail.text});update();}) as EventListener);
+api.owns=(o:any)=>o.userId===activeOwner&&o.sessionId===activeOwner;
+api.call=async(e:any,options:any)=>{
+ const user=activeOwner;
+ requests.push({user,path:e.path,networkOnly:options.networkOnly,fail,delay,hasNotice:!fail&&pending[user]});update();
+ if(fail){fail=false;throw new Error('模拟网络失败，服务端pending保留');}
+ const response={notice:pending[user]?{message:'积分不足，角色暂停了日常与主动消息',insufficientSince:'2026-10-16T08:00:00Z'}:null};
+ pending[user]=false;
+ if(delay){delay=false;await new Promise<void>(resolve=>{finish=resolve;});}
+ return response as never;
+};
+function Sample(){const [owner,setOwner]=useState('A'),[version,setVersion]=useState(0);return <main style={{padding:24}}><h1>生态不足提醒开发自查</h1><p>真实提示组件，模拟会话/接口；非数据库或多设备验收。</p><p>当前账号：{owner}</p><button onClick={()=>setVersion(v=>v+1)}>重开页面</button><button onClick={()=>window.dispatchEvent(new Event('focus'))}>恢复前台</button><button onClick={()=>{pending[owner]=true;setVersion(v=>v+1);}}>新不足周期</button><button onClick={()=>{pending[owner]=true;fail=true;setVersion(v=>v+1);}}>模拟请求失败</button><button onClick={()=>{pending[owner]=true;delay=true;setVersion(v=>v+1);}}>延迟回包</button><button onClick={()=>{activeOwner=owner==='A'?'B':'A';setOwner(activeOwner);}}>切换账号</button><button onClick={()=>{finish?.();finish=undefined;}}>送回延迟结果</button><pre id="requests"/><div key={owner}><ToastHost/><EcologyInsufficientNotice key={version} userId={owner} sessionId={owner}/></div></main>;}
+createRoot(document.getElementById('root')!).render(<StrictMode><Sample/></StrictMode>);

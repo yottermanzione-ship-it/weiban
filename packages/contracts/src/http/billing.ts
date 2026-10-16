@@ -262,6 +262,15 @@ export const UpdateRechargeOptionsRequest = z.object({
 // ---------- 用户端接口 ----------
 
 export const BillingEndpoints = {
+  consumeEcologyInsufficientNotice: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/billing/ecology-insufficient-notice/consume`,
+    auth: 'user',
+    response: z.object({
+      notice: z.object({ message: z.string().max(200), insufficientSince: Timestamp }).nullable(),
+    }),
+    summary: '3.16：原子消费当前账号生态积分不足提醒；至多一次，余额不变，无待提醒时notice=null',
+  }),
   quoteRecharge: defineEndpoint({
     method: 'POST',
     path: `${API_PREFIX}/billing/recharge-quote`,
@@ -344,7 +353,8 @@ export const AdminAccountSummary = z.object({
 
 /** 管理后台看到的流水：比用户多成本价、操作人、是否平台吸收。 */
 export const AdminLedgerEntry = LedgerEntry.extend({
-  costMicros: z.number().int().nonnegative().nullable(),
+  /** 3.16：成本冲正可为负，不对旧流水取绝对值。 */
+  costMicros: z.number().int().nullable(),
   usageRecordId: Id.nullable(),
   priceVersionId: Id.nullable(),
   operatorUserId: Id.nullable(),
@@ -409,11 +419,19 @@ export const ReconciliationRun = z.object({
       periodEnd: LocalDate,
       billedMicros: z.number().int().nonnegative(),
       computedCostMicros: z.number().int().nonnegative(),
+      /** 3.16：成本冲正可能使当期净额为负；旧computedCostMicros仅保留非负兼容值。 */
+      netComputedCostMicros: MoneyMicros.optional(),
+      unknownCostCalls: z.number().int().nonnegative().optional(),
+      uncertainCostMicros: z.number().int().nonnegative().optional(),
       diffRatio: z.number(),
       flagged: z.boolean(),
     }),
   ),
   absorbedMicros: z.number().int().nonnegative(),
+  /** 3.16：当期平台吸收净额（含冲正），风险上界不计入此数。 */
+  netAbsorbedMicros: MoneyMicros.optional(),
+  unknownCostCalls: z.number().int().nonnegative().optional(),
+  uncertainCostMicros: z.number().int().nonnegative().optional(),
   /**
    * v1.3：第 ② 层（用量记录 ↔ 扣费）由 model-access 比对、用事件 model_access.usage_reconciled 交回
    * （billing.md 8.2 节）。usageReconciledAt 为 null 表示当天第 ② 层还没有结果，此时
@@ -427,6 +445,27 @@ export const ReconciliationRun = z.object({
 });
 
 export const BillingAdminEndpoints = {
+  resolveUnknownCost: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/billing/holds/:holdId/cost-resolution`,
+    auth: 'admin',
+    params: z.object({ holdId: Id }),
+    body: z.object({
+      costMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+      evidenceUrl: z
+        .string()
+        .url()
+        .max(2000)
+        .refine((v) => v.startsWith('https://'), '需HTTPS凭证链接'),
+      reason: z.string().trim().min(5).max(1000),
+    }),
+    response: z.object({
+      holdId: Id,
+      costMicros: z.number().int().nonnegative(),
+      resolvedAt: Timestamp,
+    }),
+    summary: '核实未知供应商成本；仅平台承担差额、不追扣用户、不自动重启模型',
+  }),
   listAccounts: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/admin/billing/accounts`,

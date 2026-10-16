@@ -26,11 +26,13 @@ import {
   BILLING_SERVICE_FEE_PORT,
 } from './tokens.js';
 import { ServiceFeeService } from './application/service-fees.js';
+import { CostResolutionService } from './application/cost-resolution.js';
 
 @Module({
   imports: [IdentityModule],
   controllers: [BillingController, BillingAdminController],
   providers: [
+    CostResolutionService,
     Ledger,
     PlatformBudget,
     PriceService,

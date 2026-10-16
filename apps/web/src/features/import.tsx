@@ -387,7 +387,7 @@ function ShotThumb({
 
 // ---------- 按任务状态显示对应一步 ----------
 
-function JobStep({ job, onJob }: { job: ImportJob; onJob(job: ImportJob): void }) {
+export function JobStep({ job, onJob }: { job: ImportJob; onJob(job: ImportJob): void }) {
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
@@ -478,14 +478,16 @@ function JobStep({ job, onJob }: { job: ImportJob; onJob(job: ImportJob): void }
             </label>
             <p className="hint pad">默认生成后删除原文，只保留角色草稿和摘取的示例对话。</p>
             <div className="switch-row">
-              预计花费
+              保守预留上限
               <strong>
                 {job.estimatedMicros === null
                   ? '—'
-                  : `约 ${pointsText(microsToPoints(job.estimatedMicros))}`}
+                  : pointsText(microsToPoints(job.estimatedMicros))}
               </strong>
             </div>
-            <p className="hint pad">按当前模型和 AI 模型价格估算，实际以积分明细为准</p>
+            <p className="hint pad">
+              按已核准的上下文和输出上限预留，可能明显高于实际花费；最终按真实有效用量结算，多余预留退回。
+            </p>
             <div className="switch-row">
               预计用时
               <span>

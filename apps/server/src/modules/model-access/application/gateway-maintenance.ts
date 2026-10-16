@@ -1,5 +1,5 @@
 /** 回收不确定在途冻结、恢复已保存结果的结算、清除24h结果、探测临时故障上游。 */
-import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
 import type { BillingReservationPort } from '@weiban/contracts';
 import { and, eq, inArray, lt, ne } from 'drizzle-orm';
 import {
@@ -12,11 +12,17 @@ import {
 } from '../../../platform/index.js';
 import { BILLING_RESERVATION_PORT } from '../../billing/index.js';
 import { generationResults, upstreams } from '../infra/db/schema.js';
-import { UPSTREAM_PROBE, type UpstreamProbe } from '../tokens.js';
+import {
+  UPSTREAM_PROBE,
+  MODEL_ACCESS_CHARGE_QUERY,
+  type ChargeQuery,
+  type UpstreamProbe,
+} from '../tokens.js';
 import { GenerationCache } from './generation-cache.js';
 import { ModelGateway } from './gateway.js';
 import { UpstreamService } from './upstreams.js';
 import { UsageRecorder } from './usage.js';
+import { ModelGatewayMedia } from './media-gateway.js';
 
 @Injectable()
 export class GatewayMaintenance implements OnModuleInit {
@@ -30,6 +36,8 @@ export class GatewayMaintenance implements OnModuleInit {
     @Inject(UsageRecorder) private readonly recorder: UsageRecorder,
     @Inject(BILLING_RESERVATION_PORT) private readonly billing: BillingReservationPort,
     @Inject(UPSTREAM_PROBE) private readonly probe: UpstreamProbe,
+    @Optional() @Inject(ModelGatewayMedia) private readonly mediaGateway?: ModelGatewayMedia,
+    @Optional() @Inject(MODEL_ACCESS_CHARGE_QUERY) private readonly charges?: ChargeQuery,
   ) {}
   async onModuleInit(): Promise<void> {
     await this.jobs.work('model_access.recover_generations', () => this.recover());
@@ -51,22 +59,30 @@ export class GatewayMaintenance implements OnModuleInit {
       .limit(100);
     for (const row of old) {
       if (row.phase === 'result') {
-        await this.gateway.finalize(row, await this.cache.open(row));
+        const result = await this.cache.open(row);
+        if (result && typeof result === 'object' && 'mediaSettlement' in result) {
+          if (!this.mediaGateway) throw new Error('媒体结算恢复服务不可用');
+          await this.mediaGateway.restoreMediaResult(row, result);
+        } else await this.gateway.finalize(row, result);
         continue;
       }
-      // attach 写入前崩溃时也能用同一稳定键找回冻结 ID。
-      const record = await this.recorder.byIdempotencyKey(`gateway:${row.id}`);
-      const holdId = row.holdId ?? record?.holdId;
-      if (holdId) {
-        const release = await this.billing.release({
-          holdId,
-          reason: 'call_failed',
-          usageRecordId: record?.id,
-          upstreamId: row.upstreamId ?? record?.upstreamId ?? undefined,
-        });
-        if (record) await this.recorder.writeReleaseSnapshot(record.id, release);
+      // 每个attempt独立恢复；不能只解冻最后一次而丢失前次供应商风险。
+      const records = await this.recorder.pendingForGeneration(row.id);
+      if (row.usageRecordId && !records.some((record) => record.id === row.usageRecordId)) {
+        const record = await this.recorder.byId(row.usageRecordId);
+        if (record?.status === 'pending') records.push(record);
       }
-      if (record)
+      for (const record of records) {
+        const holdId = record.holdId ?? (row.usageRecordId === record.id ? row.holdId : null);
+        if (holdId) {
+          const release = await this.billing.release({
+            holdId,
+            reason: 'call_failed',
+            usageRecordId: record.id,
+            upstreamId: record.upstreamId,
+          });
+          await this.recorder.writeReleaseSnapshot(record.id, release);
+        }
         await this.recorder.finish(record.id, {
           status: 'failed',
           errorCode: 'interrupted',
@@ -75,9 +91,70 @@ export class GatewayMaintenance implements OnModuleInit {
           outputTokens: 0,
           estimated: false,
           latencyMs: 0,
-          retryCount: 0,
+          retryCount: record.retryCount,
         });
+      }
       await this.cache.save(row, { ok: false, error: 'provider_unavailable' }, 'complete');
+    }
+    // 流式调用没有generation结果缓存；也必须持久恢复中断风险与后台待核状态。
+    const media = await this.recorder.interruptedMedia();
+    if (media.length && !this.charges?.getBillingStatesByHoldIds)
+      throw new Error('媒体恢复需要权威冻结状态读取端口');
+    const states = new Map(
+      (
+        (await this.charges?.getBillingStatesByHoldIds?.(
+          media.flatMap((record) => (record.holdId ? [record.holdId] : [])),
+        )) ?? []
+      ).map((state) => [state.holdId, state]),
+    );
+    for (const record of media) {
+      const state = record.holdId ? states.get(record.holdId) : undefined;
+      let known = true;
+      let succeeded = false;
+      if (record.holdId) {
+        if (!state) continue; // 权威关联缺失，不能编造已知零成本。
+        if (state.usageRecordId && state.usageRecordId !== record.id)
+          throw new Error('媒体恢复冻结用量关联不一致');
+        if (state.status === 'active') {
+          if (state.risk?.phase === 'sent') {
+            if (!state.risk.sentAt || Date.parse(state.risk.sentAt) > this.clock.nowMs() - 120000)
+              continue;
+          } else if (!state.expiresAt || Date.parse(state.expiresAt) > this.clock.nowMs()) continue;
+        }
+        if (state.status === 'settled' && state.settlement) {
+          await this.recorder.writeSettleSnapshot(record.id, state.settlement);
+          known = state.settlement.costKnown === true;
+          succeeded = true;
+        } else if (state.status === 'released' && state.release) {
+          await this.recorder.writeReleaseSnapshot(record.id, state.release);
+          known = state.release.costKnown === true;
+        } else {
+          const release = await this.billing.release({
+            holdId: record.holdId,
+            reason: 'call_failed',
+            upstreamUsage: state.risk?.phase === 'reserved' ? {} : undefined,
+            usageRecordId: record.id,
+            upstreamId: record.upstreamId,
+          });
+          await this.recorder.writeReleaseSnapshot(record.id, release);
+          known = release.costKnown === true;
+        }
+      } else
+        await this.recorder.writeReleaseSnapshot(record.id, {
+          absorbedCostMicros: 0,
+          costKnown: true,
+        });
+      await this.recorder.finish(record.id, {
+        status: succeeded ? 'succeeded' : 'failed',
+        errorCode: succeeded ? null : 'interrupted',
+        inputTokens: record.inputTokens,
+        cachedInputTokens: record.cachedInputTokens,
+        outputTokens: record.outputTokens,
+        estimated: record.estimated,
+        latencyMs: record.latencyMs,
+        retryCount: record.retryCount,
+      });
+      await this.recorder.recoverAttempts(record.id, known);
     }
     await this.database.db
       .delete(generationResults)

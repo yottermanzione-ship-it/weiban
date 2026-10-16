@@ -120,11 +120,10 @@ export function stableRandom(seed: string): number {
 export async function backgroundAllowed(
   billing: BillingReadPort,
   userId: string,
-  opts: { requireBackgroundBudget?: boolean } = {},
+  _opts: { requireBackgroundBudget?: boolean } = {},
 ): Promise<boolean> {
   const spend = await billing.getSpendStatus(userId).catch(() => null);
-  if (!spend || spend.depleted || spend.availableMicros < P33_BALANCE_FLOOR_MICROS) return false;
-  return opts.requireBackgroundBudget === false || spend.backgroundRemainingTodayMicros > 0;
+  return !!spend; // 不猜金额：付费模型必须经过已核上限冻结，免费规则不受余额地板限制。
 }
 
 const JointOutput = z.object({
@@ -359,6 +358,7 @@ export class SocialService implements OnModuleInit {
       billingOwner: 'user',
       modelRole: 'background',
       countAsBackground: true,
+      ecologyTask: true,
       responseFormat: 'json',
       maxOutputTokens: 300,
       idempotencyKey: `ai:joint:${userId}:${date}:${pair.a}:${pair.b}`,
@@ -698,6 +698,7 @@ export class SocialService implements OnModuleInit {
         billingOwner: 'user',
         modelRole: 'background',
         countAsBackground: true,
+        ecologyTask: true,
         responseFormat: 'text',
         maxOutputTokens: 80,
         idempotencyKey: `ai:card-lead:${userId}:${job.sourceRef}`,
