@@ -93,7 +93,7 @@ export class ChargeQueryService implements BillingChargeQueryPort {
     }
     if (usageRecordIds.length === 0) return [];
     const { rows } = await this.database.query<ChargeRow>(
-      `${SELECT} WHERE (type = 'charge' OR (type = 'adjustment' AND idempotency_key LIKE 'cost_resolution:%' AND amount_micros = 0)) AND usage_record_id = ANY($1::uuid[]) ORDER BY created_at, id`,
+      `${SELECT} WHERE (type = 'charge' OR (type = 'adjustment' AND starts_with(idempotency_key, 'cost_resolution:') AND amount_micros = 0)) AND usage_record_id = ANY($1::uuid[]) ORDER BY created_at, id`,
       [usageRecordIds],
     );
     return rows.map(toCharge);
@@ -128,7 +128,7 @@ export class ChargeQueryService implements BillingChargeQueryPort {
       after = 'AND (created_at, id) > ($4::timestamptz, $5::uuid)';
     }
     const { rows } = await this.database.query<ChargeRow>(
-      `${SELECT} WHERE (type = 'charge' OR (type = 'adjustment' AND idempotency_key LIKE 'cost_resolution:%' AND amount_micros = 0)) AND usage_record_id IS NOT NULL
+      `${SELECT} WHERE (type = 'charge' OR (type = 'adjustment' AND starts_with(idempotency_key, 'cost_resolution:') AND amount_micros = 0)) AND usage_record_id IS NOT NULL
          AND created_at >= $1 AND created_at < $2 ${after}
          ORDER BY created_at, id LIMIT $3`,
       params,
