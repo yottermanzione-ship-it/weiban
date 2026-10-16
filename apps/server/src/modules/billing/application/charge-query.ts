@@ -3,7 +3,12 @@
  * 只读：不写任何表，不受 R9 限制（目前只有 model-access 使用）。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import type { BillingChargeQueryPort, UsageCharge, UsageChargePage } from '@weiban/contracts';
+import type {
+  BillingChargeQueryPort,
+  UsageBillingState,
+  UsageCharge,
+  UsageChargePage,
+} from '@weiban/contracts';
 import { Id } from '@weiban/contracts';
 import { AppError, DATABASE, type Database } from '../../../platform/index.js';
 import { addDays, PLATFORM_TIME_ZONE, startOfLocalDay } from '../domain/local-time.js';
@@ -16,6 +21,7 @@ interface ChargeRow {
   usage_record_id: string;
   id: string;
   amount: string;
+  hold_id: string | null;
   cost: string | null;
   absorbed: boolean;
   safety_overdraft: boolean;
@@ -23,7 +29,7 @@ interface ChargeRow {
   created_text: string;
 }
 
-const SELECT = `SELECT usage_record_id, id, amount_micros AS amount, cost_micros AS cost, absorbed, safety_overdraft,
+const SELECT = `SELECT usage_record_id, id, hold_id, amount_micros AS amount, cost_micros AS cost, absorbed, safety_overdraft,
        to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_iso,
        to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_text
   FROM billing.ledger_entries`;
@@ -33,6 +39,8 @@ function toCharge(r: ChargeRow): UsageCharge {
     usageRecordId: r.usage_record_id,
     ledgerEntryId: r.id,
     amountMicros: Math.abs(Number(r.amount)),
+    signedAmountMicros: Number(r.amount),
+    holdId: r.hold_id,
     costMicros: Number(r.cost ?? 0),
     absorbed: r.absorbed,
     safetyOverdraft: r.safety_overdraft,
@@ -43,6 +51,34 @@ function toCharge(r: ChargeRow): UsageCharge {
 @Injectable()
 export class ChargeQueryService implements BillingChargeQueryPort {
   constructor(@Inject(DATABASE) private readonly database: Database) {}
+
+  async getBillingStatesByHoldIds(holdIds: readonly string[]): Promise<UsageBillingState[]> {
+    if (holdIds.length > MAX_IDS || holdIds.some((id) => !Id.safeParse(id).success))
+      throw new AppError('bad_request', '冻结ID须为有效ID且一次最多1000个');
+    if (!holdIds.length) return [];
+    const { rows } = await this.database.query<{
+      id: string;
+      kind: 'user' | 'platform';
+      usage_id: string | null;
+      status: UsageBillingState['status'];
+      settlement: UsageBillingState['settlement'];
+      release: UsageBillingState['release'];
+    }>(
+      `SELECT h.id, a.kind, h.risk_snapshot->>'usageRecordId' AS usage_id, h.status,
+              h.settlement_snapshot AS settlement, h.release_snapshot AS release
+         FROM billing.holds h JOIN billing.accounts a ON a.id=h.account_id
+        WHERE h.id=ANY($1::uuid[])`,
+      [holdIds],
+    );
+    return rows.map((row) => ({
+      holdId: row.id,
+      accountKind: row.kind,
+      usageRecordId: row.usage_id,
+      status: row.status,
+      settlement: row.settlement,
+      release: row.release,
+    }));
+  }
 
   async getChargesByUsageRecordIds(usageRecordIds: readonly string[]): Promise<UsageCharge[]> {
     if (usageRecordIds.length > MAX_IDS) {
