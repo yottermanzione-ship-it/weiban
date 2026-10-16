@@ -445,6 +445,27 @@ export const ReconciliationRun = z.object({
 });
 
 export const BillingAdminEndpoints = {
+  resolveUnknownCost: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/billing/holds/:holdId/cost-resolution`,
+    auth: 'admin',
+    params: z.object({ holdId: Id }),
+    body: z.object({
+      costMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+      evidenceUrl: z
+        .string()
+        .url()
+        .max(2000)
+        .refine((v) => v.startsWith('https://'), '需HTTPS凭证链接'),
+      reason: z.string().trim().min(5).max(1000),
+    }),
+    response: z.object({
+      holdId: Id,
+      costMicros: z.number().int().nonnegative(),
+      resolvedAt: Timestamp,
+    }),
+    summary: '核实未知供应商成本；仅平台承担差额、不追扣用户、不自动重启模型',
+  }),
   listAccounts: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/admin/billing/accounts`,

@@ -110,7 +110,7 @@ export class UsageReconciliationService {
         const cs = byUsage.get(r.id) ?? [];
         const state = r.holdId ? states.get(r.holdId) : undefined;
         if (state?.usageRecordId && state.usageRecordId !== r.id) continue;
-        const charge = cs.find((c) => !c.absorbed);
+        const charge = cs.find((c) => !c.absorbed && !c.costCorrection);
         const total = totals(cs);
         if (!total.valid) continue;
         if (r.status === 'succeeded' && state?.status === 'settled' && state.settlement) {
@@ -264,7 +264,7 @@ function push(map: Map<string, UsageCharge[]>, c: UsageCharge): void {
 }
 
 function totals(cs: UsageCharge[]) {
-  const primary = cs.filter((c) => !c.absorbed);
+  const primary = cs.filter((c) => !c.absorbed && !c.costCorrection);
   const cost = cs.reduce((n, c) => n + c.costMicros, 0);
   const absorbedCost = cs.filter((c) => c.absorbed).reduce((n, c) => n + c.costMicros, 0);
   const charge = (c: UsageCharge) => -(c.signedAmountMicros ?? -c.amountMicros);

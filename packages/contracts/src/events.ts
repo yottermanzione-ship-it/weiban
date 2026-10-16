@@ -259,6 +259,21 @@ export const CallCostUnknown = event(
     uncertainMicros: z.number().int().nonnegative(),
   }),
 );
+/** 3.16：用量模块从计费权威快照同步；不携带凭证链接。 */
+export const CallCostResolved = event(
+  'billing.call_cost_resolved',
+  'billing',
+  z.object({
+    holdId: Id,
+    usageRecordId: Id,
+    status: z.enum(['succeeded', 'failed']),
+    chargedMicros: z.number().int().nonnegative(),
+    costMicros: z.number().int().nonnegative(),
+    absorbedCostMicros: z.number().int().nonnegative(),
+    ledgerEntryId: Id.nullable(),
+    resolvedAt: Timestamp,
+  }),
+);
 export const BalanceLow = event(
   'billing.balance_low',
   'billing',
@@ -798,6 +813,7 @@ export const DomainEvent = z.discriminatedUnion('type', [
   BalanceRestored,
   BalanceLow,
   CallCostUnknown,
+  CallCostResolved,
   CharacterPublished,
   CharacterUnpublished,
   CharacterClassificationChanged,

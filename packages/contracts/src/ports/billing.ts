@@ -143,6 +143,14 @@ export interface CallRiskSnapshot {
   upstreamId?: string;
   upstreamModelId?: string;
   sentAt?: string;
+  /** 人工核实只追加成本差额，不追扣用户。 */
+  resolution?: {
+    costMicros: number;
+    evidenceUrl: string;
+    reason: string;
+    operatorUserId: string;
+    resolvedAt: string;
+  };
 }
 export interface BillingReservationPort {
   /** 3.16：外部请求发出前原子标记，只允许active未过期且从未发出的hold。重复返回false，不可重发。 */
@@ -182,6 +190,8 @@ export interface UsageCharge {
   amountMicros: number;
   /** 3.16：原流水有符号余额变动；扣款负、冲正正。新对账不得对冲正取绝对值。 */
   signedAmountMicros?: number;
+  /** 平台成功调用的零金额成本校正，不是第二笔售价扣费。 */
+  costCorrection?: boolean;
   /** 3.16：关联冻结，旧实现可能不提供。 */
   holdId?: string | null;
   /** 成本金额（微元）。 */

@@ -50,6 +50,38 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
   async onModuleInit(): Promise<void> {
     this.registry.register(this);
     this.bus.subscribe({
+      consumer: 'model_access.on_call_cost_resolved',
+      eventType: 'billing.call_cost_resolved',
+      handle: async (event, tx) => {
+        const p = event.payload;
+        const [record] = await tx.db
+          .select({ status: usageRecords.status })
+          .from(usageRecords)
+          .where(and(eq(usageRecords.id, p.usageRecordId), eq(usageRecords.holdId, p.holdId)));
+        // 用量尚未结束则重试事件；账号注销删掉的记录不重建。
+        if (record && record.status !== p.status)
+          throw new Error('调用尚未按权威结算状态结束，稍后重试成本同步');
+        await tx.db
+          .update(usageRecords)
+          .set({
+            chargedMicros: p.chargedMicros,
+            costMicros: p.costMicros,
+            absorbedCostMicros: p.absorbedCostMicros,
+            ledgerEntryId: p.ledgerEntryId,
+            costKnown: true,
+            uncertainCostMicros: 0,
+            snapshotAt: new Date(p.resolvedAt),
+          })
+          .where(
+            and(
+              eq(usageRecords.id, p.usageRecordId),
+              eq(usageRecords.holdId, p.holdId),
+              eq(usageRecords.status, p.status),
+            ),
+          );
+      },
+    });
+    this.bus.subscribe({
       consumer: 'model_access.on_call_cost_unknown',
       eventType: 'billing.call_cost_unknown',
       handle: async (event, tx) => {

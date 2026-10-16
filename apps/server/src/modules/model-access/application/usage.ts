@@ -291,7 +291,12 @@ export class UsageRecorder {
         uncertainCostMicros: s.uncertainCostMicros ?? 0,
         snapshotAt: this.clock.now(),
       })
-      .where(eq(usageRecords.id, id));
+      .where(
+        and(
+          eq(usageRecords.id, id),
+          s.costKnown === true ? undefined : eq(usageRecords.costKnown, false),
+        ),
+      );
   }
 
   /** release 返回后写平台吸收成本快照。 */
@@ -308,7 +313,12 @@ export class UsageRecorder {
         uncertainCostMicros: s.uncertainCostMicros ?? 0,
         snapshotAt: this.clock.now(),
       })
-      .where(eq(usageRecords.id, id));
+      .where(
+        and(
+          eq(usageRecords.id, id),
+          s.costKnown === true ? undefined : eq(usageRecords.costKnown, false),
+        ),
+      );
   }
 
   /** 已成功但还没写金额快照的记录（修复任务用，billing.md 8.2 第 ② 层）。 */
