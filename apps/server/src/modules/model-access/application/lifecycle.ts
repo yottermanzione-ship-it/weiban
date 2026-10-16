@@ -29,6 +29,7 @@ import {
 } from '../infra/db/schema.js';
 import { UsageReconciliationService } from './reconciliation.js';
 import { BillingBoundsService } from './billing-bounds.js';
+import { MODEL_ACCESS_CHARGE_QUERY, type ChargeQuery } from '../tokens.js';
 
 /** 每天 3:45（北京时间）对前一天做用量对账（billing.md 8.2 第 ② 层；billing 的第 ①③ 层在 3:30）。 */
 export const RECONCILE_USAGE_JOB = 'model_access.reconcile_usage';
@@ -45,6 +46,7 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
     @Inject(UsageReconciliationService)
     private readonly reconciliation: UsageReconciliationService,
     @Optional() @Inject(BillingBoundsService) private readonly billingBounds?: BillingBoundsService,
+    @Optional() @Inject(MODEL_ACCESS_CHARGE_QUERY) private readonly charges?: ChargeQuery,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -58,16 +60,27 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
           .select({ status: usageRecords.status })
           .from(usageRecords)
           .where(and(eq(usageRecords.id, p.usageRecordId), eq(usageRecords.holdId, p.holdId)));
-        // 用量尚未结束则重试事件；账号注销删掉的记录不重建。
-        if (record && record.status !== p.status)
+        if (!record) return; // 注销删掉的记录不重建。
+        if (!this.charges?.getBillingStatesByHoldIds)
+          throw new Error('权威计费查询不可用，稍后重试成本同步');
+        const [state] = await this.charges.getBillingStatesByHoldIds([p.holdId]);
+        if (!state || state.usageRecordId !== p.usageRecordId || !state.risk?.resolution)
+          throw new Error('核实事件缺少匹配的权威记录');
+        const settled = state.status === 'settled' ? state.settlement : null;
+        const released = state.status === 'released' ? state.release : null;
+        const expectedStatus = settled ? 'succeeded' : 'failed';
+        // 核实后极迟结果可能将released改成settled，须读当前快照而非旧事件金额。
+        if ((!settled && !released) || record.status !== expectedStatus)
           throw new Error('调用尚未按权威结算状态结束，稍后重试成本同步');
-        await tx.db
+        const updated = await tx.db
           .update(usageRecords)
           .set({
-            chargedMicros: p.chargedMicros,
-            costMicros: p.costMicros,
-            absorbedCostMicros: p.absorbedCostMicros,
-            ledgerEntryId: p.ledgerEntryId,
+            chargedMicros: settled?.amountMicros ?? 0,
+            costMicros: settled?.costMicros ?? released!.absorbedCostMicros,
+            absorbedCostMicros: settled
+              ? (settled.absorbedCostMicros ?? 0)
+              : released!.absorbedCostMicros,
+            ledgerEntryId: settled?.ledgerEntryId ?? null,
             costKnown: true,
             uncertainCostMicros: 0,
             snapshotAt: new Date(p.resolvedAt),
@@ -76,9 +89,11 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
             and(
               eq(usageRecords.id, p.usageRecordId),
               eq(usageRecords.holdId, p.holdId),
-              eq(usageRecords.status, p.status),
+              eq(usageRecords.status, expectedStatus),
             ),
-          );
+          )
+          .returning({ id: usageRecords.id });
+        if (!updated.length) throw new Error('用量状态已变化，稍后重试权威快照同步');
       },
     });
     this.bus.subscribe({

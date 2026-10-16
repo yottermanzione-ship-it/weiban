@@ -347,10 +347,13 @@ export class ReservationService implements BillingReservationPort {
         ? Math.max(0, Math.min(hold.amountMicros, available(account) + hold.amountMicros))
         : 0;
       const previousAbsorbed = hold.status === 'released' ? (hold.absorbedCostMicros ?? 0) : 0;
-      const costKnown = actualKnown && priced.unpricedUnits.length === 0;
-      const knownCost = costKnown
-        ? priced.costMicros
-        : Math.max(priced.costMicros, previousAbsorbed);
+      // 已人工核实的供应商成本不被极迟响应/价目表推算重新覆盖。
+      const verifiedCost = hold.riskSnapshot?.resolution?.costMicros;
+      const costKnown =
+        verifiedCost !== undefined || (actualKnown && priced.unpricedUnits.length === 0);
+      const knownCost =
+        verifiedCost ??
+        (costKnown ? priced.costMicros : Math.max(priced.costMicros, previousAbsorbed));
       const amount =
         account.kind === 'platform'
           ? costKnown
