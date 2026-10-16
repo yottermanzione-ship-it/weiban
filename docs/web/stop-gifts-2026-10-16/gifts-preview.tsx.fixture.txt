@@ -1,0 +1,30 @@
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {HashRouter} from 'react-router-dom';
+import {AuthPage} from './src/features/auth-page';
+import {AuthProvider} from './src/app/auth';
+import {App as AdminApp} from '../admin/src/app/app';
+import {api as adminApi} from '../admin/src/data/client';
+import {api as webApi} from './src/data/client';
+await import('../../docs/design/tokens.css');
+const admin=new URLSearchParams(location.search).has('admin');
+if(admin) await import('../admin/src/app/styles.css');
+else for(const path of ['styles','media-call','l6','l6b','plaza','play','shell','old-ui','chat-old','pages-old','common-fixes']) await import('./src/app/'+path+'.css');
+const user={userId:'10000000-0000-4000-8000-000000000001',username:'开发样例',role:'admin',profileCompleted:true};
+const session={sessionId:'10000000-0000-4000-8000-000000000002',kind:'admin',accessToken:'local-fixture-only',refreshToken:'local-fixture-only',accessExpiresAt:'2099-01-01T00:00:00Z',refreshExpiresAt:'2099-01-01T00:00:00Z'};
+let options={paymentEnabled:false,pointsPerYuan:100,contactHint:'开发样例联系说明',tiers:[{tierId:'t10',priceMicros:10000000,points:1000,bonusPercent:0,bonusPoints:0}]};
+let fail=true; const logs:unknown[]=[];
+function record(value:unknown){logs.push(value);document.getElementById('records')!.textContent=JSON.stringify(logs,null,2);}
+adminApi.restore=async()=>({user,session}) as never;
+adminApi.updateUser=async()=>({user,session}) as never;
+adminApi.call=async(e:any,request:any)=>{
+ if(e.path.endsWith('/identity/me')) return user as never;
+ if(e.path.includes('recharge-options')){
+   if(e.method==='PUT'){record({method:e.method,path:e.path,body:request.body});if(fail){fail=false;throw new Error('开发样例保存失败');}options={...options,...request.body,tiers:request.body.tiers.map((t:any)=>({...t,points:t.priceMicros/10000,bonusPoints:0}))};}
+   return options as never;
+ }
+ return {items:[],count:0,unreadCount:0,pendingCount:0} as never;
+};
+webApi.restore=async()=>null;
+webApi.call=async(e:any,request:any)=>{record({method:e.method,path:e.path,body:{...request.body,password:'[已隐藏]'}});throw new Error('开发样例注册失败，检查草稿保留');};
+createRoot(document.getElementById('root')!).render(<><aside style={{padding:8,background:'#fff2ca'}}>开发自查：模拟数据，不连接真实账号或数据库 <a href="/gifts-preview.html">注册</a> · <a href="/gifts-preview.html?admin=1#/accounts">后台</a><details><summary>请求记录</summary><pre id="records"/></details></aside><HashRouter>{admin?<AdminApp/>:<AuthProvider><AuthPage/></AuthProvider>}</HashRouter></>);

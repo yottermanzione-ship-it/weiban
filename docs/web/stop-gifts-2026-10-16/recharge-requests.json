@@ -1,0 +1,30 @@
+[
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/billing/recharge-options",
+    "body": {
+      "tiers": [
+        {
+          "tierId": "t10",
+          "priceMicros": 20000000,
+          "bonusPercent": 0
+        }
+      ],
+      "contactHint": "开发样例修改后说明"
+    }
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/billing/recharge-options",
+    "body": {
+      "tiers": [
+        {
+          "tierId": "t10",
+          "priceMicros": 20000000,
+          "bonusPercent": 0
+        }
+      ],
+      "contactHint": "开发样例修改后说明"
+    }
+  }
+]
