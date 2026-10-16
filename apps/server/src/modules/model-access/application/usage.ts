@@ -22,7 +22,7 @@ import {
   type GenerateTextInput,
   type ModelPurpose,
 } from '@weiban/contracts';
-import { and, desc, eq, gte, inArray, isNull, lt, like, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lt, like, ne, or, sql, type SQL } from 'drizzle-orm';
 import {
   AUDIT_LOG,
   AppError,
@@ -118,6 +118,22 @@ export class UsageRecorder {
         finishedAt: this.clock.now(),
       })
       .where(eq(generationAttempts.id, id));
+  }
+  async recoverAttempts(usageRecordId: string, known: boolean) {
+    await this.database.db
+      .update(generationAttempts)
+      .set({
+        phase: 'finished',
+        usageState: known ? 'reported' : 'unknown',
+        errorCode: 'interrupted',
+        finishedAt: this.clock.now(),
+      })
+      .where(
+        and(
+          eq(generationAttempts.usageRecordId, usageRecordId),
+          ne(generationAttempts.phase, 'finished'),
+        ),
+      );
   }
 
   /**

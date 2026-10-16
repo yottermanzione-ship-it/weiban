@@ -803,11 +803,7 @@ export class ProactiveSchedulerService {
 
     // 余额保留线 P-33 与后台预算（SIM-05 第 9 条）；安全关怀跟进例外。
     const spend = await this.billing.getSpendStatus(ctx.userId).catch(() => null);
-    const budgetOk =
-      !!spend &&
-      !spend.depleted &&
-      spend.availableMicros >= P33_BALANCE_FLOOR_MICROS &&
-      spend.backgroundRemainingTodayMicros > 0;
+    const budgetOk = !!spend; // 金额/日预算统一由本次已核上限冻结判断。
 
     for (const plan of due) {
       if (plan.deferredSince && now.getTime() - plan.deferredSince.getTime() > P09_DEFER.maxDeferMs)
@@ -991,6 +987,7 @@ export class ProactiveSchedulerService {
         billingOwner: 'user',
         modelRole: adult ? 'adult' : 'chat',
         countAsBackground: plan.reason !== 'safety_follow_up',
+        ecologyTask: plan.reason !== 'safety_follow_up',
         responseFormat: 'text',
         maxOutputTokens: 300,
         idempotencyKey: `proactive:${plan.id}`,

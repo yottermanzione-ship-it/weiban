@@ -137,6 +137,11 @@ export class ModelGateway implements ModelGatewayPort {
         ...input,
         billingOwner: 'platform',
         safetyPriority: false,
+        modelRole:
+          input.purpose === 'safety_check' && input.modelRole === 'adult_check'
+            ? 'adult_check'
+            : 'background',
+        modelKeyOverride: undefined,
         maxOutputTokens: Math.min(input.maxOutputTokens ?? cap, cap),
       },
       { trustedPlatform: true },
@@ -206,6 +211,7 @@ export class ModelGateway implements ModelGatewayPort {
     const imageCount = input.messages.reduce((n, m) => n + (m.images?.length ?? 0), 0);
     const resolved = await this.resolver.resolve({
       ...input,
+      platformTask: internal?.trustedPlatform === true,
       hasImages: imageCount > 0,
       ...(internal?.fallbackModelKey ? { fallbackModelKey: internal.fallbackModelKey } : {}),
     });

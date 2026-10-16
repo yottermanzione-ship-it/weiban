@@ -291,6 +291,7 @@ export class MomentsAiService {
       billingOwner: 'user',
       modelRole: 'background',
       countAsBackground: true,
+      ecologyTask: true,
       responseFormat: 'text',
       maxOutputTokens: 200,
       idempotencyKey: `ai:moments-post:${userId}:${characterId}:${local.date}`,
@@ -353,6 +354,7 @@ export class MomentsAiService {
           use: 'moments',
           idempotencyKey: `moments:${userId}:${characterId}:${local.date}`,
           countAsBackground: true,
+          ecologyTask: true,
         })
         .catch(() => null);
       if (image) imageMediaIds = [image.mediaId];
@@ -726,7 +728,7 @@ export class MomentsAiService {
       purpose: 'moments',
       billingOwner: 'user',
       modelRole: 'background',
-      ...(job.mustReply ? {} : { countAsBackground: true }),
+      ...(job.mustReply ? {} : { countAsBackground: true, ecologyTask: true }),
       responseFormat: 'text',
       maxOutputTokens: 120,
       idempotencyKey: `ai:moments-${job.action}:${post.postId}:${characterId}:${job.replyToCommentId ?? 'post'}`,

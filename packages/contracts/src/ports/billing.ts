@@ -207,6 +207,8 @@ export interface UsageBillingState {
   status: 'active' | 'expired' | 'released' | 'settled';
   settlement: SettleOutput | null;
   release: ReleaseOutput | null;
+  expiresAt?: string;
+  risk?: CallRiskSnapshot | null;
 }
 
 /**

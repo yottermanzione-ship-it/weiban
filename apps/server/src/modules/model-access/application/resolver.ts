@@ -121,6 +121,8 @@ export class ModelResolver implements AdultModelReadPort {
     modelKeyOverride?: string;
     /** 网关内部：空输出降级用的备用模型（docs/refactor/03 第 1.4 B），不经契约传入。 */
     fallbackModelKey?: string;
+    /** 仅可信平台能力经网关内部传入，绕过用户选择且拒绝成人模型。 */
+    platformTask?: boolean;
   }): Promise<PortResult<ResolvedModel, GenerateError>> {
     if (
       input.modelRole === 'adult_check' &&
@@ -128,7 +130,16 @@ export class ModelResolver implements AdultModelReadPort {
     )
       return { ok: false, error: 'bad_request' };
     let picked: { facts: ModelFacts } | null;
-    if (input.fallbackModelKey) {
+    if (input.platformTask && input.modelRole !== 'adult_check') {
+      if (
+        !['safety_check', 'safety_followup', 'small_v', 'search_candidates'].includes(input.purpose)
+      )
+        return { ok: false, error: 'bad_request' };
+      const platform =
+        (await this.catalog.defaultModel('background')) ??
+        (await this.catalog.defaultModel('chat'));
+      picked = platform ? { facts: platform } : null;
+    } else if (input.fallbackModelKey) {
       if (input.modelRole !== 'background') return { ok: false, error: 'bad_request' };
       picked = { facts: await this.catalog.fact(input.fallbackModelKey) };
     } else if (input.modelKeyOverride) {
@@ -182,6 +193,12 @@ export class ModelResolver implements AdultModelReadPort {
     }
     const entry = facts.entry;
     if (!entry) return { ok: false, error: 'model_unavailable' };
+    if (
+      input.platformTask &&
+      input.modelRole !== 'adult_check' &&
+      hasAdultContent(entry.capabilities)
+    )
+      return { ok: false, error: 'model_not_allowed' };
     // 规划模型一律不能是无审查模型（CR-17）。
     if (input.purpose === 'behavior_planning' && hasAdultContent(entry.capabilities))
       return { ok: false, error: 'model_not_allowed' };

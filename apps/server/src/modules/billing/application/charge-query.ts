@@ -63,9 +63,11 @@ export class ChargeQueryService implements BillingChargeQueryPort {
       status: UsageBillingState['status'];
       settlement: UsageBillingState['settlement'];
       release: UsageBillingState['release'];
+      expires: Date;
+      risk: UsageBillingState['risk'];
     }>(
       `SELECT h.id, a.kind, h.risk_snapshot->>'usageRecordId' AS usage_id, h.status,
-              h.settlement_snapshot AS settlement, h.release_snapshot AS release
+              h.settlement_snapshot AS settlement, h.release_snapshot AS release, h.expires_at AS expires, h.risk_snapshot AS risk
          FROM billing.holds h JOIN billing.accounts a ON a.id=h.account_id
         WHERE h.id=ANY($1::uuid[])`,
       [holdIds],
@@ -77,6 +79,8 @@ export class ChargeQueryService implements BillingChargeQueryPort {
       status: row.status,
       settlement: row.settlement,
       release: row.release,
+      expiresAt: row.expires.toISOString(),
+      risk: row.risk,
     }));
   }
 

@@ -291,6 +291,7 @@ export class SimulationService implements SimulationReadPort {
       responseFormat: 'json',
       idempotencyKey: `sim:${userId}:${characterId}:${today}`,
       countAsBackground: true,
+      ecologyTask: true,
     });
 
     if (!result.ok) {
