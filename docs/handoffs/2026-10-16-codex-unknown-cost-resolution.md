@@ -11,3 +11,7 @@
 开发自查：contracts/server typecheck通过（最终server94468）；12文件eslint、追加改动相关lint；depcruise389模块1688依赖通过；server build通过。整批契约/Android资源由原代理最后生成（本任务新增1管理端点/1事件）。无新产品UI，本任务没有GUI验证要求；原积分UI由主会话在原副本实际点按，证据由原任务登记。
 
 没有PG/迁移/真实HTTP/真实账单、并发/跨日/事件重放运行证据；操作与上线前手工核验要求见docs/ops/unknown-cost-resolution.md。仅保存凭证链接不验证其真实性，必须管理员先核实；旧无快照/调用关联拒绝，仍需另行审查。目录不自动重启。
+
+补充来源审查：released核实后极迟成功settle沿用人工凭证成本，不能重新被用量/价目表推算覆盖；resolved事件读当前权威关闭快照，处理released→settled变化，状态竞态则重试。金额事件中的原快照仅作事件记录，不作为后来状态的覆盖来源。
+
+该补充的server typecheck25469、2文件eslint、server build通过；depcruise389模块1689依赖通过。仍无真实PG竞态证据。
