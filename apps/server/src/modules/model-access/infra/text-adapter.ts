@@ -2,6 +2,11 @@
 import type { GenerateTextInput } from '@weiban/contracts';
 
 export interface TextUsage {
+  reported?: {
+    promptTokens: number | null;
+    cachedTokens: number | null;
+    completionTokens: number | null;
+  };
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
@@ -54,6 +59,7 @@ export interface TextAdapter {
     /** T-071：images 为已读取的图片 data URL（网关经 MediaSystemPort 读取），按 OpenAI 多模态格式发送。 */
     messages: AdapterMessage[];
     maxOutputTokens: number;
+    outputParameter?: 'max_tokens' | 'max_completion_tokens';
     temperature?: number;
     responseFormat?: 'text' | 'json';
     idempotencyKey: string;
@@ -121,6 +127,15 @@ export function estimateTokens(text: string): number {
 }
 
 function usageOf(raw: unknown, input: string, output: string): TextUsage {
+  const object = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const details = object.prompt_tokens_details as Record<string, unknown> | undefined;
+  const numberOrNull = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) ? value : null;
+  const reported = {
+    promptTokens: numberOrNull(object.prompt_tokens),
+    cachedTokens: numberOrNull(object.prompt_cache_hit_tokens ?? details?.cached_tokens),
+    completionTokens: numberOrNull(object.completion_tokens),
+  };
   if (raw && typeof raw === 'object') {
     const u = raw as Record<string, unknown>;
     const details = u.prompt_tokens_details as Record<string, unknown> | undefined;
@@ -136,6 +151,7 @@ function usageOf(raw: unknown, input: string, output: string): TextUsage {
         cachedInputTokens: Number(cached),
         outputTokens: Number(out),
         estimated: false,
+        reported,
       };
     }
   }
@@ -144,6 +160,7 @@ function usageOf(raw: unknown, input: string, output: string): TextUsage {
     cachedInputTokens: 0,
     outputTokens: estimateTokens(output),
     estimated: true,
+    reported,
   };
 }
 
@@ -153,11 +170,8 @@ export class OpenAiTextAdapter implements TextAdapter {
       input.thinking === 'default'
         ? {}
         : thinkingOffFields(thinkingControlFor(input.baseUrl, input.model));
-    const first = await this.once(input, extra);
-    // 个别平台不认识关闭思考的字段会报 400：去掉字段再试一次。
-    if (!first.ok && first.category === 'bad_request' && Object.keys(extra).length)
-      return this.once(input, {});
-    return first;
+    // 每次generate恰好一次HTTP；所有重试必须由网关另建attempt并预留风险。
+    return this.once(input, extra);
   }
   private async once(
     input: Parameters<TextAdapter['generate']>[0],
@@ -177,7 +191,7 @@ export class OpenAiTextAdapter implements TextAdapter {
           model: input.model,
           messages: wireMessages(input.messages),
           stream: false,
-          max_tokens: input.maxOutputTokens,
+          [input.outputParameter ?? 'max_tokens']: input.maxOutputTokens,
           temperature: input.temperature,
           ...extra,
           ...(input.responseFormat === 'json' ? { response_format: { type: 'json_object' } } : {}),

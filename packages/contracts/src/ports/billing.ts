@@ -35,7 +35,11 @@ export interface ReserveInput {
   /** 估算用量：输入 token 估算值 + maxOutputTokens 等。 */
   estimate: UsageQuantities;
   /** 3.16：由网关核准路由得出的可计费上限；缺失时拒绝新冻结，旧estimate不再充当上限。 */
-  ceiling?: { usage: UsageQuantities; evidence: string };
+  ceiling?: { usage: UsageQuantities; evidence: string; pricingModels?: string[] };
+  /** 网关自动重试预留供应商风险；不是客户端可选的付款钱包。 */
+  reservePlatformRisk?: boolean;
+  /** 同一逻辑请求后续attempt沿用首次已生效且不可变的价目表。 */
+  priceVersionId?: string;
   /** 与网关调用的幂等键相同：重复调用返回同一个冻结。 */
   idempotencyKey: string;
   /**

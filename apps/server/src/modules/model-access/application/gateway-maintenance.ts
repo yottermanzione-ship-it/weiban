@@ -54,19 +54,19 @@ export class GatewayMaintenance implements OnModuleInit {
         await this.gateway.finalize(row, await this.cache.open(row));
         continue;
       }
-      // attach 写入前崩溃时也能用同一稳定键找回冻结 ID。
-      const record = await this.recorder.byIdempotencyKey(`gateway:${row.id}`);
-      const holdId = row.holdId ?? record?.holdId;
-      if (holdId) {
-        const release = await this.billing.release({
-          holdId,
-          reason: 'call_failed',
-          usageRecordId: record?.id,
-          upstreamId: row.upstreamId ?? record?.upstreamId ?? undefined,
-        });
-        if (record) await this.recorder.writeReleaseSnapshot(record.id, release);
-      }
-      if (record)
+      // 每个attempt独立恢复；不能只解冻最后一次而丢失前次供应商风险。
+      const records = await this.recorder.pendingForGeneration(row.id);
+      for (const record of records) {
+        const holdId = record.holdId ?? (row.usageRecordId === record.id ? row.holdId : null);
+        if (holdId) {
+          const release = await this.billing.release({
+            holdId,
+            reason: 'call_failed',
+            usageRecordId: record.id,
+            upstreamId: record.upstreamId,
+          });
+          await this.recorder.writeReleaseSnapshot(record.id, release);
+        }
         await this.recorder.finish(record.id, {
           status: 'failed',
           errorCode: 'interrupted',
@@ -75,8 +75,9 @@ export class GatewayMaintenance implements OnModuleInit {
           outputTokens: 0,
           estimated: false,
           latencyMs: 0,
-          retryCount: 0,
+          retryCount: record.retryCount,
         });
+      }
       await this.cache.save(row, { ok: false, error: 'provider_unavailable' }, 'complete');
     }
     await this.database.db

@@ -1,5 +1,5 @@
 /** 全系统调用上游的唯一出口：选型/闸门→占位→冻结→调用→保存结果→结算。 */
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   BACKGROUND_PURPOSES,
   BUDGET_EXEMPT_PURPOSES,
@@ -14,6 +14,7 @@ import {
   type IdentityDirectoryPort,
   type IdentityAccountStatusPort,
   type MediaSystemPort,
+  type ReserveInput,
 } from '@weiban/contracts';
 import { APP_CONFIG, CLOCK, type AppConfig, type Clock } from '../../../platform/index.js';
 import { MEDIA_SYSTEM_PORT } from '../../media/index.js';
@@ -44,10 +45,19 @@ import {
   type CachedResult,
 } from './generation-cache.js';
 import { ModelResolver, ModelStatusService, type ResolvedModel } from './resolver.js';
-import { FAILOVER_CATEGORIES, UpstreamScheduler, type RouteCandidate } from './scheduler.js';
+import { FAILOVER_CATEGORIES, UpstreamScheduler } from './scheduler.js';
 import { UpstreamService } from './upstreams.js';
 import { UsageRecorder } from './usage.js';
 import { CatalogService } from './catalog.js';
+import { BillingBoundsService, boundsEvidence, type VerifiedRoute } from './billing-bounds.js';
+
+type TextCeiling = NonNullable<ReserveInput['ceiling']>;
+type GatewayInternal = {
+  fallbackModelKey?: string;
+  billingPlan?: TextCeiling;
+  priceVersionId?: string;
+  retry?: boolean;
+};
 
 const DEFAULT_TOKENS: Partial<Record<GenerateTextInput['purpose'], number>> = {
   chat_reply: 600,
@@ -104,6 +114,7 @@ export class ModelGateway implements ModelGatewayPort {
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(MEDIA_SYSTEM_PORT) private readonly media: MediaSystemPort,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Optional() @Inject(BillingBoundsService) private readonly bounds?: BillingBoundsService,
   ) {}
   getModelStatus(userId: string, characterId: string | null) {
     return this.status.getModelStatus(userId, characterId);
@@ -111,10 +122,7 @@ export class ModelGateway implements ModelGatewayPort {
   /**
    * internal 只供网关自己的降级使用（不属于契约）：fallbackModelKey = 空输出后改用的备用模型。
    */
-  async generateText(
-    input: GenerateTextInput,
-    internal?: { fallbackModelKey?: string },
-  ): Promise<CachedResult> {
+  async generateText(input: GenerateTextInput, internal?: GatewayInternal): Promise<CachedResult> {
     if (!this.valid(input) || (await this.accounts.getAccountStatus(input.userId)) !== 'active')
       return { ok: false, error: 'bad_request' };
     if (
@@ -194,14 +202,74 @@ export class ModelGateway implements ModelGatewayPort {
           },
         ];
     }
-    if (candidates.length === 0 || !(await this.scheduler.acquireUser(input.userId))) {
+    const requested = input.maxOutputTokens ?? DEFAULT_TOKENS[input.purpose] ?? 8000;
+    const verified = await this.bounds?.text(model.modelKey, candidates, imageCount, requested);
+    if (!verified) {
+      const result: CachedResult = { ok: false, error: 'model_unavailable' };
+      await this.cache.save(row, result, 'complete');
+      return result;
+    }
+    let ceiling: TextCeiling = internal?.billingPlan ?? {
+      ...verified.ceiling,
+      pricingModels: [model.modelKey],
+    };
+    if (internal?.billingPlan && !internal.billingPlan.pricingModels?.includes(model.modelKey)) {
+      const result: CachedResult = { ok: false, error: 'model_unavailable' };
+      await this.cache.save(row, result, 'complete');
+      return result;
+    }
+    if (
+      !internal?.billingPlan &&
+      FALLBACK_PURPOSES.includes(input.purpose) &&
+      input.modelRole === 'background' &&
+      input.meta?.scenarioMode !== 'adult'
+    ) {
+      const alternatives = [
+        await this.catalog.defaultModel('background'),
+        await this.catalog.defaultModel('chat'),
+      ];
+      const fallback = alternatives.find(
+        (entry) =>
+          entry?.entry &&
+          entry.entry.modelKey !== model.modelKey &&
+          !entry.entry.capabilities.includes('adult_content'),
+      );
+      if (fallback?.entry) {
+        const routes = await this.scheduler.plan(
+          fallback.entry.modelKey,
+          input.conversationId ?? null,
+        );
+        const proof = await this.bounds!.text(
+          fallback.entry.modelKey,
+          routes,
+          imageCount,
+          requested,
+        );
+        if (proof)
+          ceiling = {
+            usage: {
+              inputTokens: Math.max(
+                ceiling.usage.inputTokens ?? 0,
+                proof.ceiling.usage.inputTokens ?? 0,
+              ),
+              outputTokens: Math.max(
+                ceiling.usage.outputTokens ?? 0,
+                proof.ceiling.usage.outputTokens ?? 0,
+              ),
+            },
+            pricingModels: [model.modelKey, fallback.entry.modelKey].sort(),
+            evidence: boundsEvidence([ceiling.evidence, proof.ceiling.evidence]),
+          };
+      }
+    }
+    if (!(await this.scheduler.acquireUser(input.userId))) {
       // 没有可用账号，或超过每用户并发 / 每分钟上限：按「模型暂时不可用」返回，不冻结、不扣费
       const result: CachedResult = { ok: false, error: 'provider_unavailable' };
       await this.cache.save(row, result, 'complete');
       return result;
     }
     try {
-      return await this.callUpstreams(input, internal, row, model, candidates, imageCount);
+      return await this.callUpstreams(input, internal, row, model, verified.routes, ceiling);
     } finally {
       this.scheduler.releaseUser(input.userId);
     }
@@ -210,246 +278,275 @@ export class ModelGateway implements ModelGatewayPort {
   /** 冻结 → 按候选账号调用（失败切换）→ 记账。v3.4 从 generateText 拆出。 */
   private async callUpstreams(
     input: GenerateTextInput,
-    internal: { fallbackModelKey?: string } | undefined,
+    internal: GatewayInternal | undefined,
     row: GenerationRow,
     model: ResolvedModel,
-    candidates: RouteCandidate[],
-    imageCount: number,
+    candidates: VerifiedRoute[],
+    ceiling: TextCeiling,
   ): Promise<CachedResult> {
-    const maxOutputTokens = input.maxOutputTokens ?? DEFAULT_TOKENS[input.purpose] ?? 8000;
-    const startedAt = this.clock.now();
-    const first = candidates[0]!;
-    const usage = await this.recorder.start({
-      input: { ...input, idempotencyKey: `gateway:${row.id}` },
-      ...model,
-      upstreamId: first.upstreamId,
-      upstreamModelId: first.upstreamModelId,
-      countsAsBackground:
-        !BUDGET_EXEMPT_PURPOSES.includes(input.purpose) &&
-        (BACKGROUND_PURPOSES.includes(input.purpose) || input.countAsBackground === true),
-    });
-    const reserve = await this.billing.estimateAndReserve({
-      account:
-        input.billingOwner === 'user'
-          ? { kind: 'user', userId: input.userId }
-          : { kind: 'platform' },
-      purpose: input.purpose,
-      modelKey: model.modelKey,
-      characterId: input.characterId,
-      estimate: {
-        // T-071：每张图按约 1000 token 估算（实际以上游返回的用量结算）。
-        inputTokens:
-          estimateTokens(input.messages.map((m) => m.content).join('\n')) + imageCount * 1000,
-        outputTokens: maxOutputTokens,
-      },
-      idempotencyKey: `gateway:${row.id}`,
-      safetyOverdraft: input.safetyPriority,
-      countAsBackground: input.countAsBackground,
-    });
-    if (!reserve.ok) {
-      const error = reserve.error === 'price_missing' ? 'model_unavailable' : reserve.error;
-      await this.recorder.finish(usage.record.id, {
-        status: 'failed',
-        errorCode: error,
-        inputTokens: 0,
-        cachedInputTokens: 0,
-        outputTokens: 0,
-        estimated: false,
-        latencyMs: 0,
-        retryCount: 0,
-      });
+    const maximum = input.maxOutputTokens ?? DEFAULT_TOKENS[input.purpose] ?? 8000;
+    const wire = applySystemMessageMode(await this.wireMessages(input), model.systemMessageMode);
+    const wallStart = performance.now();
+    const deadlineAt = new Date(
+      Math.min(
+        row.createdAt.getTime() + 60000,
+        input.deadlineAt ? Date.parse(input.deadlineAt) : Infinity,
+      ),
+    ).toISOString();
+    const budgetMs = Math.max(0, Date.parse(deadlineAt) - this.clock.nowMs());
+    let outputBudget = maximum,
+      emptyRetried = false,
+      index = 0;
+    let priceVersionId = internal?.priceVersionId;
+    let answer: TextResult = { ok: false, category: 'network_error', retryable: false };
+    const maximumAttempts = 3 + candidates.length;
+    const completeFailure = async (
+      error:
+        | 'model_unavailable'
+        | 'provider_unavailable'
+        | 'insufficient_balance'
+        | 'budget_exceeded'
+        | 'content_rejected'
+        | 'bad_request',
+    ): Promise<CachedResult> => {
       const result: CachedResult = { ok: false, error };
       await this.cache.save(row, result, 'complete');
       return result;
-    }
-    const hold = reserve.value;
-    await this.cache.attach(row.id, usage.record.id, hold.holdId, first.upstreamId);
-    await this.recorder.attachHold(usage.record.id, hold);
-    // v3.6：按模型目录的系统消息放法改写（docs/refactor/09 第 5 节）
-    const wire = applySystemMessageMode(await this.wireMessages(input), model.systemMessageMode);
-    const production = this.config.nodeEnv === 'production';
-    let answer: TextResult = { ok: false, category: 'network_error', retryable: true };
-    let retryCount = 0;
-    // AbortSignal 超时覆盖读正文；performance 只测耗时，业务日期始终由 CLOCK 提供。
-    const wallStart = performance.now();
-    const budgetMs = input.deadlineAt
-      ? Math.max(0, Math.min(60000, Date.parse(input.deadlineAt) - this.clock.nowMs()))
-      : 60000;
-    // 空输出 / 截断（docs/refactor/03 第 1.4 B「三步降级」第 2 步）：同模型只重试 1 次，输出额度 ×1.5（思考始终关）。
-    let outputBudget = maxOutputTokens;
-    let emptyRetried = false;
-    const temperature = input.temperature ?? DEFAULT_TEMPERATURE[input.purpose];
-    // v3.4：当前账号下标、占用的账号槽位、是否因本地限流（账号并发 / 频率已满）而失败
-    let idx = 0;
-    let held: string | null = null;
-    let localLimit = false;
-    const maxAttempts = 3 + candidates.length - 1;
-    try {
-      for (let attempt = 0; attempt <= maxAttempts; attempt++) {
-        const remaining = Math.floor(budgetMs - (performance.now() - wallStart));
-        if (remaining <= 0) break;
-        if (held === null) {
-          let found = -1;
-          for (let i = idx; i < candidates.length; i++) {
-            if (this.scheduler.acquireAccount(candidates[i]!)) {
-              found = i;
-              break;
-            }
-          }
-          if (found < 0) {
-            answer = { ok: false, category: 'rate_limited', retryable: false };
-            localLimit = true;
-            break;
-          }
-          idx = found;
-          held = candidates[idx]!.upstreamId;
-        }
-        const c = candidates[idx]!;
-        answer = isFakeModel(c.upstreamModelId, production)
-          ? fakeAnswer(input, wire)
-          : await this.upstreams.withApiKey(c.upstreamId, (apiKey) =>
-              this.adapter.generate({
-                baseUrl: c.baseUrl,
-                apiKey,
-                model: c.upstreamModelId,
-                messages: wire,
-                maxOutputTokens: outputBudget,
-                temperature,
-                responseFormat: input.responseFormat,
-                idempotencyKey: emptyRetried ? `gateway:${row.id}:e` : `gateway:${row.id}`,
-                timeoutMs: Math.min(20000, remaining),
-                thinking: 'off',
-              }),
-            );
-        if (answer.ok) break;
-        // 失败切换：换下一个账号立即再试（不等待），并记这个账号一次失败
-        if (FAILOVER_CATEGORIES.includes(answer.category) && idx + 1 < candidates.length) {
-          await this.scheduler.recordFailure(c.upstreamId, answer.category).catch(() => undefined);
-          this.scheduler.releaseAccount(c.upstreamId);
-          held = null;
-          idx++;
-          retryCount++;
-          continue;
-        }
-        if (!answer.retryable || attempt === maxAttempts) break;
-        if (answer.category === 'empty_output' || answer.category === 'truncated') {
-          if (emptyRetried) break;
-          emptyRetried = true;
-          outputBudget = Math.min(32000, Math.ceil(maxOutputTokens * 1.5));
-          retryCount++;
-          continue;
-        }
-        const delay = [2000, 5000, 15000][Math.min(attempt, 2)]! * (0.85 + Math.random() * 0.3);
-        if (performance.now() - wallStart + delay >= budgetMs) break;
-        await this.wait(Math.round(delay));
-        retryCount++;
-      }
-    } finally {
-      if (held !== null) this.scheduler.releaseAccount(held);
-    }
-    const final = candidates[idx]!;
-    if (final.upstreamId !== first.upstreamId || final.upstreamModelId !== first.upstreamModelId) {
-      await this.recorder.setUpstream(usage.record.id, final.upstreamId, final.upstreamModelId);
-      await this.cache.attach(row.id, usage.record.id, hold.holdId, final.upstreamId);
-    }
-    const latencyMs = Math.round(performance.now() - wallStart);
-    if (!answer.ok) {
-      const category = answer.category;
-      const release = await this.billing.release({
-        holdId: hold.holdId,
-        reason: category === 'content_rejected' ? 'call_rejected' : 'call_failed',
-        upstreamUsage: answer.usage
-          ? {
-              inputTokens: answer.usage.inputTokens,
-              cachedInputTokens: answer.usage.cachedInputTokens,
-              outputTokens: answer.usage.outputTokens,
-            }
-          : undefined,
-        usageRecordId: usage.record.id,
-        startedAt: startedAt.toISOString(),
-        upstreamId: final.upstreamId,
-      });
-      await this.recorder.writeReleaseSnapshot(usage.record.id, release);
-      await this.recorder.finish(usage.record.id, {
-        status: 'failed',
-        errorCode: localLimit ? 'account_limited' : category,
-        ...(answer.usage ?? {
-          inputTokens: 0,
-          cachedInputTokens: 0,
-          outputTokens: 0,
-          estimated: false,
-        }),
-        latencyMs,
-        retryCount,
-      });
-      const emptyLike = category === 'empty_output' || category === 'truncated';
-      if (emptyLike) {
-        // 第 3 步：模型本身的问题（不是上游故障），不改上游状态；告警后台任务换备用模型再试一次。
-        this.logger.warn(
-          `model_empty_output purpose=${input.purpose} model=${model.modelKey} category=${category}`,
-        );
-        const fallback = await this.emptyOutputFallback(input, model.modelKey, internal);
-        if (fallback) {
-          await this.cache.save(row, fallback, 'complete');
-          return fallback;
-        }
-      }
-      // v3.4：账号健康按连续失败阈值处理（ADR-0032），本地限流不算账号故障
-      if (
-        !localLimit &&
-        category !== 'content_rejected' &&
-        category !== 'bad_request' &&
-        !emptyLike
-      )
-        await this.scheduler.recordFailure(final.upstreamId, category);
-      const result: CachedResult = {
-        ok: false,
-        error:
-          category === 'content_rejected'
-            ? 'content_rejected'
-            : category === 'bad_request'
-              ? 'bad_request'
-              : 'provider_unavailable',
-      };
-      await this.cache.save(row, result, 'complete');
-      return result;
-    }
-    await this.scheduler.recordSuccess(final.upstreamId).catch(() => undefined);
-    const result: CachedResult = {
-      ok: true,
-      value: {
-        text: answer.text,
-        modelKey: model.modelKey,
-        usage: answer.usage,
-        chargedMicros: 0,
-        latencyMs,
-        usageRecordId: usage.record.id,
-      },
     };
-    // 保存网络结果后再扣款；崩溃恢复走 finalize，不再调用供应商。
-    await this.cache.save(row, result, 'result');
-    await this.recorder.finish(usage.record.id, {
-      status: 'succeeded',
-      ...answer.usage,
-      latencyMs,
-      retryCount,
-    });
-    return this.finalize((await this.cache.get(row.id))!, result);
+    for (let ordinal = 0; ordinal < maximumAttempts; ordinal++) {
+      const remaining = Math.floor(budgetMs - (performance.now() - wallStart));
+      if (remaining <= 0) break;
+      let candidate = candidates[index];
+      while (candidate && !this.scheduler.acquireAccount(candidate))
+        candidate = candidates[++index];
+      if (!candidate) break;
+      const route = candidate;
+      const key = 'gateway:' + row.id + ':attempt:' + ordinal;
+      const startedAt = this.clock.now();
+      const usage = await this.recorder.start({
+        input: { ...input, idempotencyKey: key },
+        ...model,
+        upstreamId: route.upstreamId,
+        upstreamModelId: route.upstreamModelId,
+        countsAsBackground:
+          !BUDGET_EXEMPT_PURPOSES.includes(input.purpose) &&
+          (BACKGROUND_PURPOSES.includes(input.purpose) || input.countAsBackground === true),
+      });
+      try {
+        if (!usage.created) return completeFailure('provider_unavailable');
+        const reserve = await this.billing.estimateAndReserve({
+          account:
+            input.billingOwner === 'user'
+              ? { kind: 'user', userId: input.userId }
+              : { kind: 'platform' },
+          purpose: input.purpose,
+          modelKey: model.modelKey,
+          characterId: input.characterId,
+          estimate: ceiling.usage,
+          ceiling,
+          idempotencyKey: key,
+          countAsBackground: input.countAsBackground,
+          reservePlatformRisk: ordinal > 0 || internal?.retry === true,
+          priceVersionId,
+        });
+        if (!reserve.ok) {
+          await this.recorder.writeReleaseSnapshot(usage.record.id, {
+            absorbedCostMicros: 0,
+            costKnown: true,
+          });
+          await this.recorder.finish(usage.record.id, {
+            status: 'failed',
+            errorCode: reserve.error,
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            outputTokens: 0,
+            estimated: false,
+            latencyMs: 0,
+            retryCount: ordinal,
+          });
+          return completeFailure(
+            reserve.error === 'price_missing' ? 'model_unavailable' : reserve.error,
+          );
+        }
+        const hold = reserve.value;
+        priceVersionId ??= hold.priceVersionId;
+        await this.cache.attach(row.id, usage.record.id, hold.holdId, route.upstreamId);
+        await this.recorder.attachHold(usage.record.id, hold);
+        const attemptId = await this.recorder.startAttempt({
+          generationId: row.id,
+          userId: input.userId,
+          ordinal,
+          modelKey: model.modelKey,
+          upstreamId: route.upstreamId,
+          upstreamModelId: route.upstreamModelId,
+          usageRecordId: usage.record.id,
+          holdId: hold.holdId,
+          boundSnapshot: { ceiling, route: route.billingBounds, priceVersionId },
+        });
+        const currentProof = await this.bounds!.get(
+          model.modelKey,
+          route.upstreamId,
+          route.upstreamModelId,
+        );
+        const sent =
+          !!currentProof &&
+          boundsEvidence(currentProof) === boundsEvidence(route.billingBounds) &&
+          !!this.billing.beginCall &&
+          (await this.billing.beginCall({
+            holdId: hold.holdId,
+            usageRecordId: usage.record.id,
+            upstreamId: route.upstreamId,
+            upstreamModelId: route.upstreamModelId,
+          }));
+        if (sent) {
+          await this.recorder.markAttemptSent(attemptId);
+          try {
+            answer = isFakeModel(route.upstreamModelId, this.config.nodeEnv === 'production')
+              ? fakeAnswer(input, wire)
+              : await this.upstreams.withApiKey(route.upstreamId, (apiKey) =>
+                  this.adapter.generate({
+                    baseUrl: route.baseUrl,
+                    apiKey,
+                    model: route.upstreamModelId,
+                    messages: wire,
+                    maxOutputTokens: Math.min(
+                      outputBudget,
+                      route.billingBounds.text!.maxOutputTokens,
+                    ),
+                    outputParameter: route.billingBounds.text!.outputParameter,
+                    temperature: input.temperature ?? DEFAULT_TEMPERATURE[input.purpose],
+                    responseFormat: input.responseFormat,
+                    idempotencyKey: key,
+                    timeoutMs: Math.min(20000, remaining),
+                    thinking: 'off',
+                  }),
+                );
+          } catch {
+            answer = { ok: false, category: 'network_error', retryable: true };
+          }
+        } else answer = { ok: false, category: 'provider_error', retryable: false };
+        const known = !!answer.usage && !answer.usage.estimated;
+        await this.recorder.finishAttempt(
+          attemptId,
+          answer.usage ?? null,
+          known,
+          answer.ok ? null : answer.category,
+        );
+        const latencyMs = Math.round(performance.now() - wallStart);
+        if (answer.ok) {
+          const result: CachedResult = {
+            ok: true,
+            value: {
+              text: answer.text,
+              modelKey: model.modelKey,
+              usage: answer.usage,
+              chargedMicros: 0,
+              latencyMs,
+              usageRecordId: usage.record.id,
+            },
+          };
+          // 先保存结果；结算重放不能再次发送供应商。
+          await this.cache.save(row, result, 'result');
+          await this.recorder.finish(usage.record.id, {
+            status: 'succeeded',
+            ...answer.usage,
+            latencyMs,
+            retryCount: ordinal,
+          });
+          await this.scheduler.recordSuccess(route.upstreamId).catch(() => undefined);
+          const completed = await this.finalize((await this.cache.get(row.id))!, result);
+          if (!known)
+            await this.bounds!.pauseUnknown(model.modelKey, route, {
+              checkedAt: startedAt.toISOString(),
+            });
+          return completed;
+        }
+        const released = await this.billing.release({
+          holdId: hold.holdId,
+          reason: sent
+            ? answer.category === 'content_rejected'
+              ? 'call_rejected'
+              : 'call_failed'
+            : 'cancelled',
+          upstreamUsage: known ? answer.usage : undefined,
+          usageRecordId: usage.record.id,
+          startedAt: startedAt.toISOString(),
+          upstreamId: route.upstreamId,
+        });
+        await this.recorder.writeReleaseSnapshot(usage.record.id, released);
+        await this.recorder.finish(usage.record.id, {
+          status: 'failed',
+          errorCode: sent ? answer.category : 'route_risk_blocked',
+          ...(answer.usage ?? {
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            outputTokens: 0,
+            estimated: false,
+          }),
+          latencyMs,
+          retryCount: ordinal,
+        });
+        if (sent && !known)
+          await this.bounds!.pauseUnknown(model.modelKey, route, {
+            checkedAt: startedAt.toISOString(),
+          });
+        if (!sent) {
+          index++;
+          continue;
+        }
+        if (answer.category === 'content_rejected' || answer.category === 'bad_request')
+          return completeFailure(answer.category);
+        const empty = answer.category === 'empty_output' || answer.category === 'truncated';
+        if (!known || FAILOVER_CATEGORIES.includes(answer.category)) {
+          await this.scheduler
+            .recordFailure(route.upstreamId, answer.category)
+            .catch(() => undefined);
+          index++;
+          if (index < candidates.length) continue;
+          break;
+        }
+        if (empty && !emptyRetried) {
+          emptyRetried = true;
+          outputBudget = Math.min(32000, Math.ceil(maximum * 1.5));
+          continue;
+        }
+        if (empty || !answer.retryable) break;
+        const delay = [2000, 5000, 15000][Math.min(ordinal, 2)]!;
+        if (performance.now() - wallStart + delay >= budgetMs) break;
+        await this.wait(delay);
+      } finally {
+        this.scheduler.releaseAccount(route.upstreamId);
+      }
+    }
+    if (!answer.ok && (answer.category === 'empty_output' || answer.category === 'truncated')) {
+      const fallback = await this.emptyOutputFallback({ ...input, deadlineAt }, model.modelKey, {
+        ...internal,
+        billingPlan: ceiling,
+        priceVersionId,
+        retry: true,
+      });
+      if (fallback) {
+        await this.cache.save(row, fallback, 'complete');
+        return fallback;
+      }
+    }
+    return completeFailure('provider_unavailable');
   }
   async finalize(row: GenerationRow, result: CachedResult): Promise<CachedResult> {
     if (!result.ok || !row.holdId || !row.upstreamId) throw new Error('网关待结算结果缺失');
+    const record = await this.recorder.byId(result.value.usageRecordId);
     const settled = await this.billing.settle({
       holdId: row.holdId,
       usageRecordId: result.value.usageRecordId,
+      actualKnown: !result.value.usage.estimated,
       actual: {
         inputTokens: result.value.usage.inputTokens,
         cachedInputTokens: result.value.usage.cachedInputTokens,
         outputTokens: result.value.usage.outputTokens,
       },
-      startedAt: row.createdAt.toISOString(),
+      startedAt: (record?.createdAt ?? row.createdAt).toISOString(),
       upstreamId: row.upstreamId,
     });
-    const record = await this.recorder.byIdempotencyKey(`gateway:${row.id}`);
     if (record?.status === 'pending') {
       await this.recorder.finish(result.value.usageRecordId, {
         status: 'succeeded',
@@ -474,7 +571,7 @@ export class ModelGateway implements ModelGatewayPort {
   private async emptyOutputFallback(
     input: GenerateTextInput,
     currentModelKey: string,
-    internal?: { fallbackModelKey?: string },
+    internal?: GatewayInternal,
   ): Promise<CachedResult | null> {
     if (internal?.fallbackModelKey) return null;
     if (!FALLBACK_PURPOSES.includes(input.purpose) || input.modelRole !== 'background') return null;
@@ -491,8 +588,8 @@ export class ModelGateway implements ModelGatewayPort {
     );
     if (!target?.entry) return null;
     const result = await this.generateText(
-      { ...input, idempotencyKey: `${input.idempotencyKey}:fb`.slice(0, 200) },
-      { fallbackModelKey: target.entry.modelKey },
+      { ...input, idempotencyKey: `fallback:${boundsEvidence(input.idempotencyKey)}` },
+      { ...internal, fallbackModelKey: target.entry.modelKey },
     );
     return result.ok ? result : null;
   }

@@ -47,7 +47,7 @@ import {
   splitSettlementCost,
   validUsage,
 } from '../domain/rules.js';
-import { accounts, dailySpend, holds } from '../infra/db/schema.js';
+import { accounts, dailySpend, holds, priceVersions } from '../infra/db/schema.js';
 import { available, Ledger } from './ledger.js';
 import { PlatformBudget } from './platform-budget.js';
 import { PriceService } from './prices.js';
@@ -140,6 +140,10 @@ export class ReservationService implements BillingReservationPort {
         ] as const;
         if (
           existing.limitSnapshot.evidence !== input.ceiling.evidence ||
+          JSON.stringify(existing.limitSnapshot.pricingModels ?? []) !==
+            JSON.stringify(input.ceiling.pricingModels ?? []) ||
+          (input.priceVersionId !== undefined &&
+            existing.priceVersionId !== input.priceVersionId) ||
           fields.some(
             (k) => (existing.limitSnapshot!.usage[k] ?? 0) !== (input.ceiling!.usage[k] ?? 0),
           )
@@ -154,18 +158,35 @@ export class ReservationService implements BillingReservationPort {
       }
 
       const now = this.clock.now();
-      const version = await this.prices.activeVersion(tx);
+      const version = input.priceVersionId
+        ? (
+            await tx.db
+              .select()
+              .from(priceVersions)
+              .where(eq(priceVersions.id, input.priceVersionId))
+          )[0]
+        : await this.prices.activeVersion(tx);
       if (!version) return fail('price_missing', '没有生效的价目表');
+      if (version.status !== 'active' && version.status !== 'retired')
+        return fail('price_missing', '不能按未生效价目表调用');
       const rows = await this.prices.modelPrices(tx, version.id, input.modelKey);
       if (rows.length === 0) return fail('price_missing', '当前价目表没有该模型的价格');
       if (!input.ceiling || !input.ceiling.evidence.trim() || !validUsage(input.ceiling.usage))
         return fail('price_missing', '需配置并验证计费上限');
       const priced = priceUsageCeiling(rows, input.ceiling.usage);
       if (!priced.ok) return fail('price_missing', `当前价目表缺少 ${priced.missingUnit} 的价格`);
-      const amount = priced.sellMicros;
-      if (!Number.isSafeInteger(amount) || !Number.isSafeInteger(priced.costMicros))
+      let amount = priced.sellMicros;
+      let reservedCost = priced.costMicros;
+      for (const alternative of new Set(input.ceiling.pricingModels ?? [])) {
+        const alternativeRows = await this.prices.modelPrices(tx, version.id, alternative);
+        const upper = priceUsageCeiling(alternativeRows, input.ceiling.usage);
+        if (!alternativeRows.length || !upper.ok)
+          return fail('price_missing', '备用模型缺少完整上限定价');
+        amount = Math.max(amount, upper.sellMicros);
+        reservedCost = Math.max(reservedCost, upper.costMicros);
+      }
+      if (!Number.isSafeInteger(amount) || !Number.isSafeInteger(reservedCost))
         return fail('price_missing', '计费上限超出安全金额范围');
-      const reservedCost = priced.costMicros;
 
       // 余额（平台账户余额可以为负，只受平台每日上限约束，billing.md 第 7 节第 3 条）
       if (kind === 'user' && amount > 0 && available(account) < amount) {
@@ -195,7 +216,10 @@ export class ReservationService implements BillingReservationPort {
       // 平台每日上限：原子预留。v3.3（ADR-0032）：只约束平台账户（管理员侧任务）；
       // 用户真实付费调用不占平台预算；已知售价0但成本>0则由平台承担，先预留其成本。
       const budgetDay = localDate(now, PLATFORM_TIME_ZONE);
-      const usesPlatformBudget = kind === 'platform' || (amount === 0 && reservedCost > 0);
+      const usesPlatformBudget =
+        kind === 'platform' ||
+        input.reservePlatformRisk === true ||
+        (amount === 0 && reservedCost > 0);
       if (usesPlatformBudget && !(await this.budget.reserve(tx, budgetDay, reservedCost))) {
         return fail('budget_exceeded', '平台今日总花费已达上限');
       }

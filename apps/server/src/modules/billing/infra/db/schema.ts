@@ -155,6 +155,7 @@ export const holds = billingSchema.table(
     limitSnapshot: jsonb('limit_snapshot').$type<{
       usage: import('@weiban/contracts').UsageQuantities;
       evidence: string;
+      pricingModels?: string[];
     }>(),
     riskSnapshot: jsonb('risk_snapshot').$type<import('@weiban/contracts').CallRiskSnapshot>(),
     releaseSnapshot: jsonb('release_snapshot').$type<import('@weiban/contracts').ReleaseOutput>(),

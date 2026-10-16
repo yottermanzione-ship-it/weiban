@@ -48,6 +48,7 @@ export class PlatformBudget {
 
   /** 预留；超上限返回 false（调用方返回 budget_exceeded，不留下任何冻结）。 */
   async reserve(tx: DbTx, day: string, costMicros: number): Promise<boolean> {
+    if (costMicros === 0) return true; // 已证明零成本不消耗预算，不能被历史异常风险占用误拒。
     await this.ensureDay(tx, day);
     const { rows } = await tx.query<{
       cap: string;

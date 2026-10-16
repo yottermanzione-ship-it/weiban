@@ -22,7 +22,7 @@ import {
   type GenerateTextInput,
   type ModelPurpose,
 } from '@weiban/contracts';
-import { and, desc, eq, gte, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lt, like, or, sql, type SQL } from 'drizzle-orm';
 import {
   AUDIT_LOG,
   AppError,
@@ -34,7 +34,7 @@ import {
   type Database,
 } from '../../../platform/index.js';
 import { USAGE_DAY_TIME_ZONE, decodeCursor, encodeCursor } from '../domain/rules.js';
-import { upstreams, usageRecords } from '../infra/db/schema.js';
+import { upstreams, usageRecords, generationAttempts } from '../infra/db/schema.js';
 
 type UsageRow = typeof usageRecords.$inferSelect;
 /** v3.6：稳定开头字符数 → 估算 token（中文为主，约 0.7～0.8 token / 字，取 0.75）。 */
@@ -83,6 +83,42 @@ export class UsageRecorder {
     @Inject(DATABASE) private readonly database: Database,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
+
+  async startAttempt(input: {
+    generationId: string;
+    userId: string;
+    ordinal: number;
+    modelKey: string;
+    upstreamId: string;
+    upstreamModelId: string;
+    usageRecordId: string;
+    holdId: string;
+    boundSnapshot: unknown;
+  }) {
+    const id = newId();
+    await this.database.db
+      .insert(generationAttempts)
+      .values({ ...input, id, phase: 'reserved', createdAt: this.clock.now() });
+    return id;
+  }
+  async markAttemptSent(id: string) {
+    await this.database.db
+      .update(generationAttempts)
+      .set({ phase: 'sent' })
+      .where(eq(generationAttempts.id, id));
+  }
+  async finishAttempt(id: string, usage: unknown, known: boolean, errorCode: string | null) {
+    await this.database.db
+      .update(generationAttempts)
+      .set({
+        phase: 'finished',
+        reportedUsage: usage,
+        usageState: known ? 'reported' : 'unknown',
+        errorCode,
+        finishedAt: this.clock.now(),
+      })
+      .where(eq(generationAttempts.id, id));
+  }
 
   /**
    * 调用前建一条 pending 记录。同一幂等键已有记录时不新建，返回已有的（created = false），
@@ -141,6 +177,24 @@ export class UsageRecorder {
       .from(usageRecords)
       .where(eq(usageRecords.idempotencyKey, key));
     return row ?? null;
+  }
+  async byId(id: string): Promise<UsageRow | null> {
+    const [row] = await this.database.db.select().from(usageRecords).where(eq(usageRecords.id, id));
+    return row ?? null;
+  }
+  async pendingForGeneration(id: string): Promise<UsageRow[]> {
+    return this.database.db
+      .select()
+      .from(usageRecords)
+      .where(
+        and(
+          eq(usageRecords.status, 'pending'),
+          or(
+            eq(usageRecords.idempotencyKey, `gateway:${id}`),
+            like(usageRecords.idempotencyKey, `gateway:${id}:attempt:%`),
+          ),
+        ),
+      );
   }
 
   /** v3.4：失败切换后改记实际调用的账号与上游模型名。 */
