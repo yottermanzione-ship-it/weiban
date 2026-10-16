@@ -4,6 +4,8 @@
 
 ## 2026-10-14 Codex 开发接管（本轮最新）
 
+- 当前串行推进积分批次：已续接原chat_forward，专用C:\wb-dev\wb-points-prehold / codex/points-prehold，基线50dd96f；先交最大费用/过期结算/平台可信付费及生态不足提示方案，再实施。停止邀请码与注册/充值新增赠分一并按C8核现状清理，历史余额流水不追扣。任务docs/tasks/2026-10-16-points-prehold-continuation.md。尚未分配新迁移/声称完成；不占用给总经理的5190 q样例。
+
 - 2026-10-16最新：q-features已合050afbd并快进共享main，交付2725027b51fac8f630275e997bbd47e4366df58b。浏览器连接恢复后主会话完成31张实际组件点按/失败重试/650ms长按/窄屏滚动截图及4份JSON，免费0→收费200明确再确认/同键重试和旧键换号已操作；样例导航改中文按钮。相关类型/lint/依赖边界/生成/server-web-admin构建通过（web414630）。这是开发自查，真实HTTP/PG/0097～0100/资金/多端/Safari未验；会员撤销confirm阻塞工具，关闭旧页恢复，撤销操作未验。交接与完整边界见docs/handoffs/2026-10-16-q-features.md及docs/web/q-features-2026-10-16/browser-check.md。香港未部署。契约主线3.15，下一空闲迁移0101；以下“等待浏览器/未合入”均为此前断点历史。
 
 - 2026-10-16本轮断点：q-features已保护至b6a27fdc179f165b63108a9145aad3450b87f148（业务a37017d，检查/可恢复样例19b8f7f、73cc699）。会员真实到期基础、申请免费次数与同事务冻结、我的状态/标题、商店、帮助投诉及后台、插件入口均已写入专用q分支；相关类型/lint/依赖边界/生成与server/web/admin构建有开发检查记录，web414630。主会话已审代码并推动修正周期时间、旧编号、停用包管理、到期重绘、跨资源草稿及双顶栏，但**未完成GUI/真实HTTP/PG/迁移/资金实测，因此未合入local/trunk或部署**。IAB创建返回notavailable、app打开queued；已请用户恢复本会话浏览器。5190样例当前保留，四个apps/web/q-preview*为专用worktree未跟踪文件，可由q分支docs/web/q-features-2026-10-16恢复；交接docs/handoffs/2026-10-16-q-features.md在q分支。恢复后续接原代理完成实际点按，再决定合入；不把这批记为完成验收。
