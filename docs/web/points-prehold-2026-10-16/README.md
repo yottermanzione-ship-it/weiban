@@ -1,14 +1,14 @@
-# 积分上限组件自查入口（待实际浏览器）
+# 积分上限组件开发自查
 
-本地真实组件加模拟API；不连接真实钱包、供应商或数据库。入口HTML和TSX经Vite取回200只证明模块可取，不代表GUI通过。子代理IAB实际返回notavailable，由主会话代点；尚无本轮GUI截图。
+本地真实组件加模拟API；不连接真实钱包、供应商或数据库。主会话已实际操作并保存12PNG、3份请求JSON、2份console JSON，详见browser-check.md。子代理IAB实际notavailable，未独立操作。入口HTTP200只证明模块可取，不作为GUI证据。
 
 - 后台：http://127.0.0.1:5193/points-preview.html#/models?tab=models
 - 网页：http://127.0.0.1:5193/points-preview.html?web=1#/prices
-- Vite进程本轮63641，服务不保证跨会话一直运行；恢复命令在apps/web运行 `pnpm exec vite --config points-preview.config.ts --host 127.0.0.1`。
-- 4临时文件为apps/web/points-preview.html、points-preview.tsx、points-preview-api.ts、points-preview.config.ts。只供本地自查，不混入产品入口。
+- GUI后4临时源文件已移除、5193服务已停止；不保证旧进程会跨会话运行。
+- 如需恢复，将本目录4份同名.fixture.txt复制回apps/web并去掉.fixture.txt后缀，在apps/web运行 `pnpm exec vite --config points-preview.config.ts --host 127.0.0.1`。只供本地组件自查，不混入产品入口。
 - 独立origin localStorage键weiban:points-preview-20261016，无敏感样例数据。
 
-## 主会话待点步骤
+## 已执行流程对应的恢复步骤
 
 1. 模型列表看到“需配置计费上限”。编辑模型，展开第1条路由计费上限，输入非法JSON保存应在当前表单报错并保留草稿。
 2. 页顶折叠区有可复制的格式样例（example.com占位，仅样例，不是供应商证据）。用此格式填入，打开页顶“下一次写入失败”后保存，失败保留JSON与其它草稿；再次保存成功，列表刷新后重开核JSON持久。
