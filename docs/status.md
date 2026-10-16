@@ -4,6 +4,8 @@
 
 ## 2026-10-14 Codex 开发接管（本轮最新）
 
+- 最新主会话进行中断点见docs/handoffs/2026-10-16-codex-pm-live-checkpoint.md：停止赠分已合；生态一次提示与分摊对账两块已由原积分代理合入开发分支，完整积分批次尚未合主线/部署。继续等最终交付、核代码与实际GUI，勿按WIP/旧声明当成可上线。
+
 - 积分进行中补充：代理已续接，0d8e9ff与7c4bce7保护未知风险、调用前一次授权及精确路由持久闸门；outbox目录暂停是异步双保险，不能冒称风险入账同事务暂停目录。仍未合主线，网关接线尚在做。主会话另在codex/ecology-insufficient-notice完成鉴权POST消费一次提醒与前台会话隔离（交付33a9f09，业务6240a0d），已交原代理安全合入；type/lint/build/契约生成及实际组件6图+请求toast记录通过，PG/真实HTTP/多设备未验。详情docs/handoffs/2026-10-16-codex-ecology-notice.md在该分支，暂非主线文件。
 
 - 2026-10-16最新：C8停止邀请码与新增赠分已独立开发、自测并合入（交付de579fb，业务WIP d407d64）。注册不校验/消耗邀请码、不再发赠分，历史注册事件也只建钱包；邀请码HTTP/CLI停用，后台旧页说明/默认角色库；旧充值赠送对外0、非0写入拒绝，历史余额保留。相关typecheck/lint/depcruise/server-web-admin构建及Android生成检查通过，实际浏览器5图/2请求JSON：取消注册字段、后台菜单/旧页、充值失败草稿/成功及bonusPercent=0。仅开发自查，真实DB/事件重放/线上未验、未部署。交接docs/handoffs/2026-10-16-codex-stop-gifts.md。积分代理中断的8文件已保护为2dc1bec，连同88741c4/60021ad仍为未合入WIP；已续接原代理，模型网关/未知成本风险尚未完成。
