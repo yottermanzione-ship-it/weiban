@@ -64,11 +64,8 @@ export type AuthResponse = z.infer<typeof AuthResponse>;
 export const RegisterRequest = z.object({
   username: Username,
   password: Password,
-  /**
-   * 选填（2026-10-12 总经理调整）：不填也能注册，但没有注册赠送余额；
-   * 填了就校验，无效报 invite_invalid。没填时省略该字段，不要传空字符串。
-   */
-  inviteCode: z.string().min(6).max(64).optional(),
+  /** @deprecated 11 C8：邀请码已取消；仅兼容旧客户端，字段被忽略。 */
+  inviteCode: z.string().max(64).optional(),
   device: DeviceInfo,
 });
 
@@ -350,15 +347,14 @@ export const IdentityAdminEndpoints = {
     auth: 'admin',
     body: CreateInviteRequest,
     response: Invite,
-    summary:
-      '生成一次性邀请码，成功 201；支持请求头 Idempotency-Key。v1.2：可预设注册赠送余额 bonusMicros（ADM-01 第 6 条）',
+    summary: '已停用：兼容旧客户端的入口，始终返回service_unavailable，不再生成邀请码或赠分',
   }),
   listInvites: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/admin/invites`,
     auth: 'admin',
     response: z.object({ items: z.array(Invite) }),
-    summary: '邀请码列表',
+    summary: '已停用：始终返回空列表，历史邀请码表仅保留审计',
   }),
   listPendingDeletions: defineEndpoint({
     method: 'GET',

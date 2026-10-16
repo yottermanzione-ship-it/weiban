@@ -3,7 +3,7 @@
  * 用法见 docs/backend/identity.md 第 7 节。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { INVITE_BONUS_MAX_MICROS, Password, Username } from '@weiban/contracts';
+import { Password, Username } from '@weiban/contracts';
 import { eq, sql } from 'drizzle-orm';
 import {
   AUDIT_LOG,
@@ -46,9 +46,11 @@ export class IdentityCommands {
     @Inject(PASSWORD_HASHER) private readonly hasher: PasswordHasher,
     @Inject(SessionService) private readonly sessions: SessionService,
     @Inject(SettingsService) private readonly settings: SettingsService,
-    @Inject(InviteService) private readonly invites: InviteService,
+    @Inject(InviteService) invites: InviteService,
     @Inject(PurgeVerifier) private readonly verifier: PurgeVerifier,
-  ) {}
+  ) {
+    void invites;
+  }
 
   /** 创建管理员账号（第一个管理员由运维在服务器上执行）。时区默认 Asia/Shanghai，可登录后在资料里改。 */
   async createAdmin(
@@ -191,22 +193,9 @@ export class IdentityCommands {
     });
   }
 
-  /** 生成邀请码；bonusMicros 为注册赠送余额（微元，默认 0）。 */
-  async createInvite(expiresInDays: number | null, bonusMicros = 0): Promise<Invite> {
-    if (
-      expiresInDays !== null &&
-      !(Number.isInteger(expiresInDays) && expiresInDays >= 1 && expiresInDays <= 365)
-    ) {
-      throw new CommandError('有效天数必须是 1–365 的整数');
-    }
-    if (
-      !Number.isInteger(bonusMicros) ||
-      bonusMicros < 0 ||
-      bonusMicros > INVITE_BONUS_MAX_MICROS
-    ) {
-      throw new CommandError('注册赠送余额必须是 0–1000 元');
-    }
-    return this.invites.create({ expiresInDays, bonusMicros }, null);
+  /** @deprecated 旧运维调用兼容入口；不再生成邀请码。 */
+  async createInvite(_expiresInDays: number | null, _bonusMicros = 0): Promise<Invite> {
+    throw new CommandError('邀请码功能已停用，请直接注册');
   }
 
   /** 注销核验：每个登记了删除清单的模块剩余的数据条数（全部为 0 才算删干净）。 */

@@ -1,5 +1,5 @@
 /**
- * billing 的启动登记：注册事件订阅（注册赠送，billing.md 8.3）、删除清单（billing.md 第 11 节）、定时任务
+ * billing 的启动登记：注册事件只建零余额钱包（11 C8取消赠分）、删除清单（billing.md 第 11 节）、定时任务
  * （每分钟清理过期冻结、每天 3:30 北京时间对账前一天）。
  */
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
@@ -78,7 +78,7 @@ export class BillingLifecycle implements OnModuleInit, UserDataOwner {
 
   /**
    * identity.user_registered（billing.md 8.3 第 2 条）：账号仍是 active 才处理；建钱包（已有则跳过）；
-   * 有注册赠送时写一条 admin_grant（幂等键 signup_bonus:{userId}，重复投递只记一次）。
+   * 历史事件的signupBonus也忽略，不再新增赠分；已入账的历史余额保留。
    * 只做数据库写入（订阅者要快，规范 3.4 第 2 条）。
    */
   async onUserRegistered(
@@ -88,27 +88,14 @@ export class BillingLifecycle implements OnModuleInit, UserDataOwner {
     },
     tx: DbTx,
   ): Promise<void> {
-    const { userId, signupBonus } = payload;
+    const { userId } = payload;
     const status = await this.accountStatus.getAccountStatus(userId);
     if (status !== 'active') {
       this.log.info({ status }, '注册事件到达时账号已不是 active，跳过建钱包');
       return;
     }
     const timeZone = (await this.identity.getProfile(userId))?.timeZone;
-    if (!signupBonus) {
-      await this.ledger.createUserAccountIfMissing(tx, userId, timeZone);
-      return;
-    }
-    const account = await this.ledger.lockUserAccount(tx, userId, timeZone);
-    const key = `signup_bonus:${userId}`;
-    if (await this.ledger.findByIdempotencyKey(tx, key)) return;
-    await this.ledger.postEntry(tx, account, {
-      type: 'admin_grant',
-      amountMicros: signupBonus.amountMicros,
-      idempotencyKey: key,
-      reason: SIGNUP_BONUS_REASON,
-      operatorUserId: signupBonus.grantedByUserId,
-    });
+    await this.ledger.createUserAccountIfMissing(tx, userId, timeZone);
   }
 
   // ---------- 删除清单（UserDataOwner） ----------

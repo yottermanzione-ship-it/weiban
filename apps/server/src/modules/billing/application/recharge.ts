@@ -52,8 +52,8 @@ export function toRechargeOptions(stored: StoredOptions): RechargeOptions {
         tierId: t.tierId,
         priceMicros: t.priceMicros,
         points,
-        bonusPercent: t.bonusPercent,
-        bonusPoints: Math.floor((points * t.bonusPercent) / 100),
+        bonusPercent: 0,
+        bonusPoints: 0,
       };
     }),
   };
@@ -91,6 +91,9 @@ export class RechargeService {
     operatorUserId: string,
     input: z.output<typeof UpdateRechargeOptionsRequest>,
   ): Promise<RechargeOptions> {
+    if (input.tiers.some((t) => t.bonusPercent !== 0)) {
+      throw new AppError('bad_request', '积分不再赠送，赠送比例必须为0');
+    }
     const ids = input.tiers.map((t) => t.tierId);
     if (new Set(ids).size !== ids.length) {
       throw new AppError('bad_request', '充值档位编号不能重复');
