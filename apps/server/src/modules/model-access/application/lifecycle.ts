@@ -24,6 +24,8 @@ import {
   selections,
   usageRecords,
   generationResults,
+  generationAttempts,
+  platformPurposeLimits,
 } from '../infra/db/schema.js';
 import { UsageReconciliationService } from './reconciliation.js';
 
@@ -86,7 +88,15 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
         .delete(generationResults)
         .where(eq(generationResults.userId, userId))
         .returning({ id: generationResults.id });
-      return a.length + b.length + c.length + d.length;
+      const e = await tx.db
+        .delete(generationAttempts)
+        .where(eq(generationAttempts.userId, userId))
+        .returning({ id: generationAttempts.id });
+      const f = await tx.db
+        .delete(platformPurposeLimits)
+        .where(eq(platformPurposeLimits.userId, userId))
+        .returning({ id: platformPurposeLimits.userId });
+      return a.length + b.length + c.length + d.length + e.length + f.length;
     });
   }
 
@@ -107,6 +117,14 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
       .select({ n: count() })
       .from(generationResults)
       .where(eq(generationResults.userId, userId));
-    return (a?.n ?? 0) + (b?.n ?? 0) + (c?.n ?? 0) + (d?.n ?? 0);
+    const [e] = await this.database.db
+      .select({ n: count() })
+      .from(generationAttempts)
+      .where(eq(generationAttempts.userId, userId));
+    const [f] = await this.database.db
+      .select({ n: count() })
+      .from(platformPurposeLimits)
+      .where(eq(platformPurposeLimits.userId, userId));
+    return (e?.n ?? 0) + (f?.n ?? 0) + (a?.n ?? 0) + (b?.n ?? 0) + (c?.n ?? 0) + (d?.n ?? 0);
   }
 }

@@ -1,3 +1,4 @@
+import { BillingBoundsService } from './application/billing-bounds.js';
 /**
  * model-access 模块装配（D-L0-08 后端部分）。说明见 docs/backend/model-access.md。
  * D-L0-09（AI 负责人）在本模块内加入上游适配器与模型网关（ModelGatewayPort），复用这里的
@@ -61,6 +62,7 @@ import {
   ],
   controllers: [ModelController, ModelAdminController],
   providers: [
+    BillingBoundsService,
     UpstreamService,
     GatewayLimitsService,
     UpstreamScheduler,

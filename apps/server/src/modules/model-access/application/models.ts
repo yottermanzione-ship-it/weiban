@@ -95,7 +95,12 @@ export class ModelAdminService {
     // v3.4：传了路由时，目录上的上游 = 主路由（旧接口与媒体网关仍读它）
     const primary = routes ? primaryRoute(routes) : null;
     const entry = primary
-      ? { ...rest, upstreamId: primary.upstreamId, upstreamModelId: primary.upstreamModelId }
+      ? {
+          ...rest,
+          upstreamId: primary.upstreamId,
+          upstreamModelId: primary.upstreamModelId,
+          ...(primary.billingBounds === undefined ? {} : { billingBounds: primary.billingBounds }),
+        }
       : rest;
     if (rates && pathKey === body.modelKey) {
       await this.rates.publishModelTokenRates({

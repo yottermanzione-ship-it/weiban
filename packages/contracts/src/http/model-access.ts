@@ -346,6 +346,49 @@ export const UpstreamTestFailedDetails = z.object({ reason: UpstreamTestFailure 
 export const SystemMessageMode = z.enum(['multi', 'single_system', 'no_system']);
 export type SystemMessageMode = z.infer<typeof SystemMessageMode>;
 
+/** 3.16：管理员依据供应商规格核准，绑定到具体路由；缺失即调用前拒绝，不猜模型上限。 */
+export const RouteBillingBounds = z
+  .object({
+    format: z.literal('billing-bounds-v1'),
+    pauseReason: z.literal('usage_unknown').optional(),
+    sourceUrl: z.url({ protocol: /^https$/ }).max(2048),
+    checkedAt: Timestamp,
+    text: z
+      .object({
+        contextTokens: z.number().int().min(1).max(10000000),
+        maxOutputTokens: z.number().int().min(1).max(32000),
+        totalOutputIncludesReasoning: z.literal(true),
+        outputParameter: z.enum(['max_tokens', 'max_completion_tokens']),
+        maxImages: z.number().int().min(0).max(20),
+      })
+      .optional(),
+    tts: z
+      .object({
+        maxTextBytes: z.number().int().min(1).max(100000),
+        counting: z.enum(['codepoints', 'utf16', 'utf8_bytes']),
+      })
+      .optional(),
+    asr: z
+      .object({
+        maxSeconds: z.number().int().min(1).max(86400),
+        billingStepSeconds: z.number().int().min(1).max(3600),
+      })
+      .optional(),
+    image: z
+      .object({
+        sizes: z.array(z.enum(['1024x1024', '768x1024', '1024x768'])).min(1),
+        quality: z.literal('standard'),
+        count: z.literal(1),
+      })
+      .optional(),
+    search: z
+      .object({ maxResults: z.number().int().min(1).max(10), billableCalls: z.literal(1) })
+      .optional(),
+    decision: z.object({ maxInputTokens: z.number().int().min(1).max(10000000) }).optional(),
+  })
+  .strict();
+export type RouteBillingBounds = z.infer<typeof RouteBillingBounds>;
+
 export const AdminCatalogEntry = z.object({
   modelKey: ModelKey,
   displayName: z.string().min(1).max(60),
@@ -381,6 +424,7 @@ export const AdminCatalogEntry = z.object({
   enabled: z.boolean(),
   /** v3.6：系统消息放法；写入时不传 = 保持原值（新建默认 multi）。 */
   systemMessageMode: SystemMessageMode.optional(),
+  billingBounds: RouteBillingBounds.nullable().optional(),
   updatedAt: Timestamp,
 });
 export type AdminCatalogEntry = z.infer<typeof AdminCatalogEntry>;
@@ -398,6 +442,7 @@ export const ModelRoute = z.object({
   priority: z.number().int().min(0).max(1000),
   weight: z.number().int().min(1).max(1000),
   enabled: z.boolean(),
+  billingBounds: RouteBillingBounds.nullable().optional(),
 });
 export type ModelRoute = z.infer<typeof ModelRoute>;
 

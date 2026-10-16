@@ -12,6 +12,7 @@ import { sql } from 'drizzle-orm';
 import {
   bigint,
   boolean,
+  date,
   check,
   customType,
   index,
@@ -114,6 +115,7 @@ export const modelCatalog = modelAccessSchema.table(
     enabled: boolean('enabled').notNull(),
     /** v3.6（0091）：系统消息放法 multi / single_system / no_system（docs/refactor/09 第 5 节）。 */
     systemMessageMode: text('system_message_mode').notNull().default('multi'),
+    billingBounds: jsonb('billing_bounds').$type<import('@weiban/contracts').RouteBillingBounds>(),
     createdAt: tz('created_at').notNull(),
     updatedAt: tz('updated_at').notNull(),
   },
@@ -143,6 +145,7 @@ export const modelRoutes = modelAccessSchema.table(
       .notNull()
       .references(() => upstreams.id, { onDelete: 'cascade' }),
     upstreamModelId: text('upstream_model_id').notNull(),
+    billingBounds: jsonb('billing_bounds').$type<import('@weiban/contracts').RouteBillingBounds>(),
     priority: integer('priority').notNull().default(1),
     weight: integer('weight').notNull().default(100),
     enabled: boolean('enabled').notNull().default(true),
@@ -290,4 +293,45 @@ export const generationResults = modelAccessSchema.table(
     index('generation_results_user_idx').on(t.userId),
     check('generation_results_phase_check', sql`${t.phase} in ('pending', 'result', 'complete')`),
   ],
+);
+
+/** 3.16：每次实际上游尝试独立追踪，正文仍只在已有加密generation缓存。 */
+export const generationAttempts = modelAccessSchema.table(
+  'generation_attempts',
+  {
+    id: uuid('id').primaryKey(),
+    generationId: uuid('generation_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    ordinal: integer('ordinal').notNull(),
+    modelKey: text('model_key').notNull(),
+    upstreamId: uuid('upstream_id').notNull(),
+    upstreamModelId: text('upstream_model_id').notNull(),
+    usageRecordId: uuid('usage_record_id'),
+    holdId: uuid('hold_id'),
+    phase: text('phase').notNull(),
+    boundSnapshot: jsonb('bound_snapshot').notNull(),
+    reportedUsage: jsonb('reported_usage'),
+    usageState: text('usage_state').notNull().default('unknown'),
+    errorCode: text('error_code'),
+    createdAt: tz('created_at').notNull(),
+    finishedAt: tz('finished_at'),
+  },
+  (t) => [
+    uniqueIndex('generation_attempts_generation_ordinal_key').on(t.generationId, t.ordinal),
+    index('generation_attempts_usage_idx').on(t.usageRecordId),
+    index('generation_attempts_user_idx').on(t.userId),
+  ],
+);
+/** 平台候选/小V限频，使用真实账号和北京时间自然日，跨进程不靠内存。 */
+export const platformPurposeLimits = modelAccessSchema.table(
+  'platform_purpose_limits',
+  {
+    userId: uuid('user_id').notNull(),
+    purpose: text('purpose').notNull(),
+    day: date('day', { mode: 'string' }).notNull(),
+    count: integer('count').notNull(),
+    minuteStarts: tz('minute_starts').notNull(),
+    minuteCount: integer('minute_count').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.purpose] })],
 );

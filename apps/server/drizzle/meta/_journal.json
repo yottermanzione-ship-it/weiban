@@ -627,6 +627,20 @@
       "when": 1799334400000,
       "tag": "0100_sticker_store",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1799334500000,
+      "tag": "0101_model_billing_bounds",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1799334600000,
+      "tag": "0102_billing_prehold",
+      "breakpoints": true
     }
   ]
 }

@@ -44,6 +44,8 @@ export interface ReserveInput {
   safetyOverdraft?: boolean;
   /** v1.1：按后台功能计入后台每日上限（规则同 GenerateTextInput.countAsBackground）。 */
   countAsBackground?: boolean;
+  /** 3.16：服务端明确的角色自主生态任务，独立于dailyLimit分类；仅此来源余额不足记一次生态提示。 */
+  ecologyTask?: boolean;
 }
 
 export interface ReserveOutput {
@@ -64,6 +66,8 @@ export interface SettleInput {
   /** model-access 的用量记录 ID：同一个 ID 只扣一次（幂等）。 */
   usageRecordId: string;
   actual: UsageQuantities;
+  /** 3.16：供应商未报有效用量且无核准精确本地计数时false，不按经验估算扣用户。 */
+  actualKnown?: boolean;
   /** 调用开始时刻（ISO 8601），用于选择分时价。 */
   startedAt: string;
   /**
@@ -103,6 +107,9 @@ export interface ReleaseInput {
 export interface ReleaseOutput {
   /** 失败调用仍被上游收费时由平台吸收的成本（微元）；没有则为 0。 */
   absorbedCostMicros: number;
+  /** 3.16：未知用量/缺价格不能被解释成已知零成本。 */
+  costKnown?: boolean;
+  unpricedUnits?: string[];
 }
 
 export interface SpendStatus {

@@ -156,6 +156,7 @@ export const holds = billingSchema.table(
       usage: import('@weiban/contracts').UsageQuantities;
       evidence: string;
     }>(),
+    releaseSnapshot: jsonb('release_snapshot').$type<import('@weiban/contracts').ReleaseOutput>(),
     settlementSnapshot:
       jsonb('settlement_snapshot').$type<import('@weiban/contracts').SettleOutput>(),
   },

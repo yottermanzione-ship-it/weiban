@@ -124,6 +124,32 @@ export class ReservationService implements BillingReservationPort {
         if (existing.accountId !== account.id) {
           throw new BillingUsageError('同一个幂等键被用于不同的账户');
         }
+        if (existing.modelKey !== input.modelKey || existing.purpose !== input.purpose)
+          throw new BillingUsageError('同一幂等键不能更换模型或用途');
+        if (!existing.limitSnapshot || !input.ceiling)
+          return fail('price_missing', '旧冻结缺少已验证上限，不能作为新调用授权');
+        const fields = [
+          'inputTokens',
+          'cachedInputTokens',
+          'outputTokens',
+          'images',
+          'ttsChars',
+          'asrSeconds',
+          'realtimeSeconds',
+          'searchCalls',
+        ] as const;
+        if (
+          existing.limitSnapshot.evidence !== input.ceiling.evidence ||
+          fields.some(
+            (k) => (existing.limitSnapshot!.usage[k] ?? 0) !== (input.ceiling!.usage[k] ?? 0),
+          )
+        )
+          throw new BillingUsageError('同一幂等键不能更换已批准计费上限');
+        if (existing.status !== 'active' || existing.expiresAt.getTime() <= this.clock.nowMs())
+          return fail(
+            'price_missing',
+            '冻结已关闭或过期；已有结果应从缓存重放，新尝试必须用独立编号',
+          );
         return { ok: true, value: this.toReserveOutput(existing) };
       }
 
@@ -143,7 +169,7 @@ export class ReservationService implements BillingReservationPort {
 
       // 余额（平台账户余额可以为负，只受平台每日上限约束，billing.md 第 7 节第 3 条）
       if (kind === 'user' && amount > 0 && available(account) < amount) {
-        const counts = countsAsBackground(input.purpose, input.countAsBackground);
+        const counts = input.ecologyTask === true;
         await tx.db
           .update(accounts)
           .set({
@@ -197,6 +223,7 @@ export class ReservationService implements BillingReservationPort {
         absorbedCostMicros: null,
         limitSnapshot: input.ceiling,
         settlementSnapshot: null,
+        releaseSnapshot: null,
       };
       await tx.db.insert(holds).values(hold);
       await this.ledger.changeHeld(tx, account, amount);
@@ -239,7 +266,8 @@ export class ReservationService implements BillingReservationPort {
       const wasActive = hold.status === 'active';
       const stillReserved = wasActive && hold.expiresAt.getTime() > this.clock.nowMs();
       const rows = await this.prices.modelPrices(tx, hold.priceVersionId, hold.modelKey);
-      const priced = priceUsage(rows, input.actual, startedAt, false);
+      const actualKnown = input.actualKnown !== false;
+      const priced = priceUsage(rows, actualKnown ? input.actual : {}, startedAt, false);
       if (!priced.ok) throw new BillingUsageError('实际用量无法定价');
       if (![priced.sellMicros, priced.costMicros].every(Number.isSafeInteger))
         throw new BillingUsageError('供应商实际用量金额超出安全范围，需人工核对');
@@ -247,25 +275,33 @@ export class ReservationService implements BillingReservationPort {
       const userLimit = stillReserved
         ? Math.max(0, Math.min(hold.amountMicros, available(account) + hold.amountMicros))
         : 0;
+      const previousAbsorbed = hold.status === 'released' ? (hold.absorbedCostMicros ?? 0) : 0;
+      const costKnown = actualKnown && priced.unpricedUnits.length === 0;
+      const knownCost = costKnown
+        ? priced.costMicros
+        : Math.max(priced.costMicros, previousAbsorbed);
       const amount =
         account.kind === 'platform'
-          ? priced.sellMicros
-          : priced.unpricedUnits.length
+          ? costKnown
+            ? priced.sellMicros
+            : Math.max(priced.sellMicros, previousAbsorbed)
+          : !costKnown
             ? 0
             : Math.min(priced.sellMicros, userLimit);
-      const previousAbsorbed = hold.status === 'released' ? (hold.absorbedCostMicros ?? 0) : 0;
       const allocation =
         account.kind === 'platform'
           ? {
-              chargedCostMicros: priced.costMicros - previousAbsorbed,
+              chargedCostMicros: knownCost - previousAbsorbed,
               absorbedCostMicros: previousAbsorbed,
             }
-          : splitSettlementCost(priced.costMicros, amount, priced.sellMicros);
-      const reason = !stillReserved
-        ? 'late_unreserved'
-        : amount < priced.sellMicros
-          ? 'reservation_capped'
-          : 'within_reservation';
+          : splitSettlementCost(knownCost, amount, priced.sellMicros);
+      const reason = !actualKnown
+        ? 'usage_unknown'
+        : !stillReserved
+          ? 'late_unreserved'
+          : amount < priced.sellMicros
+            ? 'reservation_capped'
+            : 'within_reservation';
       const { entry, account: after } = await this.ledger.postEntry(tx, account, {
         type: 'charge',
         // 平台旧release已扣成本时，迟到settle只追加余额差额，原流水不改。
@@ -306,13 +342,13 @@ export class ReservationService implements BillingReservationPort {
       const output: SettleOutput = {
         ledgerEntryId: entry.id,
         amountMicros: amount,
-        costMicros: priced.costMicros,
+        costMicros: knownCost,
         balanceAfterMicros: entry.balanceAfterMicros,
         ...allocation,
         theoreticalMicros: priced.sellMicros,
-        waivedMicros: priced.sellMicros - amount,
-        costKnown: priced.unpricedUnits.length === 0,
-        unpricedUnits: priced.unpricedUnits,
+        waivedMicros: Math.max(0, priced.sellMicros - amount),
+        costKnown,
+        unpricedUnits: actualKnown ? priced.unpricedUnits : ['missing_or_invalid_usage'],
       };
       await tx.db
         .update(holds)
@@ -336,7 +372,7 @@ export class ReservationService implements BillingReservationPort {
           tx,
           hold.budgetDay,
           wasActive ? hold.reservedCostMicros : 0,
-          account.kind === 'platform' ? priced.costMicros - previousAbsorbed : absorptionDelta,
+          account.kind === 'platform' ? knownCost - previousAbsorbed : absorptionDelta,
         );
       if (reason !== 'within_reservation' || priced.unpricedUnits.length)
         await this.audit.record(
@@ -376,20 +412,32 @@ export class ReservationService implements BillingReservationPort {
       const platformAccount =
         account.kind === 'user' ? await this.ledger.lockPlatformAccount(tx) : null;
       const hold = await this.lockHold(tx, input.holdId);
-      if (hold.status === 'released') return { absorbedCostMicros: hold.absorbedCostMicros ?? 0 };
+      if (hold.status === 'released')
+        return (
+          hold.releaseSnapshot ?? {
+            absorbedCostMicros: hold.absorbedCostMicros ?? 0,
+            costKnown: false,
+          }
+        );
       if (hold.status === 'settled') throw new BillingUsageError('该冻结已结算，不能再解冻');
       const wasActive = hold.status === 'active';
       if (wasActive) account = await this.ledger.changeHeld(tx, account, -hold.amountMicros);
 
       // 失败调用仍被上游收费：按成本价记平台账户「吸收」，用户不付钱（billing.md 6.5）
       let absorbed = 0;
+      let costKnown = input.upstreamUsage !== undefined;
+      let unpricedUnits: string[] = [];
       if (input.upstreamUsage && hasQuantity(input.upstreamUsage)) {
         const rows = await this.prices.modelPrices(tx, hold.priceVersionId, hold.modelKey);
         const priced = priceUsage(rows, input.upstreamUsage, startedAt, false);
-        absorbed = priced.ok ? priced.costMicros : 0;
+        costKnown =
+          priced.ok && priced.unpricedUnits.length === 0 && Number.isSafeInteger(priced.costMicros);
+        unpricedUnits = priced.unpricedUnits;
+        if (priced.ok && !Number.isSafeInteger(priced.costMicros))
+          unpricedUnits.push('unsafe_cost');
+        absorbed = priced.ok && Number.isSafeInteger(priced.costMicros) ? priced.costMicros : 0;
         if (absorbed > 0) {
-          const platform =
-            account.kind === 'platform' ? account : platformAccount!;
+          const platform = account.kind === 'platform' ? account : platformAccount!;
           await this.ledger.postEntry(tx, platform, {
             type: 'charge',
             amountMicros: -absorbed,
@@ -420,9 +468,26 @@ export class ReservationService implements BillingReservationPort {
           closedAt: this.clock.now(),
           releaseReason: input.reason,
           absorbedCostMicros: absorbed,
+          releaseSnapshot: { absorbedCostMicros: absorbed, costKnown, unpricedUnits },
         })
         .where(eq(holds.id, hold.id));
-      return { absorbedCostMicros: absorbed };
+      if (!costKnown)
+        await this.audit.record(
+          {
+            module: 'billing',
+            action: 'prehold.failure_cost_unknown',
+            actorType: 'system',
+            targetType: 'hold',
+            targetId: hold.id,
+            details: {
+              usageRecordId: input.usageRecordId ?? null,
+              reported: input.upstreamUsage ?? null,
+              unpricedUnits,
+            },
+          },
+          tx,
+        );
+      return { absorbedCostMicros: absorbed, costKnown, unpricedUnits };
     });
   }
 
