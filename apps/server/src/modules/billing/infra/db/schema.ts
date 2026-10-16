@@ -156,6 +156,7 @@ export const holds = billingSchema.table(
       usage: import('@weiban/contracts').UsageQuantities;
       evidence: string;
     }>(),
+    riskSnapshot: jsonb('risk_snapshot').$type<import('@weiban/contracts').CallRiskSnapshot>(),
     releaseSnapshot: jsonb('release_snapshot').$type<import('@weiban/contracts').ReleaseOutput>(),
     settlementSnapshot:
       jsonb('settlement_snapshot').$type<import('@weiban/contracts').SettleOutput>(),
@@ -192,6 +193,7 @@ export const platformDailyBudget = billingSchema.table(
     budgetDay: date('budget_day', { mode: 'string' }).primaryKey(),
     capMicros: money('cap_micros').notNull(),
     settledCostMicros: money('settled_cost_micros').notNull(),
+    uncertainCostMicros: money('uncertain_cost_micros').notNull().default(0),
     reservedCostMicros: money('reserved_cost_micros').notNull(),
     /** 当天是否已发过 80% 提醒。 */
     alertSentAt: tz('alert_sent_at'),

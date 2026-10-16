@@ -129,7 +129,14 @@ export interface SpendStatus {
  * engineering-standards.md 第 3.1 节）。v1.0 从原 BillingPort 拆出，让 lint 能按「谁 import 了它」检查，
  * 而不是按变量名猜（Q-009）。
  */
+export interface CallRiskSnapshot {
+ phase:'reserved'|'sent'|'unknown'|'resolved';costUpperMicros:number;uncertainMicros:number;
+ usageRecordId?:string;upstreamId?:string;upstreamModelId?:string;sentAt?:string;
+}
 export interface BillingReservationPort {
+ /** 3.16：外部请求发出前原子标记，只允许active未过期且从未发出的hold。重复返回false，不可重发。 */
+ beginCall?(input:{holdId:string;usageRecordId:string;upstreamId:string;upstreamModelId:string}):Promise<boolean>;
+
   /**
    * 原子地冻结用户（或平台账户）的钱，同时预留平台每日成本预算（billing.md 第 7 节，Q-007）；
    * 任一不够即整体失败，不留半个冻结。

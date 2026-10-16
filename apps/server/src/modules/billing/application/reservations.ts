@@ -224,10 +224,23 @@ export class ReservationService implements BillingReservationPort {
         limitSnapshot: input.ceiling,
         settlementSnapshot: null,
         releaseSnapshot: null,
+        riskSnapshot: { phase: 'reserved', costUpperMicros: reservedCost, uncertainMicros: 0 },
       };
       await tx.db.insert(holds).values(hold);
       await this.ledger.changeHeld(tx, account, amount);
       return { ok: true, value: this.toReserveOutput(hold) };
+    });
+  }
+
+  /** 仅首次从未发送的有效冻结授权供应商调用；响应丢失也不重复授权。 */
+  async beginCall(input: { holdId: string; usageRecordId: string; upstreamId: string; upstreamModelId: string }): Promise<boolean> {
+    const initial = await this.findHold(input.holdId);
+    return this.database.transaction(async (tx) => {
+      await this.ledger.lockAccountById(tx, initial.accountId);
+      const hold = await this.lockHold(tx, input.holdId);
+      if (hold.status !== 'active' || hold.expiresAt.getTime() <= this.clock.nowMs() || hold.riskSnapshot?.phase !== 'reserved') return false;
+      await tx.db.update(holds).set({ riskSnapshot: { ...hold.riskSnapshot, phase: 'sent', usageRecordId: input.usageRecordId, upstreamId: input.upstreamId, upstreamModelId: input.upstreamModelId, sentAt: this.clock.now().toISOString() } }).where(eq(holds.id, hold.id));
+      return true;
     });
   }
 
@@ -350,6 +363,7 @@ export class ReservationService implements BillingReservationPort {
         costKnown,
         unpricedUnits: actualKnown ? priced.unpricedUnits : ['missing_or_invalid_usage'],
       };
+      const risk = await this.updateRisk(tx, hold, costKnown, knownCost, wasActive);
       await tx.db
         .update(holds)
         .set({
@@ -358,6 +372,7 @@ export class ReservationService implements BillingReservationPort {
           ledgerEntryId: entry.id,
           absorbedCostMicros: allocation.absorbedCostMicros,
           settlementSnapshot: output,
+          riskSnapshot: risk.snapshot,
         })
         .where(eq(holds.id, hold.id));
       await this.addDailySpend(
@@ -371,7 +386,7 @@ export class ReservationService implements BillingReservationPort {
         await this.budget.settle(
           tx,
           hold.budgetDay,
-          wasActive ? hold.reservedCostMicros : 0,
+          risk.remainingReserved,
           account.kind === 'platform' ? knownCost - previousAbsorbed : absorptionDelta,
         );
       if (reason !== 'within_reservation' || priced.unpricedUnits.length)
@@ -425,7 +440,7 @@ export class ReservationService implements BillingReservationPort {
 
       // 失败调用仍被上游收费：按成本价记平台账户「吸收」，用户不付钱（billing.md 6.5）
       let absorbed = 0;
-      let costKnown = input.upstreamUsage !== undefined;
+      let costKnown = input.upstreamUsage !== undefined || hold.riskSnapshot?.phase === 'reserved';
       let unpricedUnits: string[] = [];
       if (input.upstreamUsage && hasQuantity(input.upstreamUsage)) {
         const rows = await this.prices.modelPrices(tx, hold.priceVersionId, hold.modelKey);
@@ -455,10 +470,11 @@ export class ReservationService implements BillingReservationPort {
           });
         }
       }
+      const risk = await this.updateRisk(tx, hold, costKnown, absorbed, wasActive);
       await this.budget.settle(
         tx,
         hold.budgetDay,
-        wasActive ? hold.reservedCostMicros : 0,
+        risk.remainingReserved,
         absorbed,
       );
       await tx.db
@@ -469,6 +485,7 @@ export class ReservationService implements BillingReservationPort {
           releaseReason: input.reason,
           absorbedCostMicros: absorbed,
           releaseSnapshot: { absorbedCostMicros: absorbed, costKnown, unpricedUnits },
+          riskSnapshot: risk.snapshot,
         })
         .where(eq(holds.id, hold.id));
       if (!costKnown)
@@ -508,10 +525,11 @@ export class ReservationService implements BillingReservationPort {
         const hold = await this.lockHold(tx, id);
         if (hold.status !== 'active') return false;
         await this.ledger.changeHeld(tx, account, -hold.amountMicros);
-        await this.budget.settle(tx, hold.budgetDay, hold.reservedCostMicros, 0);
+        const risk = await this.updateRisk(tx, hold, hold.riskSnapshot?.phase === 'reserved', 0, true);
+        await this.budget.settle(tx, hold.budgetDay, risk.remainingReserved, 0);
         await tx.db
           .update(holds)
-          .set({ status: 'expired', closedAt: this.clock.now() })
+          .set({ status: 'expired', closedAt: this.clock.now(), riskSnapshot: risk.snapshot })
           .where(eq(holds.id, id));
         return true;
       });
@@ -522,6 +540,29 @@ export class ReservationService implements BillingReservationPort {
   }
 
   // ---------- 内部 ----------
+
+  /** hold锁内转移风险；未知上限不进入实际成本，过期也不能释放已发送风险。 */
+  private async updateRisk(tx: DbTx, hold: HoldRow, known: boolean, knownCost: number, wasActive: boolean) {
+    const snapshot = hold.riskSnapshot;
+    const reserved = wasActive ? hold.reservedCostMicros : 0;
+    if (!snapshot) {
+      // 历史冻结没有可证明的调用前成本上限，不能事后编造风险金额。
+      if (!known) await this.audit.record({ module: 'billing', action: 'prehold.legacy_unknown_without_bound', actorType: 'system', targetType: 'hold', targetId: hold.id }, tx);
+      return { snapshot, remainingReserved: reserved };
+    }
+    if (known) {
+      if (snapshot.phase === 'unknown') await this.budget.resolveUnknown(tx, hold.budgetDay, snapshot.uncertainMicros);
+      return { snapshot: { ...snapshot, phase: 'resolved' as const, uncertainMicros: 0 }, remainingReserved: reserved };
+    }
+    if (snapshot.phase === 'unknown') return { snapshot, remainingReserved: 0 };
+    if (snapshot.phase !== 'sent' || !snapshot.upstreamId || !snapshot.upstreamModelId || !snapshot.sentAt) {
+      // 尚未发送不能产生供应商未知成本。
+      return { snapshot, remainingReserved: reserved };
+    }
+    const uncertainMicros = Math.max(0, snapshot.costUpperMicros - knownCost);
+    await this.budget.moveToUnknown(tx, hold.budgetDay, reserved, uncertainMicros, { holdId: hold.id, modelKey: hold.modelKey, upstreamId: snapshot.upstreamId, upstreamModelId: snapshot.upstreamModelId, sentAt: snapshot.sentAt, costUpperMicros: snapshot.costUpperMicros });
+    return { snapshot: { ...snapshot, phase: 'unknown' as const, uncertainMicros }, remainingReserved: 0 };
+  }
 
   /** 今天（用户当地日期）后台已结算 + 当前后台冻结。 */
   async backgroundSpent(tx: DbTx, accountId: string, day: string): Promise<number> {

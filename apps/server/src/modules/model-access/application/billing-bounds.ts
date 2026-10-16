@@ -35,13 +35,14 @@ export class BillingBoundsService {
       .select()
       .from(modelRoutes)
       .where(and(eq(modelRoutes.modelKey, modelKey), eq(modelRoutes.upstreamId, upstreamId)));
-    let raw: unknown = route?.upstreamModelId === upstreamModelId ? route.billingBounds : null;
-    if (!route) {
-      const [catalog] = await this.db.db
+    const [catalog] = await this.db.db
         .select()
         .from(modelCatalog)
         .where(eq(modelCatalog.modelKey, modelKey));
-      if (catalog?.upstreamId === upstreamId && catalog.upstreamModelId === upstreamModelId)
+    if (!catalog?.enabled || (route && !route.enabled)) return null;
+    let raw: unknown = route?.upstreamModelId === upstreamModelId ? route.billingBounds : null;
+    if (!route) {
+      if (catalog.upstreamId === upstreamId && catalog.upstreamModelId === upstreamModelId)
         raw = catalog.billingBounds;
     }
     const parsed = RouteBillingBounds.safeParse(raw);

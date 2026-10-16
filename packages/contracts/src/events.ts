@@ -245,6 +245,11 @@ export const BalanceRestored = event(
 );
 
 /** 可用余额低于提醒线（同一账户每天最多一次）：push 发提醒。 */
+/** 3.16：已发出但用量未知，model-access据此暂停具体路由；不含消息正文。 */
+export const CallCostUnknown=event('billing.call_cost_unknown','billing',z.object({
+ holdId:Id,modelKey:z.string(),upstreamId:Id,upstreamModelId:z.string(),sentAt:Timestamp,
+ costUpperMicros:z.number().int().nonnegative(),uncertainMicros:z.number().int().nonnegative(),
+}));
 export const BalanceLow = event(
   'billing.balance_low',
   'billing',
@@ -783,6 +788,7 @@ export const DomainEvent = z.discriminatedUnion('type', [
   BalanceDepleted,
   BalanceRestored,
   BalanceLow,
+  CallCostUnknown,
   CharacterPublished,
   CharacterUnpublished,
   CharacterClassificationChanged,
