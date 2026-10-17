@@ -118,6 +118,7 @@ export function ServicesPage() {
       </MenuGroup>
       <GroupHeader>偏好</GroupHeader>
       <MenuGroup>
+        <MenuRow to="/services/ecology" icon="wechat/star" tint="green" label="角色生态" />
         <MenuRow
           to="/services/proactive"
           icon="wechat/chat"

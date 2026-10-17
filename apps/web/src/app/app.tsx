@@ -3,6 +3,7 @@ import { StickerStorePage, StickerStoreDetailPage } from '../features/sticker-st
 import { UserStatusPage } from '../features/user-status.js';
 import { PluginsPage } from '../features/plugins.js';
 import { EcologyInsufficientNotice } from '../features/ecology-insufficient-notice.js';
+import { EcologyPage } from '../features/ecology.js';
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { RouteMotion } from '../features/route-motion.js';
@@ -299,6 +300,7 @@ function Shell() {
                 <Route path="/settings/privacy" element={<PrivacySettingsPage />} />
                 <Route path="/settings/general" element={<GeneralSettingsPage />} />
                 <Route path="/services/proactive" element={<ProactiveSettingsPage />} />
+                <Route path="/services/ecology" element={<EcologyPage />} />
                 <Route path="/services/period" element={<PeriodPage />} />
                 <Route path="/services/period/day/:date" element={<PeriodDayPage />} />
                 <Route path="/services/period/history" element={<PeriodHistoryPage />} />

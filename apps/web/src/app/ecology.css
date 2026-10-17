@@ -1,0 +1,68 @@
+/* 角色生态页（2026-10-18）。沿用旧版微信式排版：白卡、56 行高、8 组间距。 */
+
+.ecology-intro {
+  margin: 12px 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--wb-color-bg-card, #fff);
+  color: var(--wb-color-text-secondary, #7a7a7a);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.ecology-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ecology-badge {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: #f2f2f2;
+  color: #999;
+  font-size: 11px;
+  font-style: normal;
+  line-height: 17px;
+}
+
+.ecology-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.ecology-points {
+  color: #07c160;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ecology-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ecology-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 0 0;
+  padding: 14px 16px;
+  background: #fff;
+  font-size: 14px;
+}
+
+.ecology-total strong {
+  color: #07c160;
+  font-weight: 500;
+}
+
+.ecology-footnote {
+  margin: 16px;
+  color: #999;
+  font-size: 12px;
+  line-height: 1.6;
+}
