@@ -214,14 +214,45 @@ label.field-row {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin: var(--wb-space-3) 0;
-  padding: var(--wb-space-5);
-  border-radius: 10px;
+  margin: 0;
+  padding: var(--wb-space-5) var(--wb-space-4);
+  border-radius: 0;
   background: var(--wb-color-bg-surface);
   font-size: var(--wb-font-size-callout);
 }
 .avatar-editor-group {
-  padding: var(--wb-space-3) var(--wb-space-5);
+  padding: 0;
+}
+/* 选择头像：跟普通设置行一致，不要独立的框 */
+.avatar-choose-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 var(--wb-space-4);
+  border: 0;
+  background: var(--wb-color-bg-surface);
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-body);
+  text-align: left;
+}
+.avatar-choose-row:active {
+  background: var(--wb-color-bg-pressed, #ececec);
+}
+.avatar-choose-arrow {
+  color: var(--wb-color-ui-chevron);
+  font-size: 20px;
+  line-height: 1;
+}
+.field-count {
+  align-self: flex-end;
+  color: var(--wb-color-text-tertiary);
+  font-size: 12px;
+}
+.field-row textarea {
+  resize: none;
+  max-height: 140px;
 }
 
 /* ---------- 通讯录（4.6） ---------- */
@@ -1253,17 +1284,27 @@ label.field-row {
 .wx-auth-check {
   display: inline-flex;
   align-items: center;
-  gap: var(--wb-space-2);
+  gap: 6px;
   min-height: 0;
   padding: 0;
   border: 0;
   background: none;
   color: var(--wb-color-text-secondary);
-  font-size: var(--wb-font-size-footnote);
+  font-size: 13px;
+  line-height: 1.4;
 }
 .wx-auth-check .check-circle {
   width: 16px;
   height: 16px;
+  border-width: 1px;
+  border-color: #c9c9c9;
+}
+.wx-auth-check .check-circle.on {
+  border-color: var(--wb-color-brand-primary);
+}
+.wx-auth-check .check-circle .old-icon {
+  width: 12px !important;
+  height: 12px !important;
 }
 .wx-auth-submit,
 button.primary.wx-auth-submit {
@@ -1764,10 +1805,14 @@ button.primary.wx-auth-submit {
 }
 .request-intro {
   display: grid;
-  justify-items: start;
+  justify-items: stretch;
   gap: var(--wb-space-3);
-  padding: var(--wb-space-4) 0;
+  padding: var(--wb-space-4) var(--wb-space-4) var(--wb-space-5);
   font-size: var(--wb-font-size-subhead);
+}
+.request-intro .button.primary {
+  width: 100%;
+  margin-top: var(--wb-space-2);
 }
 .request-intro p {
   margin: 0;

@@ -140,8 +140,16 @@ export function AvatarEditor({
   }
   return (
     <section className="stack">
-      <button type="button" disabled={pending} onClick={() => setChoosing(true)}>
-        选择{label}
+      <button
+        type="button"
+        className="avatar-choose-row"
+        disabled={pending}
+        onClick={() => setChoosing(true)}
+      >
+        <span>选择{label}</span>
+        <span className="avatar-choose-arrow" aria-hidden>
+          ›
+        </span>
       </button>
       <input
         hidden

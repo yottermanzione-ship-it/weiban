@@ -9,6 +9,7 @@ import { AvatarEditor } from './avatar-editor.js';
 import { ProfileAvatar } from './profile-avatar.js';
 import { useAuth } from '../app/auth.js';
 import { GroupHeader, MenuGroup, MenuRow, NavBar, Sheet } from './shell-kit.js';
+import { REGION_GROUPS } from '../data/regions.js';
 function OnboardingProfilePage() {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -153,13 +154,25 @@ function OnboardingProfilePage() {
           </label>
           <label className="field-row">
             <span>地区</span>
-            <input
+            <select
               disabled={!loaded}
               value={form.city}
               onChange={(e) => setForm({ ...form, city: e.target.value })}
-              maxLength={32}
-              placeholder="所在城市"
-            />
+            >
+              <option value="">不填写</option>
+              {form.city && !REGION_GROUPS.some((g) => g.items.includes(form.city)) && (
+                <option value={form.city}>{form.city}</option>
+              )}
+              {REGION_GROUPS.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.items.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
           </label>
           <label className="field-row top">
             <span>关于我</span>
@@ -168,8 +181,10 @@ function OnboardingProfilePage() {
               value={form.about}
               onChange={(e) => setForm({ ...form, about: e.target.value })}
               maxLength={500}
+              rows={3}
               placeholder="说说你自己"
             />
+            <small className="field-count">{form.about.length}/500</small>
           </label>
         </div>
         <p className="hint page-note">这些信息所有角色都会知道。</p>
@@ -233,7 +248,7 @@ function ProfileDetails() {
       <MenuGroup>
         <MenuRow
           label="头像"
-          right={<ProfileAvatar profile={profile} />}
+          right={<ProfileAvatar profile={profile} size={40} />}
           onClick={() => {
             setError('');
             setEditing('avatar');

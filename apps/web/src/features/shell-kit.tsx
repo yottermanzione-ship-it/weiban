@@ -324,14 +324,23 @@ export function SwitchRow({
   );
 }
 
-/** 勾选圈（规格 3.15）。 */
-export function CheckCircle({ checked, disabled }: { checked: boolean; disabled?: boolean }) {
+/** 勾选圈（规格 3.15）。size 用于登录页那种 16px 小圈，默认 24。 */
+export function CheckCircle({
+  checked,
+  disabled,
+  size = 24,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  size?: number;
+}) {
   return (
     <span
       className={`check-circle ${checked ? 'on' : ''} ${disabled ? 'disabled' : ''}`}
+      style={{ width: size, height: size, borderWidth: size <= 18 ? 1 : undefined }}
       aria-hidden
     >
-      {checked && <OldIcon name="wechat/check" size={18} />}
+      {checked && <OldIcon name="wechat/check" size={Math.round(size * 0.72)} />}
     </span>
   );
 }

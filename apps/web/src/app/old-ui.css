@@ -190,13 +190,18 @@ button:disabled {
 }
 button.primary,
 a.button.primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 48px;
+  padding: 0 20px;
   border: 0;
   border-radius: 10px;
   background: var(--wb-color-brand-primary);
   color: #fff;
   font-size: var(--wb-font-size-body-small);
   font-weight: var(--wb-font-weight-semibold);
+  text-decoration: none;
 }
 button.primary:active {
   background: var(--wb-color-brand-primary-pressed);

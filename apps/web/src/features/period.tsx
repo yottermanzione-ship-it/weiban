@@ -18,6 +18,7 @@ import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterAvatar } from './character-avatar.js';
+import { NavBar } from './shell-kit.js';
 
 /*
  * 经期日记（PLAY-01，设计见 docs/design/pages/period-diary.md）。
@@ -829,8 +830,7 @@ export function PeriodSettingsPage() {
   }
   return (
     <main>
-      <Link to="/services/period">‹ 经期日记</Link>
-      <h1 className="page-title">周期设置</h1>
+      <NavBar title="周期设置" fallback="/services/period" />
       {settings.error && !settings.data && (
         <div className="empty">
           <p>加载失败</p>

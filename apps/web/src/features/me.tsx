@@ -96,11 +96,20 @@ export function ServicesPage() {
           dot={lowBalance}
           value={wallet.data ? pointsText(wallet.data.balancePoints) : '—'}
         />
+        <MenuRow to="/wallet/recharge" icon="wechat/transfer" tint="gold" label="充值" />
+      </MenuGroup>
+      <GroupHeader>消费记录</GroupHeader>
+      <MenuGroup>
+        <MenuRow to="/ledger" icon="wechat/note" tint="orange" label="积分明细" />
+        <MenuRow to="/usage" icon="wechat/bell" tint="cyan" label="用量" />
+      </MenuGroup>
+      <GroupHeader>模型</GroupHeader>
+      <MenuGroup>
         <MenuRow
           to="/models"
           icon="wechat/grid"
           tint="blue"
-          label="模型"
+          label="我的模型"
           value={
             chatModel
               ? (models.data?.items.find((m) => m.modelKey === chatModel)?.displayName ??
@@ -108,13 +117,8 @@ export function ServicesPage() {
               : '平台默认'
           }
         />
-      </MenuGroup>
-      <GroupHeader>模型与花费</GroupHeader>
-      <MenuGroup>
-        <MenuRow to="/ledger" icon="wechat/note" tint="orange" label="积分明细" />
         <MenuRow to="/prices" icon="wechat/tag" tint="green" label="AI 模型价格" />
         <MenuRow to="/leaderboard" icon="wechat/star" tint="gold" label="模型排行榜" />
-        <MenuRow to="/usage" icon="wechat/bell" tint="cyan" label="用量" />
       </MenuGroup>
       <GroupHeader>偏好</GroupHeader>
       <MenuGroup>
@@ -125,7 +129,7 @@ export function ServicesPage() {
           tint="green"
           label="主动消息与免打扰"
         />
-        <MenuRow to="/settings/plugins" label="插件" />
+        <MenuRow to="/settings/plugins" icon="wechat/grid" tint="indigo" label="插件" />
         <MenuRow to="/services/familiarity" icon="wechat/heart" tint="red" label="熟悉度总览" />
       </MenuGroup>
       <p className="hint page-note center">卡册、宠物、每日一问等玩法在「发现 › 小程序」</p>

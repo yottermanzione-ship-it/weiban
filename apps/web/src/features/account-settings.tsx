@@ -195,9 +195,15 @@ function ChangePasswordForm({ onDone }: { onDone: () => void }) {
 // ---------- 隐私 ----------
 
 const sharingNames = {
-  friends: '互相认识的角色之间可以聊起（默认）',
-  basic: '只共享基础资料',
-  off: '关闭',
+  friends: '可以聊起你（默认）',
+  basic: '只聊最基础的信息',
+  off: '什么都不共享',
+} as const;
+
+const sharingHints = {
+  friends: '互相认识的角色会转述和你有关的事',
+  basic: '只共享称呼、生日这类信息',
+  off: '谁都不会从别的角色那里听说你',
 } as const;
 
 export function PrivacySettingsPage() {
@@ -253,6 +259,7 @@ export function PrivacySettingsPage() {
           <MenuRow
             key={level}
             label={sharingNames[level]}
+            subtitle={sharingHints[level]}
             chevron={false}
             disabled={pending || !sharing.data}
             right={
@@ -265,7 +272,7 @@ export function PrivacySettingsPage() {
         ))}
       </MenuGroup>
       <p className="hint page-note">
-        开启后，互相认识的角色可能会转述你和另一个角色聊过的事；关闭后立即生效，其他角色不再使用转述来的记忆。
+        这管的是「角色之间」：别的角色能不能从 TA 这里听说关于你的事。你自己和每个角色聊的内容，只有你们俩知道。
       </p>
       {(error || remote.error) && (
         <p role="alert" className="notice-bar">

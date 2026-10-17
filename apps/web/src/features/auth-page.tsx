@@ -13,6 +13,7 @@ import { useAuth } from '../app/auth.js';
 import { friendlyError } from '../data/use-remote.js';
 import { OldIcon } from './old-icons.js';
 import { CheckCircle, showComingSoon } from './shell-kit.js';
+import { showToast } from './toast.js';
 
 export function AuthPage() {
   const [welcome, setWelcome] = useState(true);
@@ -139,8 +140,7 @@ export function AuthPage() {
         </p>
         <button type="button" className="wx-auth-link" onClick={showComingSoon}>
           用手机号登录
-        </button>
-        {error && (
+        </button>        {error && (
           <p role="alert" className="wx-auth-error">
             {error}
           </p>
@@ -154,7 +154,7 @@ export function AuthPage() {
               aria-checked={sync}
               onClick={() => setSync(!sync)}
             >
-              <CheckCircle checked={sync} />
+              <CheckCircle checked={sync} size={16} />
               登录后同步最近的聊天记录
             </button>
           )}
@@ -162,7 +162,12 @@ export function AuthPage() {
             {pending ? '请稍候…' : register ? '同意并注册' : '同意并登录'}
           </button>
           <p className="wx-auth-foot">
-            <button type="button" onClick={showComingSoon}>
+            <button
+              type="button"
+              onClick={() =>
+                showToast('微伴号密码暂不支持自助找回，请联系管理员重置', 3000, 'info')
+              }
+            >
               找回密码
             </button>
             <i aria-hidden />

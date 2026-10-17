@@ -450,6 +450,9 @@ export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) 
           enterKeyHint="search"
           onChange={(event) => setQuery(event.target.value)}
         />
+        <button type="submit" className="search-strip-submit" disabled={!query.trim()}>
+          搜索
+        </button>
       </form>
       {!onboarding && !search && <AddFriendEntries />}
       {!onboarding && <GroupHeader>{search ? '搜索结果' : '推荐角色'}</GroupHeader>}

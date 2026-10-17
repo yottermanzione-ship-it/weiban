@@ -79,12 +79,12 @@ export function ChoiceSheet<T extends string | number>({
             label={option.label}
             chevron={false}
             right={
-              <>
+              <span className="choice-right">
                 {extra?.(option.value)}
                 {option.value === value && (
-                  <OldIcon name="wechat/check" size={22} className="ink-brand" />
+                  <OldIcon name="wechat/check" size={20} className="ink-brand" />
                 )}
-              </>
+              </span>
             }
             onClick={() => {
               onPick(option.value);

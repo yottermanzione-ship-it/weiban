@@ -139,6 +139,7 @@ const ownHeader = [
   // 旧版界面（06-old-ui-spec）改用 NavBar 的页面
   /^\/settings\/(security|privacy|general)$/,
   /^\/services\/proactive$/,
+  /^\/services\/ecology$/,
   /^\/characters\/[^/]+$/,
   /^\/profile$/,
   /^\/(wallet|ledger|prices|usage|models|leaderboard)(\/|$)/,
@@ -217,7 +218,13 @@ function Shell() {
   }, []);
   // 加载中由上层的启动页盖住
   if (auth.loading) return null;
-  if (!auth.session) return <AuthPage />;
+  if (!auth.session)
+    return (
+      <>
+        <AuthPage />
+        <ToastHost />
+      </>
+    );
   const firstProfile = !auth.session.user.profileCompleted;
   const onboarding = auth.onboarding || firstProfile || searchParams.get('onboarding') === '1';
   if (!firstProfile && auth.onboarding && ['/', '/chat'].includes(location.pathname))
