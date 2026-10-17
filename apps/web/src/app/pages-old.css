@@ -1360,6 +1360,11 @@ button.primary.wx-auth-submit {
   font-weight: var(--wb-font-weight-semibold);
   line-height: 1.1;
 }
+/* 未拿到余额时不显示破折号（粗体会渲染成一根黑条），用浅灰省略号占位。 */
+.wallet-number.pending {
+  color: var(--wb-color-text-placeholder);
+  letter-spacing: 0.1em;
+}
 .low-tag {
   margin-top: var(--wb-space-3);
   padding: 1px 4px;

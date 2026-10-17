@@ -144,7 +144,7 @@ function ConversationRow({ item }: { item: Conversation }) {
 }
 
 export function ConversationListPage() {
-  const { state, online, error, synchronize, clearHistory } = useChat();
+  const { state, error, synchronize, clearHistory } = useChat();
   const navigate = useNavigate();
   useMinuteTick();
   const [menu, setMenu] = useState(false);
@@ -227,10 +227,7 @@ export function ConversationListPage() {
       <PullMiniApps title={title}>
         <header className="chat-list-head">
           <span />
-          <h1>
-            {title}
-            {!online && '(未连接)'}
-          </h1>
+          <h1>{title}</h1>
           <button
             type="button"
             className="nav-bar-icon"

@@ -721,7 +721,7 @@ export const comingSoon = {
   card: { name: '发送名片', icon: 'wechat/person', tint: 'blue' },
   chatOnly: { name: '仅聊天的朋友', icon: 'wechat/contacts_chat_only.webp', tint: 'orange' },
   services: { name: '服务号', icon: 'wechat/contacts_official', tint: 'cyan' },
-  workContacts: { name: '企业微信联系人', icon: 'wechat/contacts_enterprise.webp', tint: 'blue' },
+  workContacts: { name: '企业微信联系人', icon: 'drawn/people', tint: 'blue' },
 } as const satisfies Record<string, { name: string; icon: string; tint: Tint }>;
 export type ComingSoonKey = keyof typeof comingSoon;
 export const comingSoonPath = (key: ComingSoonKey) => `/coming-soon/${key}`;

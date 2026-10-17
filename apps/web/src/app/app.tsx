@@ -153,7 +153,44 @@ function TopBack({ fallback }: { fallback: string }) {
     </button>
   );
 }
-/** 底部标签栏（规格 4.1）：位图图标整体着色，10 号字，角标。 */
+/**
+ * 底部标签图标（2026-10-18 换用内联单色线条图）。
+ * 之前用 design-assets 里的灰度 png 当遮罩，png 自带灰底，mask 之后变成一整块实心方块。
+ * 内联 SVG 走 currentColor：未选中灰、选中绿，跟微信一致。
+ */
+function TabGlyph({ index }: { index: number }) {
+  const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.5 } as const;
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden focusable="false">
+      {index === 0 && (
+        <path
+          {...common}
+          d="M12 3.5c-4.97 0-9 3.36-9 7.5 0 2.3 1.26 4.35 3.25 5.72-.16 1.2-.78 2.5-1.86 3.53 1.68-.15 3.4-.83 4.6-1.72.92.24 1.93.37 3.01.37 4.97 0 9-3.36 9-7.5S16.97 3.5 12 3.5Z"
+        />
+      )}
+      {index === 1 && (
+        <g {...common}>
+          <circle cx="9" cy="8.5" r="3" />
+          <path d="M3.5 19c0-3.04 2.46-5.5 5.5-5.5s5.5 2.46 5.5 5.5" />
+          <path d="M15.5 6.3a3 3 0 0 1 0 5.4M17 13.6c1.9.8 3 2.4 3 4.4" />
+        </g>
+      )}
+      {index === 2 && (
+        <g {...common}>
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="M15.5 8.5 13 13l-4.5 2.5L11 11l4.5-2.5Z" />
+        </g>
+      )}
+      {index === 3 && (
+        <g {...common}>
+          <circle cx="12" cy="8" r="3.6" />
+          <path d="M4.8 20c0-3.6 3.2-6 7.2-6s7.2 2.4 7.2 6" />
+        </g>
+      )}
+    </svg>
+  );
+}
+/** 底部标签栏（规格 4.1）：单色线条图标随选中变色，10 号字，角标。 */
 function TabBar({ hidden }: { hidden: boolean }) {
   const badge = useMomentsBadge();
   const friends = useNewFriendsDot();
@@ -182,10 +219,7 @@ function TabBar({ hidden }: { hidden: boolean }) {
           {({ isActive }) => (
             <>
               <span className="tab-icon">
-                <OldIcon
-                  name={`../tab/main_page_index${tab.index}_${isActive ? 'pre' : 'nor'}.png`}
-                  size={28}
-                />
+                <TabGlyph index={tab.index} />
                 {tab.count > 0 ? (
                   <span className="tab-badge" aria-label={`${tab.count} 条未读`}>
                     {tab.count > 99 ? '99+' : tab.count}

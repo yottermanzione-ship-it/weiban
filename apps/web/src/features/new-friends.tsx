@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { MagnifyingGlass } from './old-icons.js';
 import { NewFriendsEndpoints, RoleRequestEndpoints, type NewFriendItem } from '@weiban/contracts';
 import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
@@ -55,8 +54,16 @@ function RoleRequestsSection() {
   });
   return (
     <section>
-      <GroupHeader>申请制作</GroupHeader>
       <MenuGroup>
+        <MenuRow
+          to="/plaza"
+          icon="wechat/search"
+          label="搜索角色"
+          subtitle="搜名字、绰号都可以；搜不到可以申请制作"
+        />
+        {requests.loading && !requests.data && (
+          <MenuRow label="正在读取申请…" chevron={false} disabled />
+        )}
         {requests.data?.items.map((item) => (
           <MenuRow
             key={item.requestId}
@@ -73,11 +80,6 @@ function RoleRequestsSection() {
           subtitle={requests.data?.items.length === 0 ? '还没有制作申请' : '查看全部申请与进度'}
         />
       </MenuGroup>
-      {requests.loading && (
-        <p role="status" className="page-note hint">
-          正在读取申请…
-        </p>
-      )}
       {requests.error && (
         <div role="alert" className="page-note">
           <p>{requests.error}</p>
@@ -130,9 +132,7 @@ export function NewFriendsPage() {
     <main>
       <NavBar title="新的朋友" fallback="/contacts" />
       <RoleRequestsSection />
-      <Link className="panel row-link" to="/plaza">
-        <MagnifyingGlass size={18} aria-hidden /> 搜索角色
-      </Link>
+      <GroupHeader>新的朋友</GroupHeader>
       {error && <p role="alert">{error}</p>}
       {remote.loading && !remote.data && (
         <p role="status" className="empty">

@@ -1360,8 +1360,10 @@ label.search-entry:focus-within {
 .miniapp-card .miniapp-grid {
   grid-auto-rows: 96px;
   align-items: center;
+  justify-items: center;
   gap: 0;
-  padding: 0;
+  /* 卡片是通栏的（左右各 -20），网格自己补回页面边距，否则第一列图标会贴屏幕边缘被裁掉。 */
+  padding: 0 var(--wb-space-5);
 }
 .miniapp-section {
   margin: var(--wb-space-4) 0 0;

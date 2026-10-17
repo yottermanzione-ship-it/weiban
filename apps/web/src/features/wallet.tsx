@@ -60,8 +60,8 @@ export function WalletPage() {
       <section className="wallet-card">
         <OldImage name="wechat/membership.webp" size={56} />
         <p className="wallet-label">我的积分</p>
-        <strong className="wallet-number tabular">
-          {data ? formatPoints(data.balancePoints) : '—'}
+        <strong className={`wallet-number tabular ${data ? '' : 'pending'}`}>
+          {data ? formatPoints(data.balancePoints) : '··'}
         </strong>
         {low && <span className="low-tag">积分不足</span>}
         {data && (data.heldPoints ?? 0) > 0 && (

@@ -271,7 +271,7 @@ export function ContactsPage() {
             <span>我的企业</span>
           </h2>
           <MenuGroup className="contact-fixed">
-            <ComingSoonRow id="workContacts" iconSize={40} chevron={false} />
+            <ComingSoonRow id="workContacts" iconSize={40} tile chevron={false} />
           </MenuGroup>
         </>
       )}
@@ -346,7 +346,7 @@ export function DiscoverPage() {
       </MenuGroup>
       {/* 总经理 10-14 确认（Q7）：角色广场放在朋友圈下面单独一组；Q6：不要摇一摇、购物 */}
       <MenuGroup>
-        <MenuRow to="/plaza" icon="drawn/people" tint="orange" label="角色广场" />
+        <MenuRow to="/plaza" icon="drawn/people" tint="orange" tile label="角色广场" />
       </MenuGroup>
       <MenuGroup>
         <ComingSoonRow id="channels" />
@@ -359,8 +359,9 @@ export function DiscoverPage() {
       <MenuGroup>
         <ComingSoonRow id="topstories" />
         <MenuRow
-          icon="wechat/discover_search.png"
+          icon="wechat/search"
           tint="red"
+          tile
           label="搜一搜"
           onClick={() => showToast('暂未开放', 2000, 'info')}
         />
