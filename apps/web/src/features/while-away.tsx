@@ -158,7 +158,7 @@ export function WhileAwayCard({
         </section>
       ) : (
         <button className="while-away-pill" onClick={() => onOpenChange(true)}>
-          <Sun size={16} aria-hidden /> TA 的近况
+          <Sun size={16} aria-hidden /> TA 的动态
         </button>
       )}
     </div>

@@ -13,6 +13,7 @@ import './app/shell.css';
 import './app/old-ui.css';
 import './app/chat-old.css';
 import './app/pages-old.css';
+import './app/ecology.css';
 import { App } from './app/app.js';
 import { applyDisplayPrefs } from './data/display-prefs.js';
 applyDisplayPrefs();
