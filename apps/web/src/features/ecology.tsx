@@ -222,8 +222,10 @@ export function EcologyPage() {
             <MenuRow
               to="/models"
               label="生态模型"
-              subtitle="和聊天模型分开设置；不选时用平台的默认后台模型"
-              value="跟随平台默认"
+              subtitle="当前仅为界面预览，生态模型选择尚未接通"
+              value="尚未接通"
+              chevron={false}
+              disabled
             />
           </MenuGroup>
 
@@ -255,3 +257,4 @@ export function EcologyPage() {
     </main>
   );
 }
+
