@@ -253,6 +253,7 @@ export function ForwardPicker({
             type="search"
             placeholder="搜索"
             value={search}
+            onClear={() => setSearch('')}
             onChange={(e) => setSearch(e.target.value)}
           />
           <div className="wx-forward-tabs">

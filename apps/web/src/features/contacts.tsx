@@ -238,6 +238,7 @@ export function ContactsPage() {
           aria-label="搜索通讯录"
           placeholder="搜索"
           value={query}
+          onClear={() => setQuery('')}
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
@@ -447,6 +448,12 @@ export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) 
           aria-label="搜索角色"
           placeholder={onboarding ? '搜索角色' : '搜索角色名'}
           value={query}
+          onClear={() => {
+            setQuery('');
+            setSearch('');
+            setCursor(undefined);
+            setPrevious([]);
+          }}
           maxLength={50}
           enterKeyHint="search"
           onChange={(event) => {
@@ -484,24 +491,16 @@ export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) 
                 key={role.characterId}
                 disabled={draft.saving}
                 onClick={() => void draft.choose(role.characterId)}
-                label={
-                  <>
-                    <CharacterAvatar id={role.characterId} profile={role} size={40} />
-                    <span className="row-name">{role.name}</span>
-                  </>
-                }
+                leading={<CharacterAvatar id={role.characterId} profile={role} size={40} />}
+                label={role.name}
                 subtitle={`${role.tagline}${role.added ? ' · 已添加' : ''}`}
               />
             ) : (
               <MenuRow
                 key={role.characterId}
                 to={`/characters/${role.characterId}`}
-                label={
-                  <>
-                    <CharacterAvatar id={role.characterId} profile={role} size={40} />
-                    <span className="row-name">{role.name}</span>
-                  </>
-                }
+                leading={<CharacterAvatar id={role.characterId} profile={role} size={40} />}
+                label={role.name}
                 subtitle={`${role.tagline}${role.added ? ' · 已添加' : ''}`}
               />
             ),

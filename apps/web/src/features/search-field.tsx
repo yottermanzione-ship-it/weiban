@@ -12,11 +12,13 @@ export function SearchField({
   children,
   prefix,
   inputRef,
+  onClear,
   ...props
 }: Omit<InputHTMLAttributes<HTMLInputElement>, 'prefix'> & {
   children?: ReactNode;
   prefix?: ReactNode;
   inputRef?: Ref<HTMLInputElement>;
+  onClear?: () => void;
 }) {
   const field = useRef<HTMLInputElement>(null);
   useImperativeHandle(inputRef, () => field.current!, []);
@@ -41,6 +43,20 @@ export function SearchField({
         type="search"
         aria-label={props['aria-label'] ?? props.placeholder ?? '搜索'}
       />
+      {onClear && String(props.value ?? '').length > 0 && (
+        <button
+          type="button"
+          className="wx-search-clear"
+          aria-label="清除搜索"
+          disabled={props.disabled || props.readOnly}
+          onClick={() => {
+            onClear();
+            field.current?.focus();
+          }}
+        >
+          <OldIcon name="wechat/close" size={16} />
+        </button>
+      )}
       {children}
     </div>
   );

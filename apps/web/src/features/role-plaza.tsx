@@ -208,6 +208,10 @@ function OfficialList() {
           aria-label="搜索微伴角色"
           placeholder="搜索名字、别名或作品"
           value={query}
+          onClear={() => {
+            setQuery('');
+            setSearch('');
+          }}
           maxLength={50}
           enterKeyHint="search"
           onChange={(event) => {
@@ -1098,12 +1102,8 @@ export function RoleRequestDetailPage() {
               <MenuGroup>
                 <MenuRow
                   to={`/characters/${data.characterId}`}
-                  label={
-                    <>
-                      <CharacterAvatar id={data.characterId} size={40} />
-                      <span className="row-name">查看角色资料</span>
-                    </>
-                  }
+                  leading={<CharacterAvatar id={data.characterId} size={40} />}
+                  label="查看角色资料"
                   subtitle={
                     data.addedToContacts || contact
                       ? '已加到你的通讯录'

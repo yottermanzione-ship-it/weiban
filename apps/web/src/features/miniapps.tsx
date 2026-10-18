@@ -341,6 +341,7 @@ export function MiniAppsHomePage() {
           aria-label="搜索小程序"
           placeholder="搜索小程序"
           value={query}
+          onClear={() => setQuery('')}
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>

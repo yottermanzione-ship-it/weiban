@@ -245,6 +245,10 @@ export function PlazaTab({ embedded = false }: { embedded?: boolean } = {}) {
           aria-label="搜索自定义角色"
           placeholder="搜索角色、标签、作者、基于的角色"
           value={query}
+          onClear={() => {
+            setQuery('');
+            setSearch('');
+          }}
           maxLength={50}
           enterKeyHint="search"
           onChange={(e) => {

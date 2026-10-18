@@ -222,6 +222,7 @@ export function SelectMembersPage() {
           placeholder="搜索"
           aria-label="搜索"
           value={query}
+          onClear={() => setQuery('')}
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>

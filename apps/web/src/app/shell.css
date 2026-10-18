@@ -287,6 +287,15 @@
 .menu-row > .user-message-avatar {
   margin-right: var(--wb-space-4);
 }
+.menu-leading {
+  display: grid;
+  flex: none;
+  place-items: center;
+  margin-right: var(--wb-space-4);
+}
+.menu-group:has(.menu-leading) .menu-row + .menu-row::before {
+  left: calc(var(--wb-space-5) + 40px + var(--wb-space-4));
+}
 .menu-text {
   display: grid;
   flex: 1;

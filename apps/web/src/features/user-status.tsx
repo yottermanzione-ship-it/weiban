@@ -124,7 +124,7 @@ export function UserStatusPage() {
         />
       </MenuGroup>
       {current && (
-        <p className="hint">
+        <p className="page-note">
           当前有效期：
           {current.expiresAt ? new Date(current.expiresAt).toLocaleString() : '直到手动清除'}
           。下方有效期选择在本次设置时生效。

@@ -171,6 +171,7 @@ export function MenuRow({
   iconColor,
   image,
   iconSize = 22,
+  leading,
   tile = false,
   label,
   subtitle,
@@ -191,6 +192,7 @@ export function MenuRow({
   iconColor?: string;
   image?: string;
   iconSize?: number;
+  leading?: ReactNode;
   tile?: boolean;
   label: ReactNode;
   subtitle?: ReactNode;
@@ -206,7 +208,9 @@ export function MenuRow({
 }) {
   const body = (
     <>
-      {image ? (
+      {leading != null ? (
+        <span className="menu-leading">{leading}</span>
+      ) : image ? (
         <span className="menu-icon">
           <OldImage name={image} size={iconSize} />
         </span>
