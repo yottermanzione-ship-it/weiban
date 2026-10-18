@@ -237,10 +237,16 @@ export function MenuRow({
       {extra}
       {value != null && <span className="menu-value">{value}</span>}
       {right}
-      {chevron && !center && <Chevron />}
+      {chevron && !center && (to || onClick) && <Chevron />}
     </>
   );
   const className = `menu-row ${subtitle != null ? 'two-line' : ''} ${danger ? 'danger' : ''}`;
+  if (!to && !onClick)
+    return (
+      <div className={className} aria-disabled={disabled || undefined}>
+        {body}
+      </div>
+    );
   return to && !disabled ? (
     <Link className={className} to={to}>
       {body}

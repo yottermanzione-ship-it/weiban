@@ -267,12 +267,17 @@
 .menu-group:has(.menu-icon, .icon-tile) .menu-row + .menu-row::before {
   left: 56px;
 }
-.menu-row:active {
+button.menu-row:active,
+a.menu-row:active {
   background: var(--wb-color-bg-pressed);
 }
-.menu-row:disabled {
+.menu-row:disabled,
+.menu-row[aria-disabled='true'] {
   opacity: 1;
   color: var(--wb-color-text-placeholder);
+}
+div.menu-row {
+  cursor: default;
 }
 .menu-icon,
 .menu-row > .icon-tile {
