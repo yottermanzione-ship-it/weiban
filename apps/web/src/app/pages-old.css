@@ -790,7 +790,7 @@ label.field-row {
   border-bottom: 0;
 }
 .moment-card-detail .moment-text {
-  font-size: 16px;
+  font-size: var(--wb-font-size-body-small);
   line-height: 1.5;
 }
 .moment-detail-actions {
@@ -812,7 +812,7 @@ label.field-row {
   border-radius: 0;
   background: none;
   color: var(--wb-color-text-link);
-  font-size: 15px;
+  font-size: var(--wb-font-size-callout);
 }
 .moment-detail-actions button + button {
   border-left: 0.5px solid var(--wb-color-border-hairline);
@@ -826,7 +826,7 @@ label.field-row {
   border-bottom: 0.5px solid var(--wb-color-border-hairline);
 }
 .moment-card-detail .moment-comment button {
-  font-size: 15px;
+  font-size: var(--wb-font-size-callout);
   line-height: 1.35;
 }
 .moment-avatar {

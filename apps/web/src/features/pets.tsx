@@ -33,7 +33,7 @@ import { prepareImage, uploadMedia } from '../data/upload.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { MediaImg } from './media.js';
 import { Dialog, showToast } from './toast.js';
-import { IconTile, NavBar } from './shell-kit.js';
+import { IconTile, NavBar, useEscape } from './shell-kit.js';
 
 /*
  * 共同领养宠物（PLAY-02；设计 pet.md）。只奖励不惩罚：没有饥饿值、没有「今天还没喂」、没有上限提示。
@@ -149,7 +149,11 @@ export function PetsPage() {
   return (
     <main>
       <NavBar title="宠物" fallback="/miniapps" />
-      {pets.loading && !pets.data && <span className="spinner" role="status" />}
+      {pets.loading && !pets.data && (
+        <p className="page-note" role="status">
+          正在读取宠物…
+        </p>
+      )}
       {pets.error && !pets.data && (
         <div className="empty">
           <p role="alert">{pets.error}</p>
@@ -277,13 +281,16 @@ export function PetWithPage() {
   }, [pets.data, characterId, navigate]);
   return (
     <main>
+      <NavBar title="宠物" fallback="/services/pets" />
       {pets.error ? (
         <div className="empty">
           <p>加载失败</p>
           <button onClick={pets.refresh}>重试</button>
         </div>
       ) : (
-        <span className="spinner" role="status" />
+        <p className="page-note" role="status">
+          正在读取宠物…
+        </p>
       )}
     </main>
   );
@@ -612,13 +619,16 @@ export function PetPage() {
   if (!pet)
     return (
       <main>
+        <NavBar title="宠物" fallback="/services/pets" />
         {remote.error ? (
           <div className="empty">
             <p>{remote.error}</p>
             <button onClick={remote.refresh}>重试</button>
           </div>
         ) : (
-          <span className="spinner" role="status" />
+          <p className="page-note" role="status">
+            正在读取宠物…
+          </p>
         )}
       </main>
     );
@@ -903,6 +913,7 @@ function PetAlbum({
   });
   const [uploading, setUploading] = useState(false);
   const [viewing, setViewing] = useState<string | null>(null);
+  useEscape(() => setViewing(null));
   const input = useRef<HTMLInputElement>(null);
   const photos = [...(album.data?.items ?? [])].sort((a, b) =>
     b.createdAt.localeCompare(a.createdAt),
@@ -948,16 +959,30 @@ function PetAlbum({
       </header>
       <input ref={input} type="file" accept="image/*" hidden onChange={(e) => void pick(e)} />
       {uploading && <span className="spinner" role="status" aria-label="正在上传" />}
+      {album.loading && !album.data && (
+        <p className="page-note" role="status">
+          正在读取相册…
+        </p>
+      )}
+      {album.error && (
+        <div className="empty">
+          <p role="alert">{album.error}</p>
+          <button className="text-button" disabled={album.loading} onClick={album.refresh}>
+            {album.loading ? '正在重试…' : '重试'}
+          </button>
+        </div>
+      )}
       {album.data && photos.length === 0 && (
         <p className="empty">
           {who} 发来的{pet.name}照片会收在这里
         </p>
       )}
       <div className="album-grid">
-        {photos.map((photo) => (
+        {photos.map((photo, index) => (
           <button
             key={photo.photoId}
             className="album-cell"
+            aria-label={`查看第 ${index + 1} 张照片`}
             onClick={() => setViewing(photo.mediaId)}
           >
             <MediaImg mediaId={photo.mediaId} />

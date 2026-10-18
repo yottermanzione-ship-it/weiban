@@ -43,6 +43,9 @@ button.tonal {
 .overview-name .meter {
   width: 100%;
 }
+.overview-name > .tag {
+  align-self: flex-start;
+}
 
 /* ---------- 卡册 ---------- */
 .card-grid {

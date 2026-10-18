@@ -57,7 +57,7 @@ import { CharacterAvatar } from './character-avatar.js';
 import { familiarityNames } from './growth.js';
 import { openShare } from './share.js';
 import { showToast } from './toast.js';
-import { NavBar, useBack } from './shell-kit.js';
+import { NavBar, useBack, useEscape } from './shell-kit.js';
 
 /*
  * 卡册、好感度总览、成就页（GRW-03、GRW-05、GRW-06；设计 cards-familiarity.md、me-and-services.md 3.1/3.2）。
@@ -400,7 +400,11 @@ function AlbumGroups({
                       <Cards size={24} />
                     </span>
                     <span className="card-tile-title">{card.title}</span>
-                    <small>{card.condition}</small>
+                    <small>
+                      {card.kind === 'familiarity'
+                        ? card.condition.replaceAll('熟悉度', '好感度')
+                        : card.condition}
+                    </small>
                   </div>
                 ))}
               </div>
@@ -425,6 +429,7 @@ function CardDetail({
   onClose(): void;
 }) {
   const navigate = useNavigate();
+  useEscape(onClose);
   const card = cards[index]!;
   const [back, setBack] = useState(false);
   const [opened, saveOpened] = useSeenRecord<string[]>('cards-opened');
@@ -716,7 +721,7 @@ export function AchievementsPage() {
         >
           <div className="sheet-panel" role="dialog" aria-label={open.name}>
             <strong>{open.name}</strong>
-            <p>{open.condition}</p>
+            <p>{open.condition.replaceAll('熟悉度', '好感度')}</p>
             {open.unlockedAt ? (
               <small className="hint">
                 获得于 {new Date(open.unlockedAt).toLocaleDateString('zh-CN')}

@@ -6,6 +6,21 @@
   line-height: var(--wb-line-height-normal);
   overflow-wrap: anywhere;
 }
+.switch-row > span {
+  flex: 1;
+  min-width: 0;
+}
+.switch-row .hint {
+  display: block;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+.rows > .row-button {
+  justify-content: space-between;
+}
+.rows > .row-button > small {
+  color: var(--wb-color-text-secondary);
+}
 .support-upload {
   position: relative;
 }

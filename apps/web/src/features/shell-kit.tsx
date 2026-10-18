@@ -431,7 +431,7 @@ export function TextTabs<T extends string>({
   );
 }
 
-function useEscape(onClose: () => void) {
+export function useEscape(onClose: () => void) {
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
