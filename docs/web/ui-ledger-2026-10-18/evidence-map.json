@@ -2592,13 +2592,13 @@
       "evidence": {
         "status": "源码已核待点按",
         "reviewedAt": "2026-10-18",
-        "scope": "私密模型缺失对话框引导到/models并要求选择私密模型，但ModelsPage仅提供chat选择，存在UI导航终点不匹配。未更改任何会员/模型业务。",
+        "scope": "私密模型缺失对话框现明确说明入口暂未开放，不再引导到仅提供聊天模型选择的 /models；这是纯界面修正，未改会员或模型业务。",
         "refs": [
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/scenario.tsx",
-            "quote": "onClick: () => navigate('/models')",
-            "line": 206
+            "quote": "私密模式模型的选择入口暂未开放。",
+            "line": 205
           },
           {
             "kind": "本轮源码阅读",
@@ -2610,7 +2610,7 @@
         "blockers": [
           "后端冻结"
         ],
-        "next": "P0只修用户可见引导/失效说明或讨论态入口，不恢复私密模型权益或后端。"
+        "next": "浏览器复点缺失模型弹窗；后端冻结期间不恢复私密模型权益。"
       }
     },
     {
@@ -3061,19 +3061,19 @@
       "evidence": {
         "status": "源码已核待点按",
         "reviewedAt": "2026-10-18",
-        "scope": "生态页尾已明确本机预览，不能说完全无说明；模型行仍声称分开设置却to /models，实际终点是全局聊天选择。旧主动通知入口及角色日常开关仍可达，需纯UI明确旧设置与新样例的范围。",
+        "scope": "生态页已明确为本机界面预览，模型行禁用并标明尚未接通；旧主动通知入口与角色日常开关仍可达，需继续核对可见范围。",
         "refs": [
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
             "quote": "localStorage.setItem(STORAGE_KEY",
-            "line": 141
+            "line": 134
           },
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
-            "quote": "to=\"/models\"",
-            "line": 223
+            "quote": "subtitle=\"当前仅为界面预览，生态模型选择尚未接通\"",
+            "line": 220
           },
           {
             "kind": "本轮源码阅读",
@@ -3084,8 +3084,8 @@
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
-            "quote": "本页为界面预览：开关只保存在本机",
-            "line": 253
+            "quote": "本页只演示设置效果，不会启停真实角色行为，也不会扣积分。",
+            "line": 157
           },
           {
             "kind": "本轮源码阅读",
@@ -3104,7 +3104,7 @@
           "后端冻结",
           "产品待定"
         ],
-        "next": "P0避免“生态模型”误导修改聊天选择；P1逐项标积分/动作记录为样例，旧开关文案区分范围，不接后端。"
+        "next": "浏览器复点预览提示、禁用模型行和旧设置入口；不接后端或积分。"
       }
     },
     {
@@ -5951,19 +5951,19 @@
       "evidence": {
         "status": "源码已核待点按",
         "reviewedAt": "2026-10-18",
-        "scope": "生态页尾已明确本机预览，不能说完全无说明；模型行仍声称分开设置却to /models，实际终点是全局聊天选择。旧主动通知入口及角色日常开关仍可达，需纯UI明确旧设置与新样例的范围。",
+        "scope": "生态页已明确为本机界面预览，模型行禁用并标明尚未接通；旧主动通知入口与角色日常开关仍可达，需继续核对可见范围。",
         "refs": [
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
             "quote": "localStorage.setItem(STORAGE_KEY",
-            "line": 141
+            "line": 134
           },
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
-            "quote": "to=\"/models\"",
-            "line": 223
+            "quote": "subtitle=\"当前仅为界面预览，生态模型选择尚未接通\"",
+            "line": 220
           },
           {
             "kind": "本轮源码阅读",
@@ -5974,8 +5974,8 @@
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
-            "quote": "本页为界面预览：开关只保存在本机",
-            "line": 253
+            "quote": "本页只演示设置效果，不会启停真实角色行为，也不会扣积分。",
+            "line": 157
           },
           {
             "kind": "本轮源码阅读",
@@ -5994,7 +5994,7 @@
           "后端冻结",
           "产品待定"
         ],
-        "next": "P0避免“生态模型”误导修改聊天选择；P1逐项标积分/动作记录为样例，旧开关文案区分范围，不接后端。"
+        "next": "浏览器复点预览提示、禁用模型行和旧设置入口；不接后端或积分。"
       }
     },
     {
