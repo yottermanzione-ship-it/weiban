@@ -430,6 +430,7 @@ export function Sheet({
   closeLabel = '关闭',
   action,
   half = false,
+  fullScreen = false,
 }: {
   title?: ReactNode;
   onClose(): void;
@@ -437,13 +438,14 @@ export function Sheet({
   closeLabel?: string;
   action?: ReactNode;
   half?: boolean;
+  fullScreen?: boolean;
 }) {
   useEscape(onClose);
   const closeIcon = closeLabel === '✕' || closeLabel === '关闭';
   return (
     <div className="sheet-scrim" onClick={onClose}>
       <div
-        className={`sheet-panel ${half ? 'half' : ''}`}
+        className={`sheet-panel shell-sheet ${half ? 'half' : ''} ${fullScreen ? 'fullscreen' : ''}`}
         role="dialog"
         aria-label={typeof title === 'string' ? title : undefined}
         onClick={(event) => event.stopPropagation()}

@@ -7,7 +7,6 @@ import { EcologyPage } from '../features/ecology.js';
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { RouteMotion } from '../features/route-motion.js';
-import { OldIcon } from '../features/old-icons.js';
 import { BackArrow } from '../features/shell-kit.js';
 import { useChat } from './chat.js';
 import { ConversationListPage } from '../features/conversation-list.js';
@@ -124,7 +123,7 @@ const ownHeader = [
   /^\/(sticker-store|support)(\/|$)/,
   /^\/me\/status$/,
   /^\/settings\/plugins$/,
-  /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice|cards|supplement)$/,
+  /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice|cards|supplement|memories)$/,
   /^\/(imports|pets|plaza|play|roles|role-requests)(\/|$)/,
   /^\/settings\/delete-account$/,
   /^\/(share|search)(\/|$)/,
@@ -216,7 +215,7 @@ function TabBar({ hidden }: { hidden: boolean }) {
     <nav className={`tabbar ${hidden ? 'hidden' : ''}`} aria-label="主导航">
       {tabs.map((tab) => (
         <NavLink key={tab.to} to={tab.to}>
-          {({ isActive }) => (
+          {() => (
             <>
               <span className="tab-icon">
                 <TabGlyph index={tab.index} />

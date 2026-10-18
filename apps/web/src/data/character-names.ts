@@ -14,6 +14,13 @@ export function useCharacterNames(ids: string[]) {
         await Promise.all(
           targets.slice(offset, offset + 4).map(async (characterId) => {
             try {
+              const cached = await api
+                .cached(CharacterEndpoints.getProfile, {
+                  params: { characterId },
+                })
+                .catch(() => undefined);
+              if (!active) return;
+              if (cached) setNames((previous) => ({ ...previous, [characterId]: cached.name }));
               const profile = await api.call(CharacterEndpoints.getProfile, {
                 params: { characterId },
                 signal: abort.signal,

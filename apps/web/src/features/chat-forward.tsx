@@ -67,7 +67,7 @@ export function ForwardedRecordBubble({
         <small>聊天记录 · {content.items.length} 条</small>
       </button>
       {open && (
-        <Sheet title={content.title} onClose={() => setOpen(false)} closeLabel="返回">
+        <Sheet title={content.title} onClose={() => setOpen(false)} closeLabel="返回" fullScreen>
           <div className="wx-forward-record">
             {content.items.map((i, n) => (
               <article key={n}>

@@ -549,14 +549,31 @@ div.menu-row {
 .sheet-panel.half {
   height: 50dvh;
 }
+.sheet-panel.shell-sheet {
+  gap: 0;
+  padding: 0;
+}
+.sheet-panel.fullscreen {
+  height: 100dvh;
+  max-height: 100dvh;
+  padding-top: env(safe-area-inset-top);
+  border-radius: 0;
+}
+.sheet-panel.fullscreen .sheet-head {
+  background: var(--wb-color-bg-page);
+}
 .sheet-head {
   display: grid;
   flex: none;
-  grid-template-columns: minmax(72px, 1fr) auto minmax(72px, 1fr);
+  grid-template-columns: minmax(72px, 1fr) minmax(0, auto) minmax(72px, 1fr);
   align-items: center;
   height: 56px;
 }
 .sheet-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--wb-font-size-headline);
   font-weight: var(--wb-font-weight-medium);
 }
@@ -569,7 +586,7 @@ div.menu-row {
   padding-right: var(--wb-space-3);
 }
 .sheet-text-button {
-  min-height: 0;
+  min-height: var(--wb-size-touch-target);
   margin-left: var(--wb-space-5);
   padding: 0;
   border: 0;

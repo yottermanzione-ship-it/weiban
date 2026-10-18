@@ -240,7 +240,7 @@ function MemorySheet({
           disabled={busy || !content.trim()}
           onClick={() => onSave(content.trim(), category, status, id)}
         >
-          完成
+          {busy ? '保存中…' : '完成'}
         </button>
       }
     >
@@ -268,6 +268,7 @@ function MemorySheet({
             <label>
               分类
               <select
+                aria-label="分类"
                 value={category}
                 onChange={(e) => setCategory(e.target.value as MemoryEntry['category'])}
               >

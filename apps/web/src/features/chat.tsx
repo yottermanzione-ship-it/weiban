@@ -1232,6 +1232,21 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         {divider}
         <div
           className={`wx-msg-row ${mine ? 'mine' : ''} ${selecting ? 'selecting' : ''}`}
+          role={selecting ? 'checkbox' : undefined}
+          aria-checked={selecting ? isSelected : undefined}
+          aria-label={
+            selecting
+              ? `选择消息：${Array.from(content(message)).slice(0, 80).join('')}`
+              : undefined
+          }
+          aria-disabled={selecting && !selectable(message) ? true : undefined}
+          tabIndex={selecting && selectable(message) ? 0 : undefined}
+          onKeyDown={(event) => {
+            if (!selecting || event.target !== event.currentTarget) return;
+            if (event.key !== ' ' && event.key !== 'Enter') return;
+            event.preventDefault();
+            toggle(message);
+          }}
           onClickCapture={(event) => {
             if (!selecting) return;
             event.preventDefault();
