@@ -108,3 +108,23 @@
 | `/discover` | 已打开；底栏切换已点 |
 | `/characters/:characterId` | 已看程澈资料；申请弹层打开/取消；其他角色待核 |
 | `*` | 未点按；源码/原批注待逐页核对 |
+
+## 2026-10-19 批量打开（46 条，390×844 全页截图）
+
+本轮用本机 Edge（Playwright，390×844、2x、触屏模拟）登录后逐条打开，截图在
+`C:/wb-dev/logs/ui-routes-1019/`（未入库）。**打开 ≠ 验收**：手势、长按、滚动惯性仍未复点。
+
+| 分组 | 已打开 | 结论 |
+|---|---|---|
+| 我 / 服务 / 钱包 | `/profile` `/services` `/wallet` `/wallet/recharge` `/ledger` `/prices` `/models` `/leaderboard` `/usage` | 布局正常；余额与档位要等接口（跨境隧道约 3–9 秒），不是布局问题 |
+| 设置 | `/settings/privacy` `/settings/general` `/settings/plugins` `/settings/about` `/services/proactive` | 插件页原本整页空白，已改为固定列出微信/QQ/微博三行 |
+| 角色子页 | `/characters/:id/memories` `/timeline` `/moments` `/relations` `/voice` `/cards` `/model` `/supplement` `/anniversaries` | 全部改成共用 NavBar；记忆/聊天信息深链接不再误报「不存在」 |
+| 创建与申请 | `/characters/custom/new` `/roles/create` `/role-requests` `/role-requests/new` | 创建页「角色分类」三个选项原本挤成一行互相压字，补 fieldset/radio 样式后恢复 |
+| 群与通讯录 | `/contacts/new` `/contacts/groups` `/groups/new` | 正常 |
+| 小程序 | `/services/cards` `/services/achievements` `/services/familiarity` `/services/period/*` `/imports` `/pets/adopt` | 卡册/成就/熟悉度/周期/导入原本没有标题栏，已统一 |
+| 朋友圈与广场 | `/moments/notifications` `/plaza` `/plaza/me` `/plaza/profile` `/plaza/publish` | 广场页 tab、搜索、筛选正常；`plaza/me`、`plaza/profile`、`timeline` 三条接口在本机环境偶发 500（连接池超时），非页面问题 |
+| 玩法 | `/play/letters` `/play/letters/new` `/play/reminders` | 正常 |
+| 其他 | `/chat/:id/search` `/coming-soon/:feature` | 正常 |
+
+仍未打开：`/plaza/works/:workId`、`/plaza/authors/:authorId`、`/plaza/report`、`/plaza/official/:characterId`、
+`/characters/:id/supplement` 的提交态、`/settings/delete-account`、`/share`、`/calls/:callId`、`/pets/:petId`、`/pets/with/:characterId`、`/moments/posts/:postId`、`/support/tickets/:id`、`/me/favorites/:id`、`/search/:conversationId`。
