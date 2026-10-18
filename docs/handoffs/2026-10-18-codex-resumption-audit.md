@@ -15,6 +15,7 @@
 ## 环境实查（只读，无部署/迁移/重启）
 
 - 香港docker ps：生产app健康；GET服务器回环/health：status=ok、role=all、contractVersion=3.5、数据库可用。具体生产SHA本轮未独立定位，0da5835为旧部署交接记录，不冒称新验证。
+- 后续只读核生产public.schema_migrations：79条，最新0090_plaza_official_role_requests，确认生产仍未执行0091～0102；与临时库迁移事实分别登记。
 - DR-001健康；docker inspect确认内存1073741824、NanoCPUs1000000000、127.0.0.1:5433绑定、restart=no；psql只读查询public.schema_migrations=91条、最新0102_billing_prehold。
 - 本轮未重跑迁移/回滚/套件。旧“迁移6/6、billing套件清库超时27跳过”仅引用先前记录，不算本轮通过，更不能写完整财务或并发验收。
 - 本机3000/5173/5190/5433无监听；CUA浏览器库存为空、iab不可用。docs/ops/local-preview.md是恢复说明，不代表现在运行。旧截图目录C:\wb-dev\logs\ui-shots～4存在；本轮未重新点按。
@@ -30,3 +31,4 @@
 
 - 已续接唯一子代理chat_forward，新副本C:\wb-dev\wb-ui-audit-1018 / codex/ui-audit-1018，基线2e92c92；任务docs/tasks/2026-10-18-ui-evidence-ledger.md。先交总账准确性/逐ID源码证据，不改业务或后端，不声称GUI通过。
 - 10份原未跟踪资料在共享ff时会阻挡，已逐文件核对与集成副本SHA256一致后移至C:\wb-dev\handoff-backups\2026-10-18-resume，再快进恢复为同内容跟踪文件；没有删除原资料。共享main/local-trunk在2e92c92一致。记忆目录和原两处worktree未动。
+- 为恢复后续GUI，在集成副本apps/web启动仅前端Vite，127.0.0.1:5173，exec session38255；尚未启动后端/隧道。app打开浏览器返回queued、CUA仍空，已异步请总经理方便时打开本会话浏览器；等待期间仅继续源码/台账，不把前端HTTP就绪算点按通过。
