@@ -1,0 +1,1113 @@
+{
+  "reviewedAt": "2026-10-18",
+  "sourceBaseline": "2e92c92fed82eb2eda230454fd45f18297f35149",
+  "notes": {
+    "T1.10": {
+      "status": "源码已核待点按",
+      "scope": "标题组件只有真实typing副标题；未核模型是否真实执行日常情景。",
+      "refs": [
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/chat-heading.tsx",
+          "quote": "{typing && ("
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.10.1.1": {
+      "status": "源码已核待点按",
+      "scope": "标题组件只有真实typing副标题；未核模型是否真实执行日常情景。",
+      "refs": [
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/chat-heading.tsx",
+          "quote": "{typing && ("
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.10.1.2": {
+      "status": "源码已核待点按",
+      "scope": "标题已挂CharacterStatus，旧verification“状态只有资料页”不得沿用。",
+      "refs": [
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/chat-heading.tsx",
+          "quote": "<CharacterStatus key={characterId}"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.11": {
+      "status": "历史截图待复点",
+      "scope": "历史A4交接明确记录对应菜单/引用/撤回/面板/私密界面，未逐张重新目视，当前不算验收。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "截图位于 `docs/web/a4-ui-2026-10-14/`。"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.11.5": {
+      "status": "历史截图待复点",
+      "scope": "历史A4交接明确记录对应菜单/引用/撤回/面板/私密界面，未逐张重新目视，当前不算验收。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "截图位于 `docs/web/a4-ui-2026-10-14/`。"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.11.6": {
+      "status": "历史截图待复点",
+      "scope": "历史A4交接明确记录对应菜单/引用/撤回/面板/私密界面，未逐张重新目视，当前不算验收。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "截图位于 `docs/web/a4-ui-2026-10-14/`。"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.11.8": {
+      "status": "历史截图待复点",
+      "scope": "历史A4交接明确记录对应菜单/引用/撤回/面板/私密界面，未逐张重新目视，当前不算验收。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "截图位于 `docs/web/a4-ui-2026-10-14/`。"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.11.9": {
+      "status": "历史截图待复点",
+      "scope": "历史A4交接明确记录对应菜单/引用/撤回/面板/私密界面，未逐张重新目视，当前不算验收。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "截图位于 `docs/web/a4-ui-2026-10-14/`。"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.11.10": {
+      "status": "历史截图待复点",
+      "scope": "历史A4交接明确记录对应菜单/引用/撤回/面板/私密界面，未逐张重新目视，当前不算验收。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "截图位于 `docs/web/a4-ui-2026-10-14/`。"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.11.11": {
+      "status": "历史截图待复点",
+      "scope": "历史A4交接明确记录对应菜单/引用/撤回/面板/私密界面，未逐张重新目视，当前不算验收。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "截图位于 `docs/web/a4-ui-2026-10-14/`。"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.11.12": {
+      "status": "历史截图待复点",
+      "scope": "历史A4交接明确记录对应菜单/引用/撤回/面板/私密界面，未逐张重新目视，当前不算验收。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "截图位于 `docs/web/a4-ui-2026-10-14/`。"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.11.14": {
+      "status": "历史截图待复点",
+      "scope": "历史A4交接明确记录对应菜单/引用/撤回/面板/私密界面，未逐张重新目视，当前不算验收。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "截图位于 `docs/web/a4-ui-2026-10-14/`。"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.14": {
+      "status": "历史截图待复点",
+      "scope": "历史A4交接明确记录对应菜单/引用/撤回/面板/私密界面，未逐张重新目视，当前不算验收。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "截图位于 `docs/web/a4-ui-2026-10-14/`。"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.14.3": {
+      "status": "历史截图待复点",
+      "scope": "历史A4交接明确记录对应菜单/引用/撤回/面板/私密界面，未逐张重新目视，当前不算验收。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "截图位于 `docs/web/a4-ui-2026-10-14/`。"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.14.7": {
+      "status": "历史截图待复点",
+      "scope": "历史A4交接明确记录对应菜单/引用/撤回/面板/私密界面，未逐张重新目视，当前不算验收。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "截图位于 `docs/web/a4-ui-2026-10-14/`。"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.14.10": {
+      "status": "历史截图待复点",
+      "scope": "历史A4交接明确记录对应菜单/引用/撤回/面板/私密界面，未逐张重新目视，当前不算验收。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "截图位于 `docs/web/a4-ui-2026-10-14/`。"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.14.11": {
+      "status": "历史截图待复点",
+      "scope": "历史A4交接明确记录对应菜单/引用/撤回/面板/私密界面，未逐张重新目视，当前不算验收。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "截图位于 `docs/web/a4-ui-2026-10-14/`。"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.14.13": {
+      "status": "历史截图待复点",
+      "scope": "历史A4交接明确记录对应菜单/引用/撤回/面板/私密界面，未逐张重新目视，当前不算验收。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "截图位于 `docs/web/a4-ui-2026-10-14/`。"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.14.17": {
+      "status": "历史截图待复点",
+      "scope": "历史A4交接明确记录对应菜单/引用/撤回/面板/私密界面，未逐张重新目视，当前不算验收。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "截图位于 `docs/web/a4-ui-2026-10-14/`。"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.15.1": {
+      "status": "源码已核待点按",
+      "scope": "私密模型缺失对话框引导到/models并要求选择私密模型，但ModelsPage仅提供chat选择，存在UI导航终点不匹配。未更改任何会员/模型业务。",
+      "refs": [
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/scenario.tsx",
+          "quote": "onClick: () => navigate('/models')"
+        },
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/models.tsx",
+          "quote": "body: { chat: key ? { modelKey: key } : null }"
+        }
+      ],
+      "next": "P0只修用户可见引导/失效说明或讨论态入口，不恢复私密模型权益或后端。",
+      "blockers": [
+        "后端冻结"
+      ]
+    },
+    "T1.11.13": {
+      "status": "源码已核待点按",
+      "scope": "10号后文T1.11.15推翻“不做转文字”；当前语音菜单确有转文字，不能照旧不要项删掉。",
+      "refs": [
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/chat.tsx",
+          "quote": "label: textShown[message.messageId] ? '收起文字' : '转文字'"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.11.15": {
+      "status": "源码已核待点按",
+      "scope": "10号后文T1.11.15推翻“不做转文字”；当前语音菜单确有转文字，不能照旧不要项删掉。",
+      "refs": [
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/chat.tsx",
+          "quote": "label: textShown[message.messageId] ? '收起文字' : '转文字'"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.11.2": {
+      "status": "历史截图待复点",
+      "scope": "历史完整转发组件样例有记录；本轮未重验源目标权限/真实HTTP。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-chat-forward.md",
+          "quote": "转发"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.11.7": {
+      "status": "历史截图待复点",
+      "scope": "历史完整转发组件样例有记录；本轮未重验源目标权限/真实HTTP。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-chat-forward.md",
+          "quote": "转发"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.11.4": {
+      "status": "历史截图待复点",
+      "scope": "A4逐messageId删除中间气泡的样例记录，不是本轮实测。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "delete-middle.png"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.10.8": {
+      "status": "历史截图待复点",
+      "scope": "A4心愿选择后合并单块有记录；外链仅源码核、其他卡片不一并通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "wishlist-chosen.png"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.10.3": {
+      "status": "历史截图待复点",
+      "scope": "A4单双击导航有样例，拍一拍发送最终未验；路由动画仍待本轮。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
+          "quote": "拍一拍发送链最终结果见下文"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.13.2": {
+      "status": "未核",
+      "scope": "q商店/旧素材导入已有历史交接可作复核入口，尚未逐项关联截图与当前代码，不能由功能名销账。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-16-q-features.md",
+          "quote": "表情"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.13.3": {
+      "status": "未核",
+      "scope": "q商店/旧素材导入已有历史交接可作复核入口，尚未逐项关联截图与当前代码，不能由功能名销账。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-16-q-features.md",
+          "quote": "表情"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.13.4": {
+      "status": "未核",
+      "scope": "q商店/旧素材导入已有历史交接可作复核入口，尚未逐项关联截图与当前代码，不能由功能名销账。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-16-q-features.md",
+          "quote": "表情"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.13.5": {
+      "status": "未核",
+      "scope": "q商店/旧素材导入已有历史交接可作复核入口，尚未逐项关联截图与当前代码，不能由功能名销账。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-16-q-features.md",
+          "quote": "表情"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.16.3": {
+      "status": "源码已核待点按",
+      "scope": "busy按key、乐观更新按字段；是否仍整排挥动需点按。",
+      "refs": [
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/chat-settings.tsx",
+          "quote": "disabled={!!switchBusy.muted}"
+        },
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/chat-settings.tsx",
+          "quote": "disabled={!!switchBusy.pinned}"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.16.4": {
+      "status": "源码已核待点按",
+      "scope": "busy按key、乐观更新按字段；是否仍整排挥动需点按。",
+      "refs": [
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/chat-settings.tsx",
+          "quote": "disabled={!!switchBusy.muted}"
+        },
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/chat-settings.tsx",
+          "quote": "disabled={!!switchBusy.pinned}"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.16.11": {
+      "status": "历史截图待复点",
+      "scope": "A5称呼入口删除有历史样例，普通昵称为初始资料；不扩大为关系成长完成。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a5.md",
+          "quote": "称呼"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T2.11.1": {
+      "status": "历史截图待复点",
+      "scope": "A7交接逐项列资料文案、记忆、广场或删除入口；本轮未逐张看截图/点按，整项仍待核。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a7.md",
+          "quote": "## GUI"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T2.12.3": {
+      "status": "历史截图待复点",
+      "scope": "A7交接逐项列资料文案、记忆、广场或删除入口；本轮未逐张看截图/点按，整项仍待核。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a7.md",
+          "quote": "## GUI"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T2.12.4": {
+      "status": "历史截图待复点",
+      "scope": "A7交接逐项列资料文案、记忆、广场或删除入口；本轮未逐张看截图/点按，整项仍待核。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a7.md",
+          "quote": "## GUI"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T2.12.6": {
+      "status": "历史截图待复点",
+      "scope": "A7交接逐项列资料文案、记忆、广场或删除入口；本轮未逐张看截图/点按，整项仍待核。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a7.md",
+          "quote": "## GUI"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T2.12.7": {
+      "status": "历史截图待复点",
+      "scope": "A7交接逐项列资料文案、记忆、广场或删除入口；本轮未逐张看截图/点按，整项仍待核。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a7.md",
+          "quote": "## GUI"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T2.12.8": {
+      "status": "历史截图待复点",
+      "scope": "A7交接逐项列资料文案、记忆、广场或删除入口；本轮未逐张看截图/点按，整项仍待核。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a7.md",
+          "quote": "## GUI"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T2.12.15": {
+      "status": "历史截图待复点",
+      "scope": "A7交接逐项列资料文案、记忆、广场或删除入口；本轮未逐张看截图/点按，整项仍待核。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a7.md",
+          "quote": "## GUI"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T2.12.16.2": {
+      "status": "历史截图待复点",
+      "scope": "A7交接逐项列资料文案、记忆、广场或删除入口；本轮未逐张看截图/点按，整项仍待核。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a7.md",
+          "quote": "## GUI"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T2.13": {
+      "status": "历史截图待复点",
+      "scope": "A7交接逐项列资料文案、记忆、广场或删除入口；本轮未逐张看截图/点按，整项仍待核。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a7.md",
+          "quote": "## GUI"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T2.16.0": {
+      "status": "历史截图待复点",
+      "scope": "A7交接逐项列资料文案、记忆、广场或删除入口；本轮未逐张看截图/点按，整项仍待核。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a7.md",
+          "quote": "## GUI"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T2.16.0.1": {
+      "status": "历史截图待复点",
+      "scope": "A7交接逐项列资料文案、记忆、广场或删除入口；本轮未逐张看截图/点按，整项仍待核。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a7.md",
+          "quote": "## GUI"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T2.16.0.2": {
+      "status": "历史截图待复点",
+      "scope": "A7交接逐项列资料文案、记忆、广场或删除入口；本轮未逐张看截图/点按，整项仍待核。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a7.md",
+          "quote": "## GUI"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T2.16.0.3": {
+      "status": "历史截图待复点",
+      "scope": "A7交接逐项列资料文案、记忆、广场或删除入口；本轮未逐张看截图/点按，整项仍待核。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a7.md",
+          "quote": "## GUI"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T2.16.2": {
+      "status": "历史截图待复点",
+      "scope": "A7交接逐项列资料文案、记忆、广场或删除入口；本轮未逐张看截图/点按，整项仍待核。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a7.md",
+          "quote": "## GUI"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.2.2": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.2.4": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.2.5": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.2.6": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.3.1": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.3.2": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.3.3": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.3.4": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.3.5": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.3.6": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.3.7": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.3.8": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.3.9": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.4": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.9.4": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.10.5.1": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T4.10.13": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "G3.7": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "G3.8": {
+      "status": "历史截图待复点",
+      "scope": "A9交接列对应界面证据/边界；旧收藏详情重定向仅源码，Safari仅示意，不能把整项算通过。",
+      "refs": [
+        {
+          "kind": "历史开发交接",
+          "path": "docs/handoffs/2026-10-15-web-a9.md",
+          "quote": "## 最终浏览器复看与清理"
+        }
+      ],
+      "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。",
+      "blockers": []
+    },
+    "T1.8": {
+      "status": "后端冻结",
+      "scope": "C1已定官方助手方向；真实小V未完成，UI样例可另排，不再写总经理没决定。",
+      "refs": [],
+      "next": "先做官方助手可讨论UI；真实知识库/数据读取保持冻结。",
+      "blockers": [
+        "后端冻结"
+      ]
+    },
+    "T1.10.5": {
+      "status": "后端冻结",
+      "scope": "全部聊天多模态方向已定；真实模型路由属于冻结后端，不凭消息图片组件存在说完成。",
+      "refs": [],
+      "next": "只核图片消息UI，不改路由。",
+      "blockers": [
+        "后端冻结"
+      ]
+    },
+    "T1.10.6": {
+      "status": "后端冻结",
+      "scope": "C1已明确决策/回复时机方向，精确实现未验，内核冻结；界面手势另可排。",
+      "refs": [],
+      "next": "先列UI/typing复点，真实模型与时机后续。",
+      "blockers": [
+        "后端冻结"
+      ]
+    },
+    "T1.12.2": {
+      "status": "后端冻结",
+      "scope": "C1已明确决策/回复时机方向，精确实现未验，内核冻结；界面手势另可排。",
+      "refs": [],
+      "next": "先列UI/typing复点，真实模型与时机后续。",
+      "blockers": [
+        "后端冻结"
+      ]
+    },
+    "T1.16.9": {
+      "status": "后端冻结",
+      "scope": "拆条开关已有，标点/动作约束属已定方向的内核任务，不是产品全未定。",
+      "refs": [
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/chat-settings.tsx",
+          "quote": "label=\"拆条\""
+        }
+      ],
+      "next": "核UI开关，内核保持冻结。",
+      "blockers": [
+        "后端冻结"
+      ]
+    },
+    "T1.16.12": {
+      "status": "后端冻结",
+      "scope": "C1熟悉度成长/关系解锁方向已定；当前仍关系类型表单，不可称系统关系成长已做。",
+      "refs": [
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/chat-settings.tsx",
+          "quote": "label=\"关系类型\""
+        }
+      ],
+      "next": "纯UI可出讨论样例，关系数据规则不改。",
+      "blockers": [
+        "后端冻结"
+      ]
+    },
+    "T2.12.10": {
+      "status": "后端冻结",
+      "scope": "C1熟悉度成长/关系解锁方向已定；当前仍关系类型表单，不可称系统关系成长已做。",
+      "refs": [
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/chat-settings.tsx",
+          "quote": "label=\"关系类型\""
+        }
+      ],
+      "next": "纯UI可出讨论样例，关系数据规则不改。",
+      "blockers": [
+        "后端冻结"
+      ]
+    },
+    "T1.16.13": {
+      "status": "源码已核待点按",
+      "scope": "生态页尾已明确本机预览，不能说完全无说明；模型行仍声称分开设置却to /models，实际终点是全局聊天选择。旧主动通知入口及角色日常开关仍可达，需纯UI明确旧设置与新样例的范围。",
+      "refs": [
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/ecology.tsx",
+          "quote": "localStorage.setItem(STORAGE_KEY"
+        },
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/ecology.tsx",
+          "quote": "to=\"/models\""
+        },
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/settings.tsx",
+          "quote": "label=\"主动消息与免打扰\""
+        },
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/ecology.tsx",
+          "quote": "本页为界面预览：开关只保存在本机"
+        },
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/models.tsx",
+          "quote": "body: { chat: key ? { modelKey: key } : null }"
+        },
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/chat-settings.tsx",
+          "quote": "label=\"TA 的日常\""
+        }
+      ],
+      "next": "P0避免“生态模型”误导修改聊天选择；P1逐项标积分/动作记录为样例，旧开关文案区分范围，不接后端。",
+      "blockers": [
+        "后端冻结",
+        "产品待定"
+      ]
+    },
+    "T4.2.8": {
+      "status": "源码已核待点按",
+      "scope": "生态页尾已明确本机预览，不能说完全无说明；模型行仍声称分开设置却to /models，实际终点是全局聊天选择。旧主动通知入口及角色日常开关仍可达，需纯UI明确旧设置与新样例的范围。",
+      "refs": [
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/ecology.tsx",
+          "quote": "localStorage.setItem(STORAGE_KEY"
+        },
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/ecology.tsx",
+          "quote": "to=\"/models\""
+        },
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/settings.tsx",
+          "quote": "label=\"主动消息与免打扰\""
+        },
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/ecology.tsx",
+          "quote": "本页为界面预览：开关只保存在本机"
+        },
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/models.tsx",
+          "quote": "body: { chat: key ? { modelKey: key } : null }"
+        },
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/chat-settings.tsx",
+          "quote": "label=\"TA 的日常\""
+        }
+      ],
+      "next": "P0避免“生态模型”误导修改聊天选择；P1逐项标积分/动作记录为样例，旧开关文案区分范围，不接后端。",
+      "blockers": [
+        "后端冻结",
+        "产品待定"
+      ]
+    },
+    "T1.16.14": {
+      "status": "后端冻结",
+      "scope": "C1已裁定克隆暂缓/预设音色方向；当前保留VoiceRow不能写声音已可用。",
+      "refs": [
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/chat-settings.tsx",
+          "quote": "<VoiceRow characterId="
+        }
+      ],
+      "next": "只核入口说明，不做克隆。",
+      "blockers": [
+        "后端冻结"
+      ]
+    },
+    "T2.2": {
+      "status": "后端冻结",
+      "scope": "C1候选引擎/极简申请方向已定；UI可先核字段/导航，搜索生成及制作执行不恢复。",
+      "refs": [],
+      "next": "纯UI列出候选/申请演示，暂不扩后端。",
+      "blockers": [
+        "后端冻结"
+      ]
+    },
+    "T2.14.3": {
+      "status": "后端冻结",
+      "scope": "C1候选引擎/极简申请方向已定；UI可先核字段/导航，搜索生成及制作执行不恢复。",
+      "refs": [],
+      "next": "纯UI列出候选/申请演示，暂不扩后端。",
+      "blockers": [
+        "后端冻结"
+      ]
+    },
+    "T2.14.1": {
+      "status": "产品待定",
+      "scope": "C1决定先调研角色卡字段，字段最终方案未定；C9会员/付费也冻结，不能照旧草案写默认权益。",
+      "refs": [],
+      "next": "先做字段调研与静态UI，AI优化不接通。",
+      "blockers": [
+        "后端冻结",
+        "产品待定"
+      ]
+    },
+    "G3.6": {
+      "status": "源码已核待点按",
+      "scope": "10号明确“先这样”，不是删除或必做重设计；现有分享编辑器仍在，不应列P0重做。",
+      "refs": [
+        {
+          "kind": "本轮源码阅读",
+          "path": "apps/web/src/features/share.tsx",
+          "quote": "export function ShareEditorPage()"
+        }
+      ],
+      "next": "P3保留，样式另讨论。",
+      "blockers": []
+    }
+  }
+}

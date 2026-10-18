@@ -1,15 +1,89 @@
 {
+  "auditedAt": "2026-10-18",
+  "baseline": "2e92c92fed82eb2eda230454fd45f18297f35149",
+  "scope": "台账事实核对；未浏览器复点，未改业务",
+  "exportReportedCounts": {
+    "确认": 209,
+    "要改": 104,
+    "不要": 81,
+    "未标": 7
+  },
+  "parsedCounts": {
+    "确认": 211,
+    "要改": 104,
+    "不要": 81,
+    "未标": 5
+  },
+  "sources": [
+    {
+      "path": "docs/refactor/08-master-map.json",
+      "sha256": "ee10739e7485d35a009220ae92a2d60cfec1404317708c5210789d755749d566"
+    },
+    {
+      "path": "docs/refactor/10-gm-review-annotations.md",
+      "sha256": "cd0819ca0481c5e7b40d4464306586cdcd0ae4651e20df849b60da3383c9529c"
+    },
+    {
+      "path": "docs/refactor/11-plan-and-open-topics.md",
+      "sha256": "9e913bbc4e9acf5c1f4eaef90842f3fb1ce2dc934b085f6edc2b35959ed95e69"
+    }
+  ],
+  "definitions": {
+    "originalMap": "10月14日静态地图原状，保留完整sourceRow",
+    "verdict": "批注决定；继承仅依10号导出总说明，不继承父项",
+    "evidence": "实施证据；无通过状态，未经逐行证据不得销账",
+    "planReferences": "A/B只是排期/历史议题引用，不是实施结论"
+  },
+  "discrepancy": {
+    "declared": {
+      "确认": 209,
+      "要改": 104,
+      "不要": 81,
+      "未标": 7
+    },
+    "parsedDirect": {
+      "确认": 25,
+      "要改": 104,
+      "不要": 81,
+      "未标": 5
+    },
+    "omitted": 186,
+    "computedWithExportRule": {
+      "确认": 211,
+      "要改": 104,
+      "不要": 81,
+      "未标": 5
+    },
+    "note": "原文总计与逐行差2行；未标仅找到5个ID，禁止为凑统计猜另外2个。"
+  },
   "total": 401,
-  "status": {
+  "originalStatus": {
     "已有且一致": 244,
     "缺失": 88,
     "已有需调整": 43,
     "不需要": 26
   },
   "verdict": {
-    "确认": 216,
+    "确认": 211,
     "要改": 104,
-    "不要": 81
+    "不要": 81,
+    "未标": 5
   },
-  "planned": 92
+  "annotationSource": {
+    "导出总说明继承": 186,
+    "逐行原文": 215
+  },
+  "evidence": {
+    "未核": 324,
+    "后端冻结": 10,
+    "源码已核待点按": 11,
+    "历史截图待复点": 55,
+    "产品待定": 1
+  },
+  "needsAction": 185,
+  "actionsWithReview": 81,
+  "actionsWithoutReview": 104,
+  "directPlanRows": 99,
+  "actionPlanRows": 81,
+  "noBrowserAcceptance": true
 }
