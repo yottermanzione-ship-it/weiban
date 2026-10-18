@@ -3,7 +3,6 @@
  * 顺序、资格、说明都以服务器 listModes 为准（section = private 放底部「私密」一栏；没资格的不返回）。
  */
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { OldIcon } from './old-icons.js';
 import {
   CompanionEndpoints,
@@ -15,11 +14,19 @@ import {
 import { ApiFailure } from '@weiban/client-core';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
-import { GroupHeader, IconTile, MenuGroup, MenuRow, Sheet, type Tint } from './shell-kit.js';
+import {
+  GroupHeader,
+  IconTile,
+  MenuGroup,
+  MenuRow,
+  Sheet,
+  type Tint,
+} from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 
 export type ScenarioTarget =
-  { kind: 'character'; characterId: string } | { kind: 'group'; conversationId: string };
+  | { kind: 'character'; characterId: string }
+  | { kind: 'group'; conversationId: string };
 
 /** 显示名（服务器没给名字时兜底；系统提示「已切换到…」也用它）。 */
 export const presetNames: Record<string, string> = {
@@ -52,18 +59,25 @@ export function useCurrentPreset(target: ScenarioTarget | null) {
   const character = useRemote(
     CompanionEndpoints.getForCharacter,
     {
-      params: { characterId: target?.kind === 'character' ? target.characterId : '' },
+      params: {
+        characterId: target?.kind === 'character' ? target.characterId : '',
+      },
     },
     target?.kind === 'character',
   );
   const group = useRemote(
     GroupCompanionEndpoints.getSettings,
     {
-      params: { conversationId: target?.kind === 'group' ? target.conversationId : '' },
+      params: {
+        conversationId: target?.kind === 'group' ? target.conversationId : '',
+      },
     },
     target?.kind === 'group',
   );
-  const mode = target?.kind === 'group' ? group.data?.scenarioMode : character.data?.scenarioMode;
+  const mode =
+    target?.kind === 'group'
+      ? group.data?.scenarioMode
+      : character.data?.scenarioMode;
   return {
     mode: mode as ScenarioMode | undefined,
     refresh: target?.kind === 'group' ? group.refresh : character.refresh,
@@ -81,18 +95,21 @@ export function ScenarioSheet({
   onClose(): void;
   onChanged(mode: ScenarioMode): void;
 }) {
-  const navigate = useNavigate();
   const characterModes = useRemote(
     CompanionEndpoints.listModes,
     {
-      params: { characterId: target.kind === 'character' ? target.characterId : '' },
+      params: {
+        characterId: target.kind === 'character' ? target.characterId : '',
+      },
     },
     target.kind === 'character',
   );
   const groupModes = useRemote(
     GroupCompanionEndpoints.listModes,
     {
-      params: { conversationId: target.kind === 'group' ? target.conversationId : '' },
+      params: {
+        conversationId: target.kind === 'group' ? target.conversationId : '',
+      },
     },
     target.kind === 'group',
   );
@@ -101,10 +118,12 @@ export function ScenarioSheet({
   const [prompt, setPrompt] = useState<'model' | 'intro' | null>(null);
   const items = modes.data?.items ?? [];
   const presets = items.filter(
-    (m) => (m.section ?? (m.id === 'adult' ? 'private' : 'preset')) === 'preset',
+    (m) =>
+      (m.section ?? (m.id === 'adult' ? 'private' : 'preset')) === 'preset',
   );
   const privates = items.filter(
-    (m) => (m.section ?? (m.id === 'adult' ? 'private' : 'preset')) === 'private',
+    (m) =>
+      (m.section ?? (m.id === 'adult' ? 'private' : 'preset')) === 'private',
   );
 
   async function apply(id: ScenarioMode) {
@@ -123,7 +142,8 @@ export function ScenarioSheet({
       onChanged(id);
       onClose();
     } catch (e) {
-      if (e instanceof ApiFailure && e.code === 'adult_model_missing') setPrompt('model');
+      if (e instanceof ApiFailure && e.code === 'adult_model_missing')
+        setPrompt('model');
       else if (e instanceof ApiFailure && e.code === 'adult_mode_not_eligible')
         showToast('群里有成员不能使用这个预设');
       else if (e instanceof ApiFailure && e.code === 'romance_not_allowed')
@@ -167,21 +187,27 @@ export function ScenarioSheet({
         }
         subtitle={option.description || undefined}
         right={
-          selected ? <OldIcon name="wechat/check" size={22} className="ink-brand" /> : undefined
+          selected ? (
+            <OldIcon name="wechat/check" size={22} className="ink-brand" />
+          ) : undefined
         }
       />
     );
   };
   return (
     <Sheet title="情景预设" onClose={onClose} closeLabel="✕">
-      {modes.loading && !modes.data && <div className="skeleton-row" role="status" />}
+      {modes.loading && !modes.data && (
+        <div className="skeleton-row" role="status" />
+      )}
       {modes.error && !modes.data && (
         <div className="empty">
           <p>加载失败</p>
           <button onClick={modes.refresh}>重试</button>
         </div>
       )}
-      <MenuGroup className="preset-list">{presets.map((option) => row(option))}</MenuGroup>
+      <MenuGroup className="preset-list">
+        {presets.map((option) => row(option))}
+      </MenuGroup>
       {privates.length > 0 && (
         <>
           <GroupHeader>私密模式</GroupHeader>
@@ -202,11 +228,12 @@ export function ScenarioSheet({
         <Dialog
           title="暂时无法开启私密模式"
           actions={[
-            { label: '取消', onClick: () => setPrompt(null) },
-            { label: '去选择', primary: true, onClick: () => navigate('/models') },
+            { label: '知道了', primary: true, onClick: () => setPrompt(null) },
           ]}
         >
-          <p className="hint">尚未设置私密模式模型，当前无法开启。私密模式模型的选择入口暂未开放。</p>
+          <p className="hint">
+            尚未设置私密模式模型，当前无法开启。私密模式模型的选择入口暂未开放。
+          </p>
         </Dialog>
       )}
       {prompt === 'intro' && (
@@ -233,4 +260,3 @@ export function ScenarioSheet({
     </Sheet>
   );
 }
-

@@ -9,7 +9,14 @@
  * 相关：docs/product/input/2026-10-18-gm-ecology-vision.md
  */
 import { useEffect, useMemo, useState } from 'react';
-import { GroupHeader, MenuGroup, MenuRow, NavBar, SwitchRow, CheckCircle } from './shell-kit.js';
+import {
+  GroupHeader,
+  MenuGroup,
+  MenuRow,
+  NavBar,
+  SwitchRow,
+  CheckCircle,
+} from './shell-kit.js';
 
 type ActionKey =
   | 'moments'
@@ -82,10 +89,30 @@ const ACTIONS: {
   },
 ];
 
-const FREQUENCIES: { key: Frequency; label: string; subtitle: string; points: number }[] = [
-  { key: '30m', label: '每 30 分钟', subtitle: '反应最快，积分消耗最高', points: 25 },
-  { key: '2h', label: '每 2 小时', subtitle: '推荐：像真人，成本可控', points: 6 },
-  { key: '4d', label: '每天 4 次', subtitle: '只在早中晚和睡前想一次', points: 2 },
+const FREQUENCIES: {
+  key: Frequency;
+  label: string;
+  subtitle: string;
+  points: number;
+}[] = [
+  {
+    key: '30m',
+    label: '每 30 分钟',
+    subtitle: '反应最快，积分消耗最高',
+    points: 25,
+  },
+  {
+    key: '2h',
+    label: '每 2 小时',
+    subtitle: '推荐：像真人，成本可控',
+    points: 6,
+  },
+  {
+    key: '4d',
+    label: '每天 4 次',
+    subtitle: '只在早中晚和睡前想一次',
+    points: 2,
+  },
 ];
 
 const STORAGE_KEY = 'weiban:ecology-preview:v1';
@@ -144,7 +171,8 @@ export function EcologyPage() {
     }
   }, [state]);
 
-  const thinking = FREQUENCIES.find((f) => f.key === state.frequency)?.points ?? 6;
+  const thinking =
+    FREQUENCIES.find((f) => f.key === state.frequency)?.points ?? 6;
   const actionPoints = ACTIONS.filter((a) => state.actions[a.key]).reduce(
     (sum, a) => sum + a.points,
     0,
@@ -153,7 +181,10 @@ export function EcologyPage() {
   const monthly = useMemo(() => Math.round((daily * 30) / 100), [daily]);
 
   function toggleAction(key: ActionKey, value: boolean) {
-    setState((prev) => ({ ...prev, actions: { ...prev.actions, [key]: value } }));
+    setState((prev) => ({
+      ...prev,
+      actions: { ...prev.actions, [key]: value },
+    }));
   }
 
   return (
@@ -161,7 +192,8 @@ export function EcologyPage() {
       <NavBar title="角色生态" fallback="/services" />
 
       <p className="ecology-intro">
-        开启后，TA 会像真人一样每隔一段时间自己想一想：现在该不该发条朋友圈、要不要找你说话。想的过程也会消耗积分，即使最后决定什么都不做。
+        开启后，TA
+        会像真人一样每隔一段时间自己想一想：现在该不该发条朋友圈、要不要找你说话。想的过程也会消耗积分，即使最后决定什么都不做。
       </p>
 
       <MenuGroup>
@@ -175,7 +207,9 @@ export function EcologyPage() {
 
       {state.enabled && (
         <>
-          <GroupHeader right={`约 ${daily} 积分/天`}>TA 可以自己做的事</GroupHeader>
+          <GroupHeader right={`约 ${daily} 积分/天`}>
+            TA 可以自己做的事
+          </GroupHeader>
           <MenuGroup>
             {ACTIONS.map((action) => (
               <SwitchRow
@@ -183,13 +217,17 @@ export function EcologyPage() {
                 label={
                   <span className="ecology-label">
                     {action.label}
-                    {action.note && <em className="ecology-badge">{action.note}</em>}
+                    {action.note && (
+                      <em className="ecology-badge">{action.note}</em>
+                    )}
                   </span>
                 }
                 subtitle={
                   <span className="ecology-sub">
                     {action.subtitle}
-                    <span className="ecology-points">≈{action.points} 积分/天</span>
+                    <span className="ecology-points">
+                      ≈{action.points} 积分/天
+                    </span>
                   </span>
                 }
                 checked={state.actions[action.key]}
@@ -203,7 +241,9 @@ export function EcologyPage() {
             {FREQUENCIES.map((f) => (
               <MenuRow
                 key={f.key}
-                onClick={() => setState((prev) => ({ ...prev, frequency: f.key }))}
+                onClick={() =>
+                  setState((prev) => ({ ...prev, frequency: f.key }))
+                }
                 label={f.label}
                 subtitle={f.subtitle}
                 chevron={false}
@@ -220,7 +260,6 @@ export function EcologyPage() {
           <GroupHeader>用哪个模型想</GroupHeader>
           <MenuGroup>
             <MenuRow
-              to="/models"
               label="生态模型"
               subtitle="当前仅为界面预览，生态模型选择尚未接通"
               value="尚未接通"
@@ -257,4 +296,3 @@ export function EcologyPage() {
     </main>
   );
 }
-
