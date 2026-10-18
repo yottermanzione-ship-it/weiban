@@ -2186,3 +2186,20 @@ button.primary.wx-auth-submit {
 .radio-option.disabled {
   opacity: 0.55;
 }
+
+/* 举报页：fieldset 当卡片时 legend 会顶到左边缘被裁掉 */
+fieldset.panel.rows {
+  padding: var(--wb-space-3) 0 0;
+}
+fieldset.panel.rows > legend {
+  padding: 0 var(--wb-space-4) var(--wb-space-2);
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-subhead);
+}
+fieldset.panel.rows > label.check {
+  padding: var(--wb-space-3) var(--wb-space-4);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
+}
+fieldset.panel.rows > label.check:last-of-type {
+  border-bottom: 0;
+}

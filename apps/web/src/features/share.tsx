@@ -34,6 +34,7 @@ import {
   type SharePerson,
 } from './share-render.js';
 import { showToast } from './toast.js';
+import { EmptyState, NavBar } from './shell-kit.js';
 
 /*
  * 分享图编辑页（share-templates.md 第 5、7 节；EXP-01、EXP-02）。
@@ -397,29 +398,40 @@ export function ShareEditorPage() {
   if (!source)
     return (
       <main>
-        <p className="empty">没有可以生成分享图的内容</p>
-        <button onClick={() => navigate(-1)}>返回</button>
+        <NavBar title="分享图" fallback="/chat" />
+        <EmptyState
+          icon="wechat/star"
+          title="没有可以生成分享图的内容"
+          desc="长按一条消息或一条朋友圈，选择「分享图」"
+          action={
+            <button type="button" className="text-button text-action" onClick={() => navigate(-1)}>
+              返回
+            </button>
+          }
+        />
       </main>
     );
   return (
     <main className="share-page">
-      <header className="page-header">
-        <button className="text-button" onClick={() => navigate(-1)}>
-          ‹ 取消
-        </button>
-        <h1>分享图</h1>
-        <span />
-      </header>
+      <NavBar title="分享图" fallback="/chat" onBack={() => navigate(-1)} />
       <div className="share-preview" aria-busy={rendering}>
         {error ? (
           <div className="empty">
             <p>{error}</p>
-            <button onClick={() => navigate(-1)}>返回</button>
+            <button type="button" className="text-button text-action" onClick={() => navigate(-1)}>
+              返回
+            </button>
           </div>
         ) : failed ? (
           <div className="empty">
             <p>生成失败</p>
-            <button onClick={() => setRetry((v) => v + 1)}>重试</button>
+            <button
+              type="button"
+              className="text-button text-action"
+              onClick={() => setRetry((v) => v + 1)}
+            >
+              重试
+            </button>
           </div>
         ) : preview ? (
           <img

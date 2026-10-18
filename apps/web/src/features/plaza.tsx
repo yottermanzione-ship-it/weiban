@@ -1142,7 +1142,11 @@ export function ReportPage() {
         <small className="char-count hint">{chars(note)}/200</small>
       </label>
       {error && <p role="alert">{error}</p>}
-      <button className="primary" disabled={!reason || pending} onClick={() => void submit()}>
+      <button
+        className="primary full"
+        disabled={!reason || pending}
+        onClick={() => void submit()}
+      >
         提交
       </button>
     </main>
