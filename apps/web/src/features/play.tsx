@@ -1193,7 +1193,7 @@ export function FocusPage() {
     );
   }
   return (
-    <main>
+    <main className="play-focus-setup">
       <Header title={characterId ? `和 ${nameOf(characterId)} 一起专注` : '陪你专注'} />
       {!params.get('characterId') && (
         <>
@@ -1227,7 +1227,7 @@ export function FocusPage() {
           />
         </label>
       )}
-      <label className="stack">
+      <label className="stack play-focus-note">
         做什么（选填）
         <input
           value={note}
