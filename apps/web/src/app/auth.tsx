@@ -30,16 +30,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void api
       .restore()
       .then(async (auth) => {
+        // StrictMode 会清理后重跑 effect；旧恢复链不能再刷新或恢复会话。
+        if (!active) return;
         if (auth) {
           try {
-            auth = await api.updateUser(await api.call(IdentityEndpoints.me));
+            const user = await api.call(IdentityEndpoints.me);
+            if (!active) return;
+            auth = await api.updateUser(user);
+            if (!active) return;
           } catch {
+            if (!active) return;
             // 失效请求已经清库，不能在其回调后又恢复旧会话。
             auth = await api.restore();
+            if (!active) return;
           }
         }
+        if (!active) return;
         const pending =
           auth && (!auth.user.profileCompleted || (await localStore.get('ui:onboarding')) === true);
+        if (!active) return;
         if (auth && !api.owns({ userId: auth.user.userId, sessionId: auth.session.sessionId }))
           auth = null;
         if (active) {

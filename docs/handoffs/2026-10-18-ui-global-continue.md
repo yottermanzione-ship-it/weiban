@@ -14,3 +14,13 @@
 个人资料、通用、关于、安装引导主要结构已按规范实现，继续核对载入/失败与各子路由。后续朋友圈、小程序仍未完，不能据本组宣称全站完成。主负责人的coverage/routes/screenshots不由本代理修改。
 
 浏览器反馈补修：无to/onClick的MenuRow改静态div，disabled映射aria-disabled；静态行不再按压变色或带无动作箭头。TSX扫描全部13处静态行，唯一可操作right为账号设备下线，内按钮逻辑保持，typecheck/eslint/build通过。表情接口在浏览器报加载失败、重试能进入读取；补显示remote.error友好原因，未改API或数据库。表情数据缺失导致整理/预览未实测，不能宣称通过。Sheet支持现有关闭/Esc，本组未实现焦点圈定。
+
+## 启动恢复链修复（纯Web）
+
+浏览器首次请求偶发“登录状态已改变”不是已证明的服务器登录失败：main的StrictMode双执行AuthProvider启动effect，原cleanup只阻止最后setState，旧链仍可继续me/updateUser/catch restore。ApiClient.restore重新解析生成auth对象，已在途call捕获的auth引用不同便抛session_changed；useRemote将此作为错误展示。
+
+auth.tsx最小修复：每个await边界核active，尤其restore resolve后、me后updateUser前、catch再次restore前后、本地onboarding读取前后；阻断已cleanup链继续恢复/更新。保留ownership校验与StrictMode，不改client-core、令牌生命周期、后台。已开始的底层操作仍服从原ownership检查，本次未承诺解决所有跨会话并发。
+
+检查：web typecheck、auth.tsx eslint、web build通过（原有构建警告）。待主负责人连续reload账号安全/表情请求实际复核。
+
+更正表情环境：第一次失败后重试最终成功显示共0个，不能登记持续API阻塞；无数据限制预览与排序点按。
