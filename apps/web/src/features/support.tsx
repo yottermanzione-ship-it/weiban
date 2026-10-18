@@ -205,9 +205,11 @@ export function SupportCreatePage() {
             placeholder={complaint ? '可补充说明' : '请描述遇到的问题或建议'}
           />
         </label>
-        <label>
+        <label className="support-upload">
           截图（最多9张）
           <input
+            className="sr-only support-upload-input"
+            aria-label="添加截图（最多9张）"
             type="file"
             accept="image/*"
             multiple
@@ -217,6 +219,10 @@ export function SupportCreatePage() {
               e.target.value = '';
             }}
           />
+          <span className="support-upload-target" aria-hidden="true">
+            <span>＋</span>
+            <small>添加截图 · {images.length}/9</small>
+          </span>
         </label>
         <div className="request-image-grid">
           {images.map((i) => (

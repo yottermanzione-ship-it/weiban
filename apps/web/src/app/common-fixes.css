@@ -6,6 +6,32 @@
   line-height: var(--wb-line-height-normal);
   overflow-wrap: anywhere;
 }
+.support-upload {
+  position: relative;
+}
+.support-upload-target {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--wb-space-2);
+  min-height: 64px;
+  border: 1px dashed var(--wb-color-border-strong);
+  border-radius: var(--wb-radius-md);
+  background: var(--wb-color-bg-page);
+  color: var(--wb-color-text-secondary);
+  cursor: pointer;
+}
+.support-upload-target > span {
+  font-size: 24px;
+}
+.support-upload-input:focus-visible + .support-upload-target {
+  outline: 2px solid var(--wb-color-border-focus);
+  outline-offset: 2px;
+}
+.support-upload-input:disabled + .support-upload-target {
+  opacity: 0.55;
+  cursor: default;
+}
 * {
   scrollbar-width: none;
 }
