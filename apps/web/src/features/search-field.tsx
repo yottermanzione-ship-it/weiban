@@ -1,4 +1,10 @@
-import { useImperativeHandle, useRef, type InputHTMLAttributes, type ReactNode, type Ref } from 'react';
+import {
+  useImperativeHandle,
+  useRef,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type Ref,
+} from 'react';
 import { OldIcon } from './old-icons.js';
 
 /** One field layout for global search, chat search and inline filters. */

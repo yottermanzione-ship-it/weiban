@@ -437,12 +437,25 @@
         "section": "10号；11 C9只冻结实现，不自动改原要求"
       },
       "evidence": {
-        "status": "未核",
-        "reviewedAt": null,
-        "scope": "本轮没有逐行实施证据；原地图/批注/排期均不代表验收。",
-        "refs": [],
+        "status": "源码已核待点按",
+        "reviewedAt": "2026-10-18",
+        "scope": "10-18搜索UI批次已读9个调用点/实际CSS顺序：容器改div保留inputRef与空白聚焦，范围/清除控件不嵌label，样式统一。三个角色查询表单可见提交/trim/清空恢复已做。没有浏览器输入/窄屏/取消/焦点证据，不销账通过。",
+        "refs": [
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/features/search-field.tsx",
+            "quote": "useImperativeHandle(inputRef",
+            "line": 16
+          },
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/app/common-fixes.css",
+            "quote": ".search-entry.wx-search-box input:focus-visible",
+            "line": 66
+          }
+        ],
         "blockers": [],
-        "next": "按原批注核布局、入口、文案、返回、失败/取消；真实能力与纯UI分开登记。"
+        "next": "见docs/web/ui-search-2026-10-18/coverage.md逐入口点按；候选后端仍冻结。"
       }
     },
     {
@@ -5652,12 +5665,25 @@
         "section": "10号；11 C9只冻结实现，不自动改原要求"
       },
       "evidence": {
-        "status": "未核",
-        "reviewedAt": null,
-        "scope": "本轮没有逐行实施证据；原地图/批注/排期均不代表验收。",
-        "refs": [],
+        "status": "源码已核待点按",
+        "reviewedAt": "2026-10-18",
+        "scope": "10-18搜索UI批次已读9个调用点/实际CSS顺序：容器改div保留inputRef与空白聚焦，范围/清除控件不嵌label，样式统一。三个角色查询表单可见提交/trim/清空恢复已做。没有浏览器输入/窄屏/取消/焦点证据，不销账通过。",
+        "refs": [
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/features/search-field.tsx",
+            "quote": "useImperativeHandle(inputRef",
+            "line": 16
+          },
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/app/common-fixes.css",
+            "quote": ".search-entry.wx-search-box input:focus-visible",
+            "line": 66
+          }
+        ],
         "blockers": [],
-        "next": "按原批注核布局、入口、文案、返回、失败/取消；真实能力与纯UI分开登记。"
+        "next": "见docs/web/ui-search-2026-10-18/coverage.md逐入口点按；候选后端仍冻结。"
       }
     },
     {
@@ -7080,12 +7106,25 @@
         "section": "10号；11 C9只冻结实现，不自动改原要求"
       },
       "evidence": {
-        "status": "未核",
-        "reviewedAt": null,
-        "scope": "本轮没有逐行实施证据；原地图/批注/排期均不代表验收。",
-        "refs": [],
+        "status": "源码已核待点按",
+        "reviewedAt": "2026-10-18",
+        "scope": "10-18搜索UI批次已读9个调用点/实际CSS顺序：容器改div保留inputRef与空白聚焦，范围/清除控件不嵌label，样式统一。三个角色查询表单可见提交/trim/清空恢复已做。没有浏览器输入/窄屏/取消/焦点证据，不销账通过。",
+        "refs": [
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/features/search-field.tsx",
+            "quote": "useImperativeHandle(inputRef",
+            "line": 16
+          },
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/app/common-fixes.css",
+            "quote": ".search-entry.wx-search-box input:focus-visible",
+            "line": 66
+          }
+        ],
         "blockers": [],
-        "next": "按原批注核布局、入口、文案、返回、失败/取消；真实能力与纯UI分开登记。"
+        "next": "见docs/web/ui-search-2026-10-18/coverage.md逐入口点按；候选后端仍冻结。"
       }
     },
     {
@@ -9226,14 +9265,27 @@
         "section": "C1 B10 / C9"
       },
       "evidence": {
-        "status": "后端冻结",
+        "status": "源码已核待点按",
         "reviewedAt": "2026-10-18",
-        "scope": "C1候选引擎/极简申请方向已定；UI可先核字段/导航，搜索生成及制作执行不恢复。",
-        "refs": [],
+        "scope": "10-18搜索UI批次已读9个调用点/实际CSS顺序：容器改div保留inputRef与空白聚焦，范围/清除控件不嵌label，样式统一。三个角色查询表单可见提交/trim/清空恢复已做。没有浏览器输入/窄屏/取消/焦点证据，不销账通过。",
+        "refs": [
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/features/search-field.tsx",
+            "quote": "useImperativeHandle(inputRef",
+            "line": 16
+          },
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/app/common-fixes.css",
+            "quote": ".search-entry.wx-search-box input:focus-visible",
+            "line": 66
+          }
+        ],
         "blockers": [
           "后端冻结"
         ],
-        "next": "纯UI列出候选/申请演示，暂不扩后端。"
+        "next": "见docs/web/ui-search-2026-10-18/coverage.md逐入口点按；候选后端仍冻结。"
       }
     },
     {
@@ -24409,12 +24461,19 @@
         "section": "10号；11 C9只冻结实现，不自动改原要求"
       },
       "evidence": {
-        "status": "未核",
-        "reviewedAt": null,
-        "scope": "本轮没有逐行实施证据；原地图/批注/排期均不代表验收。",
-        "refs": [],
+        "status": "源码已核待点按",
+        "reviewedAt": "2026-10-18",
+        "scope": "已目视原专注UI截图并读play.tsx FocusPage：时长chips/事项输入/开始按钮，不含搜索；本批未动专注布局、不强加SearchField，原布局反馈仍待浏览器核对。",
+        "refs": [
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/features/play.tsx",
+            "quote": "<Header title={characterId ? `和 ${nameOf(characterId)} 一起专注`",
+            "line": 1197
+          }
+        ],
         "blockers": [],
-        "next": "按原批注核布局、入口、文案、返回、失败/取消；真实能力与纯UI分开登记。"
+        "next": "恢复浏览器后核专注页及FocusCapsule，不以本轮搜索修改宣称解决。"
       }
     },
     {
