@@ -32,3 +32,10 @@
 - 已续接唯一子代理chat_forward，新副本C:\wb-dev\wb-ui-audit-1018 / codex/ui-audit-1018，基线2e92c92；任务docs/tasks/2026-10-18-ui-evidence-ledger.md。先交总账准确性/逐ID源码证据，不改业务或后端，不声称GUI通过。
 - 10份原未跟踪资料在共享ff时会阻挡，已逐文件核对与集成副本SHA256一致后移至C:\wb-dev\handoff-backups\2026-10-18-resume，再快进恢复为同内容跟踪文件；没有删除原资料。共享main/local-trunk在2e92c92一致。记忆目录和原两处worktree未动。
 - 为恢复后续GUI，在集成副本apps/web启动仅前端Vite，127.0.0.1:5173，exec session38255；尚未启动后端/隧道。app打开浏览器返回queued、CUA仍空，已异步请总经理方便时打开本会话浏览器；等待期间仅继续源码/台账，不把前端HTTP就绪算点按通过。
+
+## 台账交付已收与下一块
+
+- 唯一代理交付582fa52ebcd6c4c106b02ca8a1e65ce3f68b1a0b已快进合入local/trunk并同步共享main；PM在集成副本独立运行validate.mjs与git diff --check均exit 0，401原始对象/185动作/来源摘要和引用校验通过，无DOM执行或GUI验收。
+- 185动作中81条已逐项审阅、104条仍未审阅。全表证据：未核324、源码已核待点按11、历史截图待复点55、后端冻结10、产品待定1。不是完成率。
+- PM复读源码确认ecology.tsx与scenario.tsx的模型引导错误指向/models；该页只保存chat选择并排除adult，不能作为生态/私密模型设置入口。
+- 已在独立副本C:\wb-dev\wb-ui-model-entry-1018、分支codex/ui-model-entry-1018派唯一代理chat_forward续做，任务docs/tasks/2026-10-18-ui-model-entry-correction.md。只纠正UI入口与说明；后端/会员不动，GUI不可用则提交分支待核，不冒称通过或直接合入。
