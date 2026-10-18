@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>角色生态 · 界面预览</title>
+<style>
+:root{--green:#07C160;--bg:#EDEDED;--line:#E5E5E5;--text:#191919;--sub:#7A7A7A;--blue:#576B95}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:#DEDEDE;font:15px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--text)}
+.phone{max-width:420px;margin:0 auto;min-height:100vh;background:var(--bg)}
+.nav{position:sticky;top:0;z-index:2;display:flex;align-items:center;height:48px;padding:0 8px;background:#EDEDED;border-bottom:.5px solid #D6D6D6}
+.nav .back{width:44px;font-size:20px;color:#191919;text-align:center}
+.nav h1{flex:1;margin:0;text-align:center;font-size:17px;font-weight:500}
+.nav .right{width:44px}
+.intro{margin:12px 16px;padding:12px 14px;border-radius:8px;background:#fff;color:var(--sub);font-size:13px;line-height:1.6}
+.group{background:#fff;margin-bottom:8px}
+.row{display:flex;align-items:center;gap:12px;min-height:56px;padding:10px 16px;border-bottom:.5px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row .text{flex:1;min-width:0}
+.row .text b{display:block;font-weight:400;font-size:15px}
+.row .text small{display:block;margin-top:2px;color:var(--sub);font-size:12px;line-height:1.4}
+.h{display:flex;align-items:flex-end;justify-content:space-between;padding:14px 16px 6px;font-size:13px;color:var(--sub)}
+.h em{font-style:normal;color:var(--green)}
+.sw{position:relative;width:51px;height:31px;flex:0 0 auto;border:0;border-radius:16px;background:#E5E5E5;transition:background .2s;cursor:pointer;padding:0}
+.sw i{position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.sw.on{background:var(--green)}
+.sw.on i{left:22px}
+.points{color:var(--green);font-size:12px;white-space:nowrap}
+.badge{margin-left:6px;padding:0 5px;border-radius:4px;background:#F2F2F2;color:#999;font-size:11px}
+.radio{width:22px;height:22px;border-radius:50%;border:1px solid #C9C9C9;flex:0 0 auto;position:relative}
+.radio.on{border-color:var(--green);background:var(--green)}
+.radio.on::after{content:"";position:absolute;left:7px;top:4px;width:5px;height:9px;border:2px solid #fff;border-top:0;border-left:0;transform:rotate(45deg)}
+.total{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:#fff;margin-top:8px}
+.total strong{color:var(--green);font-weight:500}
+.muted{color:var(--sub);font-size:12px}
+.foot{margin:16px;color:#999;font-size:12px;line-height:1.6}
+.tag{display:inline-block;margin-left:6px;padding:0 6px;border-radius:4px;background:#EEF3FB;color:#3A5A8C;font-size:11px}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="nav"><div class="back">‹</div><h1>角色生态</h1><div class="right"></div></div>
+
+  <p class="intro">开启后，TA 会像真人一样每隔一段时间自己想一想：现在该不该发条朋友圈、要不要找你说话。想的过程也会消耗积分，即使最后决定什么都不做。</p>
+
+  <div class="group">
+    <div class="row">
+      <div class="text"><b>角色生态</b><small>关闭后，所有角色只在你找 TA 时回复，不会自己做任何事</small></div>
+      <button class="sw" id="master" aria-label="角色生态"><i></i></button>
+    </div>
+  </div>
+
+  <div id="body" style="display:none">
+    <div class="h"><span>TA 可以自己做的事</span><em id="actTotal">约 0 积分/天</em></div>
+    <div class="group" id="actions"></div>
+
+    <div class="h"><span>多久想一次</span></div>
+    <div class="group" id="freqs"></div>
+
+    <div class="h"><span>用哪个模型想</span></div>
+    <div class="group">
+      <div class="row">
+        <div class="text"><b>生态模型</b><small>和聊天模型分开设置；不选时用平台的默认后台模型</small></div>
+        <span class="muted">跟随平台默认 ›</span>
+      </div>
+    </div>
+
+    <div class="total"><span>合计</span><strong id="sum">约 0 积分/天 · 0 元/月</strong></div>
+
+    <div class="h"><span>TA 最近自己做了什么</span></div>
+    <div class="group">
+      <div class="row"><div class="text">发了一条朋友圈：楼下的桂花开了</div><span class="muted">今天 09:12</span></div>
+      <div class="row"><div class="text">主动找你：问你今天怎么没说话</div><span class="muted">昨天 22:40</span></div>
+      <div class="row"><div class="text">评论了你的朋友圈：这张拍得好看</div><span class="muted">昨天 18:05</span></div>
+      <div class="row"><div class="text">想了想，今天什么都没做</div><span class="muted">10-16 08:30</span></div>
+    </div>
+  </div>
+
+  <p class="foot">界面预览：开关只保存在本机，尚未接通后端。接上后，关闭开关会立即停止排队中的任务，但已经发出的调用无法撤回。</p>
+</div>
+
+<script>
+const ACTIONS = [
+  { k:'moments',  n:'发朋友圈',            d:'自己挑时机发，可能配图',              p:6 },
+  { k:'proactive',n:'主动找你聊天',        d:'想起一件事、隔太久没聊、节日问候',    p:8 },
+  { k:'interact', n:'评论 / 点赞你的朋友圈',d:'看到你发的动态会回应',                p:2 },
+  { k:'care',     n:'关心问候',            d:'经期、生病、情绪低落时主动关心',      p:3 },
+  { k:'group',    n:'在群里自己聊',        d:'角色之间互相说话，不需要你在场',      p:4 },
+  { k:'simulate', n:'日常推演',            d:'TA 今天做了什么，聊天时能接得上',     p:5 },
+  { k:'call',     n:'主动打电话',          d:'需要接通话服务后才能用',              p:2, tag:'未接通' },
+  { k:'voice',    n:'发语音消息',          d:'用 TA 的声音说一句',                  p:3, tag:'未接通' },
+];
+const FREQS = [
+  { k:'30m', n:'每 30 分钟', d:'反应最快，积分消耗最高',   p:25 },
+  { k:'2h',  n:'每 2 小时',  d:'推荐：像真人，成本可控',   p:6 },
+  { k:'4d',  n:'每天 4 次',  d:'只在早中晚和睡前想一次',   p:2 },
+];
+const state = { on:false, acts:Object.fromEntries(ACTIONS.map(a=>[a.k, a.k!=='call'&&a.k!=='voice'])), freq:'2h' };
+
+const actionsEl = document.getElementById('actions');
+const freqsEl = document.getElementById('freqs');
+
+function render() {
+  document.getElementById('body').style.display = state.on ? '' : 'none';
+  document.getElementById('master').classList.toggle('on', state.on);
+
+  actionsEl.innerHTML = ACTIONS.map(a => `
+    <div class="row">
+      <div class="text"><b>${a.n}${a.tag?`<span class="tag">${a.tag}</span>`:''}</b>
+        <small>${a.d} <span class="points">≈${a.p} 积分/天</span></small></div>
+      <button class="sw ${state.acts[a.k]?'on':''}" data-act="${a.k}"><i></i></button>
+    </div>`).join('');
+
+  freqsEl.innerHTML = FREQS.map(f => `
+    <div class="row" data-freq="${f.k}" style="cursor:pointer">
+      <div class="text"><b>${f.n}</b><small>${f.d}</small></div>
+      <span class="points">≈${f.p} 积分/天</span>
+      <span class="radio ${state.freq===f.k?'on':''}"></span>
+    </div>`).join('');
+
+  const actSum = ACTIONS.filter(a=>state.acts[a.k]).reduce((s,a)=>s+a.p,0);
+  const think = FREQS.find(f=>f.k===state.freq).p;
+  const daily = state.on ? actSum + think : 0;
+  document.getElementById('actTotal').textContent = `约 ${actSum} 积分/天`;
+  document.getElementById('sum').textContent = `约 ${daily} 积分/天 · ${Math.round(daily*30/100)} 元/月`;
+}
+
+document.getElementById('master').addEventListener('click', () => { state.on = !state.on; render(); });
+document.addEventListener('click', (e) => {
+  const sw = e.target.closest('[data-act]');
+  if (sw) { const k = sw.dataset.act; state.acts[k] = !state.acts[k]; render(); return; }
+  const fr = e.target.closest('[data-freq]');
+  if (fr) { state.freq = fr.dataset.freq; render(); }
+});
+render();
+</script>
+</body>
+</html>

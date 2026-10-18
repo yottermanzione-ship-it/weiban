@@ -1,0 +1,41 @@
+# 香港服务器「临时验证库」——不是生产，不是本机开发环境。
+#
+# 用途：部署前把 apps/server/drizzle 的迁移脚本、以及需要真实 PostgreSQL 的集成测试跑一遍。
+# 分区：独立 compose 项目 weiban-dryrun、独立数据卷 weiban-dryrun-pgdata、独立容器名。
+#       不加入 weiban-prod 的网络，不读它的密钥，不碰它的卷。
+# 暴露：只监听服务器本机 127.0.0.1:5433（生产 postgres 不开任何端口，两者互不影响）。
+# 清理：docker compose -p weiban-dryrun -f deploy/hk/dryrun-compose.yml down -v
+# 登记：docs/ops/hk-dryrun-db.md
+name: weiban-dryrun
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg18-bookworm
+    container_name: weiban-dryrun-postgres
+    # 不随开机自启：这是临时环境，用完就停，避免长期占内存
+    restart: 'no'
+    environment:
+      POSTGRES_USER: dryrun
+      POSTGRES_PASSWORD: dryrun_local_only
+      POSTGRES_DB: weiban_dryrun
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      # 只绑服务器回环地址，公网访问不到；本机通过 SSH 隧道使用
+      - '127.0.0.1:5433:5432'
+    volumes:
+      - dryrun-pgdata:/var/lib/postgresql
+      - ./dryrun-init:/docker-entrypoint-initdb.d:ro
+    # 服务器共 4 核 8G，且要和生产应用共存，这里硬性限流
+    mem_limit: 1g
+    cpus: 1.0
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U dryrun -d weiban_dryrun']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  dryrun-pgdata:
+    name: weiban-dryrun-pgdata
