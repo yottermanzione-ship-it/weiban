@@ -295,13 +295,15 @@ export function DailyQuestionPage() {
               </Link>
             )
           ) : (
-            <button
-              className="primary"
-              disabled={pending || !answer.trim() || over}
-              onClick={() => void submit()}
-            >
-              {pending ? '正在提交…' : '回答'}
-            </button>
+            <div className="page-bottom">
+              <button
+                className="primary full"
+                disabled={pending || !answer.trim() || over}
+                onClick={() => void submit()}
+              >
+                {pending ? '正在提交…' : '回答'}
+              </button>
+            </div>
           )}
         </>
       )}
@@ -348,7 +350,12 @@ export function DailyHistoryPage() {
   }, [load]);
   return (
     <main>
-      <Header title="答过的问题" />
+      <Header title="答过的问题" back="/play/daily" />
+      {loading && items.length === 0 && (
+        <p className="empty" role="status">
+          正在读取答题记录…
+        </p>
+      )}
       {error && (
         <p role="alert">
           {error} <button onClick={() => void load()}>重试</button>
@@ -474,6 +481,9 @@ export function WishlistsPage() {
 
 export function WishlistPage() {
   const { characterId = '' } = useParams();
+  return <CharacterWishlist key={characterId} characterId={characterId} />;
+}
+function CharacterWishlist({ characterId }: { characterId: string }) {
   const { nameOf } = useFriends();
   const list = useRemote(WishlistEndpoints.listItems, {
     params: { characterId },
@@ -561,10 +571,21 @@ export function WishlistPage() {
   );
   return (
     <main>
-      <Header title={`和 ${nameOf(characterId)} 的心愿清单`} />
+      <Header title={`和 ${nameOf(characterId)} 的心愿清单`} back="/play/wishlists" />
       <p className="hint">想和 TA 一起做的事</p>
-      {list.error && <p role="alert">{list.error}</p>}
-      {list.loading && !items && <div className="skeleton-row" role="status" />}
+      {list.error && (
+        <div className="empty">
+          <p role="alert">{list.error}</p>
+          <button className="text-button" onClick={list.refresh}>
+            重试
+          </button>
+        </div>
+      )}
+      {list.loading && !items && (
+        <p className="empty" role="status">
+          正在读取心愿…
+        </p>
+      )}
       {items && all.length === 0 && !adding && (
         <div className="empty">
           <p>和 TA 一起列下想做的事吧</p>

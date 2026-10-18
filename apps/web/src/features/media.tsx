@@ -804,6 +804,8 @@ export function StickerPanel({
   const firstPack =
     packs.data?.items.find((p) => p.name === '微伴预设表情') ?? packs.data?.items[0];
   const activeTab = tab === 'preset' ? (firstPack?.packId ?? 'mine') : tab;
+  const showingMine = activeTab === 'mine';
+  const selectedRemote = showingMine ? mine : packs;
   const pack = packs.data?.items.find((p) => p.packId === activeTab);
   const builtIn = ['wechat/heart', 'wechat/star'];
   return (
@@ -842,14 +844,14 @@ export function StickerPanel({
         </Link>
       </div>
       <div className="wx-sticker-body">
-        {tab === 'mine' && <p className="wx-sticker-caption">添加的单个表情</p>}
+        {showingMine && <p className="wx-sticker-caption">添加的单个表情</p>}
         <div className="wx-sticker-grid">
-          {tab === 'mine' && (
+          {showingMine && (
             <Link className="wx-sticker-cell add" to="/me/stickers" aria-label="添加表情">
               <OldIcon name="wechat/add" size={28} />
             </Link>
           )}
-          {tab === 'mine' &&
+          {showingMine &&
             mine.data?.items.map((s) => (
               <button
                 key={s.stickerId}
@@ -886,10 +888,26 @@ export function StickerPanel({
             </button>
           ))}
         </div>
-        {(packs.loading || mine.loading) && !packs.data && (
-          <p className="wx-sticker-caption center">加载中…</p>
+        {selectedRemote.loading && !selectedRemote.data && (
+          <p className="wx-sticker-caption center" role="status">
+            加载中…
+          </p>
         )}
-        {(packs.error || mine.error) && !packs.data && <p className="hint center">表情加载失败</p>}
+        {(packs.error || (showingMine && mine.error)) && (
+          <div className="hint center" role="alert">
+            <p>{packs.error ? '表情包加载失败' : '个人表情加载失败'}</p>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => {
+                if (packs.error) packs.refresh();
+                if (mine.error) mine.refresh();
+              }}
+            >
+              重试
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
