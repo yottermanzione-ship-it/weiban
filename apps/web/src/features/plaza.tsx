@@ -247,8 +247,15 @@ export function PlazaTab({ embedded = false }: { embedded?: boolean } = {}) {
           value={query}
           maxLength={50}
           enterKeyHint="search"
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            const next = e.target.value;
+            setQuery(next);
+            if (!next.trim()) setSearch('');
+          }}
         />
+        <button type="submit" className="search-strip-submit" disabled={!query.trim()}>
+          搜索
+        </button>
       </form>
       <div className="plaza-filter">
         <select

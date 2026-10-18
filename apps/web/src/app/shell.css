@@ -847,8 +847,7 @@
 }
 
 /* ---------- 搜索条（3.14） ---------- */
-.search-entry,
-label.search-entry {
+.search-entry {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -879,6 +878,8 @@ label.search-entry {
 }
 .search-strip-submit {
   flex: none;
+  min-width: 44px;
+  min-height: 36px;
   padding: 0 4px;
   border: 0;
   background: none;
@@ -889,26 +890,6 @@ label.search-entry {
 .search-strip-submit:disabled {
   color: var(--wb-color-text-tertiary);
 }
-.search-entry input {
-  flex: 1;
-  min-width: 0;
-  min-height: 36px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--wb-color-text-primary);
-  font-size: var(--wb-font-size-callout);
-}
-.search-entry input::placeholder {
-  color: var(--wb-color-ui-search-placeholder);
-}
-.search-entry input:focus {
-  outline: none;
-}
-label.search-entry:focus-within {
-  justify-content: flex-start;
-}
-
 /* ---------- 头像角标（3.13） ---------- */
 .avatar-badge-host {
   position: relative;

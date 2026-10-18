@@ -74,15 +74,15 @@
     "逐行原文": 215
   },
   "evidence": {
-    "未核": 324,
-    "后端冻结": 10,
-    "源码已核待点按": 11,
+    "未核": 320,
+    "源码已核待点按": 16,
+    "后端冻结": 9,
     "历史截图待复点": 55,
     "产品待定": 1
   },
   "needsAction": 185,
-  "actionsWithReview": 81,
-  "actionsWithoutReview": 104,
+  "actionsWithReview": 84,
+  "actionsWithoutReview": 101,
   "directPlanRows": 99,
   "actionPlanRows": 81,
   "noBrowserAcceptance": true
