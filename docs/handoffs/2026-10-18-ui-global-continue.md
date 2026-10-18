@@ -12,3 +12,5 @@
 浏览器待主负责人点按：/settings/security（修改密码提示、下线确认取消）；/me/favorites（空态）；/me/stickers（整理、选格、预览关闭/Esc）；/sticker-store（整理切换、详情、表情预览、返回）；/services/ecology（开启预览后动作开关可访问名称）。未宣称GUI或独立验收通过。
 
 个人资料、通用、关于、安装引导主要结构已按规范实现，继续核对载入/失败与各子路由。后续朋友圈、小程序仍未完，不能据本组宣称全站完成。主负责人的coverage/routes/screenshots不由本代理修改。
+
+浏览器反馈补修：无to/onClick的MenuRow改静态div，disabled映射aria-disabled；静态行不再按压变色或带无动作箭头。TSX扫描全部13处静态行，唯一可操作right为账号设备下线，内按钮逻辑保持，typecheck/eslint/build通过。表情接口在浏览器报加载失败、重试能进入读取；补显示remote.error友好原因，未改API或数据库。表情数据缺失导致整理/预览未实测，不能宣称通过。Sheet支持现有关闭/Esc，本组未实现焦点圈定。

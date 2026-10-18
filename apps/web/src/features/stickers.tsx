@@ -111,6 +111,9 @@ export function MyStickersPage() {
       {remote.error && !remote.data && (
         <div className="empty">
           <p>加载失败</p>
+          <p className="hint" role="alert">
+            {remote.error}
+          </p>
           <button className="text-button" type="button" onClick={remote.refresh}>
             重试
           </button>
