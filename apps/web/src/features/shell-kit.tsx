@@ -301,12 +301,14 @@ export function Switch({
 /** 开关行（规格 3.6）。 */
 export function SwitchRow({
   label,
+  ariaLabel,
   subtitle,
   checked,
   disabled,
   onChange,
 }: {
   label: ReactNode;
+  ariaLabel?: string;
   subtitle?: ReactNode;
   checked: boolean;
   disabled?: boolean;
@@ -322,7 +324,7 @@ export function SwitchRow({
         checked={checked}
         disabled={disabled}
         onChange={onChange}
-        label={typeof label === 'string' ? label : undefined}
+        label={ariaLabel ?? (typeof label === 'string' ? label : undefined)}
       />
     </div>
   );

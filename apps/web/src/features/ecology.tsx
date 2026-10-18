@@ -176,6 +176,7 @@ export function EcologyPage() {
             {ACTIONS.map((action) => (
               <SwitchRow
                 key={action.key}
+                ariaLabel={action.label}
                 label={
                   <span className="ecology-label">
                     {action.label}
