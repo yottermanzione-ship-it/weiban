@@ -6,7 +6,7 @@ import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { NavBar } from './shell-kit.js';
 
-/** 熟悉度 5 级名称与月相（cards-familiarity.md 第 2 节）。 */
+/** 好感度 5 级名称与月相（cards-familiarity.md 第 2 节）。 */
 export const familiarityNames = ['初识', '眼熟', '熟络', '老友', '知己'] as const;
 const moons = ['◔', '◑', '◐', '◕', '●'] as const;
 
@@ -76,7 +76,7 @@ export function FamiliarityLine({ characterId }: { characterId: string }) {
             纪念日 {custom} 个 <CaretRight size={14} aria-hidden />
           </Link>
           <h3 className="group-label">
-            熟悉度 {moons[level - 1]} L{level} {familiarityNames[level - 1]}
+            好感度 {moons[level - 1]} L{level} {familiarityNames[level - 1]}
           </h3>
           <div
             className="meter"
@@ -84,7 +84,7 @@ export function FamiliarityLine({ characterId }: { characterId: string }) {
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={Math.round(progress * 100)}
-            aria-label="熟悉度进度"
+            aria-label="好感度进度"
           >
             <span style={{ transform: `scaleX(${progress})` }} />
           </div>

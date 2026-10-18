@@ -60,7 +60,7 @@ import { showToast } from './toast.js';
 import { NavBar, useBack } from './shell-kit.js';
 
 /*
- * 卡册、熟悉度总览、成就页（GRW-03、GRW-05、GRW-06；设计 cards-familiarity.md、me-and-services.md 3.1/3.2）。
+ * 卡册、好感度总览、成就页（GRW-03、GRW-05、GRW-06；设计 cards-familiarity.md、me-and-services.md 3.1/3.2）。
  * 只奖励不催促：没有倒计时、没有百分比进度条、没有「再聊 X 条」。
  */
 
@@ -84,7 +84,7 @@ export function cardStyle(kind: string): { color: string; Icon: IconType; group:
 
 const cardGroups = [
   ['anniversary', '纪念卡', '和 TA 认识满 7 天，会收到第一张纪念卡'],
-  ['familiarity', '熟悉度卡', '熟悉度升级时会收到熟悉度卡'],
+  ['familiarity', '好感度卡', '好感度升级时会收到好感度卡'],
   ['holiday', '节日卡', '节日当天和 TA 聊天，就会收到节日卡'],
   ['moment', '瞬间卡', '一起经历的特别时刻会变成瞬间卡'],
 ] as const;
@@ -506,7 +506,7 @@ function CardDetail({
   );
 }
 
-// ---------- 熟悉度总览（服务 › 熟悉度） ----------
+// ---------- 好感度总览（服务 › 好感度） ----------
 
 const moons = ['◔', '◑', '◐', '◕', '●'] as const;
 
@@ -516,7 +516,7 @@ export function FamiliarityOverviewPage() {
   const name = useDisplayName(items.map((i) => i.characterId));
   return (
     <main>
-      <NavBar title="熟悉度" fallback="/me" />
+      <NavBar title="好感度" fallback="/me" />
       {list.loading && !list.data && <div className="skeleton-line" role="status" />}
       {list.error && !list.data && (
         <div className="empty">
@@ -567,7 +567,7 @@ const achievementGroups = [
   ['chat_call', '聊天与通话', 'var(--wb-color-achievement-chat)'],
   ['group_moments', '群聊与朋友圈', 'var(--wb-color-achievement-social)'],
   ['collect', '收藏与卡片', 'var(--wb-color-achievement-collect)'],
-  ['anniversary', '纪念日与熟悉度', 'var(--wb-color-achievement-memorial)'],
+  ['anniversary', '纪念日与好感度', 'var(--wb-color-achievement-memorial)'],
   ['play', '互动玩法', 'var(--wb-color-achievement-play)'],
 ] as const;
 

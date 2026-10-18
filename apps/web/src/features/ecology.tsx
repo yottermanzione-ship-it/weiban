@@ -12,65 +12,116 @@ import { useEffect, useState } from 'react';
 import { GroupHeader, MenuGroup, MenuRow, NavBar, SwitchRow, CheckCircle } from './shell-kit.js';
 
 type ActionKey =
-  'moments' | 'proactive' | 'interact' | 'care' | 'group' | 'simulate' | 'call' | 'voice';
+  | 'moments'
+  | 'proactive'
+  | 'interact'
+  | 'care'
+  | 'group'
+  | 'simulate'
+  | 'call'
+  | 'voice'
+  | 'photo'
+  | 'away'
+  | 'wish'
+  | 'plan';
+
+type ActionGroup = '联系你' | '自己发内容' | 'TA 的日常';
 
 type Frequency = '30m' | '2h' | '4d';
 
 const ACTIONS: {
   key: ActionKey;
+  group: ActionGroup;
   label: string;
   subtitle: string;
   points: number;
   note?: string;
 }[] = [
   {
-    key: 'moments',
-    label: '发朋友圈',
-    subtitle: '自己挑时机发，可能配图',
-    points: 6,
-  },
-  {
     key: 'proactive',
+    group: '联系你',
     label: '主动找你聊天',
     subtitle: '想起一件事、隔太久没聊、节日问候',
     points: 8,
   },
   {
     key: 'interact',
+    group: '联系你',
     label: '评论 / 点赞你的朋友圈',
     subtitle: '看到你发的动态会回应',
     points: 2,
   },
   {
     key: 'care',
+    group: '联系你',
     label: '关心问候',
     subtitle: '经期、生病、情绪低落时主动关心',
     points: 3,
   },
   {
     key: 'group',
+    group: '联系你',
     label: '在群里自己聊',
     subtitle: '角色之间互相说话，不需要你在场',
     points: 4,
   },
   {
+    key: 'moments',
+    group: '自己发内容',
+    label: '发朋友圈',
+    subtitle: '自己挑时机发，可能配图',
+    points: 6,
+  },
+  {
+    key: 'photo',
+    group: '自己发内容',
+    label: '主动发照片',
+    subtitle: '聊天时突然发一张刚拍的照片',
+    points: 4,
+    note: '未接通',
+  },
+  {
+    key: 'voice',
+    group: '自己发内容',
+    label: '发语音消息',
+    subtitle: '用 TA 的声音说一句',
+    points: 3,
+    note: '未接通',
+  },
+  {
     key: 'simulate',
+    group: 'TA 的日常',
     label: '日常推演',
     subtitle: 'TA 今天做了什么，聊天时能接得上',
     points: 5,
   },
   {
+    key: 'away',
+    group: 'TA 的日常',
+    label: '你不在时的卡片',
+    subtitle: '回来时看到 TA 这段时间的经历摘要',
+    points: 2,
+  },
+  {
+    key: 'wish',
+    group: 'TA 的日常',
+    label: '心愿提议与纪念日寄信',
+    subtitle: '主动提一个心愿，或在纪念日写封信',
+    points: 2,
+  },
+  {
+    key: 'plan',
+    group: 'TA 的日常',
+    label: '行为规划',
+    subtitle: '决定此刻发语音、发图还是找人（可切 Jev）',
+    points: 1,
+  },
+  {
     key: 'call',
+    group: '联系你',
     label: '主动打电话',
     subtitle: '需要接通话服务后才能用',
     points: 2,
-    note: '未接通',
-  },
-  {
-    key: 'voice',
-    label: '发语音消息',
-    subtitle: '用 TA 的声音说一句',
-    points: 3,
     note: '未接通',
   },
 ];
@@ -98,6 +149,10 @@ const DEFAULT_STATE: State = {
     care: true,
     group: true,
     simulate: true,
+    photo: false,
+    away: true,
+    wish: true,
+    plan: true,
     call: false,
     voice: false,
   },
@@ -171,29 +226,33 @@ export function EcologyPage() {
 
       {state.enabled && (
         <>
-          <GroupHeader>动作选项（预览）</GroupHeader>
-          <MenuGroup>
-            {ACTIONS.map((action) => (
-              <SwitchRow
-                key={action.key}
-                ariaLabel={action.label}
-                label={
-                  <span className="ecology-label">
-                    {action.label}
-                    {action.note && <em className="ecology-badge">{action.note}</em>}
-                  </span>
-                }
-                subtitle={
-                  <span className="ecology-sub">
-                    {action.subtitle}
-                    <span className="ecology-points">示例：{action.points} 积分/天</span>
-                  </span>
-                }
-                checked={state.actions[action.key]}
-                onChange={(value) => toggleAction(action.key, value)}
-              />
-            ))}
-          </MenuGroup>
+          {(['联系你', '自己发内容', 'TA 的日常'] as ActionGroup[]).map((group) => (
+            <section key={group}>
+              <GroupHeader>{group}</GroupHeader>
+              <MenuGroup>
+                {ACTIONS.filter((action) => action.group === group).map((action) => (
+                  <SwitchRow
+                    key={action.key}
+                    ariaLabel={action.label}
+                    label={
+                      <span className="ecology-label">
+                        {action.label}
+                        {action.note && <em className="ecology-badge">{action.note}</em>}
+                      </span>
+                    }
+                    subtitle={
+                      <span className="ecology-sub">
+                        {action.subtitle}
+                        <span className="ecology-points">示例：{action.points} 积分/天</span>
+                      </span>
+                    }
+                    checked={state.actions[action.key]}
+                    onChange={(value) => toggleAction(action.key, value)}
+                  />
+                ))}
+              </MenuGroup>
+            </section>
+          ))}
 
           <GroupHeader>思考频率（示例）</GroupHeader>
           <MenuGroup>

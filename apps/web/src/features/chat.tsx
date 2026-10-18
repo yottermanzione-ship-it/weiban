@@ -199,7 +199,7 @@ function systemText(code: string, params: Record<string, string | number | boole
         case 'anniversary':
           return `今天是你们认识的第 ${p('daysKnown')} 天 · 获得纪念卡 ${serial} ›`;
         case 'familiarity':
-          return `获得熟悉度卡 ${serial} ›`;
+          return `获得好感度卡 ${serial} ›`;
         case 'holiday':
           return `${p('holidayName')}快乐 · 获得节日卡 ${serial} ›`;
         default:
@@ -207,7 +207,7 @@ function systemText(code: string, params: Record<string, string | number | boole
       }
     }
     case 'familiarity_level_up':
-      return `你和 ${p('characterName')} 的熟悉度升到了 L${p('level')} ${p('levelName') || familiarityNames[Number(params.level) - 1] || ''}`;
+      return `你和 ${p('characterName')} 的好感度升到了 L${p('level')} ${p('levelName') || familiarityNames[Number(params.level) - 1] || ''}`;
     case 'pet_adopted':
       return `你和 ${p('characterName')} 一起领养了 ${p('petName')}`;
     case 'pet_renamed':

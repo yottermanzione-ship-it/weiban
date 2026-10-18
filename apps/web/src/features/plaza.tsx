@@ -78,7 +78,7 @@ const neverPublished = [
   '聊天记录',
   '记忆（关于我的事、共同经历、约定）',
   '我的资料、「关于我」、专属称呼',
-  '关系类型、熟悉度、认识天数、纪念日、卡片、成就',
+  '关系类型、好感度、认识天数、纪念日、卡片、成就',
   '情景模式、人设贴合度、秒回等聊天设置',
   '导入时的原始聊天记录和截图',
   '经期日记等健康数据',
@@ -849,7 +849,7 @@ export function WorkPage() {
             { label: '替换', primary: true, onClick: () => void apply(true) },
           ]}
         >
-          <p>将替换你现有的补充设定。你们的聊天记录、记忆和熟悉度都不会变</p>
+          <p>将替换你现有的补充设定。你们的聊天记录、记忆和好感度都不会变</p>
         </Dialog>
       )}
       {dialog === 'full' && (
@@ -2008,7 +2008,7 @@ function NewVersionSheet({
       <div className="sheet-panel" role="dialog" aria-label="作者发布了新版本">
         <strong>作者发布了新版本（版本 {version}）</strong>
         {note && <p className="hint">更新说明：{note}</p>}
-        <small className="hint">你们的聊天记录、记忆、熟悉度都不会变</small>
+        <small className="hint">你们的聊天记录、记忆、好感度都不会变</small>
         <button className="primary" disabled={pending} onClick={() => void decide('update')}>
           更新到版本 {version}
         </button>
