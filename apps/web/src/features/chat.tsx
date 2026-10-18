@@ -34,6 +34,7 @@ import {
 import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
+import { useCharacterProfile } from '../data/character-profile.js';
 import { useUpdates } from '../data/updates.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { VirtualList } from './virtual-list.js';
@@ -112,8 +113,18 @@ interface Upload {
   failed: boolean;
 }
 export function CharacterName({ id, fallback }: { id: string; fallback?: string | null }) {
-  const profile = useRemote(CharacterEndpoints.getProfile, { params: { characterId: id } });
-  return <>{fallback || profile.data?.name || '角色'}</>;
+  const profile = useCharacterProfile(id);
+  return (
+    <>
+      {fallback ||
+        profile.data?.name ||
+        (profile.loading
+          ? '正在读取角色…'
+          : profile.errorCode === 'not_found'
+            ? '角色已删除或不可见'
+            : '角色资料暂不可用')}
+    </>
+  );
 }
 /** 群里的角色成员（不含已退出的）。 */
 export function groupMembers(conversation: Conversation): Participant[] {
@@ -1110,6 +1121,28 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
       const item = pending[row.index];
       if (!item) return null;
       const c = item.body.content;
+      if (c.type === 'nudge') {
+        const target = conversation.participants.find(
+          (p) => p.participantId === c.targetParticipantId,
+        );
+        return (
+          <div className="wx-system">
+            你拍了拍{target?.kind === 'character' ? displayName(target.refId) : '自己'}
+            {item.state === 'failed' && (
+              <button
+                className="text-button"
+                onClick={() =>
+                  void chat
+                    .retry(id, item.body.clientMsgId)
+                    .catch((e) => setError(friendlyError(e)))
+                }
+              >
+                发送失败，重试
+              </button>
+            )}
+          </div>
+        );
+      }
       return (
         <div className="wx-msg-row mine">
           {myAvatar}
@@ -1192,6 +1225,22 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     }
     const message = row.message;
     const divider = row.divider && <div className="wx-time">{row.divider}</div>;
+    if (message.status === 'normal' && message.content?.type === 'nudge') {
+      const targetId = message.content.targetParticipantId;
+      const target = conversation.participants.find((p) => p.participantId === targetId);
+      const sender = senderOf(message);
+      const senderName = message.senderKind === 'user' ? '你' : displayName(sender?.refId ?? '');
+      const targetName =
+        target?.kind === 'user' ? '你' : target ? displayName(target.refId) : '对方';
+      return (
+        <>
+          {divider}
+          <div className="wx-system">
+            {senderName}拍了拍{targetName}
+          </div>
+        </>
+      );
+    }
     const system = message.senderKind === 'system' || message.status === 'recalled';
     if (system) {
       const c = message.content;
