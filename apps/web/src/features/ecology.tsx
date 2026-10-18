@@ -232,7 +232,7 @@ export function EcologyPage() {
 
           <GroupHeader>动作记录示例</GroupHeader>
           <p className="ecology-section-note">以下是虚构演示，不是角色实际执行或发送的记录。</p>
-          <MenuGroup>
+          <MenuGroup className="ecology-example-log">
             {RECENT.map((item) => (
               <MenuRow
                 key={item.time}
@@ -248,7 +248,7 @@ export function EcologyPage() {
 
       <p className="ecology-footnote">
         预览选择只保存在当前浏览器，不会修改「主动消息与免打扰」或「TA 的日常」等现有设置。
-        实际生态执行、模型与费用尚未接通。
+        本页尚未接通实际执行、模型选择或计费。
       </p>
     </main>
   );
