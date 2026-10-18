@@ -98,8 +98,19 @@ function CharacterPicker({
   onChange(id: string): void;
   label?: string;
 }) {
-  const { friends, nameOf } = useFriends();
-  if (friends.length === 0) return <p className="hint">先在通讯录添加一个 TA 吧</p>;
+  const { friends, nameOf, initialized } = useFriends();
+  if (!initialized)
+    return (
+      <p className="hint" role="status">
+        正在读取好友…
+      </p>
+    );
+  if (friends.length === 0)
+    return (
+      <p className="hint">
+        先添加一个 TA 吧 <Link to="/contacts/add">去添加</Link>
+      </p>
+    );
   return (
     <div role="radiogroup" aria-label={label} className="chip-row">
       {friends.map((f) => (

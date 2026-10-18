@@ -1,4 +1,11 @@
 /* A1: native scrolling, readable inputs and one search field geometry. */
+.page-note {
+  margin: var(--wb-space-3) var(--wb-space-4);
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+  line-height: var(--wb-line-height-normal);
+  overflow-wrap: anywhere;
+}
 * {
   scrollbar-width: none;
 }

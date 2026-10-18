@@ -6,7 +6,19 @@ export function PluginsPage() {
   return (
     <main>
       <NavBar title="插件" fallback="/settings" />
-      {remote.error && <p role="alert">{remote.error}</p>}
+      {remote.loading && !remote.data && (
+        <p className="empty" role="status">
+          正在读取插件…
+        </p>
+      )}
+      {remote.error && (
+        <p className="page-note" role="alert">
+          {remote.error}{' '}
+          <button className="text-button" type="button" onClick={remote.refresh}>
+            重试
+          </button>
+        </p>
+      )}
       <MenuGroup>
         {remote.data?.items.map((p) => (
           <MenuRow
@@ -18,7 +30,7 @@ export function PluginsPage() {
           />
         ))}
       </MenuGroup>
-      <p className="muted">外部渠道尚未开放接入。</p>
+      <p className="page-note">外部渠道尚未开放接入。</p>
     </main>
   );
 }

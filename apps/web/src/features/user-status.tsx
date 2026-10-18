@@ -99,7 +99,19 @@ export function UserStatusPage() {
   return (
     <main>
       <NavBar title="我的状态" fallback="/me" />
-      {remote.error && <p role="alert">{remote.error}</p>}
+      {remote.loading && !remote.data && (
+        <p className="empty" role="status">
+          正在读取状态…
+        </p>
+      )}
+      {remote.error && (
+        <p className="page-note" role="alert">
+          {remote.error}{' '}
+          <button type="button" className="text-button" onClick={remote.refresh}>
+            重试
+          </button>
+        </p>
+      )}
       <MenuGroup>
         <MenuRow
           label="当前状态"
@@ -165,14 +177,18 @@ export function UserStatusPage() {
           </select>
         </label>
         {error && <p role="alert">{error}</p>}
-        <button type="submit" disabled={busy || (preset === 'custom' && !text.trim())}>
-          设置状态
+        <button
+          className="primary"
+          type="submit"
+          disabled={busy || (preset === 'custom' && !text.trim())}
+        >
+          {busy ? '正在保存…' : '设置状态'}
         </button>
         <button type="button" disabled={busy || !current} onClick={() => void save(true)}>
           清除状态
         </button>
       </form>
-      <p className="muted">角色在下一次聊天回复时可自然参考你的状态；此处不发布动态。</p>
+      <p className="page-note">角色在下一次聊天回复时可自然参考你的状态；此处不发布动态。</p>
     </main>
   );
 }
