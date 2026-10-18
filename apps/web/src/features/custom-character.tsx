@@ -674,8 +674,12 @@ function CustomCharacterEditor({
           />
         </label>
 
-        <button className="primary" disabled={loading || pending || uploadPending}>
-          {mode === 'create' ? '创建角色' : '保存'}
+        <button
+          className="primary"
+          disabled={loading || pending || uploadPending}
+          aria-busy={pending}
+        >
+          {pending ? (mode === 'create' ? '正在创建…' : '正在保存…') : mode === 'create' ? '创建角色' : '保存'}
         </button>
       </form>
 

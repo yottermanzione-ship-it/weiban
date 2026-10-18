@@ -26,7 +26,7 @@
       },
       {
         "path": "docs/refactor/11-plan-and-open-topics.md",
-        "sha256": "af604cf7aa9f9f655cd71130c1cd22106c64a497025b6ef10ad71dea59dcb617"
+        "sha256": "9815ad9dd45f61c35e84cc3df391e8ab92d472849ba07a8394978061bbe84fc2"
       }
     ],
     "definitions": {
@@ -1807,13 +1807,19 @@
       "evidence": {
         "status": "历史截图待复点",
         "reviewedAt": "2026-10-18",
-        "scope": "A4单双击导航有样例，拍一拍发送最终未验；路由动画仍待本轮。",
+        "scope": "2026-10-19 已实际双击头像发送拍一拍并见已送达、灰色系统提示。完整单击导航/路由方向与真机惯性仍待核，不将整个条目销账。",
         "refs": [
           {
             "kind": "历史开发交接",
             "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
             "quote": "拍一拍发送链最终结果见下文",
             "line": 15
+          },
+          {
+            "kind": "本轮开发自测",
+            "path": "docs/web/ui-global-2026-10-18/blocking-bugs-1019.md",
+            "quote": "实际双击发送拍一拍且已送达",
+            "line": 31
           }
         ],
         "blockers": [],
@@ -3340,7 +3346,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat.tsx",
             "quote": "label: textShown[message.messageId] ? '收起文字' : '转文字'",
-            "line": 997
+            "line": 1008
           }
         ],
         "blockers": [],
@@ -3474,7 +3480,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat.tsx",
             "quote": "label: textShown[message.messageId] ? '收起文字' : '转文字'",
-            "line": 997
+            "line": 1008
           }
         ],
         "blockers": [],
@@ -5754,13 +5760,13 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "disabled={!!switchBusy.muted}",
-            "line": 162
+            "line": 171
           },
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "disabled={!!switchBusy.pinned}",
-            "line": 175
+            "line": 184
           }
         ],
         "blockers": [],
@@ -5835,13 +5841,13 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "disabled={!!switchBusy.muted}",
-            "line": 162
+            "line": 171
           },
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "disabled={!!switchBusy.pinned}",
-            "line": 175
+            "line": 184
           }
         ],
         "blockers": [],
@@ -6172,7 +6178,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "label=\"拆条\"",
-            "line": 217
+            "line": 239
           }
         ],
         "blockers": [
@@ -6384,7 +6390,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "label=\"关系类型\"",
-            "line": 245
+            "line": 267
           }
         ],
         "blockers": [
@@ -6461,13 +6467,13 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
             "quote": "localStorage.setItem(STORAGE_KEY",
-            "line": 134
+            "line": 189
           },
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
             "quote": "subtitle=\"当前仅为界面预览，生态模型选择尚未接通\"",
-            "line": 221
+            "line": 280
           },
           {
             "kind": "本轮源码阅读",
@@ -6479,7 +6485,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
             "quote": "本页只演示设置效果，不会启停真实角色行为，也不会扣积分。",
-            "line": 157
+            "line": 212
           },
           {
             "kind": "本轮源码阅读",
@@ -6491,7 +6497,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "label=\"TA 的日常\"",
-            "line": 250
+            "line": 272
           }
         ],
         "blockers": [
@@ -6569,7 +6575,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "<VoiceRow characterId=",
-            "line": 266
+            "line": 288
           }
         ],
         "blockers": [
@@ -10894,7 +10900,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "label=\"关系类型\"",
-            "line": 245
+            "line": 267
           }
         ],
         "blockers": [
@@ -17336,13 +17342,13 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
             "quote": "localStorage.setItem(STORAGE_KEY",
-            "line": 134
+            "line": 189
           },
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
             "quote": "subtitle=\"当前仅为界面预览，生态模型选择尚未接通\"",
-            "line": 221
+            "line": 280
           },
           {
             "kind": "本轮源码阅读",
@@ -17354,7 +17360,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
             "quote": "本页只演示设置效果，不会启停真实角色行为，也不会扣积分。",
-            "line": 157
+            "line": 212
           },
           {
             "kind": "本轮源码阅读",
@@ -17366,7 +17372,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "label=\"TA 的日常\"",
-            "line": 250
+            "line": 272
           }
         ],
         "blockers": [
@@ -24469,7 +24475,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/play.tsx",
             "quote": "<Header title={characterId ? `和 ${nameOf(characterId)} 一起专注`",
-            "line": 1237
+            "line": 1258
           }
         ],
         "blockers": [],
@@ -24530,7 +24536,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/share.tsx",
             "quote": "export function ShareEditorPage()",
-            "line": 93
+            "line": 94
           }
         ],
         "blockers": [],
