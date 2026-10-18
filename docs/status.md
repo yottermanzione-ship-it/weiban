@@ -7,6 +7,7 @@
 - **UI整体优化续做**：总经理再次授权继续。先做共用搜索跨页一致性，任务docs/tasks/2026-10-18-ui-search-consistency.md；唯一代理chat_forward在C:\wb-dev\wb-ui-search-1018 / codex/ui-search-1018续做，原模型入口分支e5adbec单独保留待点按。已核SearchField调用点与原截图；先改容器语义、官方角色可见提交、有效CSS与交互区域，已存在修复不重做。浏览器库存仍空，打开请求queued，源码工作继续但不冒称GUI通过。
 - **搜索批开发已收**：e445c3b296a685f3406516f1c345197874c45322（codex/ui-search-1018），9处共用调用已核，四TSX/三CSS修容器/焦点/点击区与两个广场提交、三个表单清空恢复；5个ID证据更新仅在待核分支。代理typecheck/lint/build均exit 0，PM独立台账validate与范围diff-check均0。浏览器仍空，未合主线，不记UI验收。
 - **串行第二批进行中**：codex/ui-ecology-clarity-1018，独立副本C:\wb-dev\wb-ui-ecology-clarity-1018；从模型入口e5adbec续接并只合主线文档，搜索分支不混入。任务docs/tasks/2026-10-18-ui-ecology-preview-clarity.md，仅整理生态预览信息层次、样例与实际状态说明，不改真实后端或会员。
+- **第二批开发已收**：87dafeac7677fa426b209edd1646272da8c0b726（codex/ui-ecology-clarity-1018），生态TSX/CSS明确预览范围、样例积分与动作，移除人民币月费，并调整主题色/长文案换行，继承模型入口修正。代理typecheck/单文件lint/web build均exit 0，PM已读完整业务与样式差异及交接、范围diff-check为0。旧主动通知/角色日常真实PATCH未改。与搜索批一样GUI待核未合主线；本轮不再堆第三批待点按改动，下一步先恢复浏览器点按，再合并并更新引用已变化的台账。
 
 - **Codex恢复接管核查**：其他agent的UI提交已保留并同步local/trunk，台账交付582fa52已合入，共享main同步；未混入后端分支d1179de。现有引用却未跟踪的10份预览/台账/临时库资料补入版本管理并保留原件备份。只读实查香港生产/health健康、契约3.5、迁移79条至0090；DR-001健康、1GiB/1CPU/回环5433、91条迁移至0102。旧后端副本465个未跟踪JS不动、不提交。仅前端Vite在127.0.0.1:5173启动，未启动后端/隧道；浏览器连接不可用，不算可登录预览或点按通过。完整事实见docs/handoffs/2026-10-18-codex-resumption-audit.md；最新产品约束见11号C9。
 

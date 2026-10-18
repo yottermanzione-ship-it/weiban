@@ -15,3 +15,7 @@
 ## 交付
 
 先WIP提交；只改本页/必要生态样式及交接，暂不改共享台账（搜索分支另有证据更新，避免并行生成冲突）。不写/跑测试套件；web typecheck、受影响TS eslint、web build。GUI只能CUA真实点按，空库存则明确待核，保留分支不合主线、不部署/SSH/启后端。给完整SHA、差异与检查记录、实际GUI或恢复清单。不得再派子代理。
+
+## 交付断点
+
+87dafeac7677fa426b209edd1646272da8c0b726已收，工作区干净。仅生态TSX/CSS与交接；代理type/lint/build均0，PM读完整差异与交接，范围diff-check为0。GUI连接仍空，分支未合主线。恢复清单见该分支docs/handoffs/2026-10-18-ui-ecology-preview-clarity.md；本分支继承e5adbec，未来合入需更新台账旧模型入口源码引用。旧通知和角色日常接口仅核未改。
