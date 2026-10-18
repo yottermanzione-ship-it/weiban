@@ -137,11 +137,11 @@
   padding-bottom: calc(var(--wb-space-6) + env(safe-area-inset-bottom));
   background: var(--wb-color-bg-page);
 }
-.play-focus-setup > .page-header {
+.play-focus-setup > :is(.page-header, .nav-bar) {
   margin-left: 0;
   margin-right: 0;
 }
-.play-focus-setup > :not(.page-header) {
+.play-focus-setup > :not(.page-header):not(.nav-bar) {
   margin-left: var(--wb-space-4);
   margin-right: var(--wb-space-4);
 }

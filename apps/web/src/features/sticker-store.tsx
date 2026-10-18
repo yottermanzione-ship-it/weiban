@@ -86,7 +86,16 @@ export function StickerStorePage() {
             <MenuRow
               to={p.enabled ? '/sticker-store/' + p.packId : undefined}
               label={p.name}
-              subtitle={p.enabled ? p.intro : '已停用，可移除'}
+              leading={
+                p.coverUrl ? (
+                  <img className="sticker-pack-cover" src={p.coverUrl} alt="" />
+                ) : undefined
+              }
+              subtitle={
+                p.enabled
+                  ? `${p.stickerCount} 个表情${p.intro ? ` · ${p.intro}` : ''}`
+                  : '已停用，可移除'
+              }
               value={p.added ? '已添加' : '免费'}
             />
             {manage && (
@@ -174,7 +183,12 @@ function StickerStoreDetail({ packId }: { packId: string }) {
           </div>
           <div className="sticker-grid manage">
             {p.stickers.map((s) => (
-              <button className="sticker-cell" key={s.stickerId} onClick={() => setPreview(s.url)}>
+              <button
+                className="sticker-cell"
+                key={s.stickerId}
+                aria-label={`查看${s.description || '表情'}`}
+                onClick={() => setPreview(s.url)}
+              >
                 <img src={s.url} alt={s.description ?? '表情'} />
               </button>
             ))}
