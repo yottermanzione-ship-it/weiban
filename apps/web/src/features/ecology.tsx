@@ -5,10 +5,10 @@
  * → 角色自己从动作清单里挑一个 → 调用执行器。
  *
  * 本页当前只做界面：开关保存在本机（localStorage），尚未接通后端。
- * 后端（契约 3.17 + 迁移 0103 + 生态循环）在方案确认后实现。
+ * 后端与会员方案暂缓；这里不启停真实行为，也不扣费。
  * 相关：docs/product/input/2026-10-18-gm-ecology-vision.md
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { GroupHeader, MenuGroup, MenuRow, NavBar, SwitchRow, CheckCircle } from './shell-kit.js';
 
 type ActionKey =
@@ -76,9 +76,9 @@ const ACTIONS: {
 ];
 
 const FREQUENCIES: { key: Frequency; label: string; subtitle: string; points: number }[] = [
-  { key: '30m', label: '每 30 分钟', subtitle: '反应最快，积分消耗最高', points: 25 },
-  { key: '2h', label: '每 2 小时', subtitle: '推荐：像真人，成本可控', points: 6 },
-  { key: '4d', label: '每天 4 次', subtitle: '只在早中晚和睡前想一次', points: 2 },
+  { key: '30m', label: '每 30 分钟', subtitle: '用于讨论较频繁的思考安排', points: 25 },
+  { key: '2h', label: '每 2 小时', subtitle: '用于讨论间隔更长的思考安排', points: 6 },
+  { key: '4d', label: '每天 4 次', subtitle: '示例：早中晚和睡前各一次', points: 2 },
 ];
 
 const STORAGE_KEY = 'weiban:ecology-preview:v1';
@@ -105,10 +105,10 @@ const DEFAULT_STATE: State = {
 };
 
 const RECENT = [
-  { time: '今天 09:12', text: '发了一条朋友圈：楼下的桂花开了' },
-  { time: '昨天 22:40', text: '主动找你：问你今天怎么没说话' },
-  { time: '昨天 18:05', text: '评论了你的朋友圈：这张拍得好看' },
-  { time: '10-16 08:30', text: '想了想，今天什么都没做' },
+  { time: '示例 09:12', text: '发了一条朋友圈：楼下的桂花开了' },
+  { time: '示例 22:40', text: '主动找你：问你今天怎么没说话' },
+  { time: '示例 18:05', text: '评论了你的朋友圈：这张拍得好看' },
+  { time: '示例 08:30', text: '想了想，今天什么都没做' },
 ];
 
 function load(): State {
@@ -143,25 +143,27 @@ export function EcologyPage() {
     0,
   );
   const daily = state.enabled ? thinking + actionPoints : 0;
-  const monthly = useMemo(() => Math.round((daily * 30) / 100), [daily]);
 
   function toggleAction(key: ActionKey, value: boolean) {
     setState((prev) => ({ ...prev, actions: { ...prev.actions, [key]: value } }));
   }
 
   return (
-    <main>
+    <main className="ecology-page">
       <NavBar title="角色生态" fallback="/services" />
 
-      <p className="ecology-intro">
-        开启后，TA
-        会像真人一样每隔一段时间自己想一想：现在该不该发条朋友圈、要不要找你说话。想的过程也会消耗积分，即使最后决定什么都不做。
-      </p>
+      <section className="ecology-intro" aria-label="界面预览说明">
+        <strong>界面预览</strong>
+        <p>本页只演示设置效果，不会启停真实角色行为，也不会扣积分。</p>
+        <p className="ecology-target">
+          目标方向：让角色定时了解近况，自主选择聊天、发动态等动作。以下选项和数字仅供讨论。
+        </p>
+      </section>
 
       <MenuGroup>
         <SwitchRow
-          label="角色生态"
-          subtitle="关闭后，所有角色只在你找 TA 时回复，不会自己做任何事"
+          label="预览角色生态"
+          subtitle="仅展开或收起本页演示，不控制现有角色行为，不扣积分"
           checked={state.enabled}
           onChange={(enabled) => setState((prev) => ({ ...prev, enabled }))}
         />
@@ -169,7 +171,7 @@ export function EcologyPage() {
 
       {state.enabled && (
         <>
-          <GroupHeader right={`约 ${daily} 积分/天`}>TA 可以自己做的事</GroupHeader>
+          <GroupHeader>动作选项（预览）</GroupHeader>
           <MenuGroup>
             {ACTIONS.map((action) => (
               <SwitchRow
@@ -183,7 +185,7 @@ export function EcologyPage() {
                 subtitle={
                   <span className="ecology-sub">
                     {action.subtitle}
-                    <span className="ecology-points">≈{action.points} 积分/天</span>
+                    <span className="ecology-points">示例：{action.points} 积分/天</span>
                   </span>
                 }
                 checked={state.actions[action.key]}
@@ -192,7 +194,7 @@ export function EcologyPage() {
             ))}
           </MenuGroup>
 
-          <GroupHeader>多久想一次</GroupHeader>
+          <GroupHeader>思考频率（示例）</GroupHeader>
           <MenuGroup>
             {FREQUENCIES.map((f) => (
               <MenuRow
@@ -203,7 +205,7 @@ export function EcologyPage() {
                 chevron={false}
                 right={
                   <span className="ecology-right">
-                    <span className="ecology-points">≈{f.points} 积分/天</span>
+                    <span className="ecology-points">示例：{f.points} 积分/天</span>
                     <CheckCircle checked={state.frequency === f.key} />
                   </span>
                 }
@@ -223,21 +225,21 @@ export function EcologyPage() {
           </MenuGroup>
 
           <div className="ecology-total">
-            <span>合计</span>
-            <strong>
-              约 {daily} 积分/天 · {monthly} 元/月
-            </strong>
+            <span>示例合计（仅供讨论）</span>
+            <strong>{daily} 积分/天（示例）</strong>
+            <small>演示数字不是实际报价，不会从账户扣除。</small>
           </div>
 
-          <GroupHeader>TA 最近自己做了什么</GroupHeader>
+          <GroupHeader>动作记录示例</GroupHeader>
+          <p className="ecology-section-note">以下是虚构演示，不是角色实际执行或发送的记录。</p>
           <MenuGroup>
             {RECENT.map((item) => (
               <MenuRow
                 key={item.time}
-                onClick={() => undefined}
                 label={item.text}
                 value={item.time}
                 chevron={false}
+                disabled
               />
             ))}
           </MenuGroup>
@@ -245,7 +247,8 @@ export function EcologyPage() {
       )}
 
       <p className="ecology-footnote">
-        本页为界面预览：开关只保存在本机，尚未接通后端。接上后，关闭开关会立即停止排队中的任务，但已经发出的调用无法撤回。
+        预览选择只保存在当前浏览器，不会修改「主动消息与免打扰」或「TA 的日常」等现有设置。
+        实际生态执行、模型与费用尚未接通。
       </p>
     </main>
   );
