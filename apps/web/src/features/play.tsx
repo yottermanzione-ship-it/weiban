@@ -1106,7 +1106,12 @@ export function LetterBubble({
 export function useActiveFocus() {
   const focus = useRemote(FocusEndpoints.getActive, { networkOnly: true });
   useSection('focus', focus.refresh);
-  return { session: focus.data?.session ?? null, refresh: focus.refresh };
+  return {
+    session: focus.data?.session ?? null,
+    refresh: focus.refresh,
+    loading: focus.loading,
+    error: focus.error,
+  };
 }
 
 function remainingText(ms: number) {
@@ -1144,7 +1149,7 @@ export function FocusCapsule() {
 export function FocusPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const { session, refresh } = useActiveFocus();
+  const { session, refresh, loading, error: loadError } = useActiveFocus();
   const [characterId, setCharacterId] = useState<string | null>(params.get('characterId'));
   const [preset, setPreset] = useState<number | 'custom'>(25);
   const [custom, setCustom] = useState(30);
@@ -1154,7 +1159,10 @@ export function FocusPage() {
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [finished, setFinished] = useState<FocusSession | null>(null);
   const { nameOf, friends } = useFriends();
-  const running = session && session.result === 'in_progress' ? session : null;
+  const running =
+    session && session.result === 'in_progress' && session.focusId !== finished?.focusId
+      ? session
+      : null;
   const now = useNow(!!running);
   const minutes = preset === 'custom' ? custom : preset;
   const validMinutes =
@@ -1162,7 +1170,7 @@ export function FocusPage() {
     minutes >= PLAY_LIMITS.focusMinMinutes &&
     minutes <= PLAY_LIMITS.focusMaxMinutes;
   async function start() {
-    if (!characterId || !validMinutes) return;
+    if (pending || !characterId || !validMinutes) return;
     setPending(true);
     setError('');
     try {
@@ -1184,13 +1192,16 @@ export function FocusPage() {
     }
   }
   async function end() {
-    if (!running) return;
+    if (!running || pending) return;
     setConfirmEnd(false);
+    setPending(true);
     try {
       setFinished(await api.call(FocusEndpoints.end, { params: { focusId: running.focusId } }));
       refresh();
     } catch (e) {
       showToast(friendlyError(e));
+    } finally {
+      setPending(false);
     }
   }
   const chatOf = (id: string) => friends.find((f) => f.characterId === id)?.conversationId;
@@ -1224,14 +1235,18 @@ export function FocusPage() {
             </Link>
           )
         ) : (
-          <button onClick={() => setConfirmEnd(true)}>提前结束</button>
+          <button disabled={pending} aria-busy={pending} onClick={() => setConfirmEnd(true)}>
+            {pending ? '正在结束…' : '提前结束'}
+          </button>
         )}
         {confirmEnd && (
-          <div className="sheet-panel" role="dialog" aria-label="结束这次专注？">
-            <strong>结束这次专注？</strong>
-            <button onClick={() => void end()}>结束</button>
-            <button onClick={() => setConfirmEnd(false)}>取消</button>
-          </div>
+          <Dialog
+            title="结束这次专注？"
+            actions={[
+              { label: '取消', onClick: () => setConfirmEnd(false) },
+              { label: '结束', primary: true, onClick: () => void end() },
+            ]}
+          />
         )}
       </main>
     );
@@ -1240,7 +1255,7 @@ export function FocusPage() {
     const name = nameOf(finished.characterId);
     return (
       <main className="play-focus">
-        <Header title="" back="/services" />
+        <Header title="专注已结束" back="/miniapps" />
         <div className="play-focus-body">
           <CharacterAvatar id={finished.characterId} size={64} />
           <p>这次专注结束了</p>
@@ -1253,6 +1268,24 @@ export function FocusPage() {
       </main>
     );
   }
+  if (loading || loadError)
+    return (
+      <main className="play-focus-setup">
+        <Header title="陪你专注" />
+        {loadError ? (
+          <div className="empty">
+            <p role="alert">{loadError}</p>
+            <button className="text-button" disabled={loading} onClick={refresh}>
+              {loading ? '正在重试…' : '重试'}
+            </button>
+          </div>
+        ) : (
+          <p className="page-note" role="status">
+            正在读取专注状态…
+          </p>
+        )}
+      </main>
+    );
   return (
     <main className="play-focus-setup">
       <Header title={characterId ? `和 ${nameOf(characterId)} 一起专注` : '陪你专注'} />
@@ -1301,9 +1334,10 @@ export function FocusPage() {
       <button
         className="primary"
         disabled={pending || !characterId || !validMinutes}
+        aria-busy={pending}
         onClick={() => void start()}
       >
-        开始专注
+        {pending ? '正在开始…' : '开始专注'}
       </button>
     </main>
   );
