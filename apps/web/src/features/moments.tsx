@@ -267,7 +267,7 @@ export function MomentCard({
     );
   return (
     <article
-      className="moment-card"
+      className={`moment-card${full ? ' moment-card-detail' : ''}`}
       onContextMenu={(event) => {
         const target = event.target;
         const contentTarget =
@@ -332,48 +332,72 @@ export function MomentCard({
               删除
             </button>
           )}
-          <span className="moment-more-host">
-            {menu && (
-              <span className="moment-pop" role="menu">
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={pending}
-                  onClick={() => {
-                    setMenu(false);
-                    like();
-                  }}
-                >
-                  <OldIcon name={post.likedByMe ? 'wechat/like_filled' : 'wechat/like'} size={18} />
-                  {post.likedByMe ? '取消' : '赞'}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={pending}
-                  onClick={() => {
-                    setMenu(false);
-                    setReplying(null);
-                  }}
-                >
-                  <OldIcon name="wechat/chat" size={18} />
-                  评论
-                </button>
-              </span>
-            )}
+          {!full && (
+            <span className="moment-more-host">
+              {menu && (
+                <span className="moment-pop" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={pending}
+                    onClick={() => {
+                      setMenu(false);
+                      like();
+                    }}
+                  >
+                    <OldIcon
+                      name={post.likedByMe ? 'wechat/like_filled' : 'wechat/like'}
+                      size={18}
+                    />
+                    {post.likedByMe ? '取消' : '赞'}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={pending}
+                    onClick={() => {
+                      setMenu(false);
+                      setReplying(null);
+                    }}
+                  >
+                    <OldIcon name="wechat/chat" size={18} />
+                    评论
+                  </button>
+                </span>
+              )}
+              <button
+                type="button"
+                className="moment-dots"
+                disabled={pending}
+                aria-label="赞和评论"
+                aria-expanded={menu}
+                onClick={() => setMenu((v) => !v)}
+              >
+                <i />
+                <i />
+              </button>
+            </span>
+          )}
+        </div>
+        {full && (
+          <div className="moment-detail-actions" aria-label="动态操作">
+            <button type="button" disabled={pending} aria-pressed={post.likedByMe} onClick={like}>
+              <OldIcon name={post.likedByMe ? 'wechat/like_filled' : 'wechat/like'} size={18} />
+              {post.likedByMe ? '取消赞' : '赞'}
+            </button>
             <button
               type="button"
-              className="moment-dots"
               disabled={pending}
-              aria-label="赞和评论"
-              aria-expanded={menu}
-              onClick={() => setMenu((v) => !v)}
+              onClick={() => {
+                setError('');
+                setReplying(null);
+              }}
             >
-              <i />
-              <i />
+              <OldIcon name="wechat/chat" size={18} />
+              评论
             </button>
-          </span>
-        </div>
+          </div>
+        )}
         {(post.likes.length > 0 || post.comments.length > 0) && (
           <div className="moment-feedback">
             {post.likes.length > 0 && (
@@ -444,8 +468,8 @@ export function MomentCard({
                 placeholder={replying ? `回复${actors.name(replying.author)}：` : '评论'}
                 onChange={(e) => setText(e.target.value)}
               />
-              <button className="wx-send" disabled={pending || !text.trim()}>
-                发送
+              <button className="wx-send" disabled={pending || !text.trim()} aria-busy={pending}>
+                {pending ? '发送中…' : '发送'}
               </button>
               {error && <small role="alert">{error}</small>}
             </form>

@@ -206,6 +206,8 @@ select {
   z-index: 1;
 }
 .route-enter-right {
+  position: relative;
+  z-index: 2;
   animation: route-enter-right 220ms ease-out;
 }
 .route-enter-left {

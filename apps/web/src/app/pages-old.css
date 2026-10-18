@@ -778,6 +778,57 @@ label.field-row {
   border-bottom: 1px solid var(--wb-color-bg-page);
   background: var(--wb-color-bg-surface);
 }
+.moment-detail {
+  min-height: 100dvh;
+  padding: 0;
+  background: var(--wb-color-bg-surface);
+}
+.moment-detail > .nav-bar {
+  margin: 0;
+}
+.moment-card-detail {
+  border-bottom: 0;
+}
+.moment-card-detail .moment-text {
+  font-size: 16px;
+  line-height: 1.5;
+}
+.moment-detail-actions {
+  display: flex;
+  margin-top: 16px;
+  padding: 8px 0;
+  border-top: 0.5px solid var(--wb-color-border-hairline);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
+}
+.moment-detail-actions button {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--wb-color-text-link);
+  font-size: 15px;
+}
+.moment-detail-actions button + button {
+  border-left: 0.5px solid var(--wb-color-border-hairline);
+}
+.moment-card-detail .moment-feedback {
+  padding: 0;
+  background: none;
+}
+.moment-card-detail .moment-comment {
+  padding: 12px 0;
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
+}
+.moment-card-detail .moment-comment button {
+  font-size: 15px;
+  line-height: 1.35;
+}
 .moment-avatar {
   display: inline-flex;
   flex: none;
