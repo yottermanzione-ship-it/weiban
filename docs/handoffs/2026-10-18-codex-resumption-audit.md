@@ -40,3 +40,4 @@
 - PM复读源码确认ecology.tsx与scenario.tsx的模型引导错误指向/models；该页只保存chat选择并排除adult，不能作为生态/私密模型设置入口。
 - 已在独立副本C:\wb-dev\wb-ui-model-entry-1018、分支codex/ui-model-entry-1018派唯一代理chat_forward续做，任务docs/tasks/2026-10-18-ui-model-entry-correction.md。只纠正UI入口与说明；后端/会员不动，GUI不可用则提交分支待核，不冒称通过或直接合入。
 - 模型入口业务修正已提交b7d5f4fce3a6a0586c1621c50b04ada826d6db5d：生态模型行禁用并说明预览未接通；私密缺失弹窗移除错误跳转，仅允许关闭。PM已读两文件完整差异，既有getSelection、服务端失败判断和已配置模型开启流程未改，范围diff --check为0。代理开发自检报告web类型检查、两文件eslint、web构建均exit 0；GUI库存仍空。**分支暂未合入主线，等待真实点按，不记独立验收。**
+- 最终交付e5adbecfd4cc264bf2cffd563e9c3e443263aed6已收，副本干净，代理已收尾；交接在该副本docs/handoffs/2026-10-18-ui-model-entry-correction.md，列4步待点按。后续合入须同步台账中引用旧/models片段的两项源码证据再校验；当前主线源码未改，台账校验仍通过。暂未派下一代理。

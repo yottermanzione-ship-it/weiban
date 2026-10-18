@@ -11,3 +11,7 @@
 3. 范围限两个页面及最小必要样式/交接文档。不整页重做，不改旧预览HTML作为替代。先提交WIP，再完成提交。
 4. 不写/跑测试套件，跑web typecheck、对应文件lint和build。涉及点击必须CUA实际点按；目前浏览器连接不可用，若仍不可用明确登记GUI待核，不声称验收通过。不能用伪造浏览器结果或隐藏调用后端替代。
 5. 交付完整SHA、diff范围、命令结果、GUI证据或准确环境阻塞、任务交接。未经PM复核不自行合并；缺GUI时先保留分支待核。
+
+## 当前交付
+
+最终e5adbecfd4cc264bf2cffd563e9c3e443263aed6已收，副本干净。PM已读业务diff与交接，代理报告web typecheck、两文件eslint、web build均exit 0。CUA浏览器库存仍空，GUI待核，分支未合入主线；恢复步骤见该分支docs/handoffs/2026-10-18-ui-model-entry-correction.md。后续合入同时更新台账旧源码引用，不将入口修正冒称模型能力实现或独立验收。
