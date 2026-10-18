@@ -6,7 +6,7 @@ import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { CharacterName } from './chat.js';
-import { NavBar, NavIcon, MenuGroup, GroupHeader, Sheet, EmptyState } from './shell-kit.js';
+import { NavBar, NavIcon, MenuGroup, GroupHeader, Sheet, EmptyState, SyncPendingState } from './shell-kit.js';
 import { Dialog } from './toast.js';
 const categories = {
   basic: '关于我',
@@ -63,7 +63,9 @@ export function MemoriesPage() {
           ) : undefined
         }
       />
-      {!contact ? (
+      {!contact && !state.initialized ? (
+        <SyncPendingState label="正在读取记忆…" />
+      ) : !contact ? (
         <EmptyState icon="wechat/person" title="好友不存在或已被删除" />
       ) : (
         <>

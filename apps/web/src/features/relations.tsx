@@ -12,6 +12,7 @@ import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterAvatar } from './character-avatar.js';
+import { NavBar } from './shell-kit.js';
 
 /*
  * TA 认识的人（SOC-01 第 3 条；social-l4.md 第 6 节）：只在用户自己的自定义角色之间设置关系，双向生效。
@@ -99,26 +100,29 @@ export function RelationsPage() {
   }
   return (
     <main>
-      <header className="page-header">
-        <Link to={`/characters/${characterId}`}>‹ 资料</Link>
-        <h1>TA 认识的人</h1>
-        <button
-          className="text-button"
-          aria-label="添加关系"
-          disabled={candidates.length === 0}
-          onClick={() =>
-            setEditing({
-              relation: null,
-              otherId: candidates[0] ?? '',
-              type: 'friend',
-              label: '',
-              closeness: 'familiar',
-            })
-          }
-        >
-          ＋
-        </button>
-      </header>
+      <NavBar
+        title="TA 认识的人"
+        fallback={`/characters/${characterId}`}
+        right={
+          <button
+            type="button"
+            className="text-button text-action"
+            aria-label="添加关系"
+            disabled={candidates.length === 0}
+            onClick={() =>
+              setEditing({
+                relation: null,
+                otherId: candidates[0] ?? '',
+                type: 'friend',
+                label: '',
+                closeness: 'familiar',
+              })
+            }
+          >
+            ＋
+          </button>
+        }
+      />
       {relations.loading && !relations.data && (
         <div className="stack" role="status" aria-label="正在读取">
           <div className="skeleton-row" />

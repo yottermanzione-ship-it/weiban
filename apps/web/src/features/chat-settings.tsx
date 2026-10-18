@@ -29,6 +29,7 @@ import {
   NavBar,
   Sheet,
   SwitchRow,
+  SyncPendingState,
 } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 
@@ -44,6 +45,14 @@ export function ChatSettingsPage() {
   const { state } = useChat();
   const conversation = state.conversations.find((item) => item.conversationId === conversationId);
   const role = conversation?.participants.find((item) => item.kind === 'character');
+  // 深链接或刷新时本地同步还没跑完，先给加载态，避免误报「会话不存在」
+  if (!conversation && !state.initialized)
+    return (
+      <main>
+        <NavBar title="聊天信息" fallback="/chat" />
+        <SyncPendingState icon="wechat/chat" label="正在读取会话…" />
+      </main>
+    );
   if (!conversation || !role)
     return (
       <main>

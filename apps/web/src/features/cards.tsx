@@ -57,7 +57,7 @@ import { CharacterAvatar } from './character-avatar.js';
 import { familiarityNames } from './growth.js';
 import { openShare } from './share.js';
 import { showToast } from './toast.js';
-import { useBack } from './shell-kit.js';
+import { NavBar, useBack } from './shell-kit.js';
 
 /*
  * 卡册、熟悉度总览、成就页（GRW-03、GRW-05、GRW-06；设计 cards-familiarity.md、me-and-services.md 3.1/3.2）。
@@ -150,7 +150,7 @@ export function CardAlbumsPage() {
   const total = items.reduce((sum, a) => sum + a.obtainedCount, 0);
   return (
     <main>
-      <h1 className="page-title">卡册</h1>
+      <NavBar title="卡册" fallback="/miniapps" />
       {albums.loading && !albums.data && (
         <div className="stack" role="status" aria-label="正在读取卡册">
           {[0, 1, 2, 3].map((i) => (
@@ -516,7 +516,7 @@ export function FamiliarityOverviewPage() {
   const name = useDisplayName(items.map((i) => i.characterId));
   return (
     <main>
-      <h1 className="page-title">熟悉度</h1>
+      <NavBar title="熟悉度" fallback="/me" />
       {list.loading && !list.data && <div className="skeleton-line" role="status" />}
       {list.error && !list.data && (
         <div className="empty">
@@ -651,7 +651,7 @@ export function AchievementsPage() {
   const unlocked = items.filter((a) => a.unlockedAt).length;
   return (
     <main>
-      <h1 className="page-title">成就</h1>
+      <NavBar title="成就" fallback="/me" />
       <p className="big-count center">
         已获得{' '}
         <strong>

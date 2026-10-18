@@ -140,6 +140,7 @@ const ownHeader = [
   /^\/services\/proactive$/,
   /^\/services\/ecology$/,
   /^\/characters\/[^/]+$/,
+  /^\/characters\/custom(\/|$)/,
   /^\/profile$/,
   /^\/(wallet|ledger|prices|usage|models|leaderboard)(\/|$)/,
 ];

@@ -4,6 +4,7 @@ import { CaretRight } from './old-icons.js';
 import { GrowthEndpoints, type Anniversary } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
+import { NavBar } from './shell-kit.js';
 
 /** 熟悉度 5 级名称与月相（cards-familiarity.md 第 2 节）。 */
 export const familiarityNames = ['初识', '眼熟', '熟络', '老友', '知己'] as const;
@@ -146,8 +147,7 @@ export function AnniversariesPage() {
   }
   return (
     <main>
-      <Link to={`/characters/${characterId}`}>‹ 返回资料</Link>
-      <h1 className="page-title">纪念日</h1>
+      <NavBar title="纪念日" fallback={`/characters/${characterId}`} />
       {days.loading && !days.data && (
         <div className="stack" role="status" aria-label="正在读取">
           <div className="skeleton-row" />

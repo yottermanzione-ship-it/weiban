@@ -357,6 +357,28 @@ export function CheckCircle({
   );
 }
 
+/** 首次同步还没回来时的占位：超过 6 秒仍没数据就提示重试，避免永远「正在读取」。 */
+export function SyncPendingState({
+  icon = 'wechat/person',
+  label = '正在读取…',
+}: {
+  icon?: string;
+  label?: string;
+}) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), 6000);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <EmptyState
+      icon={icon}
+      title={slow ? '读取较慢，返回上一页重试' : label}
+      desc={slow ? '网络恢复后会自动继续' : undefined}
+    />
+  );
+}
+
 /** 空状态（规格 3.16）。 */
 export function EmptyState({
   icon = 'wechat/chat',
