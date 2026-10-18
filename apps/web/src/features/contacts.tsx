@@ -438,7 +438,7 @@ export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) 
         className="search-strip"
         onSubmit={(event) => {
           event.preventDefault();
-          setSearch(query);
+          setSearch(query.trim());
           setCursor(undefined);
           setPrevious([]);
         }}
@@ -449,7 +449,15 @@ export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) 
           value={query}
           maxLength={50}
           enterKeyHint="search"
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            const next = event.target.value;
+            setQuery(next);
+            if (!next.trim()) {
+              setSearch('');
+              setCursor(undefined);
+              setPrevious([]);
+            }
+          }}
         />
         <button type="submit" className="search-strip-submit" disabled={!query.trim()}>
           搜索

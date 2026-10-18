@@ -210,8 +210,15 @@ function OfficialList() {
           value={query}
           maxLength={50}
           enterKeyHint="search"
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            const next = event.target.value;
+            setQuery(next);
+            if (!next.trim()) setSearch('');
+          }}
         />
+        <button type="submit" className="search-strip-submit" disabled={!query.trim()}>
+          搜索
+        </button>
       </form>
       <div className="plaza-filter">
         <select

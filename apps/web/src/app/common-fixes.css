@@ -24,24 +24,27 @@ select {
   touch-action: pan-y pinch-zoom;
   -webkit-overflow-scrolling: touch;
 }
-label.search-entry,
-label.wx-search-box {
+/* SearchField only. Legacy conversation-list .search-entry links keep shell.css. */
+.search-entry.wx-search-box {
   display: flex;
+  flex: 1;
   flex-direction: row;
   align-items: center;
+  justify-content: flex-start;
   min-width: 0;
-  flex: 1;
   height: 36px;
   min-height: 36px;
   gap: 8px;
   margin: 0;
-  padding: 0 12px;
+  padding: 0 8px;
+  border: 0;
   background: var(--wb-color-bg-surface);
   border-radius: 8px;
+  color: var(--wb-color-ui-search-placeholder);
+  cursor: text;
 }
-.search-entry input,
-.wx-search-box input {
-  flex: 1;
+.search-entry.wx-search-box input {
+  flex: 1 1 0;
   width: 0;
   min-width: 0;
   min-height: 0;
@@ -53,20 +56,69 @@ label.wx-search-box {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+  color: var(--wb-color-text-primary);
 }
-.search-entry input:focus,
-.wx-search-box input:focus {
+.search-entry.wx-search-box input:focus {
   outline: none;
   box-shadow: none;
 }
-.search-entry > svg,
-.wx-search-box > svg {
+/* Keyboard focus stays visible without restoring the old green box around the field. */
+.search-entry.wx-search-box input:focus-visible {
+  box-shadow: inset 0 -2px var(--wb-color-border-focus);
+}
+.search-entry.wx-search-box input::-webkit-search-cancel-button {
+  display: none;
+}
+.search-entry.wx-search-box input::placeholder {
+  color: var(--wb-color-ui-search-placeholder);
+}
+.search-entry.wx-search-box > svg {
   flex: none;
+}
+.search-entry.wx-search-box .wx-search-scope {
+  flex: 0 1 auto;
+  max-width: min(36%, 7em);
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 0;
+  border-radius: var(--wb-radius-sm);
+  background: var(--wb-color-brand-soft);
+  color: var(--wb-color-brand-on-soft);
+  font-size: var(--wb-font-size-footnote);
+}
+.search-entry.wx-search-box .wx-search-clear {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--wb-radius-full);
+  background: transparent;
+  color: var(--wb-color-text-tertiary);
+  cursor: pointer;
 }
 .wx-search-cancel {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: center;
+  align-self: center;
+  height: 36px;
+  min-height: 36px;
+  min-width: 44px;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  color: var(--wb-color-text-link);
+  font-size: var(--wb-font-size-body);
+  line-height: 1;
 }
 .wx-auth-check {
   display: flex;
