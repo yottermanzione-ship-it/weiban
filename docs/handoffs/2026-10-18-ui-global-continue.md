@@ -24,3 +24,15 @@ auth.tsx最小修复：每个await边界核active，尤其restore resolve后、m
 检查：web typecheck、auth.tsx eslint、web build通过（原有构建警告）。待主负责人连续reload账号安全/表情请求实际复核。
 
 更正表情环境：第一次失败后重试最终成功显示共0个，不能登记持续API阻塞；无数据限制预览与排序点按。
+
+## 朋友圈组（开发自测，待浏览器）
+
+依据06号4.11（弹条赞/评论、点评论回复、长按自己评论删除）与10号T3.10/4.3.9。moments.tsx移除弹条多出的收藏/分享；保留既有自己的删除入口。评论独立行复用useLongPress，单击回复/自己长按删除；使用现有接口不改语义。
+
+首次相册列表失败原先items.length>0才显示错误，现空列表也能看友好错误并重试；详情增加读取状态，切换加载清旧post避免旧内容挂在新URL。发布中取消/正文/图片操作/可见性锁定；空好友部分可见显示添加入口；补字数、aria-pressed和取消直开fallback。
+
+图片预览原images依赖cleanup会在每次增删时释放仍保留的objectURL；改为删对应URL、卸载统一释放，超过9张的部分不再先建URL再丢弃。未上传图片、发表/删除动态、改DB或后台生态。
+
+检查：web typecheck、moments.tsx eslint、web build通过（原有构建警告）。待浏览器：/moments封面换封面取消/相机菜单，/moments/new输入/清空/选择/取消；/me/moments空/失败；有真实数据后卡片赞评论、自己评论长按、详情；无数据与未执行资金/生态行为不算通过。
+
+Auth恢复链反馈：主负责人安全页两次reload均显示账号且无session_changed；表情进入与reload直接显示共0个；设备嵌套button为0，下线确认可打开并取消。仅这些开发复现路径通过，不推断所有并发或全部登录场景通过。

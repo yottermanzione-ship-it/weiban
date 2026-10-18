@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactN
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   IdentityEndpoints,
-  LibraryEndpoints,
   MediaEndpoints,
   MEDIA_LIMITS,
   MomentsEndpoints,
@@ -23,11 +22,12 @@ import { CharacterAvatar } from './character-avatar.js';
 import { UserAvatar } from './user-avatar.js';
 import { AvatarEditor } from './avatar-editor.js';
 import { MediaImg } from './media.js';
-import { openShare } from './share.js';
 import { showToast, Dialog } from './toast.js';
 import { OldIcon } from './old-icons.js';
 import {
   ActionSheet,
+  useBack,
+  useLongPress,
   EmptyState,
   GroupHeader,
   MenuGroup,
@@ -190,6 +190,37 @@ function ActorAvatar({
   );
 }
 
+function MomentCommentRow({
+  comment,
+  actors,
+  pending,
+  onReply,
+  onDelete,
+}: {
+  comment: MomentsComment;
+  actors: ActorNames;
+  pending: boolean;
+  onReply(): void;
+  onDelete(): void;
+}) {
+  const press = useLongPress(() => {
+    if (!pending && comment.author.kind === 'user') onDelete();
+  });
+  return (
+    <p className="moment-comment">
+      <button type="button" {...press} disabled={pending} onClick={onReply}>
+        <b>{actors.name(comment.author)}</b>
+        {comment.replyTo && (
+          <>
+            回复<b>{actors.name(comment.replyTo)}</b>
+          </>
+        )}
+        ：{comment.text}
+      </button>
+    </p>
+  );
+}
+
 /** 一条动态（4.11 动态卡）。 */
 export function MomentCard({
   post,
@@ -212,10 +243,10 @@ export function MomentCard({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [commentMenu, setCommentMenu] = useState<MomentsComment | null>(null);
   const { register } = actors;
-  const navigate = useNavigate();
   useEffect(() => register(actorsOf(post)), [post, register]);
   const mine = post.author.kind === 'user';
   async function run(operation: () => Promise<MomentsPost | null>) {
+    if (pending) return;
     setPending(true);
     setError('');
     try {
@@ -244,7 +275,7 @@ export function MomentCard({
           (target === event.currentTarget ||
             target.classList.contains('moment-body') ||
             target.closest('.moment-text, .moment-images'));
-        if (mine && onDeleted && contentTarget) {
+        if (!pending && mine && onDeleted && contentTarget) {
           event.preventDefault();
           setConfirmDelete(true);
         }
@@ -319,6 +350,7 @@ export function MomentCard({
                 <button
                   type="button"
                   role="menuitem"
+                  disabled={pending}
                   onClick={() => {
                     setMenu(false);
                     setReplying(null);
@@ -327,38 +359,12 @@ export function MomentCard({
                   <OldIcon name="wechat/chat" size={18} />
                   评论
                 </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenu(false);
-                    void api
-                      .call(LibraryEndpoints.addFavorites, {
-                        body: { items: [{ kind: 'moments_post', postId: post.postId }] },
-                      })
-                      .then(() => showToast('已收藏', 2000, 'success'))
-                      .catch((e) => showToast(friendlyError(e)));
-                  }}
-                >
-                  <OldIcon name="wechat/star" size={18} />
-                  收藏
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenu(false);
-                    openShare(navigate, { kind: 'moments_post', postId: post.postId });
-                  }}
-                >
-                  <OldIcon name="wechat/share" size={18} />
-                  分享
-                </button>
               </span>
             )}
             <button
               type="button"
               className="moment-dots"
+              disabled={pending}
               aria-label="赞和评论"
               aria-expanded={menu}
               onClick={() => setMenu((v) => !v)}
@@ -377,26 +383,17 @@ export function MomentCard({
               </p>
             )}
             {visibleComments.map((c) => (
-              <p key={c.commentId} className="moment-comment">
-                <button
-                  type="button"
-                  onClick={() => (c.author.kind === 'user' ? setCommentMenu(c) : setReplying(c))}
-                  onContextMenu={(event) => {
-                    event.stopPropagation();
-                    if (c.author.kind !== 'user') return;
-                    event.preventDefault();
-                    setCommentMenu(c);
-                  }}
-                >
-                  <b>{actors.name(c.author)}</b>
-                  {c.replyTo && (
-                    <>
-                      回复<b>{actors.name(c.replyTo)}</b>
-                    </>
-                  )}
-                  ：{c.text}
-                </button>
-              </p>
+              <MomentCommentRow
+                key={c.commentId}
+                comment={c}
+                actors={actors}
+                pending={pending}
+                onReply={() => {
+                  setError('');
+                  setReplying(c);
+                }}
+                onDelete={() => setCommentMenu(c)}
+              />
             ))}
             {!full && post.comments.length > visibleComments.length && (
               <Link className="moment-all" to={`/moments/posts/${post.postId}`}>
@@ -421,7 +418,7 @@ export function MomentCard({
               className="moment-reply"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!text.trim()) return;
+                if (pending || !text.trim()) return;
                 void run(async () => {
                   const next = await api.call(MomentsEndpoints.comment, {
                     params: { postId: post.postId },
@@ -799,10 +796,13 @@ function Album({
           );
         })}
       </div>
-      {list.items.length > 0 && list.error && (
-        <button className="text-button" onClick={() => void list.load()}>
-          加载失败，点击重试
-        </button>
+      {list.error && (
+        <p className="notice-bar" role="alert">
+          {list.error}{' '}
+          <button className="text-button" onClick={() => void list.load()}>
+            重试
+          </button>
+        </p>
       )}
       {!list.done && <div ref={sentinel} className="timeline-sentinel" aria-hidden />}
     </main>
@@ -864,9 +864,12 @@ export function MomentDetailPage() {
   const [post, setPost] = useState<MomentsPost | null>();
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     let active = true;
     setError('');
+    setLoading(true);
+    setPost(undefined);
     void api
       .call(MomentsEndpoints.getPost, { params: { postId }, networkOnly: true })
       .then((p) => active && setPost(p))
@@ -874,6 +877,9 @@ export function MomentDetailPage() {
         if (!active) return;
         if (e instanceof ApiFailure && e.status === 404) setPost(null);
         else setError(friendlyError(e));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
     return () => {
       active = false;
@@ -889,11 +895,18 @@ export function MomentDetailPage() {
   return (
     <main className="moment-detail">
       <NavBar title="详情" fallback="/moments" />
+      {loading && (
+        <p className="empty" role="status">
+          正在读取动态…
+        </p>
+      )}
       {post === null && <EmptyState icon="wechat/picture" title="该动态已删除" />}
       {error && !post && (
         <div className="empty">
-          <p>加载失败</p>
-          <button onClick={() => setRevision((v) => v + 1)}>重试</button>
+          <p role="alert">{error}</p>
+          <button className="text-button" onClick={() => setRevision((v) => v + 1)}>
+            重试
+          </button>
         </div>
       )}
       {post && (
@@ -917,6 +930,7 @@ interface Picked {
 /** 发朋友圈（moments.md 第 5 节；4.11 发表页）。 */
 export function ComposeMomentPage() {
   const navigate = useNavigate();
+  const back = useBack('/moments');
   const { state } = useChat();
   const contacts = state.contacts.filter((c) => c.status === 'active');
   const names = useCharacterNames(contacts.map((c) => c.characterId));
@@ -930,7 +944,11 @@ export function ComposeMomentPage() {
   const [error, setError] = useState('');
   const [leaving, setLeaving] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
-  useEffect(() => () => images.forEach((i) => URL.revokeObjectURL(i.preview)), [images]);
+  const previews = useRef<Picked[]>([]);
+  useEffect(() => {
+    previews.current = images;
+  }, [images]);
+  useEffect(() => () => previews.current.forEach((i) => URL.revokeObjectURL(i.preview)), []);
   useEffect(() => {
     const pick = new URLSearchParams(window.location.search).get('pick');
     if (pick && fileInput.current) {
@@ -950,11 +968,15 @@ export function ComposeMomentPage() {
         f.size <= MEDIA_LIMITS.imageMaxBytes,
     );
     if (valid.length < files.length) setError('只支持 10 MB 以内的 JPG、PNG、WebP、GIF 图片');
-    setImages((prev) =>
-      [...prev, ...valid.map((file) => ({ file, preview: URL.createObjectURL(file) }))].slice(0, 9),
-    );
+    setImages((prev) => [
+      ...prev,
+      ...valid
+        .slice(0, 9 - prev.length)
+        .map((file) => ({ file, preview: URL.createObjectURL(file) })),
+    ]);
   }
   async function publish() {
+    if (pending) return;
     setPending(true);
     setError('');
     try {
@@ -992,7 +1014,8 @@ export function ComposeMomentPage() {
           <button
             type="button"
             className="text-button text-action plain-text"
-            onClick={() => (dirty ? setLeaving(true) : navigate(-1))}
+            disabled={pending}
+            onClick={() => (dirty ? setLeaving(true) : back())}
           >
             取消
           </button>
@@ -1013,17 +1036,23 @@ export function ComposeMomentPage() {
           aria-label="这一刻的想法"
           placeholder="这一刻的想法..."
           maxLength={2000}
+          disabled={pending}
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
+        <p className="hint compose-count">{text.length}/2000</p>
         <div className="image-picker">
           {images.map((image, index) => (
             <span key={image.preview} className="picked-image">
               <img src={image.preview} alt="" />
               <button
                 type="button"
+                disabled={pending}
                 aria-label="移除图片"
-                onClick={() => setImages((prev) => prev.filter((_, i) => i !== index))}
+                onClick={() => {
+                  URL.revokeObjectURL(image.preview);
+                  setImages((prev) => prev.filter((_, i) => i !== index));
+                }}
               >
                 <OldIcon name="wechat/close" size={18} />
               </button>
@@ -1033,6 +1062,7 @@ export function ComposeMomentPage() {
             <button
               type="button"
               className="picked-image add-image"
+              disabled={pending}
               aria-label="添加图片"
               onClick={() => fileInput.current?.click()}
             >
@@ -1041,6 +1071,7 @@ export function ComposeMomentPage() {
           )}
           <input
             ref={fileInput}
+            disabled={pending}
             type="file"
             accept={MEDIA_LIMITS.imageMimeTypes.join(',')}
             multiple
@@ -1054,6 +1085,8 @@ export function ComposeMomentPage() {
         <button
           type="button"
           className="menu-row"
+          disabled={pending}
+          aria-pressed={visibility === 'all'}
           onClick={() => {
             setVisibility('all');
             setChoosing(false);
@@ -1068,6 +1101,8 @@ export function ComposeMomentPage() {
         <button
           type="button"
           className="menu-row"
+          disabled={pending}
+          aria-pressed={visibility === 'selected'}
           onClick={() => {
             setVisibility('selected');
             setChoosing(true);
@@ -1084,6 +1119,17 @@ export function ComposeMomentPage() {
       </MenuGroup>
       {choosing && visibility === 'selected' && (
         <MenuGroup>
+          {!contacts.length && (
+            <EmptyState
+              title="还没有可选的朋友"
+              desc="添加朋友后，可以选择谁能看到这条动态"
+              action={
+                <Link to="/contacts/add" className="text-button">
+                  添加朋友
+                </Link>
+              }
+            />
+          )}
           {contacts.map((c) => {
             const checked = selected.includes(c.characterId);
             return (
@@ -1091,6 +1137,8 @@ export function ComposeMomentPage() {
                 key={c.characterId}
                 type="button"
                 className="menu-row select-row"
+                disabled={pending}
+                aria-pressed={checked}
                 onClick={() =>
                   setSelected((v) =>
                     checked ? v.filter((id) => id !== c.characterId) : [...v, c.characterId],
@@ -1115,7 +1163,7 @@ export function ComposeMomentPage() {
         <Dialog
           actions={[
             { label: '继续编辑', onClick: () => setLeaving(false) },
-            { label: '不保留', danger: true, onClick: () => navigate(-1) },
+            { label: '不保留', danger: true, onClick: back },
           ]}
         >
           <p>不保留此次编辑？</p>

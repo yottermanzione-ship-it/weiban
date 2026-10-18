@@ -274,3 +274,7 @@ select {
   max-height: 65dvh;
   object-fit: contain;
 }
+.moment-compose .compose-count {
+  margin: 0 0 12px;
+  text-align: right;
+}
