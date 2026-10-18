@@ -35,6 +35,7 @@ import { useUpdates } from '../data/updates.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { openShare } from './share.js';
+import { EmptyState, NavBar } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 
 /*
@@ -65,20 +66,7 @@ function useSection(section: string, refresh: () => void) {
   });
 }
 function Header({ title, right, back }: { title: ReactNode; right?: ReactNode; back?: string }) {
-  const navigate = useNavigate();
-  return (
-    <header className="page-header">
-      <button
-        className="text-button"
-        aria-label="返回"
-        onClick={() => (back ? navigate(back) : navigate(-1))}
-      >
-        <CaretLeft size={24} />
-      </button>
-      <h1>{title}</h1>
-      {right ?? <span />}
-    </header>
-  );
+  return <NavBar title={title} right={right} fallback={back ?? '/miniapps'} />;
 }
 /** 已通过的好友角色（玩法只和通讯录里的 TA 一起）。 */
 function useFriends() {
@@ -93,10 +81,12 @@ function CharacterPicker({
   value,
   onChange,
   label = '和谁一起',
+  disabled = false,
 }: {
   value: string | null;
   onChange(id: string): void;
   label?: string;
+  disabled?: boolean;
 }) {
   const { friends, nameOf, initialized } = useFriends();
   if (!initialized)
@@ -117,6 +107,7 @@ function CharacterPicker({
         <button
           key={f.characterId}
           role="radio"
+          disabled={disabled}
           aria-checked={value === f.characterId}
           className={value === f.characterId ? 'play-pick selected' : 'play-pick'}
           onClick={() => onChange(f.characterId)}
@@ -176,6 +167,9 @@ export function DailyQuestionPage() {
   useSection('daily_question', () => setRevision((v) => v + 1));
   useEffect(() => {
     let active = true;
+    setState('loading');
+    setToday(null);
+    setError('');
     void api
       .call(DailyQuestionEndpoints.getToday, {
         query: { characterId: characterId ?? undefined },
@@ -187,7 +181,9 @@ export function DailyQuestionPage() {
         setState('ready');
       })
       .catch((e) => {
-        if (active) setState(code(e) === 'not_found' ? 'empty' : 'error');
+        if (!active) return;
+        setState(code(e) === 'not_found' ? 'empty' : 'error');
+        setError(friendlyError(e));
       });
     return () => {
       active = false;
@@ -195,7 +191,7 @@ export function DailyQuestionPage() {
   }, [characterId, revision]);
   const over = chars(answer) > PLAY_LIMITS.dailyAnswerMaxChars;
   async function submit() {
-    if (!today || !answer.trim() || over) return;
+    if (pending || !today || !answer.trim() || over) return;
     setPending(true);
     setError('');
     try {
@@ -227,8 +223,10 @@ export function DailyQuestionPage() {
       {state === 'loading' && <div className="skeleton-card" role="status" aria-label="正在读取" />}
       {state === 'error' && (
         <div className="empty">
-          <p>加载失败</p>
-          <button onClick={() => setRevision((v) => v + 1)}>重试</button>
+          <p role="alert">{error || '加载失败'}</p>
+          <button className="text-button" onClick={() => setRevision((v) => v + 1)}>
+            重试
+          </button>
         </div>
       )}
       {state === 'empty' && <p className="empty">今天还没有适合你们的问题，明天再来看看吧</p>}
@@ -237,7 +235,16 @@ export function DailyQuestionPage() {
           {!answered && (
             <>
               <h2 className="section-label">和谁一起答</h2>
-              <CharacterPicker value={selected} onChange={setCharacterId} label="和谁一起答" />
+              <CharacterPicker
+                value={selected}
+                disabled={pending}
+                onChange={(id) => {
+                  setAnswer('');
+                  requestId.current = crypto.randomUUID();
+                  setCharacterId(id);
+                }}
+                label="和谁一起答"
+              />
             </>
           )}
           <section className="panel stack play-card" key={today.questionId}>
@@ -250,6 +257,7 @@ export function DailyQuestionPage() {
               ) : (
                 <>
                   <textarea
+                    disabled={pending}
                     aria-label="我的回答"
                     placeholder="输入你的回答…"
                     value={answer}
@@ -411,8 +419,30 @@ export function WishlistsPage() {
   return (
     <main>
       <Header title="心愿清单" />
-      {list.error && <p role="alert">{list.error}</p>}
-      {initialized && friends.length === 0 && <p className="empty">先在通讯录添加一个 TA 吧</p>}
+      {list.error && (
+        <p className="notice-bar" role="alert">
+          {list.error}{' '}
+          <button className="text-button" onClick={list.refresh}>
+            重试
+          </button>
+        </p>
+      )}
+      {(list.loading || !initialized) && !list.data && (
+        <p className="empty" role="status">
+          正在读取心愿…
+        </p>
+      )}
+      {initialized && friends.length === 0 && (
+        <EmptyState
+          title="还没有一起许愿的朋友"
+          desc="先添加一个 TA，再列下想一起做的事"
+          action={
+            <Link className="text-button" to="/contacts/add">
+              添加朋友
+            </Link>
+          }
+        />
+      )}
       <div className="panel rows">
         {[...friends]
           .sort(

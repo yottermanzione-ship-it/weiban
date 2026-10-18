@@ -325,19 +325,25 @@ export function PeriodPage() {
     .join('、');
   return (
     <main className="period-page">
-      <header className="page-header">
-        <Link to="/services" aria-label="返回服务">
-          ‹ 服务
-        </Link>
-        <h1>经期日记</h1>
-        {seen ? <Link to="/services/period/settings">设置</Link> : <span />}
-      </header>
+      <NavBar
+        title="经期日记"
+        fallback="/miniapps"
+        right={
+          seen ? (
+            <Link className="text-button text-action" to="/services/period/settings">
+              设置
+            </Link>
+          ) : undefined
+        }
+      />
       {!seen ? (
         <Intro onStart={() => setSeen(true)} />
       ) : data.error && !data.cycles ? (
         <div className="empty">
-          <p>加载失败</p>
-          <button onClick={data.refresh}>重试</button>
+          <p role="alert">{data.error}</p>
+          <button className="text-button" onClick={data.refresh}>
+            重试
+          </button>
         </div>
       ) : !data.cycles || !data.prediction ? (
         <div className="stack" role="status" aria-label="正在读取">
@@ -501,8 +507,10 @@ export function PeriodDayPage() {
       </header>
       {data.error && !data.cycles && (
         <div className="empty">
-          <p>加载失败</p>
-          <button onClick={data.refresh}>重试</button>
+          <p role="alert">{data.error}</p>
+          <button className="text-button" onClick={data.refresh}>
+            重试
+          </button>
         </div>
       )}
       {loaded && (
@@ -629,8 +637,10 @@ export function PeriodHistoryPage() {
       <h1 className="page-title">历史记录</h1>
       {data.error && !data.cycles && (
         <div className="empty">
-          <p>加载失败</p>
-          <button onClick={data.refresh}>重试</button>
+          <p role="alert">{data.error}</p>
+          <button className="text-button" onClick={data.refresh}>
+            重试
+          </button>
         </div>
       )}
       {data.cycles && cycles.length === 0 && <p className="empty">还没有记录</p>}

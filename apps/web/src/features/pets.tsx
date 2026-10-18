@@ -148,12 +148,14 @@ export function PetsPage() {
   };
   return (
     <main>
-      <h1 className="page-title">宠物</h1>
+      <NavBar title="宠物" fallback="/miniapps" />
       {pets.loading && !pets.data && <span className="spinner" role="status" />}
       {pets.error && !pets.data && (
         <div className="empty">
-          <p>加载失败</p>
-          <button onClick={pets.refresh}>重试</button>
+          <p role="alert">{pets.error}</p>
+          <button className="text-button" onClick={pets.refresh}>
+            重试
+          </button>
         </div>
       )}
       {pets.data && active.length === 0 && memories.length === 0 ? (
@@ -215,6 +217,7 @@ function PetGuide({ onStart }: { onStart(): void }) {
   const hasContacts = state.contacts.some((c) => c.status === 'active' && c.conversationId);
   return (
     <main>
+      <NavBar title="宠物" fallback="/miniapps" />
       <section className="pet-guide" aria-label="宠物是什么">
         <div className="pet-guide-art" aria-hidden>
           <IconTile icon={Cat} tint="orange" size="lg" />
@@ -250,7 +253,7 @@ function PetGuide({ onStart }: { onStart(): void }) {
             开始领养
           </button>
         ) : (
-          <Link className="button primary" to="/plaza">
+          <Link className="button primary" to="/contacts/add">
             先去添加一个 TA
           </Link>
         )}
