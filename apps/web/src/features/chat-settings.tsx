@@ -183,6 +183,19 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
           }
         />
       </MenuGroup>
+      {companion.loading && !data && (
+        <p className="empty" role="status">
+          正在读取聊天设置…
+        </p>
+      )}
+      {companion.error && (
+        <div className="notice-bar" role="alert">
+          <p>{companion.error}</p>
+          <button className="text-button" onClick={companion.refresh}>
+            重试聊天设置
+          </button>
+        </div>
+      )}
       {data && (
         <>
           <GroupHeader>聊天模型</GroupHeader>
@@ -300,9 +313,9 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
           onClick={() => setConfirmation('purge')}
         />
       </MenuGroup>
-      {(error || companion.error) && (
+      {error && (
         <p role="alert" className="notice-bar">
-          {error || companion.error}
+          {error}
         </p>
       )}
       {sheet === 'fit' && data && (
