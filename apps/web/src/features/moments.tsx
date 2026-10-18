@@ -608,6 +608,7 @@ export function MomentsFeedPage() {
   const badge = useMomentsBadge();
   const navigate = useNavigate();
   const [cameraMenu, setCameraMenu] = useState(false);
+  const cameraPress = useLongPress(() => navigate('/moments/new'));
   const fetchPage = useCallback(
     (cursor: string | undefined) =>
       api.call(MomentsEndpoints.listFeed, { query: { cursor, limit: 10 }, networkOnly: true }),
@@ -640,12 +641,8 @@ export function MomentsFeedPage() {
             type="button"
             className="nav-bar-icon"
             aria-label="发朋友圈"
+            {...cameraPress}
             onClick={() => setCameraMenu(true)}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              navigate('/moments/new');
-            }}
           >
             <OldIcon name="wechat/camera" size={24} />
           </button>

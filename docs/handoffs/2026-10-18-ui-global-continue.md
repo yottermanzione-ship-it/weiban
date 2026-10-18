@@ -36,3 +36,5 @@ auth.tsx最小修复：每个await边界核active，尤其restore resolve后、m
 检查：web typecheck、moments.tsx eslint、web build通过（原有构建警告）。待浏览器：/moments封面换封面取消/相机菜单，/moments/new输入/清空/选择/取消；/me/moments空/失败；有真实数据后卡片赞评论、自己评论长按、详情；无数据与未执行资金/生态行为不算通过。
 
 Auth恢复链反馈：主负责人安全页两次reload均显示账号且无session_changed；表情进入与reload直接显示共0个；设备嵌套button为0，下线确认可打开并取消。仅这些开发复现路径通过，不推断所有并发或全部登录场景通过。
+
+朋友圈浏览器反馈：发布输入计数、部分可见空好友提示/添加入口、公开切换、取消确认→继续编辑保留→不保留返回已实点；未发表/上传。相机普通点按菜单/取消正常，真实700ms长按原先仍弹菜单，核实只有contextmenu无计时器，补为useLongPress长按纯文字、抬手不补普通点击，桌面右键保留；待复测。没有动态数据，评论/赞/详情仍待核。
