@@ -34,6 +34,7 @@ import { AccountDeletionsPage } from '../features/account-deletions.js';
 import { DailyQuestionsPage } from '../features/daily-questions.js';
 import { PlazaAdminPage } from '../features/plaza.js';
 import { PlannerPage } from '../features/planner.js';
+import { EcologyAdminPage } from '../features/ecology.js';
 import { RoleRequestsPage } from '../features/role-requests.js';
 import { SupportAdminPage } from '../features/support.js';
 import { MENU, badgeOf, groupBadge } from './menu.js';
@@ -222,6 +223,7 @@ function AdminShell({
         <Route path="/support" element={<SupportAdminPage />} />
         <Route path="/role-requests" element={<RoleRequestsPage />} />
         <Route path="/planner" element={<PlannerPage />} />
+        <Route path="/ecology" element={<EcologyAdminPage />} />
         <Route path="/daily-questions" element={<DailyQuestionsPage />} />
         <Route path="/announcements" element={<AnnouncementsPage />} />
         <Route path="/release-notes" element={<ReleaseNotesPage />} />

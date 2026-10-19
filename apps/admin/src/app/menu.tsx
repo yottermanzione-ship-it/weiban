@@ -49,6 +49,7 @@ export const MENU: MenuDataItem[] = [
       { path: '/usage', name: '用量与花费' },
       { path: '/billing', name: '对账与平台花费' },
       { path: '/planner', name: '行为规划' },
+      { path: '/ecology', name: '角色生态' },
     ],
   },
   {
