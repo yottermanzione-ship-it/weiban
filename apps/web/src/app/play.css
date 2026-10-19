@@ -192,8 +192,15 @@
   margin-top: var(--wb-space-6);
 }
 @media (max-width: 420px) {
+  /* 窄屏放不下 5 个：改成居中换行，最后一行不会孤零零靠左 */
   .play-focus-setup .chip-row {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .play-focus-setup .chip-row .chip {
+    flex: 0 0 auto;
+    min-width: 96px;
   }
 }
 .play-focus-body {
