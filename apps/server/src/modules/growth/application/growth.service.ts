@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   FamiliarityInfo,
@@ -11,6 +11,7 @@ import {
   Id,
   type ContactsReadPort,
   type FamiliarityEventType,
+  type IdentityMembershipReadPort,
 } from '@weiban/contracts';
 import {
   AppError,
@@ -26,6 +27,7 @@ import {
   type Outbox,
 } from '../../../platform/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
+import { IDENTITY_MEMBERSHIP_READ_PORT } from '../../identity/index.js';
 import { familiarity, familiarityEvents, anniversaries } from '../infra/db/schema.js';
 import {
   LEVEL_NAMES,
@@ -82,6 +84,9 @@ export class GrowthService {
     @Inject(CardsService) private readonly cards: CardsService,
     @Inject(AchievementService) private readonly achievements: AchievementService,
     @Inject(GrowthContext) private readonly ctx: GrowthContext,
+    @Optional()
+    @Inject(IDENTITY_MEMBERSHIP_READ_PORT)
+    private readonly membership?: IdentityMembershipReadPort,
   ) {}
 
   private async requireActiveContact(userId: string, characterId: string) {
@@ -222,12 +227,16 @@ export class GrowthService {
         leveledUp: false,
       });
 
-    const rawPoints = P25_POINTS[eventType] ?? 0;
-    if (rawPoints <= 0) throw new AppError('bad_request', '不支持的熟悉度事件类型');
+    const basePoints = P25_POINTS[eventType] ?? 0;
+    if (basePoints <= 0) throw new AppError('bad_request', '不支持的熟悉度事件类型');
+    // 会员 v5：PRO+ 好感度轻微加成（加分与每日上限同比例，见 P25_FAMILIARITY.proPlusBonusRate）
+    const rate = (await this.membership?.isProPlus(userId, tx)) ? P25_FAMILIARITY.proPlusBonusRate : 1;
+    const rawPoints = Math.ceil(basePoints * rate);
+    const dailyCap = Math.ceil(P25_FAMILIARITY.maxPointsPerCharacterPerDay * rate);
 
     const isSameDay = cur?.dailyPointsDate === localDateStr;
     const todayUsed = isSameDay ? cur.dailyPoints : 0;
-    const remaining = Math.max(0, P25_FAMILIARITY.maxPointsPerCharacterPerDay - todayUsed);
+    const remaining = Math.max(0, dailyCap - todayUsed);
     const pointsAdded = Math.min(rawPoints, remaining);
 
     // 流水同时用于幂等：上限已满时也记一笔（实际加 0）。

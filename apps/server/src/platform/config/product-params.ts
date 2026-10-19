@@ -127,6 +127,11 @@ export const P24_SHARE_IMAGE_MAX_MESSAGES = 30;
 export const P25_FAMILIARITY = {
   levelThresholds: { 1: 0, 2: 30, 3: 100, 4: 300, 5: 700 },
   maxPointsPerCharacterPerDay: 20,
+  /**
+   * 会员 v5（16 号 §3「好感度加成：保留旧版做法」，任务卡批 A-9）：PRO+ 每次加分与每日上限 ×1.2（向上取整）。
+   * 旧版 Pro 为 ×1.45；新版取「轻微加成」1.2，数值可在此调整。
+   */
+  proPlusBonusRate: 1.2,
   points: {
     activeChatDay: 10,
     replyToProactive: 2,
