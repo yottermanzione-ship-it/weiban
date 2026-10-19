@@ -9,7 +9,7 @@
  *   所有目录写入经一把事务级咨询锁串行，避免并发设两个默认；
  * - 改指上游、启用 / 停用都写审计；可用性翻转时发 model_access.model_status_changed。
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type {
   AdminCatalogEntry,
   ModelCapability,
@@ -56,6 +56,7 @@ import {
   type ChargeQuery,
   type ModelPriceSource,
 } from '../tokens.js';
+import { DisplayPricingService } from './display-pricing.js';
 import { ChargeQueryUnavailableError } from './defaults.js';
 
 type CatalogRow = typeof modelCatalog.$inferSelect;
@@ -114,6 +115,7 @@ export class CatalogService {
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(MODEL_PRICE_SOURCE) private readonly prices: ModelPriceSource,
     @Inject(MODEL_ACCESS_CHARGE_QUERY) private readonly charges: ChargeQuery,
+    @Optional() @Inject(DisplayPricingService) private readonly display?: DisplayPricingService,
   ) {}
 
   // ---------- 管理后台 ----------
@@ -366,9 +368,15 @@ export class CatalogService {
       upstreamStatus: routed.get(r.entry.modelKey) ?? r.upstreamStatus,
     }));
     const prices = await this.prices.textPrices(visible.map((r) => r.entry.modelKey));
+    // 3.17：约每条积分按最近 7 天平均实扣（不足时按默认假设）+ 展示倍率；未装配时退回 v3.3 标准回复估算
+    const display = await this.display?.forModels(
+      visible.map((r) => r.entry.modelKey),
+      prices,
+    );
     const perReply = (key: string) => {
+      const d = display?.get(key);
+      if (d) return d.pointsPerReply;
       const p = prices.get(key);
-      // 约每条积分 = 标准回复微元 ÷ 10,000，保留 2 位小数（v3.3，ADR-0032）
       return p ? Math.round(standardReplyMicros(p) / 100) / 100 : null;
     };
     return visible.map(({ entry, upstreamStatus }) => ({
@@ -377,6 +385,12 @@ export class CatalogService {
       vendorName: entry.vendorName,
       priceTier: priceTier(prices.get(entry.modelKey)),
       pointsPerReply: perReply(entry.modelKey),
+      ...(display?.get(entry.modelKey)
+        ? {
+            pointsPerReplyBasis: display.get(entry.modelKey)!.pointsPerReplyBasis,
+            displayMultiplier: display.get(entry.modelKey)!.displayMultiplier,
+          }
+        : {}),
       capabilities: entry.capabilities as ModelCapability[],
       tags: entry.tags,
       leaderboardRank: entry.leaderboardRank,

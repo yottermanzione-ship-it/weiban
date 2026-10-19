@@ -83,6 +83,16 @@ export const ModelInfo = z.object({
    * 用户端价目表只显示这个数；当前价目表没有该模型的 token 价格时为 null。
    */
   pointsPerReply: z.number().nonnegative().nullable().optional(),
+  /**
+   * 3.17（会员 v5，16 号 §2）：pointsPerReply 的来源。recent_7d = 最近 7 天该模型聊天回复的平均实扣；
+   * default = 数据不足，按默认假设（发给模型约 1 万 token、八成命中缓存、回复约 200 token）和当前售价估算。
+   */
+  pointsPerReplyBasis: z.enum(['recent_7d', 'default']).optional(),
+  /**
+   * 3.17：积分消耗倍率（只展示，例 1.0 显示「×1.0」；扣费按实际 token × 售价，不按倍率）。
+   * 后台手填优先；否则 = (0.8×输入售价 + 0.2×输出售价) / 基准模型同算式。算不出时为 null。
+   */
+  displayMultiplier: z.number().nonnegative().nullable().optional(),
 });
 export type ModelInfo = z.infer<typeof ModelInfo>;
 
@@ -472,6 +482,10 @@ export const AdminModel = AdminCatalogEntry.extend({
   pointsPerReply: z.number().nonnegative().nullable(),
   /** v3.4：模型路由（按优先级升序）。 */
   routes: z.array(ModelRoute).optional(),
+  /** 3.17：后台手填的展示倍率；null = 自动计算。 */
+  displayMultiplierManual: z.number().nonnegative().nullable().optional(),
+  /** 3.17：实际展示给用户的倍率（手填或自动），算不出为 null。 */
+  displayMultiplier: z.number().nonnegative().nullable().optional(),
 });
 export type AdminModel = z.infer<typeof AdminModel>;
 
@@ -488,7 +502,13 @@ export const AdminModelWrite = AdminCatalogEntryWrite.extend({
    * 传了时 upstreamId / upstreamModelId 以路由里的主路由为准（服务器自动同步）。
    */
   routes: z.array(ModelRoute).min(1).max(20).optional(),
+  /** 3.17：展示倍率手填值（最多 2 位小数）；null = 改为自动计算；不传 = 不改。 */
+  displayMultiplierManual: z.number().min(0).max(1000).nullable().optional(),
 });
+
+/** 3.17：展示倍率的基准模型（倍率 = 1.00 的那个）；null = 未设置，自动倍率不显示。 */
+export const DisplayMultiplierSettings = z.object({ baseModelKey: ModelKey.nullable() });
+export type DisplayMultiplierSettings = z.infer<typeof DisplayMultiplierSettings>;
 
 /** v3.4：每用户限流与健康参数（后台「模型管理」设置）。 */
 export const GatewayLimits = z.object({
@@ -504,6 +524,21 @@ export const GatewayLimits = z.object({
 export type GatewayLimits = z.infer<typeof GatewayLimits>;
 
 export const ModelAccessAdminEndpoints = {
+  getDisplayMultiplierSettings: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/display-multiplier`,
+    auth: 'admin',
+    response: DisplayMultiplierSettings,
+    summary: '3.17：展示倍率基准模型',
+  }),
+  updateDisplayMultiplierSettings: defineEndpoint({
+    method: 'PUT',
+    path: `${API_PREFIX}/admin/model/display-multiplier`,
+    auth: 'admin',
+    body: DisplayMultiplierSettings,
+    response: DisplayMultiplierSettings,
+    summary: '3.17：修改展示倍率基准模型（写审计）；只影响展示，不影响扣费',
+  }),
   getLeaderboardSource: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/admin/model/leaderboard-source`,

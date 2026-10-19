@@ -21,6 +21,7 @@ import { ModelGateway } from './application/gateway.js';
 import { GatewayWebSearchProvider } from './application/web-search.js';
 import { OpenAiTextAdapter } from './infra/text-adapter.js';
 import { CatalogService } from './application/catalog.js';
+import { DisplayPricingService } from './application/display-pricing.js';
 import { ModelAdminService, RatePriceSource } from './application/models.js';
 import { GatewayLimitsService } from './application/limits.js';
 import { UpstreamScheduler } from './application/scheduler.js';
@@ -85,6 +86,7 @@ import {
       useValue: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
     },
     CatalogService,
+    DisplayPricingService,
     SelectionService,
     { provide: MODEL_NOTIFICATION_READ_PORT, useExisting: SelectionService },
     ModelResolver,
