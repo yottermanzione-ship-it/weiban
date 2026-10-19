@@ -207,7 +207,7 @@ export function AnniversariesPage() {
             ))}
           </div>
           <button
-            className="primary"
+            className="primary full"
             disabled={pending || customs.length >= 10}
             onClick={() => {
               setLabel('');
