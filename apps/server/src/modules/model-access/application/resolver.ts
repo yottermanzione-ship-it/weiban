@@ -259,21 +259,27 @@ export class ModelQuoteService implements ModelQuotePort {
     userId: string;
     characterId?: string;
     purpose: ModelPurpose;
+    hasImages?: boolean;
+    modelKeyOverride?: string;
     estimate: UsageQuantities;
   }): ReturnType<ModelQuotePort['quote']> {
-    let facts: ModelFacts | null = null;
-    if (input.purpose === 'behavior_planning') facts = await this.catalog.defaultModel('planner');
-    if (!facts) {
-      const role: ModelRole = CHAT_ROLE_PURPOSES.includes(input.purpose) ? 'chat' : 'background';
-      facts =
-        (await this.resolver.pick(input.userId, role, input.characterId ?? null))?.facts ?? null;
-    }
-    if (!facts) return { ok: false, error: 'not_configured' };
-    if (input.purpose === 'vision' && !facts.entry?.capabilities.includes('vision')) {
-      const visionDefault = await this.catalog.defaultModel('vision');
-      if (!visionDefault) return { ok: false, error: 'not_configured' };
-      facts = visionDefault;
-    }
+    // v5（model-routing-ecology 块 A-3）：报价与执行共用 ModelResolver.resolve，消除
+    // behavior_planning（原先回落用户后台模型）与带图识图（原先只看 purpose=vision）的两套口径。
+    const role: ModelRole = CHAT_ROLE_PURPOSES.includes(input.purpose) ? 'chat' : 'background';
+    const resolved = await this.resolver.resolve({
+      userId: input.userId,
+      modelRole: role,
+      purpose: input.purpose,
+      ...(input.characterId ? { characterId: input.characterId } : {}),
+      ...(input.hasImages ? { hasImages: true } : {}),
+      ...(input.modelKeyOverride ? { modelKeyOverride: input.modelKeyOverride } : {}),
+    });
+    if (!resolved.ok)
+      return {
+        ok: false,
+        error: resolved.error === 'model_unavailable' ? 'model_removed' : 'not_configured',
+      };
+    const facts: ModelFacts = await this.catalog.fact(resolved.value.modelKey);
     const entry = facts.entry;
     if (!entry) return { ok: false, error: 'model_removed' };
     const reason = unavailableReason(entry, facts.upstreamStatus);

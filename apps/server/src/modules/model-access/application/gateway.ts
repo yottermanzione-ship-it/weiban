@@ -487,6 +487,7 @@ export class ModelGateway implements ModelGatewayPort {
             value: {
               text: answer.text,
               modelKey: model.modelKey,
+              ...(model.usedVisionDefault ? { usedVisionDefault: true } : {}),
               usage: answer.usage,
               chargedMicros: 0,
               latencyMs,

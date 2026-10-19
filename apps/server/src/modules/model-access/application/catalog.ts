@@ -194,6 +194,20 @@ export class CatalogService {
     if (defaultFor.length > 0 && !body.enabled) {
       throw new AppError('bad_request', '停用的模型不能设为平台默认模型', { status: 422 });
     }
+    // v5（model-routing-ecology 块 A-4）：平台默认聊天模型不能识图时，必须已有默认识图模型兜底，
+    // 否则用户发图会直接失败（resolver 不再静默改用其他模型以外的路径）。
+    if (
+      defaultFor.includes('chat') &&
+      !capabilities.includes('vision') &&
+      !(await this.defaultModel('vision')) &&
+      (await this.defaultModel('chat'))?.modelKey !== body.modelKey
+    ) {
+      throw new AppError(
+        'bad_request',
+        '这个模型不能识图，且平台还没有默认识图模型：请先设置默认识图模型，或选能识图的模型做聊天默认',
+        { status: 422 },
+      );
+    }
 
     if (body.enabled) await this.requirePrice(body.modelKey);
 
