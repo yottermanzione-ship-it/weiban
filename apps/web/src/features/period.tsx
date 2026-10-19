@@ -759,7 +759,6 @@ export function PeriodAuthorizationPage() {
               <div key={c.characterId}>
                 <CharacterAvatar id={c.characterId} size={40} />
                 <label className="check grow">
-                  {nameOf(c.characterId)}
                   <input
                     type="checkbox"
                     role="switch"
@@ -774,6 +773,7 @@ export function PeriodAuthorizationPage() {
                         );
                     }}
                   />
+                  {nameOf(c.characterId)}
                 </label>
               </div>
             ))}
