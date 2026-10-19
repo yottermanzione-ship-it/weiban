@@ -82,6 +82,8 @@ import { CallSchedulerService } from './call-scheduler.js';
 import { QuietStateService } from './quiet-state.js';
 import { PlannerService } from './planner.js';
 import { PlayContinuityStore } from './play-continuity.js';
+import { EcologySettingsService } from './ecology-settings.js';
+import type { EcologyActionKey } from '@weiban/contracts';
 
 /**
  * T-090：其他服务（经期关怀等）经调度器登记的计划，到发送时由登记方自己生成并发送（内容现取，不存进计划）。
@@ -137,7 +139,27 @@ export type ProactiveReason =
   | 'safety_follow_up'
   | 'interactive_play'
   /** T-071 MED-05：主动分享作品链接（计入 P-03 / P-04）；sourceRef = work:{workLinkId}:{周}。 */
-  | 'share_work';
+  | 'share_work'
+  /** v5 角色生态：生态唤醒挑中的聊天类动作（sourceRef = ecology:{runId}），不进旧账本。 */
+  | 'ecology';
+
+/** 生态 v1：聊天类动作的附加形式。 */
+export interface EcologySendExtras {
+  extra: 'voice' | 'photo' | 'sticker' | 'link' | null;
+  /** 早安 / 晚安：放开「不说早安晚安套话」。 */
+  greeting?: boolean;
+  /** 照片内容（默认用 brief）。 */
+  scene?: string;
+}
+
+export type SendOutcome =
+  | { ok: true; chargedMicros: number; messageId: string | null }
+  | { ok: false; reason: string };
+
+/** 经期关怀计划来源前缀（同 health-care CARE_PLAN_PREFIX；不 import 以免循环）。 */
+const CARE_SOURCE_PREFIX = 'care:';
+/** v5 起规则候选（节日、跟进、久未联系、日常分享……）改由生态快照提供，旧排期停用。 */
+const LEGACY_RULE_CANDIDATES = false;
 
 export interface ProactiveRequest {
   userId: string;
@@ -301,6 +323,7 @@ export class ProactiveSchedulerService {
     @Inject(QuietStateService) private readonly quiet: QuietStateService,
     @Inject(PlannerService) private readonly planner: PlannerService,
     @Inject(MEDIA_READ_PORT) private readonly mediaRead: MediaReadPort,
+    @Inject(EcologySettingsService) private readonly ecology: EcologySettingsService,
     /** T-082 PLAY-02：宠物读取（推演一致、提议领养、宠物照片）与角色照片进相册。 */
     @Optional() @Inject(GROWTH_PET_READ_PORT) private readonly pets?: PetReadPort,
     @Optional() @Inject(GROWTH_PET_ALBUM) private readonly album?: PetAlbum,
@@ -350,6 +373,87 @@ export class ProactiveSchedulerService {
     if (d.choice === 'skip_today') return null;
     const h = Number(d.choice.slice(1));
     return Number.isFinite(h) ? h : clamp(ruleHour);
+  }
+
+  // -------------------------------------------------------------------------
+  // v5 角色生态：执行聊天类动作（消息、早晚安、关心、语音、照片、表情、作品链接、心愿提议）
+  // -------------------------------------------------------------------------
+  /**
+   * 立即发一条生态主动消息（不走规则排期、不进旧的主动消息账本）。复用 send() 的生成、守卫、发送事务；
+   * sourceRef 以已登记前缀开头时（例 play_wish_propose:）交给登记方处理。返回本次扣费（微元）。
+   */
+  async sendEcology(input: {
+    userId: string;
+    characterId: string;
+    runId: string;
+    brief: string;
+    extras: EcologySendExtras;
+    sourceRef?: string;
+  }): Promise<SendOutcome> {
+    const profile = await this.identity.getProfile(input.userId);
+    if (!profile) return { ok: false, reason: 'no_profile' };
+    const now = this.clock.now();
+    const local = localParts(now, profile.timeZone);
+    const ctx: UserContext = {
+      userId: input.userId,
+      timeZone: profile.timeZone,
+      localDate: local.date,
+      localHour: local.hour,
+      nickname: profile.nickname,
+      birthday: profile.birthday,
+    };
+    const contact = await this.contacts.getActiveContact(input.userId, input.characterId);
+    if (!contact?.conversationId) return { ok: false, reason: 'contact_inactive' };
+    const sourceRef = (input.sourceRef ?? `ecology:${input.runId}`).slice(0, 200);
+    const [plan] = await this.db.db
+      .insert(proactivePlans)
+      .values({
+        id: newId(),
+        userId: input.userId,
+        characterId: input.characterId,
+        reason: input.sourceRef ? 'interactive_play' : 'ecology',
+        sourceRef,
+        topicKey: sourceRef,
+        brief: input.brief.slice(0, 2000),
+        localDate: local.date,
+        isHoliday: false,
+        priority: 0,
+        status: 'generating',
+        dueAt: now,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing()
+      .returning();
+    if (!plan) return { ok: false, reason: 'duplicate' };
+    return this.send(ctx, plan, contact, input.extras);
+  }
+
+  /** 拍一拍（不调模型、不扣费）。 */
+  async sendNudge(userId: string, characterId: string, runId: string): Promise<SendOutcome> {
+    const contact = await this.contacts.getActiveContact(userId, characterId);
+    if (!contact?.conversationId) return { ok: false, reason: 'contact_inactive' };
+    const conversation = await this.chat.getConversation(contact.conversationId);
+    const me = conversation?.participants.find(
+      (p) => p.kind === 'character' && p.refId === characterId,
+    );
+    const user = conversation?.participants.find((p) => p.kind === 'user' && p.refId === userId);
+    if (!conversation || !me || !user) return { ok: false, reason: 'context_unavailable' };
+    const posted = await this.db.transaction((tx) =>
+      this.writer.postMessage(
+        {
+          conversationId: conversation.conversationId,
+          senderParticipantId: me.participantId,
+          content: { type: 'nudge', targetParticipantId: user.participantId },
+          idempotencyKey: `eco:${runId}:nudge`,
+          expectedScope: conversation.contentScope,
+        },
+        tx,
+      ),
+    );
+    return posted.ok
+      ? { ok: true, chargedMicros: 0, messageId: posted.value.messageId }
+      : { ok: false, reason: `post_failed:${posted.error}` };
   }
 
   private async listPets(userId: string, characterId: string): Promise<PetForRuntime[]> {
@@ -468,16 +572,20 @@ export class ProactiveSchedulerService {
       ),
       'expired_day',
     );
-    // 全局开关（ACC-03）：关闭时当天所有计划放弃。
-    if (notification && !notification.proactiveMessagesEnabled) {
+    // v5 角色生态（17 号）：角色自己发起、扣用户积分的主动行为只在生态开着时发生；旧的「主动消息」全局开关
+    // 与免打扰不再适用（17 号 §3）。生态关闭时当天计划全部放弃，平台承担的安全关怀跟进除外。
+    void notification;
+    if (!(await this.ecology.isActive(userId))) {
       await this.dropWhere(
-        and(eq(proactivePlans.userId, userId), eq(proactivePlans.status, 'planned')),
-        'global_off',
+        and(
+          eq(proactivePlans.userId, userId),
+          eq(proactivePlans.status, 'planned'),
+          sql`${proactivePlans.reason} <> 'safety_follow_up'`,
+        ),
+        'ecology_off',
       );
-      return;
     }
-    // 免打扰优先，其次活跃时段（P-05/P-06）。不在时段内：计划保留，等进入时段（同一天）。
-    if (inDoNotDisturb(notification?.doNotDisturb, local.hour, local.minute)) return;
+    // 活跃时段（P-05/P-06）。不在时段内：计划保留，等进入时段（同一天）。
     if (!(await this.inActiveWindow(ctx))) return;
 
     const contacts = await this.contacts.listActiveContacts(userId);
@@ -488,8 +596,18 @@ export class ProactiveSchedulerService {
     );
     await this.collectCandidates(ctx, contacts);
     await this.processDue(ctx, contacts);
-    // T-072 主动来电（MED-07）：在同样的开关、免打扰、活跃时段判断之后登记；其余条件由来电调度判断。
-    await this.calls.consider(ctx, contacts).catch(() => undefined);
+    // v5（17 号 §4.7，总经理 10-19）：角色不再主动打电话。原 T-072 主动来电（MED-07 / PRD P-10）
+    // 的 this.calls.consider 不再调度；代码保留在 call-scheduler.ts。用户主动打给角色不受影响。
+    void this.calls;
+  }
+
+  /** 旧计划对应的生态动作（计划仍由登记方现取内容发送，开关按动作走）。 */
+  private planAction(plan: Plan): EcologyActionKey {
+    if (plan.sourceRef.startsWith(CARE_SOURCE_PREFIX)) return 'care_period';
+    if (plan.sourceRef.startsWith(PLAY_WISH_PROPOSE_SOURCE)) return 'play_wish';
+    if (plan.sourceRef.startsWith(PLAY_WISH_FOLLOW_SOURCE)) return 'play_wish';
+    if (plan.sourceRef.startsWith(PLAY_LETTER_ANNIV_SOURCE)) return 'play_letter';
+    return 'message';
   }
 
   // -------------------------------------------------------------------------
@@ -498,12 +616,30 @@ export class ProactiveSchedulerService {
   private async collectCandidates(ctx: UserContext, contacts: Contact[]): Promise<void> {
     const now = this.clock.now();
     const nowMs = now.getTime();
+    // v5 角色生态：节日、纪念日、约定跟进、久未联系、日常分享、作品分享、提议领养这些「候选」不再由规则排期；
+    // 生态唤醒时它们进入统一快照，由决策模型挑（docs/ai/ecology-v1.md §4）。这里只保留把推演事件发布到时间线。
+    for (const contact of contacts) {
+      if (!contact.conversationId) continue;
+      if (!(await this.ecology.isActive(ctx.userId, contact.characterId))) continue;
+      const events = await this.todayEvents(ctx, contact.characterId).catch(() => []);
+      await this.publishEvents(ctx, contact.characterId, events);
+    }
+    if (LEGACY_RULE_CANDIDATES) await this.collectRuleCandidates(ctx, contacts, now, nowMs);
+  }
+
+  /** v5 起停用（LEGACY_RULE_CANDIDATES = false）；保留代码便于对照与回退。 */
+  private async collectRuleCandidates(
+    ctx: UserContext,
+    contacts: Contact[],
+    now: Date,
+    nowMs: number,
+  ): Promise<void> {
+    void now;
     const holidaysToday = await this.holidays
       .getUpcomingForUser(ctx.userId, 1)
       .then((list) => list.filter((h) => h.daysAhead === 0))
       .catch(() => []);
     const birthdayToday = !!ctx.birthday && ctx.birthday.slice(5) === ctx.localDate.slice(5);
-
     for (const contact of contacts) {
       const characterId = contact.characterId;
       if (!contact.conversationId) continue;
@@ -819,8 +955,16 @@ export class ProactiveSchedulerService {
         continue;
       }
       const settings = await this.settings.get(ctx.userId, plan.characterId).catch(() => null);
-      if (!settings?.proactiveMessages) {
+      if (!settings) {
         await this.drop(plan, 'character_off');
+        continue;
+      }
+      // v5：旧计划（经期关怀、心愿、纪念日寄信）按生态的角色开关 + 动作开关放行；安全关怀跟进平台承担，不受影响。
+      if (
+        plan.reason !== 'safety_follow_up' &&
+        !(await this.ecology.isActive(ctx.userId, plan.characterId, this.planAction(plan)))
+      ) {
+        await this.drop(plan, 'ecology_off');
         continue;
       }
       if (await this.topicRecentlyUsed(plan)) {
@@ -887,14 +1031,21 @@ export class ProactiveSchedulerService {
     return !!row;
   }
 
-  private async send(ctx: UserContext, plan: Plan, contact: Contact): Promise<void> {
-    // 认领：planned → generating（并发调度只有一个能拿到）。
-    const claimed = await this.db.db
-      .update(proactivePlans)
-      .set({ status: 'generating', updatedAt: this.clock.now() })
-      .where(and(eq(proactivePlans.id, plan.id), eq(proactivePlans.status, 'planned')))
-      .returning();
-    if (!claimed.length) return;
+  private async send(
+    ctx: UserContext,
+    plan: Plan,
+    contact: Contact,
+    eco?: EcologySendExtras,
+  ): Promise<SendOutcome> {
+    // 认领：planned → generating（并发调度只有一个能拿到）。生态计划插入时已是 generating。
+    if (!eco) {
+      const claimed = await this.db.db
+        .update(proactivePlans)
+        .set({ status: 'generating', updatedAt: this.clock.now() })
+        .where(and(eq(proactivePlans.id, plan.id), eq(proactivePlans.status, 'planned')))
+        .returning();
+      if (!claimed.length) return { ok: false, reason: 'not_claimed' };
+    }
     // T-090：登记方自己发送的计划（如经期关怀，内容现取）。
     const handler = this.handlers.find((h) => plan.sourceRef.startsWith(h.prefix));
     if (handler) {
@@ -921,8 +1072,9 @@ export class ProactiveSchedulerService {
             updatedAt: this.clock.now(),
           })
           .where(eq(proactivePlans.id, plan.id));
-      else await this.drop(plan, result.reason.slice(0, 60));
-      return;
+      else return this.fail(plan, result.reason.slice(0, 60));
+      // 登记方自己发送，费用记在其消息上，这里拿不到金额。
+      return { ok: true, chargedMicros: 0, messageId: result.messageId };
     }
     const epoch = await this.contacts.getActiveContactEpoch(ctx.userId, plan.characterId);
     const role = await this.characters.getForRuntime(ctx.userId, plan.characterId);
@@ -933,8 +1085,7 @@ export class ProactiveSchedulerService {
     );
     const settings = await this.settings.get(ctx.userId, plan.characterId).catch(() => null);
     if (!epoch || !role || !policy || !conversation || !participant || !settings) {
-      await this.drop(plan, 'context_unavailable');
-      return;
+      return this.fail(plan, 'context_unavailable');
     }
     const history = await this.chat.readMessages({
       conversationId: conversation.conversationId,
@@ -970,8 +1121,7 @@ export class ProactiveSchedulerService {
           and(eq(petProposals.userId, ctx.userId), eq(petProposals.characterId, plan.characterId)),
         );
       if (done || petList.length) {
-        await this.drop(plan, 'pet_proposal_not_needed');
-        return;
+        return this.fail(plan, 'pet_proposal_not_needed');
       }
     }
     const adult =
@@ -994,7 +1144,7 @@ export class ProactiveSchedulerService {
         messages: [
           {
             role: 'system',
-            content: `你在微伴里以角色口吻主动给用户发私聊消息。平台规则优先于角色卡。只输出聊天纯文本，短句、口语、可以换行分成 1–3 条气泡；不输出JSON或括号动作；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。不要用「在干嘛」「想你了」这类没有内容的开场，不说早安晚安套话。不做情感操纵：不制造愧疚、不说一直在等、不追问、不威胁。`,
+            content: `你在微伴里以角色口吻主动给用户发私聊消息。平台规则优先于角色卡。只输出聊天纯文本，短句、口语、可以换行分成 1–3 条气泡；不输出JSON或括号动作；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。${eco && level >= 3 ? '「在干嘛」「想你了」这类没有具体内容的话可以偶尔说，但别总这样。' : '不要用「在干嘛」「想你了」这类没有内容的开场。'}${eco?.greeting ? '这次是早安或晚安：结合今天的具体情况说，别用套话。' : '不说早安晚安套话。'}不做情感操纵：不制造愧疚、不说一直在等、不追问、不威胁。`,
           },
           {
             role: 'system',
@@ -1011,8 +1161,7 @@ export class ProactiveSchedulerService {
       adult,
     );
     if (!result.ok) {
-      await this.drop(plan, `model_${result.error}`);
-      return;
+      return this.fail(plan, `model_${result.error}`);
     }
     // v3.3（积分制）：这条主动消息消耗的积分记在第一个气泡上（Message.pointsCost）。
     const charge = {
@@ -1021,17 +1170,64 @@ export class ProactiveSchedulerService {
     };
     const bubbles = splitReply(result.value.text, settings.splitBubbles).slice(0, 3);
     if (!bubbles.length || !bubbles.every((b) => outputAllowed(b, policy, adult))) {
-      await this.drop(plan, 'output_guard');
-      return;
+      return this.fail(plan, 'output_guard');
+    }
+    // 生态 v1：语音 / 照片 / 表情 / 作品链接（动作工具，docs/ai/ecology-v1.md §5）。
+    let charged = charge.chargedMicros;
+    let voice: MessageContent | null = null;
+    let link: MessageContent | null = null;
+    if (eco?.extra === 'voice') {
+      const v = await this.mediaAi
+        .synthesizeForEcology({
+          userId: ctx.userId,
+          characterId: plan.characterId,
+          conversationId: conversation.conversationId,
+          text: bubbles.join('
+'),
+          voiceId: settings.voiceId ?? null,
+          idempotencyKey: `eco:${plan.id}`,
+        })
+        .catch(() => null);
+      if (!v) return this.fail(plan, 'voice_unavailable');
+      voice = v.content;
+      charged += v.chargedMicros;
+    } else if (eco?.extra === 'photo') {
+      const image = await this.images
+        .generate({
+          userId: ctx.userId,
+          characterId: plan.characterId,
+          conversationId: conversation.conversationId,
+          scene: (eco.scene ?? plan.brief).slice(0, 300),
+          use: 'chat',
+          idempotencyKey: `proactive:${plan.id}`,
+          countAsBackground: true,
+          ecologyTask: true,
+        })
+        .catch(() => null);
+      if (!image) return this.fail(plan, 'photo_unavailable');
+      link = {
+        type: 'image',
+        mediaId: image.mediaId,
+        width: image.width,
+        height: image.height,
+        sizeBytes: image.sizeBytes,
+      };
+      charged += image.chargedMicros ?? 0;
+    } else if (eco?.extra === 'sticker') {
+      link = await this.mediaAi
+        .pickStickerForEcology(plan.characterId, bubbles.join(''), plan.id)
+        .catch(() => null);
+      if (!link) return this.fail(plan, 'no_sticker');
+    } else if (eco?.extra === 'link') {
+      link = await this.mediaAi.pickWorkLink(plan.characterId, plan.brief).catch(() => null);
+      if (!link) return this.fail(plan, 'no_link');
     }
     // T-071 MED-05：作品分享附链接卡片；链接不可访问就不发这条主动消息（不得分享打不开的链接）。
-    let link: MessageContent | null = null;
     if (plan.reason === 'share_work') {
       const workLinkId = plan.sourceRef.split(':')[1] ?? '';
       link = await this.mediaAi.pickWorkLink(plan.characterId, '', workLinkId).catch(() => null);
       if (!link) {
-        await this.drop(plan, 'link_unreachable');
-        return;
+        return this.fail(plan, 'link_unreachable');
       }
     }
     // T-072 MED-02：分享日常事件时约三分之一配一张 TA 视角的图（与事件一致；生成失败用素材库，没有就只发文字）。
@@ -1104,7 +1300,9 @@ export class ProactiveSchedulerService {
         if ((await this.accounts.getAccountStatus(ctx.userId, tx)) !== 'active') return null;
         const current = await this.contacts.getActiveContactEpoch(ctx.userId, plan.characterId, tx);
         if (current?.version !== epoch.version) return null;
-        await this.quota.recordSent(
+        // 生态动作不进旧的主动消息账本（P-03/P-04 与「未回复不再发」改由生态快照约束）。
+        if (!eco)
+          await this.quota.recordSent(
           ctx.userId,
           plan.characterId,
           plan.localDate,
@@ -1115,7 +1313,22 @@ export class ProactiveSchedulerService {
           FREQUENCY_LIMIT[settings.proactiveFrequency ?? 'medium'],
         );
         let firstId: string | null = null;
-        for (let i = 0; i < bubbles.length; i++) {
+        if (voice) {
+          const posted = await this.writer.postMessage(
+            {
+              conversationId: conversation.conversationId,
+              senderParticipantId: participant.participantId,
+              content: voice,
+              idempotencyKey: `proactive:${plan.id}:voice`,
+              expectedScope: conversation.contentScope,
+              ...(charge.chargedMicros > 0 ? { charge } : {}),
+            },
+            tx,
+          );
+          if (!posted.ok) throw new Error(`post_failed:${posted.error}`);
+          firstId = posted.value.messageId;
+        }
+        for (let i = 0; i < (voice ? 0 : bubbles.length); i++) {
           const posted = await this.writer.postMessage(
             {
               conversationId: conversation.conversationId,
@@ -1190,8 +1403,8 @@ export class ProactiveSchedulerService {
         );
         return firstId;
       });
-      if (!sent) await this.drop(plan, 'relationship_changed');
-      else if (petPhoto && link?.type === 'image')
+      if (!sent) return this.fail(plan, 'relationship_changed');
+      if (petPhoto && link?.type === 'image')
         await this.album
           ?.addCharacterPhoto({
             userId: ctx.userId,
@@ -1200,12 +1413,18 @@ export class ProactiveSchedulerService {
             messageId: photoMessageId,
           })
           .catch(() => undefined);
+      return { ok: true, chargedMicros: charged, messageId: sent };
     } catch (error) {
-      await this.drop(
+      return this.fail(
         plan,
         `send_rejected:${error instanceof Error ? error.message : 'unknown'}`.slice(0, 200),
       );
     }
+  }
+
+  private async fail(plan: Plan, reason: string): Promise<SendOutcome> {
+    await this.drop(plan, reason);
+    return { ok: false, reason };
   }
 
   private async inActiveWindow(ctx: UserContext): Promise<boolean> {

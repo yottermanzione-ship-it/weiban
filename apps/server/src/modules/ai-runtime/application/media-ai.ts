@@ -621,6 +621,63 @@ export class MediaAiService {
     };
   }
 
+  /**
+   * 生态 v1「发语音」：把一段文字合成角色语音（音色库非克隆音色；P-45 静默中不发）。
+   * 与回复流程同一套音色选择；平台未开通语音合成或没有可用音色返回 null。
+   */
+  async synthesizeForEcology(input: {
+    userId: string;
+    characterId: string;
+    conversationId: string;
+    text: string;
+    voiceId: string | null;
+    idempotencyKey: string;
+  }): Promise<{ content: MessageContent; chargedMicros: number } | null> {
+    const until = await this.quiet.getInconvenientUntil(input.userId).catch(() => null);
+    if (until && Date.parse(until) > this.clock.nowMs()) return null;
+    if (!(await this.media.isServiceEnabled('speech_synthesis'))) return null;
+    const voiceId = await this.resolveVoice(input.characterId, input.voiceId);
+    if (!voiceId) return null;
+    const text = input.text.slice(0, VOICE_MAX_CHARS * 2);
+    const result = await this.media.synthesizeSpeech({
+      userId: input.userId,
+      purpose: 'voice',
+      billingOwner: 'user',
+      characterId: input.characterId,
+      conversationId: input.conversationId,
+      text,
+      voiceId,
+      format: 'ogg_opus',
+      idempotencyKey: `tts:${input.idempotencyKey}`,
+      countAsBackground: true,
+      ecologyTask: true,
+    });
+    if (!result.ok) return null;
+    return {
+      content: {
+        type: 'voice',
+        mediaId: result.value.mediaId,
+        durationMs: Math.max(1, Math.min(300_000, result.value.durationMs)),
+        transcript: text.slice(0, 4000),
+      },
+      chargedMicros: result.value.chargedMicros,
+    };
+  }
+
+  /** 生态 v1「发表情包」：按含义挑一个库内表情；角色没有可用表情返回 null。 */
+  async pickStickerForEcology(
+    characterId: string,
+    hint: string,
+    seed: string,
+  ): Promise<MessageContent | null> {
+    return this.pickSticker(characterId, hint, seed);
+  }
+
+  /** 生态 v1：该角色有没有可用表情（决策工具清单用）。 */
+  async hasStickers(characterId: string): Promise<boolean> {
+    return (await this.assets.listStickersForCharacter(characterId).catch(() => [])).length > 0;
+  }
+
   /** 陪伴设置 → 已授权角色快照的默认音色 → 预设默认；每一项都必须仍启用。 */
   async resolveVoice(
     characterId: string,

@@ -50,6 +50,8 @@ export interface CharacterImageResult {
   width: number | null;
   height: number | null;
   sizeBytes?: number;
+  /** 生态 v1：本次生成扣的金额（微元）；素材库兜底为 0。 */
+  chargedMicros?: number;
 }
 
 @Injectable()
@@ -116,6 +118,7 @@ export class CharacterImageService {
           return {
             mediaId: generated.value.mediaId,
             source: 'generated',
+            chargedMicros: generated.value.chargedMicros,
             width: 1024,
             height: 1024,
             sizeBytes: (await this.mediaRead.getMedia(input.userId, generated.value.mediaId))
