@@ -174,7 +174,7 @@ export function SettingsPage() {
         )}
         {notification.data && (
           <SwitchRow
-            label="声音"
+            label="通知声音"
             checked={notification.data.pushSoundEnabled}
             disabled={pending}
             onChange={(pushSoundEnabled) => void updateNotification({ pushSoundEnabled })}

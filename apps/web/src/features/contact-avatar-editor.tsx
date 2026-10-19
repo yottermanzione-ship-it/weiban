@@ -4,7 +4,14 @@ import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
 import { friendlyError } from '../data/use-remote.js';
 import { AvatarEditor } from './avatar-editor.js';
-export function ContactAvatarEditor({ characterId }: { characterId: string }) {
+export function ContactAvatarEditor({
+  characterId,
+  titled = true,
+}: {
+  characterId: string;
+  /** 弹层标题已是「设置头像」时不再重复小标题。 */
+  titled?: boolean;
+}) {
   const { state, assertOwner, synchronize } = useChat();
   const contact = state.contacts.find((item) => item.characterId === characterId);
   const [pending, setPending] = useState(false);
@@ -34,7 +41,7 @@ export function ContactAvatarEditor({ characterId }: { characterId: string }) {
   if (!contact) return null;
   return (
     <section className="panel stack" aria-label="设置角色头像">
-      <h2>设置头像</h2>
+      {titled && <h2>设置头像</h2>}
       <p>上传的头像只有你自己能看到，其他人看到的角色头像不会改变</p>
       <fieldset disabled={pending}>
         <AvatarEditor

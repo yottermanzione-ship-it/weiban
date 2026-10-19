@@ -913,8 +913,8 @@ export function CharacterPage({
         </Sheet>
       )}
       {sheet === 'avatar' && contact && (
-        <Sheet title="设置头像" onClose={() => setSheet(null)} closeLabel="完成">
-          <ContactAvatarEditor characterId={characterId} />
+        <Sheet title="设置头像" onClose={() => setSheet(null)} closeLabel="取消">
+          <ContactAvatarEditor characterId={characterId} titled={false} />
         </Sheet>
       )}
       {sheet === 'remark' && contact && (
