@@ -27,3 +27,4 @@ export { hashUserId } from './application/user-hash.js';
  * - IDENTITY_MEMBERSHIP_WRITE_PORT → 契约 IdentityMembershipWritePort（只给 billing 的开通订单用）。
  */
 export { IDENTITY_MEMBERSHIP_READ_PORT, IDENTITY_MEMBERSHIP_WRITE_PORT } from './tokens.js';
+export { IDENTITY_REGISTRATION_READ_PORT } from './tokens.js';

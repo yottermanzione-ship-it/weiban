@@ -662,6 +662,20 @@
       "when": 1799334900000,
       "tag": "0105_role_request_quota_v5",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1799335100000,
+      "tag": "0107_memory_tier_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1799335200000,
+      "tag": "0108_companion_long_context",
+      "breakpoints": true
     }
   ]
 }

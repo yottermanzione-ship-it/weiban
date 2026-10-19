@@ -3,6 +3,12 @@ import { PetAiService } from './application/pet-ai.js';
 import { CardLineService, MomentCardService } from './application/moment-cards.js';
 import { MOMENTS_PET_READ_PORT } from './application/moments-ai.js';
 import { MemoryController } from './http/memory.controller.js';
+import {
+  MemoryTierAdminController,
+  MemoryTierController,
+  MemoryTierPlansController,
+} from './http/memory-tier.controller.js';
+import { MemoryTierService } from './application/memory-tier.js';
 import { Module } from '@nestjs/common';
 import { ChatModule } from '../chat/index.js';
 import { CharactersModule } from '../characters/index.js';
@@ -114,6 +120,8 @@ import {
     MomentCardService,
     CompanionSettingsService,
     MemoryService,
+    // v5 批 B：记忆分档与长上下文。
+    MemoryTierService,
     ReplyPlanStore,
     ReplyContext,
     ReplyEngine,
@@ -172,6 +180,9 @@ import {
     MemorySharingController,
     QuietStateController,
     PlannerAdminController,
+    MemoryTierController,
+    MemoryTierAdminController,
+    MemoryTierPlansController,
   ],
 })
 export class AiRuntimeModule {}
