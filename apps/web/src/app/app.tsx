@@ -178,7 +178,12 @@ function TabGlyph({ index }: { index: number }) {
       {index === 2 && (
         <g {...common}>
           <circle cx="12" cy="12" r="8.5" />
-          <path d="M15.5 8.5 13 13l-4.5 2.5L11 11l4.5-2.5Z" />
+          {/* 实心指针：只有描边时缩小会看成一道斜杠 */}
+          <path
+            d="M15.6 8.4l-2.3 5.5-5.5 2.3 2.3-5.5 5.5-2.3Z"
+            fill="currentColor"
+            stroke="none"
+          />
         </g>
       )}
       {index === 3 && (
