@@ -27,7 +27,8 @@ import {
   WorkLinksPage,
 } from '../features/media-library.js';
 import { AccountDeletionsPage, PetSpeciesPage } from '../features/pets-deletions.js';
-import { DailyQuestionsPage, PlannerPage, PlazaAdminPage } from '../features/plaza-admin.js';
+import { DailyQuestionsPage, PlazaAdminPage } from '../features/plaza-admin.js';
+import { PlannerPage } from '../features/planner.js';
 import { RoleRequestsPage } from '../features/role-requests.js';
 import { SupportAdminPage } from '../features/support.js';
 import { MENU, badgeOf, groupBadge } from './menu.js';

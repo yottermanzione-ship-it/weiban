@@ -550,3 +550,311 @@ body {
   border-radius: 50%;
   background: #e5484d;
 }
+
+/* ---------- 标签页与列表通用 ---------- */
+.page-tabs .ant-tabs-nav {
+  margin-bottom: 12px;
+}
+.page-tabs .ant-tabs-nav::before {
+  border-bottom-color: #edeff2;
+}
+.tab-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tab-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+.tab-desc {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.tab-desc strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.tab-desc span {
+  color: #8a9099;
+  font-size: 12px;
+}
+.tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.filter-panel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: #fff;
+  border: 1px solid #edeff2;
+  border-radius: 8px;
+}
+.cell-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.cell-title {
+  color: #1f2329;
+}
+.cell-sub {
+  color: #8a9099;
+  font-size: 11px;
+  line-height: 16px;
+}
+.mono {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 11px;
+}
+.cursor-pager {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #8a9099;
+  font-size: 12px;
+}
+
+/* ---------- 表单 ---------- */
+.form-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+.form-three {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0 12px;
+}
+.field-note {
+  margin: -4px 0 12px;
+  padding: 8px 10px;
+  background: #f7f8fa;
+  border-radius: 6px;
+  color: #8a9099;
+  font-size: 12px;
+  line-height: 18px;
+}
+.hidden-tag {
+  display: none;
+}
+
+/* ---------- 详情 ---------- */
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 16px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #edeff2;
+  border-radius: 8px;
+}
+.detail-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 13px;
+}
+.detail-label {
+  color: #8a9099;
+  font-size: 11px;
+}
+.detail-section {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.detail-muted {
+  color: #8a9099;
+  font-size: 12px;
+  line-height: 20px;
+}
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 8px;
+  background: #f4f5f7;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.chip-sub {
+  color: #8a9099;
+  font-size: 11px;
+}
+.error-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.error-list > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #5a6068;
+}
+.error-code {
+  color: #e5484d;
+  min-width: 70px;
+}
+
+/* ---------- 概览 ---------- */
+.mini-stats {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+.mini-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #edeff2;
+  border-radius: 8px;
+}
+.mini-stat span {
+  color: #5a6068;
+  font-size: 12px;
+}
+.mini-stat strong {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+  font-variant-numeric: tabular-nums;
+}
+.mini-stat em {
+  color: #8a9099;
+  font-size: 11px;
+  font-style: normal;
+}
+.rank-list {
+  display: flex;
+  flex-direction: column;
+}
+.rank-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 2px;
+  border-bottom: 1px solid #f5f6f7;
+  font-size: 13px;
+}
+.rank-row:last-child {
+  border-bottom: none;
+}
+.rank-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rank-meta {
+  color: #8a9099;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* ---------- 模型线路 ---------- */
+.route-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.route-row {
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #edeff2;
+  border-radius: 8px;
+}
+.route-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.route-index {
+  color: #5a6068;
+  font-size: 12px;
+  font-weight: 500;
+}
+.route-fields {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 130px;
+  gap: 0 8px;
+  align-items: start;
+}
+
+.filter-summary {
+  margin-left: auto;
+  color: #8a9099;
+  font-size: 12px;
+}
+.warn-text {
+  color: #e5484d;
+}
+.price-list {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #edeff2;
+  border-radius: 8px;
+}
+.price-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f5f6f7;
+}
+.price-row:last-child {
+  border-bottom: none;
+}
+.price-values {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 12px;
+}
+.price-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.price-edit-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1.2fr 1fr 1fr 90px 32px;
+  gap: 0 8px;
+  align-items: start;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #edeff2;
+  border-radius: 8px;
+}
+.band-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1.2fr 120px 120px 1.6fr;
+  gap: 0 8px;
+  padding-top: 4px;
+  border-top: 1px dashed #edeff2;
+}

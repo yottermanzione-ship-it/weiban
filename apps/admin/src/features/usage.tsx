@@ -1,426 +1,220 @@
 /**
- * 管理后台用量与费用页（ADM-08）。
- * 对接三个接口：usageSummary / listUsageRecords / exportUsageRecords。
- * CSV 导出在前端把 JSON 转成文件下载，不含任何消息内容。
+ * 用量与花费：按用户 / 模型 / 用途 / 角色看这段时间调用了多少、扣了多少积分、花了多少成本。
+ * 明细在「模型管理 › 调用记录」，这里只看汇总。
  */
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Button, Segmented, Select, Space } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 import {
+  ModelAccessAdminEndpoints,
   ModelAccessAdminUsageEndpoints,
-  type AdminUsageRecord,
   type AdminUsageSummary,
-  type AdminUsageFilter,
   type AdminUsageDimension,
+  type AdminModel,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
-import { errorText } from '../data/hooks.js';
-import { Feedback } from '../components/feedback.js';
+import { settle } from '../data/use-async.js';
+import { useRemote } from '../data/hooks.js';
+import { DataTable, type ProColumns } from '../ui/table.js';
+import { Page, useToast } from '../ui/page.js';
+import {
+  Money,
+  formatInt,
+  formatPercent,
+  formatYuan,
+  pointsOf,
+} from '../ui/format.js';
+import { PURPOSE_LABELS, rangeOf, type RangeKey } from './model/shared.js';
 
-const PURPOSE_LABELS: Record<string, string> = {
-  chat_reply: '聊天回复',
-  memory: '记忆',
-  simulation: '模拟',
-  proactive: '主动消息',
-  moments: '朋友圈',
-  vision: '识图',
-  voice: '语音',
-  image_generation: '图片生成',
-  web_search: '联网搜索',
-  import_analysis: '导入分析',
-  safety_check: '安全检查',
-  safety_followup: '安全跟进',
-  behavior_planning: '行为规划',
-  admin_test: '管理员测试',
-  admin_eval: '管理员评测',
-  admin_persona_check: '人设稳定检查',
-  admin_upstream_test: '上游连通测试',
+type GroupKey = 'user' | 'model' | 'purpose' | 'character';
+
+const GROUP_LABELS: Record<GroupKey, string> = {
+  user: '按用户',
+  model: '按模型',
+  purpose: '按用途',
+  character: '按角色',
 };
-
-const DIM_LABELS: Record<AdminUsageDimension, string> = {
-  user: '用户',
-  character: '角色',
-  model: '模型',
-  purpose: '用途',
-  upstream: '上游',
-  day: '日期',
-  hour: '小时',
-};
-
-function formatMicros(n: number): string {
-  return `¥${(n / 1_000_000).toFixed(4)}`;
-}
-
-function formatNum(n: number): string {
-  return n.toLocaleString('zh-CN');
-}
-
-function defaultRange(): { from: string; to: string } {
-  const now = new Date();
-  const from = new Date(now.getTime() - 7 * 86_400_000);
-  const formatLocal = (d: Date) => {
-    const s = d.toLocaleString('sv', { timeZone: 'Asia/Shanghai' });
-    return s.slice(0, 16);
-  };
-  return { from: formatLocal(from), to: formatLocal(now) };
-}
-
-function toIso(local: string): string {
-  return new Date(local + ':00+08:00').toISOString();
-}
-
-function exportCsv(items: AdminUsageRecord[], truncated: boolean): void {
-  const header = [
-    '调用时间',
-    '用户ID',
-    '角色ID',
-    '会话类型',
-    '用途',
-    '计费归属',
-    '模型',
-    '上游ID',
-    '输入Token',
-    '缓存输入Token',
-    '输出Token',
-    '是否估算',
-    '耗时(ms)',
-    '状态',
-    '错误码',
-    '重试次数',
-    '扣费(微元)',
-    '成本(微元)',
-    '平台吸收(微元)',
-    '价目表版本',
-    '安全透支',
-    '成本是否已核',
-    '待核风险上限(微元)',
-  ].join(',');
-  const rows = items.map((r) =>
-    [
-      r.createdAt,
-      r.userId,
-      r.characterId ?? '',
-      r.conversationKind ?? '',
-      r.purpose,
-      r.billingOwner,
-      r.modelKey,
-      r.upstreamId,
-      r.inputTokens,
-      r.cachedInputTokens,
-      r.outputTokens,
-      r.estimated ? '是' : '否',
-      r.latencyMs,
-      r.status,
-      r.errorCode ?? '',
-      r.retryCount,
-      r.chargedMicros,
-      r.costMicros,
-      r.absorbedCostMicros,
-      r.priceVersionId ?? '',
-      r.safetyOverdraft ? '是' : '否',
-      r.costKnown === true ? '是' : '待核',
-      r.uncertainCostMicros ?? 0,
-    ]
-      .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-      .join(','),
-  );
-  const note = truncated ? '# 注意：结果已截断，请缩小筛选范围\n' : '';
-  const blob = new Blob(['﻿' + note + header + '\n' + rows.join('\n')], {
-    type: 'text/csv;charset=utf-8',
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `usage-export-${Date.now()}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 export function UsagePage() {
-  const range = defaultRange();
-  const [from, setFrom] = useState(range.from);
-  const [to, setTo] = useState(range.to);
-  const [dim1, setDim1] = useState<AdminUsageDimension>('day');
-  const [dim2, setDim2] = useState<AdminUsageDimension | ''>('');
-  const [billingOwner, setBillingOwner] = useState<'user' | 'platform' | ''>('');
-  const [status, setStatus] = useState<'succeeded' | 'failed' | ''>('');
-  const [summary, setSummary] = useState<AdminUsageSummary | null>(null);
-  const [records, setRecords] = useState<AdminUsageRecord[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [tab, setTab] = useState<'summary' | 'detail'>('summary');
-  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+  const toast = useToast();
+  const [range, setRange] = useState<RangeKey>('7d');
+  const [group, setGroup] = useState<GroupKey>('user');
+  const [data, setData] = useState<AdminUsageSummary>();
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [exportPending, setExportPending] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const models = useRemote(ModelAccessAdminEndpoints.listModels);
 
-  function buildFilter(): AdminUsageFilter {
-    return {
-      from: toIso(from),
-      to: toIso(to),
-      ...(billingOwner ? { billingOwner } : {}),
-      ...(status ? { status } : {}),
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
+    const { from, to } = rangeOf(range);
+    void settle(
+      api.call(ModelAccessAdminUsageEndpoints.usageSummary, {
+        body: {
+          filter: { from, to },
+          groupBy: [group as AdminUsageDimension],
+          sort: 'charged_desc',
+          limit: 200,
+        },
+      }),
+    )
+      .then((result) => {
+        if (!active) return;
+        if (!result) setError('用量数据没加载出来，请稍后重试');
+        setData(result);
+      })
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
     };
+  }, [range, group, revision]);
+
+  const modelName = (key: string) =>
+    (models.data?.items ?? []).find((m: AdminModel) => m.modelKey === key)?.displayName ?? key;
+
+  function labelOf(key: string): string {
+    if (group === 'model') return modelName(key);
+    if (group === 'purpose') return PURPOSE_LABELS[key] ?? key;
+    if (group === 'character') return key || '（无角色）';
+    return key ? `${key.slice(0, 12)}…` : '—';
   }
 
-  async function runSummary(e: FormEvent) {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    try {
-      const groupBy: AdminUsageDimension[] = dim2 ? [dim1, dim2] : [dim1];
-      const res = await api.call(ModelAccessAdminUsageEndpoints.usageSummary, {
-        body: { filter: buildFilter(), groupBy, sort: dim1 === 'day' ? 'key_asc' : 'charged_desc' },
-      });
-      setSummary(res);
-      setTab('summary');
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setLoading(false);
-    }
-  }
+  const rows = data?.rows ?? [];
+  const totals = data?.totals;
 
-  async function runDetail(cursor?: string) {
-    setError('');
-    setLoading(true);
-    try {
-      const res = await api.call(ModelAccessAdminUsageEndpoints.listUsageRecords, {
-        body: { filter: buildFilter(), cursor, limit: 50 },
-      });
-      setRecords(cursor ? (prev) => [...prev, ...res.items] : res.items);
-      setNextCursor(res.nextCursor ?? null);
-      setTab('detail');
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function doExport() {
-    setExportPending(true);
-    setError('');
-    try {
-      const res = await api.call(ModelAccessAdminUsageEndpoints.exportUsageRecords, {
-        body: { filter: buildFilter() },
-      });
-      exportCsv(res.items, res.truncated);
-      if (res.truncated) setError('结果已截断（超过 50,000 行），请缩小筛选范围');
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setExportPending(false);
-    }
-  }
-
-  const totals = summary?.totals;
+  const columns: ProColumns<AdminUsageSummary['rows'][number]>[] = [
+    {
+      title: GROUP_LABELS[group].replace('按', ''),
+      render: (_, row) => (
+        <div className="cell-main">
+          <span className="cell-title">{labelOf(String(row.keys[0] ?? ''))}</span>
+          {group === 'user' && <span className="cell-sub mono">{row.keys[0]}</span>}
+        </div>
+      ),
+    },
+    {
+      title: '调用次数',
+      width: 100,
+      sorter: (a, b) => a.calls - b.calls,
+      render: (_, row) => formatInt(row.calls),
+    },
+    {
+      title: '失败',
+      width: 90,
+      sorter: (a, b) => a.failedCalls - b.failedCalls,
+      render: (_, row) =>
+        row.failedCalls > 0 ? (
+          <span className="warn-text">
+            {formatInt(row.failedCalls)}（{formatPercent(row.failureRate)}）
+          </span>
+        ) : (
+          '0'
+        ),
+    },
+    {
+      title: '输入 / 输出 token',
+      width: 160,
+      render: (_, row) => `${formatInt(row.inputTokens)} / ${formatInt(row.outputTokens)}`,
+    },
+    {
+      title: '用户扣除',
+      width: 150,
+      sorter: (a, b) => a.chargedMicros - b.chargedMicros,
+      render: (_, row) => <Money micros={row.chargedMicros} />,
+    },
+    {
+      title: '上游成本',
+      width: 110,
+      sorter: (a, b) => a.costMicros - b.costMicros,
+      render: (_, row) => formatYuan(row.costMicros),
+    },
+    {
+      title: '毛利',
+      width: 110,
+      sorter: (a, b) =>
+        a.chargedMicros - a.costMicros - (b.chargedMicros - b.costMicros),
+      render: (_, row) => (
+        <span className={row.chargedMicros - row.costMicros < 0 ? 'warn-text' : ''}>
+          {formatYuan(row.chargedMicros - row.costMicros - row.absorbedCostMicros)}
+        </span>
+      ),
+    },
+    {
+      title: '缓存命中率',
+      width: 110,
+      render: (_, row) => formatPercent(row.cacheHitRate),
+    },
+  ];
 
   return (
-    <div className="stack">
-      <h1>用量与费用</h1>
-
-      <form className="form-grid" onSubmit={(e) => void runSummary(e)}>
-        <label>
-          开始时间（北京时间）
-          <input
-            type="datetime-local"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            required
-          />
-        </label>
-        <label>
-          结束时间（北京时间）
-          <input
-            type="datetime-local"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            required
-          />
-        </label>
-        <label>
-          第一维度
-          <select value={dim1} onChange={(e) => setDim1(e.target.value as AdminUsageDimension)}>
-            {(Object.keys(DIM_LABELS) as AdminUsageDimension[]).map((d) => (
-              <option key={d} value={d}>
-                {DIM_LABELS[d]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          第二维度（可选）
-          <select
-            value={dim2}
-            onChange={(e) => setDim2(e.target.value as AdminUsageDimension | '')}
+    <Page
+      title="用量与花费"
+      desc="这段时间谁在用、用了多少、扣了多少积分、平台赚了多少。看单次调用请去「模型管理 › 调用记录」。"
+      extra={
+        <Space size={8}>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => {
+              setRevision((v) => v + 1);
+              toast.success('已刷新');
+            }}
           >
-            <option value="">不选</option>
-            {(Object.keys(DIM_LABELS) as AdminUsageDimension[])
-              .filter((d) => d !== dim1)
-              .map((d) => (
-                <option key={d} value={d}>
-                  {DIM_LABELS[d]}
-                </option>
-              ))}
-          </select>
-        </label>
-        <label>
-          计费归属
-          <select
-            value={billingOwner}
-            onChange={(e) => setBillingOwner(e.target.value as 'user' | 'platform' | '')}
-          >
-            <option value="">全部</option>
-            <option value="user">用户</option>
-            <option value="platform">平台</option>
-          </select>
-        </label>
-        <label>
-          状态
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value as 'succeeded' | 'failed' | '')}
-          >
-            <option value="">全部</option>
-            <option value="succeeded">成功</option>
-            <option value="failed">失败</option>
-          </select>
-        </label>
-        <div className="form-actions">
-          <button type="submit" disabled={loading}>
-            汇总
-          </button>
-          <button type="button" disabled={loading} onClick={() => void runDetail()}>
-            明细
-          </button>
-          <button type="button" disabled={exportPending} onClick={() => void doExport()}>
-            {exportPending ? '导出中…' : '导出 CSV'}
-          </button>
-        </div>
-      </form>
-
-      <Feedback error={error} />
-
-      {totals && tab === 'summary' && (
-        <div className="stack">
-          <div className="stat-row">
-            <div className="stat-tile">
-              <span className="stat-label">调用次数</span>
-              <span className="stat-value">{formatNum(totals.calls)}</span>
-            </div>
-            <div className="stat-tile">
-              <span className="stat-label">失败次数</span>
-              <span className="stat-value">{formatNum(totals.failedCalls)}</span>
-            </div>
-            <div className="stat-tile">
-              <span className="stat-label">合计 Token</span>
-              <span className="stat-value">{formatNum(totals.totalTokens)}</span>
-            </div>
-            <div className="stat-tile">
-              <span className="stat-label">用户扣费</span>
-              <span className="stat-value">{formatMicros(totals.chargedMicros)}</span>
-            </div>
-            <div className="stat-tile">
-              <span className="stat-label">已核成本（含已核部分）</span>
-              <span className="stat-value">{formatMicros(totals.costMicros)}</span>
-            </div>
-            <div className="stat-tile">
-              <span className="stat-label">平台吸收</span>
-              <span className="stat-value">{formatMicros(totals.absorbedCostMicros)}</span>
-            </div>
-          </div>
-          <p>
-            另有 {totals.unknownCostCalls ?? '未知'} 笔成本待核，风险上限{' '}
-            {formatMicros(totals.uncertainCostMicros ?? 0)}。风险占用不计入实际成本。
-          </p>
-          {summary.truncated && (
-            <p className="text-warn">分组行数超过上限，已截断，请缩小筛选范围。</p>
-          )}
-          <div style={{ overflowX: 'auto' }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>{DIM_LABELS[dim1]}</th>
-                  {dim2 && <th>{DIM_LABELS[dim2]}</th>}
-                  <th className="num">调用</th>
-                  <th className="num">失败</th>
-                  <th className="num">输入</th>
-                  <th className="num">缓存输入</th>
-                  <th className="num">输出</th>
-                  <th className="num">合计Token</th>
-                  <th className="num">扣费</th>
-                  <th className="num">成本</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.rows.map((row, i) => (
-                  <tr key={i}>
-                    <td>{row.keys[0]}</td>
-                    {dim2 && <td>{row.keys[1] ?? '-'}</td>}
-                    <td className="num">{formatNum(row.calls)}</td>
-                    <td className="num">{formatNum(row.failedCalls)}</td>
-                    <td className="num">{formatNum(row.inputTokens)}</td>
-                    <td className="num">{formatNum(row.cachedInputTokens)}</td>
-                    <td className="num">{formatNum(row.outputTokens)}</td>
-                    <td className="num">{formatNum(row.totalTokens)}</td>
-                    <td className="num">{formatMicros(row.chargedMicros)}</td>
-                    <td className="num">
-                      {formatMicros(row.costMicros)}（已核）；{row.unknownCostCalls ?? '未知'}{' '}
-                      笔待核 / 风险 {formatMicros(row.uncertainCostMicros ?? 0)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {tab === 'detail' && (
-        <div className="stack">
-          <div style={{ overflowX: 'auto' }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>时间</th>
-                  <th>模型</th>
-                  <th>用途</th>
-                  <th>计费归属</th>
-                  <th className="num">输入</th>
-                  <th className="num">输出</th>
-                  <th className="num">扣费</th>
-                  <th className="num">成本</th>
-                  <th>状态</th>
-                </tr>
-              </thead>
-              <tbody>
-                {records.map((r) => (
-                  <tr key={r.usageRecordId}>
-                    <td>
-                      {new Date(r.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
-                    </td>
-                    <td>{r.modelKey}</td>
-                    <td>{PURPOSE_LABELS[r.purpose] ?? r.purpose}</td>
-                    <td>{r.billingOwner === 'user' ? '用户' : '平台'}</td>
-                    <td className="num">{formatNum(r.inputTokens)}</td>
-                    <td className="num">{formatNum(r.outputTokens)}</td>
-                    <td className="num">{formatMicros(r.chargedMicros)}</td>
-                    <td className="num">
-                      {formatMicros(r.costMicros)}（已核部分）
-                      {r.costKnown !== true && (
-                        <span> · 待核，风险上限 {formatMicros(r.uncertainCostMicros ?? 0)}</span>
-                      )}
-                    </td>
-                    <td>{r.status === 'succeeded' ? '成功' : `失败(${r.errorCode ?? ''})`}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {nextCursor && (
-            <button type="button" disabled={loading} onClick={() => void runDetail(nextCursor)}>
-              加载更多
-            </button>
-          )}
-        </div>
-      )}
-    </div>
+            刷新
+          </Button>
+          <Button type="primary" onClick={() => navigate('/model?tab=records')}>
+            看调用记录
+          </Button>
+        </Space>
+      }
+    >
+      <div className="filter-panel">
+        <Segmented<RangeKey>
+          value={range}
+          onChange={setRange}
+          options={[
+            { value: 'today', label: '今天' },
+            { value: '7d', label: '近 7 天' },
+            { value: '30d', label: '近 30 天' },
+            { value: 'month', label: '本月' },
+          ]}
+        />
+        <Select
+          style={{ width: 140 }}
+          value={group}
+          onChange={setGroup}
+          options={[
+            { value: 'user', label: '按用户' },
+            { value: 'model', label: '按模型' },
+            { value: 'purpose', label: '按用途' },
+            { value: 'character', label: '按角色' },
+          ]}
+        />
+        {totals && (
+          <span className="filter-summary">
+            合计：{formatInt(totals.calls)} 次调用 · {formatInt(pointsOf(totals.chargedMicros))} 积分 ·
+            成本 {formatYuan(totals.costMicros)} · 失败率 {formatPercent(totals.failureRate)}
+          </span>
+        )}
+      </div>
+      <DataTable<AdminUsageSummary['rows'][number]>
+        rowKey={(row) => String(row.keys[0] ?? '')}
+        columns={columns}
+        data={rows}
+        loading={loading}
+        error={error}
+        onRefresh={() => setRevision((v) => v + 1)}
+        emptyTitle="这段时间没有调用"
+        emptyHint="换一个时间范围试试；如果刚上线还没有用户聊天，这里就是空的。"
+        footer={
+          data?.truncated
+            ? '结果太多，只显示前 200 组。缩小时间范围可以看到全部。'
+            : undefined
+        }
+      />
+    </Page>
   );
 }

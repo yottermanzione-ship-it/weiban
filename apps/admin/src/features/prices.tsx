@@ -1,357 +1,483 @@
+import { useState } from 'react';
+import {
+  Alert,
+  AutoComplete,
+  Button,
+  Checkbox,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Space,
+  TimePicker,
+} from 'antd';
+import { PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import type { z } from 'zod';
-import { useState, type FormEvent } from 'react';
 import {
   BillingAdminEndpoints,
   ModelAccessAdminEndpoints,
   PriceUnit,
-  AdminPriceVersion,
+  type AdminPriceVersion,
 } from '@weiban/contracts';
-import { formatMoney, yuanToMicros } from '@weiban/client-core';
+import { yuanToMicros } from '@weiban/client-core';
 import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
-import { Feedback } from '../components/feedback.js';
+import { DataTable, type ProColumns } from '../ui/table.js';
+import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
+import {
+  FieldHelp,
+  FormSection,
+  Page,
+  StatusTag,
+  useDangerConfirm,
+  useToast,
+} from '../ui/page.js';
+import { formatDateTime, formatYuan } from '../ui/format.js';
+
 type PriceVersion = z.infer<typeof AdminPriceVersion>;
-type Row = {
-  modelKey: string;
-  unit: PriceUnit;
-  price: string;
-  cost: string;
-  band: PriceVersion['items'][number]['band'];
-};
-const blank = (): Row => ({
-  modelKey: '',
-  unit: 'input_tokens_per_million',
-  price: '0',
-  cost: '0',
-  band: null,
-});
-const labels: Record<PriceUnit, string> = {
-  input_tokens_per_million: '输入 / 百万token',
-  cached_input_tokens_per_million: '缓存输入 / 百万token',
-  output_tokens_per_million: '输出 / 百万token',
+
+const UNIT_LABELS: Record<string, string> = {
+  input_tokens_per_million: '输入 / 百万 token',
+  cached_input_tokens_per_million: '缓存输入 / 百万 token',
+  output_tokens_per_million: '输出 / 百万 token',
   image: '每张图片',
   tts_10k_chars: '每万字语音',
   asr_minute: '每分钟识别',
   realtime_minute: '每分钟通话',
   search_call: '每次搜索',
 };
+
+interface PriceRow {
+  modelKey: string;
+  unit: PriceUnit;
+  price: number;
+  cost: number;
+  bandEnabled: boolean;
+  bandName?: string;
+  bandStart?: string;
+  bandEnd?: string;
+  bandWeekdays?: number[];
+}
+
+interface VersionForm {
+  versionLabel: string;
+  note?: string;
+  rows: PriceRow[];
+}
+
+const WEEKDAYS = [
+  { value: 1, label: '一' },
+  { value: 2, label: '二' },
+  { value: 3, label: '三' },
+  { value: 4, label: '四' },
+  { value: 5, label: '五' },
+  { value: 6, label: '六' },
+  { value: 7, label: '日' },
+];
+
 export function PricesPage() {
+  const toast = useToast();
+  const confirm = useDangerConfirm();
   const list = useRemote(BillingAdminEndpoints.listPriceVersions);
   const catalog = useRemote(ModelAccessAdminEndpoints.listCatalog);
-  const [draftId, setDraftId] = useState<string | null>(null);
-  const [label, setLabel] = useState('');
-  const [note, setNote] = useState('');
-  const [rows, setRows] = useState<Row[]>([blank()]);
-  const [message, setMessage] = useState('');
+  const [editing, setEditing] = useState<
+    { mode: 'new' | 'edit' | 'copy'; version?: PriceVersion } | null
+  >(null);
+  const [detail, setDetail] = useState<PriceVersion | null>(null);
   const [error, setError] = useState('');
-  const [pending, setPending] = useState(false);
-  function edit(version: PriceVersion, copy = false) {
-    setDraftId(copy ? null : version.priceVersionId);
-    setLabel(copy ? '' : version.versionLabel);
-    setNote(version.note ?? '');
-    setRows(
-      version.items.map((r) => ({
-        modelKey: r.modelKey,
-        unit: r.unit,
-        price: String(r.priceMicros / 1_000_000),
-        cost: String(r.costMicros / 1_000_000),
-        band: r.band,
-      })),
-    );
-    setMessage(copy ? '已复制价格，请填写新版本名称后保存' : '正在编辑草稿');
-  }
-  function patch(index: number, value: Partial<Row>) {
-    setRows((before) => before.map((r, i) => (i === index ? { ...r, ...value } : r)));
-  }
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    setPending(true);
-    setError('');
-    try {
-      const items = rows.map((r) => ({
-        modelKey: r.modelKey,
-        unit: r.unit,
-        priceMicros: yuanToMicros(r.price),
-        costMicros: yuanToMicros(r.cost),
-        band: r.band,
-      }));
-      const result = draftId
-        ? await api.call(BillingAdminEndpoints.updatePriceDraft, {
-            params: { priceVersionId: draftId },
-            body: { note: note || null, items },
-          })
-        : await api.call(BillingAdminEndpoints.createPriceVersion, {
-            body: { versionLabel: label, note: note || null, items },
-          });
-      setDraftId(result.priceVersionId);
-      setMessage('价目草稿已保存');
-      list.refresh();
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setPending(false);
-    }
-  }
+
   async function publish(version: PriceVersion) {
-    setError('');
-    if (!catalog.data) {
-      setError('请先完成模型目录查询再发布');
-      return;
-    }
     const priced = new Set(version.items.map((p) => p.modelKey));
-    const missing = catalog.data.items.filter((m) => m.enabled && !priced.has(m.modelKey));
-    if (
-      missing.length &&
-      !window.confirm(
-        `新版本未给以下启用模型定价：${missing.map((m) => `${m.displayName} (${m.modelKey})`).join('、')}。发布后这些模型将暂不可调用。确认发布？`,
-      )
-    )
-      return;
-    setPending(true);
-    try {
-      await api.call(BillingAdminEndpoints.activatePriceVersion, {
-        params: { priceVersionId: version.priceVersionId },
-        body: { effectiveFrom: null },
-      });
-      setMessage('新版本已立即生效，原版本已停用');
-      if (draftId === version.priceVersionId) {
-        setDraftId(null);
-        setLabel('');
-        setNote('');
-        setRows([blank()]);
+    const missing = (catalog.data?.items ?? []).filter(
+      (m) => m.enabled && !priced.has(m.modelKey),
+    );
+    confirm({
+      title: `立即启用「${version.versionLabel}」？`,
+      content:
+        missing.length > 0
+          ? `这个版本没有给 ${missing.length} 个已上架模型定价（${missing
+              .slice(0, 5)
+              .map((m) => m.displayName)
+              .join('、')}${missing.length > 5 ? ' 等' : ''}）。启用后这些模型会暂时不可调用。`
+          : '启用后旧版本立即停用，用户从下一条消息起按新价格计费。',
+      okText: '立即启用',
+      onOk: async () => {
+        setError('');
+        try {
+          await api.call(BillingAdminEndpoints.activatePriceVersion, {
+            params: { priceVersionId: version.priceVersionId },
+            body: { effectiveFrom: null },
+          });
+          toast.success('已启用');
+          list.refresh();
+        } catch (e) {
+          setError(errorText(e));
+        }
+      },
+    });
+  }
+
+  const columns: ProColumns<PriceVersion>[] = [
+    {
+      title: '版本',
+      width: 200,
+      render: (_, v) => (
+        <div className="cell-main">
+          <span className="cell-title">{v.versionLabel}</span>
+          <span className="cell-sub">{formatDateTime(v.createdAt)}</span>
+        </div>
+      ),
+    },
+    {
+      title: '状态',
+      width: 110,
+      render: (_, v) =>
+        v.status === 'active' ? (
+          <StatusTag tone="success">生效中</StatusTag>
+        ) : v.status === 'draft' ? (
+          <StatusTag tone="warning">草稿</StatusTag>
+        ) : (
+          <StatusTag tone="default">已停用</StatusTag>
+        ),
+    },
+    {
+      title: '生效时间',
+      width: 160,
+      render: (_, v) => formatDateTime(v.effectiveFrom),
+    },
+    {
+      title: '价格条数',
+      width: 100,
+      render: (_, v) => `${v.items.length} 条`,
+    },
+    {
+      title: '备注',
+      render: (_, v) => v.note ?? '—',
+    },
+    {
+      title: '操作',
+      width: 170,
+      fixed: 'right',
+      render: (_, v) => (
+        <Space size={4}>
+          {v.status === 'draft' ? (
+            <>
+              <Button type="link" size="small" onClick={() => setEditing({ mode: 'edit', version: v })}>
+                编辑
+              </Button>
+              <Button type="link" size="small" onClick={() => void publish(v)}>
+                立即启用
+              </Button>
+            </>
+          ) : (
+            <Button type="link" size="small" onClick={() => setEditing({ mode: 'copy', version: v })}>
+              复制调价
+            </Button>
+          )}
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <Page
+      title="AI 模型价格"
+      desc="这里按「价目表版本」管理所有模型的价格。日常单个调价建议在「模型管理 › 模型」里改，系统会自动生成新版本。"
+      extra={
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing({ mode: 'new' })}>
+          新建价格版本
+        </Button>
       }
-      list.refresh();
+    >
+      {error && <Alert type="error" showIcon message={error} />}
+      <DataTable<PriceVersion>
+        rowKey="priceVersionId"
+        columns={columns}
+        data={list.data?.items ?? []}
+        loading={list.loading}
+        error={list.error}
+        onRefresh={list.refresh}
+        onRowClick={(v) => setDetail(v)}
+        emptyTitle="还没有价目表"
+        emptyHint="点右上角「新建价格版本」，给每个模型填上每百万 token 的售价和成本价，然后启用。"
+        emptyAction={
+          <Button type="primary" onClick={() => setEditing({ mode: 'new' })}>
+            新建第一个版本
+          </Button>
+        }
+      />
+      {editing && (
+        <VersionDrawer
+          version={editing.version ?? null}
+          mode={editing.mode}
+          catalog={(catalog.data?.items ?? []).map((m) => ({
+            modelKey: m.modelKey,
+            displayName: m.displayName,
+          }))}
+          onClose={() => setEditing(null)}
+          onSaved={(text) => {
+            toast.success(text);
+            setEditing(null);
+            list.refresh();
+          }}
+        />
+      )}
+      {detail && (
+        <RecordDrawer
+          open
+          onClose={() => setDetail(null)}
+          title={detail.versionLabel}
+          subtitle={formatDateTime(detail.createdAt)}
+          width={640}
+        >
+          <div className="price-list">
+            {detail.items.map((item, index) => (
+              <div className="price-row" key={`${item.modelKey}-${index}`}>
+                <div className="cell-main">
+                  <span className="cell-title">{item.modelKey}</span>
+                  <span className="cell-sub">{UNIT_LABELS[item.unit] ?? item.unit}</span>
+                </div>
+                <div className="price-values">
+                  <span>售价 {formatYuan(item.priceMicros, 4)}</span>
+                  <span className="cell-sub">成本 {formatYuan(item.costMicros, 4)}</span>
+                  {item.band && <span className="cell-sub">分时价：{item.band.name}</span>}
+                </div>
+              </div>
+            ))}
+            {detail.items.length === 0 && <div className="detail-muted">这个版本没有价格条目。</div>}
+          </div>
+        </RecordDrawer>
+      )}
+    </Page>
+  );
+}
+
+function VersionDrawer({
+  version,
+  mode,
+  catalog,
+  onClose,
+  onSaved,
+}: {
+  version: PriceVersion | null;
+  mode: 'new' | 'edit' | 'copy';
+  catalog: Array<{ modelKey: string; displayName: string }>;
+  onClose: () => void;
+  onSaved: (text: string) => void;
+}) {
+  const [form] = Form.useForm<VersionForm>();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const isDraft = mode === 'edit' && version?.status === 'draft';
+
+  async function save() {
+    const values = await form.validateFields();
+    setSaving(true);
+    setError('');
+    try {
+      const items = values.rows.map((row) => ({
+        modelKey: row.modelKey,
+        unit: row.unit,
+        priceMicros: yuanToMicros(String(row.price ?? 0)),
+        costMicros: yuanToMicros(String(row.cost ?? 0)),
+        band:
+          row.bandEnabled && row.bandStart && row.bandEnd
+            ? {
+                name: row.bandName?.trim() || '分时段',
+                weekdays: row.bandWeekdays?.length ? row.bandWeekdays : [1, 2, 3, 4, 5, 6, 7],
+                start: row.bandStart,
+                end: row.bandEnd,
+              }
+            : null,
+      }));
+      if (isDraft && version) {
+        await api.call(BillingAdminEndpoints.updatePriceDraft, {
+          params: { priceVersionId: version.priceVersionId },
+          body: { note: values.note || null, items },
+        });
+        onSaved('已保存');
+      } else {
+        await api.call(BillingAdminEndpoints.createPriceVersion, {
+          body: { versionLabel: values.versionLabel, note: values.note || null, items },
+        });
+        onSaved('已创建草稿，确认无误后点「立即启用」');
+      }
     } catch (e) {
       setError(errorText(e));
     } finally {
-      setPending(false);
+      setSaving(false);
     }
   }
+
+  const initialRows: PriceRow[] =
+    version?.items.map((item) => ({
+      modelKey: item.modelKey,
+      unit: item.unit,
+      price: item.priceMicros / 1_000_000,
+      cost: item.costMicros / 1_000_000,
+      bandEnabled: !!item.band,
+      bandName: item.band?.name,
+      bandStart: item.band?.start,
+      bandEnd: item.band?.end,
+      bandWeekdays: item.band?.weekdays,
+    })) ??
+    [
+      {
+        modelKey: '',
+        unit: 'input_tokens_per_million' as PriceUnit,
+        price: 0,
+        cost: 0,
+        bandEnabled: false,
+      },
+    ];
+
   return (
-    <>
-      <h1>价目表</h1>
-      <form className="panel stack" onSubmit={(e) => void save(e)}>
-        <h2>{draftId ? '编辑价格草稿' : '新建价格版本'}</h2>
-        <div className="form-grid">
-          <label>
-            版本名称
-            <input
-              required
-              maxLength={32}
-              value={label}
-              readOnly={!!draftId}
-              onChange={(e) => setLabel(e.target.value)}
-            />
-          </label>
-          <label>
-            备注
-            <input maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} />
-          </label>
-        </div>
-        <div className="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>模型键</th>
-                <th>单位</th>
-                <th>售价（元）</th>
-                <th>成本价（元）</th>
-                <th>分时价</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={i}>
-                  <td>
-                    <input
-                      aria-label={`第${i + 1}行模型键`}
-                      required
-                      value={r.modelKey}
-                      list="catalog-keys"
-                      onChange={(e) => patch(i, { modelKey: e.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <select
-                      aria-label={`第${i + 1}行单位`}
-                      value={r.unit}
-                      onChange={(e) => patch(i, { unit: PriceUnit.parse(e.target.value) })}
-                    >
-                      {PriceUnit.options.map((u) => (
-                        <option key={u} value={u}>
-                          {labels[u]}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    <input
-                      aria-label={`第${i + 1}行售价`}
-                      required
-                      inputMode="decimal"
-                      value={r.price}
-                      onChange={(e) => patch(i, { price: e.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      aria-label={`第${i + 1}行成本价`}
-                      required
-                      inputMode="decimal"
-                      value={r.cost}
-                      onChange={(e) => patch(i, { cost: e.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <label className="check">
-                      <input
-                        type="checkbox"
-                        checked={!!r.band}
-                        onChange={(e) =>
-                          patch(i, {
-                            band: e.target.checked
-                              ? {
-                                  name: '分时段',
-                                  weekdays: [1, 2, 3, 4, 5, 6, 7],
-                                  start: '00:00',
-                                  end: '08:00',
-                                }
-                              : null,
-                          })
-                        }
-                      />
-                      设置分时段
-                    </label>
-                    {r.band && (
-                      <div className="stack">
-                        <input
-                          aria-label={`第${i + 1}行时段名称`}
-                          maxLength={16}
-                          value={r.band.name}
-                          onChange={(e) => patch(i, { band: { ...r.band!, name: e.target.value } })}
-                        />
-                        <input
-                          aria-label={`第${i + 1}行开始时间`}
-                          type="time"
-                          value={r.band.start}
-                          onChange={(e) =>
-                            patch(i, { band: { ...r.band!, start: e.target.value } })
-                          }
-                        />
-                        <input
-                          aria-label={`第${i + 1}行结束时间`}
-                          type="time"
-                          value={r.band.end}
-                          onChange={(e) => patch(i, { band: { ...r.band!, end: e.target.value } })}
-                        />
-                        <fieldset>
-                          <legend>生效星期</legend>
-                          {[1, 2, 3, 4, 5, 6, 7].map((day) => (
-                            <label className="check" key={day}>
-                              <input
-                                type="checkbox"
-                                checked={r.band!.weekdays.includes(day)}
-                                onChange={(e) =>
-                                  patch(i, {
-                                    band: {
-                                      ...r.band!,
-                                      weekdays: e.target.checked
-                                        ? [...r.band!.weekdays, day]
-                                        : r.band!.weekdays.filter((d) => d !== day),
-                                    },
-                                  })
-                                }
-                              />
-                              {day === 7 ? '日' : day}
-                            </label>
-                          ))}
-                        </fieldset>
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      onClick={() => setRows(rows.filter((_, index) => index !== i))}
-                    >
-                      移除行
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <datalist id="catalog-keys">
-          {catalog.data?.items.map((m) => (
-            <option key={m.modelKey} value={m.modelKey}>
-              {m.displayName}
-            </option>
-          ))}
-        </datalist>
-        <div className="inline">
-          <button type="button" onClick={() => setRows([...rows, blank()])}>
-            添加价格行
-          </button>
-          <button className="primary" disabled={pending}>
-            保存草稿
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setDraftId(null);
-              setLabel('');
-              setNote('');
-              setRows([blank()]);
-            }}
+    <RecordDrawer
+      open
+      onClose={onClose}
+      title={
+        mode === 'edit' && version
+          ? `编辑价格草稿 · ${version.versionLabel}`
+          : mode === 'copy' && version
+            ? `复制调价 · 基于「${version.versionLabel}」`
+            : '新建价格版本'
+      }
+      subtitle="价格单位是元；1 元 = 100 积分"
+      width={860}
+      footer={<DrawerActions onCancel={onClose} onSubmit={() => void save()} saving={saving} />}
+    >
+      {error && <Alert type="error" showIcon message={error} />}
+      <Form<VersionForm>
+        form={form}
+        layout="vertical"
+        initialValues={{
+          versionLabel: mode === 'copy' ? '' : (version?.versionLabel ?? ''),
+          note: version?.note ?? '',
+          rows: initialRows,
+        }}
+      >
+        <FormSection title="版本信息" />
+        <div className="form-two">
+          <Form.Item
+            name="versionLabel"
+            label="版本名称"
+            rules={[{ required: true, message: '给这个版本起个名字' }]}
+            extra={<FieldHelp>例：2026-10 调价。保存后不能改。</FieldHelp>}
           >
-            新建版本
-          </button>
+            <Input maxLength={32} disabled={mode === 'edit'} placeholder="例：2026-10 调价" />
+          </Form.Item>
+          <Form.Item name="note" label="备注" extra={<FieldHelp>给自己看的说明。</FieldHelp>}>
+            <Input maxLength={200} placeholder="例：DeepSeek 官方降价" />
+          </Form.Item>
         </div>
-      </form>
-      <Feedback message={message} error={error || list.error || catalog.error} />
-      <table>
-        <thead>
-          <tr>
-            <th>版本</th>
-            <th>状态</th>
-            <th>模型与价格</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {list.data?.items.map((v) => (
-            <tr key={v.priceVersionId}>
-              <td>{v.versionLabel}</td>
-              <td>{{ draft: '草稿', active: '生效中', retired: '已停用' }[v.status]}</td>
-              <td>
-                {v.items.map((r, i) => (
-                  <p key={i}>
-                    {r.modelKey} · {labels[r.unit]} · 售价{formatMoney(r.priceMicros)} / 成本
-                    {formatMoney(r.costMicros)}
-                    {r.band ? `（${r.band.name}）` : ''}
-                  </p>
-                ))}
-              </td>
-              <td>
-                {v.status === 'draft' ? (
-                  <>
-                    <button disabled={pending} onClick={() => edit(v)}>
-                      编辑草稿
-                    </button>
-                    <button disabled={pending} onClick={() => void publish(v)}>
-                      立即发布
-                    </button>
-                  </>
-                ) : (
-                  <button onClick={() => edit(v, true)}>复制调价</button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
+
+        <FormSection title="价格条目" desc="每行一个模型的一种计价单位" />
+        <Form.List name="rows">
+          {(fields, { add, remove }) => (
+            <div className="price-rows">
+              {fields.map((field) => (
+                <div className="price-edit-row" key={field.key}>
+                  <Form.Item
+                    name={[field.name, 'modelKey']}
+                    rules={[{ required: true, message: '填写模型键' }]}
+                    style={{ marginBottom: 6 }}
+                  >
+                    <AutoComplete
+                      options={catalog.map((m) => ({
+                        value: m.modelKey,
+                        label: `${m.displayName}（${m.modelKey}）`,
+                      }))}
+                      filterOption={(input, option) =>
+                        String(option?.value ?? '').includes(input)
+                      }
+                      placeholder="模型键"
+                    />
+                  </Form.Item>
+                  <Form.Item name={[field.name, 'unit']} style={{ marginBottom: 6 }}>
+                    <Select
+                      options={PriceUnit.options.map((u) => ({
+                        value: u,
+                        label: UNIT_LABELS[u] ?? u,
+                      }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name={[field.name, 'price']} style={{ marginBottom: 6 }}>
+                    <InputNumber
+                      min={0}
+                      step={0.01}
+                      addonBefore="售价"
+                      addonAfter="元"
+                      style={{ width: '100%' }}
+                    />
+                  </Form.Item>
+                  <Form.Item name={[field.name, 'cost']} style={{ marginBottom: 6 }}>
+                    <InputNumber
+                      min={0}
+                      step={0.01}
+                      addonBefore="成本"
+                      addonAfter="元"
+                      style={{ width: '100%' }}
+                    />
+                  </Form.Item>
+                  <Form.Item
+                    name={[field.name, 'bandEnabled']}
+                    valuePropName="checked"
+                    style={{ marginBottom: 6 }}
+                  >
+                    <Checkbox>分时价</Checkbox>
+                  </Form.Item>
+                  <Button
+                    type="text"
+                    danger
+                    icon={<MinusCircleOutlined />}
+                    onClick={() => remove(field.name)}
+                  />
+                  <Form.Item
+                    noStyle
+                    shouldUpdate={(prev, next) =>
+                      prev.rows?.[field.name]?.bandEnabled !== next.rows?.[field.name]?.bandEnabled
+                    }
+                  >
+                    {({ getFieldValue }) =>
+                      getFieldValue(['rows', field.name, 'bandEnabled']) ? (
+                        <div className="band-row">
+                          <Form.Item name={[field.name, 'bandName']} style={{ marginBottom: 6 }}>
+                            <Input placeholder="时段名称，例：夜间半价" />
+                          </Form.Item>
+                          <Form.Item name={[field.name, 'bandStart']} style={{ marginBottom: 6 }}>
+                            <TimePicker format="HH:mm" minuteStep={5} placeholder="开始" />
+                          </Form.Item>
+                          <Form.Item name={[field.name, 'bandEnd']} style={{ marginBottom: 6 }}>
+                            <TimePicker format="HH:mm" minuteStep={5} placeholder="结束" />
+                          </Form.Item>
+                          <Form.Item name={[field.name, 'bandWeekdays']} style={{ marginBottom: 6 }}>
+                            <Checkbox.Group options={WEEKDAYS} />
+                          </Form.Item>
+                        </div>
+                      ) : null
+                    }
+                  </Form.Item>
+                </div>
+              ))}
+              <Button
+                type="dashed"
+                block
+                onClick={() =>
+                  add({
+                    modelKey: '',
+                    unit: 'input_tokens_per_million',
+                    price: 0,
+                    cost: 0,
+                    bandEnabled: false,
+                  })
+                }
+              >
+                添加一行
+              </Button>
+            </div>
+          )}
+        </Form.List>
+      </Form>
+    </RecordDrawer>
   );
 }
