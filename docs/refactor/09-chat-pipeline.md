@@ -251,6 +251,17 @@
 
 ---
 
+### 8.1 v5 记忆分档、翻聊天记录、长上下文、留住人（2026-10-20 批 B）
+
+产品规则以 `16-membership-v5.md` §5、`18-keep-chatting.md` 为准，这里只记实现位置。
+
+- **档位判断**集中在 `application/memory-tier.ts`（`MemoryTierService.membershipSnapshot`，会员读现有会员端口、注册时间读 identity 端口；批 A 统一查询合入后在此一处改接）。参数存 `ai_runtime.memory_tier_config`（0107），后台「系统 › 记忆分档」可调，默认值在 `domain/memory-tier.ts`。
+- **记忆上下文**（`MemoryService.context`）：记忆库只取最早 `libraryLimit` 条参与；常驻条数、摘要天数按档位；检索条数 `retrieveLimit` 由调用方截取。稳定记忆块带档位指纹，档位变了重算一次（免费档摘要天数按日滚动，块最多一天重算一次，位置在开头末尾，影响很小）。记忆抽取自己用 `uncapped`，看全部已有记忆去重。
+- **翻聊天记录**（`domain/recall.ts`，照旧版 recall.js）：本轮有回忆意图时，在 `(删除屏障, 原文起点]` 之间经 chat 端口分页读（服务器内存解密，最多扫 2000 条，按档位限天数），两字片段打分取前 3 条，以「用户：/ 角色：」放进动态结尾【翻到的旧聊天】。不越过删除屏障。
+- **长上下文模式**：`companion_settings.long_context`（0108），PRO+ 会员 + 该角色打开才生效；窗口参数默认 保留 120 轮 / 300 轮触发 / 500 轮强制 / 14.5 万字，历史最多读 15 页。
+- **留住人**：平台守则（稳定开头）加 `KEEP_CHATTING_RULE` 一段；冷场 / 告别时在写作提示（深度 4）后追加本轮提示（`domain/keep-chatting.ts`），安全关怀中不加。
+- 改前改后对比：`tools/prompt-compare.ts 60 dump legacy|pro|free`，结果见 `docs/handoffs/2026-10-19-v5-memory.md`。
+
 ## 9. 改前 / 改后对照（微伴）
 
 | 项 | 改前 | 改后 |
