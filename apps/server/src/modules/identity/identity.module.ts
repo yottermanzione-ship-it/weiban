@@ -1,7 +1,12 @@
 import { PluginsController } from './http/plugins.controller.js';
 import { MembershipService } from './application/membership.js';
 import { MembershipController } from './http/membership.controller.js';
-import { IDENTITY_MEMBERSHIP_READ_PORT, IDENTITY_MEMBERSHIP_WRITE_PORT } from './tokens.js';
+import {
+  IDENTITY_MEMBERSHIP_READ_PORT,
+  IDENTITY_MEMBERSHIP_WRITE_PORT,
+  IDENTITY_REGISTRATION_READ_PORT,
+} from './tokens.js';
+import { RegistrationReadService } from './application/registration-read.js';
 /**
  * identity 模块装配（D-L0-06）。说明见 docs/backend/identity.md。
  */
@@ -77,6 +82,8 @@ import { UserStatusController } from './http/user-status.controller.js';
     MembershipService,
     { provide: IDENTITY_MEMBERSHIP_READ_PORT, useExisting: MembershipService },
     { provide: IDENTITY_MEMBERSHIP_WRITE_PORT, useExisting: MembershipService },
+    RegistrationReadService,
+    { provide: IDENTITY_REGISTRATION_READ_PORT, useExisting: RegistrationReadService },
     UserStatusService,
     { provide: IDENTITY_USER_STATUS_PORT, useExisting: UserStatusService },
   ],
@@ -90,6 +97,7 @@ import { UserStatusController } from './http/user-status.controller.js';
     IDENTITY_USER_STATUS_PORT,
     IDENTITY_MEMBERSHIP_READ_PORT,
     IDENTITY_MEMBERSHIP_WRITE_PORT,
+    IDENTITY_REGISTRATION_READ_PORT,
     IdentityCommands,
   ],
 })

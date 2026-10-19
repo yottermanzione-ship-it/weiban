@@ -10,7 +10,12 @@
  */
 import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
-import type { AchievementKey, HolidayEventPort, UpcomingHoliday } from '@weiban/contracts';
+import type {
+  AchievementKey,
+  ChatReadPort,
+  HolidayEventPort,
+  UpcomingHoliday,
+} from '@weiban/contracts';
 import {
   CLOCK,
   DATABASE,
@@ -23,6 +28,7 @@ import {
   type Database,
   type DbTx,
   type EventBus,
+  type EventOf,
   type JobQueue,
   type Logger,
   type Outbox,
@@ -34,6 +40,7 @@ import {
   daysKnownOn,
   isSystemAnniversaryDay,
 } from '../domain/familiarity-rules.js';
+import { CHAT_READ_PORT } from '../../chat/index.js';
 import { anniversaries, contactIndex, notices } from '../infra/db/schema.js';
 import { GROWTH_HOLIDAY_SOURCE } from '../tokens.js';
 import { AchievementService } from './achievements.service.js';
@@ -69,6 +76,7 @@ export class GrowthEvents implements OnModuleInit {
     @Inject(AchievementService) private readonly achievements: AchievementService,
     @Inject(GrowthContext) private readonly ctx: GrowthContext,
     @Inject(PetsService) private readonly pets: PetsService,
+    @Inject(CHAT_READ_PORT) private readonly chat: ChatReadPort,
     @Optional() @Inject(GROWTH_HOLIDAY_SOURCE) private readonly holidays?: HolidayEventPort,
   ) {}
 
@@ -157,6 +165,12 @@ export class GrowthEvents implements OnModuleInit {
           for (const userId of p.userRecipientIds)
             await this.unlockOnce(tx, userId, 'first_voice_received', p.senderRefId);
       },
+    });
+    // 16 号 §11：好感度按消息加分（单独的订阅者，失败重试不影响成就等其他处理）。
+    bus.subscribe({
+      consumer: 'growth.familiarity_on_user_message',
+      eventType: 'chat.message_created',
+      handle: (event, tx) => this.onUserMessageForFamiliarity(event, tx),
     });
     bus.subscribe({
       consumer: 'growth.on_group_members_changed',
@@ -378,6 +392,52 @@ export class GrowthEvents implements OnModuleInit {
   }
 
   /** 用户在私聊里发消息：补齐索引、纪念日当天聊天 +10（P-25）、节日卡。 */
+  /**
+   * 好感度按消息加分（16 号 §11）：用户发出的消息 → 目标角色（私聊对象，或群里被 @ 的角色）。
+   * 正文经 chat 的读端口按该消息自己的内容范围取，只用来数字数、算指纹，不保存正文；
+   * 只有文字（和语音的转写文字）算「字」，图片、表情、拍一拍等不计。
+   */
+  private async onUserMessageForFamiliarity(
+    event: EventOf<'chat.message_created'>,
+    tx: DbTx,
+  ): Promise<void> {
+    const p = event.payload;
+    if (p.senderKind !== 'user' || !p.senderRefId) return;
+    if (p.contentType !== 'text' && p.contentType !== 'voice') return;
+    const userId = p.senderRefId;
+
+    let characterIds: string[] = [];
+    if (p.conversationType === 'direct') {
+      const contacts = await this.ctx.contacts.listActiveContacts(userId);
+      const contact = contacts.find((c) => c.conversationId === p.conversationId);
+      if (contact) characterIds = [contact.characterId];
+    } else if (p.mentionedParticipantIds.length) {
+      const mentioned = new Set(p.mentionedParticipantIds);
+      const participants = await this.chat.getParticipants(p.conversationId);
+      characterIds = [
+        ...new Set(
+          participants
+            .filter((x) => x.kind === 'character' && mentioned.has(x.participantId))
+            .map((x) => x.refId),
+        ),
+      ];
+    }
+    if (!characterIds.length) return;
+
+    const message = await this.chat.getMessage(p.messageId, [p.scope]);
+    const content = message?.content;
+    const text =
+      content?.type === 'text'
+        ? content.text
+        : content?.type === 'voice'
+          ? (content.transcript ?? '')
+          : '';
+    if (!message || !text.trim()) return;
+    const sentAt = new Date(message.createdAt);
+    for (const characterId of characterIds)
+      await this.growth.awardUserMessage(tx, userId, characterId, p.messageId, text, sentAt);
+  }
+
   private async onUserDirectMessage(
     tx: DbTx,
     userId: string,

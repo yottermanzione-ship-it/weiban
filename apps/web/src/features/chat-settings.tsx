@@ -9,6 +9,7 @@ import {
   CompanionEndpoints,
   ContactsEndpoints,
   IdentityEndpoints,
+  MemoryTierEndpoints,
   ModelAccessEndpoints,
   QuietStateEndpoints,
 } from '@weiban/contracts';
@@ -73,6 +74,12 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
     params: { characterId },
   });
   const companion = useRemote(CompanionEndpoints.getForCharacter, { params: { characterId } });
+  // v5 批 B：长上下文模式（PRO+ 专属，只对这个角色）。非 PRO+ 不显示入口，不做开通引导。
+  const tier = useRemote(MemoryTierEndpoints.status, {
+    networkOnly: true,
+    params: { characterId },
+  });
+  const [longConfirm, setLongConfirm] = useState(false);
   const notification = useRemote(IdentityEndpoints.getNotificationSettings);
   const globalOff = notification.data?.proactiveMessagesEnabled === false;
   const callEntry = useCallEntry(characterId);
@@ -266,6 +273,31 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
           <MenuGroup>
             <VoiceRow characterId={characterId} voiceId={data.voiceId ?? null} />
             <MenuRow to={`/characters/${characterId}/supplement`} label="我的补充设定" />
+            {tier.data?.longContext.available && (
+              <SwitchRow
+                label="长上下文模式"
+                subtitle={
+                  tier.data.longContext.pointsPerMessage !== null
+                    ? `TA 能看到更长的聊天原文，每条约 ${tier.data.longContext.pointsPerMessage} 积分`
+                    : 'TA 能看到更长的聊天原文，每条消耗的积分会明显变多'
+                }
+                checked={switchValues.longContext ?? data.longContext ?? false}
+                disabled={!!switchBusy.longContext}
+                onChange={(longContext) => {
+                  if (longContext) {
+                    setLongConfirm(true);
+                    return;
+                  }
+                  void toggle('longContext', false, async () => {
+                    await api.call(CompanionEndpoints.updateForCharacter, {
+                      params: { characterId },
+                      body: { longContext: false },
+                    });
+                    tier.refresh();
+                  });
+                }}
+              />
+            )}
             <PlazaPublishRow characterId={characterId} />
           </MenuGroup>
         </>
@@ -305,6 +337,45 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
         <p role="alert" className="notice-bar">
           {error}
         </p>
+      )}
+      {longConfirm && tier.data && (
+        <Dialog
+          title="打开长上下文模式"
+          actions={[
+            { label: '取消', onClick: () => setLongConfirm(false) },
+            {
+              label: '打开',
+              onClick: () => {
+                setLongConfirm(false);
+                void toggle('longContext', true, async () => {
+                  await api.call(CompanionEndpoints.updateForCharacter, {
+                    params: { characterId },
+                    body: { longContext: true },
+                  });
+                  tier.refresh();
+                });
+              },
+            },
+          ]}
+        >
+          <p>TA 回复时能看到的聊天原文会从约 1.6 万字加大到约 14 万字，聊得越久越费积分。</p>
+          <p>
+            {tier.data.longContext.pointsPerMessage !== null
+              ? `聊久以后每条大约 ${tier.data.longContext.pointsPerMessage} 积分${
+                  tier.data.longContext.normalPointsPerMessage
+                    ? `（平时约 ${tier.data.longContext.normalPointsPerMessage} 积分，是平时的 ${Math.max(
+                        1,
+                        Math.round(
+                          tier.data.longContext.pointsPerMessage /
+                            tier.data.longContext.normalPointsPerMessage,
+                        ),
+                      )} 倍左右）`
+                    : ''
+                }。`
+              : '当前模型暂时无法估算每条积分，打开后以实际扣费为准。'}
+          </p>
+          <p>只对这个角色生效，可以随时关闭。</p>
+        </Dialog>
       )}
       {sheet === 'fit' && data && (
         <ActionSheet

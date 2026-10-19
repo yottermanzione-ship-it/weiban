@@ -5,6 +5,43 @@
 import { createHash } from 'node:crypto';
 import { P25_FAMILIARITY } from '../../../platform/index.js';
 
+// ---------- 按消息加分（16 号 §11） ----------
+
+/**
+ * 判定一条用户消息是否算「有效消息」，并给出它的内容指纹（去空白后的 SHA-256，不保存正文）。
+ * - 去掉空白后至少 minChars 个字（按字符计，emoji 算一个）；
+ * - 指纹与上一条消息（不论是否计分）不同；
+ * - 距上一条计分消息至少 minIntervalMs（乱序到达时取差的绝对值）。
+ */
+export function evaluateUserMessage(input: {
+  text: string;
+  sentAt: Date;
+  lastMessageHash: string | null;
+  lastMessageScoredAt: Date | null;
+}): { hash: string; valid: boolean } {
+  const rule = P25_FAMILIARITY.userMessage;
+  const normalized = input.text.replace(/\s+/gu, '');
+  const hash = createHash('sha256').update(normalized).digest('hex');
+  const valid =
+    Array.from(normalized).length >= rule.minChars &&
+    input.lastMessageHash !== hash &&
+    (!input.lastMessageScoredAt ||
+      Math.abs(input.sentAt.getTime() - input.lastMessageScoredAt.getTime()) >= rule.minIntervalMs);
+  return { hash, valid };
+}
+
+/** 加分倍率与当日上限（PRO+ 每次加分与每日上限都 ×proPlusBonusRate，向上取整）。 */
+export function scaledPoints(
+  basePoints: number,
+  proPlus: boolean,
+): { points: number; dailyCap: number } {
+  const rate = proPlus ? P25_FAMILIARITY.proPlusBonusRate : 1;
+  return {
+    points: Math.ceil(basePoints * rate),
+    dailyCap: Math.ceil(P25_FAMILIARITY.maxPointsPerCharacterPerDay * rate),
+  };
+}
+
 // ---------- 等级与点数 ----------
 
 /**

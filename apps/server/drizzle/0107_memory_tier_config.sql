@@ -1,0 +1,1 @@
+CREATE TABLE ai_runtime.memory_tier_config (id smallint PRIMARY KEY DEFAULT 1, config jsonb NOT NULL, updated_by uuid, updated_at timestamptz NOT NULL, CONSTRAINT memory_tier_config_single CHECK (id = 1));

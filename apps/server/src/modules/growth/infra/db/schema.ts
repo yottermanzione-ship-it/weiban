@@ -34,6 +34,13 @@ export const familiarity = growthSchema.table(
     /** 今日加分的「用户本地日期」（YYYY-MM-DD）；跨天时重置 dailyPoints。 */
     dailyPointsDate: date('daily_points_date', { mode: 'string' }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    /**
+     * 按消息加分（16 号 §11）：该用户发给该角色的上一条消息内容指纹（去空白后的 SHA-256，不存正文），
+     * 用于「与上一条完全相同不计分」。
+     */
+    lastMessageHash: text('last_message_hash'),
+    /** 上一条计分消息的发送时刻，用于「距上一条计分消息至少 3 秒」。 */
+    lastMessageScoredAt: timestamp('last_message_scored_at', { withTimezone: true }),
   },
   (t) => [
     uniqueIndex('familiarity_user_char_idx').on(t.userId, t.characterId),

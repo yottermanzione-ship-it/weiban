@@ -664,6 +664,27 @@
       "breakpoints": true
     },
     {
+      "idx": 106,
+      "version": "7",
+      "when": 1799335000000,
+      "tag": "0106_familiarity_message_points",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1799335100000,
+      "tag": "0107_memory_tier_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1799335200000,
+      "tag": "0108_companion_long_context",
+      "breakpoints": true
+    },
+    {
       "idx": 109,
       "version": "7",
       "when": 1799335300000,

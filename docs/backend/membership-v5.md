@@ -54,4 +54,4 @@
 
 ## 8. 好感度会员加成
 
-`P25_FAMILIARITY.proPlusBonusRate = 1.2`：PRO+ 每次熟悉度加分与每日上限 ×1.2（向上取整）。数值可调。
+`P25_FAMILIARITY.proPlusBonusRate = 2`（2026-10-20 按 16 号 §11 由 1.2 改为 2）：PRO+ 每次熟悉度加分与每日上限 ×2（向上取整）。数值可调；按消息加分见 `growth.md` 第 4 节。

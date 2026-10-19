@@ -3,14 +3,16 @@
  * - 现阶段没有在线支付：显示价格，点「开通」提示联系管理员（由后台「会员与订单」替用户开通，开通即送积分）。
  * - 权益对照是星野式两列 Free / PRO+ 逐行打勾，需要积分的项标「需积分」。
  * - 总经理 10-19 明确：不放任何诱导开通的文案（不渲染「还差 N」「立即开通享…」之类），只如实列出两档区别。
- * - 记忆数字与 16 号 §5.3 一致（批 B 把它们做成后台可调后，这里如需跟随应改为读接口）。
+ * - 记忆数字读批 B 的记忆分档参数（MemoryTierEndpoints.plans，后台「系统 › 记忆分档」可调）；读不到时按 16 号 §5.3 默认显示。
  */
 import { useState } from 'react';
 import {
   MembershipEndpoints,
   MembershipOfferEndpoints,
+  MemoryTierEndpoints,
   RoleRequestEndpoints,
   type MembershipPlan,
+  type MemoryTierLimits,
 } from '@weiban/contracts';
 import { useRemote } from '../data/use-remote.js';
 import { NavBar } from './shell-kit.js';
@@ -23,6 +25,23 @@ function dateText(iso: string) {
   const d = new Date(iso);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+
+/** 记忆分档默认值（16 号 §5.3），接口读不到时用。 */
+const DEFAULT_FREE: MemoryTierLimits = {
+  residentLimit: 3,
+  libraryLimit: 30,
+  summaryDays: 7,
+  retrieveLimit: 3,
+  recallDays: 7,
+};
+const DEFAULT_PRO: MemoryTierLimits = {
+  residentLimit: 16,
+  libraryLimit: null,
+  summaryDays: null,
+  retrieveLimit: 8,
+  recallDays: null,
+};
+const days = (n: number | null, all: string) => (n === null ? all : `最近 ${n} 天`);
 
 type Cell = string | boolean;
 interface Row {
@@ -61,6 +80,10 @@ export function MembershipPage() {
   const offer = useRemote(MembershipOfferEndpoints.getOffer);
   const membership = useRemote(MembershipEndpoints.get);
   const roleConfig = useRemote(RoleRequestEndpoints.getConfig);
+  const tiers = useRemote(MemoryTierEndpoints.plans);
+  const mf = tiers.data?.free ?? DEFAULT_FREE;
+  const mp = tiers.data?.proPlus ?? DEFAULT_PRO;
+  const trialDays = tiers.data?.newUserTrialDays ?? 7;
   const [picked, setPicked] = useState<MembershipPlan | null>(null);
   const data = offer.data;
   const member = data?.membership ?? membership.data;
@@ -78,11 +101,31 @@ export function MembershipPage() {
     { label: '群聊、语音消息、电话', free: true, pro: true, points: true },
     { label: '切换模型、私密模式', free: true, pro: true, points: true },
     { label: '开通即送积分（永久有效）', free: false, pro: bonus || true },
-    { label: '常驻记忆（每次都记得的重要事）', free: '3 条', pro: '16 条' },
-    { label: '记忆库容量（每个角色）', free: '30 条', pro: '不限' },
-    { label: '聊天摘要', free: '最近 7 天', pro: '全部 + 年度回忆' },
-    { label: '每次按话题回想', free: '3 条', pro: '8 条' },
-    { label: '翻聊天记录（提到旧事时）', free: '最近 7 天', pro: '全部' },
+    {
+      label: '常驻记忆（每次都记得的重要事）',
+      free: `${mf.residentLimit} 条`,
+      pro: `${mp.residentLimit} 条`,
+    },
+    {
+      label: '记忆库容量（每个角色）',
+      free: mf.libraryLimit === null ? '不限' : `${mf.libraryLimit} 条`,
+      pro: mp.libraryLimit === null ? '不限' : `${mp.libraryLimit} 条`,
+    },
+    {
+      label: '聊天摘要',
+      free: days(mf.summaryDays, '全部'),
+      pro: days(mp.summaryDays, '全部 + 年度回忆'),
+    },
+    {
+      label: '每次按话题回想',
+      free: `${mf.retrieveLimit} 条`,
+      pro: `${mp.retrieveLimit} 条`,
+    },
+    {
+      label: '翻聊天记录（提到旧事时）',
+      free: days(mf.recallDays, '全部'),
+      pro: days(mp.recallDays, '全部'),
+    },
     { label: '长上下文模式（可选）', free: false, pro: true, points: true },
     { label: '角色生态（含私人朋友圈）', free: false, pro: true, points: true },
     { label: '接入 QQ / 微信', free: false, pro: true, points: true },
@@ -160,7 +203,8 @@ export function MembershipPage() {
       </div>
       <p className="hint page-note">
         所有 AI 回复按积分计费，开通即送积分。扣费按实际用量（1 元 = 100
-        积分），会员与免费用户单价相同。新用户注册后前 7 天按 PRO+ 的记忆范围体验。
+        积分），会员与免费用户单价相同。
+        {trialDays > 0 ? `新用户注册后前 ${trialDays} 天按 PRO+ 的记忆范围体验。` : ''}
       </p>
 
       {(offer.error || roleConfig.error) && (

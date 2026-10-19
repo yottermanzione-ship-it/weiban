@@ -50,8 +50,11 @@ import {
   nextWindowStart,
   pickResident,
   renderStableMemory,
+  type WindowLimits,
   type WindowTurn,
 } from '../domain/memory-window.js';
+import { sinceDay, tierFingerprint, type ResolvedMemoryTier } from '../domain/memory-tier.js';
+import { MemoryTierService } from './memory-tier.js';
 import { ReplyPlanStore } from './plan-store.js';
 import { invalidateReplyPlans } from './invalidate.js';
 export const EXTRACT_MEMORY_JOB = 'ai.extract_memory';
@@ -77,6 +80,8 @@ const WindowBlock = z.object({
   normal: z.string(),
   adult: z.string(),
   residentIds: z.array(z.string()),
+  /** v5 批 B：生成这块时的档位指纹，档位变了要重算（旧块没有 = 重算一次）。 */
+  tier: z.string().optional(),
 });
 /** 日/月摘要条目。 */
 const SummaryEntry = z.object({
@@ -108,6 +113,7 @@ export class MemoryService {
     @Inject(SYNC_PORT) readonly sync: SyncPort,
     @Inject(POLICY_PORT) readonly policy: PolicyPort,
     @Inject(ReplyPlanStore) readonly plans: ReplyPlanStore,
+    @Inject(MemoryTierService) readonly tiers: MemoryTierService,
   ) {}
   /** T-066：记忆页「谁知道」（MEM-07 第 5 条）。由 SocialService 注入，避免循环依赖。 */
   private knownByResolver:
@@ -550,6 +556,15 @@ export class MemoryService {
       await this.changed(tx, job, true, conversation?.lastSeq ?? 0);
     });
   }
+  /** v5 批 B：该角色记忆库现有条数（记忆页显示档位范围用）。 */
+  async libraryCount(userId: string, characterId: string): Promise<number> {
+    const job = await this.guard(userId, characterId);
+    const [total] = await this.db.db
+      .select({ n: count() })
+      .from(memories)
+      .where(this.where(userId, characterId, job.conversationId));
+    return total?.n ?? 0;
+  }
   /** 0091：原文起点（窗口边界与删除屏障取大），回复上下文据此决定读多少历史。 */
   async windowFloor(userId: string, characterId: string): Promise<number> {
     const job = await this.guard(userId, characterId);
@@ -568,15 +583,25 @@ export class MemoryService {
   /**
    * 回复 / 通话 / 抽取用的记忆上下文。传 window（私聊回复）时同时维护分段稳定窗口：
    * 需要时前移摘要边界并重算稳定记忆块（不改 revision，不打断进行中的回复）。
+   * v5 批 B：按记忆档位裁剪——记忆库只取最早的 libraryLimit 条参与、常驻条数、摘要天数、
+   * 每次回想条数（retrieveLimit，由调用方按它截取 items）。uncapped = 记忆抽取自己用（要看到全部已有记忆去重）。
    */
   async context(
     userId: string,
     characterId: string,
     scope: 'normal' | 'adult',
     query: string,
-    window?: { turns: WindowTurn[] },
+    window?: { turns: WindowTurn[]; limits?: WindowLimits },
+    opts: { uncapped?: boolean } = {},
   ) {
     const job = await this.guard(userId, characterId);
+    const tier: ResolvedMemoryTier | null = opts.uncapped
+      ? null
+      : await this.tiers.resolve(userId).catch(() => null);
+    const limits = tier?.limits ?? null;
+    const summarySince = limits ? sinceDay(this.clock.now(), limits.summaryDays) : null;
+    const fresh = (period: string) =>
+      !summarySince || period >= summarySince.slice(0, period.length);
     return this.db.transaction(async (tx) => {
       await this.lock(tx, job);
       const state = await this.state(tx, job);
@@ -586,9 +611,12 @@ export class MemoryService {
         .where(this.where(userId, characterId, job.conversationId))
         .orderBy(asc(memories.id))
         .limit(MAX_MEMORIES);
+      // 记忆库容量：按记下的先后（ID 为时间序）只取最早的 libraryLimit 条参与；超出的不删，开通 PRO+ 立即恢复。
+      const capped = limits?.libraryLimit != null ? rows.slice(0, limits.libraryLimit) : rows;
       const decoded: MemoryEntry[] = [];
-      for (const row of rows) decoded.push(await this.open(row, tx));
+      for (const row of capped) decoded.push(await this.open(row, tx));
       const filtered = decoded.filter((entry) => scope === 'adult' || entry.scope === 'normal');
+      const cappedIds = new Set(capped.map((r) => r.id));
 
       // Vector search with keyword fallback (ADR-0020)
       let items: MemoryEntry[];
@@ -609,7 +637,9 @@ export class MemoryService {
              LIMIT 12`,
             [queryVec, userId, characterId, job.conversationId, scope],
           );
-          const vectorIds = new Set(vectorRows.rows.map((r) => r.id));
+          const vectorIds = new Set(
+            vectorRows.rows.map((r) => r.id).filter((id) => cappedIds.has(id)),
+          );
           const vectorItems = filtered.filter((e) => vectorIds.has(e.memoryId));
           // Fill remaining slots with keyword ranking for memories without vectors
           const nonVector = filtered.filter((e) => !vectorIds.has(e.memoryId));
@@ -686,8 +716,18 @@ export class MemoryService {
         );
         try {
           const data = Summaries.parse(JSON.parse(bytes.toString('utf8')));
-          segmentSummary = scope === 'adult' ? `${data.normal}\n${data.adult}` : data.normal;
           segments = data.segments?.length ? data.segments : null;
+          segmentSummary = summarySince
+            ? // 限定天数：滚动摘要没有日期，改用带日期的片段
+              (segments ?? [])
+                .filter((x) => fresh(x.at) && (scope === 'adult' || x.scope === 'normal'))
+                .map((x) => x.text)
+                .filter(Boolean)
+                .join('\n')
+                .slice(-4000)
+            : scope === 'adult'
+              ? `${data.normal}\n${data.adult}`
+              : data.normal;
           legacyNormal = data.normal;
           legacyAdult = `${data.normal}\n${data.adult}`;
         } finally {
@@ -711,6 +751,7 @@ export class MemoryService {
           dailyEntries = entries;
           // Return the 3 most recent daily entries relevant to scope
           dailySummary = entries
+            .filter((e) => fresh(e.period))
             .slice(-3)
             .map((e) => (scope === 'adult' ? `${e.normal}\n${e.adult}` : e.normal))
             .filter(Boolean)
@@ -733,6 +774,7 @@ export class MemoryService {
           monthlyEntries = entries;
           // Return the 2 most relevant monthly entries
           monthlySummary = entries
+            .filter((e) => fresh(e.period))
             .slice(-2)
             .map((e) => (scope === 'adult' ? `${e.normal}\n${e.adult}` : e.normal))
             .filter(Boolean)
@@ -761,6 +803,9 @@ export class MemoryService {
           try {
             const parsed = WindowBlock.safeParse(JSON.parse(bytes.toString('utf8')));
             block = parsed.success ? parsed.data : null;
+            // 档位变了（开通 / 到期 / 新用户体验结束 / 后台改参数），记忆块重算一次
+            if (block && limits && block.tier !== tierFingerprint(limits, summarySince))
+              block = null;
           } finally {
             bytes.fill(0);
           }
@@ -770,6 +815,7 @@ export class MemoryService {
           turns: window.turns,
           segments,
           cursorSeq: state.cursorSeq,
+          ...(window.limits ? { limits: window.limits } : {}),
         });
         if (moved !== null) {
           windowStart = moved;
@@ -778,7 +824,7 @@ export class MemoryService {
         if (!block) {
           const all = decoded.map((m) => ({ ...m, dueAt: m.dueAt ?? null }));
           const variant = (s: 'normal' | 'adult') => {
-            const resident = pickResident(all, s);
+            const resident = pickResident(all, s, limits?.residentLimit ?? 8);
             return {
               resident,
               text: renderStableMemory({
@@ -789,6 +835,7 @@ export class MemoryService {
                 legacySummary: s === 'adult' ? legacyAdult : legacyNormal,
                 daily: dailyEntries,
                 monthly: monthlyEntries,
+                summarySince,
               }),
             };
           };
@@ -800,6 +847,7 @@ export class MemoryService {
             residentIds: [
               ...new Set([...normal.resident, ...adult.resident].map((m) => m.memoryId)),
             ],
+            ...(limits ? { tier: tierFingerprint(limits, summarySince) } : {}),
           };
           await tx.db
             .update(memoryStates)
@@ -826,6 +874,10 @@ export class MemoryService {
         summary,
         stableBlock,
         residentIds,
+        /** v5 批 B：本次可用的档位（uncapped 时为 null）。 */
+        tier,
+        /** 每次按话题回想几条（调用方按它截取 items）。 */
+        retrieveLimit: limits?.retrieveLimit ?? 8,
       };
     });
   }
@@ -995,6 +1047,8 @@ export class MemoryService {
       job.characterId,
       batchScope === 'adult' && policy.adultModeEligible ? 'adult' : 'normal',
       '',
+      undefined,
+      { uncapped: true },
     );
     const result = sources.length
       ? await this.gateway.generateText({

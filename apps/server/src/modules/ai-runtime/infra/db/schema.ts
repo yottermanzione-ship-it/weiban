@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   real,
+  smallint,
   pgSchema,
   primaryKey,
   text,
@@ -87,6 +88,8 @@ export const companionSettings = aiRuntimeSchema.table(
     dailyLife: boolean('daily_life').notNull().default(true),
     /** T-071：该角色发语音 / 通话用的音色（media 音色库，非克隆）；null = 预设默认。 */
     voiceId: uuid('voice_id'),
+    /** 0108（v5 批 B）：长上下文模式，只对单个角色有效、PRO+ 专属。 */
+    longContext: boolean('long_context').notNull().default(false),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
   (t) => [
@@ -612,4 +615,16 @@ export const planningDecisions = aiRuntimeSchema.table(
     index('planning_decisions_created_idx').on(t.createdAt),
     unique('planning_decisions_key_idx').on(t.userId, t.decisionKey),
   ],
+);
+
+/** 0107（v5 批 B）：记忆分档与长上下文参数（管理后台可调，单行）。config 缺字段时按代码默认补齐。 */
+export const memoryTierConfig = aiRuntimeSchema.table(
+  'memory_tier_config',
+  {
+    id: smallint('id').primaryKey().default(1),
+    config: jsonb('config').notNull(),
+    updatedBy: uuid('updated_by'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [check('memory_tier_config_single', sql`${t.id} = 1`)],
 );
