@@ -359,7 +359,7 @@ function MembershipPanel({ account }: { account: Account }) {
 
   return (
     <div className="drawer-body">
-      <SectionCard title="会员档位" desc="只影响角色相关权益，不代表支付或赠送积分">
+      <SectionCard title="会员档位" desc="这里只能手动改到期时间（纠错用，不记订单、不发积分）；正式开通请到「会员与订单」">
         {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} />}
         <div className="detail-grid">
           <div>
