@@ -31,6 +31,7 @@ import { MePage, ServicesPage } from '../features/me.js';
 import { ProfilePage } from '../features/profile.js';
 import { SettingsPage } from '../features/settings.js';
 import { WalletPage, LedgerPage, PricesPage, RechargePage } from '../features/wallet.js';
+import { MembershipPage } from '../features/membership.js';
 import { CharacterModelPage, ModelsPage } from '../features/models.js';
 import { LeaderboardPage } from '../features/leaderboard.js';
 import { UsagePage } from '../features/usage.js';
@@ -142,7 +143,7 @@ const ownHeader = [
   /^\/characters\/[^/]+$/,
   /^\/characters\/custom(\/|$)/,
   /^\/profile$/,
-  /^\/(wallet|ledger|prices|usage|models|leaderboard)(\/|$)/,
+  /^\/(wallet|ledger|prices|usage|models|leaderboard|membership)(\/|$)/,
 ];
 function TopBack({ fallback }: { fallback: string }) {
   const back = useBack(fallback);
@@ -331,6 +332,7 @@ function Shell() {
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/services" element={<ServicesPage />} />
                 <Route path="/wallet" element={<WalletPage />} />
+                <Route path="/membership" element={<MembershipPage />} />
                 <Route path="/wallet/recharge" element={<RechargePage />} />
                 <Route path="/ledger" element={<LedgerPage />} />
                 <Route path="/prices" element={<PricesPage />} />

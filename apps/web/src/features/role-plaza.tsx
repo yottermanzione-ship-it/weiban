@@ -769,7 +769,8 @@ export function RoleRequestListPage() {
         <p>说说你想要的角色，官方会为你制作，做好后自动加到你的通讯录。</p>
         {config.data && (
           <p className="hint">
-            本期剩余 {config.data.quota.remaining} 次免费申请，超出每次200积分。
+            还剩 {config.data.quota.remaining} 次免费申请，用完后每次 {config.data.pointsCost}{' '}
+            积分。
           </p>
         )}
         <Link
@@ -1043,12 +1044,18 @@ export function RoleRequestFormPage() {
         {config.data && (
           <div className="hint">
             <p>
-              {config.data.quota.tier === 'pro_plus' ? 'PRO+每周5次' : '免费用户每月5次'}，本期剩余{' '}
-              {config.data.quota.remaining} 次。本次{' '}
-              {config.data.quota.nextPointsCost === 0 ? '免费' : '冻结200积分'}。
+              {config.data.quota.tier === 'pro_plus'
+                ? `终身免费 ${config.data.quota.lifetimeLimit ?? 3} 次 + PRO+ 每周 ${config.data.quota.weeklyLimit ?? 2} 次`
+                : `终身免费 ${config.data.quota.lifetimeLimit ?? 3} 次`}
+              ，还剩 {config.data.quota.remaining} 次。本次{' '}
+              {config.data.quota.nextPointsCost === 0
+                ? '免费'
+                : `冻结${config.data.quota.nextPointsCost}积分`}
+              。
             </p>
             <p>
-              按服务器受理时间计入北京时间自然月／周一开始的自然周。成功提交占次数，拒绝或撤回不返次数；收费申请完成扣除，拒绝或撤回退回冻结积分。
+              每周次数按北京时间周一 0
+              点重置，不累积到下周；先用每周次数。被拒绝或撤回的申请会退还次数；收费申请完成时扣除，拒绝或撤回退回冻结积分。
             </p>
           </div>
         )}
@@ -1080,8 +1087,8 @@ export function RoleRequestFormPage() {
         >
           {pending
             ? '正在提交…'
-            : config.data?.quota.nextPointsCost === 200
-              ? '确认冻结200积分并提交'
+            : (config.data?.quota.nextPointsCost ?? 0) > 0
+              ? `确认冻结${config.data?.quota.nextPointsCost}积分并提交`
               : '免费提交申请'}
         </button>
       </form>

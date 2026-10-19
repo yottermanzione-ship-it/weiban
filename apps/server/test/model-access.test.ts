@@ -898,7 +898,7 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
       });
     });
 
-    it('解析顺序：角色覆盖 > 全局 > 平台默认；后台沿用聊天模型；成人模式不回落；识图改用默认识图模型', async () => {
+    it('解析顺序：角色覆盖 > 全局 > 平台默认；后台不沿用聊天模型；成人模式不回落；识图改用默认识图模型', async () => {
       const u = await newUser();
       const base = { userId: u.userId, purpose: 'chat_reply' as const };
       const key = async (r: Promise<Awaited<ReturnType<typeof resolver.resolve>>>) => {
@@ -915,6 +915,14 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
       await http()
         .patch('/api/v1/model/selection', u.token)
         .send({ chat: { modelKey: 'test/plain-chat' } })
+        .expect(200);
+      // 只改聊天模型不影响后台：后台仍走平台默认，不再借用聊天模型
+      expect(await key(resolver.resolve({ ...base, modelRole: 'background' }))).toBe(
+        'deepseek/deepseek-flash',
+      );
+      await http()
+        .patch('/api/v1/model/selection', u.token)
+        .send({ background: { modelKey: 'test/plain-chat' } })
         .expect(200);
       expect(await key(resolver.resolve({ ...base, modelRole: 'background' }))).toBe(
         'test/plain-chat',

@@ -62,8 +62,8 @@ type Fallback =
 
 /** 2.3 节：默认置信度门槛。 */
 export const DEFAULT_CONFIDENCE_THRESHOLD = 0.55;
-/** 3.2 节：默认规划模型（平台目录里没有这个键时网关返回 model_unavailable → 规则版）。 */
-export const DEFAULT_PLANNER_MODEL = 'qwen/qwen3.8-flash';
+// v5（model-routing-ecology 块 A-2）：删除硬编码 qwen 规划模型。后台未指定时只走平台目录 defaultFor=planner，
+// 同一条链给报价与执行（resolver）；平台也没配就由 resolver 返回 not_configured，本模块回落规则版、不扣费。
 /** 4.1 / 7.3 节：回复路径最多等 1 秒（秒回开启时）；主动路径 10 秒。 */
 export const REPLY_TIMEOUT_MS = 1_000;
 export const PROACTIVE_TIMEOUT_MS = 10_000;
@@ -432,7 +432,7 @@ export class PlannerService {
       purpose: 'behavior_planning',
       billingOwner: 'user',
       modelRole: 'background',
-      modelKeyOverride: config.modelKey ?? DEFAULT_PLANNER_MODEL,
+      ...(config.modelKey ? { modelKeyOverride: config.modelKey } : {}),
       countAsBackground: req.path === 'proactive',
       ecologyTask: req.path === 'proactive',
       responseFormat: 'json',

@@ -95,6 +95,16 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.17（2026-10-20，会员 v5 批 A）
+
+依据 `docs/refactor/16-membership-v5.md`。说明见 `docs/backend/membership-v5.md`、`docs/handoffs/2026-10-19-v5-membership.md`。
+
+- 端口：`IdentityMembershipReadPort.isProPlus(userId, tx?)`（**统一「是否 PRO+」**）；新端口 `IdentityMembershipWritePort.extendProPlus`（调用方 billing）。`ModelQuotePort.quote` 增可选 `hasImages`、`modelKeyOverride`（与网关执行同口径）；`GenerateTextOutput` 增可选 `usedVisionDefault`。
+- `http/membership.ts`：`MembershipPlan`、`MembershipSettings`、`MembershipOffer`、`MembershipOrder`、`CreateMembershipOrder`；用户端 `MembershipOfferEndpoints.getOffer`，管理端 `MembershipOrderAdminEndpoints`（配置、订单列表、替用户开通）。
+- `Wallet` 增可选 `bonusMicros` / `bonusPoints`（赠送积分余额）。
+- `ModelInfo` 增可选 `displayMultiplier`、`pointsPerReplyBasis`；`AdminModel` 增 `displayMultiplier`、`displayMultiplierManual`，`AdminModelWrite` 增 `displayMultiplierManual`；新 `DisplayMultiplierSettings` 与两个管理端接口。
+- **放宽（需留意）**：`RoleRequestQuota.limit` 由字面量 5 改为整数、`nextPointsCost` 由 0/200 改为整数、`CreateRoleRequest.expectedPointsCost` 改为整数；`RoleRequestConfig` 增 `lifetimeFreeCount`、`proPlusWeeklyFreeCount`（带默认值），`RoleRequestQuota` 增 `lifetime*`、`weekly*`。严格说属于响应取值放宽，旧安卓客户端解析 `limit≠5` 会失败；安卓尚未发布正式版，按次版本处理，由总负责人确认。
+
 ### 3.15（2026-10-16，q-features 接续）
 
 旧q分支3.9预留内容适配到主线3.14后统一发布为3.15：用户当前状态、表情商店安装/管理/发送资格、插件三项coming_soon、真实最小会员有效期与管理员授予；角色心情保留A7 TimelineEndpoints.getStatus，不注册旧同URL异响应接口。制作申请配置附真实quota，提交expectedPointsCost确认0/200，免费次数标志与同Tx服务费hold/release/getByKey端口配套。没有完整会员支付权益、赠分、模型档位或角色生态全局开关。JSON Schema/OpenAPI及安卓生成配套；迁移0097~0100未执行、GUI与真实DB/扣费未验，见docs/handoffs/2026-10-16-q-features.md。

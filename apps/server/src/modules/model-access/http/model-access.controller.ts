@@ -36,6 +36,7 @@ import {
 import { CatalogService } from '../application/catalog.js';
 import { ModelAdminService } from '../application/models.js';
 import { GatewayLimitsService } from '../application/limits.js';
+import { DisplayPricingService } from '../application/display-pricing.js';
 import { UpstreamScheduler } from '../application/scheduler.js';
 import { ModelStatusService } from '../application/resolver.js';
 import { SelectionService } from '../application/selection.js';
@@ -146,7 +147,26 @@ export class ModelAdminController {
     @Inject(ModelAdminService) private readonly models: ModelAdminService,
     @Inject(UpstreamScheduler) private readonly scheduler: UpstreamScheduler,
     @Inject(GatewayLimitsService) private readonly limits: GatewayLimitsService,
+    @Inject(DisplayPricingService) private readonly displayPricing: DisplayPricingService,
   ) {}
+
+  // ---------- 3.17 展示倍率基准 ----------
+
+  @Get('display-multiplier')
+  @RequireAuth(A.getDisplayMultiplierSettings.auth)
+  getDisplayMultiplier() {
+    return this.displayPricing.getSettings();
+  }
+
+  @Put('display-multiplier')
+  @RequireAuth(A.updateDisplayMultiplierSettings.auth)
+  updateDisplayMultiplier(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(A.updateDisplayMultiplierSettings.body)))
+    body: Out<typeof A.updateDisplayMultiplierSettings.body>,
+  ) {
+    return this.displayPricing.updateSettings(me.userId, body);
+  }
 
   // ---------- 上游账号池（v3.4） ----------
 

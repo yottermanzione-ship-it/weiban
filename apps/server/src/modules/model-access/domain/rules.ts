@@ -120,6 +120,32 @@ export const STANDARD_REPLY = { inputTokens: 5000, cachedInputTokens: 3000, outp
 export const PRICE_TIER_CHEAP_BELOW_MICROS = 15_000;
 export const PRICE_TIER_EXPENSIVE_ABOVE_MICROS = 60_000;
 
+/**
+ * 3.17（会员 v5，16 号 §2.2）：用户端「约每条 X 积分」在没有最近 7 天数据时的默认假设：
+ * 发给模型约 1 万 token（其中八成命中缓存）、回复约 200 token。
+ */
+export const DEFAULT_REPLY_ASSUMPTION = {
+  inputTokens: 2000,
+  cachedInputTokens: 8000,
+  outputTokens: 200,
+};
+
+/** 按默认假设估算一条回复（微元，向上取整）。 */
+export function defaultReplyMicros(p: ModelTextPrices): number {
+  const cached = p.cachedInputPerMillionMicros ?? p.inputPerMillionMicros;
+  return Math.ceil(
+    (DEFAULT_REPLY_ASSUMPTION.inputTokens * p.inputPerMillionMicros +
+      DEFAULT_REPLY_ASSUMPTION.cachedInputTokens * cached +
+      DEFAULT_REPLY_ASSUMPTION.outputTokens * p.outputPerMillionMicros) /
+      1_000_000,
+  );
+}
+
+/** 3.17：展示倍率的加权价 = 0.8×输入售价 + 0.2×输出售价（16 号 §2.1 / 任务卡）。 */
+export function weightedPrice(p: ModelTextPrices): number {
+  return 0.8 * p.inputPerMillionMicros + 0.2 * p.outputPerMillionMicros;
+}
+
 /** 约每条回复（微元，向上取整）。 */
 export function standardReplyMicros(p: ModelTextPrices): number {
   const cached = p.cachedInputPerMillionMicros ?? p.inputPerMillionMicros;

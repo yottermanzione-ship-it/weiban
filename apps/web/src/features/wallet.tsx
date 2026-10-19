@@ -67,6 +67,11 @@ export function WalletPage() {
         {data && (data.heldPoints ?? 0) > 0 && (
           <p className="wallet-held">其中 {formatPoints(data.heldPoints)} 积分处理中</p>
         )}
+        {data && (data.bonusPoints ?? 0) > 0 && (
+          <p className="wallet-held">
+            含赠送积分 {formatPoints(data.bonusPoints)}（永久有效，优先使用）
+          </p>
+        )}
         <button
           type="button"
           className="primary wallet-recharge"
@@ -84,6 +89,7 @@ export function WalletPage() {
           value={usage.data ? `今日 ${pointsText(usage.data.totalPoints)}` : undefined}
         />
         <MenuRow to="/prices" label="AI 模型价格" />
+        <MenuRow to="/membership" label="PRO+ 会员" />
       </MenuGroup>
       {wallet.error && (
         <p role="alert" className="notice-bar">
@@ -501,10 +507,21 @@ export function LedgerPage() {
 
 // ---------- 价目表（6.5） ----------
 
-export function perReplyText(model: Pick<ModelInfo, 'pointsPerReply'>) {
-  return model.pointsPerReply == null
-    ? '—'
-    : `标准用量示例 ${formatPoints(model.pointsPerReply)} 积分`;
+/** 3.17：模型的积分消耗倍率（只展示，扣费按实际用量）。 */
+export function multiplierText(model: Pick<ModelInfo, 'displayMultiplier'>) {
+  const m = model.displayMultiplier;
+  if (m == null) return '';
+  return `×${m >= 10 ? m.toFixed(0) : m >= 1 ? m.toFixed(1) : m.toFixed(2)}`;
+}
+
+/** 3.17：「×倍率 · 约每条 X 积分」；按最近 7 天平均实扣，没有数据时按默认用量估算。 */
+export function perReplyText(
+  model: Pick<ModelInfo, 'pointsPerReply' | 'displayMultiplier' | 'pointsPerReplyBasis'>,
+) {
+  const mult = multiplierText(model);
+  const per =
+    model.pointsPerReply == null ? '' : `约每条 ${formatPoints(model.pointsPerReply)} 积分`;
+  return [mult, per].filter(Boolean).join(' · ') || '—';
 }
 
 export function PricesPage() {
@@ -534,7 +551,9 @@ export function PricesPage() {
       {section('聊天模型', chat)}
       {section('私密模式模型', adult)}
       <p className="hint page-note">
-        标准用量示例供比较单价，不是每条消息的报价。任务按已核上下文与输出上限预留，可能明显高于实际花费；最终按真实有效用量结算，多余预留退回。
+        「×倍率」用来比较各模型贵不贵；「约每条」按最近 7
+        天大家用这个模型的平均消耗估算（数据不足时按常见用量估算），不是报价。所有 AI
+        回复都按实际用量扣积分，多冻结的会退回。
       </p>
       {models.error && (
         <p role="alert" className="notice-bar">
