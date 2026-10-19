@@ -107,3 +107,12 @@
   - 同一会话重载：**1,202ms**；
   - 再重载一次：**1,012ms**。
   也就是说本地快照缓存是生效的，**有缓存时首屏约 1 秒**；慢的只有「新设备/首次登录」这一次。之前每次测试都用全新浏览器上下文，所以每次都吃满 15 秒，看起来像"每次都慢"。
+
+## 2026-10-19 17:10 热缓存一批（16 条路由）
+
+方法修正：先登录一次等本地快照落地，再逐条打开。这样每条只需 2.5 秒等待，且看到的是真实内容而不是骨架。
+
+- 已打开：`/play/daily`、`/play/daily/history`、`/play/wishlists`、`/play/wishlists/:id`、`/moments/notifications`、`/characters/:id/moments`、`/timeline`、`/characters/:id/voice`、`/characters/:id/model`、`/ledger`、`/prices`、`/models`、`/leaderboard`、`/usage`、`/settings/security`、`/search`。
+- 修：**TA 的动态**把角色名做成标题栏下面一段孤立文字，改到 NavBar 副标题，空态改用共用 EmptyState。
+- 修：**每日一问**加载时只有一个灰骨架、没有任何文字，看起来像白屏；补「正在准备今天的问题…」。该页问题由模型生成，本机模型暂停，所以只能看到加载/失败态。
+- 正常：用量页（今天/7 天/30 天 + 大数字 + 提醒线）、模型页（平台默认 + 排行榜空态 + Bai MiMo 标「暂不可用」）、全局搜索页（5 类入口）。
