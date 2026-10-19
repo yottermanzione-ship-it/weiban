@@ -1053,3 +1053,127 @@ body {
 .module-row:last-child {
   border-bottom: none;
 }
+
+/* ---------- 素材库 ---------- */
+.sticker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.sticker-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #edeff2;
+  border-radius: 8px;
+  font-size: 11px;
+  color: #5a6068;
+}
+.sticker-card img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+}
+.sticker-card .ant-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+}
+.sticker-add {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid #f0f1f3;
+}
+.sticker-card-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sticker-card-inline img {
+  width: 56px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.simple-list {
+  display: flex;
+  flex-direction: column;
+}
+.simple-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 4px;
+  border-bottom: 1px solid #f5f6f7;
+  font-size: 13px;
+}
+.simple-row:last-child {
+  border-bottom: none;
+}
+.simple-main {
+  flex: 1;
+  min-width: 0;
+}
+.appearance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.appearance-card {
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #edeff2;
+  border-radius: 8px;
+}
+.appearance-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.stage-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.stage-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: #fafbfc;
+  border-radius: 6px;
+}
+.stage-cell img {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+}
+.stage-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border: 1px dashed #dfe3e8;
+  border-radius: 6px;
+  color: #a8aeb5;
+  font-size: 11px;
+}
+
+.link-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #5a6068;
+  font-size: 12px;
+  line-height: 22px;
+}

@@ -10,6 +10,7 @@ import { DashboardPage } from '../features/dashboard.js';
 import { AccountsPage } from '../features/accounts.js';
 import { MembershipPage } from '../features/membership.js';
 import { RechargePage } from '../features/recharge.js';
+import { SettingsPage } from '../features/settings.js';
 import { ModelManagementPage } from '../features/model-management.js';
 import { PricesPage } from '../features/prices.js';
 import { AlertsPage } from '../features/alerts.js';
@@ -30,7 +31,7 @@ import {
 } from '../features/media-library.js';
 import { PetSpeciesPage } from '../features/pets-deletions.js';
 import { AccountDeletionsPage } from '../features/account-deletions.js';
-import { DailyQuestionsPage } from '../features/plaza-admin.js';
+import { DailyQuestionsPage } from '../features/daily-questions.js';
 import { PlazaAdminPage } from '../features/plaza.js';
 import { PlannerPage } from '../features/planner.js';
 import { RoleRequestsPage } from '../features/role-requests.js';
@@ -225,6 +226,7 @@ function AdminShell({
         <Route path="/announcements" element={<AnnouncementsPage />} />
         <Route path="/release-notes" element={<ReleaseNotesPage />} />
         <Route path="/version-policies" element={<VersionPoliciesPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="/admin/alerts" element={<AlertsPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
