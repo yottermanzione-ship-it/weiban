@@ -2300,3 +2300,13 @@ label.check.check-card {
   border-radius: var(--wb-radius-sm);
   background: var(--wb-color-bg-surface);
 }
+
+/* 头像占位首字母：令牌里的 #BBBBBB 在浅灰底上几乎看不清，按模式各提一档对比 */
+.user-message-avatar,
+.character-avatar {
+  color: #8c8c8c;
+}
+:root[data-scheme="dark"] .user-message-avatar,
+:root[data-scheme="dark"] .character-avatar {
+  color: #c9c9c9;
+}
