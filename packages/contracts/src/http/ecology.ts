@@ -108,7 +108,10 @@ export const UpdateEcologySettings = z
     enabled: z.boolean().optional(),
     activityLevel: EcologyActivityLevel.optional(),
     /** 只传要改的动作。 */
-    actions: z.partialRecord(EcologyActionKey, z.boolean()).optional(),
+    actions: z
+      .array(z.object({ key: EcologyActionKey, enabled: z.boolean() }).strict())
+      .max(40)
+      .optional(),
     introSeen: z.literal(true).optional(),
   })
   .strict();

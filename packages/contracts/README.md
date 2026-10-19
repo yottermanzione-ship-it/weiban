@@ -95,6 +95,13 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.19（2026-10-20，角色生态 v1 批 C）
+
+依据 `docs/refactor/17-ecology-settings.md`、16 号 §4。说明见 `docs/ai/ecology-v1.md`、`docs/handoffs/2026-10-19-v5-ecology.md`。（3.18 由批 B 记忆占用，合并时以最终递增为准。）
+
+- 新 `http/ecology.ts`：动作清单 `ECOLOGY_ACTION_KEYS`、`EcologyActivityLevel`（四档）、`EcologySettings` / `UpdateEcologySettings`、`EcologyMurmur`、`EcologyCharacterProfile`；用户端 `EcologyEndpoints`（GET/PATCH `/me/ecology`、PUT `/me/ecology/characters/:id`、GET `/characters/:id/murmurs`、GET `/characters/:id/ecology-profile`）；管理端 `EcologyAdminEndpoints`（GET/PUT `/admin/ai/ecology`、GET `/admin/ai/ecology/runs`）。
+- 端口：`ModelGatewayPlatformPort.generatePlatformText` 的 purpose 增 `moments`（官方角色公共朋友圈，平台承担）。
+
 ### 3.17（2026-10-20，会员 v5 批 A）
 
 依据 `docs/refactor/16-membership-v5.md`。说明见 `docs/backend/membership-v5.md`、`docs/handoffs/2026-10-19-v5-membership.md`。

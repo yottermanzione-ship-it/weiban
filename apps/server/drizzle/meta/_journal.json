@@ -662,6 +662,27 @@
       "when": 1799334900000,
       "tag": "0105_role_request_quota_v5",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1799335300000,
+      "tag": "0109_ecology_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1799335400000,
+      "tag": "0110_ecology_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1799335500000,
+      "tag": "0111_ecology_config",
+      "breakpoints": true
     }
   ]
 }

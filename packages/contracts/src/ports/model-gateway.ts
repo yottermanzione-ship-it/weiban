@@ -189,7 +189,8 @@ export interface ModelGatewayPort {
 export interface ModelGatewayPlatformPort {
   generatePlatformText(
     input: Omit<GenerateTextInput, 'billingOwner' | 'safetyPriority' | 'purpose'> & {
-      purpose: 'safety_check' | 'safety_followup' | 'small_v' | 'search_candidates';
+      /** 3.19：moments = 官方角色公共朋友圈（每角色每天一份、所有用户共用，平台承担，16 号 §4）。 */
+      purpose: 'safety_check' | 'safety_followup' | 'small_v' | 'search_candidates' | 'moments';
     },
   ): Promise<PortResult<GenerateTextOutput, GenerateError>>;
 }
