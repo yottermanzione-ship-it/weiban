@@ -509,28 +509,34 @@ export function FieldSheet({
   return (
     <Sheet
       title={title}
-      onClose={onClose}
+      onClose={() => {
+        if (!pending) onClose();
+      }}
       closeLabel="取消"
       action={
         <button
           type="button"
           className="small-primary primary"
           disabled={pending || (required && !value.trim())}
+          aria-busy={pending}
           onClick={() => onSave(value.trim())}
         >
-          完成
+          {pending ? '正在保存…' : '完成'}
         </button>
       }
     >
       <div className="field-sheet">
         <input
           autoFocus
+          aria-label={title}
+          disabled={pending}
           value={value}
           maxLength={maxLength}
           placeholder={placeholder}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !(required && !value.trim())) onSave(value.trim());
+            if (!pending && event.key === 'Enter' && !(required && !value.trim()))
+              onSave(value.trim());
           }}
         />
         <small>

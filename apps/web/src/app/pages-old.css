@@ -1834,7 +1834,7 @@ button.primary.wx-auth-submit {
   display: grid;
   gap: var(--wb-space-3);
   padding: var(--wb-space-4) var(--wb-space-5);
-  font-size: var(--wb-font-size-subhead);
+  font-size: var(--wb-font-size-body);
   line-height: var(--wb-line-height-relaxed);
 }
 .persona-block p {
@@ -1845,6 +1845,29 @@ button.primary.wx-auth-submit {
   color: var(--wb-color-text-secondary);
   font-size: var(--wb-font-size-footnote);
   font-weight: var(--wb-font-weight-regular);
+}
+.official-comment-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+.official-comment-composer > label {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 4px;
+  margin: 0;
+}
+.official-comment-composer textarea {
+  min-height: 80px;
+  max-height: 200px;
+  resize: vertical;
+}
+.official-comment-composer > .char-count {
+  justify-self: start;
+}
+.official-comment-composer > button {
+  min-height: 36px;
 }
 .choice-group .choice-row {
   justify-content: flex-start;

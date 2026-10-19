@@ -160,6 +160,7 @@ export function SelectMembersPage() {
     .filter((c) => !query || nameOf(c.characterId).includes(query))
     .sort((a, b) => nameOf(a.characterId).localeCompare(nameOf(b.characterId), 'zh-CN'));
   async function done() {
+    if (pending || !enough) return;
     setPending(true);
     setError('');
     try {
@@ -191,14 +192,24 @@ export function SelectMembersPage() {
           <button
             type="button"
             className="text-button text-action plain-text"
+            disabled={pending}
             onClick={() => navigate(-1)}
           >
             取消
           </button>
         }
         right={
-          <button className="primary" disabled={pending || !enough} onClick={() => void done()}>
-            完成{total > 0 ? `(${addTo ? picked.length : total})` : ''}
+          <button
+            className="primary"
+            disabled={pending || !enough}
+            aria-busy={pending}
+            onClick={() => void done()}
+          >
+            {pending
+              ? addTo
+                ? '正在添加…'
+                : '正在建群…'
+              : `完成${total > 0 ? `(${addTo ? picked.length : total})` : ''}`}
           </button>
         }
       />
@@ -208,6 +219,7 @@ export function SelectMembersPage() {
             <button
               key={id}
               type="button"
+              disabled={pending}
               onClick={() => setPicked((v) => v.filter((x) => x !== id))}
               aria-label={`取消选择${nameOf(id)}`}
             >
@@ -222,6 +234,7 @@ export function SelectMembersPage() {
           placeholder="搜索"
           aria-label="搜索"
           value={query}
+          disabled={pending}
           onClear={() => setQuery('')}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -232,17 +245,25 @@ export function SelectMembersPage() {
           {error}
         </p>
       )}
-      {contacts.length === 0 && <EmptyState icon="wechat/person" title="通讯录里还没有角色" />}
+      {!state.initialized && (
+        <p className="page-note" role="status">
+          正在读取通讯录…
+        </p>
+      )}
+      {state.initialized && contacts.length === 0 && (
+        <EmptyState icon="wechat/person" title="通讯录里还没有角色" />
+      )}
       <MenuGroup>
         {list.map((c) => {
           const isLocked = locked.includes(c.characterId);
           const checked = isLocked || picked.includes(c.characterId);
-          const disabled = isLocked || (!checked && full);
+          const disabled = pending || isLocked || (!checked && full);
           return (
             <button
               key={c.characterId}
               type="button"
               className="select-row"
+              aria-pressed={checked}
               disabled={disabled}
               onClick={() =>
                 setPicked((v) =>
