@@ -20,6 +20,7 @@ import {
   REAL_PERSON_BOUNDARY_CASES,
   CHILD_PROTECTION_CASES,
 } from '../cases/character-boundaries.js';
+import { KEEP_CHATTING_CASES, MEMORY_TIER_CASES } from '../cases/v5-memory.js';
 import {
   EVAL_CASES,
   EVAL_CASE_VERSION,
@@ -64,9 +65,11 @@ it('所有已实现阶段和主动/群聊/社交/宠物/玩法题都登记，编
     ...ADULT_CONTENT_CASES,
     ...ADULT_CONTROL_CASES,
     ...ADULT_RESTRICTED_CHARACTER_CASES,
+    ...KEEP_CHATTING_CASES,
+    ...MEMORY_TIER_CASES,
   ];
   expect(EVAL_CASES.map((test) => test.id)).toEqual(all.map((test) => test.id));
-  expect(Object.keys(EVAL_SUITES)).toHaveLength(18);
+  expect(Object.keys(EVAL_SUITES)).toHaveLength(20);
   expect(validateEvalRegistry()).toEqual([]);
   expect(new Set(EVAL_CASES.map((test) => test.id)).size).toBe(all.length);
   for (const role of EVAL_CHARACTERS.filter((role) => role.id.startsWith('S-'))) {

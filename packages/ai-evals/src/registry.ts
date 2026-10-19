@@ -18,9 +18,10 @@ import {
   REAL_PERSON_BOUNDARY_CASES,
   CHILD_PROTECTION_CASES,
 } from '../cases/character-boundaries.js';
+import { KEEP_CHATTING_CASES, MEMORY_TIER_CASES } from '../cases/v5-memory.js';
 
 /** 已落地的考题登记，不等于eval-plan全部19类已覆盖。 */
-export const EVAL_CASE_VERSION = '2026-10-12.7';
+export const EVAL_CASE_VERSION = '2026-10-20.1';
 export const EVAL_SUITES = {
   l2: L2_CASES,
   l3_simulation: L3_CASES,
@@ -40,6 +41,9 @@ export const EVAL_SUITES = {
   adult_content: ADULT_CONTENT_CASES,
   adult_controls: ADULT_CONTROL_CASES,
   adult_restricted_characters: ADULT_RESTRICTED_CHARACTER_CASES,
+  // v5 批 B：留住人、记忆分档与翻聊天记录。
+  keep_chatting: KEEP_CHATTING_CASES,
+  memory_tiers: MEMORY_TIER_CASES,
 } as const;
 export const EVAL_CASES: readonly EvalCase[] = Object.values(EVAL_SUITES).flat();
 

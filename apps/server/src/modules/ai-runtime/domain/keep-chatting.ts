@@ -11,11 +11,11 @@ export const KEEP_CHATTING_RULE =
   '不主动结束对话：对方没说要走时，不说「先睡吧」「早点休息」「不打扰你了」「你去忙吧」这类结束语，冷场时按性格接一个话题。对方说要走时，可以撒娇、轻松地挽留一次；对方坚持就温柔放行，留一个下次的期待。不让对方内疚，不反复纠缠，不拿难过、离开或伤害自己做筹码；对方要考试、上班、身体不舒服、深夜犯困或正需要关怀时不挽留，真心关心对方。';
 
 const GOODBYE =
-  /(晚安|拜拜|再见|先睡了|去睡了|要睡了|睡觉了|我睡了|睡啦|先下了|下线了|先走了|我走了|要走了|不聊了|先不聊|回头聊|改天聊|明天聊|下次聊|先这样吧?|去忙了|我去忙|忙去了|^88$|^886$|^bye)/iu;
+  /(晚安|拜拜|再见|先睡了|去睡了|要睡了|睡觉了|我睡了|睡啦|睡了[吧啊哦呀~～!！。.]*$|先下了|下线了|先走了|我走了|要走了|不聊了|先不聊|回头聊|改天聊|明天聊|下次聊|先这样吧?|去忙了|我去忙|忙去了|^88$|^886$|^bye)/iu;
 /** 有正事或身体原因：不挽留，反过来关心。 */
 const SERIOUS =
   /(考试|期末|期中|考研|上班|上早班|开会|加班|面试|赶工|交稿|deadline|ddl|身体不舒服|不舒服|生病|发烧|感冒|头疼|头痛|肚子疼|胃疼|难受|去医院|看病|吃药)/iu;
-const SLEEPY = /(困|睡|眼睛.{0,2}睁不开)/u;
+const SLEEPY = /(困|想睡|要睡了|睡了[吧啊哦呀~～!！。.]*$|眼睛.{0,2}睁不开|撑不住了)/u;
 const SHORT_FILLER =
   /^(嗯+|嗯嗯+|哦+|噢+|喔+|好+|好的|好吧|行+|行吧|可以|ok|okay|哈+|哈哈+|呵呵|嘿嘿|嘻嘻|额+|呃+|是吗|是哦|这样啊|对|对啊|还行|随便|无聊|没事|没什么)$/iu;
 
@@ -48,9 +48,10 @@ export function keepChattingCase(input: {
 }): KeepChattingCase {
   const text = input.userText.trim();
   if (!text || input.inCare) return 'none';
+  // 凌晨 1 点后说困：不挽留，反过来关心（这时说「快去睡」是对的）。
+  if (input.localHour >= 1 && input.localHour < 5 && SLEEPY.test(text)) return 'goodbye_care';
   if (hasGoodbyeIntent(text)) {
-    const lateSleepy = input.localHour >= 1 && input.localHour < 5 && SLEEPY.test(text);
-    if (lateSleepy || SERIOUS.test(text)) return 'goodbye_care';
+    if (SERIOUS.test(text)) return 'goodbye_care';
     // 一次告别最多挽留一次：上一轮（30 分钟内）已经说过要走，这次放行。
     if (
       input.previousUserTurn &&
