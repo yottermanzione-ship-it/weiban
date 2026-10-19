@@ -17,6 +17,7 @@
     "@weiban/client-core": "workspace:*",
     "@weiban/contracts": "workspace:*",
     "antd": "^5.29.3",
+    "dayjs": "^1.11.23",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.9.6",
