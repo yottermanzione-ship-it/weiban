@@ -308,6 +308,8 @@ export class WalletService implements BillingReadPort {
       heldPoints: microsToPoints(account.heldMicros),
       availablePoints: microsToPoints(avail),
       lowBalanceThresholdPoints: microsToPoints(account.lowBalanceThresholdMicros),
+      bonusMicros: account.bonusBalanceMicros,
+      bonusPoints: microsToPoints(account.bonusBalanceMicros),
       updatedAt: account.updatedAt.toISOString(),
     };
   }

@@ -641,6 +641,27 @@
       "when": 1799334600000,
       "tag": "0102_billing_prehold",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1799334700000,
+      "tag": "0103_model_display_multiplier",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1799334800000,
+      "tag": "0104_membership_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1799334900000,
+      "tag": "0105_role_request_quota_v5",
+      "breakpoints": true
     }
   ]
 }

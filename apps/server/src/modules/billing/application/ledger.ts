@@ -47,6 +47,28 @@ export interface NewEntry {
   operatorUserId?: string | null;
   /** 同时释放的冻结额（结算时：held_micros 减去该冻结；默认 0）。 */
   releaseHeldMicros?: number;
+  /**
+   * 会员 v5（16 号 §3）：这笔加钱是赠送积分（开通 PRO+、注册赠送），计入 bonus_balance_micros。
+   * 扣钱（amountMicros < 0）一律先扣赠送、再扣充值，不需要传。
+   */
+  bonusCredit?: boolean;
+}
+
+/**
+ * 会员 v5：算本条流水对赠送积分的变化量。加钱且 bonusCredit → 全部计入赠送；扣钱 → 先扣赠送。
+ * 结果保证 0 ≤ 赠送余额 ≤ max(总余额, 0)（安全透支把余额扣成负数时赠送清零）。
+ */
+export function bonusDeltaOf(
+  bonusBefore: number,
+  balanceAfter: number,
+  amountMicros: number,
+  bonusCredit: boolean,
+): number {
+  let next = bonusBefore;
+  if (amountMicros > 0 && bonusCredit) next += amountMicros;
+  else if (amountMicros < 0) next -= Math.min(bonusBefore, -amountMicros);
+  next = Math.max(0, Math.min(next, balanceAfter));
+  return next - bonusBefore;
 }
 
 export const available = (a: Pick<AccountRow, 'balanceMicros' | 'heldMicros'>) =>
@@ -182,6 +204,15 @@ export class Ledger {
     const after = balance - held;
     if (account.kind === 'user' && entry.amountMicros < 0 && after < 0)
       throw new AppError('insufficient_balance', '积分不足，保留余额与其它任务冻结');
+    const bonusDelta =
+      account.kind === 'user'
+        ? bonusDeltaOf(
+            account.bonusBalanceMicros,
+            balance,
+            entry.amountMicros,
+            entry.bonusCredit === true,
+          )
+        : 0;
     const row: LedgerRow = {
       id: newId(),
       accountId: account.id,
@@ -202,6 +233,7 @@ export class Ledger {
       safetyOverdraft: entry.safetyOverdraft ?? false,
       reason: entry.reason ?? null,
       operatorUserId: entry.operatorUserId ?? null,
+      bonusDeltaMicros: bonusDelta,
     };
     await tx.db.insert(ledgerEntries).values(row);
 
@@ -251,6 +283,7 @@ export class Ledger {
       .update(accounts)
       .set({
         balanceMicros: balance,
+        bonusBalanceMicros: account.bonusBalanceMicros + bonusDelta,
         heldMicros: held,
         insufficientSince,
         lowNotifiedOn,

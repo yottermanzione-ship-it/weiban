@@ -41,6 +41,8 @@ export const accounts = billingSchema.table(
     userId: uuid('user_id'),
     balanceMicros: money('balance_micros').notNull(),
     heldMicros: money('held_micros').notNull(),
+    /** 会员 v5（0104）：余额里属于赠送积分的部分（开通 PRO+、注册赠送）；扣费先扣它，0 ≤ 它 ≤ max(余额,0)。 */
+    bonusBalanceMicros: money('bonus_balance_micros').notNull().default(0),
     lowBalanceThresholdMicros: money('low_balance_threshold_micros').notNull(),
     backgroundDailyLimitMicros: money('background_daily_limit_micros').notNull(),
     /** 用户时区（每次冻结时从 identity 资料刷新），用于后台每日上限、余额提醒的「当天」。 */
@@ -103,6 +105,8 @@ export const ledgerEntries = billingSchema.table(
     /** 管理员操作的原因 / 冲正说明（用户可见的 note）。 */
     reason: text('reason'),
     operatorUserId: uuid('operator_user_id'),
+    /** 会员 v5（0104）：本条流水对赠送积分的变化量（加赠送为正、先扣赠送为负）。 */
+    bonusDeltaMicros: money('bonus_delta_micros').notNull().default(0),
   },
   (t) => [
     uniqueIndex('ledger_entries_idempotency_key_key').on(t.idempotencyKey),
@@ -322,5 +326,40 @@ export const feeHolds = billingSchema.table(
     index('fee_holds_account_status_idx').on(t.accountId, t.status),
     check('fee_holds_status_check', sql`${t.status} in ('active', 'settled', 'released')`),
     check('fee_holds_amount_positive', sql`${t.amountMicros} > 0`),
+  ],
+);
+
+/** 会员 v5（0104，16 号 §3）：PRO+ 开通订单。现阶段无真实支付，由管理员替用户开通；开通即一次性发赠送积分。 */
+export const membershipOrders = billingSchema.table(
+  'membership_orders',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    /** 后台提交的幂等键：重复提交返回同一订单。 */
+    clientOrderId: uuid('client_order_id').notNull(),
+    /** month / quarter / year */
+    planId: text('plan_id').notNull(),
+    /** 本单实收价（分）。 */
+    priceFen: integer('price_fen').notNull(),
+    /** 当时的原价（分）。 */
+    listPriceFen: integer('list_price_fen').notNull(),
+    /** 是否按首次价（每人限一次，部分唯一索引保证）。 */
+    firstPurchase: boolean('first_purchase').notNull(),
+    bonusPoints: integer('bonus_points').notNull(),
+    startsAt: tz('starts_at').notNull(),
+    endsAt: tz('ends_at').notNull(),
+    ledgerEntryId: uuid('ledger_entry_id'),
+    operatorUserId: uuid('operator_user_id'),
+    note: text('note'),
+    createdAt: tz('created_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('membership_orders_client_order_key').on(t.clientOrderId),
+    uniqueIndex('membership_orders_first_purchase_key')
+      .on(t.userId)
+      .where(sql`${t.firstPurchase}`),
+    index('membership_orders_user_idx').on(t.userId, t.createdAt),
+    index('membership_orders_created_idx').on(t.createdAt),
+    check('membership_orders_plan_check', sql`${t.planId} in ('month', 'quarter', 'year')`),
   ],
 );

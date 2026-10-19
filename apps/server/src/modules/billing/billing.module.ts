@@ -13,7 +13,9 @@ import { ReservationService } from './application/reservations.js';
 import { ModelRateService } from './application/model-rates.js';
 import { RechargeService } from './application/recharge.js';
 import { WalletService } from './application/wallet.js';
+import { MembershipOrderService } from './application/membership-orders.js';
 import { BillingAdminController, BillingController } from './http/billing.controller.js';
+import { MembershipAdminController, MembershipOfferController } from './http/membership.controller.js';
 import { ChargeQueryService } from './application/charge-query.js';
 import { BillingQuoteService } from './application/quotes.js';
 import {
@@ -30,7 +32,12 @@ import { CostResolutionService } from './application/cost-resolution.js';
 
 @Module({
   imports: [IdentityModule],
-  controllers: [BillingController, BillingAdminController],
+  controllers: [
+    BillingController,
+    BillingAdminController,
+    MembershipOfferController,
+    MembershipAdminController,
+  ],
   providers: [
     CostResolutionService,
     Ledger,
@@ -38,6 +45,7 @@ import { CostResolutionService } from './application/cost-resolution.js';
     PriceService,
     ReservationService,
     WalletService,
+    MembershipOrderService,
     BillingAdminService,
     ReconciliationService,
     BillingLifecycle,

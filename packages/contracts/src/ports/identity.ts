@@ -81,3 +81,15 @@ export interface IdentityMembershipReadPort {
    */
   isProPlus(userId: string, tx?: Tx): Promise<boolean>;
 }
+
+/**
+ * 3.17（会员 v5）：PRO+ 开通 / 续期写端口。提供方 identity；调用方 billing（管理员开通订单，与记订单、发赠送积分同一事务）。
+ * 新到期时间 = max(当前时间, 原到期时间) + months 个自然月（会员可叠加续期）。写审计并发 profile_updated(membership)。
+ * 账号不存在或已停用 → 抛 not_found。
+ */
+export interface IdentityMembershipWritePort {
+  extendProPlus(
+    input: { userId: string; months: number; operatorUserId: string | null },
+    tx: Tx,
+  ): Promise<{ startsAt: string; endsAt: string }>;
+}

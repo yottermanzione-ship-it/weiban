@@ -326,6 +326,8 @@ export const roleRequests = plazaSchema.table(
     pointsCost: integer('points_cost').notNull().default(0),
     pointsCharged: integer('points_charged').notNull().default(0),
     freeQuotaApplied: boolean('free_quota_applied').notNull().default(false),
+    /** 会员 v5（0105）：占用的免费次数类别 lifetime（终身）/ weekly（PRO+ 每周）；收费单为空。 */
+    freeQuotaKind: text('free_quota_kind'),
     /** 0092（Q5）：billing 服务费冻结 ID；价格为 0 时为空。 */
     feeHoldId: uuid('fee_hold_id'),
     /** 0092：none（不收费）/ held（冻结中）/ settled（已扣除）/ released（已退回）。 */

@@ -4,6 +4,7 @@ import {
   SetMembership,
   type Membership,
   type IdentityMembershipReadPort,
+  type IdentityMembershipWritePort,
   type Tx,
 } from '@weiban/contracts';
 import {
@@ -20,8 +21,28 @@ import {
   type Outbox,
 } from '../../../platform/index.js';
 import { users, memberships } from '../infra/db/schema.js';
+
+const BEIJING_OFFSET_MS = 8 * 3_600_000;
+/** 按北京时间自然月加 months 个月（月末对齐：1 月 31 日 + 1 月 = 2 月最后一天）。 */
+export function addBeijingMonths(at: Date, months: number): Date {
+  const local = new Date(at.getTime() + BEIJING_OFFSET_MS);
+  const y = local.getUTCFullYear(),
+    m = local.getUTCMonth() + months,
+    d = local.getUTCDate();
+  const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const moved = Date.UTC(
+    y,
+    m,
+    Math.min(d, lastDay),
+    local.getUTCHours(),
+    local.getUTCMinutes(),
+    local.getUTCSeconds(),
+    local.getUTCMilliseconds(),
+  );
+  return new Date(moved - BEIJING_OFFSET_MS);
+}
 @Injectable()
-export class MembershipService implements IdentityMembershipReadPort {
+export class MembershipService implements IdentityMembershipReadPort, IdentityMembershipWritePort {
   constructor(
     @Inject(DATABASE) private readonly database: Database,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -57,6 +78,59 @@ export class MembershipService implements IdentityMembershipReadPort {
       !!row.until &&
       row.until.getTime() > this.clock.now().getTime()
     );
+  }
+  /** 3.17：开通 / 续期（契约 IdentityMembershipWritePort），必须在调用方事务里。 */
+  async extendProPlus(
+    input: { userId: string; months: number; operatorUserId: string | null },
+    txInput: Tx,
+  ): Promise<{ startsAt: string; endsAt: string }> {
+    const tx = asDbTx(txInput);
+    const [user] = await tx.db
+      .select({ status: users.status })
+      .from(users)
+      .where(eq(users.id, input.userId))
+      .for('update');
+    if (!user || user.status !== 'active') throw new AppError('not_found', '账号不存在');
+    if (!Number.isInteger(input.months) || input.months < 1 || input.months > 36)
+      throw new AppError('bad_request', '会员时长不正确');
+    const now = this.clock.now();
+    const [old] = await tx.db
+      .select()
+      .from(memberships)
+      .where(eq(memberships.userId, input.userId))
+      .for('update');
+    const start =
+      old?.proPlusUntil && old.proPlusUntil.getTime() > now.getTime() ? old.proPlusUntil : now;
+    const until = addBeijingMonths(start, input.months);
+    await tx.db
+      .insert(memberships)
+      .values({
+        userId: input.userId,
+        proPlusUntil: until,
+        grantedBy: input.operatorUserId,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: memberships.userId,
+        set: { proPlusUntil: until, grantedBy: input.operatorUserId, updatedAt: now },
+      });
+    await this.audit.record(
+      {
+        module: 'identity',
+        action: 'membership.extended',
+        actorType: input.operatorUserId ? 'admin' : 'system',
+        actorId: input.operatorUserId,
+        targetType: 'user',
+        targetId: input.userId,
+        details: { months: input.months, expiresAt: until.toISOString() },
+      },
+      tx,
+    );
+    await this.outbox.publish(tx, 'identity.profile_updated', 'identity', {
+      userId: input.userId,
+      changedFields: ['membership'],
+    });
+    return { startsAt: start.toISOString(), endsAt: until.toISOString() };
   }
   async set(operator: string, userId: string, input: unknown) {
     const body = parseContract(SetMembership, input);

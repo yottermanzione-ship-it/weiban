@@ -25,6 +25,7 @@ import {
   IDENTITY_READ_PORT,
 } from '../../identity/index.js';
 import { Ledger } from './ledger.js';
+import { MembershipOrderService } from './membership-orders.js';
 import { ReconciliationService } from './reconciliation.js';
 import { ReservationService } from './reservations.js';
 
@@ -50,6 +51,7 @@ export class BillingLifecycle implements OnModuleInit, UserDataOwner {
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(LOGGER) logger: Logger,
+    @Inject(MembershipOrderService) private readonly membershipOrders: MembershipOrderService,
   ) {
     this.log = logger.child({ module: 'billing' });
   }
@@ -96,6 +98,8 @@ export class BillingLifecycle implements OnModuleInit, UserDataOwner {
     }
     const timeZone = (await this.identity.getProfile(userId))?.timeZone;
     await this.ledger.createUserAccountIfMissing(tx, userId, timeZone);
+    // 会员 v5（16 号 §7）：注册一次性赠送（后台可配，默认 0 不发；赠送积分，永久有效）。
+    await this.membershipOrders.grantSignupBonus(tx, userId, timeZone);
   }
 
   // ---------- 删除清单（UserDataOwner） ----------
@@ -107,10 +111,14 @@ export class BillingLifecycle implements OnModuleInit, UserDataOwner {
         `SELECT balance_micros AS balance FROM billing.accounts WHERE user_id = $1`,
         [userId],
       );
+      // 会员 v5：开通订单随钱包一起物理删除（0104 表不在旧的 purge 函数里）。
+      const orders = await tx.query(`DELETE FROM billing.membership_orders WHERE user_id = $1`, [
+        userId,
+      ]);
       const { rows } = await tx.query<{ n: number }>(`SELECT billing.purge_user_account($1) AS n`, [
         userId,
       ]);
-      const deleted = Number(rows[0]?.n ?? 0);
+      const deleted = Number(rows[0]?.n ?? 0) + (orders.rowCount ?? 0);
       if (before[0]) {
         // 审计只记用户 ID 的哈希和删除时余额（billing.md 第 11 节）；负余额 = 平台承担的透支（TD-024）
         await this.audit.record(
@@ -137,7 +145,8 @@ export class BillingLifecycle implements OnModuleInit, UserDataOwner {
             + (SELECT count(*) FROM billing.holds h JOIN billing.accounts a ON a.id = h.account_id
                 WHERE a.user_id = $1)
             + (SELECT count(*) FROM billing.daily_spend d JOIN billing.accounts a ON a.id = d.account_id
-                WHERE a.user_id = $1) AS n`,
+                WHERE a.user_id = $1)
+            + (SELECT count(*) FROM billing.membership_orders o WHERE o.user_id = $1) AS n`,
       [userId],
     );
     return Number(rows[0]?.n ?? 0);

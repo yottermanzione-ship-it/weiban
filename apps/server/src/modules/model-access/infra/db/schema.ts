@@ -12,6 +12,7 @@ import { sql } from 'drizzle-orm';
 import {
   bigint,
   boolean,
+  doublePrecision,
   date,
   check,
   customType,
@@ -116,6 +117,8 @@ export const modelCatalog = modelAccessSchema.table(
     /** v3.6（0091）：系统消息放法 multi / single_system / no_system（docs/refactor/09 第 5 节）。 */
     systemMessageMode: text('system_message_mode').notNull().default('multi'),
     billingBounds: jsonb('billing_bounds').$type<import('@weiban/contracts').RouteBillingBounds>(),
+    /** 会员 v5（0103）：展示倍率；null = 按基准模型自动算。只展示，不参与扣费。 */
+    displayMultiplier: doublePrecision('display_multiplier'),
     createdAt: tz('created_at').notNull(),
     updatedAt: tz('updated_at').notNull(),
   },

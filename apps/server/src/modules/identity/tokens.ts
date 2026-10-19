@@ -21,3 +21,5 @@ export const IDENTITY_SETTINGS_WRITE_PORT = Symbol('weiban.identity.settings-wri
 export const IDENTITY_USER_STATUS_PORT = Symbol('weiban.identity.user-status-port');
 
 export const IDENTITY_MEMBERSHIP_READ_PORT = Symbol('identity.membership.read');
+/** 3.17：PRO+ 开通 / 续期写端口（契约 IdentityMembershipWritePort），调用方 billing。 */
+export const IDENTITY_MEMBERSHIP_WRITE_PORT = Symbol('identity.membership.write');
