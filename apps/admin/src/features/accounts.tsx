@@ -1,283 +1,414 @@
-import { MembershipEditor } from './membership.js';
 /**
- * 用户与积分（06-old-ui-spec 第 6、9 节；契约 3.3）：账号积分概况、按积分加 / 扣、流水、充值档位配置。
- * 涉及用户的金额同时写积分和折合元（1 元 = 100 积分）。
+ * 用户列表：余额与近 30 天消耗；点一行从右侧抽屉里加扣积分、看流水、改会员。
+ * 金额统一同时显示积分与元（1 元 = 100 积分）。
  */
-import { useRef, useState, type FormEvent } from 'react';
-import { BillingAdminEndpoints, AdminAccountSummary } from '@weiban/contracts';
-import { api } from '../data/client.js';
+import { useRef, useState } from 'react';
+import { Alert, Button, Form, Input, InputNumber, Radio, Space, Tabs } from 'antd';
 import type { z } from 'zod';
-type Account = z.infer<typeof AdminAccountSummary>;
+import {
+  BillingAdminEndpoints,
+  MembershipAdminEndpoints,
+  AdminAccountSummary,
+  AdminLedgerEntry,
+} from '@weiban/contracts';
+import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
-import { Feedback } from '../components/feedback.js';
+import { DataTable, type ProColumns } from '../ui/table.js';
+import { RecordDrawer } from '../ui/drawer.js';
+import {
+  FieldHelp,
+  Page,
+  SectionCard,
+  StatusTag,
+  useDangerConfirm,
+  useToast,
+} from '../ui/page.js';
+import {
+  Money,
+  formatDateTime,
+  formatInt,
+  formatPoints,
+  formatYuan,
+} from '../ui/format.js';
 
-const pts = (n: number | null | undefined) =>
-  n == null ? '—' : new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n);
-const yuan = (micros: number) => `¥${(micros / 1_000_000).toFixed(2)}`;
-
-function AccountDetails({ account, refresh }: { account: Account; refresh: () => void }) {
-  const ledger = useRemote(BillingAdminEndpoints.listAccountLedger, {
-    params: { userId: account.userId },
-    query: { limit: 50 },
-  });
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const operation = useRef<{ signature: string; key: string } | null>(null);
-  async function adjust(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    setError('');
-    const points = Number(form.get('points'));
-    if (!Number.isFinite(points) || points <= 0) {
-      setError('请输入大于 0 的积分');
-      return;
-    }
-    setPending(true);
-    try {
-      const direction = String(form.get('direction')) as 'grant' | 'deduct';
-      const body = {
-        direction,
-        points: Math.round(points * 10_000) / 10_000,
-        reason: String(form.get('reason')),
-      };
-      const signature = JSON.stringify(body);
-      if (operation.current?.signature !== signature)
-        operation.current = { signature, key: crypto.randomUUID() };
-      await api.call(BillingAdminEndpoints.adjustBalance, {
-        params: { userId: account.userId },
-        body: { ...body, idempotencyKey: operation.current.key },
-      });
-      operation.current = null;
-      setMessage('积分已更新');
-      ledger.refresh();
-      refresh();
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setPending(false);
-    }
-  }
-  return (
-    <section className="panel stack">
-      <MembershipEditor key={account.userId} userId={account.userId} />
-      <h2>{account.username || '已注销账号'} · 积分操作</h2>
-      <form className="form-grid" onSubmit={(e) => void adjust(e)}>
-        <label>
-          操作
-          <select name="direction">
-            <option value="grant">加积分</option>
-            <option value="deduct">扣积分</option>
-          </select>
-        </label>
-        <label>
-          积分（1 元 = 100 积分）
-          <input name="points" required inputMode="decimal" placeholder="例：1000" />
-        </label>
-        <label>
-          原因
-          <input name="reason" minLength={2} maxLength={200} required />
-        </label>
-        <button className="primary" disabled={pending}>
-          确认提交
-        </button>
-      </form>
-      <Feedback message={message} error={error || ledger.error} />
-      <table>
-        <thead>
-          <tr>
-            <th>时间（北京时间）</th>
-            <th>积分</th>
-            <th>剩余</th>
-            <th>上游成本</th>
-            <th>说明</th>
-          </tr>
-        </thead>
-        <tbody>
-          {ledger.data?.items.map((row) => (
-            <tr key={row.entryId}>
-              <td>
-                {new Date(row.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
-              </td>
-              <td className={(row.points ?? 0) > 0 ? 'income' : ''}>
-                {(row.points ?? 0) > 0 ? '+' : ''}
-                {pts(row.points)} <span className="hint">≈ {yuan(row.amountMicros)}</span>
-              </td>
-              <td>{pts(row.balanceAfterPoints)}</td>
-              <td>{row.costMicros == null ? '—' : yuan(row.costMicros)}</td>
-              <td>{row.note ?? row.modelKey ?? ''}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
-  );
-}
-
-/** 充值档位与联系管理员说明（用户端充值页显示；第一版不开真实支付）。 */
-function RechargeConfig() {
-  const options = useRemote(BillingAdminEndpoints.getRechargeOptions);
-  const [rows, setRows] = useState<Array<{ tierId: string; yuan: string }> | null>(null);
-  const [hint, setHint] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const data = options.data;
-  const list =
-    rows ??
-    data?.tiers.map((t) => ({
-      tierId: t.tierId,
-      yuan: String(t.priceMicros / 1_000_000),
-    })) ??
-    [];
-  const contact = hint ?? data?.contactHint ?? '';
-  const update = (index: number, patch: Partial<(typeof list)[number]>) =>
-    setRows(list.map((r, i) => (i === index ? { ...r, ...patch } : r)));
-  async function save() {
-    setPending(true);
-    setError('');
-    try {
-      await api.call(BillingAdminEndpoints.updateRechargeOptions, {
-        body: {
-          tiers: list.map((r) => ({
-            tierId: r.tierId.trim(),
-            priceMicros: Math.round(Number(r.yuan) * 1_000_000),
-            bonusPercent: 0,
-          })),
-          contactHint: contact,
-        },
-      });
-      setRows(null);
-      setHint(null);
-      options.refresh();
-      setMessage('已保存');
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setPending(false);
-    }
-  }
-  return (
-    <section className="panel stack">
-      <h2>充值档位</h2>
-      <p className="hint">
-        用户端「充值」页按这里的档位显示，1元 = 100积分，不赠送积分。
-        当前按钮为「联系管理员充值」，弹窗显示下方说明。
-      </p>
-      <table>
-        <thead>
-          <tr>
-            <th>档位编号</th>
-            <th>价格（元）</th>
-            <th>到账积分</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {list.map((r, index) => (
-            <tr key={index}>
-              <td>
-                <input
-                  value={r.tierId}
-                  maxLength={32}
-                  onChange={(e) => update(index, { tierId: e.target.value })}
-                />
-              </td>
-              <td>
-                <input
-                  value={r.yuan}
-                  inputMode="decimal"
-                  onChange={(e) => update(index, { yuan: e.target.value })}
-                />
-              </td>
-              <td>{pts(Number(r.yuan) * 100)}</td>
-              <td>
-                <button
-                  type="button"
-                  className="danger"
-                  onClick={() => setRows(list.filter((_, i) => i !== index))}
-                >
-                  删除
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="inline">
-        <button
-          type="button"
-          disabled={list.length >= 12}
-          onClick={() => setRows([...list, { tierId: `t${list.length + 1}`, yuan: '10' }])}
-        >
-          + 添加档位
-        </button>
-      </div>
-      <label>
-        联系管理员说明
-        <input
-          value={contact}
-          maxLength={200}
-          onChange={(e) => setHint(e.target.value)}
-          placeholder="例：加微信 xxx，备注微伴号"
-        />
-      </label>
-      <div className="inline">
-        <button
-          type="button"
-          className="primary"
-          disabled={pending || !data}
-          onClick={() => void save()}
-        >
-          保存充值配置
-        </button>
-      </div>
-      <Feedback message={message} error={error || options.error} />
-    </section>
-  );
-}
+type Account = z.infer<typeof AdminAccountSummary>;
+type LedgerEntry = z.infer<typeof AdminLedgerEntry>;
 
 export function AccountsPage() {
   const accounts = useRemote(BillingAdminEndpoints.listAccounts);
-  const [selected, setSelected] = useState<string | null>(null);
-  const current = accounts.data?.items.find((a) => a.userId === selected);
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState<Account | null>(null);
+
+  const list = (accounts.data?.items ?? []).filter(
+    (a) =>
+      !query.trim() ||
+      a.username.includes(query.trim()) ||
+      a.userId.includes(query.trim()),
+  );
+
+  const columns: ProColumns<Account>[] = [
+    {
+      title: '用户',
+      width: 220,
+      render: (_, a) => (
+        <div className="cell-main">
+          <span className="cell-title">{a.username || '已注销账号'}</span>
+          <span className="cell-sub mono">{a.userId}</span>
+        </div>
+      ),
+    },
+    {
+      title: '余额',
+      width: 170,
+      sorter: (a, b) => a.balanceMicros - b.balanceMicros,
+      render: (_, a) => <Money micros={a.balanceMicros} strong />,
+    },
+    {
+      title: '处理中（冻结）',
+      width: 140,
+      render: (_, a) => `${formatPoints(a.heldMicros)} 积分`,
+    },
+    {
+      title: '近 30 天消耗',
+      width: 170,
+      sorter: (a, b) => a.spentLast30DaysMicros - b.spentLast30DaysMicros,
+      render: (_, a) => <Money micros={a.spentLast30DaysMicros} points={false} />,
+    },
+    {
+      title: '最近变动',
+      width: 150,
+      render: (_, a) => formatDateTime(a.updatedAt),
+    },
+    {
+      title: '操作',
+      width: 130,
+      fixed: 'right',
+      render: (_, a) => (
+        <Button type="link" size="small" onClick={() => setSelected(a)}>
+          积分 / 流水 / 会员
+        </Button>
+      ),
+    },
+  ];
+
   return (
-    <>
-      <h1>用户与积分</h1>
-      <Feedback error={accounts.error} />
-      <table>
-        <thead>
-          <tr>
-            <th>账号</th>
-            <th>积分</th>
-            <th>处理中</th>
-            <th>近 30 天消耗</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {accounts.data?.items.map((a) => (
-            <tr key={a.userId} className={a.userId === selected ? 'selected' : ''}>
-              <td>{a.username || '已注销账号'}</td>
-              <td>
-                {pts(a.balancePoints)} <span className="hint">≈ {yuan(a.balanceMicros)}</span>
-              </td>
-              <td>{pts(a.heldMicros / 10_000)}</td>
-              <td>
-                {pts(a.spentLast30DaysPoints)}{' '}
-                <span className="hint">≈ {yuan(a.spentLast30DaysMicros)}</span>
-              </td>
-              <td>
-                <button onClick={() => setSelected(a.userId)}>加扣积分与流水</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {current && (
-        <AccountDetails key={current.userId} account={current} refresh={accounts.refresh} />
+    <Page
+      title="用户列表"
+      desc="每个用户的积分余额与近 30 天消耗。点一行可以加扣积分、查看每一笔流水、改会员档位。"
+      extra={<Button onClick={() => accounts.refresh()}>刷新</Button>}
+    >
+      <DataTable<Account>
+        rowKey="userId"
+        columns={columns}
+        data={list}
+        loading={accounts.loading}
+        error={accounts.error}
+        onRefresh={accounts.refresh}
+        onRowClick={(a) => setSelected(a)}
+        filters={
+          <Input.Search
+            allowClear
+            placeholder="搜索用户名或用户 ID"
+            style={{ width: 260 }}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        }
+        emptyTitle="还没有用户"
+        emptyHint="用户在网页端注册后会自动出现在这里，不需要手动添加。"
+      />
+      {selected && (
+        <AccountDrawer
+          account={selected}
+          onClose={() => setSelected(null)}
+          onChanged={accounts.refresh}
+        />
       )}
-      <RechargeConfig />
-    </>
+    </Page>
+  );
+}
+
+function AccountDrawer({
+  account,
+  onClose,
+  onChanged,
+}: {
+  account: Account;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [tab, setTab] = useState<'points' | 'ledger' | 'membership'>('points');
+  return (
+    <RecordDrawer
+      open
+      onClose={onClose}
+      title={account.username || '已注销账号'}
+      subtitle={`余额 ${formatPoints(account.balanceMicros)} 积分（${formatYuan(account.balanceMicros)}）`}
+      width={720}
+    >
+      <Tabs
+        activeKey={tab}
+        onChange={(key) => setTab(key as typeof tab)}
+        items={[
+          { key: 'points', label: '加扣积分' },
+          { key: 'ledger', label: '流水' },
+          { key: 'membership', label: '会员' },
+        ]}
+      />
+      {tab === 'points' && <AdjustPanel account={account} onChanged={onChanged} />}
+      {tab === 'ledger' && <LedgerPanel account={account} />}
+      {tab === 'membership' && <MembershipPanel account={account} />}
+    </RecordDrawer>
+  );
+}
+
+interface AdjustValues {
+  direction: 'grant' | 'deduct';
+  points: number;
+  reason: string;
+}
+
+function AdjustPanel({ account, onChanged }: { account: Account; onChanged: () => void }) {
+  const toast = useToast();
+  const confirm = useDangerConfirm();
+  const [form] = Form.useForm<AdjustValues>();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const operation = useRef<{ signature: string; key: string } | null>(null);
+  const direction = Form.useWatch('direction', form) ?? 'grant';
+  const points = Form.useWatch('points', form) ?? 0;
+
+  async function submit() {
+    const values = await form.validateFields();
+    const run = async () => {
+      setSaving(true);
+      setError('');
+      try {
+        const body = {
+          direction: values.direction,
+          points: Math.round(values.points * 10_000) / 10_000,
+          reason: values.reason,
+        };
+        const signature = JSON.stringify(body);
+        if (operation.current?.signature !== signature)
+          operation.current = { signature, key: crypto.randomUUID() };
+        await api.call(BillingAdminEndpoints.adjustBalance, {
+          params: { userId: account.userId },
+          body: { ...body, idempotencyKey: operation.current.key },
+        });
+        operation.current = null;
+        toast.success('已保存');
+        form.resetFields(['points', 'reason']);
+        onChanged();
+      } catch (e) {
+        setError(errorText(e));
+      } finally {
+        setSaving(false);
+      }
+    };
+    if (values.direction === 'deduct') {
+      confirm({
+        title: `扣掉 ${values.points} 积分？`,
+        content: `扣完余额约 ${formatPoints(account.balanceMicros - values.points * 10_000)} 积分。扣减额不能超过可用余额，操作会记入审计日志。`,
+        okText: '确认扣减',
+        onOk: run,
+      });
+    } else {
+      await run();
+    }
+  }
+
+  return (
+    <div className="drawer-body">
+      <SectionCard title="加 / 扣积分" desc="用于补偿、退款或人工纠正">
+        {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} />}
+        <Form<AdjustValues>
+          form={form}
+          layout="vertical"
+          initialValues={{ direction: 'grant', points: 100 }}
+        >
+          <Form.Item name="direction" label="操作">
+            <Radio.Group>
+              <Radio.Button value="grant">加积分</Radio.Button>
+              <Radio.Button value="deduct">扣积分</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+          <Form.Item
+            name="points"
+            label="积分数"
+            rules={[
+              { required: true, message: '填写积分数量' },
+              { type: 'number', min: 0.0001, message: '要大于 0' },
+            ]}
+            extra={
+              <FieldHelp>
+                1 元 = 100 积分。{points > 0 ? `折合 ${(points / 100).toFixed(2)} 元。` : ''}
+              </FieldHelp>
+            }
+          >
+            <InputNumber min={0.0001} step={100} style={{ width: '100%' }} addonAfter="积分" />
+          </Form.Item>
+          <Form.Item
+            name="reason"
+            label="原因"
+            rules={[
+              { required: true, message: '填写原因' },
+              { min: 2, message: '至少 2 个字' },
+            ]}
+            extra={<FieldHelp>会写进流水和审计日志，写清楚为什么加/扣。</FieldHelp>}
+          >
+            <Input maxLength={200} placeholder="例：8 月模型故障补偿" />
+          </Form.Item>
+        </Form>
+        <div className="drawer-actions">
+          <span />
+          <Button
+            type={direction === 'deduct' ? 'primary' : 'primary'}
+            danger={direction === 'deduct'}
+            loading={saving}
+            onClick={() => void submit()}
+          >
+            {direction === 'deduct' ? '确认扣减' : '确认加积分'}
+          </Button>
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
+function LedgerPanel({ account }: { account: Account }) {
+  const ledger = useRemote(BillingAdminEndpoints.listAccountLedger, {
+    params: { userId: account.userId },
+    query: { limit: 100 },
+  });
+  const columns: ProColumns<LedgerEntry>[] = [
+    {
+      title: '时间',
+      width: 150,
+      render: (_, row) => formatDateTime(row.createdAt),
+    },
+    {
+      title: '积分',
+      width: 120,
+      render: (_, row) => {
+        const value = row.points ?? 0;
+        return (
+          <span className={value > 0 ? 'income' : ''}>
+            {value > 0 ? '+' : ''}
+            {formatInt(value)}
+          </span>
+        );
+      },
+    },
+    {
+      title: '剩余',
+      width: 100,
+      render: (_, row) => formatInt(row.balanceAfterPoints ?? 0),
+    },
+    {
+      title: '上游成本',
+      width: 110,
+      render: (_, row) => (row.costMicros == null ? '—' : formatYuan(row.costMicros, 4)),
+    },
+    {
+      title: '说明',
+      render: (_, row) => row.note ?? row.modelKey ?? '—',
+    },
+  ];
+  return (
+    <DataTable<LedgerEntry>
+      rowKey="entryId"
+      columns={columns}
+      data={ledger.data?.items ?? []}
+      loading={ledger.loading}
+      error={ledger.error}
+      onRefresh={ledger.refresh}
+      pagination={false}
+      emptyTitle="还没有流水"
+      emptyHint="用户每发一条消息、每次加扣积分都会在这里留一行。"
+    />
+  );
+}
+
+function MembershipPanel({ account }: { account: Account }) {
+  const remote = useRemote(MembershipAdminEndpoints.get, { params: { userId: account.userId } });
+  const toast = useToast();
+  const confirm = useDangerConfirm();
+  const [expiry, setExpiry] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function setMembership(revoke: boolean) {
+    setSaving(true);
+    setError('');
+    try {
+      await api.call(MembershipAdminEndpoints.set, {
+        params: { userId: account.userId },
+        body: { expiresAt: revoke ? null : new Date(`${expiry}T23:59:59+08:00`).toISOString() },
+      });
+      toast.success(revoke ? '已撤销 PRO+' : '已保存');
+      remote.refresh();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const isPro = remote.data?.tier === 'pro_plus';
+
+  return (
+    <div className="drawer-body">
+      <SectionCard title="会员档位" desc="只影响角色相关权益，不代表支付或赠送积分">
+        {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} />}
+        <div className="detail-grid">
+          <div>
+            <span className="detail-label">当前档位</span>
+            <StatusTag tone={isPro ? 'success' : 'default'}>{isPro ? 'PRO+' : '免费'}</StatusTag>
+          </div>
+          <div>
+            <span className="detail-label">到期时间</span>
+            <span>{remote.data?.expiresAt ? formatDateTime(remote.data.expiresAt) : '无'}</span>
+          </div>
+        </div>
+        <div style={{ height: 12 }} />
+        <Form layout="vertical">
+          <Form.Item
+            label="PRO+ 到期日期"
+            extra={<FieldHelp>到期当天 23:59 失效。撤销不会改变积分。</FieldHelp>}
+          >
+            <Input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} />
+          </Form.Item>
+        </Form>
+        <Space>
+          <Button
+            type="primary"
+            loading={saving}
+            disabled={!expiry}
+            onClick={() => void setMembership(false)}
+          >
+            授予 / 更新
+          </Button>
+          <Button
+            danger
+            disabled={!isPro || saving}
+            onClick={() =>
+              confirm({
+                title: '撤销 PRO+？',
+                content: '撤销后用户立即回到免费档位，不会改变积分余额。',
+                okText: '撤销',
+                onOk: () => setMembership(true),
+              })
+            }
+          >
+            撤销 PRO+
+          </Button>
+        </Space>
+        {remote.error && <Alert type="error" showIcon message={remote.error} style={{ marginTop: 12 }} />}
+      </SectionCard>
+      <div className="detail-muted">
+        「会员与订单」页面可以按用户 ID 直接查改档位；本页是同一个功能的快捷入口。
+      </div>
+    </div>
   );
 }

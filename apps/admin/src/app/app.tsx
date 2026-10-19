@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { ProLayout } from '@ant-design/pro-components';
 import { App as AntApp, Dropdown, Spin } from 'antd';
@@ -8,6 +8,8 @@ import { api } from '../data/client.js';
 import { LoginPage } from '../features/login.js';
 import { DashboardPage } from '../features/dashboard.js';
 import { AccountsPage } from '../features/accounts.js';
+import { MembershipPage } from '../features/membership.js';
+import { RechargePage } from '../features/recharge.js';
 import { ModelManagementPage } from '../features/model-management.js';
 import { PricesPage } from '../features/prices.js';
 import { AlertsPage } from '../features/alerts.js';
@@ -43,10 +45,12 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const location = useLocation();
   const navigate = useNavigate();
+  // 开发模式下 React 会把 effect 跑两遍。引导过程只跑一次（复用同一个 Promise），
+  // 否则第二次 updateUser 会换掉 auth 对象，让页面上正在飞的请求误判「登录状态已改变」。
+  const bootstrap = useRef<Promise<AuthResponse | null> | null>(null);
 
   useEffect(() => {
-    let active = true;
-    void (async () => {
+    bootstrap.current ??= (async () => {
       try {
         let session = await api.restore();
         if (session) {
@@ -60,13 +64,19 @@ export function App() {
           await api.forget();
           session = null;
         }
-        if (active) setAuth(session);
+        return session;
       } catch {
-        if (active) setAuth(null);
-      } finally {
-        if (active) setLoading(false);
+        return null;
       }
     })();
+    let active = true;
+    void bootstrap.current
+      .then((session) => {
+        if (active) setAuth(session);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
     const expired = () => setAuth(null);
     window.addEventListener('weiban-admin:unauthenticated', expired);
     return () => {
@@ -188,6 +198,8 @@ function AdminShell({
         <Route path="/characters" element={<CharactersPage />} />
         <Route path="/prices" element={<PricesPage />} />
         <Route path="/accounts" element={<AccountsPage />} />
+        <Route path="/membership" element={<MembershipPage />} />
+        <Route path="/recharge" element={<RechargePage />} />
         <Route path="/model" element={<ModelManagementPage />} />
         <Route path="/usage" element={<UsagePage />} />
         <Route path="/billing" element={<BillingPage />} />

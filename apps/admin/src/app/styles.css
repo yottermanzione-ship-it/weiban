@@ -858,3 +858,19 @@ body {
   padding-top: 4px;
   border-top: 1px dashed #edeff2;
 }
+
+.tier-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tier-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 140px 32px;
+  gap: 8px;
+  align-items: center;
+}
+.tier-points {
+  color: #8a9099;
+  font-size: 12px;
+}
