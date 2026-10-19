@@ -31,6 +31,18 @@ export class MemoryTierController {
   }
 }
 
+/** 3.18：两档记忆参数（权益页对照用，不含个人数据）。 */
+@Controller('api/v1/memory-tiers')
+@RequireAuth('user')
+export class MemoryTierPlansController {
+  constructor(@Inject(MemoryTierService) private readonly tiers: MemoryTierService) {}
+
+  @Get()
+  plans() {
+    return this.tiers.config();
+  }
+}
+
 @Controller('api/v1/admin/ai/memory-tiers')
 @RequireAuth('admin')
 export class MemoryTierAdminController {

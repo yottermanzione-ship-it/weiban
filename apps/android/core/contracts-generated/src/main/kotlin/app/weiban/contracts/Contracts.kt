@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.17. Regenerate: pnpm android:generate
+// Contract 3.18. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.17"
+const val CONTRACT_VERSION: String = "3.18"
 
 @Serializable
 data class AccountAlias(
@@ -386,6 +386,8 @@ data class AdminModel(
     @SerialName("hasTimeBands") val `hasTimeBands`: Boolean,
     @SerialName("pointsPerReply") val `pointsPerReply`: Double?,
     @SerialName("routes") val `routes`: List<ModelRoute>? = null,
+    @SerialName("displayMultiplierManual") val `displayMultiplierManual`: Double? = null,
+    @SerialName("displayMultiplier") val `displayMultiplier`: Double? = null,
 )
 
 @Serializable
@@ -406,6 +408,7 @@ data class AdminModelWrite(
     @SerialName("rates") val `rates`: ModelRates?,
     @SerialName("costRates") val `costRates`: ModelRates? = null,
     @SerialName("routes") val `routes`: List<ModelRoute>? = null,
+    @SerialName("displayMultiplierManual") val `displayMultiplierManual`: Double? = null,
 )
 
 @Serializable
@@ -426,6 +429,7 @@ data class AdminModelWriteInput(
     @SerialName("rates") val `rates`: ModelRatesInput?,
     @SerialName("costRates") val `costRates`: ModelRatesInput? = null,
     @SerialName("routes") val `routes`: List<ModelRouteInput>? = null,
+    @SerialName("displayMultiplierManual") val `displayMultiplierManual`: Double? = null,
 )
 
 @Serializable
@@ -2546,6 +2550,15 @@ data class CreateInviteRequestInput(
 )
 
 @Serializable
+data class CreateMembershipOrder(
+    @SerialName("clientOrderId") val `clientOrderId`: Id,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("planId") val `planId`: MembershipPlanId,
+    @SerialName("useFirstPrice") val `useFirstPrice`: Boolean? = null,
+    @SerialName("note") val `note`: String? = null,
+)
+
+@Serializable
 data class CreateMemoryRequest(
     @SerialName("clientMemoryId") val `clientMemoryId`: Id,
     @SerialName("content") val `content`: String,
@@ -2598,7 +2611,7 @@ data class CreatePublicUpdateRequestInput(
 @Serializable
 data class CreateRoleRequest(
     @SerialName("clientRequestId") val `clientRequestId`: Id,
-    @SerialName("expectedPointsCost") val `expectedPointsCost`: CreateRoleRequestExpectedPointsCost? = null,
+    @SerialName("expectedPointsCost") val `expectedPointsCost`: Long? = null,
     @SerialName("roleName") val `roleName`: String,
     @SerialName("basis") val `basis`: CharacterBasis? = null,
     @SerialName("categoryId") val `categoryId`: String? = null,
@@ -2611,7 +2624,7 @@ data class CreateRoleRequest(
 @Serializable
 data class CreateRoleRequestInput(
     @SerialName("clientRequestId") val `clientRequestId`: Id,
-    @SerialName("expectedPointsCost") val `expectedPointsCost`: CreateRoleRequestInputExpectedPointsCost? = null,
+    @SerialName("expectedPointsCost") val `expectedPointsCost`: Long? = null,
     @SerialName("roleName") val `roleName`: String,
     @SerialName("basis") val `basis`: CharacterBasis? = null,
     @SerialName("categoryId") val `categoryId`: String? = null,
@@ -2898,6 +2911,16 @@ data class DeviceInfoInput(
     @SerialName("name") val `name`: String,
     @SerialName("appVersion") val `appVersion`: String,
     @SerialName("timeZone") val `timeZone`: TimeZone,
+)
+
+@Serializable
+data class DisplayMultiplierSettings(
+    @SerialName("baseModelKey") val `baseModelKey`: ModelKey?,
+)
+
+@Serializable
+data class DisplayMultiplierSettingsInput(
+    @SerialName("baseModelKey") val `baseModelKey`: ModelKey?,
 )
 
 @Serializable
@@ -5754,6 +5777,87 @@ data class MembershipAdminEndpointsSetParams(
     @SerialName("userId") val `userId`: Id,
 )
 
+@Serializable
+data class MembershipOffer(
+    @SerialName("plans") val `plans`: List<MembershipPlan>,
+    @SerialName("firstPurchaseAvailable") val `firstPurchaseAvailable`: Boolean,
+    @EncodeDefault
+    @SerialName("paymentEnabled") val `paymentEnabled`: Boolean = false,
+    @SerialName("contactHint") val `contactHint`: String,
+    @SerialName("membership") val `membership`: Membership,
+)
+
+@Serializable
+data class MembershipOrder(
+    @SerialName("orderId") val `orderId`: Id,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("planId") val `planId`: MembershipPlanId,
+    @SerialName("priceFen") val `priceFen`: Long,
+    @SerialName("listPriceFen") val `listPriceFen`: Long,
+    @SerialName("firstPurchase") val `firstPurchase`: Boolean,
+    @SerialName("bonusPoints") val `bonusPoints`: Long,
+    @SerialName("startsAt") val `startsAt`: Timestamp,
+    @SerialName("endsAt") val `endsAt`: Timestamp,
+    @SerialName("operatorUserId") val `operatorUserId`: Id?,
+    @SerialName("note") val `note`: String?,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class MembershipOrderAdminEndpointsCreateOrderResponse(
+    @SerialName("order") val `order`: MembershipOrder,
+    @SerialName("membership") val `membership`: Membership,
+)
+
+@Serializable
+data class MembershipOrderAdminEndpointsListOrdersQuery(
+    @SerialName("userId") val `userId`: Id? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class MembershipOrderAdminEndpointsListOrdersResponse(
+    @SerialName("items") val `items`: List<MembershipOrder>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class MembershipPlan(
+    @SerialName("planId") val `planId`: MembershipPlanId,
+    @SerialName("name") val `name`: String,
+    @SerialName("months") val `months`: Long,
+    @SerialName("priceFen") val `priceFen`: Long,
+    @SerialName("firstPriceFen") val `firstPriceFen`: Long,
+    @SerialName("bonusPoints") val `bonusPoints`: Long,
+)
+
+typealias MembershipPlanId = String
+
+@Serializable
+data class MembershipPlanInput(
+    @SerialName("planId") val `planId`: MembershipPlanId,
+    @SerialName("name") val `name`: String,
+    @SerialName("months") val `months`: Long,
+    @SerialName("priceFen") val `priceFen`: Long,
+    @SerialName("firstPriceFen") val `firstPriceFen`: Long,
+    @SerialName("bonusPoints") val `bonusPoints`: Long,
+)
+
+@Serializable
+data class MembershipSettings(
+    @SerialName("plans") val `plans`: List<MembershipPlan>,
+    @SerialName("contactHint") val `contactHint`: String,
+    @SerialName("signupBonusPoints") val `signupBonusPoints`: Long,
+)
+
+@Serializable
+data class MembershipSettingsInput(
+    @SerialName("plans") val `plans`: List<MembershipPlanInput>,
+    @SerialName("contactHint") val `contactHint`: String,
+    @SerialName("signupBonusPoints") val `signupBonusPoints`: Long,
+)
+
 typealias MemoryCategory = String
 
 @Serializable
@@ -6248,6 +6352,8 @@ data class ModelInfo(
     @SerialName("leaderboardRank") val `leaderboardRank`: Long?,
     @SerialName("available") val `available`: Boolean,
     @SerialName("pointsPerReply") val `pointsPerReply`: Double? = null,
+    @SerialName("pointsPerReplyBasis") val `pointsPerReplyBasis`: String? = null,
+    @SerialName("displayMultiplier") val `displayMultiplier`: Double? = null,
 )
 
 typealias ModelKey = String
@@ -8411,6 +8517,8 @@ data class RoleRequestAdminEndpointsRejectBody(
 data class RoleRequestConfig(
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("pointsCost") val `pointsCost`: Long,
+    @SerialName("lifetimeFreeCount") val `lifetimeFreeCount`: Long,
+    @SerialName("proPlusWeeklyFreeCount") val `proPlusWeeklyFreeCount`: Long,
     @SerialName("maxOpenPerUser") val `maxOpenPerUser`: Long,
 )
 
@@ -8418,6 +8526,8 @@ data class RoleRequestConfig(
 data class RoleRequestConfigInput(
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("pointsCost") val `pointsCost`: Long,
+    @SerialName("lifetimeFreeCount") val `lifetimeFreeCount`: Long? = null,
+    @SerialName("proPlusWeeklyFreeCount") val `proPlusWeeklyFreeCount`: Long? = null,
     @SerialName("maxOpenPerUser") val `maxOpenPerUser`: Long,
 )
 
@@ -8425,6 +8535,8 @@ data class RoleRequestConfigInput(
 data class RoleRequestEndpointsGetConfigResponse(
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("pointsCost") val `pointsCost`: Long,
+    @SerialName("lifetimeFreeCount") val `lifetimeFreeCount`: Long,
+    @SerialName("proPlusWeeklyFreeCount") val `proPlusWeeklyFreeCount`: Long,
     @SerialName("maxOpenPerUser") val `maxOpenPerUser`: Long,
     @SerialName("quota") val `quota`: RoleRequestQuota,
 )
@@ -8452,11 +8564,14 @@ data class RoleRequestImage(
 data class RoleRequestQuota(
     @SerialName("quotedAt") val `quotedAt`: Timestamp,
     @SerialName("tier") val `tier`: String,
-    @EncodeDefault
-    @SerialName("limit") val `limit`: Long = 5,
+    @SerialName("limit") val `limit`: Long,
     @SerialName("used") val `used`: Long,
     @SerialName("remaining") val `remaining`: Long,
-    @SerialName("nextPointsCost") val `nextPointsCost`: RoleRequestQuotaNextPointsCost,
+    @SerialName("nextPointsCost") val `nextPointsCost`: Long,
+    @SerialName("lifetimeLimit") val `lifetimeLimit`: Long? = null,
+    @SerialName("lifetimeUsed") val `lifetimeUsed`: Long? = null,
+    @SerialName("weeklyLimit") val `weeklyLimit`: Long? = null,
+    @SerialName("weeklyUsed") val `weeklyUsed`: Long? = null,
     @SerialName("periodStart") val `periodStart`: Timestamp,
     @SerialName("periodEnd") val `periodEnd`: Timestamp,
     @EncodeDefault
@@ -10601,6 +10716,8 @@ data class Wallet(
     @SerialName("heldPoints") val `heldPoints`: NonNegativePoints? = null,
     @SerialName("availablePoints") val `availablePoints`: Points? = null,
     @SerialName("lowBalanceThresholdPoints") val `lowBalanceThresholdPoints`: NonNegativePoints? = null,
+    @SerialName("bonusMicros") val `bonusMicros`: Long? = null,
+    @SerialName("bonusPoints") val `bonusPoints`: NonNegativePoints? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
 )
 
@@ -11116,10 +11233,6 @@ data class ConversationGroup(
     @SerialName("memberLimit") val `memberLimit`: Long,
     @SerialName("formerParticipants") val `formerParticipants`: List<Participant>? = null,
 )
-
-typealias CreateRoleRequestExpectedPointsCost = JsonElement
-
-typealias CreateRoleRequestInputExpectedPointsCost = JsonElement
 
 @Serializable
 data class CreateSupportTicketTarget(
@@ -12539,8 +12652,6 @@ data class ReconciliationRunUpstreamDiffsItem(
     @SerialName("diffRatio") val `diffRatio`: Double,
     @SerialName("flagged") val `flagged`: Boolean,
 )
-
-typealias RoleRequestQuotaNextPointsCost = JsonElement
 
 @Serializable
 data class RouteBillingBoundsText(

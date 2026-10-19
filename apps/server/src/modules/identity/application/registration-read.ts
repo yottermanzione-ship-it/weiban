@@ -1,4 +1,4 @@
-/** 契约 3.17 IdentityRegistrationReadPort：注册时间（v5 批 B 新用户记忆体验用）。 */
+/** 契约 3.18 IdentityRegistrationReadPort：注册时间（v5 批 B 新用户记忆体验用）。 */
 import { Inject, Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import type { IdentityRegistrationReadPort, Tx } from '@weiban/contracts';

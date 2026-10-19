@@ -99,9 +99,12 @@ export class ModelResolver implements AdultModelReadPort {
           ? { key: raw.adult, source: 'user' }
           : null
         : role === 'background'
-          ? raw.background
+          ? // 后台/生态任务必须用用户自己选的后台模型；未选时只用平台默认，
+            // 不再借用聊天模型（否则用户以为只在聊天用贵模型，实际推演、摘要、
+            // 朋友圈都在按同一个贵模型计费）。
+            raw.background
             ? { key: raw.background, source: 'user' }
-            : userChat
+            : null
           : userChat;
     if (chosen) return { facts: await this.catalog.fact(chosen.key), source: chosen.source };
     if (role === 'adult') return null;
@@ -147,11 +150,11 @@ export class ModelResolver implements AdultModelReadPort {
       if (input.purpose !== 'behavior_planning') return { ok: false, error: 'bad_request' };
       picked = { facts: await this.catalog.fact(input.modelKeyOverride) };
     } else if (input.purpose === 'behavior_planning') {
-      // 规划默认模型（defaultFor 含 planner）；平台未设置时沿用用户的后台模型。
+      // 规划模型只认平台目录的 defaultFor=planner。未配置时明确失败（not_configured），
+      // 不再沿用用户的后台模型——否则会按另一种模型静默计费。调用方（planner）
+      // 收到失败后回落规则版：不调模型、不扣费。
       const planner = await this.catalog.defaultModel('planner');
-      picked = planner
-        ? { facts: planner }
-        : await this.pick(input.userId, input.modelRole, input.characterId ?? null);
+      picked = planner ? { facts: planner } : null;
     } else {
       picked = await this.pick(input.userId, input.modelRole, input.characterId ?? null);
     }
@@ -256,21 +259,27 @@ export class ModelQuoteService implements ModelQuotePort {
     userId: string;
     characterId?: string;
     purpose: ModelPurpose;
+    hasImages?: boolean;
+    modelKeyOverride?: string;
     estimate: UsageQuantities;
   }): ReturnType<ModelQuotePort['quote']> {
-    let facts: ModelFacts | null = null;
-    if (input.purpose === 'behavior_planning') facts = await this.catalog.defaultModel('planner');
-    if (!facts) {
-      const role: ModelRole = CHAT_ROLE_PURPOSES.includes(input.purpose) ? 'chat' : 'background';
-      facts =
-        (await this.resolver.pick(input.userId, role, input.characterId ?? null))?.facts ?? null;
-    }
-    if (!facts) return { ok: false, error: 'not_configured' };
-    if (input.purpose === 'vision' && !facts.entry?.capabilities.includes('vision')) {
-      const visionDefault = await this.catalog.defaultModel('vision');
-      if (!visionDefault) return { ok: false, error: 'not_configured' };
-      facts = visionDefault;
-    }
+    // v5（model-routing-ecology 块 A-3）：报价与执行共用 ModelResolver.resolve，消除
+    // behavior_planning（原先回落用户后台模型）与带图识图（原先只看 purpose=vision）的两套口径。
+    const role: ModelRole = CHAT_ROLE_PURPOSES.includes(input.purpose) ? 'chat' : 'background';
+    const resolved = await this.resolver.resolve({
+      userId: input.userId,
+      modelRole: role,
+      purpose: input.purpose,
+      ...(input.characterId ? { characterId: input.characterId } : {}),
+      ...(input.hasImages ? { hasImages: true } : {}),
+      ...(input.modelKeyOverride ? { modelKeyOverride: input.modelKeyOverride } : {}),
+    });
+    if (!resolved.ok)
+      return {
+        ok: false,
+        error: resolved.error === 'model_unavailable' ? 'model_removed' : 'not_configured',
+      };
+    const facts: ModelFacts = await this.catalog.fact(resolved.value.modelKey);
     const entry = facts.entry;
     if (!entry) return { ok: false, error: 'model_removed' };
     const reason = unavailableReason(entry, facts.upstreamStatus);

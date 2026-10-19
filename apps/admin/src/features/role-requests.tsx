@@ -506,6 +506,9 @@ function RequestDrawer({
 interface ConfigValues {
   enabled: boolean;
   maxOpenPerUser: number;
+  pointsCost: number;
+  lifetimeFreeCount: number;
+  proPlusWeeklyFreeCount: number;
 }
 
 function ConfigPanel() {
@@ -521,7 +524,13 @@ function ConfigPanel() {
     setError('');
     try {
       await api.call(RoleRequestAdminEndpoints.updateConfig, {
-        body: { enabled: values.enabled, pointsCost: 200, maxOpenPerUser: values.maxOpenPerUser },
+        body: {
+          enabled: values.enabled,
+          pointsCost: values.pointsCost,
+          maxOpenPerUser: values.maxOpenPerUser,
+          lifetimeFreeCount: values.lifetimeFreeCount,
+          proPlusWeeklyFreeCount: values.proPlusWeeklyFreeCount,
+        },
       });
       toast.success('已保存');
       remote.refresh();
@@ -544,6 +553,9 @@ function ConfigPanel() {
         initialValues={{
           enabled: remote.data.enabled,
           maxOpenPerUser: remote.data.maxOpenPerUser,
+          pointsCost: remote.data.pointsCost,
+          lifetimeFreeCount: remote.data.lifetimeFreeCount,
+          proPlusWeeklyFreeCount: remote.data.proPlusWeeklyFreeCount,
         }}
       >
         <FormSection title="开放申请" />
@@ -562,9 +574,30 @@ function ConfigPanel() {
         >
           <InputNumber min={1} max={50} style={{ width: 200 }} />
         </Form.Item>
+        <FormSection title="免费次数与价格" />
+        <Form.Item
+          name="lifetimeFreeCount"
+          label="每人终身免费次数"
+          extra={<FieldHelp>免费用户和 PRO+ 都有。</FieldHelp>}
+        >
+          <InputNumber min={0} max={100} precision={0} style={{ width: 200 }} />
+        </Form.Item>
+        <Form.Item
+          name="proPlusWeeklyFreeCount"
+          label="PRO+ 每周额外免费次数"
+          extra={<FieldHelp>北京时间周一 0 点重置，不累积到下周；会员期间才有。先用每周的，再用终身的。</FieldHelp>}
+        >
+          <InputNumber min={0} max={100} precision={0} style={{ width: 200 }} />
+        </Form.Item>
+        <Form.Item
+          name="pointsCost"
+          label="免费次数用完后每次价格（积分）"
+          extra={<FieldHelp>100 积分 = 1 元。提交时冻结、完成时扣除、拒绝或撤回退回。</FieldHelp>}
+        >
+          <InputNumber min={0} max={1_000_000} precision={0} style={{ width: 200 }} />
+        </Form.Item>
         <div className="field-note">
-          收费规则：免费用户每自然月 5 次、PRO+ 每自然周 5 次；超额每次固定 200
-          积分（2 元）。提交时冻结、完成时扣除、拒绝或撤回退回。
+          被拒绝或撤回的申请会退还免费次数。注意：PRO+ 每周免费次数是人工活，会员多了工作量会很大，请留意「制作申请」角标。
         </div>
         <Space>
           <Button type="primary" loading={saving} onClick={() => void save()}>

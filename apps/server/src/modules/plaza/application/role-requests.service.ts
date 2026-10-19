@@ -6,12 +6,14 @@
  *   加到该用户通讯录（幂等键 = requestId）；通讯录已满等失败时仍标记完成，addedToContacts = false，用户自己点「添加」。
  * - 每次状态变化：写 history、置 user_unseen、发 data.changed(role_requests)，并推送一条 system 通知（deepLink /role-requests/{id}）。
  *   推送失败不影响状态变化（推送在事务提交后发，失败只记日志）。
- * - 3.15：成功提交前按真实会员/北京时间自然周期算免费次数；免费不冻结，超额固定200，与申请同事务经BillingServiceFeePort冻结（可用积分不足 → 422 insufficient_balance，
+ * - 3.17（会员 v5，16 号 §6）：免费用户终身 3 次；PRO+ 终身 3 次 + 会员期间每周 2 次（北京时间周一 0 点重置、不累积，
+ *   先用每周的）；次数与价格后台可调。拒绝 / 撤回的申请不再占次数（按状态计数，即「退还次数」）。
+ * - 3.15：成功提交前算免费次数；免费不冻结，超额按配置价格（默认 200），与申请同事务经BillingServiceFeePort冻结（可用积分不足 → 422 insufficient_balance，
  *   不建申请）；完成时扣除（pointsCharged = pointsCost），被拒或撤回时退回。扣除 / 退回在状态变化提交后调用，
  *   失败只记日志，由每 10 分钟的清扫（PlazaLifecycle）补做，所以钱不会卡在冻结里。
  */
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { and, asc, count, desc, eq, gte, lt, inArray, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, lt, inArray, sql, type SQL } from 'drizzle-orm';
 import {
   CreateRoleRequest,
   RoleRequestConfig,
@@ -61,7 +63,15 @@ import { PLAZA_CHARACTERS, type PlazaCharacters } from '../tokens.js';
 import { PlazaStore } from './plaza-store.js';
 
 const CONFIG_KEY = 'role_request_config';
-const DEFAULT_CONFIG: RoleRequestConfig = { enabled: true, pointsCost: 200, maxOpenPerUser: 3 };
+const DEFAULT_CONFIG: RoleRequestConfig = {
+  enabled: true,
+  pointsCost: 200,
+  maxOpenPerUser: 3,
+  lifetimeFreeCount: 3,
+  proPlusWeeklyFreeCount: 2,
+};
+/** 拒绝 / 撤回的申请退还免费次数：计数时只算这些状态。 */
+const QUOTA_COUNTED_STATUSES: RoleRequestStatusValue[] = ['pending', 'in_progress', 'completed'];
 
 const ListMineQuery = z.object({
   cursor: z.string().optional(),
@@ -122,13 +132,11 @@ export class RoleRequestService {
       .from(plazaSettings)
       .where(eq(plazaSettings.key, CONFIG_KEY));
     const parsed = RoleRequestConfig.safeParse(row?.value);
-    return { ...(parsed.success ? parsed.data : DEFAULT_CONFIG), pointsCost: 200 };
+    return parsed.success ? parsed.data : DEFAULT_CONFIG;
   }
 
   async updateConfig(adminId: string, input: unknown): Promise<RoleRequestConfig> {
     const body = parseContract(RoleRequestConfig, input);
-    if (body.pointsCost !== 200)
-      throw new AppError('bad_request', '超额制作申请固定200积分，免费次数由系统计算');
     await this.db.transaction(async (tx) => {
       await tx.db
         .insert(plazaSettings)
@@ -156,46 +164,68 @@ export class RoleRequestService {
   // ---------- 用户端 ----------
 
   async quota(userId: string, tx?: DbTx): Promise<RoleRequestQuota> {
+    return (await this.quotaWithKind(userId, tx)).quota;
+  }
+
+  /** 3.17：算两类免费次数，并给出下一次提交占哪一类（null = 收费）。 */
+  private async quotaWithKind(
+    userId: string,
+    tx?: DbTx,
+  ): Promise<{ quota: RoleRequestQuota; nextKind: 'weekly' | 'lifetime' | null }> {
     const member = await this.membership.getMembership(userId, tx);
+    const config = await this.getConfig();
     const now = new Date(member.checkedAt),
       zone = 'Asia/Shanghai' as const,
       date = localDate(now, zone);
-    const startDate =
-      member.tier === 'pro_plus'
-        ? addDays(date, 1 - localParts(now, zone).weekday)
-        : date.slice(0, 7) + '-01';
-    const endDate =
-      member.tier === 'pro_plus'
-        ? addDays(startDate, 7)
-        : (() => {
-            const [y, m] = startDate.split('-').map(Number);
-            return new Date(Date.UTC(y!, m!, 1)).toISOString().slice(0, 10);
-          })();
-    const start = startOfLocalDay(startDate, zone),
-      end = startOfLocalDay(endDate, zone);
-    const [row] = await (tx?.db ?? this.db.db)
+    const weekStartDate = addDays(date, 1 - localParts(now, zone).weekday);
+    const start = startOfLocalDay(weekStartDate, zone),
+      end = startOfLocalDay(addDays(weekStartDate, 7), zone);
+    const db = tx?.db ?? this.db.db;
+    const counted = and(
+      eq(roleRequests.userId, userId),
+      eq(roleRequests.freeQuotaApplied, true),
+      inArray(roleRequests.status, QUOTA_COUNTED_STATUSES),
+    );
+    const [life] = await db
+      .select({ n: count() })
+      .from(roleRequests)
+      .where(and(counted, sql`coalesce(${roleRequests.freeQuotaKind}, 'lifetime') = 'lifetime'`));
+    const [week] = await db
       .select({ n: count() })
       .from(roleRequests)
       .where(
         and(
-          eq(roleRequests.userId, userId),
-          eq(roleRequests.freeQuotaApplied, true),
+          counted,
+          eq(roleRequests.freeQuotaKind, 'weekly'),
           gte(roleRequests.createdAt, start),
           lt(roleRequests.createdAt, end),
         ),
       );
-    const used = row?.n ?? 0,
-      remaining = Math.max(0, 5 - used);
+    const pro = member.tier === 'pro_plus';
+    const lifetimeLimit = config.lifetimeFreeCount,
+      lifetimeUsed = life?.n ?? 0,
+      weeklyLimit = pro ? config.proPlusWeeklyFreeCount : 0,
+      weeklyUsed = pro ? (week?.n ?? 0) : 0;
+    const weeklyLeft = Math.max(0, weeklyLimit - weeklyUsed),
+      lifetimeLeft = Math.max(0, lifetimeLimit - lifetimeUsed);
+    const nextKind = weeklyLeft > 0 ? 'weekly' : lifetimeLeft > 0 ? 'lifetime' : null;
     return {
-      quotedAt: member.checkedAt,
-      tier: member.tier,
-      limit: 5,
-      used,
-      remaining,
-      nextPointsCost: remaining > 0 ? 0 : 200,
-      periodStart: start.toISOString(),
-      periodEnd: end.toISOString(),
-      timeZone: zone,
+      nextKind,
+      quota: {
+        quotedAt: member.checkedAt,
+        tier: member.tier,
+        limit: lifetimeLimit + weeklyLimit,
+        used: Math.min(lifetimeUsed, lifetimeLimit) + Math.min(weeklyUsed, weeklyLimit),
+        remaining: weeklyLeft + lifetimeLeft,
+        nextPointsCost: nextKind ? 0 : config.pointsCost,
+        lifetimeLimit,
+        lifetimeUsed,
+        weeklyLimit,
+        weeklyUsed,
+        periodStart: start.toISOString(),
+        periodEnd: end.toISOString(),
+        timeZone: zone,
+      },
     };
   }
   async userConfig(userId: string) {
@@ -219,7 +249,7 @@ export class RoleRequestService {
       const config = await this.getConfig();
       if (!config.enabled) throw new AppError('forbidden', '申请制作暂未开放');
       await this.assertOpenBelowLimit(tx, userId, config.maxOpenPerUser);
-      const quota = await this.quota(userId, tx),
+      const { quota, nextKind } = await this.quotaWithKind(userId, tx),
         cost = quota.nextPointsCost;
       if (body.expectedPointsCost !== undefined ? body.expectedPointsCost !== cost : cost > 0)
         throw new AppError('conflict', '免费次数或价格已变化，请刷新并重新确认', {
@@ -259,7 +289,7 @@ export class RoleRequestService {
           tx,
         );
         if (!held.ok)
-          throw new AppError('insufficient_balance', '积分不足：申请制作需要200积分', {
+          throw new AppError('insufficient_balance', `积分不足：申请制作需要${cost}积分`, {
             details: { pointsCost: cost },
           });
         if (held.value.status !== 'active')
@@ -288,7 +318,8 @@ export class RoleRequestService {
           status: 'pending',
           // Q5：记录当时价格；冻结中，完成时才扣（pointsCharged 届时写入）。
           pointsCost: cost,
-          freeQuotaApplied: cost === 0,
+          freeQuotaApplied: nextKind !== null,
+          freeQuotaKind: nextKind,
           pointsCharged: 0,
           feeHoldId,
           feeState: feeHoldId ? 'held' : 'none',

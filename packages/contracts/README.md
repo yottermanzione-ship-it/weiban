@@ -95,14 +95,25 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
-### 3.17（2026-10-20，v5 批 B 记忆分档 + 长上下文）
+### 3.18（2026-10-20，v5 批 B 记忆分档 + 长上下文）
 
 全部向后兼容（只新增可选字段与接口）。说明见 `docs/handoffs/2026-10-19-v5-memory.md`、`docs/refactor/16-membership-v5.md` §5。
 
 - `http/memory.ts`：新增 `MemoryTierLimits`、`ChatWindowLimits`、`MemoryTierConfig`、`MemoryTierStatus` 与 `MemoryTierEndpoints`（用户端 `GET /characters/:characterId/memory-tier`；管理端 `GET/PUT /admin/ai/memory-tiers`）。
 - `CompanionSettings.longContext`（可选）：单个角色的长上下文模式，PRO+ 专属；非 PRO+ 打开返回 403 `forbidden`。
+- `MemoryTierEndpoints.plans`（用户端 `GET /memory-tiers`）：两档记忆参数，权益页对照用。
 - 新端口 `IdentityRegistrationReadPort`（`ports/identity.ts`）：注册时间，调用方 ai-runtime（新用户前 7 天按 PRO+ 记忆）。
-- 与 v5 其他批次并行开发，合并时版本号冲突由总负责人处理。
+- 在批 A 的 3.17 之上递增；长上下文非 PRO+ 打开的错误码见批 B 交接。
+
+### 3.17（2026-10-20，会员 v5 批 A）
+
+依据 `docs/refactor/16-membership-v5.md`。说明见 `docs/backend/membership-v5.md`、`docs/handoffs/2026-10-19-v5-membership.md`。
+
+- 端口：`IdentityMembershipReadPort.isProPlus(userId, tx?)`（**统一「是否 PRO+」**）；新端口 `IdentityMembershipWritePort.extendProPlus`（调用方 billing）。`ModelQuotePort.quote` 增可选 `hasImages`、`modelKeyOverride`（与网关执行同口径）；`GenerateTextOutput` 增可选 `usedVisionDefault`。
+- `http/membership.ts`：`MembershipPlan`、`MembershipSettings`、`MembershipOffer`、`MembershipOrder`、`CreateMembershipOrder`；用户端 `MembershipOfferEndpoints.getOffer`，管理端 `MembershipOrderAdminEndpoints`（配置、订单列表、替用户开通）。
+- `Wallet` 增可选 `bonusMicros` / `bonusPoints`（赠送积分余额）。
+- `ModelInfo` 增可选 `displayMultiplier`、`pointsPerReplyBasis`；`AdminModel` 增 `displayMultiplier`、`displayMultiplierManual`，`AdminModelWrite` 增 `displayMultiplierManual`；新 `DisplayMultiplierSettings` 与两个管理端接口。
+- **放宽（需留意）**：`RoleRequestQuota.limit` 由字面量 5 改为整数、`nextPointsCost` 由 0/200 改为整数、`CreateRoleRequest.expectedPointsCost` 改为整数；`RoleRequestConfig` 增 `lifetimeFreeCount`、`proPlusWeeklyFreeCount`（带默认值），`RoleRequestQuota` 增 `lifetime*`、`weekly*`。严格说属于响应取值放宽，旧安卓客户端解析 `limit≠5` 会失败；安卓尚未发布正式版，按次版本处理，由总负责人确认。
 
 ### 3.15（2026-10-16，q-features 接续）
 

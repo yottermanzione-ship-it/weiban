@@ -20,5 +20,11 @@ export {
 export { IdentityCommands, CommandError } from './application/commands.js';
 export { hashUserId } from './application/user-hash.js';
 
-export { IDENTITY_MEMBERSHIP_READ_PORT } from './tokens.js';
+/**
+ * 会员（3.15 / 3.17）：
+ * - IDENTITY_MEMBERSHIP_READ_PORT → 契约 IdentityMembershipReadPort。**统一「是否 PRO+」用它的 isProPlus(userId, tx?)**，
+ *   各模块不要自己读 identity.memberships。
+ * - IDENTITY_MEMBERSHIP_WRITE_PORT → 契约 IdentityMembershipWritePort（只给 billing 的开通订单用）。
+ */
+export { IDENTITY_MEMBERSHIP_READ_PORT, IDENTITY_MEMBERSHIP_WRITE_PORT } from './tokens.js';
 export { IDENTITY_REGISTRATION_READ_PORT } from './tokens.js';

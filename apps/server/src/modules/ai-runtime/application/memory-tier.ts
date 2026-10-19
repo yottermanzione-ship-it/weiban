@@ -1,9 +1,8 @@
 /**
  * 记忆分档与长上下文（v5 批 B，docs/refactor/16-membership-v5.md §5）。
  *
- * 「是否 PRO+」与「注册时间」集中在本文件的 membershipSnapshot() 一处判断（临时实现）：
- * TEMP(v5 批 A)：批 A（v5-membership）正在做统一的「是否 PRO+」查询，合并时由总负责人把
- * membershipSnapshot() 改接统一查询即可，其他地方都只调用本服务，不用改。
+ * 「是否 PRO+」与「注册时间」集中在本文件的 membershipSnapshot() 一处：
+ * 是否 PRO+ 用批 A 的统一查询 IdentityMembershipReadPort.isProPlus；注册时间用 IdentityRegistrationReadPort。
  */
 import { Inject, Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
@@ -62,19 +61,15 @@ export class MemoryTierService {
   ) {}
 
   /**
-   * TEMP(v5 批 A)：唯一的「是否 PRO+ / 注册时间」判断处。
-   * - 是否 PRO+：读现有会员表（identity.memberships，经 identity 的只读端口，按服务端时钟判断有效期）；
-   * - 注册时间：identity 的注册时间端口（契约 3.17 IdentityRegistrationReadPort，新用户前 N 天按 PRO+ 记忆）；
-   *   批 A 的统一查询若带注册时间 / 新用户体验，合并时可一并改接。
+   * 唯一的「是否 PRO+ / 注册时间」判断处。
+   * - 是否 PRO+：批 A 统一查询 isProPlus（v5 会员门槛的唯一口径）；
+   * - 注册时间：identity 的注册时间端口（契约 3.18 IdentityRegistrationReadPort，新用户前 N 天按 PRO+ 记忆）；
    * 查询失败一律按免费、非新用户处理（宁可少带记忆，不越档）。
    */
   async membershipSnapshot(
     userId: string,
   ): Promise<{ member: boolean; registeredAt: Date | null }> {
-    const member = await this.membership
-      .getMembership(userId)
-      .then((m) => m.tier === 'pro_plus')
-      .catch(() => false);
+    const member = await this.membership.isProPlus(userId).catch(() => false);
     const at = await this.registration.getRegisteredAt(userId).catch(() => null);
     return { member, registeredAt: at ? new Date(at) : null };
   }

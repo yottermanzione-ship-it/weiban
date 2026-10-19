@@ -96,6 +96,9 @@ export const Wallet = z.object({
   heldPoints: NonNegativePoints.optional(),
   availablePoints: Points.optional(),
   lowBalanceThresholdPoints: NonNegativePoints.optional(),
+  /** 3.17（会员 v5）：余额里属于赠送积分的部分（开通 PRO+、注册赠送，永久有效）；扣费先扣赠送，再扣充值。 */
+  bonusMicros: z.number().int().nonnegative().optional(),
+  bonusPoints: NonNegativePoints.optional(),
   updatedAt: Timestamp,
 });
 export type Wallet = z.infer<typeof Wallet>;

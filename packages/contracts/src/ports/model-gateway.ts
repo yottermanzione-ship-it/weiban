@@ -141,7 +141,10 @@ export interface GenerateTextInput {
 
 export interface GenerateTextOutput {
   text: string;
+  /** 实际使用（并计费）的模型。 */
   modelKey: string;
+  /** 3.17：带图而聊天模型无识图能力，本次改用平台默认识图模型（modelKey 即该模型）；供界面提示一次。 */
+  usedVisionDefault?: boolean;
   usage: {
     inputTokens: number;
     cachedInputTokens: number;
@@ -201,6 +204,10 @@ export interface ModelQuotePort {
     userId: string;
     characterId?: string;
     purpose: ModelPurpose;
+    /** 3.17：带图片时与网关执行同口径（聊天模型无识图能力 → 平台默认识图模型）。 */
+    hasImages?: boolean;
+    /** 3.17：只允许 behavior_planning，与网关 modelKeyOverride 同口径（后台指定的规划模型）。 */
+    modelKeyOverride?: string;
     /** 估算用量（输入 token 估算值 + maxOutputTokens 等），单位同 billing 的 UsageQuantities。 */
     estimate: import('./billing.js').UsageQuantities;
   }): Promise<

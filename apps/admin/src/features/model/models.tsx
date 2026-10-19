@@ -22,7 +22,7 @@ import {
   type Upstream,
 } from '@weiban/contracts';
 import { api } from '../../data/client.js';
-import { errorText } from '../../data/hooks.js';
+import { errorText, useRemote } from '../../data/hooks.js';
 import { DataTable, type ProColumns } from '../../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../../ui/drawer.js';
 import {
@@ -207,6 +207,25 @@ export function ModelsTab({
         m.pointsPerReply == null ? '—' : `${formatPoints(m.pointsPerReply * 10_000)} 积分`,
     },
     {
+      title: (
+        <span>
+          展示倍率
+          <HelpTip text="用户选模型时看到的「×倍率」，只展示不参与扣费。手填优先；不填按 (0.8×输入售价+0.2×输出售价) ÷ 基准模型同算式自动算。" />
+        </span>
+      ),
+      width: 100,
+      sorter: (a, b) => (a.displayMultiplier ?? 0) - (b.displayMultiplier ?? 0),
+      render: (_, m) =>
+        m.displayMultiplier == null ? (
+          '—'
+        ) : (
+          <span className="cell-main">
+            <span>×{m.displayMultiplier.toFixed(2)}</span>
+            <span className="cell-sub">{m.displayMultiplierManual != null ? '手填' : '自动'}</span>
+          </span>
+        ),
+    },
+    {
       title: '状态',
       width: 110,
       render: (_, m) => (
@@ -270,6 +289,7 @@ export function ModelsTab({
           </Button>
         </Space>
       </div>
+      <MultiplierBase models={models} onSaved={refresh} />
       <DataTable<AdminModel>
         rowKey="modelKey"
         columns={columns}
@@ -335,6 +355,57 @@ export function ModelsTab({
   );
 }
 
+/** 3.17：展示倍率的基准模型（倍率 = 1.00 的那个，16 号文档建议 GPT-6 Sol）。 */
+function MultiplierBase({ models, onSaved }: { models: AdminModel[]; onSaved: () => void }) {
+  const toast = useToast();
+  const remote = useRemote(ModelAccessAdminEndpoints.getDisplayMultiplierSettings);
+  const [value, setValue] = useState<string | null | undefined>(undefined);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const current = value === undefined ? (remote.data?.baseModelKey ?? null) : value;
+  async function save() {
+    setSaving(true);
+    setError('');
+    try {
+      await api.call(ModelAccessAdminEndpoints.updateDisplayMultiplierSettings, {
+        body: { baseModelKey: current },
+      });
+      toast.success('已保存基准模型');
+      remote.refresh();
+      onSaved();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <div className="filter-bar" style={{ marginBottom: 12 }}>
+      <Space wrap>
+        <span>
+          倍率基准模型
+          <HelpTip text="选一个模型作为 ×1.00，其他模型没手填倍率时按它自动换算。只影响用户看到的倍率，不影响扣费。" />
+        </span>
+        <Select
+          allowClear
+          showSearch
+          style={{ width: 280 }}
+          placeholder="未设置（自动倍率不显示）"
+          value={current ?? undefined}
+          onChange={(v?: string) => setValue(v ?? null)}
+          options={models
+            .filter((m) => m.rates)
+            .map((m) => ({ value: m.modelKey, label: `${m.displayName}（${m.modelKey}）` }))}
+        />
+        <Button loading={saving} disabled={value === undefined} onClick={() => void save()}>
+          保存
+        </Button>
+        {(error || remote.error) && <Alert type="error" showIcon message={error || remote.error} />}
+      </Space>
+    </div>
+  );
+}
+
 interface RouteDraft {
   upstreamId: string;
   upstreamModelId: string;
@@ -358,6 +429,7 @@ interface ModelFormValues {
   costInput?: number | null;
   costOutput?: number | null;
   costCache?: number | null;
+  displayMultiplierManual?: number | null;
 }
 
 function ModelWizard({
@@ -486,6 +558,7 @@ function ModelWizard({
           enabled: model ? model.enabled : true,
           rates: ratesOf(values.priceInput, values.priceOutput, values.priceCache),
           costRates: ratesOf(values.costInput, values.costOutput, values.costCache) ?? undefined,
+          displayMultiplierManual: values.displayMultiplierManual ?? null,
           routes,
         },
       });
@@ -535,6 +608,7 @@ function ModelWizard({
           costInput: model?.costRates?.input ?? null,
           costOutput: model?.costRates?.output ?? null,
           costCache: model?.costRates?.cache ?? null,
+          displayMultiplierManual: model?.displayMultiplierManual ?? null,
         }}
         onValuesChange={(changed) => {
           if (changed.routes?.[0]?.upstreamId) void loadUpstreamModels(changed.routes[0].upstreamId);
@@ -736,10 +810,22 @@ function ModelWizard({
             <InputNumber min={0} step={0.01} style={{ width: '100%' }} placeholder="0" />
           </Form.Item>
         </div>
+        <Form.Item
+          name="displayMultiplierManual"
+          label="展示倍率（可不填）"
+          extra={
+            <FieldHelp>
+              用户看到的「×倍率」，只展示、不参与扣费。不填 = 按基准模型自动算
+              {model?.displayMultiplier != null ? `（当前 ×${model.displayMultiplier.toFixed(2)}）` : ''}。
+            </FieldHelp>
+          }
+        >
+          <InputNumber min={0} max={1000} step={0.01} precision={2} style={{ width: 160 }} placeholder="自动" />
+        </Form.Item>
         <div className="field-note">
           {model?.pointsPerReply != null
-            ? `按标准用量估算，每条回复约 ${formatPoints(model.pointsPerReply * 10_000)} 积分；不是预留额，也不承诺每条花费。`
-            : '保存后系统会按标准用量算一个「每条回复约多少积分」的参考值。'}
+            ? `用户端显示约每条 ${formatPoints(model.pointsPerReply * 10_000)} 积分（有最近 7 天数据时按平均实扣，否则按约 1 万 token 输入、八成命中缓存、200 token 输出估算）；扣费按实际用量。`
+            : '保存后系统会算一个「每条回复约多少积分」的参考值。'}
         </div>
         <Collapse
           ghost

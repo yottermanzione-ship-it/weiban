@@ -74,10 +74,28 @@ export interface UserStatusReadPort {
 /** 3.15：提供方identity；按服务端Clock计算档位，可加入调用方事务。 */
 export interface IdentityMembershipReadPort {
   getMembership(userId: string, tx?: Tx): Promise<import('../http/membership.js').Membership>;
+  /**
+   * 3.17（会员 v5，16 号文档 §3）：统一「是否 PRO+」判断。记忆分档、长上下文、角色生态、
+   * QQ/微信接入、申请制作周次数等各模块只调这一个，不各自读会员表。
+   * 按服务端 Clock 判断有效期；账号不存在或已停用返回 false（不抛错），后台任务可直接调用。
+   */
+  isProPlus(userId: string, tx?: Tx): Promise<boolean>;
 }
 
 /**
- * 3.17（v5 批 B）：注册时间只读端口。提供方 identity；调用方 ai-runtime（新用户前 N 天按 PRO+ 记忆）。
+ * 3.17（会员 v5）：PRO+ 开通 / 续期写端口。提供方 identity；调用方 billing（管理员开通订单，与记订单、发赠送积分同一事务）。
+ * 新到期时间 = max(当前时间, 原到期时间) + months 个自然月（会员可叠加续期）。写审计并发 profile_updated(membership)。
+ * 账号不存在或已停用 → 抛 not_found。
+ */
+export interface IdentityMembershipWritePort {
+  extendProPlus(
+    input: { userId: string; months: number; operatorUserId: string | null },
+    tx: Tx,
+  ): Promise<{ startsAt: string; endsAt: string }>;
+}
+
+/**
+ * 3.18（v5 批 B）：注册时间只读端口。提供方 identity；调用方 ai-runtime（新用户前 N 天按 PRO+ 记忆）。
  * 账号不存在或不是 active 返回 null。单独成接口，新增它不影响已有实现。
  */
 export interface IdentityRegistrationReadPort {

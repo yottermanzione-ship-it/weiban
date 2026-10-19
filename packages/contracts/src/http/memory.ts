@@ -96,7 +96,7 @@ export const MemoryEndpoints = {
   }),
 } as const;
 
-// ---------- 3.17（v5 批 B）：记忆分档、长上下文（docs/refactor/16-membership-v5.md §5） ----------
+// ---------- 3.18（v5 批 B）：记忆分档、长上下文（docs/refactor/16-membership-v5.md §5） ----------
 
 /** 一档的记忆参数。null = 不限。 */
 export const MemoryTierLimits = z
@@ -169,20 +169,28 @@ export const MemoryTierStatus = z.object({
 export type MemoryTierStatus = z.infer<typeof MemoryTierStatus>;
 
 export const MemoryTierEndpoints = {
+  /** 3.18：两档记忆参数（权益页对照用，不含个人数据）。 */
+  plans: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/memory-tiers`,
+    auth: 'user',
+    response: MemoryTierConfig,
+    summary: '免费 / PRO+ 两档记忆参数与新用户体验天数（权益页显示，3.18）',
+  }),
   status: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/characters/:characterId/memory-tier`,
     auth: 'user',
     params,
     response: MemoryTierStatus,
-    summary: '该角色记忆的实际可用范围与长上下文模式状态（3.17）',
+    summary: '该角色记忆的实际可用范围与长上下文模式状态（3.18）',
   }),
   adminGet: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/admin/ai/memory-tiers`,
     auth: 'admin',
     response: MemoryTierConfig.extend({ updatedAt: Timestamp.nullable() }),
-    summary: '记忆分档与长上下文参数（3.17）',
+    summary: '记忆分档与长上下文参数（3.18）',
   }),
   adminUpdate: defineEndpoint({
     method: 'PUT',
@@ -190,6 +198,6 @@ export const MemoryTierEndpoints = {
     auth: 'admin',
     body: MemoryTierConfig,
     response: MemoryTierConfig.extend({ updatedAt: Timestamp.nullable() }),
-    summary: '修改记忆分档与长上下文参数，立即生效（3.17）',
+    summary: '修改记忆分档与长上下文参数，立即生效（3.18）',
   }),
 } as const;
