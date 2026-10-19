@@ -646,6 +646,7 @@ export function useAchievementsDot() {
 export function AchievementsPage() {
   const { list, isNew, markSeen } = useAchievementsDot();
   const [open, setOpen] = useState<Achievement | null>(null);
+  useEscape(() => setOpen(null));
   const markRef = useRef(markSeen);
   useEffect(() => {
     markRef.current = markSeen;

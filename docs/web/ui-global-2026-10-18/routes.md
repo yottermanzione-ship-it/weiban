@@ -39,7 +39,7 @@
 | `/characters/:characterId/relations` | 未点按；源码/原批注待逐页核对 |
 | `/contacts/new` | 未点按；源码/原批注待逐页核对 |
 | `/contacts/groups` | 未点按；源码/原批注待逐页核对 |
-| `/groups/new` | 未点按；源码/原批注待逐页核对 |
+| `/groups/new` | 10-19 实际选择程澈/温言并创建三人预览群，设置内改名；添加苏乔后取消；没有发送消息或验证 AI 群聊 |
 | `/chat/:conversationId/group` | 未点按；源码/原批注待逐页核对 |
 | `/moments` | 已看空态；相机菜单/取消、换封面面板/退出；修复后700ms长按直接发表 |
 | `/moments/new` | 已点输入计数、公开/部分可见、无好友禁发表、有内容取消确认/继续编辑/不保留、空内容取消；未发表 |
@@ -51,14 +51,14 @@
 | `/sticker-store/:packId` | 已看3张表情；点开大图/Esc退出、免费添加成功变为移除；未移除 |
 | `/support` | 已看加载→空列表 |
 | `/support/new` | 已看；空值禁用、输入后启用；未提交 |
-| `/support/tickets/:ticketId` | 未点按；源码/原批注待逐页核对 |
+| `/support/tickets/:ticketId` | 10-19 实际打开已有预览工单并提交补充，忙态/时间/正文可见；support-detail-reply-verified-1019.png |
 | `/me/status` | 已点自定义空值/输入/保存/清除；开发自测 |
 | `/settings/plugins` | 未点按；源码/原批注待逐页核对 |
 | `/me/stickers` | 已看3张；预览打开/关闭、整理选择/移到最前/完成；一次DB超时500重试恢复；未删除 |
-| `/me/favorites` | 已看加载→带长按收藏引导的空态 |
+| `/me/favorites` | 10-19 有数据复看通栏来源/正文；取消收藏确认→取消，未删除；favorites-fullwidth-refined-1019.png |
 | `/me/favorites/:favoriteId` | 未点按；源码/原批注待逐页核对 |
 | `/services/cards` | 10-19 实见3角色/1张卡；进程澈卡册，胶囊关闭正常回小程序首页 |
-| `/services/achievements` | 未点按；源码/原批注待逐页核对 |
+| `/services/achievements` | 10-19 1/34 有数据复看、打开详情；修 Esc 后实际关闭；320px 三列白卡/8px 间距，未横向撑出宫格 |
 | `/services/familiarity` | 未点按；源码/原批注待逐页核对 |
 | `/characters/:characterId/cards` | 10-19 实见1张团子瞬间卡；长标题单行、好感度解锁文案已改；实际开卡/翻面/Esc关闭 |
 | `/search` | 从chat进入、输入、取消回chat，重复两轮未出现返回循环 |
@@ -76,9 +76,9 @@
 | `/play/daily` | 已看题目/好友选择；输入计数/按钮启用、换好友清旧输入/加载、回答按钮整行；未提交 |
 | `/play/daily/history` | 已看历史空态；返回每日一问正常；补初次加载提示 |
 | `/play/wishlists` | 已看3好友心愿入口；进入程澈/返回正常 |
-| `/play/wishlists/:characterId` | 已看空态、添加第一件表单；空禁用/输入6字启用、返回列表；未提交；补读取/重试/按角色隔离草稿 |
-| `/play/letters` | 未点按；源码/原批注待逐页核对 |
-| `/play/letters/new` | 未点按；源码/原批注待逐页核对 |
+| `/play/wishlists/:characterId` | 10-19 实际新增预览心愿、编辑保存、再次打开 Esc 关闭；添加未提交文字后取消；没有完成/删除/设日期 |
+| `/play/letters` | 10-19 实际选人、查看草稿列表并重开恢复；一次连接超时重试后恢复，未寄出 |
+| `/play/letters/new` | 10-19 实际输入三段62字，取消→继续写保留→保存草稿→重开恢复；修读取前禁用和保存忙态；未寄出 |
 | `/play/letters/:letterId` | 未点按；源码/原批注待逐页核对 |
 | `/play/focus` | 10-19 320px深色特大字号实点选择角色/开始25分钟样例/计时/提前结束确认/取消/最终结束；样例已结束，未等自然结束或验证AI鼓励 |
 | `/play/reminders` | 未点按；源码/原批注待逐页核对 |
@@ -96,7 +96,7 @@
 | `/discover/plaza` | 未点按；源码/原批注待逐页核对 |
 | `/contacts/add` | 已看推荐加载与滚动；角色资料入口已点 |
 | `/plaza` | 未点按；源码/原批注待逐页核对 |
-| `/plaza/official/:characterId` | 未点按；源码/原批注待逐页核对 |
+| `/plaza/official/:characterId` | 10-19 程澈有数据正文/评论已看，实际提交两行预览评论，320px 回复输入后取消；错误重试仅源码核对 |
 | `/roles/create` | 未点按；源码/原批注待逐页核对 |
 | `/role-requests` | 未点按；源码/原批注待逐页核对 |
 | `/role-requests/new` | 未点按；源码/原批注待逐页核对 |
@@ -128,5 +128,5 @@
 | 玩法 | `/play/letters` `/play/letters/new` `/play/reminders` | 正常 |
 | 其他 | `/chat/:id/search` `/coming-soon/:feature` | 正常 |
 
-仍未打开：`/plaza/works/:workId`、`/plaza/authors/:authorId`、`/plaza/report`、`/plaza/official/:characterId`、
+上述“仍未打开”是当时批次的历史快照，后续实际操作以上方逐路由条目及 visual-pass-1019.md 为准。该批次尚未打开：`/plaza/works/:workId`、`/plaza/authors/:authorId`、`/plaza/report`、`/plaza/official/:characterId`、
 `/characters/:id/supplement` 的提交态、`/settings/delete-account`、`/share`、`/calls/:callId`、`/pets/:petId`、`/pets/with/:characterId`、`/moments/posts/:postId`、`/support/tickets/:id`、`/me/favorites/:id`、`/search/:conversationId`。

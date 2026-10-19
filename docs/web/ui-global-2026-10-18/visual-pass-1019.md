@@ -36,3 +36,18 @@
 - `focus-end-dialog-dark-large-1019.png`、`focus-ended-1019.png`
 
 本批 web typecheck、改动 TSX eslint、web build 通过。build 保留既有大包、inlineDynamicImports 弃用和插件耗时警告；未写/跑测试套件，未独立验收。整页性能更正见 blocking-bugs-1019.md，不能继续引用原 2.3 秒当达标。
+
+## 后续实际点验与修正
+
+- `d3bfa24`：官方角色详情正文改用可缩放的 17px 令牌，评论读取失败提供重试，评论输入与计数/操作分行。实际在临时库给程澈提交两行预览评论；320px 打开回复、输入后取消，没有多提交一条。证据 `official-role-comment-populated-1019.png`、`official-comment-narrow-compose-1019.png`。
+- 实际创建三人群“界面预览·散步群”，打开设置并改名；添加成员选择苏乔后取消，未添加。现有成员锁定选中，重命名提交时输入禁用；没有发送聊天或验证 AI 自主群聊。证据 `group-settings-populated-1019.png`、`group-member-selection-verified-1019.png`。
+- 帮助工单详情实际提交一条标明“界面预览”的补充，观察到正在提交和新时间/正文。证据 `support-detail-reply-verified-1019.png`。
+- `da49202`：收藏行取消双重内缩和圆卡外框，来源头像与名字/时间对齐。实际打开取消收藏确认后取消，未删收藏；证据 `favorites-fullwidth-refined-1019.png`。
+- 同批修复信件选人、离开编辑、心愿编辑及广场发布相关孤立 sheet-panel；统一遮罩/标题/关闭行为。保存中禁止关闭和重复提交；广场发布的四个分支仅源码核对，本轮没有实际走通发布，不写为通过。
+- 信件实际写入 62 字三段预览草稿，取消→继续写保留文字，再保存草稿→列表→重开恢复全文；没有寄出。补草稿恢复前的读取提示、输入禁用与失败重试，避免空白编辑误导。保存时显示“正在保存…”。证据 `letter-picker-sheet-refined-1019.png`、`letter-leave-sheet-refined-1019.png`、`letter-draft-list-verified-1019.png`、`letter-draft-restored-1019.png`。
+- 草稿列表曾一次返回连接超时；只读连接检查确认仍为 weiban_dryrun 且可连接，页面重试恢复。未重启隧道/后端，未把该次 500 当 UI 通过或新业务缺陷。
+- 心愿实际新增并编辑“【界面预览】沿河散步看日落”，保存中输入/关闭/删除均禁用，保存后列表更新；再次打开 Esc 关闭。添加另一条未提交文字后取消，仍只有原样例一条。没有设日期、完成、删除或产生提醒。证据 `wishlist-edit-sheet-refined-1019.png`。
+
+以上仍是临时库中的开发自测；错误重试的新分支未人为制造网络故障验证。`da49202` 已通过 web typecheck、改动文件 eslint、web build。
+
+- 按旧规格 §5.2 对照实际卡册/成就墙：原宫格背景透明、卡片间距12px/圆角偏大；改白色表面、8px 间距和卡片圆角，卡名12号可缩放字。成就保留64px徽章，未获得图案40%透明，320px改三列避免挤压。实际看390px、320px，320px成就宫格 clientWidth/scrollWidth 均288px；卡册切“我们的瞬间”看到团子卡对应时间线。成就详情 Esc 原先无反应，补统一处理后重新打开并按 Esc 实际关闭。证据 `achievements-narrow-white-grid-1019.png`、`cards-narrow-white-grid-1019.png`。未改变好感度/成就解锁规则。
