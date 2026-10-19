@@ -95,6 +95,14 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.17（2026-10-20，v5 批 B 记忆分档 + 长上下文）
+
+全部向后兼容（只新增可选字段与接口）。说明见 `docs/handoffs/2026-10-19-v5-memory.md`、`docs/refactor/16-membership-v5.md` §5。
+
+- `http/memory.ts`：新增 `MemoryTierLimits`、`ChatWindowLimits`、`MemoryTierConfig`、`MemoryTierStatus` 与 `MemoryTierEndpoints`（用户端 `GET /characters/:characterId/memory-tier`；管理端 `GET/PUT /admin/ai/memory-tiers`）。
+- `CompanionSettings.longContext`（可选）：单个角色的长上下文模式，PRO+ 专属；非 PRO+ 打开返回 403 `forbidden`。
+- 与 v5 其他批次并行开发，合并时版本号冲突由总负责人处理。
+
 ### 3.15（2026-10-16，q-features 接续）
 
 旧q分支3.9预留内容适配到主线3.14后统一发布为3.15：用户当前状态、表情商店安装/管理/发送资格、插件三项coming_soon、真实最小会员有效期与管理员授予；角色心情保留A7 TimelineEndpoints.getStatus，不注册旧同URL异响应接口。制作申请配置附真实quota，提交expectedPointsCost确认0/200，免费次数标志与同Tx服务费hold/release/getByKey端口配套。没有完整会员支付权益、赠分、模型档位或角色生态全局开关。JSON Schema/OpenAPI及安卓生成配套；迁移0097~0100未执行、GUI与真实DB/扣费未验，见docs/handoffs/2026-10-16-q-features.md。

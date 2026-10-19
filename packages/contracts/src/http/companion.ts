@@ -59,6 +59,12 @@ export const CompanionSettings = z.object({
   dailyLife: z.boolean().optional(),
   /** 3.0：该角色发语音、通话用的音色（MED-03 第 1 条，音色库见 GET /voices）；null = 用预设角色默认音色或平台默认。 */
   voiceId: Id.nullable().optional(),
+  /**
+   * 3.17（v5 批 B）：长上下文模式，只对单个角色设置、PRO+ 专属（docs/refactor/16 §5.4）。
+   * 原文窗口从约 1 万 token 加大到约 10 万 token；非 PRO+ 打开返回 403 forbidden，会员到期后按关闭处理。
+   * 全局默认不支持（传了忽略）。旧客户端不认识可忽略。
+   */
+  longContext: z.boolean().optional(),
 });
 export type CompanionSettings = z.infer<typeof CompanionSettings>;
 

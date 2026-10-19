@@ -9,7 +9,14 @@
  */
 import { z } from 'zod';
 
-export const WINDOW = {
+export interface WindowLimits {
+  keepTurns: number;
+  triggerTurns: number;
+  maxTurns: number;
+  triggerChars: number;
+}
+/** 平时的原文窗口（约 1 万 token）。长上下文模式的参数在后台「记忆分档」里调（v5 批 B）。 */
+export const WINDOW: WindowLimits = {
   /** 前移后至少保留的用户轮数（爱语 10，新版文档 12）。 */
   keepTurns: 12,
   /** 超过这么多用户轮触发前移。 */
@@ -18,7 +25,7 @@ export const WINDOW = {
   maxTurns: 50,
   /** 窗口原文字数上限（约 1.1 万 token），超过且多于保留轮数也触发前移（旧版的 70% 预算触发）。 */
   triggerChars: 16000,
-} as const;
+};
 
 /** 摘要片段：每次抽取写一段，记下覆盖到的消息序号，前移时按序号挑，原文与摘要不重叠。 */
 export const SummarySegment = z.object({
@@ -49,14 +56,16 @@ export function nextWindowStart(input: {
   turns: WindowTurn[];
   segments: SummarySegment[] | null;
   cursorSeq: number;
+  /** 不传 = 平时窗口 WINDOW；长上下文模式传放大后的参数。 */
+  limits?: WindowLimits;
 }): number | null {
+  const L = input.limits ?? WINDOW;
   const turns = input.turns.filter((t) => t.startSeq > input.windowStart);
   const chars = turns.reduce((n, t) => n + t.chars, 0);
   const over =
-    turns.length > WINDOW.triggerTurns ||
-    (chars > WINDOW.triggerChars && turns.length > WINDOW.keepTurns);
+    turns.length > L.triggerTurns || (chars > L.triggerChars && turns.length > L.keepTurns);
   if (!over) return null;
-  const desired = turns[turns.length - WINDOW.keepTurns]!.startSeq - 1;
+  const desired = turns[Math.max(0, turns.length - L.keepTurns)]!.startSeq - 1;
   let target: number | null = null;
   if (input.segments?.length) {
     const ends = input.segments
@@ -67,7 +76,7 @@ export function nextWindowStart(input: {
     const t = Math.min(desired, input.cursorSeq);
     if (t > input.windowStart) target = t;
   }
-  if (target === null && turns.length > WINDOW.maxTurns) target = desired;
+  if (target === null && turns.length > L.maxTurns) target = desired;
   return target;
 }
 
@@ -82,10 +91,14 @@ export interface ResidentMemory {
 }
 
 /**
- * 常驻记忆：基础资料类与重要度 ≥ 8 的当前条目，最多 8 条（旧版「称呼和底线每次都带」的做法）。
- * 只在窗口前移时刷新，所以放稳定开头不会每轮打断缓存。
+ * 常驻记忆：基础资料类与重要度 ≥ 8 的当前条目，按档位最多 limit 条（免费 3 / PRO+ 16，旧默认 8；
+ * 旧版「称呼和底线每次都带」的做法）。只在窗口前移或档位变化时刷新，所以放稳定开头不会每轮打断缓存。
  */
-export function pickResident(items: ResidentMemory[], scope: 'normal' | 'adult'): ResidentMemory[] {
+export function pickResident(
+  items: ResidentMemory[],
+  scope: 'normal' | 'adult',
+  limit = 8,
+): ResidentMemory[] {
   return items
     .filter(
       (m) =>
@@ -94,7 +107,7 @@ export function pickResident(items: ResidentMemory[], scope: 'normal' | 'adult')
         (m.category === 'basic' || m.importance >= 8),
     )
     .sort((a, b) => b.importance - a.importance || a.memoryId.localeCompare(b.memoryId))
-    .slice(0, 8);
+    .slice(0, limit);
 }
 
 export function memoryLine(m: { content: string; status: string; dueAt: string | null }): string {
@@ -118,7 +131,16 @@ export function renderStableMemory(input: {
   legacySummary: string;
   daily: DayEntry[];
   monthly: DayEntry[];
+  /**
+   * 摘要只用这一天（YYYY-MM-DD，含）之后的；null / 不传 = 全部（v5：免费只用最近 7 天）。
+   * 月摘要按月份末尾判断，整月早于该日的不用。
+   */
+  summarySince?: string | null;
+  /** 年度回忆（PRO+，v5 先留口子，暂无数据来源时传空）。 */
+  annual?: DayEntry[];
 }): string {
+  const since = input.summarySince ?? null;
+  const fresh = (period: string) => !since || period >= since.slice(0, period.length);
   const parts: string[] = [];
   if (input.resident.length)
     parts.push(
@@ -130,7 +152,10 @@ export function renderStableMemory(input: {
   let oldestDay: string | null = null;
   if (input.segments?.length) {
     const used = input.segments.filter(
-      (s) => s.toSeq <= input.windowStart && (input.scope === 'adult' || s.scope === 'normal'),
+      (s) =>
+        s.toSeq <= input.windowStart &&
+        (input.scope === 'adult' || s.scope === 'normal') &&
+        fresh(s.at),
     );
     recent = used
       .map((s) => s.text.trim())
@@ -138,12 +163,20 @@ export function renderStableMemory(input: {
       .join('\n')
       .slice(-900);
     oldestDay = used[0]?.at ?? null;
-  } else if (input.windowStart > 0) {
+  } else if (input.windowStart > 0 && !since) {
+    // 旧数据的滚动摘要没有日期，限定天数时不用（宁可少带，不越档）
     recent = input.legacySummary.trim().slice(-900);
   }
   const older = [
-    ...input.monthly.slice(-2).map((e) => ({ label: e.period, text: pick(e).slice(-300) })),
+    ...(input.annual ?? [])
+      .slice(-1)
+      .map((e) => ({ label: `${e.period} 年`, text: pick(e).slice(-300) })),
+    ...input.monthly
+      .filter((e) => fresh(e.period))
+      .slice(-2)
+      .map((e) => ({ label: e.period, text: pick(e).slice(-300) })),
     ...input.daily
+      .filter((e) => fresh(e.period))
       .filter((e) => (oldestDay ? e.period < oldestDay : false))
       .slice(-2)
       .map((e) => ({ label: e.period, text: pick(e).slice(-300) })),
