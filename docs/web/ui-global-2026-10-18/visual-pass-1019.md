@@ -122,3 +122,10 @@
 - 打开：`/services/period/day/:date`、`/services/period/authorization`、`/characters/custom/:id/edit`、`/discover/plaza`、`/settings/announcements`、`/settings/release-notes`。
 - 修：经期日记录的「这天在经期中」开关直接贴在灰页面上，没有白卡，跟其他设置行不一致；加 `.check-card` 补白底与内边距，复拍 `period-day2.png`。
 - `routes.md` 按本轮截图把 37 条「未点按」改成实际看到的结论；仍未打开：`/plaza/works/:id`、`/plaza/authors/:id`、`/calls/:callId`（缺数据/条件）、`/imports/:jobId`、`/play/letters/:letterId`、`/play/reminders/:reminderId`、`/role-requests/:requestId`（需要对应实体）。
+
+## 2026-10-19 17:35 回归与窄屏
+
+- **经期授权行顺序错了**：`label.check` 是 `row-reverse`（其它页面靠它把开关放右边），但这一行 DOM 是「名字在前、开关在后」，渲染成 `[头像][开关][名字]`，名字被顶到最右。改成「开关在前、名字在后」，复拍 `period-auth2.png` 正常。
+- **群头像"被裁"是我看错了**：实测 `.group-avatar` 48×48、两格各 22×22 位于 17 与 41，最右到 63，没有溢出；看起来缺角是 22px 小格里的首字母本身被自身 `overflow:hidden` 裁掉。不登记为缺陷。
+- 390 回归 19 页无异常：会话列表/聊天/聊天信息/群聊/群设置/服务/设置/反馈/信箱/纪念日/补充设定/动态/卡册/广场/朋友圈/我/收藏/经期日记录/导入。
+- 320 窄屏 6 页无横向溢出：广场、朋友圈、聊天信息、服务、反馈、我。
