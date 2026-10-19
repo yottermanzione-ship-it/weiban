@@ -116,3 +116,9 @@
 - 修：**TA 的动态**把角色名做成标题栏下面一段孤立文字，改到 NavBar 副标题，空态改用共用 EmptyState。
 - 修：**每日一问**加载时只有一个灰骨架、没有任何文字，看起来像白屏；补「正在准备今天的问题…」。该页问题由模型生成，本机模型暂停，所以只能看到加载/失败态。
 - 正常：用量页（今天/7 天/30 天 + 大数字 + 提醒线）、模型页（平台默认 + 排行榜空态 + Bai MiMo 标「暂不可用」）、全局搜索页（5 类入口）。
+
+## 2026-10-19 17:20 剩余路由与经期日记录
+
+- 打开：`/services/period/day/:date`、`/services/period/authorization`、`/characters/custom/:id/edit`、`/discover/plaza`、`/settings/announcements`、`/settings/release-notes`。
+- 修：经期日记录的「这天在经期中」开关直接贴在灰页面上，没有白卡，跟其他设置行不一致；加 `.check-card` 补白底与内边距，复拍 `period-day2.png`。
+- `routes.md` 按本轮截图把 37 条「未点按」改成实际看到的结论；仍未打开：`/plaza/works/:id`、`/plaza/authors/:id`、`/calls/:callId`（缺数据/条件）、`/imports/:jobId`、`/play/letters/:letterId`、`/play/reminders/:reminderId`、`/role-requests/:requestId`（需要对应实体）。
