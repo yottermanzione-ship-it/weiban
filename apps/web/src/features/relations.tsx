@@ -81,10 +81,11 @@ export function RelationsPage() {
   );
   const otherOf = (r: CharacterRelation) =>
     r.characterAId === characterId ? r.characterBId : r.characterAId;
-  const candidates = (customs ?? []).filter(
+  const candidates = (customs?.includes(characterId) ? customs : []).filter(
     (id) => id !== characterId && !mine.some((r) => otherOf(r) === id),
   );
   async function run(operation: () => Promise<unknown>) {
+    if (pending) return;
     setPending(true);
     setError('');
     try {
@@ -108,7 +109,7 @@ export function RelationsPage() {
             type="button"
             className="text-button text-action"
             aria-label="添加关系"
-            disabled={candidates.length === 0}
+            disabled={pending || relations.loading || candidates.length === 0}
             onClick={() =>
               setEditing({
                 relation: null,
@@ -132,7 +133,7 @@ export function RelationsPage() {
       {relations.data && mine.length === 0 && (
         <p className="hint">
           还没有设置关系{' '}
-          {candidates.length > 0 && (
+          {!relations.loading && candidates.length > 0 && (
             <button
               className="text-button"
               onClick={() =>
@@ -179,6 +180,9 @@ export function RelationsPage() {
       <p className="hint">
         只有你创建的角色之间可以设置关系。设置后 TA 们会在群聊、朋友圈里互相认识。
       </p>
+      {customs?.includes(characterId) && customs.length < 2 && (
+        <p className="hint">需要至少两个自己创建的角色才能添加关系。</p>
+      )}
       {editing && (
         <form
           className="panel stack"

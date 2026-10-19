@@ -33,10 +33,10 @@
 | `/chat` | 已看空态及3角色好友会话/未读；无AI气泡长按证据 |
 | `/chat/:conversationId` | 程澈会话已看；内置/商店/个人3类表情切换可见；未发消息/验证角色回复；Bai路由暂停提示可见 |
 | `/chat/:conversationId/settings` | 未点按；源码/原批注待逐页核对 |
-| `/characters/:characterId/memories` | 未点按；源码/原批注待逐页核对 |
+| `/characters/:characterId/memories` | 10-19 程澈空态→添加→输入27字/切共同经历分类，完成启用→Esc退出仍为空；未保存/删除记忆 |
 | `/characters/:characterId/timeline` | 未点按；源码/原批注待逐页核对 |
 | `/characters/:characterId/moments` | 未点按；源码/原批注待逐页核对 |
-| `/characters/:characterId/relations` | 未点按；源码/原批注待逐页核对 |
+| `/characters/:characterId/relations` | 10-19 官方程澈错误添加入口已实际打开/取消，修当前角色归属后禁用；自建林间信使仅1个自建角色不能添加；未提交关系 |
 | `/contacts/new` | 未点按；源码/原批注待逐页核对 |
 | `/contacts/groups` | 未点按；源码/原批注待逐页核对 |
 | `/groups/new` | 10-19 实际选择程澈/温言并创建三人预览群，设置内改名；添加苏乔后取消；没有发送消息或验证 AI 群聊 |
