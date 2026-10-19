@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.18. Regenerate: pnpm android:generate
+// Contract 3.19. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.18"
+const val CONTRACT_VERSION: String = "3.19"
 
 @Serializable
 data class AccountAlias(
@@ -2928,6 +2928,176 @@ data class DraftCharacterCard(
     @EncodeDefault
     @SerialName("cardSchemaVersion") val `cardSchemaVersion`: Long = 1,
     @SerialName("data") val `data`: DraftCharacterCardData,
+)
+
+@Serializable
+data class EcologyAction(
+    @SerialName("key") val `key`: String,
+    @SerialName("group") val `group`: String,
+    @SerialName("label") val `label`: String,
+    @SerialName("available") val `available`: Boolean,
+    @SerialName("unavailableReason") val `unavailableReason`: String?,
+    @SerialName("enabled") val `enabled`: Boolean,
+)
+
+typealias EcologyActionGroup = String
+
+typealias EcologyActionKey = String
+
+typealias EcologyActivityLevel = String
+
+@Serializable
+data class EcologyAdminEndpointsListRunsQuery(
+    @SerialName("userId") val `userId`: Id? = null,
+    @SerialName("status") val `status`: EcologyRunStatus? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class EcologyAdminEndpointsListRunsResponse(
+    @SerialName("items") val `items`: List<EcologyRunRecord>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class EcologyAdminOverview(
+    @SerialName("config") val `config`: EcologyConfig,
+    @SerialName("decisionModelReady") val `decisionModelReady`: Boolean,
+    @SerialName("warnings") val `warnings`: List<String>,
+    @SerialName("last24h") val `last24h`: EcologyAdminOverviewLast24h,
+)
+
+@Serializable
+data class EcologyCharacterProfile(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("statusText") val `statusText`: String?,
+    @SerialName("statusUpdatedAt") val `statusUpdatedAt`: Timestamp?,
+    @SerialName("signature") val `signature`: String?,
+    @SerialName("signatureUpdatedAt") val `signatureUpdatedAt`: Timestamp?,
+    @SerialName("ecologyEnabled") val `ecologyEnabled`: Boolean,
+)
+
+@Serializable
+data class EcologyCharacterSwitch(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("enabled") val `enabled`: Boolean,
+)
+
+@Serializable
+data class EcologyConfig(
+    @SerialName("decisionModelKey") val `decisionModelKey`: String?,
+    @SerialName("levels") val `levels`: EcologyConfigLevels,
+    @SerialName("disabledActions") val `disabledActions`: List<EcologyActionKey>,
+    @SerialName("wakeWindow") val `wakeWindow`: EcologyConfigWakeWindow,
+    @SerialName("decisionMaxOutputTokens") val `decisionMaxOutputTokens`: Long,
+)
+
+@Serializable
+data class EcologyConfigInput(
+    @SerialName("decisionModelKey") val `decisionModelKey`: String?,
+    @SerialName("levels") val `levels`: EcologyConfigInputLevels,
+    @SerialName("disabledActions") val `disabledActions`: List<EcologyActionKey>,
+    @SerialName("wakeWindow") val `wakeWindow`: EcologyConfigInputWakeWindow,
+    @SerialName("decisionMaxOutputTokens") val `decisionMaxOutputTokens`: Long,
+)
+
+@Serializable
+data class EcologyEndpointsGetCharacterProfileParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class EcologyEndpointsListMurmursParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class EcologyEndpointsListMurmursQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class EcologyEndpointsListMurmursResponse(
+    @SerialName("items") val `items`: List<EcologyMurmur>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class EcologyEndpointsSetCharacterBody(
+    @SerialName("enabled") val `enabled`: Boolean,
+)
+
+@Serializable
+data class EcologyEndpointsSetCharacterParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class EcologyLevelOption(
+    @SerialName("level") val `level`: String,
+    @SerialName("label") val `label`: String,
+    @SerialName("minPerDay") val `minPerDay`: Long,
+    @SerialName("maxPerDay") val `maxPerDay`: Long,
+    @SerialName("pointsPerCharacterPerDay") val `pointsPerCharacterPerDay`: Double?,
+)
+
+@Serializable
+data class EcologyLevelRange(
+    @SerialName("min") val `min`: Long,
+    @SerialName("max") val `max`: Long,
+)
+
+@Serializable
+data class EcologyLevelRangeInput(
+    @SerialName("min") val `min`: Long,
+    @SerialName("max") val `max`: Long,
+)
+
+@Serializable
+data class EcologyMurmur(
+    @SerialName("murmurId") val `murmurId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("text") val `text`: String,
+    @SerialName("actionKey") val `actionKey`: String?,
+    @SerialName("actionSummary") val `actionSummary`: String,
+    @SerialName("points") val `points`: Double,
+    @SerialName("origin") val `origin`: String,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class EcologyRunRecord(
+    @SerialName("runId") val `runId`: Id,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("origin") val `origin`: String,
+    @SerialName("status") val `status`: String,
+    @SerialName("actionKey") val `actionKey`: String?,
+    @SerialName("outcome") val `outcome`: String?,
+    @SerialName("modelKey") val `modelKey`: String?,
+    @SerialName("points") val `points`: Double,
+    @SerialName("latencyMs") val `latencyMs`: Long,
+    @SerialName("scheduledAt") val `scheduledAt`: Timestamp,
+    @SerialName("finishedAt") val `finishedAt`: Timestamp?,
+)
+
+typealias EcologyRunStatus = String
+
+@Serializable
+data class EcologySettings(
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("activityLevel") val `activityLevel`: String,
+    @SerialName("actions") val `actions`: List<EcologyAction>,
+    @SerialName("levels") val `levels`: List<EcologyLevelOption>,
+    @SerialName("characters") val `characters`: List<EcologyCharacterSwitch>,
+    @SerialName("eligible") val `eligible`: Boolean,
+    @SerialName("runnable") val `runnable`: Boolean,
+    @SerialName("pausedReason") val `pausedReason`: String?,
+    @SerialName("introSeen") val `introSeen`: Boolean,
+    @SerialName("estimatedPointsPerDay") val `estimatedPointsPerDay`: Double?,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp?,
 )
 
 typealias ErrorCode = String
@@ -9566,6 +9736,15 @@ data class UpdateCycleRequestInput(
 )
 
 @Serializable
+data class UpdateEcologySettings(
+    @SerialName("enabled") val `enabled`: Boolean? = null,
+    @SerialName("activityLevel") val `activityLevel`: EcologyActivityLevel? = null,
+    @SerialName("actions") val `actions`: List<UpdateEcologySettingsActionsItem>? = null,
+    @EncodeDefault
+    @SerialName("introSeen") val `introSeen`: Boolean? = true,
+)
+
+@Serializable
 data class UpdateHolidayRequest(
     @SerialName("name") val `name`: String? = null,
     @SerialName("dateType") val `dateType`: HolidayDateType? = null,
@@ -11273,6 +11452,42 @@ data class DraftCharacterCardData(
 )
 
 @Serializable
+data class EcologyAdminOverviewLast24h(
+    @SerialName("enabledUsers") val `enabledUsers`: Long,
+    @SerialName("runs") val `runs`: Long,
+    @SerialName("actions") val `actions`: Long,
+    @SerialName("points") val `points`: Double,
+)
+
+@Serializable
+data class EcologyConfigLevels(
+    @SerialName("occasional") val `occasional`: EcologyLevelRange,
+    @SerialName("often") val `often`: EcologyLevelRange,
+    @SerialName("close") val `close`: EcologyLevelRange,
+    @SerialName("inseparable") val `inseparable`: EcologyLevelRange,
+)
+
+@Serializable
+data class EcologyConfigWakeWindow(
+    @SerialName("startHour") val `startHour`: Long,
+    @SerialName("endHour") val `endHour`: Long,
+)
+
+@Serializable
+data class EcologyConfigInputLevels(
+    @SerialName("occasional") val `occasional`: EcologyLevelRangeInput,
+    @SerialName("often") val `often`: EcologyLevelRangeInput,
+    @SerialName("close") val `close`: EcologyLevelRangeInput,
+    @SerialName("inseparable") val `inseparable`: EcologyLevelRangeInput,
+)
+
+@Serializable
+data class EcologyConfigInputWakeWindow(
+    @SerialName("startHour") val `startHour`: Long,
+    @SerialName("endHour") val `endHour`: Long,
+)
+
+@Serializable
 data class EventsAchievementUnlockedPayload(
     @SerialName("userId") val `userId`: Id,
     @SerialName("achievementKey") val `achievementKey`: String,
@@ -12881,6 +13096,12 @@ data class TimelineEntryRef(
 @Serializable
 data class UnsupportedUpdateData(
     @SerialName("originalType") val `originalType`: String,
+)
+
+@Serializable
+data class UpdateEcologySettingsActionsItem(
+    @SerialName("key") val `key`: EcologyActionKey,
+    @SerialName("enabled") val `enabled`: Boolean,
 )
 
 @Serializable
