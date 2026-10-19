@@ -43,6 +43,21 @@ export class MembershipService implements IdentityMembershipReadPort {
       updatedAt: row?.updatedAt.toISOString() ?? null,
     };
   }
+  /** 3.17 统一「是否 PRO+」：见契约 IdentityMembershipReadPort.isProPlus。 */
+  async isProPlus(userId: string, input?: Tx): Promise<boolean> {
+    const db = input ? asDbTx(input).db : this.database.db;
+    const [row] = await db
+      .select({ until: memberships.proPlusUntil, status: users.status })
+      .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
+      .where(eq(memberships.userId, userId));
+    return (
+      !!row &&
+      row.status === 'active' &&
+      !!row.until &&
+      row.until.getTime() > this.clock.now().getTime()
+    );
+  }
   async set(operator: string, userId: string, input: unknown) {
     const body = parseContract(SetMembership, input);
     return this.database.transaction(async (tx) => {
