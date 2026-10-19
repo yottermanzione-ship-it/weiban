@@ -1,0 +1,60 @@
+Scope: all 9 workspace projects
+✓ Lockfile passes supply-chain policies (verified 6h ago)
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +797
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 797, reused 20, downloaded 0, added 0
+Progress: resolved 797, reused 95, downloaded 0, added 0
+Progress: resolved 797, reused 168, downloaded 0, added 0
+Progress: resolved 797, reused 281, downloaded 0, added 0
+Progress: resolved 797, reused 374, downloaded 0, added 0
+Progress: resolved 797, reused 707, downloaded 0, added 0
+Packages are hard linked from the content-addressable store to the virtual store.
+  Content-addressable store is at: C:\Users\lomjy3\AppData\Local\pnpm\store\v11
+  Virtual store is at:             node_modules/.pnpm
+Progress: resolved 797, reused 795, downloaded 0, added 11
+Progress: resolved 797, reused 797, downloaded 0, added 33
+Progress: resolved 797, reused 797, downloaded 0, added 42
+Progress: resolved 797, reused 797, downloaded 0, added 100
+Progress: resolved 797, reused 797, downloaded 0, added 127
+Progress: resolved 797, reused 797, downloaded 0, added 146
+Progress: resolved 797, reused 797, downloaded 0, added 156
+Progress: resolved 797, reused 797, downloaded 0, added 186
+Progress: resolved 797, reused 797, downloaded 0, added 215
+Progress: resolved 797, reused 797, downloaded 0, added 259
+Progress: resolved 797, reused 797, downloaded 0, added 311
+Progress: resolved 797, reused 797, downloaded 0, added 331
+Progress: resolved 797, reused 797, downloaded 0, added 334
+Progress: resolved 797, reused 797, downloaded 0, added 348
+Progress: resolved 797, reused 797, downloaded 0, added 374
+Progress: resolved 797, reused 797, downloaded 0, added 399
+Progress: resolved 797, reused 797, downloaded 0, added 463
+Progress: resolved 797, reused 797, downloaded 0, added 493
+Progress: resolved 797, reused 797, downloaded 0, added 592
+Progress: resolved 797, reused 797, downloaded 0, added 635
+Progress: resolved 797, reused 797, downloaded 0, added 688
+Progress: resolved 797, reused 797, downloaded 0, added 730
+Progress: resolved 797, reused 797, downloaded 0, added 792
+Progress: resolved 797, reused 797, downloaded 0, added 794
+Progress: resolved 797, reused 797, downloaded 0, added 795
+Progress: resolved 797, reused 797, downloaded 0, added 796
+Progress: resolved 797, reused 797, downloaded 0, added 797
+Progress: resolved 797, reused 797, downloaded 0, added 797, done
+
+devDependencies:
++ @eslint/js 10.0.1
++ @playwright/test 1.63.0
++ @types/node 24.19.1
++ @weiban/eslint-config 0.1.0 <- packages\eslint-config
++ @weiban/tsconfig 0.1.0 <- packages\tsconfig
++ dependency-cruiser 18.5.0
++ eslint 10.12.0
++ eslint-plugin-react-hooks 7.1.1
++ globals 17.13.0
++ prettier 3.9.9
++ typescript 5.9.3
++ typescript-eslint 8.71.0
++ vitest 5.0.3
+
+Done in 47.2s using pnpm v11.28.4

@@ -1,0 +1,42 @@
+{
+  "reviewedSha": "65bb669821909ac62239c5b140410d569a078411",
+  "comparisonBase": "9b647d6228553cf8d1cec13557e310dc896179c5",
+  "node": "v24.21.0",
+  "scope": "original AST method/function bodies with memory stubs; no database",
+  "MEM001": {
+    "baseline": false,
+    "userChat": "user-expensive",
+    "defaultsRequested": [
+      "background",
+      "chat"
+    ],
+    "selected": "platform-chat"
+  },
+  "MEM001_baseline": {
+    "baseline": true,
+    "userChat": null,
+    "defaultsRequested": [
+      "background",
+      "chat"
+    ],
+    "selected": "platform-chat"
+  },
+  "MEM002_control": {
+    "baseline": false,
+    "currentChat": "other-model",
+    "result": "这个模型不能识图，且平台还没有默认识图模型：请先设置默认识图模型，或选能识图的模型做聊天默认"
+  },
+  "MEM002_experiment": {
+    "baseline": false,
+    "currentChat": "same-model",
+    "result": "REACHED_TRANSACTION_WITHOUT_VISION_GUARD"
+  },
+  "MEM002_baseline": {
+    "baseline": true,
+    "currentChat": "same-model",
+    "result": "REACHED_TRANSACTION_WITHOUT_VISION_GUARD"
+  },
+  "bonusInvariantCases": 168,
+  "beijingMonthBoundaryCases": 3,
+  "result": "all assertions passed"
+}

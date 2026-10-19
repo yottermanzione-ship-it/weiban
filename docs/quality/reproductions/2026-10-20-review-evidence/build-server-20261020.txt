@@ -1,0 +1,10 @@
+$ node scripts/build.mjs
+
+  dist\seed-presets.js       2.9mb
+  dist\setup-local-model.js  2.8mb
+  dist\identity.js           2.8mb
+  dist\main.js               2.8mb
+  dist\seed-models.js        1.1mb
+  ...and 9 more output files...
+
+Done in 9105ms
