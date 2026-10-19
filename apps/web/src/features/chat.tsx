@@ -364,7 +364,7 @@ export function ConversationPage() {
           <Link className="wx-back" to="/chat" aria-label="返回微伴">
             <BackArrow />
           </Link>
-          <span />
+          <ChatHeading name="聊天" active={false} group={false} typing={false} />
           <span />
         </header>
         <p role="status" className="empty">

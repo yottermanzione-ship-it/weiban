@@ -26,6 +26,7 @@ import {
   NavBar,
   SwitchRow,
   Sheet,
+  SyncPendingState,
 } from './shell-kit.js';
 import { Dialog } from './toast.js';
 import { FieldSheet } from './chat-settings.js';
@@ -330,7 +331,11 @@ export function GroupSettingsPage() {
     return (
       <main>
         <NavBar title="聊天信息" fallback="/chat" />
-        <p className="empty">{state.initialized ? '这个群聊已解散' : '正在读取…'}</p>
+        {state.initialized ? (
+          <p className="empty">这个群聊已解散</p>
+        ) : (
+          <SyncPendingState icon="wechat/chat" label="正在读取群聊…" />
+        )}
       </main>
     );
   const nameOf = (id: string) =>
