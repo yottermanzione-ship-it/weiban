@@ -1029,6 +1029,7 @@ function Comments({ work, onCount }: { work: PlazaWorkDetail; onCount(n: number)
             加载更多评论
           </button>
         )}
+        <div className="plaza-comment-bar">
         {composing ? (
           <form
             className="message-composer"
@@ -1053,6 +1054,7 @@ function Comments({ work, onCount }: { work: PlazaWorkDetail; onCount(n: number)
             说点什么…
           </button>
         )}
+        </div>
       </div>
     </>
   );

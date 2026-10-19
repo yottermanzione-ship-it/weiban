@@ -244,3 +244,16 @@
   color: var(--wb-color-text-tertiary);
   font-size: var(--wb-font-size-caption1);
 }
+
+/* 作品详情底部评论栏：贴底、有分隔线，避免被视口裁掉 */
+.plaza-comment-bar {
+  position: sticky;
+  bottom: 0;
+  margin: var(--wb-space-3) calc(-1 * var(--wb-space-5)) calc(-1 * var(--wb-space-5));
+  padding: var(--wb-space-2) var(--wb-space-5) calc(var(--wb-space-2) + env(safe-area-inset-bottom));
+  border-top: 0.5px solid var(--wb-color-border-hairline);
+  background: var(--wb-color-bg-surface);
+}
+.plaza-comment-bar .message-composer {
+  margin-top: 0;
+}
