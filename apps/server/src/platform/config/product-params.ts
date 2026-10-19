@@ -126,18 +126,29 @@ export const P24_SHARE_IMAGE_MAX_MESSAGES = 30;
  */
 export const P25_FAMILIARITY = {
   levelThresholds: { 1: 0, 2: 30, 3: 100, 4: 300, 5: 700 },
-  maxPointsPerCharacterPerDay: 20,
   /**
-   * 会员 v5（16 号 §3「好感度加成：保留旧版做法」，任务卡批 A-9）：PRO+ 每次加分与每日上限 ×1.2（向上取整）。
-   * 旧版 Pro 为 ×1.45；新版取「轻微加成」1.2，数值可在此调整。
+   * 每个角色每天上限（16 号 §11，总经理 10-20）：免费 350，PRO+ ×2 = 700。
+   * 目标：每天约 30 条有效消息 7 天内满级；一直聊最快免费 2 天、PRO+ 1 天满级。
    */
-  proPlusBonusRate: 1.2,
+  maxPointsPerCharacterPerDay: 350,
+  /** 16 号 §11（取代 §3 批 A-9 的 ×1.2）：PRO+ 每次加分与每日上限都 ×2（向上取整）。 */
+  proPlusBonusRate: 2,
   points: {
+    /** 16 号 §11：用户每发一条有效消息（私聊，或群里 @ 到该角色）。 */
+    userMessage: 4,
     activeChatDay: 10,
     replyToProactive: 2,
     momentsInteraction: 2,
     anniversaryChat: 10,
     firstTimeInteraction: 5,
+  },
+  /**
+   * 「有效消息」判定（16 号 §11，防脚本刷）：去掉空白后至少 minChars 个字；
+   * 与该用户对该角色上一条消息内容不完全相同；距上一条计分消息至少 minIntervalMs。
+   */
+  userMessage: {
+    minChars: 2,
+    minIntervalMs: 3 * SECOND_MS,
   },
 } as const;
 

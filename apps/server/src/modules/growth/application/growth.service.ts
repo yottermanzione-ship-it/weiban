@@ -37,6 +37,8 @@ import {
   computeNextOccurrence,
   daysKnownOn,
   addDays,
+  evaluateUserMessage,
+  scaledPoints,
   stableUuid,
   systemAnniversaryDaysUpTo,
 } from '../domain/familiarity-rules.js';
@@ -46,8 +48,15 @@ import { GrowthContext } from './context.js';
 
 const MAX_CUSTOM_ANNIVERSARIES = 10;
 
-/** 契约事件类型 → P-25 分值（之前按驼峰键取值永远取不到，T-076 修正）。 */
-const P25_POINTS: Record<FamiliarityEventType, number> = {
+/**
+ * 服务器内部的熟悉度事件类型：契约里的类型（客户端可经 HTTP 上报）+ 只由服务器产生的 user_message
+ * （16 号 §11 按消息加分，由 chat.message_created 触发；不进契约，客户端不能自己上报）。
+ */
+export type GrowthFamiliarityEventType = FamiliarityEventType | 'user_message';
+
+/** 事件类型 → P-25 分值（之前按驼峰键取值永远取不到，T-076 修正）。 */
+const P25_POINTS: Record<GrowthFamiliarityEventType, number> = {
+  user_message: P25_FAMILIARITY.points.userMessage,
   active_chat_day: P25_FAMILIARITY.points.activeChatDay,
   reply_to_proactive: P25_FAMILIARITY.points.replyToProactive,
   moments_interaction: P25_FAMILIARITY.points.momentsInteraction,
@@ -56,7 +65,7 @@ const P25_POINTS: Record<FamiliarityEventType, number> = {
 };
 
 /**
- * 「首次完成某互动」（P-25 +5，每角色每种只计一次；每角色每天 20 点上限照旧）。
+ * 「首次完成某互动」（P-25 +5，每角色每种只计一次；同受每角色每日上限约束）。
  * 来源：GRW-03 第 2 条（第一次通话、第一次群聊）与 PLAY 联动表（领养、每日一问、心愿、寄信、专注、提醒）。
  */
 export type FirstInteractionKind =
@@ -194,6 +203,88 @@ export class GrowthService {
   }
 
   /**
+   * 按消息加分（16 号 §11）：用户发给该角色的一条消息（私聊，或群里 @ 到它）。调用方保证消息确由该用户发出、
+   * 目标角色正确；这里负责「有效消息」判定与幂等（键用消息 ID + 角色 ID，群里 @ 多个角色各计一次）。
+   * - 去掉空白后至少 minChars 个字；
+   * - 与该用户对该角色上一条消息（不论是否计分）内容不完全相同（去空白后比较指纹，不存正文）；
+   * - 距上一条计分消息至少 minIntervalMs（按消息发送时刻；乱序到达时取差的绝对值）。
+   * 返回本次实际加的点数（无效、已计过或当天已满为 0）。
+   */
+  async awardUserMessage(
+    tx: DbTx,
+    userId: string,
+    characterId: string,
+    messageId: string,
+    text: string,
+    sentAt: Date,
+  ): Promise<number> {
+    const contact = await this.contacts.getActiveContact(userId, characterId, tx);
+    if (!contact) return 0;
+    await this.lockFamiliarity(tx, userId, characterId);
+    const idempotencyKey = `user_message:${messageId}:${characterId}`;
+    const [existing] = await tx.db
+      .select({ id: familiarityEvents.id })
+      .from(familiarityEvents)
+      .where(eq(familiarityEvents.idempotencyKey, idempotencyKey));
+    if (existing) return 0;
+
+    const where = and(eq(familiarity.userId, userId), eq(familiarity.characterId, characterId));
+    const [cur] = await tx.db
+      .select({
+        lastMessageHash: familiarity.lastMessageHash,
+        lastMessageScoredAt: familiarity.lastMessageScoredAt,
+      })
+      .from(familiarity)
+      .where(where)
+      .for('update');
+    const { hash, valid } = evaluateUserMessage({
+      text,
+      sentAt,
+      lastMessageHash: cur?.lastMessageHash ?? null,
+      lastMessageScoredAt: cur?.lastMessageScoredAt ?? null,
+    });
+
+    // 先记下指纹（和计分时刻）：上一条消息不论是否计分都参与「完全相同」比较。
+    const scoredAt = valid ? sentAt : (cur?.lastMessageScoredAt ?? null);
+    if (cur) {
+      await tx.db
+        .update(familiarity)
+        .set({ lastMessageHash: hash, lastMessageScoredAt: scoredAt })
+        .where(where);
+    } else {
+      await tx.db.insert(familiarity).values({
+        id: newId(),
+        userId,
+        characterId,
+        totalPoints: 0,
+        level: 1,
+        dailyPoints: 0,
+        dailyPointsDate: await this.ctx.localToday(userId, tx),
+        updatedAt: this.clock.now(),
+        lastMessageHash: hash,
+        lastMessageScoredAt: scoredAt,
+      });
+    }
+    if (!valid) return 0;
+    const res = await this.awardPoints(
+      tx,
+      userId,
+      characterId,
+      'user_message',
+      idempotencyKey,
+      sentAt,
+    );
+    return res.pointsAdded;
+  }
+
+  private async lockFamiliarity(tx: DbTx, userId: string, characterId: string): Promise<void> {
+    await tx.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('growth:familiarity:' || $1 || ':' || $2, 0))",
+      [userId, characterId],
+    );
+  }
+
+  /**
    * 加分核心（幂等、每日上限）。升级时：发 growth.familiarity_leveled_up、每跨一级发一张熟悉度卡、
    * 私聊系统提示 familiarity_level_up、成就第 27、28 号、data.changed(familiarity)。
    */
@@ -201,14 +292,11 @@ export class GrowthService {
     tx: DbTx,
     userId: string,
     characterId: string,
-    eventType: FamiliarityEventType,
+    eventType: GrowthFamiliarityEventType,
     idempotencyKey: string,
     occurredAt: Date,
   ): Promise<AddFamiliarityPointsResponse> {
-    await tx.query(
-      "SELECT pg_advisory_xact_lock(hashtextextended('growth:familiarity:' || $1 || ':' || $2, 0))",
-      [userId, characterId],
-    );
+    await this.lockFamiliarity(tx, userId, characterId);
     const localDateStr = await this.ctx.localToday(userId, tx);
 
     const [existing] = await tx.db
@@ -229,12 +317,11 @@ export class GrowthService {
 
     const basePoints = P25_POINTS[eventType] ?? 0;
     if (basePoints <= 0) throw new AppError('bad_request', '不支持的熟悉度事件类型');
-    // 会员 v5：PRO+ 好感度轻微加成（加分与每日上限同比例，见 P25_FAMILIARITY.proPlusBonusRate）
-    const rate = (await this.membership?.isProPlus(userId, tx))
-      ? P25_FAMILIARITY.proPlusBonusRate
-      : 1;
-    const rawPoints = Math.ceil(basePoints * rate);
-    const dailyCap = Math.ceil(P25_FAMILIARITY.maxPointsPerCharacterPerDay * rate);
+    // 会员 v5（16 号 §11）：PRO+ 每次加分与每日上限都 ×2（见 P25_FAMILIARITY.proPlusBonusRate）
+    const { points: rawPoints, dailyCap } = scaledPoints(
+      basePoints,
+      Boolean(await this.membership?.isProPlus(userId, tx)),
+    );
 
     const isSameDay = cur?.dailyPointsDate === localDateStr;
     const todayUsed = isSameDay ? cur.dailyPoints : 0;

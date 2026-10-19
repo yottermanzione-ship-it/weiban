@@ -664,6 +664,13 @@
       "breakpoints": true
     },
     {
+      "idx": 106,
+      "version": "7",
+      "when": 1799335000000,
+      "tag": "0106_familiarity_message_points",
+      "breakpoints": true
+    },
+    {
       "idx": 107,
       "version": "7",
       "when": 1799335100000,
