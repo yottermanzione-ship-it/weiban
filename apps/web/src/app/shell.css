@@ -319,6 +319,12 @@ div.menu-row {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.menu-label-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .menu-subtitle {
   margin-top: var(--wb-space-2);
   overflow: hidden;

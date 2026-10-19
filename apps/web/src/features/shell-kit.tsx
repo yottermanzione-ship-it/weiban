@@ -228,7 +228,8 @@ export function MenuRow({
       ) : null}
       <span className={`menu-text ${center ? 'center' : ''}`}>
         <span className="menu-label">
-          {label}
+          {/* 纯文字包一层：menu-label 是 flex，匿名文本节点无法省略，长标题会被硬裁 */}
+          {typeof label === 'string' ? <span className="menu-label-text">{label}</span> : label}
           {badge}
           {dot && <span className="red-dot" aria-label="有新内容" />}
         </span>
