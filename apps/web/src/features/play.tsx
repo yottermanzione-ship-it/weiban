@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  CaretLeft,
   CheckCircle,
   Circle,
   EnvelopeSimple,
@@ -35,6 +34,7 @@ import { useUpdates } from '../data/updates.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { openShare } from './share.js';
+import { EmptyState, NavBar, Sheet } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 
 /*
@@ -65,20 +65,7 @@ function useSection(section: string, refresh: () => void) {
   });
 }
 function Header({ title, right, back }: { title: ReactNode; right?: ReactNode; back?: string }) {
-  const navigate = useNavigate();
-  return (
-    <header className="page-header">
-      <button
-        className="text-button"
-        aria-label="返回"
-        onClick={() => (back ? navigate(back) : navigate(-1))}
-      >
-        <CaretLeft size={24} />
-      </button>
-      <h1>{title}</h1>
-      {right ?? <span />}
-    </header>
-  );
+  return <NavBar title={title} right={right} fallback={back ?? '/miniapps'} />;
 }
 /** 已通过的好友角色（玩法只和通讯录里的 TA 一起）。 */
 function useFriends() {
@@ -93,19 +80,33 @@ function CharacterPicker({
   value,
   onChange,
   label = '和谁一起',
+  disabled = false,
 }: {
   value: string | null;
   onChange(id: string): void;
   label?: string;
+  disabled?: boolean;
 }) {
-  const { friends, nameOf } = useFriends();
-  if (friends.length === 0) return <p className="hint">先在通讯录添加一个 TA 吧</p>;
+  const { friends, nameOf, initialized } = useFriends();
+  if (!initialized)
+    return (
+      <p className="hint" role="status">
+        正在读取好友…
+      </p>
+    );
+  if (friends.length === 0)
+    return (
+      <p className="hint">
+        先添加一个 TA 吧 <Link to="/contacts/add">去添加</Link>
+      </p>
+    );
   return (
     <div role="radiogroup" aria-label={label} className="chip-row">
       {friends.map((f) => (
         <button
           key={f.characterId}
           role="radio"
+          disabled={disabled}
           aria-checked={value === f.characterId}
           className={value === f.characterId ? 'play-pick selected' : 'play-pick'}
           onClick={() => onChange(f.characterId)}
@@ -165,6 +166,9 @@ export function DailyQuestionPage() {
   useSection('daily_question', () => setRevision((v) => v + 1));
   useEffect(() => {
     let active = true;
+    setState('loading');
+    setToday(null);
+    setError('');
     void api
       .call(DailyQuestionEndpoints.getToday, {
         query: { characterId: characterId ?? undefined },
@@ -176,7 +180,9 @@ export function DailyQuestionPage() {
         setState('ready');
       })
       .catch((e) => {
-        if (active) setState(code(e) === 'not_found' ? 'empty' : 'error');
+        if (!active) return;
+        setState(code(e) === 'not_found' ? 'empty' : 'error');
+        setError(friendlyError(e));
       });
     return () => {
       active = false;
@@ -184,7 +190,7 @@ export function DailyQuestionPage() {
   }, [characterId, revision]);
   const over = chars(answer) > PLAY_LIMITS.dailyAnswerMaxChars;
   async function submit() {
-    if (!today || !answer.trim() || over) return;
+    if (pending || !today || !answer.trim() || over) return;
     setPending(true);
     setError('');
     try {
@@ -213,11 +219,18 @@ export function DailyQuestionPage() {
   return (
     <main>
       <Header title="每日一问" right={<Link to="/play/daily/history">历史</Link>} />
-      {state === 'loading' && <div className="skeleton-card" role="status" aria-label="正在读取" />}
+      {state === 'loading' && (
+        <>
+          <div className="skeleton-card" role="status" aria-label="正在读取" />
+          <p className="page-note hint center">正在准备今天的问题…</p>
+        </>
+      )}
       {state === 'error' && (
         <div className="empty">
-          <p>加载失败</p>
-          <button onClick={() => setRevision((v) => v + 1)}>重试</button>
+          <p role="alert">{error || '加载失败'}</p>
+          <button className="text-button" onClick={() => setRevision((v) => v + 1)}>
+            重试
+          </button>
         </div>
       )}
       {state === 'empty' && <p className="empty">今天还没有适合你们的问题，明天再来看看吧</p>}
@@ -226,7 +239,16 @@ export function DailyQuestionPage() {
           {!answered && (
             <>
               <h2 className="section-label">和谁一起答</h2>
-              <CharacterPicker value={selected} onChange={setCharacterId} label="和谁一起答" />
+              <CharacterPicker
+                value={selected}
+                disabled={pending}
+                onChange={(id) => {
+                  setAnswer('');
+                  requestId.current = crypto.randomUUID();
+                  setCharacterId(id);
+                }}
+                label="和谁一起答"
+              />
             </>
           )}
           <section className="panel stack play-card" key={today.questionId}>
@@ -239,6 +261,7 @@ export function DailyQuestionPage() {
               ) : (
                 <>
                   <textarea
+                    disabled={pending}
                     aria-label="我的回答"
                     placeholder="输入你的回答…"
                     value={answer}
@@ -277,13 +300,15 @@ export function DailyQuestionPage() {
               </Link>
             )
           ) : (
-            <button
-              className="primary"
-              disabled={pending || !answer.trim() || over}
-              onClick={() => void submit()}
-            >
-              {pending ? '正在提交…' : '回答'}
-            </button>
+            <div className="page-bottom">
+              <button
+                className="primary full"
+                disabled={pending || !answer.trim() || over}
+                onClick={() => void submit()}
+              >
+                {pending ? '正在提交…' : '回答'}
+              </button>
+            </div>
           )}
         </>
       )}
@@ -330,7 +355,12 @@ export function DailyHistoryPage() {
   }, [load]);
   return (
     <main>
-      <Header title="答过的问题" />
+      <Header title="答过的问题" back="/play/daily" />
+      {loading && items.length === 0 && (
+        <p className="empty" role="status">
+          正在读取答题记录…
+        </p>
+      )}
       {error && (
         <p role="alert">
           {error} <button onClick={() => void load()}>重试</button>
@@ -400,8 +430,30 @@ export function WishlistsPage() {
   return (
     <main>
       <Header title="心愿清单" />
-      {list.error && <p role="alert">{list.error}</p>}
-      {initialized && friends.length === 0 && <p className="empty">先在通讯录添加一个 TA 吧</p>}
+      {list.error && (
+        <p className="notice-bar" role="alert">
+          {list.error}{' '}
+          <button className="text-button" onClick={list.refresh}>
+            重试
+          </button>
+        </p>
+      )}
+      {(list.loading || !initialized) && !list.data && (
+        <p className="empty" role="status">
+          正在读取心愿…
+        </p>
+      )}
+      {initialized && friends.length === 0 && (
+        <EmptyState
+          title="还没有一起许愿的朋友"
+          desc="先添加一个 TA，再列下想一起做的事"
+          action={
+            <Link className="text-button" to="/contacts/add">
+              添加朋友
+            </Link>
+          }
+        />
+      )}
       <div className="panel rows">
         {[...friends]
           .sort(
@@ -434,6 +486,9 @@ export function WishlistsPage() {
 
 export function WishlistPage() {
   const { characterId = '' } = useParams();
+  return <CharacterWishlist key={characterId} characterId={characterId} />;
+}
+function CharacterWishlist({ characterId }: { characterId: string }) {
   const { nameOf } = useFriends();
   const list = useRemote(WishlistEndpoints.listItems, {
     params: { characterId },
@@ -458,7 +513,7 @@ export function WishlistPage() {
     setItems((prev) => (prev ?? []).map((i) => (i.itemId === item.itemId ? item : i)));
   async function add() {
     const value = text.trim();
-    if (!value || chars(value) > PLAY_LIMITS.wishlistItemMaxChars) return;
+    if (pending || !value || chars(value) > PLAY_LIMITS.wishlistItemMaxChars) return;
     setPending(true);
     try {
       const item = await api.call(WishlistEndpoints.addItem, {
@@ -521,10 +576,21 @@ export function WishlistPage() {
   );
   return (
     <main>
-      <Header title={`和 ${nameOf(characterId)} 的心愿清单`} />
+      <Header title={`和 ${nameOf(characterId)} 的心愿清单`} back="/play/wishlists" />
       <p className="hint">想和 TA 一起做的事</p>
-      {list.error && <p role="alert">{list.error}</p>}
-      {list.loading && !items && <div className="skeleton-row" role="status" />}
+      {list.error && (
+        <div className="empty">
+          <p role="alert">{list.error}</p>
+          <button className="text-button" onClick={list.refresh}>
+            重试
+          </button>
+        </div>
+      )}
+      {list.loading && !items && (
+        <p className="empty" role="status">
+          正在读取心愿…
+        </p>
+      )}
       {items && all.length === 0 && !adding && (
         <div className="empty">
           <p>和 TA 一起列下想做的事吧</p>
@@ -538,7 +604,7 @@ export function WishlistPage() {
         (all.length > 0 || adding) &&
         (adding ? (
           <form
-            className="message-composer"
+            className="message-composer stacked-composer"
             onSubmit={(e) => {
               e.preventDefault();
               void add();
@@ -546,7 +612,12 @@ export function WishlistPage() {
           >
             <label>
               想一起做的事
-              <input autoFocus value={text} onChange={(e) => setText(e.target.value)} />
+              <input
+                autoFocus
+                disabled={pending}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+              />
             </label>
             <small
               className={
@@ -560,8 +631,20 @@ export function WishlistPage() {
             <button
               className="text-button"
               disabled={pending || !text.trim() || chars(text) > PLAY_LIMITS.wishlistItemMaxChars}
+              aria-busy={pending}
             >
-              添加
+              {pending ? '正在添加…' : '添加'}
+            </button>
+            <button
+              type="button"
+              className="text-button"
+              disabled={pending}
+              onClick={() => {
+                setAdding(false);
+                setText('');
+              }}
+            >
+              取消
             </button>
           </form>
         ) : (
@@ -611,47 +694,71 @@ function WishSheet({
 }) {
   const [text, setText] = useState(item.text);
   const [date, setDate] = useState(item.dueDate ?? '');
+  const [saving, setSaving] = useState(false);
   const tooLong = chars(text.trim()) > PLAY_LIMITS.wishlistItemMaxChars;
+  async function save(body: { text?: string; dueDate?: string | null }) {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await onSave(body);
+    } finally {
+      setSaving(false);
+    }
+  }
   return (
-    <div className="sheet-panel" role="dialog" aria-label="编辑心愿">
-      <label>
-        心愿
-        <input value={text} onChange={(e) => setText(e.target.value)} />
-      </label>
-      <label>
-        定个日期
-        <input
-          type="date"
-          value={date}
-          min={todayLocal()}
-          onChange={(e) => setDate(e.target.value)}
-        />
-      </label>
-      {date && <small className="hint">定了日期，TA 到时会来问你</small>}
-      {item.dueDate && (
-        <button className="text-button" onClick={() => void onSave({ dueDate: null })}>
-          取消日期
-        </button>
-      )}
-      <div className="button-row">
-        <button onClick={onClose}>取消</button>
-        <button
-          className="primary"
-          disabled={!text.trim() || tooLong}
-          onClick={() =>
-            void onSave({
-              ...(text.trim() !== item.text ? { text: text.trim() } : {}),
-              ...(date !== (item.dueDate ?? '') ? { dueDate: date || null } : {}),
-            })
-          }
-        >
-          保存
+    <Sheet
+      title="编辑心愿"
+      closeLabel="取消"
+      closeDisabled={saving}
+      onClose={() => {
+        if (!saving) onClose();
+      }}
+    >
+      <div className="stack">
+        <label>
+          心愿
+          <input disabled={saving} value={text} onChange={(e) => setText(e.target.value)} />
+        </label>
+        <label>
+          定个日期
+          <input
+            type="date"
+            disabled={saving}
+            value={date}
+            min={todayLocal()}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </label>
+        {date && <small className="hint">定了日期，TA 到时会来问你</small>}
+        {item.dueDate && (
+          <button
+            className="text-button"
+            disabled={saving}
+            onClick={() => void save({ dueDate: null })}
+          >
+            取消日期
+          </button>
+        )}
+        <div className="button-row">
+          <button
+            className="primary full"
+            disabled={saving || !text.trim() || tooLong}
+            aria-busy={saving}
+            onClick={() =>
+              void save({
+                ...(text.trim() !== item.text ? { text: text.trim() } : {}),
+                ...(date !== (item.dueDate ?? '') ? { dueDate: date || null } : {}),
+              })
+            }
+          >
+            {saving ? '正在保存…' : '保存'}
+          </button>
+        </div>
+        <button className="danger" disabled={saving} onClick={onDelete}>
+          删除
         </button>
       </div>
-      <button className="danger" onClick={onDelete}>
-        删除
-      </button>
-    </div>
+    </Sheet>
   );
 }
 
@@ -727,14 +834,19 @@ export function LettersPage() {
           {error} <button onClick={() => void load()}>重试</button>
         </p>
       )}
-      {loading && items.length === 0 && <div className="skeleton-row" role="status" />}
+      {loading && items.length === 0 && (
+        <p className="page-note" role="status">
+          正在读取信件…
+        </p>
+      )}
       {!loading && !error && items.length === 0 && (
         <p className="empty">
           {box === 'received' ? '还没有收到信' : box === 'sent' ? '还没有寄出过信' : '没有草稿'}
         </p>
       )}
-      <div className="panel">
-        {items.map((l) => {
+      {items.length > 0 && (
+        <div className="panel">
+          {items.map((l) => {
           const inTransit = l.status === 'in_transit';
           const unreadLetter = l.direction === 'from_character' && !inTransit && !l.readAt;
           return (
@@ -774,22 +886,23 @@ export function LettersPage() {
             </button>
           );
         })}
-      </div>
+        </div>
+      )}
       {cursor && (
         <button disabled={loading} onClick={() => void load(cursor)}>
           加载更多
         </button>
       )}
       {picking && (
-        <div className="sheet-panel" role="dialog" aria-label="写给谁">
-          <strong>写给谁</strong>
-          <CharacterPicker
-            value={null}
-            label="写给谁"
-            onChange={(id) => navigate(`/play/letters/new?characterId=${id}`)}
-          />
-          <button onClick={() => setPicking(false)}>取消</button>
-        </div>
+        <Sheet title="写给谁" closeLabel="取消" onClose={() => setPicking(false)} half>
+          <div className="stack">
+            <CharacterPicker
+              value={null}
+              label="写给谁"
+              onChange={(id) => navigate(`/play/letters/new?characterId=${id}`)}
+            />
+          </div>
+        </Sheet>
       )}
     </main>
   );
@@ -806,10 +919,15 @@ export function WriteLetterPage() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [repliedToday, setRepliedToday] = useState(false);
+  const [draftLoading, setDraftLoading] = useState(!!characterId);
+  const [draftError, setDraftError] = useState('');
+  const [draftRevision, setDraftRevision] = useState(0);
   const requestId = useRef(crypto.randomUUID());
   useEffect(() => {
     if (!characterId) return;
     let active = true;
+    setDraftLoading(true);
+    setDraftError('');
     void api
       .call(LetterEndpoints.listLetters, {
         query: { box: 'drafts', characterId },
@@ -822,7 +940,12 @@ export function WriteLetterPage() {
           setOriginal(draft);
         }
       })
-      .catch(() => {});
+      .catch((error) => {
+        if (active) setDraftError(friendlyError(error));
+      })
+      .finally(() => {
+        if (active) setDraftLoading(false);
+      });
     void api
       .call(LetterEndpoints.listLetters, {
         query: { box: 'received', characterId },
@@ -841,7 +964,7 @@ export function WriteLetterPage() {
     return () => {
       active = false;
     };
-  }, [characterId]);
+  }, [characterId, draftRevision]);
   if (!characterId)
     return (
       <main>
@@ -856,7 +979,7 @@ export function WriteLetterPage() {
   const name = nameOf(characterId);
   const over = chars(body) > PLAY_LIMITS.letterMaxChars;
   async function send() {
-    if (!characterId || !body.trim() || over) return;
+    if (pending || draftLoading || !characterId || !body.trim() || over) return;
     setPending(true);
     setError('');
     try {
@@ -881,7 +1004,9 @@ export function WriteLetterPage() {
     }
   }
   async function saveDraft() {
-    if (!characterId) return;
+    if (!characterId || pending) return;
+    setPending(true);
+    setError('');
     try {
       await api.call(LetterEndpoints.saveDraft, {
         params: { characterId },
@@ -892,6 +1017,8 @@ export function WriteLetterPage() {
     } catch (e) {
       setError(friendlyError(e));
       setLeaving(false);
+    } finally {
+      setPending(false);
     }
   }
   return (
@@ -899,6 +1026,7 @@ export function WriteLetterPage() {
       <header className="page-header">
         <button
           className="text-button"
+          disabled={pending}
           onClick={() => (body.trim() && body !== original ? setLeaving(true) : navigate(-1))}
         >
           取消
@@ -906,17 +1034,35 @@ export function WriteLetterPage() {
         <h1>给 {name} 的信</h1>
         <button
           className="text-button primary-text"
-          disabled={pending || !body.trim() || over}
+          disabled={pending || draftLoading || !body.trim() || over}
           onClick={() => void send()}
         >
-          {pending ? '正在寄出…' : '寄出'}
+          {pending ? (leaving ? '正在保存…' : '正在寄出…') : '寄出'}
         </button>
       </header>
+      {draftLoading && (
+        <p className="page-note" role="status">
+          正在恢复草稿…
+        </p>
+      )}
+      {draftError && (
+        <div className="page-note">
+          <p role="alert">{draftError}</p>
+          <button
+            className="text-button"
+            disabled={draftLoading}
+            onClick={() => setDraftRevision((v) => v + 1)}
+          >
+            重试读取草稿
+          </button>
+        </div>
+      )}
       <div className="play-paper">
         <p>{name}：</p>
         <textarea
           aria-label="信的正文"
           autoFocus
+          disabled={pending || draftLoading}
           value={body}
           onChange={(e) => setBody(e.target.value)}
         />
@@ -931,15 +1077,29 @@ export function WriteLetterPage() {
           : `回信会在 ${PLAY_LIMITS.letterReplyDelayMinHours}–${PLAY_LIMITS.letterReplyDelayMaxHours} 小时后寄到`}
       </p>
       {leaving && (
-        <div className="sheet-panel" role="dialog" aria-label="离开写信页">
-          <button className="primary" onClick={() => void saveDraft()}>
-            保存草稿
-          </button>
-          <button onClick={() => navigate(-1)}>不保存</button>
-          <button className="text-button" onClick={() => setLeaving(false)}>
-            继续写
-          </button>
-        </div>
+        <Sheet
+          title="离开写信页"
+          closeLabel="继续写"
+          closeDisabled={pending}
+          onClose={() => {
+            if (!pending) setLeaving(false);
+          }}
+        >
+          <div className="stack">
+            <p>要保存这封信的草稿吗？</p>
+            <button
+              className="primary"
+              disabled={pending}
+              aria-busy={pending}
+              onClick={() => void saveDraft()}
+            >
+              {pending ? '正在保存…' : '保存草稿'}
+            </button>
+            <button disabled={pending} onClick={() => navigate(-1)}>
+              不保存
+            </button>
+          </div>
+        </Sheet>
       )}
     </main>
   );
@@ -1045,7 +1205,12 @@ export function LetterBubble({
 export function useActiveFocus() {
   const focus = useRemote(FocusEndpoints.getActive, { networkOnly: true });
   useSection('focus', focus.refresh);
-  return { session: focus.data?.session ?? null, refresh: focus.refresh };
+  return {
+    session: focus.data?.session ?? null,
+    refresh: focus.refresh,
+    loading: focus.loading,
+    error: focus.error,
+  };
 }
 
 function remainingText(ms: number) {
@@ -1083,7 +1248,7 @@ export function FocusCapsule() {
 export function FocusPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const { session, refresh } = useActiveFocus();
+  const { session, refresh, loading, error: loadError } = useActiveFocus();
   const [characterId, setCharacterId] = useState<string | null>(params.get('characterId'));
   const [preset, setPreset] = useState<number | 'custom'>(25);
   const [custom, setCustom] = useState(30);
@@ -1093,7 +1258,10 @@ export function FocusPage() {
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [finished, setFinished] = useState<FocusSession | null>(null);
   const { nameOf, friends } = useFriends();
-  const running = session && session.result === 'in_progress' ? session : null;
+  const running =
+    session && session.result === 'in_progress' && session.focusId !== finished?.focusId
+      ? session
+      : null;
   const now = useNow(!!running);
   const minutes = preset === 'custom' ? custom : preset;
   const validMinutes =
@@ -1101,7 +1269,7 @@ export function FocusPage() {
     minutes >= PLAY_LIMITS.focusMinMinutes &&
     minutes <= PLAY_LIMITS.focusMaxMinutes;
   async function start() {
-    if (!characterId || !validMinutes) return;
+    if (pending || !characterId || !validMinutes) return;
     setPending(true);
     setError('');
     try {
@@ -1123,13 +1291,16 @@ export function FocusPage() {
     }
   }
   async function end() {
-    if (!running) return;
+    if (!running || pending) return;
     setConfirmEnd(false);
+    setPending(true);
     try {
       setFinished(await api.call(FocusEndpoints.end, { params: { focusId: running.focusId } }));
       refresh();
     } catch (e) {
       showToast(friendlyError(e));
+    } finally {
+      setPending(false);
     }
   }
   const chatOf = (id: string) => friends.find((f) => f.characterId === id)?.conversationId;
@@ -1163,14 +1334,18 @@ export function FocusPage() {
             </Link>
           )
         ) : (
-          <button onClick={() => setConfirmEnd(true)}>提前结束</button>
+          <button disabled={pending} aria-busy={pending} onClick={() => setConfirmEnd(true)}>
+            {pending ? '正在结束…' : '提前结束'}
+          </button>
         )}
         {confirmEnd && (
-          <div className="sheet-panel" role="dialog" aria-label="结束这次专注？">
-            <strong>结束这次专注？</strong>
-            <button onClick={() => void end()}>结束</button>
-            <button onClick={() => setConfirmEnd(false)}>取消</button>
-          </div>
+          <Dialog
+            title="结束这次专注？"
+            actions={[
+              { label: '取消', onClick: () => setConfirmEnd(false) },
+              { label: '结束', primary: true, onClick: () => void end() },
+            ]}
+          />
         )}
       </main>
     );
@@ -1179,7 +1354,7 @@ export function FocusPage() {
     const name = nameOf(finished.characterId);
     return (
       <main className="play-focus">
-        <Header title="" back="/services" />
+        <Header title="专注已结束" back="/miniapps" />
         <div className="play-focus-body">
           <CharacterAvatar id={finished.characterId} size={64} />
           <p>这次专注结束了</p>
@@ -1192,8 +1367,26 @@ export function FocusPage() {
       </main>
     );
   }
+  if (loading || loadError)
+    return (
+      <main className="play-focus-setup">
+        <Header title="陪你专注" />
+        {loadError ? (
+          <div className="empty">
+            <p role="alert">{loadError}</p>
+            <button className="text-button" disabled={loading} onClick={refresh}>
+              {loading ? '正在重试…' : '重试'}
+            </button>
+          </div>
+        ) : (
+          <p className="page-note" role="status">
+            正在读取专注状态…
+          </p>
+        )}
+      </main>
+    );
   return (
-    <main>
+    <main className="play-focus-setup">
       <Header title={characterId ? `和 ${nameOf(characterId)} 一起专注` : '陪你专注'} />
       {!params.get('characterId') && (
         <>
@@ -1227,7 +1420,7 @@ export function FocusPage() {
           />
         </label>
       )}
-      <label className="stack">
+      <label className="stack play-focus-note">
         做什么（选填）
         <input
           value={note}
@@ -1240,9 +1433,10 @@ export function FocusPage() {
       <button
         className="primary"
         disabled={pending || !characterId || !validMinutes}
+        aria-busy={pending}
         onClick={() => void start()}
       >
-        开始专注
+        {pending ? '正在开始…' : '开始专注'}
       </button>
     </main>
   );
@@ -1308,8 +1502,17 @@ export function RemindersPage() {
           </button>
         }
       />
-      {list.error && <p role="alert">{list.error}</p>}
-      {list.loading && !items && <div className="skeleton-row" role="status" />}
+      {list.error && (
+        <div className="empty">
+          <p role="alert">{list.error}</p>
+          <button onClick={list.refresh}>重试</button>
+        </div>
+      )}
+      {list.loading && !items && (
+        <p className="empty" role="status">
+          正在读取提醒…
+        </p>
+      )}
       {items && all.length === 0 && (
         <div className="empty">
           <p>设一个提醒，让 TA 来叫你</p>
@@ -1318,30 +1521,32 @@ export function RemindersPage() {
           </Link>
         </div>
       )}
-      <div className="panel">
-        {all.map((r) => (
-          <div key={r.reminderId} className="play-reminder">
-            <Link to={`/play/reminders/${r.reminderId}`} className="overview-name">
-              <span>
-                <strong className="numeric">{r.time}</strong> {r.text}
-                {r.health && <span className="tag">健康</span>}
-              </span>
-              <small className="hint role-row">
-                <CharacterAvatar id={r.characterId} size={20} /> {nameOf(r.characterId)} 提醒 ·{' '}
-                {repeatText(r.repeat)}
-                {r.pausedByContactRemoval && ' · 已暂停'}
-              </small>
-            </Link>
-            <input
-              type="checkbox"
-              role="switch"
-              aria-label={r.enabled ? '关闭提醒' : '打开提醒'}
-              checked={r.enabled}
-              onChange={() => void toggle(r)}
-            />
-          </div>
-        ))}
-      </div>
+      {all.length > 0 && (
+        <div className="panel">
+          {all.map((r) => (
+            <div key={r.reminderId} className="play-reminder">
+              <Link to={`/play/reminders/${r.reminderId}`} className="overview-name">
+                <span>
+                  <strong className="numeric">{r.time}</strong> {r.text}
+                  {r.health && <span className="tag">健康</span>}
+                </span>
+                <small className="hint role-row">
+                  <CharacterAvatar id={r.characterId} size={20} /> {nameOf(r.characterId)} 提醒 ·{' '}
+                  {repeatText(r.repeat)}
+                  {r.pausedByContactRemoval && ' · 已暂停'}
+                </small>
+              </Link>
+              <input
+                type="checkbox"
+                role="switch"
+                aria-label={r.enabled ? '关闭提醒' : '打开提醒'}
+                checked={r.enabled}
+                onChange={() => void toggle(r)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
       {all.length > 0 && (
         <p className="hint">
           {all.length} / {limit}
@@ -1363,7 +1568,19 @@ export function ReminderEditPage() {
     return (
       <main>
         <Header title="编辑提醒" />
-        <div className="skeleton-row" role="status" />
+        <p className="empty" role="status">
+          正在读取提醒…
+        </p>
+      </main>
+    );
+  if (editing && list.error && !list.data)
+    return (
+      <main>
+        <Header title="编辑提醒" />
+        <div className="empty">
+          <p role="alert">{list.error}</p>
+          <button onClick={list.refresh}>重试</button>
+        </div>
       </main>
     );
   if (editing && list.data && !existing)
@@ -1418,7 +1635,7 @@ function ReminderForm({ reminder, onDone }: { reminder?: Reminder; onDone(): voi
     (kind !== 'weekly' || weekdays.length > 0) &&
     (kind !== 'once' || !!date);
   async function save() {
-    if (!valid || !characterId) return;
+    if (pending || !valid || !characterId) return;
     setPending(true);
     setError('');
     try {
@@ -1520,7 +1737,7 @@ function ReminderForm({ reminder, onDone }: { reminder?: Reminder; onDone(): voi
           </label>
         )}
         {kind === 'weekly' && (
-          <div className="chip-row" role="group" aria-label="选星期">
+          <div className="chip-row reminder-weekdays" role="group" aria-label="选星期">
             {weekdayNames.map((n, i) => {
               const d = i + 1;
               const on = weekdays.includes(d);
@@ -1560,6 +1777,7 @@ function ReminderForm({ reminder, onDone }: { reminder?: Reminder; onDone(): voi
           <input
             type="checkbox"
             role="switch"
+            aria-label="归类为健康"
             checked={health}
             onChange={(e) => setHealth(e.target.checked)}
           />
@@ -1574,17 +1792,22 @@ function ReminderForm({ reminder, onDone }: { reminder?: Reminder; onDone(): voi
           <input
             type="checkbox"
             role="switch"
+            aria-label="免打扰时段也提醒"
             checked={bypass}
             onChange={(e) => setBypass(e.target.checked)}
           />
         </label>
       </div>
       {error && <p role="alert">{error}</p>}
-      <button className="primary" disabled={pending || !valid} onClick={() => void save()}>
-        保存
+      <button
+        className="primary reminder-save"
+        disabled={pending || !valid}
+        onClick={() => void save()}
+      >
+        {pending ? '正在保存…' : '保存'}
       </button>
       {reminder && (
-        <button className="danger" onClick={() => setConfirmDelete(true)}>
+        <button className="danger full" onClick={() => setConfirmDelete(true)}>
           删除提醒
         </button>
       )}

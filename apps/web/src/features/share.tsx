@@ -34,6 +34,7 @@ import {
   type SharePerson,
 } from './share-render.js';
 import { showToast } from './toast.js';
+import { EmptyState, NavBar } from './shell-kit.js';
 
 /*
  * 分享图编辑页（share-templates.md 第 5、7 节；EXP-01、EXP-02）。
@@ -397,29 +398,40 @@ export function ShareEditorPage() {
   if (!source)
     return (
       <main>
-        <p className="empty">没有可以生成分享图的内容</p>
-        <button onClick={() => navigate(-1)}>返回</button>
+        <NavBar title="分享图" fallback="/chat" />
+        <EmptyState
+          icon="wechat/star"
+          title="没有可以生成分享图的内容"
+          desc="长按一条消息或一条朋友圈，选择「分享图」"
+          action={
+            <button type="button" className="text-button text-action" onClick={() => navigate(-1)}>
+              返回
+            </button>
+          }
+        />
       </main>
     );
   return (
     <main className="share-page">
-      <header className="page-header">
-        <button className="text-button" onClick={() => navigate(-1)}>
-          ‹ 取消
-        </button>
-        <h1>分享图</h1>
-        <span />
-      </header>
-      <div className="share-preview" aria-busy={rendering}>
+      <NavBar title="分享图" fallback="/chat" onBack={() => navigate(-1)} />
+      <div className="share-preview" aria-busy={rendering || (!preview && !error && !failed)}>
         {error ? (
           <div className="empty">
             <p>{error}</p>
-            <button onClick={() => navigate(-1)}>返回</button>
+            <button type="button" className="text-button text-action" onClick={() => navigate(-1)}>
+              返回
+            </button>
           </div>
         ) : failed ? (
           <div className="empty">
             <p>生成失败</p>
-            <button onClick={() => setRetry((v) => v + 1)}>重试</button>
+            <button
+              type="button"
+              className="text-button text-action"
+              onClick={() => setRetry((v) => v + 1)}
+            >
+              重试
+            </button>
           </div>
         ) : preview ? (
           <img
@@ -428,21 +440,28 @@ export function ShareEditorPage() {
             src={preview.url}
             alt="分享图预览"
           />
-        ) : null}
+        ) : (
+          <p className="hint" role="status">
+            正在准备分享内容…
+          </p>
+        )}
         {rendering && <span className="spinner" role="status" aria-label="正在生成预览" />}
       </div>
       {assets && assets.missing > 0 && <p className="hint">有 {assets.missing} 张图片没加载出来</p>}
       <div className="template-list" role="radiogroup" aria-label="模板">
         {templates.map(([key, label]) => {
-          const disabled = key === 'card_style' && source.kind === 'moments_post';
+          const cardOnly = source.kind === 'card' && key !== 'card_style';
+          const disabled = cardOnly || (key === 'card_style' && source.kind === 'moments_post');
           return (
             <button
               key={key}
               role="radio"
               aria-checked={template === key}
+              aria-disabled={disabled}
               className={`template-option ${disabled ? 'disabled' : ''}`}
               onClick={() => {
-                if (disabled) showToast('这条内容不适合卡片风');
+                if (cardOnly) showToast('卡片分享使用卡片风，保留卡面与编号');
+                else if (disabled) showToast('这条内容不适合卡片风');
                 else setTemplate(key);
               }}
             >
@@ -452,6 +471,7 @@ export function ShareEditorPage() {
           );
         })}
       </div>
+      {source.kind === 'card' && <p className="hint">卡片分享使用卡片风，保留卡面与编号</p>}
       {template === 'card_style' && !assets?.card && overflow && (
         <p className="hint">内容太多，建议用其他模板</p>
       )}
@@ -493,11 +513,18 @@ export function ShareEditorPage() {
         </label>
       </div>
       <div className="button-row share-actions">
-        <button className="primary" disabled={!preview || failed || busy} onClick={save}>
+        <button
+          className="primary"
+          disabled={!preview || rendering || failed || busy}
+          onClick={save}
+        >
           保存到相册
         </button>
         {canShare && (
-          <button disabled={!preview || failed || busy} onClick={() => void shareImage()}>
+          <button
+            disabled={!preview || rendering || failed || busy}
+            onClick={() => void shareImage()}
+          >
             分享
           </button>
         )}

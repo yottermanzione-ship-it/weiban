@@ -731,6 +731,10 @@ export function ConversationSearchPage() {
           value={input}
           maxLength={50}
           placeholder="搜索"
+          onClear={() => {
+            setInput('');
+            setMode('none');
+          }}
           onChange={(e) => {
             setInput(e.target.value);
             setMode('none');

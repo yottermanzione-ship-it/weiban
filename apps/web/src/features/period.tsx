@@ -325,19 +325,25 @@ export function PeriodPage() {
     .join('、');
   return (
     <main className="period-page">
-      <header className="page-header">
-        <Link to="/services" aria-label="返回服务">
-          ‹ 服务
-        </Link>
-        <h1>经期日记</h1>
-        {seen ? <Link to="/services/period/settings">设置</Link> : <span />}
-      </header>
+      <NavBar
+        title="经期日记"
+        fallback="/miniapps"
+        right={
+          seen ? (
+            <Link className="text-button text-action" to="/services/period/settings">
+              设置
+            </Link>
+          ) : undefined
+        }
+      />
       {!seen ? (
         <Intro onStart={() => setSeen(true)} />
       ) : data.error && !data.cycles ? (
         <div className="empty">
-          <p>加载失败</p>
-          <button onClick={data.refresh}>重试</button>
+          <p role="alert">{data.error}</p>
+          <button className="text-button" onClick={data.refresh}>
+            重试
+          </button>
         </div>
       ) : !data.cycles || !data.prediction ? (
         <div className="stack" role="status" aria-label="正在读取">
@@ -445,7 +451,7 @@ export function PeriodDayPage() {
   if (date > today())
     return (
       <main>
-        <Link to={back}>‹ 经期日记</Link>
+        <NavBar title="经期日记" fallback="/services/period" />
         <p className="empty">未来的日子还不能记录</p>
       </main>
     );
@@ -486,28 +492,32 @@ export function PeriodDayPage() {
   }
   return (
     <main>
-      <header className="page-header">
-        <button className="text-button" onClick={() => (dirty ? setLeaving(true) : navigate(back))}>
-          ‹ 经期日记
-        </button>
-        <h1>{monthDay(date)}</h1>
-        <button
-          className="text-button"
-          disabled={busy || !loaded || (!cycle && !inPeriod)}
-          onClick={() => void save(log)}
-        >
-          保存
-        </button>
-      </header>
+      <NavBar
+        title={monthDay(date)}
+        fallback="/services/period"
+        onBack={() => (dirty ? setLeaving(true) : navigate(back))}
+        right={
+          <button
+            type="button"
+            className="text-button text-action"
+            disabled={busy || !loaded || (!cycle && !inPeriod)}
+            onClick={() => void save(log)}
+          >
+            保存
+          </button>
+        }
+      />
       {data.error && !data.cycles && (
         <div className="empty">
-          <p>加载失败</p>
-          <button onClick={data.refresh}>重试</button>
+          <p role="alert">{data.error}</p>
+          <button className="text-button" onClick={data.refresh}>
+            重试
+          </button>
         </div>
       )}
       {loaded && (
         <div className="stack">
-          <label className="check">
+          <label className="check check-card">
             <input
               type="checkbox"
               checked={inPeriod}
@@ -625,12 +635,13 @@ export function PeriodHistoryPage() {
   const cycles = data.cycles ?? [];
   return (
     <main>
-      <Link to="/services/period">‹ 经期日记</Link>
-      <h1 className="page-title">历史记录</h1>
+      <NavBar title="历史记录" fallback="/services/period" />
       {data.error && !data.cycles && (
         <div className="empty">
-          <p>加载失败</p>
-          <button onClick={data.refresh}>重试</button>
+          <p role="alert">{data.error}</p>
+          <button className="text-button" onClick={data.refresh}>
+            重试
+          </button>
         </div>
       )}
       {data.cycles && cycles.length === 0 && <p className="empty">还没有记录</p>}
@@ -729,8 +740,7 @@ export function PeriodAuthorizationPage() {
   );
   return (
     <main>
-      <Link to="/services/period">‹ 经期日记</Link>
-      <h1 className="page-title">让谁知道</h1>
+      <NavBar title="让谁知道" fallback="/services/period" />
       <p className="hint">
         你授权的角色会知道你现在是否在经期、第几天、预计下次开始日，以及当天记录的痛感和症状；不知道流量、备注和历史记录。
       </p>
@@ -749,7 +759,6 @@ export function PeriodAuthorizationPage() {
               <div key={c.characterId}>
                 <CharacterAvatar id={c.characterId} size={40} />
                 <label className="check grow">
-                  {nameOf(c.characterId)}
                   <input
                     type="checkbox"
                     role="switch"
@@ -764,6 +773,7 @@ export function PeriodAuthorizationPage() {
                         );
                     }}
                   />
+                  {nameOf(c.characterId)}
                 </label>
               </div>
             ))}

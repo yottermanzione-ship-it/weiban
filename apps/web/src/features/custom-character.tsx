@@ -17,6 +17,7 @@ import { useAuth } from '../app/auth.js';
 import { CharacterTrial } from './character-trial.js';
 import { AvatarEditor } from './avatar-editor.js';
 import { CharacterVoiceSelect } from './character-voice-select.js';
+import { NavBar } from './shell-kit.js';
 
 const basisOptions: { value: CharacterBasis; label: string; description: string }[] = [
   {
@@ -446,7 +447,10 @@ function CustomCharacterEditor({
     );
   return (
     <main>
-      <h1 className="page-title">{mode === 'create' ? '创建角色' : '编辑角色'}</h1>
+      <NavBar
+        title={mode === 'create' ? '创建角色' : '编辑角色'}
+        fallback={mode === 'create' ? '/contacts' : `/characters/${characterId}`}
+      />
       {mode === 'create' && !importJobId && <ActiveImportsRow />}
       {mode === 'create' && !importJobId && (
         <Link className="panel row-link" to="/imports/new">
@@ -670,8 +674,12 @@ function CustomCharacterEditor({
           />
         </label>
 
-        <button className="primary" disabled={loading || pending || uploadPending}>
-          {mode === 'create' ? '创建角色' : '保存'}
+        <button
+          className="primary"
+          disabled={loading || pending || uploadPending}
+          aria-busy={pending}
+        >
+          {pending ? (mode === 'create' ? '正在创建…' : '正在保存…') : mode === 'create' ? '创建角色' : '保存'}
         </button>
       </form>
 

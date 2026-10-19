@@ -119,14 +119,19 @@ async function snapshot(api: ApiClient, signal: AbortSignal): Promise<FullSyncSn
       if (page.coverage) result.coverages.push({ conversationId, coverage: page.coverage });
     }
   }
-  for (const contact of contacts.items) {
-    if (contact.status !== 'active') continue;
-    const settings = await api.call(CompanionEndpoints.getForCharacter, {
-      ...options,
-      params: { characterId: contact.characterId },
-    });
-    result.settings[`companion:${contact.characterId}`] = z.json().parse(settings);
-  }
+  // 逐角色串行会让首屏尾部多出 N×往返：三个角色在跨境库上就是 10 秒。
+  // 并发取同一批设置，失败仍按原样抛出（不吞错、不改变结果结构）。
+  await Promise.all(
+    contacts.items
+      .filter((contact) => contact.status === 'active')
+      .map(async (contact) => {
+        const settings = await api.call(CompanionEndpoints.getForCharacter, {
+          ...options,
+          params: { characterId: contact.characterId },
+        });
+        result.settings[`companion:${contact.characterId}`] = z.json().parse(settings);
+      }),
+  );
   return result;
 }
 async function refreshSetting(

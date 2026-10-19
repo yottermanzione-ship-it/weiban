@@ -12,6 +12,7 @@ import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterAvatar } from './character-avatar.js';
+import { NavBar } from './shell-kit.js';
 
 /*
  * TA 认识的人（SOC-01 第 3 条；social-l4.md 第 6 节）：只在用户自己的自定义角色之间设置关系，双向生效。
@@ -80,10 +81,11 @@ export function RelationsPage() {
   );
   const otherOf = (r: CharacterRelation) =>
     r.characterAId === characterId ? r.characterBId : r.characterAId;
-  const candidates = (customs ?? []).filter(
+  const candidates = (customs?.includes(characterId) ? customs : []).filter(
     (id) => id !== characterId && !mine.some((r) => otherOf(r) === id),
   );
   async function run(operation: () => Promise<unknown>) {
+    if (pending) return;
     setPending(true);
     setError('');
     try {
@@ -99,26 +101,29 @@ export function RelationsPage() {
   }
   return (
     <main>
-      <header className="page-header">
-        <Link to={`/characters/${characterId}`}>‹ 资料</Link>
-        <h1>TA 认识的人</h1>
-        <button
-          className="text-button"
-          aria-label="添加关系"
-          disabled={candidates.length === 0}
-          onClick={() =>
-            setEditing({
-              relation: null,
-              otherId: candidates[0] ?? '',
-              type: 'friend',
-              label: '',
-              closeness: 'familiar',
-            })
-          }
-        >
-          ＋
-        </button>
-      </header>
+      <NavBar
+        title="TA 认识的人"
+        fallback={`/characters/${characterId}`}
+        right={
+          <button
+            type="button"
+            className="text-button text-action"
+            aria-label="添加关系"
+            disabled={pending || relations.loading || candidates.length === 0}
+            onClick={() =>
+              setEditing({
+                relation: null,
+                otherId: candidates[0] ?? '',
+                type: 'friend',
+                label: '',
+                closeness: 'familiar',
+              })
+            }
+          >
+            ＋
+          </button>
+        }
+      />
       {relations.loading && !relations.data && (
         <div className="stack" role="status" aria-label="正在读取">
           <div className="skeleton-row" />
@@ -128,7 +133,7 @@ export function RelationsPage() {
       {relations.data && mine.length === 0 && (
         <p className="hint">
           还没有设置关系{' '}
-          {candidates.length > 0 && (
+          {!relations.loading && candidates.length > 0 && (
             <button
               className="text-button"
               onClick={() =>
@@ -175,6 +180,9 @@ export function RelationsPage() {
       <p className="hint">
         只有你创建的角色之间可以设置关系。设置后 TA 们会在群聊、朋友圈里互相认识。
       </p>
+      {customs?.includes(characterId) && customs.length < 2 && (
+        <p className="hint">需要至少两个自己创建的角色才能添加关系。</p>
+      )}
       {editing && (
         <form
           className="panel stack"

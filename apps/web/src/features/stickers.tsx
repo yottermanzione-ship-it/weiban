@@ -1,11 +1,11 @@
 import { useRef, useState, type ChangeEvent } from 'react';
-import { Link } from 'react-router-dom';
 import { MEDIA_LIMITS, StickerEndpoints, USER_STICKER_LIMIT } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import { useUpdates } from '../data/updates.js';
 import { uploadMedia } from '../data/upload.js';
+import { MenuGroup, MenuRow, NavBar, Sheet } from './shell-kit.js';
 import { showToast } from './toast.js';
 
 /** 我 › 表情（me-and-services.md 1.5；MED-01 第 3 条）：4 列网格、从相册添加、整理（移到最前 / 删除）。 */
@@ -84,22 +84,25 @@ export function MyStickersPage() {
   }
   return (
     <main>
-      <header className="page-header">
-        <Link to="/me">‹ 我</Link>
-        <h1>我添加的表情</h1>
-        <button
-          className="text-button"
-          onClick={() => {
-            setEditing((v) => !v);
-            setSelected([]);
-          }}
-        >
-          {editing ? '完成' : '整理'}
-        </button>
-      </header>
-      <p>
-        <Link to="/sticker-store">表情商店与我的表情包</Link>
-      </p>
+      <NavBar
+        title="我添加的表情"
+        fallback="/me"
+        right={
+          <button
+            className="text-button text-action"
+            disabled={pending || !items.length}
+            onClick={() => {
+              setEditing((v) => !v);
+              setSelected([]);
+            }}
+          >
+            {editing ? '完成' : '整理'}
+          </button>
+        }
+      />
+      <MenuGroup>
+        <MenuRow to="/sticker-store" label="表情商店与我的表情包" />
+      </MenuGroup>
       {remote.loading && !remote.data && (
         <p role="status" className="empty">
           正在读取…
@@ -108,7 +111,12 @@ export function MyStickersPage() {
       {remote.error && !remote.data && (
         <div className="empty">
           <p>加载失败</p>
-          <button onClick={remote.refresh}>重试</button>
+          <p className="hint" role="alert">
+            {remote.error}
+          </p>
+          <button className="text-button" type="button" onClick={remote.refresh}>
+            重试
+          </button>
         </div>
       )}
       <div className="sticker-grid manage">
@@ -128,6 +136,8 @@ export function MyStickersPage() {
             <button
               key={s.stickerId}
               className={`sticker-cell ${checked ? 'checked' : ''}`}
+              disabled={pending}
+              aria-label={`表情 ${items.indexOf(s) + 1}${editing && checked ? '，已选择' : ''}`}
               aria-pressed={editing ? checked : undefined}
               onClick={() =>
                 editing
@@ -162,19 +172,19 @@ export function MyStickersPage() {
           </button>
         </div>
       )}
-      {preview && (
-        <div
-          className="image-viewer"
-          role="dialog"
-          aria-label="查看表情"
-          onClick={() => setPreview(null)}
-        >
-          <div className="viewer-stage">
-            <img className="viewer-image loaded" src={preview} alt="表情" />
-          </div>
-        </div>
-      )}
+      {preview && <StickerPreview url={preview} onClose={() => setPreview(null)} />}
       <input ref={input} type="file" accept="image/*" hidden onChange={(e) => void add(e)} />
     </main>
+  );
+}
+
+/** 两处表情入口共用关闭与键盘行为。 */
+export function StickerPreview({ url, onClose }: { url: string; onClose(): void }) {
+  return (
+    <Sheet title="查看表情" closeLabel="关闭" onClose={onClose}>
+      <div className="sticker-preview">
+        <img src={url} alt="表情" />
+      </div>
+    </Sheet>
   );
 }

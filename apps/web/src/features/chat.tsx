@@ -34,6 +34,7 @@ import {
 import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
+import { useCharacterProfile } from '../data/character-profile.js';
 import { useUpdates } from '../data/updates.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { VirtualList } from './virtual-list.js';
@@ -112,8 +113,18 @@ interface Upload {
   failed: boolean;
 }
 export function CharacterName({ id, fallback }: { id: string; fallback?: string | null }) {
-  const profile = useRemote(CharacterEndpoints.getProfile, { params: { characterId: id } });
-  return <>{fallback || profile.data?.name || '角色'}</>;
+  const profile = useCharacterProfile(id);
+  return (
+    <>
+      {fallback ||
+        profile.data?.name ||
+        (profile.loading
+          ? '正在读取角色…'
+          : profile.errorCode === 'not_found'
+            ? '角色已删除或不可见'
+            : '角色资料暂不可用')}
+    </>
+  );
 }
 /** 群里的角色成员（不含已退出的）。 */
 export function groupMembers(conversation: Conversation): Participant[] {
@@ -199,7 +210,7 @@ function systemText(code: string, params: Record<string, string | number | boole
         case 'anniversary':
           return `今天是你们认识的第 ${p('daysKnown')} 天 · 获得纪念卡 ${serial} ›`;
         case 'familiarity':
-          return `获得熟悉度卡 ${serial} ›`;
+          return `获得好感度卡 ${serial} ›`;
         case 'holiday':
           return `${p('holidayName')}快乐 · 获得节日卡 ${serial} ›`;
         default:
@@ -207,7 +218,7 @@ function systemText(code: string, params: Record<string, string | number | boole
       }
     }
     case 'familiarity_level_up':
-      return `你和 ${p('characterName')} 的熟悉度升到了 L${p('level')} ${p('levelName') || familiarityNames[Number(params.level) - 1] || ''}`;
+      return `你和 ${p('characterName')} 的好感度升到了 L${p('level')} ${p('levelName') || familiarityNames[Number(params.level) - 1] || ''}`;
     case 'pet_adopted':
       return `你和 ${p('characterName')} 一起领养了 ${p('petName')}`;
     case 'pet_renamed':
@@ -353,7 +364,7 @@ export function ConversationPage() {
           <Link className="wx-back" to="/chat" aria-label="返回微伴">
             <BackArrow />
           </Link>
-          <span />
+          <ChatHeading name="聊天" active={false} group={false} typing={false} />
           <span />
         </header>
         <p role="status" className="empty">
@@ -757,6 +768,20 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     !!me &&
     (message.content.mentions ?? []).includes(me.participantId);
   /** 气泡（文字类带尖角；图片、表情不带气泡底；卡片类统一白卡）。 */
+  /** 引用在微信里是气泡内的一条浅色引文，不是气泡下面另起一块 */
+  function quoteLine(message: Message) {
+    const original = messages.find((item) => item.messageId === message.quote?.messageId);
+    const who = original
+      ? original.senderKind === 'user'
+        ? (userProfile.data?.nickname ?? '我')
+        : displayName(senderOf(original)?.refId ?? role?.refId ?? '')
+      : '引用消息';
+    return (
+      <span className="wx-quote-inline">
+        {who}：{message.quote?.preview ?? '原消息已不可见'}
+      </span>
+    );
+  }
   function bubble(message: Message) {
     const c = message.content;
     const mine = message.senderKind === 'user';
@@ -764,6 +789,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
       <div
         className={`wx-bubble ${mine ? 'mine' : ''} ${mentionedMe(message) ? 'mention' : ''} ${extra}`}
       >
+        {message.quote && quoteLine(message)}
         <span className="wx-bubble-text">{children}</span>
       </div>
     );
@@ -1110,6 +1136,28 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
       const item = pending[row.index];
       if (!item) return null;
       const c = item.body.content;
+      if (c.type === 'nudge') {
+        const target = conversation.participants.find(
+          (p) => p.participantId === c.targetParticipantId,
+        );
+        return (
+          <div className="wx-system">
+            你拍了拍{target?.kind === 'character' ? displayName(target.refId) : '自己'}
+            {item.state === 'failed' && (
+              <button
+                className="text-button"
+                onClick={() =>
+                  void chat
+                    .retry(id, item.body.clientMsgId)
+                    .catch((e) => setError(friendlyError(e)))
+                }
+              >
+                发送失败，重试
+              </button>
+            )}
+          </div>
+        );
+      }
       return (
         <div className="wx-msg-row mine">
           {myAvatar}
@@ -1192,6 +1240,22 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     }
     const message = row.message;
     const divider = row.divider && <div className="wx-time">{row.divider}</div>;
+    if (message.status === 'normal' && message.content?.type === 'nudge') {
+      const targetId = message.content.targetParticipantId;
+      const target = conversation.participants.find((p) => p.participantId === targetId);
+      const sender = senderOf(message);
+      const senderName = message.senderKind === 'user' ? '你' : displayName(sender?.refId ?? '');
+      const targetName =
+        target?.kind === 'user' ? '你' : target ? displayName(target.refId) : '对方';
+      return (
+        <>
+          {divider}
+          <div className="wx-system">
+            {senderName}拍了拍{targetName}
+          </div>
+        </>
+      );
+    }
     const system = message.senderKind === 'system' || message.status === 'recalled';
     if (system) {
       const c = message.content;
@@ -1232,6 +1296,21 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         {divider}
         <div
           className={`wx-msg-row ${mine ? 'mine' : ''} ${selecting ? 'selecting' : ''}`}
+          role={selecting ? 'checkbox' : undefined}
+          aria-checked={selecting ? isSelected : undefined}
+          aria-label={
+            selecting
+              ? `选择消息：${Array.from(content(message)).slice(0, 80).join('')}`
+              : undefined
+          }
+          aria-disabled={selecting && !selectable(message) ? true : undefined}
+          tabIndex={selecting && selectable(message) ? 0 : undefined}
+          onKeyDown={(event) => {
+            if (!selecting || event.target !== event.currentTarget) return;
+            if (event.key !== ' ' && event.key !== 'Enter') return;
+            event.preventDefault();
+            toggle(message);
+          }}
           onClickCapture={(event) => {
             if (!selecting) return;
             event.preventDefault();
@@ -1274,7 +1353,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
                 {bubble(message)}
               </BubblePress>
             </div>
-            {message.quote && (
+            {message.quote && (message.content?.type ?? 'text') !== 'text' && (
               <div className="wx-quote">
                 <span>
                   {(() => {
@@ -1365,6 +1444,13 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         { label: '名片', icon: 'wechat/person', onClick: showComingSoon },
         { label: '音乐', icon: 'wechat/discover_listen', onClick: showComingSoon },
       ];
+
+  // 打开表情/加号面板后列表变矮，重新贴到底，避免最后一条被输入栏挡住
+  const lastRowKey = rows.length ? rows[rows.length - 1]!.key : null;
+  useEffect(() => {
+    if (panel === 'none' || !lastRowKey) return;
+    setScrollTarget({ key: lastRowKey, nonce: Date.now() });
+  }, [panel, lastRowKey]);
 
   return (
     <main className={`wx-chat ${panel !== 'none' ? 'with-panel' : ''}`}>

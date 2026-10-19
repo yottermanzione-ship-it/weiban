@@ -104,19 +104,29 @@ export class UpdateLogService {
         [userId, query.since, query.limit],
       );
       const items: UserUpdate[] = [];
-      for (const row of rows.rows) {
-        const seq = Number(row.seq);
-        if (seq !== query.since + items.length + 1)
+      for (const [index, row] of rows.rows.entries()) {
+        if (Number(row.seq) !== query.since + index + 1)
           throw new AppError('internal_error', '同步记录不完整');
-        const plain = await this.crypto.open(userId, `realtime:update:${seq}`, row.payload, tx);
-        try {
+      }
+      const plaintexts = await this.crypto.openMany(
+        userId,
+        rows.rows.map((row) => ({
+          aad: `realtime:update:${Number(row.seq)}`,
+          sealed: row.payload,
+        })),
+        tx,
+      );
+      try {
+        for (const [index, row] of rows.rows.entries()) {
+          const seq = Number(row.seq);
+          const plain = plaintexts[index]!;
           const payload = UserUpdatePayload.parse(JSON.parse(plain.toString('utf8')));
           items.push(
             UserUpdate.parse({ ...payload, updateSeq: seq, occurredAt: row.at.toISOString() }),
           );
-        } finally {
-          plain.fill(0);
         }
+      } finally {
+        plaintexts.forEach((plain) => plain.fill(0));
       }
       const through = items.at(-1)?.updateSeq ?? query.since;
       if (through < cursor.last && items.length < query.limit)

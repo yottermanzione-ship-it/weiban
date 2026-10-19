@@ -130,7 +130,7 @@ export function ServicesPage() {
           label="主动消息与免打扰"
         />
         <MenuRow to="/settings/plugins" icon="wechat/grid" tint="indigo" label="插件" />
-        <MenuRow to="/services/familiarity" icon="wechat/heart" tint="red" label="熟悉度总览" />
+        <MenuRow to="/services/familiarity" icon="wechat/heart" tint="red" label="好感度总览" />
       </MenuGroup>
       <p className="hint page-note center">卡册、宠物、每日一问等玩法在「发现 › 小程序」</p>
     </main>

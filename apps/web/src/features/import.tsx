@@ -18,6 +18,7 @@ import type { z } from 'zod';
 import type { RecognizedDialogueLine } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
+import { NavBar } from './shell-kit.js';
 import { useUpdates } from '../data/updates.js';
 import { uploadImportFile } from '../data/upload.js';
 import { Dialog, showToast } from './toast.js';
@@ -883,7 +884,7 @@ export function ImportListPage() {
   const jobs = useActiveImports();
   return (
     <main>
-      <h1 className="page-title">进行中的导入</h1>
+      <NavBar title="进行中的导入" fallback="/me" />
       <Link className="primary button" to="/imports/new">
         导入聊天记录
       </Link>

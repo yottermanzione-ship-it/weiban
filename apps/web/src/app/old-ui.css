@@ -83,7 +83,7 @@ main {
   top: 0;
   z-index: var(--wb-z-index-sticky);
   display: grid;
-  grid-template-columns: minmax(72px, 1fr) auto minmax(72px, 1fr);
+  grid-template-columns: minmax(56px, 1fr) minmax(0, auto) minmax(56px, 1fr);
   align-items: center;
   height: var(--wb-size-nav-bar);
   margin: calc(-1 * var(--wb-space-5)) calc(-1 * var(--wb-space-5)) var(--wb-space-3);
@@ -91,9 +91,14 @@ main {
   background: var(--wb-color-bg-nav-bar);
 }
 .page-header h1 {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   font-size: var(--wb-font-size-headline);
   font-weight: var(--wb-font-weight-medium);
   text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .page-header > :first-child {
   justify-self: start;

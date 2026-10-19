@@ -51,7 +51,7 @@ export const miniApps: MiniApp[] = [
     home: '/services/cards',
     taPath: (id) => `/characters/${id}/cards`,
     match: [/^\/services\/cards$/, /^\/characters\/[^/]+\/cards$/],
-    data: '你和每个 TA 获得的卡片、纪念日与熟悉度',
+    data: '你和每个 TA 获得的卡片、纪念日与好感度',
   },
   {
     id: 'achievements',
@@ -341,6 +341,7 @@ export function MiniAppsHomePage() {
           aria-label="搜索小程序"
           placeholder="搜索小程序"
           value={query}
+          onClear={() => setQuery('')}
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
