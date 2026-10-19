@@ -4,7 +4,7 @@ import { HistoryRecoveryRow } from './history-recovery.js';
  * 设置子页（docs/refactor/06-old-ui-spec.md 4.10）：账号与安全、隐私、通用、主动消息与免打扰。
  * 同样用 GroupHeader + MenuRow / SwitchRow。粉色主题已删除（tokens v3），通用页只留深色模式与字体大小（本机）。
  */
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { IdentityEndpoints, MemorySharingEndpoints } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
@@ -27,7 +27,6 @@ export function AccountSecurityPage() {
   const sessions = useRemote(IdentityEndpoints.listSessions);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
-  const [showChangePassword, setShowChangePassword] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
 
   async function revokeSession(sessionId: string) {
@@ -53,19 +52,16 @@ export function AccountSecurityPage() {
       <MenuGroup>
         <MenuRow
           label="修改密码"
-          value={showChangePassword ? '收起' : undefined}
-          onClick={() => setShowChangePassword((v) => !v)}
+          value="暂未开放"
+          onClick={() => showToast('暂未开放', 2000, 'info')}
         />
       </MenuGroup>
-      {showChangePassword && (
-        <ChangePasswordForm
-          onDone={() => {
-            setShowChangePassword(false);
-            showToast('密码已修改', 2000, 'success');
-          }}
-        />
-      )}
       <GroupHeader>登录设备</GroupHeader>
+      {sessions.loading && !sessions.data && (
+        <p className="empty" role="status">
+          正在读取登录设备…
+        </p>
+      )}
       <MenuGroup>
         {sessions.data?.items.map((s) => (
           <MenuRow
@@ -92,7 +88,14 @@ export function AccountSecurityPage() {
           />
         ))}
       </MenuGroup>
-      {sessions.error && <p role="alert">{sessions.error}</p>}
+      {sessions.error && (
+        <p role="alert" className="notice-bar">
+          {sessions.error}{' '}
+          <button className="text-button" type="button" onClick={sessions.refresh}>
+            重试
+          </button>
+        </p>
+      )}
       {error && (
         <p role="alert" className="notice-bar">
           {error}
@@ -120,75 +123,6 @@ export function AccountSecurityPage() {
         </Dialog>
       )}
     </main>
-  );
-}
-
-function ChangePasswordForm({ onDone }: { onDone: () => void }) {
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState('');
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const newPassword = String(form.get('newPassword'));
-    const confirm = String(form.get('confirm'));
-    if (newPassword !== confirm) {
-      setError('两次输入的新密码不一致');
-      return;
-    }
-    setPending(true);
-    setError('');
-    try {
-      // changePassword endpoint not yet in contracts — filed as contract change request in handoff
-      throw Object.assign(new Error('接口待后端实现，请等待后续版本'), { code: 'not_implemented' });
-    } catch (e) {
-      setError(friendlyError(e));
-    } finally {
-      setPending(false);
-    }
-    void onDone;
-  }
-
-  return (
-    <form onSubmit={(e) => void submit(e)}>
-      <div className="field-rows">
-        <label className="field-row">
-          <span>当前密码</span>
-          <input type="password" name="oldPassword" required autoComplete="current-password" />
-        </label>
-        <label className="field-row">
-          <span>新密码</span>
-          <input
-            type="password"
-            name="newPassword"
-            minLength={8}
-            required
-            autoComplete="new-password"
-            placeholder="至少 8 位"
-          />
-        </label>
-        <label className="field-row">
-          <span>确认</span>
-          <input
-            type="password"
-            name="confirm"
-            minLength={8}
-            required
-            autoComplete="new-password"
-          />
-        </label>
-      </div>
-      {error && (
-        <p role="alert" className="error page-note">
-          {error}
-        </p>
-      )}
-      <div className="page-bottom">
-        <button className="primary full" disabled={pending}>
-          保存新密码
-        </button>
-      </div>
-    </form>
   );
 }
 
@@ -272,7 +206,8 @@ export function PrivacySettingsPage() {
         ))}
       </MenuGroup>
       <p className="hint page-note">
-        这管的是「角色之间」：别的角色能不能从 TA 这里听说关于你的事。你自己和每个角色聊的内容，只有你们俩知道。
+        这管的是「角色之间」：别的角色能不能从 TA
+        这里听说关于你的事。你自己和每个角色聊的内容，只有你们俩知道。
       </p>
       {(error || remote.error) && (
         <p role="alert" className="notice-bar">

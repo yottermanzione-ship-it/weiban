@@ -25,6 +25,14 @@ import {
 import { enableWebPush, disableWebPush } from '../notifications/client.js';
 import { OldIcon } from './old-icons.js';
 import {
+  getMessageSoundEnabled,
+  getNoticeSound,
+  noticeSounds,
+  previewNoticeSound,
+  setMessageSoundEnabled,
+  setNoticeSound,
+} from './message-sound.js';
+import {
   ComingSoonRow,
   GroupHeader,
   MenuGroup,
@@ -41,18 +49,7 @@ const schemeNames: Record<Scheme, string> = {
   light: '浅色模式',
   dark: '深色模式',
 };
-const SOUND_KEY = 'weiban:notice-sound';
-const sounds = [
-  { value: 'iphone', label: 'IOS提示音', file: '/assets/old-ui/audio/notice_iphone.ogg' },
-  { value: 'pc', label: 'PC提示音', file: '/assets/old-ui/audio/notice_pc.ogg' },
-] as const;
-function readSound(): string {
-  try {
-    return localStorage.getItem(SOUND_KEY) ?? 'iphone';
-  } catch {
-    return 'iphone';
-  }
-}
+const sounds = noticeSounds;
 
 /** 单选列表弹层：每项 56，文字左对齐，选中项右侧绿色 ✓。 */
 export function ChoiceSheet<T extends string | number>({
@@ -113,7 +110,8 @@ export function SettingsPage() {
   const [scheme, setSchemeState] = useState(getScheme);
   const [font, setFont] = useState(getFontScale);
   const [statusVisible, setStatusVisible] = useState(getCharacterStatusVisible);
-  const [sound, setSound] = useState(readSound);
+  const [sound, setSound] = useState(getNoticeSound);
+  const [messageSound, setMessageSound] = useState(getMessageSoundEnabled);
   const [choice, setChoice] = useState<'scheme' | 'font' | 'sound' | null>(null);
   const [logout, setLogout] = useState(false);
   useEffect(() => {
@@ -176,17 +174,28 @@ export function SettingsPage() {
         )}
         {notification.data && (
           <SwitchRow
-            label="声音"
+            label="通知声音"
             checked={notification.data.pushSoundEnabled}
             disabled={pending}
             onChange={(pushSoundEnabled) => void updateNotification({ pushSoundEnabled })}
           />
         )}
-        <MenuRow
-          label="提示音"
-          value={sounds.find((s) => s.value === sound)?.label}
-          onClick={() => setChoice('sound')}
+        <SwitchRow
+          label="消息提示音"
+          subtitle="在微伴里收发消息时响一声，不打断正在播放的音乐（只对这台设备）"
+          checked={messageSound}
+          onChange={(value) => {
+            setMessageSoundEnabled(value);
+            setMessageSound(value);
+          }}
         />
+        {messageSound && (
+          <MenuRow
+            label="提示音"
+            value={sounds.find((s) => s.value === sound)?.label}
+            onClick={() => setChoice('sound')}
+          />
+        )}
         <MenuRow to="/services/proactive" label="主动消息与免打扰" />
       </MenuGroup>
       <GroupHeader>隐私</GroupHeader>
@@ -259,11 +268,7 @@ export function SettingsPage() {
           value={sound}
           options={sounds.map((s) => ({ value: s.value as string, label: s.label }))}
           onPick={(value) => {
-            try {
-              localStorage.setItem(SOUND_KEY, value);
-            } catch {
-              // 无痕模式：只在本次打开时生效
-            }
+            setNoticeSound(value);
             setSound(value);
           }}
           extra={(value) => (
@@ -273,8 +278,7 @@ export function SettingsPage() {
               aria-label="试听"
               onClick={(event) => {
                 event.stopPropagation();
-                const file = sounds.find((s) => s.value === value)?.file;
-                if (file) void new Audio(file).play().catch(() => showToast('当前浏览器无法试听'));
+                void previewNoticeSound(value).catch(() => showToast('当前浏览器无法试听'));
               }}
             >
               <OldIcon name="wechat/voice" size={20} />

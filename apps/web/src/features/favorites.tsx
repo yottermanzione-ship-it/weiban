@@ -15,7 +15,7 @@ import { CharacterAvatar } from './character-avatar.js';
 import { UserAvatar } from './user-avatar.js';
 import { CallRecordBubble, ImageBubble, LinkCardBubble, MediaImg, StickerBubble } from './media.js';
 import { shareText } from './share-render.js';
-import { NavBar, Sheet } from './shell-kit.js';
+import { EmptyState, NavBar, Sheet } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 
 function FavoriteVoice({ mediaId, transcript }: { mediaId: string; transcript?: string | null }) {
@@ -222,14 +222,18 @@ export function FavoritesPage() {
       ))}
       {remote.loading && !remote.data && <p className="empty">正在读取收藏…</p>}
       {!remote.loading && items.length === 0 && !remote.error && (
-        <p className="empty">还没有收藏</p>
+        <EmptyState icon="wechat/star" title="还没有收藏" desc="在聊天里长按消息，选择「收藏」" />
       )}
       {(error || remote.error) && (
         <p role="alert" className="notice-bar">
           {error || remote.error}
         </p>
       )}
-      {remote.error && <button onClick={remote.refresh}>重试</button>}
+      {remote.error && (
+        <button className="text-button full" type="button" onClick={remote.refresh}>
+          重试
+        </button>
+      )}
       {cursor && (
         <button className="text-button full" disabled={pending} onClick={() => void more()}>
           {pending ? '正在读取…' : '加载更多'}

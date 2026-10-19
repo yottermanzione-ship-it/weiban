@@ -4,8 +4,9 @@ import { CaretRight } from './old-icons.js';
 import { GrowthEndpoints, type Anniversary } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
+import { NavBar, Sheet } from './shell-kit.js';
 
-/** 熟悉度 5 级名称与月相（cards-familiarity.md 第 2 节）。 */
+/** 好感度 5 级名称与月相（cards-familiarity.md 第 2 节）。 */
 export const familiarityNames = ['初识', '眼熟', '熟络', '老友', '知己'] as const;
 const moons = ['◔', '◑', '◐', '◕', '●'] as const;
 
@@ -75,7 +76,7 @@ export function FamiliarityLine({ characterId }: { characterId: string }) {
             纪念日 {custom} 个 <CaretRight size={14} aria-hidden />
           </Link>
           <h3 className="group-label">
-            熟悉度 {moons[level - 1]} L{level} {familiarityNames[level - 1]}
+            好感度 {moons[level - 1]} L{level} {familiarityNames[level - 1]}
           </h3>
           <div
             className="meter"
@@ -83,7 +84,7 @@ export function FamiliarityLine({ characterId }: { characterId: string }) {
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={Math.round(progress * 100)}
-            aria-label="熟悉度进度"
+            aria-label="好感度进度"
           >
             <span style={{ transform: `scaleX(${progress})` }} />
           </div>
@@ -111,6 +112,8 @@ export function AnniversariesPage() {
   const { characterId = '' } = useParams();
   const days = useRemote(GrowthEndpoints.getDaysKnown, { params: { characterId } });
   const [adding, setAdding] = useState(false);
+  const [label, setLabel] = useState('');
+  const [date, setDate] = useState('');
   const [removing, setRemoving] = useState<Anniversary | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
@@ -120,6 +123,7 @@ export function AnniversariesPage() {
     .filter((item) => item.nextOccurrence && daysUntil(item.nextOccurrence) >= 0)
     .sort((a, b) => (a.nextOccurrence ?? '').localeCompare(b.nextOccurrence ?? ''))[0];
   async function run(operation: () => Promise<unknown>, after: () => void) {
+    if (pending) return;
     setPending(true);
     setError('');
     try {
@@ -134,20 +138,19 @@ export function AnniversariesPage() {
   }
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    if (pending || !label.trim() || !date) return;
     void run(
       () =>
         api.call(GrowthEndpoints.addAnniversary, {
           params: { characterId },
-          body: { label: String(form.get('label') ?? ''), date: String(form.get('date') ?? '') },
+          body: { label: label.trim(), date },
         }),
       () => setAdding(false),
     );
   }
   return (
     <main>
-      <Link to={`/characters/${characterId}`}>‹ 返回资料</Link>
-      <h1 className="page-title">纪念日</h1>
+      <NavBar title="纪念日" fallback={`/characters/${characterId}`} />
       {days.loading && !days.data && (
         <div className="stack" role="status" aria-label="正在读取">
           <div className="skeleton-row" />
@@ -192,7 +195,10 @@ export function AnniversariesPage() {
                   <button
                     className="text-button danger"
                     disabled={pending}
-                    onClick={() => setRemoving(item)}
+                    onClick={() => {
+                      setError('');
+                      setRemoving(item);
+                    }}
                   >
                     删除
                   </button>
@@ -201,9 +207,14 @@ export function AnniversariesPage() {
             ))}
           </div>
           <button
-            className="primary"
+            className="primary full"
             disabled={pending || customs.length >= 10}
-            onClick={() => setAdding(true)}
+            onClick={() => {
+              setLabel('');
+              setDate('');
+              setError('');
+              setAdding(true);
+            }}
           >
             {customs.length >= 10 ? '最多 10 个纪念日' : '添加纪念日'}
           </button>
@@ -211,47 +222,67 @@ export function AnniversariesPage() {
         </>
       )}
       {adding && (
-        <form className="panel stack" onSubmit={submit}>
-          <label>
-            名称
-            <input name="label" maxLength={20} required />
-          </label>
-          <label>
-            日期
-            <input name="date" type="date" required />
-          </label>
-          <button className="primary" disabled={pending}>
-            完成
-          </button>
-          <button type="button" disabled={pending} onClick={() => setAdding(false)}>
-            取消
-          </button>
-        </form>
+        <Sheet title="添加纪念日" onClose={() => setAdding(false)} closeDisabled={pending}>
+          <form className="field-sheet stack" onSubmit={submit}>
+            <label>
+              名称
+              <input
+                name="label"
+                maxLength={20}
+                required
+                value={label}
+                disabled={pending}
+                onChange={(e) => setLabel(e.target.value)}
+              />
+            </label>
+            <label>
+              日期
+              <input
+                name="date"
+                type="date"
+                required
+                value={date}
+                disabled={pending}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </label>
+            {error && <p role="alert">{error}</p>}
+            <button className="primary" disabled={pending || !label.trim() || !date}>
+              {pending ? '正在保存…' : '完成'}
+            </button>
+            <button type="button" disabled={pending} onClick={() => setAdding(false)}>
+              取消
+            </button>
+          </form>
+        </Sheet>
       )}
       {removing && (
-        <div role="dialog" aria-label="删除纪念日" className="panel">
-          <p>删除后 TA 不会再在这天特别找你</p>
-          <button
-            className="danger"
-            disabled={pending}
-            onClick={() =>
-              void run(
-                () =>
-                  api.call(GrowthEndpoints.removeAnniversary, {
-                    params: { characterId, anniversaryId: removing.id },
-                  }),
-                () => setRemoving(null),
-              )
-            }
-          >
-            删除纪念日
-          </button>
-          <button disabled={pending} onClick={() => setRemoving(null)}>
-            取消
-          </button>
-        </div>
+        <Sheet title="删除纪念日" onClose={() => setRemoving(null)} closeDisabled={pending}>
+          <div className="field-sheet stack">
+            <p>删除后 TA 不会再在这天特别找你</p>
+            {error && <p role="alert">{error}</p>}
+            <button
+              className="danger"
+              disabled={pending}
+              onClick={() =>
+                void run(
+                  () =>
+                    api.call(GrowthEndpoints.removeAnniversary, {
+                      params: { characterId, anniversaryId: removing.id },
+                    }),
+                  () => setRemoving(null),
+                )
+              }
+            >
+              {pending ? '正在删除…' : '删除纪念日'}
+            </button>
+            <button disabled={pending} onClick={() => setRemoving(null)}>
+              取消
+            </button>
+          </div>
+        </Sheet>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && !adding && !removing && <p role="alert">{error}</p>}
     </main>
   );
 }

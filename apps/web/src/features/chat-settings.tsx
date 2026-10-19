@@ -29,6 +29,7 @@ import {
   NavBar,
   Sheet,
   SwitchRow,
+  SyncPendingState,
 } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 
@@ -44,6 +45,14 @@ export function ChatSettingsPage() {
   const { state } = useChat();
   const conversation = state.conversations.find((item) => item.conversationId === conversationId);
   const role = conversation?.participants.find((item) => item.kind === 'character');
+  // 深链接或刷新时本地同步还没跑完，先给加载态，避免误报「会话不存在」
+  if (!conversation && !state.initialized)
+    return (
+      <main>
+        <NavBar title="聊天信息" fallback="/chat" />
+        <SyncPendingState icon="wechat/chat" label="正在读取会话…" />
+      </main>
+    );
   if (!conversation || !role)
     return (
       <main>
@@ -183,6 +192,23 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
           }
         />
       </MenuGroup>
+      {companion.loading && !data && (
+        <MenuGroup>
+          <div className="menu-pad stack" role="status" aria-label="正在读取聊天设置">
+            <div className="skeleton-row" />
+            <div className="skeleton-row" />
+            <div className="skeleton-row" />
+          </div>
+        </MenuGroup>
+      )}
+      {companion.error && (
+        <div className="notice-bar" role="alert">
+          <p>{companion.error}</p>
+          <button className="text-button" onClick={companion.refresh}>
+            重试聊天设置
+          </button>
+        </div>
+      )}
       {data && (
         <>
           <GroupHeader>聊天模型</GroupHeader>
@@ -300,9 +326,9 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
           onClick={() => setConfirmation('purge')}
         />
       </MenuGroup>
-      {(error || companion.error) && (
+      {error && (
         <p role="alert" className="notice-bar">
-          {error || companion.error}
+          {error}
         </p>
       )}
       {sheet === 'fit' && data && (
@@ -487,28 +513,35 @@ export function FieldSheet({
   return (
     <Sheet
       title={title}
-      onClose={onClose}
+      closeDisabled={pending}
+      onClose={() => {
+        if (!pending) onClose();
+      }}
       closeLabel="取消"
       action={
         <button
           type="button"
           className="small-primary primary"
           disabled={pending || (required && !value.trim())}
+          aria-busy={pending}
           onClick={() => onSave(value.trim())}
         >
-          完成
+          {pending ? '正在保存…' : '完成'}
         </button>
       }
     >
       <div className="field-sheet">
         <input
           autoFocus
+          aria-label={title}
+          disabled={pending}
           value={value}
           maxLength={maxLength}
           placeholder={placeholder}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !(required && !value.trim())) onSave(value.trim());
+            if (!pending && event.key === 'Enter' && !(required && !value.trim()))
+              onSave(value.trim());
           }}
         />
         <small>

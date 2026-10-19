@@ -69,20 +69,34 @@ export function SupportPage() {
   return (
     <main>
       <NavBar title="帮助与反馈" fallback="/settings" right={<Link to="/support/new">反馈</Link>} />
-      {(r.error || error) && <p role="alert">{error || r.error}</p>}
-      <MenuGroup>
-        {[...(r.data?.items ?? []), ...more].map((t) => (
-          <MenuRow
-            key={t.ticketId}
-            to={'/support/tickets/' + t.ticketId}
-            label={t.text || '投诉'}
-            value={states[t.status] ?? t.status}
-            dot={t.unseen}
-            subtitle={new Date(t.createdAt).toLocaleString()}
-          />
-        ))}
-      </MenuGroup>
-      {r.data && !r.data.items.length && <p className="empty">暂无反馈或投诉</p>}
+      {r.loading && !r.data && (
+        <p className="empty" role="status">
+          正在读取反馈…
+        </p>
+      )}
+      {(r.error || error) && (
+        <p className="page-note" role="alert">
+          {error || r.error}{' '}
+          <button className="text-button" type="button" onClick={r.refresh}>
+            重试
+          </button>
+        </p>
+      )}
+      {!!((r.data?.items.length ?? 0) + more.length) && (
+        <MenuGroup>
+          {[...(r.data?.items ?? []), ...more].map((t) => (
+            <MenuRow
+              key={t.ticketId}
+              to={'/support/tickets/' + t.ticketId}
+              label={t.text || '投诉'}
+              value={states[t.status] ?? t.status}
+              dot={t.unseen}
+              subtitle={new Date(t.createdAt).toLocaleString()}
+            />
+          ))}
+        </MenuGroup>
+      )}
+      {r.data && !r.data.items.length && !more.length && <p className="empty">暂无反馈或投诉</p>}
       {cursor && (
         <button disabled={busy} onClick={() => void load()}>
           加载更多
@@ -191,9 +205,11 @@ export function SupportCreatePage() {
             placeholder={complaint ? '可补充说明' : '请描述遇到的问题或建议'}
           />
         </label>
-        <label>
+        <label className="support-upload">
           截图（最多9张）
           <input
+            className="sr-only support-upload-input"
+            aria-label="添加截图（最多9张）"
             type="file"
             accept="image/*"
             multiple
@@ -203,6 +219,10 @@ export function SupportCreatePage() {
               e.target.value = '';
             }}
           />
+          <span className="support-upload-target" aria-hidden="true">
+            <span>＋</span>
+            <small>添加截图 · {images.length}/9</small>
+          </span>
         </label>
         <div className="request-image-grid">
           {images.map((i) => (
@@ -219,7 +239,9 @@ export function SupportCreatePage() {
           ))}
         </div>
         {error && <p role="alert">{error}</p>}
-        <button disabled={busy || (!complaint && !text.trim())}>提交</button>
+        <button className="primary" disabled={busy || (!complaint && !text.trim())}>
+          {busy ? '正在处理…' : '提交'}
+        </button>
       </form>
     </main>
   );
@@ -259,6 +281,11 @@ function SupportDetail({ ticketId }: { ticketId: string }) {
   return (
     <main>
       <NavBar title="反馈详情" fallback="/support" />
+      {r.loading && !r.data && (
+        <p className="empty" role="status">
+          正在读取反馈详情…
+        </p>
+      )}
       {(error || r.error) && <p role="alert">{error || r.error}</p>}
       {t && (
         <>
@@ -303,7 +330,9 @@ function SupportDetail({ ticketId }: { ticketId: string }) {
                   onChange={(e) => setText(e.target.value)}
                 />
               </label>
-              <button disabled={busy || !text.trim()}>补充说明</button>
+              <button className="primary" disabled={busy || !text.trim()}>
+                {busy ? '正在提交…' : '补充说明'}
+              </button>
             </form>
           )}
         </>

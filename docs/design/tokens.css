@@ -396,7 +396,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-scheme="light"]) {
     color-scheme: dark;
-    --wb-color-bg-user-avatar: var(--wb-wx-page-day);
+    --wb-color-bg-user-avatar: #2E2E30;
     --wb-color-bg-page: var(--wb-wx-page-night);
     --wb-color-bg-chat: var(--wb-wx-page-night);
     --wb-color-bg-surface: var(--wb-wx-card-night);
@@ -533,7 +533,7 @@
 }
 :root[data-scheme="dark"] {
   color-scheme: dark;
-  --wb-color-bg-user-avatar: var(--wb-wx-page-day);
+  --wb-color-bg-user-avatar: #2E2E30;
   --wb-color-bg-page: var(--wb-wx-page-night);
   --wb-color-bg-chat: var(--wb-wx-page-night);
   --wb-color-bg-surface: var(--wb-wx-card-night);
