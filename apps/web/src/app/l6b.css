@@ -16,6 +16,14 @@
 .entry-card > svg {
   margin-left: auto;
 }
+/* 标题不参与收缩：否则「上传聊天截图」会被说明文字挤成两行 */
+.entry-card > strong {
+  flex: none;
+  white-space: nowrap;
+}
+.entry-card > small {
+  min-width: 0;
+}
 .upload-area {
   min-height: 120px;
   border: 1.5px dashed var(--wb-color-border-strong);
