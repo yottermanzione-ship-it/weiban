@@ -6,6 +6,9 @@
   line-height: var(--wb-line-height-normal);
   overflow-wrap: anywhere;
 }
+.switch-row {
+  flex-direction: row;
+}
 .switch-row > span {
   flex: 1;
   min-width: 0;
@@ -14,6 +17,9 @@
   display: block;
   margin-top: 4px;
   line-height: 1.4;
+}
+.switch-row > span > br {
+  display: none;
 }
 .rows > .row-button {
   justify-content: space-between;

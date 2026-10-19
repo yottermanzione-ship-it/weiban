@@ -1495,8 +1495,17 @@ export function RemindersPage() {
           </button>
         }
       />
-      {list.error && <p role="alert">{list.error}</p>}
-      {list.loading && !items && <div className="skeleton-row" role="status" />}
+      {list.error && (
+        <div className="empty">
+          <p role="alert">{list.error}</p>
+          <button onClick={list.refresh}>重试</button>
+        </div>
+      )}
+      {list.loading && !items && (
+        <p className="empty" role="status">
+          正在读取提醒…
+        </p>
+      )}
       {items && all.length === 0 && (
         <div className="empty">
           <p>设一个提醒，让 TA 来叫你</p>
@@ -1505,30 +1514,32 @@ export function RemindersPage() {
           </Link>
         </div>
       )}
-      <div className="panel">
-        {all.map((r) => (
-          <div key={r.reminderId} className="play-reminder">
-            <Link to={`/play/reminders/${r.reminderId}`} className="overview-name">
-              <span>
-                <strong className="numeric">{r.time}</strong> {r.text}
-                {r.health && <span className="tag">健康</span>}
-              </span>
-              <small className="hint role-row">
-                <CharacterAvatar id={r.characterId} size={20} /> {nameOf(r.characterId)} 提醒 ·{' '}
-                {repeatText(r.repeat)}
-                {r.pausedByContactRemoval && ' · 已暂停'}
-              </small>
-            </Link>
-            <input
-              type="checkbox"
-              role="switch"
-              aria-label={r.enabled ? '关闭提醒' : '打开提醒'}
-              checked={r.enabled}
-              onChange={() => void toggle(r)}
-            />
-          </div>
-        ))}
-      </div>
+      {all.length > 0 && (
+        <div className="panel">
+          {all.map((r) => (
+            <div key={r.reminderId} className="play-reminder">
+              <Link to={`/play/reminders/${r.reminderId}`} className="overview-name">
+                <span>
+                  <strong className="numeric">{r.time}</strong> {r.text}
+                  {r.health && <span className="tag">健康</span>}
+                </span>
+                <small className="hint role-row">
+                  <CharacterAvatar id={r.characterId} size={20} /> {nameOf(r.characterId)} 提醒 ·{' '}
+                  {repeatText(r.repeat)}
+                  {r.pausedByContactRemoval && ' · 已暂停'}
+                </small>
+              </Link>
+              <input
+                type="checkbox"
+                role="switch"
+                aria-label={r.enabled ? '关闭提醒' : '打开提醒'}
+                checked={r.enabled}
+                onChange={() => void toggle(r)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
       {all.length > 0 && (
         <p className="hint">
           {all.length} / {limit}
@@ -1550,7 +1561,19 @@ export function ReminderEditPage() {
     return (
       <main>
         <Header title="编辑提醒" />
-        <div className="skeleton-row" role="status" />
+        <p className="empty" role="status">
+          正在读取提醒…
+        </p>
+      </main>
+    );
+  if (editing && list.error && !list.data)
+    return (
+      <main>
+        <Header title="编辑提醒" />
+        <div className="empty">
+          <p role="alert">{list.error}</p>
+          <button onClick={list.refresh}>重试</button>
+        </div>
       </main>
     );
   if (editing && list.data && !existing)
@@ -1605,7 +1628,7 @@ function ReminderForm({ reminder, onDone }: { reminder?: Reminder; onDone(): voi
     (kind !== 'weekly' || weekdays.length > 0) &&
     (kind !== 'once' || !!date);
   async function save() {
-    if (!valid || !characterId) return;
+    if (pending || !valid || !characterId) return;
     setPending(true);
     setError('');
     try {
@@ -1707,7 +1730,7 @@ function ReminderForm({ reminder, onDone }: { reminder?: Reminder; onDone(): voi
           </label>
         )}
         {kind === 'weekly' && (
-          <div className="chip-row" role="group" aria-label="选星期">
+          <div className="chip-row reminder-weekdays" role="group" aria-label="选星期">
             {weekdayNames.map((n, i) => {
               const d = i + 1;
               const on = weekdays.includes(d);
@@ -1747,6 +1770,7 @@ function ReminderForm({ reminder, onDone }: { reminder?: Reminder; onDone(): voi
           <input
             type="checkbox"
             role="switch"
+            aria-label="归类为健康"
             checked={health}
             onChange={(e) => setHealth(e.target.checked)}
           />
@@ -1761,14 +1785,19 @@ function ReminderForm({ reminder, onDone }: { reminder?: Reminder; onDone(): voi
           <input
             type="checkbox"
             role="switch"
+            aria-label="免打扰时段也提醒"
             checked={bypass}
             onChange={(e) => setBypass(e.target.checked)}
           />
         </label>
       </div>
       {error && <p role="alert">{error}</p>}
-      <button className="primary" disabled={pending || !valid} onClick={() => void save()}>
-        保存
+      <button
+        className="primary reminder-save"
+        disabled={pending || !valid}
+        onClick={() => void save()}
+      >
+        {pending ? '正在保存…' : '保存'}
       </button>
       {reminder && (
         <button className="danger" onClick={() => setConfirmDelete(true)}>
