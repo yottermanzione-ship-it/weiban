@@ -76,7 +76,6 @@ export function MurmursPage() {
             <time>{when(m.createdAt)}</time>
             <p className="murmur-text">{m.text}</p>
             <p className="murmur-meta">
-              {m.origin === 'user_request' ? '你让 TA 做的 · ' : ''}
               {m.actionSummary} · {pointsText(m.points)}
             </p>
           </li>
