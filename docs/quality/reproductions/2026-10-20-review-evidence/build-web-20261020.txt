@@ -11,7 +11,7 @@ dist/index.html                     0.97 kB │ gzip:   0.48 kB
 dist/assets/index-BJfcgbkO.css    199.52 kB │ gzip:  31.61 kB
 dist/assets/index-Bpi2GZX6.js   1,265.72 kB │ gzip: 372.33 kB
 
-[plugin builtin:vite-reporter] 
+[plugin builtin:vite-reporter]
 (!) Some chunks are larger than 500 kB after minification. Consider:
 - Using dynamic import() to code-split the application
 - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
@@ -44,4 +44,3 @@ The slowest callbacks, timed inside each callback (the wait before a callback st
   - plugin vite:css transform (5%, 1.9s, 13 calls)
 Additional callback time came from callbacks under 1s.
 See https://rolldown.rs/reference/InputOptions.checks#bundlertimings for more details.
-
