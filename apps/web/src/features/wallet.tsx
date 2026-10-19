@@ -89,6 +89,7 @@ export function WalletPage() {
           value={usage.data ? `今日 ${pointsText(usage.data.totalPoints)}` : undefined}
         />
         <MenuRow to="/prices" label="AI 模型价格" />
+        <MenuRow to="/membership" label="PRO+ 会员" />
       </MenuGroup>
       {wallet.error && (
         <p role="alert" className="notice-bar">

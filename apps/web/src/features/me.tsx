@@ -4,7 +4,12 @@ import { MyStatusRow } from './user-status.js';
  * 分组菜单用透明底彩色线图。服务页改为纯菜单列表（不做宫格）。
  */
 import { Link } from 'react-router-dom';
-import { BillingEndpoints, IdentityEndpoints, ModelAccessEndpoints } from '@weiban/contracts';
+import {
+  BillingEndpoints,
+  IdentityEndpoints,
+  MembershipEndpoints,
+  ModelAccessEndpoints,
+} from '@weiban/contracts';
 import { useAuth } from '../app/auth.js';
 import { ProfileAvatar } from './profile-avatar.js';
 import { useRemote } from '../data/use-remote.js';
@@ -76,6 +81,7 @@ export function MePage() {
  */
 export function ServicesPage() {
   const wallet = useRemote(BillingEndpoints.getWallet);
+  const membership = useRemote(MembershipEndpoints.get);
   const selection = useRemote(ModelAccessEndpoints.getSelection);
   const models = useRemote(ModelAccessEndpoints.listModels);
   const lowBalance =
@@ -97,6 +103,13 @@ export function ServicesPage() {
           value={wallet.data ? pointsText(wallet.data.balancePoints) : '—'}
         />
         <MenuRow to="/wallet/recharge" icon="wechat/transfer" tint="gold" label="充值" />
+        <MenuRow
+          to="/membership"
+          icon="wechat/star"
+          tint="orange"
+          label="PRO+ 会员"
+          value={membership.data?.tier === 'pro_plus' ? 'PRO+' : '免费'}
+        />
       </MenuGroup>
       <GroupHeader>消费记录</GroupHeader>
       <MenuGroup>
