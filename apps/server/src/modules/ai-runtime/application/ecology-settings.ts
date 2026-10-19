@@ -44,8 +44,11 @@ import {
   LEVEL_LABELS,
   LEVEL_ORDER,
   averageWakes,
+  detectUserRequest,
   microsToPoints,
 } from '../domain/ecology.js';
+import { BILLING_READ_PORT } from '../../billing/index.js';
+import type { BillingReadPort } from '@weiban/contracts';
 import {
   ecologyCharacterSettings,
   ecologyConfigTable,
@@ -71,6 +74,7 @@ export class EcologySettingsService {
     @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
     @Inject(MODEL_QUOTE_PORT) private readonly quotes: ModelQuotePort,
     @Inject(MODEL_GATEWAY_MEDIA_PORT) private readonly media: ModelGatewayMediaPort,
+    @Inject(BILLING_READ_PORT) private readonly billing: BillingReadPort,
   ) {}
 
   // =========================================================================
@@ -114,9 +118,12 @@ export class EcologySettingsService {
       ? (await this.quoteDecision(adminUserId, config.decisionModelKey)) !== null
       : false;
     const warnings: string[] = [];
-    if (!config.decisionModelKey) warnings.push('未配置决策模型：角色生态不会运行（不会改用用户的聊天模型）。');
+    if (!config.decisionModelKey)
+      warnings.push('未配置决策模型：角色生态不会运行（不会改用用户的聊天模型）。');
     else if (!ready)
-      warnings.push(`决策模型 ${config.decisionModelKey} 不在模型目录、已下架或没有价格：角色生态暂停。`);
+      warnings.push(
+        `决策模型 ${config.decisionModelKey} 不在模型目录、已下架或没有价格：角色生态暂停。`,
+      );
     const since = new Date(this.clock.nowMs() - 86400_000);
     const [enabled] = await this.db.db
       .select({ n: count() })
@@ -277,7 +284,9 @@ export class EcologySettingsService {
         minPerDay: range.min,
         maxPerDay: range.max,
         pointsPerCharacterPerDay:
-          perWake === null ? null : Math.round(microsToPoints(perWake * averageWakes(range)) * 10) / 10,
+          perWake === null
+            ? null
+            : Math.round(microsToPoints(perWake * averageWakes(range)) * 10) / 10,
       };
     });
     const level = (row?.activityLevel ?? 'often') as EcologyActivityLevel;
@@ -303,7 +312,10 @@ export class EcologySettingsService {
    * 每次唤醒的估算花费：最近 7 天全平台生态唤醒的平均实扣（样本 ≥ 20），否则按决策模型报价 × 2.5
    * （决策一次 + 一部分唤醒会真正执行动作）。决策模型不可用返回 null。
    */
-  private async estimatePerWakeMicros(userId: string, config: EcologyConfig): Promise<number | null> {
+  private async estimatePerWakeMicros(
+    userId: string,
+    config: EcologyConfig,
+  ): Promise<number | null> {
     if (!config.decisionModelKey) return null;
     const decision = await this.quoteDecision(userId, config.decisionModelKey);
     if (decision === null) return null;
@@ -366,6 +378,32 @@ export class EcologySettingsService {
         set: { enabled, updatedAt: now },
       });
     return { characterId, enabled };
+  }
+
+  /**
+   * 用户在聊天里让角色做的动作（17 号 §7）现在能不能执行：PRO+、平台可执行、积分没有不足。
+   * 不看生态开关（用户主动要求的不受开关限制）。
+   */
+  async canExecuteRequest(userId: string, action: EcologyActionKey): Promise<boolean> {
+    if (!(await this.membership.isProPlus(userId).catch(() => false))) return false;
+    if (await this.actionAvailable(action)) return false;
+    const spend = await this.billing.getSpendStatus(userId).catch(() => null);
+    return !!spend && !spend.insufficient;
+  }
+
+  /**
+   * 私聊回复动态结尾的一段（reply-context 调用）：说到做到。识别到用户让角色做某个动作时，
+   * 告诉模型系统会不会真的执行，避免「嘴上答应」。
+   */
+  async replyHint(userId: string, userText: string): Promise<string> {
+    const base =
+      '说到做到：不要说自己已经发了朋友圈、改了签名、拍了拍对方，除非下面写明系统会去做；你不会主动给对方打电话，也不要说「一会儿打给你」。';
+    const action = detectUserRequest(userText);
+    if (!action) return base;
+    const label = ACTION_DEF.get(action)?.label ?? '这件事';
+    return (await this.canExecuteRequest(userId, action))
+      ? `${base}\n对方让你「${label}」：系统会在你回复后真的去做，你可以自然地答应（例如「好，我去发」），不要编造具体内容。`
+      : `${base}\n对方让你「${label}」：这个现在做不到，不要答应、也不要假装做了，用自然的说法带过（例如「下次吧」）。`;
   }
 
   /** 积分不足：静默暂停（下次打开 App 的一次提示由 billing 记录，16 号 §8）。 */

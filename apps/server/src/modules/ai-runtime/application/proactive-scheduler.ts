@@ -153,8 +153,7 @@ export interface EcologySendExtras {
 }
 
 export type SendOutcome =
-  | { ok: true; chargedMicros: number; messageId: string | null }
-  | { ok: false; reason: string };
+  { ok: true; chargedMicros: number; messageId: string | null } | { ok: false; reason: string };
 
 /** 经期关怀计划来源前缀（同 health-care CARE_PLAN_PREFIX；不 import 以免循环）。 */
 const CARE_SOURCE_PREFIX = 'care:';
@@ -1182,8 +1181,7 @@ export class ProactiveSchedulerService {
           userId: ctx.userId,
           characterId: plan.characterId,
           conversationId: conversation.conversationId,
-          text: bubbles.join('
-'),
+          text: bubbles.join('\n'),
           voiceId: settings.voiceId ?? null,
           idempotencyKey: `eco:${plan.id}`,
         })
@@ -1303,15 +1301,15 @@ export class ProactiveSchedulerService {
         // 生态动作不进旧的主动消息账本（P-03/P-04 与「未回复不再发」改由生态快照约束）。
         if (!eco)
           await this.quota.recordSent(
-          ctx.userId,
-          plan.characterId,
-          plan.localDate,
-          `proactive:${plan.id}`,
-          plan.reason,
-          tx,
-          plan.isHoliday,
-          FREQUENCY_LIMIT[settings.proactiveFrequency ?? 'medium'],
-        );
+            ctx.userId,
+            plan.characterId,
+            plan.localDate,
+            `proactive:${plan.id}`,
+            plan.reason,
+            tx,
+            plan.isHoliday,
+            FREQUENCY_LIMIT[settings.proactiveFrequency ?? 'medium'],
+          );
         let firstId: string | null = null;
         if (voice) {
           const posted = await this.writer.postMessage(
@@ -1477,6 +1475,12 @@ export class ProactiveSchedulerService {
       'DELETE FROM ai_runtime.character_self_reports WHERE user_id=$1 AND character_id=$2',
       [userId, characterId],
     );
+    // v5 角色生态：运行记录与碎碎念、状态签名、角色开关。
+    for (const table of ['ecology_runs', 'ecology_profiles', 'ecology_character_settings'])
+      await tx.query(`DELETE FROM ai_runtime.${table} WHERE user_id=$1 AND character_id=$2`, [
+        userId,
+        characterId,
+      ]);
     await tx.db
       .delete(proactivePlans)
       .where(and(eq(proactivePlans.userId, userId), eq(proactivePlans.characterId, characterId)));

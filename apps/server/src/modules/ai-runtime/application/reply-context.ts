@@ -1,3 +1,4 @@
+import { EcologySettingsService } from './ecology-settings.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { readableMessageText } from './content-text.js';
 import { userNickname, userNamingContext } from '../domain/user-naming.js';
@@ -162,6 +163,8 @@ export class ReplyContext {
     @Optional() @Inject(GROWTH_PET_READ_PORT) readonly pets?: PetReadPort,
     /** 3.15（Q11）：用户「我的状态」。 */
     @Optional() @Inject(IDENTITY_USER_STATUS_PORT) readonly userStatus?: UserStatusReadPort,
+    /** v5 角色生态（批 C）：说到做到提示。 */
+    @Optional() @Inject(EcologySettingsService) readonly ecology?: EcologySettingsService,
   ) {}
   async build(row: ReplyPlan): Promise<ReplySnapshot | null> {
     const contact = await this.contacts.getActiveContact(row.userId, row.characterId);
@@ -537,6 +540,14 @@ ${AUTHOR_GUARD}`,
           : '',
       },
       { title: '', text: searchBlocks.join('\n\n') },
+      // v5 角色生态（批 C）：说到做到（17 号 §7）。用户让角色发朋友圈等时告诉模型系统会不会真的执行。
+      {
+        title: '',
+        text:
+          row.kind === 'message'
+            ? ((await this.ecology?.replyHint(row.userId, userText).catch(() => '')) ?? '')
+            : '',
+      },
       {
         title: '',
         text: allowedNames

@@ -78,6 +78,15 @@ import {
   PLAY_WISH_FOLLOW_SOURCE,
   PLAY_WISH_PROPOSE_SOURCE,
 } from './proactive-scheduler.js';
+import { EcologySettingsService } from './ecology-settings.js';
+import {
+  ECOLOGY_CLEANUP_JOB,
+  ECOLOGY_REQUEST_JOB,
+  ECOLOGY_TICK_JOB,
+  ECOLOGY_USER_JOB,
+  EcologyService,
+  type EcologyRequestJob,
+} from './ecology.js';
 const TRANSCRIBE_VOICE_JOB = 'ai.transcribe_voice';
 /** v5：角色主动来电停用（PRD P-10 / MED-07 主动部分）；用户主动打给角色不受影响。 */
 const PROACTIVE_CALLS_ENABLED = false;
@@ -105,6 +114,8 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     @Inject(PlannerService) readonly planner: PlannerService,
     @Inject(CompanionSettingsService) readonly companion: CompanionSettingsService,
     @Inject(PlayAiService) readonly playAi: PlayAiService,
+    @Inject(EcologyService) readonly ecology: EcologyService,
+    @Inject(EcologySettingsService) readonly ecologySettings: EcologySettingsService,
   ) {}
   async onApplicationBootstrap(): Promise<void> {
     if (this.jobs.isReady)
@@ -290,6 +301,37 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     await this.jobs.schedule(PROACTIVE_TICK_JOB, '*/10 * * * *');
     await this.jobs.work(PROACTIVE_CLEANUP_JOB, () => this.proactive.cleanup());
     await this.jobs.schedule(PROACTIVE_CLEANUP_JOB, '23 * * * *');
+    // v5 角色生态 v1：每 10 分钟唤醒检查；用户在聊天里让角色做的动作；每天清理。
+    await this.jobs.work<{ userId: string }>(ECOLOGY_USER_JOB, (j) =>
+      this.ecology.runForUser(j.data.userId),
+    );
+    await this.jobs.work(ECOLOGY_TICK_JOB, () => this.ecology.tick());
+    await this.jobs.schedule(ECOLOGY_TICK_JOB, '3,13,23,33,43,53 * * * *');
+    await this.jobs.work<EcologyRequestJob>(ECOLOGY_REQUEST_JOB, (j) =>
+      this.ecology.runRequest(j.data),
+    );
+    await this.jobs.work(ECOLOGY_CLEANUP_JOB, () => this.ecology.cleanup());
+    await this.jobs.schedule(ECOLOGY_CLEANUP_JOB, '37 * * * *');
+    this.bus.subscribe({
+      consumer: 'ai.ecology_user_request',
+      eventType: 'chat.message_created',
+      handle: async (event, tx) => {
+        const p = event.payload;
+        if (p.conversationType !== 'direct' || p.senderKind !== 'user' || !p.senderRefId) return;
+        if (p.contentType !== 'text' || p.scope !== 'normal') return;
+        const conversation = await this.chat.getConversation(p.conversationId);
+        const role = conversation?.participants.find((member) => member.kind === 'character');
+        if (!role) return;
+        const message = await this.chat.getMessage(p.messageId, ['normal']);
+        if (message?.content?.type !== 'text') return;
+        await this.ecology.onUserMessage(tx, {
+          userId: p.senderRefId,
+          characterId: role.refId,
+          text: message.content.text,
+          messageId: p.messageId,
+        });
+      },
+    });
     // T-071 MED-03 第 3 条：用户语音（私聊或群聊）尽快转文字，写回 media（「转文字」按钮与群聊上下文用）。
     await this.jobs.work<{ userId: string; messageId: string; conversationId: string }>(
       TRANSCRIBE_VOICE_JOB,
@@ -706,6 +748,8 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       consumer: 'ai.on_balance_restored',
       eventType: 'billing.balance_restored',
       handle: async (event, tx) => {
+        // v5 角色生态：积分恢复后解除「积分不足静默暂停」。
+        await this.ecologySettings.resume(event.payload.userId);
         await this.jobs.send(
           'ai.recover_replies',
           { userId: event.payload.userId },

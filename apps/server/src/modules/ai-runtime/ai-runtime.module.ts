@@ -69,6 +69,9 @@ import {
 import { ImportAiService } from './application/import-ai.js';
 import { PlannerService } from './application/planner.js';
 import { PlannerAdminController } from './http/planner-admin.controller.js';
+import { EcologySettingsService } from './application/ecology-settings.js';
+import { EcologyService } from './application/ecology.js';
+import { EcologyAdminController, EcologyController } from './http/ecology.controller.js';
 import {
   SupplementConflictService,
   PersonaUpdateSummaryService,
@@ -95,6 +98,9 @@ import {
     { provide: AI_TRIAL_CLEANUP_PORT, useExisting: ReplyPlanStore },
     // T-090：行为规划决策层。
     PlannerService,
+    // v5 角色生态 v1（批 C）：设置与闸门、统一循环。
+    EcologySettingsService,
+    EcologyService,
     // T-081：角色读取补上「我的补充设定」；导入分析；补充设定冲突项；人设更新摘要。
     SupplementedCharacterRead,
     { provide: AI_CHARACTER_READ, useExisting: SupplementedCharacterRead },
@@ -172,6 +178,8 @@ import {
     MemorySharingController,
     QuietStateController,
     PlannerAdminController,
+    EcologyController,
+    EcologyAdminController,
   ],
 })
 export class AiRuntimeModule {}

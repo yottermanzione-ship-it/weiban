@@ -215,7 +215,10 @@ export const EcologyConfig = z.object({
   disabledActions: z.array(EcologyActionKey),
   /** 唤醒分布的当地时段（时），例 8–24；角色仍会按人设和时间自己判断要不要动。 */
   wakeWindow: z
-    .object({ startHour: z.number().int().min(0).max(23), endHour: z.number().int().min(1).max(24) })
+    .object({
+      startHour: z.number().int().min(0).max(23),
+      endHour: z.number().int().min(1).max(24),
+    })
     .refine((v) => v.startHour < v.endHour, { message: '开始必须早于结束' }),
   /** 决策调用最大输出 token。 */
   decisionMaxOutputTokens: z.number().int().min(100).max(2000),

@@ -63,6 +63,11 @@ const T066_TABLES = [
   'character_self_reports',
   'pending_anniversary_letters',
   'quirk_actions',
+  // v5 角色生态 v1（迁移 0109、0110）
+  'ecology_settings',
+  'ecology_character_settings',
+  'ecology_runs',
+  'ecology_profiles',
 ] as const;
 @Injectable()
 export class ReplyPlanStore {

@@ -100,6 +100,8 @@ export interface MomentsReactJob {
   replyToCommentId?: string;
   /** 回复用户（P-29 必回）：不受当天后台预算限制，只看 P-33。 */
   mustReply?: boolean;
+  /** v5 角色生态唤醒发起（仅记录用）。 */
+  ecologyRunId?: string;
 }
 
 const MOMENTS_FORBIDDEN_REAL =
@@ -311,7 +313,11 @@ export class MomentsAiService {
       !!text &&
       !healthPrivate(text) &&
       outputAllowed(text, policy, false) &&
-      !(policy.isRealPerson && source.kind !== 'public_update' && MOMENTS_FORBIDDEN_REAL.test(text));
+      !(
+        policy.isRealPerson &&
+        source.kind !== 'public_update' &&
+        MOMENTS_FORBIDDEN_REAL.test(text)
+      );
     await this.db.db
       .update(publicMomentDrafts)
       .set({
@@ -322,7 +328,10 @@ export class MomentsAiService {
         chargedMicros: result.ok ? result.value.chargedMicros : 0,
       })
       .where(
-        and(eq(publicMomentDrafts.characterId, characterId), eq(publicMomentDrafts.localDate, date)),
+        and(
+          eq(publicMomentDrafts.characterId, characterId),
+          eq(publicMomentDrafts.localDate, date),
+        ),
       );
     return ok ? { text, sourceKind: source.kind, sourceId: source.id } : null;
   }
