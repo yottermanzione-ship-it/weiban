@@ -97,7 +97,8 @@ select:focus-visible {
   min-width: var(--wb-size-admin-min-width);
   min-height: 100dvh;
 }
-.admin-shell aside {
+/* 只作用于侧边栏本身：抽屉里的 <aside> 也是 aside，之前被这条规则压成 216px */
+.admin-shell > aside {
   width: calc(var(--wb-size-sidebar-width) * 0.6);
   flex-shrink: 0;
   background: var(--wb-color-bg-surface);
@@ -618,9 +619,11 @@ button.plain-btn {
 .mm-drawer {
   display: flex;
   flex-direction: column;
-  width: 480px;
+  width: 560px;
+  max-width: 94vw;
   height: 100%;
   background: var(--wb-color-bg-page);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.08);
   animation: mm-slide var(--wb-motion-duration-base) var(--wb-motion-easing-standard);
 }
 @keyframes mm-slide {
@@ -684,11 +687,30 @@ button.plain-btn {
   flex-wrap: wrap;
   gap: var(--wb-space-3) var(--wb-space-5);
 }
+/* 每条路由一张小卡：固定 6 列会因“第一条没有模型名”而整体错位 */
 .mm-route {
-  display: grid;
-  grid-template-columns: 1.4fr 1.4fr 70px auto 36px 36px;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--wb-space-2);
+  padding: var(--wb-space-3);
+  border: 0.5px solid var(--wb-color-border-hairline);
+  border-radius: var(--wb-radius-sm);
+  background: var(--wb-color-bg-surface);
+}
+.mm-route > select {
+  flex: 1 1 190px;
+  min-width: 0;
+}
+.mm-route > input[aria-label='该账号的模型名'] {
+  flex: 1 1 170px;
+  min-width: 0;
+}
+.mm-route > input[type='number'] {
+  flex: 0 0 76px;
+}
+.mm-route > details {
+  flex: 1 1 100%;
 }
 .mm-route button {
   min-height: 32px;
@@ -800,4 +822,22 @@ button.plain-btn {
   display: block;
   object-fit: cover;
   border-radius: var(--wb-radius-sm);
+}
+
+/* 路由卡片里的权重：给数字框一个可见标签，否则只有一个裸数字 */
+.mm-route .mm-weight {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--wb-space-2);
+  flex: 0 0 auto;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+  white-space: nowrap;
+}
+.mm-route .mm-weight input {
+  width: 72px;
+  min-height: 32px;
+  padding: 0 var(--wb-space-2);
+  text-align: center;
 }

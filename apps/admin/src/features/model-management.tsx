@@ -187,13 +187,8 @@ function Drawer({
     return () => window.removeEventListener('keydown', key);
   }, [onClose]);
   return (
-    <div className="mm-scrim" onClick={onClose}>
-      <aside
-        className="mm-drawer"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-label={title}
-      >
+    <div className="mm-scrim">
+      <aside className="mm-drawer" role="dialog" aria-label={title}>
         <header>
           <h2>{title}</h2>
           <button type="button" className="plain-btn" onClick={onClose} aria-label="关闭">
@@ -1882,31 +1877,40 @@ export function ModelWizard({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [confirmBands, setConfirmBands] = useState<FormData | null>(null);
+  const [retryModels, setRetryModels] = useState(0);
   const first = routes[0];
   useEffect(() => {
     const id = first?.upstreamId;
     if (!id) return;
     let active = true;
     setRemote({ id, items: null, error: '' });
+    // 上游（尤其跨境）拉列表可能要几十秒：8 秒没回来就先放行手填，不让表单卡住
+    const abort = new AbortController();
+    const timer = window.setTimeout(() => abort.abort(), 8000);
     void api
-      .call(ModelAccessAdminEndpoints.listUpstreamModels, { params: { upstreamId: id } })
-      .then((r) => active && setRemote({ id, items: r.items.map((i) => i.id), error: '' }))
-      .catch(
-        (e) =>
-          active &&
-          setRemote({
-            id,
-            items: [],
-            error:
-              e instanceof ApiFailure && e.code === 'upstream_test_failed'
-                ? '拉不到这个账号的模型列表，请手填模型名'
-                : errorText(e),
-          }),
-      );
+      .call(ModelAccessAdminEndpoints.listUpstreamModels, { params: { upstreamId: id }, signal: abort.signal })
+      .then((r) => {
+        window.clearTimeout(timer);
+        if (active) setRemote({ id, items: r.items.map((i) => i.id), error: '' });
+      })
+      .catch((e) => {
+        window.clearTimeout(timer);
+        if (!active) return;
+        setRemote({
+          id,
+          items: [],
+          error:
+            e instanceof ApiFailure && e.code === 'upstream_test_failed'
+              ? '拉不到这个账号的模型列表，可以直接手填模型名'
+              : '拉取超时或失败，可以直接手填模型名',
+        });
+      });
     return () => {
       active = false;
+      abort.abort();
+      window.clearTimeout(timer);
     };
-  }, [first?.upstreamId]);
+  }, [first?.upstreamId, retryModels]);
   const patchRoute = (index: number, patch: Partial<EditableRoute>) =>
     setRoutes((list) =>
       list.map((r, i) =>
@@ -2034,15 +2038,18 @@ export function ModelWizard({
                 onChange={(e) => patchRoute(index, { upstreamModelId: e.target.value })}
               />
             )}
-            <input
-              type="number"
-              aria-label="权重"
-              title="权重"
-              min={1}
-              max={1000}
-              value={r.weight}
-              onChange={(e) => patchRoute(index, { weight: Number(e.target.value) || 1 })}
-            />
+            <label className="mm-weight">
+              权重
+              <input
+                type="number"
+                aria-label="权重"
+                title="同一模型多条路由时按权重分流"
+                min={1}
+                max={1000}
+                value={r.weight}
+                onChange={(e) => patchRoute(index, { weight: Number(e.target.value) || 1 })}
+              />
+            </label>
             <label className="check">
               <input
                 type="checkbox"
@@ -2122,36 +2129,50 @@ export function ModelWizard({
           + 再加一个备用账号
         </button>
         <h3>② 模型</h3>
-        {remote.items && remote.items.length > 0 ? (
-          <label>
-            从第一个账号拉取的模型
-            <select
-              value={first?.upstreamModelId ?? ''}
-              onChange={(e) => {
-                patchRoute(0, { upstreamModelId: e.target.value });
-                if (!model && !modelKey) setModelKey(e.target.value);
-              }}
+        <label>
+          模型名（上游那边的叫法）
+          <input
+            required
+            list="mm-upstream-models"
+            value={first?.upstreamModelId ?? ''}
+            placeholder={
+              remote.items?.length ? '可下拉选，也可直接输入' : '输入上游的模型名，例如 mimo-v2.6-flash'
+            }
+            onChange={(e) => {
+              patchRoute(0, { upstreamModelId: e.target.value });
+              if (!model && !modelKey) setModelKey(e.target.value);
+            }}
+          />
+          <datalist id="mm-upstream-models">
+            {(remote.items ?? []).map((id) => (
+              <option key={id} value={id} />
+            ))}
+          </datalist>
+        </label>
+        {!remote.items && first?.upstreamId && !remote.error && (
+          <p className="hint">
+            正在拉取这个账号的模型列表…（超过 8 秒会放行，直接填也行）
+            <button
+              type="button"
+              className="plain-btn"
+              onClick={() => setRetryModels((v) => v + 1)}
             >
-              <option value="">请选择</option>
-              {remote.items.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <label>
-            模型名（上游那边的叫法）
-            <input
-              required
-              value={first?.upstreamModelId ?? ''}
-              onChange={(e) => patchRoute(0, { upstreamModelId: e.target.value })}
-            />
-          </label>
+              重试
+            </button>
+          </p>
         )}
-        {remote.error && <p className="hint">{remote.error}</p>}
-        {!remote.items && first?.upstreamId && <p className="hint">正在拉取模型列表…</p>}
+        {remote.error && (
+          <p className="hint">
+            {remote.error}
+            <button
+              type="button"
+              className="plain-btn"
+              onClick={() => setRetryModels((v) => v + 1)}
+            >
+              重新拉取
+            </button>
+          </p>
+        )}
         <h3>③ 显示与用途</h3>
         {!model && (
           <label>
