@@ -1,14 +1,16 @@
-import { SupportAdminPage, SupportBadge } from '../features/support.js';
 import { useEffect, useState } from 'react';
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { ProLayout } from '@ant-design/pro-components';
+import { App as AntApp, Dropdown, Spin } from 'antd';
+import { LogoutOutlined, UserOutlined } from '@ant-design/icons';
 import { IdentityEndpoints, type AuthResponse } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { LoginPage } from '../features/login.js';
-import { InvitesPage } from '../features/invites.js';
+import { DashboardPage } from '../features/dashboard.js';
 import { AccountsPage } from '../features/accounts.js';
 import { ModelManagementPage } from '../features/model-management.js';
 import { PricesPage } from '../features/prices.js';
-import { AlertsPage, AlertBadge } from '../features/alerts.js';
+import { AlertsPage } from '../features/alerts.js';
 import { CharactersPage } from '../features/characters.js';
 import { UsagePage } from '../features/usage.js';
 import { BillingPage } from '../features/billing.js';
@@ -24,21 +26,23 @@ import {
   VoiceLibraryPage,
   WorkLinksPage,
 } from '../features/media-library.js';
-import {
-  AccountDeletionsPage,
-  PendingDeletionBadge,
-  PetSpeciesPage,
-} from '../features/pets-deletions.js';
-import {
-  DailyQuestionsPage,
-  PlannerPage,
-  PlazaAdminPage,
-  PlazaReportBadge,
-} from '../features/plaza-admin.js';
-import { RoleRequestBadge, RoleRequestsPage } from '../features/role-requests.js';
+import { AccountDeletionsPage, PetSpeciesPage } from '../features/pets-deletions.js';
+import { DailyQuestionsPage, PlannerPage, PlazaAdminPage } from '../features/plaza-admin.js';
+import { RoleRequestsPage } from '../features/role-requests.js';
+import { SupportAdminPage } from '../features/support.js';
+import { MENU, badgeOf, groupBadge } from './menu.js';
+import { TodoProvider, useTodos } from './todos.js';
+
+function Logo() {
+  return <div className="admin-logo">伴</div>;
+}
+
 export function App() {
   const [auth, setAuth] = useState<AuthResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const location = useLocation();
+  const navigate = useNavigate();
+
   useEffect(() => {
     let active = true;
     void (async () => {
@@ -69,6 +73,7 @@ export function App() {
       window.removeEventListener('weiban-admin:unauthenticated', expired);
     };
   }, []);
+
   async function logout() {
     try {
       await api.call(IdentityEndpoints.logout);
@@ -77,96 +82,137 @@ export function App() {
       setAuth(null);
     }
   }
-  if (loading) return <p role="status">正在打开管理后台…</p>;
-  if (!auth) return <LoginPage onLogin={setAuth} />;
-  return (
-    <div className="admin-shell">
-      <aside>
-        <strong className="brand">微伴管理后台</strong>
-        <nav aria-label="管理导航">
-          {[
-            ['/characters', '角色库'],
-            ['/model', '模型管理'],
-            ['/accounts', '用户与积分'],
-            ['/usage', '用户用量对账'],
-            ['/billing', '对账与平台花费'],
-            ['/scenario-modes', '情景模式'],
-            ['/public-updates', '公开动态'],
-            ['/holidays', '节日清单'],
-            ['/relations', '关系网'],
-            ['/stickers', '表情包库'],
-            ['/voices', '音色库'],
-            ['/card-templates', '卡面模板库'],
-            ['/work-links', '作品链接库'],
-            ['/symptom-tags', '经期症状标签'],
-            ['/pet-species', '宠物图鉴'],
-            ['/account-deletions', '注销未完成'],
-            ['/plaza', '角色广场'],
-            ['/role-requests', '制作申请'],
-            ['/support', '帮助反馈与投诉'],
-            ['/planner', '行为规划'],
-            ['/daily-questions', '每日一问题库'],
-            ['/announcements', '公告管理'],
-            ['/release-notes', '更新说明'],
-            ['/version-policies', '版本策略'],
-            ['/admin/alerts', '运行提醒'],
-          ].map(([to, label]) => (
-            <NavLink key={to} to={to!}>
-              {label}
-              {to === '/admin/alerts' && <AlertBadge />}
-              {to === '/account-deletions' && <PendingDeletionBadge />}
-              {to === '/plaza' && <PlazaReportBadge />}
-              {to === '/role-requests' && <RoleRequestBadge />}
-              {to === '/support' && <SupportBadge />}
-            </NavLink>
-          ))}
-        </nav>
-      </aside>
-      <div className="workspace">
-        <header>
-          <span>产品管理</span>
-          <div>
-            {auth.user.username}
-            <button onClick={() => void logout().catch(() => {})}>退出登录</button>
-          </div>
-        </header>
-        <main>
-          <Routes>
-            <Route path="/" element={<Navigate to="/characters" replace />} />
-            <Route path="/characters" element={<CharactersPage />} />
-            <Route path="/prices" element={<PricesPage />} />
-            <Route path="/invites" element={<InvitesPage />} />
-            <Route path="/accounts" element={<AccountsPage />} />
-            <Route path="/model" element={<ModelManagementPage />} />
-            {/* 旧入口：上游管理、模型目录并入「模型管理」（06-old-ui-spec 9.8） */}
-            <Route path="/upstreams" element={<Navigate to="/model?tab=upstreams" replace />} />
-            <Route path="/catalog" element={<Navigate to="/model?tab=models" replace />} />
-            <Route path="/usage" element={<UsagePage />} />
-            <Route path="/billing" element={<BillingPage />} />
-            <Route path="/scenario-modes" element={<ScenarioModesPage />} />
-            <Route path="/public-updates" element={<PublicUpdatesPage />} />
-            <Route path="/holidays" element={<HolidaysPage />} />
-            <Route path="/relations" element={<RelationsPage />} />
-            <Route path="/stickers" element={<StickerLibraryPage />} />
-            <Route path="/voices" element={<VoiceLibraryPage />} />
-            <Route path="/card-templates" element={<CardTemplatesPage />} />
-            <Route path="/work-links" element={<WorkLinksPage />} />
-            <Route path="/symptom-tags" element={<SymptomTagsPage />} />
-            <Route path="/pet-species" element={<PetSpeciesPage />} />
-            <Route path="/account-deletions" element={<AccountDeletionsPage />} />
-            <Route path="/plaza" element={<PlazaAdminPage />} />
-            <Route path="/support" element={<SupportAdminPage />} />
-            <Route path="/role-requests" element={<RoleRequestsPage />} />
-            <Route path="/planner" element={<PlannerPage />} />
-            <Route path="/daily-questions" element={<DailyQuestionsPage />} />
-            <Route path="/announcements" element={<AnnouncementsPage />} />
-            <Route path="/release-notes" element={<ReleaseNotesPage />} />
-            <Route path="/version-policies" element={<VersionPoliciesPage />} />
-            <Route path="/admin/alerts" element={<AlertsPage />} />
-            <Route path="*" element={<Navigate to="/characters" replace />} />
-          </Routes>
-        </main>
+
+  if (loading) {
+    return (
+      <div className="boot-screen">
+        <Spin size="large" />
+        <p>正在打开管理后台…</p>
       </div>
-    </div>
+    );
+  }
+  if (!auth) return <LoginPage onLogin={setAuth} />;
+
+  return (
+    <TodoProvider>
+      <AdminShell
+        username={auth.user.username}
+        pathname={location.pathname}
+        onNavigate={(path) => navigate(path)}
+        onLogout={() => void logout().catch(() => {})}
+      />
+    </TodoProvider>
+  );
+}
+
+function AdminShell({
+  username,
+  pathname,
+  onNavigate,
+  onLogout,
+}: {
+  username: string;
+  pathname: string;
+  onNavigate: (path: string) => void;
+  onLogout: () => void;
+}) {
+  const { counts } = useTodos();
+  const { message } = AntApp.useApp();
+
+  const decorated = MENU.map((item) => {
+    const groupCount = groupBadge(item, counts);
+    return {
+      ...item,
+      // 分组标题用「图标上的红点」提示有待办，展开后每个菜单项再显示具体数字。
+      icon: item.icon ? (
+        <span className="admin-menu-icon">
+          {item.icon}
+          {groupCount > 0 && <i className="admin-menu-dot" />}
+        </span>
+      ) : undefined,
+      children: item.children?.map((child) => ({
+        ...child,
+        badge: badgeOf(child.path, counts),
+      })),
+    };
+  });
+
+  return (
+    <ProLayout
+      title="微伴管理后台"
+      logo={<Logo />}
+      layout="side"
+      fixedHeader
+      fixSiderbar
+      siderWidth={216}
+      route={{ path: '/', routes: decorated }}
+      location={{ pathname }}
+      menu={{ autoClose: false }}
+      contentStyle={{ padding: 20, minHeight: 'calc(100vh - 48px)' }}
+      menuItemRender={(item, dom) => {
+        const badge = (item as { badge?: number }).badge ?? 0;
+        if (!item.path) return dom;
+        return (
+          <Link to={item.path} className="admin-menu-link">
+            <span className="admin-menu-label">{item.name}</span>
+            {badge > 0 && <span className="admin-menu-badge">{badge > 99 ? '99+' : badge}</span>}
+          </Link>
+        );
+      }}
+      avatarProps={{
+        icon: <UserOutlined />,
+        size: 'small',
+        title: username,
+        render: (_props, dom) => (
+          <Dropdown
+            menu={{
+              items: [{ key: 'logout', icon: <LogoutOutlined />, label: '退出登录' }],
+              onClick: ({ key }) => {
+                if (key === 'logout') {
+                  message.success('已退出登录');
+                  onLogout();
+                }
+              },
+            }}
+          >
+            <div className="admin-avatar">{dom}</div>
+          </Dropdown>
+        ),
+      }}
+      onMenuHeaderClick={() => onNavigate('/dashboard')}
+    >
+      <Routes>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/characters" element={<CharactersPage />} />
+        <Route path="/prices" element={<PricesPage />} />
+        <Route path="/accounts" element={<AccountsPage />} />
+        <Route path="/model" element={<ModelManagementPage />} />
+        <Route path="/usage" element={<UsagePage />} />
+        <Route path="/billing" element={<BillingPage />} />
+        <Route path="/scenario-modes" element={<ScenarioModesPage />} />
+        <Route path="/public-updates" element={<PublicUpdatesPage />} />
+        <Route path="/holidays" element={<HolidaysPage />} />
+        <Route path="/relations" element={<RelationsPage />} />
+        <Route path="/stickers" element={<StickerLibraryPage />} />
+        <Route path="/voices" element={<VoiceLibraryPage />} />
+        <Route path="/card-templates" element={<CardTemplatesPage />} />
+        <Route path="/work-links" element={<WorkLinksPage />} />
+        <Route path="/symptom-tags" element={<SymptomTagsPage />} />
+        <Route path="/pet-species" element={<PetSpeciesPage />} />
+        <Route path="/account-deletions" element={<AccountDeletionsPage />} />
+        <Route path="/plaza" element={<PlazaAdminPage />} />
+        <Route path="/reports" element={<PlazaAdminPage />} />
+        <Route path="/support" element={<SupportAdminPage />} />
+        <Route path="/role-requests" element={<RoleRequestsPage />} />
+        <Route path="/planner" element={<PlannerPage />} />
+        <Route path="/daily-questions" element={<DailyQuestionsPage />} />
+        <Route path="/announcements" element={<AnnouncementsPage />} />
+        <Route path="/release-notes" element={<ReleaseNotesPage />} />
+        <Route path="/version-policies" element={<VersionPoliciesPage />} />
+        <Route path="/admin/alerts" element={<AlertsPage />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </ProLayout>
   );
 }

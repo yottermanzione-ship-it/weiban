@@ -10,9 +10,13 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json"
   },
   "dependencies": {
+    "@ant-design/icons": "^6.3.4",
+    "@ant-design/pro-components": "^2.8.10",
+    "@ant-design/v5-patch-for-react-19": "^1.0.3",
     "@phosphor-icons/react": "^2.1.10",
     "@weiban/client-core": "workspace:*",
     "@weiban/contracts": "workspace:*",
+    "antd": "^5.29.3",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.9.6",
