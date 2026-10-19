@@ -219,7 +219,12 @@ export function DailyQuestionPage() {
   return (
     <main>
       <Header title="每日一问" right={<Link to="/play/daily/history">历史</Link>} />
-      {state === 'loading' && <div className="skeleton-card" role="status" aria-label="正在读取" />}
+      {state === 'loading' && (
+        <>
+          <div className="skeleton-card" role="status" aria-label="正在读取" />
+          <p className="page-note hint center">正在准备今天的问题…</p>
+        </>
+      )}
       {state === 'error' && (
         <div className="empty">
           <p role="alert">{error || '加载失败'}</p>
