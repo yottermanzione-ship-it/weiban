@@ -608,7 +608,7 @@ function OfficialComments({
         )}
         {composing ? (
           <form
-            className="message-composer official-comment-composer"
+            className="message-composer stacked-composer"
             onSubmit={(e) => {
               e.preventDefault();
               void send();

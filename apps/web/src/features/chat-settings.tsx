@@ -509,6 +509,7 @@ export function FieldSheet({
   return (
     <Sheet
       title={title}
+      closeDisabled={pending}
       onClose={() => {
         if (!pending) onClose();
       }}

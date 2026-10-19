@@ -430,6 +430,7 @@ export function MomentCard({
           <Sheet
             title={replying ? `回复${actors.name(replying.author)}` : '评论'}
             closeLabel="取消"
+            closeDisabled={pending}
             half
             onClose={() => {
               if (!pending) {

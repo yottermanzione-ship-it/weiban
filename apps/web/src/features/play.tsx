@@ -34,7 +34,7 @@ import { useUpdates } from '../data/updates.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { openShare } from './share.js';
-import { EmptyState, NavBar } from './shell-kit.js';
+import { EmptyState, NavBar, Sheet } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 
 /*
@@ -508,7 +508,7 @@ function CharacterWishlist({ characterId }: { characterId: string }) {
     setItems((prev) => (prev ?? []).map((i) => (i.itemId === item.itemId ? item : i)));
   async function add() {
     const value = text.trim();
-    if (!value || chars(value) > PLAY_LIMITS.wishlistItemMaxChars) return;
+    if (pending || !value || chars(value) > PLAY_LIMITS.wishlistItemMaxChars) return;
     setPending(true);
     try {
       const item = await api.call(WishlistEndpoints.addItem, {
@@ -599,7 +599,7 @@ function CharacterWishlist({ characterId }: { characterId: string }) {
         (all.length > 0 || adding) &&
         (adding ? (
           <form
-            className="message-composer"
+            className="message-composer stacked-composer"
             onSubmit={(e) => {
               e.preventDefault();
               void add();
@@ -607,7 +607,12 @@ function CharacterWishlist({ characterId }: { characterId: string }) {
           >
             <label>
               想一起做的事
-              <input autoFocus value={text} onChange={(e) => setText(e.target.value)} />
+              <input
+                autoFocus
+                disabled={pending}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+              />
             </label>
             <small
               className={
@@ -621,8 +626,20 @@ function CharacterWishlist({ characterId }: { characterId: string }) {
             <button
               className="text-button"
               disabled={pending || !text.trim() || chars(text) > PLAY_LIMITS.wishlistItemMaxChars}
+              aria-busy={pending}
             >
-              添加
+              {pending ? '正在添加…' : '添加'}
+            </button>
+            <button
+              type="button"
+              className="text-button"
+              disabled={pending}
+              onClick={() => {
+                setAdding(false);
+                setText('');
+              }}
+            >
+              取消
             </button>
           </form>
         ) : (
@@ -672,47 +689,71 @@ function WishSheet({
 }) {
   const [text, setText] = useState(item.text);
   const [date, setDate] = useState(item.dueDate ?? '');
+  const [saving, setSaving] = useState(false);
   const tooLong = chars(text.trim()) > PLAY_LIMITS.wishlistItemMaxChars;
+  async function save(body: { text?: string; dueDate?: string | null }) {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await onSave(body);
+    } finally {
+      setSaving(false);
+    }
+  }
   return (
-    <div className="sheet-panel" role="dialog" aria-label="编辑心愿">
-      <label>
-        心愿
-        <input value={text} onChange={(e) => setText(e.target.value)} />
-      </label>
-      <label>
-        定个日期
-        <input
-          type="date"
-          value={date}
-          min={todayLocal()}
-          onChange={(e) => setDate(e.target.value)}
-        />
-      </label>
-      {date && <small className="hint">定了日期，TA 到时会来问你</small>}
-      {item.dueDate && (
-        <button className="text-button" onClick={() => void onSave({ dueDate: null })}>
-          取消日期
-        </button>
-      )}
-      <div className="button-row">
-        <button onClick={onClose}>取消</button>
-        <button
-          className="primary"
-          disabled={!text.trim() || tooLong}
-          onClick={() =>
-            void onSave({
-              ...(text.trim() !== item.text ? { text: text.trim() } : {}),
-              ...(date !== (item.dueDate ?? '') ? { dueDate: date || null } : {}),
-            })
-          }
-        >
-          保存
+    <Sheet
+      title="编辑心愿"
+      closeLabel="取消"
+      closeDisabled={saving}
+      onClose={() => {
+        if (!saving) onClose();
+      }}
+    >
+      <div className="stack">
+        <label>
+          心愿
+          <input disabled={saving} value={text} onChange={(e) => setText(e.target.value)} />
+        </label>
+        <label>
+          定个日期
+          <input
+            type="date"
+            disabled={saving}
+            value={date}
+            min={todayLocal()}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </label>
+        {date && <small className="hint">定了日期，TA 到时会来问你</small>}
+        {item.dueDate && (
+          <button
+            className="text-button"
+            disabled={saving}
+            onClick={() => void save({ dueDate: null })}
+          >
+            取消日期
+          </button>
+        )}
+        <div className="button-row">
+          <button
+            className="primary full"
+            disabled={saving || !text.trim() || tooLong}
+            aria-busy={saving}
+            onClick={() =>
+              void save({
+                ...(text.trim() !== item.text ? { text: text.trim() } : {}),
+                ...(date !== (item.dueDate ?? '') ? { dueDate: date || null } : {}),
+              })
+            }
+          >
+            {saving ? '正在保存…' : '保存'}
+          </button>
+        </div>
+        <button className="danger" disabled={saving} onClick={onDelete}>
+          删除
         </button>
       </div>
-      <button className="danger" onClick={onDelete}>
-        删除
-      </button>
-    </div>
+    </Sheet>
   );
 }
 
@@ -788,7 +829,11 @@ export function LettersPage() {
           {error} <button onClick={() => void load()}>重试</button>
         </p>
       )}
-      {loading && items.length === 0 && <div className="skeleton-row" role="status" />}
+      {loading && items.length === 0 && (
+        <p className="page-note" role="status">
+          正在读取信件…
+        </p>
+      )}
       {!loading && !error && items.length === 0 && (
         <p className="empty">
           {box === 'received' ? '还没有收到信' : box === 'sent' ? '还没有寄出过信' : '没有草稿'}
@@ -842,15 +887,15 @@ export function LettersPage() {
         </button>
       )}
       {picking && (
-        <div className="sheet-panel" role="dialog" aria-label="写给谁">
-          <strong>写给谁</strong>
-          <CharacterPicker
-            value={null}
-            label="写给谁"
-            onChange={(id) => navigate(`/play/letters/new?characterId=${id}`)}
-          />
-          <button onClick={() => setPicking(false)}>取消</button>
-        </div>
+        <Sheet title="写给谁" closeLabel="取消" onClose={() => setPicking(false)} half>
+          <div className="stack">
+            <CharacterPicker
+              value={null}
+              label="写给谁"
+              onChange={(id) => navigate(`/play/letters/new?characterId=${id}`)}
+            />
+          </div>
+        </Sheet>
       )}
     </main>
   );
@@ -867,10 +912,15 @@ export function WriteLetterPage() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [repliedToday, setRepliedToday] = useState(false);
+  const [draftLoading, setDraftLoading] = useState(!!characterId);
+  const [draftError, setDraftError] = useState('');
+  const [draftRevision, setDraftRevision] = useState(0);
   const requestId = useRef(crypto.randomUUID());
   useEffect(() => {
     if (!characterId) return;
     let active = true;
+    setDraftLoading(true);
+    setDraftError('');
     void api
       .call(LetterEndpoints.listLetters, {
         query: { box: 'drafts', characterId },
@@ -883,7 +933,12 @@ export function WriteLetterPage() {
           setOriginal(draft);
         }
       })
-      .catch(() => {});
+      .catch((error) => {
+        if (active) setDraftError(friendlyError(error));
+      })
+      .finally(() => {
+        if (active) setDraftLoading(false);
+      });
     void api
       .call(LetterEndpoints.listLetters, {
         query: { box: 'received', characterId },
@@ -902,7 +957,7 @@ export function WriteLetterPage() {
     return () => {
       active = false;
     };
-  }, [characterId]);
+  }, [characterId, draftRevision]);
   if (!characterId)
     return (
       <main>
@@ -917,7 +972,7 @@ export function WriteLetterPage() {
   const name = nameOf(characterId);
   const over = chars(body) > PLAY_LIMITS.letterMaxChars;
   async function send() {
-    if (!characterId || !body.trim() || over) return;
+    if (pending || draftLoading || !characterId || !body.trim() || over) return;
     setPending(true);
     setError('');
     try {
@@ -942,7 +997,9 @@ export function WriteLetterPage() {
     }
   }
   async function saveDraft() {
-    if (!characterId) return;
+    if (!characterId || pending) return;
+    setPending(true);
+    setError('');
     try {
       await api.call(LetterEndpoints.saveDraft, {
         params: { characterId },
@@ -953,6 +1010,8 @@ export function WriteLetterPage() {
     } catch (e) {
       setError(friendlyError(e));
       setLeaving(false);
+    } finally {
+      setPending(false);
     }
   }
   return (
@@ -960,6 +1019,7 @@ export function WriteLetterPage() {
       <header className="page-header">
         <button
           className="text-button"
+          disabled={pending}
           onClick={() => (body.trim() && body !== original ? setLeaving(true) : navigate(-1))}
         >
           取消
@@ -967,17 +1027,35 @@ export function WriteLetterPage() {
         <h1>给 {name} 的信</h1>
         <button
           className="text-button primary-text"
-          disabled={pending || !body.trim() || over}
+          disabled={pending || draftLoading || !body.trim() || over}
           onClick={() => void send()}
         >
-          {pending ? '正在寄出…' : '寄出'}
+          {pending ? (leaving ? '正在保存…' : '正在寄出…') : '寄出'}
         </button>
       </header>
+      {draftLoading && (
+        <p className="page-note" role="status">
+          正在恢复草稿…
+        </p>
+      )}
+      {draftError && (
+        <div className="page-note">
+          <p role="alert">{draftError}</p>
+          <button
+            className="text-button"
+            disabled={draftLoading}
+            onClick={() => setDraftRevision((v) => v + 1)}
+          >
+            重试读取草稿
+          </button>
+        </div>
+      )}
       <div className="play-paper">
         <p>{name}：</p>
         <textarea
           aria-label="信的正文"
           autoFocus
+          disabled={pending || draftLoading}
           value={body}
           onChange={(e) => setBody(e.target.value)}
         />
@@ -992,15 +1070,29 @@ export function WriteLetterPage() {
           : `回信会在 ${PLAY_LIMITS.letterReplyDelayMinHours}–${PLAY_LIMITS.letterReplyDelayMaxHours} 小时后寄到`}
       </p>
       {leaving && (
-        <div className="sheet-panel" role="dialog" aria-label="离开写信页">
-          <button className="primary" onClick={() => void saveDraft()}>
-            保存草稿
-          </button>
-          <button onClick={() => navigate(-1)}>不保存</button>
-          <button className="text-button" onClick={() => setLeaving(false)}>
-            继续写
-          </button>
-        </div>
+        <Sheet
+          title="离开写信页"
+          closeLabel="继续写"
+          closeDisabled={pending}
+          onClose={() => {
+            if (!pending) setLeaving(false);
+          }}
+        >
+          <div className="stack">
+            <p>要保存这封信的草稿吗？</p>
+            <button
+              className="primary"
+              disabled={pending}
+              aria-busy={pending}
+              onClick={() => void saveDraft()}
+            >
+              {pending ? '正在保存…' : '保存草稿'}
+            </button>
+            <button disabled={pending} onClick={() => navigate(-1)}>
+              不保存
+            </button>
+          </div>
+        </Sheet>
       )}
     </main>
   );

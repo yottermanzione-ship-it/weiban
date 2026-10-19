@@ -453,6 +453,7 @@ export function Sheet({
   action,
   half = false,
   fullScreen = false,
+  closeDisabled = false,
 }: {
   title?: ReactNode;
   onClose(): void;
@@ -461,11 +462,19 @@ export function Sheet({
   action?: ReactNode;
   half?: boolean;
   fullScreen?: boolean;
+  closeDisabled?: boolean;
 }) {
-  useEscape(onClose);
+  useEscape(() => {
+    if (!closeDisabled) onClose();
+  });
   const closeIcon = closeLabel === '✕' || closeLabel === '关闭';
   return (
-    <div className="sheet-scrim" onClick={onClose}>
+    <div
+      className="sheet-scrim"
+      onClick={() => {
+        if (!closeDisabled) onClose();
+      }}
+    >
       <div
         className={`sheet-panel shell-sheet ${half ? 'half' : ''} ${fullScreen ? 'fullscreen' : ''}`}
         role="dialog"
@@ -476,7 +485,12 @@ export function Sheet({
           <header className="sheet-head">
             <span className="sheet-head-side">
               {!closeIcon && (
-                <button type="button" className="sheet-text-button" onClick={onClose}>
+                <button
+                  type="button"
+                  className="sheet-text-button"
+                  disabled={closeDisabled}
+                  onClick={onClose}
+                >
                   {closeLabel}
                 </button>
               )}
@@ -488,6 +502,7 @@ export function Sheet({
                   <button
                     type="button"
                     className="nav-bar-icon"
+                    disabled={closeDisabled}
                     aria-label="关闭"
                     onClick={onClose}
                   >

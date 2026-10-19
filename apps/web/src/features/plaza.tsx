@@ -30,6 +30,7 @@ import { uploadMedia, prepareImage } from '../data/upload.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { VirtualList } from './virtual-list.js';
 import { Dialog, showToast } from './toast.js';
+import { Sheet } from './shell-kit.js';
 
 /*
  * 人设广场（PLZ-01～PLZ-07；设计 persona-plaza.md；契约 PlazaEndpoints）。
@@ -784,53 +785,54 @@ export function WorkPage() {
         )}
       </div>
       {sheet === 'versions' && (
-        <div className="sheet-panel" role="dialog" aria-label="版本记录">
-          <strong>版本记录</strong>
-          {[...w.versions]
-            .sort((a, b) => b.version - a.version)
-            .map((v) => (
-              <div key={v.version} className="stack">
-                <span>
-                  版本 {v.version} · {v.createdAt.slice(0, 10)}
-                </span>
-                {v.changeNote && <small className="hint">{v.changeNote}</small>}
-              </div>
-            ))}
-          <button onClick={() => setSheet(null)}>关闭</button>
-        </div>
+        <Sheet title="版本记录" onClose={() => setSheet(null)}>
+          <div className="stack">
+            {[...w.versions]
+              .sort((a, b) => b.version - a.version)
+              .map((v) => (
+                <div key={v.version} className="stack">
+                  <span>
+                    版本 {v.version} · {v.createdAt.slice(0, 10)}
+                  </span>
+                  {v.changeNote && <small className="hint">{v.changeNote}</small>}
+                </div>
+              ))}
+          </div>
+        </Sheet>
       )}
       {sheet === 'menu' && (
-        <div className="sheet-panel" role="dialog" aria-label="更多操作">
-          {w.isMine ? (
-            <>
-              {!removedByAdmin && (
-                <button onClick={() => void publishNewVersion()}>发布新版本</button>
-              )}
-              <button onClick={() => void manage('comments')}>
-                {w.settings.commentsOpen ? '关闭评论' : '开启评论'}
-              </button>
-              {w.status === 'listed' && <button onClick={() => setDialog('unlist')}>下架</button>}
-              {w.status === 'unlisted_by_author' && (
-                <button onClick={() => void manage('relist')}>重新上架</button>
-              )}
-              <button className="danger" onClick={() => setDialog('delete')}>
-                删除作品
-              </button>
-            </>
-          ) : reportedTargets.has(`work:${workId}`) ? (
-            <button disabled>已举报</button>
-          ) : (
-            <Link className="plain" to={`/plaza/report?work=${workId}`}>
-              举报
-            </Link>
-          )}
-          {!w.isMine && (
-            <Link className="plain" to={`/support/new?targetType=plaza_work&targetId=${workId}`}>
-              向官方投诉
-            </Link>
-          )}
-          <button onClick={() => setSheet(null)}>取消</button>
-        </div>
+        <Sheet title="更多操作" closeLabel="取消" onClose={() => setSheet(null)}>
+          <div className="stack">
+            {w.isMine ? (
+              <>
+                {!removedByAdmin && (
+                  <button onClick={() => void publishNewVersion()}>发布新版本</button>
+                )}
+                <button onClick={() => void manage('comments')}>
+                  {w.settings.commentsOpen ? '关闭评论' : '开启评论'}
+                </button>
+                {w.status === 'listed' && <button onClick={() => setDialog('unlist')}>下架</button>}
+                {w.status === 'unlisted_by_author' && (
+                  <button onClick={() => void manage('relist')}>重新上架</button>
+                )}
+                <button className="danger" onClick={() => setDialog('delete')}>
+                  删除作品
+                </button>
+              </>
+            ) : reportedTargets.has(`work:${workId}`) ? (
+              <button disabled>已举报</button>
+            ) : (
+              <Link className="plain" to={`/plaza/report?work=${workId}`}>
+                举报
+              </Link>
+            )}
+            {!w.isMine && (
+              <Link className="plain" to={`/support/new?targetType=plaza_work&targetId=${workId}`}>
+                向官方投诉
+              </Link>
+            )}
+          </div>
+        </Sheet>
       )}
       {dialog === 'adopted' && (
         <Dialog
@@ -1142,11 +1144,7 @@ export function ReportPage() {
         <small className="char-count hint">{chars(note)}/200</small>
       </label>
       {error && <p role="alert">{error}</p>}
-      <button
-        className="primary full"
-        disabled={!reason || pending}
-        onClick={() => void submit()}
-      >
+      <button className="primary full" disabled={!reason || pending} onClick={() => void submit()}>
         提交
       </button>
     </main>
@@ -1802,15 +1800,16 @@ export function PublishPage() {
           </Dialog>
         )}
         {neverSheet && (
-          <div className="sheet-panel" role="dialog" aria-label="哪些内容不会发布">
-            <strong>这些内容永远不会发布</strong>
-            <ul>
-              {neverPublished.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-            <button onClick={() => setNeverSheet(false)}>知道了</button>
-          </div>
+          <Sheet title="哪些内容不会发布" closeLabel="知道了" onClose={() => setNeverSheet(false)}>
+            <div className="stack">
+              <strong>这些内容永远不会发布</strong>
+              <ul>
+                {neverPublished.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          </Sheet>
         )}
       </main>
     );
@@ -2009,20 +2008,25 @@ function NewVersionSheet({
   }
   return (
     <>
-      <div className="sheet-panel" role="dialog" aria-label="作者发布了新版本">
-        <strong>作者发布了新版本（版本 {version}）</strong>
-        {note && <p className="hint">更新说明：{note}</p>}
-        <small className="hint">你们的聊天记录、记忆、好感度都不会变</small>
-        <button className="primary" disabled={pending} onClick={() => void decide('update')}>
-          更新到版本 {version}
-        </button>
-        <button className="text-button" disabled={pending} onClick={() => void decide('dismiss')}>
-          暂不更新
-        </button>
-        <button className="text-button" onClick={() => onClose(false)}>
-          关闭
-        </button>
-      </div>
+      <Sheet
+        title="作者发布了新版本"
+        closeDisabled={pending}
+        onClose={() => {
+          if (!pending) onClose(false);
+        }}
+      >
+        <div className="stack">
+          <strong>版本 {version}</strong>
+          {note && <p className="hint">更新说明：{note}</p>}
+          <small className="hint">你们的聊天记录、记忆、好感度都不会变</small>
+          <button className="primary" disabled={pending} onClick={() => void decide('update')}>
+            更新到版本 {version}
+          </button>
+          <button className="text-button" disabled={pending} onClick={() => void decide('dismiss')}>
+            暂不更新
+          </button>
+        </div>
+      </Sheet>
       {overwrite && (
         <Dialog
           title="你对 TA 的修改会被覆盖"

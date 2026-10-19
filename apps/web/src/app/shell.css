@@ -552,6 +552,7 @@ div.menu-row {
 .sheet-panel.shell-sheet {
   gap: 0;
   padding: 0;
+  text-align: left;
 }
 .sheet-panel.fullscreen {
   height: 100dvh;
