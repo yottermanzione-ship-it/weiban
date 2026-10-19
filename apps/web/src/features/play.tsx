@@ -839,8 +839,9 @@ export function LettersPage() {
           {box === 'received' ? '还没有收到信' : box === 'sent' ? '还没有寄出过信' : '没有草稿'}
         </p>
       )}
-      <div className="panel">
-        {items.map((l) => {
+      {items.length > 0 && (
+        <div className="panel">
+          {items.map((l) => {
           const inTransit = l.status === 'in_transit';
           const unreadLetter = l.direction === 'from_character' && !inTransit && !l.readAt;
           return (
@@ -880,7 +881,8 @@ export function LettersPage() {
             </button>
           );
         })}
-      </div>
+        </div>
+      )}
       {cursor && (
         <button disabled={loading} onClick={() => void load(cursor)}>
           加载更多
