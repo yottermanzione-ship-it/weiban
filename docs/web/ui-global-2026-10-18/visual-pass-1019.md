@@ -96,3 +96,10 @@
 - 已打开并确认正常：`/characters/:id/supplement`、`/imports/new`、`/roles/create`、`/role-requests/new`、`/me/stickers`、`/sticker-store`、`/plaza/official/:id`、`/me/favorites/:id`、`/support/tickets/:id`、`/pets/:id`。
 - 320px 复核：设置页无溢出、开关与说明正常换行；群聊页标题已显示「聊天」。
 - 未改的观察：收藏详情页头像首字母在浅灰底上对比偏低（与微信占位风格一致，保留）；`/role-requests/new` 的「补充资料」用的是 `▶` 字符而非图标。
+
+## 2026-10-19 17:00 深色模式一批
+
+- 深色下服务页、设置页、广场、朋友圈列表配色正常；深色聊天页标题已显示「聊天」（上一批修）。
+- **朋友圈默认封面在深色下是一整块亮橙**：默认封面是预设渐变（`coverFor`），深色模式没有处理。加 `is-default` 标记，仅对默认封面做 `brightness(.55) saturate(.7)`；用户自选封面不动。复拍 `ui-dark-1019/moments2.png` 已压暗。
+- 台账按本批源码改动重建并校验：`build.mjs` + `validate.mjs` 通过（evidenceReferencesValid=true，185 条需动作不变，401 行完整）。
+- 仍未解：深色聊天页在 5 秒时仍显示「正在打开聊天…」——每次登录生成新 sessionId，本地快照键随之变化，冷链接要重放同步。属同步引擎，不在本轮 web 改动范围。
