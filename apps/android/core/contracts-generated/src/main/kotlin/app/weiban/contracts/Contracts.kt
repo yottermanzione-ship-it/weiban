@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.16. Regenerate: pnpm android:generate
+// Contract 3.17. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.16"
+const val CONTRACT_VERSION: String = "3.17"
 
 @Serializable
 data class AccountAlias(
@@ -1883,6 +1883,14 @@ data class ChatSearchEndpointsSearchConversationResponse(
 )
 
 @Serializable
+data class ChatWindowLimits(
+    @SerialName("keepTurns") val `keepTurns`: Long,
+    @SerialName("triggerTurns") val `triggerTurns`: Long,
+    @SerialName("maxTurns") val `maxTurns`: Long,
+    @SerialName("triggerChars") val `triggerChars`: Long,
+)
+
+@Serializable
 data class ClientAuthFrame(
     @EncodeDefault
     @SerialName("v") val `v`: Long = 1,
@@ -2329,6 +2337,7 @@ data class CompanionEndpointsGetForCharacterResponse(
     @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
     @SerialName("voiceId") val `voiceId`: Id? = null,
+    @SerialName("longContext") val `longContext`: Boolean? = null,
 )
 
 @Serializable
@@ -2358,6 +2367,7 @@ data class CompanionSettings(
     @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
     @SerialName("voiceId") val `voiceId`: Id? = null,
+    @SerialName("longContext") val `longContext`: Boolean? = null,
 )
 
 typealias ComplaintReason = String
@@ -5804,6 +5814,54 @@ data class MemorySharingSettings(
 )
 
 typealias MemoryStatus = String
+
+@Serializable
+data class MemoryTierConfig(
+    @SerialName("free") val `free`: MemoryTierLimits,
+    @SerialName("proPlus") val `proPlus`: MemoryTierLimits,
+    @SerialName("newUserTrialDays") val `newUserTrialDays`: Long,
+    @SerialName("recallTopK") val `recallTopK`: Long,
+    @SerialName("longContext") val `longContext`: ChatWindowLimits,
+)
+
+@Serializable
+data class MemoryTierEndpointsAdminGetResponse(
+    @SerialName("free") val `free`: MemoryTierLimits,
+    @SerialName("proPlus") val `proPlus`: MemoryTierLimits,
+    @SerialName("newUserTrialDays") val `newUserTrialDays`: Long,
+    @SerialName("recallTopK") val `recallTopK`: Long,
+    @SerialName("longContext") val `longContext`: ChatWindowLimits,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp?,
+)
+
+@Serializable
+data class MemoryTierEndpointsAdminUpdateResponse(
+    @SerialName("free") val `free`: MemoryTierLimits,
+    @SerialName("proPlus") val `proPlus`: MemoryTierLimits,
+    @SerialName("newUserTrialDays") val `newUserTrialDays`: Long,
+    @SerialName("recallTopK") val `recallTopK`: Long,
+    @SerialName("longContext") val `longContext`: ChatWindowLimits,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp?,
+)
+
+@Serializable
+data class MemoryTierLimits(
+    @SerialName("residentLimit") val `residentLimit`: Long,
+    @SerialName("libraryLimit") val `libraryLimit`: Long?,
+    @SerialName("summaryDays") val `summaryDays`: Long?,
+    @SerialName("retrieveLimit") val `retrieveLimit`: Long,
+    @SerialName("recallDays") val `recallDays`: Long?,
+)
+
+@Serializable
+data class MemoryTierStatus(
+    @SerialName("tier") val `tier`: String,
+    @SerialName("basis") val `basis`: String,
+    @SerialName("trialEndsAt") val `trialEndsAt`: Timestamp?,
+    @SerialName("limits") val `limits`: MemoryTierLimits,
+    @SerialName("libraryCount") val `libraryCount`: Long,
+    @SerialName("longContext") val `longContext`: MemoryTierStatusLongContext,
+)
 
 typealias MemoryVisibility = String
 
@@ -9333,6 +9391,7 @@ data class UpdateCompanionSettingsRequest(
     @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
     @SerialName("voiceId") val `voiceId`: Id? = null,
+    @SerialName("longContext") val `longContext`: Boolean? = null,
 )
 
 @Serializable
@@ -9346,6 +9405,7 @@ data class UpdateCompanionSettingsRequestInput(
     @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
     @SerialName("voiceId") val `voiceId`: Id? = null,
+    @SerialName("longContext") val `longContext`: Boolean? = null,
 )
 
 @Serializable
@@ -12198,6 +12258,14 @@ data class HealthTagAdminEndpointsPutSymptomTagsBodyItemsItem(
 data class ImportJobSpeakersItem(
     @SerialName("name") val `name`: String,
     @SerialName("messageCount") val `messageCount`: Long,
+)
+
+@Serializable
+data class MemoryTierStatusLongContext(
+    @SerialName("available") val `available`: Boolean,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("pointsPerMessage") val `pointsPerMessage`: Double?,
+    @SerialName("normalPointsPerMessage") val `normalPointsPerMessage`: Double?,
 )
 
 @Serializable

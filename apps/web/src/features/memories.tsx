@@ -1,12 +1,25 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { MemoryEndpoints, type MemoryEntry } from '@weiban/contracts';
+import {
+  MemoryEndpoints,
+  MemoryTierEndpoints,
+  type MemoryEntry,
+  type MemoryTierStatus,
+} from '@weiban/contracts';
 import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { CharacterName } from './chat.js';
-import { NavBar, NavIcon, MenuGroup, GroupHeader, Sheet, EmptyState } from './shell-kit.js';
+import {
+  NavBar,
+  NavIcon,
+  MenuGroup,
+  MenuRow,
+  GroupHeader,
+  Sheet,
+  EmptyState,
+} from './shell-kit.js';
 import { Dialog } from './toast.js';
 const categories = {
   basic: '关于我',
@@ -29,6 +42,11 @@ export function MemoriesPage() {
     params: { characterId },
     query: { limit: 50, ...(afterId ? { afterId } : {}) },
   });
+  // v5 批 B：按档位显示 TA 实际能记住的范围（只陈述事实，不放开通引导）。
+  const tier = useRemote(MemoryTierEndpoints.status, {
+    networkOnly: true,
+    params: { characterId },
+  });
   const [editing, setEditing] = useState<MemoryEntry | 'new' | null>(null);
   const [removing, setRemoving] = useState<MemoryEntry | null>(null);
   const [busy, setBusy] = useState(false);
@@ -42,6 +60,7 @@ export function MemoriesPage() {
       setEditing(null);
       setRemoving(null);
       records.refresh();
+      tier.refresh();
     } catch (e) {
       setError(friendlyError(e));
     } finally {
@@ -78,6 +97,7 @@ export function MemoriesPage() {
             你可以修改、删除，或告诉 TA
             想记住的事。删除后旧消息不会再被用来记下它；再次主动提起时可以重新记下。
           </p>
+          {tier.data && <MemoryRange status={tier.data} />}
           {records.loading && (
             <p role="status" className="empty">
               正在读取…
@@ -203,6 +223,42 @@ export function MemoriesPage() {
         </Dialog>
       )}
     </main>
+  );
+}
+/** 记忆页「TA 能记住的范围」：按当前档位陈述实际可用范围（docs/refactor/16 §5.3，不放诱导文案）。 */
+function MemoryRange({ status }: { status: MemoryTierStatus }) {
+  const l = status.limits;
+  const days = (n: number | null, all: string) => (n === null ? all : `最近 ${n} 天`);
+  const basis =
+    status.basis === 'member'
+      ? 'PRO+'
+      : status.basis === 'new_user'
+        ? `新用户体验（至 ${status.trialEndsAt?.slice(0, 10) ?? ''}）`
+        : '免费';
+  return (
+    <section aria-label="TA 能记住的范围">
+      <GroupHeader right={basis}>TA 能记住的范围</GroupHeader>
+      <MenuGroup>
+        <MenuRow label="每次都记得的重要事" value={`${l.residentLimit} 条`} chevron={false} />
+        <MenuRow
+          label="记忆库"
+          value={
+            l.libraryLimit === null
+              ? `不限（已记 ${status.libraryCount} 条）`
+              : `最早记下的 ${l.libraryLimit} 条参与聊天`
+          }
+          chevron={false}
+        />
+        <MenuRow label="聊天摘要" value={days(l.summaryDays, '全部')} chevron={false} />
+        <MenuRow label="每次按话题回想" value={`${l.retrieveLimit} 条`} chevron={false} />
+        <MenuRow
+          label="翻聊天记录"
+          subtitle="你提到以前的事时，TA 会去翻原话"
+          value={days(l.recallDays, '从认识第一天起')}
+          chevron={false}
+        />
+      </MenuGroup>
+    </section>
   );
 }
 function MemorySheet({
