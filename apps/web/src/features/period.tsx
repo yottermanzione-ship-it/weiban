@@ -517,7 +517,7 @@ export function PeriodDayPage() {
       )}
       {loaded && (
         <div className="stack">
-          <label className="check">
+          <label className="check check-card">
             <input
               type="checkbox"
               checked={inPeriod}

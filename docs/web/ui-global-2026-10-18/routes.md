@@ -8,22 +8,22 @@
 |---|---|
 | `/` | 已完成账号登录；欢迎/登录页已看 |
 | `/me` | 已打开；底栏切换已点 |
-| `/profile` | 未点按；源码/原批注待逐页核对 |
+| `/profile` | 2026-10-19 已打开：昵称/生日/性别/地区/个性签名行正常 |
 | `/settings` | 已打开；子页入口已点，开关未改 |
-| `/services` | 未点按；源码/原批注待逐页核对 |
-| `/wallet` | 未点按；源码/原批注待逐页核对 |
-| `/wallet/recharge` | 未点按；源码/原批注待逐页核对 |
-| `/ledger` | 未点按；源码/原批注待逐页核对 |
-| `/prices` | 未点按；源码/原批注待逐页核对 |
-| `/models` | 未点按；源码/原批注待逐页核对 |
-| `/leaderboard` | 未点按；源码/原批注待逐页核对 |
-| `/usage` | 未点按；源码/原批注待逐页核对 |
-| `/characters/custom/new` | 未点按；源码/原批注待逐页核对 |
+| `/services` | 2026-10-19 已打开：钱包/消费记录/模型/偏好四组 |
+| `/wallet` | 2026-10-19 已打开：余额 0 + 积分不足标记 + 充值 |
+| `/wallet/recharge` | 2026-10-19 已打开：三档 + 自定义金额 + 全宽按钮 |
+| `/ledger` | 2026-10-19 已打开：空态与分类筛选 |
+| `/prices` | 2026-10-19 已打开 |
+| `/models` | 2026-10-19 已打开：平台默认勾选、排行榜空态、Bai MiMo 标暂不可用 |
+| `/leaderboard` | 2026-10-19 已打开：空态 |
+| `/usage` | 2026-10-19 已打开：今天/7天/30天 + 提醒线 |
+| `/characters/custom/new` | 2026-10-19 已打开：分类单选卡片已修复，头像字段不再自带边框 |
 | `/characters/custom/:characterId/edit` | 未点按；源码/原批注待逐页核对 |
 | `/settings/security` | 已点修改密码提示、下线确认并取消；外层DIV且无嵌套按钮；连续两次reload正常 |
-| `/settings/privacy` | 未点按；源码/原批注待逐页核对 |
+| `/settings/privacy` | 2026-10-19 已打开：三档共享说明 |
 | `/settings/general` | 10-19 实点深色/特大字号，在320px复看；已恢复跟随系统/标准 |
-| `/services/proactive` | 未点按；源码/原批注待逐页核对 |
+| `/services/proactive` | 2026-10-19 已打开 |
 | `/services/ecology` | 已点总开关展开/收起、滚动；模型行禁用且示例文案可见；动作开关标签待补 |
 | `/services/period` | 已看首次隐私说明/开始记录入口及导航；未开启/写入健康数据 |
 | `/services/period/day/:date` | 未点按；源码/原批注待逐页核对 |
@@ -32,18 +32,18 @@
 | `/services/period/settings` | 未点按；源码/原批注待逐页核对 |
 | `/chat` | 已看空态及3角色好友会话/未读；无AI气泡长按证据 |
 | `/chat/:conversationId` | 程澈会话已看；内置/商店/个人3类表情切换可见；未发消息/验证角色回复；Bai路由暂停提示可见 |
-| `/chat/:conversationId/settings` | 未点按；源码/原批注待逐页核对 |
+| `/chat/:conversationId/settings` | 2026-10-19 已打开：深链接改为同步占位，不再误报不存在 |
 | `/characters/:characterId/memories` | 10-19 程澈空态→添加→输入27字/切共同经历分类，完成启用→Esc退出仍为空；未保存/删除记忆 |
-| `/characters/:characterId/timeline` | 未点按；源码/原批注待逐页核对 |
-| `/characters/:characterId/moments` | 未点按；源码/原批注待逐页核对 |
+| `/characters/:characterId/timeline` | 2026-10-19 已打开：名字移入标题栏，空态用图标 |
+| `/characters/:characterId/moments` | 2026-10-19 已打开 |
 | `/characters/:characterId/relations` | 10-19 官方程澈错误添加入口已实际打开/取消，修当前角色归属后禁用；自建林间信使仅1个自建角色不能添加；未提交关系 |
-| `/contacts/new` | 未点按；源码/原批注待逐页核对 |
-| `/contacts/groups` | 未点按；源码/原批注待逐页核对 |
+| `/contacts/new` | 2026-10-19 已打开 |
+| `/contacts/groups` | 2026-10-19 已打开 |
 | `/groups/new` | 10-19 实际选择程澈/温言并创建三人预览群，设置内改名；添加苏乔后取消；没有发送消息或验证 AI 群聊 |
 | `/chat/:conversationId/group` | 未点按；源码/原批注待逐页核对 |
 | `/moments` | 已看空态；相机菜单/取消、换封面面板/退出；修复后700ms长按直接发表 |
 | `/moments/new` | 已点输入计数、公开/部分可见、无好友禁发表、有内容取消确认/继续编辑/不保留、空内容取消；未发表 |
-| `/moments/notifications` | 未点按；源码/原批注待逐页核对 |
+| `/moments/notifications` | 2026-10-19 已打开 |
 | `/moments/posts/:postId` | 10-19 样例详情已打开；通栏/赞评论操作条，实际点赞、点评论回复、长按自己的评论并取消；深色特大字号已看 |
 | `/me/moments` | 10-19 有样例动态，实际从列表点进动态详情；早期空态不再代表当前数据 |
 | `/characters/:characterId/anniversaries` | 10-19 程澈真实认识日期/下一纪念日已看；320px新增弹层空禁用、填写/原生日期输入后启用、Esc取消；未创建/删除或验证主动消息 |
@@ -53,23 +53,23 @@
 | `/support/new` | 已看；空值禁用、输入后启用；未提交 |
 | `/support/tickets/:ticketId` | 10-19 实际打开已有预览工单并提交补充，忙态/时间/正文可见；support-detail-reply-verified-1019.png |
 | `/me/status` | 已点自定义空值/输入/保存/清除；开发自测 |
-| `/settings/plugins` | 未点按；源码/原批注待逐页核对 |
+| `/settings/plugins` | 2026-10-19 已打开：微信/QQ/微博三行，均标暂未开放 |
 | `/me/stickers` | 已看3张；预览打开/关闭、整理选择/移到最前/完成；一次DB超时500重试恢复；未删除 |
 | `/me/favorites` | 10-19 有数据复看通栏来源/正文；取消收藏确认→取消，未删除；favorites-fullwidth-refined-1019.png |
-| `/me/favorites/:favoriteId` | 未点按；源码/原批注待逐页核对 |
+| `/me/favorites/:favoriteId` | 2026-10-19 已打开 |
 | `/services/cards` | 10-19 实见3角色/1张卡；进程澈卡册，胶囊关闭正常回小程序首页 |
 | `/services/achievements` | 10-19 1/34 有数据复看、打开详情；修 Esc 后实际关闭；320px 三列白卡/8px 间距，未横向撑出宫格 |
-| `/services/familiarity` | 未点按；源码/原批注待逐页核对 |
+| `/services/familiarity` | 2026-10-19 已打开：好感度改名 |
 | `/characters/:characterId/cards` | 10-19 实见1张团子瞬间卡；长标题单行、好感度解锁文案已改；实际开卡/翻面/Esc关闭 |
 | `/search` | 从chat进入、输入、取消回chat，重复两轮未出现返回循环 |
 | `/search/:conversationId` | 未点按；源码/原批注待逐页核对 |
-| `/chat/:conversationId/search` | 未点按；源码/原批注待逐页核对 |
+| `/chat/:conversationId/search` | 2026-10-19 已打开：快速查找/日期/图片/链接 |
 | `/share` | 10-19 实际从团子卡进入；修切消息模板导致空正文，卡片入口仅支持卡片风并解释；本机素材经同源代理后卡面完整/缺图提示消失；未保存相册/系统分享 |
-| `/imports` | 未点按；源码/原批注待逐页核对 |
-| `/imports/new` | 未点按；源码/原批注待逐页核对 |
+| `/imports` | 2026-10-19 已打开 |
+| `/imports/new` | 2026-10-19 已打开：入口卡片标题不再折行 |
 | `/imports/:jobId` | 未点按；源码/原批注待逐页核对 |
-| `/characters/:characterId/supplement` | 未点按；源码/原批注待逐页核对 |
-| `/settings/delete-account` | 未点按；源码/原批注待逐页核对 |
+| `/characters/:characterId/supplement` | 2026-10-19 已打开：标题与角色名分行 |
+| `/settings/delete-account` | 2026-10-19 已打开（未提交） |
 | `/services/pets` | 10-19 已看在养团子，有数据阶段标签收窄；点击进入详情。早期空态记录保留，不再当当前限制 |
 | `/pets/adopt` | 已看好友选择/名称输入/未选好友禁提交；返回正常；素材初载未等完，未领养 |
 | `/pets/:petId` | 10-19 已看团子主页/成长记录/空相册/设置，320px实滚到底部；喂食反馈与亲密值0→1；未上传/送养 |
@@ -85,25 +85,25 @@
 | `/play/reminders/:reminderId` | 未点按；源码/原批注待逐页核对 |
 | `/plaza/works/:workId` | 未点按；源码/原批注待逐页核对 |
 | `/plaza/authors/:authorId` | 未点按；源码/原批注待逐页核对 |
-| `/plaza/me` | 未点按；源码/原批注待逐页核对 |
-| `/plaza/profile` | 未点按；源码/原批注待逐页核对 |
-| `/plaza/publish` | 未点按；源码/原批注待逐页核对 |
+| `/plaza/me` | 2026-10-19 已打开（接口偶发 500） |
+| `/plaza/profile` | 2026-10-19 已打开（接口偶发 500） |
+| `/plaza/publish` | 2026-10-19 已打开：发布检查被模型网关挡住，停在 check_failed |
 | `/plaza/report` | 未点按；源码/原批注待逐页核对 |
-| `/characters/:characterId/voice` | 未点按；源码/原批注待逐页核对 |
+| `/characters/:characterId/voice` | 2026-10-19 已打开 |
 | `/calls/:callId` | 未点按；源码/原批注待逐页核对 |
-| `/coming-soon/:feature` | 未点按；源码/原批注待逐页核对 |
+| `/coming-soon/:feature` | 2026-10-19 已打开 |
 | `/miniapps` | 已看；图标长按→菜单→Esc退出；搜索→清除已点 |
 | `/discover/plaza` | 未点按；源码/原批注待逐页核对 |
 | `/contacts/add` | 已看推荐加载与滚动；角色资料入口已点 |
-| `/plaza` | 未点按；源码/原批注待逐页核对 |
+| `/plaza` | 2026-10-19 已打开：7 个角色、搜索/筛选 |
 | `/plaza/official/:characterId` | 10-19 程澈有数据正文/评论已看，实际提交两行预览评论，320px 回复输入后取消；错误重试仅源码核对 |
-| `/roles/create` | 未点按；源码/原批注待逐页核对 |
-| `/role-requests` | 未点按；源码/原批注待逐页核对 |
-| `/role-requests/new` | 未点按；源码/原批注待逐页核对 |
+| `/roles/create` | 2026-10-19 已打开 |
+| `/role-requests` | 2026-10-19 已打开：主按钮全宽 |
+| `/role-requests/new` | 2026-10-19 已打开 |
 | `/role-requests/:requestId` | 未点按；源码/原批注待逐页核对 |
 | `/pets/with/:characterId` | 10-19 按程澈实际进入，最终替换到团子详情；没宠物时的领养分支本轮未再核 |
-| `/characters/:characterId/model` | 未点按；源码/原批注待逐页核对 |
-| `/settings/about` | 未点按；源码/原批注待逐页核对 |
+| `/characters/:characterId/model` | 2026-10-19 已打开 |
+| `/settings/about` | 2026-10-19 已打开 |
 | `/settings/announcements` | 未点按；源码/原批注待逐页核对 |
 | `/settings/release-notes` | 未点按；源码/原批注待逐页核对 |
 | `/contacts` | 已打开；搜索输入/清除已点 |

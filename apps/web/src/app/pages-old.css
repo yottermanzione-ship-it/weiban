@@ -2293,3 +2293,10 @@ fieldset.panel.rows > label.check:last-of-type {
 :root[data-scheme="dark"] .moments-cover.is-default {
   filter: brightness(0.55) saturate(0.7);
 }
+
+/* 经期日记录：单独一行开关也要有白卡底，否则贴在灰页面上像没做完 */
+label.check.check-card {
+  padding: var(--wb-space-3) var(--wb-space-4);
+  border-radius: var(--wb-radius-sm);
+  background: var(--wb-color-bg-surface);
+}
