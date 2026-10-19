@@ -87,3 +87,12 @@
 - 卡册（`char-cards2.png`）：未获得的卡用图片类图标占位，观感接近「加载失败」。建议换成锁或卡形图标，未改。
 
 - **冷链接打开聊天/群设置时的空白标题**：`chat.tsx` 的加载分支标题栏是两个空 span，深链接要等同步（本机 6–13s）才出内容，这段时间页面看起来是坏的。改为渲染 `ChatHeading name="聊天"`；群设置原来只有一行「正在读取…」，改用共用 `SyncPendingState`（先「正在读取群聊…」，6 秒后提示重试）。复拍 `group-room.png` 标题已出现。根因仍是同步耗时，属环境与后端链路，本轮不宣称首屏达标。
+
+## 2026-10-19 16:40 第五批（表单与详情页）
+
+- **补充设定标题粘连**：`我的补充设定` 把角色名当 `<small>` 塞在 `<h1>` 里，渲染成「我的补充设定程澈」。改用 `NavBar` 的 `subtitle`，复拍 `supplement2.png` 标题与副标题分行。
+- **导入入口标题被挤成两行**：`.entry-card` 的 `<strong>` 允许收缩，「上传聊天截图」被右侧说明挤成「上传聊天截 / 图」。标题改为不收缩、说明换行，复拍 `imports-new2.png`。
+- **作品详情评论栏贴边被裁**：评论输入/「说点什么…」是页面最后一个流内元素，长页滚到底会被视口切掉。包一层 `.plaza-comment-bar`：sticky 贴底、上边细线、`env(safe-area-inset-bottom)`。**该页在预览里仍打不开（发布检查被模型网关挡住），只有代码与 typecheck 证据，不算看过。**
+- 已打开并确认正常：`/characters/:id/supplement`、`/imports/new`、`/roles/create`、`/role-requests/new`、`/me/stickers`、`/sticker-store`、`/plaza/official/:id`、`/me/favorites/:id`、`/support/tickets/:id`、`/pets/:id`。
+- 320px 复核：设置页无溢出、开关与说明正常换行；群聊页标题已显示「聊天」。
+- 未改的观察：收藏详情页头像首字母在浅灰底上对比偏低（与微信占位风格一致，保留）；`/role-requests/new` 的「补充资料」用的是 `▶` 字符而非图标。
