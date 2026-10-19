@@ -1807,7 +1807,7 @@ function ReminderForm({ reminder, onDone }: { reminder?: Reminder; onDone(): voi
         {pending ? '正在保存…' : '保存'}
       </button>
       {reminder && (
-        <button className="danger" onClick={() => setConfirmDelete(true)}>
+        <button className="danger full" onClick={() => setConfirmDelete(true)}>
           删除提醒
         </button>
       )}
