@@ -2310,3 +2310,8 @@ label.check.check-card {
 :root[data-scheme="dark"] .character-avatar {
   color: #c9c9c9;
 }
+
+/* 白卡里的骨架/占位内容（聊天信息等）：不要再让灰底文字横在两组之间 */
+.menu-pad {
+  padding: var(--wb-space-3) var(--wb-space-4);
+}

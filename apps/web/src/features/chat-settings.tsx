@@ -193,9 +193,13 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
         />
       </MenuGroup>
       {companion.loading && !data && (
-        <p className="empty" role="status">
-          正在读取聊天设置…
-        </p>
+        <MenuGroup>
+          <div className="menu-pad stack" role="status" aria-label="正在读取聊天设置">
+            <div className="skeleton-row" />
+            <div className="skeleton-row" />
+            <div className="skeleton-row" />
+          </div>
+        </MenuGroup>
       )}
       {companion.error && (
         <div className="notice-bar" role="alert">
