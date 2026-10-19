@@ -4,6 +4,7 @@ import { UserStatusPage } from '../features/user-status.js';
 import { PluginsPage } from '../features/plugins.js';
 import { EcologyInsufficientNotice } from '../features/ecology-insufficient-notice.js';
 import { EcologyPage } from '../features/ecology.js';
+import { MurmursPage } from '../features/murmurs.js';
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { RouteMotion } from '../features/route-motion.js';
@@ -43,7 +44,6 @@ import {
   AccountSecurityPage,
   PrivacySettingsPage,
   GeneralSettingsPage,
-  ProactiveSettingsPage,
 } from '../features/account-settings.js';
 import { TimelinePage } from '../features/timeline.js';
 import { AnniversariesPage } from '../features/growth.js';
@@ -124,7 +124,7 @@ const ownHeader = [
   /^\/(sticker-store|support)(\/|$)/,
   /^\/me\/status$/,
   /^\/settings\/plugins$/,
-  /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice|cards|supplement|memories)$/,
+  /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice|cards|supplement|memories|murmurs)$/,
   /^\/(imports|pets|plaza|play|roles|role-requests)(\/|$)/,
   /^\/settings\/delete-account$/,
   /^\/(share|search)(\/|$)/,
@@ -180,11 +180,7 @@ function TabGlyph({ index }: { index: number }) {
         <g {...common}>
           <circle cx="12" cy="12" r="8.5" />
           {/* 实心指针：只有描边时缩小会看成一道斜杠 */}
-          <path
-            d="M15.6 8.4l-2.3 5.5-5.5 2.3 2.3-5.5 5.5-2.3Z"
-            fill="currentColor"
-            stroke="none"
-          />
+          <path d="M15.6 8.4l-2.3 5.5-5.5 2.3 2.3-5.5 5.5-2.3Z" fill="currentColor" stroke="none" />
         </g>
       )}
       {index === 3 && (
@@ -347,7 +343,11 @@ function Shell() {
                 <Route path="/settings/security" element={<AccountSecurityPage />} />
                 <Route path="/settings/privacy" element={<PrivacySettingsPage />} />
                 <Route path="/settings/general" element={<GeneralSettingsPage />} />
-                <Route path="/services/proactive" element={<ProactiveSettingsPage />} />
+                {/* v5 角色生态：「主动消息与免打扰」由角色生态代替（17 号 §3 不做免打扰）。 */}
+                <Route
+                  path="/services/proactive"
+                  element={<Navigate to="/services/ecology" replace />}
+                />
                 <Route path="/services/ecology" element={<EcologyPage />} />
                 <Route path="/services/period" element={<PeriodPage />} />
                 <Route path="/services/period/day/:date" element={<PeriodDayPage />} />
@@ -362,6 +362,7 @@ function Shell() {
                 <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />
                 <Route path="/characters/:characterId/memories" element={<MemoriesPage />} />
                 <Route path="/characters/:characterId/timeline" element={<TimelinePage />} />
+                <Route path="/characters/:characterId/murmurs" element={<MurmursPage />} />
                 <Route path="/characters/:characterId/moments" element={<CharacterMomentsPage />} />
                 <Route path="/characters/:characterId/relations" element={<RelationsPage />} />
                 <Route path="/contacts/new" element={<NewFriendsPage />} />

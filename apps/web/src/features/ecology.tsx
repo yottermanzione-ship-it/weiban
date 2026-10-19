@@ -1,315 +1,226 @@
 /*
- * 角色生态（2026-10-18 总经理构想：界面先行）。
- *
- * 目标形态：定时唤醒 → 读全局上下文（聊天、朋友圈、经期、日程、记忆）
- * → 角色自己从动作清单里挑一个 → 调用执行器。
- *
- * 本页当前只做界面：开关保存在本机（localStorage），尚未接通后端。
- * 后端与会员方案暂缓；这里不启停真实行为，也不扣费。
- * 相关：docs/product/input/2026-10-18-gm-ecology-vision.md
+ * 角色生态设置（v5 批 C，docs/refactor/17-ecology-settings.md）。
+ * 我 › 偏好 › 角色生态：总开关、活跃程度（四档）、动作开关、角色开关。PRO+ 专属，按动作消耗积分。
+ * 不做免打扰、不做花费上限（17 号 §3、§6）。
  */
-import { useEffect, useState } from 'react';
-import { GroupHeader, MenuGroup, MenuRow, NavBar, SwitchRow, CheckCircle } from './shell-kit.js';
+import { useState } from 'react';
+import {
+  EcologyEndpoints,
+  type EcologyActionGroup,
+  type EcologyActionKey,
+  type UpdateEcologySettings,
+  type EcologyActivityLevel,
+  type EcologySettings,
+} from '@weiban/contracts';
+import { useChat } from '../app/chat.js';
+import { api } from '../data/client.js';
+import { useCharacterNames } from '../data/character-names.js';
+import { friendlyError, useRemote } from '../data/use-remote.js';
+import { CharacterAvatar } from './character-avatar.js';
+import { CheckCircle, GroupHeader, MenuGroup, MenuRow, NavBar, SwitchRow } from './shell-kit.js';
+import { Dialog, showToast } from './toast.js';
 
-type ActionKey =
-  | 'moments'
-  | 'proactive'
-  | 'interact'
-  | 'care'
-  | 'group'
-  | 'simulate'
-  | 'call'
-  | 'voice'
-  | 'photo'
-  | 'away'
-  | 'wish'
-  | 'plan';
-
-type ActionGroup = '联系你' | '自己发内容' | 'TA 的日常';
-
-type Frequency = '30m' | '2h' | '4d';
-
-const ACTIONS: {
-  key: ActionKey;
-  group: ActionGroup;
-  label: string;
-  subtitle: string;
-  points: number;
-  note?: string;
-}[] = [
-  {
-    key: 'proactive',
-    group: '联系你',
-    label: '主动找你聊天',
-    subtitle: '想起一件事、隔太久没聊、节日问候',
-    points: 8,
-  },
-  {
-    key: 'interact',
-    group: '联系你',
-    label: '评论 / 点赞你的朋友圈',
-    subtitle: '看到你发的动态会回应',
-    points: 2,
-  },
-  {
-    key: 'care',
-    group: '联系你',
-    label: '关心问候',
-    subtitle: '经期、生病、情绪低落时主动关心',
-    points: 3,
-  },
-  {
-    key: 'group',
-    group: '联系你',
-    label: '在群里自己聊',
-    subtitle: '角色之间互相说话，不需要你在场',
-    points: 4,
-  },
-  {
-    key: 'moments',
-    group: '自己发内容',
-    label: '发朋友圈',
-    subtitle: '自己挑时机发，可能配图',
-    points: 6,
-  },
-  {
-    key: 'photo',
-    group: '自己发内容',
-    label: '主动发照片',
-    subtitle: '聊天时突然发一张刚拍的照片',
-    points: 4,
-    note: '未接通',
-  },
-  {
-    key: 'voice',
-    group: '自己发内容',
-    label: '发语音消息',
-    subtitle: '用 TA 的声音说一句',
-    points: 3,
-    note: '未接通',
-  },
-  {
-    key: 'simulate',
-    group: 'TA 的日常',
-    label: '日常推演',
-    subtitle: 'TA 今天做了什么，聊天时能接得上',
-    points: 5,
-  },
-  {
-    key: 'away',
-    group: 'TA 的日常',
-    label: '你不在时的卡片',
-    subtitle: '回来时看到 TA 这段时间的经历摘要',
-    points: 2,
-  },
-  {
-    key: 'wish',
-    group: 'TA 的日常',
-    label: '心愿提议与纪念日寄信',
-    subtitle: '主动提一个心愿，或在纪念日写封信',
-    points: 2,
-  },
-  {
-    key: 'plan',
-    group: 'TA 的日常',
-    label: '行为规划',
-    subtitle: '决定此刻发语音、发图还是找人（可切 Jev）',
-    points: 1,
-  },
-  {
-    key: 'call',
-    group: '联系你',
-    label: '主动打电话',
-    subtitle: '需要接通话服务后才能用',
-    points: 2,
-    note: '未接通',
-  },
-];
-
-const FREQUENCIES: { key: Frequency; label: string; subtitle: string; points: number }[] = [
-  { key: '30m', label: '每 30 分钟', subtitle: '用于讨论较频繁的思考安排', points: 25 },
-  { key: '2h', label: '每 2 小时', subtitle: '用于讨论间隔更长的思考安排', points: 6 },
-  { key: '4d', label: '每天 4 次', subtitle: '示例：早中晚和睡前各一次', points: 2 },
-];
-
-const STORAGE_KEY = 'weiban:ecology-preview:v1';
-
-type State = {
-  enabled: boolean;
-  actions: Record<ActionKey, boolean>;
-  frequency: Frequency;
+const GROUP_NAMES: Record<EcologyActionGroup, string> = {
+  chat: '和你聊天',
+  moments: '朋友圈',
+  life: 'TA 自己的生活',
+  care: '关心你',
+  play: '小程序与玩法',
+  group: '群聊',
 };
+const GROUP_ORDER: EcologyActionGroup[] = ['chat', 'moments', 'life', 'care', 'play', 'group'];
 
-const DEFAULT_STATE: State = {
-  enabled: false,
-  actions: {
-    moments: true,
-    proactive: true,
-    interact: true,
-    care: true,
-    group: true,
-    simulate: true,
-    photo: false,
-    away: true,
-    wish: true,
-    plan: true,
-    call: false,
-    voice: false,
-  },
-  frequency: '2h',
-};
-
-const RECENT = [
-  { time: '示例 09:12', text: '发了一条朋友圈：楼下的桂花开了' },
-  { time: '示例 22:40', text: '主动找你：问你今天怎么没说话' },
-  { time: '示例 18:05', text: '评论了你的朋友圈：这张拍得好看' },
-  { time: '示例 08:30', text: '想了想，今天什么都没做' },
-];
-
-function load(): State {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_STATE;
-    const parsed = JSON.parse(raw) as Partial<State>;
-    return {
-      enabled: parsed.enabled ?? DEFAULT_STATE.enabled,
-      actions: { ...DEFAULT_STATE.actions, ...(parsed.actions ?? {}) },
-      frequency: parsed.frequency ?? DEFAULT_STATE.frequency,
-    };
-  } catch {
-    return DEFAULT_STATE;
-  }
+function points(n: number | null | undefined): string {
+  if (n === null || n === undefined) return '暂无法估算';
+  return `约 ${n < 10 ? n.toFixed(1).replace(/\.0$/, '') : Math.round(n)} 积分`;
 }
 
 export function EcologyPage() {
-  const [state, setState] = useState<State>(load);
+  const remote = useRemote(EcologyEndpoints.get, { networkOnly: true });
+  const [local, setLocal] = useState<EcologySettings | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [intro, setIntro] = useState(false);
+  const data = local ?? remote.data ?? null;
+  const { state } = useChat();
+  const characterIds = data?.characters.map((c) => c.characterId) ?? [];
+  const names = useCharacterNames(characterIds);
 
-  useEffect(() => {
+  async function patch(body: UpdateEcologySettings) {
+    setBusy(true);
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      /* 本机存储不可用时不影响浏览 */
+      setLocal(await api.call(EcologyEndpoints.update, { body }));
+    } catch (e) {
+      showToast(friendlyError(e), 2500, 'error');
+    } finally {
+      setBusy(false);
     }
-  }, [state]);
-
-  const thinking = FREQUENCIES.find((f) => f.key === state.frequency)?.points ?? 6;
-  const actionPoints = ACTIONS.filter((a) => state.actions[a.key]).reduce(
-    (sum, a) => sum + a.points,
-    0,
-  );
-  const daily = state.enabled ? thinking + actionPoints : 0;
-
-  function toggleAction(key: ActionKey, value: boolean) {
-    setState((prev) => ({ ...prev, actions: { ...prev.actions, [key]: value } }));
   }
+
+  async function setCharacter(characterId: string, enabled: boolean) {
+    if (!data) return;
+    setLocal({
+      ...data,
+      characters: data.characters.map((c) =>
+        c.characterId === characterId ? { ...c, enabled } : c,
+      ),
+    });
+    try {
+      await api.call(EcologyEndpoints.setCharacter, { params: { characterId }, body: { enabled } });
+      setLocal(await api.call(EcologyEndpoints.get, {}));
+    } catch (e) {
+      showToast(friendlyError(e), 2500, 'error');
+      setLocal(null);
+      remote.refresh();
+    }
+  }
+
+  function toggleMaster(enabled: boolean) {
+    if (!data) return;
+    if (enabled && !data.introSeen) {
+      setIntro(true);
+      return;
+    }
+    void patch({ enabled });
+  }
+
+  const nameOf = (id: string) =>
+    state.contacts.find((c) => c.characterId === id)?.remark || names[id] || '角色';
 
   return (
     <main className="ecology-page">
-      <NavBar title="角色生态" fallback="/services" />
-
-      <section className="ecology-intro" aria-label="界面预览说明">
-        <strong>界面预览</strong>
-        <p>本页只演示设置效果，不会启停真实角色行为，也不会扣积分。</p>
-        <p className="ecology-target">
-          目标方向：让角色定时了解近况，自主选择聊天、发动态等动作。以下选项和数字仅供讨论。
-        </p>
-      </section>
-
-      <MenuGroup>
-        <SwitchRow
-          label="预览角色生态"
-          subtitle="仅展开或收起本页演示，不控制现有角色行为，不扣积分"
-          checked={state.enabled}
-          onChange={(enabled) => setState((prev) => ({ ...prev, enabled }))}
-        />
-      </MenuGroup>
-
-      {state.enabled && (
+      <NavBar title="角色生态" fallback="/me" />
+      {remote.error && !data && (
+        <div className="notice-bar" role="alert">
+          <p>{remote.error}</p>
+          <button className="text-button" onClick={remote.refresh}>
+            重试
+          </button>
+        </div>
+      )}
+      {!data && !remote.error && (
+        <MenuGroup>
+          <div className="skeleton-row" />
+        </MenuGroup>
+      )}
+      {data && (
         <>
-          {(['联系你', '自己发内容', 'TA 的日常'] as ActionGroup[]).map((group) => (
-            <section key={group}>
-              <GroupHeader>{group}</GroupHeader>
+          <p className="ecology-lead">
+            打开后，角色会像真人一样隔一阵子「想一想」：看看你们最近聊了什么、你发的朋友圈、今天是什么日子，自己决定要不要找你、发朋友圈，或者什么也不做。
+          </p>
+          <MenuGroup>
+            <SwitchRow
+              label="角色生态"
+              subtitle={
+                !data.eligible
+                  ? 'PRO+ 会员专属'
+                  : !data.runnable
+                    ? '平台暂未开放，开启后会在开放时自动生效'
+                    : '会员专属，按角色做的事消耗积分'
+              }
+              checked={data.enabled}
+              disabled={busy || (!data.eligible && !data.enabled)}
+              onChange={toggleMaster}
+            />
+          </MenuGroup>
+          {data.enabled && data.pausedReason === 'insufficient_balance' && (
+            <p className="ecology-note warn">积分不足，角色们暂时安静了。充值后会自动恢复。</p>
+          )}
+          {data.enabled && (
+            <>
+              <GroupHeader>活跃程度</GroupHeader>
               <MenuGroup>
-                {ACTIONS.filter((action) => action.group === group).map((action) => (
-                  <SwitchRow
-                    key={action.key}
-                    ariaLabel={action.label}
-                    label={
-                      <span className="ecology-label">
-                        {action.label}
-                        {action.note && <em className="ecology-badge">{action.note}</em>}
-                      </span>
+                {data.levels.map((l) => (
+                  <MenuRow
+                    key={l.level}
+                    label={l.label}
+                    subtitle={`约每天 ${l.minPerDay === l.maxPerDay ? l.minPerDay : `${l.minPerDay}～${l.maxPerDay}`} 次 · ${points(l.pointsPerCharacterPerDay)}/角色`}
+                    chevron={false}
+                    right={<CheckCircle checked={data.activityLevel === l.level} />}
+                    onClick={() =>
+                      data.activityLevel !== l.level &&
+                      void patch({ activityLevel: l.level as EcologyActivityLevel })
                     }
-                    subtitle={
-                      <span className="ecology-sub">
-                        {action.subtitle}
-                        <span className="ecology-points">示例：{action.points} 积分/天</span>
-                      </span>
-                    }
-                    checked={state.actions[action.key]}
-                    onChange={(value) => toggleAction(action.key, value)}
                   />
                 ))}
               </MenuGroup>
-            </section>
-          ))}
+              <div className="ecology-total">
+                <span>按现在的设置，预计每天</span>
+                <strong>{points(data.estimatedPointsPerDay)}</strong>
+                <small>实际按角色做了什么扣积分；角色什么也不做时只花「想一想」的一点点。</small>
+              </div>
 
-          <GroupHeader>思考频率（示例）</GroupHeader>
-          <MenuGroup>
-            {FREQUENCIES.map((f) => (
-              <MenuRow
-                key={f.key}
-                onClick={() => setState((prev) => ({ ...prev, frequency: f.key }))}
-                label={f.label}
-                subtitle={f.subtitle}
-                chevron={false}
-                right={
-                  <span className="ecology-right">
-                    <span className="ecology-points">示例：{f.points} 积分/天</span>
-                    <CheckCircle checked={state.frequency === f.key} />
-                  </span>
-                }
-              />
-            ))}
-          </MenuGroup>
+              <GroupHeader>谁参与</GroupHeader>
+              <MenuGroup>
+                {data.characters.length === 0 && (
+                  <MenuRow label="还没有好友角色" chevron={false} disabled />
+                )}
+                {data.characters.map((c) => (
+                  <div key={c.characterId} className="ecology-character">
+                    <CharacterAvatar id={c.characterId} size={36} />
+                    <SwitchRow
+                      label={nameOf(c.characterId)}
+                      checked={c.enabled}
+                      onChange={(v) => void setCharacter(c.characterId, v)}
+                    />
+                  </div>
+                ))}
+              </MenuGroup>
 
-          <GroupHeader>用哪个模型想</GroupHeader>
-          <MenuGroup>
-            <MenuRow
-              label="生态模型"
-              subtitle="当前仅为界面预览，生态模型选择尚未接通"
-              value="尚未接通"
-              chevron={false}
-              disabled
-            />
-          </MenuGroup>
-
-          <div className="ecology-total">
-            <span>示例合计（仅供讨论）</span>
-            <strong>{daily} 积分/天（示例）</strong>
-            <small>演示数字不是实际报价，不会从账户扣除。</small>
-          </div>
-
-          <GroupHeader>动作记录示例</GroupHeader>
-          <p className="ecology-section-note">以下是虚构演示，不是角色实际执行或发送的记录。</p>
-          <MenuGroup className="ecology-example-log">
-            {RECENT.map((item) => (
-              <MenuRow
-                key={item.time}
-                label={item.text}
-                value={item.time}
-                chevron={false}
-                disabled
-              />
-            ))}
-          </MenuGroup>
+              {GROUP_ORDER.map((group) => {
+                const actions = data.actions.filter((a) => a.group === group);
+                if (!actions.length) return null;
+                return (
+                  <section key={group}>
+                    <GroupHeader>{GROUP_NAMES[group]}</GroupHeader>
+                    <MenuGroup>
+                      {actions.map((a) => (
+                        <SwitchRow
+                          key={a.key}
+                          ariaLabel={a.label}
+                          label={a.label}
+                          subtitle={a.available ? undefined : (a.unavailableReason ?? '即将上线')}
+                          checked={a.available && a.enabled}
+                          disabled={busy || !a.available}
+                          onChange={(enabled) =>
+                            void patch({ actions: [{ key: a.key as EcologyActionKey, enabled }] })
+                          }
+                        />
+                      ))}
+                    </MenuGroup>
+                  </section>
+                );
+              })}
+              <p className="ecology-footnote">
+                每次角色「想一想」都会写一两句碎碎念，在角色资料页「TA
+                的碎碎念」里能看到，附带这次做了什么、花了多少积分。 你在聊天里让 TA
+                去做的事（比如「去发个朋友圈」）不受这里的开关限制。
+              </p>
+            </>
+          )}
         </>
       )}
-
-      <p className="ecology-footnote">
-        预览选择只保存在当前浏览器，不会修改「主动消息与免打扰」或「TA 的日常」等现有设置。
-        本页尚未接通实际执行、模型选择或计费。
-      </p>
+      {intro && data && (
+        <Dialog
+          title="打开角色生态"
+          actions={[
+            { label: '取消', onClick: () => setIntro(false) },
+            {
+              label: '打开',
+              primary: true,
+              onClick: () => {
+                setIntro(false);
+                void patch({ enabled: true, introSeen: true });
+              },
+            },
+          ]}
+        >
+          <p>角色生态是 PRO+ 会员专属。</p>
+          <p>
+            角色每次「想一想」和真正去做的事（发消息、发朋友圈、点赞评论……）都会消耗你的积分，积分不足时会自动暂停。
+          </p>
+          <p>可以随时用「活跃程度」和角色开关控制花费。</p>
+        </Dialog>
+      )}
     </main>
   );
 }

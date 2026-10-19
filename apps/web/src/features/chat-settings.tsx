@@ -20,6 +20,7 @@ import { CharacterAvatar } from './character-avatar.js';
 import { useCallEntry } from './call.js';
 import { VoiceRow } from './voices.js';
 import { PlazaPublishRow } from './plaza.js';
+import { EcologyCharacterRow } from './murmurs.js';
 import { OldIcon } from './old-icons.js';
 import {
   ActionSheet,
@@ -253,38 +254,12 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
                 )
               }
             />
-            <MenuRow
-              label="主动消息"
-              value={
-                globalOff
-                  ? '已全局关闭'
-                  : data.proactiveMessages === false
-                    ? '关闭'
-                    : (frequencyNames[data.proactiveFrequency ?? 'medium'] ?? '适中').replace(
-                        /（.*）/,
-                        '',
-                      )
-              }
-              onClick={() => setSheet('proactive')}
-            />
+            {/* v5 角色生态（批 C）：原「主动消息」「TA 的日常」由角色生态的角色开关代替（17 号 §1）。 */}
+            <EcologyCharacterRow characterId={characterId} />
             <MenuRow
               label="关系类型"
               value={contact?.relationship || '朋友'}
               onClick={() => setSheet('relationship')}
-            />
-            <SwitchRow
-              label="TA 的日常"
-              subtitle="TA 会有自己的生活节奏（推演）"
-              checked={switchValues.dailyLife ?? data.dailyLife ?? true}
-              disabled={!!switchBusy.dailyLife}
-              onChange={(dailyLife) =>
-                void toggle('dailyLife', dailyLife, () =>
-                  api.call(CompanionEndpoints.updateForCharacter, {
-                    params: { characterId },
-                    body: { dailyLife },
-                  }),
-                )
-              }
             />
           </MenuGroup>
           <GroupHeader>高级</GroupHeader>

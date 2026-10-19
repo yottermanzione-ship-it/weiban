@@ -196,7 +196,6 @@ export function SettingsPage() {
             onClick={() => setChoice('sound')}
           />
         )}
-        <MenuRow to="/services/proactive" label="主动消息与免打扰" />
       </MenuGroup>
       <GroupHeader>隐私</GroupHeader>
       <MenuGroup>

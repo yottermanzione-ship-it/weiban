@@ -1,3 +1,4 @@
+import { EcologySignatureLine, MurmursRow } from './murmurs.js';
 import { SearchField } from './search-field.js';
 /*
  * 通讯录（规格 4.6）、发现（4.8）、角色广场（5.2）、角色资料页（4.12）。
@@ -779,7 +780,12 @@ export function CharacterPage({
             )}
           </h2>
           {contact?.remark && data && <p>昵称：{data.name}</p>}
-          {data?.tagline && <p>签名：{data.tagline}</p>}
+          {/* v5 角色生态：角色在生态里改过的状态 / 签名（只对自己可见）。 */}
+          {!onboarding && active ? (
+            <EcologySignatureLine characterId={characterId} tagline={data?.tagline} enabled />
+          ) : (
+            data?.tagline && <p>签名：{data.tagline}</p>
+          )}
           {!onboarding && contact?.conversationId && <FamiliarityLine characterId={characterId} />}
           {!onboarding && active && <PersonaUpdateBadge characterId={characterId} />}
           {!onboarding && data?.kind === 'custom' && contact && (
@@ -806,6 +812,7 @@ export function CharacterPage({
           />
           {contact?.conversationId && <RecentRow characterId={characterId} />}
           <MenuRow to={`/characters/${characterId}/memories`} label="我们的记忆" />
+          {contact?.conversationId && <MurmursRow characterId={characterId} />}
         </MenuGroup>
       )}
       <MenuGroup>

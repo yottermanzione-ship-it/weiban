@@ -136,12 +136,6 @@ export function ServicesPage() {
       <GroupHeader>偏好</GroupHeader>
       <MenuGroup>
         <MenuRow to="/services/ecology" icon="wechat/star" tint="green" label="角色生态" />
-        <MenuRow
-          to="/services/proactive"
-          icon="wechat/chat"
-          tint="green"
-          label="主动消息与免打扰"
-        />
         <MenuRow to="/settings/plugins" icon="wechat/grid" tint="indigo" label="插件" />
         <MenuRow to="/services/familiarity" icon="wechat/heart" tint="red" label="好感度总览" />
       </MenuGroup>
