@@ -1202,3 +1202,20 @@
   color: var(--wb-color-text-secondary);
   font-size: 15px;
 }
+
+/* 气泡内引用：浅色引文条，跟在正文上方 */
+.wx-quote-inline {
+  display: block;
+  margin-bottom: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--wb-color-text-secondary);
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.wx-bubble.mine .wx-quote-inline {
+  background: rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.55);
+}

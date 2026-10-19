@@ -768,6 +768,20 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     !!me &&
     (message.content.mentions ?? []).includes(me.participantId);
   /** 气泡（文字类带尖角；图片、表情不带气泡底；卡片类统一白卡）。 */
+  /** 引用在微信里是气泡内的一条浅色引文，不是气泡下面另起一块 */
+  function quoteLine(message: Message) {
+    const original = messages.find((item) => item.messageId === message.quote?.messageId);
+    const who = original
+      ? original.senderKind === 'user'
+        ? (userProfile.data?.nickname ?? '我')
+        : displayName(senderOf(original)?.refId ?? role?.refId ?? '')
+      : '引用消息';
+    return (
+      <span className="wx-quote-inline">
+        {who}：{message.quote?.preview ?? '原消息已不可见'}
+      </span>
+    );
+  }
   function bubble(message: Message) {
     const c = message.content;
     const mine = message.senderKind === 'user';
@@ -775,6 +789,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
       <div
         className={`wx-bubble ${mine ? 'mine' : ''} ${mentionedMe(message) ? 'mention' : ''} ${extra}`}
       >
+        {message.quote && quoteLine(message)}
         <span className="wx-bubble-text">{children}</span>
       </div>
     );
@@ -1338,7 +1353,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
                 {bubble(message)}
               </BubblePress>
             </div>
-            {message.quote && (
+            {message.quote && (message.content?.type ?? 'text') !== 'text' && (
               <div className="wx-quote">
                 <span>
                   {(() => {
