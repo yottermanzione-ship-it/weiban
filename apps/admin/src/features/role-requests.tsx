@@ -1,10 +1,22 @@
 /**
- * 角色创建 › 申请制作的后台处理（总经理 10-14 裁定 2.3；契约 RoleRequestAdminEndpoints 3.5）。
- * 列表（按状态筛选，待处理最早在前）→ 详情：接单 / 填进度 / 完成并选已上架预设角色（默认自动加到用户通讯录）/ 拒绝；
- * 另有「价格与开关」：是否开放、超额固定200积分（免费按真实档位额度）、每人同时未完成上限。
- * 所有写操作服务器写审计。
+ * 制作申请：用户提交的角色需求。接单 → 填进度 → 完成（关联已上架角色）或拒绝。
+ * 完成后默认把角色加到申请人通讯录；所有写操作服务器记审计并通知申请人。
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Select,
+  Space,
+  Switch,
+  Tabs,
+  Timeline,
+} from 'antd';
 import {
   CharacterAdminEndpoints,
   RoleRequestAdminEndpoints,
@@ -14,89 +26,61 @@ import {
 import { ApiFailure } from '@weiban/client-core';
 import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
-import { Feedback } from '../components/feedback.js';
+import { DataTable, type ProColumns } from '../ui/table.js';
+import { RecordDrawer } from '../ui/drawer.js';
+import {
+  FieldHelp,
+  FormSection,
+  Page,
+  SectionCard,
+  StatusTag,
+  useToast,
+} from '../ui/page.js';
+import { formatDateTime } from '../ui/format.js';
 
-const AUDIT = <small className="hint">此操作会记入审计记录，并通知申请人</small>;
-const statusNames: Record<string, [string, string]> = {
-  pending: ['待处理', 'tag warning'],
-  in_progress: ['制作中', 'tag'],
-  completed: ['已完成', 'tag success'],
-  rejected: ['已拒绝', 'tag danger'],
-  cancelled: ['已撤回', 'tag'],
+const STATUS_LABELS: Record<string, string> = {
+  pending: '待处理',
+  in_progress: '制作中',
+  completed: '已完成',
+  rejected: '已拒绝',
+  cancelled: '已撤回',
 };
-const basisNames: Record<string, string> = {
+
+const BASIS_LABELS: Record<string, string> = {
   real_person: '真人',
   fictional: '虚构',
   original: '原创',
 };
-function beijing(iso: string | null | undefined) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-function Status({ status }: { status: string }) {
-  const [label, cls] = statusNames[status] ?? ['未知', 'tag'];
-  return <span className={cls}>{label}</span>;
-}
 
 const CHANGED = 'weiban-admin:role-requests-changed';
-
-/** 菜单角标：待处理申请数（处理后随事件刷新）。 */
-export function RoleRequestBadge() {
-  const list = useRemote(RoleRequestAdminEndpoints.list, {
-    query: { status: 'pending', limit: 1 },
-  });
-  const { refresh } = list;
-  useEffect(() => {
-    window.addEventListener(CHANGED, refresh);
-    return () => window.removeEventListener(CHANGED, refresh);
-  }, [refresh]);
-  const count = list.data?.pendingCount ?? 0;
-  return count > 0 ? <span className="alert-badge">{count}</span> : null;
-}
 
 export function RoleRequestsPage() {
   const [tab, setTab] = useState<'list' | 'config'>('list');
   return (
-    <>
-      <h1>制作申请</h1>
-      <p className="hint">
-        用户在「角色创建 ›
-        申请制作」提交的角色需求。完成前请先在「角色库」建好并上架角色，再在这里选中它。
-      </p>
-      <div className="card-tabs" role="tablist">
-        {(
-          [
-            ['list', '申请列表'],
-            ['config', '价格与开关'],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            role="tab"
-            aria-selected={tab === key}
-            className={tab === key ? 'active' : ''}
-            onClick={() => setTab(key)}
-          >
-            {label}
-          </button>
-        ))}
+    <Page
+      title="制作申请"
+      desc="用户想要某个角色，提交需求后在这里处理。完成前请先在「角色库」建好并上架这个角色。"
+    >
+      <div className="page-tabs">
+        <Tabs
+          activeKey={tab}
+          onChange={(key) => setTab(key as 'list' | 'config')}
+          items={[
+            { key: 'list', label: '申请列表' },
+            { key: 'config', label: '价格与开关' },
+          ]}
+        />
+        {tab === 'list' ? <RequestList /> : <ConfigPanel />}
       </div>
-      {tab === 'list' ? <RequestList /> : <ConfigPanel />}
-    </>
+    </Page>
   );
 }
 
 function RequestList() {
   const [status, setStatus] = useState<'' | RoleRequestStatus>('pending');
   const [userId, setUserId] = useState('');
-  const [applied, setApplied] = useState({
-    status: 'pending' as '' | RoleRequestStatus,
+  const [applied, setApplied] = useState<{ status: '' | RoleRequestStatus; userId: string }>({
+    status: 'pending',
     userId: '',
   });
   const [items, setItems] = useState<AdminRoleRequest[]>([]);
@@ -105,125 +89,145 @@ function RequestList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
-  const load = useCallback(
-    async (after?: string) => {
-      setLoading(true);
-      setError('');
-      try {
-        const page = await api.call(RoleRequestAdminEndpoints.list, {
-          query: {
-            status: applied.status || undefined,
-            userId: applied.userId.trim() || undefined,
-            cursor: after,
-          },
-        });
-        setItems((prev) => (after ? [...prev, ...page.items] : page.items));
-        setCursor(page.nextCursor);
-        setPendingCount(page.pendingCount);
-      } catch (e) {
-        setError(errorText(e));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [applied],
-  );
+
+  async function load(after?: string) {
+    setLoading(true);
+    setError('');
+    try {
+      const page = await api.call(RoleRequestAdminEndpoints.list, {
+        query: {
+          status: applied.status || undefined,
+          userId: applied.userId.trim() || undefined,
+          cursor: after,
+        },
+      });
+      setItems((prev) => (after ? [...prev, ...page.items] : page.items));
+      setCursor(page.nextCursor);
+      setPendingCount(page.pendingCount);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     void load();
-  }, [load]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applied]);
+
+  const columns: ProColumns<AdminRoleRequest>[] = [
+    {
+      title: '角色名',
+      fixed: 'left',
+      width: 180,
+      render: (_, row) => (
+        <div className="cell-main">
+          <span className="cell-title">{row.roleName}</span>
+          <span className="cell-sub">{row.sourceWork || '未填出处'}</span>
+        </div>
+      ),
+    },
+    { title: '申请人', width: 130, render: (_, row) => row.username ?? '已注销' },
+    {
+      title: '类型',
+      width: 90,
+      render: (_, row) => BASIS_LABELS[row.basis ?? ''] ?? '不确定',
+    },
+    {
+      title: '状态',
+      width: 100,
+      render: (_, row) => (
+        <StatusTag
+          tone={
+            row.status === 'pending'
+              ? 'warning'
+              : row.status === 'in_progress'
+                ? 'processing'
+                : row.status === 'completed'
+                  ? 'success'
+                  : row.status === 'rejected'
+                    ? 'error'
+                    : 'default'
+          }
+        >
+          {STATUS_LABELS[row.status] ?? row.status}
+        </StatusTag>
+      ),
+    },
+    {
+      title: '最新留言',
+      render: (_, row) => <span className="cell-sub">{row.adminMessage || '—'}</span>,
+    },
+    {
+      title: '提交时间',
+      width: 150,
+      render: (_, row) => formatDateTime(row.createdAt),
+    },
+  ];
+
   return (
-    <>
-      <form
-        className="panel inline"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setApplied({ status, userId });
-        }}
-      >
-        <label>
-          状态
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value as '' | RoleRequestStatus)}
-          >
-            <option value="">全部</option>
-            <option value="pending">待处理{pendingCount ? `（${pendingCount}）` : ''}</option>
-            <option value="in_progress">制作中</option>
-            <option value="completed">已完成</option>
-            <option value="rejected">已拒绝</option>
-            <option value="cancelled">已撤回</option>
-          </select>
-        </label>
-        <label>
-          用户 ID
-          <input value={userId} onChange={(e) => setUserId(e.target.value)} />
-        </label>
-        <button className="primary">查询</button>
-      </form>
-      {error && (
-        <p role="alert" className="error-banner">
-          加载失败：{error} <button onClick={() => void load()}>重试</button>
-        </p>
-      )}
-      {loading && items.length === 0 && <div className="skeleton-line" role="status" />}
-      {!loading && !error && items.length === 0 && <p className="hint">没有符合条件的申请</p>}
-      {items.length > 0 && (
-        <table>
-          <thead>
-            <tr>
-              <th>角色名</th>
-              <th>申请人</th>
-              <th>类型</th>
-              <th>出处</th>
-              <th>状态</th>
-              <th>最新留言</th>
-              <th>提交时间（北京时间）</th>
-              <th>更新时间</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((r) => (
-              <tr
-                key={r.requestId}
-                className={selected === r.requestId ? 'selected' : ''}
-                onClick={() => setSelected(r.requestId)}
-              >
-                <td>{r.roleName}</td>
-                <td>{r.username ?? '已注销'}</td>
-                <td>{basisNames[r.basis ?? ''] ?? '不确定'}</td>
-                <td>{r.sourceWork || '—'}</td>
-                <td>
-                  <Status status={r.status} />
-                </td>
-                <td>{r.adminMessage ?? '—'}</td>
-                <td>{beijing(r.createdAt)}</td>
-                <td>{beijing(r.updatedAt)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {cursor && (
-        <button disabled={loading} onClick={() => void load(cursor)}>
-          加载更多
-        </button>
-      )}
+    <div className="tab-body">
+      <DataTable<AdminRoleRequest>
+        rowKey="requestId"
+        columns={columns}
+        data={items}
+        loading={loading}
+        error={error}
+        onRefresh={() => void load()}
+        onRowClick={(row) => setSelected(row.requestId)}
+        filters={
+          <>
+            <Select
+              style={{ width: 160 }}
+              value={status}
+              onChange={(value) => {
+                setStatus(value);
+                setApplied({ status: value, userId });
+              }}
+              options={[
+                { value: '', label: '全部状态' },
+                { value: 'pending', label: `待处理${pendingCount ? `（${pendingCount}）` : ''}` },
+                { value: 'in_progress', label: '制作中' },
+                { value: 'completed', label: '已完成' },
+                { value: 'rejected', label: '已拒绝' },
+                { value: 'cancelled', label: '已撤回' },
+              ]}
+            />
+            <Input.Search
+              allowClear
+              placeholder="按用户 ID 查"
+              style={{ width: 220 }}
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+              onSearch={(value) => setApplied({ status, userId: value })}
+            />
+          </>
+        }
+        emptyTitle={applied.status === 'pending' ? '没有待处理的申请' : '没有符合条件的申请'}
+        emptyHint="用户提交申请后会出现在这里；先看需求，再去「角色库」把人设做好。"
+        footer={
+          cursor ? (
+            <div className="cursor-pager">
+              <Button size="small" loading={loading} onClick={() => void load(cursor)}>
+                加载更多
+              </Button>
+            </div>
+          ) : undefined
+        }
+      />
       {selected && (
         <RequestDrawer
-          key={selected}
           requestId={selected}
           onClose={() => setSelected(null)}
-          onChanged={(r) => {
-            setItems((prev) => prev.map((x) => (x.requestId === r.requestId ? r : x)));
+          onChanged={(row) => {
+            setItems((prev) => prev.map((x) => (x.requestId === row.requestId ? row : x)));
             window.dispatchEvent(new Event(CHANGED));
-            void api
-              .call(RoleRequestAdminEndpoints.list, { query: { status: 'pending', limit: 1 } })
-              .then((page) => setPendingCount(page.pendingCount))
-              .catch(() => {});
+            void load();
           }}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -235,325 +239,340 @@ function RequestDrawer({
   onChanged,
 }: {
   requestId: string;
-  onClose(): void;
-  onChanged(r: AdminRoleRequest): void;
+  onClose: () => void;
+  onChanged: (row: AdminRoleRequest) => void;
 }) {
+  const toast = useToast();
   const remote = useRemote(RoleRequestAdminEndpoints.get, { params: { requestId } });
+  const characters = useRemote(CharacterAdminEndpoints.list);
   const [data, setData] = useState<AdminRoleRequest | null>(null);
-  const r = data ?? remote.data ?? null;
   const [action, setAction] = useState<Action | null>(null);
   const [text, setText] = useState('');
   const [characterId, setCharacterId] = useState('');
   const [addToContacts, setAddToContacts] = useState(true);
-  const [pending, setPending] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
+  const row = data ?? remote.data ?? null;
+  const open = row?.status === 'pending' || row?.status === 'in_progress';
+
   async function run() {
     if (!action) return;
-    setPending(true);
+    setSaving(true);
     setError('');
+    const params = { requestId };
+    const message = text.trim();
     try {
-      const params = { requestId };
-      const msg = text.trim();
       const result =
         action === 'accept'
           ? await api.call(RoleRequestAdminEndpoints.accept, {
               params,
-              body: msg ? { message: msg } : {},
+              body: message ? { message } : {},
             })
           : action === 'progress'
-            ? await api.call(RoleRequestAdminEndpoints.progress, { params, body: { message: msg } })
+            ? await api.call(RoleRequestAdminEndpoints.progress, {
+                params,
+                body: { message },
+              })
             : action === 'reject'
-              ? await api.call(RoleRequestAdminEndpoints.reject, { params, body: { message: msg } })
+              ? await api.call(RoleRequestAdminEndpoints.reject, {
+                  params,
+                  body: { message },
+                })
               : await api.call(RoleRequestAdminEndpoints.complete, {
                   params,
-                  body: { characterId, addToContacts, ...(msg ? { message: msg } : {}) },
+                  body: { characterId, addToContacts, ...(message ? { message } : {}) },
                 });
       setData(result);
       onChanged(result);
-      setMessage(
-        { accept: '已接单', progress: '已更新进度', complete: '已完成', reject: '已拒绝' }[action],
+      toast.success(
+        { accept: '已接单', progress: '进度已更新', complete: '已完成', reject: '已拒绝' }[action],
       );
       setAction(null);
       setText('');
     } catch (e) {
       setError(
         e instanceof ApiFailure && e.code === 'character_not_available'
-          ? '这个角色不存在或还没上架，请先在「角色库」上架'
+          ? '这个角色不存在或还没上架，请先去「角色库」上架。'
           : errorText(e),
       );
     } finally {
-      setPending(false);
+      setSaving(false);
     }
   }
-  const open = r && (r.status === 'pending' || r.status === 'in_progress');
-  const needText = action === 'progress' || action === 'reject';
+
+  const actionLabel: Record<Action, string> = {
+    accept: '接单',
+    progress: '更新进度',
+    complete: '完成并关联角色',
+    reject: '拒绝申请',
+  };
+
   return (
-    <aside className="panel stack" role="dialog" aria-label="制作申请详情">
-      <div className="page-head">
-        <h2>{r ? `「${r.roleName}」` : '制作申请'}</h2>
-        <button onClick={onClose}>关闭</button>
-      </div>
-      {remote.error && !r && <p className="error">{remote.error}</p>}
-      {!r && !remote.error && <div className="skeleton-line" role="status" />}
-      {r && (
+    <RecordDrawer
+      open
+      onClose={onClose}
+      title={row ? `「${row.roleName}」` : '制作申请'}
+      subtitle={row ? `${row.username ?? '已注销'} · ${formatDateTime(row.createdAt)}` : undefined}
+      width={720}
+      loading={!row && remote.loading}
+      footer={
+        open ? (
+          <div className="drawer-actions">
+            <Space size={8}>
+              <Button danger onClick={() => setAction('reject')}>
+                拒绝
+              </Button>
+            </Space>
+            <Space size={8}>
+              {row?.status === 'pending' && (
+                <Button onClick={() => setAction('accept')}>接单</Button>
+              )}
+              <Button onClick={() => setAction('progress')}>更新进度</Button>
+              <Button type="primary" onClick={() => setAction('complete')}>
+                完成并关联角色
+              </Button>
+            </Space>
+          </div>
+        ) : undefined
+      }
+    >
+      {error && <Alert type="error" showIcon message={error} />}
+      {remote.error && !row && <Alert type="error" showIcon message={remote.error} />}
+      {row && (
         <>
-          <Feedback message={message} />
-          <p className="hint">
-            申请人：{r.username ?? '已注销'}（用户 ID {r.userId}） · <Status status={r.status} />
-            {r.pointsCost > 0 && ` · 价格 ${r.pointsCost} 积分（已扣 ${r.pointsCharged}）`}
-          </p>
-          <dl className="mm-dl">
-            <dt>类型</dt>
-            <dd>{basisNames[r.basis ?? ''] ?? '不确定'}</dd>
-            <dt>分类</dt>
-            <dd>{r.categoryId ?? '未选'}</dd>
-            <dt>出处</dt>
-            <dd>{r.sourceWork || '—'}</dd>
-            <dt>参考资料</dt>
-            <dd className="pre-wrap">{r.referenceText || '—'}</dd>
-            <dt>补充说明</dt>
-            <dd className="pre-wrap">{r.note || '—'}</dd>
-            <dt>参考图</dt>
-            <dd>
-              {r.referenceImages.length === 0
-                ? '—'
-                : r.referenceImages.map((image, i) =>
+          <div className="detail-grid">
+            <div>
+              <span className="detail-label">状态</span>
+              <StatusTag
+                tone={
+                  row.status === 'pending'
+                    ? 'warning'
+                    : row.status === 'in_progress'
+                      ? 'processing'
+                      : row.status === 'completed'
+                        ? 'success'
+                        : row.status === 'rejected'
+                          ? 'error'
+                          : 'default'
+                }
+              >
+                {STATUS_LABELS[row.status] ?? row.status}
+              </StatusTag>
+            </div>
+            <div>
+              <span className="detail-label">申请人</span>
+              <span>
+                {row.username ?? '已注销'}（{row.userId.slice(0, 8)}…）
+              </span>
+            </div>
+            <div>
+              <span className="detail-label">类型 / 分类</span>
+              <span>
+                {BASIS_LABELS[row.basis ?? ''] ?? '不确定'} / {row.categoryId ?? '未选'}
+              </span>
+            </div>
+            <div>
+              <span className="detail-label">出处</span>
+              <span>{row.sourceWork || '—'}</span>
+            </div>
+            <div>
+              <span className="detail-label">积分</span>
+              <span>
+                {row.pointsCost > 0
+                  ? `价格 ${row.pointsCost} 积分（已扣 ${row.pointsCharged}）`
+                  : '不收费'}
+              </span>
+            </div>
+            {row.characterId && (
+              <div>
+                <span className="detail-label">关联角色</span>
+                <span>
+                  {row.characterId.slice(0, 8)}…
+                  {row.addedToContacts ? '（已加通讯录）' : '（未自动添加）'}
+                </span>
+              </div>
+            )}
+          </div>
+          <SectionCard title="需求内容">
+            <div className="detail-grid">
+              <div>
+                <span className="detail-label">参考资料</span>
+                <span className="pre-wrap">{row.referenceText || '—'}</span>
+              </div>
+              <div>
+                <span className="detail-label">补充说明</span>
+                <span className="pre-wrap">{row.note || '—'}</span>
+              </div>
+            </div>
+            <div style={{ height: 10 }} />
+            <div className="thumb-row">
+              {row.referenceImages.length === 0
+                ? '没有参考图'
+                : row.referenceImages.map((image, index) =>
                     image.url ? (
-                      <a
-                        key={image.mediaId}
-                        href={image.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="thumb-link"
-                      >
-                        <img src={image.url} alt={`参考图 ${i + 1}`} width={72} height={72} />
+                      <a key={image.mediaId} href={image.url} target="_blank" rel="noreferrer">
+                        <img src={image.url} alt={`参考图 ${index + 1}`} width={72} height={72} />
                       </a>
                     ) : (
-                      <span key={image.mediaId} className="hint">
-                        已删除{' '}
+                      <span key={image.mediaId} className="detail-muted">
+                        参考图已删除
                       </span>
                     ),
                   )}
-            </dd>
-            {r.characterId && (
-              <>
-                <dt>关联角色</dt>
-                <dd>
-                  {r.characterId}
-                  {r.addedToContacts ? '（已加到用户通讯录）' : '（未自动添加）'}
-                </dd>
-              </>
+            </div>
+          </SectionCard>
+          <SectionCard title="处理记录">
+            {row.history.length === 0 ? (
+              <div className="detail-muted">还没有处理记录。</div>
+            ) : (
+              <Timeline
+                items={row.history.map((h, index) => ({
+                  key: index,
+                  color: h.status === 'rejected' ? 'red' : h.status === 'completed' ? 'green' : 'blue',
+                  children: (
+                    <div>
+                      <div>
+                        {STATUS_LABELS[h.status] ?? h.status} · {formatDateTime(h.at)}
+                      </div>
+                      {h.message && <div className="detail-muted">{h.message}</div>}
+                    </div>
+                  ),
+                }))}
+              />
             )}
-          </dl>
-          <h3>处理记录</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>时间（北京时间）</th>
-                <th>状态</th>
-                <th>留言</th>
-              </tr>
-            </thead>
-            <tbody>
-              {r.history.map((h, i) => (
-                <tr key={i}>
-                  <td>{beijing(h.at)}</td>
-                  <td>
-                    <Status status={h.status} />
-                  </td>
-                  <td>{h.message ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {open && !action && (
-            <div className="button-row">
-              {r.status === 'pending' && (
-                <button className="primary" onClick={() => setAction('accept')}>
-                  接单
-                </button>
-              )}
-              <button onClick={() => setAction('progress')}>填写进度</button>
-              <button onClick={() => setAction('complete')}>完成并选择角色</button>
-              <button className="danger" onClick={() => setAction('reject')}>
-                拒绝
-              </button>
-            </div>
-          )}
-          {action && (
-            <div className="panel stack" role="dialog" aria-label="处理申请">
-              <h3>
-                {
-                  {
-                    accept: '接单',
-                    progress: '填写进度',
-                    complete: '完成并选择角色',
-                    reject: '拒绝申请',
-                  }[action]
-                }
-              </h3>
-              {action === 'complete' && (
-                <>
-                  <CharacterPicker value={characterId} onChange={setCharacterId} />
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={addToContacts}
-                      onChange={(e) => setAddToContacts(e.target.checked)}
-                    />
-                    自动加到申请人的通讯录（通讯录已满时不加，用户收到通知后可自己添加）
-                  </label>
-                </>
-              )}
-              <label>
-                {needText ? '留言（必填，用户可见）' : '留言（选填，用户可见）'}
-                <textarea maxLength={500} value={text} onChange={(e) => setText(e.target.value)} />
-              </label>
-              {error && (
-                <p role="alert" className="error-banner">
-                  {error}
-                </p>
-              )}
-              <div className="button-row">
-                <button onClick={() => setAction(null)}>取消</button>
-                <button
-                  className={action === 'reject' ? 'danger' : 'primary'}
-                  disabled={
-                    pending || (needText && !text.trim()) || (action === 'complete' && !characterId)
-                  }
-                  onClick={() => void run()}
-                >
-                  {pending ? '正在提交…' : '确认'}
-                </button>
-              </div>
-              {AUDIT}
-            </div>
-          )}
+          </SectionCard>
         </>
       )}
-    </aside>
+      <Modal
+        open={action !== null}
+        title={action ? actionLabel[action] : ''}
+        onCancel={() => setAction(null)}
+        onOk={() => void run()}
+        okText="确认"
+        cancelText="取消"
+        confirmLoading={saving}
+        okButtonProps={{ danger: action === 'reject' }}
+        destroyOnHidden
+      >
+        {action && (
+          <Form layout="vertical">
+            {action === 'complete' && (
+              <>
+                <Form.Item
+                  label="关联哪个角色"
+                  required
+                  extra={<FieldHelp>只能选已经上架的官方角色。</FieldHelp>}
+                >
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    value={characterId || undefined}
+                    onChange={setCharacterId}
+                    placeholder="选择已上架角色"
+                    options={(characters.data?.items ?? [])
+                      .filter((c) => c.status === 'published')
+                      .map((c) => ({ value: c.characterId, label: c.name }))}
+                  />
+                </Form.Item>
+                <Checkbox
+                  checked={addToContacts}
+                  onChange={(e) => setAddToContacts(e.target.checked)}
+                >
+                  自动加到申请人通讯录
+                </Checkbox>
+              </>
+            )}
+            <Form.Item
+              label={action === 'reject' ? '拒绝原因（会发给用户）' : '留言（可选）'}
+              required={action === 'progress' || action === 'reject'}
+              style={{ marginTop: 12 }}
+            >
+              <Input.TextArea
+                rows={3}
+                maxLength={500}
+                showCount
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+              />
+            </Form.Item>
+            <div className="detail-muted">此操作会记入审计记录，并通知申请人。</div>
+          </Form>
+        )}
+      </Modal>
+    </RecordDrawer>
   );
 }
 
-/** 已上架预设角色选择器（按名字搜索）。 */
-function CharacterPicker({ value, onChange }: { value: string; onChange(id: string): void }) {
-  const [q, setQ] = useState('');
-  const [search, setSearch] = useState('');
-  const list = useRemote(CharacterAdminEndpoints.list, {
-    query: { status: 'published', q: search || undefined },
-  });
-  return (
-    <div className="stack">
-      <form
-        className="inline"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setSearch(q.trim());
-        }}
-      >
-        <label>
-          搜索已上架角色
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="角色名" />
-        </label>
-        <button>搜索</button>
-      </form>
-      {list.error && <p className="error">{list.error}</p>}
-      <label>
-        选择角色
-        <select value={value} onChange={(e) => onChange(e.target.value)}>
-          <option value="">请选择</option>
-          {list.data?.items.map((c) => (
-            <option key={c.characterId} value={c.characterId}>
-              {c.name}
-              {c.works.length ? `（${c.works.join('、')}）` : ''}
-            </option>
-          ))}
-        </select>
-      </label>
-      {list.data && list.data.items.length === 0 && (
-        <small className="hint">没有找到已上架的角色，请先去「角色库」新建并上架</small>
-      )}
-    </div>
-  );
+interface ConfigValues {
+  enabled: boolean;
+  maxOpenPerUser: number;
 }
 
 function ConfigPanel() {
+  const toast = useToast();
   const remote = useRemote(RoleRequestAdminEndpoints.getConfig);
-  const [form, setForm] = useState<{
-    enabled: boolean;
-    pointsCost: string;
-    maxOpenPerUser: string;
-  } | null>(null);
-  const [pending, setPending] = useState(false);
+  const [form] = Form.useForm<ConfigValues>();
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const current =
-    form ??
-    (remote.data
-      ? {
-          enabled: remote.data.enabled,
-          pointsCost: String(remote.data.pointsCost),
-          maxOpenPerUser: String(remote.data.maxOpenPerUser),
-        }
-      : null);
+
   async function save() {
-    if (!current) return;
-    setPending(true);
+    const values = await form.validateFields();
+    setSaving(true);
     setError('');
-    setMessage('');
     try {
-      const saved = await api.call(RoleRequestAdminEndpoints.updateConfig, {
-        body: {
-          enabled: current.enabled,
-          pointsCost: 200,
-          maxOpenPerUser: Number(current.maxOpenPerUser) || 1,
-        },
+      await api.call(RoleRequestAdminEndpoints.updateConfig, {
+        body: { enabled: values.enabled, pointsCost: 200, maxOpenPerUser: values.maxOpenPerUser },
       });
-      setForm({
-        enabled: saved.enabled,
-        pointsCost: String(saved.pointsCost),
-        maxOpenPerUser: String(saved.maxOpenPerUser),
-      });
-      setMessage('已保存');
+      toast.success('已保存');
+      remote.refresh();
     } catch (e) {
       setError(errorText(e));
     } finally {
-      setPending(false);
+      setSaving(false);
     }
   }
-  if (remote.error && !current) return <p className="error">{remote.error}</p>;
-  if (!current) return <div className="skeleton-line" role="status" />;
+
+  if (remote.error) return <Alert type="error" showIcon message={remote.error} />;
+  if (!remote.data) return <div className="detail-muted">正在读取…</div>;
+
   return (
-    <div className="panel stack">
-      <label className="check">
-        <input
-          type="checkbox"
-          checked={current.enabled}
-          onChange={(e) => setForm({ ...current, enabled: e.target.checked })}
-        />
-        开放申请（关闭后用户端入口提示「暂未开放」）
-      </label>
-      <p>
-        免费用户每自然月5次，PRO+每自然周5次；超额固定200积分。提交冻结、完成扣除、拒绝或撤回退款。
-      </p>
-      <label>
-        每人同时未完成的申请上限
-        <input
-          type="number"
-          min={1}
-          max={50}
-          value={current.maxOpenPerUser}
-          onChange={(e) => setForm({ ...current, maxOpenPerUser: e.target.value })}
-        />
-      </label>
-      <Feedback message={message} error={error} />
-      <div className="button-row">
-        <button className="primary" disabled={pending} onClick={() => void save()}>
-          {pending ? '正在保存…' : '保存'}
-        </button>
-      </div>
-      <small className="hint">此操作会记入审计记录</small>
-    </div>
+    <SectionCard title="价格与开关" desc="控制用户能不能提交申请、每人能同时提几个">
+      {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} />}
+      <Form<ConfigValues>
+        form={form}
+        layout="vertical"
+        initialValues={{
+          enabled: remote.data.enabled,
+          maxOpenPerUser: remote.data.maxOpenPerUser,
+        }}
+      >
+        <FormSection title="开放申请" />
+        <Form.Item
+          name="enabled"
+          label="允许用户提交制作申请"
+          valuePropName="checked"
+          extra={<FieldHelp>关闭后，用户端入口显示「暂未开放」。</FieldHelp>}
+        >
+          <Switch />
+        </Form.Item>
+        <Form.Item
+          name="maxOpenPerUser"
+          label="每人同时未完成的申请上限"
+          extra={<FieldHelp>达到上限后用户不能再提交，直到旧的完成或撤回。</FieldHelp>}
+        >
+          <InputNumber min={1} max={50} style={{ width: 200 }} />
+        </Form.Item>
+        <div className="field-note">
+          收费规则：免费用户每自然月 5 次、PRO+ 每自然周 5 次；超额每次固定 200
+          积分（2 元）。提交时冻结、完成时扣除、拒绝或撤回退回。
+        </div>
+        <Space>
+          <Button type="primary" loading={saving} onClick={() => void save()}>
+            保存
+          </Button>
+          <Button onClick={() => form.resetFields()}>还原</Button>
+        </Space>
+      </Form>
+    </SectionCard>
   );
 }

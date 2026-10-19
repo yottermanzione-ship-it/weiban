@@ -29,7 +29,8 @@ import {
   WorkLinksPage,
 } from '../features/media-library.js';
 import { AccountDeletionsPage, PetSpeciesPage } from '../features/pets-deletions.js';
-import { DailyQuestionsPage, PlazaAdminPage } from '../features/plaza-admin.js';
+import { DailyQuestionsPage } from '../features/plaza-admin.js';
+import { PlazaAdminPage } from '../features/plaza.js';
 import { PlannerPage } from '../features/planner.js';
 import { RoleRequestsPage } from '../features/role-requests.js';
 import { SupportAdminPage } from '../features/support.js';
@@ -215,7 +216,7 @@ function AdminShell({
         <Route path="/pet-species" element={<PetSpeciesPage />} />
         <Route path="/account-deletions" element={<AccountDeletionsPage />} />
         <Route path="/plaza" element={<PlazaAdminPage />} />
-        <Route path="/reports" element={<PlazaAdminPage />} />
+        <Route path="/reports" element={<PlazaAdminPage initialTab="reports" />} />
         <Route path="/support" element={<SupportAdminPage />} />
         <Route path="/role-requests" element={<RoleRequestsPage />} />
         <Route path="/planner" element={<PlannerPage />} />

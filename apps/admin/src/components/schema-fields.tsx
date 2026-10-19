@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { Button, Checkbox, InputNumber, Input, Select } from 'antd';
+import { MinusCircleOutlined } from '@ant-design/icons';
 const names: Record<string, string> = {
   persona: '人设',
   speech: '语言风格',
@@ -148,125 +150,135 @@ export function SchemaFields({
     const record =
       typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
     return (
-      <fieldset className="nested-fields">
-        <legend>{label}</legend>
-        {Object.entries(s.shape as Record<string, z.ZodType>).map(([key, child]) => (
-          <SchemaFields
-            key={key}
-            schema={child as z.ZodType}
-            value={record[key]}
-            label={fieldName(key)}
-            onChange={(next) => {
-              const copy = { ...record };
-              if (next === undefined) delete copy[key];
-              else copy[key] = next;
-              onChange(copy);
-            }}
-          />
-        ))}
-      </fieldset>
+      <div className="nested-group">
+        <div className="nested-title">{label}</div>
+        <div className="nested-body">
+          {Object.entries(s.shape as Record<string, z.ZodType>).map(([key, child]) => (
+            <SchemaFields
+              key={key}
+              schema={child as z.ZodType}
+              value={record[key]}
+              label={fieldName(key)}
+              onChange={(next) => {
+                const copy = { ...record };
+                if (next === undefined) delete copy[key];
+                else copy[key] = next;
+                onChange(copy);
+              }}
+            />
+          ))}
+        </div>
+      </div>
     );
   }
   if (s instanceof z.ZodArray) {
     const items = Array.isArray(value) ? value : [];
     return (
-      <fieldset>
-        <legend>{label}</legend>
-        {items.map((item, i) => (
-          <div className="array-item" key={i}>
-            <SchemaFields
-              schema={s.element as z.ZodType}
-              value={item}
-              label={`${label} ${i + 1}`}
-              onChange={(next) => onChange(items.map((x, j) => (j === i ? next : x)))}
-            />
-            <button type="button" onClick={() => onChange(items.filter((_, j) => j !== i))}>
-              删除第{i + 1}项
-            </button>
-          </div>
-        ))}
-        <button type="button" onClick={() => onChange([...items, initial(s.element as z.ZodType)])}>
-          添加{label}
-        </button>
-      </fieldset>
+      <div className="nested-group">
+        <div className="nested-title">
+          {label}
+          <Button
+            size="small"
+            type="link"
+            onClick={() => onChange([...items, initial(s.element as z.ZodType)])}
+          >
+            + 添加
+          </Button>
+        </div>
+        <div className="nested-body">
+          {items.map((item, i) => (
+            <div className="array-item" key={i}>
+              <SchemaFields
+                schema={s.element as z.ZodType}
+                value={item}
+                label={`${label} ${i + 1}`}
+                onChange={(next) => onChange(items.map((x, j) => (j === i ? next : x)))}
+              />
+              <Button
+                type="text"
+                danger
+                size="small"
+                icon={<MinusCircleOutlined />}
+                onClick={() => onChange(items.filter((_, j) => j !== i))}
+              />
+            </div>
+          ))}
+          {items.length === 0 && <span className="field-help">还没有内容，点右上角「+ 添加」。</span>}
+        </div>
+      </div>
     );
   }
   if (s instanceof z.ZodTuple)
     return (
-      <fieldset>
-        <legend>{label}</legend>
-        {s.def.items.map((child, i) => (
-          <SchemaFields
-            key={i}
-            schema={child as z.ZodType}
-            label={`${label} ${i + 1}`}
-            value={Array.isArray(value) ? value[i] : undefined}
-            onChange={(next) => {
-              const items = Array.isArray(value)
-                ? [...value]
-                : s.def.items.map((x) => initial(x as z.ZodType));
-              items[i] = next;
-              onChange(items);
-            }}
-          />
-        ))}
-      </fieldset>
+      <div className="nested-group">
+        <div className="nested-title">{label}</div>
+        <div className="nested-body">
+          {s.def.items.map((child, i) => (
+            <SchemaFields
+              key={i}
+              schema={child as z.ZodType}
+              label={`${label} ${i + 1}`}
+              value={Array.isArray(value) ? value[i] : undefined}
+              onChange={(next) => {
+                const items = Array.isArray(value)
+                  ? [...value]
+                  : s.def.items.map((x) => initial(x as z.ZodType));
+                items[i] = next;
+                onChange(items);
+              }}
+            />
+          ))}
+        </div>
+      </div>
     );
   if (s instanceof z.ZodBoolean)
     return (
-      <label>
-        <input
-          type="checkbox"
-          checked={value === true}
-          onChange={(e) => onChange(e.target.checked)}
-        />
-        {label}
-      </label>
+      <div className="field-line">
+        <Checkbox checked={value === true} onChange={(e) => onChange(e.target.checked)}>
+          {label}
+        </Checkbox>
+      </div>
     );
   if (s instanceof z.ZodEnum)
     return (
-      <label>
-        {label}
-        <select
-          value={typeof value === 'string' ? value : ''}
-          onChange={(e) => onChange(e.target.value || undefined)}
-        >
-          <option value="">未填写</option>
-          {s.options.map((x) => (
-            <option key={String(x)} value={String(x)}>
-              {String(x)}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="field-line">
+        <span className="field-label">{label}</span>
+        <Select
+          allowClear
+          style={{ width: '100%' }}
+          placeholder="未填写"
+          value={typeof value === 'string' ? value : undefined}
+          onChange={(next) => onChange(next ?? undefined)}
+          options={s.options.map((x) => ({ value: String(x), label: String(x) }))}
+        />
+      </div>
     );
   if (s instanceof z.ZodNumber)
     return (
-      <label>
-        {label}
-        <input
-          type="number"
-          value={typeof value === 'number' ? value : ''}
-          onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
+      <div className="field-line">
+        <span className="field-label">{label}</span>
+        <InputNumber
+          style={{ width: '100%' }}
+          value={typeof value === 'number' ? value : undefined}
+          onChange={(next) => onChange(next === null ? undefined : next)}
         />
-      </label>
+      </div>
     );
   if (s instanceof z.ZodString || s instanceof z.ZodUnion)
     return (
-      <label>
-        {label}
-        <textarea
-          rows={2}
+      <div className="field-line">
+        <span className="field-label">{label}</span>
+        <Input.TextArea
+          autoSize={{ minRows: 2, maxRows: 10 }}
           value={typeof value === 'string' || typeof value === 'number' ? value : ''}
           onChange={(e) => onChange(e.target.value || undefined)}
         />
-      </label>
+      </div>
     );
   return (
-    <div>
-      <strong>{label}</strong>
-      <p className="muted">通过 WB-Card 文件导入维护此扩展字段。</p>
-      {value !== undefined && <pre>{JSON.stringify(value, null, 2)}</pre>}
+    <div className="field-line">
+      <span className="field-label">{label}</span>
+      <span className="field-help">通过 WB-Card 文件导入维护此扩展字段。</span>
     </div>
   );
 }

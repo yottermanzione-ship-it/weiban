@@ -1,439 +1,636 @@
-import { useState, type FormEvent } from 'react';
+/**
+ * 角色库：官方角色的列表与人设编辑。上架前需要通过三项检查。
+ * 人设内容仍由 WB-Card schema 驱动（components/card-editor），只换了外观。
+ */
+import { useState } from 'react';
+import {
+  Alert,
+  Button,
+  Checkbox,
+  DatePicker,
+  Input,
+  Select,
+  Space,
+  Upload,
+} from 'antd';
+import { PlusOutlined, UploadOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import {
   AdminCharacterWrite,
-  CharacterAdminEndpoints,
-  CharacterBasis,
-  RealPersonKind,
   AgeSetting,
   AvatarPattern,
+  CharacterAdminEndpoints,
+  CharacterBasis,
   MediaAdminEndpoints,
+  RealPersonKind,
   type AdminCharacter,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
-import { Feedback } from '../components/feedback.js';
+import { DataTable, type ProColumns } from '../ui/table.js';
+import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
+import {
+  Page,
+  SectionCard,
+  StatusTag,
+  useDangerConfirm,
+  useToast,
+} from '../ui/page.js';
+import { formatDateTime } from '../ui/format.js';
 import { CardEditor } from '../components/card-editor.js';
-const blank = (): AdminCharacterWrite => ({
-  name: '',
-  aliases: [],
-  works: [],
-  tagline: '',
-  intro: '',
-  tags: [],
-  categoryId: null,
-  birthday: null,
-  fanName: null,
-  fallbackGreetings: [],
-  avatar: {
-    imageMediaId: null,
-    display: { supportColors: [], avatarText: null, avatarPattern: 'star', themeColor: null },
-  },
-  classification: {
-    basis: 'original',
-    realPersonKind: null,
-    ageSetting: 'adult',
-    childAppearance: false,
-  },
-  card: { cardSchemaVersion: 1, data: {} },
-});
-const statuses: Record<string, string> = {
+
+const STATUS_LABELS: Record<string, string> = {
   draft: '草稿',
   pending_check: '待检测',
   published: '已上架',
   unpublished: '已下架',
   disabled: '已禁用',
 };
+
+const BASIS_LABELS: Record<string, string> = {
+  real_person: '真人',
+  fictional: '虚构',
+  original: '原创',
+};
+
+const REAL_PERSON_LABELS: Record<string, string> = {
+  celebrity: '公众人物',
+  historical: '历史人物',
+  private_person: '身边真人',
+};
+
+function blank(): AdminCharacterWrite {
+  return {
+    name: '',
+    aliases: [],
+    works: [],
+    tagline: '',
+    intro: '',
+    tags: [],
+    categoryId: null,
+    birthday: null,
+    fanName: null,
+    fallbackGreetings: [],
+    avatar: {
+      imageMediaId: null,
+      display: { supportColors: [], avatarText: null, avatarPattern: 'star', themeColor: null },
+    },
+    classification: {
+      basis: 'original',
+      realPersonKind: null,
+      ageSetting: 'adult',
+      childAppearance: false,
+    },
+    card: { cardSchemaVersion: 1, data: {} },
+  };
+}
+
+function draftOf(row: AdminCharacter): AdminCharacterWrite {
+  return {
+    name: row.name,
+    aliases: row.aliases,
+    works: row.works,
+    tagline: row.tagline,
+    intro: row.intro,
+    tags: row.tags,
+    categoryId: row.categoryId,
+    birthday: row.birthday,
+    fanName: row.fanName,
+    classification: {
+      basis: row.classification.basis,
+      realPersonKind: row.classification.realPersonKind,
+      ageSetting: row.classification.ageSetting,
+      childAppearance: row.classification.childAppearance,
+    },
+    avatar: { imageMediaId: row.avatar.image?.mediaId ?? null, display: row.avatar.display },
+    fallbackGreetings: row.fallbackGreetings,
+    card: row.card,
+  };
+}
+
 export function CharactersPage() {
+  const toast = useToast();
+  const confirm = useDangerConfirm();
   const list = useRemote(CharacterAdminEndpoints.list);
-  const [current, setCurrent] = useState<AdminCharacter | null>(null);
-  const [draft, setDraft] = useState<AdminCharacterWrite>(blank);
-  const [pending, setPending] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const [search, setSearch] = useState('');
-  function edit(row: AdminCharacter) {
-    setCurrent(row);
-    setDraft({
-      name: row.name,
-      aliases: row.aliases,
-      works: row.works,
-      tagline: row.tagline,
-      intro: row.intro,
-      tags: row.tags,
-      categoryId: row.categoryId,
-      birthday: row.birthday,
-      fanName: row.fanName,
-      classification: {
-        basis: row.classification.basis,
-        realPersonKind: row.classification.realPersonKind,
-        ageSetting: row.classification.ageSetting,
-        childAppearance: row.classification.childAppearance,
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('');
+  const [editing, setEditing] = useState<AdminCharacter | 'new' | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const rows = (list.data?.items ?? []).filter(
+    (row) =>
+      (!status || row.status === status) &&
+      (!query.trim() ||
+        `${row.name} ${row.aliases.join(' ')} ${row.works.join(' ')}`.includes(query.trim())),
+  );
+
+  async function togglePublish(row: AdminCharacter) {
+    const publish = row.status !== 'published';
+    const run = async () => {
+      setBusy(row.characterId);
+      try {
+        await api.call(
+          publish ? CharacterAdminEndpoints.publish : CharacterAdminEndpoints.unpublish,
+          { params: { characterId: row.characterId } },
+        );
+        toast.success(publish ? '已上架' : '已下架');
+        list.refresh();
+      } catch (e) {
+        toast.error(errorText(e));
+        list.refresh();
+      } finally {
+        setBusy(null);
+      }
+    };
+    if (publish) await run();
+    else
+      confirm({
+        title: `下架「${row.name}」？`,
+        content: '下架后用户端不再显示这个角色；已经加为好友的用户不受影响。',
+        okText: '下架',
+        onOk: run,
+      });
+  }
+
+  const columns: ProColumns<AdminCharacter>[] = [
+    {
+      title: '角色',
+      fixed: 'left',
+      width: 240,
+      render: (_, row) => (
+        <div className="cell-main">
+          <span className="cell-title">{row.name}</span>
+          <span className="cell-sub">{row.tagline || '—'}</span>
+        </div>
+      ),
+    },
+    {
+      title: '状态',
+      width: 100,
+      render: (_, row) => (
+        <StatusTag
+          tone={
+            row.status === 'published'
+              ? 'success'
+              : row.status === 'draft'
+                ? 'default'
+                : row.status === 'disabled'
+                  ? 'error'
+                  : 'warning'
+          }
+        >
+          {STATUS_LABELS[row.status] ?? row.status}
+        </StatusTag>
+      ),
+    },
+    {
+      title: '人设版本',
+      width: 90,
+      render: (_, row) => `v${row.personaVersion}`,
+    },
+    {
+      title: '上架检查',
+      width: 230,
+      render: (_, row) => {
+        const checks = [
+          ['结构', row.publishChecks.requiredFieldsComplete],
+          ['稳定', row.publishChecks.personaStabilityPassed],
+          ['边界', row.publishChecks.hardBoundaryCasesPassed],
+          ['开场白', row.publishChecks.hasFallbackGreeting],
+        ] as const;
+        return (
+          <Space size={4} wrap>
+            {checks.map(([label, pass]) => (
+              <StatusTag key={label} tone={pass ? 'success' : 'default'}>
+                {label}
+                {pass ? ' ✓' : ' ✗'}
+              </StatusTag>
+            ))}
+          </Space>
+        );
       },
-      avatar: { imageMediaId: row.avatar.image?.mediaId ?? null, display: row.avatar.display },
-      fallbackGreetings: row.fallbackGreetings,
-      card: row.card,
-    });
-  }
-  function patch(value: Partial<AdminCharacterWrite>) {
-    setDraft((d) => ({ ...d, ...value }));
-  }
-  async function save(e: FormEvent) {
-    e.preventDefault();
-    setPending(true);
+    },
+    {
+      title: '最近更新',
+      width: 150,
+      render: (_, row) => formatDateTime(row.updatedAt),
+    },
+    {
+      title: '操作',
+      width: 130,
+      fixed: 'right',
+      render: (_, row) => (
+        <Space size={4}>
+          <Button type="link" size="small" onClick={() => setEditing(row)}>
+            编辑
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            danger={row.status === 'published'}
+            loading={busy === row.characterId}
+            onClick={() => void togglePublish(row)}
+          >
+            {row.status === 'published' ? '下架' : '上架'}
+          </Button>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <Page
+      title="角色库"
+      desc="官方角色。上架前要过「必填结构 / 人设稳定 / 边界检测」三项检查；点一行编辑人设。"
+      extra={
+        <Space>
+          <Button onClick={() => list.refresh()}>刷新</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing('new')}>
+            新建角色
+          </Button>
+        </Space>
+      }
+    >
+      <DataTable<AdminCharacter>
+        rowKey="characterId"
+        columns={columns}
+        data={rows}
+        loading={list.loading}
+        error={list.error}
+        onRefresh={list.refresh}
+        onRowClick={(row) => setEditing(row)}
+        filters={
+          <>
+            <Input.Search
+              allowClear
+              placeholder="搜索名字、别名、作品"
+              style={{ width: 260 }}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <Select
+              style={{ width: 130 }}
+              value={status}
+              onChange={setStatus}
+              options={[
+                { value: '', label: '全部状态' },
+                ...Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label })),
+              ]}
+            />
+          </>
+        }
+        emptyTitle="还没有角色"
+        emptyHint="点右上角「新建角色」，填好名字、人设和至少一条备用开场白，再上架。"
+        emptyAction={
+          <Button type="primary" onClick={() => setEditing('new')}>
+            新建第一个角色
+          </Button>
+        }
+      />
+      {editing && (
+        <CharacterDrawer
+          character={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={(text) => {
+            toast.success(text);
+            list.refresh();
+          }}
+        />
+      )}
+    </Page>
+  );
+}
+
+function CharacterDrawer({
+  character,
+  onClose,
+  onSaved,
+}: {
+  character: AdminCharacter | null;
+  onClose: () => void;
+  onSaved: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState<AdminCharacterWrite>(() =>
+    character ? draftOf(character) : blank(),
+  );
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+  const patch = (value: Partial<AdminCharacterWrite>) =>
+    setDraft((current) => ({ ...current, ...value }));
+
+  async function save() {
+    setSaving(true);
     setError('');
     try {
       const body = AdminCharacterWrite.parse(draft);
-      const row = current
-        ? await api.call(CharacterAdminEndpoints.update, {
-            params: { characterId: current.characterId },
-            body,
-          })
-        : await api.call(CharacterAdminEndpoints.create, { body });
-      edit(row);
-      list.refresh();
-      setMessage('角色草稿已保存；修改人设后需要重新完成检测。');
+      if (character)
+        await api.call(CharacterAdminEndpoints.update, {
+          params: { characterId: character.characterId },
+          body,
+        });
+      else await api.call(CharacterAdminEndpoints.create, { body });
+      onSaved('已保存。改过人设后需要重新完成检测才能上架。');
+      onClose();
     } catch (e) {
       setError(errorText(e));
     } finally {
-      setPending(false);
+      setSaving(false);
     }
   }
-  async function status(row: AdminCharacter, publish: boolean) {
-    setPending(true);
-    setError('');
-    try {
-      const result = await api.call(
-        publish ? CharacterAdminEndpoints.publish : CharacterAdminEndpoints.unpublish,
-        { params: { characterId: row.characterId } },
-      );
-      if (current?.characterId === row.characterId) edit(result);
-      list.refresh();
-      setMessage(publish ? '角色已上架' : '角色已下架');
-    } catch (e) {
-      setError(errorText(e));
-      list.refresh();
-    } finally {
-      setPending(false);
-    }
-  }
-  async function avatar(file: File) {
-    setPending(true);
+
+  async function uploadAvatar(file: File) {
+    setUploading(true);
     setError('');
     try {
       const media = await api.call(MediaAdminEndpoints.adminUpload, {
         query: { purpose: 'character_avatar' },
         file,
       });
-      setDraft((d) => ({ ...d, avatar: { ...d.avatar, imageMediaId: media.mediaId } }));
-      setMessage('图片已上传；保存角色后生效。');
+      patch({ avatar: { ...draft.avatar, imageMediaId: media.mediaId } });
     } catch (e) {
       setError(errorText(e));
     } finally {
-      setPending(false);
+      setUploading(false);
     }
   }
+
+  const listField = (
+    key: 'aliases' | 'works' | 'tags' | 'fallbackGreetings',
+    label: string,
+    help: string,
+    rows = 3,
+  ) => (
+    <div className="field-line">
+      <span className="field-label">
+        {label}
+        <span className="field-label-hint">{help}</span>
+      </span>
+      <Input.TextArea
+        autoSize={{ minRows: rows, maxRows: 8 }}
+        value={draft[key].join('\n')}
+        onChange={(e) => patch({ [key]: e.target.value.split('\n') })}
+        onBlur={() => patch({ [key]: draft[key].filter((x) => x.trim()) })}
+      />
+    </div>
+  );
+
   return (
-    <>
-      <h1>角色库</h1>
-      <Feedback message={message} error={error || list.error} />
-      <label>
-        搜索角色
-        <input value={search} onChange={(e) => setSearch(e.target.value)} />
-      </label>
-      <button
-        onClick={() => {
-          setCurrent(null);
-          setDraft(blank());
-          setError('');
-          setMessage('正在新建角色');
-        }}
-      >
-        新建角色
-      </button>
-      <button onClick={list.refresh}>刷新检测结果</button>
-      <table>
-        <thead>
-          <tr>
-            <th>名字</th>
-            <th>状态</th>
-            <th>版本</th>
-            <th>必填结构</th>
-            <th>人设稳定</th>
-            <th>边界检测</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {list.data?.items
-            .filter((r) => `${r.name} ${r.aliases.join(' ')} ${r.works.join(' ')}`.includes(search))
-            .map((row) => (
-              <tr key={row.characterId}>
-                <td>{row.name}</td>
-                <td>{statuses[row.status]}</td>
-                <td>{row.personaVersion}</td>
-                {[
-                  row.publishChecks.requiredFieldsComplete,
-                  row.publishChecks.personaStabilityPassed,
-                  row.publishChecks.hardBoundaryCasesPassed,
-                ].map((pass, i) => (
-                  <td key={i}>{pass ? '通过' : '未通过'}</td>
-                ))}
-                <td>
-                  <button onClick={() => edit(row)}>编辑 {row.name}</button>
-                  <button
-                    disabled={pending}
-                    onClick={() => void status(row, row.status !== 'published')}
-                  >
-                    {row.status === 'published' ? '下架' : '上架'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-        </tbody>
-      </table>
-      <form onSubmit={(e) => void save(e)}>
-        <h2>{current ? `编辑：${current.name}` : '新建角色草稿'}</h2>
-        <fieldset disabled={pending}>
-          <div className="form-grid">
-            <label>
-              角色名字
-              <input
-                required
-                maxLength={32}
-                value={draft.name}
-                onChange={(e) => patch({ name: e.target.value })}
-              />
-            </label>
-            <label>
-              一句话介绍
-              <input
-                maxLength={60}
-                value={draft.tagline}
-                onChange={(e) => patch({ tagline: e.target.value })}
-              />
-            </label>
-            <label>
-              分类编号
-              <input
-                value={draft.categoryId ?? ''}
-                onChange={(e) => patch({ categoryId: e.target.value || null })}
-              />
-            </label>
-            <label>
-              生日
-              <input
-                type="date"
-                value={draft.birthday ?? ''}
-                onChange={(e) => patch({ birthday: e.target.value || null })}
-              />
-            </label>
-            <label>
-              粉丝称呼
-              <input
-                maxLength={20}
-                value={draft.fanName ?? ''}
-                onChange={(e) => patch({ fanName: e.target.value || null })}
-              />
-            </label>
-          </div>
-          <label>
-            详细介绍
-            <textarea
-              maxLength={1000}
-              value={draft.intro}
-              onChange={(e) => patch({ intro: e.target.value })}
+    <RecordDrawer
+      open
+      onClose={onClose}
+      title={character ? `编辑角色 · ${character.name}` : '新建角色'}
+      subtitle="人设改动保存后需要重新检测才能上架"
+      width={860}
+      footer={
+        <DrawerActions
+          onCancel={onClose}
+          onSubmit={() => void save()}
+          saving={saving}
+          submitText="保存"
+        />
+      }
+    >
+      {error && <Alert type="error" showIcon message={error} />}
+      <SectionCard title="基本信息">
+        <div className="form-two">
+          <div className="field-line">
+            <span className="field-label">角色名字</span>
+            <Input
+              maxLength={32}
+              value={draft.name}
+              onChange={(e) => patch({ name: e.target.value })}
             />
-          </label>
-          {(['aliases', 'works', 'tags', 'fallbackGreetings'] as const).map((key) => (
-            <label key={key}>
-              {
-                {
-                  aliases: '别名（每行一个）',
-                  works: '作品（每行一个）',
-                  tags: '展示标签（每行一个）',
-                  fallbackGreetings: '备用开场白（每行一个，至少一条）',
-                }[key]
+          </div>
+          <div className="field-line">
+            <span className="field-label">一句话介绍</span>
+            <Input
+              maxLength={60}
+              value={draft.tagline}
+              onChange={(e) => patch({ tagline: e.target.value })}
+            />
+          </div>
+        </div>
+        <div className="form-three">
+          <div className="field-line">
+            <span className="field-label">
+              分类编号
+              <span className="field-label-hint">角色广场里的分类</span>
+            </span>
+            <Input
+              value={draft.categoryId ?? ''}
+              onChange={(e) => patch({ categoryId: e.target.value || null })}
+            />
+          </div>
+          <div className="field-line">
+            <span className="field-label">生日</span>
+            <DatePicker
+              style={{ width: '100%' }}
+              value={draft.birthday ? dayjs(draft.birthday) : null}
+              onChange={(value) => patch({ birthday: value ? value.format('YYYY-MM-DD') : null })}
+            />
+          </div>
+          <div className="field-line">
+            <span className="field-label">粉丝称呼</span>
+            <Input
+              maxLength={20}
+              value={draft.fanName ?? ''}
+              onChange={(e) => patch({ fanName: e.target.value || null })}
+            />
+          </div>
+        </div>
+        <div className="field-line">
+          <span className="field-label">详细介绍</span>
+          <Input.TextArea
+            autoSize={{ minRows: 3, maxRows: 8 }}
+            maxLength={1000}
+            showCount
+            value={draft.intro}
+            onChange={(e) => patch({ intro: e.target.value })}
+          />
+        </div>
+        {listField('aliases', '别名', '每行一个')}
+        {listField('works', '作品', '每行一个')}
+        {listField('tags', '展示标签', '每行一个，最多 10 个')}
+        {listField('fallbackGreetings', '备用开场白', '每行一条，至少一条；没配模型时用它', 2)}
+      </SectionCard>
+
+      <SectionCard title="分类事实" desc="影响能不能用成人/恋爱内容，由服务器判定">
+        <div className="form-three">
+          <div className="field-line">
+            <span className="field-label">
+              角色原型
+              <span className="field-label-hint">真人角色只能用本人公开形象</span>
+            </span>
+            <Select
+              style={{ width: '100%' }}
+              value={draft.classification.basis}
+              onChange={(value) => {
+                const basis = CharacterBasis.parse(value);
+                patch({
+                  classification: {
+                    ...draft.classification,
+                    basis,
+                    realPersonKind: basis === 'real_person' ? 'celebrity' : null,
+                  },
+                });
+              }}
+              options={CharacterBasis.options.map((value) => ({
+                value,
+                label: BASIS_LABELS[value] ?? value,
+              }))}
+            />
+          </div>
+          {draft.classification.basis === 'real_person' && (
+            <div className="field-line">
+              <span className="field-label">真人类型</span>
+              <Select
+                style={{ width: '100%' }}
+                value={draft.classification.realPersonKind ?? 'celebrity'}
+                onChange={(value) =>
+                  patch({
+                    classification: {
+                      ...draft.classification,
+                      realPersonKind: RealPersonKind.parse(value),
+                    },
+                  })
+                }
+                options={RealPersonKind.options.map((value) => ({
+                  value,
+                  label: REAL_PERSON_LABELS[value] ?? value,
+                }))}
+              />
+            </div>
+          )}
+          <div className="field-line">
+            <span className="field-label">年龄设定</span>
+            <Select
+              style={{ width: '100%' }}
+              value={draft.classification.ageSetting}
+              onChange={(value) =>
+                patch({
+                  classification: {
+                    ...draft.classification,
+                    ageSetting: AgeSetting.parse(value),
+                  },
+                })
               }
-              <textarea
-                value={draft[key].join('\n')}
-                onChange={(e) => patch({ [key]: e.target.value.split('\n') })}
-                onBlur={() => patch({ [key]: draft[key].filter((x) => x.trim()) })}
-              />
-            </label>
-          ))}
-          <fieldset>
-            <legend>分类事实</legend>
-            <p>
-              真实人物以本人身份、真名或可识别身份事实呈现；仅借鉴灵感且使用新身份的角色归为原创。成人、恋爱与形象资格由服务器推导。
-            </p>
-            <div className="form-grid">
-              <label>
-                角色原型
-                <select
-                  value={draft.classification.basis}
-                  onChange={(e) => {
-                    const basis = CharacterBasis.parse(e.target.value);
-                    patch({
-                      classification: {
-                        ...draft.classification,
-                        basis,
-                        realPersonKind: basis === 'real_person' ? 'celebrity' : null,
-                      },
-                    });
-                  }}
-                >
-                  {CharacterBasis.options.map((x) => (
-                    <option key={x} value={x}>
-                      {{ real_person: '真人', fictional: '虚构', original: '原创' }[x]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {draft.classification.basis === 'real_person' && (
-                <label>
-                  真人类型
-                  <select
-                    value={draft.classification.realPersonKind ?? 'celebrity'}
-                    onChange={(e) =>
-                      patch({
-                        classification: {
-                          ...draft.classification,
-                          realPersonKind: RealPersonKind.parse(e.target.value),
-                        },
-                      })
-                    }
-                  >
-                    {RealPersonKind.options.map((x) => (
-                      <option key={x} value={x}>
-                        {
-                          {
-                            celebrity: '公众人物',
-                            historical: '历史人物',
-                            private_person: '身边真人',
-                          }[x]
-                        }
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              <label>
-                年龄设定
-                <select
-                  value={draft.classification.ageSetting}
-                  onChange={(e) =>
-                    patch({
-                      classification: {
-                        ...draft.classification,
-                        ageSetting: AgeSetting.parse(e.target.value),
-                      },
-                    })
-                  }
-                >
-                  <option value="adult">成年</option>
-                  <option value="minor">未成年</option>
-                </select>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={draft.classification.childAppearance}
-                  onChange={(e) =>
-                    patch({
-                      classification: {
-                        ...draft.classification,
-                        childAppearance: e.target.checked,
-                      },
-                    })
-                  }
-                />
-                儿童外观
-              </label>
-            </div>
-          </fieldset>
-          <fieldset>
-            <legend>角色头像</legend>
-            <label>
-              上传角色图片
-              <input
-                type="file"
+              options={[
+                { value: 'adult', label: '成年' },
+                { value: 'minor', label: '未成年' },
+              ]}
+            />
+          </div>
+        </div>
+        <Checkbox
+          checked={draft.classification.childAppearance}
+          onChange={(e) =>
+            patch({
+              classification: { ...draft.classification, childAppearance: e.target.checked },
+            })
+          }
+        >
+          儿童外观
+        </Checkbox>
+      </SectionCard>
+
+      <SectionCard title="头像">
+        <div className="avatar-row">
+          <div
+            className="avatar-preview"
+            style={{ background: draft.avatar.display.themeColor ?? '#07C160' }}
+          >
+            {draft.avatar.display.avatarText || draft.name.slice(0, 1) || '伴'}
+          </div>
+          <div className="avatar-actions">
+            <Space>
+              <Upload
                 accept="image/jpeg,image/png,image/webp,image/gif"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  e.target.value = '';
-                  if (file) void avatar(file);
+                showUploadList={false}
+                beforeUpload={(file) => {
+                  void uploadAvatar(file);
+                  return false;
                 }}
-              />
-            </label>
-            <p>{draft.avatar.imageMediaId ? '已设置角色图片' : '使用默认非肖像头像'}</p>
-            <button
-              type="button"
-              onClick={() => patch({ avatar: { ...draft.avatar, imageMediaId: null } })}
-            >
-              使用默认头像
-            </button>
-            <div className="form-grid">
-              <label>
-                头像字
-                <input
-                  maxLength={2}
-                  value={draft.avatar.display.avatarText ?? ''}
-                  onChange={(e) =>
-                    patch({
-                      avatar: {
-                        ...draft.avatar,
-                        display: { ...draft.avatar.display, avatarText: e.target.value || null },
-                      },
-                    })
-                  }
-                />
-              </label>
-              <label>
-                头像图案
-                <select
-                  value={draft.avatar.display.avatarPattern}
-                  onChange={(e) =>
-                    patch({
-                      avatar: {
-                        ...draft.avatar,
-                        display: {
-                          ...draft.avatar.display,
-                          avatarPattern: AvatarPattern.parse(e.target.value),
-                        },
-                      },
-                    })
-                  }
-                >
-                  {AvatarPattern.options.map((x) => (
-                    <option key={x} value={x}>
-                      {x}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                主题色
-                <input
-                  type="color"
-                  value={draft.avatar.display.themeColor ?? '#0aa35a'}
-                  onChange={(e) =>
-                    patch({
-                      avatar: {
-                        ...draft.avatar,
-                        display: { ...draft.avatar.display, themeColor: e.target.value },
-                      },
-                    })
-                  }
-                />
-              </label>
+              >
+                <Button icon={<UploadOutlined />} loading={uploading}>
+                  上传角色图片
+                </Button>
+              </Upload>
+              <Button
+                disabled={!draft.avatar.imageMediaId}
+                onClick={() =>
+                  patch({ avatar: { ...draft.avatar, imageMediaId: null } })
+                }
+              >
+                使用默认头像
+              </Button>
+            </Space>
+            <div className="field-help">
+              {draft.avatar.imageMediaId
+                ? '已设置角色图片，保存后生效。'
+                : '当前使用默认头像（文字 + 图案 + 主题色）。'}
             </div>
-          </fieldset>
-          <CardEditor card={draft.card} onChange={(card) => patch({ card })} />
-          <button className="primary" type="submit">
-            {pending ? '正在保存…' : '保存角色草稿'}
-          </button>
-        </fieldset>
-      </form>
-    </>
+          </div>
+        </div>
+        <div className="form-three">
+          <div className="field-line">
+            <span className="field-label">头像字</span>
+            <Input
+              maxLength={2}
+              value={draft.avatar.display.avatarText ?? ''}
+              onChange={(e) =>
+                patch({
+                  avatar: {
+                    ...draft.avatar,
+                    display: { ...draft.avatar.display, avatarText: e.target.value || null },
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="field-line">
+            <span className="field-label">头像图案</span>
+            <Select
+              style={{ width: '100%' }}
+              value={draft.avatar.display.avatarPattern}
+              onChange={(value) =>
+                patch({
+                  avatar: {
+                    ...draft.avatar,
+                    display: {
+                      ...draft.avatar.display,
+                      avatarPattern: AvatarPattern.parse(value),
+                    },
+                  },
+                })
+              }
+              options={AvatarPattern.options.map((value) => ({ value, label: value }))}
+            />
+          </div>
+          <div className="field-line">
+            <span className="field-label">主题色</span>
+            <Input
+              type="color"
+              value={draft.avatar.display.themeColor ?? '#07c160'}
+              onChange={(e) =>
+                patch({
+                  avatar: {
+                    ...draft.avatar,
+                    display: { ...draft.avatar.display, themeColor: e.target.value },
+                  },
+                })
+              }
+            />
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="人设卡" desc="内容很多，按板块填；只有必填项完整才能上架">
+        <CardEditor card={draft.card} onChange={(card) => patch({ card })} />
+      </SectionCard>
+      <div className="detail-muted">
+        上架前系统会自动检查：必填结构、人设稳定、边界检测、备用开场白。
+      </div>
+    </RecordDrawer>
   );
 }
