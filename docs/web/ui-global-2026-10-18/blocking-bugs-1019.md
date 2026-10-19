@@ -16,7 +16,7 @@
 - 原始汇总：`C:/wb-dev/logs/ui-sync-performance-1019.json`；复核脚本在 `C:/wb-dev/scripts/ui-blocking-bugs-1019.mjs`、`ui-sync-compare-1019.mts`，不入库、不记录凭据。
 - **这只证明 updates 接口约 2.4 秒，不证明整页冷启动 3 秒达标。** 全量快照还有其他资料/历史请求，后续应单独计时。
 - 首次无会话数据时加入三行真实布局骨架；冷登录已实际见到骨架，然后显示真实会话。截图 `chat-cold-skeleton.png`；`C:/wb-dev/logs/ui-cold-observation-1019.json` 两次观察有工具间隔，不能当端到端性能结果。
-- 另外单次“已有登录状态下重载”观察，在 DOMContentLoaded、读取遮罩隐藏及三条实名会话可见之后计时为 2,300ms，记录 `C:/wb-dev/logs/ui-chat-reload-verified-1019.json`。这是带既有缓存的重载样本，不代表首次无缓存登录或跨境波动下的稳定上限。
+- 更正：`C:/wb-dev/logs/ui-chat-reload-verified-1019.json` 的 2,300ms **撤回作为整页可用证据**；当时按文本等待“正在打开微伴”，但启动遮罩实际用 aria-label，底下会话已存在时仍可能被遮住。改用实际 `[aria-label="正在打开微伴"]` 等待隐藏，带既有缓存重载测得遮罩消失 3,508ms、三条实名会话可见 3,549ms，记录 `C:/wb-dev/logs/ui-chat-actual-ready-1019.json`。该单次样本仍未达到 3 秒，也不代表首次无缓存登录的稳定上限。
 
 ## 手势与有数据视觉
 

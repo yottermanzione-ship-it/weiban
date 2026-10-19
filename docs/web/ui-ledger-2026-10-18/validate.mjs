@@ -33,12 +33,17 @@ for (const r of rows) {
       '历史截图待复点',
       '后端冻结',
       '产品待定',
+      '开发自测（局部）',
     ].includes(r.evidence.status),
   );
   if (r.evidence.status === '源码已核待点按')
     ok(r.evidence.refs.some((p) => p.kind === '本轮源码阅读'));
   if (r.evidence.status === '历史截图待复点')
     ok(r.evidence.refs.some((p) => p.kind === '历史开发交接'));
+  if (r.evidence.status === '开发自测（局部）') {
+    ok(r.evidence.refs.some((p) => p.kind === '本轮开发自测'));
+    ok(r.evidence.scope.length > 0 && r.evidence.next.length > 0);
+  }
   strictEqual(r.annotation.parentInheritanceApplied, false);
   if (r.annotation.missingDirect) {
     strictEqual(r.annotation.directVerdict, '未批注');

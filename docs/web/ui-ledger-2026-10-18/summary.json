@@ -1,7 +1,7 @@
 {
-  "auditedAt": "2026-10-18",
+  "auditedAt": "2026-10-19",
   "baseline": "2e92c92fed82eb2eda230454fd45f18297f35149",
-  "scope": "台账事实核对；未浏览器复点，未改业务",
+  "scope": "原始地图事实保留；部分网页已开发自测点按，未独立验收",
   "exportReportedCounts": {
     "确认": 209,
     "要改": 104,
@@ -74,15 +74,16 @@
     "逐行原文": 215
   },
   "evidence": {
-    "未核": 320,
+    "未核": 316,
     "源码已核待点按": 16,
     "后端冻结": 9,
-    "历史截图待复点": 55,
+    "开发自测（局部）": 5,
+    "历史截图待复点": 54,
     "产品待定": 1
   },
   "needsAction": 185,
-  "actionsWithReview": 84,
-  "actionsWithoutReview": 101,
+  "actionsWithReview": 87,
+  "actionsWithoutReview": 98,
   "directPlanRows": 99,
   "actionPlanRows": 81,
   "noBrowserAcceptance": true

@@ -22,7 +22,7 @@
 | `/characters/custom/:characterId/edit` | 未点按；源码/原批注待逐页核对 |
 | `/settings/security` | 已点修改密码提示、下线确认并取消；外层DIV且无嵌套按钮；连续两次reload正常 |
 | `/settings/privacy` | 未点按；源码/原批注待逐页核对 |
-| `/settings/general` | 未点按；源码/原批注待逐页核对 |
+| `/settings/general` | 10-19 实点深色/特大字号，在320px复看；已恢复跟随系统/标准 |
 | `/services/proactive` | 未点按；源码/原批注待逐页核对 |
 | `/services/ecology` | 已点总开关展开/收起、滚动；模型行禁用且示例文案可见；动作开关标签待补 |
 | `/services/period` | 已看首次隐私说明/开始记录入口及导航；未开启/写入健康数据 |
@@ -44,8 +44,8 @@
 | `/moments` | 已看空态；相机菜单/取消、换封面面板/退出；修复后700ms长按直接发表 |
 | `/moments/new` | 已点输入计数、公开/部分可见、无好友禁发表、有内容取消确认/继续编辑/不保留、空内容取消；未发表 |
 | `/moments/notifications` | 未点按；源码/原批注待逐页核对 |
-| `/moments/posts/:postId` | 未点按；源码/原批注待逐页核对 |
-| `/me/moments` | 已从朋友圈昵称入口打开；相册空态正常 |
+| `/moments/posts/:postId` | 10-19 样例详情已打开；通栏/赞评论操作条，实际点赞、点评论回复、长按自己的评论并取消；深色特大字号已看 |
+| `/me/moments` | 10-19 有样例动态，实际从列表点进动态详情；早期空态不再代表当前数据 |
 | `/characters/:characterId/anniversaries` | 未点按；源码/原批注待逐页核对 |
 | `/sticker-store` | 已看空态/真实包；补封面和数量，已添加状态正常；整理入口已点 |
 | `/sticker-store/:packId` | 已看3张表情；点开大图/Esc退出、免费添加成功变为移除；未移除 |
@@ -57,10 +57,10 @@
 | `/me/stickers` | 已看3张；预览打开/关闭、整理选择/移到最前/完成；一次DB超时500重试恢复；未删除 |
 | `/me/favorites` | 已看加载→带长按收藏引导的空态 |
 | `/me/favorites/:favoriteId` | 未点按；源码/原批注待逐页核对 |
-| `/services/cards` | 未点按；源码/原批注待逐页核对 |
+| `/services/cards` | 10-19 实见3角色/1张卡；进程澈卡册，胶囊关闭正常回小程序首页 |
 | `/services/achievements` | 未点按；源码/原批注待逐页核对 |
 | `/services/familiarity` | 未点按；源码/原批注待逐页核对 |
-| `/characters/:characterId/cards` | 未点按；源码/原批注待逐页核对 |
+| `/characters/:characterId/cards` | 10-19 实见1张团子瞬间卡；长标题单行、好感度解锁文案已改；实际开卡/翻面/Esc关闭 |
 | `/search` | 从chat进入、输入、取消回chat，重复两轮未出现返回循环 |
 | `/search/:conversationId` | 未点按；源码/原批注待逐页核对 |
 | `/chat/:conversationId/search` | 未点按；源码/原批注待逐页核对 |
@@ -70,9 +70,9 @@
 | `/imports/:jobId` | 未点按；源码/原批注待逐页核对 |
 | `/characters/:characterId/supplement` | 未点按；源码/原批注待逐页核对 |
 | `/settings/delete-account` | 未点按；源码/原批注待逐页核对 |
-| `/services/pets` | 已看首次引导、开始领养入口、从领养页返回后空态；未领养/调用模型 |
+| `/services/pets` | 10-19 已看在养团子，有数据阶段标签收窄；点击进入详情。早期空态记录保留，不再当当前限制 |
 | `/pets/adopt` | 已看好友选择/名称输入/未选好友禁提交；返回正常；素材初载未等完，未领养 |
-| `/pets/:petId` | 未点按；源码/原批注待逐页核对 |
+| `/pets/:petId` | 10-19 已看团子主页/成长记录/空相册/设置，320px实滚到底部；喂食反馈与亲密值0→1；未上传/送养 |
 | `/play/daily` | 已看题目/好友选择；输入计数/按钮启用、换好友清旧输入/加载、回答按钮整行；未提交 |
 | `/play/daily/history` | 已看历史空态；返回每日一问正常；补初次加载提示 |
 | `/play/wishlists` | 已看3好友心愿入口；进入程澈/返回正常 |
@@ -80,7 +80,7 @@
 | `/play/letters` | 未点按；源码/原批注待逐页核对 |
 | `/play/letters/new` | 未点按；源码/原批注待逐页核对 |
 | `/play/letters/:letterId` | 未点按；源码/原批注待逐页核对 |
-| `/play/focus` | 已看；自定义时长已点，空态添加入口已点；未启动计时 |
+| `/play/focus` | 10-19 320px深色特大字号实点选择角色/开始25分钟样例/计时/提前结束确认/取消/最终结束；样例已结束，未等自然结束或验证AI鼓励 |
 | `/play/reminders` | 未点按；源码/原批注待逐页核对 |
 | `/play/reminders/:reminderId` | 未点按；源码/原批注待逐页核对 |
 | `/plaza/works/:workId` | 未点按；源码/原批注待逐页核对 |
@@ -101,7 +101,7 @@
 | `/role-requests` | 未点按；源码/原批注待逐页核对 |
 | `/role-requests/new` | 未点按；源码/原批注待逐页核对 |
 | `/role-requests/:requestId` | 未点按；源码/原批注待逐页核对 |
-| `/pets/with/:characterId` | 未点按；源码/原批注待逐页核对 |
+| `/pets/with/:characterId` | 10-19 按程澈实际进入，最终替换到团子详情；没宠物时的领养分支本轮未再核 |
 | `/characters/:characterId/model` | 未点按；源码/原批注待逐页核对 |
 | `/settings/about` | 未点按；源码/原批注待逐页核对 |
 | `/settings/announcements` | 未点按；源码/原批注待逐页核对 |

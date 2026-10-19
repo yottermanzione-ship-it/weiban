@@ -206,7 +206,7 @@ const ledger = rows.map((row) => {
   };
   const evidence = {
     status: review?.status ?? '未核',
-    reviewedAt: review ? '2026-10-18' : null,
+    reviewedAt: review ? (review.reviewedAt ?? '2026-10-18') : null,
     scope:
       review?.scope ?? '本轮没有逐行实施证据；原地图/批注/排期均不代表验收。',
     refs: review?.refs ?? [],
@@ -241,9 +241,9 @@ const count = (fn) =>
 const actionRows = ledger.filter((r) => r.needsAction);
 if (actionRows.length !== 185) throw Error('Expected185');
 const metadata = {
-  auditedAt: '2026-10-18',
+  auditedAt: '2026-10-19',
   baseline: '2e92c92fed82eb2eda230454fd45f18297f35149',
-  scope: '台账事实核对；未浏览器复点，未改业务',
+  scope: '原始地图事实保留；部分网页已开发自测点按，未独立验收',
   exportReportedCounts: { 确认: 209, 要改: 104, 不要: 81, 未标: 7 },
   parsedCounts: { 确认: 211, 要改: 104, 不要: 81, 未标: 5 },
   sources: Object.values(sources).map((path) => ({
@@ -313,7 +313,7 @@ const esc = (s) =>
   );
 const opts = (values) =>
   values.map((v) => `<option>${esc(v)}</option>`).join('');
-const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>微伴 UI事实台账</title><style>body{margin:0;background:#ededed;color:#191919;font:14px/1.6 system-ui}header,main{padding:16px}header{background:white}h1{font-size:21px;margin:0}.warning{background:#fff4df;padding:12px}label{display:inline-flex;gap:6px;margin:8px}select,input{font:inherit;padding:7px;max-width:100%}.table{overflow:auto}table{border-collapse:collapse;background:white;width:100%}th,td{border:1px solid #ddd;padding:10px;text-align:left;vertical-align:top;min-width:130px}td:first-child{min-width:85px}small{color:#666}details{max-width:500px}summary{cursor:pointer}a{color:#3d619b}.state{background:#eee;padding:3px 7px;white-space:nowrap}</style><header><h1>微伴 UI事实台账 ·401条</h1><p>原地图：2026-10-14；本轮文档/有限源码核对：2026-10-18。排期、决定、历史截图、当前实施证据分开，未进行浏览器验收。</p><p class="warning">10号总计确认209/未标7；可定位原文确认25/未标5＋省略186，按导出总说明计算确认211/未标5。差2条未能定位，不凑数。继承确认不等于通过。</p><p>需动作185条；有本轮逐ID审阅记录${summary.actionsWithReview}条，其余${summary.actionsWithoutReview}条实施未核。<a href="ledger.json">完整JSON</a> · <a href="evidence-map.json">185条映射</a> · <a href="audit.md">核查报告</a></p><label>页面<select id="tab"><option value="">全部</option>${opts([...new Set(ledger.map((r) => r.tab))])}</select></label><label>原稿状态<select id="original"><option value="">全部</option>${opts(Object.keys(summary.originalStatus))}</select></label><label>批注<select id="verdict"><option value="">全部</option>${opts(['确认', '要改', '不要', '未标'])}</select></label><label>批注来源<select id="origin"><option value="">全部</option>${opts(['逐行原文', '导出总说明继承'])}</select></label><label>证据状态<select id="state"><option value="">全部</option>${opts(['未核', '源码已核待点按', '历史截图待复点', '后端冻结', '产品待定'])}</select></label><label>工作集<select id="action"><option value="">401条</option><option value="yes">185需动作</option><option value="unreviewed">需动作且未审阅</option></select></label><label>搜索<input id="q" placeholder="ID/页面/批注/证据/决定"></label><p id="count"></p></header><main><div class="table"><table><thead><tr><th>ID/页面</th><th>节点</th><th>原地图（10-14）</th><th>批注及来源</th><th>最新决定/排期</th><th>实施证据（10-18）</th></tr></thead><tbody id="body"></tbody></table></div></main><script>
+const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>微伴 UI事实台账</title><style>body{margin:0;background:#ededed;color:#191919;font:14px/1.6 system-ui}header,main{padding:16px}header{background:white}h1{font-size:21px;margin:0}.warning{background:#fff4df;padding:12px}label{display:inline-flex;gap:6px;margin:8px}select,input{font:inherit;padding:7px;max-width:100%}.table{overflow:auto}table{border-collapse:collapse;background:white;width:100%}th,td{border:1px solid #ddd;padding:10px;text-align:left;vertical-align:top;min-width:130px}td:first-child{min-width:85px}small{color:#666}details{max-width:500px}summary{cursor:pointer}a{color:#3d619b}.state{background:#eee;padding:3px 7px;white-space:nowrap}</style><header><h1>微伴 UI事实台账 ·401条</h1><p>原地图：2026-10-14；续接核对：2026-10-19。排期、决定、历史截图、局部开发点按证据分开，未进行独立验收。</p><p class="warning">10号总计确认209/未标7；可定位原文确认25/未标5＋省略186，按导出总说明计算确认211/未标5。差2条未能定位，不凑数。继承确认不等于通过。</p><p>需动作185条；有本轮逐ID审阅记录${summary.actionsWithReview}条，其余${summary.actionsWithoutReview}条实施未核。<a href="ledger.json">完整JSON</a> · <a href="evidence-map.json">185条映射</a> · <a href="audit.md">核查报告</a></p><label>页面<select id="tab"><option value="">全部</option>${opts([...new Set(ledger.map((r) => r.tab))])}</select></label><label>原稿状态<select id="original"><option value="">全部</option>${opts(Object.keys(summary.originalStatus))}</select></label><label>批注<select id="verdict"><option value="">全部</option>${opts(['确认', '要改', '不要', '未标'])}</select></label><label>批注来源<select id="origin"><option value="">全部</option>${opts(['逐行原文', '导出总说明继承'])}</select></label><label>证据状态<select id="state"><option value="">全部</option>${opts(['未核', '源码已核待点按', '历史截图待复点', '后端冻结', '产品待定', '开发自测（局部）'])}</select></label><label>工作集<select id="action"><option value="">401条</option><option value="yes">185需动作</option><option value="unreviewed">需动作且未审阅</option></select></label><label>搜索<input id="q" placeholder="ID/页面/批注/证据/决定"></label><p id="count"></p></header><main><div class="table"><table><thead><tr><th>ID/页面</th><th>节点</th><th>原地图（10-14）</th><th>批注及来源</th><th>最新决定/排期</th><th>实施证据（10-18）</th></tr></thead><tbody id="body"></tbody></table></div></main><script>
 const DATA=${JSON.stringify(ledger).replace(/</g, '\\u003c')};
 const escapeHtml=${esc.toString()};
 const controls=['tab','original','verdict','origin','state','action','q'];
