@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Flower, Heart, Moon, MusicNote, Star } from './old-icons.js';
-import { CharacterEndpoints, MediaEndpoints, type CharacterSummary } from '@weiban/contracts';
+import { MediaEndpoints, type CharacterSummary } from '@weiban/contracts';
 import { avatarForeground, avatarLetters, avatarPaletteIndex } from '@weiban/client-core';
 import { useAuth } from '../app/auth.js';
 import { useChat } from '../app/chat.js';
 import { useRemote } from '../data/use-remote.js';
+import { useCharacterProfile } from '../data/character-profile.js';
 type AvatarRole = Pick<CharacterSummary, 'characterId' | 'name' | 'avatar'>;
 const patterns = { star: Star, heart: Heart, note: MusicNote, moon: Moon, flower: Flower };
 export function CharacterAvatar({
@@ -54,7 +55,7 @@ function RequestedAvatar({
   size: number;
   radius: number;
 }) {
-  const remote = useRemote(CharacterEndpoints.getProfile, { params: { characterId: id } });
+  const remote = useCharacterProfile(id);
   return (
     <Artwork
       role={remote.data?.characterId === id ? remote.data : undefined}
@@ -62,6 +63,7 @@ function RequestedAvatar({
       privateId={privateId}
       size={size}
       radius={radius}
+      loading={remote.loading}
     />
   );
 }
@@ -71,26 +73,28 @@ function Artwork({
   privateId,
   size,
   radius,
+  loading = false,
 }: {
   role?: AvatarRole;
   id?: string;
   privateId?: string | null;
   size: number;
   radius: number;
+  loading?: boolean;
 }) {
   const display = role?.avatar.display;
-  const letters = avatarLetters(role?.name ?? '', display?.avatarText);
+  const letters = role ? avatarLetters(role.name, display?.avatarText) : loading ? '…' : '—';
   const palette = String(avatarPaletteIndex(id)).padStart(2, '0');
   const supplied = display?.supportColors[0];
   const background = supplied ?? `var(--wb-support-${palette}-bg)`;
   const color = supplied ? avatarForeground(supplied) : `var(--wb-support-${palette}-on)`;
   const pattern = display?.avatarPattern ?? 'star';
-  const Icon = pattern === 'none' ? null : patterns[pattern];
+  const Icon = !role || pattern === 'none' ? null : patterns[pattern];
   return (
     <span
       className="character-avatar"
       role="img"
-      aria-label={`${role?.name ?? '角色'}头像`}
+      aria-label={role ? `${role.name}头像` : loading ? '正在读取角色头像' : '角色头像暂不可用'}
       style={{
         width: size,
         height: size,

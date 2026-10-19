@@ -116,6 +116,28 @@ export class EnvelopeCrypto {
     }
   }
 
+  /** One request can open many records for one owner without reloading the same DEK per row. */
+  async openMany(
+    owner: string,
+    records: readonly { aad: string; sealed: Buffer }[],
+    tx?: DbTx,
+  ): Promise<Buffer[]> {
+    if (!records.length) return [];
+    const dek = await this.loadDek(owner, tx ?? this.database);
+    if (!dek) throw new DecryptionError(`owner ${owner} 没有数据密钥（可能已注销删除）`);
+    const plaintexts: Buffer[] = [];
+    try {
+      for (const record of records)
+        plaintexts.push(aesGcmOpen(dek, dataAad(owner, record.aad), record.sealed));
+      return plaintexts;
+    } catch (error) {
+      plaintexts.forEach((plain) => plain.fill(0));
+      throw error;
+    } finally {
+      dek.fill(0);
+    }
+  }
+
   /** 删除 owner 的数据密钥：用它加密的数据从此无法解密。可重复调用。 */
   async destroyKey(owner: string, tx?: DbTx): Promise<void> {
     assertOwner(owner);

@@ -7,7 +7,6 @@ import { EcologyPage } from '../features/ecology.js';
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { RouteMotion } from '../features/route-motion.js';
-import { OldIcon } from '../features/old-icons.js';
 import { BackArrow } from '../features/shell-kit.js';
 import { useChat } from './chat.js';
 import { ConversationListPage } from '../features/conversation-list.js';
@@ -124,7 +123,7 @@ const ownHeader = [
   /^\/(sticker-store|support)(\/|$)/,
   /^\/me\/status$/,
   /^\/settings\/plugins$/,
-  /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice|cards|supplement)$/,
+  /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice|cards|supplement|memories)$/,
   /^\/(imports|pets|plaza|play|roles|role-requests)(\/|$)/,
   /^\/settings\/delete-account$/,
   /^\/(share|search)(\/|$)/,
@@ -141,6 +140,7 @@ const ownHeader = [
   /^\/services\/proactive$/,
   /^\/services\/ecology$/,
   /^\/characters\/[^/]+$/,
+  /^\/characters\/custom(\/|$)/,
   /^\/profile$/,
   /^\/(wallet|ledger|prices|usage|models|leaderboard)(\/|$)/,
 ];
@@ -178,7 +178,12 @@ function TabGlyph({ index }: { index: number }) {
       {index === 2 && (
         <g {...common}>
           <circle cx="12" cy="12" r="8.5" />
-          <path d="M15.5 8.5 13 13l-4.5 2.5L11 11l4.5-2.5Z" />
+          {/* 实心指针：只有描边时缩小会看成一道斜杠 */}
+          <path
+            d="M15.6 8.4l-2.3 5.5-5.5 2.3 2.3-5.5 5.5-2.3Z"
+            fill="currentColor"
+            stroke="none"
+          />
         </g>
       )}
       {index === 3 && (
@@ -216,7 +221,7 @@ function TabBar({ hidden }: { hidden: boolean }) {
     <nav className={`tabbar ${hidden ? 'hidden' : ''}`} aria-label="主导航">
       {tabs.map((tab) => (
         <NavLink key={tab.to} to={tab.to}>
-          {({ isActive }) => (
+          {() => (
             <>
               <span className="tab-icon">
                 <TabGlyph index={tab.index} />

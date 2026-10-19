@@ -208,10 +208,21 @@ function OfficialList() {
           aria-label="搜索微伴角色"
           placeholder="搜索名字、别名或作品"
           value={query}
+          onClear={() => {
+            setQuery('');
+            setSearch('');
+          }}
           maxLength={50}
           enterKeyHint="search"
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            const next = event.target.value;
+            setQuery(next);
+            if (!next.trim()) setSearch('');
+          }}
         />
+        <button type="submit" className="search-strip-submit" disabled={!query.trim()}>
+          搜索
+        </button>
       </form>
       <div className="plaza-filter">
         <select
@@ -419,6 +430,7 @@ export function OfficialRolePage() {
             <p className="hint page-note">本角色根据公开资料创作，不代表本人</p>
           )}
           <OfficialComments
+            key={characterId}
             characterId={characterId}
             count={comments ?? data.commentCount}
             onCount={setComments}
@@ -443,14 +455,17 @@ function OfficialComments({
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [composing, setComposing] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [text, setText] = useState('');
   const [replyTo, setReplyTo] = useState<PlazaComment | null>(null);
   const [sending, setSending] = useState(false);
+  const [checkingAuthor, setCheckingAuthor] = useState(false);
   const requestId = useRef(crypto.randomUUID());
   const here = `/plaza/official/${characterId}`;
   const load = useCallback(
     async (after?: string) => {
       setLoading(true);
+      setLoadError('');
       try {
         const page = await api.call(PlazaOfficialEndpoints.listComments, {
           params: { characterId },
@@ -459,8 +474,8 @@ function OfficialComments({
         });
         setItems((prev) => (after ? [...prev, ...page.items] : page.items));
         setCursor(page.nextCursor);
-      } catch {
-        /* 评论读不到时只显示空列表 */
+      } catch (error) {
+        setLoadError(friendlyError(error));
       } finally {
         setLoading(false);
       }
@@ -472,6 +487,8 @@ function OfficialComments({
   }, [load]);
   const over = chars(text) > PLAZA_COMMENT_MAX_CHARS;
   async function startCompose(target: PlazaComment | null) {
+    if (checkingAuthor || sending) return;
+    setCheckingAuthor(true);
     try {
       const profile = await api.call(PlazaEndpoints.getMyProfile, { networkOnly: true });
       if (!profile) {
@@ -484,13 +501,15 @@ function OfficialComments({
       }
     } catch {
       /* 读不到资料时照常打开输入栏，提交时由服务器判断 */
+    } finally {
+      setCheckingAuthor(false);
     }
     setReplyTo(target);
     setComposing(true);
   }
   async function send() {
     const value = text.trim();
-    if (!value || over) return;
+    if (sending || !value || over) return;
     setSending(true);
     try {
       const comment = await api.call(PlazaOfficialEndpoints.addComment, {
@@ -529,7 +548,22 @@ function OfficialComments({
       <GroupHeader>评论 {count}</GroupHeader>
       <div className="panel">
         {loading && items.length === 0 && <div className="skeleton-line" role="status" />}
-        {!loading && items.length === 0 && <p className="hint">还没有评论，来说第一句吧</p>}
+        {loadError && (
+          <div className="page-note">
+            <p role="alert">{loadError}</p>
+            <button
+              type="button"
+              className="text-button"
+              disabled={loading}
+              onClick={() => void load(items.length ? (cursor ?? undefined) : undefined)}
+            >
+              {loading ? '正在重试…' : '重试'}
+            </button>
+          </div>
+        )}
+        {!loading && !loadError && items.length === 0 && (
+          <p className="hint">还没有评论，来说第一句吧</p>
+        )}
         {items.map((c) => (
           <div key={c.commentId} className="comment-item">
             <PlazaAvatar
@@ -546,7 +580,11 @@ function OfficialComments({
               </p>
               <div className="comment-tools">
                 <span>{timeText(c.createdAt)}</span>
-                <button type="button" onClick={() => void startCompose(c)}>
+                <button
+                  type="button"
+                  disabled={checkingAuthor || sending}
+                  onClick={() => void startCompose(c)}
+                >
                   回复
                 </button>
                 {c.deletable && (
@@ -570,7 +608,7 @@ function OfficialComments({
         )}
         {composing ? (
           <form
-            className="message-composer"
+            className="message-composer stacked-composer"
             onSubmit={(e) => {
               e.preventDefault();
               void send();
@@ -578,18 +616,46 @@ function OfficialComments({
           >
             <label>
               {replyTo ? `回复 ${authorName(replyTo.author)}` : '评论'}
-              <input autoFocus value={text} onChange={(e) => setText(e.target.value)} />
+              <textarea
+                autoFocus
+                rows={3}
+                disabled={sending}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+              />
             </label>
             <small className={over ? 'char-count over-limit' : 'char-count hint'}>
               {chars(text)}/{PLAZA_COMMENT_MAX_CHARS}
             </small>
-            <button className="primary" disabled={sending || over || !text.trim()}>
-              发送
+            <button
+              className="primary"
+              disabled={sending || over || !text.trim()}
+              aria-busy={sending}
+            >
+              {sending ? '发送中…' : '发送'}
+            </button>
+            <button
+              type="button"
+              className="text-button"
+              disabled={sending}
+              onClick={() => {
+                setComposing(false);
+                setReplyTo(null);
+                setText('');
+              }}
+            >
+              取消
             </button>
           </form>
         ) : (
-          <button type="button" className="text-button" onClick={() => void startCompose(null)}>
-            说点什么…
+          <button
+            type="button"
+            className="text-button"
+            disabled={checkingAuthor}
+            aria-busy={checkingAuthor}
+            onClick={() => void startCompose(null)}
+          >
+            {checkingAuthor ? '正在打开评论…' : '说点什么…'}
           </button>
         )}
       </div>
@@ -1091,12 +1157,8 @@ export function RoleRequestDetailPage() {
               <MenuGroup>
                 <MenuRow
                   to={`/characters/${data.characterId}`}
-                  label={
-                    <>
-                      <CharacterAvatar id={data.characterId} size={40} />
-                      <span className="row-name">查看角色资料</span>
-                    </>
-                  }
+                  leading={<CharacterAvatar id={data.characterId} size={40} />}
+                  label="查看角色资料"
                   subtitle={
                     data.addedToContacts || contact
                       ? '已加到你的通讯录'

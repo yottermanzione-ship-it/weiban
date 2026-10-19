@@ -673,6 +673,16 @@ export async function exportShareImage(canvas: HTMLCanvasElement): Promise<Blob>
 export function loadImage(url: string | null | undefined, timeoutMs = 5000) {
   return new Promise<HTMLImageElement | null>((resolve) => {
     if (!url) return resolve(null);
+    // 本机 Vite 已代理 /api；画布必须同源读取签名媒体，不能靠放宽服务器 CORS。
+    let imageUrl = url;
+    if (import.meta.env.DEV && ['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+      const local = new URL(url, window.location.href);
+      if (
+        local.origin === 'http://127.0.0.1:3000' &&
+        /^\/api\/v1\/media\/[0-9a-f-]+\/content$/.test(local.pathname)
+      )
+        imageUrl = local.pathname + local.search;
+    }
     const img = new Image();
     img.crossOrigin = 'anonymous';
     const timer = window.setTimeout(() => resolve(null), timeoutMs);
@@ -684,6 +694,6 @@ export function loadImage(url: string | null | undefined, timeoutMs = 5000) {
       window.clearTimeout(timer);
       resolve(null);
     };
-    img.src = url;
+    img.src = imageUrl;
   });
 }

@@ -43,12 +43,17 @@ button.tonal {
 .overview-name .meter {
   width: 100%;
 }
+.overview-name > .tag {
+  align-self: flex-start;
+}
 
 /* ---------- 卡册 ---------- */
 .card-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--wb-space-4);
+  gap: 8px;
+  padding: 12px;
+  background: var(--wb-color-bg-surface);
 }
 .card-tile {
   display: flex;
@@ -62,7 +67,7 @@ button.tonal {
   color: var(--wb-color-text-primary);
 }
 .card-tile-title {
-  font-size: var(--wb-font-size-footnote);
+  font-size: var(--wb-font-size-caption1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -77,7 +82,7 @@ button.tonal {
   place-items: center;
   aspect-ratio: 3 / 4;
   width: 100%;
-  border-radius: var(--wb-radius-lg);
+  border-radius: 8px;
   overflow: hidden;
   color: var(--wb-color-text-on-brand);
 }
@@ -97,6 +102,9 @@ button.tonal {
   aspect-ratio: 3 / 4;
   border-radius: var(--wb-radius-lg);
   background: var(--wb-color-bg-skeleton);
+}
+.card-tile.skeleton-card {
+  border-radius: 8px;
 }
 .card-detail-scrim {
   position: fixed;
@@ -161,7 +169,14 @@ button.tonal {
 .badge-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--wb-space-5) var(--wb-space-3);
+  gap: 8px;
+  padding: 12px;
+  background: var(--wb-color-bg-surface);
+}
+@media (max-width: 359px) {
+  .badge-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 .badge-cell {
   display: flex;
@@ -173,6 +188,7 @@ button.tonal {
   background: none;
   min-height: 0;
   color: var(--wb-color-text-primary);
+  min-width: 0;
 }
 .badge-cell small {
   font-size: var(--wb-font-size-caption1);
@@ -190,6 +206,7 @@ button.tonal {
 .badge.locked {
   background: var(--wb-color-achievement-locked);
   color: var(--wb-color-text-tertiary);
+  opacity: 0.4;
 }
 .badge .red-dot {
   position: absolute;

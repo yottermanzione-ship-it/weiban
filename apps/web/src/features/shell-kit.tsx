@@ -171,6 +171,7 @@ export function MenuRow({
   iconColor,
   image,
   iconSize = 22,
+  leading,
   tile = false,
   label,
   subtitle,
@@ -191,6 +192,7 @@ export function MenuRow({
   iconColor?: string;
   image?: string;
   iconSize?: number;
+  leading?: ReactNode;
   tile?: boolean;
   label: ReactNode;
   subtitle?: ReactNode;
@@ -206,7 +208,9 @@ export function MenuRow({
 }) {
   const body = (
     <>
-      {image ? (
+      {leading != null ? (
+        <span className="menu-leading">{leading}</span>
+      ) : image ? (
         <span className="menu-icon">
           <OldImage name={image} size={iconSize} />
         </span>
@@ -224,7 +228,8 @@ export function MenuRow({
       ) : null}
       <span className={`menu-text ${center ? 'center' : ''}`}>
         <span className="menu-label">
-          {label}
+          {/* 纯文字包一层：menu-label 是 flex，匿名文本节点无法省略，长标题会被硬裁 */}
+          {typeof label === 'string' ? <span className="menu-label-text">{label}</span> : label}
           {badge}
           {dot && <span className="red-dot" aria-label="有新内容" />}
         </span>
@@ -233,10 +238,16 @@ export function MenuRow({
       {extra}
       {value != null && <span className="menu-value">{value}</span>}
       {right}
-      {chevron && !center && <Chevron />}
+      {chevron && !center && (to || onClick) && <Chevron />}
     </>
   );
   const className = `menu-row ${subtitle != null ? 'two-line' : ''} ${danger ? 'danger' : ''}`;
+  if (!to && !onClick)
+    return (
+      <div className={className} aria-disabled={disabled || undefined}>
+        {body}
+      </div>
+    );
   return to && !disabled ? (
     <Link className={className} to={to}>
       {body}
@@ -297,12 +308,14 @@ export function Switch({
 /** 开关行（规格 3.6）。 */
 export function SwitchRow({
   label,
+  ariaLabel,
   subtitle,
   checked,
   disabled,
   onChange,
 }: {
   label: ReactNode;
+  ariaLabel?: string;
   subtitle?: ReactNode;
   checked: boolean;
   disabled?: boolean;
@@ -318,7 +331,7 @@ export function SwitchRow({
         checked={checked}
         disabled={disabled}
         onChange={onChange}
-        label={typeof label === 'string' ? label : undefined}
+        label={ariaLabel ?? (typeof label === 'string' ? label : undefined)}
       />
     </div>
   );
@@ -342,6 +355,28 @@ export function CheckCircle({
     >
       {checked && <OldIcon name="wechat/check" size={Math.round(size * 0.72)} />}
     </span>
+  );
+}
+
+/** 首次同步还没回来时的占位：超过 6 秒仍没数据就提示重试，避免永远「正在读取」。 */
+export function SyncPendingState({
+  icon = 'wechat/person',
+  label = '正在读取…',
+}: {
+  icon?: string;
+  label?: string;
+}) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), 6000);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <EmptyState
+      icon={icon}
+      title={slow ? '读取较慢，返回上一页重试' : label}
+      desc={slow ? '网络恢复后会自动继续' : undefined}
+    />
   );
 }
 
@@ -397,7 +432,7 @@ export function TextTabs<T extends string>({
   );
 }
 
-function useEscape(onClose: () => void) {
+export function useEscape(onClose: () => void) {
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -418,6 +453,8 @@ export function Sheet({
   closeLabel = '关闭',
   action,
   half = false,
+  fullScreen = false,
+  closeDisabled = false,
 }: {
   title?: ReactNode;
   onClose(): void;
@@ -425,13 +462,22 @@ export function Sheet({
   closeLabel?: string;
   action?: ReactNode;
   half?: boolean;
+  fullScreen?: boolean;
+  closeDisabled?: boolean;
 }) {
-  useEscape(onClose);
+  useEscape(() => {
+    if (!closeDisabled) onClose();
+  });
   const closeIcon = closeLabel === '✕' || closeLabel === '关闭';
   return (
-    <div className="sheet-scrim" onClick={onClose}>
+    <div
+      className="sheet-scrim"
+      onClick={() => {
+        if (!closeDisabled) onClose();
+      }}
+    >
       <div
-        className={`sheet-panel ${half ? 'half' : ''}`}
+        className={`sheet-panel shell-sheet ${half ? 'half' : ''} ${fullScreen ? 'fullscreen' : ''}`}
         role="dialog"
         aria-label={typeof title === 'string' ? title : undefined}
         onClick={(event) => event.stopPropagation()}
@@ -440,7 +486,12 @@ export function Sheet({
           <header className="sheet-head">
             <span className="sheet-head-side">
               {!closeIcon && (
-                <button type="button" className="sheet-text-button" onClick={onClose}>
+                <button
+                  type="button"
+                  className="sheet-text-button"
+                  disabled={closeDisabled}
+                  onClick={onClose}
+                >
                   {closeLabel}
                 </button>
               )}
@@ -452,6 +503,7 @@ export function Sheet({
                   <button
                     type="button"
                     className="nav-bar-icon"
+                    disabled={closeDisabled}
                     aria-label="关闭"
                     onClick={onClose}
                   >

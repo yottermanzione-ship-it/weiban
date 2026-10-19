@@ -1,8 +1,8 @@
 {
   "metadata": {
-    "auditedAt": "2026-10-18",
+    "auditedAt": "2026-10-19",
     "baseline": "2e92c92fed82eb2eda230454fd45f18297f35149",
-    "scope": "台账事实核对；未浏览器复点，未改业务",
+    "scope": "原始地图事实保留；部分网页已开发自测点按，未独立验收",
     "exportReportedCounts": {
       "确认": 209,
       "要改": 104,
@@ -26,7 +26,7 @@
       },
       {
         "path": "docs/refactor/11-plan-and-open-topics.md",
-        "sha256": "ab4de297fffe8ece4737a7544b7c99c406272443515874673a6c76e7bb1f7c40"
+        "sha256": "9815ad9dd45f61c35e84cc3df391e8ab92d472849ba07a8394978061bbe84fc2"
       }
     ],
     "definitions": {
@@ -437,12 +437,25 @@
         "section": "10号；11 C9只冻结实现，不自动改原要求"
       },
       "evidence": {
-        "status": "未核",
-        "reviewedAt": null,
-        "scope": "本轮没有逐行实施证据；原地图/批注/排期均不代表验收。",
-        "refs": [],
+        "status": "源码已核待点按",
+        "reviewedAt": "2026-10-18",
+        "scope": "10-18搜索UI批次已读9个调用点/实际CSS顺序：容器改div保留inputRef与空白聚焦，范围/清除控件不嵌label，样式统一。三个角色查询表单可见提交/trim/清空恢复已做。没有浏览器输入/窄屏/取消/焦点证据，不销账通过。",
+        "refs": [
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/features/search-field.tsx",
+            "quote": "useImperativeHandle(inputRef",
+            "line": 24
+          },
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/app/common-fixes.css",
+            "quote": ".search-entry.wx-search-box input:focus-visible",
+            "line": 120
+          }
+        ],
         "blockers": [],
-        "next": "按原批注核布局、入口、文案、返回、失败/取消；真实能力与纯UI分开登记。"
+        "next": "见docs/web/ui-search-2026-10-18/coverage.md逐入口点按；候选后端仍冻结。"
       }
     },
     {
@@ -1792,19 +1805,19 @@
         "section": "10号；11 C9只冻结实现，不自动改原要求"
       },
       "evidence": {
-        "status": "历史截图待复点",
-        "reviewedAt": "2026-10-18",
-        "scope": "A4单双击导航有样例，拍一拍发送最终未验；路由动画仍待本轮。",
+        "status": "开发自测（局部）",
+        "reviewedAt": "2026-10-19",
+        "scope": "实际头像双击发送拍一拍见已送达；本轮进一步捕获正负translateX与前后页面层级。减少动画偏好、真机与所有来源未核。",
         "refs": [
           {
-            "kind": "历史开发交接",
-            "path": "docs/handoffs/2026-10-14-web-a4-ui.md",
-            "quote": "拍一拍发送链最终结果见下文",
-            "line": 15
+            "kind": "本轮开发自测",
+            "path": "docs/web/ui-global-2026-10-18/visual-pass-1019.md",
+            "quote": "实际点击内页捕获新页 translateX 为正",
+            "line": 7
           }
         ],
         "blockers": [],
-        "next": "浏览器恢复后按原批注逐项点按；本记录不宣称通过。"
+        "next": "补单击头像/双击的更多边界及减少动画与真机，不将整个条目销账。"
       }
     },
     {
@@ -3327,7 +3340,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat.tsx",
             "quote": "label: textShown[message.messageId] ? '收起文字' : '转文字'",
-            "line": 997
+            "line": 1008
           }
         ],
         "blockers": [],
@@ -3461,7 +3474,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat.tsx",
             "quote": "label: textShown[message.messageId] ? '收起文字' : '转文字'",
-            "line": 997
+            "line": 1008
           }
         ],
         "blockers": [],
@@ -5449,13 +5462,13 @@
       "evidence": {
         "status": "源码已核待点按",
         "reviewedAt": "2026-10-18",
-        "scope": "私密模型缺失对话框引导到/models并要求选择私密模型，但ModelsPage仅提供chat选择，存在UI导航终点不匹配。未更改任何会员/模型业务。",
+        "scope": "私密模型缺失对话框现明确说明入口暂未开放，不再引导到仅提供聊天模型选择的 /models；这是纯界面修正，未改会员或模型业务。",
         "refs": [
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/scenario.tsx",
-            "quote": "onClick: () => navigate('/models')",
-            "line": 206
+            "quote": "私密模式模型的选择入口暂未开放。",
+            "line": 205
           },
           {
             "kind": "本轮源码阅读",
@@ -5467,7 +5480,7 @@
         "blockers": [
           "后端冻结"
         ],
-        "next": "P0只修用户可见引导/失效说明或讨论态入口，不恢复私密模型权益或后端。"
+        "next": "浏览器复点缺失模型弹窗；后端冻结期间不恢复私密模型权益。"
       }
     },
     {
@@ -5652,12 +5665,25 @@
         "section": "10号；11 C9只冻结实现，不自动改原要求"
       },
       "evidence": {
-        "status": "未核",
-        "reviewedAt": null,
-        "scope": "本轮没有逐行实施证据；原地图/批注/排期均不代表验收。",
-        "refs": [],
+        "status": "源码已核待点按",
+        "reviewedAt": "2026-10-18",
+        "scope": "10-18搜索UI批次已读9个调用点/实际CSS顺序：容器改div保留inputRef与空白聚焦，范围/清除控件不嵌label，样式统一。三个角色查询表单可见提交/trim/清空恢复已做。没有浏览器输入/窄屏/取消/焦点证据，不销账通过。",
+        "refs": [
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/features/search-field.tsx",
+            "quote": "useImperativeHandle(inputRef",
+            "line": 24
+          },
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/app/common-fixes.css",
+            "quote": ".search-entry.wx-search-box input:focus-visible",
+            "line": 120
+          }
+        ],
         "blockers": [],
-        "next": "按原批注核布局、入口、文案、返回、失败/取消；真实能力与纯UI分开登记。"
+        "next": "见docs/web/ui-search-2026-10-18/coverage.md逐入口点按；候选后端仍冻结。"
       }
     },
     {
@@ -5728,13 +5754,13 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "disabled={!!switchBusy.muted}",
-            "line": 162
+            "line": 171
           },
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "disabled={!!switchBusy.pinned}",
-            "line": 175
+            "line": 184
           }
         ],
         "blockers": [],
@@ -5809,13 +5835,13 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "disabled={!!switchBusy.muted}",
-            "line": 162
+            "line": 171
           },
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "disabled={!!switchBusy.pinned}",
-            "line": 175
+            "line": 184
           }
         ],
         "blockers": [],
@@ -6146,7 +6172,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "label=\"拆条\"",
-            "line": 217
+            "line": 239
           }
         ],
         "blockers": [
@@ -6358,7 +6384,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "label=\"关系类型\"",
-            "line": 245
+            "line": 267
           }
         ],
         "blockers": [
@@ -6429,19 +6455,19 @@
       "evidence": {
         "status": "源码已核待点按",
         "reviewedAt": "2026-10-18",
-        "scope": "生态页尾已明确本机预览，不能说完全无说明；模型行仍声称分开设置却to /models，实际终点是全局聊天选择。旧主动通知入口及角色日常开关仍可达，需纯UI明确旧设置与新样例的范围。",
+        "scope": "生态页已明确为本机界面预览，模型行禁用并标明尚未接通；旧主动通知入口与角色日常开关仍可达，需继续核对可见范围。",
         "refs": [
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
             "quote": "localStorage.setItem(STORAGE_KEY",
-            "line": 141
+            "line": 189
           },
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
-            "quote": "to=\"/models\"",
-            "line": 223
+            "quote": "subtitle=\"当前仅为界面预览，生态模型选择尚未接通\"",
+            "line": 280
           },
           {
             "kind": "本轮源码阅读",
@@ -6452,8 +6478,8 @@
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
-            "quote": "本页为界面预览：开关只保存在本机",
-            "line": 253
+            "quote": "本页只演示设置效果，不会启停真实角色行为，也不会扣积分。",
+            "line": 212
           },
           {
             "kind": "本轮源码阅读",
@@ -6465,14 +6491,14 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "label=\"TA 的日常\"",
-            "line": 250
+            "line": 272
           }
         ],
         "blockers": [
           "后端冻结",
           "产品待定"
         ],
-        "next": "P0避免“生态模型”误导修改聊天选择；P1逐项标积分/动作记录为样例，旧开关文案区分范围，不接后端。"
+        "next": "浏览器复点预览提示、禁用模型行和旧设置入口；不接后端或积分。"
       }
     },
     {
@@ -6543,7 +6569,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "<VoiceRow characterId=",
-            "line": 266
+            "line": 288
           }
         ],
         "blockers": [
@@ -7080,12 +7106,25 @@
         "section": "10号；11 C9只冻结实现，不自动改原要求"
       },
       "evidence": {
-        "status": "未核",
-        "reviewedAt": null,
-        "scope": "本轮没有逐行实施证据；原地图/批注/排期均不代表验收。",
-        "refs": [],
+        "status": "源码已核待点按",
+        "reviewedAt": "2026-10-18",
+        "scope": "10-18搜索UI批次已读9个调用点/实际CSS顺序：容器改div保留inputRef与空白聚焦，范围/清除控件不嵌label，样式统一。三个角色查询表单可见提交/trim/清空恢复已做。没有浏览器输入/窄屏/取消/焦点证据，不销账通过。",
+        "refs": [
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/features/search-field.tsx",
+            "quote": "useImperativeHandle(inputRef",
+            "line": 24
+          },
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/app/common-fixes.css",
+            "quote": ".search-entry.wx-search-box input:focus-visible",
+            "line": 120
+          }
+        ],
         "blockers": [],
-        "next": "按原批注核布局、入口、文案、返回、失败/取消；真实能力与纯UI分开登记。"
+        "next": "见docs/web/ui-search-2026-10-18/coverage.md逐入口点按；候选后端仍冻结。"
       }
     },
     {
@@ -7208,12 +7247,19 @@
         "section": "10号；11 C9只冻结实现，不自动改原要求"
       },
       "evidence": {
-        "status": "未核",
-        "reviewedAt": null,
-        "scope": "本轮没有逐行实施证据；原地图/批注/排期均不代表验收。",
-        "refs": [],
+        "status": "开发自测（局部）",
+        "reviewedAt": "2026-10-19",
+        "scope": "实际两轮会话搜索、取消、点命中定位原消息、浏览器返回再取消，均回聊天信息；直达/复杂历史仍待核。",
+        "refs": [
+          {
+            "kind": "本轮开发自测",
+            "path": "docs/web/ui-global-2026-10-18/visual-pass-1019.md",
+            "quote": "再打开搜索、点命中跳原消息",
+            "line": 27
+          }
+        ],
         "blockers": [],
-        "next": "按原批注核布局、入口、文案、返回、失败/取消；真实能力与纯UI分开登记。"
+        "next": "补直达搜索与不同来源历史栈，不泛化为全站返回通过。"
       }
     },
     {
@@ -9226,14 +9272,27 @@
         "section": "C1 B10 / C9"
       },
       "evidence": {
-        "status": "后端冻结",
+        "status": "源码已核待点按",
         "reviewedAt": "2026-10-18",
-        "scope": "C1候选引擎/极简申请方向已定；UI可先核字段/导航，搜索生成及制作执行不恢复。",
-        "refs": [],
+        "scope": "10-18搜索UI批次已读9个调用点/实际CSS顺序：容器改div保留inputRef与空白聚焦，范围/清除控件不嵌label，样式统一。三个角色查询表单可见提交/trim/清空恢复已做。没有浏览器输入/窄屏/取消/焦点证据，不销账通过。",
+        "refs": [
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/features/search-field.tsx",
+            "quote": "useImperativeHandle(inputRef",
+            "line": 24
+          },
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/app/common-fixes.css",
+            "quote": ".search-entry.wx-search-box input:focus-visible",
+            "line": 120
+          }
+        ],
         "blockers": [
           "后端冻结"
         ],
-        "next": "纯UI列出候选/申请演示，暂不扩后端。"
+        "next": "见docs/web/ui-search-2026-10-18/coverage.md逐入口点按；候选后端仍冻结。"
       }
     },
     {
@@ -10842,7 +10901,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "label=\"关系类型\"",
-            "line": 245
+            "line": 267
           }
         ],
         "blockers": [
@@ -15434,12 +15493,19 @@
         "section": "10号；11 C9只冻结实现，不自动改原要求"
       },
       "evidence": {
-        "status": "未核",
-        "reviewedAt": null,
-        "scope": "本轮没有逐行实施证据；原地图/批注/排期均不代表验收。",
-        "refs": [],
+        "status": "开发自测（局部）",
+        "reviewedAt": "2026-10-19",
+        "scope": "样例动态的赞/评论菜单、详情操作条实际点过，点赞后重载仍见取消赞；角色自主互动未验证。",
+        "refs": [
+          {
+            "kind": "本轮开发自测",
+            "path": "docs/web/ui-global-2026-10-18/visual-pass-1019.md",
+            "quote": "实际用临时库样例发表评论、点赞并重载后仍见取消赞",
+            "line": 8
+          }
+        ],
         "blockers": [],
-        "next": "按原批注核布局、入口、文案、返回、失败/取消；真实能力与纯UI分开登记。"
+        "next": "角色侧生态与异常/并发分支仍待核。"
       }
     },
     {
@@ -15499,12 +15565,19 @@
         "section": "10号；11 C9只冻结实现，不自动改原要求"
       },
       "evidence": {
-        "status": "未核",
-        "reviewedAt": null,
-        "scope": "本轮没有逐行实施证据；原地图/批注/排期均不代表验收。",
-        "refs": [],
+        "status": "开发自测（局部）",
+        "reviewedAt": "2026-10-19",
+        "scope": "实际点击自己样例评论打开回复弹层并取消；未模拟他人或角色回复。",
+        "refs": [
+          {
+            "kind": "本轮开发自测",
+            "path": "docs/web/ui-global-2026-10-18/visual-pass-1019.md",
+            "quote": "点评论打开回复",
+            "line": 8
+          }
+        ],
         "blockers": [],
-        "next": "按原批注核布局、入口、文案、返回、失败/取消；真实能力与纯UI分开登记。"
+        "next": "补角色/他人评论回复与生成链证据；不当整条独立验收通过。"
       }
     },
     {
@@ -15564,12 +15637,19 @@
         "section": "10号；11 C9只冻结实现，不自动改原要求"
       },
       "evidence": {
-        "status": "未核",
-        "reviewedAt": null,
-        "scope": "本轮没有逐行实施证据；原地图/批注/排期均不代表验收。",
-        "refs": [],
+        "status": "开发自测（局部）",
+        "reviewedAt": "2026-10-19",
+        "scope": "实际700ms长按自己样例评论出现删除并取消，没有执行删除。",
+        "refs": [
+          {
+            "kind": "本轮开发自测",
+            "path": "docs/web/ui-global-2026-10-18/visual-pass-1019.md",
+            "quote": "700ms 长按自己的评论出现删除并取消",
+            "line": 8
+          }
+        ],
         "blockers": [],
-        "next": "按原批注核布局、入口、文案、返回、失败/取消；真实能力与纯UI分开登记。"
+        "next": "删除后服务端与列表同步分支未核。"
       }
     },
     {
@@ -17278,19 +17358,19 @@
       "evidence": {
         "status": "源码已核待点按",
         "reviewedAt": "2026-10-18",
-        "scope": "生态页尾已明确本机预览，不能说完全无说明；模型行仍声称分开设置却to /models，实际终点是全局聊天选择。旧主动通知入口及角色日常开关仍可达，需纯UI明确旧设置与新样例的范围。",
+        "scope": "生态页已明确为本机界面预览，模型行禁用并标明尚未接通；旧主动通知入口与角色日常开关仍可达，需继续核对可见范围。",
         "refs": [
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
             "quote": "localStorage.setItem(STORAGE_KEY",
-            "line": 141
+            "line": 189
           },
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
-            "quote": "to=\"/models\"",
-            "line": 223
+            "quote": "subtitle=\"当前仅为界面预览，生态模型选择尚未接通\"",
+            "line": 280
           },
           {
             "kind": "本轮源码阅读",
@@ -17301,8 +17381,8 @@
           {
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/ecology.tsx",
-            "quote": "本页为界面预览：开关只保存在本机",
-            "line": 253
+            "quote": "本页只演示设置效果，不会启停真实角色行为，也不会扣积分。",
+            "line": 212
           },
           {
             "kind": "本轮源码阅读",
@@ -17314,14 +17394,14 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/chat-settings.tsx",
             "quote": "label=\"TA 的日常\"",
-            "line": 250
+            "line": 272
           }
         ],
         "blockers": [
           "后端冻结",
           "产品待定"
         ],
-        "next": "P0避免“生态模型”误导修改聊天选择；P1逐项标积分/动作记录为样例，旧开关文案区分范围，不接后端。"
+        "next": "浏览器复点预览提示、禁用模型行和旧设置入口；不接后端或积分。"
       }
     },
     {
@@ -24409,12 +24489,19 @@
         "section": "10号；11 C9只冻结实现，不自动改原要求"
       },
       "evidence": {
-        "status": "未核",
-        "reviewedAt": null,
-        "scope": "本轮没有逐行实施证据；原地图/批注/排期均不代表验收。",
-        "refs": [],
+        "status": "源码已核待点按",
+        "reviewedAt": "2026-10-18",
+        "scope": "已目视原专注UI截图并读play.tsx FocusPage：时长chips/事项输入/开始按钮，不含搜索；本批未动专注布局、不强加SearchField，原布局反馈仍待浏览器核对。",
+        "refs": [
+          {
+            "kind": "本轮源码阅读",
+            "path": "apps/web/src/features/play.tsx",
+            "quote": "<Header title={characterId ? `和 ${nameOf(characterId)} 一起专注`",
+            "line": 1385
+          }
+        ],
         "blockers": [],
-        "next": "按原批注核布局、入口、文案、返回、失败/取消；真实能力与纯UI分开登记。"
+        "next": "恢复浏览器后核专注页及FocusCapsule，不以本轮搜索修改宣称解决。"
       }
     },
     {
@@ -24471,7 +24558,7 @@
             "kind": "本轮源码阅读",
             "path": "apps/web/src/features/share.tsx",
             "quote": "export function ShareEditorPage()",
-            "line": 93
+            "line": 94
           }
         ],
         "blockers": [],

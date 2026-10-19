@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { CaretLeft } from './old-icons.js';
 import {
   CharacterEndpoints,
   CharacterSupplementEndpoints,
@@ -11,6 +10,7 @@ import { api } from '../data/client.js';
 import { useUpdates } from '../data/updates.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { Dialog, showToast } from './toast.js';
+import { NavBar } from './shell-kit.js';
 import { SupplementSourceNote, VariantPublishLink } from './plaza.js';
 
 /*
@@ -87,16 +87,14 @@ export function SupplementPage() {
     data?.conflicts.find((c) => line.includes(c.supplementValue));
   return (
     <main>
-      <header className="page-header">
-        <button className="text-button" aria-label="返回" onClick={() => navigate(-1)}>
-          <CaretLeft size={24} />
-        </button>
-        <h1>
-          我的补充设定
-          <small className="hint subtitle">{profile.data?.name ?? ''}</small>
-        </h1>
-        <span />
-      </header>
+      <NavBar
+        title="我的补充设定"
+        subtitle={
+          profile.data?.name ? <small className="nav-subtitle">{profile.data.name}</small> : undefined
+        }
+        fallback={`/characters/${characterId}`}
+        onBack={() => navigate(-1)}
+      />
       {custom ? (
         <p className="hint">导入的资料确认后会直接合并进 TA 的人设。</p>
       ) : (

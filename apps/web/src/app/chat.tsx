@@ -8,11 +8,13 @@ import {
   type ReactNode,
 } from 'react';
 import { freshSyncState, type LocalSyncState } from '@weiban/client-core';
-import { type SendMessageRequest, type UserSendableContent } from '@weiban/contracts';
+import { type Message, type SendMessageRequest, type UserSendableContent } from '@weiban/contracts';
 import { useAuth } from './auth.js';
 import { resumeExistingPush } from '../notifications/client.js';
 import { ChatDriver } from '../data/chat-driver.js';
 import { api, localStore } from '../data/client.js';
+import { useUpdates } from '../data/updates.js';
+import { playMessageSound, playNoticeSound } from '../features/message-sound.js';
 interface ChatContextValue {
   state: LocalSyncState;
   online: boolean;
@@ -118,7 +120,35 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       throw new Error('聊天会话已改变，请重新打开微伴');
     return driver.current;
   }
-  const focus = useCallback((id: string | null) => driver.current?.focus(id), []);
+  const focusedId = useRef<string | null>(null);
+  const focus = useCallback((id: string | null) => {
+    focusedId.current = id;
+    driver.current?.focus(id);
+  }, []);
+  // 提示音（message-sound.ts）：只响刚收到的角色消息；补拉旧消息、自己发的、免打扰会话不响。
+  const conversations = useRef(state.conversations);
+  conversations.current = state.conversations;
+  const sounded = useRef(new Set<string>());
+  useUpdates((update) => {
+    if (update.type !== 'message.created') return;
+    // 实时帧与补拉页在 chat-driver / sync-http 里已按契约解析过。
+    const message = (update.data as { message?: Message } | undefined)?.message;
+    if (!message || message.senderKind !== 'character' || message.recalledAt) return;
+    if (Date.now() - Date.parse(message.createdAt) > 30_000) return;
+    if (sounded.current.has(message.messageId)) return;
+    sounded.current.add(message.messageId);
+    if (sounded.current.size > 200) sounded.current.clear();
+    if (document.visibilityState !== 'visible') return;
+    if (focusedId.current === message.conversationId) {
+      playMessageSound();
+      return;
+    }
+    const conversation = conversations.current.find(
+      (item) => item.conversationId === message.conversationId,
+    );
+    if (conversation?.state.muted || message.labels?.includes('self_chat')) return;
+    playNoticeSound();
+  });
   return (
     <ChatContext.Provider
       value={{
@@ -134,6 +164,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             quoteMessageId: quoteMessageId ?? null,
           };
           await current().dispatch({ type: 'enqueue', conversationId: id, body, now: Date.now() });
+          playMessageSound();
         },
         sendContent: async (id, content) => {
           const body: SendMessageRequest = {
@@ -142,6 +173,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             quoteMessageId: null,
           };
           await current().dispatch({ type: 'enqueue', conversationId: id, body, now: Date.now() });
+          playMessageSound();
         },
         retry: (id, clientMsgId) =>
           current().dispatch({ type: 'retry', conversationId: id, clientMsgId, now: Date.now() }),

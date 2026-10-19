@@ -250,9 +250,22 @@ export function ConversationListPage() {
           </p>
         )}
         {!state.initialized && (
-          <p role="status" className="empty">
-            正在读取聊天…
-          </p>
+          <div role="status" aria-label="正在读取聊天">
+            <p className="hint center">正在读取聊天…</p>
+            {!items.length && (
+              <div className="conversation-skeleton" aria-hidden="true">
+                {[0, 1, 2].map((row) => (
+                  <div className="conversation-skeleton-row" key={row}>
+                    <span className="conversation-skeleton-avatar" />
+                    <span>
+                      <span className="skeleton-line" />
+                      <span className="skeleton-line" />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
         <VirtualList
           items={items}

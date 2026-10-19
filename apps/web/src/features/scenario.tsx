@@ -3,7 +3,6 @@
  * 顺序、资格、说明都以服务器 listModes 为准（section = private 放底部「私密」一栏；没资格的不返回）。
  */
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { OldIcon } from './old-icons.js';
 import {
   CompanionEndpoints,
@@ -81,7 +80,6 @@ export function ScenarioSheet({
   onClose(): void;
   onChanged(mode: ScenarioMode): void;
 }) {
-  const navigate = useNavigate();
   const characterModes = useRemote(
     CompanionEndpoints.listModes,
     {
@@ -200,13 +198,12 @@ export function ScenarioSheet({
       )}
       {prompt === 'model' && (
         <Dialog
-          title="还没有选择私密模式模型"
-          actions={[
-            { label: '取消', onClick: () => setPrompt(null) },
-            { label: '去选择', primary: true, onClick: () => navigate('/models') },
-          ]}
+          title="暂时无法开启私密模式"
+          actions={[{ label: '知道了', primary: true, onClick: () => setPrompt(null) }]}
         >
-          <p className="hint">开启将切换到付费模型，请先在「服务 › 模型」中选择私密模式模型</p>
+          <p className="hint">
+            尚未设置私密模式模型，当前无法开启。私密模式模型的选择入口暂未开放。
+          </p>
         </Dialog>
       )}
       {prompt === 'intro' && (

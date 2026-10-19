@@ -14,7 +14,7 @@ import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { CharacterName } from './chat.js';
 import { KindIcon } from './while-away.js';
-import { NavBar } from './shell-kit.js';
+import { EmptyState, NavBar } from './shell-kit.js';
 
 /** 页面内部统一的条目形状：优先来自时间线列表接口（契约 3.0），服务器未提供时退回日常事件接口。 */
 interface Item {
@@ -187,10 +187,15 @@ export function TimelinePage() {
     : undefined;
   return (
     <main>
-      <NavBar title="TA 的动态" fallback={`/characters/${characterId}`} />
-      <p className="hint page-note">
-        <CharacterName id={characterId} fallback={contact?.remark} />
-      </p>
+      <NavBar
+        title="TA 的动态"
+        subtitle={
+          <small className="nav-subtitle">
+            <CharacterName id={characterId} fallback={contact?.remark} />
+          </small>
+        }
+        fallback={`/characters/${characterId}`}
+      />
       {companion.data?.dailyLife === false && (
         <p className="inline-tip">
           你关闭了 TA 的动态，不会有新的动态{' '}
@@ -213,7 +218,7 @@ export function TimelinePage() {
         </div>
       )}
       {items.length === 0 && !loading && !error && done && (
-        <p className="empty">TA 的动态会出现在这里</p>
+        <EmptyState icon="wechat/finder" title="TA 的动态会出现在这里" />
       )}
       {groups.map(([date, list]) => (
         <section key={date}>

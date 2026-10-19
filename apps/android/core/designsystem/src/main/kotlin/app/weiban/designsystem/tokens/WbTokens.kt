@@ -192,7 +192,7 @@ object WbColorSets {
         bubbleQuoteText = Color(0x8C000000)
     )
     val GreenDark = WbThemeColors(
-        bgUserAvatar = Color(0xFFEDEDED),
+        bgUserAvatar = Color(0xFF2E2E30),
         bgPage = Color(0xFF111111),
         bgChat = Color(0xFF111111),
         bgSurface = Color(0xFF191919),

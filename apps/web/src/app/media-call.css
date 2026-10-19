@@ -221,6 +221,12 @@ button.danger {
   background: var(--wb-color-brand-soft);
   color: var(--wb-color-brand-on-soft);
 }
+.sticker-pack-cover {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border-radius: var(--wb-radius-sm);
+}
 .sticker-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
