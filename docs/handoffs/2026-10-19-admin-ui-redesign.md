@@ -95,6 +95,11 @@
 6. 会员「订单」没有支付与订单接口，页面只做档位管理并写明支付未开放。
 7. 后台包体 1.6MB（gzip 500KB），后续可按菜单做路由级 code splitting。
 
-## 5. 部署
+## 5. 部署记录
 
-见 `docs/ops/hk-server.md`：先手动备份 → `git archive` → scp → 解压覆盖 `/srv/weiban/src` → `docker compose build && up -d --wait`。本次没有数据库迁移。
+- 备份：`/srv/weiban/backups/weiban-20261019T140200Z-4R4G2q`（12MB，age 加密）。
+- 源码：`git archive` 主干 `4dfab8b`（含依赖修复）→ scp 36MB → 服务器解压到 `/srv/weiban/src`，旧目录保留为 `/srv/weiban/src.old2`（回滚用，确认无误后可删）。
+- 构建：`docker compose build app caddy` 成功；`up -d --wait` 后 app、caddy healthy。
+- 验证：`http://127.0.0.1:8081` 返回新包（`assets/index-zMjFNX9V.js`），CSP 已含 `style-src 'unsafe-inline'`；经隧道 `http://localhost:9081` 打开，Ant Design 登录页正常、无 JS 报错。
+- 本次没有数据库迁移。
+- 第一次构建失败：`dayjs` 只作为 antd 的传递依赖存在，生产镜像严格解析找不到；已补成 `apps/admin` 的显式依赖（提交见 `git log`）。
