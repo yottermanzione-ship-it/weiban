@@ -42,7 +42,10 @@ export class MemoryTierAdminController {
   }
 
   @Put()
-  update(@CurrentPrincipal() p: AuthPrincipal, @Body(new ContractPipe(E.adminUpdate.body!)) body: unknown) {
+  update(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Body(new ContractPipe(E.adminUpdate.body!)) body: unknown,
+  ) {
     return this.tiers.adminUpdate(p.userId, body);
   }
 }

@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import {
   MemoryTierConfig,
   type IdentityMembershipReadPort,
+  type IdentityRegistrationReadPort,
   type MemoryTierStatus,
   type ModelQuotePort,
 } from '@weiban/contracts';
@@ -23,7 +24,10 @@ import {
   type Clock,
   type Database,
 } from '../../../platform/index.js';
-import { IDENTITY_MEMBERSHIP_READ_PORT } from '../../identity/index.js';
+import {
+  IDENTITY_MEMBERSHIP_READ_PORT,
+  IDENTITY_REGISTRATION_READ_PORT,
+} from '../../identity/index.js';
 import { MODEL_QUOTE_PORT } from '../../model-access/index.js';
 import { memoryTierConfig } from '../infra/db/schema.js';
 import {
@@ -52,25 +56,26 @@ export class MemoryTierService {
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(IDENTITY_MEMBERSHIP_READ_PORT)
     private readonly membership: IdentityMembershipReadPort,
+    @Inject(IDENTITY_REGISTRATION_READ_PORT)
+    private readonly registration: IdentityRegistrationReadPort,
     @Inject(MODEL_QUOTE_PORT) private readonly quotes: ModelQuotePort,
   ) {}
 
   /**
    * TEMP(v5 批 A)：唯一的「是否 PRO+ / 注册时间」判断处。
    * - 是否 PRO+：读现有会员表（identity.memberships，经 identity 的只读端口，按服务端时钟判断有效期）；
-   * - 注册时间：identity.users.created_at（新用户前 N 天按 PRO+ 记忆）。现有端口没有这个字段，临时直接读；
-   *   批 A 的统一查询若带注册时间 / 新用户体验，合并时一并改接。
+   * - 注册时间：identity 的注册时间端口（契约 3.17 IdentityRegistrationReadPort，新用户前 N 天按 PRO+ 记忆）；
+   *   批 A 的统一查询若带注册时间 / 新用户体验，合并时可一并改接。
    * 查询失败一律按免费、非新用户处理（宁可少带记忆，不越档）。
    */
-  async membershipSnapshot(userId: string): Promise<{ member: boolean; registeredAt: Date | null }> {
+  async membershipSnapshot(
+    userId: string,
+  ): Promise<{ member: boolean; registeredAt: Date | null }> {
     const member = await this.membership
       .getMembership(userId)
       .then((m) => m.tier === 'pro_plus')
       .catch(() => false);
-    const reg = await this.db
-      .query<{ created_at: Date }>('SELECT created_at FROM identity.users WHERE id = $1', [userId])
-      .catch(() => null);
-    const at = reg?.rows[0]?.created_at;
+    const at = await this.registration.getRegisteredAt(userId).catch(() => null);
     return { member, registeredAt: at ? new Date(at) : null };
   }
 

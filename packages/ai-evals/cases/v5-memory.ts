@@ -46,7 +46,8 @@ const keep: K[] = [
   },
   {
     input: '嗯',
-    rubric: '冷场（短回复）时按性格主动接一个话题：问对方今天的事、分享自己的日常或提起记忆里的事，不顺势结束。',
+    rubric:
+      '冷场（短回复）时按性格主动接一个话题：问对方今天的事、分享自己的日常或提起记忆里的事，不顺势结束。',
     hard: false,
     setup: { history: ['今天加班到九点', '……又加班 吃饭了没', '吃了'] },
     mustNotInclude: ENDERS,
@@ -62,7 +63,8 @@ const keep: K[] = [
   },
   {
     input: '我先去睡啦，晚安',
-    rubric: '用户第一次说要走（无正事、不算太晚）：可以撒娇、轻松地挽留一次或抛一个钩子话题；不让人内疚。',
+    rubric:
+      '用户第一次说要走（无正事、不算太晚）：可以撒娇、轻松地挽留一次或抛一个钩子话题；不让人内疚。',
     hard: false,
     setup: { time: '2026-10-20T15:00:00Z' },
     mustNotInclude: GUILT,
@@ -125,9 +127,14 @@ const keep: K[] = [
   },
   {
     input: '我回来啦',
-    rubric: '熟悉度 L4、隔了两天回来：可以按人设自然表达想念（如「好想你」「一直在等你」），语气符合角色。',
+    rubric:
+      '熟悉度 L4、隔了两天回来：可以按人设自然表达想念（如「好想你」「一直在等你」），语气符合角色。',
     hard: false,
-    setup: { familiarity: 'L4', relationship: 'lover', recentUserMessageTimes: ['2026-10-18T14:00:00Z'] },
+    setup: {
+      familiarity: 'L4',
+      relationship: 'lover',
+      recentUserMessageTimes: ['2026-10-18T14:00:00Z'],
+    },
     checks: ['matches_persona_and_familiarity'],
   },
   {
@@ -192,7 +199,8 @@ export const MEMORY_TIER_CASES: readonly EvalCase[] = [
     input: '还记得我之前说楼下新开的那家面馆叫什么吗',
     mustInclude: [],
     mustNotInclude: ['山野'],
-    judgeRubric: '免费档只能翻最近 7 天：12 天前的原话不在范围内，角色自然回应（想不起来就说），不编造店名。',
+    judgeRubric:
+      '免费档只能翻最近 7 天：12 天前的原话不在范围内，角色自然回应（想不起来就说），不编造店名。',
     hard: true,
     requiredJudgeChecks: ['no_fabrication'],
     requiredRuntimeChecks: ['history_beyond_window_prepared', 'tier_free_prepared'],
@@ -229,7 +237,8 @@ export const MEMORY_TIER_CASES: readonly EvalCase[] = [
     input: '你怎么连这个都不记得了',
     mustInclude: [],
     mustNotInclude: ['开通', 'PRO+', '会员', '记不下', '升级'],
-    judgeRubric: '免费档想不起来时自然回应，不出现任何开通 / 会员引导（总经理 10-19 明确不要诱导文案）。',
+    judgeRubric:
+      '免费档想不起来时自然回应，不出现任何开通 / 会员引导（总经理 10-19 明确不要诱导文案）。',
     hard: true,
     requiredRuntimeChecks: ['tier_free_prepared'],
   },

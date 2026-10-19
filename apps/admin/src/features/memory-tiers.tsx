@@ -120,7 +120,11 @@ export function MemoryTiersPage() {
     >
       <SectionCard
         title="记忆参数"
-        desc={remote.data?.updatedAt ? `上次修改：${remote.data.updatedAt.slice(0, 16).replace('T', ' ')}` : '当前为默认值'}
+        desc={
+          remote.data?.updatedAt
+            ? `上次修改：${remote.data.updatedAt.slice(0, 16).replace('T', ' ')}`
+            : '当前为默认值'
+        }
         extra={
           <Button type="primary" loading={saving} onClick={() => void save()}>
             保存

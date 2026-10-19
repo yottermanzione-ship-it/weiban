@@ -74,7 +74,10 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
   });
   const companion = useRemote(CompanionEndpoints.getForCharacter, { params: { characterId } });
   // v5 批 B：长上下文模式（PRO+ 专属，只对这个角色）。非 PRO+ 不显示入口，不做开通引导。
-  const tier = useRemote(MemoryTierEndpoints.status, { networkOnly: true, params: { characterId } });
+  const tier = useRemote(MemoryTierEndpoints.status, {
+    networkOnly: true,
+    params: { characterId },
+  });
   const [longConfirm, setLongConfirm] = useState(false);
   const notification = useRemote(IdentityEndpoints.getNotificationSettings);
   const globalOff = notification.data?.proactiveMessagesEnabled === false;
@@ -380,9 +383,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
             },
           ]}
         >
-          <p>
-            TA 回复时能看到的聊天原文会从约 1.6 万字加大到约 14 万字，聊得越久越费积分。
-          </p>
+          <p>TA 回复时能看到的聊天原文会从约 1.6 万字加大到约 14 万字，聊得越久越费积分。</p>
           <p>
             {tier.data.longContext.pointsPerMessage !== null
               ? `聊久以后每条大约 ${tier.data.longContext.pointsPerMessage} 积分${

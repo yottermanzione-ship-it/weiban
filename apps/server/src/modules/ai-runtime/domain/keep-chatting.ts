@@ -32,7 +32,8 @@ export function isColdReply(text: string): boolean {
   return SHORT_FILLER.test(flat);
 }
 
-export type KeepChattingCase = 'none' | 'cold' | 'goodbye_first' | 'goodbye_persist' | 'goodbye_care';
+export type KeepChattingCase =
+  'none' | 'cold' | 'goodbye_first' | 'goodbye_persist' | 'goodbye_care';
 
 export function keepChattingCase(input: {
   /** 本轮用户说的话。 */

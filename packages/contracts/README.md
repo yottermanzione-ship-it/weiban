@@ -101,6 +101,7 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 - `http/memory.ts`：新增 `MemoryTierLimits`、`ChatWindowLimits`、`MemoryTierConfig`、`MemoryTierStatus` 与 `MemoryTierEndpoints`（用户端 `GET /characters/:characterId/memory-tier`；管理端 `GET/PUT /admin/ai/memory-tiers`）。
 - `CompanionSettings.longContext`（可选）：单个角色的长上下文模式，PRO+ 专属；非 PRO+ 打开返回 403 `forbidden`。
+- 新端口 `IdentityRegistrationReadPort`（`ports/identity.ts`）：注册时间，调用方 ai-runtime（新用户前 7 天按 PRO+ 记忆）。
 - 与 v5 其他批次并行开发，合并时版本号冲突由总负责人处理。
 
 ### 3.15（2026-10-16，q-features 接续）

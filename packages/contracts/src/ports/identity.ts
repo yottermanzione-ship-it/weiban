@@ -75,3 +75,11 @@ export interface UserStatusReadPort {
 export interface IdentityMembershipReadPort {
   getMembership(userId: string, tx?: Tx): Promise<import('../http/membership.js').Membership>;
 }
+
+/**
+ * 3.17（v5 批 B）：注册时间只读端口。提供方 identity；调用方 ai-runtime（新用户前 N 天按 PRO+ 记忆）。
+ * 账号不存在或不是 active 返回 null。单独成接口，新增它不影响已有实现。
+ */
+export interface IdentityRegistrationReadPort {
+  getRegisteredAt(userId: string, tx?: Tx): Promise<string | null>;
+}

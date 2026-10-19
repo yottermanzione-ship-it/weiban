@@ -2,11 +2,7 @@
  * 记忆分档（v5 批 B，docs/refactor/16-membership-v5.md §5.3/§5.4）。纯函数与默认值。
  * 参数后台可调（MemoryTierEndpoints.adminUpdate），这里只是没配置时的默认。
  */
-import {
-  MemoryTierConfig,
-  type ChatWindowLimits,
-  type MemoryTierLimits,
-} from '@weiban/contracts';
+import { MemoryTierConfig, type ChatWindowLimits, type MemoryTierLimits } from '@weiban/contracts';
 
 export const DEFAULT_MEMORY_TIER_CONFIG: MemoryTierConfig = {
   free: { residentLimit: 3, libraryLimit: 30, summaryDays: 7, retrieveLimit: 3, recallDays: 7 },
