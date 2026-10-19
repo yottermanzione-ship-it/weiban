@@ -22,6 +22,7 @@
  * - 只发私聊（scene 只用 proactive_direct / direct_reply），群聊永不调用本服务；
  * - 用了摘要生成的消息一律带 labels: ['health']。
  */
+import { EcologySettingsService } from './ecology-settings.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { userNickname, userNamingContext } from '../domain/user-naming.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
@@ -134,6 +135,9 @@ export class HealthCareService {
     @Optional()
     @Inject(ProactiveSchedulerService)
     private readonly scheduler?: ProactiveSchedulerService,
+    @Optional()
+    @Inject(EcologySettingsService)
+    private readonly ecology?: EcologySettingsService,
   ) {}
 
   get enabled(): boolean {
@@ -168,20 +172,19 @@ export class HealthCareService {
     const profile = await this.identity.getProfile(userId);
     const notify = await this.identity.getNotificationSettings(userId);
     if (!profile) return { sent: false, reason: 'no_profile' };
-    if (notify && !notify.proactiveMessagesEnabled)
-      return { sent: false, reason: 'proactive_disabled' };
+    // v5 角色生态（17 号 §3、§4.4）：经期关怀是生态动作，旧「主动消息」开关与免打扰不再适用。
+    void notify;
+    if (this.ecology && !(await this.ecology.isActive(userId, null, 'care_period')))
+      return { sent: false, reason: 'ecology_off' };
     const now = this.clock.now();
     const local = localClock(now, profile.timeZone);
     if (!inWindow(local.minutes, P05_DEFAULT_ACTIVE_WINDOW.start, P05_DEFAULT_ACTIVE_WINDOW.end))
       return { sent: false, reason: 'outside_active_window' };
-    if (
-      notify?.doNotDisturb.enabled &&
-      inWindow(local.minutes, notify.doNotDisturb.start, notify.doNotDisturb.end)
-    )
-      return { sent: false, reason: 'do_not_disturb' };
 
     const characterId = await this.pickCharacter(userId);
     if (!characterId) return { sent: false, reason: 'no_authorized_character' };
+    if (this.ecology && !(await this.ecology.isActive(userId, characterId, 'care_period')))
+      return { sent: false, reason: 'ecology_off' };
     const ctx = await health.getPeriodContext({ userId, characterId, scene: 'proactive_direct' });
     if (!ctx) return { sent: false, reason: 'no_context' };
     const kind = decideKind(ctx, local.date);

@@ -136,7 +136,9 @@ export class ModelResolver implements AdultModelReadPort {
     let picked: { facts: ModelFacts } | null;
     if (input.platformTask && input.modelRole !== 'adult_check') {
       if (
-        !['safety_check', 'safety_followup', 'small_v', 'search_candidates'].includes(input.purpose)
+        !['safety_check', 'safety_followup', 'small_v', 'search_candidates', 'moments'].includes(
+          input.purpose,
+        )
       )
         return { ok: false, error: 'bad_request' };
       const platform =

@@ -129,6 +129,8 @@ export class ModelGateway implements ModelGatewayPort {
       safety_followup: 400,
       small_v: 800,
       search_candidates: 500,
+      // 3.19：官方角色公共朋友圈（每角色每天一份，所有用户共用，平台承担）。
+      moments: 200,
     } as const;
     if (!(input.purpose in caps)) return { ok: false, error: 'bad_request' };
     const cap = caps[input.purpose];
@@ -563,7 +565,9 @@ export class ModelGateway implements ModelGatewayPort {
                 ? 400
                 : input.purpose === 'small_v'
                   ? 800
-                  : 500;
+                  : input.purpose === 'moments'
+                    ? 200
+                    : 500;
           outputBudget = Math.min(
             32000,
             Math.ceil(maximum * 1.5),
@@ -735,7 +739,7 @@ export class ModelGateway implements ModelGatewayPort {
       (i.billingOwner !== 'platform' ||
         i.purpose.startsWith('admin_') ||
         (trustedPlatform &&
-          ['safety_check', 'safety_followup', 'small_v', 'search_candidates'].includes(
+          ['safety_check', 'safety_followup', 'small_v', 'search_candidates', 'moments'].includes(
             i.purpose,
           ))) &&
       (!['safety_check', 'safety_followup', 'small_v', 'search_candidates'].includes(i.purpose) ||

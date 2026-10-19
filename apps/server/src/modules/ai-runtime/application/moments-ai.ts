@@ -56,6 +56,10 @@ import { CompanionSettingsService } from './settings.js';
 import { SimulationService } from './simulation.js';
 import { CharacterImageService } from './character-image.js';
 import { PlannerService } from './planner.js';
+import { EcologySettingsService } from './ecology-settings.js';
+import { publicMomentDrafts } from '../infra/db/ecology-schema.js';
+import type { ModelGatewayPlatformPort } from '@weiban/contracts';
+import { MODEL_PLATFORM_GATEWAY_PORT } from '../../model-access/index.js';
 import {
   CLOSENESS_WEIGHT,
   SocialService,
@@ -129,6 +133,10 @@ export class MomentsAiService {
     @Inject(SocialService) private readonly social: SocialService,
     @Inject(CharacterImageService) private readonly images: CharacterImageService,
     @Inject(PlannerService) private readonly planner: PlannerService,
+    @Inject(EcologySettingsService) private readonly ecology: EcologySettingsService,
+    @Optional()
+    @Inject(MODEL_PLATFORM_GATEWAY_PORT)
+    private readonly platform?: ModelGatewayPlatformPort,
     @Optional()
     @Inject(PUBLIC_UPDATE_READ_PORT)
     private readonly publicUpdates?: PublicUpdateReadPort,
@@ -152,13 +160,239 @@ export class MomentsAiService {
       );
   }
 
+  /**
+   * v5（16 号 §4、17 号 §4.2）：
+   * - 官方角色（预设）的公共朋友圈保留：每角色每天一份、所有用户共用、平台承担（postPublic）；
+   * - 自定义角色没有公共朋友圈；私人朋友圈只由角色生态发（postForEcology），这里不再按规则排期扣用户积分。
+   * - 共同事件（朋友圈和私聊都读它）只给开着生态的用户安排（扣用户积分）。
+   */
   async runForUser(userId: string): Promise<void> {
     if ((await this.accounts.getAccountStatus(userId)) !== 'active') return;
-    if (!(await backgroundAllowed(this.billing, userId))) return;
-    // 共同事件先安排（朋友圈和私聊都读它）。
-    await this.social.coordinateDay(userId).catch(() => undefined);
+    if (await this.ecology.isActive(userId))
+      await this.social.coordinateDay(userId).catch(() => undefined);
     const contacts = await this.contacts.listActiveContacts(userId).catch(() => []);
-    for (const c of contacts) await this.maybePost(userId, c.characterId).catch(() => undefined);
+    for (const c of contacts) await this.postPublic(userId, c.characterId).catch(() => undefined);
+  }
+
+  // =========================================================================
+  // v5：官方角色公共朋友圈（平台承担，所有用户共用同一份文字）
+  // =========================================================================
+  private async postPublic(userId: string, characterId: string): Promise<void> {
+    if (!this.platform) return;
+    const [profile] = await this.characters.getProfiles(userId, [characterId]).catch(() => []);
+    if (profile?.kind !== 'preset') return;
+    const role = await this.characters.getForRuntime(userId, characterId);
+    const policy = await this.policy.getCharacterPolicy(userId, characterId);
+    if (!role || !policy) return;
+    // 公共节奏按角色（不按用户）稳定抽：所有人看到同一天、同一时刻附近的同一条。
+    const date = localParts(this.clock.now(), 'Asia/Shanghai').date;
+    const perWeek = role.card.data.social.moments.frequencyPerWeek ?? P16_MOMENTS.defaultPerWeek;
+    const plan = this.schedule('public', characterId, date, perWeek);
+    if (!plan.postToday) return;
+    const userLocal = localParts(
+      this.clock.now(),
+      (await this.identity.getProfile(userId))?.timeZone ?? 'Asia/Shanghai',
+    );
+    if (userLocal.hour < plan.hour || userLocal.hour > POST_HOURS.to) return;
+    const draft = await this.publicDraft(userId, characterId, date, role, policy);
+    if (!draft) return;
+    const since24 = new Date(this.clock.nowMs() - 20 * 3600_000).toISOString();
+    if (
+      (await this.moments.listCharacterPosts(userId, characterId, since24)).some(
+        (p) => p.text === draft.text,
+      )
+    )
+      return;
+    await this.writer.createPost(null, {
+      ownerUserId: userId,
+      characterId,
+      text: draft.text,
+      imageMediaIds: [],
+      link: null,
+      sourceRef: { kind: draft.sourceKind, id: draft.sourceId },
+      idempotencyKey: `public-post-${date}`,
+    });
+  }
+
+  /** 当天的公共草稿：第一个用到的用户触发生成（平台付费），之后所有用户复用。 */
+  private async publicDraft(
+    userId: string,
+    characterId: string,
+    date: string,
+    role: NonNullable<Awaited<ReturnType<CharacterReadPort['getForRuntime']>>>,
+    policy: NonNullable<Awaited<ReturnType<PolicyPort['getCharacterPolicy']>>>,
+  ): Promise<{
+    text: string;
+    sourceKind: 'daily_event' | 'public_update' | 'holiday';
+    sourceId: string;
+  } | null> {
+    const find = async () =>
+      (
+        await this.db.db
+          .select()
+          .from(publicMomentDrafts)
+          .where(
+            and(
+              eq(publicMomentDrafts.characterId, characterId),
+              eq(publicMomentDrafts.localDate, date),
+            ),
+          )
+      )[0];
+    const ready = (row: Awaited<ReturnType<typeof find>>) =>
+      row?.status === 'ready' && row.text && row.sourceKind && row.sourceId
+        ? {
+            text: row.text,
+            sourceKind: row.sourceKind as 'daily_event' | 'public_update' | 'holiday',
+            sourceId: row.sourceId,
+          }
+        : null;
+    const existing = await find();
+    if (existing) return ready(existing);
+    const claimed = await this.db.db
+      .insert(publicMomentDrafts)
+      .values({ characterId, localDate: date, status: 'generating', createdAt: this.clock.now() })
+      .onConflictDoNothing()
+      .returning();
+    if (!claimed.length) return ready(await find());
+    // 素材只用角色层面的（不含任何用户的聊天、推演）：已审核公开动态 > 非恋爱节日 > 人设里的日常小感受。
+    const holiday = await this.holidays
+      .getUpcomingForUser(userId, 1)
+      .then((l) => l.find((h) => h.daysAhead === 0 && !h.romantic))
+      .catch(() => undefined);
+    const update = (
+      (await this.publicUpdates
+        ?.listEffective(characterId, date, { limit: 3, pastDays: 2 })
+        .catch(() => [])) ?? []
+    ).find((u) => u.phase === 'recent');
+    const source = update
+      ? {
+          kind: 'public_update' as const,
+          id: update.updateId,
+          brief: `已审核的公开动态：${update.content.slice(0, 300)}`,
+        }
+      : holiday
+        ? {
+            kind: 'holiday' as const,
+            id: `${holiday.holidayId}:${holiday.date}`,
+            brief: `今天是${holiday.name}`,
+          }
+        : {
+            kind: 'daily_event' as const,
+            id: `public:${characterId}:${date}`,
+            brief: '符合你人设的一个日常小感受（天气、吃的、在做的事），不写具体的人和事件。',
+          };
+    const result = await this.platform!.generatePlatformText({
+      userId,
+      characterId,
+      purpose: 'moments',
+      modelRole: 'background',
+      responseFormat: 'text',
+      maxOutputTokens: 200,
+      idempotencyKey: `ai:public-moment:${characterId}:${date}`,
+      messages: [
+        {
+          role: 'system',
+          content: `你以角色本人的身份发一条公开的微信朋友圈（所有用户都会看到同一条）。只输出正文纯文本，不超过80字，不加引号、不加标签。文风符合人设：${role.card.data.social.moments.tone}。不提任何具体用户、不提私聊内容，不含恋爱暧昧或成人内容，不提健康隐私。${policy.isRealPerson ? '你是真人角色：不得官宣新作品或合作（除非素材就是已审核的公开动态），不评论真实社会事件或他人，不写像本人公开声明的话；只写生活化的小感受。' : ''}`,
+        },
+        {
+          role: 'system',
+          content: `角色资料：${JSON.stringify({ name: role.profile.name, persona: role.card.data.persona, speech: role.card.data.speech }).slice(0, 6000)}`,
+        },
+        { role: 'user', content: `素材：${source.brief}` },
+      ],
+    });
+    const text = result.ok
+      ? result.value.text
+          .trim()
+          .replace(/^["「『]|["」』]$/g, '')
+          .slice(0, 500)
+      : '';
+    const ok =
+      !!text &&
+      !healthPrivate(text) &&
+      outputAllowed(text, policy, false) &&
+      !(policy.isRealPerson && source.kind !== 'public_update' && MOMENTS_FORBIDDEN_REAL.test(text));
+    await this.db.db
+      .update(publicMomentDrafts)
+      .set({
+        status: ok ? 'ready' : 'dropped',
+        text: ok ? text : null,
+        sourceKind: source.kind,
+        sourceId: source.id,
+        chargedMicros: result.ok ? result.value.chargedMicros : 0,
+      })
+      .where(
+        and(eq(publicMomentDrafts.characterId, characterId), eq(publicMomentDrafts.localDate, date)),
+      );
+    return ok ? { text, sourceKind: source.kind, sourceId: source.id } : null;
+  }
+
+  // =========================================================================
+  // v5：角色生态发私人朋友圈（扣用户积分；和你们的聊天、TA 的生活有关）
+  // =========================================================================
+  async postForEcology(input: {
+    userId: string;
+    characterId: string;
+    runId: string;
+    brief: string;
+  }): Promise<{ ok: true; chargedMicros: number; postId: string } | { ok: false; reason: string }> {
+    const { userId, characterId } = input;
+    const role = await this.characters.getForRuntime(userId, characterId);
+    const policy = await this.policy.getCharacterPolicy(userId, characterId);
+    if (!role || !policy) return { ok: false, reason: 'context_unavailable' };
+    const result = await this.gateway.generateText({
+      userId,
+      characterId,
+      purpose: 'moments',
+      billingOwner: 'user',
+      modelRole: 'background',
+      countAsBackground: true,
+      ecologyTask: true,
+      responseFormat: 'text',
+      maxOutputTokens: 200,
+      idempotencyKey: `ai:eco-moment:${input.runId}`,
+      messages: [
+        {
+          role: 'system',
+          content: `你以角色本人的身份发一条私人朋友圈（只有和你聊天的这位用户能看到）。只输出朋友圈正文纯文本，不超过100字，不加引号、不加标签。文风符合人设：${role.card.data.social.moments.tone}。可以含蓄地和你们最近的聊天、你今天的生活有关，但不直接复述对方的隐私，不提月经、经期等健康隐私，不含成人内容。${policy.isRealPerson ? '你是真人角色：不官宣新作品或合作，不评论真实社会事件或他人，不写像本人公开声明的话。' : ''}${policy.isMinor || !policy.romanceAllowed ? '不涉及恋爱暧昧。' : ''}`,
+        },
+        {
+          role: 'system',
+          content: `角色资料：${JSON.stringify({ name: role.profile.name, persona: role.card.data.persona, speech: role.card.data.speech }).slice(0, 8000)}`,
+        },
+        { role: 'user', content: `这条朋友圈想写的：${input.brief.slice(0, 500)}` },
+      ],
+    });
+    if (!result.ok) return { ok: false, reason: `model_${result.error}` };
+    const text = result.value.text
+      .trim()
+      .replace(/^["「『]|["」』]$/g, '')
+      .slice(0, 500);
+    if (
+      !text ||
+      healthPrivate(text) ||
+      !outputAllowed(text, policy, false) ||
+      (policy.isRealPerson && MOMENTS_FORBIDDEN_REAL.test(text))
+    )
+      return { ok: false, reason: 'output_guard' };
+    const posted = await this.writer.createPost(null, {
+      ownerUserId: userId,
+      characterId,
+      text,
+      imageMediaIds: [],
+      link: null,
+      sourceRef: { kind: 'daily_event', id: `eco:${input.runId}` },
+      idempotencyKey: `eco-post-${input.runId}`,
+    });
+    if (!posted.ok) return { ok: false, reason: `post_failed:${String(posted.error)}` };
+    return { ok: true, chargedMicros: result.value.chargedMicros, postId: posted.value.postId };
+  }
+
+  /** v5：角色生态里的点赞 / 评论 / 回复（同 runReact，返回扣费）。 */
+  async reactForEcology(
+    job: MomentsReactJob,
+  ): Promise<{ ok: true; chargedMicros: number } | { ok: false; reason: string }> {
+    return this.react0(job);
   }
 
   /** 今天是否该发、几点发：按「用户 + 角色 + 周」稳定抽日子，不同角色节奏不同。 */
@@ -188,7 +422,8 @@ export class MomentsAiService {
     };
   }
 
-  private async maybePost(userId: string, characterId: string): Promise<void> {
+  /** v5 起不再由定时任务调用（私人朋友圈改由角色生态发）；保留便于对照。 */
+  async maybePost(userId: string, characterId: string): Promise<void> {
     const dailyLife = await this.settings
       .get(userId, characterId)
       .then((s) => s.dailyLife)
@@ -498,6 +733,11 @@ export class MomentsAiService {
       }
       scored.sort((a, b) => b.level - a.level);
       let any = false;
+      // v5：角色自己去点赞评论 = 生态动作「给你的朋友圈点赞、评论」（PRO+、开着生态、角色与动作开关都开）。
+      const allowed: typeof scored = [];
+      for (const s of scored)
+        if (await this.ecology.isActive(userId, s.id, 'moment_interact')) allowed.push(s);
+      scored.splice(0, scored.length, ...allowed);
       for (const s of scored) {
         const p = fam(s.level);
         const comment = Math.random() < p * 0.8;
@@ -529,6 +769,7 @@ export class MomentsAiService {
     if (!payload.authorCharacterId) return;
     const { added } = await this.social.relatedContacts(userId, payload.authorCharacterId);
     for (const a of added) {
+      if (!(await this.ecology.isActive(userId, a.characterId, 'moment_peer'))) continue;
       const w = CLOSENESS_WEIGHT[a.relation.closeness] ?? 0.3;
       const comment = Math.random() < w * 0.5;
       const like = Math.random() < w * 0.8;
@@ -594,6 +835,7 @@ export class MomentsAiService {
     if (!target || target === author) return;
     const relation = await this.relations.getRelation(userId, author, target).catch(() => null);
     if (!relation) return;
+    if (!(await this.ecology.isActive(userId, target, 'moment_reply'))) return;
     if (Math.random() >= (CLOSENESS_WEIGHT[relation.closeness] ?? 0.3) * 0.5) return;
     await this.react(
       {
@@ -609,19 +851,30 @@ export class MomentsAiService {
   }
 
   async runReact(job: MomentsReactJob): Promise<void> {
+    const r = await this.react0(job);
+    // P-29 必回：生成失败抛错让任务重试（最多 5 次，仍在 2 小时内）。
+    if (!r.ok && r.reason === 'generation_failed' && job.mustReply)
+      throw new Error('moments reply generation failed');
+  }
+
+  private async react0(
+    job: MomentsReactJob,
+  ): Promise<{ ok: true; chargedMicros: number } | { ok: false; reason: string }> {
     const { userId, characterId } = job;
-    if ((await this.accounts.getAccountStatus(userId)) !== 'active') return;
-    if (!(await this.contacts.getActiveContact(userId, characterId))) return;
+    if ((await this.accounts.getAccountStatus(userId)) !== 'active')
+      return { ok: false, reason: 'account_inactive' };
+    if (!(await this.contacts.getActiveContact(userId, characterId)))
+      return { ok: false, reason: 'contact_inactive' };
     if (
       !(await backgroundAllowed(this.billing, userId, {
         requireBackgroundBudget: !job.mustReply,
       }))
     )
-      return;
+      return { ok: false, reason: 'budget' };
     const post = await this.moments.getPostVisibleToCharacter(userId, job.postId, characterId);
-    if (!post) return;
+    if (!post) return { ok: false, reason: 'post_not_visible' };
     if (job.replyToCommentId && !post.comments.some((c) => c.commentId === job.replyToCommentId))
-      return;
+      return { ok: false, reason: 'comment_gone' };
     if (job.like || job.action === 'like')
       await this.writer.like({
         ownerUserId: userId,
@@ -629,13 +882,9 @@ export class MomentsAiService {
         characterId,
         idempotencyKey: `ai-like-${characterId}`,
       });
-    if (job.action === 'like') return;
+    if (job.action === 'like') return { ok: true, chargedMicros: 0 };
     const text = await this.generateComment(job, post);
-    // P-29 必回：生成失败抛错让任务重试（最多 5 次，仍在 2 小时内）。
-    if (!text) {
-      if (job.mustReply) throw new Error('moments reply generation failed');
-      return;
-    }
+    if (!text) return { ok: false, reason: 'generation_failed' };
     const result = await this.writer.comment({
       ownerUserId: userId,
       postId: post.postId,
@@ -645,7 +894,7 @@ export class MomentsAiService {
       mentionsUser: text.mentionsUser,
       idempotencyKey: `ai-${job.action}-${job.replyToCommentId ?? 'post'}`,
     });
-    if (!result.ok) return;
+    if (!result.ok) return { ok: false, reason: 'comment_rejected' };
     if (job.mustReply)
       await this.db.transaction(async (tx) => {
         await this.outbox.publish(tx, 'ai_runtime.milestone', 'ai_runtime', {
@@ -655,12 +904,13 @@ export class MomentsAiService {
           refId: post.postId,
         });
       });
+    return { ok: true, chargedMicros: text.chargedMicros };
   }
 
   private async generateComment(
     job: MomentsReactJob,
     post: MomentsPost,
-  ): Promise<{ text: string; mentionsUser: boolean } | null> {
+  ): Promise<{ text: string; mentionsUser: boolean; chargedMicros: number } | null> {
     const { userId, characterId } = job;
     const role = await this.characters.getForRuntime(userId, characterId);
     const policy = await this.policy.getCharacterPolicy(userId, characterId);
@@ -761,6 +1011,6 @@ export class MomentsAiService {
       (policy.isRealPerson && MOMENTS_FORBIDDEN_REAL.test(text))
     )
       return null;
-    return { text, mentionsUser };
+    return { text, mentionsUser, chargedMicros: result.value.chargedMicros };
   }
 }

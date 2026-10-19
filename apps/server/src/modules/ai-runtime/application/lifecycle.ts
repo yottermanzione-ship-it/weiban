@@ -79,6 +79,8 @@ import {
   PLAY_WISH_PROPOSE_SOURCE,
 } from './proactive-scheduler.js';
 const TRANSCRIBE_VOICE_JOB = 'ai.transcribe_voice';
+/** v5：角色主动来电停用（PRD P-10 / MED-07 主动部分）；用户主动打给角色不受影响。 */
+const PROACTIVE_CALLS_ENABLED = false;
 @Injectable()
 export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap {
   constructor(
@@ -353,7 +355,8 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       consumer: 'ai.call_permission_ask',
       eventType: 'growth.familiarity_leveled_up',
       handle: async (event) => {
-        if (event.payload.level >= 3)
+        // v5（17 号 §4.7，总经理 10-19）：角色不再主动打电话，L3 时也不再问「能不能给你打电话」。
+        if (PROACTIVE_CALLS_ENABLED && event.payload.level >= 3)
           await this.calls.askPermission(event.payload.userId, event.payload.characterId);
       },
     });

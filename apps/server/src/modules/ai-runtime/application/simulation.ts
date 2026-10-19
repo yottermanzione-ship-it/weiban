@@ -9,6 +9,7 @@
  * - 生成内容只写入 daily_events / mood_states，不注入用户聊天上下文（隔离性要求）。
  * - 心情与事件可被 T-052 主动消息调度读取（接口见底部 SimulationReadPort）。
  */
+import { EcologySettingsService } from './ecology-settings.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -127,6 +128,10 @@ export class SimulationService implements SimulationReadPort {
     @Inject(IDENTITY_ACCOUNT_STATUS_PORT) private readonly accounts: IdentityAccountStatusPort,
     @Inject(IDENTITY_READ_PORT) private readonly identity: IdentityReadPort,
     @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
+    /** v5 角色生态闸门：推演扣用户积分，只给开着生态（PRO+）且该角色参与的用户做。测试替身可不传。 */
+    @Optional()
+    @Inject(EcologySettingsService)
+    private readonly ecology?: EcologySettingsService,
     /** D-L3-02：已生效公开动态（SIM-03），推演必须与之一致（SIM-01 第 3 条）。 */
     @Optional()
     @Inject(PUBLIC_UPDATE_READ_PORT)
@@ -239,6 +244,7 @@ export class SimulationService implements SimulationReadPort {
   // -------------------------------------------------------------------------
 
   async simulateCharacter(userId: string, characterId: string): Promise<void> {
+    if (this.ecology && !(await this.ecology.isActive(userId, characterId))) return;
     const now = this.clock.now();
     const today = toDateString(now);
     const epoch = await this.contacts.getActiveContactEpoch(userId, characterId);

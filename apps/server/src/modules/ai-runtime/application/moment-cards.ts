@@ -9,7 +9,8 @@
  * - 发卡经 T-076 的 GROWTH_CARD_PORT：kind = moment + sourceMessageIds；收到 weekly_moment_limit 就放弃本周。
  * - 卡上一句话：角色写给用户，≤ 40 字（卡面最多 2 行）；CardLineService 也供其他卡片使用（见交接说明）。
  */
-import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
+import { EcologySettingsService } from './ecology-settings.js';
+import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
 import { and, eq, gte, isNotNull } from 'drizzle-orm';
 import type {
   BillingReadPort,
@@ -75,6 +76,10 @@ export class CardLineService implements CardCopywriterPort {
     @Inject(AI_CHARACTER_READ) private readonly characters: CharacterReadPort,
     @Inject(POLICY_PORT) private readonly policy: PolicyPort,
     @Inject(BILLING_READ_PORT) private readonly billing: BillingReadPort,
+    /** v5 角色生态闸门（测试替身可不传）。没开生态时卡片用固定模板，不调模型。 */
+    @Optional()
+    @Inject(EcologySettingsService)
+    private readonly ecology?: EcologySettingsService,
   ) {}
 
   async writeCardCopy(
@@ -100,6 +105,8 @@ export class CardLineService implements CardCopywriterPort {
   }): Promise<string | null> {
     const spend = await this.billing.getSpendStatus(input.userId).catch(() => null);
     if (!spend) return null; // 实际额度交给已核上限冻结。
+    if (this.ecology && !(await this.ecology.isActive(input.userId, input.characterId)))
+      return null;
     const role = await this.characters.getForRuntime(input.userId, input.characterId);
     const policy = await this.policy.getCharacterPolicy(input.userId, input.characterId);
     if (!role || !policy) return null;
@@ -157,6 +164,7 @@ export class MomentCardService implements OnModuleInit {
     @Inject(GROWTH_CARD_PORT) private readonly cards: GrowthCardPort,
     @Inject(CharacterImageService) private readonly images: CharacterImageService,
     @Inject(CardLineService) private readonly lines: CardLineService,
+    @Inject(EcologySettingsService) private readonly ecology: EcologySettingsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -220,6 +228,8 @@ export class MomentCardService implements OnModuleInit {
   }
 
   async evaluate(userId: string, characterId: string, weekKey: string): Promise<void> {
+    // v5：每周名场面是角色自己评估、扣用户积分的后台任务，只给开着生态的用户做。
+    if (!(await this.ecology.isActive(userId, characterId))) return;
     const contact = await this.contacts.getActiveContact(userId, characterId);
     if (!contact?.conversationId) return this.record(userId, characterId, weekKey, 'no_contact');
     const role = await this.characters.getForRuntime(userId, characterId);

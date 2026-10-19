@@ -90,6 +90,8 @@ const INVITER_MIN_FAMILIARITY = 3;
 /** 用户连发时等多久再回应（与私聊 CHAT-04 第 5 条一致的「停下来」判断）。 */
 const USER_BATCH_DELAY_MS = 3000;
 const SELF_CHAT_LABEL = 'self_chat';
+/** v5：群里自己聊改由角色生态发起，旧的每小时规则排期停用（保留代码便于对照）。 */
+const LEGACY_SELF_CHAT_SCHEDULE = false;
 
 export const GROUP_TURN_JOB = 'ai.group_turn';
 export const GROUP_SELF_CHAT_TICK_JOB = 'ai.group_self_chat_tick';
@@ -166,6 +168,8 @@ function relevance(text: string, topics: string[]): number {
   return Math.min(1, hit / Math.min(a.size, 6));
 }
 
+import { EcologySettingsService } from './ecology-settings.js';
+
 @Injectable()
 export class GroupChatService {
   constructor(
@@ -193,6 +197,7 @@ export class GroupChatService {
     @Inject(PlannerService) private readonly planner: PlannerService,
     @Inject(QuietStateService) private readonly quiet: QuietStateService,
     @Inject(GroupReplyStore) private readonly replies: GroupReplyStore,
+    @Inject(EcologySettingsService) private readonly ecology: EcologySettingsService,
     @Optional()
     @Inject(MODEL_PLATFORM_GATEWAY_PORT)
     private readonly platform?: import('@weiban/contracts').ModelGatewayPlatformPort,
@@ -997,11 +1002,14 @@ export class GroupChatService {
   // =========================================================================
   /** 每小时：为符合条件的群在今天的稳定随机时刻发起一次自发话题。 */
   async selfChatTick(): Promise<void> {
+    // v5：节日拉群（SOC-06）仍按原规则检查，但只给开着生态（PRO+）的用户；自发话题入队保留（runSelfChat 内停用）。
     const users = await this.db.db
       .selectDistinct({ userId: simulationStates.userId })
       .from(simulationStates);
     for (const { userId } of users) {
+      if (!(await this.ecology.isActive(userId, null, 'group_talk'))) continue;
       await this.holidayInviteCheck(userId).catch(() => undefined);
+      if (!LEGACY_SELF_CHAT_SCHEDULE) continue;
       const list = await this.groups.listGroupConversations(userId).catch(() => []);
       for (const conversation of list)
         await this.jobs.send(
@@ -1015,8 +1023,108 @@ export class GroupChatService {
     }
   }
 
+  /** v5 角色生态：该角色所在、用户 7 天内发过言、开着「角色自己聊天」的群（快照用）。 */
+  async ecologyGroups(
+    userId: string,
+    characterId: string,
+  ): Promise<Array<{ conversationId: string; title: string }>> {
+    const list = await this.groups
+      .listGroupConversations(userId, { memberCharacterId: characterId })
+      .catch(() => []);
+    const out: Array<{ conversationId: string; title: string }> = [];
+    for (const c of list.slice(0, 5)) {
+      const settings = await this.loadSettings(c.conversationId).catch(() => null);
+      if (!settings?.selfChatEnabled) continue;
+      const last = await this.groups.getLastUserMessageAt(c.conversationId).catch(() => null);
+      if (
+        !last ||
+        this.clock.nowMs() - Date.parse(last) > P20_SELF_CHAT.userActiveWithinDays * 86400_000
+      )
+        continue;
+      out.push({ conversationId: c.conversationId, title: c.title ?? '群聊' });
+    }
+    return out;
+  }
+
+  /**
+   * v5 角色生态「在群里主动说话」：由这个角色起话头，其他角色接（同 SOC-05 自发话题的链路与上限，
+   * 每群每天最多 1 次，不推送）。返回发出的条数；费用记在各条消息上。
+   */
+  async startTopicForEcology(input: {
+    userId: string;
+    characterId: string;
+    conversationId: string;
+    topic: string;
+  }): Promise<{ ok: true; sent: number } | { ok: false; reason: string }> {
+    const conversation = await this.chat.getConversation(input.conversationId);
+    if (!conversation || conversation.type !== 'group') return { ok: false, reason: 'no_group' };
+    const settings = await this.loadSettings(conversation.conversationId);
+    if (!settings.selfChatEnabled) return { ok: false, reason: 'self_chat_off' };
+    if (await this.quiet.getFocusUntil(input.userId).catch(() => null))
+      return { ok: false, reason: 'focus' };
+    if (!(await this.stillActive(conversation, input.userId, true, settings.scenarioMode)))
+      return { ok: false, reason: 'inactive' };
+    const history = await this.history(conversation);
+    const latest = history.at(-1);
+    if (latest && this.clock.nowMs() - Date.parse(latest.createdAt) < 30 * 60_000)
+      return { ok: false, reason: 'chat_busy' };
+    const members = await this.loadMembers(input.userId, conversation);
+    const starter = members.find((m) => m.characterId === input.characterId);
+    if (!starter || members.length < 2) return { ok: false, reason: 'members' };
+    const profile = await this.identity.getProfile(input.userId);
+    const local = localParts(this.clock.now(), profile?.timeZone ?? 'Asia/Shanghai');
+    const inserted = await this.db.transaction(async (tx) => {
+      const live = await this.chat.getConversation(conversation.conversationId, tx);
+      if (
+        !live ||
+        live.type !== 'group' ||
+        !live.participants.some((p) => p.kind === 'user' && p.refId === input.userId)
+      )
+        return [];
+      return tx.db
+        .insert(groupSelfChats)
+        .values({
+          conversationId: conversation.conversationId,
+          userId: input.userId,
+          localDate: local.date,
+          starterCharacterId: input.characterId,
+          sourceRef: 'ecology',
+          messages: 0,
+          createdAt: this.clock.now(),
+        })
+        .onConflictDoNothing()
+        .returning();
+    });
+    if (!inserted.length) return { ok: false, reason: 'already_today' };
+    const sent = await this.runChain({
+      userId: input.userId,
+      conversation,
+      members,
+      settings,
+      plan: [{ speaker: starter, reason: 'starter' }],
+      maxMessages: P20_SELF_CHAT.maxMessages,
+      triggerSeq: conversation.lastSeq,
+      keyPrefix: `self-chat:${conversation.conversationId}:${local.date}`,
+      purpose: 'proactive',
+      topic: input.topic.slice(0, 200),
+      labels: [SELF_CHAT_LABEL],
+    });
+    await this.db.db
+      .update(groupSelfChats)
+      .set({ messages: Math.min(sent, P20_SELF_CHAT.maxMessages) })
+      .where(
+        and(
+          eq(groupSelfChats.conversationId, conversation.conversationId),
+          eq(groupSelfChats.localDate, local.date),
+        ),
+      );
+    return { ok: true, sent };
+  }
+
   async runSelfChat(job: { userId: string; conversationId: string }): Promise<void> {
     if ((await this.accounts.getAccountStatus(job.userId)) !== 'active') return;
+    // v5：「群里自己聊」改由角色生态唤醒发起（startTopicForEcology）；旧的每小时规则排期停用。
+    if (!LEGACY_SELF_CHAT_SCHEDULE) return;
     const conversation = await this.chat.getConversation(job.conversationId);
     if (!conversation || conversation.type !== 'group') return;
     const settings = await this.loadSettings(conversation.conversationId);

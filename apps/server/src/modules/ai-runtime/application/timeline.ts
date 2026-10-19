@@ -11,6 +11,7 @@
  * - 后台预算耗尽时返回空摘要，不报错（SIM-11 第 3 条）。
  * - 幂等键按用户、会话及缺席起点区分，不同缺席窗口不复用旧摘要。
  */
+import { EcologySettingsService } from './ecology-settings.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, desc, eq, gte } from 'drizzle-orm';
 import {
@@ -56,6 +57,10 @@ export class TimelineSummaryService {
     @Inject(CHAT_READ_PORT) private readonly chat: Pick<ChatReadPort, 'findDirectConversation'>,
     /** T-066：服务器记录进入私聊的时间（P-18）。测试替身可不传，此时只用客户端 lastActiveAt。 */
     @Optional() @Inject(DATABASE) private readonly db?: Database,
+    /** v5 角色生态闸门：「你不在时」摘要调模型扣用户积分，只给开着生态的用户生成；测试替身可不传。 */
+    @Optional()
+    @Inject(EcologySettingsService)
+    private readonly ecology?: EcologySettingsService,
   ) {}
 
   /**
@@ -143,8 +148,12 @@ export class TimelineSummaryService {
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.seq - a.seq)
       .slice(0, 5);
 
-    // 离线时长不足或缺席期间无事件时不生成摘要
-    if (offlineSeconds < MIN_OFFLINE_SECONDS || events.length === 0) {
+    // 离线时长不足或缺席期间无事件时不生成摘要；v5：生态没开（非 PRO+ 或该角色关闭）也不生成。
+    if (
+      offlineSeconds < MIN_OFFLINE_SECONDS ||
+      events.length === 0 ||
+      (this.ecology && !(await this.ecology.isActive(userId, characterId)))
+    ) {
       return {
         summary: null,
         events: mapEvents(events),
