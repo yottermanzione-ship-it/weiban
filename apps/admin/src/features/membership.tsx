@@ -171,7 +171,11 @@ function OpenMembership({ settings, onDone }: { settings?: MembershipSettings; o
                 <FieldHelp>每人只有一次首次价（任一档）。用户已经按原价付款时关掉它。</FieldHelp>
               }
             >
-              <Switch checked={useFirst} disabled={firstUsed} onChange={setUseFirst} />
+              <Switch
+                checked={useFirst && !firstUsed}
+                disabled={firstUsed}
+                onChange={setUseFirst}
+              />
             </Form.Item>
             <Form.Item label="备注（可选）">
               <Input
@@ -295,7 +299,7 @@ function SettingsCard({ settings, onSaved }: { settings: MembershipSettings; onS
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} />}
       <Form<MembershipSettings> form={form} layout="vertical" initialValues={settings}>
         {settings.plans.map((p, i) => (
-          <Space key={p.planId} wrap align="start">
+          <div key={p.planId} style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <Form.Item
               label={`${PLAN_NAME[p.planId]}名称`}
               name={['plans', i, 'name']}
@@ -327,7 +331,7 @@ function SettingsCard({ settings, onSaved }: { settings: MembershipSettings; onS
             <Form.Item label="时长">
               <span>{p.months} 个月</span>
             </Form.Item>
-          </Space>
+          </div>
         ))}
         <Form.Item
           label="注册赠送积分"

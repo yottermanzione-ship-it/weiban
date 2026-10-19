@@ -2310,6 +2310,12 @@ button.primary.wx-auth-submit {
 .benefit-text {
   overflow-wrap: anywhere;
 }
+.benefit-line {
+  display: block;
+}
+.benefit-head > span:first-child {
+  text-align: left;
+}
 
 /* ---------- 表单分组与单选卡片（角色创建 / 编辑） ---------- */
 /* 之前 fieldset / legend / .radio-option 没有任何样式，三个分类选项挤成一行互相压字 */

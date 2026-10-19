@@ -46,7 +46,15 @@ function CellView({ value }: { value: Cell }) {
         —
       </span>
     );
-  return <span className="benefit-text">{value}</span>;
+  return (
+    <span className="benefit-text">
+      {value.split(' / ').map((line) => (
+        <span key={line} className="benefit-line">
+          {line}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 export function MembershipPage() {
@@ -62,7 +70,7 @@ export function MembershipPage() {
   const weekly = rc?.proPlusWeeklyFreeCount ?? 2;
   const fee = rc?.pointsCost ?? 200;
   const bonus = (data?.plans ?? [])
-    .map((p) => `${p.name}${formatPoints(p.bonusPoints)}`)
+    .map((p) => `${p.name} ${formatPoints(p.bonusPoints)}`)
     .join(' / ');
 
   const rows: Row[] = [
