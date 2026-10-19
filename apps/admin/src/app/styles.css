@@ -1033,3 +1033,23 @@ body {
   border-radius: 6px;
   object-fit: cover;
 }
+
+.module-list {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #edeff2;
+  border-radius: 8px;
+}
+.module-row {
+  display: grid;
+  grid-template-columns: 1fr 130px 150px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f5f6f7;
+  font-size: 13px;
+}
+.module-row:last-child {
+  border-bottom: none;
+}

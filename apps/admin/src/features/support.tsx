@@ -1,168 +1,357 @@
-import { useState } from 'react';
-import { SupportAdminEndpoints as E } from '@weiban/contracts';
+/**
+ * 帮助与反馈：用户提交的反馈与投诉。回复会通知用户；标记解决会关闭工单。
+ */
+import { useEffect, useState } from 'react';
+import { Alert, Button, Checkbox, Input, Select, Space, Timeline } from 'antd';
+import { SupportAdminEndpoints, type AdminSupportTicket } from '@weiban/contracts';
 import { api } from '../data/client.js';
-import { useRemote, errorText } from '../data/hooks.js';
-export function SupportBadge() {
-  const r = useRemote(E.list, { query: { status: 'open', limit: 1 } });
-  return r.data?.openCount ? <span className="badge">{r.data.openCount}</span> : null;
-}
+import { errorText } from '../data/hooks.js';
+import { DataTable, type ProColumns } from '../ui/table.js';
+import { RecordDrawer } from '../ui/drawer.js';
+import {
+  FieldHelp,
+  Page,
+  SectionCard,
+  StatusTag,
+  useToast,
+} from '../ui/page.js';
+import { formatDateTime } from '../ui/format.js';
+
+const STATUS_LABELS: Record<string, string> = {
+  open: '待处理',
+  replied: '已回复',
+  resolved: '已解决',
+};
+
 export function SupportAdminPage() {
-  const [filter, setFilter] = useState<'open' | 'replied' | 'resolved'>('open'),
-    [selected, setSelected] = useState<string | null>(null);
-  const r = useRemote(E.list, { query: { status: filter, limit: 100 } });
-  return (
-    <section className="stack">
-      <h1>帮助反馈与投诉</h1>
-      <label>
-        状态
-        <select
-          value={filter}
-          onChange={(e) => {
-            setFilter(e.target.value as typeof filter);
-            setSelected(null);
-          }}
-        >
-          <option value="open">待处理</option>
-          <option value="replied">已回复</option>
-          <option value="resolved">已解决</option>
-        </select>
-      </label>
-      {r.error && <p role="alert">{r.error}</p>}
-      <table>
-        <thead>
-          <tr>
-            <th>用户</th>
-            <th>类型</th>
-            <th>内容</th>
-            <th>提交时间</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {r.data?.items.map((t) => (
-            <tr key={t.ticketId}>
-              <td>{t.username ?? '已注销'}</td>
-              <td>{t.kind === 'complaint' ? '投诉' : '反馈'}</td>
-              <td>{t.text}</td>
-              <td>{new Date(t.createdAt).toLocaleString()}</td>
-              <td>
-                <button onClick={() => setSelected(t.ticketId)}>处理</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {r.data?.nextCursor && <p className="hint">仅展示当前最早100条，处理后刷新继续。</p>}
-      {selected && (
-        <TicketEditor
-          key={selected}
-          ticketId={selected}
-          close={() => setSelected(null)}
-          changed={r.refresh}
-        />
-      )}
-    </section>
-  );
-}
-export function TicketEditor({
-  ticketId,
-  close,
-  changed,
-}: {
-  ticketId: string;
-  close: () => void;
-  changed: () => void;
-}) {
-  const r = useRemote(E.get, { params: { ticketId } });
-  const [text, setText] = useState(''),
-    [resolve, setResolve] = useState(false),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
-  async function act(action: 'reply' | 'resolve' | 'reopen') {
-    setBusy(true);
+  const toast = useToast();
+  const [status, setStatus] = useState<'open' | 'replied' | 'resolved'>('open');
+  const [kind, setKind] = useState('');
+  const [items, setItems] = useState<AdminSupportTicket[]>([]);
+  const [openCount, setOpenCount] = useState(0);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [selected, setSelected] = useState<string | null>(null);
+
+  async function load(after?: string) {
+    setLoading(true);
     setError('');
     try {
-      if (action === 'reply')
-        await api.call(E.reply, { params: { ticketId }, body: { text, resolve } });
-      else await api.call(action === 'resolve' ? E.resolve : E.reopen, { params: { ticketId } });
-      setText('');
-      r.refresh();
-      changed();
+      const page = await api.call(SupportAdminEndpoints.list, {
+        query: {
+          status,
+          kind: (kind || undefined) as 'feedback' | undefined,
+          limit: 100,
+          cursor: after,
+        },
+      });
+      setItems((prev) => (after ? [...prev, ...page.items] : page.items));
+      setOpenCount(page.openCount);
+      setCursor(page.nextCursor);
     } catch (e) {
       setError(errorText(e));
     } finally {
-      setBusy(false);
+      setLoading(false);
     }
   }
-  const t = r.data;
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, kind]);
+
+  const columns: ProColumns<AdminSupportTicket>[] = [
+    {
+      title: '用户',
+      width: 130,
+      render: (_, row) => row.username ?? '已注销',
+    },
+    {
+      title: '类型',
+      width: 90,
+      render: (_, row) => (
+        <StatusTag tone={row.kind === 'complaint' ? 'error' : 'default'}>
+          {row.kind === 'complaint' ? '投诉' : '反馈'}
+        </StatusTag>
+      ),
+    },
+    {
+      title: '内容',
+      render: (_, row) => <span className="cell-clamp">{row.text}</span>,
+    },
+    {
+      title: '状态',
+      width: 100,
+      render: (_, row) => (
+        <StatusTag
+          tone={
+            row.status === 'open' ? 'warning' : row.status === 'resolved' ? 'success' : 'processing'
+          }
+        >
+          {STATUS_LABELS[row.status] ?? row.status}
+        </StatusTag>
+      ),
+    },
+    {
+      title: '提交时间',
+      width: 150,
+      render: (_, row) => formatDateTime(row.createdAt),
+    },
+  ];
+
   return (
-    <section className="panel stack">
-      <button disabled={busy} onClick={close}>
-        关闭
-      </button>
-      {(error || r.error) && <p role="alert">{error || r.error}</p>}
-      {t && (
+    <Page
+      title="帮助与反馈"
+      desc="用户提交的反馈与投诉。点一行看详情并回复；回复会推送给用户。"
+      extra={<Button onClick={() => void load()}>刷新</Button>}
+    >
+      <DataTable<AdminSupportTicket>
+        rowKey="ticketId"
+        columns={columns}
+        data={items}
+        loading={loading}
+        error={error}
+        onRefresh={() => void load()}
+        onRowClick={(row) => setSelected(row.ticketId)}
+        filters={
+          <>
+            <Select
+              style={{ width: 130 }}
+              value={status}
+              onChange={setStatus}
+              options={[
+                { value: 'open', label: `待处理${openCount ? `（${openCount}）` : ''}` },
+                { value: 'replied', label: '已回复' },
+                { value: 'resolved', label: '已解决' },
+              ]}
+            />
+            <Select
+              allowClear
+              style={{ width: 120 }}
+              placeholder="全部类型"
+              value={kind || undefined}
+              onChange={(value) => setKind(value ?? '')}
+              options={[
+                { value: 'feedback', label: '反馈' },
+                { value: 'complaint', label: '投诉' },
+              ]}
+            />
+          </>
+        }
+        emptyTitle={status === 'open' ? '没有待处理的反馈' : '没有记录'}
+        emptyHint="用户在网页端「设置 › 帮助与反馈」提交后会出现在这里。"
+        footer={
+          cursor ? (
+            <Button size="small" loading={loading} onClick={() => void load(cursor)}>
+              加载更多
+            </Button>
+          ) : undefined
+        }
+      />
+      {selected && (
+        <TicketDrawer
+          ticketId={selected}
+          onClose={() => setSelected(null)}
+          onChanged={() => {
+            void load();
+            toast.success('已保存');
+          }}
+        />
+      )}
+    </Page>
+  );
+}
+
+function TicketDrawer({
+  ticketId,
+  onClose,
+  onChanged,
+}: {
+  ticketId: string;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const [ticket, setTicket] = useState<AdminSupportTicket | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [text, setText] = useState('');
+  const [resolve, setResolve] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setError('');
+    try {
+      setTicket(await api.call(SupportAdminEndpoints.get, { params: { ticketId } }));
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticketId]);
+
+  async function act(action: 'reply' | 'resolve' | 'reopen') {
+    setSaving(true);
+    setError('');
+    try {
+      if (action === 'reply')
+        await api.call(SupportAdminEndpoints.reply, {
+          params: { ticketId },
+          body: { text: text.trim(), resolve },
+        });
+      else
+        await api.call(action === 'resolve' ? SupportAdminEndpoints.resolve : SupportAdminEndpoints.reopen, {
+          params: { ticketId },
+        });
+      setText('');
+      setResolve(false);
+      toast.success(
+        action === 'reply' ? '已回复' : action === 'resolve' ? '已标记解决' : '已重新打开',
+      );
+      await load();
+      onChanged();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <RecordDrawer
+      open
+      onClose={onClose}
+      title={
+        ticket ? `${ticket.kind === 'complaint' ? '投诉' : '反馈'} · ${ticket.username ?? '已注销'}` : '工单'
+      }
+      subtitle={ticket ? formatDateTime(ticket.createdAt) : undefined}
+      width={720}
+      loading={loading}
+    >
+      {error && <Alert type="error" showIcon message={error} />}
+      {ticket && (
         <>
-          <h2>
-            {t.kind === 'complaint' ? '投诉' : '反馈'} · {t.username ?? '已注销'}
-          </h2>
-          <p>
-            对象：{t.target?.type ?? '无'} {t.target?.id} · 原因：{t.reason ?? t.category}
-          </p>
-          <p style={{ whiteSpace: 'pre-wrap' }}>{t.text}</p>
-          <div>
-            {t.images.map(
-              (i) =>
-                i.url && (
-                  <a key={i.mediaId} href={i.url} target="_blank" rel="noreferrer">
-                    <img width={120} src={i.url} alt="反馈截图" />
-                  </a>
-                ),
+          <div className="detail-grid">
+            <div>
+              <span className="detail-label">状态</span>
+              <StatusTag
+                tone={
+                  ticket.status === 'open'
+                    ? 'warning'
+                    : ticket.status === 'resolved'
+                      ? 'success'
+                      : 'processing'
+                }
+              >
+                {STATUS_LABELS[ticket.status] ?? ticket.status}
+              </StatusTag>
+            </div>
+            <div>
+              <span className="detail-label">类型</span>
+              <span>{ticket.kind === 'complaint' ? '投诉' : '反馈'}</span>
+            </div>
+            {ticket.target && (
+              <div>
+                <span className="detail-label">投诉对象</span>
+                <span>
+                  {ticket.target.type} · {ticket.target.id.slice(0, 8)}…
+                </span>
+              </div>
+            )}
+            {ticket.reason && (
+              <div>
+                <span className="detail-label">投诉原因</span>
+                <span>{ticket.reason}</span>
+              </div>
+            )}
+            {ticket.category && (
+              <div>
+                <span className="detail-label">反馈分类</span>
+                <span>{ticket.category}</span>
+              </div>
             )}
           </div>
-          {t.replies.map((v) => (
-            <article key={v.replyId}>
-              <small>
-                {v.from === 'admin' ? '官方' : '用户'} · {new Date(v.createdAt).toLocaleString()}
-              </small>
-              <p style={{ whiteSpace: 'pre-wrap' }}>{v.text}</p>
-            </article>
-          ))}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void act('reply');
-            }}
-          >
-            <label>
-              回复
-              <textarea
-                maxLength={2000}
-                value={text}
-                disabled={busy}
-                onChange={(e) => setText(e.target.value)}
+          <SectionCard title="用户提交的内容">
+            <div className="pre-wrap">{ticket.text}</div>
+            {ticket.images.length > 0 && (
+              <div className="thumb-row" style={{ marginTop: 8 }}>
+                {ticket.images.map(
+                  (image) =>
+                    image.url && (
+                      <a key={image.mediaId} href={image.url} target="_blank" rel="noreferrer">
+                        <img src={image.url} alt="反馈截图" width={96} height={96} />
+                      </a>
+                    ),
+                )}
+              </div>
+            )}
+          </SectionCard>
+          <SectionCard title="处理记录">
+            {ticket.replies.length === 0 ? (
+              <div className="detail-muted">还没有回复。</div>
+            ) : (
+              <Timeline
+                items={ticket.replies.map((reply) => ({
+                  key: reply.replyId,
+                  color: reply.from === 'admin' ? 'green' : 'blue',
+                  children: (
+                    <div>
+                      <div>
+                        {reply.from === 'admin' ? '官方' : '用户'} ·{' '}
+                        {formatDateTime(reply.createdAt)}
+                      </div>
+                      <div className="pre-wrap">{reply.text}</div>
+                    </div>
+                  ),
+                }))}
               />
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={resolve}
-                disabled={busy}
-                onChange={(e) => setResolve(e.target.checked)}
-              />
-              同时标记解决
-            </label>
-            <button disabled={busy || !text.trim()}>回复</button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void act(t.status === 'resolved' ? 'reopen' : 'resolve')}
-            >
-              {t.status === 'resolved' ? '重新打开' : '标记解决'}
-            </button>
-          </form>
+            )}
+          </SectionCard>
+          <SectionCard title="回复用户">
+            <Input.TextArea
+              rows={4}
+              maxLength={2000}
+              showCount
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="写清楚处理结果；会推送给用户"
+            />
+            <div style={{ marginTop: 10 }}>
+              <Checkbox checked={resolve} onChange={(e) => setResolve(e.target.checked)}>
+                同时标记为已解决
+              </Checkbox>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <Space>
+                <Button
+                  type="primary"
+                  loading={saving}
+                  disabled={!text.trim()}
+                  onClick={() => void act('reply')}
+                >
+                  发送回复
+                </Button>
+                <Button
+                  loading={saving}
+                  onClick={() => void act(ticket.status === 'resolved' ? 'reopen' : 'resolve')}
+                >
+                  {ticket.status === 'resolved' ? '重新打开' : '标记解决'}
+                </Button>
+              </Space>
+              <div className="field-help" style={{ marginTop: 8 }}>
+                <FieldHelp>回复和状态变化会通知用户，并记入审计。</FieldHelp>
+              </div>
+            </div>
+          </SectionCard>
         </>
       )}
-    </section>
+    </RecordDrawer>
   );
 }

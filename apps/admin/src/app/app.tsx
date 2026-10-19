@@ -28,7 +28,8 @@ import {
   VoiceLibraryPage,
   WorkLinksPage,
 } from '../features/media-library.js';
-import { AccountDeletionsPage, PetSpeciesPage } from '../features/pets-deletions.js';
+import { PetSpeciesPage } from '../features/pets-deletions.js';
+import { AccountDeletionsPage } from '../features/account-deletions.js';
 import { DailyQuestionsPage } from '../features/plaza-admin.js';
 import { PlazaAdminPage } from '../features/plaza.js';
 import { PlannerPage } from '../features/planner.js';
