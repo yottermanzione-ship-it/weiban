@@ -567,7 +567,7 @@ function MomentsCover({
     <>
       <div className="moments-cover-wrap">
         <div
-          className="moments-cover"
+          className={`moments-cover ${coverId ? '' : 'is-default'}`}
           style={{ backgroundImage: `linear-gradient(${top}, ${bottom})` }}
         >
           {coverId && (

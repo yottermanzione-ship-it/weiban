@@ -2288,3 +2288,8 @@ fieldset.panel.rows > label.check {
 fieldset.panel.rows > label.check:last-of-type {
   border-bottom: 0;
 }
+
+/* 深色模式：默认渐变封面在夜间是一大块亮色，压暗；用户自选封面不动 */
+:root[data-scheme="dark"] .moments-cover.is-default {
+  filter: brightness(0.55) saturate(0.7);
+}
