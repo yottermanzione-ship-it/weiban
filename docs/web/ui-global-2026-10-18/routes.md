@@ -46,7 +46,7 @@
 | `/moments/notifications` | 未点按；源码/原批注待逐页核对 |
 | `/moments/posts/:postId` | 10-19 样例详情已打开；通栏/赞评论操作条，实际点赞、点评论回复、长按自己的评论并取消；深色特大字号已看 |
 | `/me/moments` | 10-19 有样例动态，实际从列表点进动态详情；早期空态不再代表当前数据 |
-| `/characters/:characterId/anniversaries` | 未点按；源码/原批注待逐页核对 |
+| `/characters/:characterId/anniversaries` | 10-19 程澈真实认识日期/下一纪念日已看；320px新增弹层空禁用、填写/原生日期输入后启用、Esc取消；未创建/删除或验证主动消息 |
 | `/sticker-store` | 已看空态/真实包；补封面和数量，已添加状态正常；整理入口已点 |
 | `/sticker-store/:packId` | 已看3张表情；点开大图/Esc退出、免费添加成功变为移除；未移除 |
 | `/support` | 已看加载→空列表 |
