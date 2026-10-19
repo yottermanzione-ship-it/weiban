@@ -124,7 +124,11 @@ export const PRICE_TIER_EXPENSIVE_ABOVE_MICROS = 60_000;
  * 3.17（会员 v5，16 号 §2.2）：用户端「约每条 X 积分」在没有最近 7 天数据时的默认假设：
  * 发给模型约 1 万 token（其中八成命中缓存）、回复约 200 token。
  */
-export const DEFAULT_REPLY_ASSUMPTION = { inputTokens: 2000, cachedInputTokens: 8000, outputTokens: 200 };
+export const DEFAULT_REPLY_ASSUMPTION = {
+  inputTokens: 2000,
+  cachedInputTokens: 8000,
+  outputTokens: 200,
+};
 
 /** 按默认假设估算一条回复（微元，向上取整）。 */
 export function defaultReplyMicros(p: ModelTextPrices): number {

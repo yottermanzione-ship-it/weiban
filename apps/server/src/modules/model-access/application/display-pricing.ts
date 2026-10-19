@@ -135,9 +135,10 @@ export class DisplayPricingService {
     if (keys.length === 0) return out;
     const { baseModelKey } = await this.getSettings();
     const wanted = [...new Set([...keys, ...(baseModelKey ? [baseModelKey] : [])])];
-    const priceMap = prices && (!baseModelKey || prices.has(baseModelKey))
-      ? prices
-      : await this.prices.textPrices(wanted);
+    const priceMap =
+      prices && (!baseModelKey || prices.has(baseModelKey))
+        ? prices
+        : await this.prices.textPrices(wanted);
     const manualRows = await this.database.db
       .select({ modelKey: modelCatalog.modelKey, value: modelCatalog.displayMultiplier })
       .from(modelCatalog)

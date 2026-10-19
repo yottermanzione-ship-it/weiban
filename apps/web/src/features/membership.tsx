@@ -34,8 +34,18 @@ interface Row {
 }
 
 function CellView({ value }: { value: Cell }) {
-  if (value === true) return <span className="benefit-yes" aria-label="有">✓</span>;
-  if (value === false) return <span className="benefit-no" aria-label="无">—</span>;
+  if (value === true)
+    return (
+      <span className="benefit-yes" aria-label="有">
+        ✓
+      </span>
+    );
+  if (value === false)
+    return (
+      <span className="benefit-no" aria-label="无">
+        —
+      </span>
+    );
   return <span className="benefit-text">{value}</span>;
 }
 
@@ -104,7 +114,9 @@ export function MembershipPage() {
                 <small>送 {formatPoints(plan.bonusPoints)} 积分</small>
               </span>
               <span className="membership-price">
-                <span className="recharge-price">¥{yuan(first ? plan.firstPriceFen : plan.priceFen)}</span>
+                <span className="recharge-price">
+                  ¥{yuan(first ? plan.firstPriceFen : plan.priceFen)}
+                </span>
                 {first && <s className="hint">¥{yuan(plan.priceFen)}</s>}
                 {first && <small className="hint">首次价，每人限一次</small>}
               </span>
@@ -112,7 +124,9 @@ export function MembershipPage() {
           );
         })}
       </div>
-      <p className="hint page-note">会员可叠加续期；赠送积分开通即到账，会员到期后也能继续用，扣费时先用赠送积分。</p>
+      <p className="hint page-note">
+        会员可叠加续期；赠送积分开通即到账，会员到期后也能继续用，扣费时先用赠送积分。
+      </p>
 
       <p className="recharge-section">权益对照</p>
       <div className="benefit-table" role="table" aria-label="免费与 PRO+ 权益对照">
@@ -137,7 +151,8 @@ export function MembershipPage() {
         ))}
       </div>
       <p className="hint page-note">
-        所有 AI 回复按积分计费，开通即送积分。扣费按实际用量（1 元 = 100 积分），会员与免费用户单价相同。新用户注册后前 7 天按 PRO+ 的记忆范围体验。
+        所有 AI 回复按积分计费，开通即送积分。扣费按实际用量（1 元 = 100
+        积分），会员与免费用户单价相同。新用户注册后前 7 天按 PRO+ 的记忆范围体验。
       </p>
 
       {(offer.error || roleConfig.error) && (

@@ -44,9 +44,30 @@ export const SIGNUP_BONUS_KEY_PREFIX = 'signup_bonus:';
 /** 16 号 §3 已定价格与赠送；注册赠送默认 0（数额待总经理定）。 */
 export const DEFAULT_MEMBERSHIP_SETTINGS: MembershipSettings = {
   plans: [
-    { planId: 'month', name: '月卡', months: 1, priceFen: 2000, firstPriceFen: 1290, bonusPoints: 3000 },
-    { planId: 'quarter', name: '季卡', months: 3, priceFen: 5800, firstPriceFen: 3990, bonusPoints: 9000 },
-    { planId: 'year', name: '年卡', months: 12, priceFen: 19800, firstPriceFen: 15990, bonusPoints: 30000 },
+    {
+      planId: 'month',
+      name: '月卡',
+      months: 1,
+      priceFen: 2000,
+      firstPriceFen: 1290,
+      bonusPoints: 3000,
+    },
+    {
+      planId: 'quarter',
+      name: '季卡',
+      months: 3,
+      priceFen: 5800,
+      firstPriceFen: 3990,
+      bonusPoints: 9000,
+    },
+    {
+      planId: 'year',
+      name: '年卡',
+      months: 12,
+      priceFen: 19800,
+      firstPriceFen: 15990,
+      bonusPoints: 30000,
+    },
   ],
   contactHint: '暂未开放在线支付，请联系管理员开通',
   signupBonusPoints: 0,
@@ -81,7 +102,8 @@ export class MembershipOrderService {
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(Ledger) private readonly ledger: Ledger,
     @Inject(IDENTITY_MEMBERSHIP_READ_PORT) private readonly membership: IdentityMembershipReadPort,
-    @Inject(IDENTITY_MEMBERSHIP_WRITE_PORT) private readonly membershipWrite: IdentityMembershipWritePort,
+    @Inject(IDENTITY_MEMBERSHIP_WRITE_PORT)
+    private readonly membershipWrite: IdentityMembershipWritePort,
   ) {}
 
   // ---------- 配置 ----------
@@ -95,7 +117,10 @@ export class MembershipOrderService {
     return parsed.success ? parsed.data : DEFAULT_MEMBERSHIP_SETTINGS;
   }
 
-  async updateSettings(operatorUserId: string, input: MembershipSettings): Promise<MembershipSettings> {
+  async updateSettings(
+    operatorUserId: string,
+    input: MembershipSettings,
+  ): Promise<MembershipSettings> {
     const ids = input.plans.map((p) => p.planId);
     if (ids.join() !== PLAN_ORDER.join())
       throw new AppError('bad_request', '会员档位必须依次是月卡、季卡、年卡');
@@ -145,7 +170,11 @@ export class MembershipOrderService {
 
   // ---------- 后台 ----------
 
-  async listOrders(query: { userId?: string | undefined; cursor?: string | undefined; limit: number }) {
+  async listOrders(query: {
+    userId?: string | undefined;
+    cursor?: string | undefined;
+    limit: number;
+  }) {
     const offset = query.cursor && /^\d{1,7}$/.test(query.cursor) ? Number(query.cursor) : 0;
     const rows = await this.database.db
       .select()

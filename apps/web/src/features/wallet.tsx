@@ -551,7 +551,9 @@ export function PricesPage() {
       {section('聊天模型', chat)}
       {section('私密模式模型', adult)}
       <p className="hint page-note">
-        「×倍率」用来比较各模型贵不贵；「约每条」按最近 7 天大家用这个模型的平均消耗估算（数据不足时按常见用量估算），不是报价。所有 AI 回复都按实际用量扣积分，多冻结的会退回。
+        「×倍率」用来比较各模型贵不贵；「约每条」按最近 7
+        天大家用这个模型的平均消耗估算（数据不足时按常见用量估算），不是报价。所有 AI
+        回复都按实际用量扣积分，多冻结的会退回。
       </p>
       {models.error && (
         <p role="alert" className="notice-bar">

@@ -230,7 +230,9 @@ export class GrowthService {
     const basePoints = P25_POINTS[eventType] ?? 0;
     if (basePoints <= 0) throw new AppError('bad_request', '不支持的熟悉度事件类型');
     // 会员 v5：PRO+ 好感度轻微加成（加分与每日上限同比例，见 P25_FAMILIARITY.proPlusBonusRate）
-    const rate = (await this.membership?.isProPlus(userId, tx)) ? P25_FAMILIARITY.proPlusBonusRate : 1;
+    const rate = (await this.membership?.isProPlus(userId, tx))
+      ? P25_FAMILIARITY.proPlusBonusRate
+      : 1;
     const rawPoints = Math.ceil(basePoints * rate);
     const dailyCap = Math.ceil(P25_FAMILIARITY.maxPointsPerCharacterPerDay * rate);
 

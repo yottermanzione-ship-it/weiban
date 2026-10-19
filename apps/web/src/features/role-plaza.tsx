@@ -703,7 +703,8 @@ export function RoleRequestListPage() {
         <p>说说你想要的角色，官方会为你制作，做好后自动加到你的通讯录。</p>
         {config.data && (
           <p className="hint">
-            还剩 {config.data.quota.remaining} 次免费申请，用完后每次 {config.data.pointsCost} 积分。
+            还剩 {config.data.quota.remaining} 次免费申请，用完后每次 {config.data.pointsCost}{' '}
+            积分。
           </p>
         )}
         <Link
@@ -987,7 +988,8 @@ export function RoleRequestFormPage() {
               。
             </p>
             <p>
-              每周次数按北京时间周一 0 点重置，不累积到下周；先用每周次数。被拒绝或撤回的申请会退还次数；收费申请完成时扣除，拒绝或撤回退回冻结积分。
+              每周次数按北京时间周一 0
+              点重置，不累积到下周；先用每周次数。被拒绝或撤回的申请会退还次数；收费申请完成时扣除，拒绝或撤回退回冻结积分。
             </p>
           </div>
         )}

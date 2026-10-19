@@ -6,17 +6,7 @@
  * - 手动改到期时间保留为「纠错」用：不记订单、不发积分。
  */
 import { useState } from 'react';
-import {
-  Alert,
-  Button,
-  Collapse,
-  Form,
-  Input,
-  InputNumber,
-  Radio,
-  Space,
-  Switch,
-} from 'antd';
+import { Alert, Button, Collapse, Form, Input, InputNumber, Radio, Space, Switch } from 'antd';
 import {
   MembershipAdminEndpoints,
   MembershipOrderAdminEndpoints,
@@ -25,14 +15,7 @@ import {
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
-import {
-  FieldHelp,
-  Page,
-  SectionCard,
-  StatusTag,
-  useDangerConfirm,
-  useToast,
-} from '../ui/page.js';
+import { FieldHelp, Page, SectionCard, StatusTag, useDangerConfirm, useToast } from '../ui/page.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { formatDateTime } from '../ui/format.js';
 
@@ -185,9 +168,7 @@ function OpenMembership({ settings, onDone }: { settings?: MembershipSettings; o
             <Form.Item
               label="按首次价"
               extra={
-                <FieldHelp>
-                  每人只有一次首次价（任一档）。用户已经按原价付款时关掉它。
-                </FieldHelp>
+                <FieldHelp>每人只有一次首次价（任一档）。用户已经按原价付款时关掉它。</FieldHelp>
               }
             >
               <Switch checked={useFirst} disabled={firstUsed} onChange={setUseFirst} />
@@ -268,13 +249,7 @@ function OpenMembership({ settings, onDone }: { settings?: MembershipSettings; o
   );
 }
 
-function SettingsCard({
-  settings,
-  onSaved,
-}: {
-  settings: MembershipSettings;
-  onSaved(): void;
-}) {
+function SettingsCard({ settings, onSaved }: { settings: MembershipSettings; onSaved(): void }) {
   const toast = useToast();
   const [form] = Form.useForm<MembershipSettings>();
   const [saving, setSaving] = useState(false);
@@ -321,16 +296,32 @@ function SettingsCard({
       <Form<MembershipSettings> form={form} layout="vertical" initialValues={settings}>
         {settings.plans.map((p, i) => (
           <Space key={p.planId} wrap align="start">
-            <Form.Item label={`${PLAN_NAME[p.planId]}名称`} name={['plans', i, 'name']} rules={[{ required: true }]}>
+            <Form.Item
+              label={`${PLAN_NAME[p.planId]}名称`}
+              name={['plans', i, 'name']}
+              rules={[{ required: true }]}
+            >
               <Input style={{ width: 100 }} maxLength={10} />
             </Form.Item>
-            <Form.Item label="原价（分）" name={['plans', i, 'priceFen']} rules={[{ required: true }]}>
+            <Form.Item
+              label="原价（分）"
+              name={['plans', i, 'priceFen']}
+              rules={[{ required: true }]}
+            >
               <InputNumber min={0} precision={0} style={{ width: 120 }} />
             </Form.Item>
-            <Form.Item label="首次价（分）" name={['plans', i, 'firstPriceFen']} rules={[{ required: true }]}>
+            <Form.Item
+              label="首次价（分）"
+              name={['plans', i, 'firstPriceFen']}
+              rules={[{ required: true }]}
+            >
               <InputNumber min={0} precision={0} style={{ width: 120 }} />
             </Form.Item>
-            <Form.Item label="赠送积分" name={['plans', i, 'bonusPoints']} rules={[{ required: true }]}>
+            <Form.Item
+              label="赠送积分"
+              name={['plans', i, 'bonusPoints']}
+              rules={[{ required: true }]}
+            >
               <InputNumber min={0} precision={0} style={{ width: 120 }} />
             </Form.Item>
             <Form.Item label="时长">
@@ -342,7 +333,9 @@ function SettingsCard({
           label="注册赠送积分"
           name="signupBonusPoints"
           rules={[{ required: true }]}
-          extra={<FieldHelp>新用户注册时一次性赠送（赠送积分）。0 = 不送；数额待总经理定。</FieldHelp>}
+          extra={
+            <FieldHelp>新用户注册时一次性赠送（赠送积分）。0 = 不送；数额待总经理定。</FieldHelp>
+          }
         >
           <InputNumber min={0} max={1_000_000} precision={0} style={{ width: 160 }} />
         </Form.Item>
