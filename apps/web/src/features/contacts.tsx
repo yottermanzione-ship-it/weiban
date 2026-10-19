@@ -656,9 +656,9 @@ export function CharacterPage({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [restore, setRestore] = useState(false);
-  const [sheet, setSheet] = useState<'remark' | 'intro' | 'greet' | 'more' | 'relationship' | null>(
-    null,
-  );
+  const [sheet, setSheet] = useState<
+    'remark' | 'avatar' | 'intro' | 'greet' | 'more' | 'relationship' | null
+  >(null);
   const greetInput = useRef<HTMLInputElement>(null);
   // 从角色广场点「添加到通讯录」过来（?add=1）：资料读到后直接打开打招呼弹层
   const autoAdd = !onboarding && query.get('add') === '1';
@@ -745,7 +745,19 @@ export function CharacterPage({
         />
       )}
       <div className="profile-head">
-        <CharacterAvatar id={characterId} profile={data} size={64} radius={8} />
+        {active ? (
+          // 同旧版 friend_profile_page：好友点头像换头像，只对自己生效（avatarSource: 'user'）。
+          <button
+            type="button"
+            className="avatar-button"
+            aria-label="设置头像"
+            onClick={() => setSheet('avatar')}
+          >
+            <CharacterAvatar id={characterId} profile={data} size={64} radius={8} />
+          </button>
+        ) : (
+          <CharacterAvatar id={characterId} profile={data} size={64} radius={8} />
+        )}
         <div className="profile-head-text">
           <h2>
             <span>{contact?.remark || data?.name || '角色资料'}</span>
@@ -898,6 +910,11 @@ export function CharacterPage({
               onChange={(event) => setGreeting(event.target.value)}
             />
           </div>
+        </Sheet>
+      )}
+      {sheet === 'avatar' && contact && (
+        <Sheet title="设置头像" onClose={() => setSheet(null)} closeLabel="完成">
+          <ContactAvatarEditor characterId={characterId} />
         </Sheet>
       )}
       {sheet === 'remark' && contact && (
