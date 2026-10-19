@@ -1445,6 +1445,13 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         { label: '音乐', icon: 'wechat/discover_listen', onClick: showComingSoon },
       ];
 
+  // 打开表情/加号面板后列表变矮，重新贴到底，避免最后一条被输入栏挡住
+  const lastRowKey = rows.length ? rows[rows.length - 1]!.key : null;
+  useEffect(() => {
+    if (panel === 'none' || !lastRowKey) return;
+    setScrollTarget({ key: lastRowKey, nonce: Date.now() });
+  }, [panel, lastRowKey]);
+
   return (
     <main className={`wx-chat ${panel !== 'none' ? 'with-panel' : ''}`}>
       <header className="wx-chat-head">
