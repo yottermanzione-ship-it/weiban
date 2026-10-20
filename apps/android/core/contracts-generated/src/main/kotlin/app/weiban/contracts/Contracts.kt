@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.23. Regenerate: pnpm android:generate
+// Contract 3.24. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.23"
+const val CONTRACT_VERSION: String = "3.24"
 
 @Serializable
 data class AccountAlias(
@@ -203,6 +203,7 @@ data class AdminCatalogEntry(
     @SerialName("capabilities") val `capabilities`: List<ModelCapability>,
     @SerialName("tags") val `tags`: List<String>,
     @SerialName("leaderboardRank") val `leaderboardRank`: Long?,
+    @SerialName("arenaModelName") val `arenaModelName`: String? = null,
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
@@ -223,6 +224,7 @@ data class AdminCatalogEntryWrite(
     @SerialName("capabilities") val `capabilities`: List<ModelCapability>,
     @SerialName("tags") val `tags`: List<String>,
     @SerialName("leaderboardRank") val `leaderboardRank`: Long?,
+    @SerialName("arenaModelName") val `arenaModelName`: String? = null,
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
@@ -241,6 +243,7 @@ data class AdminCatalogEntryWriteInput(
     @SerialName("capabilities") val `capabilities`: List<ModelCapability>,
     @SerialName("tags") val `tags`: List<String>,
     @SerialName("leaderboardRank") val `leaderboardRank`: Long?,
+    @SerialName("arenaModelName") val `arenaModelName`: String? = null,
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
@@ -387,6 +390,7 @@ data class AdminModel(
     @SerialName("capabilities") val `capabilities`: List<ModelCapability>,
     @SerialName("tags") val `tags`: List<String>,
     @SerialName("leaderboardRank") val `leaderboardRank`: Long?,
+    @SerialName("arenaModelName") val `arenaModelName`: String? = null,
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
@@ -404,6 +408,8 @@ data class AdminModel(
     @SerialName("displayMultiplier") val `displayMultiplier`: Double? = null,
     @SerialName("discount") val `discount`: ModelDiscount? = null,
     @SerialName("discountActive") val `discountActive`: Boolean? = null,
+    @SerialName("arenaRank") val `arenaRank`: Long? = null,
+    @SerialName("availability") val `availability`: AdminModelAvailability? = null,
 )
 
 @Serializable
@@ -416,6 +422,7 @@ data class AdminModelWrite(
     @SerialName("capabilities") val `capabilities`: List<ModelCapability>,
     @SerialName("tags") val `tags`: List<String>,
     @SerialName("leaderboardRank") val `leaderboardRank`: Long?,
+    @SerialName("arenaModelName") val `arenaModelName`: String? = null,
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
@@ -439,6 +446,7 @@ data class AdminModelWriteInput(
     @SerialName("capabilities") val `capabilities`: List<ModelCapability>,
     @SerialName("tags") val `tags`: List<String>,
     @SerialName("leaderboardRank") val `leaderboardRank`: Long?,
+    @SerialName("arenaModelName") val `arenaModelName`: String? = null,
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
@@ -764,6 +772,8 @@ data class AdminUsageRecord(
     @SerialName("inputTokens") val `inputTokens`: Long,
     @SerialName("cachedInputTokens") val `cachedInputTokens`: Long,
     @SerialName("outputTokens") val `outputTokens`: Long,
+    @SerialName("cacheWrite5mTokens") val `cacheWrite5mTokens`: Long? = null,
+    @SerialName("cacheWrite1hTokens") val `cacheWrite1hTokens`: Long? = null,
     @SerialName("estimated") val `estimated`: Boolean,
     @SerialName("latencyMs") val `latencyMs`: Long,
     @SerialName("ttftMs") val `ttftMs`: Long?,
@@ -812,6 +822,7 @@ data class AdminUsageSummaryRow(
     @SerialName("inputTokens") val `inputTokens`: Long,
     @SerialName("cachedInputTokens") val `cachedInputTokens`: Long,
     @SerialName("outputTokens") val `outputTokens`: Long,
+    @SerialName("cacheWriteTokens") val `cacheWriteTokens`: Long? = null,
     @SerialName("totalTokens") val `totalTokens`: Long,
     @SerialName("estimatedTokens") val `estimatedTokens`: Long,
     @SerialName("chargedMicros") val `chargedMicros`: Long,
@@ -834,6 +845,7 @@ data class AdminUsageTotals(
     @SerialName("inputTokens") val `inputTokens`: Long,
     @SerialName("cachedInputTokens") val `cachedInputTokens`: Long,
     @SerialName("outputTokens") val `outputTokens`: Long,
+    @SerialName("cacheWriteTokens") val `cacheWriteTokens`: Long? = null,
     @SerialName("totalTokens") val `totalTokens`: Long,
     @SerialName("estimatedTokens") val `estimatedTokens`: Long,
     @SerialName("chargedMicros") val `chargedMicros`: Long,
@@ -5706,6 +5718,16 @@ typealias ImportJobStatus = String
 
 typealias ImportKind = String
 
+@Serializable
+data class ImportLeaderboardRequest(
+    @SerialName("text") val `text`: String,
+)
+
+@Serializable
+data class ImportLeaderboardRequestInput(
+    @SerialName("text") val `text`: String,
+)
+
 typealias ImportResult = JsonElement
 
 typealias ImportResultInput = JsonElement
@@ -5759,6 +5781,16 @@ data class Invite(
     @SerialName("createdAt") val `createdAt`: Timestamp,
     @SerialName("expiresAt") val `expiresAt`: Timestamp?,
     @SerialName("usedAt") val `usedAt`: Timestamp?,
+)
+
+@Serializable
+data class LeaderboardSnapshotStatus(
+    @SerialName("source") val `source`: ModelLeaderboardSource?,
+    @SerialName("snapshot") val `snapshot`: LeaderboardSnapshotStatusSnapshot?,
+    @SerialName("lastAttemptAt") val `lastAttemptAt`: Timestamp?,
+    @SerialName("lastError") val `lastError`: String?,
+    @SerialName("matched") val `matched`: List<LeaderboardSnapshotStatusMatchedItem>,
+    @SerialName("unmatched") val `unmatched`: List<LeaderboardSnapshotStatusUnmatchedItem>,
 )
 
 @Serializable
@@ -6740,6 +6772,7 @@ data class ModelInfo(
     @SerialName("tags") val `tags`: List<String>,
     @SerialName("leaderboardRank") val `leaderboardRank`: Long?,
     @SerialName("available") val `available`: Boolean,
+    @SerialName("unavailableDetail") val `unavailableDetail`: String? = null,
     @SerialName("pointsPerReply") val `pointsPerReply`: Double? = null,
     @SerialName("pointsPerReplyBasis") val `pointsPerReplyBasis`: String? = null,
     @SerialName("displayMultiplier") val `displayMultiplier`: Double? = null,
@@ -6777,6 +6810,8 @@ data class ModelRates(
     @SerialName("input") val `input`: Double,
     @SerialName("output") val `output`: Double,
     @SerialName("cache") val `cache`: Double,
+    @SerialName("cacheWrite5m") val `cacheWrite5m`: Double? = null,
+    @SerialName("cacheWrite1h") val `cacheWrite1h`: Double? = null,
 )
 
 @Serializable
@@ -6784,6 +6819,8 @@ data class ModelRatesInput(
     @SerialName("input") val `input`: Double,
     @SerialName("output") val `output`: Double,
     @SerialName("cache") val `cache`: Double,
+    @SerialName("cacheWrite5m") val `cacheWrite5m`: Double? = null,
+    @SerialName("cacheWrite1h") val `cacheWrite1h`: Double? = null,
 )
 
 @Serializable
@@ -6801,6 +6838,7 @@ data class ModelRefState(
     @SerialName("modelKey") val `modelKey`: ModelKey,
     @SerialName("available") val `available`: Boolean,
     @SerialName("unavailableReason") val `unavailableReason`: String?,
+    @SerialName("unavailableDetail") val `unavailableDetail`: ModelUnavailableDetail? = null,
 )
 
 typealias ModelRole = String
@@ -6852,8 +6890,13 @@ data class ModelStatus(
     @SerialName("available") val `available`: Boolean,
     @SerialName("reason") val `reason`: String?,
     @SerialName("canFallbackToDefault") val `canFallbackToDefault`: Boolean,
+    @SerialName("detail") val `detail`: ModelUnavailableDetail? = null,
     @SerialName("visionAvailable") val `visionAvailable`: Boolean? = null,
 )
+
+typealias ModelUnavailableDetail = String
+
+typealias ModelUnavailableDetailValue = String
 
 @Serializable
 data class MomentsActor(
@@ -8994,8 +9037,8 @@ data class RouteBillingBounds(
     @SerialName("format") val `format`: String = "billing-bounds-v1",
     @EncodeDefault
     @SerialName("pauseReason") val `pauseReason`: String? = "usage_unknown",
-    @SerialName("sourceUrl") val `sourceUrl`: String,
-    @SerialName("checkedAt") val `checkedAt`: Timestamp,
+    @SerialName("sourceUrl") val `sourceUrl`: String? = null,
+    @SerialName("checkedAt") val `checkedAt`: Timestamp? = null,
     @SerialName("text") val `text`: RouteBillingBoundsText? = null,
     @SerialName("tts") val `tts`: RouteBillingBoundsTts? = null,
     @SerialName("asr") val `asr`: RouteBillingBoundsAsr? = null,
@@ -9010,8 +9053,8 @@ data class RouteBillingBoundsInput(
     @SerialName("format") val `format`: String = "billing-bounds-v1",
     @EncodeDefault
     @SerialName("pauseReason") val `pauseReason`: String? = "usage_unknown",
-    @SerialName("sourceUrl") val `sourceUrl`: String,
-    @SerialName("checkedAt") val `checkedAt`: Timestamp,
+    @SerialName("sourceUrl") val `sourceUrl`: String? = null,
+    @SerialName("checkedAt") val `checkedAt`: Timestamp? = null,
     @SerialName("text") val `text`: RouteBillingBoundsInputText? = null,
     @SerialName("tts") val `tts`: RouteBillingBoundsInputTts? = null,
     @SerialName("asr") val `asr`: RouteBillingBoundsInputAsr? = null,
@@ -10127,6 +10170,7 @@ typealias UpdateSeq = Long
 @Serializable
 data class UpdateUpstreamRequest(
     @SerialName("name") val `name`: String? = null,
+    @SerialName("kind") val `kind`: UpstreamKind? = null,
     @SerialName("baseUrl") val `baseUrl`: String? = null,
     @SerialName("provider") val `provider`: String? = null,
     @SerialName("priority") val `priority`: Long? = null,
@@ -10140,6 +10184,7 @@ data class UpdateUpstreamRequest(
 @Serializable
 data class UpdateUpstreamRequestInput(
     @SerialName("name") val `name`: String? = null,
+    @SerialName("kind") val `kind`: UpstreamKind? = null,
     @SerialName("baseUrl") val `baseUrl`: String? = null,
     @SerialName("provider") val `provider`: String? = null,
     @SerialName("priority") val `priority`: Long? = null,
@@ -11422,6 +11467,12 @@ data class AdminCharacterPublishChecks(
     @SerialName("personaStabilityPassed") val `personaStabilityPassed`: Boolean,
     @SerialName("hardBoundaryCasesPassed") val `hardBoundaryCasesPassed`: Boolean,
     @SerialName("hasFallbackGreeting") val `hasFallbackGreeting`: Boolean,
+)
+
+@Serializable
+data class AdminModelAvailability(
+    @SerialName("available") val `available`: Boolean,
+    @SerialName("detail") val `detail`: ModelUnavailableDetail?,
 )
 
 typealias AdminPlazaReportTarget = JsonElement
@@ -12892,6 +12943,29 @@ data class HealthTagAdminEndpointsPutSymptomTagsBodyItemsItem(
 data class ImportJobSpeakersItem(
     @SerialName("name") val `name`: String,
     @SerialName("messageCount") val `messageCount`: Long,
+)
+
+@Serializable
+data class LeaderboardSnapshotStatusSnapshot(
+    @SerialName("fetchedAt") val `fetchedAt`: Timestamp,
+    @SerialName("method") val `method`: String,
+    @SerialName("entries") val `entries`: Long,
+)
+
+@Serializable
+data class LeaderboardSnapshotStatusMatchedItem(
+    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("arenaModelName") val `arenaModelName`: String,
+    @SerialName("rank") val `rank`: Long,
+    @SerialName("relativeRank") val `relativeRank`: Long,
+)
+
+@Serializable
+data class LeaderboardSnapshotStatusUnmatchedItem(
+    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("arenaModelName") val `arenaModelName`: String?,
 )
 
 @Serializable

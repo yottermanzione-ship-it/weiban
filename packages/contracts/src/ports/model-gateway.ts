@@ -153,6 +153,9 @@ export interface GenerateTextOutput {
   usage: {
     inputTokens: number;
     cachedInputTokens: number;
+    /** 3.24：缓存写入 token（只有 Anthropic 原生协议报告）。 */
+    cacheWrite5mTokens?: number;
+    cacheWrite1hTokens?: number;
     outputTokens: number;
     estimated: boolean;
   };

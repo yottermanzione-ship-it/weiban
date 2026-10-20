@@ -19,6 +19,9 @@ export type BillingAccountRef = { kind: 'user'; userId: string } | { kind: 'plat
 export interface UsageQuantities {
   inputTokens?: number;
   cachedInputTokens?: number;
+  /** 3.24：缓存写入 token（Anthropic 原生协议报告，5 分钟 / 1 小时两档）；按缓存写入价计，没定价按普通输入价。 */
+  cacheWrite5mTokens?: number;
+  cacheWrite1hTokens?: number;
   outputTokens?: number;
   images?: number;
   ttsChars?: number;
@@ -260,6 +263,9 @@ export interface ModelTokenPrices {
   inputPerMillionMicros: number;
   cachedInputPerMillionMicros: number | null;
   outputPerMillionMicros: number;
+  /** 3.24：缓存写入（5 分钟 / 1 小时）全天价；null / 不带 = 没有单独价格（按输入价计）。 */
+  cacheWrite5mPerMillionMicros?: number | null;
+  cacheWrite1hPerMillionMicros?: number | null;
 }
 
 /** 3.3：当前生效价目表里一个模型的 token 价格（全天价；有分时价时 hasTimeBands = true）。 */

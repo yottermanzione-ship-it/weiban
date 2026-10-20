@@ -12,6 +12,9 @@
  * v3.4（2026-10-13，ADR-0032 第二批）：上游账号池——一行上游 = 一个上游账号（同一服务商可多个），新增服务商、
  * 优先级、权重、并发 / 每分钟请求上限、启用、冷却与健康字段；模型路由（一个模型 → 多个账号）；修改账号、批量操作、
  * 拉取账号可用模型；每用户并发 / 频率上限与健康参数；用量看板（平均延迟、失败率、缓存命中率、积分、按小时、概览）。
+ * 3.24（2026-10-21，试用反馈第二轮 F2）：上游协议新增 anthropic（Claude 原生 Messages）；倍率增「缓存写入 5 分钟 / 1 小时」；
+ * 去掉「图片识别」场景（图片随文本聊天 / 私密模式模型）；计费上限的资料链接与核对日期改为可选；模型「暂时无法使用」带具体原因；
+ * 榜单自动获取（榜单对应名称、抓取状态、立即刷新、粘贴导入），用户端名次按相对顺序重新编号。
  */
 import { z } from 'zod';
 import {
@@ -68,7 +71,9 @@ export const PriceTier = z.enum(['cheap', 'medium', 'expensive']);
 /**
  * 3.22（试用反馈批 E3）：模型使用场景。每个场景用户单独选一个模型（不做多模态「直接听语音 / 直接生成」）。
  * - chat 文本聊天（私聊、群聊回复；记忆整理、角色生态里「发文字」等后台文字任务也按它走）；
- * - vision 图片识别（看用户发的图；文本聊天模型自己能识图时直接用它）；
+ *   3.24 起用户发的图片也随文本聊天模型（私密模式下随私密模式模型）发送，文本聊天 / 私密模式模型应具备识图能力；
+ * - vision 图片识别：**3.24 起不再使用**（服务器不再返回这个场景、忽略对它的写入，0119 迁移已清除旧配置）；
+ *   取值保留只为旧客户端能解析；
  * - voice_message 语音消息（角色发语音的合成；角色音色绑定了具体语音模型时以音色为准）；
  * - speech_recognition 语音识别（用户语音转文字，含通话里听用户）；
  * - voice_call 语音通话（通话中对话用的文本模型）；
@@ -121,6 +126,31 @@ export const ModelDiscountInfo = z.object({
   endsAt: Timestamp,
 });
 
+/**
+ * 3.24：模型「暂时无法使用」的具体原因（后台与用户端都按它写清楚，不只写「暂时无法使用」）。
+ * - model_removed 已下架 / 删除；no_route 没有可用线路；upstream_disabled 线路的上游账号都被停用；
+ * - upstream_invalid_key 上游密钥无效；upstream_quota_exhausted 上游余额不足；
+ * - upstream_unavailable 上游连接异常，被健康检查暂停（探测连通后自动恢复）；upstream_cooldown 连续失败后短暂暂停；
+ * - billing_bounds_missing 线路缺计费上限；billing_bounds_paused 用量核对未通过，线路已暂停；
+ * - price_missing 当前价目表没有这个模型的价格；output_limit_too_small 线路最大输出小于一条回复需要的额度。
+ * 客户端用 tolerantEnum 解析：不认识的新原因显示通用「暂时无法使用」。
+ */
+export const ModelUnavailableDetailValue = z.enum([
+  'model_removed',
+  'no_route',
+  'upstream_disabled',
+  'upstream_invalid_key',
+  'upstream_quota_exhausted',
+  'upstream_unavailable',
+  'upstream_cooldown',
+  'billing_bounds_missing',
+  'billing_bounds_paused',
+  'price_missing',
+  'output_limit_too_small',
+]);
+export type ModelUnavailableDetail = z.infer<typeof ModelUnavailableDetailValue>;
+export const ModelUnavailableDetail = tolerantEnum(ModelUnavailableDetailValue);
+
 export const ModelInfo = z.object({
   modelKey: ModelKey,
   displayName: z.string(),
@@ -131,9 +161,15 @@ export const ModelInfo = z.object({
   capabilities: z.array(tolerantEnum(ModelCapability)),
   /** 展示标签，例：「中文好」「长记忆」「后台推荐」，由 AI 负责人维护。 */
   tags: z.array(z.string()),
+  /**
+   * 榜单名次。3.24 起是**相对名次**：本次返回的列表里有名次的模型按原榜名次排序后重新编号 1、2、3…N
+   * （原榜第 1、3、4、9 名 → 1、2、3、4），不显示原始名次；没上榜为 null。
+   */
   leaderboardRank: z.number().int().positive().nullable(),
   /** 当前是否可用（上游故障时为 false，下架的模型不出现在列表中）。 */
   available: z.boolean(),
+  /** 3.24：不可用的具体原因（available = true 时为 null / 不带）。 */
+  unavailableDetail: tolerantEnum(ModelUnavailableDetailValue).nullable().optional(),
   /**
    * v3.3：约每条回复消耗多少积分（按 cost-estimate.md 7.2「标准回复」用量和当前售价估算，1 元 = 100 积分）。
    * 用户端价目表只显示这个数；当前价目表没有该模型的 token 价格时为 null。
@@ -185,6 +221,8 @@ export const ModelRefState = ModelRef.extend({
   /** 该选择当前是否可用。 */
   available: z.boolean(),
   unavailableReason: z.enum(['model_removed', 'provider_unavailable']).nullable(),
+  /** 3.24：不可用的具体原因（可用时为 null / 不带）。 */
+  unavailableDetail: ModelUnavailableDetail.nullable().optional(),
 });
 
 /** 模型的三种用途（术语见 glossary：聊天模型、后台模型、成人模式模型）。 */
@@ -236,9 +274,11 @@ export const ModelStatus = z.object({
     .nullable(),
   /** 角色单独设置的模型不可用、全局模型正常时为 true，界面显示「临时改用默认模型」按钮。 */
   canFallbackToDefault: z.boolean(),
+  /** 3.24：reason 为 provider_unavailable / model_removed 时的具体原因（横条按它写清楚）。 */
+  detail: ModelUnavailableDetail.nullable().optional(),
   /**
-   * 3.1（积压 ㉚）：识图能否使用（截图导入、发图给角色看）= 解析出的聊天模型有 vision 能力，
-   * 或平台设置了默认识图模型（defaultFor = vision）。客户端据此提前禁用截图导入入口；旧服务器不带时按 true（失败时再提示）。
+   * 3.1（积压 ㉚）：识图能否使用（截图导入、发图给角色看）= 解析出的聊天模型有 vision 能力。
+   * 3.24 起只看文本聊天模型（不再有图片识别场景）。客户端据此提前禁用截图导入入口；旧服务器不带时按 true（失败时再提示）。
    */
   visionAvailable: z.boolean().optional(),
 });
@@ -406,7 +446,18 @@ export type UpstreamStatus = z.infer<typeof UpstreamStatus>;
 
 /** v1 只有 OpenAI 兼容接入；个别非兼容的语音 / 图片接口由 AI 负责人在适配器中处理并以新取值加入。 */
 /** 3.0：dashscope = 阿里云百炼原生接口（语音、图片）；bocha_search = 博查搜索；jev = TypeSafe AI Jev（CR-18，待配置后验证）。 */
-export const UpstreamKind = z.enum(['openai_compatible', 'dashscope', 'bocha_search', 'jev']);
+/**
+ * 3.24：anthropic = Claude 原生 Messages 接口（`POST {baseUrl}/v1/messages`，x-api-key 鉴权）：system 单独传、
+ * 稳定开头打缓存断点（cache_control）、读回缓存读取 / 写入（5 分钟 / 1 小时）用量。中转站给的 Claude 地址填在 baseUrl
+ * （带不带 /v1 都可以）。只用于文本模型；只在管理端出现。
+ */
+export const UpstreamKind = z.enum([
+  'openai_compatible',
+  'dashscope',
+  'bocha_search',
+  'jev',
+  'anthropic',
+]);
 
 /** v3.4：上游账号的调度参数（可空 = 不限）。 */
 const UpstreamLimitFields = {
@@ -488,6 +539,8 @@ export const CreateUpstreamRequest = z.object({
 /** v3.4：修改上游账号（不含密钥；换密钥用 rotateUpstreamKey）。只改传了的字段。 */
 export const UpdateUpstreamRequest = z.object({
   name: z.string().min(1).max(40).optional(),
+  /** 3.24：改协议（例 OpenAI 兼容 → Anthropic）；与改地址一样清空冷却、按「需要重新测试」处理。 */
+  kind: UpstreamKind.optional(),
   baseUrl: z.url().optional(),
   provider: UpstreamLimitFields.provider.optional(),
   priority: UpstreamLimitFields.priority.optional(),
@@ -504,7 +557,7 @@ export const UpstreamBatchRequest = z.object({
   action: z.enum(['test', 'enable', 'disable']),
 });
 
-/** v3.4：从上游账号拉取到的可用模型（OpenAI 兼容 GET {baseUrl}/models 的 id 列表）。 */
+/** v3.4：从上游账号拉取到的可用模型（OpenAI 兼容 GET {baseUrl}/models；3.24 Anthropic 协议 GET {baseUrl}/v1/models 的 id 列表）。 */
 export const UpstreamModelList = z.object({
   items: z.array(z.object({ id: z.string().max(200) })),
 });
@@ -531,13 +584,17 @@ export const UpstreamTestFailedDetails = z.object({ reason: UpstreamTestFailure 
 export const SystemMessageMode = z.enum(['multi', 'single_system', 'no_system']);
 export type SystemMessageMode = z.infer<typeof SystemMessageMode>;
 
-/** 3.16：管理员依据供应商规格核准，绑定到具体路由；缺失即调用前拒绝，不猜模型上限。 */
+/**
+ * 3.16：管理员依据供应商规格核准，绑定到具体路由；缺失即调用前拒绝，不猜模型上限。
+ * 3.24：sourceUrl（资料来源链接）、checkedAt（核对时间）改为可选，后台表单不再填写。保存时没带 checkedAt 的，
+ * 服务器记为保存时刻（用于判断「用量未知暂停」与重新核对的先后）；带了的不能晚于服务器当前时间。
+ */
 export const RouteBillingBounds = z
   .object({
     format: z.literal('billing-bounds-v1'),
     pauseReason: z.literal('usage_unknown').optional(),
-    sourceUrl: z.url({ protocol: /^https$/ }).max(2048),
-    checkedAt: Timestamp,
+    sourceUrl: z.url({ protocol: /^https$/ }).max(2048).optional(),
+    checkedAt: Timestamp.optional(),
     text: z
       .object({
         contextTokens: z.number().int().min(1).max(10000000),
@@ -583,7 +640,13 @@ export const AdminCatalogEntry = z.object({
   upstreamModelId: z.string().min(1).max(128),
   capabilities: z.array(ModelCapability),
   tags: z.array(z.string().max(16)).max(10),
+  /** 手填的榜单名次（原榜名次）；3.24 起自动获取的榜单里匹配到的名次优先（见 arenaModelName）。 */
   leaderboardRank: z.number().int().positive().nullable(),
+  /**
+   * 3.24：榜单对应名称（榜单上这个模型叫什么，例 claude-opus-4-8）；自动获取榜单时按它匹配名次
+   * （不区分大小写、忽略首尾空白）。写入时不传 = 保持原值；null = 清除。导入配置时取文件的 arena_model。
+   */
+  arenaModelName: z.string().trim().min(1).max(120).nullable().optional(),
   sortOrder: z.number().int(),
   /**
    * 作为平台默认模型（每种最多一个）；无审查模型不能设为默认。
@@ -652,6 +715,13 @@ export const ModelRates = z.object({
   input: z.number().nonnegative().max(100_000),
   output: z.number().nonnegative().max(100_000),
   cache: z.number().nonnegative().max(100_000),
+  /**
+   * 3.24：缓存写入价（元 / 百万 token，可选；5 分钟 / 1 小时两档，按上游提供的填）。上游报告缓存写入 token 时按它计价
+   * （Anthropic 原生协议会报告）；不填 / null = 按普通输入价（input）计。OpenAI 兼容通道通常只报告缓存读取。
+   * 中转站的分档价格（按用量档位）目前只用基础档。
+   */
+  cacheWrite5m: z.number().nonnegative().max(100_000).nullable().optional(),
+  cacheWrite1h: z.number().nonnegative().max(100_000).nullable().optional(),
 });
 export type ModelRates = z.infer<typeof ModelRates>;
 
@@ -675,6 +745,12 @@ export const AdminModel = AdminCatalogEntry.extend({
   discount: ModelDiscount.nullable().optional(),
   /** 3.22：折扣此刻是否生效。 */
   discountActive: z.boolean().optional(),
+  /** 3.24：自动获取的榜单里按榜单对应名称匹配到的原榜名次；没有快照或没匹配上为 null。 */
+  arenaRank: z.number().int().positive().nullable().optional(),
+  /** 3.24：此刻对用户是否可用及具体原因（与用户端同一口径）。 */
+  availability: z
+    .object({ available: z.boolean(), detail: ModelUnavailableDetail.nullable() })
+    .optional(),
 });
 export type AdminModel = z.infer<typeof AdminModel>;
 
@@ -700,7 +776,7 @@ export const AdminModelWrite = AdminCatalogEntryWrite.extend({
 /**
  * 3.22：场景推荐模型（只用于用户端「一键选推荐」）与平台内部模型（用户不可选）。
  * 字段名 = 场景 / 内部用途；null = 未指定。推荐模型须启用且可用于该场景；内部模型不能是无审查模型
- * （adult_check 除外，且须走 OpenRouter）。
+ * （adult_check 除外）。3.24：recommended.vision 不再使用（忽略写入、不再返回）。
  */
 export const ModelScenarioSettings = z.object({
   recommended: z
@@ -767,6 +843,48 @@ export type ModelDeletionImpact = z.infer<typeof ModelDeletionImpact>;
 export const DisplayMultiplierSettings = z.object({ baseModelKey: ModelKey.nullable() });
 export type DisplayMultiplierSettings = z.infer<typeof DisplayMultiplierSettings>;
 
+/**
+ * 3.24：自动获取的榜单状态（后台「模型管理」顶部）。服务器每天抓取一次榜单来源链接（也可「立即刷新」）；
+ * 网站开启人机验证等原因抓不到时保留上次结果、写明原因，可改用「粘贴榜单文本 / CSV」导入。
+ */
+export const LeaderboardSnapshotStatus = z.object({
+  source: ModelLeaderboardSource.nullable(),
+  /** 当前生效的榜单快照（没有为 null）。 */
+  snapshot: z
+    .object({
+      fetchedAt: Timestamp,
+      /** fetch = 服务器自动抓取；paste = 后台粘贴 / 上传导入。 */
+      method: z.enum(['fetch', 'paste']),
+      entries: z.number().int().nonnegative(),
+    })
+    .nullable(),
+  /** 最近一次抓取 / 导入尝试的时间与失败原因（成功时 lastError 为 null）。 */
+  lastAttemptAt: Timestamp.nullable(),
+  lastError: z.string().max(300).nullable(),
+  /** 启用的模型里匹配上的（原榜名次、用户端相对名次）。 */
+  matched: z.array(
+    z.object({
+      modelKey: ModelKey,
+      displayName: z.string(),
+      arenaModelName: z.string(),
+      rank: z.number().int().positive(),
+      relativeRank: z.number().int().positive(),
+    }),
+  ),
+  /** 启用的模型里没匹配上的（没填榜单对应名称时 arenaModelName 为 null）：用户端不显示名次、排在后面。 */
+  unmatched: z.array(
+    z.object({
+      modelKey: ModelKey,
+      displayName: z.string(),
+      arenaModelName: z.string().nullable(),
+    }),
+  ),
+});
+export type LeaderboardSnapshotStatus = z.infer<typeof LeaderboardSnapshotStatus>;
+
+/** 3.24：粘贴导入榜单：从网页复制的表格文本或 CSV（含「名次 / 模型名」），最多 1MB。 */
+export const ImportLeaderboardRequest = z.object({ text: z.string().min(1).max(1_000_000) });
+
 /** v3.4：每用户限流与健康参数（后台「模型管理」设置）。 */
 export const GatewayLimits = z.object({
   /** 每个用户同时进行中的模型调用上限；null = 不限。超出时这次调用按「模型暂时不可用」返回。 */
@@ -825,6 +943,30 @@ export const ModelAccessAdminEndpoints = {
     body: ModelLeaderboardSource,
     response: ModelLeaderboardSource,
     summary: '3.14：管理员维护Arena榜单来源/日期；模型名次沿原leaderboardRank',
+  }),
+  getLeaderboardStatus: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/leaderboard-status`,
+    auth: 'admin',
+    response: LeaderboardSnapshotStatus,
+    summary: '3.24：自动获取的榜单状态（快照时间、失败原因、匹配 / 未匹配的模型）',
+  }),
+  refreshLeaderboard: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/model/leaderboard/refresh`,
+    auth: 'admin',
+    response: LeaderboardSnapshotStatus,
+    summary:
+      '3.24：立即抓取榜单来源链接；失败保留上次结果，lastError 写明原因（例 网站开启人机验证）。写审计',
+  }),
+  importLeaderboard: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/model/leaderboard/import`,
+    auth: 'admin',
+    body: ImportLeaderboardRequest,
+    response: LeaderboardSnapshotStatus,
+    summary:
+      '3.24：粘贴榜单文本 / CSV 导入（抓取不到时的兜底）；一条都解析不出时 422 bad_request。写审计',
   }),
   listUpstreams: defineEndpoint({
     method: 'GET',
@@ -1008,6 +1150,8 @@ export const AdminUsageTotals = z.object({
   inputTokens: z.number().int().nonnegative(),
   cachedInputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
+  /** 3.24：缓存写入 token（5 分钟 + 1 小时；只有 Anthropic 原生协议会报告）。 */
+  cacheWriteTokens: z.number().int().nonnegative().optional(),
   totalTokens: z.number().int().nonnegative(),
   /** 其中按估算得出的 token 数（上游没返回用量时），界面据此显示估算占比。 */
   estimatedTokens: z.number().int().nonnegative(),
@@ -1021,7 +1165,7 @@ export const AdminUsageTotals = z.object({
   avgLatencyMs: z.number().nonnegative().optional(),
   /** 失败率 0～1。 */
   failureRate: z.number().min(0).max(1).optional(),
-  /** 缓存命中率 0～1 = 命中缓存的输入 token ÷（未命中 + 命中的输入 token）。 */
+  /** 缓存命中率 0～1 = 命中缓存的输入 token ÷（未命中 + 命中 + 缓存写入的输入 token）。 */
   cacheHitRate: z.number().min(0).max(1).optional(),
   /**
    * v3.6：理论可缓存占比 0～1 = 带「稳定开头」标记的调用里，稳定开头的估算 token ÷ 这些调用的全部输入 token
@@ -1076,6 +1220,9 @@ export const AdminUsageRecord = z.object({
   inputTokens: z.number().int().nonnegative(),
   cachedInputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
+  /** 3.24：缓存写入 token（5 分钟 / 1 小时）；只有 Anthropic 原生协议会报告。 */
+  cacheWrite5mTokens: z.number().int().nonnegative().optional(),
+  cacheWrite1hTokens: z.number().int().nonnegative().optional(),
   estimated: z.boolean(),
   latencyMs: z.number().int().nonnegative(),
   /** 首字耗时；非流式调用为 null。 */

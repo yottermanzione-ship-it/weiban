@@ -95,6 +95,19 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.24（2026-10-21，试用反馈第二轮 F2：Anthropic 原生协议、缓存写入计价、去掉图片识别场景、无法使用的具体原因、榜单自动获取）
+
+依据 `docs/tasks/2026-10-21-gm-feedback-2.md` 批 F2（含「10-21 第二次补充」第 6、7 条）。说明见 `docs/handoffs/2026-10-21-fb-models2.md`。
+
+- `UpstreamKind` 增 `anthropic`（Claude 原生 Messages 接口）；`UpdateUpstreamRequest` 增可选 `kind`（改协议）。只在管理端出现（安卓不调管理接口），按「1.1 例外」同样的理由作次版本处理。
+- `RouteBillingBounds.sourceUrl` / `checkedAt` 改为可选（后台表单不再填写；没带 `checkedAt` 时服务器记为保存时刻）。旧数据照常解析。
+- `ModelRates` 增可选 `cacheWrite5m` / `cacheWrite1h`（缓存写入价，null = 按输入价）；`PriceUnit` 增 `cache_write_5m_tokens_per_million` / `cache_write_1h_tokens_per_million`（只有填了缓存写入价的模型才会出现在价目表里；用户端没有客户端读价目表）。
+- 端口：`UsageQuantities` / `GenerateTextOutput.usage` 增可选 `cacheWrite5mTokens` / `cacheWrite1hTokens`；`ModelTokenPrices` 增可选 `cacheWrite5mPerMillionMicros` / `cacheWrite1hPerMillionMicros`。
+- 用量：`AdminUsageTotals.cacheWriteTokens`、`AdminUsageRecord.cacheWrite5mTokens` / `cacheWrite1hTokens`（可选）；缓存命中率分母含缓存写入。
+- 「图片识别」场景（`ModelScenario.vision`）**不再使用**：服务器不再返回、忽略写入（`ScenarioRefs.vision`、`ModelScenarioSettings.recommended.vision`），取值保留只为旧客户端能解析；`listModels?scenario=vision` 按「能识图的文本聊天模型」返回。0119 迁移清除旧配置。
+- 新 `ModelUnavailableDetail`（接收端 `tolerantEnum`）：`ModelInfo.unavailableDetail`、`ModelRefState.unavailableDetail`、`ModelStatus.detail`、`AdminModel.availability`（均可选）写出「暂时无法使用」的具体原因（密钥无效 / 余额不足 / 被健康检查暂停 / 缺计费上限 / 没有价格等）。
+- 榜单：`AdminCatalogEntry.arenaModelName`（榜单对应名称，可选）、`AdminModel.arenaRank`；新 `LeaderboardSnapshotStatus`、`ImportLeaderboardRequest` 与 GET `/admin/model/leaderboard-status`、POST `/admin/model/leaderboard/refresh`、POST `/admin/model/leaderboard/import`。`ModelInfo.leaderboardRank` 改为本次列表里的**相对名次** 1..N（字段与类型不变，含义由「原榜名次」改为「相对顺序」，客户端只用于排序与显示）。
+
 ### 3.23（2026-10-20，模型可删除）
 
 说明见 `docs/handoffs/2026-10-20-model-delete.md`。全部为新增接口 / 可选字段。

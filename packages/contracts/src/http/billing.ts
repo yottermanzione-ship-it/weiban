@@ -154,6 +154,9 @@ export const PriceUnit = z.enum([
   'input_tokens_per_million',
   'cached_input_tokens_per_million',
   'output_tokens_per_million',
+  /** 3.24：缓存写入（5 分钟 / 1 小时），没有时按 input_tokens_per_million 计。 */
+  'cache_write_5m_tokens_per_million',
+  'cache_write_1h_tokens_per_million',
   'image',
   'tts_10k_chars',
   'asr_minute',
