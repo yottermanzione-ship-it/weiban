@@ -3,9 +3,17 @@
  * 左滑三键（标为未读 / 不显示 / 删除）、浅色长按菜单、下拉出现小程序面板（4.3）。
  * 手感（总经理 2026-10-14）：轻点进入会话；长按（或右键）才弹菜单；左滑露出按钮；有一行展开时轻点任意行只收起。
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChatEndpoints, type Conversation } from '@weiban/contracts';
+import { ChatEndpoints, type Conversation, type Message } from '@weiban/contracts';
 import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
 import { friendlyError } from '../data/use-remote.js';
@@ -21,6 +29,75 @@ import { useRowGesture } from './row-gesture.js';
 import { listTime } from './time-format.js';
 
 const SWIPE_BUTTON = 68;
+
+/**
+ * 会话列表页不允许整页或外层容器被「滚」走（10-20 总经理反馈：标题栏「微伴」偶尔被吃掉、搜索框顶到最上面）。
+ * 原因是整页比屏幕高、外层 overflow:hidden 的容器仍能被程序滚动；CSS 已堵住，这里再兜底：
+ * 进入页面时复位，之后窗口、页面容器、列表外框一旦出现滚动立即归零（列表自身和小程序宫格照常滚动）。
+ */
+function usePinnedTop(page: RefObject<HTMLElement | null>) {
+  useLayoutEffect(() => {
+    const main = page.current;
+    if (!main) return;
+    const pinWindow = () => {
+      if (window.scrollY !== 0 || window.scrollX !== 0) window.scrollTo(0, 0);
+    };
+    const pinBox = (event: Event) => {
+      const target = event.target as HTMLElement;
+      if ((target === main || target.classList?.contains('pull-list')) && target.scrollTop !== 0)
+        target.scrollTop = 0;
+    };
+    pinWindow();
+    main.scrollTop = 0;
+    window.addEventListener('scroll', pinWindow, { passive: true });
+    main.addEventListener('scroll', pinBox, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('scroll', pinWindow);
+      main.removeEventListener('scroll', pinBox, { capture: true });
+    };
+  }, [page]);
+}
+
+/**
+ * 会话列表第二行的摘要（参照微信）：文字显示正文，其余类型显示 [图片] [语音] [链接] 标题 [语音通话] [名片] 名字
+ * [聊天记录] 等。服务器的摘要对非文字（以及成人范围）消息一律给「[消息]」，所以优先用本机已同步的那条消息自己算；
+ * 撤回、系统提示、拍一拍等服务器已给出可读文字的，照用服务器的。本机没有那条消息时绝不显示「[消息]」。
+ */
+export function listPreview(last: Conversation['lastMessage'], local: Message | undefined): string {
+  if (!last) return '';
+  const server = last.text === '[消息]' ? '' : last.text;
+  if (!local || local.status === 'recalled') return server;
+  const c = local.content;
+  switch (c?.type) {
+    case 'text':
+      return c.text;
+    case 'image':
+      return '[图片]';
+    case 'voice':
+      return '[语音]';
+    case 'sticker':
+      return '[动画表情]';
+    case 'link':
+      return `[链接] ${c.title}`;
+    case 'contact_card':
+      return `[名片] ${c.name}`;
+    case 'call_record':
+      return '[语音通话]';
+    case 'letter':
+      return '[信件]';
+    case 'daily_question':
+      return `[每日一问] ${c.question}`;
+    case 'action_card':
+      return c.text;
+    case 'forwarded_record':
+      return '[聊天记录]';
+    case 'unsupported':
+      return server || '[当前版本不支持此消息]';
+    default:
+      // system / nudge 等：服务器已按类型给出文字
+      return server;
+  }
+}
 
 /** 每分钟刷新一次时间文字。 */
 function useMinuteTick() {
@@ -90,7 +167,7 @@ function SwipeRow({
   );
 }
 
-function ConversationRow({ item }: { item: Conversation }) {
+function ConversationRow({ item, local }: { item: Conversation; local: Message | undefined }) {
   const muted = item.state.muted;
   const unread = item.unreadCount;
   const marked = item.state.markedUnread && unread === 0;
@@ -129,7 +206,7 @@ function ConversationRow({ item }: { item: Conversation }) {
         <span className="conv-preview">
           <span>
             {muted && unread > 1 ? `[${unread}条] ` : ''}
-            {item.lastMessage?.text || '开始聊天吧'}
+            {item.lastMessage ? listPreview(item.lastMessage, local) : '开始聊天吧'}
           </span>
         </span>
       </span>
@@ -153,6 +230,12 @@ export function ConversationListPage() {
   );
   const [swiped, setSwiped] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Conversation | null>(null);
+  const page = useRef<HTMLElement>(null);
+  usePinnedTop(page);
+  const byId = useMemo(
+    () => new Map(state.messages.map((message) => [message.messageId, message])),
+    [state.messages],
+  );
   // 电脑浏览器：Ctrl / ⌘ + F 在会话列表页打开全局搜索（search.md 第 5 节）。
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
@@ -223,7 +306,7 @@ export function ConversationListPage() {
     { label: '删除该聊天', danger: true, onClick: () => setDeleting(item) },
   ];
   return (
-    <main className="chat-list-page">
+    <main ref={page} className="chat-list-page">
       <PullMiniApps title={title}>
         <header className="chat-list-head">
           <span />
@@ -293,7 +376,10 @@ export function ConversationListPage() {
                 { label: '删除', kind: 'delete', onClick: () => setDeleting(item) },
               ]}
             >
-              <ConversationRow item={item} />
+              <ConversationRow
+                item={item}
+                local={item.lastMessage ? byId.get(item.lastMessage.messageId) : undefined}
+              />
             </SwipeRow>
           )}
         />

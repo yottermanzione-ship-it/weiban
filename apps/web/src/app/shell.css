@@ -1006,6 +1006,15 @@ main > button.danger-row {
   padding: 0;
   padding-bottom: calc(var(--wb-size-tab-bar) + 1px + env(safe-area-inset-bottom));
   overflow: hidden;
+  /* clip：不是滚动容器，焦点 / scrollIntoView 也没法把它「滚」上去（hidden 仍可被程序滚动） */
+  overflow: clip;
+}
+/*
+ * 会话列表页自己已经给标签栏留了底边距；外壳再留一次会让整页比屏幕高 57 像素，
+ * 鼠标滚轮 / 触摸在标题栏上一推，整个窗口就上滚，「微伴」标题栏被吃掉（10-20 总经理反馈）。
+ */
+.app-shell.with-tabs:has(.chat-list-page) {
+  padding-bottom: 0;
 }
 .chat-list-head {
   position: relative;
@@ -1045,6 +1054,7 @@ main > button.danger-row {
 }
 .pull-list.lifted {
   overflow: hidden;
+  overflow: clip;
   border-radius: var(--wb-radius-lg) var(--wb-radius-lg) 0 0;
 }
 .pull-list .search-strip {
@@ -1144,6 +1154,22 @@ main > button.danger-row {
   position: absolute;
   inset: 0 0 0 auto;
   display: flex;
+}
+/*
+ * 没滑开时藏起来：电脑浏览器缩放（110% / 125% / 150%）下行高、位移是小数像素，
+ * 前景行边缘会露出底下按钮的一丝颜色，看着像分隔线断成两截（10-20 总经理反馈）。
+ * 前景行一有位移（手势脚本写的 translateX）就显示；收起时延迟到 180ms 过渡结束才藏，避免按钮先消失。
+ * 不支持 :has 的旧浏览器保持原样（按钮一直在底下）。
+ */
+@supports selector(:has(a)) {
+  .swipe-actions {
+    visibility: hidden;
+    transition: visibility 0s linear var(--wb-motion-duration-swipe);
+  }
+  .swipe-host:has(> .swipe-track[style*='translate']) > .swipe-actions {
+    visibility: visible;
+    transition-delay: 0s;
+  }
 }
 /* 旧版 swipe_action_row：每个 68 宽、撑满行高、白字 15 */
 .swipe-actions button {
