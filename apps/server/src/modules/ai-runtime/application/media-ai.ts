@@ -77,6 +77,11 @@ export interface MediaCallContext {
   characterId: string;
   conversationId: string;
   defaultVoiceId?: string | null;
+  /**
+   * 3.24（试用反馈第二轮 F2 第 4 条）：看图用哪个模型角色。不再有「图片识别」场景：日常聊天交给「文本聊天」模型，
+   * 私密模式（会话 contentScope = adult）交给「私密模式」模型。不传 = chat。
+   */
+  modelRole?: 'chat' | 'adult';
 }
 
 export interface ImageAnalysis {
@@ -279,10 +284,10 @@ export class MediaAiService {
       conversationId: ctx.conversationId,
       purpose: 'vision',
       billingOwner: 'user',
-      modelRole: 'chat',
+      modelRole: ctx.modelRole ?? 'chat',
       responseFormat: 'text',
       maxOutputTokens: 40,
-      idempotencyKey: `vision:sticker:${mediaId}`,
+      idempotencyKey: `vision:sticker:${mediaId}${ctx.modelRole === 'adult' ? ':adult' : ''}`,
       messages: [
         {
           role: 'system',
@@ -341,10 +346,10 @@ export class MediaAiService {
       conversationId: ctx.conversationId,
       purpose: 'vision',
       billingOwner: 'user',
-      modelRole: 'chat',
+      modelRole: ctx.modelRole ?? 'chat',
       responseFormat: 'json',
       maxOutputTokens: 500,
-      idempotencyKey: `vision:${mediaId}:${ctx.characterId}`,
+      idempotencyKey: `vision:${mediaId}:${ctx.characterId}${ctx.modelRole === 'adult' ? ':adult' : ''}`,
       messages: [
         {
           role: 'system',

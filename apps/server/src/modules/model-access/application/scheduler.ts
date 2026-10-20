@@ -26,6 +26,8 @@ export interface RouteCandidate {
   upstreamId: string;
   upstreamModelId: string;
   baseUrl: string;
+  /** 3.24：上游协议（契约 UpstreamKind；文本调用按它选 OpenAI 兼容或 Anthropic 原生）。 */
+  kind: string;
   maxConcurrency: number | null;
   rpmLimit: number | null;
   /** 暂停到期但状态仍为「不可用」的账号（排在最后试探）。 */
@@ -94,6 +96,7 @@ export class UpstreamScheduler {
             upstreamId: upstream.id,
             upstreamModelId: route.upstreamModelId,
             baseUrl: upstream.baseUrl,
+            kind: upstream.kind,
             maxConcurrency: upstream.maxConcurrency,
             rpmLimit: upstream.rpmLimit,
             probing,

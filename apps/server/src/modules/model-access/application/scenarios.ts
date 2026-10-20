@@ -96,7 +96,7 @@ export class ScenarioService {
   async getConfig(userId: string): Promise<ScenarioConfig> {
     const raw = await this.raw(userId);
     const uses = await this.catalog.modelUses();
-    const facts = await this.catalog.facts([...raw.values()]);
+    const facts = await this.catalog.facts([...raw.values()], { detail: true });
     return {
       scenarios: ALL_SCENARIOS.map((scenario) => {
         const key = raw.get(scenario);
@@ -114,7 +114,9 @@ export class ScenarioService {
   async getCharacter(userId: string, characterId: string): Promise<CharacterScenarioConfig> {
     const overrides = await this.rawOverrides(userId, characterId);
     const raw = await this.raw(userId);
-    const facts = await this.catalog.facts([...overrides.values(), ...raw.values()]);
+    const facts = await this.catalog.facts([...overrides.values(), ...raw.values()], {
+      detail: true,
+    });
     return {
       characterId,
       scenarios: ALL_SCENARIOS.map((scenario) => {

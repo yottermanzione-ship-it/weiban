@@ -746,6 +746,27 @@
       "when": 1799336100000,
       "tag": "0117_model_soft_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1799336200000,
+      "tag": "0118_cache_write_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1799336300000,
+      "tag": "0119_drop_vision_scenario",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1799336400000,
+      "tag": "0120_arena_model_name",
+      "breakpoints": true
     }
   ]
 }

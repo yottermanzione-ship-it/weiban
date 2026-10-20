@@ -34,6 +34,7 @@ import {
   type AuthPrincipal,
 } from '../../../platform/index.js';
 import { CatalogService } from '../application/catalog.js';
+import { LeaderboardService } from '../application/leaderboard.js';
 import { ModelAdminService } from '../application/models.js';
 import { ModelDeletionService } from '../application/model-deletion.js';
 import { GatewayLimitsService } from '../application/limits.js';
@@ -194,7 +195,35 @@ export class ModelAdminController {
   ) {
     return this.catalog.setLeaderboardSource(me.userId, body);
   }
+
+  // ---------- 3.24 榜单自动获取 ----------
+
+  @Get('leaderboard-status')
+  @RequireAuth(A.getLeaderboardStatus.auth)
+  leaderboardStatus() {
+    return this.leaderboard.status();
+  }
+
+  @Post('leaderboard/refresh')
+  @HttpCode(200)
+  @RequireAuth(A.refreshLeaderboard.auth)
+  refreshLeaderboard(@CurrentPrincipal() me: AuthPrincipal) {
+    return this.leaderboard.refresh(me.userId);
+  }
+
+  @Post('leaderboard/import')
+  @HttpCode(200)
+  @RequireAuth(A.importLeaderboard.auth)
+  importLeaderboard(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(A.importLeaderboard.body)))
+    body: Out<typeof A.importLeaderboard.body>,
+  ) {
+    return this.leaderboard.importText(me.userId, body.text);
+  }
+
   constructor(
+    @Inject(LeaderboardService) private readonly leaderboard: LeaderboardService,
     @Inject(UpstreamService) private readonly upstreams: UpstreamService,
     @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(AdminUsageService) private readonly usage: AdminUsageService,

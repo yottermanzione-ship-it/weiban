@@ -158,12 +158,22 @@ const QUANTITY_UNITS: Array<{
 }> = [
   { field: 'inputTokens', unit: 'input_tokens_per_million', factor: 3n }, // ÷ 1,000,000
   { field: 'cachedInputTokens', unit: 'cached_input_tokens_per_million', factor: 3n },
+  // 3.24：缓存写入（Anthropic 原生协议报告）；没有单独价格时按普通输入价
+  { field: 'cacheWrite5mTokens', unit: 'cache_write_5m_tokens_per_million', factor: 3n },
+  { field: 'cacheWrite1hTokens', unit: 'cache_write_1h_tokens_per_million', factor: 3n },
   { field: 'outputTokens', unit: 'output_tokens_per_million', factor: 3n },
   { field: 'images', unit: 'image', factor: 3_000_000n }, // × 1
   { field: 'ttsChars', unit: 'tts_10k_chars', factor: 300n }, // ÷ 10,000
   { field: 'asrSeconds', unit: 'asr_minute', factor: 50_000n }, // ÷ 60
   { field: 'realtimeSeconds', unit: 'realtime_minute', factor: 50_000n },
   { field: 'searchCalls', unit: 'search_call', factor: 3_000_000n },
+];
+
+/** 没有单独价格时按普通输入价计的单位（缓存读取、3.24 缓存写入）。 */
+const INPUT_FALLBACK_UNITS: readonly PriceUnit[] = [
+  'cached_input_tokens_per_million',
+  'cache_write_5m_tokens_per_million',
+  'cache_write_1h_tokens_per_million',
 ];
 
 export type PriceResult =
@@ -173,7 +183,7 @@ export type PriceResult =
  * 按价目表计算一次调用的售价金额与成本金额（billing.md 4.2：结果向上取整到整数微元）。
  * 有数量但没有对应价格的单位：strict = true 时返回缺价（冻结时拒绝，避免免费调用）；
  * strict = false 时按 0 计（结算时调用已经发生，不能拒绝；由调用方记错误日志）。
- * 命中缓存的输入 token 没有单独的缓存价时按普通输入价计。
+ * 命中缓存的输入 token 没有单独的缓存价时按普通输入价计；3.24 缓存写入 token（5 分钟 / 1 小时）同样。
  */
 export function priceUsage(
   rows: readonly PriceRow[],
@@ -188,7 +198,7 @@ export function priceUsage(
     const quantity = usage[field] ?? 0;
     if (quantity <= 0) continue;
     let row = selectPrice(rows, unit, at);
-    if (!row && unit === 'cached_input_tokens_per_million') {
+    if (!row && INPUT_FALLBACK_UNITS.includes(unit)) {
       row = selectPrice(rows, 'input_tokens_per_million', at);
     }
     if (!row) {
@@ -242,7 +252,9 @@ export function validatePriceItems(items: readonly PriceRow[]): string[] {
   return problems;
 }
 
-/** 3.16：所有可能时段取上界；输入/缓存按较高单价覆盖同一输入总量。与strict缺价校验不同。 */
+/**
+ * 3.16：所有可能时段取上界；输入 / 缓存读取 / 缓存写入（3.24）按其中最高单价覆盖同一输入总量。与strict缺价校验不同。
+ */
 export function priceUsageCeiling(
   rows: readonly PriceRow[],
   usage: UsageQuantities,
@@ -262,14 +274,17 @@ export function priceUsageCeiling(
     const candidates =
       unit === 'input_tokens_per_million'
         ? rows.filter(
-            (r) =>
-              r.unit === 'input_tokens_per_million' || r.unit === 'cached_input_tokens_per_million',
+            (r) => r.unit === 'input_tokens_per_million' || INPUT_FALLBACK_UNITS.includes(r.unit),
           )
         : rows.filter((r) => r.unit === unit);
     const row = maximum(unit, candidates);
     if (row) upper.push(row);
   }
-  const input = (usage.inputTokens ?? 0) + (usage.cachedInputTokens ?? 0);
+  const input =
+    (usage.inputTokens ?? 0) +
+    (usage.cachedInputTokens ?? 0) +
+    (usage.cacheWrite5mTokens ?? 0) +
+    (usage.cacheWrite1hTokens ?? 0);
   if (
     input > 0 &&
     (!Number.isSafeInteger(Math.ceil(input)) ||
@@ -282,7 +297,7 @@ export function priceUsageCeiling(
     };
   return priceUsage(
     upper,
-    { ...usage, inputTokens: input, cachedInputTokens: 0 },
+    { ...usage, inputTokens: input, cachedInputTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0 },
     new Date(0),
     true,
   );

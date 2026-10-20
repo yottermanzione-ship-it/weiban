@@ -55,7 +55,7 @@ const MEDIA_USE: Partial<Record<ModelScenario, UsageQuantities>> = {
   speech_recognition: { asrSeconds: 15 },
   image_generation: { images: 1 },
 };
-const TEXT_USE: readonly ModelScenario[] = ['chat', 'vision', 'voice_call', 'private'];
+const TEXT_USE: readonly ModelScenario[] = ['chat', 'voice_call', 'private'];
 
 @Injectable()
 export class DisplayPricingService {

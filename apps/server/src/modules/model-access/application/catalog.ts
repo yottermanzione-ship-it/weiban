@@ -16,6 +16,7 @@ import type {
   ModelInfo,
   ModelRoute,
   ModelScenario,
+  ModelUnavailableDetail,
   PlatformInternalUse,
   SystemMessageMode,
   UpstreamStatus,
@@ -41,11 +42,13 @@ import {
   type Outbox,
 } from '../../../platform/index.js';
 import {
+  beijingDay,
   hasAdultContent,
   priceTier,
   standardReplyMicros,
   unavailableReason,
 } from '../domain/rules.js';
+import { normalizeArenaName, relativeRanks } from '../domain/leaderboard.js';
 import {
   modelCatalog,
   modelRoutes,
@@ -66,9 +69,14 @@ type CatalogRow = typeof modelCatalog.$inferSelect;
 type CatalogWrite = z.infer<typeof AdminCatalogEntryWrite>;
 /** 3.22：场景推荐模型 + 平台内部模型，存在 model_access.settings 的 model_uses（0114 从 default_for 迁移）。 */
 export const MODEL_USES_KEY = 'model_uses';
+/** 3.24：自动获取 / 粘贴导入的榜单快照（model_access.settings）。 */
+export const LEADERBOARD_SNAPSHOT_KEY = 'leaderboard_snapshot';
+/**
+ * 用户可配置的场景。3.24 起去掉「图片识别」（vision）：图片随文本聊天（私密模式下随私密模式）模型发送，
+ * 契约里的 vision 取值只为旧客户端保留，服务器不再返回、忽略写入。
+ */
 export const ALL_SCENARIOS: readonly ModelScenario[] = [
   'chat',
-  'vision',
   'voice_message',
   'speech_recognition',
   'voice_call',
@@ -76,7 +84,19 @@ export const ALL_SCENARIOS: readonly ModelScenario[] = [
   'private',
 ];
 /** 文本类场景：用文本模型（按 token 计价，约每条回复）。 */
-export const TEXT_SCENARIOS: readonly ModelScenario[] = ['chat', 'vision', 'voice_call', 'private'];
+export const TEXT_SCENARIOS: readonly ModelScenario[] = ['chat', 'voice_call', 'private'];
+/** 3.24：要求具备识图能力的场景（用户发的图片随这两个场景的模型发送；后台缺识图能力时提示）。 */
+export const VISION_REQUIRED_SCENARIOS: readonly ModelScenario[] = ['chat', 'private'];
+
+/** 3.24：榜单快照（存 settings；失败时只更新 lastAttemptAt / lastError，条目保留上次的）。 */
+export interface LeaderboardSnapshot {
+  fetchedAt: string | null;
+  method: 'fetch' | 'paste' | null;
+  sourceUrl: string | null;
+  entries: Array<{ name: string; rank: number }>;
+  lastAttemptAt: string | null;
+  lastError: string | null;
+}
 
 /** 一个模型的当前事实：目录条目（可能不存在）+ 所属上游状态（上游可能已删除）。 */
 export interface ModelFacts {
@@ -84,7 +104,21 @@ export interface ModelFacts {
   entry: CatalogRow | null;
   upstreamStatus: UpstreamStatus | null;
   upstreamBaseUrl?: string | null;
+  /** 3.24：不可用的具体原因（只在要求时计算：facts(keys, { detail: true })）。 */
+  detail?: ModelUnavailableDetail | null;
 }
+
+/** 3.24：多条线路都不可用时，报告「离可用最近」的那个原因。 */
+const DETAIL_PRIORITY: readonly ModelUnavailableDetail[] = [
+  'billing_bounds_paused',
+  'billing_bounds_missing',
+  'upstream_cooldown',
+  'upstream_unavailable',
+  'upstream_quota_exhausted',
+  'upstream_invalid_key',
+  'upstream_disabled',
+  'no_route',
+];
 
 /** 目录写入串行化的咨询锁键（任意固定数字）。 */
 export const CATALOG_LOCK_KEY = 72_270_008;
@@ -100,11 +134,13 @@ export function toAdminEntry(row: CatalogRow): AdminCatalogEntry {
     capabilities: row.capabilities as ModelCapability[],
     tags: row.tags,
     leaderboardRank: row.leaderboardRank,
+    arenaModelName: row.arenaModelName ?? null,
     sortOrder: row.sortOrder,
     // 3.22：平台默认改为场景推荐 / 平台内部模型（ModelScenarioSettings），这里固定返回空数组。
     defaultFor: [],
     enabled: row.enabled,
-    scenarios: row.scenarios as ModelScenario[],
+    // 3.24：「图片识别」场景已去掉（0119 已清除，防御性过滤）
+    scenarios: (row.scenarios as ModelScenario[]).filter((s) => s !== 'vision'),
     systemMessageMode: row.systemMessageMode as SystemMessageMode,
     billingBounds: row.billingBounds,
     updatedAt: row.updatedAt.toISOString(),
@@ -132,7 +168,10 @@ export class CatalogService {
       .from(modelAccessSettings)
       .where(eq(modelAccessSettings.key, MODEL_USES_KEY));
     const parsed = ModelScenarioSettings.safeParse(row?.value);
-    return parsed.success ? parsed.data : { recommended: {}, internal: {} };
+    if (!parsed.success) return { recommended: {}, internal: {} };
+    // 3.24：图片识别场景已去掉
+    const { vision: _vision, ...recommended } = parsed.data.recommended;
+    return { recommended, internal: parsed.data.internal };
   }
 
   /**
@@ -152,7 +191,8 @@ export class CatalogService {
       ModelScenario,
       string | null | undefined,
     ][]) {
-      if (key === undefined) continue;
+      // 3.24：图片识别场景已去掉，忽略写入
+      if (key === undefined || scenario === 'vision') continue;
       if (key !== null) {
         const f = await this.fact(key);
         if (!f.entry?.enabled || !f.entry.scenarios.includes(scenario))
@@ -271,8 +311,48 @@ export class CatalogService {
     });
     return source;
   }
+  /** 3.24：榜单快照（没有为 null）。 */
+  async leaderboardSnapshot(): Promise<LeaderboardSnapshot | null> {
+    const [row] = await this.database.db
+      .select()
+      .from(modelAccessSettings)
+      .where(eq(modelAccessSettings.key, LEADERBOARD_SNAPSHOT_KEY));
+    const value = row?.value as Partial<LeaderboardSnapshot> | undefined;
+    if (!value || typeof value !== 'object') return null;
+    return {
+      fetchedAt: typeof value.fetchedAt === 'string' ? value.fetchedAt : null,
+      method: value.method === 'fetch' || value.method === 'paste' ? value.method : null,
+      sourceUrl: typeof value.sourceUrl === 'string' ? value.sourceUrl : null,
+      entries: Array.isArray(value.entries)
+        ? value.entries.filter(
+            (e): e is { name: string; rank: number } =>
+              !!e && typeof e.name === 'string' && Number.isInteger(e.rank) && e.rank > 0,
+          )
+        : [],
+      lastAttemptAt: typeof value.lastAttemptAt === 'string' ? value.lastAttemptAt : null,
+      lastError: typeof value.lastError === 'string' ? value.lastError : null,
+    };
+  }
+
+  /** 3.24：按榜单对应名称查原榜名次（规范化后完全相同才算匹配）。 */
+  async arenaRanks(): Promise<{ rankOf(name: string | null | undefined): number | null }> {
+    const snapshot = await this.leaderboardSnapshot();
+    const byName = new Map(
+      (snapshot?.entries ?? []).map((e) => [normalizeArenaName(e.name), e.rank] as const),
+    );
+    return {
+      rankOf: (name) => (name ? (byName.get(normalizeArenaName(name)) ?? null) : null),
+    };
+  }
+
   async leaderboardInfo() {
-    const source = await this.leaderboardSource();
+    const configured = await this.leaderboardSource();
+    // 3.24：有自动获取 / 导入的榜单时，参考日期 = 快照日期（北京时间）
+    const snapshot = configured ? await this.leaderboardSnapshot() : null;
+    const source =
+      configured && snapshot?.fetchedAt && snapshot.entries.length
+        ? { ...configured, asOf: beijingDay(new Date(snapshot.fetchedAt)) }
+        : configured;
     const popular = await this.database.db
       .select({
         modelKey: scenarioSelections.modelKey,
@@ -297,8 +377,10 @@ export class CatalogService {
     return rows.map(toAdminEntry);
   }
 
-  async upsert(adminId: string, pathKey: string, body: CatalogWrite): Promise<AdminCatalogEntry> {
-    this.validateBillingBounds(body.billingBounds);
+  async upsert(adminId: string, pathKey: string, raw: CatalogWrite): Promise<AdminCatalogEntry> {
+    this.validateBillingBounds(raw.billingBounds);
+    // 3.24：没带核对时间的计费上限记为保存时刻
+    const body = { ...raw, billingBounds: this.stampBounds(raw.billingBounds) };
     if (pathKey !== body.modelKey) {
       throw new AppError('bad_request', '路径里的模型键与请求体不一致');
     }
@@ -306,12 +388,8 @@ export class CatalogService {
     // 3.22：default_for 不再使用（改为场景推荐 / 平台内部模型），写入时一律清空，忽略请求里的值。
     const defaultFor: string[] = [];
     const tags = [...new Set(body.tags)];
-    if (body.scenarios?.includes('vision') && !capabilities.includes('vision')) {
-      throw new AppError('bad_request', '勾选「图片识别」场景的模型必须具备识图（vision）能力', {
-        status: 422,
-        details: { field: 'scenarios' },
-      });
-    }
+    // 3.24：「图片识别」场景已去掉（旧后台传了也忽略）；文本聊天 / 私密模式模型缺识图能力只在后台提示，不拒绝保存。
+    const scenarios = body.scenarios?.filter((s) => s !== 'vision');
 
     if (body.enabled) await this.requirePrice(body.modelKey);
 
@@ -343,10 +421,17 @@ export class CatalogService {
         capabilities,
         tags,
         leaderboardRank: body.leaderboardRank,
+        // 3.24：不传 = 保持原值
+        arenaModelName:
+          body.arenaModelName === undefined
+            ? (before?.arenaModelName ?? null)
+            : body.arenaModelName?.trim() || null,
         sortOrder: body.sortOrder,
         defaultFor,
         enabled: body.enabled,
-        scenarios: [...new Set(body.scenarios ?? before?.scenarios ?? [])],
+        scenarios: [
+          ...new Set(scenarios ?? before?.scenarios.filter((s) => s !== 'vision') ?? []),
+        ],
         // v3.6：不传 = 保持原值（旧后台页面不认识这个字段）
         systemMessageMode: body.systemMessageMode ?? before?.systemMessageMode ?? 'multi',
         billingBounds:
@@ -397,7 +482,8 @@ export class CatalogService {
               : {}),
             ...(before && before.enabled !== body.enabled ? { enabledChanged: body.enabled } : {}),
             capabilities,
-            scenarios: body.scenarios ?? before?.scenarios ?? [],
+            scenarios: scenarios ?? before?.scenarios ?? [],
+            ...(body.arenaModelName !== undefined ? { arenaModelName: body.arenaModelName } : {}),
           },
         },
         tx,
@@ -421,6 +507,11 @@ export class CatalogService {
   // ---------- 用户端 ----------
 
   async listModels(capability?: string, scenario?: ModelScenario): Promise<ModelInfo[]> {
+    // 3.24：图片识别场景已去掉；旧客户端按它筛选时给能识图的文本聊天模型
+    if (scenario === 'vision') {
+      scenario = 'chat';
+      capability ??= 'vision';
+    }
     const rows = await this.database.db
       .select({
         entry: modelCatalog,
@@ -452,6 +543,16 @@ export class CatalogService {
       const p = prices.get(key);
       return p ? Math.round(standardReplyMicros(p) / 100) / 100 : null;
     };
+    // 3.24：不可用的具体原因；榜单名次 = 自动获取的榜单按榜单对应名称匹配（没有时用手填名次），
+    // 在本次返回的列表里按相对顺序重新编号 1..N（不显示原榜名次）。
+    const details = await this.availabilityDetails(visible.map((r) => r.entry.modelKey));
+    const arena = await this.arenaRanks();
+    const relative = relativeRanks(
+      visible.map(({ entry }) => ({
+        key: entry.modelKey,
+        rank: arena.rankOf(entry.arenaModelName) ?? entry.leaderboardRank,
+      })),
+    );
     return visible.map(({ entry, upstreamStatus }) => ({
       modelKey: entry.modelKey,
       displayName: entry.displayName,
@@ -466,19 +567,106 @@ export class CatalogService {
             pointsPerUse: display.get(entry.modelKey)!.pointsPerUse,
           }
         : {}),
-      scenarios: entry.scenarios as ModelScenario[],
+      scenarios: (entry.scenarios as ModelScenario[]).filter((s) => s !== 'vision'),
       capabilities: entry.capabilities as ModelCapability[],
       tags: entry.tags,
-      leaderboardRank: entry.leaderboardRank,
-      available:
-        unavailableReason(entry, (upstreamStatus as UpstreamStatus | null) ?? null) === null,
+      leaderboardRank: relative.get(entry.modelKey) ?? null,
+      ...(() => {
+        const reason = unavailableReason(entry, (upstreamStatus as UpstreamStatus | null) ?? null);
+        const detail =
+          details.get(entry.modelKey) ?? (reason === 'model_removed' ? 'model_removed' : null);
+        return { available: reason === null && !detail, unavailableDetail: detail };
+      })(),
     }));
+  }
+
+  /**
+   * 3.24：模型「暂时无法使用」的具体原因（null = 可用）。逐条线路看：上游账号启用与状态（密钥无效 / 余额不足 /
+   * 被健康检查暂停 / 连续失败短暂暂停）、计费上限（缺失 / 用量核对未通过已暂停）；有一条线路全部正常再看价目表有没有价格。
+   * 都不行时报告「离可用最近」的原因（DETAIL_PRIORITY）。没有线路的旧模型按目录上的主上游与计费上限判断。
+   */
+  async availabilityDetails(
+    modelKeys: readonly string[],
+  ): Promise<Map<string, ModelUnavailableDetail | null>> {
+    const keys = [...new Set(modelKeys)];
+    const out = new Map<string, ModelUnavailableDetail | null>();
+    if (!keys.length) return out;
+    const entries = await this.database.db
+      .select()
+      .from(modelCatalog)
+      .where(inArray(modelCatalog.modelKey, keys));
+    const routeRows = await this.database.db
+      .select({ route: modelRoutes, upstream: upstreams })
+      .from(modelRoutes)
+      .leftJoin(upstreams, eq(upstreams.id, modelRoutes.upstreamId))
+      .where(inArray(modelRoutes.modelKey, keys));
+    const primaryIds = [...new Set(entries.map((e) => e.upstreamId))];
+    const primaries = primaryIds.length
+      ? await this.database.db.select().from(upstreams).where(inArray(upstreams.id, primaryIds))
+      : [];
+    let priced: Set<string> | null = null;
+    try {
+      priced = new Set(await this.charges.listActivePricedModelKeys());
+    } catch {
+      priced = null; // 价目表暂时查不到：不据此判定
+    }
+    const now = this.clock.nowMs();
+    const judge = (
+      routeEnabled: boolean,
+      upstream: typeof upstreams.$inferSelect | null | undefined,
+      bounds: unknown,
+    ): ModelUnavailableDetail | null => {
+      const parsed = RouteBillingBounds.safeParse(bounds);
+      const paused = parsed.success && parsed.data.pauseReason === 'usage_unknown';
+      if (!routeEnabled) return paused ? 'billing_bounds_paused' : 'no_route';
+      if (!upstream || upstream.deletedAt || !upstream.enabled) return 'upstream_disabled';
+      if (upstream.status === 'invalid') return 'upstream_invalid_key';
+      if (upstream.status === 'quota_exhausted') return 'upstream_quota_exhausted';
+      if (upstream.status !== 'active') return 'upstream_unavailable';
+      if (upstream.cooldownUntil && upstream.cooldownUntil.getTime() > now) return 'upstream_cooldown';
+      if (paused) return 'billing_bounds_paused';
+      if (
+        !parsed.success ||
+        (parsed.data.checkedAt !== undefined && Date.parse(parsed.data.checkedAt) > now)
+      )
+        return 'billing_bounds_missing';
+      return null;
+    };
+    for (const key of keys) {
+      const entry = entries.find((e) => e.modelKey === key);
+      if (!entry || !entry.enabled || entry.deletedAt) {
+        out.set(key, 'model_removed');
+        continue;
+      }
+      const mine = routeRows.filter((r) => r.route.modelKey === key);
+      const results = mine.length
+        ? mine.map((r) => judge(r.route.enabled, r.upstream, r.route.billingBounds))
+        : [
+            judge(
+              true,
+              primaries.find((u) => u.id === entry.upstreamId),
+              entry.billingBounds,
+            ),
+          ];
+      if (results.some((r) => r === null)) {
+        out.set(key, priced && !priced.has(key) ? 'price_missing' : null);
+        continue;
+      }
+      out.set(
+        key,
+        DETAIL_PRIORITY.find((d) => results.includes(d)) ?? results[0] ?? 'no_route',
+      );
+    }
+    return out;
   }
 
   // ---------- 查询（选择、状态、网关） ----------
 
   /** 一批模型键的当前事实（不存在的键 entry 为 null）。 */
-  async facts(modelKeys: readonly string[]): Promise<Map<string, ModelFacts>> {
+  async facts(
+    modelKeys: readonly string[],
+    options: { detail?: boolean } = {},
+  ): Promise<Map<string, ModelFacts>> {
     const keys = [...new Set(modelKeys)];
     const out = new Map<string, ModelFacts>();
     if (keys.length === 0) return out;
@@ -501,6 +689,10 @@ export class CatalogService {
           routed.get(r.entry.modelKey) ?? (r.upstreamStatus as UpstreamStatus | null) ?? null,
         upstreamBaseUrl: r.upstreamBaseUrl,
       });
+    }
+    if (options.detail) {
+      const details = await this.availabilityDetails(keys);
+      for (const [key, f] of out) out.set(key, { ...f, detail: details.get(key) ?? null });
     }
     return out;
   }
@@ -554,8 +746,9 @@ export class CatalogService {
   }
 
   /** 整体替换某模型的路由（后台「模型」向导）。账号必须存在、不能重复。 */
-  async replaceRoutes(adminId: string, modelKey: string, routes: ModelRoute[]): Promise<void> {
-    for (const route of routes) this.validateBillingBounds(route.billingBounds);
+  async replaceRoutes(adminId: string, modelKey: string, raw: ModelRoute[]): Promise<void> {
+    for (const route of raw) this.validateBillingBounds(route.billingBounds);
+    const routes = raw.map((r) => ({ ...r, billingBounds: this.stampBounds(r.billingBounds) }));
     const ids = routes.map((r) => r.upstreamId);
     if (new Set(ids).size !== ids.length) {
       throw new AppError('bad_request', '同一个上游账号在路由里出现了两次', { status: 422 });
@@ -612,12 +805,24 @@ export class CatalogService {
   validateBillingBounds(bounds: RouteBillingBounds | null | undefined): void {
     if (bounds == null) return;
     const parsed = RouteBillingBounds.safeParse(bounds);
-    if (!parsed.success || Date.parse(parsed.data.checkedAt) > this.clock.nowMs())
+    if (
+      !parsed.success ||
+      (parsed.data.checkedAt !== undefined && Date.parse(parsed.data.checkedAt) > this.clock.nowMs())
+    )
       throw new AppError(
         'bad_request',
         '计费上限格式不正确或核准时间在服务器未来，请核实后再保存',
         { status: 422 },
       );
+  }
+
+  /**
+   * 3.24：后台不再填核对日期；没带 checkedAt 的计费上限记为保存时刻。「用量未知暂停」按它判断先后
+   * （调用开始之后重新保存过的线路不会被那次调用的结果暂停）。
+   */
+  stampBounds<T extends RouteBillingBounds | null | undefined>(bounds: T): T {
+    if (!bounds || bounds.checkedAt) return bounds;
+    return { ...bounds, checkedAt: this.clock.now().toISOString() } as T;
   }
 
   /**

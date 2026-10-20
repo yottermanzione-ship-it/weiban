@@ -47,9 +47,11 @@ export class BillingBoundsService {
         raw = catalog.billingBounds;
     }
     const parsed = RouteBillingBounds.safeParse(raw);
+    // 3.24：核对时间可选（后台不再填，保存时由服务器记下）；带了的不能在未来
     return parsed.success &&
       !parsed.data.pauseReason &&
-      Date.parse(parsed.data.checkedAt) <= this.clock.nowMs()
+      (parsed.data.checkedAt === undefined ||
+        Date.parse(parsed.data.checkedAt) <= this.clock.nowMs())
       ? parsed.data
       : null;
   }
@@ -125,7 +127,7 @@ export class BillingBoundsService {
       for (const row of routes) {
         if (
           !row.billingBounds ||
-          Date.parse(row.billingBounds.checkedAt) > Date.parse(bounds.checkedAt)
+          Date.parse(row.billingBounds.checkedAt ?? '') > Date.parse(bounds.checkedAt ?? '')
         )
           continue;
         await tx.db
@@ -155,7 +157,7 @@ export class BillingBoundsService {
       for (const row of catalogs) {
         if (
           !row.billingBounds ||
-          Date.parse(row.billingBounds.checkedAt) > Date.parse(bounds.checkedAt)
+          Date.parse(row.billingBounds.checkedAt ?? '') > Date.parse(bounds.checkedAt ?? '')
         )
           continue;
         await tx.db

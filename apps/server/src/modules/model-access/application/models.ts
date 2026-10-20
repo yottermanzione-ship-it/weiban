@@ -30,21 +30,30 @@ type Write = z.output<typeof AdminModelWrite>;
 
 const MICROS_PER_YUAN = 1_000_000;
 
-/** 倍率（元 / 百万 token）→ 微元 / 百万 token。 */
+const toMicros = (yuan: number | null | undefined) =>
+  yuan === null || yuan === undefined ? null : Math.round(yuan * MICROS_PER_YUAN);
+
+/** 倍率（元 / 百万 token）→ 微元 / 百万 token。3.24：缓存写入没填为 null（按输入价计）。 */
 export function ratesToPrices(rates: ModelRates): ModelTokenPrices {
   return {
     inputPerMillionMicros: Math.round(rates.input * MICROS_PER_YUAN),
     cachedInputPerMillionMicros: Math.round(rates.cache * MICROS_PER_YUAN),
     outputPerMillionMicros: Math.round(rates.output * MICROS_PER_YUAN),
+    cacheWrite5mPerMillionMicros: toMicros(rates.cacheWrite5m),
+    cacheWrite1hPerMillionMicros: toMicros(rates.cacheWrite1h),
   };
 }
 
-/** 微元 / 百万 token → 倍率（元 / 百万 token）；没有缓存价时缓存倍率 = 输入倍率。 */
+/** 微元 / 百万 token → 倍率（元 / 百万 token）；没有缓存价时缓存倍率 = 输入倍率；没有缓存写入价为 null。 */
 export function pricesToRates(p: ModelTokenPrices): ModelRates {
+  const yuan = (micros: number | null | undefined) =>
+    micros === null || micros === undefined ? null : micros / MICROS_PER_YUAN;
   return {
     input: p.inputPerMillionMicros / MICROS_PER_YUAN,
     output: p.outputPerMillionMicros / MICROS_PER_YUAN,
     cache: (p.cachedInputPerMillionMicros ?? p.inputPerMillionMicros) / MICROS_PER_YUAN,
+    cacheWrite5m: yuan(p.cacheWrite5mPerMillionMicros),
+    cacheWrite1h: yuan(p.cacheWrite1hPerMillionMicros),
   };
 }
 
@@ -61,9 +70,11 @@ export function toAdminModel(
   display?: DisplayPricing,
   discount?: ModelDiscountSetting,
   nowMs = 0,
+  extra: Pick<AdminModel, 'arenaRank' | 'availability'> = {},
 ): AdminModel {
   return {
     ...entry,
+    ...extra,
     discount: discount ?? null,
     discountActive:
       !!discount && Date.parse(discount.startsAt) <= nowMs && nowMs < Date.parse(discount.endsAt),
@@ -104,6 +115,9 @@ export class ModelAdminService {
     const display = await this.display?.forModels(keys);
     const discounts = await this.rates.getModelDiscounts(keys);
     const nowMs = this.clock.nowMs();
+    // 3.24：可用性具体原因、榜单匹配名次
+    const details = await this.catalog.availabilityDetails(keys);
+    const arena = await this.catalog.arenaRanks();
     return entries.map((e) =>
       e.deletedAt
         ? toAdminModel(e, undefined, [], undefined, undefined, nowMs)
@@ -114,6 +128,13 @@ export class ModelAdminService {
             display?.get(e.modelKey),
             discounts.get(e.modelKey),
             nowMs,
+            {
+              arenaRank: arena.rankOf(e.arenaModelName),
+              availability: {
+                available: !details.get(e.modelKey),
+                detail: details.get(e.modelKey) ?? null,
+              },
+            },
           ),
     );
   }
@@ -156,6 +177,8 @@ export class ModelAdminService {
     const savedRoutes = await this.catalog.routes([saved.modelKey]);
     const display = await this.display?.forModels([saved.modelKey]);
     const discounts = await this.rates.getModelDiscounts([saved.modelKey]);
+    const detail = (await this.catalog.availabilityDetails([saved.modelKey])).get(saved.modelKey);
+    const arena = await this.catalog.arenaRanks();
     return toAdminModel(
       saved,
       current.get(saved.modelKey),
@@ -163,6 +186,10 @@ export class ModelAdminService {
       display?.get(saved.modelKey),
       discounts.get(saved.modelKey),
       this.clock.nowMs(),
+      {
+        arenaRank: arena.rankOf(saved.arenaModelName),
+        availability: { available: !detail, detail: detail ?? null },
+      },
     );
   }
 }

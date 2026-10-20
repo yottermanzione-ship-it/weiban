@@ -233,7 +233,7 @@ export class UpstreamService {
   async update(
     adminId: string,
     upstreamId: string,
-    patch: UpstreamPoolFields & { name?: string; baseUrl?: string },
+    patch: UpstreamPoolFields & { name?: string; baseUrl?: string; kind?: Kind },
   ): Promise<Upstream> {
     const baseUrl = patch.baseUrl !== undefined ? this.checkBaseUrl(patch.baseUrl) : undefined;
     return this.database.transaction(async (tx) => {
@@ -242,6 +242,12 @@ export class UpstreamService {
       if (patch.name !== undefined) set.name = patch.name;
       if (baseUrl !== undefined && baseUrl !== before.baseUrl) {
         set.baseUrl = baseUrl;
+        set.cooldownUntil = null;
+        set.consecutiveFailures = 0;
+      }
+      // 3.24：改协议（例 OpenAI 兼容 → Anthropic）与改地址一样清空暂停，需要重新测试
+      if (patch.kind !== undefined && patch.kind !== before.kind) {
+        set.kind = patch.kind;
         set.cooldownUntil = null;
         set.consecutiveFailures = 0;
       }
@@ -292,7 +298,7 @@ export class UpstreamService {
   async models(upstreamId: string): Promise<{ items: Array<{ id: string }> }> {
     const row = await this.get(upstreamId);
     const result = await this.withApiKey(upstreamId, (apiKey) =>
-      fetchUpstreamModels({ baseUrl: row.baseUrl, apiKey }),
+      fetchUpstreamModels({ kind: row.kind, baseUrl: row.baseUrl, apiKey }),
     );
     if (!result.ok) throw testFailed(result.reason);
     return { items: result.ids.map((id) => ({ id })) };
@@ -418,7 +424,9 @@ export class UpstreamService {
         .set({
           lastTestedAt: this.clock.now(),
           // 手动测试通过 = 管理员确认恢复：清空暂停与连续失败
-          ...(failure ? { lastError: failure } : { cooldownUntil: null, consecutiveFailures: 0 }),
+          ...(failure
+            ? { lastError: failure }
+            : { cooldownUntil: null, consecutiveFailures: 0, lastError: null }),
         })
         .where(eq(upstreams.id, upstreamId));
       await this.applyStatus(tx, locked, statusAfterTest(failure), 'admin_test', failure);

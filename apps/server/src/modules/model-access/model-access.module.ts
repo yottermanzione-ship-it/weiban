@@ -19,7 +19,13 @@ import { GenerationCache } from './application/generation-cache.js';
 import { GatewayMaintenance } from './application/gateway-maintenance.js';
 import { ModelGateway } from './application/gateway.js';
 import { GatewayWebSearchProvider } from './application/web-search.js';
-import { OpenAiTextAdapter } from './infra/text-adapter.js';
+import { OpenAiTextAdapter, RoutingTextAdapter } from './infra/text-adapter.js';
+import { AnthropicTextAdapter } from './infra/anthropic-adapter.js';
+import {
+  LEADERBOARD_FETCHER,
+  LeaderboardService,
+  defaultLeaderboardFetcher,
+} from './application/leaderboard.js';
 import { CatalogService } from './application/catalog.js';
 import { DisplayPricingService } from './application/display-pricing.js';
 import { ModelAdminService, RatePriceSource } from './application/models.js';
@@ -81,13 +87,20 @@ import {
     { provide: MODEL_GATEWAY_MEDIA_PORT, useExisting: ModelGatewayMedia },
     { provide: MEDIA_ADAPTER, useFactory: () => new OpenAiCompatibleMediaAdapter() },
     { provide: WEB_SEARCH_PROVIDER, useExisting: GatewayWebSearchProvider },
-    { provide: TEXT_ADAPTER, useFactory: () => new OpenAiTextAdapter() },
+    {
+      provide: TEXT_ADAPTER,
+      // 3.24：按上游账号协议选 OpenAI 兼容或 Anthropic 原生
+      useFactory: () => new RoutingTextAdapter(new OpenAiTextAdapter(), new AnthropicTextAdapter()),
+    },
     { provide: MODEL_GENERATION_POLICY, useExisting: POLICY_PORT },
     {
       provide: GATEWAY_RETRY_WAIT,
       useValue: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
     },
     CatalogService,
+    // 3.24：榜单自动获取（每天抓取 + 立即刷新 + 粘贴导入）
+    LeaderboardService,
+    { provide: LEADERBOARD_FETCHER, useValue: defaultLeaderboardFetcher },
     DisplayPricingService,
     SelectionService,
     ScenarioService,

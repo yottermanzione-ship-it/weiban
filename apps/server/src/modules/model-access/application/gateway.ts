@@ -35,7 +35,9 @@ import {
   type ModelPolicy,
 } from '../tokens.js';
 import {
+  billableUsage,
   estimateTokens,
+  textProtocolOf,
   type AdapterMessage,
   type TextAdapter,
   type TextResult,
@@ -244,6 +246,7 @@ export class ModelGateway implements ModelGatewayPort {
             upstreamId: primary.id,
             upstreamModelId: model.upstreamModelId,
             baseUrl: primary.baseUrl,
+            kind: primary.kind,
             maxConcurrency: primary.maxConcurrency,
             rpmLimit: primary.rpmLimit,
             probing: false,
@@ -337,7 +340,9 @@ export class ModelGateway implements ModelGatewayPort {
     ceiling: TextCeiling,
   ): Promise<CachedResult> {
     const maximum = input.maxOutputTokens ?? DEFAULT_TOKENS[input.purpose] ?? 8000;
-    const wire = applySystemMessageMode(await this.wireMessages(input), model.systemMessageMode);
+    // 3.24：Anthropic 原生协议自己处理系统消息（顶层 system + 缓存断点）；OpenAI 兼容按模型的系统消息放法改写。
+    const baseWire = await this.wireMessages(input);
+    const wire = applySystemMessageMode(baseWire, model.systemMessageMode);
     const wallStart = performance.now();
     const deadlineAt = new Date(
       Math.min(
@@ -458,10 +463,11 @@ export class ModelGateway implements ModelGatewayPort {
               ? fakeAnswer(input, wire)
               : await this.upstreams.withApiKey(route.upstreamId, (apiKey) =>
                   this.adapter.generate({
+                    protocol: textProtocolOf(route.kind),
                     baseUrl: route.baseUrl,
                     apiKey,
                     model: route.upstreamModelId,
-                    messages: wire,
+                    messages: textProtocolOf(route.kind) === 'anthropic' ? baseWire : wire,
                     maxOutputTokens: Math.min(
                       outputBudget,
                       route.billingBounds.text!.maxOutputTokens,
@@ -505,6 +511,7 @@ export class ModelGateway implements ModelGatewayPort {
             status: 'succeeded',
             ...answer.usage,
             latencyMs,
+            ttftMs: answer.ttftMs ?? null,
             retryCount: ordinal,
           });
           await this.scheduler.recordSuccess(route.upstreamId).catch(() => undefined);
@@ -522,7 +529,8 @@ export class ModelGateway implements ModelGatewayPort {
               ? 'call_rejected'
               : 'call_failed'
             : 'cancelled',
-          upstreamUsage: !sent ? {} : known ? answer.usage : undefined,
+          // 3.24：只交计价字段（原来把 estimated / reported 一并传入，会被计费的用量校验拒绝）
+          upstreamUsage: !sent ? {} : known && answer.usage ? billableUsage(answer.usage) : undefined,
           usageRecordId: usage.record.id,
           startedAt: startedAt.toISOString(),
           upstreamId: route.upstreamId,
@@ -607,11 +615,8 @@ export class ModelGateway implements ModelGatewayPort {
       holdId: row.holdId,
       usageRecordId: result.value.usageRecordId,
       actualKnown: !result.value.usage.estimated,
-      actual: {
-        inputTokens: result.value.usage.inputTokens,
-        cachedInputTokens: result.value.usage.cachedInputTokens,
-        outputTokens: result.value.usage.outputTokens,
-      },
+      // 3.24：含缓存写入（5 分钟 / 1 小时），billing 按缓存写入价计（没定价按输入价）
+      actual: billableUsage(result.value.usage),
       startedAt: (record?.createdAt ?? row.createdAt).toISOString(),
       upstreamId: row.upstreamId,
     });
@@ -673,12 +678,18 @@ export class ModelGateway implements ModelGatewayPort {
     }
     return { ok: false, error: 'provider_unavailable' };
   }
-  /** T-071：把 images 读成 data URL（只在服务器内部，不落日志）。读取失败的图片跳过。 */
+  /**
+   * T-071：把 images 读成 data URL（只在服务器内部，不落日志）。读取失败的图片跳过。
+   * 3.24：标出缓存断点（09 号 §6 的稳定开头）：开头的系统消息；有 meta.stablePrefixChars 时，
+   * 稳定开头的最后一条整消息（开头每轮只追加，断点随之后移，上游按前缀找回上一轮写入的缓存）。
+   */
   private async wireMessages(input: GenerateTextInput): Promise<AdapterMessage[]> {
     const out: AdapterMessage[] = [];
-    for (const m of input.messages) {
+    const breakpoints = cacheBreakpointIndexes(input);
+    for (const [index, m] of input.messages.entries()) {
+      const mark = breakpoints.has(index) ? { cacheBreakpoint: true } : {};
       if (!m.images?.length) {
-        out.push({ role: m.role, content: m.content });
+        out.push({ role: m.role, content: m.content, ...mark });
         continue;
       }
       const urls: string[] = [];
@@ -691,7 +702,12 @@ export class ModelGateway implements ModelGatewayPort {
           // 媒体已删除：当作没有这张图。
         }
       }
-      out.push({ role: m.role, content: m.content, ...(urls.length ? { images: urls } : {}) });
+      out.push({
+        role: m.role,
+        content: m.content,
+        ...(urls.length ? { images: urls } : {}),
+        ...mark,
+      });
     }
     return out;
   }
@@ -748,6 +764,27 @@ export class ModelGateway implements ModelGatewayPort {
         trustedPlatform)
     );
   }
+}
+
+/**
+ * 3.24：缓存断点位置（消息下标）。① 开头的系统消息；② 稳定开头（meta.stablePrefixChars，按整条消息累计字数）
+ * 的最后一条，且不是 ① 那一条。没有稳定开头标记的调用只打 ①。
+ */
+export function cacheBreakpointIndexes(input: Pick<GenerateTextInput, 'messages' | 'meta'>): Set<number> {
+  const out = new Set<number>();
+  if (input.messages[0]?.role === 'system') out.add(0);
+  const stable = input.meta?.stablePrefixChars;
+  if (typeof stable === 'number' && stable > 0) {
+    let chars = 0;
+    let last = -1;
+    for (const [index, m] of input.messages.entries()) {
+      if (chars + m.content.length > stable) break;
+      chars += m.content.length;
+      last = index;
+    }
+    if (last > 0) out.add(last);
+  }
+  return out;
 }
 
 /** 开发 / 测试假上游（upstreamModelId 以 fake- 开头，生产不启用）：确定性回答，用量按估算记（含前缀缓存模拟）。 */

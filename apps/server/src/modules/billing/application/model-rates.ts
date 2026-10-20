@@ -37,6 +37,9 @@ const TOKEN_UNITS: readonly PriceUnit[] = [
   'input_tokens_per_million',
   'cached_input_tokens_per_million',
   'output_tokens_per_million',
+  // 3.24：缓存写入（可选；没有这两行时按输入价计）
+  'cache_write_5m_tokens_per_million',
+  'cache_write_1h_tokens_per_million',
 ];
 
 type Row = typeof priceItems.$inferSelect;
@@ -47,10 +50,14 @@ function ratesOf(rows: Row[], field: 'priceMicros' | 'costMicros'): ModelTokenPr
   const output = base('output_tokens_per_million');
   if (!input || !output) return null;
   const cached = base('cached_input_tokens_per_million');
+  const write5m = base('cache_write_5m_tokens_per_million');
+  const write1h = base('cache_write_1h_tokens_per_million');
   return {
     inputPerMillionMicros: input[field],
     cachedInputPerMillionMicros: cached ? cached[field] : null,
     outputPerMillionMicros: output[field],
+    cacheWrite5mPerMillionMicros: write5m ? write5m[field] : null,
+    cacheWrite1hPerMillionMicros: write1h ? write1h[field] : null,
   };
 }
 
@@ -58,13 +65,17 @@ const same = (a: ModelTokenPrices | null, b: ModelTokenPrices) =>
   !!a &&
   a.inputPerMillionMicros === b.inputPerMillionMicros &&
   a.outputPerMillionMicros === b.outputPerMillionMicros &&
-  a.cachedInputPerMillionMicros === b.cachedInputPerMillionMicros;
+  a.cachedInputPerMillionMicros === b.cachedInputPerMillionMicros &&
+  (a.cacheWrite5mPerMillionMicros ?? null) === (b.cacheWrite5mPerMillionMicros ?? null) &&
+  (a.cacheWrite1hPerMillionMicros ?? null) === (b.cacheWrite1hPerMillionMicros ?? null);
 
 function checkPrices(p: ModelTokenPrices): void {
   for (const v of [
     p.inputPerMillionMicros,
     p.outputPerMillionMicros,
     p.cachedInputPerMillionMicros,
+    p.cacheWrite5mPerMillionMicros ?? null,
+    p.cacheWrite1hPerMillionMicros ?? null,
   ])
     if (v !== null && (!Number.isSafeInteger(v) || v < 0))
       throw new AppError('bad_request', '倍率必须是非负数');
@@ -172,6 +183,25 @@ export class ModelRateService implements BillingModelRatePort {
           priceMicros: input.price.outputPerMillionMicros,
           costMicros: input.cost.outputPerMillionMicros,
         },
+        // 3.24：缓存写入价只在填了时写（售价没填 = 按输入价，不写这一行）
+        ...(
+          [
+            ['cache_write_5m_tokens_per_million', 'cacheWrite5mPerMillionMicros'],
+            ['cache_write_1h_tokens_per_million', 'cacheWrite1hPerMillionMicros'],
+          ] as const
+        ).flatMap(([unit, field]) => {
+          const price = input.price[field];
+          if (price === null || price === undefined) return [];
+          return [
+            {
+              modelKey: input.modelKey,
+              unit,
+              band: null,
+              priceMicros: price,
+              costMicros: input.cost[field] ?? price,
+            },
+          ];
+        }),
       ];
       const items = [...kept, ...fresh];
       const problems = validatePriceItems(items);

@@ -132,6 +132,8 @@ export class ReservationService implements BillingReservationPort {
         const fields = [
           'inputTokens',
           'cachedInputTokens',
+          'cacheWrite5mTokens',
+          'cacheWrite1hTokens',
           'outputTokens',
           'images',
           'ttsChars',

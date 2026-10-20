@@ -39,7 +39,7 @@ export const upstreams = modelAccessSchema.table(
   {
     id: uuid('id').primaryKey(),
     name: text('name').notNull(),
-    /** 契约 UpstreamKind：v1 只有 openai_compatible。 */
+    /** 契约 UpstreamKind：openai_compatible / anthropic（3.24，Claude 原生 Messages）/ dashscope / bocha_search / jev。 */
     kind: text('kind').notNull(),
     baseUrl: text('base_url').notNull(),
     /** 信封加密后的密钥（平台 DEK，AAD = upstream:{id}）。 */
@@ -112,6 +112,8 @@ export const modelCatalog = modelAccessSchema.table(
     capabilities: text('capabilities').array().notNull(),
     tags: text('tags').array().notNull(),
     leaderboardRank: integer('leaderboard_rank'),
+    /** 3.24（0120）：榜单对应名称（自动获取榜单时按它匹配名次）。 */
+    arenaModelName: text('arena_model_name'),
     sortOrder: integer('sort_order').notNull(),
     /** 平台默认用途：chat / background / vision，每种最多一个（部分唯一索引不好表达数组，由代码在行锁下保证）。 */
     defaultFor: text('default_for').array().notNull(),
@@ -277,6 +279,9 @@ export const usageRecords = modelAccessSchema.table(
     retryCount: integer('retry_count').notNull(),
     inputTokens: integer('input_tokens').notNull(),
     cachedInputTokens: integer('cached_input_tokens').notNull(),
+    /** 3.24（0118）：缓存写入 token（Anthropic 原生协议报告）。 */
+    cacheWrite5mTokens: integer('cache_write_5m_tokens').notNull().default(0),
+    cacheWrite1hTokens: integer('cache_write_1h_tokens').notNull().default(0),
     outputTokens: integer('output_tokens').notNull(),
     /** 上游没返回用量、按估算规则得出（runtime-overview.md 2.5）。 */
     estimated: boolean('estimated').notNull(),

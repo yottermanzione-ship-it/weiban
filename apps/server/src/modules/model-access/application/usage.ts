@@ -68,6 +68,9 @@ export interface FinishUsageInput {
   errorCode?: string | null;
   inputTokens: number;
   cachedInputTokens: number;
+  /** 3.24：缓存写入 token（Anthropic 原生协议报告）；不传按 0。 */
+  cacheWrite5mTokens?: number;
+  cacheWrite1hTokens?: number;
   outputTokens: number;
   estimated: boolean;
   latencyMs: number;
@@ -257,6 +260,8 @@ export class UsageRecorder {
         errorCode: f.errorCode ?? null,
         inputTokens: f.inputTokens,
         cachedInputTokens: f.cachedInputTokens,
+        cacheWrite5mTokens: f.cacheWrite5mTokens ?? 0,
+        cacheWrite1hTokens: f.cacheWrite1hTokens ?? 0,
         outputTokens: f.outputTokens,
         estimated: f.estimated,
         latencyMs: f.latencyMs,
@@ -352,8 +357,9 @@ const TOTALS_SQL = sql`
   coalesce(sum(${usageRecords.inputTokens}), 0)::bigint as input_tokens,
   coalesce(sum(${usageRecords.cachedInputTokens}), 0)::bigint as cached_input_tokens,
   coalesce(sum(${usageRecords.outputTokens}), 0)::bigint as output_tokens,
-  coalesce(sum(${usageRecords.inputTokens} + ${usageRecords.cachedInputTokens} + ${usageRecords.outputTokens}), 0)::bigint as total_tokens,
-  coalesce(sum(${usageRecords.inputTokens} + ${usageRecords.cachedInputTokens} + ${usageRecords.outputTokens})
+  coalesce(sum(${usageRecords.cacheWrite5mTokens} + ${usageRecords.cacheWrite1hTokens}), 0)::bigint as cache_write_tokens,
+  coalesce(sum(${usageRecords.inputTokens} + ${usageRecords.cachedInputTokens} + ${usageRecords.cacheWrite5mTokens} + ${usageRecords.cacheWrite1hTokens} + ${usageRecords.outputTokens}), 0)::bigint as total_tokens,
+  coalesce(sum(${usageRecords.inputTokens} + ${usageRecords.cachedInputTokens} + ${usageRecords.cacheWrite5mTokens} + ${usageRecords.cacheWrite1hTokens} + ${usageRecords.outputTokens})
     filter (where ${usageRecords.estimated}), 0)::bigint as estimated_tokens,
   coalesce(sum(${usageRecords.chargedMicros})
     filter (where ${usageRecords.billingOwner} = 'user' and ${usageRecords.status} = 'succeeded'), 0)::bigint as charged_micros,
@@ -361,7 +367,7 @@ const TOTALS_SQL = sql`
   coalesce(sum(${usageRecords.absorbedCostMicros}), 0)::bigint as absorbed_cost_micros,
   coalesce(sum(${usageRecords.latencyMs}), 0)::bigint as latency_ms,
   coalesce(sum(${usageRecords.stablePrefixTokens}), 0)::bigint as stable_prefix_tokens,
-  coalesce(sum(${usageRecords.inputTokens} + ${usageRecords.cachedInputTokens})
+  coalesce(sum(${usageRecords.inputTokens} + ${usageRecords.cachedInputTokens} + ${usageRecords.cacheWrite5mTokens} + ${usageRecords.cacheWrite1hTokens})
     filter (where ${usageRecords.stablePrefixTokens} is not null), 0)::bigint as marked_input_tokens`;
 
 type TotalsRow = Record<
@@ -372,6 +378,7 @@ type TotalsRow = Record<
   | 'input_tokens'
   | 'cached_input_tokens'
   | 'output_tokens'
+  | 'cache_write_tokens'
   | 'total_tokens'
   | 'estimated_tokens'
   | 'charged_micros'
@@ -386,8 +393,9 @@ type TotalsRow = Record<
 function toTotals(r: TotalsRow | undefined): AdminUsageTotals {
   const n = (v: string | number | null | undefined) => Number(v ?? 0);
   const calls = n(r?.calls);
-  // usage_records.input_tokens 是未命中缓存的输入（与价目表单位一致），命中率 = 命中 ÷（未命中 + 命中）
-  const inputAll = n(r?.input_tokens) + n(r?.cached_input_tokens);
+  // usage_records.input_tokens 是未命中缓存的输入（与价目表单位一致），命中率 = 命中 ÷（未命中 + 命中 + 缓存写入）
+  const inputAll =
+    n(r?.input_tokens) + n(r?.cached_input_tokens) + n(r?.cache_write_tokens);
   return {
     // v3.4 用量监控
     unknownCostCalls: n(r?.unknown_cost_calls),
@@ -406,6 +414,7 @@ function toTotals(r: TotalsRow | undefined): AdminUsageTotals {
     inputTokens: n(r?.input_tokens),
     cachedInputTokens: n(r?.cached_input_tokens),
     outputTokens: n(r?.output_tokens),
+    cacheWriteTokens: n(r?.cache_write_tokens),
     totalTokens: n(r?.total_tokens),
     estimatedTokens: n(r?.estimated_tokens),
     chargedMicros: n(r?.charged_micros),
@@ -429,6 +438,8 @@ export function toAdminRecord(row: UsageRow): AdminUsageRecord {
     upstreamId: row.upstreamId,
     inputTokens: row.inputTokens,
     cachedInputTokens: row.cachedInputTokens,
+    cacheWrite5mTokens: row.cacheWrite5mTokens,
+    cacheWrite1hTokens: row.cacheWrite1hTokens,
     outputTokens: row.outputTokens,
     estimated: row.estimated,
     latencyMs: row.latencyMs,

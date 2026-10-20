@@ -8,12 +8,13 @@
  * - ModelStatusService：GET /model/status 与 ModelGatewayPort.getModelStatus 的实现。
  *
  * 解析顺序（3.22 起按场景，见 scenarios.ts；没有平台兜底默认）：
- * - chat：场景「文本聊天」（input.scenario 指定时用它，例 通话 = voice_call；purpose = vision 时 = 图片识别）；
+ * - chat：场景「文本聊天」（input.scenario 指定时用它，例 通话 = voice_call）；
  * - background：同一角色的「文本聊天」（后台文字任务跟随文本聊天，不再有单独的后台模型）；
  * - adult：场景「私密模式」；
  * - 每个场景：角色单独设置 > 用户场景配置 > not_configured。管理员自己的 admin_* 调用没配置时用场景推荐模型；
  * - 平台任务（安全、小V、平台内容）、行为规划、成人检查：后台指定的「平台内部模型」；
- * - 带图而模型没有 vision 能力：改用同一角色「图片识别」场景的模型，没有则 capability_missing。
+ * - 3.24：不再有「图片识别」场景。带图（或 purpose = vision）就交给本次解析出的模型（文本聊天 / 私密模式），
+ *   它没有 vision 能力时 capability_missing（后台要求这两类模型具备识图能力，缺了会提示）。
  * 选中的模型下架 / 上游故障时**不自动换**（MDL-04），直接返回 model_unavailable / provider_unavailable。
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
@@ -47,8 +48,9 @@ export function scenarioFor(
   scenario?: ModelScenario,
 ): ModelScenario {
   if (role === 'adult') return 'private';
-  if (role === 'chat' && scenario) return scenario;
-  if (role === 'chat' && purpose === 'vision') return 'vision';
+  // 3.24：图片识别场景已去掉（旧调用方传 vision 也按文本聊天解析）
+  if (role === 'chat' && scenario && scenario !== 'vision') return scenario;
+  void purpose;
   return 'chat';
 }
 
@@ -118,11 +120,6 @@ export class ModelResolver implements AdultModelReadPort {
     const scenario = scenarioFor(role, options.purpose ?? 'chat_reply', options.scenario);
     const picked = await this.scenarios.pick(userId, scenario, characterId);
     if (picked) return picked;
-    // 图片识别没单独配置时：文本聊天模型自己能识图就用它
-    if (scenario === 'vision') {
-      const chat = await this.scenarios.pick(userId, 'chat', characterId);
-      if (chat?.facts.entry?.capabilities.includes('vision')) return chat;
-    }
     if (options.purpose?.startsWith('admin_')) {
       const recommended = await this.catalog.recommendedModel(scenario);
       if (recommended) return { facts: recommended, source: 'platform_default' };
@@ -180,7 +177,7 @@ export class ModelResolver implements AdultModelReadPort {
       });
     }
     if (!picked) return { ok: false, error: 'not_configured' };
-    let facts = picked.facts;
+    const facts = picked.facts;
     if (input.modelRole === 'adult_check') {
       let allowed = false;
       try {
@@ -196,7 +193,7 @@ export class ModelResolver implements AdultModelReadPort {
       }
       if (!allowed) return { ok: false, error: 'model_not_allowed' };
     }
-    let usedVisionDefault = false;
+    const usedVisionDefault = false;
     const checkUsable = (f: ModelFacts): GenerateError | null => {
       const reason = unavailableReason(f.entry, f.upstreamStatus);
       if (reason === 'model_removed') return 'model_unavailable';
@@ -205,21 +202,12 @@ export class ModelResolver implements AdultModelReadPort {
     };
     const first = checkUsable(facts);
     if (first) return { ok: false, error: first };
+    // 3.24：图片随本次的模型（文本聊天 / 私密模式）发送，不再改用单独的识图模型。
     if (
       (input.purpose === 'vision' || input.hasImages === true) &&
       !facts.entry?.capabilities.includes('vision')
-    ) {
-      // 3.22：改用同一角色「图片识别」场景的模型（用户自己配置的，不是平台默认）。
-      const vision = input.platformTask
-        ? null
-        : await this.scenarios.pick(input.userId, 'vision', input.characterId ?? null);
-      if (!vision?.facts.entry?.capabilities.includes('vision'))
-        return { ok: false, error: 'capability_missing' };
-      const err = checkUsable(vision.facts);
-      if (err) return { ok: false, error: err };
-      facts = vision.facts;
-      usedVisionDefault = true;
-    }
+    )
+      return { ok: false, error: 'capability_missing' };
     const entry = facts.entry;
     if (!entry) return { ok: false, error: 'model_unavailable' };
     if (
@@ -372,11 +360,9 @@ export class ModelStatusService {
         ((await this.bounds?.profiles(f.entry.modelKey)) ?? []).some(
           (proof) => (proof.text?.maxImages ?? 0) > 0,
         );
+      // 3.24：只看文本聊天模型（不再有图片识别场景）
       const picked = await this.resolver.pick(userId, 'chat', characterId);
-      if (await usable(picked?.facts)) return true;
-      // 3.22：聊天模型不能识图时看「图片识别」场景
-      const vision = await this.resolver.pick(userId, 'chat', characterId, { purpose: 'vision' });
-      return usable(vision?.facts);
+      return usable(picked?.facts);
     } catch {
       return false;
     }
@@ -392,7 +378,15 @@ export class ModelStatusService {
         canFallbackToDefault: false,
       };
     }
-    const reason = unavailableReason(picked.facts.entry, picked.facts.upstreamStatus);
+    const baseReason = unavailableReason(picked.facts.entry, picked.facts.upstreamStatus);
+    // 3.24：具体原因（密钥无效 / 余额不足 / 被健康检查暂停 / 缺计费上限 / 没有价格…）
+    const detail =
+      (await this.catalog.availabilityDetails([picked.facts.modelKey])).get(
+        picked.facts.modelKey,
+      ) ?? (baseReason === 'model_removed' ? 'model_removed' : null);
+    const reason =
+      baseReason ??
+      (detail ? (detail === 'model_removed' ? 'model_removed' : 'provider_unavailable') : null);
     if (reason) {
       let canFallbackToDefault = false;
       if (picked.source === 'override') {
@@ -400,9 +394,12 @@ export class ModelStatusService {
         const global = await this.resolver.pick(userId, 'chat', null);
         canFallbackToDefault =
           global !== null &&
-          unavailableReason(global.facts.entry, global.facts.upstreamStatus) === null;
+          unavailableReason(global.facts.entry, global.facts.upstreamStatus) === null &&
+          !(await this.catalog.availabilityDetails([global.facts.modelKey])).get(
+            global.facts.modelKey,
+          );
       }
-      return { characterId, available: false, reason, canFallbackToDefault };
+      return { characterId, available: false, reason, canFallbackToDefault, detail };
     }
     const spend = await this.billing.getSpendStatus(userId);
     const quote = await this.quotes?.quote({
@@ -411,13 +408,31 @@ export class ModelStatusService {
       purpose: 'chat_reply',
       estimate: { outputTokens: 600 },
     });
-    if (!quote?.ok)
+    if (!quote?.ok) {
+      // 3.24：报价失败多半是线路的最大输出不够一条回复，或计费上限 / 价格缺失——写清楚，不再笼统说「没配置」
+      if (quote && quote.error === 'price_missing') {
+        const profiles = (await this.bounds?.profiles(picked.facts.modelKey)) ?? [];
+        const texts = profiles.flatMap((p) => (p.text ? [p.text] : []));
+        return {
+          characterId,
+          available: false,
+          reason: 'provider_unavailable',
+          canFallbackToDefault: false,
+          detail:
+            texts.length && texts.every((t) => t.maxOutputTokens < 600)
+              ? 'output_limit_too_small'
+              : texts.length
+                ? 'price_missing'
+                : 'billing_bounds_missing',
+        };
+      }
       return {
         characterId,
         available: false,
         reason: 'not_configured',
         canFallbackToDefault: false,
       };
+    }
     if (quote.value.amountMicros > 0 && spend.availableMicros < quote.value.amountMicros) {
       return {
         characterId,

@@ -1,19 +1,47 @@
-/** OpenAI 兼容文本协议；不记录响应原文、不跟随重定向、不持有密钥。 */
-import type { GenerateTextInput } from '@weiban/contracts';
+/**
+ * 文本协议适配器：OpenAI 兼容（本文件）与 Anthropic 原生 Messages（anthropic-adapter.ts，3.24），
+ * RoutingTextAdapter 按上游账号的协议选用。不记录响应原文、不跟随重定向、不持有密钥。
+ */
+import type { GenerateTextInput, UsageQuantities } from '@weiban/contracts';
 
 export interface TextUsage {
   reported?: {
     promptTokens: number | null;
     cachedTokens: number | null;
     completionTokens: number | null;
+    /** 3.24：上游报告的缓存写入 token（Anthropic cache_creation_input_tokens）。 */
+    cacheWriteTokens?: number | null;
   };
+  /** 未命中缓存、也不是缓存写入的输入 token。 */
   inputTokens: number;
+  /** 命中缓存（缓存读取）的输入 token。 */
   cachedInputTokens: number;
+  /** 3.24：缓存写入的输入 token（5 分钟 / 1 小时两档；只有 Anthropic 原生协议报告）。 */
+  cacheWrite5mTokens?: number;
+  cacheWrite1hTokens?: number;
   outputTokens: number;
   estimated: boolean;
 }
+
+/** 3.24：网关交给计费的用量（只取计价字段，去掉 estimated / reported 等说明字段）。 */
+export function billableUsage(usage: TextUsage): UsageQuantities {
+  return {
+    inputTokens: usage.inputTokens,
+    cachedInputTokens: usage.cachedInputTokens,
+    outputTokens: usage.outputTokens,
+    ...(usage.cacheWrite5mTokens ? { cacheWrite5mTokens: usage.cacheWrite5mTokens } : {}),
+    ...(usage.cacheWrite1hTokens ? { cacheWrite1hTokens: usage.cacheWrite1hTokens } : {}),
+  };
+}
+
+/** 3.24：上游协议（文本）。 */
+export type TextProtocol = 'openai_compatible' | 'anthropic';
+export function textProtocolOf(kind: string | null | undefined): TextProtocol {
+  return kind === 'anthropic' ? 'anthropic' : 'openai_compatible';
+}
+
 export type TextResult =
-  | { ok: true; text: string; usage: TextUsage }
+  | { ok: true; text: string; usage: TextUsage; ttftMs?: number }
   | {
       ok: false;
       category:
@@ -35,6 +63,11 @@ export interface AdapterMessage {
   role: GenerateTextInput['messages'][number]['role'];
   content: string;
   images?: string[];
+  /**
+   * 3.24：缓存断点。网关按 09 号 §6 的「稳定开头」标出（开头系统消息、稳定开头的最后一条消息）；
+   * Anthropic 协议在这里打 cache_control，OpenAI 兼容协议忽略（上游自动前缀缓存）。
+   */
+  cacheBreakpoint?: boolean;
 }
 
 function wireMessages(messages: AdapterMessage[]): unknown[] {
@@ -53,6 +86,8 @@ function wireMessages(messages: AdapterMessage[]): unknown[] {
 
 export interface TextAdapter {
   generate(input: {
+    /** 3.24：上游协议；不传 = OpenAI 兼容。 */
+    protocol?: TextProtocol;
     baseUrl: string;
     apiKey: string;
     model: string;
@@ -162,6 +197,19 @@ function usageOf(raw: unknown, input: string, output: string): TextUsage {
     estimated: true,
     reported,
   };
+}
+
+/** 3.24：按上游账号的协议选择适配器（TEXT_ADAPTER 的默认实现）。 */
+export class RoutingTextAdapter implements TextAdapter {
+  constructor(
+    private readonly openai: TextAdapter,
+    private readonly anthropic: TextAdapter,
+  ) {}
+  generate(input: Parameters<TextAdapter['generate']>[0]): Promise<TextResult> {
+    return input.protocol === 'anthropic'
+      ? this.anthropic.generate(input)
+      : this.openai.generate(input);
+  }
 }
 
 export class OpenAiTextAdapter implements TextAdapter {

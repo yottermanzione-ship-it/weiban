@@ -149,6 +149,8 @@ export class GatewayMaintenance implements OnModuleInit {
         errorCode: succeeded ? null : 'interrupted',
         inputTokens: record.inputTokens,
         cachedInputTokens: record.cachedInputTokens,
+        cacheWrite5mTokens: record.cacheWrite5mTokens,
+        cacheWrite1hTokens: record.cacheWrite1hTokens,
         outputTokens: record.outputTokens,
         estimated: record.estimated,
         latencyMs: record.latencyMs,
@@ -183,7 +185,7 @@ export class GatewayMaintenance implements OnModuleInit {
       if (upstream.cooldownUntil && upstream.cooldownUntil.getTime() > this.clock.nowMs()) continue;
       const result = await this.upstreamService.withApiKey(upstream.id, (apiKey) =>
         this.probe.test({
-          kind: 'openai_compatible',
+          kind: upstream.kind as Parameters<UpstreamProbe['test']>[0]['kind'],
           baseUrl: upstream.baseUrl,
           apiKey,
         }),

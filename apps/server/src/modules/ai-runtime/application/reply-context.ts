@@ -271,6 +271,8 @@ export class ReplyContext {
       userId: row.userId,
       characterId: row.characterId,
       conversationId: row.conversationId,
+      // 3.24：私密模式下发的图片交给私密模式模型看（不再有单独的图片识别场景）
+      modelRole: conversation.contentScope === 'adult' ? ('adult' as const) : ('chat' as const),
     };
     const lastCharacterSeq = history.filter((r) => r.senderKind === 'character').at(-1)?.seq ?? 0;
     const fresh = history
