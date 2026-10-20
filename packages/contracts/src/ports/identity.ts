@@ -29,6 +29,11 @@ export interface IdentityAccountStatusPort {
    */
   /** 可选调用方事务：同连接读取并锁定账号行，避免并发事务耗尽连接池。 */
   getAccountStatus(userId: string, tx?: Tx): Promise<AccountStatus | null>;
+  /**
+   * 3.22：账号是否被管理员封禁（批 E2）。封禁账号的后台任务（角色生态、主动消息、记忆整理等）一律跳过、不扣积分；
+   * 模型网关在解析模型前统一判断。可选方法：旧实现不提供时按未封禁处理。
+   */
+  isBanned?(userId: string): Promise<boolean>;
 }
 
 /**

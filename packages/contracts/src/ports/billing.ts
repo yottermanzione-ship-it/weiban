@@ -286,6 +286,24 @@ export interface BillingModelRatePort {
     price: ModelTokenPrices;
     cost: ModelTokenPrices;
   }): Promise<{ priceVersionId: string; published: boolean }>;
+  /**
+   * 3.22：各模型的限时折扣设置（含未开始 / 已结束的；没有设置的模型不在结果里）。
+   * 折扣只作用于售价，成本不变；冻结、结算、报价都由 billing 在同一处按折扣计算（冻结时锁定折扣）。
+   */
+  getModelDiscounts(modelKeys: readonly string[]): Promise<Map<string, ModelDiscountSetting>>;
+  /** 3.22：设置 / 取消（discount = null）某模型的限时折扣（写审计）。 */
+  setModelDiscount(input: {
+    operatorUserId: string;
+    modelKey: string;
+    discount: ModelDiscountSetting | null;
+  }): Promise<void>;
+}
+
+/** 3.22：限时折扣。rate 0.01～0.99；[startsAt, endsAt) 生效（ISO 时间）。 */
+export interface ModelDiscountSetting {
+  rate: number;
+  startsAt: string;
+  endsAt: string;
 }
 
 // ---------- 3.1（积压 ㉖ 计费报价、㉞ 当日聊天花费） ----------

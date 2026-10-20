@@ -65,6 +65,62 @@ export type ModelCapability = z.infer<typeof ModelCapability>;
 
 export const PriceTier = z.enum(['cheap', 'medium', 'expensive']);
 
+/**
+ * 3.22（试用反馈批 E3）：模型使用场景。每个场景用户单独选一个模型（不做多模态「直接听语音 / 直接生成」）。
+ * - chat 文本聊天（私聊、群聊回复；记忆整理、角色生态里「发文字」等后台文字任务也按它走）；
+ * - vision 图片识别（看用户发的图；文本聊天模型自己能识图时直接用它）；
+ * - voice_message 语音消息（角色发语音的合成；角色音色绑定了具体语音模型时以音色为准）；
+ * - speech_recognition 语音识别（用户语音转文字，含通话里听用户）；
+ * - voice_call 语音通话（通话中对话用的文本模型）；
+ * - image_generation 发照片 / 自拍（图片生成）；
+ * - private 私密模式聊天（原「成人模式模型」）。
+ */
+export const ModelScenario = z.enum([
+  'chat',
+  'vision',
+  'voice_message',
+  'speech_recognition',
+  'voice_call',
+  'image_generation',
+  'private',
+]);
+export type ModelScenario = z.infer<typeof ModelScenario>;
+
+/**
+ * 3.22：平台内部模型（用户不可选，后台指定）。safety 安全检查与关怀跟进；small_v 小V 答疑；
+ * platform_content 平台承担的内容生成（官方角色公共朋友圈、搜索候选）；planner 行为规划；
+ * adult_check 成人内容检查（须 OpenRouter）；web_search 联网搜索。
+ * 「角色生态决策」模型仍存在生态配置里（后台模型页同一栏可改），不在这里。
+ */
+export const PlatformInternalUse = z.enum([
+  'safety',
+  'small_v',
+  'platform_content',
+  'planner',
+  'adult_check',
+  'web_search',
+]);
+export type PlatformInternalUse = z.infer<typeof PlatformInternalUse>;
+
+/** 3.22：限时折扣（后台设置）。rate 0.01～0.99（最多 2 位小数）；[startsAt, endsAt) 期间生效，到期自动恢复原价。 */
+export const ModelDiscount = z
+  .object({
+    rate: z.number().min(0.01).max(0.99),
+    startsAt: Timestamp,
+    endsAt: Timestamp,
+  })
+  .refine((d) => Date.parse(d.endsAt) > Date.parse(d.startsAt), {
+    message: '结束时间必须晚于开始时间',
+    path: ['endsAt'],
+  });
+export type ModelDiscount = z.infer<typeof ModelDiscount>;
+
+/** 3.22：用户端看到的进行中折扣。 */
+export const ModelDiscountInfo = z.object({
+  rate: z.number().min(0.01).max(0.99),
+  endsAt: Timestamp,
+});
+
 export const ModelInfo = z.object({
   modelKey: ModelKey,
   displayName: z.string(),
@@ -93,6 +149,30 @@ export const ModelInfo = z.object({
    * 后台手填优先；否则 = (0.8×输入售价 + 0.2×输出售价) / 基准模型同算式。算不出时为 null。
    */
   displayMultiplier: z.number().nonnegative().nullable().optional(),
+  /** 3.22：后台标注这个模型可用于哪些场景（模型配置页按场景只列可用的模型）。 */
+  scenarios: z.array(tolerantEnum(ModelScenario)).optional(),
+  /**
+   * 3.22：进行中的限时折扣（没有或已过期为 null / 不带）。rate = 折扣系数（0.5 = 5 折），
+   * 扣费按「售价 × rate」，pointsPerReply / pointsPerUse 已是折后数；displayMultiplier 仍是原倍率，
+   * 界面显示「消耗倍率 ~~×1.0~~ ×0.5 · 限时 5 折」。
+   */
+  discount: ModelDiscountInfo.nullable().optional(),
+  /**
+   * 3.22：按场景估算「约每次多少积分」（已含折扣）：文本类场景（文本聊天 / 图片识别 / 语音通话 / 私密模式）= 约每条回复；
+   * 语音消息 = 约 100 字一条；语音识别 = 约 15 秒一条；发照片 = 1 张。算不出为 null，不适用的场景不带。
+   */
+  pointsPerUse: z
+    .object({
+      chat: z.number().nonnegative().nullable(),
+      vision: z.number().nonnegative().nullable(),
+      voice_message: z.number().nonnegative().nullable(),
+      speech_recognition: z.number().nonnegative().nullable(),
+      voice_call: z.number().nonnegative().nullable(),
+      image_generation: z.number().nonnegative().nullable(),
+      private: z.number().nonnegative().nullable(),
+    })
+    .partial()
+    .optional(),
 });
 export type ModelInfo = z.infer<typeof ModelInfo>;
 
@@ -164,6 +244,50 @@ export const ModelStatus = z.object({
 });
 export type ModelStatus = z.infer<typeof ModelStatus>;
 
+/** 3.22：每个场景一项（字段名 = 场景）；未传的场景不改，null = 清除。 */
+export const ScenarioRefs = z
+  .object({
+    chat: ModelRef.nullable(),
+    vision: ModelRef.nullable(),
+    voice_message: ModelRef.nullable(),
+    speech_recognition: ModelRef.nullable(),
+    voice_call: ModelRef.nullable(),
+    image_generation: ModelRef.nullable(),
+    private: ModelRef.nullable(),
+  })
+  .partial();
+
+/** 3.22：用户在某个场景的配置。 */
+export const ScenarioSelection = z.object({
+  scenario: tolerantEnum(ModelScenario),
+  /** 用户选的模型；null = 未配置（该场景的功能不可用，首次使用时引导配置）。 */
+  selection: ModelRefState.nullable(),
+  /** 后台为该场景指定的推荐模型（只用于「一键选推荐」，不是兜底默认）；未指定为 null。 */
+  recommendedModelKey: ModelKey.nullable(),
+});
+
+export const ScenarioConfig = z.object({
+  scenarios: z.array(ScenarioSelection),
+  /** 文本聊天还没配置：客户端弹出首次引导，配置前不能发消息。 */
+  needsSetup: z.boolean(),
+});
+export type ScenarioConfig = z.infer<typeof ScenarioConfig>;
+
+export const UpdateScenarioConfigRequest = z.object({ selections: ScenarioRefs });
+
+/** 3.22：某角色逐场景的单独设置；selection = null 表示跟随场景设置，effective = 实际会用的模型。 */
+export const CharacterScenarioConfig = z.object({
+  characterId: Id,
+  scenarios: z.array(
+    z.object({
+      scenario: tolerantEnum(ModelScenario),
+      selection: ModelRefState.nullable(),
+      effective: ModelRefState.nullable(),
+    }),
+  ),
+});
+export type CharacterScenarioConfig = z.infer<typeof CharacterScenarioConfig>;
+
 export const ModelAccessEndpoints = {
   getLeaderboardInfo: defineEndpoint({
     method: 'GET',
@@ -176,7 +300,10 @@ export const ModelAccessEndpoints = {
     method: 'GET',
     path: `${API_PREFIX}/model/models`,
     auth: 'user',
-    query: z.object({ capability: ModelCapability.optional() }),
+    query: z.object({
+      capability: ModelCapability.optional(),
+      scenario: ModelScenario.optional(),
+    }),
     response: z.object({ items: z.array(ModelInfo) }),
     summary: '模型目录（带价格档位、能力、标签、排行名次）；具体价格调 GET /billing/prices',
   }),
@@ -213,6 +340,49 @@ export const ModelAccessEndpoints = {
     response: CharacterModelOverride,
     summary:
       '为角色单独设置聊天模型；null 恢复使用全局默认。无审查模型只能给有成人资格的角色设置，否则 403 model_not_allowed',
+  }),
+  getScenarioConfig: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/model/scenarios`,
+    auth: 'user',
+    response: ScenarioConfig,
+    summary: '3.22：按场景的模型配置（含后台推荐模型、是否需要首次引导）',
+  }),
+  updateScenarioConfig: defineEndpoint({
+    method: 'PATCH',
+    path: `${API_PREFIX}/model/scenarios`,
+    auth: 'user',
+    body: UpdateScenarioConfigRequest,
+    response: ScenarioConfig,
+    summary:
+      '3.22：修改场景配置。模型须启用且后台标注可用于该场景（否则 422 model_unavailable）；私密模式以外的场景不能选无审查模型（422 model_not_allowed）',
+  }),
+  applyRecommendedScenarios: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/model/scenarios/recommended`,
+    auth: 'user',
+    body: z.object({ overwrite: z.boolean().optional() }),
+    response: ScenarioConfig,
+    summary:
+      '3.22：一键选推荐：把后台推荐模型写入未配置的场景（overwrite = true 时覆盖全部）；私密模式不自动选',
+  }),
+  getCharacterScenarios: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/model/character-scenarios/:characterId`,
+    auth: 'user',
+    params: z.object({ characterId: Id }),
+    response: CharacterScenarioConfig,
+    summary: '3.22：某角色逐场景的单独设置（未指定 = 跟随场景设置）',
+  }),
+  updateCharacterScenarios: defineEndpoint({
+    method: 'PATCH',
+    path: `${API_PREFIX}/model/character-scenarios/:characterId`,
+    auth: 'user',
+    params: z.object({ characterId: Id }),
+    body: UpdateScenarioConfigRequest,
+    response: CharacterScenarioConfig,
+    summary:
+      '3.22：为角色逐场景单独指定模型（null = 跟随场景设置）。无审查模型只能给有成人资格的角色，否则 403 model_not_allowed',
   }),
   getModelStatus: defineEndpoint({
     method: 'GET',
@@ -422,6 +592,8 @@ export const AdminCatalogEntry = z.object({
    * 必须具备 vision 能力；未设置时网关返回 capability_missing（billing.md 3.2 节）。
    * 3.0：planner = 行为规划默认模型（CR-17，只能用于 behavior_planning）；speech_synthesis / speech_recognition /
    * image_generation / web_search = 平台提供的语音合成、语音识别、图片生成、联网搜索服务（MED，平台未设置即「未开通」）。
+   * **3.22 起不再使用**：平台默认改为「场景推荐模型」与「平台内部模型」（ModelScenarioSettings），
+   * 服务器忽略写入的值、返回空数组；字段保留只为旧客户端能解析。
    */
   defaultFor: z.array(
     z.enum([
@@ -437,6 +609,8 @@ export const AdminCatalogEntry = z.object({
     ]),
   ),
   enabled: z.boolean(),
+  /** 3.22：可用于哪些场景（后台勾选）；写入时不传 = 保持原值（新建为空）。 */
+  scenarios: z.array(ModelScenario).optional(),
   /** v3.6：系统消息放法；写入时不传 = 保持原值（新建默认 multi）。 */
   systemMessageMode: SystemMessageMode.optional(),
   billingBounds: RouteBillingBounds.nullable().optional(),
@@ -491,6 +665,10 @@ export const AdminModel = AdminCatalogEntry.extend({
   displayMultiplierManual: z.number().nonnegative().nullable().optional(),
   /** 3.17：实际展示给用户的倍率（手填或自动），算不出为 null。 */
   displayMultiplier: z.number().nonnegative().nullable().optional(),
+  /** 3.22：限时折扣设置（含未开始 / 已结束的）；null = 没有。 */
+  discount: ModelDiscount.nullable().optional(),
+  /** 3.22：折扣此刻是否生效。 */
+  discountActive: z.boolean().optional(),
 });
 export type AdminModel = z.infer<typeof AdminModel>;
 
@@ -509,7 +687,39 @@ export const AdminModelWrite = AdminCatalogEntryWrite.extend({
   routes: z.array(ModelRoute).min(1).max(20).optional(),
   /** 3.17：展示倍率手填值（最多 2 位小数）；null = 改为自动计算；不传 = 不改。 */
   displayMultiplierManual: z.number().min(0).max(1000).nullable().optional(),
+  /** 3.22：限时折扣；null = 取消折扣；不传 = 不改。扣费按折后售价，成本不变。 */
+  discount: ModelDiscount.nullable().optional(),
 });
+
+/**
+ * 3.22：场景推荐模型（只用于用户端「一键选推荐」）与平台内部模型（用户不可选）。
+ * 字段名 = 场景 / 内部用途；null = 未指定。推荐模型须启用且可用于该场景；内部模型不能是无审查模型
+ * （adult_check 除外，且须走 OpenRouter）。
+ */
+export const ModelScenarioSettings = z.object({
+  recommended: z
+    .object({
+      chat: ModelKey.nullable(),
+      vision: ModelKey.nullable(),
+      voice_message: ModelKey.nullable(),
+      speech_recognition: ModelKey.nullable(),
+      voice_call: ModelKey.nullable(),
+      image_generation: ModelKey.nullable(),
+      private: ModelKey.nullable(),
+    })
+    .partial(),
+  internal: z
+    .object({
+      safety: ModelKey.nullable(),
+      small_v: ModelKey.nullable(),
+      platform_content: ModelKey.nullable(),
+      planner: ModelKey.nullable(),
+      adult_check: ModelKey.nullable(),
+      web_search: ModelKey.nullable(),
+    })
+    .partial(),
+});
+export type ModelScenarioSettings = z.infer<typeof ModelScenarioSettings>;
 
 /** 3.17：展示倍率的基准模型（倍率 = 1.00 的那个）；null = 未设置，自动倍率不显示。 */
 export const DisplayMultiplierSettings = z.object({ baseModelKey: ModelKey.nullable() });
@@ -529,6 +739,21 @@ export const GatewayLimits = z.object({
 export type GatewayLimits = z.infer<typeof GatewayLimits>;
 
 export const ModelAccessAdminEndpoints = {
+  getScenarioSettings: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/scenario-settings`,
+    auth: 'admin',
+    response: ModelScenarioSettings,
+    summary: '3.22：场景推荐模型与平台内部模型',
+  }),
+  updateScenarioSettings: defineEndpoint({
+    method: 'PUT',
+    path: `${API_PREFIX}/admin/model/scenario-settings`,
+    auth: 'admin',
+    body: ModelScenarioSettings,
+    response: ModelScenarioSettings,
+    summary: '3.22：修改场景推荐模型与平台内部模型（只改传了的键，写审计）',
+  }),
   getDisplayMultiplierSettings: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/admin/model/display-multiplier`,

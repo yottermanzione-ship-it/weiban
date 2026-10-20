@@ -10,7 +10,7 @@
  * 请求 / 响应的消息结构仍是草案：AI 系统负责人可提出变更申请（流式输出、多模态、工具调用），架构批准后修改。
  */
 import { z } from 'zod';
-import type { ModelRole } from '../http/model-access.js';
+import type { ModelRole, ModelScenario } from '../http/model-access.js';
 import type { PortResult } from './common.js';
 
 /** 调用用途：用于用量页分类和预算判断。新增用途属于次版本变更。 */
@@ -126,6 +126,11 @@ export interface GenerateTextInput {
    * 或由行为规划配置指定。照常按用户余额扣费。
    */
   modelKeyOverride?: string;
+  /**
+   * 3.22：按哪个场景的模型配置解析（只对 modelRole = chat 有意义，目前只有通话用 voice_call）。
+   * 不传时：chat → 文本聊天（purpose = vision 时 → 图片识别）；adult → 私密模式；background → 文本聊天（同一角色的设置）。
+   */
+  scenario?: ModelScenario;
   meta?: {
     personaVersion?: number;
     promptTemplateVersion?: string;
@@ -209,6 +214,8 @@ export interface ModelQuotePort {
     hasImages?: boolean;
     /** 3.17：只允许 behavior_planning，与网关 modelKeyOverride 同口径（后台指定的规划模型）。 */
     modelKeyOverride?: string;
+    /** 3.22：与 GenerateTextInput.scenario 同口径。 */
+    scenario?: ModelScenario;
     /** 估算用量（输入 token 估算值 + maxOutputTokens 等），单位同 billing 的 UsageQuantities。 */
     estimate: import('./billing.js').UsageQuantities;
   }): Promise<
