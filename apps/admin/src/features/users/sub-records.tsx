@@ -26,7 +26,7 @@ export function subSummary(r: SubRecord): string {
 
 export function subColumns(
   nameOf: (userId: string | null) => string,
-  options: { showUser?: boolean; onUser?: (userId: string) => void } = {},
+  options: { showUser?: boolean; onUser?: (userId: string) => void; compact?: boolean } = {},
 ): ProColumns<SubRecord>[] {
   const cols: ProColumns<SubRecord>[] = [
     { title: '时间', width: 150, render: (_, r) => formatDateTime(r.createdAt) },
@@ -59,16 +59,20 @@ export function subColumns(
     },
     {
       title: '会员期',
-      width: 200,
+      width: options.compact ? 120 : 200,
       render: (_, r) =>
         r.order
-          ? `${formatDate(r.order.startsAt)} → ${formatDate(r.order.endsAt)}`
+          ? options.compact
+            ? `至 ${formatDate(r.order.endsAt)}`
+            : `${formatDate(r.order.startsAt)} → ${formatDate(r.order.endsAt)}`
           : r.change?.expiresAt
             ? `至 ${formatDate(r.change.expiresAt)}`
             : '—',
     },
-    { title: '操作人', width: 120, render: (_, r) => nameOf(r.operatorUserId) },
   );
+  // 抽屉里（compact）放不下：操作人在详情里看。
+  if (!options.compact)
+    cols.push({ title: '操作人', width: 120, render: (_, r) => nameOf(r.operatorUserId) });
   return cols;
 }
 

@@ -241,7 +241,13 @@ export function TopupRecordsPage() {
             </div>
             <div>
               <span className="detail-label">积分类别</span>
-              <span>{selected.kind === 'signup_bonus' ? '赠送积分（先扣）' : '充值积分'}</span>
+              <span>
+                {selected.kind === 'signup_bonus'
+                  ? '赠送积分（扣费时先扣）'
+                  : selected.kind === 'grant'
+                    ? '充值积分'
+                    : '从余额扣除'}
+              </span>
             </div>
             <div>
               <span className="detail-label">流水编号</span>

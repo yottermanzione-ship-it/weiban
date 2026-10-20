@@ -282,7 +282,7 @@ function MembershipPanel({
       <DataTable<SubRecord>
         rowKey="key"
         size="small"
-        columns={subColumns(nameOf)}
+        columns={subColumns(nameOf, { compact: true })}
         data={records.data}
         loading={records.loading}
         error={records.error}
@@ -577,6 +577,7 @@ function AdjustExpiryDrawer({
         >
           <DatePicker
             style={{ width: '100%' }}
+            placeholder="选择日期"
             disabledDate={(d) => d.isBefore(dayjs().startOf('day'))}
           />
         </Form.Item>
