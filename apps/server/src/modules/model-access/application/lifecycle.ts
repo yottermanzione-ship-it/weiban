@@ -176,9 +176,7 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
         .delete(characterScenarioOverrides)
         .where(eq(characterScenarioOverrides.userId, userId))
         .returning({ id: characterScenarioOverrides.userId });
-      return (
-        a.length + b.length + c.length + d.length + e.length + f.length + g.length + h.length
-      );
+      return a.length + b.length + c.length + d.length + e.length + f.length + g.length + h.length;
     });
   }
 

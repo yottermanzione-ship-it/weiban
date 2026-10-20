@@ -61,13 +61,18 @@ export function ModelPriceLine({
       </span>,
     );
   } else if (m) parts.push(<span key="m">消耗倍率 {m}</span>);
-  if (d) parts.push(<span key="d" className="price-discount">{discountText(d.rate)}</span>);
-  const text = !scenario || TEXT_SCENARIOS.includes(scenario);
-  const per = scenario ? (model.pointsPerUse?.[scenario] ?? (text ? model.pointsPerReply : null)) : model.pointsPerReply;
-  if (per != null)
+  if (d)
     parts.push(
-      <span key="p">{`约每${text ? '条' : '次'} ${formatPoints(per)} 积分`}</span>,
+      <span key="d" className="price-discount">
+        {discountText(d.rate)}
+      </span>,
     );
+  const text = !scenario || TEXT_SCENARIOS.includes(scenario);
+  const per = scenario
+    ? (model.pointsPerUse?.[scenario] ?? (text ? model.pointsPerReply : null))
+    : model.pointsPerReply;
+  if (per != null)
+    parts.push(<span key="p">{`约每${text ? '条' : '次'} ${formatPoints(per)} 积分`}</span>);
   if (!parts.length) return <>—</>;
   return (
     <>
@@ -267,7 +272,10 @@ export function ScenarioModelPage() {
         <>
           <ModelPriceLine model={model} scenario={meta.key} />
           {onBoard && ` · ${model.vendorName}`}
-          {onBoard && tab === 'popular' && rank != null && ` · ${counts.get(model.modelKey)} 人选用`}
+          {onBoard &&
+            tab === 'popular' &&
+            rank != null &&
+            ` · ${counts.get(model.modelKey)} 人选用`}
           {!model.available && ' · 暂不可用'}
         </>
       }
@@ -304,9 +312,7 @@ export function ScenarioModelPage() {
             <p className="hint page-note">按「文本聊天」选用人数排序，不含角色单独设置。</p>
           )}
           <MenuGroup>
-            {ranked.map((m, i) =>
-              modelRow(m, tab === 'rank' ? m.leaderboardRank! : i + 1, true),
-            )}
+            {ranked.map((m, i) => modelRow(m, tab === 'rank' ? m.leaderboardRank! : i + 1, true))}
           </MenuGroup>
           {!models.loading && !info.loading && ranked.length === 0 && (
             <p className="empty">{tab === 'rank' ? '暂未配置模型排名' : '还没有选用数据'}</p>
@@ -369,9 +375,7 @@ export function CharacterModelPage() {
               key={s.key}
               to={`/characters/${characterId}/model/${s.key}`}
               label={s.label}
-              value={
-                own ?? <span className="ink-muted">{`跟随（${effective ?? '未配置'}）`}</span>
-              }
+              value={own ?? <span className="ink-muted">{`跟随（${effective ?? '未配置'}）`}</span>}
             />
           );
         })}
@@ -397,7 +401,10 @@ export function CharacterScenarioPickerPage() {
   const [pending, setPending] = useState(false);
   const row = config.data?.scenarios.find((r) => r.scenario === meta.key);
   const current = row?.selection?.modelKey ?? '';
-  const followName = nameOf(models.data?.items, row?.effective && !row.selection ? row.effective.modelKey : null);
+  const followName = nameOf(
+    models.data?.items,
+    row?.effective && !row.selection ? row.effective.modelKey : null,
+  );
   async function choose(key: string) {
     if (pending || key === current) return;
     setPending(true);
@@ -535,7 +542,11 @@ export function ModelSetupGuide({
       actions={[
         { label: '稍后', onClick: onClose },
         { label: '自己选', onClick: () => navigate('/models') },
-        { label: pending ? '配置中…' : '一键选推荐', primary: true, onClick: () => void recommend() },
+        {
+          label: pending ? '配置中…' : '一键选推荐',
+          primary: true,
+          onClick: () => void recommend(),
+        },
       ]}
     >
       <p className="setup-guide-text">

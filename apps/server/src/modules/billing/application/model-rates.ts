@@ -236,7 +236,9 @@ export class ModelRateService implements BillingModelRatePort {
 
   // ---------- 3.22 限时折扣 ----------
 
-  async getModelDiscounts(modelKeys: readonly string[]): Promise<Map<string, ModelDiscountSetting>> {
+  async getModelDiscounts(
+    modelKeys: readonly string[],
+  ): Promise<Map<string, ModelDiscountSetting>> {
     const keys = [...new Set(modelKeys)];
     const out = new Map<string, ModelDiscountSetting>();
     if (!keys.length) return out;
@@ -265,7 +267,9 @@ export class ModelRateService implements BillingModelRatePort {
       try {
         rateBp = discountRateToBp(input.discount.rate);
       } catch {
-        throw new AppError('bad_request', '折扣须在 0.01～0.99 之间（例 0.5 = 5 折）', { status: 422 });
+        throw new AppError('bad_request', '折扣须在 0.01～0.99 之间（例 0.5 = 5 折）', {
+          status: 422,
+        });
       }
       const startsAt = new Date(input.discount.startsAt);
       const endsAt = new Date(input.discount.endsAt);

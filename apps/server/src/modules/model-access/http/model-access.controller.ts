@@ -97,7 +97,8 @@ export class ModelController {
   @RequireAuth(E.getCharacterScenarios.auth)
   getCharacterScenarios(
     @CurrentPrincipal() me: AuthPrincipal,
-    @Param(new ContractPipe(schema(E.getCharacterScenarios.params))) params: { characterId: string },
+    @Param(new ContractPipe(schema(E.getCharacterScenarios.params)))
+    params: { characterId: string },
   ) {
     return this.scenarios.getCharacter(me.userId, params.characterId);
   }

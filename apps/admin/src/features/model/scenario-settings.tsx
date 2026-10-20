@@ -20,22 +20,24 @@ import { errorText, useRemote } from '../../data/hooks.js';
 import { HelpTip, SectionCard, useToast } from '../../ui/page.js';
 import { SCENARIO_LABELS } from './shared.js';
 
-const INTERNAL_LABELS: Record<PlatformInternalUse | 'ecology_decision', { label: string; help: string }> =
-  {
-    safety: { label: '安全检查', help: '安全关怀识别与次日跟进，平台付费。' },
-    small_v: { label: '小V 答疑', help: '用户问小V 时用，平台付费。' },
-    ecology_decision: {
-      label: '角色生态决策',
-      help: '角色「想一想」下一步做什么；按用户积分计费，用户不可选。不配置 = 生态不运行。',
-    },
-    platform_content: {
-      label: '平台内容生成',
-      help: '官方角色公共朋友圈、搜索候选等平台承担的生成。',
-    },
-    planner: { label: '行为规划', help: '后台规划角色行为；不配置时回落规则版，不调模型。' },
-    adult_check: { label: '成人内容检查', help: '必须是走 OpenRouter 的模型。' },
-    web_search: { label: '联网搜索', help: '平台提供的联网搜索服务。' },
-  };
+const INTERNAL_LABELS: Record<
+  PlatformInternalUse | 'ecology_decision',
+  { label: string; help: string }
+> = {
+  safety: { label: '安全检查', help: '安全关怀识别与次日跟进，平台付费。' },
+  small_v: { label: '小V 答疑', help: '用户问小V 时用，平台付费。' },
+  ecology_decision: {
+    label: '角色生态决策',
+    help: '角色「想一想」下一步做什么；按用户积分计费，用户不可选。不配置 = 生态不运行。',
+  },
+  platform_content: {
+    label: '平台内容生成',
+    help: '官方角色公共朋友圈、搜索候选等平台承担的生成。',
+  },
+  planner: { label: '行为规划', help: '后台规划角色行为；不配置时回落规则版，不调模型。' },
+  adult_check: { label: '成人内容检查', help: '必须是走 OpenRouter 的模型。' },
+  web_search: { label: '联网搜索', help: '平台提供的联网搜索服务。' },
+};
 
 const SCENARIO_ORDER: ModelScenario[] = [
   'chat',
@@ -132,7 +134,10 @@ export function ScenarioSettingsCard({ models }: { models: AdminModel[] }) {
                 value={draft.recommended[scenario] ?? undefined}
                 options={optionsFor(scenario)}
                 onChange={(v?: string) =>
-                  setDraft((d) => ({ ...d, recommended: { ...d.recommended, [scenario]: v ?? null } }))
+                  setDraft((d) => ({
+                    ...d,
+                    recommended: { ...d.recommended, [scenario]: v ?? null },
+                  }))
                 }
               />
             </div>
@@ -154,9 +159,7 @@ export function ScenarioSettingsCard({ models }: { models: AdminModel[] }) {
                 showSearch
                 style={{ flex: 1, minWidth: 0 }}
                 placeholder="未指定"
-                value={
-                  (use === 'ecology_decision' ? decision : draft.internal[use]) ?? undefined
-                }
+                value={(use === 'ecology_decision' ? decision : draft.internal[use]) ?? undefined}
                 options={internalOptions(use)}
                 onChange={(v?: string) =>
                   use === 'ecology_decision'

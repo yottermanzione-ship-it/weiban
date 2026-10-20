@@ -510,7 +510,6 @@ export function LedgerPage() {
 
 export { multiplierText } from './points.js';
 
-
 export function PricesPage() {
   const models = useRemote(ModelAccessEndpoints.listModels);
   const items = models.data?.items ?? [];

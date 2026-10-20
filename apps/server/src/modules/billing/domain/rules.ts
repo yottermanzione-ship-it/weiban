@@ -303,7 +303,8 @@ export const NO_DISCOUNT_BP = 10_000;
 /** 折扣系数（0.01～0.99）→ × 10000 的整数；超出范围抛错。 */
 export function discountRateToBp(rate: number): number {
   const bp = Math.round(rate * 10_000);
-  if (!Number.isFinite(rate) || bp < 100 || bp > 9_900) throw new RangeError('折扣须在 0.01～0.99 之间');
+  if (!Number.isFinite(rate) || bp < 100 || bp > 9_900)
+    throw new RangeError('折扣须在 0.01～0.99 之间');
   return bp;
 }
 

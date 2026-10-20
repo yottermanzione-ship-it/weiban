@@ -122,7 +122,10 @@ export const modelCatalog = modelAccessSchema.table(
     /** 会员 v5（0103）：展示倍率；null = 按基准模型自动算。只展示，不参与扣费。 */
     displayMultiplier: doublePrecision('display_multiplier'),
     /** 3.22（0114）：可用于哪些场景（契约 ModelScenario，后台勾选）。 */
-    scenarios: text('scenarios').array().notNull().default(sql`'{}'::text[]`),
+    scenarios: text('scenarios')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     createdAt: tz('created_at').notNull(),
     updatedAt: tz('updated_at').notNull(),
   },

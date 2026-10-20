@@ -11,11 +11,7 @@
  * 选择变化发 model_access.selection_changed（与原「模型选择」同一个事件）。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  CharacterScenarioConfig,
-  ModelScenario,
-  ScenarioConfig,
-} from '@weiban/contracts';
+import type { CharacterScenarioConfig, ModelScenario, ScenarioConfig } from '@weiban/contracts';
 import { and, eq } from 'drizzle-orm';
 import {
   AppError,
@@ -56,7 +52,9 @@ export class ScenarioService {
       .from(scenarioSelections)
       .where(eq(scenarioSelections.userId, userId));
     return new Map(
-      rows.filter((r) => isScenario(r.scenario)).map((r) => [r.scenario as ModelScenario, r.modelKey]),
+      rows
+        .filter((r) => isScenario(r.scenario))
+        .map((r) => [r.scenario as ModelScenario, r.modelKey]),
     );
   }
 
@@ -72,7 +70,9 @@ export class ScenarioService {
         ),
       );
     return new Map(
-      rows.filter((r) => isScenario(r.scenario)).map((r) => [r.scenario as ModelScenario, r.modelKey]),
+      rows
+        .filter((r) => isScenario(r.scenario))
+        .map((r) => [r.scenario as ModelScenario, r.modelKey]),
     );
   }
 
@@ -202,7 +202,8 @@ export class ScenarioService {
           modelHasAdultContent: hasAdultContent(f.entry!.capabilities),
         });
         if (!decision.allowed) {
-          if (decision.reason === 'character_not_found') throw new AppError('not_found', '角色不存在');
+          if (decision.reason === 'character_not_found')
+            throw new AppError('not_found', '角色不存在');
           if (decision.reason === 'model_not_allowed')
             throw new AppError('model_not_allowed', '这个角色不能使用允许成人内容的模型');
           throw new AppError('policy_denied', '这个角色不能使用该模型');
@@ -228,7 +229,10 @@ export class ScenarioService {
             await tx.db
               .delete(scenarioSelections)
               .where(
-                and(eq(scenarioSelections.userId, userId), eq(scenarioSelections.scenario, w.scenario)),
+                and(
+                  eq(scenarioSelections.userId, userId),
+                  eq(scenarioSelections.scenario, w.scenario),
+                ),
               );
           else
             await tx.db

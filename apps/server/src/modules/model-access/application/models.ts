@@ -60,7 +60,7 @@ export function toAdminModel(
   routes?: ModelRoute[],
   display?: DisplayPricing,
   discount?: ModelDiscountSetting,
-  nowMs = Date.now(),
+  nowMs = 0,
 ): AdminModel {
   return {
     ...entry,
