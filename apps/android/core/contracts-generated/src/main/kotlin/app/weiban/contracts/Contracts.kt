@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.20. Regenerate: pnpm android:generate
+// Contract 3.21. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.20"
+const val CONTRACT_VERSION: String = "3.21"
 
 @Serializable
 data class AccountAlias(
@@ -124,6 +124,8 @@ data class AdminAccountSummary(
     @SerialName("spentLast30DaysMicros") val `spentLast30DaysMicros`: Long,
     @SerialName("balancePoints") val `balancePoints`: Points? = null,
     @SerialName("spentLast30DaysPoints") val `spentLast30DaysPoints`: NonNegativePoints? = null,
+    @SerialName("bonusBalanceMicros") val `bonusBalanceMicros`: Long? = null,
+    @SerialName("bonusBalancePoints") val `bonusBalancePoints`: NonNegativePoints? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
 )
 
@@ -340,6 +342,12 @@ data class AdminDailyQuestion(
     @SerialName("tags") val `tags`: List<DailyQuestionTag>,
     @SerialName("listed") val `listed`: Boolean,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class AdminDeleteUserRequest(
+    @SerialName("confirmUsername") val `confirmUsername`: String,
+    @SerialName("reason") val `reason`: String,
 )
 
 @Serializable
@@ -664,6 +672,32 @@ data class AdminSupportTicket(
     @SerialName("handledBy") val `handledBy`: Id?,
 )
 
+@Serializable
+data class AdminTopupEntry(
+    @SerialName("entryId") val `entryId`: Id,
+    @SerialName("type") val `type`: LedgerEntryType,
+    @SerialName("amountMicros") val `amountMicros`: MoneyMicros,
+    @SerialName("balanceAfterMicros") val `balanceAfterMicros`: MoneyMicros,
+    @SerialName("category") val `category`: String?,
+    @SerialName("modelKey") val `modelKey`: ModelKey?,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("note") val `note`: String?,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("points") val `points`: Points? = null,
+    @SerialName("balanceAfterPoints") val `balanceAfterPoints`: Points? = null,
+    @SerialName("usageRecordId") val `usageRecordId`: Id?,
+    @SerialName("costMicros") val `costMicros`: Long?,
+    @SerialName("priceVersionId") val `priceVersionId`: Id?,
+    @SerialName("operatorUserId") val `operatorUserId`: Id?,
+    @SerialName("absorbed") val `absorbed`: Boolean,
+    @SerialName("safetyOverdraft") val `safetyOverdraft`: Boolean,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("username") val `username`: String,
+    @SerialName("kind") val `kind`: AdminTopupKind,
+)
+
+typealias AdminTopupKind = String
+
 typealias AdminUsageCallStatus = String
 
 typealias AdminUsageDimension = String
@@ -798,6 +832,59 @@ data class AdminUsageTotals(
     @SerialName("failureRate") val `failureRate`: Double? = null,
     @SerialName("cacheHitRate") val `cacheHitRate`: Double? = null,
     @SerialName("stablePrefixRate") val `stablePrefixRate`: Double? = null,
+)
+
+@Serializable
+data class AdminUserBan(
+    @SerialName("bannedAt") val `bannedAt`: Timestamp,
+    @SerialName("reason") val `reason`: String,
+    @SerialName("operatorUserId") val `operatorUserId`: Id?,
+)
+
+@Serializable
+data class AdminUserOverview(
+    @SerialName("totalUsers") val `totalUsers`: Long,
+    @SerialName("proPlusUsers") val `proPlusUsers`: Long,
+    @SerialName("expiringSoon") val `expiringSoon`: List<AdminUserOverviewExpiringSoonItem>,
+)
+
+@Serializable
+data class AdminUserSummary(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("username") val `username`: String,
+    @SerialName("nickname") val `nickname`: String?,
+    @SerialName("role") val `role`: String,
+    @SerialName("status") val `status`: String,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("lastActiveAt") val `lastActiveAt`: Timestamp?,
+    @SerialName("ban") val `ban`: AdminUserBan?,
+    @SerialName("membership") val `membership`: AdminUserSummaryMembership,
+)
+
+@Serializable
+data class AdminUsersEndpointsBanUserParams(
+    @SerialName("userId") val `userId`: Id,
+)
+
+@Serializable
+data class AdminUsersEndpointsDeleteUserParams(
+    @SerialName("userId") val `userId`: Id,
+)
+
+@Serializable
+data class AdminUsersEndpointsDeleteUserResponse(
+    @EncodeDefault
+    @SerialName("status") val `status`: String = "deleting",
+)
+
+@Serializable
+data class AdminUsersEndpointsListUsersResponse(
+    @SerialName("items") val `items`: List<AdminUserSummary>,
+)
+
+@Serializable
+data class AdminUsersEndpointsUnbanUserParams(
+    @SerialName("userId") val `userId`: Id,
 )
 
 @Serializable
@@ -993,6 +1080,11 @@ data class AuthorizationResponse(
 typealias AvatarPattern = String
 
 @Serializable
+data class BanUserRequest(
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
 data class BillingAdminEndpointsActivatePriceVersionBody(
     @SerialName("effectiveFrom") val `effectiveFrom`: Timestamp?,
 )
@@ -1067,6 +1159,22 @@ data class BillingAdminEndpointsListReconciliationQuery(
 @Serializable
 data class BillingAdminEndpointsListReconciliationResponse(
     @SerialName("items") val `items`: List<ReconciliationRun>,
+)
+
+@Serializable
+data class BillingAdminEndpointsListTopupsQuery(
+    @SerialName("userId") val `userId`: Id? = null,
+    @SerialName("kind") val `kind`: AdminTopupKind? = null,
+    @SerialName("from") val `from`: Timestamp? = null,
+    @SerialName("to") val `to`: Timestamp? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class BillingAdminEndpointsListTopupsResponse(
+    @SerialName("items") val `items`: List<AdminTopupEntry>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
 )
 
 @Serializable
@@ -5948,6 +6056,32 @@ data class MembershipAdminEndpointsSetParams(
 )
 
 @Serializable
+data class MembershipChange(
+    @SerialName("changeId") val `changeId`: Id,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("previousExpiresAt") val `previousExpiresAt`: Timestamp?,
+    @SerialName("expiresAt") val `expiresAt`: Timestamp?,
+    @SerialName("operatorUserId") val `operatorUserId`: Id?,
+    @SerialName("reason") val `reason`: String?,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+)
+
+@Serializable
+data class MembershipChangeAdminEndpointsListChangesQuery(
+    @SerialName("userId") val `userId`: Id? = null,
+    @SerialName("from") val `from`: Timestamp? = null,
+    @SerialName("to") val `to`: Timestamp? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class MembershipChangeAdminEndpointsListChangesResponse(
+    @SerialName("items") val `items`: List<MembershipChange>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
 data class MembershipOffer(
     @SerialName("plans") val `plans`: List<MembershipPlan>,
     @SerialName("firstPurchaseAvailable") val `firstPurchaseAvailable`: Boolean,
@@ -5971,6 +6105,7 @@ data class MembershipOrder(
     @SerialName("operatorUserId") val `operatorUserId`: Id?,
     @SerialName("note") val `note`: String?,
     @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("renewal") val `renewal`: Boolean? = null,
 )
 
 @Serializable
@@ -5982,6 +6117,10 @@ data class MembershipOrderAdminEndpointsCreateOrderResponse(
 @Serializable
 data class MembershipOrderAdminEndpointsListOrdersQuery(
     @SerialName("userId") val `userId`: Id? = null,
+    @SerialName("from") val `from`: Timestamp? = null,
+    @SerialName("to") val `to`: Timestamp? = null,
+    @SerialName("planId") val `planId`: MembershipPlanId? = null,
+    @SerialName("firstPurchase") val `firstPurchase`: String? = null,
     @SerialName("cursor") val `cursor`: String? = null,
     @SerialName("limit") val `limit`: Long? = null,
 )
@@ -9149,6 +9288,7 @@ data class SessionSummary(
 @Serializable
 data class SetMembership(
     @SerialName("expiresAt") val `expiresAt`: Timestamp?,
+    @SerialName("reason") val `reason`: String? = null,
 )
 
 @Serializable
@@ -11178,6 +11318,20 @@ data class AdminUsageOverviewRecentErrorsItem(
     @SerialName("errorCode") val `errorCode`: String,
     @SerialName("count") val `count`: Long,
     @SerialName("lastAt") val `lastAt`: Timestamp,
+)
+
+@Serializable
+data class AdminUserOverviewExpiringSoonItem(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("username") val `username`: String,
+    @SerialName("nickname") val `nickname`: String?,
+    @SerialName("expiresAt") val `expiresAt`: Timestamp,
+)
+
+@Serializable
+data class AdminUserSummaryMembership(
+    @SerialName("tier") val `tier`: String,
+    @SerialName("expiresAt") val `expiresAt`: Timestamp?,
 )
 
 @Serializable
