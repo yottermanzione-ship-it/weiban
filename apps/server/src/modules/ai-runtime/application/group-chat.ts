@@ -65,12 +65,7 @@ import { MODEL_GATEWAY_PORT, MODEL_PLATFORM_GATEWAY_PORT } from '../../model-acc
 import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import { INITIAL_MODES, modeOption, scenarioText } from '../domain/persona.js';
-import {
-  highRisk,
-  outputAllowed,
-  splitReply,
-  unescapeModelText,
-} from '../domain/reply-rules.js';
+import { highRisk, outputAllowed, splitReply, unescapeModelText } from '../domain/reply-rules.js';
 import { callModelForCare, careFallback } from './safety-care.js';
 import {
   groupCompanionSettings,

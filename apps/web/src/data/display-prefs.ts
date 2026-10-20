@@ -66,7 +66,8 @@ export function applyDisplayPrefs() {
 function syncThemeColor(scheme: Scheme) {
   document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
     const dark =
-      scheme === 'dark' || (scheme === 'system' && (meta.getAttribute('media') ?? '').includes('dark'));
+      scheme === 'dark' ||
+      (scheme === 'system' && (meta.getAttribute('media') ?? '').includes('dark'));
     meta.setAttribute('content', dark ? '#202020' : '#EDEDED');
   });
 }

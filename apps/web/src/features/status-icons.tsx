@@ -202,5 +202,7 @@ export function statusChoiceOf(status: Pick<UserStatus, 'preset' | 'text'>): Sta
       allChoices.find((c) => c.text && c.text === status.text) ??
       allChoices.find((c) => c.key === 'custom')!
     );
-  return allChoices.find((c) => c.key === status.preset) ?? allChoices.find((c) => c.key === 'custom')!;
+  return (
+    allChoices.find((c) => c.key === status.preset) ?? allChoices.find((c) => c.key === 'custom')!
+  );
 }
