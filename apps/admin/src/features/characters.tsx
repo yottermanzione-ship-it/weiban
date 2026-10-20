@@ -38,6 +38,7 @@ import {
 } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
 import { CardEditor } from '../components/card-editor.js';
+import { EligibilityCard, EligibilityLookupDrawer } from './character-eligibility.js';
 
 const STATUS_LABELS: Record<string, string> = {
   draft: '草稿',
@@ -116,6 +117,7 @@ export function CharactersPage() {
   const [status, setStatus] = useState('');
   const [editing, setEditing] = useState<AdminCharacter | 'new' | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [lookup, setLookup] = useState(false);
 
   const rows = (list.data?.items ?? []).filter(
     (row) =>
@@ -245,6 +247,7 @@ export function CharactersPage() {
       extra={
         <Space>
           <Button onClick={() => list.refresh()}>刷新</Button>
+          <Button onClick={() => setLookup(true)}>按角色 ID 标注资格</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing('new')}>
             新建角色
           </Button>
@@ -287,6 +290,7 @@ export function CharactersPage() {
           </Button>
         }
       />
+      {lookup && <EligibilityLookupDrawer onClose={() => setLookup(false)} />}
       {editing && (
         <CharacterDrawer
           character={editing === 'new' ? null : editing}
@@ -460,7 +464,7 @@ function CharacterDrawer({
         {listField('fallbackGreetings', '备用开场白', '每行一条，至少一条；没配模型时用它', 2)}
       </SectionCard>
 
-      <SectionCard title="分类事实" desc="影响能不能用成人/恋爱内容，由服务器判定">
+      <SectionCard title="分类事实" desc="资料里写的分类；AI 判断不准时在下面「资格标注」里人工纠正">
         <div className="form-three">
           <div className="field-line">
             <span className="field-label">
@@ -538,6 +542,8 @@ function CharacterDrawer({
           儿童外观
         </Checkbox>
       </SectionCard>
+
+      {character && <EligibilityCard characterId={character.characterId} />}
 
       <SectionCard title="头像">
         <div className="avatar-row">

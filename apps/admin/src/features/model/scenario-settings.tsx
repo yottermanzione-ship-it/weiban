@@ -20,8 +20,10 @@ import { errorText, useRemote } from '../../data/hooks.js';
 import { HelpTip, SectionCard, useToast } from '../../ui/page.js';
 import { SCENARIO_LABELS } from './shared.js';
 
+/** 3.25：成人内容检查（adult_check）不再使用，不在后台显示。 */
+type InternalUse = Exclude<PlatformInternalUse, 'adult_check'> | 'ecology_decision';
 const INTERNAL_LABELS: Record<
-  PlatformInternalUse | 'ecology_decision',
+  InternalUse,
   { label: string; help: string }
 > = {
   safety: { label: '安全检查', help: '安全关怀识别与次日跟进，平台付费。' },
@@ -35,7 +37,6 @@ const INTERNAL_LABELS: Record<
     help: '官方角色公共朋友圈、搜索候选等平台承担的生成。',
   },
   planner: { label: '行为规划', help: '后台规划角色行为；不配置时回落规则版，不调模型。' },
-  adult_check: { label: '成人内容检查', help: '必须是走 OpenRouter 的模型。' },
   web_search: { label: '联网搜索', help: '平台提供的联网搜索服务。' },
 };
 
@@ -47,13 +48,13 @@ const SCENARIO_ORDER: ModelScenario[] = [
   'image_generation',
   'private',
 ];
-const INTERNAL_ORDER: Array<PlatformInternalUse | 'ecology_decision'> = [
+const INTERNAL_ORDER: InternalUse[] = [
   'safety',
   'small_v',
   'ecology_decision',
   'platform_content',
   'planner',
-  'adult_check',
+  // 3.25：成人内容检查不再使用（私密模式不调用检查模型）
   'web_search',
 ];
 
@@ -79,9 +80,9 @@ export function ScenarioSettingsCard({ models }: { models: AdminModel[] }) {
       .filter((m) => m.scenarios?.includes(scenario))
       .filter((m) => scenario === 'private' || !m.capabilities.includes('adult_content'))
       .map((m) => ({ value: m.modelKey, label: `${m.displayName}（${m.modelKey}）` }));
-  const internalOptions = (use: PlatformInternalUse | 'ecology_decision') =>
+  const internalOptions = (_use: InternalUse) =>
     enabled
-      .filter((m) => use === 'adult_check' || !m.capabilities.includes('adult_content'))
+      .filter((m) => !m.capabilities.includes('adult_content'))
       .map((m) => ({ value: m.modelKey, label: `${m.displayName}（${m.modelKey}）` }));
 
   async function save() {
