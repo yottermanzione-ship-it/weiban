@@ -336,6 +336,8 @@ function VersionDrawer({
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={`price-version:${mode}:${version?.priceVersionId ?? 'new'}`}
       open
       onClose={onClose}
       title={

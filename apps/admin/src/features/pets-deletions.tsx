@@ -263,6 +263,8 @@ function PetDrawer({
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={`pet-species:${species?.speciesId ?? 'new'}`}
       open
       onClose={onClose}
       title={species ? `编辑物种 · ${species.name}` : '新建物种'}

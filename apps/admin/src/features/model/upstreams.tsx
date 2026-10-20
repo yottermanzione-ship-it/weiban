@@ -500,6 +500,8 @@ function UpstreamForm({
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={`upstream:${upstream?.upstreamId ?? 'new'}`}
       open
       onClose={onClose}
       title={upstream ? `编辑上游账号 · ${upstream.name}` : '添加上游账号'}
@@ -799,6 +801,8 @@ function LimitsDrawer({ onClose }: { onClose: () => void }) {
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={'gateway-limits'}
       open
       onClose={onClose}
       title="调度设置"

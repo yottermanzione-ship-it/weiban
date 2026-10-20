@@ -281,6 +281,8 @@ function StickerPackDrawer({
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={`sticker-pack:${pack?.packId ?? 'new'}`}
       open
       onClose={onClose}
       title={current ? `编辑表情包 · ${current.name}` : '新建表情包'}
@@ -566,6 +568,8 @@ function VoiceDrawer({
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={`voice:${voice?.voiceId ?? 'new'}`}
       open
       onClose={onClose}
       title={voice ? `编辑音色 · ${voice.name}` : '登记音色'}
@@ -803,6 +807,8 @@ function CardDrawer({
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={`card-template:${template?.templateId ?? 'new'}`}
       open
       onClose={onClose}
       title={template ? `编辑模板 · ${template.name}` : '新增卡面模板'}
@@ -1110,6 +1116,8 @@ function WorkLinkDrawer({
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={`work-link:${characterId}:${link?.workLinkId ?? 'new'}`}
       open
       onClose={onClose}
       title={link ? '编辑作品链接' : '添加作品链接'}

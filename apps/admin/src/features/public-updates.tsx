@@ -401,8 +401,8 @@ export function PublicUpdatesPage() {
           saving={saving}
           error={error}
           onClose={() => setEditing(null)}
-          onSave={(mode) => {
-            const { item, draft } = editing;
+          onSave={(mode, draft) => {
+            const { item } = editing;
             void run(
               async () => {
                 const fields = {
@@ -511,7 +511,8 @@ function UpdateDrawer({
   saving: boolean;
   error: string;
   onClose: () => void;
-  onSave: (mode: 'draft' | 'pending' | 'effective') => void;
+  /** draft = 抽屉里当前填的内容（10-20 修正：之前提交的是打开时的旧内容，编辑会丢）。 */
+  onSave: (mode: 'draft' | 'pending' | 'effective', draft: Draft) => void;
 }) {
   const [values, setValues] = useState<Draft>(draft);
   const patch = (value: Partial<Draft>) => setValues((current) => ({ ...current, ...value }));
@@ -521,18 +522,23 @@ function UpdateDrawer({
     <RecordDrawer
       open
       onClose={onClose}
+      draft={{
+        key: `public-update:${item?.updateId ?? 'new'}`,
+        value: values,
+        restore: (v: Draft) => setValues(v),
+      }}
       title={item ? '审核公开动态' : '手动录入公开动态'}
       subtitle="角色只会说这里写明的内容，不会自行补充细节"
       width={680}
       footer={
         <DrawerActions
           onCancel={onClose}
-          onSubmit={() => onSave(canApprove ? 'effective' : 'pending')}
+          onSubmit={() => onSave(canApprove ? 'effective' : 'pending', values)}
           saving={saving}
           submitText={canApprove ? '通过并生效' : '保存并提交审核'}
           extra={
             !item ? (
-              <Button onClick={() => onSave('draft')} disabled={saving}>
+              <Button onClick={() => onSave('draft', values)} disabled={saving}>
                 存为草稿
               </Button>
             ) : undefined

@@ -339,6 +339,14 @@ function HolidayDrawer({
     <RecordDrawer
       open
       onClose={onClose}
+      draft={{
+        key: `holiday:${item?.holidayId ?? 'new'}`,
+        value: values,
+        restore: (v: Draft) => {
+          setValues(v);
+          onSave(v);
+        },
+      }}
       title={item ? `编辑节日 · ${item.name}` : '添加节日'}
       width={600}
       footer={

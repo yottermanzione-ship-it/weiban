@@ -260,6 +260,8 @@ function PlannerDrawer({
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={`planner:${type}`}
       open
       onClose={onClose}
       title={label}

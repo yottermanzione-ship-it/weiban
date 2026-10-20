@@ -293,6 +293,8 @@ function AnnouncementDrawer({
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={`announcement:${value?.announcementId ?? 'new'}`}
       open
       onClose={onClose}
       title={value ? '编辑公告' : '新建公告'}
@@ -583,6 +585,8 @@ function ReleaseNoteDrawer({
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={`release-note:${value?.releaseNoteId ?? 'new'}`}
       open
       onClose={onClose}
       title={value ? `编辑 ${value.version}` : '新增版本说明'}
@@ -779,6 +783,8 @@ function PolicyDrawer({
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={`version-policy:${value.platform}`}
       open
       onClose={onClose}
       title={`版本策略 · ${PLATFORM_LABELS[value.platform] ?? value.platform}`}

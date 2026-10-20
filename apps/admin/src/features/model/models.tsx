@@ -719,6 +719,8 @@ function ModelWizard({
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={`model:${model?.modelKey ?? 'new'}`}
       open
       onClose={onClose}
       title={model ? `编辑模型 · ${model.displayName}` : '添加模型'}

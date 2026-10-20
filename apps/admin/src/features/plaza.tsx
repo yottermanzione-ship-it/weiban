@@ -1081,6 +1081,8 @@ function BansTab() {
         }
       />
       <RecordDrawer
+        form={form}
+        draftKey={'plaza-ban:new'}
         open={open}
         onClose={() => setOpen(false)}
         title="停止发布和评论"

@@ -311,6 +311,8 @@ function BillDrawer({
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={'bill:new'}
       open
       onClose={onClose}
       title="录入上游账单"

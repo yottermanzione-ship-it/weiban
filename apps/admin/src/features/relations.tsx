@@ -277,6 +277,8 @@ function RelationDrawer({
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={`relation:${relation?.relationId ?? 'new'}`}
       open
       onClose={onClose}
       title={relation ? '编辑关系' : '添加关系'}

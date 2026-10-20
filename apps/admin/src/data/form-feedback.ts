@@ -17,6 +17,7 @@
 import { useState } from 'react';
 import { App, type FormInstance } from 'antd';
 import { errorText } from './hooks.js';
+import { markFormFailed, markFormValidated } from './drafts.js';
 import {
   describeIssue,
   describeIssues,
@@ -136,6 +137,7 @@ export function useFormFeedback<V = unknown>(form: FormInstance<V>, options: For
   const [error, setError] = useState('');
 
   function report(failure: unknown): string {
+    markFormFailed(form as FormInstance);
     const text = applyFormError(form as FormInstance, failure, options);
     if (text) {
       setError(text);
@@ -149,6 +151,8 @@ export function useFormFeedback<V = unknown>(form: FormInstance<V>, options: For
     try {
       const values = await form.validateFields(nameList);
       setError('');
+      // 全量校验通过 = 准备保存；抽屉据此判断关闭时是清草稿还是存草稿（data/drafts.ts）
+      if (!nameList) markFormValidated(form as FormInstance, (form as FormInstance).getFieldsValue(true));
       return values;
     } catch (failure) {
       report(failure);
@@ -158,6 +162,7 @@ export function useFormFeedback<V = unknown>(form: FormInstance<V>, options: For
 
   /** 前端自己发现的字段问题（例 JSON 写错）：字段下面写红字、定位过去、弹提示。 */
   function reportField(name: NamePath, fieldText: string, summary = fieldText): string {
+    markFormFailed(form as FormInstance);
     (form as FormInstance).setFields([{ name, errors: [fieldText] }]);
     focusField(form as FormInstance, name);
     setError(summary);

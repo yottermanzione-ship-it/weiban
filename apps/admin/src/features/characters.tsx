@@ -379,6 +379,11 @@ function CharacterDrawer({
     <RecordDrawer
       open
       onClose={onClose}
+      draft={{
+        key: `character:${character?.characterId ?? 'new'}`,
+        value: draft,
+        restore: (v: AdminCharacterWrite) => setDraft(v),
+      }}
       title={character ? `编辑角色 · ${character.name}` : '新建角色'}
       subtitle="人设改动保存后需要重新检测才能上架"
       width={860}

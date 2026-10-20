@@ -243,6 +243,8 @@ function QuestionDrawer({
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={`question:${question?.questionId ?? 'new'}`}
       open
       onClose={onClose}
       title={question ? '编辑题目' : '新建题目'}

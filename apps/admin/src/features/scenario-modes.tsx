@@ -282,6 +282,8 @@ function ModeDrawer({
 
   return (
     <RecordDrawer
+      form={form}
+      draftKey={`scenario-mode:${mode?.id ?? 'new'}`}
       open
       onClose={onClose}
       title={mode ? `编辑情景模式 · ${mode.name}` : '新增情景模式'}
