@@ -183,11 +183,26 @@ main.edit-page {
   margin-top: var(--wb-size-group-gap);
 }
 .edit-group.edit-avatar > .panel {
+  gap: 0;
   margin: 0;
-  padding: var(--wb-space-4) var(--wb-space-5);
+  padding: 0;
   border: 0;
   border-radius: 0;
   background: none;
+}
+.edit-group.edit-avatar > .panel > p {
+  margin: 0;
+  padding: var(--wb-space-4) var(--wb-space-5) 0;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-subhead);
+}
+.edit-group.edit-avatar fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.edit-group.edit-avatar .avatar-choose-row {
+  padding: 0 var(--wb-space-5);
 }
 /* 单选行（微信「设置性别」）：高 56，选中项右侧绿色对号，行间细线从左 16 开始 */
 .pick-row {
@@ -244,15 +259,17 @@ main.edit-page {
   text-align: left;
 }
 .region-locate .region-pin {
+  display: inline-flex;
   flex: none;
   width: 60px;
+  padding-left: 20px;
   color: var(--wb-color-brand-primary);
 }
-.region-locate span:not(.old-icon) {
+.region-locate .region-text {
   flex: 1;
   min-width: 0;
 }
-.region-locate.muted span:not(.old-icon) {
+.region-locate.muted .region-text {
   color: var(--wb-color-text-secondary);
 }
 .region-locate:disabled {

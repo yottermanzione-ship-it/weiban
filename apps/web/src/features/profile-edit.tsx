@@ -25,21 +25,21 @@ import { MenuRow, NavBar, SyncPendingState, useBack } from './shell-kit.js';
 
 const FALLBACK = '/profile';
 
-/** 资料读到之前先显示加载态；读到后才挂编辑页，草稿只取第一次的值。 */
+/**
+ * 资料读到之前先显示同样的顶栏（完成灰色）和空白，避免整页闪一下加载图标；
+ * 读到后才挂编辑器，草稿只取第一次的值。
+ */
 function WithProfile({ title, children }: { title: string; children(p: Profile): ReactNode }) {
   const remote = useRemote(IdentityEndpoints.getProfile);
   if (!remote.data)
     return (
-      <main className="edit-page">
-        <NavBar title={title} fallback={FALLBACK} />
-        {remote.error ? (
+      <EditPage title={title} canSave={false} onSave={() => {}} fallback={FALLBACK}>
+        {remote.error && (
           <p role="alert" className="notice-bar">
             {remote.error}
           </p>
-        ) : (
-          <SyncPendingState label="正在读取资料…" />
         )}
-      </main>
+      </EditPage>
     );
   return <>{children(remote.data)}</>;
 }
@@ -281,8 +281,10 @@ function RegionEditor({ initial }: { initial: string }) {
           disabled={pending || locate.state === 'locating'}
           onClick={() => (locate.state === 'found' ? setPicked(locate.region) : start())}
         >
-          <OldIcon name="wechat/location" size={22} className="region-pin" />
-          <span>{locateText}</span>
+          <span className="region-pin">
+            <OldIcon name="wechat/location" size={22} />
+          </span>
+          <span className="region-text">{locateText}</span>
           {locate.state === 'found' && picked === locate.region && (
             <OldIcon name="wechat/check" size={22} className="ink-brand" />
           )}
@@ -385,7 +387,7 @@ export function AliasInfoPage() {
     <InfoPage
       icon={<WeibanMark />}
       title={`微伴号：${username ?? '—'}`}
-      description="微伴号是账号的唯一凭证，可以用来登录；每 7 天可以修改一次，原微伴号仍可登录。"
+      description="微伴号是账号的唯一凭证，可用来登录，每 7 天可修改一次。"
       actionLabel="修改微伴号"
       actionDisabled={!remote.data}
       onAction={() => navigate('/profile/alias/edit')}
