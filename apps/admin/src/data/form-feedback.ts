@@ -135,5 +135,14 @@ export function useFormFeedback<V = unknown>(form: FormInstance<V>, options: For
     }
   }
 
-  return { error, setError, clear: () => setError(''), report, validate };
+  /** 前端自己发现的字段问题（例 JSON 写错）：字段下面写红字、定位过去、弹提示。 */
+  function reportField(name: NamePath, fieldText: string, summary = fieldText): string {
+    (form as FormInstance).setFields([{ name, errors: [fieldText] }]);
+    focusField(form as FormInstance, name);
+    setError(summary);
+    void message.error({ content: summary, duration: 5, key: 'form-feedback' });
+    return summary;
+  }
+
+  return { error, setError, clear: () => setError(''), report, reportField, validate };
 }

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  AutoComplete,
   Button,
   Checkbox,
   Collapse,
@@ -9,9 +10,16 @@ import {
   InputNumber,
   Select,
   Space,
+  Switch,
   Tag,
+  type FormInstance,
 } from 'antd';
-import { PlusOutlined, MinusCircleOutlined, ArrowUpOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined,
+  MinusCircleOutlined,
+  ArrowUpOutlined,
+  UploadOutlined,
+} from '@ant-design/icons';
 import { ApiFailure } from '@weiban/client-core';
 import {
   ModelAccessAdminEndpoints,
@@ -23,6 +31,8 @@ import {
 } from '@weiban/contracts';
 import { api } from '../../data/client.js';
 import { errorText, useRemote } from '../../data/hooks.js';
+import { useFormFeedback } from '../../data/form-feedback.js';
+import type { IssuePath } from '../../data/issues.js';
 import { DataTable, type ProColumns } from '../../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../../ui/drawer.js';
 import {
@@ -37,10 +47,21 @@ import { formatPoints } from '../../ui/format.js';
 import {
   CAPABILITY_LABELS,
   DEFAULT_FOR_LABELS,
-  PROVIDERS,
   UPSTREAM_STATE_LABELS,
+  toWrite,
   upstreamState,
 } from './shared.js';
+import {
+  BoundsFields,
+  DEFAULT_VISION_IMAGES,
+  boundsToForm,
+  formToBounds,
+  isTextOnlyBounds,
+  vendorPricePage,
+  type BoundsFormValues,
+} from './billing-bounds.js';
+import { MODEL_KEY_HINT, isValidModelKey, suggestModelKey } from './model-key.js';
+import { ImportModelsButton } from './import.js';
 
 type UseFilter = 'all' | 'chat' | 'background' | 'adult' | 'vision' | 'voice';
 
@@ -70,25 +91,6 @@ function matchesUse(m: AdminModel, use: UseFilter): boolean {
   }
 }
 
-function toWrite(m: AdminModel) {
-  return {
-    modelKey: m.modelKey,
-    displayName: m.displayName,
-    vendorName: m.vendorName,
-    upstreamId: m.upstreamId,
-    upstreamModelId: m.upstreamModelId,
-    capabilities: m.capabilities,
-    tags: m.tags,
-    leaderboardRank: m.leaderboardRank,
-    sortOrder: m.sortOrder,
-    defaultFor: m.defaultFor,
-    enabled: m.enabled,
-    billingBounds: m.billingBounds ?? null,
-    rates: m.rates,
-    costRates: m.costRates,
-    ...(m.routes?.length ? { routes: m.routes } : {}),
-  };
-}
 
 function ratesOf(input?: number | null, output?: number | null, cache?: number | null): ModelRates | null {
   if (input == null && output == null && cache == null) return null;
@@ -110,6 +112,11 @@ export function ModelsTab({
   const [status, setStatus] = useState<'all' | 'on' | 'off'>('all');
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<AdminModel | 'new' | null>(null);
+  const [focusBounds, setFocusBounds] = useState(false);
+  const openEditor = (target: AdminModel | 'new', bounds = false) => {
+    setFocusBounds(bounds);
+    setEditing(target);
+  };
   const [error, setError] = useState('');
 
   const upstreamName = (id: string) =>
@@ -236,7 +243,21 @@ export function ModelsTab({
                 (route) => route.enabled && route.billingBounds && !route.billingBounds.pauseReason,
               )
             : m.billingBounds && !m.billingBounds.pauseReason) && (
-            <StatusTag tone="warning">需配置计费上限</StatusTag>
+            <span
+              role="button"
+              tabIndex={0}
+              className="tag-link"
+              title="点击直接填写计费上限"
+              onClick={(e) => {
+                e.stopPropagation();
+                openEditor(m, true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') openEditor(m, true);
+              }}
+            >
+              <StatusTag tone="warning">需配置计费上限 ›</StatusTag>
+            </span>
           )}
         </Space>
       ),
@@ -247,7 +268,14 @@ export function ModelsTab({
       fixed: 'right',
       render: (_, m) => (
         <Space size={4}>
-          <Button type="link" size="small" onClick={() => setEditing(m)}>
+          <Button
+            type="link"
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              openEditor(m);
+            }}
+          >
             编辑
           </Button>
           {m.enabled ? (
@@ -284,7 +312,13 @@ export function ModelsTab({
           <span>每个模型可以挂多条上游线路；价格按「每百万 token 的人民币价格」填写。</span>
         </div>
         <Space size={8}>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing('new')}>
+          <ImportModelsButton
+            models={models}
+            upstreams={upstreams}
+            onDone={refresh}
+            icon={<UploadOutlined />}
+          />
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor('new')}>
             添加模型
           </Button>
         </Space>
@@ -296,7 +330,7 @@ export function ModelsTab({
         data={list}
         error={error}
         onRefresh={refresh}
-        onRowClick={(m) => setEditing(m)}
+        onRowClick={(m) => openEditor(m)}
         filters={
           <>
             <Input.Search
@@ -334,7 +368,7 @@ export function ModelsTab({
         emptyTitle="还没有模型"
         emptyHint="先在「上游账号」里添加一条线路，再点「添加模型」，填上模型名和每百万 token 的价格。"
         emptyAction={
-          <Button type="primary" onClick={() => setEditing('new')}>
+          <Button type="primary" onClick={() => openEditor('new')}>
             添加第一个模型
           </Button>
         }
@@ -343,6 +377,7 @@ export function ModelsTab({
         <ModelWizard
           model={editing === 'new' ? null : editing}
           upstreams={upstreams}
+          focusBounds={focusBounds}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -411,7 +446,12 @@ interface RouteDraft {
   upstreamModelId: string;
   weight: number;
   enabled: boolean;
+  /** form = 用结构化表单填计费上限；json = 高级模式，直接编辑 JSON（语音、图片等特殊模型）。 */
+  boundsMode: 'form' | 'json';
+  bounds: BoundsFormValues;
   billingBoundsDraft: string;
+  /** 打开抽屉时这条线路已有的计费上限（不是表单字段，只用于保留暂停标记和精确核对时间）。 */
+  origin?: RouteBillingBounds | null;
 }
 
 interface ModelFormValues {
@@ -432,48 +472,116 @@ interface ModelFormValues {
   displayMultiplierManual?: number | null;
 }
 
+function routeDraftOf(
+  route: {
+    upstreamId: string;
+    upstreamModelId: string;
+    weight: number;
+    enabled: boolean;
+    billingBounds?: RouteBillingBounds | null;
+  },
+  ctx: { vision: boolean; vendor: string },
+): RouteDraft {
+  const bounds = route.billingBounds ?? null;
+  const json = bounds != null && !isTextOnlyBounds(bounds);
+  return {
+    upstreamId: route.upstreamId,
+    upstreamModelId: route.upstreamModelId,
+    weight: route.weight,
+    enabled: route.enabled,
+    boundsMode: json ? 'json' : 'form',
+    bounds: boundsToForm(bounds, {
+      vision: ctx.vision,
+      sourceUrl: vendorPricePage(ctx.vendor, route.upstreamModelId),
+    }),
+    billingBoundsDraft: json ? JSON.stringify(bounds, null, 2) : '',
+    origin: bounds,
+  };
+}
+
+function needsBounds(route: RouteDraft): boolean {
+  return !route.origin || Boolean(route.origin.pauseReason);
+}
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 function ModelWizard({
   model,
   upstreams,
+  focusBounds,
   onClose,
   onSaved,
 }: {
   model: AdminModel | null;
   upstreams: Upstream[];
+  /** 打开后直接定位到计费上限（从列表里点「需配置计费上限」进来）。 */
+  focusBounds?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [form] = Form.useForm<ModelFormValues>();
+  const feedback = useFormFeedback(form, {
+    mapPath: (path) => {
+      const routes = (form.getFieldValue('routes') as RouteDraft[] | undefined) ?? [];
+      const boundsPath = (index: number, rest: IssuePath): IssuePath => {
+        if (routes[index]?.boundsMode === 'json') return ['routes', index, 'billingBoundsDraft'];
+        const [a, b] = rest;
+        if (a === 'text' && typeof b === 'string') return ['routes', index, 'bounds', b];
+        if (a === 'sourceUrl' || a === 'checkedAt') return ['routes', index, 'bounds', a];
+        return ['routes', index, 'bounds', 'sourceUrl'];
+      };
+      const [head, second, third] = path;
+      if (head === 'routes' && typeof second === 'number')
+        return third === 'billingBounds' ? boundsPath(second, path.slice(3)) : path;
+      if (head === 'billingBounds') return boundsPath(0, path.slice(1));
+      if (head === 'upstreamId' || head === 'upstreamModelId') return ['routes', 0, head];
+      if (head === 'rates' && typeof second === 'string') return [`price${capitalize(second)}`];
+      if (head === 'costRates' && typeof second === 'string') return [`cost${capitalize(second)}`];
+      return path;
+    },
+  });
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
   const [upstreamModels, setUpstreamModels] = useState<{ id: string; items: string[] | null; error: string }>({
     id: '',
     items: null,
     error: '',
   });
   const [confirmBands, setConfirmBands] = useState(false);
+  const lastSuggestedKey = useRef('');
 
-  const initialRoutes: RouteDraft[] = model?.routes?.length
-    ? [...model.routes]
-        .sort((a, b) => a.priority - b.priority)
-        .map((r) => ({
-          upstreamId: r.upstreamId,
-          upstreamModelId: r.upstreamModelId,
-          weight: r.weight,
-          enabled: r.enabled,
-          billingBoundsDraft: r.billingBounds ? JSON.stringify(r.billingBounds, null, 2) : '',
-        }))
-    : [
-        {
-          upstreamId: model?.upstreamId ?? upstreams[0]?.upstreamId ?? '',
-          upstreamModelId: model?.upstreamModelId ?? '',
-          weight: 100,
-          enabled: true,
-          billingBoundsDraft: model?.billingBounds
-            ? JSON.stringify(model.billingBounds, null, 2)
-            : '',
-        },
-      ];
+  const vision = model?.capabilities.includes('vision') ?? false;
+  const [initialRoutes] = useState<RouteDraft[]>(() => {
+    const ctx = { vision, vendor: model?.vendorName ?? '' };
+    return model?.routes?.length
+      ? [...model.routes].sort((a, b) => a.priority - b.priority).map((r) => routeDraftOf(r, ctx))
+      : [
+          routeDraftOf(
+            {
+              upstreamId: model?.upstreamId ?? upstreams[0]?.upstreamId ?? '',
+              upstreamModelId: model?.upstreamModelId ?? '',
+              weight: 100,
+              enabled: true,
+              billingBounds: model?.billingBounds ?? null,
+            },
+            ctx,
+          ),
+        ];
+  });
+
+  useEffect(() => {
+    if (!focusBounds) return;
+    // 等抽屉滑出动画结束再滚动。
+    const timer = window.setTimeout(() => {
+      const routes = (form.getFieldValue('routes') as RouteDraft[] | undefined) ?? [];
+      const index = Math.max(0, routes.findIndex(needsBounds));
+      const target =
+        routes[index]?.boundsMode === 'json'
+          ? ['routes', index, 'billingBoundsDraft']
+          : ['routes', index, 'bounds', 'contextTokens'];
+      form.scrollToField(target, { behavior: 'smooth', block: 'center', focus: true });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [focusBounds, form]);
 
   async function loadUpstreamModels(upstreamId: string) {
     if (!upstreamId) return;
@@ -496,53 +604,58 @@ function ModelWizard({
   }
 
   async function save(force = false) {
-    const values = await form.validateFields();
+    const checked = await feedback.validate();
+    if (!checked) return;
+    // getFieldsValue(true) 带上不是表单字段的 origin。
+    const values = form.getFieldsValue(true) as ModelFormValues;
     if (model?.hasTimeBands && !force && values.priceInput != null) {
       setConfirmBands(true);
       return;
     }
-    let routes: ModelRoute[];
-    try {
-      routes = values.routes.map((route, index) => {
-        let billingBounds: ModelRoute['billingBounds'] = null;
-        if (route.billingBoundsDraft.trim()) {
-          const parsed = RouteBillingBounds.safeParse(JSON.parse(route.billingBoundsDraft));
-          if (!parsed.success)
-            throw new Error(
-              `第 ${index + 1} 条线路的计费上限格式不正确：${parsed.error.issues
-                .map((issue) => `${issue.path.join('.')} ${issue.message}`)
-                .join('；')}`,
+    const routes: ModelRoute[] = [];
+    for (const [index, route] of values.routes.entries()) {
+      let billingBounds: ModelRoute['billingBounds'] = null;
+      if (route.boundsMode === 'json') {
+        const text = (route.billingBoundsDraft ?? '').trim();
+        if (text) {
+          try {
+            billingBounds = JSON.parse(text) as RouteBillingBounds;
+          } catch {
+            feedback.reportField(
+              ['routes', index, 'billingBoundsDraft'],
+              'JSON 写得不对：检查引号、逗号、括号是否成对',
+              `第 ${index + 1} 条线路的计费上限 JSON 写得不对`,
             );
-          billingBounds = parsed.data;
+            return;
+          }
         }
-        return {
-          upstreamId: route.upstreamId,
-          upstreamModelId: route.upstreamModelId,
-          priority: index + 1,
-          weight: route.weight,
-          enabled: route.enabled,
-          billingBounds,
-        };
+      } else {
+        billingBounds = formToBounds(route.bounds, route.origin);
+      }
+      routes.push({
+        upstreamId: route.upstreamId,
+        upstreamModelId: (route.upstreamModelId ?? '').trim(),
+        priority: index + 1,
+        weight: route.weight,
+        enabled: route.enabled,
+        billingBounds,
       });
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : '计费上限格式不正确');
-      return;
     }
     const primary = routes[0];
     if (!primary) {
-      setError('至少要有一条上游线路');
+      feedback.setError('至少要有一条上游线路');
       return;
     }
     const key = (model?.modelKey ?? values.modelKey ?? '').trim();
     setSaving(true);
-    setError('');
+    feedback.clear();
     try {
       await api.call(ModelAccessAdminEndpoints.upsertModel, {
         params: { modelKey: key },
         body: {
           modelKey: key,
-          displayName: values.displayName,
-          vendorName: values.vendorName,
+          displayName: values.displayName.trim(),
+          vendorName: values.vendorName.trim(),
           upstreamId: primary.upstreamId,
           upstreamModelId: primary.upstreamModelId,
           billingBounds: primary.billingBounds ?? null,
@@ -564,11 +677,41 @@ function ModelWizard({
       });
       onSaved();
     } catch (e) {
-      setError(errorText(e));
+      feedback.report(e);
     } finally {
       setSaving(false);
       setConfirmBands(false);
     }
+  }
+
+  /** 厂商 / 模型名 / 能力变化时，顺手预填模型键、资料链接、最多图片数。 */
+  function onValuesChange(changed: Partial<ModelFormValues>) {
+    const routes = (form.getFieldValue('routes') as RouteDraft[] | undefined) ?? [];
+    const vendor = (form.getFieldValue('vendorName') as string | undefined) ?? '';
+    const changedRoutes = (changed.routes ?? []) as Array<Partial<RouteDraft> | undefined>;
+    if (changedRoutes[0]?.upstreamId) void loadUpstreamModels(changedRoutes[0].upstreamId);
+
+    if (!model && ('vendorName' in changed || changedRoutes[0]?.upstreamModelId !== undefined)) {
+      const suggestion = suggestModelKey(vendor, routes[0]?.upstreamModelId);
+      const current = ((form.getFieldValue('modelKey') as string | undefined) ?? '').trim();
+      if (suggestion && (!current || current === lastSuggestedKey.current)) {
+        lastSuggestedKey.current = suggestion;
+        form.setFields([{ name: 'modelKey', value: suggestion, errors: [] }]);
+      }
+    }
+
+    routes.forEach((route, index) => {
+      if (route.boundsMode !== 'form') return;
+      const touchedModel = changedRoutes[index]?.upstreamModelId !== undefined;
+      if (('vendorName' in changed || touchedModel) && !route.bounds?.sourceUrl?.trim()) {
+        const url = vendorPricePage(vendor, route.upstreamModelId);
+        if (url) form.setFieldValue(['routes', index, 'bounds', 'sourceUrl'], url);
+      }
+      if ('capabilities' in changed && !route.origin) {
+        const hasVision = (changed.capabilities ?? []).includes('vision');
+        form.setFieldValue(['routes', index, 'bounds', 'maxImages'], hasVision ? DEFAULT_VISION_IMAGES : 0);
+      }
+    });
   }
 
   const firstUpstream = Form.useWatch(['routes', 0, 'upstreamId'], form);
@@ -579,17 +722,18 @@ function ModelWizard({
       onClose={onClose}
       title={model ? `编辑模型 · ${model.displayName}` : '添加模型'}
       subtitle="价格改完保存后，系统会自动生成并发布新的价目表版本"
-      width={720}
+      width={760}
       footer={
         <DrawerActions
           onCancel={onClose}
           onSubmit={() => void save()}
           saving={saving}
           submitText={model ? '保存' : '保存并上架'}
+          error={feedback.error}
         />
       }
     >
-      {error && <Alert type="error" showIcon message={error} />}
+      {feedback.error && <Alert type="error" showIcon message={feedback.error} />}
       <Form<ModelFormValues>
         form={form}
         layout="vertical"
@@ -610,11 +754,9 @@ function ModelWizard({
           costCache: model?.costRates?.cache ?? null,
           displayMultiplierManual: model?.displayMultiplierManual ?? null,
         }}
-        onValuesChange={(changed) => {
-          if (changed.routes?.[0]?.upstreamId) void loadUpstreamModels(changed.routes[0].upstreamId);
-        }}
+        onValuesChange={onValuesChange}
       >
-        <FormSection title="① 上游线路" desc="按顺序切换：第一条不通就用第二条" />
+        <FormSection title="① 上游线路" desc="按顺序切换：第一条不通就用第二条；每条线路都要有计费上限才能用" />
         <Form.List name="routes">
           {(fields, { add, remove, move }) => (
             <div className="route-list">
@@ -643,6 +785,7 @@ function ModelWizard({
                   <div className="route-fields">
                     <Form.Item
                       name={[field.name, 'upstreamId']}
+                      label="上游账号"
                       rules={[{ required: true, message: '选择上游账号' }]}
                       style={{ marginBottom: 8 }}
                     >
@@ -660,13 +803,16 @@ function ModelWizard({
                     </Form.Item>
                     <Form.Item
                       name={[field.name, 'upstreamModelId']}
-                      rules={[{ required: true, message: '填写模型名' }]}
+                      label="上游模型名"
+                      rules={[
+                        { required: true, whitespace: true, message: '填写这个账号那边的模型名' },
+                        { max: 128, message: '模型名最多 128 个字符' },
+                      ]}
                       style={{ marginBottom: 8 }}
                     >
-                      <Select
-                        showSearch
+                      <AutoComplete
                         allowClear
-                        placeholder="这个账号那边的模型名"
+                        placeholder="这个账号那边的模型名，例 gemini-3.8-flash"
                         options={(index === 0 ? upstreamModels.items ?? [] : []).map((id) => ({
                           value: id,
                           label: id,
@@ -676,69 +822,54 @@ function ModelWizard({
                             void loadUpstreamModels(firstUpstream);
                         }}
                         notFoundContent={
-                          index === 0 && upstreamModels.error
-                            ? upstreamModels.error
-                            : '可以直接输入模型名'
+                          index === 0 && upstreamModels.error ? upstreamModels.error : null
                         }
                         filterOption={(input, option) =>
-                          String(option?.value ?? '').includes(input)
+                          String(option?.value ?? '').toLowerCase().includes(input.toLowerCase())
                         }
                       />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'weight']} style={{ marginBottom: 8 }}>
-                      <InputNumber min={1} max={1000} addonBefore="权重" style={{ width: '100%' }} />
+                    <Form.Item name={[field.name, 'weight']} label="权重" style={{ marginBottom: 8 }}>
+                      <InputNumber min={1} max={1000} precision={0} style={{ width: '100%' }} />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'enabled']} valuePropName="checked" style={{ marginBottom: 8 }}>
+                    <Form.Item
+                      name={[field.name, 'enabled']}
+                      label="状态"
+                      valuePropName="checked"
+                      style={{ marginBottom: 8 }}
+                    >
                       <Checkbox>启用这条线路</Checkbox>
                     </Form.Item>
                   </div>
-                  <Collapse
-                    ghost
-                    size="small"
-                    items={[
-                      {
-                        key: 'bounds',
-                        label: '计费上限（高级，通常不用填）',
-                        children: (
-                          <Form.Item
-                            name={[field.name, 'billingBoundsDraft']}
-                            extra={
-                              <FieldHelp>
-                                只在已核实供应商官方计费资料时填写。留空表示这条线路不能调用；换上游或模型名会清空旧内容。
-                              </FieldHelp>
-                            }
-                          >
-                            <Input.TextArea rows={6} placeholder='{"format":"billing-bounds-v1", …}' />
-                          </Form.Item>
-                        ),
-                      },
-                    ]}
-                  />
+                  <RouteBoundsEditor form={form} name={field.name} index={index} />
                 </div>
               ))}
               <Button
                 type="dashed"
                 block
-                onClick={() =>
-                  add({
-                    upstreamId:
-                      upstreams.find(
-                        (u) =>
-                          !(form.getFieldValue('routes') as RouteDraft[] | undefined)?.some(
-                            (r) => r.upstreamId === u.upstreamId,
-                          ),
-                      )
-                        ?.upstreamId ??
-                      upstreams[0]?.upstreamId ??
-                      '',
-                    upstreamModelId:
-                      (form.getFieldValue('routes') as RouteDraft[] | undefined)?.[0]
-                        ?.upstreamModelId ?? '',
-                    weight: 100,
-                    enabled: true,
-                    billingBoundsDraft: '',
-                  })
-                }
+                onClick={() => {
+                  const routes = (form.getFieldValue('routes') as RouteDraft[] | undefined) ?? [];
+                  const capabilities = (form.getFieldValue('capabilities') as string[] | undefined) ?? [];
+                  add(
+                    routeDraftOf(
+                      {
+                        upstreamId:
+                          upstreams.find((u) => !routes.some((r) => r.upstreamId === u.upstreamId))
+                            ?.upstreamId ??
+                          upstreams[0]?.upstreamId ??
+                          '',
+                        upstreamModelId: routes[0]?.upstreamModelId ?? '',
+                        weight: 100,
+                        enabled: true,
+                        billingBounds: null,
+                      },
+                      {
+                        vision: capabilities.includes('vision'),
+                        vendor: (form.getFieldValue('vendorName') as string | undefined) ?? '',
+                      },
+                    ),
+                  );
+                }}
               >
                 再加一条备用线路
               </Button>
@@ -747,34 +878,52 @@ function ModelWizard({
         </Form.List>
 
         <FormSection title="② 显示与用途" />
-        {!model && (
-          <Form.Item
-            name="modelKey"
-            label="模型键"
-            rules={[{ required: true, message: '填写模型键' }]}
-            extra={<FieldHelp>内部唯一标识，保存后不能改。一般和上游模型名一致，例如 deepseek-chat。</FieldHelp>}
-          >
-            <Input maxLength={80} placeholder="例：deepseek-chat" />
-          </Form.Item>
-        )}
         <div className="form-two">
           <Form.Item
             name="displayName"
             label="显示名"
-            rules={[{ required: true, message: '填写显示名' }]}
+            rules={[
+              { required: true, whitespace: true, message: '填写显示名' },
+              { max: 60, message: '显示名最多 60 个字' },
+            ]}
             extra={<FieldHelp>用户看到的模型名字。</FieldHelp>}
           >
-            <Input maxLength={60} placeholder="例：DeepSeek V3" />
+            <Input maxLength={60} placeholder="例：Gemini 3.8 Flash" />
           </Form.Item>
           <Form.Item
             name="vendorName"
-            label="出品方"
-            rules={[{ required: true, message: '填写出品方' }]}
-            extra={<FieldHelp>例：深度求索。</FieldHelp>}
+            label="出品方（厂商）"
+            rules={[
+              { required: true, whitespace: true, message: '填写出品方' },
+              { max: 40, message: '出品方最多 40 个字' },
+            ]}
+            extra={<FieldHelp>例：Google、深度求索。用来自动生成模型键。</FieldHelp>}
           >
-            <Input maxLength={40} />
+            <Input maxLength={40} placeholder="例：Google" />
           </Form.Item>
         </div>
+        {!model && (
+          <Form.Item
+            name="modelKey"
+            label="模型键"
+            rules={[
+              { required: true, whitespace: true, message: `填写模型键。${MODEL_KEY_HINT}` },
+              {
+                validator: (_, value: string | undefined) =>
+                  !value || isValidModelKey(value.trim())
+                    ? Promise.resolve()
+                    : Promise.reject(new Error(MODEL_KEY_HINT)),
+              },
+            ]}
+            extra={
+              <FieldHelp>
+                内部唯一标识，保存后不能改。已按「出品方」和第 1 条线路的「上游模型名」自动生成，可以改。{MODEL_KEY_HINT}。
+              </FieldHelp>
+            }
+          >
+            <Input maxLength={128} placeholder="例：google/gemini-3.8-flash" />
+          </Form.Item>
+        )}
         <Form.Item name="capabilities" label="能力" extra={<FieldHelp>决定用户端哪些功能可以选它。</FieldHelp>}>
           <Checkbox.Group
             options={Object.entries(CAPABILITY_LABELS).map(([value, label]) => ({ value, label }))}
@@ -790,24 +939,39 @@ function ModelWizard({
           />
         </Form.Item>
         <div className="form-two">
-          <Form.Item name="tags" label="标签" extra={<FieldHelp>用逗号分隔，用户端展示用。</FieldHelp>}>
+          <Form.Item
+            name="tags"
+            label="标签"
+            rules={[
+              {
+                validator: (_, value: string | undefined) => {
+                  const tags = (value ?? '').split(/[,，、\s]+/).filter(Boolean);
+                  if (tags.length > 10) return Promise.reject(new Error('标签最多 10 个'));
+                  if (tags.some((t) => t.length > 16))
+                    return Promise.reject(new Error('每个标签最多 16 个字'));
+                  return Promise.resolve();
+                },
+              },
+            ]}
+            extra={<FieldHelp>用逗号分隔，用户端展示用；最多 10 个，每个不超过 16 个字。</FieldHelp>}
+          >
             <Input placeholder="例：便宜，快" />
           </Form.Item>
           <Form.Item name="sortOrder" label="排序" extra={<FieldHelp>数字小的排前面。</FieldHelp>}>
-            <InputNumber style={{ width: '100%' }} />
+            <InputNumber precision={0} style={{ width: '100%' }} />
           </Form.Item>
         </div>
 
         <FormSection title="③ 价格" desc="每百万 token 的人民币价格，1 元 = 100 积分" />
         <div className="form-three">
           <Form.Item name="priceInput" label="输入（元）" extra={<FieldHelp>没命中缓存时，每百万 token 收多少。</FieldHelp>}>
-            <InputNumber min={0} step={0.01} style={{ width: '100%' }} placeholder="0" />
+            <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} placeholder="0" />
           </Form.Item>
           <Form.Item name="priceOutput" label="输出（元）" extra={<FieldHelp>模型写出来的内容，每百万 token 收多少。</FieldHelp>}>
-            <InputNumber min={0} step={0.01} style={{ width: '100%' }} placeholder="0" />
+            <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} placeholder="0" />
           </Form.Item>
           <Form.Item name="priceCache" label="缓存命中（元）" extra={<FieldHelp>命中缓存时便宜很多，一般填输入价的 1/10。</FieldHelp>}>
-            <InputNumber min={0} step={0.01} style={{ width: '100%' }} placeholder="0" />
+            <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} placeholder="0" />
           </Form.Item>
         </div>
         <Form.Item
@@ -834,27 +998,26 @@ function ModelWizard({
             {
               key: 'cost',
               label: '成本价（对账用，不填 = 和售价相同）',
+              forceRender: true,
               children: (
                 <div className="form-three">
                   <Form.Item name="costInput" label="成本 · 输入">
-                    <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                    <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} />
                   </Form.Item>
                   <Form.Item name="costOutput" label="成本 · 输出">
-                    <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                    <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} />
                   </Form.Item>
                   <Form.Item name="costCache" label="成本 · 缓存">
-                    <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                    <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} />
                   </Form.Item>
                 </div>
               ),
             },
           ]}
         />
-        {PROVIDERS.length > 0 && (
-          <Tag className="hidden-tag" color="default">
-            非 token 计价模型（语音、图片）请在「AI 模型价格」里维护
-          </Tag>
-        )}
+        <Tag className="hidden-tag" color="default">
+          非 token 计价模型（语音、图片）请在「AI 模型价格」里维护
+        </Tag>
       </Form>
       {confirmBands && (
         <Alert
@@ -875,5 +1038,127 @@ function ModelWizard({
         />
       )}
     </RecordDrawer>
+  );
+}
+
+/** 一条线路的计费上限：默认结构化表单；折叠项里可以改用 JSON。 */
+function RouteBoundsEditor({
+  form,
+  name,
+  index,
+}: {
+  form: FormInstance<ModelFormValues>;
+  name: number;
+  index: number;
+}) {
+  const mode = (Form.useWatch(['routes', name, 'boundsMode'], form) as RouteDraft['boundsMode'] | undefined) ?? 'form';
+  const bounds = Form.useWatch(['routes', name, 'bounds'], form) as BoundsFormValues | undefined;
+  const origin = (form.getFieldValue(['routes', name]) as RouteDraft | undefined)?.origin ?? null;
+  const preview = mode === 'form' && bounds ? JSON.stringify(formToBounds(bounds, origin), null, 2) : '';
+  const [openKeys, setOpenKeys] = useState<string[]>(mode === 'json' ? ['json'] : []);
+
+  function switchMode(json: boolean) {
+    const route = form.getFieldValue(['routes', name]) as RouteDraft;
+    if (json) {
+      if (!route.billingBoundsDraft?.trim())
+        form.setFieldValue(
+          ['routes', name, 'billingBoundsDraft'],
+          JSON.stringify(formToBounds(route.bounds, route.origin), null, 2),
+        );
+      form.setFieldValue(['routes', name, 'boundsMode'], 'json');
+      setOpenKeys(['json']);
+      return;
+    }
+    // 切回表单：JSON 是普通文字模型的格式时，把数字带回表单。
+    try {
+      const parsed = RouteBillingBounds.safeParse(JSON.parse(route.billingBoundsDraft || 'null'));
+      if (parsed.success && isTextOnlyBounds(parsed.data))
+        form.setFieldValue(
+          ['routes', name, 'bounds'],
+          boundsToForm(parsed.data, { vision: false, sourceUrl: parsed.data.sourceUrl }),
+        );
+    } catch {
+      /* JSON 写坏了就保留表单里原来的数字 */
+    }
+    form.setFieldValue(['routes', name, 'boundsMode'], 'form');
+  }
+
+  return (
+    <div className="route-bounds" id={`route-bounds-${index}`}>
+      <div className="route-bounds-head">
+        <span>计费上限</span>
+        <HelpTip text="系统按这里的「上下文长度 / 最大输出」先预扣积分，回复完按实际用量多退少补。没有计费上限的线路，调用前会被拒绝（角色不回消息）。" />
+      </div>
+      {!origin && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="这条线路还没有计费上限，没有它角色不会回消息。下面已按常见值预填，核对数字后保存即可。"
+        />
+      )}
+      {origin?.pauseReason && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="系统没法确认这条线路的实际用量，已暂停使用。"
+          description="重新核对下面的数字，把核对日期改成今天，勾选「启用这条线路」后保存即可恢复。"
+        />
+      )}
+      <Form.Item name={[name, 'boundsMode']} hidden>
+        <Input />
+      </Form.Item>
+      {mode === 'form' ? (
+        <BoundsFields name={name} />
+      ) : (
+        <div className="field-note" style={{ marginBottom: 12 }}>
+          这条线路正在使用下方「高级」里的 JSON 作为计费上限。
+        </div>
+      )}
+      <Collapse
+        ghost
+        size="small"
+        activeKey={openKeys}
+        onChange={(keys) => setOpenKeys(Array.isArray(keys) ? keys : [keys])}
+        items={[
+          {
+            key: 'json',
+            label: '高级：直接编辑 JSON（语音、图片等特殊模型才需要）',
+            forceRender: true,
+            children: (
+              <>
+                <Space style={{ marginBottom: 8 }}>
+                  <Switch size="small" checked={mode === 'json'} onChange={switchMode} />
+                  <span>{mode === 'json' ? '正在使用 JSON（关掉回到表单）' : '改用 JSON 填写'}</span>
+                </Space>
+                {mode === 'json' ? (
+                  <Form.Item
+                    name={[name, 'billingBoundsDraft']}
+                    extra={
+                      <FieldHelp>
+                        格式见契约 billing-bounds-v1。留空 = 这条线路没有计费上限（不能调用）。
+                      </FieldHelp>
+                    }
+                  >
+                    <Input.TextArea rows={10} className="mono" placeholder='{"format":"billing-bounds-v1", …}' />
+                  </Form.Item>
+                ) : (
+                  <>
+                    <Form.Item name={[name, 'billingBoundsDraft']} hidden>
+                      <Input />
+                    </Form.Item>
+                    <div className="field-help" style={{ marginBottom: 4 }}>
+                      按上面表单生成、保存时会提交的内容：
+                    </div>
+                    <pre className="json-preview">{preview}</pre>
+                  </>
+                )}
+              </>
+            ),
+          },
+        ]}
+      />
+    </div>
   );
 }

@@ -1,0 +1,93 @@
+/**
+ * 模型键「厂商/模型名」的生成与校验。
+ * 规则以契约为准：packages/contracts/src/http/model-access.ts ModelKey。
+ */
+import { ModelKey } from '@weiban/contracts';
+
+export { MODEL_KEY_HINT } from '../../data/issues.js';
+
+export function isValidModelKey(value: string): boolean {
+  return ModelKey.safeParse(value).success;
+}
+
+/** 中文厂商名 / 常见别名 → 英文小写标识。 */
+const VENDOR_SLUGS: Array<[RegExp, string]> = [
+  [/谷歌|google|gemini/i, 'google'],
+  [/anthropic|claude/i, 'anthropic'],
+  [/openai/i, 'openai'],
+  [/深度求索|deepseek/i, 'deepseek'],
+  [/月之暗面|moonshot|kimi/i, 'moonshot'],
+  [/智谱|zhipu|glm/i, 'zhipu'],
+  [/阿里|通义|百炼|qwen|dashscope/i, 'qwen'],
+  [/小米|xiaomi|mimo/i, 'xiaomi'],
+  [/^x\.?ai$|grok/i, 'xai'],
+  [/字节|豆包|doubao|bytedance/i, 'bytedance'],
+  [/腾讯|混元|tencent|hunyuan/i, 'tencent'],
+  [/百度|文心|baidu|ernie/i, 'baidu'],
+  [/minimax|稀宇/i, 'minimax'],
+  [/meta|llama/i, 'meta'],
+  [/mistral/i, 'mistral'],
+];
+
+export function vendorSlug(vendor: string | null | undefined): string {
+  const raw = (vendor ?? '').trim();
+  if (!raw) return '';
+  const known = VENDOR_SLUGS.find(([re]) => re.test(raw));
+  if (known) return known[1];
+  return raw
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9._-]/g, '')
+    .replace(/^[^a-z0-9]+/, '')
+    .slice(0, 48);
+}
+
+function modelSlug(model: string): string {
+  return model
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9._:-]/g, '')
+    .replace(/^[^a-z0-9]+/, '')
+    .slice(0, 80);
+}
+
+/**
+ * 按「厂商」和「上游模型名」给出建议的模型键（小写、去空格）。
+ * 上游模型名本身就是「厂商/模型名」格式（例 OpenRouter 的 google/gemini-x）时直接用它。
+ */
+export function suggestModelKey(
+  vendor: string | null | undefined,
+  upstreamModelId: string | null | undefined,
+): string {
+  const model = (upstreamModelId ?? '').trim();
+  if (!model) return '';
+  if (model.includes('/')) {
+    const whole = model.toLowerCase().replace(/\s+/g, '-');
+    if (isValidModelKey(whole)) return whole;
+    const tail = model.slice(model.lastIndexOf('/') + 1);
+    const head = model.slice(0, model.indexOf('/'));
+    const candidate = `${vendorSlug(vendor) || vendorSlug(head)}/${modelSlug(tail)}`;
+    return isValidModelKey(candidate) ? candidate : '';
+  }
+  const v = vendorSlug(vendor) || vendorSlug(model.split(/[-_\s]/)[0]);
+  const m = modelSlug(model);
+  const candidate = `${v}/${m}`;
+  return v && m && isValidModelKey(candidate) ? candidate : '';
+}
+
+/** gemini-4-argon → Gemini 4 Argon；gpt-6.1-sol → GPT 6.1 Sol。只是预填，管理员可以改。 */
+export function prettyModelName(model: string): string {
+  return model
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) =>
+      /^(gpt|glm|ai|llm)$/i.test(part)
+        ? part.toUpperCase()
+        : /^\d/.test(part)
+          ? part
+          : part.charAt(0).toUpperCase() + part.slice(1),
+    )
+    .join(' ')
+    .slice(0, 60);
+}

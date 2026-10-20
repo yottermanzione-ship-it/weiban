@@ -1,4 +1,4 @@
-import type { Upstream } from '@weiban/contracts';
+import type { AdminModel, Upstream } from '@weiban/contracts';
 
 export const PURPOSE_LABELS: Record<string, string> = {
   chat_reply: '聊天回复',
@@ -111,4 +111,25 @@ export function toLocalInput(iso: string): string {
 
 export function fromLocalInput(value: string): string {
   return new Date(`${value}:00+08:00`).toISOString();
+}
+
+/** 已有模型 → upsertModel 请求体（原样回写，只改调用方覆盖的字段）。 */
+export function toWrite(m: AdminModel) {
+  return {
+    modelKey: m.modelKey,
+    displayName: m.displayName,
+    vendorName: m.vendorName,
+    upstreamId: m.upstreamId,
+    upstreamModelId: m.upstreamModelId,
+    capabilities: m.capabilities,
+    tags: m.tags,
+    leaderboardRank: m.leaderboardRank,
+    sortOrder: m.sortOrder,
+    defaultFor: m.defaultFor,
+    enabled: m.enabled,
+    billingBounds: m.billingBounds ?? null,
+    rates: m.rates,
+    costRates: m.costRates,
+    ...(m.routes?.length ? { routes: m.routes } : {}),
+  };
 }

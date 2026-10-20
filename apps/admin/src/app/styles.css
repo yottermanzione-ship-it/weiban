@@ -814,9 +814,70 @@ body {
 }
 .route-fields {
   display: grid;
-  grid-template-columns: 1fr 1.2fr 130px;
+  grid-template-columns: 1fr 1.2fr 100px 130px;
   gap: 0 8px;
   align-items: start;
+}
+.route-bounds {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed #edeff2;
+}
+.route-bounds-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+  color: #1f2329;
+  font-size: 13px;
+  font-weight: 500;
+}
+.json-preview {
+  max-height: 220px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  color: #5a6068;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  background: #f7f8fa;
+  border-radius: 6px;
+}
+.tag-link {
+  cursor: pointer;
+}
+.tag-link:hover .status-tag,
+.tag-link:focus-visible .status-tag {
+  text-decoration: underline;
+}
+.cell-guessed .ant-input-number,
+.cell-guessed.ant-input-number {
+  background: #fffbe6;
+  border-color: #ffd666;
+}
+.cell-error {
+  display: block;
+  margin-top: 2px;
+  color: #ff4d4f;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: normal;
+}
+.import-table .ant-table-cell {
+  vertical-align: top;
+}
+.import-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 12px 0;
+}
+@media (max-width: 720px) {
+  .route-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 .filter-summary {
