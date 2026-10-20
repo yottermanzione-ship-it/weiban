@@ -282,11 +282,7 @@ export function EligibilityLookupDrawer({ onClose }: { onClose: () => void }) {
           onChange={(e) => setInput(e.target.value)}
           onPressEnter={() => valid && setCharacterId(input.trim())}
         />
-        <Button
-          type="primary"
-          disabled={!valid}
-          onClick={() => setCharacterId(input.trim())}
-        >
+        <Button type="primary" disabled={!valid} onClick={() => setCharacterId(input.trim())}>
           查找
         </Button>
       </Space.Compact>

@@ -15,7 +15,14 @@ export const FamiliarityLevel = z.number().int().min(1).max(6);
 export type FamiliarityLevel = z.infer<typeof FamiliarityLevel>;
 
 /** 3.25：六个阶段的名称（下标 = level - 1）。服务端与各客户端都从这里取，不各写一份。 */
-export const FAMILIARITY_STAGE_NAMES = ['粉丝', '朋友', '亲密好友', '暧昧', '恋人', '伴侣'] as const;
+export const FAMILIARITY_STAGE_NAMES = [
+  '粉丝',
+  '朋友',
+  '亲密好友',
+  '暧昧',
+  '恋人',
+  '伴侣',
+] as const;
 
 /**
  * 3.25：从未充值、也不是 PRO+ 会员的账号，好感度最高停在第几阶段（3 = 亲密好友）；充值或开通会员后解除。

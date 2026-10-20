@@ -90,7 +90,10 @@ export function effectiveStage(
   thresholds: StageThresholds,
   ceiling: number,
 ): number {
-  return Math.max(1, Math.min(Math.max(storedLevel, levelFromPoints(totalPoints, thresholds)), ceiling));
+  return Math.max(
+    1,
+    Math.min(Math.max(storedLevel, levelFromPoints(totalPoints, thresholds)), ceiling),
+  );
 }
 
 // ---------- 暂停亲密表达 / 称呼（照旧版 relationship_service.js detectRelationshipIntent） ----------

@@ -418,7 +418,9 @@ export class ReplyContext {
     );
     // 3.25（G1-6）：好感度阶段。恋爱说法（违禁词第 3 类）按阶段放开：恋人阶段起（或用户明确选了恋人关系 /
     // 恋爱模式 / 私密模式）才允许；用户要求暂停亲密表达时一律不允许；未成年设定角色永远不允许。
-    const stage = await this.growth?.relationshipStage(row.userId, row.characterId).catch(() => null);
+    const stage = await this.growth
+      ?.relationshipStage(row.userId, row.characterId)
+      .catch(() => null);
     const stageInput = {
       level: stage?.level ?? 1,
       romancePaused: stage?.romancePaused ?? false,

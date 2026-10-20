@@ -213,16 +213,16 @@ export class ChatStore {
           : last.scope === 'adult'
             ? PRIVATE_MESSAGE_PREVIEW
             : content?.type === 'text'
-            ? previewText(content.text)
-            : content?.type === 'nudge'
-              ? '[拍一拍]'
-              : content?.type === 'system' && content.code === 'contact_accepted'
-                ? '通过了你的好友申请'
-                : content?.type === 'contact_card'
-                  ? previewText(`[名片] ${content.name}`)
-                  : content?.type === 'system'
-                    ? systemPreview(content.code, content.params)
-                    : '[消息]';
+              ? previewText(content.text)
+              : content?.type === 'nudge'
+                ? '[拍一拍]'
+                : content?.type === 'system' && content.code === 'contact_accepted'
+                  ? '通过了你的好友申请'
+                  : content?.type === 'contact_card'
+                    ? previewText(`[名片] ${content.name}`)
+                    : content?.type === 'system'
+                      ? systemPreview(content.code, content.params)
+                      : '[消息]';
       lastMessage = {
         messageId: last.id,
         seq: last.seq,

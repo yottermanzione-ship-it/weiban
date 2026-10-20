@@ -24,7 +24,8 @@ const STAGE_PROMPTS: Record<number, string> = {
 };
 
 /** 未成年设定角色：只按朋友相处（不进入暧昧及以上，任何阶段都不涉及恋爱）。 */
-const MINOR_PROMPT = '像朋友一样亲切、自然、有来有回地相处，主动关心对方；不涉及恋爱、暧昧或亲密称呼。';
+const MINOR_PROMPT =
+  '像朋友一样亲切、自然、有来有回地相处，主动关心对方；不涉及恋爱、暧昧或亲密称呼。';
 
 export interface RelationshipStageInput {
   level: number;

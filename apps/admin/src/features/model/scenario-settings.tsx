@@ -22,10 +22,7 @@ import { SCENARIO_LABELS } from './shared.js';
 
 /** 3.25：成人内容检查（adult_check）不再使用，不在后台显示。 */
 type InternalUse = Exclude<PlatformInternalUse, 'adult_check'> | 'ecology_decision';
-const INTERNAL_LABELS: Record<
-  InternalUse,
-  { label: string; help: string }
-> = {
+const INTERNAL_LABELS: Record<InternalUse, { label: string; help: string }> = {
   safety: { label: '安全检查', help: '安全关怀识别与次日跟进，平台付费。' },
   small_v: { label: '小V 答疑', help: '用户问小V 时用，平台付费。' },
   ecology_decision: {

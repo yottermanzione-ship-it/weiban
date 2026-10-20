@@ -32,11 +32,7 @@ import {
 import { CHAT_ADMIN_PORT } from '../../chat/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
 import { MEDIA_ASSET_READ_PORT } from '../../media/index.js';
-import {
-  deriveClassification,
-  classificationCanChange,
-  compareClassification,
-} from '../../policy/index.js';
+import { classificationCanChange, compareClassification } from '../../policy/index.js';
 import { characters, trialSessions } from '../infra/db/schema.js';
 import { childFeaturesIn } from '../domain/child-features.js';
 import { catchphrasesOf, voiceIdOf, type CustomCharacterPayload } from '../domain/custom-card.js';

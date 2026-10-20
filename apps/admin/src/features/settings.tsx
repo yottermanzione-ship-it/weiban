@@ -13,30 +13,20 @@ import {
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
-import {
-  FieldHelp,
-  FormSection,
-  Page,
-  SectionCard,
-  useToast,
-} from '../ui/page.js';
+import { FieldHelp, FormSection, Page, SectionCard, useToast } from '../ui/page.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 
 export function SettingsPage() {
   return (
-    <Page
-      title="系统设置"
-      desc="影响全站的参数。改完立即生效，请确认后再保存。"
-    >
+    <Page title="系统设置" desc="影响全站的参数。改完立即生效，请确认后再保存。">
       <LimitsCard />
       <FamiliarityStagesCard />
       <SectionCard title="其它设置" desc="分散在各自页面，避免重复维护">
         <ul className="link-list">
+          <li>公告与版本策略：内容运营 › 公告 / 系统 › 版本策略</li>
           <li>
-            公告与版本策略：内容运营 › 公告 / 系统 › 版本策略
-          </li>
-          <li>
-            用户模型榜单来源：<Link to="/model">模型与计费 › 模型管理</Link>（页面顶部）；各模型名次在模型编辑里填
+            用户模型榜单来源：<Link to="/model">模型与计费 › 模型管理</Link>
+            （页面顶部）；各模型名次在模型编辑里填
           </li>
           <li>自动搜索公开动态：角色 › 公开动态（页面底部开关）</li>
           <li>上游账号的调度参数：模型与计费 › 模型管理 › 上游账号 › 调度设置</li>

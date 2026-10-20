@@ -3,16 +3,7 @@
  * 人设内容仍由 WB-Card schema 驱动（components/card-editor），只换了外观。
  */
 import { useState } from 'react';
-import {
-  Alert,
-  Button,
-  Checkbox,
-  DatePicker,
-  Input,
-  Select,
-  Space,
-  Upload,
-} from 'antd';
+import { Alert, Button, Checkbox, DatePicker, Input, Select, Space, Upload } from 'antd';
 import { PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
@@ -29,13 +20,7 @@ import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
-import {
-  Page,
-  SectionCard,
-  StatusTag,
-  useDangerConfirm,
-  useToast,
-} from '../ui/page.js';
+import { Page, SectionCard, StatusTag, useDangerConfirm, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
 import { CardEditor } from '../components/card-editor.js';
 import { EligibilityCard, EligibilityLookupDrawer } from './character-eligibility.js';
@@ -464,7 +449,10 @@ function CharacterDrawer({
         {listField('fallbackGreetings', '备用开场白', '每行一条，至少一条；没配模型时用它', 2)}
       </SectionCard>
 
-      <SectionCard title="分类事实" desc="资料里写的分类；AI 判断不准时在下面「资格标注」里人工纠正">
+      <SectionCard
+        title="分类事实"
+        desc="资料里写的分类；AI 判断不准时在下面「资格标注」里人工纠正"
+      >
         <div className="form-three">
           <div className="field-line">
             <span className="field-label">
@@ -569,9 +557,7 @@ function CharacterDrawer({
               </Upload>
               <Button
                 disabled={!draft.avatar.imageMediaId}
-                onClick={() =>
-                  patch({ avatar: { ...draft.avatar, imageMediaId: null } })
-                }
+                onClick={() => patch({ avatar: { ...draft.avatar, imageMediaId: null } })}
               >
                 使用默认头像
               </Button>

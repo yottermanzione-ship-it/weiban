@@ -356,9 +356,7 @@ export function ScenarioModelPage() {
         </MenuGroup>
       )}
       {row?.selection && !row.selection.available && (
-        <p className="error page-note">
-          已选模型暂时用不了，请稍后再试，或先换一个
-        </p>
+        <p className="error page-note">已选模型暂时用不了，请稍后再试，或先换一个</p>
       )}
       {(models.error || config.error) && (
         <p role="alert" className="notice-bar">
@@ -488,9 +486,7 @@ export function CharacterScenarioPickerPage() {
         ))}
       </MenuGroup>
       {row?.selection && !row.selection.available && (
-        <p className="error page-note">
-          TA 用的模型暂时用不了，回复时会提示你临时改用场景设置
-        </p>
+        <p className="error page-note">TA 用的模型暂时用不了，回复时会提示你临时改用场景设置</p>
       )}
       {(models.error || config.error) && <p role="alert">{models.error || config.error}</p>}
     </main>
