@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.24. Regenerate: pnpm android:generate
+// Contract 3.25. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.24"
+const val CONTRACT_VERSION: String = "3.25"
 
 @Serializable
 data class AccountAlias(
@@ -272,6 +272,17 @@ data class AdminCharacter(
     @SerialName("personaVersion") val `personaVersion`: Long,
     @SerialName("publishChecks") val `publishChecks`: AdminCharacterPublishChecks,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class AdminCharacterEligibility(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("kind") val `kind`: CharacterKind,
+    @SerialName("auto") val `auto`: CharacterEligibilityFacts,
+    @SerialName("override") val `override`: CharacterEligibilityFacts?,
+    @SerialName("effective") val `effective`: CharacterClassification,
+    @SerialName("history") val `history`: List<CharacterEligibilityChange>,
 )
 
 @Serializable
@@ -1687,6 +1698,11 @@ data class CardTemplateWriteInput(
 )
 
 @Serializable
+data class CharacterAdminEndpointsGetEligibilityParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
 data class CharacterAdminEndpointsListQuery(
     @SerialName("status") val `status`: CharacterPublishStatus? = null,
     @SerialName("q") val `q`: String? = null,
@@ -1699,6 +1715,11 @@ data class CharacterAdminEndpointsListResponse(
 
 @Serializable
 data class CharacterAdminEndpointsPublishParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class CharacterAdminEndpointsSetEligibilityParams(
     @SerialName("characterId") val `characterId`: Id,
 )
 
@@ -1792,6 +1813,34 @@ data class CharacterDisplayInput(
     @SerialName("avatarText") val `avatarText`: String?,
     @SerialName("avatarPattern") val `avatarPattern`: AvatarPattern,
     @SerialName("themeColor") val `themeColor`: HexColor?,
+)
+
+@Serializable
+data class CharacterEligibilityChange(
+    @SerialName("at") val `at`: Timestamp,
+    @SerialName("operatorUserId") val `operatorUserId`: Id?,
+    @SerialName("operatorName") val `operatorName`: String,
+    @SerialName("reason") val `reason`: String,
+    @SerialName("before") val `before`: CharacterEligibilityFacts?,
+    @SerialName("after") val `after`: CharacterEligibilityFacts?,
+)
+
+@Serializable
+data class CharacterEligibilityFacts(
+    @SerialName("basis") val `basis`: CharacterBasis,
+    @SerialName("realPersonKind") val `realPersonKind`: RealPersonKind?,
+    @SerialName("ageSetting") val `ageSetting`: AgeSetting,
+    @SerialName("childAppearance") val `childAppearance`: Boolean,
+    @SerialName("childFeaturesDetected") val `childFeaturesDetected`: Boolean,
+)
+
+@Serializable
+data class CharacterEligibilityFactsInput(
+    @SerialName("basis") val `basis`: CharacterBasis,
+    @SerialName("realPersonKind") val `realPersonKind`: RealPersonKind?,
+    @SerialName("ageSetting") val `ageSetting`: AgeSetting,
+    @SerialName("childAppearance") val `childAppearance`: Boolean,
+    @SerialName("childFeaturesDetected") val `childFeaturesDetected`: Boolean,
 )
 
 @Serializable
@@ -5178,6 +5227,10 @@ data class EventsWishlistItemCompleted(
     @SerialName("payload") val `payload`: EventsWishlistItemCompletedPayload,
 )
 
+typealias FamiliarityCapReason = String
+
+typealias FamiliarityCapReasonValue = String
+
 typealias FamiliarityEventType = String
 
 @Serializable
@@ -5188,9 +5241,22 @@ data class FamiliarityInfo(
     @SerialName("pointsToNextLevel") val `pointsToNextLevel`: Long?,
     @SerialName("totalPoints") val `totalPoints`: Long,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("stageName") val `stageName`: String? = null,
+    @SerialName("capReason") val `capReason`: FamiliarityCapReason? = null,
+    @SerialName("romancePaused") val `romancePaused`: Boolean? = null,
 )
 
 typealias FamiliarityLevel = Long
+
+@Serializable
+data class FamiliarityStageSettings(
+    @SerialName("thresholds") val `thresholds`: FamiliarityStageThresholds,
+    @SerialName("stageNames") val `stageNames`: List<String>,
+    @SerialName("freeCeilingLevel") val `freeCeilingLevel`: FamiliarityLevel,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp?,
+)
+
+typealias FamiliarityStageThresholds = List<Long>
 
 @Serializable
 data class Favorite(
@@ -9983,6 +10049,18 @@ data class UpdateAuthorizationRequestInput(
 )
 
 @Serializable
+data class UpdateCharacterEligibilityRequest(
+    @SerialName("override") val `override`: CharacterEligibilityFacts?,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class UpdateCharacterEligibilityRequestInput(
+    @SerialName("override") val `override`: CharacterEligibilityFactsInput?,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
 data class UpdateCompanionSettingsRequest(
     @SerialName("instantReply") val `instantReply`: Boolean? = null,
     @SerialName("splitBubbles") val `splitBubbles`: Boolean? = null,
@@ -10059,6 +10137,16 @@ data class UpdateEcologySettings(
     @SerialName("actions") val `actions`: List<UpdateEcologySettingsActionsItem>? = null,
     @EncodeDefault
     @SerialName("introSeen") val `introSeen`: Boolean? = true,
+)
+
+@Serializable
+data class UpdateFamiliarityStageSettingsRequest(
+    @SerialName("thresholds") val `thresholds`: FamiliarityStageThresholds,
+)
+
+@Serializable
+data class UpdateFamiliarityStageSettingsRequestInput(
+    @SerialName("thresholds") val `thresholds`: FamiliarityStageThresholds,
 )
 
 @Serializable
