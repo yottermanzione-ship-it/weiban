@@ -14,6 +14,7 @@ import { formatDateTime, relativeTime } from '../ui/format.js';
 const KIND_LABELS: Record<string, string> = {
   platform_budget_warning: '平台预算',
   reconciliation_flagged: '对账异常',
+  upstream_usage_missing: '连续缺用量（已按估算计费）',
   upstream_quota_exhausted: '上游余额',
   upstream_invalid: '上游密钥',
   upstream_unavailable: '上游故障',

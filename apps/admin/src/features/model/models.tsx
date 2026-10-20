@@ -26,9 +26,11 @@ import { ApiFailure } from '@weiban/client-core';
 import {
   ModelAccessAdminEndpoints,
   RouteBillingBounds,
+  USAGE_MISSING_ALERT_STREAK,
   type AdminModel,
   type ModelScenario,
   type ModelRates,
+  type ModelsDevMatch,
   type ModelRoute,
   type Upstream,
 } from '@weiban/contracts';
@@ -59,13 +61,21 @@ import {
 } from './shared.js';
 import {
   BoundsFields,
+  DEFAULT_CONTEXT_TOKENS,
+  DEFAULT_MAX_OUTPUT_TOKENS,
   DEFAULT_VISION_IMAGES,
   boundsToForm,
   formToBounds,
   isTextOnlyBounds,
   type BoundsFormValues,
 } from './billing-bounds.js';
-import { MODEL_KEY_HINT, isValidModelKey, suggestModelKey } from './model-key.js';
+import { autoModelKey } from './model-key.js';
+import {
+  ModelsDevBar,
+  ModelsDevPanel,
+  PLATFORM_MAX_OUTPUT,
+  useModelsDevMatch,
+} from './models-dev.js';
 import { ImportModelsButton } from './import.js';
 import { useDeleteModels } from './delete-models.js';
 
@@ -103,6 +113,11 @@ function ratesOf(
 
 /** 3.24：这些原因要去模型抽屉里改计费上限，状态标签可以点开直接定位。 */
 const BOUNDS_DETAILS = ['billing_bounds_missing', 'billing_bounds_paused', 'output_limit_too_small'];
+
+/** 3.26（G3-2）：连续多次没返回用量的线路（达到提示阈值才在后台显示，不停用）。 */
+function usageMissingOf(m: AdminModel) {
+  return (m.usageMissing ?? []).filter((r) => r.streak >= USAGE_MISSING_ALERT_STREAK);
+}
 
 /** 3.24：文本聊天 / 私密模式模型缺识图能力（用户发的图片会发不出去）。 */
 function lacksVision(scenarios: readonly string[] | undefined, capabilities: readonly string[]) {
@@ -249,6 +264,17 @@ export function ModelsTab({
                 缺识图能力
               </span>
             )}
+            {usageMissingOf(m).map((r) => (
+              <span
+                key={`${r.upstreamId}:${r.upstreamModelId}`}
+                className="status-reason warn"
+                title={`线路「${upstreamName(r.upstreamId)} · ${r.upstreamModelId}」${
+                  r.since ? `从 ${dayjs(r.since).format('MM-DD HH:mm')} 起` : ''
+                }连续 ${r.streak} 次没有返回用量，系统按本地估算计费（标记「估算」），线路照常使用。可检查上游 / 中转是否返回 usage，或在「调用记录」里看估算的调用。`}
+              >
+                连续 {r.streak} 次没返回用量 · 按估算计费
+              </span>
+            ))}
           </div>
         );
       },
@@ -428,6 +454,7 @@ export function ModelsTab({
           </Button>
         </Space>
       </div>
+      <ModelsDevBar />
       <MultiplierBase key={deleteVersion} models={models} onSaved={refresh} />
       <DataTable<AdminModel>
         rowKey="modelKey"
@@ -496,6 +523,7 @@ export function ModelsTab({
       {editing && (
         <ModelWizard
           model={editing === 'new' ? null : editing}
+          existingKeys={models.map((m) => m.modelKey)}
           upstreams={upstreams}
           focusBounds={focusBounds}
           onClose={() => setEditing(null)}
@@ -634,12 +662,15 @@ type AdminModelDiscount = NonNullable<AdminModel['discount']>;
 
 function ModelWizard({
   model,
+  existingKeys,
   upstreams,
   focusBounds,
   onClose,
   onSaved,
 }: {
   model: AdminModel | null;
+  /** 3.26：现有模型的键（新建时自动生成的模型键避开它们，免得覆盖已有模型）。 */
+  existingKeys: string[];
   upstreams: Upstream[];
   /** 打开后直接定位到计费上限（从列表里点「需配置计费上限」进来）。 */
   focusBounds?: boolean;
@@ -675,7 +706,9 @@ function ModelWizard({
     error: '',
   });
   const [confirmBands, setConfirmBands] = useState(false);
-  const lastSuggestedKey = useRef('');
+  // 3.26：models.dev 自动预填过的值（字段路径 → 值）；当前值还等于它时，换了模型名可以再次覆盖
+  const lastAuto = useRef(new Map<string, unknown>());
+  const [autoApplied, setAutoApplied] = useState('');
 
   const vision = model?.capabilities.includes('vision') ?? false;
   const [initialRoutes] = useState<RouteDraft[]>(() => {
@@ -779,7 +812,11 @@ function ModelWizard({
       feedback.setError('至少要有一条上游线路');
       return;
     }
-    const key = (model?.modelKey ?? values.modelKey ?? '').trim();
+    // 3.26（G3-3）：模型键不让管理员填，新建时按「出品方 / 上游模型名」自动生成
+    const key =
+      model?.modelKey ??
+      (values.modelKey?.trim() ||
+        autoModelKey(values.vendorName, primary.upstreamModelId, new Set(existingKeys)));
     // 3.22：限时折扣。开关关掉且原来有折扣 → 取消；没动过 → 不传（不改）。
     let discount: AdminModelDiscount | null | undefined;
     if (values.discountOn) {
@@ -855,12 +892,10 @@ function ModelWizard({
     if (changedRoutes[0]?.upstreamId) void loadUpstreamModels(changedRoutes[0].upstreamId);
 
     if (!model && ('vendorName' in changed || changedRoutes[0]?.upstreamModelId !== undefined)) {
-      const suggestion = suggestModelKey(vendor, routes[0]?.upstreamModelId);
-      const current = ((form.getFieldValue('modelKey') as string | undefined) ?? '').trim();
-      if (suggestion && (!current || current === lastSuggestedKey.current)) {
-        lastSuggestedKey.current = suggestion;
-        form.setFields([{ name: 'modelKey', value: suggestion, errors: [] }]);
-      }
+      form.setFieldValue(
+        'modelKey',
+        autoModelKey(vendor, routes[0]?.upstreamModelId, new Set(existingKeys)),
+      );
     }
 
     routes.forEach((route, index) => {
@@ -873,6 +908,78 @@ function ModelWizard({
   }
 
   const firstUpstream = Form.useWatch(['routes', 0, 'upstreamId'], form);
+  const firstModelName = Form.useWatch(['routes', 0, 'upstreamModelId'], form) as string | undefined;
+  const vendorWatch = Form.useWatch('vendorName', form) as string | undefined;
+  const keyWatch = Form.useWatch('modelKey', form) as string | undefined;
+  const devMatch = useModelsDevMatch(firstModelName, vendorWatch);
+
+  /**
+   * 3.26（G3-1）：把 models.dev 的官方数据填进表单。
+   * auto（新建时匹配到自动填）：只填空着的、或还是默认值 / 上次自动填的格子，不覆盖管理员手改的；
+   * manual（点「用这些数据填入」）：有数据的项全部覆盖。
+   */
+  function applyMatch(match: ModelsDevMatch, mode: 'auto' | 'manual') {
+    // 字段路径是动态拼的（线路下标），用不带字段类型的表单实例
+    const loose = form as unknown as FormInstance;
+    const updates: Array<{ name: (string | number)[]; value: unknown }> = [];
+    const set = (name: (string | number)[], value: unknown, defaults: unknown[] = []) => {
+      if (value == null) return;
+      const key = name.join('.');
+      const current: unknown = loose.getFieldValue(name);
+      const untouched =
+        current == null ||
+        current === '' ||
+        defaults.includes(current) ||
+        (lastAuto.current.has(key) && lastAuto.current.get(key) === current);
+      if (mode === 'manual' || untouched) {
+        updates.push({ name, value });
+        lastAuto.current.set(key, value);
+      }
+    };
+    set(['priceInput'], match.priceCny.input);
+    set(['priceOutput'], match.priceCny.output);
+    set(['priceCache'], match.priceCny.cacheRead);
+    set(['priceCacheWrite5m'], match.priceCny.cacheWrite);
+    if (!(form.getFieldValue('displayName') as string | undefined)?.trim())
+      updates.push({ name: ['displayName'], value: match.name.slice(0, 60) });
+    const capabilities = (form.getFieldValue('capabilities') as string[] | undefined) ?? [];
+    let vision = capabilities.includes('vision');
+    if (match.supportsImage != null && (mode === 'manual' || (!model && match.supportsImage))) {
+      vision = match.supportsImage;
+      const next = vision
+        ? [...new Set([...capabilities, 'vision'])]
+        : capabilities.filter((c) => c !== 'vision');
+      updates.push({ name: ['capabilities'], value: next });
+    }
+    const routes = (form.getFieldValue('routes') as RouteDraft[] | undefined) ?? [];
+    routes.forEach((route, index) => {
+      if (route.boundsMode !== 'form') return;
+      if (mode === 'auto' && route.origin) return;
+      set(['routes', index, 'bounds', 'contextTokens'], match.contextTokens, [DEFAULT_CONTEXT_TOKENS]);
+      set(
+        ['routes', index, 'bounds', 'maxOutputTokens'],
+        match.maxOutputTokens == null ? null : Math.min(PLATFORM_MAX_OUTPUT, match.maxOutputTokens),
+        [DEFAULT_MAX_OUTPUT_TOKENS],
+      );
+      if (match.supportsImage != null)
+        set(['routes', index, 'bounds', 'maxImages'], vision ? DEFAULT_VISION_IMAGES : 0, [
+          0,
+          DEFAULT_VISION_IMAGES,
+        ]);
+    });
+    loose.setFields(updates.map((u) => ({ ...u, errors: [] })));
+    setAutoApplied(match.providerId + '/' + match.modelId);
+  }
+
+  // 新建模型：匹配到就自动预填（编辑已有模型不自动改，点按钮才填）
+  useEffect(() => {
+    if (model || devMatch.kind !== 'found') return;
+    applyMatch(devMatch.match, 'auto');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [devMatch]);
+  const devApplied =
+    devMatch.kind === 'found' &&
+    autoApplied === devMatch.match.providerId + '/' + devMatch.match.modelId;
 
   return (
     <RecordDrawer
@@ -1045,6 +1152,11 @@ function ModelWizard({
           )}
         </Form.List>
 
+        <ModelsDevPanel
+          state={devMatch}
+          autoApplied={devApplied}
+          onApply={(match) => applyMatch(match, 'manual')}
+        />
         <FormSection title="② 显示与用途" />
         <div className="form-two">
           <Form.Item
@@ -1070,28 +1182,9 @@ function ModelWizard({
             <Input maxLength={40} placeholder="例：Google" />
           </Form.Item>
         </div>
-        {!model && (
-          <Form.Item
-            name="modelKey"
-            label="模型键"
-            rules={[
-              { required: true, whitespace: true, message: `填写模型键。${MODEL_KEY_HINT}` },
-              {
-                validator: (_, value: string | undefined) =>
-                  !value || isValidModelKey(value.trim())
-                    ? Promise.resolve()
-                    : Promise.reject(new Error(MODEL_KEY_HINT)),
-              },
-            ]}
-            extra={
-              <FieldHelp>
-                内部唯一标识，保存后不能改。已按「出品方」和第 1 条线路的「上游模型名」自动生成，可以改。{MODEL_KEY_HINT}。
-              </FieldHelp>
-            }
-          >
-            <Input maxLength={128} placeholder="例：google/gemini-3.8-flash" />
-          </Form.Item>
-        )}
+        <Form.Item name="modelKey" hidden>
+          <Input />
+        </Form.Item>
         <Form.Item name="capabilities" label="能力" extra={<FieldHelp>决定用户端哪些功能可以选它。</FieldHelp>}>
           <Checkbox.Group
             options={Object.entries(CAPABILITY_LABELS).map(([value, label]) => ({ value, label }))}
@@ -1268,6 +1361,27 @@ function ModelWizard({
             },
           ]}
         />
+        <Collapse
+          ghost
+          size="small"
+          items={[
+            {
+              key: 'advanced',
+              label: '高级',
+              children: (
+                <div className="readonly-field">
+                  <span className="field-label">
+                    模型键
+                    <HelpTip text="系统内部的唯一标识，按「出品方 / 上游模型名」自动生成，保存后不能改。调用记录、价目表、用户的模型配置都用它对应这个模型。" />
+                  </span>
+                  <span className="mono">
+                    {model?.modelKey ?? (keyWatch || '（填好出品方和上游模型名后自动生成）')}
+                  </span>
+                </div>
+              ),
+            },
+          ]}
+        />
         <Tag className="hidden-tag" color="default">
           非 token 计价模型（语音、图片）请在「AI 模型价格」里维护
         </Tag>
@@ -1389,8 +1503,8 @@ function RouteBoundsEditor({
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          message="系统没法确认这条线路的实际用量，已暂停使用。"
-          description="重新核对下面的数字，勾选「已重新核对」和上面的「启用这条线路」后保存即可恢复。"
+          message="这条线路以前因为「没法确认实际用量」被系统暂停了。"
+          description="现在上游没报用量时系统按估算计费、不再暂停线路（升级时会自动恢复）。如果还看到这条，勾选「已重新核对」和上面的「启用这条线路」后保存即可恢复。"
         />
       )}
       <Form.Item name={[name, 'boundsMode']} hidden>

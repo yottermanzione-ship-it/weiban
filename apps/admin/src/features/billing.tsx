@@ -29,6 +29,7 @@ import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
 import {
   FieldHelp,
   FormSection,
+  HelpTip,
   Page,
   SectionCard,
   StatusTag,
@@ -124,6 +125,24 @@ export function BillingPage() {
         (r.unknownCostCalls ?? 0) > 0 ? (
           <span className="warn-text">
             {r.unknownCostCalls} 笔待核，风险上界 {formatYuan(r.uncertainCostMicros ?? 0, 4)}
+          </span>
+        ) : (
+          '—'
+        ),
+    },
+    {
+      title: (
+        <span>
+          估算计费
+          <HelpTip text="上游没返回用量（token 数）的调用：系统按本地分词估算计费并标记「估算」，线路照常使用。这里是当天的条数和记账金额；数量多时可以检查上游 / 中转是否返回 usage。" />
+        </span>
+      ),
+      width: 150,
+      render: (_, r) =>
+        (r.estimatedUsageCalls ?? 0) > 0 ? (
+          <span className="cell-main">
+            <span>{r.estimatedUsageCalls} 条</span>
+            <span className="cell-sub">{formatYuan(r.estimatedChargedMicros ?? 0, 4)}</span>
           </span>
         ) : (
           '—'

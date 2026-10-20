@@ -10,8 +10,11 @@
  *   中转站的分档价格（按用量档位）目前只取基础档（文件里 input / output / cache 那一组），其余字段忽略。
  * 3.24：去掉「资料来源链接」（price_source 不再使用）与核对日期；不再有「图片识别」场景，识图默认勾上
  * （总经理的聊天模型都是多模态；文本聊天 / 私密模式模型需要识图能力）。
+ * 3.26（G3）：读入文件后按模型名批量查 models.dev，预填上下文长度、最大输出、识图；文件没写缓存价 / 缓存写入价时
+ * 按官方「缓存价 ÷ 输入价」的比例 × 文件里的输入价预填（查不到才按输入价 10%）。模型键不再显示给管理员填，
+ * 按「厂商 / 上游模型名」自动生成（与已有模型同键 = 更新价格）。
  */
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Alert,
   App,
@@ -33,6 +36,7 @@ import {
   ModelAccessAdminEndpoints,
   type AdminModel,
   type ModelRates,
+  type ModelsDevMatch,
   type Upstream,
 } from '@weiban/contracts';
 import { api } from '../../data/client.js';
@@ -44,7 +48,8 @@ import {
   DEFAULT_VISION_IMAGES,
   formToBounds,
 } from './billing-bounds.js';
-import { MODEL_KEY_HINT, isValidModelKey, prettyModelName, suggestModelKey } from './model-key.js';
+import { MODEL_KEY_HINT, autoModelKey, isValidModelKey, prettyModelName } from './model-key.js';
+import { PLATFORM_MAX_OUTPUT } from './models-dev.js';
 import { UPSTREAM_STATE_LABELS, toWrite, upstreamState } from './shared.js';
 
 const PriceTriple = z.object({
@@ -113,6 +118,13 @@ interface ImportRow {
   rank: number | null;
   supplierModel: string | null;
   needsValidation: boolean;
+  /** 3.26：models.dev 匹配结果（undefined = 还在查）。 */
+  dev?: { match: ModelsDevMatch | null; noData: boolean };
+  /** 3.26：缓存价 / 缓存写入价是按 models.dev 比例预填的（不是文件里的）。 */
+  priceCacheFromDev?: boolean;
+  costCacheFromDev?: boolean;
+  /** 文件里原本有没有这几项（决定能不能用 models.dev 预填）。 */
+  fileHas: { priceCache: boolean; priceWrite: boolean; costCache: boolean; costWrite: boolean };
   result?: { ok: boolean; text: string };
 }
 
@@ -130,7 +142,7 @@ function rowsFromFile(raw: z.infer<typeof ImportFile>): ImportRow[] {
         : null;
     return {
       id: String(index),
-      modelKey: suggestModelKey(m.vendor, m.model),
+      modelKey: autoModelKey(m.vendor, m.model),
       displayName: prettyModelName(m.model),
       vendorName: m.vendor.slice(0, 40),
       upstreamModelId: m.model,
@@ -159,8 +171,58 @@ function rowsFromFile(raw: z.infer<typeof ImportFile>): ImportRow[] {
       rank,
       supplierModel: m.supplier_lowest_model?.trim() || null,
       needsValidation: m.needs_validation === true,
+      fileHas: {
+        priceCache: retail.cache != null,
+        priceWrite: retail.cache_write_5m != null || retail.cache_write != null,
+        costCache: supplier?.cache != null,
+        costWrite: supplier?.cache_write_5m != null || supplier?.cache_write != null,
+      },
     };
   });
+}
+
+/** 3.26：按官方「缓存价 ÷ 输入价」的比例，换算成文件里这个价位的缓存价。 */
+function ratioOf(official: number | null, officialInput: number | null, input: number | null) {
+  if (official == null || !officialInput || input == null) return null;
+  return round((input * official) / officialInput, 4);
+}
+
+/** 3.26：把 models.dev 匹配结果用到一行上（只填文件里没有的项；上下文、最大输出、识图按官方数据）。 */
+function withModelsDev(row: ImportRow, match: ModelsDevMatch | null, noData: boolean): ImportRow {
+  const next: ImportRow = { ...row, dev: { match, noData } };
+  if (!match) return next;
+  const usd = match.priceUsd;
+  const fill = (triple: Triple, hasCache: boolean, hasWrite: boolean) => {
+    const cache = hasCache ? null : ratioOf(usd.cacheRead, usd.input, triple.input);
+    const write = hasWrite ? null : ratioOf(usd.cacheWrite, usd.input, triple.input);
+    return {
+      triple: {
+        ...triple,
+        ...(cache != null ? { cache } : {}),
+        ...(write != null ? { cacheWrite5m: write } : {}),
+      },
+      fromDev: cache != null,
+    };
+  };
+  const price = fill(row.price, row.fileHas.priceCache, row.fileHas.priceWrite);
+  next.price = price.triple;
+  if (price.fromDev) {
+    next.priceCacheGuessed = false;
+    next.priceCacheFromDev = true;
+  }
+  if (row.cost) {
+    const cost = fill(row.cost, row.fileHas.costCache, row.fileHas.costWrite);
+    next.cost = cost.triple;
+    if (cost.fromDev) {
+      next.costCacheGuessed = false;
+      next.costCacheFromDev = true;
+    }
+  }
+  if (match.contextTokens != null) next.contextTokens = Math.min(10_000_000, match.contextTokens);
+  if (match.maxOutputTokens != null)
+    next.maxOutputTokens = Math.min(PLATFORM_MAX_OUTPUT, match.maxOutputTokens);
+  if (match.supportsImage != null) next.vision = match.supportsImage;
+  return next;
 }
 
 function isInt(value: number | null, min: number, max: number): value is number {
@@ -170,7 +232,7 @@ function isInt(value: number | null, min: number, max: number): value is number 
 function rowErrors(row: ImportRow, existing: AdminModel | undefined, duplicate: boolean): RowErrors {
   const errors: RowErrors = {};
   if (!isValidModelKey(row.modelKey.trim())) errors.modelKey = MODEL_KEY_HINT;
-  else if (duplicate) errors.modelKey = '和表里另一行的模型键重复了';
+  else if (duplicate) errors.modelKey = '和表里另一行是同一个模型（厂商和上游模型名都一样），只勾一行';
   if (row.price.input == null) errors.priceInput = '填写输入售价';
   if (row.price.output == null) errors.priceOutput = '填写输出售价';
   if (existing) return errors;
@@ -307,6 +369,45 @@ function ImportPreview({
   const [upstreamError, setUpstreamError] = useState('');
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [summary, setSummary] = useState('');
+  const [devError, setDevError] = useState('');
+
+  // 3.26：打开预览时按模型名批量查 models.dev（每次最多 200 个）
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const list = initialRows;
+      const results = new Map<string, { match: ModelsDevMatch | null; noData: boolean }>();
+      try {
+        for (let i = 0; i < list.length; i += 200) {
+          const chunk = list.slice(i, i + 200);
+          const res = await api.call(ModelAccessAdminEndpoints.lookupModelsDev, {
+            body: {
+              items: chunk.map((r) => ({
+                name: r.upstreamModelId.slice(0, 200),
+                vendor: r.vendorName.slice(0, 60),
+              })),
+            },
+          });
+          chunk.forEach((r, k) =>
+            results.set(r.id, { match: res.items[k]?.match ?? null, noData: !res.fetchedAt }),
+          );
+        }
+      } catch (e) {
+        if (active) setDevError(errorText(e));
+        return;
+      }
+      if (!active) return;
+      setRows((current) =>
+        current.map((r) => {
+          const hit = results.get(r.id);
+          return hit && !r.result ? withModelsDev(r, hit.match, hit.noData) : r;
+        }),
+      );
+    })();
+    return () => {
+      active = false;
+    };
+  }, [initialRows]);
 
   const existingOf = (row: ImportRow) => models.find((m) => m.modelKey === row.modelKey.trim());
   const keyCount = new Map<string, number>();
@@ -319,7 +420,16 @@ function ImportPreview({
     rowErrors(row, existingOf(row), (keyCount.get(row.modelKey.trim()) ?? 0) > 1);
 
   const update = (id: string, patch: Partial<ImportRow>) =>
-    setRows((list) => list.map((r) => (r.id === id ? { ...r, ...patch, result: undefined } : r)));
+    setRows((list) =>
+      list.map((r) => {
+        if (r.id !== id) return r;
+        const next = { ...r, ...patch, result: undefined };
+        // 3.26：模型键跟着厂商 / 上游模型名自动变（管理员看不到也不用填）
+        if ('vendorName' in patch || 'upstreamModelId' in patch)
+          next.modelKey = autoModelKey(next.vendorName, next.upstreamModelId);
+        return next;
+      }),
+    );
 
   const cellError = (row: ImportRow, key: keyof RowErrors) => {
     if (!showErrors || !selected.includes(row.id)) return null;
@@ -483,7 +593,15 @@ function ImportPreview({
     );
     return (
       <>
-        {guessed ? <Tooltip title="文件里没有缓存价，按输入价的 10% 预填，可以改">{input}</Tooltip> : input}
+        {guessed ? (
+          <Tooltip title="文件里没有缓存价，models.dev 也查不到，按输入价的 10% 预填，可以改">{input}</Tooltip>
+        ) : part === 'cache' && (group === 'price' ? row.priceCacheFromDev : row.costCacheFromDev) ? (
+          <Tooltip title="文件里没有缓存价：按 models.dev 官方「缓存价 ÷ 输入价」的比例换算，可以改">
+            <span className="cell-from-dev">{input}</span>
+          </Tooltip>
+        ) : (
+          input
+        )}
         {errorKey ? cellError(row, errorKey) : null}
       </>
     );
@@ -533,24 +651,38 @@ function ImportPreview({
     {
       title: (
         <span>
-          模型键
-          <HelpTip text={MODEL_KEY_HINT} />
+          models.dev
+          <HelpTip text="按上游模型名在 models.dev 公开数据里查到的官方条目：上下文长度、最大输出、识图已按它预填，文件没写的缓存价也按官方比例预填。没找到的请手动核对这几项。" />
         </span>
       ),
-      width: 230,
+      width: 170,
       fixed: 'left',
-      render: (_, row) => (
-        <>
-          <Input
-            size="small"
-            className="mono"
-            value={row.modelKey}
-            status={status(row, 'modelKey')}
-            onChange={(e) => update(row.id, { modelKey: e.target.value })}
-          />
-          {cellError(row, 'modelKey')}
-        </>
-      ),
+      render: (_, row) => {
+        const keyError = cellError(row, 'modelKey');
+        const dev = row.dev;
+        return (
+          <Space direction="vertical" size={2}>
+            {!dev ? (
+              <span className="cell-sub">查询中…</span>
+            ) : dev.match ? (
+              <Tooltip
+                title={`${dev.match.providerName} · ${dev.match.modelId}${dev.match.exact ? '' : '（近似匹配，请核对）'}`}
+              >
+                <Tag color={dev.match.exact ? 'green' : 'orange'} bordered={false}>
+                  {dev.match.exact ? '已匹配' : '近似匹配'} · {dev.match.providerId}
+                </Tag>
+              </Tooltip>
+            ) : (
+              <Tooltip title="models.dev 里没找到这个模型名：上下文长度、最大输出、识图请手动核对">
+                <Tag color="orange" bordered={false}>
+                  {dev.noData ? '还没有数据' : '没找到，请手填'}
+                </Tag>
+              </Tooltip>
+            )}
+            {keyError}
+          </Space>
+        );
+      },
     },
     {
       title: '显示名',
@@ -787,8 +919,16 @@ function ImportPreview({
         type="info"
         showIcon
         message="导入前请核对：新模型会挂到下面选的上游账号；已有同键模型只更新价格，不改线路。"
-        description="黄色格子 = 文件里没有、按输入价 10% 预填的缓存价。计费上限默认上下文 128000 / 最大输出 8192、输出参数名 max_tokens，导入后可在模型抽屉里再改。"
+        description="上下文长度、最大输出、识图按 models.dev 官方数据预填（查不到时默认 128000 / 8192）；蓝色格子 = 文件没写、按官方比例预填的缓存价，黄色格子 = 查不到、按输入价 10% 预填。输出参数名一律 max_tokens，导入后都可以在模型抽屉里再改。"
       />
+      {devError && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginTop: 8 }}
+          message={`查不了 models.dev（${devError}），这次按默认值预填，请手动核对上下文长度、最大输出和识图。`}
+        />
+      )}
       <div className="import-toolbar">
         <Space>
           <span>挂到哪个上游账号</span>

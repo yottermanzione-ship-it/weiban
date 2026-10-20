@@ -96,3 +96,41 @@ export function prettyModelName(model: string): string {
     .join(' ')
     .slice(0, 60);
 }
+
+function shortHash(text: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36).slice(0, 6);
+}
+
+/**
+ * 3.26（G3-3）：模型键对管理员隐藏，按「出品方 / 上游模型名」自动生成，**总是**返回合法的键。
+ * - 先用 suggestModelKey；生成不了（例 中文模型名）时退回「厂商/model-短哈希」；
+ * - taken 里已有（新建时与现有模型重名）就在末尾加 -2、-3…，避免覆盖已有模型。
+ */
+export function autoModelKey(
+  vendor: string | null | undefined,
+  upstreamModelId: string | null | undefined,
+  taken: ReadonlySet<string> = new Set(),
+): string {
+  const model = (upstreamModelId ?? '').trim();
+  let base = suggestModelKey(vendor, model);
+  if (!base) {
+    const v = vendorSlug(vendor) || 'custom';
+    const m = modelSlug(model.includes('/') ? model.slice(model.lastIndexOf('/') + 1) : model);
+    const tail = m && /^[a-zA-Z0-9]/.test(m) ? m : `model-${shortHash(model || String(vendor ?? ''))}`;
+    base = `${v.slice(0, 48)}/${tail.slice(0, 80)}`;
+    if (!isValidModelKey(base)) base = `custom/model-${shortHash(`${vendor ?? ''}|${model}`)}`;
+  }
+  if (!taken.has(base)) return base;
+  for (let n = 2; n < 1000; n++) {
+    const suffix = `-${n}`;
+    const [head, tail] = [base.slice(0, base.indexOf('/')), base.slice(base.indexOf('/') + 1)];
+    const candidate = `${head}/${tail.slice(0, 80 - suffix.length)}${suffix}`;
+    if (!taken.has(candidate) && isValidModelKey(candidate)) return candidate;
+  }
+  return `${base.slice(0, base.indexOf('/'))}/model-${shortHash(`${base}|${Date.now()}`)}`;
+}

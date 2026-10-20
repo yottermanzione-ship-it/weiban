@@ -183,7 +183,17 @@ export function RecordsTab({
     {
       title: '输入 / 输出 token',
       width: 150,
-      render: (_, r) => `${formatInt(r.inputTokens)} / ${formatInt(r.outputTokens)}`,
+      // 3.26：上游没返回用量、按本地估算计费的调用标「估算」
+      render: (_, r) => (
+        <span>
+          {formatInt(r.inputTokens)} / {formatInt(r.outputTokens)}
+          {r.estimated && (
+            <Tag bordered={false} color="orange" style={{ marginLeft: 4 }} title="上游没返回用量，按本地分词估算计费">
+              估算
+            </Tag>
+          )}
+        </span>
+      ),
     },
     {
       title: '耗时',

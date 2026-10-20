@@ -93,7 +93,7 @@ export const UNAVAILABLE_DETAIL_LABELS: Record<string, string> = {
   upstream_unavailable: '上游连接异常，被健康检查暂停',
   upstream_cooldown: '上游连续失败，暂停几分钟后自动重试',
   billing_bounds_missing: '缺计费上限',
-  billing_bounds_paused: '用量核对未通过，线路已暂停',
+  billing_bounds_paused: '线路被旧规则暂停（用量未知）',
   price_missing: '价目表里没有价格',
   output_limit_too_small: '最大输出太小，不够一条回复',
 };

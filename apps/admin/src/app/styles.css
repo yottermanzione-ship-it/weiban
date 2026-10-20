@@ -1413,3 +1413,47 @@ body {
 .model-status .status-reason.warn {
   color: #d48806;
 }
+
+/* 3.26（G3）：models.dev 官方数据预填 */
+.models-dev-bar {
+  margin-bottom: 12px;
+}
+.models-dev-panel {
+  margin: 4px 0 16px;
+}
+.models-dev-found {
+  padding: 10px 12px;
+  background: #f4f8ff;
+  border: 1px solid #d6e4ff;
+  border-radius: 8px;
+}
+.models-dev-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.models-dev-grid {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 4px 12px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.models-dev-grid > span:nth-child(odd) {
+  color: #8a9099;
+}
+.cell-from-dev .ant-input-number,
+.cell-from-dev.ant-input-number {
+  background: #f0f5ff;
+  border-color: #adc6ff;
+}
+.readonly-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.readonly-field .field-label {
+  color: #8a9099;
+}
