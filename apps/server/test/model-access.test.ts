@@ -658,10 +658,11 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         .send({ recommended: { private: 'dolphin/uncensored' }, internal: {} })
         .expect(200);
       charges.priced.add('qwen/no-vision');
+      // 3.24：「图片识别」场景已去掉：旧后台传了也忽略（不再 422）
       const vision = await putCatalog(
         entry('qwen/no-vision', upstreamId, { scenarios: ['vision'] }),
-      ).expect(422);
-      expect(errorCode(vision)).toBe('bad_request');
+      ).expect(200);
+      expect(AdminCatalogEntry.parse(vision.body).scenarios).toEqual([]);
       await putCatalog(entry('qwen/no-vision', upstreamId, { enabled: false })).expect(200);
       await http()
         .put('/api/v1/admin/model/scenario-settings', adminToken)
@@ -982,7 +983,7 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
       expect(
         await key(resolver.resolve({ ...base, modelRole: 'background', characterId: MINOR })),
       ).toBe('deepseek/deepseek-flash');
-      // 带图：聊天模型不能识图，没配图片识别 → capability_missing；配了 → 改用它
+      // 3.24：带图随文本聊天模型；它不能识图 → capability_missing（不再改用图片识别场景，旧写法被忽略）
       expect(await key(resolver.resolve({ ...base, modelRole: 'chat', hasImages: true }))).toBe(
         'capability_missing',
       );
@@ -990,10 +991,17 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         .patch('/api/v1/model/scenarios', u.token)
         .send({ selections: { vision: { modelKey: 'qwen/qwen-vl-plus' } } })
         .expect(200);
+      expect(await key(resolver.resolve({ ...base, modelRole: 'chat', hasImages: true }))).toBe(
+        'capability_missing',
+      );
+      await http()
+        .patch('/api/v1/model/scenarios', u.token)
+        .send({ selections: { chat: { modelKey: 'qwen/qwen-vl-plus' } } })
+        .expect(200);
       const vision = await resolver.resolve({ ...base, modelRole: 'chat', hasImages: true });
       expect(vision.ok && vision.value).toMatchObject({
         modelKey: 'qwen/qwen-vl-plus',
-        usedVisionDefault: true,
+        usedVisionDefault: false,
       });
       // 场景没勾选的模型不能选
       const wrong = await http()
@@ -1020,16 +1028,11 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
               .expect(200)
           ).body,
         );
-      // 3.22：没有平台默认模型，先配置文本聊天与图片识别（相当于以前的平台默认）
+      // 3.22：没有平台默认模型，先配置文本聊天（3.24 不再有图片识别场景）
       expect(await status()).toMatchObject({ available: false, reason: 'not_configured' });
       await http()
         .patch('/api/v1/model/scenarios', u.token)
-        .send({
-          selections: {
-            chat: { modelKey: 'deepseek/deepseek-v4-pro' },
-            vision: { modelKey: 'qwen/qwen-vl-plus' },
-          },
-        })
+        .send({ selections: { chat: { modelKey: 'deepseek/deepseek-v4-pro' } } })
         .expect(200);
       expect(await status()).toMatchObject({ available: false, reason: 'insufficient_balance' });
       await http()
@@ -1046,7 +1049,8 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         available: true,
         reason: null,
         canFallbackToDefault: false,
-        visionAvailable: true,
+        // 3.24：只看文本聊天模型能否识图（deepseek-v4-pro 不能）
+        visionAvailable: false,
       });
       expect(await statusSvc.getModelStatus(u.userId, null)).toEqual({
         available: true,
@@ -1066,7 +1070,9 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         available: false,
         reason: 'provider_unavailable',
         canFallbackToDefault: true,
-        visionAvailable: true,
+        // 3.24：写出具体原因；只看文本聊天模型能否识图
+        detail: 'upstream_unavailable',
+        visionAvailable: false,
       });
       await upstreamsSvc.reportStatus(own.upstreamId, 'active', 'probe');
       await addModel('test/status-model', own.upstreamId, { enabled: false });
