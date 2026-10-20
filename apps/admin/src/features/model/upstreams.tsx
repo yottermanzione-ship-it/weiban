@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Alert,
+  App,
   Button,
   Checkbox,
   Form,
@@ -58,6 +59,7 @@ export function UpstreamsTab({
 }) {
   const toast = useToast();
   const confirm = useDangerConfirm();
+  const { modal } = App.useApp();
   const [provider, setProvider] = useState('');
   const [status, setStatus] = useState<'all' | UpstreamState>('all');
   const [query, setQuery] = useState('');
@@ -117,6 +119,66 @@ export function UpstreamsTab({
     } catch (e) {
       setError(errorText(e));
     }
+  }
+
+  /** 引用这条线路的模型（主上游或任一路由，含停用的模型）。 */
+  const usersOf = (upstreamId: string) =>
+    models.filter(
+      (m) => m.upstreamId === upstreamId || (m.routes ?? []).some((r) => r.upstreamId === upstreamId),
+    );
+
+  function blocked(u: Upstream, names: string[]) {
+    modal.warning({
+      title: `「${u.name}」还在被模型使用，暂时不能删除`,
+      content: (
+        <div>
+          <p>下面这些模型的线路里还有它，请先在「模型」里把它们换到别的上游账号，再回来删除：</p>
+          <ul style={{ paddingLeft: 18, margin: 0 }}>
+            {names.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        </div>
+      ),
+      okText: '知道了',
+      centered: true,
+    });
+  }
+
+  function askDelete(u: Upstream) {
+    const using = usersOf(u.upstreamId);
+    if (using.length > 0) {
+      blocked(
+        u,
+        using.map((m) => m.displayName),
+      );
+      return;
+    }
+    confirm({
+      title: `删除「${u.name}」？`,
+      content: '删除后密钥立即清除、不再分配调用，也不能恢复；历史调用记录仍保留，账号名显示为「已删除」。',
+      okText: '删除',
+      onOk: async () => {
+        setError('');
+        try {
+          await api.call(ModelAccessAdminEndpoints.deleteUpstream, {
+            params: { upstreamId: u.upstreamId },
+          });
+          toast.success('已删除');
+          setSelected((keys) => keys.filter((k) => k !== u.upstreamId));
+          refresh();
+        } catch (e) {
+          const names =
+            e instanceof ApiFailure && e.code === 'conflict'
+              ? (e.details as { modelNames?: unknown } | undefined)?.modelNames
+              : undefined;
+          if (Array.isArray(names) && names.length > 0) {
+            blocked(u, names.map(String));
+            refresh();
+          } else setError(errorText(e));
+        }
+      },
+    });
   }
 
   const columns: ProColumns<Upstream>[] = [
@@ -183,7 +245,7 @@ export function UpstreamsTab({
     },
     {
       title: '操作',
-      width: 150,
+      width: 200,
       fixed: 'right',
       render: (_, u) => (
         <Space size={4}>
@@ -214,6 +276,9 @@ export function UpstreamsTab({
               停用
             </Button>
           )}
+          <Button type="link" size="small" danger onClick={() => askDelete(u)}>
+            删除
+          </Button>
         </Space>
       ),
     },

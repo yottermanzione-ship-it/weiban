@@ -80,8 +80,10 @@ export function BillingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const upstreamName = (id: string) =>
-    (upstreams.data?.items ?? []).find((u) => u.upstreamId === id)?.name ?? id;
+  const upstreamName = (id: string) => {
+    const u = (upstreams.data?.items ?? []).find((x) => x.upstreamId === id);
+    return u ? (u.deletedAt ? `${u.name}（已删除）` : u.name) : id;
+  };
 
   const columns: ProColumns<Recon>[] = [
     { title: '日期', width: 110, render: (_, r) => formatDate(r.date) },
@@ -246,7 +248,7 @@ export function BillingPage() {
 
       {billOpen && (
         <BillDrawer
-          upstreams={(upstreams.data?.items ?? []).map((u) => ({
+          upstreams={(upstreams.data?.items ?? []).filter((u) => !u.deletedAt).map((u) => ({
             value: u.upstreamId,
             label: u.name,
           }))}

@@ -78,8 +78,10 @@ export function RecordsTab({
     };
   }, [filter, cursor]);
 
-  const upstreamName = (id: string) =>
-    upstreams.find((u) => u.upstreamId === id)?.name ?? '未知账号';
+  const upstreamName = (id: string) => {
+    const u = upstreams.find((x) => x.upstreamId === id);
+    return u ? (u.deletedAt ? `${u.name}（已删除）` : u.name) : '未知账号';
+  };
   const modelName = (key: string) => models.find((m) => m.modelKey === key)?.displayName ?? key;
 
   async function exportCsv() {
@@ -253,7 +255,7 @@ export function RecordsTab({
           style={{ width: 150 }}
           value={upstreamId}
           onChange={setUpstreamId}
-          options={[{ value: '', label: '全部上游账号' }, ...upstreams.map((u) => ({ value: u.upstreamId, label: u.name }))]}
+          options={[{ value: '', label: '全部上游账号' }, ...upstreams.map((u) => ({ value: u.upstreamId, label: upstreamName(u.upstreamId) }))]}
         />
         <Select
           style={{ width: 130 }}

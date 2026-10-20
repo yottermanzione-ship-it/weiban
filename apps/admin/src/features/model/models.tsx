@@ -460,6 +460,7 @@ interface ModelFormValues {
   vendorName: string;
   tags?: string;
   sortOrder?: number;
+  leaderboardRank?: number | null;
   capabilities: string[];
   defaultFor: string[];
   routes: RouteDraft[];
@@ -665,7 +666,7 @@ function ModelWizard({
             .map((t) => t.trim())
             .filter(Boolean)
             .slice(0, 10),
-          leaderboardRank: model?.leaderboardRank ?? null,
+          leaderboardRank: values.leaderboardRank ?? null,
           sortOrder: values.sortOrder ?? model?.sortOrder ?? 0,
           defaultFor: values.defaultFor as AdminModel['defaultFor'],
           enabled: model ? model.enabled : true,
@@ -743,6 +744,7 @@ function ModelWizard({
           vendorName: model?.vendorName ?? '',
           tags: model?.tags.join('，') ?? '',
           sortOrder: model?.sortOrder ?? 0,
+          leaderboardRank: model?.leaderboardRank ?? null,
           capabilities: model?.capabilities ?? [],
           defaultFor: model?.defaultFor ?? [],
           routes: initialRoutes,
@@ -961,6 +963,17 @@ function ModelWizard({
             <InputNumber precision={0} style={{ width: '100%' }} />
           </Form.Item>
         </div>
+        <Form.Item
+          name="leaderboardRank"
+          label="榜单名次"
+          extra={
+            <FieldHelp>
+              用户端「模型排行榜」里显示的名次（对照页面顶部的榜单来源填写）；留空 = 不上榜。
+            </FieldHelp>
+          }
+        >
+          <InputNumber min={1} max={9999} precision={0} style={{ width: 200 }} placeholder="不上榜" />
+        </Form.Item>
 
         <FormSection title="③ 价格" desc="每百万 token 的人民币价格，1 元 = 100 积分" />
         <div className="form-three">

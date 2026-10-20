@@ -110,7 +110,7 @@ async function loadDashboard(): Promise<DashboardData> {
     trend,
     purposesToday,
     purposesYesterday,
-    upstreams: upstreams?.items ?? [],
+    upstreams: (upstreams?.items ?? []).filter((u) => !u.deletedAt),
   };
 }
 

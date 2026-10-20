@@ -651,6 +651,18 @@ body {
   grid-template-columns: 1fr 1fr 1fr;
   gap: 0 12px;
 }
+/* 模型管理顶部：榜单来源一行三栏 */
+.leaderboard-source-form {
+  display: grid;
+  grid-template-columns: 1fr 180px 2fr;
+  gap: 0 12px;
+}
+.leaderboard-source-form .ant-form-item {
+  margin-bottom: 0;
+}
+.model-page-head {
+  margin-bottom: 16px;
+}
 .field-note {
   margin: -4px 0 12px;
   padding: 8px 10px;
@@ -875,6 +887,9 @@ body {
   margin: 12px 0;
 }
 @media (max-width: 720px) {
+  .leaderboard-source-form {
+    grid-template-columns: 1fr;
+  }
   .route-fields {
     grid-template-columns: 1fr;
   }
