@@ -408,6 +408,55 @@ export type AdminCharacterWrite = z.infer<typeof AdminCharacterWrite>;
 export const AdminCharacterUpdate = z.object(adminCharacterFields).partial();
 export type AdminCharacterUpdate = z.infer<typeof AdminCharacterUpdate>;
 
+/**
+ * 3.25（试用反馈第三轮 G1-2）：后台人工标注角色资格。可直接改「真人 / 未成年设定 / 儿童外貌 / 检出儿童特征」，
+ * 两个方向都能改（纠正 AI 误判）；预设角色与用户自建角色都适用。人工标注优先于自动结果（含 AI 检出、
+ * 用户套用的预设改版检出），清除人工标注后恢复自动结果。每次修改留审计（谁、何时、原因必填）。
+ */
+export const CharacterEligibilityFacts = z
+  .object({
+    ...classificationFields,
+    childFeaturesDetected: z.boolean(),
+  })
+  .superRefine(checkClassificationCombination);
+export type CharacterEligibilityFacts = z.infer<typeof CharacterEligibilityFacts>;
+
+export const CharacterEligibilityChange = z.object({
+  at: Timestamp,
+  operatorUserId: Id.nullable(),
+  /** 操作人账号名（查不到时为空字符串）。 */
+  operatorName: z.string(),
+  reason: z.string(),
+  /** 修改前的人工标注（null = 当时没有人工标注，按自动结果）。 */
+  before: CharacterEligibilityFacts.nullable(),
+  /** 修改后的人工标注（null = 清除人工标注，恢复自动结果）。 */
+  after: CharacterEligibilityFacts.nullable(),
+});
+export type CharacterEligibilityChange = z.infer<typeof CharacterEligibilityChange>;
+
+export const AdminCharacterEligibility = z.object({
+  characterId: Id,
+  name: z.string(),
+  kind: CharacterKind,
+  /** 自动结果（资料里的分类 + 系统 / AI 检出），不含人工标注。 */
+  auto: CharacterEligibilityFacts,
+  /** 当前人工标注；null = 没有人工标注。 */
+  override: CharacterEligibilityFacts.nullable(),
+  /** 实际生效的分类与推导结果（有人工标注时按人工标注）。 */
+  effective: CharacterClassification,
+  /** 修改记录（新的在前，最多 50 条）。 */
+  history: z.array(CharacterEligibilityChange),
+});
+export type AdminCharacterEligibility = z.infer<typeof AdminCharacterEligibility>;
+
+export const UpdateCharacterEligibilityRequest = z.object({
+  /** 新的人工标注；null = 清除人工标注，恢复自动结果。 */
+  override: CharacterEligibilityFacts.nullable(),
+  /** 修改原因（必填）。 */
+  reason: z.string().trim().min(2).max(200),
+});
+export type UpdateCharacterEligibilityRequest = z.infer<typeof UpdateCharacterEligibilityRequest>;
+
 export const CharacterAdminEndpoints = {
   list: defineEndpoint({
     method: 'GET',
@@ -449,5 +498,23 @@ export const CharacterAdminEndpoints = {
     params: z.object({ characterId: Id }),
     response: AdminCharacter,
     summary: '下架：不再出现在广场，已添加的用户不受影响（ADM-01 第 5 条）',
+  }),
+  getEligibility: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/characters/:characterId/eligibility`,
+    auth: 'admin',
+    params: z.object({ characterId: Id }),
+    response: AdminCharacterEligibility,
+    summary: '3.25：角色资格（自动结果、人工标注、生效结果与修改记录）；预设与用户自建角色都可查',
+  }),
+  setEligibility: defineEndpoint({
+    method: 'PUT',
+    path: `${API_PREFIX}/admin/characters/:characterId/eligibility`,
+    auth: 'admin',
+    params: z.object({ characterId: Id }),
+    body: UpdateCharacterEligibilityRequest,
+    response: AdminCharacterEligibility,
+    summary:
+      '3.25：人工标注 / 清除角色资格（原因必填，写审计）；生效结果变化时发 characters.character_classification_changed',
   }),
 } as const;

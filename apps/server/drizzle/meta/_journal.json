@@ -767,6 +767,27 @@
       "when": 1799336400000,
       "tag": "0120_arena_model_name",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1799336500000,
+      "tag": "0121_character_eligibility_override",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1799336600000,
+      "tag": "0122_familiarity_stages",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1799336700000,
+      "tag": "0123_drop_adult_check",
+      "breakpoints": true
     }
   ]
 }

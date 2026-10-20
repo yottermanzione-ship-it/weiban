@@ -15,6 +15,8 @@
  * 3.24（2026-10-21，试用反馈第二轮 F2）：上游协议新增 anthropic（Claude 原生 Messages）；倍率增「缓存写入 5 分钟 / 1 小时」；
  * 去掉「图片识别」场景（图片随文本聊天 / 私密模式模型）；计费上限的资料链接与核对日期改为可选；模型「暂时无法使用」带具体原因；
  * 榜单自动获取（榜单对应名称、抓取状态、立即刷新、粘贴导入），用户端名次按相对顺序重新编号。
+ * 3.25（2026-10-21，试用反馈第三轮 G1）：私密模式不再调用「成人内容检查」模型、也不再限定走 OpenRouter
+ * （平台内部模型 adult_check 不再使用）；模型「暂时无法使用」的具体原因只给后台看，用户端接口不再带。
  */
 import { z } from 'zod';
 import {
@@ -94,7 +96,8 @@ export type ModelScenario = z.infer<typeof ModelScenario>;
 /**
  * 3.22：平台内部模型（用户不可选，后台指定）。safety 安全检查与关怀跟进；small_v 小V 答疑；
  * platform_content 平台承担的内容生成（官方角色公共朋友圈、搜索候选）；planner 行为规划；
- * adult_check 成人内容检查（须 OpenRouter）；web_search 联网搜索。
+ * adult_check 成人内容检查——**3.25 起不再使用**（私密模式不再调用检查模型，服务器忽略写入、不再返回，取值保留只为兼容）；
+ * web_search 联网搜索。
  * 「角色生态决策」模型仍存在生态配置里（后台模型页同一栏可改），不在这里。
  */
 export const PlatformInternalUse = z.enum([
@@ -127,7 +130,8 @@ export const ModelDiscountInfo = z.object({
 });
 
 /**
- * 3.24：模型「暂时无法使用」的具体原因（后台与用户端都按它写清楚，不只写「暂时无法使用」）。
+ * 3.24：模型「暂时无法使用」的具体原因。**3.25 起只在后台接口返回**（AdminModel.availability）；用户端接口
+ * （ModelInfo.unavailableDetail、ModelRefState.unavailableDetail、ModelStatus.detail）不再带，用户端统一显示中性文案。
  * - model_removed 已下架 / 删除；no_route 没有可用线路；upstream_disabled 线路的上游账号都被停用；
  * - upstream_invalid_key 上游密钥无效；upstream_quota_exhausted 上游余额不足；
  * - upstream_unavailable 上游连接异常，被健康检查暂停（探测连通后自动恢复）；upstream_cooldown 连续失败后短暂暂停；
@@ -168,7 +172,7 @@ export const ModelInfo = z.object({
   leaderboardRank: z.number().int().positive().nullable(),
   /** 当前是否可用（上游故障时为 false，下架的模型不出现在列表中）。 */
   available: z.boolean(),
-  /** 3.24：不可用的具体原因（available = true 时为 null / 不带）。 */
+  /** 3.24：不可用的具体原因。3.25 起用户端接口不再带（只后台可见）。 */
   unavailableDetail: tolerantEnum(ModelUnavailableDetailValue).nullable().optional(),
   /**
    * v3.3：约每条回复消耗多少积分（按 cost-estimate.md 7.2「标准回复」用量和当前售价估算，1 元 = 100 积分）。
@@ -221,7 +225,7 @@ export const ModelRefState = ModelRef.extend({
   /** 该选择当前是否可用。 */
   available: z.boolean(),
   unavailableReason: z.enum(['model_removed', 'provider_unavailable']).nullable(),
-  /** 3.24：不可用的具体原因（可用时为 null / 不带）。 */
+  /** 3.24：不可用的具体原因。3.25 起用户端接口不再带（只后台可见）。 */
   unavailableDetail: ModelUnavailableDetail.nullable().optional(),
 });
 
@@ -274,7 +278,7 @@ export const ModelStatus = z.object({
     .nullable(),
   /** 角色单独设置的模型不可用、全局模型正常时为 true，界面显示「临时改用默认模型」按钮。 */
   canFallbackToDefault: z.boolean(),
-  /** 3.24：reason 为 provider_unavailable / model_removed 时的具体原因（横条按它写清楚）。 */
+  /** 3.24：具体原因。3.25 起不再带（只后台可见），横条统一显示中性文案。 */
   detail: ModelUnavailableDetail.nullable().optional(),
   /**
    * 3.1（积压 ㉚）：识图能否使用（截图导入、发图给角色看）= 解析出的聊天模型有 vision 能力。

@@ -3,13 +3,32 @@
  * 需求：GRW-03、GRW-04；参数见 P-25。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, LocalDate, Timestamp, defineEndpoint } from '../common.js';
+import { API_PREFIX, Id, LocalDate, Timestamp, defineEndpoint, tolerantEnum } from '../common.js';
 
 // ---------- 熟悉度 ----------
 
-/** 熟悉度等级：1 初识 / 2 眼熟 / 3 熟络 / 4 老友 / 5 知己（GRW-03）。 */
-export const FamiliarityLevel = z.number().int().min(1).max(5);
+/**
+ * 好感度阶段（3.25 起六阶段，沿用旧版微伴说法，docs/refactor/11 C13「10-21 好感度改回旧版说法」）：
+ * 1 粉丝 / 2 朋友 / 3 亲密好友 / 4 暧昧 / 5 恋人 / 6 伴侣。3.24 及以前是五级（初识…知己），字段名沿用 level。
+ */
+export const FamiliarityLevel = z.number().int().min(1).max(6);
 export type FamiliarityLevel = z.infer<typeof FamiliarityLevel>;
+
+/** 3.25：六个阶段的名称（下标 = level - 1）。服务端与各客户端都从这里取，不各写一份。 */
+export const FAMILIARITY_STAGE_NAMES = ['粉丝', '朋友', '亲密好友', '暧昧', '恋人', '伴侣'] as const;
+
+/**
+ * 3.25：从未充值、也不是 PRO+ 会员的账号，好感度最高停在第几阶段（3 = 亲密好友）；充值或开通会员后解除。
+ * 未成年设定的角色同样最高停在这一阶段（不进入暧昧及以上）。
+ */
+export const FAMILIARITY_FREE_CEILING_LEVEL = 3;
+
+/**
+ * 3.25：阶段被卡住的原因。membership = 从未充值且非会员（充值 / 开会员后解除）；minor = 未成年设定角色（不解除）。
+ * 接收端容错解析。
+ */
+export const FamiliarityCapReasonValue = z.enum(['membership', 'minor']);
+export const FamiliarityCapReason = tolerantEnum(FamiliarityCapReasonValue);
 
 /**
  * 熟悉度加分事件类型（GRW-03 第 2 条）。
@@ -26,15 +45,21 @@ export type FamiliarityEventType = z.infer<typeof FamiliarityEventType>;
 
 export const FamiliarityInfo = z.object({
   characterId: Id,
-  /** 当前等级（1–5）。 */
+  /** 当前阶段（3.25 起 1–6，名称见 FAMILIARITY_STAGE_NAMES）。被卡住时为卡住后的阶段。 */
   level: FamiliarityLevel,
-  /** 当前等级已积累点数。 */
+  /** 当前阶段已积累点数。 */
   pointsInLevel: z.number().int().nonnegative(),
-  /** 升到下一级所需点数；L5 时为 null。 */
+  /** 升到下一阶段所需点数；最高阶段时为 null（被卡住时仍给出，界面按 capReason 提示）。 */
   pointsToNextLevel: z.number().int().positive().nullable(),
-  /** 累计总点数。 */
+  /** 累计总点数（被卡住时点数照常累计，解除后按点数直接升到对应阶段）。 */
   totalPoints: z.number().int().nonnegative(),
   updatedAt: Timestamp,
+  /** 3.25：当前阶段名称（= FAMILIARITY_STAGE_NAMES[level - 1]）。 */
+  stageName: z.string().optional(),
+  /** 3.25：阶段被卡住的原因；没被卡住为 null / 不带。 */
+  capReason: FamiliarityCapReason.nullable().optional(),
+  /** 3.25：用户明确要求暂停恋爱 / 暧昧表达（例「别叫我宝贝」「先当朋友」），说「可以继续」等恢复。 */
+  romancePaused: z.boolean().optional(),
 });
 export type FamiliarityInfo = z.infer<typeof FamiliarityInfo>;
 
@@ -179,5 +204,54 @@ export const GrowthEndpoints = {
     params: z.object({ characterId: Id, anniversaryId: Id }),
     response: z.null(),
     summary: '删除自定义纪念日（系统预置纪念日不可删除，返回 bad_request）。GRW-04',
+  }),
+} as const;
+
+// ---------- 3.25：后台调整阶段阈值 ----------
+
+/**
+ * 3.25：好感度六阶段的累计点数阈值（下标 = level - 1）：第一项固定 0，严格递增。默认 [0, 100, 400, 500, 600, 700]
+ * ——点数规则（16 号 §11：每条有效消息 +4、每日上限等）不变，只把原来的满级 700 映射到六阶段，
+ * 约 100 条有效消息到「亲密好友」。后台改阈值后，已达到的阶段不回落（只升不降）。
+ */
+export const FamiliarityStageThresholds = z
+  .array(z.number().int().nonnegative().max(1_000_000))
+  .length(6)
+  .refine((v) => v[0] === 0, { message: '第一阶段的阈值必须是 0' })
+  .refine((v) => v.every((n, i) => i === 0 || n > v[i - 1]!), { message: '阈值必须逐级递增' });
+
+export const FamiliarityStageSettings = z.object({
+  thresholds: FamiliarityStageThresholds,
+  /** 阶段名称（只读，= FAMILIARITY_STAGE_NAMES）。 */
+  stageNames: z.array(z.string()).length(6),
+  /** 未充值且非会员、以及未成年设定角色的最高阶段（只读，= FAMILIARITY_FREE_CEILING_LEVEL）。 */
+  freeCeilingLevel: FamiliarityLevel,
+  /** 最近一次修改时间；从未改过（用默认值）为 null。 */
+  updatedAt: Timestamp.nullable(),
+});
+export type FamiliarityStageSettings = z.infer<typeof FamiliarityStageSettings>;
+
+export const UpdateFamiliarityStageSettingsRequest = z.object({
+  thresholds: FamiliarityStageThresholds,
+});
+export type UpdateFamiliarityStageSettingsRequest = z.infer<
+  typeof UpdateFamiliarityStageSettingsRequest
+>;
+
+export const GrowthAdminEndpoints = {
+  getFamiliarityStages: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/growth/familiarity-stages`,
+    auth: 'admin',
+    response: FamiliarityStageSettings,
+    summary: '3.25：好感度六阶段阈值（后台可调）',
+  }),
+  updateFamiliarityStages: defineEndpoint({
+    method: 'PUT',
+    path: `${API_PREFIX}/admin/growth/familiarity-stages`,
+    auth: 'admin',
+    body: UpdateFamiliarityStageSettingsRequest,
+    response: FamiliarityStageSettings,
+    summary: '3.25：修改好感度阶段阈值（写审计）；已达到的阶段不回落',
   }),
 } as const;

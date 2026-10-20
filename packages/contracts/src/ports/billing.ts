@@ -174,6 +174,14 @@ export interface BillingReservationPort {
   release(input: ReleaseInput): Promise<ReleaseOutput>;
 }
 
+/**
+ * 3.25（G1-7 好感度权益卡死）：这位用户是否付过费——充值过积分（管理员代充值，不含注册赠送与开通会员赠送）或开通过 PRO+。
+ * 提供方 billing；调用方 growth（从未付费且当前不是 PRO+ 的账号，好感度最高停在「亲密好友」）。单独成接口，不影响已有实现。
+ */
+export interface BillingPaidHistoryPort {
+  hasPaidBefore(userId: string, tx?: Tx): Promise<boolean>;
+}
+
 /** 只读计费端口：任何模块都可以用（例如 ai-runtime 判断要不要安排后台任务）。 */
 export interface BillingReadPort {
   getSpendStatus(userId: string): Promise<SpendStatus>;

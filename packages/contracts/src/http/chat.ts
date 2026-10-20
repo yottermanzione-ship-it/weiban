@@ -384,7 +384,7 @@ export const ChargedMessage = z.object({
 });
 export type ChargedMessage = z.infer<typeof ChargedMessage>;
 
-/** 会话列表中的最后一条消息摘要。成人范围消息是否显示为「[消息]」以 PRD v1.2 为准。 */
+/** 会话列表中的最后一条消息摘要。3.25 起私密模式（成人范围）消息一律为「[私密消息]」（撤回的仍显示撤回提示），客户端同样处理。 */
 export const MessagePreview = z.object({
   messageId: Id,
   seq: Seq,

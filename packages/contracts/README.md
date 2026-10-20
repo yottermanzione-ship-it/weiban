@@ -95,6 +95,17 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.25（2026-10-21，试用反馈第三轮 G1：私密模式去掉检查模型、人工标注角色资格、好感度六阶段）
+
+依据 `docs/tasks/2026-10-21-gm-feedback-3.md` 批 G1。说明见 `docs/handoffs/2026-10-21-g1.md`。
+
+- 好感度：`FamiliarityLevel` 上限 5 → 6（六阶段 粉丝 / 朋友 / 亲密好友 / 暧昧 / 恋人 / 伴侣，新常量 `FAMILIARITY_STAGE_NAMES`、`FAMILIARITY_FREE_CEILING_LEVEL`）；`FamiliarityInfo` 增可选 `stageName`、`capReason`（`membership` 从未充值且非会员 / `minor` 未成年设定角色，接收端容错）、`romancePaused`。字段名 `level` 不变、含义改为阶段；安卓按新上限重新生成。
+- 后台：新 `FamiliarityStageSettings`、`UpdateFamiliarityStageSettingsRequest` 与 `GrowthAdminEndpoints`（GET / PUT `/admin/growth/familiarity-stages`，阶段阈值可调）。
+- 角色资格人工标注：新 `CharacterEligibilityFacts`、`CharacterEligibilityChange`、`AdminCharacterEligibility`、`UpdateCharacterEligibilityRequest`；`CharacterAdminEndpoints` 增 GET / PUT `/admin/characters/:characterId/eligibility`（预设与用户自建角色都可用，原因必填，写审计）。
+- 端口：新 `BillingPaidHistoryPort.hasPaidBefore`（growth 判断好感度权益卡死）。
+- 模型：平台内部模型 `adult_check` 不再使用（私密模式不再调用成人内容检查模型，也不再限定 OpenRouter）；`ModelInfo.unavailableDetail`、`ModelRefState.unavailableDetail`、`ModelStatus.detail` 用户端接口不再带（具体原因只在后台 `AdminModel.availability`）。字段保留，均为可选。
+- 会话列表：`MessagePreview.text` 对私密模式消息改为「[私密消息]」。
+
 ### 3.24（2026-10-21，试用反馈第二轮 F2：Anthropic 原生协议、缓存写入计价、去掉图片识别场景、无法使用的具体原因、榜单自动获取）
 
 依据 `docs/tasks/2026-10-21-gm-feedback-2.md` 批 F2（含「10-21 第二次补充」第 6、7 条）。说明见 `docs/handoffs/2026-10-21-fb-models2.md`。
