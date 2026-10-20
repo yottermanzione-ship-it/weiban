@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.22. Regenerate: pnpm android:generate
+// Contract 3.23. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.22"
+const val CONTRACT_VERSION: String = "3.23"
 
 @Serializable
 data class AccountAlias(
@@ -210,6 +210,7 @@ data class AdminCatalogEntry(
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("deletedAt") val `deletedAt`: Timestamp? = null,
 )
 
 @Serializable
@@ -393,6 +394,7 @@ data class AdminModel(
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("deletedAt") val `deletedAt`: Timestamp? = null,
     @SerialName("rates") val `rates`: ModelRates?,
     @SerialName("costRates") val `costRates`: ModelRates?,
     @SerialName("hasTimeBands") val `hasTimeBands`: Boolean,
@@ -3019,6 +3021,16 @@ data class DaysKnownInfo(
     @SerialName("nextAnniversary") val `nextAnniversary`: Anniversary?,
     @SerialName("anniversaries") val `anniversaries`: List<Anniversary>,
     @SerialName("isRomantic") val `isRomantic`: Boolean,
+)
+
+@Serializable
+data class DeleteModelsRequest(
+    @SerialName("modelKeys") val `modelKeys`: List<ModelKey>,
+)
+
+@Serializable
+data class DeleteModelsRequestInput(
+    @SerialName("modelKeys") val `modelKeys`: List<ModelKey>,
 )
 
 @Serializable
@@ -6681,6 +6693,22 @@ data class ModelAccessEndpointsUpdateCharacterScenariosParams(
 )
 
 typealias ModelCapability = String
+
+@Serializable
+data class ModelDeletionImpact(
+    @SerialName("models") val `models`: List<ModelDeletionImpactModelsItem>,
+    @SerialName("users") val `users`: Long,
+    @SerialName("scenarioSelections") val `scenarioSelections`: Long,
+    @SerialName("characters") val `characters`: Long,
+    @SerialName("characterOverrides") val `characterOverrides`: Long,
+    @SerialName("recommended") val `recommended`: List<ModelScenario>,
+    @SerialName("internal") val `internal`: List<PlatformInternalUse>,
+    @SerialName("routes") val `routes`: Long,
+    @SerialName("discounts") val `discounts`: Long,
+    @SerialName("pricedModels") val `pricedModels`: Long,
+    @SerialName("displayMultiplierBase") val `displayMultiplierBase`: Boolean,
+    @SerialName("priceVersionId") val `priceVersionId`: Id? = null,
+)
 
 @Serializable
 data class ModelDiscount(
@@ -12908,6 +12936,13 @@ data class MessagePageCoverageExcludedRangesItem(
     @SerialName("fromSeq") val `fromSeq`: Seq,
     @SerialName("throughSeq") val `throughSeq`: Seq,
     @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class ModelDeletionImpactModelsItem(
+    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("enabled") val `enabled`: Boolean,
 )
 
 @Serializable
