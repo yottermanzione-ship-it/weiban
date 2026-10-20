@@ -47,7 +47,8 @@ function cleanName(raw: string): string | null {
     .trim();
   if (!name || name.length > 120) return null;
   if (!/[a-z]/i.test(name)) return null; // 纯数字、符号不是模型名
-  if (/^(rank|model|score|votes?|organization|license|名次|排名|模型|分数)\b/i.test(name)) return null;
+  if (/^(rank|model|score|votes?|organization|license|名次|排名|模型|分数)\b/i.test(name))
+    return null;
   return name;
 }
 
@@ -115,7 +116,10 @@ function fromEmbeddedJson(html: string, map: Map<string, LeaderboardEntry>): voi
 function fromHtmlTable(html: string, map: Map<string, LeaderboardEntry>): void {
   for (const row of html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
     const cells = [...row[1]!.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((c) =>
-      c[1]!.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
+      c[1]!
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim(),
     );
     fromCells(cells, map);
   }
@@ -173,7 +177,10 @@ function fromCsv(lines: string[], map: Map<string, LeaderboardEntry>): boolean {
 /** 纯文本（网页复制）：制表符 / 多个空格分隔的行；或「名次一行、模型名下一行」。 */
 function fromPlainText(lines: string[], map: Map<string, LeaderboardEntry>): void {
   for (const line of lines) {
-    const cells = line.split(/\t| {2,}|\|/).map((c) => c.trim()).filter(Boolean);
+    const cells = line
+      .split(/\t| {2,}|\|/)
+      .map((c) => c.trim())
+      .filter(Boolean);
     if (cells.length >= 2) fromCells(cells, map);
   }
   if (map.size) return;
@@ -194,7 +201,7 @@ function fromPlainText(lines: string[], map: Map<string, LeaderboardEntry>): voi
 /** 解析榜单（网页 HTML、粘贴文本或 CSV）。解析不出返回空数组。 */
 export function parseLeaderboard(input: string): LeaderboardEntry[] {
   const map = new Map<string, LeaderboardEntry>();
-  const text = input.replace(/^﻿/, '');
+  const text = input.replace(/^\uFEFF/, '');
   if (/<html|<table|<script/i.test(text)) {
     fromEmbeddedJson(text, map);
     if (!map.size) fromHtmlTable(text, map);
@@ -208,7 +215,10 @@ export function parseLeaderboard(input: string): LeaderboardEntry[] {
       }
     }
     if (!map.size) {
-      const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const lines = text
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
       if (!(lines[0]?.includes(',') && fromCsv(lines, map))) fromPlainText(lines, map);
     }
   }
@@ -222,7 +232,9 @@ export function looksLikeBotChallenge(status: number, body: string): boolean {
   return (
     status === 403 ||
     status === 503 ||
-    /Just a moment\.\.\.|challenges\.cloudflare\.com|cf-chl|Attention Required/i.test(body.slice(0, 20_000))
+    /Just a moment\.\.\.|challenges\.cloudflare\.com|cf-chl|Attention Required/i.test(
+      body.slice(0, 20_000),
+    )
   );
 }
 

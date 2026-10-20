@@ -21,7 +21,11 @@ import { unavailableShort, unavailableText } from './model-unavailable.js';
 /** 3.24：模型名后的「暂不可用」小标签（短原因；悬停 / 读屏给完整原因）。 */
 function UnavailableTag({ detail }: { detail: string | null | undefined }) {
   return (
-    <span className="tag-unavailable" title={unavailableText(detail)} aria-label={unavailableText(detail)}>
+    <span
+      className="tag-unavailable"
+      title={unavailableText(detail)}
+      aria-label={unavailableText(detail)}
+    >
       {unavailableShort(detail)}
     </span>
   );
@@ -32,7 +36,11 @@ function UnavailableTag({ detail }: { detail: string | null | undefined }) {
  * 3.24 去掉「图片识别」：你发的图片直接交给文本聊天（私密模式下交给私密模式）的模型看。
  */
 export const SCENARIOS: Array<{ key: ModelScenario; label: string; hint: string }> = [
-  { key: 'chat', label: '文本聊天', hint: '私聊、群聊回复（含看你发的图片），以及记忆整理等后台文字任务' },
+  {
+    key: 'chat',
+    label: '文本聊天',
+    hint: '私聊、群聊回复（含看你发的图片），以及记忆整理等后台文字任务',
+  },
   { key: 'voice_message', label: '语音消息', hint: '角色发语音时的声音合成' },
   { key: 'speech_recognition', label: '语音识别', hint: '把你的语音转成文字（含通话）' },
   { key: 'voice_call', label: '语音通话', hint: '通话时角色说话用的模型' },
@@ -489,7 +497,8 @@ export function CharacterScenarioPickerPage() {
       </MenuGroup>
       {row?.selection && !row.selection.available && (
         <p className="error page-note">
-          TA 用的模型暂不可用（{unavailableText(row.selection.unavailableDetail)}），回复时会提示你临时改用场景设置
+          TA 用的模型暂不可用（{unavailableText(row.selection.unavailableDetail)}
+          ），回复时会提示你临时改用场景设置
         </p>
       )}
       {(models.error || config.error) && <p role="alert">{models.error || config.error}</p>}

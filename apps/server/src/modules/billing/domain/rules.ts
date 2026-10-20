@@ -297,7 +297,13 @@ export function priceUsageCeiling(
     };
   return priceUsage(
     upper,
-    { ...usage, inputTokens: input, cachedInputTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0 },
+    {
+      ...usage,
+      inputTokens: input,
+      cachedInputTokens: 0,
+      cacheWrite5mTokens: 0,
+      cacheWrite1hTokens: 0,
+    },
     new Date(0),
     true,
   );

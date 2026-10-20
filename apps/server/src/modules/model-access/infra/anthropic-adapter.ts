@@ -98,7 +98,8 @@ export function toAnthropicRequest(messages: AdapterMessage[]): {
   const system: Block[] = [];
   while (start < messages.length && messages[start]!.role === 'system') {
     const m = messages[start]!;
-    if (m.content) system.push(...withBreakpoint([{ type: 'text', text: m.content }], m.cacheBreakpoint));
+    if (m.content)
+      system.push(...withBreakpoint([{ type: 'text', text: m.content }], m.cacheBreakpoint));
     start++;
   }
   const out: WireMessage[] = [];
@@ -141,7 +142,11 @@ function mergeUsage(target: Record<string, unknown>, raw: unknown) {
   }
 }
 
-export function anthropicUsage(raw: Record<string, unknown>, input: string, output: string): TextUsage {
+export function anthropicUsage(
+  raw: Record<string, unknown>,
+  input: string,
+  output: string,
+): TextUsage {
   const read = num(raw.cache_read_input_tokens) ?? 0;
   const creation = num(raw.cache_creation_input_tokens);
   const detail = (raw.cache_creation ?? {}) as Record<string, unknown>;
@@ -188,13 +193,24 @@ export function classifyAnthropicError(
   if (
     status === 402 ||
     type === 'billing_error' ||
-    ['insufficient_quota', 'insufficient_user_quota', 'insufficient_balance', 'quota_exhausted'].includes(code) ||
+    [
+      'insufficient_quota',
+      'insufficient_user_quota',
+      'insufficient_balance',
+      'quota_exhausted',
+    ].includes(code) ||
     /credit balance|insufficient (?:balance|quota|credit)|余额不足|额度不足/i.test(message)
   )
     return { category: 'quota_exhausted', retryable: false };
-  if (status === 401 || status === 403 || type === 'authentication_error' || type === 'permission_error')
+  if (
+    status === 401 ||
+    status === 403 ||
+    type === 'authentication_error' ||
+    type === 'permission_error'
+  )
     return { category: 'invalid_key', retryable: false };
-  if (status === 429 || type === 'rate_limit_error') return { category: 'rate_limited', retryable: true };
+  if (status === 429 || type === 'rate_limit_error')
+    return { category: 'rate_limited', retryable: true };
   if (status >= 500 || type === 'overloaded_error' || type === 'api_error')
     return { category: 'provider_error', retryable: true };
   return { category: 'bad_request', retryable: false };

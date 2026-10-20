@@ -394,8 +394,7 @@ function toTotals(r: TotalsRow | undefined): AdminUsageTotals {
   const n = (v: string | number | null | undefined) => Number(v ?? 0);
   const calls = n(r?.calls);
   // usage_records.input_tokens 是未命中缓存的输入（与价目表单位一致），命中率 = 命中 ÷（未命中 + 命中 + 缓存写入）
-  const inputAll =
-    n(r?.input_tokens) + n(r?.cached_input_tokens) + n(r?.cache_write_tokens);
+  const inputAll = n(r?.input_tokens) + n(r?.cached_input_tokens) + n(r?.cache_write_tokens);
   return {
     // v3.4 用量监控
     unknownCostCalls: n(r?.unknown_cost_calls),

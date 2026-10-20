@@ -20,7 +20,8 @@ export function refState(f: ModelFacts): ModelRefStateOut {
     return { modelKey: f.modelKey, available: reason === null, unavailableReason: reason };
   const detail = f.detail ?? (reason === 'model_removed' ? 'model_removed' : null);
   const merged =
-    reason ?? (detail ? (detail === 'model_removed' ? 'model_removed' : 'provider_unavailable') : null);
+    reason ??
+    (detail ? (detail === 'model_removed' ? 'model_removed' : 'provider_unavailable') : null);
   return {
     modelKey: f.modelKey,
     available: merged === null,

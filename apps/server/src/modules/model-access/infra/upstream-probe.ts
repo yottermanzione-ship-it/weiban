@@ -18,7 +18,11 @@ export const UPSTREAM_TEST_TIMEOUT_MS = 10_000;
 export class OpenAiCompatibleProbe implements UpstreamProbe {
   constructor(private readonly timeoutMs = UPSTREAM_TEST_TIMEOUT_MS) {}
 
-  async test(input: { kind?: string; baseUrl: string; apiKey: string }): Promise<UpstreamProbeResult> {
+  async test(input: {
+    kind?: string;
+    baseUrl: string;
+    apiKey: string;
+  }): Promise<UpstreamProbeResult> {
     if (input.kind === 'anthropic') return anthropicProbe(input, this.timeoutMs);
     let response: Response;
     try {
@@ -61,10 +65,12 @@ async function anthropicProbe(
     return { ok: false, reason: 'network_error' };
   }
   await response.body?.cancel().catch(() => undefined);
-  if (response.status === 401 || response.status === 403) return { ok: false, reason: 'invalid_key' };
+  if (response.status === 401 || response.status === 403)
+    return { ok: false, reason: 'invalid_key' };
   if (response.status === 402) return { ok: false, reason: 'insufficient_balance' };
   if (response.status >= 500) return { ok: false, reason: 'provider_error' };
-  if (response.status >= 300 && response.status < 400) return { ok: false, reason: 'provider_error' };
+  if (response.status >= 300 && response.status < 400)
+    return { ok: false, reason: 'provider_error' };
   return { ok: true };
 }
 

@@ -530,7 +530,11 @@ export class ModelGateway implements ModelGatewayPort {
               : 'call_failed'
             : 'cancelled',
           // 3.24：只交计价字段（原来把 estimated / reported 一并传入，会被计费的用量校验拒绝）
-          upstreamUsage: !sent ? {} : known && answer.usage ? billableUsage(answer.usage) : undefined,
+          upstreamUsage: !sent
+            ? {}
+            : known && answer.usage
+              ? billableUsage(answer.usage)
+              : undefined,
           usageRecordId: usage.record.id,
           startedAt: startedAt.toISOString(),
           upstreamId: route.upstreamId,
@@ -770,7 +774,9 @@ export class ModelGateway implements ModelGatewayPort {
  * 3.24：缓存断点位置（消息下标）。① 开头的系统消息；② 稳定开头（meta.stablePrefixChars，按整条消息累计字数）
  * 的最后一条，且不是 ① 那一条。没有稳定开头标记的调用只打 ①。
  */
-export function cacheBreakpointIndexes(input: Pick<GenerateTextInput, 'messages' | 'meta'>): Set<number> {
+export function cacheBreakpointIndexes(
+  input: Pick<GenerateTextInput, 'messages' | 'meta'>,
+): Set<number> {
   const out = new Set<number>();
   if (input.messages[0]?.role === 'system') out.add(0);
   const stable = input.meta?.stablePrefixChars;

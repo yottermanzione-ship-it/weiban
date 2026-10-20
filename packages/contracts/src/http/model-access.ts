@@ -593,7 +593,10 @@ export const RouteBillingBounds = z
   .object({
     format: z.literal('billing-bounds-v1'),
     pauseReason: z.literal('usage_unknown').optional(),
-    sourceUrl: z.url({ protocol: /^https$/ }).max(2048).optional(),
+    sourceUrl: z
+      .url({ protocol: /^https$/ })
+      .max(2048)
+      .optional(),
     checkedAt: Timestamp.optional(),
     text: z
       .object({

@@ -148,7 +148,10 @@ export class LeaderboardService implements OnModuleInit {
       name ? (byName.get(normalizeArenaName(name)) ?? null) : null;
     // 相对名次与用户端同一口径（自动名次优先，否则手填名次；用户端还会按场景筛选后重新编号）
     const relative = relativeRanks(
-      rows.map((r) => ({ key: r.modelKey, rank: matchedRank(r.arenaModelName) ?? r.leaderboardRank })),
+      rows.map((r) => ({
+        key: r.modelKey,
+        rank: matchedRank(r.arenaModelName) ?? r.leaderboardRank,
+      })),
     );
     const matched: LeaderboardSnapshotStatus['matched'] = [];
     const unmatched: LeaderboardSnapshotStatus['unmatched'] = [];
@@ -174,7 +177,11 @@ export class LeaderboardService implements OnModuleInit {
       source,
       snapshot:
         snapshot?.fetchedAt && snapshot.method
-          ? { fetchedAt: snapshot.fetchedAt, method: snapshot.method, entries: snapshot.entries.length }
+          ? {
+              fetchedAt: snapshot.fetchedAt,
+              method: snapshot.method,
+              entries: snapshot.entries.length,
+            }
           : null,
       lastAttemptAt: snapshot?.lastAttemptAt ?? null,
       lastError: snapshot?.lastError ?? null,
@@ -199,7 +206,12 @@ export class LeaderboardService implements OnModuleInit {
       error = (e instanceof Error ? e.message : '抓取失败').slice(0, 300);
     }
     if (error) this.logger.warn(`榜单抓取失败：${error}`);
-    await this.save(entries.length ? { method: 'fetch', entries, sourceUrl: source.url } : null, error, adminId, 'fetch');
+    await this.save(
+      entries.length ? { method: 'fetch', entries, sourceUrl: source.url } : null,
+      error,
+      adminId,
+      'fetch',
+    );
     return this.status();
   }
 
@@ -213,12 +225,21 @@ export class LeaderboardService implements OnModuleInit {
         { status: 422 },
       );
     const source = await this.catalog.leaderboardSource();
-    await this.save({ method: 'paste', entries, sourceUrl: source?.url ?? null }, null, adminId, 'paste');
+    await this.save(
+      { method: 'paste', entries, sourceUrl: source?.url ?? null },
+      null,
+      adminId,
+      'paste',
+    );
     return this.status();
   }
 
   private async save(
-    next: { method: 'fetch' | 'paste'; entries: LeaderboardEntry[]; sourceUrl: string | null } | null,
+    next: {
+      method: 'fetch' | 'paste';
+      entries: LeaderboardEntry[];
+      sourceUrl: string | null;
+    } | null,
     error: string | null,
     adminId: string | null,
     action: 'fetch' | 'paste',

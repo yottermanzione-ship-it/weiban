@@ -104,7 +104,8 @@ export const UNAVAILABLE_DETAIL_HINTS: Record<string, string> = {
   upstream_disabled: '到「上游账号」启用账号，或给模型换一条线路。',
   upstream_invalid_key: '到「上游账号」更换密钥后点「测试连通」。',
   upstream_quota_exhausted: '去服务商处充值，再到「上游账号」点「测试连通」恢复。',
-  upstream_unavailable: '系统每分钟自动探测，连通后自动恢复；也可以到「上游账号」手动「测试连通」看具体原因。',
+  upstream_unavailable:
+    '系统每分钟自动探测，连通后自动恢复；也可以到「上游账号」手动「测试连通」看具体原因。',
   upstream_cooldown: '暂停到期后自动重试；频繁出现请看「调用记录」里的失败原因。',
   billing_bounds_missing: '打开模型抽屉，给线路填上计费上限。',
   billing_bounds_paused: '打开模型抽屉，核对计费上限后勾选「已重新核对」和「启用这条线路」保存。',

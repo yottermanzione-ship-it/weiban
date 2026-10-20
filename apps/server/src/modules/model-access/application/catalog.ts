@@ -429,9 +429,7 @@ export class CatalogService {
         sortOrder: body.sortOrder,
         defaultFor,
         enabled: body.enabled,
-        scenarios: [
-          ...new Set(scenarios ?? before?.scenarios.filter((s) => s !== 'vision') ?? []),
-        ],
+        scenarios: [...new Set(scenarios ?? before?.scenarios.filter((s) => s !== 'vision') ?? [])],
         // v3.6：不传 = 保持原值（旧后台页面不认识这个字段）
         systemMessageMode: body.systemMessageMode ?? before?.systemMessageMode ?? 'multi',
         billingBounds:
@@ -604,7 +602,7 @@ export class CatalogService {
     const primaries = primaryIds.length
       ? await this.database.db.select().from(upstreams).where(inArray(upstreams.id, primaryIds))
       : [];
-    let priced: Set<string> | null = null;
+    let priced: Set<string> | null;
     try {
       priced = new Set(await this.charges.listActivePricedModelKeys());
     } catch {
@@ -623,7 +621,8 @@ export class CatalogService {
       if (upstream.status === 'invalid') return 'upstream_invalid_key';
       if (upstream.status === 'quota_exhausted') return 'upstream_quota_exhausted';
       if (upstream.status !== 'active') return 'upstream_unavailable';
-      if (upstream.cooldownUntil && upstream.cooldownUntil.getTime() > now) return 'upstream_cooldown';
+      if (upstream.cooldownUntil && upstream.cooldownUntil.getTime() > now)
+        return 'upstream_cooldown';
       if (paused) return 'billing_bounds_paused';
       if (
         !parsed.success ||
@@ -652,10 +651,7 @@ export class CatalogService {
         out.set(key, priced && !priced.has(key) ? 'price_missing' : null);
         continue;
       }
-      out.set(
-        key,
-        DETAIL_PRIORITY.find((d) => results.includes(d)) ?? results[0] ?? 'no_route',
-      );
+      out.set(key, DETAIL_PRIORITY.find((d) => results.includes(d)) ?? results[0] ?? 'no_route');
     }
     return out;
   }
@@ -807,7 +803,8 @@ export class CatalogService {
     const parsed = RouteBillingBounds.safeParse(bounds);
     if (
       !parsed.success ||
-      (parsed.data.checkedAt !== undefined && Date.parse(parsed.data.checkedAt) > this.clock.nowMs())
+      (parsed.data.checkedAt !== undefined &&
+        Date.parse(parsed.data.checkedAt) > this.clock.nowMs())
     )
       throw new AppError(
         'bad_request',
