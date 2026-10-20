@@ -95,6 +95,17 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.22（2026-10-20，试用反馈批 E3：模型配置按场景 + 限时折扣 + 首次引导）
+
+依据 `docs/tasks/2026-10-20-gm-feedback-batches.md` 批 E3。说明见 `docs/handoffs/2026-10-20-fb-models.md`。全部为新增接口 / 可选字段；旧接口保留为兼容层。
+
+- 新 `ModelScenario`（文本聊天 / 图片识别 / 语音消息 / 语音识别 / 语音通话 / 发照片 / 私密模式）与 `PlatformInternalUse`（安全检查、小V、平台内容、行为规划、成人检查、联网搜索）。
+- 用户端：`ModelAccessEndpoints` 新增 GET / PATCH `/model/scenarios`（`ScenarioConfig`，含推荐模型与 `needsSetup` 首次引导标记）、POST `/model/scenarios/recommended`（一键选推荐）、GET / PATCH `/model/character-scenarios/:characterId`（`CharacterScenarioConfig`，角色逐场景单独设置）；`listModels` 增 `scenario` 筛选。
+- `ModelInfo` 增可选 `scenarios`、`discount`（进行中的限时折扣）、`pointsPerUse`（按场景约每次积分，已含折扣）。
+- 管理端：`AdminCatalogEntry` 增可选 `scenarios`；`defaultFor` 不再使用（服务器忽略写入、返回空数组）；`AdminModel` 增 `discount` / `discountActive`，`AdminModelWrite` 增 `discount`；新 `ModelScenarioSettings` 与 GET / PUT `/admin/model/scenario-settings`。
+- 端口：`GenerateTextInput` / `ModelQuotePort.quote` 增可选 `scenario`；`BillingModelRatePort` 增 `getModelDiscounts` / `setModelDiscount`（`ModelDiscountSetting`）；`IdentityAccountStatusPort` 增可选 `isBanned`。
+- 旧接口语义：`/model/selection` 的 `chat` = 文本聊天场景、`adult` = 私密模式场景、`background` 恒为 null（写入忽略）；`/model/character-overrides` = 该角色文本聊天场景的单独设置。
+
 ### 3.21（2026-10-20，试用反馈批 E2：用户与会员管理重排）
 
 依据 `docs/tasks/2026-10-20-gm-feedback-batches.md` 批 E2。说明见 `docs/handoffs/2026-10-20-fb-users.md`。全部为新增接口 / 可选字段。

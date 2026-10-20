@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.21. Regenerate: pnpm android:generate
+// Contract 3.22. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.21"
+const val CONTRACT_VERSION: String = "3.22"
 
 @Serializable
 data class AccountAlias(
@@ -206,6 +206,7 @@ data class AdminCatalogEntry(
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("scenarios") val `scenarios`: List<ModelScenario>? = null,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
@@ -224,6 +225,7 @@ data class AdminCatalogEntryWrite(
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("scenarios") val `scenarios`: List<ModelScenario>? = null,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
 )
@@ -241,6 +243,7 @@ data class AdminCatalogEntryWriteInput(
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("scenarios") val `scenarios`: List<ModelScenario>? = null,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBoundsInput? = null,
 )
@@ -386,6 +389,7 @@ data class AdminModel(
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("scenarios") val `scenarios`: List<ModelScenario>? = null,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
@@ -396,6 +400,8 @@ data class AdminModel(
     @SerialName("routes") val `routes`: List<ModelRoute>? = null,
     @SerialName("displayMultiplierManual") val `displayMultiplierManual`: Double? = null,
     @SerialName("displayMultiplier") val `displayMultiplier`: Double? = null,
+    @SerialName("discount") val `discount`: ModelDiscount? = null,
+    @SerialName("discountActive") val `discountActive`: Boolean? = null,
 )
 
 @Serializable
@@ -411,12 +417,14 @@ data class AdminModelWrite(
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("scenarios") val `scenarios`: List<ModelScenario>? = null,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
     @SerialName("rates") val `rates`: ModelRates?,
     @SerialName("costRates") val `costRates`: ModelRates? = null,
     @SerialName("routes") val `routes`: List<ModelRoute>? = null,
     @SerialName("displayMultiplierManual") val `displayMultiplierManual`: Double? = null,
+    @SerialName("discount") val `discount`: ModelDiscount? = null,
 )
 
 @Serializable
@@ -432,12 +440,14 @@ data class AdminModelWriteInput(
     @SerialName("sortOrder") val `sortOrder`: Long,
     @SerialName("defaultFor") val `defaultFor`: List<String>,
     @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("scenarios") val `scenarios`: List<ModelScenario>? = null,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBoundsInput? = null,
     @SerialName("rates") val `rates`: ModelRatesInput?,
     @SerialName("costRates") val `costRates`: ModelRatesInput? = null,
     @SerialName("routes") val `routes`: List<ModelRouteInput>? = null,
     @SerialName("displayMultiplierManual") val `displayMultiplierManual`: Double? = null,
+    @SerialName("discount") val `discount`: ModelDiscountInput? = null,
 )
 
 @Serializable
@@ -1837,6 +1847,12 @@ data class CharacterRelation(
     @SerialName("evidence") val `evidence`: String?,
     @SerialName("ownerUserId") val `ownerUserId`: Id?,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class CharacterScenarioConfig(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("scenarios") val `scenarios`: List<CharacterScenarioConfigScenariosItem>,
 )
 
 @Serializable
@@ -6619,7 +6635,17 @@ data class ModelAccessAdminUsageEndpointsUsageOverviewBody(
 )
 
 @Serializable
+data class ModelAccessEndpointsApplyRecommendedScenariosBody(
+    @SerialName("overwrite") val `overwrite`: Boolean? = null,
+)
+
+@Serializable
 data class ModelAccessEndpointsGetCharacterOverrideParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class ModelAccessEndpointsGetCharacterScenariosParams(
     @SerialName("characterId") val `characterId`: Id,
 )
 
@@ -6631,6 +6657,7 @@ data class ModelAccessEndpointsGetModelStatusQuery(
 @Serializable
 data class ModelAccessEndpointsListModelsQuery(
     @SerialName("capability") val `capability`: ModelCapability? = null,
+    @SerialName("scenario") val `scenario`: ModelScenario? = null,
 )
 
 @Serializable
@@ -6648,7 +6675,32 @@ data class ModelAccessEndpointsSetCharacterOverrideParams(
     @SerialName("characterId") val `characterId`: Id,
 )
 
+@Serializable
+data class ModelAccessEndpointsUpdateCharacterScenariosParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
 typealias ModelCapability = String
+
+@Serializable
+data class ModelDiscount(
+    @SerialName("rate") val `rate`: Double,
+    @SerialName("startsAt") val `startsAt`: Timestamp,
+    @SerialName("endsAt") val `endsAt`: Timestamp,
+)
+
+@Serializable
+data class ModelDiscountInfo(
+    @SerialName("rate") val `rate`: Double,
+    @SerialName("endsAt") val `endsAt`: Timestamp,
+)
+
+@Serializable
+data class ModelDiscountInput(
+    @SerialName("rate") val `rate`: Double,
+    @SerialName("startsAt") val `startsAt`: Timestamp,
+    @SerialName("endsAt") val `endsAt`: Timestamp,
+)
 
 @Serializable
 data class ModelInfo(
@@ -6663,6 +6715,9 @@ data class ModelInfo(
     @SerialName("pointsPerReply") val `pointsPerReply`: Double? = null,
     @SerialName("pointsPerReplyBasis") val `pointsPerReplyBasis`: String? = null,
     @SerialName("displayMultiplier") val `displayMultiplier`: Double? = null,
+    @SerialName("scenarios") val `scenarios`: List<String>? = null,
+    @SerialName("discount") val `discount`: ModelDiscountInfo? = null,
+    @SerialName("pointsPerUse") val `pointsPerUse`: ModelInfoPointsPerUse? = null,
 )
 
 typealias ModelKey = String
@@ -6740,6 +6795,20 @@ data class ModelRouteInput(
     @SerialName("weight") val `weight`: Long,
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBoundsInput? = null,
+)
+
+typealias ModelScenario = String
+
+@Serializable
+data class ModelScenarioSettings(
+    @SerialName("recommended") val `recommended`: ModelScenarioSettingsRecommended,
+    @SerialName("internal") val `internal`: ModelScenarioSettingsInternal,
+)
+
+@Serializable
+data class ModelScenarioSettingsInput(
+    @SerialName("recommended") val `recommended`: ModelScenarioSettingsInputRecommended,
+    @SerialName("internal") val `internal`: ModelScenarioSettingsInputInternal,
 )
 
 @Serializable
@@ -7365,6 +7434,8 @@ data class PlanningDecisionRecord(
 typealias PlanningDecisionType = String
 
 typealias PlanningFallback = String
+
+typealias PlatformInternalUse = String
 
 @Serializable
 data class PlazaAdminEndpointsBanAuthorBody(
@@ -8921,6 +8992,12 @@ data class RouteBillingBoundsInput(
     @SerialName("decision") val `decision`: RouteBillingBoundsInputDecision? = null,
 )
 
+@Serializable
+data class ScenarioConfig(
+    @SerialName("scenarios") val `scenarios`: List<ScenarioSelection>,
+    @SerialName("needsSetup") val `needsSetup`: Boolean,
+)
+
 typealias ScenarioMode = String
 
 @Serializable
@@ -8943,6 +9020,35 @@ data class ScenarioModeOption(
     @SerialName("section") val `section`: String? = null,
     @SerialName("recommended") val `recommended`: Boolean? = null,
     @SerialName("aiReady") val `aiReady`: Boolean? = null,
+)
+
+@Serializable
+data class ScenarioRefs(
+    @SerialName("chat") val `chat`: ModelRef? = null,
+    @SerialName("vision") val `vision`: ModelRef? = null,
+    @SerialName("voice_message") val `voice_message`: ModelRef? = null,
+    @SerialName("speech_recognition") val `speech_recognition`: ModelRef? = null,
+    @SerialName("voice_call") val `voice_call`: ModelRef? = null,
+    @SerialName("image_generation") val `image_generation`: ModelRef? = null,
+    @SerialName("private") val `private`: ModelRef? = null,
+)
+
+@Serializable
+data class ScenarioRefsInput(
+    @SerialName("chat") val `chat`: ModelRefInput? = null,
+    @SerialName("vision") val `vision`: ModelRefInput? = null,
+    @SerialName("voice_message") val `voice_message`: ModelRefInput? = null,
+    @SerialName("speech_recognition") val `speech_recognition`: ModelRefInput? = null,
+    @SerialName("voice_call") val `voice_call`: ModelRefInput? = null,
+    @SerialName("image_generation") val `image_generation`: ModelRefInput? = null,
+    @SerialName("private") val `private`: ModelRefInput? = null,
+)
+
+@Serializable
+data class ScenarioSelection(
+    @SerialName("scenario") val `scenario`: String,
+    @SerialName("selection") val `selection`: ModelRefState?,
+    @SerialName("recommendedModelKey") val `recommendedModelKey`: ModelKey?,
 )
 
 typealias SearchKeyword = String
@@ -9976,6 +10082,16 @@ data class UpdateRechargeOptionsRequest(
 data class UpdateRechargeOptionsRequestInput(
     @SerialName("tiers") val `tiers`: List<UpdateRechargeOptionsRequestInputTiersItem>,
     @SerialName("contactHint") val `contactHint`: String,
+)
+
+@Serializable
+data class UpdateScenarioConfigRequest(
+    @SerialName("selections") val `selections`: ScenarioRefs,
+)
+
+@Serializable
+data class UpdateScenarioConfigRequestInput(
+    @SerialName("selections") val `selections`: ScenarioRefsInput,
 )
 
 typealias UpdateSeq = Long
@@ -11494,6 +11610,13 @@ data class CharacterClassificationDerived(
 )
 
 @Serializable
+data class CharacterScenarioConfigScenariosItem(
+    @SerialName("scenario") val `scenario`: String,
+    @SerialName("selection") val `selection`: ModelRefState?,
+    @SerialName("effective") val `effective`: ModelRefState?,
+)
+
+@Serializable
 data class ClientAuthFrameData(
     @SerialName("token") val `token`: String,
     @SerialName("contractVersion") val `contractVersion`: String,
@@ -12788,9 +12911,62 @@ data class MessagePageCoverageExcludedRangesItem(
 )
 
 @Serializable
+data class ModelInfoPointsPerUse(
+    @SerialName("chat") val `chat`: Double? = null,
+    @SerialName("vision") val `vision`: Double? = null,
+    @SerialName("voice_message") val `voice_message`: Double? = null,
+    @SerialName("speech_recognition") val `speech_recognition`: Double? = null,
+    @SerialName("voice_call") val `voice_call`: Double? = null,
+    @SerialName("image_generation") val `image_generation`: Double? = null,
+    @SerialName("private") val `private`: Double? = null,
+)
+
+@Serializable
 data class ModelLeaderboardInfoPopularItem(
     @SerialName("modelKey") val `modelKey`: String,
     @SerialName("users") val `users`: Long,
+)
+
+@Serializable
+data class ModelScenarioSettingsRecommended(
+    @SerialName("chat") val `chat`: ModelKey? = null,
+    @SerialName("vision") val `vision`: ModelKey? = null,
+    @SerialName("voice_message") val `voice_message`: ModelKey? = null,
+    @SerialName("speech_recognition") val `speech_recognition`: ModelKey? = null,
+    @SerialName("voice_call") val `voice_call`: ModelKey? = null,
+    @SerialName("image_generation") val `image_generation`: ModelKey? = null,
+    @SerialName("private") val `private`: ModelKey? = null,
+)
+
+@Serializable
+data class ModelScenarioSettingsInternal(
+    @SerialName("safety") val `safety`: ModelKey? = null,
+    @SerialName("small_v") val `small_v`: ModelKey? = null,
+    @SerialName("platform_content") val `platform_content`: ModelKey? = null,
+    @SerialName("planner") val `planner`: ModelKey? = null,
+    @SerialName("adult_check") val `adult_check`: ModelKey? = null,
+    @SerialName("web_search") val `web_search`: ModelKey? = null,
+)
+
+@Serializable
+data class ModelScenarioSettingsInputRecommended(
+    @SerialName("chat") val `chat`: ModelKey? = null,
+    @SerialName("vision") val `vision`: ModelKey? = null,
+    @SerialName("voice_message") val `voice_message`: ModelKey? = null,
+    @SerialName("speech_recognition") val `speech_recognition`: ModelKey? = null,
+    @SerialName("voice_call") val `voice_call`: ModelKey? = null,
+    @SerialName("image_generation") val `image_generation`: ModelKey? = null,
+    @SerialName("private") val `private`: ModelKey? = null,
+)
+
+@Serializable
+data class ModelScenarioSettingsInputInternal(
+    @SerialName("safety") val `safety`: ModelKey? = null,
+    @SerialName("small_v") val `small_v`: ModelKey? = null,
+    @SerialName("platform_content") val `platform_content`: ModelKey? = null,
+    @SerialName("planner") val `planner`: ModelKey? = null,
+    @SerialName("adult_check") val `adult_check`: ModelKey? = null,
+    @SerialName("web_search") val `web_search`: ModelKey? = null,
 )
 
 @Serializable
