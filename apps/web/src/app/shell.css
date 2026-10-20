@@ -2039,6 +2039,18 @@ main.status-page {
   line-height: 16px;
   vertical-align: 2px;
 }
+/* 3.24：模型「暂不可用」短原因标签 */
+.tag-unavailable {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--wb-color-text-danger);
+  border-radius: 3px;
+  color: var(--wb-color-text-danger);
+  font-size: 11px;
+  line-height: 16px;
+  vertical-align: 2px;
+}
 .ink-muted {
   color: var(--wb-color-text-secondary);
 }

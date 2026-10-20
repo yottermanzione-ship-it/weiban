@@ -16,7 +16,16 @@ import { useRemote, friendlyError } from '../data/use-remote.js';
 import { useChat } from '../app/chat.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterAvatar } from './character-avatar.js';
-import { unavailableText } from './model-unavailable.js';
+import { unavailableShort, unavailableText } from './model-unavailable.js';
+
+/** 3.24：模型名后的「暂不可用」小标签（短原因；悬停 / 读屏给完整原因）。 */
+function UnavailableTag({ detail }: { detail: string | null | undefined }) {
+  return (
+    <span className="tag-unavailable" title={unavailableText(detail)} aria-label={unavailableText(detail)}>
+      {unavailableShort(detail)}
+    </span>
+  );
+}
 
 /**
  * 3.22：每个场景单独选模型（不做多模态「直接听语音 / 直接生成」）。
@@ -163,7 +172,7 @@ function ScenarioView() {
                 chosen ? (
                   row?.selection?.available === false ? (
                     <span className="ink-danger">
-                      {chosen}（{unavailableText(row.selection.unavailableDetail)}）
+                      {chosen}（{unavailableShort(row.selection.unavailableDetail)}）
                     </span>
                   ) : (
                     chosen
@@ -277,6 +286,7 @@ export function ScenarioModelPage() {
           {rank != null && <span className="rank-no">{rank}</span>}
           {model.displayName}
           {model.modelKey === recommended && <span className="tag-recommend">推荐</span>}
+          {!model.available && <UnavailableTag detail={model.unavailableDetail} />}
         </>
       }
       subtitle={
@@ -287,7 +297,6 @@ export function ScenarioModelPage() {
             tab === 'popular' &&
             rank != null &&
             ` · ${counts.get(model.modelKey)} 人选用`}
-          {!model.available && ` · 暂不可用：${unavailableText(model.unavailableDetail)}`}
         </>
       }
       chevron={false}
@@ -459,11 +468,15 @@ export function CharacterScenarioPickerPage() {
         {models.data?.items.map((model) => (
           <MenuRow
             key={model.modelKey}
-            label={model.displayName}
+            label={
+              <>
+                {model.displayName}
+                {!model.available && <UnavailableTag detail={model.unavailableDetail} />}
+              </>
+            }
             subtitle={
               <>
                 <ModelPriceLine model={model} scenario={meta.key} />
-                {!model.available && ` · 暂不可用：${unavailableText(model.unavailableDetail)}`}
                 {model.capabilities.includes('adult_content') && ' · 允许成人内容'}
               </>
             }

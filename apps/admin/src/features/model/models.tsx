@@ -190,6 +190,70 @@ export function ModelsTab({
       ),
     },
     {
+      title: (
+        <span>
+          状态
+          <HelpTip text="上架的模型对用户「暂时无法使用」时，这里写出具体原因（与用户端看到的一致），悬停看怎么处理。" />
+        </span>
+      ),
+      width: 190,
+      render: (_, m) => {
+        // 3.24：具体原因来自服务器（availability）；旧服务器不带时按线路计费上限判断
+        const detail =
+          m.availability?.detail ??
+          (m.availability
+            ? null
+            : !(m.routes?.length
+                  ? m.routes.some(
+                      (route) =>
+                        route.enabled && route.billingBounds && !route.billingBounds.pauseReason,
+                    )
+                  : m.billingBounds && !m.billingBounds.pauseReason)
+              ? 'billing_bounds_missing'
+              : null);
+        const showDetail = m.enabled && detail && detail !== 'model_removed';
+        return (
+          <div className="cell-main model-status">
+            <span>
+              <StatusTag tone={m.enabled ? (showDetail ? 'warning' : 'success') : 'default'}>
+                {m.enabled ? (showDetail ? '暂时无法使用' : '已上架') : '已下架'}
+              </StatusTag>
+            </span>
+            {showDetail &&
+              (BOUNDS_DETAILS.includes(detail) ? (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="tag-link status-reason"
+                  title={`${UNAVAILABLE_DETAIL_HINTS[detail] ?? ''}（点击直接填写）`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openEditor(m, true);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') openEditor(m, true);
+                  }}
+                >
+                  {UNAVAILABLE_DETAIL_LABELS[detail] ?? detail} ›
+                </span>
+              ) : (
+                <span className="status-reason" title={UNAVAILABLE_DETAIL_HINTS[detail] ?? ''}>
+                  {UNAVAILABLE_DETAIL_LABELS[detail] ?? detail}
+                </span>
+              ))}
+            {m.enabled && lacksVision(m.scenarios, m.capabilities) && (
+              <span
+                className="status-reason warn"
+                title="勾了文本聊天 / 私密模式但没有识图能力：用户发的图片会发不出去"
+              >
+                缺识图能力
+              </span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
       title: '上游线路（按顺序切换）',
       width: 160,
       render: (_, m) => {
@@ -298,65 +362,6 @@ export function ModelsTab({
             <span className="cell-sub">{m.displayMultiplierManual != null ? '手填' : '自动'}</span>
           </span>
         ),
-    },
-    {
-      title: (
-        <span>
-          状态
-          <HelpTip text="上架的模型对用户「暂时无法使用」时，这里写出具体原因（与用户端看到的一致），悬停看怎么处理。" />
-        </span>
-      ),
-      width: 170,
-      render: (_, m) => {
-        // 3.24：具体原因来自服务器（availability）；旧服务器不带时按线路计费上限判断
-        const detail =
-          m.availability?.detail ??
-          (m.availability
-            ? null
-            : !(m.routes?.length
-                  ? m.routes.some(
-                      (route) =>
-                        route.enabled && route.billingBounds && !route.billingBounds.pauseReason,
-                    )
-                  : m.billingBounds && !m.billingBounds.pauseReason)
-              ? 'billing_bounds_missing'
-              : null);
-        const showDetail = m.enabled && detail && detail !== 'model_removed';
-        return (
-          <Space size={4} wrap>
-            <StatusTag tone={m.enabled ? (showDetail ? 'warning' : 'success') : 'default'}>
-              {m.enabled ? (showDetail ? '暂时无法使用' : '已上架') : '已下架'}
-            </StatusTag>
-            {showDetail &&
-              (BOUNDS_DETAILS.includes(detail) ? (
-                <span
-                  role="button"
-                  tabIndex={0}
-                  className="tag-link"
-                  title={`${UNAVAILABLE_DETAIL_HINTS[detail] ?? ''}（点击直接填写）`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openEditor(m, true);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') openEditor(m, true);
-                  }}
-                >
-                  <StatusTag tone="warning">{UNAVAILABLE_DETAIL_LABELS[detail] ?? detail} ›</StatusTag>
-                </span>
-              ) : (
-                <span title={UNAVAILABLE_DETAIL_HINTS[detail] ?? ''}>
-                  <StatusTag tone="error">{UNAVAILABLE_DETAIL_LABELS[detail] ?? detail}</StatusTag>
-                </span>
-              ))}
-            {m.enabled && lacksVision(m.scenarios, m.capabilities) && (
-              <span title="勾了文本聊天 / 私密模式但没有识图能力：用户发的图片会发不出去">
-                <StatusTag tone="warning">缺识图能力</StatusTag>
-              </span>
-            )}
-          </Space>
-        );
-      },
     },
     {
       title: '操作',

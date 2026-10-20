@@ -20,3 +20,22 @@ const TEXT: Record<string, string> = {
 export function unavailableText(detail: string | null | undefined): string {
   return (detail && TEXT[detail]) || '暂时无法使用';
 }
+
+const SHORT: Record<string, string> = {
+  model_removed: '已下架',
+  no_route: '未开通',
+  upstream_disabled: '已暂停',
+  upstream_invalid_key: '密钥失效',
+  upstream_quota_exhausted: '余额不足',
+  upstream_unavailable: '连接异常',
+  upstream_cooldown: '短暂暂停',
+  billing_bounds_missing: '计费未配置',
+  billing_bounds_paused: '核对暂停',
+  price_missing: '未定价',
+  output_limit_too_small: '回复上限过小',
+};
+
+/** 列表行里用的短说法（行宽有限，完整原因在页面下方说明里）。 */
+export function unavailableShort(detail: string | null | undefined): string {
+  return (detail && SHORT[detail]) || '暂不可用';
+}

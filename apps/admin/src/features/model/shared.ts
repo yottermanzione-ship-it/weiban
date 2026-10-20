@@ -117,7 +117,7 @@ export const UPSTREAM_ERROR_LABELS: Record<string, string> = {
   invalid_key: '密钥无效',
   insufficient_balance: '余额不足',
   quota_exhausted: '余额不足',
-  network_error: '连不上（网络错误或超时）',
+  network_error: '网络不通或超时',
   provider_error: '服务商返回错误',
   rate_limited: '被限流',
   timeout: '超时',

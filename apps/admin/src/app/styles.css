@@ -1403,3 +1403,13 @@ body {
   flex-wrap: wrap;
   gap: 6px 0;
 }
+/* 3.24：模型「暂时无法使用」的具体原因 */
+.model-status .status-reason {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #d4380d;
+  white-space: normal;
+}
+.model-status .status-reason.warn {
+  color: #d48806;
+}
