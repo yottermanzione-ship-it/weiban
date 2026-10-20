@@ -119,7 +119,8 @@ export class AdminUsersService {
   async ban(operatorUserId: string, userId: string, reason: string): Promise<AdminUserSummary> {
     await this.database.transaction(async (tx) => {
       const [user] = await tx.db.select().from(users).where(eq(users.id, userId)).for('update');
-      if (!user || user.status !== 'active') throw new AppError('not_found', '账号不存在或已在注销中');
+      if (!user || user.status !== 'active')
+        throw new AppError('not_found', '账号不存在或已在注销中');
       if (user.role === 'admin') throw new AppError('forbidden', '管理员账号不能封禁');
       const now = this.clock.now();
       await tx.db

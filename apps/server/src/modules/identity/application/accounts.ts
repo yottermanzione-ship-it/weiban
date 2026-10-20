@@ -247,7 +247,8 @@ export class AccountService {
     input: { confirmUsername: string; reason: string },
   ): Promise<void> {
     const [user] = await this.database.db.select().from(users).where(eq(users.id, userId));
-    if (!user || user.status !== 'active') throw new AppError('not_found', '账号不存在或已在注销中');
+    if (!user || user.status !== 'active')
+      throw new AppError('not_found', '账号不存在或已在注销中');
     if (user.role === 'admin') throw new AppError('forbidden', '管理员账号不能在后台删除');
     const names = [user.username, user.currentAlias].filter(Boolean).map((n) => n!.toLowerCase());
     if (!names.includes(input.confirmUsername.trim().toLowerCase()))

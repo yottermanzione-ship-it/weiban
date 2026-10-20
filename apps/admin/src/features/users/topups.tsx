@@ -125,7 +125,12 @@ export function TopupRecordsPage() {
       title: '用户',
       width: 200,
       render: (_, r) => (
-        <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setOpenUserId(r.userId)}>
+        <Button
+          type="link"
+          size="small"
+          style={{ padding: 0 }}
+          onClick={() => setOpenUserId(r.userId)}
+        >
           {userName(r)}
         </Button>
       ),

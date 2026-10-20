@@ -40,7 +40,10 @@ export function PlansPage() {
         <span>
           {yuanFen(p.firstPriceFen)}
           {p.priceFen > 0 && p.firstPriceFen < p.priceFen && (
-            <span className="cell-sub"> · {Math.round((p.firstPriceFen / p.priceFen) * 100) / 10} 折</span>
+            <span className="cell-sub">
+              {' '}
+              · {Math.round((p.firstPriceFen / p.priceFen) * 100) / 10} 折
+            </span>
           )}
         </span>
       ),
@@ -58,7 +61,8 @@ export function PlansPage() {
     { title: '价格', width: 120, render: (_, t) => `¥${t.priceMicros / 1_000_000}` },
     {
       title: '到账积分',
-      render: (_, t) => `${formatInt((t.priceMicros / 1_000_000) * (r?.pointsPerYuan ?? 100))} 积分`,
+      render: (_, t) =>
+        `${formatInt((t.priceMicros / 1_000_000) * (r?.pointsPerYuan ?? 100))} 积分`,
     },
   ];
 
@@ -106,7 +110,11 @@ export function PlansPage() {
       </SectionCard>
       <SectionCard
         title="充值档位"
-        desc={r ? `1 元 = ${r.pointsPerYuan} 积分，不赠送；暂未接在线支付，用户点充值会看到联系说明` : undefined}
+        desc={
+          r
+            ? `1 元 = ${r.pointsPerYuan} 积分，不赠送；暂未接在线支付，用户点充值会看到联系说明`
+            : undefined
+        }
         extra={
           <Button type="primary" disabled={!r} onClick={() => setEditing('recharge')}>
             编辑
@@ -245,7 +253,12 @@ function PlansDrawer({
       draftKey="membership-plans:all"
       title="编辑 PRO+ 会员档位"
       footer={
-        <DrawerActions onCancel={onClose} onSubmit={() => void save()} saving={saving} error={error} />
+        <DrawerActions
+          onCancel={onClose}
+          onSubmit={() => void save()}
+          saving={saving}
+          error={error}
+        />
       }
     >
       <Form<PlansForm>
@@ -277,21 +290,39 @@ function PlansDrawer({
                 name={['plans', i, 'priceYuan']}
                 rules={[{ required: true, message: '填写原价' }]}
               >
-                <InputNumber min={0} max={100000} precision={2} addonAfter="元" style={{ width: '100%' }} />
+                <InputNumber
+                  min={0}
+                  max={100000}
+                  precision={2}
+                  addonAfter="元"
+                  style={{ width: '100%' }}
+                />
               </Form.Item>
               <Form.Item
                 label="首次价"
                 name={['plans', i, 'firstPriceYuan']}
                 rules={[{ required: true, message: '填写首次价' }]}
               >
-                <InputNumber min={0} max={100000} precision={2} addonAfter="元" style={{ width: '100%' }} />
+                <InputNumber
+                  min={0}
+                  max={100000}
+                  precision={2}
+                  addonAfter="元"
+                  style={{ width: '100%' }}
+                />
               </Form.Item>
               <Form.Item
                 label="开通赠送"
                 name={['plans', i, 'bonusPoints']}
                 rules={[{ required: true, message: '填写赠送积分' }]}
               >
-                <InputNumber min={0} max={10_000_000} precision={0} addonAfter="积分" style={{ width: '100%' }} />
+                <InputNumber
+                  min={0}
+                  max={10_000_000}
+                  precision={0}
+                  addonAfter="积分"
+                  style={{ width: '100%' }}
+                />
               </Form.Item>
             </div>
           </div>
@@ -351,17 +382,32 @@ function SignupDrawer({
       draftKey="signup-bonus:all"
       title="编辑注册赠送积分"
       footer={
-        <DrawerActions onCancel={onClose} onSubmit={() => void save()} saving={saving} error={error} />
+        <DrawerActions
+          onCancel={onClose}
+          onSubmit={() => void save()}
+          saving={saving}
+          error={error}
+        />
       }
     >
-      <Form form={form} layout="vertical" initialValues={{ signupBonusPoints: settings.signupBonusPoints }}>
+      <Form
+        form={form}
+        layout="vertical"
+        initialValues={{ signupBonusPoints: settings.signupBonusPoints }}
+      >
         <Form.Item
           name="signupBonusPoints"
           label="每个新用户赠送"
           rules={[{ required: true, message: '填写积分数（不送填 0）' }]}
           extra={<FieldHelp>只对保存之后注册的新用户生效；0 = 不送。1 元 = 100 积分。</FieldHelp>}
         >
-          <InputNumber min={0} max={1_000_000} precision={0} addonAfter="积分" style={{ width: '100%' }} />
+          <InputNumber
+            min={0}
+            max={1_000_000}
+            precision={0}
+            addonAfter="积分"
+            style={{ width: '100%' }}
+          />
         </Form.Item>
       </Form>
     </RecordDrawer>
@@ -380,7 +426,11 @@ function RechargeDrawer({
   onClose,
   onSaved,
 }: {
-  options: { tiers: Array<{ tierId: string; priceMicros: number }>; contactHint: string; pointsPerYuan: number };
+  options: {
+    tiers: Array<{ tierId: string; priceMicros: number }>;
+    contactHint: string;
+    pointsPerYuan: number;
+  };
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -425,7 +475,12 @@ function RechargeDrawer({
       title="编辑充值档位"
       subtitle={`1 元 = ${options.pointsPerYuan} 积分，不赠送`}
       footer={
-        <DrawerActions onCancel={onClose} onSubmit={() => void save()} saving={saving} error={error} />
+        <DrawerActions
+          onCancel={onClose}
+          onSubmit={() => void save()}
+          saving={saving}
+          error={error}
+        />
       }
     >
       <Form<TierForm>
@@ -454,7 +509,13 @@ function RechargeDrawer({
                     rules={[{ required: true, message: '填写价格' }]}
                     style={{ marginBottom: 0 }}
                   >
-                    <InputNumber min={1} step={10} style={{ width: '100%' }} addonAfter="元" placeholder="价格" />
+                    <InputNumber
+                      min={1}
+                      step={10}
+                      style={{ width: '100%' }}
+                      addonAfter="元"
+                      placeholder="价格"
+                    />
                   </Form.Item>
                   <Form.Item
                     noStyle
@@ -466,13 +527,19 @@ function RechargeDrawer({
                       <span className="tier-points">
                         到账{' '}
                         {formatInt(
-                          Number(getFieldValue(['tiers', field.name, 'yuan']) ?? 0) * options.pointsPerYuan,
+                          Number(getFieldValue(['tiers', field.name, 'yuan']) ?? 0) *
+                            options.pointsPerYuan,
                         )}{' '}
                         积分
                       </span>
                     )}
                   </Form.Item>
-                  <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} />
+                  <Button
+                    type="text"
+                    danger
+                    icon={<MinusCircleOutlined />}
+                    onClick={() => remove(field.name)}
+                  />
                 </div>
               ))}
               <Button
@@ -492,7 +559,9 @@ function RechargeDrawer({
           name="contactHint"
           label="「联系管理员充值」说明"
           rules={[{ required: true, message: '填写联系说明' }]}
-          extra={<FieldHelp>用户点「充值」时弹窗里显示的话，例：加微信 xxx，备注微伴号。</FieldHelp>}
+          extra={
+            <FieldHelp>用户点「充值」时弹窗里显示的话，例：加微信 xxx，备注微伴号。</FieldHelp>
+          }
         >
           <Input.TextArea rows={3} maxLength={200} showCount />
         </Form.Item>

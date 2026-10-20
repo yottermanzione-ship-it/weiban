@@ -34,13 +34,7 @@ import { errorText, useRemote } from '../../data/hooks.js';
 import { useAsync } from '../../data/use-async.js';
 import { useFormFeedback } from '../../data/form-feedback.js';
 import { DrawerActions, RecordDrawer } from '../../ui/drawer.js';
-import {
-  FieldHelp,
-  FormSection,
-  SectionCard,
-  useDangerConfirm,
-  useToast,
-} from '../../ui/page.js';
+import { FieldHelp, FormSection, SectionCard, useDangerConfirm, useToast } from '../../ui/page.js';
 import { DataTable, type ProColumns } from '../../ui/table.js';
 import {
   formatDate,
@@ -113,7 +107,9 @@ export function UserDetailDrawer({
       {tab === 'membership' && <MembershipPanel row={row} nameOf={nameOf} onChanged={onChanged} />}
       {tab === 'points' && <PointsPanel row={row} nameOf={nameOf} onChanged={onChanged} />}
       {tab === 'usage' && <UsagePanel row={row} />}
-      {tab === 'safety' && <SafetyPanel row={row} nameOf={nameOf} onChanged={onChanged} onClose={onClose} />}
+      {tab === 'safety' && (
+        <SafetyPanel row={row} nameOf={nameOf} onChanged={onChanged} onClose={onClose} />
+      )}
     </RecordDrawer>
   );
 }
@@ -227,7 +223,11 @@ function MembershipPanel({
         title="会员状态"
         extra={
           <Space>
-            <Button type="primary" disabled={inactive || !settings.data} onClick={() => setDrawer('open')}>
+            <Button
+              type="primary"
+              disabled={inactive || !settings.data}
+              onClick={() => setDrawer('open')}
+            >
               {isPro ? '续期' : '开通'}
             </Button>
             <Button disabled={inactive} onClick={() => setDrawer('adjust')}>
@@ -251,7 +251,12 @@ function MembershipPanel({
         }
       >
         {(error || settings.error) && (
-          <Alert type="error" showIcon message={error || settings.error} style={{ marginBottom: 12 }} />
+          <Alert
+            type="error"
+            showIcon
+            message={error || settings.error}
+            style={{ marginBottom: 12 }}
+          />
         )}
         <div className="detail-grid">
           <div>
@@ -270,11 +275,19 @@ function MembershipPanel({
           </div>
           <div>
             <span className="detail-label">首次价</span>
-            <span>{records.loading ? '…' : firstUsed ? '已用过（之后按原价）' : '还没用过（开通自动按首次价）'}</span>
+            <span>
+              {records.loading
+                ? '…'
+                : firstUsed
+                  ? '已用过（之后按原价）'
+                  : '还没用过（开通自动按首次价）'}
+            </span>
           </div>
           <div>
             <span className="detail-label">说明</span>
-            <span>开通 / 续期记订单并发赠送积分；调整到期日、取消只改时间，不记订单、不动积分。</span>
+            <span>
+              开通 / 续期记订单并发赠送积分；调整到期日、取消只改时间，不记订单、不动积分。
+            </span>
           </div>
         </div>
       </SectionCard>
@@ -545,7 +558,12 @@ function AdjustExpiryDrawer({
       title="调整到期日"
       subtitle={`${displayName(user)} · 现在 ${current ? formatDate(current.toISOString()) : '不是会员'}`}
       footer={
-        <DrawerActions onCancel={onClose} onSubmit={() => void submit()} saving={saving} error={error} />
+        <DrawerActions
+          onCancel={onClose}
+          onSubmit={() => void submit()}
+          saving={saving}
+          error={error}
+        />
       }
     >
       <Alert
@@ -706,7 +724,11 @@ function PointsPanel({
       </div>
       <div className="drawer-row-head">
         <div className="detail-section">积分流水</div>
-        <Button type="primary" disabled={user.status !== 'active'} onClick={() => setAdjusting(true)}>
+        <Button
+          type="primary"
+          disabled={user.status !== 'active'}
+          onClick={() => setAdjusting(true)}
+        >
           加 / 扣积分
         </Button>
       </div>
@@ -793,7 +815,9 @@ function AdjustPointsDrawer({
           body: { ...body, idempotencyKey: operation.current.key },
         });
         operation.current = null;
-        toast.success(values.direction === 'grant' ? `已加 ${body.points} 积分` : `已扣 ${body.points} 积分`);
+        toast.success(
+          values.direction === 'grant' ? `已加 ${body.points} 积分` : `已扣 ${body.points} 积分`,
+        );
         onDone();
       } catch (e) {
         setError(feedback.report(e));
@@ -1001,9 +1025,7 @@ function SafetyPanel({
   return (
     <div className="drawer-body">
       {error && <Alert type="error" showIcon message={error} />}
-      {isAdmin && (
-        <Alert type="info" showIcon message="管理员账号不能在这里封禁或删除。" />
-      )}
+      {isAdmin && <Alert type="info" showIcon message="管理员账号不能在这里封禁或删除。" />}
       <SectionCard title="封禁" desc="封禁后不能登录，已登录的设备全部下线；数据保留，随时可以解封">
         {user.ban ? (
           <Space direction="vertical" style={{ width: '100%' }}>
@@ -1022,7 +1044,9 @@ function SafetyPanel({
                   onOk: () =>
                     run(
                       () =>
-                        api.call(AdminUsersEndpoints.unbanUser, { params: { userId: user.userId } }),
+                        api.call(AdminUsersEndpoints.unbanUser, {
+                          params: { userId: user.userId },
+                        }),
                       '已解除封禁',
                     ),
                 })

@@ -84,7 +84,11 @@ export function MembershipRecordsPage() {
     return {
       orders: [...(prev?.orders ?? []), ...(orders?.items ?? [])],
       changes: [...(prev?.changes ?? []), ...(changes?.items ?? [])],
-      orderCursor: orders ? orders.nextCursor : wantOrders ? (prev?.orderCursor ?? null) : undefined,
+      orderCursor: orders
+        ? orders.nextCursor
+        : wantOrders
+          ? (prev?.orderCursor ?? null)
+          : undefined,
       changeCursor: changes
         ? changes.nextCursor
         : wantChanges

@@ -2,10 +2,7 @@
  * 会员订阅记录的公共部分：表格列、详情抽屉、按用户读取（用户详情 › 会员 与「会员订阅记录」页共用）。
  */
 import { Button, Space } from 'antd';
-import {
-  MembershipChangeAdminEndpoints,
-  MembershipOrderAdminEndpoints,
-} from '@weiban/contracts';
+import { MembershipChangeAdminEndpoints, MembershipOrderAdminEndpoints } from '@weiban/contracts';
 import { api } from '../../data/client.js';
 import { RecordDrawer } from '../../ui/drawer.js';
 import { StatusTag } from '../../ui/page.js';

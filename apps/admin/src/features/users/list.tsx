@@ -99,9 +99,7 @@ export function UserListPage() {
         account ? (
           <div className="cell-main">
             <span className="cell-title">{formatPoints(account.balanceMicros)}</span>
-            <span className="cell-sub">
-              赠送 {formatPoints(account.bonusBalanceMicros ?? 0)}
-            </span>
+            <span className="cell-sub">赠送 {formatPoints(account.bonusBalanceMicros ?? 0)}</span>
           </div>
         ) : (
           '—'

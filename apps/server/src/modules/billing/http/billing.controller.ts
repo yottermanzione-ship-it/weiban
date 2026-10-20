@@ -171,7 +171,9 @@ export class BillingAdminController {
 
   @Get('topups')
   @RequireAuth(A.listTopups.auth)
-  topups(@Query(new ContractPipe(schema(A.listTopups.query))) query: Out<typeof A.listTopups.query>) {
+  topups(
+    @Query(new ContractPipe(schema(A.listTopups.query))) query: Out<typeof A.listTopups.query>,
+  ) {
     return this.admin.listTopups(query);
   }
 

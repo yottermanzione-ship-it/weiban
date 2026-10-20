@@ -39,9 +39,12 @@ export function daysLeft(expiresAt: string | null | undefined): number | null {
 }
 
 /** 列表里显示的名字：昵称（登录名）。 */
-export function displayName(user: Pick<AdminUserSummary, 'username' | 'nickname'> | undefined): string {
+export function displayName(
+  user: Pick<AdminUserSummary, 'username' | 'nickname'> | undefined,
+): string {
   if (!user) return '已注销账号';
-  if (user.nickname && user.nickname !== user.username) return `${user.nickname}（${user.username}）`;
+  if (user.nickname && user.nickname !== user.username)
+    return `${user.nickname}（${user.username}）`;
   return user.username || '已注销账号';
 }
 
@@ -107,7 +110,10 @@ export type SubRecord = {
   change?: MembershipChange;
 };
 
-export function mergeSubRecords(orders: MembershipOrder[], changes: MembershipChange[]): SubRecord[] {
+export function mergeSubRecords(
+  orders: MembershipOrder[],
+  changes: MembershipChange[],
+): SubRecord[] {
   const list: SubRecord[] = [
     ...orders.map((order) => ({
       key: `o:${order.orderId}`,
@@ -130,6 +136,13 @@ export function mergeSubRecords(orders: MembershipOrder[], changes: MembershipCh
 }
 
 export function SubKindTag({ kind }: { kind: SubKind }) {
-  const tone = kind === 'open' ? 'success' : kind === 'renew' ? 'processing' : kind === 'cancel' ? 'error' : 'warning';
+  const tone =
+    kind === 'open'
+      ? 'success'
+      : kind === 'renew'
+        ? 'processing'
+        : kind === 'cancel'
+          ? 'error'
+          : 'warning';
   return <StatusTag tone={tone}>{SUB_KIND_NAME[kind]}</StatusTag>;
 }
