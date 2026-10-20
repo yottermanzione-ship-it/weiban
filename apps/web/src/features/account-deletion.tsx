@@ -141,7 +141,7 @@ export function AccountDeletionPage() {
           别人已经从人设广场添加的角色属于对方，会保留，作者显示为「已注销用户」。
         </p>
       </div>
-      <button className="danger full" onClick={() => setDialog(true)}>
+      <button className="danger danger-row" onClick={() => setDialog(true)}>
         注销账号
       </button>
       {dialog && (

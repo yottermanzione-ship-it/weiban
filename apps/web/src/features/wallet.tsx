@@ -514,11 +514,15 @@ export function multiplierText(model: Pick<ModelInfo, 'displayMultiplier'>) {
   return `×${m >= 10 ? m.toFixed(0) : m >= 1 ? m.toFixed(1) : m.toFixed(2)}`;
 }
 
-/** 3.17：「×倍率 · 约每条 X 积分」；按最近 7 天平均实扣，没有数据时按默认用量估算。 */
+/**
+ * 模型列表行副标题（10-20 统一）：「消耗倍率 ×1.1 · 约每条 5.35 积分」。
+ * 约每条按最近 7 天平均实扣，没有数据时按默认用量估算。
+ */
 export function perReplyText(
   model: Pick<ModelInfo, 'pointsPerReply' | 'displayMultiplier' | 'pointsPerReplyBasis'>,
 ) {
-  const mult = multiplierText(model);
+  const m = multiplierText(model);
+  const mult = m ? `消耗倍率 ${m}` : '';
   const per =
     model.pointsPerReply == null ? '' : `约每条 ${formatPoints(model.pointsPerReply)} 积分`;
   return [mult, per].filter(Boolean).join(' · ') || '—';
@@ -550,11 +554,6 @@ export function PricesPage() {
       <NavBar title="AI 模型价格" fallback="/wallet" />
       {section('聊天模型', chat)}
       {section('私密模式模型', adult)}
-      <p className="hint page-note">
-        「×倍率」用来比较各模型贵不贵；「约每条」按最近 7
-        天大家用这个模型的平均消耗估算（数据不足时按常见用量估算），不是报价。所有 AI
-        回复都按实际用量扣积分，多冻结的会退回。
-      </p>
       {models.error && (
         <p role="alert" className="notice-bar">
           {models.error}

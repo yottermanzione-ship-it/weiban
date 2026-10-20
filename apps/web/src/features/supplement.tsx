@@ -140,7 +140,7 @@ export function SupplementPage() {
       </div>
       {!custom && lines.length > 0 && <VariantPublishLink characterId={characterId} />}
       {!custom && lines.length > 0 && (
-        <button className="danger" onClick={() => setConfirmClear(true)}>
+        <button className="danger danger-row" onClick={() => setConfirmClear(true)}>
           删除全部补充设定
         </button>
       )}

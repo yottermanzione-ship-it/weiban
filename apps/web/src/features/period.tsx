@@ -880,11 +880,9 @@ export function PeriodSettingsPage() {
           <small>记录不足 2 个周期时，用这里的数字预测</small>
         </div>
       )}
-      <div className="panel rows">
-        <button className="danger row-button" disabled={busy} onClick={() => setConfirming(true)}>
-          清空经期日记
-        </button>
-      </div>
+      <button className="danger danger-row" disabled={busy} onClick={() => setConfirming(true)}>
+        清空经期日记
+      </button>
       {confirming && (
         <div role="dialog" aria-label="清空经期日记" className="panel">
           <p>

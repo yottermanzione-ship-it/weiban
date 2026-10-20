@@ -351,7 +351,7 @@ function MemorySheet({
                   <option value="past">过去</option>
                 </select>
               </label>
-              <button type="button" className="danger" onClick={onDelete}>
+              <button type="button" className="danger danger-row" onClick={onDelete}>
                 删除这条记忆
               </button>
             </>

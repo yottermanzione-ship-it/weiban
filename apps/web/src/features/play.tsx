@@ -754,7 +754,7 @@ function WishSheet({
             {saving ? '正在保存…' : '保存'}
           </button>
         </div>
-        <button className="danger" disabled={saving} onClick={onDelete}>
+        <button className="danger danger-row" disabled={saving} onClick={onDelete}>
           删除
         </button>
       </div>
@@ -1807,7 +1807,7 @@ function ReminderForm({ reminder, onDone }: { reminder?: Reminder; onDone(): voi
         {pending ? '正在保存…' : '保存'}
       </button>
       {reminder && (
-        <button className="danger full" onClick={() => setConfirmDelete(true)}>
+        <button className="danger danger-row" onClick={() => setConfirmDelete(true)}>
           删除提醒
         </button>
       )}

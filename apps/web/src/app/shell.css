@@ -309,6 +309,29 @@ div.menu-row {
 .menu-text.center {
   text-align: center;
 }
+.menu-text.center .menu-label {
+  justify-content: center;
+}
+/* 10-20：页面里单独的红色危险按钮，统一成微信式白底通栏、红字居中 */
+button.danger-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: var(--wb-size-setting-row);
+  margin: var(--wb-size-group-gap) 0;
+  padding: 0 var(--wb-space-5);
+  border: 0;
+  border-radius: 0;
+  background: var(--wb-color-bg-surface);
+  color: var(--wb-color-text-danger);
+  font-size: var(--wb-font-size-body);
+  text-align: center;
+}
+main > button.danger-row {
+  width: calc(100% + 2 * var(--wb-space-5));
+  margin-inline: calc(-1 * var(--wb-space-5));
+}
 .menu-label {
   display: flex;
   align-items: center;

@@ -46,7 +46,8 @@ export function ModelsPage() {
       setPending(false);
     }
   }
-  const row = (model: (typeof all)[number], rank?: number) => (
+  /** onBoard = 排行榜 / 热门榜里的行：副标题后面可以带厂商名；其余列表行只显示消耗倍率与约每条积分。 */
+  const row = (model: (typeof all)[number], rank?: number, onBoard = false) => (
     <MenuRow
       key={model.modelKey}
       label={
@@ -57,8 +58,8 @@ export function ModelsPage() {
       }
       subtitle={[
         perReplyText(model),
-        model.vendorName,
-        tab === 'popular' && rank != null ? `${counts.get(model.modelKey)} 人选用` : '',
+        onBoard ? model.vendorName : '',
+        onBoard && tab === 'popular' && rank != null ? `${counts.get(model.modelKey)} 人选用` : '',
         model.available ? '' : '暂不可用',
       ]
         .filter(Boolean)
@@ -107,22 +108,20 @@ export function ModelsPage() {
         onChange={setTab}
       />
       {tab === 'rank' ? (
-        <p className="hint page-note">
-          管理员维护的模型排名。
-          {info.data?.source ? (
+        // 10-20：只显示真实来源与日期（「来源：Arena · 2026-10-15」）；后台没配置时整行不显示
+        info.data?.source && (
+          <p className="hint page-note">
             <a href={info.data.source.url} target="_blank" rel="noreferrer">
-              参考来源：{info.data.source.label}
-              {info.data.source.asOf ? `（${info.data.source.asOf}）` : ''}
+              来源：{info.data.source.label}
+              {info.data.source.asOf ? ` · ${info.data.source.asOf}` : ''}
             </a>
-          ) : (
-            '榜单来源待配置'
-          )}
-        </p>
+          </p>
+        )
       ) : (
         <p className="hint page-note">按当前全局聊天模型选用人数排序，不含角色单独设置。</p>
       )}
       <MenuGroup>
-        {ranked.map((m, i) => row(m, tab === 'rank' ? m.leaderboardRank! : i + 1))}
+        {ranked.map((m, i) => row(m, tab === 'rank' ? m.leaderboardRank! : i + 1, true))}
       </MenuGroup>
       {!models.loading && !info.loading && ranked.length === 0 && (
         <p className="empty">{tab === 'rank' ? '暂未配置模型排名' : '还没有选用数据'}</p>
@@ -199,7 +198,6 @@ export function CharacterModelPage() {
             label={model.displayName}
             subtitle={[
               perReplyText(model),
-              model.vendorName,
               model.available ? '' : '暂不可用',
               model.capabilities.includes('adult_content') ? '允许成人内容' : '',
             ]

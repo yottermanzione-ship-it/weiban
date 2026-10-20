@@ -206,6 +206,8 @@ export function MenuRow({
   center?: boolean;
   disabled?: boolean;
 }) {
+  // 10-20：红色危险操作行（退出登录、删除、清空、注销…）一律微信式居中、无箭头
+  const centered = center || danger;
   const body = (
     <>
       {leading != null ? (
@@ -226,7 +228,7 @@ export function MenuRow({
           </span>
         )
       ) : null}
-      <span className={`menu-text ${center ? 'center' : ''}`}>
+      <span className={`menu-text ${centered ? 'center' : ''}`}>
         <span className="menu-label">
           {/* 纯文字包一层：menu-label 是 flex，匿名文本节点无法省略，长标题会被硬裁 */}
           {typeof label === 'string' ? <span className="menu-label-text">{label}</span> : label}
@@ -238,7 +240,7 @@ export function MenuRow({
       {extra}
       {value != null && <span className="menu-value">{value}</span>}
       {right}
-      {chevron && !center && (to || onClick) && <Chevron />}
+      {chevron && !centered && (to || onClick) && <Chevron />}
     </>
   );
   const className = `menu-row ${subtitle != null ? 'two-line' : ''} ${danger ? 'danger' : ''}`;

@@ -268,7 +268,7 @@ export function RelationsPage() {
             </button>
           </div>
           {editing.relation && (
-            <button type="button" className="danger" onClick={() => setConfirmDelete(true)}>
+            <button type="button" className="danger danger-row" onClick={() => setConfirmDelete(true)}>
               删除关系
             </button>
           )}

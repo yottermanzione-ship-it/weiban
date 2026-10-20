@@ -763,7 +763,7 @@ export function PetPage() {
             <small>{pet.name} ›</small>
           </button>
         </div>
-        <button className="danger full" onClick={() => setConfirmSendAway(true)}>
+        <button className="danger danger-row" onClick={() => setConfirmSendAway(true)}>
           送养
         </button>
         {error && <p role="alert">{error}</p>}
