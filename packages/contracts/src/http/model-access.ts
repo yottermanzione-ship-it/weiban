@@ -758,8 +758,25 @@ export const AdminModel = AdminCatalogEntry.extend({
   availability: z
     .object({ available: z.boolean(), detail: ModelUnavailableDetail.nullable() })
     .optional(),
+  /**
+   * 3.26（G3-2）：哪些线路最近连续没有返回用量（上游没报 token 数，系统已按本地估算计费、标记「估算」，不再暂停线路）。
+   * 只列连续次数 > 0 的线路；上游重新报用量就清零。次数达到 USAGE_MISSING_ALERT_STREAK 时后台提示一次。
+   */
+  usageMissing: z
+    .array(
+      z.object({
+        upstreamId: Id,
+        upstreamModelId: z.string(),
+        streak: z.number().int().positive(),
+        since: Timestamp.nullable(),
+      }),
+    )
+    .optional(),
 });
 export type AdminModel = z.infer<typeof AdminModel>;
+
+/** 3.26（G3-2）：同一条线路连续多少次没返回用量后，后台提示一次（只提示，不停用）。 */
+export const USAGE_MISSING_ALERT_STREAK = 5;
 
 export const AdminModelWrite = AdminCatalogEntryWrite.extend({
   /**
@@ -892,6 +909,84 @@ export type LeaderboardSnapshotStatus = z.infer<typeof LeaderboardSnapshotStatus
 /** 3.24：粘贴导入榜单：从网页复制的表格文本或 CSV（含「名次 / 模型名」），最多 1MB。 */
 export const ImportLeaderboardRequest = z.object({ text: z.string().min(1).max(1_000_000) });
 
+// ---------- 3.26（G3-1）：models.dev 公开模型数据（价格、上下文、最大输出、能否识图） ----------
+
+/**
+ * 3.26：models.dev（https://models.dev/api.json，开源项目 sst/models.dev 维护的公开模型目录）的本地缓存状态。
+ * 服务器每天抓取一次、后台可手动刷新；抓取失败保留上次结果并写明原因。价格原文是美元 / 百万 token，
+ * 按 usdCnyRate（后台可改，默认 7.2）换算成人民币用于预填。
+ */
+export const ModelsDevStatus = z.object({
+  sourceUrl: z.string(),
+  /** 当前缓存的抓取时间；还没有成功抓取过为 null。 */
+  fetchedAt: Timestamp.nullable(),
+  modelCount: z.number().int().nonnegative(),
+  providerCount: z.number().int().nonnegative(),
+  lastAttemptAt: Timestamp.nullable(),
+  /** 最近一次抓取失败的原因（成功后清空）。 */
+  lastError: z.string().max(300).nullable(),
+  /** 1 美元 = 多少人民币。 */
+  usdCnyRate: z.number().positive().max(100),
+});
+export type ModelsDevStatus = z.infer<typeof ModelsDevStatus>;
+
+export const ModelsDevSettings = z.object({ usdCnyRate: z.number().min(0.01).max(100) });
+export type ModelsDevSettings = z.infer<typeof ModelsDevSettings>;
+
+/** 每百万 token 的价格四项（缺的为 null）。 */
+export const ModelsDevPrice = z.object({
+  input: z.number().nonnegative().nullable(),
+  output: z.number().nonnegative().nullable(),
+  cacheRead: z.number().nonnegative().nullable(),
+  cacheWrite: z.number().nonnegative().nullable(),
+});
+export type ModelsDevPrice = z.infer<typeof ModelsDevPrice>;
+
+/** 按模型名匹配到的 models.dev 条目。 */
+export const ModelsDevMatch = z.object({
+  /** models.dev 的服务商 ID 与名称（例 anthropic / Anthropic；优先官方服务商）。 */
+  providerId: z.string(),
+  providerName: z.string(),
+  modelId: z.string(),
+  name: z.string(),
+  /** true = 模型名（规范化后）完全一致；false = 去掉日期 / latest 等后缀后才对上，请核对。 */
+  exact: z.boolean(),
+  /** 其他服务商里同名条目的个数（同一个模型在多个平台上架）。 */
+  alternatives: z.number().int().nonnegative(),
+  /** 官方价格（美元 / 百万 token）；models.dev 没有价格时四项都是 null。 */
+  priceUsd: ModelsDevPrice,
+  /** 按当前汇率换算的人民币价格（元 / 百万 token，4 位小数）。 */
+  priceCny: ModelsDevPrice,
+  contextTokens: z.number().int().positive().nullable(),
+  maxOutputTokens: z.number().int().positive().nullable(),
+  /** 输入是否支持图片；models.dev 没写为 null。 */
+  supportsImage: z.boolean().nullable(),
+});
+export type ModelsDevMatch = z.infer<typeof ModelsDevMatch>;
+
+export const ModelsDevLookupRequest = z.object({
+  items: z
+    .array(
+      z.object({
+        /** 上游模型名（例 claude-opus-4-6、anthropic/claude-opus-4.6）。 */
+        name: z.string().trim().min(1).max(200),
+        /** 出品方（例 Anthropic、深度求索），用来在多个服务商里优先选官方那条。 */
+        vendor: z.string().max(60).optional(),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
+export type ModelsDevLookupRequest = z.infer<typeof ModelsDevLookupRequest>;
+
+export const ModelsDevLookupResponse = z.object({
+  fetchedAt: Timestamp.nullable(),
+  usdCnyRate: z.number().positive(),
+  /** 与请求 items 一一对应；匹配不到为 null。还没有缓存时全部为 null（看 fetchedAt）。 */
+  items: z.array(z.object({ name: z.string(), match: ModelsDevMatch.nullable() })),
+});
+export type ModelsDevLookupResponse = z.infer<typeof ModelsDevLookupResponse>;
+
 /** v3.4：每用户限流与健康参数（后台「模型管理」设置）。 */
 export const GatewayLimits = z.object({
   /** 每个用户同时进行中的模型调用上限；null = 不限。超出时这次调用按「模型暂时不可用」返回。 */
@@ -974,6 +1069,36 @@ export const ModelAccessAdminEndpoints = {
     response: LeaderboardSnapshotStatus,
     summary:
       '3.24：粘贴榜单文本 / CSV 导入（抓取不到时的兜底）；一条都解析不出时 422 bad_request。写审计',
+  }),
+  getModelsDevStatus: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/models-dev`,
+    auth: 'admin',
+    response: ModelsDevStatus,
+    summary: '3.26：models.dev 公开模型数据的缓存状态与汇率',
+  }),
+  refreshModelsDev: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/model/models-dev/refresh`,
+    auth: 'admin',
+    response: ModelsDevStatus,
+    summary: '3.26：立即重新抓取 models.dev；失败保留上次缓存，lastError 写明原因。写审计',
+  }),
+  updateModelsDevSettings: defineEndpoint({
+    method: 'PUT',
+    path: `${API_PREFIX}/admin/model/models-dev/settings`,
+    auth: 'admin',
+    body: ModelsDevSettings,
+    response: ModelsDevStatus,
+    summary: '3.26：修改美元→人民币汇率（只影响预填，不改已保存的价格）。写审计',
+  }),
+  lookupModelsDev: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/model/models-dev/lookup`,
+    auth: 'admin',
+    body: ModelsDevLookupRequest,
+    response: ModelsDevLookupResponse,
+    summary: '3.26：按模型名（可带出品方）批量检索 models.dev，用于添加 / 编辑模型、导入配置时预填',
   }),
   listUpstreams: defineEndpoint({
     method: 'GET',

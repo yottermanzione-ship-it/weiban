@@ -161,7 +161,25 @@ export function estimateTokens(text: string): number {
   return Math.max(1, Math.ceil(chinese * 0.7 + words * 1.3 + other / 4));
 }
 
-function usageOf(raw: unknown, input: string, output: string): TextUsage {
+/** 3.26（G3-2）：估算时每张图片按 1000 token、每条消息额外 4 token（角色、分隔符）计，宁多勿少。 */
+export const ESTIMATED_IMAGE_TOKENS = 1000;
+const ESTIMATED_MESSAGE_OVERHEAD = 4;
+
+/** 3.26：上游没报用量时，按本地分词规则估算这次请求的输入 token（文字 + 图片 + 每条消息开销）。 */
+export function estimateInputTokens(
+  messages: ReadonlyArray<{ content: string; images?: readonly string[] }>,
+): number {
+  return messages.reduce(
+    (sum, m) =>
+      sum +
+      estimateTokens(m.content) +
+      ESTIMATED_MESSAGE_OVERHEAD +
+      (m.images?.length ?? 0) * ESTIMATED_IMAGE_TOKENS,
+    0,
+  );
+}
+
+function usageOf(raw: unknown, inputEstimate: number, output: string): TextUsage {
   const object = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const details = object.prompt_tokens_details as Record<string, unknown> | undefined;
   const numberOrNull = (value: unknown) =>
@@ -191,7 +209,7 @@ function usageOf(raw: unknown, input: string, output: string): TextUsage {
     }
   }
   return {
-    inputTokens: estimateTokens(input),
+    inputTokens: Math.max(1, inputEstimate),
     cachedInputTokens: 0,
     outputTokens: estimateTokens(output),
     estimated: true,
@@ -282,7 +300,7 @@ export class OpenAiTextAdapter implements TextAdapter {
           ok: false,
           category: 'content_rejected',
           retryable: false,
-          ...(payload.usage ? { usage: usageOf(payload.usage, '', '') } : {}),
+          ...(payload.usage ? { usage: usageOf(payload.usage, estimateInputTokens(input.messages), '') } : {}),
         };
       if (response.status === 401 || response.status === 403)
         return { ok: false, category: 'invalid_key', retryable: false };
@@ -299,18 +317,14 @@ export class OpenAiTextAdapter implements TextAdapter {
           ok: false,
           category: 'content_rejected',
           retryable: false,
-          ...(payload.usage ? { usage: usageOf(payload.usage, '', '') } : {}),
+          ...(payload.usage ? { usage: usageOf(payload.usage, estimateInputTokens(input.messages), '') } : {}),
         };
       const raw: unknown = choice?.message?.content;
       if (raw !== undefined && raw !== null && typeof raw !== 'string')
         return { ok: false, category: 'provider_error', retryable: true };
       const rawText = typeof raw === 'string' ? raw : '';
       const text = stripReasoning(rawText);
-      const usage = usageOf(
-        payload.usage,
-        input.messages.map((m) => m.content).join('\n'),
-        rawText,
-      );
+      const usage = usageOf(payload.usage, estimateInputTokens(input.messages), rawText);
       // 空正文或 JSON 被截断：按失败处理（网关负责重试与降级），不能当成功静默返回。
       if (!text) return { ok: false, category: 'empty_output', retryable: true, usage };
       if (choice?.finish_reason === 'length' && input.responseFormat === 'json')

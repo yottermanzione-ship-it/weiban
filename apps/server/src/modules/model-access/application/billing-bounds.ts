@@ -1,17 +1,22 @@
-import { CATALOG_LOCK_KEY } from './catalog.js';
 /** 路由计费证据只来自管理员核准配置；估算器不在此充当上限。 */
 import { Inject, Injectable } from '@nestjs/common';
-import { RouteBillingBounds, type UsageQuantities } from '@weiban/contracts';
-import { and, eq } from 'drizzle-orm';
+import {
+  RouteBillingBounds,
+  USAGE_MISSING_ALERT_STREAK,
+  type UsageQuantities,
+} from '@weiban/contracts';
+import { and, eq, gt, sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import {
   DATABASE,
   CLOCK,
   AUDIT_LOG,
+  OUTBOX,
   type Database,
   type Clock,
   type AuditLog,
   type DbTx,
+  type Outbox,
 } from '../../../platform/index.js';
 import { modelRoutes, modelCatalog, platformPurposeLimits } from '../infra/db/schema.js';
 import { localDate } from '../../../platform/time/local-time.js';
@@ -26,6 +31,7 @@ export class BillingBoundsService {
     @Inject(DATABASE) private readonly db: Database,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
+    @Inject(OUTBOX) private readonly outbox: Outbox,
   ) {}
   async get(
     modelKey: string,
@@ -106,87 +112,83 @@ export class BillingBoundsService {
     }
     return profiles;
   }
-  async pauseUnknown(
+  /**
+   * 3.26（G3-2）：记录一次上游调用有没有返回用量（取代原「用量未知 → 暂停线路」）。
+   * - reported：上游报了用量，这条线路的连续缺用量计数清零；
+   * - missing：上游没报（已按本地估算计费，或进程中断后成本待核），计数 +1。连续达到
+   *   USAGE_MISSING_ALERT_STREAK 次时写审计、发一条管理员提醒（info，只进后台列表），本轮不再重复提醒；
+   *   **不停用线路**（总经理 10-21 确认）。
+   * 同一上游模型名可能挂在多个模型下（按上游 + 上游模型名一起更新）。
+   */
+  async recordUsage(
     modelKey: string,
     route: { upstreamId: string; upstreamModelId: string },
-    bounds: Pick<RouteBillingBounds, 'checkedAt'>,
+    state: 'reported' | 'missing',
     transaction?: DbTx,
-  ) {
-    const pause = async (tx: DbTx) => {
-      await tx.query('SELECT pg_advisory_xact_lock($1)', [CATALOG_LOCK_KEY]);
-      const routes = await tx.db
-        .select()
-        .from(modelRoutes)
-        .where(
-          and(
-            eq(modelRoutes.upstreamId, route.upstreamId),
-            eq(modelRoutes.upstreamModelId, route.upstreamModelId),
-          ),
-        )
-        .for('update');
-      for (const row of routes) {
-        if (
-          !row.billingBounds ||
-          Date.parse(row.billingBounds.checkedAt ?? '') > Date.parse(bounds.checkedAt ?? '')
-        )
-          continue;
-        await tx.db
-          .update(modelRoutes)
-          .set({
-            enabled: false,
-            billingBounds: { ...row.billingBounds, pauseReason: 'usage_unknown' },
-            updatedAt: this.clock.now(),
-          })
-          .where(
-            and(
-              eq(modelRoutes.modelKey, row.modelKey),
-              eq(modelRoutes.upstreamId, route.upstreamId),
-            ),
-          );
-      }
-      const catalogs = await tx.db
-        .select()
-        .from(modelCatalog)
-        .where(
-          and(
-            eq(modelCatalog.upstreamId, route.upstreamId),
-            eq(modelCatalog.upstreamModelId, route.upstreamModelId),
-          ),
-        )
-        .for('update');
-      for (const row of catalogs) {
-        if (
-          !row.billingBounds ||
-          Date.parse(row.billingBounds.checkedAt ?? '') > Date.parse(bounds.checkedAt ?? '')
-        )
-          continue;
-        await tx.db
-          .update(modelCatalog)
-          .set({
-            billingBounds: { ...row.billingBounds, pauseReason: 'usage_unknown' },
-            updatedAt: this.clock.now(),
-          })
-          .where(eq(modelCatalog.modelKey, row.modelKey));
-      }
+  ): Promise<void> {
+    const where = and(
+      eq(modelRoutes.upstreamId, route.upstreamId),
+      eq(modelRoutes.upstreamModelId, route.upstreamModelId),
+    );
+    if (state === 'reported') {
+      const db = transaction?.db ?? this.db.db;
+      await db
+        .update(modelRoutes)
+        .set({ usageMissingStreak: 0, usageMissingSince: null, usageMissingAlertedAt: null })
+        .where(and(where, gt(modelRoutes.usageMissingStreak, 0)));
+      return;
+    }
+    const run = async (tx: DbTx) => {
+      const now = this.clock.now();
+      const rows = await tx.db
+        .update(modelRoutes)
+        .set({
+          usageMissingStreak: sql`${modelRoutes.usageMissingStreak} + 1`,
+          usageMissingSince: sql`coalesce(${modelRoutes.usageMissingSince}, ${now})`,
+        })
+        .where(where)
+        .returning({
+          modelKey: modelRoutes.modelKey,
+          streak: modelRoutes.usageMissingStreak,
+          alertedAt: modelRoutes.usageMissingAlertedAt,
+        });
+      const due = rows.filter((r) => r.streak >= USAGE_MISSING_ALERT_STREAK && !r.alertedAt);
+      if (!due.length) return;
+      await tx.db.update(modelRoutes).set({ usageMissingAlertedAt: now }).where(where);
+      const streak = Math.max(...due.map((r) => r.streak));
+      const name =
+        route.upstreamModelId.length > 60
+          ? `${route.upstreamModelId.slice(0, 57)}...`
+          : route.upstreamModelId;
+      await this.outbox.publish(tx, 'platform.admin_alert_raised', 'model_access', {
+        kind: 'upstream_usage_missing',
+        severity: 'info',
+        dedupeKey: `upstream_usage_missing:${route.upstreamId}:${createHash('sha256')
+          .update(route.upstreamModelId)
+          .digest('hex')
+          .slice(0, 16)}`,
+        summary: `线路「${name}」连续 ${streak} 次没有返回用量，已按本地估算计费（线路照常使用）。可检查上游是否返回 usage。`,
+        refs: { upstreamId: route.upstreamId },
+      });
       await this.audit.record(
         {
           module: 'model_access',
-          action: 'billing_bounds.usage_unknown',
+          action: 'billing_bounds.usage_missing_streak',
           actorType: 'system',
           targetType: 'model',
           targetId: modelKey,
           details: {
             upstreamId: route.upstreamId,
             upstreamModelId: route.upstreamModelId,
-            evidence: boundsEvidence(bounds),
-            reason: '供应商未报告有效用量，需核对后重新启用具体路由',
+            streak,
+            models: due.map((r) => r.modelKey),
           },
         },
         tx,
       );
     };
-    if (transaction) await pause(transaction);
-    else await this.db.transaction(pause);
+    if (transaction) await run(transaction);
+    else await this.db.transaction(run);
   }
 
   /** 北京自然日+自然分钟窗口，用户别名/进程重启不刷新额度。仅首次逻辑请求调用，cache重放不消耗。 */

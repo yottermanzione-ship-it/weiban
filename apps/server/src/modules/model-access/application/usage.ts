@@ -110,13 +110,20 @@ export class UsageRecorder {
       .set({ phase: 'sent' })
       .where(eq(generationAttempts.id, id));
   }
-  async finishAttempt(id: string, usage: unknown, known: boolean, errorCode: string | null) {
+  /** 3.26：usageState 可显式传 estimated（上游没报用量、按本地估算计费）；不传按 known 得出。 */
+  async finishAttempt(
+    id: string,
+    usage: unknown,
+    known: boolean,
+    errorCode: string | null,
+    usageState?: 'reported' | 'estimated' | 'unknown',
+  ) {
     await this.database.db
       .update(generationAttempts)
       .set({
         phase: 'finished',
         reportedUsage: usage,
-        usageState: known ? 'reported' : 'unknown',
+        usageState: usageState ?? (known ? 'reported' : 'unknown'),
         errorCode,
         finishedAt: this.clock.now(),
       })

@@ -643,11 +643,15 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     actualKnown = true,
   ): Promise<PortResult<MediaCallResult, GenerateError>> {
     const latencyMs = Math.round(performance.now() - charge.wallStart);
+    // 3.26（G3-2）：上游没报用量但本地有估算数量（例 决策调用按本地分词估算输入 token）时按估算计费、标记估算，
+    // 不再算「成本未知」；连估算数量都没有的才保持未知（成本待核，线路照常使用）。
+    const estimated = !actualKnown && Object.values(actual).some((v) => typeof v === 'number' && v > 0);
     const settled = await this.billing.settle({
       holdId: charge.holdId,
       usageRecordId: charge.usageRecordId,
       actual,
-      actualKnown,
+      actualKnown: actualKnown || estimated,
+      ...(estimated ? { actualEstimated: true } : {}),
       startedAt: charge.startedAt.toISOString(),
       upstreamId: charge.model.upstreamId,
     });
@@ -662,11 +666,18 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       mediaUnits: unitsOf(actual),
     });
     await this.recorder.writeSettleSnapshot(charge.usageRecordId, settled);
-    await this.recorder.finishAttempt(charge.attemptId, actual, actualKnown, null);
-    if (!actualKnown)
-      await this.bounds!.pauseUnknown(charge.model.modelKey, charge.model, {
-        checkedAt: charge.startedAt.toISOString(),
-      });
+    await this.recorder.finishAttempt(
+      charge.attemptId,
+      actual,
+      actualKnown,
+      null,
+      actualKnown ? 'reported' : estimated ? 'estimated' : 'unknown',
+    );
+    // 未知的由 billing.call_cost_unknown 事件计入；这里只记已报 / 估算两种
+    if (actualKnown || estimated)
+      await this.bounds
+        ?.recordUsage(charge.model.modelKey, charge.model, actualKnown ? 'reported' : 'missing')
+        .catch(() => undefined);
     return {
       ok: true,
       value: {
@@ -698,10 +709,6 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       release.costKnown === true,
       category,
     );
-    if (charge.sent && release.costKnown !== true)
-      await this.bounds!.pauseUnknown(charge.model.modelKey, charge.model, {
-        checkedAt: charge.startedAt.toISOString(),
-      });
     await this.recorder.finish(charge.usageRecordId, {
       status: 'failed',
       errorCode: category,

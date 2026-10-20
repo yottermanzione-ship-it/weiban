@@ -12,6 +12,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type {
   AdminCatalogEntry,
+  AdminModel,
   ModelCapability,
   ModelInfo,
   ModelRoute,
@@ -27,7 +28,7 @@ import {
   ModelScenarioSettings,
   RouteBillingBounds,
 } from '@weiban/contracts';
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   AUDIT_LOG,
@@ -729,6 +730,36 @@ export class CatalogService {
         priority: r.priority,
         weight: r.weight,
         enabled: r.enabled,
+      });
+      out.set(r.modelKey, list);
+    }
+    return out;
+  }
+
+  /** 3.26（G3-2）：各模型最近连续没返回用量的线路（后台提示；计数 > 0 才列出）。 */
+  async usageMissing(
+    modelKeys: readonly string[],
+  ): Promise<Map<string, NonNullable<AdminModel['usageMissing']>>> {
+    const keys = [...new Set(modelKeys)];
+    const out = new Map<string, NonNullable<AdminModel['usageMissing']>>();
+    if (keys.length === 0) return out;
+    const rows = await this.database.db
+      .select({
+        modelKey: modelRoutes.modelKey,
+        upstreamId: modelRoutes.upstreamId,
+        upstreamModelId: modelRoutes.upstreamModelId,
+        streak: modelRoutes.usageMissingStreak,
+        since: modelRoutes.usageMissingSince,
+      })
+      .from(modelRoutes)
+      .where(and(inArray(modelRoutes.modelKey, keys), gt(modelRoutes.usageMissingStreak, 0)));
+    for (const r of rows) {
+      const list = out.get(r.modelKey) ?? [];
+      list.push({
+        upstreamId: r.upstreamId,
+        upstreamModelId: r.upstreamModelId,
+        streak: r.streak,
+        since: r.since?.toISOString() ?? null,
       });
       out.set(r.modelKey, list);
     }

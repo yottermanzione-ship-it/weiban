@@ -16,6 +16,7 @@ import {
   type IdentityAccountStatusPort,
   type MediaSystemPort,
   type ReserveInput,
+  type UsageQuantities,
   type ModelGatewayPlatformPort,
 } from '@weiban/contracts';
 import { APP_CONFIG, CLOCK, type AppConfig, type Clock } from '../../../platform/index.js';
@@ -36,6 +37,7 @@ import {
 } from '../tokens.js';
 import {
   billableUsage,
+  estimateInputTokens,
   estimateTokens,
   textProtocolOf,
   type AdapterMessage,
@@ -484,13 +486,21 @@ export class ModelGateway implements ModelGatewayPort {
             answer = { ok: false, category: 'network_error', retryable: true };
           }
         } else answer = { ok: false, category: 'provider_error', retryable: false };
+        // 3.26（G3-2）：上游没报用量时不再算「成本未知、暂停线路」，改按本地分词估算计费并标记「估算」。
+        // 失败且连估算都没有（HTTP 报错、网络中断）时：上游明确拒绝的错误按 0 计；其余按估算的输入 token 由平台吸收。
         const known = !!answer.usage && !answer.usage.estimated;
+        const failureUsage = sent && !answer.ok ? this.failureUsage(answer, wire) : undefined;
         await this.recorder.finishAttempt(
           attemptId,
-          answer.usage ?? null,
+          answer.usage ?? failureUsage?.usage ?? null,
           known,
           answer.ok ? null : answer.category,
+          known ? 'reported' : answer.usage || failureUsage?.estimated ? 'estimated' : 'unknown',
         );
+        if (sent && (answer.ok || known || answer.usage || failureUsage?.estimated))
+          await this.bounds!.recordUsage(model.modelKey, route, known ? 'reported' : 'missing').catch(
+            () => undefined,
+          );
         const latencyMs = Math.round(performance.now() - wallStart);
         if (answer.ok) {
           const result: CachedResult = {
@@ -515,12 +525,7 @@ export class ModelGateway implements ModelGatewayPort {
             retryCount: ordinal,
           });
           await this.scheduler.recordSuccess(route.upstreamId).catch(() => undefined);
-          const completed = await this.finalize((await this.cache.get(row.id))!, result);
-          if (!known)
-            await this.bounds!.pauseUnknown(model.modelKey, route, {
-              checkedAt: startedAt.toISOString(),
-            });
-          return completed;
+          return await this.finalize((await this.cache.get(row.id))!, result);
         }
         const released = await this.billing.release({
           holdId: hold.holdId,
@@ -530,11 +535,8 @@ export class ModelGateway implements ModelGatewayPort {
               : 'call_failed'
             : 'cancelled',
           // 3.24：只交计价字段（原来把 estimated / reported 一并传入，会被计费的用量校验拒绝）
-          upstreamUsage: !sent
-            ? {}
-            : known && answer.usage
-              ? billableUsage(answer.usage)
-              : undefined,
+          upstreamUsage: !sent ? {} : (failureUsage?.usage ?? {}),
+          ...(sent && failureUsage?.estimated ? { upstreamUsageEstimated: true } : {}),
           usageRecordId: usage.record.id,
           startedAt: startedAt.toISOString(),
           upstreamId: route.upstreamId,
@@ -543,19 +545,18 @@ export class ModelGateway implements ModelGatewayPort {
         await this.recorder.finish(usage.record.id, {
           status: 'failed',
           errorCode: sent ? answer.category : 'route_risk_blocked',
-          ...(answer.usage ?? {
-            inputTokens: 0,
-            cachedInputTokens: 0,
-            outputTokens: 0,
-            estimated: false,
-          }),
+          ...(answer.usage ??
+            (failureUsage?.estimated
+              ? {
+                  inputTokens: failureUsage.usage.inputTokens ?? 0,
+                  cachedInputTokens: 0,
+                  outputTokens: failureUsage.usage.outputTokens ?? 0,
+                  estimated: true,
+                }
+              : { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, estimated: false })),
           latencyMs,
           retryCount: ordinal,
         });
-        if (sent && !known)
-          await this.bounds!.pauseUnknown(model.modelKey, route, {
-            checkedAt: startedAt.toISOString(),
-          });
         if (!sent) {
           index++;
           continue;
@@ -563,7 +564,8 @@ export class ModelGateway implements ModelGatewayPort {
         if (answer.category === 'content_rejected' || answer.category === 'bad_request')
           return completeFailure(answer.category);
         const empty = answer.category === 'empty_output' || answer.category === 'truncated';
-        if (!known || FAILOVER_CATEGORIES.includes(answer.category)) {
+        // 3.26：缺用量不再等于「线路暂停、必须换线路」；只按错误类别决定是否切换线路。
+        if (FAILOVER_CATEGORIES.includes(answer.category)) {
           await this.scheduler
             .recordFailure(route.upstreamId, answer.category)
             .catch(() => undefined);
@@ -612,13 +614,35 @@ export class ModelGateway implements ModelGatewayPort {
     }
     return completeFailure('provider_unavailable');
   }
+  /**
+   * 3.26（G3-2）：失败调用交给计费的用量。
+   * - 上游报了用量：原样（已知）；只给了估算（正文为空 / 被截断但没报 usage）：用估算，标记估算；
+   * - 什么都没报：上游明确拒绝（密钥、余额、限流、请求错误、服务商报错）的按 0 计（这类请求供应商不收费）；
+   *   网络中断 / 超时可能已经生成，按估算的输入 token 计，由平台吸收（用户不付钱），标记估算。
+   */
+  private failureUsage(
+    answer: Extract<TextResult, { ok: false }>,
+    wire: AdapterMessage[],
+  ): { usage: UsageQuantities; estimated: boolean } {
+    if (answer.usage)
+      return { usage: billableUsage(answer.usage), estimated: answer.usage.estimated };
+    if (answer.category === 'network_error')
+      return {
+        usage: { inputTokens: estimateInputTokens(wire), cachedInputTokens: 0, outputTokens: 0 },
+        estimated: true,
+      };
+    return { usage: {}, estimated: false };
+  }
+
   async finalize(row: GenerationRow, result: CachedResult): Promise<CachedResult> {
     if (!result.ok || !row.holdId || !row.upstreamId) throw new Error('网关待结算结果缺失');
     const record = await this.recorder.byId(result.value.usageRecordId);
     const settled = await this.billing.settle({
       holdId: row.holdId,
       usageRecordId: result.value.usageRecordId,
-      actualKnown: !result.value.usage.estimated,
+      // 3.26：上游没报用量 → 按网关的本地估算计费（标记估算），不再当作「成本未知」
+      actualKnown: true,
+      ...(result.value.usage.estimated ? { actualEstimated: true } : {}),
       // 3.24：含缓存写入（5 分钟 / 1 小时），billing 按缓存写入价计（没定价按输入价）
       actual: billableUsage(result.value.usage),
       startedAt: (record?.createdAt ?? row.createdAt).toISOString(),

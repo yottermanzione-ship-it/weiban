@@ -35,6 +35,7 @@ import {
 } from '../../../platform/index.js';
 import { CatalogService } from '../application/catalog.js';
 import { LeaderboardService } from '../application/leaderboard.js';
+import { ModelsDevService } from '../application/models-dev.js';
 import { ModelAdminService } from '../application/models.js';
 import { ModelDeletionService } from '../application/model-deletion.js';
 import { GatewayLimitsService } from '../application/limits.js';
@@ -244,8 +245,44 @@ export class ModelAdminController {
     return this.leaderboard.importText(me.userId, body.text);
   }
 
+  // ---------- 3.26 models.dev 公开模型数据（预填价格 / 上下文 / 最大输出 / 识图） ----------
+
+  @Get('models-dev')
+  @RequireAuth(A.getModelsDevStatus.auth)
+  modelsDevStatus() {
+    return this.modelsDev.status();
+  }
+
+  @Post('models-dev/refresh')
+  @HttpCode(200)
+  @RequireAuth(A.refreshModelsDev.auth)
+  refreshModelsDev(@CurrentPrincipal() me: AuthPrincipal) {
+    return this.modelsDev.refresh(me.userId);
+  }
+
+  @Put('models-dev/settings')
+  @RequireAuth(A.updateModelsDevSettings.auth)
+  updateModelsDevSettings(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(A.updateModelsDevSettings.body)))
+    body: Out<typeof A.updateModelsDevSettings.body>,
+  ) {
+    return this.modelsDev.updateRate(me.userId, body.usdCnyRate);
+  }
+
+  @Post('models-dev/lookup')
+  @HttpCode(200)
+  @RequireAuth(A.lookupModelsDev.auth)
+  lookupModelsDev(
+    @Body(new ContractPipe(schema(A.lookupModelsDev.body)))
+    body: Out<typeof A.lookupModelsDev.body>,
+  ) {
+    return this.modelsDev.lookup(body);
+  }
+
   constructor(
     @Inject(LeaderboardService) private readonly leaderboard: LeaderboardService,
+    @Inject(ModelsDevService) private readonly modelsDev: ModelsDevService,
     @Inject(UpstreamService) private readonly upstreams: UpstreamService,
     @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(AdminUsageService) private readonly usage: AdminUsageService,

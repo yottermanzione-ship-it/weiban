@@ -280,13 +280,9 @@ export class ReservationService implements BillingReservationPort {
         hold.riskSnapshot?.phase !== 'reserved'
       )
         return false;
+      // 3.26（G3-2）：同一路由有「成本待核」的旧调用时不再拒绝新调用（总经理确认：缺用量不暂停线路）。
+      // 待核风险照常记在平台预算与对账里，由后台核实；这里只保留锁，和写入待核风险串行。
       await this.lockCallRoute(tx, input.upstreamId, input.upstreamModelId);
-      const unresolved = await tx.query<{ id: string }>(
-        `SELECT id FROM billing.holds WHERE risk_snapshot->>'phase'='unknown'
-         AND risk_snapshot->>'upstreamId'=$1 AND risk_snapshot->>'upstreamModelId'=$2 LIMIT 1`,
-        [input.upstreamId, input.upstreamModelId],
-      );
-      if (unresolved.rows.length) return false;
       await tx.db
         .update(holds)
         .set({
@@ -345,6 +341,8 @@ export class ReservationService implements BillingReservationPort {
       const stillReserved = wasActive && hold.expiresAt.getTime() > this.clock.nowMs();
       const rows = await this.prices.modelPrices(tx, hold.priceVersionId, hold.modelKey);
       const actualKnown = input.actualKnown !== false;
+      // 3.26：上游没报用量时网关按本地分词估算（actualEstimated）。按估算计费，同样受冻结上限保护、不透支。
+      const usageEstimated = actualKnown && input.actualEstimated === true;
       const rawPriced = priceUsage(rows, actualKnown ? input.actual : {}, startedAt, false);
       if (!rawPriced.ok) throw new BillingUsageError('实际用量无法定价');
       // 3.22：按冻结时锁定的限时折扣计售价（与报价、冻结同一算式 applyDiscount）；成本不变。
@@ -435,6 +433,7 @@ export class ReservationService implements BillingReservationPort {
         waivedMicros: Math.max(0, priced.sellMicros - amount),
         costKnown,
         unpricedUnits: actualKnown ? priced.unpricedUnits : ['missing_or_invalid_usage'],
+        ...(usageEstimated ? { usageEstimated: true } : {}),
       };
       const risk = await this.updateRisk(tx, hold, costKnown, knownCost, wasActive);
       output.uncertainCostMicros = risk.snapshot?.uncertainMicros ?? 0;
@@ -478,6 +477,7 @@ export class ReservationService implements BillingReservationPort {
               theoreticalMicros: priced.sellMicros,
               ...allocation,
               unpricedUnits: priced.unpricedUnits,
+              usageEstimated,
             },
           },
           tx,
@@ -520,6 +520,9 @@ export class ReservationService implements BillingReservationPort {
 
       // 失败调用仍被上游收费：按成本价记平台账户「吸收」，用户不付钱（billing.md 6.5）
       let absorbed = 0;
+      // 3.26：upstreamUsageEstimated = 网关按本地估算给出的用量（上游没报），平台按估算吸收成本。
+      const usageEstimated =
+        input.upstreamUsage !== undefined && input.upstreamUsageEstimated === true;
       let costKnown = input.upstreamUsage !== undefined || hold.riskSnapshot?.phase === 'reserved';
       let unpricedUnits: string[] = [];
       if (input.upstreamUsage && hasQuantity(input.upstreamUsage)) {
@@ -546,7 +549,7 @@ export class ReservationService implements BillingReservationPort {
             upstreamId: input.upstreamId ?? null,
             costMicros: absorbed,
             absorbed: true,
-            reason: `失败调用仍被上游收费（${input.reason}）`,
+            reason: `失败调用仍被上游收费（${input.reason}${usageEstimated ? '，按估算用量' : ''}）`,
           });
         }
       }
@@ -564,6 +567,7 @@ export class ReservationService implements BillingReservationPort {
             costKnown,
             unpricedUnits,
             uncertainCostMicros: risk.snapshot?.uncertainMicros ?? 0,
+            ...(usageEstimated ? { usageEstimated: true } : {}),
           },
           riskSnapshot: risk.snapshot,
         })
@@ -589,6 +593,7 @@ export class ReservationService implements BillingReservationPort {
         costKnown,
         unpricedUnits,
         uncertainCostMicros: risk.snapshot?.uncertainMicros ?? 0,
+        ...(usageEstimated ? { usageEstimated: true } : {}),
       };
     });
   }

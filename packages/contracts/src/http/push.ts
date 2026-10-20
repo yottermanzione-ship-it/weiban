@@ -155,6 +155,11 @@ export const AdminAlertKind = z.enum([
   'upstream_unavailable',
   /** 之前报过的上游问题已恢复（上游状态回到 active）。发出方 model_access。 */
   'upstream_recovered',
+  /**
+   * 3.26：某条线路连续多次没返回用量（已按本地估算计费，不停用线路）。发出方 model_access，级别 info（只进后台列表）。
+   * 合并键 `upstream_usage_missing:{upstreamId}:{上游模型名摘要}`。
+   */
+  'upstream_usage_missing',
 ]);
 export type AdminAlertKind = z.infer<typeof AdminAlertKind>;
 

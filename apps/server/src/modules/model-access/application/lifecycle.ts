@@ -103,12 +103,8 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
       eventType: 'billing.call_cost_unknown',
       handle: async (event, tx) => {
         if (!this.billingBounds) throw new Error('计费边界服务不可用，未知风险事件不得确认');
-        await this.billingBounds.pauseUnknown(
-          event.payload.modelKey,
-          event.payload,
-          { checkedAt: event.payload.sentAt },
-          tx,
-        );
+        // 3.26（G3-2）：成本待核（多为进程中断）不再暂停线路，只计入连续缺用量；待核风险由后台核实。
+        await this.billingBounds.recordUsage(event.payload.modelKey, event.payload, 'missing', tx);
       },
     });
     this.bus.subscribe({

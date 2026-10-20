@@ -21,6 +21,7 @@
  * 安全：密钥只放在 x-api-key 头；不跟随重定向；任何错误只返回类别，不记录上游原文；响应最多读 2MB。
  */
 import {
+  estimateInputTokens,
   estimateTokens,
   stripReasoning,
   type AdapterMessage,
@@ -144,7 +145,7 @@ function mergeUsage(target: Record<string, unknown>, raw: unknown) {
 
 export function anthropicUsage(
   raw: Record<string, unknown>,
-  input: string,
+  inputEstimate: number,
   output: string,
 ): TextUsage {
   const read = num(raw.cache_read_input_tokens) ?? 0;
@@ -174,7 +175,7 @@ export function anthropicUsage(
       reported,
     };
   return {
-    inputTokens: estimateTokens(input),
+    inputTokens: Math.max(1, inputEstimate),
     cachedInputTokens: 0,
     outputTokens: estimateTokens(output),
     estimated: true,
@@ -230,7 +231,7 @@ export class AnthropicTextAdapter implements TextAdapter {
         ? { output_config: { effort: 'low' } }
         : {}),
     };
-    const inputText = input.messages.map((m) => m.content).join('\n');
+    const inputEstimate = estimateInputTokens(input.messages);
     try {
       // 每次 generate 恰好一次 HTTP；重试由网关另建 attempt 并预留风险。
       const response = await fetch(anthropicUrl(input.baseUrl, 'messages'), {
@@ -261,7 +262,7 @@ export class AnthropicTextAdapter implements TextAdapter {
       const parsed = contentType.includes('application/json') ? parseJson(raw) : parseStream(raw);
       if (parsed.error) return { ok: false, ...classifyAnthropicError(0, parsed.error) };
       const rawText = parsed.text;
-      const usage = anthropicUsage(parsed.usage, inputText, rawText);
+      const usage = anthropicUsage(parsed.usage, inputEstimate, rawText);
       if (parsed.stopReason === 'refusal')
         return { ok: false, category: 'content_rejected', retryable: false, usage };
       const text = stripReasoning(rawText);

@@ -50,6 +50,9 @@ export interface ReconciliationDetails {
   netAbsorbedMicros?: number;
   unknownCostCalls?: number;
   uncertainCostMicros?: number;
+  /** 3.26：按本地估算用量计费（上游没报用量）的调用条数与记账金额。 */
+  estimatedUsageCalls?: number;
+  estimatedChargedMicros?: number;
   balanceMismatches: Array<{ accountId: string; balanceMicros: number; ledgerSumMicros: number }>;
   heldMismatches: Array<{ accountId: string; heldMicros: number; activeHoldsMicros: number }>;
   overdrawnAccounts: Array<{ accountId: string; userId: string | null; balanceMicros: number }>;
@@ -135,6 +138,7 @@ export class ReconciliationService {
       [dayStart, dayEnd],
     );
     const dayRisk = await this.unknownRisk(date, date);
+    const dayEstimated = await this.estimatedUsage(date, date);
 
     // ③ 上游账单
     const threshold = this.config.billing.upstreamDiffRatio;
@@ -174,6 +178,9 @@ export class ReconciliationService {
         netComputedCostMicros: computed,
         unknownCostCalls: risk.count,
         uncertainCostMicros: risk.amount,
+        estimatedUsageCalls: (
+          await this.estimatedUsage(bill.periodStart, bill.periodEnd, bill.upstreamId)
+        ).count,
         diffRatio: Math.round(diffRatio * 10_000) / 10_000,
         flagged: diffRatio > threshold || risk.count > 0,
       });
@@ -183,6 +190,8 @@ export class ReconciliationService {
       netAbsorbedMicros: Number(absorbed.rows[0]?.total ?? 0),
       unknownCostCalls: dayRisk.count,
       uncertainCostMicros: dayRisk.amount,
+      estimatedUsageCalls: dayEstimated.count,
+      estimatedChargedMicros: dayEstimated.amount,
       balanceMismatches,
       heldMismatches,
       overdrawnAccounts,
@@ -381,8 +390,28 @@ export class ReconciliationService {
       netAbsorbedMicros: details.netAbsorbedMicros ?? row.absorbedMicros,
       unknownCostCalls: details.unknownCostCalls ?? 0,
       uncertainCostMicros: details.uncertainCostMicros ?? 0,
+      estimatedUsageCalls: details.estimatedUsageCalls ?? 0,
+      estimatedChargedMicros: details.estimatedChargedMicros ?? 0,
       createdAt: row.createdAt.toISOString(),
     };
+  }
+
+  /**
+   * 3.26（G3-2）：按本地估算用量记账的调用（结算或失败吸收快照里标了 usageEstimated）。
+   * 金额 = 用户 / 平台账户被扣的售价 + 失败调用平台吸收的成本。只列出，不算异常（不触发标红）。
+   */
+  private async estimatedUsage(from: string, to: string, upstreamId?: string) {
+    const { rows } = await this.database.query<{ count: string; amount: string }>(
+      `SELECT count(*) AS count,
+              coalesce(sum(coalesce((settlement_snapshot->>'amountMicros')::bigint,
+                                    (release_snapshot->>'absorbedCostMicros')::bigint, 0)),0) AS amount
+         FROM billing.holds
+        WHERE (settlement_snapshot->>'usageEstimated' = 'true' OR release_snapshot->>'usageEstimated' = 'true')
+          AND budget_day >= $1 AND budget_day <= $2
+          ${upstreamId ? "AND risk_snapshot->>'upstreamId'=$3" : ''}`,
+      upstreamId ? [from, to, upstreamId] : [from, to],
+    );
+    return { count: Number(rows[0]?.count ?? 0), amount: Number(rows[0]?.amount ?? 0) };
   }
 
   private async unknownRisk(from: string, to: string, upstreamId?: string) {

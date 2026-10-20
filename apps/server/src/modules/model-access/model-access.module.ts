@@ -26,6 +26,11 @@ import {
   LeaderboardService,
   defaultLeaderboardFetcher,
 } from './application/leaderboard.js';
+import {
+  MODELS_DEV_FETCHER,
+  ModelsDevService,
+  defaultModelsDevFetcher,
+} from './application/models-dev.js';
 import { CatalogService } from './application/catalog.js';
 import { DisplayPricingService } from './application/display-pricing.js';
 import { ModelAdminService, RatePriceSource } from './application/models.js';
@@ -101,6 +106,9 @@ import {
     // 3.24：榜单自动获取（每天抓取 + 立即刷新 + 粘贴导入）
     LeaderboardService,
     { provide: LEADERBOARD_FETCHER, useValue: defaultLeaderboardFetcher },
+    // 3.26：models.dev 公开模型数据（后台预填价格 / 上下文 / 最大输出 / 识图）
+    ModelsDevService,
+    { provide: MODELS_DEV_FETCHER, useValue: defaultModelsDevFetcher },
     DisplayPricingService,
     SelectionService,
     ScenarioService,

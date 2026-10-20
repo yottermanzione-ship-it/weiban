@@ -174,6 +174,10 @@ export const modelRoutes = modelAccessSchema.table(
     priority: integer('priority').notNull().default(1),
     weight: integer('weight').notNull().default(100),
     enabled: boolean('enabled').notNull().default(true),
+    /** 3.26（0124）：连续几次没返回用量（已按估算计费）；上游重新报用量清零。达到阈值后台提示一次，不停用。 */
+    usageMissingStreak: integer('usage_missing_streak').notNull().default(0),
+    usageMissingSince: tz('usage_missing_since'),
+    usageMissingAlertedAt: tz('usage_missing_alerted_at'),
     createdAt: tz('created_at').notNull(),
     updatedAt: tz('updated_at').notNull(),
   },
@@ -396,3 +400,15 @@ export const platformPurposeLimits = modelAccessSchema.table(
   },
   (t) => [primaryKey({ columns: [t.userId, t.purpose] })],
 );
+
+/** 3.26（0125）：models.dev 公开模型数据的本地缓存（只有一行，id = 1）。data = 压缩索引（domain/models-dev.ts）。 */
+export const modelsDevSnapshot = modelAccessSchema.table('models_dev_snapshot', {
+  id: integer('id').primaryKey().default(1),
+  fetchedAt: tz('fetched_at'),
+  lastAttemptAt: tz('last_attempt_at'),
+  lastError: text('last_error'),
+  modelCount: integer('model_count').notNull().default(0),
+  providerCount: integer('provider_count').notNull().default(0),
+  data: jsonb('data').$type<import('../../domain/models-dev.js').ModelsDevIndex>(),
+  updatedAt: tz('updated_at').notNull(),
+});

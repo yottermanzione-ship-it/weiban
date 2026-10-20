@@ -70,7 +70,7 @@ export function toAdminModel(
   display?: DisplayPricing,
   discount?: ModelDiscountSetting,
   nowMs = 0,
-  extra: Pick<AdminModel, 'arenaRank' | 'availability'> = {},
+  extra: Pick<AdminModel, 'arenaRank' | 'availability' | 'usageMissing'> = {},
 ): AdminModel {
   return {
     ...entry,
@@ -118,6 +118,8 @@ export class ModelAdminService {
     // 3.24：可用性具体原因、榜单匹配名次
     const details = await this.catalog.availabilityDetails(keys);
     const arena = await this.catalog.arenaRanks();
+    // 3.26：最近连续没返回用量的线路（后台提示，不停用）
+    const missing = await this.catalog.usageMissing(keys);
     return entries.map((e) =>
       e.deletedAt
         ? toAdminModel(e, undefined, [], undefined, undefined, nowMs)
@@ -134,6 +136,7 @@ export class ModelAdminService {
                 available: !details.get(e.modelKey),
                 detail: details.get(e.modelKey) ?? null,
               },
+              usageMissing: missing.get(e.modelKey) ?? [],
             },
           ),
     );

@@ -75,6 +75,11 @@ export interface SettleInput {
   actual: UsageQuantities;
   /** 3.16：供应商未报有效用量且无核准精确本地计数时false，不按经验估算扣用户。 */
   actualKnown?: boolean;
+  /**
+   * 3.26（G3-2）：actual 是网关按本地分词估算的用量（上游没报）。按估算计费（仍不超过冻结额度、不透支），
+   * 结算快照标记 usageEstimated，对账单列条数；不进入「待核成本」，也不暂停线路。与 actualKnown = false 互斥。
+   */
+  actualEstimated?: boolean;
   /** 调用开始时刻（ISO 8601），用于选择分时价。 */
   startedAt: string;
   /**
@@ -98,6 +103,8 @@ export interface SettleOutput {
   costKnown?: boolean;
   uncertainCostMicros?: number;
   unpricedUnits?: string[];
+  /** 3.26：这次按本地估算用量结算（上游没报用量）。 */
+  usageEstimated?: boolean;
 }
 
 export interface ReleaseInput {
@@ -109,6 +116,8 @@ export interface ReleaseInput {
   startedAt?: string;
   /** v1.3：同 SettleInput.upstreamId。传了 upstreamUsage（平台吸收）时网关应当一起传。 */
   upstreamId?: string;
+  /** 3.26：upstreamUsage 是本地估算（上游没报）；平台按估算吸收成本，快照标记 usageEstimated。 */
+  upstreamUsageEstimated?: boolean;
 }
 
 /** v1.1：解冻结果。网关把平台吸收的成本记到用量记录上（管理后台用量页 ADM-08，billing.md 10.1 节）。 */
@@ -119,6 +128,8 @@ export interface ReleaseOutput {
   costKnown?: boolean;
   uncertainCostMicros?: number;
   unpricedUnits?: string[];
+  /** 3.26：成本按本地估算用量计。 */
+  usageEstimated?: boolean;
 }
 
 export interface SpendStatus {

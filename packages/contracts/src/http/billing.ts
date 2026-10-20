@@ -445,6 +445,8 @@ export const ReconciliationRun = z.object({
       netComputedCostMicros: MoneyMicros.optional(),
       unknownCostCalls: z.number().int().nonnegative().optional(),
       uncertainCostMicros: z.number().int().nonnegative().optional(),
+      /** 3.26：同期上游没报用量、按本地估算计费的调用条数。 */
+      estimatedUsageCalls: z.number().int().nonnegative().optional(),
       diffRatio: z.number(),
       flagged: z.boolean(),
     }),
@@ -454,6 +456,12 @@ export const ReconciliationRun = z.object({
   netAbsorbedMicros: MoneyMicros.optional(),
   unknownCostCalls: z.number().int().nonnegative().optional(),
   uncertainCostMicros: z.number().int().nonnegative().optional(),
+  /**
+   * 3.26（G3-2）：当天上游没报用量、按本地估算 token 计费（标记「估算」）的调用条数，
+   * 及这些调用记账的金额合计（微元，用户扣费 + 平台吸收成本）。估算不再暂停线路，也不计入「待核成本」。
+   */
+  estimatedUsageCalls: z.number().int().nonnegative().optional(),
+  estimatedChargedMicros: z.number().int().nonnegative().optional(),
   /**
    * v1.3：第 ② 层（用量记录 ↔ 扣费）由 model-access 比对、用事件 model_access.usage_reconciled 交回
    * （billing.md 8.2 节）。usageReconciledAt 为 null 表示当天第 ② 层还没有结果，此时
