@@ -32,7 +32,11 @@ import {
 import { CHAT_USER_PORT, CHAT_READ_PORT } from '../src/modules/chat/index.js';
 import { CONTACTS_READ_PORT } from '../src/modules/contacts/index.js';
 import { BillingAdminService, PriceService } from '../src/modules/billing/testing.js';
-import { CatalogService, UpstreamService } from '../src/modules/model-access/testing.js';
+import {
+  CatalogService,
+  ScenarioService,
+  UpstreamService,
+} from '../src/modules/model-access/testing.js';
 import { ReplyPlanStore, CompanionSettingsService } from '../src/modules/ai-runtime/testing.js';
 import { ContactsCommands, ACCEPT_CONTACT_JOB } from '../src/modules/contacts/testing.js';
 import { captureLogger, testConfig, testKekRing } from './support/fixtures.js';
@@ -172,8 +176,15 @@ describeDb('AI真实HTTP网关/计费与跨应用持久队列', () => {
       tags: [],
       leaderboardRank: null,
       sortOrder: 0,
-      defaultFor: ['chat'],
+      defaultFor: [],
+      scenarios: ['chat', 'voice_call', 'private'],
       enabled: true,
+    });
+    // 3.22：没有平台默认模型：用户自己的文本聊天场景 + 平台内部模型（安全检查等）。
+    await app.get(ScenarioService).updateConfig(userId, { chat: { modelKey } });
+    await app.get(CatalogService).setModelUses(userId, {
+      recommended: { chat: modelKey },
+      internal: { safety: modelKey, small_v: modelKey, platform_content: modelKey },
     });
     // 此场景核对队列恢复与一次扣费；贴合度1不启用随机延迟/撤回等小巧思。
     // 小巧思的高贴合度、配额和恢复由 quirks.test.ts 单独覆盖。

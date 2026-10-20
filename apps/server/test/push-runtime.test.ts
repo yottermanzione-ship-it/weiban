@@ -252,9 +252,16 @@ describeDb('push主应用端口、模型故障目标与独立worker真实HTTP', 
         tags: [],
         leaderboardRank: null,
         sortOrder: 0,
-        defaultFor: modelKey === 'push/default' ? ['chat'] : [],
+        defaultFor: [],
+        scenarios: ['chat', 'voice_call', 'private'],
         enabled: true,
       });
+    // 3.22：没有平台默认模型（老用户迁移时已写成显式的场景配置），第一个用户显式选 push/default。
+    await request(base)
+      .patch('/api/v1/model/selection')
+      .auth(users[0]!.session.token, { type: 'bearer' })
+      .send({ chat: { modelKey: 'push/default' } })
+      .expect(200);
     for (const user of users.slice(1))
       await request(base)
         .patch('/api/v1/model/selection')
@@ -307,7 +314,7 @@ describeDb('push主应用端口、模型故障目标与独立worker真实HTTP', 
       (await db.query("SELECT id FROM push.requests WHERE kind='model_status'")).rows,
     ).toHaveLength(2);
   });
-  it('默认模型下架保留事件用途，隐式用户仍能提醒；新的默认已选定则不发旧故障', async () => {
+  it('3.22 模型下架：选了它的场景配置与角色单独设置的用户都收到提醒；改选别的模型后不再算受影响', async () => {
     const catalog = app.get(CatalogService);
     const model = (await catalog.adminList()).find((m) => m.modelKey === 'push/default')!;
     const { updatedAt: _updatedAt, ...body } = model;
@@ -320,7 +327,7 @@ describeDb('push主应用端口、模型故障目标与独立worker真实HTTP', 
       "SELECT event FROM platform.outbox WHERE event_type='model_access.model_status_changed' AND event->'payload'->>'reason'='model_removed' ORDER BY created_at DESC LIMIT 1",
     );
     const event = Events.ModelStatusChanged.parse(events.rows[0]!.event);
-    expect(event.payload.previousDefaultFor).toEqual(['chat']);
+    expect(event.payload.previousDefaultFor).toBeUndefined();
     const read = app.get<ModelNotificationReadPort>(MODEL_NOTIFICATION_READ_PORT);
     const ids = users.map((u) => u.user.userId);
     expect(
@@ -348,12 +355,11 @@ describeDb('push主应用端口、模型故障目标与独立worker真实HTTP', 
         ).rows.map((r) => r.user_id),
       ),
     ).toEqual(new Set([ids[0], ids[2]]));
-    const replacement = (await catalog.adminList()).find((m) => m.modelKey === 'push/other')!;
-    const { updatedAt: _replacementUpdatedAt, ...replacementBody } = replacement;
-    await catalog.upsert(users[0]!.user.userId, replacement.modelKey, {
-      ...replacementBody,
-      defaultFor: ['chat'],
-    });
+    await request(base)
+      .patch('/api/v1/model/selection')
+      .auth(users[0]!.session.token, { type: 'bearer' })
+      .send({ chat: { modelKey: 'push/other' } })
+      .expect(200);
     expect(
       await read.affectedUsers(ids, model.modelKey, undefined, event.payload.previousDefaultFor),
     ).toEqual([ids[2]]);

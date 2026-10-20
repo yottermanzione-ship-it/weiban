@@ -25,3 +25,4 @@ export { ModelGateway } from './application/gateway.js';
 export { GenerationCache } from './application/generation-cache.js';
 export { OpenAiTextAdapter, estimateTokens, type TextAdapter } from './infra/text-adapter.js';
 export { GatewayMaintenance } from './application/gateway-maintenance.js';
+export { ScenarioService } from './application/scenarios.js';

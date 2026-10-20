@@ -151,8 +151,14 @@ async function configureFlowModel(app: INestApplication, adminId: string, url: s
     tags: [],
     leaderboardRank: null,
     sortOrder: 0,
-    defaultFor: ['chat'],
+    defaultFor: [],
+    scenarios: ['chat', 'voice_call', 'private'],
     enabled: true,
+  });
+  // 3.22：没有平台默认模型了：设为文本聊天推荐模型（用户首次引导一键选推荐）+ 平台内部模型。
+  await app.get(CatalogService).setModelUses(adminId, {
+    recommended: { chat: FLOW_MODEL, voice_call: FLOW_MODEL },
+    internal: { safety: FLOW_MODEL, small_v: FLOW_MODEL, platform_content: FLOW_MODEL },
   });
 }
 async function createFlowCharacter(app: INestApplication, token: string) {

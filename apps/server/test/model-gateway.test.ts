@@ -17,6 +17,7 @@ import { MODEL_GATEWAY_PORT } from '../src/modules/model-access/index.js';
 import {
   UpstreamService,
   CatalogService,
+  ScenarioService,
   GATEWAY_RETRY_WAIT,
   GenerationCache,
   GatewayMaintenance,
@@ -156,8 +157,15 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
       tags: [],
       leaderboardRank: null,
       sortOrder: 0,
-      defaultFor: ['chat'],
+      defaultFor: [],
+      scenarios: ['chat', 'voice_call', 'private'],
       enabled: true,
+    });
+    // 3.22：没有平台默认模型：调用用户自己的文本聊天场景 + 平台内部模型。
+    await app.get(ScenarioService).updateConfig(user, { chat: { modelKey } });
+    await app.get(CatalogService).setModelUses(admin, {
+      recommended: { chat: modelKey },
+      internal: { safety: modelKey, small_v: modelKey, platform_content: modelKey },
     });
   });
   beforeEach(async () => {

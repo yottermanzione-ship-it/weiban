@@ -311,6 +311,8 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
       leaderboardRank: null,
       sortOrder: 10,
       defaultFor: [],
+      // 3.22：文字模型默认可用于文本聊天、语音通话、私密模式
+      scenarios: ['chat', 'voice_call', 'private'],
       enabled: true,
       ...extra,
     };
@@ -624,7 +626,9 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         defaultFor: ['chat'],
         sortOrder: 1,
       });
-      expect(e.defaultFor).toEqual(['chat']);
+      // 3.22：defaultFor 不再使用，写入被忽略；可用场景照存
+      expect(e.defaultFor).toEqual([]);
+      expect(e.scenarios?.sort()).toEqual(['chat', 'private', 'voice_call']);
       await putCatalog(entry('deepseek/deepseek-v4-pro', upstreamId), 'deepseek/other').expect(400);
       await http()
         .put('/api/v1/admin/model/catalog/no-slash', adminToken)
@@ -637,23 +641,32 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
       expect((await audits('catalog.created')).length).toBeGreaterThan(0);
     });
 
-    it('无审查模型不能设为默认 422 model_not_allowed；默认识图模型必须有 vision；停用的不能是默认', async () => {
-      charges.priced.add('dolphin/uncensored');
-      const adult = await putCatalog(
-        entry('dolphin/uncensored', upstreamId, {
-          capabilities: ['adult_content'],
-          defaultFor: ['background'],
-        }),
-      ).expect(422);
+    it('3.22：无审查模型不能做推荐（私密模式除外）/ 内部模型 422 model_not_allowed；图片识别场景必须有 vision；停用的不能推荐', async () => {
+      await addModel('dolphin/uncensored', upstreamId, { capabilities: ['adult_content'] });
+      const adult = await http()
+        .put('/api/v1/admin/model/scenario-settings', adminToken)
+        .send({ recommended: { chat: 'dolphin/uncensored' }, internal: {} })
+        .expect(422);
       expect(errorCode(adult)).toBe('model_not_allowed');
+      const internal = await http()
+        .put('/api/v1/admin/model/scenario-settings', adminToken)
+        .send({ recommended: {}, internal: { safety: 'dolphin/uncensored' } })
+        .expect(422);
+      expect(errorCode(internal)).toBe('model_not_allowed');
+      await http()
+        .put('/api/v1/admin/model/scenario-settings', adminToken)
+        .send({ recommended: { private: 'dolphin/uncensored' }, internal: {} })
+        .expect(200);
       charges.priced.add('qwen/no-vision');
       const vision = await putCatalog(
-        entry('qwen/no-vision', upstreamId, { defaultFor: ['vision'] }),
+        entry('qwen/no-vision', upstreamId, { scenarios: ['vision'] }),
       ).expect(422);
       expect(errorCode(vision)).toBe('bad_request');
-      await putCatalog(
-        entry('qwen/no-vision', upstreamId, { defaultFor: ['chat'], enabled: false }),
-      ).expect(422);
+      await putCatalog(entry('qwen/no-vision', upstreamId, { enabled: false })).expect(200);
+      await http()
+        .put('/api/v1/admin/model/scenario-settings', adminToken)
+        .send({ recommended: { chat: 'qwen/no-vision' }, internal: {} })
+        .expect(422);
     });
 
     it('契约 1.3：启用时当前价目表没有该模型的价格 → 422 model_unavailable；计费查询未接入 → 503；停用保存不查价', async () => {
@@ -671,21 +684,25 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
       await putCatalog(entry('qwen/unpriced', upstreamId)).expect(200);
     });
 
-    it('每种默认只有一个：设新默认时从原模型上摘掉；改指上游、停用记审计并发事件', async () => {
-      await addModel('deepseek/deepseek-flash', upstreamId, { defaultFor: ['background', 'chat'] });
-      const list = z
-        .object({ items: z.array(AdminCatalogEntry) })
-        .parse((await http().get('/api/v1/admin/model/catalog', adminToken).expect(200)).body);
-      const pro = list.items.find((i) => i.modelKey === 'deepseek/deepseek-v4-pro');
-      const flash = list.items.find((i) => i.modelKey === 'deepseek/deepseek-flash');
-      expect(pro?.defaultFor).toEqual([]);
-      expect(flash?.defaultFor.sort()).toEqual(['background', 'chat']);
-      // 改回 pro 为聊天默认
-      await addModel('deepseek/deepseek-v4-pro', upstreamId, {
-        defaultFor: ['chat'],
-        sortOrder: 1,
-      });
-      await addModel('deepseek/deepseek-flash', upstreamId, { defaultFor: ['background'] });
+    it('3.22 场景推荐 / 平台内部模型：每个场景一个，只改传了的键，写审计；改指上游、停用记审计并发事件', async () => {
+      await addModel('deepseek/deepseek-flash', upstreamId);
+      await http()
+        .put('/api/v1/admin/model/scenario-settings', adminToken)
+        .send({
+          recommended: { chat: 'deepseek/deepseek-v4-pro' },
+          internal: { safety: 'deepseek/deepseek-flash' },
+        })
+        .expect(200);
+      const settings = (
+        await http()
+          .put('/api/v1/admin/model/scenario-settings', adminToken)
+          .send({ recommended: { voice_call: 'deepseek/deepseek-v4-pro' }, internal: {} })
+          .expect(200)
+      ).body as { recommended: Record<string, string>; internal: Record<string, string> };
+      expect(settings.recommended.chat).toBe('deepseek/deepseek-v4-pro');
+      expect(settings.recommended.voice_call).toBe('deepseek/deepseek-v4-pro');
+      expect(settings.internal.safety).toBe('deepseek/deepseek-flash');
+      expect((await audits('model_uses.updated')).length).toBeGreaterThan(0);
 
       const other = await createUpstream('备用上游');
       await addModel('qwen/qwen3.7-plus', upstreamId);
@@ -711,7 +728,7 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
     it('用户端模型列表：只列启用的；能力筛选；可用状态；价格档位', async () => {
       await addModel('qwen/qwen-vl-plus', upstreamId, {
         capabilities: ['vision'],
-        defaultFor: ['vision'],
+        scenarios: ['chat', 'vision'],
       });
       prices.map.set('deepseek/deepseek-flash', {
         inputPerMillionMicros: 1_000_000,
@@ -735,6 +752,12 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
           (await http().get('/api/v1/model/models?capability=vision', u.token).expect(200)).body,
         ).items;
       expect(vision.map((m) => m.modelKey)).toEqual(['qwen/qwen-vl-plus']);
+      const visionScenario = z
+        .object({ items: z.array(ModelInfo) })
+        .parse(
+          (await http().get('/api/v1/model/models?scenario=vision', u.token).expect(200)).body,
+        ).items;
+      expect(visionScenario.map((m) => m.modelKey)).toEqual(['qwen/qwen-vl-plus']);
       await http().get('/api/v1/model/models?capability=nope', u.token).expect(400);
       await http().get('/api/v1/model/models').expect(401);
     });
@@ -762,13 +785,16 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         (await http().get('/api/v1/model/selection', u.token).expect(200)).body,
       );
       expect(empty).toEqual({ chat: null, background: null, adult: null });
-      for (const field of ['chat', 'background']) {
-        const res = await http()
-          .patch('/api/v1/model/selection', u.token)
-          .send({ [field]: { modelKey: 'dolphin/dolphin-24b' } })
-          .expect(422);
-        expect(errorCode(res)).toBe('model_not_allowed');
-      }
+      const notAllowed = await http()
+        .patch('/api/v1/model/selection', u.token)
+        .send({ chat: { modelKey: 'dolphin/dolphin-24b' } })
+        .expect(422);
+      expect(errorCode(notAllowed)).toBe('model_not_allowed');
+      // 3.22：background 不再单独存在，写入忽略
+      await http()
+        .patch('/api/v1/model/selection', u.token)
+        .send({ background: { modelKey: 'dolphin/dolphin-24b' } })
+        .expect(200);
       const missing = await http()
         .patch('/api/v1/model/selection', u.token)
         .send({ chat: { modelKey: 'nope/nope' } })
@@ -796,12 +822,12 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
       });
       expect(ok.chat?.modelKey).toBe('test/plain-chat');
       expect(ok.background).toBeNull();
-      // 失败的请求一个字段都不改（chat 合法、background 不合法）
+      // 失败的请求一个字段都不改（chat 合法、adult 不合法）
       await http()
         .patch('/api/v1/model/selection', u.token)
         .send({
           chat: { modelKey: 'deepseek/deepseek-flash' },
-          background: { modelKey: 'dolphin/dolphin-24b' },
+          adult: { modelKey: 'test/disabled' },
         })
         .expect(422);
       const after = ModelSelection.parse(
@@ -916,47 +942,65 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
       });
     });
 
-    it('解析顺序：角色覆盖 > 全局 > 平台默认；后台不沿用聊天模型；成人模式不回落；识图改用默认识图模型', async () => {
+    it('3.22 解析顺序：角色单独设置 > 场景配置 > 未配置（没有平台兜底）；后台跟随文本聊天；私密模式不回落；带图改用图片识别场景', async () => {
       const u = await newUser();
       const base = { userId: u.userId, purpose: 'chat_reply' as const };
       const key = async (r: Promise<Awaited<ReturnType<typeof resolver.resolve>>>) => {
         const x = await r;
         return x.ok ? x.value.modelKey : x.error;
       };
-      expect(await key(resolver.resolve({ ...base, modelRole: 'chat' }))).toBe(
-        'deepseek/deepseek-v4-pro',
-      );
+      // 新用户：没有平台默认，全部未配置（客户端首次引导）
+      expect(await key(resolver.resolve({ ...base, modelRole: 'chat' }))).toBe('not_configured');
       expect(await key(resolver.resolve({ ...base, modelRole: 'background' }))).toBe(
-        'deepseek/deepseek-flash',
+        'not_configured',
       );
       expect(await key(resolver.resolve({ ...base, modelRole: 'adult' }))).toBe('not_configured');
+      const config = (await http().get('/api/v1/model/scenarios', u.token).expect(200)).body as {
+        needsSetup: boolean;
+      };
+      expect(config.needsSetup).toBe(true);
       await http()
-        .patch('/api/v1/model/selection', u.token)
-        .send({ chat: { modelKey: 'test/plain-chat' } })
+        .patch('/api/v1/model/scenarios', u.token)
+        .send({ selections: { chat: { modelKey: 'test/plain-chat' } } })
         .expect(200);
-      // 只改聊天模型不影响后台：后台仍走平台默认，不再借用聊天模型
-      expect(await key(resolver.resolve({ ...base, modelRole: 'background' }))).toBe(
-        'deepseek/deepseek-flash',
-      );
-      await http()
-        .patch('/api/v1/model/selection', u.token)
-        .send({ background: { modelKey: 'test/plain-chat' } })
-        .expect(200);
+      expect(await key(resolver.resolve({ ...base, modelRole: 'chat' }))).toBe('test/plain-chat');
+      // 后台文字任务跟随文本聊天
       expect(await key(resolver.resolve({ ...base, modelRole: 'background' }))).toBe(
         'test/plain-chat',
       );
+      // 通话按「语音通话」场景：没配置就是未配置
+      expect(
+        await key(resolver.resolve({ ...base, modelRole: 'chat', scenario: 'voice_call' })),
+      ).toBe('not_configured');
       await http()
-        .put(`/api/v1/model/character-overrides/${MINOR}`, u.token)
-        .send({ chat: { modelKey: 'deepseek/deepseek-flash' } })
+        .patch(`/api/v1/model/character-scenarios/${MINOR}`, u.token)
+        .send({ selections: { chat: { modelKey: 'deepseek/deepseek-flash' } } })
         .expect(200);
       expect(await key(resolver.resolve({ ...base, modelRole: 'chat', characterId: MINOR }))).toBe(
         'deepseek/deepseek-flash',
       );
-      const vision = await resolver.resolve({ ...base, modelRole: 'chat', purpose: 'vision' });
+      expect(
+        await key(resolver.resolve({ ...base, modelRole: 'background', characterId: MINOR })),
+      ).toBe('deepseek/deepseek-flash');
+      // 带图：聊天模型不能识图，没配图片识别 → capability_missing；配了 → 改用它
+      expect(await key(resolver.resolve({ ...base, modelRole: 'chat', hasImages: true }))).toBe(
+        'capability_missing',
+      );
+      await http()
+        .patch('/api/v1/model/scenarios', u.token)
+        .send({ selections: { vision: { modelKey: 'qwen/qwen-vl-plus' } } })
+        .expect(200);
+      const vision = await resolver.resolve({ ...base, modelRole: 'chat', hasImages: true });
       expect(vision.ok && vision.value).toMatchObject({
         modelKey: 'qwen/qwen-vl-plus',
         usedVisionDefault: true,
       });
+      // 场景没勾选的模型不能选
+      const wrong = await http()
+        .patch('/api/v1/model/scenarios', u.token)
+        .send({ selections: { image_generation: { modelKey: 'test/plain-chat' } } })
+        .expect(422);
+      expect(errorCode(wrong)).toBe('model_unavailable');
     });
   });
 
@@ -976,6 +1020,17 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
               .expect(200)
           ).body,
         );
+      // 3.22：没有平台默认模型，先配置文本聊天与图片识别（相当于以前的平台默认）
+      expect(await status()).toMatchObject({ available: false, reason: 'not_configured' });
+      await http()
+        .patch('/api/v1/model/scenarios', u.token)
+        .send({
+          selections: {
+            chat: { modelKey: 'deepseek/deepseek-v4-pro' },
+            vision: { modelKey: 'qwen/qwen-vl-plus' },
+          },
+        })
+        .expect(200);
       expect(await status()).toMatchObject({ available: false, reason: 'insufficient_balance' });
       await http()
         .post(`/api/v1/admin/billing/accounts/${u.userId}/adjustments`, adminToken)

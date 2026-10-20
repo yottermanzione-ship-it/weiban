@@ -833,8 +833,14 @@ describeDb('成人输入复核：真实HTTP/PG/事件/加密/回复链，网关�
       [upstreamId, cipher, clock.now()],
     );
     await db.query(
-      "INSERT INTO model_access.model_catalog(model_key,display_name,vendor_name,upstream_id,upstream_model_id,capabilities,tags,sort_order,default_for,enabled,created_at,updated_at) VALUES('fixture/checker','fixture','fixture',$1,'fixture',ARRAY[]::text[],ARRAY[]::text[],0,ARRAY['adult_check'],true,$2,$2)",
+      "INSERT INTO model_access.model_catalog(model_key,display_name,vendor_name,upstream_id,upstream_model_id,capabilities,tags,sort_order,default_for,enabled,created_at,updated_at) VALUES('fixture/checker','fixture','fixture',$1,'fixture',ARRAY[]::text[],ARRAY[]::text[],0,ARRAY[]::text[],true,$2,$2)",
       [upstreamId, clock.now()],
+    );
+    // 3.22：成人内容检查模型是「平台内部模型」（model_access.settings 的 model_uses）。
+    await db.query(
+      `INSERT INTO model_access.settings(key,value,updated_at) VALUES('model_uses','{"recommended":{},"internal":{"adult_check":"fixture/checker"}}'::jsonb,$1)
+       ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`,
+      [clock.now()],
     );
     const resolver = app.get(ModelResolver);
     const input = {
@@ -861,7 +867,7 @@ describeDb('成人输入复核：真实HTTP/PG/事件/加密/回复链，网关�
       error: 'bad_request',
     });
     await db.query(
-      "UPDATE model_access.model_catalog SET default_for=ARRAY['background'] WHERE model_key='fixture/checker'",
+      `UPDATE model_access.settings SET value='{"recommended":{},"internal":{"safety":"fixture/checker"}}'::jsonb WHERE key='model_uses'`,
     );
     expect(await resolver.resolve(input)).toEqual({ ok: false, error: 'not_configured' });
   });
@@ -922,8 +928,13 @@ describeDb('成人输入复核：真实HTTP/PG/事件/加密/回复链，网关�
         tags: [],
         leaderboardRank: null,
         sortOrder: 0,
-        defaultFor: ['adult_check'],
+        defaultFor: [],
         enabled: true,
+      });
+      // 3.22：首次指定「成人内容检查」平台内部模型时发 adult_checker_configured。
+      await app.get(CatalogService).setModelUses(adminId, {
+        recommended: {},
+        internal: { adult_check: modelKey },
       });
       for (let i = 0; i < 20; i++)
         if ((await app.get<EventDispatcher>(EVENT_DISPATCHER).dispatchOnce(200)).claimed === 0)

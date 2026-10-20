@@ -149,6 +149,12 @@ describeDb('T041真实启动：注册→延迟接受→HTTP上游→计费/消�
       .set('Authorization', auth)
       .send({ nickname: '第一天' })
       .expect(200);
+    // 3.22：首次引导「一键选推荐」写入场景配置（新号没有平台默认模型）。
+    await http()
+      .post('/api/v1/model/scenarios/recommended')
+      .set('Authorization', auth)
+      .send({})
+      .expect(200);
     // Registration credits arrive through the production event dispatcher.
     await vi.waitFor(async () => {
       expect(
