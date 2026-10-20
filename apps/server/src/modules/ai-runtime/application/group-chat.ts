@@ -65,7 +65,12 @@ import { MODEL_GATEWAY_PORT, MODEL_PLATFORM_GATEWAY_PORT } from '../../model-acc
 import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import { INITIAL_MODES, modeOption, scenarioText } from '../domain/persona.js';
-import { highRisk, outputAllowed } from '../domain/reply-rules.js';
+import {
+  highRisk,
+  outputAllowed,
+  splitReply,
+  unescapeModelText,
+} from '../domain/reply-rules.js';
 import { callModelForCare, careFallback } from './safety-care.js';
 import {
   groupCompanionSettings,
@@ -82,6 +87,9 @@ import { GroupReplyStore, type GroupReplyPlan } from './group-reply-store.js';
 // ---------------------------------------------------------------------------
 // 参数
 // ---------------------------------------------------------------------------
+/** F1-8：群里一次发言最多拆成几条气泡。 */
+const GROUP_MAX_BUBBLES = 3;
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export const P19_GROUP = { maxResponders: 3, maxConsecutiveCharacterMessages: 6 };
 export const P20_SELF_CHAT = { perGroupPerDay: 1, maxMessages: 10, userActiveWithinDays: 7 };
 export const P22_INVITE_WINDOW_DAYS = 7;
@@ -873,10 +881,16 @@ export class GroupChatService {
       : deflect && outputAllowed(deflect, policy, false)
         ? deflect
         : '这个话题先放一放，好吗？我们聊聊你今天过得怎么样。';
-    const text = sourceText
-      .trim()
-      .replace(new RegExp(`^${speaker.name}[：:]\\s*`), '')
-      .slice(0, 300);
+    // F1-8：字面「\n」等转义残留先还原；按拆条规则拆成气泡（群里最多 3 条），每条去掉「名字：」前缀。
+    const strip = new RegExp(`^${escapeRegExp(speaker.name)}[：:]\\s*`);
+    const parts = splitReply(unescapeModelText(sourceText).slice(0, 300), true)
+      .map((b) => b.replace(strip, '').trim())
+      .filter(Boolean);
+    const bubbles =
+      parts.length > GROUP_MAX_BUBBLES
+        ? [...parts.slice(0, GROUP_MAX_BUBBLES - 1), parts.slice(GROUP_MAX_BUBBLES - 1).join('\n')]
+        : parts;
+    const text = bubbles.join('\n');
     if (!text || !outputAllowed(text, policy, adult)) return null;
     if (
       input.durable &&
@@ -912,16 +926,35 @@ export class GroupChatService {
         return null;
       if (await this.newerUserMessage(conversation, input.triggerSeq)) return null;
       if (input.durable && !(await this.replies.checkpoint(input.durable, {}))) return null;
-      const posted = await this.writer.postMessage({
-        conversationId: conversation.conversationId,
-        senderParticipantId: speaker.participantId,
-        content: { type: 'text', text },
-        idempotencyKey: input.idempotencyKey,
-        expectedScope: conversation.contentScope,
-        ...(input.labels.length ? { labels: input.labels } : {}),
-        ...(charge && charge.chargedMicros > 0 ? { charge } : {}),
-      });
-      if (!posted.ok) return null;
+      // 第一条沿用原幂等键（重放时不重复发）；积分记在第一条上，后面几条间隔约 1–2 秒依次发出。
+      for (const [index, line] of bubbles.entries()) {
+        if (index > 0) {
+          await sleep(input.instant ? 400 : 1000 + Math.random() * 1000);
+          if (
+            !(await this.stillActive(
+              conversation,
+              input.userId,
+              input.purpose === 'proactive',
+              input.scenarioMode,
+            )) ||
+            (await this.newerUserMessage(conversation, input.triggerSeq))
+          )
+            break;
+        }
+        const posted = await this.writer.postMessage({
+          conversationId: conversation.conversationId,
+          senderParticipantId: speaker.participantId,
+          content: { type: 'text', text: line },
+          idempotencyKey: index === 0 ? input.idempotencyKey : `${input.idempotencyKey}:b${index}`,
+          expectedScope: conversation.contentScope,
+          ...(input.labels.length ? { labels: input.labels } : {}),
+          ...(index === 0 && charge && charge.chargedMicros > 0 ? { charge } : {}),
+        });
+        if (!posted.ok) {
+          if (index === 0) return null;
+          break;
+        }
+      }
       return { text, stopChain };
     } finally {
       await this.typingIfPresent({
@@ -982,7 +1015,7 @@ export class GroupChatService {
     );
     const text =
       result.ok && result.value.text.trim()
-        ? result.value.text.trim().slice(0, 600)
+        ? unescapeModelText(result.value.text).trim().slice(0, 600)
         : careFallback(
             role?.card.data.safetyStyle.careFallbackText,
             0,

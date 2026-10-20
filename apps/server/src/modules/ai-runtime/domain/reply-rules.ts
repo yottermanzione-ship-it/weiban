@@ -7,8 +7,24 @@ import {
 import { petPressure } from './pets.js';
 export const REPLY_TEMPLATE_VERSION = 'chat-v3';
 export const USER_BATCH_DELAY_MS = 3000;
+/**
+ * F1-8（10-21）：模型偶尔把换行写成字面的「\n」（反斜杠 + n，常见于群聊），连同 \r、\t、\"、\uXXXX
+ * 等转义残留一起还原成真正的字符；私聊、群聊、主动消息的输出都先过这里再拆条。
+ */
+export function unescapeModelText(text: string): string {
+  return text
+    .replace(/\\r\\n|\\n|\\r/g, '\n')
+    .replace(/\\t/g, ' ')
+    .replace(/\\(["'])/g, '$1')
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => {
+      const code = parseInt(hex, 16);
+      if (code === 10) return '\n';
+      // 控制字符与落单的代理项不还原，直接去掉。
+      return code < 32 || (code >= 0xd800 && code <= 0xdfff) ? '' : String.fromCharCode(code);
+    });
+}
 export function splitReply(text: string, split: boolean): string[] {
-  const clean = text.trim();
+  const clean = unescapeModelText(text).trim();
   if (!clean || clean.length > 16000) return [];
   if (!split) return clean.length <= 4000 ? [clean] : [];
   const lines = clean

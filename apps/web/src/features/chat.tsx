@@ -73,6 +73,7 @@ import { ScenarioSheet, presetNames, useCurrentPreset } from './scenario.js';
 import { ChatAvatarLink } from './chat-avatar-link.js';
 import { ForwardPicker, ForwardedRecordBubble } from './chat-forward.js';
 import { OldIcon } from './old-icons.js';
+import { getReadReceiptVisible } from '../data/display-prefs.js';
 import { useModelSetupGate } from './models.js';
 import {
   BackArrow,
@@ -513,6 +514,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const id = conversation.conversationId;
   const group = conversation.type === 'group';
   const userProfile = useRemote(IdentityEndpoints.getProfile);
+  // F1-3：设置里可关掉「已读 / 已送达」（本机偏好；设置页是另一路由，回来时重新挂载即生效）。
+  const [readReceipt] = useState(getReadReceiptVisible);
   const members = groupMembers(conversation);
   const role = members[0];
   const everyone = [
@@ -1376,7 +1379,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
                 </span>
               </div>
             )}
-            {!group && mine && message.messageId === lastMine?.messageId && (
+            {readReceipt && !group && mine && message.messageId === lastMine?.messageId && (
               <small className="wx-read">
                 {conversation.peerReadSeq !== null && conversation.peerReadSeq >= message.seq
                   ? '已读'

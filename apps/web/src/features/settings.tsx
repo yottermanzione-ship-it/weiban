@@ -18,6 +18,8 @@ import {
   getScheme,
   getCharacterStatusVisible,
   setCharacterStatusVisible,
+  getReadReceiptVisible,
+  setReadReceiptVisible,
   setFontScale,
   setScheme,
   type Scheme,
@@ -110,6 +112,7 @@ export function SettingsPage() {
   const [scheme, setSchemeState] = useState(getScheme);
   const [font, setFont] = useState(getFontScale);
   const [statusVisible, setStatusVisible] = useState(getCharacterStatusVisible);
+  const [readVisible, setReadVisible] = useState(getReadReceiptVisible);
   const [sound, setSound] = useState(getNoticeSound);
   const [messageSound, setMessageSound] = useState(getMessageSoundEnabled);
   const [choice, setChoice] = useState<'scheme' | 'font' | 'sound' | null>(null);
@@ -182,7 +185,7 @@ export function SettingsPage() {
         )}
         <SwitchRow
           label="消息提示音"
-          subtitle="在微伴里收发消息时响一声，不打断正在播放的音乐（只对这台设备）"
+          subtitle="聊天界面消息收发提示音"
           checked={messageSound}
           onChange={(value) => {
             setMessageSoundEnabled(value);
@@ -211,6 +214,15 @@ export function SettingsPage() {
           onChange={(visible) => {
             setCharacterStatusVisible(visible);
             setStatusVisible(visible);
+          }}
+        />
+        <SwitchRow
+          label="显示消息已读状态"
+          subtitle="关闭后，私聊气泡下不再显示「已读」「已送达」"
+          checked={readVisible}
+          onChange={(visible) => {
+            setReadReceiptVisible(visible);
+            setReadVisible(visible);
           }}
         />
         <MenuRow label="深色模式" value={schemeNames[scheme]} onClick={() => setChoice('scheme')} />

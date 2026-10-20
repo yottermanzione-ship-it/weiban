@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { MediaEndpoints, type Profile } from '@weiban/contracts';
+import type { Profile } from '@weiban/contracts';
 import { avatarLetters } from '@weiban/client-core';
-import { useRemote } from '../data/use-remote.js';
+import { useAuth } from '../app/auth.js';
+import { CachedPicture, recallMyAvatar, rememberMyAvatar, useMediaUrl } from './avatar-cache.js';
 export function UserAvatar({
   profile,
   size = 40,
@@ -13,7 +13,13 @@ export function UserAvatar({
   radius?: number;
   imageClassName?: string;
 }) {
-  const letters = avatarLetters(profile?.nickname ?? '我');
+  const { session } = useAuth();
+  const userId = session?.user.userId;
+  if (profile) rememberMyAvatar(userId, profile.avatarMediaId ?? null);
+  // F1-6：资料未读到前先用本次打开里记住的头像；都没有时只画底色，不先闪昵称缩写。
+  const mediaId = profile ? (profile.avatarMediaId ?? null) : recallMyAvatar(userId);
+  const url = useMediaUrl(mediaId);
+  const letters = profile ? avatarLetters(profile.nickname ?? '我') : '';
   return (
     <span
       className="user-message-avatar"
@@ -26,35 +32,14 @@ export function UserAvatar({
         fontSize: size * (Array.from(letters).length === 1 ? 0.44 : 0.34),
       }}
     >
-      <span aria-hidden="true">{letters}</span>
-      {profile?.avatarMediaId && (
-        <PrivateImage
-          key={profile.avatarMediaId}
-          mediaId={profile.avatarMediaId}
-          imageClassName={imageClassName}
+      {!mediaId && <span aria-hidden="true">{letters}</span>}
+      {mediaId && (
+        <CachedPicture
+          url={url}
+          className={imageClassName}
+          fallback={<span aria-hidden="true">{letters}</span>}
         />
       )}
     </span>
-  );
-}
-function PrivateImage({ mediaId, imageClassName }: { mediaId: string; imageClassName?: string }) {
-  const media = useRemote(MediaEndpoints.getMedia, { params: { mediaId } });
-  return media.data ? (
-    <Picture key={media.data.url} url={media.data.url} imageClassName={imageClassName} />
-  ) : null;
-}
-function Picture({ url, imageClassName }: { url: string; imageClassName?: string }) {
-  const [loaded, setLoaded] = useState(false);
-  const [failed, setFailed] = useState(false);
-  return failed ? null : (
-    <img
-      className={imageClassName}
-      src={url}
-      alt=""
-      aria-hidden="true"
-      style={{ opacity: loaded ? 1 : 0 }}
-      onLoad={() => setLoaded(true)}
-      onError={() => setFailed(true)}
-    />
   );
 }

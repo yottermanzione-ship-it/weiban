@@ -116,9 +116,10 @@ select {
   outline: none;
   box-shadow: none;
 }
-/* Keyboard focus stays visible without restoring the old green box around the field. */
+/* F1-1: no green underline/outline on focus (WeChat shows only the caret). */
 .search-entry.wx-search-box input:focus-visible {
-  box-shadow: inset 0 -2px var(--wb-color-border-focus);
+  outline: none;
+  box-shadow: none;
 }
 .search-entry.wx-search-box input::-webkit-search-cancel-button {
   display: none;
@@ -300,4 +301,33 @@ select {
 .moment-compose .compose-count {
   margin: 0 0 12px;
   text-align: right;
+}
+
+/* F1-2: the entering page is opaque during the slide, so gaps between grouped
+   rows (chat info, settings…) never show the outgoing chat underneath. */
+.route-enter-right,
+.route-enter-left {
+  background: var(--wb-color-bg-page);
+}
+.chat-info-page {
+  background: var(--wb-color-bg-page);
+}
+
+/*
+ * F1-9：手机宽度下外壳占满屏幕，body 底色只在状态栏区域（iPhone Safari 取它着色）和回弹时露出来，
+ * 统一成页面底色，与标题栏同色；宽屏仍保留外框底色。「我」页、设个状态页顶部不是灰底，按页面顶部颜色。
+ */
+@media (max-width: 640px) {
+  html,
+  body {
+    background: var(--wb-color-bg-page);
+  }
+  html:has(main.me-page),
+  html:has(main.me-page) body {
+    background: var(--wb-color-bg-surface);
+  }
+  html:has(main.status-page),
+  html:has(main.status-page) body {
+    background: #5d616b;
+  }
 }

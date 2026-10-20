@@ -1017,7 +1017,13 @@ main > button.danger-row {
   padding-bottom: 0;
 }
 .chat-list-head {
-  position: relative;
+  /*
+   * F1-9：与通讯录等页的 .nav-bar 一样用 sticky。iPhone Safari 状态栏区域的颜色取顶部吸顶 / 固定元素的底色，
+   * 没有时取 body 底色（#F4F5F7，比标题栏浅）——这就是「微伴」页顶部上浅下深、通讯录一整块同色的原因。
+   * 外层不滚动，sticky 不会改变位置。
+   */
+  position: sticky;
+  top: 0;
   z-index: 2;
   display: grid;
   flex: none;
@@ -1550,6 +1556,251 @@ main > button.danger-row {
   color: var(--wb-color-brand-primary);
   font-size: var(--wb-font-size-footnote);
 }
+/* F1-4：头卡整体可点（覆盖层链接），状态胶囊叠在上面独立可点（参照微信「我」页）。 */
+.me-head {
+  position: relative;
+}
+.me-head-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+.me-head > :not(.me-head-cover) {
+  position: relative;
+  pointer-events: none;
+}
+.me-head-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wb-space-2);
+  margin-top: var(--wb-space-3);
+}
+.me-head-chips .points-chip {
+  margin-top: 0;
+}
+.me-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 28px;
+  padding: 0 11px 0 9px;
+  border: 1px solid var(--wb-color-border-hairline);
+  border-radius: var(--wb-radius-full);
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+  text-decoration: none;
+  pointer-events: auto;
+}
+.me-status-chip span {
+  max-width: 10em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.me-status-chip:active {
+  background: var(--wb-color-bg-pressed, rgba(0, 0, 0, 0.05));
+}
+
+/* ---------- F1-5「设个状态」：深色毛玻璃 + 分组图标宫格 ---------- */
+main.status-page {
+  min-height: 100dvh;
+  max-width: none;
+  margin: 0;
+  padding: calc(env(safe-area-inset-top) + 4px) 12px calc(env(safe-area-inset-bottom) + 24px);
+  background:
+    radial-gradient(120% 60% at 20% 0%, rgba(120, 128, 150, 0.55), transparent 70%),
+    linear-gradient(180deg, #5d616b 0%, #6f6a66 45%, #8a7461 100%);
+  color: rgba(255, 255, 255, 0.92);
+}
+.status-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  margin-bottom: 8px;
+}
+.status-head h1 {
+  display: grid;
+  margin: 0;
+  font-size: 17px;
+  font-weight: var(--wb-font-weight-medium);
+  line-height: 1.3;
+  text-align: center;
+}
+.status-head small {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  font-weight: normal;
+}
+.status-close {
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-top: -22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+}
+.status-group {
+  margin: 0 0 12px;
+  padding: 14px 6px 6px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  backdrop-filter: blur(24px) saturate(1.2);
+}
+.status-group h2 {
+  margin: 0 0 4px 12px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 14px;
+  font-weight: normal;
+}
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.status-cell {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  min-height: 84px;
+  padding: 14px 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 13px;
+}
+.status-cell span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-cell.on {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+.status-cell:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+.status-current {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.status-current > span {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+}
+.status-current small {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+}
+.status-link {
+  min-height: 36px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.status-tip {
+  margin: 12px 8px 0;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  text-align: center;
+}
+.status-confirm {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  z-index: var(--wb-z-index-sheet, 50);
+  display: grid;
+  gap: 12px;
+  width: min(100%, var(--wb-size-content-max-width, 480px));
+  padding: 16px 16px calc(env(safe-area-inset-bottom) + 16px);
+  border-radius: 16px 16px 0 0;
+  background: rgba(40, 40, 44, 0.86);
+  -webkit-backdrop-filter: blur(30px);
+  backdrop-filter: blur(30px);
+  color: #fff;
+  transform: translateX(-50%);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.25);
+}
+.status-confirm-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+}
+.status-confirm input {
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  outline: none;
+}
+.status-confirm input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+.status-confirm input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.status-durations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.status-durations button {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: var(--wb-radius-full);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+}
+.status-durations button.on {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.9);
+  color: #222;
+}
+.status-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.status-actions button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+.status-actions button.primary {
+  background: var(--wb-color-brand-primary);
+}
+.status-confirm [role='alert'] {
+  margin: 0;
+  color: #ffb4b4;
+  font-size: 13px;
+}
 
 /* ---------- 公告 ---------- */
 .announcement-body {
@@ -1822,4 +2073,7 @@ button.primary.wide {
 .setup-guide-list b {
   font-weight: var(--wb-font-weight-semibold);
   text-align: right;
+}
+main.status-page:has(.status-confirm) {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 300px);
 }

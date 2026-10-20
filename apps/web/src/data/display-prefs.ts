@@ -13,6 +13,15 @@ export const fontScales = [
 const SCHEME_KEY = 'weiban:scheme';
 const FONT_KEY = 'weiban:font-scale';
 const STATUS_KEY = 'weiban:character-status';
+const READ_KEY = 'weiban:read-receipt';
+/** 私聊气泡下的「已读 / 已送达」（只对这台设备，默认显示）。 */
+export function getReadReceiptVisible() {
+  return read(READ_KEY) !== 'hidden';
+}
+export function setReadReceiptVisible(visible: boolean) {
+  write(READ_KEY, visible ? 'shown' : 'hidden');
+  window.dispatchEvent(new Event('weiban:display-prefs'));
+}
 export function getCharacterStatusVisible() {
   return read(STATUS_KEY) !== 'hidden';
 }
@@ -48,6 +57,18 @@ export function applyDisplayPrefs() {
   if (scheme === 'system') delete root.dataset.scheme;
   else root.dataset.scheme = scheme;
   root.style.setProperty('--wb-font-scale', String(getFontScale()));
+  syncThemeColor(scheme);
+}
+/**
+ * F1-9：浏览器状态栏 / 地址栏颜色（theme-color）跟随顶栏底色（令牌 --wb-color-bg-nav-bar：浅色 #EDEDED、深色 #202020）。
+ * index.html 按系统深浅各放一个；手动选了深色 / 浅色时两个都改成所选的颜色。
+ */
+function syncThemeColor(scheme: Scheme) {
+  document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
+    const dark =
+      scheme === 'dark' || (scheme === 'system' && (meta.getAttribute('media') ?? '').includes('dark'));
+    meta.setAttribute('content', dark ? '#202020' : '#EDEDED');
+  });
 }
 export function setScheme(value: Scheme) {
   write(SCHEME_KEY, value);

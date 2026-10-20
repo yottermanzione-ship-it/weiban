@@ -1,10 +1,9 @@
-import { useState } from 'react';
 import { Flower, Heart, Moon, MusicNote, Star } from './old-icons.js';
-import { MediaEndpoints, type CharacterSummary } from '@weiban/contracts';
+import type { CharacterSummary } from '@weiban/contracts';
 import { avatarForeground, avatarLetters, avatarPaletteIndex } from '@weiban/client-core';
 import { useAuth } from '../app/auth.js';
 import { useChat } from '../app/chat.js';
-import { useRemote } from '../data/use-remote.js';
+import { CachedPicture, useMediaUrl } from './avatar-cache.js';
 import { useCharacterProfile } from '../data/character-profile.js';
 type AvatarRole = Pick<CharacterSummary, 'characterId' | 'name' | 'avatar'>;
 const patterns = { star: Star, heart: Heart, note: MusicNote, moon: Moon, flower: Flower };
@@ -121,28 +120,13 @@ function Artwork({
         />
       )}
       {privateId ? (
-        <PrivatePicture key={privateId} mediaId={privateId} />
+        <PrivatePicture mediaId={privateId} />
       ) : role?.avatar.image ? (
-        <Picture key={role.avatar.image.url} url={role.avatar.image.url} />
+        <CachedPicture url={role.avatar.image.url} />
       ) : null}
     </span>
   );
 }
 function PrivatePicture({ mediaId }: { mediaId: string }) {
-  const remote = useRemote(MediaEndpoints.getMedia, { params: { mediaId } });
-  return remote.data ? <Picture key={remote.data.url} url={remote.data.url} /> : null;
-}
-function Picture({ url }: { url: string }) {
-  const [loaded, setLoaded] = useState(false);
-  const [failed, setFailed] = useState(false);
-  return failed ? null : (
-    <img
-      aria-hidden="true"
-      alt=""
-      src={url}
-      style={{ opacity: loaded ? 1 : 0 }}
-      onLoad={() => setLoaded(true)}
-      onError={() => setFailed(true)}
-    />
-  );
+  return <CachedPicture url={useMediaUrl(mediaId)} />;
 }

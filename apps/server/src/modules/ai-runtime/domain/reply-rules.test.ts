@@ -15,6 +15,10 @@ it('纯文本拆条最多四条，不产生标点气泡或截断句子；关闭�
   expect(splitReply('！\n。。。', true)).toEqual([]);
   expect(splitReply('❤', true)).toEqual(['❤']);
   expect(splitReply('x'.repeat(4001), false)).toEqual([]);
+  // F1-8：模型输出的字面「\n」当换行拆条，其他转义残留还原。
+  expect(splitReply('啧\\n@水浮蓝 有事直说', true)).toEqual(['啧', '@水浮蓝 有事直说']);
+  expect(splitReply('好\\r\\n\\"走\\"', true)).toEqual(['好', '"走"']);
+  expect(splitReply('一\\n二', false)).toEqual(['一\n二']);
   expect(replyDelay('你好', false, 0)).toBe(3000);
   expect(replyDelay('长'.repeat(1000), false, 0)).toBe(20000);
   expect(replyDelay('你好', true, 0)).toBe(1000);

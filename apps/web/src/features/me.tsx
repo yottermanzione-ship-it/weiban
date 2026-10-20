@@ -1,4 +1,3 @@
-import { MyStatusRow } from './user-status.js';
 /*
  * 我（docs/refactor/06-old-ui-spec.md 4.9）：没有顶栏，白色头卡从状态栏下开始；
  * 分组菜单用透明底彩色线图。服务页改为纯菜单列表（不做宫格）。
@@ -17,6 +16,7 @@ import { OldImage } from './old-icons.js';
 import { ComingSoonRow, Chevron, GroupHeader, MenuGroup, MenuRow, NavBar } from './shell-kit.js';
 import { useAnnouncementUnread } from './release.js';
 import { pointsText } from './points.js';
+import { MyStatusChip } from './user-status.js';
 
 export function MePage() {
   const { session } = useAuth();
@@ -30,20 +30,25 @@ export function MePage() {
 
   return (
     <main className="me-page">
-      <Link className="me-head" to="/profile" aria-label="我的资料">
+      {/* F1-4：整张头卡点开资料；状态胶囊是卡上独立的按钮（参照微信「我」页）。 */}
+      <div className="me-head">
+        <Link className="me-head-cover" to="/profile" aria-label="我的资料" />
         <ProfileAvatar profile={profile.data} />
         <span className="me-head-text">
-          <h2>{profile.data?.nickname ?? '填写你的昵称'}</h2>
+          <h2>{profile.data ? (profile.data.nickname ?? '填写你的昵称') : ' '}</h2>
           <p>微伴号：{alias.data?.username ?? session?.user.username}</p>
-          {wallet.data && (
-            <span className="points-chip">
-              <OldImage name="wechat/membership.webp" size={14} />
-              {pointsText(wallet.data.balancePoints)}
-            </span>
-          )}
+          <span className="me-head-chips">
+            <MyStatusChip />
+            {wallet.data && (
+              <span className="points-chip">
+                <OldImage name="wechat/membership.webp" size={14} />
+                {pointsText(wallet.data.balancePoints)}
+              </span>
+            )}
+          </span>
         </span>
         <Chevron />
-      </Link>
+      </div>
       <MenuGroup>
         <MenuRow
           to="/services"
@@ -54,7 +59,6 @@ export function MePage() {
         />
       </MenuGroup>
       <MenuGroup>
-        <MyStatusRow />
         <MenuRow to="/me/favorites" image="color/color_favorites.svg" iconSize={23} label="收藏" />
         <MenuRow to="/moments" icon="wechat/picture" tint="blue" label="朋友圈" />
         <ComingSoonRow id="channels" />
