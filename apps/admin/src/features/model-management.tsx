@@ -2,6 +2,7 @@
  * 管理后台「模型管理」：概览 · 上游账号 · 模型 · 调用记录。
  * 数据仍走 @weiban/contracts 的 model-access 管理接口，界面统一用 Ant Design。
  */
+import { useState } from 'react';
 import { Tabs } from 'antd';
 import { useSearchParams } from 'react-router-dom';
 import { ModelAccessAdminEndpoints } from '@weiban/contracts';
@@ -33,6 +34,11 @@ export function ModelManagementPage() {
   // 3.20：已删除（软删）的上游只给调用记录显示账号名用，账号列表与线路选择里隐藏。
   const allUpstreams = upstreams.data?.items ?? [];
   const liveUpstreams = allUpstreams.filter((u) => !u.deletedAt);
+  // 3.23：已删除（软删）的模型同理：只给调用记录显示模型名用，其余地方隐藏。
+  const allModels = models.data?.items ?? [];
+  const liveModels = allModels.filter((m) => !m.deletedAt);
+  // 删除模型后场景推荐 / 平台内部模型卡片重新读取（被删的模型已从设置里清掉）
+  const [settingsVersion, setSettingsVersion] = useState(0);
 
   return (
     <Page
@@ -41,7 +47,7 @@ export function ModelManagementPage() {
     >
       <div className="model-page-head">
         <LeaderboardSourceCard />
-        <ScenarioSettingsCard models={models.data?.items ?? []} />
+        <ScenarioSettingsCard key={settingsVersion} models={liveModels} />
       </div>
       <div className="page-tabs">
         <Tabs
@@ -53,7 +59,7 @@ export function ModelManagementPage() {
         {tab === 'upstreams' && (
           <UpstreamsTab
             upstreams={liveUpstreams}
-            models={models.data?.items ?? []}
+            models={liveModels}
             refresh={() => {
               upstreams.refresh();
               models.refresh();
@@ -62,8 +68,9 @@ export function ModelManagementPage() {
         )}
         {tab === 'models' && (
           <ModelsTab
-            models={models.data?.items ?? []}
+            models={liveModels}
             upstreams={liveUpstreams}
+            onDeleted={() => setSettingsVersion((v) => v + 1)}
             refresh={() => {
               models.refresh();
               upstreams.refresh();
@@ -73,7 +80,7 @@ export function ModelManagementPage() {
         {tab === 'records' && (
           <RecordsTab
             upstreams={allUpstreams}
-            models={models.data?.items ?? []}
+            models={allModels}
             initial={{
               upstreamId: params.get('upstream') ?? '',
               modelKey: params.get('model') ?? '',

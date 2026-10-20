@@ -167,10 +167,12 @@ function EcologyConfigTab() {
               allowClear
               showSearch
               placeholder="选择决策模型"
-              options={(models.data?.items ?? []).map((m) => ({
-                value: m.modelKey,
-                label: `${m.displayName}（${m.modelKey}）`,
-              }))}
+              options={(models.data?.items ?? [])
+                .filter((m) => !m.deletedAt)
+                .map((m) => ({
+                  value: m.modelKey,
+                  label: `${m.displayName}（${m.modelKey}）`,
+                }))}
             />
           </Form.Item>
           <FormSection

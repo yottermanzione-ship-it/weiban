@@ -1368,3 +1368,25 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* 3.23：删除模型确认框里的影响清单 */
+.delete-impact p {
+  margin: 0 0 8px;
+}
+.delete-impact ul {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+.delete-impact li {
+  margin-bottom: 4px;
+}
+.delete-impact-names {
+  font-weight: 500;
+}
+.delete-impact-head {
+  font-weight: 500;
+}
+.delete-impact-foot {
+  color: #8a9099;
+  font-size: 12px;
+}

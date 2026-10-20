@@ -24,7 +24,6 @@ import {
   ModelAccessAdminEndpoints,
   ModelAccessAdminUsageEndpoints,
   type AdminLedgerEntry,
-  type AdminModel,
   type MembershipPlanId,
   type MembershipSettings,
 } from '@weiban/contracts';
@@ -55,6 +54,7 @@ import {
   type UserRow,
 } from './shared.js';
 import { SubRecordDrawer, loadUserSubRecords, subColumns } from './sub-records.js';
+import { modelLabel } from '../model/shared.js';
 
 type LedgerEntry = z.infer<typeof AdminLedgerEntry>;
 type TabKey = 'profile' | 'membership' | 'points' | 'usage' | 'safety';
@@ -916,8 +916,7 @@ function UsagePanel({ row }: { row: UserRow }) {
       },
     });
   });
-  const modelName = (key: string) =>
-    (models.data?.items ?? []).find((m: AdminModel) => m.modelKey === key)?.displayName ?? key;
+  const modelName = (key: string) => modelLabel(models.data?.items ?? [], key);
   const totals = usage.data?.totals;
   type UsageRow = NonNullable<typeof usage.data>['rows'][number];
   const totalCharged = totals?.chargedMicros ?? 0;

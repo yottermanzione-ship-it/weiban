@@ -145,3 +145,24 @@ export function toWrite(m: AdminModel) {
     ...(m.routes?.length ? { routes: m.routes } : {}),
   };
 }
+
+/** 3.23：平台内部模型用途（删除模型确认框里列出受影响的用途）。 */
+export const INTERNAL_USE_LABELS: Record<string, string> = {
+  safety: '安全检查',
+  small_v: '小V 答疑',
+  platform_content: '平台内容生成',
+  planner: '行为规划',
+  adult_check: '成人内容检查',
+  web_search: '联网搜索',
+};
+
+/**
+ * 3.23：按模型键找显示名。已删除的模型（deletedAt 非空）只给历史记录显示名字，加「（已删除）」；
+ * 同键重新添加过时优先用现存的那个。找不到时原样显示键。
+ */
+export function modelLabel(models: readonly AdminModel[], key: string): string {
+  const live = models.find((m) => m.modelKey === key && !m.deletedAt);
+  if (live) return live.displayName;
+  const gone = models.find((m) => m.modelKey === key);
+  return gone ? `${gone.displayName}（已删除）` : key;
+}

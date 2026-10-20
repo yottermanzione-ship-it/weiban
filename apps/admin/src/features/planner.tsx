@@ -185,7 +185,7 @@ function PlannerConfig() {
         <PlannerDrawer
           type={editing}
           entry={entryOf(editing)}
-          models={(models.data?.items ?? []).map((m) => ({
+          models={(models.data?.items ?? []).filter((m) => !m.deletedAt).map((m) => ({
             value: m.modelKey,
             label: `${m.displayName}（${m.modelKey}）`,
           }))}

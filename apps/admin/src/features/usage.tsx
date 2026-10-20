@@ -11,7 +11,6 @@ import {
   ModelAccessAdminUsageEndpoints,
   type AdminUsageSummary,
   type AdminUsageDimension,
-  type AdminModel,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { settle } from '../data/use-async.js';
@@ -25,7 +24,7 @@ import {
   formatYuan,
   pointsOf,
 } from '../ui/format.js';
-import { PURPOSE_LABELS, rangeOf, type RangeKey } from './model/shared.js';
+import { PURPOSE_LABELS, modelLabel, rangeOf, type RangeKey } from './model/shared.js';
 
 type GroupKey = 'user' | 'model' | 'purpose' | 'character';
 
@@ -73,8 +72,7 @@ export function UsagePage() {
     };
   }, [range, group, revision]);
 
-  const modelName = (key: string) =>
-    (models.data?.items ?? []).find((m: AdminModel) => m.modelKey === key)?.displayName ?? key;
+  const modelName = (key: string) => modelLabel(models.data?.items ?? [], key);
 
   function labelOf(key: string): string {
     if (group === 'model') return modelName(key);

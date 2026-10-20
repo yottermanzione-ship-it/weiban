@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type Key } from 'react';
 import dayjs from 'dayjs';
 import {
   Alert,
@@ -65,6 +65,7 @@ import {
 } from './billing-bounds.js';
 import { MODEL_KEY_HINT, isValidModelKey, suggestModelKey } from './model-key.js';
 import { ImportModelsButton } from './import.js';
+import { useDeleteModels } from './delete-models.js';
 
 /** 3.22：按场景筛选（模型「可用于哪些场景」）。 */
 type UseFilter = 'all' | ModelScenario;
@@ -89,10 +90,14 @@ export function ModelsTab({
   models,
   upstreams,
   refresh,
+  onDeleted,
 }: {
+  /** 只传未删除的模型（已删除的只给调用记录显示名字用）。 */
   models: AdminModel[];
   upstreams: Upstream[];
   refresh: () => void;
+  /** 3.23：删除模型后通知外层（场景推荐 / 平台内部模型卡片重新读取）。 */
+  onDeleted?: () => void;
 }) {
   const toast = useToast();
   const confirm = useDangerConfirm();
@@ -106,6 +111,15 @@ export function ModelsTab({
     setEditing(target);
   };
   const [error, setError] = useState('');
+  // 3.23：勾选批量删除；删除后让展示倍率基准卡片重新读取（基准模型可能被清空）
+  const [selected, setSelected] = useState<Key[]>([]);
+  const [deleteVersion, setDeleteVersion] = useState(0);
+  const askDelete = useDeleteModels((keys) => {
+    setSelected((cur) => cur.filter((k) => !keys.includes(String(k))));
+    setDeleteVersion((v) => v + 1);
+    onDeleted?.();
+    refresh();
+  });
 
   const upstreamName = (id: string) =>
     upstreams.find((u) => u.upstreamId === id)?.name ?? '未知账号';
@@ -286,7 +300,7 @@ export function ModelsTab({
     },
     {
       title: '操作',
-      width: 96,
+      width: 140,
       fixed: 'right',
       render: (_, m) => (
         <Space size={4}>
@@ -322,6 +336,9 @@ export function ModelsTab({
               上架
             </Button>
           )}
+          <Button type="link" size="small" danger onClick={() => void askDelete([m])}>
+            删除
+          </Button>
         </Space>
       ),
     },
@@ -346,7 +363,7 @@ export function ModelsTab({
           </Button>
         </Space>
       </div>
-      <MultiplierBase models={models} onSaved={refresh} />
+      <MultiplierBase key={deleteVersion} models={models} onSaved={refresh} />
       <DataTable<AdminModel>
         rowKey="modelKey"
         columns={columns}
@@ -354,6 +371,22 @@ export function ModelsTab({
         error={error}
         onRefresh={refresh}
         onRowClick={(m) => openEditor(m)}
+        selectedKeys={selected}
+        onSelectionChange={(keys) => setSelected(keys)}
+        batchActions={(rows) => (
+          <Button
+            size="small"
+            danger
+            onClick={() => {
+              // 勾选会跨筛选 / 翻页保留：按键从全部模型里取
+              const keys = new Set(selected.map(String));
+              const picked = models.filter((m) => keys.has(m.modelKey));
+              void askDelete(picked.length ? picked : rows);
+            }}
+          >
+            批量删除
+          </Button>
+        )}
         filters={
           <>
             <Input.Search

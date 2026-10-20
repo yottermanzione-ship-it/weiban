@@ -211,7 +211,7 @@ export function PricesPage() {
         <VersionDrawer
           version={editing.version ?? null}
           mode={editing.mode}
-          catalog={(catalog.data?.items ?? []).map((m) => ({
+          catalog={(catalog.data?.items ?? []).filter((m) => !m.deletedAt).map((m) => ({
             modelKey: m.modelKey,
             displayName: m.displayName,
           }))}

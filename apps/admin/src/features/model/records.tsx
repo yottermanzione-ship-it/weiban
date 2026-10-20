@@ -15,7 +15,14 @@ import { DataTable, type ProColumns } from '../../ui/table.js';
 import { RecordDrawer } from '../../ui/drawer.js';
 import { StatusTag, useToast } from '../../ui/page.js';
 import { formatDateTime, formatInt, formatYuan, pointsOf } from '../../ui/format.js';
-import { ERROR_LABELS, PURPOSE_LABELS, fromLocalInput, rangeOf, toLocalInput } from './shared.js';
+import {
+  ERROR_LABELS,
+  PURPOSE_LABELS,
+  fromLocalInput,
+  modelLabel,
+  rangeOf,
+  toLocalInput,
+} from './shared.js';
 
 const PAGE_SIZE = 50;
 
@@ -82,7 +89,7 @@ export function RecordsTab({
     const u = upstreams.find((x) => x.upstreamId === id);
     return u ? (u.deletedAt ? `${u.name}（已删除）` : u.name) : '未知账号';
   };
-  const modelName = (key: string) => models.find((m) => m.modelKey === key)?.displayName ?? key;
+  const modelName = (key: string) => modelLabel(models, key);
 
   async function exportCsv() {
     setError('');
@@ -249,7 +256,7 @@ export function RecordsTab({
           style={{ width: 170 }}
           value={modelKey}
           onChange={setModelKey}
-          options={[{ value: '', label: '全部模型' }, ...models.map((m) => ({ value: m.modelKey, label: m.displayName }))]}
+          options={[{ value: '', label: '全部模型' }, ...[...new Set(models.map((m) => m.modelKey))].map((key) => ({ value: key, label: modelName(key) }))]}
         />
         <Select
           style={{ width: 150 }}

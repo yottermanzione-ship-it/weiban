@@ -132,7 +132,7 @@ export function UpstreamsTab({
       title: `「${u.name}」还在被模型使用，暂时不能删除`,
       content: (
         <div>
-          <p>下面这些模型的线路里还有它，请先在「模型」里把它们换到别的上游账号，再回来删除：</p>
+          <p>下面这些模型的线路里还有它，请先在「模型」里把它们换到别的上游账号（或删除这些模型），再回来删除：</p>
           <ul style={{ paddingLeft: 18, margin: 0 }}>
             {names.map((n) => (
               <li key={n}>{n}</li>
@@ -177,6 +177,99 @@ export function UpstreamsTab({
             refresh();
           } else setError(errorText(e));
         }
+      },
+    });
+  }
+
+  /**
+   * 3.23：批量删除。还被模型（含已下架的；已删除的模型不算）使用的账号跳过并列出；
+   * 其余逐个删除，最后汇总成功 / 失败。
+   */
+  function askBatchDelete(ids: string[]) {
+    const targets = upstreams.filter((u) => ids.includes(u.upstreamId));
+    if (!targets.length) return;
+    const blockedList = targets
+      .map((u) => ({ u, names: usersOf(u.upstreamId).map((m) => m.displayName) }))
+      .filter((x) => x.names.length > 0);
+    const deletable = targets.filter((u) => !blockedList.some((b) => b.u === u));
+    const blockedView = (
+      <ul style={{ paddingLeft: 18, margin: 0 }}>
+        {blockedList.map(({ u, names }) => (
+          <li key={u.upstreamId}>
+            {u.name}：{names.join('、')}
+          </li>
+        ))}
+      </ul>
+    );
+    if (!deletable.length) {
+      modal.warning({
+        title: '选中的上游账号都还在被模型使用，暂时不能删除',
+        content: (
+          <div>
+            <p>请先在「模型」里把这些模型换到别的线路（或删除模型），再回来删除：</p>
+            {blockedView}
+          </div>
+        ),
+        okText: '知道了',
+        centered: true,
+      });
+      return;
+    }
+    confirm({
+      title: `删除 ${deletable.length} 个上游账号？`,
+      content: (
+        <div>
+          <p>{deletable.map((u) => u.name).join('、')}</p>
+          <p>删除后密钥立即清除、不再分配调用，也不能恢复；历史调用记录仍保留，账号名显示为「已删除」。</p>
+          {blockedList.length > 0 && (
+            <>
+              <p>下面 {blockedList.length} 个还在被模型使用，这次会跳过：</p>
+              {blockedView}
+            </>
+          )}
+        </div>
+      ),
+      okText: `删除 ${deletable.length} 个`,
+      onOk: async () => {
+        setError('');
+        const failed: Array<{ name: string; reason: string }> = [];
+        for (const u of deletable) {
+          try {
+            await api.call(ModelAccessAdminEndpoints.deleteUpstream, {
+              params: { upstreamId: u.upstreamId },
+            });
+          } catch (e) {
+            const names =
+              e instanceof ApiFailure && e.code === 'conflict'
+                ? (e.details as { modelNames?: unknown } | undefined)?.modelNames
+                : undefined;
+            failed.push({
+              name: u.name,
+              reason: Array.isArray(names)
+                ? `还在被使用：${names.map(String).join('、')}`
+                : errorText(e),
+            });
+          }
+        }
+        const done = deletable.length - failed.length;
+        if (done > 0) toast.success(`已删除 ${done} 个上游账号`);
+        if (failed.length > 0)
+          modal.warning({
+            title: `${failed.length} 个没删掉`,
+            content: (
+              <ul style={{ paddingLeft: 18, margin: 0 }}>
+                {failed.map((f) => (
+                  <li key={f.name}>
+                    {f.name}：{f.reason}
+                  </li>
+                ))}
+              </ul>
+            ),
+            okText: '知道了',
+            centered: true,
+          });
+        setSelected([]);
+        refresh();
       },
     });
   }
@@ -328,6 +421,9 @@ export function UpstreamsTab({
               }
             >
               批量停用
+            </Button>
+            <Button size="small" danger onClick={() => askBatchDelete(selected.map(String))}>
+              批量删除
             </Button>
           </>
         )}
