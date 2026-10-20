@@ -615,10 +615,16 @@ export const AdminCatalogEntry = z.object({
   systemMessageMode: SystemMessageMode.optional(),
   billingBounds: RouteBillingBounds.nullable().optional(),
   updatedAt: Timestamp,
+  /**
+   * 3.23：删除时间（软删）。非空 = 已删除：不在用户端、场景可选列表、推荐 / 内部模型里，线路已删除，
+   * 恒为停用；列表仍返回它（modelKey 为删除前的键），只为让历史调用记录、用量、对账能显示模型名。
+   * 后台的模型表格与各处模型选择应隐藏它。删除后可以用同一个键重新添加（与已删除的记录互不影响）。
+   */
+  deletedAt: Timestamp.nullable().optional(),
 });
 export type AdminCatalogEntry = z.infer<typeof AdminCatalogEntry>;
 
-export const AdminCatalogEntryWrite = AdminCatalogEntry.omit({ updatedAt: true });
+export const AdminCatalogEntryWrite = AdminCatalogEntry.omit({ updatedAt: true, deletedAt: true });
 
 /**
  * v3.4：模型路由——这个模型可以走哪些上游账号（按优先级、权重调度，失败自动切换到下一个）。
@@ -720,6 +726,42 @@ export const ModelScenarioSettings = z.object({
     .partial(),
 });
 export type ModelScenarioSettings = z.infer<typeof ModelScenarioSettings>;
+
+/** 3.23：删除模型（单个 / 批量）。键必须是现存（未删除）的模型。 */
+export const DeleteModelsRequest = z.object({
+  modelKeys: z
+    .array(ModelKey)
+    .min(1)
+    .max(100)
+    .refine((keys) => new Set(keys).size === keys.length, { message: '模型键不能重复' }),
+});
+export type DeleteModelsRequest = z.infer<typeof DeleteModelsRequest>;
+
+/**
+ * 3.23：删除模型会清理的引用（预览 = 将要清理；执行 = 已清理）。
+ * 用户的场景配置 / 角色设置被清掉后回到「未配置」/「跟随」，由首次引导重新选。
+ */
+export const ModelDeletionImpact = z.object({
+  models: z.array(z.object({ modelKey: ModelKey, displayName: z.string(), enabled: z.boolean() })),
+  /** 场景配置里用到这些模型的用户数（去重）与配置条数。 */
+  users: z.number().int().nonnegative(),
+  scenarioSelections: z.number().int().nonnegative(),
+  /** 单独指定了这些模型的角色数（按「用户 × 角色」去重）与设置条数。 */
+  characters: z.number().int().nonnegative(),
+  characterOverrides: z.number().int().nonnegative(),
+  /** 场景推荐模型里用到它们的场景、平台内部模型里用到它们的用途。 */
+  recommended: z.array(ModelScenario),
+  internal: z.array(PlatformInternalUse),
+  /** 线路条数、限时折扣个数、当前价目表里有价格的模型个数。 */
+  routes: z.number().int().nonnegative(),
+  discounts: z.number().int().nonnegative(),
+  pricedModels: z.number().int().nonnegative(),
+  /** 展示倍率的基准模型是其中之一（删除后改为未设置）。 */
+  displayMultiplierBase: z.boolean(),
+  /** 只在执行结果里：去掉这些模型后发布的新价目表版本；没有价格要去掉时为 null。 */
+  priceVersionId: Id.nullable().optional(),
+});
+export type ModelDeletionImpact = z.infer<typeof ModelDeletionImpact>;
 
 /** 3.17：展示倍率的基准模型（倍率 = 1.00 的那个）；null = 未设置，自动倍率不显示。 */
 export const DisplayMultiplierSettings = z.object({ baseModelKey: ModelKey.nullable() });
@@ -902,6 +944,23 @@ export const ModelAccessAdminEndpoints = {
     response: AdminModel,
     summary:
       'v3.3：新增或修改模型（目录 + 倍率一次保存）。倍率有变化时先自动生成并发布新价目表版本，再保存目录；path 中的 modelKey 需 URL 编码。其余规则同 upsertCatalogEntry',
+  }),
+  previewDeleteModels: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/model/models/delete-preview`,
+    auth: 'admin',
+    body: DeleteModelsRequest,
+    response: ModelDeletionImpact,
+    summary: '3.23：删除模型前预览受影响的引用（只读）；有不存在或已删除的键时 404 not_found',
+  }),
+  deleteModels: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/model/models/delete`,
+    auth: 'admin',
+    body: DeleteModelsRequest,
+    response: ModelDeletionImpact,
+    summary:
+      '3.23：删除模型（软删，可批量）：删线路，清用户场景配置 / 角色设置 / 场景推荐 / 平台内部模型 / 展示倍率基准 / 折扣，发布不含它们的新价目表（历史版本保留）；历史调用记录仍显示模型名；同键可重新添加。写审计',
   }),
 } as const;
 

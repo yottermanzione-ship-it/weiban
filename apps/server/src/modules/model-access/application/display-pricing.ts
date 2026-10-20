@@ -30,7 +30,8 @@ import { defaultReplyMicros, weightedPrice, type ModelTextPrices } from '../doma
 import { modelAccessSettings, modelCatalog, usageRecords } from '../infra/db/schema.js';
 import { MODEL_PRICE_SOURCE, MODEL_RATE_PORT, type ModelPriceSource } from '../tokens.js';
 
-const BASE_KEY = 'display_multiplier_base';
+export const DISPLAY_BASE_KEY = 'display_multiplier_base';
+const BASE_KEY = DISPLAY_BASE_KEY;
 const WINDOW_MS = 7 * 24 * 3_600_000;
 const CACHE_MS = 10 * 60_000;
 export const MIN_SAMPLES = 20;

@@ -234,6 +234,118 @@ export class ModelRateService implements BillingModelRatePort {
     });
   }
 
+  // ---------- 3.23 删除模型 ----------
+
+  async modelPriceFootprint(
+    modelKeys: readonly string[],
+  ): Promise<{ pricedModelKeys: string[]; discountedModelKeys: string[] }> {
+    const keys = [...new Set(modelKeys)];
+    if (keys.length === 0) return { pricedModelKeys: [], discountedModelKeys: [] };
+    const [version] = await this.database.db
+      .select({ id: priceVersions.id })
+      .from(priceVersions)
+      .where(eq(priceVersions.status, 'active'));
+    const priced = version
+      ? await this.database.db
+          .selectDistinct({ modelKey: priceItems.modelKey })
+          .from(priceItems)
+          .where(and(eq(priceItems.priceVersionId, version.id), inArray(priceItems.modelKey, keys)))
+      : [];
+    const discounted = await this.database.db
+      .select({ modelKey: modelDiscounts.modelKey })
+      .from(modelDiscounts)
+      .where(inArray(modelDiscounts.modelKey, keys));
+    return {
+      pricedModelKeys: priced.map((r) => r.modelKey).sort(),
+      discountedModelKeys: discounted.map((r) => r.modelKey).sort(),
+    };
+  }
+
+  async removeModels(input: {
+    operatorUserId: string;
+    modelKeys: readonly string[];
+  }): Promise<{ priceVersionId: string | null; pricedModels: number; discounts: number }> {
+    const keys = [...new Set(input.modelKeys)];
+    if (keys.length === 0) return { priceVersionId: null, pricedModels: 0, discounts: 0 };
+    return this.database.transaction(async (tx) => {
+      // 与其他发布一样先锁当前生效版本，串行切换
+      const { rows: locked } = await tx.query<{ id: string }>(
+        `SELECT id FROM billing.price_versions WHERE status = 'active' FOR UPDATE`,
+      );
+      const activeId = locked[0]?.id ?? null;
+      const current: Row[] = activeId
+        ? await tx.db
+            .select()
+            .from(priceItems)
+            .where(eq(priceItems.priceVersionId, activeId))
+            .orderBy(asc(priceItems.sortOrder))
+        : [];
+      const removed = current.filter((r) => keys.includes(r.modelKey));
+      const pricedModels = new Set(removed.map((r) => r.modelKey)).size;
+      const droppedDiscounts = await tx.db
+        .delete(modelDiscounts)
+        .where(inArray(modelDiscounts.modelKey, keys))
+        .returning({ modelKey: modelDiscounts.modelKey });
+      let priceVersionId: string | null = null;
+      if (activeId && removed.length > 0) {
+        const kept = current.filter((r) => !keys.includes(r.modelKey));
+        const now = this.clock.now();
+        priceVersionId = newId();
+        await tx.db.insert(priceVersions).values({
+          id: priceVersionId,
+          versionLabel: `del-${now
+            .toISOString()
+            .slice(0, 23)
+            .replace(/[-:T.]/g, '')}`.slice(0, 32),
+          status: 'draft',
+          effectiveFrom: null,
+          note: `删除模型：${keys.join('、')}`.slice(0, 200),
+          createdAt: now,
+          createdBy: input.operatorUserId,
+        });
+        if (kept.length > 0)
+          await tx.db.insert(priceItems).values(
+            kept.map((item, index) => ({
+              id: newId(),
+              priceVersionId: priceVersionId!,
+              modelKey: item.modelKey,
+              unit: item.unit,
+              band: item.band,
+              priceMicros: item.priceMicros,
+              costMicros: item.costMicros,
+              sortOrder: index,
+            })),
+          );
+        await tx.db
+          .update(priceVersions)
+          .set({ status: 'retired', retiredAt: now })
+          .where(eq(priceVersions.id, activeId));
+        await tx.db
+          .update(priceVersions)
+          .set({ status: 'active', effectiveFrom: now })
+          .where(eq(priceVersions.id, priceVersionId));
+      }
+      if (priceVersionId || droppedDiscounts.length > 0)
+        await this.audit.record(
+          {
+            module: 'billing',
+            action: 'price_version.models_removed',
+            actorType: 'admin',
+            actorId: input.operatorUserId,
+            targetType: 'price_version',
+            targetId: priceVersionId,
+            details: {
+              modelKeys: keys,
+              replaced: priceVersionId ? activeId : null,
+              discountsRemoved: droppedDiscounts.map((d) => d.modelKey),
+            },
+          },
+          tx,
+        );
+      return { priceVersionId, pricedModels, discounts: droppedDiscounts.length };
+    });
+  }
+
   // ---------- 3.22 限时折扣 ----------
 
   async getModelDiscounts(

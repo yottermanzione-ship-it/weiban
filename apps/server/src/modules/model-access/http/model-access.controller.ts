@@ -35,6 +35,7 @@ import {
 } from '../../../platform/index.js';
 import { CatalogService } from '../application/catalog.js';
 import { ModelAdminService } from '../application/models.js';
+import { ModelDeletionService } from '../application/model-deletion.js';
 import { GatewayLimitsService } from '../application/limits.js';
 import { DisplayPricingService } from '../application/display-pricing.js';
 import { UpstreamScheduler } from '../application/scheduler.js';
@@ -198,6 +199,7 @@ export class ModelAdminController {
     @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(AdminUsageService) private readonly usage: AdminUsageService,
     @Inject(ModelAdminService) private readonly models: ModelAdminService,
+    @Inject(ModelDeletionService) private readonly deletion: ModelDeletionService,
     @Inject(UpstreamScheduler) private readonly scheduler: UpstreamScheduler,
     @Inject(GatewayLimitsService) private readonly limits: GatewayLimitsService,
     @Inject(DisplayPricingService) private readonly displayPricing: DisplayPricingService,
@@ -300,6 +302,27 @@ export class ModelAdminController {
   @RequireAuth(A.listModels.auth)
   async listAdminModels() {
     return { items: await this.models.list() };
+  }
+
+  // 3.23：删除模型（软删，可批量）。放在 models/:modelKey 之前，免得被当成模型键。
+  @Post('models/delete-preview')
+  @HttpCode(200)
+  @RequireAuth(A.previewDeleteModels.auth)
+  previewDeleteModels(
+    @Body(new ContractPipe(schema(A.previewDeleteModels.body)))
+    body: Out<typeof A.previewDeleteModels.body>,
+  ) {
+    return this.deletion.preview(body.modelKeys);
+  }
+
+  @Post('models/delete')
+  @HttpCode(200)
+  @RequireAuth(A.deleteModels.auth)
+  deleteModels(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(A.deleteModels.body))) body: Out<typeof A.deleteModels.body>,
+  ) {
+    return this.deletion.delete(me.userId, body.modelKeys);
   }
 
   @Put('models/:modelKey')

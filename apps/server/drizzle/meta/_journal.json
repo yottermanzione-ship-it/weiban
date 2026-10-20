@@ -739,6 +739,13 @@
       "when": 1799336000000,
       "tag": "0116_model_discounts",
       "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1799336100000,
+      "tag": "0117_model_soft_delete",
+      "breakpoints": true
     }
   ]
 }

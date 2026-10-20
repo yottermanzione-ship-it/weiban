@@ -91,7 +91,8 @@ export const CATALOG_LOCK_KEY = 72_270_008;
 
 export function toAdminEntry(row: CatalogRow): AdminCatalogEntry {
   return {
-    modelKey: row.modelKey,
+    // 3.23：已删除的行 model_key 已改名，对外仍给原键（历史记录按原键找名字）
+    modelKey: row.originalModelKey ?? row.modelKey,
     displayName: row.displayName,
     vendorName: row.vendorName,
     upstreamId: row.upstreamId,
@@ -107,6 +108,7 @@ export function toAdminEntry(row: CatalogRow): AdminCatalogEntry {
     systemMessageMode: row.systemMessageMode as SystemMessageMode,
     billingBounds: row.billingBounds,
     updatedAt: row.updatedAt.toISOString(),
+    deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
   };
 }
 
@@ -282,11 +284,16 @@ export class CatalogService {
     return { source, popular };
   }
 
+  /** 后台目录（含停用的；3.23 起也含已删除的，deletedAt 非空，排在最后）。 */
   async adminList(): Promise<AdminCatalogEntry[]> {
     const rows = await this.database.db
       .select()
       .from(modelCatalog)
-      .orderBy(asc(modelCatalog.sortOrder), asc(modelCatalog.modelKey));
+      .orderBy(
+        sql`${modelCatalog.deletedAt} is not null`,
+        asc(modelCatalog.sortOrder),
+        asc(modelCatalog.modelKey),
+      );
     return rows.map(toAdminEntry);
   }
 

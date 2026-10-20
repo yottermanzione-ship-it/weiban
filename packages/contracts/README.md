@@ -95,6 +95,15 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.23（2026-10-20，模型可删除）
+
+说明见 `docs/handoffs/2026-10-20-model-delete.md`。全部为新增接口 / 可选字段。
+
+- `AdminCatalogEntry`（及 `AdminModel`）增可选 `deletedAt`：已删除（软删）的模型仍在后台列表里返回（`modelKey` 为删除前的键），只为历史记录显示模型名；`AdminCatalogEntryWrite` 不含它。
+- 新 `DeleteModelsRequest`、`ModelDeletionImpact`；`ModelAccessAdminEndpoints` 新增 POST `/admin/model/models/delete-preview`（预览受影响的引用）与 POST `/admin/model/models/delete`（删除，可批量）。
+- 端口：`BillingModelRatePort` 增 `removeModels`（发布不含这些模型的新价目表、删折扣）与 `modelPriceFootprint`（预览用）。
+- 删除模型后它的线路随之删除，不再挡上游账号删除（`deleteUpstream` 的 409 只看未删除的模型）。
+
 ### 3.22（2026-10-20，试用反馈批 E3：模型配置按场景 + 限时折扣 + 首次引导）
 
 依据 `docs/tasks/2026-10-20-gm-feedback-batches.md` 批 E3。说明见 `docs/handoffs/2026-10-20-fb-models.md`。全部为新增接口 / 可选字段；旧接口保留为兼容层。

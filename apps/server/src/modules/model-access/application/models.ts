@@ -97,21 +97,24 @@ export class ModelAdminService {
 
   async list(): Promise<AdminModel[]> {
     const entries = await this.catalog.adminList();
-    const keys = entries.map((e) => e.modelKey);
+    // 3.23：已删除的模型不查价格 / 线路 / 折扣（同键可能已重新添加，按键查会串到新模型上）
+    const keys = entries.filter((e) => !e.deletedAt).map((e) => e.modelKey);
     const rates = await this.rates.getActiveTokenRates(keys);
     const routes = await this.catalog.routes(keys);
     const display = await this.display?.forModels(keys);
     const discounts = await this.rates.getModelDiscounts(keys);
     const nowMs = this.clock.nowMs();
     return entries.map((e) =>
-      toAdminModel(
-        e,
-        rates.get(e.modelKey),
-        routes.get(e.modelKey),
-        display?.get(e.modelKey),
-        discounts.get(e.modelKey),
-        nowMs,
-      ),
+      e.deletedAt
+        ? toAdminModel(e, undefined, [], undefined, undefined, nowMs)
+        : toAdminModel(
+            e,
+            rates.get(e.modelKey),
+            routes.get(e.modelKey),
+            display?.get(e.modelKey),
+            discounts.get(e.modelKey),
+            nowMs,
+          ),
     );
   }
 

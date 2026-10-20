@@ -100,7 +100,9 @@ async function main(): Promise<void> {
     }
 
     // 3. 模型目录
-    const existing = (await catalog.adminList()).find((m) => m.modelKey === MODEL_KEY);
+    const existing = (await catalog.adminList()).find(
+      (m) => m.modelKey === MODEL_KEY && !m.deletedAt,
+    );
     await catalog.upsert(adminId, MODEL_KEY, {
       modelKey: MODEL_KEY,
       displayName: 'MiMo V2.6 Flash',

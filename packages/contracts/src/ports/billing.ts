@@ -297,6 +297,19 @@ export interface BillingModelRatePort {
     modelKey: string;
     discount: ModelDiscountSetting | null;
   }): Promise<void>;
+  /**
+   * 3.23：删除模型时调用。复制当前生效价目表、去掉这些模型的全部价格行（token、语音、图片等所有单位），
+   * 生成新版本并立即发布（历史版本保留，写审计）；同时删除它们的限时折扣。
+   * 当前价目表里没有它们的价格时不发新版本，priceVersionId 为 null。
+   */
+  removeModels(input: {
+    operatorUserId: string;
+    modelKeys: readonly string[];
+  }): Promise<{ priceVersionId: string | null; pricedModels: number; discounts: number }>;
+  /** 3.23：删除预览用——当前生效价目表里有价格的模型键、有折扣设置的模型键（只读）。 */
+  modelPriceFootprint(
+    modelKeys: readonly string[],
+  ): Promise<{ pricedModelKeys: string[]; discountedModelKeys: string[] }>;
 }
 
 /** 3.22：限时折扣。rate 0.01～0.99；[startsAt, endsAt) 生效（ISO 时间）。 */

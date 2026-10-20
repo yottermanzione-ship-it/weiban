@@ -8,7 +8,7 @@
  */
 import { Inject, Injectable } from '@nestjs/common';
 import type { AdminAlertFacts, Upstream, UpstreamKind, UpstreamStatus } from '@weiban/contracts';
-import { and, asc, eq, gte, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   APP_CONFIG,
@@ -453,7 +453,8 @@ export class UpstreamService {
       const primary = await tx.db
         .select({ modelKey: modelCatalog.modelKey })
         .from(modelCatalog)
-        .where(eq(modelCatalog.upstreamId, upstreamId));
+        // 3.23：已删除的模型（软删，线路已删）不再挡删除
+        .where(and(eq(modelCatalog.upstreamId, upstreamId), isNull(modelCatalog.deletedAt)));
       const keys = [...new Set([...routed, ...primary].map((r) => r.modelKey))].sort();
       if (keys.length > 0) {
         const named = await tx.db

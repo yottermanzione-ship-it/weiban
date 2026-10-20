@@ -128,9 +128,22 @@ export const modelCatalog = modelAccessSchema.table(
       .default(sql`'{}'::text[]`),
     createdAt: tz('created_at').notNull(),
     updatedAt: tz('updated_at').notNull(),
+    /**
+     * 3.23（0117）：软删。删除时 model_key 改成「原键#deleted:<随机>」腾出原键（同键可重新添加），
+     * 原键存 original_model_key；行保留给历史调用记录显示模型名。按原键查目录的地方因此天然查不到已删除的行。
+     */
+    deletedAt: tz('deleted_at'),
+    originalModelKey: text('original_model_key'),
   },
   (t) => [
     index('model_catalog_upstream_idx').on(t.upstreamId),
+    index('model_catalog_original_key_idx')
+      .on(t.originalModelKey)
+      .where(sql`${t.originalModelKey} IS NOT NULL`),
+    check(
+      'model_catalog_deleted_check',
+      sql`(${t.deletedAt} IS NULL) = (${t.originalModelKey} IS NULL) AND (${t.deletedAt} IS NULL OR NOT ${t.enabled})`,
+    ),
     // 无审查模型只能用于专用检查默认，不能作为聊天/后台等生成默认。
     check(
       'model_catalog_adult_not_default',
