@@ -258,6 +258,8 @@ class AgentSession implements CallAgentSession {
       purpose: 'chat_reply',
       billingOwner: 'user',
       modelRole: adult ? 'adult' : 'chat',
+      // 3.22：通话按「语音通话」场景的模型（私密范围仍走私密模式）。
+      ...(adult ? {} : { scenario: 'voice_call' as const }),
       messages,
       maxOutputTokens: 200,
       responseFormat: 'text',

@@ -217,6 +217,8 @@ export class EcologySettingsService {
       const row = await this.row(userId);
       if (!row?.enabled || row.pausedReason) return false;
       if ((await this.accounts.getAccountStatus(userId)) !== 'active') return false;
+      // 3.22（批 E2 遗留）：封禁账号的生态全部跳过，不扣积分（网关处也会再拦一次）。
+      if (await this.accounts.isBanned?.(userId)) return false;
       if (!(await this.membership.isProPlus(userId))) return false;
       if (characterId && !(await this.characterEnabled(userId, characterId))) return false;
       if (action) {

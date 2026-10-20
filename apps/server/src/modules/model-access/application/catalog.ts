@@ -15,12 +15,15 @@ import type {
   ModelCapability,
   ModelInfo,
   ModelRoute,
+  ModelScenario,
+  PlatformInternalUse,
   SystemMessageMode,
   UpstreamStatus,
 } from '@weiban/contracts';
 import {
   AdminCatalogEntryWrite,
   ModelLeaderboardSource,
+  ModelScenarioSettings,
   RouteBillingBounds,
 } from '@weiban/contracts';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
@@ -47,7 +50,7 @@ import {
   modelCatalog,
   modelRoutes,
   upstreams,
-  selections,
+  scenarioSelections,
   modelAccessSettings,
 } from '../infra/db/schema.js';
 import {
@@ -61,20 +64,19 @@ import { ChargeQueryUnavailableError } from './defaults.js';
 
 type CatalogRow = typeof modelCatalog.$inferSelect;
 type CatalogWrite = z.infer<typeof AdminCatalogEntryWrite>;
-export type DefaultUse =
-  | 'chat'
-  | 'background'
-  | 'vision'
-  | 'planner'
-  | 'adult_check'
-  | 'speech_synthesis'
-  | 'speech_recognition'
-  | 'image_generation'
-  | 'web_search';
-/** 模型故障提醒只关心这三类默认（ModelNotificationReadPort.previousDefaultFor）。 */
-const NOTIFY_USES = ['chat', 'background', 'vision'] as const;
-type NotifyUse = (typeof NOTIFY_USES)[number];
-const isNotifyUse = (u: string): u is NotifyUse => (NOTIFY_USES as readonly string[]).includes(u);
+/** 3.22：场景推荐模型 + 平台内部模型，存在 model_access.settings 的 model_uses（0114 从 default_for 迁移）。 */
+export const MODEL_USES_KEY = 'model_uses';
+export const ALL_SCENARIOS: readonly ModelScenario[] = [
+  'chat',
+  'vision',
+  'voice_message',
+  'speech_recognition',
+  'voice_call',
+  'image_generation',
+  'private',
+];
+/** 文本类场景：用文本模型（按 token 计价，约每条回复）。 */
+export const TEXT_SCENARIOS: readonly ModelScenario[] = ['chat', 'vision', 'voice_call', 'private'];
 
 /** 一个模型的当前事实：目录条目（可能不存在）+ 所属上游状态（上游可能已删除）。 */
 export interface ModelFacts {
@@ -98,8 +100,10 @@ export function toAdminEntry(row: CatalogRow): AdminCatalogEntry {
     tags: row.tags,
     leaderboardRank: row.leaderboardRank,
     sortOrder: row.sortOrder,
-    defaultFor: row.defaultFor as DefaultUse[],
+    // 3.22：平台默认改为场景推荐 / 平台内部模型（ModelScenarioSettings），这里固定返回空数组。
+    defaultFor: [],
     enabled: row.enabled,
+    scenarios: row.scenarios as ModelScenario[],
     systemMessageMode: row.systemMessageMode as SystemMessageMode,
     billingBounds: row.billingBounds,
     updatedAt: row.updatedAt.toISOString(),
@@ -117,6 +121,115 @@ export class CatalogService {
     @Inject(MODEL_ACCESS_CHARGE_QUERY) private readonly charges: ChargeQuery,
     @Optional() @Inject(DisplayPricingService) private readonly display?: DisplayPricingService,
   ) {}
+
+  // ---------- 3.22 场景推荐模型 / 平台内部模型 ----------
+
+  async modelUses(): Promise<ModelScenarioSettings> {
+    const [row] = await this.database.db
+      .select()
+      .from(modelAccessSettings)
+      .where(eq(modelAccessSettings.key, MODEL_USES_KEY));
+    const parsed = ModelScenarioSettings.safeParse(row?.value);
+    return parsed.success ? parsed.data : { recommended: {}, internal: {} };
+  }
+
+  /**
+   * 修改推荐 / 内部模型（只改传了的键）。推荐模型须启用且标注可用于该场景；内部模型须启用、不能是无审查模型
+   * （adult_check 除外）。返回修改后的完整设置。
+   */
+  async setModelUses(
+    operatorUserId: string,
+    input: ModelScenarioSettings,
+  ): Promise<ModelScenarioSettings> {
+    const current = await this.modelUses();
+    const next: ModelScenarioSettings = {
+      recommended: { ...current.recommended },
+      internal: { ...current.internal },
+    };
+    for (const [scenario, key] of Object.entries(input.recommended) as [
+      ModelScenario,
+      string | null | undefined,
+    ][]) {
+      if (key === undefined) continue;
+      if (key !== null) {
+        const f = await this.fact(key);
+        if (!f.entry?.enabled || !f.entry.scenarios.includes(scenario))
+          throw new AppError('bad_request', `推荐模型 ${key} 未启用或没有勾选可用于这个场景`, {
+            status: 422,
+            details: { field: `recommended.${scenario}` },
+          });
+        if (scenario !== 'private' && hasAdultContent(f.entry.capabilities))
+          throw new AppError('model_not_allowed', '无审查模型只能推荐给私密模式', { status: 422 });
+      }
+      next.recommended[scenario] = key;
+    }
+    for (const [use, key] of Object.entries(input.internal) as [
+      PlatformInternalUse,
+      string | null | undefined,
+    ][]) {
+      if (key === undefined) continue;
+      if (key !== null) {
+        const f = await this.fact(key);
+        if (!f.entry?.enabled)
+          throw new AppError('bad_request', `平台内部模型 ${key} 不存在或未启用`, {
+            status: 422,
+            details: { field: `internal.${use}` },
+          });
+        if (use !== 'adult_check' && hasAdultContent(f.entry.capabilities))
+          throw new AppError(
+            'model_not_allowed',
+            '无审查模型不能做平台内部模型（成人内容检查除外）',
+            { status: 422 },
+          );
+      }
+      next.internal[use] = key;
+    }
+    await this.database.transaction(async (tx) => {
+      const now = this.clock.now();
+      await tx.db
+        .insert(modelAccessSettings)
+        .values({ key: MODEL_USES_KEY, value: next, updatedAt: now, updatedBy: operatorUserId })
+        .onConflictDoUpdate({
+          target: modelAccessSettings.key,
+          set: { value: next, updatedAt: now, updatedBy: operatorUserId },
+        });
+      await this.audit.record(
+        {
+          module: 'model_access',
+          action: 'model_uses.updated',
+          actorType: 'admin',
+          actorId: operatorUserId,
+          targetType: 'model_settings',
+          targetId: null,
+          details: { before: current, after: next },
+        },
+        tx,
+      );
+      const checker = next.internal.adult_check;
+      if (checker && checker !== current.internal.adult_check)
+        await this.outbox.publish(tx, 'model_access.adult_checker_configured', 'model_access', {
+          modelKey: checker,
+        });
+    });
+    return next;
+  }
+
+  /** 场景推荐模型（只用于「一键选推荐」与管理员自己的 admin_* 调用；只算启用的）。 */
+  async recommendedModel(scenario: ModelScenario): Promise<ModelFacts | null> {
+    const key = (await this.modelUses()).recommended[scenario];
+    return key ? this.enabledFact(key) : null;
+  }
+
+  /** 平台内部模型（安全检查、小V、平台内容、行为规划、成人检查、联网搜索；只算启用的）。 */
+  async internalModel(use: PlatformInternalUse): Promise<ModelFacts | null> {
+    const key = (await this.modelUses()).internal[use];
+    return key ? this.enabledFact(key) : null;
+  }
+
+  private async enabledFact(key: string): Promise<ModelFacts | null> {
+    const f = await this.fact(key);
+    return f.entry?.enabled ? f : null;
+  }
 
   // ---------- 管理后台 ----------
   async leaderboardSource() {
@@ -159,14 +272,14 @@ export class CatalogService {
   async leaderboardInfo() {
     const source = await this.leaderboardSource();
     const popular = await this.database.db
-      .select({ modelKey: selections.chatModelKey, users: sql<number>`cast(count(*) as integer)` })
-      .from(selections)
-      .where(sql`${selections.chatModelKey} IS NOT NULL`)
-      .groupBy(selections.chatModelKey);
-    return {
-      source,
-      popular: popular.filter((r): r is { modelKey: string; users: number } => r.modelKey !== null),
-    };
+      .select({
+        modelKey: scenarioSelections.modelKey,
+        users: sql<number>`cast(count(*) as integer)`,
+      })
+      .from(scenarioSelections)
+      .where(eq(scenarioSelections.scenario, 'chat'))
+      .groupBy(scenarioSelections.modelKey);
+    return { source, popular };
   }
 
   async adminList(): Promise<AdminCatalogEntry[]> {
@@ -183,32 +296,14 @@ export class CatalogService {
       throw new AppError('bad_request', '路径里的模型键与请求体不一致');
     }
     const capabilities = [...new Set(body.capabilities)];
-    const defaultFor = [...new Set(body.defaultFor)];
+    // 3.22：default_for 不再使用（改为场景推荐 / 平台内部模型），写入时一律清空，忽略请求里的值。
+    const defaultFor: string[] = [];
     const tags = [...new Set(body.tags)];
-    if (defaultFor.some((use) => use !== 'adult_check') && hasAdultContent(capabilities)) {
-      throw new AppError('model_not_allowed', '无审查（允许成人内容）模型不能设为平台默认模型', {
+    if (body.scenarios?.includes('vision') && !capabilities.includes('vision')) {
+      throw new AppError('bad_request', '勾选「图片识别」场景的模型必须具备识图（vision）能力', {
         status: 422,
+        details: { field: 'scenarios' },
       });
-    }
-    if (defaultFor.includes('vision') && !capabilities.includes('vision')) {
-      throw new AppError('bad_request', '默认识图模型必须具备识图（vision）能力', { status: 422 });
-    }
-    if (defaultFor.length > 0 && !body.enabled) {
-      throw new AppError('bad_request', '停用的模型不能设为平台默认模型', { status: 422 });
-    }
-    // v5（model-routing-ecology 块 A-4）：平台默认聊天模型不能识图时，必须已有默认识图模型兜底，
-    // 否则用户发图会直接失败（resolver 不再静默改用其他模型以外的路径）。
-    if (
-      defaultFor.includes('chat') &&
-      !capabilities.includes('vision') &&
-      !(await this.defaultModel('vision')) &&
-      (await this.defaultModel('chat'))?.modelKey !== body.modelKey
-    ) {
-      throw new AppError(
-        'bad_request',
-        '这个模型不能识图，且平台还没有默认识图模型：请先设置默认识图模型，或选能识图的模型做聊天默认',
-        { status: 422 },
-      );
     }
 
     if (body.enabled) await this.requirePrice(body.modelKey);
@@ -231,24 +326,6 @@ export class CatalogService {
       }
       const beforeStatus = before ? await this.upstreamStatusOf(tx, before.upstreamId) : null;
 
-      // 每种默认最多一个：从其他模型上摘掉
-      const movedFrom: Array<{ modelKey: string; use: string }> = [];
-      for (const use of defaultFor) {
-        const holders = await tx.db
-          .select({ modelKey: modelCatalog.modelKey })
-          .from(modelCatalog)
-          .where(
-            sql`${use}::text = any(${modelCatalog.defaultFor}) and ${modelCatalog.modelKey} <> ${body.modelKey}`,
-          );
-        for (const h of holders) {
-          await tx.db
-            .update(modelCatalog)
-            .set({ defaultFor: sql`array_remove(${modelCatalog.defaultFor}, ${use}::text)` })
-            .where(eq(modelCatalog.modelKey, h.modelKey));
-          movedFrom.push({ modelKey: h.modelKey, use });
-        }
-      }
-
       const now = this.clock.now();
       const values = {
         modelKey: body.modelKey,
@@ -262,6 +339,7 @@ export class CatalogService {
         sortOrder: body.sortOrder,
         defaultFor,
         enabled: body.enabled,
+        scenarios: [...new Set(body.scenarios ?? before?.scenarios ?? [])],
         // v3.6：不传 = 保持原值（旧后台页面不认识这个字段）
         systemMessageMode: body.systemMessageMode ?? before?.systemMessageMode ?? 'multi',
         billingBounds:
@@ -312,8 +390,7 @@ export class CatalogService {
               : {}),
             ...(before && before.enabled !== body.enabled ? { enabledChanged: body.enabled } : {}),
             capabilities,
-            defaultFor,
-            ...(movedFrom.length > 0 ? { defaultMovedFrom: movedFrom } : {}),
+            scenarios: body.scenarios ?? before?.scenarios ?? [],
           },
         },
         tx,
@@ -327,21 +404,8 @@ export class CatalogService {
             modelKey: row.modelKey,
             available: isReason === null,
             reason: isReason ?? 'recovered',
-            ...(before.defaultFor.some(isNotifyUse)
-              ? { previousDefaultFor: before.defaultFor.filter(isNotifyUse) }
-              : {}),
           });
         }
-      }
-      if (
-        defaultFor.includes('adult_check') &&
-        (!before?.defaultFor.includes('adult_check') ||
-          upstreamChanged ||
-          before.upstreamModelId !== row.upstreamModelId)
-      ) {
-        await this.outbox.publish(tx, 'model_access.adult_checker_configured', 'model_access', {
-          modelKey: row.modelKey,
-        });
       }
       return toAdminEntry(row);
     });
@@ -349,7 +413,7 @@ export class CatalogService {
 
   // ---------- 用户端 ----------
 
-  async listModels(capability?: string): Promise<ModelInfo[]> {
+  async listModels(capability?: string, scenario?: ModelScenario): Promise<ModelInfo[]> {
     const rows = await this.database.db
       .select({
         entry: modelCatalog,
@@ -359,9 +423,11 @@ export class CatalogService {
       .leftJoin(upstreams, eq(upstreams.id, modelCatalog.upstreamId))
       .where(eq(modelCatalog.enabled, true))
       .orderBy(asc(modelCatalog.sortOrder), asc(modelCatalog.modelKey));
-    const visible0 = capability
-      ? rows.filter((r) => r.entry.capabilities.includes(capability))
-      : rows;
+    const visible0 = rows.filter(
+      (r) =>
+        (!capability || r.entry.capabilities.includes(capability)) &&
+        (!scenario || r.entry.scenarios.includes(scenario)),
+    );
     const routed = await this.routeStatus(visible0.map((r) => r.entry.modelKey));
     const visible = visible0.map((r) => ({
       ...r,
@@ -389,8 +455,11 @@ export class CatalogService {
         ? {
             pointsPerReplyBasis: display.get(entry.modelKey)!.pointsPerReplyBasis,
             displayMultiplier: display.get(entry.modelKey)!.displayMultiplier,
+            discount: display.get(entry.modelKey)!.discount,
+            pointsPerUse: display.get(entry.modelKey)!.pointsPerUse,
           }
         : {}),
+      scenarios: entry.scenarios as ModelScenario[],
       capabilities: entry.capabilities as ModelCapability[],
       tags: entry.tags,
       leaderboardRank: entry.leaderboardRank,
@@ -608,31 +677,6 @@ export class CatalogService {
   async fact(modelKey: string): Promise<ModelFacts> {
     const map = await this.facts([modelKey]);
     return map.get(modelKey) ?? { modelKey, entry: null, upstreamStatus: null };
-  }
-
-  /** 平台默认模型（每种最多一个；只算启用的）。 */
-  async defaultModel(use: DefaultUse): Promise<ModelFacts | null> {
-    const rows = await this.database.db
-      .select({
-        entry: modelCatalog,
-        upstreamStatus: upstreams.status,
-        upstreamBaseUrl: upstreams.baseUrl,
-      })
-      .from(modelCatalog)
-      .leftJoin(upstreams, eq(upstreams.id, modelCatalog.upstreamId))
-      .where(sql`${use}::text = any(${modelCatalog.defaultFor}) and ${modelCatalog.enabled}`)
-      .orderBy(asc(modelCatalog.modelKey))
-      .limit(1);
-    const r = rows[0];
-    if (!r) return null;
-    const routed = await this.routeStatus([r.entry.modelKey]);
-    return {
-      modelKey: r.entry.modelKey,
-      entry: r.entry,
-      upstreamStatus:
-        routed.get(r.entry.modelKey) ?? (r.upstreamStatus as UpstreamStatus | null) ?? null,
-      upstreamBaseUrl: r.upstreamBaseUrl,
-    };
   }
 
   /**

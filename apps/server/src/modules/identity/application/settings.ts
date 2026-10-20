@@ -417,6 +417,15 @@ export class SettingsService
   // ---------- IdentityAccountStatusPort（契约 1.2） ----------
 
   /** 账号状态：active / deleting；账号不存在（已删除或从未存在）返回 null。 */
+  /** 3.22：账号是否被管理员封禁（批 E2 的 banned_at）。模型网关据此跳过封禁账号的一切用户付费调用。 */
+  async isBanned(userId: string): Promise<boolean> {
+    const [row] = await this.database.db
+      .select({ bannedAt: users.bannedAt })
+      .from(users)
+      .where(eq(users.id, userId));
+    return !!row?.bannedAt;
+  }
+
   async getAccountStatus(userId: string, transaction?: Tx): Promise<AccountStatus | null> {
     const db = transaction ? asDbTx(transaction).db : this.database.db;
     const query = db.select({ status: users.status }).from(users).where(eq(users.id, userId));

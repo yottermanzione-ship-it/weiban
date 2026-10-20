@@ -29,6 +29,7 @@ import { ModelAccessLifecycle } from './application/lifecycle.js';
 import { UsageReconciliationService } from './application/reconciliation.js';
 import { ModelQuoteService, ModelResolver, ModelStatusService } from './application/resolver.js';
 import { SelectionService } from './application/selection.js';
+import { ScenarioService } from './application/scenarios.js';
 import { UpstreamService } from './application/upstreams.js';
 import { AdminUsageService, UsageRecorder } from './application/usage.js';
 import { ModelAdminController, ModelController } from './http/model-access.controller.js';
@@ -88,6 +89,7 @@ import {
     CatalogService,
     DisplayPricingService,
     SelectionService,
+    ScenarioService,
     { provide: MODEL_NOTIFICATION_READ_PORT, useExisting: SelectionService },
     ModelResolver,
     { provide: ADULT_MODEL_READ_PORT, useExisting: ModelResolver },

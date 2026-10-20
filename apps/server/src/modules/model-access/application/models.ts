@@ -14,10 +14,12 @@ import {
   type AdminCatalogEntry,
   type AdminModel,
   type BillingModelRatePort,
+  type ModelDiscountSetting,
   type ModelRates,
   type ModelRoute,
   type ModelTokenPrices,
 } from '@weiban/contracts';
+import { CLOCK, type Clock } from '../../../platform/index.js';
 import type { z } from 'zod';
 import { standardReplyMicros } from '../domain/rules.js';
 import { MODEL_RATE_PORT, type ModelPriceSource } from '../tokens.js';
@@ -57,9 +59,14 @@ export function toAdminModel(
   rates: ActiveModelTokenRates | undefined,
   routes?: ModelRoute[],
   display?: DisplayPricing,
+  discount?: ModelDiscountSetting,
+  nowMs = Date.now(),
 ): AdminModel {
   return {
     ...entry,
+    discount: discount ?? null,
+    discountActive:
+      !!discount && Date.parse(discount.startsAt) <= nowMs && nowMs < Date.parse(discount.endsAt),
     displayMultiplierManual: display?.displayMultiplierManual ?? null,
     displayMultiplier: display?.displayMultiplier ?? null,
     rates: rates ? pricesToRates(rates.price) : null,
@@ -84,6 +91,7 @@ export class ModelAdminService {
   constructor(
     @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(MODEL_RATE_PORT) private readonly rates: BillingModelRatePort,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Optional() @Inject(DisplayPricingService) private readonly display?: DisplayPricingService,
   ) {}
 
@@ -93,13 +101,22 @@ export class ModelAdminService {
     const rates = await this.rates.getActiveTokenRates(keys);
     const routes = await this.catalog.routes(keys);
     const display = await this.display?.forModels(keys);
+    const discounts = await this.rates.getModelDiscounts(keys);
+    const nowMs = this.clock.nowMs();
     return entries.map((e) =>
-      toAdminModel(e, rates.get(e.modelKey), routes.get(e.modelKey), display?.get(e.modelKey)),
+      toAdminModel(
+        e,
+        rates.get(e.modelKey),
+        routes.get(e.modelKey),
+        display?.get(e.modelKey),
+        discounts.get(e.modelKey),
+        nowMs,
+      ),
     );
   }
 
   async upsert(adminId: string, pathKey: string, body: Write): Promise<AdminModel> {
-    const { rates, costRates, routes, displayMultiplierManual, ...rest } = body;
+    const { rates, costRates, routes, displayMultiplierManual, discount, ...rest } = body;
     this.catalog.validateBillingBounds(body.billingBounds);
     for (const route of routes ?? []) this.catalog.validateBillingBounds(route.billingBounds);
     // v3.4：传了路由时，目录上的上游 = 主路由（旧接口与媒体网关仍读它）
@@ -124,14 +141,25 @@ export class ModelAdminService {
     if (routes) await this.catalog.replaceRoutes(adminId, saved.modelKey, routes);
     if (displayMultiplierManual !== undefined)
       await this.display?.setManual(saved.modelKey, displayMultiplierManual);
+    // 3.22：限时折扣存 billing（报价 / 冻结 / 结算在 billing 同一处按它打折）。
+    if (discount !== undefined)
+      await this.rates.setModelDiscount({
+        operatorUserId: adminId,
+        modelKey: saved.modelKey,
+        discount,
+      });
+    this.display?.invalidate();
     const current = await this.rates.getActiveTokenRates([saved.modelKey]);
     const savedRoutes = await this.catalog.routes([saved.modelKey]);
     const display = await this.display?.forModels([saved.modelKey]);
+    const discounts = await this.rates.getModelDiscounts([saved.modelKey]);
     return toAdminModel(
       saved,
       current.get(saved.modelKey),
       savedRoutes.get(saved.modelKey),
       display?.get(saved.modelKey),
+      discounts.get(saved.modelKey),
+      this.clock.nowMs(),
     );
   }
 }

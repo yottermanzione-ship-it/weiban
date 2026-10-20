@@ -40,6 +40,7 @@ import { DisplayPricingService } from '../application/display-pricing.js';
 import { UpstreamScheduler } from '../application/scheduler.js';
 import { ModelStatusService } from '../application/resolver.js';
 import { SelectionService } from '../application/selection.js';
+import { ScenarioService } from '../application/scenarios.js';
 import { UpstreamService } from '../application/upstreams.js';
 import { AdminUsageService } from '../application/usage.js';
 
@@ -60,7 +61,58 @@ export class ModelController {
     @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(SelectionService) private readonly selection: SelectionService,
     @Inject(ModelStatusService) private readonly status: ModelStatusService,
+    @Inject(ScenarioService) private readonly scenarios: ScenarioService,
   ) {}
+
+  // ---------- 3.22 按场景的模型配置 ----------
+
+  @Get('scenarios')
+  @RequireAuth(E.getScenarioConfig.auth)
+  getScenarios(@CurrentPrincipal() me: AuthPrincipal) {
+    return this.scenarios.getConfig(me.userId);
+  }
+
+  @Patch('scenarios')
+  @RequireAuth(E.updateScenarioConfig.auth)
+  updateScenarios(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(E.updateScenarioConfig.body)))
+    body: Out<typeof E.updateScenarioConfig.body>,
+  ) {
+    return this.scenarios.updateConfig(me.userId, body.selections);
+  }
+
+  @Post('scenarios/recommended')
+  @HttpCode(200)
+  @RequireAuth(E.applyRecommendedScenarios.auth)
+  applyRecommended(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(E.applyRecommendedScenarios.body)))
+    body: Out<typeof E.applyRecommendedScenarios.body>,
+  ) {
+    return this.scenarios.applyRecommended(me.userId, body.overwrite === true);
+  }
+
+  @Get('character-scenarios/:characterId')
+  @RequireAuth(E.getCharacterScenarios.auth)
+  getCharacterScenarios(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(schema(E.getCharacterScenarios.params))) params: { characterId: string },
+  ) {
+    return this.scenarios.getCharacter(me.userId, params.characterId);
+  }
+
+  @Patch('character-scenarios/:characterId')
+  @RequireAuth(E.updateCharacterScenarios.auth)
+  updateCharacterScenarios(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(schema(E.updateCharacterScenarios.params)))
+    params: { characterId: string },
+    @Body(new ContractPipe(schema(E.updateCharacterScenarios.body)))
+    body: Out<typeof E.updateCharacterScenarios.body>,
+  ) {
+    return this.scenarios.updateCharacter(me.userId, params.characterId, body.selections);
+  }
 
   @Get('leaderboard-info')
   @RequireAuth(E.getLeaderboardInfo.auth)
@@ -73,7 +125,7 @@ export class ModelController {
   async listModels(
     @Query(new ContractPipe(schema(E.listModels.query))) query: Out<typeof E.listModels.query>,
   ) {
-    return { items: await this.catalog.listModels(query.capability) };
+    return { items: await this.catalog.listModels(query.capability, query.scenario) };
   }
 
   @Get('selection')
@@ -149,6 +201,24 @@ export class ModelAdminController {
     @Inject(GatewayLimitsService) private readonly limits: GatewayLimitsService,
     @Inject(DisplayPricingService) private readonly displayPricing: DisplayPricingService,
   ) {}
+
+  // ---------- 3.22 场景推荐模型 / 平台内部模型 ----------
+
+  @Get('scenario-settings')
+  @RequireAuth(A.getScenarioSettings.auth)
+  getScenarioSettings() {
+    return this.catalog.modelUses();
+  }
+
+  @Put('scenario-settings')
+  @RequireAuth(A.updateScenarioSettings.auth)
+  updateScenarioSettings(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(A.updateScenarioSettings.body)))
+    body: Out<typeof A.updateScenarioSettings.body>,
+  ) {
+    return this.catalog.setModelUses(me.userId, body);
+  }
 
   // ---------- 3.17 展示倍率基准 ----------
 

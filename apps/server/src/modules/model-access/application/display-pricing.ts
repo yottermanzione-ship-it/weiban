@@ -7,8 +7,16 @@
  * - 约每条积分：最近 7 天该模型「用户付费的聊天回复」成功调用的平均实扣；样本少于 MIN_SAMPLES 时按默认假设估算。
  *   结果在进程内缓存 10 分钟（列表接口高频、数据不需要实时）。
  */
-import { Inject, Injectable } from '@nestjs/common';
-import { DisplayMultiplierSettings, microsToPoints } from '@weiban/contracts';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import {
+  DisplayMultiplierSettings,
+  microsToPoints,
+  type BillingModelRatePort,
+  type BillingQuotePort,
+  type ModelScenario,
+  type UsageQuantities,
+} from '@weiban/contracts';
+import { BILLING_QUOTE_PORT } from '../../billing/index.js';
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import {
   AUDIT_LOG,
@@ -20,7 +28,7 @@ import {
 } from '../../../platform/index.js';
 import { defaultReplyMicros, weightedPrice, type ModelTextPrices } from '../domain/rules.js';
 import { modelAccessSettings, modelCatalog, usageRecords } from '../infra/db/schema.js';
-import { MODEL_PRICE_SOURCE, type ModelPriceSource } from '../tokens.js';
+import { MODEL_PRICE_SOURCE, MODEL_RATE_PORT, type ModelPriceSource } from '../tokens.js';
 
 const BASE_KEY = 'display_multiplier_base';
 const WINDOW_MS = 7 * 24 * 3_600_000;
@@ -32,20 +40,54 @@ export interface DisplayPricing {
   displayMultiplierManual: number | null;
   pointsPerReply: number | null;
   pointsPerReplyBasis: 'recent_7d' | 'default';
+  /** 3.22：进行中的限时折扣（没有为 null）。 */
+  discount: { rate: number; endsAt: string } | null;
+  /** 3.22：按场景「约每次积分」（已含折扣）。 */
+  pointsPerUse: Partial<Record<ModelScenario, number | null>>;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/** 3.22：媒体场景「约每次」的估算用量（语音消息约 100 字、语音识别约 15 秒、发照片 1 张）。 */
+const MEDIA_USE: Partial<Record<ModelScenario, UsageQuantities>> = {
+  voice_message: { ttsChars: 100 },
+  speech_recognition: { asrSeconds: 15 },
+  image_generation: { images: 1 },
+};
+const TEXT_USE: readonly ModelScenario[] = ['chat', 'vision', 'voice_call', 'private'];
+
 @Injectable()
 export class DisplayPricingService {
   private recent: { at: number; map: Map<string, { avg: number; n: number }> } | null = null;
+  private mediaQuotes = new Map<string, { at: number; points: number | null }>();
 
   constructor(
     @Inject(DATABASE) private readonly database: Database,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(MODEL_PRICE_SOURCE) private readonly prices: ModelPriceSource,
+    @Optional() @Inject(MODEL_RATE_PORT) private readonly rates?: BillingModelRatePort,
+    @Optional() @Inject(BILLING_QUOTE_PORT) private readonly quotes?: BillingQuotePort,
   ) {}
+
+  /** 后台改了价格 / 折扣后清掉缓存的媒体估算。 */
+  invalidate(): void {
+    this.mediaQuotes.clear();
+  }
+
+  /** 媒体场景按价目表 + 当前折扣报价（billing 同一算式），缓存 10 分钟。 */
+  private async mediaPoints(modelKey: string, scenario: ModelScenario): Promise<number | null> {
+    const usage = MEDIA_USE[scenario];
+    if (!usage || !this.quotes) return null;
+    const cacheKey = `${modelKey}|${scenario}`;
+    const hit = this.mediaQuotes.get(cacheKey);
+    const nowMs = this.clock.nowMs();
+    if (hit && nowMs - hit.at < CACHE_MS) return hit.points;
+    const quoted = await this.quotes.quote(modelKey, usage).catch(() => null);
+    const points = quoted ? round2(microsToPoints(quoted.amountMicros)) : null;
+    this.mediaQuotes.set(cacheKey, { at: nowMs, points });
+    return points;
+  }
 
   async getSettings(): Promise<DisplayMultiplierSettings> {
     const [row] = await this.database.db
@@ -140,10 +182,17 @@ export class DisplayPricingService {
         ? prices
         : await this.prices.textPrices(wanted);
     const manualRows = await this.database.db
-      .select({ modelKey: modelCatalog.modelKey, value: modelCatalog.displayMultiplier })
+      .select({
+        modelKey: modelCatalog.modelKey,
+        value: modelCatalog.displayMultiplier,
+        scenarios: modelCatalog.scenarios,
+      })
       .from(modelCatalog)
       .where(inArray(modelCatalog.modelKey, [...keys]));
     const manual = new Map(manualRows.map((r) => [r.modelKey, r.value]));
+    const scenariosOf = new Map(manualRows.map((r) => [r.modelKey, r.scenarios]));
+    const discounts = (await this.rates?.getModelDiscounts(keys)) ?? new Map();
+    const nowMs = this.clock.nowMs();
     const basePrice = baseModelKey ? priceMap.get(baseModelKey) : undefined;
     const baseWeighted = basePrice ? weightedPrice(basePrice) : 0;
     const recent = await this.recentAverages(keys);
@@ -151,17 +200,32 @@ export class DisplayPricingService {
       const p = priceMap.get(key);
       const hand = manual.get(key) ?? null;
       const auto = p && baseWeighted > 0 ? round2(weightedPrice(p) / baseWeighted) : null;
+      const d = discounts.get(key);
+      const discount =
+        d && Date.parse(d.startsAt) <= nowMs && nowMs < Date.parse(d.endsAt)
+          ? { rate: d.rate, endsAt: d.endsAt }
+          : null;
       const r = recent.get(key);
-      const useRecent = !!r && r.n >= MIN_SAMPLES;
+      // 折扣期间最近 7 天的实扣里混有折后数，不能再乘一次：改按默认假设 × 折后售价估算。
+      const useRecent = !!r && r.n >= MIN_SAMPLES && !discount;
+      const perReply = useRecent
+        ? round2(microsToPoints(r.avg))
+        : p
+          ? round2(microsToPoints(defaultReplyMicros(p)) * (discount?.rate ?? 1))
+          : null;
+      const pointsPerUse: Partial<Record<ModelScenario, number | null>> = {};
+      for (const scenario of (scenariosOf.get(key) ?? []) as ModelScenario[]) {
+        pointsPerUse[scenario] = TEXT_USE.includes(scenario)
+          ? perReply
+          : await this.mediaPoints(key, scenario);
+      }
       out.set(key, {
         displayMultiplierManual: hand,
         displayMultiplier: hand ?? auto,
-        pointsPerReply: useRecent
-          ? round2(microsToPoints(r.avg))
-          : p
-            ? round2(microsToPoints(defaultReplyMicros(p)))
-            : null,
+        pointsPerReply: perReply,
         pointsPerReplyBasis: useRecent ? 'recent_7d' : 'default',
+        discount,
+        pointsPerUse,
       });
     }
     return out;

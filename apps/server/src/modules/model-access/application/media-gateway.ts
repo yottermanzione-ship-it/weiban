@@ -3,8 +3,8 @@
  *
  * 与 generateText 相同的「闸门 → 冻结 → 调用 → 结算 / 解冻 → 用量记录」流程，计价单位：
  * 语音合成 ttsChars（tts_10k_chars）、语音识别 asrSeconds（asr_minute）、图片 images（image）、搜索 searchCalls（search_call）。
- * 平台未把任何模型设为对应 defaultFor（speech_synthesis / speech_recognition / image_generation / web_search）时
- * 返回 not_configured，即「平台未开通」。
+ * 3.22：语音合成 / 语音识别 / 图片生成按用户的场景配置（语音消息 / 语音识别 / 发照片，角色单独设置优先）解析，
+ * 未配置返回 not_configured；联网搜索用后台指定的平台内部模型。角色音色绑定了具体语音模型且该模型可用时以音色为准。
  *
  * 幂等：非流式调用复用 GenerationCache（同一用户 + 幂等键 24 小时内返回第一次的结果，不再扣费）。
  * 流式调用（实时识别、流式合成）每段 / 每次独立记账，幂等键由调用方保证唯一。
@@ -55,7 +55,9 @@ import {
   type MediaTarget,
 } from '../infra/media-adapter.js';
 import { MEDIA_ADAPTER } from '../tokens.js';
-import { CatalogService, type DefaultUse, type ModelFacts } from './catalog.js';
+import { CatalogService, type ModelFacts } from './catalog.js';
+import { ScenarioService } from './scenarios.js';
+import type { ModelScenario } from '@weiban/contracts';
 import { GenerationCache, requestHash, type GenerationRow } from './generation-cache.js';
 import { UpstreamService } from './upstreams.js';
 import { UsageRecorder } from './usage.js';
@@ -64,6 +66,11 @@ import { BillingBoundsService, boundsEvidence } from './billing-bounds.js';
 import { pcmWavSeconds, roundAsr } from '../domain/media-billing-bounds.js';
 
 type Service = 'speech_synthesis' | 'speech_recognition' | 'image_generation' | 'web_search';
+const SERVICE_SCENARIO: Record<Exclude<Service, 'web_search'>, ModelScenario> = {
+  speech_synthesis: 'voice_message',
+  speech_recognition: 'speech_recognition',
+  image_generation: 'image_generation',
+};
 
 interface Resolved {
   modelKey: string;
@@ -129,6 +136,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(CLOCK) private readonly clock: Clock,
     @Optional() @Inject(BillingBoundsService) private readonly bounds?: BillingBoundsService,
+    @Optional() @Inject(ScenarioService) private readonly scenarios?: ScenarioService,
   ) {}
 
   // ---------- 服务开通 ----------
@@ -137,7 +145,11 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     service:
       'speech_synthesis' | 'speech_recognition' | 'image_generation' | 'web_search' | 'vision',
   ): Promise<boolean> {
-    const facts = await this.catalog.defaultModel(service);
+    // 3.22：平台是否「开通」= 有可用于该场景的模型（以推荐模型为代表；没有推荐时看任一启用模型）。
+    const facts =
+      service === 'web_search'
+        ? await this.catalog.internalModel('web_search')
+        : await this.anyScenarioModel(service === 'vision' ? 'vision' : SERVICE_SCENARIO[service]);
     if (!facts?.entry || unavailableReason(facts.entry, facts.upstreamStatus) !== null)
       return false;
     const bounds = await this.bounds?.get(
@@ -166,7 +178,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     return this.cached('tts', input, async () => {
       const voice = await this.assets.getVoice(input.voiceId);
       if (!voice || !voice.enabled) return { ok: false, error: 'bad_request' };
-      const model = await this.resolve('speech_synthesis', voice.modelKey);
+      const model = await this.resolve('speech_synthesis', voice.modelKey, input);
       if (!model.ok) return model;
       const chars = this.ttsUnits(model.value, text);
       if (chars === null) return { ok: false, error: 'model_unavailable' };
@@ -208,7 +220,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     return this.cached('asr', input, async () => {
       if (!(await this.media.canUse(input.ownerUserId, input.mediaId, ['chat_voice'])))
         return { ok: false, error: 'bad_request' };
-      const model = await this.resolve('speech_recognition', null);
+      const model = await this.resolve('speech_recognition', null, input);
       if (!model.ok) return model;
       const info = await this.mediaRead
         .getMedia(input.ownerUserId, input.mediaId)
@@ -234,7 +246,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     if (!prompt || !['1024x1024', '768x1024', '1024x768'].includes(input.size))
       return { ok: false, error: 'bad_request' };
     return this.cached('image', input, async () => {
-      const model = await this.resolve('image_generation', null);
+      const model = await this.resolve('image_generation', null, input);
       if (!model.ok) return model;
       if (!model.value.billingBounds.image?.sizes.includes(input.size))
         return { ok: false, error: 'model_unavailable' };
@@ -261,7 +273,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     if (!query) return { ok: false, error: 'bad_request' };
     const max = Math.min(Math.max(Math.floor(input.maxResults) || 1, 1), 10);
     return this.cached('search', input, async () => {
-      const model = await this.resolve('web_search', null);
+      const model = await this.resolve('web_search', null, input);
       if (!model.ok) return model;
       const search = model.value.billingBounds.search;
       if (!search || max > search.maxResults) return { ok: false, error: 'model_unavailable' };
@@ -338,7 +350,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     input: MediaCallBase & { sampleRate: 16000 },
   ): Promise<PortResult<RealtimeAsrSession, GenerateError>> {
     if (!(await this.precheck(input))) return { ok: false, error: 'bad_request' };
-    const model = await this.resolve('speech_recognition', null);
+    const model = await this.resolve('speech_recognition', null, input);
     if (!model.ok) return model;
     const profile = model.value.billingBounds.asr!;
     const first = await this.reserve(
@@ -363,7 +375,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     if (!text || !(await this.precheck(input))) return { ok: false, error: 'bad_request' };
     const voice = await this.assets.getVoice(input.voiceId);
     if (!voice || !voice.enabled) return { ok: false, error: 'bad_request' };
-    const model = await this.resolve('speech_synthesis', voice.modelKey);
+    const model = await this.resolve('speech_synthesis', voice.modelKey, input);
     if (!model.ok) return model;
     const chars = this.ttsUnits(model.value, text);
     if (chars === null) return { ok: false, error: 'model_unavailable' };
@@ -446,6 +458,8 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     )
       return false;
     if ((await this.accounts.getAccountStatus(base.userId)) !== 'active') return false;
+    // 3.22（批 E2 遗留）：封禁账号不产生用户付费调用（生态发语音 / 发照片等后台任务跳过、不扣积分）。
+    if (base.billingOwner === 'user' && (await this.accounts.isBanned?.(base.userId))) return false;
     if (
       base.billingOwner === 'platform' &&
       !(await this.directory.listAdminUserIds()).includes(base.userId)
@@ -454,14 +468,36 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     return true;
   }
 
+  /** 可用于某场景的代表模型：推荐模型优先，否则任一启用且标注该场景的模型。 */
+  private async anyScenarioModel(scenario: ModelScenario): Promise<ModelFacts | null> {
+    const recommended = await this.catalog.recommendedModel(scenario);
+    if (recommended) return recommended;
+    const first = (await this.catalog.listModels(undefined, scenario)).find((m) => m.available);
+    return first ? this.catalog.fact(first.modelKey) : null;
+  }
+
+  /**
+   * 3.22：按场景配置解析媒体模型（同一处给执行与冻结用）。语音合成时角色音色绑定的模型可用就以音色为准
+   * （音色代号只在它自己的模型上有效），但用户必须已配置「语音消息」场景（未配置 = 不可用）。
+   */
   private async resolve(
     service: Service,
     preferredModelKey: string | null,
+    base: MediaCallBase,
   ): Promise<PortResult<Resolved, GenerateError>> {
-    const fallback = await this.catalog.defaultModel(service as DefaultUse);
-    if (!fallback) return { ok: false, error: 'not_configured' };
-    let facts: ModelFacts = fallback;
-    if (preferredModelKey && preferredModelKey !== fallback.modelKey) {
+    let picked: ModelFacts | null;
+    if (service === 'web_search') picked = await this.catalog.internalModel('web_search');
+    else {
+      const scenario = SERVICE_SCENARIO[service];
+      picked =
+        (await this.scenarios?.pick(base.userId, scenario, base.characterId ?? null))?.facts ??
+        null;
+      if (!picked && base.purpose.startsWith('admin_'))
+        picked = await this.catalog.recommendedModel(scenario);
+    }
+    if (!picked) return { ok: false, error: 'not_configured' };
+    let facts: ModelFacts = picked;
+    if (preferredModelKey && preferredModelKey !== picked.modelKey) {
       const preferred = await this.catalog.fact(preferredModelKey);
       if (unavailableReason(preferred.entry, preferred.upstreamStatus) === null) facts = preferred;
     }

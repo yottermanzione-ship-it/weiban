@@ -5,6 +5,7 @@ import {
   BUDGET_EXEMPT_PURPOSES,
   SAFETY_OVERDRAFT_PURPOSES,
   ModelPurpose,
+  ModelScenario,
   BillingOwner,
   Id,
   Timestamp,
@@ -158,6 +159,10 @@ export class ModelGateway implements ModelGatewayPort {
       (await this.accounts.getAccountStatus(input.userId)) !== 'active'
     )
       return { ok: false, error: 'bad_request' };
+    // 3.22（批 E2 遗留）：被封禁的账号不再产生任何用户付费的调用（角色生态、主动消息、记忆整理等后台任务全部跳过），
+    // 在解析模型、冻结之前拒绝，不扣积分。
+    if (input.billingOwner === 'user' && (await this.accounts.isBanned?.(input.userId)))
+      return { ok: false, error: 'policy_denied' };
     if (
       input.billingOwner === 'platform' &&
       !internal?.trustedPlatform &&
@@ -273,10 +278,8 @@ export class ModelGateway implements ModelGatewayPort {
       input.modelRole === 'background' &&
       input.meta?.scenarioMode !== 'adult'
     ) {
-      const alternatives = [
-        await this.catalog.defaultModel('background'),
-        await this.catalog.defaultModel('chat'),
-      ];
+      // 3.22：备用模型 = 后台给「文本聊天」场景指定的推荐模型（没有平台默认模型了）。
+      const alternatives = [await this.catalog.recommendedModel('chat')];
       const fallback = alternatives.find(
         (entry) =>
           entry?.entry &&
@@ -641,10 +644,7 @@ export class ModelGateway implements ModelGatewayPort {
     if (internal?.fallbackModelKey) return null;
     if (!FALLBACK_PURPOSES.includes(input.purpose) || input.modelRole !== 'background') return null;
     if (input.meta?.scenarioMode === 'adult') return null;
-    const candidates = [
-      await this.catalog.defaultModel('background'),
-      await this.catalog.defaultModel('chat'),
-    ];
+    const candidates = [await this.catalog.recommendedModel('chat')];
     const target = candidates.find(
       (f) =>
         f?.entry &&
@@ -701,6 +701,8 @@ export class ModelGateway implements ModelGatewayPort {
       ModelPurpose.safeParse(i.purpose).success &&
       BillingOwner.safeParse(i.billingOwner).success &&
       ['chat', 'background', 'adult', 'adult_check'].includes(i.modelRole) &&
+      (i.scenario === undefined ||
+        (i.modelRole === 'chat' && ModelScenario.safeParse(i.scenario).success)) &&
       (i.modelRole !== 'adult_check' ||
         (i.purpose === 'safety_check' && !!i.characterId && !i.safetyPriority)) &&
       (i.modelKeyOverride === undefined ||

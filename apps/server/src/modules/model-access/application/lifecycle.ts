@@ -21,6 +21,8 @@ import {
 } from '../../../platform/index.js';
 import {
   characterOverrides,
+  characterScenarioOverrides,
+  scenarioSelections,
   selections,
   usageRecords,
   generationResults,
@@ -123,6 +125,14 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
   /** 角色被彻底删除：删除该用户对该角色的单独模型设置（可重复执行）。 */
   async onContactPurged(payload: { userId: string; characterId: string }, tx: DbTx): Promise<void> {
     await tx.db
+      .delete(characterScenarioOverrides)
+      .where(
+        and(
+          eq(characterScenarioOverrides.userId, payload.userId),
+          eq(characterScenarioOverrides.characterId, payload.characterId),
+        ),
+      );
+    await tx.db
       .delete(characterOverrides)
       .where(
         and(
@@ -158,7 +168,17 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
         .delete(platformPurposeLimits)
         .where(eq(platformPurposeLimits.userId, userId))
         .returning({ id: platformPurposeLimits.userId });
-      return a.length + b.length + c.length + d.length + e.length + f.length;
+      const g = await tx.db
+        .delete(scenarioSelections)
+        .where(eq(scenarioSelections.userId, userId))
+        .returning({ id: scenarioSelections.userId });
+      const h = await tx.db
+        .delete(characterScenarioOverrides)
+        .where(eq(characterScenarioOverrides.userId, userId))
+        .returning({ id: characterScenarioOverrides.userId });
+      return (
+        a.length + b.length + c.length + d.length + e.length + f.length + g.length + h.length
+      );
     });
   }
 
@@ -187,6 +207,23 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
       .select({ n: count() })
       .from(platformPurposeLimits)
       .where(eq(platformPurposeLimits.userId, userId));
-    return (e?.n ?? 0) + (f?.n ?? 0) + (a?.n ?? 0) + (b?.n ?? 0) + (c?.n ?? 0) + (d?.n ?? 0);
+    const [g] = await this.database.db
+      .select({ n: count() })
+      .from(scenarioSelections)
+      .where(eq(scenarioSelections.userId, userId));
+    const [h] = await this.database.db
+      .select({ n: count() })
+      .from(characterScenarioOverrides)
+      .where(eq(characterScenarioOverrides.userId, userId));
+    return (
+      (e?.n ?? 0) +
+      (f?.n ?? 0) +
+      (a?.n ?? 0) +
+      (b?.n ?? 0) +
+      (c?.n ?? 0) +
+      (d?.n ?? 0) +
+      (g?.n ?? 0) +
+      (h?.n ?? 0)
+    );
   }
 }

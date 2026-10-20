@@ -7,11 +7,13 @@
  *   这样即使管理员事后给某个已被选为全局聊天模型的模型加上 adult_content，调用也绕不过闸门。
  * - ModelStatusService：GET /model/status 与 ModelGatewayPort.getModelStatus 的实现。
  *
- * 解析顺序：
- * - chat：角色覆盖 > 全局聊天 > 平台默认聊天；
- * - background：全局后台 > 用户的聊天模型（角色覆盖 > 全局聊天，「不设置时沿用聊天模型」）> 平台默认后台 > 平台默认聊天；
- * - adult：用户的成人模式模型（不回落到聊天模型，pm-rulings-2 B2）；
- * - 用途 vision：先按 modelRole 解析，模型没有 vision 能力时改用平台默认识图模型，没有则 capability_missing。
+ * 解析顺序（3.22 起按场景，见 scenarios.ts；没有平台兜底默认）：
+ * - chat：场景「文本聊天」（input.scenario 指定时用它，例 通话 = voice_call；purpose = vision 时 = 图片识别）；
+ * - background：同一角色的「文本聊天」（后台文字任务跟随文本聊天，不再有单独的后台模型）；
+ * - adult：场景「私密模式」；
+ * - 每个场景：角色单独设置 > 用户场景配置 > not_configured。管理员自己的 admin_* 调用没配置时用场景推荐模型；
+ * - 平台任务（安全、小V、平台内容）、行为规划、成人检查：后台指定的「平台内部模型」；
+ * - 带图而模型没有 vision 能力：改用同一角色「图片识别」场景的模型，没有则 capability_missing。
  * 选中的模型下架 / 上游故障时**不自动换**（MDL-04），直接返回 model_unavailable / provider_unavailable。
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
@@ -23,7 +25,9 @@ import type {
   ModelPurpose,
   ModelQuotePort,
   ModelRole,
+  ModelScenario,
   ModelStatus,
+  PlatformInternalUse,
   PortResult,
   SystemMessageMode,
   UsageQuantities,
@@ -33,8 +37,29 @@ import { BILLING_QUOTE_PORT, BILLING_READ_PORT } from '../../billing/index.js';
 import { hasAdultContent, unavailableReason } from '../domain/rules.js';
 import { MODEL_ACCESS_POLICY, type ModelPolicy } from '../tokens.js';
 import { CatalogService, type ModelFacts } from './catalog.js';
-import { SelectionService } from './selection.js';
+import { ScenarioService } from './scenarios.js';
 import { BillingBoundsService } from './billing-bounds.js';
+
+/** 3.22：一次调用按哪个场景解析。 */
+export function scenarioFor(
+  role: ModelRole,
+  purpose: ModelPurpose,
+  scenario?: ModelScenario,
+): ModelScenario {
+  if (role === 'adult') return 'private';
+  if (role === 'chat' && scenario) return scenario;
+  if (role === 'chat' && purpose === 'vision') return 'vision';
+  return 'chat';
+}
+
+/** 3.22：平台任务用途 → 平台内部模型。 */
+const PLATFORM_TASK_USE: Partial<Record<ModelPurpose, PlatformInternalUse>> = {
+  safety_check: 'safety',
+  safety_followup: 'safety',
+  small_v: 'small_v',
+  search_candidates: 'platform_content',
+  moments: 'platform_content',
+};
 
 export interface ResolvedModel {
   modelKey: string;
@@ -72,46 +97,37 @@ export class ModelResolver implements AdultModelReadPort {
   }
   constructor(
     @Inject(CatalogService) private readonly catalog: CatalogService,
-    @Inject(SelectionService) private readonly selection: SelectionService,
+    @Inject(ScenarioService) private readonly scenarios: ScenarioService,
     @Inject(MODEL_ACCESS_POLICY) private readonly policy: ModelPolicy,
   ) {}
 
-  /** 按用户选择解析出模型键（不检查可用性）；null = 没有任何可用的选择。 */
+  /**
+   * 按用户的场景配置解析出模型（不检查可用性）；null = 该场景未配置。
+   * 3.22：没有平台兜底默认；只有管理员自己的 admin_* 调用在没配置时用场景推荐模型。
+   */
   async pick(
     userId: string,
     role: ModelRole,
     characterId: string | null,
+    options: { purpose?: ModelPurpose; scenario?: ModelScenario } = {},
   ): Promise<{ facts: ModelFacts; source: 'override' | 'user' | 'platform_default' } | null> {
     if (role === 'adult_check') {
-      const checker = await this.catalog.defaultModel('adult_check');
+      const checker = await this.catalog.internalModel('adult_check');
       return checker ? { facts: checker, source: 'platform_default' } : null;
     }
-    const raw = await this.selection.raw(userId);
-    const override = characterId ? await this.selection.rawOverride(userId, characterId) : null;
-    const userChat = override
-      ? { key: override, source: 'override' as const }
-      : raw.chat
-        ? { key: raw.chat, source: 'user' as const }
-        : null;
-    const chosen: { key: string; source: 'override' | 'user' } | null =
-      role === 'adult'
-        ? raw.adult
-          ? { key: raw.adult, source: 'user' }
-          : null
-        : role === 'background'
-          ? // 后台/生态任务必须用用户自己选的后台模型；未选时只用平台默认，
-            // 不再借用聊天模型（否则用户以为只在聊天用贵模型，实际推演、摘要、
-            // 朋友圈都在按同一个贵模型计费）。
-            raw.background
-            ? { key: raw.background, source: 'user' }
-            : null
-          : userChat;
-    if (chosen) return { facts: await this.catalog.fact(chosen.key), source: chosen.source };
-    if (role === 'adult') return null;
-    const fallback =
-      (role === 'background' ? await this.catalog.defaultModel('background') : null) ??
-      (await this.catalog.defaultModel('chat'));
-    return fallback ? { facts: fallback, source: 'platform_default' } : null;
+    const scenario = scenarioFor(role, options.purpose ?? 'chat_reply', options.scenario);
+    const picked = await this.scenarios.pick(userId, scenario, characterId);
+    if (picked) return picked;
+    // 图片识别没单独配置时：文本聊天模型自己能识图就用它
+    if (scenario === 'vision') {
+      const chat = await this.scenarios.pick(userId, 'chat', characterId);
+      if (chat?.facts.entry?.capabilities.includes('vision')) return chat;
+    }
+    if (options.purpose?.startsWith('admin_')) {
+      const recommended = await this.catalog.recommendedModel(scenario);
+      if (recommended) return { facts: recommended, source: 'platform_default' };
+    }
+    return null;
   }
 
   async resolve(input: {
@@ -127,6 +143,8 @@ export class ModelResolver implements AdultModelReadPort {
     fallbackModelKey?: string;
     /** 仅可信平台能力经网关内部传入，绕过用户选择且拒绝成人模型。 */
     platformTask?: boolean;
+    /** 3.22：按哪个场景解析（只对 chat 角色有意义）。 */
+    scenario?: ModelScenario;
   }): Promise<PortResult<ResolvedModel, GenerateError>> {
     if (
       input.modelRole === 'adult_check' &&
@@ -141,9 +159,8 @@ export class ModelResolver implements AdultModelReadPort {
         )
       )
         return { ok: false, error: 'bad_request' };
-      const platform =
-        (await this.catalog.defaultModel('background')) ??
-        (await this.catalog.defaultModel('chat'));
+      const use = PLATFORM_TASK_USE[input.purpose];
+      const platform = use ? await this.catalog.internalModel(use) : null;
       picked = platform ? { facts: platform } : null;
     } else if (input.fallbackModelKey) {
       if (input.modelRole !== 'background') return { ok: false, error: 'bad_request' };
@@ -152,13 +169,15 @@ export class ModelResolver implements AdultModelReadPort {
       if (input.purpose !== 'behavior_planning') return { ok: false, error: 'bad_request' };
       picked = { facts: await this.catalog.fact(input.modelKeyOverride) };
     } else if (input.purpose === 'behavior_planning') {
-      // 规划模型只认平台目录的 defaultFor=planner。未配置时明确失败（not_configured），
-      // 不再沿用用户的后台模型——否则会按另一种模型静默计费。调用方（planner）
-      // 收到失败后回落规则版：不调模型、不扣费。
-      const planner = await this.catalog.defaultModel('planner');
+      // 规划模型只认平台内部模型「行为规划」。未配置时明确失败（not_configured），
+      // 调用方（planner）收到失败后回落规则版：不调模型、不扣费。
+      const planner = await this.catalog.internalModel('planner');
       picked = planner ? { facts: planner } : null;
     } else {
-      picked = await this.pick(input.userId, input.modelRole, input.characterId ?? null);
+      picked = await this.pick(input.userId, input.modelRole, input.characterId ?? null, {
+        purpose: input.purpose,
+        ...(input.scenario ? { scenario: input.scenario } : {}),
+      });
     }
     if (!picked) return { ok: false, error: 'not_configured' };
     let facts = picked.facts;
@@ -190,11 +209,15 @@ export class ModelResolver implements AdultModelReadPort {
       (input.purpose === 'vision' || input.hasImages === true) &&
       !facts.entry?.capabilities.includes('vision')
     ) {
-      const visionDefault = await this.catalog.defaultModel('vision');
-      if (!visionDefault) return { ok: false, error: 'capability_missing' };
-      const err = checkUsable(visionDefault);
+      // 3.22：改用同一角色「图片识别」场景的模型（用户自己配置的，不是平台默认）。
+      const vision = input.platformTask
+        ? null
+        : await this.scenarios.pick(input.userId, 'vision', input.characterId ?? null);
+      if (!vision?.facts.entry?.capabilities.includes('vision'))
+        return { ok: false, error: 'capability_missing' };
+      const err = checkUsable(vision.facts);
       if (err) return { ok: false, error: err };
-      facts = visionDefault;
+      facts = vision.facts;
       usedVisionDefault = true;
     }
     const entry = facts.entry;
@@ -263,6 +286,7 @@ export class ModelQuoteService implements ModelQuotePort {
     purpose: ModelPurpose;
     hasImages?: boolean;
     modelKeyOverride?: string;
+    scenario?: ModelScenario;
     estimate: UsageQuantities;
   }): ReturnType<ModelQuotePort['quote']> {
     // v5（model-routing-ecology 块 A-3）：报价与执行共用 ModelResolver.resolve，消除
@@ -275,6 +299,7 @@ export class ModelQuoteService implements ModelQuotePort {
       ...(input.characterId ? { characterId: input.characterId } : {}),
       ...(input.hasImages ? { hasImages: true } : {}),
       ...(input.modelKeyOverride ? { modelKeyOverride: input.modelKeyOverride } : {}),
+      ...(input.scenario ? { scenario: input.scenario } : {}),
     });
     if (!resolved.ok)
       return {
@@ -341,22 +366,17 @@ export class ModelStatusService {
 
   private async visionAvailable(userId: string, characterId: string | null): Promise<boolean> {
     try {
-      const picked = await this.resolver.pick(userId, 'chat', characterId);
-      if (
-        picked?.facts.entry?.capabilities.includes('vision') &&
-        unavailableReason(picked.facts.entry, picked.facts.upstreamStatus) === null
-      )
-        return ((await this.bounds?.profiles(picked.facts.entry.modelKey)) ?? []).some(
+      const usable = async (f: ModelFacts | undefined) =>
+        !!f?.entry?.capabilities.includes('vision') &&
+        unavailableReason(f.entry, f.upstreamStatus) === null &&
+        ((await this.bounds?.profiles(f.entry.modelKey)) ?? []).some(
           (proof) => (proof.text?.maxImages ?? 0) > 0,
         );
-      const visionDefault = await this.catalog.defaultModel('vision');
-      return (
-        !!visionDefault?.entry &&
-        unavailableReason(visionDefault.entry, visionDefault.upstreamStatus) === null &&
-        ((await this.bounds?.profiles(visionDefault.entry.modelKey)) ?? []).some(
-          (proof) => (proof.text?.maxImages ?? 0) > 0,
-        )
-      );
+      const picked = await this.resolver.pick(userId, 'chat', characterId);
+      if (await usable(picked?.facts)) return true;
+      // 3.22：聊天模型不能识图时看「图片识别」场景
+      const vision = await this.resolver.pick(userId, 'chat', characterId, { purpose: 'vision' });
+      return usable(vision?.facts);
     } catch {
       return false;
     }
