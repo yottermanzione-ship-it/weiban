@@ -130,6 +130,8 @@ export function MembershipPage() {
     { label: '角色生态（含私人朋友圈）', free: false, pro: true, points: true },
     { label: '接入 QQ / 微信', free: false, pro: true, points: true },
     { label: '好感度加成', free: false, pro: true },
+    // 3.25（G1-7）：从未充值且非会员的账号，好感度最高到「亲密好友」；充值或开通会员后解除。
+    { label: '好感度最高阶段', free: '亲密好友（充值后解除）', pro: '伴侣' },
     {
       label: `申请官方制作角色（免费次数用完后 ${fee} 积分/次）`,
       free: `终身 ${life} 次`,

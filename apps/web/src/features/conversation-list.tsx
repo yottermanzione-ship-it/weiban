@@ -62,11 +62,16 @@ function usePinnedTop(page: RefObject<HTMLElement | null>) {
  * 会话列表第二行的摘要（参照微信）：文字显示正文，其余类型显示 [图片] [语音] [链接] 标题 [语音通话] [名片] 名字
  * [聊天记录] 等。服务器的摘要对非文字（以及成人范围）消息一律给「[消息]」，所以优先用本机已同步的那条消息自己算；
  * 撤回、系统提示、拍一拍等服务器已给出可读文字的，照用服务器的。本机没有那条消息时绝不显示「[消息]」。
+ * 3.25（G1-3）：私密模式消息一律显示「[私密消息]」，不露正文（与服务器一致）。
  */
+/** 3.25：会话列表里私密模式消息的摘要（契约 MessagePreview）。 */
+export const PRIVATE_MESSAGE_PREVIEW = '[私密消息]';
+
 export function listPreview(last: Conversation['lastMessage'], local: Message | undefined): string {
   if (!last) return '';
   const server = last.text === '[消息]' ? '' : last.text;
   if (!local || local.status === 'recalled') return server;
+  if (local.scope === 'adult') return PRIVATE_MESSAGE_PREVIEW;
   const c = local.content;
   switch (c?.type) {
     case 'text':

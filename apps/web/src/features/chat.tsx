@@ -75,7 +75,7 @@ import { ForwardPicker, ForwardedRecordBubble } from './chat-forward.js';
 import { OldIcon } from './old-icons.js';
 import { getReadReceiptVisible } from '../data/display-prefs.js';
 import { useModelSetupGate } from './models.js';
-import { unavailableText } from './model-unavailable.js';
+import { REPLY_UNAVAILABLE_TEXT } from './model-unavailable.js';
 import {
   BackArrow,
   CheckCircle,
@@ -221,7 +221,8 @@ function systemText(code: string, params: Record<string, string | number | boole
       }
     }
     case 'familiarity_level_up':
-      return `你和 ${p('characterName')} 的好感度升到了 L${p('level')} ${p('levelName') || familiarityNames[Number(params.level) - 1] || ''}`;
+      // 3.25：六阶段说法（粉丝 → … → 伴侣），不再显示 L 几
+      return `你和 ${p('characterName')} 的好感度升到了「${p('levelName') || familiarityNames[Number(params.level) - 1] || ''}」`;
     case 'pet_adopted':
       return `你和 ${p('characterName')} 一起领养了 ${p('petName')}`;
     case 'pet_renamed':
@@ -1519,8 +1520,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
               ? '还没给 TA 选可用的模型，角色暂时无法回复'
               : status.data.reason === 'model_removed'
                 ? 'TA 用的模型已下架，换一个才能继续聊'
-                : // 3.24：写清具体原因（密钥失效 / 余额不足 / 被暂停 / 缺计费上限…）
-                  `模型暂时无法使用：${unavailableText(status.data.detail)}`}
+                : // 3.25：具体原因只给后台看，用户端统一中性文案
+                  REPLY_UNAVAILABLE_TEXT}
           <Link to={status.data.reason === 'insufficient_balance' ? '/wallet/recharge' : '/models'}>
             {status.data.reason === 'insufficient_balance'
               ? '去充值 ›'

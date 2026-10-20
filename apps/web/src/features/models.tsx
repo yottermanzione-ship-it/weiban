@@ -16,19 +16,11 @@ import { useRemote, friendlyError } from '../data/use-remote.js';
 import { useChat } from '../app/chat.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterAvatar } from './character-avatar.js';
-import { unavailableShort, unavailableText } from './model-unavailable.js';
+import { MODEL_UNAVAILABLE_SHORT } from './model-unavailable.js';
 
-/** 3.24：模型名后的「暂不可用」小标签（短原因；悬停 / 读屏给完整原因）。 */
-function UnavailableTag({ detail }: { detail: string | null | undefined }) {
-  return (
-    <span
-      className="tag-unavailable"
-      title={unavailableText(detail)}
-      aria-label={unavailableText(detail)}
-    >
-      {unavailableShort(detail)}
-    </span>
-  );
+/** 模型名后的「暂不可用」小标签（3.25：不写具体原因，原因只给后台看）。 */
+function UnavailableTag() {
+  return <span className="tag-unavailable">{MODEL_UNAVAILABLE_SHORT}</span>;
 }
 
 /**
@@ -180,7 +172,7 @@ function ScenarioView() {
                 chosen ? (
                   row?.selection?.available === false ? (
                     <span className="ink-danger">
-                      {chosen}（{unavailableShort(row.selection.unavailableDetail)}）
+                      {chosen}（{MODEL_UNAVAILABLE_SHORT}）
                     </span>
                   ) : (
                     chosen
@@ -294,7 +286,7 @@ export function ScenarioModelPage() {
           {rank != null && <span className="rank-no">{rank}</span>}
           {model.displayName}
           {model.modelKey === recommended && <span className="tag-recommend">推荐</span>}
-          {!model.available && <UnavailableTag detail={model.unavailableDetail} />}
+          {!model.available && <UnavailableTag />}
         </>
       }
       subtitle={
@@ -365,7 +357,7 @@ export function ScenarioModelPage() {
       )}
       {row?.selection && !row.selection.available && (
         <p className="error page-note">
-          已选模型暂不可用（{unavailableText(row.selection.unavailableDetail)}），可以先换一个
+          已选模型暂时用不了，请稍后再试，或先换一个
         </p>
       )}
       {(models.error || config.error) && (
@@ -479,7 +471,7 @@ export function CharacterScenarioPickerPage() {
             label={
               <>
                 {model.displayName}
-                {!model.available && <UnavailableTag detail={model.unavailableDetail} />}
+                {!model.available && <UnavailableTag />}
               </>
             }
             subtitle={
@@ -497,8 +489,7 @@ export function CharacterScenarioPickerPage() {
       </MenuGroup>
       {row?.selection && !row.selection.available && (
         <p className="error page-note">
-          TA 用的模型暂不可用（{unavailableText(row.selection.unavailableDetail)}
-          ），回复时会提示你临时改用场景设置
+          TA 用的模型暂时用不了，回复时会提示你临时改用场景设置
         </p>
       )}
       {(models.error || config.error) && <p role="alert">{models.error || config.error}</p>}

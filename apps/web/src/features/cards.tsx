@@ -54,7 +54,12 @@ import { useUpdates } from '../data/updates.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { useSeenRecord } from '../data/seen.js';
 import { CharacterAvatar } from './character-avatar.js';
-import { familiarityNames } from './growth.js';
+import {
+  familiarityCapHint,
+  familiarityMoons,
+  familiarityProgressText,
+  stageNameOf,
+} from './growth.js';
 import { openShare } from './share.js';
 import { showToast } from './toast.js';
 import { NavBar, useBack, useEscape } from './shell-kit.js';
@@ -513,7 +518,7 @@ function CardDetail({
 
 // ---------- 好感度总览（服务 › 好感度） ----------
 
-const moons = ['◔', '◑', '◐', '◕', '●'] as const;
+const moons = familiarityMoons;
 
 export function FamiliarityOverviewPage() {
   const list = useRemote(GrowthCardEndpoints.listFamiliarity);
@@ -538,7 +543,7 @@ export function FamiliarityOverviewPage() {
       <div className="panel rows">
         {items.map((info) => {
           const progress =
-            info.pointsToNextLevel === null
+            info.pointsToNextLevel === null || familiarityCapHint(info)
               ? 1
               : info.pointsInLevel / (info.pointsInLevel + info.pointsToNextLevel);
           return (
@@ -547,9 +552,7 @@ export function FamiliarityOverviewPage() {
               <span className="overview-name">
                 {name(info.characterId)}
                 <small className="hint">
-                  {moons[info.level - 1]} L{info.level} {familiarityNames[info.level - 1]}
-                  {info.pointsToNextLevel !== null &&
-                    ` · 距 L${info.level + 1} 还差 ${info.pointsToNextLevel} 点`}
+                  {moons[info.level - 1]} {stageNameOf(info)} · {familiarityProgressText(info)}
                 </small>
                 <span className="meter" aria-hidden>
                   <span style={{ transform: `scaleX(${progress})` }} />

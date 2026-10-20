@@ -1,14 +1,43 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { CaretRight } from './old-icons.js';
-import { GrowthEndpoints, type Anniversary } from '@weiban/contracts';
+import {
+  FAMILIARITY_STAGE_NAMES,
+  GrowthEndpoints,
+  type Anniversary,
+  type FamiliarityInfo,
+} from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { NavBar, Sheet } from './shell-kit.js';
 
-/** 好感度 5 级名称与月相（cards-familiarity.md 第 2 节）。 */
-export const familiarityNames = ['初识', '眼熟', '熟络', '老友', '知己'] as const;
-const moons = ['◔', '◑', '◐', '◕', '●'] as const;
+/**
+ * 好感度六阶段名称（3.25 改回旧版说法：粉丝 → 朋友 → 亲密好友 → 暧昧 → 恋人 → 伴侣，名称来自契约）与图标。
+ */
+export const familiarityNames = FAMILIARITY_STAGE_NAMES;
+export const familiarityMoons = ['◔', '◑', '◐', '◕', '●', '♥'] as const;
+const moons = familiarityMoons;
+
+/** 阶段名（服务器给的优先）。 */
+export function stageNameOf(info: Pick<FamiliarityInfo, 'level' | 'stageName'>): string {
+  return info.stageName || familiarityNames[info.level - 1] || '';
+}
+
+/** 3.25：被卡住时的说明（从未充值且非会员 / 未成年设定角色）；没卡住返回 null。 */
+export function familiarityCapHint(info: Pick<FamiliarityInfo, 'capReason'>): string | null {
+  if (info.capReason === 'membership') return '充值或开通 PRO+ 后可以继续升级';
+  if (info.capReason === 'minor') return 'TA 是未成年设定，好感度最高到「亲密好友」';
+  return null;
+}
+
+/** 进度说明：最高阶段 / 被卡住 / 距下一阶段还差几点。 */
+export function familiarityProgressText(info: FamiliarityInfo): string {
+  if (info.pointsToNextLevel === null) return '已经是最高阶段';
+  return (
+    familiarityCapHint(info) ??
+    `距「${familiarityNames[info.level] ?? '下一阶段'}」还差 ${info.pointsToNextLevel} 点`
+  );
+}
 
 function daysUntil(date: string): number {
   const [y, m, d] = date.split('-').map(Number) as [number, number, number];
@@ -19,8 +48,8 @@ function daysUntil(date: string): number {
 }
 
 /**
- * 资料页头部副信息行「认识第 N 天 · ◐ L3 熟络 ›」，点开底部弹层（l3-companion.md 第 4 节）。
- * 天数和等级只显示服务器给的数，不自己算。
+ * 资料页头部副信息行「认识第 N 天 · ◐ 亲密好友 ›」，点开底部弹层（l3-companion.md 第 4 节）。
+ * 天数和阶段只显示服务器给的数，不自己算。
  */
 export function FamiliarityLine({ characterId }: { characterId: string }) {
   const days = useRemote(GrowthEndpoints.getDaysKnown, { params: { characterId } });
@@ -38,16 +67,18 @@ export function FamiliarityLine({ characterId }: { characterId: string }) {
   if (!days.data || !familiarity.data) return <p className="subline">认识第 — 天</p>;
   const level = familiarity.data.level;
   const dayText = `${days.data.isRomantic ? '在一起' : '认识'}第 ${days.data.daysKnown} 天`;
+  const capped = familiarity.data.capReason != null;
   const progress =
-    familiarity.data.pointsToNextLevel === null
+    familiarity.data.pointsToNextLevel === null || capped
       ? 1
       : familiarity.data.pointsInLevel /
         (familiarity.data.pointsInLevel + familiarity.data.pointsToNextLevel);
   const custom = days.data.anniversaries.length;
+  const stageName = stageNameOf(familiarity.data);
   return (
     <>
       <button className="subline" onClick={() => setOpen(true)}>
-        {dayText} · {moons[level - 1]} L{level} {familiarityNames[level - 1]}
+        {dayText} · {moons[level - 1]} {stageName}
         <CaretRight size={14} aria-hidden />
       </button>
       <dialog
@@ -76,7 +107,8 @@ export function FamiliarityLine({ characterId }: { characterId: string }) {
             纪念日 {custom} 个 <CaretRight size={14} aria-hidden />
           </Link>
           <h3 className="group-label">
-            好感度 {moons[level - 1]} L{level} {familiarityNames[level - 1]}
+            好感度 {moons[level - 1]} {stageName}
+            {familiarity.data.romancePaused && '（亲密表达已暂停）'}
           </h3>
           <div
             className="meter"
@@ -89,14 +121,18 @@ export function FamiliarityLine({ characterId }: { characterId: string }) {
             <span style={{ transform: `scaleX(${progress})` }} />
           </div>
           <small className="hint">
-            {familiarity.data.pointsToNextLevel === null
-              ? '已经是最高等级'
-              : `距下一级还差 ${familiarity.data.pointsToNextLevel} 点`}
+            {familiarityProgressText(familiarity.data)}
+            {familiarity.data.capReason === 'membership' && (
+              <>
+                {' '}
+                <Link to="/membership">去看看 ›</Link>
+              </>
+            )}
           </small>
           <ol className="level-list">
             {familiarityNames.map((name, index) => (
               <li key={name} aria-current={index + 1 === level ? 'true' : undefined}>
-                {moons[index]} L{index + 1} {name}
+                {moons[index]} {name}
               </li>
             ))}
           </ol>
