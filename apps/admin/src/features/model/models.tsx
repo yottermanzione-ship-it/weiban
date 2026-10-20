@@ -1065,7 +1065,7 @@ function ModelWizard({
         </Form.Item>
         <FormSection
           title="④ 限时折扣（可不设）"
-          desc="生效期间按「售价 × 折扣」扣费，成本不变；到期自动恢复原价。用户端显示「消耗倍率 ~~×1.0~~ ×0.5 · 限时 5 折」"
+          desc="生效期间按「售价 × 折扣」扣费，成本不变；到期自动恢复原价。用户端显示「消耗倍率 ×1.0（划掉）×0.5 · 限时 5 折」"
         />
         <div className="form-three">
           <Form.Item name="discountOn" label="开启折扣" valuePropName="checked">

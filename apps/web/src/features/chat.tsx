@@ -537,7 +537,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     query: { characterId: group ? undefined : role?.refId },
   });
   // 3.22：文本聊天模型还没配置时弹出首次引导，配置好之前不能发消息。
-  const modelGate = useModelSetupGate();
+  const modelGate = useModelSetupGate(() => status.refresh());
   const location = useLocation();
   const prefill = (location.state as { prefill?: string } | null)?.prefill;
   const [text, setText] = useState(prefill ?? '');
@@ -1507,13 +1507,19 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         </p>
       )}
       {!chat.online && <p className="notice-bar">网络暂不可用，消息保存在本机，联网后继续发送</p>}
-      {status.data && !status.data.available && (
+      {status.data && !status.data.available && !modelGate.needsSetup && (
         <p className="notice-bar">
           {status.data.reason === 'insufficient_balance'
             ? '积分不足，角色暂时无法回复'
-            : '模型服务暂时不可用，角色暂时无法回复'}
+            : status.data.reason === 'not_configured'
+              ? '还没给 TA 选可用的模型，角色暂时无法回复'
+              : '模型服务暂时不可用，角色暂时无法回复'}
           <Link to={status.data.reason === 'insufficient_balance' ? '/wallet/recharge' : '/models'}>
-            {status.data.reason === 'insufficient_balance' ? '去充值 ›' : '去看看 ›'}
+            {status.data.reason === 'insufficient_balance'
+              ? '去充值 ›'
+              : status.data.reason === 'not_configured'
+                ? '去配置 ›'
+                : '去看看 ›'}
           </Link>
         </p>
       )}

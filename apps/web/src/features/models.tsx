@@ -47,9 +47,15 @@ export function ModelPriceLine({
   model: Pick<
     ModelInfo,
     'pointsPerReply' | 'displayMultiplier' | 'discount' | 'pointsPerUse' | 'pointsPerReplyBasis'
-  >;
+  > & { scenarios?: ModelInfo['scenarios'] };
   scenario?: ModelScenario;
 }) {
+  // 没指定场景的非文字模型（语音、图片）：按它的第一个场景显示「约每次」。
+  scenario ??=
+    model.pointsPerReply == null
+      ? (model.scenarios?.find((s) => model.pointsPerUse?.[s as ModelScenario] != null) as
+          ModelScenario | undefined)
+      : undefined;
   const parts: ReactNode[] = [];
   const m = multiplierText(model);
   const d = model.discount;
@@ -475,7 +481,7 @@ export function CharacterScenarioPickerPage() {
  * 3.22 首次引导：文本聊天还没配置时，进入聊天（或任何需要模型的功能）弹出引导，
  * 含「一键选推荐」；配置好之前不能发消息（block() 返回 true 时调用方停止发送并已弹出引导）。
  */
-export function useModelSetupGate() {
+export function useModelSetupGate(onConfigured?: () => void) {
   const config = useRemote(ModelAccessEndpoints.getScenarioConfig, { networkOnly: true });
   const [open, setOpen] = useState(false);
   const needsSetup = config.data?.needsSetup === true;
@@ -497,6 +503,7 @@ export function useModelSetupGate() {
           onDone={() => {
             setOpen(false);
             config.refresh();
+            onConfigured?.();
           }}
         />
       ) : null,
