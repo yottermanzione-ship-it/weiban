@@ -381,6 +381,10 @@ function ImportPreview({
               leaderboardRank: row.rank,
               sortOrder: row.rank ?? index + 1,
               defaultFor: [],
+              // 3.22：导入的都是文字模型：默认可用于文本聊天、语音通话、私密模式（能识图再加图片识别）。
+              scenarios: row.vision
+                ? ['chat', 'vision', 'voice_call', 'private']
+                : ['chat', 'voice_call', 'private'],
               enabled: enableNew,
               rates,
               costRates,

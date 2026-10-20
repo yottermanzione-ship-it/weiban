@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import dayjs from 'dayjs';
 import {
   Alert,
   AutoComplete,
   Button,
   Checkbox,
   Collapse,
+  DatePicker,
   Form,
   Input,
   InputNumber,
@@ -25,6 +27,7 @@ import {
   ModelAccessAdminEndpoints,
   RouteBillingBounds,
   type AdminModel,
+  type ModelScenario,
   type ModelRates,
   type ModelRoute,
   type Upstream,
@@ -46,7 +49,7 @@ import {
 import { formatPoints } from '../../ui/format.js';
 import {
   CAPABILITY_LABELS,
-  DEFAULT_FOR_LABELS,
+  SCENARIO_LABELS,
   UPSTREAM_STATE_LABELS,
   toWrite,
   upstreamState,
@@ -63,32 +66,17 @@ import {
 import { MODEL_KEY_HINT, isValidModelKey, suggestModelKey } from './model-key.js';
 import { ImportModelsButton } from './import.js';
 
-type UseFilter = 'all' | 'chat' | 'background' | 'adult' | 'vision' | 'voice';
+/** 3.22：按场景筛选（模型「可用于哪些场景」）。 */
+type UseFilter = 'all' | ModelScenario;
 
 function matchesUse(m: AdminModel, use: UseFilter): boolean {
-  switch (use) {
-    case 'all':
-      return true;
-    case 'chat':
-      return (
-        m.defaultFor.includes('chat') ||
-        (!m.capabilities.includes('adult_content') &&
-          !m.defaultFor.some((d) => d.startsWith('speech')))
-      );
-    case 'background':
-      return m.defaultFor.includes('background') || m.defaultFor.includes('planner');
-    case 'adult':
-      return m.capabilities.includes('adult_content') || m.defaultFor.includes('adult_check');
-    case 'vision':
-      return m.capabilities.includes('vision') || m.defaultFor.includes('vision');
-    case 'voice':
-      return (
-        m.capabilities.includes('voice_input') ||
-        m.capabilities.includes('voice_output') ||
-        m.defaultFor.includes('speech_synthesis') ||
-        m.defaultFor.includes('speech_recognition')
-      );
-  }
+  return use === 'all' || (m.scenarios ?? []).includes(use);
+}
+
+/** 3.22：限时折扣「5 折」写法。 */
+function discountLabel(rate: number) {
+  const tenth = Math.round(rate * 100) / 10;
+  return `${Number.isInteger(tenth) ? tenth.toFixed(0) : tenth.toFixed(1)} 折`;
 }
 
 
@@ -178,10 +166,17 @@ export function ModelsTab({
         ['文字', ...m.capabilities.map((c) => CAPABILITY_LABELS[c] ?? c)].join(' · '),
     },
     {
-      title: '默认给谁用',
-      width: 140,
+      title: (
+        <span>
+          可用场景
+          <HelpTip text="用户在「模型配置」里，每个场景只能选勾选了该场景的模型。" />
+        </span>
+      ),
+      width: 160,
       render: (_, m) =>
-        m.defaultFor.map((d) => DEFAULT_FOR_LABELS[d] ?? d).join('、') || '—',
+        (m.scenarios ?? []).map((s) => SCENARIO_LABELS[s] ?? s).join('、') || (
+          <span className="cell-sub">未勾选（用户选不到）</span>
+        ),
     },
     {
       title: (
@@ -212,6 +207,33 @@ export function ModelsTab({
       sorter: (a, b) => (a.pointsPerReply ?? 0) - (b.pointsPerReply ?? 0),
       render: (_, m) =>
         m.pointsPerReply == null ? '—' : `${formatPoints(m.pointsPerReply * 10_000)} 积分`,
+    },
+    {
+      title: (
+        <span>
+          限时折扣
+          <HelpTip text="生效期间按「售价 × 折扣」扣费，成本不变；到期自动恢复原价。" />
+        </span>
+      ),
+      width: 130,
+      render: (_, m) =>
+        m.discount ? (
+          <span className="cell-main">
+            <span>
+              <Tag color={m.discountActive ? 'red' : 'default'}>
+                {discountLabel(m.discount.rate)}
+                {m.discountActive
+                  ? ' · 进行中'
+                  : Date.parse(m.discount.endsAt) <= Date.now()
+                    ? ' · 已结束'
+                    : ' · 未开始'}
+              </Tag>
+            </span>
+            <span className="cell-sub">至 {dayjs(m.discount.endsAt).format('MM-DD HH:mm')}</span>
+          </span>
+        ) : (
+          '—'
+        ),
     },
     {
       title: (
@@ -286,7 +308,8 @@ export function ModelsTab({
               onClick={() =>
                 confirm({
                   title: `下架「${m.displayName}」？`,
-                  content: '下架后，正在使用这个模型的角色会改用默认模型。',
+                  content:
+                    '下架后，选了这个模型的场景会显示「暂不可用」，用户需要重新选择（不会自动换成别的模型）。',
                   okText: '下架',
                   onOk: () => setEnabled(m, false),
                 })
@@ -345,12 +368,11 @@ export function ModelsTab({
               value={use}
               onChange={setUse}
               options={[
-                { value: 'all', label: '全部用途' },
-                { value: 'chat', label: '聊天' },
-                { value: 'background', label: '后台' },
-                { value: 'adult', label: '成人模式' },
-                { value: 'vision', label: '识图' },
-                { value: 'voice', label: '语音' },
+                { value: 'all', label: '全部场景' },
+                ...Object.entries(SCENARIO_LABELS).map(([value, label]) => ({
+                  value: value as ModelScenario,
+                  label,
+                })),
               ]}
             />
             <Select
@@ -462,8 +484,11 @@ interface ModelFormValues {
   sortOrder?: number;
   leaderboardRank?: number | null;
   capabilities: string[];
-  defaultFor: string[];
+  scenarios: ModelScenario[];
   routes: RouteDraft[];
+  discountOn?: boolean;
+  discountRate?: number | null;
+  discountRange?: [dayjs.Dayjs, dayjs.Dayjs] | null;
   priceInput?: number | null;
   priceOutput?: number | null;
   priceCache?: number | null;
@@ -505,6 +530,7 @@ function needsBounds(route: RouteDraft): boolean {
 }
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+type AdminModelDiscount = NonNullable<AdminModel['discount']>;
 
 function ModelWizard({
   model,
@@ -648,6 +674,20 @@ function ModelWizard({
       return;
     }
     const key = (model?.modelKey ?? values.modelKey ?? '').trim();
+    // 3.22：限时折扣。开关关掉且原来有折扣 → 取消；没动过 → 不传（不改）。
+    let discount: AdminModelDiscount | null | undefined;
+    if (values.discountOn) {
+      const [start, end] = values.discountRange ?? [];
+      if (!values.discountRate || !start || !end) {
+        feedback.reportField(['discountRange'], '填写折扣和起止时间', '限时折扣没填完整');
+        return;
+      }
+      discount = {
+        rate: values.discountRate,
+        startsAt: start.toISOString(),
+        endsAt: end.toISOString(),
+      };
+    } else if (model?.discount) discount = null;
     setSaving(true);
     feedback.clear();
     try {
@@ -668,8 +708,10 @@ function ModelWizard({
             .slice(0, 10),
           leaderboardRank: values.leaderboardRank ?? null,
           sortOrder: values.sortOrder ?? model?.sortOrder ?? 0,
-          defaultFor: values.defaultFor as AdminModel['defaultFor'],
+          defaultFor: [],
+          scenarios: values.scenarios,
           enabled: model ? model.enabled : true,
+          ...(discount !== undefined ? { discount } : {}),
           rates: ratesOf(values.priceInput, values.priceOutput, values.priceCache),
           costRates: ratesOf(values.costInput, values.costOutput, values.costCache) ?? undefined,
           displayMultiplierManual: values.displayMultiplierManual ?? null,
@@ -748,8 +790,13 @@ function ModelWizard({
           sortOrder: model?.sortOrder ?? 0,
           leaderboardRank: model?.leaderboardRank ?? null,
           capabilities: model?.capabilities ?? [],
-          defaultFor: model?.defaultFor ?? [],
+          scenarios: model?.scenarios ?? ['chat', 'voice_call', 'private'],
           routes: initialRoutes,
+          discountOn: !!model?.discount,
+          discountRate: model?.discount?.rate ?? 0.5,
+          discountRange: model?.discount
+            ? [dayjs(model.discount.startsAt), dayjs(model.discount.endsAt)]
+            : null,
           priceInput: model?.rates?.input ?? null,
           priceOutput: model?.rates?.output ?? null,
           priceCache: model?.rates?.cache ?? null,
@@ -934,12 +981,27 @@ function ModelWizard({
           />
         </Form.Item>
         <Form.Item
-          name="defaultFor"
-          label="默认给谁用"
-          extra={<FieldHelp>不选也可以；选了之后，对应场景默认用这个模型。</FieldHelp>}
+          name="scenarios"
+          label="可用于哪些场景"
+          rules={[
+            {
+              validator: (_, value: string[] | undefined) =>
+                value?.includes('vision') &&
+                !((form.getFieldValue('capabilities') as string[] | undefined) ?? []).includes(
+                  'vision',
+                )
+                  ? Promise.reject(new Error('勾选「图片识别」需要先在「能力」里勾选识图'))
+                  : Promise.resolve(),
+            },
+          ]}
+          extra={
+            <FieldHelp>
+              用户在「模型配置」里每个场景只能选勾选了它的模型。文字模型一般勾文本聊天、语音通话、私密模式（能识图再勾图片识别）；语音、图片模型勾对应场景。平台默认已改为页面顶部的「场景推荐模型 / 平台内部模型」。
+            </FieldHelp>
+          }
         >
           <Checkbox.Group
-            options={Object.entries(DEFAULT_FOR_LABELS).map(([value, label]) => ({ value, label }))}
+            options={Object.entries(SCENARIO_LABELS).map(([value, label]) => ({ value, label }))}
           />
         </Form.Item>
         <div className="form-two">
@@ -1001,6 +1063,30 @@ function ModelWizard({
         >
           <InputNumber min={0} max={1000} step={0.01} precision={2} style={{ width: 160 }} placeholder="自动" />
         </Form.Item>
+        <FormSection
+          title="④ 限时折扣（可不设）"
+          desc="生效期间按「售价 × 折扣」扣费，成本不变；到期自动恢复原价。用户端显示「消耗倍率 ~~×1.0~~ ×0.5 · 限时 5 折」"
+        />
+        <div className="form-three">
+          <Form.Item name="discountOn" label="开启折扣" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            name="discountRate"
+            label="折扣"
+            extra={<FieldHelp>0.5 = 5 折，可填 0.01～0.99。</FieldHelp>}
+          >
+            <InputNumber min={0.01} max={0.99} step={0.05} precision={2} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="discountRange" label="起止时间">
+            <DatePicker.RangePicker
+              showTime={{ format: 'HH:mm' }}
+              format="YYYY-MM-DD HH:mm"
+              placeholder={['开始', '结束']}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
+        </div>
         <div className="field-note">
           {model?.pointsPerReply != null
             ? `用户端显示约每条 ${formatPoints(model.pointsPerReply * 10_000)} 积分（有最近 7 天数据时按平均实扣，否则按约 1 万 token 输入、八成命中缓存、200 token 输出估算）；扣费按实际用量。`

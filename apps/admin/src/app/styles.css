@@ -1341,3 +1341,30 @@ body {
   grid-template-columns: 1fr 1fr 1fr 1.2fr;
   gap: 0 12px;
 }
+
+/* 3.22 模型管理顶部：场景推荐模型 / 平台内部模型（两栏） */
+.scenario-settings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 32px;
+}
+.scenario-settings-title {
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.scenario-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.scenario-settings-label {
+  flex: none;
+  width: 120px;
+  color: #4e5969;
+}
+@media (max-width: 900px) {
+  .scenario-settings {
+    grid-template-columns: 1fr;
+  }
+}

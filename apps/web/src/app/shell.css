@@ -1743,3 +1743,57 @@ main > button.danger-row {
     transition: none;
   }
 }
+
+/* 3.22 模型配置：限时折扣、推荐标记、未配置、首次引导 */
+.price-was {
+  color: var(--wb-color-text-tertiary, #b2b2b2);
+}
+.price-discount {
+  color: var(--wb-color-text-danger);
+}
+.tag-recommend {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--wb-color-brand-primary);
+  border-radius: 3px;
+  color: var(--wb-color-brand-primary);
+  font-size: 11px;
+  line-height: 16px;
+  vertical-align: 2px;
+}
+.ink-muted {
+  color: var(--wb-color-text-secondary);
+}
+.ink-danger {
+  color: var(--wb-color-text-danger);
+}
+.page-actions {
+  padding: 12px 16px 0;
+}
+button.primary.wide {
+  width: 100%;
+}
+.setup-guide-text {
+  margin: 8px 0;
+  color: var(--wb-color-text-secondary);
+  font-size: 14px;
+  text-align: left;
+}
+.setup-guide-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+  font-size: 14px;
+}
+.setup-guide-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+}
+.setup-guide-list b {
+  font-weight: var(--wb-font-weight-semibold);
+  text-align: right;
+}

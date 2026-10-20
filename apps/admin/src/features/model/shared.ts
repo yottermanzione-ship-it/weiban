@@ -61,6 +61,17 @@ export const DEFAULT_FOR_LABELS: Record<string, string> = {
   web_search: '联网搜索',
 };
 
+/** 3.22：模型使用场景（取代原「默认给谁用」）。 */
+export const SCENARIO_LABELS: Record<string, string> = {
+  chat: '文本聊天',
+  vision: '图片识别',
+  voice_message: '语音消息',
+  speech_recognition: '语音识别',
+  voice_call: '语音通话',
+  image_generation: '发照片',
+  private: '私密模式',
+};
+
 export const CAPABILITY_LABELS: Record<string, string> = {
   vision: '识图',
   voice_input: '语音输入',
@@ -126,6 +137,7 @@ export function toWrite(m: AdminModel) {
     leaderboardRank: m.leaderboardRank,
     sortOrder: m.sortOrder,
     defaultFor: m.defaultFor,
+    ...(m.scenarios ? { scenarios: m.scenarios } : {}),
     enabled: m.enabled,
     billingBounds: m.billingBounds ?? null,
     rates: m.rates,

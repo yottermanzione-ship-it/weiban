@@ -12,6 +12,7 @@ import { UpstreamsTab } from './model/upstreams.js';
 import { ModelsTab } from './model/models.js';
 import { RecordsTab } from './model/records.js';
 import { LeaderboardSourceCard } from './model/leaderboard-source.js';
+import { ScenarioSettingsCard } from './model/scenario-settings.js';
 
 type Tab = 'overview' | 'upstreams' | 'models' | 'records';
 
@@ -40,6 +41,7 @@ export function ModelManagementPage() {
     >
       <div className="model-page-head">
         <LeaderboardSourceCard />
+        <ScenarioSettingsCard models={models.data?.items ?? []} />
       </div>
       <div className="page-tabs">
         <Tabs
