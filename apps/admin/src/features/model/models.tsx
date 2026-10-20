@@ -130,7 +130,7 @@ export function ModelsTab({
     setError('');
     try {
       await api.call(ModelAccessAdminEndpoints.upsertModel, {
-        params: { modelKey: encodeURIComponent(m.modelKey) },
+        params: { modelKey: m.modelKey },
         body: { ...toWrite(m), enabled },
       });
       toast.success(enabled ? '已上架' : '已下架');
@@ -538,7 +538,7 @@ function ModelWizard({
     setError('');
     try {
       await api.call(ModelAccessAdminEndpoints.upsertModel, {
-        params: { modelKey: encodeURIComponent(key) },
+        params: { modelKey: key },
         body: {
           modelKey: key,
           displayName: values.displayName,
