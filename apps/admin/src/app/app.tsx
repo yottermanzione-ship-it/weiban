@@ -7,9 +7,10 @@ import { IdentityEndpoints, type AuthResponse } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { LoginPage } from '../features/login.js';
 import { DashboardPage } from '../features/dashboard.js';
-import { AccountsPage } from '../features/accounts.js';
-import { MembershipPage } from '../features/membership.js';
-import { RechargePage } from '../features/recharge.js';
+import { UserListPage } from '../features/users/list.js';
+import { MembershipRecordsPage } from '../features/users/records.js';
+import { TopupRecordsPage } from '../features/users/topups.js';
+import { PlansPage } from '../features/users/plans.js';
 import { SettingsPage } from '../features/settings.js';
 import { ModelManagementPage } from '../features/model-management.js';
 import { PricesPage } from '../features/prices.js';
@@ -202,9 +203,13 @@ function AdminShell({
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/characters" element={<CharactersPage />} />
         <Route path="/prices" element={<PricesPage />} />
-        <Route path="/accounts" element={<AccountsPage />} />
-        <Route path="/membership" element={<MembershipPage />} />
-        <Route path="/recharge" element={<RechargePage />} />
+        <Route path="/accounts" element={<UserListPage />} />
+        <Route path="/membership-records" element={<MembershipRecordsPage />} />
+        <Route path="/recharge-records" element={<TopupRecordsPage />} />
+        <Route path="/plans" element={<PlansPage />} />
+        {/* 10-20 批 E2：原「会员与订单」混合页删除，旧地址跳到用户列表；原「充值档位」并入套餐与价格。 */}
+        <Route path="/membership" element={<Navigate to="/accounts" replace />} />
+        <Route path="/recharge" element={<Navigate to="/plans" replace />} />
         <Route path="/model" element={<ModelManagementPage />} />
         <Route path="/usage" element={<UsagePage />} />
         <Route path="/billing" element={<BillingPage />} />

@@ -37,7 +37,9 @@ export function SettingsPage() {
           </li>
           <li>自动搜索公开动态：角色 › 公开动态（页面底部开关）</li>
           <li>上游账号的调度参数：模型与计费 › 模型管理 › 上游账号 › 调度设置</li>
-          <li>充值档位与联系说明：用户 › 充值档位</li>
+          <li>
+            会员价格、充值档位、注册赠送积分：<Link to="/plans">用户 › 套餐与价格</Link>
+          </li>
         </ul>
       </SectionCard>
     </Page>

@@ -23,8 +23,9 @@ export const MENU: MenuDataItem[] = [
     icon: <TeamOutlined />,
     children: [
       { path: '/accounts', name: '用户列表' },
-      { path: '/membership', name: '会员与订单' },
-      { path: '/recharge', name: '充值档位' },
+      { path: '/membership-records', name: '会员订阅记录' },
+      { path: '/recharge-records', name: '充值记录' },
+      { path: '/plans', name: '套餐与价格' },
     ],
   },
   {

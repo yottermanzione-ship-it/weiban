@@ -1269,3 +1269,75 @@ body {
   font-size: 12px;
   line-height: 22px;
 }
+
+/* ---------- 用户板块（10-20 批 E2） ---------- */
+.user-overview {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) minmax(0, 3fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.stat-button {
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.stat-button:hover {
+  border-color: #b8c4d6;
+}
+.user-expiring {
+  gap: 6px;
+}
+.chip-button {
+  border: none;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.chip-button:hover {
+  background: #e8ecf2;
+}
+.plan-radio {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+.plan-radio .ant-radio-button-wrapper {
+  height: auto;
+  padding: 10px 12px;
+  line-height: 20px;
+  border-radius: 8px !important;
+  border-inline-start-width: 1px;
+}
+.plan-radio .ant-radio-button-wrapper::before {
+  display: none !important;
+}
+.plan-radio-name {
+  font-weight: 600;
+}
+.plan-radio-price {
+  font-size: 16px;
+  font-weight: 600;
+}
+.plan-radio-price s {
+  color: #8a9099;
+  font-size: 12px;
+  font-weight: 400;
+}
+.plan-radio-sub {
+  color: #8a9099;
+  font-size: 12px;
+}
+.drawer-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+.form-row-4 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1.2fr;
+  gap: 0 12px;
+}
