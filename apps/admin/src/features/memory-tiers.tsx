@@ -10,8 +10,9 @@ import {
   type MemoryTierLimits,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
-import { errorText, useRemote } from '../data/hooks.js';
+import { useRemote } from '../data/hooks.js';
 import { FieldHelp, FormSection, Page, SectionCard, useToast } from '../ui/page.js';
+import { useFormFeedback } from '../data/form-feedback.js';
 
 type TierForm = {
   residentLimit: number;
@@ -83,6 +84,7 @@ export function MemoryTiersPage() {
   const toast = useToast();
   const remote = useRemote(MemoryTierEndpoints.adminGet);
   const [form] = Form.useForm<FormValues>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -91,7 +93,8 @@ export function MemoryTiersPage() {
   }, [remote.data, form]);
 
   async function save() {
-    const v = await form.validateFields();
+    const v = await feedback.validate();
+    if (!v) return;
     setSaving(true);
     setError('');
     try {
@@ -107,7 +110,7 @@ export function MemoryTiersPage() {
       toast.success('已保存，约 30 秒内生效');
       remote.refresh();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }

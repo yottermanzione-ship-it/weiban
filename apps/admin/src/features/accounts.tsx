@@ -30,6 +30,7 @@ import {
   formatPoints,
   formatYuan,
 } from '../ui/format.js';
+import { useFormFeedback } from '../data/form-feedback.js';
 
 type Account = z.infer<typeof AdminAccountSummary>;
 type LedgerEntry = z.infer<typeof AdminLedgerEntry>;
@@ -172,6 +173,7 @@ function AdjustPanel({ account, onChanged }: { account: Account; onChanged: () =
   const toast = useToast();
   const confirm = useDangerConfirm();
   const [form] = Form.useForm<AdjustValues>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const operation = useRef<{ signature: string; key: string } | null>(null);
@@ -179,7 +181,8 @@ function AdjustPanel({ account, onChanged }: { account: Account; onChanged: () =
   const points = Form.useWatch('points', form) ?? 0;
 
   async function submit() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     const run = async () => {
       setSaving(true);
       setError('');
@@ -201,7 +204,7 @@ function AdjustPanel({ account, onChanged }: { account: Account; onChanged: () =
         form.resetFields(['points', 'reason']);
         onChanged();
       } catch (e) {
-        setError(errorText(e));
+        setError(feedback.report(e));
       } finally {
         setSaving(false);
       }

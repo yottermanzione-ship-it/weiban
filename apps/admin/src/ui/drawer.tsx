@@ -55,7 +55,7 @@ export function RecordDrawer({
   );
 }
 
-/** 抽屉底部按钮。 */
+/** 抽屉底部按钮。error：提交失败时显示在按钮左边的一句红字，点完按钮不用上滑就能看到。 */
 export function DrawerActions({
   onCancel,
   onSubmit,
@@ -63,6 +63,7 @@ export function DrawerActions({
   submitText = '保存',
   disabled,
   extra,
+  error,
 }: {
   onCancel: () => void;
   onSubmit?: () => void;
@@ -70,10 +71,18 @@ export function DrawerActions({
   submitText?: string;
   disabled?: boolean;
   extra?: ReactNode;
+  error?: ReactNode;
 }) {
   return (
     <div className="drawer-actions">
-      <Space size={8}>{extra}</Space>
+      <Space size={8} className="drawer-actions-left">
+        {extra}
+        {error && (
+          <span className="drawer-actions-error" role="alert" title={typeof error === 'string' ? error : undefined}>
+            {error}
+          </span>
+        )}
+      </Space>
       <Space size={8}>
         <Button onClick={onCancel}>取消</Button>
         {onSubmit && (

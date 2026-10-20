@@ -18,6 +18,7 @@ import { errorText, useRemote } from '../data/hooks.js';
 import { FieldHelp, Page, SectionCard, StatusTag, useDangerConfirm, useToast } from '../ui/page.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { formatDateTime } from '../ui/format.js';
+import { useFormFeedback } from '../data/form-feedback.js';
 
 const PLAN_NAME: Record<string, string> = { month: '月卡', quarter: '季卡', year: '年卡' };
 const yuan = (fen: number) => `¥${(fen / 100).toFixed(fen % 100 === 0 ? 0 : 1)}`;
@@ -256,11 +257,13 @@ function OpenMembership({ settings, onDone }: { settings?: MembershipSettings; o
 function SettingsCard({ settings, onSaved }: { settings: MembershipSettings; onSaved(): void }) {
   const toast = useToast();
   const [form] = Form.useForm<MembershipSettings>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   async function save() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     try {
@@ -280,7 +283,7 @@ function SettingsCard({ settings, onSaved }: { settings: MembershipSettings; onS
       toast.success('已保存');
       onSaved();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }

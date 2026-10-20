@@ -17,6 +17,7 @@ import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { FieldHelp, FormSection, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
+import { useFormFeedback } from '../data/form-feedback.js';
 
 const LEVELS = [
   ['occasional', '偶尔冒泡'],
@@ -94,6 +95,7 @@ function EcologyConfigTab() {
   const overview = useRemote(EcologyAdminEndpoints.getOverview);
   const models = useRemote(ModelAccessAdminEndpoints.listModels);
   const [form] = Form.useForm<EcologyConfig>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const data = overview.data;
@@ -103,7 +105,8 @@ function EcologyConfigTab() {
   }, [data, form]);
 
   async function save() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     try {
@@ -113,7 +116,7 @@ function EcologyConfigTab() {
       toast.success('已保存生态参数');
       overview.refresh();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }

@@ -43,6 +43,7 @@ import {
   useToast,
 } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
+import { useFormFeedback } from '../data/form-feedback.js';
 
 function useCharacters() {
   const characters = useRemote(CharacterAdminEndpoints.list);
@@ -189,6 +190,7 @@ function StickerPackDrawer({
     intro: string;
     coverStickerId?: string;
   }>();
+  const feedback = useFormFeedback(form);
   const [current, setCurrent] = useState<StickerPack | null>(pack);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -197,7 +199,8 @@ function StickerPackDrawer({
   const [uploading, setUploading] = useState(false);
 
   async function save() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     const body = {
@@ -222,7 +225,7 @@ function StickerPackDrawer({
       onToast('已保存');
       if (!current) onClose();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
       onError(errorText(e));
     } finally {
       setSaving(false);
@@ -520,13 +523,15 @@ function VoiceDrawer({
     enabled: boolean;
     sampleMediaId?: string | null;
   }>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [sampleUrl, setSampleUrl] = useState<string | null>(voice?.sampleUrl ?? null);
   const [error, setError] = useState('');
 
   async function save() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     const body = {
@@ -553,7 +558,7 @@ function VoiceDrawer({
       else await api.call(VoiceAdminEndpoints.createVoice, { body });
       onSaved();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }
@@ -759,13 +764,15 @@ function CardDrawer({
     enabled: boolean;
     mediaId?: string;
   }>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(template?.url ?? null);
   const [error, setError] = useState('');
 
   async function save() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     if (!values.mediaId) {
       setError('请先上传卡面图片');
       return;
@@ -788,7 +795,7 @@ function CardDrawer({
       else await api.call(CardTemplateAdminEndpoints.createTemplate, { body });
       onSaved();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }
@@ -1069,11 +1076,13 @@ function WorkLinkDrawer({
     appHint: 'music' | 'video' | 'web';
     enabled: boolean;
   }>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   async function save() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     const body = {
@@ -1093,7 +1102,7 @@ function WorkLinkDrawer({
       else await api.call(WorkLinkAdminEndpoints.createWorkLink, { params: { characterId }, body });
       onSaved();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }

@@ -18,6 +18,7 @@ import {
   useToast,
 } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
+import { useFormFeedback } from '../data/form-feedback.js';
 
 type Question = z.infer<typeof AdminDailyQuestion>;
 
@@ -213,12 +214,14 @@ function QuestionDrawer({
   onSaved: (question: Question) => void;
 }) {
   const [form] = Form.useForm<{ text: string; tags: Question['tags']; listed: boolean }>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const tags = Form.useWatch('tags', form) ?? [];
 
   async function save() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     const body = { text: values.text.trim(), tags: values.tags ?? [], listed: values.listed };
@@ -232,7 +235,7 @@ function QuestionDrawer({
       onSaved(saved);
       onClose();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }

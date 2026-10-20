@@ -45,6 +45,7 @@ import {
   upstreamState,
   type UpstreamState,
 } from './shared.js';
+import { useFormFeedback } from '../../data/form-feedback.js';
 
 export function UpstreamsTab({
   upstreams,
@@ -353,13 +354,15 @@ function UpstreamForm({
   onSaved: (text: string) => void;
 }) {
   const [form] = Form.useForm<UpstreamFormValues>();
+  const feedback = useFormFeedback(form);
   const [rotating, setRotating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
 
   async function submit() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     setNote('');
@@ -405,7 +408,7 @@ function UpstreamForm({
       setError(
         e instanceof ApiFailure && e.code === 'upstream_test_failed'
           ? '连通测试没通过。请检查密钥和接口地址；如果仍要保存，勾选「测试不通过也保存」。'
-          : errorText(e),
+          : feedback.report(e),
       );
     } finally {
       setSaving(false);
@@ -701,12 +704,14 @@ interface LimitsValues {
 function LimitsDrawer({ onClose }: { onClose: () => void }) {
   const remote = useRemote(ModelAccessAdminEndpoints.getGatewayLimits);
   const [form] = Form.useForm<LimitsValues>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const toast = useToast();
 
   async function submit() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     const body: GatewayLimits = {
@@ -721,7 +726,7 @@ function LimitsDrawer({ onClose }: { onClose: () => void }) {
       remote.refresh();
       onClose();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }

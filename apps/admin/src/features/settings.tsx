@@ -10,7 +10,7 @@ import {
   type GatewayLimits,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
-import { errorText, useRemote } from '../data/hooks.js';
+import { useRemote } from '../data/hooks.js';
 import {
   FieldHelp,
   FormSection,
@@ -18,6 +18,7 @@ import {
   SectionCard,
   useToast,
 } from '../ui/page.js';
+import { useFormFeedback } from '../data/form-feedback.js';
 
 export function SettingsPage() {
   return (
@@ -45,6 +46,7 @@ function LeaderboardCard() {
   const toast = useToast();
   const remote = useRemote(ModelAccessAdminEndpoints.getLeaderboardSource);
   const [form] = Form.useForm<{ label: string; url: string; asOf?: dayjs.Dayjs | null }>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -58,7 +60,8 @@ function LeaderboardCard() {
   }, [remote.data, form]);
 
   async function save() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     try {
@@ -72,7 +75,7 @@ function LeaderboardCard() {
       toast.success('已保存');
       remote.refresh();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }
@@ -126,6 +129,7 @@ function LimitsCard() {
   const toast = useToast();
   const remote = useRemote(ModelAccessAdminEndpoints.getGatewayLimits);
   const [form] = Form.useForm<GatewayLimits>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -134,7 +138,8 @@ function LimitsCard() {
   }, [remote.data, form]);
 
   async function save() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     try {
@@ -149,7 +154,7 @@ function LimitsCard() {
       toast.success('已保存');
       remote.refresh();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }

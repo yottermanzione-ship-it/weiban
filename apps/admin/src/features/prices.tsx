@@ -33,6 +33,7 @@ import {
   useToast,
 } from '../ui/page.js';
 import { formatDateTime, formatYuan } from '../ui/format.js';
+import { useFormFeedback } from '../data/form-feedback.js';
 
 type PriceVersion = z.infer<typeof AdminPriceVersion>;
 
@@ -266,12 +267,14 @@ function VersionDrawer({
   onSaved: (text: string) => void;
 }) {
   const [form] = Form.useForm<VersionForm>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const isDraft = mode === 'edit' && version?.status === 'draft';
 
   async function save() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     try {
@@ -303,7 +306,7 @@ function VersionDrawer({
         onSaved('已创建草稿，确认无误后点「立即启用」');
       }
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }

@@ -35,6 +35,7 @@ import {
   useToast,
 } from '../ui/page.js';
 import { formatDate, formatYuan } from '../ui/format.js';
+import { useFormFeedback } from '../data/form-feedback.js';
 
 type Recon = z.infer<typeof ReconciliationRun>;
 
@@ -279,11 +280,13 @@ function BillDrawer({
   onSaved: () => void;
 }) {
   const [form] = Form.useForm<BillValues>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   async function save() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     try {
@@ -298,7 +301,7 @@ function BillDrawer({
       });
       onSaved();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }

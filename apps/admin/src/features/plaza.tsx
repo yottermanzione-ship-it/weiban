@@ -40,6 +40,7 @@ import {
   useToast,
 } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
+import { useFormFeedback } from '../data/form-feedback.js';
 
 type Work = z.infer<typeof AdminPlazaWork>;
 type Report = z.infer<typeof AdminPlazaReport>;
@@ -974,6 +975,7 @@ function BansTab() {
   const [error, setError] = useState('');
   const [open, setOpen] = useState(false);
   const [form] = Form.useForm<{ userId: string; period: string; reason: string }>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
 
   async function load() {
@@ -994,7 +996,8 @@ function BansTab() {
   }, []);
 
   async function ban() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     try {
@@ -1013,7 +1016,7 @@ function BansTab() {
       form.resetFields();
       void load();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }

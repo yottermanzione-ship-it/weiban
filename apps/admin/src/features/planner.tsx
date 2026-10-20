@@ -23,6 +23,7 @@ import {
   useToast,
 } from '../ui/page.js';
 import { formatDateTime, formatPercent } from '../ui/format.js';
+import { useFormFeedback } from '../data/form-feedback.js';
 
 type Decision = z.infer<typeof PlanningDecisionRecord>;
 
@@ -226,6 +227,7 @@ function PlannerDrawer({
   onSaved: (label: string) => void;
 }) {
   const [form] = Form.useForm<PlannerForm>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const implementation = Form.useWatch('implementation', form) ?? 'rules';
@@ -234,7 +236,8 @@ function PlannerDrawer({
   const switching = implementation !== initial;
 
   async function save() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     try {
@@ -249,7 +252,7 @@ function PlannerDrawer({
       });
       onSaved(label);
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }

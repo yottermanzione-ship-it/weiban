@@ -334,6 +334,22 @@ body {
   justify-content: space-between;
   gap: 12px;
 }
+.drawer-actions-left {
+  min-width: 0;
+  flex: 1;
+}
+.drawer-actions-left .ant-space-item:last-child {
+  min-width: 0;
+}
+.drawer-actions-error {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: #ff4d4f;
+  font-size: 13px;
+  line-height: 18px;
+}
 .detail-block .ant-card-head {
   min-height: 34px;
   padding: 0 12px;

@@ -18,6 +18,7 @@ import {
   useDangerConfirm,
   useToast,
 } from '../ui/page.js';
+import { useFormFeedback } from '../data/form-feedback.js';
 
 const STAGES = [
   ['baby', '幼年'],
@@ -180,6 +181,7 @@ function PetDrawer({
     presetNames: string;
     listed: boolean;
   }>();
+  const feedback = useFormFeedback(form);
   const [drafts, setDrafts] = useState<AppearanceDraft[]>(() => draftsOf(species));
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
@@ -216,7 +218,8 @@ function PetDrawer({
   }
 
   async function save() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     if (values.listed && !complete) {
       setError('每个外观的三张图都传齐后才能上架。');
       return;
@@ -252,7 +255,7 @@ function PetDrawer({
       else await api.call(PetSpeciesAdminEndpoints.createSpecies, { body });
       onSaved();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }

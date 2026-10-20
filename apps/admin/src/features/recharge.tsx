@@ -6,10 +6,11 @@ import { Alert, Button, Form, Input, InputNumber, Space } from 'antd';
 import { PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { BillingAdminEndpoints } from '@weiban/contracts';
 import { api } from '../data/client.js';
-import { errorText, useRemote } from '../data/hooks.js';
+import { useRemote } from '../data/hooks.js';
 import { Page, SectionCard, useToast } from '../ui/page.js';
 import { FieldHelp, FormSection } from '../ui/page.js';
 import { formatInt } from '../ui/format.js';
+import { useFormFeedback } from '../data/form-feedback.js';
 
 interface TierForm {
   contactHint: string;
@@ -20,12 +21,14 @@ export function RechargePage() {
   const toast = useToast();
   const options = useRemote(BillingAdminEndpoints.getRechargeOptions);
   const [form] = Form.useForm<TierForm>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const data = options.data;
 
   async function save() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     try {
@@ -42,7 +45,7 @@ export function RechargePage() {
       toast.success('已保存');
       options.refresh();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }

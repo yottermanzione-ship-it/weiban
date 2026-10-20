@@ -39,6 +39,7 @@ import {
   useToast,
 } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
+import { useFormFeedback } from '../data/form-feedback.js';
 
 type Platform = 'web' | 'android';
 const PLATFORM_LABELS: Record<string, string> = { web: '网页', android: '安卓' };
@@ -253,11 +254,13 @@ function AnnouncementDrawer({
   onSaved: (text: string) => void;
 }) {
   const [form] = Form.useForm<AnnouncementForm>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   async function submit(mode: 'draft' | 'publish' | 'save') {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     const body = {
@@ -282,7 +285,7 @@ function AnnouncementDrawer({
       onSaved(mode === 'publish' ? '已发布' : '已保存');
       onClose();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }
@@ -545,11 +548,13 @@ function ReleaseNoteDrawer({
   onSaved: () => void;
 }) {
   const [form] = Form.useForm<ReleaseNoteForm>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   async function submit() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     const body = {
@@ -570,7 +575,7 @@ function ReleaseNoteDrawer({
       onSaved();
       onClose();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }
@@ -743,11 +748,13 @@ function PolicyDrawer({
   onSaved: () => void;
 }) {
   const [form] = Form.useForm<PolicyForm>();
+  const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   async function submit() {
-    const values = await form.validateFields();
+    const values = await feedback.validate();
+    if (!values) return;
     setSaving(true);
     setError('');
     try {
@@ -764,7 +771,7 @@ function PolicyDrawer({
       onSaved();
       onClose();
     } catch (e) {
-      setError(errorText(e));
+      setError(feedback.report(e));
     } finally {
       setSaving(false);
     }
