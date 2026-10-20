@@ -75,6 +75,7 @@ import { ForwardPicker, ForwardedRecordBubble } from './chat-forward.js';
 import { OldIcon } from './old-icons.js';
 import { getReadReceiptVisible } from '../data/display-prefs.js';
 import { useModelSetupGate } from './models.js';
+import { unavailableText } from './model-unavailable.js';
 import {
   BackArrow,
   CheckCircle,
@@ -1516,7 +1517,10 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
             ? '积分不足，角色暂时无法回复'
             : status.data.reason === 'not_configured'
               ? '还没给 TA 选可用的模型，角色暂时无法回复'
-              : '模型服务暂时不可用，角色暂时无法回复'}
+              : status.data.reason === 'model_removed'
+                ? 'TA 用的模型已下架，换一个才能继续聊'
+                : // 3.24：写清具体原因（密钥失效 / 余额不足 / 被暂停 / 缺计费上限…）
+                  `模型暂时无法使用：${unavailableText(status.data.detail)}`}
           <Link to={status.data.reason === 'insufficient_balance' ? '/wallet/recharge' : '/models'}>
             {status.data.reason === 'insufficient_balance'
               ? '去充值 ›'

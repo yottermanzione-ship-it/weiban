@@ -16,18 +16,21 @@ import { useRemote, friendlyError } from '../data/use-remote.js';
 import { useChat } from '../app/chat.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterAvatar } from './character-avatar.js';
+import { unavailableText } from './model-unavailable.js';
 
-/** 3.22：七个场景（每个场景单独选模型；不做多模态「直接听语音 / 直接生成」）。 */
+/**
+ * 3.22：每个场景单独选模型（不做多模态「直接听语音 / 直接生成」）。
+ * 3.24 去掉「图片识别」：你发的图片直接交给文本聊天（私密模式下交给私密模式）的模型看。
+ */
 export const SCENARIOS: Array<{ key: ModelScenario; label: string; hint: string }> = [
-  { key: 'chat', label: '文本聊天', hint: '私聊、群聊回复，以及记忆整理等后台文字任务' },
-  { key: 'vision', label: '图片识别', hint: '看懂你发的图片；文本聊天模型能识图时直接用它' },
+  { key: 'chat', label: '文本聊天', hint: '私聊、群聊回复（含看你发的图片），以及记忆整理等后台文字任务' },
   { key: 'voice_message', label: '语音消息', hint: '角色发语音时的声音合成' },
   { key: 'speech_recognition', label: '语音识别', hint: '把你的语音转成文字（含通话）' },
   { key: 'voice_call', label: '语音通话', hint: '通话时角色说话用的模型' },
   { key: 'image_generation', label: '发照片', hint: '角色发照片、自拍' },
-  { key: 'private', label: '私密模式', hint: '私密模式聊天用的模型' },
+  { key: 'private', label: '私密模式', hint: '私密模式聊天用的模型（私密模式下发的图片也给它看）' },
 ];
-const TEXT_SCENARIOS: readonly ModelScenario[] = ['chat', 'vision', 'voice_call', 'private'];
+const TEXT_SCENARIOS: readonly ModelScenario[] = ['chat', 'voice_call', 'private'];
 const scenarioLabel = (s: ModelScenario) => SCENARIOS.find((x) => x.key === s)?.label ?? s;
 
 function discountText(rate: number) {
@@ -159,7 +162,9 @@ function ScenarioView() {
               value={
                 chosen ? (
                   row?.selection?.available === false ? (
-                    <span className="ink-danger">{chosen}（暂不可用）</span>
+                    <span className="ink-danger">
+                      {chosen}（{unavailableText(row.selection.unavailableDetail)}）
+                    </span>
                   ) : (
                     chosen
                   )
@@ -282,7 +287,7 @@ export function ScenarioModelPage() {
             tab === 'popular' &&
             rank != null &&
             ` · ${counts.get(model.modelKey)} 人选用`}
-          {!model.available && ' · 暂不可用'}
+          {!model.available && ` · 暂不可用：${unavailableText(model.unavailableDetail)}`}
         </>
       }
       chevron={false}
@@ -342,7 +347,9 @@ export function ScenarioModelPage() {
         </MenuGroup>
       )}
       {row?.selection && !row.selection.available && (
-        <p className="error page-note">已选模型暂不可用，请重新选择</p>
+        <p className="error page-note">
+          已选模型暂不可用（{unavailableText(row.selection.unavailableDetail)}），可以先换一个
+        </p>
       )}
       {(models.error || config.error) && (
         <p role="alert" className="notice-bar">
@@ -456,7 +463,7 @@ export function CharacterScenarioPickerPage() {
             subtitle={
               <>
                 <ModelPriceLine model={model} scenario={meta.key} />
-                {!model.available && ' · 暂不可用'}
+                {!model.available && ` · 暂不可用：${unavailableText(model.unavailableDetail)}`}
                 {model.capabilities.includes('adult_content') && ' · 允许成人内容'}
               </>
             }
@@ -468,7 +475,9 @@ export function CharacterScenarioPickerPage() {
         ))}
       </MenuGroup>
       {row?.selection && !row.selection.available && (
-        <p className="error page-note">TA 用的模型暂不可用，回复时会提示你临时改用场景设置</p>
+        <p className="error page-note">
+          TA 用的模型暂不可用（{unavailableText(row.selection.unavailableDetail)}），回复时会提示你临时改用场景设置
+        </p>
       )}
       {(models.error || config.error) && <p role="alert">{models.error || config.error}</p>}
     </main>
