@@ -5,7 +5,11 @@
  * 文件格式（每个 models[] 项）：
  *   model → 上游模型名；vendor → 厂商；retail_prices_cny_per_mtok → 售价；
  *   supplier_lowest_prices_cny_per_mtok → 成本；public_display_official_multiplier → 展示倍率（手填）；
- *   price_source → 计费上限的资料来源链接；arena_overall_rank → 榜单名次 / 排序。
+ *   arena_overall_rank → 手填榜单名次 / 排序；arena_model → 榜单对应名称（3.24，自动获取榜单时按它匹配）。
+ *   价格里可带 cache_write_5m / cache_write_1h（3.24，缓存写入价；也认 cache_write = 5 分钟档），没有 = 按输入价计。
+ *   中转站的分档价格（按用量档位）目前只取基础档（文件里 input / output / cache 那一组），其余字段忽略。
+ * 3.24：去掉「资料来源链接」（price_source 不再使用）与核对日期；不再有「图片识别」场景，识图默认勾上
+ * （总经理的聊天模型都是多模态；文本聊天 / 私密模式模型需要识图能力）。
  */
 import { useRef, useState, type ReactNode } from 'react';
 import {
@@ -24,7 +28,6 @@ import {
   Tooltip,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import dayjs from 'dayjs';
 import { z } from 'zod';
 import {
   ModelAccessAdminEndpoints,
@@ -48,6 +51,10 @@ const PriceTriple = z.object({
   input: z.number().nonnegative(),
   output: z.number().nonnegative(),
   cache: z.number().nonnegative().optional().nullable(),
+  // 3.24：缓存写入价（可选）
+  cache_write: z.number().nonnegative().optional().nullable(),
+  cache_write_5m: z.number().nonnegative().optional().nullable(),
+  cache_write_1h: z.number().nonnegative().optional().nullable(),
 });
 
 const ImportFile = z.object({
@@ -62,6 +69,7 @@ const ImportFile = z.object({
         public_display_official_multiplier: z.number().nonnegative().optional().nullable(),
         price_source: z.string().optional().nullable(),
         arena_overall_rank: z.number().optional().nullable(),
+        arena_model: z.string().optional().nullable(),
         supplier_lowest_model: z.string().optional().nullable(),
         needs_validation: z.boolean().optional().nullable(),
       }),
@@ -73,6 +81,17 @@ interface Triple {
   input: number | null;
   output: number | null;
   cache: number | null;
+  /** 3.24：缓存写入价（null = 按输入价计）。 */
+  cacheWrite5m: number | null;
+  cacheWrite1h: number | null;
+}
+
+function writes(t: z.infer<typeof PriceTriple>) {
+  const w5 = t.cache_write_5m ?? t.cache_write ?? null;
+  return {
+    cacheWrite5m: w5 == null ? null : round(w5, 4),
+    cacheWrite1h: t.cache_write_1h == null ? null : round(t.cache_write_1h, 4),
+  };
 }
 
 interface ImportRow {
@@ -86,7 +105,8 @@ interface ImportRow {
   cost: Triple | null;
   costCacheGuessed: boolean;
   multiplier: number | null;
-  sourceUrl: string;
+  /** 3.24：榜单对应名称（文件 arena_model）。 */
+  arenaModel: string | null;
   contextTokens: number | null;
   maxOutputTokens: number | null;
   vision: boolean;
@@ -118,6 +138,7 @@ function rowsFromFile(raw: z.infer<typeof ImportFile>): ImportRow[] {
         input: round(retail.input, 4),
         output: round(retail.output, 4),
         cache: round(retail.cache ?? retail.input * 0.1, 4),
+        ...writes(retail),
       },
       priceCacheGuessed: retail.cache == null,
       cost: supplier
@@ -125,15 +146,16 @@ function rowsFromFile(raw: z.infer<typeof ImportFile>): ImportRow[] {
             input: round(supplier.input, 4),
             output: round(supplier.output, 4),
             cache: round(supplier.cache ?? supplier.input * 0.1, 4),
+            ...writes(supplier),
           }
         : null,
       costCacheGuessed: supplier ? supplier.cache == null : false,
       multiplier:
         m.public_display_official_multiplier == null ? null : round(m.public_display_official_multiplier, 2),
-      sourceUrl: m.price_source?.trim() ?? '',
+      arenaModel: m.arena_model?.trim().slice(0, 120) || null,
       contextTokens: DEFAULT_CONTEXT_TOKENS,
       maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
-      vision: false,
+      vision: true,
       rank,
       supplierModel: m.supplier_lowest_model?.trim() || null,
       needsValidation: m.needs_validation === true,
@@ -158,15 +180,19 @@ function rowErrors(row: ImportRow, existing: AdminModel | undefined, duplicate: 
   if (!vendor || vendor.length > 40) errors.vendorName = '厂商要填 1 到 40 个字';
   const model = row.upstreamModelId.trim();
   if (!model || model.length > 128) errors.upstreamModelId = '上游模型名要填 1 到 128 个字符';
-  if (!/^https:\/\/\S+\.\S+/.test(row.sourceUrl.trim()) || row.sourceUrl.length > 2048)
-    errors.sourceUrl = '需要是以 https:// 开头的完整网址';
   if (!isInt(row.contextTokens, 1, 10_000_000)) errors.contextTokens = '填 1 到 10000000 的整数';
   if (!isInt(row.maxOutputTokens, 1, 32_000)) errors.maxOutputTokens = '填 1 到 32000 的整数';
   return errors;
 }
 
 function ratesOf(t: Triple): ModelRates {
-  return { input: t.input ?? 0, output: t.output ?? 0, cache: t.cache ?? 0 };
+  return {
+    input: t.input ?? 0,
+    output: t.output ?? 0,
+    cache: t.cache ?? 0,
+    cacheWrite5m: t.cacheWrite5m,
+    cacheWrite1h: t.cacheWrite1h,
+  };
 }
 
 function fieldLabelOf(key: string): string {
@@ -175,7 +201,6 @@ function fieldLabelOf(key: string): string {
     displayName: '显示名',
     vendorName: '厂商',
     upstreamModelId: '上游模型名',
-    sourceUrl: '资料链接',
     contextTokens: '上下文长度',
     maxOutputTokens: '最大输出',
     priceInput: '输入售价',
@@ -334,7 +359,6 @@ function ImportPreview({
       return;
     }
 
-    const checkedToday = dayjs();
     let ok = 0;
     const failed: string[] = [];
     setProgress({ done: 0, total: selectedRows.length });
@@ -352,6 +376,8 @@ function ImportPreview({
               rates,
               costRates: costRates ?? existing.costRates,
               displayMultiplierManual: row.multiplier,
+              // 3.24：文件带榜单对应名称时一并更新
+              ...(row.arenaModel ? { arenaModelName: row.arenaModel } : {}),
             },
           });
         } else {
@@ -361,8 +387,6 @@ function ImportPreview({
               maxOutputTokens: row.maxOutputTokens,
               outputParameter: 'max_tokens',
               maxImages: row.vision ? DEFAULT_VISION_IMAGES : 0,
-              sourceUrl: row.sourceUrl,
-              checkedAt: checkedToday,
             },
             null,
           );
@@ -379,12 +403,11 @@ function ImportPreview({
               capabilities: row.vision ? ['vision'] : [],
               tags: [],
               leaderboardRank: row.rank,
+              arenaModelName: row.arenaModel,
               sortOrder: row.rank ?? index + 1,
               defaultFor: [],
-              // 3.22：导入的都是文字模型：默认可用于文本聊天、语音通话、私密模式（能识图再加图片识别）。
-              scenarios: row.vision
-                ? ['chat', 'vision', 'voice_call', 'private']
-                : ['chat', 'voice_call', 'private'],
+              // 3.22：导入的都是文字模型：默认可用于文本聊天、语音通话、私密模式（3.24 起图片随文本聊天模型）。
+              scenarios: ['chat', 'voice_call', 'private'],
               enabled: enableNew,
               rates,
               costRates,
@@ -604,6 +627,24 @@ function ImportPreview({
     { title: '售价·入', width: 96, render: (_, row) => priceCell(row, 'price', 'input', 'priceInput') },
     { title: '售价·出', width: 96, render: (_, row) => priceCell(row, 'price', 'output', 'priceOutput') },
     { title: '售价·缓存', width: 96, render: (_, row) => priceCell(row, 'price', 'cache') },
+    {
+      title: (
+        <span>
+          缓存写入
+          <HelpTip text="文件里的 cache_write_5m / cache_write_1h（元 / 百万 token）。没有 = 按输入价计；只有 Anthropic 协议的线路会报告缓存写入。" />
+        </span>
+      ),
+      width: 110,
+      render: (_, row) =>
+        row.price.cacheWrite5m == null && row.price.cacheWrite1h == null ? (
+          <span className="cell-sub">同输入价</span>
+        ) : (
+          <span className="cell-sub">
+            5 分钟 {row.price.cacheWrite5m ?? '同输入'}
+            {row.price.cacheWrite1h != null ? ` · 1 小时 ${row.price.cacheWrite1h}` : ''}
+          </span>
+        ),
+    },
     { title: '成本·入', width: 90, render: (_, row) => priceCell(row, 'cost', 'input') },
     { title: '成本·出', width: 90, render: (_, row) => priceCell(row, 'cost', 'output') },
     { title: '成本·缓存', width: 90, render: (_, row) => priceCell(row, 'cost', 'cache') },
@@ -688,8 +729,26 @@ function ImportPreview({
     {
       title: (
         <span>
+          榜单对应名称
+          <HelpTip text="榜单上这个模型叫什么（文件里的 arena_model），自动获取榜单时按它匹配名次。" />
+        </span>
+      ),
+      width: 180,
+      render: (_, row) => (
+        <Input
+          size="small"
+          className="mono"
+          value={row.arenaModel ?? ''}
+          placeholder="不上榜"
+          onChange={(e) => update(row.id, { arenaModel: e.target.value.slice(0, 120) || null })}
+        />
+      ),
+    },
+    {
+      title: (
+        <span>
           识图
-          <HelpTip text="勾上 = 这个模型能看图（最多 4 张）；不勾 = 只能发文字。" />
+          <HelpTip text="勾上 = 这个模型能看图（最多 4 张）。用户发的图片随文本聊天 / 私密模式模型发送，聊天模型都应勾上。" />
         </span>
       ),
       width: 60,
@@ -698,29 +757,6 @@ function ImportPreview({
           <span className="cell-sub">—</span>
         ) : (
           <Checkbox checked={row.vision} onChange={(e) => update(row.id, { vision: e.target.checked })} />
-        ),
-    },
-    {
-      title: (
-        <span>
-          资料来源链接
-          <HelpTip text="计费上限的依据：厂商价格页或模型文档（https）。文件里的 price_source。" />
-        </span>
-      ),
-      width: 260,
-      render: (_, row) =>
-        existingOf(row) ? (
-          <span className="cell-sub">不改</span>
-        ) : (
-          <>
-            <Input
-              size="small"
-              value={row.sourceUrl}
-              status={status(row, 'sourceUrl')}
-              onChange={(e) => update(row.id, { sourceUrl: e.target.value })}
-            />
-            {cellError(row, 'sourceUrl')}
-          </>
         ),
     },
   ];
@@ -751,7 +787,7 @@ function ImportPreview({
         type="info"
         showIcon
         message="导入前请核对：新模型会挂到下面选的上游账号；已有同键模型只更新价格，不改线路。"
-        description="黄色格子 = 文件里没有、按输入价 10% 预填的缓存价。计费上限默认上下文 128000 / 最大输出 8192、核对日期为今天、输出参数名 max_tokens，导入后可在模型抽屉里再改。"
+        description="黄色格子 = 文件里没有、按输入价 10% 预填的缓存价。计费上限默认上下文 128000 / 最大输出 8192、输出参数名 max_tokens，导入后可在模型抽屉里再改。"
       />
       <div className="import-toolbar">
         <Space>

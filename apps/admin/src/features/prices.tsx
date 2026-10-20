@@ -40,6 +40,8 @@ type PriceVersion = z.infer<typeof AdminPriceVersion>;
 const UNIT_LABELS: Record<string, string> = {
   input_tokens_per_million: '输入 / 百万 token',
   cached_input_tokens_per_million: '缓存输入 / 百万 token',
+  cache_write_5m_tokens_per_million: '缓存写入 5 分钟 / 百万 token',
+  cache_write_1h_tokens_per_million: '缓存写入 1 小时 / 百万 token',
   output_tokens_per_million: '输出 / 百万 token',
   image: '每张图片',
   tts_10k_chars: '每万字语音',

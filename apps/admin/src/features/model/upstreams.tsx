@@ -39,13 +39,28 @@ import { formatInt, formatYuan, relativeTime } from '../../ui/format.js';
 import { TrendBars } from '../../ui/chart.js';
 import {
   ERROR_LABELS,
+  KIND_LABELS,
   PROVIDERS,
+  UPSTREAM_ERROR_LABELS,
   UPSTREAM_STATE_LABELS,
   providerName,
   rangeOf,
+  upstreamReason,
   upstreamState,
   type UpstreamState,
 } from './shared.js';
+
+/** 3.24：测试结果的大白话（失败时写清楚是密钥、余额还是网络）。 */
+function testResultText(u: Upstream, ms: number): string {
+  if (u.status === 'active') return `连通正常，耗时 ${ms}ms`;
+  const reason =
+    u.status === 'invalid'
+      ? '密钥无效'
+      : u.status === 'quota_exhausted'
+        ? '余额不足'
+        : (UPSTREAM_ERROR_LABELS[u.lastError ?? ''] ?? '服务商返回错误');
+  return `连接失败：${reason}`;
+}
 import { useFormFeedback } from '../../data/form-feedback.js';
 
 export function UpstreamsTab({
@@ -87,11 +102,9 @@ export function UpstreamsTab({
         const result = await api.call(ModelAccessAdminEndpoints.testUpstream, {
           params: { upstreamId: ids[0]! },
         });
-        toast.success(
-          result.status === 'active'
-            ? `连通正常，耗时 ${Math.round(performance.now() - started)}ms`
-            : `连接失败：${ERROR_LABELS[result.lastError ?? ''] ?? result.status}`,
-        );
+        const text = testResultText(result, Math.round(performance.now() - started));
+        if (result.status === 'active') toast.success(text);
+        else toast.error(text);
       } else {
         await api.call(ModelAccessAdminEndpoints.batchUpstreams, {
           body: { upstreamIds: ids, action: 'test' },
@@ -288,19 +301,37 @@ export function UpstreamsTab({
       ),
     },
     {
-      title: '供应商',
-      width: 130,
-      render: (_, u) => providerName(u.provider ?? u.kind),
+      title: '供应商 / 协议',
+      width: 160,
+      render: (_, u) => (
+        <div className="cell-main">
+          <span>{providerName(u.provider ?? u.kind)}</span>
+          <span className="cell-sub">{KIND_LABELS[u.kind] ?? u.kind}</span>
+        </div>
+      ),
     },
     {
-      title: '状态',
-      width: 110,
+      title: (
+        <span>
+          状态
+          <HelpTip text="异常时写出具体原因：密钥无效 / 余额不足 / 连接异常被健康检查暂停 / 连续失败短暂暂停。" />
+        </span>
+      ),
+      width: 220,
       render: (_, u) => {
         const state = upstreamState(u);
+        const reason = upstreamReason(u);
         return (
-          <StatusTag tone={state === 'normal' ? 'success' : state === 'disabled' ? 'default' : 'error'}>
-            {testing.includes(u.upstreamId) ? '测试中' : UPSTREAM_STATE_LABELS[state]}
-          </StatusTag>
+          <div className="cell-main">
+            <span>
+              <StatusTag
+                tone={state === 'normal' ? 'success' : state === 'disabled' ? 'default' : 'error'}
+              >
+                {testing.includes(u.upstreamId) ? '测试中' : UPSTREAM_STATE_LABELS[state]}
+              </StatusTag>
+            </span>
+            {reason && state !== 'disabled' && <span className="cell-sub">{reason}</span>}
+          </div>
         );
       },
     },
@@ -494,6 +525,8 @@ export function UpstreamsTab({
 interface UpstreamFormValues {
   name: string;
   provider: string;
+  /** 3.24：协议（OpenAI 兼容 / Anthropic 原生）。 */
+  kind: Upstream['kind'];
   baseUrl: string;
   apiKey?: string;
   priority: number;
@@ -542,7 +575,7 @@ function UpstreamForm({
       if (upstream) {
         await api.call(ModelAccessAdminEndpoints.updateUpstream, {
           params: { upstreamId: upstream.upstreamId },
-          body: common,
+          body: { ...common, ...(values.kind !== upstream.kind ? { kind: values.kind } : {}) },
         });
         if (rotating && values.apiKey)
           await api.call(ModelAccessAdminEndpoints.rotateUpstreamKey, {
@@ -554,7 +587,7 @@ function UpstreamForm({
         const created = await api.call(ModelAccessAdminEndpoints.createUpstream, {
           body: {
             ...common,
-            kind: 'openai_compatible',
+            kind: values.kind,
             apiKey: values.apiKey ?? '',
             saveOnTestFailure: values.saveOnTestFailure === true,
           },
@@ -584,11 +617,7 @@ function UpstreamForm({
       const r = await api.call(ModelAccessAdminEndpoints.testUpstream, {
         params: { upstreamId: upstream.upstreamId },
       });
-      setNote(
-        r.status === 'active'
-          ? `连通正常，耗时 ${Math.round(performance.now() - started)}ms`
-          : `连接失败：${ERROR_LABELS[r.lastError ?? ''] ?? r.status}`,
-      );
+      setNote(testResultText(r, Math.round(performance.now() - started)));
     } catch (e) {
       setNote(`连接失败：${errorText(e)}`);
     }
@@ -621,6 +650,7 @@ function UpstreamForm({
         initialValues={{
           name: upstream?.name ?? '',
           provider: upstream?.provider ?? 'openai_compatible',
+          kind: upstream?.kind ?? 'openai_compatible',
           baseUrl: upstream?.baseUrl ?? '',
           priority: upstream?.priority ?? 1,
           weight: upstream?.weight ?? 100,
@@ -648,16 +678,27 @@ function UpstreamForm({
           <Select options={PROVIDERS.map((p) => ({ value: p.id, label: p.name }))} />
         </Form.Item>
         <Form.Item
-          name="baseUrl"
-          label="接口地址"
-          rules={[
-            { required: true, message: '填写服务商给的接口地址' },
-            { type: 'url', message: '要以 http:// 或 https:// 开头' },
-          ]}
-          extra={<FieldHelp>服务商文档里的 Base URL，一般以 /v1 结尾。</FieldHelp>}
+          name="kind"
+          label="协议"
+          extra={
+            <FieldHelp>
+              中转站一般两种地址都给：选「OpenAI 兼容」可以调所有模型（包括 Claude）；Claude 选「Anthropic（Claude
+              原生）」能用上缓存断点、按「缓存读取 / 缓存写入」准确计费，缓存命中更高。同一个中转站可以各建一个账号，Claude
+              模型的线路挂 Anthropic 那个。改协议后请重新「测试连接」。
+            </FieldHelp>
+          }
         >
-          <Input placeholder="https://…/v1" />
+          <Select
+            options={[
+              { value: 'openai_compatible', label: 'OpenAI 兼容（/chat/completions）' },
+              { value: 'anthropic', label: 'Anthropic · Claude 原生（/v1/messages）' },
+              ...(upstream && !['openai_compatible', 'anthropic'].includes(upstream.kind)
+                ? [{ value: upstream.kind, label: KIND_LABELS[upstream.kind] ?? upstream.kind }]
+                : []),
+            ]}
+          />
         </Form.Item>
+        <KindAwareBaseUrl form={form} />
         {upstream && !rotating ? (
           <Form.Item label="密钥" extra={<FieldHelp>为了安全，保存后不能查看原文。</FieldHelp>}>
             <Space>
@@ -734,6 +775,30 @@ function UpstreamForm({
   );
 }
 
+/** 3.24：接口地址的说明随协议变化（Anthropic 协议填中转给的 Claude 地址，带不带 /v1 都行）。 */
+function KindAwareBaseUrl({ form }: { form: ReturnType<typeof Form.useForm<UpstreamFormValues>>[0] }) {
+  const kind = Form.useWatch('kind', form);
+  return (
+    <Form.Item
+      name="baseUrl"
+      label="接口地址"
+      rules={[
+        { required: true, message: '填写服务商给的接口地址' },
+        { type: 'url', message: '要以 http:// 或 https:// 开头' },
+      ]}
+      extra={
+        <FieldHelp>
+          {kind === 'anthropic'
+            ? '中转站给的 Claude（Anthropic）地址，例 https://…/claude 或 https://…/v1，带不带 /v1 都可以，系统会请求 …/v1/messages。'
+            : '服务商文档里的 Base URL，一般以 /v1 结尾。'}
+        </FieldHelp>
+      }
+    >
+      <Input placeholder={kind === 'anthropic' ? 'https://…（Claude 地址）' : 'https://…/v1'} />
+    </Form.Item>
+  );
+}
+
 function UpstreamDetail({
   upstream,
   models,
@@ -780,9 +845,16 @@ function UpstreamDetail({
       <div className="detail-grid">
         <div>
           <span className="detail-label">状态</span>
-          <StatusTag tone={state === 'normal' ? 'success' : state === 'disabled' ? 'default' : 'error'}>
-            {UPSTREAM_STATE_LABELS[state]}
-          </StatusTag>
+          <span>
+            <StatusTag tone={state === 'normal' ? 'success' : state === 'disabled' ? 'default' : 'error'}>
+              {UPSTREAM_STATE_LABELS[state]}
+            </StatusTag>
+            {upstreamReason(upstream) ?? ''}
+          </span>
+        </div>
+        <div>
+          <span className="detail-label">协议</span>
+          <span>{KIND_LABELS[upstream.kind] ?? upstream.kind}</span>
         </div>
         <div>
           <span className="detail-label">接口地址</span>

@@ -107,6 +107,8 @@ export function RecordsTab({
         '实际上游模型',
         '输入token',
         '缓存token',
+        '缓存写入5分钟token',
+        '缓存写入1小时token',
         '输出token',
         '耗时ms',
         '上游成本(元)',
@@ -125,6 +127,8 @@ export function RecordsTab({
           x.upstreamModelId ?? '',
           x.inputTokens,
           x.cachedInputTokens,
+          x.cacheWrite5mTokens ?? 0,
+          x.cacheWrite1hTokens ?? 0,
           x.outputTokens,
           x.latencyMs,
           (x.costMicros / 1_000_000).toFixed(4),
@@ -365,8 +369,13 @@ export function RecordsTab({
             <div>
               <span className="detail-label">token</span>
               <span>
-                输入 {formatInt(detail.inputTokens)}（缓存 {formatInt(detail.cachedInputTokens)}）· 输出{' '}
-                {formatInt(detail.outputTokens)}
+                输入 {formatInt(detail.inputTokens)}（缓存读取 {formatInt(detail.cachedInputTokens)}
+                {(detail.cacheWrite5mTokens ?? 0) + (detail.cacheWrite1hTokens ?? 0) > 0
+                  ? ` · 缓存写入 ${formatInt(detail.cacheWrite5mTokens ?? 0)}${
+                      detail.cacheWrite1hTokens ? ` + 1 小时 ${formatInt(detail.cacheWrite1hTokens)}` : ''
+                    }`
+                  : ''}
+                ）· 输出 {formatInt(detail.outputTokens)}
                 {detail.estimated ? '（估算）' : ''}
               </span>
             </div>

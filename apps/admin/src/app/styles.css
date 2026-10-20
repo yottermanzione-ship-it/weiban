@@ -1390,3 +1390,16 @@ body {
   color: #8a9099;
   font-size: 12px;
 }
+
+/* 3.24：榜单自动获取状态 */
+.leaderboard-status {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed #e5e7eb;
+  font-size: 13px;
+}
+.leaderboard-match {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 0;
+}

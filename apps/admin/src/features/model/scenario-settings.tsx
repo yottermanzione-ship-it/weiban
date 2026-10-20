@@ -41,7 +41,6 @@ const INTERNAL_LABELS: Record<
 
 const SCENARIO_ORDER: ModelScenario[] = [
   'chat',
-  'vision',
   'voice_message',
   'speech_recognition',
   'voice_call',

@@ -50,7 +50,10 @@ import { formatPoints } from '../../ui/format.js';
 import {
   CAPABILITY_LABELS,
   SCENARIO_LABELS,
+  UNAVAILABLE_DETAIL_HINTS,
+  UNAVAILABLE_DETAIL_LABELS,
   UPSTREAM_STATE_LABELS,
+  VISION_REQUIRED_SCENARIOS,
   toWrite,
   upstreamState,
 } from './shared.js';
@@ -60,7 +63,6 @@ import {
   boundsToForm,
   formToBounds,
   isTextOnlyBounds,
-  vendorPricePage,
   type BoundsFormValues,
 } from './billing-bounds.js';
 import { MODEL_KEY_HINT, isValidModelKey, suggestModelKey } from './model-key.js';
@@ -81,9 +83,33 @@ function discountLabel(rate: number) {
 }
 
 
-function ratesOf(input?: number | null, output?: number | null, cache?: number | null): ModelRates | null {
+function ratesOf(
+  input?: number | null,
+  output?: number | null,
+  cache?: number | null,
+  cacheWrite5m?: number | null,
+  cacheWrite1h?: number | null,
+): ModelRates | null {
   if (input == null && output == null && cache == null) return null;
-  return { input: input ?? 0, output: output ?? 0, cache: cache ?? 0 };
+  return {
+    input: input ?? 0,
+    output: output ?? 0,
+    cache: cache ?? 0,
+    // 3.24：缓存写入价可不填（null = 按输入价计）
+    cacheWrite5m: cacheWrite5m ?? null,
+    cacheWrite1h: cacheWrite1h ?? null,
+  };
+}
+
+/** 3.24：这些原因要去模型抽屉里改计费上限，状态标签可以点开直接定位。 */
+const BOUNDS_DETAILS = ['billing_bounds_missing', 'billing_bounds_paused', 'output_limit_too_small'];
+
+/** 3.24：文本聊天 / 私密模式模型缺识图能力（用户发的图片会发不出去）。 */
+function lacksVision(scenarios: readonly string[] | undefined, capabilities: readonly string[]) {
+  return (
+    (scenarios ?? []).some((s) => (VISION_REQUIRED_SCENARIOS as readonly string[]).includes(s)) &&
+    !capabilities.includes('vision')
+  );
 }
 
 export function ModelsTab({
@@ -208,6 +234,11 @@ export function ModelsTab({
             </span>
             <span className="cell-sub">
               缓存 {m.rates.cache.toFixed(2)}
+              {m.rates.cacheWrite5m != null || m.rates.cacheWrite1h != null
+                ? ` · 写 ${m.rates.cacheWrite5m?.toFixed(2) ?? '同输入'}${
+                    m.rates.cacheWrite1h != null ? ` / 1h ${m.rates.cacheWrite1h.toFixed(2)}` : ''
+                  }`
+                : ''}
               {m.hasTimeBands ? ' · 有分时价' : ''}
             </span>
           </span>
@@ -269,34 +300,63 @@ export function ModelsTab({
         ),
     },
     {
-      title: '状态',
-      width: 110,
-      render: (_, m) => (
-        <Space size={4} wrap>
-          <StatusTag tone={m.enabled ? 'success' : 'default'}>{m.enabled ? '已上架' : '已下架'}</StatusTag>
-          {!(m.routes?.length
-            ? m.routes.some(
-                (route) => route.enabled && route.billingBounds && !route.billingBounds.pauseReason,
-              )
-            : m.billingBounds && !m.billingBounds.pauseReason) && (
-            <span
-              role="button"
-              tabIndex={0}
-              className="tag-link"
-              title="点击直接填写计费上限"
-              onClick={(e) => {
-                e.stopPropagation();
-                openEditor(m, true);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') openEditor(m, true);
-              }}
-            >
-              <StatusTag tone="warning">需配置计费上限 ›</StatusTag>
-            </span>
-          )}
-        </Space>
+      title: (
+        <span>
+          状态
+          <HelpTip text="上架的模型对用户「暂时无法使用」时，这里写出具体原因（与用户端看到的一致），悬停看怎么处理。" />
+        </span>
       ),
+      width: 170,
+      render: (_, m) => {
+        // 3.24：具体原因来自服务器（availability）；旧服务器不带时按线路计费上限判断
+        const detail =
+          m.availability?.detail ??
+          (m.availability
+            ? null
+            : !(m.routes?.length
+                  ? m.routes.some(
+                      (route) =>
+                        route.enabled && route.billingBounds && !route.billingBounds.pauseReason,
+                    )
+                  : m.billingBounds && !m.billingBounds.pauseReason)
+              ? 'billing_bounds_missing'
+              : null);
+        const showDetail = m.enabled && detail && detail !== 'model_removed';
+        return (
+          <Space size={4} wrap>
+            <StatusTag tone={m.enabled ? (showDetail ? 'warning' : 'success') : 'default'}>
+              {m.enabled ? (showDetail ? '暂时无法使用' : '已上架') : '已下架'}
+            </StatusTag>
+            {showDetail &&
+              (BOUNDS_DETAILS.includes(detail) ? (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="tag-link"
+                  title={`${UNAVAILABLE_DETAIL_HINTS[detail] ?? ''}（点击直接填写）`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openEditor(m, true);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') openEditor(m, true);
+                  }}
+                >
+                  <StatusTag tone="warning">{UNAVAILABLE_DETAIL_LABELS[detail] ?? detail} ›</StatusTag>
+                </span>
+              ) : (
+                <span title={UNAVAILABLE_DETAIL_HINTS[detail] ?? ''}>
+                  <StatusTag tone="error">{UNAVAILABLE_DETAIL_LABELS[detail] ?? detail}</StatusTag>
+                </span>
+              ))}
+            {m.enabled && lacksVision(m.scenarios, m.capabilities) && (
+              <span title="勾了文本聊天 / 私密模式但没有识图能力：用户发的图片会发不出去">
+                <StatusTag tone="warning">缺识图能力</StatusTag>
+              </span>
+            )}
+          </Space>
+        );
+      },
     },
     {
       title: '操作',
@@ -529,6 +589,11 @@ interface ModelFormValues {
   costOutput?: number | null;
   costCache?: number | null;
   displayMultiplierManual?: number | null;
+  arenaModelName?: string | null;
+  priceCacheWrite5m?: number | null;
+  priceCacheWrite1h?: number | null;
+  costCacheWrite5m?: number | null;
+  costCacheWrite1h?: number | null;
 }
 
 function routeDraftOf(
@@ -539,7 +604,7 @@ function routeDraftOf(
     enabled: boolean;
     billingBounds?: RouteBillingBounds | null;
   },
-  ctx: { vision: boolean; vendor: string },
+  ctx: { vision: boolean },
 ): RouteDraft {
   const bounds = route.billingBounds ?? null;
   const json = bounds != null && !isTextOnlyBounds(bounds);
@@ -549,10 +614,7 @@ function routeDraftOf(
     weight: route.weight,
     enabled: route.enabled,
     boundsMode: json ? 'json' : 'form',
-    bounds: boundsToForm(bounds, {
-      vision: ctx.vision,
-      sourceUrl: vendorPricePage(ctx.vendor, route.upstreamModelId),
-    }),
+    bounds: boundsToForm(bounds, { vision: ctx.vision }),
     billingBoundsDraft: json ? JSON.stringify(bounds, null, 2) : '',
     origin: bounds,
   };
@@ -587,8 +649,7 @@ function ModelWizard({
         if (routes[index]?.boundsMode === 'json') return ['routes', index, 'billingBoundsDraft'];
         const [a, b] = rest;
         if (a === 'text' && typeof b === 'string') return ['routes', index, 'bounds', b];
-        if (a === 'sourceUrl' || a === 'checkedAt') return ['routes', index, 'bounds', a];
-        return ['routes', index, 'bounds', 'sourceUrl'];
+        return ['routes', index, 'bounds', 'contextTokens'];
       };
       const [head, second, third] = path;
       if (head === 'routes' && typeof second === 'number')
@@ -601,6 +662,8 @@ function ModelWizard({
     },
   });
   const [saving, setSaving] = useState(false);
+  // 3.24：文本聊天 / 私密模式模型缺识图能力时先提示一次
+  const [confirmVision, setConfirmVision] = useState(false);
   const [upstreamModels, setUpstreamModels] = useState<{ id: string; items: string[] | null; error: string }>({
     id: '',
     items: null,
@@ -611,7 +674,7 @@ function ModelWizard({
 
   const vision = model?.capabilities.includes('vision') ?? false;
   const [initialRoutes] = useState<RouteDraft[]>(() => {
-    const ctx = { vision, vendor: model?.vendorName ?? '' };
+    const ctx = { vision };
     return model?.routes?.length
       ? [...model.routes].sort((a, b) => a.priority - b.priority).map((r) => routeDraftOf(r, ctx))
       : [
@@ -663,11 +726,16 @@ function ModelWizard({
     }
   }
 
-  async function save(force = false) {
+  async function save(force = false, visionOk = false) {
     const checked = await feedback.validate();
     if (!checked) return;
     // getFieldsValue(true) 带上不是表单字段的 origin。
     const values = form.getFieldsValue(true) as ModelFormValues;
+    if (!visionOk && lacksVision(values.scenarios, values.capabilities)) {
+      setConfirmVision(true);
+      return;
+    }
+    setConfirmVision(false);
     if (model?.hasTimeBands && !force && values.priceInput != null) {
       setConfirmBands(true);
       return;
@@ -740,13 +808,27 @@ function ModelWizard({
             .filter(Boolean)
             .slice(0, 10),
           leaderboardRank: values.leaderboardRank ?? null,
+          arenaModelName: values.arenaModelName?.trim() || null,
           sortOrder: values.sortOrder ?? model?.sortOrder ?? 0,
           defaultFor: [],
           scenarios: values.scenarios,
           enabled: model ? model.enabled : true,
           ...(discount !== undefined ? { discount } : {}),
-          rates: ratesOf(values.priceInput, values.priceOutput, values.priceCache),
-          costRates: ratesOf(values.costInput, values.costOutput, values.costCache) ?? undefined,
+          rates: ratesOf(
+            values.priceInput,
+            values.priceOutput,
+            values.priceCache,
+            values.priceCacheWrite5m,
+            values.priceCacheWrite1h,
+          ),
+          costRates:
+            ratesOf(
+              values.costInput,
+              values.costOutput,
+              values.costCache,
+              values.costCacheWrite5m,
+              values.costCacheWrite1h,
+            ) ?? undefined,
           displayMultiplierManual: values.displayMultiplierManual ?? null,
           routes,
         },
@@ -760,7 +842,7 @@ function ModelWizard({
     }
   }
 
-  /** 厂商 / 模型名 / 能力变化时，顺手预填模型键、资料链接、最多图片数。 */
+  /** 厂商 / 模型名 / 能力变化时，顺手预填模型键、最多图片数。 */
   function onValuesChange(changed: Partial<ModelFormValues>) {
     const routes = (form.getFieldValue('routes') as RouteDraft[] | undefined) ?? [];
     const vendor = (form.getFieldValue('vendorName') as string | undefined) ?? '';
@@ -778,11 +860,6 @@ function ModelWizard({
 
     routes.forEach((route, index) => {
       if (route.boundsMode !== 'form') return;
-      const touchedModel = changedRoutes[index]?.upstreamModelId !== undefined;
-      if (('vendorName' in changed || touchedModel) && !route.bounds?.sourceUrl?.trim()) {
-        const url = vendorPricePage(vendor, route.upstreamModelId);
-        if (url) form.setFieldValue(['routes', index, 'bounds', 'sourceUrl'], url);
-      }
       if ('capabilities' in changed && !route.origin) {
         const hasVision = (changed.capabilities ?? []).includes('vision');
         form.setFieldValue(['routes', index, 'bounds', 'maxImages'], hasVision ? DEFAULT_VISION_IMAGES : 0);
@@ -836,7 +913,12 @@ function ModelWizard({
           costInput: model?.costRates?.input ?? null,
           costOutput: model?.costRates?.output ?? null,
           costCache: model?.costRates?.cache ?? null,
+          priceCacheWrite5m: model?.rates?.cacheWrite5m ?? null,
+          priceCacheWrite1h: model?.rates?.cacheWrite1h ?? null,
+          costCacheWrite5m: model?.costRates?.cacheWrite5m ?? null,
+          costCacheWrite1h: model?.costRates?.cacheWrite1h ?? null,
           displayMultiplierManual: model?.displayMultiplierManual ?? null,
+          arenaModelName: model?.arenaModelName ?? null,
         }}
         onValuesChange={onValuesChange}
       >
@@ -947,10 +1029,7 @@ function ModelWizard({
                         enabled: true,
                         billingBounds: null,
                       },
-                      {
-                        vision: capabilities.includes('vision'),
-                        vendor: (form.getFieldValue('vendorName') as string | undefined) ?? '',
-                      },
+                      { vision: capabilities.includes('vision') },
                     ),
                   );
                 }}
@@ -1016,20 +1095,9 @@ function ModelWizard({
         <Form.Item
           name="scenarios"
           label="可用于哪些场景"
-          rules={[
-            {
-              validator: (_, value: string[] | undefined) =>
-                value?.includes('vision') &&
-                !((form.getFieldValue('capabilities') as string[] | undefined) ?? []).includes(
-                  'vision',
-                )
-                  ? Promise.reject(new Error('勾选「图片识别」需要先在「能力」里勾选识图'))
-                  : Promise.resolve(),
-            },
-          ]}
           extra={
             <FieldHelp>
-              用户在「模型配置」里每个场景只能选勾选了它的模型。文字模型一般勾文本聊天、语音通话、私密模式（能识图再勾图片识别）；语音、图片模型勾对应场景。平台默认已改为页面顶部的「场景推荐模型 / 平台内部模型」。
+              用户在「模型配置」里每个场景只能选勾选了它的模型。文字模型一般勾文本聊天、语音通话、私密模式；语音、图片模型勾对应场景。用户发的图片随「文本聊天」（私密模式下随「私密模式」）的模型发送，所以这两类模型要勾「能力 › 识图」。平台默认已改为页面顶部的「场景推荐模型 / 平台内部模型」。
             </FieldHelp>
           }
         >
@@ -1037,6 +1105,7 @@ function ModelWizard({
             options={Object.entries(SCENARIO_LABELS).map(([value, label]) => ({ value, label }))}
           />
         </Form.Item>
+        <VisionWarning form={form} />
         <div className="form-two">
           <Form.Item
             name="tags"
@@ -1060,17 +1129,36 @@ function ModelWizard({
             <InputNumber precision={0} style={{ width: '100%' }} />
           </Form.Item>
         </div>
-        <Form.Item
-          name="leaderboardRank"
-          label="榜单名次"
-          extra={
-            <FieldHelp>
-              用户端「模型排行榜」里显示的名次（对照页面顶部的榜单来源填写）；留空 = 不上榜。
-            </FieldHelp>
-          }
-        >
-          <InputNumber min={1} max={9999} precision={0} style={{ width: 200 }} placeholder="不上榜" />
-        </Form.Item>
+        <div className="form-two">
+          <Form.Item
+            name="arenaModelName"
+            label="榜单对应名称"
+            rules={[{ max: 120, message: '最多 120 个字符' }]}
+            extra={
+              <FieldHelp>
+                榜单上这个模型叫什么（例 claude-opus-4-8），自动获取榜单时按它匹配名次（不区分大小写）。
+                {model?.arenaModelName
+                  ? model.arenaRank != null
+                    ? ` 当前匹配到原榜第 ${model.arenaRank} 名。`
+                    : ' 当前榜单里没找到这个名字。'
+                  : ''}
+              </FieldHelp>
+            }
+          >
+            <Input maxLength={120} placeholder="例：claude-opus-4-8" />
+          </Form.Item>
+          <Form.Item
+            name="leaderboardRank"
+            label="手填榜单名次（可不填）"
+            extra={
+              <FieldHelp>
+                自动获取的榜单匹配不到时才用它（原榜名次）。用户端只显示相对顺序 1、2、3…，不显示原始名次；都没有 = 不上榜。
+              </FieldHelp>
+            }
+          >
+            <InputNumber min={1} max={9999} precision={0} style={{ width: '100%' }} placeholder="不上榜" />
+          </Form.Item>
+        </div>
 
         <FormSection title="③ 价格" desc="每百万 token 的人民币价格，1 元 = 100 积分" />
         <div className="form-three">
@@ -1082,6 +1170,26 @@ function ModelWizard({
           </Form.Item>
           <Form.Item name="priceCache" label="缓存命中（元）" extra={<FieldHelp>命中缓存时便宜很多，一般填输入价的 1/10。</FieldHelp>}>
             <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} placeholder="0" />
+          </Form.Item>
+        </div>
+        <div className="form-two">
+          <Form.Item
+            name="priceCacheWrite5m"
+            label="缓存写入 · 5 分钟（元，可不填）"
+            extra={
+              <FieldHelp>
+                上游报告「缓存写入」时按它收（Claude 一般是输入价的 1.25 倍）；不填 = 按输入价。只有 Anthropic 协议的线路会报告缓存写入。
+              </FieldHelp>
+            }
+          >
+            <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} placeholder="同输入价" />
+          </Form.Item>
+          <Form.Item
+            name="priceCacheWrite1h"
+            label="缓存写入 · 1 小时（元，可不填）"
+            extra={<FieldHelp>1 小时缓存的写入价（Claude 一般是输入价的 2 倍）；不填 = 按输入价。</FieldHelp>}
+          >
+            <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} placeholder="同输入价" />
           </Form.Item>
         </div>
         <Form.Item
@@ -1144,6 +1252,12 @@ function ModelWizard({
                   <Form.Item name="costCache" label="成本 · 缓存">
                     <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} />
                   </Form.Item>
+                  <Form.Item name="costCacheWrite5m" label="成本 · 缓存写入 5 分钟">
+                    <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} placeholder="同售价" />
+                  </Form.Item>
+                  <Form.Item name="costCacheWrite1h" label="成本 · 缓存写入 1 小时">
+                    <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} placeholder="同售价" />
+                  </Form.Item>
                 </div>
               ),
             },
@@ -1153,6 +1267,24 @@ function ModelWizard({
           非 token 计价模型（语音、图片）请在「AI 模型价格」里维护
         </Tag>
       </Form>
+      {confirmVision && (
+        <Alert
+          type="warning"
+          showIcon
+          message="这个模型勾了文本聊天 / 私密模式，但没有识图能力"
+          description="用户发的图片随这两个场景的模型发送，选了它的用户发图会失败。建议在「能力」里勾上识图（模型确实能看图时）。"
+          action={
+            <Space>
+              <Button size="small" onClick={() => setConfirmVision(false)}>
+                回去修改
+              </Button>
+              <Button size="small" type="primary" onClick={() => void save(false, true)}>
+                仍然保存
+              </Button>
+            </Space>
+          }
+        />
+      )}
       {confirmBands && (
         <Alert
           type="warning"
@@ -1164,7 +1296,7 @@ function ModelWizard({
               <Button size="small" onClick={() => setConfirmBands(false)}>
                 取消
               </Button>
-              <Button size="small" type="primary" onClick={() => void save(true)}>
+              <Button size="small" type="primary" onClick={() => void save(true, true)}>
                 继续保存
               </Button>
             </Space>
@@ -1172,6 +1304,22 @@ function ModelWizard({
         />
       )}
     </RecordDrawer>
+  );
+}
+
+/** 3.24：文本聊天 / 私密模式模型缺识图能力的即时提示。 */
+function VisionWarning({ form }: { form: FormInstance<ModelFormValues> }) {
+  const scenarios = Form.useWatch('scenarios', form) as string[] | undefined;
+  const capabilities = (Form.useWatch('capabilities', form) as string[] | undefined) ?? [];
+  if (!lacksVision(scenarios, capabilities)) return null;
+  return (
+    <Alert
+      type="warning"
+      showIcon
+      style={{ marginBottom: 16 }}
+      message="文本聊天 / 私密模式的模型需要识图能力"
+      description="不再有单独的「图片识别」场景：用户发的图片直接发给文本聊天（私密模式下发给私密模式）的模型。这个模型没勾识图，选了它的用户发图会失败。"
+    />
   );
 }
 
@@ -1209,7 +1357,7 @@ function RouteBoundsEditor({
       if (parsed.success && isTextOnlyBounds(parsed.data))
         form.setFieldValue(
           ['routes', name, 'bounds'],
-          boundsToForm(parsed.data, { vision: false, sourceUrl: parsed.data.sourceUrl }),
+          boundsToForm(parsed.data, { vision: false }),
         );
     } catch {
       /* JSON 写坏了就保留表单里原来的数字 */
@@ -1237,14 +1385,14 @@ function RouteBoundsEditor({
           showIcon
           style={{ marginBottom: 12 }}
           message="系统没法确认这条线路的实际用量，已暂停使用。"
-          description="重新核对下面的数字，把核对日期改成今天，勾选「启用这条线路」后保存即可恢复。"
+          description="重新核对下面的数字，勾选「已重新核对」和上面的「启用这条线路」后保存即可恢复。"
         />
       )}
       <Form.Item name={[name, 'boundsMode']} hidden>
         <Input />
       </Form.Item>
       {mode === 'form' ? (
-        <BoundsFields name={name} />
+        <BoundsFields name={name} paused={Boolean(origin?.pauseReason)} />
       ) : (
         <div className="field-note" style={{ marginBottom: 12 }}>
           这条线路正在使用下方「高级」里的 JSON 作为计费上限。

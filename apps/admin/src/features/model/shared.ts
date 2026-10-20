@@ -61,10 +61,9 @@ export const DEFAULT_FOR_LABELS: Record<string, string> = {
   web_search: '联网搜索',
 };
 
-/** 3.22：模型使用场景（取代原「默认给谁用」）。 */
+/** 3.22：模型使用场景（取代原「默认给谁用」）。3.24 去掉「图片识别」：图片随文本聊天 / 私密模式模型。 */
 export const SCENARIO_LABELS: Record<string, string> = {
   chat: '文本聊天',
-  vision: '图片识别',
   voice_message: '语音消息',
   speech_recognition: '语音识别',
   voice_call: '语音通话',
@@ -81,6 +80,49 @@ export const CAPABILITY_LABELS: Record<string, string> = {
   adult_content: '成人内容',
 };
 
+/** 3.24：要求具备识图能力的场景（用户发的图片随这两个场景的模型发送）。 */
+export const VISION_REQUIRED_SCENARIOS = ['chat', 'private'] as const;
+
+/** 3.24：模型「暂时无法使用」的具体原因（后台口径，契约 ModelUnavailableDetail）。 */
+export const UNAVAILABLE_DETAIL_LABELS: Record<string, string> = {
+  model_removed: '已下架',
+  no_route: '没有启用的线路',
+  upstream_disabled: '上游账号已停用',
+  upstream_invalid_key: '上游密钥无效',
+  upstream_quota_exhausted: '上游余额不足',
+  upstream_unavailable: '上游连接异常，被健康检查暂停',
+  upstream_cooldown: '上游连续失败，暂停几分钟后自动重试',
+  billing_bounds_missing: '缺计费上限',
+  billing_bounds_paused: '用量核对未通过，线路已暂停',
+  price_missing: '价目表里没有价格',
+  output_limit_too_small: '最大输出太小，不够一条回复',
+};
+
+/** 3.24：怎么处理（后台提示）。 */
+export const UNAVAILABLE_DETAIL_HINTS: Record<string, string> = {
+  no_route: '在模型抽屉里启用至少一条线路。',
+  upstream_disabled: '到「上游账号」启用账号，或给模型换一条线路。',
+  upstream_invalid_key: '到「上游账号」更换密钥后点「测试连通」。',
+  upstream_quota_exhausted: '去服务商处充值，再到「上游账号」点「测试连通」恢复。',
+  upstream_unavailable: '系统每分钟自动探测，连通后自动恢复；也可以到「上游账号」手动「测试连通」看具体原因。',
+  upstream_cooldown: '暂停到期后自动重试；频繁出现请看「调用记录」里的失败原因。',
+  billing_bounds_missing: '打开模型抽屉，给线路填上计费上限。',
+  billing_bounds_paused: '打开模型抽屉，核对计费上限后勾选「已重新核对」和「启用这条线路」保存。',
+  price_missing: '在模型抽屉的「价格」里填上售价保存。',
+  output_limit_too_small: '把线路计费上限的「最大输出」改到 600 以上。',
+};
+
+/** 3.24：上游最近一次失败的类别（Upstream.lastError）→ 大白话。 */
+export const UPSTREAM_ERROR_LABELS: Record<string, string> = {
+  invalid_key: '密钥无效',
+  insufficient_balance: '余额不足',
+  quota_exhausted: '余额不足',
+  network_error: '连不上（网络错误或超时）',
+  provider_error: '服务商返回错误',
+  rate_limited: '被限流',
+  timeout: '超时',
+};
+
 export type UpstreamState = 'normal' | 'abnormal' | 'disabled';
 
 export function upstreamState(u: Upstream): UpstreamState {
@@ -95,6 +137,32 @@ export const UPSTREAM_STATE_LABELS: Record<UpstreamState, string> = {
   abnormal: '异常',
   disabled: '已停用',
 };
+
+/** 3.24：上游协议（契约 UpstreamKind）。 */
+export const KIND_LABELS: Record<string, string> = {
+  openai_compatible: 'OpenAI 兼容',
+  anthropic: 'Anthropic（Claude 原生）',
+  dashscope: '阿里云百炼原生',
+  bocha_search: '博查搜索',
+  jev: 'Jev',
+};
+
+/** 3.24：账号异常的具体原因（列表、详情、测试结果都用它），正常时为 null。 */
+export function upstreamReason(u: Upstream): string | null {
+  const last = u.lastError ? (UPSTREAM_ERROR_LABELS[u.lastError] ?? u.lastError) : null;
+  if (u.enabled === false) return '已停用，不分配调用';
+  if (u.status === 'invalid') return '密钥无效：请更换密钥后测试';
+  if (u.status === 'quota_exhausted') return '余额不足：去服务商处充值后测试';
+  if (u.status === 'unavailable')
+    return `连接异常，已被健康检查暂停${last ? `（最近：${last}）` : ''}；每分钟自动探测，连通后恢复`;
+  if (u.cooldownUntil && new Date(u.cooldownUntil).getTime() > Date.now()) {
+    const until = new Date(new Date(u.cooldownUntil).getTime() + 8 * 3_600_000)
+      .toISOString()
+      .slice(11, 16);
+    return `连续失败 ${u.consecutiveFailures ?? 0} 次，暂停到 ${until}${last ? `（最近：${last}）` : ''}`;
+  }
+  return null;
+}
 
 /** 北京时间今天 0 点，往前 offsetDays 天。 */
 export function beijingMidnight(offsetDays = 0): Date {
@@ -135,6 +203,7 @@ export function toWrite(m: AdminModel) {
     capabilities: m.capabilities,
     tags: m.tags,
     leaderboardRank: m.leaderboardRank,
+    ...(m.arenaModelName !== undefined ? { arenaModelName: m.arenaModelName } : {}),
     sortOrder: m.sortOrder,
     defaultFor: m.defaultFor,
     ...(m.scenarios ? { scenarios: m.scenarios } : {}),
