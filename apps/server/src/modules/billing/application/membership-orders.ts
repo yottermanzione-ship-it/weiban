@@ -18,7 +18,7 @@ import {
   type MembershipOrder,
   type MembershipPlanId,
 } from '@weiban/contracts';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gte, lt } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   AppError,
@@ -91,6 +91,8 @@ function toOrder(r: OrderRow): MembershipOrder {
     operatorUserId: r.operatorUserId,
     note: r.note,
     createdAt: r.createdAt.toISOString(),
+    // 开通时仍在会员期内 → 生效区间从原到期时间开始（晚于下单时间）。留 1 秒余量。
+    renewal: r.startsAt.getTime() > r.createdAt.getTime() + 1000,
   };
 }
 
@@ -172,6 +174,10 @@ export class MembershipOrderService {
 
   async listOrders(query: {
     userId?: string | undefined;
+    from?: string | undefined;
+    to?: string | undefined;
+    planId?: MembershipPlanId | undefined;
+    firstPurchase?: 'true' | 'false' | undefined;
     cursor?: string | undefined;
     limit: number;
   }) {
@@ -179,7 +185,17 @@ export class MembershipOrderService {
     const rows = await this.database.db
       .select()
       .from(membershipOrders)
-      .where(query.userId ? eq(membershipOrders.userId, query.userId) : undefined)
+      .where(
+        and(
+          query.userId ? eq(membershipOrders.userId, query.userId) : undefined,
+          query.from ? gte(membershipOrders.createdAt, new Date(query.from)) : undefined,
+          query.to ? lt(membershipOrders.createdAt, new Date(query.to)) : undefined,
+          query.planId ? eq(membershipOrders.planId, query.planId) : undefined,
+          query.firstPurchase
+            ? eq(membershipOrders.firstPurchase, query.firstPurchase === 'true')
+            : undefined,
+        ),
+      )
       .orderBy(desc(membershipOrders.createdAt), desc(membershipOrders.id))
       .limit(query.limit + 1)
       .offset(offset);

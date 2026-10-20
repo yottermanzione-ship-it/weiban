@@ -1,6 +1,8 @@
 import { PluginsController } from './http/plugins.controller.js';
 import { MembershipService } from './application/membership.js';
 import { MembershipController } from './http/membership.controller.js';
+import { AdminUsersService } from './application/admin-users.js';
+import { AdminUsersController } from './http/admin-users.controller.js';
 import {
   IDENTITY_MEMBERSHIP_READ_PORT,
   IDENTITY_MEMBERSHIP_WRITE_PORT,
@@ -55,6 +57,7 @@ import { UserStatusController } from './http/user-status.controller.js';
     UserStatusController,
     MembershipController,
     PluginsController,
+    AdminUsersController,
   ],
   providers: [
     { provide: PASSWORD_HASHER, useValue: new PasswordHasher() },
@@ -66,6 +69,7 @@ import { UserStatusController } from './http/user-status.controller.js';
     SessionService,
     SettingsService,
     AccountService,
+    AdminUsersService,
     InviteService,
     DeletionService,
     PurgeVerifier,

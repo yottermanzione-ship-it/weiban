@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, desc, eq, gte, lt } from 'drizzle-orm';
 import {
   SetMembership,
   type Membership,
+  type MembershipChange,
   type IdentityMembershipReadPort,
   type IdentityMembershipWritePort,
   type Tx,
@@ -14,13 +15,14 @@ import {
   OUTBOX,
   AppError,
   asDbTx,
+  newId,
   parseContract,
   type Database,
   type Clock,
   type AuditLog,
   type Outbox,
 } from '../../../platform/index.js';
-import { users, memberships } from '../infra/db/schema.js';
+import { users, memberships, membershipChanges } from '../infra/db/schema.js';
 
 const BEIJING_OFFSET_MS = 8 * 3_600_000;
 /** 按北京时间自然月加 months 个月（月末对齐：1 月 31 日 + 1 月 = 2 月最后一天）。 */
@@ -151,6 +153,16 @@ export class MembershipService implements IdentityMembershipReadPort, IdentityMe
           target: memberships.userId,
           set: { proPlusUntil: until, grantedBy: operator, updatedAt: now },
         });
+      // 3.21：手动调整 / 取消记入会员订阅记录（开通 / 续期由 billing 订单记录）。
+      await tx.db.insert(membershipChanges).values({
+        id: newId(),
+        userId,
+        previousUntil: old?.proPlusUntil ?? null,
+        newUntil: until,
+        operatorUserId: operator,
+        reason: body.reason || null,
+        createdAt: now,
+      });
       await this.audit.record(
         {
           module: 'identity',
@@ -159,7 +171,7 @@ export class MembershipService implements IdentityMembershipReadPort, IdentityMe
           actorId: operator,
           targetType: 'user',
           targetId: userId,
-          details: { expiresAt: body.expiresAt },
+          details: { expiresAt: body.expiresAt, reason: body.reason ?? null },
         },
         tx,
       );
@@ -169,5 +181,41 @@ export class MembershipService implements IdentityMembershipReadPort, IdentityMe
       });
       return this.getMembership(userId, tx);
     });
+  }
+
+  /** 3.21：手动调整记录（新到旧）。cursor 为偏移量。 */
+  async listChanges(query: {
+    userId?: string | undefined;
+    from?: string | undefined;
+    to?: string | undefined;
+    cursor?: string | undefined;
+    limit: number;
+  }): Promise<{ items: MembershipChange[]; nextCursor: string | null }> {
+    const offset = query.cursor && /^d{1,7}$/.test(query.cursor) ? Number(query.cursor) : 0;
+    const rows = await this.database.db
+      .select()
+      .from(membershipChanges)
+      .where(
+        and(
+          query.userId ? eq(membershipChanges.userId, query.userId) : undefined,
+          query.from ? gte(membershipChanges.createdAt, new Date(query.from)) : undefined,
+          query.to ? lt(membershipChanges.createdAt, new Date(query.to)) : undefined,
+        ),
+      )
+      .orderBy(desc(membershipChanges.createdAt), desc(membershipChanges.id))
+      .limit(query.limit + 1)
+      .offset(offset);
+    return {
+      items: rows.slice(0, query.limit).map((r) => ({
+        changeId: r.id,
+        userId: r.userId,
+        previousExpiresAt: r.previousUntil?.toISOString() ?? null,
+        expiresAt: r.newUntil?.toISOString() ?? null,
+        operatorUserId: r.operatorUserId,
+        reason: r.reason,
+        createdAt: r.createdAt.toISOString(),
+      })),
+      nextCursor: rows.length > query.limit ? String(offset + query.limit) : null,
+    };
   }
 }

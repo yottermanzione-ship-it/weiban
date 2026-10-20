@@ -9,7 +9,13 @@ export const Membership = z.object({
   updatedAt: Timestamp.nullable(),
 });
 export type Membership = z.infer<typeof Membership>;
-export const SetMembership = z.object({ expiresAt: Timestamp.nullable() }).strict();
+export const SetMembership = z
+  .object({
+    expiresAt: Timestamp.nullable(),
+    /** 3.21：调整 / 取消原因，记入会员订阅记录（MembershipChange.reason）。 */
+    reason: z.string().trim().max(200).optional(),
+  })
+  .strict();
 export const MembershipEndpoints = {
   get: defineEndpoint({
     method: 'GET',
@@ -97,6 +103,8 @@ export const MembershipOrder = z.object({
   operatorUserId: Id.nullable(),
   note: z.string().nullable(),
   createdAt: Timestamp,
+  /** 3.21：续期（开通时仍在会员期内，生效区间接在原到期时间之后）= true；新开通 = false。 */
+  renewal: z.boolean().optional(),
 });
 export type MembershipOrder = z.infer<typeof MembershipOrder>;
 
@@ -144,11 +152,18 @@ export const MembershipOrderAdminEndpoints = {
     auth: 'admin',
     query: z.object({
       userId: Id.optional(),
+      /** 3.21：开通时间范围 [from, to)。 */
+      from: Timestamp.optional(),
+      to: Timestamp.optional(),
+      /** 3.21：按档位筛选。 */
+      planId: MembershipPlanId.optional(),
+      /** 3.21：'true' 只看首次价订单，'false' 只看原价订单。 */
+      firstPurchase: z.enum(['true', 'false']).optional(),
       cursor: z.string().optional(),
       limit: z.coerce.number().int().min(1).max(100).default(30),
     }),
     response: cursorPage(MembershipOrder),
-    summary: '3.17：开通订单列表（新到旧，可按用户筛选）',
+    summary: '3.17：开通订单列表（新到旧，可按用户筛选）；3.21 增时间 / 档位 / 是否首次筛选',
   }),
   createOrder: defineEndpoint({
     method: 'POST',
@@ -158,5 +173,38 @@ export const MembershipOrderAdminEndpoints = {
     response: z.object({ order: MembershipOrder, membership: Membership }),
     summary:
       '3.17：管理员替用户开通 / 续期 PRO+：记订单（价格、是否首次），到期时间叠加，一次性发赠送积分（同一事务，幂等）',
+  }),
+} as const;
+
+// ---------- 3.21：会员调整记录（10-20 批 E2，后台「会员订阅记录」） ----------
+
+/** 管理员手动改到期日 / 取消会员的一条记录（不记订单、不发积分）。开通 / 续期见 MembershipOrder。 */
+export const MembershipChange = z.object({
+  changeId: Id,
+  userId: Id,
+  /** 调整前的到期时间（null = 原来没有会员记录或已取消）。 */
+  previousExpiresAt: Timestamp.nullable(),
+  /** 调整后的到期时间；null = 取消会员。 */
+  expiresAt: Timestamp.nullable(),
+  operatorUserId: Id.nullable(),
+  reason: z.string().nullable(),
+  createdAt: Timestamp,
+});
+export type MembershipChange = z.infer<typeof MembershipChange>;
+
+export const MembershipChangeAdminEndpoints = {
+  listChanges: defineEndpoint({
+    method: 'GET',
+    path: API_PREFIX + '/admin/membership/changes',
+    auth: 'admin',
+    query: z.object({
+      userId: Id.optional(),
+      from: Timestamp.optional(),
+      to: Timestamp.optional(),
+      cursor: z.string().optional(),
+      limit: z.coerce.number().int().min(1).max(100).default(30),
+    }),
+    response: cursorPage(MembershipChange),
+    summary: '3.21：管理员手动调整到期日 / 取消会员的记录（新到旧，可按用户、时间筛选）',
   }),
 } as const;

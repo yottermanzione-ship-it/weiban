@@ -169,6 +169,12 @@ export class BillingAdminController {
     return this.admin.adjust(me.userId, params.userId, body);
   }
 
+  @Get('topups')
+  @RequireAuth(A.listTopups.auth)
+  topups(@Query(new ContractPipe(schema(A.listTopups.query))) query: Out<typeof A.listTopups.query>) {
+    return this.admin.listTopups(query);
+  }
+
   @Get('accounts/:userId/ledger')
   @RequireAuth(A.listAccountLedger.auth)
   accountLedger(

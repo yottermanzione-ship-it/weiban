@@ -711,6 +711,13 @@
       "when": 1799335600000,
       "tag": "0112_upstream_soft_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1799335700000,
+      "tag": "0113_admin_users_ban_membership_changes",
+      "breakpoints": true
     }
   ]
 }

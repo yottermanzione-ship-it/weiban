@@ -1,5 +1,10 @@
-import { Body, Controller, Get, Put, Param, Inject } from '@nestjs/common';
-import { MembershipAdminEndpoints as A, MembershipEndpoints as E } from '@weiban/contracts';
+import { Body, Controller, Get, Put, Param, Inject, Query } from '@nestjs/common';
+import {
+  MembershipAdminEndpoints as A,
+  MembershipChangeAdminEndpoints as C,
+  MembershipEndpoints as E,
+} from '@weiban/contracts';
+import type { z } from 'zod';
 import {
   RequireAuth,
   CurrentPrincipal,
@@ -24,5 +29,12 @@ export class MembershipController {
     @Body(new ContractPipe(A.set.body!)) body: unknown,
   ) {
     return this.service.set(me.userId, params.userId, body);
+  }
+  /** 3.21：会员手动调整记录。 */
+  @Get('admin/membership/changes') @RequireAuth(C.listChanges.auth) listChanges(
+    @Query(new ContractPipe(C.listChanges.query!))
+    query: z.output<NonNullable<typeof C.listChanges.query>>,
+  ) {
+    return this.service.listChanges(query);
   }
 }

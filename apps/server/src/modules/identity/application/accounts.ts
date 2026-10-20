@@ -234,6 +234,32 @@ export class AccountService {
       // 用 403 而不是默认的 401：密码输错不代表登录失效，客户端不应因此退出登录
       throw new AppError('invalid_credentials', '密码错误', { status: 403 });
     }
+    await this.beginDeletion(userId, { actorType: 'user' });
+  }
+
+  /**
+   * 3.21：管理员替用户注销（后台「用户详情 › 封禁与删除」）。必须填对登录名；管理员账号不能这样删。
+   * 之后与用户自助注销完全相同（DeletionService 编排各模块删除）。
+   */
+  async adminRequestDeletion(
+    operatorUserId: string,
+    userId: string,
+    input: { confirmUsername: string; reason: string },
+  ): Promise<void> {
+    const [user] = await this.database.db.select().from(users).where(eq(users.id, userId));
+    if (!user || user.status !== 'active') throw new AppError('not_found', '账号不存在或已在注销中');
+    if (user.role === 'admin') throw new AppError('forbidden', '管理员账号不能在后台删除');
+    const names = [user.username, user.currentAlias].filter(Boolean).map((n) => n!.toLowerCase());
+    if (!names.includes(input.confirmUsername.trim().toLowerCase()))
+      throw new AppError('bad_request', '填写的登录名与该账号不一致');
+    await this.beginDeletion(userId, { actorType: 'admin', operatorUserId, reason: input.reason });
+  }
+
+  /** 标记注销中 → 作废全部会话 → 删除数据密钥 → 发布 identity.user_deletion_requested → 审计。 */
+  private async beginDeletion(
+    userId: string,
+    actor: { actorType: 'user' } | { actorType: 'admin'; operatorUserId: string; reason: string },
+  ): Promise<void> {
     await this.database.transaction(async (tx) => {
       const now = this.clock.now();
       const updated = await tx.db
@@ -241,7 +267,10 @@ export class AccountService {
         .set({ status: 'deleting', deletionRequestedAt: now, updatedAt: now })
         .where(and(eq(users.id, userId), eq(users.status, 'active')))
         .returning({ id: users.id });
-      if (updated.length === 0) throw new AppError('unauthenticated', '登录已失效');
+      if (updated.length === 0)
+        throw actor.actorType === 'user'
+          ? new AppError('unauthenticated', '登录已失效')
+          : new AppError('not_found', '账号不存在或已在注销中');
       await this.sessions.revokeAll(tx, userId, 'account_deleting');
       await this.crypto.destroyKey(userId, tx);
       await this.outbox.publish(tx, 'identity.user_deletion_requested', 'identity', {
@@ -249,17 +278,27 @@ export class AccountService {
         requestedAt: now.toISOString(),
       });
       await this.audit.record(
-        {
-          module: 'identity',
-          action: 'user.deletion_requested',
-          actorType: 'user',
-          targetType: 'user_hash',
-          targetId: hashUserId(userId),
-        },
+        actor.actorType === 'user'
+          ? {
+              module: 'identity',
+              action: 'user.deletion_requested',
+              actorType: 'user',
+              targetType: 'user_hash',
+              targetId: hashUserId(userId),
+            }
+          : {
+              module: 'identity',
+              action: 'user.deletion_requested_by_admin',
+              actorType: 'admin',
+              actorId: actor.operatorUserId,
+              targetType: 'user_hash',
+              targetId: hashUserId(userId),
+              details: { reason: actor.reason },
+            },
         tx,
       );
     });
-    this.log.info({ userId }, '账号进入注销流程');
+    this.log.info({ userId, by: actor.actorType }, '账号进入注销流程');
   }
 
   // ---------- 内部 ----------

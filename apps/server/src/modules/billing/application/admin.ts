@@ -8,11 +8,12 @@ import {
   type AdminAccountSummary,
   type AdminAdjustmentRequest,
   type AdminLedgerEntry,
+  type AdminTopupEntry,
   type IdentityAccountStatusPort,
   type IdentityDirectoryPort,
   type UpstreamBill,
 } from '@weiban/contracts';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lt, ne, or } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   APP_CONFIG,
@@ -74,10 +75,12 @@ export class BillingAdminService {
       user_id: string;
       balance: string;
       held: string;
+      bonus: string;
       spent: string | null;
       updated_at: Date;
     }>(
-      `SELECT a.user_id, a.balance_micros AS balance, a.held_micros AS held, a.updated_at,
+      `SELECT a.user_id, a.balance_micros AS balance, a.held_micros AS held,
+              a.bonus_balance_micros AS bonus, a.updated_at,
               (SELECT -sum(l.amount_micros) FROM billing.ledger_entries l
                 WHERE l.account_id = a.id AND l.type = 'charge' AND NOT l.absorbed
                   AND l.created_at >= $1) AS spent
@@ -103,6 +106,8 @@ export class BillingAdminService {
         spentLast30DaysMicros: spent,
         balancePoints: microsToPoints(Number(r.balance)),
         spentLast30DaysPoints: microsToPoints(spent),
+        bonusBalanceMicros: Math.max(0, Number(r.bonus ?? 0)),
+        bonusBalancePoints: microsToPoints(Math.max(0, Number(r.bonus ?? 0))),
         updatedAt: new Date(r.updated_at).toISOString(),
       };
     });
@@ -182,6 +187,70 @@ export class BillingAdminService {
     return {
       items: page.map(toAdminLedgerEntry),
       nextCursor: rows.length > query.limit && last ? encodeCursor(last) : null,
+    };
+  }
+
+  /**
+   * 3.21：充值记录 —— 管理员加 / 扣积分与注册赠送（开通会员赠送 purpose = membership_bonus 不算）。
+   * 平台账户没有 admin_grant / admin_deduct，按类型筛选即可。
+   */
+  async listTopups(query: {
+    userId?: string | undefined;
+    kind?: AdminTopupEntry['kind'] | undefined;
+    from?: string | undefined;
+    to?: string | undefined;
+    cursor?: string | undefined;
+    limit: number;
+  }): Promise<{ items: AdminTopupEntry[]; nextCursor: string | null }> {
+    const notMembership = or(
+      isNull(ledgerEntries.purpose),
+      ne(ledgerEntries.purpose, 'membership_bonus'),
+    );
+    const kindFilter =
+      query.kind === 'signup_bonus'
+        ? and(eq(ledgerEntries.type, 'admin_grant'), eq(ledgerEntries.purpose, 'signup_bonus'))
+        : query.kind === 'grant'
+          ? and(
+              eq(ledgerEntries.type, 'admin_grant'),
+              or(isNull(ledgerEntries.purpose), ne(ledgerEntries.purpose, 'signup_bonus')),
+              notMembership,
+            )
+          : query.kind === 'deduct'
+            ? eq(ledgerEntries.type, 'admin_deduct')
+            : and(inArray(ledgerEntries.type, ['admin_grant', 'admin_deduct']), notMembership);
+    const rows = await this.database.db
+      .select({ entry: ledgerEntries, userId: accounts.userId })
+      .from(ledgerEntries)
+      .innerJoin(accounts, eq(accounts.id, ledgerEntries.accountId))
+      .where(
+        and(
+          eq(accounts.kind, 'user'),
+          kindFilter,
+          query.userId ? eq(accounts.userId, query.userId) : undefined,
+          query.from ? gte(ledgerEntries.createdAt, new Date(query.from)) : undefined,
+          query.to ? lt(ledgerEntries.createdAt, new Date(query.to)) : undefined,
+          beforeCursor(query.cursor),
+        ),
+      )
+      .orderBy(desc(ledgerEntries.createdAt), desc(ledgerEntries.id))
+      .limit(query.limit + 1);
+    const page = rows.slice(0, query.limit);
+    const ids = [...new Set(page.map((r) => r.userId).filter((id): id is string => !!id))];
+    const usernames = ids.length ? await this.directory.getUsernames(ids) : {};
+    const last = page[page.length - 1];
+    return {
+      items: page.map(({ entry, userId }) => ({
+        ...toAdminLedgerEntry(entry),
+        userId: userId!,
+        username: usernames[userId!] ?? '',
+        kind:
+          entry.type === 'admin_deduct'
+            ? 'deduct'
+            : entry.purpose === 'signup_bonus'
+              ? 'signup_bonus'
+              : 'grant',
+      })),
+      nextCursor: rows.length > query.limit && last ? encodeCursor(last.entry) : null,
     };
   }
 

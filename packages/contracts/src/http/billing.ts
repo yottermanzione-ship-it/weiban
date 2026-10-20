@@ -351,6 +351,9 @@ export const AdminAccountSummary = z.object({
   /** v3.3：balanceMicros / spentLast30DaysMicros 的积分值。 */
   balancePoints: Points.optional(),
   spentLast30DaysPoints: NonNegativePoints.optional(),
+  /** 3.21：余额里属于赠送积分的部分（开通 PRO+、注册赠送）；余额 − 赠送 = 充值积分。 */
+  bonusBalanceMicros: z.number().int().nonnegative().optional(),
+  bonusBalancePoints: NonNegativePoints.optional(),
   updatedAt: Timestamp,
 });
 
@@ -371,6 +374,19 @@ export const AdminLedgerEntry = LedgerEntry.extend({
  * v3.3：amountMicros 与 points 二选一（后台按积分输入时传 points，服务器换算为微元 = points × 10,000）；
  * 两个都不传或都传 → 400。
  */
+/**
+ * 3.21（10-20 批 E2）：后台「充值记录」一行 —— 管理员加 / 扣积分（现阶段充值由管理员收款后加积分）与注册赠送。
+ * 开通 PRO+ 赠送的积分不在这里（见会员订阅记录）。
+ */
+export const AdminTopupKind = z.enum(['grant', 'deduct', 'signup_bonus']);
+export const AdminTopupEntry = AdminLedgerEntry.extend({
+  userId: Id,
+  /** 取不到（账号已删除）时为空字符串。 */
+  username: z.string(),
+  kind: AdminTopupKind,
+});
+export type AdminTopupEntry = z.infer<typeof AdminTopupEntry>;
+
 export const AdminAdjustmentRequest = z.object({
   direction: z.enum(['grant', 'deduct']),
   amountMicros: PositiveMoneyMicros.optional(),
@@ -484,6 +500,22 @@ export const BillingAdminEndpoints = {
     body: AdminAdjustmentRequest,
     response: AdminLedgerEntry,
     summary: '管理员加 / 扣余额（必填原因，幂等）；扣减额不能超过可用余额（422）；写审计日志',
+  }),
+  listTopups: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/billing/topups`,
+    auth: 'admin',
+    query: z.object({
+      userId: Id.optional(),
+      kind: AdminTopupKind.optional(),
+      from: Timestamp.optional(),
+      to: Timestamp.optional(),
+      cursor: z.string().optional(),
+      limit: z.coerce.number().int().min(1).max(200).default(50),
+    }),
+    response: cursorPage(AdminTopupEntry),
+    summary:
+      '3.21：充值记录 —— 管理员加 / 扣积分与注册赠送（不含开通会员赠送、不含模型扣费），新到旧',
   }),
   listAccountLedger: defineEndpoint({
     method: 'GET',

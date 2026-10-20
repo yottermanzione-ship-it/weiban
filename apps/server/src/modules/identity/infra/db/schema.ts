@@ -53,6 +53,10 @@ export const users = identitySchema.table(
     deletionRetriggeredAt: tz('deletion_retriggered_at'),
     /** 完成判定前的复核轮数（迁移 0056，T-080）：复核发现残留会重新投递该模块，超过上限停在「注销未完成」。 */
     deletionRechecks: integer('deletion_rechecks').notNull().default(0),
+    /** 10-20 批 E2（0113）：封禁时间；非空 = 封禁中（不能登录、会话全部作废）。 */
+    bannedAt: tz('banned_at'),
+    banReason: text('ban_reason'),
+    bannedBy: uuid('banned_by'),
   },
   (t) => [
     uniqueIndex('users_username_lower_key').on(sql`lower(${t.username})`),
@@ -290,3 +294,23 @@ export const memberships = identitySchema.table('memberships', {
   grantedBy: uuid('granted_by').references(() => users.id, { onDelete: 'set null' }),
   updatedAt: tz('updated_at').notNull(),
 });
+
+/** 10-20 批 E2（0113）：管理员手动改到期日 / 取消会员的记录（开通 / 续期记在 billing.membership_orders）。 */
+export const membershipChanges = identitySchema.table(
+  'membership_changes',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    previousUntil: tz('previous_until'),
+    newUntil: tz('new_until'),
+    operatorUserId: uuid('operator_user_id'),
+    reason: text('reason'),
+    createdAt: tz('created_at').notNull(),
+  },
+  (t) => [
+    index('membership_changes_user_idx').on(t.userId, t.createdAt),
+    index('membership_changes_created_idx').on(t.createdAt),
+  ],
+);

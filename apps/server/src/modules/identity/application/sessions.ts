@@ -17,6 +17,7 @@ import {
 } from '@weiban/contracts';
 import { and, desc, eq, gt, lte } from 'drizzle-orm';
 import {
+  AppError,
   CLOCK,
   DATABASE,
   LOGGER,
@@ -70,6 +71,12 @@ export class SessionService implements SessionVerifier, IdentitySessionReadPort 
     kind: SessionKind,
     device: DeviceInfo,
   ): Promise<CreatedSession> {
+    // 3.21：封禁中的账号不发新会话（登录、注册重试都走这里）。
+    const [state] = await tx.db
+      .select({ bannedAt: users.bannedAt })
+      .from(users)
+      .where(eq(users.id, userId));
+    if (state?.bannedAt) throw new AppError('forbidden', '该账号已被封禁，如有疑问请联系管理员');
     const now = this.clock.now();
     const token = generateSessionToken();
     const id = newId();
@@ -100,6 +107,7 @@ export class SessionService implements SessionVerifier, IdentitySessionReadPort 
         expiresAt: sessions.expiresAt,
         role: users.role,
         status: users.status,
+        bannedAt: users.bannedAt,
       })
       .from(sessions)
       .innerJoin(users, eq(users.id, sessions.userId))
@@ -111,7 +119,7 @@ export class SessionService implements SessionVerifier, IdentitySessionReadPort 
       );
       return null;
     }
-    if (row.status !== 'active') return null;
+    if (row.status !== 'active' || row.bannedAt) return null;
     if (shouldTouchSession(row.lastActiveAt, now)) {
       await this.touch(row.sessionId, row.userId, row.kind as SessionKind, now);
     }
@@ -141,7 +149,7 @@ export class SessionService implements SessionVerifier, IdentitySessionReadPort 
     const runner = input ? asDbTx(input) : this.database;
     const result = await runner.query(
       `SELECT s.id FROM identity.sessions s JOIN identity.users u ON u.id=s.user_id
-       WHERE s.id=$1 AND s.user_id=$2 AND s.kind='app' AND s.expires_at>$3 AND u.status='active'
+       WHERE s.id=$1 AND s.user_id=$2 AND s.kind='app' AND s.expires_at>$3 AND u.status='active' AND u.banned_at IS NULL
        ${input ? 'FOR SHARE OF s,u' : ''}`,
       [sessionId, userId, this.clock.now()],
     );

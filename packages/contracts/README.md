@@ -95,6 +95,14 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.21（2026-10-20，试用反馈批 E2：用户与会员管理重排）
+
+依据 `docs/tasks/2026-10-20-gm-feedback-batches.md` 批 E2。说明见 `docs/handoffs/2026-10-20-fb-users.md`。全部为新增接口 / 可选字段。
+
+- 新 `http/admin-users.ts`：`AdminUserSummary`（资料、会员、封禁）、`AdminUserOverview`（总用户数、PRO+ 数、7 天内到期名单）；`AdminUsersEndpoints`：GET `/admin/users`、GET `/admin/users/overview`、POST `/admin/users/:id/ban`、POST `/admin/users/:id/unban`、POST `/admin/users/:id/deletion`（管理员替用户注销，需填登录名确认）。
+- 会员：`SetMembership` 增可选 `reason`；新 `MembershipChange` 与 `MembershipChangeAdminEndpoints.listChanges`（GET `/admin/membership/changes`，手动调整 / 取消记录）；`MembershipOrder` 增可选 `renewal`；`listOrders` 增 `from` / `to` / `planId` / `firstPurchase` 筛选。
+- 计费：`AdminAccountSummary` 增可选 `bonusBalanceMicros` / `bonusBalancePoints`；新 `AdminTopupEntry` 与 `BillingAdminEndpoints.listTopups`（GET `/admin/billing/topups`，管理员加扣与注册赠送）。
+
 ### 3.20（2026-10-20，试用反馈批 E1）
 
 依据 `docs/tasks/2026-10-20-gm-feedback-batches.md` 批 E1。说明见 `docs/handoffs/2026-10-20-fb-small.md`。
