@@ -1,4 +1,4 @@
-import { AccountAliasRow } from './account-alias.js';
+import { AliasRow } from './profile-edit.js';
 import { HistoryRecoveryRow } from './history-recovery.js';
 /*
  * 设置子页（docs/refactor/06-old-ui-spec.md 4.10）：账号与安全、隐私、通用、主动消息与免打扰。
@@ -47,7 +47,7 @@ export function AccountSecurityPage() {
     <main>
       <NavBar title="账号与安全" fallback="/settings" />
       <MenuGroup>
-        <AccountAliasRow />
+        <AliasRow />
       </MenuGroup>
       <MenuGroup>
         <MenuRow

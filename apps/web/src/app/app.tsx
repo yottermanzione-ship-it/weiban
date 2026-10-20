@@ -30,6 +30,17 @@ import { AuthPage } from '../features/auth-page.js';
 import { SplashScreen, useSplash } from '../features/splash.js';
 import { MePage, ServicesPage } from '../features/me.js';
 import { ProfilePage } from '../features/profile.js';
+import {
+  AliasEditPage,
+  AliasInfoPage,
+  ProfileAboutPage,
+  ProfileBirthdayPage,
+  ProfileGenderPage,
+  ProfileNicknamePage,
+  ProfileRegionGroupPage,
+  ProfileRegionPage,
+} from '../features/profile-edit.js';
+import { CharacterRelationshipPage, CharacterRemarkPage } from '../features/contact-edit.js';
 import { SettingsPage } from '../features/settings.js';
 import { WalletPage, LedgerPage, PricesPage, RechargePage } from '../features/wallet.js';
 import { MembershipPage } from '../features/membership.js';
@@ -147,7 +158,9 @@ const ownHeader = [
   /^\/services\/ecology$/,
   /^\/characters\/[^/]+$/,
   /^\/characters\/custom(\/|$)/,
-  /^\/profile$/,
+  /^\/profile(\/|$)/,
+  // 10-21 G2：备注、关系类型编辑页
+  /^\/characters\/[^/]+\/(remark|relationship)$/,
   /^\/(wallet|ledger|prices|usage|models|leaderboard|membership)(\/|$)/,
 ];
 function TopBack({ fallback }: { fallback: string }) {
@@ -330,6 +343,15 @@ function Shell() {
                 />
                 <Route path="/me" element={<MePage />} />
                 <Route path="/profile" element={<ProfilePage />} />
+                {/* 10-21 G2：个人信息各项编辑改为整页推入的二级页面 */}
+                <Route path="/profile/nickname" element={<ProfileNicknamePage />} />
+                <Route path="/profile/gender" element={<ProfileGenderPage />} />
+                <Route path="/profile/birthday" element={<ProfileBirthdayPage />} />
+                <Route path="/profile/region" element={<ProfileRegionPage />} />
+                <Route path="/profile/region/:group" element={<ProfileRegionGroupPage />} />
+                <Route path="/profile/about" element={<ProfileAboutPage />} />
+                <Route path="/profile/alias" element={<AliasInfoPage />} />
+                <Route path="/profile/alias/edit" element={<AliasEditPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/services" element={<ServicesPage />} />
                 <Route path="/wallet" element={<WalletPage />} />
@@ -371,6 +393,11 @@ function Shell() {
                 <Route path="/characters/:characterId/murmurs" element={<MurmursPage />} />
                 <Route path="/characters/:characterId/moments" element={<CharacterMomentsPage />} />
                 <Route path="/characters/:characterId/relations" element={<RelationsPage />} />
+                <Route path="/characters/:characterId/remark" element={<CharacterRemarkPage />} />
+                <Route
+                  path="/characters/:characterId/relationship"
+                  element={<CharacterRelationshipPage />}
+                />
                 <Route path="/contacts/new" element={<NewFriendsPage />} />
                 <Route path="/contacts/groups" element={<GroupListPage />} />
                 <Route path="/groups/new" element={<SelectMembersPage />} />

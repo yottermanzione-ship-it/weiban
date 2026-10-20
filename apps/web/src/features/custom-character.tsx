@@ -233,6 +233,26 @@ function CustomCharacterEditor({
       active = false;
     };
   }, [importJobId]);
+  // 10-21 G2：编辑已有角色时没改动、或必填（名字、至少 50 字的人设描述）没填好，「保存」保持灰色
+  const snapshot = JSON.stringify([
+    name,
+    description,
+    basis,
+    realKind,
+    childAppearance,
+    birthday,
+    avatarMediaId,
+    voiceId,
+    ageSetting,
+    catchphrase,
+    speechStyle,
+    exampleDialogue,
+    tags,
+  ]);
+  const [baseline, setBaseline] = useState<string | null>(null);
+  if (mode === 'edit' && loaded && baseline === null) setBaseline(snapshot);
+  const unchanged = mode === 'edit' && snapshot === baseline;
+  const incomplete = !name.trim() || description.length < 50;
   const fromImport = (field: string) =>
     imported?.fields.has(field) ? <span className="tag neutral">来自导入</span> : null;
   const touch = (field: string) =>
@@ -367,6 +387,7 @@ function CustomCharacterEditor({
         if (result.childFeaturesDetected) setChildWarning(true);
         setOriginalBasis(result.classification.basis);
         setOriginalAge(result.classification.ageSetting);
+        setBaseline(snapshot);
         setMessage('已保存');
       }
     } catch (e) {
@@ -676,7 +697,7 @@ function CustomCharacterEditor({
 
         <button
           className="primary"
-          disabled={loading || pending || uploadPending}
+          disabled={loading || pending || uploadPending || unchanged || incomplete}
           aria-busy={pending}
         >
           {pending ? (mode === 'create' ? '正在创建…' : '正在保存…') : mode === 'create' ? '创建角色' : '保存'}

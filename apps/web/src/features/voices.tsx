@@ -5,6 +5,7 @@ import { CompanionEndpoints, VoiceEndpoints } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import { showToast } from './toast.js';
+import { CheckSlot } from './shell-kit.js';
 
 /**
  * TA 的声音（media-l5.md 第 6 节；MED-03 第 1 条）：从音色库给角色换音色。
@@ -77,10 +78,12 @@ export function VoicePickerPage() {
             onClick={() => choose(null)}
             aria-pressed={current === null}
           >
+            {/* 与下面各行的试听按钮同宽占位，名字和对号上下对齐（10-21 G2） */}
+            <span className="voice-play-slot" aria-hidden />
             <span className="voice-name">
               默认 <span className="tag">默认</span>
             </span>
-            {current === null && <span aria-label="已选择">✓</span>}
+            <CheckSlot checked={current === null} />
           </button>
           {voices.data.items
             .filter((v) => v.enabled)
@@ -107,7 +110,7 @@ export function VoicePickerPage() {
                       </span>
                     ))}
                   </span>
-                  {current === voice.voiceId && <span aria-label="已选择">✓</span>}
+                  <CheckSlot checked={current === voice.voiceId} />
                 </button>
               </div>
             ))}

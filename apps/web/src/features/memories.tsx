@@ -296,7 +296,15 @@ function MemorySheet({
       action={
         <button
           className="small-primary primary"
-          disabled={busy || !content.trim()}
+          disabled={
+            busy ||
+            !content.trim() ||
+            // 10-21 G2：编辑已有记忆时没改动，「完成」保持灰色
+            (!!entry &&
+              content.trim() === entry.content.trim() &&
+              category === entry.category &&
+              status === entry.status)
+          }
           onClick={() => onSave(content.trim(), category, status, id)}
         >
           {busy ? '保存中…' : '完成'}

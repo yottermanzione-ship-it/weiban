@@ -260,7 +260,19 @@ export function RelationsPage() {
             ))}
           </div>
           <div className="button-row">
-            <button className="primary" disabled={pending || !editing.otherId}>
+            <button
+              className="primary"
+              disabled={
+                pending ||
+                !editing.otherId ||
+                // 10-21 G2：修改已有关系时没改动，「完成」保持灰色
+                (!!editing.relation &&
+                  editing.type === editing.relation.type &&
+                  (editing.type !== 'other' ||
+                    editing.label.trim() === (editing.relation.label ?? '')) &&
+                  editing.closeness === editing.relation.closeness)
+              }
+            >
               完成
             </button>
             <button type="button" onClick={() => setEditing(null)}>

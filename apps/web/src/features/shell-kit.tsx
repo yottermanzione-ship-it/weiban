@@ -524,7 +524,24 @@ export function Sheet({
 export interface ActionItem {
   label: ReactNode;
   danger?: boolean;
+  /** 单选列表里的当前项：右侧固定位置显示绿色对号，不参与文字居中（10-21 G2）。 */
+  checked?: boolean;
   onClick(): void;
+}
+
+/**
+ * 对号固定列（10-21 G2）：不管选没选中都占同样宽度，行尾其他图标（试听喇叭等）因此始终对齐。
+ */
+export function CheckSlot({ checked, size = 20 }: { checked: boolean; size?: number }) {
+  return (
+    <span
+      className="check-slot"
+      style={{ width: size }}
+      aria-label={checked ? '已选择' : undefined}
+    >
+      {checked && <OldIcon name="wechat/check" size={size} className="ink-brand" />}
+    </span>
+  );
 }
 
 /** 底部操作列表（规格 3.10）。 */
@@ -547,7 +564,8 @@ export function ActionSheet({
             <button
               key={index}
               type="button"
-              role="menuitem"
+              role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
+              aria-checked={item.checked}
               className={item.danger ? 'danger' : ''}
               onClick={() => {
                 onClose();
@@ -555,6 +573,11 @@ export function ActionSheet({
               }}
             >
               {item.label}
+              {item.checked && (
+                <span className="action-check" aria-hidden>
+                  <OldIcon name="wechat/check" size={20} className="ink-brand" />
+                </span>
+              )}
             </button>
           ))}
         </div>

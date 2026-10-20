@@ -28,3 +28,4 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   void navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 import './app/common-fixes.css';
+import './app/edit-pages.css';

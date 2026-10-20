@@ -1,0 +1,398 @@
+/*
+ * 10-21 G2：资料编辑二级页面 + 全站绿色确认按钮灰 / 绿状态 + 底部选择对号固定列。
+ * 尺寸按总经理给的微信截图（iPhone，920px 宽截图 ≈ 2.14 像素 / pt）量出来换算成 CSS 像素。
+ */
+
+:root {
+  /* 白底页上的浅灰按钮（微信「修改微信号」、禁用的「确定」）：#F2F2F2 */
+  --g2-soft-button-bg: rgba(0, 0, 0, 0.05);
+  --g2-clear-icon: rgba(0, 0, 0, 0.2);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-scheme='light']) {
+    --g2-soft-button-bg: rgba(255, 255, 255, 0.08);
+    --g2-clear-icon: rgba(255, 255, 255, 0.3);
+  }
+}
+:root[data-scheme='dark'] {
+  --g2-soft-button-bg: rgba(255, 255, 255, 0.08);
+  --g2-clear-icon: rgba(255, 255, 255, 0.3);
+}
+
+/* ---------- 全站绿色确认按钮：不可点时灰底灰字（微信），有效改动后才是绿色 ---------- */
+button.primary:disabled,
+a.button.primary.disabled {
+  opacity: 1;
+  background: var(--wb-color-ui-button-disabled-bg);
+  color: var(--wb-color-ui-button-disabled-text);
+}
+
+/* ---------- 底部选择：对号不参与文字居中，固定在右侧 ---------- */
+.action-group button[role='menuitemradio'] {
+  position: relative;
+}
+.action-check {
+  position: absolute;
+  top: 50%;
+  right: var(--wb-space-5);
+  display: inline-flex;
+  transform: translateY(-50%);
+}
+/* 单选列表的对号固定列：没选中也占位，行尾的试听喇叭因此上下对齐 */
+.check-slot {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+.voice-row .icon-button,
+.voice-play-slot {
+  flex: none;
+  width: 44px;
+  padding: 0;
+}
+.voice-row > .check-slot {
+  margin-left: auto;
+}
+
+/* ---------- 编辑页（微信「设置名字 / 性别 / 地区 / 个性签名」） ---------- */
+main.edit-page {
+  min-height: 100dvh;
+  padding: 0;
+  background: var(--wb-color-bg-page);
+}
+.edit-page > .nav-bar {
+  margin: 0;
+}
+.edit-page .edit-cancel {
+  min-height: 44px;
+  padding: 0 0 0 17px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-body-small);
+}
+.edit-page .edit-cancel:disabled {
+  opacity: 0.5;
+}
+/* 完成：54 × 34，圆角 4，14 号字，离右边 17 */
+.nav-bar .primary.edit-done {
+  min-width: 54px;
+  min-height: 34px;
+  height: 34px;
+  margin-right: 13px;
+  padding: 0 12px;
+  border-radius: 4px;
+  font-size: calc(14px * var(--wb-font-scale));
+  font-weight: var(--wb-font-weight-medium);
+}
+/* 白色通栏输入行：高 56，文字 17，右侧 17 的灰色圆形清除键 */
+.edit-input-row {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding: 0 var(--wb-space-5) 0 12px;
+  background: var(--wb-color-bg-surface);
+}
+.edit-input-row input {
+  flex: 1;
+  min-width: 0;
+  min-height: 56px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  background: none;
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-body);
+  caret-color: var(--wb-color-brand-primary);
+}
+.edit-input-row input:focus-visible {
+  outline: none;
+}
+.edit-input-row input[type='date'] {
+  -webkit-appearance: none;
+  appearance: none;
+  text-align: left;
+}
+.edit-clear {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  min-width: 0;
+  min-height: 44px;
+  margin-right: -9px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--g2-clear-icon);
+}
+/* 多行输入：高约 80，右下角剩余字数 */
+.edit-textarea {
+  display: grid;
+  padding: 10px var(--wb-space-5) 8px;
+  background: var(--wb-color-bg-surface);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
+}
+.edit-textarea textarea {
+  min-height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  resize: none;
+  background: none;
+  color: var(--wb-color-text-primary);
+  font: inherit;
+  font-size: var(--wb-font-size-body);
+  line-height: 1.45;
+  caret-color: var(--wb-color-brand-primary);
+}
+.edit-textarea textarea:focus-visible {
+  outline: none;
+}
+.edit-textarea small {
+  justify-self: end;
+  color: var(--wb-color-text-placeholder);
+  font-size: var(--wb-font-size-body);
+  line-height: 1.2;
+}
+.edit-hint {
+  margin: var(--wb-space-3) var(--wb-space-5) 0;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-subhead);
+}
+/* 分组标题（微信「定位到的位置」「全部」）：高 38，14 号灰字贴底 */
+.edit-section {
+  display: flex;
+  align-items: flex-end;
+  height: 38px;
+  margin: 0;
+  padding: 0 var(--wb-space-5) 7px;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-subhead);
+  font-weight: var(--wb-font-weight-regular);
+}
+.edit-group {
+  background: var(--wb-color-bg-surface);
+}
+.edit-group.first {
+  margin-top: var(--wb-size-group-gap);
+}
+.edit-group.edit-avatar > .panel {
+  margin: 0;
+  padding: var(--wb-space-4) var(--wb-space-5);
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+/* 单选行（微信「设置性别」）：高 56，选中项右侧绿色对号，行间细线从左 16 开始 */
+.pick-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 var(--wb-space-5);
+  border: 0;
+  border-radius: 0;
+  background: var(--wb-color-bg-surface);
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-body);
+  text-align: left;
+}
+.pick-row + .pick-row::before,
+.region-list > * + *::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: var(--wb-space-5);
+  border-top: 0.5px solid var(--wb-color-border-hairline);
+}
+.pick-row:active {
+  background: var(--wb-color-bg-pressed, rgba(0, 0, 0, 0.05));
+}
+.pick-row:disabled {
+  opacity: 1;
+}
+/* 地区列表（微信「设置地区」）：行高 44 */
+.region-list > .menu-row,
+.region-list > .pick-row {
+  position: relative;
+  min-height: 44px;
+}
+.region-list > .menu-row::before {
+  left: var(--wb-space-5);
+}
+.region-locate {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--wb-space-5) 0 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--wb-color-bg-surface);
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-body);
+  text-align: left;
+}
+.region-locate .region-pin {
+  flex: none;
+  width: 60px;
+  color: var(--wb-color-brand-primary);
+}
+.region-locate span:not(.old-icon) {
+  flex: 1;
+  min-width: 0;
+}
+.region-locate.muted span:not(.old-icon) {
+  color: var(--wb-color-text-secondary);
+}
+.region-locate:disabled {
+  opacity: 1;
+}
+
+/* ---------- 白底表单页（微信「设置拍一拍」）与说明页（微信「微信号」） ---------- */
+main.form-page,
+main.info-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  padding: 0 0 calc(54px + env(safe-area-inset-bottom));
+  background: var(--wb-color-bg-surface);
+}
+main.info-page {
+  align-items: center;
+  padding-bottom: calc(123px + env(safe-area-inset-bottom));
+  text-align: center;
+}
+.form-page > .nav-bar,
+.info-page > .nav-bar {
+  margin: 0;
+  background: var(--wb-color-bg-surface);
+}
+.form-page-bar {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  height: var(--wb-size-nav-bar);
+}
+.form-page-close {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  min-height: 44px;
+  margin-left: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--wb-color-text-primary);
+}
+.form-page-title {
+  margin: 57px 34px 0;
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-title2);
+  font-weight: var(--wb-font-weight-semibold);
+  line-height: 1.2;
+  text-align: center;
+}
+.form-page-field {
+  margin: 40px 34px 0;
+  border-top: 0.5px solid var(--wb-color-border-hairline);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
+}
+.form-page-field input {
+  width: 100%;
+  min-height: 56px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  background: none;
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-body);
+  caret-color: var(--wb-color-brand-primary);
+}
+.form-page-field input:focus-visible {
+  outline: none;
+}
+.form-page-desc {
+  margin: 10px 34px 0;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-subhead);
+  line-height: 1.5;
+}
+.form-page-desc p {
+  margin: 0;
+}
+.form-page-desc p + p {
+  margin-top: var(--wb-space-2);
+}
+.form-page-desc .error {
+  color: var(--wb-color-text-danger);
+}
+.form-page-bottom {
+  display: flex;
+  justify-content: center;
+  margin-top: auto;
+  padding-top: var(--wb-space-8);
+}
+/* 底部按钮 196 × 50，圆角 8，17 号字；禁用为 #F2F2F2 底浅灰字 */
+.form-page-bottom button {
+  width: 196px;
+  max-width: calc(100% - 64px);
+  min-height: 50px;
+  padding: 0 var(--wb-space-5);
+  border: 0;
+  border-radius: 8px;
+  font-size: var(--wb-font-size-body);
+  font-weight: var(--wb-font-weight-medium);
+}
+.form-page-bottom button.primary:disabled {
+  background: var(--g2-soft-button-bg);
+  color: var(--wb-color-ui-button-disabled-text);
+}
+.form-page-bottom .secondary-button {
+  background: var(--g2-soft-button-bg);
+  color: var(--wb-color-text-primary);
+}
+.form-page-bottom .secondary-button:active {
+  background: var(--wb-color-ui-button-disabled-bg);
+}
+.info-page-icon {
+  margin-top: 113px;
+}
+.info-logo {
+  display: block;
+  width: 68px;
+  height: auto;
+  border-radius: 16px;
+  filter: grayscale(1);
+  opacity: 0.18;
+}
+.info-page-title {
+  margin: 44px 24px 0;
+  color: var(--wb-color-text-primary);
+  font-size: calc(21px * var(--wb-font-scale));
+  font-weight: var(--wb-font-weight-semibold);
+  line-height: 1.3;
+  word-break: break-all;
+}
+.info-page-desc {
+  margin: 18px 37px 0;
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-body);
+  line-height: 1.65;
+  opacity: 0.85;
+}
+.info-page .page-note {
+  margin: var(--wb-space-4) var(--wb-space-6) 0;
+}

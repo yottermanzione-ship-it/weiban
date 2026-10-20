@@ -111,7 +111,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
     }
   }
   const [error, setError] = useState('');
-  const [sheet, setSheet] = useState<'fit' | 'proactive' | 'relationship' | null>(null);
+  const [sheet, setSheet] = useState<'fit' | 'proactive' | null>(null);
   const [confirmation, setConfirmation] = useState<
     'clear' | 'remove' | 'purge' | 'purgeConfirmed' | null
   >(null);
@@ -136,16 +136,6 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
       () => api.call(CompanionEndpoints.updateForCharacter, { params: { characterId }, body }),
       undefined,
       success,
-    );
-  const updateRelationship = (relationship: string) =>
-    void change(
-      () =>
-        api.call(ContactsEndpoints.update, {
-          params: { characterId },
-          body: { relationship },
-        }),
-      () => setSheet(null),
-      '已保存',
     );
   const data = companion.data;
   // 3.22：显示该角色「文本聊天」实际用的模型（单独指定或跟随场景设置）。
@@ -268,7 +258,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
             <MenuRow
               label="关系类型"
               value={contact?.relationship || '朋友'}
-              onClick={() => setSheet('relationship')}
+              to={`/characters/${characterId}/relationship`}
             />
           </MenuGroup>
           <GroupHeader>高级</GroupHeader>
@@ -384,7 +374,8 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
           title="人设贴合度：越贴合越像原角色，越顺从越听你的"
           onClose={() => setSheet(null)}
           items={fitNames.map((name, index) => ({
-            label: `${name}${(data.personaFit ?? 3) === index + 1 ? ' ✓' : ''}`,
+            label: name,
+            checked: (data.personaFit ?? 3) === index + 1,
             onClick: () => updateCompanion({ personaFit: index + 1 }),
           }))}
         />
@@ -472,17 +463,6 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
           )}
         </Sheet>
       )}
-      {sheet === 'relationship' && (
-        <FieldSheet
-          title="关系类型"
-          initial={contact?.relationship ?? '朋友'}
-          maxLength={30}
-          required
-          pending={pending}
-          onClose={() => setSheet(null)}
-          onSave={(value) => updateRelationship(value || '朋友')}
-        />
-      )}
       {confirmation === 'clear' && (
         <ActionSheet
           title="只清空聊天记录显示，TA的记忆和养成数据会保留"
@@ -558,6 +538,8 @@ export function FieldSheet({
   onSave(value: string): void;
 }) {
   const [value, setValue] = useState(initial);
+  // 10-21 G2：没改动或必填为空时「完成」灰色不可点
+  const canSave = value.trim() !== initial.trim() && !(required && !value.trim());
   return (
     <Sheet
       title={title}
@@ -570,7 +552,7 @@ export function FieldSheet({
         <button
           type="button"
           className="small-primary primary"
-          disabled={pending || (required && !value.trim())}
+          disabled={pending || !canSave}
           aria-busy={pending}
           onClick={() => onSave(value.trim())}
         >
@@ -588,8 +570,7 @@ export function FieldSheet({
           placeholder={placeholder}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
-            if (!pending && event.key === 'Enter' && !(required && !value.trim()))
-              onSave(value.trim());
+            if (!pending && event.key === 'Enter' && canSave) onSave(value.trim());
           }}
         />
         <small>

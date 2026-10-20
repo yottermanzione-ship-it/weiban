@@ -163,6 +163,9 @@ export function SupplementPage() {
             {
               label: '保存',
               primary: true,
+              disabled:
+                !editing.text.trim() ||
+                (editing.index >= 0 && editing.text.trim() === lines[editing.index]?.trim()),
               onClick: () => {
                 const text = editing.text.trim().replace(/\r?\n/g, ' ');
                 if (!text) return;

@@ -35,6 +35,7 @@ import {
   setNoticeSound,
 } from './message-sound.js';
 import {
+  CheckSlot,
   ComingSoonRow,
   GroupHeader,
   MenuGroup,
@@ -53,7 +54,7 @@ const schemeNames: Record<Scheme, string> = {
 };
 const sounds = noticeSounds;
 
-/** 单选列表弹层：每项 56，文字左对齐，选中项右侧绿色 ✓。 */
+/** 单选列表弹层：每项 56，文字左对齐，选中项右侧绿色 ✓（固定列，没选中也占位，试听喇叭因此对齐）。 */
 export function ChoiceSheet<T extends string | number>({
   title,
   value,
@@ -80,9 +81,7 @@ export function ChoiceSheet<T extends string | number>({
             right={
               <span className="choice-right">
                 {extra?.(option.value)}
-                {option.value === value && (
-                  <OldIcon name="wechat/check" size={20} className="ink-brand" />
-                )}
+                <CheckSlot checked={option.value === value} />
               </span>
             }
             onClick={() => {

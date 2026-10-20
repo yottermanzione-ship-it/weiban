@@ -35,7 +35,6 @@ import { PlazaOriginNote, PlazaTab } from './plaza.js';
 import { MediaImg } from './media.js';
 import { OldIcon } from './old-icons.js';
 import { useAchievementsDot, useCardsDot } from './cards.js';
-import { FieldSheet } from './chat-settings.js';
 import {
   ActionSheet,
   ComingSoonRow,
@@ -657,9 +656,7 @@ export function CharacterPage({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [restore, setRestore] = useState(false);
-  const [sheet, setSheet] = useState<
-    'remark' | 'avatar' | 'intro' | 'greet' | 'more' | 'relationship' | null
-  >(null);
+  const [sheet, setSheet] = useState<'avatar' | 'intro' | 'greet' | 'more' | null>(null);
   const greetInput = useRef<HTMLInputElement>(null);
   // 从角色广场点「添加到通讯录」过来（?add=1）：资料读到后直接打开打招呼弹层
   const autoAdd = !onboarding && query.get('add') === '1';
@@ -713,21 +710,6 @@ export function CharacterPage({
       setPending(false);
     }
   }
-  const saveContact = (body: { remark?: string | null; relationship?: string }) => {
-    setPending(true);
-    void api
-      .call(ContactsEndpoints.update, {
-        params: { characterId },
-        body,
-      })
-      .then(() => synchronize())
-      .then(() => {
-        setSheet(null);
-        showToast('已保存', 2000, 'success');
-      })
-      .catch((e) => setError(friendlyError(e)))
-      .finally(() => setPending(false));
-  };
   const Content = onboarding ? 'section' : 'main';
   const active = contact?.status === 'active';
   const data = profile.data;
@@ -800,7 +782,7 @@ export function CharacterPage({
       )}
       {contact && !onboarding && (
         <MenuGroup>
-          <MenuRow label="设置备注和头像" onClick={() => setSheet('remark')} />
+          <MenuRow label="设置备注和头像" to={`/characters/${characterId}/remark`} />
         </MenuGroup>
       )}
       {!onboarding && active && (
@@ -821,7 +803,7 @@ export function CharacterPage({
           <MenuRow
             label="关系类型"
             value={contact?.relationship || '朋友'}
-            onClick={() => setSheet('relationship')}
+            to={`/characters/${characterId}/relationship`}
           />
         )}
         <MenuRow
@@ -924,26 +906,6 @@ export function CharacterPage({
           <ContactAvatarEditor characterId={characterId} titled={false} />
         </Sheet>
       )}
-      {sheet === 'remark' && contact && (
-        <RemarkSheet
-          characterId={characterId}
-          initial={contact.remark ?? ''}
-          pending={pending}
-          onClose={() => setSheet(null)}
-          onSave={(remark) => saveContact({ remark: remark || null })}
-        />
-      )}
-      {sheet === 'relationship' && (
-        <FieldSheet
-          title="关系类型"
-          initial={contact?.relationship ?? '朋友'}
-          maxLength={30}
-          required
-          pending={pending}
-          onClose={() => setSheet(null)}
-          onSave={(relationship) => saveContact({ relationship: relationship || '朋友' })}
-        />
-      )}
       {sheet === 'intro' && data && (
         <Sheet title="简介" onClose={() => setSheet(null)}>
           <div className="intro-sheet">
@@ -957,7 +919,10 @@ export function CharacterPage({
         <ActionSheet
           onClose={() => setSheet(null)}
           items={[
-            { label: '设置备注和头像', onClick: () => setSheet('remark') },
+            {
+              label: '设置备注和头像',
+              onClick: () => navigate(`/characters/${characterId}/remark`),
+            },
             {
               label: starred ? '取消星标朋友' : '设为星标朋友',
               onClick: () => stars.toggle(characterId),
@@ -985,49 +950,5 @@ export function CharacterPage({
         </Dialog>
       )}
     </Content>
-  );
-}
-
-function RemarkSheet({
-  characterId,
-  initial,
-  pending,
-  onClose,
-  onSave,
-}: {
-  characterId: string;
-  initial: string;
-  pending: boolean;
-  onClose(): void;
-  onSave(value: string): void;
-}) {
-  const [value, setValue] = useState(initial);
-  return (
-    <Sheet
-      title="设置备注和头像"
-      onClose={onClose}
-      closeLabel="取消"
-      action={
-        <button
-          type="button"
-          className="small-primary primary"
-          disabled={pending}
-          onClick={() => onSave(value.trim())}
-        >
-          完成
-        </button>
-      }
-    >
-      <div className="field-sheet">
-        <p className="hint">备注名</p>
-        <input
-          value={value}
-          maxLength={20}
-          placeholder="添加备注名"
-          onChange={(event) => setValue(event.target.value)}
-        />
-      </div>
-      <ContactAvatarEditor characterId={characterId} />
-    </Sheet>
   );
 }

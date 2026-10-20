@@ -1,13 +1,13 @@
-import { AccountAliasRow } from './account-alias.js';
 import { showToast } from './toast.js';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { IdentityEndpoints, type Profile } from '@weiban/contracts';
+import { IdentityEndpoints } from '@weiban/contracts';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import { api } from '../data/client.js';
 import { AvatarEditor } from './avatar-editor.js';
 import { ProfileAvatar } from './profile-avatar.js';
 import { useAuth } from '../app/auth.js';
+import { AliasRow } from './profile-edit.js';
 import { GroupHeader, MenuGroup, MenuRow, NavBar, Sheet } from './shell-kit.js';
 import { REGION_GROUPS } from '../data/regions.js';
 function OnboardingProfilePage() {
@@ -211,35 +211,10 @@ export function ProfilePage() {
 }
 function ProfileDetails() {
   const remote = useRemote(IdentityEndpoints.getProfile);
-  const [editing, setEditing] = useState<
-    'avatar' | 'nickname' | 'birthday' | 'gender' | 'city' | 'about' | null
-  >(null);
+  // 10-21 G2：昵称、性别、生日、地区、个性签名、微伴号改成整页推入的二级页面（profile-edit.tsx）；头像仍用原弹层。
+  const [editingAvatar, setEditingAvatar] = useState(false);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState('');
   const auth = useAuth();
-  async function save(body: Partial<Profile>) {
-    if (pending) return;
-    setPending(true);
-    setError('');
-    try {
-      await api.call(IdentityEndpoints.updateProfile, { body });
-      remote.refresh();
-      await auth.refreshUser();
-      setEditing(null);
-      showToast('已保存', 2000, 'success');
-    } catch (e) {
-      setError(friendlyError(e));
-    } finally {
-      setPending(false);
-    }
-  }
-  const labels = {
-    nickname: '昵称',
-    birthday: '生日',
-    gender: '性别',
-    city: '地区',
-    about: '个性签名',
-  };
   const genders = { female: '女', male: '男', other: '其他', unspecified: '未填写' };
   const profile = remote.data;
   return (
@@ -249,53 +224,34 @@ function ProfileDetails() {
         <MenuRow
           label="头像"
           right={<ProfileAvatar profile={profile} size={40} />}
-          onClick={() => {
-            setError('');
-            setEditing('avatar');
-          }}
+          onClick={() => setEditingAvatar(true)}
         />
-        <MenuRow
-          label="昵称"
-          value={profile?.nickname ?? '未填写'}
-          onClick={() => {
-            setError('');
-            setEditing('nickname');
-          }}
-        />
-        <AccountAliasRow />
+        <MenuRow label="昵称" value={profile?.nickname ?? '未填写'} to="/profile/nickname" />
+        <AliasRow />
         <MenuRow
           label="二维码名片"
           right={<QrPlaceholder />}
           onClick={() => showToast('暂未开放', 2000, 'info')}
         />
-        {(['gender', 'birthday', 'city', 'about'] as const).map((key) => (
-          <MenuRow
-            key={key}
-            label={labels[key]}
-            value={
-              key === 'gender'
-                ? profile
-                  ? genders[profile.gender]
-                  : '—'
-                : profile?.[key] || '未填写'
-            }
-            onClick={() => {
-              setError('');
-              setEditing(key);
-            }}
-          />
-        ))}
+        <MenuRow
+          label="性别"
+          value={profile ? genders[profile.gender] : '—'}
+          to="/profile/gender"
+        />
+        <MenuRow label="生日" value={profile?.birthday || '未填写'} to="/profile/birthday" />
+        <MenuRow label="地区" value={profile?.city || '未填写'} to="/profile/region" />
+        <MenuRow label="个性签名" value={profile?.about || '未填写'} to="/profile/about" />
       </MenuGroup>
       {remote.error && (
         <p role="alert" className="notice-bar">
           {remote.error}
         </p>
       )}
-      {editing === 'avatar' && (
+      {editingAvatar && (
         <Sheet
           title="头像"
           onClose={() => {
-            if (!pending) setEditing(null);
+            if (!pending) setEditingAvatar(false);
           }}
           closeLabel="取消"
         >
@@ -305,25 +261,10 @@ function ProfileDetails() {
               await api.call(IdentityEndpoints.updateProfile, { body: { avatarMediaId: mediaId } });
               remote.refresh();
               await auth.refreshUser();
-              setEditing(null);
+              setEditingAvatar(false);
             }}
           />
-          {error && <p role="alert">{error}</p>}
         </Sheet>
-      )}
-      {editing && editing !== 'avatar' && profile && (
-        <ProfileField
-          key={editing}
-          field={editing}
-          title={labels[editing]}
-          initial={profile[editing] ?? ''}
-          pending={pending}
-          error={error}
-          onClose={() => {
-            if (!pending) setEditing(null);
-          }}
-          onSave={(value) => void save({ [editing]: value || null })}
-        />
       )}
     </main>
   );
@@ -341,78 +282,5 @@ function QrPlaceholder() {
         ?
       </text>
     </svg>
-  );
-}
-function ProfileField({
-  field,
-  title,
-  initial,
-  pending,
-  error,
-  onClose,
-  onSave,
-}: {
-  field: string;
-  title: string;
-  initial: string;
-  pending: boolean;
-  error: string;
-  onClose(): void;
-  onSave(value: string): void;
-}) {
-  const [value, setValue] = useState(initial);
-  return (
-    <Sheet
-      title={title}
-      closeLabel="取消"
-      onClose={onClose}
-      action={
-        <button
-          className="small-primary primary"
-          disabled={pending || (field === 'nickname' && !value.trim())}
-          onClick={() => onSave(value.trim())}
-        >
-          完成
-        </button>
-      }
-    >
-      <div className="field-sheet">
-        {field === 'gender' ? (
-          <select
-            aria-label="性别"
-            value={value}
-            disabled={pending}
-            onChange={(e) => setValue(e.target.value)}
-          >
-            <option value="unspecified">未填写</option>
-            <option value="female">女</option>
-            <option value="male">男</option>
-            <option value="other">其他</option>
-          </select>
-        ) : field === 'about' ? (
-          <textarea
-            aria-label={title}
-            value={value}
-            maxLength={500}
-            disabled={pending}
-            onChange={(e) => setValue(e.target.value)}
-          />
-        ) : (
-          <input
-            aria-label={title}
-            type={field === 'birthday' ? 'date' : 'text'}
-            value={value}
-            maxLength={field === 'nickname' ? 20 : 32}
-            disabled={pending}
-            onChange={(e) => setValue(e.target.value)}
-          />
-        )}
-      </div>
-      {error && (
-        <p role="alert" className="error page-note">
-          {error}
-        </p>
-      )}
-    </Sheet>
   );
 }

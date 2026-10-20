@@ -60,7 +60,14 @@ export function Dialog({
 }: {
   title?: string;
   children?: ReactNode;
-  actions: Array<{ label: string; primary?: boolean; danger?: boolean; onClick(): void }>;
+  actions: Array<{
+    label: string;
+    primary?: boolean;
+    danger?: boolean;
+    /** 10-21 G2：输入型确认框没改动或为空时，确认键置灰不可点。 */
+    disabled?: boolean;
+    onClick(): void;
+  }>;
 }) {
   return (
     <div className="dialog-scrim">
@@ -75,6 +82,7 @@ export function Dialog({
               key={action.label}
               type="button"
               className={action.danger ? 'danger' : action.primary ? 'confirm' : ''}
+              disabled={action.disabled}
               onClick={action.onClick}
             >
               {action.label}

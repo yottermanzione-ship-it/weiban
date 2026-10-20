@@ -1634,8 +1634,12 @@ function ReminderForm({ reminder, onDone }: { reminder?: Reminder; onDone(): voi
     /^([01]\d|2[0-3]):[0-5]\d$/.test(time) &&
     (kind !== 'weekly' || weekdays.length > 0) &&
     (kind !== 'once' || !!date);
+  // 10-21 G2：修改已有提醒时没改动，「保存」保持灰色
+  const snapshot = JSON.stringify([text.trim(), time, repeat, characterId, health, bypass]);
+  const [baseline] = useState(snapshot);
+  const unchanged = !!reminder && snapshot === baseline;
   async function save() {
-    if (pending || !valid || !characterId) return;
+    if (pending || !valid || !characterId || unchanged) return;
     setPending(true);
     setError('');
     try {
@@ -1801,7 +1805,7 @@ function ReminderForm({ reminder, onDone }: { reminder?: Reminder; onDone(): voi
       {error && <p role="alert">{error}</p>}
       <button
         className="primary reminder-save"
-        disabled={pending || !valid}
+        disabled={pending || !valid || unchanged}
         onClick={() => void save()}
       >
         {pending ? '正在保存…' : '保存'}
