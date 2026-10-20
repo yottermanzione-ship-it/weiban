@@ -16,7 +16,7 @@ import { and, eq } from 'drizzle-orm';
 import { CLOCK, DATABASE, type Clock, type Database } from '../../../platform/index.js';
 import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import { addDays, safeTimeZone, startOfLocalDay } from '../domain/local-time.js';
-import { priceUsageCeiling, validUsage } from '../domain/rules.js';
+import { applyDiscount, priceUsageCeiling, validUsage } from '../domain/rules.js';
 import { accounts } from '../infra/db/schema.js';
 import { PriceService } from './prices.js';
 
@@ -24,7 +24,7 @@ import { PriceService } from './prices.js';
 export class BillingQuoteService implements BillingQuotePort, BillingDailySpendReadPort {
   constructor(
     @Inject(DATABASE) private readonly database: Database,
-    @Inject(CLOCK) _clock: Clock,
+    @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PriceService) private readonly prices: PriceService,
     @Inject(IDENTITY_READ_PORT) private readonly identity: IdentityReadPort,
   ) {}
@@ -41,9 +41,10 @@ export class BillingQuoteService implements BillingQuotePort, BillingDailySpendR
       if (!rows.length) return null;
       const priced = priceUsageCeiling(rows, estimate);
       if (!priced.ok || !Number.isSafeInteger(priced.sellMicros)) return null;
-      // 与冻结同口径：最高分时/缓存费率；已核零价允许0，不把缺价格当0。
+      // 与冻结同口径：最高分时/缓存费率 + 此刻的限时折扣；已核零价允许0，不把缺价格当0。
+      const discountBp = await this.prices.discountBp(tx, modelKey, this.clock.now());
       return {
-        amountMicros: priced.sellMicros,
+        amountMicros: applyDiscount(priced.sellMicros, discountBp),
         priceVersionId: version.id,
       };
     });

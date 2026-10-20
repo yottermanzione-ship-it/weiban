@@ -121,6 +121,8 @@ export const modelCatalog = modelAccessSchema.table(
     billingBounds: jsonb('billing_bounds').$type<import('@weiban/contracts').RouteBillingBounds>(),
     /** 会员 v5（0103）：展示倍率；null = 按基准模型自动算。只展示，不参与扣费。 */
     displayMultiplier: doublePrecision('display_multiplier'),
+    /** 3.22（0114）：可用于哪些场景（契约 ModelScenario，后台勾选）。 */
+    scenarios: text('scenarios').array().notNull().default(sql`'{}'::text[]`),
     createdAt: tz('created_at').notNull(),
     updatedAt: tz('updated_at').notNull(),
   },
@@ -180,7 +182,38 @@ export const selections = modelAccessSchema.table('selections', {
   updatedAt: tz('updated_at').notNull(),
 });
 
-/** 角色单独设置的聊天模型。 */
+/** 3.22（0115）：用户按场景的模型配置（一行一个场景；没有行 = 该场景未配置）。 */
+export const scenarioSelections = modelAccessSchema.table(
+  'scenario_selections',
+  {
+    userId: uuid('user_id').notNull(),
+    scenario: text('scenario').notNull(),
+    modelKey: text('model_key').notNull(),
+    updatedAt: tz('updated_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.scenario] }),
+    index('scenario_selections_model_idx').on(t.modelKey),
+  ],
+);
+
+/** 3.22（0115）：角色逐场景单独设置（没有行 = 跟随场景设置）。 */
+export const characterScenarioOverrides = modelAccessSchema.table(
+  'character_scenario_overrides',
+  {
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    scenario: text('scenario').notNull(),
+    modelKey: text('model_key').notNull(),
+    updatedAt: tz('updated_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.characterId, t.scenario] }),
+    index('character_scenario_overrides_character_idx').on(t.characterId),
+  ],
+);
+
+/** 角色单独设置的聊天模型（3.22 起不再读写，数据已迁入 character_scenario_overrides，保留只为回滚）。 */
 export const characterOverrides = modelAccessSchema.table(
   'character_overrides',
   {

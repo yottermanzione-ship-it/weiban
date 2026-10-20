@@ -294,3 +294,29 @@ export function splitSettlementCost(cost: number, charged: number, theoretical: 
     theoretical > 0 ? Number((BigInt(cost) * BigInt(charged)) / BigInt(theoretical)) : 0;
   return { chargedCostMicros: chargedCost, absorbedCostMicros: cost - chargedCost };
 }
+
+// ---------- 3.22 限时折扣 ----------
+
+/** 原价（折扣系数 × 10000）。 */
+export const NO_DISCOUNT_BP = 10_000;
+
+/** 折扣系数（0.01～0.99）→ × 10000 的整数；超出范围抛错。 */
+export function discountRateToBp(rate: number): number {
+  const bp = Math.round(rate * 10_000);
+  if (!Number.isFinite(rate) || bp < 100 || bp > 9_900) throw new RangeError('折扣须在 0.01～0.99 之间');
+  return bp;
+}
+
+/** 某时刻折扣是否生效：[startsAt, endsAt)。 */
+export function discountActiveAt(d: { startsAt: Date; endsAt: Date }, at: Date): boolean {
+  return d.startsAt.getTime() <= at.getTime() && at.getTime() < d.endsAt.getTime();
+}
+
+/**
+ * 折后售价（微元，向上取整）。**报价、冻结、结算唯一的打折算式**：只作用于售价，成本不变。
+ */
+export function applyDiscount(sellMicros: number, discountBp: number): number {
+  if (discountBp >= NO_DISCOUNT_BP) return sellMicros;
+  const bp = BigInt(Math.max(1, Math.floor(discountBp)));
+  return Number((BigInt(sellMicros) * bp + 9_999n) / 10_000n);
+}

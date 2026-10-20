@@ -718,6 +718,27 @@
       "when": 1799335700000,
       "tag": "0113_admin_users_ban_membership_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1799335800000,
+      "tag": "0114_model_scenarios",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1799335900000,
+      "tag": "0115_scenario_selections",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1799336000000,
+      "tag": "0116_model_discounts",
+      "breakpoints": true
     }
   ]
 }

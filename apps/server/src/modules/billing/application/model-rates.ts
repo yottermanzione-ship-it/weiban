@@ -10,6 +10,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type {
   ActiveModelTokenRates,
   BillingModelRatePort,
+  ModelDiscountSetting,
   ModelTokenPrices,
   PriceUnit,
 } from '@weiban/contracts';
@@ -24,8 +25,13 @@ import {
   type Clock,
   type Database,
 } from '../../../platform/index.js';
-import { validatePriceItems, type PriceBand, type PriceRow } from '../domain/rules.js';
-import { priceItems, priceVersions } from '../infra/db/schema.js';
+import {
+  discountRateToBp,
+  validatePriceItems,
+  type PriceBand,
+  type PriceRow,
+} from '../domain/rules.js';
+import { modelDiscounts, priceItems, priceVersions } from '../infra/db/schema.js';
 
 const TOKEN_UNITS: readonly PriceUnit[] = [
   'input_tokens_per_million',
@@ -225,6 +231,79 @@ export class ModelRateService implements BillingModelRatePort {
         tx,
       );
       return { priceVersionId: id, published: true };
+    });
+  }
+
+  // ---------- 3.22 限时折扣 ----------
+
+  async getModelDiscounts(modelKeys: readonly string[]): Promise<Map<string, ModelDiscountSetting>> {
+    const keys = [...new Set(modelKeys)];
+    const out = new Map<string, ModelDiscountSetting>();
+    if (!keys.length) return out;
+    const rows = await this.database.db
+      .select()
+      .from(modelDiscounts)
+      .where(inArray(modelDiscounts.modelKey, keys));
+    for (const r of rows)
+      out.set(r.modelKey, {
+        rate: r.rateBp / 10_000,
+        startsAt: r.startsAt.toISOString(),
+        endsAt: r.endsAt.toISOString(),
+      });
+    return out;
+  }
+
+  async setModelDiscount(input: {
+    operatorUserId: string;
+    modelKey: string;
+    discount: ModelDiscountSetting | null;
+  }): Promise<void> {
+    const now = this.clock.now();
+    let values: { rateBp: number; startsAt: Date; endsAt: Date } | null = null;
+    if (input.discount) {
+      let rateBp: number;
+      try {
+        rateBp = discountRateToBp(input.discount.rate);
+      } catch {
+        throw new AppError('bad_request', '折扣须在 0.01～0.99 之间（例 0.5 = 5 折）', { status: 422 });
+      }
+      const startsAt = new Date(input.discount.startsAt);
+      const endsAt = new Date(input.discount.endsAt);
+      if (
+        Number.isNaN(startsAt.getTime()) ||
+        Number.isNaN(endsAt.getTime()) ||
+        endsAt.getTime() <= startsAt.getTime()
+      )
+        throw new AppError('bad_request', '折扣的结束时间必须晚于开始时间', { status: 422 });
+      values = { rateBp, startsAt, endsAt };
+    }
+    await this.database.transaction(async (tx) => {
+      if (values)
+        await tx.db
+          .insert(modelDiscounts)
+          .values({
+            modelKey: input.modelKey,
+            ...values,
+            updatedAt: now,
+            updatedBy: input.operatorUserId,
+          })
+          .onConflictDoUpdate({
+            target: modelDiscounts.modelKey,
+            set: { ...values, updatedAt: now, updatedBy: input.operatorUserId },
+          });
+      else await tx.db.delete(modelDiscounts).where(eq(modelDiscounts.modelKey, input.modelKey));
+      await this.audit.record(
+        {
+          module: 'billing',
+          action: values ? 'model_discount.set' : 'model_discount.cleared',
+          actorType: 'admin',
+          actorId: input.operatorUserId,
+          targetType: 'model',
+          targetId: input.modelKey,
+          details: input.discount ? { ...input.discount } : {},
+        },
+        tx,
+      );
     });
   }
 }

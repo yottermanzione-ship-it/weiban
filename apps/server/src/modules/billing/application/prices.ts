@@ -19,8 +19,14 @@ import {
   type Database,
   type DbTx,
 } from '../../../platform/index.js';
-import { validatePriceItems, type PriceBand, type PriceRow } from '../domain/rules.js';
-import { priceItems, priceVersions } from '../infra/db/schema.js';
+import {
+  NO_DISCOUNT_BP,
+  discountActiveAt,
+  validatePriceItems,
+  type PriceBand,
+  type PriceRow,
+} from '../domain/rules.js';
+import { modelDiscounts, priceItems, priceVersions } from '../infra/db/schema.js';
 
 export type AdminPriceVersion = z.infer<typeof AdminPriceVersion>;
 type VersionRow = typeof priceVersions.$inferSelect;
@@ -70,6 +76,18 @@ export class PriceService {
       .from(priceItems)
       .where(and(eq(priceItems.priceVersionId, priceVersionId), eq(priceItems.modelKey, modelKey)));
     return rows.map(toRow);
+  }
+
+  /**
+   * 3.22：某模型在某时刻生效的折扣（× 10000；没有或不在时间窗内 = 10000 原价）。
+   * 报价、冻结都从这里取，结算用冻结时锁定的值（holds.discount_bp）。
+   */
+  async discountBp(tx: DbTx, modelKey: string, at: Date): Promise<number> {
+    const [row] = await tx.db
+      .select()
+      .from(modelDiscounts)
+      .where(eq(modelDiscounts.modelKey, modelKey));
+    return row && discountActiveAt(row, at) ? row.rateBp : NO_DISCOUNT_BP;
   }
 
   // ---------- 用户端 ----------

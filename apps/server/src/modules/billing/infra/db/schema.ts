@@ -165,6 +165,8 @@ export const holds = billingSchema.table(
     releaseSnapshot: jsonb('release_snapshot').$type<import('@weiban/contracts').ReleaseOutput>(),
     settlementSnapshot:
       jsonb('settlement_snapshot').$type<import('@weiban/contracts').SettleOutput>(),
+    /** 3.22（0116）：冻结时锁定的限时折扣（× 10000，10000 = 原价）；结算按它计售价。 */
+    discountBp: integer('discount_bp').notNull().default(10000),
   },
   (t) => [
     uniqueIndex('holds_idempotency_key_key').on(t.idempotencyKey),
@@ -289,6 +291,17 @@ export const reconciliationRuns = billingSchema.table(
   },
   (t) => [uniqueIndex('reconciliation_runs_run_date_key').on(t.runDate)],
 );
+
+/** 3.22（0116）：模型限时折扣。只作用于售价，成本不变；[starts_at, ends_at) 生效。 */
+export const modelDiscounts = billingSchema.table('model_discounts', {
+  modelKey: text('model_key').primaryKey(),
+  /** 折扣系数 × 10000（5000 = 5 折）。 */
+  rateBp: integer('rate_bp').notNull(),
+  startsAt: tz('starts_at').notNull(),
+  endsAt: tz('ends_at').notNull(),
+  updatedAt: tz('updated_at').notNull(),
+  updatedBy: uuid('updated_by'),
+});
 
 /** v3.3（0088，ADR-0032）：计费的后台配置（键值）。recharge_options = 充值档位、赠送比例、联系管理员说明。 */
 export const billingSettings = billingSchema.table('settings', {

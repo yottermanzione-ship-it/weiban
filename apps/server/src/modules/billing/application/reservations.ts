@@ -40,6 +40,7 @@ import {
 import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import { localDate, PLATFORM_TIME_ZONE, safeTimeZone } from '../domain/local-time.js';
 import {
+  applyDiscount,
   countsAsBackground,
   HOLD_TTL_MS,
   priceUsage,
@@ -175,14 +176,17 @@ export class ReservationService implements BillingReservationPort {
         return fail('price_missing', '需配置并验证计费上限');
       const priced = priceUsageCeiling(rows, input.ceiling.usage);
       if (!priced.ok) return fail('price_missing', `当前价目表缺少 ${priced.missingUnit} 的价格`);
-      let amount = priced.sellMicros;
+      // 3.22：限时折扣在冻结时锁定（holds.discount_bp），结算按同一折扣；只打售价，成本不变。
+      const discountBp = await this.prices.discountBp(tx, input.modelKey, this.clock.now());
+      let amount = applyDiscount(priced.sellMicros, discountBp);
       let reservedCost = priced.costMicros;
       for (const alternative of new Set(input.ceiling.pricingModels ?? [])) {
         const alternativeRows = await this.prices.modelPrices(tx, version.id, alternative);
         const upper = priceUsageCeiling(alternativeRows, input.ceiling.usage);
         if (!alternativeRows.length || !upper.ok)
           return fail('price_missing', '备用模型缺少完整上限定价');
-        amount = Math.max(amount, upper.sellMicros);
+        const alternativeBp = await this.prices.discountBp(tx, alternative, this.clock.now());
+        amount = Math.max(amount, applyDiscount(upper.sellMicros, alternativeBp));
         reservedCost = Math.max(reservedCost, upper.costMicros);
       }
       if (!Number.isSafeInteger(amount) || !Number.isSafeInteger(reservedCost))
@@ -249,6 +253,7 @@ export class ReservationService implements BillingReservationPort {
         settlementSnapshot: null,
         releaseSnapshot: null,
         riskSnapshot: { phase: 'reserved', costUpperMicros: reservedCost, uncertainMicros: 0 },
+        discountBp,
       };
       await tx.db.insert(holds).values(hold);
       await this.ledger.changeHeld(tx, account, amount);
@@ -338,8 +343,13 @@ export class ReservationService implements BillingReservationPort {
       const stillReserved = wasActive && hold.expiresAt.getTime() > this.clock.nowMs();
       const rows = await this.prices.modelPrices(tx, hold.priceVersionId, hold.modelKey);
       const actualKnown = input.actualKnown !== false;
-      const priced = priceUsage(rows, actualKnown ? input.actual : {}, startedAt, false);
-      if (!priced.ok) throw new BillingUsageError('实际用量无法定价');
+      const rawPriced = priceUsage(rows, actualKnown ? input.actual : {}, startedAt, false);
+      if (!rawPriced.ok) throw new BillingUsageError('实际用量无法定价');
+      // 3.22：按冻结时锁定的限时折扣计售价（与报价、冻结同一算式 applyDiscount）；成本不变。
+      const priced = {
+        ...rawPriced,
+        sellMicros: applyDiscount(rawPriced.sellMicros, hold.discountBp ?? 10_000),
+      };
       if (![priced.sellMicros, priced.costMicros].every(Number.isSafeInteger))
         throw new BillingUsageError('供应商实际用量金额超出安全范围，需人工核对');
       // 已释放/过期的用户资金没有授权再抢占；历史不一致也不能侵占其它hold。
