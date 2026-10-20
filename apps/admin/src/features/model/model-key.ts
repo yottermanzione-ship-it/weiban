@@ -78,9 +78,14 @@ export function suggestModelKey(
 
 /** gemini-4-argon → Gemini 4 Argon；gpt-6.1-sol → GPT 6.1 Sol。只是预填，管理员可以改。 */
 export function prettyModelName(model: string): string {
-  return model
-    .split(/[-_\s]+/)
-    .filter(Boolean)
+  // claude-opus-5-5 → 5.5：相邻的纯数字段合成版本号。
+  const parts = model.split(/[-_\s]+/).filter(Boolean).reduce<string[]>((acc, part) => {
+    const prev = acc[acc.length - 1];
+    if (prev && /^\d+(\.\d+)*$/.test(prev) && /^\d+$/.test(part)) acc[acc.length - 1] = `${prev}.${part}`;
+    else acc.push(part);
+    return acc;
+  }, []);
+  return parts
     .map((part) =>
       /^(gpt|glm|ai|llm)$/i.test(part)
         ? part.toUpperCase()

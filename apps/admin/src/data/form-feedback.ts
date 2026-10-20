@@ -17,7 +17,14 @@
 import { useState } from 'react';
 import { App, type FormInstance } from 'antd';
 import { errorText } from './hooks.js';
-import { describeIssues, issueFieldText, issuesOf, type IssuePath } from './issues.js';
+import {
+  describeIssue,
+  describeIssues,
+  issueFieldText,
+  issuesOf,
+  lastField,
+  type IssuePath,
+} from './issues.js';
 
 type NamePath = Parameters<FormInstance['scrollToField']>[0];
 type InternalPath = (string | number)[];
@@ -92,17 +99,31 @@ export function applyFormError(
     return null;
   };
 
-  const byField = new Map<string, { name: InternalPath; errors: string[] }>();
+  // 同一字段上「同一项、同一原因」只写一次；重复时留路径更具体的那条（例 routes.0.billingBounds 优先于镜像 billingBounds）。
+  const byField = new Map<
+    string,
+    { name: InternalPath; texts: Map<string, { text: string; depth: number }> }
+  >();
   for (const issue of issues) {
     const name = resolve(issue.path);
     if (!name) continue;
     const key = JSON.stringify(name);
-    const entry = byField.get(key) ?? { name, errors: [] };
-    const text = issueFieldText(issue);
-    if (!entry.errors.includes(text)) entry.errors.push(text);
+    const entry = byField.get(key) ?? { name, texts: new Map() };
+    // 映射到的字段不是这个问题本身的字段（例：错误在 JSON 里的某一项）时，带上字段名说清楚。
+    const own = lastField(issue.path);
+    const target = name.filter((seg): seg is string => typeof seg === 'string').pop();
+    const reason = issueFieldText(issue);
+    const text = own && target && own !== target ? describeIssue(issue) : reason;
+    const dedupe = `${own ?? ''}|${reason}`;
+    const prev = entry.texts.get(dedupe);
+    if (!prev || prev.depth < issue.path.length)
+      entry.texts.set(dedupe, { text, depth: issue.path.length });
     byField.set(key, entry);
   }
-  const fields = [...byField.values()];
+  const fields = [...byField.values()].map((f) => ({
+    name: f.name,
+    errors: [...f.texts.values()].map((t) => t.text),
+  }));
   if (fields.length) {
     form.setFields(fields);
     focusField(form, fields[0]!.name);

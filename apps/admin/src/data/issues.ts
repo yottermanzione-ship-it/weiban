@@ -174,7 +174,7 @@ export function fieldLabel(path: IssuePath): string {
   return parts.join(' · ') || '填写内容';
 }
 
-function lastField(path: IssuePath): string | undefined {
+export function lastField(path: IssuePath): string | undefined {
   for (let i = path.length - 1; i >= 0; i -= 1) {
     const seg = path[i];
     if (typeof seg === 'string') return seg;
@@ -184,6 +184,20 @@ function lastField(path: IssuePath): string | undefined {
 
 function num(v: unknown): number | undefined {
   return typeof v === 'number' ? v : typeof v === 'bigint' ? Number(v) : undefined;
+}
+
+/** 服务器只回英文说明（没有 code），按常见句式翻译。 */
+function serverReason(message: string): string {
+  if (/received (undefined|null)|required/i.test(message)) return '没有填';
+  const big = /too big.*?([<>]=?)\s*([\d.]+)/i.exec(message);
+  if (big) return `太大或太长了（上限 ${big[2]}）`;
+  if (/too big/i.test(message)) return '太大或太长了';
+  const small = /too small.*?([<>]=?)\s*([\d.]+)/i.exec(message);
+  if (small) return `太小或太短了（下限 ${small[2]}）`;
+  if (/too small/i.test(message)) return '太小或太短了';
+  if (/url/i.test(message)) return '需要是以 https:// 开头的完整网址';
+  if (/unrecognized key/i.test(message)) return '有不认识的项';
+  return '格式不对';
 }
 
 /** 只说原因（不带字段名）。 */
@@ -230,6 +244,8 @@ export function issueReason(issue: FieldIssue): string {
     }
     case 'not_multiple_of':
       return `需要是 ${String(d.divisor)} 的倍数`;
+    case undefined:
+      return serverReason(issue.message);
     default:
       return '格式不对';
   }
@@ -246,7 +262,7 @@ export function issueFieldText(issue: FieldIssue): string {
     issue.code === 'invalid_union';
   if (hint && formatLike) return hint;
   const reason = issueReason(issue);
-  return hint && (issue.code === 'too_small' || issue.code === 'too_big') ? `${reason}（${hint}）` : reason;
+  return hint && (issue.code === 'too_small' || issue.code === 'too_big') ? `${reason}；${hint}` : reason;
 }
 
 /** 完整一句话：「模型键：格式应为 …」 */
@@ -256,7 +272,15 @@ export function describeIssue(issue: FieldIssue): string {
 
 /** 多个问题时：第一处 +「等 N 处」。 */
 export function describeIssues(issues: FieldIssue[]): string {
-  const first = issues[0];
+  // 同一个问题可能出现两次（例 billingBounds 是主线路 routes.0.billingBounds 的镜像）：
+  // 按「字段 + 原因」去重计数，重复时用路径更具体的那条来描述。
+  const unique = new Map<string, FieldIssue>();
+  for (const issue of issues) {
+    const key = `${lastField(issue.path) ?? ''}|${issueFieldText(issue)}`;
+    const prev = unique.get(key);
+    if (!prev || prev.path.length < issue.path.length) unique.set(key, issue);
+  }
+  const first = unique.values().next().value;
   if (!first) return '请检查填写内容';
-  return issues.length > 1 ? `${describeIssue(first)}（共 ${issues.length} 处要改）` : describeIssue(first);
+  return unique.size > 1 ? `${describeIssue(first)}（共 ${unique.size} 处要改）` : describeIssue(first);
 }
