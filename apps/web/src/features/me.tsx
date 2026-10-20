@@ -82,12 +82,13 @@ export function MePage() {
 export function ServicesPage() {
   const wallet = useRemote(BillingEndpoints.getWallet);
   const membership = useRemote(MembershipEndpoints.get);
-  const selection = useRemote(ModelAccessEndpoints.getSelection);
+  const scenarios = useRemote(ModelAccessEndpoints.getScenarioConfig, { networkOnly: true });
   const models = useRemote(ModelAccessEndpoints.listModels);
   const lowBalance =
     wallet.data != null &&
     (wallet.data.availablePoints ?? 0) <= (wallet.data.lowBalanceThresholdPoints ?? 0);
-  const chatModel = selection.data?.chat?.modelKey;
+  const chatModel = scenarios.data?.scenarios.find((s) => s.scenario === 'chat')?.selection
+    ?.modelKey;
 
   return (
     <main>
@@ -122,12 +123,13 @@ export function ServicesPage() {
           to="/models"
           icon="wechat/grid"
           tint="blue"
-          label="我的模型"
+          label="模型配置"
+          dot={scenarios.data?.needsSetup === true}
           value={
             chatModel
               ? (models.data?.items.find((m) => m.modelKey === chatModel)?.displayName ??
                 chatModel.split('/').pop())
-              : '平台默认'
+              : '未配置'
           }
         />
         <MenuRow to="/prices" icon="wechat/tag" tint="green" label="AI 模型价格" />

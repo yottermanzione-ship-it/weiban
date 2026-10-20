@@ -70,7 +70,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
   const conversation = state.conversations.find((item) => item.conversationId === id)!;
   const contact = state.contacts.find((item) => item.characterId === characterId);
   const models = useRemote(ModelAccessEndpoints.listModels);
-  const override = useRemote(ModelAccessEndpoints.getCharacterOverride, {
+  const scenarios = useRemote(ModelAccessEndpoints.getCharacterScenarios, {
     params: { characterId },
   });
   const companion = useRemote(CompanionEndpoints.getForCharacter, { params: { characterId } });
@@ -148,10 +148,12 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
       '已保存',
     );
   const data = companion.data;
-  const modelName = override.data?.chat
-    ? (models.data?.items.find((m) => m.modelKey === override.data?.chat?.modelKey)?.displayName ??
-      override.data.chat.modelKey.split('/').pop())
-    : '跟随默认';
+  // 3.22：显示该角色「文本聊天」实际用的模型（单独指定或跟随场景设置）。
+  const ownChat = scenarios.data?.scenarios.find((s) => s.scenario === 'chat');
+  const chatKey = ownChat?.selection?.modelKey ?? ownChat?.effective?.modelKey;
+  const modelName = chatKey
+    ? `${models.data?.items.find((m) => m.modelKey === chatKey)?.displayName ?? chatKey.split('/').pop()}${ownChat?.selection ? '' : '（跟随）'}`
+    : '未配置';
   return (
     <main className="chat-info-page">
       <NavBar title="聊天信息" fallback={`/chat/${id}`} />
@@ -219,7 +221,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
       )}
       {data && (
         <>
-          <GroupHeader>聊天模型</GroupHeader>
+          <GroupHeader>模型</GroupHeader>
           <MenuGroup>
             <MenuRow
               to={`/characters/${characterId}/model`}

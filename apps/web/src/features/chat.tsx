@@ -73,6 +73,7 @@ import { ScenarioSheet, presetNames, useCurrentPreset } from './scenario.js';
 import { ChatAvatarLink } from './chat-avatar-link.js';
 import { ForwardPicker, ForwardedRecordBubble } from './chat-forward.js';
 import { OldIcon } from './old-icons.js';
+import { useModelSetupGate } from './models.js';
 import {
   BackArrow,
   CheckCircle,
@@ -535,6 +536,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const status = useRemote(ModelAccessEndpoints.getModelStatus, {
     query: { characterId: group ? undefined : role?.refId },
   });
+  // 3.22：文本聊天模型还没配置时弹出首次引导，配置好之前不能发消息。
+  const modelGate = useModelSetupGate();
   const location = useLocation();
   const prefill = (location.state as { prefill?: string } | null)?.prefill;
   const [text, setText] = useState(prefill ?? '');
@@ -719,6 +722,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     const files = [...(event.target.files ?? [])].slice(0, 9);
     event.target.value = '';
     setPanel('none');
+    if (modelGate.block()) return;
     const prepared: Upload[] = [];
     for (const file of files) {
       if (!(MEDIA_LIMITS.imageMimeTypes as readonly string[]).includes(file.type)) {
@@ -745,6 +749,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     for (const upload of prepared) await runUpload(upload);
   }
   function sendVoice(result: RecordResult) {
+    if (modelGate.block()) return;
     if (result.blob.size > MEDIA_LIMITS.voiceMaxBytes) {
       showToast('语音太长，无法发送');
       return;
@@ -887,6 +892,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     if (!text.trim() || sending) return;
+    if (modelGate.block()) return;
     setSending(true);
     setError('');
     try {
@@ -1493,6 +1499,13 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
             message.content !== null,
         )}
       />
+      {modelGate.element}
+      {modelGate.needsSetup && (
+        <p className="notice-bar">
+          还没选文本聊天模型，选好后才能发消息
+          <Link to="/models">去配置 ›</Link>
+        </p>
+      )}
       {!chat.online && <p className="notice-bar">网络暂不可用，消息保存在本机，联网后继续发送</p>}
       {status.data && !status.data.available && (
         <p className="notice-bar">

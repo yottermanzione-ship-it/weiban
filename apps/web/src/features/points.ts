@@ -37,3 +37,10 @@ export function yuanText(micros: number): string {
 export function yuanPrecise(micros: number, digits = 4): string {
   return `¥${(micros / 1_000_000).toFixed(digits)}`;
 }
+
+/** 3.17：模型的积分消耗倍率（只展示，扣费按实际用量）。 */
+export function multiplierText(model: { displayMultiplier?: number | null }) {
+  const m = model.displayMultiplier;
+  if (m == null) return '';
+  return `×${m >= 10 ? m.toFixed(0) : m >= 1 ? m.toFixed(1) : m.toFixed(2)}`;
+}

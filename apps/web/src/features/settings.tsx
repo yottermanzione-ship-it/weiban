@@ -223,6 +223,7 @@ export function SettingsPage() {
         <MenuRow label="聊天背景" onClick={() => showToast('暂未开放', 2000, 'info')} />
         <ComingSoonRow id="teen" withIcon={false} />
         <ComingSoonRow id="care" withIcon={false} />
+        <MenuRow to="/models" label="模型配置" />
         <MenuRow to="/settings/plugins" label="插件" />
       </MenuGroup>
       <GroupHeader>关于</GroupHeader>

@@ -33,7 +33,12 @@ import { ProfilePage } from '../features/profile.js';
 import { SettingsPage } from '../features/settings.js';
 import { WalletPage, LedgerPage, PricesPage, RechargePage } from '../features/wallet.js';
 import { MembershipPage } from '../features/membership.js';
-import { CharacterModelPage, ModelsPage } from '../features/models.js';
+import {
+  CharacterModelPage,
+  CharacterScenarioPickerPage,
+  ModelsPage,
+  ScenarioModelPage,
+} from '../features/models.js';
 import { LeaderboardPage } from '../features/leaderboard.js';
 import { UsagePage } from '../features/usage.js';
 import {
@@ -333,6 +338,7 @@ function Shell() {
                 <Route path="/ledger" element={<LedgerPage />} />
                 <Route path="/prices" element={<PricesPage />} />
                 <Route path="/models" element={<ModelsPage />} />
+                <Route path="/models/scenario/:scenario" element={<ScenarioModelPage />} />
                 <Route path="/leaderboard" element={<LeaderboardPage />} />
                 <Route path="/usage" element={<UsagePage />} />
                 <Route path="/characters/custom/new" element={<CreateCustomCharacterPage />} />
@@ -434,6 +440,10 @@ function Shell() {
                 <Route path="/role-requests/:requestId" element={<RoleRequestDetailPage />} />
                 <Route path="/pets/with/:characterId" element={<PetWithPage />} />
                 <Route path="/characters/:characterId/model" element={<CharacterModelPage />} />
+                <Route
+                  path="/characters/:characterId/model/:scenario"
+                  element={<CharacterScenarioPickerPage />}
+                />
                 <Route path="/settings/about" element={<AboutPage />} />
                 <Route path="/settings/announcements" element={<AnnouncementsPage />} />
                 <Route path="/settings/release-notes" element={<ReleaseNotesPage />} />

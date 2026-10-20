@@ -32,6 +32,7 @@ import {
 } from './shell-kit.js';
 import { Dialog } from './toast.js';
 import { formatPoints, pointsText, signedPoints, yuanText } from './points.js';
+import { ModelPriceLine } from './models.js';
 
 function dateKey(iso: string) {
   const d = new Date(iso);
@@ -507,26 +508,8 @@ export function LedgerPage() {
 
 // ---------- 价目表（6.5） ----------
 
-/** 3.17：模型的积分消耗倍率（只展示，扣费按实际用量）。 */
-export function multiplierText(model: Pick<ModelInfo, 'displayMultiplier'>) {
-  const m = model.displayMultiplier;
-  if (m == null) return '';
-  return `×${m >= 10 ? m.toFixed(0) : m >= 1 ? m.toFixed(1) : m.toFixed(2)}`;
-}
+export { multiplierText } from './points.js';
 
-/**
- * 模型列表行副标题（10-20 统一）：「消耗倍率 ×1.1 · 约每条 5.35 积分」。
- * 约每条按最近 7 天平均实扣，没有数据时按默认用量估算。
- */
-export function perReplyText(
-  model: Pick<ModelInfo, 'pointsPerReply' | 'displayMultiplier' | 'pointsPerReplyBasis'>,
-) {
-  const m = multiplierText(model);
-  const mult = m ? `消耗倍率 ${m}` : '';
-  const per =
-    model.pointsPerReply == null ? '' : `约每条 ${formatPoints(model.pointsPerReply)} 积分`;
-  return [mult, per].filter(Boolean).join(' · ') || '—';
-}
 
 export function PricesPage() {
   const models = useRemote(ModelAccessEndpoints.listModels);
@@ -542,7 +525,12 @@ export function PricesPage() {
             <MenuRow
               key={model.modelKey}
               label={model.displayName}
-              subtitle={`${perReplyText(model)}${model.available ? '' : ' · 暂不可用'}`}
+              subtitle={
+                <>
+                  <ModelPriceLine model={model} />
+                  {model.available ? '' : ' · 暂不可用'}
+                </>
+              }
               chevron={false}
             />
           ))}

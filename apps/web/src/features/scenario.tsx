@@ -3,6 +3,7 @@
  * 顺序、资格、说明都以服务器 listModes 为准（section = private 放底部「私密」一栏；没资格的不返回）。
  */
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { OldIcon } from './old-icons.js';
 import {
   CompanionEndpoints,
@@ -80,6 +81,7 @@ export function ScenarioSheet({
   onClose(): void;
   onChanged(mode: ScenarioMode): void;
 }) {
+  const navigate = useNavigate();
   const characterModes = useRemote(
     CompanionEndpoints.listModes,
     {
@@ -138,8 +140,18 @@ export function ScenarioSheet({
     }
     if (option.id !== 'adult') return apply(option.id);
     try {
-      const selection = await api.call(ModelAccessEndpoints.getSelection);
-      if (!selection.adult) return setPrompt('model');
+      // 3.22：私密模式用「私密模式」场景的模型（这个角色单独指定的优先）。
+      if (target.kind === 'character') {
+        const own = await api.call(ModelAccessEndpoints.getCharacterScenarios, {
+          params: { characterId: target.characterId },
+        });
+        if (!own.scenarios.find((s) => s.scenario === 'private')?.effective)
+          return setPrompt('model');
+      } else {
+        const mine = await api.call(ModelAccessEndpoints.getScenarioConfig);
+        if (!mine.scenarios.find((s) => s.scenario === 'private')?.selection)
+          return setPrompt('model');
+      }
     } catch {
       // 读不到时交给服务器判断
     }
@@ -199,11 +211,19 @@ export function ScenarioSheet({
       {prompt === 'model' && (
         <Dialog
           title="暂时无法开启私密模式"
-          actions={[{ label: '知道了', primary: true, onClick: () => setPrompt(null) }]}
+          actions={[
+            { label: '知道了', onClick: () => setPrompt(null) },
+            {
+              label: '去选模型',
+              primary: true,
+              onClick: () => {
+                setPrompt(null);
+                navigate('/models/scenario/private');
+              },
+            },
+          ]}
         >
-          <p className="hint">
-            尚未设置私密模式模型，当前无法开启。私密模式模型的选择入口暂未开放。
-          </p>
+          <p className="hint">还没选「私密模式」用的模型，选好后才能开启。</p>
         </Dialog>
       )}
       {prompt === 'intro' && (
