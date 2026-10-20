@@ -442,16 +442,8 @@ export class CustomCharacterService {
       rawPlain.fill(0);
     }
 
-    const classification = deriveClassification(
-      {
-        basis: row.basis as 'real_person' | 'fictional' | 'original',
-        realPersonKind: row.realPersonKind as 'celebrity' | 'historical' | 'private_person' | null,
-        ageSetting: row.ageSetting as 'minor' | 'adult',
-        childAppearance: row.childAppearance,
-      },
-      'custom',
-      row.childFeaturesDetected,
-    );
+    // 3.25：按生效分类（含后台人工标注）。
+    const classification = this.characterService.classify(row);
 
     return {
       characterId: row.id,

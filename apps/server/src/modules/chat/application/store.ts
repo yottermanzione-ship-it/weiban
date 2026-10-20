@@ -45,6 +45,8 @@ export const emptyState: UserConversationState = {
 };
 export const previewText = (text: string): string =>
   text.slice(0, 100).replace(/[\uD800-\uDBFF]$/u, '');
+/** 3.25：会话列表里私密模式消息的摘要（契约 MessagePreview）。 */
+export const PRIVATE_MESSAGE_PREVIEW = '[私密消息]';
 
 @Injectable()
 export class ChatStore {
@@ -202,12 +204,15 @@ export class ChatStore {
     let lastMessage: Conversation['lastMessage'] = null;
     if (last) {
       const content = await this.content(tx, row, last);
+      // 3.25（G1-3）：私密模式（成人范围）消息在会话列表一律显示「[私密消息]」，不露正文。
       const text =
         last.status === 'recalled'
           ? last.senderKind === 'user'
             ? '你撤回了一条消息'
             : '对方撤回了一条消息'
-          : content?.type === 'text'
+          : last.scope === 'adult'
+            ? PRIVATE_MESSAGE_PREVIEW
+            : content?.type === 'text'
             ? previewText(content.text)
             : content?.type === 'nudge'
               ? '[拍一拍]'

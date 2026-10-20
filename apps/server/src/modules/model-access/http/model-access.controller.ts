@@ -57,6 +57,22 @@ function schema<S extends z.ZodType>(value: S | undefined): S {
   return value;
 }
 
+/**
+ * 3.25（G1-5）：模型「暂时无法使用」的具体原因（密钥 / 余额 / 计费上限等）只给后台看；用户端接口一律去掉
+ * unavailableDetail（ModelInfo、ModelRefState）与 ModelStatus.detail，用户端显示中性文案。
+ */
+export function withoutUnavailableDetail<T>(value: T): T {
+  if (Array.isArray(value)) return value.map((v: unknown) => withoutUnavailableDetail(v)) as T;
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    const out: Record<string, unknown> = {};
+    for (const [key, v] of Object.entries(value))
+      if (key !== 'unavailableDetail') out[key] = withoutUnavailableDetail(v);
+    return out as T;
+  }
+  return value;
+}
+const hide = async <T>(value: Promise<T>): Promise<T> => withoutUnavailableDetail(await value);
+
 @Controller('api/v1/model')
 export class ModelController {
   constructor(
@@ -71,7 +87,7 @@ export class ModelController {
   @Get('scenarios')
   @RequireAuth(E.getScenarioConfig.auth)
   getScenarios(@CurrentPrincipal() me: AuthPrincipal) {
-    return this.scenarios.getConfig(me.userId);
+    return hide(this.scenarios.getConfig(me.userId));
   }
 
   @Patch('scenarios')
@@ -81,7 +97,7 @@ export class ModelController {
     @Body(new ContractPipe(schema(E.updateScenarioConfig.body)))
     body: Out<typeof E.updateScenarioConfig.body>,
   ) {
-    return this.scenarios.updateConfig(me.userId, body.selections);
+    return hide(this.scenarios.updateConfig(me.userId, body.selections));
   }
 
   @Post('scenarios/recommended')
@@ -92,7 +108,7 @@ export class ModelController {
     @Body(new ContractPipe(schema(E.applyRecommendedScenarios.body)))
     body: Out<typeof E.applyRecommendedScenarios.body>,
   ) {
-    return this.scenarios.applyRecommended(me.userId, body.overwrite === true);
+    return hide(this.scenarios.applyRecommended(me.userId, body.overwrite === true));
   }
 
   @Get('character-scenarios/:characterId')
@@ -102,7 +118,7 @@ export class ModelController {
     @Param(new ContractPipe(schema(E.getCharacterScenarios.params)))
     params: { characterId: string },
   ) {
-    return this.scenarios.getCharacter(me.userId, params.characterId);
+    return hide(this.scenarios.getCharacter(me.userId, params.characterId));
   }
 
   @Patch('character-scenarios/:characterId')
@@ -114,7 +130,7 @@ export class ModelController {
     @Body(new ContractPipe(schema(E.updateCharacterScenarios.body)))
     body: Out<typeof E.updateCharacterScenarios.body>,
   ) {
-    return this.scenarios.updateCharacter(me.userId, params.characterId, body.selections);
+    return hide(this.scenarios.updateCharacter(me.userId, params.characterId, body.selections));
   }
 
   @Get('leaderboard-info')
@@ -128,13 +144,15 @@ export class ModelController {
   async listModels(
     @Query(new ContractPipe(schema(E.listModels.query))) query: Out<typeof E.listModels.query>,
   ) {
-    return { items: await this.catalog.listModels(query.capability, query.scenario) };
+    return {
+      items: await hide(this.catalog.listModels(query.capability, query.scenario)),
+    };
   }
 
   @Get('selection')
   @RequireAuth(E.getSelection.auth)
   getSelection(@CurrentPrincipal() me: AuthPrincipal): Promise<ModelSelection> {
-    return this.selection.getSelection(me.userId);
+    return hide(this.selection.getSelection(me.userId));
   }
 
   @Patch('selection')
@@ -144,7 +162,7 @@ export class ModelController {
     @Body(new ContractPipe(schema(E.updateSelection.body)))
     body: Out<typeof E.updateSelection.body>,
   ): Promise<ModelSelection> {
-    return this.selection.updateSelection(me.userId, body);
+    return hide(this.selection.updateSelection(me.userId, body));
   }
 
   @Get('character-overrides/:characterId')
@@ -153,7 +171,7 @@ export class ModelController {
     @CurrentPrincipal() me: AuthPrincipal,
     @Param(new ContractPipe(schema(E.getCharacterOverride.params))) params: { characterId: string },
   ) {
-    return this.selection.getOverride(me.userId, params.characterId);
+    return hide(this.selection.getOverride(me.userId, params.characterId));
   }
 
   @Put('character-overrides/:characterId')
@@ -164,17 +182,21 @@ export class ModelController {
     @Body(new ContractPipe(schema(E.setCharacterOverride.body)))
     body: Out<typeof E.setCharacterOverride.body>,
   ) {
-    return this.selection.setOverride(me.userId, params.characterId, body.chat);
+    return hide(this.selection.setOverride(me.userId, params.characterId, body.chat));
   }
 
   @Get('status')
   @RequireAuth(E.getModelStatus.auth)
-  getStatus(
+  async getStatus(
     @CurrentPrincipal() me: AuthPrincipal,
     @Query(new ContractPipe(schema(E.getModelStatus.query)))
     query: Out<typeof E.getModelStatus.query>,
   ): Promise<ModelStatus> {
-    return this.status.getStatus(me.userId, query.characterId ?? null);
+    const { detail: _detail, ...status } = await this.status.getStatus(
+      me.userId,
+      query.characterId ?? null,
+    );
+    return status;
   }
 }
 

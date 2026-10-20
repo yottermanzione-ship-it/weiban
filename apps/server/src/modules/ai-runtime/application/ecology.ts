@@ -11,6 +11,7 @@
  * - 说到做到（17 号 §7）：碎碎念只在动作真的执行成功时保留，失败改成中性一句；用户在聊天里让角色做的动作
  *   （发朋友圈、拍一拍、改状态、改签名）不受生态开关限制，PRO+ + 积分够就执行。
  */
+import { stageLabel } from '../domain/relationship-stage.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, gte, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import {
@@ -577,7 +578,7 @@ export class EcologyService {
       `【你】${role.profile.name}。人设：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech }).slice(0, 2500)}`,
     );
     lines.push(
-      `【你们】关系：${contact.relationship ?? '朋友'}；熟悉度 L${level}（L1 客气，L5 很亲密）；${policy.romanceAllowed && !policy.isMinor ? '' : '不涉及恋爱暧昧；'}对方称呼：${profile.nickname ?? '对方'}`,
+      `【你们】关系：${contact.relationship ?? '朋友'}；好感度：${stageLabel(level)}（粉丝 → 朋友 → 亲密好友 → 暧昧 → 恋人 → 伴侣，越往后越亲密）；${policy.romanceAllowed && !policy.isMinor ? '' : '不涉及恋爱暧昧；'}对方称呼：${profile.nickname ?? '对方'}`,
     );
 
     // 聊天：最近 12 条；你发了还没回的条数；对方最近活跃。
@@ -822,7 +823,9 @@ export class EcologyService {
           : '（你发的消息对方还没回，这次不再发私聊消息，别纠缠。）',
       );
     if (level < 3)
-      lines.push('（熟悉度还不到 L3：发消息要有具体内容，不要「在干嘛」「想你了」这类空话。）');
+      lines.push(
+        '（好感度还不到「亲密好友」：发消息要有具体内容，不要「在干嘛」「想你了」这类空话。）',
+      );
     return { text: lines.join('\n'), tools, targets, hasFollowUps: followUps.length > 0 };
   }
 

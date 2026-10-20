@@ -3,6 +3,7 @@
  * 纯函数，不依赖任何 NestJS / DB / 平台代码，方便单元测试。
  */
 import { createHash } from 'node:crypto';
+import { FAMILIARITY_STAGE_NAMES } from '@weiban/contracts';
 import { P25_FAMILIARITY } from '../../../platform/index.js';
 
 // ---------- 按消息加分（16 号 §11） ----------
@@ -42,36 +43,86 @@ export function scaledPoints(
   };
 }
 
-// ---------- 等级与点数 ----------
+// ---------- 阶段与点数（3.25 六阶段） ----------
 
-/**
- * 根据累计点数计算当前等级。
- * levelThresholds: { 1:0, 2:30, 3:100, 4:300, 5:700 }
- */
-export function levelFromPoints(totalPoints: number): number {
-  const thresholds = P25_FAMILIARITY.levelThresholds;
-  if (totalPoints >= thresholds[5]) return 5;
-  if (totalPoints >= thresholds[4]) return 4;
-  if (totalPoints >= thresholds[3]) return 3;
-  if (totalPoints >= thresholds[2]) return 2;
+/** 最高阶段（伴侣）。 */
+export const MAX_STAGE = FAMILIARITY_STAGE_NAMES.length;
+
+/** 阈值：下标 = 阶段 - 1；第一项 0、严格递增（后台可调，默认 P25_FAMILIARITY.defaultStageThresholds）。 */
+export type StageThresholds = readonly number[];
+
+/** 按累计点数算阶段（1–6）。 */
+export function levelFromPoints(
+  totalPoints: number,
+  thresholds: StageThresholds = P25_FAMILIARITY.defaultStageThresholds,
+): number {
+  for (let stage = MAX_STAGE; stage > 1; stage -= 1)
+    if (totalPoints >= (thresholds[stage - 1] ?? Infinity)) return stage;
   return 1;
 }
 
-/**
- * 当前等级已积累点数（本级起点到当前累计点数的差值）。
- */
-export function pointsInLevel(totalPoints: number, level: number): number {
-  const thresholds = P25_FAMILIARITY.levelThresholds as Record<number, number>;
-  return totalPoints - (thresholds[level] ?? 0);
+/** 当前阶段已积累点数（阶段起点到当前累计点数的差值；阈值调高后不为负）。 */
+export function pointsInLevel(
+  totalPoints: number,
+  level: number,
+  thresholds: StageThresholds = P25_FAMILIARITY.defaultStageThresholds,
+): number {
+  return Math.max(0, totalPoints - (thresholds[level - 1] ?? 0));
+}
+
+/** 升到下一阶段还差多少点；最高阶段返回 null（至少 1，契约要求正数）。 */
+export function pointsToNextLevel(
+  level: number,
+  totalPoints: number,
+  thresholds: StageThresholds = P25_FAMILIARITY.defaultStageThresholds,
+): number | null {
+  if (level >= MAX_STAGE) return null;
+  return Math.max(1, (thresholds[level] ?? 0) - totalPoints);
 }
 
 /**
- * 升到下一级需要多少点；已到 L5 返回 null。
+ * 实际阶段：已存的阶段只升不降（后台调高阈值不回落），再按权益 / 角色资格的上限卡住。
+ * ceiling = 最高可到的阶段（未付费且非会员、未成年设定角色为 3 亲密好友；其余为 6）。
  */
-export function pointsToNextLevel(level: number): number | null {
-  if (level >= 5) return null;
-  const thresholds = P25_FAMILIARITY.levelThresholds as Record<number, number>;
-  return thresholds[level + 1]! - thresholds[level]!;
+export function effectiveStage(
+  storedLevel: number,
+  totalPoints: number,
+  thresholds: StageThresholds,
+  ceiling: number,
+): number {
+  return Math.max(1, Math.min(Math.max(storedLevel, levelFromPoints(totalPoints, thresholds)), ceiling));
+}
+
+// ---------- 暂停亲密表达 / 称呼（照旧版 relationship_service.js detectRelationshipIntent） ----------
+
+/**
+ * 从用户这条消息里识别关系意图：
+ * - romancePaused = true：明确要求暂停恋爱 / 暧昧表达（「别叫我宝贝」「先当朋友」「我不想谈恋爱」）；
+ * - romancePaused = false：明确恢复（「可以叫我老婆」「继续谈恋爱」）；null = 没表态；
+ * - title：用户希望被怎么称呼（老公 / 老婆 / 宝贝 / 亲爱的 / 宝宝 / 哥哥 / 姐姐），没说为空串。
+ */
+export function detectRelationshipIntent(message: string): {
+  romancePaused: boolean | null;
+  title: string;
+} {
+  const text = message.trim();
+  const pause =
+    /(?:别(?:再)?|不要|不许|停止|先别).{0,10}(?:叫我|喊我|称呼我|恋爱|暧昧|亲密|宝贝|老婆|老公)/u.test(
+      text,
+    ) ||
+    /(?:先当|只当|做回).{0,5}(?:普通)?朋友/u.test(text) ||
+    /我不想.{0,6}(?:谈恋爱|暧昧|这么亲密)/u.test(text) ||
+    /别跟我.{0,4}(?:谈恋爱|搞暧昧)/u.test(text);
+  if (pause) return { romancePaused: true, title: '' };
+  const titleMatch = text.match(
+    /(?:以后|今后|从现在开始)?(?:可以)?(?:叫|喊|称呼)我(?:做|为)?[「“"']?(老公|老婆|宝贝|亲爱的|宝宝|哥哥|姐姐)[」”"']?/u,
+  );
+  const title = titleMatch?.[1] ?? '';
+  const resume =
+    Boolean(title) ||
+    /(?:继续|恢复).{0,8}(?:谈恋爱|恋爱|暧昧|亲密)/u.test(text) ||
+    /可以.{0,8}(?:谈恋爱|亲密一点|叫我)/u.test(text);
+  return { romancePaused: resume ? false : null, title };
 }
 
 // ---------- 认识天数 ----------
@@ -164,14 +215,10 @@ export function computeNextOccurrence(
 
 // ---------- T-076：纪念卡、熟悉度卡用到的规则 ----------
 
-/** 等级名称（GRW-03 第 1 条）。 */
-export const LEVEL_NAMES: Record<number, string> = {
-  1: '初识',
-  2: '眼熟',
-  3: '熟络',
-  4: '老友',
-  5: '知己',
-};
+/** 阶段名称（3.25 六阶段，契约 FAMILIARITY_STAGE_NAMES；键 = 阶段 1–6）。 */
+export const LEVEL_NAMES: Record<number, string> = Object.fromEntries(
+  FAMILIARITY_STAGE_NAMES.map((name, i) => [i + 1, name]),
+);
 
 /**
  * GRW-04 第 2 条：第 7、30、100、200、365 天，之后每 100 天和每个周年。

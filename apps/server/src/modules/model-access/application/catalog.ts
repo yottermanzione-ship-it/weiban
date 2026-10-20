@@ -3,7 +3,7 @@
  * 用户端模型列表（只列启用的），以及给选择 / 状态 / 网关用的查询。
  *
  * 规则：
- * - 无审查模型不能设为生成默认；仅专用 adult_check 例外，调用时仍须成人资格与OpenRouter路由。
+ * - 无审查模型不能设为生成默认，也不能做平台内部模型（3.25 起不再有「成人内容检查」模型）。
  * - 默认识图模型必须具备 vision 能力；停用的模型不能是默认；
  * - 每种默认最多一个：设新默认时自动从原默认模型上摘掉（同一事务、审计里记下），
  *   所有目录写入经一把事务级咨询锁串行，避免并发设两个默认；
@@ -169,14 +169,15 @@ export class CatalogService {
       .where(eq(modelAccessSettings.key, MODEL_USES_KEY));
     const parsed = ModelScenarioSettings.safeParse(row?.value);
     if (!parsed.success) return { recommended: {}, internal: {} };
-    // 3.24：图片识别场景已去掉
+    // 3.24：图片识别场景已去掉；3.25：成人内容检查模型不再使用
     const { vision: _vision, ...recommended } = parsed.data.recommended;
-    return { recommended, internal: parsed.data.internal };
+    const { adult_check: _adultCheck, ...internal } = parsed.data.internal;
+    return { recommended, internal };
   }
 
   /**
-   * 修改推荐 / 内部模型（只改传了的键）。推荐模型须启用且标注可用于该场景；内部模型须启用、不能是无审查模型
-   * （adult_check 除外）。返回修改后的完整设置。
+   * 修改推荐 / 内部模型（只改传了的键）。推荐模型须启用且标注可用于该场景；内部模型须启用、不能是无审查模型。
+   * 3.25：adult_check（成人内容检查）不再使用，忽略写入。返回修改后的完整设置。
    */
   async setModelUses(
     operatorUserId: string,
@@ -209,7 +210,7 @@ export class CatalogService {
       PlatformInternalUse,
       string | null | undefined,
     ][]) {
-      if (key === undefined) continue;
+      if (key === undefined || use === 'adult_check') continue;
       if (key !== null) {
         const f = await this.fact(key);
         if (!f.entry?.enabled)
@@ -217,12 +218,10 @@ export class CatalogService {
             status: 422,
             details: { field: `internal.${use}` },
           });
-        if (use !== 'adult_check' && hasAdultContent(f.entry.capabilities))
-          throw new AppError(
-            'model_not_allowed',
-            '无审查模型不能做平台内部模型（成人内容检查除外）',
-            { status: 422 },
-          );
+        if (hasAdultContent(f.entry.capabilities))
+          throw new AppError('model_not_allowed', '无审查模型不能做平台内部模型', {
+            status: 422,
+          });
       }
       next.internal[use] = key;
     }
@@ -247,11 +246,6 @@ export class CatalogService {
         },
         tx,
       );
-      const checker = next.internal.adult_check;
-      if (checker && checker !== current.internal.adult_check)
-        await this.outbox.publish(tx, 'model_access.adult_checker_configured', 'model_access', {
-          modelKey: checker,
-        });
     });
     return next;
   }
@@ -262,7 +256,7 @@ export class CatalogService {
     return key ? this.enabledFact(key) : null;
   }
 
-  /** 平台内部模型（安全检查、小V、平台内容、行为规划、成人检查、联网搜索；只算启用的）。 */
+  /** 平台内部模型（安全检查、小V、平台内容、行为规划、联网搜索；只算启用的）。 */
   async internalModel(use: PlatformInternalUse): Promise<ModelFacts | null> {
     const key = (await this.modelUses()).internal[use];
     return key ? this.enabledFact(key) : null;

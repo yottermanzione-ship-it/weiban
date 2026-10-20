@@ -4,6 +4,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   pgSchema,
   text,
   boolean,
@@ -27,7 +28,7 @@ export const familiarity = growthSchema.table(
     characterId: uuid('character_id').notNull(),
     /** 累计总点数（只升不降，GRW-03 第 3 条）。 */
     totalPoints: integer('total_points').notNull().default(0),
-    /** 当前等级 1–5。 */
+    /** 当前阶段 1–6（3.25 起六阶段，迁移 0122）。存的是已卡上限后的阶段，只升不降（未成年重分类除外）。 */
     level: integer('level').notNull().default(1),
     /** 今日已得点数；配合 dailyPointsDate 做每日上限检查。 */
     dailyPoints: integer('daily_points').notNull().default(0),
@@ -41,14 +42,26 @@ export const familiarity = growthSchema.table(
     lastMessageHash: text('last_message_hash'),
     /** 上一条计分消息的发送时刻，用于「距上一条计分消息至少 3 秒」。 */
     lastMessageScoredAt: timestamp('last_message_scored_at', { withTimezone: true }),
+    /** 3.25（迁移 0122）：用户明确要求暂停恋爱 / 暧昧表达（旧版 romance_paused）。 */
+    romancePaused: boolean('romance_paused').notNull().default(false),
+    /** 3.25：用户希望被怎么称呼（「叫我老婆」→ 老婆；旧版 preferred_partner_title）。 */
+    preferredTitle: text('preferred_title'),
   },
   (t) => [
     uniqueIndex('familiarity_user_char_idx').on(t.userId, t.characterId),
-    check('familiarity_level_check', sql`${t.level} BETWEEN 1 AND 5`),
+    check('familiarity_level_check', sql`${t.level} BETWEEN 1 AND 6`),
     check('familiarity_points_check', sql`${t.totalPoints} >= 0`),
     check('familiarity_daily_check', sql`${t.dailyPoints} >= 0`),
   ],
 );
+
+/** 3.25（迁移 0122）：growth 的后台配置（键值）。familiarity_stages = { thresholds: number[6] }。 */
+export const growthSettings = growthSchema.table('settings', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  updatedBy: uuid('updated_by'),
+});
 
 /**
  * 每次加分事件的流水记录；idempotency_key 唯一索引确保同一业务事件只计一次（GRW-03 第 2 条）。

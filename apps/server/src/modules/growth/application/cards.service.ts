@@ -41,6 +41,7 @@ import {
 } from '../../media/index.js';
 import {
   LEVEL_NAMES,
+  MAX_STAGE,
   addDays,
   daysKnownOn,
   isSystemAnniversaryDay,
@@ -300,7 +301,7 @@ export class CardsService implements GrowthCardPort {
       .orderBy(asc(cards.serialNo));
     const obtained = await Promise.all(rows.map((r) => this.dto(userId, r)));
 
-    // 未获得项：接下来 3 个系统纪念日、未到的熟悉度等级（L2–L5）。瞬间卡、节日卡不显示未获得项。
+    // 未获得项：接下来 3 个系统纪念日、未到的好感度阶段（2–6）。瞬间卡、节日卡不显示未获得项。
     const today = await this.ctx.localToday(userId);
     const daysKnown = Math.max(1, daysKnownOn(contact.knownSince, today));
     const haveKeys = new Set(rows.map((r) => r.idempotencyKey));
@@ -320,12 +321,12 @@ export class CardsService implements GrowthCardPort {
       .from(familiarity)
       .where(and(eq(familiarity.userId, userId), eq(familiarity.characterId, characterId)));
     const level = fam?.level ?? 1;
-    for (let l = 2; l <= 5; l += 1) {
+    for (let l = 2; l <= MAX_STAGE; l += 1) {
       if (l > level && !haveKeys.has(`familiarity:${l}`))
         locked.push({
           kind: 'familiarity',
           title: familiarityTitle(l),
-          condition: `熟悉度升到 L${l} ${LEVEL_NAMES[l]}`,
+          condition: `好感度升到「${LEVEL_NAMES[l]}」`,
         });
     }
     return CardAlbum.parse({ characterId, obtained, locked });
@@ -410,8 +411,9 @@ export function anniversaryTitle(days: number): string {
   return days % 365 === 0 ? `认识 ${days / 365} 周年` : `认识第 ${days} 天`;
 }
 
+/** 3.25：好感度卡标题用阶段名（旧版说法），不再带 L 几。 */
 export function familiarityTitle(level: number): string {
-  return `L${level} ${LEVEL_NAMES[level] ?? ''}`.trim();
+  return LEVEL_NAMES[level] ?? '好感度';
 }
 
 /** 卡上那句话的模板（growth 自己发的卡不调用 AI；名场面等由 ai-runtime 生成后传入）。 */
@@ -423,10 +425,11 @@ export const CARD_LINES = {
   familiarity: (level: number) =>
     (
       ({
-        2: '好像越来越熟了，以后可以随便一点。',
-        3: '和你聊天越来越自在了。',
-        4: '有你这样的老朋友，真好。',
-        5: '有些话，只想说给你听。',
+        2: '我们算是朋友了吧，以后可以随便一点。',
+        3: '和你聊天越来越自在了，有你真好。',
+        4: '最近总会想起你，你知道吗？',
+        5: '以后，就请多多指教啦。',
+        6: '往后的日子，也想一直和你一起过。',
       }) as Record<number, string>
     )[level] ?? '我们又熟了一点。',
   holiday: (name: string) => `${name}快乐！今天能和你聊聊天，真好。`.slice(0, 60),

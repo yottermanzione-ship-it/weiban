@@ -9,6 +9,7 @@
  *   用户动态 → 可见角色按熟悉度点赞评论（至少 1 个 L2 及以上的角色互动）。
  * 说明见 docs/ai/runtime-overview.md 7.6 节。
  */
+import { stageLabel } from '../domain/relationship-stage.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 import { and, eq, gte } from 'drizzle-orm';
@@ -998,7 +999,7 @@ export class MomentsAiService {
         },
         {
           role: 'system',
-          content: `角色资料：${JSON.stringify({ name: role.profile.name, persona: role.card.data.persona, speech: role.card.data.speech }).slice(0, 6000)}\n${relLines.join('\n')}\n你和用户（${userName}）的熟悉度：L${level}`,
+          content: `角色资料：${JSON.stringify({ name: role.profile.name, persona: role.card.data.persona, speech: role.card.data.speech }).slice(0, 6000)}\n${relLines.join('\n')}\n你和用户（${userName}）的好感度：${stageLabel(level)}`,
         },
         {
           role: 'user',

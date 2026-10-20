@@ -377,7 +377,8 @@ class AgentSession implements CallAgentSession {
       conversationId: this.info.conversationId,
       purpose: 'memory',
       billingOwner: 'user',
-      modelRole: 'background',
+      // 3.25（G1-4）：私密模式下的通话内容只交给该用户的私密模式模型整理，不发给受限模型（会拒答）。
+      modelRole: this.info.scope === 'adult' ? 'adult' : 'background',
       responseFormat: 'text',
       maxOutputTokens: 150,
       idempotencyKey: `call:${this.info.callId}:summary`,

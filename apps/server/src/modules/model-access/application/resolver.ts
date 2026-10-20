@@ -178,21 +178,7 @@ export class ModelResolver implements AdultModelReadPort {
     }
     if (!picked) return { ok: false, error: 'not_configured' };
     const facts = picked.facts;
-    if (input.modelRole === 'adult_check') {
-      let allowed = false;
-      try {
-        const url = new URL(facts.upstreamBaseUrl ?? '');
-        allowed =
-          url.protocol === 'https:' &&
-          url.hostname === 'openrouter.ai' &&
-          (!url.port || url.port === '443') &&
-          !url.username &&
-          !url.password;
-      } catch {
-        /* 没有有效上游地址时不放行，不回落到用户后台模型。 */
-      }
-      if (!allowed) return { ok: false, error: 'model_not_allowed' };
-    }
+    // 3.25（G1-1）：去掉「成人内容检查模型必须走 OpenRouter」的限制（检查模型本身也不再调用）。
     const usedVisionDefault = false;
     const checkUsable = (f: ModelFacts): GenerateError | null => {
       const reason = unavailableReason(f.entry, f.upstreamStatus);

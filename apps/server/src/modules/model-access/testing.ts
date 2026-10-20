@@ -17,7 +17,7 @@ export { UsageRecorder, AdminUsageService } from './application/usage.js';
 export { UsageReconciliationService } from './application/reconciliation.js';
 export { ModelAccessLifecycle, RECONCILE_USAGE_JOB } from './application/lifecycle.js';
 export type { ModelTextPrices } from './domain/rules.js';
-export { ADULT_CHECKER_BASE_URL } from './domain/rules.js';
+
 export { CatalogService } from './application/catalog.js';
 
 export { TEXT_ADAPTER, MODEL_GENERATION_POLICY, GATEWAY_RETRY_WAIT } from './tokens.js';

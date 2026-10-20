@@ -9,6 +9,9 @@ import {
   AddAnniversaryRequest,
   UpdateAnniversaryRequest,
   Id,
+  FAMILIARITY_FREE_CEILING_LEVEL,
+  FAMILIARITY_STAGE_NAMES,
+  type BillingPaidHistoryPort,
   type ContactsReadPort,
   type FamiliarityEventType,
   type IdentityMembershipReadPort,
@@ -26,12 +29,15 @@ import {
   type DbTx,
   type Outbox,
 } from '../../../platform/index.js';
+import { BILLING_PAID_HISTORY_PORT } from '../../billing/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { IDENTITY_MEMBERSHIP_READ_PORT } from '../../identity/index.js';
 import { familiarity, familiarityEvents, anniversaries } from '../infra/db/schema.js';
 import {
   LEVEL_NAMES,
-  levelFromPoints,
+  MAX_STAGE,
+  detectRelationshipIntent,
+  effectiveStage,
   pointsInLevel,
   pointsToNextLevel,
   computeNextOccurrence,
@@ -45,8 +51,28 @@ import {
 import { AchievementService } from './achievements.service.js';
 import { CARD_LINES, CardsService, anniversaryTitle, familiarityTitle } from './cards.service.js';
 import { GrowthContext } from './context.js';
+import { FamiliarityStageSettingsService } from './stage-settings.js';
 
 const MAX_CUSTOM_ANNIVERSARIES = 10;
+
+/** 3.25：阶段上限（权益卡死 / 未成年设定角色）。 */
+interface StageCeiling {
+  level: number;
+  reason: 'membership' | 'minor' | null;
+}
+interface StageView {
+  thresholds: number[];
+  ceiling: StageCeiling;
+}
+
+/** 3.25：ai-runtime 组装提示词用的关系阶段。 */
+export interface RelationshipStage {
+  level: number;
+  stageName: string;
+  romancePaused: boolean;
+  preferredTitle: string | null;
+  capReason: 'membership' | 'minor' | null;
+}
 
 /**
  * 服务器内部的熟悉度事件类型：契约里的类型（客户端可经 HTTP 上报）+ 只由服务器产生的 user_message
@@ -93,10 +119,73 @@ export class GrowthService {
     @Inject(CardsService) private readonly cards: CardsService,
     @Inject(AchievementService) private readonly achievements: AchievementService,
     @Inject(GrowthContext) private readonly ctx: GrowthContext,
+    @Inject(FamiliarityStageSettingsService)
+    private readonly stages: FamiliarityStageSettingsService,
     @Optional()
     @Inject(IDENTITY_MEMBERSHIP_READ_PORT)
     private readonly membership?: IdentityMembershipReadPort,
+    @Optional()
+    @Inject(BILLING_PAID_HISTORY_PORT)
+    private readonly paid?: BillingPaidHistoryPort,
   ) {}
+
+  // ---------- 3.25 阶段上限（G1-6 / G1-7） ----------
+
+  /** 付过费（充值过或开通过 PRO+）或当前是 PRO+ → 好感度不设上限。 */
+  private async entitled(userId: string, tx?: DbTx): Promise<boolean> {
+    if (await this.membership?.isProPlus(userId, tx)) return true;
+    return Boolean(await this.paid?.hasPaidBefore(userId, tx));
+  }
+
+  /**
+   * 阶段上限：未成年设定角色最高「亲密好友」（不进入暧昧及以上，不解除）；从未充值且非会员的账号最高「亲密好友」
+   * （充值或开会员后解除）。entitled 可由调用方预先算好（列表页一次算一个用户）。
+   */
+  private async ceiling(
+    userId: string,
+    characterId: string,
+    tx?: DbTx,
+    entitled?: boolean,
+  ): Promise<StageCeiling> {
+    if (await this.ctx.isMinorCharacter(characterId, tx))
+      return { level: FAMILIARITY_FREE_CEILING_LEVEL, reason: 'minor' };
+    if (entitled ?? (await this.entitled(userId, tx))) return { level: MAX_STAGE, reason: null };
+    return { level: FAMILIARITY_FREE_CEILING_LEVEL, reason: 'membership' };
+  }
+
+  private async stageView(
+    userId: string,
+    characterId: string,
+    tx?: DbTx,
+    entitled?: boolean,
+  ): Promise<StageView> {
+    return {
+      thresholds: await this.stages.thresholds(),
+      ceiling: await this.ceiling(userId, characterId, tx, entitled),
+    };
+  }
+
+  /** 3.25：给 ai-runtime 组装提示词（阶段语气、暂停亲密表达、称呼）。没有好友关系时按第一阶段。 */
+  async relationshipStage(userId: string, characterId: string): Promise<RelationshipStage> {
+    const [row] = await this.db.db
+      .select()
+      .from(familiarity)
+      .where(and(eq(familiarity.userId, userId), eq(familiarity.characterId, characterId)));
+    const view = await this.stageView(userId, characterId);
+    const level = effectiveStage(
+      row?.level ?? 1,
+      row?.totalPoints ?? 0,
+      view.thresholds,
+      view.ceiling.level,
+    );
+    return {
+      level,
+      stageName: FAMILIARITY_STAGE_NAMES[level - 1] ?? FAMILIARITY_STAGE_NAMES[0],
+      romancePaused: row?.romancePaused ?? false,
+      preferredTitle: row?.preferredTitle ?? null,
+      capReason: view.ceiling.reason && level >= view.ceiling.level ? view.ceiling.reason : null,
+    };
+  }
 
   private async requireActiveContact(userId: string, characterId: string) {
     const contact = await this.contacts.getActiveContact(userId, characterId);
@@ -104,25 +193,32 @@ export class GrowthService {
     return contact;
   }
 
-  private familiarityDto(row: typeof familiarity.$inferSelect): FamiliarityInfo {
+  private familiarityDto(row: typeof familiarity.$inferSelect, view: StageView): FamiliarityInfo {
+    const level = effectiveStage(row.level, row.totalPoints, view.thresholds, view.ceiling.level);
     return FamiliarityInfo.parse({
       characterId: row.characterId,
-      level: row.level,
-      pointsInLevel: pointsInLevel(row.totalPoints, row.level),
-      pointsToNextLevel: pointsToNextLevel(row.level),
+      level,
+      pointsInLevel: pointsInLevel(row.totalPoints, level, view.thresholds),
+      pointsToNextLevel: pointsToNextLevel(level, row.totalPoints, view.thresholds),
       totalPoints: row.totalPoints,
       updatedAt: row.updatedAt.toISOString(),
+      stageName: FAMILIARITY_STAGE_NAMES[level - 1],
+      capReason: view.ceiling.reason && level >= view.ceiling.level ? view.ceiling.reason : null,
+      romancePaused: row.romancePaused,
     });
   }
 
-  private zeroFamiliarity(characterId: string): FamiliarityInfo {
+  private zeroFamiliarity(characterId: string, view: StageView): FamiliarityInfo {
     return FamiliarityInfo.parse({
       characterId,
       level: 1,
       pointsInLevel: 0,
-      pointsToNextLevel: pointsToNextLevel(1),
+      pointsToNextLevel: pointsToNextLevel(1, 0, view.thresholds),
       totalPoints: 0,
       updatedAt: this.clock.now().toISOString(),
+      stageName: FAMILIARITY_STAGE_NAMES[0],
+      capReason: null,
+      romancePaused: false,
     });
   }
 
@@ -131,11 +227,7 @@ export class GrowthService {
   async getFamiliarityLevel(userId: string, characterId: string): Promise<number | null> {
     const contact = await this.contacts.getActiveContact(userId, characterId);
     if (!contact) return null;
-    const [row] = await this.db.db
-      .select({ level: familiarity.level })
-      .from(familiarity)
-      .where(and(eq(familiarity.userId, userId), eq(familiarity.characterId, characterId)));
-    return row?.level ?? 1;
+    return (await this.relationshipStage(userId, characterId)).level;
   }
 
   async getDaysKnownCount(userId: string, characterId: string): Promise<number | null> {
@@ -153,7 +245,8 @@ export class GrowthService {
       .select()
       .from(familiarity)
       .where(and(eq(familiarity.userId, userId), eq(familiarity.characterId, characterId)));
-    return row ? this.familiarityDto(row) : this.zeroFamiliarity(characterId);
+    const view = await this.stageView(userId, characterId);
+    return row ? this.familiarityDto(row, view) : this.zeroFamiliarity(characterId, view);
   }
 
   /** 「我 → 服务 → 熟悉度」：所有角色，按等级从高到低（GRW-03 第 7 条）。 */
@@ -161,10 +254,14 @@ export class GrowthService {
     const contacts = await this.contacts.listActiveContacts(userId);
     const rows = await this.db.db.select().from(familiarity).where(eq(familiarity.userId, userId));
     const byChar = new Map(rows.map((r) => [r.characterId, r]));
-    const items = contacts.map((c) => {
-      const row = byChar.get(c.characterId);
-      return row ? this.familiarityDto(row) : this.zeroFamiliarity(c.characterId);
-    });
+    const entitled = await this.entitled(userId);
+    const items = await Promise.all(
+      contacts.map(async (c) => {
+        const row = byChar.get(c.characterId);
+        const view = await this.stageView(userId, c.characterId, undefined, entitled);
+        return row ? this.familiarityDto(row, view) : this.zeroFamiliarity(c.characterId, view);
+      }),
+    );
     items.sort((a, b) => b.totalPoints - a.totalPoints);
     return { items };
   }
@@ -243,13 +340,19 @@ export class GrowthService {
       lastMessageHash: cur?.lastMessageHash ?? null,
       lastMessageScoredAt: cur?.lastMessageScoredAt ?? null,
     });
+    // 3.25（旧版「暂停亲密表达」）：用户明确要求暂停 / 恢复恋爱暧昧表达、或说了希望的称呼，不论是否计分都记下。
+    const intent = detectRelationshipIntent(text);
+    const romance = {
+      ...(intent.romancePaused === null ? {} : { romancePaused: intent.romancePaused }),
+      ...(intent.title ? { preferredTitle: intent.title } : {}),
+    };
 
     // 先记下指纹（和计分时刻）：上一条消息不论是否计分都参与「完全相同」比较。
     const scoredAt = valid ? sentAt : (cur?.lastMessageScoredAt ?? null);
     if (cur) {
       await tx.db
         .update(familiarity)
-        .set({ lastMessageHash: hash, lastMessageScoredAt: scoredAt })
+        .set({ lastMessageHash: hash, lastMessageScoredAt: scoredAt, ...romance })
         .where(where);
     } else {
       await tx.db.insert(familiarity).values({
@@ -263,8 +366,11 @@ export class GrowthService {
         updatedAt: this.clock.now(),
         lastMessageHash: hash,
         lastMessageScoredAt: scoredAt,
+        ...romance,
       });
     }
+    if (Object.keys(romance).length)
+      await this.ctx.dataChanged(tx, userId, 'familiarity', characterId, null);
     if (!valid) return 0;
     const res = await this.awardPoints(
       tx,
@@ -308,9 +414,10 @@ export class GrowthService {
       .from(familiarity)
       .where(and(eq(familiarity.userId, userId), eq(familiarity.characterId, characterId)))
       .for('update');
+    const view = await this.stageView(userId, characterId, tx);
     if (existing)
       return AddFamiliarityPointsResponse.parse({
-        familiarity: cur ? this.familiarityDto(cur) : this.zeroFamiliarity(characterId),
+        familiarity: cur ? this.familiarityDto(cur, view) : this.zeroFamiliarity(characterId, view),
         pointsAdded: 0,
         leveledUp: false,
       });
@@ -341,14 +448,15 @@ export class GrowthService {
 
     if (pointsAdded <= 0)
       return AddFamiliarityPointsResponse.parse({
-        familiarity: cur ? this.familiarityDto(cur) : this.zeroFamiliarity(characterId),
+        familiarity: cur ? this.familiarityDto(cur, view) : this.zeroFamiliarity(characterId, view),
         pointsAdded: 0,
         leveledUp: false,
       });
 
     const newTotal = (cur?.totalPoints ?? 0) + pointsAdded;
     const oldLevel = cur?.level ?? 1;
-    const newLevel = Math.max(oldLevel, levelFromPoints(newTotal));
+    // 3.25：六阶段阈值（后台可调）+ 上限（未付费且非会员 / 未成年设定角色最高「亲密好友」）；点数照常累计。
+    const newLevel = effectiveStage(oldLevel, newTotal, view.thresholds, view.ceiling.level);
     const [saved] = await tx.db
       .insert(familiarity)
       .values({
@@ -378,7 +486,7 @@ export class GrowthService {
     await this.ctx.dataChanged(tx, userId, 'familiarity', characterId, null);
 
     return AddFamiliarityPointsResponse.parse({
-      familiarity: this.familiarityDto(saved!),
+      familiarity: this.familiarityDto(saved!, view),
       pointsAdded,
       leveledUp,
     });

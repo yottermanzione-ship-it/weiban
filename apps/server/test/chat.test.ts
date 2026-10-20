@@ -530,7 +530,7 @@ describeDb('chat 真实事务、HTTP、隔离和历史负记录', () => {
     );
     expect(adult.message.scope).toBe('adult');
     expect((await reader.getConversation(conversation.conversationId))?.lastMessage?.text).toBe(
-      '[消息]',
+      '[私密消息]',
     );
     await admin.setContentScope({ conversationId: conversation.conversationId, scope: 'normal' });
     await users.sendMessage(userId, conversation.conversationId, {

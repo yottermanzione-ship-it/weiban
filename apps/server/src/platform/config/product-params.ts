@@ -121,11 +121,13 @@ export const P23_RECALL_WINDOW_MS = 2 * MINUTE_MS;
 export const P24_SHARE_IMAGE_MAX_MESSAGES = 30;
 
 /**
- * 来源：PRD 第 5 节 P-25。熟悉度：升级累计点数与每日上限、各行为得分。GRW-03
- * levelThresholds[n] 表示升到 L(n) 需要的累计点数（L1 为 0）。
+ * 来源：PRD 第 5 节 P-25。好感度：升级累计点数与每日上限、各行为得分。GRW-03
+ * 3.25（10-21 G1-6）：改回旧版六阶段（粉丝 / 朋友 / 亲密好友 / 暧昧 / 恋人 / 伴侣）。点数规则不变，
+ * 只把原来的满级 700 映射到六阶段；defaultStageThresholds[i] = 到第 i+1 阶段需要的累计点数。
+ * 实际阈值后台可调（growth.settings familiarity_stages），这里只是默认值。
  */
 export const P25_FAMILIARITY = {
-  levelThresholds: { 1: 0, 2: 30, 3: 100, 4: 300, 5: 700 },
+  defaultStageThresholds: [0, 100, 400, 500, 600, 700] as readonly number[],
   /**
    * 每个角色每天上限（16 号 §11，总经理 10-20）：免费 350，PRO+ ×2 = 700。
    * 目标：每天约 30 条有效消息 7 天内满级；一直聊最快免费 2 天、PRO+ 1 天满级。

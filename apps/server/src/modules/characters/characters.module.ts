@@ -7,6 +7,7 @@ import { RealtimeModule } from '../realtime/index.js';
 import { PublicUpdateService } from './application/public-updates.js';
 import { PublicUpdateAdminController } from './http/public-updates.controller.js';
 import { CharacterService } from './application/characters.js';
+import { CharacterEligibilityService } from './application/eligibility.js';
 import { CharacterCheckWorker } from './application/check-worker.js';
 import { CustomCharacterService } from './application/custom-character.js';
 import { CharacterTrialService } from './application/trials.js';
@@ -61,6 +62,7 @@ import {
     { provide: CHARACTER_SUPPLEMENT_PORT, useExisting: CharacterSupplementService },
     { provide: CHARACTER_SUPPLEMENT_CONFLICTS, useExisting: CharacterSupplementService },
     CharacterService,
+    CharacterEligibilityService,
     CharacterCheckWorker,
     CustomCharacterService,
     CharacterTrialService,

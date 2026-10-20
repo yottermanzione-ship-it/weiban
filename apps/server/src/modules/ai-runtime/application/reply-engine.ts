@@ -29,7 +29,6 @@ import { ReplyPlanStore, type ReplyPlan } from './plan-store.js';
 import { ReplyContext, ReplySnapshot } from './reply-context.js';
 import { callModelForCare, careFallback } from './safety-care.js';
 import { HEALTH_LABEL } from './health-care.js';
-import { AdultBoundaryService } from './adult-boundary.js';
 import { MediaAiService } from './media-ai.js';
 import { PlannerService } from './planner.js';
 import { QuirkService } from './quirk-service.js';
@@ -50,7 +49,6 @@ const Result = z.object({
 @Injectable()
 export class ReplyEngine {
   constructor(
-    @Inject(AdultBoundaryService) readonly adultBoundary: AdultBoundaryService,
     @Inject(ReplyPlanStore) readonly store: ReplyPlanStore,
     @Inject(ReplyContext) readonly context: ReplyContext,
     @Inject(MODEL_GATEWAY_PORT) readonly gateway: ModelGatewayPort,
@@ -122,32 +120,13 @@ export class ReplyEngine {
       careActive: snapshot.careActive,
       suspected: false,
     };
-    const adult = snapshot.scope === 'adult' && !facts.highRisk && !facts.careActive;
-    const inputReview = adult
-      ? await this.adultBoundary.review(
-          this.input(row, snapshot, 'reply'),
-          this.adultBoundary.inputText(this.input(row, snapshot, 'reply')),
-          'input',
-        )
-      : 'allowed';
-    let answer: PortResult<GenerateTextOutput, GenerateError> =
-      inputReview !== 'allowed'
-        ? { ok: false, error: inputReview === 'blocked' ? 'content_rejected' : 'not_configured' }
-        : snapshot.forceCareFallback
-          ? { ok: false, error: 'policy_denied' }
-          : await callModelForCare(gw, this.input(row, snapshot, 'reply'), facts);
-    let adultOutput =
-      adult && answer.ok
-        ? await this.adultBoundary.review(
-            this.input(row, snapshot, 'reply'),
-            answer.value.text,
-            'output',
-          )
-        : 'allowed';
+    // 3.25（G1-1）：私密模式不再调用成人内容检查模型；底线由角色资格、私密模式提示词与违禁词规则保证。
+    let answer: PortResult<GenerateTextOutput, GenerateError> = snapshot.forceCareFallback
+      ? { ok: false, error: 'policy_denied' }
+      : await callModelForCare(gw, this.input(row, snapshot, 'reply'), facts);
     if (
       answer.ok &&
-      (!outputAllowed(answer.value.text, snapshot.policy, snapshot.scope === 'adult') ||
-        adultOutput === 'blocked')
+      !outputAllowed(answer.value.text, snapshot.policy, snapshot.scope === 'adult')
     ) {
       answer = await callModelForCare(
         gw,
@@ -164,20 +143,7 @@ export class ReplyEngine {
         },
         facts,
       );
-      adultOutput =
-        adult && answer.ok
-          ? await this.adultBoundary.review(
-              this.input(row, snapshot, 'guard'),
-              answer.value.text,
-              'output',
-            )
-          : 'allowed';
     }
-    if (answer.ok && adultOutput !== 'allowed')
-      answer = {
-        ok: false,
-        error: adultOutput === 'blocked' ? 'content_rejected' : 'not_configured',
-      };
     const inCare = facts.highRisk || facts.careActive;
     let bubbles: string[] = [];
     let fallbackReason: string | null = null;

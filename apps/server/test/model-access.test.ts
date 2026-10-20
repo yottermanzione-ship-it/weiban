@@ -1070,8 +1070,7 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         available: false,
         reason: 'provider_unavailable',
         canFallbackToDefault: true,
-        // 3.24：写出具体原因；只看文本聊天模型能否识图
-        detail: 'upstream_unavailable',
+        // 3.25：具体原因只给后台看，用户端接口不再带 detail；只看文本聊天模型能否识图
         visionAvailable: false,
       });
       await upstreamsSvc.reportStatus(own.upstreamId, 'active', 'probe');

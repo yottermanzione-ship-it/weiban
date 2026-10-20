@@ -133,7 +133,27 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       .from(categories)
       .orderBy(categories.order, categories.id);
   }
+  /**
+   * 生效的分类。3.25（G1-2）：有后台人工标注时按人工标注（优先于资料分类与 AI / 系统检出，含用户套用的
+   * 预设改版检出）；没有时按自动结果。
+   */
   classify(row: Row): CharacterClassification {
+    const manual = row.eligibilityOverride;
+    if (manual)
+      return deriveClassification(
+        {
+          basis: manual.basis,
+          realPersonKind: manual.basis === 'real_person' ? manual.realPersonKind : null,
+          ageSetting: manual.ageSetting,
+          childAppearance: manual.childAppearance,
+        },
+        row.kind as 'preset' | 'custom',
+        manual.childFeaturesDetected,
+      );
+    return this.autoClassify(row);
+  }
+  /** 自动结果（不看人工标注）：资料里的分类 + 系统 / AI 检出的儿童特征。 */
+  autoClassify(row: Row): CharacterClassification {
     return deriveClassification(
       {
         basis: row.basis as 'real_person' | 'fictional' | 'original',

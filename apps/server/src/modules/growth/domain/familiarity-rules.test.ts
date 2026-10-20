@@ -23,9 +23,12 @@ describe('16 号 §11 好感度参数', () => {
   });
 
   it('满级阈值不变：一直聊免费 2 天、PRO+ 1 天满级', () => {
-    expect(levelFromPoints(699)).toBe(4);
-    expect(levelFromPoints(700)).toBe(5);
-    expect(levelFromPoints(350 * 2)).toBe(5);
+    // 3.25：六阶段默认阈值 0 / 100 / 400 / 500 / 600 / 700。
+    expect(levelFromPoints(99)).toBe(1);
+    expect(levelFromPoints(400)).toBe(3);
+    expect(levelFromPoints(699)).toBe(5);
+    expect(levelFromPoints(700)).toBe(6);
+    expect(levelFromPoints(350 * 2)).toBe(6);
   });
 });
 

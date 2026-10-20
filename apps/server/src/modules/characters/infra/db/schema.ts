@@ -11,6 +11,14 @@ import {
   primaryKey,
 } from 'drizzle-orm/pg-core';
 export const charactersSchema = pgSchema('characters');
+/** 3.25：人工标注的资格事实（契约 CharacterEligibilityFacts）。 */
+export interface EligibilityOverride {
+  basis: 'real_person' | 'fictional' | 'original';
+  realPersonKind: 'celebrity' | 'historical' | 'private_person' | null;
+  ageSetting: 'minor' | 'adult';
+  childAppearance: boolean;
+  childFeaturesDetected: boolean;
+}
 const bytea = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
 export const categories = charactersSchema.table('categories', {
   id: text('id').primaryKey(),
@@ -65,11 +73,32 @@ export const characters = charactersSchema.table(
     plazaAuthorName: text('plaza_author_name'),
     /** plaza 的 adoptionId（文本），同一用户同一键只建一个角色。 */
     plazaIdempotencyKey: text('plaza_idempotency_key'),
+    /**
+     * 3.25（迁移 0121，G1-2）：后台人工标注的资格事实（全量），优先于上面的分类列与 AI / 系统检出；
+     * null = 没有人工标注。分类列照常由自动流程维护，清除人工标注即恢复自动结果。
+     */
+    eligibilityOverride: jsonb('eligibility_override').$type<EligibilityOverride | null>(),
   },
   (t) => [
     index('characters_owner_idx').on(t.ownerId),
     index('characters_plaza_idx').on(t.status, t.categoryId),
   ],
+);
+/** 3.25（迁移 0121）：角色资格人工标注的修改记录（谁、何时、原因）。 */
+export const eligibilityChanges = charactersSchema.table(
+  'eligibility_changes',
+  {
+    id: uuid('id').primaryKey(),
+    characterId: uuid('character_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    operatorUserId: uuid('operator_user_id'),
+    reason: text('reason').notNull(),
+    beforeOverride: jsonb('before_override').$type<EligibilityOverride | null>(),
+    afterOverride: jsonb('after_override').$type<EligibilityOverride | null>(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [index('eligibility_changes_character_idx').on(t.characterId, t.createdAt)],
 );
 export const trialSessions = charactersSchema.table('trial_sessions', {
   conversationId: uuid('conversation_id').primaryKey(),

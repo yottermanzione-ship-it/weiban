@@ -1,9 +1,21 @@
-import { Controller, Get, Post, Patch, Body, Query, Param, Inject, HttpCode } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Put,
+  Body,
+  Query,
+  Param,
+  Inject,
+  HttpCode,
+} from '@nestjs/common';
 import {
   CharacterEndpoints as E,
   CharacterAdminEndpoints as A,
   type AdminCharacterWrite,
   type AdminCharacterUpdate,
+  type UpdateCharacterEligibilityRequest,
 } from '@weiban/contracts';
 import {
   ContractPipe,
@@ -12,6 +24,7 @@ import {
   type AuthPrincipal,
 } from '../../../platform/index.js';
 import { CharacterService } from '../application/characters.js';
+import { CharacterEligibilityService } from '../application/eligibility.js';
 @Controller('api/v1/characters')
 export class CharacterController {
   constructor(@Inject(CharacterService) private readonly service: CharacterService) {}
@@ -40,7 +53,25 @@ export class CharacterController {
 }
 @Controller('api/v1/admin/characters')
 export class CharacterAdminController {
-  constructor(@Inject(CharacterService) private readonly service: CharacterService) {}
+  constructor(
+    @Inject(CharacterService) private readonly service: CharacterService,
+    @Inject(CharacterEligibilityService) private readonly eligibility: CharacterEligibilityService,
+  ) {}
+  /** 3.25（G1-2）：角色资格人工标注（预设与用户自建角色都可用）。 */
+  @Get(':characterId/eligibility')
+  @RequireAuth(A.getEligibility.auth)
+  getEligibility(@Param(new ContractPipe(A.getEligibility.params!)) p: { characterId: string }) {
+    return this.eligibility.get(p.characterId);
+  }
+  @Put(':characterId/eligibility')
+  @RequireAuth(A.setEligibility.auth)
+  setEligibility(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(A.setEligibility.params!)) p: { characterId: string },
+    @Body(new ContractPipe(A.setEligibility.body!)) body: UpdateCharacterEligibilityRequest,
+  ) {
+    return this.eligibility.set(me.userId, p.characterId, body);
+  }
   @Get()
   @RequireAuth(A.list.auth)
   async list(

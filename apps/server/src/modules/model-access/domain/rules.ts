@@ -4,7 +4,6 @@
  * docs/ai/cost-estimate.md 7.2 节（「约每条回复」与价格档位）。
  */
 import type { ModelCapability, UpstreamStatus } from '@weiban/contracts';
-export const ADULT_CHECKER_BASE_URL = 'https://openrouter.ai/api/v1';
 
 export type UpstreamTestFailure =
   'invalid_key' | 'insufficient_balance' | 'network_error' | 'provider_error';

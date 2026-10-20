@@ -84,6 +84,12 @@ export class GrowthContext {
     return { category, portraitFreeOnly: c.derived.portraitPolicy !== 'allowed' };
   }
 
+  /** 3.25：角色是否未成年设定（含儿童外貌 / 检出儿童特征、后台人工标注）；查不到按否。 */
+  async isMinorCharacter(characterId: string, tx?: DbTx): Promise<boolean> {
+    const c = await this.characters.getClassification(characterId, tx as Tx | undefined);
+    return c?.derived.isMinor ?? false;
+  }
+
   /** 在用户与角色的私聊里写一条系统提示（不打断聊天，GRW-05 / 设计 C 4.4）。没有私聊时跳过。 */
   async postSystem(
     tx: DbTx,

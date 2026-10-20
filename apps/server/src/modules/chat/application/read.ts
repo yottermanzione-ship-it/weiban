@@ -26,7 +26,7 @@ import {
   participants,
   userConversationStates,
 } from '../infra/db/schema.js';
-import { ChatStore, type ConversationRow } from './store.js';
+import { ChatStore, PRIVATE_MESSAGE_PREVIEW, type ConversationRow } from './store.js';
 
 @Injectable()
 export class ChatReadService implements ChatReadPort {
@@ -104,7 +104,8 @@ export class ChatReadService implements ChatReadPort {
         .select({ scope: messages.scope })
         .from(messages)
         .where(eq(messages.id, result.lastMessage.messageId));
-      if (source?.scope === 'adult') result.lastMessage = { ...result.lastMessage, text: '[消息]' };
+      if (source?.scope === 'adult')
+        result.lastMessage = { ...result.lastMessage, text: PRIVATE_MESSAGE_PREVIEW };
     }
     return result;
   }

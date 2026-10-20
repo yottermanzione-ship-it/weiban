@@ -8,6 +8,7 @@
  *   P-33 余额保留线 1 元。
  * 说明见 docs/ai/runtime-overview.md 第 7 节「T-065 实现差异」。
  */
+import { stageLabel } from '../domain/relationship-stage.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { readableMessageText } from './content-text.js';
 import { userNickname } from '../domain/user-naming.js';
@@ -585,7 +586,7 @@ export class GroupChatService {
       const score =
         (member.talkativeness / 100) * 0.4 +
         topic * 0.3 +
-        (member.familiarity / 5) * 0.2 +
+        (member.familiarity / 6) * 0.2 +
         Math.random() * 0.1 -
         (recentSpeakers.has(member.participantId) ? 0.15 : 0);
       scored.push({ member, score: Math.max(0, score) });
@@ -825,7 +826,7 @@ export class GroupChatService {
         },
         {
           role: 'system',
-          content: `你的角色资料：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, groupStyle: role.card.data.social.groupStyle, examples: role.card.data.examples.slice(0, 6) }).slice(0, 16000)}${supplementBlock(role.userSupplement)}\n群成员关系：\n${relationLines.join('\n') || '（群里只有你和用户）'}\n用户：${profile?.nickname ?? '用户'}（与你的熟悉度 L${speaker.familiarity}）`,
+          content: `你的角色资料：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, groupStyle: role.card.data.social.groupStyle, examples: role.card.data.examples.slice(0, 6) }).slice(0, 16000)}${supplementBlock(role.userSupplement)}\n群成员关系：\n${relationLines.join('\n') || '（群里只有你和用户）'}\n用户：${profile?.nickname ?? '用户'}（与你的好感度：${stageLabel(speaker.familiarity)}）`,
         },
         {
           role: 'user',

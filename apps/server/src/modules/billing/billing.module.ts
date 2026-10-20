@@ -25,11 +25,13 @@ import {
   BILLING_CHARGE_QUERY_PORT,
   BILLING_DAILY_SPEND_READ_PORT,
   BILLING_MODEL_RATE_PORT,
+  BILLING_PAID_HISTORY_PORT,
   BILLING_QUOTE_PORT,
   BILLING_READ_PORT,
   BILLING_RESERVATION_PORT,
   BILLING_SERVICE_FEE_PORT,
 } from './tokens.js';
+import { PaidHistoryService } from './application/paid-history.js';
 import { ServiceFeeService } from './application/service-fees.js';
 import { CostResolutionService } from './application/cost-resolution.js';
 
@@ -64,6 +66,8 @@ import { CostResolutionService } from './application/cost-resolution.js';
     { provide: BILLING_MODEL_RATE_PORT, useExisting: ModelRateService },
     ServiceFeeService,
     { provide: BILLING_SERVICE_FEE_PORT, useExisting: ServiceFeeService },
+    PaidHistoryService,
+    { provide: BILLING_PAID_HISTORY_PORT, useExisting: PaidHistoryService },
   ],
   exports: [
     BILLING_MODEL_RATE_PORT,
@@ -73,6 +77,7 @@ import { CostResolutionService } from './application/cost-resolution.js';
     BILLING_QUOTE_PORT,
     BILLING_DAILY_SPEND_READ_PORT,
     BILLING_SERVICE_FEE_PORT,
+    BILLING_PAID_HISTORY_PORT,
   ],
 })
 export class BillingModule {}

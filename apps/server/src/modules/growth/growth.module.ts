@@ -5,6 +5,7 @@
  */
 import { Module } from '@nestjs/common';
 import type { GrowthReadPort } from '@weiban/contracts';
+import { BillingModule } from '../billing/index.js';
 import { CharactersModule } from '../characters/index.js';
 import { ChatModule } from '../chat/index.js';
 import { ContactsModule } from '../contacts/index.js';
@@ -16,6 +17,8 @@ import { CardsService } from './application/cards.service.js';
 import { GrowthContext } from './application/context.js';
 import { GrowthEvents } from './application/growth-events.js';
 import { GrowthService } from './application/growth.service.js';
+import { FamiliarityStageSettingsService } from './application/stage-settings.js';
+import { GrowthAdminController } from './http/growth-admin.controller.js';
 import { PetsService } from './application/pets.service.js';
 import { PetSpeciesAdminController, PetsController } from './http/pets.controller.js';
 import { GrowthCardsController } from './http/growth-cards.controller.js';
@@ -32,6 +35,7 @@ import {
 
 @Module({
   imports: [
+    BillingModule,
     ContactsModule,
     CharactersModule,
     ChatModule,
@@ -40,9 +44,16 @@ import {
     RealtimeModule,
   ],
   // 卡片控制器在前：/growth/cards、/growth/achievements 等固定路径先于 /growth/:characterId/... 匹配。
-  controllers: [GrowthCardsController, GrowthController, PetsController, PetSpeciesAdminController],
+  controllers: [
+    GrowthCardsController,
+    GrowthAdminController,
+    GrowthController,
+    PetsController,
+    PetSpeciesAdminController,
+  ],
   providers: [
     GrowthContext,
+    FamiliarityStageSettingsService,
     AchievementService,
     CardsService,
     GrowthService,

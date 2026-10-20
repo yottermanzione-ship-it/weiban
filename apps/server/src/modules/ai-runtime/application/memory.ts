@@ -1057,7 +1057,8 @@ export class MemoryService {
           conversationId: job.conversationId,
           purpose: 'memory',
           billingOwner: 'user',
-          modelRole: 'background',
+          // 3.25（G1-4）：私密模式那段对话的记忆抽取 / 摘要只用该用户的私密模式模型（不发给受限模型，避免拒答）。
+          modelRole: batchScope === 'adult' ? 'adult' : 'background',
           countAsBackground: true,
           meta: {
             scenarioMode: batchScope,

@@ -12,6 +12,7 @@
  * - P-09 用户 5 分钟内在任一会话发过消息则延后；最长延后 60 分钟，超时放弃。
  * - P-33 余额保留线 1 元（cost-estimate.md 6.2）。
  */
+import { stageLabel } from '../domain/relationship-stage.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { userNickname, userNamingContext } from '../domain/user-naming.js';
 import { AdultBoundaryService } from './adult-boundary.js';
@@ -1106,7 +1107,7 @@ export class ProactiveSchedulerService {
       .getFamiliarity(ctx.userId, plan.characterId)
       .then((f) => f.level)
       .catch(() => 1);
-    const tone = `L${level}`;
+    const tone = stageLabel(level);
     const address = userNickname(ctx.nickname);
     // T-082：宠物现取（改名立即生效）；提议领养只在还没有宠物、也没提过时发。
     const petList = await this.listPets(ctx.userId, plan.characterId);
