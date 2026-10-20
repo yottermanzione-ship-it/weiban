@@ -561,7 +561,8 @@ export class AdminUsageService {
         status: upstreams.status,
         cooldownUntil: upstreams.cooldownUntil,
       })
-      .from(upstreams);
+      .from(upstreams)
+      .where(isNull(upstreams.deletedAt));
     let available = 0;
     let abnormal = 0;
     let disabled = 0;

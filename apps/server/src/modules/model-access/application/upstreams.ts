@@ -81,6 +81,7 @@ export function toUpstream(
     lastError: row.lastError,
     lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
     lastTestedAt: row.lastTestedAt?.toISOString() ?? null,
+    deletedAt: row.deletedAt?.toISOString() ?? null,
     ...(extra?.inFlight !== undefined ? { inFlight: extra.inFlight } : {}),
     ...(extra?.todayCalls !== undefined ? { todayCalls: extra.todayCalls } : {}),
     ...(extra?.todayCostMicros !== undefined ? { todayCostMicros: extra.todayCostMicros } : {}),
@@ -437,20 +438,47 @@ export class UpstreamService {
     });
   }
 
-  /** 删除上游：仍有启用的模型指向它时 409。密文随行删除。 */
+  /**
+   * 删除上游（10-20 起软删）：仍被任何模型线路引用（启用或停用的路由、模型目录的主上游）时 409，
+   * details 带引用它的模型键与名称，提示先换线路。删除后清空密文、停用、记删除时间；
+   * 行保留，历史调用记录仍能显示账号名。已删除的账号不再出现在调度、探测、线路选择里。
+   */
   async delete(adminId: string, upstreamId: string): Promise<void> {
     await this.database.transaction(async (tx) => {
       const row = await this.lock(tx, upstreamId);
-      const enabled = await tx.db
+      const routed = await tx.db
+        .select({ modelKey: modelRoutes.modelKey })
+        .from(modelRoutes)
+        .where(eq(modelRoutes.upstreamId, upstreamId));
+      const primary = await tx.db
         .select({ modelKey: modelCatalog.modelKey })
         .from(modelCatalog)
-        .where(and(eq(modelCatalog.upstreamId, upstreamId), eq(modelCatalog.enabled, true)));
-      if (enabled.length > 0) {
-        throw new AppError('conflict', '还有启用的模型使用这个上游，请先停用或改指到别的上游', {
-          details: { modelKeys: enabled.map((e) => e.modelKey) },
-        });
+        .where(eq(modelCatalog.upstreamId, upstreamId));
+      const keys = [...new Set([...routed, ...primary].map((r) => r.modelKey))].sort();
+      if (keys.length > 0) {
+        const named = await tx.db
+          .select({ modelKey: modelCatalog.modelKey, displayName: modelCatalog.displayName })
+          .from(modelCatalog)
+          .where(inArray(modelCatalog.modelKey, keys));
+        const nameOf = new Map(named.map((n) => [n.modelKey, n.displayName]));
+        const modelNames = keys.map((k) => nameOf.get(k) ?? k);
+        throw new AppError(
+          'conflict',
+          `这些模型还在用这个上游账号：${modelNames.join('、')}。请先在「模型」里把它们换到别的线路，再删除`,
+          { details: { modelKeys: keys, modelNames } },
+        );
       }
-      await tx.db.delete(upstreams).where(eq(upstreams.id, upstreamId));
+      const now = this.clock.now();
+      await tx.db
+        .update(upstreams)
+        .set({
+          deletedAt: now,
+          enabled: false,
+          secretCiphertext: Buffer.alloc(0),
+          cooldownUntil: null,
+          updatedAt: now,
+        })
+        .where(eq(upstreams.id, upstreamId));
       await this.audit.record(
         {
           module: 'model_access',
@@ -502,7 +530,7 @@ export class UpstreamService {
         .from(upstreams)
         .where(eq(upstreams.id, upstreamId))
         .for('update');
-      if (!row) return false;
+      if (!row || row.deletedAt) return false;
       return this.applyStatus(tx, row, status, source, failure);
     });
   }
@@ -512,7 +540,7 @@ export class UpstreamService {
       .select()
       .from(upstreams)
       .where(eq(upstreams.id, upstreamId));
-    if (!row) throw new AppError('not_found', '上游不存在');
+    if (!row || row.deletedAt) throw new AppError('not_found', '上游不存在');
     return row;
   }
 
@@ -584,7 +612,7 @@ export class UpstreamService {
       .from(upstreams)
       .where(eq(upstreams.id, upstreamId))
       .for('update');
-    if (!row) throw new AppError('not_found', '上游不存在');
+    if (!row || row.deletedAt) throw new AppError('not_found', '上游不存在');
     return row;
   }
 

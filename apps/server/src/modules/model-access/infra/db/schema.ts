@@ -67,6 +67,8 @@ export const upstreams = modelAccessSchema.table(
     consecutiveFailures: integer('consecutive_failures').notNull().default(0),
     lastError: text('last_error'),
     lastUsedAt: tz('last_used_at'),
+    /** 10-20（0112）：软删时间。删除后密文清空、不参与调度，行保留给历史调用记录显示账号名。 */
+    deletedAt: tz('deleted_at'),
   },
   (t) => [
     check(

@@ -95,6 +95,13 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.20（2026-10-20，试用反馈批 E1）
+
+依据 `docs/tasks/2026-10-20-gm-feedback-batches.md` 批 E1。说明见 `docs/handoffs/2026-10-20-fb-small.md`。
+
+- `Upstream` 增可选 `deletedAt`：上游账号改为软删，删除后列表仍返回（后台隐藏，调用记录据此显示账号名）。
+- `deleteUpstream`：仍被任何模型线路引用（启用或停用的模型、任一路由）时 409，`error.details` 带 `modelKeys` 与 `modelNames`；已删除的账号再操作返回 404。
+
 ### 3.19（2026-10-20，角色生态 v1 批 C）
 
 依据 `docs/refactor/17-ecology-settings.md`、16 号 §4。说明见 `docs/ai/ecology-v1.md`、`docs/handoffs/2026-10-19-v5-ecology.md`。（在批 B 的 3.18 之上递增。）

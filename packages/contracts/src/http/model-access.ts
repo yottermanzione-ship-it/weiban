@@ -286,6 +286,11 @@ export const Upstream = z.object({
   /** 今天（北京时间）的调用次数与上游成本（微元）。 */
   todayCalls: z.number().int().nonnegative().optional(),
   todayCostMicros: z.number().int().nonnegative().optional(),
+  /**
+   * 3.20：删除时间（软删）。非空 = 已删除：密钥已清空、不参与调度、不能再被模型指向；
+   * 列表仍返回它，只为让历史调用记录能显示账号名，后台的账号列表与线路选择应隐藏它。
+   */
+  deletedAt: Timestamp.nullable().optional(),
 });
 export type Upstream = z.infer<typeof Upstream>;
 
@@ -593,7 +598,8 @@ export const ModelAccessAdminEndpoints = {
     auth: 'admin',
     params: z.object({ upstreamId: Id }),
     response: NoContent,
-    summary: '删除上游；仍有启用的模型指向它时 409 conflict',
+    summary:
+      '3.20：删除上游（软删，历史调用记录保留可读）；仍被任何模型线路引用（含停用的模型）时 409 conflict，error.details = { modelKeys, modelNames }',
   }),
   updateUpstream: defineEndpoint({
     method: 'PATCH',

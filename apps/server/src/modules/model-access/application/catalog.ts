@@ -23,7 +23,7 @@ import {
   ModelLeaderboardSource,
   RouteBillingBounds,
 } from '@weiban/contracts';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   AUDIT_LOG,
@@ -224,7 +224,7 @@ export class CatalogService {
       const [upstream] = await tx.db
         .select({ status: upstreams.status })
         .from(upstreams)
-        .where(eq(upstreams.id, body.upstreamId))
+        .where(and(eq(upstreams.id, body.upstreamId), isNull(upstreams.deletedAt)))
         .for('share');
       if (!upstream && (body.enabled || upstreamChanged)) {
         throw new AppError('bad_request', '指定的上游不存在', { status: 422 });
@@ -489,7 +489,7 @@ export class CatalogService {
       const found = await tx.db
         .select({ id: upstreams.id })
         .from(upstreams)
-        .where(inArray(upstreams.id, ids));
+        .where(and(inArray(upstreams.id, ids), isNull(upstreams.deletedAt)));
       if (found.length !== ids.length) {
         throw new AppError('bad_request', '路由里有不存在的上游账号', { status: 422 });
       }

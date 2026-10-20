@@ -548,25 +548,43 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
       expect(unavailable).toMatchObject({ severity: 'warning' });
     });
 
-    it('删除：仍有启用模型时 409；停用后可删，密文随之删除', async () => {
+    it('删除（软删）：仍被模型线路引用时 409 并列出模型名；换线路后可删，密文清空、行保留', async () => {
       const up = await createUpstream('待删上游');
       await addModel('test/delete-me', up.upstreamId);
       const conflict = await http()
         .delete(`/api/v1/admin/model/upstreams/${up.upstreamId}`, adminToken)
         .expect(409);
       expect(errorCode(conflict)).toBe('conflict');
+      expect(conflict.body.error.details.modelKeys).toEqual(['test/delete-me']);
+      // 停用的模型仍然引用它：照样 409
       await putCatalog(entry('test/delete-me', up.upstreamId, { enabled: false })).expect(200);
+      await http().delete(`/api/v1/admin/model/upstreams/${up.upstreamId}`, adminToken).expect(409);
+      // 换到别的线路后可删
+      const other = await createUpstream('接替上游');
+      await putCatalog(entry('test/delete-me', other.upstreamId, { enabled: false })).expect(200);
       await http().delete(`/api/v1/admin/model/upstreams/${up.upstreamId}`, adminToken).expect(204);
       const left = await withClient(
         async (c) =>
-          (await c.query(`SELECT 1 FROM model_access.upstreams WHERE id = $1`, [up.upstreamId]))
-            .rowCount,
+          (
+            await c.query(
+              `SELECT deleted_at, enabled, octet_length(secret_ciphertext) AS len FROM model_access.upstreams WHERE id = $1`,
+              [up.upstreamId],
+            )
+          ).rows[0] as { deleted_at: Date | null; enabled: boolean; len: number },
       );
-      expect(left).toBe(0);
+      expect(left.deleted_at).not.toBeNull();
+      expect(left.enabled).toBe(false);
+      expect(Number(left.len)).toBe(0);
       expect((await audits('upstream.deleted')).some((a) => a.target_id === up.upstreamId)).toBe(
         true,
       );
-      // 停用条目指向已删除的上游：重新启用 422
+      // 列表仍返回（带 deletedAt，后台据此隐藏、调用记录据此显示账号名）
+      const list = await http().get('/api/v1/admin/model/upstreams', adminToken).expect(200);
+      expect(
+        list.body.items.find((u: { upstreamId: string }) => u.upstreamId === up.upstreamId)
+          ?.deletedAt,
+      ).toBeTruthy();
+      // 已删除的上游不能再被模型指向
       const res = await putCatalog(entry('test/delete-me', up.upstreamId)).expect(422);
       expect(errorCode(res)).toBe('bad_request');
       await http().delete(`/api/v1/admin/model/upstreams/${up.upstreamId}`, adminToken).expect(404);
