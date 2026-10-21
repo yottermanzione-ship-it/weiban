@@ -1,4 +1,5 @@
-import { Controller, Get, Inject, Param, Query } from '@nestjs/common';
+import { Controller, Delete, Get, HttpCode, Inject, Param, Query } from '@nestjs/common';
+import { SharedEpisodesService } from '../application/shared-episodes.js';
 import { TimelineEndpoints as E } from '@weiban/contracts';
 import {
   ContractPipe,
@@ -14,7 +15,17 @@ export class TimelineController {
   constructor(
     @Inject(TimelineSummaryService) private readonly timeline: TimelineSummaryService,
     @Inject(TimelineListService) private readonly list: TimelineListService,
+    @Inject(SharedEpisodesService) private readonly episodes: SharedEpisodesService,
   ) {}
+  @Delete('characters/:characterId/episodes/:episodeId')
+  @HttpCode(204)
+  async removeEpisode(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Param(new ContractPipe(E.removeEpisode.params!))
+    params: { characterId: string; episodeId: string },
+  ) {
+    await this.episodes.remove(p.userId, params.characterId, params.episodeId);
+  }
 
   @Get('characters/:characterId/status')
   getStatus(

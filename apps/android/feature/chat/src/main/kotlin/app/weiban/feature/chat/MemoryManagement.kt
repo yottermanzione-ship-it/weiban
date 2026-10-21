@@ -134,6 +134,7 @@ private class MemoryActions(
     }
     Text("${if (entry.scope == "adult") "来自成人模式" else "日常记忆"} · 仅这位角色知道")
     Text("记下日期：${entry.createdAt.take(10)}")
+    Text("来源：${when(entry.origin){"group"->"群聊";"call"->"电话";"system"->"互动";else->"私聊"}}")
     Button(enabled = !actions.pending && content.isNotBlank(), onClick = {
         actions.change(refresh) {
             actions.call(

@@ -20,6 +20,7 @@ import type { PetForRuntime, PetReadPort } from '@weiban/contracts';
 import { petContextBlock } from '../domain/pets.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 import { BrainContextService, brainMessages, brainTail } from './brain.js';
+import { SharedEpisodesService } from './shared-episodes.js';
 import { and, asc, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import {
   type BillingReadPort,
@@ -318,6 +319,7 @@ export class ProactiveSchedulerService {
     @Inject(CompanionSettingsService) private readonly settings: CompanionSettingsService,
     @Inject(MemoryService) private readonly memory: MemoryService,
     @Inject(BrainContextService) private readonly brain: BrainContextService,
+    @Inject(SharedEpisodesService) private readonly episodes: SharedEpisodesService,
     @Inject(SimulationService) private readonly simulation: SimulationService,
     @Inject(MediaAiService) private readonly mediaAi: MediaAiService,
     @Inject(CharacterImageService) private readonly images: CharacterImageService,
@@ -1408,6 +1410,17 @@ ${careNote}`
           if (!posted.ok) throw new Error(`post_failed:${posted.error}`);
           if (petPhoto) photoMessageId = posted.value.messageId;
         }
+        if (firstId)
+          await this.episodes.record(tx, {
+            userId: ctx.userId,
+            characterId: plan.characterId,
+            kind: 'proactive',
+            sourceType: 'proactive',
+            sourceId: plan.id,
+            text: '我主动给你发了消息。',
+            scope: adultUsed ? 'adult' : 'normal',
+            epoch: epoch.version,
+          });
         if (isPetProposal) {
           const posted = await this.writer.postMessage(
             {

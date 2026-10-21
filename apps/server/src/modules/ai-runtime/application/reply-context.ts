@@ -1,5 +1,6 @@
 import { EcologySettingsService } from './ecology-settings.js';
 import { brainPrefix } from '../domain/brain.js';
+import { SharedEpisodesService } from './shared-episodes.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { readableMessageText } from './content-text.js';
 import { userNickname, userNamingContext } from '../domain/user-naming.js';
@@ -192,6 +193,7 @@ export class ReplyContext {
     @Inject(CompanionSettingsService) readonly settings: CompanionSettingsService,
     @Inject(ReplyPlanStore) readonly store: ReplyPlanStore,
     @Inject(MemoryService) readonly memory: MemoryService,
+    @Inject(SharedEpisodesService) readonly episodes: SharedEpisodesService,
     @Inject(GroupChatService) readonly groupChat: GroupChatService,
     @Inject(HealthCareService) readonly healthCare: HealthCareService,
     @Inject(SocialService) readonly social: SocialService,
@@ -456,6 +458,12 @@ export class ReplyContext {
       explicitRomance: conversation.contentScope === 'adult',
     };
     const replyPolicy = { ...policy, romanceAllowed: romanceUnlocked(stageInput) };
+    const episodes = await this.episodes.context(
+      row.userId,
+      row.characterId,
+      conversation.contentScope,
+      userText,
+    );
     const head = brainPrefix({
       name: role.profile.name,
       card,
@@ -470,6 +478,7 @@ export class ReplyContext {
       supplement: supplementBlock(role.userSupplement, 4000),
       selfReports,
       stableMemory: remembered.stableBlock,
+      episodes: episodes.stable,
     });
 
     // ② 聊天记录：摘要边界之后的原文，只在尾部追加
@@ -518,7 +527,7 @@ export class ReplyContext {
         .filter((m) => !resident.has(m.memoryId))
         .slice(0, remembered.retrieveLimit)
         .map((m) => memoryLine({ content: m.content, status: m.status, dueAt: m.dueAt ?? null })),
-      700,
+      350,
     );
     // T-082 PLAY-02：共同领养的宠物（名字现取，改名立刻生效；知道今天玩过几次）。
     const petBlock = petContextBlock(
@@ -612,6 +621,8 @@ ${AUTHOR_GUARD}`,
         text: keepHint ? `${styleNote}\n${keepHint}` : styleNote,
       });
     const tail: PromptSection[] = [
+      { title: '刚刚一起经历的', text: episodes.recent },
+      { title: '相关经历', text: episodes.relevant },
       {
         title: '私聊场景',
         text: '现在以角色口吻与用户私聊。只输出聊天纯文本，短句换行，不输出JSON或括号动作。',

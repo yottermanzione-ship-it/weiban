@@ -7,7 +7,7 @@
  * v2.5（T-054）：新增。
  */
 import { z } from 'zod';
-import { API_PREFIX, Id, Timestamp, defineEndpoint, tolerantEnum } from '../common.js';
+import { API_PREFIX, Id, NoContent, Timestamp, defineEndpoint, tolerantEnum } from '../common.js';
 
 // ---------- 事件类型 ----------
 
@@ -67,6 +67,7 @@ export const TimelineEntrySource = z.enum([
   'moments_post', // 角色发的朋友圈
   'character_interaction', // 和其他角色的互动（共同事件、互评）
   'public_update', // 管理员审核生效的公开动态
+  'shared_episode', // 本人与角色共同经历，可删除并同步忘记
 ]);
 
 export const TimelineEntry = z.object({
@@ -89,6 +90,14 @@ export type TimelineEntry = z.infer<typeof TimelineEntry>;
 // ---------- 接口定义 ----------
 
 export const TimelineEndpoints = {
+  removeEpisode: defineEndpoint({
+    method: 'DELETE',
+    path: `${API_PREFIX}/characters/:characterId/episodes/:episodeId`,
+    auth: 'user',
+    params: z.object({ characterId: Id, episodeId: Id }),
+    response: NoContent,
+    summary: '3.32：删除本人与角色的一条共同经历，同步清理近况与归档；不允许旧任务重新写回',
+  }),
   getStatus: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/characters/:characterId/status`,

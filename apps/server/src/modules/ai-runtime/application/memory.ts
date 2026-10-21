@@ -1,4 +1,5 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { SharedEpisodesService } from './shared-episodes.js';
 import { readableMessageText } from './content-text.js';
 import {
   captionMediaIds,
@@ -121,6 +122,7 @@ export class MemoryService {
     @Inject(POLICY_PORT) readonly policy: PolicyPort,
     @Inject(ReplyPlanStore) readonly plans: ReplyPlanStore,
     @Inject(MemoryTierService) readonly tiers: MemoryTierService,
+    @Inject(SharedEpisodesService) readonly episodes: SharedEpisodesService,
     /** H3：图片描述存档（图片内容进记忆，健康类除外）。 */
     @Optional() @Inject(ImageCaptionStore) readonly captions?: ImageCaptionStore,
   ) {}
@@ -292,7 +294,16 @@ export class MemoryService {
     content: string,
     scope: 'normal' | 'adult',
   ): Promise<void> {
-    await this.addEpisode(userId, characterId, callId, content, 'never', scope);
+    await this.episodes.record(null, {
+      userId,
+      characterId,
+      sourceType: 'call',
+      sourceId: callId,
+      kind: 'call',
+      text: content,
+      scope,
+      importance: 6,
+    });
   }
 
   /**
@@ -305,46 +316,17 @@ export class MemoryService {
     characterId: string,
     clientId: string,
     content: string,
-    sharingClass: 'never' | 'shareable' | 'basic',
+    _sharingClass: 'never' | 'shareable' | 'basic',
     scope: 'normal' | 'adult' = 'normal',
   ): Promise<void> {
-    const callId = clientId;
-    const text = content.trim().slice(0, 1000);
-    if (!text || healthPrivate(text)) return;
-    const job = await this.guard(userId, characterId).catch(() => null);
-    if (!job) return;
-    await this.db.transaction(async (tx) => {
-      await this.lock(tx, job);
-      const conversation = await this.chat.getConversation(job.conversationId, tx);
-      if (!conversation) return;
-      const id = newId();
-      const data: z.infer<typeof MemoryPayload> = {
-        content: text,
-        category: 'episode',
-        importance: 5,
-        dueAt: null,
-        visibility: 'only_this_character',
-        sharingClass,
-        status: 'past',
-        sourceMessageIds: [],
-        createdBy: 'extracted',
-      };
-      const inserted = await tx.db
-        .insert(memories)
-        .values({
-          id,
-          userId,
-          characterId,
-          conversationId: job.conversationId,
-          clientId: callId,
-          scope,
-          ciphertext: await this.seal(tx, userId, id, data),
-          createdAt: this.clock.now(),
-          updatedAt: this.clock.now(),
-        })
-        .onConflictDoNothing()
-        .returning({ id: memories.id });
-      if (inserted.length) await this.changed(tx, job, false, conversation.lastSeq);
+    await this.episodes.record(null, {
+      userId,
+      characterId,
+      sourceType: 'system',
+      sourceId: clientId,
+      kind: 'play',
+      text: content,
+      scope,
     });
   }
   /**
@@ -1361,6 +1343,7 @@ export class MemoryService {
             ...new Set([...(old?.sourceMessageIds ?? []), ...operation.sourceMessageIds]),
           ].slice(-100),
           createdBy: old?.createdBy ?? 'extracted',
+          origin: old?.origin ?? 'private_chat',
           // T-066：自动提取的记忆默认「谁知道 = 默认」，能否共享由 sharingClass 闸门决定（MEM-07）。
           visibility: old?.visibility ?? 'default',
           sharingClass: sharingClass(

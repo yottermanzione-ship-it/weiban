@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.31. Regenerate: pnpm android:generate
+// Contract 3.32. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.31"
+const val CONTRACT_VERSION: String = "3.32"
 
 @Serializable
 data class AccountAlias(
@@ -6365,6 +6365,7 @@ data class MemoryEntry(
     @SerialName("scope") val `scope`: String,
     @SerialName("sourceMessageIds") val `sourceMessageIds`: List<Id>,
     @SerialName("createdBy") val `createdBy`: String,
+    @SerialName("origin") val `origin`: String? = null,
     @SerialName("knownBy") val `knownBy`: List<Id>,
     @SerialName("createdAt") val `createdAt`: Timestamp,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
@@ -10091,6 +10092,12 @@ data class TimelineEndpointsListTimelineQuery(
 data class TimelineEndpointsListTimelineResponse(
     @SerialName("items") val `items`: List<TimelineEntry>,
     @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class TimelineEndpointsRemoveEpisodeParams(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("episodeId") val `episodeId`: Id,
 )
 
 @Serializable

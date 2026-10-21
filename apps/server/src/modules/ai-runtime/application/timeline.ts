@@ -30,6 +30,7 @@ import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { MOMENTS_READ_PORT } from '../../moments/index.js';
 import { PUBLIC_UPDATE_READ_PORT } from '../../characters/index.js';
 import { SocialService } from './social.js';
+import { SharedEpisodesService } from './shared-episodes.js';
 import { CLOCK, DATABASE, AppError, type Clock, type Database } from '../../../platform/index.js';
 import { chatVisits, dailyEvents, moodStates } from '../infra/db/schema.js';
 import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
@@ -256,6 +257,7 @@ export class TimelineListService {
     @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
     @Inject(MOMENTS_READ_PORT) private readonly moments: MomentsReadPort,
     @Inject(SocialService) private readonly social: SocialService,
+    @Inject(SharedEpisodesService) private readonly episodes: SharedEpisodesService,
     @Optional()
     @Inject(PUBLIC_UPDATE_READ_PORT)
     private readonly publicUpdates?: PublicUpdateReadPort,
@@ -302,6 +304,7 @@ export class TimelineListService {
       (await this.contacts.listActiveContacts(userId)).map((c) => c.characterId),
     );
     const items: TimelineEntry[] = [];
+    items.push(...(await this.episodes.list(userId, characterId, since)));
 
     // 1. 推演日常事件（发生时间 = 生成时刻；同批按 seq 排开 1 秒保证顺序稳定）。
     const events = await this.db.db

@@ -140,8 +140,16 @@ export function MemoriesPage() {
                       <span className="memory-entry-content">{entry.content}</span>
                       <small>
                         {entry.status === 'past' ? '过去' : '现在'} ·{' '}
-                        {entry.createdBy === 'user_manual' ? '你告诉 TA 的' : '从聊天中记下'} ·{' '}
-                        {entry.createdAt.slice(0, 10)}
+                        {entry.createdBy === 'user_manual'
+                          ? '你告诉 TA 的'
+                          : entry.origin === 'group'
+                            ? '来自群聊'
+                            : entry.origin === 'call'
+                              ? '来自电话'
+                              : entry.origin === 'system'
+                                ? '来自互动'
+                                : '来自私聊'}{' '}
+                        · {entry.createdAt.slice(0, 10)}
                       </small>
                       <small>
                         {entry.scope === 'adult' ? '来自私密模式' : '来自日常'} · 此角色的记忆

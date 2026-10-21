@@ -143,6 +143,74 @@ const vector256 = customType<{ data: string | null; driverData: string | null }>
   toDriver: (v) => v,
 });
 /** 不在明文列保存记忆内容、来源消息、私密类别或共享标签。embedding 明文存储（见 ADR-0020）。 */
+export const sharedEpisodes = aiRuntimeSchema.table(
+  'shared_episodes',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    epoch: uuid('epoch').notNull(),
+    scope: text('scope').notNull(),
+    kind: text('kind').notNull(),
+    sourceKey: text('source_key').notNull(),
+    ciphertext: bytes('ciphertext'),
+    embedding: vector256('embedding'),
+    importance: integer('importance').notNull(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    archiveMonth: text('archive_month'),
+  },
+  (t) => [
+    unique('shared_episodes_user_id_character_id_epoch_source_key_key').on(
+      t.userId,
+      t.characterId,
+      t.epoch,
+      t.sourceKey,
+    ),
+    index('shared_episodes_owner_idx').on(t.userId, t.characterId, t.epoch, t.occurredAt),
+    index('shared_episodes_source_idx').on(t.sourceKey),
+    check('shared_episodes_scope_check', sql`${t.scope} IN ('normal','adult')`),
+    check('shared_episodes_importance_check', sql`${t.importance} BETWEEN 1 AND 10`),
+  ],
+);
+export const sharedEpisodeStates = aiRuntimeSchema.table(
+  'shared_episode_states',
+  {
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    epoch: uuid('epoch').notNull(),
+    scope: text('scope').notNull(),
+    frozenAt: timestamp('frozen_at', { withTimezone: true }).notNull(),
+    ciphertext: bytes('ciphertext').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.characterId, t.epoch, t.scope] }),
+    check('shared_episode_states_scope_check', sql`${t.scope} IN ('normal','adult')`),
+  ],
+);
+export const sharedEpisodeMonths = aiRuntimeSchema.table(
+  'shared_episode_months',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    epoch: uuid('epoch').notNull(),
+    scope: text('scope').notNull(),
+    month: text('month').notNull(),
+    ciphertext: bytes('ciphertext').notNull(),
+  },
+  (t) => [
+    unique('shared_episode_months_user_id_character_id_epoch_scope_month_key').on(
+      t.userId,
+      t.characterId,
+      t.epoch,
+      t.scope,
+      t.month,
+    ),
+    check('shared_episode_months_scope_check', sql`${t.scope} IN ('normal','adult')`),
+  ],
+);
 export const memories = aiRuntimeSchema.table(
   'memories',
   {

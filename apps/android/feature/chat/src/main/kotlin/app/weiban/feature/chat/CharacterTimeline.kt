@@ -32,6 +32,27 @@ private class TimelinePager(
     var loading by mutableStateOf(false)
     var failed by mutableStateOf(false)
     var initialized by mutableStateOf(false)
+    var deleting by mutableStateOf(false)
+    var removeError by mutableStateOf<String?>(null)
+
+    @Suppress("TooGenericExceptionCaught")
+    suspend fun remove(entry: TimelineEntry): Boolean {
+        if (deleting) return false
+        deleting = true
+        removeError = null
+        try {
+            repository.call(Endpoints.timelineEndpointsRemoveEpisode, params = mapOf("characterId" to characterId, "episodeId" to entry.entryId), options = SessionCallOptions(owner = owner, networkOnly = true))
+            items.removeAll { it.entryId == entry.entryId }
+            return true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            removeError = "删除失败，请重试"
+            return false
+        } finally {
+            deleting = false
+        }
+    }
 
     @Suppress("TooGenericExceptionCaught") // UI boundary: show retry instead of crashing.
     suspend fun next() {
@@ -72,6 +93,7 @@ private class TimelinePager(
     val scope = rememberCoroutineScope()
     val list = rememberLazyListState()
     val colors = LocalWeibanColors.current
+    var removing by remember(owner, characterId) { mutableStateOf<TimelineEntry?>(null) }
     LaunchedEffect(pager) { pager.next() }
     val nearEnd by remember {
         derivedStateOf {
@@ -99,14 +121,19 @@ private class TimelinePager(
                 Text("TA 的近况会出现在这里", Modifier.fillMaxWidth().padding(WbSpace.S8), color = colors.textSecondary)
             else ->
                 LazyColumn(state = list, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(WbSpace.S5)) {
-                    items(pager.items, key = { it.entryId }) { entry -> TimelineRow(entry) }
+                    items(pager.items, key = { it.entryId }) { entry -> TimelineRow(entry) { removing = entry } }
                     item(key = "footer") { TimelineFooter(pager) { scope.launch { pager.next() } } }
                 }
         }
     }
+    removing?.let { entry ->
+        AlertDialog(onDismissRequest = { if (!pager.deleting) removing = null }, title = { Text("删除这段共同经历？") }, text = { Text(pager.removeError ?: "TA 将不再通过共同经历想起这件事，旧任务也不会重新写回。") }, confirmButton = {
+            TextButton(enabled = !pager.deleting, onClick = { scope.launch { if (pager.remove(entry)) removing = null } }) { Text(if (pager.deleting) "正在删除…" else "删除并忘记") }
+        }, dismissButton = { TextButton(enabled = !pager.deleting, onClick = { removing = null }) { Text("取消") } })
+    }
 }
 
-@Composable private fun TimelineRow(entry: TimelineEntry) {
+@Composable private fun TimelineRow(entry: TimelineEntry, onRemove: () -> Unit) {
     val colors = LocalWeibanColors.current
     Column(Modifier.fillMaxWidth().padding(vertical = WbSpace.S3)) {
         Text(momentTime(entry.occurredAt), color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
@@ -119,9 +146,11 @@ private class TimelinePager(
                 "public_update" -> "公开资料"
                 "moments_post" -> "朋友圈"
                 "character_interaction" -> "和其他角色"
+                "shared_episode" -> "我们一起"
                 else -> null
             }
         source?.let { Text(it, color = colors.textTertiary, style = MaterialTheme.typography.bodySmall) }
+        if (entry.source == "shared_episode") TextButton(onClick = onRemove) { Text("删除并忘记") }
         if (entry.ref?.kind ==
             "url"
         ) {

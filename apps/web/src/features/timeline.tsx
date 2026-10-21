@@ -15,6 +15,8 @@ import { friendlyError, useRemote } from '../data/use-remote.js';
 import { CharacterName } from './chat.js';
 import { KindIcon } from './while-away.js';
 import { EmptyState, NavBar } from './shell-kit.js';
+import { Dialog } from './toast.js';
+import { useAuth } from '../app/auth.js';
 
 /** 页面内部统一的条目形状：优先来自时间线列表接口（契约 3.0），服务器未提供时退回日常事件接口。 */
 interface Item {
@@ -23,7 +25,13 @@ interface Item {
   time: string;
   summary: string;
   kind: string;
-  source: 'daily_event' | 'moments_post' | 'character_interaction' | 'public_update' | 'other';
+  source:
+    | 'daily_event'
+    | 'moments_post'
+    | 'character_interaction'
+    | 'public_update'
+    | 'shared_episode'
+    | 'other';
   withCharacterIds: string[];
   ref: TimelineEntry['ref'];
 }
@@ -33,7 +41,13 @@ function localDate(d: Date): string {
 }
 function fromEntry(entry: TimelineEntry): Item {
   const at = new Date(entry.occurredAt);
-  const known = ['daily_event', 'moments_post', 'character_interaction', 'public_update'];
+  const known = [
+    'daily_event',
+    'moments_post',
+    'character_interaction',
+    'public_update',
+    'shared_episode',
+  ];
   return {
     id: entry.entryId,
     date: localDate(at),
@@ -97,7 +111,15 @@ function SourceIcon({ item }: { item: Item }) {
   return <KindIcon kind={item.kind} />;
 }
 
-function TimelineItem({ item, onAsk }: { item: Item; onAsk?(text: string): void }) {
+function TimelineItem({
+  item,
+  onAsk,
+  onRemove,
+}: {
+  item: Item;
+  onAsk?(text: string): void;
+  onRemove?(item: Item): void;
+}) {
   const [expanded, setExpanded] = useState(false);
   return (
     <li className="timeline-item">
@@ -113,6 +135,14 @@ function TimelineItem({ item, onAsk }: { item: Item; onAsk?(text: string): void 
           </button>
         )}
         <div className="timeline-actions">
+          {item.source === 'shared_episode' && (
+            <>
+              <span className="tag">我们一起</span>
+              <button className="text-button danger" onClick={() => onRemove?.(item)}>
+                删除并忘记
+              </button>
+            </>
+          )}
           {item.withCharacterIds.map((id) => (
             <Link key={id} to={`/characters/${id}`}>
               <CharacterName id={id} />
@@ -140,6 +170,13 @@ export function TimelinePage() {
   const { characterId = '' } = useParams();
   const navigate = useNavigate();
   const { state } = useChat();
+  const { session } = useAuth();
+  const owner = session
+    ? { userId: session.user.userId, sessionId: session.session.sessionId }
+    : null;
+  const ownerKey = `${owner?.userId}:${owner?.sessionId}:${characterId}`;
+  const currentOwner = useRef(ownerKey);
+  currentOwner.current = ownerKey;
   const contact = state.contacts.find((item) => item.characterId === characterId);
   const companion = useRemote(CompanionEndpoints.getForCharacter, { params: { characterId } });
   const [items, setItems] = useState<Item[]>([]);
@@ -147,6 +184,9 @@ export function TimelinePage() {
   const [legacy, setLegacy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [removing, setRemoving] = useState<Item | null>(null);
+  const [removingBusy, setRemovingBusy] = useState(false);
+  const [removeError, setRemoveError] = useState('');
   const sentinel = useRef<HTMLDivElement>(null);
   const busy = useRef(false);
   const done = cursor === null;
@@ -157,16 +197,50 @@ export function TimelinePage() {
     setError('');
     try {
       const page = await fetchPage(characterId, cursor, legacy);
+      if (currentOwner.current !== ownerKey) return;
       setItems((previous) => [...previous, ...page.items]);
       setCursor(page.nextCursor);
       setLegacy(page.legacy);
     } catch (e) {
+      if (currentOwner.current !== ownerKey) return;
       setError(friendlyError(e));
     } finally {
-      busy.current = false;
-      setLoading(false);
+      if (currentOwner.current === ownerKey) {
+        busy.current = false;
+        setLoading(false);
+      }
     }
-  }, [characterId, cursor, legacy]);
+  }, [characterId, cursor, legacy, ownerKey]);
+  useEffect(() => {
+    busy.current = false;
+    setItems([]);
+    setCursor(undefined);
+    setLegacy(false);
+    setError('');
+    setLoading(false);
+    setRemoving(null);
+    setRemovingBusy(false);
+    setRemoveError('');
+  }, [ownerKey]);
+  const removeEpisode = async () => {
+    if (!removing || !owner || removingBusy || !api.owns(owner)) return;
+    setRemovingBusy(true);
+    setRemoveError('');
+    try {
+      await api.call(TimelineEndpoints.removeEpisode, {
+        networkOnly: true,
+        params: { characterId, episodeId: removing.id },
+      });
+      if (!api.owns(owner) || currentOwner.current !== ownerKey) return;
+      setItems((items) => items.filter((item) => item.id !== removing.id));
+      setRemoving(null);
+    } catch (error) {
+      if (api.owns(owner) && currentOwner.current === ownerKey)
+        setRemoveError(friendlyError(error));
+    } finally {
+      if (api.owns(owner) && currentOwner.current === ownerKey) setRemovingBusy(false);
+    }
+  };
   useEffect(() => {
     const element = sentinel.current;
     if (!element || done || error) return;
@@ -225,7 +299,15 @@ export function TimelinePage() {
           <h2 className="group-label">{dayLabel(date)}</h2>
           <ul className="timeline">
             {list.map((item) => (
-              <TimelineItem key={item.id} item={item} onAsk={ask} />
+              <TimelineItem
+                key={item.id}
+                item={item}
+                onAsk={ask}
+                onRemove={(item) => {
+                  setRemoving(item);
+                  setRemoveError('');
+                }}
+              />
             ))}
           </ul>
         </section>
@@ -238,6 +320,23 @@ export function TimelinePage() {
       {items.length > 0 && done && <p className="hint center">只保留最近 90 天</p>}
       {!done && <div ref={sentinel} className="timeline-sentinel" aria-hidden />}
       {items.length > 0 && loading && <p role="status">正在读取…</p>}
+      {removing && (
+        <Dialog
+          title="删除这段共同经历？"
+          actions={[
+            { label: '取消', disabled: removingBusy, onClick: () => setRemoving(null) },
+            {
+              label: removingBusy ? '正在删除…' : '删除并忘记',
+              danger: true,
+              disabled: removingBusy,
+              onClick: () => void removeEpisode(),
+            },
+          ]}
+        >
+          <p>TA 将不再通过共同经历想起这件事，旧任务也不会重新写回。</p>
+          {removeError && <p role="alert">{removeError}</p>}
+        </Dialog>
+      )}
     </main>
   );
 }

@@ -72,6 +72,7 @@ import { GroupChatService } from './group-chat.js';
 import { MediaAiService } from './media-ai.js';
 import { MemoryService } from './memory.js';
 import { BrainContextService, brainMessages } from './brain.js';
+import { SharedEpisodesService } from './shared-episodes.js';
 import { MomentsAiService } from './moments-ai.js';
 import {
   PLAY_WISH_PROPOSE_SOURCE,
@@ -169,6 +170,7 @@ export class EcologyService {
     @Inject(MOMENTS_READ_PORT) private readonly moments: MomentsReadPort,
     @Inject(MemoryService) private readonly memory: MemoryService,
     @Inject(BrainContextService) private readonly brain: BrainContextService,
+    @Inject(SharedEpisodesService) private readonly episodes: SharedEpisodesService,
     @Inject(SimulationService) private readonly simulation: SimulationService,
     @Inject(SocialService) private readonly social: SocialService,
     @Inject(ProactiveSchedulerService) private readonly proactive: ProactiveSchedulerService,
@@ -592,6 +594,15 @@ export class EcologyService {
       .insert(ecologyProfiles)
       .values({ userId, characterId, ...set })
       .onConflictDoUpdate({ target: [ecologyProfiles.userId, ecologyProfiles.characterId], set });
+    await this.episodes.record(null, {
+      userId,
+      characterId,
+      kind: 'profile_changed',
+      sourceType: `profile-${action}`,
+      sourceId: `${now.toISOString()}:${text}`,
+      text: `我把${action === 'status' ? '状态' : '签名'}改成了「${text}」。`,
+      scope: 'normal',
+    });
   }
 
   // =========================================================================

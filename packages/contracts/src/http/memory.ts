@@ -26,6 +26,7 @@ export const MemoryEntry = z.object({
   scope: z.enum(['normal', 'adult']),
   sourceMessageIds: z.array(Id).max(100),
   createdBy: z.enum(['extracted', 'user_manual']),
+  origin: z.enum(['private_chat', 'group', 'call', 'system']).optional(),
   knownBy: z.array(Id),
   createdAt: Timestamp,
   updatedAt: Timestamp,

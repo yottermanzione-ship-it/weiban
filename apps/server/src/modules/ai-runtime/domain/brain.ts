@@ -41,6 +41,7 @@ export interface BrainInput {
   supplement: string;
   selfReports: string;
   stableMemory: string;
+  episodes?: string;
   /** Decisions have no dialogue examples; other personal scenes share the full prefix. */
   compact?: boolean;
 }
@@ -79,6 +80,7 @@ export function brainPrefix(input: BrainInput): PromptSection[] {
     { title: '', text: input.supplement.trim() },
     { title: '', text: input.selfReports },
     { title: '记忆', text: input.stableMemory },
+    { title: '最近一起经历的', text: input.episodes ?? '' },
     { title: '', text: `${todayLine(input.now, input.timeZone)}（精确时间见场景补充）` },
   ];
   if (!input.compact) return sections;
