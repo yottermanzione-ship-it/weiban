@@ -1450,5 +1450,7 @@ export class MemoryService {
   }
 }
 function textOf(message: Message): string {
+  // 3.27（H1）：拍一拍只是打个招呼，不作为记忆素材。
+  if (message.content?.type === 'nudge') return '';
   return readableMessageText(message);
 }

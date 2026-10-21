@@ -85,6 +85,7 @@ import {
   GROWTH_CARD_LOOKUP,
   GROWTH_CARD_COPYWRITER,
   GROWTH_CARD_PORT,
+  GROWTH_READ_PORT,
 } from './modules/growth/index.js';
 import { MomentsModule, MOMENTS_READ_PORT } from './modules/moments/index.js';
 import {
@@ -100,7 +101,12 @@ import {
   CALL_SERVICE_STATUS,
   type CallServiceStatus,
 } from './modules/calls/index.js';
-import { PlayModule, PLAY_CARD_ISSUER, PLAY_ACTIVE_HOURS } from './modules/play/index.js';
+import {
+  PlayModule,
+  PLAY_CARD_ISSUER,
+  PLAY_ACTIVE_HOURS,
+  PLAY_FAMILIARITY,
+} from './modules/play/index.js';
 import { SupportModule } from './modules/support/index.js';
 import {
   PlazaModule,
@@ -328,8 +334,12 @@ class LibraryCompositionModule {}
 @Global()
 @Module({
   imports: [GrowthModule],
-  providers: [{ provide: PLAY_CARD_ISSUER, useExisting: GROWTH_CARD_PORT }],
-  exports: [PLAY_CARD_ISSUER],
+  providers: [
+    { provide: PLAY_CARD_ISSUER, useExisting: GROWTH_CARD_PORT },
+    // 3.27（H1）：每日一问的恋爱题只给好感度到「恋人」阶段的角色。
+    { provide: PLAY_FAMILIARITY, useExisting: GROWTH_READ_PORT },
+  ],
+  exports: [PLAY_CARD_ISSUER, PLAY_FAMILIARITY],
 })
 class PlayCompositionModule {}
 

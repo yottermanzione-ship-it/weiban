@@ -10,6 +10,7 @@ import {
   type PostMessageInput,
   type PostMessageError,
   type PortResult,
+  type IdentityReadPort,
   type PolicyPort,
   type SyncPort,
 } from '@weiban/contracts';
@@ -26,6 +27,7 @@ import {
   type Outbox,
 } from '../../../platform/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
+import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import {
   MEDIA_READ_PORT,
   MEDIA_SYSTEM_PORT,
@@ -65,6 +67,7 @@ export class ChatWriteService {
     @Inject(MEDIA_SYSTEM_PORT) private readonly media: MediaSystemPort,
     @Inject(MEDIA_STICKER_CHECK) private readonly stickers: MediaStickerCheck,
     @Inject(MEDIA_READ_PORT) private readonly mediaRead: MediaReadPort,
+    @Inject(IDENTITY_READ_PORT) private readonly identity: IdentityReadPort,
   ) {}
   async post(
     tx: DbTx,
@@ -159,7 +162,7 @@ export class ChatWriteService {
     }
     if (content.type === 'nudge') {
       const [target] = await tx.db
-        .select({ id: participants.id })
+        .select({ id: participants.id, kind: participants.kind, refId: participants.refId })
         .from(participants)
         .where(
           and(
@@ -169,6 +172,17 @@ export class ChatWriteService {
         );
       if (!target)
         return { ok: false, error: 'invalid_content', message: '拍一拍目标不在此会话中' };
+      // 3.27（H1）：服务器盖上被拍一方的类型和拍一拍后缀快照（客户端传的忽略）；目前只有用户能设后缀。
+      const suffix =
+        target.kind === 'user'
+          ? ((await this.identity.getProfile(target.refId, tx))?.nudgeSuffix ?? '').trim()
+          : '';
+      content = {
+        type: 'nudge',
+        targetParticipantId: content.targetParticipantId,
+        targetKind: target.kind === 'user' ? 'user' : 'character',
+        ...(suffix ? { suffix: suffix.slice(0, 15) } : {}),
+      };
     }
     // L5（T-069）：用户发的图片、语音、表情、链接封面必须是本人可用的媒体（MediaSystemPort.canUse）。
     if (sender?.kind === 'user' && !verifiedForward) {

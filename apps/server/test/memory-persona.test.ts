@@ -601,7 +601,8 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     await http()
       .patch(`/api/v1/contacts/${characterId}`)
       .set('Authorization', auth())
-      .send({ relationship: '粉丝与偶像' })
+      // 3.27（H1）：关系类型已删除；改专属称呼同样作废正在生成的回复。
+      .send({ addressAs: '小饭团' })
       .expect(200);
     await dispatch();
     expect((await store.get(oldRelationshipPlan.id))?.inputCiphertext).toBeNull();
@@ -616,7 +617,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     const prompt = JSON.stringify(snapshot?.messages);
     expect(prompt).toContain('RECENT_TWENTY_ROUNDS_CANARY');
     expect(prompt).toContain('人设贴合度5/5');
-    expect(prompt).toContain('粉丝与偶像');
+    expect(prompt).not.toContain('用户明确选择的关系');
     await db.query("UPDATE characters.characters SET age_setting='minor' WHERE id=$1", [
       characterId,
     ]);
@@ -628,17 +629,13 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     ).body as { items: { id: string }[] };
     expect(modes.items.map((m) => m.id)).not.toContain('adult');
     expect(modes.items.map((m) => m.id)).not.toContain('romance');
-    await http()
+    // 3.27（H1）：关系类型选择已删除——旧客户端传的 relationship 被忽略，不写入也不返回。
+    const ignored = await http()
       .patch(`/api/v1/contacts/${characterId}`)
       .set('Authorization', auth())
       .send({ relationship: '我的男朋友' })
-      .expect(403);
-    for (const relationship of ['女朋友', '老公', '老婆', '丈夫', '妻子'])
-      await http()
-        .patch(`/api/v1/contacts/${characterId}`)
-        .set('Authorization', auth())
-        .send({ relationship })
-        .expect(403);
+      .expect(200);
+    expect(ignored.body.relationship).toBeUndefined();
     await db.query("UPDATE characters.characters SET age_setting='adult' WHERE id=$1", [
       characterId,
     ]);
@@ -684,11 +681,21 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
       characterId,
     ]);
     try {
+      // 3.27（H1）：「情侣暧昧」不再可选；旧数据里残留的 romance 默认对儿童角色仍按日常。
       await http()
         .patch('/api/v1/me/companion-defaults')
         .set('Authorization', auth())
         .send({ scenarioMode: 'romance' })
+        .expect(400);
+      await http()
+        .patch('/api/v1/me/companion-defaults')
+        .set('Authorization', auth())
+        .send({ scenarioMode: 'tsundere' })
         .expect(200);
+      await db.query(
+        "UPDATE ai_runtime.companion_settings SET scenario_mode='romance' WHERE user_id=$1 AND character_id IS NULL",
+        [userId],
+      );
       const pending = await user('今天有什么有趣的事？');
       clock.advance(Math.max(0, pending.dueAt.getTime() - clock.nowMs()));
       await engine.run(pending.id);

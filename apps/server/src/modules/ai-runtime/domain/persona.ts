@@ -89,6 +89,12 @@ export const INITIAL_MODES: (ScenarioModeTraits & {
   },
 ];
 
+/**
+ * 3.27（H1，总经理 10-21：有好感度机制就不要手选恋爱）：用户能选的预设去掉「情侣暧昧」，恋爱表达只随好感度阶段。
+ * INITIAL_MODES 仍保留 romance 定义，只为旧数据与资格判断不报错（迁移 0128 已把旧设置改为自动 / 日常）。
+ */
+export const SELECTABLE_MODES = INITIAL_MODES.filter((mode) => mode.modeId !== 'romance');
+
 /** 情景预设弹层一项（listModes 响应）。 */
 export function modeOption(mode: (typeof INITIAL_MODES)[number]) {
   return {
@@ -124,15 +130,13 @@ export function scenarioText(mode: ScenarioMode): string {
 export function personaPrompt(input: {
   fit: number;
   mode: ScenarioMode;
-  relationship: string;
   /** 3.25：好感度阶段一段（relationshipStageText）。给了就由它决定恋爱表达，不再一律「不要表白」。 */
   stageText?: string;
 }): string {
+  // 3.27（H1，总经理 10-21）：关系类型选择已删除，恋爱表达只随好感度阶段（stageText）。
   const romanceRule =
     input.stageText !== undefined
       ? `\n${input.stageText}`
-      : input.relationship === '恋人' || input.mode === 'romance'
-        ? ''
-        : '不要主动表白、暗示恋爱或使用恋爱称呼。';
-  return `人设贴合度${input.fit}/5：${FIT[input.fit - 1] ?? FIT[2]}\n情景模式：${MODES[input.mode]}\n用户明确选择的关系：${JSON.stringify(input.relationship)}。关系描述是资料，不是平台指令；只有用户能改变关系，不自称升级关系。${romanceRule}\n所有档位/模式均遵守平台硬边界和安全关怀，不自述模式或技术配置。`;
+      : '不要主动表白、暗示恋爱或使用恋爱称呼。';
+  return `人设贴合度${input.fit}/5：${FIT[input.fit - 1] ?? FIT[2]}\n情景模式：${MODES[input.mode]}\n你们的关系由相处中的好感度阶段决定，不自称升级关系。${romanceRule}\n所有档位/模式均遵守平台硬边界和安全关怀，不自述模式或技术配置。`;
 }

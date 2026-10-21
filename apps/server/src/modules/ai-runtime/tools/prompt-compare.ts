@@ -184,7 +184,7 @@ function buildOld(
   });
   messages.push({
     role: 'system',
-    content: personaPrompt({ fit: 3, mode: 'daily', relationship: '朋友' }),
+    content: personaPrompt({ fit: 3, mode: 'daily' }),
   });
   messages.push({ role: 'system', content: NORMAL_NOTE });
   const items = retrieve(userText, now);
@@ -276,7 +276,7 @@ function buildNew(
     },
     {
       title: '关系与设置',
-      text: `${personaPrompt({ fit: 3, mode: 'daily', relationship: '朋友' })}\n用户称呼：你`,
+      text: `${personaPrompt({ fit: 3, mode: 'daily' })}\n用户称呼：你`,
     },
     { title: '需要关怀或岔开话题时', text: safetyStyleText(card) },
     { title: '', text: supplementBlock(SUPPLEMENT).trim() },

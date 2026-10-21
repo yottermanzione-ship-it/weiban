@@ -11,7 +11,7 @@
  * - 说到做到（17 号 §7）：碎碎念只在动作真的执行成功时保留，失败改成中性一句；用户在聊天里让角色做的动作
  *   （发朋友圈、拍一拍、改状态、改签名）不受生态开关限制，PRO+ + 积分够就执行。
  */
-import { stageLabel } from '../domain/relationship-stage.js';
+import { ROMANCE_TITLE_STAGE, stageLabel } from '../domain/relationship-stage.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, gte, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import {
@@ -578,7 +578,7 @@ export class EcologyService {
       `【你】${role.profile.name}。人设：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech }).slice(0, 2500)}`,
     );
     lines.push(
-      `【你们】关系：${contact.relationship ?? '朋友'}；好感度：${stageLabel(level)}（粉丝 → 朋友 → 亲密好友 → 暧昧 → 恋人 → 伴侣，越往后越亲密）；${policy.romanceAllowed && !policy.isMinor ? '' : '不涉及恋爱暧昧；'}对方称呼：${profile.nickname ?? '对方'}`,
+      `【你们】好感度：${stageLabel(level)}（粉丝 → 朋友 → 亲密好友 → 暧昧 → 恋人 → 伴侣，越往后越亲密）；${policy.romanceAllowed && !policy.isMinor ? '' : '不涉及恋爱暧昧；'}对方称呼：${profile.nickname ?? '对方'}`,
     );
 
     // 聊天：最近 12 条；你发了还没回的条数；对方最近活跃。
@@ -642,7 +642,8 @@ export class EcologyService {
     const special: string[] = [];
     const holidays = await this.holidays.getUpcomingForUser(userId, 1).catch(() => []);
     for (const h of holidays)
-      if (h.daysAhead === 0 && (!h.romantic || contact.relationship === '恋人'))
+      // 3.27（H1）：恋爱节日只对好感度到「恋人」阶段的角色（不再看手选的关系类型）。
+      if (h.daysAhead === 0 && (!h.romantic || level >= ROMANCE_TITLE_STAGE))
         special.push(`今天是${h.name}`);
     if (profile.birthday && profile.birthday.slice(5) === local.date.slice(5))
       special.push('今天是对方生日');

@@ -10,7 +10,7 @@
  */
 import { stageLabel } from '../domain/relationship-stage.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { readableMessageText } from './content-text.js';
+import { nudgeText, readableMessageText } from './content-text.js';
 import { userNickname } from '../domain/user-naming.js';
 import { AdultBoundaryService } from './adult-boundary.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
@@ -65,7 +65,12 @@ import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from '../../identity
 import { MODEL_GATEWAY_PORT, MODEL_PLATFORM_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
-import { INITIAL_MODES, modeOption, scenarioText } from '../domain/persona.js';
+import {
+  INITIAL_MODES,
+  modeOption,
+  scenarioText,
+  SELECTABLE_MODES,
+} from '../domain/persona.js';
 import { highRisk, outputAllowed, splitReply, unescapeModelText } from '../domain/reply-rules.js';
 import { callModelForCare, careFallback } from './safety-care.js';
 import {
@@ -292,7 +297,7 @@ export class GroupChatService {
 
   private async allowedModes(userId: string, characterIds: string[]) {
     const result: typeof INITIAL_MODES = [];
-    for (const mode of INITIAL_MODES) {
+    for (const mode of SELECTABLE_MODES) {
       let ok = true;
       for (const characterId of characterIds) {
         const decision = await this.policy.checkScenarioMode({ userId, characterId, mode });
@@ -314,7 +319,8 @@ export class GroupChatService {
     const conversation = await this.ownedGroup(userId, conversationId);
     const old = await this.loadSettings(conversationId);
     if (patch.scenarioMode && patch.scenarioMode !== old.scenarioMode) {
-      const mode = INITIAL_MODES.find((m) => m.modeId === patch.scenarioMode);
+      // 3.27（H1）：「情侣暧昧」不再可选。
+      const mode = SELECTABLE_MODES.find((m) => m.modeId === patch.scenarioMode);
       if (!mode) throw new AppError('bad_request', '情景模式无效');
       const allowed = await this.allowedModes(userId, this.memberIds(conversation));
       if (!allowed.some((m) => m.modeId === mode.modeId))
@@ -541,8 +547,13 @@ export class GroupChatService {
       return;
     }
     const userText = trigger ? readableMessageText(trigger) : '';
+    // 3.27（H1）：群里拍了拍某个角色 = 点名让 TA 回应。
     const mentioned = new Set(
-      trigger?.content?.type === 'text' ? (trigger.content.mentions ?? []) : [],
+      trigger?.content?.type === 'text'
+        ? (trigger.content.mentions ?? [])
+        : trigger?.content?.type === 'nudge'
+          ? [trigger.content.targetParticipantId]
+          : [],
     );
     const settings = await this.loadSettings(conversation.conversationId);
     const saved = await this.replies.open<GroupCheckpoint>(row, 'plan');
@@ -781,9 +792,13 @@ export class GroupChatService {
     const transcript = history
       .filter((m) => m.senderKind !== 'system' && m.status === 'normal' && !!readableMessageText(m))
       .slice(-30)
-      .map(
-        (m) =>
-          `${nameOf(m.senderParticipantId)}：${readableMessageText(m).slice(0, m.content?.type === 'forwarded_record' ? 32_000 : 300)}`,
+      .map((m) =>
+        m.content?.type === 'nudge'
+          ? nudgeText(m.content, m.senderKind, {
+              sender: nameOf(m.senderParticipantId),
+              target: nameOf(m.content.targetParticipantId),
+            })
+          : `${nameOf(m.senderParticipantId)}：${readableMessageText(m).slice(0, m.content?.type === 'forwarded_record' ? 32_000 : 300)}`,
       )
       .join('\n');
     // SOC-01 第 5 条：注入与每个群成员的关系；没有关系 = 不认识，不能编造共同经历。

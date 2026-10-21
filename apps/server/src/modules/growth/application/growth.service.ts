@@ -586,7 +586,10 @@ export class GrowthService {
       knownSince,
       nextAnniversary,
       anniversaries: all,
-      isRomantic: contact.relationship === '恋人',
+      // 3.27（H1）：关系类型选择已删除，「恋人」只看好感度阶段（恋人阶段起且没有暂停亲密表达）。
+      isRomantic: await this.relationshipStage(userId, characterId)
+        .then((s) => s.level >= 5 && !s.romancePaused)
+        .catch(() => false),
     });
   }
 

@@ -319,18 +319,9 @@ export class ContactsCommands {
   }
   async update(userId: string, characterId: string, input: unknown): Promise<Contact> {
     parseContract(Id, characterId);
-    const patch = parseContract(UpdateContactRequest, input);
-    if (
-      patch.relationship &&
-      !(
-        await this.policy.checkRelationshipType({
-          userId,
-          characterId,
-          relationshipType: patch.relationship,
-        })
-      ).allowed
-    )
-      throw new AppError('romance_not_allowed', '该角色不能使用恋爱关系');
+    // 3.27（H1，总经理 10-21）：关系类型选择已删除——旧客户端传的 relationship 一律忽略（列保留以便回滚）。
+    const { relationship: ignored, ...patch } = parseContract(UpdateContactRequest, input);
+    void ignored;
     if (patch.customAvatarMediaId) {
       const object = await this.media.getMedia(userId, patch.customAvatarMediaId);
       if (object.purpose !== 'contact_avatar')
@@ -340,21 +331,7 @@ export class ContactsCommands {
       await this.lockUser(tx, userId);
       const row = await this.row(tx, userId, characterId);
       if (!row || row.status === 'deleted') throw new AppError('not_found', '联系人不存在');
-      if (
-        patch.relationship &&
-        !(
-          await this.policy.checkRelationshipType(
-            { userId, characterId, relationshipType: patch.relationship },
-            tx,
-          )
-        ).allowed
-      )
-        return null;
-      const { relationship, ...fields } = patch;
-      const values = {
-        ...fields,
-        ...(relationship === undefined ? {} : { relationshipType: relationship }),
-      };
+      const values = { ...patch };
       const changedFields = Object.entries(values)
         .filter(([key, value]) => row[key as keyof ContactRow] !== value)
         .map(([key]) => key);
@@ -373,7 +350,6 @@ export class ContactsCommands {
       });
       return contact;
     });
-    if (result === null) throw new AppError('romance_not_allowed', '该角色不能使用恋爱关系');
     return result;
   }
   async remove(userId: string, characterId: string, mode: 'soft' | 'purge'): Promise<void> {

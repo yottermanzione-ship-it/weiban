@@ -56,6 +56,7 @@ export const NudgeContent = z.object({
    */
   suffix: z.string().max(15).optional(),
 });
+export type NudgeContent = z.infer<typeof NudgeContent>;
 
 /**
  * 系统提示（会话中的灰色小字，术语见 glossary）。

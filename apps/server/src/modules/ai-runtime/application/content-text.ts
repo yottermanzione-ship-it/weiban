@@ -1,4 +1,28 @@
-import type { Message, ForwardSnapshotContent, ForwardedRecordContent } from '@weiban/contracts';
+import type {
+  Message,
+  ForwardSnapshotContent,
+  ForwardedRecordContent,
+  NudgeContent,
+} from '@weiban/contracts';
+
+/**
+ * 3.27（H1 拍一拍）：拍一拍给模型看的文字。
+ * 不给 names 时按私聊里「角色本人」的视角：用户拍了拍你 / 你拍了拍用户（+ 用户的拍一拍后缀）。
+ * 群聊传入发起人与被拍者的名字。以前拍一拍不进模型上下文（被当成空消息丢掉），角色看不到、也就不回应。
+ */
+export function nudgeText(
+  c: NudgeContent,
+  senderKind: Message['senderKind'],
+  names?: { sender: string; target: string },
+): string {
+  const suffix = c.suffix ?? '';
+  if (names) return `[拍一拍：${names.sender}拍了拍${names.target}${suffix}]`;
+  if (senderKind === 'user')
+    return c.targetKind === 'user'
+      ? `[拍一拍：用户拍了拍自己${suffix}]`
+      : '[拍一拍：用户拍了拍你（双击了你的头像，想引起你的注意）]';
+  return `[拍一拍：你拍了拍用户${suffix}]`;
+}
 
 /** Offline, bounded rendering shared by reply/group/memory. Media is described without inventing pixels. */
 export function snapshotText(c: ForwardSnapshotContent): string {
@@ -32,9 +56,9 @@ export function readableMessageText(m: Message): string {
     c.type === 'unsupported' ||
     c.type === 'system' ||
     c.type === 'action_card' ||
-    c.type === 'call_record' ||
-    c.type === 'nudge'
+    c.type === 'call_record'
   )
     return '';
+  if (c.type === 'nudge') return nudgeText(c, m.senderKind);
   return snapshotText(c);
 }

@@ -32,7 +32,7 @@ import { POLICY_PORT } from '../../policy/index.js';
 import { CHARACTER_READ_PORT } from '../../characters/index.js';
 import { CHAT_ADMIN_PORT } from '../../chat/index.js';
 import { ADULT_MODEL_READ_PORT } from '../../model-access/index.js';
-import { INITIAL_MODES, modeOption } from '../domain/persona.js';
+import { INITIAL_MODES, modeOption, SELECTABLE_MODES } from '../domain/persona.js';
 import { ReplyPlanStore } from './plan-store.js';
 import { invalidateReplyPlans } from './invalidate.js';
 import { companionSettings } from '../infra/db/schema.js';
@@ -111,11 +111,11 @@ export class CompanionSettingsService {
     const allowed = await this.policy.listAllowedScenarioModes({
       userId,
       characterId,
-      candidates: INITIAL_MODES,
+      candidates: SELECTABLE_MODES,
       adminAllowlist: role.card.data.modes.adminAllowlist,
     });
     return {
-      items: INITIAL_MODES.filter((mode) => allowed.some((m) => m.modeId === mode.modeId)).map(
+      items: SELECTABLE_MODES.filter((mode) => allowed.some((m) => m.modeId === mode.modeId)).map(
         modeOption,
       ),
     };
@@ -185,6 +185,9 @@ export class CompanionSettingsService {
     await this.guard(userId, characterId);
     const allowed =
       characterId && patch.scenarioMode ? await this.listModes(userId, characterId) : null;
+    // 3.27（H1）：「情侣暧昧」不再可选（全局默认也不行）。
+    if (patch.scenarioMode === 'romance')
+      throw new AppError('bad_request', '情侣暧昧已改为随好感度阶段自动解锁');
     if (patch.scenarioMode === 'adult') {
       if (!characterId) throw new AppError('bad_request', '成人模式只能为单独角色开启');
       const decision = await this.policy.checkScenarioMode({

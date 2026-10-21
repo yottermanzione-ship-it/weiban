@@ -12,7 +12,7 @@
  * - P-09 用户 5 分钟内在任一会话发过消息则延后；最长延后 60 分钟，超时放弃。
  * - P-33 余额保留线 1 元（cost-estimate.md 6.2）。
  */
-import { stageLabel } from '../domain/relationship-stage.js';
+import { ROMANCE_TITLE_STAGE, stageLabel } from '../domain/relationship-stage.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { userNickname, userNamingContext } from '../domain/user-naming.js';
 import { AdultBoundaryService } from './adult-boundary.js';
@@ -649,7 +649,9 @@ export class ProactiveSchedulerService {
         .catch(() => 1);
       const settings = await this.settings.get(ctx.userId, characterId).catch(() => null);
       if (!settings || !settings.proactiveMessages) continue;
-      const romanticOk = contact.relationship === '恋人' || settings.scenarioMode === 'romance';
+      // 3.27（H1）：恋爱节日只随好感度阶段（恋人阶段起、没暂停亲密表达）；关系类型与「情侣暧昧」预设已删除。
+      const stage = await this.growth.relationshipStage(ctx.userId, characterId).catch(() => null);
+      const romanticOk = !!stage && stage.level >= ROMANCE_TITLE_STAGE && !stage.romancePaused;
 
       // 节日（SIM-09）：当天尽早；按熟悉度排序（priority）；恋爱节日只对恋人/恋爱模式。
       for (const h of holidaysToday) {

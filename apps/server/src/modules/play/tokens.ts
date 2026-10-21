@@ -3,7 +3,7 @@
  * ai-runtime 可 import 本模块 index.ts（T-101 上层白名单 ai-runtime → play）；play 不能 import ai-runtime / growth，
  * 反方向一律用事件（play.*），发卡等需要 growth 的动作由 ai-runtime（T-096）调用或装配入口注入。
  */
-import type { GrowthCardPort } from '@weiban/contracts';
+import type { GrowthCardPort, GrowthReadPort } from '@weiban/contracts';
 
 /** 契约 PlayReadPort（ai-runtime：专注状态、心愿清单、提醒、待生成回信）。 */
 export const PLAY_READ_PORT = Symbol('weiban.play.read-port');
@@ -46,6 +46,13 @@ export interface PlayDailyAnswerStatus {
  */
 export const PLAY_CARD_ISSUER = Symbol('weiban.play.card-issuer');
 export type PlayCardIssuer = Pick<GrowthCardPort, 'issueCard'>;
+
+/**
+ * 3.27（H1）：好感度阶段（1 粉丝 … 5 恋人 … 6 伴侣）。关系类型选择已删除，「恋人」只随好感度阶段；
+ * play 不能 import growth，由 app.module.ts 绑定到 growth 的 GROWTH_READ_PORT；未绑定时按「非恋人」。
+ */
+export const PLAY_FAMILIARITY = Symbol('weiban.play.familiarity');
+export type PlayFamiliarity = Pick<GrowthReadPort, 'getFamiliarityLevel'>;
 
 /**
  * 心愿提议卡片（action_card，cardKind = wishlist_proposal）的约定，T-096 发卡片时使用：

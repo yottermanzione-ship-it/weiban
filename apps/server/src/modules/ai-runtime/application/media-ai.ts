@@ -15,7 +15,7 @@
  * - 计费：所有调用经模型网关（语音按字数 / 分钟，识图按 token，搜索按次）。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { forwardedRecordText, snapshotText } from './content-text.js';
+import { forwardedRecordText, nudgeText, snapshotText } from './content-text.js';
 import {
   type CharacterNameReadPort,
   type CharacterRelationReadPort,
@@ -271,6 +271,9 @@ export class MediaAiService {
       }
       case 'contact_card':
         return { text: `[${mine ? '你' : '对方'}发了一张名片：${c.name}]` };
+      case 'nudge':
+        // 3.27（H1）：拍一拍进上下文，角色才看得到、按人设回应。
+        return { text: nudgeText(c, m.senderKind) };
       default:
         return null;
     }

@@ -3,7 +3,7 @@
  * 私聊会话与用户参与者、以用户 / 角色身份写卡片消息、data.changed 更新。
  * 只经对方模块的端口读取，不碰别人的表（R8）。
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type {
   CharacterNameReadPort,
   CharacterReadPort,
@@ -26,10 +26,12 @@ import { CHAT_ADMIN_PORT, CHAT_PARTICIPANT_PORT, CHAT_READ_PORT } from '../../ch
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
+import { PLAY_FAMILIARITY, type PlayFamiliarity } from '../tokens.js';
 
 export const DEFAULT_TZ = 'Asia/Shanghai';
-/** GRW-02：关系类型「恋人」。 */
-export const LOVER_RELATIONSHIP = '恋人';
+
+/** 3.27（H1）：好感度「恋人」阶段（六阶段第 5 级）。 */
+export const LOVER_STAGE = 5;
 
 /** 选题、提议过滤用的角色画像（PLAY-03 第 3 条、PLAY-04 第 4 条）。 */
 export interface CharacterTraits {
@@ -68,6 +70,7 @@ export class PlayContext {
     @Inject(CHAT_PARTICIPANT_PORT) private readonly chat: ChatParticipantPort,
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
     @Inject(CHAT_ADMIN_PORT) private readonly chatAdmin: ChatAdminPort,
+    @Optional() @Inject(PLAY_FAMILIARITY) private readonly familiarity?: PlayFamiliarity,
   ) {}
 
   /** 用户 IANA 时区（缺省 Asia/Shanghai）。 */
@@ -99,18 +102,16 @@ export class PlayContext {
   }
 
   async traits(userId: string, characterId: string, tx?: DbTx): Promise<CharacterTraits> {
-    const [contact, classification] = await Promise.all([
-      this.contacts.getActiveContact(userId, characterId, tx as Tx | undefined),
+    const [classification, level] = await Promise.all([
       this.characters.getClassification(characterId, tx as Tx | undefined),
+      this.familiarity?.getFamiliarityLevel(userId, characterId).catch(() => null) ?? null,
     ]);
     // 读不到分类时按最严处理（儿童 + 真人 + 非恋人）。
     if (!classification) return { lover: false, child: true, realPerson: true };
     const child = classification.derived.isMinor;
     return {
-      lover:
-        !child &&
-        classification.derived.romanceAllowed &&
-        contact?.relationship === LOVER_RELATIONSHIP,
+      // 3.27（H1）：「恋人」只随好感度阶段（恋人阶段 = 5 起），不再看手选的关系类型。
+      lover: !child && classification.derived.romanceAllowed && (level ?? 0) >= LOVER_STAGE,
       child,
       realPerson: classification.basis === 'real_person',
     };

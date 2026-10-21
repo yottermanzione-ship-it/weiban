@@ -163,7 +163,6 @@ export class CallSchedulerService {
           features: {
             reasonKind: t.reason,
             familiarityLevel: level,
-            relationshipType: contact.relationship ?? null,
           },
           path: 'proactive',
           idempotencyKey: `call:${ctx.localDate}:${t.sourceRef}`,

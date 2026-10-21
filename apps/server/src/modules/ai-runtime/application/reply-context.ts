@@ -416,8 +416,9 @@ export class ReplyContext {
       row.characterId,
       conversation.contentScope,
     );
-    // 3.25（G1-6）：好感度阶段。恋爱说法（违禁词第 3 类）按阶段放开：恋人阶段起（或用户明确选了恋人关系 /
-    // 恋爱模式 / 私密模式）才允许；用户要求暂停亲密表达时一律不允许；未成年设定角色永远不允许。
+    // 3.25（G1-6）：好感度阶段。恋爱说法（违禁词第 3 类）按阶段放开：恋人阶段起（或私密模式）才允许；
+    // 用户要求暂停亲密表达时一律不允许；未成年设定角色永远不允许。
+    // 3.27（H1，总经理 10-21）：删除「用户选了恋人关系 / 情侣暧昧预设就直接用恋人口吻」的特例，只随阶段。
     const stage = await this.growth
       ?.relationshipStage(row.userId, row.characterId)
       .catch(() => null);
@@ -426,10 +427,7 @@ export class ReplyContext {
       romancePaused: stage?.romancePaused ?? false,
       preferredTitle: stage?.preferredTitle ?? null,
       romanceAllowed: policy.romanceAllowed && !policy.isMinor,
-      explicitRomance:
-        (contact.relationship ?? '朋友') === '恋人' ||
-        settings.scenarioMode === 'romance' ||
-        conversation.contentScope === 'adult',
+      explicitRomance: conversation.contentScope === 'adult',
     };
     const replyPolicy = { ...policy, romanceAllowed: romanceUnlocked(stageInput) };
     const head: PromptSection[] = [
@@ -458,7 +456,6 @@ export class ReplyContext {
         text: `${personaPrompt({
           fit: settings.personaFit ?? 3,
           mode: settings.scenarioMode ?? 'daily',
-          relationship: contact.relationship ?? '朋友',
           stageText: relationshipStageText(stageInput),
         })}\n${userNamingContext(profile.nickname)}${
           card.modes.modeOverrides?.[settings.scenarioMode ?? 'daily']

@@ -25,7 +25,7 @@ export function contactDto(row: ContactRow): Contact {
     remark: row.remark,
     customAvatarMediaId: row.customAvatarMediaId,
     addressAs: row.addressAs,
-    relationship: row.relationshipType,
+    // 3.27（H1）：关系类型不再返回（恋爱表达只随好感度阶段）。
     knownSince: row.knownSince,
     conversationId: row.status === 'active' ? row.conversationId : null,
     addedAt: row.addedAt.toISOString(),
