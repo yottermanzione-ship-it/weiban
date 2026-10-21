@@ -95,6 +95,14 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.27（2026-10-21，试用反馈第四轮 H1：先用后扣、删除关系类型、拍一拍）
+
+依据 `docs/tasks/2026-10-21-gm-feedback-4.md` 批 H1。说明见 `docs/handoffs/2026-10-21-h1.md`。
+
+- 计费：`ReserveError` 增 `concurrency_limited`、`request_too_large`；`ReserveInput.estimate` 含义改为「实际发送的上下文 + 最大输出」估算（只用于巨额拦截与后台每日上限）。用户付费调用不再冻结（`ReserveOutput.amountMicros = 0`），结算全额扣、余额可为负。新 `PostpaidSettings`、`UpdatePostpaidSettingsRequest`、`POSTPAID_DEFAULTS`、`BillingDebtor`、`BillingDebtSummary`；`BillingAdminEndpoints` 增 GET / PUT `/admin/billing/postpaid-settings`、GET `/admin/billing/debts`。
+- 资料：`Profile.nudgeSuffix`（可选，最多 15 字）。拍一拍：`NudgeContent` 增可选 `targetKind`、`suffix`（服务器写入时填写）；新导出类型 `NudgeContent`。
+- 联系人：`Contact.relationship`、`UpdateContactRequest.relationship` 标为弃用——服务器不再返回、写入忽略。
+
 ### 3.26（2026-10-21，试用反馈第三轮 G3：models.dev 预填、缺用量按估算计费、模型键自动生成）
 
 依据 `docs/tasks/2026-10-21-gm-feedback-3.md` 批 G3。说明见 `docs/handoffs/2026-10-21-g3.md`。
