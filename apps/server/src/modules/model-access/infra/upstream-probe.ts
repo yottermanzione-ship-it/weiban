@@ -83,6 +83,7 @@ export async function fetchUpstreamModels(input: {
   baseUrl: string;
   apiKey: string;
 }): Promise<{ ok: true; ids: string[] } | { ok: false; reason: UpstreamTestFailure }> {
+  if (input.kind === 'deepseek_search') return { ok: true, ids: ['deepseek-search'] };
   if (input.kind === 'anthropic') {
     const listed = await fetchAnthropicModels({ ...input, timeoutMs: UPSTREAM_TEST_TIMEOUT_MS });
     if (!listed) return { ok: false, reason: 'network_error' };

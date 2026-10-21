@@ -461,6 +461,7 @@ export const UpstreamKind = z.enum([
   'bocha_search',
   'jev',
   'anthropic',
+  'deepseek_search',
 ]);
 
 /** v3.4：上游账号的调度参数（可空 = 不限）。 */
@@ -997,6 +998,8 @@ export const GatewayLimits = z.object({
   failureThreshold: z.number().int().min(1).max(100),
   /** 自动暂停多少秒后再试。 */
   cooldownSeconds: z.number().int().min(10).max(86_400),
+  searchCandidatesPerUserDay: z.number().int().min(1).max(1000).optional(),
+  searchCandidatesGlobalDay: z.number().int().min(1).max(100000).optional(),
 });
 export type GatewayLimits = z.infer<typeof GatewayLimits>;
 

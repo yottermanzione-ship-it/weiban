@@ -59,3 +59,4 @@ export * from './ports/index.js';
 export * from './http/membership.js';
 export * from './http/admin-users.js';
 export * from './http/ecology.js';
+export * from './http/search.js';

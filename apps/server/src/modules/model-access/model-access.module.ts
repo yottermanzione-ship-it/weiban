@@ -19,6 +19,8 @@ import { GenerationCache } from './application/generation-cache.js';
 import { GatewayMaintenance } from './application/gateway-maintenance.js';
 import { ModelGateway } from './application/gateway.js';
 import { GatewayWebSearchProvider } from './application/web-search.js';
+import { WebToolsStore } from './application/web-tools-store.js';
+import { SearchController } from './http/search.controller.js';
 import { OpenAiTextAdapter, RoutingTextAdapter } from './infra/text-adapter.js';
 import { AnthropicTextAdapter } from './infra/anthropic-adapter.js';
 import {
@@ -76,9 +78,10 @@ import {
     MODEL_GATEWAY_MEDIA_PORT,
     MODEL_QUOTE_PORT,
   ],
-  controllers: [ModelController, ModelAdminController],
+  controllers: [ModelController, ModelAdminController, SearchController],
   providers: [
     BillingBoundsService,
+    WebToolsStore,
     UpstreamService,
     GatewayLimitsService,
     UpstreamScheduler,
@@ -90,7 +93,12 @@ import {
     GatewayWebSearchProvider,
     ModelGatewayMedia,
     { provide: MODEL_GATEWAY_MEDIA_PORT, useExisting: ModelGatewayMedia },
-    { provide: MEDIA_ADAPTER, useFactory: () => new OpenAiCompatibleMediaAdapter() },
+    {
+      provide: MEDIA_ADAPTER,
+      inject: [WebToolsStore],
+      useFactory: (tools: WebToolsStore) =>
+        new OpenAiCompatibleMediaAdapter((kind, host) => tools.allowRequest(kind, host)),
+    },
     { provide: WEB_SEARCH_PROVIDER, useExisting: GatewayWebSearchProvider },
     {
       provide: TEXT_ADAPTER,

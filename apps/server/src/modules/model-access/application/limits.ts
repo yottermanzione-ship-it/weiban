@@ -24,6 +24,8 @@ export const DEFAULT_GATEWAY_LIMITS: GatewayLimits = {
   perUserRpm: null,
   failureThreshold: 3,
   cooldownSeconds: 300,
+  searchCandidatesPerUserDay: 20,
+  searchCandidatesGlobalDay: 5000,
 };
 
 @Injectable()
@@ -44,12 +46,16 @@ export class GatewayLimitsService {
       .from(modelAccessSettings)
       .where(eq(modelAccessSettings.key, KEY));
     const parsed = GatewayLimits.safeParse(row?.value);
-    const value = parsed.success ? parsed.data : DEFAULT_GATEWAY_LIMITS;
+    const value = parsed.success
+      ? { ...DEFAULT_GATEWAY_LIMITS, ...parsed.data }
+      : DEFAULT_GATEWAY_LIMITS;
     this.cached = { value, at: now };
     return value;
   }
 
   async update(adminId: string, value: GatewayLimits): Promise<GatewayLimits> {
+    // 旧管理端不知道新增字段时，保留已设置的搜索额度。
+    value = { ...(await this.get()), ...value };
     const now = this.clock.now();
     await this.database.transaction(async (tx) => {
       await tx.db

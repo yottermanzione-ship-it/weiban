@@ -124,10 +124,11 @@ export const UPSTREAM_ERROR_LABELS: Record<string, string> = {
   timeout: '超时',
 };
 
-export type UpstreamState = 'normal' | 'abnormal' | 'disabled';
+export type UpstreamState = 'normal' | 'abnormal' | 'disabled' | 'pending';
 
 export function upstreamState(u: Upstream): UpstreamState {
   if (u.enabled === false) return 'disabled';
+  if (u.maskedKey === '未配置') return 'pending';
   if (u.status !== 'active') return 'abnormal';
   if (u.cooldownUntil && new Date(u.cooldownUntil).getTime() > Date.now()) return 'abnormal';
   return 'normal';
@@ -137,6 +138,7 @@ export const UPSTREAM_STATE_LABELS: Record<UpstreamState, string> = {
   normal: '正常',
   abnormal: '异常',
   disabled: '已停用',
+  pending: '待配置',
 };
 
 /** 3.24：上游协议（契约 UpstreamKind）。 */
@@ -145,6 +147,7 @@ export const KIND_LABELS: Record<string, string> = {
   anthropic: 'Anthropic（Claude 原生）',
   dashscope: '阿里云百炼原生',
   bocha_search: '博查搜索',
+  deepseek_search: 'DeepSeek 搜索',
   jev: 'Jev',
 };
 
@@ -152,6 +155,7 @@ export const KIND_LABELS: Record<string, string> = {
 export function upstreamReason(u: Upstream): string | null {
   const last = u.lastError ? (UPSTREAM_ERROR_LABELS[u.lastError] ?? u.lastError) : null;
   if (u.enabled === false) return '已停用，不分配调用';
+  if (u.maskedKey === '未配置') return '尚未填写密钥，请编辑后配置密钥';
   if (u.status === 'invalid') return '密钥无效：请更换密钥后测试';
   if (u.status === 'quota_exhausted') return '余额不足：去服务商处充值后测试';
   if (u.status === 'unavailable')

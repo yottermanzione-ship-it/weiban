@@ -48,7 +48,16 @@ export function CreateCustomCharacterPage() {
   const [params] = useSearchParams();
   const importJobId = params.get('import');
   return (
-    <CustomCharacterEditor key={importJobId ?? 'new'} mode="create" importJobId={importJobId} />
+    <CustomCharacterEditor
+      key={importJobId ?? params.get('candidateName') ?? 'new'}
+      mode="create"
+      importJobId={importJobId}
+      candidate={{
+        name: (params.get('candidateName') ?? '').slice(0, 32),
+        description: (params.get('candidateDescription') ?? '').slice(0, 500),
+        source: (params.get('candidateSource') ?? '').slice(0, 2000),
+      }}
+    />
   );
 }
 
@@ -90,10 +99,12 @@ function CustomCharacterEditor({
   mode,
   characterId,
   importJobId = null,
+  candidate,
 }: {
   mode: 'create' | 'edit';
   characterId?: string;
   importJobId?: string | null;
+  candidate?: { name: string; description: string; source: string };
 }) {
   const navigate = useNavigate();
   const { session } = useAuth();
@@ -111,8 +122,14 @@ function CustomCharacterEditor({
   const [declared, setDeclared] = useState(false);
   const [importDraft, setImportDraft] = useState<ImportDraft | null>(null);
 
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+  const [name, setName] = useState(
+    mode === 'create' && !importJobId ? (candidate?.name ?? '') : '',
+  );
+  const [description, setDescription] = useState(
+    mode === 'create' && !importJobId && candidate?.name
+      ? `${candidate.description}${candidate.source ? `\n参考公开资料（尚未核实）：${candidate.source}` : ''}`
+      : '',
+  );
   const [basis, setBasis] = useState<CharacterBasis>('original');
   const [realKind, setRealKind] = useState<RealPersonKind>('private_person');
   const [childAppearance, setChildAppearance] = useState(false);
@@ -700,7 +717,13 @@ function CustomCharacterEditor({
           disabled={loading || pending || uploadPending || unchanged || incomplete}
           aria-busy={pending}
         >
-          {pending ? (mode === 'create' ? '正在创建…' : '正在保存…') : mode === 'create' ? '创建角色' : '保存'}
+          {pending
+            ? mode === 'create'
+              ? '正在创建…'
+              : '正在保存…'
+            : mode === 'create'
+              ? '创建角色'
+              : '保存'}
         </button>
       </form>
 

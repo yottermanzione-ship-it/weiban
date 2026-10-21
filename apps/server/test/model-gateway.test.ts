@@ -22,9 +22,31 @@ import {
   GenerationCache,
   GatewayMaintenance,
   AdminUsageService,
+  ModelGatewayMedia,
+  WebToolsStore,
 } from '../src/modules/model-access/testing.js';
 import { captureLogger, testConfig, testKekRing } from './support/fixtures.js';
 import { describeDb, resetTestDatabase } from './support/db.js';
+
+it('S 搜索服务完整依赖图可装配（不启动数据库与任务）', async () => {
+  const module = await Test.createTestingModule({
+    imports: [
+      AppModule.forRoot({
+        config: testConfig({ APP_ROLE: 'web' }),
+        clock: new TestClock('2026-10-21T12:00:00Z'),
+        logger: captureLogger().logger,
+        kekRing: testKekRing().ring,
+        background: false,
+      }),
+    ],
+  }).compile();
+  try {
+    expect(module.get(ModelGatewayMedia)).toBeInstanceOf(ModelGatewayMedia);
+    expect(module.get(WebToolsStore)).toBeInstanceOf(WebToolsStore);
+  } finally {
+    await module.close();
+  }
+});
 
 describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费', () => {
   let app: INestApplication;

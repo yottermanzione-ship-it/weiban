@@ -310,6 +310,13 @@ export interface GenerateImageInput extends MediaCallBase {
 export interface GatewayWebSearchInput extends MediaCallBase {
   query: string;
   maxResults: number;
+  needContent?: boolean;
+  originalQuestion?: string;
+}
+
+/** 3.30：由搜索供应商抓取公开网页；按 search_call 计价。 */
+export interface GatewayWebFetchInput extends MediaCallBase {
+  url: string;
 }
 
 export interface WebSearchResultItem {
@@ -318,6 +325,9 @@ export interface WebSearchResultItem {
   snippet: string;
   source: string | null;
   publishedAt: string | null;
+  authority?: number;
+  relevance?: number;
+  content?: string;
 }
 
 /** 实时语音识别流（通话中听用户，ADR-0025）：网关按分钟分段冻结与结算（长通话分段冻结）。 */
@@ -378,6 +388,10 @@ export interface ModelGatewayMediaPort {
   webSearch(
     input: GatewayWebSearchInput,
   ): Promise<PortResult<MediaCallResult & { items: WebSearchResultItem[] }, GenerateError>>;
+  /** 旧的媒体端口实现可不支持抓取；调用方须检查是否存在。 */
+  webFetch?(
+    input: GatewayWebFetchInput,
+  ): Promise<PortResult<MediaCallResult & { title: string; content: string }, GenerateError>>;
   openRealtimeAsr(
     input: MediaCallBase & { sampleRate: 16000 },
   ): Promise<PortResult<RealtimeAsrSession, GenerateError>>;

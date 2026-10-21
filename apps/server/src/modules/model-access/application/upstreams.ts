@@ -65,7 +65,9 @@ export function toUpstream(
     name: row.name,
     kind: row.kind as Kind,
     baseUrl: row.baseUrl,
-    maskedKey: formatMask(row.displayPrefix, row.displaySuffix),
+    maskedKey: row.secretCiphertext.length
+      ? formatMask(row.displayPrefix, row.displaySuffix)
+      : '未配置',
     status: row.status as UpstreamStatus,
     statusChangedAt: row.statusChangedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
@@ -511,6 +513,7 @@ export class UpstreamService {
    */
   async withApiKey<T>(upstreamId: string, fn: (apiKey: string) => Promise<T>): Promise<T> {
     const row = await this.get(upstreamId);
+    if (!row.secretCiphertext.length) throw new AppError('bad_request', '请先配置上游密钥');
     const plain = await this.crypto.open(
       PLATFORM_KEY_OWNER,
       upstreamAad(upstreamId),

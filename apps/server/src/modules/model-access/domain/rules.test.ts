@@ -1,4 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { OpenAiCompatibleMediaAdapter } from '../infra/media-adapter.js';
+import { ModelGatewayMedia } from '../application/media-gateway.js';
+import { WebToolsStore } from '../application/web-tools-store.js';
+import { characterCandidates, privateSearchText, publicWebUrl } from './web-search.js';
+import { TestClock } from '../../../platform/index.js';
+import { GatewayLimitsService } from '../application/limits.js';
+
 import {
   checkBaseUrl,
   classifyTestStatus,
@@ -13,6 +20,372 @@ import {
   statusAfterTest,
   unavailableReason,
 } from './rules.js';
+
+afterEach(() => vi.restoreAllMocks());
+
+describe('S DeepSeek Search / Fetch 协议', () => {
+  it('旧管理端保存调度设置时保留已调整过的搜索额度', async () => {
+    const limits = Object.create(GatewayLimitsService.prototype) as GatewayLimitsService;
+    const values = vi.fn().mockReturnValue({ onConflictDoUpdate: async () => {} });
+    const tx = { db: { insert: () => ({ values }) } };
+    const old = {
+      perUserConcurrency: null,
+      perUserRpm: null,
+      failureThreshold: 3,
+      cooldownSeconds: 300,
+    };
+    Object.assign(limits, {
+      get: async () => ({
+        ...old,
+        searchCandidatesPerUserDay: 21,
+        searchCandidatesGlobalDay: 5100,
+      }),
+      database: { transaction: (run: (t: object) => Promise<void>) => run(tx) },
+      clock: new TestClock('2026-10-21T12:00:00Z'),
+      audit: { record: vi.fn() },
+    });
+    expect(await limits.update('admin', { ...old, failureThreshold: 4 })).toMatchObject({
+      failureThreshold: 4,
+      searchCandidatesPerUserDay: 21,
+      searchCandidatesGlobalDay: 5100,
+    });
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        value: expect.objectContaining({ searchCandidatesGlobalDay: 5100 }),
+      }),
+    );
+  });
+  it('本地QPS拒绝按零成本释放，不能把健康的上游标成故障', async () => {
+    const media = Object.create(ModelGatewayMedia.prototype) as ModelGatewayMedia;
+    const fail = vi.fn();
+    const charge = { usageRecordId: 'u', holdId: 'h' };
+    Object.assign(media, {
+      activeGenerations: new WeakMap(),
+      cached: (_kind: string, _input: unknown, callback: () => Promise<unknown>) => callback(),
+      resolve: async () => ({
+        ok: true,
+        value: { modelKey: 'search/model', billingBounds: { search: { maxResults: 10 } } },
+      }),
+      webTools: {
+        key: () => 'k',
+        claim: async () => ({ kind: 'claimed', token: 'lease' }),
+        finish: vi.fn(),
+      },
+      reserve: async () => ({ ok: true, value: charge }),
+      beginCharge: async () => true,
+      fail,
+      withTarget: (
+        _model: unknown,
+        callback: (target: object, adapter: object) => Promise<unknown>,
+      ) =>
+        callback(
+          {},
+          {
+            search: async () => ({
+              ok: false,
+              category: 'rate_limited',
+              zeroCost: true,
+              localRateLimit: true,
+            }),
+          },
+        ),
+    });
+    expect(
+      await media.webSearch({
+        userId: 'u',
+        purpose: 'search_candidates',
+        billingOwner: 'platform',
+        idempotencyKey: 'k',
+        query: '程澈',
+        maxResults: 5,
+      }),
+    ).toEqual({ ok: false, error: 'provider_unavailable' });
+    expect(fail).toHaveBeenCalledWith(charge, 'rate_limited', { searchCalls: 0 }, false);
+  });
+  it('候选多层额度先全部检查再写入，日切重置；注销后的账号不能重建限额记录', async () => {
+    const store = Object.create(WebToolsStore.prototype) as WebToolsStore;
+    const rows = vi.fn().mockResolvedValue([{ window: '2026-10-21', count: 5000 }]);
+    const written: { count: number }[] = [];
+    const active = vi.fn().mockResolvedValue('active');
+    const tx = {
+      query: vi.fn(),
+      db: {
+        select: () => ({ from: () => ({ where: rows }) }),
+        insert: () => ({
+          values: (value: { count: number }) => ({
+            onConflictDoUpdate: async () => {
+              written.push(value);
+            },
+          }),
+        }),
+      },
+    };
+    Object.assign(store, {
+      db: { transaction: (run: (t: object) => Promise<unknown>) => run(tx) },
+      clock: new TestClock('2026-10-21T12:00:00Z'),
+      accounts: { getAccountStatus: active },
+      limits: {
+        get: async () => ({ searchCandidatesGlobalDay: 5000, searchCandidatesPerUserDay: 20 }),
+      },
+    });
+    expect(await store.consumeCandidate('user')).toBe(false);
+    expect(written).toEqual([]);
+    // 全局尚有余额、用户当天已用20次，不能只扣掉全局计数。
+    rows
+      .mockResolvedValueOnce([{ window: '2026-10-21', count: 1 }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ window: '2026-10-21', count: 20 }]);
+    expect(await store.consumeCandidate('user')).toBe(false);
+    expect(written).toEqual([]);
+    rows.mockResolvedValue([{ window: '2026-10-20', count: 99999 }]);
+    expect(await store.consumeCandidate('user')).toBe(true);
+    expect(written.map((x) => x.count)).toEqual([1, 1, 1]);
+    active.mockResolvedValue('deleting');
+    expect(await store.consumeCandidate('user')).toBe(false);
+    expect(written).toHaveLength(3);
+  });
+  const target = {
+    kind: 'deepseek_search',
+    baseUrl: 'https://api.deepseek.com/v1',
+    apiKey: 'fixture-key',
+    model: 'deepseek-search',
+  };
+  it('同一搜索请求附 Bearer、不跟重定向；按 Unicode 截断并保留元数据、去跟踪参数', async () => {
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: [
+            {
+              title: '公开角色',
+              url: 'https://example.com/role?utm_source=ad&lang=zh#section',
+              summary: '长摘要',
+              snippet: '短摘要',
+              site_name: '公开百科',
+              date: null,
+              authority: 3,
+              rerank_score: 2.1,
+              content: '公开正文',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    const adapter = new OpenAiCompatibleMediaAdapter();
+    const result = await adapter.search(target, {
+      query: '猫'.repeat(150),
+      maxResults: 5,
+      needContent: true,
+    });
+    expect(fetcher.mock.calls[0]![0]).toBe('https://api.deepseek.com/v1/tools/search');
+    const init = fetcher.mock.calls[0]![1]!;
+    expect(init).toMatchObject({
+      method: 'POST',
+      redirect: 'manual',
+      headers: { Authorization: 'Bearer fixture-key' },
+    });
+    expect(JSON.parse(String(init.body))).toEqual({
+      query: '猫'.repeat(128),
+      count: 5,
+      need_content: true,
+    });
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        billable: true,
+        hits: [
+          {
+            title: '公开角色',
+            url: 'https://example.com/role?lang=zh',
+            snippet: '长摘要',
+            source: '公开百科',
+            publishedAt: null,
+            authority: 3,
+            relevance: 2.1,
+            content: '公开正文',
+          },
+        ],
+      },
+    });
+  });
+  it('空结果不计费；非空结果即使本地丢弃不安全 URL 也保留真实供应商成本', async () => {
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('{"results":[]}'))
+      .mockResolvedValueOnce(
+        new Response('{"results":[{"title":"bad","url":"http://127.0.0.1/"}]}'),
+      );
+    const adapter = new OpenAiCompatibleMediaAdapter();
+    expect(await adapter.search(target, { query: '公开角色', maxResults: 5 })).toEqual({
+      ok: true,
+      value: { hits: [], billable: false },
+    });
+    expect(await adapter.search(target, { query: '公开角色', maxResults: 5 })).toEqual({
+      ok: true,
+      value: { hits: [], billable: true },
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it('抓取只发给供应商；403/404不作密钥故障，正文限制两万字符', async () => {
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('', { status: 403 }))
+      .mockResolvedValueOnce(new Response('', { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ title: '公开文章', content: '正'.repeat(21000) })),
+      );
+    const adapter = new OpenAiCompatibleMediaAdapter();
+    for (let n = 0; n < 2; n++)
+      expect(await adapter.fetchPage(target, { url: 'https://example.com/article' })).toEqual({
+        ok: true,
+        value: { title: '', content: '' },
+      });
+    const page = await adapter.fetchPage(target, { url: 'https://example.com/article' });
+    expect(page.ok && page.value.content.length).toBe(20000);
+    expect(
+      fetcher.mock.calls.every(([url]) => url === 'https://api.deepseek.com/v1/tools/fetch'),
+    ).toBe(true);
+    expect(await adapter.fetchPage(target, { url: 'http://user:password@example.com/' })).toEqual({
+      ok: false,
+      category: 'bad_request',
+    });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+  it('401/402映射正确且不回显错误正文；本地限速拒绝不发请求', async () => {
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('SECRET_PROVIDER_CANARY', { status: 401 }))
+      .mockResolvedValueOnce(new Response('', { status: 402 }));
+    const adapter = new OpenAiCompatibleMediaAdapter();
+    expect(await adapter.search(target, { query: '公开角色', maxResults: 1 })).toEqual({
+      ok: false,
+      category: 'invalid_key',
+      zeroCost: true,
+    });
+    expect(await adapter.search(target, { query: '公开角色', maxResults: 1 })).toEqual({
+      ok: false,
+      category: 'quota_exhausted',
+      zeroCost: true,
+    });
+    const gated = new OpenAiCompatibleMediaAdapter(async () => false);
+    expect(await gated.search(target, { query: '公开角色', maxResults: 1 })).toEqual({
+      ok: false,
+      category: 'rate_limited',
+      zeroCost: true,
+      localRateLimit: true,
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it('429等一秒只重试一次；畸形200响应不假报已知零成本', async () => {
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('', { status: 429 }))
+      .mockResolvedValueOnce(new Response('{"results":[]}'))
+      .mockResolvedValueOnce(new Response('not-json'));
+    const adapter = new OpenAiCompatibleMediaAdapter();
+    expect((await adapter.search(target, { query: '公开角色', maxResults: 1 })).ok).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(await adapter.search(target, { query: '公开角色', maxResults: 1 })).toEqual({
+      ok: false,
+      category: 'provider_error',
+    });
+  });
+  it('缓存键不含原查询，规范化相同公开查询共享；用途与原问题隔离', () => {
+    const store = Object.create(WebToolsStore.prototype) as WebToolsStore;
+    const key = store.key('search/model', 'search_candidates', ' ＡＢＣ  角色 ', 5);
+    expect(key).toBe(store.key('search/model', 'search_candidates', 'abc 角色', 5));
+    expect(key).toMatch(/^[a-f0-9]{64}$/u);
+    expect(key).not.toBe(store.key('search/model', 'admin_distill', 'abc 角色', 5));
+    expect(key).not.toBe(
+      store.key('search/model', 'search_candidates', 'abc 角色', 5, '另一部作品'),
+    );
+  });
+  it('候选过滤私生活、电话号码、凭据与内网链接，不把网页当成角色事实', () => {
+    expect(privateSearchText('我的同学 小李')).toBe(true);
+    expect(privateSearchText('１３８００１３８０００')).toBe(true);
+    expect(privateSearchText('某演员的新作品')).toBe(false);
+    expect(privateSearchText('site:weibo.com after:2026-10-21 公开活动')).toBe(false);
+    expect(privateSearchText('https://example.com/?id=%31%33%38%30%30%31%33%38%30%30%30')).toBe(
+      true,
+    );
+    expect(publicWebUrl('http://2130706433/')).toBeNull();
+    const good = {
+      title: '程澈 - 公开百科',
+      url: 'https://example.com/cc?utm_source=x',
+      snippet: '虚构作品角色',
+      source: null,
+      publishedAt: null,
+    };
+    expect(
+      characterCandidates('程澈', [
+        good,
+        good,
+        { ...good, url: 'https://example.com/privacy', snippet: '私人手机号 13800138000' },
+      ]),
+    ).toEqual([
+      {
+        name: '程澈',
+        title: good.title,
+        description: good.snippet,
+        sourceUrl: 'https://example.com/cc',
+      },
+    ]);
+  });
+  it('网关空搜索结果以0次结算，非空按1次；共享缓存命中不再次调用供应商', async () => {
+    const media = Object.create(ModelGatewayMedia.prototype) as ModelGatewayMedia;
+    const claim = vi.fn().mockResolvedValue({ kind: 'claimed', token: 'lease' });
+    const finish = vi.fn();
+    const search = vi.fn().mockResolvedValue({ ok: true, value: { hits: [], billable: false } });
+    const actuals: unknown[] = [];
+    const metadata = {
+      modelKey: 'search/model',
+      chargedMicros: 0,
+      latencyMs: 1,
+      usageRecordId: 'usage-fixture',
+    };
+    const run = vi.fn(
+      async (
+        _base: unknown,
+        _model: unknown,
+        _estimate: unknown,
+        callback: (
+          target: object,
+          adapter: object,
+        ) => Promise<{ ok: boolean; value: object; actual: unknown }>,
+      ) => {
+        const outcome = await callback(target, { search });
+        actuals.push(outcome.actual);
+        return { ok: true, value: { ...metadata, ...outcome.value } };
+      },
+    );
+    Object.assign(media, {
+      cached: (_kind: string, _input: unknown, callback: () => Promise<unknown>) => callback(),
+      resolve: async () => ({
+        ok: true,
+        value: { ...metadata, billingBounds: { search: { maxResults: 10 } } },
+      }),
+      webTools: { key: () => 'key', claim, finish },
+      run,
+    });
+    const input = {
+      userId: 'u',
+      purpose: 'search_candidates' as const,
+      billingOwner: 'platform' as const,
+      idempotencyKey: 'key',
+      query: '程澈',
+      maxResults: 5,
+    };
+    expect((await media.webSearch(input)).ok).toBe(true);
+    expect(actuals).toEqual([{ searchCalls: 0 }]);
+    search.mockResolvedValue({ ok: true, value: { hits: [], billable: true } });
+    await media.webSearch(input);
+    expect(actuals.at(-1)).toEqual({ searchCalls: 1 });
+    claim.mockResolvedValue({ kind: 'hit', value: { ...metadata, items: [] } });
+    await media.webSearch(input);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(finish).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe('密钥与掩码', () => {
   it('去除首尾空白，长度不合法返回 null', () => {

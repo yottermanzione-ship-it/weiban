@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SearchField } from './search-field.js';
+import { WebCharacterSearch } from './web-character-search.js';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CaretLeft, ChatCircle, DotsThree, Heart, Storefront, UserList } from './old-icons.js';
 import { z } from 'zod';
@@ -363,13 +364,16 @@ function WorkList({
     );
   if (items.length === 0)
     return (
-      <p className="empty">
-        {authorId
-          ? 'TA 还没有公开的作品'
-          : search
-            ? `没有找到「${search}」`
-            : '还没有人发布角色 · 在和自己的角色聊天时，可以从「聊天信息」发布到这里'}
-      </p>
+      <>
+        <p className="empty">
+          {authorId
+            ? 'TA 还没有公开的作品'
+            : search
+              ? `没有找到「${search}」`
+              : '还没有人发布角色 · 在和自己的角色聊天时，可以从「聊天信息」发布到这里'}
+        </p>
+        {!authorId && search && <WebCharacterSearch key={search} query={search} />}
+      </>
     );
   return (
     <>

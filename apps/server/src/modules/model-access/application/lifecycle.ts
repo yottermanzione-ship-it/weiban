@@ -7,7 +7,7 @@
  */
 import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
 import type { UserDataOwner } from '@weiban/contracts';
-import { and, count, eq } from 'drizzle-orm';
+import { and, count, eq, or } from 'drizzle-orm';
 import {
   DATABASE,
   EVENT_BUS,
@@ -28,6 +28,7 @@ import {
   generationResults,
   generationAttempts,
   platformPurposeLimits,
+  webToolLimits,
 } from '../infra/db/schema.js';
 import { UsageReconciliationService } from './reconciliation.js';
 import { BillingBoundsService } from './billing-bounds.js';
@@ -172,11 +173,39 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
         .delete(characterScenarioOverrides)
         .where(eq(characterScenarioOverrides.userId, userId))
         .returning({ id: characterScenarioOverrides.userId });
-      return a.length + b.length + c.length + d.length + e.length + f.length + g.length + h.length;
+      const search = await tx.db
+        .delete(webToolLimits)
+        .where(
+          or(
+            eq(webToolLimits.key, `candidates:user:${userId}`),
+            eq(webToolLimits.key, `candidates:minute:${userId}`),
+          ),
+        )
+        .returning();
+      return (
+        search.length +
+        a.length +
+        b.length +
+        c.length +
+        d.length +
+        e.length +
+        f.length +
+        g.length +
+        h.length
+      );
     });
   }
 
   async countUserData(userId: string): Promise<number> {
+    const [search] = await this.database.db
+      .select({ n: count() })
+      .from(webToolLimits)
+      .where(
+        or(
+          eq(webToolLimits.key, `candidates:user:${userId}`),
+          eq(webToolLimits.key, `candidates:minute:${userId}`),
+        ),
+      );
     const [a] = await this.database.db
       .select({ n: count() })
       .from(selections)
@@ -210,6 +239,7 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
       .from(characterScenarioOverrides)
       .where(eq(characterScenarioOverrides.userId, userId));
     return (
+      (search?.n ?? 0) +
       (e?.n ?? 0) +
       (f?.n ?? 0) +
       (a?.n ?? 0) +

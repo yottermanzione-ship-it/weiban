@@ -1,4 +1,5 @@
 import { SearchField } from './search-field.js';
+import { WebCharacterSearch } from './web-character-search.js';
 /*
  * 总经理 2026-10-14 裁定 2.3：通讯录右上「添加朋友」下的两个入口。
  * - 角色广场（/plaza）：一个页面两个 tab ——「自定义角色」（用户分享，原人设广场）与「微伴角色」（官方制作）；
@@ -261,7 +262,13 @@ function OfficialList() {
         </div>
       )}
       {state === 'ready' && items.length === 0 && (
-        <EmptyState icon="wechat/search" title={search ? `没有找到「${search}」` : '还没有角色'} />
+        <>
+          <EmptyState
+            icon="wechat/search"
+            title={search ? `没有找到「${search}」` : '还没有角色'}
+          />
+          {search && <WebCharacterSearch key={search} query={search} />}
+        </>
       )}
       {items.length > 0 && (
         <VirtualList

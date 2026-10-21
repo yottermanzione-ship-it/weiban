@@ -193,7 +193,7 @@ export class BillingBoundsService {
 
   /** 北京自然日+自然分钟窗口，用户别名/进程重启不刷新额度。仅首次逻辑请求调用，cache重放不消耗。 */
   async consumePurpose(userId: string, purpose: 'small_v' | 'search_candidates'): Promise<boolean> {
-    const caps = purpose === 'small_v' ? { minute: 10, day: 100 } : { minute: 5, day: 30 };
+    const caps = purpose === 'small_v' ? { minute: 10, day: 100 } : { minute: 5, day: 20 };
     return this.db.transaction(async (tx) => {
       await tx.query(
         "SELECT pg_advisory_xact_lock(hashtextextended('model:platform:' || $1 || ':' || $2,0))",

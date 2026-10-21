@@ -29,6 +29,31 @@ import {
 
 export const modelAccessSchema = pgSchema('model_access');
 
+/** 3.30：公开搜索缓存仅保留哈希与资料摘要，正文不长期缓存。 */
+export const webSearchCache = modelAccessSchema.table(
+  'web_search_cache',
+  {
+    queryKey: text('query_key').primaryKey(),
+    purpose: text('purpose').notNull(),
+    results: jsonb('results'),
+    leaseToken: uuid('lease_token').notNull(),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }).notNull(),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [index('web_search_expiry_idx').on(t.expiresAt)],
+);
+export const webToolLimits = modelAccessSchema.table(
+  'web_tool_limits',
+  {
+    key: text('key').primaryKey(),
+    window: text('window').notNull(),
+    count: integer('count').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [check('web_tool_limits_count_check', sql`${t.count} >= 0`)],
+);
+
 const tz = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 const money = (name: string) => bigint(name, { mode: 'number' });
 const bytea = customType<{ data: Buffer }>({ dataType: () => 'bytea' });

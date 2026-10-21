@@ -1,5 +1,6 @@
 import { EcologySignatureLine, MurmursRow } from './murmurs.js';
 import { SearchField } from './search-field.js';
+import { WebCharacterSearch } from './web-character-search.js';
 /*
  * 通讯录（规格 4.6）、发现（4.8）、角色广场（5.2）、角色资料页（4.12）。
  */
@@ -508,7 +509,10 @@ export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) 
         </MenuGroup>
       )}
       {!roles.loading && roles.data?.items.length === 0 && (
-        <EmptyState icon="wechat/search" title="没有找到角色" />
+        <>
+          <EmptyState icon="wechat/search" title="没有找到角色" />
+          {search && <WebCharacterSearch key={search} query={search} />}
+        </>
       )}
       {(previous.length > 0 || roles.data?.nextCursor) && (
         <div className="pager-row">

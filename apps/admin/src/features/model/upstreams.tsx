@@ -137,7 +137,8 @@ export function UpstreamsTab({
   /** 引用这条线路的模型（主上游或任一路由，含停用的模型）。 */
   const usersOf = (upstreamId: string) =>
     models.filter(
-      (m) => m.upstreamId === upstreamId || (m.routes ?? []).some((r) => r.upstreamId === upstreamId),
+      (m) =>
+        m.upstreamId === upstreamId || (m.routes ?? []).some((r) => r.upstreamId === upstreamId),
     );
 
   function blocked(u: Upstream, names: string[]) {
@@ -145,7 +146,9 @@ export function UpstreamsTab({
       title: `「${u.name}」还在被模型使用，暂时不能删除`,
       content: (
         <div>
-          <p>下面这些模型的线路里还有它，请先在「模型」里把它们换到别的上游账号（或删除这些模型），再回来删除：</p>
+          <p>
+            下面这些模型的线路里还有它，请先在「模型」里把它们换到别的上游账号（或删除这些模型），再回来删除：
+          </p>
           <ul style={{ paddingLeft: 18, margin: 0 }}>
             {names.map((n) => (
               <li key={n}>{n}</li>
@@ -169,7 +172,8 @@ export function UpstreamsTab({
     }
     confirm({
       title: `删除「${u.name}」？`,
-      content: '删除后密钥立即清除、不再分配调用，也不能恢复；历史调用记录仍保留，账号名显示为「已删除」。',
+      content:
+        '删除后密钥立即清除、不再分配调用，也不能恢复；历史调用记录仍保留，账号名显示为「已删除」。',
       okText: '删除',
       onOk: async () => {
         setError('');
@@ -233,7 +237,9 @@ export function UpstreamsTab({
       content: (
         <div>
           <p>{deletable.map((u) => u.name).join('、')}</p>
-          <p>删除后密钥立即清除、不再分配调用，也不能恢复；历史调用记录仍保留，账号名显示为「已删除」。</p>
+          <p>
+            删除后密钥立即清除、不再分配调用，也不能恢复；历史调用记录仍保留，账号名显示为「已删除」。
+          </p>
           {blockedList.length > 0 && (
             <>
               <p>下面 {blockedList.length} 个还在被模型使用，这次会跳过：</p>
@@ -325,7 +331,13 @@ export function UpstreamsTab({
           <div className="cell-main">
             <span>
               <StatusTag
-                tone={state === 'normal' ? 'success' : state === 'disabled' ? 'default' : 'error'}
+                tone={
+                  state === 'normal'
+                    ? 'success'
+                    : state === 'disabled' || state === 'pending'
+                      ? 'default'
+                      : 'error'
+                }
               >
                 {testing.includes(u.upstreamId) ? '测试中' : UPSTREAM_STATE_LABELS[state]}
               </StatusTag>
@@ -471,7 +483,10 @@ export function UpstreamsTab({
               style={{ width: 150 }}
               value={provider}
               onChange={setProvider}
-              options={[{ value: '', label: '全部供应商' }, ...PROVIDERS.map((p) => ({ value: p.id, label: p.name }))]}
+              options={[
+                { value: '', label: '全部供应商' },
+                ...PROVIDERS.map((p) => ({ value: p.id, label: p.name })),
+              ]}
             />
             <Select
               style={{ width: 130 }}
@@ -482,6 +497,7 @@ export function UpstreamsTab({
                 { value: 'normal', label: '正常' },
                 { value: 'abnormal', label: '异常' },
                 { value: 'disabled', label: '已停用' },
+                { value: 'pending', label: '待配置' },
               ]}
             />
             <Button onClick={() => void test(list.map((u) => u.upstreamId))}>测试全部</Button>
@@ -682,9 +698,10 @@ function UpstreamForm({
           label="协议"
           extra={
             <FieldHelp>
-              中转站一般两种地址都给：选「OpenAI 兼容」可以调所有模型（包括 Claude）；Claude 选「Anthropic（Claude
-              原生）」能用上缓存断点、按「缓存读取 / 缓存写入」准确计费，缓存命中更高。同一个中转站可以各建一个账号，Claude
-              模型的线路挂 Anthropic 那个。改协议后请重新「测试连接」。
+              中转站一般两种地址都给：选「OpenAI 兼容」可以调所有模型（包括 Claude）；Claude
+              选「Anthropic（Claude 原生）」能用上缓存断点、按「缓存读取 /
+              缓存写入」准确计费，缓存命中更高。同一个中转站可以各建一个账号，Claude 模型的线路挂
+              Anthropic 那个。改协议后请重新「测试连接」。
             </FieldHelp>
           }
         >
@@ -692,7 +709,9 @@ function UpstreamForm({
             options={[
               { value: 'openai_compatible', label: 'OpenAI 兼容（/chat/completions）' },
               { value: 'anthropic', label: 'Anthropic · Claude 原生（/v1/messages）' },
-              ...(upstream && !['openai_compatible', 'anthropic'].includes(upstream.kind)
+              { value: 'deepseek_search', label: 'DeepSeek 搜索（/v1/tools/search）' },
+              ...(upstream &&
+              !['openai_compatible', 'anthropic', 'deepseek_search'].includes(upstream.kind)
                 ? [{ value: upstream.kind, label: KIND_LABELS[upstream.kind] ?? upstream.kind }]
                 : []),
             ]}
@@ -704,7 +723,7 @@ function UpstreamForm({
             <Space>
               <Typography.Text code>{upstream.maskedKey}</Typography.Text>
               <Button size="small" onClick={() => setRotating(true)}>
-                更换密钥
+                {upstream.maskedKey === '未配置' ? '配置密钥' : '更换密钥'}
               </Button>
             </Space>
           </Form.Item>
@@ -755,17 +774,28 @@ function UpstreamForm({
             <InputNumber min={1} style={{ width: '100%' }} placeholder="不限" />
           </Form.Item>
         </div>
-        <Form.Item name="note" label="备注" extra={<FieldHelp>给自己看的说明，用户看不到。</FieldHelp>}>
+        <Form.Item
+          name="note"
+          label="备注"
+          extra={<FieldHelp>给自己看的说明，用户看不到。</FieldHelp>}
+        >
           <Input maxLength={200} placeholder="例：额度用完前先用这条" />
         </Form.Item>
-        <Form.Item name="enabled" label="启用" valuePropName="checked" extra={<FieldHelp>关掉后不再分配调用，但配置保留。</FieldHelp>}>
+        <Form.Item
+          name="enabled"
+          label="启用"
+          valuePropName="checked"
+          extra={<FieldHelp>关掉后不再分配调用，但配置保留。</FieldHelp>}
+        >
           <Switch />
         </Form.Item>
         {!upstream && (
           <Form.Item
             name="saveOnTestFailure"
             valuePropName="checked"
-            extra={<FieldHelp>正常情况测试不通过不会保存；勾上则强制保存，状态记为「异常」。</FieldHelp>}
+            extra={
+              <FieldHelp>正常情况测试不通过不会保存；勾上则强制保存，状态记为「异常」。</FieldHelp>
+            }
           >
             <Checkbox>测试不通过也保存</Checkbox>
           </Form.Item>
@@ -776,7 +806,11 @@ function UpstreamForm({
 }
 
 /** 3.24：接口地址的说明随协议变化（Anthropic 协议填中转给的 Claude 地址，带不带 /v1 都行）。 */
-function KindAwareBaseUrl({ form }: { form: ReturnType<typeof Form.useForm<UpstreamFormValues>>[0] }) {
+function KindAwareBaseUrl({
+  form,
+}: {
+  form: ReturnType<typeof Form.useForm<UpstreamFormValues>>[0];
+}) {
   const kind = Form.useWatch('kind', form);
   return (
     <Form.Item
@@ -790,7 +824,9 @@ function KindAwareBaseUrl({ form }: { form: ReturnType<typeof Form.useForm<Upstr
         <FieldHelp>
           {kind === 'anthropic'
             ? '中转站给的 Claude（Anthropic）地址，例 https://…/claude 或 https://…/v1，带不带 /v1 都可以，系统会请求 …/v1/messages。'
-            : '服务商文档里的 Base URL，一般以 /v1 结尾。'}
+            : kind === 'deepseek_search'
+              ? '使用预置的 DeepSeek 官方地址；搜索与抓取分别请求 /v1/tools/search 和 /v1/tools/fetch。'
+              : '服务商文档里的 Base URL，一般以 /v1 结尾。'}
         </FieldHelp>
       }
     >
@@ -841,12 +877,26 @@ function UpstreamDetail({
   const state = upstreamState(upstream);
 
   return (
-    <RecordDrawer open onClose={onClose} title={upstream.name} subtitle={providerName(upstream.provider ?? upstream.kind)} width={620}>
+    <RecordDrawer
+      open
+      onClose={onClose}
+      title={upstream.name}
+      subtitle={providerName(upstream.provider ?? upstream.kind)}
+      width={620}
+    >
       <div className="detail-grid">
         <div>
           <span className="detail-label">状态</span>
           <span>
-            <StatusTag tone={state === 'normal' ? 'success' : state === 'disabled' ? 'default' : 'error'}>
+            <StatusTag
+              tone={
+                state === 'normal'
+                  ? 'success'
+                  : state === 'disabled' || state === 'pending'
+                    ? 'default'
+                    : 'error'
+              }
+            >
               {UPSTREAM_STATE_LABELS[state]}
             </StatusTag>
             {upstreamReason(upstream) ?? ''}
@@ -903,8 +953,8 @@ function UpstreamDetail({
             <span className="chip" key={m.modelKey}>
               {m.displayName}
               <span className="chip-sub mono">
-                {(m.routes ?? []).find((r) => r.upstreamId === upstream.upstreamId)?.upstreamModelId ??
-                  m.upstreamModelId}
+                {(m.routes ?? []).find((r) => r.upstreamId === upstream.upstreamId)
+                  ?.upstreamModelId ?? m.upstreamModelId}
               </span>
             </span>
           ))}
@@ -934,6 +984,8 @@ interface LimitsValues {
   perUserRpm?: number | null;
   failureThreshold: number;
   cooldownSeconds: number;
+  searchCandidatesPerUserDay: number;
+  searchCandidatesGlobalDay: number;
 }
 
 function LimitsDrawer({ onClose }: { onClose: () => void }) {
@@ -954,6 +1006,8 @@ function LimitsDrawer({ onClose }: { onClose: () => void }) {
       perUserRpm: values.perUserRpm ?? null,
       failureThreshold: values.failureThreshold,
       cooldownSeconds: values.cooldownSeconds,
+      searchCandidatesPerUserDay: values.searchCandidatesPerUserDay,
+      searchCandidatesGlobalDay: values.searchCandidatesGlobalDay,
     };
     try {
       await api.call(ModelAccessAdminEndpoints.updateGatewayLimits, { body });
@@ -989,6 +1043,8 @@ function LimitsDrawer({ onClose }: { onClose: () => void }) {
             perUserRpm: remote.data.perUserRpm ?? null,
             failureThreshold: remote.data.failureThreshold,
             cooldownSeconds: remote.data.cooldownSeconds,
+            searchCandidatesPerUserDay: remote.data.searchCandidatesPerUserDay ?? 20,
+            searchCandidatesGlobalDay: remote.data.searchCandidatesGlobalDay ?? 5000,
           }}
         >
           <FormSection title="每个用户的限额" desc="防止一个人把额度用光" />
@@ -1006,6 +1062,26 @@ function LimitsDrawer({ onClose }: { onClose: () => void }) {
               extra={<FieldHelp>留空 = 不限。</FieldHelp>}
             >
               <InputNumber min={1} style={{ width: '100%' }} placeholder="不限" />
+            </Form.Item>
+          </div>
+          <FormSection
+            title="联网找角色"
+            desc="平台承担搜索费用；按北京时间每天重置，缓存命中也计入查找次数"
+          />
+          <div className="form-two">
+            <Form.Item
+              name="searchCandidatesPerUserDay"
+              label="每人每天最多查找"
+              rules={[{ required: true, message: '必填' }]}
+            >
+              <InputNumber min={1} max={1000} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item
+              name="searchCandidatesGlobalDay"
+              label="全站每天最多查找"
+              rules={[{ required: true, message: '必填' }]}
+            >
+              <InputNumber min={1} max={100000} style={{ width: '100%' }} />
             </Form.Item>
           </div>
           <FormSection title="线路健康" desc="连续失败后自动暂停，过一会再试" />

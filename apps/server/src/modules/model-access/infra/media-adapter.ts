@@ -10,6 +10,9 @@
  * 安全：密钥只放在 Authorization 头；不跟随重定向；不记录上游原文；响应大小有上限。
  */
 
+import type { WebSearchResultItem } from '@weiban/contracts';
+import { deepseekSearch, deepseekFetch, type SearchRequestGate } from './deepseek-tools.js';
+
 export type MediaFailure =
   | 'network_error'
   | 'provider_error'
@@ -19,7 +22,9 @@ export type MediaFailure =
   | 'content_rejected'
   | 'bad_request';
 
-export type MediaAdapterResult<T> = { ok: true; value: T } | { ok: false; category: MediaFailure };
+export type MediaAdapterResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; category: MediaFailure; zeroCost?: boolean; localRateLimit?: boolean };
 
 export interface MediaTarget {
   kind: string;
@@ -28,13 +33,7 @@ export interface MediaTarget {
   model: string;
 }
 
-export interface SearchHit {
-  title: string;
-  url: string;
-  snippet: string;
-  source: string | null;
-  publishedAt: string | null;
-}
+export type SearchHit = WebSearchResultItem;
 
 /** T-090（CR-18）：Jev 风格的类型化决策问题。 */
 export interface DecideAdapterQuestion {
@@ -82,8 +81,12 @@ export interface MediaAdapter {
   ): Promise<MediaAdapterResult<{ bytes: Uint8Array; mimeType: string }>>;
   search(
     t: MediaTarget,
-    input: { query: string; maxResults: number },
-  ): Promise<MediaAdapterResult<{ hits: SearchHit[] }>>;
+    input: { query: string; maxResults: number; needContent?: boolean; originalQuestion?: string },
+  ): Promise<MediaAdapterResult<{ hits: SearchHit[]; billable?: boolean }>>;
+  fetchPage?(
+    t: MediaTarget,
+    input: { url: string },
+  ): Promise<MediaAdapterResult<{ title: string; content: string }>>;
 }
 
 const MAX_RESPONSE_BYTES = 12_000_000;
@@ -177,6 +180,10 @@ export function wavFromPcm(pcm: Uint8Array, sampleRate: number): Uint8Array {
 }
 
 export class OpenAiCompatibleMediaAdapter implements MediaAdapter {
+  constructor(private readonly searchGate?: SearchRequestGate) {}
+  fetchPage(t: MediaTarget, input: { url: string }) {
+    return deepseekFetch(t, input.url, this.searchGate);
+  }
   /**
    * Jev 决策（UpstreamKind = jev）。接口地址与字段按公开资料推测（state + 类型化问题），**待配置后验证**；
    * 拿到账号后按官方文档改这里即可，网关的冻结 / 结算 / 用量记录不变。
@@ -404,8 +411,10 @@ export class OpenAiCompatibleMediaAdapter implements MediaAdapter {
 
   async search(
     t: MediaTarget,
-    input: { query: string; maxResults: number },
-  ): Promise<MediaAdapterResult<{ hits: SearchHit[] }>> {
+    input: { query: string; maxResults: number; needContent?: boolean; originalQuestion?: string },
+  ): Promise<MediaAdapterResult<{ hits: SearchHit[]; billable?: boolean }>> {
+    if (t.kind === 'deepseek_search') return deepseekSearch(t, input, this.searchGate);
+    if (t.kind !== 'bocha_search') return { ok: false, category: 'bad_request', zeroCost: true };
     try {
       const response = await fetch(url(t.baseUrl, '/web-search'), {
         method: 'POST',

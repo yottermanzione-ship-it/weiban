@@ -23,10 +23,12 @@ import { ModelGateway } from './gateway.js';
 import { UpstreamService } from './upstreams.js';
 import { UsageRecorder } from './usage.js';
 import { ModelGatewayMedia } from './media-gateway.js';
+import { WebToolsStore } from './web-tools-store.js';
 
 @Injectable()
 export class GatewayMaintenance implements OnModuleInit {
   constructor(
+    @Inject(WebToolsStore) private readonly webTools: WebToolsStore,
     @Inject(DATABASE) private readonly database: Database,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
@@ -47,6 +49,7 @@ export class GatewayMaintenance implements OnModuleInit {
     await this.jobs.schedule('model_access.probe_upstreams', '* * * * *');
   }
   async recover(): Promise<void> {
+    await this.webTools.cleanup();
     const old = await this.database.db
       .select()
       .from(generationResults)

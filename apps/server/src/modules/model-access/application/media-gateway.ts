@@ -21,6 +21,7 @@ import {
   type DecideInput,
   type DecideOutput,
   type GatewayWebSearchInput,
+  type GatewayWebFetchInput,
   type GenerateError,
   type GenerateImageInput,
   type GenerateTextInput,
@@ -64,6 +65,8 @@ import { UsageRecorder } from './usage.js';
 import { unavailableReason } from '../domain/rules.js';
 import { BillingBoundsService, boundsEvidence, reserveErrorToGenerate } from './billing-bounds.js';
 import { pcmWavSeconds, roundAsr } from '../domain/media-billing-bounds.js';
+import { WebToolsStore } from './web-tools-store.js';
+import { privateSearchText, publicWebUrl } from '../domain/web-search.js';
 
 type Service = 'speech_synthesis' | 'speech_recognition' | 'image_generation' | 'web_search';
 const SERVICE_SCENARIO: Record<Exclude<Service, 'web_search'>, ModelScenario> = {
@@ -93,7 +96,7 @@ interface Charge {
 
 type CallOutcome<T> =
   | { ok: true; value: T; actual: UsageQuantities; actualKnown?: boolean }
-  | { ok: false; category: MediaFailure; actual?: UsageQuantities };
+  | { ok: false; category: MediaFailure; actual?: UsageQuantities; localRateLimit?: boolean };
 
 type PendingMediaResult = {
   ok: true;
@@ -122,6 +125,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
   private readonly activeGenerations = new WeakMap<object, GenerationRow>();
 
   constructor(
+    @Inject(WebToolsStore) private readonly webTools: WebToolsStore,
     @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(UpstreamService) private readonly upstreams: UpstreamService,
     @Inject(UsageRecorder) private readonly recorder: UsageRecorder,
@@ -152,6 +156,13 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         : await this.anyScenarioModel(service === 'vision' ? 'vision' : SERVICE_SCENARIO[service]);
     if (!facts?.entry || unavailableReason(facts.entry, facts.upstreamStatus) !== null)
       return false;
+    if (
+      service === 'web_search' &&
+      !isFakeModel(facts.entry.upstreamModelId, this.config.nodeEnv === 'production')
+    ) {
+      const upstream = await this.upstreams.get(facts.entry.upstreamId);
+      if (!['deepseek_search', 'bocha_search'].includes(upstream.kind)) return false;
+    }
     const bounds = await this.bounds?.get(
       facts.entry.modelKey,
       facts.entry.upstreamId,
@@ -270,17 +281,97 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     input: GatewayWebSearchInput,
   ): Promise<PortResult<MediaCallResult & { items: WebSearchResultItem[] }, GenerateError>> {
     const query = input.query.trim().slice(0, 300);
-    if (!query) return { ok: false, error: 'bad_request' };
+    if (
+      !query ||
+      privateSearchText(query) ||
+      privateSearchText(input.originalQuestion ?? '') ||
+      input.billingOwner !== 'platform'
+    )
+      return { ok: false, error: 'bad_request' };
     const max = Math.min(Math.max(Math.floor(input.maxResults) || 1, 1), 10);
     return this.cached('search', input, async () => {
       const model = await this.resolve('web_search', null, input);
       if (!model.ok) return model;
       const search = model.value.billingBounds.search;
       if (!search || max > search.maxResults) return { ok: false, error: 'model_unavailable' };
+      const key = this.webTools.key(
+        model.value.modelKey,
+        input.purpose,
+        query,
+        max,
+        input.originalQuestion,
+      );
+      // 请求正文不进长期共享缓存；需要正文的调用仍受每用户幂等保护。
+      const claim = input.needContent ? null : await this.webTools.claim(key, input.purpose);
+      if (claim?.kind === 'hit') return { ok: true, value: claim.value };
+      if (claim?.kind === 'busy') return { ok: false, error: 'provider_unavailable' };
+      try {
+        const result = await this.run(
+          input,
+          model.value,
+          { searchCalls: 1 },
+          async (target, adapter) => {
+            const found = await adapter.search(target, {
+              query,
+              maxResults: max,
+              needContent: input.needContent,
+              originalQuestion: input.originalQuestion,
+            });
+            if (!found.ok)
+              return { ...found, ...(found.zeroCost ? { actual: { searchCalls: 0 } } : {}) };
+            return {
+              ok: true,
+              value: {
+                items: found.value.hits.filter(
+                  (hit) => !privateSearchText(`${hit.title} ${hit.snippet} ${hit.content ?? ''}`),
+                ),
+              },
+              actual: {
+                searchCalls: (found.value.billable ?? found.value.hits.length > 0) ? 1 : 0,
+              },
+            };
+          },
+        );
+        if (claim?.kind === 'claimed')
+          await this.webTools.finish(
+            key,
+            claim.token,
+            input.purpose,
+            result.ok ? result.value : null,
+          );
+        return result;
+      } catch (error) {
+        if (claim?.kind === 'claimed')
+          await this.webTools.finish(key, claim.token, input.purpose, null);
+        throw error;
+      }
+    });
+  }
+
+  async webFetch(
+    input: GatewayWebFetchInput,
+  ): Promise<PortResult<MediaCallResult & { title: string; content: string }, GenerateError>> {
+    const url = publicWebUrl(input.url);
+    if (
+      !url ||
+      privateSearchText(url) ||
+      input.billingOwner !== 'platform' ||
+      !input.purpose.startsWith('admin_')
+    )
+      return { ok: false, error: 'bad_request' };
+    return this.cached('fetch', input, async () => {
+      const model = await this.resolve('web_search', null, input);
+      if (!model.ok) return model;
       return this.run(input, model.value, { searchCalls: 1 }, async (target, adapter) => {
-        const result = await adapter.search(target, { query, maxResults: max });
-        if (!result.ok) return result;
-        return { ok: true, value: { items: result.value.hits }, actual: { searchCalls: 1 } };
+        if (!adapter.fetchPage || target.kind !== 'deepseek_search')
+          return { ok: false, category: 'bad_request', actual: { searchCalls: 0 } };
+        const result = await adapter.fetchPage(target, { url });
+        if (!result.ok)
+          return { ...result, ...(result.zeroCost ? { actual: { searchCalls: 0 } } : {}) };
+        const value = privateSearchText(`${result.value.title} ${result.value.content}`)
+          ? { title: '', content: '' }
+          : result.value;
+        return { ok: true, value, actual: { searchCalls: result.value.content.trim() ? 1 : 0 } };
       });
     });
   }
@@ -446,7 +537,8 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
   // ---------- 内部：计费流程（RealtimeAsr 也会调用） ----------
 
   /** 账号、ID、用途合法性（与 generateText 相同口径）。 */
-  async precheck(base: MediaCallBase): Promise<boolean> {
+  async precheck(base: MediaCallBase, platformSearch = false): Promise<boolean> {
+    const candidate = platformSearch && base.purpose === 'search_candidates';
     if (
       !Id.safeParse(base.userId).success ||
       !ModelPurpose.safeParse(base.purpose).success ||
@@ -454,14 +546,19 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       typeof base.idempotencyKey !== 'string' ||
       !base.idempotencyKey ||
       base.idempotencyKey.length > 200 ||
-      (base.billingOwner === 'platform' && !base.purpose.startsWith('admin_'))
+      (base.billingOwner === 'platform' && !base.purpose.startsWith('admin_') && !candidate)
     )
       return false;
     if ((await this.accounts.getAccountStatus(base.userId)) !== 'active') return false;
     // 3.22（批 E2 遗留）：封禁账号不产生用户付费调用（生态发语音 / 发照片等后台任务跳过、不扣积分）。
-    if (base.billingOwner === 'user' && (await this.accounts.isBanned?.(base.userId))) return false;
+    if (
+      (base.billingOwner === 'user' || candidate) &&
+      (await this.accounts.isBanned?.(base.userId))
+    )
+      return false;
     if (
       base.billingOwner === 'platform' &&
+      !candidate &&
       !(await this.directory.listAdminUserIds()).includes(base.userId)
     )
       return false;
@@ -505,6 +602,14 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     if (reason === 'model_removed' || !facts.entry)
       return { ok: false, error: 'model_unavailable' };
     if (reason === 'provider_unavailable') return { ok: false, error: 'provider_unavailable' };
+    if (
+      service === 'web_search' &&
+      !isFakeModel(facts.entry.upstreamModelId, this.config.nodeEnv === 'production')
+    ) {
+      const upstream = await this.upstreams.get(facts.entry.upstreamId);
+      if (!['deepseek_search', 'bocha_search'].includes(upstream.kind))
+        return { ok: false, error: 'not_configured' };
+    }
     const billingBounds = await this.bounds?.get(
       facts.entry.modelKey,
       facts.entry.upstreamId,
@@ -694,6 +799,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     charge: Charge,
     category: MediaFailure,
     upstreamUsage?: UsageQuantities,
+    reportUpstream = true,
   ): Promise<void> {
     const release = await this.billing.release({
       holdId: charge.holdId,
@@ -724,6 +830,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     if (
       charge.sent &&
       !charge.model.fake &&
+      reportUpstream &&
       !['content_rejected', 'bad_request'].includes(category)
     )
       await this.upstreams.reportStatus(
@@ -783,7 +890,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       outcome = { ok: false, category: 'provider_error' };
     }
     if (!outcome.ok) {
-      await this.fail(charge.value, outcome.category, outcome.actual);
+      await this.fail(charge.value, outcome.category, outcome.actual, !outcome.localRateLimit);
       return { ok: false, error: this.mapError(outcome.category) };
     }
     if (generation) {
@@ -891,7 +998,8 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     input: MediaCallBase,
     fn: () => Promise<PortResult<T, GenerateError>>,
   ): Promise<PortResult<T, GenerateError>> {
-    if (!(await this.precheck(input))) return { ok: false, error: 'bad_request' };
+    if (!(await this.precheck(input, kind === 'search')))
+      return { ok: false, error: 'bad_request' };
     const pseudo = {
       ...input,
       idempotencyKey: `media:${kind}:${input.idempotencyKey}`,

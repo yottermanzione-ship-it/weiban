@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.29. Regenerate: pnpm android:generate
+// Contract 3.30. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.29"
+const val CONTRACT_VERSION: String = "3.30"
 
 @Serializable
 data class AccountAlias(
@@ -1936,6 +1936,14 @@ data class CharacterRelation(
 data class CharacterScenarioConfig(
     @SerialName("characterId") val `characterId`: Id,
     @SerialName("scenarios") val `scenarios`: List<CharacterScenarioConfigScenariosItem>,
+)
+
+@Serializable
+data class CharacterSearchCandidate(
+    @SerialName("name") val `name`: String,
+    @SerialName("title") val `title`: String,
+    @SerialName("description") val `description`: String,
+    @SerialName("sourceUrl") val `sourceUrl`: String,
 )
 
 @Serializable
@@ -5479,6 +5487,8 @@ data class GatewayLimits(
     @SerialName("perUserRpm") val `perUserRpm`: Long?,
     @SerialName("failureThreshold") val `failureThreshold`: Long,
     @SerialName("cooldownSeconds") val `cooldownSeconds`: Long,
+    @SerialName("searchCandidatesPerUserDay") val `searchCandidatesPerUserDay`: Long? = null,
+    @SerialName("searchCandidatesGlobalDay") val `searchCandidatesGlobalDay`: Long? = null,
 )
 
 @Serializable
@@ -5487,6 +5497,8 @@ data class GatewayLimitsInput(
     @SerialName("perUserRpm") val `perUserRpm`: Long?,
     @SerialName("failureThreshold") val `failureThreshold`: Long,
     @SerialName("cooldownSeconds") val `cooldownSeconds`: Long,
+    @SerialName("searchCandidatesPerUserDay") val `searchCandidatesPerUserDay`: Long? = null,
+    @SerialName("searchCandidatesGlobalDay") val `searchCandidatesGlobalDay`: Long? = null,
 )
 
 typealias Gender = String
@@ -9288,6 +9300,16 @@ data class ScenarioSelection(
     @SerialName("recommendedModelKey") val `recommendedModelKey`: ModelKey?,
 )
 
+@Serializable
+data class SearchEndpointsCharacterCandidatesBody(
+    @SerialName("query") val `query`: String,
+)
+
+@Serializable
+data class SearchEndpointsCharacterCandidatesResponse(
+    @SerialName("items") val `items`: List<CharacterSearchCandidate>,
+)
+
 typealias SearchKeyword = String
 
 @Serializable
@@ -11439,6 +11461,12 @@ data class Wallet(
 )
 
 @Serializable
+data class WebPage(
+    @SerialName("title") val `title`: String,
+    @SerialName("content") val `content`: String,
+)
+
+@Serializable
 data class WebPushSubscription(
     @SerialName("endpoint") val `endpoint`: String,
     @SerialName("keys") val `keys`: WebPushSubscriptionKeys,
@@ -11448,6 +11476,18 @@ data class WebPushSubscription(
 data class WebPushSubscriptionInput(
     @SerialName("endpoint") val `endpoint`: String,
     @SerialName("keys") val `keys`: WebPushSubscriptionInputKeys,
+)
+
+@Serializable
+data class WebSearchHit(
+    @SerialName("title") val `title`: String,
+    @SerialName("url") val `url`: String,
+    @SerialName("snippet") val `snippet`: String,
+    @SerialName("source") val `source`: String?,
+    @SerialName("publishedAt") val `publishedAt`: String?,
+    @SerialName("authority") val `authority`: Long? = null,
+    @SerialName("relevance") val `relevance`: Double? = null,
+    @SerialName("content") val `content`: String? = null,
 )
 
 @Serializable
