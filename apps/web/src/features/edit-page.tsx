@@ -166,10 +166,13 @@ export function FormPage({
   onSubmit,
   fallback,
   children,
+  prefix,
 }: {
   title: string;
   value: string;
   onChange(value: string): void;
+  /** 3.27（H1 拍一拍）：输入框前的固定文字（微信「拍了拍我」+ 后缀输入）。 */
+  prefix?: ReactNode;
   maxLength?: number;
   placeholder?: string;
   label: string;
@@ -197,7 +200,8 @@ export function FormPage({
         </button>
       </header>
       <h1 className="form-page-title">{title}</h1>
-      <div className="form-page-field">
+      <div className={prefix ? 'form-page-field has-prefix' : 'form-page-field'}>
+        {prefix && <span className="form-page-prefix">{prefix}</span>}
         <input
           aria-label={label}
           value={value}

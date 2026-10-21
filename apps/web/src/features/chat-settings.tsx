@@ -255,11 +255,6 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
             />
             {/* v5 角色生态（批 C）：原「主动消息」「TA 的日常」由角色生态的角色开关代替（17 号 §1）。 */}
             <EcologyCharacterRow characterId={characterId} />
-            <MenuRow
-              label="关系类型"
-              value={contact?.relationship || '朋友'}
-              to={`/characters/${characterId}/relationship`}
-            />
           </MenuGroup>
           <GroupHeader>高级</GroupHeader>
           <MenuGroup>

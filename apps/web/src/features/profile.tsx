@@ -7,7 +7,7 @@ import { api } from '../data/client.js';
 import { AvatarEditor } from './avatar-editor.js';
 import { ProfileAvatar } from './profile-avatar.js';
 import { useAuth } from '../app/auth.js';
-import { AliasRow } from './profile-edit.js';
+import { AliasRow, NudgeRow } from './profile-edit.js';
 import { GroupHeader, MenuGroup, MenuRow, NavBar, Sheet } from './shell-kit.js';
 import { REGION_GROUPS } from '../data/regions.js';
 function OnboardingProfilePage() {
@@ -227,6 +227,8 @@ function ProfileDetails() {
           onClick={() => setEditingAvatar(true)}
         />
         <MenuRow label="昵称" value={profile?.nickname ?? '未填写'} to="/profile/nickname" />
+        {/* 3.27（H1）：拍一拍后缀（角色拍你时显示） */}
+        <NudgeRow suffix={profile?.nudgeSuffix} />
         <AliasRow />
         <MenuRow
           label="二维码名片"

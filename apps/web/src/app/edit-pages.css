@@ -341,6 +341,21 @@ main.info-page {
 .form-page-field input:focus-visible {
   outline: none;
 }
+/* 3.27（H1）拍一拍：「拍了拍我」固定前缀 + 后缀输入，同一行 */
+.form-page-field.has-prefix {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.form-page-prefix {
+  flex: none;
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-body);
+}
+.form-page-field.has-prefix input {
+  flex: 1;
+  min-width: 0;
+}
 .form-page-desc {
   margin: 10px 34px 0;
   color: var(--wb-color-text-secondary);

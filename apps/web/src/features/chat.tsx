@@ -70,13 +70,14 @@ import { ApiFailure } from '@weiban/client-core';
 import { SHARE_REJECT_TEXT, openShare } from './share.js';
 import { familiarityNames } from './growth.js';
 import { ScenarioSheet, presetNames, useCurrentPreset } from './scenario.js';
-import { ChatAvatarLink } from './chat-avatar-link.js';
+import { ChatAvatarLink, SelfNudgeAvatar } from './chat-avatar-link.js';
 import { ForwardPicker, ForwardedRecordBubble } from './chat-forward.js';
 import { OldIcon } from './old-icons.js';
 import { getReadReceiptVisible } from '../data/display-prefs.js';
 import { useModelSetupGate } from './models.js';
 import { REPLY_UNAVAILABLE_TEXT } from './model-unavailable.js';
 import {
+  ActionSheet,
   BackArrow,
   CheckCircle,
   Sheet,
@@ -593,6 +594,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const cameraInput = useRef<HTMLInputElement>(null);
   const [presetOpen, setPresetOpen] = useState(false);
   const [plusPage, setPlusPage] = useState(0);
+  const [avatarMenu, setAvatarMenu] = useState<Participant | null>(null);
   const [menu, setMenu] = useState<{
     message: Message;
     anchor: DOMRect;
@@ -1113,7 +1115,18 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const lastMine = [...messages]
     .reverse()
     .find((m) => m.senderKind === 'user' && m.status === 'normal');
-  const myAvatar = <UserAvatar profile={userProfile.data} size={40} radius={4} />;
+  // 3.27（H1）：拍一拍。双击对方头像（或长按菜单）拍 TA，双击自己的头像拍自己；服务器盖上被拍者的后缀。
+  function nudge(target: Participant | undefined) {
+    if (!target) return;
+    void chat
+      .sendContent(id, { type: 'nudge', targetParticipantId: target.participantId })
+      .catch((e) => setError(friendlyError(e)));
+  }
+  const myAvatar = (
+    <SelfNudgeAvatar onNudge={() => nudge(me)}>
+      <UserAvatar profile={userProfile.data} size={40} radius={4} />
+    </SelfNudgeAvatar>
+  );
 
   const olderRequest = useRef(false);
   function fetchOlder() {
@@ -1153,7 +1166,10 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         );
         return (
           <div className="wx-system">
-            你拍了拍{target?.kind === 'character' ? displayName(target.refId) : '自己'}
+            你拍了拍
+            {target?.kind === 'character'
+              ? displayName(target.refId)
+              : `自己${userProfile.data?.nudgeSuffix ?? ''}`}
             {item.state === 'failed' && (
               <button
                 className="text-button"
@@ -1257,12 +1273,19 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
       const sender = senderOf(message);
       const senderName = message.senderKind === 'user' ? '你' : displayName(sender?.refId ?? '');
       const targetName =
-        target?.kind === 'user' ? '你' : target ? displayName(target.refId) : '对方';
+        target?.kind === 'user'
+          ? message.senderKind === 'user'
+            ? '自己'
+            : '你'
+          : target
+            ? displayName(target.refId)
+            : '对方';
       return (
         <>
           {divider}
           <div className="wx-system">
             {senderName}拍了拍{targetName}
+            {message.content.suffix ?? ''}
           </div>
         </>
       );
@@ -1339,12 +1362,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           ) : (
             <ChatAvatarLink
               to={`/characters/${senderId}${group && conversation.title ? `?group=${encodeURIComponent(conversation.title)}` : ''}`}
-              onNudge={() => {
-                if (sender)
-                  void chat
-                    .sendContent(id, { type: 'nudge', targetParticipantId: sender.participantId })
-                    .catch((e) => setError(friendlyError(e)));
-              }}
+              onNudge={() => nudge(sender)}
+              onMenu={() => sender && setAvatarMenu(sender)}
             >
               <CharacterAvatar id={senderId} size={40} radius={4} />
             </ChatAvatarLink>
@@ -1515,7 +1534,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
       {status.data && !status.data.available && !modelGate.needsSetup && (
         <p className="notice-bar">
           {status.data.reason === 'insufficient_balance'
-            ? '积分不足，角色暂时无法回复'
+            ? '积分已用完，角色暂时无法回复（充值后积分大于 0 即恢复）'
             : status.data.reason === 'not_configured'
               ? '还没给 TA 选可用的模型，角色暂时无法回复'
               : status.data.reason === 'model_removed'
@@ -1781,6 +1800,25 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
       )}
       {panel === 'plus' && !selecting && (
         <PlusPanel page={plusPage} onPage={setPlusPage} cells={plusCells} />
+      )}
+      {avatarMenu && (
+        <ActionSheet
+          title={displayName(avatarMenu.refId)}
+          onClose={() => setAvatarMenu(null)}
+          items={[
+            { label: '拍一拍', onClick: () => nudge(avatarMenu) },
+            ...(group
+              ? [{ label: `@${displayName(avatarMenu.refId)}`, onClick: () => insertMention(avatarMenu) }]
+              : []),
+            {
+              label: '查看资料',
+              onClick: () =>
+                navigate(
+                  `/characters/${avatarMenu.refId}${group && conversation.title ? `?group=${encodeURIComponent(conversation.title)}` : ''}`,
+                ),
+            },
+          ]}
+        />
       )}
       {menu && (
         <BubbleMenu

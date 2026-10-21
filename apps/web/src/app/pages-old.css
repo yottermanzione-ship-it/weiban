@@ -1438,6 +1438,12 @@ button.primary.wx-auth-submit {
   color: var(--wb-color-text-secondary);
   font-size: var(--wb-font-size-caption1);
 }
+/* 3.27（H1）欠费说明 */
+.wallet-debt {
+  color: var(--wb-color-text-danger);
+  line-height: 1.5;
+  text-align: center;
+}
 .wallet-recharge {
   width: 100%;
   margin-top: var(--wb-space-7);

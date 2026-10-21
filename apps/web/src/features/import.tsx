@@ -479,7 +479,7 @@ export function JobStep({ job, onJob }: { job: ImportJob; onJob(job: ImportJob):
             </label>
             <p className="hint pad">默认生成后删除原文，只保留角色草稿和摘取的示例对话。</p>
             <div className="switch-row">
-              保守预留上限
+              最多可能花费
               <strong>
                 {job.estimatedMicros === null
                   ? '—'
@@ -487,7 +487,7 @@ export function JobStep({ job, onJob }: { job: ImportJob; onJob(job: ImportJob):
               </strong>
             </div>
             <p className="hint pad">
-              按已核准的上下文和输出上限预留，可能明显高于实际花费；最终按真实有效用量结算，多余预留退回。
+              按上下文和输出上限估算，实际通常少得多；用完按真实用量扣，积分大于 0 就能开始。
             </p>
             <div className="switch-row">
               预计用时

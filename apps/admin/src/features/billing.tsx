@@ -1,5 +1,5 @@
 /**
- * 对账与平台花费：平台今日成本、各上游近 30 天成本、每日对账结果、录入上游账单。
+ * 对账与平台花费：平台今日成本、先用后扣保护与欠费用户（3.27）、各上游近 30 天成本、每日对账结果、录入上游账单。
  * 数据仍来自 billing 管理接口，界面统一 Ant Design。
  */
 import { useEffect, useState } from 'react';
@@ -37,6 +37,7 @@ import {
 } from '../ui/page.js';
 import { formatDate, formatYuan } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
+import { PostpaidPanel } from './postpaid.js';
 
 type Recon = z.infer<typeof ReconciliationRun>;
 
@@ -218,6 +219,8 @@ export function BillingPage() {
         </div>
       )}
       {summary.error && <Alert type="error" showIcon message={summary.error} />}
+
+      <PostpaidPanel />
 
       <SectionCard title="各上游近 30 天成本" desc="按线路看钱花在哪">
         {(data?.last30DaysCostByUpstream ?? []).length === 0 ? (

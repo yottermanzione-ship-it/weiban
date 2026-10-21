@@ -1,6 +1,7 @@
 /*
- * 角色资料的编辑页（10-21 G2）：「设置备注和头像」「关系类型」从底部抽屉改成整页推入的二级页面。
- * 路由：/characters/:characterId/remark、/characters/:characterId/relationship。
+ * 角色资料的编辑页（10-21 G2）：「设置备注和头像」从底部抽屉改成整页推入的二级页面。
+ * 路由：/characters/:characterId/remark。
+ * 3.27（H1，总经理 10-21）：「关系类型」页已删除——有好感度机制就不要关系选择，恋爱表达只随好感度阶段。
  */
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
@@ -12,7 +13,7 @@ import { ContactAvatarEditor } from './contact-avatar-editor.js';
 import { ClearInput, EditPage, useDraft } from './edit-page.js';
 import { NavBar, SyncPendingState, useBack } from './shell-kit.js';
 
-type ContactBody = { remark?: string | null; relationship?: string };
+type ContactBody = { remark?: string | null };
 
 function useContactSave(characterId: string, fallback: string) {
   const { assertOwner, synchronize } = useChat();
@@ -103,62 +104,6 @@ function RemarkEditor({
         {/* 头像选好裁剪后立即生效，不需要再点「完成」 */}
         <ContactAvatarEditor characterId={characterId} titled={false} />
       </div>
-    </EditPage>
-  );
-}
-
-export function CharacterRelationshipPage() {
-  const { characterId = '' } = useParams();
-  const { state } = useChat();
-  const contact = state.contacts.find((item) => item.characterId === characterId);
-  const fallback = `/characters/${characterId}`;
-  if (!contact) return <Missing title="关系类型" fallback={fallback} />;
-  return (
-    <RelationshipEditor
-      characterId={characterId}
-      initial={contact.relationship || '朋友'}
-      fallback={fallback}
-    />
-  );
-}
-function RelationshipEditor({
-  characterId,
-  initial,
-  fallback,
-}: {
-  characterId: string;
-  initial: string;
-  fallback: string;
-}) {
-  const draft = useDraft(initial);
-  const { pending, error, save } = useContactSave(characterId, fallback);
-  const canSave = draft.changed && draft.value.trim() !== '';
-  const submit = () => {
-    if (canSave) void save({ relationship: draft.value.trim() });
-  };
-  return (
-    <EditPage
-      title="关系类型"
-      canSave={canSave}
-      pending={pending}
-      onSave={submit}
-      fallback={fallback}
-    >
-      <ClearInput
-        label="关系类型"
-        value={draft.value}
-        maxLength={30}
-        placeholder="如：朋友、恋人、家人"
-        disabled={pending}
-        onChange={draft.setValue}
-        onEnter={submit}
-      />
-      <p className="edit-hint">TA 会按这个关系和你相处</p>
-      {error && (
-        <p role="alert" className="error page-note">
-          {error}
-        </p>
-      )}
     </EditPage>
   );
 }

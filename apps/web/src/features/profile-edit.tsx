@@ -1,7 +1,7 @@
 /*
  * 个人信息各项的编辑页（10-21 G2）：原来的底部抽屉改成整页推入的二级页面，细节对照微信截图 28–35。
  * 路由：/profile/nickname、/profile/gender、/profile/birthday、/profile/region(/:group)、/profile/about、
- *       /profile/alias（微伴号说明页）、/profile/alias/edit（修改微伴号）。
+ *       /profile/alias（微伴号说明页）、/profile/alias/edit（修改微伴号）、/profile/nudge（拍一拍，3.27）。
  */
 import { ApiFailure } from '@weiban/client-core';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -487,6 +487,58 @@ function AliasEditor({ initial, nextChangeAt }: { initial: string; nextChangeAt:
       }
     />
   );
+}
+
+// ---------- 拍一拍（3.27 H1，截图 34 样式） ----------
+
+export function ProfileNudgePage() {
+  const remote = useRemote(IdentityEndpoints.getProfile);
+  if (!remote.data)
+    return (
+      <main className="form-page">
+        <NavBar title="拍一拍" fallback={FALLBACK} />
+        {remote.error ? (
+          <p role="alert" className="notice-bar">
+            {remote.error}
+          </p>
+        ) : (
+          <SyncPendingState label="正在读取…" />
+        )}
+      </main>
+    );
+  return <NudgeEditor initial={remote.data.nudgeSuffix ?? ''} />;
+}
+function NudgeEditor({ initial }: { initial: string }) {
+  const [value, setValue] = useState(initial);
+  const { pending, error, save } = useProfileSave();
+  const changed = value.trim() !== initial.trim();
+  const preview = value.trim();
+  return (
+    <FormPage
+      title="拍一拍"
+      label="拍一拍后缀"
+      prefix="拍了拍我"
+      value={value}
+      maxLength={15}
+      placeholder="的小脑袋"
+      onChange={setValue}
+      canSubmit={changed}
+      pending={pending}
+      onSubmit={() => void save({ nudgeSuffix: preview || null })}
+      fallback={FALLBACK}
+      description={
+        <>
+          <p>角色拍了拍你时，会显示「TA 拍了拍我{preview}」。留空就不显示后缀。</p>
+          <ErrorLine error={error} />
+        </>
+      }
+    />
+  );
+}
+
+/** 个人信息页的「拍一拍」行（3.27 H1）。 */
+export function NudgeRow({ suffix }: { suffix: string | null | undefined }) {
+  return <MenuRow label="拍一拍" value={suffix || '未设置'} to="/profile/nudge" />;
 }
 
 /** 个人信息页的「微伴号」行：进说明页（不再弹抽屉）。 */

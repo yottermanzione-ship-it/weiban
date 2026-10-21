@@ -37,10 +37,11 @@ import {
   ProfileBirthdayPage,
   ProfileGenderPage,
   ProfileNicknamePage,
+  ProfileNudgePage,
   ProfileRegionGroupPage,
   ProfileRegionPage,
 } from '../features/profile-edit.js';
-import { CharacterRelationshipPage, CharacterRemarkPage } from '../features/contact-edit.js';
+import { CharacterRemarkPage } from '../features/contact-edit.js';
 import { SettingsPage } from '../features/settings.js';
 import { WalletPage, LedgerPage, PricesPage, RechargePage } from '../features/wallet.js';
 import { MembershipPage } from '../features/membership.js';
@@ -159,8 +160,8 @@ const ownHeader = [
   /^\/characters\/[^/]+$/,
   /^\/characters\/custom(\/|$)/,
   /^\/profile(\/|$)/,
-  // 10-21 G2：备注、关系类型编辑页
-  /^\/characters\/[^/]+\/(remark|relationship)$/,
+  // 10-21 G2：备注编辑页（3.27 关系类型页已删除）
+  /^\/characters\/[^/]+\/remark$/,
   /^\/(wallet|ledger|prices|usage|models|leaderboard|membership)(\/|$)/,
 ];
 function TopBack({ fallback }: { fallback: string }) {
@@ -350,6 +351,7 @@ function Shell() {
                 <Route path="/profile/region" element={<ProfileRegionPage />} />
                 <Route path="/profile/region/:group" element={<ProfileRegionGroupPage />} />
                 <Route path="/profile/about" element={<ProfileAboutPage />} />
+                <Route path="/profile/nudge" element={<ProfileNudgePage />} />
                 <Route path="/profile/alias" element={<AliasInfoPage />} />
                 <Route path="/profile/alias/edit" element={<AliasEditPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
@@ -394,9 +396,10 @@ function Shell() {
                 <Route path="/characters/:characterId/moments" element={<CharacterMomentsPage />} />
                 <Route path="/characters/:characterId/relations" element={<RelationsPage />} />
                 <Route path="/characters/:characterId/remark" element={<CharacterRemarkPage />} />
+                {/* 3.27（H1）：关系类型页已删除，旧链接回到角色资料 */}
                 <Route
                   path="/characters/:characterId/relationship"
-                  element={<CharacterRelationshipPage />}
+                  element={<Navigate to=".." relative="path" replace />}
                 />
                 <Route path="/contacts/new" element={<NewFriendsPage />} />
                 <Route path="/contacts/groups" element={<GroupListPage />} />

@@ -55,6 +55,7 @@ export function WalletPage() {
   const navigate = useNavigate();
   const data = wallet.data;
   const low = data != null && (data.availablePoints ?? 0) < (data.lowBalanceThresholdPoints ?? 0);
+  const debt = data != null && (data.balancePoints ?? 0) < 0;
   return (
     <main className="wallet-page">
       <NavBar title="积分" fallback="/services" />
@@ -64,7 +65,17 @@ export function WalletPage() {
         <strong className={`wallet-number tabular ${data ? '' : 'pending'}`}>
           {data ? formatPoints(data.balancePoints) : '··'}
         </strong>
-        {low && <span className="low-tag">积分不足</span>}
+        {debt ? (
+          <span className="low-tag">已欠费</span>
+        ) : (
+          low && <span className="low-tag">积分不足</span>
+        )}
+        {debt && (
+          // 3.27（H1 先用后扣、可欠一次）：余额扣成负数后一切付费调用暂停，充值转正后恢复。
+          <p className="wallet-held wallet-debt" role="status">
+            上次使用超出余额 {formatPoints(-(data?.balancePoints ?? 0))} 积分。角色的聊天、生态、主动消息等已暂停，充值后积分大于 0 即恢复。
+          </p>
+        )}
         {data && (data.heldPoints ?? 0) > 0 && (
           <p className="wallet-held">其中 {formatPoints(data.heldPoints)} 积分处理中</p>
         )}

@@ -799,13 +799,6 @@ export function CharacterPage({
       )}
       <MenuGroup>
         {!onboarding && active && <MenuRow to={`/characters/${characterId}/cards`} label="卡册" />}
-        {!onboarding && active && (
-          <MenuRow
-            label="关系类型"
-            value={contact?.relationship || '朋友'}
-            to={`/characters/${characterId}/relationship`}
-          />
-        )}
         <MenuRow
           label="简介"
           subtitle={data?.intro || data?.tagline || undefined}
