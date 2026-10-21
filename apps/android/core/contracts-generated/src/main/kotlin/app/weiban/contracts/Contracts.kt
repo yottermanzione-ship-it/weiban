@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.26. Regenerate: pnpm android:generate
+// Contract 3.27. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.26"
+const val CONTRACT_VERSION: String = "3.27"
 
 @Serializable
 data class AccountAlias(
@@ -1241,6 +1241,25 @@ data class BillingAdminEndpointsUpdatePriceDraftBody(
 @Serializable
 data class BillingAdminEndpointsUpdatePriceDraftParams(
     @SerialName("priceVersionId") val `priceVersionId`: Id,
+)
+
+@Serializable
+data class BillingDebtSummary(
+    @SerialName("count") val `count`: Long,
+    @SerialName("totalDebtMicros") val `totalDebtMicros`: Long,
+    @SerialName("totalDebtPoints") val `totalDebtPoints`: NonNegativePoints,
+    @SerialName("items") val `items`: List<BillingDebtor>,
+)
+
+@Serializable
+data class BillingDebtor(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("username") val `username`: String,
+    @SerialName("balanceMicros") val `balanceMicros`: MoneyMicros,
+    @SerialName("balancePoints") val `balancePoints`: Points,
+    @SerialName("debtMicros") val `debtMicros`: PositiveMoneyMicros,
+    @SerialName("debtPoints") val `debtPoints`: NonNegativePoints,
+    @SerialName("lastChargeAt") val `lastChargeAt`: Timestamp?,
 )
 
 @Serializable
@@ -6451,6 +6470,8 @@ data class MessageContentNudge(
     @EncodeDefault
     @SerialName("type") override val `type`: String = "nudge",
     @SerialName("targetParticipantId") val `targetParticipantId`: Id,
+    @SerialName("targetKind") val `targetKind`: String? = null,
+    @SerialName("suffix") val `suffix`: String? = null,
 ) : MessageContent
 
 @Serializable
@@ -7249,6 +7270,8 @@ data class NudgeContent(
     @EncodeDefault
     @SerialName("type") val `type`: String = "nudge",
     @SerialName("targetParticipantId") val `targetParticipantId`: Id,
+    @SerialName("targetKind") val `targetKind`: String? = null,
+    @SerialName("suffix") val `suffix`: String? = null,
 )
 
 @Serializable
@@ -7256,6 +7279,8 @@ data class NudgeContentInput(
     @EncodeDefault
     @SerialName("type") val `type`: String = "nudge",
     @SerialName("targetParticipantId") val `targetParticipantId`: Id,
+    @SerialName("targetKind") val `targetKind`: String? = null,
+    @SerialName("suffix") val `suffix`: String? = null,
 )
 
 @Serializable
@@ -8161,6 +8186,14 @@ typealias PortraitPolicy = String
 
 typealias PositiveMoneyMicros = Long
 
+@Serializable
+data class PostpaidSettings(
+    @SerialName("maxConcurrentPaidCalls") val `maxConcurrentPaidCalls`: Long,
+    @SerialName("concurrencyWaitSeconds") val `concurrencyWaitSeconds`: Long,
+    @SerialName("largeRequestLimitPoints") val `largeRequestLimitPoints`: Long,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp?,
+)
+
 typealias PredictionConfidence = String
 
 @Serializable
@@ -8223,6 +8256,7 @@ data class Profile(
     @SerialName("gender") val `gender`: Gender,
     @SerialName("city") val `city`: String?,
     @SerialName("about") val `about`: String?,
+    @SerialName("nudgeSuffix") val `nudgeSuffix`: String? = null,
     @SerialName("timeZone") val `timeZone`: TimeZone,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
 )
@@ -8392,6 +8426,8 @@ data class ReceivedMessageContentNudge(
     @EncodeDefault
     @SerialName("type") override val `type`: String = "nudge",
     @SerialName("targetParticipantId") val `targetParticipantId`: Id,
+    @SerialName("targetKind") val `targetKind`: String? = null,
+    @SerialName("suffix") val `suffix`: String? = null,
 ) : ReceivedMessageContent
 
 @Serializable
@@ -10272,6 +10308,20 @@ data class UpdateNotificationSettingsRequestInput(
 )
 
 @Serializable
+data class UpdatePostpaidSettingsRequest(
+    @SerialName("maxConcurrentPaidCalls") val `maxConcurrentPaidCalls`: Long? = null,
+    @SerialName("concurrencyWaitSeconds") val `concurrencyWaitSeconds`: Long? = null,
+    @SerialName("largeRequestLimitPoints") val `largeRequestLimitPoints`: Long? = null,
+)
+
+@Serializable
+data class UpdatePostpaidSettingsRequestInput(
+    @SerialName("maxConcurrentPaidCalls") val `maxConcurrentPaidCalls`: Long? = null,
+    @SerialName("concurrencyWaitSeconds") val `concurrencyWaitSeconds`: Long? = null,
+    @SerialName("largeRequestLimitPoints") val `largeRequestLimitPoints`: Long? = null,
+)
+
+@Serializable
 data class UpdateProfileRequest(
     @SerialName("nickname") val `nickname`: String? = null,
     @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
@@ -10280,6 +10330,7 @@ data class UpdateProfileRequest(
     @SerialName("gender") val `gender`: Gender? = null,
     @SerialName("city") val `city`: String? = null,
     @SerialName("about") val `about`: String? = null,
+    @SerialName("nudgeSuffix") val `nudgeSuffix`: String? = null,
     @SerialName("timeZone") val `timeZone`: TimeZone? = null,
 )
 
@@ -10292,6 +10343,7 @@ data class UpdateProfileRequestInput(
     @SerialName("gender") val `gender`: Gender? = null,
     @SerialName("city") val `city`: String? = null,
     @SerialName("about") val `about`: String? = null,
+    @SerialName("nudgeSuffix") val `nudgeSuffix`: String? = null,
     @SerialName("timeZone") val `timeZone`: TimeZone? = null,
 )
 
@@ -10684,6 +10736,8 @@ data class UserSendableContentNudge(
     @EncodeDefault
     @SerialName("type") override val `type`: String = "nudge",
     @SerialName("targetParticipantId") val `targetParticipantId`: Id,
+    @SerialName("targetKind") val `targetKind`: String? = null,
+    @SerialName("suffix") val `suffix`: String? = null,
 ) : UserSendableContent
 
 @Serializable
@@ -10775,6 +10829,8 @@ data class UserSendableContentInputNudge(
     @EncodeDefault
     @SerialName("type") override val `type`: String = "nudge",
     @SerialName("targetParticipantId") val `targetParticipantId`: Id,
+    @SerialName("targetKind") val `targetKind`: String? = null,
+    @SerialName("suffix") val `suffix`: String? = null,
 ) : UserSendableContentInput
 
 @Serializable
