@@ -474,6 +474,52 @@ export const ReconciliationRun = z.object({
   createdAt: Timestamp,
 });
 
+// ---------- 3.27（H1）先用后扣、可欠一次 ----------
+
+/** 默认值（后台没改过时）。并发默认 3：语音通话会同时有识别、回复、合成三路调用。 */
+export const POSTPAID_DEFAULTS = {
+  maxConcurrentPaidCalls: 3,
+  concurrencyWaitSeconds: 10,
+  largeRequestLimitPoints: 200,
+} as const;
+
+export const PostpaidSettings = z.object({
+  /** 同一用户同时进行的付费模型调用上限（含后台任务）。 */
+  maxConcurrentPaidCalls: z.number().int().min(1).max(20),
+  /** 满了时前台调用（聊天回复等）最多排队等几秒再拒绝；后台任务不等、直接拒绝。 */
+  concurrencyWaitSeconds: z.number().int().min(0).max(30),
+  /** 单次请求预估（实际发送的上下文 + 模型最大输出）超过这么多积分就先拦截，不调用。 */
+  largeRequestLimitPoints: z.number().int().min(1).max(1_000_000),
+  updatedAt: Timestamp.nullable(),
+});
+export type PostpaidSettings = z.infer<typeof PostpaidSettings>;
+
+export const UpdatePostpaidSettingsRequest = PostpaidSettings.omit({ updatedAt: true }).partial();
+
+export const BillingDebtor = z.object({
+  userId: Id,
+  /** 取不到（账号已删除）时为空字符串。 */
+  username: z.string(),
+  /** 当前余额（负数）。 */
+  balanceMicros: MoneyMicros,
+  balancePoints: Points,
+  /** 欠费金额（正数）= −余额。 */
+  debtMicros: PositiveMoneyMicros,
+  debtPoints: NonNegativePoints,
+  /** 最近一笔扣费时间（多半就是扣成负数的那笔）。 */
+  lastChargeAt: Timestamp.nullable(),
+});
+export type BillingDebtor = z.infer<typeof BillingDebtor>;
+
+export const BillingDebtSummary = z.object({
+  count: z.number().int().nonnegative(),
+  totalDebtMicros: z.number().int().nonnegative(),
+  totalDebtPoints: NonNegativePoints,
+  /** 欠得多的在前，最多 500 个。 */
+  items: z.array(BillingDebtor),
+});
+export type BillingDebtSummary = z.infer<typeof BillingDebtSummary>;
+
 export const BillingAdminEndpoints = {
   resolveUnknownCost: defineEndpoint({
     method: 'POST',
@@ -630,5 +676,27 @@ export const BillingAdminEndpoints = {
     body: UpdateRechargeOptionsRequest,
     response: RechargeOptions,
     summary: 'v3.3：修改充值档位、赠送比例与联系管理员说明（写审计日志）',
+  }),
+  getPostpaidSettings: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/billing/postpaid-settings`,
+    auth: 'admin',
+    response: PostpaidSettings,
+    summary: '3.27（H1）：先用后扣的保护参数——同一用户付费调用并发上限、前台排队等待秒数、异常巨额请求拦截线',
+  }),
+  updatePostpaidSettings: defineEndpoint({
+    method: 'PUT',
+    path: `${API_PREFIX}/admin/billing/postpaid-settings`,
+    auth: 'admin',
+    body: UpdatePostpaidSettingsRequest,
+    response: PostpaidSettings,
+    summary: '3.27（H1）：修改先用后扣保护参数（只传要改的字段，写审计日志，立即生效）',
+  }),
+  listDebts: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/billing/debts`,
+    auth: 'admin',
+    response: BillingDebtSummary,
+    summary: '3.27（H1）：欠费用户（余额 < 0）与欠费金额，欠得多的在前；对账页显示',
   }),
 } as const;

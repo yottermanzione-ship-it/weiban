@@ -52,6 +52,11 @@ export interface NewEntry {
    * 扣钱（amountMicros < 0）一律先扣赠送、再扣充值，不需要传。
    */
   bonusCredit?: boolean;
+  /**
+   * 3.27（H1 先用后扣）：允许这笔扣钱把用户可用余额扣成负数（先用后扣调用的结算）。
+   * 其它扣钱（管理员扣减、服务费等）仍不允许透支。
+   */
+  allowNegative?: boolean;
 }
 
 /**
@@ -202,7 +207,7 @@ export class Ledger {
     const before = account.balanceMicros - held;
     const balance = account.balanceMicros + entry.amountMicros;
     const after = balance - held;
-    if (account.kind === 'user' && entry.amountMicros < 0 && after < 0)
+    if (account.kind === 'user' && entry.amountMicros < 0 && after < 0 && !entry.allowNegative)
       throw new AppError('insufficient_balance', '积分不足，保留余额与其它任务冻结');
     const bonusDelta =
       account.kind === 'user'

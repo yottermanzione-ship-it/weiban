@@ -4,6 +4,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   microsToPoints,
+  type BillingDebtSummary,
   pointsToMicros,
   type AdminAccountSummary,
   type AdminAdjustmentRequest,
@@ -111,6 +112,48 @@ export class BillingAdminService {
         updatedAt: new Date(r.updated_at).toISOString(),
       };
     });
+  }
+
+  /** 3.27（H1 先用后扣）：欠费用户（余额 < 0）与欠费金额，欠得多的在前（最多 500 个）。 */
+  async listDebts(): Promise<BillingDebtSummary> {
+    const { rows: totals } = await this.database.query<{ n: string; total: string | null }>(
+      `SELECT count(*)::text AS n, (-sum(balance_micros))::text AS total
+         FROM billing.accounts WHERE kind = 'user' AND balance_micros < 0`,
+    );
+    const { rows } = await this.database.query<{
+      user_id: string;
+      balance: string;
+      last_charge_at: Date | null;
+    }>(
+      `SELECT a.user_id, a.balance_micros AS balance,
+              (SELECT max(l.created_at) FROM billing.ledger_entries l
+                WHERE l.account_id = a.id AND l.type = 'charge' AND NOT l.absorbed) AS last_charge_at
+         FROM billing.accounts a
+        WHERE a.kind = 'user' AND a.balance_micros < 0
+        ORDER BY a.balance_micros, a.id
+        LIMIT 500`,
+    );
+    const usernames = rows.length
+      ? await this.directory.getUsernames(rows.map((r) => r.user_id))
+      : {};
+    const totalDebtMicros = Number(totals[0]?.total ?? 0);
+    return {
+      count: Number(totals[0]?.n ?? 0),
+      totalDebtMicros,
+      totalDebtPoints: microsToPoints(totalDebtMicros),
+      items: rows.map((r) => {
+        const balance = Number(r.balance);
+        return {
+          userId: r.user_id,
+          username: usernames[r.user_id] ?? '',
+          balanceMicros: balance,
+          balancePoints: microsToPoints(balance),
+          debtMicros: -balance,
+          debtPoints: microsToPoints(-balance),
+          lastChargeAt: r.last_charge_at ? new Date(r.last_charge_at).toISOString() : null,
+        };
+      }),
+    };
   }
 
   /**

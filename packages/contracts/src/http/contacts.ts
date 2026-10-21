@@ -33,7 +33,10 @@ export const Contact = z.object({
   /** 私聊会话 ID；status = pending 时为 null。 */
   conversationId: Id.nullable(),
   addedAt: Timestamp,
-  /** GRW-02：用户明确选择，旧响应缺省时沿用既有关系。 */
+  /**
+   * @deprecated 3.27（H1，总经理 10-21：有好感度机制就不要关系选择）：服务器不再返回、客户端不再显示，
+   * 恋爱表达只随好感度阶段。字段保留只为旧客户端能解析（数据库列保留以便回滚）。
+   */
   relationship: z.string().trim().min(1).max(30).optional(),
 });
 export type Contact = z.infer<typeof Contact>;
@@ -55,6 +58,7 @@ export const UpdateContactRequest = z.object({
   remark: z.string().max(20).nullable().optional(),
   customAvatarMediaId: Id.nullable().optional(),
   addressAs: z.string().max(20).nullable().optional(),
+  /** @deprecated 3.27（H1）：关系类型选择已删除，服务器忽略此字段（不写入、不报错）。 */
   relationship: z.string().trim().min(1).max(30).optional(),
 });
 

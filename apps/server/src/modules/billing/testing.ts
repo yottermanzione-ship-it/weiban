@@ -5,7 +5,8 @@
 import type { Database } from '../../platform/index.js';
 
 export { ReconciliationService } from './application/reconciliation.js';
-export { ReservationService } from './application/reservations.js';
+export { ReservationService, CONCURRENCY_WINDOW_MS } from './application/reservations.js';
+export { PostpaidSettingsService } from './application/postpaid-settings.js';
 export { BillingLifecycle, SIGNUP_BONUS_REASON } from './application/lifecycle.js';
 export {
   DEFAULT_BACKGROUND_DAILY_LIMIT_MICROS,

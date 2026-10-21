@@ -55,9 +55,8 @@ const OUTPUT_SAMPLE_RATE = 24_000;
 /** P-31：55 分钟提醒，59 分 30 秒道别。 */
 const REMIND_AT_MS = 55 * 60_000;
 const FAREWELL_AT_MS = 59 * 60_000 + 30_000;
-/** 余额检查间隔与「约 1 分钟」的保守阈值（微元）。 */
+/** 余额检查间隔。 */
 const BALANCE_CHECK_MS = 20_000;
-const LOW_BALANCE_MICROS = 300_000;
 /** 20秒余额轮询 + 最多10秒道别，满足耗尽后30秒内结束。 */
 const FAREWELL_TIMEOUT_MS = 10_000;
 
@@ -201,7 +200,8 @@ class AgentSession implements CallAgentSession {
   private async checkBalance(): Promise<void> {
     if (this.closed || this.ending) return;
     const spend = await this.deps.billing.getSpendStatus(this.info.userId).catch(() => null);
-    if (spend && (spend.depleted || spend.availableMicros < LOW_BALANCE_MICROS))
+    // 3.27（H1 先用后扣）：余额扣到 ≤ 0 才道别（不再提前按「约 1 分钟」的保守阈值结束）。
+    if (spend?.depleted)
       await this.farewell('insufficient_balance');
   }
 

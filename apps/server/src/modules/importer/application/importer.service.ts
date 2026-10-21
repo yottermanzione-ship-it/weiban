@@ -346,9 +346,9 @@ export class ImporterService implements OnModuleInit {
     const retry = job.status === 'failed' && !!job.selectedSpeaker && !job.rawDeletedAt;
     if (job.status !== 'ready' && !retry) throw new AppError('conflict', '当前不能开始生成');
     if (!this.analyzer) throw new AppError('service_disabled', '导入分析暂不可用');
-    // CHR-08 第 7 条：余额不足以完成时不开始。
+    // 3.27（H1 先用后扣，取代 CHR-08 第 7 条「余额不足以完成时不开始」）：可用余额 > 0 即可开始。
     const spend = await this.billing.getSpendStatus(userId);
-    if (spend.insufficient || spend.availableMicros < (job.estimatedMicros ?? 1))
+    if (spend.insufficient || spend.availableMicros <= 0)
       throw new AppError('insufficient_balance', '余额不足');
     await this.db.transaction(async (tx) => {
       await this.setStatus(tx, job, {

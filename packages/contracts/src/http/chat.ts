@@ -48,6 +48,13 @@ export const TextContent = z.object({
 export const NudgeContent = z.object({
   type: z.literal('nudge'),
   targetParticipantId: Id,
+  /** 3.27（H1）：被拍的是用户还是角色。服务器写入时填写，客户端发送时不用传（传了也会被覆盖）。 */
+  targetKind: z.enum(['user', 'character']).optional(),
+  /**
+   * 3.27（H1）：被拍一方的拍一拍后缀快照（目前只有用户能设置，见 Profile.nudgeSuffix）。
+   * 服务器写入时填写，客户端传了会被覆盖；显示为「X 拍了拍 Y」+ suffix。
+   */
+  suffix: z.string().max(15).optional(),
 });
 
 /**

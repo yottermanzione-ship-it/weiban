@@ -34,6 +34,7 @@ import {
 import { PaidHistoryService } from './application/paid-history.js';
 import { ServiceFeeService } from './application/service-fees.js';
 import { CostResolutionService } from './application/cost-resolution.js';
+import { PostpaidSettingsService } from './application/postpaid-settings.js';
 
 @Module({
   imports: [IdentityModule],
@@ -45,6 +46,7 @@ import { CostResolutionService } from './application/cost-resolution.js';
   ],
   providers: [
     CostResolutionService,
+    PostpaidSettingsService,
     Ledger,
     PlatformBudget,
     PriceService,

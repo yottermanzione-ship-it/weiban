@@ -55,7 +55,12 @@ import { FAILOVER_CATEGORIES, UpstreamScheduler } from './scheduler.js';
 import { UpstreamService } from './upstreams.js';
 import { UsageRecorder } from './usage.js';
 import { CatalogService } from './catalog.js';
-import { BillingBoundsService, boundsEvidence, type VerifiedRoute } from './billing-bounds.js';
+import {
+  BillingBoundsService,
+  boundsEvidence,
+  reserveErrorToGenerate,
+  type VerifiedRoute,
+} from './billing-bounds.js';
 
 type TextCeiling = NonNullable<ReserveInput['ceiling']>;
 type GatewayInternal = {
@@ -401,7 +406,17 @@ export class ModelGateway implements ModelGatewayPort {
           purpose: input.purpose,
           modelKey: model.modelKey,
           characterId: input.characterId,
-          estimate: ceiling.usage,
+          // 3.27（H1）：按本平台实际发送的上下文 + 这次的最大输出估算（只用于异常巨额拦截），不再按线路上限。
+          estimate: {
+            inputTokens: Math.min(
+              ceiling.usage.inputTokens ?? Number.MAX_SAFE_INTEGER,
+              estimateInputTokens(wire),
+            ),
+            outputTokens: Math.min(
+              ceiling.usage.outputTokens ?? Number.MAX_SAFE_INTEGER,
+              outputBudget,
+            ),
+          },
           ceiling,
           idempotencyKey: key,
           countAsBackground: input.countAsBackground,
@@ -424,9 +439,7 @@ export class ModelGateway implements ModelGatewayPort {
             latencyMs: 0,
             retryCount: ordinal,
           });
-          return completeFailure(
-            reserve.error === 'price_missing' ? 'model_unavailable' : reserve.error,
-          );
+          return completeFailure(reserveErrorToGenerate(reserve.error));
         }
         const hold = reserve.value;
         priceVersionId ??= hold.priceVersionId;

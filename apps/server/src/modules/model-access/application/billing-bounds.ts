@@ -230,3 +230,23 @@ export class BillingBoundsService {
     });
   }
 }
+
+/**
+ * 3.27（H1 先用后扣）：计费拒绝原因 → 网关对外错误。
+ * price_missing → model_unavailable；并发已满 → provider_unavailable（暂时，稍后可重试）；
+ * 异常巨额 → budget_exceeded（与后台上限同类：不调用、不扣费）。
+ */
+export function reserveErrorToGenerate(
+  error: import('@weiban/contracts').ReserveError,
+): 'model_unavailable' | 'provider_unavailable' | 'insufficient_balance' | 'budget_exceeded' {
+  switch (error) {
+    case 'price_missing':
+      return 'model_unavailable';
+    case 'concurrency_limited':
+      return 'provider_unavailable';
+    case 'request_too_large':
+      return 'budget_exceeded';
+    default:
+      return error;
+  }
+}

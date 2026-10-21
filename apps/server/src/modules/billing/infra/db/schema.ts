@@ -167,6 +167,13 @@ export const holds = billingSchema.table(
       jsonb('settlement_snapshot').$type<import('@weiban/contracts').SettleOutput>(),
     /** 3.22（0116）：冻结时锁定的限时折扣（× 10000，10000 = 原价）；结算按它计售价。 */
     discountBp: integer('discount_bp').notNull().default(10000),
+    /**
+     * 3.27（0126，H1）：先用后扣。true = 不冻结积分（amount_micros = 0），结算按实际用量全额扣、余额可以变负；
+     * 只用于幂等、并发计数与结算关联。旧冻结为 false，照旧规则处理。
+     */
+    postpaid: boolean('postpaid').notNull().default(false),
+    /** 3.27：调用前按实际发送的上下文 + 最大输出估的售价（异常巨额拦截、排查用；不冻结）。 */
+    estimateMicros: money('estimate_micros').notNull().default(0),
   },
   (t) => [
     uniqueIndex('holds_idempotency_key_key').on(t.idempotencyKey),
@@ -179,6 +186,7 @@ export const holds = billingSchema.table(
       .where(sql`${t.status} = 'active'`),
     check('holds_status_check', sql`${t.status} in ('active', 'settled', 'released', 'expired')`),
     check('holds_amount_nonnegative', sql`${t.amountMicros} >= 0`),
+    check('holds_estimate_nonnegative', sql`${t.estimateMicros} >= 0`),
   ],
 );
 

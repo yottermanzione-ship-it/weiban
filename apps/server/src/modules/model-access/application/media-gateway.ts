@@ -62,7 +62,7 @@ import { GenerationCache, requestHash, type GenerationRow } from './generation-c
 import { UpstreamService } from './upstreams.js';
 import { UsageRecorder } from './usage.js';
 import { unavailableReason } from '../domain/rules.js';
-import { BillingBoundsService, boundsEvidence } from './billing-bounds.js';
+import { BillingBoundsService, boundsEvidence, reserveErrorToGenerate } from './billing-bounds.js';
 import { pcmWavSeconds, roundAsr } from '../domain/media-billing-bounds.js';
 
 type Service = 'speech_synthesis' | 'speech_recognition' | 'image_generation' | 'web_search';
@@ -590,7 +590,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       ecologyTask: base.ecologyTask,
     });
     if (!reserve.ok) {
-      const error = reserve.error === 'price_missing' ? 'model_unavailable' : reserve.error;
+      const error = reserveErrorToGenerate(reserve.error);
       await this.recorder.writeReleaseSnapshot(usage.record.id, {
         absorbedCostMicros: 0,
         costKnown: true,

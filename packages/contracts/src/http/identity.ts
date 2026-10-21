@@ -102,6 +102,11 @@ const profileFields = {
   gender: Gender,
   city: z.string().max(32).nullable(),
   about: z.string().max(500).nullable(),
+  /**
+   * 3.27（H1 拍一拍）：拍一拍后缀（微信式「拍了拍我的小脑袋」里的「的小脑袋」）。角色拍我、我拍自己时接在后面显示。
+   * 最多 15 字；null 或空 = 不显示。旧响应缺省按 null。
+   */
+  nudgeSuffix: z.string().trim().max(15).nullable().optional(),
   /** 用户时区；客户端每次连接上报设备时区，服务器据此更新（SIM-04 以设备时区为准）。 */
   timeZone: TimeZone,
 };

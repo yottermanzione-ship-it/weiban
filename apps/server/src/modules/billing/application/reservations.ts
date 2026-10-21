@@ -6,6 +6,11 @@
  *   锁用户账户 → 幂等（同一个键返回同一个冻结）→ 取当前价目表估价 → 余额检查（禁止用户透支）
  *   → 用户后台每日上限 → 平台每日上限原子预留 → 写冻结记录、加 held_micros。
  * 任一检查不通过都不留下冻结（余额不足时只记下 insufficient_since）。
+ *
+ * 3.27（H1，总经理 10-21「先用后扣、可欠一次」，取代上面「禁止用户透支」）：用户付费调用（postpaid）
+ *   不再冻结积分：只要求可用余额 > 0；异常巨额（按实际发送的上下文 + 最大输出预估）先拦截；
+ *   同一用户同时进行的付费调用有上限（满了前台排队几秒、后台直接拒绝）；结算按实际用量全额扣，余额可以变负。
+ *   余额为负后 available ≤ 0，后续一切付费调用在这里被拒，直到充值。平台账户不受影响。
  */
 import { Inject, Injectable } from '@nestjs/common';
 import {
@@ -52,6 +57,7 @@ import { accounts, dailySpend, holds, priceVersions } from '../infra/db/schema.j
 import { available, Ledger } from './ledger.js';
 import { PlatformBudget } from './platform-budget.js';
 import { PriceService } from './prices.js';
+import { PostpaidSettingsService, type PostpaidLimits } from './postpaid-settings.js';
 
 type HoldRow = typeof holds.$inferSelect;
 
@@ -69,6 +75,13 @@ const fail = (error: ReserveError, message: string): PortResult<ReserveOutput, R
   message,
 });
 
+/** 3.27：并发上限只数最近这么久内开始、仍未结算的付费调用（进程崩溃留下的冻结不会把用户卡 10 分钟）。 */
+export const CONCURRENCY_WINDOW_MS = 120_000;
+/** 3.27：前台调用排队时多久重试一次。 */
+const CONCURRENCY_POLL_MS = 300;
+/** 内部信号：并发已满（由外层决定排队还是拒绝）。 */
+const BUSY = Symbol('busy');
+
 @Injectable()
 export class ReservationService implements BillingReservationPort {
   private readonly log: Logger;
@@ -85,6 +98,7 @@ export class ReservationService implements BillingReservationPort {
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(APP_CONFIG) config: AppConfig,
     @Inject(LOGGER) logger: Logger,
+    @Inject(PostpaidSettingsService) private readonly postpaid: PostpaidSettingsService,
   ) {
     this.log = logger.child({ module: 'billing' });
     void config; // 旧透支环境配置不再赋予权限。
@@ -106,7 +120,27 @@ export class ReservationService implements BillingReservationPort {
     const timeZone = userId
       ? safeTimeZone((await this.identity.getProfile(userId))?.timeZone)
       : PLATFORM_TIME_ZONE;
+    // 3.27：用户付费调用的保护参数；后台任务（生态、记忆整理等）并发满了不排队，前台调用最多等几秒。
+    const limits = userId ? await this.postpaid.limits() : null;
+    const background =
+      countsAsBackground(input.purpose, input.countAsBackground) || input.ecologyTask === true;
+    const waitUntil = performance.now() + (limits && !background ? limits.concurrencyWaitMs : 0);
+    for (;;) {
+      const result = await this.reserveOnce(input, kind, userId, timeZone, limits);
+      if (result !== BUSY) return result;
+      if (performance.now() + CONCURRENCY_POLL_MS > waitUntil)
+        return fail('concurrency_limited', '同时进行的付费调用太多，请稍后再试');
+      await new Promise((resolve) => setTimeout(resolve, CONCURRENCY_POLL_MS));
+    }
+  }
 
+  private async reserveOnce(
+    input: ReserveInput,
+    kind: 'user' | 'platform',
+    userId: string | null,
+    timeZone: string,
+    limits: PostpaidLimits | null,
+  ): Promise<PortResult<ReserveOutput, ReserveError> | typeof BUSY> {
     return this.database.transaction(async (tx) => {
       let account = userId
         ? await this.ledger.lockUserAccount(tx, userId, timeZone)
@@ -182,20 +216,32 @@ export class ReservationService implements BillingReservationPort {
       const discountBp = await this.prices.discountBp(tx, input.modelKey, this.clock.now());
       let amount = applyDiscount(priced.sellMicros, discountBp);
       let reservedCost = priced.costMicros;
+      // 3.27：按实际发送的上下文 + 最大输出估价（异常巨额拦截用）；估不出来时按上限算（宁严勿松）。
+      const estimateOf = (r: typeof rows, bp: number, fallback: number) => {
+        const e = priceUsageCeiling(r, input.estimate);
+        return e.ok && Number.isSafeInteger(e.sellMicros) ? applyDiscount(e.sellMicros, bp) : fallback;
+      };
+      let estimate = estimateOf(rows, discountBp, amount);
       for (const alternative of new Set(input.ceiling.pricingModels ?? [])) {
         const alternativeRows = await this.prices.modelPrices(tx, version.id, alternative);
         const upper = priceUsageCeiling(alternativeRows, input.ceiling.usage);
         if (!alternativeRows.length || !upper.ok)
           return fail('price_missing', '备用模型缺少完整上限定价');
         const alternativeBp = await this.prices.discountBp(tx, alternative, this.clock.now());
-        amount = Math.max(amount, applyDiscount(upper.sellMicros, alternativeBp));
+        const alternativeSell = applyDiscount(upper.sellMicros, alternativeBp);
+        amount = Math.max(amount, alternativeSell);
         reservedCost = Math.max(reservedCost, upper.costMicros);
+        estimate = Math.max(estimate, estimateOf(alternativeRows, alternativeBp, alternativeSell));
       }
       if (!Number.isSafeInteger(amount) || !Number.isSafeInteger(reservedCost))
         return fail('price_missing', '计费上限超出安全金额范围');
+      estimate = Math.min(estimate, amount);
+      // 3.27：用户付费调用一律先用后扣（不冻结）；平台账户不变。
+      const postpaid = kind === 'user';
 
-      // 余额（平台账户余额可以为负，只受平台每日上限约束，billing.md 第 7 节第 3 条）
-      if (kind === 'user' && amount > 0 && available(account) < amount) {
+      // 余额（平台账户余额可以为负，只受平台每日上限约束，billing.md 第 7 节第 3 条）。
+      // 3.27：用户只要求可用余额 > 0（先用后扣）；免费模型（售价 0）不受影响。
+      if (kind === 'user' && amount > 0 && available(account) <= 0) {
         const counts = input.ecologyTask === true;
         await tx.db
           .update(accounts)
@@ -208,13 +254,39 @@ export class ReservationService implements BillingReservationPort {
           .where(eq(accounts.id, account.id));
         return fail('insufficient_balance', '积分不足，充值后继续');
       }
+      if (postpaid && amount > 0 && limits) {
+        // 3.27：异常巨额请求先拦截（不调用、不扣费），写审计便于后台排查。
+        if (estimate > limits.largeRequestLimitMicros) {
+          await this.audit.record(
+            {
+              module: 'billing',
+              action: 'postpaid.request_too_large',
+              actorType: 'system',
+              targetType: 'account',
+              targetId: account.id,
+              details: {
+                modelKey: input.modelKey,
+                purpose: input.purpose,
+                estimateMicros: estimate,
+                limitMicros: limits.largeRequestLimitMicros,
+                estimate: input.estimate,
+              },
+            },
+            tx,
+          );
+          return fail('request_too_large', '这次请求预估花费异常大，已拦截');
+        }
+        // 3.27：同一用户同时进行的付费调用上限（账户行已加锁，并发冻结在这里排队，计数准确）。
+        const inFlight = await this.inFlightPaidCalls(tx, account.id);
+        if (inFlight >= limits.maxConcurrentPaidCalls) return BUSY;
+      }
 
       // 用户后台每日上限（账户行已加锁，同一用户的并发请求已排队）
       const counts = kind === 'user' && countsAsBackground(input.purpose, input.countAsBackground);
       const backgroundDay = counts ? localDate(now, account.timeZone) : null;
       if (backgroundDay) {
         const spent = await this.backgroundSpent(tx, account.id, backgroundDay);
-        if (spent + amount > account.backgroundDailyLimitMicros) {
+        if (spent + (postpaid ? estimate : amount) > account.backgroundDailyLimitMicros) {
           return fail('budget_exceeded', '今天的后台花费已达上限');
         }
       }
@@ -233,7 +305,7 @@ export class ReservationService implements BillingReservationPort {
       const hold: HoldRow = {
         id: newId(),
         accountId: account.id,
-        amountMicros: amount,
+        amountMicros: postpaid ? 0 : amount,
         purpose: input.purpose,
         modelKey: input.modelKey,
         characterId: input.characterId ?? null,
@@ -256,9 +328,11 @@ export class ReservationService implements BillingReservationPort {
         releaseSnapshot: null,
         riskSnapshot: { phase: 'reserved', costUpperMicros: reservedCost, uncertainMicros: 0 },
         discountBp,
+        postpaid,
+        estimateMicros: postpaid ? estimate : 0,
       };
       await tx.db.insert(holds).values(hold);
-      await this.ledger.changeHeld(tx, account, amount);
+      if (!postpaid) await this.ledger.changeHeld(tx, account, amount);
       return { ok: true, value: this.toReserveOutput(hold) };
     });
   }
@@ -353,9 +427,12 @@ export class ReservationService implements BillingReservationPort {
       if (![priced.sellMicros, priced.costMicros].every(Number.isSafeInteger))
         throw new BillingUsageError('供应商实际用量金额超出安全范围，需人工核对');
       // 已释放/过期的用户资金没有授权再抢占；历史不一致也不能侵占其它hold。
-      const userLimit = stillReserved
-        ? Math.max(0, Math.min(hold.amountMicros, available(account) + hold.amountMicros))
-        : 0;
+      // 3.27：先用后扣的冻结没有上限，按实际用量全额扣（余额可以变负）；迟到 / 过期的结算也照扣。
+      const userLimit = hold.postpaid
+        ? Number.MAX_SAFE_INTEGER
+        : stillReserved
+          ? Math.max(0, Math.min(hold.amountMicros, available(account) + hold.amountMicros))
+          : 0;
       const previousAbsorbed = hold.status === 'released' ? (hold.absorbedCostMicros ?? 0) : 0;
       // 已人工核实的供应商成本不被极迟响应/价目表推算重新覆盖。
       const verifiedCost = hold.riskSnapshot?.resolution?.costMicros;
@@ -381,7 +458,9 @@ export class ReservationService implements BillingReservationPort {
           : splitSettlementCost(knownCost, amount, priced.sellMicros);
       const reason = !actualKnown
         ? 'usage_unknown'
-        : !stillReserved
+        : hold.postpaid
+          ? 'postpaid'
+          : !stillReserved
           ? 'late_unreserved'
           : amount < priced.sellMicros
             ? 'reservation_capped'
@@ -402,6 +481,7 @@ export class ReservationService implements BillingReservationPort {
         safetyOverdraft: false,
         releaseHeldMicros: wasActive ? hold.amountMicros : 0,
         reason: amount < priced.sellMicros ? '冻结上限保护，差额不向用户补扣' : null,
+        allowNegative: hold.postpaid,
       });
       const absorptionDelta = allocation.absorbedCostMicros - previousAbsorbed;
       if (account.kind === 'user' && absorptionDelta !== 0) {
@@ -462,7 +542,10 @@ export class ReservationService implements BillingReservationPort {
           risk.remainingReserved,
           account.kind === 'platform' ? knownCost - previousAbsorbed : absorptionDelta,
         );
-      if (reason !== 'within_reservation' || priced.unpricedUnits.length)
+      if (
+        (reason !== 'within_reservation' && reason !== 'postpaid') ||
+        priced.unpricedUnits.length
+      )
         await this.audit.record(
           {
             module: 'billing',
@@ -704,6 +787,18 @@ export class ReservationService implements BillingReservationPort {
       "SELECT pg_advisory_xact_lock(hashtextextended('billing:call-route:' || $1 || ':' || $2, 0))",
       [upstreamId, upstreamModelId],
     );
+  }
+
+  /** 3.27：这个账户最近 CONCURRENCY_WINDOW_MS 内开始、仍未结算的先用后扣调用数。 */
+  async inFlightPaidCalls(tx: DbTx, accountId: string): Promise<number> {
+    const now = this.clock.nowMs();
+    const { rows } = await tx.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM billing.holds
+        WHERE account_id = $1 AND status = 'active' AND postpaid
+          AND expires_at > $2 AND created_at > $3`,
+      [accountId, new Date(now), new Date(now - CONCURRENCY_WINDOW_MS)],
+    );
+    return Number(rows[0]?.n ?? 0);
   }
 
   /** 今天（用户当地日期）后台已结算 + 当前后台冻结。 */

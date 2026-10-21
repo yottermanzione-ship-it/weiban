@@ -34,6 +34,7 @@ import { ReconciliationService } from '../application/reconciliation.js';
 import { RechargeService } from '../application/recharge.js';
 import { WalletService } from '../application/wallet.js';
 import { CostResolutionService } from '../application/cost-resolution.js';
+import { PostpaidSettingsService } from '../application/postpaid-settings.js';
 
 const E = BillingEndpoints;
 const A = BillingAdminEndpoints;
@@ -122,7 +123,30 @@ export class BillingAdminController {
     @Inject(PriceService) private readonly prices: PriceService,
     @Inject(ReconciliationService) private readonly reconciliation: ReconciliationService,
     @Inject(RechargeService) private readonly recharge: RechargeService,
+    @Inject(PostpaidSettingsService) private readonly postpaid: PostpaidSettingsService,
   ) {}
+
+  @Get('postpaid-settings')
+  @RequireAuth(A.getPostpaidSettings.auth)
+  postpaidSettings() {
+    return this.postpaid.get();
+  }
+
+  @Put('postpaid-settings')
+  @RequireAuth(A.updatePostpaidSettings.auth)
+  updatePostpaidSettings(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(A.updatePostpaidSettings.body)))
+    body: Out<typeof A.updatePostpaidSettings.body>,
+  ) {
+    return this.postpaid.update(me.userId, body);
+  }
+
+  @Get('debts')
+  @RequireAuth(A.listDebts.auth)
+  debts() {
+    return this.admin.listDebts();
+  }
 
   @Post('holds/:holdId/cost-resolution')
   @RequireAuth(A.resolveUnknownCost.auth)

@@ -78,6 +78,7 @@ export function toProfile(row: ProfileRow): Profile {
     gender: row.gender as Profile['gender'],
     city: row.city,
     about: row.about,
+    nudgeSuffix: row.nudgeSuffix ?? null,
     timeZone: row.timeZone,
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -237,7 +238,12 @@ export class SettingsService
     return profile;
   }
 
-  async updateProfile(userId: string, patch: UpdateProfileRequest): Promise<Profile> {
+  async updateProfile(userId: string, input: UpdateProfileRequest): Promise<Profile> {
+    // 3.27（H1）：拍一拍后缀去掉首尾空白，空字符串按「不显示」（null）存。
+    const patch: UpdateProfileRequest =
+      input.nudgeSuffix === undefined
+        ? input
+        : { ...input, nudgeSuffix: input.nudgeSuffix?.trim() || null };
     if (patch.avatarMediaId) {
       const avatar = await this.media.getMedia(userId, patch.avatarMediaId);
       if (avatar.purpose !== 'user_avatar')

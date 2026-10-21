@@ -35,7 +35,11 @@ export interface ReserveInput {
   purpose: ModelPurpose;
   modelKey: string;
   characterId?: string;
-  /** 估算用量：输入 token 估算值 + maxOutputTokens 等。 */
+  /**
+   * 估算用量：输入 token 估算值 + maxOutputTokens 等。
+   * 3.27（H1 先用后扣）：用户付费调用不再按 ceiling 冻结；按 estimate（本平台实际发送的上下文 + 模型最大输出）
+   * 估价，只用于「异常巨额请求拦截」（预估超过后台设定的积分数直接拒绝 request_too_large）与后台每日上限。
+   */
   estimate: UsageQuantities;
   /** 3.16：由网关核准路由得出的可计费上限；缺失时拒绝新冻结，旧estimate不再充当上限。 */
   ceiling?: { usage: UsageQuantities; evidence: string; pricingModels?: string[] };
@@ -63,10 +67,20 @@ export interface ReserveOutput {
   usedSafetyOverdraft: boolean;
 }
 
+/**
+ * 3.27（H1，总经理 10-21「先用后扣、可欠一次」，取代 3.16 的「先冻结后结算、不透支」）：
+ * - 用户付费调用前只要求可用余额 > 0（≤ 0 拒绝 insufficient_balance），不再冻结（ReserveOutput.amountMicros = 0）；
+ * - 结算按实际用量全额扣，余额可以变成负数；为负后一切付费调用被拒，直到充值使余额 > 0；
+ * - 同一用户同时进行的付费调用有上限（后台可调），满了前台调用排队等待几秒、后台任务直接拒绝 concurrency_limited；
+ * - 单次预估（ReserveInput.estimate）超过后台设定积分数的异常巨额请求拒绝 request_too_large。
+ * 平台账户（kind = platform：安全关怀、小V、搜索候选、管理员工具等）不受这些规则影响。
+ */
 export type ReserveError =
-  | 'insufficient_balance' // 可用余额不足
+  | 'insufficient_balance' // 可用余额 ≤ 0（或旧冻结：可用余额不足）
   | 'budget_exceeded' // 用户后台每日上限，或平台每日总上限
-  | 'price_missing'; // 当前价目表没有该模型的价格（网关对外报 model_unavailable）
+  | 'price_missing' // 当前价目表没有该模型的价格（网关对外报 model_unavailable）
+  | 'concurrency_limited' // 3.27：同一用户同时进行的付费调用已达上限（网关对外报 provider_unavailable）
+  | 'request_too_large'; // 3.27：单次预估超过异常巨额拦截线（网关对外报 budget_exceeded）
 
 export interface SettleInput {
   holdId: string;

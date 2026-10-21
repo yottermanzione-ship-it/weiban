@@ -114,6 +114,8 @@ export const profiles = identitySchema.table('profiles', {
   gender: text('gender').notNull(),
   city: text('city'),
   about: text('about'),
+  /** 3.27（0127，H1）：拍一拍后缀，最多 15 字；null = 不显示。 */
+  nudgeSuffix: text('nudge_suffix'),
   timeZone: text('time_zone').notNull(),
   updatedAt: tz('updated_at').notNull(),
 });

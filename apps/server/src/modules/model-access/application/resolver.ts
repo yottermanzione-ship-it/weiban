@@ -419,7 +419,8 @@ export class ModelStatusService {
         canFallbackToDefault: false,
       };
     }
-    if (quote.value.amountMicros > 0 && spend.availableMicros < quote.value.amountMicros) {
+    // 3.27（H1 先用后扣）：只要求可用余额 > 0，不再要求够一条回复的保守预留。
+    if (quote.value.amountMicros > 0 && spend.availableMicros <= 0) {
       return {
         characterId,
         available: false,
