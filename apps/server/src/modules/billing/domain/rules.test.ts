@@ -1,4 +1,117 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { SharedSearchBilling } from '../application/shared-search.js';
+import { TestClock } from '../../../platform/index.js';
+
+describe('H4 shared billing admission and retry', () => {
+  it('never recreates a wallet or admits a deleting user', async () => {
+    const service = Object.create(SharedSearchBilling.prototype) as SharedSearchBilling;
+    const query = vi.fn(async (_sql: string) => ({ rows: [] })),
+      lockUserAccount = vi.fn();
+    Object.assign(service, {
+      db: { transaction: async (run: (tx: object) => Promise<unknown>) => run({ query }) },
+      clock: new TestClock(),
+      limits: {
+        limits: async () => ({ maxConcurrentPaidCalls: 2, largeRequestLimitMicros: 2000000 }),
+      },
+      identities: { getAccountStatus: async () => 'deleting' },
+      ledger: { lockUserAccount },
+      prices: {
+        activeVersion: async () => ({ id: 'price' }),
+        modelPrices: async () => [
+          {
+            modelKey: 'search',
+            unit: 'search_call',
+            priceMicros: 5000,
+            costMicros: 5000,
+            band: null,
+          },
+        ],
+        discountBp: async () => 10000,
+      },
+    });
+    expect(
+      await service.begin({
+        key: 'key',
+        characterId: 'role',
+        modelKey: 'search',
+        userIds: ['user'],
+      }),
+    ).toBeNull();
+    expect(lockUserAccount).not.toHaveBeenCalled();
+    expect(query.mock.calls.some(([sql]) => String(sql).includes('INSERT'))).toBe(false);
+  });
+  it('closed shared settlements are idempotent and bind their supplier usage', async () => {
+    const service = Object.create(SharedSearchBilling.prototype) as SharedSearchBilling;
+    const postEntry = vi.fn();
+    const call = {
+      id: 'group',
+      character_id: 'role',
+      model_key: 'search',
+      state: 'settled',
+      collected_micros: '200',
+      usage_record_id: 'usage',
+    };
+    const query = async (sql: string) => ({
+      rows: sql.includes('SELECT a.user_id')
+        ? [{ user_id: 'user', charged_micros: '200' }]
+        : sql.includes('SELECT request_key')
+          ? [{ request_key: 'key' }]
+          : sql.includes('shared_search_calls')
+            ? [call]
+            : [],
+    });
+    Object.assign(service, {
+      db: { transaction: async (run: (tx: object) => Promise<unknown>) => run({ query }) },
+      clock: new TestClock(),
+      ledger: { postEntry },
+    });
+    expect(await service.settle('group', 'usage')).toEqual({
+      collectedMicros: 200,
+      userCharges: { user: 200 },
+    });
+    expect(postEntry).not.toHaveBeenCalled();
+    await expect(service.settle('group', 'another-usage')).rejects.toThrow('source changed');
+  });
+});
+import { sharedSlice, roundedSharedCharge } from './shared-search.js';
+
+describe('H4 shared search precision', () => {
+  it('allocates one total exactly across the original cohort, with no float loss', () => {
+    for (const amount of [0, 1, 99, 100, 149, 5000, Number.MAX_SAFE_INTEGER])
+      for (const n of [1, 2, 3, 17, 257])
+        for (const offset of [0, n - 1]) {
+          const parts = Array.from({ length: n }, (_, i) => sharedSlice(amount, n, i, offset));
+          expect(parts.reduce((s, x) => s + BigInt(x), 0n)).toBe(BigInt(amount));
+          expect(Math.max(...parts) - Math.min(...parts)).toBeLessThanOrEqual(1);
+        }
+  });
+  it('accumulates small shares, rounds to 0.01 points, and carries the rounding credit', () => {
+    expect(roundedSharedCharge(33, 0)).toEqual({ charge: 0, carry: 33 });
+    expect(roundedSharedCharge(33, 33)).toEqual({ charge: 0, carry: 66 });
+    expect(roundedSharedCharge(34, 66)).toEqual({ charge: 100, carry: 0 });
+    expect(roundedSharedCharge(150, 0)).toEqual({ charge: 200, carry: -50 });
+    expect(roundedSharedCharge(50, -50)).toEqual({ charge: 0, carry: 0 });
+    let carry = 0,
+      charged = 0,
+      total = 0;
+    for (let i = 0; i < 10000; i++) {
+      const value = i % 171;
+      total += value;
+      const next = roundedSharedCharge(value, carry);
+      charged += next.charge;
+      carry = next.carry;
+      expect(charged + carry).toBe(total);
+      expect(next.charge % 100).toBe(0);
+    }
+  });
+  it('a deleted participant does not transfer their share to the survivors', () => {
+    expect(sharedSlice(5000, 3, 1)).toBe(1667);
+    expect(sharedSlice(5000, 3, 2)).toBe(1666);
+    expect(sharedSlice(5000, 3, 1) + sharedSlice(5000, 3, 2)).toBe(3333);
+    expect(() => sharedSlice(-1, 3, 0)).toThrow();
+    expect(() => roundedSharedCharge(1, 100)).toThrow();
+  });
+});
 import {
   addDays,
   daysBetween,
@@ -123,9 +236,9 @@ describe('用途分类（billing.md 5.2、第 7 节、6.6）', () => {
     expect(countsAsBackground('safety_check', true)).toBe(false);
   });
 
-  it('安全透支资格：用途在名单、用户钱包、调用方请求，三者同时满足', () => {
-    expect(safetyOverdraftEligible('chat_reply', 'user', true)).toBe(true);
-    expect(safetyOverdraftEligible('safety_followup', 'user', true)).toBe(true);
+  it('H1 已取消旧安全透支特例，兼容函数不能绕过先用后扣准入', () => {
+    expect(safetyOverdraftEligible('chat_reply', 'user', true)).toBe(false);
+    expect(safetyOverdraftEligible('safety_followup', 'user', true)).toBe(false);
     expect(safetyOverdraftEligible('proactive', 'user', true)).toBe(false);
     expect(safetyOverdraftEligible('memory', 'user', true)).toBe(false);
     expect(safetyOverdraftEligible('chat_reply', 'platform', true)).toBe(false);

@@ -28,3 +28,4 @@ export { estimateTokens } from './infra/text-adapter.js';
 export { simulatePrefixCache } from './domain/prefix-cache.js';
 /** Bounded synthetic operations probe; never changes runtime configuration. */
 export { evaluateConfiguredDecisions } from './application/decision-evaluation.js';
+export { SHARED_WEB_SEARCH_PORT } from './tokens.js';

@@ -437,3 +437,14 @@ export const modelsDevSnapshot = modelAccessSchema.table('models_dev_snapshot', 
   data: jsonb('data').$type<import('../../domain/models-dev.js').ModelsDevIndex>(),
   updatedAt: tz('updated_at').notNull(),
 });
+
+/** H4 recovery receipt: public summaries only; never copies participant identities or a query. */
+export const sharedSearchReceipts = modelAccessSchema.table('shared_search_receipts', {
+  requestKey: text('request_key').primaryKey(),
+  characterId: uuid('character_id').notNull(),
+  groupId: uuid('group_id').notNull(),
+  usageRecordId: uuid('usage_record_id').notNull(),
+  isFree: boolean('is_free').notNull(),
+  items: jsonb('items').notNull().$type<import('@weiban/contracts').WebSearchResultItem[]>(),
+  createdAt: tz('created_at').notNull(),
+});

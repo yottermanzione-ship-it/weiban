@@ -200,7 +200,11 @@ export class EcologySettingsService {
     if (def.mode === 'reserved') return def.reservedReason ?? '即将上线';
     if ((config ?? (await this.config())).disabledActions.includes(key)) return '平台暂未开放';
     if (def.needs && !(await this.media.isServiceEnabled(def.needs).catch(() => false)))
-      return def.needs === 'speech_synthesis' ? '平台未开通语音合成' : '平台未开通图片生成';
+      return def.needs === 'speech_synthesis'
+        ? '平台未开通语音合成'
+        : def.needs === 'web_search'
+          ? '平台未开通联网搜索'
+          : '平台未开通图片生成';
     return null;
   }
 
@@ -359,10 +363,18 @@ export class EcologySettingsService {
       ...(body.enabled === true ? { pausedReason: null, pausedAt: null } : {}),
       updatedAt: now,
     };
-    await this.db.db
-      .insert(ecologySettings)
-      .values({ userId, ...values })
-      .onConflictDoUpdate({ target: ecologySettings.userId, set: values });
+    await this.db.transaction(async (tx) => {
+      await tx.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended('ecology-settings:' || $1,0))",
+        [userId],
+      );
+      if ((await this.accounts.getAccountStatus(userId, tx)) !== 'active')
+        throw new AppError('unauthenticated', '账号不可用');
+      await tx.db
+        .insert(ecologySettings)
+        .values({ userId, ...values })
+        .onConflictDoUpdate({ target: ecologySettings.userId, set: values });
+    });
     return this.get(userId);
   }
 
@@ -372,13 +384,21 @@ export class EcologySettingsService {
     if (!(await this.contacts.getActiveContact(userId, characterId)))
       throw new AppError('not_found', '好友不存在');
     const now = this.clock.now();
-    await this.db.db
-      .insert(ecologyCharacterSettings)
-      .values({ userId, characterId, enabled, updatedAt: now })
-      .onConflictDoUpdate({
-        target: [ecologyCharacterSettings.userId, ecologyCharacterSettings.characterId],
-        set: { enabled, updatedAt: now },
-      });
+    await this.db.transaction(async (tx) => {
+      await tx.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended('ecology-settings:' || $1,0))",
+        [userId],
+      );
+      if (!(await this.contacts.getActiveContact(userId, characterId, tx)))
+        throw new AppError('not_found', '好友不存在');
+      await tx.db
+        .insert(ecologyCharacterSettings)
+        .values({ userId, characterId, enabled, updatedAt: now })
+        .onConflictDoUpdate({
+          target: [ecologyCharacterSettings.userId, ecologyCharacterSettings.characterId],
+          set: { enabled, updatedAt: now },
+        });
+    });
     return { characterId, enabled };
   }
 

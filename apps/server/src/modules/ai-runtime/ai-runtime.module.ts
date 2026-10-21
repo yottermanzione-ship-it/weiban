@@ -79,6 +79,7 @@ import { PlannerService } from './application/planner.js';
 import { PlannerAdminController } from './http/planner-admin.controller.js';
 import { EcologySettingsService } from './application/ecology-settings.js';
 import { EcologyService } from './application/ecology.js';
+import { WeiboSyncService } from './application/weibo.js';
 import { EcologyAdminController, EcologyController } from './http/ecology.controller.js';
 import {
   SupplementConflictService,
@@ -103,6 +104,7 @@ import {
     PlayModule,
   ],
   providers: [
+    WeiboSyncService,
     { provide: AI_TRIAL_CLEANUP_PORT, useExisting: ReplyPlanStore },
     // T-090：行为规划决策层。
     PlannerService,

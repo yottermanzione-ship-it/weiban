@@ -28,7 +28,7 @@ export const PublicUpdateStatus = z.enum([
 ]);
 export type PublicUpdateStatus = z.infer<typeof PublicUpdateStatus>;
 
-export const PublicUpdateSource = z.enum(['manual', 'auto_search']);
+export const PublicUpdateSource = z.enum(['manual', 'auto_search', 'weibo_sync']);
 export type PublicUpdateSource = z.infer<typeof PublicUpdateSource>;
 
 /** 动态类别：新作品 / 活动行程 / 获奖 / 其他。 */

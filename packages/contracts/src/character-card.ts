@@ -184,6 +184,20 @@ export const CardSafetyStyle = z.strictObject({
     ),
 });
 export const CardProfileExtra = z.strictObject({
+  /** H4：两项齐备才视为明确微博标记，不从角色名字猜身份。 */
+  weibo: z
+    .strictObject({
+      nickname: z.string().trim().min(1).max(80),
+      avatarUrl: z
+        .url()
+        .max(2000)
+        .refine((value) => /^https:\/\//iu.test(value), '微博头像地址须为 HTTPS'),
+      userId: z
+        .string()
+        .regex(/^\d{5,20}$/u)
+        .optional(),
+    })
+    .optional(),
   occupation: z.string().min(1).max(200),
   gender: z.enum(['female', 'male', 'other', 'unspecified']).optional(),
   ageDisplay: z.string().max(100).optional(),

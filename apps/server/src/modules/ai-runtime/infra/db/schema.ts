@@ -685,3 +685,44 @@ export const imageCaptions = aiRuntimeSchema.table(
     check('image_caption_scope', sql`${t.scope} IN ('normal','adult')`),
   ],
 );
+
+/** H4 shared public artifacts contain no user context; only deliveries belong to a user. */
+export const weiboSyncStates = aiRuntimeSchema.table('weibo_sync_states', {
+  characterId: uuid('character_id').primaryKey(),
+  leaseToken: uuid('lease_token').notNull(),
+  leaseUntil: timestamp('lease_until', { withTimezone: true, mode: 'date' }).notNull(),
+  nextAllowedAt: timestamp('next_allowed_at', { withTimezone: true, mode: 'date' }).notNull(),
+  day: text('day').notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  pendingKey: text('pending_key'),
+  lastSuccessAt: timestamp('last_success_at', { withTimezone: true, mode: 'date' }),
+});
+export const weiboItems = aiRuntimeSchema.table(
+  'weibo_items',
+  {
+    id: uuid('id').primaryKey(),
+    characterId: uuid('character_id').notNull(),
+    sourceKey: text('source_key').notNull(),
+    contentKey: text('content_key').notNull(),
+    publicUpdateId: uuid('public_update_id').notNull(),
+    sourceUrl: text('source_url').notNull(),
+    content: text('content').notNull(),
+    publishedOn: text('published_on').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [
+    unique('weibo_items_character_source_key').on(t.characterId, t.sourceKey),
+    unique('weibo_items_character_content_key').on(t.characterId, t.contentKey),
+  ],
+);
+export const weiboDeliveries = aiRuntimeSchema.table(
+  'weibo_deliveries',
+  {
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => weiboItems.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    postId: uuid('post_id').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.itemId, t.userId] })],
+);

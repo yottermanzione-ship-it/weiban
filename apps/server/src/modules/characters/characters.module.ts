@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { WeiboPublication } from './application/weibo.js';
+import { WEIBO_PUBLICATION_PORT } from './tokens.js';
 import { ChatModule } from '../chat/index.js';
 import { MediaModule } from '../media/index.js';
 import { MODEL_GATEWAY_PORT, WEB_SEARCH_PROVIDER } from '../model-access/index.js';
@@ -58,6 +60,8 @@ import {
     WorkLinkAdminController,
   ],
   providers: [
+    WeiboPublication,
+    { provide: WEIBO_PUBLICATION_PORT, useExisting: WeiboPublication },
     CharacterSupplementService,
     { provide: CHARACTER_SUPPLEMENT_PORT, useExisting: CharacterSupplementService },
     { provide: CHARACTER_SUPPLEMENT_CONFLICTS, useExisting: CharacterSupplementService },
@@ -87,6 +91,7 @@ import {
     { provide: EVALUATOR_GATEWAY, useExisting: MODEL_GATEWAY_PORT },
   ],
   exports: [
+    WEIBO_PUBLICATION_PORT,
     CHARACTER_TRIAL_READ_PORT,
     CHARACTER_READ_PORT,
     CHARACTER_NAME_READ_PORT,

@@ -842,6 +842,13 @@
       "when": 1799337500000,
       "tag": "0131_web_search",
       "breakpoints": true
+    },
+    {
+      "version": "7",
+      "tag": "0132_weibo_sync",
+      "breakpoints": true,
+      "idx": 132,
+      "when": 1799337600000
     }
   ]
 }

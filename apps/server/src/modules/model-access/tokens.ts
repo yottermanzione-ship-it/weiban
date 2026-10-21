@@ -65,3 +65,4 @@ export const MEDIA_ADAPTER = Symbol('weiban.model-access.media-adapter');
 
 /** 契约 3.1 ModelQuotePort：按用户所选模型报价（调用方 ai-runtime）。 */
 export const MODEL_QUOTE_PORT = Symbol('weiban.model-access.quote');
+export const SHARED_WEB_SEARCH_PORT = Symbol('weiban.model-access.shared-web-search');

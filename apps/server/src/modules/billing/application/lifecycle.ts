@@ -146,7 +146,9 @@ export class BillingLifecycle implements OnModuleInit, UserDataOwner {
                 WHERE a.user_id = $1)
             + (SELECT count(*) FROM billing.daily_spend d JOIN billing.accounts a ON a.id = d.account_id
                 WHERE a.user_id = $1)
-            + (SELECT count(*) FROM billing.membership_orders o WHERE o.user_id = $1) AS n`,
+            + (SELECT count(*) FROM billing.membership_orders o WHERE o.user_id = $1)
+            + (SELECT count(*) FROM billing.shared_search_members m JOIN billing.accounts a ON a.id=m.account_id WHERE a.user_id=$1)
+            + (SELECT count(*) FROM billing.shared_search_carries c JOIN billing.accounts a ON a.id=c.account_id WHERE a.user_id=$1) AS n`,
       [userId],
     );
     return Number(rows[0]?.n ?? 0);

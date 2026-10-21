@@ -80,6 +80,7 @@ export const SERVICE_FEE_PURPOSE = 'service_fee';
 export function categoryOf(purpose: string | null): SpendCategory | null {
   if (!purpose) return null;
   if (purpose === SERVICE_FEE_PURPOSE) return 'service';
+  if (purpose === SHARED_SEARCH_PURPOSE) return 'background';
   return (PURPOSE_CATEGORY as Record<string, SpendCategory | undefined>)[purpose] ?? null;
 }
 
@@ -342,3 +343,4 @@ export function applyDiscount(sellMicros: number, discountBp: number): number {
   const bp = BigInt(Math.max(1, Math.floor(discountBp)));
   return Number((BigInt(sellMicros) * bp + 9_999n) / 10_000n);
 }
+import { SHARED_SEARCH_PURPOSE } from './shared-search.js';

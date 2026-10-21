@@ -103,6 +103,10 @@ const names: Record<string, string> = {
   type: '类型',
   year: '年份',
   searchKeywords: '搜索关键词',
+  weibo: '微博标记（公开账号）',
+  userId: '微博数字 ID（可选，用于核对作者）',
+  nickname: '微博昵称',
+  avatarUrl: '微博头像地址（HTTPS）',
   creatorNotes: '创建者备注（不会发送给模型）',
   sourceList: '来源清单',
   creationMethod: '创建方式',
@@ -151,7 +155,14 @@ export function SchemaFields({
       typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
     return (
       <div className="nested-group">
-        <div className="nested-title">{label}</div>
+        <div className="nested-title">
+          {label}
+          {schema.isOptional() && value !== undefined && (
+            <Button size="small" type="link" onClick={() => onChange(undefined)}>
+              清空
+            </Button>
+          )}
+        </div>
         <div className="nested-body">
           {Object.entries(s.shape as Record<string, z.ZodType>).map(([key, child]) => (
             <SchemaFields
@@ -203,7 +214,9 @@ export function SchemaFields({
               />
             </div>
           ))}
-          {items.length === 0 && <span className="field-help">还没有内容，点右上角「+ 添加」。</span>}
+          {items.length === 0 && (
+            <span className="field-help">还没有内容，点右上角「+ 添加」。</span>
+          )}
         </div>
       </div>
     );

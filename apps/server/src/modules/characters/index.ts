@@ -20,3 +20,4 @@ export {
   type CharacterChildFeaturesWriter,
 } from './tokens.js';
 export { seedPresetCharacters, type PresetSeedResult } from './application/preset-seed.js';
+export { WEIBO_PUBLICATION_PORT } from './tokens.js';

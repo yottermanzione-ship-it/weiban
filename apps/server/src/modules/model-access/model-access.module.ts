@@ -5,6 +5,8 @@ import { BillingBoundsService } from './application/billing-bounds.js';
  * ModelResolver、UpstreamService.withApiKey / reportStatus、UsageRecorder、ModelStatusService。
  */
 import { Module } from '@nestjs/common';
+import { SharedWebSearch } from './application/shared-search.js';
+import { SHARED_WEB_SEARCH_PORT } from './tokens.js';
 import {
   BILLING_CHARGE_QUERY_PORT,
   BILLING_MODEL_RATE_PORT,
@@ -70,6 +72,7 @@ import {
 @Module({
   imports: [BillingModule, IdentityModule, MediaModule],
   exports: [
+    SHARED_WEB_SEARCH_PORT,
     MODEL_GATEWAY_PORT,
     MODEL_PLATFORM_GATEWAY_PORT,
     MODEL_NOTIFICATION_READ_PORT,
@@ -80,6 +83,8 @@ import {
   ],
   controllers: [ModelController, ModelAdminController, SearchController],
   providers: [
+    SharedWebSearch,
+    { provide: SHARED_WEB_SEARCH_PORT, useExisting: SharedWebSearch },
     BillingBoundsService,
     WebToolsStore,
     UpstreamService,

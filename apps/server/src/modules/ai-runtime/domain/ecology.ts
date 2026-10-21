@@ -28,7 +28,7 @@ export interface EcologyActionDef {
   tool: string;
   mode: EcologyExecMode;
   /** 需要的平台服务；未开通时不可用。 */
-  needs?: 'speech_synthesis' | 'image_generation';
+  needs?: 'speech_synthesis' | 'image_generation' | 'web_search';
   /** reserved 时的说明。 */
   reservedReason?: string;
   /** 碎碎念下方灰字「做了什么」。 */
@@ -36,6 +36,15 @@ export interface EcologyActionDef {
 }
 
 export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
+  {
+    key: 'weibo_sync',
+    group: 'moments',
+    label: '同步微博动态',
+    tool: '查看自己有微博标记的公开账号是否有新微博，并同步到开启生态的用户的私人朋友圈。有新作品或公开信息线索、想起一阵没看微博时才选；没有必要就不选。查询只用已标记的公开账号，不查私人生活。费用由当时开启该角色生态且有积分的用户平摊。',
+    mode: 'decision',
+    needs: 'web_search',
+    summary: '查看并同步了公开微博动态',
+  },
   {
     key: 'message',
     group: 'chat',

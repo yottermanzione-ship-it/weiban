@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.30. Regenerate: pnpm android:generate
+// Contract 3.31. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.30"
+const val CONTRACT_VERSION: String = "3.31"
 
 @Serializable
 data class AccountAlias(
@@ -1581,6 +1581,7 @@ data class CardPersona(
 
 @Serializable
 data class CardProfileExtra(
+    @SerialName("weibo") val `weibo`: CardProfileExtraWeibo? = null,
     @SerialName("occupation") val `occupation`: String,
     @SerialName("gender") val `gender`: String? = null,
     @SerialName("ageDisplay") val `ageDisplay`: String? = null,
@@ -11892,6 +11893,13 @@ data class CardPersonaGrowthByFamiliarity(
 )
 
 @Serializable
+data class CardProfileExtraWeibo(
+    @SerialName("nickname") val `nickname`: String,
+    @SerialName("avatarUrl") val `avatarUrl`: String,
+    @SerialName("userId") val `userId`: String? = null,
+)
+
+@Serializable
 data class CardProfileExtraWorksDetailItem(
     @SerialName("title") val `title`: String,
     @SerialName("type") val `type`: String,
@@ -14191,6 +14199,7 @@ data class DraftCharacterCardDataSafetyStyle(
 
 @Serializable
 data class DraftCharacterCardDataProfileExtra(
+    @SerialName("weibo") val `weibo`: DraftCharacterCardDataProfileExtraWeibo? = null,
     @SerialName("occupation") val `occupation`: String? = null,
     @SerialName("gender") val `gender`: String? = null,
     @SerialName("ageDisplay") val `ageDisplay`: String? = null,
@@ -14299,6 +14308,13 @@ data class DraftCharacterCardDataRecognitionSelfPublicImagesItem(
     @SerialName("publisher") val `publisher`: String,
     @SerialName("visualCues") val `visualCues`: String,
     @SerialName("sourceUrl") val `sourceUrl`: String,
+)
+
+@Serializable
+data class DraftCharacterCardDataProfileExtraWeibo(
+    @SerialName("nickname") val `nickname`: String,
+    @SerialName("avatarUrl") val `avatarUrl`: String,
+    @SerialName("userId") val `userId`: String? = null,
 )
 
 @Serializable

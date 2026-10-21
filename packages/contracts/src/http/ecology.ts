@@ -25,6 +25,7 @@ export const ECOLOGY_ACTION_KEYS = [
   'moment_interact',
   'moment_reply',
   'moment_peer',
+  'weibo_sync',
   // 4.3 TA 自己的生活（碎碎念每次都写，不设开关）
   'status',
   'signature',

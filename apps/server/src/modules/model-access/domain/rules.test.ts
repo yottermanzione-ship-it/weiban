@@ -5,6 +5,84 @@ import { WebToolsStore } from '../application/web-tools-store.js';
 import { characterCandidates, privateSearchText, publicWebUrl } from './web-search.js';
 import { TestClock } from '../../../platform/index.js';
 import { GatewayLimitsService } from '../application/limits.js';
+import { SharedWebSearch } from '../application/shared-search.js';
+
+describe('H4 shared search recovery', () => {
+  it('a saved receipt retries settlement without reissuing the supplier request', async () => {
+    const gateway = Object.create(SharedWebSearch.prototype) as SharedWebSearch;
+    const settle = vi.fn(async () => ({ collectedMicros: 300, userCharges: { user: 100 } })),
+      search = vi.fn();
+    Object.assign(gateway, {
+      db: {
+        query: async () => ({
+          rows: [
+            {
+              character_id: 'role',
+              group_id: 'group',
+              usage_record_id: 'usage',
+              is_free: false,
+              items: [],
+            },
+          ],
+        }),
+      },
+      shares: { settle },
+      media: { webSearch: search },
+      catalog: { internalModel: vi.fn() },
+    });
+    const result = await gateway.search({
+      characterId: 'role',
+      requesterUserId: 'user',
+      userIds: ['user'],
+      query: 'public',
+      key: 'same',
+    });
+    expect(result).toEqual({ ok: true, items: [], chargedMicros: 300, requesterChargeMicros: 100 });
+    expect(search).not.toHaveBeenCalled();
+    expect(settle).toHaveBeenCalledWith('group', 'usage');
+  });
+  it('free cached receipts release admission and never collect an older supplier usage', async () => {
+    const gateway = Object.create(SharedWebSearch.prototype) as SharedWebSearch;
+    const settle = vi.fn(),
+      cancel = vi.fn();
+    Object.assign(gateway, {
+      db: {
+        query: async () => ({
+          rows: [
+            {
+              character_id: 'role',
+              group_id: 'group',
+              usage_record_id: 'older',
+              is_free: true,
+              items: [],
+            },
+          ],
+        }),
+      },
+      shares: { settle, cancel },
+    });
+    expect(
+      await gateway.search({
+        characterId: 'role',
+        requesterUserId: 'user',
+        userIds: ['user'],
+        query: 'public',
+        key: 'same',
+      }),
+    ).toMatchObject({ ok: true, chargedMicros: 0 });
+    expect(settle).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledWith('group');
+    expect(
+      await gateway.search({
+        characterId: 'other-role',
+        requesterUserId: 'user',
+        userIds: ['user'],
+        query: 'public',
+        key: 'same',
+      }),
+    ).toEqual({ ok: false });
+  });
+});
 import { decisionQuestions, decisionUrl, parseDecisionReply } from '../infra/jev-adapter.js';
 
 import {

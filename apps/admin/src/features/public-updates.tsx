@@ -2,18 +2,7 @@
  * 公开动态：真人角色的作品/活动/获奖信息。自动搜索到的候选先进入「待审核」，通过后角色才会知道。
  */
 import { useEffect, useState } from 'react';
-import {
-  Alert,
-  Button,
-  DatePicker,
-  Form,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Switch,
-  Tabs,
-} from 'antd';
+import { Alert, Button, DatePicker, Form, Input, Modal, Select, Space, Switch, Tabs } from 'antd';
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
@@ -29,14 +18,7 @@ import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
-import {
-  FieldHelp,
-  FormSection,
-  Page,
-  SectionCard,
-  StatusTag,
-  useToast,
-} from '../ui/page.js';
+import { FieldHelp, FormSection, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDate } from '../ui/format.js';
 
 const STATUS_LABELS: Record<PublicUpdateStatus, string> = {
@@ -112,9 +94,10 @@ export function PublicUpdatesPage() {
           },
   });
   const [editing, setEditing] = useState<{ item: PublicUpdate | null; draft: Draft } | null>(null);
-  const [noting, setNoting] = useState<{ item: PublicUpdate; action: 'reject' | 'withdraw' } | null>(
-    null,
-  );
+  const [noting, setNoting] = useState<{
+    item: PublicUpdate;
+    action: 'reject' | 'withdraw';
+  } | null>(null);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -214,7 +197,12 @@ export function PublicUpdatesPage() {
     {
       title: '来源',
       width: 100,
-      render: (_, row) => (row.source === 'auto_search' ? '自动搜索' : '手动录入'),
+      render: (_, row) =>
+        row.source === 'auto_search'
+          ? '自动搜索'
+          : row.source === 'weibo_sync'
+            ? '微博同步（来源待人工核实）'
+            : '手动录入',
     },
     {
       title: '操作',
@@ -342,6 +330,7 @@ export function PublicUpdatesPage() {
                 onChange={(value) => setSource((value as PublicUpdateSource) ?? '')}
                 options={[
                   { value: 'auto_search', label: '自动搜索' },
+                  { value: 'weibo_sync', label: '微博同步' },
                   { value: 'manual', label: '手动录入' },
                 ]}
               />
@@ -384,9 +373,7 @@ export function PublicUpdatesPage() {
               )
             }
           />
-          <span className="detail-muted">
-            关闭后只能手动录入；已搜到的候选不受影响。
-          </span>
+          <span className="detail-muted">关闭后只能手动录入；已搜到的候选不受影响。</span>
         </Space>
       </SectionCard>
 
@@ -550,7 +537,11 @@ function UpdateDrawer({
       <Form layout="vertical">
         <FormSection title="基本信息" />
         <div className="form-two">
-          <Form.Item label="角色" required extra={<FieldHelp>只有真人角色才有公开动态。</FieldHelp>}>
+          <Form.Item
+            label="角色"
+            required
+            extra={<FieldHelp>只有真人角色才有公开动态。</FieldHelp>}
+          >
             <Select
               showSearch
               optionFilterProp="label"

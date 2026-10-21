@@ -792,9 +792,11 @@ export class ReservationService implements BillingReservationPort {
   async inFlightPaidCalls(tx: DbTx, accountId: string): Promise<number> {
     const now = this.clock.nowMs();
     const { rows } = await tx.query<{ n: string }>(
-      `SELECT count(*)::text AS n FROM billing.holds
+      `SELECT ((SELECT count(*) FROM billing.holds
         WHERE account_id = $1 AND status = 'active' AND postpaid
-          AND expires_at > $2 AND created_at > $3`,
+          AND expires_at > $2 AND created_at > $3)
+        + (SELECT count(*) FROM billing.shared_search_members m JOIN billing.shared_search_calls c ON c.id=m.call_id
+          WHERE m.account_id=$1 AND c.state='pending' AND c.expires_at>$2))::text AS n`,
       [accountId, new Date(now), new Date(now - CONCURRENCY_WINDOW_MS)],
     );
     return Number(rows[0]?.n ?? 0);

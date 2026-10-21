@@ -81,6 +81,7 @@ import { SimulationService } from './simulation.js';
 import { SocialService } from './social.js';
 import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
 import { captionForMemory, captionSnapshot } from '../domain/image-caption.js';
+import { WeiboSyncService } from './weibo.js';
 import { snapshotText } from './content-text.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 
@@ -171,6 +172,7 @@ export class EcologyService {
     @Inject(MomentsAiService) private readonly momentsAi: MomentsAiService,
     @Inject(MediaAiService) private readonly mediaAi: MediaAiService,
     @Inject(GroupChatService) private readonly groups: GroupChatService,
+    @Inject(WeiboSyncService) private readonly weibo: WeiboSyncService,
     /** H3：图片描述存档。 */
     @Optional() @Inject(ImageCaptionStore) private readonly captions?: ImageCaptionStore,
   ) {}
@@ -405,6 +407,7 @@ export class EcologyService {
       }),
     );
     charged += done.chargedMicros;
+    if(action==='weibo_sync'&&done.reason==='no_new_public_posts')return this.finish(run.id,{status:'idle',outcome:'no_new_public_posts',actionKey:action,actionSummary:'看了看微博，暂时没有新动态',modelKey:result.value.modelKey,chargedMicros:charged,murmur:{userId,text:'看了看微博，暂时没看到新的公开动态。'},latencyMs:this.clock.nowMs()-started});
     if (!done.ok && /insufficient_balance/.test(done.reason ?? ''))
       await this.settings.pause(userId, 'insufficient_balance');
     const def = ACTION_DEF.get(action)!;
@@ -450,6 +453,8 @@ export class EcologyService {
         : { ok: false, chargedMicros: 0, reason: r.reason };
     };
     switch (action) {
+      case 'weibo_sync':
+        return this.weibo.run(userId, characterId);
       case 'message':
       case 'care_anniversary':
       case 'care_absence':
@@ -830,6 +835,7 @@ export class EcologyService {
     const works = (await this.mediaAi.listShareableWorks(characterId).catch(() => [])).length > 0;
     const signatureRecent =
       ep?.signatureUpdatedAt && nowMs - ep.signatureUpdatedAt.getTime() < 3 * 86400_000;
+    const weiboReady = await this.weibo.offer(userId, characterId).catch(() => false);
     for (const def of ACTION_DEF.values()) {
       if (def.mode !== 'decision') continue;
       if (disabled.has(def.key)) continue;
@@ -839,6 +845,8 @@ export class EcologyService {
       if (privateMode && (def.key === 'voice' || def.key === 'group_talk')) continue;
       const ok = (() => {
         switch (def.key) {
+          case 'weibo_sync':
+            return weiboReady;
           case 'greeting':
             return (local.hour >= 6 && local.hour < 10) || local.hour >= 21 || local.hour < 1;
           case 'care_late_night':

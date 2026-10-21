@@ -56,3 +56,4 @@ export interface CharacterPlazaOriginStatus {
 export const CHARACTER_CHILD_FEATURES_WRITER = Symbol('weiban.characters.child-features-writer');
 /** 兼容旧名：等同契约 CharacterChildFeaturesWritePort。 */
 export type CharacterChildFeaturesWriter = CharacterChildFeaturesWritePort;
+export const WEIBO_PUBLICATION_PORT = Symbol('weiban.characters.weibo-publication');

@@ -384,3 +384,56 @@ export const membershipOrders = billingSchema.table(
     check('membership_orders_plan_check', sql`${t.planId} in ('month', 'quarter', 'year')`),
   ],
 );
+
+/** H4: one supplier usage, immutable payer snapshot, precision carry. */
+export const sharedSearchCalls = billingSchema.table(
+  'shared_search_calls',
+  {
+    id: uuid('id').primaryKey(),
+    requestKey: text('request_key').notNull().unique(),
+    characterId: uuid('character_id').notNull(),
+    modelKey: text('model_key').notNull(),
+    state: text('state').notNull(),
+    memberCount: integer('member_count').notNull(),
+    ceilingMicros: money('ceiling_micros').notNull(),
+    usageRecordId: uuid('usage_record_id').unique(),
+    collectedMicros: money('collected_micros').notNull().default(0),
+    createdAt: tz('created_at').notNull(),
+    expiresAt: tz('expires_at').notNull(),
+  },
+  (t) => [
+    check('shared_search_state', sql`${t.state} IN ('pending','settled','cancelled')`),
+    check('shared_search_members_positive', sql`${t.memberCount}>0`),
+  ],
+);
+export const sharedSearchMembers = billingSchema.table(
+  'shared_search_members',
+  {
+    callId: uuid('call_id')
+      .notNull()
+      .references(() => sharedSearchCalls.id),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    ordinal: integer('ordinal').notNull(),
+    chargedMicros: money('charged_micros').notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.callId, t.accountId] }),
+    index('shared_search_members_account_idx').on(t.accountId),
+  ],
+);
+export const sharedSearchCarries = billingSchema.table(
+  'shared_search_carries',
+  {
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    characterId: uuid('character_id').notNull(),
+    carryMicros: integer('carry_micros').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.accountId, t.characterId] }),
+    check('shared_search_carry_range', sql`${t.carryMicros} BETWEEN -50 AND 99`),
+  ],
+);

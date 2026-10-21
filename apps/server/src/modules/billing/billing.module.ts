@@ -35,6 +35,8 @@ import { PaidHistoryService } from './application/paid-history.js';
 import { ServiceFeeService } from './application/service-fees.js';
 import { CostResolutionService } from './application/cost-resolution.js';
 import { PostpaidSettingsService } from './application/postpaid-settings.js';
+import { SharedSearchBilling } from './application/shared-search.js';
+import { BILLING_SHARED_SEARCH_PORT } from './tokens.js';
 
 @Module({
   imports: [IdentityModule],
@@ -45,6 +47,8 @@ import { PostpaidSettingsService } from './application/postpaid-settings.js';
     MembershipAdminController,
   ],
   providers: [
+    SharedSearchBilling,
+    { provide: BILLING_SHARED_SEARCH_PORT, useExisting: SharedSearchBilling },
     CostResolutionService,
     PostpaidSettingsService,
     Ledger,
@@ -72,6 +76,7 @@ import { PostpaidSettingsService } from './application/postpaid-settings.js';
     { provide: BILLING_PAID_HISTORY_PORT, useExisting: PaidHistoryService },
   ],
   exports: [
+    BILLING_SHARED_SEARCH_PORT,
     BILLING_MODEL_RATE_PORT,
     BILLING_RESERVATION_PORT,
     BILLING_READ_PORT,
