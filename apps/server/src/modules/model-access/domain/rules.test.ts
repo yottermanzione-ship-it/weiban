@@ -5,6 +5,7 @@ import { WebToolsStore } from '../application/web-tools-store.js';
 import { characterCandidates, privateSearchText, publicWebUrl } from './web-search.js';
 import { TestClock } from '../../../platform/index.js';
 import { GatewayLimitsService } from '../application/limits.js';
+import { decisionQuestions, decisionUrl, parseDecisionReply } from '../infra/jev-adapter.js';
 
 import {
   checkBaseUrl,
@@ -22,6 +23,160 @@ import {
 } from './rules.js';
 
 afterEach(() => vi.restoreAllMocks());
+
+describe('J verified decision protocol', () => {
+  const questions = [
+    { questionId: 'q', kind: 'choice' as const, prompt: 'Choose', options: ['act', 'defer'] },
+  ];
+  const reply = {
+    model: 'jev-1.13.0',
+    answers: {
+      q: {
+        type: 'choice',
+        choice: 'defer',
+        confidence: 0.9,
+        probabilities: { act: 0.01, defer: 0.99 },
+      },
+    },
+    usage: { input_tokens: 44, output_tokens: 9 },
+  };
+  const target = {
+    kind: 'openai_compatible',
+    baseUrl: 'https://relay.example/v1',
+    apiKey: 'synthetic-key',
+    model: 'jev-latest',
+  };
+  it('routes relay and native APIs without duplicated v1; no guessed judge endpoint', () => {
+    expect(decisionUrl(target)).toBe('https://relay.example/v1/decisions');
+    expect(decisionUrl({ kind: 'jev', baseUrl: 'https://native.example/v1/' })).toBe(
+      'https://native.example/v1/systemone',
+    );
+    expect(decisionUrl({ kind: 'jev', baseUrl: 'https://native.example' })).toBe(
+      'https://native.example/v1/systemone',
+    );
+    expect(decisionUrl({ kind: 'anthropic', baseUrl: 'https://native.example' })).toBeNull();
+    expect(decisionQuestions(questions)).toEqual({
+      q: { type: 'choice', instructions: 'Choose', criteria: { act: null, defer: null } },
+    });
+  });
+  it('rejects duplicate IDs/options and empty choices before sending', async () => {
+    const fetcher = vi.spyOn(globalThis, 'fetch');
+    expect(decisionQuestions([...questions, ...questions])).toBeNull();
+    for (const options of [[], ['act', 'act'], ['']]) {
+      const result = await new OpenAiCompatibleMediaAdapter().decide(target, {
+        state: {},
+        questions: [{ ...questions[0]!, options }],
+      });
+      expect(result).toMatchObject({ ok: false, zeroCost: true });
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('matches answers by ID and requires a complete valid probability distribution and usage', () => {
+    expect(parseDecisionReply(reply, questions)).toMatchObject({
+      inputTokens: 44,
+      outputTokens: 9,
+      answers: [{ choice: 'defer', confidence: 0.9 }],
+    });
+    for (const raw of [
+      { ...reply, usage: {} },
+      { ...reply, usage: { input_tokens: -1 } },
+      { ...reply, answers: {} },
+      { ...reply, answers: { q: { ...reply.answers.q, choice: 'outside' } } },
+      { ...reply, answers: { q: { ...reply.answers.q, probabilities: { act: 0.2, defer: 0.2 } } } },
+      {
+        ...reply,
+        answers: { q: { ...reply.answers.q, probabilities: { act: 0, defer: 0.9, extra: 0.1 } } },
+      },
+    ])
+      expect(parseDecisionReply(raw, questions)).toBeNull();
+  });
+  it('maps Noul probability to yes/no plus margin; Scale preserves modal index in legacy port', () => {
+    const result = parseDecisionReply(
+      {
+        model: 'jev',
+        usage: { input_tokens: 1 },
+        answers: {
+          yes: { type: 'noul', noul: 0.25 },
+          score: {
+            type: 'score',
+            score: 1.1,
+            confidence: 0.4,
+            probabilities: { '0': 0.2, '1': 0.5, '2': 0.3 },
+          },
+        },
+      },
+      [
+        { questionId: 'yes', kind: 'yes_no', prompt: 'Is it true?', options: ['yes', 'no'] },
+        { questionId: 'score', kind: 'scale', prompt: 'Rate', options: ['low', 'medium', 'high'] },
+      ],
+    );
+    expect(result?.answers).toEqual([
+      { questionId: 'yes', choice: 'no', probabilities: { yes: 0.25, no: 0.75 }, confidence: 0.5 },
+      {
+        questionId: 'score',
+        choice: '1',
+        probabilities: { '0': 0.2, '1': 0.5, '2': 0.3 },
+        confidence: 0.4,
+      },
+    ]);
+  });
+  it('uses exact Decisions body, reported usage, and bounded request deadline', async () => {
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json(reply));
+    const result = await new OpenAiCompatibleMediaAdapter().decide(target, {
+      state: { synthetic: true },
+      questions,
+      timeoutMs: 1000,
+    });
+    expect(result).toMatchObject({ ok: true, value: { inputTokens: 44 } });
+    const [url, init] = fetcher.mock.calls[0]!;
+    expect(url).toBe('https://relay.example/v1/decisions');
+    expect(JSON.parse(init!.body as string)).toEqual({
+      model: 'jev-latest',
+      state: { synthetic: true },
+      questions: decisionQuestions(questions),
+    });
+    expect(init!.redirect).toBe('manual');
+  });
+  it('classifies B.AI 400 quota errors and empty 429 without exposing response messages or retrying', async () => {
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        Response.json(
+          { error: { code: 'insufficient_user_quota', message: 'DO_NOT_ECHO' } },
+          { status: 400 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response('', { status: 429 }));
+    const adapter = new OpenAiCompatibleMediaAdapter();
+    expect(await adapter.decide(target, { state: {}, questions })).toEqual({
+      ok: false,
+      zeroCost: true,
+      category: 'quota_exhausted',
+    });
+    expect(await adapter.decide(target, { state: {}, questions })).toEqual({
+      ok: false,
+      zeroCost: true,
+      category: 'rate_limited',
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it('does not invent token counts or zero cost on malformed 200 / network loss', async () => {
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(Response.json({ answers: {} }))
+      .mockRejectedValueOnce(new Error('DO_NOT_ECHO'));
+    const adapter = new OpenAiCompatibleMediaAdapter();
+    expect(await adapter.decide(target, { state: {}, questions })).toEqual({
+      ok: false,
+      category: 'provider_error',
+    });
+    expect(await adapter.decide(target, { state: {}, questions })).toEqual({
+      ok: false,
+      category: 'network_error',
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe('S DeepSeek Search / Fetch 协议', () => {
   it('旧管理端保存调度设置时保留已调整过的搜索额度', async () => {

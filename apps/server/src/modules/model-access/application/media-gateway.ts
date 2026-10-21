@@ -389,6 +389,10 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       input.questions.length > 20
     )
       return { ok: false, error: 'bad_request' };
+    const timeoutMs = input.deadlineAt
+      ? Math.min(10000, Date.parse(input.deadlineAt) - this.clock.nowMs())
+      : 10000;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return { ok: false, error: 'bad_request' };
     return this.cached('decide', input, async () => {
       const facts = await this.catalog.fact(input.modelKey);
       const reason = unavailableReason(facts.entry, facts.upstreamStatus);
@@ -415,15 +419,27 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         questionId: q.questionId,
         kind: q.kind,
         prompt: q.prompt,
-        options: q.kind === 'yes_no' ? ['yes', 'no'] : (q.options ?? []).slice(0, 255),
+        options:
+          q.kind === 'yes_no'
+            ? ['yes', 'no']
+            : q.kind === 'scale' &&
+                Number.isInteger(q.scaleSize) &&
+                q.scaleSize! >= 2 &&
+                q.scaleSize! <= 10
+              ? Array.from({ length: q.scaleSize! }, (_, i) => String(i))
+              : (q.options ?? []).slice(0, 255),
       }));
       return this.run(
         input,
         model,
         { inputTokens: estimateTokens, outputTokens: 0 },
         async (target, adapter) => {
-          const result = await adapter.decide(target, { state: input.state, questions });
-          if (!result.ok) return result;
+          const result = await adapter.decide(target, { state: input.state, questions, timeoutMs });
+          if (!result.ok)
+            return {
+              ...result,
+              ...(result.zeroCost ? { actual: { inputTokens: 0, outputTokens: 0 } } : {}),
+            };
           return {
             ok: true,
             value: { answers: result.value.answers },

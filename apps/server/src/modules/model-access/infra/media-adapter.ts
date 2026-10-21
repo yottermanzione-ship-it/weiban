@@ -11,6 +11,7 @@
  */
 
 import type { WebSearchResultItem } from '@weiban/contracts';
+import { jevDecide } from './jev-adapter.js';
 import { deepseekSearch, deepseekFetch, type SearchRequestGate } from './deepseek-tools.js';
 
 export type MediaFailure =
@@ -53,7 +54,11 @@ export interface MediaAdapter {
   /** 行为规划决策（Jev，CR-18）。真实接口字段「待配置后验证」。 */
   decide(
     t: MediaTarget,
-    input: { state: Record<string, unknown>; questions: DecideAdapterQuestion[] },
+    input: {
+      state: Record<string, unknown>;
+      questions: DecideAdapterQuestion[];
+      timeoutMs?: number;
+    },
   ): Promise<
     MediaAdapterResult<{
       answers: DecideAdapterAnswer[];
@@ -184,81 +189,17 @@ export class OpenAiCompatibleMediaAdapter implements MediaAdapter {
   fetchPage(t: MediaTarget, input: { url: string }) {
     return deepseekFetch(t, input.url, this.searchGate);
   }
-  /**
-   * Jev 决策（UpstreamKind = jev）。接口地址与字段按公开资料推测（state + 类型化问题），**待配置后验证**；
-   * 拿到账号后按官方文档改这里即可，网关的冻结 / 结算 / 用量记录不变。
-   */
-  async decide(
+  /** Verified System One / Decisions request; shared relay accounts keep their existing protocol. */
+  decide(
     t: MediaTarget,
-    input: { state: Record<string, unknown>; questions: DecideAdapterQuestion[] },
-  ): Promise<
-    MediaAdapterResult<{
-      answers: DecideAdapterAnswer[];
-      inputTokens: number;
-      inputTokensEstimated?: boolean;
-    }>
-  > {
-    if (t.kind !== 'jev') return { ok: false, category: 'bad_request' };
-    try {
-      const response = await fetch(url(t.baseUrl, '/v1/judge'), {
-        method: 'POST',
-        redirect: 'manual',
-        signal: AbortSignal.timeout(10_000),
-        headers: { Authorization: `Bearer ${t.apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: t.model,
-          state: input.state,
-          questions: input.questions.map((q) => ({
-            id: q.questionId,
-            type: q.kind,
-            question: q.prompt,
-            ...(q.kind === 'choice' ? { options: q.options } : {}),
-          })),
-        }),
-      });
-      if (!response.ok) return { ok: false, category: await errorOf(response) };
-      const bytes = await readLimited(response);
-      if (!bytes) return { ok: false, category: 'provider_error' };
-      const payload = JSON.parse(Buffer.from(bytes).toString('utf8')) as {
-        answers?: Array<Record<string, unknown>>;
-        usage?: { input_tokens?: unknown };
-      };
-      const answers: DecideAdapterAnswer[] = [];
-      for (const q of input.questions) {
-        const a = (payload.answers ?? []).find((x) => x.id === q.questionId);
-        if (!a) return { ok: false, category: 'provider_error' };
-        const probs: Record<string, number> = {};
-        const raw = (a.probabilities ?? {}) as Record<string, unknown>;
-        for (const [k, v] of Object.entries(raw)) if (typeof v === 'number') probs[k] = v;
-        const choice = typeof a.choice === 'string' ? a.choice : String(a.answer ?? '');
-        answers.push({
-          questionId: q.questionId,
-          choice,
-          probabilities: probs,
-          confidence: typeof a.confidence === 'number' ? a.confidence : 0,
-        });
-      }
-      const inputTokens =
-        Number.isSafeInteger(payload.usage?.input_tokens) &&
-        Number(payload.usage?.input_tokens) >= 0
-          ? Number(payload.usage?.input_tokens)
-          : Math.ceil(JSON.stringify(input.state).length / 2);
-      return {
-        ok: true,
-        value: {
-          answers,
-          inputTokens,
-          inputTokensEstimated: !(
-            Number.isSafeInteger(payload.usage?.input_tokens) &&
-            Number(payload.usage?.input_tokens) >= 0
-          ),
-        },
-      };
-    } catch {
-      return { ok: false, category: 'network_error' };
-    }
+    input: {
+      state: Record<string, unknown>;
+      questions: DecideAdapterQuestion[];
+      timeoutMs?: number;
+    },
+  ) {
+    return jevDecide(t, input);
   }
-
   async synthesize(
     t: MediaTarget,
     input: { text: string; voice: string; format: 'ogg_opus' | 'pcm16_24k' | 'wav' },
@@ -454,7 +395,11 @@ export class FakeMediaAdapter implements MediaAdapter {
   /** 假 Jev：确定性地给第一个选项 0.7，其余平分。 */
   async decide(
     _t: MediaTarget,
-    input: { state: Record<string, unknown>; questions: DecideAdapterQuestion[] },
+    input: {
+      state: Record<string, unknown>;
+      questions: DecideAdapterQuestion[];
+      timeoutMs?: number;
+    },
   ): Promise<
     MediaAdapterResult<{
       answers: DecideAdapterAnswer[];

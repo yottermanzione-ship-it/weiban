@@ -26,3 +26,5 @@ export { UpstreamService } from './application/upstreams.js';
 /** v3.6：请求结构对比工具（ai-runtime/tools/prompt-compare.ts）用的估算与前缀缓存模拟（纯函数）。 */
 export { estimateTokens } from './infra/text-adapter.js';
 export { simulatePrefixCache } from './domain/prefix-cache.js';
+/** Bounded synthetic operations probe; never changes runtime configuration. */
+export { evaluateConfiguredDecisions } from './application/decision-evaluation.js';

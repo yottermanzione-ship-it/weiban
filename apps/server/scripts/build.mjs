@@ -27,6 +27,7 @@ await build({
     'seed-models': 'src/cli/seed-models.ts',
     'seed-presets': 'src/cli/seed-presets.ts',
     'setup-local-model': 'src/cli/setup-local-model.ts',
+    'evaluate-decisions': 'src/cli/evaluate-decisions.ts',
   },
   outdir: 'dist',
   bundle: true,
