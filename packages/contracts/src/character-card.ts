@@ -189,6 +189,7 @@ export const CardProfileExtra = z.strictObject({
     .strictObject({
       nickname: z.string().trim().min(1).max(80),
       avatarUrl: z
+        .string()
         .url()
         .max(2000)
         .refine((value) => /^https:\/\//iu.test(value), '微博头像地址须为 HTTPS'),

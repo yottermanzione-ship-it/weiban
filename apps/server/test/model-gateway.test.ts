@@ -14,6 +14,9 @@ import {
   ReservationService,
 } from '../src/modules/billing/testing.js';
 import { MODEL_GATEWAY_PORT } from '../src/modules/model-access/index.js';
+import { SHARED_WEB_SEARCH_PORT } from '../src/modules/model-access/index.js';
+import { BILLING_SHARED_SEARCH_PORT } from '../src/modules/billing/index.js';
+import { WEIBO_PUBLICATION_PORT } from '../src/modules/characters/index.js';
 import {
   UpstreamService,
   CatalogService,
@@ -43,6 +46,9 @@ it('S 搜索服务完整依赖图可装配（不启动数据库与任务）', as
   try {
     expect(module.get(ModelGatewayMedia)).toBeInstanceOf(ModelGatewayMedia);
     expect(module.get(WebToolsStore)).toBeInstanceOf(WebToolsStore);
+    expect(typeof module.get(SHARED_WEB_SEARCH_PORT).search).toBe('function');
+    expect(typeof module.get(BILLING_SHARED_SEARCH_PORT).settle).toBe('function');
+    expect(typeof module.get(WEIBO_PUBLICATION_PORT).publish).toBe('function');
   } finally {
     await module.close();
   }

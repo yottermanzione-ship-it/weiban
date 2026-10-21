@@ -6,6 +6,7 @@ import type {
   SharedWebSearchPort,
   WeiboPublicationPort,
   BillingReadPort,
+  IdentityAccountStatusPort,
 } from '@weiban/contracts';
 import {
   DATABASE,
@@ -22,6 +23,7 @@ import { WEIBO_PUBLICATION_PORT } from '../../characters/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { MOMENTS_CHARACTER_PORT } from '../../moments/index.js';
 import { BILLING_READ_PORT } from '../../billing/index.js';
+import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 import { EcologySettingsService } from './ecology-settings.js';
 import { localDate } from '../../../platform/time/local-time.js';
@@ -51,16 +53,23 @@ export class WeiboSyncService implements OnModuleInit {
     @Inject(WEIBO_PUBLICATION_PORT) private readonly publication: WeiboPublicationPort,
     @Inject(MOMENTS_CHARACTER_PORT) private readonly moments: MomentsCharacterPort,
     @Inject(BILLING_READ_PORT) private readonly billing: BillingReadPort,
-    @Inject(JOB_QUEUE) private readonly jobs:JobQueue,
+    @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
+    @Inject(IDENTITY_ACCOUNT_STATUS_PORT) private readonly identity: IdentityAccountStatusPort,
   ) {}
-  async onModuleInit(){
-    await this.jobs.work('ai.weibo_recover',()=>this.recover());
+  async onModuleInit() {
+    await this.jobs.work('ai.weibo_recover', () => this.recover());
     // Recovery only closes already-requested work; it never creates a new synchronization decision.
-    await this.jobs.schedule('ai.weibo_recover','*/2 * * * *');
+    await this.jobs.schedule('ai.weibo_recover', '*/2 * * * *');
   }
-  async recover(){
-    const rows=await this.db.query<{character_id:string}>('SELECT character_id FROM ai_runtime.weibo_sync_states WHERE pending_key IS NOT NULL AND lease_until<=$1 ORDER BY lease_until LIMIT 20',[this.clock.now()]);
-    for(const row of rows.rows){const [owner]=await this.participants(row.character_id);if(owner)await this.run(owner.userId,row.character_id);}
+  async recover() {
+    const rows = await this.db.query<{ character_id: string }>(
+      'SELECT character_id FROM ai_runtime.weibo_sync_states WHERE pending_key IS NOT NULL AND lease_until<=$1 ORDER BY lease_until LIMIT 20',
+      [this.clock.now()],
+    );
+    for (const row of rows.rows) {
+      const [owner] = await this.participants(row.character_id);
+      if (owner) await this.run(owner.userId, row.character_id);
+    }
   }
   private async role(userId: string, characterId: string) {
     const role = await this.characters.getForRuntime(userId, characterId);
@@ -168,7 +177,7 @@ export class WeiboSyncService implements OnModuleInit {
     for (const r of recipients)
       if (await this.settings.isActive(r.userId, characterId, 'weibo_sync'))
         deliveryRecipients.push(r);
-    let delivered=0;
+    let delivered = 0;
     try {
       await this.db.transaction(async (tx) => {
         const state = (
@@ -221,7 +230,7 @@ export class WeiboSyncService implements OnModuleInit {
               ],
             );
           for (const r of deliveryRecipients)
-            if(await this.deliver(tx, r, characterId, itemId, updateId, material))delivered++;
+            if (await this.deliver(tx, r, characterId, itemId, updateId, material)) delivered++;
         }
         await tx.query(
           'UPDATE ai_runtime.weibo_sync_states SET pending_key=NULL,lease_until=$2,last_success_at=$2 WHERE character_id=$1',
@@ -232,7 +241,11 @@ export class WeiboSyncService implements OnModuleInit {
       return { ok: false, chargedMicros: result.requesterChargeMicros, reason: 'delivery_pending' };
     }
     // Only this user's already-settled share belongs in their ecology run total.
-    return { ok: delivered>0, chargedMicros: result.requesterChargeMicros,reason:delivered?'sent':'no_new_public_posts' };
+    return {
+      ok: delivered > 0,
+      chargedMicros: result.requesterChargeMicros,
+      reason: delivered ? 'sent' : 'no_new_public_posts',
+    };
   }
   private async deliver(
     tx: DbTx,
@@ -245,6 +258,10 @@ export class WeiboSyncService implements OnModuleInit {
     await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('ecology-settings:' || $1,0))", [
       r.userId,
     ]);
+    // Identity/contact locks precede per-user runtime rows, matching account deletion.
+    const epoch = await this.contacts.getActiveContactEpoch(r.userId, characterId, tx);
+    if (epoch?.version !== r.epoch) return;
+    if (await this.identity.isBanned?.(r.userId, tx)) return;
     const settings = (
       await tx.query<{
         enabled: boolean;
@@ -268,8 +285,6 @@ export class WeiboSyncService implements OnModuleInit {
       character?.enabled === false
     )
       return;
-    const epoch = await this.contacts.getActiveContactEpoch(r.userId, characterId, tx);
-    if (epoch?.version !== r.epoch) return;
     if (
       (
         await tx.query(

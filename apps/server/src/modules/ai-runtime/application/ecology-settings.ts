@@ -389,7 +389,7 @@ export class EcologySettingsService {
         "SELECT pg_advisory_xact_lock(hashtextextended('ecology-settings:' || $1,0))",
         [userId],
       );
-      if (!(await this.contacts.getActiveContact(userId, characterId, tx)))
+      if (!(await this.contacts.getActiveContactEpoch(userId, characterId, tx)))
         throw new AppError('not_found', '好友不存在');
       await tx.db
         .insert(ecologyCharacterSettings)

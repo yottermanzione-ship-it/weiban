@@ -9,7 +9,9 @@ import {
   jsonb,
   index,
   primaryKey,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 export const charactersSchema = pgSchema('characters');
 /** 3.25：人工标注的资格事实（契约 CharacterEligibilityFacts）。 */
 export interface EligibilityOverride {
@@ -186,6 +188,9 @@ export const publicUpdates = charactersSchema.table(
     index('public_updates_status_idx').on(t.status, t.createdAt),
     index('public_updates_character_idx').on(t.characterId, t.status, t.startDate),
     index('public_updates_source_key_idx').on(t.characterId, t.sourceKey),
+    uniqueIndex('public_updates_weibo_key_idx')
+      .on(t.characterId, t.sourceKey)
+      .where(sql`${t.source}='weibo_sync'`),
   ],
 );
 

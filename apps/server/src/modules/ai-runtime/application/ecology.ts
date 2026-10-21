@@ -407,7 +407,17 @@ export class EcologyService {
       }),
     );
     charged += done.chargedMicros;
-    if(action==='weibo_sync'&&done.reason==='no_new_public_posts')return this.finish(run.id,{status:'idle',outcome:'no_new_public_posts',actionKey:action,actionSummary:'看了看微博，暂时没有新动态',modelKey:result.value.modelKey,chargedMicros:charged,murmur:{userId,text:'看了看微博，暂时没看到新的公开动态。'},latencyMs:this.clock.nowMs()-started});
+    if (action === 'weibo_sync' && done.reason === 'no_new_public_posts')
+      return this.finish(run.id, {
+        status: 'idle',
+        outcome: 'no_new_public_posts',
+        actionKey: action,
+        actionSummary: '看了看微博，暂时没有新动态',
+        modelKey: result.value.modelKey,
+        chargedMicros: charged,
+        murmur: { userId, text: '看了看微博，暂时没看到新的公开动态。' },
+        latencyMs: this.clock.nowMs() - started,
+      });
     if (!done.ok && /insufficient_balance/.test(done.reason ?? ''))
       await this.settings.pause(userId, 'insufficient_balance');
     const def = ACTION_DEF.get(action)!;

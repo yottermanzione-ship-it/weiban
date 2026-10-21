@@ -1,5 +1,73 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { WeiboSyncService } from '../application/weibo.js';
+import type { DbTx } from '../../../platform/index.js';
 import { weiboCandidates, weiboPostUrl } from './weibo.js';
+
+describe('H4 delivery authorization at commit time', () => {
+  async function attempt(options: { epoch?: string; banned?: boolean; disabled?: boolean }) {
+    const query = vi.fn(async (sql: string) => ({
+      rows: sql.includes('FROM ai_runtime.ecology_settings')
+        ? [
+            {
+              enabled: true,
+              paused_reason: null,
+              disabled_actions: options.disabled ? ['weibo_sync'] : [],
+            },
+          ]
+        : [],
+    }));
+    const tx = { query } as unknown as DbTx;
+    const createPost = vi.fn(async () => ({ ok: true, value: { postId: 'post' } }));
+    const isBanned = vi.fn(async () => options.banned ?? false);
+    const service = Object.assign(Object.create(WeiboSyncService.prototype), {
+      contacts: {
+        getActiveContactEpoch: vi.fn(async () => ({ version: options.epoch ?? 'current' })),
+      },
+      identity: { isBanned },
+      moments: { createPost },
+    }) as {
+      deliver(
+        tx: DbTx,
+        recipient: { userId: string; epoch: string },
+        characterId: string,
+        itemId: string,
+        updateId: string,
+        item: { content: string; sourceUrl: string },
+      ): Promise<unknown>;
+    };
+    await service.deliver(tx, { userId: 'user', epoch: 'current' }, 'role', 'item', 'update', {
+      content: '公开作品发布',
+      sourceUrl: 'https://weibo.com/123456789/AbC9',
+    });
+    return { query, createPost, isBanned, tx };
+  }
+  it('rejects changed contact epochs, bans and action switches before creating a private post', async () => {
+    for (const options of [{ epoch: 'readded' }, { banned: true }, { disabled: true }]) {
+      const result = await attempt(options);
+      expect(result.createPost).not.toHaveBeenCalled();
+      expect(
+        result.query.mock.calls.some(([sql]) =>
+          sql.includes('INSERT INTO ai_runtime.weibo_deliveries'),
+        ),
+      ).toBe(false);
+    }
+  });
+  it('checks bans in the same transaction and records delivery only after the private post succeeds', async () => {
+    const result = await attempt({});
+    expect(result.isBanned).toHaveBeenCalledWith('user', result.tx);
+    expect(result.createPost).toHaveBeenCalledWith(
+      result.tx,
+      expect.objectContaining({
+        ownerUserId: 'user',
+        sourceRef: { kind: 'public_update', id: 'update' },
+        idempotencyKey: 'weibo:item',
+      }),
+    );
+    expect(result.query.mock.calls.at(-1)?.[0]).toContain(
+      'INSERT INTO ai_runtime.weibo_deliveries',
+    );
+  });
+});
 
 describe('H4 public Weibo source filtering', () => {
   const hit = {

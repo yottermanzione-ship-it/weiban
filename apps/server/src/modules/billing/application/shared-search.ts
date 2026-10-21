@@ -67,11 +67,16 @@ export class SharedSearchBilling implements SharedSearchBillingPort {
         ])
       ).rows[0];
       if (old) {
-        if (old.character_id !== input.characterId)
-          throw new Error('shared key reused');
-        if(old.state==='pending'&&(old.expires_at<=this.clock.now()||old.model_key!==input.modelKey)){
-          await tx.query("UPDATE billing.shared_search_calls SET state='cancelled' WHERE id=$1 AND state='pending'",[old.id]);
-          return {groupId:old.id,userIds:[],state:'cancelled' as const};
+        if (old.character_id !== input.characterId) throw new Error('shared key reused');
+        if (
+          old.state === 'pending' &&
+          (old.expires_at <= this.clock.now() || old.model_key !== input.modelKey)
+        ) {
+          await tx.query(
+            "UPDATE billing.shared_search_calls SET state='cancelled' WHERE id=$1 AND state='pending'",
+            [old.id],
+          );
+          return { groupId: old.id, userIds: [], state: 'cancelled' as const };
         }
         const members = await tx.query<{ user_id: string }>(
           'SELECT a.user_id FROM billing.shared_search_members m JOIN billing.accounts a ON a.id=m.account_id WHERE m.call_id=$1 AND a.user_id IS NOT NULL ORDER BY m.ordinal',
@@ -235,6 +240,8 @@ export class SharedSearchBilling implements SharedSearchBillingPort {
           [account.id, call.character_id, rounded.carry],
         );
         if (rounded.charge > 0) {
+          if (!Number.isSafeInteger(collected + rounded.charge))
+            throw new Error('shared search collection exceeds safe integer range');
           await this.ledger.postEntry(tx, account, {
             type: 'charge',
             amountMicros: -rounded.charge,
