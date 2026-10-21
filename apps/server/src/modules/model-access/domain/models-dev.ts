@@ -58,9 +58,14 @@ export function compactModelsDev(raw: unknown): ModelsDevIndex {
       if (!m || typeof m !== 'object') continue;
       const model = m as Record<string, unknown>;
       const id = (typeof model.id === 'string' && model.id ? model.id : modelKey).slice(0, 200);
-      const cost = model.cost && typeof model.cost === 'object' ? (model.cost as Record<string, unknown>) : null;
+      const cost =
+        model.cost && typeof model.cost === 'object'
+          ? (model.cost as Record<string, unknown>)
+          : null;
       const limit =
-        model.limit && typeof model.limit === 'object' ? (model.limit as Record<string, unknown>) : null;
+        model.limit && typeof model.limit === 'object'
+          ? (model.limit as Record<string, unknown>)
+          : null;
       const modalities =
         model.modalities && typeof model.modalities === 'object'
           ? (model.modalities as Record<string, unknown>)

@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.25. Regenerate: pnpm android:generate
+// Contract 3.26. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.25"
+const val CONTRACT_VERSION: String = "3.26"
 
 @Serializable
 data class AccountAlias(
@@ -421,6 +421,7 @@ data class AdminModel(
     @SerialName("discountActive") val `discountActive`: Boolean? = null,
     @SerialName("arenaRank") val `arenaRank`: Long? = null,
     @SerialName("availability") val `availability`: AdminModelAvailability? = null,
+    @SerialName("usageMissing") val `usageMissing`: List<AdminModelUsageMissingItem>? = null,
 )
 
 @Serializable
@@ -6965,6 +6966,67 @@ typealias ModelUnavailableDetail = String
 typealias ModelUnavailableDetailValue = String
 
 @Serializable
+data class ModelsDevLookupRequest(
+    @SerialName("items") val `items`: List<ModelsDevLookupRequestItemsItem>,
+)
+
+@Serializable
+data class ModelsDevLookupRequestInput(
+    @SerialName("items") val `items`: List<ModelsDevLookupRequestInputItemsItem>,
+)
+
+@Serializable
+data class ModelsDevLookupResponse(
+    @SerialName("fetchedAt") val `fetchedAt`: Timestamp?,
+    @SerialName("usdCnyRate") val `usdCnyRate`: Double,
+    @SerialName("items") val `items`: List<ModelsDevLookupResponseItemsItem>,
+)
+
+@Serializable
+data class ModelsDevMatch(
+    @SerialName("providerId") val `providerId`: String,
+    @SerialName("providerName") val `providerName`: String,
+    @SerialName("modelId") val `modelId`: String,
+    @SerialName("name") val `name`: String,
+    @SerialName("exact") val `exact`: Boolean,
+    @SerialName("alternatives") val `alternatives`: Long,
+    @SerialName("priceUsd") val `priceUsd`: ModelsDevPrice,
+    @SerialName("priceCny") val `priceCny`: ModelsDevPrice,
+    @SerialName("contextTokens") val `contextTokens`: Long?,
+    @SerialName("maxOutputTokens") val `maxOutputTokens`: Long?,
+    @SerialName("supportsImage") val `supportsImage`: Boolean?,
+)
+
+@Serializable
+data class ModelsDevPrice(
+    @SerialName("input") val `input`: Double?,
+    @SerialName("output") val `output`: Double?,
+    @SerialName("cacheRead") val `cacheRead`: Double?,
+    @SerialName("cacheWrite") val `cacheWrite`: Double?,
+)
+
+@Serializable
+data class ModelsDevSettings(
+    @SerialName("usdCnyRate") val `usdCnyRate`: Double,
+)
+
+@Serializable
+data class ModelsDevSettingsInput(
+    @SerialName("usdCnyRate") val `usdCnyRate`: Double,
+)
+
+@Serializable
+data class ModelsDevStatus(
+    @SerialName("sourceUrl") val `sourceUrl`: String,
+    @SerialName("fetchedAt") val `fetchedAt`: Timestamp?,
+    @SerialName("modelCount") val `modelCount`: Long,
+    @SerialName("providerCount") val `providerCount`: Long,
+    @SerialName("lastAttemptAt") val `lastAttemptAt`: Timestamp?,
+    @SerialName("lastError") val `lastError`: String?,
+    @SerialName("usdCnyRate") val `usdCnyRate`: Double,
+)
+
+@Serializable
 data class MomentsActor(
     @SerialName("kind") val `kind`: String,
     @SerialName("refId") val `refId`: Id,
@@ -8745,6 +8807,8 @@ data class ReconciliationRun(
     @SerialName("netAbsorbedMicros") val `netAbsorbedMicros`: MoneyMicros? = null,
     @SerialName("unknownCostCalls") val `unknownCostCalls`: Long? = null,
     @SerialName("uncertainCostMicros") val `uncertainCostMicros`: Long? = null,
+    @SerialName("estimatedUsageCalls") val `estimatedUsageCalls`: Long? = null,
+    @SerialName("estimatedChargedMicros") val `estimatedChargedMicros`: Long? = null,
     @SerialName("usageReconciledAt") val `usageReconciledAt`: Timestamp? = null,
     @SerialName("usageAmountMismatch") val `usageAmountMismatch`: Long? = null,
     @SerialName("createdAt") val `createdAt`: Timestamp,
@@ -11563,6 +11627,14 @@ data class AdminModelAvailability(
     @SerialName("detail") val `detail`: ModelUnavailableDetail?,
 )
 
+@Serializable
+data class AdminModelUsageMissingItem(
+    @SerialName("upstreamId") val `upstreamId`: Id,
+    @SerialName("upstreamModelId") val `upstreamModelId`: String,
+    @SerialName("streak") val `streak`: Long,
+    @SerialName("since") val `since`: Timestamp?,
+)
+
 typealias AdminPlazaReportTarget = JsonElement
 
 @Serializable
@@ -13167,6 +13239,24 @@ data class ModelScenarioSettingsInputInternal(
 )
 
 @Serializable
+data class ModelsDevLookupRequestItemsItem(
+    @SerialName("name") val `name`: String,
+    @SerialName("vendor") val `vendor`: String? = null,
+)
+
+@Serializable
+data class ModelsDevLookupRequestInputItemsItem(
+    @SerialName("name") val `name`: String,
+    @SerialName("vendor") val `vendor`: String? = null,
+)
+
+@Serializable
+data class ModelsDevLookupResponseItemsItem(
+    @SerialName("name") val `name`: String,
+    @SerialName("match") val `match`: ModelsDevMatch?,
+)
+
+@Serializable
 data class MomentsNotificationPost(
     @SerialName("author") val `author`: MomentsActor,
     @SerialName("text") val `text`: String,
@@ -13392,6 +13482,7 @@ data class ReconciliationRunUpstreamDiffsItem(
     @SerialName("netComputedCostMicros") val `netComputedCostMicros`: MoneyMicros? = null,
     @SerialName("unknownCostCalls") val `unknownCostCalls`: Long? = null,
     @SerialName("uncertainCostMicros") val `uncertainCostMicros`: Long? = null,
+    @SerialName("estimatedUsageCalls") val `estimatedUsageCalls`: Long? = null,
     @SerialName("diffRatio") val `diffRatio`: Double,
     @SerialName("flagged") val `flagged`: Boolean,
 )

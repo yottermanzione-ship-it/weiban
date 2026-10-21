@@ -131,7 +131,12 @@ export class ModelsDevService implements OnModuleInit {
     await this.database.transaction(async (tx) => {
       await tx.db
         .insert(modelAccessSettings)
-        .values({ key: MODELS_DEV_SETTINGS_KEY, value: { usdCnyRate }, updatedAt: now, updatedBy: adminId })
+        .values({
+          key: MODELS_DEV_SETTINGS_KEY,
+          value: { usdCnyRate },
+          updatedAt: now,
+          updatedBy: adminId,
+        })
         .onConflictDoUpdate({
           target: modelAccessSettings.key,
           set: { value: { usdCnyRate }, updatedAt: now, updatedBy: adminId },

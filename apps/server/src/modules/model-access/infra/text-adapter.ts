@@ -300,7 +300,9 @@ export class OpenAiTextAdapter implements TextAdapter {
           ok: false,
           category: 'content_rejected',
           retryable: false,
-          ...(payload.usage ? { usage: usageOf(payload.usage, estimateInputTokens(input.messages), '') } : {}),
+          ...(payload.usage
+            ? { usage: usageOf(payload.usage, estimateInputTokens(input.messages), '') }
+            : {}),
         };
       if (response.status === 401 || response.status === 403)
         return { ok: false, category: 'invalid_key', retryable: false };
@@ -317,7 +319,9 @@ export class OpenAiTextAdapter implements TextAdapter {
           ok: false,
           category: 'content_rejected',
           retryable: false,
-          ...(payload.usage ? { usage: usageOf(payload.usage, estimateInputTokens(input.messages), '') } : {}),
+          ...(payload.usage
+            ? { usage: usageOf(payload.usage, estimateInputTokens(input.messages), '') }
+            : {}),
         };
       const raw: unknown = choice?.message?.content;
       if (raw !== undefined && raw !== null && typeof raw !== 'string')

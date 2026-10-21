@@ -95,6 +95,14 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.26（2026-10-21，试用反馈第三轮 G3：models.dev 预填、缺用量按估算计费、模型键自动生成）
+
+依据 `docs/tasks/2026-10-21-gm-feedback-3.md` 批 G3。说明见 `docs/handoffs/2026-10-21-g3.md`。
+
+- models.dev：新 `ModelsDevStatus`、`ModelsDevSettings`、`ModelsDevPrice`、`ModelsDevMatch`、`ModelsDevLookupRequest`、`ModelsDevLookupResponse`；`ModelAccessAdminEndpoints` 增 GET `/admin/model/models-dev`、POST `/admin/model/models-dev/refresh`、PUT `/admin/model/models-dev/settings`（美元→人民币汇率，默认 7.2）、POST `/admin/model/models-dev/lookup`（按模型名批量检索，最多 200 个）。
+- 缺用量：端口 `SettleInput.actualEstimated`、`ReleaseInput.upstreamUsageEstimated`、`SettleOutput.usageEstimated`、`ReleaseOutput.usageEstimated`（均可选）——上游没报用量时按本地估算计费并标记，不再当作「成本未知」暂停线路。`ReconciliationRun` 增可选 `estimatedUsageCalls`、`estimatedChargedMicros`（及 `upstreamDiffs[].estimatedUsageCalls`）。`AdminModel` 增可选 `usageMissing`（连续缺用量的线路），新常量 `USAGE_MISSING_ALERT_STREAK = 5`；`AdminAlertKind` 增 `upstream_usage_missing`（info，接收端容错）。
+- `RouteBillingBounds.pauseReason`、`ModelUnavailableDetail.billing_bounds_paused` 保留只为旧数据，服务器不再写入（0124 迁移清掉旧暂停）。
+
 ### 3.25（2026-10-21，试用反馈第三轮 G1：私密模式去掉检查模型、人工标注角色资格、好感度六阶段）
 
 依据 `docs/tasks/2026-10-21-gm-feedback-3.md` 批 G1。说明见 `docs/handoffs/2026-10-21-g1.md`。

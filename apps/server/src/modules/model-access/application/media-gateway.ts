@@ -645,7 +645,8 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     const latencyMs = Math.round(performance.now() - charge.wallStart);
     // 3.26（G3-2）：上游没报用量但本地有估算数量（例 决策调用按本地分词估算输入 token）时按估算计费、标记估算，
     // 不再算「成本未知」；连估算数量都没有的才保持未知（成本待核，线路照常使用）。
-    const estimated = !actualKnown && Object.values(actual).some((v) => typeof v === 'number' && v > 0);
+    const estimated =
+      !actualKnown && Object.values(actual).some((v) => typeof v === 'number' && v > 0);
     const settled = await this.billing.settle({
       holdId: charge.holdId,
       usageRecordId: charge.usageRecordId,

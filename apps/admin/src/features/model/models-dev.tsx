@@ -141,7 +141,10 @@ export type MatchState =
   | { kind: 'error'; name: string; text: string };
 
 /** 按上游模型名 + 出品方检索（停止输入 600ms 后查；名字没变不重复查）。 */
-export function useModelsDevMatch(name: string | undefined, vendor: string | undefined): MatchState {
+export function useModelsDevMatch(
+  name: string | undefined,
+  vendor: string | undefined,
+): MatchState {
   const [state, setState] = useState<MatchState>({ kind: 'idle' });
   const seq = useRef(0);
   const trimmed = (name ?? '').trim();
@@ -156,7 +159,9 @@ export function useModelsDevMatch(name: string | undefined, vendor: string | und
     const timer = window.setTimeout(() => {
       void api
         .call(ModelAccessAdminEndpoints.lookupModelsDev, {
-          body: { items: [{ name: trimmed, ...(vendorText ? { vendor: vendorText.slice(0, 60) } : {}) }] },
+          body: {
+            items: [{ name: trimmed, ...(vendorText ? { vendor: vendorText.slice(0, 60) } : {}) }],
+          },
         })
         .then((res) => {
           if (id !== seq.current) return;
@@ -220,8 +225,7 @@ export function ModelsDevPanel({
       />
     );
   const { match, rate } = state;
-  const capped =
-    match.maxOutputTokens != null && match.maxOutputTokens > PLATFORM_MAX_OUTPUT;
+  const capped = match.maxOutputTokens != null && match.maxOutputTokens > PLATFORM_MAX_OUTPUT;
   return (
     <div className="models-dev-panel models-dev-found">
       <div className="models-dev-head">
@@ -241,7 +245,11 @@ export function ModelsDevPanel({
             </Tag>
           )}
         </Space>
-        <Button size="small" type={autoApplied ? 'default' : 'primary'} onClick={() => onApply(match)}>
+        <Button
+          size="small"
+          type={autoApplied ? 'default' : 'primary'}
+          onClick={() => onApply(match)}
+        >
           {autoApplied ? '重新填入' : '用这些数据填入'}
         </Button>
       </div>
@@ -254,8 +262,8 @@ export function ModelsDevPanel({
         <span>美元原价</span>
         <span className="cell-sub">
           入 {money(match.priceUsd.input, '$')} · 出 {money(match.priceUsd.output, '$')} · 缓存读{' '}
-          {money(match.priceUsd.cacheRead, '$')} · 缓存写 {money(match.priceUsd.cacheWrite, '$')}（汇率{' '}
-          {rate}）
+          {money(match.priceUsd.cacheRead, '$')} · 缓存写 {money(match.priceUsd.cacheWrite, '$')}
+          （汇率 {rate}）
         </span>
         <span>上下文 / 最大输出</span>
         <span>
@@ -263,7 +271,9 @@ export function ModelsDevPanel({
           {capped && <span className="cell-sub">（平台最大输出上限 32,000，按 32,000 填）</span>}
         </span>
         <span>识图</span>
-        <span>{match.supportsImage == null ? '没写' : match.supportsImage ? '支持' : '不支持'}</span>
+        <span>
+          {match.supportsImage == null ? '没写' : match.supportsImage ? '支持' : '不支持'}
+        </span>
       </div>
       <div className="field-help">
         填入的是官方售价（售价可以按需加价或打折）；成本价请按你在中转站的实际进价填。上下文越大，每条回复预扣的积分越多（回复完按实际用量退回）。

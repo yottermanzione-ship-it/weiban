@@ -498,9 +498,11 @@ export class ModelGateway implements ModelGatewayPort {
           known ? 'reported' : answer.usage || failureUsage?.estimated ? 'estimated' : 'unknown',
         );
         if (sent && (answer.ok || known || answer.usage || failureUsage?.estimated))
-          await this.bounds!.recordUsage(model.modelKey, route, known ? 'reported' : 'missing').catch(
-            () => undefined,
-          );
+          await this.bounds!.recordUsage(
+            model.modelKey,
+            route,
+            known ? 'reported' : 'missing',
+          ).catch(() => undefined);
         const latencyMs = Math.round(performance.now() - wallStart);
         if (answer.ok) {
           const result: CachedResult = {
