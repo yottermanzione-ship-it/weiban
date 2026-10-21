@@ -51,7 +51,7 @@ export interface DecideAdapterAnswer {
 }
 
 export interface MediaAdapter {
-  /** 行为规划决策（Jev，CR-18）。真实接口字段「待配置后验证」。 */
+  /** 行为规划决策（Jev，CR-18）。J 已验证 B.AI Decisions；原生协议仍需对应线路实测。 */
   decide(
     t: MediaTarget,
     input: {

@@ -115,6 +115,7 @@ export async function evaluateConfiguredDecisions(
   if (rows.length !== 2 || rows.some((r) => !r.secret_ciphertext.length))
     throw new Error('configured_decision_models_unavailable');
   const adapter = new OpenAiCompatibleMediaAdapter();
+  let failures = 0;
   emit({
     version: DECISION_EVAL_VERSION,
     mode: smoke ? 'smoke' : 'full',
@@ -157,15 +158,17 @@ export async function evaluateConfiguredDecisions(
           latencyMs,
           ...(result.ok ? { ok: true, ...result.value } : { ok: false, error: result.category }),
         });
+        if (!result.ok) failures++;
         // Stop after failed smoke, or an authentication/quota failure. Never probe another credential.
         if (
           !result.ok &&
           (smoke || result.category === 'invalid_key' || result.category === 'quota_exhausted')
         )
-          return;
+          throw new Error('decision_evaluation_incomplete');
       }
     } finally {
       plain.fill(0);
     }
   }
+  if (failures) throw new Error('decision_evaluation_has_failures');
 }

@@ -10,7 +10,7 @@ import type {
 const Probability = z.number().min(0).max(1);
 const Usage = z.object({
   input_tokens: z.number().int().min(0).max(2147483647),
-  output_tokens: z.number().int().min(0).max(2147483647).optional(),
+  output_tokens: z.number().int().min(0).max(2147483647),
 });
 const Reply = z.object({
   model: z.string().min(1),
@@ -121,7 +121,7 @@ export function parseDecisionReply(raw: unknown, questions: readonly DecideAdapt
   return {
     answers,
     inputTokens: parsed.data.usage.input_tokens,
-    outputTokens: parsed.data.usage.output_tokens ?? 0,
+    outputTokens: parsed.data.usage.output_tokens,
     resolvedModel: parsed.data.model,
   };
 }
@@ -154,11 +154,11 @@ export async function jevDecide(
       body,
     });
     const reader = response.body?.getReader();
-    if (!reader) return { ok: false, category: 'provider_error' };
+    if (!reader && response.status === 200) return { ok: false, category: 'provider_error' };
     const chunks: Uint8Array[] = [];
     let size = 0;
     try {
-      for (;;) {
+      while (reader) {
         const part = await reader.read();
         if (part.done) break;
         size += part.value.length;
@@ -169,7 +169,7 @@ export async function jevDecide(
         chunks.push(part.value);
       }
     } finally {
-      reader.releaseLock();
+      reader?.releaseLock();
     }
     let raw: unknown;
     try {
@@ -187,7 +187,7 @@ export async function jevDecide(
       ].includes(code ?? '');
       return {
         ok: false,
-        ...(response.status < 500 ? { zeroCost: true } : {}),
+        ...(response.status < 500 && response.status !== 408 ? { zeroCost: true } : {}),
         category:
           quota || response.status === 402
             ? 'quota_exhausted'

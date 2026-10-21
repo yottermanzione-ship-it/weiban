@@ -2,6 +2,11 @@
 
 > 由项目总负责人维护。最后更新：2026-10-19。本轮以以下开发接管进度为准，旧断点保留备查。
 
+## 2026-10-21 Codex 接续 J 决策实测
+
+- `C:\wb-dev\wb-decision-j` / `codex/decision-j`：修正 Jev Decisions / System One 协议、用量与问题校验、调用截止时间；真实容器内用合成输入完成 32 次调用，两个线上条目均解析到 jev-1.13.0。没有部署或修改线上配置。
+- 搜索相关题低置信度，不能直接登记为正式切换通过。结果见 [实测报告](ai/eval-runs/2026-10-21-planner-jev.md)，后续生态、微博频率与识图触发见 [25 号方案](refactor/25-jev-ecology-decisions.md)，开发断点见 [J 交接](handoffs/2026-10-21-j-decisions.md)。H4 费用分摊与新触发尚未实现。
+
 ## 2026-10-21 Codex 接续 S 联网搜索
 
 - 独立副本 `C:\wb-dev\wb-search-s` / `codex/search-s`，基于 H3 提交 `74d1fb69c1614f8256409ccf2383120d7571640a`；共享 main 未改、未 push / 合入 / 部署。

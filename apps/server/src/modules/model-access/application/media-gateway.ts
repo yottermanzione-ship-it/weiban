@@ -67,6 +67,7 @@ import { BillingBoundsService, boundsEvidence, reserveErrorToGenerate } from './
 import { pcmWavSeconds, roundAsr } from '../domain/media-billing-bounds.js';
 import { WebToolsStore } from './web-tools-store.js';
 import { privateSearchText, publicWebUrl } from '../domain/web-search.js';
+import { decisionQuestions } from '../infra/jev-adapter.js';
 
 type Service = 'speech_synthesis' | 'speech_recognition' | 'image_generation' | 'web_search';
 const SERVICE_SCENARIO: Record<Exclude<Service, 'web_search'>, ModelScenario> = {
@@ -427,14 +428,36 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
                 q.scaleSize! >= 2 &&
                 q.scaleSize! <= 10
               ? Array.from({ length: q.scaleSize! }, (_, i) => String(i))
-              : (q.options ?? []).slice(0, 255),
+              : (q.options ?? []),
       }));
+      if (
+        !decisionQuestions(questions) ||
+        input.questions.some(
+          (q) =>
+            q.kind === 'scale' &&
+            (!Number.isInteger(q.scaleSize) || q.scaleSize! < 2 || q.scaleSize! > 10),
+        )
+      )
+        return { ok: false, error: 'bad_request' };
       return this.run(
         input,
         model,
         { inputTokens: estimateTokens, outputTokens: 0 },
         async (target, adapter) => {
-          const result = await adapter.decide(target, { state: input.state, questions, timeoutMs });
+          const remaining = input.deadlineAt
+            ? Math.min(timeoutMs, Date.parse(input.deadlineAt) - this.clock.nowMs())
+            : timeoutMs;
+          if (remaining <= 0)
+            return {
+              ok: false,
+              category: 'bad_request',
+              actual: { inputTokens: 0, outputTokens: 0 },
+            };
+          const result = await adapter.decide(target, {
+            state: input.state,
+            questions,
+            timeoutMs: remaining,
+          });
           if (!result.ok)
             return {
               ...result,

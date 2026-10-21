@@ -241,7 +241,9 @@
 | CR-18 | Jev 接入：① `UpstreamKind` 新增 Jev 对应取值（它不是 OpenAI 兼容接口，请求是「state + 类型化问题」）；② `ModelGatewayPort` 新增 `decide(input)` 方法（输入：`userId`、`purpose = behavior_planning`、`countAsBackground`、`modelKey`、`state`、`questions[]`、`idempotencyKey`；输出：每题的选项、各选项概率、置信度，以及 `usageRecordId`、`chargedMicros`），同样走冻结 / 结算 / 用量记录；③ 计价：Jev 按输入 token 计价（官网 42 美元 / 十亿输入 token，**待配置后验证**），现有按 token 计价可用，不需要 `PriceUnit` 新增按次单位；若实际为按次计价再按 `billing.md` 10.2 第 3 条评估 | 第 9 节；`billing.md` 10.2 |
 | CR-19 | 管理端接口（D-L7-01）：`GET/PUT /api/v1/admin/ai/planner-config`（按决策类型读取 / 切换实现、模型、门槛，切换时必须带评测报告编号，写审计）、`GET /api/v1/admin/ai/planning-decisions`（按用户、角色、决策类型、时间、`fallback` 筛选决策记录，供质量抽查，不含消息内容） | 7.1、7.2 |
 
-## 9. Jev 接入方式（候选实现，全部「待配置后验证」）
+## 9. Jev 接入方式（历史设计，J 实测已补协议）
+
+> 2026-10-21：B.AI 已有两个 Jev 条目，已按正式 Decisions 协议修正适配并做合成样本真实调用，见 [J 报告](eval-runs/2026-10-21-planner-jev.md)。下文为原设计背景；旧的「没账号 / 接口靠推测」不再适用于已测的 B.AI 线路，其余正式评测与数据政策仍未验。生态后续方案见 [25 号](../refactor/25-jev-ecology-decisions.md)，运行配置未切换。
 
 **已知情况**（来自公开资料，未经实测）：Jev 是 TypeSafe AI 的「System One」模型，用于软件内部的自动化判断，不生成文字。请求由一段待评估的 **state**（文本、JSON 对象或数组）和一组**类型化问题**组成；问题有三类：是非题、选择题（返回所选项、每个选项的概率和置信度，最多 255 个选项）、打分题（2～10 级的有序量表）。官网称延迟约 0.1 秒级、输入价格 42 美元 / 十亿 token，目前为早期体验。中文能力、数据保存政策、服务器所在地**资料中均未说明**。
 

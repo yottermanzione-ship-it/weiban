@@ -46,6 +46,50 @@ describe('J verified decision protocol', () => {
     apiKey: 'synthetic-key',
     model: 'jev-latest',
   };
+  it('does not send a decision after its deadline expires during billing preparation', async () => {
+    const clock = new TestClock('2026-10-21T12:00:00Z');
+    const decide = vi.fn();
+    const media = Object.create(ModelGatewayMedia.prototype) as ModelGatewayMedia;
+    Object.assign(media, {
+      clock,
+      config: { nodeEnv: 'test' },
+      cached: async (_kind: string, _base: unknown, run: () => Promise<unknown>) => run(),
+      catalog: {
+        fact: async () => ({
+          entry: {
+            enabled: true,
+            capabilities: [],
+            modelKey: 'jev/test',
+            upstreamId: 'upstream',
+            upstreamModelId: 'jev-latest',
+          },
+          upstreamStatus: 'active',
+        }),
+      },
+      bounds: { get: async () => ({ decision: { maxInputTokens: 4000 } }) },
+      run: async (
+        _input: unknown,
+        _model: unknown,
+        _usage: unknown,
+        call: (t: typeof target, a: { decide: typeof decide }) => Promise<unknown>,
+      ) => {
+        clock.advance(2000);
+        return call(target, { decide });
+      },
+    });
+    const result = await media.decide({
+      userId: '0192f000-0000-7000-8000-000000000001',
+      purpose: 'behavior_planning',
+      billingOwner: 'user',
+      modelKey: 'jev/test',
+      state: {},
+      questions,
+      idempotencyKey: 'deadline',
+      deadlineAt: '2026-10-21T12:00:01Z',
+    });
+    expect(result).toMatchObject({ ok: false, actual: { inputTokens: 0, outputTokens: 0 } });
+    expect(decide).not.toHaveBeenCalled();
+  });
   it('routes relay and native APIs without duplicated v1; no guessed judge endpoint', () => {
     expect(decisionUrl(target)).toBe('https://relay.example/v1/decisions');
     expect(decisionUrl({ kind: 'jev', baseUrl: 'https://native.example/v1/' })).toBe(
@@ -94,7 +138,7 @@ describe('J verified decision protocol', () => {
     const result = parseDecisionReply(
       {
         model: 'jev',
-        usage: { input_tokens: 1 },
+        usage: { input_tokens: 1, output_tokens: 0 },
         answers: {
           yes: { type: 'noul', noul: 0.25 },
           score: {
@@ -146,7 +190,7 @@ describe('J verified decision protocol', () => {
           { status: 400 },
         ),
       )
-      .mockResolvedValueOnce(new Response('', { status: 429 }));
+      .mockResolvedValueOnce(new Response(null, { status: 429 }));
     const adapter = new OpenAiCompatibleMediaAdapter();
     expect(await adapter.decide(target, { state: {}, questions })).toEqual({
       ok: false,
@@ -434,7 +478,7 @@ describe('S DeepSeek Search / Fetch 协议', () => {
   it('429等一秒只重试一次；畸形200响应不假报已知零成本', async () => {
     const fetcher = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response('', { status: 429 }))
+      .mockResolvedValueOnce(new Response(null, { status: 429 }))
       .mockResolvedValueOnce(new Response('{"results":[]}'))
       .mockResolvedValueOnce(new Response('not-json'));
     const adapter = new OpenAiCompatibleMediaAdapter();
