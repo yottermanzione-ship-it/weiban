@@ -1,4 +1,5 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { SharedEpisodesService } from './shared-episodes.js';
 import { readableMessageText } from './content-text.js';
 import {
@@ -237,6 +238,7 @@ export class MemoryService {
         ...data,
         memoryId: row.id,
         characterId: row.characterId,
+        origin: row.origin ?? undefined,
         scope: row.scope,
         knownBy: [row.characterId],
         createdAt: row.createdAt.toISOString(),
@@ -583,6 +585,16 @@ export class MemoryService {
     });
   }
   private async changed(tx: DbTx, job: MemoryJob, forget: boolean, barrierSeq: number) {
+    if (forget) {
+      await tx.query(
+        'UPDATE ai_runtime.group_memory_states SET cursor_seq=greatest(cursor_seq,last_user_seq),pending_count=0,lease_id=NULL,lease_until=NULL,prepared_ciphertext=NULL,result_ciphertext=NULL,generation=generation+1 WHERE user_id=$1',
+        [job.userId],
+      );
+      await tx.query(
+        "UPDATE ai_runtime.call_memory_jobs SET status='cancelled',ciphertext=NULL,result_ciphertext=NULL,lease_id=NULL,lease_until=NULL WHERE user_id=$1 AND character_id=$2 AND status='pending'",
+        [job.userId, job.characterId],
+      );
+    }
     const state = await this.state(tx, job);
     await tx.db
       .update(memoryStates)
@@ -648,6 +660,7 @@ export class MemoryService {
         .where(eq(memories.id, memoryId))
         .returning();
       await this.changed(tx, job, true, conversation?.lastSeq ?? 0);
+      await this.episodes.forgetReferences(tx, userId, characterId, old.sourceMessageIds);
       return this.open(updated!, tx);
     });
   }
@@ -662,6 +675,10 @@ export class MemoryService {
         .where(and(this.where(userId, characterId, job.conversationId), eq(memories.id, memoryId)))
         .returning();
       if (!removed.length) return;
+      for (const row of removed) {
+        const payload = await this.open(row, tx);
+        await this.episodes.forgetReferences(tx, userId, characterId, payload.sourceMessageIds);
+      }
       await this.changed(tx, job, true, conversation?.lastSeq ?? 0);
     });
   }
@@ -991,6 +1008,171 @@ export class MemoryService {
         retrieveLimit: limits?.retrieveLimit ?? 8,
       };
     });
+  }
+  /** M: persist a call transcript once; extraction runs after the call, through the normal paid gateway. */
+  async enqueueCallExtraction(input: {
+    userId: string;
+    characterId: string;
+    conversationId: string;
+    callId: string;
+    scope: 'normal' | 'adult';
+    transcript: string;
+    epoch?: string;
+    startedAt?: Date;
+  }) {
+    const job = await this.guard(input.userId, input.characterId).catch(() => null);
+    if (
+      !job ||
+      job.conversationId !== input.conversationId ||
+      (input.epoch && job.epoch !== input.epoch)
+    )
+      return;
+    await this.db.transaction(async (tx) => {
+      await this.lock(tx, job);
+      const epoch = await this.contacts.getActiveContactEpoch(input.userId, input.characterId, tx);
+      if (!epoch || (input.startedAt && input.startedAt < new Date(epoch.acceptAfter))) return;
+      const state = await this.state(tx, job);
+      const text = input.transcript
+        .split('\n')
+        .filter((line) => !healthPrivate(line))
+        .join('\n')
+        .slice(-12000);
+      if (!text.trim()) return;
+      await tx.query(
+        `INSERT INTO ai_runtime.call_memory_jobs(id,user_id,character_id,conversation_id,epoch,scope,revision,ciphertext,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO NOTHING`,
+        [
+          input.callId,
+          input.userId,
+          input.characterId,
+          input.conversationId,
+          job.epoch,
+          input.scope,
+          state.revision,
+          await this.crypto.seal(
+            input.userId,
+            `ai:call-memory:${input.callId}`,
+            JSON.stringify({ transcript: text }),
+            tx,
+          ),
+          this.clock.now(),
+        ],
+      );
+      await this.jobs.send(
+        'ai.extract_call_memory',
+        { callId: input.callId },
+        { tx, retryLimit: 10, retryBackoff: true },
+      );
+    });
+  }
+  /** Atomic writer shared by group/call extraction. Callers fence their batch in the same transaction. */
+  async applyExternal(
+    tx: DbTx,
+    input: {
+      userId: string;
+      characterId: string;
+      conversationId: string;
+      epoch: string;
+      scope: 'normal' | 'adult';
+      origin: 'group' | 'call';
+      batchId: string;
+      revision: number;
+      operations: z.infer<typeof ExtractedMemory>['operations'];
+      sourceIds: string[];
+    },
+  ) {
+    const job: MemoryJob = {
+      userId: input.userId,
+      characterId: input.characterId,
+      conversationId: input.conversationId,
+      epoch: input.epoch,
+    };
+    await this.lock(tx, job);
+    const state = await this.state(tx, job);
+    if (state.revision !== input.revision) return false;
+    if (input.scope === 'adult' && !(await this.policy.checkAdultGeneration(job, tx)).allowed)
+      return false;
+    const sourceIds = new Set(input.sourceIds);
+    const rows = await tx.db
+      .select()
+      .from(memories)
+      .where(this.where(input.userId, input.characterId, input.conversationId));
+    const decoded = new Map<string, MemoryEntry>();
+    for (const row of rows) decoded.set(row.id, await this.open(row, tx));
+    let remaining = Math.max(0, MAX_MEMORIES - rows.length);
+    let changed = false;
+    for (const [index, operation] of input.operations.entries()) {
+      if (operation.action === 'NOOP') continue;
+      if (
+        !operation.sourceMessageIds.every((id) => sourceIds.has(id)) ||
+        healthPrivate(operation.content)
+      )
+        throw new Error('memory_external_invalid_source');
+      const old = operation.memoryId ? decoded.get(operation.memoryId) : undefined;
+      if (
+        operation.action !== 'ADD' &&
+        (!old || old.createdBy === 'user_manual' || old.scope !== input.scope)
+      )
+        continue;
+      if (
+        operation.action === 'ADD' &&
+        (remaining <= 0 ||
+          [...decoded.values()].some(
+            (m) => m.scope === input.scope && m.content === operation.content,
+          ))
+      )
+        continue;
+      const id = old?.memoryId ?? newId();
+      const raw = createHash('sha256')
+        .update(`${input.batchId}:${input.characterId}:${index}`)
+        .digest('hex');
+      const clientId = `${raw.slice(0, 8)}-${raw.slice(8, 12)}-4${raw.slice(13, 16)}-a${raw.slice(17, 20)}-${raw.slice(20, 32)}`;
+      const payload: z.infer<typeof MemoryPayload> = {
+        content: operation.action === 'MARK_PAST' && old ? old.content : operation.content,
+        category: operation.category,
+        importance: operation.importance,
+        dueAt: operation.dueAt ?? old?.dueAt ?? null,
+        status: operation.action === 'MARK_PAST' ? 'past' : 'current',
+        visibility: old?.visibility ?? 'default',
+        sharingClass: sharingClass(operation.content, operation.sharingClass),
+        sourceMessageIds: [
+          ...new Set([...(old?.sourceMessageIds ?? []), ...operation.sourceMessageIds]),
+        ].slice(-100),
+        createdBy: 'extracted',
+      };
+      const ciphertext = await this.seal(tx, input.userId, id, payload);
+      if (old)
+        await tx.db
+          .update(memories)
+          .set({
+            ciphertext,
+            origin: old?.origin ?? input.origin,
+            embedding: toVectorLiteral(embed(payload.content)),
+            updatedAt: this.clock.now(),
+          })
+          .where(eq(memories.id, id));
+      else {
+        await tx.db
+          .insert(memories)
+          .values({
+            id,
+            userId: input.userId,
+            characterId: input.characterId,
+            conversationId: input.conversationId,
+            clientId,
+            scope: input.scope,
+            origin: input.origin,
+            ciphertext,
+            embedding: toVectorLiteral(embed(payload.content)),
+            createdAt: this.clock.now(),
+            updatedAt: this.clock.now(),
+          })
+          .onConflictDoNothing();
+        remaining--;
+      }
+      changed = true;
+    }
+    if (changed) await this.changed(tx, job, false, 0);
+    return true;
   }
   async revision(
     tx: DbTx,
@@ -1343,7 +1525,6 @@ export class MemoryService {
             ...new Set([...(old?.sourceMessageIds ?? []), ...operation.sourceMessageIds]),
           ].slice(-100),
           createdBy: old?.createdBy ?? 'extracted',
-          origin: old?.origin ?? 'private_chat',
           // T-066：自动提取的记忆默认「谁知道 = 默认」，能否共享由 sharingClass 闸门决定（MEM-07）。
           visibility: old?.visibility ?? 'default',
           sharingClass: sharingClass(
@@ -1366,6 +1547,7 @@ export class MemoryService {
             .set({
               ciphertext,
               scope,
+              origin: old?.origin ?? 'private_chat',
               embedding: embeddingLiteral,
               updatedAt: this.clock.now(),
             })
@@ -1378,6 +1560,7 @@ export class MemoryService {
             conversationId: job.conversationId,
             scope,
             ciphertext,
+            origin: 'private_chat',
             embedding: embeddingLiteral,
             createdAt: this.clock.now(),
             updatedAt: this.clock.now(),

@@ -76,6 +76,8 @@ const T066_TABLES = [
   'shared_episode_states',
   'shared_episode_months',
   'shared_episodes',
+  'call_memory_jobs',
+  'group_memory_states',
 ] as const;
 @Injectable()
 export class ReplyPlanStore {

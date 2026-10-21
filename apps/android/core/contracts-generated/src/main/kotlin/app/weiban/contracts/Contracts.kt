@@ -6394,6 +6394,8 @@ data class MemoryTierConfig(
     @SerialName("proPlus") val `proPlus`: MemoryTierLimits,
     @SerialName("newUserTrialDays") val `newUserTrialDays`: Long,
     @SerialName("recallTopK") val `recallTopK`: Long,
+    @SerialName("groupMemoryMessageThreshold") val `groupMemoryMessageThreshold`: Long? = null,
+    @SerialName("groupMemoryIdleMinutes") val `groupMemoryIdleMinutes`: Long? = null,
     @SerialName("longContext") val `longContext`: ChatWindowLimits,
 )
 
@@ -6403,6 +6405,8 @@ data class MemoryTierEndpointsAdminGetResponse(
     @SerialName("proPlus") val `proPlus`: MemoryTierLimits,
     @SerialName("newUserTrialDays") val `newUserTrialDays`: Long,
     @SerialName("recallTopK") val `recallTopK`: Long,
+    @SerialName("groupMemoryMessageThreshold") val `groupMemoryMessageThreshold`: Long? = null,
+    @SerialName("groupMemoryIdleMinutes") val `groupMemoryIdleMinutes`: Long? = null,
     @SerialName("longContext") val `longContext`: ChatWindowLimits,
     @SerialName("updatedAt") val `updatedAt`: Timestamp?,
 )
@@ -6413,6 +6417,8 @@ data class MemoryTierEndpointsAdminUpdateResponse(
     @SerialName("proPlus") val `proPlus`: MemoryTierLimits,
     @SerialName("newUserTrialDays") val `newUserTrialDays`: Long,
     @SerialName("recallTopK") val `recallTopK`: Long,
+    @SerialName("groupMemoryMessageThreshold") val `groupMemoryMessageThreshold`: Long? = null,
+    @SerialName("groupMemoryIdleMinutes") val `groupMemoryIdleMinutes`: Long? = null,
     @SerialName("longContext") val `longContext`: ChatWindowLimits,
     @SerialName("updatedAt") val `updatedAt`: Timestamp?,
 )

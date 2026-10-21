@@ -359,7 +359,7 @@ export class EcologyService {
       temperature: 0.8,
       idempotencyKey: `eco:${run.id}:decide`,
       meta: {
-        promptTemplateVersion: 'ecology-v1',
+        promptTemplateVersion: 'ecology-v2-brain',
         stablePrefixChars: snapshot.prefix.length,
         ...(snapshot.privateMode
           ? { scenarioMode: 'adult', conversationKind: 'direct' as const }

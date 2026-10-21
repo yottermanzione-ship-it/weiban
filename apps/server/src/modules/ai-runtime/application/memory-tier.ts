@@ -171,6 +171,9 @@ export class MemoryTierService {
 
   async adminUpdate(adminId: string, input: unknown) {
     const body = parseContract(MemoryTierConfig, input);
+    const previous = await this.config();
+    body.groupMemoryMessageThreshold ??= previous.groupMemoryMessageThreshold ?? 20;
+    body.groupMemoryIdleMinutes ??= previous.groupMemoryIdleMinutes ?? 10;
     const problem = windowProblem(body.longContext);
     if (problem) throw new AppError('bad_request', `长上下文窗口：${problem}`);
     const old = await this.config();

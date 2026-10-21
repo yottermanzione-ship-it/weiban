@@ -5,7 +5,7 @@ import {
   P28_INSTANT_REPLY_MIN_TYPING_MS,
 } from '../../../platform/index.js';
 import { petPressure } from './pets.js';
-export const REPLY_TEMPLATE_VERSION = 'chat-v3';
+export const REPLY_TEMPLATE_VERSION = 'chat-v4-brain';
 export const USER_BATCH_DELAY_MS = 3000;
 /**
  * F1-8（10-21）：模型偶尔把换行写成字面的「\n」（反斜杠 + n，常见于群聊），连同 \r、\t、\"、\uXXXX

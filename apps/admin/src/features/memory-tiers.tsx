@@ -26,6 +26,8 @@ type FormValues = {
   proPlus: TierForm;
   newUserTrialDays: number;
   recallTopK: number;
+  groupMemoryMessageThreshold?: number;
+  groupMemoryIdleMinutes?: number;
   longContext: MemoryTierConfig['longContext'];
 };
 
@@ -104,6 +106,8 @@ export function MemoryTiersPage() {
           proPlus: tierOut(v.proPlus),
           newUserTrialDays: v.newUserTrialDays,
           recallTopK: v.recallTopK,
+          groupMemoryMessageThreshold: v.groupMemoryMessageThreshold ?? 20,
+          groupMemoryIdleMinutes: v.groupMemoryIdleMinutes ?? 10,
           longContext: v.longContext,
         },
       });
@@ -142,6 +146,22 @@ export function MemoryTiersPage() {
           <FormSection title="PRO+" desc="默认：常驻 16、记忆库不限、摘要全部、回想 8、翻全部" />
           <TierFields name="proPlus" />
           <FormSection title="通用" />
+          <div className="form-two">
+            <Form.Item
+              name="groupMemoryMessageThreshold"
+              label="群聊每多少条用户消息整理一次"
+              extra={<FieldHelp>默认20条，整理会消耗该用户积分，与生态开关无关。</FieldHelp>}
+            >
+              <InputNumber min={5} max={100} placeholder="20" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item
+              name="groupMemoryIdleMinutes"
+              label="群聊安静多少分钟后整理"
+              extra={<FieldHelp>不足消息数量时，按静默时间整理；默认10分钟。</FieldHelp>}
+            >
+              <InputNumber min={1} max={120} placeholder="10" style={{ width: '100%' }} />
+            </Form.Item>
+          </div>
           <div className="form-two">
             <Form.Item
               name="newUserTrialDays"

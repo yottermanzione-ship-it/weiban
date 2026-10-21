@@ -1304,7 +1304,7 @@ export const AdminUsageTotals = z.object({
   cacheHitRate: z.number().min(0).max(1).optional(),
   /**
    * v3.6：理论可缓存占比 0～1 = 带「稳定开头」标记的调用里，稳定开头的估算 token ÷ 这些调用的全部输入 token
-   * （目前只有私聊回复带标记）。与 cacheHitRate 对照：命中率明显低于它，说明上游没吃到缓存（换了账号、开头被改动等）。
+   * （个人角色场景使用共享前缀时带标记）。与 cacheHitRate 对照：命中率明显低于它，说明上游没吃到缓存（换了账号、开头被改动等）。
    */
   stablePrefixRate: z.number().min(0).max(1).optional(),
 });

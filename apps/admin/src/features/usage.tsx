@@ -17,13 +17,7 @@ import { settle } from '../data/use-async.js';
 import { useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { Page, useToast } from '../ui/page.js';
-import {
-  Money,
-  formatInt,
-  formatPercent,
-  formatYuan,
-  pointsOf,
-} from '../ui/format.js';
+import { Money, formatInt, formatPercent, formatYuan, pointsOf } from '../ui/format.js';
 import { PURPOSE_LABELS, modelLabel, rangeOf, type RangeKey } from './model/shared.js';
 
 type GroupKey = 'user' | 'model' | 'purpose' | 'character';
@@ -133,8 +127,7 @@ export function UsagePage() {
     {
       title: '毛利',
       width: 110,
-      sorter: (a, b) =>
-        a.chargedMicros - a.costMicros - (b.chargedMicros - b.costMicros),
+      sorter: (a, b) => a.chargedMicros - a.costMicros - (b.chargedMicros - b.costMicros),
       render: (_, row) => (
         <span className={row.chargedMicros - row.costMicros < 0 ? 'warn-text' : ''}>
           {formatYuan(row.chargedMicros - row.costMicros - row.absorbedCostMicros)}
@@ -145,6 +138,11 @@ export function UsagePage() {
       title: '缓存命中率',
       width: 110,
       render: (_, row) => formatPercent(row.cacheHitRate),
+    },
+    {
+      title: '理论可缓存（估算）',
+      width: 160,
+      render: (_, row) => formatPercent(row.stablePrefixRate),
     },
   ];
 
@@ -193,8 +191,8 @@ export function UsagePage() {
         />
         {totals && (
           <span className="filter-summary">
-            合计：{formatInt(totals.calls)} 次调用 · {formatInt(pointsOf(totals.chargedMicros))} 积分 ·
-            成本 {formatYuan(totals.costMicros)} · 失败率 {formatPercent(totals.failureRate)}
+            合计：{formatInt(totals.calls)} 次调用 · {formatInt(pointsOf(totals.chargedMicros))}{' '}
+            积分 · 成本 {formatYuan(totals.costMicros)} · 失败率 {formatPercent(totals.failureRate)}
           </span>
         )}
       </div>
@@ -208,9 +206,7 @@ export function UsagePage() {
         emptyTitle="这段时间没有调用"
         emptyHint="换一个时间范围试试；如果刚上线还没有用户聊天，这里就是空的。"
         footer={
-          data?.truncated
-            ? '结果太多，只显示前 200 组。缩小时间范围可以看到全部。'
-            : undefined
+          data?.truncated ? '结果太多，只显示前 200 组。缩小时间范围可以看到全部。' : undefined
         }
       />
     </Page>

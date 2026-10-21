@@ -917,6 +917,7 @@ export class GroupChatService {
         conversationKind: 'group',
         scenarioMode: input.scenarioMode,
         stablePrefixChars: brain.prefix.length,
+        promptTemplateVersion: 'brain-v1:group',
       },
     };
     if (input.durable) {

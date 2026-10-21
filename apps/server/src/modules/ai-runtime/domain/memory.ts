@@ -7,6 +7,7 @@ export const MemoryPayload = MemoryEntry.omit({
   knownBy: true,
   createdAt: true,
   updatedAt: true,
+  origin: true,
 }).strict();
 export type MemoryPayload = z.infer<typeof MemoryPayload>;
 export const ExtractedMemory = z.strictObject({

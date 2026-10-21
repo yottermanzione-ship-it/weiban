@@ -143,6 +143,57 @@ const vector256 = customType<{ data: string | null; driverData: string | null }>
   toDriver: (v) => v,
 });
 /** 不在明文列保存记忆内容、来源消息、私密类别或共享标签。embedding 明文存储（见 ADR-0020）。 */
+export const groupMemoryStates = aiRuntimeSchema.table(
+  'group_memory_states',
+  {
+    preparedCiphertext: bytes('prepared_ciphertext'),
+    resultCiphertext: bytes('result_ciphertext'),
+    generation: integer('generation').notNull().default(0),
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    conversationId: uuid('conversation_id').notNull(),
+    cursorSeq: bigint('cursor_seq', { mode: 'number' }).notNull().default(0),
+    lastUserSeq: bigint('last_user_seq', { mode: 'number' }).notNull().default(0),
+    pendingCount: integer('pending_count').notNull().default(0),
+    lastUserAt: timestamp('last_user_at', { withTimezone: true }).notNull(),
+    leaseId: uuid('lease_id'),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    retryAfter: timestamp('retry_after', { withTimezone: true }),
+  },
+  (t) => [
+    unique('group_memory_states_user_id_conversation_id_key').on(t.userId, t.conversationId),
+    check(
+      'group_memory_states_check',
+      sql`${t.cursorSeq}>=0 AND ${t.lastUserSeq}>=0 AND ${t.pendingCount}>=0`,
+    ),
+    index('group_memory_pending_idx')
+      .on(t.retryAfter, t.lastUserAt)
+      .where(sql`${t.pendingCount}>0`),
+  ],
+);
+export const callMemoryJobs = aiRuntimeSchema.table(
+  'call_memory_jobs',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    conversationId: uuid('conversation_id').notNull(),
+    epoch: uuid('epoch').notNull(),
+    scope: text('scope').notNull(),
+    revision: integer('revision').notNull(),
+    ciphertext: bytes('ciphertext'),
+    resultCiphertext: bytes('result_ciphertext'),
+    status: text('status').notNull().default('pending'),
+    leaseId: uuid('lease_id'),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    retryAfter: timestamp('retry_after', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    check('call_memory_jobs_scope_check', sql`${t.scope} IN ('normal','adult')`),
+    check('call_memory_jobs_status_check', sql`${t.status} IN ('pending','done','cancelled')`),
+  ],
+);
 export const sharedEpisodes = aiRuntimeSchema.table(
   'shared_episodes',
   {
@@ -219,6 +270,7 @@ export const memories = aiRuntimeSchema.table(
     characterId: uuid('character_id').notNull(),
     conversationId: uuid('conversation_id').notNull(),
     clientId: uuid('client_id'),
+    origin: text('origin'),
     scope: text('scope').notNull(),
     ciphertext: bytes('ciphertext').notNull(),
     /** 向量嵌入（明文，256 维，Phase 1 统计嵌入，见 ADR-0020）。新记录自动填充，旧记录 null。 */
@@ -230,6 +282,7 @@ export const memories = aiRuntimeSchema.table(
     unique('memory_client_idx').on(t.userId, t.characterId, t.clientId),
     index('memory_owner_idx').on(t.userId, t.characterId, t.conversationId, t.id),
     check('memory_scope', sql`${t.scope} IN ('normal','adult')`),
+    check('memories_origin_check', sql`${t.origin} IN ('private_chat','group','call','system')`),
   ],
 );
 /** 删除屏障按会话seq保守截断旧原文；摘要与来源清单加密。 */

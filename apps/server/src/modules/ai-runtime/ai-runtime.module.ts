@@ -13,6 +13,7 @@ import {
 import { MemoryTierService } from './application/memory-tier.js';
 import { BrainContextService } from './application/brain.js';
 import { SharedEpisodesService } from './application/shared-episodes.js';
+import { ConversationMemoryService } from './application/conversation-memory.js';
 import { Module } from '@nestjs/common';
 import { ChatModule } from '../chat/index.js';
 import { CharactersModule } from '../characters/index.js';
@@ -139,6 +140,7 @@ import {
     // v5 批 B：记忆分档与长上下文。
     BrainContextService,
     SharedEpisodesService,
+    ConversationMemoryService,
     MemoryTierService,
     ReplyPlanStore,
     ReplyContext,

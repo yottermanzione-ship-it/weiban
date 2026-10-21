@@ -248,7 +248,11 @@ export class ModelGateway implements ModelGatewayPort {
     }
     const model = resolved.value;
     // v3.4（ADR-0032）：上游账号池——按优先级 / 权重 / 粘性会话排出候选账号，失败自动切换。
-    let candidates = await this.scheduler.plan(model.modelKey, input.conversationId ?? null);
+    const affinity =
+      input.billingOwner === 'user' && input.characterId
+        ? `brain:${input.userId}:${input.characterId}`
+        : (input.conversationId ?? null);
+    let candidates = await this.scheduler.plan(model.modelKey, affinity);
     if (candidates.length === 0) {
       // 没有路由（理论上 0089 已迁移）：沿用目录上的主上游，状态必须正常
       const primary = await this.upstreams.get(model.upstreamId).catch(() => null);
@@ -308,10 +312,7 @@ export class ModelGateway implements ModelGatewayPort {
           !entry.entry.capabilities.includes('adult_content'),
       );
       if (fallback?.entry) {
-        const routes = await this.scheduler.plan(
-          fallback.entry.modelKey,
-          input.conversationId ?? null,
-        );
+        const routes = await this.scheduler.plan(fallback.entry.modelKey, affinity);
         const proof = await this.bounds!.text(
           fallback.entry.modelKey,
           routes,

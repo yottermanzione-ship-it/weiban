@@ -1,7 +1,12 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import type { ContactsReadPort, ChatReadPort, TimelineEntry } from '@weiban/contracts';
+import type {
+  ContactsReadPort,
+  ChatReadPort,
+  TimelineEntry,
+  MomentsReadPort,
+} from '@weiban/contracts';
 import {
   AppError,
   CLOCK,
@@ -17,19 +22,29 @@ import {
 } from '../../../platform/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { CHAT_READ_PORT } from '../../chat/index.js';
+import { MOMENTS_READ_PORT } from '../../moments/index.js';
 import { ReplyPlanStore } from './plan-store.js';
 import { invalidateReplyPlans } from './invalidate.js';
 import { healthPrivate, relevance } from '../domain/memory.js';
 import { takeWithin } from '../domain/prompt-assembly.js';
 import { embed, toVectorLiteral } from '../domain/vector-embed.js';
+import { MemoryTierService } from './memory-tier.js';
 
 const Payload = z.object({
   text: z.string().max(120),
   withCharacterIds: z.array(z.string()).max(10).default([]),
+  sourceIds: z.array(z.string()).max(100).default([]),
 });
 const Snapshot = z.object({ ids: z.array(z.string()), text: z.string().max(600) });
 const Archived = z
-  .array(z.object({ id: z.string(), at: z.string(), text: z.string().max(120) }))
+  .array(
+    z.object({
+      id: z.string(),
+      at: z.string(),
+      text: z.string().max(120),
+      sourceIds: z.array(z.string()).max(100).default([]),
+    }),
+  )
   .max(1000);
 type Row = {
   id: string;
@@ -56,6 +71,7 @@ export interface EpisodeInput {
   occurredAt?: Date;
   epoch?: string;
   withCharacterIds?: string[];
+  sourceIds?: string[];
 }
 const keyOf = (type: string, id: string) =>
   createHash('sha256').update(`${type}:${id}`).digest('hex');
@@ -65,8 +81,10 @@ export class SharedEpisodesService implements OnModuleInit {
     @Inject(DATABASE) private readonly db: Database,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(ReplyPlanStore) private readonly store: ReplyPlanStore,
+    @Inject(MemoryTierService) private readonly tiers: MemoryTierService,
     @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
     @Inject(CHAT_READ_PORT) private readonly chat: ChatReadPort,
+    @Inject(MOMENTS_READ_PORT) private readonly moments: MomentsReadPort,
     @Inject(EVENT_BUS) private readonly bus: EventBus,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
   ) {}
@@ -115,7 +133,14 @@ export class SharedEpisodesService implements OnModuleInit {
       eventType: 'moments.post_created',
       handle: async (event, tx) => {
         const p = event.payload;
-        if (p.authorKind === 'character' && p.authorCharacterId)
+        const post = p.authorCharacterId
+          ? await this.moments.getPostVisibleToCharacter(
+              p.ownerUserId,
+              p.postId,
+              p.authorCharacterId,
+            )
+          : null;
+        if (p.authorKind === 'character' && p.authorCharacterId && post)
           await this.record(tx, {
             userId: p.ownerUserId,
             characterId: p.authorCharacterId,
@@ -123,7 +148,7 @@ export class SharedEpisodesService implements OnModuleInit {
             sourceType: 'post',
             sourceId: p.postId,
             scope: 'normal',
-            text: '我发了一条朋友圈。',
+            text: `我发了一条朋友圈：「${post.text.slice(0, 60) || '图片动态'}」。`,
             occurredAt: new Date(event.occurredAt),
           });
       },
@@ -133,7 +158,15 @@ export class SharedEpisodesService implements OnModuleInit {
       eventType: 'moments.comment_created',
       handle: async (event, tx) => {
         const p = event.payload;
-        if (p.authorKind === 'character' && p.authorCharacterId)
+        const post = p.authorCharacterId
+          ? await this.moments.getPostVisibleToCharacter(
+              p.ownerUserId,
+              p.postId,
+              p.authorCharacterId,
+            )
+          : null;
+        const comment = post?.comments.find((comment) => comment.commentId === p.commentId);
+        if (p.authorKind === 'character' && p.authorCharacterId && comment)
           await this.record(tx, {
             userId: p.ownerUserId,
             characterId: p.authorCharacterId,
@@ -141,7 +174,7 @@ export class SharedEpisodesService implements OnModuleInit {
             sourceType: 'comment',
             sourceId: p.commentId,
             scope: 'normal',
-            text: p.replyToKind ? '我回复了一条朋友圈评论。' : '我评论了一条朋友圈。',
+            text: `${p.replyToKind ? '我回复了一条朋友圈评论' : '我评论了一条朋友圈'}：「${comment.text.slice(0, 60)}」。`,
             occurredAt: new Date(event.occurredAt),
           });
       },
@@ -178,16 +211,26 @@ export class SharedEpisodesService implements OnModuleInit {
       handle: async (event, tx) => {
         const { userId, characterId } = event.payload;
         await this.store.lock(tx, userId);
-        for (const table of ['shared_episode_states', 'shared_episode_months', 'shared_episodes'])
-          await tx.query(`DELETE FROM ai_runtime.${table} WHERE user_id=$1 AND character_id=$2`, [
-            userId,
-            characterId,
-          ]);
+        const current = await this.contacts.getActiveContactEpoch(userId, characterId, tx);
+        for (const table of [
+          'shared_episode_states',
+          'shared_episode_months',
+          'shared_episodes',
+          'call_memory_jobs',
+        ])
+          await tx.query(
+            `DELETE FROM ai_runtime.${table} WHERE user_id=$1 AND character_id=$2 AND ($3::uuid IS NULL OR epoch<>$3)`,
+            [userId, characterId, current?.version ?? null],
+          );
+        await tx.query(
+          'UPDATE ai_runtime.group_memory_states SET cursor_seq=last_user_seq,pending_count=0,lease_id=NULL,lease_until=NULL,prepared_ciphertext=NULL,result_ciphertext=NULL,generation=generation+1 WHERE user_id=$1',
+          [userId],
+        );
       },
     });
   }
   async record(transaction: DbTx | null, input: EpisodeInput): Promise<string | null> {
-    const text = input.text.replace(/\s+/gu, ' ').trim().slice(0, 120);
+    let text = input.text.replace(/\s+/gu, ' ').trim().slice(0, 120);
     if (!text || healthPrivate(text)) return null;
     const write = async (tx: DbTx) => {
       if (!(await this.store.lock(tx, input.userId))) return null;
@@ -208,12 +251,21 @@ export class SharedEpisodesService implements OnModuleInit {
           source.labels?.includes('quirk_draft')
         )
           return null;
+        if (source.content?.type === 'voice' && source.content.transcript)
+          text = `我给你发了一条语音：「${source.content.transcript.slice(0, 60)}」。`;
+        if (healthPrivate(text)) return null;
       }
       const id = newId();
       const ciphertext = await this.store.crypto.seal(
         input.userId,
         `ai:episode:${id}`,
-        JSON.stringify({ text, withCharacterIds: input.withCharacterIds ?? [] }),
+        JSON.stringify(
+          Payload.parse({
+            text,
+            withCharacterIds: (input.withCharacterIds ?? []).slice(0, 10),
+            sourceIds: (input.sourceIds ?? []).slice(0, 100),
+          }),
+        ),
         tx,
       );
       const inserted = await tx.query<{ id: string }>(
@@ -252,6 +304,8 @@ export class SharedEpisodesService implements OnModuleInit {
     }
   }
   async context(userId: string, characterId: string, scope: 'normal' | 'adult', query: string) {
+    const tier = await this.tiers.resolve(userId);
+    const since = new Date(this.clock.nowMs() - (tier.limits.summaryDays ?? 730) * 86400000);
     return this.db.transaction(async (tx) => {
       if (!(await this.store.lock(tx, userId))) return { stable: '', recent: '', relevant: '' };
       const epoch = await this.contacts.getActiveContactEpoch(userId, characterId, tx);
@@ -259,10 +313,23 @@ export class SharedEpisodesService implements OnModuleInit {
       const now = this.clock.now();
       const rows = (
         await tx.query<Row>(
-          `SELECT * FROM ai_runtime.shared_episodes WHERE user_id=$1 AND character_id=$2 AND epoch=$3 AND deleted_at IS NULL AND ciphertext IS NOT NULL AND ($4='adult' OR scope='normal') ORDER BY occurred_at DESC LIMIT 500`,
-          [userId, characterId, epoch.version, scope],
+          `SELECT * FROM ai_runtime.shared_episodes WHERE user_id=$1 AND character_id=$2 AND epoch=$3 AND deleted_at IS NULL AND ciphertext IS NOT NULL AND ($4='adult' OR scope='normal') AND occurred_at>=$5 ORDER BY occurred_at DESC LIMIT 500`,
+          [userId, characterId, epoch.version, scope, since],
         )
       ).rows;
+      const vectorIds = new Set<string>();
+      if (query.trim() && tier.limits.retrieveLimit > 0) {
+        const nearest = (
+          await tx.query<Row>(
+            `SELECT * FROM ai_runtime.shared_episodes WHERE user_id=$1 AND character_id=$2 AND epoch=$3 AND ($4='adult' OR scope='normal') AND deleted_at IS NULL AND ciphertext IS NOT NULL AND embedding IS NOT NULL AND occurred_at>=$5 ORDER BY embedding <=> $6::vector(256) LIMIT 8`,
+            [userId, characterId, epoch.version, scope, since, toVectorLiteral(embed(query))],
+          )
+        ).rows;
+        for (const row of nearest) {
+          vectorIds.add(row.id);
+          if (!rows.some((existing) => existing.id === row.id)) rows.push(row);
+        }
+      }
       const decoded: (Row & { text: string })[] = [];
       for (const row of rows) {
         const payload = await this.open(row, tx);
@@ -316,23 +383,30 @@ export class SharedEpisodesService implements OnModuleInit {
         .filter((e) => !selected.has(e.id) && e.created_at > (state?.frozen_at ?? now))
         .slice(0, 5);
       recent.forEach((e) => selected.add(e.id));
-      const relevant = query.trim()
-        ? decoded
-            .filter((e) => !selected.has(e.id))
-            .sort(
-              (a, b) =>
-                relevance(b.text, query, b.importance, now.getTime() - b.occurred_at.getTime()) -
-                relevance(a.text, query, a.importance, now.getTime() - a.occurred_at.getTime()),
-            )
-            .slice(0, 3)
-            .map((e) => e.text)
-        : [];
-      const months = (
-        await tx.query<{ id: string; ciphertext: Buffer }>(
-          "SELECT id,ciphertext FROM ai_runtime.shared_episode_months WHERE user_id=$1 AND character_id=$2 AND epoch=$3 AND ($4='adult' OR scope='normal') ORDER BY month DESC LIMIT 2",
-          [userId, characterId, epoch.version, scope],
-        )
-      ).rows;
+      const relevant =
+        query.trim() && tier.limits.retrieveLimit > 0
+          ? decoded
+              .filter((e) => !selected.has(e.id))
+              .sort(
+                (a, b) =>
+                  Number(vectorIds.has(b.id)) +
+                  relevance(b.text, query, b.importance, now.getTime() - b.occurred_at.getTime()) -
+                  Number(vectorIds.has(a.id)) -
+                  relevance(a.text, query, a.importance, now.getTime() - a.occurred_at.getTime()),
+              )
+              .slice(0, Math.min(3, tier.limits.retrieveLimit))
+              .map((e) => e.text)
+          : [];
+      const months =
+        (tier.limits.summaryDays === null || tier.limits.summaryDays > 90) &&
+        tier.limits.retrieveLimit > 0
+          ? (
+              await tx.query<{ id: string; ciphertext: Buffer }>(
+                "SELECT id,ciphertext FROM ai_runtime.shared_episode_months WHERE user_id=$1 AND character_id=$2 AND epoch=$3 AND ($4='adult' OR scope='normal') AND month>=$5 ORDER BY month DESC LIMIT 2",
+                [userId, characterId, epoch.version, scope, since.toISOString().slice(0, 7)],
+              )
+            ).rows
+          : [];
       if (query.trim())
         for (const month of months) {
           const bytes = await this.store.crypto.open(
@@ -345,7 +419,11 @@ export class SharedEpisodesService implements OnModuleInit {
             const items = Archived.parse(JSON.parse(bytes.toString('utf8')));
             relevant.push(
               ...items
-                .filter((e) => relevance(e.text, query, 5, now.getTime() - Date.parse(e.at)) > 0.15)
+                .filter(
+                  (e) =>
+                    Date.parse(e.at) >= since.getTime() &&
+                    relevance(e.text, query, 5, now.getTime() - Date.parse(e.at)) > 0.15,
+                )
                 .slice(-3)
                 .map((e) => e.text),
             );
@@ -363,15 +441,29 @@ export class SharedEpisodesService implements OnModuleInit {
       };
     });
   }
-  async list(userId: string, characterId: string, since: Date): Promise<TimelineEntry[]> {
+  async list(
+    userId: string,
+    characterId: string,
+    since: Date,
+    after?: { at: string; id: string } | null,
+    limit = 51,
+  ): Promise<TimelineEntry[]> {
     return this.db.transaction(async (tx) => {
       if (!(await this.store.lock(tx, userId))) return [];
       const epoch = await this.contacts.getActiveContactEpoch(userId, characterId, tx);
       if (!epoch) return [];
       const rows = (
         await tx.query<Row>(
-          `SELECT * FROM ai_runtime.shared_episodes WHERE user_id=$1 AND character_id=$2 AND epoch=$3 AND scope='normal' AND deleted_at IS NULL AND occurred_at>=$4 ORDER BY occurred_at DESC LIMIT 2000`,
-          [userId, characterId, epoch.version, since],
+          `SELECT * FROM ai_runtime.shared_episodes WHERE user_id=$1 AND character_id=$2 AND epoch=$3 AND scope='normal' AND deleted_at IS NULL AND occurred_at>=$4 AND ($5::timestamptz IS NULL OR occurred_at<$5 OR (occurred_at=$5 AND id<$6::uuid)) ORDER BY occurred_at DESC,id DESC LIMIT $7`,
+          [
+            userId,
+            characterId,
+            epoch.version,
+            since,
+            after?.at ?? null,
+            after?.id ?? null,
+            Math.min(51, Math.max(1, limit)),
+          ],
         )
       ).rows;
       const result: TimelineEntry[] = [];
@@ -447,6 +539,14 @@ export class SharedEpisodesService implements OnModuleInit {
       [row.user_id, row.character_id],
     );
     await invalidateReplyPlans(tx, this.store, row.user_id, row.character_id);
+    await tx.query(
+      "UPDATE ai_runtime.call_memory_jobs SET status='cancelled',ciphertext=NULL,result_ciphertext=NULL,lease_id=NULL,lease_until=NULL WHERE user_id=$1 AND character_id=$2 AND status='pending'",
+      [row.user_id, row.character_id],
+    );
+    await tx.query(
+      'UPDATE ai_runtime.group_memory_states SET cursor_seq=last_user_seq,pending_count=0,lease_id=NULL,lease_until=NULL,prepared_ciphertext=NULL,result_ciphertext=NULL,generation=generation+1 WHERE user_id=$1',
+      [row.user_id],
+    );
     // Pending group inputs must also be regenerated after forgetting.
     await tx.query(
       `UPDATE ai_runtime.group_reply_plans SET status='cancelled',plan_ciphertext=NULL,input_ciphertext=NULL,result_ciphertext=NULL,lease_id=NULL,lease_until=NULL,retry_epoch=retry_epoch+1,updated_at=$2 WHERE user_id=$1 AND status IN ('queued','generating','waiting')`,
@@ -462,6 +562,46 @@ export class SharedEpisodesService implements OnModuleInit {
     ).rows;
     for (const row of rows) {
       if (await this.store.lock(tx, row.user_id)) await this.erase(tx, row);
+    }
+  }
+  async forgetReferences(tx: DbTx, userId: string, characterId: string, sourceIds: string[]) {
+    if (!sourceIds.length) return;
+    const wanted = new Set(sourceIds);
+    const rows = (
+      await tx.query<Row>(
+        'SELECT * FROM ai_runtime.shared_episodes WHERE user_id=$1 AND character_id=$2 AND deleted_at IS NULL AND ciphertext IS NOT NULL',
+        [userId, characterId],
+      )
+    ).rows;
+    for (const row of rows) {
+      const payload = await this.open(row, tx);
+      if (payload?.sourceIds.some((id) => wanted.has(id))) await this.erase(tx, row);
+    }
+    const months = (
+      await tx.query<{ id: string; ciphertext: Buffer }>(
+        'SELECT id,ciphertext FROM ai_runtime.shared_episode_months WHERE user_id=$1 AND character_id=$2',
+        [userId, characterId],
+      )
+    ).rows;
+    for (const month of months) {
+      const items = await this.openArchive(userId, month.id, month.ciphertext, tx);
+      for (const item of items.filter((item) => item.sourceIds.some((id) => wanted.has(id)))) {
+        const row = (
+          await tx.query<Row>(
+            'SELECT * FROM ai_runtime.shared_episodes WHERE id=$1 AND user_id=$2 AND character_id=$3',
+            [item.id, userId, characterId],
+          )
+        ).rows[0];
+        if (row) await this.erase(tx, row);
+      }
+    }
+  }
+  private async openArchive(userId: string, id: string, ciphertext: Buffer, tx: DbTx) {
+    const bytes = await this.store.crypto.open(userId, `ai:episodes-month:${id}`, ciphertext, tx);
+    try {
+      return Archived.parse(JSON.parse(bytes.toString('utf8')));
+    } finally {
+      bytes.fill(0);
     }
   }
   async archive() {
@@ -506,7 +646,12 @@ export class SharedEpisodesService implements OnModuleInit {
             }
           }
           if (!items.some((item) => item.id === row.id))
-            items.push({ id: row.id, at: row.occurred_at.toISOString(), text: payload.text });
+            items.push({
+              id: row.id,
+              at: row.occurred_at.toISOString(),
+              text: payload.text,
+              sourceIds: payload.sourceIds,
+            });
           await tx.query(
             `INSERT INTO ai_runtime.shared_episode_months(id,user_id,character_id,epoch,scope,month,ciphertext) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(user_id,character_id,epoch,scope,month) DO UPDATE SET ciphertext=EXCLUDED.ciphertext`,
             [

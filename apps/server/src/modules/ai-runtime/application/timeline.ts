@@ -291,7 +291,8 @@ export class TimelineListService {
     if (query.cursor) {
       try {
         const [at, id] = Buffer.from(query.cursor, 'base64url').toString('utf8').split('|');
-        if (!at || !id || Number.isNaN(Date.parse(at))) throw new Error('bad');
+        if (!at || !id || Number.isNaN(Date.parse(at)) || !Id.safeParse(id).success)
+          throw new Error('bad');
         after = { at, id };
       } catch {
         throw new AppError('bad_request', '游标不正确');
@@ -304,7 +305,7 @@ export class TimelineListService {
       (await this.contacts.listActiveContacts(userId)).map((c) => c.characterId),
     );
     const items: TimelineEntry[] = [];
-    items.push(...(await this.episodes.list(userId, characterId, since)));
+    items.push(...(await this.episodes.list(userId, characterId, since, after, limit + 1)));
 
     // 1. 推演日常事件（发生时间 = 生成时刻；同批按 seq 排开 1 秒保证顺序稳定）。
     const events = await this.db.db
@@ -380,11 +381,16 @@ export class TimelineListService {
         ref: { kind: 'public_update', id: u.updateId },
       });
 
-    const sorted = items.sort(
-      (a, b) =>
-        Date.parse(b.occurredAt) - Date.parse(a.occurredAt) ||
-        (a.entryId < b.entryId ? 1 : a.entryId > b.entryId ? -1 : 0),
-    );
+    const sorted = items
+      .map((item) => ({
+        ...item,
+        withCharacterIds: item.withCharacterIds.filter((id) => active.has(id)),
+      }))
+      .sort(
+        (a, b) =>
+          Date.parse(b.occurredAt) - Date.parse(a.occurredAt) ||
+          (a.entryId < b.entryId ? 1 : a.entryId > b.entryId ? -1 : 0),
+      );
     const rest = after
       ? sorted.filter((x) => {
           const d = Date.parse(x.occurredAt) - Date.parse(after.at);

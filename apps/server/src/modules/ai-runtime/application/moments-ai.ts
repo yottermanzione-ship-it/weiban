@@ -389,6 +389,11 @@ export class MomentsAiService {
       responseFormat: 'text',
       maxOutputTokens: 200,
       idempotencyKey: `ai:eco-moment:${input.runId}`,
+      meta: {
+        stablePrefixChars: brain.prefix.length,
+        promptTemplateVersion: 'brain-v1:private-moment',
+        ...(input.privateConversationId ? { scenarioMode: 'adult' } : {}),
+      },
       messages: [
         ...brainMessages(brain, input.privateConversationId ? 'adult' : 'background'),
         {

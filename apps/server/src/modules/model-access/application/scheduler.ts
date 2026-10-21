@@ -66,7 +66,7 @@ export class UpstreamScheduler {
     @Inject(UpstreamService) private readonly upstreams: UpstreamService,
   ) {}
 
-  /** 该模型可用的账号，按调度顺序排好。stickyKey = 会话 ID（没有时用 null，按权重随机）。 */
+  /** 该模型可用的账号。个人角色调用按用户+角色粘性，其它请求按会话；没有键时按权重随机。 */
   async plan(modelKey: string, stickyKey: string | null): Promise<RouteCandidate[]> {
     const rows = await this.database.db
       .select({ route: modelRoutes, upstream: upstreams })

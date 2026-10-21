@@ -140,6 +140,8 @@ export const MemoryTierConfig = z
     newUserTrialDays: z.number().int().min(0).max(60),
     /** 翻聊天记录每次最多取几条原话（0 = 关闭翻聊天记录）。 */
     recallTopK: z.number().int().min(0).max(10),
+    groupMemoryMessageThreshold: z.number().int().min(5).max(100).optional(),
+    groupMemoryIdleMinutes: z.number().int().min(1).max(120).optional(),
     /** 长上下文模式（PRO+ 可对单个角色打开）的原文窗口。 */
     longContext: ChatWindowLimits,
   })

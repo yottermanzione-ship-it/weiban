@@ -15,6 +15,8 @@ export const DEFAULT_MEMORY_TIER_CONFIG: MemoryTierConfig = {
   },
   newUserTrialDays: 7,
   recallTopK: 3,
+  groupMemoryMessageThreshold: 20,
+  groupMemoryIdleMinutes: 10,
   // 约 10 万 token：平时 1.6 万字 ≈ 1.1 万 token，按字数放大约 9 倍；轮数同理放大。
   longContext: { keepTurns: 120, triggerTurns: 300, maxTurns: 500, triggerChars: 145_000 },
 };
