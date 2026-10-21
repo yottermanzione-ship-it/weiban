@@ -283,15 +283,31 @@ export function useCall() {
   return value;
 }
 
-/** 私聊「+」/ 资料页的语音通话入口是否显示（平台未开通时不显示，MED-06 第 11 条）。 */
-export function useCallEntry(characterId: string | undefined) {
+/**
+ * 私聊「+」/ 资料页的语音通话入口状态：visible = 平台开通了语音服务（未开通时不显示，MED-06 第 11 条）；
+ * privateMode = 3.28（H2）该角色正处于私密模式，私密模式只开放文字和图片，入口置灰并说明。
+ */
+export function useCallAccess(characterId: string | undefined): {
+  visible: boolean;
+  privateMode: boolean;
+} {
   const remote = useRemote(CallEndpoints.getAvailability, {
     query: { characterId: characterId ?? '' },
     networkOnly: true,
   });
-  if (!characterId || !remote.data) return false;
-  return remote.data.reason !== 'service_disabled';
+  if (!characterId || !remote.data) return { visible: false, privateMode: false };
+  return {
+    visible: remote.data.reason !== 'service_disabled',
+    privateMode: remote.data.reason === 'private_mode',
+  };
 }
+
+export function useCallEntry(characterId: string | undefined) {
+  return useCallAccess(characterId).visible;
+}
+
+/** 3.28（H2）：私密模式不能语音通话时的说明。 */
+export const PRIVATE_MODE_CALL_HINT = '私密模式只支持文字和图片，切换到其他模式后才能语音通话';
 
 async function askMicrophone(): Promise<MediaStream | null> {
   try {
@@ -400,6 +416,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
           if (!availability.available) {
             void ctx.close();
             if (availability.reason === 'insufficient_balance') setDialog('balance');
+            else if (availability.reason === 'private_mode')
+              showToast(PRIVATE_MODE_CALL_HINT, 3000, 'info');
             else if (availability.reason === 'busy') {
               const active = await api.call(CallEndpoints.getActiveCall, { networkOnly: true });
               if (active.call) setView({ ...base(active.call, 'active'), detached: true });
@@ -420,6 +438,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
         } catch (e) {
           void ctx.close().catch(() => {});
           if (e instanceof ApiFailure && e.code === 'insufficient_balance') setDialog('balance');
+          else if (e instanceof ApiFailure && e.code === 'private_mode_unsupported')
+            showToast(PRIVATE_MODE_CALL_HINT, 3000, 'info');
           else showToast(friendlyError(e));
         }
       })();
@@ -790,11 +810,17 @@ export function CallLinkPage() {
 
 /** 资料页「语音通话」：平台未开通时不显示。 */
 export function ProfileCallButton({ characterId }: { characterId: string }) {
-  const show = useCallEntry(characterId);
+  const access = useCallAccess(characterId);
   const { start } = useCall();
-  if (!show) return null;
+  if (!access.visible) return null;
   return (
-    <button className="profile-action" onClick={() => start(characterId)}>
+    <button
+      className={access.privateMode ? 'profile-action muted' : 'profile-action'}
+      aria-disabled={access.privateMode || undefined}
+      onClick={() =>
+        access.privateMode ? showToast(PRIVATE_MODE_CALL_HINT, 3000, 'info') : start(characterId)
+      }
+    >
       <OldIcon name="wechat/voice_call" size={20} />
       语音通话
     </button>

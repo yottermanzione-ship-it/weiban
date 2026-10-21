@@ -1219,3 +1219,12 @@
   background: rgba(0, 0, 0, 0.08);
   color: rgba(0, 0, 0, 0.55);
 }
+
+/* 3.28（H2）：私密模式只开放文字和图片——语音输入、语音通话入口置灰（仍可点，点了说明原因）。 */
+.wx-input-icon.is-muted,
+.wx-plus-cell.is-muted .wx-plus-square {
+  opacity: 0.38;
+}
+.wx-plus-cell.is-muted small {
+  color: var(--wb-color-text-tertiary, var(--wb-color-text-secondary));
+}

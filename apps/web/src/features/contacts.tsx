@@ -30,7 +30,7 @@ import { RecentRow } from './timeline.js';
 import { RelationsRow } from './relations.js';
 import { useNewFriendsDot } from './new-friends.js';
 import { useMomentsBadge } from './moments.js';
-import { useCall, useCallEntry } from './call.js';
+import { PRIVATE_MODE_CALL_HINT, useCall, useCallAccess } from './call.js';
 import { PlazaOriginNote, PlazaTab } from './plaza.js';
 import { MediaImg } from './media.js';
 import { OldIcon } from './old-icons.js';
@@ -628,7 +628,8 @@ export function CharacterPage({
   const { state, assertOwner, synchronize } = useChat();
   const contact = state.contacts.find((item) => item.characterId === characterId);
   const stars = useStars();
-  const callEntry = useCallEntry(characterId);
+  const callAccess = useCallAccess(characterId);
+  const callEntry = callAccess.visible;
   const { start: startCall } = useCall();
   const [query] = useSearchParams();
   const referrer = onboarding ? null : query.get('ref');
@@ -815,7 +816,16 @@ export function CharacterPage({
             发消息
           </Link>
           {!onboarding && callEntry && (
-            <button type="button" className="profile-action" onClick={() => startCall(characterId)}>
+            <button
+              type="button"
+              className={callAccess.privateMode ? 'profile-action muted' : 'profile-action'}
+              aria-disabled={callAccess.privateMode || undefined}
+              onClick={() =>
+                callAccess.privateMode
+                  ? showToast(PRIVATE_MODE_CALL_HINT, 3000, 'info')
+                  : startCall(characterId)
+              }
+            >
               <OldIcon name="wechat/voice_call" size={20} />
               语音通话
             </button>

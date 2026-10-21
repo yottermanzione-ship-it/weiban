@@ -62,7 +62,7 @@ import {
   voicePlayer,
   type RecordResult,
 } from './media.js';
-import { useCall, useCallEntry } from './call.js';
+import { PRIVATE_MODE_CALL_HINT, useCall, useCallEntry } from './call.js';
 import { copyText } from './copy-text.js';
 import { Dialog, showToast } from './toast.js';
 import { prepareImage, uploadMedia } from '../data/upload.js';
@@ -611,6 +611,11 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     [group, id, roleId],
   );
   const preset = useCurrentPreset(presetTarget);
+  // 3.28（H2）：私密模式只开放文字和图片——不能语音通话、不能按住说话（语音输入）。
+  const privateMode = !group && preset.mode === 'adult';
+  useEffect(() => {
+    if (privateMode) setMode('text');
+  }, [privateMode]);
   useEffect(() => () => voicePlayer.stop(), []);
   const messages = chat.state.messages
     .filter((item) => item.conversationId === id)
@@ -851,7 +856,14 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
             content={c}
             mine={mine}
             name={role ? displayName(role.refId) : undefined}
-            onRedial={!group && role && callEntry ? () => startCall(role.refId) : undefined}
+            onRedial={
+              !group && role && callEntry
+                ? () =>
+                    privateMode
+                      ? showToast(PRIVATE_MODE_CALL_HINT, 3000, 'info')
+                      : startCall(role.refId)
+                : undefined
+            }
           />
         );
       case 'text':
@@ -1461,8 +1473,10 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         {
           label: '语音通话',
           icon: 'wechat/voice_call',
+          muted: privateMode,
           onClick: () => {
-            if (role && callEntry) {
+            if (privateMode) showToast(PRIVATE_MODE_CALL_HINT, 3000, 'info');
+            else if (role && callEntry) {
               setPanel('none');
               startCall(role.refId);
             } else showToast('语音通话需先开通语音服务并配置域名，暂未开放', 3000, 'info');
@@ -1685,9 +1699,14 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         <form className="wx-input-bar" onSubmit={(event) => void submit(event)}>
           <button
             type="button"
-            className="wx-input-icon"
+            className={privateMode ? 'wx-input-icon is-muted' : 'wx-input-icon'}
             aria-label={mode === 'text' ? '切换到按住说话' : '切换到键盘'}
+            aria-disabled={privateMode || undefined}
             onClick={() => {
+              if (privateMode) {
+                showToast('私密模式只支持文字和图片，暂时不能发语音', 3000, 'info');
+                return;
+              }
               setMode((m) => (m === 'text' ? 'voice' : 'text'));
               setPanel('none');
             }}
@@ -1923,6 +1942,8 @@ interface PlusCell {
   label: string;
   icon: string;
   dot?: boolean;
+  /** 3.28（H2）：置灰（仍可点，点了说明原因）。 */
+  muted?: boolean;
   onClick(): void;
 }
 
@@ -1952,8 +1973,14 @@ function PlusPanel({
       >
         {pages.map((list, index) => (
           <div className="wx-plus-page" key={index}>
-            {list.map(({ label, icon, dot, onClick }) => (
-              <button key={label} type="button" className="wx-plus-cell" onClick={onClick}>
+            {list.map(({ label, icon, dot, muted, onClick }) => (
+              <button
+                key={label}
+                type="button"
+                className={muted ? 'wx-plus-cell is-muted' : 'wx-plus-cell'}
+                aria-disabled={muted || undefined}
+                onClick={onClick}
+              >
                 <span className="wx-plus-square">
                   <OldIcon name={icon} size={28} />
                   {dot && <span className="wx-plus-dot" aria-label="现在开着别的预设" />}
