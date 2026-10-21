@@ -397,6 +397,8 @@ class AgentSession implements CallAgentSession {
       this.info.characterId,
       this.info.callId,
       result.value.text.trim().slice(0, 300),
+      // 方案 20 §2.4：私密模式的通话摘要写入私密范围，不进日常私聊、群聊、生态。
+      this.info.scope,
     );
   }
 }

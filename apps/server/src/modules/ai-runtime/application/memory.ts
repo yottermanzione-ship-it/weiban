@@ -274,19 +274,22 @@ export class MemoryService {
   /**
    * T-072 MEM-04 / MED-06 第 5 条：通话结束后的摘要写入记忆（类别 episode，记忆页可见、可删改）。
    * 以 callId 作为客户端幂等键，同一通电话只写一条；经期等健康内容不写。
+   * scope：私密模式的通话摘要必须写成 adult（方案 20 §2.4 问题 2），只在私密模式被想起、只给私密模型。
    */
   async addCallSummary(
     userId: string,
     characterId: string,
     callId: string,
     content: string,
+    scope: 'normal' | 'adult',
   ): Promise<void> {
-    await this.addEpisode(userId, characterId, callId, content, 'never');
+    await this.addEpisode(userId, characterId, callId, content, 'never', scope);
   }
 
   /**
    * 系统写入一条共同经历记忆（T-072 通话摘要；T-082 领养、起名、送养——宠物不是敏感信息，可 shareable）。
-   * clientId 为 UUID，同用户同角色内幂等。
+   * clientId 为 UUID，同用户同角色内幂等。scope 默认 normal；私密模式产生的经历传 adult
+   * （adult 记忆只在私密模式读取，memoryShareable 也不允许跨角色转述）。
    */
   async addEpisode(
     userId: string,
@@ -294,6 +297,7 @@ export class MemoryService {
     clientId: string,
     content: string,
     sharingClass: 'never' | 'shareable' | 'basic',
+    scope: 'normal' | 'adult' = 'normal',
   ): Promise<void> {
     const callId = clientId;
     const text = content.trim().slice(0, 1000);
@@ -324,7 +328,7 @@ export class MemoryService {
           characterId,
           conversationId: job.conversationId,
           clientId: callId,
-          scope: 'normal',
+          scope,
           ciphertext: await this.seal(tx, userId, id, data),
           createdAt: this.clock.now(),
           updatedAt: this.clock.now(),

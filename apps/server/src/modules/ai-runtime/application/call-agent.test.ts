@@ -20,7 +20,11 @@ import { CompanionSettingsService } from './settings.js';
 
 afterEach(() => vi.useRealTimers());
 
-async function openControlledSession(blockReply = false, customVoiceId?: string) {
+async function openControlledSession(
+  blockReply = false,
+  customVoiceId?: string,
+  opts: { adult?: boolean; userSays?: string } = {},
+) {
   let releaseReply: (() => void) | undefined;
   const reply = vi.fn(async () => {
     if (blockReply)
@@ -38,11 +42,13 @@ async function openControlledSession(blockReply = false, customVoiceId?: string)
     ).card,
   );
   if (customVoiceId) card.data.social.voiceId = customVoiceId;
+  const addCallSummary = vi.fn(async () => undefined);
   const resolveVoice = vi.fn(async () => customVoiceId ?? 'fixture-voice');
   let releaseAsr: (() => void) | undefined;
   const asr = {
     pushAudio: vi.fn(),
     results: async function* () {
+      if (opts.userSays) yield { final: true, text: opts.userSays };
       await new Promise<void>((resolveWait) => {
         releaseAsr = resolveWait;
       });
@@ -72,9 +78,11 @@ async function openControlledSession(blockReply = false, customVoiceId?: string)
       {
         provide: AdultBoundaryService,
         useValue: {
-          generate: async () => {
-            throw Error('普通通话不得走成人生成');
-          },
+          generate: opts.adult
+            ? reply
+            : async () => {
+                throw Error('普通通话不得走成人生成');
+              },
         },
       },
       {
@@ -107,6 +115,7 @@ async function openControlledSession(blockReply = false, customVoiceId?: string)
             isRealPerson: false,
             isMinor: false,
             romanceAllowed: true,
+            adultModeEligible: !!opts.adult,
           }),
         },
       },
@@ -118,9 +127,14 @@ async function openControlledSession(blockReply = false, customVoiceId?: string)
       },
       { provide: CHAT_READ_PORT, useValue: { readMessages: async () => [] } },
       { provide: CLOCK, useValue: new TestClock('2026-10-11T10:00:00Z') },
-      { provide: MemoryService, useValue: { context: async () => null } },
+      { provide: MemoryService, useValue: { context: async () => null, addCallSummary } },
       { provide: MediaAiService, useValue: { resolveVoice } },
-      { provide: CompanionSettingsService, useValue: { get: async () => ({ voiceId: null }) } },
+      {
+        provide: CompanionSettingsService,
+        useValue: {
+          get: async () => ({ voiceId: null, scenarioMode: opts.adult ? 'adult' : 'daily' }),
+        },
+      },
       { provide: DATABASE, useValue: {} },
     ],
   }).compile();
@@ -142,6 +156,8 @@ async function openControlledSession(blockReply = false, customVoiceId?: string)
   await vi.advanceTimersByTimeAsync(0);
   return {
     module,
+    reply,
+    addCallSummary,
     resolveVoice,
     session,
     speech,
@@ -269,3 +285,37 @@ it('聊天模型仍在等待时，余额道别不能排在回复后面，晚到�
     await call.module.close();
   }
 });
+
+it.each([
+  { adult: true, scope: 'adult', modelRole: 'adult' },
+  { adult: false, scope: 'normal', modelRole: 'background' },
+])(
+  '通话摘要按通话范围写入记忆：私密模式写 adult 且用私密模型，日常写 normal（方案 20 §2.4）',
+  async ({ adult, scope, modelRole }) => {
+    const call = await openControlledSession(false, undefined, {
+      adult,
+      userSays: '明天我要去面试',
+    });
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0);
+      await call.session.close({ durationSec: 60, outcome: 'completed' });
+      await call.collected;
+      const summary = call.reply.mock.calls
+        .map((c) => (c as unknown as [{ purpose: string; modelRole: string }])[0])
+        .find((input) => input.purpose === 'memory');
+      expect(summary?.modelRole).toBe(modelRole);
+      expect(call.addCallSummary).toHaveBeenCalledTimes(1);
+      expect(call.addCallSummary).toHaveBeenCalledWith(
+        'user',
+        'role',
+        'call',
+        expect.any(String),
+        scope,
+      );
+    } finally {
+      await call.session.close({ durationSec: 0, outcome: 'ended' });
+      await call.module.close();
+    }
+  },
+);
