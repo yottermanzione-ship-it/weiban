@@ -3,7 +3,12 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Test } from '@nestjs/testing';
 import { afterEach, expect, it, vi } from 'vitest';
-import { CharacterCard, type CallAgentSession, type CallAgentSignal } from '@weiban/contracts';
+import {
+  CharacterCard,
+  type CallAgentSession,
+  type CallAgentSignal,
+  type GenerateTextInput,
+} from '@weiban/contracts';
 import { CLOCK, DATABASE, TestClock } from '../../../platform/index.js';
 import { BILLING_READ_PORT } from '../../billing/index.js';
 import { CHAT_READ_PORT } from '../../chat/index.js';
@@ -27,7 +32,8 @@ async function openControlledSession(
   opts: { adult?: boolean; userSays?: string } = {},
 ) {
   let releaseReply: (() => void) | undefined;
-  const reply = vi.fn(async () => {
+  const reply = vi.fn(async (_input: GenerateTextInput) => {
+    void _input;
     if (blockReply)
       await new Promise<void>((resolveReply) => {
         releaseReply = resolveReply;
@@ -187,6 +193,10 @@ it('自定义角色通话把已授权角色快照音色传入选择器和语音�
     expect(call.speech).toHaveBeenCalledWith(
       expect.objectContaining({ voiceId: 'custom-library-voice' }),
     );
+    const request = call.reply.mock.calls[0]?.[0];
+    expect(request?.messages[0]?.content).toBe('共享角色前缀：用户周末喜欢爬山');
+    expect(request?.messages.some((m) => m.content.includes('本轮记忆：下周三面试'))).toBe(true);
+    expect(request?.meta?.stablePrefixChars).toBe('共享角色前缀：用户周末喜欢爬山'.length);
   } finally {
     await call.session.close({ durationSec: 0, outcome: 'ended' });
     await call.collected;

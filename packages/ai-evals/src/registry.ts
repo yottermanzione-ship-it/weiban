@@ -21,7 +21,7 @@ import {
 import { KEEP_CHATTING_CASES, MEMORY_TIER_CASES } from '../cases/v5-memory.js';
 
 /** 已落地的考题登记，不等于eval-plan全部19类已覆盖。 */
-export const EVAL_CASE_VERSION = '2026-10-20.1';
+export const EVAL_CASE_VERSION = '2026-10-21.1';
 export const EVAL_SUITES = {
   l2: L2_CASES,
   l3_simulation: L3_CASES,

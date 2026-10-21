@@ -550,6 +550,20 @@ for (const fixture of fixtures) {
       { role: 'system', content: head },
       { role: 'system', content: fixture.rule },
       ...turns,
+      ...(fixture.compact
+        ? []
+        : [
+            {
+              role: 'system' as const,
+              content: `${SOCIAL}\n【本轮检索】${MEMORY.slice(
+                TIER.residentLimit,
+                TIER.residentLimit + TIER.retrieveLimit,
+              )
+                .map(memoryLine)
+                .join('\n')
+                .slice(0, 700)}`,
+            },
+          ]),
       { role: 'system', content: `本轮场景提示${index}：${USER_LINES[index]}` },
     ];
     oldTotal += simulatePrefixCache(`m1:old:${fixture.scene}`, before).total;
