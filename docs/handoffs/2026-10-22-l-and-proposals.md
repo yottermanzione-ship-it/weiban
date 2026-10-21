@@ -25,6 +25,8 @@
 
 `C:\wb-dev\logs\l-types-final.txt` 的 contracts、client-core、server、web、admin 必要类型编译 exit 0；后续服务器最新源码编译 `l-server-compile-current.txt` 也 exit 0。安卓 `l-android-compile-2.txt` 有整应用编译成功；格式写入 `l-android-format-write-2.txt` 已成功。最后编译先遇 Windows JAR 文件占用；一次 PowerShell Gradle 参数未加引号导致参数被拆，已纠正；已用 `C:\wb-dev\logs\l-android-build-dir.init.gradle` 将生成目录隔离到 `C:\wb-dev\android-build-l-20261022`，不杀其它任务的进程、不删已有构建文件，以 `l-android-compile-isolated.txt` 的实际完成结果为准，不把旧成功自动覆盖后续改动。
 
+最后结果：`l-android-compile-isolated.txt` 整应用 Kotlin 编译 **exit 0**，112 个任务执行、用时 6 分 15 秒；对应本轮实现提交 `f6f801c21b2f39c764a2fe26e1cda87886bd42fb`。这证明当前源码完成类型 / 编译装配，不代表 APK 安装、功能测试、账务、数据库或独立质量验收通过。原构建目录的文件占用没有通过删除或结束其它任务来绕过。
+
 本轮没有执行 Vitest、迁移 up/down、真实数据库 / 并发 / 注销验证、浏览器点按、Android 测试或真机。已补日志隐私边界 / 指纹、API 技术钩子 / 账号通知夹具，但未运行；完整自审时须和 M 新旧夹具统一更新执行。两份 M Android 页面只是配套格式化，不登记业务验证。
 
 最终自审至少核验：新契约请求严格与响应容错、队列重放 / 跨号 / 超额 / 丢回执、数据库限流与保留期 / 注销、版本重开 / 采样告警、反馈快照与通知、后台完整交互，以及 H3 / S / H4 / M 的联动、真实费用和原先未执行的数据库用例。真实供应商、真机、Jev 正式校准 / 长期稳定性没有现成通过结论。Codex 开发代码的独立验收仍需另一位审查者。
