@@ -942,6 +942,20 @@ function ModelWizard({
     set(['priceCacheWrite5m'], match.priceCny.cacheWrite);
     if (!(form.getFieldValue('displayName') as string | undefined)?.trim())
       updates.push({ name: ['displayName'], value: match.name.slice(0, 60) });
+    if (!(form.getFieldValue('vendorName') as string | undefined)?.trim()) {
+      const vendor = match.providerName.slice(0, 40);
+      updates.push({ name: ['vendorName'], value: vendor });
+      // setFields 不触发 onValuesChange：模型键在这里跟着出品方重算
+      if (!model)
+        updates.push({
+          name: ['modelKey'],
+          value: autoModelKey(
+            vendor,
+            form.getFieldValue(['routes', 0, 'upstreamModelId']) as string | undefined,
+            new Set(existingKeys),
+          ),
+        });
+    }
     const capabilities = (form.getFieldValue('capabilities') as string[] | undefined) ?? [];
     let vision = capabilities.includes('vision');
     if (match.supportsImage != null && (mode === 'manual' || (!model && match.supportsImage))) {

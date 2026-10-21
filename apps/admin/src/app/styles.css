@@ -1436,7 +1436,7 @@ body {
 }
 .models-dev-grid {
   display: grid;
-  grid-template-columns: 140px 1fr;
+  grid-template-columns: 170px 1fr;
   gap: 4px 12px;
   margin-bottom: 6px;
   font-size: 13px;
