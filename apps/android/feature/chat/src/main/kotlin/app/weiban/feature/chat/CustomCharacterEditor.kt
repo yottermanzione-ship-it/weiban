@@ -21,6 +21,8 @@ internal data class CustomEditorOpen(
     val owner: OwnerRecord,
     val characterId: String? = null,
     val nonce: Long = System.nanoTime(),
+    val seedName: String? = null,
+    val seedDescription: String? = null,
 )
 
 @Composable internal fun ColumnScope.MyCustomCharacters(
@@ -124,6 +126,7 @@ internal class CustomCharacterDraft(
         val tagList = tags.split(',', '，', '、').map(String::trim).filter(String::isNotEmpty)
         return when {
             name.trim().isEmpty() -> "请填写角色名字"
+            basis !in setOf("original", "fictional", "real_person") -> "请选择角色原型分类"
             description.trim().length < 50 -> "人设描述至少需要50字"
             phraseList.size > 10 || phraseList.any { it.length > 50 } -> "最多10句口头禅，每句最多50字"
             tagList.size > 10 || tagList.any { it.length > 16 } -> "最多10个标签，每个最多16字"
@@ -159,7 +162,21 @@ internal class CustomCharacterDraft(
 ) {
     val auth by repository.auth.collectAsState()
     if (auth?.user?.userId != open.owner.userId || auth?.session?.sessionId != open.owner.sessionId) return
-    var draft by remember(open) { mutableStateOf(if (open.characterId == null) CustomCharacterDraft() else null) }
+    var draft by remember(open) {
+        mutableStateOf(
+            if (open.characterId == null) {
+                CustomCharacterDraft().also {
+                    open.seedName?.let { name ->
+                        it.name = name.take(32)
+                        it.basis = ""
+                    }
+                    open.seedDescription?.let { description -> it.description = description.take(2000) }
+                }
+            } else {
+                null
+            },
+        )
+    }
     var error by remember(open) { mutableStateOf<String?>(null) }
     var saved by remember(open) { mutableStateOf<UserCustomCharacter?>(null) }
     LaunchedEffect(open) {

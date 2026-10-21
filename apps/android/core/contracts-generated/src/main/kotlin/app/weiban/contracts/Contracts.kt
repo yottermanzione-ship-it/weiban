@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.32. Regenerate: pnpm android:generate
+// Contract 3.33. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.32"
+const val CONTRACT_VERSION: String = "3.33"
 
 @Serializable
 data class AccountAlias(
@@ -2202,6 +2202,148 @@ data class ClientFullSyncSnapshot(
     @SerialName("coverages") val `coverages`: List<ClientFullSyncSnapshotCoveragesItem>,
 )
 
+@Serializable
+data class ClientLogAdminEndpointsGetParams(
+    @SerialName("fingerprint") val `fingerprint`: String,
+)
+
+@Serializable
+data class ClientLogAdminEndpointsGetResponse(
+    @SerialName("issue") val `issue`: ClientLogIssue,
+    @SerialName("samples") val `samples`: List<ClientLogSample>,
+    @SerialName("days") val `days`: List<ClientLogAdminEndpointsGetResponseDaysItem>,
+    @SerialName("users") val `users`: List<ClientLogAdminEndpointsGetResponseUsersItem>,
+)
+
+@Serializable
+data class ClientLogAdminEndpointsListResponse(
+    @SerialName("items") val `items`: List<ClientLogIssue>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+    @SerialName("todayIssues") val `todayIssues`: Long,
+    @SerialName("versions") val `versions`: List<ClientLogAdminEndpointsListResponseVersionsItem>,
+)
+
+@Serializable
+data class ClientLogAdminEndpointsTicketParams(
+    @SerialName("ticketId") val `ticketId`: Id,
+)
+
+@Serializable
+data class ClientLogAdminEndpointsTicketResponse(
+    @SerialName("items") val `items`: List<ClientRuntimeEvent>,
+)
+
+@Serializable
+data class ClientLogAdminEndpointsUpdateBody(
+    @SerialName("status") val `status`: ClientLogStatus,
+    @SerialName("note") val `note`: String,
+)
+
+@Serializable
+data class ClientLogAdminEndpointsUserParams(
+    @SerialName("userId") val `userId`: Id,
+)
+
+@Serializable
+data class ClientLogAdminEndpointsUserResponse(
+    @SerialName("items") val `items`: List<ClientLogSample>,
+)
+
+typealias ClientLogApp = String
+
+@Serializable
+data class ClientLogBatch(
+    @SerialName("sessionId") val `sessionId`: Id,
+    @SerialName("appKind") val `appKind`: ClientLogApp,
+    @SerialName("version") val `version`: ClientLogVersion,
+    @SerialName("build") val `build`: ClientLogBuild,
+    @SerialName("events") val `events`: List<ClientRuntimeEvent>,
+)
+
+typealias ClientLogBuild = String
+
+typealias ClientLogCode = String
+
+@Serializable
+data class ClientLogEndpointsReportAnonymousResponse(
+    @EncodeDefault
+    @SerialName("accepted") val `accepted`: Boolean = true,
+)
+
+@Serializable
+data class ClientLogEnvironment(
+    @SerialName("os") val `os`: String,
+    @SerialName("browser") val `browser`: String,
+    @SerialName("major") val `major`: Long,
+    @SerialName("screen") val `screen`: String,
+    @SerialName("language") val `language`: String,
+    @SerialName("network") val `network`: String,
+)
+
+@Serializable
+data class ClientLogFrame(
+    @SerialName("file") val `file`: String,
+    @SerialName("line") val `line`: Long,
+    @SerialName("column") val `column`: Long,
+    @SerialName("asset") val `asset`: String? = null,
+)
+
+@Serializable
+data class ClientLogIssue(
+    @SerialName("fingerprint") val `fingerprint`: String,
+    @SerialName("kind") val `kind`: ClientLogKind,
+    @SerialName("appKind") val `appKind`: ClientLogApp,
+    @SerialName("title") val `title`: String,
+    @SerialName("firstSeenAt") val `firstSeenAt`: Timestamp,
+    @SerialName("lastSeenAt") val `lastSeenAt`: Timestamp,
+    @SerialName("totalCount") val `totalCount`: Long,
+    @SerialName("affectedUsers") val `affectedUsers`: Long,
+    @SerialName("firstVersion") val `firstVersion`: ClientLogVersion,
+    @SerialName("lastVersion") val `lastVersion`: ClientLogVersion,
+    @SerialName("status") val `status`: ClientLogStatus,
+    @SerialName("note") val `note`: String,
+)
+
+typealias ClientLogKind = String
+
+@Serializable
+data class ClientLogListQuery(
+    @SerialName("appKind") val `appKind`: ClientLogApp? = null,
+    @SerialName("kind") val `kind`: ClientLogKind? = null,
+    @SerialName("status") val `status`: ClientLogStatus? = null,
+    @SerialName("version") val `version`: ClientLogVersion? = null,
+    @SerialName("since") val `since`: Timestamp? = null,
+    @SerialName("until") val `until`: Timestamp? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long,
+)
+
+@Serializable
+data class ClientLogListQueryInput(
+    @SerialName("appKind") val `appKind`: ClientLogApp? = null,
+    @SerialName("kind") val `kind`: ClientLogKind? = null,
+    @SerialName("status") val `status`: ClientLogStatus? = null,
+    @SerialName("version") val `version`: ClientLogVersion? = null,
+    @SerialName("since") val `since`: Timestamp? = null,
+    @SerialName("until") val `until`: Timestamp? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+typealias ClientLogRoute = String
+
+@Serializable
+data class ClientLogSample(
+    @SerialName("id") val `id`: Id,
+    @SerialName("userId") val `userId`: Id?,
+    @SerialName("receivedAt") val `receivedAt`: Timestamp,
+    @SerialName("event") val `event`: ClientRuntimeEvent,
+)
+
+typealias ClientLogStatus = String
+
+typealias ClientLogVersion = String
+
 typealias ClientMsgId = String
 
 @Serializable
@@ -2233,6 +2375,26 @@ data class ClientPresenceFrame(
     @SerialName("type") val `type`: String = "presence.focus",
     @SerialName("ref") val `ref`: String? = null,
     @SerialName("data") val `data`: ClientPresenceFrameData,
+)
+
+@Serializable
+data class ClientRuntimeEvent(
+    @SerialName("clientEventId") val `clientEventId`: Id,
+    @SerialName("sessionId") val `sessionId`: Id,
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("kind") val `kind`: ClientLogKind,
+    @SerialName("appKind") val `appKind`: ClientLogApp,
+    @SerialName("version") val `version`: ClientLogVersion,
+    @SerialName("build") val `build`: ClientLogBuild,
+    @SerialName("page") val `page`: ClientLogRoute,
+    @SerialName("code") val `code`: ClientLogCode,
+    @SerialName("frames") val `frames`: List<ClientLogFrame>,
+    @SerialName("environment") val `environment`: ClientLogEnvironment,
+    @SerialName("count") val `count`: Long,
+    @SerialName("components") val `components`: List<String>? = null,
+    @SerialName("api") val `api`: ClientRuntimeEventApi? = null,
+    @SerialName("reconnects") val `reconnects`: Long? = null,
+    @SerialName("offlineSeconds") val `offlineSeconds`: Long? = null,
 )
 
 @Serializable
@@ -2852,6 +3014,7 @@ data class CreateRoleRequestInput(
 
 @Serializable
 data class CreateSupportTicket(
+    @SerialName("runtimeEvents") val `runtimeEvents`: List<ClientRuntimeEvent>? = null,
     @SerialName("clientRequestId") val `clientRequestId`: Id,
     @SerialName("kind") val `kind`: SupportTicketKind,
     @SerialName("category") val `category`: FeedbackCategory? = null,
@@ -2865,6 +3028,7 @@ data class CreateSupportTicket(
 
 @Serializable
 data class CreateSupportTicketInput(
+    @SerialName("runtimeEvents") val `runtimeEvents`: List<ClientRuntimeEvent>? = null,
     @SerialName("clientRequestId") val `clientRequestId`: Id,
     @SerialName("kind") val `kind`: SupportTicketKind,
     @SerialName("category") val `category`: FeedbackCategory? = null,
@@ -12010,12 +12174,40 @@ data class ClientFullSyncSnapshotCoveragesItem(
     @SerialName("coverage") val `coverage`: MessagePageCoverage,
 )
 
+@Serializable
+data class ClientLogAdminEndpointsGetResponseDaysItem(
+    @SerialName("day") val `day`: String,
+    @SerialName("count") val `count`: Long,
+)
+
+@Serializable
+data class ClientLogAdminEndpointsGetResponseUsersItem(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("lastSeenAt") val `lastSeenAt`: Timestamp,
+)
+
+@Serializable
+data class ClientLogAdminEndpointsListResponseVersionsItem(
+    @SerialName("version") val `version`: ClientLogVersion,
+    @SerialName("sessions") val `sessions`: Long,
+    @SerialName("affectedSessions") val `affectedSessions`: Long,
+)
+
 @Serializable class ClientPingFrameData
 
 @Serializable
 data class ClientPresenceFrameData(
     @SerialName("conversationId") val `conversationId`: Id?,
     @SerialName("foreground") val `foreground`: Boolean,
+)
+
+@Serializable
+data class ClientRuntimeEventApi(
+    @SerialName("route") val `route`: ClientLogRoute,
+    @SerialName("method") val `method`: String,
+    @SerialName("status") val `status`: Long,
+    @SerialName("durationMs") val `durationMs`: Long,
+    @SerialName("requestId") val `requestId`: Id? = null,
 )
 
 @Serializable

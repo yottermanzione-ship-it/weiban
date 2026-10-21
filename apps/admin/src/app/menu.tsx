@@ -78,6 +78,7 @@ export const MENU: MenuDataItem[] = [
       { path: '/support', name: '帮助与反馈' },
       { path: '/reports', name: '举报处理' },
       { path: '/admin/alerts', name: '运行提醒' },
+      { path: '/client-logs', name: '客户端报错' },
       { path: '/account-deletions', name: '注销未完成' },
     ],
   },
@@ -115,7 +116,6 @@ export function badgeOf(path: string | undefined, counts: TodoCounts): number {
 export function groupBadge(item: MenuDataItem, counts: TodoCounts): number {
   const key = item.key ?? item.path;
   if (key === '/roles') return counts.roleRequests;
-  if (key === '/service')
-    return counts.support + counts.reports + counts.alerts + counts.deletions;
+  if (key === '/service') return counts.support + counts.reports + counts.alerts + counts.deletions;
   return 0;
 }

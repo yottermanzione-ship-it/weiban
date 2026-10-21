@@ -127,7 +127,10 @@ private val menuPages = setOf("me", "services", "settings", "account", "general"
             "period" -> PeriodDiaryPage(repository, owner)
             "proactive" -> ProactiveDefaultsPage(state)
             "privacy" -> PrivacyPage(state)
+            "support" -> SupportPage(state)
+            "support-new" -> SupportCreatePage(state)
             "delete-account" -> AccountDeletionPage(state, onLogout)
+            else -> if (page.startsWith("support-ticket:")) SupportTicketPage(state, page.removePrefix("support-ticket:"))
         }
     }
 }
@@ -351,6 +354,7 @@ private val menuPages = setOf("me", "services", "settings", "account", "general"
     MenuGroup { MenuRow("推送") { state.openPage("notifications") } }
     MenuGroup {
         MenuRow("关于微伴", value = ReleaseCenter.versionName, dot = (unread?.unreadCount ?: 0) > 0) { state.openPage("about") }
+        MenuRow("帮助与反馈") { state.openPage("support") }
         ComingSoonRow("plugins", withIcon = false, onOpen = coming)
     }
     MenuGroup { MenuRow("退出登录", danger = true, onClick = onLogout) }
@@ -438,13 +442,24 @@ private val pageTitles =
         "period" to "经期日记",
         "proactive" to "主动消息与免打扰",
         "privacy" to "隐私",
+        "support" to "帮助与反馈",
+        "support-new" to "提交反馈",
         "delete-account" to "注销账号",
     )
 
 private fun pageTitle(
     page: String,
     firstProfile: Boolean,
-): String = if (firstProfile && page == "profile") "TA 该怎么称呼你？" else pageTitles[page] ?: "我"
+): String =
+    if (firstProfile &&
+        page == "profile"
+    ) {
+        "TA 该怎么称呼你？"
+    } else if (page.startsWith("support-ticket:")) {
+        "反馈详情"
+    } else {
+        pageTitles[page] ?: "我"
+    }
 
 @Composable private fun ModelDefault(
     state: MeState,

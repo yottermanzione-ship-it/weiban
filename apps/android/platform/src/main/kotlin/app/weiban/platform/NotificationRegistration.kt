@@ -19,18 +19,33 @@ internal class NotificationRegistration(
     suspend fun bind(owner: OwnerRecord) =
         lock.withLock {
             if (!transport.available || !notices.permitted() || !repository.notifications.enabled(owner)) return@withLock
-            val token = transport.token()
+            val token =
+                try {
+                    transport.token()
+                } catch (error: Exception) {
+                    if (error !is kotlinx.coroutines.CancellationException && owned(owner)) repository.runtimeLogs?.pushFailure()
+                    throw error
+                }
             if (!repository.notifications.enabled(owner) || !notices.permitted()) return@withLock
             val result =
-                repository.call(
-                    Endpoints.pushEndpointsRegisterDevice,
-                    buildJsonObject {
-                        put("kind", "android")
-                        put("provider", transport.provider)
-                        put("token", token)
-                    },
-                    options = SessionCallOptions(owner = owner, networkOnly = true),
-                )
+                try {
+                    repository.call(
+                        Endpoints.pushEndpointsRegisterDevice,
+                        buildJsonObject {
+                            put("kind", "android")
+                            put("provider", transport.provider)
+                            put("token", token)
+                        },
+                        options = SessionCallOptions(owner = owner, networkOnly = true),
+                    )
+                } catch (error: Exception) {
+                    if (error !is kotlinx.coroutines.CancellationException && owned(owner) &&
+                        (error !is app.weiban.network.ApiFailure || error.code !in setOf("session_changed", "unauthenticated"))
+                    ) {
+                        repository.runtimeLogs?.pushFailure()
+                    }
+                    throw error
+                }
             repository.notifications.saveDevice(owner, result.pushDeviceId)
         }
 

@@ -37,6 +37,7 @@ export const ModuleName = z.enum([
   'play',
   // 3.8（总对照表 Q9）
   'support',
+  'client_logs',
 ]);
 export type ModuleName = z.infer<typeof ModuleName>;
 

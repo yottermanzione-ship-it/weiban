@@ -21,6 +21,7 @@ import {
   type SupportTicket,
   type SyncPort,
   type Tx,
+  type ClientLogsPort,
 } from '@weiban/contracts';
 import { z } from 'zod';
 import {
@@ -39,6 +40,7 @@ import { IDENTITY_DIRECTORY_PORT } from '../../identity/index.js';
 import { MEDIA_READ_PORT, MEDIA_SYSTEM_PORT } from '../../media/index.js';
 import { PUSH_PORT } from '../../push/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
+import { CLIENT_LOGS_PORT } from '../../client-logs/index.js';
 import { tickets, type TicketReplyJson, type TicketRow } from '../infra/db/schema.js';
 
 const DAILY_LIMIT = 20;
@@ -91,6 +93,7 @@ export class SupportService {
     @Inject(MEDIA_READ_PORT) private readonly mediaRead: MediaReadPort,
     @Optional() @Inject(PUSH_PORT) private readonly push?: PushPort,
     @Optional() @Inject(IDENTITY_DIRECTORY_PORT) private readonly directory?: IdentityDirectoryPort,
+    @Optional() @Inject(CLIENT_LOGS_PORT) private readonly clientLogs?: ClientLogsPort,
   ) {}
 
   // ---------- 用户端 ----------
@@ -156,6 +159,7 @@ export class SupportService {
           updatedAt: now,
         })
         .returning();
+      await this.clientLogs?.attach(tx, userId, created!.id, body.runtimeEvents ?? []);
       await this.changed(tx, userId, created!.id);
       return created!;
     });

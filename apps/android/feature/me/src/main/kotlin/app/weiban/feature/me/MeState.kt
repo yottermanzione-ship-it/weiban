@@ -82,10 +82,12 @@ internal class MeState(
 
     fun back() {
         page = history.removeLastOrNull() ?: "me"
+        repository.runtimeLogs?.page("/settings/$page")
         message = null
     }
 
     fun openPage(next: String) {
+        repository.runtimeLogs?.page("/settings/$next")
         if (next == page) return
         if (next == "me") history.clear() else history += page
         page = next

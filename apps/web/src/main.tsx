@@ -15,12 +15,15 @@ import './app/chat-old.css';
 import './app/pages-old.css';
 import './app/ecology.css';
 import { App } from './app/app.js';
+import { RuntimeErrorBoundary } from './app/runtime-error-boundary.js';
 import { applyDisplayPrefs } from './data/display-prefs.js';
 applyDisplayPrefs();
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <App />
+      <RuntimeErrorBoundary>
+        <App />
+      </RuntimeErrorBoundary>
     </BrowserRouter>
   </StrictMode>,
 );

@@ -13,6 +13,15 @@ export interface RequestOptions<E extends EndpointDef> {
   networkOnly?: boolean;
   /** 驱动停止或账号切换时取消在途请求。 */
   signal?: AbortSignal;
+  keepalive?: boolean;
+}
+export interface ApiFailureRecord {
+  route: string;
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  status: number;
+  durationMs: number;
+  requestId?: string;
+  timeout?: boolean;
 }
 export class ApiFailure extends Error {
   constructor(
@@ -25,6 +34,42 @@ export class ApiFailure extends Error {
   }
 }
 export class ApiClient {
+  private failureObserver: ((event: ApiFailureRecord) => void) | undefined;
+  private ownerObserver: ((userId: string | null) => void) | undefined;
+  observeOwner(observer: (userId: string | null) => void): void {
+    this.ownerObserver = observer;
+  }
+  private notifyOwner(): void {
+    try {
+      this.ownerObserver?.(this.auth?.user.userId ?? null);
+    } catch {
+      /* optional observer */
+    }
+  }
+  observeFailures(observer: (event: ApiFailureRecord) => void): void {
+    this.failureObserver = observer;
+  }
+  private reportFailure(
+    endpoint: EndpointDef,
+    startedAt: number,
+    status: number,
+    requestId?: string,
+    timeout = false,
+  ): void {
+    if (endpoint.path.includes('/client-logs') || (status > 0 && status < 500)) return;
+    try {
+      this.failureObserver?.({
+        route: endpoint.path,
+        method: endpoint.method as ApiFailureRecord['method'],
+        status,
+        durationMs: Math.min(120000, Math.max(0, Date.now() - startedAt)),
+        ...(requestId ? { requestId } : {}),
+        ...(timeout ? { timeout: true } : {}),
+      });
+    } catch {
+      /* telemetry must not break requests */
+    }
+  }
   private auth: AuthResponse | null = null;
   private writes: Promise<void> = Promise.resolve();
   private enqueue<T>(work: () => Promise<T>): Promise<T> {
@@ -44,19 +89,23 @@ export class ApiClient {
   async restore(): Promise<AuthResponse | null> {
     const parsed = AuthResponse.safeParse(await this.store.get('session'));
     this.auth = parsed.success ? parsed.data : null;
+    this.notifyOwner();
     return this.auth;
   }
   async authenticate(auth: AuthResponse): Promise<void> {
     const validated = AuthResponse.parse(auth);
     this.auth = null;
+    this.notifyOwner();
     await this.enqueue(async () => {
       await this.store.clear();
       await this.store.set('session', validated);
       this.auth = validated;
+      this.notifyOwner();
     });
   }
   async forget(): Promise<void> {
     this.auth = null;
+    this.notifyOwner();
     await this.enqueue(() => this.store.clear());
   }
   owns(owner: { userId: string; sessionId: string }): boolean {
@@ -132,6 +181,7 @@ export class ApiClient {
       form.set('file', options.file, 'avatar');
       payload = form;
     }
+    const startedAt = Date.now();
     let response: Response;
     try {
       response = await this.fetcher.call(globalThis, url, {
@@ -140,15 +190,23 @@ export class ApiClient {
         credentials: 'omit',
         redirect: 'error',
         cache: 'no-store',
+        ...(options.keepalive ? { keepalive: true } : {}),
         signal: options.signal
           ? AbortSignal.any([options.signal, AbortSignal.timeout(20_000)])
           : AbortSignal.timeout(20_000),
         ...(payload !== undefined ? { body: payload } : {}),
       });
-    } catch {
+    } catch (error) {
       if (endpoint.auth !== 'none' && this.auth !== auth)
         throw new ApiFailure('session_changed', '登录状态已改变，请重新打开页面', 0);
       if (options.signal?.aborted) throw new ApiFailure('request_cancelled', '请求已取消', 0);
+      this.reportFailure(
+        endpoint,
+        startedAt,
+        0,
+        undefined,
+        error instanceof DOMException && error.name === 'TimeoutError',
+      );
       if (endpoint.method === 'GET' && !options.networkOnly) {
         const local = await this.cached(endpoint, options);
         if (local !== undefined) return local;
@@ -159,6 +217,13 @@ export class ApiClient {
     const raw: unknown = response.status === 204 ? null : await response.json().catch(() => null);
     if (options.signal?.aborted) throw new ApiFailure('request_cancelled', '请求已取消', 0);
     if (!response.ok) {
+      if (endpoint.auth === 'none' || this.auth === auth)
+        this.reportFailure(
+          endpoint,
+          startedAt,
+          response.status,
+          response.headers.get('x-request-id') ?? undefined,
+        );
       const error = ApiError.safeParse(raw);
       const code = error.success ? error.data.error.code : 'unsupported';
       if (code === 'unauthenticated' && endpoint.auth !== 'none' && this.auth === auth) {

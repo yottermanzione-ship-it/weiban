@@ -23,6 +23,7 @@ class SessionRepository(
     private val database: LocalDatabase,
     private val vault: SessionVault,
 ) {
+    var runtimeLogs: ClientRuntimeLogs? = null
     private val lock = Mutex()
     private val current = MutableStateFlow<AuthResponse?>(null)
     val auth: StateFlow<AuthResponse?> = current
@@ -102,7 +103,15 @@ class SessionRepository(
         val key = endpoint.id + ":" + params.toSortedMap() + ":" + query.toSortedMap()
         val value =
             try {
-                api.call(endpoint, body, params, query, idempotencyKey, multipart, expectedSession = captured)
+                val requestBody =
+                    if (endpoint.id == Endpoints.supportEndpointsCreate.id &&
+                        body is JsonObject
+                    ) {
+                        JsonObject(body + ("runtimeEvents" to (runtimeLogs?.snapshot() ?: JsonArray(emptyList()))))
+                    } else {
+                        body
+                    }
+                api.call(endpoint, requestBody, params, query, idempotencyKey, multipart, expectedSession = captured)
             } catch (error: ApiFailure) {
                 if (error.code == "unauthenticated" && captured != null) invalidate(captured)
                 throw error

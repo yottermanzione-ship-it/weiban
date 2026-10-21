@@ -7,6 +7,7 @@
  * 截图先用 POST /media 上传，purpose = support_image（只有上传者本人可读；管理员经详情取短期链接）。
  */
 import { z } from 'zod';
+import { ClientRuntimeEvent } from './client-logs.js';
 import {
   API_PREFIX,
   Id,
@@ -92,6 +93,7 @@ export const SupportTicket = z.object({
 export type SupportTicket = z.infer<typeof SupportTicket>;
 
 export const CreateSupportTicket = z.object({
+  runtimeEvents: z.array(ClientRuntimeEvent).max(20).optional(),
   /** 客户端生成的幂等键：同一键重复提交返回同一工单。 */
   clientRequestId: Id,
   kind: SupportTicketKind,

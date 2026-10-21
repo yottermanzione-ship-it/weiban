@@ -2,7 +2,8 @@
  * 用户列表（10-20 批 E2，参考旧版 UsersPage「搜用户 → 开会员」）：
  * 顶部总用户数、PRO+ 会员数、7 天内到期名单（可点）；搜索账号 / 昵称 / ID；点一行打开用户详情抽屉。
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Alert, Button, Input, Segmented, Space } from 'antd';
 import { AdminUsersEndpoints } from '@weiban/contracts';
 import { useRemote } from '../../data/hooks.js';
@@ -22,12 +23,22 @@ import { UserDetailDrawer } from './detail.js';
 type Quick = 'all' | 'pro' | 'expiring' | 'banned';
 
 export function UserListPage() {
+  const [searchParams] = useSearchParams();
+  const linkedUser = searchParams.get('userId');
+  const linkedTab = searchParams.get('tab');
   const users = useUserRows();
   const overview = useRemote(AdminUsersEndpoints.overview);
   const [query, setQuery] = useState('');
   const [quick, setQuick] = useState<Quick>('all');
   const [openId, setOpenId] = useState<string | null>(null);
-  const [openTab, setOpenTab] = useState<'profile' | 'membership'>('profile');
+  const [openTab, setOpenTab] = useState<'profile' | 'membership' | 'runtime'>('profile');
+  useEffect(() => {
+    if (linkedUser) {
+      setQuery(linkedUser);
+      setOpenId(linkedUser);
+      setOpenTab(linkedTab === 'runtime' ? 'runtime' : 'profile');
+    }
+  }, [linkedUser, linkedTab]);
 
   function refreshAll() {
     users.refresh();

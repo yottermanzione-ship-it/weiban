@@ -44,6 +44,7 @@ export const SERVER_MODULES = {
   play: { layer: 'upper', schema: 'play' },
   // 3.8（总对照表 Q9、Q10）：帮助与反馈、投诉、插件入口。只依赖底层（media、push、realtime、identity）。
   support: { layer: 'middle', schema: 'support' },
+  'client-logs': { layer: 'middle', schema: 'client_logs' },
 };
 
 /**

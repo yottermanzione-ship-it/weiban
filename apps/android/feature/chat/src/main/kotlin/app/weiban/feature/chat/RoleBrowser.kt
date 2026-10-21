@@ -307,7 +307,14 @@ private class CatalogUi {
             )
             HorizontalDivider()
         }
-        if (!page.loading && catalog?.items?.isEmpty() == true) item { Text("没有找到角色", Modifier.padding(WbSpace.S5)) }
+        if (!page.loading && catalog?.items?.isEmpty() == true) {
+            item {
+                Column(Modifier.padding(WbSpace.S5)) {
+                    Text("没有找到角色")
+                    WebCharacterCandidates(repository, owner, ui.search)
+                }
+            }
+        }
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         if (ui.previous.isNotEmpty()) TextButton(onClick = { ui.back() }, enabled = !page.loading) { Text("上一页角色") }

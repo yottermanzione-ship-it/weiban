@@ -21,6 +21,12 @@ class WeibanApplication :
     val database by lazy { Room.databaseBuilder(this, LocalDatabase::class.java, "weiban-local.db").build() }
     val api by lazy { ApiClient(BuildConfig.API_BASE_URL) }
     val repository by lazy { SessionRepository(api, database, TokenVault(this, api.json)) }
+    val runtimeLogs by lazy {
+        ClientRuntimeLogs(this, api, scope, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE.toLong()).also {
+            repository.runtimeLogs =
+                it
+        }
+    }
     val chat by lazy { ChatRuntime(repository, scope) { ChatWork.enqueue(this, it) } }
     private val transport by lazy {
         FirebasePushTransport(
@@ -76,6 +82,7 @@ class WeibanApplication :
 
     override fun onCreate() {
         super.onCreate()
+        runtimeLogs
         transport.initialize()
         scope.launch {
             var previous: OwnerRecord? = null

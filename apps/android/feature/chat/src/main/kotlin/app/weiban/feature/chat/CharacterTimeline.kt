@@ -41,7 +41,15 @@ private class TimelinePager(
         deleting = true
         removeError = null
         try {
-            repository.call(Endpoints.timelineEndpointsRemoveEpisode, params = mapOf("characterId" to characterId, "episodeId" to entry.entryId), options = SessionCallOptions(owner = owner, networkOnly = true))
+            repository.call(
+                Endpoints.timelineEndpointsRemoveEpisode,
+                params =
+                    mapOf(
+                        "characterId" to characterId,
+                        "episodeId" to entry.entryId,
+                    ),
+                options = SessionCallOptions(owner = owner, networkOnly = true),
+            )
             items.removeAll { it.entryId == entry.entryId }
             return true
         } catch (error: CancellationException) {
@@ -127,13 +135,20 @@ private class TimelinePager(
         }
     }
     removing?.let { entry ->
-        AlertDialog(onDismissRequest = { if (!pager.deleting) removing = null }, title = { Text("删除这段共同经历？") }, text = { Text(pager.removeError ?: "TA 将不再通过共同经历想起这件事，旧任务也不会重新写回。") }, confirmButton = {
-            TextButton(enabled = !pager.deleting, onClick = { scope.launch { if (pager.remove(entry)) removing = null } }) { Text(if (pager.deleting) "正在删除…" else "删除并忘记") }
+        AlertDialog(onDismissRequest = { if (!pager.deleting) removing = null }, title = { Text("删除这段共同经历？") }, text = {
+            Text(pager.removeError ?: "TA 将不再通过共同经历想起这件事，旧任务也不会重新写回。")
+        }, confirmButton = {
+            TextButton(enabled = !pager.deleting, onClick = {
+                scope.launch { if (pager.remove(entry)) removing = null }
+            }) { Text(if (pager.deleting) "正在删除…" else "删除并忘记") }
         }, dismissButton = { TextButton(enabled = !pager.deleting, onClick = { removing = null }) { Text("取消") } })
     }
 }
 
-@Composable private fun TimelineRow(entry: TimelineEntry, onRemove: () -> Unit) {
+@Composable private fun TimelineRow(
+    entry: TimelineEntry,
+    onRemove: () -> Unit,
+) {
     val colors = LocalWeibanColors.current
     Column(Modifier.fillMaxWidth().padding(vertical = WbSpace.S3)) {
         Text(momentTime(entry.occurredAt), color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)

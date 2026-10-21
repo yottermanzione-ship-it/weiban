@@ -18,6 +18,7 @@ private val sharingLevels =
 /** 设置 › 隐私 › 跨角色共享（MEM-07 第 1 条；MemorySharingEndpoints，默认 friends）。 */
 @Composable internal fun PrivacyPage(state: MeState) {
     val colors = LocalWeibanColors.current
+    Text("为排查故障，微伴自动上报不含聊天内容、输入内容和登录凭证的技术运行记录。明细保留 30 天，问题分组保留 180 天；注销时删除关联记录。", style = MaterialTheme.typography.bodySmall)
     var sharing by remember { mutableStateOf<MemorySharingSettings?>(null) }
     LaunchedEffect(state) { state.perform { sharing = state.call(Endpoints.memorySharingEndpointsGet) } }
     Text("跨角色共享", style = MaterialTheme.typography.titleSmall)

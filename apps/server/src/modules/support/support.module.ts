@@ -7,12 +7,13 @@ import { IdentityModule } from '../identity/index.js';
 import { MediaModule } from '../media/index.js';
 import { PushModule } from '../push/index.js';
 import { RealtimeModule } from '../realtime/index.js';
+import { ClientLogsModule } from '../client-logs/index.js';
 import { SupportLifecycle } from './application/support-lifecycle.js';
 import { SupportService } from './application/support.service.js';
 import { SupportAdminController, SupportController } from './http/support.controller.js';
 
 @Module({
-  imports: [IdentityModule, MediaModule, PushModule, RealtimeModule],
+  imports: [IdentityModule, MediaModule, PushModule, RealtimeModule, ClientLogsModule],
   controllers: [SupportController, SupportAdminController],
   providers: [SupportService, SupportLifecycle],
 })

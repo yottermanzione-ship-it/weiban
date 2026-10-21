@@ -205,15 +205,18 @@ private class WorkListState {
                 TextButton(onClick = { scope.launch { load(null) } }) { Text("重试") }
             }
         list.items.isEmpty() ->
-            Text(
-                when {
-                    authorId != null -> "TA 还没有公开的作品"
-                    search.isNotBlank() -> "没有找到「$search」"
-                    else -> "还没有人发布角色 · 在和自己的角色聊天时，可以从「聊天信息」发布到这里"
-                },
-                Modifier.padding(WbSpace.S5),
-                color = colors.textSecondary,
-            )
+            Column(Modifier.padding(WbSpace.S5)) {
+                Text(
+                    when {
+                        authorId != null -> "TA 还没有公开的作品"
+                        search.isNotBlank() -> "没有找到「$search」"
+                        else -> "还没有人发布角色 · 在和自己的角色聊天时，可以从「聊天信息」发布到这里"
+                    },
+                    Modifier.padding(WbSpace.S5),
+                    color = colors.textSecondary,
+                )
+                if (authorId == null) WebCharacterCandidates(repository, owner, search)
+            }
         else ->
             LazyColumn(Modifier.weight(1f)) {
                 items(list.items, key = { it.workId }) { work ->

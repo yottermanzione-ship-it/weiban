@@ -13,3 +13,4 @@ export * from './health.js';
 export * from './proactive.js';
 export * from './social.js';
 export * from './public-updates.js';
+export * from './client-logs.js';

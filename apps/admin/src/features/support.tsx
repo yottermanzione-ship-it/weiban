@@ -8,13 +8,8 @@ import { api } from '../data/client.js';
 import { errorText } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { RecordDrawer } from '../ui/drawer.js';
-import {
-  FieldHelp,
-  Page,
-  SectionCard,
-  StatusTag,
-  useToast,
-} from '../ui/page.js';
+import { TicketRuntimeLogs } from './client-logs.js';
+import { FieldHelp, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -207,9 +202,12 @@ function TicketDrawer({
           body: { text: text.trim(), resolve },
         });
       else
-        await api.call(action === 'resolve' ? SupportAdminEndpoints.resolve : SupportAdminEndpoints.reopen, {
-          params: { ticketId },
-        });
+        await api.call(
+          action === 'resolve' ? SupportAdminEndpoints.resolve : SupportAdminEndpoints.reopen,
+          {
+            params: { ticketId },
+          },
+        );
       setText('');
       setResolve(false);
       toast.success(
@@ -229,7 +227,9 @@ function TicketDrawer({
       open
       onClose={onClose}
       title={
-        ticket ? `${ticket.kind === 'complaint' ? '投诉' : '反馈'} · ${ticket.username ?? '已注销'}` : '工单'
+        ticket
+          ? `${ticket.kind === 'complaint' ? '投诉' : '反馈'} · ${ticket.username ?? '已注销'}`
+          : '工单'
       }
       subtitle={ticket ? formatDateTime(ticket.createdAt) : undefined}
       width={720}
@@ -279,6 +279,7 @@ function TicketDrawer({
             )}
           </div>
           <SectionCard title="用户提交的内容">
+            <TicketRuntimeLogs key={ticketId} ticketId={ticketId} />
             <div className="pre-wrap">{ticket.text}</div>
             {ticket.images.length > 0 && (
               <div className="thumb-row" style={{ marginTop: 8 }}>

@@ -7,6 +7,7 @@ export * from './version.js';
 export * from './common.js';
 export * from './character-card.js';
 export * from './client-sync.js';
+export * from './client-log-safety.js';
 
 // HTTP 接口（客户端 ↔ 服务器）
 export * from './http/identity.js';
@@ -44,6 +45,7 @@ export * from './http/public-updates.js';
 // 3.8（总对照表 Q 清单）
 export * from './http/support.js';
 export * from './http/status.js';
+export * from './http/client-logs.js';
 
 // WebSocket 帧
 export * from './ws.js';

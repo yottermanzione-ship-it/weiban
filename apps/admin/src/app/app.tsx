@@ -15,6 +15,7 @@ import { SettingsPage } from '../features/settings.js';
 import { ModelManagementPage } from '../features/model-management.js';
 import { PricesPage } from '../features/prices.js';
 import { AlertsPage } from '../features/alerts.js';
+import { ClientLogsPage } from '../features/client-logs.js';
 import { CharactersPage } from '../features/characters.js';
 import { UsagePage } from '../features/usage.js';
 import { BillingPage } from '../features/billing.js';
@@ -237,6 +238,7 @@ function AdminShell({
         <Route path="/version-policies" element={<VersionPoliciesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/admin/alerts" element={<AlertsPage />} />
+        <Route path="/client-logs" element={<ClientLogsPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </ProLayout>

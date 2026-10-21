@@ -333,6 +333,7 @@ export class ChatDriver {
             }
             this.authenticated = true;
             this.reconnectAttempt = 0;
+            runtimeLogs.connection(true);
             this.lastPong = this.lastPing = Date.now();
             this.presence();
             void this.reconnect(frame.data.latestUpdateSeq);
@@ -387,6 +388,7 @@ export class ChatDriver {
         return;
       }
       const seconds = [0.5, 1, 2, 4, 8, 10][Math.min(this.reconnectAttempt++, 5)]!;
+      runtimeLogs.connection(false, this.reconnectAttempt);
       this.reconnectTimer = window.setTimeout(
         () => this.connect(),
         seconds * 1000 * (0.8 + Math.random() * 0.4),
@@ -445,3 +447,4 @@ export class ChatDriver {
     }
   }
 }
+import { runtimeLogs } from './runtime-logs.js';

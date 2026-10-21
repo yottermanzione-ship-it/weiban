@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
-import { AuthResponse, IdentityEndpoints } from '@weiban/contracts';
+import { AuthResponse, IdentityEndpoints, ClientLogEndpoints } from '@weiban/contracts';
 import {
   ApiClient,
   ApiFailure,
@@ -27,6 +27,51 @@ function session(username = 'test_user') {
   });
 }
 const store = () => new IndexedLocalStore('weiban-test', new IDBFactory());
+it('运行记录观察器仅收到技术模板；不传正文、令牌，且遥测失败不递归', async () => {
+  const observer = vi.fn();
+  const client = new ApiClient(store(), async () =>
+    Response.json(
+      { error: { code: 'internal_error', message: 'CANARY_CHAT', requestId: id } },
+      { status: 500, headers: { 'x-request-id': id } },
+    ),
+  );
+  client.observeFailures(observer);
+  await client.authenticate(session());
+  await expect(client.call(IdentityEndpoints.me, { networkOnly: true })).rejects.toBeInstanceOf(
+    ApiFailure,
+  );
+  expect(observer).toHaveBeenCalledTimes(1);
+  expect(observer.mock.calls[0]?.[0]).toEqual({
+    route: '/api/v1/me',
+    method: 'GET',
+    status: 500,
+    durationMs: expect.any(Number),
+    requestId: id,
+  });
+  expect(JSON.stringify(observer.mock.calls)).not.toContain('CANARY');
+  await expect(
+    client.call(ClientLogEndpoints.report, {
+      body: { sessionId: id, appKind: 'web', version: '1.0.0', build: '123', events: [] },
+    }),
+  ).rejects.toBeInstanceOf(ApiFailure);
+  expect(observer).toHaveBeenCalledTimes(1);
+});
+it('账号观察器在退出和切换时立即获知归属，观察器故障不影响会话', async () => {
+  const owners: Array<string | null> = [];
+  const client = new ApiClient(store());
+  client.observeOwner((id) => {
+    owners.push(id);
+  });
+  await client.restore();
+  await client.authenticate(session());
+  await client.authenticate(session('another_user'));
+  await client.forget();
+  expect(owners).toEqual([null, null, id, null, '22222222-2222-4222-8222-222222222222', null]);
+  client.observeOwner(() => {
+    throw new Error('telemetry only');
+  });
+  await expect(client.authenticate(session())).resolves.toBeUndefined();
+});
 it('保留服务器的错误说明和逐项拒绝原因', async () => {
   const details = { rejected: [{ id, reason: 'health_label' }] };
   const client = new ApiClient(store(), async () =>

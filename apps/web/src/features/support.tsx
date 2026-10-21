@@ -9,6 +9,7 @@ import {
   type ComplaintReason as Reason,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
+import { runtimeLogs } from '../data/runtime-logs.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { useUpdates } from '../data/updates.js';
 import { uploadMedia, prepareImage } from '../data/upload.js';
@@ -144,6 +145,7 @@ export function SupportCreatePage() {
           ...(complaint ? { target: { type: targetType, id: targetId! }, reason } : { category }),
           text,
           imageIds: images.map((i) => i.mediaId),
+          runtimeEvents: runtimeLogs.snapshot(),
         },
       });
       navigate('/support/tickets/' + t.ticketId, { replace: true });
@@ -242,6 +244,7 @@ export function SupportCreatePage() {
         <button className="primary" disabled={busy || (!complaint && !text.trim())}>
           {busy ? '正在处理…' : '提交'}
         </button>
+        <p className="hint">会附带最近的运行记录，不含聊天内容。</p>
       </form>
     </main>
   );

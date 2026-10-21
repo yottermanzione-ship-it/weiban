@@ -160,6 +160,7 @@ export const AdminAlertKind = z.enum([
    * 合并键 `upstream_usage_missing:{upstreamId}:{上游模型名摘要}`。
    */
   'upstream_usage_missing',
+  'client_error_spike',
 ]);
 export type AdminAlertKind = z.infer<typeof AdminAlertKind>;
 

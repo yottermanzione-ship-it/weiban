@@ -55,9 +55,10 @@ import {
 } from './shared.js';
 import { SubRecordDrawer, loadUserSubRecords, subColumns } from './sub-records.js';
 import { modelLabel } from '../model/shared.js';
+import { UserRuntimeLogs } from '../client-logs.js';
 
 type LedgerEntry = z.infer<typeof AdminLedgerEntry>;
-type TabKey = 'profile' | 'membership' | 'points' | 'usage' | 'safety';
+type TabKey = 'profile' | 'membership' | 'points' | 'usage' | 'safety' | 'runtime';
 
 export function UserDetailDrawer({
   row,
@@ -101,12 +102,14 @@ export function UserDetailDrawer({
           { key: 'points', label: '积分' },
           { key: 'usage', label: '用量' },
           { key: 'safety', label: '封禁与删除' },
+          { key: 'runtime', label: '客户端报错' },
         ]}
       />
       {tab === 'profile' && <ProfilePanel row={row} nameOf={nameOf} />}
       {tab === 'membership' && <MembershipPanel row={row} nameOf={nameOf} onChanged={onChanged} />}
       {tab === 'points' && <PointsPanel row={row} nameOf={nameOf} onChanged={onChanged} />}
       {tab === 'usage' && <UsagePanel row={row} />}
+      {tab === 'runtime' && <UserRuntimeLogs key={user.userId} userId={user.userId} />}
       {tab === 'safety' && (
         <SafetyPanel row={row} nameOf={nameOf} onChanged={onChanged} onClose={onClose} />
       )}

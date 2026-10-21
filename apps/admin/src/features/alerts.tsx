@@ -19,6 +19,7 @@ const KIND_LABELS: Record<string, string> = {
   upstream_invalid: '上游密钥',
   upstream_unavailable: '上游故障',
   upstream_recovered: '上游恢复',
+  client_error_spike: '客户端报错激增',
 };
 
 const SEVERITY: Record<string, { tone: 'error' | 'warning' | 'default'; label: string }> = {

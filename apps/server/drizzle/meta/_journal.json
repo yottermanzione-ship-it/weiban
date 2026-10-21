@@ -863,6 +863,13 @@
       "idx": 134,
       "when": 1799337800000,
       "breakpoints": true
+    },
+    {
+      "version": "7",
+      "tag": "0135_client_logs",
+      "idx": 135,
+      "when": 1799337900000,
+      "breakpoints": true
     }
   ]
 }

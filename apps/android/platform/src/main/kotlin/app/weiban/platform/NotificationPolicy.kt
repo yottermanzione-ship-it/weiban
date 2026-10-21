@@ -41,6 +41,9 @@ internal fun notificationRoute(envelope: NotificationEnvelope): String? {
     } else if (route.startsWith("/imports/")) {
         val id = route.removePrefix("/imports/")
         route.takeIf { envelope.kind == "import" && runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false) }
+    } else if (route.startsWith("/support/tickets/")) {
+        val id = route.removePrefix("/support/tickets/")
+        route.takeIf { envelope.kind == "system" && runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false) }
     } else if (route.startsWith("/calls/")) {
         // 角色来电（MED-07）：kind = call，打开前核对仍在响铃（T-070 交接）。
         val id = route.removePrefix("/calls/")

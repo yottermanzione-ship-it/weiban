@@ -173,6 +173,10 @@ export function PrivacySettingsPage() {
   return (
     <main>
       <NavBar title="隐私" fallback="/settings" />
+      <p className="page-note">
+        为排查故障，微伴会自动上报不含聊天内容、输入内容和登录凭证的技术运行记录。明细保留 30
+        天，问题分组保留 180 天；注销时删除与你关联的记录。
+      </p>
       <MenuGroup>
         {['朋友权限', '黑名单', '不让TA看我的朋友圈', '不看TA的朋友圈'].map((label) => (
           <MenuRow key={label} label={label} onClick={() => showToast('暂未开放', 2000, 'info')} />

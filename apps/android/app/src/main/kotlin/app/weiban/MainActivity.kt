@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        (application as WeibanApplication).scope.launch { (application as WeibanApplication).runtimeLogs.flush() }
         (application as WeibanApplication).chat.foreground(false)
         (application as WeibanApplication).calls.foreground(false)
         super.onPause()
@@ -241,6 +242,9 @@ private class NavigationUi(
             moments = "feed"
         } else if (value.startsWith("/chat/")) {
             open(value.removePrefix("/chat/"))
+        } else if (value.startsWith("/support/tickets/")) {
+            tab = "我"
+            mePage = "support-ticket:" + value.removePrefix("/support/tickets/")
         } else if (value == "/chat") {
             tab = "微伴"
         } else {
@@ -270,6 +274,19 @@ private class NavigationUi(
     onLogout: () -> Unit,
 ) {
     val navigation = rememberSaveable(saver = NavigationUi.saver) { NavigationUi() }
+    LaunchedEffect(navigation.tab, navigation.conversationId, navigation.mePage, navigation.moments) {
+        runtime.runtimeLogs.page(
+            when {
+                navigation.conversationId != null -> "/chat/:id"
+                navigation.moments != null -> "/moments"
+                navigation.mePage != null -> "/settings/${navigation.mePage}"
+                navigation.tab == "我" -> "/me"
+                navigation.tab == "通讯录" -> "/contacts"
+                navigation.tab == "发现" -> "/discover"
+                else -> "/chat"
+            },
+        )
+    }
     val onboarding by runtime.repository.onboardingPending.collectAsState()
     val target by runtime.push.navigation.target
         .collectAsState()

@@ -13,8 +13,18 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import java.io.IOException
+import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+
+data class ApiFailureRecord(
+    val route: String,
+    val method: String,
+    val status: Int,
+    val durationMs: Long,
+    val requestId: String? = null,
+    val timeout: Boolean = false,
+)
 
 class ApiFailure(
     val code: String,
@@ -45,9 +55,12 @@ class ApiClient(
             }
         }
     private val session = AtomicReference<AuthResponse?>(null)
+    var onFailure: ((ApiFailureRecord) -> Unit)? = null
+    var onOwnerChanged: ((String?) -> Unit)? = null
 
     fun authenticate(auth: AuthResponse?) {
         session.set(auth)
+        runCatching { onOwnerChanged?.invoke(auth?.user?.userId) }
     }
 
     fun current(): AuthResponse? = session.get()
@@ -70,22 +83,59 @@ class ApiClient(
             if (session.get() !== auth) throw ApiFailure("session_changed", 0)
             if (endpoint.auth != "none" && auth == null) throw ApiFailure("unauthenticated", 401)
             val request = request(endpoint, auth, body, params, query, idempotencyKey, multipart)
-            client.newCall(request).awaitDecoded { response ->
-                if (session.get() !== auth) throw ApiFailure("session_changed", 0)
-                val bytes = response.body?.byteStream()?.use { it.readBounded(4_194_305) } ?: byteArrayOf()
-                if (bytes.size > 4_194_304) throw ApiFailure("invalid_response", 0)
-                if (!response.isSuccessful) {
-                    val error =
-                        runCatching {
-                            val raw = json.parseToJsonElement(bytes.toString(Charsets.UTF_8))
-                            json.decodeFromJsonElement(ApiError.serializer(), ContractJson.normalize("ApiError", raw))
-                        }.getOrNull()
-                    if (error?.error?.code == "unauthenticated" && endpoint.auth != "none") session.compareAndSet(auth, null)
-                    throw ApiFailure(error?.error?.code ?: "unsupported", response.code, error?.error?.message, error?.error?.details)
+            val started = System.nanoTime()
+            try {
+                client.newCall(request).awaitDecoded { response ->
+                    if (session.get() !== auth) throw ApiFailure("session_changed", 0)
+                    val bytes = response.body?.byteStream()?.use { it.readBounded(4_194_305) } ?: byteArrayOf()
+                    if (bytes.size > 4_194_304) throw ApiFailure("invalid_response", 0)
+                    if (!response.isSuccessful) {
+                        if (response.code >= 500) reportFailure(endpoint, started, response.code, response.header("x-request-id"))
+                        val error =
+                            runCatching {
+                                val raw = json.parseToJsonElement(bytes.toString(Charsets.UTF_8))
+                                json.decodeFromJsonElement(ApiError.serializer(), ContractJson.normalize("ApiError", raw))
+                            }.getOrNull()
+                        if (error?.error?.code == "unauthenticated" && endpoint.auth != "none" &&
+                            session.compareAndSet(auth, null)
+                        ) {
+                            runCatching { onOwnerChanged?.invoke(null) }
+                        }
+                        throw ApiFailure(error?.error?.code ?: "unsupported", response.code, error?.error?.message, error?.error?.details)
+                    }
+                    decode(endpoint, bytes, auth)
                 }
-                decode(endpoint, bytes, auth)
+            } catch (error: IOException) {
+                if (error !is ApiFailure &&
+                    session.get() === auth
+                ) {
+                    reportFailure(endpoint, started, 0, timeout = error is SocketTimeoutException)
+                }
+                throw error
             }
         }
+
+    private fun reportFailure(
+        endpoint: ContractEndpoint<*>,
+        started: Long,
+        status: Int,
+        requestId: String? = null,
+        timeout: Boolean = false,
+    ) {
+        if (endpoint.path.contains("/client-logs")) return
+        runCatching {
+            onFailure?.invoke(
+                ApiFailureRecord(
+                    endpoint.path,
+                    endpoint.method,
+                    status,
+                    ((System.nanoTime() - started) / 1_000_000).coerceIn(0, 120000),
+                    requestId,
+                    timeout,
+                ),
+            )
+        }
+    }
 
     private fun <T> request(
         endpoint: ContractEndpoint<T>,
