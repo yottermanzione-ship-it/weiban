@@ -1808,7 +1808,12 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           items={[
             { label: '拍一拍', onClick: () => nudge(avatarMenu) },
             ...(group
-              ? [{ label: `@${displayName(avatarMenu.refId)}`, onClick: () => insertMention(avatarMenu) }]
+              ? [
+                  {
+                    label: `@${displayName(avatarMenu.refId)}`,
+                    onClick: () => insertMention(avatarMenu),
+                  },
+                ]
               : []),
             {
               label: '查看资料',

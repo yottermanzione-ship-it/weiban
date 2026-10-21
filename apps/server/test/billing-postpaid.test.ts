@@ -100,8 +100,7 @@ describeDb('3.27 先用后扣、可欠一次（真实 PostgreSQL）', () => {
     const name = `postpaid_user_${userCounter}`;
     const id = await commands.createAdmin(name, PASSWORD);
     await commands.setRole(name, 'user');
-    if (balanceMicros > 0)
-      await grant(id, balanceMicros);
+    if (balanceMicros > 0) await grant(id, balanceMicros);
     return id;
   }
   function grant(userId: string, amountMicros: number) {
@@ -210,9 +209,7 @@ describeDb('3.27 先用后扣、可欠一次（真实 PostgreSQL）', () => {
     setTimeout(() => void settle(rows[0]!.id), 400);
     expect((await queued).ok).toBe(true);
     // 后台任务不排队
-    const background = await reservations.estimateAndReserve(
-      input(id, { purpose: 'memory' }),
-    );
+    const background = await reservations.estimateAndReserve(input(id, { purpose: 'memory' }));
     expect(background.ok ? null : background.error).toBe('concurrency_limited');
   });
 

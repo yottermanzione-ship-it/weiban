@@ -219,7 +219,9 @@ export class ReservationService implements BillingReservationPort {
       // 3.27：按实际发送的上下文 + 最大输出估价（异常巨额拦截用）；估不出来时按上限算（宁严勿松）。
       const estimateOf = (r: typeof rows, bp: number, fallback: number) => {
         const e = priceUsageCeiling(r, input.estimate);
-        return e.ok && Number.isSafeInteger(e.sellMicros) ? applyDiscount(e.sellMicros, bp) : fallback;
+        return e.ok && Number.isSafeInteger(e.sellMicros)
+          ? applyDiscount(e.sellMicros, bp)
+          : fallback;
       };
       let estimate = estimateOf(rows, discountBp, amount);
       for (const alternative of new Set(input.ceiling.pricingModels ?? [])) {
@@ -461,10 +463,10 @@ export class ReservationService implements BillingReservationPort {
         : hold.postpaid
           ? 'postpaid'
           : !stillReserved
-          ? 'late_unreserved'
-          : amount < priced.sellMicros
-            ? 'reservation_capped'
-            : 'within_reservation';
+            ? 'late_unreserved'
+            : amount < priced.sellMicros
+              ? 'reservation_capped'
+              : 'within_reservation';
       const { entry, account: after } = await this.ledger.postEntry(tx, account, {
         type: 'charge',
         // 平台旧release已扣成本时，迟到settle只追加余额差额，原流水不改。
@@ -542,10 +544,7 @@ export class ReservationService implements BillingReservationPort {
           risk.remainingReserved,
           account.kind === 'platform' ? knownCost - previousAbsorbed : absorptionDelta,
         );
-      if (
-        (reason !== 'within_reservation' && reason !== 'postpaid') ||
-        priced.unpricedUnits.length
-      )
+      if ((reason !== 'within_reservation' && reason !== 'postpaid') || priced.unpricedUnits.length)
         await this.audit.record(
           {
             module: 'billing',

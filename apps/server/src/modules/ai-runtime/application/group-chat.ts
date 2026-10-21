@@ -65,12 +65,7 @@ import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from '../../identity
 import { MODEL_GATEWAY_PORT, MODEL_PLATFORM_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
-import {
-  INITIAL_MODES,
-  modeOption,
-  scenarioText,
-  SELECTABLE_MODES,
-} from '../domain/persona.js';
+import { INITIAL_MODES, modeOption, scenarioText, SELECTABLE_MODES } from '../domain/persona.js';
 import { highRisk, outputAllowed, splitReply, unescapeModelText } from '../domain/reply-rules.js';
 import { callModelForCare, careFallback } from './safety-care.js';
 import {

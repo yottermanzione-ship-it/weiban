@@ -3,17 +3,7 @@
  * 数据仍来自 billing 管理接口，界面统一 Ant Design。
  */
 import { useEffect, useState } from 'react';
-import {
-  Alert,
-  Button,
-  DatePicker,
-  Form,
-  Input,
-  InputNumber,
-  Select,
-  Skeleton,
-  Space,
-} from 'antd';
+import { Alert, Button, DatePicker, Form, Input, InputNumber, Select, Skeleton, Space } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import type { z } from 'zod';
@@ -270,10 +260,12 @@ export function BillingPage() {
 
       {billOpen && (
         <BillDrawer
-          upstreams={(upstreams.data?.items ?? []).filter((u) => !u.deletedAt).map((u) => ({
-            value: u.upstreamId,
-            label: u.name,
-          }))}
+          upstreams={(upstreams.data?.items ?? [])
+            .filter((u) => !u.deletedAt)
+            .map((u) => ({
+              value: u.upstreamId,
+              label: u.name,
+            }))}
           onClose={() => setBillOpen(false)}
           onSaved={() => {
             setBillOpen(false);
@@ -377,7 +369,11 @@ function BillDrawer({
         >
           <InputNumber min={0} step={0.01} style={{ width: '100%' }} addonAfter="元" />
         </Form.Item>
-        <Form.Item name="note" label="备注" extra={<FieldHelp>例：8 月账单，含赠送额度。</FieldHelp>}>
+        <Form.Item
+          name="note"
+          label="备注"
+          extra={<FieldHelp>例：8 月账单，含赠送额度。</FieldHelp>}
+        >
           <Input maxLength={200} />
         </Form.Item>
       </Form>

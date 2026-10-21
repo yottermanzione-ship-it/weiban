@@ -6,9 +6,9 @@ const target = '00000000-0000-4000-8000-000000000001';
 
 describe('3.27 拍一拍进模型上下文', () => {
   it('私聊按角色视角：用户拍了拍你 / 你拍了拍用户（带用户后缀）', () => {
-    expect(nudgeText({ type: 'nudge', targetParticipantId: target, targetKind: 'character' }, 'user')).toContain(
-      '用户拍了拍你',
-    );
+    expect(
+      nudgeText({ type: 'nudge', targetParticipantId: target, targetKind: 'character' }, 'user'),
+    ).toContain('用户拍了拍你');
     expect(
       nudgeText(
         { type: 'nudge', targetParticipantId: target, targetKind: 'user', suffix: '的小脑袋' },

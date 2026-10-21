@@ -196,7 +196,8 @@ function SettingsDrawer({
           rules={[{ required: true, message: '填写 1–20' }]}
           extra={
             <FieldHelp>
-              默认 3：语音通话时会同时有「听你说话」「想怎么回」「念出来」三路调用，设成 2 通话可能卡住。
+              默认 3：语音通话时会同时有「听你说话」「想怎么回」「念出来」三路调用，设成 2
+              通话可能卡住。
             </FieldHelp>
           }
         >
@@ -206,7 +207,9 @@ function SettingsDrawer({
           name="concurrencyWaitSeconds"
           label="满了时聊天回复最多排队几秒"
           rules={[{ required: true, message: '填写 0–30' }]}
-          extra={<FieldHelp>超过还没轮到就提示「暂时没法回复」；后台任务不排队，下次再做。</FieldHelp>}
+          extra={
+            <FieldHelp>超过还没轮到就提示「暂时没法回复」；后台任务不排队，下次再做。</FieldHelp>
+          }
         >
           <InputNumber min={0} max={30} precision={0} style={{ width: '100%' }} addonAfter="秒" />
         </Form.Item>
@@ -217,7 +220,8 @@ function SettingsDrawer({
           rules={[{ required: true, message: '填写拦截线' }]}
           extra={
             <FieldHelp>
-              默认 200 积分（2 元）。按这次实际发给模型的内容加上最长回复估算；正常聊天一条通常不到 10 积分。
+              默认 200 积分（2 元）。按这次实际发给模型的内容加上最长回复估算；正常聊天一条通常不到
+              10 积分。
             </FieldHelp>
           }
         >

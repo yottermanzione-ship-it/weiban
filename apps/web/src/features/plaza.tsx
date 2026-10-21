@@ -1030,30 +1030,30 @@ function Comments({ work, onCount }: { work: PlazaWorkDetail; onCount(n: number)
           </button>
         )}
         <div className="plaza-comment-bar">
-        {composing ? (
-          <form
-            className="message-composer"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void send();
-            }}
-          >
-            <label>
-              {replyTo ? `回复 ${authorName(replyTo.author)}` : '评论'}
-              <input autoFocus value={text} onChange={(e) => setText(e.target.value)} />
-            </label>
-            <small className={over ? 'char-count over-limit' : 'char-count hint'}>
-              {chars(text)}/{PLAZA_COMMENT_MAX_CHARS}
-            </small>
-            <button className="primary" disabled={sending || over || !text.trim()}>
-              发送
+          {composing ? (
+            <form
+              className="message-composer"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void send();
+              }}
+            >
+              <label>
+                {replyTo ? `回复 ${authorName(replyTo.author)}` : '评论'}
+                <input autoFocus value={text} onChange={(e) => setText(e.target.value)} />
+              </label>
+              <small className={over ? 'char-count over-limit' : 'char-count hint'}>
+                {chars(text)}/{PLAZA_COMMENT_MAX_CHARS}
+              </small>
+              <button className="primary" disabled={sending || over || !text.trim()}>
+                发送
+              </button>
+            </form>
+          ) : (
+            <button className="text-button" onClick={() => void startCompose(null)}>
+              说点什么…
             </button>
-          </form>
-        ) : (
-          <button className="text-button" onClick={() => void startCompose(null)}>
-            说点什么…
-          </button>
-        )}
+          )}
         </div>
       </div>
     </>

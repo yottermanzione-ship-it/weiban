@@ -201,8 +201,7 @@ class AgentSession implements CallAgentSession {
     if (this.closed || this.ending) return;
     const spend = await this.deps.billing.getSpendStatus(this.info.userId).catch(() => null);
     // 3.27（H1 先用后扣）：余额扣到 ≤ 0 才道别（不再提前按「约 1 分钟」的保守阈值结束）。
-    if (spend?.depleted)
-      await this.farewell('insufficient_balance');
+    if (spend?.depleted) await this.farewell('insufficient_balance');
   }
 
   private systemPrompt(): ChatMessageForModel[] {

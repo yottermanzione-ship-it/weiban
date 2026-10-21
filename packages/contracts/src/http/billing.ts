@@ -682,7 +682,8 @@ export const BillingAdminEndpoints = {
     path: `${API_PREFIX}/admin/billing/postpaid-settings`,
     auth: 'admin',
     response: PostpaidSettings,
-    summary: '3.27（H1）：先用后扣的保护参数——同一用户付费调用并发上限、前台排队等待秒数、异常巨额请求拦截线',
+    summary:
+      '3.27（H1）：先用后扣的保护参数——同一用户付费调用并发上限、前台排队等待秒数、异常巨额请求拦截线',
   }),
   updatePostpaidSettings: defineEndpoint({
     method: 'PUT',
