@@ -68,6 +68,8 @@ const T066_TABLES = [
   'ecology_character_settings',
   'ecology_runs',
   'ecology_profiles',
+  // H2（迁移 0129）：切出私密模式的整理任务
+  'private_digests',
 ] as const;
 @Injectable()
 export class ReplyPlanStore {

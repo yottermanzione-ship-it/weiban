@@ -234,6 +234,9 @@ export class MediaAiService {
         // Forwarded character audio already has its authoritative spoken text; reuse it.
         if (m.labels?.includes('forwarded') && c.transcript)
           return { text: `[语音，文字原文] ${c.transcript}` };
+        // H2：私密模式不做语音识别（只开放文字与图片）。
+        if (ctx.modelRole === 'adult' && opts.analyze)
+          return { text: '[对方发了一条语音；私密模式里不识别语音，可以请对方打字]' };
         const text = opts.analyze
           ? await this.transcribe(ctx, c.mediaId).catch(() => null)
           : ((await this.transcripts.getTranscript(c.mediaId).catch(() => null))?.text ?? null);

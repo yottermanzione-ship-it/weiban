@@ -339,6 +339,120 @@ export class MemoryService {
     });
   }
   /**
+   * H2（契约 3.28）：写入「私密模式期间的经历整理」（切出私密模式时由私密模型生成的干净摘要）。
+   * 日常（normal）范围、类别 episode、重要度 8（进稳定记忆块的常驻记忆）、只这个角色知道、不跨角色转述；
+   * clientId = 整理任务 ID（同一次切出只写一条）。demoteIds：之前的整理记忆降到重要度 6，只留最新一条常驻。
+   * 返回记忆 ID（已存在时返回原 ID；好友已变化等返回 null）。
+   */
+  async addPrivateDigest(input: {
+    userId: string;
+    characterId: string;
+    conversationId: string;
+    clientId: string;
+    content: string;
+    demoteIds: string[];
+  }): Promise<string | null> {
+    const text = input.content.trim().slice(0, 1000);
+    if (!text || healthPrivate(text)) return null;
+    const job = await this.guard(input.userId, input.characterId).catch(() => null);
+    if (!job || job.conversationId !== input.conversationId) return null;
+    return this.db.transaction(async (tx) => {
+      await this.lock(tx, job);
+      const conversation = await this.chat.getConversation(job.conversationId, tx);
+      if (!conversation) return null;
+      const id = newId();
+      const data: z.infer<typeof MemoryPayload> = {
+        content: text,
+        category: 'episode',
+        importance: 8,
+        dueAt: null,
+        visibility: 'only_this_character',
+        sharingClass: 'never',
+        status: 'current',
+        sourceMessageIds: [],
+        createdBy: 'extracted',
+      };
+      let embedding: string | null = null;
+      try {
+        embedding = toVectorLiteral(embed(text));
+      } catch {
+        // 向量失败退回关键词检索
+      }
+      const inserted = await tx.db
+        .insert(memories)
+        .values({
+          id,
+          userId: job.userId,
+          characterId: job.characterId,
+          conversationId: job.conversationId,
+          clientId: input.clientId,
+          scope: 'normal',
+          ciphertext: await this.seal(tx, job.userId, id, data),
+          embedding,
+          createdAt: this.clock.now(),
+          updatedAt: this.clock.now(),
+        })
+        .onConflictDoNothing()
+        .returning({ id: memories.id });
+      if (!inserted.length) {
+        const [same] = await tx.db
+          .select({ id: memories.id })
+          .from(memories)
+          .where(
+            and(
+              this.where(job.userId, job.characterId, job.conversationId),
+              eq(memories.clientId, input.clientId),
+            ),
+          );
+        return same?.id ?? null;
+      }
+      for (const oldId of input.demoteIds) {
+        const [row] = await tx.db
+          .select()
+          .from(memories)
+          .where(
+            and(
+              this.where(job.userId, job.characterId, job.conversationId),
+              eq(memories.id, oldId),
+            ),
+          );
+        if (!row || row.scope !== 'normal') continue;
+        const old = await this.open(row, tx);
+        // 用户改过的不动
+        if (old.createdBy !== 'extracted' || old.importance <= 6) continue;
+        await tx.db
+          .update(memories)
+          .set({
+            ciphertext: await this.seal(tx, job.userId, row.id, {
+              content: old.content,
+              category: old.category,
+              importance: 6,
+              dueAt: old.dueAt ?? null,
+              visibility: old.visibility,
+              sharingClass: old.sharingClass,
+              status: old.status,
+              sourceMessageIds: old.sourceMessageIds,
+              createdBy: old.createdBy,
+            }),
+          })
+          .where(eq(memories.id, row.id));
+      }
+      await this.changed(tx, job, false, conversation.lastSeq);
+      // 新的常驻记忆要进稳定记忆块：块作废，下次回复重算（不移动窗口边界）。
+      await tx.db
+        .update(memoryStates)
+        .set({ windowBlockCiphertext: null })
+        .where(
+          and(
+            eq(memoryStates.userId, job.userId),
+            eq(memoryStates.characterId, job.characterId),
+            eq(memoryStates.conversationId, job.conversationId),
+          ),
+        );
+      return id;
+    });
+  }
+  /**
    * T-096 PLAY-04 第 5 条：心愿清单项定了日期 → 一条「约定」（commitment，dueAt = 该日期）；取消日期或删除 → 约定一并取消。
    * clientId = 清单项 ID（同用户同角色内唯一），不调用模型。返回约定记忆 ID（取消时为 null）。
    */

@@ -184,6 +184,18 @@ export class ChatWriteService {
         ...(suffix ? { suffix: suffix.slice(0, 15) } : {}),
       };
     }
+    // 3.28（H2）：私密模式只开放文字与图片——用户不能发语音（语音输入），角色也不发语音。
+    if (
+      row.contentScope === 'adult' &&
+      (content.type === 'voice' ||
+        (content.type === 'forwarded_record' &&
+          content.items.some((item) => item.content.type === 'voice')))
+    )
+      return {
+        ok: false,
+        error: 'invalid_content',
+        message: '私密模式只支持文字和图片，暂时不能发语音',
+      };
     // L5（T-069）：用户发的图片、语音、表情、链接封面必须是本人可用的媒体（MediaSystemPort.canUse）。
     if (sender?.kind === 'user' && !verifiedForward) {
       if (content.type === 'forwarded_record')

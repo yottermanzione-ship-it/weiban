@@ -1,4 +1,5 @@
 import { MemoryService } from './application/memory.js';
+import { PrivateDigestService } from './application/private-digest.js';
 import { PetAiService } from './application/pet-ai.js';
 import { CardLineService, MomentCardService } from './application/moment-cards.js';
 import { MOMENTS_PET_READ_PORT } from './application/moments-ai.js';
@@ -126,6 +127,8 @@ import {
     MomentCardService,
     CompanionSettingsService,
     MemoryService,
+    // H2：切出私密模式时的干净整理。
+    PrivateDigestService,
     // v5 批 B：记忆分档与长上下文。
     MemoryTierService,
     ReplyPlanStore,

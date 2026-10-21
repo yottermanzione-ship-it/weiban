@@ -25,6 +25,7 @@ import {
 } from '../infra/db/schema.js';
 import { GENERATE_REPLY_JOB, ReplyPlanStore } from './plan-store.js';
 import { MemoryService, EXTRACT_MEMORY_JOB, type MemoryJob } from './memory.js';
+import { PrivateDigestService, PRIVATE_DIGEST_JOB } from './private-digest.js';
 import { ReplyEngine } from './reply-engine.js';
 import { HealthCareService, HEALTH_CARE_CHECK_JOB, HEALTH_CARE_SWEEP_JOB } from './health-care.js';
 import { invalidateReplyPlans } from './invalidate.js';
@@ -116,6 +117,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     @Inject(PlayAiService) readonly playAi: PlayAiService,
     @Inject(EcologyService) readonly ecology: EcologyService,
     @Inject(EcologySettingsService) readonly ecologySettings: EcologySettingsService,
+    @Inject(PrivateDigestService) readonly privateDigest: PrivateDigestService,
   ) {}
   async onApplicationBootstrap(): Promise<void> {
     if (this.jobs.isReady)
@@ -140,10 +142,17 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       pollingIntervalSeconds: 0.5,
       localConcurrency: 2,
     });
+    // H2：切出私密模式时的干净整理（失败由对账按 next_attempt_at 重投）。
+    await this.jobs.work<{ digestId: string }>(
+      PRIVATE_DIGEST_JOB,
+      (j) => this.privateDigest.run(j.data.digestId),
+      { pollingIntervalSeconds: 2, localConcurrency: 2 },
+    );
     await this.jobs.work('ai.reconcile', async () => {
       await this.store.reconcile();
       await this.groupChat.reconcile();
       await this.memory.reconcile();
+      await this.privateDigest.reconcile();
     });
     await this.jobs.schedule('ai.reconcile', '* * * * *');
 

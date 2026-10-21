@@ -9,6 +9,7 @@ export { AiRuntimeLifecycle } from './application/lifecycle.js';
 export { companionSettings, replyPlans } from './infra/db/schema.js';
 
 export { MemoryService, EXTRACT_MEMORY_JOB } from './application/memory.js';
+export { PrivateDigestService, PRIVATE_DIGEST_JOB } from './application/private-digest.js';
 export { memories, memoryStates } from './infra/db/schema.js';
 export { ReplyContext } from './application/reply-context.js';
 export { ReplySnapshot } from './application/reply-context.js';

@@ -93,11 +93,13 @@ export class ReplyEngine {
     const care = snapshot.highRisk || snapshot.careActive;
     let suspected = snapshot.suspected;
     if (suspected && !care) {
+      // H2：私密模式里用户的话不出私密范围——疑似风险的判断也交给该用户的私密模型（按用户积分），
+      // 不走平台安全检查模型；日常范围照旧走平台检查。
       const check = await callModelForCare(
         gw,
         {
           ...this.input(row, snapshot, 'check'),
-          purpose: 'safety_check',
+          purpose: snapshot.scope === 'adult' ? 'chat_reply' : 'safety_check',
           messages: [
             {
               role: 'system',

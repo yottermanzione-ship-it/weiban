@@ -59,6 +59,7 @@ export const CallUnavailableReason = z.enum([
   'insufficient_balance', // 「余额不足，暂时无法通话」
   'busy', // 已有进行中的通话
   'contact_inactive',
+  'private_mode', // 3.28（H2）：该角色正处于私密模式（只开放文字与图片），入口置灰并说明
 ]);
 
 export const CallAvailability = z.object({

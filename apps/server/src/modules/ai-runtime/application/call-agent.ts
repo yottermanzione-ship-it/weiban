@@ -249,7 +249,9 @@ class AgentSession implements CallAgentSession {
         : []),
     ];
     const n = this.turnNo++;
-    const adult = this.info.scope === 'adult' && !this.careActive;
+    // H2：私密范围的关怀回合也只交给私密模型（私密内容不出私密范围），关怀要求见上面的系统提示；
+    // 输出按日常范围检查。私密模式已不能发起通话（calls 模块拒绝），这里保持一致。
+    const adult = this.info.scope === 'adult';
     const request: GenerateTextInput = {
       userId: this.info.userId,
       characterId: this.info.characterId,
@@ -278,10 +280,10 @@ class AgentSession implements CallAgentSession {
         });
     if (this.closed || this.ending) return;
     let text =
-      result.ok && outputAllowed(result.value.text, this.info.policy, adult)
+      result.ok && outputAllowed(result.value.text, this.info.policy, adult && !this.careActive)
         ? result.value.text.replace(/[（(][^）)]{0,20}[）)]/gu, '').trim()
         : '';
-    if (adult && !result.ok && result.error === 'content_rejected') {
+    if (adult && !this.careActive && !result.ok && result.error === 'content_rejected') {
       const deflect = this.info.role.card.data.safetyStyle.deflectStyle?.trim();
       text =
         deflect && outputAllowed(deflect, this.info.policy, false)

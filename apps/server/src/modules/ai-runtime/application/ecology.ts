@@ -120,6 +120,13 @@ interface ActionResult {
 
 interface Snapshot {
   text: string;
+  /**
+   * H2（总经理 10-21 C14）：该角色正处于私密模式（会话内容范围 adult 且有资格）。
+   * 期间生态的模型调用一律走该用户的私密模型；不发语音、不去群里说话（私密模式只开放文字与图片、仅单角色）。
+   * 快照仍只读日常范围，私密内容不进生态。
+   */
+  privateMode: boolean;
+  conversationId: string;
   tools: EcologyActionKey[];
   targets: Map<string, { postId?: string; commentId?: string; conversationId?: string }>;
   hasFollowUps: boolean;
@@ -320,17 +327,31 @@ export class EcologyService {
     const result = await this.gateway.generateText({
       userId,
       characterId,
-      purpose: 'behavior_planning',
+      // H2：私密模式期间决策也交给该用户的私密模型（行为规划模型不能是私密模型，所以改用 proactive 用途）。
+      ...(snapshot.privateMode
+        ? {
+            purpose: 'proactive' as const,
+            modelRole: 'adult' as const,
+            conversationId: snapshot.conversationId,
+          }
+        : {
+            purpose: 'behavior_planning' as const,
+            modelRole: 'background' as const,
+            modelKeyOverride: config.decisionModelKey,
+          }),
       billingOwner: 'user',
-      modelRole: 'background',
-      modelKeyOverride: config.decisionModelKey,
       countAsBackground: true,
       ecologyTask: true,
       responseFormat: 'json',
       maxOutputTokens: config.decisionMaxOutputTokens,
       temperature: 0.8,
       idempotencyKey: `eco:${run.id}:decide`,
-      meta: { promptTemplateVersion: 'ecology-v1' },
+      meta: {
+        promptTemplateVersion: 'ecology-v1',
+        ...(snapshot.privateMode
+          ? { scenarioMode: 'adult', conversationKind: 'direct' as const }
+          : {}),
+      },
       messages: [
         { role: 'system', content: DECISION_SYSTEM },
         { role: 'user', content: snapshot.text },
@@ -467,6 +488,7 @@ export class EcologyService {
           characterId,
           runId: run.id,
           brief,
+          ...(snapshot.privateMode ? { privateConversationId: snapshot.conversationId } : {}),
         });
         return r.ok
           ? { ok: true, chargedMicros: r.chargedMicros }
@@ -483,6 +505,7 @@ export class EcologyService {
           action: like ? 'like' : 'comment',
           like: true,
           ecologyRunId: run.id,
+          ...(snapshot.privateMode ? { privateConversationId: snapshot.conversationId } : {}),
         });
         return r.ok
           ? { ok: true, chargedMicros: r.chargedMicros }
@@ -498,6 +521,7 @@ export class EcologyService {
           action: 'reply',
           replyToCommentId: target.commentId,
           ecologyRunId: run.id,
+          ...(snapshot.privateMode ? { privateConversationId: snapshot.conversationId } : {}),
         });
         return r.ok
           ? { ok: true, chargedMicros: r.chargedMicros }
@@ -557,6 +581,8 @@ export class EcologyService {
       this.contacts.getActiveContact(userId, characterId),
     ]);
     if (!profile || !role || !policy || !contact?.conversationId) return null;
+    const conversation = await this.chat.getConversation(contact.conversationId).catch(() => null);
+    const privateMode = conversation?.contentScope === 'adult' && policy.adultModeEligible;
     const config = await this.settings.config();
     const userRow = await this.settings.row(userId);
     const disabled = new Set(userRow?.disabledActions ?? []);
@@ -780,6 +806,8 @@ export class EcologyService {
       if (disabled.has(def.key)) continue;
       if (await this.settings.actionAvailable(def.key, config)) continue;
       if (CHAT_ACTIONS.has(def.key) && chatBlocked) continue;
+      // H2：私密模式只开放文字与图片（不发语音），且仅单角色（不去群里说话）。
+      if (privateMode && (def.key === 'voice' || def.key === 'group_talk')) continue;
       const ok = (() => {
         switch (def.key) {
           case 'greeting':
@@ -827,7 +855,14 @@ export class EcologyService {
       lines.push(
         '（好感度还不到「亲密好友」：发消息要有具体内容，不要「在干嘛」「想你了」这类空话。）',
       );
-    return { text: lines.join('\n'), tools, targets, hasFollowUps: followUps.length > 0 };
+    return {
+      text: lines.join('\n'),
+      privateMode,
+      conversationId: contact.conversationId,
+      tools,
+      targets,
+      hasFollowUps: followUps.length > 0,
+    };
   }
 
   // =========================================================================

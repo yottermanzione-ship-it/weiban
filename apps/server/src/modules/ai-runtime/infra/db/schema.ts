@@ -628,3 +628,36 @@ export const memoryTierConfig = aiRuntimeSchema.table(
   },
   (t) => [check('memory_tier_config_single', sql`${t.id} = 1`)],
 );
+/**
+ * 0129（H2，契约 3.28）：切出私密模式时的「干净整理」任务。每次切出一行（event_key 幂等），
+ * 由私密模型生成不含露骨描写的摘要，写成一条日常范围记忆（memory_id）。失败按 next_attempt_at 重试。
+ */
+export const privateDigests = aiRuntimeSchema.table(
+  'private_digests',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    conversationId: uuid('conversation_id').notNull(),
+    eventKey: text('event_key').notNull(),
+    toSeq: bigint('to_seq', { mode: 'number' }).notNull(),
+    status: text('status').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull(),
+    lastError: text('last_error'),
+    memoryId: uuid('memory_id'),
+    chargedMicros: bigint('charged_micros', { mode: 'number' }).notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('private_digest_event_idx').on(t.conversationId, t.eventKey),
+    index('private_digest_due_idx').on(t.status, t.nextAttemptAt),
+    index('private_digest_conv_idx').on(t.conversationId, t.toSeq),
+    index('private_digest_user_idx').on(t.userId),
+    check(
+      'private_digest_status',
+      sql`${t.status} IN ('pending','failed','done','skipped','abandoned')`,
+    ),
+  ],
+);

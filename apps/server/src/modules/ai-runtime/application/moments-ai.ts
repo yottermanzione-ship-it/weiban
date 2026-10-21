@@ -103,6 +103,8 @@ export interface MomentsReactJob {
   mustReply?: boolean;
   /** v5 角色生态唤醒发起（仅记录用）。 */
   ecologyRunId?: string;
+  /** H2：该角色正处于私密模式（生态发起）——这次生成改用私密模型，传私聊会话 ID（私密模型调用必须带会话）。 */
+  privateConversationId?: string;
 }
 
 const MOMENTS_FORBIDDEN_REAL =
@@ -345,6 +347,8 @@ export class MomentsAiService {
     characterId: string;
     runId: string;
     brief: string;
+    /** H2：角色正处于私密模式——用私密模型生成（输入只有日常资料，输出仍按日常范围检查）。 */
+    privateConversationId?: string;
   }): Promise<{ ok: true; chargedMicros: number; postId: string } | { ok: false; reason: string }> {
     const { userId, characterId } = input;
     const role = await this.characters.getForRuntime(userId, characterId);
@@ -355,7 +359,13 @@ export class MomentsAiService {
       characterId,
       purpose: 'moments',
       billingOwner: 'user',
-      modelRole: 'background',
+      ...(input.privateConversationId
+        ? {
+            modelRole: 'adult' as const,
+            conversationId: input.privateConversationId,
+            meta: { scenarioMode: 'adult' },
+          }
+        : { modelRole: 'background' as const }),
       countAsBackground: true,
       ecologyTask: true,
       responseFormat: 'text',
@@ -987,7 +997,14 @@ export class MomentsAiService {
       characterId,
       purpose: 'moments',
       billingOwner: 'user',
-      modelRole: 'background',
+      // H2：生态发起且角色正处于私密模式 → 私密模型（输出仍按日常范围检查）。
+      ...(job.privateConversationId
+        ? {
+            modelRole: 'adult' as const,
+            conversationId: job.privateConversationId,
+            meta: { scenarioMode: 'adult' },
+          }
+        : { modelRole: 'background' as const }),
       ...(job.mustReply ? {} : { countAsBackground: true, ecologyTask: true }),
       responseFormat: 'text',
       maxOutputTokens: 120,

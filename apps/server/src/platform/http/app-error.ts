@@ -59,6 +59,7 @@ export const DEFAULT_ERROR_STATUS: Record<ErrorCode, number> = {
   plaza_publish_forbidden: 403,
   plaza_classification_loosened: 422,
   plaza_check_unavailable: 422,
+  private_mode_unsupported: 422,
 };
 
 export interface AppErrorOptions {

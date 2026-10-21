@@ -185,15 +185,32 @@ export class CallService implements CallSessionPort, UserDataOwner, OnModuleInit
     characterId: string,
   ): Promise<{
     available: boolean;
-    reason: 'service_disabled' | 'insufficient_balance' | 'busy' | 'contact_inactive' | null;
+    reason:
+      | 'service_disabled'
+      | 'insufficient_balance'
+      | 'busy'
+      | 'contact_inactive'
+      | 'private_mode'
+      | null;
   }> {
     if (!(await this.serviceEnabled())) return { available: false, reason: 'service_disabled' };
     if (!(await this.contacts.getActiveContact(userId, characterId)))
       return { available: false, reason: 'contact_inactive' };
+    if (await this.inPrivateMode(userId, characterId))
+      return { available: false, reason: 'private_mode' };
     if (await this.getActiveCall(userId)) return { available: false, reason: 'busy' };
     if (!(await this.balanceOk(userId)))
       return { available: false, reason: 'insufficient_balance' };
     return { available: true, reason: null };
+  }
+
+  /**
+   * 3.28（H2，总经理 10-21 C14）：私密模式只开放文字与图片，不能语音通话。
+   * 以私聊会话当前的内容范围为准（切到私密模式时 ai-runtime 把会话改成 adult）。
+   */
+  private async inPrivateMode(userId: string, characterId: string): Promise<boolean> {
+    const conversation = await this.chatRead.findDirectConversation(userId, characterId);
+    return conversation?.contentScope === 'adult';
   }
 
   // ---------- 拨出（MED-06） ----------
@@ -217,6 +234,10 @@ export class CallService implements CallSessionPort, UserDataOwner, OnModuleInit
       throw new AppError('insufficient_balance', '余额不足，暂时无法通话', { status: 422 });
     const conversation = await this.chatRead.findDirectConversation(userId, input.characterId);
     if (!conversation) throw new AppError('not_found', '找不到会话');
+    if (conversation.contentScope === 'adult')
+      throw new AppError('private_mode_unsupported', '私密模式只支持文字和图片，暂时不能语音通话', {
+        status: 422,
+      });
     const row = await this.create(userId, {
       characterId: input.characterId,
       conversationId: conversation.conversationId,
@@ -315,6 +336,8 @@ export class CallService implements CallSessionPort, UserDataOwner, OnModuleInit
       input.characterId,
     );
     if (!conversation) return { ok: false, error: 'contact_inactive' };
+    // H2：私密模式不来电（只开放文字与图片）。
+    if (conversation.contentScope === 'adult') return { ok: false, error: 'service_disabled' };
     const row = await this.create(input.userId, {
       characterId: input.characterId,
       conversationId: conversation.conversationId,

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import {
   Id,
@@ -37,6 +37,7 @@ import { ReplyPlanStore } from './plan-store.js';
 import { invalidateReplyPlans } from './invalidate.js';
 import { companionSettings } from '../infra/db/schema.js';
 import { MemoryTierService } from './memory-tier.js';
+import { PrivateDigestService } from './private-digest.js';
 @Injectable()
 export class CompanionSettingsService {
   constructor(
@@ -52,6 +53,8 @@ export class CompanionSettingsService {
     @Inject(ReplyPlanStore) private readonly plans: ReplyPlanStore,
     @Inject(MEDIA_ASSET_READ_PORT) private readonly assets: MediaAssetReadPort,
     @Inject(MemoryTierService) private readonly tiers: MemoryTierService,
+    /** H2：切出私密模式时登记「干净整理」（测试里可不注入）。 */
+    @Optional() @Inject(PrivateDigestService) private readonly digests?: PrivateDigestService,
   ) {}
   private async guard(userId: string, characterId: string | null): Promise<void> {
     parseContract(Id, userId);
@@ -153,6 +156,14 @@ export class CompanionSettingsService {
               ),
             );
         if (contact?.conversationId) {
+          // H2：私密模型不可用导致的自动切回也算一次切出（同一次回落键相同，只登记一次）。
+          if (mode === 'adult' && characterId)
+            await this.digests?.enqueue(tx, {
+              userId,
+              characterId,
+              conversationId: contact.conversationId,
+              eventKey: `mode-unavailable:${Date.parse(value.updatedAt)}`,
+            });
           await this.chat.setContentScope(
             { conversationId: contact.conversationId, scope: 'normal' },
             tx,
@@ -234,6 +245,16 @@ export class CompanionSettingsService {
       if (characterId && patch.scenarioMode && patch.scenarioMode !== old.scenarioMode) {
         const contact = await this.contacts.getActiveContact(userId, characterId, tx);
         if (!contact?.conversationId) throw new AppError('not_found', '会话不存在');
+        const switchId = newId();
+        // H2（总经理 10-21 C14）：切出私密模式（切到自动或任何非私密模式）→ 登记一次「干净整理」，
+        // 以这次切换为准（switchId），异步由私密模型生成，不阻塞切换。
+        if (old.scenarioMode === 'adult' && patch.scenarioMode !== 'adult')
+          await this.digests?.enqueue(tx, {
+            userId,
+            characterId,
+            conversationId: contact.conversationId,
+            eventKey: `mode:${switchId}`,
+          });
         const result = await this.chat.setContentScope(
           {
             conversationId: contact.conversationId,
@@ -246,7 +267,7 @@ export class CompanionSettingsService {
           conversationId: contact.conversationId,
           code: 'scenario_mode_changed',
           params: { mode: patch.scenarioMode },
-          idempotencyKey: `mode:${userId}:${characterId}:${newId()}`,
+          idempotencyKey: `mode:${userId}:${characterId}:${switchId}`,
         });
       }
       await tx.db
