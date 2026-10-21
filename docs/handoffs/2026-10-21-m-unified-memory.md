@@ -2,6 +2,8 @@
 
 任务见 [M 实施卡](../tasks/2026-10-21-m-unified-memory.md)，依据第四轮第五轮与 [20 号方案](../refactor/20-unified-memory.md)。活动副本 `C:\wb-dev\wb-memory-m`，分支 `codex/memory-m`，基于 H4 `b02caf134c410099b96b65b9c6e2a51ae68373fa`。第一阶段检查点 `46005e6`，后续提交补齐评测与最终证据。共享 main 未改，未 push、合并主线或部署；未连接服务器、启动本机 Docker 或调用真实供应商。
 
+最终源码检查点：`d2984a2d8190f68e0ba10113b036b2f54e96ea19`。后续仅补记本提交号的文档提交不改变源码；`git merge local/trunk` 返回 Already up to date，工作区干净。原隔离评测两题的编号又作显式断言，最终单独重测 5 条通过（`m-eval-protection-final.txt`），没有静默丢掉旧题。
+
 ## 完成本阶段
 
 - 抽出公共 `brainPrefix` / `BrainContextService`：平台边界、短行人设 / 说话方式 / 示例、公开资料、好感度与称呼、补充设定、自述、稳定记忆和当地日期。相同用户 / 角色 / 范围及版本下复用同一前缀；私聊规则移到场景补充，群聊、主动消息、通话、私人朋友圈采用相同模板。生态使用有预算的精简版本，不带对话示例。
