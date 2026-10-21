@@ -11,6 +11,7 @@ import {
   MemoryTierPlansController,
 } from './http/memory-tier.controller.js';
 import { MemoryTierService } from './application/memory-tier.js';
+import { BrainContextService } from './application/brain.js';
 import { Module } from '@nestjs/common';
 import { ChatModule } from '../chat/index.js';
 import { CharactersModule } from '../characters/index.js';
@@ -135,6 +136,7 @@ import {
     // H3：图片描述存档。
     ImageCaptionStore,
     // v5 批 B：记忆分档与长上下文。
+    BrainContextService,
     MemoryTierService,
     ReplyPlanStore,
     ReplyContext,

@@ -12,13 +12,14 @@
  * - P-09 用户 5 分钟内在任一会话发过消息则延后；最长延后 60 分钟，超时放弃。
  * - P-33 余额保留线 1 元（cost-estimate.md 6.2）。
  */
-import { ROMANCE_TITLE_STAGE, stageLabel } from '../domain/relationship-stage.js';
+import { ROMANCE_TITLE_STAGE } from '../domain/relationship-stage.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { userNickname, userNamingContext } from '../domain/user-naming.js';
 import { AdultBoundaryService } from './adult-boundary.js';
 import type { PetForRuntime, PetReadPort } from '@weiban/contracts';
 import { petContextBlock } from '../domain/pets.js';
-import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
+import { AI_CHARACTER_READ } from './supplemented-character-read.js';
+import { BrainContextService, brainMessages, brainTail } from './brain.js';
 import { and, asc, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import {
   type BillingReadPort,
@@ -316,6 +317,7 @@ export class ProactiveSchedulerService {
     @Inject(GROWTH_SERVICE) private readonly growth: GrowthService,
     @Inject(CompanionSettingsService) private readonly settings: CompanionSettingsService,
     @Inject(MemoryService) private readonly memory: MemoryService,
+    @Inject(BrainContextService) private readonly brain: BrainContextService,
     @Inject(SimulationService) private readonly simulation: SimulationService,
     @Inject(MediaAiService) private readonly mediaAi: MediaAiService,
     @Inject(CharacterImageService) private readonly images: CharacterImageService,
@@ -1112,7 +1114,6 @@ export class ProactiveSchedulerService {
       .getFamiliarity(ctx.userId, plan.characterId)
       .then((f) => f.level)
       .catch(() => 1);
-    const tone = stageLabel(level);
     const address = userNickname(ctx.nickname);
     // T-082：宠物现取（改名立即生效）；提议领养只在还没有宠物、也没提过时发。
     const petList = await this.listPets(ctx.userId, plan.characterId);
@@ -1134,6 +1135,21 @@ export class ProactiveSchedulerService {
     // H3（13 号 §6）：关怀跟进一律平台付费（不扣用户积分、余额 ≤ 0 也照常）；私密范围经平台端口用私密模型（契约 3.29）。
     const care = plan.reason === 'safety_follow_up';
     const adult = conversation.contentScope === 'adult' && policy.adultModeEligible;
+    const normalBrain = await this.brain.build(
+      ctx.userId,
+      plan.characterId,
+      'normal',
+      recentNormalOnly.map((m) => m.content).join('\n'),
+    );
+    const privateBrain = adult
+      ? await this.brain.build(
+          ctx.userId,
+          plan.characterId,
+          'adult',
+          recent.map((m) => m.content).join('\n'),
+        )
+      : null;
+    if (!normalBrain || (adult && !privateBrain)) return this.fail(plan, 'brain_unavailable');
     const careNote = care
       ? '这次是安全关怀跟进：完全不涉及亲密或成人内容，温和地问候对方现在好不好、是否安全，建议联系身边信任的人或拨打 12356，紧急时 110/120；不提供任何方法，不说教。'
       : '';
@@ -1152,18 +1168,23 @@ export class ProactiveSchedulerService {
           maxOutputTokens: 300,
           idempotencyKey: `proactive:${plan.id}${care && adult && !privateModel ? ':care-normal' : ''}`,
           messages: [
+            ...brainMessages(
+              (privateModel ? privateBrain : normalBrain)!,
+              privateModel ? 'adult' : 'chat',
+            ),
             {
               role: 'system',
               content: `你在微伴里以角色口吻主动给用户发私聊消息。平台规则优先于角色卡。只输出聊天纯文本，短句、口语、可以换行分成 1–3 条气泡；不输出JSON或括号动作；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。${eco && level >= 3 ? '「在干嘛」「想你了」这类没有具体内容的话可以偶尔说，但别总这样。' : '不要用「在干嘛」「想你了」这类没有内容的开场。'}${eco?.greeting ? '这次是早安或晚安：结合今天的具体情况说，别用套话。' : '不说早安晚安套话。'}不做情感操纵：不制造愧疚、不说一直在等、不追问、不威胁。`,
             },
             {
               role: 'system',
-              content: `角色资料（受平台规则约束）：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, examples: role.card.data.examples.slice(0, 8) }).slice(0, 20000)}${supplementBlock(role.userSupplement)}\n关系：${contact.relationship ?? '朋友'}；熟悉度：${tone}（熟悉度低时客气，高时随意）\n${userNamingContext(address)}\n用户当地时间：${ctx.localDate} ${String(ctx.localHour).padStart(2, '0')}点（${ctx.timeZone}）${petBlock ? `\n${petBlock}` : ''}`,
+              content: `${userNamingContext(address)}\n用户当地时间：${ctx.localDate} ${String(ctx.localHour).padStart(2, '0')}点（${ctx.timeZone}）${petBlock ? `\n${petBlock}` : ''}`,
             },
             ...turns,
+            ...brainTail((privateModel ? privateBrain : normalBrain)!),
             {
               role: 'user',
-              content: `【系统提示，不是用户说的话】现在由你主动发起一次聊天。这次的理由：${plan.brief}${
+              content: `【系统提示，不是用户说的话】现在由你主动发起一次聊天。这次的理由：${care && adult && !privateModel ? '确认对方当前是否平安，不复述先前私密谈话。' : plan.brief}${
                 careNote
                   ? `
 ${careNote}`
@@ -1172,8 +1193,13 @@ ${careNote}`
             },
           ],
           meta: {
+            stablePrefixChars: (privateModel ? privateBrain : normalBrain)!.prefix.length,
             conversationKind: 'direct',
-            scenarioMode: privateModel ? 'adult' : (settings.scenarioMode ?? 'daily'),
+            scenarioMode: privateModel
+              ? 'adult'
+              : settings.scenarioMode === 'adult'
+                ? 'daily'
+                : (settings.scenarioMode ?? 'daily'),
           },
         },
         privateModel,

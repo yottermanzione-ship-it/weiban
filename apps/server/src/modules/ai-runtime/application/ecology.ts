@@ -71,6 +71,7 @@ import { EcologySettingsService } from './ecology-settings.js';
 import { GroupChatService } from './group-chat.js';
 import { MediaAiService } from './media-ai.js';
 import { MemoryService } from './memory.js';
+import { BrainContextService, brainMessages } from './brain.js';
 import { MomentsAiService } from './moments-ai.js';
 import {
   PLAY_WISH_PROPOSE_SOURCE,
@@ -123,6 +124,7 @@ interface ActionResult {
 }
 
 interface Snapshot {
+  prefix: string;
   text: string;
   /**
    * H2（总经理 10-21 C14）：该角色正处于私密模式（会话内容范围 adult 且有资格）。
@@ -166,6 +168,7 @@ export class EcologyService {
     @Inject(HOLIDAY_EVENT_PORT) private readonly holidays: HolidayEventPort,
     @Inject(MOMENTS_READ_PORT) private readonly moments: MomentsReadPort,
     @Inject(MemoryService) private readonly memory: MemoryService,
+    @Inject(BrainContextService) private readonly brain: BrainContextService,
     @Inject(SimulationService) private readonly simulation: SimulationService,
     @Inject(SocialService) private readonly social: SocialService,
     @Inject(ProactiveSchedulerService) private readonly proactive: ProactiveSchedulerService,
@@ -355,11 +358,13 @@ export class EcologyService {
       idempotencyKey: `eco:${run.id}:decide`,
       meta: {
         promptTemplateVersion: 'ecology-v1',
+        stablePrefixChars: snapshot.prefix.length,
         ...(snapshot.privateMode
           ? { scenarioMode: 'adult', conversationKind: 'direct' as const }
           : {}),
       },
       messages: [
+        { role: 'system', content: snapshot.prefix },
         { role: 'system', content: DECISION_SYSTEM },
         { role: 'user', content: snapshot.text },
       ],
@@ -603,6 +608,13 @@ export class EcologyService {
     if (!profile || !role || !policy || !contact?.conversationId) return null;
     const conversation = await this.chat.getConversation(contact.conversationId).catch(() => null);
     const privateMode = conversation?.contentScope === 'adult' && policy.adultModeEligible;
+    // Decision inputs remain normal-scope, even when H2 routes them to the private model.
+    const brain = await this.brain.build(userId, characterId, 'normal', '', {
+      compact: true,
+      excludeHealth: true,
+    });
+    if (!brain) return null;
+    const prefix = brainMessages(brain, privateMode ? 'adult' : 'background')[0]!.content;
     const config = await this.settings.config();
     const userRow = await this.settings.row(userId);
     const disabled = new Set(userRow?.disabledActions ?? []);
@@ -619,9 +631,6 @@ export class EcologyService {
 
     lines.push(
       `【现在】对方当地时间 ${local.date} 周${weekday} ${String(local.hour).padStart(2, '0')}:${String(local.minute).padStart(2, '0')}（${profile.timeZone}）`,
-    );
-    lines.push(
-      `【你】${role.profile.name}。人设：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech }).slice(0, 2500)}`,
     );
     lines.push(
       `【你们】好感度：${stageLabel(level)}（粉丝 → 朋友 → 亲密好友 → 暧昧 → 恋人 → 伴侣，越往后越亲密）；${policy.romanceAllowed && !policy.isMinor ? '' : '不涉及恋爱暧昧；'}对方称呼：${profile.nickname ?? '对方'}`,
@@ -685,14 +694,6 @@ export class EcologyService {
       (m) => m.scope === 'normal' && m.status === 'current' && !healthPrivate(m.content),
     );
     const followUps = usable.filter((m) => m.category === 'commitment');
-    const memLines = usable
-      .sort((a, b) => b.importance - a.importance)
-      .slice(0, 12)
-      .map(
-        (m) =>
-          `- ${m.content.slice(0, 80)}${m.dueAt ? `（时间：${m.dueAt.slice(0, 16).replace('T', ' ')}）` : ''}`,
-      );
-    lines.push(`【你记得的】${memLines.length ? `\n${memLines.join('\n')}` : '（暂无）'}`);
 
     // 日子：节日、生日、纪念日。
     const special: string[] = [];
@@ -904,6 +905,7 @@ export class EcologyService {
       );
     return {
       text: lines.join('\n'),
+      prefix,
       privateMode,
       conversationId: contact.conversationId,
       tools,

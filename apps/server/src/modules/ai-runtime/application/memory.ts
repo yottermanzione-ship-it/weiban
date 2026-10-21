@@ -719,7 +719,7 @@ export class MemoryService {
     scope: 'normal' | 'adult',
     query: string,
     window?: { turns: WindowTurn[]; limits?: WindowLimits },
-    opts: { uncapped?: boolean } = {},
+    opts: { uncapped?: boolean; brain?: boolean } = {},
   ) {
     const job = await this.guard(userId, characterId);
     const tier: ResolvedMemoryTier | null = opts.uncapped
@@ -918,7 +918,7 @@ export class MemoryService {
       let windowStart = Math.max(state.windowStartSeq, state.barrierSeq);
       let stableBlock = '';
       let residentIds: string[] = [];
-      if (window) {
+      if (window || opts.brain) {
         let block: z.infer<typeof WindowBlock> | null = null;
         if (state.windowBlockCiphertext) {
           const bytes = await this.crypto.open(
@@ -937,13 +937,15 @@ export class MemoryService {
             bytes.fill(0);
           }
         }
-        const moved = nextWindowStart({
-          windowStart,
-          turns: window.turns,
-          segments,
-          cursorSeq: state.cursorSeq,
-          ...(window.limits ? { limits: window.limits } : {}),
-        });
+        const moved = window
+          ? nextWindowStart({
+              windowStart,
+              turns: window.turns,
+              segments,
+              cursorSeq: state.cursorSeq,
+              ...(window.limits ? { limits: window.limits } : {}),
+            })
+          : null;
         if (moved !== null) {
           windowStart = moved;
           block = null;

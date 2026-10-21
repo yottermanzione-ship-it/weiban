@@ -50,6 +50,7 @@ import { MOMENTS_CHARACTER_PORT, MOMENTS_READ_PORT } from '../../moments/index.j
 import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import { healthPrivate } from '../domain/memory.js';
+import { BrainContextService, brainMessages, brainTail } from './brain.js';
 import { outputAllowed } from '../domain/reply-rules.js';
 import { momentsPlans, simulationStates } from '../infra/db/schema.js';
 import { localParts } from './proactive-scheduler.js';
@@ -144,6 +145,7 @@ export class MomentsAiService {
     @Inject(HOLIDAY_EVENT_PORT) private readonly holidays: HolidayEventPort,
     @Inject(SimulationService) private readonly simulation: SimulationService,
     @Inject(CompanionSettingsService) private readonly settings: CompanionSettingsService,
+    @Inject(BrainContextService) private readonly brain: BrainContextService,
     @Inject(SocialService) private readonly social: SocialService,
     @Inject(CharacterImageService) private readonly images: CharacterImageService,
     @Inject(PlannerService) private readonly planner: PlannerService,
@@ -365,6 +367,11 @@ export class MomentsAiService {
     const role = await this.characters.getForRuntime(userId, characterId);
     const policy = await this.policy.getCharacterPolicy(userId, characterId);
     if (!role || !policy) return { ok: false, reason: 'context_unavailable' };
+    // A private post is normal-scope even while its owner uses the private model.
+    const brain = await this.brain.build(userId, characterId, 'normal', input.brief, {
+      excludeHealth: true,
+    });
+    if (!brain) return { ok: false, reason: 'context_unavailable' };
     const result = await this.gateway.generateText({
       userId,
       characterId,
@@ -383,14 +390,12 @@ export class MomentsAiService {
       maxOutputTokens: 200,
       idempotencyKey: `ai:eco-moment:${input.runId}`,
       messages: [
+        ...brainMessages(brain, input.privateConversationId ? 'adult' : 'background'),
         {
           role: 'system',
           content: `你以角色本人的身份发一条私人朋友圈（只有和你聊天的这位用户能看到）。只输出朋友圈正文纯文本，不超过100字，不加引号、不加标签。文风符合人设：${role.card.data.social.moments.tone}。可以含蓄地和你们最近的聊天、你今天的生活有关，但不直接复述对方的隐私，不提月经、经期等健康隐私，不含成人内容。${policy.isRealPerson ? '你是真人角色：不官宣新作品或合作，不评论真实社会事件或他人，不写像本人公开声明的话。' : ''}${policy.isMinor || !policy.romanceAllowed ? '不涉及恋爱暧昧。' : ''}`,
         },
-        {
-          role: 'system',
-          content: `角色资料：${JSON.stringify({ name: role.profile.name, persona: role.card.data.persona, speech: role.card.data.speech }).slice(0, 8000)}`,
-        },
+        ...brainTail(brain),
         { role: 'user', content: `这条朋友圈想写的：${input.brief.slice(0, 500)}` },
       ],
     });

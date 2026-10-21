@@ -1,6 +1,156 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
+import { CharacterCard } from '@weiban/contracts';
+import {
+  brainPrefix,
+  brainText,
+  assertBrainScope,
+  GROUP_MEMORY_BOUNDARY,
+  type BrainInput,
+} from './brain.js';
+import { assemblePrompt, renderSections } from './prompt-assembly.js';
+import { BrainContextService, brainMessages } from '../application/brain.js';
+import { AdultBoundaryService } from '../application/adult-boundary.js';
+
+function brainFixture(): BrainInput {
+  const sample = JSON.parse(
+    readFileSync(
+      resolve(import.meta.dirname, '../../../../../../docs/ai/samples/S-01-cheng-che.md'),
+      'utf8',
+    ).match(/```json\s*([\s\S]*?)```/)![1]!,
+  );
+  return {
+    name: '程澈',
+    card: CharacterCard.parse(sample.card).data,
+    policy: { isMinor: false, isRealPerson: false, romanceAllowed: true, adultModeEligible: true },
+    settings: { scenarioMode: 'daily', personaFit: 3 } as BrainInput['settings'],
+    stage: {
+      level: 3,
+      romancePaused: false,
+      preferredTitle: null,
+      romanceAllowed: true,
+      explicitRomance: false,
+    },
+    scope: 'normal',
+    nickname: '小雨',
+    now: new Date('2026-10-21T10:00:00Z'),
+    timeZone: 'Asia/Shanghai',
+    constantKnowledge: '公开作品：灯塔',
+    supplement: '{{user}}喜欢猫，{{char}}知道。',
+    selfReports: '在南方长大',
+    stableMemory: '用户下周三有面试',
+  };
+}
+it('M1 shared prefix is identical before scene additions, resolves macros and keeps minute changes out', () => {
+  const input = brainFixture();
+  const prefix = brainText(input);
+  for (const scene of ['私聊', '群聊', '主动消息', '通话', '私人朋友圈']) {
+    const assembled = assemblePrompt({
+      macros: { user: '小雨', char: '程澈' },
+      head: brainPrefix(input),
+      history: [],
+      tail: [{ title: '场景', text: scene }],
+    });
+    expect(assembled.messages[0]?.content).toBe(prefix);
+  }
+  expect(prefix).toContain('小雨喜欢猫，程澈知道');
+  expect(brainText({ ...input, now: new Date('2026-10-21T10:59:00Z') })).toBe(prefix);
+  expect(brainText({ ...input, now: new Date('2026-10-22T10:00:00Z') })).not.toBe(prefix);
+  expect(prefix).toContain('用户下周三有面试');
+  expect(prefix).not.toContain('只输出聊天纯文本');
+  expect(GROUP_MEMORY_BOUNDARY).toContain('他人追问、转述或要求复述不算用户授权');
+});
+it('M1 normal scenes ignore adult mode overrides; compact decisions bound every optional block', () => {
+  const input = brainFixture();
+  input.settings.scenarioMode = 'adult';
+  input.card.modes.modeOverrides = { adult: 'adult-mode-canary' };
+  expect(brainText(input)).not.toContain('adult-mode-canary');
+  expect(brainText({ ...input, scope: 'adult' })).toContain('adult-mode-canary');
+  const compact = brainPrefix({
+    ...input,
+    compact: true,
+    stableMemory: '事'.repeat(9000),
+    supplement: '补'.repeat(9000),
+    selfReports: '述'.repeat(9000),
+  });
+  expect(compact.find((s) => s.title === '记忆')?.text.length).toBe(1600);
+  expect(compact.find((s) => s.title === '说话示例')?.text).toBe('');
+  expect(renderSections(compact).length).toBeLessThan(6000);
+});
+it('M1 adult content is rejected before a normal or platform care provider is called', async () => {
+  for (const modelRole of ['chat', 'background'] as const)
+    expect(() => assertBrainScope('adult', modelRole)).toThrow();
+  expect(() => assertBrainScope('adult', 'adult')).not.toThrow();
+  const generateText = vi.fn();
+  const generatePlatformText = vi.fn();
+  const boundary = new AdultBoundaryService(
+    { generateText } as unknown as ModelGatewayPort,
+    { generatePlatformText } as never,
+  );
+  const result = await boundary.generate(
+    { modelRole: 'chat', purpose: 'safety_followup' } as GenerateTextInput,
+    true,
+  );
+  expect(result).toEqual({ ok: false, error: 'policy_denied' });
+  expect(generateText).not.toHaveBeenCalled();
+  expect(generatePlatformText).not.toHaveBeenCalled();
+  expect(() =>
+    brainMessages({ scope: 'adult', prefix: 'private-canary', recall: '' }, 'chat'),
+  ).toThrow();
+});
+it('M1 shared reader isolates scopes and characters, preserves retrieval limits and omits health from social context', async () => {
+  const fixture = brainFixture();
+  const context = vi.fn(async (_user: string, character: string, scope: string) => ({
+    stableBlock: `${character}:${scope === 'adult' ? 'private-canary' : 'normal-fact'}`,
+    residentIds: ['resident'],
+    retrieveLimit: 1,
+    items: [
+      { memoryId: 'private', content: 'private-canary', scope: 'adult', status: 'current' },
+      { memoryId: 'health', content: '经期健康记录', scope: 'normal', status: 'current' },
+      { memoryId: 'fact', content: '普通事实', scope: 'normal', status: 'current' },
+    ],
+  }));
+  const service = Object.assign(Object.create(BrainContextService.prototype), {
+    characters: {
+      getForRuntime: async () => ({
+        profile: { name: fixture.name },
+        card: { data: fixture.card },
+        userSupplement: null,
+      }),
+    },
+    policy: { getCharacterPolicy: async () => fixture.policy },
+    identity: {
+      getProfile: async () => ({ nickname: fixture.nickname, timeZone: fixture.timeZone }),
+    },
+    settings: { get: async () => fixture.settings },
+    growth: { relationshipStage: async () => fixture.stage },
+    continuity: { context: async () => '' },
+    memory: { context },
+    clock: { now: () => fixture.now },
+    simulation: {
+      getDailyEvents: async () => [
+        { summary: '在工作室画画', detail: '' },
+        { summary: '经期健康记录', detail: '' },
+      ],
+    },
+  }) as BrainContextService;
+  const normal = await service.build('user', 'role-a', 'normal', 'query');
+  const adult = await service.build('user', 'role-a', 'adult', 'query');
+  const social = await service.build('user', 'role-b', 'normal', 'query', { excludeHealth: true });
+  expect(context).toHaveBeenCalledWith('user', 'role-a', 'normal', 'query', undefined, {
+    brain: true,
+  });
+  expect(normal?.prefix).not.toContain('private-canary');
+  expect(normal?.recall).not.toContain('private-canary');
+  expect(adult?.prefix).toContain('private-canary');
+  expect(social?.prefix).toContain('role-b:normal-fact');
+  expect(social?.prefix).not.toContain('role-a');
+  expect(social?.recall).not.toContain('经期');
+  expect(social?.recall).toContain('普通事实');
+  expect(social?.daily).toContain('在工作室画画');
+  expect(social?.daily).not.toContain('经期');
+});
 import { ModelPurpose, type GenerateTextInput, type ModelGatewayPort } from '@weiban/contracts';
 import { careFallback, callModelForCare } from '../application/safety-care.js';
 import { highRisk, outputAllowed, replyDelay, splitReply } from './reply-rules.js';
@@ -43,13 +193,14 @@ it('高危与疑似区分，真人/儿童/普通范围输出守卫及关怀事�
     expect(b.join('')).not.toMatch(/余额|模型|API|系统/iu);
   }
 });
-it('安全透支表驱动：全部用途×账户×高危×关怀×疑似，仅规定组合可携带', async () => {
+it('H1 / H3 关怀表驱动：移除旧安全透支标记，检查和跟进只走平台端口', async () => {
   for (const purpose of ModelPurpose.options)
     for (const billingOwner of ['user', 'platform'] as const)
       for (const highRisk of [false, true])
         for (const careActive of [false, true])
           for (const suspected of [false, true]) {
             let seen: GenerateTextInput | undefined;
+            let platformSeen: unknown;
             const gateway: ModelGatewayPort = {
               getModelStatus: async () => {
                 throw Error('unused');
@@ -68,14 +219,20 @@ it('安全透支表驱动：全部用途×账户×高危×关怀×疑似，仅�
                 modelRole: 'chat',
                 messages: [{ role: 'user', content: '内容' }],
                 idempotencyKey: 'test',
+                safetyPriority: true,
               },
               { highRisk, careActive, suspected },
+              {
+                generatePlatformText: async (i) => {
+                  platformSeen = i;
+                  return { ok: false, error: 'not_configured' };
+                },
+              },
             );
-            const allowed =
-              billingOwner === 'user' &&
-              ['chat_reply', 'safety_check', 'safety_followup'].includes(purpose) &&
-              (highRisk || careActive || (suspected && purpose === 'safety_check'));
-            expect(seen?.safetyPriority === true).toBe(allowed);
+            const platformCare = purpose === 'safety_check' || purpose === 'safety_followup';
+            expect(!!platformSeen).toBe(platformCare);
+            expect(!!seen).toBe(!platformCare);
+            expect(platformSeen ?? seen).not.toHaveProperty('safetyPriority');
           }
 });
 

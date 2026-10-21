@@ -47,6 +47,7 @@ import {
 import { DEFAULT_MEMORY_TIER_CONFIG } from '../domain/memory-tier.js';
 import { KEEP_CHATTING_RULE, keepChattingCase, keepChattingHint } from '../domain/keep-chatting.js';
 import { hasRecallIntent, recallBlock, retrieveRelevantHistory } from '../domain/recall.js';
+import { brainText, GROUP_MEMORY_BOUNDARY, type BrainInput } from '../domain/brain.js';
 
 type Msg = { role: 'system' | 'user' | 'assistant'; content: string };
 type ChatRow = { seq: number; sender: 'user' | 'character'; text: string; at: Date };
@@ -418,7 +419,9 @@ for (let turn = 1; turn <= TURNS; turn++) {
 
 const sum = (k: keyof (typeof rows)[number]) => rows.reduce((s, r) => s + Number(r[k]), 0);
 const pct = (a: number, b: number) => `${((a / Math.max(1, b)) * 100).toFixed(1)}%`;
-console.log(`模拟 ${TURNS} 轮私聊（样本角色：${NAME}）`);
+console.log(
+  `历史 chat-v2 / chat-v3 模板基线，模拟 ${TURNS} 轮私聊（样本角色：${NAME}）；下方另列 M1 当前共享模板。`,
+);
 console.log('');
 console.log('| 指标 | 改前 chat-v2 | 改后 chat-v3 |');
 console.log('|---|---|---|');
@@ -450,3 +453,111 @@ console.log(sampleOld);
 console.log('');
 console.log(`第 ${Math.min(TURNS, 45)} 轮请求结构（改后）：`);
 console.log(sampleNew);
+
+// M1: same synthetic card/history across scenes. No credentials, database or model request.
+const brainInput: BrainInput = {
+  name: NAME,
+  card,
+  policy: { isMinor: false, isRealPerson: false, romanceAllowed: true, adultModeEligible: true },
+  settings: { scenarioMode: 'daily', personaFit: 3 } as BrainInput['settings'],
+  stage: {
+    level: 3,
+    romancePaused: false,
+    preferredTitle: null,
+    romanceAllowed: true,
+    explicitRomance: false,
+  },
+  scope: 'normal',
+  nickname: '小雨',
+  now: new Date('2026-10-21T10:00:00Z'),
+  timeZone: TZ,
+  constantKnowledge: lorebookText(
+    lorebook(card.knowledge.entries, '', '2026-10-21', false).constant,
+  ),
+  supplement: SUPPLEMENT,
+  selfReports: SELF_REPORT,
+  stableMemory: renderStableMemory({
+    scope: 'normal',
+    resident: pickResident(MEMORY, 'normal', TIER.residentLimit),
+    windowStart: 0,
+    segments: null,
+    legacySummary: '你们聊过加班、周末爬山和面试，提醒对方别吃芒果。',
+    daily: [],
+    monthly: [],
+  }),
+};
+const prefix = brainText(brainInput);
+const compactPrefix = brainText({ ...brainInput, compact: true });
+const fixtures = [
+  {
+    scene: '群聊',
+    old: JSON.stringify({
+      persona: card.persona,
+      speech: card.speech,
+      groupStyle: card.social.groupStyle,
+      examples: card.examples.slice(0, 6),
+    }).slice(0, 16000),
+    rule: `群聊发言不超过60字。${GROUP_MEMORY_BOUNDARY}`,
+  },
+  {
+    scene: '主动消息',
+    old: JSON.stringify({
+      persona: card.persona,
+      speech: card.speech,
+      examples: card.examples.slice(0, 8),
+    }).slice(0, 20000),
+    rule: '主动给用户发口语消息，不做情感操纵，不制造愧疚。',
+  },
+  {
+    scene: '通话',
+    old: `${JSON.stringify({ persona: card.persona, speech: card.speech, examples: card.examples.slice(0, 8), safetyStyle: card.safetyStyle }).slice(0, 20000)}\n${JSON.stringify(MEMORY.slice(0, 12).map((m) => m.content))}`,
+    rule: '一次说1至3句短句，直接转成语音，不用表情或网址。',
+  },
+  {
+    scene: '私人朋友圈',
+    old: JSON.stringify({ name: NAME, persona: card.persona, speech: card.speech }).slice(0, 8000),
+    rule: '只有这位用户可见，不超过100字，不复述隐私和健康信息。',
+  },
+  {
+    scene: '生态决策（精简）',
+    old: JSON.stringify({ persona: card.persona, speech: card.speech }).slice(0, 2500),
+    rule: '仅从这次可执行工具中选择，不执行不允许的动作。',
+    compact: true,
+  },
+];
+console.log(
+  '\nM1 共享模板：合成公开样本，仅比较输入结构；旧模板按原字段/截断上限重构，并非线上抓取。',
+);
+console.log('每场景20次、相同模型/账号的模拟；不代表真实供应商命中、输出质量或积分。');
+console.log('| 场景 | 旧模板均值token | 共享模板均值token | 共享前缀字符 | 模拟缓存占比 |');
+console.log('|---|---:|---:|---:|---:|');
+for (const fixture of fixtures) {
+  const head = fixture.compact ? compactPrefix : prefix;
+  let oldTotal = 0,
+    newTotal = 0,
+    cached = 0;
+  for (let index = 0; index < 20; index++) {
+    const turns: Msg[] = USER_LINES.slice(Math.max(0, index - 5), index + 1).map((content) => ({
+      role: 'user',
+      content,
+    }));
+    const before: Msg[] = [
+      { role: 'system', content: `${fixture.rule}\n${fixture.old}\n${SUPPLEMENT}` },
+      ...turns,
+      { role: 'system', content: `本轮场景提示${index}：${USER_LINES[index]}` },
+    ];
+    const after: Msg[] = [
+      { role: 'system', content: head },
+      { role: 'system', content: fixture.rule },
+      ...turns,
+      { role: 'system', content: `本轮场景提示${index}：${USER_LINES[index]}` },
+    ];
+    oldTotal += simulatePrefixCache(`m1:old:${fixture.scene}`, before).total;
+    const sampled = simulatePrefixCache(`m1:${fixture.scene}`, after);
+    newTotal += sampled.total;
+    cached += sampled.cached;
+  }
+  console.log(
+    `| ${fixture.scene} | ${Math.round(oldTotal / 20)} | ${Math.round(newTotal / 20)} | ${head.length} | ${pct(cached, newTotal)} |`,
+  );
+}

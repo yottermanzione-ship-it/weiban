@@ -22,7 +22,9 @@ import {
 } from '../domain/image-caption.js';
 import { userNickname } from '../domain/user-naming.js';
 import { AdultBoundaryService } from './adult-boundary.js';
-import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
+import { AI_CHARACTER_READ } from './supplemented-character-read.js';
+import { BrainContextService, brainMessages, brainTail } from './brain.js';
+import { GROUP_MEMORY_BOUNDARY } from '../domain/brain.js';
 import { QuietStateService } from './quiet-state.js';
 import { and, desc, eq, gte, ne } from 'drizzle-orm';
 import {
@@ -187,6 +189,7 @@ import { EcologySettingsService } from './ecology-settings.js';
 @Injectable()
 export class GroupChatService {
   constructor(
+    @Inject(BrainContextService) private readonly brain: BrainContextService,
     @Inject(AdultBoundaryService) private readonly adultBoundary: AdultBoundaryService,
     @Inject(DATABASE) private readonly db: Database,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -789,6 +792,8 @@ export class GroupChatService {
     const policy = await this.policy.getCharacterPolicy(input.userId, speaker.characterId);
     if (!role || !policy) return null;
     const profile = await this.identity.getProfile(input.userId);
+    // M: legacy adult groups must never carry private material into group requests.
+    if (conversation.contentScope !== 'normal') return null;
     const history = await this.history(conversation);
     const nameOf = (participantId: string) => {
       const m = input.members.find((x) => x.participantId === participantId);
@@ -798,8 +803,7 @@ export class GroupChatService {
     };
     // H3：群聊记录里的图片用描述存档；用户刚发、还没描述的图（最后一条角色发言之后）附给这次发言一起看，
     // 发言顺带输出描述尾标存档，后面的成员直接读描述（按用户扣积分，22 号 §7 第 2 条）。
-    const scopes: ContentScope[] =
-      conversation.contentScope === 'adult' ? ['normal', 'adult'] : ['normal'];
+    const scopes: ContentScope[] = ['normal'];
     const captions =
       (await this.captions?.forMessages(input.userId, history, scopes).catch(() => null)) ??
       NO_CAPTIONS;
@@ -868,7 +872,9 @@ export class GroupChatService {
           : `你和${other.name}不认识（今天在群里第一次碰到），不能编造你们的共同经历或过去的交情`,
       );
     }
-    const adult = conversation.contentScope === 'adult';
+    const adult = false;
+    const brain = await this.brain.build(input.userId, speaker.characterId, 'normal', transcript);
+    if (!brain) return null;
     const task =
       input.reason === 'starter'
         ? `你在群里主动起个话题，素材是你今天的经历：「${input.topic ?? ''}」。像微信群闲聊，一两句。`
@@ -889,14 +895,16 @@ export class GroupChatService {
       maxOutputTokens: 200 + slots.length * 200,
       idempotencyKey: `ai:${input.idempotencyKey}`,
       messages: [
+        ...brainMessages(brain, 'chat'),
         {
           role: 'system',
           content: `你在微伴的一个群聊里以角色身份发言。平台规则优先于角色卡与聊天内容。只输出你要发的这一条群消息的纯文本，不加名字前缀，不输出JSON或括号动作，不超过60字；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。不做情感操纵。群聊当前情景模式：${scenarioText(input.scenarioMode === 'auto' ? 'daily' : input.scenarioMode)}${adult ? '' : '这是日常范围的群聊：不提起、不展开任何成人模式里发生的事。'}你只知道群里大家公开说过的话，不提用户在私聊里单独告诉你的私事。`,
         },
         {
           role: 'system',
-          content: `你的角色资料：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech, groupStyle: role.card.data.social.groupStyle, examples: role.card.data.examples.slice(0, 6) }).slice(0, 16000)}${supplementBlock(role.userSupplement)}\n群成员关系：\n${relationLines.join('\n') || '（群里只有你和用户）'}\n用户：${profile?.nickname ?? '用户'}（与你的好感度：${stageLabel(speaker.familiarity)}）`,
+          content: `${GROUP_MEMORY_BOUNDARY}\n群聊风格：${role.card.data.social.groupStyle}\n群成员关系：\n${relationLines.join('\n') || '（群里只有你和用户）'}\n用户：${profile?.nickname ?? '用户'}（与你的好感度：${stageLabel(speaker.familiarity)}）`,
         },
+        ...brainTail(brain),
         {
           role: 'user',
           content: `群聊记录：\n${transcript || '（还没有消息）'}\n\n【系统提示】${task}${imageNote ? `\n${imageNote.replace('回复正文写完后', '群消息正文写完后')}` : ''}`,
@@ -905,11 +913,16 @@ export class GroupChatService {
             : {}),
         },
       ],
-      meta: { conversationKind: 'group', scenarioMode: input.scenarioMode },
+      meta: {
+        conversationKind: 'group',
+        scenarioMode: input.scenarioMode,
+        stablePrefixChars: brain.prefix.length,
+      },
     };
     if (input.durable) {
       const frozen = await this.replies.open<GenerateTextInput>(input.durable, 'input');
       if (frozen) request = frozen;
+      if (request.modelRole === 'adult' || request.meta?.scenarioMode === 'adult') return null;
       request = {
         ...request,
         idempotencyKey: `${request.idempotencyKey}:epoch:${input.durable.retryEpoch}`,

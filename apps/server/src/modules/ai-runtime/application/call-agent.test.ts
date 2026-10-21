@@ -17,6 +17,7 @@ import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 import { MemoryService } from './memory.js';
 import { MediaAiService } from './media-ai.js';
 import { CompanionSettingsService } from './settings.js';
+import { BrainContextService } from './brain.js';
 
 afterEach(() => vi.useRealTimers());
 
@@ -75,6 +76,16 @@ async function openControlledSession(
   const module = await Test.createTestingModule({
     providers: [
       CallAgentService,
+      {
+        provide: BrainContextService,
+        useValue: {
+          build: async () => ({
+            scope: opts.adult ? 'adult' : 'normal',
+            prefix: '共享角色前缀：用户周末喜欢爬山',
+            recall: '本轮记忆：下周三面试',
+          }),
+        },
+      },
       {
         provide: AdultBoundaryService,
         useValue: {
