@@ -144,13 +144,24 @@ export class ModelGateway implements ModelGatewayPort {
     } as const;
     if (!(input.purpose in caps)) return { ok: false, error: 'bad_request' };
     const cap = caps[input.purpose];
+    // 3.29（H3，13 号 §6）：私密模式的安全关怀（判断风险、关怀回合、次日跟进）由平台付费，但仍用该用户为这个角色
+    // 选的私密模式模型（私密内容不出私密范围）。只允许安全用途，必须带角色与会话（照常过私密资格检查）。
+    const privateCare =
+      input.modelRole === 'adult' &&
+      (input.purpose === 'safety_check' || input.purpose === 'safety_followup');
+    if (
+      input.modelRole === 'adult' &&
+      (!privateCare || !input.characterId || !input.conversationId)
+    )
+      return { ok: false, error: 'bad_request' };
     return this.generateText(
       {
         ...input,
         billingOwner: 'platform',
         safetyPriority: false,
-        modelRole:
-          input.purpose === 'safety_check' && input.modelRole === 'adult_check'
+        modelRole: privateCare
+          ? 'adult'
+          : input.purpose === 'safety_check' && input.modelRole === 'adult_check'
             ? 'adult_check'
             : 'background',
         modelKeyOverride: undefined,

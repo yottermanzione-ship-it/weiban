@@ -188,10 +188,14 @@ export class ChatReadService implements ChatReadPort {
       return result;
     });
   }
-  async getMessage(messageId: string, scopesInput: ContentScope[]): Promise<Message | null> {
+  async getMessage(
+    messageId: string,
+    scopesInput: ContentScope[],
+    input?: Tx,
+  ): Promise<Message | null> {
     parseContract(Id, messageId);
     const scopes = parseContract(ContentScope.array(), scopesInput);
-    return this.db.transaction(async (tx) => {
+    const read = async (tx: DbTx) => {
       const [stored] = await tx.db.select().from(messages).where(eq(messages.id, messageId));
       if (!stored || !scopes.includes(stored.scope as ContentScope)) return null;
       const row = await this.store.load(tx, stored.conversationId);
@@ -199,7 +203,8 @@ export class ChatReadService implements ChatReadPort {
       const [current] = await tx.db.select().from(messages).where(eq(messages.id, messageId));
       if (!current) return null;
       return this.store.message(tx, row, current, await this.store.view(tx, row, null, scopes));
-    });
+    };
+    return input ? read(asDbTx(input)) : this.db.transaction(read);
   }
   async listForUser(userId: string): Promise<{ items: Conversation[] }> {
     return this.db.transaction(async (tx) => {

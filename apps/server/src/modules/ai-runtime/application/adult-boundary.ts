@@ -35,6 +35,7 @@ export class AdultBoundaryService {
     adult: boolean,
   ): Promise<PortResult<GenerateTextOutput, GenerateError>> {
     void adult;
+    // 安全关怀跟进由平台付费；3.29（H3）起 modelRole = adult 时经平台端口用该用户的私密模型。
     if (input.purpose === 'safety_followup')
       return this.platform
         ? this.platform.generatePlatformText({ ...input, purpose: 'safety_followup' })

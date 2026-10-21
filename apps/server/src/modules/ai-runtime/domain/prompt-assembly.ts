@@ -7,6 +7,7 @@
  *   ③ 动态结尾（一条系统消息，放在最后一条用户消息之后）：每轮都会变的资料与本轮指令。
  * 区块之间用「【标题】」分隔，模型容易分清；空区块不输出。
  */
+import type { ModelImageRef } from '@weiban/contracts';
 
 export interface PromptSection {
   /** 区块标题；为空时不加标题行（例如平台守则正文自带说明）。 */
@@ -22,12 +23,18 @@ export interface DepthInsert {
   order: number;
 }
 
-export interface ChatTurnMessage {
+/** H3：本轮附给模型看的图（一步看图）；blindContent = 模型看不到图时替换 content 的说法。只用于用户消息。 */
+export interface TurnImages {
+  images?: ModelImageRef[];
+  blindContent?: string;
+}
+
+export interface ChatTurnMessage extends TurnImages {
   role: 'user' | 'assistant';
   content: string;
 }
 
-export interface AssembledMessage {
+export interface AssembledMessage extends TurnImages {
   role: 'system' | 'user' | 'assistant';
   content: string;
 }
@@ -94,7 +101,13 @@ export function assemblePrompt(input: AssembleInput): {
       insertIndexes.push(messages.length);
       messages.push({ role: 'system', content: notes.join('\n') });
     }
-    messages.push({ role: m.role, content: m.content });
+    messages.push({
+      role: m.role,
+      content: m.content,
+      ...(m.role === 'user' && m.images?.length
+        ? { images: m.images, ...(m.blindContent ? { blindContent: m.blindContent } : {}) }
+        : {}),
+    });
   });
   const tailText = [...tailInserts.map(fill), tail].filter(Boolean).join('\n\n');
   if (tailText) messages.push({ role: 'system', content: tailText });
@@ -142,4 +155,39 @@ export function takeWithin(items: string[], maxChars: number): string[] {
     used += item.length + 1;
   }
   return out;
+}
+
+/** H3：附图在消息文字里的标记（〔图1〕…），尾标里的 n 与它对应。 */
+export const IMAGE_MARKER = /〔图(\d+)〕/gu;
+
+/**
+ * H3：去掉附图。describe 给了（同一轮的重写调用已经解析出描述）且消息里每个标记都有描述 → 把标记换成描述，
+ * 省去再看一次图的钱；否则（模型缺识图能力等）改用 blindContent（看不到图的说法）。
+ */
+export function withoutImages<T extends AssembledMessage>(
+  messages: readonly T[],
+  describe?: (n: number) => string | null,
+): T[] {
+  return messages.map((m) => {
+    if (m.role === 'system' && !describe)
+      return {
+        ...m,
+        content: m.content.replace(/【这一轮的图片】[\s\S]*?【图片存档要求结束】/gu, ''),
+      };
+    if (!m.images?.length) return m;
+    const { images: _images, blindContent, ...rest } = m;
+    void _images;
+    if (describe) {
+      let complete = true;
+      let matched = false;
+      const content = m.content.replace(IMAGE_MARKER, (_all, n: string) => {
+        matched = true;
+        const text = describe(Number(n));
+        if (!text) complete = false;
+        return text ? `：${text}` : '';
+      });
+      if (matched && complete) return { ...rest, content } as T;
+    }
+    return { ...rest, content: blindContent ?? m.content } as T;
+  });
 }

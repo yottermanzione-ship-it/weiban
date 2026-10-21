@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, desc, eq, inArray, lt, lte, ne } from 'drizzle-orm';
 import {
   type ChatReadPort,
@@ -38,6 +38,8 @@ import {
   parseDigest,
 } from '../domain/private-digest.js';
 import { readableMessageText } from './content-text.js';
+import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
+import { captionForMemory } from '../domain/image-caption.js';
 import { MemoryService } from './memory.js';
 
 export const PRIVATE_DIGEST_JOB = 'ai.private_digest';
@@ -65,6 +67,8 @@ export class PrivateDigestService {
     @Inject(MODEL_GATEWAY_PORT) private readonly gateway: ModelGatewayPort,
     @Inject(POLICY_PORT) private readonly policy: PolicyPort,
     @Inject(MemoryService) private readonly memory: MemoryService,
+    /** H3：私密模式里发的图的描述（只在私密范围；健康类不带）。 */
+    @Optional() @Inject(ImageCaptionStore) private readonly captions?: ImageCaptionStore,
   ) {}
 
   /**
@@ -239,6 +243,10 @@ export class PrivateDigestService {
       await this.finish(row, { status: 'skipped', lastError: 'adult_mode_not_eligible' });
       return;
     }
+    const loaded =
+      (await this.captions?.forMessages(row.userId, sources, ['adult']).catch(() => null)) ??
+      NO_CAPTIONS;
+    const captions = new Map([...loaded].filter(([, c]) => captionForMemory(c)));
     const result = await this.gateway.generateText({
       userId: row.userId,
       characterId: row.characterId,
@@ -263,7 +271,7 @@ export class PrivateDigestService {
           content: JSON.stringify({
             messages: sources.map((m) => ({
               sender: m.senderKind === 'user' ? '用户' : '角色',
-              text: readableMessageText(m).slice(0, 2000),
+              text: readableMessageText(m, captions).slice(0, 2000),
             })),
           }),
         },

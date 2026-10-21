@@ -58,6 +58,15 @@ import { SimulationService } from './simulation.js';
 import { CharacterImageService } from './character-image.js';
 import { PlannerService } from './planner.js';
 import { EcologySettingsService } from './ecology-settings.js';
+import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
+import {
+  CAPTION_MAX_IMAGES,
+  captionInstruction,
+  captionPhrase,
+  filterPeople,
+  splitCaptionTail,
+  type ImageSlot,
+} from '../domain/image-caption.js';
 import { publicMomentDrafts } from '../infra/db/ecology-schema.js';
 import type { ModelGatewayPlatformPort } from '@weiban/contracts';
 import { MODEL_PLATFORM_GATEWAY_PORT } from '../../model-access/index.js';
@@ -146,6 +155,8 @@ export class MomentsAiService {
     @Inject(PUBLIC_UPDATE_READ_PORT)
     private readonly publicUpdates?: PublicUpdateReadPort,
     @Optional() @Inject(MOMENTS_PET_READ_PORT) private readonly pets?: PetReadPort,
+    /** H3：图片描述存档（角色评论用户朋友圈时也看图）。 */
+    @Optional() @Inject(ImageCaptionStore) private readonly captions?: ImageCaptionStore,
   ) {}
 
   // =========================================================================
@@ -992,6 +1003,47 @@ export class MomentsAiService {
     const task = replyTo
       ? `回复${nameOf(replyTo.author)}的这条评论：「${replyTo.text.slice(0, 200)}」`
       : `在这条动态下评论一句`;
+    // H3（22 号 §7 第 2 条）：用户朋友圈的图——已有描述的直接写进去，没有的附给这次评论一起看（最多 4 张），
+    // 评论顺带输出描述尾标存档（日常范围），以后再评论、私聊提起都用描述。按用户扣积分。
+    const own = post.author.kind === 'user' && post.author.refId === userId;
+    const captions =
+      own && post.images.length
+        ? ((await this.captions
+            ?.load(
+              userId,
+              post.images.map((i) => i.mediaId),
+              ['normal'],
+            )
+            .catch(() => null)) ?? NO_CAPTIONS)
+        : NO_CAPTIONS;
+    const slots: ImageSlot[] = [];
+    const imageLines = own
+      ? post.images.map((img, index) => {
+          const seen = captions.get(img.mediaId);
+          if (seen) return `图${index + 1}：${captionPhrase(seen)}`;
+          if (!this.captions || slots.length >= CAPTION_MAX_IMAGES)
+            return `图${index + 1}：（这次没附上，不要猜它的内容）`;
+          const slot: ImageSlot = {
+            n: slots.length + 1,
+            mediaId: img.mediaId,
+            ownerUserId: userId,
+            messageId: null,
+            sticker: false,
+          };
+          slots.push(slot);
+          return `图${index + 1}〔图${slot.n}〕`;
+        })
+      : [];
+    const imageNote = captionInstruction(slots, { allowed: [role.profile.name], scope: 'normal' })
+      .replace('对方这轮发来', '这条动态附了')
+      .replace('回复正文写完后', '评论正文写完后');
+    const imagesText = own
+      ? post.images.length
+        ? `\n（附 ${post.images.length} 张图片）\n${imageLines.join('\n')}`
+        : ''
+      : post.images.length
+        ? `\n（附 ${post.images.length} 张图片，你看不到图片内容，不要描述图片细节）`
+        : '';
     const result = await this.gateway.generateText({
       userId,
       characterId,
@@ -1007,7 +1059,7 @@ export class MomentsAiService {
         : { modelRole: 'background' as const }),
       ...(job.mustReply ? {} : { countAsBackground: true, ecologyTask: true }),
       responseFormat: 'text',
-      maxOutputTokens: 120,
+      maxOutputTokens: 120 + slots.length * 200,
       idempotencyKey: `ai:moments-${job.action}:${post.postId}:${characterId}:${job.replyToCommentId ?? 'post'}`,
       messages: [
         {
@@ -1020,12 +1072,34 @@ export class MomentsAiService {
         },
         {
           role: 'user',
-          content: `动态（${nameOf(post.author)} 发的）：${post.text.slice(0, 600) || '（图片动态）'}${post.images.length ? `\n（附 ${post.images.length} 张图片，你看不到图片内容，不要描述图片细节）` : ''}\n评论区：\n${thread || '（暂无）'}\n\n【任务】${task}`,
+          content: `动态（${nameOf(post.author)} 发的）：${post.text.slice(0, 600) || '（图片动态）'}${imagesText}\n评论区：\n${thread || '（暂无）'}\n\n【任务】${task}${imageNote ? `\n${imageNote}` : ''}`,
+          ...(slots.length
+            ? { images: slots.map((s) => ({ mediaId: s.mediaId, ownerUserId: s.ownerUserId })) }
+            : {}),
         },
       ],
     });
     if (!result.ok) return null;
-    let text = result.value.text
+    const parts = splitCaptionTail(result.value.text, slots.length);
+    for (const [index, slot] of slots.entries()) {
+      let caption = parts.captions[index];
+      if (!caption || !this.captions) continue;
+      caption = filterPeople(caption, [role.profile.name]);
+      if (!outputAllowed(captionPhrase(caption), policy, false))
+        caption = { ...caption, description: '画面含不适合日常聊天的内容', textInImage: '' };
+      await this.captions
+        .save({
+          userId,
+          mediaId: slot.mediaId,
+          scope: 'normal',
+          messageId: null,
+          conversationId: null,
+          caption,
+          modelKey: result.value.modelKey,
+        })
+        .catch(() => undefined);
+    }
+    let text = parts.reply
       .trim()
       .replace(new RegExp(`^${role.profile.name}[：:]\\s*`), '')
       .slice(0, 200);

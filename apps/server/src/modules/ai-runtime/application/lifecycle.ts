@@ -26,6 +26,7 @@ import {
 import { GENERATE_REPLY_JOB, ReplyPlanStore } from './plan-store.js';
 import { MemoryService, EXTRACT_MEMORY_JOB, type MemoryJob } from './memory.js';
 import { PrivateDigestService, PRIVATE_DIGEST_JOB } from './private-digest.js';
+import { ImageCaptionStore } from './image-captions.js';
 import { ReplyEngine } from './reply-engine.js';
 import { HealthCareService, HEALTH_CARE_CHECK_JOB, HEALTH_CARE_SWEEP_JOB } from './health-care.js';
 import { invalidateReplyPlans } from './invalidate.js';
@@ -118,6 +119,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     @Inject(EcologyService) readonly ecology: EcologyService,
     @Inject(EcologySettingsService) readonly ecologySettings: EcologySettingsService,
     @Inject(PrivateDigestService) readonly privateDigest: PrivateDigestService,
+    @Inject(ImageCaptionStore) readonly captions: ImageCaptionStore,
   ) {}
   async onApplicationBootstrap(): Promise<void> {
     if (this.jobs.isReady)
@@ -682,12 +684,22 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         await invalidateReplyPlans(tx, this.store, event.payload.userId, event.payload.characterId);
       },
     });
+    // H3：撤回的消息不再留图片描述。
+    this.bus.subscribe({
+      consumer: 'ai.on_message_recalled_captions',
+      eventType: 'chat.message_recalled',
+      handle: async (event, tx) => {
+        await this.captions.deleteByMessage(tx, event.payload.messageId);
+      },
+    });
     this.bus.subscribe({
       consumer: 'ai.on_contact_purged',
       eventType: 'contacts.contact_purged',
       handle: async (event, tx) => {
         const { userId, characterId, conversationId } = event.payload;
         await this.store.lock(tx, userId);
+        // H3：这个会话里的图片描述一并删除。
+        if (conversationId) await this.captions.deleteByConversation(tx, userId, conversationId);
         if (conversationId) {
           await tx.db
             .delete(memories)

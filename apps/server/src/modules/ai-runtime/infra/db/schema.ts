@@ -661,3 +661,27 @@ export const privateDigests = aiRuntimeSchema.table(
     ),
   ],
 );
+/** H3（迁移 0130）：图片描述存档（按用户密钥加密；种类等都在密文里）。scope = adult 只在私密范围读。 */
+export const imageCaptions = aiRuntimeSchema.table(
+  'image_captions',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    mediaId: uuid('media_id').notNull(),
+    scope: text('scope').notNull(),
+    messageId: uuid('message_id'),
+    conversationId: uuid('conversation_id'),
+    captionCiphertext: customType<{ data: Buffer }>({ dataType: () => 'bytea' })(
+      'caption_ciphertext',
+    ).notNull(),
+    modelKey: text('model_key'),
+    template: text('template').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('image_caption_media_scope_key').on(t.userId, t.mediaId, t.scope),
+    index('image_caption_message_idx').on(t.messageId),
+    index('image_caption_conversation_idx').on(t.conversationId),
+    check('image_caption_scope', sql`${t.scope} IN ('normal','adult')`),
+  ],
+);

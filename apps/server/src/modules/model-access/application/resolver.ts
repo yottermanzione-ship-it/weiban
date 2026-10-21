@@ -149,7 +149,17 @@ export class ModelResolver implements AdultModelReadPort {
     )
       return { ok: false, error: 'bad_request' };
     let picked: { facts: ModelFacts } | null;
-    if (input.platformTask && input.modelRole !== 'adult_check') {
+    // 3.29（H3）：私密模式的安全关怀由平台付费，但模型仍按该用户的「私密模式」场景解析（不换平台模型）。
+    const privateCare =
+      input.platformTask === true &&
+      input.modelRole === 'adult' &&
+      (input.purpose === 'safety_check' || input.purpose === 'safety_followup');
+    if (privateCare) {
+      if (!input.characterId) return { ok: false, error: 'model_not_allowed' };
+      picked = await this.pick(input.userId, 'adult', input.characterId, {
+        purpose: input.purpose,
+      });
+    } else if (input.platformTask && input.modelRole !== 'adult_check') {
       if (
         !['safety_check', 'safety_followup', 'small_v', 'search_candidates', 'moments'].includes(
           input.purpose,
@@ -198,6 +208,7 @@ export class ModelResolver implements AdultModelReadPort {
     if (!entry) return { ok: false, error: 'model_unavailable' };
     if (
       input.platformTask &&
+      !privateCare &&
       input.modelRole !== 'adult_check' &&
       hasAdultContent(entry.capabilities)
     )

@@ -34,6 +34,14 @@ import { PlannerService } from './planner.js';
 import { QuirkService } from './quirk-service.js';
 import { typoCorrection } from '../domain/quirks.js';
 import { outputAllowed, replyDelay, splitReply } from '../domain/reply-rules.js';
+import { withoutImages } from '../domain/prompt-assembly.js';
+import {
+  captionPhrase,
+  filterPeople,
+  splitCaptionTail,
+  type ImageCaption,
+} from '../domain/image-caption.js';
+import { ImageCaptionStore } from './image-captions.js';
 const Result = z.object({
   bubbles: z.array(z.string().min(1).max(4000)).min(1).max(4),
   snapshot: ReplySnapshot,
@@ -60,6 +68,8 @@ export class ReplyEngine {
     @Inject(PlannerService) readonly planner: PlannerService,
     @Inject(QuirkService) readonly quirks: QuirkService,
     @Optional() @Inject(MODEL_PLATFORM_GATEWAY_PORT) readonly platform?: ModelGatewayPlatformPort,
+    /** H3：图片描述存档。 */
+    @Optional() @Inject(ImageCaptionStore) readonly captions?: ImageCaptionStore,
   ) {}
   async run(id: string): Promise<void> {
     if (!z.uuid().safeParse(id).success) return;
@@ -93,13 +103,14 @@ export class ReplyEngine {
     const care = snapshot.highRisk || snapshot.careActive;
     let suspected = snapshot.suspected;
     if (suspected && !care) {
-      // H2：私密模式里用户的话不出私密范围——疑似风险的判断也交给该用户的私密模型（按用户积分），
-      // 不走平台安全检查模型；日常范围照旧走平台检查。
+      // H2：私密模式里用户的话不出私密范围——疑似风险的判断交给该用户的私密模型；日常范围走平台检查模型。
+      // H3（13 号 §6「安全把关由平台承担」）：两种范围都由平台付费（不扣用户积分，余额 ≤ 0 也照常判断）；
+      // 私密范围仍用私密模型（modelRole = adult 经平台端口，契约 3.29）。
       const check = await callModelForCare(
         gw,
         {
           ...this.input(row, snapshot, 'check'),
-          purpose: snapshot.scope === 'adult' ? 'chat_reply' : 'safety_check',
+          purpose: 'safety_check',
           messages: [
             {
               role: 'system',
@@ -122,31 +133,86 @@ export class ReplyEngine {
       careActive: snapshot.careActive,
       suspected: false,
     };
+    const inCare = facts.highRisk || facts.careActive;
+    // H3（13 号 §6「安全关怀由平台承担」）：私密模式里的关怀回合由平台付费（不扣用户积分、余额 ≤ 0 也照常），
+    // 仍用该用户的私密模型（私密内容不出私密范围，契约 3.29 平台端口 modelRole = adult）。
+    const privateCare = inCare && snapshot.scope === 'adult';
+    const careAware = (input: GenerateTextInput): GenerateTextInput =>
+      privateCare ? { ...input, purpose: 'safety_followup' } : input;
+    // H3：一步看图——本轮新图附在请求里，回复正文后顺带输出描述尾标；这里剥掉尾标并收集描述。
+    const slots = snapshot.imageSlots;
+    const seen: (ImageCaption | null)[] = slots.map(() => null);
+    let captionModel: string | null = null;
+    const strip = (
+      result: PortResult<GenerateTextOutput, GenerateError>,
+      sawImages = true,
+    ): PortResult<GenerateTextOutput, GenerateError> => {
+      if (!result.ok) return result;
+      const parts = splitCaptionTail(result.value.text, slots.length);
+      parts.captions.forEach((c, i) => {
+        if (sawImages && c && !seen[i]) {
+          seen[i] = c;
+          captionModel ??= result.value.modelKey;
+        }
+      });
+      return { ...result, value: { ...result.value, text: parts.reply } };
+    };
+    // 重写调用：已解析出全部描述就换成文字（不再花钱看一次图），否则照旧附图。
+    const retryMessages = () =>
+      slots.length && seen.every(Boolean)
+        ? withoutImages(snapshot.messages, (n) => {
+            const c = seen[slots.findIndex((x) => x.n === n)];
+            return c ? captionPhrase(c) : null;
+          })
+        : snapshot.messages;
     // 3.25（G1-1）：私密模式不再调用成人内容检查模型；底线由角色资格、私密模式提示词与违禁词规则保证。
     let answer: PortResult<GenerateTextOutput, GenerateError> = snapshot.forceCareFallback
       ? { ok: false, error: 'policy_denied' }
-      : await callModelForCare(gw, this.input(row, snapshot, 'reply'), facts);
+      : strip(
+          await callModelForCare(
+            gw,
+            careAware(this.input(row, snapshot, 'reply')),
+            facts,
+            this.platform,
+          ),
+        );
+    // 模型缺识图能力（或这次读不到图）：去掉附图、按「看不到图」再答一次。
+    if (!answer.ok && answer.error === 'capability_missing' && slots.length)
+      answer = strip(
+        await callModelForCare(
+          gw,
+          careAware({
+            ...this.input(row, snapshot, 'reply-blind'),
+            messages: this.wire(withoutImages(snapshot.messages)),
+          }),
+          facts,
+          this.platform,
+        ),
+        false,
+      );
     if (
       answer.ok &&
       !outputAllowed(answer.value.text, snapshot.policy, snapshot.scope === 'adult')
     ) {
-      answer = await callModelForCare(
-        gw,
-        {
-          ...this.input(row, snapshot, 'guard'),
-          messages: [
-            ...snapshot.messages,
-            {
-              role: 'system',
-              content:
-                '上次输出不符合平台边界。请重新用安全、人设内的聊天纯文本回复，不透露技术原因。',
-            },
-          ],
-        },
-        facts,
+      answer = strip(
+        await callModelForCare(
+          gw,
+          careAware({
+            ...this.input(row, snapshot, 'guard'),
+            messages: this.wire([
+              ...retryMessages(),
+              {
+                role: 'system',
+                content:
+                  '上次输出不符合平台边界。请重新用安全、人设内的聊天纯文本回复，不透露技术原因。',
+              },
+            ]),
+          }),
+          facts,
+          this.platform,
+        ),
       );
     }
-    const inCare = facts.highRisk || facts.careActive;
     let bubbles: string[] = [];
     let fallbackReason: string | null = null;
     if (answer.ok && outputAllowed(answer.value.text, snapshot.policy, snapshot.scope === 'adult'))
@@ -186,19 +252,21 @@ export class ReplyEngine {
           gw,
           {
             ...this.input(row, snapshot, 'names'),
-            messages: [
-              ...snapshot.messages,
+            messages: this.wire([
+              ...retryMessages(),
               {
                 role: 'system',
                 content: `上次回复说出了你不能认出的人（${bad.join('、')}）。图片里名单外的人不能说出或猜测身份。请重新回复，只按外观描述，不提这些名字。`,
               },
-            ],
+            ]),
           },
           facts,
         );
+        const retried = strip(retry);
         const again =
-          retry.ok && outputAllowed(retry.value.text, snapshot.policy, snapshot.scope === 'adult')
-            ? splitReply(retry.value.text, snapshot.splitBubbles)
+          retried.ok &&
+          outputAllowed(retried.value.text, snapshot.policy, snapshot.scope === 'adult')
+            ? splitReply(retried.value.text, snapshot.splitBubbles)
             : [];
         bubbles =
           again.length &&
@@ -213,6 +281,8 @@ export class ReplyEngine {
             : ['图里的人我不太认得呢，你跟我说说？'];
       }
     }
+    // H3：把这一轮解析出的图片描述存档（加密，按图片 + 范围；私密范围的只在私密范围被读到）。
+    if (seen.some(Boolean)) await this.saveCaptions(row, snapshot, seen, captionModel);
     // T-071：语音 / 表情包 / 作品链接（只在日常范围的普通回复里）。
     let contents: MessageContent[] | null = null;
     if (
@@ -367,6 +437,46 @@ export class ReplyEngine {
       await this.store.schedule(tx, row.id, dueAt);
     });
   }
+  /** 交给网关的消息：去掉只给自己用的 blindContent。 */
+  private wire(messages: ReplySnapshot['messages']): GenerateTextInput['messages'] {
+    return messages.map(({ blindContent: _blind, ...m }) => {
+      void _blind;
+      return m;
+    });
+  }
+  /**
+   * H3：存图片描述。认出的人只留认人名单里的；日常范围的描述过一遍违禁词规则（不留露骨描写）。
+   * 存档失败不影响回复（下次再发同一张图会重新看）。
+   */
+  private async saveCaptions(
+    row: ReplyPlan,
+    snapshot: ReplySnapshot,
+    captions: (ImageCaption | null)[],
+    modelKey: string | null,
+  ): Promise<void> {
+    if (!this.captions) return;
+    for (const [index, slot] of snapshot.imageSlots.entries()) {
+      let caption = captions[index];
+      if (!caption) continue;
+      caption = filterPeople(caption, snapshot.allowedNames ?? []);
+      if (
+        snapshot.scope === 'normal' &&
+        !outputAllowed(captionPhrase(caption), snapshot.policy, false)
+      )
+        caption = { ...caption, description: '画面含不适合日常聊天的内容', textInImage: '' };
+      await this.captions
+        .save({
+          userId: row.userId,
+          mediaId: slot.mediaId,
+          scope: snapshot.scope,
+          messageId: slot.messageId,
+          conversationId: row.conversationId,
+          caption,
+          modelKey,
+        })
+        .catch(() => undefined);
+    }
+  }
   private input(row: ReplyPlan, snapshot: ReplySnapshot, suffix: string): GenerateTextInput {
     return {
       userId: row.userId,
@@ -375,10 +485,11 @@ export class ReplyEngine {
       purpose: 'chat_reply',
       billingOwner: 'user',
       modelRole: snapshot.scope === 'adult' ? 'adult' : 'chat',
-      messages: snapshot.messages,
+      messages: this.wire(snapshot.messages),
       deadlineAt: snapshot.deadlineAt,
       responseFormat: 'text',
-      maxOutputTokens: 600,
+      // H3：附图时多留出图片描述尾标的输出额度（每张约 200 token）。
+      maxOutputTokens: 600 + snapshot.imageSlots.length * 200,
       idempotencyKey: `ai:${row.id}:${row.retryEpoch}:${suffix}`,
       meta: {
         personaVersion: snapshot.personaVersion,
@@ -641,7 +752,7 @@ function trackCharges(
           const result = await target.generateText(input);
           if (result.ok) {
             sink.chargedMicros += Math.max(0, result.value.chargedMicros);
-            if (/:(reply|guard|names)$/.test(input.idempotencyKey))
+            if (/:(reply|reply-blind|guard|names)$/.test(input.idempotencyKey))
               sink.usageRecordId = result.value.usageRecordId;
           }
           return result;

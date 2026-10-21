@@ -95,6 +95,13 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.29（2026-10-21，试用反馈第四轮 H3：图片描述存档、私密关怀平台付费）
+
+依据 `docs/tasks/2026-10-21-gm-feedback-4.md` 批 H3。说明见 `docs/handoffs/2026-10-21-h3.md`。
+
+- 模型网关（服务器内部端口，客户端无感）：`ModelGatewayPlatformPort.generatePlatformText` 允许 `modelRole = 'adult'`（只限 `safety_check` / `safety_followup`，必须带角色与会话）——私密模式的安全关怀由平台付费，但仍用该用户的私密模式模型。
+- 行为变化（无 HTTP / WebSocket 字段改动）：用户发的图由回复模型直接看（同一次调用顺带输出描述，不显示给用户），描述加密存档后供后续上下文、记忆、群聊、生态、朋友圈评论使用；群聊发言与朋友圈评论也开始看图（按用户扣积分）。
+
 ### 3.28（2026-10-21，试用反馈第四轮 H2：私密模式重整）
 
 依据 `docs/tasks/2026-10-21-gm-feedback-4.md` 批 H2。说明见 `docs/handoffs/2026-10-21-h2.md`。

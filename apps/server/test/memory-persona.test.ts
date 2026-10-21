@@ -4,11 +4,13 @@ import { Test } from '@nestjs/testing';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import request from 'supertest';
+import sharp from 'sharp';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
   AdminCharacterWrite,
   AuthResponse,
   CharacterCard,
+  MediaObject,
   type GenerateTextInput,
   type ModelGatewayPort,
   type ChatUserPort,
@@ -46,6 +48,7 @@ import {
   MemoryService,
   ReplyContext,
   PrivateDigestService,
+  ImageCaptionStore,
 } from '../src/modules/ai-runtime/testing.js';
 import { captureLogger, testConfig, testKekRing } from './support/fixtures.js';
 import { describeDb, resetTestDatabase } from './support/db.js';
@@ -813,6 +816,122 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
         .expect(200);
     }
   });
+  it('H3 描述加密、按用户与范围隔离、重复存档只保留首次；注销清单覆盖', async () => {
+    const captions = app.get(ImageCaptionStore);
+    const mediaId = newId();
+    const base = {
+      userId,
+      mediaId,
+      messageId: null,
+      conversationId: null,
+      modelKey: 'test/model',
+      caption: {
+        kind: 'pet' as const,
+        description: 'CAPTION_CAT_CANARY',
+        textInImage: '',
+        people: [],
+      },
+    };
+    await captions.save({ ...base, scope: 'adult' });
+    expect((await captions.load(userId, [mediaId], ['normal'])).size).toBe(0);
+    expect((await captions.load(adminId, [mediaId], ['adult'])).size).toBe(0);
+    expect((await captions.load(userId, [mediaId], ['adult'])).get(mediaId)?.description).toBe(
+      'CAPTION_CAT_CANARY',
+    );
+    await captions.save({
+      ...base,
+      scope: 'adult',
+      caption: { ...base.caption, description: '重复覆盖' },
+    });
+    await captions.save({
+      ...base,
+      scope: 'normal',
+      caption: { ...base.caption, description: '日常猫咪' },
+    });
+    expect(
+      (await captions.load(userId, [mediaId], ['normal', 'adult'])).get(mediaId)?.description,
+    ).toBe('日常猫咪');
+    const rows = await db.query<{ caption_ciphertext: Buffer }>(
+      'SELECT caption_ciphertext FROM ai_runtime.image_captions WHERE media_id=$1',
+      [mediaId],
+    );
+    expect(rows.rows).toHaveLength(2);
+    expect(rows.rows.every((r) => !r.caption_ciphertext.toString('utf8').includes('CANARY'))).toBe(
+      true,
+    );
+  });
+  it('H3 新图在同一次回复中看懂并存档，后续只读描述；撤回后拒绝迟到存档', async () => {
+    const original = response;
+    try {
+      const image = await sharp({
+        create: { width: 8, height: 8, channels: 3, background: '#ffaa00' },
+      })
+        .png()
+        .toBuffer();
+      const uploaded = MediaObject.parse(
+        (
+          await http()
+            .post('/api/v1/media?purpose=chat_image')
+            .set('Authorization', auth())
+            .attach('file', image, { filename: 'cat.png', contentType: 'image/png' })
+            .expect(201)
+        ).body,
+      );
+      const ack = await app.get<ChatUserPort>(CHAT_USER_PORT).sendMessage(userId, cid, {
+        clientMsgId: newId(),
+        content: { type: 'image', mediaId: uploaded.mediaId, width: 8, height: 8 },
+      });
+      await dispatch();
+      const pending = (await plans()).at(-1)!;
+      response =
+        '猫猫好可爱\n<图片描述>[{"n":1,"kind":"pet","description":"H3_ORANGE_CAT_CANARY 橘猫趴窗台"}]</图片描述>';
+      const before = calls.length;
+      await finish(pending.id);
+      const turn = calls.slice(before).filter((c) => c.purpose === 'chat_reply');
+      expect(turn).toHaveLength(1);
+      expect(turn[0]!.messages.flatMap((m) => m.images ?? [])).toEqual([
+        { mediaId: uploaded.mediaId, ownerUserId: userId },
+      ]);
+      const captions = app.get(ImageCaptionStore);
+      expect(
+        (await captions.load(userId, [uploaded.mediaId], ['normal'])).get(uploaded.mediaId)
+          ?.description,
+      ).toContain('H3_ORANGE_CAT_CANARY');
+      const visible = await app.get(CHAT_READ_PORT).readMessages({
+        conversationId: cid,
+        scopes: ['normal'],
+        afterSeq: ack.message.seq,
+        limit: 10,
+      });
+      expect(JSON.stringify(visible)).not.toContain('<图片描述>');
+      expect(
+        visible.some((m: { content: { type: string; text?: string } | null }) =>
+          m.content?.text?.includes('猫猫好可爱'),
+        ),
+      ).toBe(true);
+      const next = await user('刚才的猫猫呢');
+      const snapshot = await app.get(ReplyContext).build(next);
+      expect(JSON.stringify(snapshot?.messages)).toContain('H3_ORANGE_CAT_CANARY');
+      expect(snapshot?.messages.flatMap((m) => m.images ?? [])).toEqual([]);
+      await http()
+        .post(`/api/v1/conversations/${cid}/messages/${ack.message.messageId}/recall`)
+        .set('Authorization', auth())
+        .expect(200);
+      await dispatch();
+      await captions.save({
+        userId,
+        mediaId: uploaded.mediaId,
+        scope: 'normal',
+        messageId: ack.message.messageId,
+        conversationId: cid,
+        modelKey: 'late',
+        caption: { kind: 'pet', description: '迟到描述', textInImage: '', people: [] },
+      });
+      expect((await captions.load(userId, [uploaded.mediaId], ['normal'])).size).toBe(0);
+    } finally {
+      response = original;
+    }
+  }, 120_000);
   it('长消息抽取按完整来源分批，网关输入有界且不跳过剩余游标', async () => {
     response = JSON.stringify({ operations: [] });
     for (let i = 0; i < 4; i++) await memory().extract(await job());

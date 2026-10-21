@@ -35,7 +35,8 @@ export interface ChatReadPort {
   findDirectConversation(userId: string, characterId: string): Promise<Conversation | null>;
   /** 结果按 seq 升序；不含正文被撤回的内容。 */
   readMessages(input: ReadMessagesInput): Promise<Message[]>;
-  getMessage(messageId: string, scopes: ContentScope[]): Promise<Message | null>;
+  /** 可选事务用于派生资料写入前锁定并核对来源，防止撤回与迟到写入交错。 */
+  getMessage(messageId: string, scopes: ContentScope[], tx?: Tx): Promise<Message | null>;
 }
 
 /** 3.0：群聊读取（提供方 chat，调用方 ai-runtime）。与 ChatReadPort 分开，避免改动已有实现。 */

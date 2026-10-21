@@ -77,7 +77,10 @@ export interface ModelImageRef {
 export interface ChatMessageForModel {
   role: 'system' | 'user' | 'assistant';
   content: string;
-  /** 3.0：附带图片（只允许 role = user）。有图片时网关要求模型具备 vision 能力，否则改用平台默认识图模型（B5）。 */
+  /**
+   * 3.0：附带图片（只允许 role = user）。3.24 起有图片时要求本次解析出的模型具备 vision 能力，否则 capability_missing。
+   * 3.29（H3）：私聊 / 群聊回复、朋友圈评论把本轮新图直接附在回复调用里（一步看图），回复顺带输出图片描述尾标供存档。
+   */
   images?: ModelImageRef[];
 }
 
@@ -193,7 +196,13 @@ export interface ModelGatewayPort {
   }>;
 }
 
-/** 3.16：仅服务器可信业务注入，不作为HTTP请求字段；普通聊天不能借用平台账户。 */
+/**
+ * 3.16：仅服务器可信业务注入，不作为HTTP请求字段；普通聊天不能借用平台账户。
+ * 3.29（H3，13 号 §6「安全把关、关怀跟进由平台承担」）：modelRole = 'adult' 只允许与 purpose = safety_check /
+ * safety_followup 同时出现，表示私密模式里的安全关怀（风险判断、关怀回合、次日跟进）——平台付费（不扣用户积分，
+ * 余额 ≤ 0 也照常执行），但模型仍按该用户为这个角色配置的「私密模式」场景解析，私密内容不出私密范围；
+ * 必须带 characterId 与 conversationId，照常经私密资格检查，否则 bad_request / policy_denied。其余 modelRole 一律按平台内部模型。
+ */
 export interface ModelGatewayPlatformPort {
   generatePlatformText(
     input: Omit<GenerateTextInput, 'billingOwner' | 'safetyPriority' | 'purpose'> & {

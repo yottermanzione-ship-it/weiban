@@ -13,6 +13,7 @@ export { PrivateDigestService, PRIVATE_DIGEST_JOB } from './application/private-
 export { memories, memoryStates } from './infra/db/schema.js';
 export { ReplyContext } from './application/reply-context.js';
 export { ReplySnapshot } from './application/reply-context.js';
+export { ImageCaptionStore } from './application/image-captions.js';
 export { PlayContinuityStore } from './application/play-continuity.js';
 export { QuirkService } from './application/quirk-service.js';
 export type { QuirkAction, QuirkKind } from './domain/quirks.js';

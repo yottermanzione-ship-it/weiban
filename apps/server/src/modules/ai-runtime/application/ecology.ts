@@ -12,7 +12,7 @@
  *   （发朋友圈、拍一拍、改状态、改签名）不受生态开关限制，PRO+ + 积分够就执行。
  */
 import { ROMANCE_TITLE_STAGE, stageLabel } from '../domain/relationship-stage.js';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, desc, eq, gte, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import {
   Id,
@@ -79,6 +79,9 @@ import {
 } from './proactive-scheduler.js';
 import { SimulationService } from './simulation.js';
 import { SocialService } from './social.js';
+import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
+import { captionForMemory, captionSnapshot } from '../domain/image-caption.js';
+import { snapshotText } from './content-text.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 
 export const ECOLOGY_TICK_JOB = 'ai.ecology_tick';
@@ -168,6 +171,8 @@ export class EcologyService {
     @Inject(MomentsAiService) private readonly momentsAi: MomentsAiService,
     @Inject(MediaAiService) private readonly mediaAi: MediaAiService,
     @Inject(GroupChatService) private readonly groups: GroupChatService,
+    /** H3：图片描述存档。 */
+    @Optional() @Inject(ImageCaptionStore) private readonly captions?: ImageCaptionStore,
   ) {}
 
   // =========================================================================
@@ -619,6 +624,11 @@ export class EcologyService {
     }
     const lastUser = [...visible].reverse().find((m) => m.senderKind === 'user');
     const sinceUserMs = lastUser ? nowMs - Date.parse(lastUser.createdAt) : Infinity;
+    // H3：图片 / 用户自己的表情用描述存档（日常范围）。
+    const chatCaptions =
+      (await this.captions
+        ?.forMessages(userId, visible.slice(-12), ['normal'])
+        .catch(() => null)) ?? NO_CAPTIONS;
     const chatLines = visible.slice(-12).map((m) => {
       const who = m.senderKind === 'user' ? '对方' : '你';
       const body =
@@ -626,7 +636,12 @@ export class EcologyService {
           ? m.content.text.slice(0, 120)
           : m.content?.type === 'voice'
             ? `[语音]${m.content.transcript?.slice(0, 80) ?? ''}`
-            : `[${m.content?.type ?? '消息'}]`;
+            : (m.content?.type === 'image' && chatCaptions.has(m.content.mediaId)) ||
+                (m.content?.type === 'sticker' &&
+                  !m.content.description &&
+                  chatCaptions.has(m.content.mediaId))
+              ? snapshotText(m.content, chatCaptions).slice(0, 160)
+              : `[${m.content?.type ?? '消息'}]`;
       return `${who}（${ago(nowMs - Date.parse(m.createdAt))}）：${body}`;
     });
     lines.push(`【最近聊天】${chatLines.length ? `\n${chatLines.join('\n')}` : '还没怎么聊过'}`);
@@ -726,8 +741,22 @@ export class EcologyService {
       if (interacted) continue;
       const key = `U${++u}`;
       targets.set(key, { postId: p.postId });
+      const pics =
+        (await this.captions
+          ?.load(
+            userId,
+            p.images.map((i) => i.mediaId),
+            ['normal'],
+          )
+          .catch(() => null)) ?? NO_CAPTIONS;
+      const picText = p.images
+        .map((i) => pics.get(i.mediaId))
+        .filter((c) => !!c && captionForMemory(c))
+        .map((c) => captionSnapshot(c!))
+        .join(' ')
+        .slice(0, 160);
       momentLines.push(
-        `${key} 对方的动态（${ago(nowMs - Date.parse(p.createdAt))}，你还没互动）：${p.text.slice(0, 80) || '（图片）'}`,
+        `${key} 对方的动态（${ago(nowMs - Date.parse(p.createdAt))}，你还没互动）：${p.text.slice(0, 80) || (picText ? '' : '（图片）')}${picText ? ` ${picText}` : ''}`,
       );
     }
     let pc = 0;

@@ -11,6 +11,15 @@
 import { stageLabel } from '../domain/relationship-stage.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { nudgeText, readableMessageText } from './content-text.js';
+import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
+import {
+  CAPTION_MAX_IMAGES,
+  captionInstruction,
+  captionPhrase,
+  filterPeople,
+  splitCaptionTail,
+  type ImageSlot,
+} from '../domain/image-caption.js';
 import { userNickname } from '../domain/user-naming.js';
 import { AdultBoundaryService } from './adult-boundary.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
@@ -27,6 +36,7 @@ import {
   type ChatParticipantPort,
   type ChatReadPort,
   type ContactsReadPort,
+  type ContentScope,
   type Conversation,
   type GenerateTextInput,
   type HolidayEventPort,
@@ -205,6 +215,8 @@ export class GroupChatService {
     @Optional()
     @Inject(MODEL_PLATFORM_GATEWAY_PORT)
     private readonly platform?: import('@weiban/contracts').ModelGatewayPlatformPort,
+    /** H3：图片描述存档（群聊也看图，按用户扣积分）。 */
+    @Optional() @Inject(ImageCaptionStore) private readonly captions?: ImageCaptionStore,
   ) {}
 
   // =========================================================================
@@ -784,18 +796,65 @@ export class GroupChatService {
       const p = conversation.participants.find((x) => x.participantId === participantId);
       return p?.kind === 'user' ? (profile?.nickname ?? '用户') : '已退群的成员';
     };
-    const transcript = history
-      .filter((m) => m.senderKind !== 'system' && m.status === 'normal' && !!readableMessageText(m))
-      .slice(-30)
-      .map((m) =>
-        m.content?.type === 'nudge'
-          ? nudgeText(m.content, m.senderKind, {
-              sender: nameOf(m.senderParticipantId),
-              target: nameOf(m.content.targetParticipantId),
-            })
-          : `${nameOf(m.senderParticipantId)}：${readableMessageText(m).slice(0, m.content?.type === 'forwarded_record' ? 32_000 : 300)}`,
+    // H3：群聊记录里的图片用描述存档；用户刚发、还没描述的图（最后一条角色发言之后）附给这次发言一起看，
+    // 发言顺带输出描述尾标存档，后面的成员直接读描述（按用户扣积分，22 号 §7 第 2 条）。
+    const scopes: ContentScope[] =
+      conversation.contentScope === 'adult' ? ['normal', 'adult'] : ['normal'];
+    const captions =
+      (await this.captions?.forMessages(input.userId, history, scopes).catch(() => null)) ??
+      NO_CAPTIONS;
+    const lastCharacterSeq = history.filter((m) => m.senderKind === 'character').at(-1)?.seq ?? 0;
+    const slots: ImageSlot[] = [];
+    const slotFor = (m: Message): ImageSlot | null => {
+      if (
+        !this.captions ||
+        input.purpose !== 'chat_reply' ||
+        m.senderKind !== 'user' ||
+        m.seq <= lastCharacterSeq ||
+        slots.length >= CAPTION_MAX_IMAGES
       )
+        return null;
+      const c = m.content;
+      const mediaId =
+        c?.type === 'image'
+          ? c.mediaId
+          : c?.type === 'sticker' && !c.description
+            ? c.mediaId
+            : null;
+      if (!mediaId || captions.has(mediaId)) return null;
+      const slot: ImageSlot = {
+        n: slots.length + 1,
+        mediaId,
+        ownerUserId: input.userId,
+        messageId: m.messageId,
+        sticker: c?.type === 'sticker',
+      };
+      slots.push(slot);
+      return slot;
+    };
+    const transcript = history
+      .filter(
+        (m) =>
+          m.senderKind !== 'system' && m.status === 'normal' && !!readableMessageText(m, captions),
+      )
+      .slice(-30)
+      .map((m) => {
+        if (m.content?.type === 'nudge')
+          return nudgeText(m.content, m.senderKind, {
+            sender: nameOf(m.senderParticipantId),
+            target: nameOf(m.content.targetParticipantId),
+          });
+        const slot = slotFor(m);
+        if (slot)
+          return `${nameOf(m.senderParticipantId)}：[${slot.sticker ? '表情' : '图片'}〔图${slot.n}〕]`;
+        return `${nameOf(m.senderParticipantId)}：${readableMessageText(m, captions).slice(0, m.content?.type === 'forwarded_record' ? 32_000 : 300)}`;
+      })
       .join('\n');
+    const selfNames = [role.profile.name, ...role.profile.aliases].filter((n) => n.length >= 2);
+    const imageNote = captionInstruction(slots, {
+      allowed: selfNames,
+      scope: conversation.contentScope,
+    });
     // SOC-01 第 5 条：注入与每个群成员的关系；没有关系 = 不认识，不能编造共同经历。
     const relationLines: string[] = [];
     for (const other of input.members) {
@@ -827,7 +886,7 @@ export class GroupChatService {
       modelRole: adult ? 'adult' : 'chat',
       ...(input.purpose === 'proactive' ? { countAsBackground: true, ecologyTask: true } : {}),
       responseFormat: 'text',
-      maxOutputTokens: 200,
+      maxOutputTokens: 200 + slots.length * 200,
       idempotencyKey: `ai:${input.idempotencyKey}`,
       messages: [
         {
@@ -840,7 +899,10 @@ export class GroupChatService {
         },
         {
           role: 'user',
-          content: `群聊记录：\n${transcript || '（还没有消息）'}\n\n【系统提示】${task}`,
+          content: `群聊记录：\n${transcript || '（还没有消息）'}\n\n【系统提示】${task}${imageNote ? `\n${imageNote.replace('回复正文写完后', '群消息正文写完后')}` : ''}`,
+          ...(slots.length
+            ? { images: slots.map((x) => ({ mediaId: x.mediaId, ownerUserId: x.ownerUserId })) }
+            : {}),
         },
       ],
       meta: { conversationKind: 'group', scenarioMode: input.scenarioMode },
@@ -871,9 +933,35 @@ export class GroupChatService {
       ))
     )
       return null;
-    const result = cached
+    let result = cached
       ? { ok: true as const, value: { text: cached.text } }
       : await this.adultBoundary.generate(request, adult);
+    let sawImages = request.messages.some((m) => m.images?.length);
+    // H3：模型缺识图能力 → 去掉附图，按「看不到图」再说一次（图片标记换成看不到的说法）。
+    if (
+      !result.ok &&
+      result.error === 'capability_missing' &&
+      request.messages.some((m) => m.images?.length)
+    ) {
+      sawImages = false;
+      result = await this.adultBoundary.generate(
+        {
+          ...request,
+          idempotencyKey: `${request.idempotencyKey}:blind`,
+          maxOutputTokens: 200,
+          messages: request.messages.map(({ images: _images, ...m }) => {
+            void _images;
+            return {
+              ...m,
+              content: m.content
+                .replace(/\[(图片|表情)〔图\d+〕\]/gu, '[$1，你看不到内容，不要猜]')
+                .replace(/\n【这一轮的图片】[\s\S]*$/u, ''),
+            };
+          }),
+        },
+        adult,
+      );
+    }
     if (!result.ok && !(adult && result.error === 'content_rejected')) return null;
     const stopChain = cached?.stopChain ?? !result.ok;
     // v3.3（积分制）：群聊发言消耗的积分记在消息上（重放缓存时已扣过费，不重复记）。
@@ -881,9 +969,44 @@ export class GroupChatService {
       !cached && result.ok && 'chargedMicros' in result.value
         ? { usageRecordId: result.value.usageRecordId, chargedMicros: result.value.chargedMicros }
         : null;
+    // H3：剥掉图片描述尾标并存档（重放缓存时已存过）。
+    let replyText = result.ok ? result.value.text : '';
+    if (result.ok && !cached) {
+      const frozenSlots = (sawImages ? request.messages : [])
+        .flatMap((m) => m.images ?? [])
+        .map((img) => ({
+          mediaId: img.mediaId,
+          messageId:
+            history.find(
+              (h) =>
+                (h.content?.type === 'image' || h.content?.type === 'sticker') &&
+                h.content.mediaId === img.mediaId,
+            )?.messageId ?? null,
+        }));
+      const parts = splitCaptionTail(replyText, frozenSlots.length);
+      replyText = parts.reply;
+      for (const [index, slot] of frozenSlots.entries()) {
+        let caption = parts.captions[index];
+        if (!caption || !this.captions) continue;
+        caption = filterPeople(caption, selfNames);
+        if (!adult && !outputAllowed(captionPhrase(caption), policy, false))
+          caption = { ...caption, description: '画面含不适合日常聊天的内容', textInImage: '' };
+        await this.captions
+          .save({
+            userId: input.userId,
+            mediaId: slot.mediaId,
+            scope: conversation.contentScope,
+            messageId: slot.messageId,
+            conversationId: conversation.conversationId,
+            caption,
+            modelKey: 'modelKey' in result.value ? result.value.modelKey : null,
+          })
+          .catch(() => undefined);
+      }
+    } else if (result.ok) replyText = splitCaptionTail(replyText, 0).reply;
     const deflect = role.card.data.safetyStyle.deflectStyle?.trim();
     const sourceText = result.ok
-      ? result.value.text
+      ? replyText
       : deflect && outputAllowed(deflect, policy, false)
         ? deflect
         : '这个话题先放一放，好吗？我们聊聊你今天过得怎么样。';

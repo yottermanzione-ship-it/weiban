@@ -1,6 +1,13 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { readableMessageText } from './content-text.js';
-import { and, asc, count, eq, gt, isNull, lte, or } from 'drizzle-orm';
+import {
+  captionMediaIds,
+  ImageCaptionStore,
+  NO_CAPTIONS,
+  type CaptionMap,
+} from './image-captions.js';
+import { captionForMemory } from '../domain/image-caption.js';
+import { and, asc, count, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   CreateMemoryRequest,
@@ -33,7 +40,7 @@ import { CHAT_READ_PORT } from '../../chat/index.js';
 import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
-import { memories, memoryStates } from '../infra/db/schema.js';
+import { memories, memoryStates, replyPlans } from '../infra/db/schema.js';
 import {
   MemoryPayload,
   ExtractedMemory,
@@ -114,6 +121,8 @@ export class MemoryService {
     @Inject(POLICY_PORT) readonly policy: PolicyPort,
     @Inject(ReplyPlanStore) readonly plans: ReplyPlanStore,
     @Inject(MemoryTierService) readonly tiers: MemoryTierService,
+    /** H3：图片描述存档（图片内容进记忆，健康类除外）。 */
+    @Optional() @Inject(ImageCaptionStore) readonly captions?: ImageCaptionStore,
   ) {}
   /** T-066：记忆页「谁知道」（MEM-07 第 5 条）。由 SocialService 注入，避免循环依赖。 */
   private knownByResolver:
@@ -1134,6 +1143,42 @@ export class MemoryService {
     const batchScope = availableHistory[0]!.scope;
     const boundary = availableHistory.findIndex((m) => m.scope !== batchScope);
     const sameScope = boundary < 0 ? availableHistory : availableHistory.slice(0, boundary);
+    // H3（22 号 §7 第 3 条）：用户发的图按描述存档参与抽取（只读同一范围的描述）；健康类图片不进记忆。
+    const loadedCaptions: CaptionMap =
+      (await this.captions?.forMessages(job.userId, sameScope, [batchScope]).catch(() => null)) ??
+      NO_CAPTIONS;
+    // 同次回复还在生成描述时不要先推进抽取游标，否则图片随后存档也永远不会再被抽取。
+    const pendingImage =
+      this.captions &&
+      sameScope.find(
+        (m) =>
+          m.senderKind === 'user' &&
+          m.status === 'normal' &&
+          captionMediaIds([m]).some((id) => !loadedCaptions.has(id)),
+      );
+    if (pendingImage) {
+      const [pending] = await this.db.db
+        .select({ id: replyPlans.id })
+        .from(replyPlans)
+        .where(
+          and(
+            eq(replyPlans.userId, job.userId),
+            eq(replyPlans.conversationId, job.conversationId),
+            gt(replyPlans.triggerSeq, pendingImage.seq - 1),
+            inArray(replyPlans.status, ['queued', 'generating']),
+          ),
+        )
+        .limit(1);
+      if (pending) {
+        await this.defer(job, state, 30_000);
+        return;
+      }
+    }
+    // 转发记录内的图也经过同一健康过滤，不能绕过顶层 image 的检查。
+    const captions: CaptionMap = new Map(
+      [...loadedCaptions].filter(([, caption]) => captionForMemory(caption)),
+    );
+    const textOf = (message: Message) => messageText(message, captions);
     // Keep whole source messages and process a bounded prefix; remaining seqs go to the next job.
     const history: typeof availableHistory = [];
     let sourceChars = 0;
@@ -1149,7 +1194,12 @@ export class MemoryService {
     const sources = history.filter(
       (m) =>
         m.status === 'normal' &&
-        (m.content?.type === 'text' || m.content?.type === 'forwarded_record') &&
+        (m.content?.type === 'text' ||
+          m.content?.type === 'forwarded_record' ||
+          (m.content?.type === 'image' &&
+            m.senderKind === 'user' &&
+            !!captions.get(m.content.mediaId) &&
+            captionForMemory(captions.get(m.content.mediaId)!))) &&
         m.senderKind !== 'system' &&
         (m.scope !== 'adult' || policy.adultModeEligible) &&
         !healthPrivate(textOf(m)) &&
@@ -1563,8 +1613,8 @@ export class MemoryService {
     });
   }
 }
-function textOf(message: Message): string {
+function messageText(message: Message, captions?: CaptionMap): string {
   // 3.27（H1）：拍一拍只是打个招呼，不作为记忆素材。
   if (message.content?.type === 'nudge') return '';
-  return readableMessageText(message);
+  return readableMessageText(message, captions);
 }

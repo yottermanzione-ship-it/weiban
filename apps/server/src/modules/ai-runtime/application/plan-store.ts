@@ -70,6 +70,8 @@ const T066_TABLES = [
   'ecology_profiles',
   // H2（迁移 0129）：切出私密模式的整理任务
   'private_digests',
+  // H3（迁移 0130）：图片描述存档
+  'image_captions',
 ] as const;
 @Injectable()
 export class ReplyPlanStore {

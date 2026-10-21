@@ -1130,7 +1130,8 @@ export class ProactiveSchedulerService {
       }
     }
     // H2（总经理 10-21 C14）：私密模式里的安全关怀跟进也由私密模型生成（加关怀要求），私密内容不出私密范围；
-    // 私密模型调不通（如余额不足）时，退回平台关怀模型，但只给日常范围的聊天（不带私密原文）。
+    // 私密模型调不通时，退回平台关怀模型，但只给日常范围的聊天（不带私密原文）。
+    // H3（13 号 §6）：关怀跟进一律平台付费（不扣用户积分、余额 ≤ 0 也照常）；私密范围经平台端口用私密模型（契约 3.29）。
     const care = plan.reason === 'safety_follow_up';
     const adult = conversation.contentScope === 'adult' && policy.adultModeEligible;
     const careNote = care
@@ -1142,7 +1143,7 @@ export class ProactiveSchedulerService {
           userId: ctx.userId,
           characterId: plan.characterId,
           conversationId: conversation.conversationId,
-          purpose: care && !privateModel ? 'safety_followup' : 'proactive',
+          purpose: care ? 'safety_followup' : 'proactive',
           billingOwner: 'user',
           modelRole: privateModel ? 'adult' : 'chat',
           countAsBackground: !care,

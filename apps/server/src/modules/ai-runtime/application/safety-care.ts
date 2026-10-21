@@ -1,4 +1,8 @@
-/** 安全检查/跟进走可信平台端口；普通高危聊天仍由用户计费，保留规则兜底。 */
+/**
+ * 安全检查/跟进走可信平台端口（平台付费，13 号 §6）；普通高危聊天仍由用户计费，保留规则兜底。
+ * 3.29（H3）：私密模式里的风险判断（safety_check）、关怀回合与次日跟进（safety_followup）带 modelRole = adult
+ * 经平台端口调用：平台付费，但仍用该用户的私密模型，私密内容不出私密范围。
+ */
 import {
   type GenerateTextInput,
   type ModelGatewayPort,

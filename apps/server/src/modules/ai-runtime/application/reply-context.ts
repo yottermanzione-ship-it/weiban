@@ -71,7 +71,9 @@ import { ReplyPlanStore, type ReplyPlan } from './plan-store.js';
 import { highRisk, REPLY_TEMPLATE_VERSION } from '../domain/reply-rules.js';
 import { HealthCareService } from './health-care.js';
 import { SocialService } from './social.js';
-import { MediaAiService } from './media-ai.js';
+import { MediaAiService, imageBudget, type RenderedMedia } from './media-ai.js';
+import { ImageCaptionStore, NO_CAPTIONS, type CaptionMap } from './image-captions.js';
+import { captionInstruction, type ImageSlot } from '../domain/image-caption.js';
 import { QuirkAction, NO_QUIRK } from '../domain/quirks.js';
 import { MemoryTierService } from './memory-tier.js';
 import {
@@ -89,7 +91,7 @@ const MAX_MESSAGE_CHARS = 3000;
 /** 翻聊天记录：每次最多扫描多少条更早的消息（在服务器内存里解密匹配的上限保护，ADR-0027 补记）。 */
 const RECALL_MAX_SCAN = 2000;
 /** 可以翻的内容类型（与聊天记录搜索一致：文字、链接标题、信件、每日一问、角色语音原文）。 */
-const RECALL_TYPES = ['text', 'link', 'letter', 'daily_question', 'voice'];
+const RECALL_TYPES = ['text', 'link', 'letter', 'daily_question', 'voice', 'image', 'sticker'];
 /** 窗口内的用户轮：每段连续用户消息算一轮，记录起始序号与本轮（含角色回复）字数。 */
 function windowTurns(history: Message[], floor: number): WindowTurn[] {
   const turns: WindowTurn[] = [];
@@ -112,7 +114,17 @@ export const ReplySnapshot = z.object({
   scope: z.enum(['normal', 'adult']),
   lastUserSeq: z.number().int().nonnegative(),
   messages: z.array(
-    z.object({ role: z.enum(['system', 'user', 'assistant']), content: z.string() }),
+    z.object({
+      role: z.enum(['system', 'user', 'assistant']),
+      content: z.string(),
+      /** H3：本轮附给模型看的图（一步看图），只在用户消息上。 */
+      images: z
+        .array(z.object({ mediaId: z.uuid(), ownerUserId: z.uuid() }))
+        .max(4)
+        .optional(),
+      /** H3：模型看不到图时替换 content 的说法。 */
+      blindContent: z.string().optional(),
+    }),
   ),
   personaVersion: z.number().int(),
   memoryRevision: z.number().int().nonnegative().default(0),
@@ -138,7 +150,20 @@ export const ReplySnapshot = z.object({
     isRealPerson: z.boolean(),
     romanceAllowed: z.boolean(),
   }),
-  /** T-071：本轮识过图时的认人名单（名单外真人姓名拦截用）；没识图为 null。 */
+  /** H3：本轮附给模型看的图（按 n 对应回复尾标里的描述，回复后存档）。 */
+  imageSlots: z
+    .array(
+      z.object({
+        n: z.number().int().positive(),
+        mediaId: z.uuid(),
+        ownerUserId: z.uuid(),
+        messageId: z.uuid().nullable(),
+        sticker: z.boolean(),
+      }),
+    )
+    .max(4)
+    .default([]),
+  /** T-071：本轮有图时的认人名单（名单外真人姓名拦截用）；没图为 null。 */
   allowedNames: z.array(z.string()).nullable().default(null),
   /** T-071：本轮用户说的话（含语音转写、图片 / 链接说明），用于语音请求、链接请求与人名拦截。 */
   userText: z.string().default(''),
@@ -182,6 +207,8 @@ export class ReplyContext {
     @Optional() @Inject(IDENTITY_USER_STATUS_PORT) readonly userStatus?: UserStatusReadPort,
     /** v5 角色生态（批 C）：说到做到提示。 */
     @Optional() @Inject(EcologySettingsService) readonly ecology?: EcologySettingsService,
+    /** H3：图片描述存档。 */
+    @Optional() @Inject(ImageCaptionStore) readonly captions?: ImageCaptionStore,
   ) {}
   async build(row: ReplyPlan): Promise<ReplySnapshot | null> {
     const contact = await this.contacts.getActiveContact(row.userId, row.characterId);
@@ -281,32 +308,33 @@ export class ReplyContext {
     const fresh = history
       .filter((m) => m.senderKind === 'user' && m.seq > lastCharacterSeq && m.status === 'normal')
       .slice(-6);
+    // H3：图片描述存档（已看过的图直接用描述）；本轮新图附给回复调用本身（一步看图），回复顺带输出描述尾标。
+    const captions: CaptionMap =
+      (await this.captions?.forMessages(row.userId, history, historyScopes)) ?? NO_CAPTIONS;
+    const selfNames = [role.profile.name, ...role.profile.aliases].filter((n) => n.length >= 2);
+    const budget = imageBudget();
+    const renderedMedia = new Map<string, RenderedMedia>();
     const rendered = new Map<string, string>();
-    const searchBlocks: string[] = [];
-    let allowedNames: string[] | null = null;
-    let freshPlain = fresh
-      .map((m) => (m.content?.type === 'text' ? m.content.text : ''))
-      .filter(Boolean)
-      .join('\n');
+    const imageSlots: ImageSlot[] = [];
     for (const m of fresh) {
       if (m.content?.type === 'text') continue;
       const out = await this.mediaAi
-        .render(mediaCtx, m, {
-          analyze: true,
-          selfName: role.profile.name,
-          aliases: role.profile.aliases,
-          isRealPerson: policy.isRealPerson,
-          userText: freshPlain,
-        })
+        .render(mediaCtx, m, { fresh: true, selfNames, captions, budget })
         .catch(() => null);
       if (!out) continue;
+      renderedMedia.set(m.messageId, out);
       rendered.set(m.messageId, out.text);
-      if (out.analysis) {
-        allowedNames = [...new Set([...(allowedNames ?? []), ...out.analysis.allowedNames])];
-        if (out.analysis.searchBlock) searchBlocks.push(out.analysis.searchBlock);
-      }
+      imageSlots.push(...(out.slots ?? []));
     }
-    freshPlain = fresh
+    // 本轮有图（新附的或已有描述的）：认人名单（名单外真人姓名拦截、尾标 people 过滤）。
+    let allowedNames: string[] | null = null;
+    if (imageSlots.length || fresh.some((m) => m.content?.type === 'image')) {
+      const names = await this.mediaAi
+        .allowedNames(mediaCtx, role.profile.name, role.profile.aliases)
+        .catch(() => ({ self: selfNames, others: [] as string[] }));
+      allowedNames = [...new Set([...names.self, ...names.others])];
+    }
+    const freshPlain = fresh
       .map((m) => (m.content?.type === 'text' ? m.content.text : (rendered.get(m.messageId) ?? '')))
       .filter(Boolean)
       .join('\n');
@@ -338,6 +366,7 @@ export class ReplyContext {
             since: remembered.tier?.limits.recallDays ?? null,
             query: userText,
             max: recallTopK,
+            userId: row.userId,
           }).catch(() => [] as RecallCandidate[])
         : [];
     // 情景预设「自动」：规则判断本轮风格（安全关怀中不加风格提示；永不判断为恋爱 / 成人）。
@@ -486,25 +515,27 @@ ${AUTHOR_GUARD}`
     for (const m of recent) {
       if (m.status !== 'normal' || !m.content || m.labels?.includes('quirk_draft')) continue;
       let text: string | null;
+      const current = renderedMedia.get(m.messageId);
       if (m.content.type === 'text') text = m.content.text;
-      else if (rendered.has(m.messageId)) text = rendered.get(m.messageId)!;
+      else if (current) text = current.text;
       else
         text =
           (
             await this.mediaAi
-              .render(mediaCtx, m, {
-                analyze: false,
-                selfName: role.profile.name,
-                aliases: role.profile.aliases,
-                isRealPerson: policy.isRealPerson,
-                userText: '',
-              })
+              .render(mediaCtx, m, { fresh: false, selfNames, captions })
               .catch(() => null)
           )?.text ?? null;
       if (!text) continue;
+      const limit = m.content.type === 'forwarded_record' ? 32_000 : MAX_MESSAGE_CHARS;
       chat.push({
         role: m.senderKind === 'user' ? 'user' : 'assistant',
-        content: text.slice(0, m.content.type === 'forwarded_record' ? 32_000 : MAX_MESSAGE_CHARS),
+        content: text.slice(0, limit),
+        ...(m.senderKind === 'user' && current?.images?.length
+          ? {
+              images: current.images,
+              ...(current.blindText ? { blindContent: current.blindText.slice(0, limit) } : {}),
+            }
+          : {}),
       });
     }
     if (row.kind === 'greeting')
@@ -633,7 +664,6 @@ ${AUTHOR_GUARD}`,
           ? `用户之前退出了你拉的群（当时拉群原因：${exitReason.slice(0, 200)}）。如果自然，可以轻描淡写提一句，按你的性格；不追问原因、不让对方愧疚、不说难过或被抛弃。之后不再提。`
           : '',
       },
-      { title: '', text: searchBlocks.join('\n\n') },
       // H2：私密模式里的安全关怀回合仍由私密模型生成（私密内容不出私密范围），这里加上关怀要求。
       {
         title: '',
@@ -655,6 +685,15 @@ ${AUTHOR_GUARD}`,
         text: allowedNames
           ? `识图认人规则：图片里你只能认出这些人：${JSON.stringify(allowedNames)}（你自己和与你有公开关系的人）。名单外的人不说出、不猜测身份，只按外观描述。`
           : '',
+      },
+      // H3：本轮附图的看图要求与描述尾标格式（尾标由回复引擎解析存档、剥掉，用户看不到）。
+      {
+        title: '',
+        text: captionInstruction(imageSlots, {
+          allowed: allowedNames,
+          scope: privateScope ? 'adult' : 'normal',
+          skipped: budget.skipped,
+        }),
       },
       { title: '', text: extraExample ? situationalExampleText(extraExample) : '' },
       // 3.15（Q11）：用户当前状态（未过期才有）。
@@ -738,6 +777,7 @@ ${AUTHOR_GUARD}`
       // 3.25：输出检查按这一轮的恋爱放开情况（违禁词第 3 类按阶段）。
       policy: replyPolicy,
       allowedNames,
+      imageSlots,
       userText: userText.slice(0, 4000),
       voiceId: settings.voiceId ?? null,
       defaultVoiceId:
@@ -762,6 +802,7 @@ ${AUTHOR_GUARD}`
     since: number | null;
     query: string;
     max: number;
+    userId: string;
   }): Promise<RecallCandidate[]> {
     if (input.beforeSeq <= input.afterSeq) return [];
     const sinceDate = sinceDay(this.clock.now(), input.since);
@@ -780,6 +821,10 @@ ${AUTHOR_GUARD}`
       });
       if (!rows.length) break;
       scanned += rows.length;
+      // H3：图片 / 用户自己的表情只在有描述存档时参与翻找（没有描述的跳过）。
+      const pageCaptions =
+        (await this.captions?.forMessages(input.userId, rows, input.scopes).catch(() => null)) ??
+        NO_CAPTIONS;
       let reachedEnd = false;
       for (const m of rows) {
         if (m.seq <= input.afterSeq || (sinceMs !== null && Date.parse(m.createdAt) < sinceMs)) {
@@ -787,7 +832,14 @@ ${AUTHOR_GUARD}`
           continue;
         }
         if (m.senderKind === 'system' || m.status !== 'normal') continue;
-        const text = readableMessageText(m);
+        if (
+          (m.content?.type === 'image' && !pageCaptions.has(m.content.mediaId)) ||
+          (m.content?.type === 'sticker' &&
+            !m.content.description &&
+            !pageCaptions.has(m.content.mediaId))
+        )
+          continue;
+        const text = readableMessageText(m, pageCaptions);
         if (text)
           candidates.push({
             seq: m.seq,
