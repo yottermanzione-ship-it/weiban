@@ -89,6 +89,7 @@ export class ImagePublicSearch {
           needsFacts: true,
         })
         .catch(() => null);
+      if (!decision) return first;
       if (decision?.ok) {
         if (
           !['public_clues', 'external_facts'].every((id) =>

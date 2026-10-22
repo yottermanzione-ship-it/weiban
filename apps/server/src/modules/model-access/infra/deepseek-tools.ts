@@ -56,12 +56,14 @@ async function request(
       return { ok: false, category: 'bad_request', zeroCost: true };
     if (gate && !(await gate(kind, host)))
       return { ok: false, category: 'rate_limited', zeroCost: true, localRateLimit: true };
+    const remainingAfterGate = deadlineAt ? Date.parse(deadlineAt) - toolClock.nowMs() : remaining;
+    if (remainingAfterGate <= 0) return { ok: false, category: 'bad_request', zeroCost: true };
     let response: Response;
     try {
       response = await fetch(`${target.baseUrl.replace(/\/(?:v1)?\/?$/u, '')}/v1/tools/${kind}`, {
         method: 'POST',
         redirect: 'manual',
-        signal: AbortSignal.timeout(Math.min(30000, remaining)),
+        signal: AbortSignal.timeout(Math.min(30000, remainingAfterGate)),
         headers: { Authorization: `Bearer ${target.apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
