@@ -4,6 +4,7 @@ import {
   bestArenaRanks,
   normalizeArenaName,
   relativeRanks,
+  suggestArenaNames,
 } from '../src/modules/model-access/testing.js';
 
 const raw = (index: number, category = 'other') => ({
@@ -224,8 +225,33 @@ describe('precise Arena matching and relative ranking', () => {
       1,
     );
     expect(entries).toHaveLength(3); // Matching must not discard raw source variants.
-    expect(normalizeArenaName(' Model-X-thinking-high ')).toBe('model-x');
-    expect(normalizeArenaName('Model-X (reasoning: low)')).toBe('model-x');
+    expect(normalizeArenaName(' Model-X-thinking-high ')).toBe('model x');
+    expect(normalizeArenaName('Model-X (reasoning: low)')).toBe('model x');
+  });
+  it('matches upstream ids to Arena display names without a manual mapping field', () => {
+    expect(normalizeArenaName('gemini-4-argon-high')).toBe(
+      normalizeArenaName('Gemini 4 Argon (High)'),
+    );
+    expect(normalizeArenaName('gpt-6.1-sol-max')).toBe(normalizeArenaName('GPT-6.1 Sol (Max)'));
+    expect(normalizeArenaName('claude-opus-5.5-xhigh')).toBe(
+      normalizeArenaName('Claude Opus 5.5 (xHigh)'),
+    );
+    // Dated / different versions stay separate; the admin can map an exception manually.
+    expect(normalizeArenaName('deepseek-v4.1-flash-max')).not.toBe(
+      normalizeArenaName('DeepSeek-V4.1-Flash-20260910 (Max)'),
+    );
+  });
+  it('suggests likely Arena names for manual correction without auto-applying', () => {
+    const entries = [
+      { name: 'MiMo-V2.6-Pro', rank: 27 },
+      { name: 'DeepSeek-V4.1-Flash-20260910 (Max)', rank: 36 },
+      { name: 'GPT-6.1 Sol (Max)', rank: 28 },
+    ];
+    expect(suggestArenaNames('MiMo V2.6 Flash', entries, 3)[0]?.name).toBe('MiMo-V2.6-Pro');
+    expect(suggestArenaNames('DeepSeek V4.1 Flash', entries, 3)[0]?.name).toBe(
+      'DeepSeek-V4.1-Flash-20260910 (Max)',
+    );
+    expect(suggestArenaNames('私密模型', entries, 3)).toEqual([]);
   });
   it('folds explicit effort and thinking budget while preserving date/version tokens', () => {
     expect(normalizeArenaName('Claude Opus 4.5 (High, 32K, 20251101)')).toBe(
@@ -236,9 +262,9 @@ describe('precise Arena matching and relative ranking', () => {
     );
     expect(normalizeArenaName('Grok 4.20 Beta (Reasoning, 0309)')).toBe('grok 4.20 beta (0309)');
     expect(normalizeArenaName('Gemini 2.5 Flash-Lite Preview (Non-Thinking, 09-2025)')).toBe(
-      'gemini 2.5 flash-lite preview (09-2025)',
+      'gemini 2.5 flash lite preview (09 2025)',
     );
-    expect(normalizeArenaName('Qwen3-235B-A22B-Thinking (2507)')).toBe('qwen3-235b-a22b (2507)');
+    expect(normalizeArenaName('Qwen3-235B-A22B-Thinking (2507)')).toBe('qwen3 235b a22b (2507)');
     expect(normalizeArenaName('Grok 4 Fast (Non-Reasoning)')).toBe(
       normalizeArenaName('Grok 4 Fast (Reasoning)'),
     );

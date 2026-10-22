@@ -19,6 +19,7 @@ import {
   normalizeArenaName,
   parseLeaderboard,
   relativeRanks,
+  suggestArenaNames,
   type LeaderboardEntry,
 } from '../domain/leaderboard.js';
 import { fetchArenaDataset, type ArenaDataset } from '../infra/arena-dataset.js';
@@ -60,6 +61,7 @@ export class LeaderboardService implements OnModuleInit {
         .select({
           modelKey: modelCatalog.modelKey,
           displayName: modelCatalog.displayName,
+          upstreamModelId: modelCatalog.upstreamModelId,
           arenaModelName: modelCatalog.arenaModelName,
           sortOrder: modelCatalog.sortOrder,
         })
@@ -68,18 +70,25 @@ export class LeaderboardService implements OnModuleInit {
     ).sort((a, b) => a.sortOrder - b.sortOrder || a.modelKey.localeCompare(b.modelKey));
     const matchedRank = (name: string | null) =>
       name ? (byName.get(normalizeArenaName(name)) ?? null) : null;
-    const relative = relativeRanks(
-      rows.map((r) => ({ key: r.modelKey, rank: matchedRank(r.arenaModelName) })),
-    );
+    // 手动指定优先；没填就用模型显示名 / 上游模型名，管理员不需要逐条维护。
+    const rankOfRow = (r: (typeof rows)[number]) =>
+      matchedRank(r.arenaModelName) ?? matchedRank(r.displayName) ?? matchedRank(r.upstreamModelId);
+    const effectiveName = (r: (typeof rows)[number], rank: number) =>
+      matchedRank(r.arenaModelName) !== null
+        ? r.arenaModelName!
+        : matchedRank(r.displayName) !== null
+          ? r.displayName
+          : (r.upstreamModelId ?? String(rank));
+    const relative = relativeRanks(rows.map((r) => ({ key: r.modelKey, rank: rankOfRow(r) })));
     const matched: LeaderboardSnapshotStatus['matched'] = [];
     const unmatched: LeaderboardSnapshotStatus['unmatched'] = [];
     for (const r of rows) {
-      const rank = matchedRank(r.arenaModelName);
-      if (rank !== null && r.arenaModelName)
+      const rank = rankOfRow(r);
+      if (rank !== null)
         matched.push({
           modelKey: r.modelKey,
           displayName: r.displayName,
-          arenaModelName: r.arenaModelName,
+          arenaModelName: effectiveName(r, rank),
           rank,
           relativeRank: relative.get(r.modelKey)!,
         });
@@ -88,6 +97,11 @@ export class LeaderboardService implements OnModuleInit {
           modelKey: r.modelKey,
           displayName: r.displayName,
           arenaModelName: r.arenaModelName ?? null,
+          suggestions: suggestArenaNames(
+            r.displayName || r.upstreamModelId,
+            snapshot?.entries ?? [],
+            3,
+          ),
         });
     }
     matched.sort((a, b) => a.relativeRank - b.relativeRank);
@@ -109,6 +123,41 @@ export class LeaderboardService implements OnModuleInit {
       matched,
       unmatched,
     };
+  }
+
+  /**
+   * 3.36：后台「榜单匹配」手动指定 / 清除模型的榜单对应名称。
+   * null = 改回默认（用模型显示名 / 上游模型名自动匹配）。只影响展示排名，不改价格、扣费。
+   */
+  async updateArenaName(
+    adminId: string,
+    modelKey: string,
+    arenaModelName: string | null,
+  ): Promise<LeaderboardSnapshotStatus> {
+    const [row] = await this.database.db
+      .select({ modelKey: modelCatalog.modelKey })
+      .from(modelCatalog)
+      .where(and(eq(modelCatalog.modelKey, modelKey), isNull(modelCatalog.deletedAt)));
+    if (!row) throw new AppError('not_found', '模型不存在或已删除', { status: 404 });
+    await this.database.transaction(async (tx) => {
+      await tx.db
+        .update(modelCatalog)
+        .set({ arenaModelName, updatedAt: this.clock.now() })
+        .where(eq(modelCatalog.modelKey, modelKey));
+      await this.audit.record(
+        {
+          module: 'model_access',
+          action: 'catalog.arena_name_updated',
+          actorType: 'admin',
+          actorId: adminId,
+          targetType: 'model_catalog',
+          targetId: modelKey,
+          details: { arenaModelName },
+        },
+        tx,
+      );
+    });
+    return this.status();
   }
 
   /** 分页同步超过 HTTP 超时；手动刷新投递持久队列，后台轮询状态。 */

@@ -145,7 +145,7 @@ export class ModelAdminService {
               ...(serviceRates
                 ? { serviceRates: serviceRatesToYuan(serviceRates.get(e.modelKey) ?? []) }
                 : {}),
-              arenaRank: arena.rankOf(e.arenaModelName),
+              arenaRank: arena.rankOfEntry(e),
               availability: {
                 available: !details.get(e.modelKey),
                 detail: details.get(e.modelKey) ?? null,
@@ -239,7 +239,7 @@ export class ModelAdminService {
         ...(currentServices
           ? { serviceRates: serviceRatesToYuan(currentServices.get(saved.modelKey) ?? []) }
           : {}),
-        arenaRank: arena.rankOf(saved.arenaModelName),
+        arenaRank: arena.rankOfEntry(saved),
         availability: { available: !detail, detail: detail ?? null },
       },
     );

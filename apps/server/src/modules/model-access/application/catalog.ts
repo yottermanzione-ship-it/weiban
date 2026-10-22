@@ -348,18 +348,46 @@ export class CatalogService {
     };
   }
 
-  /** 3.24：按榜单对应名称查原榜名次（规范化后完全相同才算匹配）。 */
+  /**
+   * 3.24：查原榜名次。默认用模型自己的名字（显示名 → 上游模型名）匹配，不再要求管理员逐条填
+   * 「榜单对应名称」；只有后台手动指定的例外（arenaModelName）才优先。
+   */
   async arenaRanks(): Promise<{
     rankOf(name: string | null | undefined): number | null;
+    rankOfEntry(entry: {
+      arenaModelName?: string | null;
+      displayName: string;
+      upstreamModelId: string;
+    }): number | null;
     previousRankOf(name: string | null | undefined): number | null;
+    previousRankOfEntry(entry: {
+      arenaModelName?: string | null;
+      displayName: string;
+      upstreamModelId: string;
+    }): number | null;
   }> {
     const snapshot = await this.leaderboardSnapshot();
     const byName = bestArenaRanks(snapshot?.entries ?? []);
     const previous = bestArenaRanks(snapshot?.previousEntries ?? []);
-    return {
-      rankOf: (name) => (name ? (byName.get(normalizeArenaName(name)) ?? null) : null),
-      previousRankOf: (name) => (name ? (previous.get(normalizeArenaName(name)) ?? null) : null),
-    };
+    const rankOf = (name: string | null | undefined) =>
+      name ? (byName.get(normalizeArenaName(name)) ?? null) : null;
+    const previousRankOf = (name: string | null | undefined) =>
+      name ? (previous.get(normalizeArenaName(name)) ?? null) : null;
+    const rankOfEntry = (entry: {
+      arenaModelName?: string | null;
+      displayName: string;
+      upstreamModelId: string;
+    }) =>
+      rankOf(entry.arenaModelName) ?? rankOf(entry.displayName) ?? rankOf(entry.upstreamModelId);
+    const previousRankOfEntry = (entry: {
+      arenaModelName?: string | null;
+      displayName: string;
+      upstreamModelId: string;
+    }) =>
+      previousRankOf(entry.arenaModelName) ??
+      previousRankOf(entry.displayName) ??
+      previousRankOf(entry.upstreamModelId);
+    return { rankOf, rankOfEntry, previousRankOf, previousRankOfEntry };
   }
 
   async leaderboardInfo() {
@@ -564,20 +592,20 @@ export class CatalogService {
       const p = prices.get(key);
       return p ? Math.round(standardReplyMicros(p) / 100) / 100 : null;
     };
-    // 榜单名次只从有效快照按榜单对应名称匹配，未匹配为 null，不再用旧手填名次兜底；
-    // 在本次返回的列表里按相对顺序重新编号 1..N（不显示原榜名次）。
+    // 榜单名次只从有效快照匹配（手动指定优先，否则用模型显示名 / 上游模型名），未匹配为 null，
+    // 不再用旧手填名次兜底；在本次返回的列表里按相对顺序重新编号 1..N（不显示原榜名次）。
     const details = await this.availabilityDetails(visible.map((r) => r.entry.modelKey));
     const arena = await this.arenaRanks();
     const relative = relativeRanks(
       visible.map(({ entry }) => ({
         key: entry.modelKey,
-        rank: arena.rankOf(entry.arenaModelName),
+        rank: arena.rankOfEntry(entry),
       })),
     );
     const previous = relativeRanks(
       visible.map(({ entry }) => ({
         key: entry.modelKey,
-        rank: arena.previousRankOf(entry.arenaModelName),
+        rank: arena.previousRankOfEntry(entry),
       })),
     );
     return visible.map(({ entry, upstreamStatus }) => ({

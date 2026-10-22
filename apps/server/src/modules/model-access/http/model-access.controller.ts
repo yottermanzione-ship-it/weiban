@@ -227,6 +227,17 @@ export class ModelAdminController {
     return this.leaderboard.status();
   }
 
+  @Put('leaderboard/match/:modelKey')
+  @RequireAuth(A.updateArenaName.auth)
+  updateArenaName(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(schema(A.updateArenaName.params))) params: { modelKey: string },
+    @Body(new ContractPipe(schema(A.updateArenaName.body)))
+    body: Out<typeof A.updateArenaName.body>,
+  ) {
+    return this.leaderboard.updateArenaName(me.userId, params.modelKey, body.arenaModelName);
+  }
+
   @Post('leaderboard/refresh')
   @HttpCode(200)
   @RequireAuth(A.refreshLeaderboard.auth)

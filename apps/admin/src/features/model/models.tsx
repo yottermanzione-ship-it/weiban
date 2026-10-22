@@ -644,7 +644,6 @@ interface ModelFormValues {
   costOutput?: number | null;
   costCache?: number | null;
   displayMultiplierManual?: number | null;
-  arenaModelName?: string | null;
   priceCacheWrite5m?: number | null;
   priceCacheWrite1h?: number | null;
   costCacheWrite5m?: number | null;
@@ -907,7 +906,6 @@ export function ModelWizard({
             .filter(Boolean)
             .slice(0, 10),
           leaderboardRank: values.leaderboardRank ?? null,
-          arenaModelName: values.arenaModelName?.trim() || null,
           sortOrder: values.sortOrder ?? model?.sortOrder ?? 0,
           defaultFor: [],
           scenarios: values.scenarios,
@@ -1161,7 +1159,6 @@ export function ModelWizard({
           costCacheWrite5m: model?.costRates?.cacheWrite5m ?? null,
           costCacheWrite1h: model?.costRates?.cacheWrite1h ?? null,
           displayMultiplierManual: model?.displayMultiplierManual ?? null,
-          arenaModelName: model?.arenaModelName ?? null,
         }}
         onValuesChange={onValuesChange}
       >
@@ -1384,24 +1381,6 @@ export function ModelWizard({
         </div>
         <div className="form-two">
           <Form.Item
-            name="arenaModelName"
-            label="榜单对应名称"
-            rules={[{ max: 120, message: '最多 120 个字符' }]}
-            extra={
-              <FieldHelp>
-                榜单上这个模型叫什么（例 Gemini 4
-                Argon），按官方显示名精确匹配（忽略大小写和明确思考档位，不混合型号）。
-                {model?.arenaModelName
-                  ? model.arenaRank != null
-                    ? ` 当前匹配到原榜第 ${model.arenaRank} 名。`
-                    : ' 当前榜单里没找到这个名字。'
-                  : ''}
-              </FieldHelp>
-            }
-          >
-            <Input maxLength={120} placeholder="例：Gemini 4 Argon" />
-          </Form.Item>
-          <Form.Item
             name="leaderboardRank"
             label="历史手填名次（不参与排名）"
             extra={
@@ -1522,7 +1501,8 @@ export function ModelWizard({
             label="展示倍率（可不填）"
             extra={
               <FieldHelp>
-                用户看到的「×倍率」，只展示、不参与扣费。不填 = 按基准模型自动算
+                用户看到的「×倍率」，只展示、不参与扣费。不填 / 点「改为自动」后保存 =
+                按基准模型自动算
                 {model?.displayMultiplier != null
                   ? `（当前 ×${model.displayMultiplier.toFixed(2)}）`
                   : ''}
@@ -1530,14 +1510,19 @@ export function ModelWizard({
               </FieldHelp>
             }
           >
-            <InputNumber
-              min={0}
-              max={1000}
-              step={0.01}
-              precision={2}
-              style={{ width: 160 }}
-              placeholder="自动"
-            />
+            <Space.Compact>
+              <InputNumber
+                min={0}
+                max={1000}
+                step={0.01}
+                precision={2}
+                style={{ width: 160 }}
+                placeholder="自动"
+              />
+              <Button onClick={() => form.setFieldValue('displayMultiplierManual', null)}>
+                改为自动
+              </Button>
+            </Space.Compact>
           </Form.Item>
         </div>
         <FormSection

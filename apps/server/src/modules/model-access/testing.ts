@@ -33,8 +33,11 @@ export { ALL_SCENARIOS, type LeaderboardSnapshot } from './application/catalog.j
 export { LeaderboardService, REFRESH_LEADERBOARD_JOB } from './application/leaderboard.js';
 export { fetchArenaDataset, type ArenaDataset } from './infra/arena-dataset.js';
 export {
+  bestArenaEntries,
   bestArenaRanks,
   normalizeArenaName,
   relativeRanks,
   parseLeaderboard,
+  suggestArenaNames,
+  type ArenaSuggestion,
 } from './domain/leaderboard.js';

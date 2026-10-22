@@ -928,15 +928,33 @@ export const LeaderboardSnapshotStatus = z.object({
       relativeRank: z.number().int().positive(),
     }),
   ),
-  /** 启用的模型里没匹配上的（没填榜单对应名称时 arenaModelName 为 null）：用户端不显示名次、排在后面。 */
+  /**
+   * 启用的模型里没匹配上的（没手动指定时 arenaModelName 为 null）：用户端不显示名次、排在后面。
+   * 3.36：附带按名称相似度算出的候选（最多 3 条），供后台「榜单匹配」手动纠错；不会自动套用。
+   */
   unmatched: z.array(
     z.object({
       modelKey: ModelKey,
       displayName: z.string(),
       arenaModelName: z.string().nullable(),
+      suggestions: z
+        .array(
+          z.object({
+            name: z.string(),
+            rank: z.number().int().positive(),
+            score: z.number().min(0).max(1),
+          }),
+        )
+        .optional(),
     }),
   ),
 });
+
+/** 3.36：后台「榜单匹配」手动指定 / 清除某个模型的榜单对应名称（null = 改为默认按模型名自动匹配）。 */
+export const UpdateArenaNameRequest = z.object({
+  arenaModelName: z.string().trim().min(1).max(120).nullable(),
+});
+export type UpdateArenaNameRequest = z.infer<typeof UpdateArenaNameRequest>;
 export type LeaderboardSnapshotStatus = z.infer<typeof LeaderboardSnapshotStatus>;
 
 /** 3.24：粘贴导入榜单：从网页复制的表格文本或 CSV（含「名次 / 模型名」），最多 1MB。 */
@@ -1087,6 +1105,16 @@ export const ModelAccessAdminEndpoints = {
     auth: 'admin',
     response: LeaderboardSnapshotStatus,
     summary: '3.24：自动获取的榜单状态（快照时间、失败原因、匹配 / 未匹配的模型）',
+  }),
+  updateArenaName: defineEndpoint({
+    method: 'PUT',
+    path: `${API_PREFIX}/admin/model/leaderboard/match/:modelKey`,
+    auth: 'admin',
+    params: z.object({ modelKey: z.string() }),
+    body: UpdateArenaNameRequest,
+    response: LeaderboardSnapshotStatus,
+    summary:
+      '3.36：后台「榜单匹配」手动指定 / 清除某个模型的榜单对应名称（null = 改回默认按模型名自动匹配），写审计',
   }),
   refreshLeaderboard: defineEndpoint({
     method: 'POST',

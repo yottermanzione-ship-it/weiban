@@ -40,7 +40,12 @@ function fixture(servicePort = true) {
     }),
     routes: vi.fn(async () => new Map()),
     availabilityDetails: vi.fn(async () => new Map()),
-    arenaRanks: vi.fn(async () => ({ rankOf: () => null })),
+    arenaRanks: vi.fn(async () => ({
+      rankOf: () => null,
+      rankOfEntry: () => null,
+      previousRankOf: () => null,
+      previousRankOfEntry: () => null,
+    })),
     adminList: vi.fn(async () => [body]),
     usageMissing: vi.fn(async () => new Map()),
   };
@@ -102,6 +107,26 @@ describe('ModelAdminService service rates', () => {
     );
     expect(f.rates.publishModelServiceRates).not.toHaveBeenCalled();
     await expect(f.svc.upsert('admin', 'other/key', body)).rejects.toThrow('模型键');
+  });
+  it('clears a manual display multiplier so the base model auto value applies', async () => {
+    const { rates, catalog } = fixture();
+    const display = {
+      setManual: vi.fn(async () => undefined),
+      forModels: vi.fn(async () => new Map()),
+      invalidate: vi.fn(),
+    };
+    const svc = new ModelAdminService(
+      catalog as never,
+      rates as never,
+      { nowMs: () => 0 } as never,
+      display as never,
+    );
+    await svc.upsert('admin', key, {
+      ...body,
+      serviceRates: undefined,
+      displayMultiplierManual: null,
+    });
+    expect(display.setManual).toHaveBeenCalledWith(key, null);
   });
   it('uses precise yuan conversion and combines token/service time-band flags', () => {
     expect(
