@@ -1,0 +1,89 @@
+$ vitest run
+
+ RUN  v5.0.3 C:/wb-qa/review-20261020
+
+ ❯ |server| src/modules/billing/domain/rules.test.ts (10 tests | 1 failed) 26ms
+   ❯ 用途分类（billing.md 5.2、第 7 节、6.6） (3)
+     × 安全透支资格：用途在名单、用户钱包、调用方请求，三者同时满足 9ms
+ ❯ |server| src/modules/ai-runtime/domain/reply-rules.test.ts (5 tests | 1 failed) 53ms
+   × 安全透支表驱动：全部用途×账户×高危×关怀×疑似，仅规定组合可携带 10ms
+ ❯ |server| src/modules/identity/domain/rules.test.ts (11 tests | 1 failed) 58ms
+   ❯ 密码强度 (2)
+     × 包含用户名、字符太单一、常见密码 → 弱 8ms
+ ❯ |server| src/modules/ai-runtime/application/closeout-hooks.test.ts (5 tests | 1 failed) 25ms
+   ❯ 契约 3.1 的 AI 接入 (5)
+     × 余额低于后台保留线时不调用卡片文案模型 10ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |server| src/modules/ai-runtime/application/closeout-hooks.test.ts > 契约 3.1 的 AI 接入 > 余额低于后台保留线时不调用卡片文案模型
+TypeError: this.characters.getForRuntime is not a function
+ ❯ CardLineService.writeLine src/modules/ai-runtime/application/moment-cards.ts:103:40
+    101|     const spend = await this.billing.getSpendStatus(input.userId).catc…
+    102|     if (!spend) return null; // 实际额度交给已核上限冻结。
+    103|     const role = await this.characters.getForRuntime(input.userId, inp…
+       |                                        ^
+    104|     const policy = await this.policy.getCharacterPolicy(input.userId, …
+    105|     if (!role || !policy) return null;
+ ❯ CardLineService.writeCardCopy src/modules/ai-runtime/application/moment-cards.ts:83:18
+ ❯ src/modules/ai-runtime/application/closeout-hooks.test.ts:29:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |server| src/modules/ai-runtime/domain/reply-rules.test.ts > 安全透支表驱动：全部用途×账户×高危×关怀×疑似，仅规定组合可携带
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/modules/ai-runtime/domain/reply-rules.test.ts:74:51
+     72|               ['chat_reply', 'safety_check', 'safety_followup'].includ…
+     73|               (highRisk || careActive || (suspected && purpose === 'sa…
+     74|             expect(seen?.safetyPriority === true).toBe(allowed);
+       |                                                   ^
+     75|           }
+     76| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  |server| src/modules/billing/domain/rules.test.ts > 用途分类（billing.md 5.2、第 7 节、6.6） > 安全透支资格：用途在名单、用户钱包、调用方请求，三者同时满足
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/modules/billing/domain/rules.test.ts:127:65
+    125|
+    126|   it('安全透支资格：用途在名单、用户钱包、调用方请求，三者同时满足', () => {
+    127|     expect(safetyOverdraftEligible('chat_reply', 'user', true)).toBe(t…
+       |                                                                 ^
+    128|     expect(safetyOverdraftEligible('safety_followup', 'user', true)).t…
+    129|     expect(safetyOverdraftEligible('proactive', 'user', true)).toBe(fa…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  |server| src/modules/identity/domain/rules.test.ts > 密码强度 > 包含用户名、字符太单一、常见密码 → 弱
+TypeError: .toMatch() expects to receive a string, but got object
+ ❯ src/modules/identity/domain/rules.test.ts:85:55
+     83|   it('包含用户名、字符太单一、常见密码 → 弱', () => {
+     84|     expect(passwordWeakness('xxAlice_01xx', 'alice_01')).toMatch(/用户名/…
+     85|     expect(passwordWeakness('ababababab', 'someone')).toMatch(/5 个不同/);
+       |                                                       ^
+     86|     expect(passwordWeakness('Password123', 'someone')).toMatch(/常见/);
+     87|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  4 failed | 43 passed | 41 skipped (88)
+      Tests  4 failed | 321 passed | 368 skipped (693)
+   Start at  04:17:52
+   Duration  297.34s (import 86%, transform 10%, tests 3%)
+
+[ELIFECYCLE] Test failed. See above for more details.

@@ -1,0 +1,10 @@
+Target SHA: 65bb669821909ac62239c5b140410d569a078411
+Node: v24.21.0
+Verified target blobs: 482
+MG-01: reproduced; old monthly marker survives cutoff
+更早的往事（摘要，不是原话；过去的状态不当作现在）：
+2026-10：OLD_2026_10_01
+MG-02: reproduced; standard user voice has awardCalls=0
+MG-03: reproduced; [{"sec":0,"valid":true},{"sec":10,"valid":true},{"sec":1,"valid":true}]
+All three defect probes reproduced. These are not end-to-end acceptance tests.
+Child exit: 0

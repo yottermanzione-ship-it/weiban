@@ -1,0 +1,11 @@
+
+ RUN  v5.0.3 C:/wb-qa/review-20261020
+
+
+ Test Files  18 passed (18)
+      Tests  156 passed (156)
+   Start at  04:22:20
+   Duration  13.13s (import 65%, transform 22%, tests 10%, worker 2%)
+
+    Isolate  18 workers spawned · ~256ms startup each (spawn + environment, per file)
+             at least ~4.35s faster with isolate: false — reuses workers across files instead of one per file

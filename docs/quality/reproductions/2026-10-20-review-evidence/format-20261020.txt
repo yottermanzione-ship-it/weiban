@@ -1,0 +1,45 @@
+$ prettier --check .
+Checking formatting...
+[warn] apps/admin/src/app/menu.tsx
+[warn] apps/admin/src/app/styles.css
+[warn] apps/admin/src/app/todos.tsx
+[warn] apps/admin/src/components/schema-fields.tsx
+[warn] apps/admin/src/features/account-deletions.tsx
+[warn] apps/admin/src/features/accounts.tsx
+[warn] apps/admin/src/features/billing.tsx
+[warn] apps/admin/src/features/characters.tsx
+[warn] apps/admin/src/features/daily-questions.tsx
+[warn] apps/admin/src/features/dashboard.tsx
+[warn] apps/admin/src/features/holidays.tsx
+[warn] apps/admin/src/features/media-library.tsx
+[warn] apps/admin/src/features/model/models.tsx
+[warn] apps/admin/src/features/model/overview.tsx
+[warn] apps/admin/src/features/model/records.tsx
+[warn] apps/admin/src/features/model/upstreams.tsx
+[warn] apps/admin/src/features/pets-deletions.tsx
+[warn] apps/admin/src/features/planner.tsx
+[warn] apps/admin/src/features/plaza.tsx
+[warn] apps/admin/src/features/prices.tsx
+[warn] apps/admin/src/features/public-updates.tsx
+[warn] apps/admin/src/features/recharge.tsx
+[warn] apps/admin/src/features/relations.tsx
+[warn] apps/admin/src/features/releases.tsx
+[warn] apps/admin/src/features/role-requests.tsx
+[warn] apps/admin/src/features/scenario-modes.tsx
+[warn] apps/admin/src/features/settings.tsx
+[warn] apps/admin/src/features/support.tsx
+[warn] apps/admin/src/features/symptom-tags.tsx
+[warn] apps/admin/src/features/usage.tsx
+[warn] apps/admin/src/ui/chart.tsx
+[warn] apps/admin/src/ui/table.tsx
+[warn] apps/server/drizzle/meta/_journal.json
+[warn] apps/server/test/adult-input-boundaries.test.ts
+[warn] apps/web/src/app/app.tsx
+[warn] apps/web/src/features/auth-page.tsx
+[warn] apps/web/src/features/custom-character.tsx
+[warn] apps/web/src/features/play.tsx
+[warn] apps/web/src/features/plaza.tsx
+[warn] apps/web/src/features/plugins.tsx
+[warn] apps/web/src/features/supplement.tsx
+[warn] Code style issues found in 41 files. Run Prettier with --write to fix.
+[ELIFECYCLE] Command failed with exit code 1.

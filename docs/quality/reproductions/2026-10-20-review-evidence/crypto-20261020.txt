@@ -1,0 +1,1 @@
+{"sha":"65bb669821909ac62239c5b140410d569a078411","checks":["batch-order-and-content","one-key-read-per-batch","empty-batch-no-read","wrong-aad-rejected","other-owner-rejected","deleted-key-rejected"],"passed":6,"database":"in-memory read-only stub; no PostgreSQL"}

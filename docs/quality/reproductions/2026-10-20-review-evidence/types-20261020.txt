@@ -1,0 +1,16 @@
+$ tsc -p tsconfig.json && pnpm -r --if-present run typecheck
+Scope: 8 of 9 workspace projects
+packages/ai-evals typecheck$ tsc -p tsconfig.json
+packages/contracts typecheck$ tsc -p tsconfig.json && tsc -p tsconfig.node.json
+packages/eslint-config typecheck$ tsc -p tsconfig.json
+packages/eslint-config typecheck: Done
+packages/ai-evals typecheck: Done
+packages/contracts typecheck: Done
+apps/server typecheck$ tsc -p tsconfig.json
+packages/client-core typecheck$ tsc -p tsconfig.json
+packages/client-core typecheck: Done
+apps/admin typecheck$ tsc -p tsconfig.json && tsc -p tsconfig.node.json
+apps/web typecheck$ tsc -p tsconfig.json && tsc -p tsconfig.node.json
+apps/admin typecheck: Done
+apps/server typecheck: Done
+apps/web typecheck: Done

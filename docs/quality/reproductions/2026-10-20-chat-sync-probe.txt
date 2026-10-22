@@ -1,0 +1,17 @@
+CHAT-001 read-only SyncEngine probe
+Date: 2026-10-20 (Asia/Shanghai)
+Reviewed SHA: 65bb669821909ac62239c5b140410d569a078411
+Runtime: Node.js v24.21.0
+Working directory: C:/wb-qa/review-20261020
+Command: pnpm --filter @weiban/contracts exec tsx ../../docs/quality/reproductions/2026-10-20-chat-sync-probe.mjs
+Source check: six source/fixture blobs matched the reviewed SHA (the script throws on mismatch).
+Exit code: 0
+Stdout:
+{"lastUpdateSeq":1,"actionChoice":null,"messageType":"action_card"}
+
+Interpretation: a contract-valid message.updated carried actionChoice=add, but
+after consuming updateSeq=1 and serializing/reopening state, actionChoice is null.
+No HTTP server, database, browser, real account, or business write was used.
+This reproduces the same input and engine behavior as the inline command in
+product-chat-sync-acceptance.md. Exit 0 means the probe executed, not that the
+product passed acceptance.

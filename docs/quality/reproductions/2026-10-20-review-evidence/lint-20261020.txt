@@ -1,0 +1,8 @@
+$ eslint . && pnpm lint:deps
+
+C:\wb-qa\review-20261020\docs\web\ui-ledger-2026-10-18\build.mjs
+  3:28  error  'relative' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+✖ 1 problem (1 error, 0 warnings)
+
+[ELIFECYCLE] Command failed with exit code 1.
