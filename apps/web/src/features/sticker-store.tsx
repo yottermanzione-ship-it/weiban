@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import '../app/stickers.css';
+import { Link, useParams } from 'react-router-dom';
 import { StickerStoreEndpoints as E } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
@@ -15,18 +16,22 @@ function useStoreRefresh(refresh: () => void) {
 export function StickerStorePage() {
   const store = useRemote(E.listPacks, { networkOnly: true });
   const mine = useRemote(E.listAdded, { networkOnly: true });
-  const [manage, setManage] = useState(false),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
+  const [manage, setManage] = useState(false);
+  const [sorting, setSorting] = useState(false);
+  const [tab, setTab] = useState<'featured' | 'more'>('featured');
+  const [query, setQuery] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   useStoreRefresh(() => {
     store.refresh();
     mine.refresh();
   });
-  async function remove(packId: string) {
+  async function change(packId: string, remove = false) {
     setBusy(true);
     setError('');
     try {
-      await api.call(E.removePack, { params: { packId } });
+      if (remove) await api.call(E.removePack, { params: { packId } });
+      else await api.call(E.addPack, { params: { packId } });
       mine.refresh();
       store.refresh();
     } catch (e) {
@@ -36,6 +41,7 @@ export function StickerStorePage() {
     }
   }
   async function move(index: number) {
+    if (index < 1) return;
     const ids = mine.data?.items.map((p) => p.packId) ?? [];
     [ids[index - 1], ids[index]] = [ids[index]!, ids[index - 1]!];
     setBusy(true);
@@ -50,19 +56,66 @@ export function StickerStorePage() {
     }
   }
   const list = manage ? mine : store;
+  const needle = query.trim().toLocaleLowerCase();
+  const shown = (store.data?.items ?? []).filter(
+    (p) => !needle || `${p.name} ${p.intro}`.toLocaleLowerCase().includes(needle),
+  );
   return (
-    <main>
+    <main className="sticker-store-page">
       <NavBar
-        title={manage ? '我的表情包' : '表情商店'}
-        fallback="/me/stickers"
+        title={
+          manage ? (
+            '我的表情'
+          ) : (
+            <span className="sticker-store-tabs" role="tablist" aria-label="表情商店分类">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'featured'}
+                onClick={() => setTab('featured')}
+              >
+                精选表情
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'more'}
+                onClick={() => setTab('more')}
+              >
+                更多表情
+              </button>
+            </span>
+          )
+        }
+        fallback="/me"
+        onBack={
+          manage
+            ? () => {
+                setManage(false);
+                setSorting(false);
+              }
+            : undefined
+        }
         right={
-          <button
-            className="text-button text-action"
-            onClick={() => setManage(!manage)}
-            disabled={busy}
-          >
-            {manage ? '商店' : '整理'}
-          </button>
+          manage ? (
+            <button
+              type="button"
+              className="text-button"
+              disabled={busy}
+              onClick={() => setSorting((v) => !v)}
+            >
+              {sorting ? '完成' : '排序'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="text-button"
+              aria-label="我的表情"
+              onClick={() => setManage(true)}
+            >
+              •••
+            </button>
+          )
         }
       />
       {(error || list.error) && (
@@ -71,7 +124,7 @@ export function StickerStorePage() {
         </p>
       )}
       {list.error && (
-        <button className="text-button full" onClick={list.refresh}>
+        <button type="button" className="text-button full" onClick={list.refresh}>
           重试
         </button>
       )}
@@ -80,43 +133,117 @@ export function StickerStorePage() {
           正在读取…
         </p>
       )}
-      <MenuGroup>
-        {list.data?.items.map((p, i) => (
-          <div key={p.packId}>
-            <MenuRow
-              to={p.enabled ? '/sticker-store/' + p.packId : undefined}
-              label={p.name}
-              leading={
-                p.coverUrl ? (
-                  <img className="sticker-pack-cover" src={p.coverUrl} alt="" />
-                ) : undefined
-              }
-              subtitle={
-                p.enabled
-                  ? `${p.stickerCount} 个表情${p.intro ? ` · ${p.intro}` : ''}`
-                  : '已停用，可移除'
-              }
-              value={p.added ? '已添加' : '免费'}
-            />
-            {manage && (
-              <div className="actions">
-                <button disabled={busy || i === 0} onClick={() => void move(i)}>
-                  上移
-                </button>
-                <button disabled={busy || p.builtIn} onClick={() => void remove(p.packId)}>
-                  移除
+      {manage ? (
+        <MenuGroup>
+          <MenuRow
+            to="/me/stickers"
+            label="添加的单个表情"
+            leading={
+              <span className="sticker-manage-heart" aria-hidden>
+                ♡
+              </span>
+            }
+          />
+          {mine.data?.items.map((p, i) => (
+            <div key={p.packId} className="sticker-manage-row">
+              <MenuRow
+                to={p.enabled ? '/sticker-store/' + p.packId : undefined}
+                label={p.name}
+                chevron={false}
+                leading={
+                  p.coverUrl ? (
+                    <img className="sticker-pack-cover" src={p.coverUrl} alt="" />
+                  ) : undefined
+                }
+                subtitle={p.enabled ? undefined : '已停用，可移除'}
+              />
+              <div className="sticker-manage-actions">
+                {sorting && (
+                  <button
+                    type="button"
+                    disabled={busy || i === 0}
+                    aria-label={`上移${p.name}`}
+                    onClick={() => void move(i)}
+                  >
+                    上移
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={busy || p.builtIn}
+                  aria-label={`移除${p.name}`}
+                  onClick={() => void change(p.packId, true)}
+                >
+                  {p.builtIn ? '默认' : '移除'}
                 </button>
               </div>
-            )}
+            </div>
+          ))}
+        </MenuGroup>
+      ) : (
+        <>
+          <div className="sticker-store-search">
+            <input
+              type="search"
+              aria-label="搜索表情包"
+              placeholder="搜索"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
           </div>
-        ))}
-      </MenuGroup>
-      {list.data && !list.data.items.length && (
-        <p className="empty">{manage ? '尚未添加表情包' : '暂无上架表情包'}</p>
+          {shown.length > 0 && (
+            <div className="sticker-store-banners" aria-label="表情包推荐">
+              {shown.slice(0, 3).map((p) => (
+                <Link
+                  key={p.packId}
+                  to={'/sticker-store/' + p.packId}
+                  className="sticker-store-banner"
+                >
+                  {p.coverUrl && <img src={p.coverUrl} alt="" />}
+                  <strong>{p.name}</strong>
+                </Link>
+              ))}
+            </div>
+          )}
+          <h2 className="sticker-store-heading">{tab === 'featured' ? '精选' : '更多表情'}</h2>
+          {tab === 'featured' ? (
+            <div className="sticker-store-list">
+              {shown.map((p) => (
+                <div className="sticker-store-row" key={p.packId}>
+                  <Link to={'/sticker-store/' + p.packId} className="sticker-store-row-detail">
+                    {p.coverUrl && <img src={p.coverUrl} alt="" />}
+                    <span>{p.name}</span>
+                  </Link>
+                  <button
+                    type="button"
+                    disabled={busy || p.added}
+                    aria-label={`${p.added ? '已添加' : '添加'}${p.name}`}
+                    onClick={() => void change(p.packId)}
+                  >
+                    {p.added ? '已添加' : '添加'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="sticker-store-tiles">
+              {shown.map((p) => (
+                <Link
+                  key={p.packId}
+                  to={'/sticker-store/' + p.packId}
+                  className="sticker-store-tile"
+                >
+                  {p.coverUrl && <img src={p.coverUrl} alt="" />}
+                  <span>{p.name}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+          {store.data && !shown.length && (
+            <p className="empty">{needle ? '没有找到相关表情包' : '暂无上架表情包'}</p>
+          )}
+        </>
       )}
-      <MenuGroup>
-        <MenuRow to="/me/stickers" label="管理单个表情" />
-      </MenuGroup>
     </main>
   );
 }

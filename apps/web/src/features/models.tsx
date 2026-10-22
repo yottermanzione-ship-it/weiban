@@ -244,8 +244,6 @@ export function ScenarioModelPage() {
   const config = useRemote(ModelAccessEndpoints.getScenarioConfig, { networkOnly: true });
   const info = useRemote(ModelAccessEndpoints.getLeaderboardInfo);
   const [tab, setTab] = useState<'rank' | 'popular'>('rank');
-  const [search, setSearch] = useState('');
-  const [reverse, setReverse] = useState(false);
   const [pending, setPending] = useState(false);
   const row = config.data?.scenarios.find((r) => r.scenario === meta.key);
   const current = row?.selection?.modelKey ?? '';
@@ -254,7 +252,7 @@ export function ScenarioModelPage() {
     models.data?.items.filter(
       (m) => meta.key === 'private' || !m.capabilities.includes('adult_content'),
     ) ?? [];
-  // 按现行展示权限过滤后再次连续编号，不能因隐藏模型留下名次空档；搜索不改变榜单编号。
+  // 按现行展示权限过滤后再次连续编号，不能因隐藏模型留下名次空档。
   const rankIndex = new Map(
     [...visible]
       .filter((m) => m.leaderboardRank != null)
@@ -286,13 +284,9 @@ export function ScenarioModelPage() {
       tab === 'rank'
         ? (a.leaderboardRank ?? Infinity) - (b.leaderboardRank ?? Infinity)
         : (counts.get(b.modelKey) ?? 0) - (counts.get(a.modelKey) ?? 0);
-    return (reverse ? -1 : 1) * (difference || a.displayName.localeCompare(b.displayName));
+    return difference || a.displayName.localeCompare(b.displayName);
   });
   const positions = new Map(ranked.map((m, i) => [m.modelKey, i + 1]));
-  const query = search.trim().toLocaleLowerCase();
-  const shown = ranked.filter(
-    (m) => !query || (m.displayName + ' ' + m.vendorName).toLocaleLowerCase().includes(query),
-  );
   async function choose(key: string | null) {
     if (pending || (key ?? '') === current) return;
     setPending(true);
@@ -370,22 +364,8 @@ export function ScenarioModelPage() {
           ) : (
             <p className="hint page-note">按「文本聊天」选用人数排序，不含角色单独设置。</p>
           )}
-          <div className="field-rows">
-            <label className="field-row">
-              <span>搜索模型</span>
-              <input
-                aria-label="搜索模型"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="名称或开发商"
-              />
-            </label>
-            <button type="button" onClick={() => setReverse((v) => !v)}>
-              {reverse ? '恢复默认排序' : '反向排序'}
-            </button>
-          </div>
           <MenuGroup>
-            {shown.map((m) =>
+            {ranked.map((m) =>
               modelRow(
                 m,
                 tab === 'rank' ? (m.leaderboardRank ?? undefined) : positions.get(m.modelKey),
@@ -393,7 +373,6 @@ export function ScenarioModelPage() {
               ),
             )}
           </MenuGroup>
-          {shown.length === 0 && all.length > 0 && <p className="empty">没有匹配的模型</p>}
           {!models.loading && !info.loading && ranked.length === 0 && (
             <p className="empty">{tab === 'rank' ? '暂未配置模型排名' : '还没有选用数据'}</p>
           )}

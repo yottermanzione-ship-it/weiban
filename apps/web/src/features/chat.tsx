@@ -1,4 +1,5 @@
 import { ChatHeading } from './chat-heading.js';
+import { editEmoji } from './emoji-edit.js';
 /*
  * 私聊 / 群聊页（docs/refactor/06-old-ui-spec.md 4.4）：返回键 + 未读药丸、一句一个气泡（每条带头像和尖角）、
  * 时间条（间隔 > 5 分钟）、气泡长按深色菜单、输入栏（语音 / 输入框 / 表情 / ＋ 或发送）、按住说话、
@@ -908,6 +909,21 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     setMode('text');
     input.current?.focus();
   }
+  function changeEmoji(value?: string) {
+    if (sending) return;
+    const edited = editEmoji(
+      text,
+      input.current?.selectionStart ?? text.length,
+      input.current?.selectionEnd ?? text.length,
+      value,
+    );
+    if (edited.value.length > 4000) {
+      showToast('消息已达到字数上限');
+      return;
+    }
+    setText(edited.value);
+    requestAnimationFrame(() => input.current?.setSelectionRange(edited.cursor, edited.cursor));
+  }
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     if (!text.trim() || sending) return;
@@ -1810,6 +1826,11 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
       )}
       {panel === 'sticker' && !selecting && (
         <StickerPanel
+          onEmoji={changeEmoji}
+          onErase={() => changeEmoji()}
+          onSend={() => void submit()}
+          canSend={!sending && !!text.trim()}
+          characterIds={members.map((member) => member.refId)}
           onPick={(sticker) =>
             void chat
               .sendContent(id, { type: 'sticker', ...sticker })

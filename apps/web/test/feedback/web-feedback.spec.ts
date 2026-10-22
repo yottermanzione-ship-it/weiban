@@ -27,7 +27,7 @@ test('服务仅保留积分入口，积分页仍可充值；聊天流水无二�
     ),
   ).toBe(false);
 });
-test('排行榜包含无排名模型，热门显示人数，搜索选择保持唯一列表', async ({ page }) => {
+test('排行榜保持默认顺序和唯一列表，不再提供搜索或反向排序', async ({ page }) => {
   await page.goto(`${fixture}?page=rank`);
   await expect(page.getByText('全部可选模型')).toHaveCount(0);
   await expect(page.getByText('已排名模型', { exact: false })).toHaveCount(1);
@@ -35,9 +35,12 @@ test('排行榜包含无排名模型，热门显示人数，搜索选择保持�
   await expect(page.getByText(/暂无排名/)).toBeVisible();
   await expect(page.getByText('受限模型', { exact: false })).toHaveCount(0);
   await expect(page.locator('.rank-no')).toHaveText('1');
-  await page.getByLabel('搜索模型', { exact: true }).fill('另一厂商');
-  await expect(page.getByText('已排名模型', { exact: false })).toHaveCount(0);
-  await page.getByLabel('搜索模型', { exact: true }).fill('');
+  await expect(page.getByLabel('搜索模型', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /反向排序|恢复默认排序/ })).toHaveCount(0);
+  await expect(page.locator('.menu-row').filter({ hasText: /已排名模型|无数据模型/ })).toHaveText([
+    /已排名模型/,
+    /无数据模型/,
+  ]);
   await page.getByRole('tab', { name: '热门榜' }).click();
   await expect(page.getByText(/12 人选用/)).toBeVisible();
   await expect(page.getByText(/0 人选用/)).toBeVisible();
