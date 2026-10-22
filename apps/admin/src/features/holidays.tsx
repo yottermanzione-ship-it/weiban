@@ -3,35 +3,15 @@
  * 日期规则只有三种：每年公历、每年农历、只此一次。
  */
 import { useEffect, useState } from 'react';
-import {
-  Alert,
-  Button,
-  Checkbox,
-  DatePicker,
-  Form,
-  Input,
-  Select,
-  Switch,
-  Tag,
-} from 'antd';
+import { Alert, Button, Checkbox, DatePicker, Form, Input, Select, Switch, Tag } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import {
-  HolidayAdminEndpoints,
-  type HolidayDateType,
-  type HolidayEvent,
-} from '@weiban/contracts';
+import { HolidayAdminEndpoints, type HolidayDateType, type HolidayEvent } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { errorText } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
-import {
-  FieldHelp,
-  FormSection,
-  Page,
-  useDangerConfirm,
-  useToast,
-} from '../ui/page.js';
+import { FieldHelp, FormSection, Page, useDangerConfirm, useToast } from '../ui/page.js';
 
 const DATE_TYPE_LABELS: Record<HolidayDateType, string> = {
   annual: '每年（公历）',
@@ -180,14 +160,19 @@ export function HolidaysPage() {
     {
       title: '最近日期',
       width: 200,
-      render: (_, row) =>
-        row.upcomingDates.length > 0 ? row.upcomingDates.join('、') : '—',
+      render: (_, row) => (row.upcomingDates.length > 0 ? row.upcomingDates.join('、') : '—'),
     },
     {
       title: '节日卡',
       width: 100,
       render: (_, row) =>
-        row.sendCard ? <Tag color="green" bordered={false}>发送</Tag> : <span className="cell-sub">不发送</span>,
+        row.sendCard ? (
+          <Tag color="green" bordered={false}>
+            发送
+          </Tag>
+        ) : (
+          <span className="cell-sub">不发送</span>
+        ),
     },
     {
       title: '启用',
@@ -201,7 +186,11 @@ export function HolidaysPage() {
       width: 90,
       fixed: 'right',
       render: (_, row) => (
-        <Button type="link" size="small" onClick={() => setEditing({ item: row, draft: draftOf(row) })}>
+        <Button
+          type="link"
+          size="small"
+          onClick={() => setEditing({ item: row, draft: draftOf(row) })}
+        >
           编辑
         </Button>
       ),
@@ -367,7 +356,11 @@ function HolidayDrawer({
       {error && <Alert type="error" showIcon message={error} />}
       <Form layout="vertical">
         <FormSection title="节日信息" />
-        <Form.Item label="名称" required extra={<FieldHelp>例：春节、情人节、角色生日。</FieldHelp>}>
+        <Form.Item
+          label="名称"
+          required
+          extra={<FieldHelp>例：春节、情人节、角色生日。</FieldHelp>}
+        >
           <Input
             maxLength={100}
             value={values.name}
@@ -416,10 +409,7 @@ function HolidayDrawer({
             options={Object.entries(CATEGORY_LABELS).map(([value, label]) => ({ value, label }))}
           />
         </Form.Item>
-        <Form.Item
-          label="适用角色"
-          extra={<FieldHelp>不选 = 所有角色都过这个节。</FieldHelp>}
-        >
+        <Form.Item label="适用角色" extra={<FieldHelp>不选 = 所有角色都过这个节。</FieldHelp>}>
           <Checkbox.Group
             options={CATEGORY_OPTIONS}
             value={values.characterCategories}

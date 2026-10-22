@@ -12,14 +12,7 @@ import { adminToken } from '../data/client.js';
 import { errorText } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
-import {
-  FieldHelp,
-  FormSection,
-  Page,
-  StatusTag,
-  useDangerConfirm,
-  useToast,
-} from '../ui/page.js';
+import { FieldHelp, FormSection, Page, StatusTag, useDangerConfirm, useToast } from '../ui/page.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 
 type ScenarioMode = {
@@ -65,10 +58,13 @@ async function fetchModes(): Promise<ScenarioMode[]> {
 }
 
 async function saveMode(id: string | null, data: Partial<ScenarioMode>): Promise<ScenarioMode> {
-  return request<ScenarioMode>(id ? `/api/v1/admin/scenario-modes/${id}` : '/api/v1/admin/scenario-modes', {
-    method: id ? 'PATCH' : 'POST',
-    body: JSON.stringify(data),
-  });
+  return request<ScenarioMode>(
+    id ? `/api/v1/admin/scenario-modes/${id}` : '/api/v1/admin/scenario-modes',
+    {
+      method: id ? 'PATCH' : 'POST',
+      body: JSON.stringify(data),
+    },
+  );
 }
 
 async function deleteMode(id: string): Promise<void> {
@@ -319,7 +315,11 @@ function ModeDrawer({
             <InputNumber style={{ width: '100%' }} />
           </Form.Item>
         </div>
-        <Form.Item name="description" label="说明" extra={<FieldHelp>一句话说明这个情景是什么。</FieldHelp>}>
+        <Form.Item
+          name="description"
+          label="说明"
+          extra={<FieldHelp>一句话说明这个情景是什么。</FieldHelp>}
+        >
           <Input maxLength={60} />
         </Form.Item>
         <Form.Item

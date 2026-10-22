@@ -71,7 +71,12 @@ export function SymptomTagsPage() {
       title="症状标签"
       desc="用户记录经期时能选的症状。这里只能维护标签，任何人的经期记录在后台都看不到。"
       extra={
-        <Button type="primary" loading={saving} disabled={rows === null} onClick={() => void save()}>
+        <Button
+          type="primary"
+          loading={saving}
+          disabled={rows === null}
+          onClick={() => void save()}
+        >
           保存
         </Button>
       }

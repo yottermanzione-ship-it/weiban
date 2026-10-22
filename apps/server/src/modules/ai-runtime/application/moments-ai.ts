@@ -60,6 +60,7 @@ import { CharacterImageService } from './character-image.js';
 import { PlannerService } from './planner.js';
 import { EcologySettingsService } from './ecology-settings.js';
 import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
+import { ImagePublicSearch } from './image-public-search.js';
 import {
   CAPTION_MAX_IMAGES,
   captionInstruction,
@@ -159,6 +160,7 @@ export class MomentsAiService {
     @Optional() @Inject(MOMENTS_PET_READ_PORT) private readonly pets?: PetReadPort,
     /** H3：图片描述存档（角色评论用户朋友圈时也看图）。 */
     @Optional() @Inject(ImageCaptionStore) private readonly captions?: ImageCaptionStore,
+    @Optional() @Inject(ImagePublicSearch) private readonly imageSearch?: ImagePublicSearch,
   ) {}
 
   // =========================================================================
@@ -1054,7 +1056,7 @@ export class MomentsAiService {
       : post.images.length
         ? `\n（附 ${post.images.length} 张图片，你看不到图片内容，不要描述图片细节）`
         : '';
-    const result = await this.gateway.generateText({
+    const request: import('@weiban/contracts').GenerateTextInput = {
       userId,
       characterId,
       purpose: 'moments',
@@ -1088,7 +1090,28 @@ export class MomentsAiService {
             : {}),
         },
       ],
-    });
+    };
+    let result = await this.gateway.generateText(request);
+    if (this.imageSearch && !job.privateConversationId)
+      result = await this.imageSearch.refine(
+        request,
+        result,
+        (next) => this.gateway.generateText(next),
+        async () => {
+          const fresh = await this.moments.getPostVisibleToCharacter(
+            userId,
+            post.postId,
+            characterId,
+          );
+          return (
+            !!fresh &&
+            fresh.text === post.text &&
+            JSON.stringify(fresh.images) === JSON.stringify(post.images) &&
+            JSON.stringify(fresh.comments) === JSON.stringify(post.comments)
+          );
+        },
+        own && !!job.mustReply,
+      );
     if (!result.ok) return null;
     const parts = splitCaptionTail(result.value.text, slots.length);
     for (const [index, slot] of slots.entries()) {

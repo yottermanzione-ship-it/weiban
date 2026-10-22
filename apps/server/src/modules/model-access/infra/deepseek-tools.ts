@@ -1,5 +1,6 @@
 /** DeepSeek 官方 Search / Fetch JSON 协议（2026-10-21）。不在此打印响应、查询或密钥。 */
 import { z } from 'zod';
+import { SystemClock } from '../../../platform/index.js';
 import { WebSearchHit, WebPage } from '@weiban/contracts';
 import { publicWebUrl } from '../domain/web-search.js';
 import type { MediaAdapterResult, MediaTarget, SearchHit } from './media-adapter.js';
@@ -16,6 +17,7 @@ const RawHit = z.object({
   rerank_score: z.number().min(0).max(3).optional(),
 });
 const Results = z.object({ results: z.array(z.unknown()).max(50) });
+const toolClock = new SystemClock();
 export type SearchRequestGate = (kind: 'search' | 'fetch', host?: string) => Promise<boolean>;
 
 async function readJson(response: Response): Promise<unknown> {
@@ -46,8 +48,12 @@ async function request(
   body: unknown,
   gate?: SearchRequestGate,
   host?: string,
+  deadlineAt?: string,
 ): Promise<MediaAdapterResult<unknown>> {
   for (let attempt = 0; attempt < 2; attempt++) {
+    const remaining = deadlineAt ? Date.parse(deadlineAt) - toolClock.nowMs() : 30000;
+    if (!Number.isFinite(remaining) || remaining <= 0)
+      return { ok: false, category: 'bad_request', zeroCost: true };
     if (gate && !(await gate(kind, host)))
       return { ok: false, category: 'rate_limited', zeroCost: true, localRateLimit: true };
     let response: Response;
@@ -55,7 +61,7 @@ async function request(
       response = await fetch(`${target.baseUrl.replace(/\/(?:v1)?\/?$/u, '')}/v1/tools/${kind}`, {
         method: 'POST',
         redirect: 'manual',
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(Math.min(30000, remaining)),
         headers: { Authorization: `Bearer ${target.apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
@@ -74,6 +80,7 @@ async function request(
       return { ok: true, value: { title: '', content: '' } };
     if (
       attempt === 0 &&
+      !deadlineAt &&
       (response.status === 408 || response.status === 429 || response.status >= 500)
     ) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -104,6 +111,7 @@ export async function deepseekSearch(
     maxResults: number;
     needContent?: boolean;
     originalQuestion?: string;
+    deadlineAt?: string;
   },
   gate?: SearchRequestGate,
 ): Promise<MediaAdapterResult<{ hits: SearchHit[]; billable: boolean }>> {
@@ -121,6 +129,8 @@ export async function deepseekSearch(
         : {}),
     },
     gate,
+    undefined,
+    input.deadlineAt,
   );
   if (!result.ok) return result;
   const body = Results.safeParse(result.value);

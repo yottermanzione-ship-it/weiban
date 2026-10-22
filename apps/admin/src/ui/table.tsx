@@ -115,9 +115,7 @@ export function DataTable<T extends Record<string, unknown>>({
               }
         }
         locale={{
-          emptyText: (
-            <EmptyHint title={emptyTitle} hint={emptyHint} action={emptyAction} />
-          ),
+          emptyText: <EmptyHint title={emptyTitle} hint={emptyHint} action={emptyAction} />,
         }}
         rowSelection={
           onSelectionChange

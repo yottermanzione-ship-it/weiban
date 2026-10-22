@@ -42,6 +42,7 @@ import {
   type ImageCaption,
 } from '../domain/image-caption.js';
 import { ImageCaptionStore } from './image-captions.js';
+import { ImagePublicSearch } from './image-public-search.js';
 const Result = z.object({
   bubbles: z.array(z.string().min(1).max(4000)).min(1).max(4),
   snapshot: ReplySnapshot,
@@ -70,6 +71,7 @@ export class ReplyEngine {
     @Optional() @Inject(MODEL_PLATFORM_GATEWAY_PORT) readonly platform?: ModelGatewayPlatformPort,
     /** H3：图片描述存档。 */
     @Optional() @Inject(ImageCaptionStore) readonly captions?: ImageCaptionStore,
+    @Optional() @Inject(ImagePublicSearch) readonly imageSearch?: ImagePublicSearch,
   ) {}
   async run(id: string): Promise<void> {
     if (!z.uuid().safeParse(id).success) return;
@@ -168,14 +170,7 @@ export class ReplyEngine {
     // 3.25（G1-1）：私密模式不再调用成人内容检查模型；底线由角色资格、私密模式提示词与违禁词规则保证。
     let answer: PortResult<GenerateTextOutput, GenerateError> = snapshot.forceCareFallback
       ? { ok: false, error: 'policy_denied' }
-      : strip(
-          await callModelForCare(
-            gw,
-            careAware(this.input(row, snapshot, 'reply')),
-            facts,
-            this.platform,
-          ),
-        );
+      : strip(await this.imageReply(row, snapshot, gw, facts, privateCare));
     // 模型缺识图能力（或这次读不到图）：去掉附图、按「看不到图」再答一次。
     if (!answer.ok && answer.error === 'capability_missing' && slots.length)
       answer = strip(
@@ -438,6 +433,60 @@ export class ReplyEngine {
     });
   }
   /** 交给网关的消息：去掉只给自己用的 blindContent。 */
+  private async imageReply(
+    row: ReplyPlan,
+    snapshot: ReplySnapshot,
+    gw: ModelGatewayPort,
+    facts: { highRisk: boolean; careActive: boolean; suspected: boolean },
+    privateCare: boolean,
+  ) {
+    const input = {
+      ...this.input(row, snapshot, 'reply'),
+      ...(privateCare ? { purpose: 'safety_followup' as const } : {}),
+    };
+    const first = await callModelForCare(gw, input, facts, this.platform);
+    if (
+      !this.imageSearch ||
+      facts.highRisk ||
+      facts.careActive ||
+      snapshot.trial ||
+      row.kind !== 'message'
+    )
+      return first;
+    return this.imageSearch.refine(
+      input,
+      first,
+      (next) => gw.generateText(next),
+      async () => {
+        const conversation = await this.context.chat.getConversation(row.conversationId);
+        if (
+          conversation?.contentScope !== 'normal' ||
+          (await this.context.currentEpoch(row, snapshot)) !== snapshot.epoch
+        )
+          return false;
+        for (const slot of snapshot.imageSlots) {
+          if (!slot.messageId || slot.ownerUserId !== row.userId) return false;
+          const message = await this.context.chat.getMessage(slot.messageId, ['normal']);
+          if (
+            message?.status !== 'normal' ||
+            message.senderKind !== 'user' ||
+            message.conversationId !== row.conversationId
+          )
+            return false;
+        }
+        return this.store.db.transaction(
+          async (tx) =>
+            (await this.context.memory.revision(
+              tx,
+              row.userId,
+              row.characterId,
+              row.conversationId,
+            )) === snapshot.memoryRevision,
+        );
+      },
+    );
+  }
+
   private wire(messages: ReplySnapshot['messages']): GenerateTextInput['messages'] {
     return messages.map(({ blindContent: _blind, ...m }) => {
       void _blind;

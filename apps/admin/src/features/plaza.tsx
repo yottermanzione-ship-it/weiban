@@ -31,14 +31,7 @@ import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
-import {
-  FieldHelp,
-  FormSection,
-  Page,
-  SectionCard,
-  StatusTag,
-  useToast,
-} from '../ui/page.js';
+import { FieldHelp, FormSection, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 
@@ -100,9 +93,7 @@ function looser(prev: Facts, next: Facts): boolean {
 }
 
 export function PlazaAdminPage({ initialTab }: { initialTab?: 'works' | 'reports' }) {
-  const [tab, setTab] = useState<'works' | 'official' | 'reports' | 'bans'>(
-    initialTab ?? 'works',
-  );
+  const [tab, setTab] = useState<'works' | 'official' | 'reports' | 'bans'>(initialTab ?? 'works');
   return (
     <Page
       title={initialTab === 'reports' ? '举报处理' : '角色广场'}
@@ -201,9 +192,7 @@ function WorksTab() {
       title: '类型',
       width: 150,
       render: (_, row) =>
-        row.kind === 'preset_variant'
-          ? `预设改版 · ${row.basedOnPresetName ?? ''}`
-          : '自定义角色',
+        row.kind === 'preset_variant' ? `预设改版 · ${row.basedOnPresetName ?? ''}` : '自定义角色',
     },
     {
       title: '分类',
@@ -483,11 +472,7 @@ function WorkDrawer({
       <Modal
         open={action !== null}
         title={
-          action === 'remove'
-            ? '下架这个作品？'
-            : action === 'restore'
-              ? '恢复上架？'
-              : '更正分类'
+          action === 'remove' ? '下架这个作品？' : action === 'restore' ? '恢复上架？' : '更正分类'
         }
         onCancel={() => setAction(null)}
         onOk={() => void run()}
@@ -550,7 +535,11 @@ function WorkDrawer({
                     value={next.ageSetting}
                     onChange={(value) => setNext({ ...next, ageSetting: value })}
                     options={[
-                      { value: 'adult', label: '已满 18 岁', disabled: current.ageSetting === 'minor' },
+                      {
+                        value: 'adult',
+                        label: '已满 18 岁',
+                        disabled: current.ageSetting === 'minor',
+                      },
                       { value: 'minor', label: '未满 18 岁' },
                     ]}
                   />
@@ -776,7 +765,13 @@ function ReportsTab() {
       width: 100,
       render: (_, row) => (
         <StatusTag
-          tone={row.status === 'pending' ? 'warning' : row.status === 'dismissed' ? 'default' : 'success'}
+          tone={
+            row.status === 'pending'
+              ? 'warning'
+              : row.status === 'dismissed'
+                ? 'default'
+                : 'success'
+          }
         >
           {row.status === 'pending' ? '待处理' : row.status === 'dismissed' ? '已驳回' : '已处理'}
         </StatusTag>
@@ -1088,7 +1083,13 @@ function BansTab() {
         title="停止发布和评论"
         subtitle="停权期间该用户不能发布作品、不能评论"
         width={520}
-        footer={<DrawerActions onCancel={() => setOpen(false)} onSubmit={() => void ban()} saving={saving} />}
+        footer={
+          <DrawerActions
+            onCancel={() => setOpen(false)}
+            onSubmit={() => void ban()}
+            saving={saving}
+          />
+        }
       >
         <Form
           form={form}

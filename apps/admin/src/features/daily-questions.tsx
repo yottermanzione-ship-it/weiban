@@ -10,13 +10,7 @@ import { api } from '../data/client.js';
 import { errorText } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
-import {
-  FieldHelp,
-  FormSection,
-  Page,
-  StatusTag,
-  useToast,
-} from '../ui/page.js';
+import { FieldHelp, FormSection, Page, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 
@@ -273,7 +267,11 @@ function QuestionDrawer({
         >
           <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} maxLength={40} showCount />
         </Form.Item>
-        <Form.Item name="tags" label="标签" extra={<FieldHelp>决定分给哪些角色，可多选。</FieldHelp>}>
+        <Form.Item
+          name="tags"
+          label="标签"
+          extra={<FieldHelp>决定分给哪些角色，可多选。</FieldHelp>}
+        >
           <Checkbox.Group options={TAGS.map(([value, label]) => ({ value, label }))} />
         </Form.Item>
         <div className="field-note">

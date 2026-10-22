@@ -22,7 +22,10 @@ export function TrendBars({
           const ratio = max === 0 ? 0 : value / max;
           const isLast = index === values.length - 1;
           return (
-            <Tooltip key={`${labels[index]}-${index}`} title={`${labels[index] ?? ''}：${format(value)}`}>
+            <Tooltip
+              key={`${labels[index]}-${index}`}
+              title={`${labels[index] ?? ''}：${format(value)}`}
+            >
               <div className="trend-col">
                 <span className="trend-value">{value > 0 ? format(value) : ''}</span>
                 <div

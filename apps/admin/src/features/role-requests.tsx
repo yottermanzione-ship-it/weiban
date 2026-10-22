@@ -28,14 +28,7 @@ import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { RecordDrawer } from '../ui/drawer.js';
-import {
-  FieldHelp,
-  FormSection,
-  Page,
-  SectionCard,
-  StatusTag,
-  useToast,
-} from '../ui/page.js';
+import { FieldHelp, FormSection, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 
@@ -429,7 +422,8 @@ function RequestDrawer({
               <Timeline
                 items={row.history.map((h, index) => ({
                   key: index,
-                  color: h.status === 'rejected' ? 'red' : h.status === 'completed' ? 'green' : 'blue',
+                  color:
+                    h.status === 'rejected' ? 'red' : h.status === 'completed' ? 'green' : 'blue',
                   children: (
                     <div>
                       <div>
@@ -588,7 +582,11 @@ function ConfigPanel() {
         <Form.Item
           name="proPlusWeeklyFreeCount"
           label="PRO+ 每周额外免费次数"
-          extra={<FieldHelp>北京时间周一 0 点重置，不累积到下周；会员期间才有。先用每周的，再用终身的。</FieldHelp>}
+          extra={
+            <FieldHelp>
+              北京时间周一 0 点重置，不累积到下周；会员期间才有。先用每周的，再用终身的。
+            </FieldHelp>
+          }
         >
           <InputNumber min={0} max={100} precision={0} style={{ width: 200 }} />
         </Form.Item>
@@ -600,7 +598,8 @@ function ConfigPanel() {
           <InputNumber min={0} max={1_000_000} precision={0} style={{ width: 200 }} />
         </Form.Item>
         <div className="field-note">
-          被拒绝或撤回的申请会退还免费次数。注意：PRO+ 每周免费次数是人工活，会员多了工作量会很大，请留意「制作申请」角标。
+          被拒绝或撤回的申请会退还免费次数。注意：PRO+
+          每周免费次数是人工活，会员多了工作量会很大，请留意「制作申请」角标。
         </div>
         <Space>
           <Button type="primary" loading={saving} onClick={() => void save()}>

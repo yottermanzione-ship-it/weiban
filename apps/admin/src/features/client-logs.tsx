@@ -125,10 +125,11 @@ export function ClientLogsPage() {
     }
   }
   useEffect(() => {
+    const requestRevision = revision;
     setPage(undefined);
     void load();
     return () => {
-      revision.current++;
+      requestRevision.current++;
     };
   }, [filters]); // eslint-disable-line react-hooks/exhaustive-deps
   const columns: ProColumns<ClientLogIssue>[] = [

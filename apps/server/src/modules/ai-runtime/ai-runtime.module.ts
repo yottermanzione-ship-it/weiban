@@ -1,6 +1,7 @@
 import { MemoryService } from './application/memory.js';
 import { PrivateDigestService } from './application/private-digest.js';
 import { ImageCaptionStore } from './application/image-captions.js';
+import { ImagePublicSearch } from './application/image-public-search.js';
 import { PetAiService } from './application/pet-ai.js';
 import { CardLineService, MomentCardService } from './application/moment-cards.js';
 import { MOMENTS_PET_READ_PORT } from './application/moments-ai.js';
@@ -137,6 +138,7 @@ import {
     PrivateDigestService,
     // H3：图片描述存档。
     ImageCaptionStore,
+    ImagePublicSearch,
     // v5 批 B：记忆分档与长上下文。
     BrainContextService,
     SharedEpisodesService,

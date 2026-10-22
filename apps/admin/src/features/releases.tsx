@@ -83,7 +83,9 @@ export function AnnouncementsPage() {
       width: 100,
       render: (_, row) => (
         <StatusTag
-          tone={row.status === 'published' ? 'success' : row.status === 'draft' ? 'default' : 'warning'}
+          tone={
+            row.status === 'published' ? 'success' : row.status === 'draft' ? 'default' : 'warning'
+          }
         >
           {ANNOUNCEMENT_STATUS[row.status] ?? row.status}
         </StatusTag>
@@ -93,7 +95,9 @@ export function AnnouncementsPage() {
       title: '平台',
       width: 100,
       render: (_, row) =>
-        row.platforms.length === 0 ? '全部' : row.platforms.map((p) => PLATFORM_LABELS[p]).join('、'),
+        row.platforms.length === 0
+          ? '全部'
+          : row.platforms.map((p) => PLATFORM_LABELS[p]).join('、'),
     },
     {
       title: '生效期',
@@ -101,7 +105,9 @@ export function AnnouncementsPage() {
       render: (_, row) => (
         <div className="cell-main">
           <span>{formatDateTime(row.startsAt ?? row.publishedAt)} 起</span>
-          <span className="cell-sub">{row.endsAt ? `${formatDateTime(row.endsAt)} 止` : '不限结束'}</span>
+          <span className="cell-sub">
+            {row.endsAt ? `${formatDateTime(row.endsAt)} 止` : '不限结束'}
+          </span>
         </div>
       ),
     },
@@ -377,10 +383,18 @@ function AnnouncementDrawer({
           </Form.Item>
         </Form.Item>
         <Space size={24} wrap>
-          <Form.Item name="popup" valuePropName="checked" extra={<FieldHelp>未读用户打开应用时弹一次。</FieldHelp>}>
+          <Form.Item
+            name="popup"
+            valuePropName="checked"
+            extra={<FieldHelp>未读用户打开应用时弹一次。</FieldHelp>}
+          >
             <Switch checkedChildren="弹窗" unCheckedChildren="不弹窗" />
           </Form.Item>
-          <Form.Item name="pinned" valuePropName="checked" extra={<FieldHelp>置顶显示在列表最上面。</FieldHelp>}>
+          <Form.Item
+            name="pinned"
+            valuePropName="checked"
+            extra={<FieldHelp>置顶显示在列表最上面。</FieldHelp>}
+          >
             <Switch checkedChildren="置顶" unCheckedChildren="不置顶" />
           </Form.Item>
           {value?.status === 'published' && (

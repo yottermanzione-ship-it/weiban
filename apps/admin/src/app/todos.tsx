@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { ReactNode } from 'react';
 import {
   IdentityAdminEndpoints,
@@ -89,7 +97,5 @@ export function useTodos(): TodoState {
 }
 
 export function totalTodos(counts: TodoCounts): number {
-  return (
-    counts.roleRequests + counts.support + counts.reports + counts.deletions + counts.alerts
-  );
+  return counts.roleRequests + counts.support + counts.reports + counts.deletions + counts.alerts;
 }

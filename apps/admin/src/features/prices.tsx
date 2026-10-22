@@ -24,14 +24,7 @@ import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
-import {
-  FieldHelp,
-  FormSection,
-  Page,
-  StatusTag,
-  useDangerConfirm,
-  useToast,
-} from '../ui/page.js';
+import { FieldHelp, FormSection, Page, StatusTag, useDangerConfirm, useToast } from '../ui/page.js';
 import { formatDateTime, formatYuan } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 
@@ -83,17 +76,16 @@ export function PricesPage() {
   const confirm = useDangerConfirm();
   const list = useRemote(BillingAdminEndpoints.listPriceVersions);
   const catalog = useRemote(ModelAccessAdminEndpoints.listCatalog);
-  const [editing, setEditing] = useState<
-    { mode: 'new' | 'edit' | 'copy'; version?: PriceVersion } | null
-  >(null);
+  const [editing, setEditing] = useState<{
+    mode: 'new' | 'edit' | 'copy';
+    version?: PriceVersion;
+  } | null>(null);
   const [detail, setDetail] = useState<PriceVersion | null>(null);
   const [error, setError] = useState('');
 
   async function publish(version: PriceVersion) {
     const priced = new Set(version.items.map((p) => p.modelKey));
-    const missing = (catalog.data?.items ?? []).filter(
-      (m) => m.enabled && !priced.has(m.modelKey),
-    );
+    const missing = (catalog.data?.items ?? []).filter((m) => m.enabled && !priced.has(m.modelKey));
     confirm({
       title: `立即启用「${version.versionLabel}」？`,
       content:
@@ -165,7 +157,11 @@ export function PricesPage() {
         <Space size={4}>
           {v.status === 'draft' ? (
             <>
-              <Button type="link" size="small" onClick={() => setEditing({ mode: 'edit', version: v })}>
+              <Button
+                type="link"
+                size="small"
+                onClick={() => setEditing({ mode: 'edit', version: v })}
+              >
                 编辑
               </Button>
               <Button type="link" size="small" onClick={() => void publish(v)}>
@@ -173,7 +169,11 @@ export function PricesPage() {
               </Button>
             </>
           ) : (
-            <Button type="link" size="small" onClick={() => setEditing({ mode: 'copy', version: v })}>
+            <Button
+              type="link"
+              size="small"
+              onClick={() => setEditing({ mode: 'copy', version: v })}
+            >
               复制调价
             </Button>
           )}
@@ -213,10 +213,12 @@ export function PricesPage() {
         <VersionDrawer
           version={editing.version ?? null}
           mode={editing.mode}
-          catalog={(catalog.data?.items ?? []).filter((m) => !m.deletedAt).map((m) => ({
-            modelKey: m.modelKey,
-            displayName: m.displayName,
-          }))}
+          catalog={(catalog.data?.items ?? [])
+            .filter((m) => !m.deletedAt)
+            .map((m) => ({
+              modelKey: m.modelKey,
+              displayName: m.displayName,
+            }))}
           onClose={() => setEditing(null)}
           onSaved={(text) => {
             toast.success(text);
@@ -247,7 +249,9 @@ export function PricesPage() {
                 </div>
               </div>
             ))}
-            {detail.items.length === 0 && <div className="detail-muted">这个版本没有价格条目。</div>}
+            {detail.items.length === 0 && (
+              <div className="detail-muted">这个版本没有价格条目。</div>
+            )}
           </div>
         </RecordDrawer>
       )}
@@ -314,27 +318,25 @@ function VersionDrawer({
     }
   }
 
-  const initialRows: PriceRow[] =
-    version?.items.map((item) => ({
-      modelKey: item.modelKey,
-      unit: item.unit,
-      price: item.priceMicros / 1_000_000,
-      cost: item.costMicros / 1_000_000,
-      bandEnabled: !!item.band,
-      bandName: item.band?.name,
-      bandStart: item.band?.start,
-      bandEnd: item.band?.end,
-      bandWeekdays: item.band?.weekdays,
-    })) ??
-    [
-      {
-        modelKey: '',
-        unit: 'input_tokens_per_million' as PriceUnit,
-        price: 0,
-        cost: 0,
-        bandEnabled: false,
-      },
-    ];
+  const initialRows: PriceRow[] = version?.items.map((item) => ({
+    modelKey: item.modelKey,
+    unit: item.unit,
+    price: item.priceMicros / 1_000_000,
+    cost: item.costMicros / 1_000_000,
+    bandEnabled: !!item.band,
+    bandName: item.band?.name,
+    bandStart: item.band?.start,
+    bandEnd: item.band?.end,
+    bandWeekdays: item.band?.weekdays,
+  })) ?? [
+    {
+      modelKey: '',
+      unit: 'input_tokens_per_million' as PriceUnit,
+      price: 0,
+      cost: 0,
+      bandEnabled: false,
+    },
+  ];
 
   return (
     <RecordDrawer
@@ -394,9 +396,7 @@ function VersionDrawer({
                         value: m.modelKey,
                         label: `${m.displayName}（${m.modelKey}）`,
                       }))}
-                      filterOption={(input, option) =>
-                        String(option?.value ?? '').includes(input)
-                      }
+                      filterOption={(input, option) => String(option?.value ?? '').includes(input)}
                       placeholder="模型键"
                     />
                   </Form.Item>
@@ -457,7 +457,10 @@ function VersionDrawer({
                           <Form.Item name={[field.name, 'bandEnd']} style={{ marginBottom: 6 }}>
                             <TimePicker format="HH:mm" minuteStep={5} placeholder="结束" />
                           </Form.Item>
-                          <Form.Item name={[field.name, 'bandWeekdays']} style={{ marginBottom: 6 }}>
+                          <Form.Item
+                            name={[field.name, 'bandWeekdays']}
+                            style={{ marginBottom: 6 }}
+                          >
                             <Checkbox.Group options={WEEKDAYS} />
                           </Form.Item>
                         </div>

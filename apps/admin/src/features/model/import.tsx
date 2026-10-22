@@ -137,7 +137,9 @@ function rowsFromFile(raw: z.infer<typeof ImportFile>): ImportRow[] {
     const retail = m.retail_prices_cny_per_mtok;
     const supplier = m.supplier_lowest_prices_cny_per_mtok ?? null;
     const rank =
-      typeof m.arena_overall_rank === 'number' && Number.isInteger(m.arena_overall_rank) && m.arena_overall_rank > 0
+      typeof m.arena_overall_rank === 'number' &&
+      Number.isInteger(m.arena_overall_rank) &&
+      m.arena_overall_rank > 0
         ? m.arena_overall_rank
         : null;
     return {
@@ -163,7 +165,9 @@ function rowsFromFile(raw: z.infer<typeof ImportFile>): ImportRow[] {
         : null,
       costCacheGuessed: supplier ? supplier.cache == null : false,
       multiplier:
-        m.public_display_official_multiplier == null ? null : round(m.public_display_official_multiplier, 2),
+        m.public_display_official_multiplier == null
+          ? null
+          : round(m.public_display_official_multiplier, 2),
       arenaModel: m.arena_model?.trim().slice(0, 120) || null,
       contextTokens: DEFAULT_CONTEXT_TOKENS,
       maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
@@ -229,10 +233,15 @@ function isInt(value: number | null, min: number, max: number): value is number 
   return value != null && Number.isInteger(value) && value >= min && value <= max;
 }
 
-function rowErrors(row: ImportRow, existing: AdminModel | undefined, duplicate: boolean): RowErrors {
+function rowErrors(
+  row: ImportRow,
+  existing: AdminModel | undefined,
+  duplicate: boolean,
+): RowErrors {
   const errors: RowErrors = {};
   if (!isValidModelKey(row.modelKey.trim())) errors.modelKey = MODEL_KEY_HINT;
-  else if (duplicate) errors.modelKey = '和表里另一行是同一个模型（厂商和上游模型名都一样），只勾一行';
+  else if (duplicate)
+    errors.modelKey = '和表里另一行是同一个模型（厂商和上游模型名都一样），只勾一行';
   if (row.price.input == null) errors.priceInput = '填写输入售价';
   if (row.price.output == null) errors.priceOutput = '填写输出售价';
   if (existing) return errors;
@@ -538,13 +547,17 @@ function ImportPreview({
         ok += 1;
         setRows((list) =>
           list.map((r) =>
-            r.id === row.id ? { ...r, result: { ok: true, text: existing ? '已更新价格' : '已添加' } } : r,
+            r.id === row.id
+              ? { ...r, result: { ok: true, text: existing ? '已更新价格' : '已添加' } }
+              : r,
           ),
         );
       } catch (e) {
         const text = errorText(e);
         failed.push(row.id);
-        setRows((list) => list.map((r) => (r.id === row.id ? { ...r, result: { ok: false, text } } : r)));
+        setRows((list) =>
+          list.map((r) => (r.id === row.id ? { ...r, result: { ok: false, text } } : r)),
+        );
       }
       setProgress({ done: index + 1, total: selectedRows.length });
     }
@@ -556,7 +569,9 @@ function ImportPreview({
       return;
     }
     setSelected(failed);
-    setSummary(`成功 ${ok} 个，失败 ${failed.length} 个。失败的行已保留勾选，看「结果」列的原因，改好后再点导入。`);
+    setSummary(
+      `成功 ${ok} 个，失败 ${failed.length} 个。失败的行已保留勾选，看「结果」列的原因，改好后再点导入。`,
+    );
     void message.warning(`有 ${failed.length} 个模型没导入成功，原因写在表格「结果」列`);
   }
 
@@ -568,7 +583,8 @@ function ImportPreview({
   ) => {
     const triple = row[group];
     if (!triple) return <span className="cell-sub">与售价相同</span>;
-    const guessed = part === 'cache' && (group === 'price' ? row.priceCacheGuessed : row.costCacheGuessed);
+    const guessed =
+      part === 'cache' && (group === 'price' ? row.priceCacheGuessed : row.costCacheGuessed);
     const input = (
       <InputNumber
         size="small"
@@ -594,8 +610,11 @@ function ImportPreview({
     return (
       <>
         {guessed ? (
-          <Tooltip title="文件里没有缓存价，models.dev 也查不到，按输入价的 10% 预填，可以改">{input}</Tooltip>
-        ) : part === 'cache' && (group === 'price' ? row.priceCacheFromDev : row.costCacheFromDev) ? (
+          <Tooltip title="文件里没有缓存价，models.dev 也查不到，按输入价的 10% 预填，可以改">
+            {input}
+          </Tooltip>
+        ) : part === 'cache' &&
+          (group === 'price' ? row.priceCacheFromDev : row.costCacheFromDev) ? (
           <Tooltip title="文件里没有缓存价：按 models.dev 官方「缓存价 ÷ 输入价」的比例换算，可以改">
             <span className="cell-from-dev">{input}</span>
           </Tooltip>
@@ -636,7 +655,9 @@ function ImportPreview({
                 新增
               </Tag>
             )}
-            {existing?.hasTimeBands && <span className="cell-error">有分时价，导入后变全天统一价</span>}
+            {existing?.hasTimeBands && (
+              <span className="cell-error">有分时价，导入后变全天统一价</span>
+            )}
             {row.needsValidation && (
               <Tooltip title="文件里标了 needs_validation：价格或线路还需要人工核实">
                 <Tag color="orange" bordered={false}>
@@ -746,7 +767,9 @@ function ImportPreview({
                   className="cell-sub tag-link"
                   role="button"
                   tabIndex={0}
-                  onClick={() => update(row.id, { upstreamModelId: row.supplierModel ?? row.upstreamModelId })}
+                  onClick={() =>
+                    update(row.id, { upstreamModelId: row.supplierModel ?? row.upstreamModelId })
+                  }
                 >
                   供应商里叫 {row.supplierModel}
                 </span>
@@ -756,8 +779,16 @@ function ImportPreview({
           </>
         ),
     },
-    { title: '售价·入', width: 96, render: (_, row) => priceCell(row, 'price', 'input', 'priceInput') },
-    { title: '售价·出', width: 96, render: (_, row) => priceCell(row, 'price', 'output', 'priceOutput') },
+    {
+      title: '售价·入',
+      width: 96,
+      render: (_, row) => priceCell(row, 'price', 'input', 'priceInput'),
+    },
+    {
+      title: '售价·出',
+      width: 96,
+      render: (_, row) => priceCell(row, 'price', 'output', 'priceOutput'),
+    },
     { title: '售价·缓存', width: 96, render: (_, row) => priceCell(row, 'price', 'cache') },
     {
       title: (
@@ -888,7 +919,10 @@ function ImportPreview({
         existingOf(row) ? (
           <span className="cell-sub">—</span>
         ) : (
-          <Checkbox checked={row.vision} onChange={(e) => update(row.id, { vision: e.target.checked })} />
+          <Checkbox
+            checked={row.vision}
+            onChange={(e) => update(row.id, { vision: e.target.checked })}
+          />
         ),
     },
   ];
@@ -910,7 +944,9 @@ function ImportPreview({
             取消
           </Button>
           <Button type="primary" loading={!!progress} onClick={() => void run()}>
-            {progress ? `正在导入 ${progress.done}/${progress.total}` : `导入 ${selectedRows.length} 个模型`}
+            {progress
+              ? `正在导入 ${progress.done}/${progress.total}`
+              : `导入 ${selectedRows.length} 个模型`}
           </Button>
         </Space>
       }
@@ -944,7 +980,9 @@ function ImportPreview({
             options={upstreams.map((u) => ({
               value: u.upstreamId,
               label: `${u.name}${
-                upstreamState(u) === 'normal' ? '' : `（${UPSTREAM_STATE_LABELS[upstreamState(u)]}）`
+                upstreamState(u) === 'normal'
+                  ? ''
+                  : `（${UPSTREAM_STATE_LABELS[upstreamState(u)]}）`
               }`,
             }))}
           />

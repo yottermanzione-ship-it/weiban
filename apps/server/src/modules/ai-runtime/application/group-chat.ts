@@ -12,6 +12,7 @@ import { stageLabel } from '../domain/relationship-stage.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { nudgeText, readableMessageText } from './content-text.js';
 import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
+import { ImagePublicSearch } from './image-public-search.js';
 import {
   CAPTION_MAX_IMAGES,
   captionInstruction,
@@ -220,6 +221,7 @@ export class GroupChatService {
     private readonly platform?: import('@weiban/contracts').ModelGatewayPlatformPort,
     /** H3：图片描述存档（群聊也看图，按用户扣积分）。 */
     @Optional() @Inject(ImageCaptionStore) private readonly captions?: ImageCaptionStore,
+    @Optional() @Inject(ImagePublicSearch) private readonly imageSearch?: ImagePublicSearch,
   ) {}
 
   // =========================================================================
@@ -947,9 +949,38 @@ export class GroupChatService {
       ))
     )
       return null;
-    let result = cached
-      ? { ok: true as const, value: { text: cached.text } }
-      : await this.adultBoundary.generate(request, adult);
+    let generated = cached ? null : await this.adultBoundary.generate(request, adult);
+    if (generated && this.imageSearch)
+      generated = await this.imageSearch.refine(
+        request,
+        generated,
+        (next) => this.adultBoundary.generate(next, false),
+        async () => {
+          if (
+            !(await this.stillActive(
+              conversation,
+              input.userId,
+              input.purpose === 'proactive',
+              input.scenarioMode,
+            ))
+          )
+            return false;
+          if (input.durable && !(await this.replies.checkpoint(input.durable, {}))) return false;
+          for (const slot of slots) {
+            if (!slot.messageId || slot.ownerUserId !== input.userId) return false;
+            const source = await this.chat.getMessage(slot.messageId, ['normal']);
+            if (
+              source?.status !== 'normal' ||
+              source.senderKind !== 'user' ||
+              source.conversationId !== conversation.conversationId
+            )
+              return false;
+          }
+          return true;
+        },
+        input.purpose !== 'proactive',
+      );
+    let result = cached ? { ok: true as const, value: { text: cached.text } } : generated!;
     let sawImages = request.messages.some((m) => m.images?.length);
     // H3：模型缺识图能力 → 去掉附图，按「看不到图」再说一次（图片标记换成看不到的说法）。
     if (

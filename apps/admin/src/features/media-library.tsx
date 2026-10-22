@@ -271,7 +271,10 @@ function StickerPackDrawer({
     try {
       await api.call(StickerAdminEndpoints.deleteSticker, { params: { stickerId } });
       if (current)
-        setCurrent({ ...current, stickers: current.stickers.filter((s) => s.stickerId !== stickerId) });
+        setCurrent({
+          ...current,
+          stickers: current.stickers.filter((s) => s.stickerId !== stickerId),
+        });
       onChanged();
       onToast('已删除');
     } catch (e) {
@@ -328,7 +331,11 @@ function StickerPackDrawer({
               />
             </Form.Item>
           </div>
-          <Form.Item name="intro" label="商店简介" extra={<FieldHelp>用户在表情商店看到的说明。</FieldHelp>}>
+          <Form.Item
+            name="intro"
+            label="商店简介"
+            extra={<FieldHelp>用户在表情商店看到的说明。</FieldHelp>}
+          >
             <Input maxLength={100} />
           </Form.Item>
           <div className="form-three">
@@ -362,7 +369,10 @@ function StickerPackDrawer({
           </Space>
         </Form>
       </SectionCard>
-      <SectionCard title="表情" desc={current ? `共 ${current.stickers.length} 个` : '先保存表情包再加表情'}>
+      <SectionCard
+        title="表情"
+        desc={current ? `共 ${current.stickers.length} 个` : '先保存表情包再加表情'}
+      >
         <div className="sticker-grid">
           {(current?.stickers ?? []).map((sticker) => (
             <div className="sticker-card" key={sticker.stickerId}>
@@ -599,7 +609,11 @@ function VoiceDrawer({
           >
             <Input maxLength={20} />
           </Form.Item>
-          <Form.Item name="tags" label="气质标签" extra={<FieldHelp>用逗号分隔，例：温柔，低音。</FieldHelp>}>
+          <Form.Item
+            name="tags"
+            label="气质标签"
+            extra={<FieldHelp>用逗号分隔，例：温柔，低音。</FieldHelp>}
+          >
             <Input placeholder="温柔，低音" />
           </Form.Item>
         </div>
@@ -621,7 +635,10 @@ function VoiceDrawer({
             <Input maxLength={80} />
           </Form.Item>
         </div>
-        <Form.Item label="试听音频" extra={<FieldHelp>上传一段 5～15 秒的样音，用户试听不扣积分。</FieldHelp>}>
+        <Form.Item
+          label="试听音频"
+          extra={<FieldHelp>上传一段 5～15 秒的样音，用户试听不扣积分。</FieldHelp>}
+        >
           <Space>
             <Upload
               accept="audio/mpeg,audio/wav,audio/mp4"
@@ -679,7 +696,9 @@ export function CardTemplatesPage() {
           <img src={row.url} alt={row.name} />
           <div className="cell-main">
             <span className="cell-title">{row.name}</span>
-            <span className="cell-sub">{row.kinds.map((k) => CARD_KIND_LABELS[k] ?? k).join('、')}</span>
+            <span className="cell-sub">
+              {row.kinds.map((k) => CARD_KIND_LABELS[k] ?? k).join('、')}
+            </span>
           </div>
         </div>
       ),
@@ -867,7 +886,9 @@ function CardDrawer({
                 上传图片
               </Button>
             </Upload>
-            {preview && <img src={preview} alt="卡面预览" style={{ height: 64, borderRadius: 6 }} />}
+            {preview && (
+              <img src={preview} alt="卡面预览" style={{ height: 64, borderRadius: 6 }} />
+            )}
           </Space>
         </Form.Item>
         <Form.Item
@@ -950,7 +971,8 @@ export function WorkLinksPage() {
     {
       title: '类型',
       width: 90,
-      render: (_, row) => ({ music: '音乐', video: '视频', web: '网页' })[row.appHint] ?? row.appHint,
+      render: (_, row) =>
+        ({ music: '音乐', video: '视频', web: '网页' })[row.appHint] ?? row.appHint,
     },
     {
       title: '来源',

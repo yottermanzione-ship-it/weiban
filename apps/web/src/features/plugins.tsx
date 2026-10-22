@@ -38,7 +38,9 @@ export function PluginsPage() {
           />
         ))}
       </MenuGroup>
-      <p className="page-note">接入后，TA 能看到你在这些平台上的公开动态；聊天记录需要你单独授权。</p>
+      <p className="page-note">
+        接入后，TA 能看到你在这些平台上的公开动态；聊天记录需要你单独授权。
+      </p>
     </main>
   );
 }

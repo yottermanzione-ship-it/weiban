@@ -92,7 +92,6 @@ function discountLabel(rate: number) {
   return `${Number.isInteger(tenth) ? tenth.toFixed(0) : tenth.toFixed(1)} 折`;
 }
 
-
 function ratesOf(
   input?: number | null,
   output?: number | null,
@@ -112,7 +111,11 @@ function ratesOf(
 }
 
 /** 3.24：这些原因要去模型抽屉里改计费上限，状态标签可以点开直接定位。 */
-const BOUNDS_DETAILS = ['billing_bounds_missing', 'billing_bounds_paused', 'output_limit_too_small'];
+const BOUNDS_DETAILS = [
+  'billing_bounds_missing',
+  'billing_bounds_paused',
+  'output_limit_too_small',
+];
 
 /** 3.26（G3-2）：连续多次没返回用量的线路（达到提示阈值才在后台显示，不停用）。 */
 function usageMissingOf(m: AdminModel) {
@@ -170,9 +173,7 @@ export function ModelsTab({
     .filter((m) => status === 'all' || (status === 'on' ? m.enabled : !m.enabled))
     .filter(
       (m) =>
-        !query.trim() ||
-        m.displayName.includes(query.trim()) ||
-        m.modelKey.includes(query.trim()),
+        !query.trim() || m.displayName.includes(query.trim()) || m.modelKey.includes(query.trim()),
     )
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
@@ -700,7 +701,11 @@ function ModelWizard({
   const [saving, setSaving] = useState(false);
   // 3.24：文本聊天 / 私密模式模型缺识图能力时先提示一次
   const [confirmVision, setConfirmVision] = useState(false);
-  const [upstreamModels, setUpstreamModels] = useState<{ id: string; items: string[] | null; error: string }>({
+  const [upstreamModels, setUpstreamModels] = useState<{
+    id: string;
+    items: string[] | null;
+    error: string;
+  }>({
     id: '',
     items: null,
     error: '',
@@ -902,13 +907,17 @@ function ModelWizard({
       if (route.boundsMode !== 'form') return;
       if ('capabilities' in changed && !route.origin) {
         const hasVision = (changed.capabilities ?? []).includes('vision');
-        form.setFieldValue(['routes', index, 'bounds', 'maxImages'], hasVision ? DEFAULT_VISION_IMAGES : 0);
+        form.setFieldValue(
+          ['routes', index, 'bounds', 'maxImages'],
+          hasVision ? DEFAULT_VISION_IMAGES : 0,
+        );
       }
     });
   }
 
   const firstUpstream = Form.useWatch(['routes', 0, 'upstreamId'], form);
-  const firstModelName = Form.useWatch(['routes', 0, 'upstreamModelId'], form) as string | undefined;
+  const firstModelName = Form.useWatch(['routes', 0, 'upstreamModelId'], form) as
+    string | undefined;
   const vendorWatch = Form.useWatch('vendorName', form) as string | undefined;
   const keyWatch = Form.useWatch('modelKey', form) as string | undefined;
   const devMatch = useModelsDevMatch(firstModelName, vendorWatch);
@@ -969,7 +978,9 @@ function ModelWizard({
     routes.forEach((route, index) => {
       if (route.boundsMode !== 'form') return;
       if (mode === 'auto' && route.origin) return;
-      set(['routes', index, 'bounds', 'contextTokens'], match.contextTokens, [DEFAULT_CONTEXT_TOKENS]);
+      set(['routes', index, 'bounds', 'contextTokens'], match.contextTokens, [
+        DEFAULT_CONTEXT_TOKENS,
+      ]);
       set(
         ['routes', index, 'bounds', 'maxOutputTokens'],
         match.maxOutputTokens == null ? null : Math.min(PLATFORM_MAX_OUTPUT, match.maxOutputTokens),
@@ -1048,7 +1059,10 @@ function ModelWizard({
         }}
         onValuesChange={onValuesChange}
       >
-        <FormSection title="① 上游线路" desc="按顺序切换：第一条不通就用第二条；每条线路都要有计费上限才能用" />
+        <FormSection
+          title="① 上游线路"
+          desc="按顺序切换：第一条不通就用第二条；每条线路都要有计费上限才能用"
+        />
         <Form.List name="routes">
           {(fields, { add, remove, move }) => (
             <div className="route-list">
@@ -1105,7 +1119,7 @@ function ModelWizard({
                       <AutoComplete
                         allowClear
                         placeholder="这个账号那边的模型名，例 gemini-3.8-flash"
-                        options={(index === 0 ? upstreamModels.items ?? [] : []).map((id) => ({
+                        options={(index === 0 ? (upstreamModels.items ?? []) : []).map((id) => ({
                           value: id,
                           label: id,
                         }))}
@@ -1117,11 +1131,17 @@ function ModelWizard({
                           index === 0 && upstreamModels.error ? upstreamModels.error : null
                         }
                         filterOption={(input, option) =>
-                          String(option?.value ?? '').toLowerCase().includes(input.toLowerCase())
+                          String(option?.value ?? '')
+                            .toLowerCase()
+                            .includes(input.toLowerCase())
                         }
                       />
                     </Form.Item>
-                    <Form.Item name={[field.name, 'weight']} label="权重" style={{ marginBottom: 8 }}>
+                    <Form.Item
+                      name={[field.name, 'weight']}
+                      label="权重"
+                      style={{ marginBottom: 8 }}
+                    >
                       <InputNumber min={1} max={1000} precision={0} style={{ width: '100%' }} />
                     </Form.Item>
                     <Form.Item
@@ -1141,7 +1161,8 @@ function ModelWizard({
                 block
                 onClick={() => {
                   const routes = (form.getFieldValue('routes') as RouteDraft[] | undefined) ?? [];
-                  const capabilities = (form.getFieldValue('capabilities') as string[] | undefined) ?? [];
+                  const capabilities =
+                    (form.getFieldValue('capabilities') as string[] | undefined) ?? [];
                   add(
                     routeDraftOf(
                       {
@@ -1199,7 +1220,11 @@ function ModelWizard({
         <Form.Item name="modelKey" hidden>
           <Input />
         </Form.Item>
-        <Form.Item name="capabilities" label="能力" extra={<FieldHelp>决定用户端哪些功能可以选它。</FieldHelp>}>
+        <Form.Item
+          name="capabilities"
+          label="能力"
+          extra={<FieldHelp>决定用户端哪些功能可以选它。</FieldHelp>}
+        >
           <Checkbox.Group
             options={Object.entries(CAPABILITY_LABELS).map(([value, label]) => ({ value, label }))}
           />
@@ -1209,7 +1234,8 @@ function ModelWizard({
           label="可用于哪些场景"
           extra={
             <FieldHelp>
-              用户在「模型配置」里每个场景只能选勾选了它的模型。文字模型一般勾文本聊天、语音通话、私密模式；语音、图片模型勾对应场景。用户发的图片随「文本聊天」（私密模式下随「私密模式」）的模型发送，所以这两类模型要勾「能力 › 识图」。平台默认已改为页面顶部的「场景推荐模型 / 平台内部模型」。
+              用户在「模型配置」里每个场景只能选勾选了它的模型。文字模型一般勾文本聊天、语音通话、私密模式；语音、图片模型勾对应场景。用户发的图片随「文本聊天」（私密模式下随「私密模式」）的模型发送，所以这两类模型要勾「能力
+              › 识图」。平台默认已改为页面顶部的「场景推荐模型 / 平台内部模型」。
             </FieldHelp>
           }
         >
@@ -1233,7 +1259,9 @@ function ModelWizard({
                 },
               },
             ]}
-            extra={<FieldHelp>用逗号分隔，用户端展示用；最多 10 个，每个不超过 16 个字。</FieldHelp>}
+            extra={
+              <FieldHelp>用逗号分隔，用户端展示用；最多 10 个，每个不超过 16 个字。</FieldHelp>
+            }
           >
             <Input placeholder="例：便宜，快" />
           </Form.Item>
@@ -1248,7 +1276,8 @@ function ModelWizard({
             rules={[{ max: 120, message: '最多 120 个字符' }]}
             extra={
               <FieldHelp>
-                榜单上这个模型叫什么（例 claude-opus-4-8），自动获取榜单时按它匹配名次（不区分大小写）。
+                榜单上这个模型叫什么（例
+                claude-opus-4-8），自动获取榜单时按它匹配名次（不区分大小写）。
                 {model?.arenaModelName
                   ? model.arenaRank != null
                     ? ` 当前匹配到原榜第 ${model.arenaRank} 名。`
@@ -1264,24 +1293,61 @@ function ModelWizard({
             label="手填榜单名次（可不填）"
             extra={
               <FieldHelp>
-                自动获取的榜单匹配不到时才用它（原榜名次）。用户端只显示相对顺序 1、2、3…，不显示原始名次；都没有 = 不上榜。
+                自动获取的榜单匹配不到时才用它（原榜名次）。用户端只显示相对顺序
+                1、2、3…，不显示原始名次；都没有 = 不上榜。
               </FieldHelp>
             }
           >
-            <InputNumber min={1} max={9999} precision={0} style={{ width: '100%' }} placeholder="不上榜" />
+            <InputNumber
+              min={1}
+              max={9999}
+              precision={0}
+              style={{ width: '100%' }}
+              placeholder="不上榜"
+            />
           </Form.Item>
         </div>
 
         <FormSection title="③ 价格" desc="每百万 token 的人民币价格，1 元 = 100 积分" />
         <div className="form-three">
-          <Form.Item name="priceInput" label="输入（元）" extra={<FieldHelp>没命中缓存时，每百万 token 收多少。</FieldHelp>}>
-            <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} placeholder="0" />
+          <Form.Item
+            name="priceInput"
+            label="输入（元）"
+            extra={<FieldHelp>没命中缓存时，每百万 token 收多少。</FieldHelp>}
+          >
+            <InputNumber
+              min={0}
+              max={100_000}
+              step={0.01}
+              style={{ width: '100%' }}
+              placeholder="0"
+            />
           </Form.Item>
-          <Form.Item name="priceOutput" label="输出（元）" extra={<FieldHelp>模型写出来的内容，每百万 token 收多少。</FieldHelp>}>
-            <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} placeholder="0" />
+          <Form.Item
+            name="priceOutput"
+            label="输出（元）"
+            extra={<FieldHelp>模型写出来的内容，每百万 token 收多少。</FieldHelp>}
+          >
+            <InputNumber
+              min={0}
+              max={100_000}
+              step={0.01}
+              style={{ width: '100%' }}
+              placeholder="0"
+            />
           </Form.Item>
-          <Form.Item name="priceCache" label="缓存命中（元）" extra={<FieldHelp>命中缓存时便宜很多，一般填输入价的 1/10。</FieldHelp>}>
-            <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} placeholder="0" />
+          <Form.Item
+            name="priceCache"
+            label="缓存命中（元）"
+            extra={<FieldHelp>命中缓存时便宜很多，一般填输入价的 1/10。</FieldHelp>}
+          >
+            <InputNumber
+              min={0}
+              max={100_000}
+              step={0.01}
+              style={{ width: '100%' }}
+              placeholder="0"
+            />
           </Form.Item>
         </div>
         <div className="form-two">
@@ -1290,18 +1356,35 @@ function ModelWizard({
             label="缓存写入 · 5 分钟（元，可不填）"
             extra={
               <FieldHelp>
-                上游报告「缓存写入」时按它收（Claude 一般是输入价的 1.25 倍）；不填 = 按输入价。只有 Anthropic 协议的线路会报告缓存写入。
+                上游报告「缓存写入」时按它收（Claude 一般是输入价的 1.25 倍）；不填 = 按输入价。只有
+                Anthropic 协议的线路会报告缓存写入。
               </FieldHelp>
             }
           >
-            <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} placeholder="同输入价" />
+            <InputNumber
+              min={0}
+              max={100_000}
+              step={0.01}
+              style={{ width: '100%' }}
+              placeholder="同输入价"
+            />
           </Form.Item>
           <Form.Item
             name="priceCacheWrite1h"
             label="缓存写入 · 1 小时（元，可不填）"
-            extra={<FieldHelp>1 小时缓存的写入价（Claude 一般是输入价的 2 倍）；不填 = 按输入价。</FieldHelp>}
+            extra={
+              <FieldHelp>
+                1 小时缓存的写入价（Claude 一般是输入价的 2 倍）；不填 = 按输入价。
+              </FieldHelp>
+            }
           >
-            <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} placeholder="同输入价" />
+            <InputNumber
+              min={0}
+              max={100_000}
+              step={0.01}
+              style={{ width: '100%' }}
+              placeholder="同输入价"
+            />
           </Form.Item>
         </div>
         <Form.Item
@@ -1310,11 +1393,21 @@ function ModelWizard({
           extra={
             <FieldHelp>
               用户看到的「×倍率」，只展示、不参与扣费。不填 = 按基准模型自动算
-              {model?.displayMultiplier != null ? `（当前 ×${model.displayMultiplier.toFixed(2)}）` : ''}。
+              {model?.displayMultiplier != null
+                ? `（当前 ×${model.displayMultiplier.toFixed(2)}）`
+                : ''}
+              。
             </FieldHelp>
           }
         >
-          <InputNumber min={0} max={1000} step={0.01} precision={2} style={{ width: 160 }} placeholder="自动" />
+          <InputNumber
+            min={0}
+            max={1000}
+            step={0.01}
+            precision={2}
+            style={{ width: 160 }}
+            placeholder="自动"
+          />
         </Form.Item>
         <FormSection
           title="④ 限时折扣（可不设）"
@@ -1329,7 +1422,13 @@ function ModelWizard({
             label="折扣"
             extra={<FieldHelp>0.5 = 5 折，可填 0.01～0.99。</FieldHelp>}
           >
-            <InputNumber min={0.01} max={0.99} step={0.05} precision={2} style={{ width: '100%' }} />
+            <InputNumber
+              min={0.01}
+              max={0.99}
+              step={0.05}
+              precision={2}
+              style={{ width: '100%' }}
+            />
           </Form.Item>
           <Form.Item name="discountRange" label="起止时间">
             <DatePicker.RangePicker
@@ -1365,10 +1464,22 @@ function ModelWizard({
                     <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} />
                   </Form.Item>
                   <Form.Item name="costCacheWrite5m" label="成本 · 缓存写入 5 分钟">
-                    <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} placeholder="同售价" />
+                    <InputNumber
+                      min={0}
+                      max={100_000}
+                      step={0.01}
+                      style={{ width: '100%' }}
+                      placeholder="同售价"
+                    />
                   </Form.Item>
                   <Form.Item name="costCacheWrite1h" label="成本 · 缓存写入 1 小时">
-                    <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} placeholder="同售价" />
+                    <InputNumber
+                      min={0}
+                      max={100_000}
+                      step={0.01}
+                      style={{ width: '100%' }}
+                      placeholder="同售价"
+                    />
                   </Form.Item>
                 </div>
               ),
@@ -1466,10 +1577,13 @@ function RouteBoundsEditor({
   name: number;
   index: number;
 }) {
-  const mode = (Form.useWatch(['routes', name, 'boundsMode'], form) as RouteDraft['boundsMode'] | undefined) ?? 'form';
+  const mode =
+    (Form.useWatch(['routes', name, 'boundsMode'], form) as RouteDraft['boundsMode'] | undefined) ??
+    'form';
   const bounds = Form.useWatch(['routes', name, 'bounds'], form) as BoundsFormValues | undefined;
   const origin = (form.getFieldValue(['routes', name]) as RouteDraft | undefined)?.origin ?? null;
-  const preview = mode === 'form' && bounds ? JSON.stringify(formToBounds(bounds, origin), null, 2) : '';
+  const preview =
+    mode === 'form' && bounds ? JSON.stringify(formToBounds(bounds, origin), null, 2) : '';
   const [openKeys, setOpenKeys] = useState<string[]>(mode === 'json' ? ['json'] : []);
 
   function switchMode(json: boolean) {
@@ -1545,7 +1659,9 @@ function RouteBoundsEditor({
               <>
                 <Space style={{ marginBottom: 8 }}>
                   <Switch size="small" checked={mode === 'json'} onChange={switchMode} />
-                  <span>{mode === 'json' ? '正在使用 JSON（关掉回到表单）' : '改用 JSON 填写'}</span>
+                  <span>
+                    {mode === 'json' ? '正在使用 JSON（关掉回到表单）' : '改用 JSON 填写'}
+                  </span>
                 </Space>
                 {mode === 'json' ? (
                   <Form.Item
@@ -1556,7 +1672,11 @@ function RouteBoundsEditor({
                       </FieldHelp>
                     }
                   >
-                    <Input.TextArea rows={10} className="mono" placeholder='{"format":"billing-bounds-v1", …}' />
+                    <Input.TextArea
+                      rows={10}
+                      className="mono"
+                      placeholder='{"format":"billing-bounds-v1", …}'
+                    />
                   </Form.Item>
                 ) : (
                   <>

@@ -111,7 +111,11 @@ export function RecordDrawer({
           clearDraft(k);
           return;
         }
-        if (reason === 'close' && savedOk && state.fingerprint === draftFingerprint(currentValue())) {
+        if (
+          reason === 'close' &&
+          savedOk &&
+          state.fingerprint === draftFingerprint(currentValue())
+        ) {
           clearDraft(k);
           return;
         }
@@ -261,7 +265,11 @@ export function DrawerActions({
       <Space size={8} className="drawer-actions-left">
         {extra}
         {error && (
-          <span className="drawer-actions-error" role="alert" title={typeof error === 'string' ? error : undefined}>
+          <span
+            className="drawer-actions-error"
+            role="alert"
+            title={typeof error === 'string' ? error : undefined}
+          >
             {error}
           </span>
         )}

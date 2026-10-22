@@ -3,7 +3,18 @@
  * 决策层出错会自动退回纯规则，用户无感。
  */
 import { useEffect, useState } from 'react';
-import { Alert, Button, DatePicker, Form, Input, InputNumber, Radio, Select, Space, Tabs } from 'antd';
+import {
+  Alert,
+  Button,
+  DatePicker,
+  Form,
+  Input,
+  InputNumber,
+  Radio,
+  Select,
+  Space,
+  Tabs,
+} from 'antd';
 import type { Dayjs } from 'dayjs';
 import type { z } from 'zod';
 import {
@@ -15,13 +26,7 @@ import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
-import {
-  FieldHelp,
-  FormSection,
-  Page,
-  StatusTag,
-  useToast,
-} from '../ui/page.js';
+import { FieldHelp, FormSection, Page, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime, formatPercent } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 
@@ -137,7 +142,11 @@ function PlannerConfig() {
       title: '操作',
       width: 90,
       render: (_, entry) => (
-        <Button type="link" size="small" onClick={() => setEditing(entry.decisionType as DecisionType)}>
+        <Button
+          type="link"
+          size="small"
+          onClick={() => setEditing(entry.decisionType as DecisionType)}
+        >
           设置
         </Button>
       ),
@@ -185,10 +194,12 @@ function PlannerConfig() {
         <PlannerDrawer
           type={editing}
           entry={entryOf(editing)}
-          models={(models.data?.items ?? []).filter((m) => !m.deletedAt).map((m) => ({
-            value: m.modelKey,
-            label: `${m.displayName}（${m.modelKey}）`,
-          }))}
+          models={(models.data?.items ?? [])
+            .filter((m) => !m.deletedAt)
+            .map((m) => ({
+              value: m.modelKey,
+              label: `${m.displayName}（${m.modelKey}）`,
+            }))}
           onClose={() => setEditing(null)}
           onSaved={(label) => {
             setEditing(null);
@@ -281,7 +292,10 @@ function PlannerDrawer({
         }}
       >
         <FormSection title="实现方式" />
-        <Form.Item name="implementation" extra={<FieldHelp>接模型更自然，但每次判断都会产生费用。</FieldHelp>}>
+        <Form.Item
+          name="implementation"
+          extra={<FieldHelp>接模型更自然，但每次判断都会产生费用。</FieldHelp>}
+        >
           <Radio.Group>
             <Radio value="rules">纯规则</Radio>
             <Radio value="rules_model">规则 + 便宜模型</Radio>
@@ -303,7 +317,9 @@ function PlannerDrawer({
         <Form.Item
           name="confidenceThreshold"
           label="置信度门槛"
-          extra={<FieldHelp>模型给出的置信度低于这个值，就退回规则判断。范围 0.30～0.90。</FieldHelp>}
+          extra={
+            <FieldHelp>模型给出的置信度低于这个值，就退回规则判断。范围 0.30～0.90。</FieldHelp>
+          }
         >
           <InputNumber min={0.3} max={0.9} step={0.05} style={{ width: '100%' }} />
         </Form.Item>
@@ -313,7 +329,8 @@ function PlannerDrawer({
           rules={switching ? [{ required: true, message: '切换实现必须填写评测报告编号' }] : []}
           extra={
             <FieldHelp>
-              切换实现前必须先在评测里跑过这类决策。{switching ? '这次是切换实现，必填。' : '只改门槛可以不填。'}
+              切换实现前必须先在评测里跑过这类决策。
+              {switching ? '这次是切换实现，必填。' : '只改门槛可以不填。'}
             </FieldHelp>
           }
         >
@@ -507,7 +524,9 @@ function PlannerDecisions() {
             </div>
             <div>
               <span className="detail-label">退回原因</span>
-              <span>{detail.fallback ? (FALLBACK_NAMES[detail.fallback] ?? detail.fallback) : '—'}</span>
+              <span>
+                {detail.fallback ? (FALLBACK_NAMES[detail.fallback] ?? detail.fallback) : '—'}
+              </span>
             </div>
             <div>
               <span className="detail-label">耗时</span>

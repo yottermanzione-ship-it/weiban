@@ -11,6 +11,7 @@
  */
 
 import type { WebSearchResultItem } from '@weiban/contracts';
+import { SystemClock } from '../../../platform/index.js';
 import { jevDecide } from './jev-adapter.js';
 import { deepseekSearch, deepseekFetch, type SearchRequestGate } from './deepseek-tools.js';
 
@@ -86,7 +87,13 @@ export interface MediaAdapter {
   ): Promise<MediaAdapterResult<{ bytes: Uint8Array; mimeType: string }>>;
   search(
     t: MediaTarget,
-    input: { query: string; maxResults: number; needContent?: boolean; originalQuestion?: string },
+    input: {
+      query: string;
+      maxResults: number;
+      needContent?: boolean;
+      originalQuestion?: string;
+      deadlineAt?: string;
+    },
   ): Promise<MediaAdapterResult<{ hits: SearchHit[]; billable?: boolean }>>;
   fetchPage?(
     t: MediaTarget,
@@ -96,6 +103,7 @@ export interface MediaAdapter {
 
 const MAX_RESPONSE_BYTES = 12_000_000;
 const TIMEOUT_MS = 30_000;
+const adapterClock = new SystemClock();
 
 function classify(status: number, code: string): MediaFailure | null {
   if (status >= 200 && status < 300) return null;
@@ -352,15 +360,27 @@ export class OpenAiCompatibleMediaAdapter implements MediaAdapter {
 
   async search(
     t: MediaTarget,
-    input: { query: string; maxResults: number; needContent?: boolean; originalQuestion?: string },
+    input: {
+      query: string;
+      maxResults: number;
+      needContent?: boolean;
+      originalQuestion?: string;
+      deadlineAt?: string;
+    },
   ): Promise<MediaAdapterResult<{ hits: SearchHit[]; billable?: boolean }>> {
     if (t.kind === 'deepseek_search') return deepseekSearch(t, input, this.searchGate);
+    if (input.deadlineAt && Date.parse(input.deadlineAt) <= adapterClock.nowMs())
+      return { ok: false, category: 'bad_request', zeroCost: true };
     if (t.kind !== 'bocha_search') return { ok: false, category: 'bad_request', zeroCost: true };
     try {
       const response = await fetch(url(t.baseUrl, '/web-search'), {
         method: 'POST',
         redirect: 'manual',
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        signal: AbortSignal.timeout(
+          input.deadlineAt
+            ? Math.max(1, Math.min(TIMEOUT_MS, Date.parse(input.deadlineAt) - adapterClock.nowMs()))
+            : TIMEOUT_MS,
+        ),
         headers: { Authorization: `Bearer ${t.apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: input.query, count: input.maxResults, summary: true }),
       });

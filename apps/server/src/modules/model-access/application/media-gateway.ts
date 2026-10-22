@@ -317,6 +317,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
               maxResults: max,
               needContent: input.needContent,
               originalQuestion: input.originalQuestion,
+              ...(input.deadlineAt ? { deadlineAt: input.deadlineAt } : {}),
             });
             if (!found.ok)
               return { ...found, ...(found.zeroCost ? { actual: { searchCalls: 0 } } : {}) };
@@ -382,6 +383,56 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
    * 与其他调用相同的冻结 / 结算 / 用量记录。假上游（fake-）时确定性输出。真实 Jev 接口「待配置后验证」。
    */
   async decide(input: DecideInput): Promise<PortResult<DecideOutput, GenerateError>> {
+    return this.decision(input, false);
+  }
+
+  async decidePublicImage(input: {
+    userId: string;
+    idempotencyKey: string;
+    deadlineAt: string;
+    clueCount: number;
+    needsFacts: boolean;
+  }): Promise<PortResult<DecideOutput, GenerateError>> {
+    if (
+      !Number.isInteger(input.clueCount) ||
+      input.clueCount < 1 ||
+      input.clueCount > 4 ||
+      typeof input.needsFacts !== 'boolean'
+    )
+      return { ok: false, error: 'bad_request' };
+    const model = await this.catalog.internalModel('planner');
+    if (!model) return { ok: false, error: 'not_configured' };
+    return this.decision(
+      {
+        userId: input.userId,
+        purpose: 'behavior_planning',
+        billingOwner: 'platform',
+        modelKey: model.modelKey,
+        idempotencyKey: input.idempotencyKey,
+        deadlineAt: input.deadlineAt,
+        state: { approvedPublicWorkCount: input.clueCount, needsExternalFacts: input.needsFacts },
+        questions: [
+          {
+            questionId: 'public_clues',
+            kind: 'yes_no',
+            prompt: '已通过本地规则核实有公开作品标题。是否足以按标题查询公开作品资料？',
+          },
+          {
+            questionId: 'external_facts',
+            kind: 'yes_no',
+            prompt:
+              'needsExternalFacts 表示当前问题需要作品资料之外的新事实。是否需要查询？false 时回答 no。',
+          },
+        ],
+      },
+      true,
+    );
+  }
+
+  private async decision(
+    input: DecideInput,
+    publicImage: boolean,
+  ): Promise<PortResult<DecideOutput, GenerateError>> {
     if (
       input.purpose !== 'behavior_planning' ||
       !input.modelKey ||
@@ -394,7 +445,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       ? Math.min(10000, Date.parse(input.deadlineAt) - this.clock.nowMs())
       : 10000;
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return { ok: false, error: 'bad_request' };
-    return this.cached('decide', input, async () => {
+    return this.cached(publicImage ? 'public-image-decision' : 'decide', input, async () => {
       const facts = await this.catalog.fact(input.modelKey);
       const reason = unavailableReason(facts.entry, facts.upstreamStatus);
       if (!facts.entry || reason === 'model_removed')
@@ -576,7 +627,11 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
   // ---------- 内部：计费流程（RealtimeAsr 也会调用） ----------
 
   /** 账号、ID、用途合法性（与 generateText 相同口径）。 */
-  async precheck(base: MediaCallBase, platformSearch = false): Promise<boolean> {
+  async precheck(
+    base: MediaCallBase,
+    platformSearch = false,
+    publicImage = false,
+  ): Promise<boolean> {
     const candidate = platformSearch && base.purpose === 'search_candidates';
     if (
       !Id.safeParse(base.userId).success ||
@@ -585,19 +640,23 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       typeof base.idempotencyKey !== 'string' ||
       !base.idempotencyKey ||
       base.idempotencyKey.length > 200 ||
-      (base.billingOwner === 'platform' && !base.purpose.startsWith('admin_') && !candidate)
+      (base.billingOwner === 'platform' &&
+        !base.purpose.startsWith('admin_') &&
+        !candidate &&
+        !publicImage)
     )
       return false;
     if ((await this.accounts.getAccountStatus(base.userId)) !== 'active') return false;
     // 3.22（批 E2 遗留）：封禁账号不产生用户付费调用（生态发语音 / 发照片等后台任务跳过、不扣积分）。
     if (
-      (base.billingOwner === 'user' || candidate) &&
+      (base.billingOwner === 'user' || candidate || publicImage) &&
       (await this.accounts.isBanned?.(base.userId))
     )
       return false;
     if (
       base.billingOwner === 'platform' &&
       !candidate &&
+      !publicImage &&
       !(await this.directory.listAdminUserIds()).includes(base.userId)
     )
       return false;
@@ -1037,7 +1096,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     input: MediaCallBase,
     fn: () => Promise<PortResult<T, GenerateError>>,
   ): Promise<PortResult<T, GenerateError>> {
-    if (!(await this.precheck(input, kind === 'search')))
+    if (!(await this.precheck(input, kind === 'search', kind === 'public-image-decision')))
       return { ok: false, error: 'bad_request' };
     const pseudo = {
       ...input,
@@ -1047,6 +1106,9 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     if (claim.row.requestHash !== requestHash(pseudo)) return { ok: false, error: 'bad_request' };
     if (!claim.created) {
       for (let i = 0; i < 900; i++) {
+        const deadlineAt = (input as MediaCallBase & { deadlineAt?: string }).deadlineAt;
+        if (deadlineAt && Date.parse(deadlineAt) <= this.clock.nowMs())
+          return { ok: false, error: 'provider_unavailable' };
         const row = await this.cache.get(claim.row.id);
         if (!row) break;
         if (row.phase === 'result')

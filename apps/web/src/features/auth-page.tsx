@@ -140,7 +140,8 @@ export function AuthPage() {
         </p>
         <button type="button" className="wx-auth-link" onClick={showComingSoon}>
           用手机号登录
-        </button>        {error && (
+        </button>{' '}
+        {error && (
           <p role="alert" className="wx-auth-error">
             {error}
           </p>

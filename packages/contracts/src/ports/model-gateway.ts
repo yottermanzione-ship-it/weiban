@@ -308,6 +308,8 @@ export interface GenerateImageInput extends MediaCallBase {
 
 /** 联网搜索（按 search_call 计价）。 */
 export interface GatewayWebSearchInput extends MediaCallBase {
+  /** P3：图片当轮检索的绝对截止时间；过期后不得再发送供应商请求。 */
+  deadlineAt?: string;
   query: string;
   maxResults: number;
   needContent?: boolean;
@@ -400,6 +402,14 @@ export interface ModelGatewayMediaPort {
   ): Promise<PortResult<StreamingTtsResult, GenerateError>>;
   /** 行为规划决策（CR-18）。 */
   decide(input: DecideInput): Promise<PortResult<DecideOutput, GenerateError>>;
+  /** P3：可信服务器能力。只允许计数 / 布尔值，绝不接收图、OCR、描述或聊天原文；平台承担决策费用。 */
+  decidePublicImage?(input: {
+    userId: string;
+    idempotencyKey: string;
+    deadlineAt: string;
+    clueCount: number;
+    needsFacts: boolean;
+  }): Promise<PortResult<DecideOutput, GenerateError>>;
   /** 某项平台服务是否已开通（入口显隐）。 */
   isServiceEnabled(
     service:

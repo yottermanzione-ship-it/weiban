@@ -125,7 +125,9 @@ export function OverviewTab({ onGo }: { onGo: (tab: 'upstreams' | 'models' | 're
             <div className="mini-stat">
               <span>毛利</span>
               <strong>{formatYuan(profit)}</strong>
-              <em>上期 {formatYuan((previous?.chargedMicros ?? 0) - (previous?.costMicros ?? 0))}</em>
+              <em>
+                上期 {formatYuan((previous?.chargedMicros ?? 0) - (previous?.costMicros ?? 0))}
+              </em>
             </div>
             <div className="mini-stat">
               <span>失败率</span>
@@ -135,7 +137,8 @@ export function OverviewTab({ onGo }: { onGo: (tab: 'upstreams' | 'models' | 're
             <div className="mini-stat">
               <span>线路</span>
               <strong>
-                {data?.overview?.accounts.available ?? 0} / {data?.overview?.accounts.total ?? 0} 正常
+                {data?.overview?.accounts.available ?? 0} / {data?.overview?.accounts.total ?? 0}{' '}
+                正常
               </strong>
               <em>异常 {data?.overview?.accounts.abnormal ?? 0}</em>
             </div>

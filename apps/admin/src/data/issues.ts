@@ -53,10 +53,16 @@ const FIELD_INFO: Record<string, FieldInfo> = {
   input: { label: '输入价' },
   output: { label: '输出价' },
   cache: { label: '缓存命中价' },
-  displayMultiplierManual: { label: '展示倍率', hint: '填 0 到 1000 的数字，最多 2 位小数；不填 = 自动' },
+  displayMultiplierManual: {
+    label: '展示倍率',
+    hint: '填 0 到 1000 的数字，最多 2 位小数；不填 = 自动',
+  },
   billingBounds: { label: '计费上限', group: true },
   billingBoundsDraft: { label: '计费上限 JSON' },
-  sourceUrl: { label: '资料来源链接', hint: '需要是以 https:// 开头的完整网址，例 https://ai.google.dev/gemini-api/docs/pricing' },
+  sourceUrl: {
+    label: '资料来源链接',
+    hint: '需要是以 https:// 开头的完整网址，例 https://ai.google.dev/gemini-api/docs/pricing',
+  },
   checkedAt: { label: '核对日期', hint: '选一个不晚于今天的日期' },
   contextTokens: { label: '上下文长度', hint: '填 1 到 10000000 的整数（token），不确定填 128000' },
   maxOutputTokens: { label: '最大输出', hint: '填 1 到 32000 的整数（token），不确定填 8192' },
@@ -210,7 +216,8 @@ export function issueReason(issue: FieldIssue): string {
     case 'too_small': {
       const min = num(d.minimum) ?? 0;
       if (origin === 'string') return min <= 1 ? '不能为空' : `至少 ${min} 个字`;
-      if (origin === 'array' || origin === 'set') return min <= 1 ? '至少要有 1 项' : `至少要有 ${min} 项`;
+      if (origin === 'array' || origin === 'set')
+        return min <= 1 ? '至少要有 1 项' : `至少要有 ${min} 项`;
       return d.inclusive === false ? `必须大于 ${min}` : `不能小于 ${min}`;
     }
     case 'too_big': {
@@ -262,7 +269,9 @@ export function issueFieldText(issue: FieldIssue): string {
     issue.code === 'invalid_union';
   if (hint && formatLike) return hint;
   const reason = issueReason(issue);
-  return hint && (issue.code === 'too_small' || issue.code === 'too_big') ? `${reason}；${hint}` : reason;
+  return hint && (issue.code === 'too_small' || issue.code === 'too_big')
+    ? `${reason}；${hint}`
+    : reason;
 }
 
 /** 完整一句话：「模型键：格式应为 …」 */
@@ -282,5 +291,7 @@ export function describeIssues(issues: FieldIssue[]): string {
   }
   const first = unique.values().next().value;
   if (!first) return '请检查填写内容';
-  return unique.size > 1 ? `${describeIssue(first)}（共 ${unique.size} 处要改）` : describeIssue(first);
+  return unique.size > 1
+    ? `${describeIssue(first)}（共 ${unique.size} 处要改）`
+    : describeIssue(first);
 }

@@ -118,7 +118,9 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
       }
     >
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} />}
-      {remote.error && <Alert type="error" showIcon message={remote.error} style={{ marginBottom: 12 }} />}
+      {remote.error && (
+        <Alert type="error" showIcon message={remote.error} style={{ marginBottom: 12 }} />
+      )}
       <Form<SourceValues>
         form={form}
         layout="vertical"
@@ -135,7 +137,9 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
         </Form.Item>
         <Form.Item
           label="参考日期"
-          extra={<FieldHelp>没有自动获取 / 导入的榜单时显示这个日期；有了就显示榜单更新日期。</FieldHelp>}
+          extra={
+            <FieldHelp>没有自动获取 / 导入的榜单时显示这个日期；有了就显示榜单更新日期。</FieldHelp>
+          }
         >
           <Form.Item name="asOf" noStyle>
             <DatePicker style={{ width: '100%' }} placeholder="选择日期" />
@@ -148,7 +152,9 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
             { required: true, message: '填写链接' },
             { type: 'url', message: '要以 https:// 开头' },
           ]}
-          extra={<FieldHelp>只支持 Arena 官方 https 链接；服务器每天 4:20 自动抓取一次。</FieldHelp>}
+          extra={
+            <FieldHelp>只支持 Arena 官方 https 链接；服务器每天 4:20 自动抓取一次。</FieldHelp>
+          }
         >
           <Input />
         </Form.Item>
@@ -177,7 +183,8 @@ function SnapshotStatus({ status }: { status: LeaderboardSnapshotStatus }) {
         {status.snapshot ? (
           <span>
             当前榜单更新于 {fmt(status.snapshot.fetchedAt)}（
-            {status.snapshot.method === 'fetch' ? '服务器抓取' : '粘贴导入'}，{status.snapshot.entries} 条）
+            {status.snapshot.method === 'fetch' ? '服务器抓取' : '粘贴导入'}，
+            {status.snapshot.entries} 条）
           </span>
         ) : (
           <span>还没有榜单数据（用户端按手填名次显示）</span>
@@ -189,7 +196,9 @@ function SnapshotStatus({ status }: { status: LeaderboardSnapshotStatus }) {
           showIcon
           style={{ margin: '8px 0' }}
           message={`最近一次获取失败${status.lastAttemptAt ? `（${fmt(status.lastAttemptAt)}）` : ''}：${status.lastError}`}
-          description={status.snapshot ? '用户端继续用上次的榜单。' : '可以点「粘贴导入」手动导入。'}
+          description={
+            status.snapshot ? '用户端继续用上次的榜单。' : '可以点「粘贴导入」手动导入。'
+          }
         />
       )}
       <Collapse
@@ -209,7 +218,9 @@ function SnapshotStatus({ status }: { status: LeaderboardSnapshotStatus }) {
                 {status.unmatched.map((m) => (
                   <Tag key={m.modelKey}>
                     {m.displayName}
-                    {m.arenaModelName ? `（榜单里没有「${m.arenaModelName}」）` : '（没填榜单对应名称）'}
+                    {m.arenaModelName
+                      ? `（榜单里没有「${m.arenaModelName}」）`
+                      : '（没填榜单对应名称）'}
                   </Tag>
                 ))}
                 <div className="field-help" style={{ marginTop: 6 }}>
@@ -258,7 +269,15 @@ function PasteDrawer({
       title="粘贴导入榜单"
       subtitle="服务器抓不到榜单网站时用它：导入后立即按「榜单对应名称」匹配名次"
       width={620}
-      footer={<DrawerActions onCancel={onClose} onSubmit={() => void submit()} saving={saving} submitText="导入" error={error} />}
+      footer={
+        <DrawerActions
+          onCancel={onClose}
+          onSubmit={() => void submit()}
+          saving={saving}
+          submitText="导入"
+          error={error}
+        />
+      }
     >
       <Alert
         type="info"
@@ -278,7 +297,9 @@ function PasteDrawer({
         >
           <Button icon={<UploadOutlined />}>选择 CSV 文件</Button>
         </Upload>
-        <span className="field-help">{text ? `已填入 ${text.length.toLocaleString('en-US')} 个字符` : ''}</span>
+        <span className="field-help">
+          {text ? `已填入 ${text.length.toLocaleString('en-US')} 个字符` : ''}
+        </span>
       </Space>
       <Input.TextArea
         rows={16}

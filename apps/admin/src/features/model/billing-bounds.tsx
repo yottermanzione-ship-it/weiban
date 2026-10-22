@@ -26,7 +26,12 @@ export const DEFAULT_VISION_IMAGES = 4;
 /** 只有文字部分（普通聊天模型）的计费上限可以用表单编辑；语音 / 图片 / 搜索等走高级 JSON。 */
 export function isTextOnlyBounds(bounds: RouteBillingBounds | null | undefined): boolean {
   return Boolean(
-    bounds?.text && !bounds.tts && !bounds.asr && !bounds.image && !bounds.search && !bounds.decision,
+    bounds?.text &&
+    !bounds.tts &&
+    !bounds.asr &&
+    !bounds.image &&
+    !bounds.search &&
+    !bounds.decision,
   );
 }
 
@@ -83,7 +88,9 @@ const intRule = (min: number, max: number, label: string) => ({
   validator: (_: unknown, value: unknown) => {
     if (value == null || value === '') return Promise.reject(new Error(`填写${label}`));
     if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max)
-      return Promise.reject(new Error(`${label}要填 ${min} 到 ${max.toLocaleString('en-US')} 的整数`));
+      return Promise.reject(
+        new Error(`${label}要填 ${min} 到 ${max.toLocaleString('en-US')} 的整数`),
+      );
     return Promise.resolve();
   },
 });
@@ -103,7 +110,13 @@ export function BoundsFields({ name, paused = false }: { name: number; paused?: 
             </FieldHelp>
           }
         >
-          <InputNumber min={1} max={10_000_000} precision={0} step={1000} style={{ width: '100%' }} />
+          <InputNumber
+            min={1}
+            max={10_000_000}
+            precision={0}
+            step={1000}
+            style={{ width: '100%' }}
+          />
         </Form.Item>
         <Form.Item
           name={[name, 'bounds', 'maxOutputTokens']}
@@ -111,8 +124,8 @@ export function BoundsFields({ name, paused = false }: { name: number; paused?: 
           rules={[intRule(1, 32_000, '最大输出')]}
           extra={
             <FieldHelp>
-              模型一次最多写多少 token（含思考过程），系统按它预扣积分；最多 32000，不确定填 8192。小于 600
-              时一条聊天回复都不够，模型会显示「暂时无法使用」。
+              模型一次最多写多少 token（含思考过程），系统按它预扣积分；最多 32000，不确定填
+              8192。小于 600 时一条聊天回复都不够，模型会显示「暂时无法使用」。
             </FieldHelp>
           }
         >
@@ -124,8 +137,9 @@ export function BoundsFields({ name, paused = false }: { name: number; paused?: 
           rules={[{ required: true, message: '选择输出参数名' }]}
           extra={
             <FieldHelp>
-              告诉模型「最多写多少」用的参数名。大多数接口用 max_tokens；OpenAI 的新模型（o 系列、GPT-5
-              以后）用 max_completion_tokens。Anthropic 协议的线路忽略这一项（固定用 max_tokens）。
+              告诉模型「最多写多少」用的参数名。大多数接口用 max_tokens；OpenAI 的新模型（o
+              系列、GPT-5 以后）用 max_completion_tokens。Anthropic 协议的线路忽略这一项（固定用
+              max_tokens）。
             </FieldHelp>
           }
         >

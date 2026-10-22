@@ -90,7 +90,9 @@ export function SupplementPage() {
       <NavBar
         title="我的补充设定"
         subtitle={
-          profile.data?.name ? <small className="nav-subtitle">{profile.data.name}</small> : undefined
+          profile.data?.name ? (
+            <small className="nav-subtitle">{profile.data.name}</small>
+          ) : undefined
         }
         fallback={`/characters/${characterId}`}
         onBack={() => navigate(-1)}

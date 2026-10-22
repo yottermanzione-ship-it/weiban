@@ -1,6 +1,6 @@
 // 仅生成事实台账；不推断产品已完成，不访问数据库或应用API。
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { dirname, resolve, relative } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 const here = dirname(fileURLToPath(import.meta.url)),

@@ -847,45 +847,45 @@ export function LettersPage() {
       {items.length > 0 && (
         <div className="panel">
           {items.map((l) => {
-          const inTransit = l.status === 'in_transit';
-          const unreadLetter = l.direction === 'from_character' && !inTransit && !l.readAt;
-          return (
-            <button
-              key={l.letterId}
-              className="play-letter-row"
-              onClick={() =>
-                box === 'drafts'
-                  ? navigate(`/play/letters/new?characterId=${l.characterId}`)
-                  : !inTransit && navigate(`/play/letters/${l.letterId}`)
-              }
-            >
-              {unreadLetter ? (
-                <EnvelopeSimple size={32} weight="fill" aria-hidden="true" />
-              ) : (
-                <EnvelopeSimpleOpen size={32} aria-hidden="true" />
-              )}
-              <span className="overview-name">
-                <strong>
-                  {nameOf(l.characterId)}
-                  {unreadLetter && <span className="red-dot" aria-label="未读" />}
-                </strong>
-                {inTransit ? (
-                  <small className="hint">
-                    信件在路上
-                    {l.expectedDeliveryDate === todayLocal() ? ' · 预计今天送到' : ''}
-                  </small>
+            const inTransit = l.status === 'in_transit';
+            const unreadLetter = l.direction === 'from_character' && !inTransit && !l.readAt;
+            return (
+              <button
+                key={l.letterId}
+                className="play-letter-row"
+                onClick={() =>
+                  box === 'drafts'
+                    ? navigate(`/play/letters/new?characterId=${l.characterId}`)
+                    : !inTransit && navigate(`/play/letters/${l.letterId}`)
+                }
+              >
+                {unreadLetter ? (
+                  <EnvelopeSimple size={32} weight="fill" aria-hidden="true" />
                 ) : (
-                  <small className="hint">「{firstLine(l.body)}」</small>
+                  <EnvelopeSimpleOpen size={32} aria-hidden="true" />
                 )}
-                <small className="hint">
-                  {box === 'received' && l.deliveredAt && `${dateText(l.deliveredAt)} 送达`}
-                  {box === 'sent' && l.sentAt && `${dateText(l.sentAt)} 寄出`}
-                  {box === 'drafts' && `${dateText(l.updatedAt)} 保存`}
-                </small>
-              </span>
-            </button>
-          );
-        })}
+                <span className="overview-name">
+                  <strong>
+                    {nameOf(l.characterId)}
+                    {unreadLetter && <span className="red-dot" aria-label="未读" />}
+                  </strong>
+                  {inTransit ? (
+                    <small className="hint">
+                      信件在路上
+                      {l.expectedDeliveryDate === todayLocal() ? ' · 预计今天送到' : ''}
+                    </small>
+                  ) : (
+                    <small className="hint">「{firstLine(l.body)}」</small>
+                  )}
+                  <small className="hint">
+                    {box === 'received' && l.deliveredAt && `${dateText(l.deliveredAt)} 送达`}
+                    {box === 'sent' && l.sentAt && `${dateText(l.sentAt)} 寄出`}
+                    {box === 'drafts' && `${dateText(l.updatedAt)} 保存`}
+                  </small>
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
       {cursor && (

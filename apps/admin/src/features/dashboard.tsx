@@ -41,9 +41,7 @@ async function loadDashboard(): Promise<DashboardData> {
   // 「昨天」取与今天等长的时段（今天 0 点到现在），否则半天比一天没有意义。
   const elapsed = Date.now() - new Date(today).getTime();
   const yesterdayFrom = new Date(new Date(today).getTime() - 86_400_000).toISOString();
-  const yesterdayTo = new Date(
-    new Date(today).getTime() - 86_400_000 + elapsed,
-  ).toISOString();
+  const yesterdayTo = new Date(new Date(today).getTime() - 86_400_000 + elapsed).toISOString();
   const [overview, usersToday, usersYesterday, trend, purposesToday, purposesYesterday, upstreams] =
     await Promise.all([
       settle(
@@ -135,7 +133,10 @@ function deltaText(today: number, yesterday: number): { text: string; up: boolea
   };
 }
 
-function pointsDeltaText(today: number, yesterday: number): { text: string; up: boolean; flat: boolean } {
+function pointsDeltaText(
+  today: number,
+  yesterday: number,
+): { text: string; up: boolean; flat: boolean } {
   const diff = today - yesterday;
   if (!today && !yesterday) return { text: '昨天没有数据', up: false, flat: true };
   if (Math.abs(diff) < 0.0005) return { text: '与昨天持平', up: false, flat: true };
@@ -177,10 +178,20 @@ function StatCard({
 }
 
 const TODO_ITEMS: { key: keyof TodoCounts; label: string; path: string; hint: string }[] = [
-  { key: 'roleRequests', label: '制作申请', path: '/role-requests', hint: '用户提交的角色制作需求' },
+  {
+    key: 'roleRequests',
+    label: '制作申请',
+    path: '/role-requests',
+    hint: '用户提交的角色制作需求',
+  },
   { key: 'support', label: '帮助与反馈', path: '/support', hint: '用户反馈与投诉' },
   { key: 'reports', label: '举报处理', path: '/reports', hint: '广场作品与评论的举报' },
-  { key: 'deletions', label: '注销未完成', path: '/account-deletions', hint: '注销流程还没跑完的账号' },
+  {
+    key: 'deletions',
+    label: '注销未完成',
+    path: '/account-deletions',
+    hint: '注销流程还没跑完的账号',
+  },
   { key: 'alerts', label: '运行提醒', path: '/admin/alerts', hint: '系统自动报出的异常' },
 ];
 
@@ -229,9 +240,9 @@ export function DashboardPage() {
   const totals = data?.overview?.totals;
   const previous = data?.overview?.previousTotals;
   const chargedPoints = totals?.chargedPoints ?? pointsOf(totals?.chargedMicros ?? 0);
-  const previousChargedPoints =
-    previous?.chargedPoints ?? pointsOf(previous?.chargedMicros ?? 0);
-  const profit = (totals?.chargedMicros ?? 0) - (totals?.costMicros ?? 0) - (totals?.absorbedCostMicros ?? 0);
+  const previousChargedPoints = previous?.chargedPoints ?? pointsOf(previous?.chargedMicros ?? 0);
+  const profit =
+    (totals?.chargedMicros ?? 0) - (totals?.costMicros ?? 0) - (totals?.absorbedCostMicros ?? 0);
   const previousProfit =
     (previous?.chargedMicros ?? 0) -
     (previous?.costMicros ?? 0) -
@@ -242,7 +253,9 @@ export function DashboardPage() {
   const pick = (day: string) => trendRows.find((row) => row.keys[0] === day);
   const labels = days.map((day) => `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))}`);
   const callValues = days.map((day) => pick(day)?.calls ?? 0);
-  const pointValues = days.map((day) => pick(day)?.chargedPoints ?? pointsOf(pick(day)?.chargedMicros ?? 0));
+  const pointValues = days.map(
+    (day) => pick(day)?.chargedPoints ?? pointsOf(pick(day)?.chargedMicros ?? 0),
+  );
   const costValues = days.map((day) => pick(day)?.costMicros ?? 0);
 
   const upstreams = [...(data?.upstreams ?? [])].sort((a, b) => {
@@ -293,10 +306,7 @@ export function DashboardPage() {
               label="消息数"
               value={formatInt(chatCalls(data?.purposesToday))}
               hint="今天 AI 回复的条数（按聊天回复的模型调用统计）"
-              delta={deltaText(
-                chatCalls(data?.purposesToday),
-                chatCalls(data?.purposesYesterday),
-              )}
+              delta={deltaText(chatCalls(data?.purposesToday), chatCalls(data?.purposesYesterday))}
             />
             <StatCard
               label="积分消耗"
@@ -366,7 +376,11 @@ export function DashboardPage() {
               <SectionCard
                 title="待办"
                 desc="点一条直接去处理"
-                extra={<span className="dash-total">共 {Object.values(counts).reduce((a, b) => a + b, 0)} 件</span>}
+                extra={
+                  <span className="dash-total">
+                    共 {Object.values(counts).reduce((a, b) => a + b, 0)} 件
+                  </span>
+                }
               >
                 <div className="todo-list">
                   {TODO_ITEMS.map((item) => (
@@ -382,7 +396,9 @@ export function DashboardPage() {
                           <span className="todo-hint">{item.hint}</span>
                         </Tooltip>
                       </span>
-                      <span className={counts[item.key] > 0 ? 'todo-count is-active' : 'todo-count'}>
+                      <span
+                        className={counts[item.key] > 0 ? 'todo-count is-active' : 'todo-count'}
+                      >
                         {counts[item.key]}
                       </span>
                       <RightOutlined className="todo-arrow" />
@@ -403,7 +419,8 @@ export function DashboardPage() {
               >
                 {upstreams.length === 0 ? (
                   <div className="health-empty">
-                    还没有添加上游账号。去「模型管理 › 上游账号」添加第一条，填入 API 密钥后系统会自动测试连通。
+                    还没有添加上游账号。去「模型管理 › 上游账号」添加第一条，填入 API
+                    密钥后系统会自动测试连通。
                   </div>
                 ) : (
                   <div className="health-list">

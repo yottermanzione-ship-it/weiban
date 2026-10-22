@@ -58,7 +58,9 @@ export function RecordsTab({
       from: fromLocalInput(range[0].format('YYYY-MM-DDTHH:mm')),
       to: fromLocalInput(range[1].format('YYYY-MM-DDTHH:mm')),
       ...(userId.trim() ? { userIds: userId.split(/[,，\s]+/).filter(Boolean) } : {}),
-      ...(characterId.trim() ? { characterIds: characterId.split(/[,，\s]+/).filter(Boolean) } : {}),
+      ...(characterId.trim()
+        ? { characterIds: characterId.split(/[,，\s]+/).filter(Boolean) }
+        : {}),
       ...(modelKey ? { modelKeys: [modelKey] } : {}),
       ...(upstreamId ? { upstreamIds: [upstreamId] } : {}),
       ...(purpose ? { purposes: [purpose as never] } : {}),
@@ -188,7 +190,12 @@ export function RecordsTab({
         <span>
           {formatInt(r.inputTokens)} / {formatInt(r.outputTokens)}
           {r.estimated && (
-            <Tag bordered={false} color="orange" style={{ marginLeft: 4 }} title="上游没返回用量，按本地分词估算计费">
+            <Tag
+              bordered={false}
+              color="orange"
+              style={{ marginLeft: 4 }}
+              title="上游没返回用量，按本地分词估算计费"
+            >
               估算
             </Tag>
           )}
@@ -223,7 +230,9 @@ export function RecordsTab({
         r.status === 'succeeded' ? (
           <StatusTag tone="success">成功</StatusTag>
         ) : (
-          <StatusTag tone="error">{ERROR_LABELS[r.errorCode ?? ''] ?? r.errorCode ?? '失败'}</StatusTag>
+          <StatusTag tone="error">
+            {ERROR_LABELS[r.errorCode ?? ''] ?? r.errorCode ?? '失败'}
+          </StatusTag>
         ),
     },
   ];
@@ -270,13 +279,22 @@ export function RecordsTab({
           style={{ width: 170 }}
           value={modelKey}
           onChange={setModelKey}
-          options={[{ value: '', label: '全部模型' }, ...[...new Set(models.map((m) => m.modelKey))].map((key) => ({ value: key, label: modelName(key) }))]}
+          options={[
+            { value: '', label: '全部模型' },
+            ...[...new Set(models.map((m) => m.modelKey))].map((key) => ({
+              value: key,
+              label: modelName(key),
+            })),
+          ]}
         />
         <Select
           style={{ width: 150 }}
           value={upstreamId}
           onChange={setUpstreamId}
-          options={[{ value: '', label: '全部上游账号' }, ...upstreams.map((u) => ({ value: u.upstreamId, label: upstreamName(u.upstreamId) }))]}
+          options={[
+            { value: '', label: '全部上游账号' },
+            ...upstreams.map((u) => ({ value: u.upstreamId, label: upstreamName(u.upstreamId) })),
+          ]}
         />
         <Select
           style={{ width: 130 }}
@@ -363,7 +381,8 @@ export function RecordsTab({
             <div>
               <span className="detail-label">用户 / 角色</span>
               <span className="mono">
-                {detail.userId.slice(0, 12)}… / {detail.characterId ? `${detail.characterId.slice(0, 8)}…` : '—'}
+                {detail.userId.slice(0, 12)}… /{' '}
+                {detail.characterId ? `${detail.characterId.slice(0, 8)}…` : '—'}
               </span>
             </div>
             <div>
@@ -382,7 +401,9 @@ export function RecordsTab({
                 输入 {formatInt(detail.inputTokens)}（缓存读取 {formatInt(detail.cachedInputTokens)}
                 {(detail.cacheWrite5mTokens ?? 0) + (detail.cacheWrite1hTokens ?? 0) > 0
                   ? ` · 缓存写入 ${formatInt(detail.cacheWrite5mTokens ?? 0)}${
-                      detail.cacheWrite1hTokens ? ` + 1 小时 ${formatInt(detail.cacheWrite1hTokens)}` : ''
+                      detail.cacheWrite1hTokens
+                        ? ` + 1 小时 ${formatInt(detail.cacheWrite1hTokens)}`
+                        : ''
                     }`
                   : ''}
                 ）· 输出 {formatInt(detail.outputTokens)}

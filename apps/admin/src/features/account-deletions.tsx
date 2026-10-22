@@ -4,10 +4,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Alert, Button, Space } from 'antd';
-import {
-  IdentityAdminEndpoints,
-  type PendingAccountDeletion,
-} from '@weiban/contracts';
+import { IdentityAdminEndpoints, type PendingAccountDeletion } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { errorText } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
@@ -72,8 +69,7 @@ export function AccountDeletionsPage() {
     }
   }
 
-  const pendingOf = (row: PendingAccountDeletion) =>
-    row.modules.filter((m) => !m.purged).length;
+  const pendingOf = (row: PendingAccountDeletion) => row.modules.filter((m) => !m.purged).length;
 
   const columns: ProColumns<PendingAccountDeletion>[] = [
     {

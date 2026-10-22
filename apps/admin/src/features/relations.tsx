@@ -17,13 +17,7 @@ import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
-import {
-  FieldHelp,
-  FormSection,
-  Page,
-  useDangerConfirm,
-  useToast,
-} from '../ui/page.js';
+import { FieldHelp, FormSection, Page, useDangerConfirm, useToast } from '../ui/page.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 
 const TYPE_LABELS: Record<RelationType, string> = {
@@ -236,8 +230,7 @@ function RelationDrawer({
   const a = Form.useWatch('characterAId', form);
   const b = Form.useWatch('characterBId', form);
   const basisOf = (id?: string) => characters.find((c) => c.value === id)?.basis;
-  const mixed =
-    !!a && !!b && (basisOf(a) === 'real_person') !== (basisOf(b) === 'real_person');
+  const mixed = !!a && !!b && (basisOf(a) === 'real_person') !== (basisOf(b) === 'real_person');
 
   async function save() {
     const values = await feedback.validate();
@@ -307,7 +300,12 @@ function RelationDrawer({
             label="角色 A"
             rules={[{ required: true, message: '选择角色' }]}
           >
-            <Select showSearch optionFilterProp="label" options={characters} disabled={!!relation} />
+            <Select
+              showSearch
+              optionFilterProp="label"
+              options={characters}
+              disabled={!!relation}
+            />
           </Form.Item>
           <Form.Item
             name="characterBId"
@@ -322,7 +320,12 @@ function RelationDrawer({
               },
             ]}
           >
-            <Select showSearch optionFilterProp="label" options={characters} disabled={!!relation} />
+            <Select
+              showSearch
+              optionFilterProp="label"
+              options={characters}
+              disabled={!!relation}
+            />
           </Form.Item>
         </div>
         <FormSection title="关系内容" />

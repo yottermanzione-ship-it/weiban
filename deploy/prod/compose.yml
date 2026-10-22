@@ -32,6 +32,7 @@ services:
       HOST: 0.0.0.0
       PORT: 3000
       HTTP_TRUST_PROXY: '1'
+      IMAGE_PUBLIC_SEARCH_ENABLED: ${IMAGE_PUBLIC_SEARCH_ENABLED:-0}
       DATABASE_URL_FILE: /run/secrets/database_url
       PLATFORM_KEK_FILE: /run/secrets/kek
       PLATFORM_KEK_VERSION: ${PLATFORM_KEK_VERSION:-1}

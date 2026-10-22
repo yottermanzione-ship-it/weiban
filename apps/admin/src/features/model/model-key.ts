@@ -79,12 +79,16 @@ export function suggestModelKey(
 /** gemini-4-argon → Gemini 4 Argon；gpt-6.1-sol → GPT 6.1 Sol。只是预填，管理员可以改。 */
 export function prettyModelName(model: string): string {
   // claude-opus-5-5 → 5.5：相邻的纯数字段合成版本号。
-  const parts = model.split(/[-_\s]+/).filter(Boolean).reduce<string[]>((acc, part) => {
-    const prev = acc[acc.length - 1];
-    if (prev && /^\d+(\.\d+)*$/.test(prev) && /^\d+$/.test(part)) acc[acc.length - 1] = `${prev}.${part}`;
-    else acc.push(part);
-    return acc;
-  }, []);
+  const parts = model
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .reduce<string[]>((acc, part) => {
+      const prev = acc[acc.length - 1];
+      if (prev && /^\d+(\.\d+)*$/.test(prev) && /^\d+$/.test(part))
+        acc[acc.length - 1] = `${prev}.${part}`;
+      else acc.push(part);
+      return acc;
+    }, []);
   return parts
     .map((part) =>
       /^(gpt|glm|ai|llm)$/i.test(part)
@@ -121,7 +125,8 @@ export function autoModelKey(
   if (!base) {
     const v = vendorSlug(vendor) || 'custom';
     const m = modelSlug(model.includes('/') ? model.slice(model.lastIndexOf('/') + 1) : model);
-    const tail = m && /^[a-zA-Z0-9]/.test(m) ? m : `model-${shortHash(model || String(vendor ?? ''))}`;
+    const tail =
+      m && /^[a-zA-Z0-9]/.test(m) ? m : `model-${shortHash(model || String(vendor ?? ''))}`;
     base = `${v.slice(0, 48)}/${tail.slice(0, 80)}`;
     if (!isValidModelKey(base)) base = `custom/model-${shortHash(`${vendor ?? ''}|${model}`)}`;
   }

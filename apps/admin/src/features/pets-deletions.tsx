@@ -10,14 +10,7 @@ import { adminMediaUrl } from '../data/media-url.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
-import {
-  FieldHelp,
-  Page,
-  SectionCard,
-  StatusTag,
-  useDangerConfirm,
-  useToast,
-} from '../ui/page.js';
+import { FieldHelp, Page, SectionCard, StatusTag, useDangerConfirm, useToast } from '../ui/page.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 
 const STAGES = [
@@ -307,7 +300,11 @@ function PetDrawer({
             name="listed"
             label="上架"
             valuePropName="checked"
-            extra={<FieldHelp>{complete ? '用户领养时可以看到这个物种。' : '三张图传齐后才能上架。'}</FieldHelp>}
+            extra={
+              <FieldHelp>
+                {complete ? '用户领养时可以看到这个物种。' : '三张图传齐后才能上架。'}
+              </FieldHelp>
+            }
           >
             <Switch disabled={!complete} />
           </Form.Item>
@@ -335,7 +332,9 @@ function PetDrawer({
                   value={draft.name}
                   onChange={(e) =>
                     setDrafts((items) =>
-                      items.map((item, i) => (i === index ? { ...item, name: e.target.value } : item)),
+                      items.map((item, i) =>
+                        i === index ? { ...item, name: e.target.value } : item,
+                      ),
                     )
                   }
                   style={{ width: 200 }}
@@ -368,7 +367,10 @@ function PetDrawer({
                   <div className="stage-cell" key={stage}>
                     <span className="field-label">{label}</span>
                     {draft.images[stage] ? (
-                      <img src={adminMediaUrl(draft.images[stage]!.url)} alt={`${draft.name}${label}`} />
+                      <img
+                        src={adminMediaUrl(draft.images[stage]!.url)}
+                        alt={`${draft.name}${label}`}
+                      />
                     ) : (
                       <div className="stage-empty">未上传</div>
                     )}

@@ -132,7 +132,10 @@ export function applyFormError(
   return describeIssues(issues);
 }
 
-export function useFormFeedback<V = unknown>(form: FormInstance<V>, options: FormFeedbackOptions = {}) {
+export function useFormFeedback<V = unknown>(
+  form: FormInstance<V>,
+  options: FormFeedbackOptions = {},
+) {
   const { message } = App.useApp();
   const [error, setError] = useState('');
 
@@ -152,7 +155,8 @@ export function useFormFeedback<V = unknown>(form: FormInstance<V>, options: For
       const values = await form.validateFields(nameList);
       setError('');
       // 全量校验通过 = 准备保存；抽屉据此判断关闭时是清草稿还是存草稿（data/drafts.ts）
-      if (!nameList) markFormValidated(form as FormInstance, (form as FormInstance).getFieldsValue(true));
+      if (!nameList)
+        markFormValidated(form as FormInstance, (form as FormInstance).getFieldsValue(true));
       return values;
     } catch (failure) {
       report(failure);
