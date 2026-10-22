@@ -10,6 +10,7 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
   AdminModelWrite,
   microsToPoints,
+  type ActiveModelServiceRate,
   type ActiveModelTokenRates,
   type AdminCatalogEntry,
   type AdminModel,
@@ -19,7 +20,7 @@ import {
   type ModelRoute,
   type ModelTokenPrices,
 } from '@weiban/contracts';
-import { CLOCK, type Clock } from '../../../platform/index.js';
+import { AppError, CLOCK, type Clock } from '../../../platform/index.js';
 import type { z } from 'zod';
 import { standardReplyMicros } from '../domain/rules.js';
 import { MODEL_RATE_PORT, type ModelPriceSource } from '../tokens.js';
@@ -29,6 +30,14 @@ import { DisplayPricingService, type DisplayPricing } from './display-pricing.js
 type Write = z.output<typeof AdminModelWrite>;
 
 const MICROS_PER_YUAN = 1_000_000;
+
+export const serviceRatesToYuan = (rates: readonly ActiveModelServiceRate[]) =>
+  rates.map((r) => ({
+    unit: r.unit,
+    price: r.priceMicros / MICROS_PER_YUAN,
+    cost: r.costMicros / MICROS_PER_YUAN,
+    hasTimeBands: r.hasTimeBands,
+  }));
 
 const toMicros = (yuan: number | null | undefined) =>
   yuan === null || yuan === undefined ? null : Math.round(yuan * MICROS_PER_YUAN);
@@ -70,7 +79,7 @@ export function toAdminModel(
   display?: DisplayPricing,
   discount?: ModelDiscountSetting,
   nowMs = 0,
-  extra: Pick<AdminModel, 'arenaRank' | 'availability' | 'usageMissing'> = {},
+  extra: Pick<AdminModel, 'arenaRank' | 'availability' | 'usageMissing' | 'serviceRates'> = {},
 ): AdminModel {
   return {
     ...entry,
@@ -82,7 +91,8 @@ export function toAdminModel(
     displayMultiplier: display?.displayMultiplier ?? null,
     rates: rates ? pricesToRates(rates.price) : null,
     costRates: rates ? pricesToRates(rates.cost) : null,
-    hasTimeBands: rates?.hasTimeBands ?? false,
+    hasTimeBands:
+      (rates?.hasTimeBands ?? false) || !!extra.serviceRates?.some((r) => r.hasTimeBands),
     pointsPerReply: display?.pointsPerReply ?? pointsPerReply(rates?.price),
     routes: routes ?? [],
   };
@@ -111,6 +121,7 @@ export class ModelAdminService {
     // 3.23：已删除的模型不查价格 / 线路 / 折扣（同键可能已重新添加，按键查会串到新模型上）
     const keys = entries.filter((e) => !e.deletedAt).map((e) => e.modelKey);
     const rates = await this.rates.getActiveTokenRates(keys);
+    const serviceRates = await this.rates.getActiveServiceRates?.(keys);
     const routes = await this.catalog.routes(keys);
     const display = await this.display?.forModels(keys);
     const discounts = await this.rates.getModelDiscounts(keys);
@@ -131,6 +142,9 @@ export class ModelAdminService {
             discounts.get(e.modelKey),
             nowMs,
             {
+              ...(serviceRates
+                ? { serviceRates: serviceRatesToYuan(serviceRates.get(e.modelKey) ?? []) }
+                : {}),
               arenaRank: arena.rankOf(e.arenaModelName),
               availability: {
                 available: !details.get(e.modelKey),
@@ -143,7 +157,28 @@ export class ModelAdminService {
   }
 
   async upsert(adminId: string, pathKey: string, body: Write): Promise<AdminModel> {
-    const { rates, costRates, routes, displayMultiplierManual, discount, ...rest } = body;
+    const { rates, costRates, serviceRates, routes, displayMultiplierManual, discount, ...rest } =
+      body;
+    if (serviceRates !== undefined) {
+      if (!this.rates.publishModelServiceRates)
+        throw new AppError('bad_request', '当前服务不支持服务单价写入，不能忽略该请求');
+      if (pathKey !== body.modelKey)
+        throw new AppError('bad_request', '修改模型键时不能同时修改服务单价');
+      const capability = {
+        search_call: 'web_search',
+        tts_10k_chars: 'voice_output',
+        asr_minute: 'voice_input',
+        realtime_minute: 'voice_output',
+        image: 'image_generation',
+      } as const;
+      for (const rate of serviceRates) {
+        if (
+          !body.capabilities.includes(capability[rate.unit]) ||
+          (rate.unit === 'realtime_minute' && !body.capabilities.includes('voice_input'))
+        )
+          throw new AppError('bad_request', `服务计价单位 ${rate.unit} 与模型能力不匹配`);
+      }
+    }
     this.catalog.validateBillingBounds(body.billingBounds);
     for (const route of routes ?? []) this.catalog.validateBillingBounds(route.billingBounds);
     // v3.4：传了路由时，目录上的上游 = 主路由（旧接口与媒体网关仍读它）
@@ -164,6 +199,16 @@ export class ModelAdminService {
         cost: ratesToPrices(costRates ?? rates),
       });
     }
+    if (serviceRates !== undefined)
+      await this.rates.publishModelServiceRates!({
+        operatorUserId: adminId,
+        modelKey: body.modelKey,
+        rates: serviceRates.map((r) => ({
+          unit: r.unit,
+          priceMicros: Math.round(r.price * MICROS_PER_YUAN),
+          costMicros: Math.round((r.cost ?? r.price) * MICROS_PER_YUAN),
+        })),
+      });
     const saved = await this.catalog.upsert(adminId, pathKey, entry);
     if (routes) await this.catalog.replaceRoutes(adminId, saved.modelKey, routes);
     if (displayMultiplierManual !== undefined)
@@ -177,6 +222,7 @@ export class ModelAdminService {
       });
     this.display?.invalidate();
     const current = await this.rates.getActiveTokenRates([saved.modelKey]);
+    const currentServices = await this.rates.getActiveServiceRates?.([saved.modelKey]);
     const savedRoutes = await this.catalog.routes([saved.modelKey]);
     const display = await this.display?.forModels([saved.modelKey]);
     const discounts = await this.rates.getModelDiscounts([saved.modelKey]);
@@ -190,6 +236,9 @@ export class ModelAdminService {
       discounts.get(saved.modelKey),
       this.clock.nowMs(),
       {
+        ...(currentServices
+          ? { serviceRates: serviceRatesToYuan(currentServices.get(saved.modelKey) ?? []) }
+          : {}),
         arenaRank: arena.rankOf(saved.arenaModelName),
         availability: { available: !detail, detail: detail ?? null },
       },

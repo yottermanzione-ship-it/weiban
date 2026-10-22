@@ -1,5 +1,5 @@
 /** 角色分享图片：仅合规素材库或安全公开网页封面，不调用生图和收费人脸复检。 */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type {
   LinkPreviewPort,
   MediaAssetReadPort,
@@ -10,6 +10,7 @@ import type {
 import { LINK_PREVIEW_PORT, MEDIA_ASSET_READ_PORT, MEDIA_READ_PORT } from '../../media/index.js';
 import { MODEL_GATEWAY_MEDIA_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
+import { APP_CONFIG, type AppConfig } from '../../../platform/index.js';
 
 export type ImageUse = 'chat' | 'moments' | 'card' | 'pet';
 export interface GenerateCharacterImageInput {
@@ -65,6 +66,7 @@ export class CharacterImageService {
     @Inject(POLICY_PORT) private readonly policy: PolicyPort,
     @Inject(MEDIA_READ_PORT) private readonly mediaRead: MediaReadPort,
     @Inject(LINK_PREVIEW_PORT) private readonly links: LinkPreviewPort,
+    @Optional() @Inject(APP_CONFIG) private readonly config?: AppConfig,
   ) {}
 
   /** 保留内部方法名兼容旧调用方；此方法不再生成图片。 */
@@ -73,7 +75,11 @@ export class CharacterImageService {
     if (!policy) return null;
     let chargedMicros = 0;
     const query =
-      input.searchPublic && input.use === 'chat' && !policy.isRealPerson
+      this.config?.characterPublicPictureSearchEnabled === true &&
+      input.searchPublic &&
+      input.use === 'chat' &&
+      !policy.isRealPerson &&
+      !policy.isHistorical
         ? publicPictureQuery(input.scene)
         : null;
     if (

@@ -150,20 +150,8 @@ export type LedgerEntry = z.infer<typeof LedgerEntry>;
 
 // ---------- 价目表 ----------
 
-export const PriceUnit = z.enum([
-  'input_tokens_per_million',
-  'cached_input_tokens_per_million',
-  'output_tokens_per_million',
-  /** 3.24：缓存写入（5 分钟 / 1 小时），没有时按 input_tokens_per_million 计。 */
-  'cache_write_5m_tokens_per_million',
-  'cache_write_1h_tokens_per_million',
-  'image',
-  'tts_10k_chars',
-  'asr_minute',
-  'realtime_minute',
-  'search_call',
-]);
-export type PriceUnit = z.infer<typeof PriceUnit>;
+export { PriceUnit, ServicePriceUnit } from '../price-unit.js';
+import { PriceUnit } from '../price-unit.js';
 
 /** 分时段（例如高峰价）。时间按供应商规定的时区（通常北京时间），weekdays 1=周一…7=周日。 */
 export const PriceTimeBand = z.object({

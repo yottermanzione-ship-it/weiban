@@ -43,6 +43,7 @@ export const EnvSchema = z.object({
   /** 无域名试运行：显式允许以 IPv4 地址作媒体地址时使用 HTTP；域名仍须 HTTPS。 */
   ALLOW_IP_HTTP: booleanFlag,
   IMAGE_PUBLIC_SEARCH_ENABLED: booleanFlag,
+  CHARACTER_PUBLIC_PICTURE_SEARCH_ENABLED: booleanFlag,
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   /** 进程角色（overview.md 第 6 节）：web 只开 HTTP；worker 只跑事件分发和任务；all 两者都做。 */
   APP_ROLE: z.enum(['web', 'worker', 'all']).default('all'),
@@ -82,6 +83,7 @@ export const DEV_PLATFORM_DAILY_CAP_MICROS = 20_000_000;
 
 export interface AppConfig {
   readonly imagePublicSearchEnabled?: boolean;
+  readonly characterPublicPictureSearchEnabled?: boolean;
   readonly push: { readonly credentialsFile: string | null };
   readonly media: {
     readonly driver: 'disk' | 's3';
@@ -182,6 +184,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     },
     nodeEnv: e.NODE_ENV,
     imagePublicSearchEnabled: e.IMAGE_PUBLIC_SEARCH_ENABLED,
+    characterPublicPictureSearchEnabled: e.CHARACTER_PUBLIC_PICTURE_SEARCH_ENABLED,
     role: e.APP_ROLE,
     http: { host: e.HOST, port: e.PORT, trustProxy: parseTrustProxy(e.HTTP_TRUST_PROXY) },
     database: { url: e.DATABASE_URL, poolMax: e.DATABASE_POOL_MAX },

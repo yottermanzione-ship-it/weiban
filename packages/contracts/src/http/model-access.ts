@@ -19,6 +19,7 @@
  * （平台内部模型 adult_check 不再使用）；模型「暂时无法使用」的具体原因只给后台看，用户端接口不再带。
  */
 import { z } from 'zod';
+import { ServicePriceUnit } from '../price-unit.js';
 import {
   API_PREFIX,
   Id,
@@ -738,8 +739,29 @@ export const ModelRates = z.object({
 });
 export type ModelRates = z.infer<typeof ModelRates>;
 
+/** 3.36：非 token 单价，金额为元 / 该单位。 */
+export const ModelServiceRateWrite = z.strictObject({
+  unit: ServicePriceUnit,
+  price: z.number().nonnegative().max(100_000),
+  cost: z.number().nonnegative().max(100_000).nullable().optional(),
+});
+export type ModelServiceRateWrite = z.infer<typeof ModelServiceRateWrite>;
+export const ModelServiceRate = ModelServiceRateWrite.extend({
+  hasTimeBands: z.boolean().optional(),
+});
+export type ModelServiceRate = z.infer<typeof ModelServiceRate>;
+const ServiceRatesWrite = z
+  .array(ModelServiceRateWrite)
+  .min(1)
+  .max(5)
+  .refine(
+    (rates) => new Set(rates.map((r) => r.unit)).size === rates.length,
+    '同一计价单位不能重复',
+  );
+
 /** v3.3：后台「模型」页的一行 = 目录条目 + 当前生效价目表里的倍率。 */
 export const AdminModel = AdminCatalogEntry.extend({
+  serviceRates: z.array(ModelServiceRate).max(5).optional(),
   /** 售价倍率（用户被扣的钱）；当前生效价目表里没有该模型的 token 价格时为 null（例：语音、图片模型）。 */
   rates: ModelRates.nullable(),
   /** 成本倍率（上游收平台的钱，对账用）；默认与售价相同（个人测试阶段加价系数 1.00）。 */
@@ -785,8 +807,10 @@ export type AdminModel = z.infer<typeof AdminModel>;
 export const USAGE_MISSING_ALERT_STREAK = 5;
 
 export const AdminModelWrite = AdminCatalogEntryWrite.extend({
+  /** 3.36：省略不改；只替换传入单位（含分时价）为全天价，其他单位完整保留。 */
+  serviceRates: ServiceRatesWrite.optional(),
   /**
-   * 售价倍率。传 null = 不改价目表（语音、图片等非 token 计价的模型在「价目表版本」高级页维护）。
+   * 售价倍率。传 null = 不改 token 价格（语音、搜索等非 token 计价通过 serviceRates 维护）。
    * 与当前价格不同时，后端复制当前生效价目表、替换这个模型的输入 / 输出 / 缓存三项价格，生成新版本并立即发布。
    */
   rates: ModelRates.nullable(),

@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.35. Regenerate: pnpm android:generate
+// Contract 3.36. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.35"
+const val CONTRACT_VERSION: String = "3.36"
 
 @Serializable
 data class AccountAlias(
@@ -410,6 +410,7 @@ data class AdminModel(
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
     @SerialName("deletedAt") val `deletedAt`: Timestamp? = null,
+    @SerialName("serviceRates") val `serviceRates`: List<ModelServiceRate>? = null,
     @SerialName("rates") val `rates`: ModelRates?,
     @SerialName("costRates") val `costRates`: ModelRates?,
     @SerialName("hasTimeBands") val `hasTimeBands`: Boolean,
@@ -441,6 +442,7 @@ data class AdminModelWrite(
     @SerialName("scenarios") val `scenarios`: List<ModelScenario>? = null,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
+    @SerialName("serviceRates") val `serviceRates`: List<ModelServiceRateWrite>? = null,
     @SerialName("rates") val `rates`: ModelRates?,
     @SerialName("costRates") val `costRates`: ModelRates? = null,
     @SerialName("routes") val `routes`: List<ModelRoute>? = null,
@@ -465,6 +467,7 @@ data class AdminModelWriteInput(
     @SerialName("scenarios") val `scenarios`: List<ModelScenario>? = null,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBoundsInput? = null,
+    @SerialName("serviceRates") val `serviceRates`: List<ModelServiceRateWrite>? = null,
     @SerialName("rates") val `rates`: ModelRatesInput?,
     @SerialName("costRates") val `costRates`: ModelRatesInput? = null,
     @SerialName("routes") val `routes`: List<ModelRouteInput>? = null,
@@ -7161,6 +7164,21 @@ data class ModelSelection(
 )
 
 @Serializable
+data class ModelServiceRate(
+    @SerialName("unit") val `unit`: ServicePriceUnit,
+    @SerialName("price") val `price`: Double,
+    @SerialName("cost") val `cost`: Double? = null,
+    @SerialName("hasTimeBands") val `hasTimeBands`: Boolean? = null,
+)
+
+@Serializable
+data class ModelServiceRateWrite(
+    @SerialName("unit") val `unit`: ServicePriceUnit,
+    @SerialName("price") val `price`: Double,
+    @SerialName("cost") val `cost`: Double? = null,
+)
+
+@Serializable
 data class ModelStatus(
     @SerialName("characterId") val `characterId`: Id?,
     @SerialName("available") val `available`: Boolean,
@@ -9813,6 +9831,8 @@ data class ServerUpdateFrame(
     @SerialName("ref") val `ref`: String? = null,
     @SerialName("data") val `data`: UserUpdate,
 )
+
+typealias ServicePriceUnit = String
 
 typealias SessionKind = String
 

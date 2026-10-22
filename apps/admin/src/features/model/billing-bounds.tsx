@@ -11,6 +11,7 @@ import { FieldHelp } from '../../ui/page.js';
 export type OutputParameter = 'max_tokens' | 'max_completion_tokens';
 
 export interface BoundsFormValues {
+  searchMaxResults?: number | null;
   contextTokens?: number | null;
   maxOutputTokens?: number | null;
   outputParameter?: OutputParameter;
@@ -42,6 +43,7 @@ export function boundsToForm(
 ): BoundsFormValues {
   const text = bounds?.text;
   return {
+    searchMaxResults: bounds?.search?.maxResults ?? 5,
     contextTokens: text?.contextTokens ?? DEFAULT_CONTEXT_TOKENS,
     maxOutputTokens: text?.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
     outputParameter: text?.outputParameter ?? 'max_tokens',

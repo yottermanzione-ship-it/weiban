@@ -66,5 +66,6 @@ export class BillingTestQueries {
     return rows[0] ?? null;
   }
 }
+export { ModelRateService } from './application/model-rates.js';
 export { PriceService } from './application/prices.js';
 export { BillingAdminService } from './application/admin.js';

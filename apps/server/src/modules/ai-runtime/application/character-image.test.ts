@@ -4,7 +4,13 @@ import { CharacterImageService, publicPictureQuery } from './character-image.js'
 import { MediaAiService } from './media-ai.js';
 
 function setup(
-  options: { real?: boolean; historical?: boolean; library?: boolean; enabled?: boolean } = {},
+  options: {
+    real?: boolean;
+    historical?: boolean;
+    library?: boolean;
+    enabled?: boolean;
+    pictureSearch?: boolean;
+  } = {},
 ) {
   const media = {
     generateImage: vi.fn(() => {
@@ -40,9 +46,14 @@ function setup(
     previewForUser: vi.fn(async () => ({ reachable: true, coverMediaId: 'stored-web-image' })),
   };
   const service = new CharacterImageService(
-    ...([media, assets, policy, read, links] as unknown as ConstructorParameters<
-      typeof CharacterImageService
-    >),
+    ...([
+      media,
+      assets,
+      policy,
+      read,
+      links,
+      { characterPublicPictureSearchEnabled: options.pictureSearch ?? true },
+    ] as unknown as ConstructorParameters<typeof CharacterImageService>),
   );
   const input = {
     userId: 'user',
@@ -275,4 +286,17 @@ describe('角色分享图片不生图', () => {
     expect(publicPictureQuery('请找某位演员的自拍，聊天金丝雀')).toBeNull();
     expect(publicPictureQuery('家里地址123，想看海滩')).toBe('海滩 公开图片');
   });
+});
+
+it('历史人物即使未同时标记真人且实验开关打开，也只使用库图', async () => {
+  const s = setup({ historical: true, real: false });
+  expect(await s.service.generate(s.input)).toMatchObject({ source: 'library', chargedMicros: 0 });
+  expect(s.media.webSearch).not.toHaveBeenCalled();
+});
+
+it('角色网上找图开关关闭时不触发搜索或新费用，用户输入图检索开关与此无关', async () => {
+  const s = setup({ pictureSearch: false });
+  expect(await s.service.generate(s.input)).toMatchObject({ source: 'library', chargedMicros: 0 });
+  expect(s.media.webSearch).not.toHaveBeenCalled();
+  expect(s.media.generateImage).not.toHaveBeenCalled();
 });
