@@ -85,34 +85,41 @@ class ApiClient(
             val request = request(endpoint, auth, body, params, query, idempotencyKey, multipart)
             val started = System.nanoTime()
             try {
-                client.newCall(request).awaitDecoded { response ->
-                    if (session.get() !== auth) throw ApiFailure("session_changed", 0)
-                    val bytes = response.body?.byteStream()?.use { it.readBounded(4_194_305) } ?: byteArrayOf()
-                    if (bytes.size > 4_194_304) throw ApiFailure("invalid_response", 0)
-                    if (!response.isSuccessful) {
-                        if (response.code >= 500) reportFailure(endpoint, started, response.code, response.header("x-request-id"))
-                        val error =
-                            runCatching {
-                                val raw = json.parseToJsonElement(bytes.toString(Charsets.UTF_8))
-                                json.decodeFromJsonElement(ApiError.serializer(), ContractJson.normalize("ApiError", raw))
-                            }.getOrNull()
-                        if (error?.error?.code == "unauthenticated" && endpoint.auth != "none" &&
-                            session.compareAndSet(auth, null)
-                        ) {
-                            runCatching { onOwnerChanged?.invoke(null) }
-                        }
-                        throw ApiFailure(error?.error?.code ?: "unsupported", response.code, error?.error?.message, error?.error?.details)
-                    }
-                    decode(endpoint, bytes, auth)
-                }
+                executeCall(endpoint, request, auth, started)
+            } catch (error: ApiFailure) {
+                throw error
+            } catch (error: SocketTimeoutException) {
+                if (session.get() === auth) reportFailure(endpoint, started, 0, timeout = true)
+                throw error
             } catch (error: IOException) {
-                if (error !is ApiFailure &&
-                    session.get() === auth
-                ) {
-                    reportFailure(endpoint, started, 0, timeout = error is SocketTimeoutException)
-                }
+                if (session.get() === auth) reportFailure(endpoint, started, 0)
                 throw error
             }
+        }
+
+    private suspend fun <T> executeCall(
+        endpoint: ContractEndpoint<T>,
+        request: Request,
+        auth: AuthResponse?,
+        started: Long,
+    ): T =
+        client.newCall(request).awaitDecoded { response ->
+            if (session.get() !== auth) throw ApiFailure("session_changed", 0)
+            val bytes = response.body?.byteStream()?.use { it.readBounded(4_194_305) } ?: byteArrayOf()
+            if (bytes.size > 4_194_304) throw ApiFailure("invalid_response", 0)
+            if (!response.isSuccessful) {
+                if (response.code >= 500) reportFailure(endpoint, started, response.code, response.header("x-request-id"))
+                val error =
+                    runCatching {
+                        val raw = json.parseToJsonElement(bytes.toString(Charsets.UTF_8))
+                        json.decodeFromJsonElement(ApiError.serializer(), ContractJson.normalize("ApiError", raw))
+                    }.getOrNull()
+                if (error?.error?.code == "unauthenticated" && endpoint.auth != "none" && session.compareAndSet(auth, null)) {
+                    runCatching { onOwnerChanged?.invoke(null) }
+                }
+                throw ApiFailure(error?.error?.code ?: "unsupported", response.code, error?.error?.message, error?.error?.details)
+            }
+            decode(endpoint, bytes, auth)
         }
 
     private fun reportFailure(

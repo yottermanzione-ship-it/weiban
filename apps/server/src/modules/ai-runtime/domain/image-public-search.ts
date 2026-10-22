@@ -1,6 +1,18 @@
-import type { CharacterForRuntime } from '@weiban/contracts';
+import type { CharacterForRuntime, Message } from '@weiban/contracts';
 import type { ImageCaption } from './image-caption.js';
 import { healthPrivate } from './memory.js';
+
+/** Hidden/cleared messages retain a normal status but their readable content is null. */
+export function publicImageSource(message: Message | null, conversationId: string): boolean {
+  return (
+    !!message &&
+    message.status === 'normal' &&
+    !!message.content &&
+    message.senderKind === 'user' &&
+    message.conversationId === conversationId &&
+    !message.labels.includes('health')
+  );
+}
 
 /** Query vocabulary comes from the published preset card, never from free OCR or user text. */
 export function publicImageQuery(

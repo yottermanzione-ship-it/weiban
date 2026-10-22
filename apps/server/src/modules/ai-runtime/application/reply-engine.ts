@@ -43,6 +43,7 @@ import {
 } from '../domain/image-caption.js';
 import { ImageCaptionStore } from './image-captions.js';
 import { ImagePublicSearch } from './image-public-search.js';
+import { publicImageSource } from '../domain/image-public-search.js';
 const Result = z.object({
   bubbles: z.array(z.string().min(1).max(4000)).min(1).max(4),
   snapshot: ReplySnapshot,
@@ -477,12 +478,7 @@ export class ReplyEngine {
         for (const slot of snapshot.imageSlots) {
           if (!slot.messageId || slot.ownerUserId !== row.userId) return false;
           const message = await this.context.chat.getMessage(slot.messageId, ['normal']);
-          if (
-            message?.status !== 'normal' ||
-            message.senderKind !== 'user' ||
-            message.conversationId !== row.conversationId
-          )
-            return false;
+          if (!publicImageSource(message, row.conversationId)) return false;
         }
         return this.store.db.transaction(
           async (tx) =>

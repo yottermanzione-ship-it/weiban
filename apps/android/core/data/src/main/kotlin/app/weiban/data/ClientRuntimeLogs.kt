@@ -165,25 +165,7 @@ class ClientRuntimeLogs(
             .putLong("start", start)
             .putInt("count", count + 1)
             .apply()
-        val frames =
-            error
-                ?.stackTrace
-                .orEmpty()
-                .filter {
-                    it.className.startsWith("app.weiban.")
-                }.take(20)
-                .map {
-                    ClientLogFrame(
-                        "app.kt",
-                        it.lineNumber.toLong().coerceIn(0, 10000000),
-                        0,
-                        it.className
-                            .hashCode()
-                            .toUInt()
-                            .toString(16)
-                            .padStart(8, '0'),
-                    )
-                }
+        val frames = safeFrames(error)
         val key = listOf(kind, code, page, apiEvent?.route, apiEvent?.method, apiEvent?.status, frames).joinToString("|")
         val before = known[key]
         val event =
@@ -225,6 +207,26 @@ class ClientRuntimeLogs(
             JsonArray(recent.map { api.json.encodeToJsonElement(ClientRuntimeEvent.serializer(), it) })
         }
 
+    private fun safeFrames(error: Throwable?): List<ClientLogFrame> =
+        error
+            ?.stackTrace
+            .orEmpty()
+            .filter { it.className.startsWith("app.weiban.") }
+            .take(20)
+            .map {
+                ClientLogFrame(
+                    "app.kt",
+                    it.lineNumber.toLong().coerceIn(0, 10000000),
+                    0,
+                    it.className
+                        .hashCode()
+                        .toUInt()
+                        .toString(16)
+                        .padStart(8, '0'),
+                )
+            }
+
+    @Suppress("TooGenericExceptionCaught") // AtomicFile must abort every failed write before the failure is contained.
     private fun persist() {
         val bytes = api.json.encodeToString(SavedRuntimeLogs.serializer(), SavedRuntimeLogs(owner, queue.toList())).toByteArray()
         runCatching {
@@ -242,27 +244,8 @@ class ClientRuntimeLogs(
     suspend fun flush() {
         val work =
             synchronized(lock) {
-                if (!bound || sending || (queue.isEmpty() && sentSession)) return
-                val first = queue.firstOrNull()
-                val batchSession = first?.sessionId ?: session
-                val batchVersion = first?.version ?: version
-                val batchBuild = first?.build ?: build
-                val events =
-                    queue
-                        .filter { it.sessionId == batchSession && it.version == batchVersion && it.build == batchBuild }
-                        .take(
-                            20,
-                        ).toMutableList()
-                var batch = ClientLogBatch(batchSession, "android", batchVersion, batchBuild, events.toList())
-                while (api.json
-                        .encodeToString(ClientLogBatch.serializer(), batch)
-                        .toByteArray()
-                        .size >
-                    30000
-                ) {
-                    events.removeAt(events.lastIndex)
-                    batch = batch.copy(events = events.toList())
-                }
+                if (!readyToSend()) return
+                val batch = pendingBatch()
                 sending = true
                 Triple(generation, owner, batch)
             }
@@ -291,74 +274,103 @@ class ClientRuntimeLogs(
         }
     }
 
-    private fun route(value: String): String {
-        val allowed =
-            setOf(
-                "api",
-                "v1",
-                "me",
-                "admin",
-                "auth",
-                "login",
-                "register",
-                "chat",
-                "contacts",
-                "discover",
-                "settings",
-                "privacy",
-                "profile",
-                "support",
-                "tickets",
-                "messages",
-                "conversations",
-                "characters",
-                "models",
-                "billing",
-                "calls",
-                "media",
-                "push",
-                "devices",
-                "sync",
-                "updates",
-                "moments",
-                "posts",
-                "comments",
-                "likes",
-                "memories",
-                "episodes",
-                "timeline",
-                "assets",
-                "pets",
-                "library",
-                "plaza",
-                "play",
-                "health",
-                "growth",
-                "avatar",
-                "cover",
-                "status",
-                "notifications",
-                "token",
-                "sessions",
-                "logout",
-                "refresh",
-                "password",
-                "email",
-                "phone",
-                "verify",
-                "read",
-                "replies",
-                "seen",
-            )
-        return "/" +
+    private fun readyToSend(): Boolean {
+        if (!bound || sending) return false
+        return queue.isNotEmpty() || !sentSession
+    }
+
+    // Called while holding lock, so old-session replay stays partitioned through serialization.
+    private fun pendingBatch(): ClientLogBatch {
+        val first = queue.firstOrNull()
+        val batchSession = first?.sessionId ?: session
+        val batchVersion = first?.version ?: version
+        val batchBuild = first?.build ?: build
+        val events =
+            queue
+                .filter { it.sessionId == batchSession && it.version == batchVersion && it.build == batchBuild }
+                .take(
+                    20,
+                ).toMutableList()
+        var batch = ClientLogBatch(batchSession, "android", batchVersion, batchBuild, events.toList())
+        while (api.json
+                .encodeToString(ClientLogBatch.serializer(), batch)
+                .toByteArray()
+                .size > 30000
+        ) {
+            events.removeAt(events.lastIndex)
+            batch = batch.copy(events = events.toList())
+        }
+        return batch
+    }
+
+    private val allowedRouteSegments =
+        setOf(
+            "api",
+            "v1",
+            "me",
+            "admin",
+            "auth",
+            "login",
+            "register",
+            "chat",
+            "contacts",
+            "discover",
+            "settings",
+            "privacy",
+            "profile",
+            "support",
+            "tickets",
+            "messages",
+            "conversations",
+            "characters",
+            "models",
+            "billing",
+            "calls",
+            "media",
+            "push",
+            "devices",
+            "sync",
+            "updates",
+            "moments",
+            "posts",
+            "comments",
+            "likes",
+            "memories",
+            "episodes",
+            "timeline",
+            "assets",
+            "pets",
+            "library",
+            "plaza",
+            "play",
+            "health",
+            "growth",
+            "avatar",
+            "cover",
+            "status",
+            "notifications",
+            "token",
+            "sessions",
+            "logout",
+            "refresh",
+            "password",
+            "email",
+            "phone",
+            "verify",
+            "read",
+            "replies",
+            "seen",
+        )
+
+    private fun route(value: String): String =
+        "/" +
             value.substringBefore('?').substringBefore('#').split('/').filter { it.isNotEmpty() }.take(12).joinToString("/") {
                 if (it in
-                    allowed
+                    allowedRouteSegments
                 ) {
                     it
                 } else {
                     ":id"
                 }
             }
-    }
 }

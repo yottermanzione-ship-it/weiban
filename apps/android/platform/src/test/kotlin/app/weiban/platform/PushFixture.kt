@@ -125,7 +125,16 @@ internal class PushFixture : AutoCloseable {
                             MockResponse().setBody(
                                 repository.api.json.encodeToString(
                                     Profile.serializer(),
-                                    Profile(null, null, null, "unspecified", null, null, "Asia/Shanghai", time),
+                                    Profile(
+                                        nickname = null,
+                                        avatarMediaId = null,
+                                        birthday = null,
+                                        gender = "unspecified",
+                                        city = null,
+                                        about = null,
+                                        timeZone = "Asia/Shanghai",
+                                        updatedAt = time,
+                                    ),
                                 ),
                             )
                         "/api/v1/conversations/$conversationId" ->

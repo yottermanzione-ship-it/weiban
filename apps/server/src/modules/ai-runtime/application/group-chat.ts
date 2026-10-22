@@ -13,6 +13,7 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import { nudgeText, readableMessageText } from './content-text.js';
 import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
 import { ImagePublicSearch } from './image-public-search.js';
+import { publicImageSource } from '../domain/image-public-search.js';
 import {
   CAPTION_MAX_IMAGES,
   captionInstruction,
@@ -969,12 +970,7 @@ export class GroupChatService {
           for (const slot of slots) {
             if (!slot.messageId || slot.ownerUserId !== input.userId) return false;
             const source = await this.chat.getMessage(slot.messageId, ['normal']);
-            if (
-              source?.status !== 'normal' ||
-              source.senderKind !== 'user' ||
-              source.conversationId !== conversation.conversationId
-            )
-              return false;
+            if (!publicImageSource(source, conversation.conversationId)) return false;
           }
           return true;
         },

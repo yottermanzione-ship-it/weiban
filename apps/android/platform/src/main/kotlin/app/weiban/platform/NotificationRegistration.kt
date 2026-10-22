@@ -16,6 +16,7 @@ internal class NotificationRegistration(
 ) {
     private val lock = Mutex()
 
+    @Suppress("TooGenericExceptionCaught") // Observe SDK/network failures without their payload, then preserve the original failure.
     suspend fun bind(owner: OwnerRecord) =
         lock.withLock {
             if (!transport.available || !notices.permitted() || !repository.notifications.enabled(owner)) return@withLock
@@ -23,7 +24,7 @@ internal class NotificationRegistration(
                 try {
                     transport.token()
                 } catch (error: Exception) {
-                    if (error !is kotlinx.coroutines.CancellationException && owned(owner)) repository.runtimeLogs?.pushFailure()
+                    observeFailure(owner, error)
                     throw error
                 }
             if (!repository.notifications.enabled(owner) || !notices.permitted()) return@withLock
@@ -39,11 +40,7 @@ internal class NotificationRegistration(
                         options = SessionCallOptions(owner = owner, networkOnly = true),
                     )
                 } catch (error: Exception) {
-                    if (error !is kotlinx.coroutines.CancellationException && owned(owner) &&
-                        (error !is app.weiban.network.ApiFailure || error.code !in setOf("session_changed", "unauthenticated"))
-                    ) {
-                        repository.runtimeLogs?.pushFailure()
-                    }
+                    observeFailure(owner, error)
                     throw error
                 }
             repository.notifications.saveDevice(owner, result.pushDeviceId)
@@ -65,6 +62,15 @@ internal class NotificationRegistration(
             }
             if (owned(owner)) transport.stop()
         }
+    }
+
+    private fun observeFailure(
+        owner: OwnerRecord,
+        error: Exception,
+    ) {
+        if (error is kotlinx.coroutines.CancellationException || !owned(owner)) return
+        if (error is app.weiban.network.ApiFailure && error.code in setOf("session_changed", "unauthenticated")) return
+        repository.runtimeLogs?.pushFailure()
     }
 
     private fun owned(owner: OwnerRecord): Boolean {

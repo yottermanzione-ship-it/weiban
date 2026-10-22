@@ -16,7 +16,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /** S 原生补齐：手动公开候选，不冒充 P1 的联想 / 同名身份引擎。 */
-@Composable internal fun WebCharacterCandidates(
+@Suppress("TooGenericExceptionCaught") // User-triggered search boundary renders only fixed retry text; cancellations are rethrown.
+@Composable
+internal fun WebCharacterCandidates(
     repository: SessionRepository,
     owner: OwnerRecord,
     query: String,

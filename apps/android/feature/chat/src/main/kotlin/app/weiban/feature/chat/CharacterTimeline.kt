@@ -40,7 +40,7 @@ private class TimelinePager(
         if (deleting) return false
         deleting = true
         removeError = null
-        try {
+        return try {
             repository.call(
                 Endpoints.timelineEndpointsRemoveEpisode,
                 params =
@@ -51,12 +51,12 @@ private class TimelinePager(
                 options = SessionCallOptions(owner = owner, networkOnly = true),
             )
             items.removeAll { it.entryId == entry.entryId }
-            return true
+            true
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
             removeError = "删除失败，请重试"
-            return false
+            false
         } finally {
             deleting = false
         }

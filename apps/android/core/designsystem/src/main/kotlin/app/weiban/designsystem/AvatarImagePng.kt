@@ -7,12 +7,11 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
 import app.weiban.designsystem.tokens.WbRadius
-import app.weiban.designsystem.tokens.WbSize
 import java.io.ByteArrayOutputStream
 
 /** Export a centred image crop with the same avatar corner ratio; leave source ownership to the caller. */
 fun avatarImagePng(source: Bitmap): ByteArray {
-    val size = WbSize.AvatarXxl.value
+    val size = NOTIFICATION_AVATAR_SIZE.toFloat()
     val result = Bitmap.createBitmap(size.toInt(), size.toInt(), Bitmap.Config.ARGB_8888)
     try {
         val side = minOf(source.width, source.height)

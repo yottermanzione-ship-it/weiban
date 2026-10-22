@@ -22,15 +22,16 @@ import androidx.compose.ui.text.font.createFontFamilyResolver
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import app.weiban.designsystem.tokens.WbRadius
-import app.weiban.designsystem.tokens.WbSize
 import java.io.ByteArrayOutputStream
 
-/** Notification systems need pixels: export the same style and shape as the UI at exactly 96px. */
+internal const val NOTIFICATION_AVATAR_SIZE = 96
+
+/** Notification pixels are independent of the UI's current avatar dimensions. */
 fun defaultAvatarPng(
     context: Context,
     style: DefaultAvatarStyle,
 ): ByteArray {
-    val size = WbSize.AvatarXxl.value
+    val size = NOTIFICATION_AVATAR_SIZE.toFloat()
     val bitmap = Bitmap.createBitmap(size.toInt(), size.toInt(), Bitmap.Config.ARGB_8888)
     try {
         val letters =

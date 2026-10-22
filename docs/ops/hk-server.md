@@ -68,7 +68,9 @@ $C restart app        # 重启应用
 systemctl list-timers weiban-backup.timer   # 下次备份时间
 ```
 
-**升级到新版本**：本机 `git archive --format=tar.gz -o src.tgz <版本>` → scp 到服务器 → 先手动备份 → 解压覆盖 `/srv/weiban/src` → `$C build && $C up -d --wait`。
+**升级到新版本（防旧分支覆盖）**：先把所有待发布改动合入 main，在干净的整合副本执行 `& .\deploy\hk\Assert-ReleaseSource.ps1 -Ref main`。此只读闸门会拉取最新 main 并读取服务器发布清单；缺少 main 或线上提交的旧任务分支、未提交业务文件均拒绝发布。通过后才可对已核准的完整 SHA 执行 `git archive` / 传输 / 构建；不可直接从任一旧任务副本覆盖线上源码。
+
+正式切换采用独立版本目录，先校验与 Git 源码摘要一致、隔离库迁移可执行、备份完整，再更新 `/srv/weiban/src` 版本链接和固定项目的镜像。保留上一版源码与镜像，更新 `/srv/weiban/deployment-version.txt` 中的完整 sourceCommit；不要覆盖在用源码目录后才开始构建。本次范例和证据见 [10-22 统一发布交接](../handoffs/2026-10-22-consolidated-release.md)。该闸门仅核验，不授予后续发布权限。
 
 **恢复**（只恢复到新的空项目，不覆盖在用的）：
 

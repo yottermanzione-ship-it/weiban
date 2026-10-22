@@ -31,7 +31,19 @@ class MeScreenTest {
     private lateinit var repository: SessionRepository
     private val timestamp = "2026-10-06T03:00:00.000Z"
     private val user = CurrentUser("01920000-0000-7000-8000-000000000014", "native_user", "user", false, timestamp)
-    private val profile = AtomicReference(Profile(null, null, null, "unspecified", null, null, "Asia/Shanghai", timestamp))
+    private val profile =
+        AtomicReference(
+            Profile(
+                nickname = null,
+                avatarMediaId = null,
+                birthday = null,
+                gender = "unspecified",
+                city = null,
+                about = null,
+                timeZone = "Asia/Shanghai",
+                updatedAt = timestamp,
+            ),
+        )
     private val notifications =
         AtomicReference(
             NotificationSettings(
@@ -125,7 +137,7 @@ class MeScreenTest {
                             5_000_001,
                             1_000_000,
                             WalletBackgroundBudget(2_000_000, 0, "2026-10-07T00:00:00.000Z"),
-                            timestamp,
+                            updatedAt = timestamp,
                         ),
                     )
                 "/api/v1/me/notification-settings" -> {

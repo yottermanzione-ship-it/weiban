@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CharacterForRuntime } from '@weiban/contracts';
-import { publicImageQuery } from './image-public-search.js';
+import { publicImageQuery, publicImageSource } from './image-public-search.js';
 import type { ImageCaption } from './image-caption.js';
 
 const role = {
@@ -29,6 +29,20 @@ const caption: ImageCaption = {
   people: [],
 };
 describe('公开图片查询出境边界', () => {
+  it('隐藏 / 清空消息即使仍是 normal 也不得作为搜索来源；健康标签先于模型分类', () => {
+    const message = {
+      status: 'normal',
+      senderKind: 'user',
+      conversationId: 'conversation',
+      labels: [],
+      content: { type: 'image' },
+    } as unknown as import('@weiban/contracts').Message;
+    expect(publicImageSource(message, 'conversation')).toBe(true);
+    expect(publicImageSource({ ...message, content: null }, 'conversation')).toBe(false);
+    expect(publicImageSource({ ...message, labels: ['health'] }, 'conversation')).toBe(false);
+    expect(publicImageSource({ ...message, status: 'recalled' }, 'conversation')).toBe(false);
+    expect(publicImageSource(message, 'other-conversation')).toBe(false);
+  });
   it('只导出已登记公开词，不泄露描述、OCR 或识别人名', () => {
     const result = publicImageQuery(role, [
       {
