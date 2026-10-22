@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.36. Regenerate: pnpm android:generate
+// Contract 3.37. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.36"
+const val CONTRACT_VERSION: String = "3.37"
 
 @Serializable
 data class AccountAlias(
@@ -6907,6 +6907,11 @@ data class ModelAccessAdminEndpointsTestUpstreamParams(
 )
 
 @Serializable
+data class ModelAccessAdminEndpointsUpdateArenaNameParams(
+    @SerialName("modelKey") val `modelKey`: String,
+)
+
+@Serializable
 data class ModelAccessAdminEndpointsUpdateUpstreamParams(
     @SerialName("upstreamId") val `upstreamId`: Id,
 )
@@ -10363,6 +10368,16 @@ data class UpdateAnniversaryRequestInput(
 )
 
 @Serializable
+data class UpdateArenaNameRequest(
+    @SerialName("arenaModelName") val `arenaModelName`: String?,
+)
+
+@Serializable
+data class UpdateArenaNameRequestInput(
+    @SerialName("arenaModelName") val `arenaModelName`: String?,
+)
+
+@Serializable
 data class UpdateAuthorizationRequest(
     @SerialName("authorizedCharacterIds") val `authorizedCharacterIds`: List<Id>,
 )
@@ -13462,6 +13477,7 @@ data class LeaderboardSnapshotStatusUnmatchedItem(
     @SerialName("modelKey") val `modelKey`: ModelKey,
     @SerialName("displayName") val `displayName`: String,
     @SerialName("arenaModelName") val `arenaModelName`: String?,
+    @SerialName("suggestions") val `suggestions`: List<LeaderboardSnapshotStatusUnmatchedItemSuggestionsItem>? = null,
 )
 
 @Serializable
@@ -14486,6 +14502,13 @@ data class EventsMessageActionChosenPayloadRef(
 data class EventsUserRegisteredPayloadSignupBonus(
     @SerialName("amountMicros") val `amountMicros`: Long,
     @SerialName("grantedByUserId") val `grantedByUserId`: Id?,
+)
+
+@Serializable
+data class LeaderboardSnapshotStatusUnmatchedItemSuggestionsItem(
+    @SerialName("name") val `name`: String,
+    @SerialName("rank") val `rank`: Long,
+    @SerialName("score") val `score`: Double,
 )
 
 @Serializable
