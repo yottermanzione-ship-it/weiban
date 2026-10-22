@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.34. Regenerate: pnpm android:generate
+// Contract 3.35. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.34"
+const val CONTRACT_VERSION: String = "3.35"
 
 @Serializable
 data class AccountAlias(
@@ -7043,6 +7043,7 @@ data class ModelInfo(
     @SerialName("capabilities") val `capabilities`: List<String>,
     @SerialName("tags") val `tags`: List<String>,
     @SerialName("leaderboardRank") val `leaderboardRank`: Long?,
+    @SerialName("leaderboardChange") val `leaderboardChange`: Long? = null,
     @SerialName("available") val `available`: Boolean,
     @SerialName("unavailableDetail") val `unavailableDetail`: String? = null,
     @SerialName("pointsPerReply") val `pointsPerReply`: Double? = null,
@@ -7058,6 +7059,9 @@ typealias ModelKey = String
 @Serializable
 data class ModelLeaderboardInfo(
     @SerialName("source") val `source`: ModelLeaderboardSource?,
+    @SerialName("fetchedAt") val `fetchedAt`: Timestamp? = null,
+    @SerialName("method") val `method`: String? = null,
+    @SerialName("lastError") val `lastError`: String? = null,
     @SerialName("popular") val `popular`: List<ModelLeaderboardInfoPopularItem>,
 )
 
@@ -13419,6 +13423,9 @@ data class LeaderboardSnapshotStatusSnapshot(
     @SerialName("fetchedAt") val `fetchedAt`: Timestamp,
     @SerialName("method") val `method`: String,
     @SerialName("entries") val `entries`: Long,
+    @SerialName("publishedAt") val `publishedAt`: LocalDate? = null,
+    @SerialName("sourceUrl") val `sourceUrl`: String? = null,
+    @SerialName("totalRows") val `totalRows`: Long? = null,
 )
 
 @Serializable
