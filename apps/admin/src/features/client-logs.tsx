@@ -32,6 +32,7 @@ export function RuntimeLogEvents({ events }: { events: ClientRuntimeEvent[] }) {
   return events.length ? (
     <Table
       rowKey="clientEventId"
+      rowSelection={{ preserveSelectedRowKeys: false }}
       size="small"
       pagination={{ pageSize: 10 }}
       dataSource={events}
@@ -318,32 +319,29 @@ function IssueDrawer({
             onChange={(e) => setNote(e.target.value)}
           />
           <SectionCard title="近 30 天次数">
-            <table>
-              <thead>
-                <tr>
-                  <th>日期</th>
-                  <th>次数</th>
-                  <th>趋势</th>
-                </tr>
-              </thead>
-              <tbody>
-                {remote.data.days.map((d) => (
-                  <tr key={d.day}>
-                    <td>{d.day}</td>
-                    <td>{d.count}</td>
-                    <td>
-                      <meter
-                        min={0}
-                        max={Math.max(1, ...remote.data!.days.map((x) => x.count))}
-                        value={d.count}
-                      >
-                        {d.count}
-                      </meter>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <Table
+              rowKey="day"
+              size="small"
+              pagination={false}
+              rowSelection={{ preserveSelectedRowKeys: false }}
+              dataSource={remote.data.days}
+              columns={[
+                { title: '日期', dataIndex: 'day' },
+                { title: '次数', dataIndex: 'count' },
+                {
+                  title: '趋势',
+                  render: (_, day) => (
+                    <meter
+                      min={0}
+                      max={Math.max(1, ...remote.data!.days.map((x) => x.count))}
+                      value={day.count}
+                    >
+                      {day.count}
+                    </meter>
+                  ),
+                },
+              ]}
+            />
           </SectionCard>
           <SectionCard title="最近 20 条样本">
             <RuntimeLogEvents events={remote.data.samples.map((s) => s.event)} />

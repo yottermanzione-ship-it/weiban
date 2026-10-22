@@ -244,6 +244,7 @@ export function EligibilityCard({ characterId }: { characterId: string }) {
         style={{ marginTop: 12 }}
         size="small"
         rowKey={(row) => `${row.at}-${row.reason}`}
+        rowSelection={{ preserveSelectedRowKeys: false }}
         pagination={false}
         dataSource={data.history}
         locale={{ emptyText: '还没有人工修改过' }}

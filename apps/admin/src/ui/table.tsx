@@ -124,7 +124,7 @@ export function DataTable<T extends Record<string, unknown>>({
                 onChange: (keys, rows) => onSelectionChange(keys, rows),
                 preserveSelectedRowKeys: true,
               }
-            : undefined
+            : { preserveSelectedRowKeys: false }
         }
         tableAlertOptionRender={
           batchActions

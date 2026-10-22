@@ -32,6 +32,7 @@ import {
 import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
+import { BatchStatusActions } from '../ui/batch-status.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
 import {
   FieldHelp,
@@ -65,6 +66,7 @@ export function StickerLibraryPage() {
   const packs = useRemote(StickerAdminEndpoints.listPacks);
   const characters = useCharacters();
   const [editing, setEditing] = useState<StickerPack | 'new' | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
   const [error, setError] = useState('');
 
   const nameOf = (id: string) => characters.find((c) => c.value === id)?.label ?? id.slice(0, 8);
@@ -137,6 +139,27 @@ export function StickerLibraryPage() {
       {error && <Alert type="error" showIcon message={error} />}
       <DataTable<StickerPack>
         rowKey="packId"
+        selectedKeys={selected}
+        onSelectionChange={(keys) => setSelected(keys.map(String))}
+        batchActions={(rows) => (
+          <BatchStatusActions
+            rows={rows}
+            name="表情包"
+            keyOf={(row) => row.packId}
+            labelOf={(row) => row.name}
+            update={(row, enabled) =>
+              api.call(StickerAdminEndpoints.updatePack, {
+                params: { packId: row.packId },
+                body: { enabled },
+              })
+            }
+            warning="停用后不能再发送这些包，已发出的消息仍保留。"
+            onComplete={(failed) => {
+              setSelected(failed);
+              packs.refresh();
+            }}
+          />
+        )}
         columns={columns}
         data={packs.data?.items ?? []}
         loading={packs.loading}
@@ -192,6 +215,7 @@ function StickerPackDrawer({
   }>();
   const feedback = useFormFeedback(form);
   const [current, setCurrent] = useState<StickerPack | null>(pack);
+  const [selectedStickers, setSelectedStickers] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [description, setDescription] = useState('');
@@ -275,6 +299,7 @@ function StickerPackDrawer({
           ...current,
           stickers: current.stickers.filter((s) => s.stickerId !== stickerId),
         });
+      setSelectedStickers((before) => before.filter((id) => id !== stickerId));
       onChanged();
       onToast('已删除');
     } catch (e) {
@@ -373,9 +398,64 @@ function StickerPackDrawer({
         title="表情"
         desc={current ? `共 ${current.stickers.length} 个` : '先保存表情包再加表情'}
       >
+        <Space wrap style={{ marginBottom: 12 }}>
+          <Checkbox
+            disabled={!current?.stickers.length}
+            checked={
+              !!current?.stickers.length && selectedStickers.length === current.stickers.length
+            }
+            indeterminate={
+              selectedStickers.length > 0 &&
+              selectedStickers.length < (current?.stickers.length ?? 0)
+            }
+            onChange={(event) =>
+              setSelectedStickers(
+                event.target.checked ? (current?.stickers.map((s) => s.stickerId) ?? []) : [],
+              )
+            }
+          >
+            全选包内表情
+          </Checkbox>
+          <span>已选 {selectedStickers.length} 个</span>
+          <BatchStatusActions
+            rows={(current?.stickers ?? []).filter((s) => selectedStickers.includes(s.stickerId))}
+            name="表情"
+            keyOf={(row) => row.stickerId}
+            labelOf={(row) => row.description}
+            remove={(row) =>
+              api.call(StickerAdminEndpoints.deleteSticker, {
+                params: { stickerId: row.stickerId },
+              })
+            }
+            onComplete={(failed) => {
+              const deleted = new Set(selectedStickers.filter((id) => !failed.includes(id)));
+              setCurrent((before) =>
+                before
+                  ? {
+                      ...before,
+                      stickers: before.stickers.filter((s) => !deleted.has(s.stickerId)),
+                    }
+                  : before,
+              );
+              setSelectedStickers(failed);
+              onChanged();
+            }}
+          />
+        </Space>
         <div className="sticker-grid">
           {(current?.stickers ?? []).map((sticker) => (
             <div className="sticker-card" key={sticker.stickerId}>
+              <Checkbox
+                aria-label={`选择表情${sticker.description}`}
+                checked={selectedStickers.includes(sticker.stickerId)}
+                onChange={(event) =>
+                  setSelectedStickers((before) =>
+                    event.target.checked
+                      ? [...before, sticker.stickerId]
+                      : before.filter((id) => id !== sticker.stickerId),
+                  )
+                }
+              />
               <img src={sticker.url} alt={sticker.description} />
               <span>{sticker.description}</span>
               <Button
@@ -433,6 +513,7 @@ export function VoiceLibraryPage() {
   const toast = useToast();
   const voices = useRemote(VoiceAdminEndpoints.listVoices);
   const [editing, setEditing] = useState<AdminVoice | 'new' | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
 
   const columns: ProColumns<AdminVoice>[] = [
     {
@@ -494,6 +575,27 @@ export function VoiceLibraryPage() {
     >
       <DataTable<AdminVoice>
         rowKey="voiceId"
+        selectedKeys={selected}
+        onSelectionChange={(keys) => setSelected(keys.map(String))}
+        batchActions={(rows) => (
+          <BatchStatusActions
+            rows={rows}
+            name="音色"
+            keyOf={(row) => row.voiceId}
+            labelOf={(row) => row.name}
+            update={(row, enabled) =>
+              api.call(VoiceAdminEndpoints.updateVoice, {
+                params: { voiceId: row.voiceId },
+                body: { enabled },
+              })
+            }
+            warning="停用后，正在使用这些音色的角色会退回默认音色。"
+            onComplete={(failed) => {
+              setSelected(failed);
+              voices.refresh();
+            }}
+          />
+        )}
         columns={columns}
         data={voices.data?.items ?? []}
         loading={voices.loading}
@@ -686,6 +788,7 @@ export function CardTemplatesPage() {
   const toast = useToast();
   const templates = useRemote(CardTemplateAdminEndpoints.listTemplates);
   const [editing, setEditing] = useState<CardTemplate | 'new' | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
 
   const columns: ProColumns<CardTemplate>[] = [
     {
@@ -747,6 +850,27 @@ export function CardTemplatesPage() {
     >
       <DataTable<CardTemplate>
         rowKey="templateId"
+        selectedKeys={selected}
+        onSelectionChange={(keys) => setSelected(keys.map(String))}
+        batchActions={(rows) => (
+          <BatchStatusActions
+            rows={rows}
+            name="卡面模板"
+            keyOf={(row) => row.templateId}
+            labelOf={(row) => row.name}
+            update={(row, enabled) =>
+              api.call(CardTemplateAdminEndpoints.updateTemplate, {
+                params: { templateId: row.templateId },
+                body: { enabled },
+              })
+            }
+            warning="停用后不再使用这些模板，已发出的卡片仍保留。"
+            onComplete={(failed) => {
+              setSelected(failed);
+              templates.refresh();
+            }}
+          />
+        )}
         columns={columns}
         data={templates.data?.items ?? []}
         loading={templates.loading}
@@ -918,6 +1042,7 @@ export function WorkLinksPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<WorkLink | 'new' | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
 
   const published = (characters.data?.items ?? []).filter((c) => c.status === 'published');
 
@@ -1040,7 +1165,10 @@ export function WorkLinksPage() {
             style={{ width: 220 }}
             placeholder="选择角色"
             value={characterId || undefined}
-            onChange={(value) => setCharacterId(value ?? '')}
+            onChange={(value) => {
+              setSelected([]);
+              setCharacterId(value ?? '');
+            }}
             options={published.map((c) => ({ value: c.characterId, label: c.name }))}
           />
           <Button
@@ -1057,6 +1185,32 @@ export function WorkLinksPage() {
       {error && <Alert type="error" showIcon message={error} />}
       <DataTable<WorkLink>
         rowKey="workLinkId"
+        selectedKeys={selected}
+        onSelectionChange={(keys) => setSelected(keys.map(String))}
+        batchActions={(rows) => (
+          <BatchStatusActions
+            rows={rows}
+            name="作品链接"
+            keyOf={(row) => row.workLinkId}
+            labelOf={(row) => row.title}
+            update={(row, enabled) =>
+              api.call(WorkLinkAdminEndpoints.updateWorkLink, {
+                params: { characterId, workLinkId: row.workLinkId },
+                body: { enabled },
+              })
+            }
+            remove={(row) =>
+              api.call(WorkLinkAdminEndpoints.deleteWorkLink, {
+                params: { characterId, workLinkId: row.workLinkId },
+              })
+            }
+            warning="停用后角色不再分享这些链接，已发出的消息仍保留。"
+            onComplete={(failed) => {
+              setSelected(failed);
+              void load();
+            }}
+          />
+        )}
         columns={columns}
         data={items}
         loading={loading}
