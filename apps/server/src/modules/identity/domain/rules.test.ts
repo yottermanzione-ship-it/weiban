@@ -82,7 +82,8 @@ describe('登录锁定（连续 5 次失败锁 15 分钟）', () => {
 describe('密码强度', () => {
   it('包含用户名、字符太单一、常见密码 → 弱', () => {
     expect(passwordWeakness('xxAlice_01xx', 'alice_01')).toMatch(/用户名/);
-    expect(passwordWeakness('ababababab', 'someone')).toMatch(/5 个不同/);
+    // 总经理已取消「至少5种字符」要求，重复字符不再单独拒绝。
+    expect(passwordWeakness('ababababab', 'someone')).toBeNull();
     expect(passwordWeakness('Password123', 'someone')).toMatch(/常见/);
   });
 

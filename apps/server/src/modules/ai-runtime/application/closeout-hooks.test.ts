@@ -13,12 +13,12 @@ describe('契约 3.1 的 AI 接入', () => {
     expect(planningCostLimitReached(100000, 10000)).toBe(true);
     expect(planningCostLimitReached(1000000, 30000)).toBe(false);
   });
-  it('余额低于后台保留线时不调用卡片文案模型', async () => {
+  it('余额耗尽时不调用卡片文案模型或读取角色资料', async () => {
     const generateText = vi.fn();
     const billing = {
       getSpendStatus: vi.fn().mockResolvedValue({
-        depleted: false,
-        availableMicros: 999999,
+        depleted: true,
+        availableMicros: 0,
       }),
     } as unknown as BillingReadPort;
     const args = [{ generateText }, {}, {}, billing] as unknown as ConstructorParameters<

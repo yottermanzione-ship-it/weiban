@@ -12,8 +12,17 @@ body {
   min-width: 1280px;
   background: #f4f5f7;
   color: #1f2329;
-  font-family: 'MiSans', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC',
-    'Noto Sans SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  font-family:
+    'MiSans',
+    -apple-system,
+    BlinkMacSystemFont,
+    'PingFang SC',
+    'HarmonyOS Sans SC',
+    'Noto Sans SC',
+    'Microsoft YaHei',
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 .admin-app {

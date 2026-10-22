@@ -49,7 +49,7 @@ async function openControlledSession(
     ).card,
   );
   if (customVoiceId) card.data.social.voiceId = customVoiceId;
-  const addCallSummary = vi.fn(async () => undefined);
+  const enqueueCallExtraction = vi.fn(async () => undefined);
   const resolveVoice = vi.fn(async () => customVoiceId ?? 'fixture-voice');
   let releaseAsr: (() => void) | undefined;
   const asr = {
@@ -140,11 +140,12 @@ async function openControlledSession(
         provide: CONTACTS_READ_PORT,
         useValue: {
           getActiveContact: async () => ({ conversationId: 'conversation', addressAs: '朋友' }),
+          getActiveContactEpoch: async () => ({ version: 'contact-epoch' }),
         },
       },
       { provide: CHAT_READ_PORT, useValue: { readMessages: async () => [] } },
       { provide: CLOCK, useValue: new TestClock('2026-10-11T10:00:00Z') },
-      { provide: MemoryService, useValue: { context: async () => null, addCallSummary } },
+      { provide: MemoryService, useValue: { context: async () => null, enqueueCallExtraction } },
       { provide: MediaAiService, useValue: { resolveVoice } },
       {
         provide: CompanionSettingsService,
@@ -174,7 +175,7 @@ async function openControlledSession(
   return {
     module,
     reply,
-    addCallSummary,
+    enqueueCallExtraction,
     resolveVoice,
     session,
     speech,
@@ -310,33 +311,34 @@ it('聊天模型仍在等待时，余额道别不能排在回复后面，晚到�
 it.each([
   { adult: true, scope: 'adult', modelRole: 'adult' },
   { adult: false, scope: 'normal', modelRole: 'background' },
-])(
-  '通话摘要按通话范围写入记忆：私密模式写 adult 且用私密模型，日常写 normal（方案 20 §2.4）',
-  async ({ adult, scope, modelRole }) => {
-    const call = await openControlledSession(false, undefined, {
-      adult,
-      userSays: '明天我要去面试',
-    });
-    try {
-      await vi.advanceTimersByTimeAsync(0);
-      await vi.advanceTimersByTimeAsync(0);
-      await call.session.close({ durationSec: 60, outcome: 'completed' });
-      await call.collected;
-      const summary = call.reply.mock.calls
-        .map((c) => (c as unknown as [{ purpose: string; modelRole: string }])[0])
-        .find((input) => input.purpose === 'memory');
-      expect(summary?.modelRole).toBe(modelRole);
-      expect(call.addCallSummary).toHaveBeenCalledTimes(1);
-      expect(call.addCallSummary).toHaveBeenCalledWith(
-        'user',
-        'role',
-        'call',
-        expect.any(String),
+])('挂断后按通话范围进入持久抽取队列，不在挂断链路同步调用记忆模型', async ({ adult, scope }) => {
+  const call = await openControlledSession(false, undefined, {
+    adult,
+    userSays: '明天我要去面试',
+  });
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    await call.session.close({ durationSec: 60, outcome: 'completed' });
+    await call.collected;
+    const summary = call.reply.mock.calls
+      .map((c) => (c as unknown as [{ purpose: string; modelRole: string }])[0])
+      .find((input) => input.purpose === 'memory');
+    expect(summary).toBeUndefined();
+    expect(call.enqueueCallExtraction).toHaveBeenCalledTimes(1);
+    expect(call.enqueueCallExtraction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user',
+        characterId: 'role',
+        callId: 'call',
         scope,
-      );
-    } finally {
-      await call.session.close({ durationSec: 0, outcome: 'ended' });
-      await call.module.close();
-    }
-  },
-);
+        conversationId: 'conversation',
+        epoch: 'contact-epoch',
+        transcript: expect.stringContaining('明天我要去面试'),
+      }),
+    );
+  } finally {
+    await call.session.close({ durationSec: 0, outcome: 'ended' });
+    await call.module.close();
+  }
+});

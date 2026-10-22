@@ -57,7 +57,7 @@ export const ClientLogFrame = z
 export const ClientLogRoute = z
   .string()
   .max(180)
-  .regex(/^\/(?:[a-z-]+|:id)?(?:\/(?:[a-z-]+|:id))*$/);
+  .regex(/^\/(?:v1|[a-z-]+|:id)?(?:\/(?:v1|[a-z-]+|:id))*$/);
 export const ClientRuntimeEvent = z
   .object({
     clientEventId: Id,

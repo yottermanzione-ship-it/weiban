@@ -126,6 +126,7 @@ it('M1 shared reader isolates scopes and characters, preserves retrieval limits 
     settings: { get: async () => fixture.settings },
     growth: { relationshipStage: async () => fixture.stage },
     continuity: { context: async () => '' },
+    episodes: { context: async () => '' },
     memory: { context },
     clock: { now: () => fixture.now },
     simulation: {

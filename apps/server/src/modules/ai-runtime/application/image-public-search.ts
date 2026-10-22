@@ -36,6 +36,16 @@ export class ImagePublicSearch {
     valid: () => Promise<boolean>,
     eligible = true,
   ): Promise<PortResult<GenerateTextOutput, GenerateError>> {
+    return this.refineChecked(input, first, generate, valid, eligible).catch(() => first);
+  }
+
+  private async refineChecked(
+    input: GenerateTextInput,
+    first: PortResult<GenerateTextOutput, GenerateError>,
+    generate: ModelGatewayPort['generateText'],
+    valid: () => Promise<boolean>,
+    eligible = true,
+  ): Promise<PortResult<GenerateTextOutput, GenerateError>> {
     if (
       !this.config.imagePublicSearchEnabled ||
       !eligible ||

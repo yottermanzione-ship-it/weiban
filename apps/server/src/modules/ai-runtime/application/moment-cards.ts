@@ -104,7 +104,7 @@ export class CardLineService implements CardCopywriterPort {
     idempotencyKey: string;
   }): Promise<string | null> {
     const spend = await this.billing.getSpendStatus(input.userId).catch(() => null);
-    if (!spend) return null; // 实际额度交给已核上限冻结。
+    if (!spend || spend.depleted || spend.insufficient) return null;
     if (this.ecology && !(await this.ecology.isActive(input.userId, input.characterId)))
       return null;
     const role = await this.characters.getForRuntime(input.userId, input.characterId);
