@@ -1,6 +1,6 @@
 # 后台多选第二批
 
-> 本批开发和相关检查完成，尚待发布；上线后在本页登记实际来源、备份和健康结果。只改前端，不改公开契约、后端权限或真实业务数据，不构建APK。
+> **已发布**：北京时间2026-10-23 07:49:43，运行源码 `54a0110986593a487b5d7fc6307da23a3061df19`，契约3.37，网页构建424787。只改前端，不改公开契约或后端权限；没有批量修改/删除生产业务记录，没有构建APK。
 
 ## 范围与实际行为
 
@@ -24,6 +24,15 @@
 - 共用表格：[DataTable](../../apps/admin/src/ui/table.tsx)、[批量状态操作](../../apps/admin/src/ui/batch-status.tsx)。
 - 页面：[素材库](../../apps/admin/src/features/media-library.tsx)、[运行记录](../../apps/admin/src/features/client-logs.tsx)、[资格历史](../../apps/admin/src/features/character-eligibility.tsx)。
 - 本地夹具及案例：[夹具](../../apps/admin/test/browser-fixtures/batch-operations.tsx)、[浏览器案例](../../apps/admin/test/service-pricing/batch-operations.spec.ts)。
+
+## 正式发布回执
+
+- 来源闸门确认本批完整提交包含发布时最新远端main与线上fb166f9完整提交。旧源码1667个相关文件、新候选2724个Git blob通过核验；只规范化Windows脚本CRLF，不忽略业务差异。
+- 独立版本目录上构建server/web/admin产物及app/edge镜像，没有重复运行功能测试或构建APK。精确补丁44,834字节，SHA256 `0ee20163c1ba74dbbc81fd16baae21d2f5acc055ba2624e14820ce0d123f1002`。
+- 备份 `/srv/weiban/backups/weiban-20261022T234927Z-UWuE6L` 的数据库及媒体均age加密、校验通过；发布状态 `/srv/weiban/backups/release-state-20261022T234927Z`。旧版本目录和before镜像保留，不覆盖恢复数据库、不删除历史备份。
+- 发布进程PID3344698退出0；实际容器镜像与候选一致，前后台健康ok/HTTP200、契约3.37、crypto有效。无待执行迁移，最新仍0135_client_logs。输入图公开补查=1、角色自主网图=0；没有改变模型选择、价格、网图开关或语音设置。
+- app镜像 `sha256:8979f004126619befe31e221aa24b43831e50a0b2f64f79fcfc6f276b7048703`；edge镜像 `sha256:3e4aadc8dfe7f30dba9a6af011f0fa8703b064d2b1709701f19913ad6c87ffc9`；运行目录 `/srv/weiban/releases/54a0110986593a487b5d7fc6307da23a3061df19-web`。
+- 发布必要健康/身份检查不是全产品验收；没有用真实账号点批量操作去修改生产数据。其他Agent的榜单和价格改动、第一批表情界面均保留。
 
 ## 后续仍未完成
 
