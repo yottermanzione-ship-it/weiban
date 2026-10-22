@@ -101,7 +101,17 @@ export class ReplyEngine {
     });
     // v3.3（积分制）：累计这次回复各次调用扣的钱，记在第一个气泡上（Message.pointsCost）。
     const charge = { usageRecordId: null as string | null, chargedMicros: 0 };
-    const gw = trackCharges(this.gateway, charge);
+    const chargedGateway = trackCharges(this.gateway, charge);
+    let imageReplyCalls = 0;
+    const gw: ModelGatewayPort = {
+      getModelStatus: (userId, characterId) => chargedGateway.getModelStatus(userId, characterId),
+      generateText: (input) => {
+        // P3's extra text answer shares the original two-call budget with all rewrite paths.
+        if (snapshot.imageSlots.length && input.purpose === 'chat_reply' && ++imageReplyCalls > 2)
+          return Promise.resolve({ ok: false as const, error: 'policy_denied' as const });
+        return chargedGateway.generateText(input);
+      },
+    };
     const care = snapshot.highRisk || snapshot.careActive;
     let suspected = snapshot.suspected;
     if (suspected && !care) {
