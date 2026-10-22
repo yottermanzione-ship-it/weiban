@@ -231,7 +231,7 @@ export class ModelAdminController {
   @HttpCode(200)
   @RequireAuth(A.refreshLeaderboard.auth)
   refreshLeaderboard(@CurrentPrincipal() me: AuthPrincipal) {
-    return this.leaderboard.refresh(me.userId);
+    return this.leaderboard.requestRefresh(me.userId);
   }
 
   @Post('leaderboard/import')

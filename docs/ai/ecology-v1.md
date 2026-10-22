@@ -1,5 +1,7 @@
 # 角色生态 v1：实现说明
 
+> 2026-10-22：photo 动作为分享公开图片/库图，不再依赖生图开通或调用生图。明确分享动作可付费联网检索固定公开主题，转存失败/无图时保留已经实扣搜索费统计；不声称自拍。其余卡片、宠物、朋友圈配图只走库图。最新边界见[接口说明](../architecture/2026-10-22-character-picture-contract-change.md)。
+
 > 依据：`docs/refactor/17-ecology-settings.md`（用户可见设置与动作清单的唯一定义处）、`docs/refactor/16-membership-v5.md` §4（收费）、`docs/product/input/2026-10-18-gm-ecology-vision.md`（目标形态）、`docs/backend/model-routing-ecology-plan.md` 块 B/C。
 > 本文只说明「代码怎么做的」，不重复上面文档里的产品规则。批次：v5 批 C（2026-10-20），契约 3.19，迁移 0109–0111。
 

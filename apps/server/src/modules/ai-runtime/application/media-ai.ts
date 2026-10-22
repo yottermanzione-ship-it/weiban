@@ -73,7 +73,7 @@ const VOICE_MAX_CHARS = 120;
 const VOICE_REQUEST =
   /(发|来)(条|个|段|一段|一条)?语音|语音(给我|发我|说)|听听你的声音|想听你(的)?声音|用语音/u;
 const PHOTO_REQUEST =
-  /(发|拍|来)(张|个|一张)?(照片|图|图片|自拍)|拍给我看|给我看看你(在|那边|那里)|看看你(在干嘛|那边)/u;
+  /(发|拍|来|找|搜|分享)(张|个|一张)?[^\n。！？]{0,20}(照片|图片|图|自拍)|拍给我看|给我看看你(在|那边|那里)|看看你(在干嘛|那边)/u;
 const LINK_REQUEST =
   /(推荐|分享|发我|发给我|想听|想看|听听|看看).{0,8}(歌|歌曲|音乐|作品|新歌|视频|电影|剧|专辑)|(歌|作品|视频|专辑).{0,4}(链接|地址)/u;
 
@@ -408,6 +408,7 @@ export class MediaAiService {
     instant?: boolean;
     /** 情景预设「树洞分享」：不主动发语音和表情包（用户明确要语音时照发）。 */
     quiet?: boolean;
+    onSearchCharged?: (chargedMicros: number) => void;
   }): Promise<MessageContent[] | null> {
     const { ctx, bubbles } = input;
     const joined = bubbles.join('，');
@@ -469,14 +470,16 @@ export class MediaAiService {
     const contents: MessageContent[] = bubbles.map((text) => ({ type: 'text', text }));
     let changed = false;
 
-    // T-072 MED-02：用户想看照片时发一张 TA 视角的图（真人无人脸；未开通时素材库兜底，没有就不发）。
+    // 用户要图：只分享安全公开网页封面或合规库图，不调用生图或付费人脸检查。
     if (PHOTO_REQUEST.test(input.userText)) {
       const image = await this.images
         .generate({
           userId: ctx.userId,
           characterId: ctx.characterId,
           conversationId: ctx.conversationId,
-          scene: joined.slice(0, 300),
+          scene: input.userText.slice(0, 300),
+          searchPublic: true,
+          onSearchCharged: input.onSearchCharged,
           use: 'chat',
           idempotencyKey: `reply:${input.triggerId}`,
         })
@@ -488,6 +491,12 @@ export class MediaAiService {
           width: image.width,
           height: image.height,
           sizeBytes: image.sizeBytes,
+        });
+        contents.push({
+          type: 'text',
+          text: image.sourceUrl
+            ? `网上找到的图片，来源：${image.sourceUrl}`
+            : '分享一张素材库图片。',
         });
         changed = true;
       }

@@ -43,6 +43,9 @@ export const ModelLeaderboardSource = z.object({
 });
 export const ModelLeaderboardInfo = z.object({
   source: ModelLeaderboardSource.nullable(),
+  fetchedAt: Timestamp.nullable().optional(),
+  method: z.enum(['fetch', 'paste']).nullable().optional(),
+  lastError: z.string().max(300).nullable().optional(),
   popular: z.array(z.object({ modelKey: z.string(), users: z.number().int().nonnegative() })),
 });
 
@@ -79,7 +82,7 @@ export const PriceTier = z.enum(['cheap', 'medium', 'expensive']);
  * - voice_message 语音消息（角色发语音的合成；角色音色绑定了具体语音模型时以音色为准）；
  * - speech_recognition 语音识别（用户语音转文字，含通话里听用户）；
  * - voice_call 语音通话（通话中对话用的文本模型）；
- * - image_generation 发照片 / 自拍（图片生成）；
+ * - image_generation 已停用的发照片配置，仅保留旧客户端解析；自主发图不调用生图；
  * - private 私密模式聊天（原「成人模式模型」）。
  */
 export const ModelScenario = z.enum([
@@ -170,6 +173,8 @@ export const ModelInfo = z.object({
    * （原榜第 1、3、4、9 名 → 1、2、3、4），不显示原始名次；没上榜为 null。
    */
   leaderboardRank: z.number().int().positive().nullable(),
+  /** 与上一份有效快照按当前模型集合比较，正数为上升；无可比数据为 null。 */
+  leaderboardChange: z.number().int().nullable().optional(),
   /** 当前是否可用（上游故障时为 false，下架的模型不出现在列表中）。 */
   available: z.boolean(),
   /** 3.24：不可用的具体原因。3.25 起用户端接口不再带（只后台可见）。 */
@@ -881,6 +886,9 @@ export const LeaderboardSnapshotStatus = z.object({
       /** fetch = 服务器自动抓取；paste = 后台粘贴 / 上传导入。 */
       method: z.enum(['fetch', 'paste']),
       entries: z.number().int().nonnegative(),
+      publishedAt: LocalDate.nullable().optional(),
+      sourceUrl: z.url().nullable().optional(),
+      totalRows: z.number().int().nonnegative().nullable().optional(),
     })
     .nullable(),
   /** 最近一次抓取 / 导入尝试的时间与失败原因（成功时 lastError 为 null）。 */

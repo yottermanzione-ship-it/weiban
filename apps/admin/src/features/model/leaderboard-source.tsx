@@ -1,10 +1,10 @@
 /**
  * 用户模型榜单来源（10-20 从「系统设置」移到「模型管理」页顶部）。
- * 3.24（试用反馈第二轮 F2 第 6 条）：榜单自动获取——服务器每天抓一次来源链接（也可「立即刷新」），
+ * 3.24（试用反馈第二轮 F2 第 6 条）：榜单自动获取——服务器每六小时同步官方数据集（也可「立即刷新」），
  * 按各模型的「榜单对应名称」匹配名次，用户端按相对顺序重新编号 1..N；抓不到时保留上次结果并写明原因，
  * 可改用「粘贴导入」（从榜单网页整表复制，或上传 CSV）。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Collapse, DatePicker, Form, Input, Space, Tag, Upload } from 'antd';
 import { ReloadOutlined, UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -32,6 +32,13 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
   const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const pollRun = useRef(0);
+  useEffect(
+    () => () => {
+      pollRun.current += 1;
+    },
+    [],
+  );
   const [pasting, setPasting] = useState(false);
   const [error, setError] = useState('');
   const current = status ?? statusRemote.data ?? null;
@@ -59,6 +66,7 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
         },
       });
       toast.success('已保存，用户端排行榜会显示新的来源');
+      setStatus(null);
       remote.refresh();
       statusRemote.refresh();
     } catch (e) {
@@ -69,11 +77,26 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
   }
 
   async function refreshNow() {
+    const run = ++pollRun.current;
     setRefreshing(true);
     setError('');
     try {
-      const next = await api.call(ModelAccessAdminEndpoints.refreshLeaderboard);
-      setStatus(next);
+      const initial = await api.call(ModelAccessAdminEndpoints.refreshLeaderboard);
+      setStatus(initial);
+      toast.info('已提交后台同步；完整分页可能需要数分钟，请勿重复刷新。');
+      let next = initial;
+      const started = Date.now();
+      while (run === pollRun.current && Date.now() - started < 600_000) {
+        await new Promise((resolve) => window.setTimeout(resolve, 5_000));
+        if (run !== pollRun.current) return;
+        next = await api.call(ModelAccessAdminEndpoints.getLeaderboardStatus);
+        setStatus(next);
+        if (next.lastAttemptAt !== initial.lastAttemptAt) break;
+      }
+      if (next.lastAttemptAt === initial.lastAttemptAt) {
+        toast.warning('同步尚未返回新结果，请稍后查看状态；当前有效榜单不受影响。');
+        return;
+      }
       if (next.lastError) toast.warning('这次没抓到，已保留上次的榜单');
       else toast.success(`已更新榜单，共 ${next.snapshot?.entries ?? 0} 条`);
       onChanged?.();
@@ -91,7 +114,7 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
         remote.data
           ? `用户端显示「来源：${remote.data.label}${
               current?.snapshot
-                ? ` · ${dayjs(current.snapshot.fetchedAt).format('YYYY-MM-DD')}`
+                ? ` · ${current.snapshot.publishedAt ?? '发布日期未知'}`
                 : remote.data.asOf
                   ? ` · ${remote.data.asOf}`
                   : ''
@@ -138,7 +161,7 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
         <Form.Item
           label="参考日期"
           extra={
-            <FieldHelp>没有自动获取 / 导入的榜单时显示这个日期；有了就显示榜单更新日期。</FieldHelp>
+            <FieldHelp>仅供手动来源备注；官方发布日期由数据集提供，不用抓取日期代替。</FieldHelp>
           }
         >
           <Form.Item name="asOf" noStyle>
@@ -153,7 +176,10 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
             { type: 'url', message: '要以 https:// 开头' },
           ]}
           extra={
-            <FieldHelp>只支持 Arena 官方 https 链接；服务器每天 4:20 自动抓取一次。</FieldHelp>
+            <FieldHelp>
+              只支持 Arena 官方 https 链接；服务器每六小时完整分页同步官方 Dataset Viewer 的 Overall
+              数据。
+            </FieldHelp>
           }
         >
           <Input />
@@ -182,12 +208,13 @@ function SnapshotStatus({ status }: { status: LeaderboardSnapshotStatus }) {
         <strong>自动获取：</strong>
         {status.snapshot ? (
           <span>
-            当前榜单更新于 {fmt(status.snapshot.fetchedAt)}（
-            {status.snapshot.method === 'fetch' ? '服务器抓取' : '粘贴导入'}，
-            {status.snapshot.entries} 条）
+            官方发布日期 {status.snapshot.publishedAt ?? '未知'}；抓取于{' '}
+            {fmt(status.snapshot.fetchedAt)}（
+            {status.snapshot.method === 'fetch' ? '官方数据集' : '管理员手工导入（非自动官方同步）'}
+            ，{status.snapshot.entries} 条）
           </span>
         ) : (
-          <span>还没有榜单数据（用户端按手填名次显示）</span>
+          <span>还没有有效榜单数据（用户端显示暂无排名）</span>
         )}
       </div>
       {status.lastError && (
@@ -224,7 +251,7 @@ function SnapshotStatus({ status }: { status: LeaderboardSnapshotStatus }) {
                   </Tag>
                 ))}
                 <div className="field-help" style={{ marginTop: 6 }}>
-                  没匹配上的模型在用户端排行榜里排在后面、不显示名次；在模型抽屉里改「榜单对应名称」即可。
+                  没匹配上的模型在用户端排行榜里排在后面、显示「暂无排名」；在模型抽屉里改「榜单对应名称」即可。
                 </div>
               </div>
             ),

@@ -10,7 +10,7 @@ export function publicImageSource(message: Message | null, conversationId: strin
     !!message.content &&
     message.senderKind === 'user' &&
     message.conversationId === conversationId &&
-    !message.labels.includes('health')
+    !(message.labels ?? []).includes('health')
   );
 }
 

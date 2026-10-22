@@ -42,7 +42,6 @@ const SCENARIO_ORDER: ModelScenario[] = [
   'voice_message',
   'speech_recognition',
   'voice_call',
-  'image_generation',
   'private',
 ];
 const INTERNAL_ORDER: InternalUse[] = [

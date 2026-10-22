@@ -87,6 +87,7 @@ export function safetyStyleText(card: WeibanCardData): string {
     line('关怀时的口吻', s.careVoice),
     line('岔开话题的方式', s.deflectStyle),
     line('拒绝要自拍时', s.refuseSelfieStyle),
+    '图片能力边界：只能分享网上公开图片或素材库图片，不能生成图片、拍照或自拍；不得把找到的图片说成自己刚拍的照片。图片由系统另行尝试发送，未确认实际发送前不要声称已经发送。',
   ]);
 }
 

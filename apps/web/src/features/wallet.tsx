@@ -1,7 +1,7 @@
 /*
- * 积分（docs/refactor/06-old-ui-spec.md 第 6 节）：钱包、充值、积分明细（含每条消息）、价目表。
+ * 积分（docs/refactor/06-old-ui-spec.md 第 6 节）：钱包、充值、积分流水汇总、价目表。
  * 1 元 = 100 积分；界面只用接口下发的 *Points 字段（契约 3.3），格式见 points.ts。
- * 聊天、通话、朋友圈里不出现积分数；每条消息的消耗在「积分明细 › 每条消息」里查看。
+ * 聊天、通话、朋友圈里不出现积分数；消耗在「积分明细」按日期、角色和类别汇总查看。
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -9,9 +9,7 @@ import {
   BillingEndpoints,
   RECHARGE_MIN_FEN,
   RECHARGE_MAX_FEN,
-  ChatEndpoints,
   ModelAccessEndpoints,
-  type ChargedMessage,
   type LedgerEntry,
   type ModelInfo,
 } from '@weiban/contracts';
@@ -21,7 +19,6 @@ import { useCharacterNames } from '../data/character-names.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { OldImage } from './old-icons.js';
 import {
-  Chevron,
   EmptyState,
   GroupHeader,
   IconTile,
@@ -308,9 +305,6 @@ export function LedgerPage() {
   const [filter, setFilter] = useState<'all' | 'spend' | 'topup'>('all');
   const [cursor, setCursor] = useState<string>();
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
-  const [charged, setCharged] = useState<Record<string, ChargedMessage | null>>({});
-  const [open, setOpen] = useState<LedgerGroup | null>(null);
-  const navigate = useNavigate();
   const remote = useRemote(BillingEndpoints.listLedger, {
     query: { type: filter, limit: 100, ...(cursor ? { cursor } : {}) },
   });
@@ -325,81 +319,12 @@ export function LedgerPage() {
         return [...before, ...remote.data!.items.filter((e) => !seen.has(e.entryId))];
       });
   }, [remote.data]);
-  // 两段取数（6.4）：扣费流水的 usageRecordId 批量查消息摘要（每次 ≤ 100）。
-  useEffect(() => {
-    const missing = entries
-      .map((e) => e.usageRecordId)
-      .filter((id): id is string => !!id && !(id in charged));
-    if (!missing.length) return;
-    let active = true;
-    const chunks: string[][] = [];
-    for (let i = 0; i < missing.length; i += 100) chunks.push(missing.slice(i, i + 100));
-    void Promise.all(
-      chunks.map((usageRecordIds) =>
-        api.call(ChatEndpoints.listChargedMessages, { body: { usageRecordIds } }),
-      ),
-    )
-      .then((results) => {
-        if (!active) return;
-        setCharged((before) => {
-          const next = { ...before };
-          // 查不到的也记下，避免重复请求（值为占位）。
-          for (const id of missing) if (!(id in next)) next[id] = null;
-          for (const r of results) for (const item of r.items) next[item.usageRecordId] = item;
-          return next;
-        });
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [entries, charged]);
   const characterIds = useMemo(
     () => [...new Set(entries.map((e) => e.characterId).filter((id): id is string => !!id))],
     [entries],
   );
   const names = useCharacterNames(characterIds);
   const days = groupLedger(entries);
-  const messagesOf = (group: LedgerGroup) =>
-    group.entries
-      .map((e) => (e.usageRecordId ? charged[e.usageRecordId] : null))
-      .filter((m): m is ChargedMessage => !!m);
-
-  if (open) {
-    const messages = messagesOf(open).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    const title = `${open.characterId ? (names[open.characterId] ?? '角色') : '平台'} · ${categoryNames[open.category ?? 'unsupported'] ?? '其他'}`;
-    return (
-      <main className="ledger-page">
-        <NavBar title={title} onBack={() => setOpen(null)} />
-        <GroupHeader right={`消耗 ${formatPoints(Math.abs(open.points))}`}>
-          {dayLabel(open.day)}
-        </GroupHeader>
-        <MenuGroup>
-          {messages.map((m) => (
-            <button
-              key={m.usageRecordId}
-              type="button"
-              className="charge-row"
-              onClick={() => navigate(`/chat/${m.conversationId}`)}
-            >
-              <span className="charge-top">
-                <small>
-                  {new Date(m.createdAt).toLocaleTimeString('zh-CN', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </small>
-                <b className="tabular">{signedPoints(-m.pointsCost)} 积分</b>
-              </span>
-              <span className="charge-excerpt">{m.excerpt}</span>
-            </button>
-          ))}
-        </MenuGroup>
-        {messages.length === 0 && <EmptyState icon="wechat/note" title="没有可查看的消息" />}
-      </main>
-    );
-  }
-
   return (
     <main className="ledger-page">
       <NavBar title="积分明细" fallback="/wallet" />
@@ -456,8 +381,6 @@ export function LedgerPage() {
                     </div>
                   );
                 }
-                const messages = messagesOf(group);
-                const linkable = messages.length > 0;
                 const who = group.characterId ? (names[group.characterId] ?? '角色') : '平台';
                 const body = (
                   <>
@@ -470,26 +393,12 @@ export function LedgerPage() {
                       <span>
                         {who} · {categoryNames[group.category ?? 'unsupported'] ?? '其他'}
                       </span>
-                      <small>
-                        {linkable
-                          ? `共 ${messages.length} 条消息`
-                          : `共 ${group.entries.length} 次`}
-                      </small>
+                      <small>共 {group.entries.length} 次消耗</small>
                     </span>
                     <b className="tabular">{signedPoints(group.points)}</b>
-                    {linkable && <Chevron />}
                   </>
                 );
-                return linkable ? (
-                  <button
-                    key={group.key}
-                    type="button"
-                    className="ledger-row-old"
-                    onClick={() => setOpen(group)}
-                  >
-                    {body}
-                  </button>
-                ) : (
+                return (
                   <div key={group.key} className="ledger-row-old">
                     {body}
                   </div>

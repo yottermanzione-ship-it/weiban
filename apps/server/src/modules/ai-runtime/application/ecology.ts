@@ -76,6 +76,7 @@ import { SharedEpisodesService } from './shared-episodes.js';
 import { MomentsAiService } from './moments-ai.js';
 import {
   PLAY_WISH_PROPOSE_SOURCE,
+  ProactiveChargeError,
   ProactiveSchedulerService,
   localParts,
 } from './proactive-scheduler.js';
@@ -409,7 +410,7 @@ export class EcologyService {
     const done = await this.perform(run, action, decision, snapshot).catch(
       (error: unknown): ActionResult => ({
         ok: false,
-        chargedMicros: 0,
+        chargedMicros: error instanceof ProactiveChargeError ? error.chargedMicros : 0,
         reason: error instanceof Error ? error.message : 'error',
       }),
     );
@@ -467,7 +468,7 @@ export class EcologyService {
       });
       return r.ok
         ? { ok: true, chargedMicros: r.chargedMicros }
-        : { ok: false, chargedMicros: 0, reason: r.reason };
+        : { ok: false, chargedMicros: r.chargedMicros ?? 0, reason: r.reason };
     };
     switch (action) {
       case 'weibo_sync':

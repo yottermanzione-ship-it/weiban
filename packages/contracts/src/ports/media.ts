@@ -1,4 +1,4 @@
-import type { MediaObject, MediaPurpose } from '../http/media.js';
+import type { LinkPreview, MediaObject, MediaPurpose } from '../http/media.js';
 import type { Tx } from './common.js';
 
 /** media 提供：验证头像归属及取得短期访问链接。不存在/无权访问时统一 not_found。 */
@@ -68,6 +68,8 @@ export interface MediaAssetReadPort {
 
 /** 3.0：链接预览与可访问性检查（MED-05）。提供方 media。 */
 export interface LinkPreviewPort {
+  /** 安全抓取网页封面并转存为本人 chat_image；复用同名 HTTP 设施及其 SSRF、大小、转码与限流保护。 */
+  previewForUser?(userId: string, url: string): Promise<LinkPreview>;
   preview(url: string): Promise<{
     reachable: boolean;
     title: string | null;

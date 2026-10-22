@@ -36,7 +36,6 @@ export const SCENARIOS: Array<{ key: ModelScenario; label: string; hint: string 
   { key: 'voice_message', label: '语音消息', hint: '角色发语音时的声音合成' },
   { key: 'speech_recognition', label: '语音识别', hint: '把你的语音转成文字（含通话）' },
   { key: 'voice_call', label: '语音通话', hint: '通话时角色说话用的模型' },
-  { key: 'image_generation', label: '发照片', hint: '角色发照片、自拍' },
   { key: 'private', label: '私密模式', hint: '私密模式聊天用的模型（私密模式下发的图片也给它看）' },
 ];
 const TEXT_SCENARIOS: readonly ModelScenario[] = ['chat', 'voice_call', 'private'];
@@ -138,7 +137,11 @@ function ScenarioView() {
   const [pending, setPending] = useState(false);
   const rows = config.data?.scenarios ?? [];
   const canRecommend = rows.some(
-    (r) => r.scenario !== 'private' && !r.selection && r.recommendedModelKey,
+    (r) =>
+      SCENARIOS.some((s) => s.key === r.scenario) &&
+      r.scenario !== 'private' &&
+      !r.selection &&
+      r.recommendedModelKey,
   );
   async function recommend() {
     setPending(true);
@@ -198,7 +201,7 @@ function ScenarioView() {
         </div>
       )}
       <p className="hint page-note">
-        角色的日常动态（发文字、发语音、发照片）按对应场景自动使用这里的模型，不用单独选。
+        角色的文字和语音按对应场景使用模型；表情包、网上找图不调用生图模型，无需单独配置。
       </p>
       {(config.error || models.error) && (
         <p role="alert" className="notice-bar">
@@ -241,27 +244,55 @@ export function ScenarioModelPage() {
   const config = useRemote(ModelAccessEndpoints.getScenarioConfig, { networkOnly: true });
   const info = useRemote(ModelAccessEndpoints.getLeaderboardInfo);
   const [tab, setTab] = useState<'rank' | 'popular'>('rank');
+  const [search, setSearch] = useState('');
+  const [reverse, setReverse] = useState(false);
   const [pending, setPending] = useState(false);
   const row = config.data?.scenarios.find((r) => r.scenario === meta.key);
   const current = row?.selection?.modelKey ?? '';
   const recommended = row?.recommendedModelKey ?? null;
-  const all =
+  const visible =
     models.data?.items.filter(
       (m) => meta.key === 'private' || !m.capabilities.includes('adult_content'),
     ) ?? [];
+  // 按现行展示权限过滤后再次连续编号，不能因隐藏模型留下名次空档；搜索不改变榜单编号。
+  const rankIndex = new Map(
+    [...visible]
+      .filter((m) => m.leaderboardRank != null)
+      .sort((a, b) => a.leaderboardRank! - b.leaderboardRank!)
+      .map((m, i) => [m.modelKey, i + 1]),
+  );
+  const previousIndex = new Map(
+    [...visible]
+      .filter((m) => m.leaderboardRank != null && m.leaderboardChange != null)
+      .sort(
+        (a, b) =>
+          a.leaderboardRank! + a.leaderboardChange! - (b.leaderboardRank! + b.leaderboardChange!),
+      )
+      .map((m, i) => [m.modelKey, i + 1]),
+  );
+  const all = visible.map((m) => ({
+    ...m,
+    leaderboardRank: rankIndex.get(m.modelKey) ?? null,
+    leaderboardChange:
+      rankIndex.has(m.modelKey) && previousIndex.has(m.modelKey)
+        ? previousIndex.get(m.modelKey)! - rankIndex.get(m.modelKey)!
+        : null,
+  }));
   const counts = new Map(info.data?.popular.map((p) => [p.modelKey, p.users]));
-  const ranked =
-    tab === 'rank'
-      ? all
-          .filter((m) => m.leaderboardRank != null)
-          .sort((a, b) => a.leaderboardRank! - b.leaderboardRank!)
-      : all
-          .filter((m) => (counts.get(m.modelKey) ?? 0) > 0)
-          .sort(
-            (a, b) =>
-              counts.get(b.modelKey)! - counts.get(a.modelKey)! ||
-              a.displayName.localeCompare(b.displayName),
-          );
+  const ranked = [...all].sort((a, b) => {
+    if (tab === 'rank' && (a.leaderboardRank == null) !== (b.leaderboardRank == null))
+      return a.leaderboardRank == null ? 1 : -1;
+    const difference =
+      tab === 'rank'
+        ? (a.leaderboardRank ?? Infinity) - (b.leaderboardRank ?? Infinity)
+        : (counts.get(b.modelKey) ?? 0) - (counts.get(a.modelKey) ?? 0);
+    return (reverse ? -1 : 1) * (difference || a.displayName.localeCompare(b.displayName));
+  });
+  const positions = new Map(ranked.map((m, i) => [m.modelKey, i + 1]));
+  const query = search.trim().toLocaleLowerCase();
+  const shown = ranked.filter(
+    (m) => !query || (m.displayName + ' ' + m.vendorName).toLocaleLowerCase().includes(query),
+  );
   async function choose(key: string | null) {
     if (pending || (key ?? '') === current) return;
     setPending(true);
@@ -293,10 +324,13 @@ export function ScenarioModelPage() {
         <>
           <ModelPriceLine model={model} scenario={meta.key} />
           {onBoard && ` · ${model.vendorName}`}
+          {onBoard && tab === 'rank' && model.leaderboardRank == null && ' · 暂无排名'}
           {onBoard &&
-            tab === 'popular' &&
-            rank != null &&
-            ` · ${counts.get(model.modelKey)} 人选用`}
+            tab === 'rank' &&
+            model.leaderboardChange != null &&
+            model.leaderboardChange !== 0 &&
+            ` · ${model.leaderboardChange > 0 ? '↑' : '↓'}${Math.abs(model.leaderboardChange)}`}
+          {onBoard && tab === 'popular' && ` · ${counts.get(model.modelKey) ?? 0} 人选用`}
         </>
       }
       chevron={false}
@@ -324,23 +358,48 @@ export function ScenarioModelPage() {
               <p className="hint page-note">
                 <a href={info.data.source.url} target="_blank" rel="noreferrer">
                   来源：{info.data.source.label}
-                  {info.data.source.asOf ? ` · ${info.data.source.asOf}` : ''}
+                  {info.data.source.asOf ? ` · 发布 ${info.data.source.asOf}` : ''}
                 </a>
+                {info.data.fetchedAt && (
+                  <span> · 最近同步 {new Date(info.data.fetchedAt).toLocaleString('zh-CN')}</span>
+                )}
+                {info.data.method === 'paste' && <span> · 管理员手工导入</span>}
+                {info.data.lastError && <span> · 同步失败，保留上次有效数据</span>}
               </p>
             )
           ) : (
             <p className="hint page-note">按「文本聊天」选用人数排序，不含角色单独设置。</p>
           )}
+          <div className="field-rows">
+            <label className="field-row">
+              <span>搜索模型</span>
+              <input
+                aria-label="搜索模型"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="名称或开发商"
+              />
+            </label>
+            <button type="button" onClick={() => setReverse((v) => !v)}>
+              {reverse ? '恢复默认排序' : '反向排序'}
+            </button>
+          </div>
           <MenuGroup>
-            {ranked.map((m, i) => modelRow(m, tab === 'rank' ? m.leaderboardRank! : i + 1, true))}
+            {shown.map((m) =>
+              modelRow(
+                m,
+                tab === 'rank' ? (m.leaderboardRank ?? undefined) : positions.get(m.modelKey),
+                true,
+              ),
+            )}
           </MenuGroup>
+          {shown.length === 0 && all.length > 0 && <p className="empty">没有匹配的模型</p>}
           {!models.loading && !info.loading && ranked.length === 0 && (
             <p className="empty">{tab === 'rank' ? '暂未配置模型排名' : '还没有选用数据'}</p>
           )}
-          <GroupHeader>全部可选模型</GroupHeader>
         </>
       )}
-      <MenuGroup>{all.map((m) => modelRow(m))}</MenuGroup>
+      {meta.key !== 'chat' && <MenuGroup>{all.map((m) => modelRow(m))}</MenuGroup>}
       {!models.loading && all.length === 0 && (
         <p className="empty">平台暂未提供可用于「{meta.label}」的模型</p>
       )}
@@ -358,9 +417,9 @@ export function ScenarioModelPage() {
       {row?.selection && !row.selection.available && (
         <p className="error page-note">已选模型暂时用不了，请稍后再试，或先换一个</p>
       )}
-      {(models.error || config.error) && (
+      {(models.error || config.error || info.error) && (
         <p role="alert" className="notice-bar">
-          {models.error || config.error}
+          {models.error || config.error || info.error}
         </p>
       )}
     </main>

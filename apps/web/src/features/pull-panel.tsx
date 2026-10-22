@@ -4,7 +4,7 @@
  * 做法参照成熟的「下拉二楼」实现（微信下拉小程序、淘宝 / 京东二楼）与手势库 @use-gesture、react-spring 的处理方式，
  * 没有引入第三方库，只取它们的三个核心：
  * 1. 跟手阻尼：位移 = use-gesture 的 rubberband 公式 (d·D·c)/(D + c·d)，越拉越沉；
- * 2. 速度判定：记录最近 100ms 的手指采样算速度，快速甩动即使距离不够也能打开 / 收起；
+ * 2. 速度判定：记录最近 100ms 的手指采样算速度，打开必须达到距离阈值；速度只辅助收起；
  * 3. 松手弹簧：按 react-spring 的「张力 + 摩擦」弹簧逐帧推进（带初速度），不是固定时长的 CSS 过渡。
  * 滚动冲突：只有列表滚到最顶、且第一段移动是向下时才接管；接管后用非被动监听阻止浏览器滚动，
  * 否则浏览器一接管 touchmove 会降到每秒约 5 次，跟手一顿一顿。会话行的点按 / 长按 / 左滑另有状态机，互不干扰。
@@ -31,8 +31,8 @@ import { MiniAppIcon, useMiniAppPrefs, type MiniApp } from './miniapps.js';
 
 /** 手指移动多少像素后才算拖动（与会话行状态机的 10 像素配合：先于行判定为竖滚）。 */
 const SLOP = 8;
-/** 打开阈值（位移）；手指约需拉 150 像素。 */
-const THRESHOLD = 90;
+/** 阈值之前仅露出连续浅灰空白；较重阻尼避免轻甩就打开。 */
+const THRESHOLD = 140;
 /** 打开后底部露出的聊天列表高度（总经理要求拉高一些，便于上滑收起）。 */
 const TAIL = 120;
 /** 快速甩动判定：像素 / 毫秒。 */
@@ -42,7 +42,7 @@ const CLOSE_DISTANCE = 80;
 const WHEEL_GAP = 260;
 
 /** use-gesture 的橡皮筋公式。 */
-function rubberband(distance: number, dimension: number, constant = 0.7) {
+function rubberband(distance: number, dimension: number, constant = 0.42) {
   if (distance <= 0) return 0;
   return (distance * dimension * constant) / (dimension + constant * distance);
 }
@@ -152,16 +152,18 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
   /** 画出位移 value（只改 transform / opacity）。 */
   const paint = useCallback(
     (value: number) => {
+      value = Math.max(0, value);
       y.current = value;
       const list = listRef.current;
       const hint = hintRef.current;
       const panel = panelRef.current;
       const full = openY();
       if (list) list.style.transform = value > 0.5 ? `translateY(${value}px)` : '';
-      const progress = Math.max(0, Math.min(1, value / full));
+      const revealed = openRef.current || value >= THRESHOLD;
+      const progress = revealed ? Math.max(0, Math.min(1, value / full)) : 0;
       if (panel) {
         panel.style.setProperty('--pull-progress', String(progress));
-        if (value > 0.5) panel.classList.add('visible');
+        panel.classList.toggle('visible', revealed && value > 0.5);
       }
       if (hint) {
         // 提示只在「从关闭往下拉」的前半程出现
@@ -169,7 +171,7 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
         const fade = openRef.current
           ? 0
           : Math.max(0, 1 - Math.max(0, value - THRESHOLD * 1.6) / 80);
-        hint.style.opacity = String(t < 0.12 ? 0 : Math.min(1, (t - 0.12) / 0.5) * fade);
+        hint.style.opacity = String(revealed && !openRef.current ? fade : 0);
         hint.style.transform = `translateY(${Math.max(0, value / 2 - 18)}px)`;
         hint.style.setProperty('--dots-gap', `${4 + 10 * t}px`);
         hint.classList.toggle('half', t >= 0.5);
@@ -235,9 +237,9 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
     const v = velocity.current.get();
     const full = openY();
     if (d.from === 'closed') {
-      const go = y.current >= THRESHOLD || (v > FLICK && y.current > 24);
+      const go = y.current >= THRESHOLD;
       if (go) {
-        animateTo(full, v);
+        animateTo(full, Math.min(0.6, Math.max(0, v * 0.42)));
         pushOpen();
       } else animateTo(0, v);
     } else {
@@ -331,16 +333,20 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
       el.addEventListener('touchstart', s, { passive: true });
       el.addEventListener('touchmove', move, { passive: false });
       el.addEventListener('touchend', end);
-      el.addEventListener('touchcancel', end);
+      const cancel = () => {
+        drag.current = null;
+        animateTo(openRef.current ? openY() : 0);
+      };
+      el.addEventListener('touchcancel', cancel);
       return () => {
         el.removeEventListener('touchstart', s);
         el.removeEventListener('touchmove', move);
         el.removeEventListener('touchend', end);
-        el.removeEventListener('touchcancel', end);
+        el.removeEventListener('touchcancel', cancel);
       };
     });
     return () => handlers.forEach((off) => off());
-  }, [moveTo, release]);
+  }, [moveTo, release, animateTo, openY]);
 
   // 鼠标：按下后在窗口上跟踪，松开后吞掉这次点击
   const mouseDown = (from: Drag['from']) => (event: ReactPointerEvent) => {

@@ -28,7 +28,7 @@ export interface EcologyActionDef {
   tool: string;
   mode: EcologyExecMode;
   /** 需要的平台服务；未开通时不可用。 */
-  needs?: 'speech_synthesis' | 'image_generation' | 'web_search';
+  needs?: 'speech_synthesis' | 'web_search';
   /** reserved 时的说明。 */
   reservedReason?: string;
   /** 碎碎念下方灰字「做了什么」。 */
@@ -73,11 +73,10 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
   {
     key: 'photo',
     group: 'chat',
-    label: '发照片 / 自拍',
-    tool: '拍一张 TA 视角的照片发给对方（景物、食物、身边的东西），配一句话。brief 写照片内容和想说的话。',
+    label: '分享图片',
+    tool: '分享网上找到的公开图片或素材库图片，配一句话；不得声称是刚拍的照片或自拍。brief 写想分享的公开主题。',
     mode: 'decision',
-    needs: 'image_generation',
-    summary: '给你发了张照片',
+    summary: '给你分享了张图片',
   },
   {
     key: 'sticker',

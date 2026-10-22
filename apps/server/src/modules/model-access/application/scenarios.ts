@@ -153,6 +153,10 @@ export class ScenarioService {
   }
 
   async updateConfig(userId: string, refs: ScenarioRefs): Promise<ScenarioConfig> {
+    if (refs.image_generation != null)
+      throw new AppError('bad_request', '发照片模型配置已取消；角色只分享表情或公开图片', {
+        status: 422,
+      });
     const writes: Array<{ scenario: ModelScenario; modelKey: string | null }> = [];
     for (const scenario of ALL_SCENARIOS) {
       const value = refs[scenario];
@@ -190,6 +194,10 @@ export class ScenarioService {
     characterId: string,
     refs: ScenarioRefs,
   ): Promise<CharacterScenarioConfig> {
+    if (refs.image_generation != null)
+      throw new AppError('bad_request', '发照片模型配置已取消；角色只分享表情或公开图片', {
+        status: 422,
+      });
     const writes: Array<{ scenario: ModelScenario; modelKey: string | null }> = [];
     for (const scenario of ALL_SCENARIOS) {
       const value = refs[scenario];

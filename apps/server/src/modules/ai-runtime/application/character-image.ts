@@ -1,162 +1,126 @@
-/**
- * T-072 角色发图（MED-02，D-L5-05）。说明见 docs/ai/call-and-image.md 第 2 节。
- *
- * - 真人角色：只生成「TA 视角」的景物、食物、物品、宠物、场景，提示词明确不出现人物；生成后用识图模型做人脸检查，
- *   有人脸就丢弃（删除媒体）并改用素材库。
- * - 历史人物：一律古风插画（policy.checkImageGeneration 的 style = classical_illustration）。
- * - 虚构 / 原创角色：可以画角色形象（depictsCharacter = true，经 policy 允许），不以「像某位真人」为目标。
- * - 平台未开通图片服务、余额不足或生成失败：从素材库（卡面模板库，真人角色只取无肖像模板）选一张；没有就不发。
- * - 计费：按张（网关 image 单位）；人脸检查按识图 token。
- *
- * 对外：generate() 给私聊配图、朋友圈配图、卡片画面（T-076 / T-082 经 ai-runtime 调用）、宠物照片（T-082）共用。
- */
-import { Inject, Injectable, Optional } from '@nestjs/common';
+/** 角色分享图片：仅合规素材库或安全公开网页封面，不调用生图和收费人脸复检。 */
+import { Inject, Injectable } from '@nestjs/common';
 import type {
+  LinkPreviewPort,
   MediaAssetReadPort,
-  MediaSystemPort,
   MediaReadPort,
   ModelGatewayMediaPort,
-  ModelGatewayPlatformPort,
   PolicyPort,
-  CharacterReadPort,
 } from '@weiban/contracts';
-import { CHARACTER_READ_PORT } from '../../characters/index.js';
-import { MEDIA_ASSET_READ_PORT, MEDIA_SYSTEM_PORT, MEDIA_READ_PORT } from '../../media/index.js';
-import { MODEL_GATEWAY_MEDIA_PORT, MODEL_PLATFORM_GATEWAY_PORT } from '../../model-access/index.js';
+import { LINK_PREVIEW_PORT, MEDIA_ASSET_READ_PORT, MEDIA_READ_PORT } from '../../media/index.js';
+import { MODEL_GATEWAY_MEDIA_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 
 export type ImageUse = 'chat' | 'moments' | 'card' | 'pet';
-
 export interface GenerateCharacterImageInput {
   userId: string;
   characterId: string;
   conversationId?: string;
-  /** 画面内容（日常事件、卡片主题、宠物描述）。 */
   scene: string;
   use: ImageUse;
-  /** 卡片用：卡片种类（素材库兜底时按种类取模板）。 */
   cardKind?: string;
-  /** 想画角色本人（仅虚构 / 原创角色可能被允许）。 */
+  /** 兼容旧调用方；不再生成任何角色肖像。 */
   wantCharacter?: boolean;
   idempotencyKey: string;
-  /** 系统主动发起（朋友圈、主动分享）计入后台预算。 */
   countAsBackground?: boolean;
   ecologyTask?: boolean;
+  /** 仅明确分享图片动作允许联网；旧日常/朋友圈/卡片不自动增加搜索费用。 */
+  searchPublic?: boolean;
+  /** 即使没有可发送图片，也回报网关已经实际结算的搜索费。 */
+  onSearchCharged?: (chargedMicros: number) => void;
 }
-
 export interface CharacterImageResult {
   mediaId: string;
-  source: 'generated' | 'library';
+  source: 'web' | 'library';
   width: number | null;
   height: number | null;
   sizeBytes?: number;
-  /** 生态 v1：本次生成扣的金额（微元）；素材库兜底为 0。 */
+  /** 仅可能包含现行 web_search 的费用；没有图片生成费用。 */
   chargedMicros?: number;
+  sourceUrl?: string;
+}
+
+/** 只输出固定公开主题，不把聊天原文、私人线索或角色真实姓名交给搜索供应商。 */
+export function publicPictureQuery(scene: string): string | null {
+  const topics: Array<[RegExp, string]> = [
+    [/猫|小猫/u, '猫咪'],
+    [/狗|小狗/u, '狗狗'],
+    [/花|花园/u, '花卉'],
+    [/树|森林/u, '森林'],
+    [/海|沙滩/u, '海滩'],
+    [/天空|云|夕阳|日落/u, '天空 日落'],
+    [/山|风景/u, '自然风景'],
+    [/咖啡/u, '咖啡'],
+    [/蛋糕|甜点/u, '甜点'],
+  ];
+  const topic = topics.find(([pattern]) => pattern.test(scene))?.[1];
+  return topic ? `${topic} 公开图片` : null;
 }
 
 @Injectable()
 export class CharacterImageService {
   constructor(
     @Inject(MODEL_GATEWAY_MEDIA_PORT) private readonly media: ModelGatewayMediaPort,
-    @Inject(MEDIA_SYSTEM_PORT) private readonly files: MediaSystemPort,
     @Inject(MEDIA_ASSET_READ_PORT) private readonly assets: MediaAssetReadPort,
     @Inject(POLICY_PORT) private readonly policy: PolicyPort,
-    @Inject(CHARACTER_READ_PORT) private readonly characters: CharacterReadPort,
     @Inject(MEDIA_READ_PORT) private readonly mediaRead: MediaReadPort,
-    @Optional()
-    @Inject(MODEL_PLATFORM_GATEWAY_PORT)
-    private readonly platform?: ModelGatewayPlatformPort,
+    @Inject(LINK_PREVIEW_PORT) private readonly links: LinkPreviewPort,
   ) {}
 
+  /** 保留内部方法名兼容旧调用方；此方法不再生成图片。 */
   async generate(input: GenerateCharacterImageInput): Promise<CharacterImageResult | null> {
     const policy = await this.policy.getCharacterPolicy(input.userId, input.characterId);
     if (!policy) return null;
-    const style = policy.isHistorical ? 'classical_illustration' : 'unspecified';
-    let depicts = !!input.wantCharacter && !policy.isRealPerson;
-    let decision = await this.policy.checkImageGeneration({
-      userId: input.userId,
-      characterId: input.characterId,
-      depictsCharacter: depicts,
-      style,
-    });
-    if (!decision.allowed && depicts) {
-      depicts = false;
-      decision = await this.policy.checkImageGeneration({
-        userId: input.userId,
-        characterId: input.characterId,
-        depictsCharacter: false,
-        style,
-      });
-    }
-    if (decision.allowed && (await this.media.isServiceEnabled('image_generation'))) {
-      const role = await this.characters.getForRuntime(input.userId, input.characterId);
-      const scene = input.scene.slice(0, 400);
-      const prompt = policy.isRealPerson
-        ? `第一人称视角拍摄的生活照片：${scene}。画面中只有景物、食物、物品、宠物或场景，绝对不出现任何人物、人脸、人体或人像海报。`
-        : depicts
-          ? `原创角色插画：${role?.profile.name ?? '角色'}，${role?.profile.intro.slice(0, 120) ?? ''}。场景：${scene}。原创形象，不模仿任何真实人物。`
-          : `第一人称视角的生活照片：${scene}。画面以景物、食物、物品或场景为主，不出现可识别的真实人物。`;
-      const generated = await this.media.generateImage({
-        userId: input.userId,
-        purpose: 'image_generation',
-        billingOwner: 'user',
-        characterId: input.characterId,
-        ...(input.conversationId ? { conversationId: input.conversationId } : {}),
-        prompt,
-        style,
-        size: '1024x1024',
-        ownerUserId: input.userId,
-        idempotencyKey: `img:${input.idempotencyKey}`,
-        ...(input.countAsBackground ? { countAsBackground: true } : {}),
-        ecologyTask: input.ecologyTask,
-      });
-      if (generated.ok) {
-        // MED-02：真人角色（含历史人物）生成后人脸检查，有人脸就丢弃。
-        const faceFree =
-          !policy.isRealPerson || (await this.noFace(input, generated.value.mediaId));
-        if (faceFree)
+    let chargedMicros = 0;
+    const query =
+      input.searchPublic && input.use === 'chat' && !policy.isRealPerson
+        ? publicPictureQuery(input.scene)
+        : null;
+    if (
+      query &&
+      this.links.previewForUser &&
+      (await this.media.isServiceEnabled('web_search').catch(() => false))
+    ) {
+      const found = await this.media
+        .webSearch({
+          userId: input.userId,
+          purpose: 'web_search',
+          billingOwner: 'user',
+          characterId: input.characterId,
+          ...(input.conversationId ? { conversationId: input.conversationId } : {}),
+          query,
+          maxResults: 3,
+          idempotencyKey: `picture-search:${input.idempotencyKey}`,
+          ...(input.countAsBackground ? { countAsBackground: true } : {}),
+          ...(input.ecologyTask ? { ecologyTask: true } : {}),
+        })
+        .catch(() => null);
+      if (found?.ok) {
+        chargedMicros = found.value.chargedMicros;
+        input.onSearchCharged?.(chargedMicros);
+        for (const item of found.value.items.slice(0, 3)) {
+          // Existing media facility handles DNS pinning, public IPs, every redirect,
+          // bounded reads, rate limiting and image re-encoding. Never fetch here.
+          const preview = await this.links.previewForUser(input.userId, item.url).catch(() => null);
+          if (!preview?.reachable || !preview.coverMediaId) continue;
+          const image = await this.mediaRead
+            .getMedia(input.userId, preview.coverMediaId)
+            .catch(() => null);
+          if (!image) continue;
           return {
-            mediaId: generated.value.mediaId,
-            source: 'generated',
-            chargedMicros: generated.value.chargedMicros,
-            width: 1024,
-            height: 1024,
-            sizeBytes: (await this.mediaRead.getMedia(input.userId, generated.value.mediaId))
-              .sizeBytes,
+            mediaId: image.mediaId,
+            source: 'web',
+            width: image.width,
+            height: image.height,
+            sizeBytes: image.sizeBytes,
+            chargedMicros,
+            sourceUrl: item.url,
           };
-        await this.files.deleteObject(generated.value.mediaId).catch(() => undefined);
+        }
       }
     }
-    return this.fromLibrary(input, policy.isRealPerson, policy.isHistorical);
-  }
-
-  /** 人脸检查：识图模型判断；判断不了（未开通 / 失败）按「可能有人脸」处理，宁可不发。 */
-  private async noFace(input: GenerateCharacterImageInput, mediaId: string): Promise<boolean> {
-    if (!this.platform) return false;
-    const result = await this.platform.generatePlatformText({
-      userId: input.userId,
-      characterId: input.characterId,
-      purpose: 'safety_check',
-      modelRole: 'chat',
-      responseFormat: 'text',
-      maxOutputTokens: 5,
-      idempotencyKey: `img-face:${mediaId}`,
-      ...(input.countAsBackground ? { countAsBackground: true } : {}),
-      ecologyTask: input.ecologyTask,
-      messages: [
-        {
-          role: 'system',
-          content:
-            '判断图片里是否出现任何人脸、人像（含照片、海报、画像中的人脸，侧脸也算）。只回答 YES 或 NO。',
-        },
-        {
-          role: 'user',
-          content: '图里有人脸吗？',
-          images: [{ mediaId, ownerUserId: input.userId }],
-        },
-      ],
-    });
-    return result.ok && /^\s*NO\b/i.test(result.value.text);
+    const image = await this.fromLibrary(input, policy.isRealPerson, policy.isHistorical);
+    return image ? { ...image, chargedMicros } : null;
   }
 
   private async fromLibrary(
@@ -177,12 +141,15 @@ export class CharacterImageService {
     let h = 0;
     for (const ch of input.idempotencyKey) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
     const pick = list[h % list.length]!;
+    const image = await this.mediaRead.getMedia(input.userId, pick.mediaId).catch(() => null);
+    if (!image) return null;
     return {
       mediaId: pick.mediaId,
       source: 'library',
-      width: null,
-      height: null,
-      sizeBytes: (await this.mediaRead.getMedia(input.userId, pick.mediaId)).sizeBytes,
+      width: image.width,
+      height: image.height,
+      sizeBytes: image.sizeBytes,
+      chargedMicros: 0,
     };
   }
 }

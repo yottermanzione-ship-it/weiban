@@ -67,7 +67,6 @@ export const SCENARIO_LABELS: Record<string, string> = {
   voice_message: '语音消息',
   speech_recognition: '语音识别',
   voice_call: '语音通话',
-  image_generation: '发照片',
   private: '私密模式',
 };
 

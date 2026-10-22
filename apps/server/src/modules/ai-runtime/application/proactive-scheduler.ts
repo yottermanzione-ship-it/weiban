@@ -155,8 +155,20 @@ export interface EcologySendExtras {
   scene?: string;
 }
 
+/** 已发生实扣后记录失败：仅用于内部把费用带回生态结果，不再次扣款。 */
+export class ProactiveChargeError extends Error {
+  constructor(
+    reason: string,
+    readonly chargedMicros: number,
+    cause: unknown,
+  ) {
+    super(reason, { cause });
+  }
+}
+
 export type SendOutcome =
-  { ok: true; chargedMicros: number; messageId: string | null } | { ok: false; reason: string };
+  | { ok: true; chargedMicros: number; messageId: string | null }
+  | { ok: false; reason: string; chargedMicros?: number };
 
 /** 经期关怀计划来源前缀（同 health-care CARE_PLAN_PREFIX；不 import 以免循环）。 */
 const CARE_SOURCE_PREFIX = 'care:';
@@ -1009,7 +1021,7 @@ export class ProactiveSchedulerService {
       ruleReason: rule ? '规则版配图' : '规则版只发文字',
       conservative: 'text',
       question:
-        '角色主动分享一件日常小事，要不要配一张 TA 视角的照片（keep_image）还是只发文字（text）？',
+        '角色主动分享一件日常小事，要不要配一张素材库图片（keep_image）还是只发文字（text）？不得声称是自己刚拍的照片。',
       features: { localHour: ctx.localHour, reasonKind: plan.reason },
       path: 'proactive',
       idempotencyKey: `photo:${plan.id}`,
@@ -1252,13 +1264,17 @@ ${careNote}`
           characterId: plan.characterId,
           conversationId: conversation.conversationId,
           scene: (eco.scene ?? plan.brief).slice(0, 300),
+          searchPublic: true,
+          onSearchCharged: (micros) => {
+            charged += Math.max(0, micros);
+          },
           use: 'chat',
           idempotencyKey: `proactive:${plan.id}`,
           countAsBackground: true,
           ecologyTask: true,
         })
         .catch(() => null);
-      if (!image) return this.fail(plan, 'photo_unavailable');
+      if (!image) return this.fail(plan, 'photo_unavailable', charged);
       link = {
         type: 'image',
         mediaId: image.mediaId,
@@ -1266,7 +1282,10 @@ ${careNote}`
         height: image.height,
         sizeBytes: image.sizeBytes,
       };
-      charged += image.chargedMicros ?? 0;
+      // Search charge was reported before attempting image transfer, including failed transfers.
+      bubbles.push(
+        image.sourceUrl ? `网上找到的图片，来源：${image.sourceUrl}` : '分享一张素材库图片。',
+      );
     } else if (eco?.extra === 'sticker') {
       link = await this.mediaAi
         .pickStickerForEcology(plan.characterId, bubbles.join(''), plan.id)
@@ -1345,6 +1364,8 @@ ${careNote}`
           sizeBytes: image.sizeBytes,
         };
     }
+    // 首条消息展示本次实际总费用（文字及已结算搜索/语音），不是再次向网关扣款。
+    charge.chargedMicros = charged;
     try {
       const sent = await this.db.transaction(async (tx) => {
         await tx.query(
@@ -1468,7 +1489,7 @@ ${careNote}`
         );
         return firstId;
       });
-      if (!sent) return this.fail(plan, 'relationship_changed');
+      if (!sent) return this.fail(plan, 'relationship_changed', charged);
       if (petPhoto && link?.type === 'image')
         await this.album
           ?.addCharacterPhoto({
@@ -1483,13 +1504,18 @@ ${careNote}`
       return this.fail(
         plan,
         `send_rejected:${error instanceof Error ? error.message : 'unknown'}`.slice(0, 200),
+        charged,
       );
     }
   }
 
-  private async fail(plan: Plan, reason: string): Promise<SendOutcome> {
-    await this.drop(plan, reason);
-    return { ok: false, reason };
+  private async fail(plan: Plan, reason: string, chargedMicros = 0): Promise<SendOutcome> {
+    try {
+      await this.drop(plan, reason);
+    } catch (error) {
+      throw new ProactiveChargeError(reason, chargedMicros, error);
+    }
+    return { ok: false, reason, chargedMicros };
   }
 
   private async inActiveWindow(ctx: UserContext): Promise<boolean> {

@@ -107,7 +107,6 @@ export function ServicesPage() {
           dot={lowBalance}
           value={wallet.data ? pointsText(wallet.data.balancePoints) : '—'}
         />
-        <MenuRow to="/wallet/recharge" icon="wechat/transfer" tint="gold" label="充值" />
         <MenuRow
           to="/membership"
           icon="wechat/star"

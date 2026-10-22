@@ -998,8 +998,8 @@ main > button.danger-row {
 /* ---------- 会话列表（4.2） ---------- */
 .chat-list-page {
   position: relative;
-  /* 下拉时列表上方露出的是小程序面板的深色底 */
-  background: var(--wb-color-ui-pull-panel-bg);
+  /* 未达到阈值时，空白与标题、安全区保持连续同色。 */
+  background: var(--wb-color-bg-nav-bar);
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -1029,8 +1029,8 @@ main > button.danger-row {
   flex: none;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  height: var(--wb-size-nav-bar);
-  padding: 0 var(--wb-space-2);
+  height: calc(var(--wb-size-nav-bar) + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) var(--wb-space-2) 0;
   background: var(--wb-color-bg-nav-bar);
 }
 .chat-list-head h1 {
@@ -1057,6 +1057,7 @@ main > button.danger-row {
   /* 位移由脚本里的弹簧逐帧推进，不能再加 CSS 过渡（会把跟手拖慢） */
   will-change: transform;
   overscroll-behavior-y: contain;
+  user-select: none;
 }
 .pull-list.lifted {
   overflow: hidden;

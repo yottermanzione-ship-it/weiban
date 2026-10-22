@@ -200,11 +200,7 @@ export class EcologySettingsService {
     if (def.mode === 'reserved') return def.reservedReason ?? '即将上线';
     if ((config ?? (await this.config())).disabledActions.includes(key)) return '平台暂未开放';
     if (def.needs && !(await this.media.isServiceEnabled(def.needs).catch(() => false)))
-      return def.needs === 'speech_synthesis'
-        ? '平台未开通语音合成'
-        : def.needs === 'web_search'
-          ? '平台未开通联网搜索'
-          : '平台未开通图片生成';
+      return def.needs === 'speech_synthesis' ? '平台未开通语音合成' : '平台未开通联网搜索';
     return null;
   }
 

@@ -12,14 +12,56 @@
 export interface LeaderboardEntry {
   name: string;
   rank: number;
+  organization?: string;
+  rating?: number;
+  ratingLower?: number;
+  ratingUpper?: number;
+  voteCount?: number;
+  publishedAt?: string;
 }
 
 /** 最多保留的条目数（够覆盖整张榜）。 */
 export const LEADERBOARD_MAX_ENTRIES = 2000;
 
-/** 匹配用的规范化：去首尾空白、合并空白、小写。 */
+/** Strip explicit thinking effort/budget only; preserve all date/version/Pro/Flash tokens. */
 export function normalizeArenaName(name: string): string {
-  return name.trim().replace(/\s+/g, ' ').toLowerCase();
+  const level = '(?:off|on|none|minimal|low|medium|high|xhigh|max|instant)';
+  const effort = new RegExp(
+    `^(?:(?:thinking|reasoning)(?:\\s*[:=-]?\\s*(?:${level}|\\d+[km](?:\\s*tokens)?))?|non[- ](?:thinking|reasoning)|${level})$`,
+    'i',
+  );
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/\(([^()]*)\)\s*$/, (original, content: string) => {
+      const tokens = content.split(',').map((part) => part.trim());
+      if (!tokens.some((token) => effort.test(token))) return original;
+      const keep = tokens.filter(
+        (token) => !effort.test(token) && !/^\d+[km](?:\s*tokens)?$/i.test(token),
+      );
+      return keep.length ? `(${keep.join(', ')})` : '';
+    })
+    .replace(
+      new RegExp(
+        `(?:[-_ ](?:non[-_ ](?:thinking|reasoning)|thinking|reasoning))(?:[-_ ]${level})?(?=\\s*(?:\\([^()]*\\))?$)`,
+        'i',
+      ),
+      '',
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Keep raw entries intact; collapse ONLY when building the matching index. */
+export function bestArenaRanks(entries: readonly LeaderboardEntry[]): Map<string, number> {
+  const result = new Map<string, number>();
+  for (const entry of entries) {
+    const key = normalizeArenaName(entry.name);
+    const previous = result.get(key);
+    if (previous === undefined || entry.rank < previous) result.set(key, entry.rank);
+  }
+  return result;
 }
 
 const RANK_KEYS = ['rank', 'rank_ub', 'rankub', 'ranking', 'position', 'place', '名次', '排名'];
@@ -61,7 +103,7 @@ function rankOf(raw: unknown): number | null {
 
 function add(map: Map<string, LeaderboardEntry>, name: string | null, rank: number | null) {
   if (!name || rank === null) return;
-  const key = normalizeArenaName(name);
+  const key = name.trim().replace(/\s+/g, ' ').toLowerCase();
   const old = map.get(key);
   if (!old || rank < old.rank) map.set(key, { name, rank });
 }

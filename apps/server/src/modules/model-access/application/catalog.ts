@@ -43,13 +43,17 @@ import {
   type Outbox,
 } from '../../../platform/index.js';
 import {
-  beijingDay,
   hasAdultContent,
   priceTier,
   standardReplyMicros,
   unavailableReason,
 } from '../domain/rules.js';
-import { normalizeArenaName, relativeRanks } from '../domain/leaderboard.js';
+import {
+  normalizeArenaName,
+  bestArenaRanks,
+  relativeRanks,
+  type LeaderboardEntry,
+} from '../domain/leaderboard.js';
 import {
   modelCatalog,
   modelRoutes,
@@ -74,14 +78,13 @@ export const MODEL_USES_KEY = 'model_uses';
 export const LEADERBOARD_SNAPSHOT_KEY = 'leaderboard_snapshot';
 /**
  * 用户可配置的场景。3.24 起去掉「图片识别」（vision）：图片随文本聊天（私密模式下随私密模式）模型发送，
- * 契约里的 vision 取值只为旧客户端保留，服务器不再返回、忽略写入。
+ * 契约里的 vision 取值只为旧客户端保留。2026-10-22 起 image_generation 也不再是用户场景，角色分享图片不生图。
  */
 export const ALL_SCENARIOS: readonly ModelScenario[] = [
   'chat',
   'voice_message',
   'speech_recognition',
   'voice_call',
-  'image_generation',
   'private',
 ];
 /** 文本类场景：用文本模型（按 token 计价，约每条回复）。 */
@@ -94,7 +97,10 @@ export interface LeaderboardSnapshot {
   fetchedAt: string | null;
   method: 'fetch' | 'paste' | null;
   sourceUrl: string | null;
-  entries: Array<{ name: string; rank: number }>;
+  entries: LeaderboardEntry[];
+  publishedAt?: string | null;
+  totalRows?: number | null;
+  previousEntries?: LeaderboardEntry[];
   lastAttemptAt: string | null;
   lastError: string | null;
 }
@@ -171,7 +177,11 @@ export class CatalogService {
     const parsed = ModelScenarioSettings.safeParse(row?.value);
     if (!parsed.success) return { recommended: {}, internal: {} };
     // 3.24：图片识别场景已去掉；3.25：成人内容检查模型不再使用
-    const { vision: _vision, ...recommended } = parsed.data.recommended;
+    const {
+      vision: _vision,
+      image_generation: _imageGeneration,
+      ...recommended
+    } = parsed.data.recommended;
     const { adult_check: _adultCheck, ...internal } = parsed.data.internal;
     return { recommended, internal };
   }
@@ -194,7 +204,7 @@ export class CatalogService {
       string | null | undefined,
     ][]) {
       // 3.24：图片识别场景已去掉，忽略写入
-      if (key === undefined || scenario === 'vision') continue;
+      if (key === undefined || !ALL_SCENARIOS.includes(scenario)) continue;
       if (key !== null) {
         const f = await this.fact(key);
         if (!f.entry?.enabled || !f.entry.scenarios.includes(scenario))
@@ -275,7 +285,9 @@ export class CatalogService {
       .from(modelAccessSettings)
       .where(eq(modelAccessSettings.key, 'leaderboard_source'));
     const source = ModelLeaderboardSource.safeParse(row?.value);
-    return source.success ? source.data : null;
+    return source.success
+      ? source.data
+      : { label: 'Arena', url: 'https://arena.ai/leaderboard/chat/text', asOf: null };
   }
   async setLeaderboardSource(operatorUserId: string, input: unknown) {
     const source = ModelLeaderboardSource.parse(input);
@@ -324,29 +336,39 @@ export class CatalogService {
               !!e && typeof e.name === 'string' && Number.isInteger(e.rank) && e.rank > 0,
           )
         : [],
+      publishedAt: typeof value.publishedAt === 'string' ? value.publishedAt : null,
+      totalRows: typeof value.totalRows === 'number' ? value.totalRows : null,
+      previousEntries: Array.isArray(value.previousEntries)
+        ? value.previousEntries.filter(
+            (e) => e && typeof e.name === 'string' && Number.isInteger(e.rank) && e.rank > 0,
+          )
+        : [],
       lastAttemptAt: typeof value.lastAttemptAt === 'string' ? value.lastAttemptAt : null,
       lastError: typeof value.lastError === 'string' ? value.lastError : null,
     };
   }
 
   /** 3.24：按榜单对应名称查原榜名次（规范化后完全相同才算匹配）。 */
-  async arenaRanks(): Promise<{ rankOf(name: string | null | undefined): number | null }> {
+  async arenaRanks(): Promise<{
+    rankOf(name: string | null | undefined): number | null;
+    previousRankOf(name: string | null | undefined): number | null;
+  }> {
     const snapshot = await this.leaderboardSnapshot();
-    const byName = new Map(
-      (snapshot?.entries ?? []).map((e) => [normalizeArenaName(e.name), e.rank] as const),
-    );
+    const byName = bestArenaRanks(snapshot?.entries ?? []);
+    const previous = bestArenaRanks(snapshot?.previousEntries ?? []);
     return {
       rankOf: (name) => (name ? (byName.get(normalizeArenaName(name)) ?? null) : null),
+      previousRankOf: (name) => (name ? (previous.get(normalizeArenaName(name)) ?? null) : null),
     };
   }
 
   async leaderboardInfo() {
     const configured = await this.leaderboardSource();
-    // 3.24：有自动获取 / 导入的榜单时，参考日期 = 快照日期（北京时间）
+    // 官方发布日期与抓取时间分开，不以抓取日期冒充榜单日期。
     const snapshot = configured ? await this.leaderboardSnapshot() : null;
     const source =
       configured && snapshot?.fetchedAt && snapshot.entries.length
-        ? { ...configured, asOf: beijingDay(new Date(snapshot.fetchedAt)) }
+        ? { ...configured, asOf: snapshot.publishedAt ?? null }
         : configured;
     const popular = await this.database.db
       .select({
@@ -356,7 +378,13 @@ export class CatalogService {
       .from(scenarioSelections)
       .where(eq(scenarioSelections.scenario, 'chat'))
       .groupBy(scenarioSelections.modelKey);
-    return { source, popular };
+    return {
+      source,
+      popular,
+      fetchedAt: snapshot?.fetchedAt ?? null,
+      method: snapshot?.method ?? null,
+      lastError: snapshot?.lastError ?? null,
+    };
   }
 
   /** 后台目录（含停用的；3.23 起也含已删除的，deletedAt 非空，排在最后）。 */
@@ -536,14 +564,20 @@ export class CatalogService {
       const p = prices.get(key);
       return p ? Math.round(standardReplyMicros(p) / 100) / 100 : null;
     };
-    // 3.24：不可用的具体原因；榜单名次 = 自动获取的榜单按榜单对应名称匹配（没有时用手填名次），
+    // 榜单名次只从有效快照按榜单对应名称匹配，未匹配为 null，不再用旧手填名次兜底；
     // 在本次返回的列表里按相对顺序重新编号 1..N（不显示原榜名次）。
     const details = await this.availabilityDetails(visible.map((r) => r.entry.modelKey));
     const arena = await this.arenaRanks();
     const relative = relativeRanks(
       visible.map(({ entry }) => ({
         key: entry.modelKey,
-        rank: arena.rankOf(entry.arenaModelName) ?? entry.leaderboardRank,
+        rank: arena.rankOf(entry.arenaModelName),
+      })),
+    );
+    const previous = relativeRanks(
+      visible.map(({ entry }) => ({
+        key: entry.modelKey,
+        rank: arena.previousRankOf(entry.arenaModelName),
       })),
     );
     return visible.map(({ entry, upstreamStatus }) => ({
@@ -560,10 +594,14 @@ export class CatalogService {
             pointsPerUse: display.get(entry.modelKey)!.pointsPerUse,
           }
         : {}),
-      scenarios: (entry.scenarios as ModelScenario[]).filter((s) => s !== 'vision'),
+      scenarios: (entry.scenarios as ModelScenario[]).filter((s) => ALL_SCENARIOS.includes(s)),
       capabilities: entry.capabilities as ModelCapability[],
       tags: entry.tags,
       leaderboardRank: relative.get(entry.modelKey) ?? null,
+      leaderboardChange:
+        relative.has(entry.modelKey) && previous.has(entry.modelKey)
+          ? previous.get(entry.modelKey)! - relative.get(entry.modelKey)!
+          : null,
       ...(() => {
         const reason = unavailableReason(entry, (upstreamStatus as UpstreamStatus | null) ?? null);
         const detail =

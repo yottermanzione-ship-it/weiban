@@ -1276,8 +1276,8 @@ function ModelWizard({
             rules={[{ max: 120, message: '最多 120 个字符' }]}
             extra={
               <FieldHelp>
-                榜单上这个模型叫什么（例
-                claude-opus-4-8），自动获取榜单时按它匹配名次（不区分大小写）。
+                榜单上这个模型叫什么（例 Gemini 4
+                Argon），按官方显示名精确匹配（忽略大小写和明确思考档位，不混合型号）。
                 {model?.arenaModelName
                   ? model.arenaRank != null
                     ? ` 当前匹配到原榜第 ${model.arenaRank} 名。`
@@ -1286,15 +1286,14 @@ function ModelWizard({
               </FieldHelp>
             }
           >
-            <Input maxLength={120} placeholder="例：claude-opus-4-8" />
+            <Input maxLength={120} placeholder="例：Gemini 4 Argon" />
           </Form.Item>
           <Form.Item
             name="leaderboardRank"
-            label="手填榜单名次（可不填）"
+            label="历史手填名次（不参与排名）"
             extra={
               <FieldHelp>
-                自动获取的榜单匹配不到时才用它（原榜名次）。用户端只显示相对顺序
-                1、2、3…，不显示原始名次；都没有 = 不上榜。
+                此字段只保留旧配置，不再参与用户排名。没有有效官方/手工导入匹配时显示「暂无排名」。
               </FieldHelp>
             }
           >
@@ -1303,7 +1302,8 @@ function ModelWizard({
               max={9999}
               precision={0}
               style={{ width: '100%' }}
-              placeholder="不上榜"
+              placeholder="旧字段已停用"
+              disabled
             />
           </Form.Item>
         </div>
