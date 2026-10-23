@@ -359,6 +359,20 @@ export class MomentsAiService {
   // =========================================================================
   // v5：角色生态发私人朋友圈（扣用户积分；和你们的聊天、TA 的生活有关）
   // =========================================================================
+  /** 最近一条仍有效的微博同步动态；没有绑定微博的角色返回 null。 */
+  private async latestWeiboUpdate(
+    characterId: string,
+  ): Promise<{ updateId: string; content: string } | null> {
+    if (!this.publicUpdates) return null;
+    const today = new Date(this.clock.nowMs()).toISOString().slice(0, 10);
+    const updates = await this.publicUpdates
+      .listEffective(characterId, today, { limit: 5, pastDays: 30 })
+      .catch(() => []);
+    const found = updates.find(
+      (u) => /weibo\.(com|cn)/i.test(u.sourceUrl) && u.content.trim().length >= 4,
+    );
+    return found ? { updateId: found.updateId, content: found.content } : null;
+  }
   async postForEcology(input: {
     userId: string;
     characterId: string;
@@ -371,6 +385,33 @@ export class MomentsAiService {
     const role = await this.characters.getForRuntime(userId, characterId);
     const policy = await this.policy.getCharacterPolicy(userId, characterId);
     if (!role || !policy) return { ok: false, reason: 'context_unavailable' };
+    // 微博角色：优先原样转发它最近一条已同步的公开动态，不花钱重新生成文案。
+    const weibo = await this.latestWeiboUpdate(characterId);
+    if (weibo) {
+      const forwarded = weibo.content.trim().slice(0, 500);
+      const safe =
+        forwarded.length >= 4 &&
+        !healthPrivate(forwarded) &&
+        outputAllowed(forwarded, policy, false) &&
+        !(policy.isRealPerson && MOMENTS_FORBIDDEN_REAL.test(forwarded));
+      if (safe) {
+        const scenery = this.scenery
+          ? await this.scenery.pick({ userId, seed: `weibo:${weibo.updateId}` }).catch(() => null)
+          : null;
+        const reposted = await this.writer.createPost(null, {
+          ownerUserId: userId,
+          characterId,
+          text: forwarded,
+          imageMediaIds: scenery ? [scenery.mediaId] : [],
+          link: null,
+          sourceRef: { kind: 'public_update', id: weibo.updateId },
+          // 同一条微博对同一个用户只转一次。
+          idempotencyKey: `eco-weibo:${userId}:${weibo.updateId}`,
+        });
+        // 已经转过就继续走正常生成，避免这次唤醒白跑。
+        if (reposted.ok) return { ok: true, chargedMicros: 0, postId: reposted.value.postId };
+      }
+    }
     // A private post is normal-scope even while its owner uses the private model.
     const brain = await this.brain.build(userId, characterId, 'normal', input.brief, {
       excludeHealth: true,
