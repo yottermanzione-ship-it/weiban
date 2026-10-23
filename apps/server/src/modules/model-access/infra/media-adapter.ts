@@ -490,7 +490,8 @@ export function normalizeDashscopeWav(bytes: Uint8Array): Uint8Array | null {
       if (foundData) return null;
       foundData = true;
       if (sentinel(size)) {
-        if (!streaming) return null;
+        // DashScope 完成后的文件可能只有 data 长度是流式哨兵、RIFF 长度已正确；
+        // 旧版同样按实际字节修正，否则会把可用音频判成损坏。
         size = view.length - body;
         view.writeUInt32LE(size, offset + 4);
       }

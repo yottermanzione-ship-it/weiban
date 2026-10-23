@@ -109,7 +109,7 @@ describe('DashScope native speech synthesis protocol', () => {
     expect(calls[0]!.headers.authorization).toBe(`Bearer ${KEY}`);
     expect(calls[0]!.body).toEqual({
       model: MODEL,
-      input: { text: '你好，百炼。', voice: 'Cherry', format: 'wav' },
+      input: { text: '你好，百炼。', voice: 'Cherry', format: 'wav', sample_rate: 24000 },
     });
     expect(calls.filter((c) => c.method === 'GET')).toHaveLength(0);
   });

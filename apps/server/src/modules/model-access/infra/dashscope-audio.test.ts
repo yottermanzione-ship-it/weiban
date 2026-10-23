@@ -127,6 +127,16 @@ describe('DashScope provider-returned audio download', () => {
     });
   });
 
+  it('repairs a data-only stream sentinel while RIFF length is already correct', async () => {
+    const streaming = wav();
+    streaming.writeUInt32LE(0x7fffffbf, 40);
+    chunks = [streaming];
+    providerChars = 10;
+    const result = await synthesize('pcm16_24k');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.mimeType).toBe('audio/L16');
+  });
+
   it.each(['riff', 'data'])('does not repair arbitrary invalid %s lengths', async (field) => {
     const corrupt = wav();
     corrupt.writeUInt32LE(123456, field === 'riff' ? 4 : 40);
