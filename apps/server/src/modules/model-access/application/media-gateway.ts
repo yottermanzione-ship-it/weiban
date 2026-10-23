@@ -65,6 +65,7 @@ import { UsageRecorder } from './usage.js';
 import { unavailableReason } from '../domain/rules.js';
 import { BillingBoundsService, boundsEvidence, reserveErrorToGenerate } from './billing-bounds.js';
 import { pcmWavSeconds, roundAsr } from '../domain/media-billing-bounds.js';
+import { probeAudioSeconds } from '../infra/audio-duration.js';
 import { WebToolsStore } from './web-tools-store.js';
 import { privateSearchText, publicWebUrl } from '../domain/web-search.js';
 import { decisionQuestions } from '../infra/jev-adapter.js';
@@ -255,7 +256,12 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         .getMedia(input.ownerUserId, input.mediaId)
         .catch(() => null);
       const file = await this.media.readBytes(input.mediaId);
-      const duration = pcmWavSeconds(file.bytes);
+      // 浏览器录音是 webm/mp4，旧版会把原文件直接交给识别；这里用容器真实时长做冻结估算，
+      // 不再因为缺少 WAV 头而拒绝识别（结算仍以供应商上报秒数为准）。
+      const duration =
+        pcmWavSeconds(file.bytes) ??
+        (await probeAudioSeconds(file.bytes)) ??
+        (info?.durationMs ? info.durationMs / 1000 : null);
       const profile = model.value.billingBounds.asr;
       if (!info || duration === null || !profile || duration > profile.maxSeconds)
         return { ok: false, error: 'model_unavailable' };

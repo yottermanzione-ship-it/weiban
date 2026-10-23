@@ -616,7 +616,7 @@ async function dashscopeSynthesize(
       headers: { Authorization: `Bearer ${t.apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: t.model,
-        input: { text: input.text, voice: input.voice, format: 'wav' },
+        input: { text: input.text, voice: input.voice, format: 'wav', sample_rate: 24000 },
       }),
     });
     if (!response.ok) return { ok: false, category: await errorOf(response) };
