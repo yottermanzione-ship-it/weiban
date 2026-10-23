@@ -4,7 +4,7 @@
  * 与 generateText 相同的「闸门 → 冻结 → 调用 → 结算 / 解冻 → 用量记录」流程，计价单位：
  * 语音合成 ttsChars（tts_10k_chars）、语音识别 asrSeconds（asr_minute）、图片 images（image）、搜索 searchCalls（search_call）。
  * 3.22：语音合成 / 语音识别 / 图片生成按用户的场景配置（语音消息 / 语音识别 / 发照片，角色单独设置优先）解析，
- * 未配置返回 not_configured；联网搜索用后台指定的平台内部模型。角色音色绑定了具体语音模型且该模型可用时以音色为准。
+ * 未配置返回 not_configured；联网搜索用后台指定的平台内部模型。音色必须绑定用户实际选择的语音模型，不兼容时拒绝，不静默换模型。
  *
  * 幂等：非流式调用复用 GenerationCache（同一用户 + 幂等键 24 小时内返回第一次的结果，不再扣费）。
  * 流式调用（实时识别、流式合成）每段 / 每次独立记账，幂等键由调用方保证唯一。
@@ -97,7 +97,13 @@ interface Charge {
 
 type CallOutcome<T> =
   | { ok: true; value: T; actual: UsageQuantities; actualKnown?: boolean }
-  | { ok: false; category: MediaFailure; actual?: UsageQuantities; localRateLimit?: boolean };
+  | {
+      ok: false;
+      category: MediaFailure;
+      actual?: UsageQuantities;
+      localRateLimit?: boolean;
+      zeroCost?: boolean;
+    };
 
 type PendingMediaResult = {
   ok: true;
@@ -246,7 +252,18 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       return this.run(input, model.value, { asrSeconds: seconds }, async (target, adapter) => {
         const result = await adapter.transcribe(target, file);
         if (!result.ok) return result;
-        return { ok: true, value: { text: result.value.text }, actual: { asrSeconds: seconds } };
+        const measured = result.value.asrSeconds;
+        if (measured !== undefined && (!Number.isFinite(measured) || measured < 0))
+          return { ok: false, category: 'provider_error' };
+        return {
+          ok: true,
+          value: { text: result.value.text },
+          actual: {
+            asrSeconds:
+              measured === undefined ? seconds : roundAsr(measured, profile.billingStepSeconds),
+          },
+          actualKnown: measured !== undefined,
+        };
       });
     });
   }
@@ -574,7 +591,11 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       category: 'provider_error',
     }));
     if (!started.ok) {
-      await this.fail(charge.value, started.category);
+      await this.fail(
+        charge.value,
+        started.category,
+        started.zeroCost ? { ttsChars: 0 } : undefined,
+      );
       return { ok: false, error: this.mapError(started.category) };
     }
     let settle!: (v: PortResult<MediaCallResult, GenerateError>) => void;
@@ -672,8 +693,8 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
   }
 
   /**
-   * 3.22：按场景配置解析媒体模型（同一处给执行与冻结用）。语音合成时角色音色绑定的模型可用就以音色为准
-   * （音色代号只在它自己的模型上有效），但用户必须已配置「语音消息」场景（未配置 = 不可用）。
+   * 按场景配置解析媒体模型（执行与计费共用）。音色代号仅在其登记的模型上有效；
+   * 与用户/角色实际选择不一致或缺少绑定时拒绝，绝不偷偷跨模型或跨供应商。
    */
   private async resolve(
     service: Service,
@@ -691,11 +712,11 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         picked = await this.catalog.recommendedModel(scenario);
     }
     if (!picked) return { ok: false, error: 'not_configured' };
-    let facts: ModelFacts = picked;
-    if (preferredModelKey && preferredModelKey !== picked.modelKey) {
-      const preferred = await this.catalog.fact(preferredModelKey);
-      if (unavailableReason(preferred.entry, preferred.upstreamStatus) === null) facts = preferred;
-    }
+    // A provider voice is scoped to its registered model. Never silently replace the user's
+    // scenario/character selection (including for calls), nor send its key to another provider.
+    if (service === 'speech_synthesis' && preferredModelKey !== picked.modelKey)
+      return { ok: false, error: 'model_unavailable' };
+    const facts: ModelFacts = picked;
     const reason = unavailableReason(facts.entry, facts.upstreamStatus);
     if (reason === 'model_removed' || !facts.entry)
       return { ok: false, error: 'model_unavailable' };
@@ -955,7 +976,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
   async transcribePcm(
     model: Resolved,
     pcm: Uint8Array,
-  ): Promise<MediaAdapterResult<{ text: string }>> {
+  ): Promise<MediaAdapterResult<{ text: string; asrSeconds?: number }>> {
     const file = { bytes: wavFromPcm(pcm, 16000), mimeType: 'audio/wav' };
     return this.withTarget(model, (target, adapter) => adapter.transcribe(target, file));
   }
@@ -988,7 +1009,10 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       outcome = { ok: false, category: 'provider_error' };
     }
     if (!outcome.ok) {
-      await this.fail(charge.value, outcome.category, outcome.actual, !outcome.localRateLimit);
+      const actual = outcome.zeroCost
+        ? Object.fromEntries(Object.keys(estimate).map((unit) => [unit, 0]))
+        : outcome.actual;
+      await this.fail(charge.value, outcome.category, actual, !outcome.localRateLimit);
       return { ok: false, error: this.mapError(outcome.category) };
     }
     if (generation) {
@@ -1156,6 +1180,7 @@ class RealtimeAsr implements RealtimeAsrSession {
   private readonly queue: Array<{ text: string; final: boolean }> = [];
   private wake: (() => void) | null = null;
   private ended = false;
+  private failed = false;
   private chargedMicros = 0;
   private lastUsageId: string;
   constructor(
@@ -1181,6 +1206,7 @@ class RealtimeAsr implements RealtimeAsrSession {
           await this.accept(data.slice(offset, offset + 3200));
       })
       .catch(() => {
+        this.failed = true;
         this.emit(null);
       });
   }
@@ -1191,7 +1217,10 @@ class RealtimeAsr implements RealtimeAsrSession {
         yield next;
         continue;
       }
-      if (this.ended) return;
+      if (this.ended) {
+        if (this.failed) throw new Error('ASR_SESSION_FAILED');
+        return;
+      }
       await new Promise<void>((resolve) => (this.wake = resolve));
     }
   }
@@ -1258,18 +1287,40 @@ class RealtimeAsr implements RealtimeAsrSession {
     this.lastUsageId = charge.usageRecordId;
     if (!(await this.gateway.beginCharge(charge))) {
       await this.gateway.cancelCharge(charge);
+      this.failed = true;
       this.emit(null);
       return;
     }
     const result = await this.gateway.transcribePcm(this.model, pcm).catch(() => null);
     if (!result?.ok) {
-      await this.gateway.fail(charge, result?.category ?? 'provider_error');
+      await this.gateway.fail(
+        charge,
+        result?.category ?? 'provider_error',
+        result && !result.ok && result.zeroCost ? { asrSeconds: 0 } : undefined,
+      );
+      this.failed = true;
       this.emit(null);
       return;
     }
-    const done = await this.gateway.succeed(charge, actual);
-    if (done.ok) this.chargedMicros += done.value.chargedMicros;
-    if (result.value.text.trim()) this.emit({ text: result.value.text.trim(), final: true });
+    const measured = result.value.asrSeconds;
+    const done = await this.gateway.succeed(
+      charge,
+      {
+        asrSeconds:
+          measured === undefined
+            ? actual.asrSeconds
+            : roundAsr(measured, profile.billingStepSeconds),
+      },
+      measured !== undefined,
+    );
+    if (!done.ok) {
+      this.failed = true;
+      this.emit(null);
+      return;
+    }
+    this.chargedMicros += done.value.chargedMicros;
+    if (!this.closed && result.value.text.trim())
+      this.emit({ text: result.value.text.trim(), final: true });
   }
   private async finish(): Promise<MediaCallResult> {
     this.closed = true;

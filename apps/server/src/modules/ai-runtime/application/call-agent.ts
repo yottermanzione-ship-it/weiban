@@ -4,7 +4,7 @@
  * 语音识别（openRealtimeAsr，按分钟分段计费）→ 角色聊天模型（generateText chat_reply，同人设、同记忆、同硬性边界）
  * → 语音合成（streamSpeech，按字数）。规则：
  * - 接通后角色先开口（来电带拨打理由）。
- * - 可打断：客户端 barge_in 或识别到用户新的一句话，立即停止当前合成（只结算已合成部分）。
+ * - 可打断：客户端 barge_in 或新 final 使旧轮次失效；已调用模型/合成仍由网关按真实用量结算。
  * - P-31：55 分钟时角色自然提醒（总负责人裁定：AI 侧自己计时，不改契约）；59 分半道别后发 end(time_limit)，
  *   calls 在 60 分钟强制结束兜底。
  * - MDL-10 第 5 条：余额不够约 1 分钟（或识别下一分钟冻结失败）时自然道别，30 秒内发 end(insufficient_balance)。
@@ -71,6 +71,9 @@ class AsyncQueue<T> {
     this.items.push(item);
     this.waiters.splice(0).forEach((w) => w());
   }
+  clear(): void {
+    this.items = [];
+  }
   end(): void {
     this.ended = true;
     this.waiters.splice(0).forEach((w) => w());
@@ -114,16 +117,28 @@ interface SessionInfo {
   brain: PersonalBrain;
 }
 
+/** Only local delivery is cancelled; requests already sent still settle in the gateway. */
+class ReplyTurn {
+  private release!: () => void;
+  readonly cancelled = new Promise<void>((resolve) => (this.release = resolve));
+
+  cancel(): void {
+    this.release();
+  }
+}
+
 class AgentSession implements CallAgentSession {
   readonly outputSampleRate = OUTPUT_SAMPLE_RATE;
-  private readonly audioQ = new AsyncQueue<Uint8Array>();
-  private readonly signalQ = new AsyncQueue<CallAgentSignal>();
+  private readonly audioQ = new AsyncQueue<{ turn: ReplyTurn; chunk: Uint8Array }>();
+  private readonly signalQ = new AsyncQueue<{ turn: ReplyTurn | null; signal: CallAgentSignal }>();
   private readonly turns: ChatMessageForModel[] = [];
   private chain: Promise<void> = Promise.resolve();
-  private current: StreamingTtsResult | null = null;
+  private activeTurn: ReplyTurn | null = null;
+  private current: { turn: ReplyTurn; stream: StreamingTtsResult } | null = null;
   private muted = false;
   private closed = false;
   private ending = false;
+  private endRequested = false;
   private careActive = false;
   private turnNo = 0;
   private readonly timers: NodeJS.Timeout[] = [];
@@ -139,64 +154,130 @@ class AgentSession implements CallAgentSession {
 
   start(): void {
     // 接通后角色先开口（MED-06）。
-    this.enqueue(() => this.respond(null));
+    const turn = this.beginTurn();
+    this.enqueue(() => this.respond(null, turn), turn);
     void this.listen();
     this.timers.push(
-      setTimeout(() => this.enqueue(() => this.remind()), REMIND_AT_MS),
+      setTimeout(() => {
+        if (this.closed || this.ending) return;
+        const reminder = this.activeTurn ?? this.beginTurn();
+        this.enqueue(() => this.remind(reminder), reminder);
+      }, REMIND_AT_MS),
       setTimeout(() => void this.farewell('time_limit'), FAREWELL_AT_MS),
       setInterval(() => void this.checkBalance(), BALANCE_CHECK_MS),
     );
   }
 
   onUserAudio(chunk: Uint8Array): void {
-    if (this.closed || this.muted) return;
+    if (this.closed || this.ending || this.muted) return;
     this.asr.pushAudio(chunk);
   }
 
   onBargeIn(): void {
-    this.current?.abort();
+    if (this.closed || this.endRequested) return;
+    this.invalidateTurn();
   }
 
   onMute(muted: boolean): void {
+    if (this.closed || this.ending) return;
+    // 静音只关闭麦克风，不打断角色；已进入识别流、静音后才到达的 final 也不回应。
     this.muted = muted;
   }
 
-  audio(): AsyncIterable<Uint8Array> {
-    return this.audioQ.iterate();
+  async *audio(): AsyncIterable<Uint8Array> {
+    for await (const item of this.audioQ.iterate()) {
+      // clear 之外还检查轮次，拦住已从队列取出、尚未交付的旧音频。
+      if (this.isActive(item.turn)) yield item.chunk;
+    }
   }
 
-  signals(): AsyncIterable<CallAgentSignal> {
-    return this.signalQ.iterate();
+  async *signals(): AsyncIterable<CallAgentSignal> {
+    for await (const item of this.signalQ.iterate()) {
+      if (!this.closed && (!item.turn || this.isActive(item.turn))) yield item.signal;
+    }
   }
 
   async close(input: { durationSec: number; outcome: string }): Promise<void> {
     if (this.closed) return;
     this.closed = true;
-    this.timers.forEach((t) => clearTimeout(t));
-    this.current?.abort();
-    await this.asr.close().catch(() => undefined);
+    this.clearTimers();
+    this.invalidateTurn();
+    // 本地输出立即结束，不等仍在结算的 ASR / 模型 / 合成请求。
     this.audioQ.end();
+    this.signalQ.clear();
     this.signalQ.end();
+    await this.asr.close().catch(() => undefined);
     if (input.durationSec > 0 && this.turns.some((t) => t.role === 'user'))
       await this.summarize().catch(() => undefined);
   }
 
   // ---------- 内部 ----------
 
-  private enqueue(task: () => Promise<void>): void {
-    this.chain = this.chain.then(task).catch(() => undefined);
+  private isActive(turn: ReplyTurn): boolean {
+    return !this.closed && this.activeTurn === turn;
   }
 
-  /** 识别结果：每句 final 打断当前说话并排队回应。识别流提前结束 = 余额不够下一分钟。 */
+  private clearTimers(): void {
+    this.timers.splice(0).forEach((t) => clearTimeout(t));
+  }
+
+  private invalidateTurn(): void {
+    const old = this.activeTurn;
+    this.activeTurn = null;
+    old?.cancel();
+    this.audioQ.clear();
+    const current = this.current;
+    this.current = null;
+    if (!old && !current) return;
+    this.signalQ.clear();
+    current?.stream.abort();
+    this.signalQ.push({ turn: null, signal: { kind: 'speaking', speaking: false } });
+  }
+
+  private beginTurn(): ReplyTurn {
+    this.invalidateTurn();
+    const turn = new ReplyTurn();
+    this.activeTurn = turn;
+    return turn;
+  }
+
+  private enqueue(task: () => Promise<void>, turn: ReplyTurn): void {
+    this.chain = this.chain
+      .then(async () => {
+        if (!this.isActive(turn)) return;
+        // 放开本地队列，不等待不能撤回的上游调用；其结果仍由任务观察并在网关正常结算。
+        await Promise.race([task(), turn.cancelled]);
+      })
+      .catch(() => undefined);
+  }
+
+  /** 每句 final 立即使旧轮次失效，新的回应不排在旧模型/合成请求后面。 */
   private async listen(): Promise<void> {
-    for await (const r of this.asr.results()) {
-      if (this.closed) return;
-      if (!r.final || !r.text.trim()) continue;
-      this.current?.abort();
-      const text = r.text.trim().slice(0, 1000);
-      this.enqueue(() => this.respond(text));
+    try {
+      for await (const r of this.asr.results()) {
+        if (this.closed || this.ending) return;
+        if (this.muted || !r.final || !r.text.trim()) continue;
+        const text = r.text.trim().slice(0, 1000);
+        // 接收时记录用户原话和风险，不能因快速连续 final 跳过用户内容或关怀边界。
+        this.turns.push({ role: 'user', content: text });
+        if (highRisk(text) === 'high') this.careActive = true;
+        const turn = this.beginTurn();
+        this.enqueue(() => this.respond(text, turn), turn);
+      }
+      if (!this.closed && !this.ending) await this.farewell('insufficient_balance');
+    } catch {
+      if (this.closed || this.ending) return;
+      this.ending = true;
+      this.invalidateTurn();
+      this.requestEnd('failed');
     }
-    if (!this.closed) await this.farewell('insufficient_balance');
+  }
+
+  private requestEnd(outcome: 'time_limit' | 'insufficient_balance' | 'failed'): void {
+    if (this.closed || this.endRequested) return;
+    this.endRequested = true;
+    this.clearTimers();
+    this.signalQ.push({ turn: null, signal: { kind: 'end', outcome } });
   }
 
   private async checkBalance(): Promise<void> {
@@ -219,11 +300,9 @@ class AgentSession implements CallAgentSession {
   }
 
   /** 生成并说出一轮回应；userText = null 表示开场白。 */
-  private async respond(userText: string | null): Promise<void> {
-    if (this.closed || this.ending) return;
-    if (userText) this.turns.push({ role: 'user', content: userText });
+  private async respond(userText: string | null, turn: ReplyTurn): Promise<void> {
+    if (!this.isActive(turn) || this.ending) return;
     const risk = userText ? highRisk(userText) : 'none';
-    if (risk === 'high') this.careActive = true;
     const opening =
       userText === null
         ? this.info.direction === 'incoming'
@@ -277,7 +356,7 @@ class AgentSession implements CallAgentSession {
           careActive: this.careActive,
           suspected: risk === 'suspected',
         });
-    if (this.closed || this.ending) return;
+    if (!this.isActive(turn) || this.ending) return;
     let text =
       result.ok && outputAllowed(result.value.text, this.info.policy, adult && !this.careActive)
         ? result.value.text.replace(/[（(][^）)]{0,20}[）)]/gu, '').trim()
@@ -295,31 +374,33 @@ class AgentSession implements CallAgentSession {
         : userText === null
           ? '喂，听得到吗？'
           : '嗯……我刚刚走神了，你再说一遍好吗？';
-    this.turns.push({ role: 'assistant', content: text });
-    await this.speak(text, n);
+    await this.speak(text, n, turn);
   }
 
-  private async remind(): Promise<void> {
-    if (this.closed || this.ending) return;
+  private async remind(turn: ReplyTurn): Promise<void> {
+    if (!this.isActive(turn) || this.ending) return;
     const text = '我们聊了快一个小时啦，再过五分钟电话就要自动挂断了哦。';
-    this.turns.push({ role: 'assistant', content: text });
-    await this.speak(text, this.turnNo++);
+    await this.speak(text, this.turnNo++, turn);
   }
 
   private async farewell(outcome: 'time_limit' | 'insufficient_balance'): Promise<void> {
     if (this.closed || this.ending) return;
     this.ending = true;
-    this.current?.abort();
+    this.clearTimers();
+    const turn = this.beginTurn();
     const text =
       outcome === 'time_limit'
         ? '时间差不多啦，今天就先聊到这儿，我们回头再聊，拜拜～'
         : '电话这边好像要断了，我们先挂啦，回头打字接着聊，拜拜～';
-    this.turns.push({ role: 'assistant', content: text });
     // 包含余额轮询的最坏等待后，道别仍须在30秒总时限内结束。
     let timeout: NodeJS.Timeout | undefined;
+    let spoken = false;
     try {
       await Promise.race([
-        this.speak(text, this.turnNo++, true),
+        this.speak(text, this.turnNo++, turn).then(() => {
+          spoken = true;
+        }),
+        turn.cancelled,
         new Promise<void>((r) => {
           timeout = setTimeout(r, FAREWELL_TIMEOUT_MS);
           this.timers.push(timeout);
@@ -329,13 +410,14 @@ class AgentSession implements CallAgentSession {
       // 语音服务故障也必须按既定结局结束通话。
     } finally {
       if (timeout) clearTimeout(timeout);
-      this.current?.abort();
+      // 超时/打断使尚未返回的 TTS 同样失效；自然播完则保留待交付的道别音频。
+      if (!spoken && this.isActive(turn)) this.invalidateTurn();
     }
-    this.signalQ.push({ kind: 'end', outcome });
+    this.requestEnd(outcome);
   }
 
-  private async speak(text: string, n: number, force = false): Promise<void> {
-    if (this.closed || (this.ending && !force)) return;
+  private async speak(text: string, n: number, turn: ReplyTurn): Promise<void> {
+    if (!this.isActive(turn)) return;
     const tts: PortResult<StreamingTtsResult, string> = await this.deps.media.streamSpeech({
       userId: this.info.userId,
       purpose: 'voice',
@@ -348,20 +430,33 @@ class AgentSession implements CallAgentSession {
       idempotencyKey: `call:${this.info.callId}:${this.startedAt}:tts:${n}`,
     });
     if (!tts.ok) return;
-    if (this.closed || (this.ending && !force)) {
+    // done 属于网关的真实调用结算，不把本地作废等同于免费，也不阻塞下一轮回应。
+    void tts.value.done.catch(() => undefined);
+    if (!this.isActive(turn)) {
       tts.value.abort();
       return;
     }
-    this.current = tts.value;
-    this.signalQ.push({ kind: 'speaking', speaking: true });
+    this.current = { turn, stream: tts.value };
+    this.signalQ.push({ turn, signal: { kind: 'speaking', speaking: true } });
+    let recorded = false;
     try {
       for await (const chunk of tts.value.audio) {
-        if (this.closed) break;
-        this.audioQ.push(chunk);
+        if (!this.isActive(turn)) break;
+        if (chunk.length === 0) continue;
+        // 从未产出声音的晚到回复，不写作已说出口的通话内容。
+        if (!recorded) {
+          recorded = true;
+          this.turns.push({ role: 'assistant', content: text });
+        }
+        this.audioQ.push({ turn, chunk });
       }
     } finally {
-      this.signalQ.push({ kind: 'speaking', speaking: false });
-      if (this.current === tts.value) this.current = null;
+      // 旧流的 finally 不得关闭新轮次的 speaking 状态。
+      if (this.current?.stream === tts.value) {
+        this.current = null;
+        if (this.isActive(turn))
+          this.signalQ.push({ turn, signal: { kind: 'speaking', speaking: false } });
+      }
     }
   }
 

@@ -16,6 +16,7 @@ import { jevDecide } from './jev-adapter.js';
 import { deepseekSearch, deepseekFetch, type SearchRequestGate } from './deepseek-tools.js';
 import { downloadDashscopeAudio } from './dashscope-audio.js';
 import { acquireNativeOpusEncoder } from './native-opus.js';
+import { isNativeAsrModel, nativeAsr } from './native-asr.js';
 
 export type MediaFailure =
   | 'network_error'
@@ -82,7 +83,7 @@ export interface MediaAdapter {
   transcribe(
     t: MediaTarget,
     input: { bytes: Uint8Array; mimeType: string },
-  ): Promise<MediaAdapterResult<{ text: string }>>;
+  ): Promise<MediaAdapterResult<{ text: string; asrSeconds?: number }>>;
   generateImage(
     t: MediaTarget,
     input: { prompt: string; size: string },
@@ -461,13 +462,17 @@ export function pcmFromWav(bytes: Uint8Array, sampleRate: number): Uint8Array | 
 async function mimoSynthesize(
   t: MediaTarget,
   input: { text: string; voice: string; format: 'ogg_opus' | 'pcm16_24k' | 'wav' },
+  signal?: AbortSignal,
 ): Promise<MediaAdapterResult<{ bytes: Uint8Array; mimeType: string; durationMs: number }>> {
+  if (signal?.aborted) return { ok: false, category: 'bad_request', zeroCost: true };
   if (input.format === 'ogg_opus') return { ok: false, category: 'bad_request' };
   try {
     const response = await fetch(url(t.baseUrl, '/chat/completions'), {
       method: 'POST',
       redirect: 'manual',
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)])
+        : AbortSignal.timeout(TIMEOUT_MS),
       headers: {
         'api-key': t.apiKey,
         Authorization: `Bearer ${t.apiKey}`,
@@ -538,13 +543,17 @@ export function isDashscopeTtsTarget(t: MediaTarget): boolean {
 async function dashscopeSynthesize(
   t: MediaTarget,
   input: { text: string; voice: string; format: 'ogg_opus' | 'pcm16_24k' | 'wav' },
+  signal?: AbortSignal,
 ): Promise<MediaAdapterResult<{ bytes: Uint8Array; mimeType: string; durationMs: number }>> {
+  if (signal?.aborted) return { ok: false, category: 'bad_request', zeroCost: true };
   if (input.format === 'ogg_opus') return { ok: false, category: 'bad_request' };
   try {
     const response = await fetch(url(t.baseUrl, '/services/audio/tts/SpeechSynthesizer'), {
       method: 'POST',
       redirect: 'manual',
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)])
+        : AbortSignal.timeout(TIMEOUT_MS),
       headers: { Authorization: `Bearer ${t.apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: t.model,
@@ -641,12 +650,17 @@ export function withMimoChatAudio(inner: MediaAdapter): MediaAdapter {
           : inner.synthesize(t, i);
     },
     synthesizeStream: async (t, i, signal) => {
+      if (signal.aborted) return { ok: false, category: 'bad_request', zeroCost: true };
       const blocked = retired(t);
       if (blocked) return blocked;
       if (!native(t)) return inner.synthesizeStream(t, i, signal);
       const result = isMimoChatAudioModel(t.model)
-        ? await mimoSynthesize(t, { text: i.text, voice: i.voice, format: 'pcm16_24k' })
-        : await dashscopeSynthesize(t, { text: i.text, voice: i.voice, format: 'pcm16_24k' });
+        ? await mimoSynthesize(t, { text: i.text, voice: i.voice, format: 'pcm16_24k' }, signal)
+        : await dashscopeSynthesize(
+            t,
+            { text: i.text, voice: i.voice, format: 'pcm16_24k' },
+            signal,
+          );
       if (!result.ok) return result;
       const pcm = result.value.bytes;
       async function* chunks(): AsyncIterable<Uint8Array> {
@@ -657,7 +671,9 @@ export function withMimoChatAudio(inner: MediaAdapter): MediaAdapter {
       }
       return { ok: true, value: chunks() };
     },
-    transcribe: (t, i) => inner.transcribe(t, i),
+    transcribe: (t, i) =>
+      // A model's Chat-Completions compatibility does not imply multipart transcription support.
+      isNativeAsrModel(t.model) ? nativeAsr(t, i) : inner.transcribe(t, i),
     generateImage: (t, i) => inner.generateImage(t, i),
     search: (t, i) => inner.search(t, i),
     ...(inner.fetchPage

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Pause, Play } from './old-icons.js';
 import { CompanionEndpoints, VoiceEndpoints } from '@weiban/contracts';
@@ -20,6 +20,16 @@ export function VoicePickerPage() {
   const [playing, setPlaying] = useState<string | null>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
   const current = chosen !== undefined ? chosen : (companion.data?.voiceId ?? null);
+  useEffect(() => {
+    return () => {
+      if (audio.current) {
+        audio.current.onended = null;
+        audio.current.onerror = null;
+        audio.current.pause();
+        audio.current = null;
+      }
+    };
+  }, [characterId]);
   function preview(voiceId: string, url: string | null) {
     audio.current?.pause();
     if (playing === voiceId || !url) {
@@ -28,15 +38,23 @@ export function VoicePickerPage() {
     }
     const element = new Audio(url);
     audio.current = element;
-    element.onended = () => setPlaying(null);
+    element.onended = () => {
+      if (audio.current === element) setPlaying(null);
+    };
     element.onerror = () => {
+      if (audio.current !== element) return;
       setPlaying(null);
       showToast('试听加载失败');
     };
     setPlaying(voiceId);
-    void element.play().catch(() => setPlaying(null));
+    void element.play().catch(() => {
+      if (audio.current === element) setPlaying(null);
+    });
   }
   function choose(voiceId: string | null) {
+    audio.current?.pause();
+    audio.current = null;
+    setPlaying(null);
     const previous = current;
     setChosen(voiceId);
     void api
@@ -117,7 +135,7 @@ export function VoicePickerPage() {
         </div>
       )}
       <p className="hint">
-        所有声音都是合成音色，不模仿任何真人的声音。改了以后，语音消息和通话都会用新的声音。
+        所有声音都是合成音色，不模仿任何真人的声音。语音消息和通话使用所选音色；音色须与语音消息模型匹配，不会自动切换模型。
       </p>
     </main>
   );
