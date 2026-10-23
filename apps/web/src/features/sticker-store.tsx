@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import '../app/stickers.css';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { StickerStoreEndpoints as E } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
@@ -16,7 +16,10 @@ function useStoreRefresh(refresh: () => void) {
 export function StickerStorePage() {
   const store = useRemote(E.listPacks, { networkOnly: true });
   const mine = useRemote(E.listAdded, { networkOnly: true });
-  const [manage, setManage] = useState(false);
+  // 「我的表情」是独立路由：系统返回手势/返回键才能回到商店，而不是退回「我」页签。
+  const location = useLocation();
+  const navigate = useNavigate();
+  const manage = location.pathname.replace(/\/+$/, '').endsWith('/sticker-store/mine');
   const [tab, setTab] = useState<'featured' | 'more'>('featured');
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
@@ -71,15 +74,14 @@ export function StickerStorePage() {
             </span>
           )
         }
-        fallback="/me"
-        onBack={manage ? () => setManage(false) : undefined}
+        fallback={manage ? '/sticker-store' : '/me'}
         right={
           !manage && (
             <button
               type="button"
               className="nav-bar-icon sticker-store-more"
               aria-label="我的表情"
-              onClick={() => setManage(true)}
+              onClick={() => navigate('/sticker-store/mine')}
             >
               <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
                 <circle cx="4" cy="10" r="1.6" fill="currentColor" />

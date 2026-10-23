@@ -415,6 +415,7 @@ function Shell() {
                   element={<AnniversariesPage />}
                 />
                 <Route path="/sticker-store" element={<StickerStorePage />} />
+                <Route path="/sticker-store/mine" element={<StickerStorePage />} />
                 <Route path="/sticker-store/:packId" element={<StickerStoreDetailPage />} />
                 <Route path="/support" element={<SupportPage />} />
                 <Route path="/support/new" element={<SupportCreatePage />} />

@@ -163,6 +163,7 @@ createRoot(document.getElementById('root')!).render(
       <Routes>
         <Route path="/panel" element={<PanelFixture />} />
         <Route path="/sticker-store" element={<StickerStorePage />} />
+        <Route path="/sticker-store/mine" element={<StickerStorePage />} />
         <Route path="/me/stickers" element={<p>单个表情管理入口</p>} />
       </Routes>
     </AuthProvider>

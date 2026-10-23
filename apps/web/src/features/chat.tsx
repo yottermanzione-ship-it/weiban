@@ -1582,12 +1582,6 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           </Link>
         </p>
       )}
-      {group && typingNames.length > 0 && status.data?.available && (
-        <p
-          className="wx-typing"
-          role="status"
-        >{`${typingNames.filter(Boolean).join('、')} 正在输入...`}</p>
-      )}
       {(error || chat.error) && (
         <p role="alert" className="notice-bar">
           {error || chat.error}

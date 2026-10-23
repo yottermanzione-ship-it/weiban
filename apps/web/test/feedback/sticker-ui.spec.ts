@@ -59,4 +59,9 @@ test('表情商店保留搜索、切换网格，管理单表情和系列只用�
   await page.getByRole('button', { name: '移除测试系列', exact: true }).click();
   await expect(page.getByRole('button', { name: '移除测试系列', exact: true })).toHaveCount(0);
   await page.screenshot({ path: 'apps/web/test-results/sticker-manage-unified.png' });
+  // 「我的表情」是独立路由：返回后应回到表情商店，而不是退回「我」页签。
+  await expect(page.getByText('添加的单个表情', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '返回' }).click();
+  await expect(page.getByRole('tab', { name: '精选表情' })).toBeVisible();
+  await expect(page.getByText('添加的单个表情', { exact: true })).toHaveCount(0);
 });
