@@ -1,4 +1,7 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('./native-opus.js', () => ({
+  acquireNativeOpusEncoder: async () => ({ ok: false, reason: 'unavailable' }),
+}));
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import {
@@ -125,13 +128,13 @@ describe('MiMo native speech synthesis protocol', () => {
     expect(result.value.durationMs).toBe(Math.round((24_000 * 2) / 48));
   });
 
-  it('refuses ogg_opus instead of pretending the container is supported', async () => {
+  it('refuses ogg_opus before contacting the provider when the real encoder is unavailable', async () => {
     const result = await adapter().synthesize(target(), {
       text: '你好',
       voice: 'v',
       format: 'ogg_opus',
     });
-    expect(result).toEqual({ ok: false, category: 'bad_request' });
+    expect(result).toEqual({ ok: false, category: 'bad_request', zeroCost: true });
     expect(calls).toHaveLength(0);
   });
 

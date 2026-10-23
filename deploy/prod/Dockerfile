@@ -23,8 +23,8 @@ RUN --mount=type=secret,id=build_ca,required=false \
 
 FROM node:24.19.0-bookworm-slim AS app
 ENV NODE_ENV=production
-# Operator-only CMS maintenance needs the system implementation, never a custom crypto protocol.
-RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
+# System CMS maintenance and bounded native-TTS PCM -> Ogg/Opus encoding (no custom containers).
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates ffmpeg \
     && test "$(readlink -f /var/lib/apt/lists)" = /var/lib/apt/lists \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app

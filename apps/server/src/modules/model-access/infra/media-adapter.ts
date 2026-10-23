@@ -15,6 +15,7 @@ import { SystemClock } from '../../../platform/index.js';
 import { jevDecide } from './jev-adapter.js';
 import { deepseekSearch, deepseekFetch, type SearchRequestGate } from './deepseek-tools.js';
 import { downloadDashscopeAudio } from './dashscope-audio.js';
+import { acquireNativeOpusEncoder } from './native-opus.js';
 
 export type MediaFailure =
   | 'network_error'
@@ -454,8 +455,8 @@ export function pcmFromWav(bytes: Uint8Array, sampleRate: number): Uint8Array | 
  * MiMo 原生语音合成：走 `/chat/completions` 的 `audio` 字段（旧项目核实过的协议），
  * 不是 OpenAI 的 `/audio/speech`。返回的是 base64 音频，需自行解码。
  *
- * 边界：本适配器不引入 OGG 封装器，`ogg_opus` 直接按 `bad_request` 拒绝，
- * 不谎称已支持语音消息所需的封装；PCM 只接受 24kHz 单声道 16 位，其余格式不静默重采样。
+ * 本函数仅提供WAV/PCM；wrapper在预先取得编码租约后把PCM交给真实Opus编码器，
+ * 不把WAV当作OGG。PCM只接受24kHz单声道16位，其余格式不静默重采样。
  */
 async function mimoSynthesize(
   t: MediaTarget,
@@ -609,6 +610,30 @@ export function withMimoChatAudio(inner: MediaAdapter): MediaAdapter {
     synthesize: async (t, i) => {
       const blocked = retired(t);
       if (blocked) return blocked;
+      if (native(t) && i.format === 'ogg_opus') {
+        // Reserve the bounded encoder before any potentially billable provider request.
+        const acquired = await acquireNativeOpusEncoder();
+        if (!acquired.ok)
+          return acquired.reason === 'busy'
+            ? { ok: false, category: 'rate_limited', zeroCost: true, localRateLimit: true }
+            : { ok: false, category: 'bad_request', zeroCost: true };
+        try {
+          const pcm = isMimoChatAudioModel(t.model)
+            ? await mimoSynthesize(t, { ...i, format: 'pcm16_24k' })
+            : await dashscopeSynthesize(t, { ...i, format: 'pcm16_24k' });
+          if (!pcm.ok) return pcm;
+          const bytes = await acquired.lease.encode(pcm.value.bytes);
+          return {
+            ok: true,
+            value: { bytes, mimeType: 'audio/ogg', durationMs: pcm.value.durationMs },
+          };
+        } catch {
+          // The provider may already have synthesized audio: do not claim zero cost or retry.
+          return { ok: false, category: 'provider_error' };
+        } finally {
+          acquired.lease.release();
+        }
+      }
       return isMimoChatAudioModel(t.model)
         ? mimoSynthesize(t, i)
         : isDashscopeTtsTarget(t)

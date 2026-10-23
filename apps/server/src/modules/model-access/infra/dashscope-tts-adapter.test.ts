@@ -1,4 +1,7 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('./native-opus.js', () => ({
+  acquireNativeOpusEncoder: async () => ({ ok: false, reason: 'unavailable' }),
+}));
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { OpenAiCompatibleMediaAdapter, withMimoChatAudio } from './media-adapter.js';
@@ -111,7 +114,7 @@ describe('DashScope native speech synthesis protocol', () => {
     expect(calls.filter((c) => c.method === 'GET')).toHaveLength(0);
   });
 
-  it('refuses the retired tts-flash model and the ogg container without calling upstream', async () => {
+  it('refuses retired models and unavailable OGG encoding without calling upstream', async () => {
     expect(
       await adapter().synthesize(target('qwen-audio-3.0-tts-flash'), {
         text: '你好',
@@ -121,8 +124,8 @@ describe('DashScope native speech synthesis protocol', () => {
     ).toEqual({ ok: false, category: 'bad_request' });
     expect(
       await adapter().synthesize(target(), { text: '你好', voice: 'Cherry', format: 'ogg_opus' }),
-    ).toEqual({ ok: false, category: 'bad_request' });
-    // 退役模型与不支持的容器均在请求前拒绝，不能误送到 OpenAI 兼容路径。
+    ).toEqual({ ok: false, category: 'bad_request', zeroCost: true });
+    // 退役模型与缺编码器均在请求前拒绝，不能误送到 OpenAI 兼容路径。
     expect(calls).toHaveLength(0);
   });
 
