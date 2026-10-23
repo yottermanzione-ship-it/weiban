@@ -28,11 +28,13 @@ async function main(): Promise<void> {
     return index >= 0 ? args[index + 1] : undefined;
   };
   const adminName = read('--admin');
-  const decisionModel = read('--decision-model');
+  const clearDecision = args.includes('--clear');
+  if (clearDecision && args.includes('--decision-model')) fail('ARGUMENT_CONFLICT');
+  const decisionModel = clearDecision ? null : read('--decision-model');
   const apply = args.includes('--apply');
-  const known = new Set(['--admin', '--decision-model', '--apply']);
+  const known = new Set(['--admin', '--decision-model', '--apply', '--clear']);
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--apply') continue;
+    if (args[i] === '--apply' || args[i] === '--clear') continue;
     if (!known.has(args[i]!)) fail('ARGUMENT_INVALID');
     if (!args[i + 1] || args[i + 1]!.startsWith('--')) fail('ARGUMENT_REQUIRED');
     i++;
@@ -56,8 +58,8 @@ async function main(): Promise<void> {
       warningsBefore: before.warnings,
       runsLast24h: before.last24h.runs,
     };
-    if (decisionModel) {
-      // updateConfig 会核对目录/上架/价格；不带 --apply 时只在内存里验证一遍，不写库。
+    if (decisionModel !== undefined) {
+      // 写入时由 updateConfig 核对目录/上架/价格；不带 --apply 时只预览，不写库。
       if (!apply) {
         out.plannedDecisionModel = decisionModel;
         out.applied = false;

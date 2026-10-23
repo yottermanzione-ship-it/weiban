@@ -3,19 +3,42 @@ param(
     [string]$Ref = 'HEAD',
     [ValidatePattern('^[A-Za-z0-9.-]+$')]
     [string]$Server = '103.231.58.124',
-    [string]$IdentityFile = (Join-Path $env:USERPROFILE '.ssh/weiban_deploy')
+    [string]$IdentityFile = (Join-Path $env:USERPROFILE '.ssh/weiban_deploy'),
+    # Explicit local-first release mode, authorized by the operator; never skips ancestry checks.
+    [switch]$LocalOnly,
+    [string]$LocalIntegrationPath = (Join-Path $env:USERPROFILE 'Desktop/weiban')
 )
 
 # Read-only release guard: an old task branch must never replace the consolidated live version.
 $ErrorActionPreference = 'Stop'
 $releaseRoot = (& git -C $PSScriptRoot rev-parse --show-toplevel).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Cannot locate the release repository.' }
-& git -C $releaseRoot fetch origin main
-if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the latest remote main.' }
+if (-not $LocalOnly) {
+    & git -C $releaseRoot fetch origin main
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the latest remote main.' }
+}
 $releaseCommit = (& git -C $releaseRoot rev-parse --verify --end-of-options "$Ref^{commit}").Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Release ref is not a commit.' }
+# Retain the last observed remote-main check even when an offline/local-first release is requested.
 & git -C $releaseRoot merge-base --is-ancestor origin/main $releaseCommit
-if ($LASTEXITCODE -ne 0) { throw 'Release source omits changes already merged into main. Integrate main first.' }
+if ($LASTEXITCODE -ne 0) { throw 'Release source omits changes already observed on main. Integrate main first.' }
+if ($LocalOnly) {
+    foreach ($localRef in @('refs/heads/main', 'refs/heads/local/trunk')) {
+        & git -C $releaseRoot show-ref --verify --quiet $localRef
+        if ($LASTEXITCODE -eq 0) {
+            & git -C $releaseRoot merge-base --is-ancestor $localRef $releaseCommit
+            if ($LASTEXITCODE -ne 0) { throw "Release source omits local integration ref $localRef." }
+        }
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $LocalIntegrationPath '.git'))) {
+        throw 'Cannot inspect the shared local integration checkout.'
+    }
+    $integrationCommit = (& git -C $LocalIntegrationPath rev-parse --verify HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve shared local integration HEAD.' }
+    & git -C $releaseRoot merge-base --is-ancestor $integrationCommit $releaseCommit
+    if ($LASTEXITCODE -ne 0) { throw 'Release source omits the shared local integration HEAD. Integrate it first.' }
+    Write-Output "Local-first mode: checked local main/trunk, last observed origin/main, and shared HEAD $integrationCommit; no remote fetch claimed."
+}
 
 $sourceChanges = @(
     & git -C $releaseRoot diff --name-only

@@ -17,7 +17,6 @@ export function StickerStorePage() {
   const store = useRemote(E.listPacks, { networkOnly: true });
   const mine = useRemote(E.listAdded, { networkOnly: true });
   const [manage, setManage] = useState(false);
-  const [sorting, setSorting] = useState(false);
   const [tab, setTab] = useState<'featured' | 'more'>('featured');
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
@@ -34,21 +33,6 @@ export function StickerStorePage() {
       else await api.call(E.addPack, { params: { packId } });
       mine.refresh();
       store.refresh();
-    } catch (e) {
-      setError(friendlyError(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function move(index: number) {
-    if (index < 1) return;
-    const ids = mine.data?.items.map((p) => p.packId) ?? [];
-    [ids[index - 1], ids[index]] = [ids[index]!, ids[index - 1]!];
-    setBusy(true);
-    setError('');
-    try {
-      await api.call(E.reorderMyPacks, { body: { packIds: ids } });
-      mine.refresh();
     } catch (e) {
       setError(friendlyError(e));
     } finally {
@@ -88,32 +72,20 @@ export function StickerStorePage() {
           )
         }
         fallback="/me"
-        onBack={
-          manage
-            ? () => {
-                setManage(false);
-                setSorting(false);
-              }
-            : undefined
-        }
+        onBack={manage ? () => setManage(false) : undefined}
         right={
-          manage ? (
+          !manage && (
             <button
               type="button"
-              className="text-button"
-              disabled={busy}
-              onClick={() => setSorting((v) => !v)}
-            >
-              {sorting ? '完成' : '排序'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="text-button"
+              className="nav-bar-icon sticker-store-more"
               aria-label="我的表情"
               onClick={() => setManage(true)}
             >
-              •••
+              <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+                <circle cx="4" cy="10" r="1.6" fill="currentColor" />
+                <circle cx="10" cy="10" r="1.6" fill="currentColor" />
+                <circle cx="16" cy="10" r="1.6" fill="currentColor" />
+              </svg>
             </button>
           )
         }
@@ -144,7 +116,7 @@ export function StickerStorePage() {
               </span>
             }
           />
-          {mine.data?.items.map((p, i) => (
+          {mine.data?.items.map((p) => (
             <div key={p.packId} className="sticker-manage-row">
               <MenuRow
                 to={p.enabled ? '/sticker-store/' + p.packId : undefined}
@@ -158,16 +130,6 @@ export function StickerStorePage() {
                 subtitle={p.enabled ? undefined : '已停用，可移除'}
               />
               <div className="sticker-manage-actions">
-                {sorting && (
-                  <button
-                    type="button"
-                    disabled={busy || i === 0}
-                    aria-label={`上移${p.name}`}
-                    onClick={() => void move(i)}
-                  >
-                    上移
-                  </button>
-                )}
                 <button
                   type="button"
                   disabled={busy || p.builtIn}

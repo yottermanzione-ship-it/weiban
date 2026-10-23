@@ -33,7 +33,17 @@ test('表情商店保留搜索、切换网格，管理单表情和系列只用�
   await page.goto(`${fixture}?page=store`);
   await expect(page.getByRole('tab', { name: '精选表情' })).toBeVisible();
   await expect(page.getByRole('searchbox', { name: '搜索表情包' })).toBeVisible();
+  const featured = page.getByRole('tab', { name: '精选表情' });
+  await expect(featured).toHaveCSS('border-top-width', '0px');
+  await expect(featured).toHaveCSS('border-bottom-width', '0px');
+  await expect(featured).toHaveCSS('border-radius', '0px');
+  expect(await featured.evaluate((el) => getComputedStyle(el, '::after').height)).toBe('2px');
+  const more = page.getByRole('button', { name: '我的表情', exact: true });
+  await expect(more).toHaveCSS('color', 'rgb(17, 17, 17)');
+  await expect(more.locator('svg')).toHaveAttribute('width', '20');
+  await expect(more.locator('circle')).toHaveCount(3);
   await expect(page.locator('.sticker-store-row')).toHaveCount(2);
+  await page.screenshot({ path: 'apps/web/test-results/sticker-store-header-fixed.png' });
   await page.getByRole('tab', { name: '更多表情' }).click();
   await expect(page.locator('.sticker-store-tile')).toHaveCount(2);
   await page.getByRole('searchbox', { name: '搜索表情包' }).fill('测试系列');
@@ -44,6 +54,8 @@ test('表情商店保留搜索、切换网格，管理单表情和系列只用�
   await expect(page.locator('.menu-group')).toContainText('测试系列');
   await expect(page.getByText('隐私设置', { exact: true })).toHaveCount(0);
   await expect(page.getByText('我的自拍表情', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '排序', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /上移/ })).toHaveCount(0);
   await page.getByRole('button', { name: '移除测试系列', exact: true }).click();
   await expect(page.getByRole('button', { name: '移除测试系列', exact: true })).toHaveCount(0);
   await page.screenshot({ path: 'apps/web/test-results/sticker-manage-unified.png' });

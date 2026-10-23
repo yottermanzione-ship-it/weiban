@@ -1,7 +1,7 @@
 import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
-import { and, count, eq, inArray, isNotNull, lt, or } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm';
 import {
   MEDIA_LIMITS,
   MediaPurpose as MediaPurposeSchema,
@@ -46,6 +46,7 @@ import {
 } from '../tokens.js';
 import type { ObjectStorage } from '../infra/storage.js';
 import { isBuiltinKey, renderBuiltinSvg } from './builtin-art.js';
+import { stickerImportId } from './sticker-import-id.js';
 type Row = typeof objects.$inferSelect;
 
 /** 素材库用途：所有者为空（平台），所有登录用户可读，只能管理员上传。 */
@@ -216,6 +217,70 @@ export class MediaService
     return this.toMedia(row, userId);
   }
 
+  /** Maintenance-only preview: exactly the upload decoder, without DB/storage/crypto writes. */
+  async inspectLibraryImage(file: { buffer: Buffer; mimetype: string }): Promise<{
+    mediaId: string;
+    contentHash: string;
+  }> {
+    const processed = await this.processImage(file.buffer, file.mimetype);
+    try {
+      const contentHash = createHash('sha256').update(processed.body).digest('hex');
+      return { mediaId: stickerImportId('media', contentHash), contentHash };
+    } finally {
+      processed.body.fill(0);
+      processed.thumb?.fill(0);
+    }
+  }
+
+  /** Called only by the controlled importer after active-admin and review checks. */
+  async importLibraryImage(
+    adminId: string,
+    file: { buffer: Buffer; mimetype: string },
+    provenance: Record<string, unknown>,
+  ): Promise<{ mediaId: string; created: boolean }> {
+    const processed = await this.processImage(file.buffer, file.mimetype);
+    try {
+      const contentHash = createHash('sha256').update(processed.body).digest('hex');
+      const id = stickerImportId('media', contentHash);
+      const [existing] = await this.database.db.select().from(objects).where(eq(objects.id, id));
+      if (existing) {
+        if (
+          existing.state !== 'ready' ||
+          existing.ownerId !== null ||
+          existing.purpose !== 'sticker_library' ||
+          existing.contentHash !== contentHash
+        )
+          throw new AppError('conflict', '导入媒体ID已有非就绪或不匹配记录；保留进度，先人工核查');
+        return { mediaId: id, created: false };
+      }
+      // Also reuse pre-existing platform library images with the same decoded bytes.
+      const [same] = await this.database.db
+        .select()
+        .from(objects)
+        .where(
+          and(
+            eq(objects.purpose, 'sticker_library'),
+            eq(objects.state, 'ready'),
+            isNull(objects.ownerId),
+            eq(objects.contentHash, contentHash),
+          ),
+        );
+      if (same?.ownerId === null) return { mediaId: same.id, created: false };
+      const row = await this.store({
+        id,
+        ownerId: null,
+        purpose: 'sticker_library',
+        processed,
+        transcriptStatus: null,
+        importAudit: { adminId, provenance },
+      });
+      return { mediaId: row.id, created: true };
+    } finally {
+      processed.body.fill(0);
+      processed.thumb?.fill(0);
+    }
+  }
+
   private processAudio(
     purpose: string,
     file: { buffer: Buffer; mimetype: string },
@@ -292,6 +357,9 @@ export class MediaService
 
   /** 先登记 pending，写入加密对象（含缩略图），最后置 ready；失败清理。 */
   private async store(input: {
+    /** Internal import identity only; never accepted from an HTTP request. */
+    id?: string;
+    importAudit?: { adminId: string; provenance: Record<string, unknown> };
     ownerId: string | null;
     purpose: string;
     processed: Processed;
@@ -299,7 +367,7 @@ export class MediaService
     expiresAt?: Date | null;
   }): Promise<Row> {
     const { processed } = input;
-    const id = newId();
+    const id = input.id ?? newId();
     const storageKey = `${id}.sealed`;
     const thumbStorageKey = processed.thumb ? `${newId()}.sealed` : null;
     const keyOwner = input.ownerId ?? PLATFORM_KEY_OWNER;
@@ -350,6 +418,24 @@ export class MediaService
           if (thumbStorageKey) await this.storage.delete(thumbStorageKey);
           throw new AppError('not_found', '媒体已删除');
         }
+        if (input.importAudit)
+          await this.audit.record(
+            {
+              module: 'media',
+              action: 'asset.uploaded',
+              actorType: 'admin',
+              actorId: input.importAudit.adminId,
+              targetType: 'media',
+              targetId: id,
+              details: {
+                purpose: input.purpose,
+                mimeType: ready.mimeType,
+                sizeBytes: ready.sizeBytes,
+                import: input.importAudit.provenance,
+              },
+            },
+            tx,
+          );
         return ready;
       });
     } catch (error) {

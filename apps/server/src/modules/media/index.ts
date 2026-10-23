@@ -1,5 +1,13 @@
 export { MediaModule } from './media.module.js';
 export {
+  StickerAssetImporter,
+  StickerImportError,
+  StickerImportManifest,
+  readStickerImportManifest,
+  stickerImportErrorCode,
+} from './application/sticker-asset-importer.js';
+export { createStickerAssetImporter } from './application/sticker-import-runtime.js';
+export {
   MEDIA_READ_PORT,
   MEDIA_SYSTEM_PORT,
   MEDIA_TRANSCRIPT_PORT,
