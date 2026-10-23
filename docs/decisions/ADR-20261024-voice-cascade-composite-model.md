@@ -12,7 +12,7 @@
 ## 决策
 
 1. 在模型目录新增**组合模型（composite model）**：`modelKey = voice/cascade-call`，显示名 `Voice Call Cascade`，场景 `voice_call`，`enabled = true`。
-2. 组合关系不写进上游字段，改为目录条目的 `tags` 标记 `pipeline:voice_call`，并在 `model_access.settings` 新增 `voice_call_pipeline`：
+2. 组合关系不写进上游字段，改为目录条目的 `tags` 标记 `pipeline:call`（13 字符，在后台契约 `AdminCatalogEntry.tags` 的 16 字符上限内），并在 `model_access.settings` 新增 `voice_call_pipeline`：
    ```json
    { "asrModelKey": "...", "textModelKey": "deepseek/deepseek-v4.1-flash", "ttsModelKey": "...", "ttsVoiceMode": "system|clone" }
    ```

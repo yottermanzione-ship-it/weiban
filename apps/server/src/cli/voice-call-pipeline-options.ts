@@ -38,16 +38,13 @@ export const VOICE_CALL_COMPOSITE_ENTRY_VENDOR = 'Weiban';
 export const CATALOG_TAG_MAX_LENGTH = 16;
 
 /**
- * 组合标签本身带来的非阻断提示：`pipeline:voice_call` 有 19 个字符，超过后台契约 tags 的长度上限，
- * 后台模型列表 / 价格页按契约解析会失败。写入仍按 ADR 执行（组合判定依赖这个标签），
- * 由维护方决定缩短标签还是放宽契约。
+ * 组合条目的正常提示：标签 `pipeline:call` 是 13 个字符，在后台契约 tags 上限（16）内，
+ * 后台模型列表能正常解析这个条目。只在条目存在 / 本次创建时输出。
  */
-export function compositeEntryWarnings(): string[] {
-  return VOICE_CALL_PIPELINE_TAG.length > CATALOG_TAG_MAX_LENGTH
-    ? [
-        `目录标签 ${VOICE_CALL_PIPELINE_TAG} 有 ${VOICE_CALL_PIPELINE_TAG.length} 个字符，超过后台契约 tags 上限 ${CATALOG_TAG_MAX_LENGTH}：放宽契约前，后台模型列表会解析失败`,
-      ]
-    : [];
+export function compositeEntryNotes(): string[] {
+  return [
+    `组合条目标签 ${VOICE_CALL_PIPELINE_TAG}（${VOICE_CALL_PIPELINE_TAG.length} 字符）在后台契约 tags 上限 ${CATALOG_TAG_MAX_LENGTH} 内`,
+  ];
 }
 
 /** --set 解析结果：三个组件键已通过结构校验。 */
@@ -237,7 +234,7 @@ export interface VoiceCallExistingCompositeEntry {
 }
 
 /**
- * 组合目录条目的写入载荷（ADR-20261024）：固定键 `voice/cascade-call`、标签 `pipeline:voice_call`、
+ * 组合目录条目的写入载荷（ADR-20261024）：固定键 `voice/cascade-call`、标签 `pipeline:call`、
  * 只用于 `voice_call` 场景、启用。组合条目没有自己的上游 / token 价，主上游字段镜像文本组件，
  * 只为满足目录表的结构要求；运行时从 `voice_call_pipeline` 取三个组件。
  */

@@ -173,7 +173,7 @@ export function toAdminEntry(row: CatalogRow): AdminCatalogEntry {
 
 /**
  * 启用目录条目时是否必须先在价目表里有它的 token 价（契约 1.3）。
- * 组合通话模型（`voice/cascade-call` + `pipeline:voice_call`）自身不调用上游、没有 token 单价，
+ * 组合通话模型（`voice/cascade-call` + `pipeline:call`）自身不调用上游、没有 token 单价，
  * 费用由三个组件按真实调用分别计费，所以豁免；其余条目（含没有组合标签的同名条目）照旧要求价格。
  */
 export function requiresCatalogPrice(entry: {
@@ -353,7 +353,7 @@ export class CatalogService {
     return parsed.value;
   }
 
-  /** 目录里的组合模型条目（固定模型键 + `pipeline:voice_call` 标签）；没有为 null。 */
+  /** 目录里的组合模型条目（固定模型键 + `pipeline:call` 标签）；没有为 null。 */
   async voiceCallCompositeFact(): Promise<ModelFacts | null> {
     const facts = await this.fact(VOICE_CALL_CASCADE_MODEL_KEY);
     return isVoiceCallComposite(facts.entry) ? facts : null;

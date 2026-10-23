@@ -2,7 +2,7 @@
  * 组合通话模型（ADR-20261024-voice-cascade-composite-model）：用户只选一个「语音通话模型」，
  * 后台仍按识别分钟、文本 token、合成字符三次真实计费。
  *
- * - 目录里 `modelKey = voice/cascade-call` 且标签含 `pipeline:voice_call` 的条目是组合模型；
+ * - 目录里 `modelKey = voice/cascade-call` 且标签含 `pipeline:call` 的条目是组合模型；
  *   它自身不调用任何上游、不要求自己的 token 单价。
  * - 组合关系存在 `model_access.settings.voice_call_pipeline`（读时严格校验，非法 = 未配置）；
  *   运行时拆成识别 / 文本 / 合成三个组件，任一组件停用、删除或上游不可用 → 整通电话不可用并给出原因，
@@ -22,8 +22,8 @@ import type { ModelFacts } from './catalog.js';
 
 /** 组合模型在目录里的固定模型键。 */
 export const VOICE_CALL_CASCADE_MODEL_KEY = 'voice/cascade-call';
-/** 目录条目的组合标记；只有带这个标签的 `voice/cascade-call` 才按组合模型解析。 */
-export const VOICE_CALL_PIPELINE_TAG = 'pipeline:voice_call';
+/** 目录条目的组合标记；只有带这个标签的 `voice/cascade-call` 才按组合模型解析。13 字符，在后台契约 tags 上限（16）内。 */
+export const VOICE_CALL_PIPELINE_TAG = 'pipeline:call';
 /** `model_access.settings` 里的组合关系键。 */
 export const VOICE_CALL_PIPELINE_SETTING_KEY = 'voice_call_pipeline';
 /** 展示倍率的默认基准模型（后台另设 display_multiplier_base 时以后台为准）。 */
@@ -49,7 +49,7 @@ export interface VoiceCallCatalogEntry {
   tags: readonly string[];
 }
 
-/** 是不是「语音通话」组合模型：固定模型键 + `pipeline:voice_call` 标签，两者缺一不可。 */
+/** 是不是「语音通话」组合模型：固定模型键 + `pipeline:call` 标签，两者缺一不可。 */
 export function isVoiceCallComposite(entry: VoiceCallCatalogEntry | null | undefined): boolean {
   return (
     entry?.modelKey === VOICE_CALL_CASCADE_MODEL_KEY && entry.tags.includes(VOICE_CALL_PIPELINE_TAG)

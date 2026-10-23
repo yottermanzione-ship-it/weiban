@@ -1,6 +1,6 @@
 /**
  * 组合通话模型的运维入口（ADR-20261024）：配置 `model_access.settings.voice_call_pipeline`，
- * 可选登记目录条目 `voice/cascade-call`（标签 `pipeline:voice_call`）。只走服务层，不开 HTTP，不打印密钥。
+ * 可选登记目录条目 `voice/cascade-call`（标签 `pipeline:call`）。只走服务层，不开 HTTP，不打印密钥。
  *
  *   pnpm --filter @weiban/server exec tsx src/cli/voice-call-pipeline.ts --show
  *   pnpm --filter @weiban/server exec tsx src/cli/voice-call-pipeline.ts --set \
@@ -11,7 +11,7 @@
  *
  * --set 在第一次写入之前校验：三个组件都在目录里且启用，上游账号存在（未删除）且不是本机 loopback；
  * 任一不满足就整体失败并列出全部原因，不写入任何设置。--create-entry 只能和 --set 一起用：
- * 组合条目自身不调用上游、没有 token 单价（catalog 对带 pipeline:voice_call 的条目豁免价格检查），
+ * 组合条目自身不调用上游、没有 token 单价（catalog 对带 pipeline:call 的条目豁免价格检查），
  * 主上游字段镜像文本组件，只为满足目录结构；运行时从设置里取三个组件。
  */
 import 'reflect-metadata';
@@ -32,7 +32,7 @@ import { NestPinoLogger } from '../platform/logging/nest-logger.js';
 import { createLogger, DATABASE, loadConfig, type Database } from '../platform/index.js';
 import {
   assessVoiceCallPipeline,
-  compositeEntryWarnings,
+  compositeEntryNotes,
   compositeEntryWrite,
   parseVoiceCallPipelineCommand,
   type VoiceCallExistingCompositeEntry,
@@ -108,14 +108,15 @@ async function show(catalog: CatalogService, upstreams: readonly Upstream[]): Pr
   if (!pipeline) problems.push('voice_call_pipeline 未配置：先执行 --set');
   if (!entry) problems.push('组合条目 voice/cascade-call 未登记：--set 时加 --create-entry');
   else if (!entry.enabled) problems.push('组合条目 voice/cascade-call 已停用');
-  else if (!isVoiceCallComposite(entry)) problems.push('组合条目缺少 pipeline:voice_call 标签');
+  else if (!isVoiceCallComposite(entry)) problems.push('组合条目缺少 pipeline:call 标签');
   out({
     ok: true,
     pipeline,
     compositeEntry: entry ? entrySummary(entry) : null,
     components: prepared?.components ?? [],
     problems,
-    warnings: [...(prepared?.warnings ?? []), ...(entry ? compositeEntryWarnings() : [])],
+    warnings: prepared?.warnings ?? [],
+    notes: entry ? compositeEntryNotes() : [],
     ready: problems.length === 0,
   });
 }
@@ -163,7 +164,8 @@ async function apply(
     pipeline,
     compositeEntry: entry ? entrySummary(entry) : null,
     components: prepared.components,
-    warnings: [...prepared.warnings, ...(entry ? compositeEntryWarnings() : [])],
+    warnings: prepared.warnings,
+    notes: entry ? compositeEntryNotes() : [],
   });
 }
 

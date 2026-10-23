@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   assessVoiceCallPipeline,
-  compositeEntryWarnings,
+  CATALOG_TAG_MAX_LENGTH,
+  compositeEntryNotes,
   compositeEntryWrite,
   isLoopbackBaseUrl,
   parseVoiceCallPipelineCommand,
@@ -314,9 +315,11 @@ describe('voice-call composite catalog payload', () => {
     expect(write.tags[0]).toBe(VOICE_CALL_PIPELINE_TAG);
   });
 
-  it('flags that the 19-character pipeline tag exceeds the admin contract tag limit', () => {
-    expect(VOICE_CALL_PIPELINE_TAG).toHaveLength(19);
-    expect(compositeEntryWarnings()).toHaveLength(1);
-    expect(compositeEntryWarnings()[0]).toContain('超过后台契约 tags 上限 16');
+  it('uses a pipeline tag that fits inside the admin contract tag limit', () => {
+    expect(VOICE_CALL_PIPELINE_TAG).toBe('pipeline:call');
+    expect(VOICE_CALL_PIPELINE_TAG.length).toBeLessThanOrEqual(CATALOG_TAG_MAX_LENGTH);
+    expect(compositeEntryNotes()).toEqual([
+      '组合条目标签 pipeline:call（13 字符）在后台契约 tags 上限 16 内',
+    ]);
   });
 });
