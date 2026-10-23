@@ -61,6 +61,7 @@ import { PlannerService } from './planner.js';
 import { EcologySettingsService } from './ecology-settings.js';
 import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
 import { ImagePublicSearch } from './image-public-search.js';
+import { MomentSceneryService } from './moment-scenery.js';
 import {
   CAPTION_MAX_IMAGES,
   captionInstruction,
@@ -161,6 +162,7 @@ export class MomentsAiService {
     /** H3：图片描述存档（角色评论用户朋友圈时也看图）。 */
     @Optional() @Inject(ImageCaptionStore) private readonly captions?: ImageCaptionStore,
     @Optional() @Inject(ImagePublicSearch) private readonly imageSearch?: ImagePublicSearch,
+    @Optional() @Inject(MomentSceneryService) private readonly scenery?: MomentSceneryService,
   ) {}
 
   // =========================================================================
@@ -418,11 +420,16 @@ export class MomentsAiService {
       (policy.isRealPerson && MOMENTS_FORBIDDEN_REAL.test(text))
     )
       return { ok: false, reason: 'output_guard' };
+    const scenery = this.scenery
+      ? await this.scenery
+          .pick({ userId, seed: `eco:${input.runId}:${text.slice(0, 80)}` })
+          .catch(() => null)
+      : null;
     const posted = await this.writer.createPost(null, {
       ownerUserId: userId,
       characterId,
       text,
-      imageMediaIds: [],
+      imageMediaIds: scenery ? [scenery.mediaId] : [],
       link: null,
       sourceRef: { kind: 'daily_event', id: `eco:${input.runId}` },
       idempotencyKey: `eco-post-${input.runId}`,
