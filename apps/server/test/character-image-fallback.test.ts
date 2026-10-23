@@ -27,7 +27,7 @@ import { CharacterImageService, type ImageUse } from '../src/modules/ai-runtime/
 import { captureLogger, testConfig, testKekRing } from './support/fixtures.js';
 import { describeDb, resetTestDatabase } from './support/db.js';
 
-describeDb('角色发图素材兜底：真实策略、HTTP素材库与用途过滤', () => {
+describeDb('普通图撤回日常图库兜底：卡片/宠物模板与权限仍保留', () => {
   let app: INestApplication;
   let dir: string;
   let token: string;
@@ -213,24 +213,19 @@ describeDb('角色发图素材兜底：真实策略、HTTP素材库与用途过�
     });
     await http().post('/api/v1/admin/card-templates').send({}).expect(401);
   });
-  it('真人日常配图只取无肖像日常照片，禁用和名场面素材均排除', async () => {
-    const valid = [templates.landscape!.mediaId, templates.classical!.mediaId];
-    for (const use of ['chat', 'moments'] as const) {
-      for (let i = 0; i < 12; i++) {
-        const result = await generate('celebrity', use, `real-${use}-${i}`);
-        expect(result?.source).toBe('library');
-        expect(valid).toContain(result?.mediaId);
+  it('即使库中有合规日常照片，普通角色/真人的聊天和朋友圈也不再抽取', async () => {
+    for (const role of ['original', 'celebrity']) {
+      for (const use of ['chat', 'moments'] as const) {
+        expect(await generate(role, use, `no-stock-${role}-${use}`)).toBeNull();
       }
     }
     expect(
       (await assets.listCardTemplates('daily_photo', true, true)).map((r) => r.mediaId),
     ).toEqual([templates.classical!.mediaId]);
   });
-  it('历史人物聊天和朋友圈同时要求日常用途、古风和无肖像', async () => {
+  it('历史人物也不拿古风素材冒充普通聊天/朋友圈照片', async () => {
     for (const use of ['chat', 'moments'] as const) {
-      expect((await generate('historical', use, `historical-${use}`))?.mediaId).toBe(
-        templates.classical!.mediaId,
-      );
+      expect(await generate('historical', use, `historical-${use}`)).toBeNull();
     }
   });
   it('卡片与宠物仍按原用途，空类别不借用日常图', async () => {
@@ -240,18 +235,14 @@ describeDb('角色发图素材兜底：真实策略、HTTP素材库与用途过�
     expect((await generate('historical', 'pet', 'pet'))?.mediaId).toBe(templates.pet!.mediaId);
     expect(await generate('original', 'card', 'missing', 'holiday')).toBeNull();
   });
-  it('没有合规古风日常素材时不发；普通虚构角色仍可用非古风日常图', async () => {
+  it('停用部分旧素材也不把其余日常图库作为普通图兜底', async () => {
     await http()
       .patch(`/api/v1/admin/card-templates/${templates.classical!.templateId}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ enabled: false })
       .expect(200);
     expect(await generate('historical', 'chat', 'no-classical')).toBeNull();
-    const remaining = [
-      templates.portrait!.mediaId,
-      templates.landscape!.mediaId,
-      templates.classicalPortrait!.mediaId,
-    ];
-    expect(remaining).toContain((await generate('original', 'chat', 'original'))?.mediaId);
+    expect((await assets.listCardTemplates('daily_photo', false, false)).length).toBeGreaterThan(0);
+    expect(await generate('original', 'chat', 'original')).toBeNull();
   });
 });

@@ -1,26 +1,20 @@
 import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
-import { CharacterImageService, publicPictureQuery } from './character-image.js';
+import { CharacterImageService } from './character-image.js';
 import { MediaAiService } from './media-ai.js';
+import { safetyStyleText } from '../domain/character-prompt.js';
 
 function setup(
-  options: {
-    real?: boolean;
-    historical?: boolean;
-    library?: boolean;
-    enabled?: boolean;
-    pictureSearch?: boolean;
-  } = {},
+  options: { real?: boolean; historical?: boolean; library?: boolean; policy?: boolean } = {},
 ) {
   const media = {
     generateImage: vi.fn(() => {
       throw new Error('must never generate');
     }),
-    isServiceEnabled: vi.fn(async () => options.enabled ?? true),
-    webSearch: vi.fn(async () => ({
-      ok: true,
-      value: { chargedMicros: 7, items: [{ url: 'https://public.example/picture' }] },
-    })),
+    isServiceEnabled: vi.fn(async () => true),
+    webSearch: vi.fn(async () => {
+      throw new Error('must not search without source verification');
+    }),
   };
   const assets = {
     listCardTemplates: vi.fn(async () =>
@@ -28,11 +22,11 @@ function setup(
     ),
   };
   const policy = {
-    getCharacterPolicy: vi.fn(async () => ({
-      isRealPerson: options.real ?? false,
-      isHistorical: options.historical ?? false,
-    })),
-    checkImageGeneration: vi.fn(),
+    getCharacterPolicy: vi.fn(async () =>
+      options.policy === false
+        ? null
+        : { isRealPerson: options.real ?? false, isHistorical: options.historical ?? false },
+    ),
   };
   const read = {
     getMedia: vi.fn(async (_user: string, mediaId: string) => ({
@@ -43,260 +37,167 @@ function setup(
     })),
   };
   const links = {
-    previewForUser: vi.fn(async () => ({ reachable: true, coverMediaId: 'stored-web-image' })),
+    previewForUser: vi.fn(async () => ({ reachable: true, coverMediaId: 'unverified-cover' })),
   };
   const service = new CharacterImageService(
-    ...([
-      media,
-      assets,
-      policy,
-      read,
-      links,
-      { characterPublicPictureSearchEnabled: options.pictureSearch ?? true },
-    ] as unknown as ConstructorParameters<typeof CharacterImageService>),
+    ...([assets, policy, read] as unknown as ConstructorParameters<typeof CharacterImageService>),
   );
   const input = {
     userId: 'user',
     characterId: 'character',
     conversationId: 'conversation',
-    scene: '看看猫咪图片。私人聊天金丝雀',
+    scene: '自拍或猫咪，私人聊天金丝雀',
     use: 'chat' as const,
     searchPublic: true,
+    wantCharacter: true,
     idempotencyKey: 'turn',
   };
   return { service, media, assets, policy, read, links, input };
 }
+function extras(s: ReturnType<typeof setup>, assets: unknown = s.assets) {
+  return new MediaAiService(
+    ...([
+      s.media,
+      {},
+      assets,
+      s.links,
+      {},
+      {},
+      {},
+      {},
+      {},
+      { getInconvenientUntil: async () => null },
+      { nowMs: () => 0 },
+      s.service,
+      {
+        decide: async (input: { options?: string[] }) => ({
+          choice: input.options?.includes('keep_sticker') ? 'keep_sticker' : 'text',
+        }),
+      },
+    ] as unknown as ConstructorParameters<typeof MediaAiService>),
+  );
+}
 
-describe('角色分享图片不生图', () => {
-  it('发送网图使用安全转存的 mediaId，并仅记录搜索费用', async () => {
+describe('普通图片不再走随机图库、网页封面或生图', () => {
+  it('发给角色的能力说明不再承诺图库图片，未实发不能说已经发送', () => {
+    const prompt = safetyStyleText({
+      safetyStyle: {
+        careVoice: '温和',
+        deflectStyle: '自然',
+        refuseSelfieStyle: '不冒充真人新自拍',
+      },
+    } as unknown as Parameters<typeof safetyStyleText>[0]);
+    expect(prompt).toContain('不从日常图库抽图');
+    expect(prompt).toContain('不拿网页封面凑普通图片');
+    expect(prompt).toContain('未确认实际发送前');
+    expect(prompt).not.toContain('只能分享网上公开图片或素材库图片');
+  });
+  it.each([
+    [false, false, 'chat'],
+    [false, false, 'moments'],
+    [true, false, 'chat'],
+    [true, false, 'moments'],
+    [true, true, 'chat'],
+    [true, true, 'moments'],
+  ] as const)(
+    '真人=%s 历史=%s 用途=%s：没有可信来源就不发图、不产生搜索费',
+    async (real, historical, use) => {
+      const s = setup({ real, historical });
+      const onSearchCharged = vi.fn();
+      expect(
+        await s.service.generate({
+          ...s.input,
+          use,
+          ecologyTask: true,
+          countAsBackground: true,
+          onSearchCharged,
+        }),
+      ).toBeNull();
+      expect(s.assets.listCardTemplates).not.toHaveBeenCalled();
+      expect(s.read.getMedia).not.toHaveBeenCalled();
+      expect(s.links.previewForUser).not.toHaveBeenCalled();
+      expect(s.media.webSearch).not.toHaveBeenCalled();
+      expect(s.media.generateImage).not.toHaveBeenCalled();
+      expect(onSearchCharged).not.toHaveBeenCalled();
+    },
+  );
+  it('不能把日常图库伪装成卡片用途绕回普通配图', async () => {
     const s = setup();
-    const result = await s.service.generate({
-      ...s.input,
-      ecologyTask: true,
-      countAsBackground: true,
-    });
-    expect(result).toMatchObject({
-      mediaId: 'stored-web-image',
-      source: 'web',
-      chargedMicros: 7,
-      sourceUrl: 'https://public.example/picture',
-    });
-    expect(s.links.previewForUser).toHaveBeenCalledWith('user', 'https://public.example/picture');
-    expect(s.media.webSearch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        query: '猫咪 公开图片',
-        purpose: 'web_search',
-        billingOwner: 'user',
-        ecologyTask: true,
-        countAsBackground: true,
-        idempotencyKey: 'picture-search:turn',
-      }),
-    );
-    expect(JSON.stringify(s.media.webSearch.mock.calls)).not.toContain('私人聊天金丝雀');
-    expect(s.media.generateImage).not.toHaveBeenCalled();
-    expect(s.policy.checkImageGeneration).not.toHaveBeenCalled();
-  });
-  it('真人/历史人物不联网、不生图、不付人脸检查费用，仅筛选合规库图', async () => {
-    const s = setup({ real: true, historical: true });
-    expect(await s.service.generate(s.input)).toMatchObject({
-      mediaId: 'library',
-      source: 'library',
-      chargedMicros: 0,
-    });
-    expect(s.assets.listCardTemplates).toHaveBeenCalledWith('daily_photo', true, true);
-    expect(s.media.webSearch).not.toHaveBeenCalled();
-    expect(s.media.generateImage).not.toHaveBeenCalled();
-  });
-  it('未开通搜索不收费、不检查生图开关，仍能分享库图', async () => {
-    const s = setup({ enabled: false });
-    expect(await s.service.generate(s.input)).toMatchObject({
-      source: 'library',
-      chargedMicros: 0,
-    });
-    expect(s.media.isServiceEnabled).toHaveBeenCalledWith('web_search');
-    expect(s.media.webSearch).not.toHaveBeenCalled();
-  });
-  it('搜索失败或余额不足时库图兜底；没有库图就不发', async () => {
-    const s = setup({ library: false });
-    s.media.webSearch.mockResolvedValueOnce({ ok: false, error: 'insufficient_balance' } as never);
-    expect(await s.service.generate(s.input)).toBeNull();
-    expect(s.media.generateImage).not.toHaveBeenCalled();
-  });
-  it('安全抓取拒绝后不发送外链假图，搜索费沿用网关实扣', async () => {
-    const s = setup();
-    s.links.previewForUser.mockRejectedValueOnce(new Error('blocked private address'));
-    expect(await s.service.generate(s.input)).toMatchObject({
-      mediaId: 'library',
-      source: 'library',
-      chargedMicros: 7,
-    });
-    expect(s.media.generateImage).not.toHaveBeenCalled();
-  });
-  it('搜索成功但安全抓取失败且库空，仍准确回报已经实扣的费用', async () => {
-    const s = setup({ library: false });
-    s.links.previewForUser.mockRejectedValueOnce(new Error('SSRF blocked'));
-    const onSearchCharged = vi.fn();
-    expect(await s.service.generate({ ...s.input, onSearchCharged })).toBeNull();
-    expect(onSearchCharged).toHaveBeenCalledExactlyOnceWith(7);
-    expect(s.media.generateImage).not.toHaveBeenCalled();
-  });
-  it('网关余额不足没有结算则不回报搜索费用', async () => {
-    const s = setup();
-    s.media.webSearch.mockResolvedValueOnce({ ok: false, error: 'insufficient_balance' } as never);
-    const onSearchCharged = vi.fn();
-    expect(await s.service.generate({ ...s.input, onSearchCharged })).toMatchObject({
-      source: 'library',
-      chargedMicros: 0,
-    });
-    expect(onSearchCharged).not.toHaveBeenCalled();
-  });
-  it('转存媒体读取失败不发送失效 mediaId', async () => {
-    const s = setup({ library: false });
-    s.read.getMedia.mockRejectedValueOnce(new Error('not found'));
-    expect(await s.service.generate(s.input)).toBeNull();
-  });
-  it('卡片、宠物、朋友圈及旧自动配图不增加网络搜索费用', async () => {
-    const s = setup();
-    for (const use of ['card', 'pet', 'moments'] as const) {
-      expect(await s.service.generate({ ...s.input, use })).toMatchObject({
-        source: 'library',
-        chargedMicros: 0,
-      });
-    }
-    await s.service.generate({ ...s.input, searchPublic: false });
-    expect(s.media.webSearch).not.toHaveBeenCalled();
-    expect(s.assets.listCardTemplates).toHaveBeenCalledWith('pet', false, false);
-    expect(s.assets.listCardTemplates).toHaveBeenCalledWith('moment', false, false);
-  });
-  it('聊天真实附加路径发送转存图片和来源，不将网页URL当mediaId', async () => {
-    const s = setup();
-    const ai = new MediaAiService(
-      ...([
-        s.media,
-        {},
-        s.assets,
-        s.links,
-        {},
-        {},
-        {},
-        {},
-        {},
-        { getInconvenientUntil: async () => null },
-        { nowMs: () => 0 },
-        s.service,
-        { decide: async () => ({ choice: 'text' }) },
-      ] as unknown as ConstructorParameters<typeof MediaAiService>),
-    );
-    const onSearchCharged = vi.fn();
-    const result = await ai.planExtras({
-      ctx: { userId: 'user', characterId: 'character', conversationId: 'conversation' },
-      triggerId: 'trigger',
-      bubbles: ['看看这张图片'],
-      userText: '发张猫咪图片',
-      history: [],
-      voiceId: null,
-      quiet: true,
-      onSearchCharged,
-    });
-    expect(onSearchCharged).toHaveBeenCalledExactlyOnceWith(7);
-    expect(result).toContainEqual(
-      expect.objectContaining({ type: 'image', mediaId: 'stored-web-image' }),
-    );
-    expect(result).toContainEqual({
-      type: 'text',
-      text: '网上找到的图片，来源：https://public.example/picture',
-    });
-    expect(s.media.generateImage).not.toHaveBeenCalled();
-  });
-  it('图片发送失败时不捏造图片气泡，保留原文字回复', async () => {
-    const s = setup({ library: false, enabled: false });
-    const ai = new MediaAiService(
-      ...([
-        s.media,
-        {},
-        s.assets,
-        s.links,
-        {},
-        {},
-        {},
-        {},
-        {},
-        { getInconvenientUntil: async () => null },
-        { nowMs: () => 0 },
-        s.service,
-        { decide: async () => ({ choice: 'text' }) },
-      ] as unknown as ConstructorParameters<typeof MediaAiService>),
-    );
     expect(
-      await ai.planExtras({
+      await s.service.generate({ ...s.input, use: 'card', cardKind: 'daily_photo' }),
+    ).toBeNull();
+    expect(s.assets.listCardTemplates).not.toHaveBeenCalled();
+  });
+  it('卡片与宠物底图仍按原用途及真人/古风限制读取', async () => {
+    const s = setup({ real: true, historical: true });
+    expect(
+      await s.service.generate({ ...s.input, use: 'card', cardKind: 'anniversary' }),
+    ).toMatchObject({ mediaId: 'library', source: 'library', chargedMicros: 0 });
+    expect(s.assets.listCardTemplates).toHaveBeenLastCalledWith('anniversary', true, true);
+    expect(await s.service.generate({ ...s.input, use: 'pet' })).toMatchObject({
+      mediaId: 'library',
+      source: 'library',
+      chargedMicros: 0,
+    });
+    expect(s.assets.listCardTemplates).toHaveBeenLastCalledWith('pet', true, true);
+    expect(s.media.generateImage).not.toHaveBeenCalled();
+  });
+  it('默认卡片沿用moment类别，缺角色策略不读模板', async () => {
+    const s = setup();
+    expect(await s.service.generate({ ...s.input, use: 'card' })).toMatchObject({
+      source: 'library',
+    });
+    expect(s.assets.listCardTemplates).toHaveBeenCalledWith('moment', false, false);
+    const unavailable = setup({ policy: false });
+    expect(await unavailable.service.generate({ ...unavailable.input, use: 'pet' })).toBeNull();
+    expect(unavailable.assets.listCardTemplates).not.toHaveBeenCalled();
+  });
+  it('卡片/宠物无模板或媒体失效时不借普通图兜底', async () => {
+    const empty = setup({ library: false });
+    expect(await empty.service.generate({ ...empty.input, use: 'pet' })).toBeNull();
+    const failed = setup();
+    failed.read.getMedia.mockRejectedValueOnce(new Error('missing'));
+    expect(await failed.service.generate({ ...failed.input, use: 'card' })).toBeNull();
+    expect(failed.media.generateImage).not.toHaveBeenCalled();
+  });
+  it('真实聊天附加路径不拼假图片气泡，也不破坏已有文字', async () => {
+    const s = setup();
+    const bubbles = ['今天聊得很开心'];
+    expect(
+      await extras(s).planExtras({
         ctx: { userId: 'user', characterId: 'character', conversationId: 'conversation' },
         triggerId: 'trigger',
-        bubbles: ['今天聊得很开心'],
+        bubbles,
         userText: '发张猫咪图片',
         history: [],
         voiceId: null,
         quiet: true,
       }),
     ).toBeNull();
-    expect(s.media.generateImage).not.toHaveBeenCalled();
+    expect(bubbles).toEqual(['今天聊得很开心']);
+    expect(s.links.previewForUser).not.toHaveBeenCalled();
+    expect(s.media.webSearch).not.toHaveBeenCalled();
   });
-  it('保留角色自主选择并发送库内表情，不调用图片模型', async () => {
+  it('表情图片仍可由角色选择，不能误关成普通照片', async () => {
     const s = setup();
-    const stickerAssets = {
+    const ai = extras(s, {
       listStickersForCharacter: async () => [
         { stickerId: 'sticker', mediaId: 'sticker-media', description: '开心' },
       ],
-    };
-    const ai = new MediaAiService(
-      ...([
-        s.media,
-        {},
-        stickerAssets,
-        s.links,
-        {},
-        {},
-        {},
-        {},
-        {},
-        { getInconvenientUntil: async () => null },
-        { nowMs: () => 0 },
-        s.service,
-        {
-          decide: async (input: { options: string[] }) => ({
-            choice: input.options.includes('keep_sticker') ? 'keep_sticker' : 'text',
-          }),
-        },
-      ] as unknown as ConstructorParameters<typeof MediaAiService>),
-    );
-    const result = await ai.planExtras({
-      ctx: { userId: 'user', characterId: 'character', conversationId: 'conversation' },
-      triggerId: 'trigger',
-      bubbles: ['开心'],
-      userText: '你好',
-      history: [],
-      voiceId: null,
     });
-    expect(result).toContainEqual(
+    expect(
+      await ai.planExtras({
+        ctx: { userId: 'user', characterId: 'character', conversationId: 'conversation' },
+        triggerId: 'sticker-trigger',
+        bubbles: ['开心'],
+        userText: '你好',
+        history: [],
+        voiceId: null,
+      }),
+    ).toContainEqual(
       expect.objectContaining({ type: 'sticker', stickerId: 'sticker', mediaId: 'sticker-media' }),
     );
     expect(s.media.webSearch).not.toHaveBeenCalled();
     expect(s.media.generateImage).not.toHaveBeenCalled();
   });
-  it('没有固定公开主题时不外传任意私人文字或人物检索', () => {
-    expect(publicPictureQuery('请找某位演员的自拍，聊天金丝雀')).toBeNull();
-    expect(publicPictureQuery('家里地址123，想看海滩')).toBe('海滩 公开图片');
-  });
-});
-
-it('历史人物即使未同时标记真人且实验开关打开，也只使用库图', async () => {
-  const s = setup({ historical: true, real: false });
-  expect(await s.service.generate(s.input)).toMatchObject({ source: 'library', chargedMicros: 0 });
-  expect(s.media.webSearch).not.toHaveBeenCalled();
-});
-
-it('角色网上找图开关关闭时不触发搜索或新费用，用户输入图检索开关与此无关', async () => {
-  const s = setup({ pictureSearch: false });
-  expect(await s.service.generate(s.input)).toMatchObject({ source: 'library', chargedMicros: 0 });
-  expect(s.media.webSearch).not.toHaveBeenCalled();
-  expect(s.media.generateImage).not.toHaveBeenCalled();
 });
