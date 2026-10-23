@@ -27,9 +27,17 @@ export type MediaFailure =
   | 'content_rejected'
   | 'bad_request';
 
+/** Only quantities explicitly reported by the supplier; preserve them even after local failure. */
+export type ReportedMediaUsage = { ttsChars?: number; asrSeconds?: number };
 export type MediaAdapterResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; category: MediaFailure; zeroCost?: boolean; localRateLimit?: boolean };
+  | { ok: true; value: T; reportedUsage?: ReportedMediaUsage }
+  | {
+      ok: false;
+      category: MediaFailure;
+      zeroCost?: boolean;
+      localRateLimit?: boolean;
+      reportedUsage?: ReportedMediaUsage;
+    };
 
 export interface MediaTarget {
   kind: string;
@@ -296,7 +304,7 @@ export class OpenAiCompatibleMediaAdapter implements MediaAdapter {
   async transcribe(
     t: MediaTarget,
     input: { bytes: Uint8Array; mimeType: string },
-  ): Promise<MediaAdapterResult<{ text: string }>> {
+  ): Promise<MediaAdapterResult<{ text: string; asrSeconds?: number }>> {
     try {
       const form = new FormData();
       const ext = input.mimeType.split('/')[1]?.split(';')[0] ?? 'ogg';
@@ -317,9 +325,17 @@ export class OpenAiCompatibleMediaAdapter implements MediaAdapter {
       if (!response.ok) return { ok: false, category: await errorOf(response) };
       const bytes = await readLimited(response);
       if (!bytes) return { ok: false, category: 'provider_error' };
-      const payload = JSON.parse(Buffer.from(bytes).toString('utf8')) as { text?: unknown };
+      const payload = JSON.parse(Buffer.from(bytes).toString('utf8')) as {
+        text?: unknown;
+        usage?: { seconds?: unknown };
+      };
       if (typeof payload.text !== 'string') return { ok: false, category: 'provider_error' };
-      return { ok: true, value: { text: payload.text.slice(0, 4000) } };
+      const seconds = payload.usage?.seconds;
+      const reported = typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0;
+      return {
+        ok: true,
+        value: { text: payload.text.slice(0, 4000), ...(reported ? { asrSeconds: seconds } : {}) },
+      };
     } catch {
       return { ok: false, category: 'network_error' };
     }
@@ -452,6 +468,48 @@ export function pcmFromWav(bytes: Uint8Array, sampleRate: number): Uint8Array | 
   return new Uint8Array(data);
 }
 
+/** Repair only documented completed-stream length sentinels, never arbitrary corrupt WAV lengths. */
+export function normalizeDashscopeWav(bytes: Uint8Array): Uint8Array | null {
+  const view = Buffer.from(bytes);
+  if (
+    view.length < 44 ||
+    view.toString('ascii', 0, 4) !== 'RIFF' ||
+    view.toString('ascii', 8, 12) !== 'WAVE'
+  )
+    return null;
+  const sentinel = (n: number) => n === 0x7fffffbf || n === 0x7fffffff;
+  const riff = view.readUInt32LE(4);
+  const streaming = sentinel(riff);
+  if (!streaming && riff !== view.length - 8) return null;
+  if (streaming) view.writeUInt32LE(view.length - 8, 4);
+  let foundData = false;
+  for (let offset = 12; offset + 8 <= view.length;) {
+    let size = view.readUInt32LE(offset + 4);
+    const body = offset + 8;
+    if (view.toString('ascii', offset, offset + 4) === 'data') {
+      if (foundData) return null;
+      foundData = true;
+      if (sentinel(size)) {
+        if (!streaming) return null;
+        size = view.length - body;
+        view.writeUInt32LE(size, offset + 4);
+      }
+    }
+    if (body + size > view.length) return null;
+    offset = body + size + (size % 2);
+    if (offset > view.length) return null;
+  }
+  const pcm = pcmFromWav(view, 24000);
+  return foundData && pcm && pcm.length > 0 && pcm.length % 2 === 0 ? view : null;
+}
+
+function ttsReceipt(payload: Record<string, unknown>): { reportedUsage?: ReportedMediaUsage } {
+  const chars = (payload.usage as { characters?: unknown } | undefined)?.characters;
+  return typeof chars === 'number' && Number.isSafeInteger(chars) && chars >= 0
+    ? { reportedUsage: { ttsChars: chars } }
+    : {};
+}
+
 /**
  * MiMo 原生语音合成：走 `/chat/completions` 的 `audio` 字段（旧项目核实过的协议），
  * 不是 OpenAI 的 `/audio/speech`。返回的是 base64 音频，需自行解码。
@@ -547,6 +605,7 @@ async function dashscopeSynthesize(
 ): Promise<MediaAdapterResult<{ bytes: Uint8Array; mimeType: string; durationMs: number }>> {
   if (signal?.aborted) return { ok: false, category: 'bad_request', zeroCost: true };
   if (input.format === 'ogg_opus') return { ok: false, category: 'bad_request' };
+  let reported: { reportedUsage?: ReportedMediaUsage } = {};
   try {
     const response = await fetch(url(t.baseUrl, '/services/audio/tts/SpeechSynthesizer'), {
       method: 'POST',
@@ -569,6 +628,7 @@ async function dashscopeSynthesize(
     } catch {
       return { ok: false, category: 'provider_error' };
     }
+    reported = ttsReceipt(payload);
     const output = payload.output as { audio?: { url?: unknown } } | undefined;
     const audioUrl = typeof output?.audio?.url === 'string' ? output.audio.url.trim() : '';
     let audio: Uint8Array;
@@ -577,29 +637,22 @@ async function dashscopeSynthesize(
     } catch {
       // The synthesis POST may already be billable; never report zeroCost or forward the signed URL.
       // A CDN 401/403 is not proof that the provider API key is invalid.
-      return { ok: false, category: 'provider_error' };
+      return { ok: false, category: 'provider_error', ...reported };
     }
-    const header = Buffer.from(audio);
-    if (
-      audio.length < 44 ||
-      header.toString('ascii', 0, 4) !== 'RIFF' ||
-      header.toString('ascii', 8, 12) !== 'WAVE'
-    )
-      return { ok: false, category: 'provider_error' };
-    if (input.format === 'pcm16_24k') {
-      const pcm = pcmFromWav(audio, 24_000);
-      if (!pcm) return { ok: false, category: 'bad_request' };
-      return {
-        ok: true,
-        value: { bytes: pcm, mimeType: 'audio/L16', durationMs: Math.round(pcm.length / 48) },
-      };
-    }
+    const normalized = normalizeDashscopeWav(audio);
+    if (!normalized) return { ok: false, category: 'provider_error', ...reported };
+    const pcm = pcmFromWav(normalized, 24_000)!;
+    const durationMs = Math.round(pcm.length / 48);
     return {
       ok: true,
-      value: { bytes: audio, mimeType: 'audio/wav', durationMs: estimateSpeechMs(input.text) },
+      value:
+        input.format === 'pcm16_24k'
+          ? { bytes: pcm, mimeType: 'audio/L16', durationMs }
+          : { bytes: normalized, mimeType: 'audio/wav', durationMs },
+      ...reported,
     };
   } catch {
-    return { ok: false, category: 'network_error' };
+    return { ok: false, category: 'network_error', ...reported };
   }
 }
 
@@ -626,19 +679,22 @@ export function withMimoChatAudio(inner: MediaAdapter): MediaAdapter {
           return acquired.reason === 'busy'
             ? { ok: false, category: 'rate_limited', zeroCost: true, localRateLimit: true }
             : { ok: false, category: 'bad_request', zeroCost: true };
+        let reported: { reportedUsage?: ReportedMediaUsage } = {};
         try {
           const pcm = isMimoChatAudioModel(t.model)
             ? await mimoSynthesize(t, { ...i, format: 'pcm16_24k' })
             : await dashscopeSynthesize(t, { ...i, format: 'pcm16_24k' });
           if (!pcm.ok) return pcm;
+          if (pcm.reportedUsage) reported = { reportedUsage: pcm.reportedUsage };
           const bytes = await acquired.lease.encode(pcm.value.bytes);
           return {
             ok: true,
             value: { bytes, mimeType: 'audio/ogg', durationMs: pcm.value.durationMs },
+            ...reported,
           };
         } catch {
-          // The provider may already have synthesized audio: do not claim zero cost or retry.
-          return { ok: false, category: 'provider_error' };
+          // Already reported supplier units survive a local encoder failure.
+          return { ok: false, category: 'provider_error', ...reported };
         } finally {
           acquired.lease.release();
         }
@@ -669,7 +725,11 @@ export function withMimoChatAudio(inner: MediaAdapter): MediaAdapter {
           yield pcm.subarray(offset, Math.min(pcm.length, offset + 4096));
         }
       }
-      return { ok: true, value: chunks() };
+      return {
+        ok: true,
+        value: chunks(),
+        ...(result.reportedUsage ? { reportedUsage: result.reportedUsage } : {}),
+      };
     },
     transcribe: (t, i) =>
       // A model's Chat-Completions compatibility does not imply multipart transcription support.

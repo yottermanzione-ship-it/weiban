@@ -124,6 +124,21 @@ describe('native TTS -> declared ogg_opus routing', () => {
     expect(codec.encode).toHaveBeenCalledTimes(1);
     expect(codec.release).toHaveBeenCalledTimes(1);
   });
+  it('preserves supplier-reported characters when local Opus encoding fails after a billable Qwen synthesis', async () => {
+    api.mockResolvedValue(
+      Response.json({
+        output: { audio: { url: 'https://fixture.aliyuncs.com/audio.wav' } },
+        usage: { characters: 10 },
+      }),
+    );
+    codec.encode.mockRejectedValue(new Error('local encoder failed'));
+    expect(
+      await adapter().synthesize(target('dashscope', 'qwen-audio-3.0-tts-plus'), input),
+    ).toEqual({ ok: false, category: 'provider_error', reportedUsage: { ttsChars: 10 } });
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(codec.release).toHaveBeenCalledTimes(1);
+  });
+
   it('leaves explicit WAV requests on their existing path without reserving an encoder', async () => {
     const result = await adapter().synthesize(target(), { ...input, format: 'wav' });
     expect(result.ok).toBe(true);

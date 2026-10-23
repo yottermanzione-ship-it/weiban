@@ -27,16 +27,14 @@ describe('native ASR integration routing', () => {
   );
 
   it('routes supported DashScope ASR through the native JSON path and retains provider seconds', async () => {
-    const fetch = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            output: { choices: [{ message: { content: [{ text: '你好' }] } }] },
-            usage: { seconds: 0.01 },
-          }),
-        ),
-      );
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          output: { choices: [{ message: { content: [{ text: '你好' }] } }] },
+          usage: { seconds: 0.01 },
+        }),
+      ),
+    );
     vi.stubGlobal('fetch', fetch);
     expect(
       await adapter().transcribe(
@@ -50,6 +48,31 @@ describe('native ASR integration routing', () => {
     ).toEqual({ ok: true, value: { text: '你好', asrSeconds: 0.01 } });
     expect(fetch.mock.calls[0]![0]).toContain('/services/aigc/multimodal-generation/generation');
   });
+});
+
+describe('compatible ASR real usage propagation', () => {
+  it.each([2, undefined, -1, '2'])(
+    'returns only valid supplier seconds, never an invented duration (%s)',
+    async (seconds) => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValue(Response.json({ text: '你好，微伴。', usage: { seconds } }));
+      vi.stubGlobal('fetch', fetch);
+      expect(
+        await adapter().transcribe(
+          { ...target(), model: 'FunAudioLLM/SenseVoiceSmall' },
+          {
+            bytes: wavFromPcm(new Uint8Array(69120), 24000),
+            mimeType: 'audio/wav',
+          },
+        ),
+      ).toEqual({
+        ok: true,
+        value: { text: '你好，微伴。', ...(seconds === 2 ? { asrSeconds: 2 } : {}) },
+      });
+      expect(fetch.mock.calls[0]![0]).toContain('/audio/transcriptions');
+    },
+  );
 });
 
 describe('native cascade synthesis cancellation', () => {

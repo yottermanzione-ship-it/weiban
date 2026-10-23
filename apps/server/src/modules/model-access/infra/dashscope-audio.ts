@@ -27,6 +27,10 @@ for (const [address, prefix] of [
 export function dashscopeAudioUrl(raw: string): URL | null {
   try {
     const url = new URL(raw);
+    // Some official signed objects are labelled HTTP although the same object supports TLS.
+    // Upgrade the URL only; never send HTTP, follow a redirect, or relax the DNS/IP checks.
+    if (url.protocol === 'http:' && !url.port && /\.(aliyuncs|aliyun)\.com$/u.test(url.hostname))
+      url.protocol = 'https:';
     return url.protocol === 'https:' &&
       !url.username &&
       !url.password &&

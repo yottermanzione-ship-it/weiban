@@ -101,6 +101,7 @@ type CallOutcome<T> =
       ok: false;
       category: MediaFailure;
       actual?: UsageQuantities;
+      reportedUsage?: UsageQuantities;
       localRateLimit?: boolean;
       zeroCost?: boolean;
     };
@@ -200,33 +201,43 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       if (!model.ok) return model;
       const chars = this.ttsUnits(model.value, text);
       if (chars === null) return { ok: false, error: 'model_unavailable' };
-      return this.run(input, model.value, { ttsChars: chars }, async (target, adapter) => {
-        const result = await adapter.synthesize(target, {
-          text,
-          voice: voice.providerVoiceKey,
-          format: input.format === 'pcm16_24k' ? 'wav' : input.format,
-        });
-        if (!result.ok) return result;
-        let bytes = result.value.bytes;
-        let mimeType = result.value.mimeType;
-        if (mimeType === 'audio/L16') {
-          bytes = wavFromPcm(bytes, 24000);
-          mimeType = 'audio/wav';
-        }
-        const durationMs = Math.max(1, Math.min(300_000, result.value.durationMs));
-        const saved = await this.media.putObject({
-          ownerUserId: input.userId,
-          purpose: 'generated_voice',
-          bytes,
-          mimeType,
-          durationMs,
-        });
-        return {
-          ok: true,
-          value: { mediaId: saved.mediaId, durationMs },
-          actual: { ttsChars: chars },
-        };
-      });
+      return this.run(
+        input,
+        model.value,
+        { ttsChars: this.ttsEstimate(model.value, text, chars) },
+        async (target, adapter) => {
+          const result = await adapter.synthesize(target, {
+            text,
+            voice: voice.providerVoiceKey,
+            format: input.format === 'pcm16_24k' ? 'wav' : input.format,
+          });
+          if (!result.ok) return result;
+          let bytes = result.value.bytes;
+          let mimeType = result.value.mimeType;
+          if (mimeType === 'audio/L16') {
+            bytes = wavFromPcm(bytes, 24000);
+            mimeType = 'audio/wav';
+          }
+          const durationMs = Math.max(1, Math.min(300_000, result.value.durationMs));
+          const saved = await this.media
+            .putObject({
+              ownerUserId: input.userId,
+              purpose: 'generated_voice',
+              bytes,
+              mimeType,
+              durationMs,
+            })
+            .catch(() => null);
+          if (!saved)
+            return { ok: false, category: 'provider_error', reportedUsage: result.reportedUsage };
+          return {
+            ok: true,
+            value: { mediaId: saved.mediaId, durationMs },
+            actual: { ttsChars: result.reportedUsage?.ttsChars ?? chars },
+            actualKnown: result.reportedUsage?.ttsChars !== undefined,
+          };
+        },
+      );
     });
   }
 
@@ -577,7 +588,12 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     if (!model.ok) return model;
     const chars = this.ttsUnits(model.value, text);
     if (chars === null) return { ok: false, error: 'model_unavailable' };
-    const charge = await this.reserve(input, model.value, { ttsChars: chars }, 0);
+    const charge = await this.reserve(
+      input,
+      model.value,
+      { ttsChars: this.ttsEstimate(model.value, text, chars) },
+      0,
+    );
     if (!charge.ok) return charge;
     if (!(await this.beginCharge(charge.value))) {
       await this.fail(charge.value, 'provider_error');
@@ -594,7 +610,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       await this.fail(
         charge.value,
         started.category,
-        started.zeroCost ? { ttsChars: 0 } : undefined,
+        started.zeroCost ? { ttsChars: 0 } : started.reportedUsage,
       );
       return { ok: false, error: this.mapError(started.category) };
     }
@@ -602,21 +618,18 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     const done = new Promise<PortResult<MediaCallResult, GenerateError>>((r) => (settle = r));
     let finishing: Promise<void> | null = null;
     let delivered = false;
+    const actualChars = started.reportedUsage?.ttsChars ?? chars;
+    const usageReported = started.reportedUsage?.ttsChars !== undefined;
     const finish = () =>
       (finishing ??= (async () => {
-        // 打断或未自然读完没有供应商实际用量，不能拿音频字节经验折算收费。
+        // Native whole-utterance synthesis may already have reported all billable units.
+        // Playback cancellation cannot erase those units or estimate them from delivered bytes.
         if (completed && !controller.signal.aborted && !delivered) {
-          await this.fail(charge.value, 'provider_error', { ttsChars: chars });
+          await this.fail(charge.value, 'provider_error', started.reportedUsage);
           settle({ ok: false, error: 'provider_unavailable' });
           return;
         }
-        settle(
-          await this.succeed(
-            charge.value,
-            { ttsChars: chars },
-            completed && !controller.signal.aborted,
-          ),
-        );
+        settle(await this.succeed(charge.value, { ttsChars: actualChars }, usageReported));
       })());
     const source = started.value;
     let completed = false;
@@ -1011,7 +1024,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     if (!outcome.ok) {
       const actual = outcome.zeroCost
         ? Object.fromEntries(Object.keys(estimate).map((unit) => [unit, 0]))
-        : outcome.actual;
+        : (outcome.reportedUsage ?? outcome.actual);
       await this.fail(charge.value, outcome.category, actual, !outcome.localRateLimit);
       return { ok: false, error: this.mapError(outcome.category) };
     }
@@ -1102,6 +1115,14 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       latencyMs: 0,
       retryCount: 0,
     });
+  }
+
+  private ttsEstimate(model: Resolved, text: string, units: number): number {
+    // Qwen Plus can count a Chinese character as more than one billable unit.
+    // UTF-8 length is a conservative input ceiling here, never the settled supplier quantity.
+    return /^qwen-audio-[\d.]+-tts/iu.test(model.upstreamModelId)
+      ? Math.max(units, Buffer.byteLength(text, 'utf8'))
+      : units;
   }
 
   private ttsUnits(model: Resolved, text: string): number | null {

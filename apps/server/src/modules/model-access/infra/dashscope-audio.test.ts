@@ -41,6 +41,7 @@ let chunks: Buffer[];
 let audioUrl: string;
 let api: ReturnType<typeof vi.fn>;
 let connectError: boolean;
+let providerChars: number | undefined;
 beforeEach(() => {
   vi.clearAllMocks();
   status = 200;
@@ -48,6 +49,7 @@ beforeEach(() => {
   chunks = [wav()];
   audioUrl = AUDIO_URL;
   connectError = false;
+  providerChars = undefined;
   network.lookup.mockResolvedValue([{ address: '1.1.1.1', family: 4 }]);
   network.request.mockImplementation(
     (_url: URL, _options: RequestOptions, reply: (r: IncomingMessage) => void) => {
@@ -67,7 +69,12 @@ beforeEach(() => {
       return req;
     },
   );
-  api = vi.fn(async () => Response.json({ output: { audio: { url: audioUrl } } }));
+  api = vi.fn(async () =>
+    Response.json({
+      output: { audio: { url: audioUrl } },
+      ...(providerChars === undefined ? {} : { usage: { characters: providerChars } }),
+    }),
+  );
   vi.stubGlobal('fetch', api);
 });
 afterEach(() => {
@@ -107,6 +114,60 @@ describe('DashScope provider-returned audio download', () => {
     });
   });
 
+  it('repairs the known completed-stream WAV sentinels and returns measured PCM and supplier units', async () => {
+    const streaming = wav();
+    streaming.writeUInt32LE(0x7fffffbf, 4);
+    streaming.writeUInt32LE(0x7fffffff, 40);
+    chunks = [streaming];
+    providerChars = 10;
+    expect(await synthesize('pcm16_24k')).toEqual({
+      ok: true,
+      value: { bytes: new Uint8Array(9600), mimeType: 'audio/L16', durationMs: 200 },
+      reportedUsage: { ttsChars: 10 },
+    });
+  });
+
+  it.each(['riff', 'data'])('does not repair arbitrary invalid %s lengths', async (field) => {
+    const corrupt = wav();
+    corrupt.writeUInt32LE(123456, field === 'riff' ? 4 : 40);
+    chunks = [corrupt];
+    expect(await synthesize()).toEqual({ ok: false, category: 'provider_error' });
+  });
+
+  it('preserves reported billable units on CDN failure without claiming a free failed synthesis', async () => {
+    providerChars = 10;
+    status = 403;
+    expect(await synthesize()).toEqual({
+      ok: false,
+      category: 'provider_error',
+      reportedUsage: { ttsChars: 10 },
+    });
+    expect(api).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps reported whole-utterance units in the cascade stream even if playback is cancelled', async () => {
+    providerChars = 10;
+    const controller = new AbortController();
+    const result = await withMimoChatAudio(new OpenAiCompatibleMediaAdapter()).synthesizeStream(
+      {
+        kind: 'dashscope',
+        model: 'qwen-audio-3.0-tts-plus',
+        baseUrl: 'https://dashscope.example/api/v1',
+        apiKey: KEY,
+      },
+      { text: '你好，微伴。', voice: 'longanlingxin' },
+      controller.signal,
+    );
+    controller.abort();
+    expect(result.ok).toBe(true);
+    expect(result.reportedUsage).toEqual({ ttsChars: 10 });
+    if (result.ok) {
+      const audio = [];
+      for await (const chunk of result.value) audio.push(chunk);
+      expect(audio).toEqual([]);
+    }
+  });
+
   it('pins the inspected public A record while preserving hostname certificate checks', async () => {
     await downloadDashscopeAudio(AUDIO_URL);
     expect(network.lookup).toHaveBeenCalledWith('audio-test.oss-cn-hangzhou.aliyuncs.com', {
@@ -133,9 +194,19 @@ describe('DashScope provider-returned audio download', () => {
     expect(JSON.stringify(options)).not.toContain(KEY);
   });
 
-  it('rejects credentials, private hosts, misleading suffixes, non-HTTPS and nonstandard ports before DNS', async () => {
+  it('upgrades only a standard-port official HTTP object to HTTPS without sending HTTP or changing its signed query', async () => {
+    audioUrl = AUDIO_URL.replace('https:', 'http:');
+    await synthesize();
+    expect(network.request.mock.calls[0]![0].href).toBe(AUDIO_URL);
+    expect(network.request.mock.calls[0]![0].protocol).toBe('https:');
+    expect(network.request).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects credentials, private hosts, misleading suffixes, unsupported schemes and nonstandard ports before DNS', async () => {
     for (const raw of [
-      'http://cdn.aliyuncs.com/a.wav',
+      'http://evil.example/a.wav',
+      'http://cdn.aliyuncs.com:8080/a.wav',
+      'ftp://cdn.aliyuncs.com/a.wav',
       'https://127.0.0.1/a.wav',
       'https://a.aliyuncs.com.evil.example/a.wav',
       'https://a.aliyuncs.com:8443/a.wav',
