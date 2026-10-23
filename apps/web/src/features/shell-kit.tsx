@@ -602,6 +602,7 @@ export function LongPressMenu({
   onClose(): void;
 }) {
   useEscape(onClose);
+  const scrim = useMenuScrim(onClose);
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: at.x, top: at.y });
   useLayoutEffect(() => {
@@ -615,7 +616,7 @@ export function LongPressMenu({
     });
   }, [at.x, at.y]);
   return (
-    <div className="pop-scrim" onClick={onClose} onContextMenu={(e) => e.preventDefault()}>
+    <div className="pop-scrim" {...scrim}>
       <div
         ref={ref}
         className="light-menu"
@@ -651,8 +652,9 @@ export function PopMenu({
   onClose(): void;
 }) {
   useEscape(onClose);
+  const scrim = useMenuScrim(onClose);
   return (
-    <div className="pop-scrim" onClick={onClose}>
+    <div className="pop-scrim" {...scrim}>
       <div className="pop-menu" role="menu" onClick={(event) => event.stopPropagation()}>
         {items.map(({ label, icon, onClick }) => (
           <button
@@ -675,6 +677,8 @@ export function PopMenu({
 
 const LONG_PRESS_MS = 500;
 const PRESS_SLOP = 10;
+/** 长按菜单刚出现后，抬手补发的兼容点击/上下文菜单不能被当成"点遮罩关闭"。 */
+const SWALLOW_MS = 1000;
 
 /**
  * 长按（按住 500ms 不动）或右键：回调带手指位置；长按后吞掉随之而来的点击。轻点照常触发点击（进入页面）。
@@ -686,7 +690,7 @@ const PRESS_SLOP = 10;
 export function useLongPress(onLongPress: (at: { x: number; y: number }) => void) {
   const timer = useRef(0);
   const start = useRef<{ x: number; y: number } | null>(null);
-  const fired = useRef(false);
+  const firedAt = useRef(0);
   const callback = useRef(onLongPress);
   useLayoutEffect(() => {
     callback.current = onLongPress;
@@ -706,15 +710,20 @@ export function useLongPress(onLongPress: (at: { x: number; y: number }) => void
     window.clearTimeout(timer.current);
     start.current = null;
   };
+  /** 最近一次长按是否刚触发：用时间窗而不是布尔，避免安卓的 contextmenu 与计时器互相把状态抹掉。 */
+  const recentlyFired = () => firedAt.current > 0 && Date.now() - firedAt.current < SWALLOW_MS;
+  const fire = (x: number, y: number) => {
+    firedAt.current = Date.now();
+    callback.current({ x, y });
+  };
   const begin = (x: number, y: number) => {
     window.clearTimeout(timer.current);
-    fired.current = false;
+    firedAt.current = 0;
     start.current = { x, y };
     timer.current = window.setTimeout(() => {
       if (!start.current) return;
       start.current = null;
-      fired.current = true;
-      callback.current({ x, y });
+      fire(x, y);
     }, LONG_PRESS_MS);
   };
   const moveTo = (x: number, y: number) => {
@@ -733,7 +742,7 @@ export function useLongPress(onLongPress: (at: { x: number; y: number }) => void
     },
     onTouchEnd(event: ReactTouchEvent) {
       // 长按已弹菜单：阻止抬手后浏览器补发的点击（否则会立刻点到菜单遮罩把菜单关掉，或进入会话）
-      if (fired.current && event.cancelable) event.preventDefault();
+      if (recentlyFired() && event.cancelable) event.preventDefault();
       cancel();
     },
     onTouchCancel: cancel,
@@ -753,19 +762,37 @@ export function useLongPress(onLongPress: (at: { x: number; y: number }) => void
     onPointerCancel: cancel,
     onContextMenu(event: ReactMouseEvent) {
       event.preventDefault();
-      // 安卓长按会在计时器之后再发一次 contextmenu：已经弹过就不再弹
-      if (fired.current) return;
+      // 安卓长按会同时发 contextmenu 和到点计时器：谁先到谁弹，另一个直接忽略。
+      if (firedAt.current > 0) return;
       cancel();
-      fired.current = true;
-      callback.current({ x: event.clientX, y: event.clientY });
-      window.setTimeout(() => (fired.current = false), 400);
+      fire(event.clientX, event.clientY);
     },
     onClickCapture(event: ReactMouseEvent) {
-      if (fired.current) {
+      if (recentlyFired()) {
         event.preventDefault();
         event.stopPropagation();
-        fired.current = false;
-      } else cancel();
+        firedAt.current = 0;
+        return;
+      }
+      cancel();
+      firedAt.current = 0;
+    },
+  };
+}
+
+/**
+ * 长按菜单的遮罩点击：菜单刚出现的一小段时间内忽略点击。
+ * 手机抬手后浏览器可能补发一次兼容点击，落点正好是刚铺开的遮罩，会把菜单瞬间关掉。
+ */
+export function useMenuScrim(onClose: () => void, guardMs = 400) {
+  const openedAt = useRef(Date.now());
+  return {
+    onClick() {
+      if (Date.now() - openedAt.current < guardMs) return;
+      onClose();
+    },
+    onContextMenu(event: ReactMouseEvent) {
+      event.preventDefault();
     },
   };
 }

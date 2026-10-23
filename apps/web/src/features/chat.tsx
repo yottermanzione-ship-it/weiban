@@ -86,6 +86,7 @@ import {
   MenuRow,
   showComingSoon,
   useLongPress,
+  useMenuScrim,
 } from './shell-kit.js';
 
 function BubblePress({
@@ -434,8 +435,9 @@ function BubbleMenu({
   }, [onClose]);
   const rows: BubbleMenuItem[][] = [];
   for (let i = 0; i < items.length; i += 3) rows.push(items.slice(i, i + 3));
+  const scrim = useMenuScrim(onClose);
   return (
-    <div className="pop-scrim" onClick={onClose} onContextMenu={(e) => e.preventDefault()}>
+    <div className="pop-scrim" {...scrim}>
       <div
         ref={ref}
         className={`bubble-menu ${place.below ? 'below' : ''}`}
