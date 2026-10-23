@@ -104,7 +104,21 @@ Object.assign(api, {
       builtIn: false,
       inStore: true,
     });
-    if (endpoint === E.listPacks) return { items: packs.slice(0, 2).map(dto) };
+    if (endpoint === E.listPacks) {
+      // ?page=store-curated 用带「猫咪」的夹具验证精选只挑可爱向系列。
+      const curated = new URLSearchParams(location.search).get('page') === 'store-curated';
+      const items = curated
+        ? [
+            ...packs.slice(0, 2),
+            {
+              ...packs[0]!,
+              packId: 'cat',
+              name: '猫咪',
+            },
+          ]
+        : packs.slice(0, 2);
+      return { items: items.map(dto) };
+    }
     if (endpoint === E.listAdded)
       return { items: added.flatMap((id) => packs.filter((p) => p.packId === id)).map(dto) };
     if (endpoint === E.removePack) {
@@ -158,7 +172,7 @@ function PanelFixture() {
 }
 const page = new URLSearchParams(location.search).get('page');
 createRoot(document.getElementById('root')!).render(
-  <MemoryRouter initialEntries={[page === 'store' ? '/sticker-store' : '/panel']}>
+  <MemoryRouter initialEntries={[page?.startsWith('store') ? '/sticker-store' : '/panel']}>
     <AuthProvider>
       <Routes>
         <Route path="/panel" element={<PanelFixture />} />

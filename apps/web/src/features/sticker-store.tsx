@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import '../app/stickers.css';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { StickerStoreEndpoints as E } from '@weiban/contracts';
@@ -7,6 +7,39 @@ import { useRemote, friendlyError } from '../data/use-remote.js';
 import { useUpdates } from '../data/updates.js';
 import { StickerPreview } from './stickers.js';
 import { MenuGroup, MenuRow, NavBar } from './shell-kit.js';
+import { PackCover } from './pack-cover.js';
+import { readStoreSnapshot, saveStoreSnapshot, type CachedPack } from './sticker-cache.js';
+
+/**
+ * 「精选表情」只放少量可爱向系列；其余全部留在「更多表情」。
+ * 按名字挑选，找不到对应系列时退回按商店顺序的前几个，避免整页空白。
+ */
+const FEATURED_NAMES = [
+  '猫咪',
+  '猫咪日常',
+  '仓鼠',
+  '小猪',
+  '开心鸭',
+  '开心鸭日常',
+  '沙雕企鹅',
+  '狗狗',
+  '全是心心',
+  '鹦鹉',
+  '皮卡丘',
+  '哆啦A梦',
+];
+function pickFeatured<T extends { name: string }>(items: T[]): T[] {
+  const picked: T[] = [];
+  const seen = new Set<string>();
+  for (const name of FEATURED_NAMES) {
+    const found = items.find((p) => p.name === name);
+    if (found && !seen.has(found.name)) {
+      seen.add(found.name);
+      picked.push(found);
+    }
+  }
+  return picked.length ? picked : items.slice(0, 8);
+}
 function useStoreRefresh(refresh: () => void) {
   useUpdates((u) => {
     if (u.type === 'data.changed' && (u.data as { section?: string })?.section === 'stickers')
@@ -16,6 +49,14 @@ function useStoreRefresh(refresh: () => void) {
 export function StickerStorePage() {
   const store = useRemote(E.listPacks, { networkOnly: true });
   const mine = useRemote(E.listAdded, { networkOnly: true });
+  // 进页面先用上次的列表快照顶上，网络请求在后台刷新；封面另按版本缓存在本地。
+  const [snapshot, setSnapshot] = useState<CachedPack[] | null>(() => readStoreSnapshot());
+  useEffect(() => {
+    if (store.data) {
+      setSnapshot(store.data.items);
+      saveStoreSnapshot(store.data.items);
+    }
+  }, [store.data]);
   // 「我的表情」是独立路由：系统返回手势/返回键才能回到商店，而不是退回「我」页签。
   const location = useLocation();
   const navigate = useNavigate();
@@ -44,9 +85,12 @@ export function StickerStorePage() {
   }
   const list = manage ? mine : store;
   const needle = query.trim().toLocaleLowerCase();
-  const shown = (store.data?.items ?? []).filter(
+  const all = store.data?.items ?? snapshot ?? [];
+  const matched = all.filter(
     (p) => !needle || `${p.name} ${p.intro}`.toLocaleLowerCase().includes(needle),
   );
+  // 精选页签只展示少量可爱向系列；搜索时按全量搜，避免搜不到精选之外的包。
+  const shown = tab === 'featured' && !needle ? pickFeatured(matched) : matched;
   return (
     <main className="sticker-store-page">
       <NavBar
@@ -126,7 +170,12 @@ export function StickerStorePage() {
                 chevron={false}
                 leading={
                   p.coverUrl ? (
-                    <img className="sticker-pack-cover" src={p.coverUrl} alt="" />
+                    <PackCover
+                      packId={p.packId}
+                      url={p.coverUrl}
+                      updatedAt={p.updatedAt}
+                      className="sticker-pack-cover"
+                    />
                   ) : undefined
                 }
                 subtitle={p.enabled ? undefined : '已停用，可移除'}
@@ -160,7 +209,7 @@ export function StickerStorePage() {
               {shown.map((p) => (
                 <div className="sticker-store-row" key={p.packId}>
                   <Link to={'/sticker-store/' + p.packId} className="sticker-store-row-detail">
-                    {p.coverUrl && <img src={p.coverUrl} alt="" />}
+                    <PackCover packId={p.packId} url={p.coverUrl} updatedAt={p.updatedAt} />
                     <span>{p.name}</span>
                   </Link>
                   <button
@@ -182,13 +231,13 @@ export function StickerStorePage() {
                   to={'/sticker-store/' + p.packId}
                   className="sticker-store-tile"
                 >
-                  {p.coverUrl && <img src={p.coverUrl} alt="" />}
+                  <PackCover packId={p.packId} url={p.coverUrl} updatedAt={p.updatedAt} />
                   <span>{p.name}</span>
                 </Link>
               ))}
             </div>
           )}
-          {store.data && !shown.length && (
+          {(store.data || snapshot) && !shown.length && (
             <p className="empty">{needle ? '没有找到相关表情包' : '暂无上架表情包'}</p>
           )}
         </>

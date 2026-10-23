@@ -29,6 +29,20 @@ test('表情面板默认emoji、个人单图、角色专属及系列依次显示
   await expect(page.getByRole('status')).toHaveText('系列表情');
   await page.screenshot({ path: 'apps/web/test-results/sticker-panel-series.png' });
 });
+test('精选表情只挑少量可爱向系列，更多表情仍是全部', async ({ page }) => {
+  await page.goto(`${fixture}?page=store-curated`);
+  // 「猫咪」在精选名单里，「测试系列」「角色专属包」不是。
+  await expect(page.locator('.sticker-store-row')).toHaveCount(1);
+  await expect(page.locator('.sticker-store-row')).toContainText('猫咪');
+  await page.getByRole('tab', { name: '更多表情' }).click();
+  await expect(page.locator('.sticker-store-tile')).toHaveCount(3);
+  // 搜索走全量，精选之外的系列也能搜到。
+  await page.getByRole('tab', { name: '精选表情' }).click();
+  await page.getByRole('searchbox', { name: '搜索表情包' }).fill('测试');
+  await expect(page.locator('.sticker-store-row')).toHaveCount(1);
+  await expect(page.locator('.sticker-store-row')).toContainText('测试系列');
+});
+
 test('表情商店保留搜索、切换网格，管理单表情和系列只用一个列表', async ({ page }) => {
   await page.goto(`${fixture}?page=store`);
   await expect(page.getByRole('tab', { name: '精选表情' })).toBeVisible();
