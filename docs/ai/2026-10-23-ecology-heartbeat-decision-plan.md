@@ -90,3 +90,15 @@ state 只有合成标识、动作名、该语言场景。完整样本每条目�
 4. 没有模型参与时，按紧急度确定性兜底，同一输入结果固定，不会随机发。
 
 7 条单元测试通过（免打扰跨零点、上限、预算、模型选择合法/越界/低置信度、无模型兜底、结果确定性）。**尚未接入真实心跳与执行链路**，真实发送前仍需再核一次预算与频率；线上行为不变。
+
+## 更正：决策环路其实已经在代码里（2026-10-23 复核）
+
+上一轮我写过「尚未接入真实心跳与执行链路」，复核代码后这句话**不准确**，特此更正：
+
+- 唤醒后确实会取快照再交给决策模型：[executeWake](<C:/wb-dev/wb-client-logs/apps/server/src/modules/ai-runtime/application/ecology.ts#L331-L384>) 先校验是否配置了决策模型，构建快照，再以 `behavior_planning`（私密模式走 `proactive`）调用网关，返回 JSON 后解析成决策；余额不足会暂停生态，其它错误按失败收口。
+- 免打扰、活跃时段、延后、静默、话题去重、频率预检集中在主动调度器，见[调度器说明与免打扰实现](<C:/wb-dev/wb-client-logs/apps/server/src/modules/ai-runtime/application/proactive-scheduler.ts#L93-L268>)；安静状态由独立的 QuietStateService 维护。
+- 生态唤醒挑中的聊天类动作通过 `sourceRef = ecology:{runId}` 进入主动消息链路，不重复计入旧账本。
+
+因此**缺的不是"把决策接进去"**，而是：中文/生态场景下的实际效果验收、置信度与拒答是否按预期、真实用量与费用对账，以及这些规则在不同角色上是否稳定。
+
+上一轮新增的[纯规则模块](<C:/wb-dev/wb-client-logs/apps/server/src/modules/ai-runtime/domain/ecology-decision.ts>)**不是集成点**：它的作用是把"系统该拦什么、模型只能挑什么"写成可测试的清单，供后续对齐与回归使用；现有环路已包含等价逻辑，因此**不需要再插一层**，也不应因为多写了这个模块就声称生态有新增能力。
