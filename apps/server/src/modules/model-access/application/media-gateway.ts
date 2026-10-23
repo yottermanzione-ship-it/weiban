@@ -1004,13 +1004,18 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     const charge = await this.reserve(base, model, estimate, 0);
     if (!charge.ok) return charge;
     const generation = this.activeGenerations.get(base);
-    if (generation)
+    if (generation) {
       await this.cache.attach(
         generation.id,
         charge.value.usageRecordId,
         charge.value.holdId,
         model.upstreamId,
       );
+      // 结算缓存恢复时必须与本次冻结一致；只写数据库会让内存里的行仍是 null，
+      // 导致真实媒体调用在供应商成功后被“媒体结算缓存关联不一致”错误拒绝。
+      generation.usageRecordId = charge.value.usageRecordId;
+      generation.holdId = charge.value.holdId;
+    }
     if (!(await this.beginCharge(charge.value))) {
       await this.fail(charge.value, 'provider_error');
       return { ok: false, error: 'model_unavailable' };
