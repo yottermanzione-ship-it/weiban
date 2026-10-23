@@ -64,7 +64,7 @@ export const AI_USER_QUIET_STATE = Symbol('weiban.ai-runtime.user-quiet-state');
 export const STICKER_WINDOW = 10;
 export const STICKER_MAX_IN_WINDOW = 2;
 /** 规则版下每次回复附表情包的概率（在上限之内）；T-090 起作为决策层 reply_form 的规则版与退路。 */
-const STICKER_CHANCE = 0.15;
+const STICKER_CHANCE = 0.28;
 /** MED-03 第 2 条：角色主动发语音不超过该角色消息的 10%。 */
 export const VOICE_MAX_RATIO = 0.1;
 /** 规则版：上限内主动发语音的概率（T-090 起作为决策层 reply_form 的规则版与退路）。 */
