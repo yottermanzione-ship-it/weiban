@@ -29,6 +29,7 @@ await build({
     'setup-local-model': 'src/cli/setup-local-model.ts',
     'evaluate-decisions': 'src/cli/evaluate-decisions.ts',
     'import-legacy-upstreams': 'src/cli/import-legacy-upstreams.ts',
+    'ecology-config': 'src/cli/ecology-config.ts',
   },
   outdir: 'dist',
   bundle: true,
