@@ -1,6 +1,6 @@
 # 旧配置受控接收与停用入库：第四步开发
 
-> 本页登记接收端实现；检查/发布结果据实际回执补充。**尚未读取真实旧Key、执行真实导出或导入，不是ASR/TTS/通话已经开通。** 与[只读导出器](../refactor/2026-10-23-legacy-exporter-implementation.md)衔接，安全决定见[ADR](../decisions/ADR-20261023-legacy-config-export.md)。
+> 本页登记接收端实现与发布回执。**尚未读取真实旧Key、执行真实导出或导入，不是ASR/TTS/通话已经开通。** 与[只读导出器](../refactor/2026-10-23-legacy-exporter-implementation.md)衔接，安全决定见[ADR](../decisions/ADR-20261023-legacy-config-export.md)。
 
 ## 实际实现
 
@@ -17,6 +17,16 @@
 ## 文件
 
 [私有格式校验](../../apps/server/src/modules/model-access/domain/legacy-import.ts)、[接收器](../../apps/server/src/modules/model-access/application/legacy-receiver.ts)、[停用入库服务](../../apps/server/src/modules/model-access/application/legacy-upstream-import.ts)、[维护CLI](../../apps/server/src/cli/import-legacy-upstreams.ts)、[相关合成测试](../../apps/server/src/modules/model-access/application/legacy-receiver.test.ts)。
+
+## 实际发布回执
+
+- 代码 `7b3a8ce1b008917737a153240b611c62590112c9` 已推送分支与远端main；来源闸门确认同时包含最新main及当时线上完整 `a09e678…`。
+- 候选2736个Git blob逐项核验通过，仅规范化仓库既定的Windows脚本CRLF；补丁116,391字节，SHA256 `a7ed6aeab6aa9f547a6536f6830e184d2513bcec8aafddee230aed5f0ad1f6c9`。
+- 首次镜像构建在执行到 `pnpm deploy` 时SSH连接被重置（错误为连接重置，不是构建失败），线上仍为旧版、未做任何切换；核对后确认暂存目录完整但无release镜像，改为**脱离终端的受保护构建**，先重跑同一blob核验再构建，未删除或重建暂存目录，也未放宽校验。第二次构建退出0。
+- 发布进程退出0，前后台健康/HTTP200、crypto有效；无待执行迁移（仍0135_client_logs）。加密备份 `/srv/weiban/backups/weiban-20261023T080437Z-eRBG2m` 数据库与媒体均校验OK，状态 `/srv/weiban/backups/release-state-20261023T080437Z`，before镜像与前版目录保留。
+- app `sha256:567837dad34a2363bc21bc03c9830923ff510f53e2878d701005e4b5ba47bd88`；edge `sha256:7990f52cb67a5c6b6186962c1da9f2c6ae3bc44374228032225925c3543f5b43`；运行目录 `/srv/weiban/releases/7b3a8ce1b008917737a153240b611c62590112c9-web`。
+- 实机容器内确认OpenSSL 3.0.22存在、`dist/import-legacy-upstreams.js` 已打包（1,376,984字节），无参数返回 `ONE_ACTION_REQUIRED`、`--plan`缺参返回 `ARGUMENT_REQUIRED`，均退出1且**未连接数据库、未做任何写入**。这是安全性烟雾检查，不是真实导入演练。
+- 输入图公开补查=1、角色自主网图=0，原设置未改；未重跑已通过的功能测试、全仓套件或APK。
 
 ## 检查边界
 
