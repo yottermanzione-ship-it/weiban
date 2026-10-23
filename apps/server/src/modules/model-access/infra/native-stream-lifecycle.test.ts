@@ -11,7 +11,7 @@ const target = (mimo = true) => ({
 afterEach(() => vi.unstubAllGlobals());
 
 describe('native ASR integration routing', () => {
-  it.each(['qwen-audio-3.1-asr-flash', 'mimo-v2.5-asr', 'qwen3-asr-flash'])(
+  it.each(['qwen-audio-3.1-asr-flash', 'qwen3-asr-flash'])(
     'never tries multipart for unverified native/compatible ASR model %s',
     async (model) => {
       const fetch = vi.fn();

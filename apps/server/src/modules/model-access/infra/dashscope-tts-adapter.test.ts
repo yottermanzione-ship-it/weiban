@@ -129,9 +129,34 @@ describe('DashScope native speech synthesis protocol', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('enables qwen-audio-3.1-tts-flash on the native protocol with 24kHz sample rate', async () => {
+    handler = ({ path }) =>
+      path === '/services/audio/tts/SpeechSynthesizer'
+        ? {
+            status: 200,
+            json: { output: { audio: { url: `${baseUrl}/audio/out.wav?token=1` } } },
+          }
+        : { status: 404, json: {} };
+    // 本机音频地址仍会被下载域名检查拒绝；这里只验证 3.1 Flash 被放行并走到原生请求。
+    expect(
+      await adapter().synthesize(target('qwen-audio-3.1-tts-flash'), {
+        text: '你好',
+        voice: 'Cherry',
+        format: 'wav',
+      }),
+    ).toEqual({ ok: false, category: 'provider_error' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.path).toBe('/services/audio/tts/SpeechSynthesizer');
+    expect(calls[0]!.body).toEqual({
+      model: 'qwen-audio-3.1-tts-flash',
+      input: { text: '你好', voice: 'Cherry', format: 'wav', sample_rate: 24000 },
+    });
+  });
+
   it('only treats dashscope tts models as native targets', async () => {
     const { isDashscopeTtsTarget } = await import('./media-adapter.js');
     expect(isDashscopeTtsTarget(target())).toBe(true);
+    expect(isDashscopeTtsTarget(target('qwen-audio-3.1-tts-flash'))).toBe(true);
     expect(isDashscopeTtsTarget(target('qwen-audio-3.0-tts-flash'))).toBe(false);
     expect(isDashscopeTtsTarget(target(MODEL, 'openai_compatible'))).toBe(false);
     expect(isDashscopeTtsTarget(target('qwen3.5-omni-plus-realtime'))).toBe(false);

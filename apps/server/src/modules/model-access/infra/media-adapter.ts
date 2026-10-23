@@ -16,6 +16,7 @@ import { jevDecide } from './jev-adapter.js';
 import { deepseekSearch, deepseekFetch, type SearchRequestGate } from './deepseek-tools.js';
 import { downloadDashscopeAudio } from './dashscope-audio.js';
 import { acquireNativeOpusEncoder } from './native-opus.js';
+import { isMimoAsrModel, mimoAsr } from './mimo-asr.js';
 import { isNativeAsrModel, nativeAsr } from './native-asr.js';
 
 export type MediaFailure =
@@ -586,18 +587,24 @@ async function mimoSynthesize(
   }
 }
 
-/** 通义语音合成模型（`qwen-audio-3.0-tts-plus` 等）；`-flash` 已退役，不放行。 */
+/**
+ * 通义语音合成模型（`qwen-audio-3.0-tts-plus`、`qwen-audio-3.1-tts-flash` 等）。
+ * 只有 `qwen-audio-3.0-tts-flash` 及其它未核实的 flash 型号仍按退役拒绝；
+ * 不能因为名字里带 `tts-flash` 就把 3.1 一起关掉。
+ */
 export function isDashscopeTtsTarget(t: MediaTarget): boolean {
+  const model = t.model.trim().toLowerCase();
   return (
     t.kind === 'dashscope' &&
-    /^qwen-audio-[\d.]+-tts/iu.test(t.model) &&
-    !/tts-flash/iu.test(t.model)
+    /^qwen-audio-[\d.]+-tts/u.test(model) &&
+    (!/tts-flash/u.test(model) || model === 'qwen-audio-3.1-tts-flash')
   );
 }
 
 /**
  * 通义百炼原生语音合成：`POST {baseUrl}/services/audio/tts/SpeechSynthesizer`，
- * 返回 `output.audio.url` 再下载音频（旧项目核实过的协议）。`-tts-flash` 已退役，直接拒绝。
+ * 返回 `output.audio.url` 再下载音频（旧项目核实过的协议）。3.0 Flash 已退役，
+ * 3.1 Flash 沿用同一原生协议（请求显式带 24kHz）。
  */
 async function dashscopeSynthesize(
   t: MediaTarget,
@@ -665,7 +672,7 @@ export function withMimoChatAudio(inner: MediaAdapter): MediaAdapter {
   const native = (t: MediaTarget) => isMimoChatAudioModel(t.model) || isDashscopeTtsTarget(t);
   /** 百炼已退役的 tts-flash 既不走原生协议，也不能落到 OpenAI 兼容接口上去试。 */
   const retired = (t: MediaTarget) =>
-    t.kind === 'dashscope' && /tts-flash/iu.test(t.model)
+    t.kind === 'dashscope' && /tts-flash/iu.test(t.model) && !isDashscopeTtsTarget(t)
       ? ({ ok: false, category: 'bad_request' } as const)
       : null;
   return {
@@ -733,8 +740,13 @@ export function withMimoChatAudio(inner: MediaAdapter): MediaAdapter {
       };
     },
     transcribe: (t, i) =>
-      // A model's Chat-Completions compatibility does not imply multipart transcription support.
-      isNativeAsrModel(t.model) ? nativeAsr(t, i) : inner.transcribe(t, i),
+      // MiMo 走旧版 Chat-Completions 内联音频协议；DashScope 走原生 JSON；
+      // 其余模型（含 SiliconFlow 两条）保持 OpenAI 兼容 multipart 路径。
+      isMimoAsrModel(t.model)
+        ? mimoAsr(t, i)
+        : isNativeAsrModel(t.model)
+          ? nativeAsr(t, i)
+          : inner.transcribe(t, i),
     generateImage: (t, i) => inner.generateImage(t, i),
     search: (t, i) => inner.search(t, i),
     ...(inner.fetchPage
