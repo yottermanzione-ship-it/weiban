@@ -1,6 +1,8 @@
 # 项目状态
 
-> **2026-10-23 21:38 当前运行版**：`fc76c5c2edd0aa65005fb198b66d5273e29495b2`。原生MiMo/百炼语音现在能产出**真正的Ogg/Opus**（不再拒绝或拿WAV冒充）：生产镜像内实测0.5秒PCM→1950字节Ogg、ffprobe识别opus、解码回正好24000字节；容器非root、libopus可用。相关测试63/63通过，加密备份后发布，商店21系列/351张与生态暂停状态未变。**仍不是真流式/实时通话/Omni，也未核真实音色与供应商账单。** [回执](handoffs/2026-10-23-native-tts-ogg-opus.md)、[完整需求与遗留清单](handoffs/2026-10-23-all-requirements-ledger.md)。
+> **2026-10-23 22:06 当前运行版**：`a95170238c890c4c41ae7775cde529a103436423`，修掉“聊天长按气泡菜单一抬手就消失”：长按判定改成时间窗，菜单刚出现的400ms内忽略遮罩点击，聊天气泡/会话列表/右上角三处菜单统一；新增2条回归用例通过。加密备份后发布，商店21系列与生态暂停状态未变。**需总经理真机复试确认**；若仍复现请提供机型与浏览器内核。[回执](handoffs/2026-10-23-chat-longpress-menu.md)、[完整需求与遗留清单](handoffs/2026-10-23-all-requirements-ledger.md)、[需求进度与缺项表](handoffs/wb-requirements-gap-20261023.xlsx)。
+
+> **2026-10-23 21:38 已发布：原生TTS真Ogg/Opus（历史）**：`fc76c5c2edd0aa65005fb198b66d5273e29495b2`。原生MiMo/百炼语音现在能产出**真正的Ogg/Opus**（不再拒绝或拿WAV冒充）：生产镜像内实测0.5秒PCM→1950字节Ogg、ffprobe识别opus、解码回正好24000字节；容器非root、libopus可用。相关测试63/63通过，加密备份后发布，商店21系列/351张与生态暂停状态未变。**仍不是真流式/实时通话/Omni，也未核真实音色与供应商账单。** [回执](handoffs/2026-10-23-native-tts-ogg-opus.md)、[完整需求与遗留清单](handoffs/2026-10-23-all-requirements-ledger.md)。
 
 > **2026-10-23 20:11 已发布：百炼音频下载安全（历史）**：`159f01fd79eb304bb89c569a92190d811509f207`，百炼音频下载已加公共IPv4固定连接、凭据隔离、无重定向及限时限量，补齐真正返回WAV/PCM的离线正向用例；server类型检查及相关26项测试通过后停止，已加密备份/发布且前后台健康。**这不是OGG语音消息、原生实时通话/Omni或真实供应商账单已验收。** 正式库21系列/351张表情保留，生态decision_model仍NONE，用户模型/价格未改，未构建APK。[本批回执](handoffs/2026-10-23-dashscope-audio-download.md)、[完整需求与遗留清单](handoffs/2026-10-23-all-requirements-ledger.md)。
 
