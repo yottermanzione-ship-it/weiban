@@ -117,3 +117,22 @@ state 只有合成标识、动作名、该语言场景。完整样本每条目�
 结论：**代码里有一套完整的唤醒与决策环路，但线上过去一周里一次都没有真正跑过**。这不是"效果好不好"的问题，而是"根本没跑起来"。最可能的原因是决策模型未配置（`executeWake` 在没有 `decisionModelKey` 时直接以 `model_not_configured` 结束），但这需要结合调度任务日志确认，本次只做只读查询，没有改任何配置。
 
 因此对总经理的说法应当是：生态目前处于**未启用/未运行**状态，而不是"已经在跑只是不够自然"。
+
+### 根因（2026-10-23 追加查证）
+
+再查任务队列，得到决定性证据：
+
+| 查询 | 结果 |
+|---|---|
+| `pgboss.job` 中 `ai.ecology_tick` | **500 条**，最近一次 2026-10-23 08:53 UTC |
+| `pgboss.job` 中 `ai.ecology_user` | **569 条**，最近一次 08:53 UTC |
+| `pgboss.job` 中 `ai.ecology_cleanup` | 83 条，最近 08:37 UTC |
+| `pgboss.schedule` 注册 | `ai.ecology_tick` = `3,13,23,33,43,53 * * * *`，2026-10-19 已注册 |
+| `ecology_settings` | 用户 `01a1309d…`，enabled=true |
+| `ecology_runs` | 0 行 |
+
+也就是说：**定时任务一直在跑，用户级任务也一直在入队并执行，但每次都在同一个地方直接返回，所以一条运行记录都没产生。**
+
+代码位置：[runForUser](<C:/wb-dev/wb-client-logs/apps/server/src/modules/ai-runtime/application/ecology.ts#L218-L221>) 第 219–221 行——先看生态是否开启，再看 `config.decisionModelKey`；**没有决策模型就直接 return，不写任何运行记录**。而 `ecology_config` 表里 0 行，等于连 default 配置都没有，决策模型自然为空。
+
+结论：生态不是"效果不好"，也不是"没人开启"，而是**从未配置决策模型，每次唤醒在入口处静默返回**。要让它真正跑起来，必须先配好决策模型（例如已配置的 `jev/jev-1.13.0`）。这会带来真实的每次唤醒费用（`behavior_planning` 调用），属于要花真金白银的改动，**需总经理确认后再改生产配置**，本批只查明原因，没有改动任何线上设置。
