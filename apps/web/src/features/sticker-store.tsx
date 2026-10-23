@@ -155,21 +155,6 @@ export function StickerStorePage() {
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
-          {shown.length > 0 && (
-            <div className="sticker-store-banners" aria-label="表情包推荐">
-              {shown.slice(0, 3).map((p) => (
-                <Link
-                  key={p.packId}
-                  to={'/sticker-store/' + p.packId}
-                  className="sticker-store-banner"
-                >
-                  {p.coverUrl && <img src={p.coverUrl} alt="" />}
-                  <strong>{p.name}</strong>
-                </Link>
-              ))}
-            </div>
-          )}
-          <h2 className="sticker-store-heading">{tab === 'featured' ? '精选' : '更多表情'}</h2>
           {tab === 'featured' ? (
             <div className="sticker-store-list">
               {shown.map((p) => (

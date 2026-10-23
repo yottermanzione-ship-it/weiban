@@ -43,6 +43,10 @@ test('表情商店保留搜索、切换网格，管理单表情和系列只用�
   await expect(more.locator('svg')).toHaveAttribute('width', '20');
   await expect(more.locator('circle')).toHaveCount(3);
   await expect(page.locator('.sticker-store-row')).toHaveCount(2);
+  // 只保留顶部两个带下划线的页签；推荐横幅与「精选/更多表情」小标题都已去掉。
+  await expect(page.locator('.sticker-store-heading')).toHaveCount(0);
+  await expect(page.locator('.sticker-store-banners')).toHaveCount(0);
+  await expect(page.getByText('精选', { exact: true })).toHaveCount(0);
   await page.screenshot({ path: 'apps/web/test-results/sticker-store-header-fixed.png' });
   await page.getByRole('tab', { name: '更多表情' }).click();
   await expect(page.locator('.sticker-store-tile')).toHaveCount(2);
