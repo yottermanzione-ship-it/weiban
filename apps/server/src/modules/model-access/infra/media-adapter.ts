@@ -411,6 +411,146 @@ export class OpenAiCompatibleMediaAdapter implements MediaAdapter {
 }
 
 /** 开发 / 测试用假上游：确定性输出，不发网络请求。 */
+/** MiMo 语音合成模型名（`mimo-v2.5-tts`、`mimo-v2.5-tts-voiceclone` 等）。 */
+const MIMO_TTS_MODEL = /^mimo-[a-z0-9.]*-tts/i;
+
+export function isMimoChatAudioModel(model: string): boolean {
+  return MIMO_TTS_MODEL.test(model.trim());
+}
+
+/** 从 24kHz 单声道 16 位 WAV 里取出 PCM；格式不符返回 null（不做隐式重采样）。 */
+export function pcmFromWav(bytes: Uint8Array, sampleRate: number): Uint8Array | null {
+  const view = Buffer.from(bytes);
+  if (view.length < 44 || view.toString('ascii', 0, 4) !== 'RIFF') return null;
+  if (view.toString('ascii', 8, 12) !== 'WAVE') return null;
+  let offset = 12;
+  let fmt: { format: number; channels: number; rate: number; bits: number } | null = null;
+  let data: Buffer | null = null;
+  while (offset + 8 <= view.length) {
+    const id = view.toString('ascii', offset, offset + 4);
+    const size = view.readUInt32LE(offset + 4);
+    const body = offset + 8;
+    if (body + size > view.length) break;
+    if (id === 'fmt ' && size >= 16) {
+      fmt = {
+        format: view.readUInt16LE(body),
+        channels: view.readUInt16LE(body + 2),
+        rate: view.readUInt32LE(body + 4),
+        bits: view.readUInt16LE(body + 14),
+      };
+    } else if (id === 'data') {
+      data = view.subarray(body, body + size);
+    }
+    offset = body + size + (size % 2);
+  }
+  if (!fmt || !data) return null;
+  if (fmt.format !== 1 || fmt.bits !== 16 || fmt.channels !== 1 || fmt.rate !== sampleRate)
+    return null;
+  return new Uint8Array(data);
+}
+
+/**
+ * MiMo 原生语音合成：走 `/chat/completions` 的 `audio` 字段（旧项目核实过的协议），
+ * 不是 OpenAI 的 `/audio/speech`。返回的是 base64 音频，需自行解码。
+ *
+ * 边界：本适配器不引入 OGG 封装器，`ogg_opus` 直接按 `bad_request` 拒绝，
+ * 不谎称已支持语音消息所需的封装；PCM 只接受 24kHz 单声道 16 位，其余格式不静默重采样。
+ */
+async function mimoSynthesize(
+  t: MediaTarget,
+  input: { text: string; voice: string; format: 'ogg_opus' | 'pcm16_24k' | 'wav' },
+): Promise<MediaAdapterResult<{ bytes: Uint8Array; mimeType: string; durationMs: number }>> {
+  if (input.format === 'ogg_opus') return { ok: false, category: 'bad_request' };
+  try {
+    const response = await fetch(url(t.baseUrl, '/chat/completions'), {
+      method: 'POST',
+      redirect: 'manual',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      headers: {
+        'api-key': t.apiKey,
+        Authorization: `Bearer ${t.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: t.model,
+        messages: [
+          { role: 'user', content: '用自然、口语化的语气朗读下一条内容，不要添加任何额外说明。' },
+          { role: 'assistant', content: input.text },
+        ],
+        audio: { format: 'wav', voice: input.voice },
+      }),
+    });
+    if (!response.ok) return { ok: false, category: await errorOf(response) };
+    const bytes = await readLimited(response);
+    if (!bytes) return { ok: false, category: 'provider_error' };
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(Buffer.from(bytes).toString('utf8')) as Record<string, unknown>;
+    } catch {
+      return { ok: false, category: 'provider_error' };
+    }
+    const choices = payload.choices as Array<{ message?: { audio?: unknown } }> | undefined;
+    const audio = (choices?.[0]?.message?.audio ?? payload.audio) as
+      { data?: unknown; duration_seconds?: unknown; duration?: unknown } | undefined;
+    const base64 = typeof audio?.data === 'string' ? audio.data.trim() : '';
+    if (!base64 || base64.length > MAX_RESPONSE_BYTES * 2)
+      return { ok: false, category: 'provider_error' };
+    const decoded = Buffer.from(base64, 'base64');
+    if (decoded.length < 44 || decoded.length > MAX_RESPONSE_BYTES)
+      return { ok: false, category: 'provider_error' };
+    const seconds = Number(audio?.duration_seconds ?? audio?.duration);
+    const durationMs =
+      Number.isFinite(seconds) && seconds > 0
+        ? Math.round(seconds * 1000)
+        : estimateSpeechMs(input.text);
+    if (input.format === 'pcm16_24k') {
+      const pcm = pcmFromWav(decoded, 24_000);
+      if (!pcm) return { ok: false, category: 'bad_request' };
+      return {
+        ok: true,
+        value: { bytes: pcm, mimeType: 'audio/L16', durationMs: Math.round(pcm.length / 48) },
+      };
+    }
+    return {
+      ok: true,
+      value: { bytes: new Uint8Array(decoded), mimeType: 'audio/wav', durationMs },
+    };
+  } catch {
+    return { ok: false, category: 'network_error' };
+  }
+}
+
+/**
+ * 给多媒体适配器加上 MiMo 原生语音合成；其余能力（识别、生图、搜索、决策）原样委托。
+ * 只按模型名分流，避免把 OpenAI 兼容线路误当成 MiMo。
+ */
+export function withMimoChatAudio(inner: MediaAdapter): MediaAdapter {
+  return {
+    decide: (t, i) => inner.decide(t, i),
+    synthesize: (t, i) =>
+      isMimoChatAudioModel(t.model) ? mimoSynthesize(t, i) : inner.synthesize(t, i),
+    synthesizeStream: async (t, i, signal) => {
+      if (!isMimoChatAudioModel(t.model)) return inner.synthesizeStream(t, i, signal);
+      const result = await mimoSynthesize(t, { text: i.text, voice: i.voice, format: 'pcm16_24k' });
+      if (!result.ok) return result;
+      const pcm = result.value.bytes;
+      async function* chunks(): AsyncIterable<Uint8Array> {
+        for (let offset = 0; offset < pcm.length; offset += 4096) {
+          if (signal.aborted) return;
+          yield pcm.subarray(offset, Math.min(pcm.length, offset + 4096));
+        }
+      }
+      return { ok: true, value: chunks() };
+    },
+    transcribe: (t, i) => inner.transcribe(t, i),
+    generateImage: (t, i) => inner.generateImage(t, i),
+    search: (t, i) => inner.search(t, i),
+    ...(inner.fetchPage
+      ? { fetchPage: (t: MediaTarget, i: { url: string }) => inner.fetchPage!(t, i) }
+      : {}),
+  };
+}
+
 export class FakeMediaAdapter implements MediaAdapter {
   /** 假 Jev：确定性地给第一个选项 0.7，其余平分。 */
   async decide(

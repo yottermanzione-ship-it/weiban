@@ -16,7 +16,7 @@ import { POLICY_PORT } from '../policy/index.js';
 import { IdentityModule } from '../identity/index.js';
 import { MediaModule } from '../media/index.js';
 import { ModelGatewayMedia } from './application/media-gateway.js';
-import { OpenAiCompatibleMediaAdapter } from './infra/media-adapter.js';
+import { OpenAiCompatibleMediaAdapter, withMimoChatAudio } from './infra/media-adapter.js';
 import { GenerationCache } from './application/generation-cache.js';
 import { GatewayMaintenance } from './application/gateway-maintenance.js';
 import { ModelGateway } from './application/gateway.js';
@@ -102,7 +102,9 @@ import {
       provide: MEDIA_ADAPTER,
       inject: [WebToolsStore],
       useFactory: (tools: WebToolsStore) =>
-        new OpenAiCompatibleMediaAdapter((kind, host) => tools.allowRequest(kind, host)),
+        withMimoChatAudio(
+          new OpenAiCompatibleMediaAdapter((kind, host) => tools.allowRequest(kind, host)),
+        ),
     },
     { provide: WEB_SEARCH_PROVIDER, useExisting: GatewayWebSearchProvider },
     {
