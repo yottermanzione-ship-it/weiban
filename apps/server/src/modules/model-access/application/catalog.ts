@@ -11,8 +11,10 @@
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type {
+  ActiveModelServiceRate,
   AdminCatalogEntry,
   AdminModel,
+  BillingModelRatePort,
   ModelCapability,
   ModelInfo,
   ModelRoute,
@@ -64,11 +66,25 @@ import {
 import {
   MODEL_ACCESS_CHARGE_QUERY,
   MODEL_PRICE_SOURCE,
+  MODEL_RATE_PORT,
   type ChargeQuery,
   type ModelPriceSource,
 } from '../tokens.js';
 import { DisplayPricingService } from './display-pricing.js';
 import { ChargeQueryUnavailableError } from './defaults.js';
+import { parseVoiceCallPipeline, type VoiceCallPipeline } from '../domain/voice-call-pipeline.js';
+import {
+  checkVoiceCallComponents,
+  DEFAULT_DISPLAY_BASE_MODEL_KEY,
+  isVoiceCallComposite,
+  readVoiceCallPipelineValue,
+  serviceRatePrice,
+  VOICE_CALL_CASCADE_MODEL_KEY,
+  VOICE_CALL_PIPELINE_SETTING_KEY,
+  voiceCallDisplayMultiplier,
+  voiceCallFailureDetail,
+  type VoiceCallAvailability,
+} from './voice-call-composite.js';
 
 type CatalogRow = typeof modelCatalog.$inferSelect;
 type CatalogWrite = z.infer<typeof AdminCatalogEntryWrite>;
@@ -165,6 +181,8 @@ export class CatalogService {
     @Inject(MODEL_PRICE_SOURCE) private readonly prices: ModelPriceSource,
     @Inject(MODEL_ACCESS_CHARGE_QUERY) private readonly charges: ChargeQuery,
     @Optional() @Inject(DisplayPricingService) private readonly display?: DisplayPricingService,
+    // ADR-20261024：组合通话模型的展示倍率需要语音 / 识别的服务单价（billing 价目表）。
+    @Optional() @Inject(MODEL_RATE_PORT) private readonly rates?: BillingModelRatePort,
   ) {}
 
   // ---------- 3.22 场景推荐模型 / 平台内部模型 ----------
@@ -259,6 +277,114 @@ export class CatalogService {
       );
     });
     return next;
+  }
+
+  // ---------- 组合通话模型（ADR-20261024） ----------
+
+  /** 读 `model_access.settings.voice_call_pipeline`；严格校验，非法（含未知字段 / 重复组件）= 未配置。 */
+  async voiceCallPipeline(): Promise<VoiceCallPipeline | null> {
+    const [row] = await this.database.db
+      .select()
+      .from(modelAccessSettings)
+      .where(eq(modelAccessSettings.key, VOICE_CALL_PIPELINE_SETTING_KEY));
+    return readVoiceCallPipelineValue(row?.value);
+  }
+
+  /**
+   * 保存组合关系。只校验结构（三个不同且合法的模型键），不要求组件此刻已上架：
+   * 允许先配关系、再逐个上模型；运行时逐项判断并给出不可用原因。
+   */
+  async setVoiceCallPipeline(operatorUserId: string, raw: unknown): Promise<VoiceCallPipeline> {
+    const parsed = parseVoiceCallPipeline(raw);
+    if (!parsed.ok)
+      throw new AppError(
+        'bad_request',
+        parsed.error === 'pipeline_duplicate_components'
+          ? '识别、文本、合成不能选同一个模型'
+          : '语音通话组合模型设置格式不正确：需要 asrModelKey / textModelKey / ttsModelKey 三个合法模型键',
+        { status: 422, details: { field: VOICE_CALL_PIPELINE_SETTING_KEY, error: parsed.error } },
+      );
+    if (
+      [parsed.value.asrModelKey, parsed.value.textModelKey, parsed.value.ttsModelKey].includes(
+        VOICE_CALL_CASCADE_MODEL_KEY,
+      )
+    )
+      throw new AppError('bad_request', '组合模型不能把自己作为组件', { status: 422 });
+    const before = await this.voiceCallPipeline();
+    await this.database.transaction(async (tx) => {
+      const now = this.clock.now();
+      await tx.db
+        .insert(modelAccessSettings)
+        .values({
+          key: VOICE_CALL_PIPELINE_SETTING_KEY,
+          value: parsed.value,
+          updatedAt: now,
+          updatedBy: operatorUserId,
+        })
+        .onConflictDoUpdate({
+          target: modelAccessSettings.key,
+          set: { value: parsed.value, updatedAt: now, updatedBy: operatorUserId },
+        });
+      await this.audit.record(
+        {
+          module: 'model_access',
+          action: 'voice_call_pipeline.updated',
+          actorType: 'admin',
+          actorId: operatorUserId,
+          targetType: 'model_access_settings',
+          targetId: null,
+          details: { before, after: parsed.value },
+        },
+        tx,
+      );
+    });
+    return parsed.value;
+  }
+
+  /** 目录里的组合模型条目（固定模型键 + `pipeline:voice_call` 标签）；没有为 null。 */
+  async voiceCallCompositeFact(): Promise<ModelFacts | null> {
+    const facts = await this.fact(VOICE_CALL_CASCADE_MODEL_KEY);
+    return isVoiceCallComposite(facts.entry) ? facts : null;
+  }
+
+  /** 组合模型的平台级可用性：三个组件都启用且上游正常才算可用（与某个用户是否选它无关）。 */
+  async voiceCallAvailability(): Promise<VoiceCallAvailability> {
+    const pipeline = await this.voiceCallPipeline();
+    if (!pipeline) return { available: false, failure: { reason: 'pipeline_unconfigured' } };
+    const facts = await this.facts([
+      pipeline.asrModelKey,
+      pipeline.textModelKey,
+      pipeline.ttsModelKey,
+    ]);
+    const checked = checkVoiceCallComponents(pipeline, {
+      asr: facts.get(pipeline.asrModelKey),
+      text: facts.get(pipeline.textModelKey),
+      tts: facts.get(pipeline.ttsModelKey),
+    });
+    return checked.ok
+      ? { available: true, pipeline }
+      : { available: false, failure: checked.failure };
+  }
+
+  /**
+   * 组合模型的展示倍率：每分钟约 3 积分的混合口径（识别 1 分钟 + 合成约 68 字 + 文本约 6 轮），
+   * 相对基准模型（默认 openai/gpt-6.1-sol，后台可另设）的同一分钟口径。任何一项价格缺失 = null。
+   */
+  async voiceCallCompositeDisplayMultiplier(): Promise<number | null> {
+    const pipeline = await this.voiceCallPipeline();
+    if (!pipeline) return null;
+    const settings = (await this.display?.getSettings()) ?? { baseModelKey: null };
+    const baseModelKey = settings.baseModelKey ?? DEFAULT_DISPLAY_BASE_MODEL_KEY;
+    const serviceRates: ReadonlyMap<string, readonly ActiveModelServiceRate[]> =
+      (await this.rates?.getActiveServiceRates?.([pipeline.asrModelKey, pipeline.ttsModelKey])) ??
+      new Map();
+    const prices = await this.prices.textPrices([pipeline.textModelKey, baseModelKey]);
+    return voiceCallDisplayMultiplier({
+      asrPerMinuteMicros: serviceRatePrice(serviceRates, pipeline.asrModelKey, 'asr_minute'),
+      ttsPer10kCharsMicros: serviceRatePrice(serviceRates, pipeline.ttsModelKey, 'tts_10k_chars'),
+      text: prices.get(pipeline.textModelKey),
+      base: prices.get(baseModelKey),
+    });
   }
 
   /** 场景推荐模型（只用于「一键选推荐」与管理员自己的 admin_* 调用；只算启用的）。 */
@@ -592,6 +718,14 @@ export class CatalogService {
       const p = prices.get(key);
       return p ? Math.round(standardReplyMicros(p) / 100) / 100 : null;
     };
+    // 组合通话模型自身没有上游 / token 价：倍率由三组件价格折算，可用性由三组件共同决定。
+    const compositeVisible = visible.some((r) => isVoiceCallComposite(r.entry));
+    const voiceCall = compositeVisible
+      ? {
+          displayMultiplier: await this.voiceCallCompositeDisplayMultiplier(),
+          availability: await this.voiceCallAvailability(),
+        }
+      : null;
     // 榜单名次只从有效快照匹配（手动指定优先，否则用模型显示名 / 上游模型名），未匹配为 null，
     // 不再用旧手填名次兜底；在本次返回的列表里按相对顺序重新编号 1..N（不显示原榜名次）。
     const details = await this.availabilityDetails(visible.map((r) => r.entry.modelKey));
@@ -608,35 +742,54 @@ export class CatalogService {
         rank: arena.previousRankOfEntry(entry),
       })),
     );
-    return visible.map(({ entry, upstreamStatus }) => ({
-      modelKey: entry.modelKey,
-      displayName: entry.displayName,
-      vendorName: entry.vendorName,
-      priceTier: priceTier(prices.get(entry.modelKey)),
-      pointsPerReply: perReply(entry.modelKey),
-      ...(display?.get(entry.modelKey)
-        ? {
-            pointsPerReplyBasis: display.get(entry.modelKey)!.pointsPerReplyBasis,
-            displayMultiplier: display.get(entry.modelKey)!.displayMultiplier,
-            discount: display.get(entry.modelKey)!.discount,
-            pointsPerUse: display.get(entry.modelKey)!.pointsPerUse,
-          }
-        : {}),
-      scenarios: (entry.scenarios as ModelScenario[]).filter((s) => ALL_SCENARIOS.includes(s)),
-      capabilities: entry.capabilities as ModelCapability[],
-      tags: entry.tags,
-      leaderboardRank: relative.get(entry.modelKey) ?? null,
-      leaderboardChange:
-        relative.has(entry.modelKey) && previous.has(entry.modelKey)
-          ? previous.get(entry.modelKey)! - relative.get(entry.modelKey)!
-          : null,
-      ...(() => {
-        const reason = unavailableReason(entry, (upstreamStatus as UpstreamStatus | null) ?? null);
-        const detail =
-          details.get(entry.modelKey) ?? (reason === 'model_removed' ? 'model_removed' : null);
-        return { available: reason === null && !detail, unavailableDetail: detail };
-      })(),
-    }));
+    return visible.map(({ entry, upstreamStatus }) => {
+      const composite = isVoiceCallComposite(entry);
+      const d = display?.get(entry.modelKey);
+      // 后台手填倍率优先；组合模型没有自己的 token 价，自动值来自三组件分钟口径。
+      const manualMultiplier = d?.displayMultiplierManual ?? entry.displayMultiplier ?? null;
+      const displayMultiplier =
+        manualMultiplier ??
+        (composite ? (voiceCall?.displayMultiplier ?? null) : (d?.displayMultiplier ?? null));
+      const reason = unavailableReason(entry, (upstreamStatus as UpstreamStatus | null) ?? null);
+      const detail =
+        details.get(entry.modelKey) ?? (reason === 'model_removed' ? 'model_removed' : null);
+      const availability = composite
+        ? voiceCall
+          ? voiceCall.availability.available
+            ? { available: true, unavailableDetail: null }
+            : {
+                available: false,
+                unavailableDetail: voiceCallFailureDetail(voiceCall.availability.failure),
+              }
+          : { available: false, unavailableDetail: 'no_route' as const }
+        : { available: reason === null && !detail, unavailableDetail: detail };
+      return {
+        modelKey: entry.modelKey,
+        displayName: entry.displayName,
+        vendorName: entry.vendorName,
+        priceTier: priceTier(prices.get(entry.modelKey)),
+        pointsPerReply: perReply(entry.modelKey),
+        ...(d
+          ? {
+              pointsPerReplyBasis: d.pointsPerReplyBasis,
+              displayMultiplier,
+              discount: d.discount,
+              pointsPerUse: d.pointsPerUse,
+            }
+          : composite
+            ? { displayMultiplier }
+            : {}),
+        scenarios: (entry.scenarios as ModelScenario[]).filter((s) => ALL_SCENARIOS.includes(s)),
+        capabilities: entry.capabilities as ModelCapability[],
+        tags: entry.tags,
+        leaderboardRank: relative.get(entry.modelKey) ?? null,
+        leaderboardChange:
+          relative.has(entry.modelKey) && previous.has(entry.modelKey)
+            ? previous.get(entry.modelKey)! - relative.get(entry.modelKey)!
+            : null,
+        ...availability,
+      };
+    });
   }
 
   /**

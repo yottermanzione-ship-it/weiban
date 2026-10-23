@@ -5,6 +5,8 @@
  * 语音合成 ttsChars（tts_10k_chars）、语音识别 asrSeconds（asr_minute）、图片 images（image）、搜索 searchCalls（search_call）。
  * 3.22：语音合成 / 语音识别 / 图片生成按用户的场景配置（语音消息 / 语音识别 / 发照片，角色单独设置优先）解析，
  * 未配置返回 not_configured；联网搜索用后台指定的平台内部模型。音色必须绑定用户实际选择的语音模型，不兼容时拒绝，不静默换模型。
+ * ADR-20261024：通话（实时识别 / 流式合成）在 `voice_call` 选到组合模型 `voice/cascade-call` 时改用
+ * `voice_call_pipeline` 里的识别 / 合成组件；组合模型自身不调用上游，组件停用或删除时整通电话不可用。
  *
  * 幂等：非流式调用复用 GenerationCache（同一用户 + 幂等键 24 小时内返回第一次的结果，不再扣费）。
  * 流式调用（实时识别、流式合成）每段 / 每次独立记账，幂等键由调用方保证唯一。
@@ -63,6 +65,7 @@ import { GenerationCache, requestHash, type GenerationRow } from './generation-c
 import { UpstreamService } from './upstreams.js';
 import { UsageRecorder } from './usage.js';
 import { unavailableReason } from '../domain/rules.js';
+import { voiceCallFailureError } from './voice-call-composite.js';
 import { BillingBoundsService, boundsEvidence, reserveErrorToGenerate } from './billing-bounds.js';
 import { pcmWavSeconds, roundAsr } from '../domain/media-billing-bounds.js';
 import { probeAudioSeconds } from '../infra/audio-duration.js';
@@ -565,7 +568,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     input: MediaCallBase & { sampleRate: 16000 },
   ): Promise<PortResult<RealtimeAsrSession, GenerateError>> {
     if (!(await this.precheck(input))) return { ok: false, error: 'bad_request' };
-    const model = await this.resolve('speech_recognition', null, input);
+    const model = await this.resolve('speech_recognition', null, input, 'asr');
     if (!model.ok) return model;
     const profile = model.value.billingBounds.asr!;
     const first = await this.reserve(
@@ -590,7 +593,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     if (!text || !(await this.precheck(input))) return { ok: false, error: 'bad_request' };
     const voice = await this.assets.getVoice(input.voiceId);
     if (!voice || !voice.enabled) return { ok: false, error: 'bad_request' };
-    const model = await this.resolve('speech_synthesis', voice.modelKey, input);
+    const model = await this.resolve('speech_synthesis', voice.modelKey, input, 'tts');
     if (!model.ok) return model;
     const chars = this.ttsUnits(model.value, text);
     if (chars === null) return { ok: false, error: 'model_unavailable' };
@@ -714,21 +717,33 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
   /**
    * 按场景配置解析媒体模型（执行与计费共用）。音色代号仅在其登记的模型上有效；
    * 与用户/角色实际选择不一致或缺少绑定时拒绝，绝不偷偷跨模型或跨供应商。
+   * `callComponent` 只由通话的实时识别 / 流式合成传入：`voice_call` 选到组合模型时改用
+   * `voice_call_pipeline` 的对应组件，组件不可用直接返回原因，不退回普通场景。
    */
   private async resolve(
     service: Service,
     preferredModelKey: string | null,
     base: MediaCallBase,
+    callComponent?: 'asr' | 'tts',
   ): Promise<PortResult<Resolved, GenerateError>> {
     let picked: ModelFacts | null;
     if (service === 'web_search') picked = await this.catalog.internalModel('web_search');
     else {
-      const scenario = SERVICE_SCENARIO[service];
-      picked =
-        (await this.scenarios?.pick(base.userId, scenario, base.characterId ?? null))?.facts ??
-        null;
-      if (!picked && base.purpose.startsWith('admin_'))
-        picked = await this.catalog.recommendedModel(scenario);
+      const plan =
+        callComponent && this.scenarios
+          ? await this.scenarios.voiceCallPlan(base.userId, base.characterId ?? null)
+          : null;
+      if (plan?.kind === 'unavailable')
+        return { ok: false, error: voiceCallFailureError(plan.failure) };
+      if (plan?.kind === 'composite' && callComponent) picked = plan.components[callComponent];
+      else {
+        const scenario = SERVICE_SCENARIO[service];
+        picked =
+          (await this.scenarios?.pick(base.userId, scenario, base.characterId ?? null))?.facts ??
+          null;
+        if (!picked && base.purpose.startsWith('admin_'))
+          picked = await this.catalog.recommendedModel(scenario);
+      }
     }
     if (!picked) return { ok: false, error: 'not_configured' };
     // A provider voice is scoped to its registered model. Never silently replace the user's

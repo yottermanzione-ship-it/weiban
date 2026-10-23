@@ -26,7 +26,15 @@ import { hasAdultContent } from '../domain/rules.js';
 import { characterScenarioOverrides, scenarioSelections } from '../infra/db/schema.js';
 import { MODEL_ACCESS_POLICY, type ModelPolicy } from '../tokens.js';
 import { ALL_SCENARIOS, CatalogService, type ModelFacts } from './catalog.js';
-import { refState } from './selection-state.js';
+import { refState, type ModelRefStateOut } from './selection-state.js';
+import {
+  checkVoiceCallComponents,
+  isVoiceCallComposite,
+  VOICE_CALL_CASCADE_MODEL_KEY,
+  voiceCallFailureDetail,
+  type VoiceCallFailure,
+  type VoiceCallPlan,
+} from './voice-call-composite.js';
 
 export type ScenarioRefs = Partial<Record<ModelScenario, { modelKey: string } | null>>;
 
@@ -76,34 +84,146 @@ export class ScenarioService {
     );
   }
 
+  /** 角色单独设置 > 用户场景配置；都没有 → null。 */
+  private async selectedKey(
+    userId: string,
+    scenario: ModelScenario,
+    characterId: string | null,
+  ): Promise<{ key: string; source: 'override' | 'user' } | null> {
+    if (characterId) {
+      const override = (await this.rawOverrides(userId, characterId)).get(scenario);
+      if (override) return { key: override, source: 'override' };
+    }
+    const key = (await this.raw(userId)).get(scenario);
+    return key ? { key, source: 'user' } : null;
+  }
+
   /**
    * **唯一的场景解析**：角色单独设置 > 用户场景配置；都没有 → null（not_configured）。
    * 不检查可用性（调用方按 unavailableReason 判断，选中的模型下架时不自动换，MDL-04）。
+   *
+   * ADR-20261024：`voice_call` 选到组合模型时，文本改用 `textModelKey`（识别 / 合成由媒体网关
+   * 调 `voiceCallPlan` 取对应组件）。组合模型自身没有上游，绝不能被当成可调用的上游模型返回。
    */
   async pick(
     userId: string,
     scenario: ModelScenario,
     characterId: string | null,
   ): Promise<{ facts: ModelFacts; source: 'override' | 'user' } | null> {
-    if (characterId) {
-      const override = (await this.rawOverrides(userId, characterId)).get(scenario);
-      if (override) return { facts: await this.catalog.fact(override), source: 'override' };
+    const selected = await this.selectedKey(userId, scenario, characterId);
+    if (!selected) return null;
+    if (scenario === 'voice_call') {
+      const plan = await this.planForSelection(selected);
+      if (plan.kind === 'composite')
+        return { facts: plan.components.text, source: selected.source };
+      if (plan.kind === 'unavailable') {
+        // 组合关系没配好 = 这个场景还没配置；组件停用 / 删除 / 上游故障 = 模型不可用。
+        // 两种情况都不换别的模型，由解析方按现有错误值给用户明确结果。
+        if (plan.failure.reason === 'pipeline_unconfigured') return null;
+        return {
+          facts: { modelKey: selected.key, entry: null, upstreamStatus: null },
+          source: selected.source,
+        };
+      }
     }
-    const key = (await this.raw(userId)).get(scenario);
-    return key ? { facts: await this.catalog.fact(key), source: 'user' } : null;
+    return { facts: await this.catalog.fact(selected.key), source: selected.source };
+  }
+
+  /**
+   * 通话运行时解析（媒体网关的实时识别 / 流式合成共用）：`voice_call` 选到组合模型时返回
+   * 三个组件的目录事实；没选组合模型时返回 not_composite，调用方按原场景解析。
+   */
+  async voiceCallPlan(userId: string, characterId: string | null): Promise<VoiceCallPlan> {
+    const selected = await this.selectedKey(userId, 'voice_call', characterId);
+    return selected ? this.planForSelection(selected) : { kind: 'not_composite' };
+  }
+
+  private async planForSelection(selected: {
+    key: string;
+    source: 'override' | 'user';
+  }): Promise<VoiceCallPlan> {
+    const facts = await this.catalog.fact(selected.key);
+    if (!isVoiceCallComposite(facts.entry)) return { kind: 'not_composite' };
+    const unavailable = (failure: VoiceCallFailure): VoiceCallPlan => ({
+      kind: 'unavailable',
+      source: selected.source,
+      modelKey: selected.key,
+      failure,
+    });
+    if (!facts.entry!.enabled) return unavailable({ reason: 'composite_disabled' });
+    const pipeline = await this.catalog.voiceCallPipeline();
+    if (!pipeline) return unavailable({ reason: 'pipeline_unconfigured' });
+    // 防御：组合关系自引用会让运行时递归，按「没配好」处理。
+    if (
+      [pipeline.asrModelKey, pipeline.textModelKey, pipeline.ttsModelKey].includes(
+        VOICE_CALL_CASCADE_MODEL_KEY,
+      )
+    )
+      return unavailable({ reason: 'pipeline_unconfigured' });
+    const factsByKey = await this.catalog.facts([
+      pipeline.asrModelKey,
+      pipeline.textModelKey,
+      pipeline.ttsModelKey,
+    ]);
+    const checked = checkVoiceCallComponents(pipeline, {
+      asr: factsByKey.get(pipeline.asrModelKey),
+      text: factsByKey.get(pipeline.textModelKey),
+      tts: factsByKey.get(pipeline.ttsModelKey),
+    });
+    if (!checked.ok) return unavailable(checked.failure);
+    return {
+      kind: 'composite',
+      source: selected.source,
+      pipeline,
+      components: checked.value,
+    };
+  }
+
+  /** 场景设置里的选择状态：组合模型的可用性由三个组件决定，不看它自己的（不存在的）上游。 */
+  private stateOf(
+    facts: ModelFacts | undefined,
+    plan: VoiceCallPlan | null,
+  ): ModelRefStateOut | null {
+    if (!facts) return null;
+    if (!isVoiceCallComposite(facts.entry) || !plan) return refState(facts);
+    if (plan.kind === 'composite')
+      return {
+        modelKey: facts.modelKey,
+        available: true,
+        unavailableReason: null,
+        unavailableDetail: null,
+      };
+    if (plan.kind === 'not_composite') return refState(facts);
+    const failure = plan.failure;
+    if (failure.reason === 'pipeline_unconfigured' || failure.reason === 'composite_disabled')
+      return {
+        modelKey: facts.modelKey,
+        available: false,
+        unavailableReason:
+          failure.reason === 'composite_disabled' ? 'model_removed' : 'provider_unavailable',
+        unavailableDetail: voiceCallFailureDetail(failure),
+      };
+    return {
+      modelKey: facts.modelKey,
+      available: false,
+      unavailableReason:
+        failure.detail === 'model_removed' ? 'model_removed' : 'provider_unavailable',
+      unavailableDetail: voiceCallFailureDetail(failure),
+    };
   }
 
   async getConfig(userId: string): Promise<ScenarioConfig> {
     const raw = await this.raw(userId);
     const uses = await this.catalog.modelUses();
     const facts = await this.catalog.facts([...raw.values()], { detail: true });
+    const voiceCallPlan = raw.has('voice_call') ? await this.voiceCallPlan(userId, null) : null;
     return {
       scenarios: ALL_SCENARIOS.map((scenario) => {
         const key = raw.get(scenario);
         const f = key ? facts.get(key) : undefined;
         return {
           scenario,
-          selection: f ? refState(f) : null,
+          selection: this.stateOf(f, scenario === 'voice_call' ? voiceCallPlan : null),
           recommendedModelKey: uses.recommended[scenario] ?? null,
         };
       }),
@@ -117,6 +237,10 @@ export class ScenarioService {
     const facts = await this.catalog.facts([...overrides.values(), ...raw.values()], {
       detail: true,
     });
+    const ownVoiceCall = overrides.has('voice_call');
+    const globalVoiceCall = raw.has('voice_call');
+    const ownPlan = ownVoiceCall ? await this.voiceCallPlan(userId, characterId) : null;
+    const globalPlan = globalVoiceCall ? await this.voiceCallPlan(userId, null) : null;
     return {
       characterId,
       scenarios: ALL_SCENARIOS.map((scenario) => {
@@ -124,10 +248,11 @@ export class ScenarioService {
         const effective = own ?? raw.get(scenario);
         const ownFacts = own ? facts.get(own) : undefined;
         const effectiveFacts = effective ? facts.get(effective) : undefined;
+        const effectivePlan = scenario === 'voice_call' ? (own ? ownPlan : globalPlan) : null;
         return {
           scenario,
-          selection: ownFacts ? refState(ownFacts) : null,
-          effective: effectiveFacts ? refState(effectiveFacts) : null,
+          selection: this.stateOf(ownFacts, scenario === 'voice_call' ? ownPlan : null),
+          effective: this.stateOf(effectiveFacts, effectivePlan),
         };
       }),
     };
