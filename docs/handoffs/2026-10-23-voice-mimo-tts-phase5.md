@@ -28,10 +28,25 @@
 - 测试使用本地合成 HTTP 服务与合成密钥，**不是真实 MiMo 账号**；真实音色、真实时延、真实计费对账均未验证，也没有构建 APK。
 - 未做：DashScope 原生 TTS/复刻协议、实时通话的厂商 WebSocket 协议、Omni 级联、OGG 封装、系统音色白名单；这些仍需真实凭据与实测，且克隆/真人声音在授权缺失前继续排除。
 
+## 第二批：通义百炼原生语音合成（已随同批发布）
+
+- 新增 `POST {baseUrl}/services/audio/tts/SpeechSynthesizer` 协议：`{model, input:{text, voice, format}}`，拿 `output.audio.url` 再下载；只接受官方 `*.aliyuncs.com` / `*.aliyun.com` 的 https 地址，避免被指到任意站点。
+- 退役的 `qwen-audio-3.0-tts-flash` **明确拒绝**，不再落到 OpenAI 兼容接口上试；`ogg_opus` 同样拒绝，理由与 MiMo 一致（没有封装器就不假装支持）。
+- 路由按「上游类型 + 模型名」双重判断，OpenAI 兼容路径保持不变，识别/生图/搜索/决策仍原样委托。
+- 测试首轮 5 条中 1 条失败，抓到**真实缺陷**：退役模型会被误送到 `/audio/speech`。修正为显式拒绝后复测，两套语音协议共 12/12 通过，类型检查通过，测试停止。
+- 真实百炼账号未验证：真实音色、真实音频格式与时延、`tts_10k_chars` 计费对账都要等有授权凭据时再核。
+
+## 第二批发布回执（通义百炼协议 + 普通图核验规则）
+
+- 运行源码 `acc87479944f21ccfb16ee30bc911776b6569199`，2026-10-23 16:52:08（北京时间）发布；来源闸门确认同时包含最新远端 main 与当时线上完整 `3d6bfcd…`。
+- 候选 2744 个 Git blob 逐项核验；补丁 41,107 字节，SHA256 `b2967fe9d5e43bcbc57a5dda1c78a6d679b03293e489d7bcca92990507dfac6e`。
+- 加密备份 `/srv/weiban/backups/weiban-20261023T085151Z-pehyae` 数据库与媒体均校验 OK；状态 `/srv/weiban/backups/release-state-20261023T085151Z`；before 镜像与前版目录保留；无待执行迁移（仍 0135_client_logs）。
+- app `sha256:16138719079c2ca629912930d718936c1f8b89f6b4dcae05f247ee5180f19010`；edge `sha256:8eb90d9c16aa955d40b9155ab2d4e73e0191920f3bd8a80e182aa9ed157518ad`。
+- 同批带上了未接线的普通图片出处核验规则（不改变运行时行为）与文档更新；`characterPublicPictureSearchEnabled` 仍为 0。
+
 ## 发布回执
 
-- 代码 `3d6bfcda9319d044e72241f742594f9f01bc9f01`；来源闸门确认同时包含最新远端 main 与当时线上完整 `7b3a8ce…`。
-- 候选 2740 个 Git blob 逐项核验；补丁 39,297 字节，SHA256 `938d4e2f31bd4e59e9ffbdbadfa4b3ff6c27aadca034c2fe2544ba2ecef31206`。
+- 代码 `3d6bfcda9319d044e72241f742594f9f01bc9f01`；来源闸门确认同时包含最新远端 main 与当时线上完整 `7b3a8ce…`。- 候选 2740 个 Git blob 逐项核验；补丁 39,297 字节，SHA256 `938d4e2f31bd4e59e9ffbdbadfa4b3ff6c27aadca034c2fe2544ba2ecef31206`。
 - 2026-10-23 16:41:17（北京时间）发布，发布进程退出 0；前后台健康/HTTP200、crypto 有效；无待执行迁移（仍 0135_client_logs）。
 - 加密备份 `/srv/weiban/backups/weiban-20261023T084100Z-vQOGUs` 数据库与媒体均校验 OK；状态 `/srv/weiban/backups/release-state-20261023T084100Z`；before 镜像与前版目录保留。
 - app `sha256:cf586074e3d8fd5d4e404c314d9b524ecd77eef543a0741743fa3b543bd43b7b`；edge `sha256:17e0725201ae4a4420aa9be50bb014f9c3dc66fe8dda03b410eccd311b3f75ad`。
