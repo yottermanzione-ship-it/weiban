@@ -28,6 +28,15 @@
 - 测试使用本地合成 HTTP 服务与合成密钥，**不是真实 MiMo 账号**；真实音色、真实时延、真实计费对账均未验证，也没有构建 APK。
 - 未做：DashScope 原生 TTS/复刻协议、实时通话的厂商 WebSocket 协议、Omni 级联、OGG 封装、系统音色白名单；这些仍需真实凭据与实测，且克隆/真人声音在授权缺失前继续排除。
 
+## 发布回执
+
+- 代码 `3d6bfcda9319d044e72241f742594f9f01bc9f01`；来源闸门确认同时包含最新远端 main 与当时线上完整 `7b3a8ce…`。
+- 候选 2740 个 Git blob 逐项核验；补丁 39,297 字节，SHA256 `938d4e2f31bd4e59e9ffbdbadfa4b3ff6c27aadca034c2fe2544ba2ecef31206`。
+- 2026-10-23 16:41:17（北京时间）发布，发布进程退出 0；前后台健康/HTTP200、crypto 有效；无待执行迁移（仍 0135_client_logs）。
+- 加密备份 `/srv/weiban/backups/weiban-20261023T084100Z-vQOGUs` 数据库与媒体均校验 OK；状态 `/srv/weiban/backups/release-state-20261023T084100Z`；before 镜像与前版目录保留。
+- app `sha256:cf586074e3d8fd5d4e404c314d9b524ecd77eef543a0741743fa3b543bd43b7b`；edge `sha256:17e0725201ae4a4420aa9be50bb014f9c3dc66fe8dda03b410eccd311b3f75ad`。
+- 期间 GitHub 一度连续超时，代码在本地积压但未发布、线上保持旧版本；恢复后才推送并发布，没有绕过来源闸门。
+
 ## 下一步
 
 1. 有真实 Key 时，用最短文本做一次真实合成，核对返回格式、时长与 `tts_10k_chars` 用量是否对得上。
