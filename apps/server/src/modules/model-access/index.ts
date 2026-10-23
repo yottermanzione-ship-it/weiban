@@ -23,6 +23,10 @@ export { MODEL_QUOTE_PORT } from './tokens.js';
 /** 本机运维脚本（cli/setup-local-model.ts）以管理员身份走服务层登记目录、读上游。 */
 export { CatalogService } from './application/catalog.js';
 export { UpstreamService } from './application/upstreams.js';
+/** Private maintenance CLI; no HTTP endpoint and no supplier probing. */
+export { LegacyUpstreamImportService } from './application/legacy-upstream-import.js';
+export { LegacyImportReceiver } from './application/legacy-receiver.js';
+export { LegacyImportError } from './domain/legacy-import.js';
 /** v3.6：请求结构对比工具（ai-runtime/tools/prompt-compare.ts）用的估算与前缀缓存模拟（纯函数）。 */
 export { estimateTokens } from './infra/text-adapter.js';
 export { simulatePrefixCache } from './domain/prefix-cache.js';

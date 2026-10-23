@@ -23,6 +23,10 @@ RUN --mount=type=secret,id=build_ca,required=false \
 
 FROM node:24.19.0-bookworm-slim AS app
 ENV NODE_ENV=production
+# Operator-only CMS maintenance needs the system implementation, never a custom crypto protocol.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
+    && test "$(readlink -f /var/lib/apt/lists)" = /var/lib/apt/lists \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build --chown=node:node /runtime/ ./
 RUN mkdir -p /app/.data/media && chown -R node:node /app/.data
