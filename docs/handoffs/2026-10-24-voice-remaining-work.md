@@ -4,7 +4,7 @@ Status: TTS (MiMo system voice) and browser-recording ASR duration fix are LIVE 
 
 ## A. Composite voice-call model
 - Store pipeline setting (asr/text/tts keys) in model_access.settings as voice_call_pipeline.
-- Add catalog entry voice/cascade-call (display "Voice Cascade"), tag pipeline:voice_call, no upstream model.
+- Add catalog entry voice/cascade-call (display "Voice Cascade"), tag pipeline:call, no upstream model.
 - Runtime: when voice_call resolves to composite, use the three components instead of one upstream.
 - Display multiplier from minute blend (ASR 1.08 + ~68 TTS chars + text tokens; old data: 202s/session, 22 turns, 68 char/min).
 

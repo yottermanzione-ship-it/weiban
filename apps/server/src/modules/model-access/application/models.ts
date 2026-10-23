@@ -19,6 +19,7 @@ import {
   type ModelRates,
   type ModelRoute,
   type ModelTokenPrices,
+  type ModelUnavailableDetail,
 } from '@weiban/contracts';
 import { AppError, CLOCK, type Clock } from '../../../platform/index.js';
 import type { z } from 'zod';
@@ -26,6 +27,7 @@ import { standardReplyMicros } from '../domain/rules.js';
 import { MODEL_RATE_PORT, type ModelPriceSource } from '../tokens.js';
 import { CatalogService } from './catalog.js';
 import { DisplayPricingService, type DisplayPricing } from './display-pricing.js';
+import { isVoiceCallComposite, voiceCallFailureDetail } from './voice-call-composite.js';
 
 type Write = z.output<typeof AdminModelWrite>;
 
@@ -116,6 +118,23 @@ export class ModelAdminService {
     @Optional() @Inject(DisplayPricingService) private readonly display?: DisplayPricingService,
   ) {}
 
+  /**
+   * 组合通话模型（`voice/cascade-call` + `pipeline:call`）自身不调用上游、没有 token 单价，
+   * 后台可用性改看流水线三个组件（与用户端 `voiceCallAvailability` 同一口径），
+   * 不再按它自己的镜像上游 / 计费上限算出「缺计费上限 / 无路由」这类误导原因；
+   * 其他条目仍由 `availabilityDetails` 决定（返回 null 表示按它判断）。
+   */
+  private async compositeAvailability(
+    entry: AdminCatalogEntry,
+  ): Promise<{ available: boolean; detail: ModelUnavailableDetail | null } | null> {
+    if (!isVoiceCallComposite(entry)) return null;
+    if (!entry.enabled) return { available: false, detail: 'model_removed' };
+    const availability = await this.catalog.voiceCallAvailability();
+    return availability.available
+      ? { available: true, detail: null }
+      : { available: false, detail: voiceCallFailureDetail(availability.failure) };
+  }
+
   async list(): Promise<AdminModel[]> {
     const entries = await this.catalog.adminList();
     // 3.23：已删除的模型不查价格 / 线路 / 折扣（同键可能已重新添加，按键查会串到新模型上）
@@ -131,6 +150,9 @@ export class ModelAdminService {
     const arena = await this.catalog.arenaRanks();
     // 3.26：最近连续没返回用量的线路（后台提示，不停用）
     const missing = await this.catalog.usageMissing(keys);
+    // 组合通话条目没有自己的上游 / 价格：可用性看三个组件，与用户端同一口径。
+    const composite = entries.find((e) => !e.deletedAt && isVoiceCallComposite(e));
+    const voiceCall = composite ? await this.compositeAvailability(composite) : null;
     return entries.map((e) =>
       e.deletedAt
         ? toAdminModel(e, undefined, [], undefined, undefined, nowMs)
@@ -146,10 +168,13 @@ export class ModelAdminService {
                 ? { serviceRates: serviceRatesToYuan(serviceRates.get(e.modelKey) ?? []) }
                 : {}),
               arenaRank: arena.rankOfEntry(e),
-              availability: {
-                available: !details.get(e.modelKey),
-                detail: details.get(e.modelKey) ?? null,
-              },
+              availability:
+                e === composite && voiceCall
+                  ? voiceCall
+                  : {
+                      available: !details.get(e.modelKey),
+                      detail: details.get(e.modelKey) ?? null,
+                    },
               usageMissing: missing.get(e.modelKey) ?? [],
             },
           ),
