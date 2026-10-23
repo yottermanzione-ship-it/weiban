@@ -14,6 +14,7 @@ import type { WebSearchResultItem } from '@weiban/contracts';
 import { SystemClock } from '../../../platform/index.js';
 import { jevDecide } from './jev-adapter.js';
 import { deepseekSearch, deepseekFetch, type SearchRequestGate } from './deepseek-tools.js';
+import { downloadDashscopeAudio } from './dashscope-audio.js';
 
 export type MediaFailure =
   | 'network_error'
@@ -560,24 +561,21 @@ async function dashscopeSynthesize(
     }
     const output = payload.output as { audio?: { url?: unknown } } | undefined;
     const audioUrl = typeof output?.audio?.url === 'string' ? output.audio.url.trim() : '';
-    let parsed: URL;
+    let audio: Uint8Array;
     try {
-      parsed = new URL(audioUrl);
+      audio = await downloadDashscopeAudio(audioUrl);
     } catch {
+      // The synthesis POST may already be billable; never report zeroCost or forward the signed URL.
+      // A CDN 401/403 is not proof that the provider API key is invalid.
       return { ok: false, category: 'provider_error' };
     }
-    const host = parsed.hostname.toLowerCase();
-    // 只下载官方域名，避免被指到任意地址。
-    if (parsed.protocol !== 'https:' || !/\.(aliyuncs|aliyun)\.com$/u.test(host))
+    const header = Buffer.from(audio);
+    if (
+      audio.length < 44 ||
+      header.toString('ascii', 0, 4) !== 'RIFF' ||
+      header.toString('ascii', 8, 12) !== 'WAVE'
+    )
       return { ok: false, category: 'provider_error' };
-    const audioResponse = await fetch(parsed.toString(), {
-      method: 'GET',
-      redirect: 'manual',
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    if (!audioResponse.ok) return { ok: false, category: await errorOf(audioResponse) };
-    const audio = await readLimited(audioResponse);
-    if (!audio || audio.length < 44) return { ok: false, category: 'provider_error' };
     if (input.format === 'pcm16_24k') {
       const pcm = pcmFromWav(audio, 24_000);
       if (!pcm) return { ok: false, category: 'bad_request' };

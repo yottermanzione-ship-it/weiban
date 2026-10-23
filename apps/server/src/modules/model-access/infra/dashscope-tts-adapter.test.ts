@@ -82,7 +82,7 @@ beforeEach(() => {
 });
 
 describe('DashScope native speech synthesis protocol', () => {
-  it('posts to SpeechSynthesizer then downloads the returned wav', async () => {
+  it('posts to SpeechSynthesizer but refuses the returned localhost audio URL', async () => {
     const audio = wav(24_000, 4800);
     handler = ({ method, path }) =>
       path === '/services/audio/tts/SpeechSynthesizer'
@@ -95,7 +95,7 @@ describe('DashScope native speech synthesis protocol', () => {
         : method === 'GET' && path.startsWith('/audio/')
           ? { status: 200, raw: audio }
           : { status: 404, json: {} };
-    // 服务端只认官方域名，这里用测试开关把本机地址当成受信域名。
+    // 这里没有绕过域名检查的测试开关；本机地址必须拒绝，不能称为正向下载测试。
     const result = await adapter().synthesize(
       { ...target(), baseUrl },
       { text: '你好，百炼。', voice: 'Cherry', format: 'wav' },
@@ -122,8 +122,8 @@ describe('DashScope native speech synthesis protocol', () => {
     expect(
       await adapter().synthesize(target(), { text: '你好', voice: 'Cherry', format: 'ogg_opus' }),
     ).toEqual({ ok: false, category: 'bad_request' });
-    // flash 走的是 OpenAI 兼容路径（不是原生协议），因此会请求 /audio/speech。
-    expect(calls.every((c) => c.path !== '/services/audio/tts/SpeechSynthesizer')).toBe(true);
+    // 退役模型与不支持的容器均在请求前拒绝，不能误送到 OpenAI 兼容路径。
+    expect(calls).toHaveLength(0);
   });
 
   it('only treats dashscope tts models as native targets', async () => {
