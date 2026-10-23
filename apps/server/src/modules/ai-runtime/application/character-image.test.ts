@@ -70,9 +70,17 @@ function extras(s: ReturnType<typeof setup>, assets: unknown = s.assets) {
       { nowMs: () => 0 },
       s.service,
       {
-        decide: async (input: { options?: string[] }) => ({
-          choice: input.options?.includes('keep_sticker') ? 'keep_sticker' : 'text',
-        }),
+        decideBatch: async (input: {
+          questions: Array<{ questionId: string; options: string[] }>;
+        }) =>
+          Object.fromEntries(
+            input.questions.map((q) => [
+              q.questionId,
+              {
+                choice: q.options.includes('keep_sticker') ? 'keep_sticker' : 'text',
+              },
+            ]),
+          ),
       },
     ] as unknown as ConstructorParameters<typeof MediaAiService>),
   );

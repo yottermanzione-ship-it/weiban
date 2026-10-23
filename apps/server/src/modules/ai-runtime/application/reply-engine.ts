@@ -316,6 +316,7 @@ export class ReplyEngine {
           voiceId: snapshot.voiceId,
           instant: snapshot.instantReply,
           quiet: snapshot.effectiveStyle === 'treehole',
+          sensitive: snapshot.healthUsed,
           onSearchCharged: (micros) => {
             charge.chargedMicros += Math.max(0, micros);
           },

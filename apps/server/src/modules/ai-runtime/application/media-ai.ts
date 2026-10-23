@@ -55,7 +55,8 @@ import {
 } from '../../media/index.js';
 import { MODEL_GATEWAY_MEDIA_PORT } from '../../model-access/index.js';
 import { CharacterImageService } from './character-image.js';
-import { PlannerService } from './planner.js';
+import { PlannerService, type PlanBatchRequest, type PlanResult } from './planner.js';
+import { replyTone, selectReplySticker } from '../domain/reply-media-candidates.js';
 
 /** P-45 静默查询（契约 UserQuietStatePort，由 QuietStateService 提供，T-072）。 */
 export const AI_USER_QUIET_STATE = Symbol('weiban.ai-runtime.user-quiet-state');
@@ -72,8 +73,6 @@ const VOICE_CHANCE = 0.06;
 const VOICE_MAX_CHARS = 120;
 const VOICE_REQUEST =
   /(发|来)(条|个|段|一段|一条)?语音|语音(给我|发我|说)|听听你的声音|想听你(的)?声音|用语音/u;
-const PHOTO_REQUEST =
-  /(发|拍|来|找|搜|分享)(张|个|一张)?[^\n。！？]{0,20}(照片|图片|图|自拍)|拍给我看|给我看看你(在|那边|那里)|看看你(在干嘛|那边)/u;
 const LINK_REQUEST =
   /(推荐|分享|发我|发给我|想听|想看|听听|看看).{0,8}(歌|歌曲|音乐|作品|新歌|视频|电影|剧|专辑)|(歌|作品|视频|专辑).{0,4}(链接|地址)/u;
 
@@ -154,7 +153,7 @@ export class MediaAiService {
     @Inject(CHARACTER_REAL_PERSON_NAMES) private readonly realNames: RealNames,
     @Inject(AI_USER_QUIET_STATE) private readonly quiet: UserQuietStatePort,
     @Inject(CLOCK) private readonly clock: Clock,
-    @Inject(CharacterImageService) private readonly images: CharacterImageService,
+    @Inject(CharacterImageService) _images: CharacterImageService,
     @Inject(PlannerService) private readonly planner: PlannerService,
   ) {}
 
@@ -409,142 +408,161 @@ export class MediaAiService {
     /** 情景预设「树洞分享」：不主动发语音和表情包（用户明确要语音时照发）。 */
     quiet?: boolean;
     onSearchCharged?: (chargedMicros: number) => void;
+    /** 涉及健康的普通范围回复也不进入自主多媒体决策。 */
+    sensitive?: boolean;
   }): Promise<MessageContent[] | null> {
     const { ctx, bubbles } = input;
+    if (input.sensitive || ctx.modelRole === 'adult') return null;
     const joined = bubbles.join('，');
-    const mine = input.history.filter((m) => m.senderKind === 'character' && m.status === 'normal');
+    const mine = input.history.filter(
+      (m) => m.senderKind === 'character' && m.status === 'normal' && m.scope === 'normal',
+    );
     const seed = `${input.triggerId}:${ctx.characterId}`;
-
-    // 语音（MED-03）
     const requested = VOICE_REQUEST.test(input.userText);
     const recent = mine.slice(-100);
     const voiceCount = recent.filter((m) => m.content?.type === 'voice').length;
-    const ratioOk = (voiceCount + 1) / (recent.length + bubbles.length) <= VOICE_MAX_RATIO;
-    const shortEnough = [...joined].length <= VOICE_MAX_CHARS;
-    let wantVoice = shortEnough && requested;
-    // T-090：未被要求时由决策层在「文字 / 语音」间挑（上限、P-45 静默已由代码先扣掉；静默中 voice 不在选项里）。
+    // 语音会替代本轮所有文字气泡，不能用尚未发送的文字气泡虚增分母。
+    const ratioOk = (voiceCount + 1) / (recent.length + 1) <= VOICE_MAX_RATIO;
+    const shortEnough = [...joined].length > 0 && [...joined].length <= VOICE_MAX_CHARS;
+    const until = await this.quiet.getInconvenientUntil(ctx.userId).catch(() => undefined);
+    const voiceQuietOk = until !== undefined && (!until || Date.parse(until) <= this.clock.nowMs());
+    let availableVoice: string | null = null;
+    if (shortEnough && voiceQuietOk && (requested || (!input.quiet && ratioOk))) {
+      const enabled = await this.media.isServiceEnabled('speech_synthesis').catch(() => false);
+      if (enabled)
+        availableVoice = await this.resolveVoice(
+          ctx.characterId,
+          input.voiceId,
+          ctx.defaultVoiceId,
+        ).catch(() => null);
+    }
+    const recentStickers = mine.filter((m) => m.content?.type === 'sticker').slice(-2);
+    const excludedIds = new Set(
+      recentStickers.flatMap((m) => (m.content?.type === 'sticker' ? [m.content.stickerId] : [])),
+    );
+    const stickerQuota = (contentCount: number) => {
+      const previousCount = Math.max(0, STICKER_WINDOW - contentCount - 1);
+      const previous = previousCount ? mine.slice(-previousCount) : [];
+      return STICKER_MAX_IN_WINDOW - previous.filter((m) => m.content?.type === 'sticker').length;
+    };
+    const canSticker =
+      !input.quiet &&
+      bubbles.length < 6 &&
+      mine.at(-1)?.content?.type !== 'sticker' &&
+      Math.min(stickerQuota(bubbles.length), stickerQuota(1)) > 0;
+    const candidate = canSticker
+      ? selectReplySticker(
+          await this.assets.listStickersForCharacter(ctx.characterId).catch(() => []),
+          joined,
+          input.userText,
+          seededChance(`pick:${seed}`),
+          excludedIds,
+        )
+      : null;
     const lastUser = [...input.history].reverse().find((m) => m.senderKind === 'user');
     const baseFeatures = {
       userMsgLength: [...input.userText].length,
       userMsgIsVoice: lastUser?.content?.type === 'voice',
       userMsgHasImage: lastUser?.content?.type === 'image',
       replyLength: [...joined].length,
-      quotaLeft: {
-        voice: Math.max(
-          0,
-          Math.floor((recent.length + bubbles.length) * VOICE_MAX_RATIO) - voiceCount,
-        ),
-      },
+      replyTone: replyTone(input.userText, joined),
     };
-    const timeoutMs = input.instant ? 1000 : 3000;
-    if (!wantVoice && shortEnough && ratioOk && !input.quiet) {
-      const until = await this.quiet.getInconvenientUntil(ctx.userId).catch(() => null);
-      const quiet = !!until && Date.parse(until) > this.clock.nowMs();
-      if (!quiet) {
-        const ruleVoice = seededChance(`voice:${seed}`) < VOICE_CHANCE;
-        const d = await this.planner.decide({
-          userId: ctx.userId,
-          characterId: ctx.characterId,
-          conversationId: ctx.conversationId,
-          decisionType: 'reply_form',
-          options: ['text', 'voice'],
-          ruleChoice: ruleVoice ? 'voice' : 'text',
-          ruleReason: ruleVoice ? '规则版抽中语音' : '规则版发文字',
-          conservative: 'text',
-          question:
-            '这次回复保持文字（text）还是改成语音消息（voice）？语音只在自然、合适的时候用。',
-          features: { ...baseFeatures, inconvenientActive: false },
-          summary: input.userText.slice(0, 100),
-          path: 'reply',
-          idempotencyKey: `${seed}:voice`,
-          timeoutMs,
-        });
-        wantVoice = d.choice === 'voice';
-      }
+    const questions: PlanBatchRequest['questions'] = [];
+    if (availableVoice && !requested && !input.quiet && ratioOk) {
+      const ruleVoice = seededChance(`voice:${seed}`) < VOICE_CHANCE;
+      questions.push({
+        questionId: 'voice',
+        options: ['text', 'voice'],
+        ruleChoice: ruleVoice ? 'voice' : 'text',
+        ruleReason: ruleVoice ? '规则版抽中语音' : '规则版发文字',
+        conservative: 'text',
+        question:
+          '是否将这段回复改为语音？voice替代同段文字，text保持文字；只在自然合适时用语音，其他问题独立判断。',
+        features: {
+          ...baseFeatures,
+          inconvenientActive: false,
+          quotaLeft: {
+            voice: Math.max(0, Math.floor((recent.length + 1) * VOICE_MAX_RATIO) - voiceCount),
+          },
+        },
+      });
     }
-    if (wantVoice) {
-      const voice = await this.synthesizeReply(input).catch(() => null);
-      if (voice) return [voice];
+    if (candidate) {
+      const ruleSticker = seededChance(`sticker:${seed}`) < STICKER_CHANCE;
+      questions.push({
+        questionId: 'sticker',
+        options: ['no_sticker', 'keep_sticker'],
+        ruleChoice: ruleSticker ? 'keep_sticker' : 'no_sticker',
+        ruleReason: ruleSticker ? '规则版附合义表情' : '规则版不附表情',
+        conservative: 'no_sticker',
+        question:
+          '是否附带已匹配的表情？stickerMeaning是候选含义，replyTone是回复语气。仅在相符且不显得轻浮时选keep_sticker，否则no_sticker；允许与语音同时批准。',
+        features: {
+          ...baseFeatures,
+          stickerMeaning: candidate.meaning,
+          candidateCount: 1,
+          quotaLeft: { sticker: Math.min(stickerQuota(bubbles.length), stickerQuota(1)) },
+        },
+      });
     }
-
-    const contents: MessageContent[] = bubbles.map((text) => ({ type: 'text', text }));
+    const votes: Record<string, PlanResult> = questions.length
+      ? await this.planner
+          .decideBatch({
+            userId: ctx.userId,
+            characterId: ctx.characterId,
+            conversationId: ctx.conversationId,
+            decisionType: 'reply_form',
+            path: 'reply',
+            idempotencyKey: `reply-media:${seed}`,
+            timeoutMs: input.instant ? 1000 : 3000,
+            questions,
+          })
+          .catch(() => ({}))
+      : {};
+    let contents: MessageContent[] = bubbles.map((text) => ({ type: 'text', text }));
     let changed = false;
-
-    // 用户要图：只分享安全公开网页封面或合规库图，不调用生图或付费人脸检查。
-    if (PHOTO_REQUEST.test(input.userText)) {
-      const image = await this.images
-        .generate({
-          userId: ctx.userId,
-          characterId: ctx.characterId,
-          conversationId: ctx.conversationId,
-          scene: input.userText.slice(0, 300),
-          searchPublic: true,
-          onSearchCharged: input.onSearchCharged,
-          use: 'chat',
-          idempotencyKey: `reply:${input.triggerId}`,
-        })
-        .catch(() => null);
-      if (image) {
-        contents.push({
-          type: 'image',
-          mediaId: image.mediaId,
-          width: image.width,
-          height: image.height,
-          sizeBytes: image.sizeBytes,
-        });
-        contents.push({
-          type: 'text',
-          text: image.sourceUrl
-            ? `网上找到的图片，来源：${image.sourceUrl}`
-            : '分享一张素材库图片。',
-        });
+    if (availableVoice && (requested || votes.voice?.choice === 'voice')) {
+      // 真正合成前再次检查静默、服务与音色；Jev批准不等于执行能力仍然存在。
+      const voice = await this.synthesizeReply({ ...input, voiceId: availableVoice }).catch(
+        () => null,
+      );
+      if (voice) {
+        contents = [voice];
         changed = true;
       }
     }
-
-    // 作品链接（MED-05）：用户想听 / 想看时，从作品链接库挑一条。
-    if (LINK_REQUEST.test(input.userText)) {
+    // 作品链接为用户明确要求，沿用原库与可访问性校验；不因已发语音就静默丢失。
+    if (LINK_REQUEST.test(input.userText) && contents.length < 6) {
       const link = await this.pickWorkLink(ctx.characterId, joined).catch(() => null);
       if (link) {
         contents.push(link);
         changed = true;
       }
     }
-
-    // 表情包（MED-01 第 4 条）：最近 10 条气泡（含本次）里最多 2 个。
-    if (!changed && !input.quiet) {
-      const windowPrev = mine.slice(-(STICKER_WINDOW - contents.length - 1));
-      const stickersInWindow = windowPrev.filter((m) => m.content?.type === 'sticker').length;
-      let wantSticker = false;
-      if (stickersInWindow < STICKER_MAX_IN_WINDOW) {
-        const ruleSticker = seededChance(`sticker:${seed}`) < STICKER_CHANCE;
-        const d = await this.planner.decide({
-          userId: ctx.userId,
-          characterId: ctx.characterId,
-          conversationId: ctx.conversationId,
-          decisionType: 'reply_form',
-          options: ['no_sticker', 'keep_sticker'],
-          ruleChoice: ruleSticker ? 'keep_sticker' : 'no_sticker',
-          ruleReason: ruleSticker ? '规则版附表情包' : '规则版不附表情包',
-          conservative: 'no_sticker',
-          question: '这次回复要不要附一个表情包（keep_sticker）？每 10 条气泡最多 2 个。',
-          features: {
-            ...baseFeatures,
-            quotaLeft: { sticker: STICKER_MAX_IN_WINDOW - stickersInWindow },
-          },
-          summary: input.userText.slice(0, 100),
-          path: 'reply',
-          idempotencyKey: `${seed}:sticker`,
-          timeoutMs,
+    if (
+      candidate &&
+      votes.sticker?.choice === 'keep_sticker' &&
+      contents.length < 6 &&
+      stickerQuota(contents.length) > 0
+    ) {
+      // 等待决策期间素材可能被停用；核对仍是同一候选，不临时换另一张。
+      const stillAvailable = (
+        await this.assets.listStickersForCharacter(ctx.characterId).catch(() => [])
+      ).some(
+        (s) =>
+          s.stickerId === candidate.sticker.stickerId &&
+          s.mediaId === candidate.sticker.mediaId &&
+          s.description === candidate.sticker.description,
+      );
+      if (stillAvailable) {
+        contents.push({
+          type: 'sticker',
+          source: 'library',
+          stickerId: candidate.sticker.stickerId,
+          mediaId: candidate.sticker.mediaId,
+          description: candidate.sticker.description.slice(0, 40) || null,
         });
-        wantSticker = d.choice === 'keep_sticker';
-      }
-      if (wantSticker) {
-        const sticker = await this.pickSticker(ctx.characterId, joined, seed).catch(() => null);
-        if (sticker) {
-          contents.push(sticker);
-          changed = true;
-        }
+        changed = true;
       }
     }
     return changed ? contents : null;
@@ -665,23 +683,15 @@ export class MediaAiService {
     seed: string,
   ): Promise<MessageContent | null> {
     const list = await this.assets.listStickersForCharacter(characterId);
-    if (!list.length) return null;
-    // 含义与回复字面重合最多的优先；都不重合时稳定随机挑一个。
-    let best = list[Math.floor(seededChance(`pick:${seed}`) * list.length)]!;
-    let bestScore = 0;
-    for (const s of list) {
-      const score = [...new Set(s.description)].filter((ch) => reply.includes(ch)).length;
-      if (score > bestScore) {
-        best = s;
-        bestScore = score;
-      }
-    }
+    const candidate = selectReplySticker(list, reply, '', seededChance(`pick:${seed}`));
+    if (!candidate) return null;
+    const { sticker } = candidate;
     return {
       type: 'sticker',
-      stickerId: best.stickerId,
+      stickerId: sticker.stickerId,
       source: 'library',
-      mediaId: best.mediaId,
-      description: best.description.slice(0, 40) || null,
+      mediaId: sticker.mediaId,
+      description: sticker.description.slice(0, 40) || null,
     };
   }
 
