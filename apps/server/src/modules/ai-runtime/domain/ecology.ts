@@ -347,16 +347,50 @@ export const EcologyDecision = z.object({
 export type EcologyDecision = z.infer<typeof EcologyDecision>;
 
 /** 从模型输出里取 JSON（容忍 ```json 包裹和前后多余文字）。 */
-export function parseDecision(raw: string): EcologyDecision | null {
+/** 从模型输出里取出第一个「配对完整」的 JSON 对象；字符串内的括号不算。 */
+function firstJsonObject(raw: string): string | null {
   const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  if (start < 0 || end <= start) return null;
-  try {
-    const parsed = EcologyDecision.safeParse(JSON.parse(raw.slice(start, end + 1)));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < raw.length; i++) {
+    const ch = raw[i]!;
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return raw.slice(start, i + 1);
+    }
   }
+  return null;
+}
+
+/**
+ * 解析决策模型的输出。模型常带说明文字、代码块或多余括号：
+ * 先按配对括号取第一段 JSON，再容忍尾逗号；仍不合法就判定 bad_output，不猜内容。
+ */
+export function parseDecision(raw: string): EcologyDecision | null {
+  const object = firstJsonObject(raw);
+  if (!object) return null;
+  for (const candidate of [object, object.replace(/,\s*([}\]])/gu, '$1')]) {
+    try {
+      const parsed = EcologyDecision.safeParse(JSON.parse(candidate));
+      if (parsed.success) return parsed.data;
+    } catch {
+      // 继续尝试下一个候选；都不行就返回 null。
+    }
+  }
+  return null;
 }
 
 /** 1 积分 = 10000 微元，保留 2 位小数。 */
