@@ -171,6 +171,18 @@ export function toAdminEntry(row: CatalogRow): AdminCatalogEntry {
   };
 }
 
+/**
+ * 启用目录条目时是否必须先在价目表里有它的 token 价（契约 1.3）。
+ * 组合通话模型（`voice/cascade-call` + `pipeline:voice_call`）自身不调用上游、没有 token 单价，
+ * 费用由三个组件按真实调用分别计费，所以豁免；其余条目（含没有组合标签的同名条目）照旧要求价格。
+ */
+export function requiresCatalogPrice(entry: {
+  modelKey: string;
+  tags: readonly string[];
+}): boolean {
+  return !isVoiceCallComposite(entry);
+}
+
 @Injectable()
 export class CatalogService {
   constructor(
@@ -568,7 +580,9 @@ export class CatalogService {
     // 3.24：「图片识别」场景已去掉（旧后台传了也忽略）；文本聊天 / 私密模式模型缺识图能力只在后台提示，不拒绝保存。
     const scenarios = body.scenarios?.filter((s) => s !== 'vision');
 
-    if (body.enabled) await this.requirePrice(body.modelKey);
+    // 组合通话模型自身不调用上游、没有 token 单价（三组件各自计费），启用时不要求自己的价格。
+    if (body.enabled && requiresCatalogPrice({ modelKey: body.modelKey, tags }))
+      await this.requirePrice(body.modelKey);
 
     return this.database.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock($1)', [CATALOG_LOCK_KEY]);
@@ -1135,6 +1149,7 @@ export class CatalogService {
   /**
    * 契约 1.3：保存为启用时，当前生效价目表必须有这个模型的价格，否则 422 model_unavailable
    * （billing.md 4.1、ADR-0017 第 1 条）。计费查询端口未接入时 503，不放行。
+   * 组合通话模型例外，见 requiresCatalogPrice。
    */
   private async requirePrice(modelKey: string): Promise<void> {
     let priced: string[];

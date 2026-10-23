@@ -31,6 +31,7 @@ await build({
     'import-legacy-upstreams': 'src/cli/import-legacy-upstreams.ts',
     'import-sticker-assets': 'src/cli/import-sticker-assets.ts',
     'ecology-config': 'src/cli/ecology-config.ts',
+    'voice-call-pipeline': 'src/cli/voice-call-pipeline.ts',
   },
   outdir: 'dist',
   bundle: true,

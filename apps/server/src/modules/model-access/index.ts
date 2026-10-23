@@ -21,8 +21,15 @@ export type { WebSearchProvider } from './application/web-search.js';
 export { MODEL_GATEWAY_MEDIA_PORT } from './tokens.js';
 export { MODEL_QUOTE_PORT } from './tokens.js';
 /** 本机运维脚本（cli/setup-local-model.ts）以管理员身份走服务层登记目录、读上游。 */
-export { CatalogService } from './application/catalog.js';
+export { CatalogService, type ModelFacts } from './application/catalog.js';
 export { UpstreamService } from './application/upstreams.js';
+/** 组合通话模型运维脚本（cli/voice-call-pipeline.ts）：组合标记、固定模型键与设置结构校验。 */
+export {
+  isVoiceCallComposite,
+  VOICE_CALL_CASCADE_MODEL_KEY,
+  VOICE_CALL_PIPELINE_TAG,
+} from './application/voice-call-composite.js';
+export { parseVoiceCallPipeline, type VoiceCallPipeline } from './domain/voice-call-pipeline.js';
 /** Private maintenance CLI; no HTTP endpoint and no supplier probing. */
 export { LegacyUpstreamImportService } from './application/legacy-upstream-import.js';
 export { LegacyImportReceiver } from './application/legacy-receiver.js';
