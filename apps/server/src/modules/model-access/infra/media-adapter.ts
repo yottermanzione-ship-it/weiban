@@ -520,18 +520,110 @@ async function mimoSynthesize(
   }
 }
 
+/** 通义语音合成模型（`qwen-audio-3.0-tts-plus` 等）；`-flash` 已退役，不放行。 */
+export function isDashscopeTtsTarget(t: MediaTarget): boolean {
+  return (
+    t.kind === 'dashscope' &&
+    /^qwen-audio-[\d.]+-tts/iu.test(t.model) &&
+    !/tts-flash/iu.test(t.model)
+  );
+}
+
+/**
+ * 通义百炼原生语音合成：`POST {baseUrl}/services/audio/tts/SpeechSynthesizer`，
+ * 返回 `output.audio.url` 再下载音频（旧项目核实过的协议）。`-tts-flash` 已退役，直接拒绝。
+ */
+async function dashscopeSynthesize(
+  t: MediaTarget,
+  input: { text: string; voice: string; format: 'ogg_opus' | 'pcm16_24k' | 'wav' },
+): Promise<MediaAdapterResult<{ bytes: Uint8Array; mimeType: string; durationMs: number }>> {
+  if (input.format === 'ogg_opus') return { ok: false, category: 'bad_request' };
+  try {
+    const response = await fetch(url(t.baseUrl, '/services/audio/tts/SpeechSynthesizer'), {
+      method: 'POST',
+      redirect: 'manual',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      headers: { Authorization: `Bearer ${t.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: t.model,
+        input: { text: input.text, voice: input.voice, format: 'wav' },
+      }),
+    });
+    if (!response.ok) return { ok: false, category: await errorOf(response) };
+    const payloadBytes = await readLimited(response);
+    if (!payloadBytes) return { ok: false, category: 'provider_error' };
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(Buffer.from(payloadBytes).toString('utf8')) as Record<string, unknown>;
+    } catch {
+      return { ok: false, category: 'provider_error' };
+    }
+    const output = payload.output as { audio?: { url?: unknown } } | undefined;
+    const audioUrl = typeof output?.audio?.url === 'string' ? output.audio.url.trim() : '';
+    let parsed: URL;
+    try {
+      parsed = new URL(audioUrl);
+    } catch {
+      return { ok: false, category: 'provider_error' };
+    }
+    const host = parsed.hostname.toLowerCase();
+    // 只下载官方域名，避免被指到任意地址。
+    if (parsed.protocol !== 'https:' || !/\.(aliyuncs|aliyun)\.com$/u.test(host))
+      return { ok: false, category: 'provider_error' };
+    const audioResponse = await fetch(parsed.toString(), {
+      method: 'GET',
+      redirect: 'manual',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!audioResponse.ok) return { ok: false, category: await errorOf(audioResponse) };
+    const audio = await readLimited(audioResponse);
+    if (!audio || audio.length < 44) return { ok: false, category: 'provider_error' };
+    if (input.format === 'pcm16_24k') {
+      const pcm = pcmFromWav(audio, 24_000);
+      if (!pcm) return { ok: false, category: 'bad_request' };
+      return {
+        ok: true,
+        value: { bytes: pcm, mimeType: 'audio/L16', durationMs: Math.round(pcm.length / 48) },
+      };
+    }
+    return {
+      ok: true,
+      value: { bytes: audio, mimeType: 'audio/wav', durationMs: estimateSpeechMs(input.text) },
+    };
+  } catch {
+    return { ok: false, category: 'network_error' };
+  }
+}
+
 /**
  * 给多媒体适配器加上 MiMo 原生语音合成；其余能力（识别、生图、搜索、决策）原样委托。
  * 只按模型名分流，避免把 OpenAI 兼容线路误当成 MiMo。
  */
 export function withMimoChatAudio(inner: MediaAdapter): MediaAdapter {
+  const native = (t: MediaTarget) => isMimoChatAudioModel(t.model) || isDashscopeTtsTarget(t);
+  /** 百炼已退役的 tts-flash 既不走原生协议，也不能落到 OpenAI 兼容接口上去试。 */
+  const retired = (t: MediaTarget) =>
+    t.kind === 'dashscope' && /tts-flash/iu.test(t.model)
+      ? ({ ok: false, category: 'bad_request' } as const)
+      : null;
   return {
     decide: (t, i) => inner.decide(t, i),
-    synthesize: (t, i) =>
-      isMimoChatAudioModel(t.model) ? mimoSynthesize(t, i) : inner.synthesize(t, i),
+    synthesize: async (t, i) => {
+      const blocked = retired(t);
+      if (blocked) return blocked;
+      return isMimoChatAudioModel(t.model)
+        ? mimoSynthesize(t, i)
+        : isDashscopeTtsTarget(t)
+          ? dashscopeSynthesize(t, i)
+          : inner.synthesize(t, i);
+    },
     synthesizeStream: async (t, i, signal) => {
-      if (!isMimoChatAudioModel(t.model)) return inner.synthesizeStream(t, i, signal);
-      const result = await mimoSynthesize(t, { text: i.text, voice: i.voice, format: 'pcm16_24k' });
+      const blocked = retired(t);
+      if (blocked) return blocked;
+      if (!native(t)) return inner.synthesizeStream(t, i, signal);
+      const result = isMimoChatAudioModel(t.model)
+        ? await mimoSynthesize(t, { text: i.text, voice: i.voice, format: 'pcm16_24k' })
+        : await dashscopeSynthesize(t, { text: i.text, voice: i.voice, format: 'pcm16_24k' });
       if (!result.ok) return result;
       const pcm = result.value.bytes;
       async function* chunks(): AsyncIterable<Uint8Array> {
