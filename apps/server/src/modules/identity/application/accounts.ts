@@ -173,6 +173,15 @@ export class AccountService {
       throw new AppError('forbidden', '该账号不是管理员，不能登录管理后台');
     }
     return this.database.transaction(async (tx) => {
+      // 旧版微伴用 bcrypt 存密码：登录成功后静默升级为 argon2id，用户无感（迁移兼容）。
+      if (this.hasher.needsRehash(user.passwordHash)) {
+        const upgraded = await this.hasher.hash(input.password);
+        await tx.db
+          .update(users)
+          .set({ passwordHash: upgraded, updatedAt: this.clock.now() })
+          .where(eq(users.id, user.id));
+        this.log.info({ userId: user.id }, '旧版密码哈希已升级为 argon2id');
+      }
       const session = await this.sessions.create(tx, user.id, input.kind, input.device);
       if (input.kind === 'admin') {
         await this.audit.record(
