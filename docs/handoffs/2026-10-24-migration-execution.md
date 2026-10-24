@@ -61,7 +61,7 @@
 - 仍在跑的后台任务：`pwsh-8b79a7096a0f4690`。它先在旧机以 nice 低优先级运行 `scripts/ops/pack-legacy-content-media.py`，再通过仅加载旧机私钥的临时内存代理，让新站直接 scp 旧站 `content-snapshot-v2/content-media.tar.gz` 和 `content-media-package.json`。结束后必须 `job_output` 收回结果。新站目标在 `/srv/weiban/import-staging/20261024-final/data`。**不要重复启动此传输。**
 - 其他本轮后台任务均已收回；两次经本机到新机的大文件传输超时已终止，改成服务器间直传后头像包完整且校验通过。
 - 新增代码（尚无聊天正式导入器）：`EnvelopeCrypto.sealMany`（逐行 AAD/nonce，批次只读取一次 DEK）、`MediaService.importLegacyObject`（维护专用，确定 ID、同所有者/用途幂等、防越权）、`createImportMediaService.accountStatus` 可传入真实身份状态/锁。6 个对应单测及 server typecheck 通过；不需要重跑。
-- 新增 `scripts/ops/export-legacy-content.py` 和 `pack-legacy-content-media.py`；导出无账号密码。补迁的两个用户密码用另一个私有文件搬过来，入库后新站文件已删除，旧站 `/tmp/wb-transfer-20261024/users-final.json` 待清除。不要打印密码或聊天正文。
+- 新增 `scripts/ops/export-legacy-content.py` 和 `pack-legacy-content-media.py`；导出无账号密码。补迁的两个用户密码用另一个私有文件搬过来，入库后新站文件已删除，旧站 `/tmp/wb-transfer-20261024/users-final.json` 也已清除。不要打印密码或聊天正文。
 - 下一步自行编写一次性内容迁入脚本（不使用 workflow/子代理，不运行本机 Docker）。运行在新站 app 维护容器，可以用本机 esbuild 打包并 gzip 后上传，避免 3MB bundle 直传反复超时。通用打包脚本 `C:/wb-dev/logs/build-maintenance-20261024.mjs`。
 - 当前源码的内部方法无需为了运行维护脚本再部署一次：打包维护脚本时会带入最新代码；正式 app 读消息/朋友圈格式不变。后续需提交源代码以便恢复。
 
