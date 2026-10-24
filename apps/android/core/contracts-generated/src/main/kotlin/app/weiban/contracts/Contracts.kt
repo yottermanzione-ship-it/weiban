@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.38. Regenerate: pnpm android:generate
+// Contract 3.39. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.38"
+const val CONTRACT_VERSION: String = "3.39"
 
 @Serializable
 data class AccountAlias(
@@ -1596,6 +1596,7 @@ data class CardPersona(
     @SerialName("background") val `background`: String? = null,
     @SerialName("personality") val `personality`: String,
     @SerialName("values") val `values`: String? = null,
+    @SerialName("emotionalTone") val `emotionalTone`: String? = null,
     @SerialName("likes") val `likes`: List<String>? = null,
     @SerialName("dislikes") val `dislikes`: List<String>? = null,
     @SerialName("personaTags") val `personaTags`: List<PersonaTag>,
@@ -12184,6 +12185,7 @@ data class CardRecognitionSelfPublicImagesItem(
 data class CardSocialMoments(
     @SerialName("frequencyPerWeek") val `frequencyPerWeek`: List<JsonElement>,
     @SerialName("tone") val `tone`: String,
+    @SerialName("topics") val `topics`: List<String>? = null,
     @SerialName("imageSubjects") val `imageSubjects`: List<String>? = null,
     @SerialName("commentStyle") val `commentStyle`: String? = null,
 )
@@ -14405,6 +14407,7 @@ data class DraftCharacterCardDataPersona(
     @SerialName("background") val `background`: String? = null,
     @SerialName("personality") val `personality`: String? = null,
     @SerialName("values") val `values`: String? = null,
+    @SerialName("emotionalTone") val `emotionalTone`: String? = null,
     @SerialName("likes") val `likes`: List<String>? = null,
     @SerialName("dislikes") val `dislikes`: List<String>? = null,
     @SerialName("personaTags") val `personaTags`: List<PersonaTag>? = null,
@@ -14592,6 +14595,7 @@ data class DraftCharacterCardDataSpeechEmojiHabit(
 data class DraftCharacterCardDataSocialMoments(
     @SerialName("frequencyPerWeek") val `frequencyPerWeek`: List<JsonElement>,
     @SerialName("tone") val `tone`: String,
+    @SerialName("topics") val `topics`: List<String>? = null,
     @SerialName("imageSubjects") val `imageSubjects`: List<String>? = null,
     @SerialName("commentStyle") val `commentStyle`: String? = null,
 )

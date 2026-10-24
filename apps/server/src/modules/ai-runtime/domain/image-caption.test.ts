@@ -223,7 +223,7 @@ describe('H3 请求组装：附图只跟着本轮用户消息走', () => {
   it('图片透传到用户消息，不影响稳定开头；去图时有描述用描述、没有用看不到的说法', () => {
     const images = [{ mediaId: ID, ownerUserId: USER }];
     const assembled = assemblePrompt({
-      head: [{ title: '', text: '平台规则' }],
+      head: [{ title: '', text: '通用规则' }],
       history: [
         { role: 'user', content: '早' },
         { role: 'assistant', content: '早呀' },
@@ -234,7 +234,7 @@ describe('H3 请求组装：附图只跟着本轮用户消息走', () => {
     const last = assembled.messages.at(-2)!;
     expect(last.images).toEqual(images);
     expect(assembled.messages.filter((m) => m.images).length).toBe(1);
-    expect(assembled.stats.stablePrefixChars).toBe('平台规则'.length + '早'.length + '早呀'.length);
+    expect(assembled.stats.stablePrefixChars).toBe('通用规则'.length + '早'.length + '早呀'.length);
     const described = withoutImages(assembled.messages, () => '（宠物）橘猫');
     expect(described.at(-2)).toEqual({ role: 'user', content: '[对方发来一张图片：（宠物）橘猫]' });
     expect(withoutImages(assembled.messages).at(-2)).toEqual({ role: 'user', content: '[看不到]' });

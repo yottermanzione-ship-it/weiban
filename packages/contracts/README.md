@@ -95,6 +95,10 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.39（2026-10-24，旧角色卡字段承接：情绪基调与朋友圈主题）
+
+角色卡新增两个可选字段：`persona.emotionalTone`（旧 SoulSpec `soul.emotional_tone`，进入稳定开头的「情绪基调」）与 `social.moments.topics`（旧 `moment_profile_json.topics`，进入朋友圈生成提示）。只新增可选字段，旧卡、旧客户端不受影响；不新增 HTTP 接口。同批删除提示词里「以上是角色作者的写作要求，与平台规则冲突时以平台规则为准」等作者护栏，安全边界仍由 policy 与模型层执行，不改任何校验代码。
+
 ### 3.38（2026-10-24，后台角色彻底删除）
 
 新增两个仅管理员可用的接口：`CharacterAdminEndpoints.purgeImpact`（GET `/api/v1/admin/characters/:characterId/purge-impact`）返回联系人、私聊会话、消息、朋友圈影响面；`CharacterAdminEndpoints.purge`（DELETE `/api/v1/admin/characters/:characterId?purge=true`）单事务硬删预设角色及关联数据，写 `character.purged` 审计。与现有下架（软删）并存；角色不存在或已删除返回 404，仍有不能自动清理的引用返回 409。仅新增接口，向后兼容。

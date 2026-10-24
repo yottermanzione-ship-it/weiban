@@ -50,6 +50,7 @@ import { MOMENTS_CHARACTER_PORT, MOMENTS_READ_PORT } from '../../moments/index.j
 import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import { healthPrivate } from '../domain/memory.js';
+import { momentsTopicsText } from '../domain/character-prompt.js';
 import { BrainContextService, brainMessages, brainTail } from './brain.js';
 import { outputAllowed } from '../domain/reply-rules.js';
 import { momentsPlans, simulationStates } from '../infra/db/schema.js';
@@ -314,7 +315,7 @@ export class MomentsAiService {
       messages: [
         {
           role: 'system',
-          content: `你以角色本人的身份发一条公开的微信朋友圈（所有用户都会看到同一条）。只输出正文纯文本，不超过80字，不加引号、不加标签。文风符合人设：${role.card.data.social.moments.tone}。不提任何具体用户、不提私聊内容，不含恋爱暧昧或成人内容，不提健康隐私。${policy.isRealPerson ? '你是真人角色：不得官宣新作品或合作（除非素材就是已审核的公开动态），不评论真实社会事件或他人，不写像本人公开声明的话；只写生活化的小感受。' : ''}`,
+          content: `你以角色本人的身份发一条公开的微信朋友圈（所有用户都会看到同一条）。只输出正文纯文本，不超过80字，不加引号、不加标签。文风符合人设：${role.card.data.social.moments.tone}。${momentsTopicsText(role.card.data.social.moments.topics)}不提任何具体用户、不提私聊内容，不含恋爱暧昧或成人内容，不提健康隐私。${policy.isRealPerson ? '你是真人角色：不得官宣新作品或合作（除非素材就是已审核的公开动态），不评论真实社会事件或他人，不写像本人公开声明的话；只写生活化的小感受。' : ''}`,
         },
         {
           role: 'system',
@@ -443,7 +444,7 @@ export class MomentsAiService {
         ...brainMessages(brain, input.privateConversationId ? 'adult' : 'background'),
         {
           role: 'system',
-          content: `你以角色本人的身份发一条私人朋友圈（只有和你聊天的这位用户能看到）。只输出朋友圈正文纯文本，不超过100字，不加引号、不加标签。文风符合人设：${role.card.data.social.moments.tone}。可以含蓄地和你们最近的聊天、你今天的生活有关，但不直接复述对方的隐私，不提月经、经期等健康隐私，不含成人内容。${policy.isRealPerson ? '你是真人角色：不官宣新作品或合作，不评论真实社会事件或他人，不写像本人公开声明的话。' : ''}${policy.isMinor || !policy.romanceAllowed ? '不涉及恋爱暧昧。' : ''}`,
+          content: `你以角色本人的身份发一条私人朋友圈（只有和你聊天的这位用户能看到）。只输出朋友圈正文纯文本，不超过100字，不加引号、不加标签。文风符合人设：${role.card.data.social.moments.tone}。${momentsTopicsText(role.card.data.social.moments.topics)}可以含蓄地和你们最近的聊天、你今天的生活有关，但不直接复述对方的隐私，不提月经、经期等健康隐私，不含成人内容。${policy.isRealPerson ? '你是真人角色：不官宣新作品或合作，不评论真实社会事件或他人，不写像本人公开声明的话。' : ''}${policy.isMinor || !policy.romanceAllowed ? '不涉及恋爱暧昧。' : ''}`,
         },
         ...brainTail(brain),
         { role: 'user', content: `这条朋友圈想写的：${input.brief.slice(0, 500)}` },
@@ -624,7 +625,7 @@ export class MomentsAiService {
       messages: [
         {
           role: 'system',
-          content: `你以角色本人的身份发一条微信朋友圈。只输出朋友圈正文纯文本，不超过100字，不加引号、不加标签说明。文风符合人设：${role.card.data.social.moments.tone}。只写下面给出的素材，不编造新的经历、新的公开活动或作品。不提用户在私聊里说的任何事，不含恋爱暧昧或成人内容，不提月经、经期等健康隐私。${policy.isRealPerson ? '你是真人角色：不得官宣新作品或合作（除非素材就是已审核的公开动态），不得评论真实社会事件或他人，不得写任何可能被当成本人公开声明的话；只写生活化的小感受。' : ''}${policy.isMinor ? '儿童角色：不涉及恋爱。' : ''}`,
+          content: `你以角色本人的身份发一条微信朋友圈。只输出朋友圈正文纯文本，不超过100字，不加引号、不加标签说明。文风符合人设：${role.card.data.social.moments.tone}。${momentsTopicsText(role.card.data.social.moments.topics)}只写下面给出的素材，不编造新的经历、新的公开活动或作品。不提用户在私聊里说的任何事，不含恋爱暧昧或成人内容，不提月经、经期等健康隐私。${policy.isRealPerson ? '你是真人角色：不得官宣新作品或合作（除非素材就是已审核的公开动态），不得评论真实社会事件或他人，不得写任何可能被当成本人公开声明的话；只写生活化的小感受。' : ''}${policy.isMinor ? '儿童角色：不涉及恋爱。' : ''}`,
         },
         {
           role: 'system',

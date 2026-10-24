@@ -27,6 +27,11 @@ export const CardPersona = z.strictObject({
   background: optionalText,
   personality: text,
   values: optionalText,
+  /**
+   * 3.39：情绪基调（旧 SoulSpec `soul.emotional_tone`）。与 `speech.tone` 的「语气」不同，
+   * 这里写角色长期的情绪底色（如「温暖克制，低落时不外放」），运行时进稳定开头的「情绪基调」。
+   */
+  emotionalTone: z.string().max(1000).optional(),
   likes: strings.optional(),
   dislikes: strings.optional(),
   personaTags: z.array(PersonaTag).min(1).max(3),
@@ -133,6 +138,8 @@ export const CardSocial = z.strictObject({
   moments: z.strictObject({
     frequencyPerWeek: z.tuple([z.number().int().min(0).max(7), z.number().int().min(0).max(7)]),
     tone: text,
+    /** 3.39：常写主题（旧 `moment_profile_json.topics`），只用于朋友圈生成提示。 */
+    topics: z.array(z.string().min(1).max(100)).max(20).optional(),
     imageSubjects: strings.optional(),
     commentStyle: optionalText,
   }),
@@ -218,8 +225,9 @@ export const CardProfileExtra = z.strictObject({
   searchKeywords: strings.optional(),
 });
 /**
- * 3.7：提示词写法（借鉴酒馆角色卡，docs/refactor/09-chat-pipeline.md 第 7.1 节）。全部可选，全部受平台规则约束：
- * 运行时把它们包在「角色作者的写作要求」里，并紧跟一句「与平台规则冲突时以平台规则为准」，不能替换平台守则。
+ * 3.7：提示词写法（借鉴酒馆角色卡，docs/refactor/09-chat-pipeline.md 第 7.1 节）。全部可选：
+ * 运行时把它们作为「角色作者的写作要求」原样拼进提示词，不再追加平台规则护栏；
+ * 安全边界由 policy 与模型层拦截，不依赖提示词里的一句话。
  */
 export const CardPrompting = z.strictObject({
   /** 角色作者的补充写作要求，放在稳定开头（角色资料之后）。 */

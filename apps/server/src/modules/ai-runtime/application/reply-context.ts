@@ -50,7 +50,6 @@ import {
   pinnedExamples,
   situationalExample,
   situationalExampleText,
-  AUTHOR_GUARD,
   AUTHOR_NOTE_DEPTH,
   CHARACTER_NOTE_DEPTH,
 } from '../domain/character-prompt.js';
@@ -580,8 +579,7 @@ export class ReplyContext {
       inserts.push({
         depth: prompting.characterNote.depth ?? CHARACTER_NOTE_DEPTH,
         order: 0,
-        text: `【角色笔记】${prompting.characterNote.text}
-${AUTHOR_GUARD}`,
+        text: `【角色笔记】${prompting.characterNote.text}`,
       });
     // v5 批 B「留住人」（docs/refactor/18）：冷场 / 告别时在写作提示后追加一句本轮提示
     // （写作提示本来就每轮变，不碰稳定开头）。
@@ -693,13 +691,10 @@ ${AUTHOR_GUARD}`,
           previous && fresh.length ? new Date(previous.createdAt) : null,
         ),
       },
-      // 后置指令（酒馆 post-history instructions）：请求最末尾，模型最重视；仍受平台规则约束。
+      // 后置指令（酒馆 post-history instructions）：请求最末尾，模型最重视。
       {
         title: '角色作者的补充要求',
-        text: prompting?.postHistoryInstructions
-          ? `${prompting.postHistoryInstructions}
-${AUTHOR_GUARD}`
-          : '',
+        text: prompting?.postHistoryInstructions ?? '',
       },
     ];
     const assembled = assemblePrompt({

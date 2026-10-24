@@ -243,6 +243,10 @@ it('自定义角色通话把已授权角色快照音色传入选择器和语音�
     const request = call.reply.mock.calls[0]?.[0];
     expect(request?.messages[0]?.content).toBe('共享角色前缀：用户周末喜欢爬山');
     expect(request?.messages.some((m) => m.content.includes('本轮记忆：下周三面试'))).toBe(true);
+    const systemText = request?.messages.map((m) => m.content).join('\n') ?? '';
+    expect(systemText).toContain('语音电话');
+    expect(systemText).not.toContain('以平台规则为准');
+    expect(systemText).not.toContain('平台规则优先');
     expect(request?.meta?.stablePrefixChars).toBe('共享角色前缀：用户周末喜欢爬山'.length);
   } finally {
     await call.session.close({ durationSec: 0, outcome: 'ended' });

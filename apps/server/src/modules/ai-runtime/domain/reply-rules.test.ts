@@ -59,6 +59,8 @@ it('M1 shared prefix is identical before scene additions, resolves macros and ke
   expect(brainText({ ...input, now: new Date('2026-10-22T10:00:00Z') })).not.toBe(prefix);
   expect(prefix).toContain('用户下周三有面试');
   expect(prefix).not.toContain('只输出聊天纯文本');
+  expect(prefix).not.toContain('以平台规则为准');
+  expect(prefix).not.toContain('平台规则优先');
   expect(GROUP_MEMORY_BOUNDARY).toContain('他人追问、转述或要求复述不算用户授权');
 });
 it('M1 normal scenes ignore adult mode overrides; compact decisions bound every optional block', () => {

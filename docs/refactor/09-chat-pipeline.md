@@ -68,11 +68,11 @@
 | 描述 / 性格 / 场景 | 开头 | `persona.*`、`speech.*` 渲染成短行，进稳定开头 |
 | 开场白 | 第一条角色消息 | `fallbackGreetings` / `opening`（另有流程，不在本文） |
 | 示例对话 | 开头（可逐步挤出） | 固定 6 条进开头；`situational` 时结尾补 1 条 |
-| 系统提示（替换主提示） | 开头 | `prompting.systemNote`：**只能追加**在角色资料后，不能替换平台守则 |
+| 系统提示（替换主提示） | 开头 | `prompting.systemNote`：**只能追加**在角色资料后，不能替换主提示 |
 | 后置指令 | 最末尾 | `prompting.postHistoryInstructions`：动态结尾最后 |
 | 角色笔记（depth prompt，默认深度 4） | 聊天中 | `prompting.characterNote{text, depth}` |
 
-卡片作者写的三段文字一律包成「角色作者的写作要求」，后面紧跟「与平台规则冲突时以平台规则为准」，输出仍过平台守卫。这是对原角色卡规范「删除 system_prompt / post_history」的调整，见 `docs/ai/character-card-spec.md` 1.1。
+卡片作者写的三段文字作为「角色作者的写作要求」原样拼入，不额外追加平台规则护栏；输出仍过平台守卫。这是对原角色卡规范「删除 system_prompt / post_history」的调整，见 `docs/ai/character-card-spec.md` 1.1。
 
 ### 2.3 世界书
 
@@ -307,7 +307,7 @@
 | 模型的系统消息放法 | 管理后台「模型」页：`AdminModelWrite` / `AdminCatalogEntryWrite`（PUT 模型、旧目录接口） | `systemMessageMode: 'multi' \| 'single_system' \| 'no_system'` | 下拉框，默认 multi；不传 = 保持原值；列表 `AdminModel.systemMessageMode` 回显 |
 | 用量看板：理论可缓存占比 | `usageSummary` / `usageOverview` 的 `AdminUsageTotals` | `stablePrefixRate` | 与 `cacheHitRate` 并排显示；按模型 / 用途分组都有 |
 | 用量明细 | `usageRecords` 的 `AdminUsageRecord` | `stablePrefixTokens` | 单条调用的稳定开头估算 token |
-| 角色卡：提示词写法 | 角色卡编辑（管理员预设、自定义角色）的卡片 JSON | `card.data.prompting.{systemNote, postHistoryInstructions, characterNote{text, depth}, exampleMode, exampleCount}` | 建议放在「高级」折叠区；每个输入框下注明「只影响说话风格，与平台规则冲突时以平台规则为准」 |
+| 角色卡：提示词写法 | 角色卡编辑（管理员预设、自定义角色）的卡片 JSON | `card.data.prompting.{systemNote, postHistoryInstructions, characterNote{text, depth}, exampleMode, exampleCount}` | 建议放在「高级」折叠区；每个输入框下注明「只影响说话风格；安全边界由系统统一执行，不在这里配置」 |
 | 角色卡：世界书设置 | 同上 | `card.data.knowledge.{scanDepth, constantBudget, triggeredBudget, recursive}`、`entries[].preventRecursion` | 世界书条目管理沿用原 `knowledge.entries` 编辑（关键词、二级关键词、常驻、优先级、有效期、来源），新增一个「不触发别的条目」勾选 |
 
 ---
