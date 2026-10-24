@@ -238,11 +238,15 @@ async function main() {
         if (p.ref) await tx.query('INSERT INTO moments.post_media(post_id,position,media_id,width,height) VALUES($1,0,$2,NULL,NULL)', [p.id, p.ref.id]);
         const comments = p.visible.filter(i => i.type === 'comment' && String(i.content ?? '').trim());
         const commentIds = new Map(comments.map(i => [String(i.id), legacyId('moment-comment', p.owner, String(i.id))]));
+        const parentComments = new Map(comments.map(i => [String(i.id), i]));
         const bodies = await crypto.sealMany(p.owner, comments.map(i => ({ aad: `moments:comment:${commentIds.get(String(i.id))}`, plaintext: String(i.content).replaceAll('\u0000', '') })), tx);
         const commentRows = comments.map((i, index) => {
           const kind = i.actor_type === 'user' ? 'user' : 'character', ref = kind === 'user' ? p.owner : character(p.owner, i.actor_name);
           const replyId = commentIds.get(String(i.reply_to_interaction_id)) ?? null;
-          return [commentIds.get(String(i.id)), p.id, kind, ref, replyId, null, null, bodies[index], i.reply_to_actor === '我', `legacy-comment:${i.id}`, legacyTime(i.created_at, createdAt)];
+          const parent = parentComments.get(String(i.reply_to_interaction_id));
+          const replyKind = parent ? parent.actor_type === 'user' ? 'user' : 'character' : i.reply_to_actor === '我' ? 'user' : null;
+          const replyRef = replyKind === 'user' ? p.owner : parent && replyKind === 'character' ? character(p.owner, parent.actor_name) : null;
+          return [commentIds.get(String(i.id)), p.id, kind, ref, replyId, replyKind, replyRef, bodies[index], i.reply_to_actor === '我', `legacy-comment:${i.id}`, legacyTime(i.created_at, createdAt)];
         });
         stats.comments += await insertRows(tx, 'moments.comments', ['id', 'post_id', 'author_kind', 'author_ref_id', 'reply_to_comment_id', 'reply_to_kind', 'reply_to_ref_id', 'text_ciphertext', 'mentions_user', 'create_key', 'created_at'], commentRows);
         const likes = p.visible.filter(i => i.type === 'like').map(i => [p.id, i.actor_type === 'user' ? 'user' : 'character', i.actor_type === 'user' ? p.owner : character(p.owner, i.actor_name), legacyTime(i.created_at, createdAt)]);
@@ -252,6 +256,7 @@ async function main() {
       done++; if (done % 500 === 0) output({ progress: { phase, done, total: posts.length } });
     }
   }
+  if (phase === 'moments') await insertRows(db, 'moments.badge_state', ['user_id', 'posts_seen_at', 'interactions_seen_at'], sourceUsers.map(u => [u.id, capturedAt, capturedAt]));
   await audit.record({ module: 'importer', action: 'legacy_content.imported', actorType: 'admin', actorId: OP, targetType: 'legacy_content_snapshot', details: { phase, capturedAt, messages: stats.insertedMessages, posts: stats.posts, comments: stats.comments, likes: stats.likes, contacts: stats.contacts, deletedRowsNotResurrected: stats.deletedRowsNotResurrected } });
   fs.writeFileSync(options.get('--report'), JSON.stringify({ ok: true, capturedAt, stats, issues: reportIssues }, null, 2), { mode: 0o600 });
   output({ ok: true, capturedAt, stats: { ...stats, privateLegacyCharacters: stats.privateLegacyCharacters.length }, issues: reportIssues.length });
