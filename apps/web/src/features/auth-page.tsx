@@ -126,7 +126,7 @@ export function AuthPage() {
               name="password"
               type="password"
               required
-              minLength={8}
+              minLength={register ? 8 : 1}
               maxLength={128}
               autoComplete={register ? 'new-password' : 'current-password'}
               placeholder={register ? '设置密码，至少 8 位' : '请填写密码'}
