@@ -147,7 +147,7 @@ import {
     // 朋友圈随机风景图（沿用旧版参数：约 22% 带图，同内容同图）。
     MomentSceneryService,
     { provide: MOMENT_SCENERY_FETCHER, useValue: fetchScenery },
-    // v5 批 B：记忆分档与长上下文。
+    // v5 批 B：记忆分档。
     BrainContextService,
     SharedEpisodesService,
     ConversationMemoryService,

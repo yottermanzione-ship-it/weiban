@@ -36,7 +36,6 @@ import { INITIAL_MODES, modeOption, SELECTABLE_MODES } from '../domain/persona.j
 import { ReplyPlanStore } from './plan-store.js';
 import { invalidateReplyPlans } from './invalidate.js';
 import { companionSettings } from '../infra/db/schema.js';
-import { MemoryTierService } from './memory-tier.js';
 import { PrivateDigestService } from './private-digest.js';
 import { characterView, roleAdminAllowlist } from './character-view.js';
 @Injectable()
@@ -53,7 +52,6 @@ export class CompanionSettingsService {
     @Inject(ADULT_MODEL_READ_PORT) private readonly adultModels: AdultModelReadPort,
     @Inject(ReplyPlanStore) private readonly plans: ReplyPlanStore,
     @Inject(MEDIA_ASSET_READ_PORT) private readonly assets: MediaAssetReadPort,
-    @Inject(MemoryTierService) private readonly tiers: MemoryTierService,
     /** H2：切出私密模式时登记「干净整理」（测试里可不注入）。 */
     @Optional() @Inject(PrivateDigestService) private readonly digests?: PrivateDigestService,
   ) {}
@@ -102,8 +100,6 @@ export class CompanionSettingsService {
       proactiveCalls: row?.proactiveCalls ?? false,
       dailyLife: row?.dailyLife ?? true,
       voiceId: row?.voiceId ?? null,
-      // v5 批 B：长上下文只认该角色自己的设置行，不从全局默认继承。
-      longContext: characterId !== null && !!specific?.longContext,
       updatedAt: (row?.updatedAt ?? this.clock.now()).toISOString(),
       inheritsDefaults: characterId !== null && !specific,
     };
@@ -227,9 +223,6 @@ export class CompanionSettingsService {
       const voice = await this.assets.getVoice(patch.voiceId);
       if (!voice || !voice.enabled) throw new AppError('bad_request', '音色不存在或已停用');
     }
-    // v5 批 B：长上下文模式 PRO+ 专属、只对单个角色（全局默认传了忽略）。
-    if (patch.longContext === true && characterId && !(await this.tiers.isProPlus(userId)))
-      throw new AppError('forbidden', '长上下文模式需要 PRO+ 会员');
     const activeContacts = characterId ? [] : await this.contacts.listActiveContacts(userId);
     return this.db.transaction(async (tx) => {
       await this.lock(tx, userId);
@@ -249,7 +242,6 @@ export class CompanionSettingsService {
         proactiveCalls: patch.proactiveCalls ?? old.proactiveCalls ?? false,
         dailyLife: patch.dailyLife ?? old.dailyLife ?? true,
         voiceId: patch.voiceId === undefined ? (old.voiceId ?? null) : patch.voiceId,
-        longContext: characterId ? (patch.longContext ?? old.longContext ?? false) : false,
         updatedAt: this.clock.now(),
       };
       if (characterId && patch.scenarioMode && patch.scenarioMode !== old.scenarioMode) {

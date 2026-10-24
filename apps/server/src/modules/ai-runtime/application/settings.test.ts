@@ -52,7 +52,6 @@ interface SettingsRow {
   proactiveCalls: boolean;
   dailyLife: boolean;
   voiceId: string | null;
-  longContext: boolean;
   updatedAt: Date;
 }
 
@@ -94,7 +93,6 @@ function setup(
     proactiveCalls: false,
     dailyLife: true,
     voiceId: null,
-    longContext: false,
     // 与测试时钟不同，复现线上「幂等键取上一次 updatedAt」会随时间变化的场景。
     updatedAt: new Date('2026-10-24T18:12:00.000Z'),
   };
@@ -156,7 +154,6 @@ function setup(
     {
       getAdultModelStatus: async () => options.adultModel ?? { available: true, reason: null },
     },
-    {},
     {},
     {},
     digests,

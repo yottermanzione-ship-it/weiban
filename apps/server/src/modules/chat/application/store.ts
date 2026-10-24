@@ -42,6 +42,7 @@ export const emptyState: UserConversationState = {
   clearedThroughSeq: 0,
   readSeq: 0,
   markedUnread: false,
+  backgroundMediaId: null,
 };
 export const previewText = (text: string): string =>
   text.slice(0, 100).replace(/[\uD800-\uDBFF]$/u, '');

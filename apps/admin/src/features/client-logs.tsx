@@ -15,6 +15,7 @@ import { DataTable, type ProColumns } from '../ui/table.js';
 import { RecordDrawer } from '../ui/drawer.js';
 import { Page, SectionCard } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
+import { userDisplayName } from './users/identity.js';
 
 const states = { open: '待处理', resolved: '已处理', ignored: '已忽略' };
 const kinds: Record<string, string> = {
@@ -349,8 +350,12 @@ function IssueDrawer({
           <SectionCard title="受影响用户（最近 100 人）">
             <Space wrap>
               {remote.data.users.map((u) => (
-                <Link key={u.userId} to={'/accounts?userId=' + u.userId + '&tab=runtime'}>
-                  {u.userId}
+                <Link
+                  key={u.userId}
+                  to={'/accounts?userId=' + u.userId + '&tab=runtime'}
+                  title={u.userId}
+                >
+                  {userDisplayName(u.userId, { nickname: u.nickname, username: u.username })}
                 </Link>
               ))}
             </Space>

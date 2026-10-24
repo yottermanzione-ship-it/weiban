@@ -18,6 +18,7 @@ import { DataTable, type ProColumns } from '../ui/table.js';
 import { FieldHelp, FormSection, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
+import { UserIdentity, useUserDirectory } from './users/identity.js';
 
 const LEVELS = [
   ['occasional', '偶尔冒泡'],
@@ -230,6 +231,8 @@ function EcologyConfigTab() {
 }
 
 function EcologyRunsTab() {
+  // 运行记录接口只返回 userId（ai-runtime 提供），这里用后台账号目录一次批量补昵称。
+  const directory = useUserDirectory();
   const [userId, setUserId] = useState('');
   const [status, setStatus] = useState<EcologyRunStatus | undefined>();
   const [applied, setApplied] = useState<{ userId: string; status?: EcologyRunStatus }>({
@@ -271,8 +274,15 @@ function EcologyRunsTab() {
     { title: '时间', width: 150, render: (_, r) => formatDateTime(r.scheduledAt) },
     {
       title: '用户',
-      width: 120,
-      render: (_, r) => <span className="cell-sub">{r.userId.slice(0, 8)}</span>,
+      width: 150,
+      render: (_, r) => (
+        <UserIdentity
+          compact
+          userId={r.userId}
+          label={directory.byId.get(r.userId)}
+          deleted={!directory.loading && !directory.error && !directory.byId.has(r.userId)}
+        />
+      ),
     },
     {
       title: '角色',

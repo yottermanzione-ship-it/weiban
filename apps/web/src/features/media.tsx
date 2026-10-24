@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { memo, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
   ImageBroken,
   LinkSimple,
@@ -22,7 +21,8 @@ import {
 } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
 import { api } from '../data/client.js';
-import { useRemote, friendlyError } from '../data/use-remote.js';
+import { friendlyError } from '../data/use-remote.js';
+import { CachedImage, forgetPicture, useMediaLink } from './avatar-cache.js';
 import { useUpdates } from '../data/updates.js';
 import { showToast } from './toast.js';
 
@@ -49,23 +49,35 @@ function boxSize(width: number | null, height: number | null, max = 150, min = 8
   };
 }
 
-export function MediaImg({
+export const MediaImg = memo(function MediaImg({
   mediaId,
   thumbnail = true,
   alt = '',
   className,
+  cache = true,
 }: {
   mediaId: string;
   thumbnail?: boolean;
   alt?: string;
   className?: string;
+  /** 大图查看器传 false：不把原图字节留在内存里。 */
+  cache?: boolean;
 }) {
-  const media = useRemote(MediaEndpoints.getMedia, { params: { mediaId } });
+  // 链接按 mediaId 缓存（有效期 5 分钟），重挂载不再重新取链接、也不再换一个签名。
+  // 原图（可能是旧版 MP4）在链接没带 mimeType 时先取一次元信息，别把视频当图片画。
+  const { link, error, reload } = useMediaLink(mediaId, undefined, {
+    networkOnly: false,
+    needMetadata: !thumbnail,
+  });
   const [broken, setBroken] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const url = thumbnail ? (media.data?.thumbnailUrl ?? media.data?.url) : media.data?.url;
-  const legacyVideo = !thumbnail && media.data?.mimeType === 'video/mp4';
-  if (broken || (media.error && !media.data))
+  const [attempt, setAttempt] = useState(0);
+  const variant = thumbnail ? 't' : 'o';
+  const mediaKey = `${variant}:${mediaId}`;
+  const url = thumbnail ? (link?.thumbnailUrl ?? link?.url) : link?.url;
+  // 缩略图一定是图；只有原图才需要先确认类型（hint / 旧缓存可能没有 mimeType）。
+  const kindUnknown = !thumbnail && Boolean(url) && !link?.mimeType;
+  const legacyVideo = !thumbnail && link?.mimeType === 'video/mp4';
+  if (broken || (error && (!url || kindUnknown)))
     return (
       <button
         type="button"
@@ -73,8 +85,10 @@ export function MediaImg({
         aria-label="图片损坏，点击重新加载"
         onClick={(event) => {
           event.stopPropagation();
+          forgetPicture(mediaKey);
           setBroken(false);
-          media.refresh();
+          setAttempt((value) => value + 1);
+          reload();
         }}
       >
         <ImageBroken size={24} aria-hidden />
@@ -83,10 +97,11 @@ export function MediaImg({
   return (
     <span className={`media-frame ${className ?? ''}`}>
       {url &&
+        !kindUnknown &&
         (legacyVideo ? (
           <video
             src={url}
-            poster={media.data?.thumbnailUrl ?? undefined}
+            poster={link?.thumbnailUrl ?? undefined}
             controls
             playsInline
             preload="metadata"
@@ -98,19 +113,21 @@ export function MediaImg({
             onError={() => setBroken(true)}
           />
         ) : (
-          <img
-            src={url}
+          <CachedImage
+            key={`${mediaKey}:${attempt}`}
+            mediaKey={mediaKey}
+            url={url}
             alt={alt}
-            loading="lazy"
-            decoding="async"
-            className={loaded ? 'loaded' : ''}
-            onLoad={() => setLoaded(true)}
-            onError={() => setBroken(true)}
+            fade
+            // 缩略图第一次出现可以慢慢加载；大图和表情立刻取。
+            eager={!thumbnail}
+            cache={cache}
+            onBroken={() => setBroken(true)}
           />
         ))}
     </span>
   );
-}
+});
 
 export function ImageBubble({
   content,
@@ -288,7 +305,13 @@ export function ImageViewer({
           setMenu(true);
         }}
       >
-        <MediaImg key={mediaId} mediaId={mediaId} thumbnail={false} className="viewer-image" />
+        <MediaImg
+          key={mediaId}
+          mediaId={mediaId}
+          thumbnail={false}
+          className="viewer-image"
+          cache={false}
+        />
       </div>
       {current > 0 && (
         <button
@@ -616,11 +639,7 @@ function VoiceWaveIcon() {
         <circle cx="3.96" cy="9" r="1.6" fill="currentColor" />
         <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
           {VOICE_WAVE_ARCS.map(({ radius, path }, index) => (
-            <path
-              key={radius}
-              className={`wx-voice-arc wx-voice-arc-${index + 1}`}
-              d={path}
-            />
+            <path key={radius} className={`wx-voice-arc wx-voice-arc-${index + 1}`} d={path} />
           ))}
         </g>
       </svg>

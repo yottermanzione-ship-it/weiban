@@ -230,12 +230,25 @@ export const INTERNAL_USE_LABELS: Record<string, string> = {
 };
 
 /**
+ * 3.27：软删除行的键 / 显示名可能带 `#deleted:<随机>` 后缀（0117 删除时改写 model_key；
+ * 历史数据里显示名也可能带着它）。展示名去掉后缀，模型键照原样显示（副行保留完整键供核对）。
+ */
+export function stripDeletedSuffix(value: string): string {
+  return value.replace(/#deleted:[0-9A-Za-z-]+$/, '').trim();
+}
+
+/** 3.27：列表里显示的模型名（去掉 `#deleted:` 后缀；去掉后为空时退回原文）。 */
+export function modelDisplayName(m: Pick<AdminModel, 'displayName'>): string {
+  return stripDeletedSuffix(m.displayName) || m.displayName;
+}
+
+/**
  * 3.23：按模型键找显示名。已删除的模型（deletedAt 非空）只给历史记录显示名字，加「（已删除）」；
  * 同键重新添加过时优先用现存的那个。找不到时原样显示键。
  */
 export function modelLabel(models: readonly AdminModel[], key: string): string {
   const live = models.find((m) => m.modelKey === key && !m.deletedAt);
-  if (live) return live.displayName;
+  if (live) return modelDisplayName(live);
   const gone = models.find((m) => m.modelKey === key);
-  return gone ? `${gone.displayName}（已删除）` : key;
+  return gone ? `${modelDisplayName(gone)}（已删除）` : key;
 }

@@ -48,7 +48,7 @@ const ConversationUpdated = z.object({
   data: z.object({ conversation: Conversation }),
 });
 
-/** 当前用户的个人状态变化：已读、置顶、免打扰、隐藏、清空、标为未读。 */
+/** 当前用户的个人状态变化：已读、置顶、免打扰、隐藏、清空、标为未读、聊天背景（3.41）。 */
 const ConversationStateUpdated = z.object({
   type: z.literal('conversation.state_updated'),
   data: z.object({

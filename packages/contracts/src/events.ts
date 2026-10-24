@@ -38,6 +38,8 @@ export const ModuleName = z.enum([
   // 3.8（总对照表 Q9）
   'support',
   'client_logs',
+  // 3.42（微信 / 微博接入，真实 iLink / OpenIM 协议）
+  'channels',
 ]);
 export type ModuleName = z.infer<typeof ModuleName>;
 

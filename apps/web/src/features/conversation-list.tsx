@@ -172,6 +172,12 @@ function SwipeRow({
   );
 }
 
+/**
+ * 一行会话。这里故意不加 React.memo：同步引擎是「原地改」会话对象的（未读数、摘要、免打扰都在原对象上改），
+ * props 引用不变但内容会变，memo 会让未读角标和摘要停在旧值。
+ * 滚动时不重渲染由 VirtualList 的行元素缓存保证（滚动只重算窗口，不重跑 render），
+ * 头像 / 图片子树另有 memo（CharacterAvatar、MediaImg）。
+ */
 function ConversationRow({ item, local }: { item: Conversation; local: Message | undefined }) {
   const muted = item.state.muted;
   const unread = item.unreadCount;
@@ -338,7 +344,7 @@ export function ConversationListPage() {
           </p>
         )}
         {!state.initialized && (
-          <div role="status" aria-label="正在读取聊天">
+          <div className="chat-list-loading" role="status" aria-label="正在读取聊天">
             <p className="hint center">正在读取聊天…</p>
             {!items.length && (
               <div className="conversation-skeleton" aria-hidden="true">

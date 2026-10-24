@@ -47,6 +47,8 @@ export * from './http/public-updates.js';
 export * from './http/support.js';
 export * from './http/status.js';
 export * from './http/client-logs.js';
+// 3.42：设置 › 插件 › 微信 / 微博接入（外部渠道绑定与网关回调）
+export * from './http/channels.js';
 
 // WebSocket 帧
 export * from './ws.js';

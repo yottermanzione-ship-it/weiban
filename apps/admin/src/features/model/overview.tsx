@@ -12,6 +12,7 @@ import { SectionCard, StatusTag } from '../../ui/page.js';
 import { TrendBars } from '../../ui/chart.js';
 import { formatInt, formatPercent, formatYuan, pointsOf } from '../../ui/format.js';
 import { ERROR_LABELS, rangeOf, type RangeKey } from './shared.js';
+import { UserIdentity } from '../users/identity.js';
 
 interface Data {
   overview?: AdminUsageOverview;
@@ -197,14 +198,23 @@ export function OverviewTab({ onGo }: { onGo: (tab: 'upstreams' | 'models' | 're
                 }
               >
                 <div className="rank-list">
-                  {(data?.users?.rows ?? []).map((row) => (
-                    <div className="rank-row" key={row.keys[0]}>
-                      <span className="rank-name mono">{String(row.keys[0]).slice(0, 12)}…</span>
-                      <span className="rank-meta">
-                        {formatInt(row.calls)} 次 · {formatInt(pointsOf(row.chargedMicros))} 积分
-                      </span>
-                    </div>
-                  ))}
+                  {(data?.users?.rows ?? []).map((row) => {
+                    const userId = String(row.keys[0] ?? '');
+                    return (
+                      <div className="rank-row" key={userId}>
+                        <span className="rank-name">
+                          <UserIdentity
+                            compact
+                            userId={userId}
+                            label={data?.users?.userLabels?.[userId]}
+                          />
+                        </span>
+                        <span className="rank-meta">
+                          {formatInt(row.calls)} 次 · {formatInt(pointsOf(row.chargedMicros))} 积分
+                        </span>
+                      </div>
+                    );
+                  })}
                   {(data?.users?.rows ?? []).length === 0 && (
                     <div className="detail-muted">这段时间没有调用。</div>
                   )}

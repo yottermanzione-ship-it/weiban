@@ -34,6 +34,7 @@ import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
 import { FieldHelp, FormSection, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
+import { UserIdentity, userDisplayName, useUserDirectory } from './users/identity.js';
 
 type Work = z.infer<typeof AdminPlazaWork>;
 type Report = z.infer<typeof AdminPlazaReport>;
@@ -757,8 +758,13 @@ function ReportsTab() {
     { title: '补充说明', render: (_, row) => <span className="cell-sub">{row.note ?? '—'}</span> },
     {
       title: '举报人',
-      width: 120,
-      render: (_, row) => <span className="mono">{row.reporterUserId.slice(0, 8)}…</span>,
+      width: 150,
+      render: (_, row) => (
+        <UserIdentity
+          userId={row.reporterUserId}
+          label={{ nickname: row.nickname, username: row.username }}
+        />
+      ),
     },
     {
       title: '状态',
@@ -906,7 +912,12 @@ function ReportDrawer({
         </div>
         <div>
           <span className="detail-label">举报人</span>
-          <span className="mono">{report.reporterUserId.slice(0, 12)}…</span>
+          <span title={report.reporterUserId}>
+            {userDisplayName(report.reporterUserId, {
+              nickname: report.nickname,
+              username: report.username,
+            })}
+          </span>
         </div>
         <div>
           <span className="detail-label">补充说明</span>
@@ -972,6 +983,13 @@ function BansTab() {
   const [form] = Form.useForm<{ userId: string; period: string; reason: string }>();
   const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
+  // 停权接口只带广场昵称，登录名按契约注释另经 identity 目录取。
+  const directory = useUserDirectory();
+
+  const labelOf = (row: Ban) =>
+    row.nickname
+      ? { nickname: row.nickname, username: directory.byId.get(row.userId)?.username ?? null }
+      : directory.byId.get(row.userId);
 
   async function load() {
     setLoading(true);
@@ -1034,12 +1052,7 @@ function BansTab() {
   const columns: ProColumns<Ban>[] = [
     {
       title: '用户',
-      render: (_, row) => (
-        <div className="cell-main">
-          <span>{row.nickname ?? '未设置昵称'}</span>
-          <span className="cell-sub mono">{row.userId}</span>
-        </div>
-      ),
+      render: (_, row) => <UserIdentity userId={row.userId} label={labelOf(row)} />,
     },
     {
       title: '截止',

@@ -15,6 +15,7 @@ import type {
   IdentityDirectoryPort,
   IdentityReadPort,
   IdentitySettingsWritePort,
+  IdentityUserLabel,
   NotificationSettings,
   Profile,
   UpdateProfileRequest,
@@ -449,6 +450,28 @@ export class SettingsService
       .from(users)
       .where(inArray(users.id, [...new Set(userIds)]));
     return Object.fromEntries(rows.map((row) => [row.id, row.username]));
+  }
+
+  /** 后台展示「这是谁」：一次联表查询昵称与登录名，不逐行查库。 */
+  async getUserLabels(userIds: readonly string[]): Promise<Record<string, IdentityUserLabel>> {
+    if (userIds.length > 500) throw new AppError('bad_request', '一次最多查询 500 个用户 ID');
+    const ids = [...new Set(userIds)];
+    if (ids.length === 0) return {};
+    const rows = await this.database.db
+      .select({
+        id: users.id,
+        username: sql<string>`coalesce(${users.currentAlias}, ${users.username})`,
+        nickname: profiles.nickname,
+      })
+      .from(users)
+      .leftJoin(profiles, eq(profiles.userId, users.id))
+      .where(inArray(users.id, ids));
+    return Object.fromEntries(
+      rows.map((row) => [
+        row.id,
+        { nickname: row.nickname ?? null, username: row.username } satisfies IdentityUserLabel,
+      ]),
+    );
   }
 
   async listAdminUserIds(input?: Tx): Promise<string[]> {

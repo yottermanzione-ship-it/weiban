@@ -305,7 +305,7 @@ export function MiniAppCell({
   );
 }
 
-/** 发现 › 小程序（5.1）：搜索条、最近使用横排、我的小程序白卡宫格、「整理」拖动排序。 */
+/** 发现 › 小程序（5.1）：搜索条、最近使用宫格（与我的小程序同为白卡 4 列）、「整理」拖动排序。 */
 export function MiniAppsHomePage() {
   const prefs = useMiniAppPrefs();
   const navigate = useNavigate();
@@ -367,10 +367,13 @@ export function MiniAppsHomePage() {
           {prefs.recent.length > 0 && (
             <>
               <GroupHeader>最近使用</GroupHeader>
-              <div className="miniapp-recent">
-                {prefs.recent.map((app) => (
-                  <MiniAppCell key={app.id} app={app} onPick={() => open(app)} />
-                ))}
+              {/* 与「我的小程序」共用 .miniapp-card > .miniapp-grid，列宽/行高/内边距一致 */}
+              <div className="miniapp-card miniapp-recent">
+                <div className="miniapp-grid">
+                  {prefs.recent.map((app) => (
+                    <MiniAppCell key={app.id} app={app} onPick={() => open(app)} />
+                  ))}
+                </div>
               </div>
             </>
           )}

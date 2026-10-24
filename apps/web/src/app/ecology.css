@@ -59,15 +59,17 @@
   max-width: 55%;
 }
 
+/* 「预计每天」不是独立浮动卡片，而是和上下分组同一条通栏：
+   复用 .menu-group 的满宽容器（抵消 main 的页面内边距），内容仍按 16px 内边距对齐。
+   只去掉组间距里的下边距，保持插入前的上下留白。 */
 .ecology-total {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 6px 12px;
-  margin: 8px 0 0;
-  padding: 14px 16px;
-  background: var(--wb-color-bg-surface);
+  margin-bottom: 0;
+  padding: 14px var(--wb-space-5);
   font-size: 14px;
 }
 

@@ -1,14 +1,10 @@
 /**
- * 记忆分档与长上下文（v5 批 B，docs/refactor/16-membership-v5.md §5）。
- * 免费 / PRO+ 两档的记忆参数、新用户体验天数、翻聊天记录条数、长上下文窗口。改完立即生效（约 30 秒内）。
+ * 记忆分档（v5 批 B，docs/refactor/16-membership-v5.md §5）。
+ * 免费 / PRO+ 两档的记忆参数、新用户体验天数、翻聊天记录条数。改完立即生效（约 30 秒内）。
  */
 import { useEffect, useState } from 'react';
 import { Alert, Button, Form, InputNumber, Space } from 'antd';
-import {
-  MemoryTierEndpoints,
-  type MemoryTierConfig,
-  type MemoryTierLimits,
-} from '@weiban/contracts';
+import { MemoryTierEndpoints, type MemoryTierLimits } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { useRemote } from '../data/hooks.js';
 import { FieldHelp, FormSection, Page, SectionCard, useToast } from '../ui/page.js';
@@ -28,7 +24,6 @@ type FormValues = {
   recallTopK: number;
   groupMemoryMessageThreshold?: number;
   groupMemoryIdleMinutes?: number;
-  longContext: MemoryTierConfig['longContext'];
 };
 
 const tierOut = (t: TierForm): MemoryTierLimits => ({
@@ -108,7 +103,6 @@ export function MemoryTiersPage() {
           recallTopK: v.recallTopK,
           groupMemoryMessageThreshold: v.groupMemoryMessageThreshold ?? 20,
           groupMemoryIdleMinutes: v.groupMemoryIdleMinutes ?? 10,
-          longContext: v.longContext,
         },
       });
       toast.success('已保存，约 30 秒内生效');
@@ -123,7 +117,7 @@ export function MemoryTiersPage() {
   return (
     <Page
       title="记忆分档"
-      desc="免费与 PRO+ 的记忆范围、新用户体验、翻聊天记录、长上下文模式。只决定发给模型的内容，不删除任何数据。"
+      desc="免费与 PRO+ 的记忆范围、新用户体验、翻聊天记录。只决定发给模型的内容，不删除任何数据。"
     >
       <SectionCard
         title="记忆参数"
@@ -167,7 +161,7 @@ export function MemoryTiersPage() {
               name="newUserTrialDays"
               label="新用户按 PRO+ 记忆的天数"
               rules={[{ required: true, message: '必填' }]}
-              extra={<FieldHelp>从注册时间算；0 = 不送。只送记忆，不含长上下文。</FieldHelp>}
+              extra={<FieldHelp>从注册时间算；0 = 不送。只送记忆。</FieldHelp>}
             >
               <InputNumber min={0} max={60} style={{ width: '100%' }} />
             </Form.Item>
@@ -178,42 +172,6 @@ export function MemoryTiersPage() {
               extra={<FieldHelp>用户提到「还记得 / 上次…」时才翻；0 = 关闭。</FieldHelp>}
             >
               <InputNumber min={0} max={10} style={{ width: '100%' }} />
-            </Form.Item>
-          </div>
-          <FormSection
-            title="长上下文模式（PRO+）"
-            desc="用户在聊天信息页对单个角色打开。平时窗口约 1.6 万字（30 轮触发前移、保留 12 轮）。"
-          />
-          <div className="form-two">
-            <Form.Item
-              name={['longContext', 'triggerChars']}
-              label="原文字数上限"
-              rules={[{ required: true, message: '必填' }]}
-              extra={<FieldHelp>默认 145000 字，约 10 万 token。</FieldHelp>}
-            >
-              <InputNumber min={2000} max={400000} style={{ width: '100%' }} />
-            </Form.Item>
-            <Form.Item
-              name={['longContext', 'triggerTurns']}
-              label="超过多少轮前移"
-              rules={[{ required: true, message: '必填' }]}
-            >
-              <InputNumber min={8} max={4000} style={{ width: '100%' }} />
-            </Form.Item>
-            <Form.Item
-              name={['longContext', 'keepTurns']}
-              label="前移后保留多少轮"
-              rules={[{ required: true, message: '必填' }]}
-              extra={<FieldHelp>要小于触发轮数。</FieldHelp>}
-            >
-              <InputNumber min={4} max={2000} style={{ width: '100%' }} />
-            </Form.Item>
-            <Form.Item
-              name={['longContext', 'maxTurns']}
-              label="摘要没跟上时强制前移轮数"
-              rules={[{ required: true, message: '必填' }]}
-            >
-              <InputNumber min={10} max={6000} style={{ width: '100%' }} />
             </Form.Item>
           </div>
           <Space>

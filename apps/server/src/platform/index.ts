@@ -4,7 +4,14 @@
  */
 export { PlatformModule, type PlatformOptions } from './platform.module.js';
 
-export { APP_CONFIG, loadConfig, ConfigError, type AppConfig } from './config/config.js';
+export {
+  APP_CONFIG,
+  loadConfig,
+  ConfigError,
+  type AppConfig,
+  type WechatChannelConfig,
+  type WeiboChannelConfig,
+} from './config/config.js';
 export * from './config/product-params.js';
 
 export { CLOCK, SystemClock, TestClock, type Clock } from './clock/clock.js';

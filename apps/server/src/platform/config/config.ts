@@ -76,10 +76,72 @@ export const EnvSchema = z.object({
   BILLING_SAFETY_OVERDRAFT_LIMIT_MICROS: z.coerce.number().int().min(0).optional(),
   /** 对账第 ③ 层：上游账单与按成本价汇总的偏差超过此比例标红（billing.md 8.2，默认 0.03 = 3%）。 */
   BILLING_UPSTREAM_DIFF_RATIO: z.coerce.number().min(0).max(10).default(0.03),
+  /**
+   * 外部渠道接入（设置 › 插件，3.42）。**默认全关**：不打开时页面显示「未联调」，接口返回 422，
+   * 服务器照常启动，也不会去轮询 / 发送任何东西（部署默认不触发绑定或发送）。
+   *
+   * 微信走 iLink 协议：客户端不保存任何长期密钥，bot_token 是用户扫码后才有、并加密存库，
+   * 所以这里只有「开关」和服务节点（只允许 iLink 官方 HTTPS 节点）。
+   * 微博走 OpenIM：AppID / AppSecret 由用户本人填、加密存库，这里只有开关和两个端点。
+   */
+  CHANNEL_WECHAT_ENABLED: booleanFlag,
+  CHANNEL_WECHAT_ILINK_BASE_URL: z
+    .url()
+    .optional()
+    .refine(
+      (value) =>
+        value === undefined ||
+        (() => {
+          try {
+            const url = new URL(value);
+            const host =
+              url.hostname === 'ilinkai.weixin.qq.com' ||
+              url.hostname.endsWith('.ilinkai.weixin.qq.com');
+            return (
+              url.protocol === 'https:' &&
+              host &&
+              !url.port &&
+              !url.username &&
+              !url.password &&
+              (url.pathname === '/' || url.pathname === '') &&
+              !url.search &&
+              !url.hash
+            );
+          } catch {
+            return false;
+          }
+        })(),
+      '必须是 iLink 官方 HTTPS 节点（ilinkai.weixin.qq.com），不带端口、路径或查询',
+    ),
+  /** 微博通道默认「未联调」；实网联调通过后才由运维显式打开。 */
+  CHANNEL_WEIBO_ENABLED: booleanFlag,
+  CHANNEL_WEIBO_TOKEN_ENDPOINT: z.url().optional(),
+  CHANNEL_WEIBO_WS_ENDPOINT: z
+    .url()
+    .optional()
+    .refine(
+      (value) => value === undefined || value.startsWith('wss://'),
+      '微博长连必须是 wss:// 地址',
+    ),
 });
 
 /** 开发 / 测试环境没配置平台每日上限时的取值：20 元。生产环境必须显式配置。 */
 export const DEV_PLATFORM_DAILY_CAP_MICROS = 20_000_000;
+
+/** 微信接入的服务器侧配置：只有一个开关和服务节点（bot_token 来自扫码，加密存库）。 */
+export interface WechatChannelConfig {
+  /** 运维显式打开后才允许用户发起绑定；默认 false。 */
+  readonly enabled: boolean;
+  /** iLink 服务节点，只允许官方 HTTPS 节点；默认 https://ilinkai.weixin.qq.com。 */
+  readonly ilinkBaseUrl: string;
+}
+
+/** 微博接入的服务器侧配置：AppID / AppSecret 由用户本人填并加密存库，这里只有开关和端点。 */
+export interface WeiboChannelConfig {
+  readonly enabled: boolean;
+  readonly tokenEndpoint: string | null;
+  readonly wsEndpoint: string | null;
+}
 
 export interface AppConfig {
   readonly imagePublicSearchEnabled?: boolean;
@@ -112,6 +174,11 @@ export interface AppConfig {
   };
   readonly events: { readonly pollIntervalMs: number };
   readonly debugLlmPayload: boolean;
+  /** 外部渠道接入（微信 / 微博）的服务器侧配置；enabled = false 表示「未联调」，页面据此提示。 */
+  readonly channels: {
+    readonly wechat: WechatChannelConfig;
+    readonly weibo: WeiboChannelConfig;
+  };
   readonly billing: {
     readonly platformDailyCapMicros: number;
     /** null = 使用 billing 模块的默认值（billing.md 6.6 第 2 条）。 */
@@ -197,6 +264,17 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     events: { pollIntervalMs: e.EVENTS_POLL_INTERVAL_MS },
     // 生产环境无论怎么配置都关闭
     debugLlmPayload: production ? false : e.DEBUG_LLM_PAYLOAD,
+    channels: {
+      wechat: {
+        enabled: e.CHANNEL_WECHAT_ENABLED,
+        ilinkBaseUrl: e.CHANNEL_WECHAT_ILINK_BASE_URL ?? 'https://ilinkai.weixin.qq.com',
+      },
+      weibo: {
+        enabled: e.CHANNEL_WEIBO_ENABLED,
+        tokenEndpoint: e.CHANNEL_WEIBO_TOKEN_ENDPOINT ?? null,
+        wsEndpoint: e.CHANNEL_WEIBO_WS_ENDPOINT ?? null,
+      },
+    },
     billing: {
       platformDailyCapMicros: e.BILLING_PLATFORM_DAILY_CAP_MICROS ?? DEV_PLATFORM_DAILY_CAP_MICROS,
       safetyOverdraftLimitMicros: e.BILLING_SAFETY_OVERDRAFT_LIMIT_MICROS ?? null,

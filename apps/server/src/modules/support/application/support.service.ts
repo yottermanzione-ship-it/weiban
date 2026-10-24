@@ -15,6 +15,7 @@ import {
   SupportTicketStatus,
   type AdminSupportTicket,
   type IdentityDirectoryPort,
+  type IdentityUserLabel,
   type MediaReadPort,
   type MediaSystemPort,
   type PushPort,
@@ -263,9 +264,9 @@ export class SupportService {
       .select({ n: count() })
       .from(tickets)
       .where(eq(tickets.status, 'open'));
-    const names = await this.usernames(page.map((r) => r.userId));
+    const labels = await this.labels(page.map((r) => r.userId));
     return {
-      items: await Promise.all(page.map((r) => this.toAdminDto(r, names))),
+      items: await Promise.all(page.map((r) => this.toAdminDto(r, labels))),
       nextCursor: rows.length > q.limit ? encodeOffset(offset + q.limit) : null,
       openCount: open?.n ?? 0,
     };
@@ -273,7 +274,7 @@ export class SupportService {
 
   async adminGet(ticketId: string): Promise<AdminSupportTicket> {
     const row = await this.find(ticketId);
-    return this.toAdminDto(row, await this.usernames([row.userId]));
+    return this.toAdminDto(row, await this.labels([row.userId]));
   }
 
   async adminReply(adminId: string, ticketId: string, input: unknown) {
@@ -395,7 +396,7 @@ export class SupportService {
       return next;
     });
     if (notify) await this.pushStatus(notify);
-    return this.toAdminDto(row, await this.usernames([row.userId]));
+    return this.toAdminDto(row, await this.labels([row.userId]));
   }
 
   private async byClientId(userId: string, clientRequestId: string, tx?: DbTx) {
@@ -456,11 +457,12 @@ export class SupportService {
     }
   }
 
-  private async usernames(userIds: string[]): Promise<Record<string, string>> {
+  /** 后台展示「这是谁」：一次批量取昵称 + 登录名，取不到不影响工单本身。 */
+  private async labels(userIds: string[]): Promise<Record<string, IdentityUserLabel>> {
     const ids = [...new Set(userIds)];
     if (!ids.length || !this.directory) return {};
     try {
-      return await this.directory.getUsernames(ids);
+      return await this.directory.getUserLabels(ids);
     } catch {
       return {};
     }
@@ -508,12 +510,13 @@ export class SupportService {
 
   private async toAdminDto(
     row: TicketRow,
-    names: Record<string, string>,
+    labels: Record<string, IdentityUserLabel>,
   ): Promise<AdminSupportTicket> {
     return {
       ...(await this.toDto(row)),
       userId: row.userId,
-      username: names[row.userId] ?? null,
+      username: labels[row.userId]?.username ?? null,
+      nickname: labels[row.userId]?.nickname ?? null,
       handledBy: row.handledBy,
     };
   }

@@ -143,11 +143,12 @@ export function EcologyPage() {
                   />
                 ))}
               </MenuGroup>
-              <div className="ecology-total">
+              {/* 用分组容器承载：和其它分组同一套通栏、同一左边界。 */}
+              <MenuGroup className="ecology-total">
                 <span>按现在的设置，预计每天</span>
                 <strong>{points(data.estimatedPointsPerDay)}</strong>
                 <small>实际按角色做了什么扣积分；角色什么也不做时只花「想一想」的一点点。</small>
-              </div>
+              </MenuGroup>
 
               <GroupHeader>谁参与</GroupHeader>
               <MenuGroup>

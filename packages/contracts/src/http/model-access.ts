@@ -31,6 +31,7 @@ import {
   tolerantEnum,
 } from '../common.js';
 import { BillingOwner, ModelPurpose } from '../ports/model-gateway.js';
+import { AdminUserLabel } from './admin-users.js';
 
 // ---------- 模型目录 ----------
 export const ModelLeaderboardSource = z.object({
@@ -50,11 +51,61 @@ export const ModelLeaderboardInfo = z.object({
   popular: z.array(z.object({ modelKey: z.string(), users: z.number().int().nonnegative() })),
 });
 
-/** 平台内的模型键，例 "deepseek/deepseek-v4-pro"。用户选择、价目表、用量都用它。 */
-export const ModelKey = z
+/**
+ * 平台内的模型键**规范格式**，例 "deepseek/deepseek-v4-pro"：小写「出品方/模型名」。
+ * 新增 / 修改模型的写入契约只接受它（`AdminCatalogEntryWrite` / `AdminModelWrite`）。
+ */
+export const CanonicalModelKey = z
   .string()
   .regex(/^[a-z0-9][a-z0-9._-]{0,47}\/[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/);
+export type CanonicalModelKey = z.infer<typeof CanonicalModelKey>;
+
+/**
+ * 3.27：生产 `model_access.model_catalog` 里唯一一条真实存在、没有厂商前缀的旧键
+ * （百炼 TTS；enabled = true、scenarios 含 voice_message，所以用户端要能读到它、也要能选它）。
+ * 公开契约**只额外承认这一条字面量**，不是「裸键放行」；其它没有 "厂商/模型名" 的键仍然不合法。
+ */
+export const LEGACY_MODEL_KEY = 'qwen-audio-3.0-tts-plus' as const;
+
+/**
+ * 平台内的模型键，例 "deepseek/deepseek-v4-pro"。用户选择、价目表、用量都用它。
+ * 3.27：规范格式之外，只额外接受上面那一条真实历史键（`LEGACY_MODEL_KEY`）；
+ * 后台新增 / 修改模型用的写入契约仍只接受 `CanonicalModelKey`。
+ */
+export const ModelKey = z.union([CanonicalModelKey, z.literal(LEGACY_MODEL_KEY)]);
 export type ModelKey = z.infer<typeof ModelKey>;
+
+/**
+ * 3.27：**后台读取**用的模型键。只放宽后台响应（`AdminCatalogEntry` / `AdminModel` /
+ * `AdminUsageRecord`，以及 3.43 的 `AdminUsageOverview.recentErrors[].modelKey`），
+ * 用户端只额外承认一条真实历史键（见 `ModelKey` / `LEGACY_MODEL_KEY`），写入（`*Write`）仍用
+ * `CanonicalModelKey`，不要把宽校验扩散到公开契约。
+ *
+ * 生产 `model_access.model_catalog` 里真实存在两类通不过规范 `CanonicalModelKey` 正则的键：
+ * 1. 软删除行：0117 迁移在删除时把 `model_key` 改成「原键#deleted:<随机>」腾出原键，
+ *    原键存 `original_model_key`；该列为空时后台读到的就是带后缀的键
+ *    （例 openai/gpt-6.1-sol#deleted:01a159b9、google/gemini-3.8-flash#deleted:01a159b9）；
+ * 2. 早期没有「出品方/模型名」前缀的旧键（没有 "/"，例 qwen-audio-3.0-tts-plus）。
+ * 两种前缀都可能被软删除，所以后缀单独放一条规则。
+ *
+ * 后台「调用记录」也用同一套规则（`AdminUsageRecord`，明细 / 导出 / 详情是同一个类型）：
+ * `model_access.usage_records` 里仍有旧键（例 qwen-audio-3.0-tts-plus），而客户端对响应整包解析，
+ * 一行不合格整页明细就空白。
+ */
+export const AdminModelKey = z.union([
+  ModelKey,
+  /** 软删除键：原键（带厂商前缀）+ `#deleted:<随机>`。 */
+  z
+    .string()
+    .regex(
+      /^[a-z0-9][a-z0-9._-]{0,47}\/[A-Za-z0-9][A-Za-z0-9._:-]{0,79}#deleted:[0-9A-Za-z-]{1,64}$/,
+    ),
+  /** 早期没有厂商前缀的旧键。 */
+  z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/),
+  /** 没有厂商前缀的旧键被软删除。 */
+  z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}#deleted:[0-9A-Za-z-]{1,64}$/),
+]);
+export type AdminModelKey = z.infer<typeof AdminModelKey>;
 
 /**
  * 模型能力。adult_content = 无审查 / 允许成人内容的模型：只能用于有成人资格的角色
@@ -646,7 +697,11 @@ export const RouteBillingBounds = z
 export type RouteBillingBounds = z.infer<typeof RouteBillingBounds>;
 
 export const AdminCatalogEntry = z.object({
-  modelKey: ModelKey,
+  /**
+   * 3.27：后台读取放宽（软删除键 `原键#deleted:<随机>`、没有厂商前缀的旧键），
+   * 见 `AdminModelKey`；写入仍严格用 `CanonicalModelKey`（`AdminCatalogEntryWrite`）。
+   */
+  modelKey: AdminModelKey,
   displayName: z.string().min(1).max(60),
   vendorName: z.string().min(1).max(40),
   upstreamId: Id,
@@ -701,7 +756,15 @@ export const AdminCatalogEntry = z.object({
 });
 export type AdminCatalogEntry = z.infer<typeof AdminCatalogEntry>;
 
-export const AdminCatalogEntryWrite = AdminCatalogEntry.omit({ updatedAt: true, deletedAt: true });
+/**
+ * 3.27：写入仍只接受 `CanonicalModelKey`（必须有「小写厂商/模型名」）。宽校验只给后台**读取**
+ * （`AdminCatalogEntry` / `AdminModel`），公开的 `ModelKey` 也只额外承认 `LEGACY_MODEL_KEY` 一条，
+ * 免得新增 / 修改模型时能写入 `#deleted:` 或任意没有厂商前缀的键。
+ */
+export const AdminCatalogEntryWrite = AdminCatalogEntry.omit({
+  updatedAt: true,
+  deletedAt: true,
+}).extend({ modelKey: CanonicalModelKey });
 
 /**
  * v3.4：模型路由——这个模型可以走哪些上游账号（按优先级、权重调度，失败自动切换到下一个）。
@@ -759,7 +822,11 @@ const ServiceRatesWrite = z
     '同一计价单位不能重复',
   );
 
-/** v3.3：后台「模型」页的一行 = 目录条目 + 当前生效价目表里的倍率。 */
+/**
+ * v3.3：后台「模型」页的一行 = 目录条目 + 当前生效价目表里的倍率。
+ * 3.27：`modelKey` 跟 `AdminCatalogEntry` 一样放宽（真实目录里有软删除键、没有厂商前缀的旧键），
+ * 用户端接口不受影响。
+ */
 export const AdminModel = AdminCatalogEntry.extend({
   serviceRates: z.array(ModelServiceRate).max(5).optional(),
   /** 售价倍率（用户被扣的钱）；当前生效价目表里没有该模型的 token 价格时为 null（例：语音、图片模型）。 */
@@ -1394,6 +1461,11 @@ export const AdminUsageSummary = z.object({
   totals: AdminUsageTotals,
   /** 分组行数超过 limit 被截断。 */
   truncated: z.boolean(),
+  /**
+   * groupBy 含 user 时：用户 ID → 身份（昵称优先，其次登录名）。一次批量查询，不逐行查库；
+   * 已注销的账号不出现在这里，界面按「已注销账号」显示。
+   */
+  userLabels: z.record(z.string(), AdminUserLabel).default({}),
 });
 export type AdminUsageSummary = z.infer<typeof AdminUsageSummary>;
 
@@ -1405,12 +1477,20 @@ export const AdminUsageRecord = z.object({
   createdAt: Timestamp,
   /** 发起调用的用户；平台账户的调用为发起操作的管理员。 */
   userId: Id,
+  /** 用户昵称与登录名（后台展示用，优先昵称）；账号已注销为 null。 */
+  nickname: z.string().nullable().default(null),
+  username: z.string().nullable().default(null),
   characterId: Id.nullable(),
   conversationKind: z.enum(['direct', 'group']).nullable(),
   /** 不认识的用途解析为 'unsupported'。 */
   purpose: tolerantEnum(ModelPurpose),
   billingOwner: BillingOwner,
-  modelKey: ModelKey,
+  /**
+   * 3.27：后台读取放宽（软删除键 `原键#deleted:<随机>`、没有厂商前缀的旧键），与模型目录同规则，
+   * 见 `AdminModelKey`。`model_access.usage_records` 里有不符合公开正则的历史键，
+   * 用严格的 `ModelKey` 会让整页明细一行都解析不出来。
+   */
+  modelKey: AdminModelKey,
   upstreamId: Id,
   inputTokens: z.number().int().nonnegative(),
   cachedInputTokens: z.number().int().nonnegative(),
@@ -1458,7 +1538,12 @@ export const AdminUsageOverview = z.object({
   recentErrors: z.array(
     z.object({
       upstreamId: Id,
-      modelKey: ModelKey,
+      /**
+       * 3.43：后台只读历史，键同样放宽（软删除键 / 没有厂商前缀的旧键），与 `AdminUsageRecord` 一致，
+       * 见 `AdminModelKey`。这里用严格的 `ModelKey` 会让整包概览解析失败、看板所有数字都不显示。
+       * 请求体里的 `modelKeys` 筛选用 `ModelKey`（规范键 + `LEGACY_MODEL_KEY` 这一条历史键），能筛到旧键的调用记录。
+       */
+      modelKey: AdminModelKey,
       errorCode: z.string().max(64),
       count: z.number().int().positive(),
       lastAt: Timestamp,

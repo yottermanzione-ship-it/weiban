@@ -7,6 +7,7 @@ import {
   GROUP_MEMBER_LIMIT,
   GROUP_MIN_CHARACTERS,
   GroupCompanionEndpoints,
+  MembershipEndpoints,
 } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
 import { useChat } from '../app/chat.js';
@@ -36,6 +37,9 @@ import { MediaImg } from './media.js';
 function groupError(e: unknown): string {
   if (e instanceof ApiFailure && e.status === 422 && e.code === 'limit_reached')
     return `群里最多 ${GROUP_MEMBER_LIMIT} 个角色`;
+  // 10-25（会员 v6）：群聊是 PRO+ 权益，服务端返回 403 membership_required 时引导开通。
+  if (e instanceof ApiFailure && e.code === 'membership_required')
+    return '群聊是 PRO+ 会员权益，开通后才能发起群聊、在群里发消息';
   if (e instanceof ApiFailure && e.code === 'adult_mode_not_eligible')
     return '群里有成员不能使用这个模式';
   if (e instanceof ApiFailure && e.code === 'romance_not_allowed')
@@ -152,6 +156,10 @@ export function SelectMembersPage() {
   const [requestId] = useState(() => crypto.randomUUID());
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
+  // 10-25（会员 v6）：发起群聊只对 PRO+ 开放；「添加成员」不是建群，旧群仍可由免费用户维护成员。
+  // 服务端同样校验（403 membership_required），这里只提前引导，不作为唯一防线。
+  const membership = useRemote(MembershipEndpoints.get);
+  const createLocked = !addTo && membership.data?.tier === 'free';
   const nameOf = (id: string) =>
     contacts.find((c) => c.characterId === id)?.remark || names[id] || '角色';
   const total = locked.length + picked.length;
@@ -161,7 +169,7 @@ export function SelectMembersPage() {
     .filter((c) => !query || nameOf(c.characterId).includes(query))
     .sort((a, b) => nameOf(a.characterId).localeCompare(nameOf(b.characterId), 'zh-CN'));
   async function done() {
-    if (pending || !enough) return;
+    if (pending || !enough || createLocked) return;
     setPending(true);
     setError('');
     try {
@@ -185,6 +193,32 @@ export function SelectMembersPage() {
       setPending(false);
     }
   }
+  if (createLocked)
+    return (
+      <main className="select-members">
+        <NavBar
+          title="发起群聊"
+          left={
+            <button
+              type="button"
+              className="text-button text-action plain-text"
+              onClick={() => navigate(-1)}
+            >
+              取消
+            </button>
+          }
+        />
+        <p className="notice-bar" role="status">
+          群聊是 PRO+ 会员权益，开通后即可发起群聊。
+          <Link to="/membership">去开通 ›</Link>
+        </p>
+        <EmptyState
+          icon="wechat/chat_pair"
+          title="还不能发起群聊"
+          desc="已加入的旧群仍可以查看历史消息，只是暂时不能在里面发言"
+        />
+      </main>
+    );
   return (
     <main className="select-members">
       <NavBar

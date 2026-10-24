@@ -15,7 +15,7 @@ export interface WindowLimits {
   maxTurns: number;
   triggerChars: number;
 }
-/** 平时的原文窗口（约 1 万 token）。长上下文模式的参数在后台「记忆分档」里调（v5 批 B）。 */
+/** 平时的原文窗口（约 1 万 token）。 */
 export const WINDOW: WindowLimits = {
   /** 前移后至少保留的用户轮数（爱语 10，新版文档 12）。 */
   keepTurns: 12,
@@ -56,16 +56,14 @@ export function nextWindowStart(input: {
   turns: WindowTurn[];
   segments: SummarySegment[] | null;
   cursorSeq: number;
-  /** 不传 = 平时窗口 WINDOW；长上下文模式传放大后的参数。 */
-  limits?: WindowLimits;
 }): number | null {
-  const L = input.limits ?? WINDOW;
   const turns = input.turns.filter((t) => t.startSeq > input.windowStart);
   const chars = turns.reduce((n, t) => n + t.chars, 0);
   const over =
-    turns.length > L.triggerTurns || (chars > L.triggerChars && turns.length > L.keepTurns);
+    turns.length > WINDOW.triggerTurns ||
+    (chars > WINDOW.triggerChars && turns.length > WINDOW.keepTurns);
   if (!over) return null;
-  const desired = turns[Math.max(0, turns.length - L.keepTurns)]!.startSeq - 1;
+  const desired = turns[Math.max(0, turns.length - WINDOW.keepTurns)]!.startSeq - 1;
   let target: number | null = null;
   if (input.segments?.length) {
     const ends = input.segments
@@ -76,7 +74,7 @@ export function nextWindowStart(input: {
     const t = Math.min(desired, input.cursorSeq);
     if (t > input.windowStart) target = t;
   }
-  if (target === null && turns.length > L.maxTurns) target = desired;
+  if (target === null && turns.length > WINDOW.maxTurns) target = desired;
   return target;
 }
 

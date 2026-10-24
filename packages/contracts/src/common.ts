@@ -152,6 +152,8 @@ export const ErrorCode = z.enum([
   'plaza_check_unavailable', // 422：隐私检查或儿童特征重检无法完成（余额不足或模型故障），不能跳过
   // 3.28（H2）
   'private_mode_unsupported', // 422：私密模式只开放文字与图片（语音通话、语音消息不可用）
+  // 会员权益（10-25，会员 v6）
+  'membership_required', // 403：该功能是 PRO+ 权益；details.benefit / details.action 指明具体权益，客户端据此引导开通
   // v1.0 删除：age_not_confirmed、group_conversation（PRD v1.2 取消年龄确认和「群聊只用日常」）
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

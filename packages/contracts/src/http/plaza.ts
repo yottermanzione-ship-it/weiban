@@ -521,6 +521,9 @@ export const AdminPlazaWork = PlazaWorkDetail.extend({
 export const AdminPlazaReport = z.object({
   reportId: Id,
   reporterUserId: Id,
+  /** 举报人昵称与登录名（后台展示用，优先昵称）；账号已注销为 null。 */
+  nickname: z.string().nullable().default(null),
+  username: z.string().nullable().default(null),
   target: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('work'), workId: Id }),
     z.object({ kind: z.literal('comment'), commentId: Id, workId: Id, text: z.string() }),

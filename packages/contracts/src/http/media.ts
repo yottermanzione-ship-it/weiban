@@ -14,7 +14,7 @@ import { API_PREFIX, Id, Timestamp, defineEndpoint, tolerantEnum } from '../comm
 /**
  * 用途决定谁能读、保留多久（3.0 扩展，D-L5-01）：
  * - user_avatar / contact_avatar / chat_image / chat_voice / user_sticker / moments_image / pet_photo /
- *   import_screenshot / custom_character_avatar：只有上传者本人可读（import_screenshot 随导入原文删除）；
+ *   import_screenshot / custom_character_avatar / chat_background：只有上传者本人可读（import_screenshot 随导入原文删除）；
  * - generated_image / generated_voice：系统为某用户生成（角色发图、角色语音、宠物照片），只有该用户可读；
  * - character_avatar / sticker_library / voice_sample / card_template / pet_art：素材库，所有登录用户可读，只能管理员上传；
  * - plaza_avatar：人设广场公开头像（作品发布时由 plaza 经 MediaWritePort 复制生成），所有登录用户可读。
@@ -24,6 +24,8 @@ export const MediaPurpose = z.enum([
   'moments_cover',
   /** 3.11：用户设置群头像，仅上传者本人可读。 */
   'group_avatar',
+  /** 3.41：本人给某个会话单独设置的聊天背景，仅上传者本人可读。 */
+  'chat_background',
   'user_avatar',
   'contact_avatar',
   'character_avatar',
@@ -52,6 +54,7 @@ export type MediaPurpose = z.infer<typeof MediaPurpose>;
 export const UserMediaPurpose = z.enum([
   'moments_cover',
   'group_avatar',
+  'chat_background',
   'user_avatar',
   'contact_avatar',
   'chat_image',

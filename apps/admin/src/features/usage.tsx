@@ -19,6 +19,7 @@ import { DataTable, type ProColumns } from '../ui/table.js';
 import { Page, useToast } from '../ui/page.js';
 import { Money, formatInt, formatPercent, formatYuan, pointsOf } from '../ui/format.js';
 import { PURPOSE_LABELS, modelLabel, rangeOf, type RangeKey } from './model/shared.js';
+import { UserIdentity } from './users/identity.js';
 
 type GroupKey = 'user' | 'model' | 'purpose' | 'character';
 
@@ -72,7 +73,7 @@ export function UsagePage() {
     if (group === 'model') return modelName(key);
     if (group === 'purpose') return PURPOSE_LABELS[key] ?? key;
     if (group === 'character') return key || '（无角色）';
-    return key ? `${key.slice(0, 12)}…` : '—';
+    return key;
   }
 
   const rows = data?.rows ?? [];
@@ -81,12 +82,16 @@ export function UsagePage() {
   const columns: ProColumns<AdminUsageSummary['rows'][number]>[] = [
     {
       title: GROUP_LABELS[group].replace('按', ''),
-      render: (_, row) => (
-        <div className="cell-main">
-          <span className="cell-title">{labelOf(String(row.keys[0] ?? ''))}</span>
-          {group === 'user' && <span className="cell-sub mono">{row.keys[0]}</span>}
-        </div>
-      ),
+      render: (_, row) => {
+        const key = String(row.keys[0] ?? '');
+        // 「按用户」显示昵称（没有昵称退回登录名，都没有才显示 ID 短码）；复制完整 UUID 走 title。
+        if (group === 'user') return <UserIdentity userId={key} label={data?.userLabels?.[key]} />;
+        return (
+          <div className="cell-main">
+            <span className="cell-title">{labelOf(key)}</span>
+          </div>
+        );
+      },
     },
     {
       title: '调用次数',

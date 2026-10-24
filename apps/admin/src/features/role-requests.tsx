@@ -31,6 +31,7 @@ import { RecordDrawer } from '../ui/drawer.js';
 import { FieldHelp, FormSection, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
+import { UserIdentity, userDisplayName } from './users/identity.js';
 
 const STATUS_LABELS: Record<string, string> = {
   pending: '待处理',
@@ -122,7 +123,17 @@ function RequestList() {
         </div>
       ),
     },
-    { title: '申请人', width: 130, render: (_, row) => row.username ?? '已注销' },
+    {
+      title: '申请人',
+      width: 150,
+      render: (_, row) => (
+        <UserIdentity
+          userId={row.userId}
+          label={{ nickname: row.nickname, username: row.username }}
+          deleted={!row.username}
+        />
+      ),
+    },
     {
       title: '类型',
       width: 90,
@@ -306,7 +317,11 @@ function RequestDrawer({
       open
       onClose={onClose}
       title={row ? `「${row.roleName}」` : '制作申请'}
-      subtitle={row ? `${row.username ?? '已注销'} · ${formatDateTime(row.createdAt)}` : undefined}
+      subtitle={
+        row
+          ? `${userDisplayName(row.userId, { nickname: row.nickname, username: row.username }, !row.username)} · ${formatDateTime(row.createdAt)}`
+          : undefined
+      }
       width={720}
       loading={!row && remote.loading}
       footer={
@@ -356,7 +371,11 @@ function RequestDrawer({
             <div>
               <span className="detail-label">申请人</span>
               <span>
-                {row.username ?? '已注销'}（{row.userId.slice(0, 8)}…）
+                {userDisplayName(
+                  row.userId,
+                  { nickname: row.nickname, username: row.username },
+                  !row.username,
+                )}
               </span>
             </div>
             <div>
@@ -575,16 +594,21 @@ function ConfigPanel() {
         <Form.Item
           name="lifetimeFreeCount"
           label="每人终身免费次数"
-          extra={<FieldHelp>免费用户和 PRO+ 都有。</FieldHelp>}
+          extra={
+            <FieldHelp>
+              免费用户的口径（默认 3 次）；PRO+ 不看这一项，改用下面的每周次数。
+            </FieldHelp>
+          }
         >
           <InputNumber min={0} max={100} precision={0} style={{ width: 200 }} />
         </Form.Item>
         <Form.Item
           name="proPlusWeeklyFreeCount"
-          label="PRO+ 每周额外免费次数"
+          label="PRO+ 每周免费次数"
           extra={
             <FieldHelp>
-              北京时间周一 0 点重置，不累积到下周；会员期间才有。先用每周的，再用终身的。
+              默认 3 次；北京时间周一 0 点重置，不累积到下周。PRO+ 只看每周次数，不再叠加终身次数；
+              免费用户不生效。
             </FieldHelp>
           }
         >

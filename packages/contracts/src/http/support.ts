@@ -170,6 +170,8 @@ export const AdminSupportTicket = SupportTicket.extend({
   userId: Id,
   /** 提交人用户名（后台展示）；账号已注销为 null。 */
   username: z.string().nullable(),
+  /** 提交人昵称；没填资料或账号已注销为 null。 */
+  nickname: z.string().nullable().default(null),
   /** 最近处理的管理员。 */
   handledBy: Id.nullable(),
 });
@@ -236,7 +238,10 @@ export const SupportAdminEndpoints = {
 
 // ---------- 3.15：设置 › 插件（总对照表 Q10，节点 T4.10.9） ----------
 
-/** 插件。目前只有外部渠道接入（真微信 / QQ / 微博），都还没开放；真正的接入在下一张任务卡做。 */
+/**
+ * 插件。3.15 时只有入口、全部 coming_soon；3.42 起微信 / 微博的真实状态在 http/channels.ts（ChannelEndpoints），
+ * 这个接口保留给旧客户端，status 跟着绑定关系走；QQ 仍固定 coming_soon。
+ */
 export const PluginId = z.enum(['wechat', 'qq', 'weibo']);
 export type PluginId = z.infer<typeof PluginId>;
 
@@ -257,6 +262,6 @@ export const PluginEndpoints = {
     path: `${API_PREFIX}/plugins`,
     auth: 'user',
     response: z.object({ items: z.array(Plugin) }),
-    summary: '3.15：设置 › 插件列表（微信 / QQ / 微博接入，目前都是 coming_soon）',
+    summary: '3.15：设置 › 插件列表（兼容入口；微信 / 微博状态跟绑定关系走，QQ 仍是 coming_soon）',
   }),
 } as const;

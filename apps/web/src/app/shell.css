@@ -1423,17 +1423,9 @@ main > button.danger-row {
   height: var(--wb-size-mini-app-icon);
   border-radius: var(--wb-radius-lg);
 }
-.miniapp-recent {
-  display: flex;
-  gap: var(--wb-space-6);
-  overflow-x: auto;
-  padding: var(--wb-space-4) var(--wb-space-5);
-  margin: 0 calc(-1 * var(--wb-space-5));
-  background: var(--wb-color-bg-surface);
-}
-.miniapp-recent .miniapp-cell {
-  flex: 0 0 56px;
-}
+/* 最近使用与「我的小程序」共用 .miniapp-card > .miniapp-grid 的几何：
+   4 列等宽、96 行高、0 间距、左右各 16 内边距都由上面那组规则提供，这里不再单独定义，
+   避免两段网格再次各写一套而错位。.miniapp-recent 只作标记类。 */
 .miniapp-card {
   margin: 0 calc(-1 * var(--wb-space-5)) var(--wb-size-group-gap);
   padding: var(--wb-space-2) 0;

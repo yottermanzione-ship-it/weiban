@@ -180,7 +180,15 @@ export const ClientLogAdminEndpoints = {
       issue: ClientLogIssue,
       samples: z.array(ClientLogSample),
       days: z.array(z.object({ day: z.string(), count: z.number().int().nonnegative() })),
-      users: z.array(z.object({ userId: Id, lastSeenAt: Timestamp })),
+      users: z.array(
+        z.object({
+          userId: Id,
+          /** 昵称与登录名（后台展示用，优先昵称）；账号已注销为 null。 */
+          nickname: z.string().nullable().default(null),
+          username: z.string().nullable().default(null),
+          lastSeenAt: Timestamp,
+        }),
+      ),
     }),
     summary: '问题详情：最近 20 条、30 天趋势、最近受影响用户',
   }),

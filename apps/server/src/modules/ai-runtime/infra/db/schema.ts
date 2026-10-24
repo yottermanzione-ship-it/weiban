@@ -88,7 +88,7 @@ export const companionSettings = aiRuntimeSchema.table(
     dailyLife: boolean('daily_life').notNull().default(true),
     /** T-071：该角色发语音 / 通话用的音色（media 音色库，非克隆）；null = 预设默认。 */
     voiceId: uuid('voice_id'),
-    /** 0108（v5 批 B）：长上下文模式，只对单个角色有效、PRO+ 专属。 */
+    /** 0108（v5 批 B）：长上下文模式，只对单个角色有效、PRO+ 专属。已下线，保留列（代码不再读写）。 */
     longContext: boolean('long_context').notNull().default(false),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
@@ -738,7 +738,10 @@ export const planningDecisions = aiRuntimeSchema.table(
   ],
 );
 
-/** 0107（v5 批 B）：记忆分档与长上下文参数（管理后台可调，单行）。config 缺字段时按代码默认补齐。 */
+/**
+ * 0107（v5 批 B）：记忆分档参数（管理后台可调，单行）。config 缺字段时按代码默认补齐。
+ * 0108 加的 companion_settings.long_context 列保留不动（长上下文模式已下线，代码不再读写）。
+ */
 export const memoryTierConfig = aiRuntimeSchema.table(
   'memory_tier_config',
   {

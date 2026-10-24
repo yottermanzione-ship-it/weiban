@@ -4,6 +4,8 @@
  * - 权益对照是星野式两列 Free / PRO+ 逐行打勾，需要积分的项标「需积分」。
  * - 总经理 10-19 明确：不放任何诱导开通的文案（不渲染「还差 N」「立即开通享…」之类），只如实列出两档区别。
  * - 记忆数字读批 B 的记忆分档参数（MemoryTierEndpoints.plans，后台「系统 › 记忆分档」可调）；读不到时按 16 号 §5.3 默认显示。
+ * - 10-25（会员 v6）：角色制作免费次数不再「终身 + 每周」叠加——免费用户终身 N 次、PRO+ 每周 N 次，
+ *   数字都读 RoleRequestEndpoints.getConfig（后台「制作申请 › 价格与开关」）；用完后按 pointsCost 积分/次。
  */
 import { useState } from 'react';
 import {
@@ -90,52 +92,45 @@ export function MembershipPage() {
   const pro = member?.tier === 'pro_plus';
   const rc = roleConfig.data;
   const life = rc?.lifetimeFreeCount ?? 3;
-  const weekly = rc?.proPlusWeeklyFreeCount ?? 2;
+  const weekly = rc?.proPlusWeeklyFreeCount ?? 3;
   const fee = rc?.pointsCost ?? 200;
-  const bonus = (data?.plans ?? [])
-    .map((p) => `${p.name} ${formatPoints(p.bonusPoints)}`)
-    .join(' / ');
 
   const rows: Row[] = [
-    { label: '和角色聊天（可选任意模型）', free: true, pro: true, points: true },
-    { label: '群聊、语音消息、电话', free: true, pro: true, points: true },
-    { label: '切换模型、私密模式', free: true, pro: true, points: true },
-    { label: '开通即送积分（永久有效）', free: false, pro: bonus || true },
+    { label: '角色聊天', free: true, pro: true, points: true },
+    { label: '群聊', free: false, pro: true, points: true },
+    { label: '语音通话', free: true, pro: true, points: true },
+    { label: '切换模型', free: true, pro: true, points: true },
     {
-      label: '常驻记忆（每次都记得的重要事）',
+      label: '常驻记忆',
       free: `${mf.residentLimit} 条`,
       pro: `${mp.residentLimit} 条`,
     },
     {
-      label: '记忆库容量（每个角色）',
+      label: '记忆库容量 /角色',
       free: mf.libraryLimit === null ? '不限' : `${mf.libraryLimit} 条`,
       pro: mp.libraryLimit === null ? '不限' : `${mp.libraryLimit} 条`,
     },
     {
       label: '聊天摘要',
       free: days(mf.summaryDays, '全部'),
-      pro: days(mp.summaryDays, '全部 + 年度回忆'),
+      // 「年度回忆」后端只留了上下文口子、暂无数据来源（memory-window annual 传空）。
+      pro: days(mp.summaryDays, '长期、年度回忆'),
     },
     {
-      label: '每次按话题回想',
+      label: '按话题回忆往事',
       free: `${mf.retrieveLimit} 条`,
       pro: `${mp.retrieveLimit} 条`,
     },
-    {
-      label: '翻聊天记录（提到旧事时）',
-      free: days(mf.recallDays, '全部'),
-      pro: days(mp.recallDays, '全部'),
-    },
-    { label: '长上下文模式（可选）', free: false, pro: true, points: true },
-    { label: '角色生态（含私人朋友圈）', free: false, pro: true, points: true },
+    { label: '角色生态', free: false, pro: true, points: true },
     { label: '接入 QQ / 微信', free: false, pro: true, points: true },
     { label: '好感度加成', free: false, pro: true },
     // 3.25（G1-7）：从未充值且非会员的账号，好感度最高到「亲密好友」；充值或开通会员后解除。
-    { label: '好感度最高阶段', free: '亲密好友（充值后解除）', pro: '伴侣' },
+    { label: '好感度最高阶段', free: '亲密好友', pro: '伴侣' },
     {
-      label: `申请官方制作角色（免费次数用完后 ${fee} 积分/次）`,
-      free: `终身 ${life} 次`,
-      pro: `终身 ${life} 次 + 每周 ${weekly} 次`,
+      // 10-25（会员 v6）：免费列就是终身 N 次；PRO+ 只看本周 N 次，不再叠加终身次数。
+      label: '申请官方制作角色',
+      free: `${life} 次`,
+      pro: `每周 ${weekly} 次`,
     },
   ];
 
@@ -203,6 +198,10 @@ export function MembershipPage() {
           </div>
         ))}
       </div>
+      <p className="hint page-note">
+        免费用户的 {life} 次是终身次数，用完后每次 {fee} 积分（后台可调）；PRO+
+        的每周次数按北京时间周一 0 点重置，不累积到下周。
+      </p>
       <p className="hint page-note">
         所有 AI 回复按积分计费，开通即送积分。扣费按实际用量（1 元 = 100
         积分），会员与免费用户单价相同。

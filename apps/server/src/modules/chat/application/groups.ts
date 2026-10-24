@@ -3,6 +3,7 @@
  * - 移出 / 退出的成员保留参与者行并写 left_at，历史消息仍能渲染发送者（Conversation.group.formerParticipants）；
  * - 群消息仍走 ChatWriteService：seq、幂等、补拉、已读游标与私聊完全一致；
  * - 群的情景模式、自己聊天、秒回归 ai-runtime（GroupCompanionEndpoints），chat 只提供数据与系统提示。
+ * - 10-25：用户「发起群聊」是 PRO+ 权益（见 group-access.ts）；查看历史、群信息不受限。
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, eq, isNull, max } from 'drizzle-orm';
@@ -14,6 +15,7 @@ import {
   type ChatGroupAdminPort,
   type ChatGroupReadPort,
   type Conversation,
+  type IdentityMembershipReadPort,
   type PortResult,
   type SyncPort,
   type Tx,
@@ -34,6 +36,7 @@ import {
 } from '../../../platform/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
 import { MEDIA_SYSTEM_PORT } from '../../media/index.js';
+import { IDENTITY_MEMBERSHIP_READ_PORT } from '../../identity/index.js';
 import {
   conversations,
   messages,
@@ -43,6 +46,7 @@ import {
 import { CHAT_GROUP_DIRECTORY, type ChatGroupDirectory } from '../tokens.js';
 import { ChatStore, type ConversationRow } from './store.js';
 import { ChatWriteService } from './write.js';
+import { assertGroupChatEligible } from './group-access.js';
 
 type ParticipantRow = typeof participants.$inferSelect;
 const TITLE_MAX = 40;
@@ -57,6 +61,8 @@ export class ChatGroupService implements ChatGroupAdminPort, ChatGroupReadPort {
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(MEDIA_SYSTEM_PORT) private readonly media: MediaSystemPort,
+    @Inject(IDENTITY_MEMBERSHIP_READ_PORT)
+    private readonly membership: IdentityMembershipReadPort,
     @Optional()
     @Inject(CHAT_GROUP_DIRECTORY)
     private readonly groupDirectory: ChatGroupDirectory | null,
@@ -127,12 +133,21 @@ export class ChatGroupService implements ChatGroupAdminPort, ChatGroupReadPort {
 
   async createForUser(userId: string, input: unknown): Promise<Conversation> {
     const body = parseContract(CreateGroupRequest, input);
+    // 10-25：发起群聊是 PRO+ 权益（403 membership_required）。幂等重试先看群是否已经建好，
+    // 避免「建群成功 → 会员到期 → 客户端重试」被误拒成一个错误。
+    const createKey = `user:${body.clientRequestId}`;
+    const [existing] = await this.db.db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(and(eq(conversations.ownerUserId, userId), eq(conversations.createKey, createKey)))
+      .limit(1);
+    if (!existing) await assertGroupChatEligible(this.membership, userId, 'create_group');
     const result = await this.createGroupConversation(null, {
       ownerUserId: userId,
       characterIds: body.characterIds,
       title: body.title ?? null,
       createdByCharacterId: null,
-      idempotencyKey: `user:${body.clientRequestId}`,
+      idempotencyKey: createKey,
     });
     if (!result.ok) {
       if (result.error === 'limit_reached')

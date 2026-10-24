@@ -21,6 +21,7 @@ import {
   ChatActionEndpoints,
   ChatEndpoints,
   IdentityEndpoints,
+  MembershipEndpoints,
   CharacterEndpoints,
   ModelAccessEndpoints,
   MediaExtraEndpoints,
@@ -42,6 +43,7 @@ import { VirtualList } from './virtual-list.js';
 import { HomeScreenGuide } from './home-screen-guide.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { UserAvatar } from './user-avatar.js';
+import { useMediaUrl } from './avatar-cache.js';
 import { WhileAwayCard, useWhileAway } from './while-away.js';
 import {
   CallRecordBubble,
@@ -520,6 +522,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const id = conversation.conversationId;
   const group = conversation.type === 'group';
   const userProfile = useRemote(IdentityEndpoints.getProfile);
+  // 3.41：当前会话自己的聊天背景（media.purpose = chat_background）；没设置就不发请求。
+  const backgroundUrl = useMediaUrl(conversation.state.backgroundMediaId);
   // F1-3：设置里可关掉「已读 / 已送达」（本机偏好；设置页是另一路由，回来时重新挂载即生效）。
   const [readReceipt] = useState(getReadReceiptVisible);
   const members = groupMembers(conversation);
@@ -547,6 +551,10 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   });
   // 3.22：文本聊天模型还没配置时弹出首次引导，配置好之前不能发消息。
   const modelGate = useModelSetupGate(() => status.refresh());
+  // 10-25（会员 v6）：群聊只对 PRO+ 开放。免费用户可以打开旧群、看历史消息，但不能在群里发新消息；
+  // 服务端在发送入口按同一条规则返回 403 membership_required，这里只提前引导，不作为唯一防线。
+  const membership = useRemote(MembershipEndpoints.get);
+  const groupLocked = group && membership.data?.tier === 'free';
   const location = useLocation();
   const prefill = (location.state as { prefill?: string } | null)?.prefill;
   const [text, setText] = useState(prefill ?? '');
@@ -929,6 +937,10 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     if (!text.trim() || sending) return;
+    if (groupLocked) {
+      showToast('群聊是 PRO+ 会员权益，开通后才能发消息', 3000, 'info');
+      return;
+    }
     if (modelGate.block()) return;
     setSending(true);
     setError('');
@@ -1600,6 +1612,11 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         />
       )}
       <div className="wx-chat-body" onClick={() => panel !== 'none' && setPanel('none')}>
+        {backgroundUrl && (
+          <div className="wx-chat-bg" aria-hidden>
+            <img src={backgroundUrl} alt="" />
+          </div>
+        )}
         <VirtualList
           items={rows}
           itemKey={(row) => row.key}
@@ -1706,6 +1723,11 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
             <OldIcon name="wechat/delete" size={24} />
             删除
           </button>
+        </div>
+      ) : groupLocked ? (
+        <div className="wx-input-bar wx-group-locked" role="status">
+          <span>群聊是 PRO+ 会员权益，开通后可以在群里发消息；历史消息仍可查看。</span>
+          <Link to="/membership">去开通 ›</Link>
         </div>
       ) : (
         <form className="wx-input-bar" onSubmit={(event) => void submit(event)}>
@@ -1820,7 +1842,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           </button>
         </div>
       )}
-      {panel === 'sticker' && !selecting && (
+      {panel === 'sticker' && !selecting && !groupLocked && (
         <StickerPanel
           onEmoji={changeEmoji}
           onErase={() => changeEmoji()}
@@ -1834,7 +1856,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           }
         />
       )}
-      {panel === 'plus' && !selecting && (
+      {panel === 'plus' && !selecting && !groupLocked && (
         <PlusPanel page={plusPage} onPage={setPlusPage} cells={plusCells} />
       )}
       {avatarMenu && (
@@ -1842,7 +1864,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           title={displayName(avatarMenu.refId)}
           onClose={() => setAvatarMenu(null)}
           items={[
-            { label: '拍一拍', onClick: () => nudge(avatarMenu) },
+            // 拍一拍也是一条群消息：免费用户在群里不能发，先不给入口。
+            ...(groupLocked ? [] : [{ label: '拍一拍', onClick: () => nudge(avatarMenu) }]),
             ...(group
               ? [
                   {

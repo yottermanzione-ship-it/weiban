@@ -95,6 +95,29 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 4.0（2026-10-25，统一发布：移除长上下文协议字段）
+
+本次将尚未发布的 3.41–3.43 批次一并发布为 4.0。移除 `MemoryTierStatus.longContext` 等旧响应字段属于删除字段，按版本规则升主版本，不能因网页与服务器同时更新而声称协议完全向后兼容。配套更新网页、后台与 Android 契约生成物；旧客户端需要使用更新后的契约。服务器仍忽略旧请求中的长上下文开关，历史数据库列保留但不读写。其余新增字段、接口、后台历史模型键兼容与会员权益变化详见以下开发批次记录。
+
+### 3.43（2026-10-25，会员 v6：制作配额与群聊权益落到服务端；后台只读补强）
+
+错误码新增 `membership_required`（403，`details.benefit` / `details.action` / `details.requiredTier` 指明是哪项 PRO+ 权益），客户端按 code 引导开通、不解析 message；旧客户端读到未知错误码走 `tolerantEnum` 的 `unsupported` 兜底，不需要升级。群聊相关：`POST /groups`（发起群聊）与在群聊里发消息（`POST /conversations/:id/messages`、WebSocket `message.send`、转发进群）在非 PRO+ 时返回该错误码，查看历史 / 群信息不受影响。制作配额：`RoleRequestConfig.proPlusWeeklyFreeCount` 默认值由 2 改为 3，PRO+ 改为「每周 3 次」且不再叠加 `lifetimeFreeCount`；`RoleRequestQuota.limit / used / remaining` 的含义收敛为「当前档位生效的那一类额度」（免费 = 终身，PRO+ = 本周），`lifetime*` / `weekly*` 仍是两类原始计数，字段形状不变。线上已有的旧配置（存着 2）由迁移 `0140_role_request_weekly_three` 改成 3；没存过配置的走服务器默认值 3。
+
+后台只读补强（放宽历史数据读取 / 新增展示字段；新增模型仍须规范键）：
+
+- 新增 `AdminModelKey`：只用于后台读取的模型键，接受软删除键（`原键#deleted:<随机>`，0117 软删产生）与早期没有厂商前缀的旧键（例 `qwen-audio-3.0-tts-plus`）。`AdminCatalogEntry` / `AdminModel` / `AdminUsageRecord` / `AdminUsageOverview.recentErrors[].modelKey` 改用它，避免生产历史数据让后台整包解析失败、一页都显示不出来；新增模型写入（`AdminCatalogEntryWrite`）仍使用 `CanonicalModelKey`；公开读与选择的 `ModelKey` 只额外兼容实际存在的 `qwen-audio-3.0-tts-plus` 这一条旧键，仍拒绝其他裸键与软删除键，避免用户模型列表同样整包失败。
+- 后台「这是谁」统一带昵称：新增 `AdminUserLabel`（`nickname` / `username`，都可为 null）。`AdminUsageSummary.userLabels`（`groupBy` 含 user 时一次批量返回，不逐行查库）、`AdminUsageRecord.nickname` / `username`、`AdminRoleRequest.nickname`、`AdminPlazaReport.nickname` / `username`、`PendingAccountDeletion.nickname` 都是新增字段（默认 null），已注销账号为 null，旧客户端忽略即可。
+
+### 3.42（2026-10-25，设置 › 插件 › 微信 / 微博接入）
+
+新增 `channels.ts` 与 `ChannelEndpoints`，按旧版实际协议实现：微信使用 iLink 出二维码、查询扫码状态、服务器长轮询收消息与发送文字；微博保留 OpenIM 协议适配，但尚不能可靠验证私信发送者归属，保持 `not_integrated`，不开放绑定。没有虚构的外部网关或 webhook。`GET /api/v1/channels` 返回状态与可选角色；微信使用 `/channels/wechat/qr` 与 `/channels/wechat/qr/:attemptId`，已绑定后可换角色或解绑。用户凭据与消息正文按所属用户 DEK 加密，正常私聊文字复用现有 AI 回复与计费链路，私密范围内容不外发；仅 PRO+ 可新绑，查看状态与解绑不受会员限制。新增模块登记账号注销清理。配套迁移 `0139_channels`，默认关闭外部轮询；不迁移旧站绑定，也不连接旧站。真实扫码与消息往返仍需要本人授权联调，不能把协议模拟测试记为实网验证。
+
+### 3.41（2026-10-25，单个会话的聊天背景；移除长上下文模式）
+
+会话状态新增可选 `backgroundMediaId`（`UserConversationState` 响应与 `UpdateConversationStateRequest` 请求，`null` = 恢复默认；旧响应不带该字段按默认背景处理）。媒体用途新增 `chat_background`（`MediaPurpose`、`UserMediaPurpose`），只有上传者本人可读，只能挂到自己的会话。两处都是向后兼容的增量：`MediaObject.purpose` 早已是接收端容错的 `tolerantEnum(MediaPurpose)`，旧客户端读到新取值不报错；`UserMediaPurpose` 只出现在上传请求的 query 里，服务器多认一个值不影响旧客户端。不需要旧客户端升级，只升次版本。数据库要配套迁移 `0138_chat_background`（`chat.user_conversation_states` 加 `background_media_id uuid`，与其它媒体列一致不加外键），不先迁移则 chat 模块读写会报列不存在。
+
+同批移除「长上下文模式」：删除 `CompanionSettings.longContext`、`MemoryTierConfig.longContext` / `ChatWindowLimits`、`MemoryTierStatus.longContext`，服务器不再读写这些字段（数据库列与旧配置保留，读取时丢弃，不新增迁移）。用户端陪伴设置请求体是非严格对象，旧客户端仍带 `longContext` 会被剥离而不是 400；但删除旧响应字段仍属于不兼容改动，因此统一发布时升为 4.0，不能据此宣称旧客户端完全兼容。
+
 ### 3.40（2026-10-24，旧角色卡就是运行格式）
 
 新增 `legacy-character-card.ts`：`characters_v2` 整行 JSON 的读取器与旧字段访问器（`core_persona`、`soul_*`、`style_*`、`knowledge_json`、`opening_messages_json`、`group_chat_json`、`moment_profile_json`、`voice_json`、`qwen_voice_id`、`display_name`、`nickname`、`aliases_json`、`signature`、`identity_*`），不做字段改名、不转 `WeibanCardData`。运行端口 `CharacterForRuntime` 的 `card` 改为可空并新增 `legacyCard`（旧卡整行）；`CharacterReadPort` 新增可选 `getLegacyContext`（旧库世界书 / 示例对话）。旧卡角色直接按旧字段运行，新卡角色逻辑不变。

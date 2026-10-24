@@ -56,6 +56,7 @@ import {
   UNAVAILABLE_DETAIL_LABELS,
   UPSTREAM_STATE_LABELS,
   VISION_REQUIRED_SCENARIOS,
+  modelDisplayName,
   toWrite,
   upstreamState,
 } from './shared.js';
@@ -141,13 +142,31 @@ function lacksVision(scenarios: readonly string[] | undefined, capabilities: rea
 
 export function ModelsTab({
   models,
+  deletedModels = [],
   upstreams,
+  loading = false,
+  loadError = '',
+  upstreamsError = '',
+  invalidModels = [],
   refresh,
   onDeleted,
 }: {
-  /** 只传未删除的模型（已删除的只给调用记录显示名字用）。 */
+  /** 只传未删除的模型（编辑、上架 / 下架、批量删除都只作用于它们）。 */
   models: AdminModel[];
+  /**
+   * 3.27：已删除（软删）的模型。真实目录里有软删除行，现在按契约也能读出来了：
+   * 排在列表最后、标「已删除」，只供核对历史（不能编辑 / 上架 / 再删除）。
+   */
+  deletedModels?: AdminModel[];
   upstreams: Upstream[];
+  /** 3.27：列表还在读取。读的过程中不能把「还没有结果」当成「没有模型」。 */
+  loading?: boolean;
+  /** 3.27：列表接口失败的原因（非 2xx、响应不符合契约、超时都会走到这里）。有值时只报错 + 重试，不显示空状态。 */
+  loadError?: string;
+  /** 3.27：上游账号列表失败。空状态让管理员先加线路，线路没读出来时要说明白，免得重复添加。 */
+  upstreamsError?: string;
+  /** 3.27：响应里不符合契约、因此没能展示的行（模型键 + 第一个不符合的字段）。 */
+  invalidModels?: Array<{ modelKey: string; message: string }>;
   refresh: () => void;
   /** 3.23：删除模型后通知外层（场景推荐 / 平台内部模型卡片重新读取）。 */
   onDeleted?: () => void;
@@ -177,14 +196,24 @@ export function ModelsTab({
   const upstreamName = (id: string) =>
     upstreams.find((u) => u.upstreamId === id)?.name ?? '未知账号';
 
+  const matchesQuery = (m: AdminModel) => {
+    const q = query.trim();
+    return !q || modelDisplayName(m).includes(q) || m.modelKey.includes(q);
+  };
   const list = models
     .filter((m) => matchesUse(m, use))
     .filter((m) => status === 'all' || (status === 'on' ? m.enabled : !m.enabled))
-    .filter(
-      (m) =>
-        !query.trim() || m.displayName.includes(query.trim()) || m.modelKey.includes(query.trim()),
-    )
+    .filter(matchesQuery)
     .sort((a, b) => a.sortOrder - b.sortOrder);
+  // 3.27：已删除的行照旧排在最后。它们恒为停用，所以「已上架」筛选里不出现。
+  const deletedList =
+    status === 'on'
+      ? []
+      : deletedModels
+          .filter((m) => matchesUse(m, use))
+          .filter(matchesQuery)
+          .sort((a, b) => a.sortOrder - b.sortOrder);
+  const tableRows = [...list, ...deletedList];
 
   async function setEnabled(m: AdminModel, enabled: boolean) {
     setError('');
@@ -207,7 +236,11 @@ export function ModelsTab({
       width: 210,
       render: (_, m) => (
         <div className="cell-main">
-          <span className="cell-title">{m.displayName}</span>
+          <span className="cell-title">
+            {/* 3.27：显示名去掉 `#deleted:` 后缀；副行照原样显示完整模型键，方便核对。 */}
+            {modelDisplayName(m)}
+            {m.deletedAt && <StatusTag tone="default">已删除</StatusTag>}
+          </span>
           <span className="cell-sub">
             {m.vendorName} · <span className="mono">{m.modelKey}</span>
           </span>
@@ -223,6 +256,17 @@ export function ModelsTab({
       ),
       width: 190,
       render: (_, m) => {
+        // 3.27：已删除的行只显示「已删除」，不再按停用线路 / 计费上限给出误导性的原因。
+        if (m.deletedAt) {
+          return (
+            <div className="cell-main model-status">
+              <span>
+                <StatusTag tone="default">已删除</StatusTag>
+              </span>
+              <span className="cell-sub">历史记录仍显示模型名，不能重新上架</span>
+            </div>
+          );
+        }
         // 3.24：具体原因来自服务器（availability）；旧服务器不带时按线路计费上限判断
         const detail =
           m.availability?.detail ??
@@ -413,47 +457,78 @@ export function ModelsTab({
       title: '操作',
       width: 140,
       fixed: 'right',
-      render: (_, m) => (
-        <Space size={4}>
-          <Button
-            type="link"
-            size="small"
-            onClick={(e) => {
-              e.stopPropagation();
-              openEditor(m);
-            }}
-          >
-            编辑
-          </Button>
-          {m.enabled ? (
+      // 3.27：已删除的行没有可操作的动作（再编辑 / 上架 / 删除都没有意义，接口也不接受这些键）。
+      render: (_, m) =>
+        m.deletedAt ? (
+          <span className="cell-sub">已删除，仅供核对</span>
+        ) : (
+          <Space size={4}>
             <Button
               type="link"
               size="small"
-              danger
-              onClick={() =>
-                confirm({
-                  title: `下架「${m.displayName}」？`,
-                  content:
-                    '下架后，选了这个模型的场景会显示「暂不可用」，用户需要重新选择（不会自动换成别的模型）。',
-                  okText: '下架',
-                  onOk: () => setEnabled(m, false),
-                })
-              }
+              onClick={(e) => {
+                e.stopPropagation();
+                openEditor(m);
+              }}
             >
-              下架
+              编辑
             </Button>
-          ) : (
-            <Button type="link" size="small" onClick={() => void setEnabled(m, true)}>
-              上架
+            {m.enabled ? (
+              <Button
+                type="link"
+                size="small"
+                danger
+                onClick={() =>
+                  confirm({
+                    title: `下架「${modelDisplayName(m)}」？`,
+                    content:
+                      '下架后，选了这个模型的场景会显示「暂不可用」，用户需要重新选择（不会自动换成别的模型）。',
+                    okText: '下架',
+                    onOk: () => setEnabled(m, false),
+                  })
+                }
+              >
+                下架
+              </Button>
+            ) : (
+              <Button type="link" size="small" onClick={() => void setEnabled(m, true)}>
+                上架
+              </Button>
+            )}
+            <Button type="link" size="small" danger onClick={() => void askDelete([m])}>
+              删除
             </Button>
-          )}
-          <Button type="link" size="small" danger onClick={() => void askDelete([m])}>
-            删除
-          </Button>
-        </Space>
-      ),
+          </Space>
+        ),
     },
   ];
+
+  /**
+   * 3.27：空状态只在「接口成功返回、确实一个模型都没有」时出现。
+   * 读取中 / 读取失败 / 只是筛选没匹配到，都不能说「还没有模型」。
+   */
+  const emptyState = loadError
+    ? {
+        emptyTitle: '模型列表没加载出来',
+        emptyHint: '原因见上方红条；点「刷新」重试。一直失败请把这条错误交给开发。',
+      }
+    : loading
+      ? { emptyTitle: '正在读取模型…' }
+      : models.length > 0 || deletedModels.length > 0
+        ? {
+            emptyTitle: '没有符合筛选的模型',
+            emptyHint: '模型是有的，只是当前的搜索词 / 场景 / 状态没匹配到；换个条件试试。',
+          }
+        : {
+            emptyTitle: '还没有模型',
+            emptyHint:
+              '先在「上游账号」里添加一条线路，再点「添加模型」，填上模型名和每百万 token 的价格。',
+            emptyAction: (
+              <Button type="primary" onClick={() => openEditor('new')}>
+                添加第一个模型
+              </Button>
+            ),
+          };
 
   return (
     <div className="tab-body">
@@ -476,13 +551,50 @@ export function ModelsTab({
       </div>
       <ModelsDevBar />
       <MultiplierBase key={deleteVersion} models={models} onSaved={refresh} />
+      {upstreamsError && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="上游账号列表没加载出来"
+          description={`${upstreamsError}（线路名称会显示「未知账号」，先点「刷新」重试再添加模型）`}
+        />
+      )}
+      {invalidModels.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={`有 ${invalidModels.length} 个模型的数据不符合契约，暂时没有列出来`}
+          description={
+            <>
+              {invalidModels.slice(0, 5).map((item) => (
+                <div key={item.modelKey} className="cell-sub">
+                  <span className="mono">{item.modelKey}</span>：{item.message}
+                </div>
+              ))}
+              {invalidModels.length > 5 && (
+                <div className="cell-sub">
+                  还有 {invalidModels.length - 5} 个，修好这些再看下一条。
+                </div>
+              )}
+            </>
+          }
+        />
+      )}
       <DataTable<AdminModel>
-        rowKey="modelKey"
+        // 3.27：已删除行给的是删除前的原键，同键可能重新添加过、也可能删过不止一次，行键要带上删除时间区分。
+        rowKey={(m) => (m.deletedAt ? `${m.modelKey}#deleted@${m.deletedAt}` : m.modelKey)}
         columns={columns}
-        data={list}
-        error={error}
+        data={tableRows}
+        loading={loading}
+        error={error || loadError}
         onRefresh={refresh}
-        onRowClick={(m) => openEditor(m)}
+        // 3.27：已删除的行只能看，点开编辑没有意义（写入接口也不接受软删除键）。
+        onRowClick={(m) => {
+          if (!m.deletedAt) openEditor(m);
+        }}
+        rowSelectable={(m) => !m.deletedAt}
         selectedKeys={selected}
         onSelectionChange={(keys) => setSelected(keys)}
         batchActions={(rows) => (
@@ -532,13 +644,9 @@ export function ModelsTab({
             />
           </>
         }
-        emptyTitle="还没有模型"
-        emptyHint="先在「上游账号」里添加一条线路，再点「添加模型」，填上模型名和每百万 token 的价格。"
-        emptyAction={
-          <Button type="primary" onClick={() => openEditor('new')}>
-            添加第一个模型
-          </Button>
-        }
+        emptyTitle={emptyState.emptyTitle}
+        emptyHint={emptyState.emptyHint}
+        emptyAction={emptyState.emptyAction}
       />
       {editing && (
         <ModelWizard

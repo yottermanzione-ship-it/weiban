@@ -88,7 +88,6 @@ import { MediaAiService, imageBudget, type RenderedMedia } from './media-ai.js';
 import { ImageCaptionStore, NO_CAPTIONS, type CaptionMap } from './image-captions.js';
 import { captionInstruction, type ImageSlot } from '../domain/image-caption.js';
 import { QuirkAction, NO_QUIRK } from '../domain/quirks.js';
-import { MemoryTierService } from './memory-tier.js';
 import {
   hasRecallIntent,
   recallBlock,
@@ -213,7 +212,6 @@ export class ReplyContext {
     @Inject(HealthCareService) readonly healthCare: HealthCareService,
     @Inject(SocialService) readonly social: SocialService,
     @Inject(MediaAiService) readonly mediaAi: MediaAiService,
-    @Inject(MemoryTierService) readonly tiers: MemoryTierService,
     @Optional() @Inject(GROWTH_PET_READ_PORT) readonly pets?: PetReadPort,
     /** 3.25：好感度阶段（语气、恋爱表达按阶段放开、暂停亲密表达）。 */
     @Optional() @Inject(GROWTH_SERVICE) readonly growth?: GrowthService,
@@ -290,17 +288,12 @@ export class ReplyContext {
     const privateScope = conversation.contentScope === 'adult' && policy.adultModeEligible;
     // 0091：分段稳定窗口——至少读到原文起点（摘要边界），最多 600 条（docs/refactor/09 第 8 节）。
     const floor = await this.memory.windowFloor(row.userId, row.characterId).catch(() => 0);
-    // v5 批 B：长上下文模式（PRO+ 对单个角色打开）——原文窗口放大到约 10 万 token，历史多读几页。
-    const longContext = await this.tiers
-      .longContextLimits(row.userId, settings.longContext === true)
-      .catch(() => ({ active: false, limits: undefined }));
     const historyScopes: ContentScope[] = privateScope ? ['normal', 'adult'] : ['normal'];
     const history = await this.readHistory(
       row.conversationId,
       historyScopes,
       row.kind === 'message' ? row.triggerSeq + 1 : undefined,
       floor,
-      longContext.active ? 15 : 3,
     );
     const latest = history.filter((m) => m.senderKind !== 'system').at(-1);
     // 旧气泡可以在新用户消息之后送达，不能把‘最后一条是角色’当作新用户已被回复。
@@ -372,7 +365,6 @@ export class ReplyContext {
       userText,
       {
         turns: windowTurns(history, floor),
-        ...(longContext.active && longContext.limits ? { limits: longContext.limits } : {}),
       },
     );
     // v5 批 B：翻聊天记录（照旧版 recall.js）——本轮有回忆意图才翻「原文窗口之前」的旧聊天，取最相关几条原话。
@@ -875,17 +867,16 @@ export class ReplyContext {
     }
     return retrieveRelevantHistory(candidates, input.query, { max: input.max });
   }
-  /** 从新到旧分页读历史，直到覆盖原文起点 floor（平时最多 3 页、600 条；长上下文模式 15 页）。 */
+  /** 从新到旧分页读历史，直到覆盖原文起点 floor（最多 3 页、600 条）。 */
   private async readHistory(
     conversationId: string,
     scopes: ContentScope[],
     beforeSeq: number | undefined,
     floor: number,
-    maxPages = 3,
   ): Promise<Message[]> {
     const out: Message[] = [];
     let before = beforeSeq;
-    for (let page = 0; page < maxPages; page++) {
+    for (let page = 0; page < 3; page++) {
       const rows = await this.chat.readMessages({
         conversationId,
         scopes,

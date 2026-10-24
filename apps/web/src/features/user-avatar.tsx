@@ -35,7 +35,11 @@ export function UserAvatar({
       {!mediaId && <span aria-hidden="true">{letters}</span>}
       {mediaId && (
         <CachedPicture
+          key={mediaId}
+          mediaId={mediaId}
           url={url}
+          width={size}
+          height={size}
           className={imageClassName}
           fallback={<span aria-hidden="true">{letters}</span>}
         />

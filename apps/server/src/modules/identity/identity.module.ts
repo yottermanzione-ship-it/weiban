@@ -1,4 +1,3 @@
-import { PluginsController } from './http/plugins.controller.js';
 import { MembershipService } from './application/membership.js';
 import { MembershipController } from './http/membership.controller.js';
 import { AdminUsersService } from './application/admin-users.js';
@@ -56,7 +55,6 @@ import { UserStatusController } from './http/user-status.controller.js';
     AnnouncementAdminController,
     UserStatusController,
     MembershipController,
-    PluginsController,
     AdminUsersController,
   ],
   providers: [

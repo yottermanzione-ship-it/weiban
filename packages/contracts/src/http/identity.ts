@@ -344,6 +344,8 @@ export type AccountDeletionModuleProgress = z.infer<typeof AccountDeletionModule
 export const PendingAccountDeletion = z.object({
   userId: Id,
   username: z.string(),
+  /** 昵称（identity.profiles.nickname）；没填资料为 null。 */
+  nickname: z.string().nullable().default(null),
   requestedAt: Timestamp,
   /** 管理员最近一次手动重新触发的时间；没有触发过为 null。 */
   lastRetriggeredAt: Timestamp.nullable(),

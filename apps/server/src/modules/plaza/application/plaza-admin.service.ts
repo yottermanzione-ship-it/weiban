@@ -19,6 +19,8 @@ import {
   PlazaWorkStatus,
   RealPersonKind,
   Timestamp,
+  type IdentityDirectoryPort,
+  type IdentityUserLabel,
   type PlazaSnapshotClassification,
 } from '@weiban/contracts';
 import { z } from 'zod';
@@ -55,6 +57,7 @@ import {
   type PlazaCharacters,
   type PlazaClassificationPolicy,
 } from '../tokens.js';
+import { IDENTITY_DIRECTORY_PORT } from '../../identity/index.js';
 import { PlazaOfficialService } from './plaza-official.service.js';
 import { PlazaService } from './plaza.service.js';
 import { PlazaStore } from './plaza-store.js';
@@ -103,6 +106,9 @@ export class PlazaAdminService {
     @Inject(PLAZA_CLASSIFICATION_POLICY)
     private readonly policy?: PlazaClassificationPolicy,
     @Optional() @Inject(PlazaOfficialService) private readonly official?: PlazaOfficialService,
+    @Optional()
+    @Inject(IDENTITY_DIRECTORY_PORT)
+    private readonly directory?: IdentityDirectoryPort,
   ) {}
 
   private get db() {
@@ -110,6 +116,17 @@ export class PlazaAdminService {
   }
   private get clock() {
     return this.store.clock;
+  }
+
+  /** 后台展示「这是谁」：一次批量取昵称 + 登录名，取不到不影响举报信息本身。 */
+  private async reporterLabels(userIds: string[]): Promise<Record<string, IdentityUserLabel>> {
+    const ids = [...new Set(userIds)];
+    if (!ids.length || !this.directory) return {};
+    try {
+      return await this.directory.getUserLabels(ids);
+    } catch {
+      return {};
+    }
   }
 
   // ---------- 作品 ----------
@@ -461,9 +478,13 @@ export class PlazaAdminService {
       ? await this.db.db.select().from(comments).where(inArray(comments.id, commentIds))
       : [];
     const cMap = new Map(cs.map((c) => [c.id, c]));
+    // 后台展示「这是谁」：举报人昵称一次批量取回，不逐行查库。
+    const labels = await this.reporterLabels(rows.map((r) => r.reporterUserId));
     return rows.map((r) => ({
       reportId: r.id,
       reporterUserId: r.reporterUserId,
+      nickname: labels[r.reporterUserId]?.nickname ?? null,
+      username: labels[r.reporterUserId]?.username ?? null,
       target:
         r.targetKind === 'work'
           ? { kind: 'work' as const, workId: r.targetId }

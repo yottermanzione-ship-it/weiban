@@ -1064,17 +1064,19 @@ export function RoleRequestFormPage() {
           <div className="hint">
             <p>
               {config.data.quota.tier === 'pro_plus'
-                ? `终身免费 ${config.data.quota.lifetimeLimit ?? 3} 次 + PRO+ 每周 ${config.data.quota.weeklyLimit ?? 2} 次`
-                : `终身免费 ${config.data.quota.lifetimeLimit ?? 3} 次`}
-              ，还剩 {config.data.quota.remaining} 次。本次{' '}
+                ? `PRO+ 每周免费 ${config.data.proPlusWeeklyFreeCount} 次，本周还剩 ${config.data.quota.remaining} 次`
+                : `终身免费 ${config.data.lifetimeFreeCount} 次，还剩 ${config.data.quota.remaining} 次`}
+              。本次{' '}
               {config.data.quota.nextPointsCost === 0
                 ? '免费'
                 : `冻结${config.data.quota.nextPointsCost}积分`}
               。
             </p>
             <p>
-              每周次数按北京时间周一 0
-              点重置，不累积到下周；先用每周次数。被拒绝或撤回的申请会退还次数；收费申请完成时扣除，拒绝或撤回退回冻结积分。
+              免费用户终身 {config.data.lifetimeFreeCount} 次；PRO+ 每周{' '}
+              {config.data.proPlusWeeklyFreeCount} 次，按北京时间周一 0
+              点重置、不累积，不与终身次数叠加。
+              被拒绝或撤回的申请会退还次数；免费次数用完后每次按配置价格收费，收费申请完成时扣除，拒绝或撤回退回冻结积分。
             </p>
           </div>
         )}

@@ -5,6 +5,17 @@
 import { z } from 'zod';
 import { API_PREFIX, Id, Timestamp, defineEndpoint } from '../common.js';
 
+/**
+ * 后台展示「这是谁」用的最小身份：优先昵称（identity.profiles.nickname），其次登录名；
+ * 两者都取不到（账号已注销）时界面显示用户 ID 短码。
+ * 一次批量取回（IdentityDirectoryPort.getUserLabels），后台不得逐行查库（避免 N+1）。
+ */
+export const AdminUserLabel = z.object({
+  nickname: z.string().nullable(),
+  username: z.string().nullable(),
+});
+export type AdminUserLabel = z.infer<typeof AdminUserLabel>;
+
 export const AdminUserBan = z.object({
   bannedAt: Timestamp,
   reason: z.string(),

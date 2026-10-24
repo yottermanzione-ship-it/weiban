@@ -28,6 +28,7 @@ import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
 import { FieldHelp, FormSection, Page, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime, formatPercent } from '../ui/format.js';
+import { shortUserId, userDisplayName, useUserDirectory } from './users/identity.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 
 type Decision = z.infer<typeof PlanningDecisionRecord>;
@@ -350,6 +351,8 @@ interface DecisionFilters {
 }
 
 function PlannerDecisions() {
+  // 决策记录接口只返回 userId（ai-runtime 提供），这里用后台账号目录一次批量补昵称。
+  const directory = useUserDirectory();
   const [filters, setFilters] = useState<DecisionFilters>({ userId: '', characterId: '' });
   const [applied, setApplied] = useState<DecisionFilters>({ userId: '', characterId: '' });
   const [items, setItems] = useState<Decision[]>([]);
@@ -537,10 +540,20 @@ function PlannerDecisions() {
               <span>{detail.options.join(' / ') || '—'}</span>
             </div>
             <div>
-              <span className="detail-label">用户 / 角色</span>
-              <span className="mono">
-                {detail.userId.slice(0, 12)}… / {detail.characterId?.slice(0, 8) ?? '—'}
+              <span className="detail-label">用户</span>
+              <span title={detail.userId}>
+                {userDisplayName(detail.userId, directory.byId.get(detail.userId))}
+                {directory.byId.has(detail.userId) && (
+                  <>
+                    {' '}
+                    <span className="cell-sub mono">{shortUserId(detail.userId)}</span>
+                  </>
+                )}
               </span>
+            </div>
+            <div>
+              <span className="detail-label">角色</span>
+              <span className="mono">{detail.characterId?.slice(0, 8) ?? '—'}</span>
             </div>
           </div>
           <div className="detail-muted">理由：{detail.reason || '—'}</div>

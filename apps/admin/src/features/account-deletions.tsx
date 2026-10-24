@@ -11,6 +11,7 @@ import { DataTable, type ProColumns } from '../ui/table.js';
 import { RecordDrawer } from '../ui/drawer.js';
 import { Page, StatusTag, useDangerConfirm, useToast } from '../ui/page.js';
 import { formatDateTime, relativeTime } from '../ui/format.js';
+import { UserIdentity, userDisplayName } from './users/identity.js';
 
 const MODULE_LABELS: Record<string, string> = {
   identity: '账号',
@@ -76,10 +77,11 @@ export function AccountDeletionsPage() {
       title: '用户',
       width: 220,
       render: (_, row) => (
-        <div className="cell-main">
-          <span className="cell-title">{row.username}</span>
-          <span className="cell-sub mono">{row.userId}</span>
-        </div>
+        <UserIdentity
+          userId={row.userId}
+          label={{ nickname: row.nickname, username: row.username }}
+          deleted={!row.username}
+        />
       ),
     },
     {
@@ -126,7 +128,7 @@ export function AccountDeletionsPage() {
             loading={busy === row.userId}
             onClick={() =>
               confirm({
-                title: `重新触发「${row.username}」的删除？`,
+                title: `重新触发「${userDisplayName(row.userId, { nickname: row.nickname, username: row.username }, !row.username)}」的删除？`,
                 content: '会对还没回报完成的模块重新投递删除任务；已完成的部分不会重复删除。',
                 okText: '重新触发',
                 onOk: () => retry(row),
@@ -162,7 +164,7 @@ export function AccountDeletionsPage() {
         <RecordDrawer
           open
           onClose={() => setDetail(null)}
-          title={`${detail.username} 的注销进度`}
+          title={`${userDisplayName(detail.userId, { nickname: detail.nickname, username: detail.username })} 的注销进度`}
           subtitle={`申请于 ${formatDateTime(detail.requestedAt)}`}
           width={560}
         >

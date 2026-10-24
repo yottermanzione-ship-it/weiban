@@ -488,6 +488,8 @@ export const BillingDebtor = z.object({
   userId: Id,
   /** 取不到（账号已删除）时为空字符串。 */
   username: z.string(),
+  /** 昵称（identity.profiles.nickname）；没填资料或账号已删除为 null。 */
+  nickname: z.string().nullable().default(null),
   /** 当前余额（负数）。 */
   balanceMicros: MoneyMicros,
   balancePoints: Points,
