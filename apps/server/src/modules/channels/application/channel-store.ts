@@ -7,8 +7,9 @@
  * - 一切「后台会碰到的行」都带 generation：重建绑定会 +1，旧的后台任务因此自动作废。
  * - 解绑保留 tombstone 行，但清空凭据、游标与账号字段，并丢弃该绑定的排队消息。
  */
+import { Inject, Injectable } from '@nestjs/common';
 import type { ChannelId, ChannelBindingStatus } from '@weiban/contracts';
-import { newId, type Database, type DbTx } from '../../../platform/index.js';
+import { DATABASE, newId, type Database, type DbTx } from '../../../platform/index.js';
 import type { InboundOutcomeValue, OutboundStatusValue } from '../infra/db/schema.js';
 
 export interface BindingRow {
@@ -69,8 +70,13 @@ const BINDING_COLUMNS = `id,user_id,channel,status,character_id,character_name,a
 const ATTEMPT_COLUMNS = `id,user_id,channel,status,character_id,character_name,qrcode_sealed,bind_url,
   poll_base_url,expires_at,confirmed_binding_id,last_error`;
 
+/**
+ * 持久化仓储。**必须显式 @Inject(DATABASE)**：服务器用 esbuild 打包，没有 design:paramtypes 元信息，
+ * 只写 `constructor(private db: Database)` 时 Nest 会把 db 注入成 undefined（线上 /api/v1/channels 500 的原因）。
+ */
+@Injectable()
 export class ChannelStore {
-  constructor(private readonly db: Database) {}
+  constructor(@Inject(DATABASE) private readonly db: Database) {}
 
   async bindingsOf(userId: string): Promise<BindingRow[]> {
     const { rows } = await this.db.query<BindingRow>(
