@@ -943,18 +943,26 @@
   border-bottom: 7px solid var(--wb-color-overlay-menu);
 }
 
-.custom-group-avatar {
+/* 群自定义头像：优先于 .group-avatar 的宫格规则，图片必须铺满 48 方框。
+   原先只写 .custom-group-avatar，样式表加载顺序一变就会被 .group-avatar 的 grid 规则压住，
+   图片退回宫格单元大小（22px）甚至被挤成一条——2026-10-25 反馈的“群头像被缩小”。 */
+.group-avatar.custom-group-avatar {
+  position: relative;
   display: block;
   padding: 0;
   overflow: hidden;
 }
-.custom-group-avatar > .media-frame,
-.custom-group-avatar > .media-broken {
+.group-avatar.custom-group-avatar > .media-frame,
+.group-avatar.custom-group-avatar > .media-broken {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
 }
-.custom-group-avatar img {
+.group-avatar.custom-group-avatar img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
