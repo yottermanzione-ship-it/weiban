@@ -106,6 +106,27 @@ export class EnvelopeCrypto {
     }
   }
 
+  /** Maintenance batches use one DEK load, while every row still has its own AAD and nonce. */
+  async sealMany(
+    owner: string,
+    records: readonly { aad: string; plaintext: string | Buffer }[],
+    tx?: DbTx,
+  ): Promise<Buffer[]> {
+    if (!records.length) return [];
+    const dek = await this.getOrCreateDek(owner, tx ?? this.database);
+    try {
+      return records.map(({ aad, plaintext }) =>
+        aesGcmSeal(
+          dek,
+          dataAad(owner, aad),
+          typeof plaintext === 'string' ? Buffer.from(plaintext, 'utf8') : plaintext,
+        ),
+      );
+    } finally {
+      dek.fill(0);
+    }
+  }
+
   async open(owner: string, aad: string, sealed: Buffer, tx?: DbTx): Promise<Buffer> {
     const dek = await this.loadDek(owner, tx ?? this.database);
     if (!dek) throw new DecryptionError(`owner ${owner} 没有数据密钥（可能已注销删除）`);

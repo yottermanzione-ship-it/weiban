@@ -657,6 +657,66 @@ export class MediaService
     return this.toMedia(row, input.ownerUserId ?? PLATFORM_KEY_OWNER);
   }
 
+  /** Offline migration only: deterministic identity, existing image/audio checks, owner-bound encryption. */
+  async importLegacyObject(input: {
+    id: string;
+    adminId: string;
+    ownerUserId: string;
+    purpose: MediaPurpose;
+    bytes: Uint8Array;
+    mimeType: string;
+    durationMs?: number;
+  }): Promise<{ mediaId: string; created: boolean }> {
+    if (
+      !/^[0-9a-f-]{36}$/i.test(input.id) ||
+      ![
+        'chat_image',
+        'chat_voice',
+        'generated_voice',
+        'user_sticker',
+        'moments_image',
+        'user_avatar',
+        'group_avatar',
+      ].includes(input.purpose)
+    )
+      throw new AppError('bad_request', '不支持的旧媒体导入身份或用途');
+    const [existing] = await this.database.db
+      .select()
+      .from(objects)
+      .where(eq(objects.id, input.id));
+    if (existing) {
+      if (
+        existing.ownerId !== input.ownerUserId ||
+        existing.purpose !== input.purpose ||
+        existing.state !== 'ready'
+      )
+        throw new AppError('conflict', '旧媒体导入ID与现有记录不符');
+      return { mediaId: existing.id, created: false };
+    }
+    const buffer = Buffer.from(input.bytes);
+    const processed = isAudioPurpose(input.purpose)
+      ? this.processAudio(
+          'generated_voice',
+          { buffer, mimetype: input.mimeType },
+          input.durationMs ?? null,
+        )
+      : await this.processImage(buffer, input.mimeType);
+    try {
+      const row = await this.store({
+        id: input.id,
+        ownerId: input.ownerUserId,
+        purpose: input.purpose,
+        processed,
+        transcriptStatus: null,
+        importAudit: { adminId: input.adminId, provenance: { legacyMigration: true } },
+      });
+      return { mediaId: row.id, created: true };
+    } finally {
+      processed.body.fill(0);
+      processed.thumb?.fill(0);
+    }
+  }
+
   /** 复制对象（重新加密到新所有者），保留宽高、时长、缩略图与内容摘要。 */
   async copyRow(mediaId: string, ownerId: string | null, purpose: string): Promise<Row> {
     const source = await this.get(mediaId);

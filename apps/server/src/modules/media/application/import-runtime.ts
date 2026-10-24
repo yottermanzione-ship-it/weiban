@@ -15,6 +15,7 @@ import {
 } from '../../../platform/index.js';
 import { DiskStorage, S3Storage, type ObjectStorage } from '../infra/storage.js';
 import { MediaService } from './media.js';
+import type { MediaAccountStatus } from '../tokens.js';
 
 export function createImportMediaService(input: {
   database: Database;
@@ -23,6 +24,8 @@ export function createImportMediaService(input: {
   crypto: EnvelopeCrypto;
   audit: AuditLog;
   apply: boolean;
+  /** Private content migration must provide the real identity status/locking port. */
+  accountStatus?: MediaAccountStatus;
 }): MediaService {
   const { database, config, clock, crypto, audit } = input;
   const unavailable = async (): Promise<never> => {
@@ -70,7 +73,7 @@ export function createImportMediaService(input: {
     // 维护脚本不参与后台彻底删除；登记表为空只为满足构造签名。
     new CharacterPurgeRegistry(),
     jobs,
-    {
+    input.accountStatus ?? {
       getAccountStatus: async () => {
         throw new Error('PRIVATE_MEDIA_IMPORT_REJECTED');
       },
