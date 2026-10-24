@@ -72,6 +72,7 @@ import {
 import { CompanionSettingsService } from './settings.js';
 import { SimulationService } from './simulation.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
+import { characterView, rolePersonaSpeechText } from './character-view.js';
 
 // ---------------------------------------------------------------------------
 // 任务名
@@ -172,6 +173,7 @@ export class PlayAiService {
     const role = await this.characters.getForRuntime(userId, characterId);
     const policy = await this.policy.getCharacterPolicy(userId, characterId);
     if (!role || !policy) return null;
+    const view = characterView(role);
     const profile = await this.identity.getProfile(userId);
     const settings = await this.settings.get(userId, characterId).catch(() => null);
     return {
@@ -182,11 +184,13 @@ export class PlayAiService {
       participantId: participant.participantId,
       personaVersion: role.personaVersion,
       persona:
-        JSON.stringify({
-          persona: role.card.data.persona,
-          speech: role.card.data.speech,
-          examples: role.card.data.examples.slice(0, 6),
-        }).slice(0, 12000) + supplementBlock(role.userSupplement),
+        (view.card
+          ? JSON.stringify({
+              persona: view.card.persona,
+              speech: view.card.speech,
+              examples: view.card.examples.slice(0, 6),
+            }).slice(0, 12000)
+          : rolePersonaSpeechText(view, 12000)) + supplementBlock(role.userSupplement),
       address: userNickname(profile?.nickname),
       isMinor: policy.isMinor,
       isRealPerson: policy.isRealPerson,

@@ -890,6 +890,18 @@ export class MediaAssetService
     };
   }
 
+  /** 旧卡音色：按供应商音色键找一条已启用的 media.voices（voice_json / qwen_voice_id 存的是供应商 id）。 */
+  async findEnabledVoiceByProviderKey(
+    providerVoiceKey: string,
+  ): Promise<{ voiceId: string } | null> {
+    const [row] = await this.database.db
+      .select({ voiceId: voices.id })
+      .from(voices)
+      .where(and(eq(voices.providerVoiceKey, providerVoiceKey), eq(voices.enabled, true)))
+      .limit(1);
+    return row ?? null;
+  }
+
   async listCardTemplates(
     kind: string,
     portraitFreeOnly: boolean,

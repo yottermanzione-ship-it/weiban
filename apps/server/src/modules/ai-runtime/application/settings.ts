@@ -38,6 +38,7 @@ import { invalidateReplyPlans } from './invalidate.js';
 import { companionSettings } from '../infra/db/schema.js';
 import { MemoryTierService } from './memory-tier.js';
 import { PrivateDigestService } from './private-digest.js';
+import { characterView, roleAdminAllowlist } from './character-view.js';
 @Injectable()
 export class CompanionSettingsService {
   constructor(
@@ -115,7 +116,7 @@ export class CompanionSettingsService {
       userId,
       characterId,
       candidates: SELECTABLE_MODES,
-      adminAllowlist: role.card.data.modes.adminAllowlist,
+      adminAllowlist: roleAdminAllowlist(characterView(role)),
     });
     return {
       items: SELECTABLE_MODES.filter((mode) => allowed.some((m) => m.modeId === mode.modeId)).map(

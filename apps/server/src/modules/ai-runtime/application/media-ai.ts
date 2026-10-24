@@ -673,6 +673,11 @@ export class MediaAiService {
       if (!id) continue;
       const voice = await this.assets.getVoice(id).catch(() => null);
       if (voice?.enabled) return id;
+      // 旧卡音色：voice_json / qwen_voice_id 是供应商音色 id，按 provider_voice_key 找到媒体音色。
+      if (this.assets.findEnabledVoiceByProviderKey) {
+        const byProvider = await this.assets.findEnabledVoiceByProviderKey(id).catch(() => null);
+        if (byProvider) return byProvider.voiceId;
+      }
     }
     return null;
   }

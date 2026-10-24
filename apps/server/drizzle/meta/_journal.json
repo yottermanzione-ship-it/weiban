@@ -870,6 +870,13 @@
       "idx": 135,
       "when": 1799337900000,
       "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1799338000000,
+      "tag": "0136_legacy_character_cards",
+      "breakpoints": true
     }
   ]
 }

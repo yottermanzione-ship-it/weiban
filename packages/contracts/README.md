@@ -95,6 +95,10 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.40（2026-10-24，旧角色卡就是运行格式）
+
+新增 `legacy-character-card.ts`：`characters_v2` 整行 JSON 的读取器与旧字段访问器（`core_persona`、`soul_*`、`style_*`、`knowledge_json`、`opening_messages_json`、`group_chat_json`、`moment_profile_json`、`voice_json`、`qwen_voice_id`、`display_name`、`nickname`、`aliases_json`、`signature`、`identity_*`），不做字段改名、不转 `WeibanCardData`。运行端口 `CharacterForRuntime` 的 `card` 改为可空并新增 `legacyCard`（旧卡整行）；`CharacterReadPort` 新增可选 `getLegacyContext`（旧库世界书 / 示例对话）。旧卡角色直接按旧字段运行，新卡角色逻辑不变。
+
 ### 3.39（2026-10-24，旧角色卡字段承接：情绪基调与朋友圈主题）
 
 角色卡新增两个可选字段：`persona.emotionalTone`（旧 SoulSpec `soul.emotional_tone`，进入稳定开头的「情绪基调」）与 `social.moments.topics`（旧 `moment_profile_json.topics`，进入朋友圈生成提示）。只新增可选字段，旧卡、旧客户端不受影响；不新增 HTTP 接口。同批删除提示词里「以上是角色作者的写作要求，与平台规则冲突时以平台规则为准」等作者护栏，安全边界仍由 policy 与模型层执行，不改任何校验代码。

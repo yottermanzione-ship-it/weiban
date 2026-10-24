@@ -87,6 +87,7 @@ import { captionForMemory, captionSnapshot } from '../domain/image-caption.js';
 import { WeiboSyncService } from './weibo.js';
 import { snapshotText } from './content-text.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
+import { characterView, rolePersonaSpeechText } from './character-view.js';
 
 export const ECOLOGY_TICK_JOB = 'ai.ecology_tick';
 export const ECOLOGY_USER_JOB = 'ai.ecology_user';
@@ -1012,7 +1013,11 @@ export class EcologyService {
       messages: [
         {
           role: 'system',
-          content: `你是「${role.profile.name}」，人设：${JSON.stringify(role.card.data.persona).slice(0, 1500)}。只输出${job.action === 'status' ? '一个不超过 12 个字的状态（例「在听歌」）' : '一句不超过 30 个字的个性签名'}，不加引号。`,
+          content: `你是「${role.profile.name}」，人设：${
+            role.card
+              ? JSON.stringify(role.card.data.persona).slice(0, 1500)
+              : rolePersonaSpeechText(characterView(role), 1500)
+          }。只输出${job.action === 'status' ? '一个不超过 12 个字的状态（例「在听歌」）' : '一句不超过 30 个字的个性签名'}，不加引号。`,
         },
         { role: 'user', content: `对方的原话：「${job.text}」` },
       ],

@@ -57,6 +57,7 @@ import { MemoryService } from './memory.js';
 import { localParts } from './proactive-scheduler.js';
 import { CompanionSettingsService } from './settings.js';
 import { SimulationService, EventKind } from './simulation.js';
+import { characterView, rolePersonaSpeechText } from './character-view.js';
 
 // ---------------------------------------------------------------------------
 // 参数
@@ -349,12 +350,14 @@ export class SocialService implements OnModuleInit {
     ];
     const real = policyA.isRealPerson || policyB.isRealPerson;
     const brief = (r: typeof roleA) =>
-      JSON.stringify({
-        name: r.profile.name,
-        persona: r.card.data.persona,
-        activities: r.card.data.simulation.dailyActivities.slice(0, 8),
-        hobbies: r.card.data.simulation.hobbies,
-      }).slice(0, 3000);
+      r.card
+        ? JSON.stringify({
+            name: r.profile.name,
+            persona: r.card.data.persona,
+            activities: r.card.data.simulation.dailyActivities.slice(0, 8),
+            hobbies: r.card.data.simulation.hobbies,
+          }).slice(0, 3000)
+        : `名字：${r.profile.name}\n${rolePersonaSpeechText(characterView(r), 3000)}`;
     const result = await this.gateway.generateText({
       userId,
       characterId: owner,
@@ -728,7 +731,7 @@ export class SocialService implements OnModuleInit {
         messages: [
           {
             role: 'system',
-            content: `你以角色口吻在私聊里随口分享今天和朋友${target.name}一起做的事，顺势问用户要不要认识${target.name}。一两句、不超过50字，只输出聊天文本；不强推、不制造愧疚，不编造事实以外的细节。真人=${policy.isRealPerson}。角色：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech }).slice(0, 4000)}`,
+            content: `你以角色口吻在私聊里随口分享今天和朋友${target.name}一起做的事，顺势问用户要不要认识${target.name}。一两句、不超过50字，只输出聊天文本；不强推、不制造愧疚，不编造事实以外的细节。真人=${policy.isRealPerson}。角色：${rolePersonaSpeechText(characterView(role), 4000)}`,
           },
           { role: 'user', content: `今天的事（事实）：${job.brief ?? ''}` },
         ],

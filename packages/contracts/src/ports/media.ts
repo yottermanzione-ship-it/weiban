@@ -58,6 +58,11 @@ export interface MediaAssetReadPort {
     enabled: boolean;
     careFallbackMediaId: string | null;
   } | null>;
+  /**
+   * 按供应商音色键找已启用的媒体音色。旧卡角色的 voice_json / qwen_voice_id 存的是供应商
+   * 音色 id，不是 media.voices 的主键；音色解析先按主键找，找不到再按这个键找。
+   */
+  findEnabledVoiceByProviderKey?(providerVoiceKey: string): Promise<{ voiceId: string } | null>;
   listCardTemplates(
     kind: string,
     portraitFreeOnly: boolean,

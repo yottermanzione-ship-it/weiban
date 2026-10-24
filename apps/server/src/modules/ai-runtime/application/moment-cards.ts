@@ -48,6 +48,7 @@ import { momentCardAttempts, replyPlans, simulationStates } from '../infra/db/sc
 import { CharacterImageService } from './character-image.js';
 import { localParts } from './proactive-scheduler.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
+import { characterView, rolePersonaSpeechText } from './character-view.js';
 
 export const MOMENT_TICK_JOB = 'ai.moment_cards_tick';
 export const MOMENT_PAIR_JOB = 'ai.moment_card';
@@ -132,7 +133,7 @@ export class CardLineService implements CardCopywriterPort {
         },
         {
           role: 'system',
-          content: `角色资料：${JSON.stringify({ name: role.profile.name, persona: role.card.data.persona, speech: role.card.data.speech }).slice(0, 5000)}`,
+          content: `角色资料：${role.profile.name}\n${rolePersonaSpeechText(characterView(role), 5000)}`,
         },
       ],
     });

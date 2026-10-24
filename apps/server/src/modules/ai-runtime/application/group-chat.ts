@@ -93,6 +93,13 @@ import { SimulationService } from './simulation.js';
 import { localParts } from './proactive-scheduler.js';
 import { PlannerService } from './planner.js';
 import { GroupReplyStore, type GroupReplyPlan } from './group-reply-store.js';
+import {
+  characterView,
+  roleCareFallback,
+  roleDeflect,
+  roleGroup,
+  rolePersonaSpeechText,
+} from './character-view.js';
 
 // ---------------------------------------------------------------------------
 // 参数
@@ -905,7 +912,7 @@ export class GroupChatService {
         },
         {
           role: 'system',
-          content: `${GROUP_MEMORY_BOUNDARY}\n群聊风格：${role.card.data.social.groupStyle}\n群成员关系：\n${relationLines.join('\n') || '（群里只有你和用户）'}\n用户：${profile?.nickname ?? '用户'}（与你的好感度：${stageLabel(speaker.familiarity)}）`,
+          content: `${GROUP_MEMORY_BOUNDARY}\n群聊风格：${roleGroup(characterView(role)).style || '自然'}\n群成员关系：\n${relationLines.join('\n') || '（群里只有你和用户）'}\n用户：${profile?.nickname ?? '用户'}（与你的好感度：${stageLabel(speaker.familiarity)}）`,
         },
         ...brainTail(brain),
         {
@@ -1045,7 +1052,7 @@ export class GroupChatService {
           .catch(() => undefined);
       }
     } else if (result.ok) replyText = splitCaptionTail(replyText, 0).reply;
-    const deflect = role.card.data.safetyStyle.deflectStyle?.trim();
+    const deflect = roleDeflect(characterView(role)).trim();
     const sourceText = result.ok
       ? replyText
       : deflect && outputAllowed(deflect, policy, false)
@@ -1175,7 +1182,7 @@ export class GroupChatService {
         messages: [
           {
             role: 'system',
-            content: `你以角色口吻在私聊里关心刚才在群里流露出自伤念头的用户。语气温和真诚，不说教；建议对方联系身边信任的人或心理援助热线 12356，紧急时拨打 110/120；不提供任何方法；不在群里讨论。角色资料：${JSON.stringify({ persona: role?.card.data.persona, speech: role?.card.data.speech }).slice(0, 6000)}`,
+            content: `你以角色口吻在私聊里关心刚才在群里流露出自伤念头的用户。语气温和真诚，不说教；建议对方联系身边信任的人或心理援助热线 12356，紧急时拨打 110/120；不提供任何方法；不在群里讨论。角色资料：${role ? rolePersonaSpeechText(characterView(role), 6000) : ''}`,
           },
           { role: 'user', content: '（用户刚才在群里说了让人担心的话）' },
         ],
@@ -1187,7 +1194,7 @@ export class GroupChatService {
       result.ok && result.value.text.trim()
         ? unescapeModelText(result.value.text).trim().slice(0, 600)
         : careFallback(
-            role?.card.data.safetyStyle.careFallbackText,
+            role ? roleCareFallback(characterView(role)) : undefined,
             0,
             userNickname(profile?.nickname),
           ).join('\n');
@@ -1623,7 +1630,7 @@ export class GroupChatService {
       messages: [
         {
           role: 'system',
-          content: `你是这个角色，要建一个微信群拉朋友和用户进来。按你的说话风格起一个群名，不超过12个字，只输出群名。角色：${JSON.stringify({ persona: role?.card.data.persona, speech: role?.card.data.speech }).slice(0, 4000)}`,
+          content: `你是这个角色，要建一个微信群拉朋友和用户进来。按你的说话风格起一个群名，不超过12个字，只输出群名。角色：${role ? rolePersonaSpeechText(characterView(role), 4000) : ''}`,
         },
         { role: 'user', content: `建群原因：${job.reason}` },
       ],
@@ -1711,13 +1718,14 @@ export class GroupChatService {
         .getFamiliarity(userId, p.refId)
         .then((f) => f.level)
         .catch(() => 1);
+      const group = roleGroup(characterView(role));
       members.push({
         participantId: p.participantId,
         characterId: p.refId,
         name: profile?.name ?? '',
         aliases: profile?.aliases ?? [],
-        talkativeness: role.card.data.social.talkativeness,
-        hobbies: role.card.data.simulation.hobbies,
+        talkativeness: group.talkativeness,
+        hobbies: group.hobbies ? group.hobbies.split('、').filter(Boolean) : [],
         familiarity,
       });
     }

@@ -21,3 +21,35 @@ export {
 } from './tokens.js';
 export { seedPresetCharacters, type PresetSeedResult } from './application/preset-seed.js';
 export { WEIBO_PUBLICATION_PORT } from './tokens.js';
+export {
+  EMPTY_LEGACY_CONTEXT,
+  LegacyCharacterCard,
+  legacyDialogueExamples,
+  legacyKnowledgeEntries,
+  legacyRuntimeContext,
+  parseLegacyCard,
+  type LegacyCardRow,
+  type LegacyDialogueExample,
+  type LegacyGroupProfile,
+  type LegacyKnowledgeEntry,
+  type LegacyMomentProfile,
+} from './domain/legacy-card.js';
+export {
+  buildLegacyImportPlan,
+  legacyClassification,
+  legacyCategoryId,
+  legacyImportReport,
+  LEGACY_FIELD_LIMITS,
+  type LegacyImportExisting,
+  type LegacyImportInput,
+  type LegacyImportIssue,
+  type LegacyImportKind,
+  type LegacyImportPlan,
+  type LegacyCharacterPlan,
+  type LegacyRowPlan,
+} from './domain/legacy-import.js';
+export {
+  applyLegacyImportPlan,
+  readLegacyImportExisting,
+  type LegacyImportProgress,
+} from './application/legacy-import-apply.js';

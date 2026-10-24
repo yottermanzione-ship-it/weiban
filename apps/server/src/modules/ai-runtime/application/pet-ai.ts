@@ -44,6 +44,7 @@ import { outputAllowed } from '../domain/reply-rules.js';
 import { petProposals } from '../infra/db/schema.js';
 import { MemoryService } from './memory.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
+import { characterView, rolePersonaSpeechText } from './character-view.js';
 
 export const PET_NAMING_JOB = 'ai.pet_naming';
 export const PET_EVENT_JOB = 'ai.pet_event';
@@ -194,7 +195,7 @@ export class PetAiService implements OnModuleInit {
         },
         {
           role: 'system',
-          content: `角色资料：${JSON.stringify({ name: role.profile.name, persona: role.card.data.persona, speech: role.card.data.speech }).slice(0, 6000)}${supplementBlock(role.userSupplement, 1000)}`,
+          content: `角色资料：${role.profile.name}\n${rolePersonaSpeechText(characterView(role), 6000)}${supplementBlock(role.userSupplement, 1000)}`,
         },
       ],
     });
@@ -307,7 +308,7 @@ export class PetAiService implements OnModuleInit {
         },
         {
           role: 'system',
-          content: `角色资料：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech }).slice(0, 6000)}${supplementBlock(role.userSupplement, 1000)}`,
+          content: `角色资料：${rolePersonaSpeechText(characterView(role), 6000)}${supplementBlock(role.userSupplement, 1000)}`,
         },
         { role: 'user', content: `【系统提示，不是用户说的话】${instruction}` },
       ],

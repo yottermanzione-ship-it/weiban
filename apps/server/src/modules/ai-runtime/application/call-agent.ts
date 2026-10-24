@@ -50,6 +50,7 @@ import { callModelForCare } from './safety-care.js';
 import { MediaAiService } from './media-ai.js';
 import { MemoryService } from './memory.js';
 import { CompanionSettingsService } from './settings.js';
+import { characterView, roleDeflect, roleVoiceIds } from './character-view.js';
 
 /** 下行音频采样率（PCM16 24 kHz）。 */
 const OUTPUT_SAMPLE_RATE = 24_000;
@@ -362,7 +363,7 @@ class AgentSession implements CallAgentSession {
         ? result.value.text.replace(/[（(][^）)]{0,20}[）)]/gu, '').trim()
         : '';
     if (adult && !this.careActive && !result.ok && result.error === 'content_rejected') {
-      const deflect = this.info.role.card.data.safetyStyle.deflectStyle?.trim();
+      const deflect = roleDeflect(characterView(this.info.role)).trim();
       text =
         deflect && outputAllowed(deflect, this.info.policy, false)
           ? deflect
@@ -539,7 +540,12 @@ export class CallAgentService implements CallAgentPort {
     const voiceId = await this.mediaAi.resolveVoice(
       input.characterId,
       settings?.voiceId ?? null,
-      role.profile.kind === 'custom' ? (role.card.data.social.voiceId ?? null) : null,
+      // 旧卡角色直接读 voice_json / qwen_voice_id；新卡自定义角色沿用 card.social.voiceId。
+      role.legacyCard
+        ? (roleVoiceIds(characterView(role))[0] ?? null)
+        : role.profile.kind === 'custom'
+          ? (role.card?.data.social.voiceId ?? null)
+          : null,
     );
     if (!voiceId) return { ok: false, error: 'service_disabled' };
 

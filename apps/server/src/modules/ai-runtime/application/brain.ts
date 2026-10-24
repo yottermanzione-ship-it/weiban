@@ -10,6 +10,8 @@ import { PlayContinuityStore } from './play-continuity.js';
 import { MemoryService } from './memory.js';
 import { brainText, assertBrainScope } from '../domain/brain.js';
 import { lorebook, lorebookText, DEFAULT_LOREBOOK } from '../domain/knowledge.js';
+import { legacyLorebook, legacyLorebookText } from '../domain/legacy-prompt.js';
+import { parseLegacyCard } from '../../characters/index.js';
 import { takeWithin } from '../domain/prompt-assembly.js';
 import { memoryLine } from '../domain/memory-window.js';
 import { healthPrivate } from '../domain/memory.js';
@@ -55,18 +57,32 @@ export class BrainContextService {
     });
     const selfReports = await this.continuity.context(userId, characterId, scope);
     const episodes = await this.episodes.context(userId, characterId, scope, query);
-    const card = role.card.data;
+    const card = role.card?.data ?? null;
+    const legacy = role.legacyCard ? parseLegacyCard(role.legacyCard) : null;
+    const legacyContext = legacy
+      ? await this.characters.getLegacyContext?.(characterId).catch(() => null)
+      : null;
     const localDate = new Intl.DateTimeFormat('en-CA', {
       timeZone: profile.timeZone,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
     }).format(this.clock.now());
-    const constant = lorebook(card.knowledge.entries, '', localDate, policy.isRealPerson, {
-      constantChars: card.knowledge.constantBudget ?? DEFAULT_LOREBOOK.constantChars,
-      triggeredChars: 0,
-      recursionDepth: 0,
-    });
+    const constantKnowledge = card
+      ? lorebookText(
+          lorebook(card.knowledge.entries, '', localDate, policy.isRealPerson, {
+            constantChars: card.knowledge.constantBudget ?? DEFAULT_LOREBOOK.constantChars,
+            triggeredChars: 0,
+            recursionDepth: 0,
+          }).constant,
+        )
+      : legacyLorebookText(
+          legacyLorebook(legacyContext?.lorebook ?? [], '', {
+            constantChars: DEFAULT_LOREBOOK.constantChars,
+            triggeredChars: 0,
+            recursionDepth: 0,
+          }).constant,
+        );
     const visible = (text: string) => !opts.excludeHealth || !healthPrivate(text);
     const stableMemory = visible(memory.stableBlock) ? memory.stableBlock : '';
     // Simulation's current day key is UTC (same reader as SocialService's direct-chat context).
@@ -89,6 +105,8 @@ export class BrainContextService {
     const prefix = brainText({
       name: role.profile.name,
       card,
+      legacyCard: legacy,
+      legacyExamples: legacyContext?.examples,
       policy,
       settings,
       stage: {
@@ -102,7 +120,7 @@ export class BrainContextService {
       nickname: profile.nickname,
       now: this.clock.now(),
       timeZone: profile.timeZone,
-      constantKnowledge: lorebookText(constant.constant),
+      constantKnowledge,
       supplement: visible(supplementBlock(role.userSupplement, 4000))
         ? supplementBlock(role.userSupplement, 4000)
         : '',

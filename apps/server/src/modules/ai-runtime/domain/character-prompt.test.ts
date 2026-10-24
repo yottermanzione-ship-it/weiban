@@ -69,9 +69,7 @@ it('作者提示词原样拼入，不再追加平台规则护栏', () => {
 
 it('朋友圈生成的三条提示都接入卡片主题，而不是只加字段', () => {
   const source = readFileSync(resolve(import.meta.dirname, '../application/moments-ai.ts'), 'utf8');
-  expect(
-    source.match(/momentsTopicsText\(role\.card\.data\.social\.moments\.topics\)/gu) ?? [],
-  ).toHaveLength(3);
+  expect(source.match(/momentsTopicsText\(moments\.topics\)/gu) ?? []).toHaveLength(3);
 });
 
 it('AI 运行时生产源码不再包含平台规则护栏与 AUTHOR_GUARD', () => {

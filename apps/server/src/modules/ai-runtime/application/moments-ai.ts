@@ -81,6 +81,7 @@ import {
   relationText,
   stableRandom,
 } from './social.js';
+import { characterView, roleMoments, rolePersonaSpeechText } from './character-view.js';
 
 // ---------------------------------------------------------------------------
 // 参数（PRD 5.1 节原文）
@@ -209,7 +210,7 @@ export class MomentsAiService {
     if (!role || !policy) return;
     // 公共节奏按角色（不按用户）稳定抽：所有人看到同一天、同一时刻附近的同一条。
     const date = localParts(this.clock.now(), 'Asia/Shanghai').date;
-    const perWeek = role.card.data.social.moments.frequencyPerWeek ?? P16_MOMENTS.defaultPerWeek;
+    const perWeek = roleMoments(characterView(role)).frequencyPerWeek;
     const plan = this.schedule('public', characterId, date, perWeek);
     if (!plan.postToday) return;
     const userLocal = localParts(
@@ -249,6 +250,7 @@ export class MomentsAiService {
     sourceKind: 'daily_event' | 'public_update' | 'holiday';
     sourceId: string;
   } | null> {
+    const moments = roleMoments(characterView(role));
     const find = async () =>
       (
         await this.db.db
@@ -315,11 +317,11 @@ export class MomentsAiService {
       messages: [
         {
           role: 'system',
-          content: `你以角色本人的身份发一条公开的微信朋友圈（所有用户都会看到同一条）。只输出正文纯文本，不超过80字，不加引号、不加标签。文风符合人设：${role.card.data.social.moments.tone}。${momentsTopicsText(role.card.data.social.moments.topics)}不提任何具体用户、不提私聊内容，不含恋爱暧昧或成人内容，不提健康隐私。${policy.isRealPerson ? '你是真人角色：不得官宣新作品或合作（除非素材就是已审核的公开动态），不评论真实社会事件或他人，不写像本人公开声明的话；只写生活化的小感受。' : ''}`,
+          content: `你以角色本人的身份发一条公开的微信朋友圈（所有用户都会看到同一条）。只输出正文纯文本，不超过80字，不加引号、不加标签。文风符合人设：${moments.tone}。${momentsTopicsText(moments.topics)}不提任何具体用户、不提私聊内容，不含恋爱暧昧或成人内容，不提健康隐私。${policy.isRealPerson ? '你是真人角色：不得官宣新作品或合作（除非素材就是已审核的公开动态），不评论真实社会事件或他人，不写像本人公开声明的话；只写生活化的小感受。' : ''}`,
         },
         {
           role: 'system',
-          content: `角色资料：${JSON.stringify({ name: role.profile.name, persona: role.card.data.persona, speech: role.card.data.speech }).slice(0, 6000)}`,
+          content: `角色资料：${rolePersonaSpeechText(characterView(role), 6000)}`,
         },
         { role: 'user', content: `素材：${source.brief}` },
       ],
@@ -386,6 +388,7 @@ export class MomentsAiService {
     const role = await this.characters.getForRuntime(userId, characterId);
     const policy = await this.policy.getCharacterPolicy(userId, characterId);
     if (!role || !policy) return { ok: false, reason: 'context_unavailable' };
+    const moments = roleMoments(characterView(role));
     // 微博角色：优先原样转发它最近一条已同步的公开动态，不花钱重新生成文案。
     const weibo = await this.latestWeiboUpdate(characterId);
     if (weibo) {
@@ -444,7 +447,7 @@ export class MomentsAiService {
         ...brainMessages(brain, input.privateConversationId ? 'adult' : 'background'),
         {
           role: 'system',
-          content: `你以角色本人的身份发一条私人朋友圈（只有和你聊天的这位用户能看到）。只输出朋友圈正文纯文本，不超过100字，不加引号、不加标签。文风符合人设：${role.card.data.social.moments.tone}。${momentsTopicsText(role.card.data.social.moments.topics)}可以含蓄地和你们最近的聊天、你今天的生活有关，但不直接复述对方的隐私，不提月经、经期等健康隐私，不含成人内容。${policy.isRealPerson ? '你是真人角色：不官宣新作品或合作，不评论真实社会事件或他人，不写像本人公开声明的话。' : ''}${policy.isMinor || !policy.romanceAllowed ? '不涉及恋爱暧昧。' : ''}`,
+          content: `你以角色本人的身份发一条私人朋友圈（只有和你聊天的这位用户能看到）。只输出朋友圈正文纯文本，不超过100字，不加引号、不加标签。文风符合人设：${moments.tone}。${momentsTopicsText(moments.topics)}可以含蓄地和你们最近的聊天、你今天的生活有关，但不直接复述对方的隐私，不提月经、经期等健康隐私，不含成人内容。${policy.isRealPerson ? '你是真人角色：不官宣新作品或合作，不评论真实社会事件或他人，不写像本人公开声明的话。' : ''}${policy.isMinor || !policy.romanceAllowed ? '不涉及恋爱暧昧。' : ''}`,
         },
         ...brainTail(brain),
         { role: 'user', content: `这条朋友圈想写的：${input.brief.slice(0, 500)}` },
@@ -524,11 +527,13 @@ export class MomentsAiService {
     const role = await this.characters.getForRuntime(userId, characterId);
     const policy = await this.policy.getCharacterPolicy(userId, characterId);
     if (!role || !policy) return;
+    const view = characterView(role);
+    const moments = roleMoments(view);
     const profile = await this.identity.getProfile(userId);
     const tz = profile?.timeZone ?? 'Asia/Shanghai';
     const now = this.clock.now();
     const local = localParts(now, tz);
-    const perWeek = role.card.data.social.moments.frequencyPerWeek ?? P16_MOMENTS.defaultPerWeek;
+    const perWeek = moments.frequencyPerWeek;
     const plan = this.schedule(userId, characterId, local.date, perWeek);
     if (
       !plan.postToday ||
@@ -625,11 +630,21 @@ export class MomentsAiService {
       messages: [
         {
           role: 'system',
-          content: `你以角色本人的身份发一条微信朋友圈。只输出朋友圈正文纯文本，不超过100字，不加引号、不加标签说明。文风符合人设：${role.card.data.social.moments.tone}。${momentsTopicsText(role.card.data.social.moments.topics)}只写下面给出的素材，不编造新的经历、新的公开活动或作品。不提用户在私聊里说的任何事，不含恋爱暧昧或成人内容，不提月经、经期等健康隐私。${policy.isRealPerson ? '你是真人角色：不得官宣新作品或合作（除非素材就是已审核的公开动态），不得评论真实社会事件或他人，不得写任何可能被当成本人公开声明的话；只写生活化的小感受。' : ''}${policy.isMinor ? '儿童角色：不涉及恋爱。' : ''}`,
+          content: `你以角色本人的身份发一条微信朋友圈。只输出朋友圈正文纯文本，不超过100字，不加引号、不加标签说明。文风符合人设：${moments.tone}。${momentsTopicsText(moments.topics)}只写下面给出的素材，不编造新的经历、新的公开活动或作品。不提用户在私聊里说的任何事，不含恋爱暧昧或成人内容，不提月经、经期等健康隐私。${policy.isRealPerson ? '你是真人角色：不得官宣新作品或合作（除非素材就是已审核的公开动态），不得评论真实社会事件或他人，不得写任何可能被当成本人公开声明的话；只写生活化的小感受。' : ''}${policy.isMinor ? '儿童角色：不涉及恋爱。' : ''}`,
         },
         {
           role: 'system',
-          content: `角色资料：${JSON.stringify({ name: role.profile.name, fanName: role.profile.fanName, persona: role.card.data.persona, speech: role.card.data.speech, fanNameUsage: role.card.data.profileExtra.fanNameUsage }).slice(0, 8000)}`,
+          content: `角色资料：${
+            view.card
+              ? JSON.stringify({
+                  name: role.profile.name,
+                  fanName: role.profile.fanName,
+                  persona: view.card.persona,
+                  speech: view.card.speech,
+                  fanNameUsage: view.card.profileExtra.fanNameUsage,
+                }).slice(0, 8000)
+              : rolePersonaSpeechText(view, 8000)
+          }`,
         },
         { role: 'user', content: `今天要发的素材（${source.label}，事实）：${source.brief}` },
       ],
@@ -1008,6 +1023,8 @@ export class MomentsAiService {
     const policy = await this.policy.getCharacterPolicy(userId, characterId);
     const profile = await this.identity.getProfile(userId);
     if (!role || !policy) return null;
+    const view = characterView(role);
+    const moments = roleMoments(view);
     const ids = new Set<string>();
     if (post.author.kind === 'character') ids.add(post.author.refId);
     for (const c of post.comments) if (c.author.kind === 'character') ids.add(c.author.refId);
@@ -1125,11 +1142,11 @@ export class MomentsAiService {
       messages: [
         {
           role: 'system',
-          content: `你以角色身份在微信朋友圈下评论。只输出评论正文，不超过40字，不加名字前缀。评论要和动态内容相关；按你的风格（${role.card.data.social.moments.commentStyle ?? '自然'}）；和亲密的朋友可以调侃接梗，和不熟的人客气。不提用户在私聊里说过的私事，不含恋爱暧昧（除非允许恋爱=${policy.romanceAllowed}）或成人内容，不提经期等健康隐私。${policy.isRealPerson ? '真人角色：不官宣、不评论真实社会事件和他人、不写像本人声明的话。' : ''}如果要叫用户，可以用「@${userName}」开头。`,
+          content: `你以角色身份在微信朋友圈下评论。只输出评论正文，不超过40字，不加名字前缀。评论要和动态内容相关；按你的风格（${moments.commentStyle}）；和亲密的朋友可以调侃接梗，和不熟的人客气。不提用户在私聊里说过的私事，不含恋爱暧昧（除非允许恋爱=${policy.romanceAllowed}）或成人内容，不提经期等健康隐私。${policy.isRealPerson ? '真人角色：不官宣、不评论真实社会事件和他人、不写像本人声明的话。' : ''}如果要叫用户，可以用「@${userName}」开头。`,
         },
         {
           role: 'system',
-          content: `角色资料：${JSON.stringify({ name: role.profile.name, persona: role.card.data.persona, speech: role.card.data.speech }).slice(0, 6000)}\n${relLines.join('\n')}\n你和用户（${userName}）的好感度：${stageLabel(level)}`,
+          content: `角色资料：${rolePersonaSpeechText(view, 6000)}\n${relLines.join('\n')}\n你和用户（${userName}）的好感度：${stageLabel(level)}`,
         },
         {
           role: 'user',

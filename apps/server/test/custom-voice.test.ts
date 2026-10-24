@@ -123,7 +123,7 @@ describeDb('自定义角色音色：真实库、角色快照及语音选择', ()
         .voiceId,
     ).toBe(voiceA);
     const characters = app.get(CharacterService);
-    expect((await characters.getForRuntime(owner, roleId))?.card.data.social.voiceId).toBe(voiceA);
+    expect((await characters.getForRuntime(owner, roleId))?.card?.data.social.voiceId).toBe(voiceA);
     expect(await characters.getForRuntime(other, roleId)).toBeNull();
     const trial = await http()
       .post('/api/v1/characters/custom/trial')
@@ -131,7 +131,7 @@ describeDb('自定义角色音色：真实库、角色快照及语音选择', ()
       .send({ ...form, sourceCharacterId: roleId, voiceId: voiceA })
       .expect(200);
     expect(
-      (await characters.getForRuntime(owner, trial.body.characterId))?.card.data.social.voiceId,
+      (await characters.getForRuntime(owner, trial.body.characterId))?.card?.data.social.voiceId,
     ).toBe(voiceA);
     await http()
       .delete(`/api/v1/characters/custom/trial/${trial.body.conversationId}`)
@@ -206,7 +206,7 @@ describeDb('自定义角色音色：真实库、角色快照及语音选择', ()
       .send({ voiceId: newId() })
       .expect(400);
     expect(
-      (await app.get(CharacterService).getForRuntime(owner, roleId))?.card.data.social.voiceId,
+      (await app.get(CharacterService).getForRuntime(owner, roleId))?.card?.data.social.voiceId,
     ).toBe(voiceB);
     const cleared = await http()
       .patch(`/api/v1/characters/custom/${roleId}`)
@@ -215,7 +215,7 @@ describeDb('自定义角色音色：真实库、角色快照及语音选择', ()
       .expect(200);
     expect(cleared.body.voiceId).toBeNull();
     expect(
-      (await app.get(CharacterService).getForRuntime(owner, roleId))?.card.data.social.voiceId,
+      (await app.get(CharacterService).getForRuntime(owner, roleId))?.card?.data.social.voiceId,
     ).toBeUndefined();
   });
 });

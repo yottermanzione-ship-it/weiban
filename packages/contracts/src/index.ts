@@ -6,6 +6,7 @@
 export * from './version.js';
 export * from './common.js';
 export * from './character-card.js';
+export * from './legacy-character-card.js';
 export * from './client-sync.js';
 export * from './client-log-safety.js';
 

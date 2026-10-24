@@ -25,6 +25,7 @@ import { MOMENTS_CHARACTER_PORT } from '../../moments/index.js';
 import { BILLING_READ_PORT } from '../../billing/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
+import { characterView, roleWeiboMarker } from './character-view.js';
 import { EcologySettingsService } from './ecology-settings.js';
 import { localDate } from '../../../platform/time/local-time.js';
 import {
@@ -73,7 +74,8 @@ export class WeiboSyncService implements OnModuleInit {
   }
   private async role(userId: string, characterId: string) {
     const role = await this.characters.getForRuntime(userId, characterId);
-    const marker = role?.card.data.profileExtra.weibo;
+    // 旧卡没有新卡的微博标记，按没有处理（旧卡身份字段不猜微博）。
+    const marker = role ? roleWeiboMarker(characterView(role)) : null;
     if (
       !role ||
       role.profile.kind !== 'preset' ||

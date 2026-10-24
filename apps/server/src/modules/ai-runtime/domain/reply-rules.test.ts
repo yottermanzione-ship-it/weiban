@@ -66,7 +66,7 @@ it('M1 shared prefix is identical before scene additions, resolves macros and ke
 it('M1 normal scenes ignore adult mode overrides; compact decisions bound every optional block', () => {
   const input = brainFixture();
   input.settings.scenarioMode = 'adult';
-  input.card.modes.modeOverrides = { adult: 'adult-mode-canary' };
+  input.card!.modes.modeOverrides = { adult: 'adult-mode-canary' };
   expect(brainText(input)).not.toContain('adult-mode-canary');
   expect(brainText({ ...input, scope: 'adult' })).toContain('adult-mode-canary');
   const compact = brainPrefix({

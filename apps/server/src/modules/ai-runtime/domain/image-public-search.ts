@@ -19,13 +19,14 @@ export function publicImageQuery(
   role: CharacterForRuntime,
   captions: readonly (ImageCaption | null)[],
 ) {
+  const card = role.card?.data;
   if (
     role.profile.kind !== 'preset' ||
     role.classification.realPersonKind === 'private_person' ||
-    !role.card.data.recognition.selfEnabled
+    !card?.recognition.selfEnabled
   )
     return null;
-  const works = role.card.data.recognition.selfPublicImages ?? [];
+  const works = card.recognition.selfPublicImages ?? [];
   for (const caption of captions) {
     if (
       !caption ||

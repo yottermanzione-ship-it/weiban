@@ -37,7 +37,9 @@ export class PolicyService implements PolicyPort {
       publicStatementGuard: d.publicStatementGuard,
       shareImageLabel: c.basis === 'real_person' ? 'not_real_person' : null,
       voiceCloneAllowed: false,
-      recognitionAllowlist: runtime.card.data.recognition.selfEnabled ? [characterId] : [],
+      // 旧卡角色没有新卡的识图认人配置，默认不认领公开图片。
+      recognitionAllowlist:
+        runtime.card?.data.recognition.selfEnabled === true ? [characterId] : [],
     };
   }
   private async decision(
