@@ -507,8 +507,10 @@ export class MediaService
   async toMedia(row: Row, userId: string): Promise<MediaObject> {
     const expires = new Date(this.clock.nowMs() + LINK_TTL_MS);
     const url = await this.linkFor(row, userId, 'o', expires);
-    const isImage = row.mimeType.startsWith('image/');
-    const thumbnailUrl = !isImage
+    const hasPreview =
+      row.mimeType.startsWith('image/') ||
+      (row.mimeType === 'video/mp4' && Boolean(row.thumbStorageKey));
+    const thumbnailUrl = !hasPreview
       ? null
       : row.thumbStorageKey
         ? await this.linkFor(row, userId, 't', expires)
@@ -666,6 +668,8 @@ export class MediaService
     bytes: Uint8Array;
     mimeType: string;
     durationMs?: number;
+    /** Legacy image rows sometimes contain MP4; verified by ffprobe in the offline importer only. */
+    legacyVideo?: { width: number; height: number; durationMs: number; posterPng: Uint8Array };
   }): Promise<{ mediaId: string; created: boolean }> {
     if (
       !/^[0-9a-f-]{36}$/i.test(input.id) ||
@@ -694,13 +698,45 @@ export class MediaService
       return { mediaId: existing.id, created: false };
     }
     const buffer = Buffer.from(input.bytes);
-    const processed = isAudioPurpose(input.purpose)
-      ? this.processAudio(
-          'generated_voice',
-          { buffer, mimetype: input.mimeType },
-          input.durationMs ?? null,
-        )
-      : await this.processImage(buffer, input.mimeType);
+    let processed: Processed;
+    if (input.legacyVideo) {
+      const video = input.legacyVideo;
+      if (
+        input.purpose !== 'chat_image' ||
+        input.mimeType !== 'video/mp4' ||
+        buffer.length > MEDIA_LIMITS.imageMaxBytes ||
+        buffer.length < 16 ||
+        buffer.toString('ascii', 4, 8) !== 'ftyp' ||
+        !Number.isInteger(video.width) ||
+        !Number.isInteger(video.height) ||
+        video.width < 1 ||
+        video.height < 1 ||
+        video.width * video.height > 40000000 ||
+        !Number.isInteger(video.durationMs) ||
+        video.durationMs < 1 ||
+        video.durationMs > LONG_AUDIO_MAX_MS
+      )
+        throw new AppError('bad_request', '旧视频格式或尺寸不符合要求');
+      const poster = await this.processImage(Buffer.from(video.posterPng), 'image/png');
+      const thumb = poster.thumb ?? poster.body;
+      if (poster.thumb) poster.body.fill(0);
+      processed = {
+        body: buffer,
+        mimeType: 'video/mp4',
+        width: video.width,
+        height: video.height,
+        thumb,
+        durationMs: video.durationMs,
+      };
+    } else {
+      processed = isAudioPurpose(input.purpose)
+        ? this.processAudio(
+            'generated_voice',
+            { buffer, mimetype: input.mimeType },
+            input.durationMs ?? null,
+          )
+        : await this.processImage(buffer, input.mimeType);
+    }
     try {
       const row = await this.store({
         id: input.id,

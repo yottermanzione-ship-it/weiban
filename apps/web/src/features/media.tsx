@@ -64,6 +64,7 @@ export function MediaImg({
   const [broken, setBroken] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const url = thumbnail ? (media.data?.thumbnailUrl ?? media.data?.url) : media.data?.url;
+  const legacyVideo = !thumbnail && media.data?.mimeType === 'video/mp4';
   if (broken || (media.error && !media.data))
     return (
       <button
@@ -81,17 +82,32 @@ export function MediaImg({
     );
   return (
     <span className={`media-frame ${className ?? ''}`}>
-      {url && (
-        <img
-          src={url}
-          alt={alt}
-          loading="lazy"
-          decoding="async"
-          className={loaded ? 'loaded' : ''}
-          onLoad={() => setLoaded(true)}
-          onError={() => setBroken(true)}
-        />
-      )}
+      {url &&
+        (legacyVideo ? (
+          <video
+            src={url}
+            poster={media.data?.thumbnailUrl ?? undefined}
+            controls
+            playsInline
+            preload="metadata"
+            aria-label="旧视频"
+            style={{ maxWidth: '90vw', maxHeight: '80vh', objectFit: 'contain' }}
+            onClick={(event) => event.stopPropagation()}
+            onTouchStart={(event) => event.stopPropagation()}
+            onTouchEnd={(event) => event.stopPropagation()}
+            onError={() => setBroken(true)}
+          />
+        ) : (
+          <img
+            src={url}
+            alt={alt}
+            loading="lazy"
+            decoding="async"
+            className={loaded ? 'loaded' : ''}
+            onLoad={() => setLoaded(true)}
+            onError={() => setBroken(true)}
+          />
+        ))}
     </span>
   );
 }
