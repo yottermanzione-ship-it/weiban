@@ -1047,8 +1047,15 @@ main > button.danger-row {
   min-height: 0;
 }
 .pull-list {
-  position: absolute;
-  inset: 0;
+  /*
+   * 占页面 flex 列的内容区，而不是绝对定位铺满整个 padding box：
+   * .chat-list-page 的 padding-bottom 已经扣掉标签栏（56 + 1 + 安全区），
+   * 绝对定位的 inset: 0 会连这段 padding 一起盖住，虚拟列表底边落到屏幕最下沿，
+   * 滚到底时最后一行被固定标签栏压掉（10-25 反馈）。这里只留一次底边距，不重复叠加。
+   */
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   /* 和小程序面板同层、排在它后面：下拉时列表盖在面板上，面板从列表上方露出来 */
   z-index: calc(var(--wb-z-index-tab-bar) - 1);
   display: flex;

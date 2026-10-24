@@ -144,7 +144,16 @@ export class CompanionSettingsService {
       const mode = value.scenarioMode ?? 'daily';
       const missing =
         mode === 'adult' && adult && !adult.available && adult.reason !== 'provider_unavailable';
-      if (characterId && (missing || !allowed?.items.some((m) => m.id === mode))) {
+      // 当前已经是日常时无需「回落到日常」：再写一遍设置、再发一条提示只会在每次进聊天时刷屏。
+      // 真正的回落（成人模型不可用、角色不再允许该模式）仍然保留一次可见提示。
+      if (
+        characterId &&
+        mode !== 'daily' &&
+        (missing || !allowed?.items.some((m) => m.id === mode))
+      ) {
+        const reason = mode === 'adult' ? 'adult_mode_unavailable' : 'scenario_mode_unavailable';
+        // 同一用户、同一角色、同一原因只登记 / 提示一次；幂等键不能带会随写入变化的 updatedAt。
+        const fallbackKey = `mode-unavailable:${userId}:${characterId}:${reason}`;
         value.scenarioMode = 'daily';
         if (!value.inheritsDefaults)
           await tx.db
@@ -157,13 +166,13 @@ export class CompanionSettingsService {
               ),
             );
         if (contact?.conversationId) {
-          // H2：私密模型不可用导致的自动切回也算一次切出（同一次回落键相同，只登记一次）。
+          // H2：私密模型不可用导致的自动切回也算一次切出（同一个回落键只登记一次）。
           if (mode === 'adult' && characterId)
             await this.digests?.enqueue(tx, {
               userId,
               characterId,
               conversationId: contact.conversationId,
-              eventKey: `mode-unavailable:${Date.parse(value.updatedAt)}`,
+              eventKey: fallbackKey,
             });
           await this.chat.setContentScope(
             { conversationId: contact.conversationId, scope: 'normal' },
@@ -175,9 +184,9 @@ export class CompanionSettingsService {
               code: 'scenario_mode_changed',
               params: {
                 mode: 'daily',
-                reason: mode === 'adult' ? 'adult_mode_unavailable' : 'scenario_mode_unavailable',
+                reason,
               },
-              idempotencyKey: `mode-unavailable:${userId}:${characterId}:${Date.parse(value.updatedAt)}`,
+              idempotencyKey: fallbackKey,
             });
         }
         // An ineligible inherited default is an effective fallback, not a persisted setting change.

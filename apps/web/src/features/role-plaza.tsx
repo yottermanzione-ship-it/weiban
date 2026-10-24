@@ -40,7 +40,8 @@ import {
   MenuRow,
   NavBar,
   NavIcon,
-  TextTabs,
+  PopSelect,
+  type PopSelectOption,
 } from './shell-kit.js';
 import { VirtualList } from './virtual-list.js';
 import { Dialog, showToast } from './toast.js';
@@ -118,7 +119,26 @@ export function RolePlazaHubPage() {
   return (
     <main className="role-plaza-hub">
       <NavBar
-        title="角色广场"
+        title={
+          <span className="role-plaza-tabs" role="tablist" aria-label="角色广场分类">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'custom'}
+              onClick={() => choose('custom')}
+            >
+              自定义角色
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'official'}
+              onClick={() => choose('official')}
+            >
+              微伴角色
+            </button>
+          </span>
+        }
         fallback="/contacts/add"
         right={
           tab === 'custom' ? (
@@ -131,20 +151,18 @@ export function RolePlazaHubPage() {
           ) : undefined
         }
       />
-      <TextTabs<PlazaTabKey>
-        items={[
-          { value: 'custom', label: '自定义角色' },
-          { value: 'official', label: '微伴角色' },
-        ]}
-        value={tab}
-        onChange={choose}
-      />
       {tab === 'custom' ? <PlazaTab embedded /> : <OfficialList />}
     </main>
   );
 }
 
 type OfficialSort = 'hot' | 'most_liked' | 'default';
+
+const OFFICIAL_SORT_OPTIONS: PopSelectOption[] = [
+  { value: 'hot', label: '热门' },
+  { value: 'most_liked', label: '点赞最多' },
+  { value: 'default', label: '默认顺序' },
+];
 
 function OfficialList() {
   const [query, setQuery] = useState('');
@@ -226,27 +244,21 @@ function OfficialList() {
         </button>
       </form>
       <div className="plaza-filter">
-        <select
-          aria-label="排序"
+        <PopSelect
+          label="排序"
           value={sort}
-          onChange={(e) => setSort(e.target.value as OfficialSort)}
-        >
-          <option value="hot">热门</option>
-          <option value="most_liked">点赞最多</option>
-          <option value="default">默认顺序</option>
-        </select>
-        <select
-          aria-label="分类"
+          options={OFFICIAL_SORT_OPTIONS}
+          onChange={(next) => setSort(next as OfficialSort)}
+        />
+        <PopSelect
+          label="分类"
           value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
-        >
-          <option value="">全部分类</option>
-          {categories.data?.items.map((c) => (
-            <option key={c.categoryId} value={c.categoryId}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: '', label: '全部分类' },
+            ...(categories.data?.items ?? []).map((c) => ({ value: c.categoryId, label: c.name })),
+          ]}
+          onChange={setCategoryId}
+        />
       </div>
       {state === 'loading' && items.length === 0 && (
         <p role="status" className="empty">

@@ -4,6 +4,7 @@
  * 只用设计令牌（app/old-ui.css），动画只用 transform / opacity。
  */
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -671,6 +672,131 @@ export function PopMenu({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ---------- 下拉筛选胶囊（角色广场的排序 / 类型 / 分类，替换浏览器原生 select） ----------
+
+export interface PopSelectOption {
+  value: string;
+  label: string;
+}
+
+/** 同一时间只展开一颗筛选：新的展开前先把已展开的关掉。 */
+const openPopSelectClosers = new Set<() => void>();
+const nothing = () => {};
+
+/**
+ * 胶囊按钮 + 紧贴按钮正下方的圆角卡片菜单（外观沿用设计令牌里的 FilterBar 胶囊）。
+ * - 按钮写当前选中值 + 向下小箭头，不再弹浏览器原生菜单；
+ * - 菜单：圆角 12、白底（深色模式跟随）、轻微阴影、上下留白、每项 40 高，选中项品牌色 + 右侧对勾；
+ * - 关闭：点外部、Esc（焦点回到按钮）、再点同一颗；同一时间只展开一颗；
+ * - 无障碍：按钮 aria-haspopup="menu" + aria-expanded，菜单 role="menu"，每项 role="menuitemradio" + aria-checked。
+ */
+export function PopSelect({
+  label,
+  value,
+  options,
+  onChange,
+  disabled = false,
+}: {
+  /** 这颗筛选的名字（排序 / 类型 / 分类），只用于无障碍名称。 */
+  label: string;
+  value: string;
+  options: PopSelectOption[];
+  onChange(value: string): void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [alignEnd, setAlignEnd] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  // Esc 关闭（复用 useEscape）：顺手把焦点还给按钮，键盘用户不会掉到页面开头。
+  const closeOnEscape = useCallback(() => {
+    setOpen(false);
+    trigger.current?.focus();
+  }, []);
+  useEscape(open ? closeOnEscape : nothing);
+  // 登记已展开的这颗，别的展开时先关掉它。
+  useEffect(() => {
+    if (!open) return;
+    openPopSelectClosers.add(close);
+    return () => {
+      openPopSelectClosers.delete(close);
+    };
+  }, [open, close]);
+  // 点组件外面关闭。用 pointerdown：打开这一下已经过去，不会自己把自己关掉。
+  useEffect(() => {
+    if (!open) return;
+    const listener = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', listener, true);
+    return () => document.removeEventListener('pointerdown', listener, true);
+  }, [open]);
+  // 菜单比按钮宽时改成靠按钮右边缘贴齐，最后一颗筛选点了不会顶出屏幕右边。
+  useLayoutEffect(() => {
+    if (!open) {
+      setAlignEnd(false);
+      return;
+    }
+    const el = menu.current;
+    const anchor = trigger.current;
+    if (!el || !anchor) return;
+    setAlignEnd(anchor.getBoundingClientRect().left + el.offsetWidth > window.innerWidth - 12);
+  }, [open]);
+  const current = options.find((option) => option.value === value);
+  return (
+    <div className="pop-select" ref={root}>
+      <button
+        ref={trigger}
+        type="button"
+        className="pop-select-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`${label}：${current?.label ?? ''}`}
+        disabled={disabled}
+        onClick={() => {
+          if (open) {
+            setOpen(false);
+            return;
+          }
+          for (const closeOther of openPopSelectClosers) closeOther();
+          setOpen(true);
+        }}
+      >
+        <span className="pop-select-value">{current?.label ?? label}</span>
+        <OldIcon name="wechat/chevron_down" size={12} className="pop-select-caret" />
+      </button>
+      {open && (
+        <div
+          ref={menu}
+          className={`pop-select-menu${alignEnd ? ' end' : ''}`}
+          role="menu"
+          aria-label={label}
+        >
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={option.value === value}
+              onClick={() => {
+                setOpen(false);
+                onChange(option.value);
+              }}
+            >
+              <span className="pop-select-option">{option.label}</span>
+              {option.value === value && (
+                <OldIcon name="wechat/check" size={18} className="ink-brand" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

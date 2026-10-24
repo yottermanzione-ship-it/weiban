@@ -66,6 +66,38 @@ function initialOf(name: string): string {
   return letter;
 }
 
+/**
+ * 分组用的角色姓名：这次打开里读到过的名字记住，切回通讯录时先用上次的名字分组。
+ * 否则姓名还没读到时好友会全部落进 # 组，读完再整页重排一遍（按账号区分，容量有上限）。
+ */
+const rememberedNames = new Map<string, string>();
+const REMEMBERED_LIMIT = 200;
+let nameScope = '';
+function ownNameScope(): void {
+  const next = api.ownerKey();
+  if (next === nameScope) return;
+  nameScope = next;
+  rememberedNames.clear();
+}
+function rememberName(characterId: string, name: string) {
+  rememberedNames.delete(characterId);
+  rememberedNames.set(characterId, name);
+  if (rememberedNames.size <= REMEMBERED_LIMIT) return;
+  const oldest = rememberedNames.keys().next();
+  if (!oldest.done) rememberedNames.delete(oldest.value);
+}
+function stableNames(ids: string[], names: Record<string, string>): Record<string, string> {
+  ownNameScope();
+  const merged: Record<string, string> = {};
+  for (const id of ids) {
+    const live = names[id];
+    if (live) rememberName(id, live);
+    const name = live || rememberedNames.get(id);
+    if (name) merged[id] = name;
+  }
+  return merged;
+}
+
 function ContactRow({
   characterId,
   remark,
@@ -195,7 +227,8 @@ export function ContactsPage() {
   const newFriendsDot = useNewFriendsDot();
   const stars = useStars();
   const [query, setQuery] = useState('');
-  const names = useCharacterNames(state.contacts.map((contact) => contact.characterId));
+  const contactIds = state.contacts.map((contact) => contact.characterId);
+  const names = stableNames(contactIds, useCharacterNames(contactIds));
   const label = (c: (typeof state.contacts)[number]) => c.remark || names[c.characterId] || '';
   const contacts = [...state.contacts]
     .filter((c) => !query.trim() || label(c).includes(query.trim()))

@@ -120,13 +120,14 @@ function Artwork({
         />
       )}
       {privateId ? (
-        <PrivatePicture mediaId={privateId} />
+        <AvatarPicture mediaId={privateId} />
       ) : role?.avatar.image ? (
-        <CachedPicture url={role.avatar.image.url} />
+        // 资料里的 image.url 每次取资料都可能换一个签名，直接用会让浏览器重下图片；按 mediaId 复用。
+        <AvatarPicture mediaId={role.avatar.image.mediaId} hintUrl={role.avatar.image.url} />
       ) : null}
     </span>
   );
 }
-function PrivatePicture({ mediaId }: { mediaId: string }) {
-  return <CachedPicture url={useMediaUrl(mediaId)} />;
+function AvatarPicture({ mediaId, hintUrl }: { mediaId: string; hintUrl?: string }) {
+  return <CachedPicture url={useMediaUrl(mediaId, hintUrl)} />;
 }

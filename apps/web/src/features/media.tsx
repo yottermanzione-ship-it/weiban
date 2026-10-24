@@ -592,6 +592,42 @@ export function useTranscript(mediaId: string, enabled: boolean) {
   return value;
 }
 
+/**
+ * 旧版语音波纹（Flutter `_VoiceWavePainter`）：22×18，x=18% 处一个实心圆点，
+ * 再画半径 4.5 / 8.7 / 12.9 的三段同心圆弧，线宽 1.8、圆头，
+ * 从 -0.75 弧度起顺时针跨 1.5 弧度。
+ */
+const VOICE_WAVE_ARCS = [4.5, 8.7, 12.9].map((radius) => {
+  const cx = 22 * 0.18;
+  const cy = 18 / 2;
+  const dx = radius * Math.cos(0.75);
+  const dy = radius * Math.sin(0.75);
+  const x = (cx + dx).toFixed(2);
+  return {
+    radius,
+    path: `M ${x} ${(cy - dy).toFixed(2)} A ${radius} ${radius} 0 0 1 ${x} ${(cy + dy).toFixed(2)}`,
+  };
+});
+
+function VoiceWaveIcon() {
+  return (
+    <span className="wx-voice-wave" aria-hidden>
+      <svg viewBox="0 0 22 18" width="22" height="18" focusable="false">
+        <circle cx="3.96" cy="9" r="1.6" fill="currentColor" />
+        <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          {VOICE_WAVE_ARCS.map(({ radius, path }, index) => (
+            <path
+              key={radius}
+              className={`wx-voice-arc wx-voice-arc-${index + 1}`}
+              d={path}
+            />
+          ))}
+        </g>
+      </svg>
+    </span>
+  );
+}
+
 export function VoiceBubble({
   message,
   next,
@@ -611,6 +647,7 @@ export function VoiceBubble({
   const seconds = Math.max(1, Math.round(content.durationMs / 1000));
   // 宽 = 86 + 秒数（1–30 截断）× 4，最小 108、最大 220（4.4.5）。
   const width = Math.max(108, Math.min(220, 86 + Math.min(30, seconds) * 4));
+  const label = failed ? '重试' : `${seconds}''`;
   const text = content.transcript
     ? content.transcript
     : transcript?.status === 'ready'
@@ -623,16 +660,20 @@ export function VoiceBubble({
           type="button"
           className={`wx-bubble wx-voice ${mine ? 'mine' : ''} ${playing ? 'playing' : ''} ${failed ? 'failed' : ''}`}
           style={{ width }}
-          aria-label={`语音 ${seconds} 秒，${playing ? '暂停' : '播放'}`}
+          aria-label={`语音 ${seconds} 秒，${failed ? '重试' : playing ? '暂停' : '播放'}`}
           onClick={() => void player.play(message, next)}
         >
-          <span className="wx-voice-wave" aria-hidden>
-            <i />
-            <i />
-            <i />
-          </span>
-          <span className="wx-voice-len numeric">{seconds}&apos;&apos;</span>
-          {failed && <span className="wx-voice-retry">重试</span>}
+          {mine ? (
+            <>
+              <span className="wx-voice-len numeric">{label}</span>
+              <VoiceWaveIcon />
+            </>
+          ) : (
+            <>
+              <VoiceWaveIcon />
+              <span className="wx-voice-len numeric">{label}</span>
+            </>
+          )}
         </button>
         {unplayed && <span className="red-dot voice-dot" aria-label="未播放" />}
       </span>

@@ -283,17 +283,20 @@
   color: rgba(0, 0, 0, 0.55);
 }
 
-/* 语音（4.4.5） */
+/* 语音（4.4.5；图标与布局对齐旧版 Flutter _VoiceWavePainter） */
 .wx-voice {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--wb-space-3);
   padding: 9px 14px;
+  border-radius: var(--wb-radius-md);
   font-size: var(--wb-font-size-body-small);
   font-weight: var(--wb-font-weight-medium);
 }
-.wx-voice.mine {
-  flex-direction: row-reverse;
+.wx-voice::before,
+.wx-voice.mine::before {
+  display: none;
 }
 .wx-voice.playing {
   color: var(--wb-color-ui-voice-playing);
@@ -302,8 +305,7 @@
   color: var(--wb-color-ui-voice-error);
 }
 .wx-voice-wave {
-  position: relative;
-  display: inline-block;
+  display: inline-flex;
   flex: none;
   width: 22px;
   height: 18px;
@@ -311,51 +313,52 @@
 .wx-voice.mine .wx-voice-wave {
   transform: scaleX(-1);
 }
-.wx-voice-wave i {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  border: 1.8px solid currentColor;
-  border-color: transparent currentColor transparent transparent;
-  border-radius: 50%;
-  transform: translateY(-50%);
-}
-.wx-voice-wave i:nth-child(1) {
-  left: -2px;
-  width: 6px;
-  height: 6px;
-  border-width: 3px;
-}
-.wx-voice-wave i:nth-child(2) {
-  left: -2px;
-  width: 14px;
-  height: 14px;
-}
-.wx-voice-wave i:nth-child(3) {
-  left: -2px;
+.wx-voice-wave svg {
+  display: block;
   width: 22px;
-  height: 22px;
+  height: 18px;
+  overflow: visible;
 }
-.wx-voice.playing .wx-voice-wave i {
-  animation: wx-voice-wave var(--wb-motion-duration-voice-wave) steps(1) infinite;
+.wx-voice-arc {
+  opacity: 1;
 }
-.wx-voice.playing .wx-voice-wave i:nth-child(2) {
-  animation-delay: 300ms;
+.wx-voice.playing .wx-voice-arc-1 {
+  animation: wx-voice-arc-1 var(--wb-motion-duration-voice-wave) linear infinite;
 }
-.wx-voice.playing .wx-voice-wave i:nth-child(3) {
-  animation-delay: 600ms;
+.wx-voice.playing .wx-voice-arc-2 {
+  animation: wx-voice-arc-2 var(--wb-motion-duration-voice-wave) linear infinite;
 }
-@keyframes wx-voice-wave {
+.wx-voice.playing .wx-voice-arc-3 {
+  animation: wx-voice-arc-3 var(--wb-motion-duration-voice-wave) linear infinite;
+}
+/* 旧版进度 0→1 循环（900ms）：三段依次从 0.35 亮到 1，未播放时保持全亮。 */
+@keyframes wx-voice-arc-1 {
   0% {
-    opacity: 0.25;
+    opacity: 0.35;
   }
-  33% {
+  33.33%,
+  100% {
     opacity: 1;
   }
 }
-.wx-voice-retry {
-  margin-left: auto;
-  font-size: var(--wb-font-size-footnote);
+@keyframes wx-voice-arc-2 {
+  0%,
+  33.33% {
+    opacity: 0.35;
+  }
+  66.67%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes wx-voice-arc-3 {
+  0%,
+  66.67% {
+    opacity: 0.35;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 .voice-wrap {
   display: grid;
@@ -1116,7 +1119,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .wx-record-wave i,
-  .wx-voice.playing .wx-voice-wave i,
+  .wx-voice.playing .wx-voice-arc,
   .bubble-menu {
     animation: none;
   }

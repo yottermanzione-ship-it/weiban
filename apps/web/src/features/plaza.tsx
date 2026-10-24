@@ -31,7 +31,7 @@ import { uploadMedia, prepareImage } from '../data/upload.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { VirtualList } from './virtual-list.js';
 import { Dialog, showToast } from './toast.js';
-import { Sheet } from './shell-kit.js';
+import { Sheet, PopSelect, type PopSelectOption } from './shell-kit.js';
 
 /*
  * 人设广场（PLZ-01～PLZ-07；设计 persona-plaza.md；契约 PlazaEndpoints）。
@@ -212,6 +212,24 @@ export function usePlazaBadge() {
 
 // ---------- 广场分页（PLZ-01） ----------
 
+/** 三颗筛选的选项与取值完全照旧（排序 / 类型 / 分类），只把原生 select 换成胶囊 + 卡片菜单。 */
+const PLAZA_SORT_OPTIONS: PopSelectOption[] = [
+  { value: 'hot', label: '热门' },
+  { value: 'latest', label: '最新发布' },
+  { value: 'most_liked', label: '点赞最多' },
+];
+const PLAZA_KIND_OPTIONS: PopSelectOption[] = [
+  { value: '', label: '全部类型' },
+  { value: 'custom_character', label: '自定义角色' },
+  { value: 'preset_variant', label: '预设改版' },
+];
+const PLAZA_BASIS_OPTIONS: PopSelectOption[] = [
+  { value: '', label: '全部分类' },
+  { value: 'original', label: '原创' },
+  { value: 'fictional', label: '虚构' },
+  { value: 'real_person', label: '真人' },
+];
+
 /** embedded：放进「角色广场」两个 tab 页里，「我发布的」入口移到页面标题栏。 */
 export function PlazaTab({ embedded = false }: { embedded?: boolean } = {}) {
   const badge = usePlazaBadge();
@@ -264,39 +282,28 @@ export function PlazaTab({ embedded = false }: { embedded?: boolean } = {}) {
         </button>
       </form>
       <div className="plaza-filter">
-        <select
-          aria-label="排序"
+        <PopSelect
+          label="排序"
           value={sort}
-          onChange={(e) => setSort(e.target.value as typeof sort)}
-        >
-          <option value="hot">热门</option>
-          <option value="latest">最新发布</option>
-          <option value="most_liked">点赞最多</option>
-        </select>
-        <select
-          aria-label="类型"
+          options={PLAZA_SORT_OPTIONS}
+          onChange={(next) => setSort(next as typeof sort)}
+        />
+        <PopSelect
+          label="类型"
           value={kind}
-          onChange={(e) => {
-            const next = e.target.value as typeof kind;
-            setKind(next);
+          options={PLAZA_KIND_OPTIONS}
+          onChange={(next) => {
+            setKind(next as typeof kind);
             if (next === 'preset_variant') setBasis('');
           }}
-        >
-          <option value="">全部类型</option>
-          <option value="custom_character">自定义角色</option>
-          <option value="preset_variant">预设改版</option>
-        </select>
-        <select
-          aria-label="分类"
+        />
+        <PopSelect
+          label="分类"
           value={basis}
+          options={PLAZA_BASIS_OPTIONS}
           disabled={kind === 'preset_variant'}
-          onChange={(e) => setBasis(e.target.value as typeof basis)}
-        >
-          <option value="">全部分类</option>
-          <option value="original">原创</option>
-          <option value="fictional">虚构</option>
-          <option value="real_person">真人</option>
-        </select>
+          onChange={(next) => setBasis(next as typeof basis)}
+        />
       </div>
       <WorkList key={JSON.stringify(filters)} {...filters} />
     </section>
