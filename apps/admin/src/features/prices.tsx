@@ -9,6 +9,7 @@ import {
   InputNumber,
   Select,
   Space,
+  Table,
   TimePicker,
 } from 'antd';
 import { PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
@@ -27,8 +28,13 @@ import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
 import { FieldHelp, FormSection, Page, StatusTag, useDangerConfirm, useToast } from '../ui/page.js';
 import { formatDateTime, formatYuan } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
+import { splitSelected } from './batch-helpers.js';
 
 type PriceVersion = z.infer<typeof AdminPriceVersion>;
+type PriceItem = PriceVersion['items'][number];
+
+/** 价格条目没有独立 id；草稿内按数组下标定位（删除后会重置选择）。 */
+const priceItemKey = (_item: PriceItem, index: number) => String(index);
 
 const UNIT_LABELS: Record<string, string> = {
   input_tokens_per_million: '输入 / 百万 token',
@@ -81,7 +87,72 @@ export function PricesPage() {
     version?: PriceVersion;
   } | null>(null);
   const [detail, setDetail] = useState<PriceVersion | null>(null);
+  const [detailSelected, setDetailSelected] = useState<string[]>([]);
   const [error, setError] = useState('');
+
+  function openDetail(version: PriceVersion) {
+    setDetail(version);
+    setDetailSelected([]);
+  }
+
+  function removeDetailItems() {
+    if (!detail) return;
+    if (detail.status !== 'draft') {
+      toast.warning('已生效或已停用的价目表不可修改，请先复制调价或新建草稿版本。');
+      return;
+    }
+    const { remaining, removed } = splitSelected(detail.items, detailSelected, priceItemKey);
+    if (removed.length === 0) return;
+    if (remaining.length === 0) {
+      toast.warning('草稿至少要保留一条价格，不能把全部条目删光。');
+      return;
+    }
+    const names = removed.map(
+      (item) => `${item.modelKey} · ${UNIT_LABELS[item.unit] ?? item.unit}`,
+    );
+    confirm({
+      title: `删除草稿里的 ${removed.length} 条价格？`,
+      content: (
+        <div className="delete-impact">
+          <p className="delete-impact-head">将影响 {removed.length} 项</p>
+          <ul>
+            {names.slice(0, 20).map((name, index) => (
+              <li key={`${name}-${index}`}>{name}</li>
+            ))}
+          </ul>
+          {removed.length > 20 && <p className="delete-impact-foot">等共 {removed.length} 条</p>}
+          <p className="delete-impact-foot">
+            只改这个草稿版本，已生效 /
+            已停用的价目表不受影响；删除后立即保存，草稿至少要保留一条价格。
+          </p>
+        </div>
+      ),
+      okText: `删除 ${removed.length} 条`,
+      onOk: async () => {
+        try {
+          const updated = await api.call(BillingAdminEndpoints.updatePriceDraft, {
+            params: { priceVersionId: detail.priceVersionId },
+            body: {
+              items: remaining.map((item) => ({
+                modelKey: item.modelKey,
+                unit: item.unit,
+                priceMicros: item.priceMicros,
+                costMicros: item.costMicros,
+                band: item.band,
+              })),
+            },
+          });
+          setDetail(updated);
+          setDetailSelected([]);
+          toast.success(`已从草稿删除 ${removed.length} 条价格`);
+          list.refresh();
+        } catch (e) {
+          toast.error(errorText(e));
+          throw e;
+        }
+      },
+    });
+  }
 
   async function publish(version: PriceVersion) {
     const priced = new Set(version.items.map((p) => p.modelKey));
@@ -142,8 +213,12 @@ export function PricesPage() {
     },
     {
       title: '价格条数',
-      width: 100,
-      render: (_, v) => `${v.items.length} 条`,
+      width: 120,
+      render: (_, v) => (
+        <Button type="link" size="small" onClick={() => openDetail(v)}>
+          {v.items.length} 条 ›
+        </Button>
+      ),
     },
     {
       title: '备注',
@@ -182,10 +257,13 @@ export function PricesPage() {
     },
   ];
 
+  const versions = list.data?.items ?? [];
+  const hasDraft = versions.some((version) => version.status === 'draft');
+
   return (
     <Page
       title="AI 模型价格"
-      desc="这里按「价目表版本」管理所有模型的价格。日常单个调价建议在「模型管理 › 模型」里改，系统会自动生成新版本。"
+      desc="这里按「价目表版本」管理所有模型的价格。点「条数」打开条目列表：草稿版可以勾选后批量删除条目；已生效 / 已停用的版本只读。日常单个调价建议在「模型管理 › 模型」里改，系统会自动生成新版本。"
       extra={
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing({ mode: 'new' })}>
           新建价格版本
@@ -193,14 +271,23 @@ export function PricesPage() {
       }
     >
       {error && <Alert type="error" showIcon message={error} />}
+      {list.data && !hasDraft && (
+        <Alert
+          type="info"
+          showIcon
+          message="当前没有草稿版本"
+          description="已生效、已停用的价目表都不可修改。要批量删除价格条目，请先点某个版本的「复制调价」或右上角「新建价格版本」生成草稿。"
+          style={{ marginBottom: 12 }}
+        />
+      )}
       <DataTable<PriceVersion>
         rowKey="priceVersionId"
         columns={columns}
-        data={list.data?.items ?? []}
+        data={versions}
         loading={list.loading}
         error={list.error}
         onRefresh={list.refresh}
-        onRowClick={(v) => setDetail(v)}
+        onRowClick={openDetail}
         emptyTitle="还没有价目表"
         emptyHint="点右上角「新建价格版本」，给每个模型填上每百万 token 的售价和成本价，然后启用。"
         emptyAction={
@@ -232,27 +319,105 @@ export function PricesPage() {
           open
           onClose={() => setDetail(null)}
           title={detail.versionLabel}
-          subtitle={formatDateTime(detail.createdAt)}
-          width={640}
+          subtitle={`${detail.status === 'draft' ? '草稿' : detail.status === 'active' ? '生效中' : '已停用'} · ${formatDateTime(detail.createdAt)}`}
+          width={720}
         >
-          <div className="price-list">
-            {detail.items.map((item, index) => (
-              <div className="price-row" key={`${item.modelKey}-${index}`}>
-                <div className="cell-main">
-                  <span className="cell-title">{item.modelKey}</span>
-                  <span className="cell-sub">{UNIT_LABELS[item.unit] ?? item.unit}</span>
-                </div>
-                <div className="price-values">
-                  <span>售价 {formatYuan(item.priceMicros, 4)}</span>
-                  <span className="cell-sub">成本 {formatYuan(item.costMicros, 4)}</span>
-                  {item.band && <span className="cell-sub">分时价：{item.band.name}</span>}
-                </div>
+          {detail.status === 'draft' ? (
+            <>
+              <Alert
+                type="info"
+                showIcon
+                message="这是草稿，可批量删除价格条目"
+                description="勾选后点「批量删除所选条目」，删除会立即保存到这个草稿；草稿至少要保留一条价格。表头复选框只全选当前草稿的全部条目。"
+                style={{ marginBottom: 12 }}
+              />
+              <Table<PriceItem>
+                size="small"
+                rowKey={(_, index) => String(index ?? 0)}
+                dataSource={detail.items}
+                pagination={false}
+                columns={[
+                  { title: '模型', dataIndex: 'modelKey' },
+                  {
+                    title: '单位',
+                    render: (_, item) => UNIT_LABELS[item.unit] ?? item.unit,
+                  },
+                  {
+                    title: '售价',
+                    width: 110,
+                    render: (_, item) => formatYuan(item.priceMicros, 4),
+                  },
+                  {
+                    title: '成本',
+                    width: 110,
+                    render: (_, item) => formatYuan(item.costMicros, 4),
+                  },
+                  {
+                    title: '分时价',
+                    width: 100,
+                    render: (_, item) => item.band?.name ?? '—',
+                  },
+                ]}
+                rowSelection={{
+                  selectedRowKeys: detailSelected,
+                  onChange: (keys) => setDetailSelected(keys.map(String)),
+                  preserveSelectedRowKeys: false,
+                }}
+                locale={{ emptyText: '这个草稿没有价格条目。' }}
+              />
+              <div className="drawer-row-head" style={{ marginTop: 12 }}>
+                <span className="cell-sub">已选 {detailSelected.length} 条</span>
+                <Space>
+                  <Button
+                    size="small"
+                    type="link"
+                    disabled={!detailSelected.length}
+                    onClick={() => setDetailSelected([])}
+                  >
+                    清空选择
+                  </Button>
+                  <Button
+                    size="small"
+                    danger
+                    disabled={!detailSelected.length}
+                    onClick={removeDetailItems}
+                  >
+                    批量删除所选条目
+                  </Button>
+                </Space>
               </div>
-            ))}
-            {detail.items.length === 0 && (
-              <div className="detail-muted">这个版本没有价格条目。</div>
-            )}
-          </div>
+            </>
+          ) : (
+            <>
+              <Alert
+                type="warning"
+                showIcon
+                message={
+                  detail.status === 'active' ? '已生效的价目表不可修改' : '已停用的价目表不可修改'
+                }
+                description="价格条目只能从草稿里删除。请点该版本的「复制调价」生成新草稿，或新建价格版本。"
+                style={{ marginBottom: 12 }}
+              />
+              <div className="price-list">
+                {detail.items.map((item, index) => (
+                  <div className="price-row" key={`${item.modelKey}-${index}`}>
+                    <div className="cell-main">
+                      <span className="cell-title">{item.modelKey}</span>
+                      <span className="cell-sub">{UNIT_LABELS[item.unit] ?? item.unit}</span>
+                    </div>
+                    <div className="price-values">
+                      <span>售价 {formatYuan(item.priceMicros, 4)}</span>
+                      <span className="cell-sub">成本 {formatYuan(item.costMicros, 4)}</span>
+                      {item.band && <span className="cell-sub">分时价：{item.band.name}</span>}
+                    </div>
+                  </div>
+                ))}
+                {detail.items.length === 0 && (
+                  <div className="detail-muted">这个版本没有价格条目。</div>
+                )}
+              </div>
+            </>
+          )}
         </RecordDrawer>
       )}
     </Page>

@@ -4,11 +4,18 @@
  */
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Alert, Button, Input, Segmented, Space } from 'antd';
+import { Alert, Button, Checkbox, Input, Segmented, Space } from 'antd';
 import { AdminUsersEndpoints } from '@weiban/contracts';
+import { api } from '../../data/client.js';
 import { useRemote } from '../../data/hooks.js';
 import { HelpTip, Page } from '../../ui/page.js';
 import { DataTable, type ProColumns } from '../../ui/table.js';
+import {
+  BatchBar,
+  BatchFailureAlert,
+  BatchOperationModal,
+  type BatchFailure,
+} from '../../ui/batch-operation.js';
 import { formatDate, formatPoints, formatYuan, relativeTime } from '../../ui/format.js';
 import {
   AccountStateTag,
@@ -32,6 +39,14 @@ export function UserListPage() {
   const [quick, setQuick] = useState<Quick>('all');
   const [openId, setOpenId] = useState<string | null>(null);
   const [openTab, setOpenTab] = useState<'profile' | 'membership' | 'runtime'>('profile');
+  const [selected, setSelected] = useState<string[]>([]);
+  const [failures, setFailures] = useState<BatchFailure[]>([]);
+  const [batch, setBatch] = useState<{
+    kind: 'delete' | 'ban' | 'unban';
+    rows: UserRow[];
+  } | null>(null);
+  const [reason, setReason] = useState('');
+  const [ackDelete, setAckDelete] = useState(false);
   useEffect(() => {
     if (linkedUser) {
       setQuery(linkedUser);
@@ -39,6 +54,10 @@ export function UserListPage() {
       setOpenTab(linkedTab === 'runtime' ? 'runtime' : 'profile');
     }
   }, [linkedUser, linkedTab]);
+  // 选择只对当前页 / 当前筛选有效：换关键词或快捷筛选时清空。
+  useEffect(() => {
+    setSelected([]);
+  }, [query, quick]);
 
   function refreshAll() {
     users.refresh();
@@ -65,6 +84,46 @@ export function UserListPage() {
       !!user.nickname?.toLowerCase().includes(q)
     );
   });
+
+  // 只认当前筛选结果里的行：即使组件状态里残留了旧页的 key，也不会作用到看不见的用户。
+  const selectedRows = list.filter(({ userId }) => selected.includes(userId));
+
+  function openBatch(kind: 'delete' | 'ban' | 'unban') {
+    if (!selectedRows.length) return;
+    setReason('');
+    setAckDelete(false);
+    setBatch({ kind, rows: [...selectedRows] });
+  }
+
+  async function runBatch(row: UserRow): Promise<string> {
+    if (!batch) return '';
+    if (batch.kind === 'delete') {
+      await api.call(AdminUsersEndpoints.deleteUser, {
+        params: { userId: row.user.userId },
+        body: { confirmUsername: row.user.username, reason: reason.trim() },
+      });
+      return '已进入注销流程';
+    }
+    if (batch.kind === 'ban') {
+      await api.call(AdminUsersEndpoints.banUser, {
+        params: { userId: row.user.userId },
+        body: { reason: reason.trim() },
+      });
+      return '已封禁';
+    }
+    await api.call(AdminUsersEndpoints.unbanUser, { params: { userId: row.user.userId } });
+    return row.user.ban ? '已解除封禁' : '本来就没有封禁';
+  }
+
+  const batchVerb = batch?.kind === 'delete' ? '注销' : batch?.kind === 'ban' ? '封禁' : '解封';
+  const batchConfirmText =
+    batch?.kind === 'delete' ? '确认注销' : batch?.kind === 'ban' ? '确认封禁' : '确认解封';
+  const batchDisabled =
+    batch?.kind === 'delete'
+      ? reason.trim().length < 2 || !ackDelete
+      : batch?.kind === 'ban'
+        ? reason.trim().length < 2
+        : false;
 
   const nameOf = (id: string | null) => {
     if (!id) return '系统';
@@ -202,6 +261,7 @@ export function UserListPage() {
         </div>
       </div>
       {overview.error && <Alert type="error" showIcon message={overview.error} />}
+      <BatchFailureAlert failures={failures} onDismiss={() => setFailures([])} />
       <DataTable<UserRow>
         rowKey="userId"
         columns={columns}
@@ -210,6 +270,38 @@ export function UserListPage() {
         error={users.error}
         onRefresh={refreshAll}
         onRowClick={(r) => open(r.userId)}
+        selectedKeys={selected}
+        onSelectionChange={(keys) => setSelected(keys.map(String))}
+        preserveSelection={false}
+        selectionHint="表头勾选只覆盖当前页；换页或改筛选会清空"
+        onPageChange={() => setSelected([])}
+        rowSelectable={({ user }) => user.role !== 'admin' && user.status === 'active'}
+        batchActions={() => (
+          <BatchBar count={selectedRows.length}>
+            <Button size="small" disabled={!selectedRows.length} onClick={() => openBatch('ban')}>
+              批量封禁
+            </Button>
+            <Button size="small" disabled={!selectedRows.length} onClick={() => openBatch('unban')}>
+              批量解封
+            </Button>
+            <Button
+              size="small"
+              danger
+              disabled={!selectedRows.length}
+              onClick={() => openBatch('delete')}
+            >
+              批量注销
+            </Button>
+            <Button
+              size="small"
+              type="text"
+              disabled={!selectedRows.length}
+              onClick={() => setSelected([])}
+            >
+              清空选择
+            </Button>
+          </BatchBar>
+        )}
         filters={
           <Space wrap>
             <Input.Search
@@ -238,6 +330,84 @@ export function UserListPage() {
             : '用户在网页端注册后会自动出现在这里，不需要手动添加。'
         }
       />
+      {batch && (
+        <BatchOperationModal
+          title={`${batchVerb}选中的 ${batch.rows.length} 个账号？`}
+          intro={
+            batch.kind === 'delete' ? (
+              <>
+                将影响 {batch.rows.length}{' '}
+                项。这会走与用户自助注销相同的流程：账号立即下线、不能登录，
+                聊天、角色、记忆、积分等数据全部删除，不能恢复。管理员账号和注销中的账号不能勾选。
+                每条单独提交，失败项会列出来并保持选中。
+              </>
+            ) : batch.kind === 'ban' ? (
+              <>
+                将影响 {batch.rows.length}{' '}
+                项。封禁后不能登录，已登录的设备全部下线；数据保留，随时可以解封。
+                每条单独提交，失败项会列出来并保持选中。
+              </>
+            ) : (
+              <>
+                将影响 {batch.rows.length} 项。解封后可以重新登录；本来就没封禁的账号不受影响。
+                每条单独提交，失败项会列出来并保持选中。
+              </>
+            )
+          }
+          targets={batch.rows}
+          keyOf={(row) => row.user.userId}
+          labelOf={(row) => displayName(row.user)}
+          confirmText={batchConfirmText}
+          danger={batch.kind !== 'unban'}
+          confirmDisabled={batchDisabled}
+          run={runBatch}
+          onCancel={() => setBatch(null)}
+          onFinished={(failed) => {
+            setFailures(failed);
+            setSelected(failed.map((item) => item.key));
+            setBatch(null);
+            refreshAll();
+          }}
+        >
+          {batch.kind === 'delete' && (
+            <>
+              <div className="field-line">
+                <span className="field-label">
+                  注销原因
+                  <span className="field-label-hint">必填，至少 2 个字，记入审计</span>
+                </span>
+                <Input.TextArea
+                  rows={2}
+                  maxLength={200}
+                  showCount
+                  value={reason}
+                  placeholder="例：用户联系客服要求注销 / 清理测试账号"
+                  onChange={(e) => setReason(e.target.value)}
+                />
+              </div>
+              <Checkbox checked={ackDelete} onChange={(e) => setAckDelete(e.target.checked)}>
+                我确认这些账号将进入注销流程，数据删除后不能恢复
+              </Checkbox>
+            </>
+          )}
+          {batch.kind === 'ban' && (
+            <div className="field-line">
+              <span className="field-label">
+                封禁原因
+                <span className="field-label-hint">必填，至少 2 个字，记入审计</span>
+              </span>
+              <Input.TextArea
+                rows={2}
+                maxLength={200}
+                showCount
+                value={reason}
+                placeholder="例：批量处理广告 / 违规账号"
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </div>
+          )}
+        </BatchOperationModal>
+      )}
       {openRow && (
         <UserDetailDrawer
           key={openRow.userId}
