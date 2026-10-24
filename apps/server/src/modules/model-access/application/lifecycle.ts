@@ -9,10 +9,12 @@ import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common'
 import type { UserDataOwner } from '@weiban/contracts';
 import { and, count, eq, or } from 'drizzle-orm';
 import {
+  CHARACTER_PURGE_REGISTRY,
   DATABASE,
   EVENT_BUS,
   JOB_QUEUE,
   USER_DATA_REGISTRY,
+  type CharacterPurgeRegistry,
   type Database,
   type DbTx,
   type EventBus,
@@ -45,6 +47,7 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
     @Inject(DATABASE) private readonly database: Database,
     @Inject(EVENT_BUS) private readonly bus: EventBus,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
+    @Inject(CHARACTER_PURGE_REGISTRY) private readonly purgeRegistry: CharacterPurgeRegistry,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(UsageReconciliationService)
     private readonly reconciliation: UsageReconciliationService,
@@ -54,6 +57,10 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
 
   async onModuleInit(): Promise<void> {
     this.registry.register(this);
+    this.purgeRegistry.register({
+      module: 'model_access',
+      purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
+    });
     this.bus.subscribe({
       consumer: 'model_access.on_call_cost_resolved',
       eventType: 'billing.call_cost_resolved',
@@ -117,6 +124,14 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
       await this.reconciliation.runForYesterday();
     });
     await this.jobs.schedule(RECONCILE_USAGE_JOB, '45 3 * * *');
+  }
+
+  /** 后台彻底删除角色：该角色在所有用户下的单独模型设置；用量记录保留为历史。 */
+  async purgeCharacter(tx: DbTx, characterId: string): Promise<void> {
+    await tx.db
+      .delete(characterScenarioOverrides)
+      .where(eq(characterScenarioOverrides.characterId, characterId));
+    await tx.db.delete(characterOverrides).where(eq(characterOverrides.characterId, characterId));
   }
 
   /** 角色被彻底删除：删除该用户对该角色的单独模型设置（可重复执行）。 */

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { S3Client } from '@aws-sdk/client-s3';
 import { z } from 'zod';
 import {
+  CharacterPurgeRegistry,
   JobQueue,
   UserDataRegistry,
   createLogger,
@@ -69,6 +70,8 @@ export function createStickerAssetImporter(input: {
     config,
     audit,
     new UserDataRegistry(),
+    // 维护脚本不参与后台彻底删除，登记表为空；只为满足 MediaService 的构造签名。
+    new CharacterPurgeRegistry(),
     jobs,
     {
       getAccountStatus: async () => {

@@ -28,6 +28,7 @@ import {
 } from '@weiban/contracts';
 import {
   AppError,
+  CHARACTER_PURGE_REGISTRY,
   CLOCK,
   DATABASE,
   ENVELOPE_CRYPTO,
@@ -36,6 +37,7 @@ import {
   asDbTx,
   newId,
   parseContract,
+  type CharacterPurgeRegistry,
   type Clock,
   type Database,
   type DbTx,
@@ -86,6 +88,7 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
     @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
     @Inject(MEDIA_READ_PORT) private readonly media: MediaReadPort,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
+    @Inject(CHARACTER_PURGE_REGISTRY) private readonly purgeRegistry: CharacterPurgeRegistry,
   ) {}
 
   onModuleInit(): void {
@@ -93,6 +96,11 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
       module: 'moments',
       purgeUser: (id) => this.purgeUser(id),
       countUserData: (id) => this.countUserData(id),
+    });
+    this.purgeRegistry.register({
+      module: 'moments',
+      count: (characterId, tx) => this.countCharacterData(characterId, tx),
+      purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
     });
   }
 
@@ -705,7 +713,41 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
     });
   }
 
-  // ---------- 删除清单（注销） ----------
+  // ---------- 删除清单（注销 / 后台彻底删除角色） ----------
+
+  /** 后台彻底删除角色：角色发布的动态，以及它在任何动态下留下的评论 / 点赞。 */
+  async countCharacterData(characterId: string, tx?: DbTx): Promise<{ moments: number }> {
+    const { rows } = await (tx ?? this.db).query<{ n: number }>(
+      `SELECT count(*)::int AS n
+         FROM moments.posts
+        WHERE author_character_id = $1 AND author_kind = 'character'`,
+      [characterId],
+    );
+    return { moments: rows[0]?.n ?? 0 };
+  }
+
+  async purgeCharacter(tx: DbTx, characterId: string): Promise<void> {
+    // 角色自己的动态：点赞 / 评论 / 可见范围 / 图片随 posts 级联删除。
+    await tx.query(
+      "DELETE FROM moments.posts WHERE author_character_id = $1 AND author_kind = 'character'",
+      [characterId],
+    );
+    await tx.query(
+      "DELETE FROM moments.comments WHERE author_kind = 'character' AND author_ref_id = $1",
+      [characterId],
+    );
+    await tx.query(
+      "DELETE FROM moments.likes WHERE actor_kind = 'character' AND actor_ref_id = $1",
+      [characterId],
+    );
+    await tx.query(
+      `UPDATE moments.comments
+          SET reply_to_ref_id = NULL
+        WHERE reply_to_kind = 'character' AND reply_to_ref_id = $1`,
+      [characterId],
+    );
+    await tx.query('DELETE FROM moments.visibility WHERE character_id = $1', [characterId]);
+  }
 
   async purgeUser(userId: string): Promise<number> {
     return this.db.transaction(async (tx) => {

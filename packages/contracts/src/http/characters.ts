@@ -457,6 +457,40 @@ export const UpdateCharacterEligibilityRequest = z.object({
 });
 export type UpdateCharacterEligibilityRequest = z.infer<typeof UpdateCharacterEligibilityRequest>;
 
+/**
+ * 后台「彻底删除（硬删）」影响面。与「下架（软删）」并存：硬删会物理删除角色及下列关联数据，
+ * 无法恢复。计数口径：contacts = 该角色的全部联系人记录（含待通过 / 已进入删除保留期的记录）；
+ * conversations / messages = 与该角色的私聊会话及其消息（不含群聊，群聊只移除该角色成员关系）；
+ * moments = 该角色发布的朋友圈动态。查询与执行在同一套 SQL 上，执行结果按实际删除前的计数返回。
+ */
+export const AdminCharacterPurgeCounts = z.object({
+  contacts: z.number().int().nonnegative(),
+  conversations: z.number().int().nonnegative(),
+  messages: z.number().int().nonnegative(),
+  moments: z.number().int().nonnegative(),
+});
+export type AdminCharacterPurgeCounts = z.infer<typeof AdminCharacterPurgeCounts>;
+
+export const AdminCharacterPurgeImpact = z.object({
+  characterId: Id,
+  name: z.string(),
+  status: CharacterPublishStatus,
+  counts: AdminCharacterPurgeCounts,
+});
+export type AdminCharacterPurgeImpact = z.infer<typeof AdminCharacterPurgeImpact>;
+
+/**
+ * 彻底删除结果。`counts` 是删除前实际算出的影响面；`purgedAt` 是事务提交时间。
+ * 角色不存在、已删除或不是预设角色时返回 404；仍有不能自动清理的引用（例如用户已发布的预设改版作品）
+ * 时返回 409，`details` 给出原因和计数，不静默跳过。
+ */
+export const AdminCharacterPurgeResult = z.object({
+  characterId: Id,
+  purgedAt: Timestamp,
+  counts: AdminCharacterPurgeCounts,
+});
+export type AdminCharacterPurgeResult = z.infer<typeof AdminCharacterPurgeResult>;
+
 export const CharacterAdminEndpoints = {
   list: defineEndpoint({
     method: 'GET',
@@ -516,5 +550,23 @@ export const CharacterAdminEndpoints = {
     response: AdminCharacterEligibility,
     summary:
       '3.25：人工标注 / 清除角色资格（原因必填，写审计）；生效结果变化时发 characters.character_classification_changed',
+  }),
+  purgeImpact: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/characters/:characterId/purge-impact`,
+    auth: 'admin',
+    params: z.object({ characterId: Id }),
+    response: AdminCharacterPurgeImpact,
+    summary: '彻底删除前的影响面：联系人、私聊会话、消息、朋友圈条数；角色不存在或已删除时 404',
+  }),
+  purge: defineEndpoint({
+    method: 'DELETE',
+    path: `${API_PREFIX}/admin/characters/:characterId`,
+    auth: 'admin',
+    params: z.object({ characterId: Id }),
+    query: z.object({ purge: z.literal('true') }),
+    response: AdminCharacterPurgeResult,
+    summary:
+      '管理员彻底删除预设角色（硬删，不可恢复）：单事务删除角色与联系人 / 私聊 / 消息 / 朋友圈等关联数据，写审计；不存在或已删除 404',
   }),
 } as const;

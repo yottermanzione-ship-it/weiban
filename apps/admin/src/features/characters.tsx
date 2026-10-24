@@ -15,6 +15,7 @@ import {
   MediaAdminEndpoints,
   RealPersonKind,
   type AdminCharacter,
+  type AdminCharacterPurgeImpact,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
@@ -30,7 +31,11 @@ import {
 import { formatDateTime } from '../ui/format.js';
 import { CardEditor } from '../components/card-editor.js';
 import { EligibilityCard, EligibilityLookupDrawer, factsText } from './character-eligibility.js';
-import { applyEligibilityPatch, type EligibilityBatchPatch } from './batch-helpers.js';
+import {
+  applyEligibilityPatch,
+  canConfirmPurge,
+  type EligibilityBatchPatch,
+} from './batch-helpers.js';
 
 const STATUS_LABELS: Record<string, string> = {
   draft: '草稿',
@@ -52,7 +57,7 @@ const REAL_PERSON_LABELS: Record<string, string> = {
   private_person: '身边真人',
 };
 
-type BatchKind = 'publish' | 'unpublish' | 'eligibility';
+type BatchKind = 'publish' | 'unpublish' | 'eligibility' | 'purge';
 
 interface EligibilityForm {
   basis: '' | CharacterBasis;
@@ -152,6 +157,11 @@ export function CharactersPage() {
   const [failures, setFailures] = useState<BatchFailure[]>([]);
   const [batch, setBatch] = useState<{ kind: BatchKind; rows: AdminCharacter[] } | null>(null);
   const [eligibilityForm, setEligibilityForm] = useState<EligibilityForm>(EMPTY_ELIGIBILITY_FORM);
+  const [purgeImpacts, setPurgeImpacts] = useState<Record<string, AdminCharacterPurgeImpact>>({});
+  const [purgeImpactErrors, setPurgeImpactErrors] = useState<Record<string, string>>({});
+  const [purgeImpactLoading, setPurgeImpactLoading] = useState(false);
+  const [purgeAcknowledged, setPurgeAcknowledged] = useState(false);
+  const [purgeConfirmText, setPurgeConfirmText] = useState('');
 
   // 选择只对当前页 / 当前筛选有效：换关键词或状态时清空。
   useEffect(() => {
@@ -169,8 +179,47 @@ export function CharactersPage() {
   function openBatch(kind: BatchKind) {
     if (!selectedRows.length) return;
     setEligibilityForm(EMPTY_ELIGIBILITY_FORM);
+    setPurgeImpacts({});
+    setPurgeImpactErrors({});
+    setPurgeAcknowledged(false);
+    setPurgeConfirmText('');
     setBatch({ kind, rows: [...selectedRows] });
   }
+
+  // 彻底删除必须先查每个角色的影响面；查询失败的角色不允许确认。
+  useEffect(() => {
+    if (batch?.kind !== 'purge') return;
+    let active = true;
+    setPurgeImpactLoading(true);
+    setPurgeImpacts({});
+    setPurgeImpactErrors({});
+    void Promise.all(
+      batch.rows.map(async (row) => {
+        try {
+          const impact = await api.call(CharacterAdminEndpoints.purgeImpact, {
+            params: { characterId: row.characterId },
+          });
+          return { characterId: row.characterId, impact } as const;
+        } catch (error) {
+          return { characterId: row.characterId, error: errorText(error) } as const;
+        }
+      }),
+    ).then((results) => {
+      if (!active) return;
+      const impacts: Record<string, AdminCharacterPurgeImpact> = {};
+      const errors: Record<string, string> = {};
+      for (const result of results) {
+        if ('impact' in result && result.impact) impacts[result.characterId] = result.impact;
+        else errors[result.characterId] = result.error;
+      }
+      setPurgeImpacts(impacts);
+      setPurgeImpactErrors(errors);
+      setPurgeImpactLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [batch]);
 
   const eligibilityPatch = eligibilityPatchOf(eligibilityForm);
   const eligibilityHasChange =
@@ -181,6 +230,14 @@ export function CharactersPage() {
 
   async function runBatch(row: AdminCharacter): Promise<string> {
     if (!batch) return '';
+    if (batch.kind === 'purge') {
+      const result = await api.call(CharacterAdminEndpoints.purge, {
+        params: { characterId: row.characterId },
+        query: { purge: 'true' },
+      });
+      const { contacts, conversations, messages, moments } = result.counts;
+      return `已彻底删除：联系人 ${contacts}、会话 ${conversations}、消息 ${messages}、朋友圈 ${moments}`;
+    }
     if (batch.kind === 'publish') {
       await api.call(CharacterAdminEndpoints.publish, {
         params: { characterId: row.characterId },
@@ -210,7 +267,9 @@ export function CharactersPage() {
       ? `上架选中的 ${batch.rows.length} 个角色？`
       : batch?.kind === 'unpublish'
         ? `下架选中的 ${batch.rows.length} 个角色？`
-        : `批量修改 ${batch?.rows.length ?? 0} 个角色的资格标注？`;
+        : batch?.kind === 'purge'
+          ? `彻底删除选中的 ${batch.rows.length} 个角色？`
+          : `批量修改 ${batch?.rows.length ?? 0} 个角色的资格标注？`;
   const batchIntro =
     batch?.kind === 'publish' ? (
       <>
@@ -221,8 +280,13 @@ export function CharactersPage() {
     ) : batch?.kind === 'unpublish' ? (
       <>
         将影响 {batch.rows.length}{' '}
-        项。角色库没有硬删除接口，下架就是软删：角色从广场和用户端选择列表消失，
-        已添加为好友的用户不受影响，数据保留，随时可以重新上架。
+        项。下架是软删：角色从广场和用户端选择列表消失，已添加为好友的用户不受影响，
+        数据保留，随时可以重新上架；如果确实要真正删除，请用「批量彻底删除」。
+      </>
+    ) : batch?.kind === 'purge' ? (
+      <>
+        将永久删除 {batch.rows.length} 个角色及其关联数据，<strong>不可恢复</strong>
+        。下面逐项列出影响面，请核对后勾选并输入确认文字。
       </>
     ) : (
       <>
@@ -230,6 +294,18 @@ export function CharactersPage() {
         项。会逐条读取每个角色当前的事实（人工标注优先，没有就按自动结果），
         只覆盖下面选择的字段，其余保持不变；原因会写进每个角色的修改记录。
       </>
+    );
+  const purgeImpactReady =
+    batch?.kind === 'purge' &&
+    !purgeImpactLoading &&
+    batch.rows.every((row) => purgeImpacts[row.characterId]) &&
+    Object.keys(purgeImpactErrors).length === 0;
+  const purgeConfirmReady =
+    batch?.kind === 'purge' &&
+    canConfirmPurge(
+      batch.rows.map((row) => row.name),
+      purgeAcknowledged,
+      purgeConfirmText,
     );
 
   async function togglePublish(row: AdminCharacter) {
@@ -349,7 +425,7 @@ export function CharactersPage() {
   return (
     <Page
       title="角色库"
-      desc="官方角色。上架前要过「必填结构 / 人设稳定 / 边界检测」三项检查；点一行编辑人设。勾选后可批量上架 / 下架（软删）或批量修改资格标注。"
+      desc="官方角色。上架前要过「必填结构 / 人设稳定 / 边界检测」三项检查；点一行编辑人设。勾选后可批量上架 / 下架（软删）、批量彻底删除（硬删，不可恢复）或批量修改资格标注。"
       extra={
         <Space>
           <Button onClick={() => list.refresh()}>刷新</Button>
@@ -392,6 +468,15 @@ export function CharactersPage() {
               onClick={() => openBatch('unpublish')}
             >
               批量下架（软删）
+            </Button>
+            <Button
+              size="small"
+              danger
+              type="primary"
+              disabled={!selectedRows.length}
+              onClick={() => openBatch('purge')}
+            >
+              批量彻底删除（硬删）
             </Button>
             <Button
               size="small"
@@ -450,12 +535,16 @@ export function CharactersPage() {
               ? '批量上架'
               : batch.kind === 'unpublish'
                 ? '批量下架'
-                : '批量保存'
+                : batch.kind === 'purge'
+                  ? '彻底删除'
+                  : '批量保存'
           }
-          danger={batch.kind === 'unpublish'}
+          danger={batch.kind === 'unpublish' || batch.kind === 'purge'}
           confirmDisabled={
-            batch.kind === 'eligibility' &&
-            (!eligibilityHasChange || eligibilityForm.reason.trim().length < 2)
+            batch.kind === 'purge'
+              ? !purgeImpactReady || !purgeConfirmReady
+              : batch.kind === 'eligibility' &&
+                (!eligibilityHasChange || eligibilityForm.reason.trim().length < 2)
           }
           run={runBatch}
           onCancel={() => setBatch(null)}
@@ -466,6 +555,65 @@ export function CharactersPage() {
             list.refresh();
           }}
         >
+          {batch.kind === 'purge' && (
+            <>
+              <Alert
+                type="error"
+                showIcon
+                message="彻底删除不可恢复"
+                description="角色、联系人、私聊会话与消息、朋友圈等关联数据会被物理删除；财务流水和客服记录按合规要求保留历史引用。"
+              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {batch.rows.map((row) => {
+                  const impact = purgeImpacts[row.characterId];
+                  const error = purgeImpactErrors[row.characterId];
+                  return (
+                    <div
+                      key={row.characterId}
+                      style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}
+                    >
+                      <strong>{row.name}</strong>
+                      {error ? (
+                        <span className="cell-sub" style={{ color: '#cf1322' }}>
+                          影响面查询失败：{error}
+                        </span>
+                      ) : impact ? (
+                        <span>
+                          将删除：联系人 {impact.counts.contacts}、会话{' '}
+                          {impact.counts.conversations}、消息 {impact.counts.messages}、朋友圈{' '}
+                          {impact.counts.moments}
+                        </span>
+                      ) : (
+                        <span className="cell-sub">正在计算影响面…</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <Checkbox
+                checked={purgeAcknowledged}
+                onChange={(e) => setPurgeAcknowledged(e.target.checked)}
+              >
+                我已了解此操作不可恢复，确认彻底删除
+              </Checkbox>
+              <div className="field-line">
+                <span className="field-label">
+                  确认文字
+                  <span className="field-label-hint">
+                    {batch.rows.length === 1
+                      ? `输入角色名「${batch.rows[0]?.name ?? ''}」或「彻底删除」`
+                      : '批量删除请输入「彻底删除」'}
+                  </span>
+                </span>
+                <Input
+                  value={purgeConfirmText}
+                  placeholder={batch.rows.length === 1 ? (batch.rows[0]?.name ?? '') : '彻底删除'}
+                  onChange={(e) => setPurgeConfirmText(e.target.value)}
+                  disabled={purgeImpactLoading}
+                />
+              </div>
+            </>
+          )}
           {batch.kind === 'eligibility' && (
             <>
               <div className="form-two">

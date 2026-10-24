@@ -17,6 +17,7 @@ import {
 import {
   APP_CONFIG,
   AUDIT_LOG,
+  CHARACTER_PURGE_REGISTRY,
   CLOCK,
   JOB_QUEUE,
   DATABASE,
@@ -28,6 +29,7 @@ import {
   newId,
   type AppConfig,
   type AuditLog,
+  type CharacterPurgeRegistry,
   type Clock,
   type JobQueue,
   type Database,
@@ -120,12 +122,17 @@ export class MediaService
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
+    @Inject(CHARACTER_PURGE_REGISTRY) private readonly purgeRegistry: CharacterPurgeRegistry,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(MEDIA_ACCOUNT_STATUS) private readonly accounts: MediaAccountStatus,
     @Optional() @Inject(MEDIA_SYNC) private readonly sync: MediaSync | null = null,
   ) {}
   async onModuleInit(): Promise<void> {
     this.registry.register(this);
+    this.purgeRegistry.register({
+      module: 'media',
+      purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
+    });
     await this.jobs.work('media.recover_uploads', () => this.recoverUploads());
     await this.jobs.schedule('media.recover_uploads', '*/10 * * * *');
     await this.jobs.work('media.lifecycle', () => this.runLifecycle());
@@ -133,6 +140,16 @@ export class MediaService
   }
 
   // ---------- 生命周期 ----------
+
+  /** 后台彻底删除角色：从素材库「指定角色」的表情包数组里移除该角色（无外键，JSONB 映射）。 */
+  private async purgeCharacter(tx: DbTx, characterId: string): Promise<void> {
+    await tx.query(
+      `UPDATE media.sticker_packs
+          SET character_ids = character_ids - $1::text
+        WHERE jsonb_exists(character_ids, $1)`,
+      [characterId],
+    );
+  }
 
   /** 回收超过 10 分钟仍是 pending 的上传（上传中途崩溃）。 */
   async recoverUploads(): Promise<void> {

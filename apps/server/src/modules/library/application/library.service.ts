@@ -32,6 +32,7 @@ import {
 import { z } from 'zod';
 import {
   AppError,
+  CHARACTER_PURGE_REGISTRY,
   CLOCK,
   DATABASE,
   ENVELOPE_CRYPTO,
@@ -39,6 +40,7 @@ import {
   USER_DATA_REGISTRY,
   newId,
   parseContract,
+  type CharacterPurgeRegistry,
   type Clock,
   type Database,
   type DbTx,
@@ -126,6 +128,7 @@ export class LibraryService implements OnModuleInit {
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(ENVELOPE_CRYPTO) private readonly crypto: EnvelopeCrypto,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
+    @Inject(CHARACTER_PURGE_REGISTRY) private readonly purgeRegistry: CharacterPurgeRegistry,
     @Inject(CHAT_READ_PORT) private readonly chat: ChatReadPort,
     @Inject(POLICY_PORT) private readonly policy: PolicyPort,
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
@@ -141,6 +144,10 @@ export class LibraryService implements OnModuleInit {
       module: 'library',
       purgeUser: (userId) => this.purgeUser(userId),
       countUserData: (userId) => this.countUserData(userId),
+    });
+    this.purgeRegistry.register({
+      module: 'library',
+      purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
     });
   }
 
@@ -715,6 +722,13 @@ export class LibraryService implements OnModuleInit {
       type: 'data.changed',
       data: { section: 'favorites', characterId: null, itemId },
     });
+  }
+
+  /** 后台彻底删除角色：收藏保留（已有内容与头像快照），只去掉角色引用。 */
+  private async purgeCharacter(tx: DbTx, characterId: string): Promise<void> {
+    await tx.query('UPDATE library.favorites SET character_id = NULL WHERE character_id = $1', [
+      characterId,
+    ]);
   }
 
   private async purgeUser(userId: string): Promise<number> {

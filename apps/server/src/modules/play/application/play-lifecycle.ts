@@ -8,13 +8,16 @@
  */
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import {
+  CHARACTER_PURGE_REGISTRY,
   CLOCK,
   DATABASE,
   EVENT_BUS,
   LOGGER,
   USER_DATA_REGISTRY,
+  type CharacterPurgeRegistry,
   type Clock,
   type Database,
+  type DbTx,
   type EventBus,
   type Logger,
   type UserDataRegistry,
@@ -37,6 +40,7 @@ export class PlayLifecycle implements OnModuleInit {
     @Inject(EVENT_BUS) private readonly bus: EventBus,
     @Inject(LOGGER) private readonly logger: Logger,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
+    @Inject(CHARACTER_PURGE_REGISTRY) private readonly purgeRegistry: CharacterPurgeRegistry,
     @Inject(PlayJobs) private readonly jobs: PlayJobs,
     @Inject(DailyQuestionService) daily: DailyQuestionService,
     @Inject(WishlistService) wishlist: WishlistService,
@@ -61,6 +65,10 @@ export class PlayLifecycle implements OnModuleInit {
         for (const f of this.features) n += await f.countUserData(userId);
         return n;
       },
+    });
+    this.purgeRegistry.register({
+      module: 'play',
+      purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
     });
 
     this.bus.subscribe({
@@ -90,6 +98,17 @@ export class PlayLifecycle implements OnModuleInit {
 
     await this.jobs.register(PLAY_DUE_SWEEP_JOB, () => this.sweep());
     await this.jobs.cron(PLAY_DUE_SWEEP_JOB, '* * * * *');
+  }
+
+  /** 后台彻底删除角色：每日一问、心愿清单、慢信、专注、提醒中与该角色相关的记录。 */
+  private async purgeCharacter(tx: DbTx, characterId: string): Promise<void> {
+    await tx.query('DELETE FROM play.daily_answers WHERE character_id = $1', [characterId]);
+    await tx.query('DELETE FROM play.daily_prefs WHERE last_character_id = $1', [characterId]);
+    await tx.query('DELETE FROM play.focus_sessions WHERE character_id = $1', [characterId]);
+    await tx.query('DELETE FROM play.letters WHERE character_id = $1', [characterId]);
+    await tx.query('DELETE FROM play.reminders WHERE character_id = $1', [characterId]);
+    await tx.query('DELETE FROM play.wishlist_items WHERE character_id = $1', [characterId]);
+    await tx.query('DELETE FROM play.wishlist_proposals WHERE character_id = $1', [characterId]);
   }
 
   private async sweep(): Promise<void> {

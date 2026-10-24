@@ -20,6 +20,7 @@ import {
   newId,
   EventBus,
   UserDataRegistry,
+  CharacterPurgeRegistry,
   type JobQueue,
 } from '../src/platform/index.js';
 
@@ -126,6 +127,7 @@ describeDb('T-052 proactive 真实PG：事务配额、日报、节日和删除',
       bus,
       jobs,
       registry,
+      new CharacterPurgeRegistry(),
       guards,
       events,
       messages,

@@ -14,9 +14,11 @@ import type {
   AchievementKey,
   ChatReadPort,
   HolidayEventPort,
+  MediaSystemPort,
   UpcomingHoliday,
 } from '@weiban/contracts';
 import {
+  CHARACTER_PURGE_REGISTRY,
   CLOCK,
   DATABASE,
   EVENT_BUS,
@@ -24,6 +26,7 @@ import {
   LOGGER,
   OUTBOX,
   USER_DATA_REGISTRY,
+  type CharacterPurgeRegistry,
   type Clock,
   type Database,
   type DbTx,
@@ -34,6 +37,7 @@ import {
   type Outbox,
   type UserDataRegistry,
 } from '../../../platform/index.js';
+import { MEDIA_SYSTEM_PORT } from '../../media/index.js';
 import {
   addDays,
   customAnniversaryHits,
@@ -71,6 +75,8 @@ export class GrowthEvents implements OnModuleInit {
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(LOGGER) private readonly logger: Logger,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
+    @Inject(CHARACTER_PURGE_REGISTRY) private readonly purgeRegistry: CharacterPurgeRegistry,
+    @Inject(MEDIA_SYSTEM_PORT) private readonly media: MediaSystemPort,
     @Inject(GrowthService) private readonly growth: GrowthService,
     @Inject(CardsService) private readonly cards: CardsService,
     @Inject(AchievementService) private readonly achievements: AchievementService,
@@ -86,6 +92,10 @@ export class GrowthEvents implements OnModuleInit {
       module: 'growth',
       purgeUser: (userId) => this.purgeUser(userId),
       countUserData: (userId) => this.countUserData(userId),
+    });
+    this.purgeRegistry.register({
+      module: 'growth',
+      purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
     });
     this.subscribe();
     await this.jobs.work(GROWTH_ANNIVERSARY_SWEEP_JOB, () => this.sweep());
@@ -655,6 +665,43 @@ export class GrowthEvents implements OnModuleInit {
   }
 
   // ---------- 删除清单 ----------
+
+  /** 后台彻底删除预设角色：卡片、熟悉度、纪念日、联系索引、宠物及其相册 / 互动 / 起名。 */
+  private async purgeCharacter(tx: DbTx, characterId: string): Promise<void> {
+    const uploads = await tx.query<{ media_id: string }>(
+      `SELECT al.media_id
+         FROM growth.pet_album al
+         JOIN growth.pets p ON p.id = al.pet_id
+        WHERE p.character_id = $1 AND al.source = 'user'`,
+      [characterId],
+    );
+    await tx.query(
+      'DELETE FROM growth.pet_album WHERE pet_id IN (SELECT id FROM growth.pets WHERE character_id = $1)',
+      [characterId],
+    );
+    await tx.query(
+      'DELETE FROM growth.pet_timeline WHERE pet_id IN (SELECT id FROM growth.pets WHERE character_id = $1)',
+      [characterId],
+    );
+    await tx.query(
+      'DELETE FROM growth.pet_interactions WHERE pet_id IN (SELECT id FROM growth.pets WHERE character_id = $1)',
+      [characterId],
+    );
+    await tx.query('DELETE FROM growth.pet_naming_requests WHERE character_id = $1', [characterId]);
+    for (const upload of uploads.rows)
+      await this.media.deleteObject(upload.media_id, tx).catch(() => undefined);
+    await tx.query('DELETE FROM growth.pets WHERE character_id = $1', [characterId]);
+    await tx.query('DELETE FROM growth.cards WHERE character_id = $1', [characterId]);
+    await tx.query('DELETE FROM growth.familiarity_events WHERE character_id = $1', [characterId]);
+    await tx.query('DELETE FROM growth.familiarity WHERE character_id = $1', [characterId]);
+    await tx.query('DELETE FROM growth.anniversaries WHERE character_id = $1', [characterId]);
+    await tx.query('DELETE FROM growth.contact_index WHERE character_id = $1', [characterId]);
+    // 成就是用户级记录，不随角色收回：只去掉角色引用。
+    await tx.query(
+      'UPDATE growth.achievement_unlocks SET character_id = NULL WHERE character_id = $1',
+      [characterId],
+    );
+  }
 
   private async purgeUser(userId: string): Promise<number> {
     return this.db.transaction(async (tx) => {

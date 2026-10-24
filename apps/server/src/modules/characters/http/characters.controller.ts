@@ -4,6 +4,7 @@ import {
   Post,
   Patch,
   Put,
+  Delete,
   Body,
   Query,
   Param,
@@ -25,6 +26,7 @@ import {
 } from '../../../platform/index.js';
 import { CharacterService } from '../application/characters.js';
 import { CharacterEligibilityService } from '../application/eligibility.js';
+import { CharacterPurgeService } from '../application/purge.js';
 @Controller('api/v1/characters')
 export class CharacterController {
   constructor(@Inject(CharacterService) private readonly service: CharacterService) {}
@@ -56,6 +58,7 @@ export class CharacterAdminController {
   constructor(
     @Inject(CharacterService) private readonly service: CharacterService,
     @Inject(CharacterEligibilityService) private readonly eligibility: CharacterEligibilityService,
+    @Inject(CharacterPurgeService) private readonly purger: CharacterPurgeService,
   ) {}
   /** 3.25（G1-2）：角色资格人工标注（预设与用户自建角色都可用）。 */
   @Get(':characterId/eligibility')
@@ -115,5 +118,22 @@ export class CharacterAdminController {
     @Param(new ContractPipe(A.unpublish.params!)) p: { characterId: string },
   ) {
     return this.service.unpublish(me.userId, p.characterId);
+  }
+  /** 彻底删除前的影响面；与下架（软删）分开，供后台二次确认展示。 */
+  @Get(':characterId/purge-impact')
+  @RequireAuth(A.purgeImpact.auth)
+  purgeImpact(@Param(new ContractPipe(A.purgeImpact.params!)) p: { characterId: string }) {
+    return this.purger.impact(p.characterId);
+  }
+  /** 管理员硬删预设角色：purge=true 必填，避免误把普通 DELETE 当成软删。 */
+  @Delete(':characterId')
+  @HttpCode(200)
+  @RequireAuth(A.purge.auth)
+  purge(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(A.purge.params!)) p: { characterId: string },
+    @Query(new ContractPipe(A.purge.query!)) _q: { purge: 'true' },
+  ) {
+    return this.purger.purge(me.userId, p.characterId);
   }
 }

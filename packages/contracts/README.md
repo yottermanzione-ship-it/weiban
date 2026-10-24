@@ -95,6 +95,10 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 3.38（2026-10-24，后台角色彻底删除）
+
+新增两个仅管理员可用的接口：`CharacterAdminEndpoints.purgeImpact`（GET `/api/v1/admin/characters/:characterId/purge-impact`）返回联系人、私聊会话、消息、朋友圈影响面；`CharacterAdminEndpoints.purge`（DELETE `/api/v1/admin/characters/:characterId?purge=true`）单事务硬删预设角色及关联数据，写 `character.purged` 审计。与现有下架（软删）并存；角色不存在或已删除返回 404，仍有不能自动清理的引用返回 409。仅新增接口，向后兼容。
+
 ### 3.36（2026-10-22，模型服务单位单价）
 
 申请及批准范围见 `docs/architecture/2026-10-22-service-unit-pricing.md`。现有模型合并接口增加可选 serviceRates（仅五种既有非 token 单位，元/单位）；写入省略不改、1..5 项且单位唯一，cost 省略/null 默认售价。仅替换提交单位（分时价变全天），保留其他价格。BillingModelRatePort 增加可选服务单价读写，所有发布统一事务锁；不增加付费调用、不新增计费单位。生成物由整合主 agent 统一生成。

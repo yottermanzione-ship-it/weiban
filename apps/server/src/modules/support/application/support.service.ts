@@ -328,7 +328,15 @@ export class SupportService {
     });
   }
 
-  // ---------- 注销 ----------
+  // ---------- 注销 / 后台删除角色 ----------
+
+  /** 后台彻底删除角色：工单历史保留，只清掉角色引用（targetId 作为历史不删）。 */
+  async purgeCharacter(tx: DbTx, characterId: string): Promise<void> {
+    await tx.db
+      .update(tickets)
+      .set({ characterId: null })
+      .where(eq(tickets.characterId, characterId));
+  }
 
   async purgeUser(userId: string): Promise<number> {
     return this.db.transaction(async (tx) => {

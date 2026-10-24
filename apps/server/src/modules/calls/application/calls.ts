@@ -26,6 +26,7 @@ import {
 } from '@weiban/contracts';
 import {
   AppError,
+  CHARACTER_PURGE_REGISTRY,
   CLOCK,
   DATABASE,
   ENVELOPE_CRYPTO,
@@ -34,6 +35,7 @@ import {
   PLATFORM_KEY_OWNER,
   USER_DATA_REGISTRY,
   newId,
+  type CharacterPurgeRegistry,
   type Clock,
   type Database,
   type DbTx,
@@ -84,6 +86,7 @@ export class CallService implements CallSessionPort, UserDataOwner, OnModuleInit
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
+    @Inject(CHARACTER_PURGE_REGISTRY) private readonly purgeRegistry: CharacterPurgeRegistry,
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
     @Inject(CHAT_READ_PORT) private readonly chatRead: ChatReadPort,
     @Inject(CHAT_PARTICIPANT_PORT) private readonly chatWrite: ChatParticipantPort,
@@ -97,6 +100,10 @@ export class CallService implements CallSessionPort, UserDataOwner, OnModuleInit
 
   async onModuleInit(): Promise<void> {
     this.registry.register(this);
+    this.purgeRegistry.register({
+      module: 'calls',
+      purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
+    });
     await this.jobs.work<{ callId: string }>(JOB_AUTO_ANSWER, (job) =>
       this.autoAnswer(job.data.callId),
     );
@@ -659,6 +666,11 @@ export class CallService implements CallSessionPort, UserDataOwner, OnModuleInit
   }
 
   // ---------- 注销 ----------
+
+  /** 后台彻底删除角色：该角色的全部通话会话。 */
+  private async purgeCharacter(tx: DbTx, characterId: string): Promise<void> {
+    await tx.db.delete(callSessions).where(eq(callSessions.characterId, characterId));
+  }
 
   async purgeUser(userId: string): Promise<number> {
     const rows = await this.database.db

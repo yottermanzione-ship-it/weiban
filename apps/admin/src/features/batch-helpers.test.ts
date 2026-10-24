@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CharacterEligibilityFacts } from '@weiban/contracts';
-import { applyEligibilityPatch, splitSelected } from './batch-helpers.js';
+import { applyEligibilityPatch, canConfirmPurge, splitSelected } from './batch-helpers.js';
 
 function facts(overrides: Record<string, unknown> = {}) {
   return CharacterEligibilityFacts.parse({
@@ -59,5 +59,27 @@ describe('splitSelected', () => {
     const { remaining, removed } = splitSelected(items, ['b'], (item) => item.id);
     expect(remaining.map((item) => item.id)).toEqual(['a', 'c']);
     expect(removed.map((item) => item.id)).toEqual(['b']);
+  });
+});
+
+describe('canConfirmPurge', () => {
+  it('必须同时勾选不可恢复并输入确认文字', () => {
+    expect(canConfirmPurge(['林夏予'], false, '彻底删除')).toBe(false);
+    expect(canConfirmPurge(['林夏予'], true, '')).toBe(false);
+    expect(canConfirmPurge(['林夏予'], true, '删')).toBe(false);
+  });
+
+  it('单个角色可输入角色名或固定确认文字', () => {
+    expect(canConfirmPurge(['林夏予'], true, '林夏予')).toBe(true);
+    expect(canConfirmPurge(['林夏予'], true, ' 彻底删除 ')).toBe(true);
+  });
+
+  it('批量删除只接受固定确认文字，不能只输一个角色名', () => {
+    expect(canConfirmPurge(['林夏予', '顾星河'], true, '林夏予')).toBe(false);
+    expect(canConfirmPurge(['林夏予', '顾星河'], true, '彻底删除')).toBe(true);
+  });
+
+  it('没有选中项时不能确认', () => {
+    expect(canConfirmPurge([], true, '彻底删除')).toBe(false);
   });
 });

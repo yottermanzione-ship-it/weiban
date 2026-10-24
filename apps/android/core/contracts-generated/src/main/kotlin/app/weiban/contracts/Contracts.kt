@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.37. Regenerate: pnpm android:generate
+// Contract 3.38. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.37"
+const val CONTRACT_VERSION: String = "3.38"
 
 @Serializable
 data class AccountAlias(
@@ -283,6 +283,29 @@ data class AdminCharacterEligibility(
     @SerialName("override") val `override`: CharacterEligibilityFacts?,
     @SerialName("effective") val `effective`: CharacterClassification,
     @SerialName("history") val `history`: List<CharacterEligibilityChange>,
+)
+
+@Serializable
+data class AdminCharacterPurgeCounts(
+    @SerialName("contacts") val `contacts`: Long,
+    @SerialName("conversations") val `conversations`: Long,
+    @SerialName("messages") val `messages`: Long,
+    @SerialName("moments") val `moments`: Long,
+)
+
+@Serializable
+data class AdminCharacterPurgeImpact(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("status") val `status`: CharacterPublishStatus,
+    @SerialName("counts") val `counts`: AdminCharacterPurgeCounts,
+)
+
+@Serializable
+data class AdminCharacterPurgeResult(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("purgedAt") val `purgedAt`: Timestamp,
+    @SerialName("counts") val `counts`: AdminCharacterPurgeCounts,
 )
 
 @Serializable
@@ -1739,6 +1762,22 @@ data class CharacterAdminEndpointsListResponse(
 
 @Serializable
 data class CharacterAdminEndpointsPublishParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class CharacterAdminEndpointsPurgeParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class CharacterAdminEndpointsPurgeQuery(
+    @EncodeDefault
+    @SerialName("purge") val `purge`: String = "true",
+)
+
+@Serializable
+data class CharacterAdminEndpointsPurgeImpactParams(
     @SerialName("characterId") val `characterId`: Id,
 )
 
@@ -6286,10 +6325,12 @@ data class LockedCard(
     @SerialName("condition") val `condition`: String,
 )
 
+typealias LoginPassword = String
+
 @Serializable
 data class LoginRequest(
     @SerialName("username") val `username`: Username,
-    @SerialName("password") val `password`: Password,
+    @SerialName("password") val `password`: LoginPassword,
     @SerialName("device") val `device`: DeviceInfo,
     @SerialName("kind") val `kind`: SessionKind,
 )
@@ -6297,7 +6338,7 @@ data class LoginRequest(
 @Serializable
 data class LoginRequestInput(
     @SerialName("username") val `username`: Username,
-    @SerialName("password") val `password`: Password,
+    @SerialName("password") val `password`: LoginPassword,
     @SerialName("device") val `device`: DeviceInfoInput,
     @SerialName("kind") val `kind`: SessionKind? = null,
 )

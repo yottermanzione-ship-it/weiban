@@ -59,3 +59,18 @@ export function splitSelected<T>(
   });
   return { remaining, removed };
 }
+
+/**
+ * 「彻底删除」的最后一道确认：必须勾选不可恢复，并输入确认文字。
+ * 批量时输入「彻底删除」；只选了一个角色时也允许输入该角色名，避免批量误删。
+ */
+export function canConfirmPurge(
+  rowNames: readonly string[],
+  acknowledged: boolean,
+  typed: string,
+): boolean {
+  if (!acknowledged || rowNames.length === 0) return false;
+  const text = typed.trim();
+  if (text === '彻底删除') return true;
+  return rowNames.length === 1 && text.length > 0 && text === rowNames[0];
+}
