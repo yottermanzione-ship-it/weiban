@@ -7,6 +7,18 @@ export {
   stickerImportErrorCode,
 } from './application/sticker-asset-importer.js';
 export { createStickerAssetImporter } from './application/sticker-import-runtime.js';
+/** 旧卡头像 / 音色导入：维护 CLI 用的最小装配与通用安全读文件工具。 */
+export { createImportMediaService } from './application/import-runtime.js';
+export { assertNoLinks, readCheckedFile } from './application/sticker-asset-importer.js';
+export type { MediaService } from './application/media.js';
+export {
+  MediaVoiceImportService,
+  createMediaVoiceImportService,
+  legacyVoiceId,
+  type RegisterVoiceInput,
+  type RegisterVoiceResult,
+  type VoiceCatalogEntry,
+} from './application/voice-import.js';
 export {
   MEDIA_READ_PORT,
   MEDIA_SYSTEM_PORT,

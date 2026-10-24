@@ -877,6 +877,13 @@
       "when": 1799338000000,
       "tag": "0136_legacy_character_cards",
       "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1799338100000,
+      "tag": "0137_character_avatar_media",
+      "breakpoints": true
     }
   ]
 }

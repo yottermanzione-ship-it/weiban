@@ -53,6 +53,11 @@ export const characters = charactersSchema.table(
      * 不转 WeibanCardData；此时 draft_ciphertext 可以为空。新卡角色为 null。
      */
     legacyCard: jsonb('legacy_card').$type<Record<string, unknown> | null>(),
+    /**
+     * 迁移 0137：旧卡角色头像（media.objects.id，purpose=character_avatar）。
+     * 旧站头像是 AI 模仿图，总经理 2026-10-24 确认可直接导入；新卡头像仍在 card.avatar。
+     */
+    avatarMediaId: uuid('avatar_media_id'),
     publishedCiphertext: bytea('published_ciphertext'),
     publishedRevision: integer('published_revision'),
     revision: integer('revision').notNull().default(1),

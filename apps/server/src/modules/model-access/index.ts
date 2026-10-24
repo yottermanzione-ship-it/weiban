@@ -40,3 +40,5 @@ export { simulatePrefixCache } from './domain/prefix-cache.js';
 /** Bounded synthetic operations probe; never changes runtime configuration. */
 export { evaluateConfiguredDecisions } from './application/decision-evaluation.js';
 export { SHARED_WEB_SEARCH_PORT } from './tokens.js';
+/** 旧卡音色导入 CLI：只读当前可用的语音消息模型键。 */
+export { listVoiceMessageModelKeys } from './application/voice-model-registry.js';

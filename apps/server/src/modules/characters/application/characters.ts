@@ -71,7 +71,7 @@ type Row = typeof characters.$inferSelect;
 function legacyName(legacy: LegacyCharacterCard): string {
   return (legacy.displayName || legacy.nickname || '未命名角色').slice(0, 32);
 }
-/** 旧卡不迁头像（真人照片风险未决），资料页用默认绘制头像。 */
+/** 旧卡头像的默认绘制参数；有导入头像时图片优先。 */
 function legacyAvatarDisplay(): CharacterDisplay {
   return { supportColors: [], avatarText: null, avatarPattern: 'none', themeColor: null };
 }
@@ -233,6 +233,17 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
   private legacyOf(row: Row): LegacyCharacterCard | null {
     return row.legacyCard ? parseLegacyCard(row.legacyCard) : null;
   }
+  /** 旧卡头像：只有导入 CLI 写过 avatar_media_id 才有图；读取失败按无图处理。 */
+  private async legacyAvatar(userId: string, row: Row): Promise<CharacterProfile['avatar']> {
+    const display = legacyAvatarDisplay();
+    if (!row.avatarMediaId) return { image: null, display };
+    try {
+      const media = await this.media.getMedia(userId, row.avatarMediaId);
+      return { image: { mediaId: media.mediaId, url: media.url }, display };
+    } catch {
+      return { image: null, display };
+    }
+  }
   /** 旧卡角色的资料页数据：名字 / 别名 / 签名 / 分类按旧字段，不要求新卡。 */
   private async legacyProfile(userId: string, row: Row, legacy: LegacyCharacterCard) {
     const c = this.classify(row);
@@ -242,7 +253,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       name: legacyName(legacy),
       aliases: legacy.aliases,
       works: [],
-      avatar: { image: null, display: legacyAvatarDisplay() },
+      avatar: await this.legacyAvatar(userId, row),
       tagline: legacy.signature.slice(0, 60),
       tags: [],
       categoryId: row.categoryId,
@@ -261,7 +272,11 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
    * 旧卡角色的后台列表展示。旧卡没有 WeibanCardData，`card` 用空草稿占位（DraftCharacterCard
    * 允许 data 为空），不改旧卡原文；这类角色不走后台的新卡编辑 / 发布流程。
    */
-  private legacyAdmin(row: Row, legacy: LegacyCharacterCard): AdminCharacter {
+  private async legacyAdmin(
+    userId: string,
+    row: Row,
+    legacy: LegacyCharacterCard,
+  ): Promise<AdminCharacter> {
     const c = this.classify(row);
     const greetings = legacy.openingMessages
       .map((text) => text.slice(0, 200))
@@ -277,7 +292,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       intro: (legacy.corePersona || legacy.signature).slice(0, 1000),
       tags: [],
       categoryId: row.categoryId,
-      avatar: { image: null, display: legacyAvatarDisplay() },
+      avatar: await this.legacyAvatar(userId, row),
       birthday: legacyBirthday(legacy),
       fanName: null,
       classification: c,
@@ -710,7 +725,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
   }
   private async admin(userId: string, row: Row): Promise<AdminCharacter> {
     const legacy = this.legacyOf(row);
-    if (legacy) return this.legacyAdmin(row, legacy);
+    if (legacy) return this.legacyAdmin(userId, row, legacy);
     const body = await this.decode(row);
     return {
       ...body,
