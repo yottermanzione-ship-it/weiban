@@ -490,7 +490,9 @@ export function normalizeDashscopeWav(bytes: Uint8Array): Uint8Array | null {
     if (view.toString('ascii', offset, offset + 4) === 'data') {
       if (foundData) return null;
       foundData = true;
-      if (sentinel(size)) {
+      if (sentinel(size) || (streaming && size === riff - (body - 8))) {
+        // 部分供应商按流式 RIFF 总长减去前置 chunk 开销写 data 长度：
+        // 实测 0x7fffffbf / 0x7fffff9b。只在已识别 RIFF 哨兵且两者精确相符时修复。
         // DashScope 完成后的文件可能只有 data 长度是流式哨兵、RIFF 长度已正确；
         // 旧版同样按实际字节修正，否则会把可用音频判成损坏。
         size = view.length - body;

@@ -57,6 +57,9 @@ export interface MediaAssetReadPort {
     modelKey: string;
     enabled: boolean;
     careFallbackMediaId: string | null;
+    /** Internal-only: encrypted reference sample and migration provenance. */
+    sampleMediaId?: string | null;
+    tags?: string[];
   } | null>;
   /**
    * 按供应商音色键找已启用的媒体音色。旧卡角色的 voice_json / qwen_voice_id 存的是供应商

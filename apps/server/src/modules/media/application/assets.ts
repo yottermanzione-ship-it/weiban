@@ -877,6 +877,8 @@ export class MediaAssetService
     modelKey: string;
     enabled: boolean;
     careFallbackMediaId: string | null;
+    sampleMediaId?: string | null;
+    tags?: string[];
   } | null> {
     const [row] = await this.database.db.select().from(voices).where(eq(voices.id, voiceId));
     if (!row) return null;
@@ -887,6 +889,8 @@ export class MediaAssetService
       modelKey: row.modelKey,
       enabled: row.enabled,
       careFallbackMediaId: row.careFallbackMediaId,
+      sampleMediaId: row.sampleMediaId,
+      tags: row.tags,
     };
   }
 

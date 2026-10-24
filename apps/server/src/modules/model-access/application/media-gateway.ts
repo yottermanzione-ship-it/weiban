@@ -201,8 +201,16 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     return this.cached('tts', input, async () => {
       const voice = await this.assets.getVoice(input.voiceId);
       if (!voice || !voice.enabled) return { ok: false, error: 'bad_request' };
-      const model = await this.resolve('speech_synthesis', voice.modelKey, input);
+      const model = await this.resolve(
+        'speech_synthesis',
+        voice.modelKey,
+        input,
+        undefined,
+        voice.tags?.includes('legacy') === true,
+      );
       if (!model.ok) return model;
+      const providerVoice = await this.providerVoice(voice);
+      if (providerVoice === null) return { ok: false, error: 'bad_request' };
       const chars = this.ttsUnits(model.value, text);
       if (chars === null) return { ok: false, error: 'model_unavailable' };
       return this.run(
@@ -212,7 +220,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         async (target, adapter) => {
           const result = await adapter.synthesize(target, {
             text,
-            voice: voice.providerVoiceKey,
+            voice: providerVoice,
             format: input.format === 'pcm16_24k' ? 'wav' : input.format,
           });
           if (!result.ok) return result;
@@ -593,8 +601,16 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     if (!text || !(await this.precheck(input))) return { ok: false, error: 'bad_request' };
     const voice = await this.assets.getVoice(input.voiceId);
     if (!voice || !voice.enabled) return { ok: false, error: 'bad_request' };
-    const model = await this.resolve('speech_synthesis', voice.modelKey, input, 'tts');
+    const model = await this.resolve(
+      'speech_synthesis',
+      voice.modelKey,
+      input,
+      'tts',
+      voice.tags?.includes('legacy') === true,
+    );
     if (!model.ok) return model;
+    const providerVoice = await this.providerVoice(voice);
+    if (providerVoice === null) return { ok: false, error: 'bad_request' };
     const chars = this.ttsUnits(model.value, text);
     if (chars === null) return { ok: false, error: 'model_unavailable' };
     const charge = await this.reserve(
@@ -610,7 +626,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     }
     const controller = new AbortController();
     const started = await this.withTarget(model.value, (target, adapter) =>
-      adapter.synthesizeStream(target, { text, voice: voice.providerVoiceKey }, controller.signal),
+      adapter.synthesizeStream(target, { text, voice: providerVoice }, controller.signal),
     ).catch((): MediaAdapterResult<AsyncIterable<Uint8Array>> => ({
       ok: false,
       category: 'provider_error',
@@ -707,6 +723,32 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
   }
 
   /** 可用于某场景的代表模型：推荐模型优先，否则任一启用且标注该场景的模型。 */
+  /** MiMo uses the stored reference bytes on each request, never a persistent clone id. */
+  private async providerVoice(
+    voice: NonNullable<Awaited<ReturnType<MediaAssetReadPort['getVoice']>>>,
+  ): Promise<string | null> {
+    if (!voice.providerVoiceKey.startsWith('mimo-reference:')) return voice.providerVoiceKey;
+    const sampleId = voice.providerVoiceKey.slice('mimo-reference:'.length);
+    if (
+      !Id.safeParse(sampleId).success ||
+      sampleId !== voice.sampleMediaId ||
+      !voice.modelKey?.startsWith('xiaomi/mimo-')
+    )
+      return null;
+    try {
+      const sample = await this.media.readBytes(sampleId);
+      if (
+        !['audio/mpeg', 'audio/wav'].includes(sample.mimeType) ||
+        sample.bytes.length === 0 ||
+        sample.bytes.length > 7 * 1024 * 1024
+      )
+        return null;
+      return `data:${sample.mimeType};base64,${Buffer.from(sample.bytes).toString('base64')}`;
+    } catch {
+      return null;
+    }
+  }
+
   private async anyScenarioModel(scenario: ModelScenario): Promise<ModelFacts | null> {
     const recommended = await this.catalog.recommendedModel(scenario);
     if (recommended) return recommended;
@@ -725,6 +767,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     preferredModelKey: string | null,
     base: MediaCallBase,
     callComponent?: 'asr' | 'tts',
+    legacyVoice = false,
   ): Promise<PortResult<Resolved, GenerateError>> {
     let picked: ModelFacts | null;
     if (service === 'web_search') picked = await this.catalog.internalModel('web_search');
@@ -744,6 +787,18 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         if (!picked && base.purpose.startsWith('admin_'))
           picked = await this.catalog.recommendedModel(scenario);
       }
+    }
+    // Migrated character voices carry their own supplier/model identity. Use exactly that
+    // registered model (and its billing rates), never send a Qwen key to MiMo or vice versa.
+    // Ordinary manually selected voices retain the strict scenario-matching behavior below.
+    if (service === 'speech_synthesis' && legacyVoice && preferredModelKey) {
+      const legacy = await this.catalog.fact(preferredModelKey);
+      if (
+        !legacy.entry?.capabilities.includes('voice_output') ||
+        !legacy.entry.scenarios.includes('voice_message')
+      )
+        return { ok: false, error: 'model_unavailable' };
+      picked = legacy;
     }
     if (!picked) return { ok: false, error: 'not_configured' };
     // A provider voice is scoped to its registered model. Never silently replace the user's
