@@ -41,6 +41,8 @@ const BLOB_ITEM_BYTES = 2 * 1024 * 1024;
 const PICTURE_LIMIT = 4000;
 /** 同时最多几个字节请求：快速滑一整屏时不要把连接池占满。 */
 const MAX_TRANSFERS = 4;
+/** 并发满了以后排队等槽的图片数；只是“等缓存”，不是用户还能看到的行，够用且有界。 */
+const PENDING_BYTES_LIMIT = 64;
 /** 记已经确认太大的链接，避免同一张大图每次挂载都白下 2 MB。 */
 const TOO_BIG_LIMIT = 200;
 
@@ -71,6 +73,11 @@ const avatarOf = new Map<string, string>();
 const inFlight = new Map<string, Promise<string | undefined>>();
 /** 图片缓存键 → 可撤销的字节请求。 */
 const transfers = new Map<string, AbortController>();
+/**
+ * 并发满了时的等待队列（缓存键 → 链接）。
+ * 关键：以前这里满了就直接丢掉，被丢掉的那张图永远没有 blob，重挂载又走 <img> 下载。
+ */
+const pendingBytes = new Map<string, string>();
 /** 已经确认超过 2 MB 的链接。 */
 const tooBig = new Map<string, true>();
 let blobBytes = 0;
@@ -87,6 +94,7 @@ export function ensureScope(): void {
   for (const controller of transfers.values()) controller.abort();
   transfers.clear();
   inFlight.clear();
+  pendingBytes.clear();
   links.clear();
   deadHints.clear();
   staleLinks.clear();
@@ -315,18 +323,11 @@ function rememberTooBig(url: string): void {
 }
 
 /**
- * 一次 fetch 拿字节 → object URL（同一 mediaKey 的并发请求合并，最多 MAX_TRANSFERS 个）。
+ * 真正发一次字节请求（并发槽由 loadBytes / enqueueBytes 控制）。
  * 换账号后返回的在途结果直接丢弃；超过 2 MB 的不留在内存里，交给 <img> 走网络。
  * 关键：重挂载时先查 blobs，命中就直接返回，绝不会再请求网络。
  */
-function loadBytes(key: string, url: string): Promise<string | undefined> {
-  const cached = blobs.get(key);
-  if (cached) return Promise.resolve(cached.url);
-  if (tooBig.has(url)) return Promise.resolve(undefined);
-  const running = inFlight.get(key);
-  if (running) return running;
-  if (inFlight.size >= MAX_TRANSFERS || typeof fetch !== 'function')
-    return Promise.resolve(undefined);
+function startTransfer(key: string, url: string): Promise<string | undefined> {
   const owner = scope;
   const startedAt = generation;
   const controller = new AbortController();
@@ -358,6 +359,8 @@ function loadBytes(key: string, url: string): Promise<string | undefined> {
         inFlight.delete(key);
         transfers.delete(key);
       }
+      // 槽位空出来，接着缓存排队中的图。
+      drainPending();
     });
   inFlight.set(key, job);
   transfers.set(key, controller);
@@ -365,12 +368,59 @@ function loadBytes(key: string, url: string): Promise<string | undefined> {
 }
 
 /**
+ * 并发满了的时候排队等槽，而不是直接丢掉。
+ * 之前 loadBytes 在 inFlight.size >= 4 时 return undefined，且 cacheBytes 不重试：
+ * 被丢的那张图永远没有 blob；快速滚动重挂载时只能再走 <img> 下载一次（真机 8~19 次重复请求）。
+ */
+function enqueueBytes(key: string, url: string): void {
+  if (blobs.has(key) || tooBig.has(url) || inFlight.has(key) || pendingBytes.has(key)) return;
+  pendingBytes.set(key, url);
+  while (pendingBytes.size > PENDING_BYTES_LIMIT) {
+    const oldest = pendingBytes.keys().next();
+    if (oldest.done) break;
+    pendingBytes.delete(oldest.value);
+  }
+  drainPending();
+}
+
+/** 槽位空出来后按排队顺序继续发；同一个 mediaKey 不会重复。 */
+function drainPending(): void {
+  if (typeof fetch !== 'function') return;
+  while (inFlight.size < MAX_TRANSFERS && pendingBytes.size > 0) {
+    const next = pendingBytes.entries().next();
+    if (next.done) return;
+    const [key, url] = next.value;
+    pendingBytes.delete(key);
+    if (blobs.has(key) || tooBig.has(url) || inFlight.has(key)) continue;
+    void startTransfer(key, url);
+  }
+}
+
+/**
+ * 前台要图：能立刻发就发；并发满时马上返回 undefined（调用方先退回 <img> 出图），
+ * 同时把字节缓存排进队列，稍后一定要补上 —— 否则下次重挂载又会下载。
+ */
+function loadBytes(key: string, url: string): Promise<string | undefined> {
+  const cached = blobs.get(key);
+  if (cached) return Promise.resolve(cached.url);
+  if (tooBig.has(url)) return Promise.resolve(undefined);
+  const running = inFlight.get(key);
+  if (running) return running;
+  if (typeof fetch !== 'function') return Promise.resolve(undefined);
+  if (inFlight.size >= MAX_TRANSFERS) {
+    enqueueBytes(key, url);
+    return Promise.resolve(undefined);
+  }
+  return startTransfer(key, url);
+}
+
+/**
  * 画成功之后把字节存进内存：下次重挂载（快速滑动最常见）直接用本地地址出图。
  * 懒加载的图（缩略图）第一次仍会走 <img>，这里补一次字节缓存；重挂载就只读内存。
+ * 以前并发满时这里直接放弃，懒加载组图在快速滚动里会被反复下载；现在排队补齐。
  */
 function cacheBytes(key: string, url: string): void {
-  if (blobs.has(key) || tooBig.has(url)) return;
-  void loadBytes(key, url);
+  enqueueBytes(key, url);
 }
 
 /** 图片加载失败时清掉缓存：下次重试走网络，不会一直拿坏掉的地址。 */

@@ -128,7 +128,7 @@ export function MembershipPage() {
     { label: '好感度最高阶段', free: '亲密好友', pro: '伴侣' },
     {
       // 10-25（会员 v6）：免费列就是终身 N 次；PRO+ 只看本周 N 次，不再叠加终身次数。
-      label: '申请官方制作角色',
+      label: '角色制作',
       free: `${life} 次`,
       pro: `每周 ${weekly} 次`,
     },
