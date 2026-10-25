@@ -138,15 +138,11 @@ export class CompanionSettingsService {
         throw new AppError('not_found', '好友不存在');
       const value = await this.load(tx, userId, characterId);
       const mode = value.scenarioMode ?? 'daily';
-      const missing =
-        mode === 'adult' && adult && !adult.available && adult.reason !== 'provider_unavailable';
-      // 当前已经是日常时无需「回落到日常」：再写一遍设置、再发一条提示只会在每次进聊天时刷屏。
-      // 真正的回落（成人模型不可用、角色不再允许该模式）仍然保留一次可见提示。
-      if (
-        characterId &&
-        mode !== 'daily' &&
-        (missing || !allowed?.items.some((m) => m.id === mode))
-      ) {
+      const adultModelUnavailable = mode === 'adult' && !!adult && !adult.available;
+      const modeAllowed = allowed?.items.some((m) => m.id === mode) ?? false;
+      // 只有「角色不再允许该模式」才自动回落。私密模型没配置 / 暂不可用时保留私密范围：
+      // 若静默改成 daily，之后的敏感输入会落进 normal，所以改为提示用户自己切换。
+      if (characterId && mode !== 'daily' && !modeAllowed) {
         const reason = mode === 'adult' ? 'adult_mode_unavailable' : 'scenario_mode_unavailable';
         // 同一用户、同一角色、同一原因只登记 / 提示一次；幂等键不能带会随写入变化的 updatedAt。
         const fallbackKey = `mode-unavailable:${userId}:${characterId}:${reason}`;
@@ -189,6 +185,20 @@ export class CompanionSettingsService {
         // Invalidating here would cancel the very reply whose context is being built on every retry.
         if (!value.inheritsDefaults)
           await invalidateReplyPlans(tx, this.plans, userId, characterId);
+      } else if (
+        characterId &&
+        mode === 'adult' &&
+        adultModelUnavailable &&
+        !value.inheritsDefaults
+      ) {
+        // 平台固定私密模型没配置 / 暂不可用：保留私密设置与消息范围，只提示一次，让用户主动切换。
+        if (contact?.conversationId)
+          await this.chat.postSystemMessage(tx, {
+            conversationId: contact.conversationId,
+            code: 'scenario_mode_unavailable',
+            params: { mode: 'adult', reason: 'adult_model_unavailable' },
+            idempotencyKey: `private-model-unavailable:${userId}:${characterId}`,
+          });
       }
       return value;
     });

@@ -182,7 +182,11 @@ export class PlazaService {
         ? [desc(hot), desc(works.publishedAt), desc(works.id)]
         : q.sort === 'most_liked'
           ? [desc(works.likeCount), desc(works.publishedAt), desc(works.id)]
-          : [desc(works.publishedAt), desc(works.id)];
+          : q.sort === 'added'
+            ? // 角色广场「添加热度」：作品累计采用数（每次采用都会把角色加进通讯录）从多到少，
+              // 相同按发布时间、再按 id，在 SQL 里先排完全集再分页；点赞 / 评论不参与。
+              [desc(works.adoptCount), desc(works.publishedAt), desc(works.id)]
+            : [desc(works.publishedAt), desc(works.id)];
     const rows = await this.db.db
       .select({ w: works })
       .from(works)

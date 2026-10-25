@@ -347,3 +347,39 @@ export const legacyExampleDialogues = charactersSchema.table(
   },
   (t) => [index('legacy_examples_character_idx').on(t.characterId, t.sortOrder)],
 );
+
+/**
+ * 迁移 0143：旧卡保存 / 恢复前的完整快照。**不经 platform.audit_log 的通用脱敏**，长字母数字、URL、
+ * 未识别旧字段都按原样保存；只存头像的 media id 与展示参数，不存短效签名 URL。
+ * 不存上架状态与资格标注：恢复不还原这两项，也不改角色 ID / 联系人 / 消息。
+ */
+export const legacyCharacterRevisions = charactersSchema.table(
+  'legacy_character_revisions',
+  {
+    characterId: uuid('character_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    source: text('source').$type<'save' | 'restore'>().notNull(),
+    operatorUserId: uuid('operator_user_id'),
+    note: text('note'),
+    name: text('name').notNull(),
+    searchText: text('search_text').notNull(),
+    aliases: jsonb('aliases').$type<string[]>().notNull(),
+    signature: text('signature').notNull(),
+    legacyCard: jsonb('legacy_card').$type<Record<string, unknown>>().notNull(),
+    avatarMediaId: uuid('avatar_media_id'),
+    avatarDisplay: jsonb('avatar_display').$type<Record<string, unknown>>().notNull(),
+    lorebook: jsonb('lorebook')
+      .$type<Array<{ id: string; payload: Record<string, unknown> }>>()
+      .notNull(),
+    examples: jsonb('examples')
+      .$type<Array<{ id: string; payload: Record<string, unknown>; sortOrder: number }>>()
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.characterId, t.revision] }),
+    index('legacy_character_revisions_created_idx').on(t.characterId, t.createdAt),
+  ],
+);

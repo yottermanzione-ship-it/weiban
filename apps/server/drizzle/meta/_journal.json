@@ -905,6 +905,27 @@
       "when": 1799338400000,
       "tag": "0140_role_request_weekly_three",
       "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1799338500000,
+      "tag": "0141_recap_year_recaps",
+      "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1799338600000,
+      "tag": "0142_ecology_weibo_media",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1799338700000,
+      "tag": "0143_legacy_character_revisions",
+      "breakpoints": true
     }
   ]
 }

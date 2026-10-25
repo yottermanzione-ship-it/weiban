@@ -36,7 +36,6 @@ export const SCENARIOS: Array<{ key: ModelScenario; label: string; hint: string 
   { key: 'voice_message', label: '语音消息', hint: '角色发语音时的声音合成' },
   { key: 'speech_recognition', label: '语音识别', hint: '把你的语音转成文字（含通话）' },
   { key: 'voice_call', label: '语音通话', hint: '通话时角色说话用的模型' },
-  { key: 'private', label: '私密模式', hint: '私密模式聊天用的模型（私密模式下发的图片也给它看）' },
 ];
 const TEXT_SCENARIOS: readonly ModelScenario[] = ['chat', 'voice_call', 'private'];
 const scenarioLabel = (s: ModelScenario) => SCENARIOS.find((x) => x.key === s)?.label ?? s;
@@ -203,6 +202,7 @@ function ScenarioView() {
       <p className="hint page-note">
         角色的文字和语音按对应场景使用模型；表情包、网上找图不调用生图模型，无需单独配置。
       </p>
+      <p className="hint page-note">私密模式使用平台统一配置的模型，不能自行选择。</p>
       {(config.error || models.error) && (
         <p role="alert" className="notice-bar">
           {config.error || models.error}
@@ -239,6 +239,17 @@ function CharacterView() {
 /** 模型配置 › 某个场景：只列后台标注可用于该场景的模型。文本聊天保留排行榜 / 热门榜。 */
 export function ScenarioModelPage() {
   const { scenario = 'chat' } = useParams() as { scenario?: ModelScenario };
+  if (scenario === 'private' || !SCENARIOS.some((entry) => entry.key === scenario))
+    return (
+      <main>
+        <NavBar title="私密模式" fallback="/models" />
+        <p className="empty">私密模式使用平台统一配置的模型，不能自行选择。</p>
+      </main>
+    );
+  return <ScenarioModelPicker scenario={scenario} />;
+}
+
+function ScenarioModelPicker({ scenario }: { scenario: ModelScenario }) {
   const meta = SCENARIOS.find((s) => s.key === scenario) ?? SCENARIOS[0]!;
   const models = useRemote(ModelAccessEndpoints.listModels, { query: { scenario: meta.key } });
   const config = useRemote(ModelAccessEndpoints.getScenarioConfig, { networkOnly: true });
@@ -248,10 +259,7 @@ export function ScenarioModelPage() {
   const row = config.data?.scenarios.find((r) => r.scenario === meta.key);
   const current = row?.selection?.modelKey ?? '';
   const recommended = row?.recommendedModelKey ?? null;
-  const visible =
-    models.data?.items.filter(
-      (m) => meta.key === 'private' || !m.capabilities.includes('adult_content'),
-    ) ?? [];
+  const visible = models.data?.items.filter((m) => !m.capabilities.includes('adult_content')) ?? [];
   // 按现行展示权限过滤后再次连续编号，不能因隐藏模型留下名次空档。
   const rankIndex = new Map(
     [...visible]
@@ -440,6 +448,7 @@ export function CharacterModelPage() {
       </MenuGroup>
       {config.error && <p role="alert">{config.error}</p>}
       <p className="hint page-note">只影响这个角色；群聊里每个角色也按各自的设置回复。</p>
+      <p className="hint page-note">私密模式由平台统一配置，不在这里按角色选择。</p>
     </main>
   );
 }
@@ -450,6 +459,23 @@ export function CharacterScenarioPickerPage() {
     characterId?: string;
     scenario?: ModelScenario;
   };
+  if (scenario === 'private' || !SCENARIOS.some((entry) => entry.key === scenario))
+    return (
+      <main>
+        <NavBar title="TA 用的模型" fallback={`/characters/${characterId}/model`} />
+        <p className="empty">私密模式使用平台统一配置的模型，不能自行选择。</p>
+      </main>
+    );
+  return <CharacterScenarioPicker characterId={characterId} scenario={scenario} />;
+}
+
+function CharacterScenarioPicker({
+  characterId,
+  scenario,
+}: {
+  characterId: string;
+  scenario: ModelScenario;
+}) {
   const meta = SCENARIOS.find((s) => s.key === scenario) ?? SCENARIOS[0]!;
   const models = useRemote(ModelAccessEndpoints.listModels, { query: { scenario: meta.key } });
   const config = useRemote(ModelAccessEndpoints.getCharacterScenarios, {

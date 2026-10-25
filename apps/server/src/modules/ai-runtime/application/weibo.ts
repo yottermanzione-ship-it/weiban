@@ -113,6 +113,20 @@ export class WeiboSyncService implements OnModuleInit {
     }
     return result;
   }
+  /**
+   * 共享联网检索「结算前重核资格」（给 billing 的 shared-search 用）：
+   * 传回检索当时记下的 {userId, epoch}，返回现在仍然符合条件的同一批。
+   * 资格 = 生态里仍启用微博同步、余额不欠、与该角色的关系 epoch 未变；刚关掉生态或删了角色的人不会仍被收款。
+   */
+  async recheckParticipants(
+    characterId: string,
+    expected: readonly { userId: string; epoch: string }[],
+  ): Promise<{ userId: string; epoch: string }[]> {
+    const current = new Map(
+      (await this.participants(characterId)).map((row) => [row.userId, row.epoch]),
+    );
+    return expected.filter((row) => current.get(row.userId) === row.epoch);
+  }
   private async claim(characterId: string) {
     return this.db.transaction(async (tx) => {
       await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('weibo-sync:' || $1,0))", [
@@ -166,6 +180,8 @@ export class WeiboSyncService implements OnModuleInit {
       userIds: recipients.map((r) => r.userId),
       query: `site:weibo.com "${marker.nickname.replace(/["\\]/gu, '')}" 微博 after:${new Date(this.clock.nowMs() - 7 * 86400000).toISOString().slice(0, 10)}`,
       key: claim.key,
+      eligibleUserIds: async () =>
+        (await this.recheckParticipants(characterId, recipients)).map((r) => r.userId),
     });
     if (!result.ok) {
       await this.db.query(

@@ -97,5 +97,22 @@ export function useCharacterProfile(id: string) {
       active = false;
     };
   }, [id, userId, sessionId, key, revision]);
+  /**
+   * 资料请求因网络失败停在占位后：网络恢复 / 页面重新可见时只重试一次，不轮询、
+   * 不做全局重试；成功或换账号后监听自动卸载。4xx/5xx 等非网络错误不在此列。
+   */
+  useEffect(() => {
+    if (state.errorCode !== 'network_error') return;
+    const retry = () => setRevision((value) => value + 1);
+    const visible = () => {
+      if (document.visibilityState === 'visible') retry();
+    };
+    window.addEventListener('online', retry);
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      window.removeEventListener('online', retry);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [state.errorCode]);
   return state.key === key ? state : seed();
 }

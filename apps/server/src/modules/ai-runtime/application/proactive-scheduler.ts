@@ -153,6 +153,8 @@ export interface EcologySendExtras {
   greeting?: boolean;
   /** 照片内容（默认用 brief）。 */
   scene?: string;
+  /** 3.29：已审核的微博图片媒体 ID；有它时只走既有媒体发送，不生图。 */
+  photoMediaId?: string;
 }
 
 /** 已发生实扣后记录失败：仅用于内部把费用带回生态结果，不再次扣款。 */
@@ -405,6 +407,8 @@ export class ProactiveSchedulerService {
     brief: string;
     extras: EcologySendExtras;
     sourceRef?: string;
+    /** 3.29：同一来源（如 weibo:updateId）只发一次；不改变 sourceRef/reason。 */
+    dedupeKey?: string;
   }): Promise<SendOutcome> {
     const profile = await this.identity.getProfile(input.userId);
     if (!profile) return { ok: false, reason: 'no_profile' };
@@ -421,6 +425,8 @@ export class ProactiveSchedulerService {
     const contact = await this.contacts.getActiveContact(input.userId, input.characterId);
     if (!contact?.conversationId) return { ok: false, reason: 'contact_inactive' };
     const sourceRef = (input.sourceRef ?? `ecology:${input.runId}`).slice(0, 200);
+    // 同一张微博图片/同一个来源只排一次；不影响 sourceRef 的既有语义。
+    const topicKey = (input.dedupeKey ?? sourceRef).slice(0, 200);
     const [plan] = await this.db.db
       .insert(proactivePlans)
       .values({
@@ -429,7 +435,7 @@ export class ProactiveSchedulerService {
         characterId: input.characterId,
         reason: input.sourceRef ? 'interactive_play' : 'ecology',
         sourceRef,
-        topicKey: sourceRef,
+        topicKey,
         brief: input.brief.slice(0, 2000),
         localDate: local.date,
         isHoliday: false,
@@ -1258,34 +1264,18 @@ ${careNote}`
       voice = v.content;
       charged += v.chargedMicros;
     } else if (eco?.extra === 'photo') {
-      const image = await this.images
-        .generate({
-          userId: ctx.userId,
-          characterId: plan.characterId,
-          conversationId: conversation.conversationId,
-          scene: (eco.scene ?? plan.brief).slice(0, 300),
-          searchPublic: true,
-          onSearchCharged: (micros) => {
-            charged += Math.max(0, micros);
-          },
-          use: 'chat',
-          idempotencyKey: `proactive:${plan.id}`,
-          countAsBackground: true,
-          ecologyTask: true,
-        })
-        .catch(() => null);
-      if (!image) return this.fail(plan, 'photo_unavailable', charged);
+      // 3.29：生态照片只投递已审核的微博图片，走既有媒体发送；不生图、不搜索、不扣图片模型费。
+      if (!eco.photoMediaId) return this.fail(plan, 'photo_unavailable', charged);
+      const media = await this.mediaRead.getMedia(ctx.userId, eco.photoMediaId).catch(() => null);
+      if (!media) return this.fail(plan, 'photo_unavailable', charged);
       link = {
         type: 'image',
-        mediaId: image.mediaId,
-        width: image.width,
-        height: image.height,
-        sizeBytes: image.sizeBytes,
+        mediaId: media.mediaId,
+        width: media.width ?? null,
+        height: media.height ?? null,
+        sizeBytes: media.sizeBytes,
       };
-      // Search charge was reported before attempting image transfer, including failed transfers.
-      bubbles.push(
-        image.sourceUrl ? `网上找到的图片，来源：${image.sourceUrl}` : '分享一张素材库图片。',
-      );
+      bubbles.push('分享一张微博图片。');
     } else if (eco?.extra === 'sticker') {
       link = await this.mediaAi
         .pickStickerForEcology(plan.characterId, bubbles.join(''), plan.id)

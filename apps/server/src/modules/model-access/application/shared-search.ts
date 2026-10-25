@@ -38,9 +38,10 @@ export class SharedWebSearch implements SharedWebSearchPort {
       if (old.character_id !== input.characterId) return { ok: false };
       const items = z.array(WebSearchHit).max(5).parse(old.items);
       if (old.is_free) await this.shares.cancel(old.group_id);
+      const eligible = await this.eligibleUserIds(input.eligibleUserIds);
       const fee = old.is_free
         ? { collectedMicros: 0, userCharges: {} as Record<string, number> }
-        : await this.shares.settle(old.group_id, old.usage_record_id);
+        : await this.shares.settle(old.group_id, old.usage_record_id, eligible);
       return {
         ok: true,
         items,
@@ -88,10 +89,27 @@ export class SharedWebSearch implements SharedWebSearchPort {
     let requesterChargeMicros = 0;
     // Shared-cache hits point at an older usage; never reimburse it again.
     if (result.value.chargedMicros > 0) {
-      const fee = await this.shares.settle(group.groupId, result.value.usageRecordId);
+      const eligible = await this.eligibleUserIds(input.eligibleUserIds);
+      const fee = await this.shares.settle(group.groupId, result.value.usageRecordId, eligible);
       chargedMicros = fee.collectedMicros;
       requesterChargeMicros = fee.userCharges[input.requesterUserId] ?? 0;
     } else await this.shares.cancel(group.groupId);
     return { ok: true, items: result.value.items, chargedMicros, requesterChargeMicros };
+  }
+
+  /**
+   * 3.29：结算前重核。回调由调用方（微博同步）用检索开始时的 {userId,epoch}
+   * 调 WeiboSyncService.recheckParticipants；这里只做去重/容错，不反向依赖 AI_RUNTIME。
+   * 回调失败 → 返回空集合（宁可不收，不把费用压给已关生态/已删角色的人）。
+   */
+  private async eligibleUserIds(
+    recheck?: () => Promise<readonly string[]>,
+  ): Promise<readonly string[] | undefined> {
+    if (!recheck) return undefined;
+    try {
+      return [...new Set(await recheck())];
+    } catch {
+      return [];
+    }
   }
 }

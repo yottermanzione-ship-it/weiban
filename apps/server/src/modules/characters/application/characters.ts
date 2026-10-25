@@ -72,7 +72,7 @@ function legacyName(legacy: LegacyCharacterCard): string {
   return (legacy.displayName || legacy.nickname || '未命名角色').slice(0, 32);
 }
 /** 旧卡头像的默认绘制参数；有导入头像时图片优先。 */
-function legacyAvatarDisplay(): CharacterDisplay {
+export function legacyAvatarDisplay(): CharacterDisplay {
   return { supportColors: [], avatarText: null, avatarPattern: 'none', themeColor: null };
 }
 /** 旧卡 identity_* 里的生日；不是 YYYY-MM-DD 就当没有。 */
@@ -299,6 +299,9 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       fallbackGreetings: greetings,
       card: { cardSchemaVersion: 1, data: {} },
       personaVersion: row.personaVersion,
+      /** 旧卡没有 WB-Card 数据：后台按旧字段查看/保存（CharacterLegacyAdminService），不走新卡编辑器。 */
+      format: 'legacy' as const,
+      revision: row.revision,
       publishChecks: {
         requiredFieldsComplete: false,
         personaStabilityPassed: false,
@@ -734,6 +737,8 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       avatar: await this.avatar(userId, body),
       classification: this.classify(row),
       personaVersion: row.personaVersion,
+      format: 'wbcard' as const,
+      revision: row.revision,
       publishChecks: {
         requiredFieldsComplete: row.checks.requiredFieldsComplete,
         hasFallbackGreeting: row.checks.hasFallbackGreeting,

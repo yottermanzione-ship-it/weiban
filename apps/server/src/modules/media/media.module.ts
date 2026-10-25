@@ -79,6 +79,8 @@ import {
     MEDIA_CLASSICAL_CARD_TEMPLATES,
     LINK_PREVIEW_PORT,
     MEDIA_STORAGE_AUDIT,
+    // ai-runtime 的微博素材采集复用同一套安全出站抓取（SSRF/DNS/重定向/超时/字节上限），不另写一份。
+    LinkPreviewService,
   ],
 })
 export class MediaModule {}

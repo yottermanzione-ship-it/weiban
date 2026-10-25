@@ -289,7 +289,7 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
     [openY, paint],
   );
 
-  // 触屏：列表（关闭时下拉）、露出条与面板（打开时上推）。原生监听，touchmove 非被动。
+  // 触屏：列表（关闭时下拉）、露出条与面板（打开时上推）。原生监听；列表的非被动 touchmove 见下方按需挂载。
   useEffect(() => {
     const list = listRef.current;
     const tail = tailRef.current;
@@ -324,19 +324,18 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
       release();
     };
     const pairs: Array<[HTMLElement, Drag['from']]> = [
-      [list, 'closed'],
       [tail, 'open'],
       [panel, 'open'],
     ];
+    const cancel = () => {
+      drag.current = null;
+      animateTo(openRef.current ? openY() : 0);
+    };
     const handlers = pairs.map(([el, from]) => {
       const s = start(from);
       el.addEventListener('touchstart', s, { passive: true });
       el.addEventListener('touchmove', move, { passive: false });
       el.addEventListener('touchend', end);
-      const cancel = () => {
-        drag.current = null;
-        animateTo(openRef.current ? openY() : 0);
-      };
       el.addEventListener('touchcancel', cancel);
       return () => {
         el.removeEventListener('touchstart', s);
@@ -345,7 +344,43 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
         el.removeEventListener('touchcancel', cancel);
       };
     });
-    return () => handlers.forEach((off) => off());
+    /*
+     * 列表的 touchmove 只在「已经滚到最顶」时挂非被动监听。
+     * 常驻的代价是整个会话列表的触摸滚动会被浏览器降级到主线程（每个 touchmove 都要等 JS 跑完），
+     * 手指跟手变差、惯性一卡一卡；而只有到顶才可能需要接管下拉二楼。离开顶部立刻摘掉。
+     */
+    const listStart = start('closed');
+    list.addEventListener('touchstart', listStart, { passive: true });
+    let attached = false;
+    let scroller: HTMLElement | null = null;
+    const atTop = () => {
+      if (!scroller?.isConnected) scroller = list.querySelector<HTMLElement>('.virtual-list');
+      return !scroller || scroller.scrollTop <= 0;
+    };
+    const attach = () => {
+      if (attached) return;
+      attached = true;
+      list.addEventListener('touchmove', move, { passive: false });
+      list.addEventListener('touchend', end);
+      list.addEventListener('touchcancel', cancel);
+    };
+    const detach = () => {
+      if (!attached) return;
+      attached = false;
+      list.removeEventListener('touchmove', move);
+      list.removeEventListener('touchend', end);
+      list.removeEventListener('touchcancel', cancel);
+    };
+    const sync = () => (atTop() ? attach() : detach());
+    sync();
+    // scroll 不冒泡，用捕获阶段拿列表自己的滚动；滚动到顶 / 离开顶部时切换监听。
+    list.addEventListener('scroll', sync, { capture: true, passive: true });
+    return () => {
+      handlers.forEach((off) => off());
+      list.removeEventListener('touchstart', listStart);
+      list.removeEventListener('scroll', sync, { capture: true });
+      detach();
+    };
   }, [moveTo, release, animateTo, openY]);
 
   // 鼠标：按下后在窗口上跟踪，松开后吞掉这次点击

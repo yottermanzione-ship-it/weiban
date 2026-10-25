@@ -345,6 +345,14 @@ export const UserCustomEndpoints = {
 
 // ---------- 管理后台（ADM-01 最小版） ----------
 
+/**
+ * 角色数据格式。`wbcard` = 新卡（draft / published 密文，按 WB-Card 1.0 编辑）；
+ * `legacy` = 旧卡（`characters.legacy_card` 整行，运行时直接读旧字段）。
+ * 旧卡没有 WB-Card 数据：后台必须按旧字段查看与保存，不能拿空 WB-Card 壳当资料，也不把旧卡转成新卡。
+ */
+export const CharacterCardFormat = z.enum(['wbcard', 'legacy']);
+export type CharacterCardFormat = z.infer<typeof CharacterCardFormat>;
+
 export const AdminCharacter = z.object({
   characterId: Id,
   status: CharacterPublishStatus,
@@ -363,13 +371,20 @@ export const AdminCharacter = z.object({
   fallbackGreetings: z.array(z.string().min(1).max(200)),
   card: DraftCharacterCard,
   personaVersion: z.number().int().positive(),
-  /** 上架前置检查结果（ADM-01 第 3 条）。 */
+  /** 上架前置检查结果（ADM-01 第 3 条）。旧卡不适用 WB-Card 检查，后台按旧字段编辑。 */
   publishChecks: z.object({
     requiredFieldsComplete: z.boolean(),
     personaStabilityPassed: z.boolean(),
     hardBoundaryCasesPassed: z.boolean(),
     hasFallbackGreeting: z.boolean(),
   }),
+  /**
+   * 数据格式。缺省按新卡处理，兼容不认识该字段的旧客户端 / 旧服务端。
+   * 旧卡详情与保存走 `CharacterAdminEndpoints.legacyDetail` / `legacyUpdate`。
+   */
+  format: CharacterCardFormat.optional(),
+  /** 当前修订号（乐观并发）；旧卡保存作为 `expectedRevision`，不一致返回 409。 */
+  revision: z.number().int().positive().optional(),
   updatedAt: Timestamp,
 });
 export type AdminCharacter = z.infer<typeof AdminCharacter>;
@@ -407,6 +422,220 @@ export type AdminCharacterWrite = z.infer<typeof AdminCharacterWrite>;
  */
 export const AdminCharacterUpdate = z.object(adminCharacterFields).partial();
 export type AdminCharacterUpdate = z.infer<typeof AdminCharacterUpdate>;
+
+// ---------- 旧卡（legacy_card）后台读写 ----------
+
+/**
+ * 旧卡可编辑字段（白名单，逻辑名与后台表单一致）。写入时按旧库字段名落回 `legacy_card`；
+ * 不在白名单里的旧字段（raw_json、voice_json、source_json 等）一律原样保留，不进编辑表单。
+ * 旧卡核心人设不允许清空（运行时没有兜底人设）；其余字段可以显式清空。
+ */
+export const AdminLegacyFields = z.object({
+  displayName: z.string().min(1).max(32),
+  nickname: z.string().max(32),
+  aliases: z.array(z.string().min(1).max(32)).max(20),
+  signature: z.string().max(200),
+  corePersona: z.string().min(1).max(8000),
+  speakingStyle: z.string().max(4000),
+  relationshipMode: z.string().max(4000),
+  /** 朋友圈设定（旧卡 `moment_profile_json`）；null = 没有，保存时清空该键。 */
+  momentProfile: z.json().nullable(),
+  /** 群聊设定（旧卡 `group_chat_json`）；null = 没有，保存时清空该键。 */
+  groupChat: z.json().nullable(),
+  /** 备用开场白（旧卡 `opening_messages_json`）；空数组 = 没有。 */
+  openingMessages: z.array(z.string().min(1).max(200)).max(10),
+});
+export type AdminLegacyFields = z.infer<typeof AdminLegacyFields>;
+
+/** 允许显式清空的字段（核心人设与角色名字不能清空）。 */
+export const AdminLegacyClearableField = z.enum([
+  'nickname',
+  'aliases',
+  'signature',
+  'speakingStyle',
+  'relationshipMode',
+  'momentProfile',
+  'groupChat',
+  'openingMessages',
+]);
+export type AdminLegacyClearableField = z.infer<typeof AdminLegacyClearableField>;
+
+/** 旧库世界书一整行（payload 原样，未识别键保留）。 */
+export const AdminLegacyLorebookEntry = z.object({
+  id: z.string().min(1).max(64),
+  payload: z.record(z.string(), z.unknown()),
+});
+export type AdminLegacyLorebookEntry = z.infer<typeof AdminLegacyLorebookEntry>;
+
+/** 旧库对话示例一整行（payload + 独立的排序号）。 */
+export const AdminLegacyDialogueExample = z.object({
+  id: z.string().min(1).max(64),
+  sortOrder: z.number().int(),
+  payload: z.record(z.string(), z.unknown()),
+});
+export type AdminLegacyDialogueExample = z.infer<typeof AdminLegacyDialogueExample>;
+
+/**
+ * 旧卡版本历史里的一条（来自 characters.legacy_character_revisions 的元数据，新的在前）。
+ * `revision` 是快照代表的那一版（即保存 / 恢复之前的状态），恢复时用它作为目标版本号。
+ */
+export const AdminLegacyRevision = z.object({
+  revision: z.number().int().positive(),
+  at: Timestamp,
+  /** save = 保存前留存；restore = 恢复前留存。 */
+  source: z.enum(['save', 'restore']),
+  operatorUserId: Id.nullable(),
+  operatorName: z.string(),
+  /** 快照当时的主表显示名与签名（便于不看正文也能辨认版本）。 */
+  name: z.string(),
+  aliases: z.array(z.string()),
+  signature: z.string(),
+  /** 这次改动涉及哪些逻辑字段（来自审计，不含正文）。 */
+  changedFields: z.array(z.string()),
+  note: z.string().nullable(),
+});
+export type AdminLegacyRevision = z.infer<typeof AdminLegacyRevision>;
+
+/**
+ * 一个旧卡版本快照的完整内容（查看 / 恢复确认用）。
+ * 与旧卡同等权限、只给后台角色管理读；不含短效签名 URL，只有头像 media id 与展示参数。
+ */
+export const AdminLegacySnapshot = z.object({
+  characterId: Id,
+  revision: z.number().int().positive(),
+  at: Timestamp,
+  source: z.enum(['save', 'restore']),
+  operatorUserId: Id.nullable(),
+  operatorName: z.string(),
+  note: z.string().nullable(),
+  name: z.string(),
+  aliases: z.array(z.string()),
+  signature: z.string(),
+  fields: AdminLegacyFields,
+  avatar: z.object({ mediaId: Id.nullable(), display: CharacterDisplay }),
+  lorebook: z.array(AdminLegacyLorebookEntry),
+  examples: z.array(AdminLegacyDialogueExample),
+});
+export type AdminLegacySnapshot = z.infer<typeof AdminLegacySnapshot>;
+
+/**
+ * 恢复到某个旧卡快照版本。
+ * - `revision`：历史里的快照版本号（`AdminLegacyRevision.revision`）；
+ * - `expectedRevision`：当前详情的 revision，不一致返回 409（避免覆盖别人刚保存的内容）；
+ * - `confirm: true`：后台二次确认的显式标记，缺省不执行。
+ * 恢复会写一个新 revision，并在恢复前再存一份快照；不还原上架状态与资格标注，
+ * 不改角色 ID、联系人、消息，也不重新上架。
+ */
+export const AdminLegacyRestoreRequest = z.object({
+  revision: z.number().int().positive(),
+  expectedRevision: z.number().int().positive(),
+  confirm: z.literal(true),
+  note: z.string().trim().max(200).optional(),
+});
+export type AdminLegacyRestoreRequest = z.infer<typeof AdminLegacyRestoreRequest>;
+
+/** 旧卡详情：旧字段按逻辑名给出；未识别字段原样只读；世界书与示例带 id 便于局部保存。 */
+export const AdminLegacyCharacterDetail = z.object({
+  characterId: Id,
+  status: CharacterPublishStatus,
+  revision: z.number().int().positive(),
+  updatedAt: Timestamp,
+  name: z.string(),
+  avatar: CharacterAvatar,
+  fields: AdminLegacyFields,
+  /** 未识别 / 不可编辑的旧字段原样值（只读；保存时不动）。 */
+  preserved: z.record(z.string(), z.unknown()),
+  lorebook: z.array(AdminLegacyLorebookEntry),
+  examples: z.array(AdminLegacyDialogueExample),
+  /** 最近的版本历史，新的在前（最多 20 条）。 */
+  history: z.array(AdminLegacyRevision),
+});
+export type AdminLegacyCharacterDetail = z.infer<typeof AdminLegacyCharacterDetail>;
+
+export const AdminLegacyLorebookPatch = z.object({
+  /** 无 id = 新建；有 id = 更新该角色下的这一条（payload 与原值浅合并，未提交的键保留）。 */
+  upsert: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(64).optional(),
+        payload: z.record(z.string(), z.unknown()),
+      }),
+    )
+    .max(200)
+    .optional(),
+  /** 删除条目 id；必须属于该角色。 */
+  delete: z.array(z.string().min(1).max(64)).max(200).optional(),
+});
+export type AdminLegacyLorebookPatch = z.infer<typeof AdminLegacyLorebookPatch>;
+
+export const AdminLegacyExamplesPatch = z.object({
+  upsert: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(64).optional(),
+        payload: z.record(z.string(), z.unknown()),
+        sortOrder: z.number().int().min(0).max(100000).optional(),
+      }),
+    )
+    .max(200)
+    .optional(),
+  delete: z.array(z.string().min(1).max(64)).max(200).optional(),
+});
+export type AdminLegacyExamplesPatch = z.infer<typeof AdminLegacyExamplesPatch>;
+
+/**
+ * 旧卡局部保存。语义：
+ * - `fields` 只传改动过的字段（没传 = 保持原值）；空串 / 空数组 / null 表示明确清空；
+ * - `clear` 显式清空字段（与 fields 里的同名字段互斥，核心人设与名字不可清空）；
+ * - `lorebook` / `examples` 按 id 局部更新或删除，不带 id 的新增；条目必须属于该角色；
+ * - `avatarMediaId` 省略 = 不动；null = 恢复默认头像（文字）；字符串 = 换成已上传的角色头像；
+ * - `expectedRevision` 与当前 revision 不一致时返回 409，避免覆盖别人刚保存的内容。
+ * 不会写新卡 draft / published 密文，不改分类、上架状态、角色 ID 与关联数据。
+ */
+export const AdminLegacyCharacterPatch = z
+  .object({
+    expectedRevision: z.number().int().positive(),
+    fields: AdminLegacyFields.partial().optional(),
+    clear: z.array(AdminLegacyClearableField).max(10).optional(),
+    lorebook: AdminLegacyLorebookPatch.optional(),
+    examples: AdminLegacyExamplesPatch.optional(),
+    avatarMediaId: Id.nullable().optional(),
+    /** 可选备注，写进修改记录。 */
+    note: z.string().trim().max(200).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const both = (value.clear ?? []).filter(
+      (field) => value.fields !== undefined && value.fields[field] !== undefined,
+    );
+    if (both.length)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['clear'],
+        message: `同一字段不能既提交新值又清空：${both.join('、')}`,
+      });
+    for (const [label, block] of [
+      ['lorebook', value.lorebook],
+      ['examples', value.examples],
+    ] as const) {
+      if (!block) continue;
+      const ids = block.delete ?? [];
+      if (new Set(ids).size !== ids.length)
+        ctx.addIssue({
+          code: 'custom',
+          path: [label, 'delete'],
+          message: '删除列表里有重复条目',
+        });
+      const upserted = (block.upsert ?? []).flatMap((item) => (item.id ? [item.id] : []));
+      const clash = upserted.filter((id) => ids.includes(id));
+      if (clash.length)
+        ctx.addIssue({
+          code: 'custom',
+          path: [label],
+          message: `同一条目不能既保存又删除：${clash.join('、')}`,
+        });
+    }
+  });
+export type AdminLegacyCharacterPatch = z.infer<typeof AdminLegacyCharacterPatch>;
 
 /**
  * 3.25（试用反馈第三轮 G1-2）：后台人工标注角色资格。可直接改「真人 / 未成年设定 / 儿童外貌 / 检出儿童特征」，
@@ -516,6 +745,43 @@ export const CharacterAdminEndpoints = {
     body: AdminCharacterUpdate,
     response: AdminCharacter,
     summary: '编辑预设角色；分类变化触发 characters.character_classification_changed',
+  }),
+  legacyDetail: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/characters/:characterId/legacy`,
+    auth: 'admin',
+    params: z.object({ characterId: Id }),
+    response: AdminLegacyCharacterDetail,
+    summary:
+      '旧卡详情：按旧字段返回人设/风格/关系/朋友圈/群聊/开场白，世界书与示例按需读，未识别字段只读保留；非旧卡返回 422',
+  }),
+  legacyUpdate: defineEndpoint({
+    method: 'PATCH',
+    path: `${API_PREFIX}/admin/characters/:characterId/legacy`,
+    auth: 'admin',
+    params: z.object({ characterId: Id }),
+    body: AdminLegacyCharacterPatch,
+    response: AdminLegacyCharacterDetail,
+    summary:
+      '旧卡局部保存：白名单字段局部合并与显式清空、世界书/示例按 id 更新删除、头像替换；expectedRevision 冲突返回 409；保存前写完整版本快照，不写新卡密文',
+  }),
+  legacyRevision: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/characters/:characterId/legacy/revisions/:revision`,
+    auth: 'admin',
+    params: z.object({ characterId: Id, revision: z.coerce.number().int().positive() }),
+    response: AdminLegacySnapshot,
+    summary: '旧卡某个版本快照的完整内容（查看 / 恢复确认用）；只查本角色的快照，不含签名 URL',
+  }),
+  legacyRestore: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/characters/:characterId/legacy/restore`,
+    auth: 'admin',
+    params: z.object({ characterId: Id }),
+    body: AdminLegacyRestoreRequest,
+    response: AdminLegacyCharacterDetail,
+    summary:
+      '恢复到某个旧卡快照版本：需 expectedRevision 与 confirm=true；写新 revision 并在恢复前再存快照；不还原上架状态与资格，不动角色 ID/联系人/消息',
   }),
   publish: defineEndpoint({
     method: 'POST',

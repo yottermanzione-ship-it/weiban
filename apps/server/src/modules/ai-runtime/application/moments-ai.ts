@@ -50,6 +50,7 @@ import { MOMENTS_CHARACTER_PORT, MOMENTS_READ_PORT } from '../../moments/index.j
 import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import { healthPrivate } from '../domain/memory.js';
+import { ecoRandom } from '../domain/ecology.js';
 import { momentsTopicsText } from '../domain/character-prompt.js';
 import { BrainContextService, brainMessages, brainTail } from './brain.js';
 import { outputAllowed } from '../domain/reply-rules.js';
@@ -63,6 +64,11 @@ import { EcologySettingsService } from './ecology-settings.js';
 import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
 import { ImagePublicSearch } from './image-public-search.js';
 import { MomentSceneryService } from './moment-scenery.js';
+import {
+  WEIBO_MOMENT_MATERIAL_PORT,
+  type WeiboMomentMaterial,
+  type WeiboMomentMaterialPort,
+} from './weibo-material.js';
 import {
   CAPTION_MAX_IMAGES,
   captionInstruction,
@@ -165,6 +171,13 @@ export class MomentsAiService {
     @Optional() @Inject(ImageCaptionStore) private readonly captions?: ImageCaptionStore,
     @Optional() @Inject(ImagePublicSearch) private readonly imageSearch?: ImagePublicSearch,
     @Optional() @Inject(MomentSceneryService) private readonly scenery?: MomentSceneryService,
+    /**
+     * 3.29：微博同步朋友圈的图片素材代理（e0fac 实现）。未提供时只消费已同步的文字动态，
+     * 绝不用 AI/随机风景图补图。
+     */
+    @Optional()
+    @Inject(WEIBO_MOMENT_MATERIAL_PORT)
+    private readonly weiboMaterial?: WeiboMomentMaterialPort,
   ) {}
 
   // =========================================================================
@@ -360,9 +373,9 @@ export class MomentsAiService {
   }
 
   // =========================================================================
-  // v5：角色生态发私人朋友圈（扣用户积分；和你们的聊天、TA 的生活有关）
+  // v5：角色生态发私人朋友圈（只同步对应微博原文/素材；无素材就跳过，不 AI 编）
   // =========================================================================
-  /** 最近一条仍有效的微博同步动态；没有绑定微博的角色返回 null。 */
+  /** 最近一条仍有效的微博同步动态（只有文本，图片由素材代理另行提供）。 */
   private async latestWeiboUpdate(
     characterId: string,
   ): Promise<{ updateId: string; content: string } | null> {
@@ -376,111 +389,83 @@ export class MomentsAiService {
     );
     return found ? { updateId: found.updateId, content: found.content } : null;
   }
+
+  /**
+   * 3.29：朋友圈动作的微博素材。优先用图片代理（e0fac）给的原文 + 图片；
+   * 代理未接入时退回「已同步公开动态」的文本，`images` 为空，绝不补 AI/随机风景图。
+   */
+  private async latestWeiboMaterial(
+    userId: string,
+    characterId: string,
+  ): Promise<WeiboMomentMaterial | null> {
+    if (this.weiboMaterial) {
+      // e0fac 的代理是权威来源：null 就是没有素材，不再回退文本，避免“无素材”被旧数据掩盖。
+      return this.weiboMaterial.latest(userId, characterId).catch(() => null);
+    }
+    const legacy = await this.latestWeiboUpdate(characterId);
+    return legacy ? { updateId: legacy.updateId, content: legacy.content, images: [] } : null;
+  }
+
+  /** 生态工具筛选用：这个角色/用户此刻有没有可用的微博朋友圈素材。 */
+  async hasWeiboMaterial(userId: string, characterId: string): Promise<boolean> {
+    return (await this.latestWeiboMaterial(userId, characterId)) !== null;
+  }
+
+  /**
+   * 生态 photo：从同一条微博素材的图片里稳定选一张，交给既有聊天媒体路径发送。
+   * 只读 e0fac 已入库的媒体；没有图返回 null（调用方 skip），绝不生图/找风景图。
+   */
+  async weiboPhotoForEcology(
+    userId: string,
+    characterId: string,
+  ): Promise<{ mediaId: string; updateId: string } | null> {
+    const material = await this.latestWeiboMaterial(userId, characterId);
+    const images = material?.images ?? [];
+    if (!images.length) return null;
+    const index = Math.floor(ecoRandom(`weibo:${material!.updateId}:${userId}`) * images.length);
+    const image = images[Math.min(index, images.length - 1)];
+    return image ? { mediaId: image.mediaId, updateId: material!.updateId } : null;
+  }
+
+  /**
+   * 3.29：moment_post 只同步「对应微博已同步的原文/素材」到用户自己的朋友圈。
+   * 没有素材、素材不安全、已经转过 → 明确失败/跳过；**不再回退 AI 编动态，也不用随机风景图**。
+   * 图片只从素材代理返回的该条微博图片里稳定随机取一张（幂等键保证重试不重复发）。
+   */
   async postForEcology(input: {
     userId: string;
     characterId: string;
     runId: string;
-    brief: string;
-    /** H2：角色正处于私密模式——用私密模型生成（输入只有日常资料，输出仍按日常范围检查）。 */
-    privateConversationId?: string;
   }): Promise<{ ok: true; chargedMicros: number; postId: string } | { ok: false; reason: string }> {
     const { userId, characterId } = input;
-    const role = await this.characters.getForRuntime(userId, characterId);
     const policy = await this.policy.getCharacterPolicy(userId, characterId);
-    if (!role || !policy) return { ok: false, reason: 'context_unavailable' };
-    const moments = roleMoments(characterView(role));
-    // 微博角色：优先原样转发它最近一条已同步的公开动态，不花钱重新生成文案。
-    const weibo = await this.latestWeiboUpdate(characterId);
-    if (weibo) {
-      const forwarded = weibo.content.trim().slice(0, 500);
-      const safe =
-        forwarded.length >= 4 &&
-        !healthPrivate(forwarded) &&
-        outputAllowed(forwarded, policy, false) &&
-        !(policy.isRealPerson && MOMENTS_FORBIDDEN_REAL.test(forwarded));
-      if (safe) {
-        const scenery = this.scenery
-          ? await this.scenery.pick({ userId, seed: `weibo:${weibo.updateId}` }).catch(() => null)
-          : null;
-        const reposted = await this.writer.createPost(null, {
-          ownerUserId: userId,
-          characterId,
-          text: forwarded,
-          imageMediaIds: scenery ? [scenery.mediaId] : [],
-          link: null,
-          sourceRef: { kind: 'public_update', id: weibo.updateId },
-          // 同一条微博对同一个用户只转一次。
-          idempotencyKey: `eco-weibo:${userId}:${weibo.updateId}`,
-        });
-        // 已经转过就继续走正常生成，避免这次唤醒白跑。
-        if (reposted.ok) return { ok: true, chargedMicros: 0, postId: reposted.value.postId };
-      }
-    }
-    // A private post is normal-scope even while its owner uses the private model.
-    const brain = await this.brain.build(userId, characterId, 'normal', input.brief, {
-      excludeHealth: true,
-    });
-    if (!brain) return { ok: false, reason: 'context_unavailable' };
-    const result = await this.gateway.generateText({
-      userId,
-      characterId,
-      purpose: 'moments',
-      billingOwner: 'user',
-      ...(input.privateConversationId
-        ? {
-            modelRole: 'adult' as const,
-            conversationId: input.privateConversationId,
-            meta: { scenarioMode: 'adult' },
-          }
-        : { modelRole: 'background' as const }),
-      countAsBackground: true,
-      ecologyTask: true,
-      responseFormat: 'text',
-      maxOutputTokens: 200,
-      idempotencyKey: `ai:eco-moment:${input.runId}`,
-      meta: {
-        stablePrefixChars: brain.prefix.length,
-        promptTemplateVersion: 'brain-v1:private-moment',
-        ...(input.privateConversationId ? { scenarioMode: 'adult' } : {}),
-      },
-      messages: [
-        ...brainMessages(brain, input.privateConversationId ? 'adult' : 'background'),
-        {
-          role: 'system',
-          content: `你以角色本人的身份发一条私人朋友圈（只有和你聊天的这位用户能看到）。只输出朋友圈正文纯文本，不超过100字，不加引号、不加标签。文风符合人设：${moments.tone}。${momentsTopicsText(moments.topics)}可以含蓄地和你们最近的聊天、你今天的生活有关，但不直接复述对方的隐私，不提月经、经期等健康隐私，不含成人内容。${policy.isRealPerson ? '你是真人角色：不官宣新作品或合作，不评论真实社会事件或他人，不写像本人公开声明的话。' : ''}${policy.isMinor || !policy.romanceAllowed ? '不涉及恋爱暧昧。' : ''}`,
-        },
-        ...brainTail(brain),
-        { role: 'user', content: `这条朋友圈想写的：${input.brief.slice(0, 500)}` },
-      ],
-    });
-    if (!result.ok) return { ok: false, reason: `model_${result.error}` };
-    const text = result.value.text
-      .trim()
-      .replace(/^["「『]|["」』]$/g, '')
-      .slice(0, 500);
-    if (
-      !text ||
-      healthPrivate(text) ||
-      !outputAllowed(text, policy, false) ||
-      (policy.isRealPerson && MOMENTS_FORBIDDEN_REAL.test(text))
-    )
-      return { ok: false, reason: 'output_guard' };
-    const scenery = this.scenery
-      ? await this.scenery
-          .pick({ userId, seed: `eco:${input.runId}:${text.slice(0, 80)}` })
-          .catch(() => null)
-      : null;
-    const posted = await this.writer.createPost(null, {
+    if (!policy) return { ok: false, reason: 'context_unavailable' };
+    const material = await this.latestWeiboMaterial(userId, characterId);
+    if (!material) return { ok: false, reason: 'no_material' };
+    const forwarded = material.content.trim().slice(0, 500);
+    const safe =
+      forwarded.length >= 4 &&
+      !healthPrivate(forwarded) &&
+      outputAllowed(forwarded, policy, false) &&
+      !(policy.isRealPerson && MOMENTS_FORBIDDEN_REAL.test(forwarded));
+    if (!safe) return { ok: false, reason: 'material_rejected' };
+    const images = material.images ?? [];
+    const picked =
+      images.length > 0
+        ? images[Math.floor(ecoRandom(`weibo:${material.updateId}:${userId}`) * images.length)]
+        : null;
+    const reposted = await this.writer.createPost(null, {
       ownerUserId: userId,
       characterId,
-      text,
-      imageMediaIds: scenery ? [scenery.mediaId] : [],
+      text: forwarded,
+      imageMediaIds: picked ? [picked.mediaId] : [],
       link: null,
-      sourceRef: { kind: 'daily_event', id: `eco:${input.runId}` },
-      idempotencyKey: `eco-post-${input.runId}`,
+      sourceRef: { kind: 'public_update', id: material.updateId },
+      // 同一条微博对同一个用户只转一次。
+      idempotencyKey: `eco-weibo:${userId}:${material.updateId}`,
     });
-    if (!posted.ok) return { ok: false, reason: `post_failed:${String(posted.error)}` };
-    return { ok: true, chargedMicros: result.value.chargedMicros, postId: posted.value.postId };
+    if (!reposted.ok) return { ok: false, reason: `post_failed:${String(reposted.error)}` };
+    return { ok: true, chargedMicros: 0, postId: reposted.value.postId };
   }
 
   /** v5：角色生态里的点赞 / 评论 / 回复（同 runReact，返回扣费）。 */

@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 4.0. Regenerate: pnpm android:generate
+// Contract 4.1. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "4.0"
+const val CONTRACT_VERSION: String = "4.1"
 
 @Serializable
 data class AccountAlias(
@@ -271,6 +271,8 @@ data class AdminCharacter(
     @SerialName("card") val `card`: DraftCharacterCard,
     @SerialName("personaVersion") val `personaVersion`: Long,
     @SerialName("publishChecks") val `publishChecks`: AdminCharacterPublishChecks,
+    @SerialName("format") val `format`: CharacterCardFormat? = null,
+    @SerialName("revision") val `revision`: Long? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
 )
 
@@ -410,6 +412,146 @@ data class AdminLedgerEntry(
     @SerialName("operatorUserId") val `operatorUserId`: Id?,
     @SerialName("absorbed") val `absorbed`: Boolean,
     @SerialName("safetyOverdraft") val `safetyOverdraft`: Boolean,
+)
+
+@Serializable
+data class AdminLegacyCharacterDetail(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("status") val `status`: CharacterPublishStatus,
+    @SerialName("revision") val `revision`: Long,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("name") val `name`: String,
+    @SerialName("avatar") val `avatar`: CharacterAvatar,
+    @SerialName("fields") val `fields`: AdminLegacyFields,
+    @SerialName("preserved") val `preserved`: Map<String, JsonElement>,
+    @SerialName("lorebook") val `lorebook`: List<AdminLegacyLorebookEntry>,
+    @SerialName("examples") val `examples`: List<AdminLegacyDialogueExample>,
+    @SerialName("history") val `history`: List<AdminLegacyRevision>,
+)
+
+@Serializable
+data class AdminLegacyCharacterPatch(
+    @SerialName("expectedRevision") val `expectedRevision`: Long,
+    @SerialName("fields") val `fields`: AdminLegacyCharacterPatchFields? = null,
+    @SerialName("clear") val `clear`: List<AdminLegacyClearableField>? = null,
+    @SerialName("lorebook") val `lorebook`: AdminLegacyLorebookPatch? = null,
+    @SerialName("examples") val `examples`: AdminLegacyExamplesPatch? = null,
+    @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+    @SerialName("note") val `note`: String? = null,
+)
+
+@Serializable
+data class AdminLegacyCharacterPatchInput(
+    @SerialName("expectedRevision") val `expectedRevision`: Long,
+    @SerialName("fields") val `fields`: AdminLegacyCharacterPatchInputFields? = null,
+    @SerialName("clear") val `clear`: List<AdminLegacyClearableField>? = null,
+    @SerialName("lorebook") val `lorebook`: AdminLegacyLorebookPatchInput? = null,
+    @SerialName("examples") val `examples`: AdminLegacyExamplesPatchInput? = null,
+    @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+    @SerialName("note") val `note`: String? = null,
+)
+
+typealias AdminLegacyClearableField = String
+
+@Serializable
+data class AdminLegacyDialogueExample(
+    @SerialName("id") val `id`: String,
+    @SerialName("sortOrder") val `sortOrder`: Long,
+    @SerialName("payload") val `payload`: Map<String, JsonElement>,
+)
+
+@Serializable
+data class AdminLegacyExamplesPatch(
+    @SerialName("upsert") val `upsert`: List<AdminLegacyExamplesPatchUpsertItem>? = null,
+    @SerialName("delete") val `delete`: List<String>? = null,
+)
+
+@Serializable
+data class AdminLegacyExamplesPatchInput(
+    @SerialName("upsert") val `upsert`: List<AdminLegacyExamplesPatchInputUpsertItem>? = null,
+    @SerialName("delete") val `delete`: List<String>? = null,
+)
+
+@Serializable
+data class AdminLegacyFields(
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("nickname") val `nickname`: String,
+    @SerialName("aliases") val `aliases`: List<String>,
+    @SerialName("signature") val `signature`: String,
+    @SerialName("corePersona") val `corePersona`: String,
+    @SerialName("speakingStyle") val `speakingStyle`: String,
+    @SerialName("relationshipMode") val `relationshipMode`: String,
+    @SerialName("momentProfile") val `momentProfile`: SharedSchema1?,
+    @SerialName("groupChat") val `groupChat`: SharedSchema2?,
+    @SerialName("openingMessages") val `openingMessages`: List<String>,
+)
+
+@Serializable
+data class AdminLegacyLorebookEntry(
+    @SerialName("id") val `id`: String,
+    @SerialName("payload") val `payload`: Map<String, JsonElement>,
+)
+
+@Serializable
+data class AdminLegacyLorebookPatch(
+    @SerialName("upsert") val `upsert`: List<AdminLegacyLorebookPatchUpsertItem>? = null,
+    @SerialName("delete") val `delete`: List<String>? = null,
+)
+
+@Serializable
+data class AdminLegacyLorebookPatchInput(
+    @SerialName("upsert") val `upsert`: List<AdminLegacyLorebookPatchInputUpsertItem>? = null,
+    @SerialName("delete") val `delete`: List<String>? = null,
+)
+
+@Serializable
+data class AdminLegacyRestoreRequest(
+    @SerialName("revision") val `revision`: Long,
+    @SerialName("expectedRevision") val `expectedRevision`: Long,
+    @EncodeDefault
+    @SerialName("confirm") val `confirm`: Boolean = true,
+    @SerialName("note") val `note`: String? = null,
+)
+
+@Serializable
+data class AdminLegacyRestoreRequestInput(
+    @SerialName("revision") val `revision`: Long,
+    @SerialName("expectedRevision") val `expectedRevision`: Long,
+    @EncodeDefault
+    @SerialName("confirm") val `confirm`: Boolean = true,
+    @SerialName("note") val `note`: String? = null,
+)
+
+@Serializable
+data class AdminLegacyRevision(
+    @SerialName("revision") val `revision`: Long,
+    @SerialName("at") val `at`: Timestamp,
+    @SerialName("source") val `source`: String,
+    @SerialName("operatorUserId") val `operatorUserId`: Id?,
+    @SerialName("operatorName") val `operatorName`: String,
+    @SerialName("name") val `name`: String,
+    @SerialName("aliases") val `aliases`: List<String>,
+    @SerialName("signature") val `signature`: String,
+    @SerialName("changedFields") val `changedFields`: List<String>,
+    @SerialName("note") val `note`: String?,
+)
+
+@Serializable
+data class AdminLegacySnapshot(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("revision") val `revision`: Long,
+    @SerialName("at") val `at`: Timestamp,
+    @SerialName("source") val `source`: String,
+    @SerialName("operatorUserId") val `operatorUserId`: Id?,
+    @SerialName("operatorName") val `operatorName`: String,
+    @SerialName("note") val `note`: String?,
+    @SerialName("name") val `name`: String,
+    @SerialName("aliases") val `aliases`: List<String>,
+    @SerialName("signature") val `signature`: String,
+    @SerialName("fields") val `fields`: AdminLegacyFields,
+    @SerialName("avatar") val `avatar`: AdminLegacySnapshotAvatar,
+    @SerialName("lorebook") val `lorebook`: List<AdminLegacyLorebookEntry>,
+    @SerialName("examples") val `examples`: List<AdminLegacyDialogueExample>,
 )
 
 typealias AdminMediaPurpose = String
@@ -1105,6 +1247,19 @@ data class AnnouncementWrite(
     @SerialName("endsAt") val `endsAt`: Timestamp?,
     @SerialName("popup") val `popup`: Boolean,
     @SerialName("pinned") val `pinned`: Boolean,
+)
+
+@Serializable
+data class AnnualRecap(
+    @SerialName("recapId") val `recapId`: Id,
+    @SerialName("year") val `year`: Long,
+    @SerialName("generatedAt") val `generatedAt`: Timestamp,
+    @SerialName("windowStart") val `windowStart`: Timestamp,
+    @SerialName("windowEnd") val `windowEnd`: Timestamp,
+    @SerialName("cutoffNote") val `cutoffNote`: String,
+    @SerialName("lines") val `lines`: List<String>,
+    @SerialName("caveat") val `caveat`: String?,
+    @SerialName("stats") val `stats`: RecapStats,
 )
 
 @Serializable
@@ -1824,6 +1979,27 @@ data class CharacterAdminEndpointsGetEligibilityParams(
 )
 
 @Serializable
+data class CharacterAdminEndpointsLegacyDetailParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class CharacterAdminEndpointsLegacyRestoreParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class CharacterAdminEndpointsLegacyRevisionParams(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("revision") val `revision`: Long,
+)
+
+@Serializable
+data class CharacterAdminEndpointsLegacyUpdateParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
 data class CharacterAdminEndpointsListQuery(
     @SerialName("status") val `status`: CharacterPublishStatus? = null,
     @SerialName("q") val `q`: String? = null,
@@ -1902,6 +2078,8 @@ data class CharacterCard(
     @SerialName("cardSchemaVersion") val `cardSchemaVersion`: Long = 1,
     @SerialName("data") val `data`: WeibanCardData,
 )
+
+typealias CharacterCardFormat = String
 
 @Serializable
 data class CharacterCategory(
@@ -2306,7 +2484,7 @@ data class ClientFullSyncSnapshot(
     @SerialName("conversations") val `conversations`: List<Conversation>,
     @SerialName("messages") val `messages`: List<Message>,
     @SerialName("contacts") val `contacts`: List<Contact>,
-    @SerialName("settings") val `settings`: Map<String, SharedSchema1>,
+    @SerialName("settings") val `settings`: Map<String, SharedSchema3>,
     @SerialName("coverages") val `coverages`: List<ClientFullSyncSnapshotCoveragesItem>,
 )
 
@@ -2794,7 +2972,7 @@ data class ClientSyncState(
     @SerialName("excluded") val `excluded`: List<ClientSyncStateExcludedItem>,
     @SerialName("scannedThrough") val `scannedThrough`: Map<String, Long>,
     @SerialName("pendingUpdates") val `pendingUpdates`: List<UserUpdate>,
-    @SerialName("settings") val `settings`: Map<String, SharedSchema2>,
+    @SerialName("settings") val `settings`: Map<String, SharedSchema4>,
 )
 
 @Serializable
@@ -7091,6 +7269,11 @@ data class ModelAccessEndpointsListModelsResponse(
 )
 
 @Serializable
+data class ModelAccessEndpointsPrivateModelResponse(
+    @SerialName("model") val `model`: PrivateModelInfo?,
+)
+
+@Serializable
 data class ModelAccessEndpointsSetCharacterOverrideBody(
     @SerialName("chat") val `chat`: ModelRefInput?,
 )
@@ -7254,12 +7437,14 @@ typealias ModelScenario = String
 data class ModelScenarioSettings(
     @SerialName("recommended") val `recommended`: ModelScenarioSettingsRecommended,
     @SerialName("internal") val `internal`: ModelScenarioSettingsInternal,
+    @SerialName("fixed") val `fixed`: ModelScenarioSettingsFixed? = null,
 )
 
 @Serializable
 data class ModelScenarioSettingsInput(
     @SerialName("recommended") val `recommended`: ModelScenarioSettingsInputRecommended,
     @SerialName("internal") val `internal`: ModelScenarioSettingsInputInternal,
+    @SerialName("fixed") val `fixed`: ModelScenarioSettingsInputFixed? = null,
 )
 
 @Serializable
@@ -8558,6 +8743,15 @@ data class PrivacySpan(
     @SerialName("kinds") val `kinds`: List<String>,
 )
 
+@Serializable
+data class PrivateModelInfo(
+    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("displayMultiplier") val `displayMultiplier`: Double?,
+    @SerialName("discountRate") val `discountRate`: Double?,
+    @SerialName("available") val `available`: Boolean,
+)
+
 typealias ProactiveFrequency = String
 
 @Serializable
@@ -8716,6 +8910,37 @@ data class QuoteRef(
 )
 
 typealias RealPersonKind = String
+
+@Serializable
+data class RecapEndpointsPendingResponse(
+    @SerialName("recap") val `recap`: AnnualRecap?,
+)
+
+@Serializable
+data class RecapNightMessage(
+    @SerialName("date") val `date`: LocalDate,
+    @SerialName("time") val `time`: String,
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("characterId") val `characterId`: Id?,
+)
+
+@Serializable
+data class RecapStats(
+    @SerialName("totalMessages") val `totalMessages`: Long,
+    @SerialName("userMessages") val `userMessages`: Long,
+    @SerialName("characterMessages") val `characterMessages`: Long,
+    @SerialName("groupMessages") val `groupMessages`: Long,
+    @SerialName("directMessages") val `directMessages`: Long,
+    @SerialName("characterCount") val `characterCount`: Long,
+    @SerialName("activeDays") val `activeDays`: Long,
+    @SerialName("monthlyUserMessages") val `monthlyUserMessages`: List<RecapStatsMonthlyUserMessagesItem>,
+    @SerialName("topCharacters") val `topCharacters`: List<RecapStatsTopCharactersItem>,
+    @SerialName("busiestDays") val `busiestDays`: List<RecapStatsBusiestDaysItem>,
+    @SerialName("latestNight") val `latestNight`: RecapNightMessage?,
+    @SerialName("nightCount") val `nightCount`: Long,
+    @SerialName("streak") val `streak`: RecapStatsStreak?,
+    @SerialName("migratedMessages") val `migratedMessages`: Long,
+)
 
 typealias ReceivedAppTheme = String
 
@@ -9599,6 +9824,7 @@ data class ScenarioSelection(
     @SerialName("scenario") val `scenario`: String,
     @SerialName("selection") val `selection`: ModelRefState?,
     @SerialName("recommendedModelKey") val `recommendedModelKey`: ModelKey?,
+    @SerialName("fixedByAdmin") val `fixedByAdmin`: Boolean? = null,
 )
 
 @Serializable
@@ -12030,6 +12256,10 @@ typealias SharedSchema1 = JsonElement
 
 typealias SharedSchema2 = JsonElement
 
+typealias SharedSchema3 = JsonElement
+
+typealias SharedSchema4 = JsonElement
+
 @Serializable
 data class AchievementProgress(
     @SerialName("current") val `current`: Long,
@@ -12073,6 +12303,66 @@ data class AdminCharacterPublishChecks(
     @SerialName("personaStabilityPassed") val `personaStabilityPassed`: Boolean,
     @SerialName("hardBoundaryCasesPassed") val `hardBoundaryCasesPassed`: Boolean,
     @SerialName("hasFallbackGreeting") val `hasFallbackGreeting`: Boolean,
+)
+
+@Serializable
+data class AdminLegacyCharacterPatchFields(
+    @SerialName("displayName") val `displayName`: String? = null,
+    @SerialName("nickname") val `nickname`: String? = null,
+    @SerialName("aliases") val `aliases`: List<String>? = null,
+    @SerialName("signature") val `signature`: String? = null,
+    @SerialName("corePersona") val `corePersona`: String? = null,
+    @SerialName("speakingStyle") val `speakingStyle`: String? = null,
+    @SerialName("relationshipMode") val `relationshipMode`: String? = null,
+    @SerialName("momentProfile") val `momentProfile`: SharedSchema1? = null,
+    @SerialName("groupChat") val `groupChat`: SharedSchema2? = null,
+    @SerialName("openingMessages") val `openingMessages`: List<String>? = null,
+)
+
+@Serializable
+data class AdminLegacyCharacterPatchInputFields(
+    @SerialName("displayName") val `displayName`: String? = null,
+    @SerialName("nickname") val `nickname`: String? = null,
+    @SerialName("aliases") val `aliases`: List<String>? = null,
+    @SerialName("signature") val `signature`: String? = null,
+    @SerialName("corePersona") val `corePersona`: String? = null,
+    @SerialName("speakingStyle") val `speakingStyle`: String? = null,
+    @SerialName("relationshipMode") val `relationshipMode`: String? = null,
+    @SerialName("momentProfile") val `momentProfile`: SharedSchema1? = null,
+    @SerialName("groupChat") val `groupChat`: SharedSchema2? = null,
+    @SerialName("openingMessages") val `openingMessages`: List<String>? = null,
+)
+
+@Serializable
+data class AdminLegacyExamplesPatchUpsertItem(
+    @SerialName("id") val `id`: String? = null,
+    @SerialName("payload") val `payload`: Map<String, JsonElement>,
+    @SerialName("sortOrder") val `sortOrder`: Long? = null,
+)
+
+@Serializable
+data class AdminLegacyExamplesPatchInputUpsertItem(
+    @SerialName("id") val `id`: String? = null,
+    @SerialName("payload") val `payload`: Map<String, JsonElement>,
+    @SerialName("sortOrder") val `sortOrder`: Long? = null,
+)
+
+@Serializable
+data class AdminLegacyLorebookPatchUpsertItem(
+    @SerialName("id") val `id`: String? = null,
+    @SerialName("payload") val `payload`: Map<String, JsonElement>,
+)
+
+@Serializable
+data class AdminLegacyLorebookPatchInputUpsertItem(
+    @SerialName("id") val `id`: String? = null,
+    @SerialName("payload") val `payload`: Map<String, JsonElement>,
+)
+
+@Serializable
+data class AdminLegacySnapshotAvatar(
+    @SerialName("mediaId") val `mediaId`: Id?,
+    @SerialName("display") val `display`: CharacterDisplay,
 )
 
 @Serializable
@@ -13706,6 +13996,11 @@ data class ModelScenarioSettingsInternal(
 )
 
 @Serializable
+data class ModelScenarioSettingsFixed(
+    @SerialName("private") val `private`: ModelKey? = null,
+)
+
+@Serializable
 data class ModelScenarioSettingsInputRecommended(
     @SerialName("chat") val `chat`: ModelKey? = null,
     @SerialName("vision") val `vision`: ModelKey? = null,
@@ -13724,6 +14019,11 @@ data class ModelScenarioSettingsInputInternal(
     @SerialName("planner") val `planner`: ModelKey? = null,
     @SerialName("adult_check") val `adult_check`: ModelKey? = null,
     @SerialName("web_search") val `web_search`: ModelKey? = null,
+)
+
+@Serializable
+data class ModelScenarioSettingsInputFixed(
+    @SerialName("private") val `private`: ModelKey? = null,
 )
 
 @Serializable
@@ -13829,6 +14129,34 @@ data class ProtocolVectorStepsItem(
 data class ProtocolVectorExpected(
     @SerialName("state") val `state`: ClientSyncState,
     @SerialName("effects") val `effects`: List<ClientSyncEffect>,
+)
+
+@Serializable
+data class RecapStatsMonthlyUserMessagesItem(
+    @SerialName("month") val `month`: Long,
+    @SerialName("count") val `count`: Long,
+)
+
+@Serializable
+data class RecapStatsTopCharactersItem(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("userMessages") val `userMessages`: Long,
+    @SerialName("lastMessageAt") val `lastMessageAt`: Timestamp,
+)
+
+@Serializable
+data class RecapStatsBusiestDaysItem(
+    @SerialName("date") val `date`: LocalDate,
+    @SerialName("userMessages") val `userMessages`: Long,
+    @SerialName("totalMessages") val `totalMessages`: Long,
+)
+
+@Serializable
+data class RecapStatsStreak(
+    @SerialName("days") val `days`: Long,
+    @SerialName("from") val `from`: LocalDate,
+    @SerialName("to") val `to`: LocalDate,
 )
 
 typealias ReceivedMessageContentSystemParamsValue = JsonElement

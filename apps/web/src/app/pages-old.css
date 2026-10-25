@@ -245,6 +245,22 @@ label.field-row {
   font-size: 20px;
   line-height: 1;
 }
+/*
+ * 仅角色资料「设置头像」弹层：把「选择头像」做成整行、居中、放大的操作。
+ * 备注和头像页仍用上面的普通行（不加这个类）。56px 触区，窄屏由弹层自身
+ * 的左右 padding 与底部安全区兜住，不会截断。
+ */
+.avatar-choose-row-sheet {
+  justify-content: center;
+  min-height: 56px;
+  padding: 0 var(--wb-space-5);
+  font-size: var(--wb-font-size-title3);
+  font-weight: var(--wb-font-weight-medium);
+  text-align: center;
+}
+.avatar-choose-row-sheet .avatar-choose-arrow {
+  display: none;
+}
 .field-count {
   align-self: flex-end;
   color: var(--wb-color-text-tertiary);

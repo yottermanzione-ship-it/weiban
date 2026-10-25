@@ -21,7 +21,7 @@
  * - 第一次出现的图（eager + 可缓存）用一次 fetch 换 blob，避免「<img> 一次 + 缓存再一次」。
  * - 原图缺少 mimeType 时先取元信息，不把旧版 MP4 当图片画。
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { MediaEndpoints, type MediaObject } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { useRemote } from '../data/use-remote.js';
@@ -189,14 +189,22 @@ function rememberLink(mediaId: string, next: MediaLink): void {
 }
 
 /**
- * 资料里带的链接先用上，但绝不覆盖还有效的链接。
- * 关键：同一个 hint URL 过期后**不再延长** expiresAt（旧实现会把失效签名反复续命，
- * 页面永远拿一个死链接，正式链接也永远不去取）。失效就返回 undefined，
- * 让 useMediaLink 走正式 getMedia；返回的过期链接只用于「先接着画上次那张」。
+ * 资料里带的链接先用上，但绝不覆盖还有效的**正式**链接。
+ * - 同一个 hint URL 过期后不再延长 expiresAt（旧实现会把失效签名反复续命）。
+ * - 资料重新给了另一个 hint 签名（冷启动先画 IndexedDB 里的旧资料，随后网络资料到达）：
+ *   换掉旧 hint，不能让它继续占 4 分钟；已有 blob 时换 URL 也不会重新下载。
+ * - 正式链接始终优先；过期就返回 undefined，让 useMediaLink 走正式 getMedia。
  */
 function adoptHint(mediaId: string, hintUrl: string): MediaLink | undefined {
   const existing = links.get(mediaId);
-  if (existing && existing.expiresAt - MARGIN_MS > Date.now()) return existing;
+  if (existing && existing.expiresAt - MARGIN_MS > Date.now()) {
+    if (existing.url === hintUrl) return existing;
+    if (existing.hint) {
+      existing.url = hintUrl;
+      existing.expiresAt = Date.now() + HINT_TTL_MS;
+    }
+    return existing;
+  }
   if (existing) {
     if (existing.hint) {
       // 这份签名已经超过我们按 4 分钟估的有效期：记死，别下一次又从 hint 重新起算。
@@ -247,8 +255,9 @@ export function useMediaLink(
   /** 强制刷新计数：broken 图点「重新加载」时即使有可用链接也要真的回源一次。 */
   const [nonce, setNonce] = useState(0);
   const known = mediaId ? freshLink(mediaId) : undefined;
-  const hinted = !known && mediaId && hintUrl ? adoptHint(mediaId, hintUrl) : undefined;
-  const current = mediaId ? (known ?? hinted ?? links.get(mediaId)) : undefined;
+  // 即使已经有 hint 也要把资料最新给的 hint 交给 adoptHint：冷启动的旧资料 hint 会被新资料替换。
+  const hinted = mediaId && hintUrl ? adoptHint(mediaId, hintUrl) : undefined;
+  const current = mediaId ? (hinted ?? known ?? links.get(mediaId)) : undefined;
   // 原图还缺 mimeType：先取元信息再决定画 <img> 还是 <video>，别把旧版 MP4 当图片。
   const wantMetadata = Boolean(options.needMetadata && mediaId && current && !current.mimeType);
   const enabled = Boolean(mediaId) && (nonce > 0 || wantMetadata || (!known && !hinted));
@@ -475,6 +484,7 @@ export function CachedImage({
   cache = true,
   fallback = null,
   onBroken,
+  onLinkBroken,
 }: {
   mediaKey: string;
   url?: string;
@@ -490,6 +500,8 @@ export function CachedImage({
   cache?: boolean;
   fallback?: ReactNode;
   onBroken?(): void;
+  /** 网络链接（hint / 旧签名）加载失败：交给上层回源正式 getMedia。 */
+  onLinkBroken?(): void;
 }) {
   ensureScope();
   const owner = api.ownerKey();
@@ -542,7 +554,10 @@ export function CachedImage({
       if (live) setState({ src: url, loaded: true, failed: false });
     };
     probe.onerror = () => {
-      if (live) setState((previous) => (previous.src ? previous : { ...previous, failed: true }));
+      if (!live) return;
+      // 新链接不能显示：保留还在显示的那张（如果有），同时让上层回源正式链接。
+      setState((previous) => (previous.src ? previous : { ...previous, failed: true }));
+      onLinkBroken?.();
     };
     probe.src = url;
     return () => {
@@ -580,26 +595,33 @@ export function CachedImage({
             return;
           }
         }
+        // 换到新链接后，旧 <img> 的报错才晚到：不能把新链接也一起判死。
+        if (url && state.src && state.src !== url) return;
         forgetPicture(mediaKey);
         setState((previous) => ({ ...previous, failed: true }));
         onBroken?.();
+        onLinkBroken?.();
       }}
     />
   );
 }
 
-/** 头像 / 聊天图片共用的「按 mediaId 记住链接 + 字节」图片组件（头像入口）。 */
+/**
+ * 头像 / 聊天图片共用的「按 mediaId 记住链接 + 字节」图片组件（头像入口）。
+ * 链接与“图片加载失败 → 回源正式 getMedia”都在这里闭环：冷启动先画的旧资料 hint
+ * 失效时，不需要用户刷新就能自己恢复；每个失败 URL 只补一次，避免无意义重试。
+ */
 export function CachedPicture({
   mediaId,
-  url,
+  hintUrl,
   className,
   width,
   height,
   fallback = null,
 }: {
   mediaId: string;
-  /** useMediaUrl 解析出来的链接；还没解析到也可以不传。 */
-  url?: string;
+  /** 资料顺带给的签名链接；没有时由 useMediaLink 自己取正式链接。 */
+  hintUrl?: string;
   className?: string;
   /** 固定宽高，图片晚到也不撑开行。 */
   width?: number;
@@ -607,6 +629,16 @@ export function CachedPicture({
   /** 图片加载失败时显示（如昵称缩写）。 */
   fallback?: ReactNode;
 }) {
+  const { link, reload } = useMediaLink(mediaId, hintUrl);
+  const url = link?.url;
+  // 同一个 URL 只回源一次；服务器给了新签名（URL 变化）后允许再试一次。
+  const retried = useRef<{ mediaId: string; url: string | null } | null>(null);
+  const recover = () => {
+    if (!url) return;
+    if (retried.current?.mediaId === mediaId && retried.current.url === url) return;
+    retried.current = { mediaId, url };
+    reload();
+  };
   return (
     <CachedImage
       mediaKey={`a:${mediaId}`}
@@ -615,6 +647,7 @@ export function CachedPicture({
       width={width}
       height={height}
       fallback={fallback}
+      onLinkBroken={recover}
     />
   );
 }

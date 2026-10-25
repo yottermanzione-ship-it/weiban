@@ -18,6 +18,7 @@ import {
   type AdminCharacterPurgeImpact,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
+import { ApiFailure } from '@weiban/client-core';
 import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
@@ -30,6 +31,7 @@ import {
 } from '../ui/batch-operation.js';
 import { formatDateTime } from '../ui/format.js';
 import { CardEditor } from '../components/card-editor.js';
+import { LegacyCharacterDrawer } from '../components/legacy-card-editor.js';
 import { EligibilityCard, EligibilityLookupDrawer, factsText } from './character-eligibility.js';
 import {
   applyEligibilityPatch,
@@ -239,6 +241,13 @@ export function CharactersPage() {
       return `已彻底删除：联系人 ${contacts}、会话 ${conversations}、消息 ${messages}、朋友圈 ${moments}`;
     }
     if (batch.kind === 'publish') {
+      // 旧卡没有 WB-Card 密文，后台不能重新上架；保持原发布状态，不假装成功。
+      if (row.format === 'legacy')
+        throw new ApiFailure(
+          'bad_request',
+          '旧卡不支持在后台重新上架（旧卡保持原有发布状态）',
+          422,
+        );
       await api.call(CharacterAdminEndpoints.publish, {
         params: { characterId: row.characterId },
       });
@@ -376,6 +385,9 @@ export function CharactersPage() {
       title: '上架检查',
       width: 230,
       render: (_, row) => {
+        // 旧卡没有 WB-Card，不适用「必填结构 / 人设稳定 / 边界检测」；显示旧格式说明，不假装缺 12 项。
+        if (row.format === 'legacy')
+          return <StatusTag tone="default">旧卡 · 旧字段运行，不适用 WB-Card 检查</StatusTag>;
         const checks = [
           ['结构', row.publishChecks.requiredFieldsComplete],
           ['稳定', row.publishChecks.personaStabilityPassed],
@@ -408,15 +420,29 @@ export function CharactersPage() {
           <Button type="link" size="small" onClick={() => setEditing(row)}>
             编辑
           </Button>
-          <Button
-            type="link"
-            size="small"
-            danger={row.status === 'published'}
-            loading={busy === row.characterId}
-            onClick={() => void togglePublish(row)}
-          >
-            {row.status === 'published' ? '下架' : '上架'}
-          </Button>
+          {row.format === 'legacy' ? (
+            row.status === 'published' ? (
+              <Button
+                type="link"
+                size="small"
+                danger
+                loading={busy === row.characterId}
+                onClick={() => void togglePublish(row)}
+              >
+                下架
+              </Button>
+            ) : null
+          ) : (
+            <Button
+              type="link"
+              size="small"
+              danger={row.status === 'published'}
+              loading={busy === row.characterId}
+              onClick={() => void togglePublish(row)}
+            >
+              {row.status === 'published' ? '下架' : '上架'}
+            </Button>
+          )}
         </Space>
       ),
     },
@@ -743,15 +769,26 @@ export function CharactersPage() {
         </BatchOperationModal>
       )}
       {lookup && <EligibilityLookupDrawer onClose={() => setLookup(false)} />}
-      {editing && (
-        <CharacterDrawer
-          character={editing === 'new' ? null : editing}
+      {editing && editing !== 'new' && editing.format === 'legacy' ? (
+        <LegacyCharacterDrawer
+          character={editing}
           onClose={() => setEditing(null)}
           onSaved={(text) => {
             toast.success(text);
             list.refresh();
           }}
         />
+      ) : (
+        editing && (
+          <CharacterDrawer
+            character={editing === 'new' ? null : editing}
+            onClose={() => setEditing(null)}
+            onSaved={(text) => {
+              toast.success(text);
+              list.refresh();
+            }}
+          />
+        )
       )}
     </Page>
   );

@@ -91,6 +91,13 @@ export class ModelController {
     return hide(this.scenarios.getConfig(me.userId));
   }
 
+  /** 3.28：平台固定私密模型（用户只读）；未配置返回 `{ model: null }`。 */
+  @Get('private-model')
+  @RequireAuth(E.privateModel.auth)
+  async privateModel() {
+    return { model: await this.catalog.privateModel() };
+  }
+
   @Patch('scenarios')
   @RequireAuth(E.updateScenarioConfig.auth)
   updateScenarios(
@@ -320,6 +327,14 @@ export class ModelAdminController {
     body: Out<typeof A.updateScenarioSettings.body>,
   ) {
     return this.catalog.setModelUses(me.userId, body);
+  }
+
+  /** 3.28：一次性初始化固定私密模型（仅当 fixed 从未存在时复制推荐私密模型；写审计）。 */
+  @Post('private-model/initialize')
+  @HttpCode(200)
+  @RequireAuth(A.initializeFixedPrivateModel.auth)
+  initializeFixedPrivateModel(@CurrentPrincipal() me: AuthPrincipal) {
+    return this.catalog.initializeFixedPrivateModel(me.userId);
   }
 
   // ---------- 3.17 展示倍率基准 ----------

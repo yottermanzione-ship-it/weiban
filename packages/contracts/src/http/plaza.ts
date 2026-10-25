@@ -164,7 +164,11 @@ export const PlazaWorkDetail = PlazaWorkCard.extend({
 });
 export type PlazaWorkDetail = z.infer<typeof PlazaWorkDetail>;
 
-export const PlazaSort = z.enum(['hot', 'latest', 'most_liked']);
+/**
+ * 列表排序：added = 被用户添加的次数（作品用作品累计采用数 adoptCount），从多到少，相同按发布时间、再按 id；
+ * 角色广场（/plaza）只用 added，hot / latest / most_liked 保留给旧客户端与其它入口。
+ */
+export const PlazaSort = z.enum(['hot', 'latest', 'most_liked', 'added']);
 
 export const ListPlazaWorksQuery = z.object({
   q: z.string().trim().min(1).max(50).optional(),
@@ -301,7 +305,7 @@ export const PlazaEndpoints = {
     query: ListPlazaWorksQuery,
     response: cursorPage(PlazaWorkCard),
     summary:
-      '人设广场列表：搜索（角色名、标签、作者昵称、基于的预设角色名）、排序（热门 P-34 / 最新 / 点赞最多）、筛选（PLZ-01）；不含下架和被停权作者的作品',
+      '人设广场列表：搜索（角色名、标签、作者昵称、基于的预设角色名）、排序（添加人数 added / 热门 P-34 / 最新 / 点赞最多）、筛选（PLZ-01）；不含下架和被停权作者的作品',
   }),
   getWork: defineEndpoint({
     method: 'GET',
@@ -721,8 +725,11 @@ export const PlazaOfficialDetail = z.object({
 });
 export type PlazaOfficialDetail = z.infer<typeof PlazaOfficialDetail>;
 
-/** hot = 点赞 + 2×评论；most_liked = 点赞数；default = 角色库默认顺序。 */
-export const PlazaOfficialSort = z.enum(['hot', 'most_liked', 'default']);
+/**
+ * hot = 点赞 + 2×评论；most_liked = 点赞数；default = 角色库默认顺序；
+ * added = 被用户添加的人数（通讯录里仍保留该角色的用户，按 userId 去重），角色广场只用它。
+ */
+export const PlazaOfficialSort = z.enum(['hot', 'most_liked', 'default', 'added']);
 
 export const ListPlazaOfficialQuery = z.object({
   q: z.string().trim().min(1).max(50).optional(),
@@ -752,7 +759,7 @@ export const PlazaOfficialEndpoints = {
     query: ListPlazaOfficialQuery,
     response: cursorPage(PlazaOfficialCard),
     summary:
-      '3.5：角色广场「微伴角色」tab：已上架的官方预设角色，按名字 / 别名 / 作品名搜索、按分类筛选、按热门 / 点赞 / 默认排序',
+      '3.5：角色广场「微伴角色」tab：已上架的官方预设角色，按名字 / 别名 / 作品名搜索、按分类筛选、按添加人数 / 热门 / 点赞 / 默认排序',
   }),
   get: defineEndpoint({
     method: 'GET',

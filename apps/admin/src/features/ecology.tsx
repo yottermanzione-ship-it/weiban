@@ -155,13 +155,15 @@ function EcologyConfigTab() {
         {error && <Alert type="error" showIcon message={error} />}
         <Form<EcologyConfig> form={form} layout="vertical" style={{ maxWidth: 720 }}>
           <FormSection
-            title="决策模型"
-            desc="角色「想一想」用哪个模型；建议选便宜、会输出 JSON 的模型。"
+            title="决策模型（Gate）"
+            desc="唯一动作开关：只对候选动作回答是/否，不写正文、状态签名或碎碎念；正文由用户自己的场景模型执行。"
           />
           <Form.Item
             name="decisionModelKey"
             extra={
-              <FieldHelp>不配置 = 生态不运行，不会改用用户的聊天模型。按用户积分计费。</FieldHelp>
+              <FieldHelp>
+                不配置 = 生态不运行；不会改用用户聊天模型。按用户积分计费。Jev 只在此处配置。
+              </FieldHelp>
             }
           >
             <Select

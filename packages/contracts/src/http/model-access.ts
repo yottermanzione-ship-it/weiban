@@ -273,6 +273,24 @@ export const ModelInfo = z.object({
 });
 export type ModelInfo = z.infer<typeof ModelInfo>;
 
+/**
+ * 3.28：平台固定的私密模型（用户不可选，只读展示）。
+ * - `displayMultiplier` 是**已含进行中折扣**的实际展示倍率；`discountRate` 只用于文案，
+ *   **不要再乘一次**（否则会重复打折）。
+ * - `available=false` 表示此刻不能进私密模式（模型停用 / 线路或价格有问题）；没有配置时整个 `model` 为 null。
+ */
+export const PrivateModelInfo = z.object({
+  modelKey: ModelKey,
+  displayName: z.string(),
+  /** 实际展示倍率（已含折扣）；价格算不出时为 null。 */
+  displayMultiplier: z.number().nonnegative().nullable(),
+  /** 进行中的限时折扣系数（0.5 = 5 折），仅用于文案；已包含在上面的倍率里。 */
+  discountRate: z.number().positive().lte(1).nullable(),
+  /** 此刻能否用于私密模式。 */
+  available: z.boolean(),
+});
+export type PrivateModelInfo = z.infer<typeof PrivateModelInfo>;
+
 // ---------- 用户的模型选择 ----------
 
 export const ModelRef = z.object({ modelKey: ModelKey });
@@ -365,6 +383,11 @@ export const ScenarioSelection = z.object({
   selection: ModelRefState.nullable(),
   /** 后台为该场景指定的推荐模型（只用于「一键选推荐」，不是兜底默认）；未指定为 null。 */
   recommendedModelKey: ModelKey.nullable(),
+  /**
+   * 3.28：该场景的模型由平台固定（目前只有 private），用户不能改；`selection` 是平台配置的结果。
+   * 普通场景不带这个字段。
+   */
+  fixedByAdmin: z.boolean().optional(),
 });
 
 export const ScenarioConfig = z.object({
@@ -448,6 +471,18 @@ export const ModelAccessEndpoints = {
     auth: 'user',
     response: ScenarioConfig,
     summary: '3.22：按场景的模型配置（含后台推荐模型、是否需要首次引导）',
+  }),
+  /**
+   * 3.28：平台固定私密模型（用户只读）。稳定 200：未配置时 `{ model: null }`，不用 204，
+   * 免得客户端把空 body 当 JSON 解析失败。`displayMultiplier` 已含进行中的折扣。
+   */
+  privateModel: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/model/private-model`,
+    auth: 'user',
+    response: z.object({ model: PrivateModelInfo.nullable() }),
+    summary:
+      '3.28：平台固定私密模型（用户不可选）；未配置时 model=null；倍率已含折扣，不要再乘 discountRate',
   }),
   updateScenarioConfig: defineEndpoint({
     method: 'PATCH',
@@ -921,6 +956,17 @@ export const ModelScenarioSettings = z.object({
       web_search: ModelKey.nullable(),
     })
     .partial(),
+  /**
+   * 3.28：平台**固定**的场景模型（用户不可选、运行时无条件使用）。目前只有 `private`。
+   * 与 `recommended` 完全分开：推荐只影响「一键选推荐 / 管理员调用兜底」，固定才是私密模式的实际来源。
+   * 字段不存在 = 从未初始化；`{ private: null }` = 管理员主动清空（不会被自动初始化复活）。
+   */
+  fixed: z
+    .object({
+      private: ModelKey.nullable(),
+    })
+    .partial()
+    .optional(),
 });
 export type ModelScenarioSettings = z.infer<typeof ModelScenarioSettings>;
 
@@ -1135,6 +1181,19 @@ export const ModelAccessAdminEndpoints = {
     body: ModelScenarioSettings,
     response: ModelScenarioSettings,
     summary: '3.22：修改场景推荐模型与平台内部模型（只改传了的键，写审计）',
+  }),
+  /**
+   * 3.28：一次性初始化固定私密模型——仅当 `fixed` 字段从未存在、且当前推荐私密模型有效时，
+   * 把它复制到 `fixed.private` 并写审计；`fixed:null` 表示管理员主动清空，不会自动复活。
+   * 不连接生产数据、不批量回填用户选择。
+   */
+  initializeFixedPrivateModel: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/model/private-model/initialize`,
+    auth: 'admin',
+    response: ModelScenarioSettings,
+    summary:
+      '3.28：一次性初始化固定私密模型（仅当 fixed 从未存在时，复制当前推荐私密模型；已初始化或已主动清空时 409）',
   }),
   getDisplayMultiplierSettings: defineEndpoint({
     method: 'GET',

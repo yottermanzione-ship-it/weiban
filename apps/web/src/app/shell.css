@@ -1159,10 +1159,15 @@ main > button.danger-row {
   position: relative;
   z-index: 1;
   transition: transform var(--wb-motion-duration-swipe) ease-out;
-  will-change: transform;
 }
+/*
+ * will-change 只在真正拖动 / 已滑开的那一行挂：常驻会给列表里每个挂载行都建一个合成层
+ * （虚拟列表上下各留 1200 像素缓冲，实际有几十行），白占 GPU 内存、每帧多一层合成，
+ * 手指滚动时更容易掉帧。松手后的 180ms 过渡由 transform 过渡自己触发合成，不需要常驻。
+ */
 .swipe-track.dragging {
   transition: none;
+  will-change: transform;
 }
 .swipe-actions {
   position: absolute;

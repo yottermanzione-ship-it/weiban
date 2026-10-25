@@ -16,6 +16,8 @@ import {
   CharacterAdminEndpoints as A,
   type AdminCharacterWrite,
   type AdminCharacterUpdate,
+  type AdminLegacyCharacterPatch,
+  type AdminLegacyRestoreRequest,
   type UpdateCharacterEligibilityRequest,
 } from '@weiban/contracts';
 import {
@@ -26,6 +28,7 @@ import {
 } from '../../../platform/index.js';
 import { CharacterService } from '../application/characters.js';
 import { CharacterEligibilityService } from '../application/eligibility.js';
+import { CharacterLegacyAdminService } from '../application/legacy-admin.js';
 import { CharacterPurgeService } from '../application/purge.js';
 @Controller('api/v1/characters')
 export class CharacterController {
@@ -58,6 +61,7 @@ export class CharacterAdminController {
   constructor(
     @Inject(CharacterService) private readonly service: CharacterService,
     @Inject(CharacterEligibilityService) private readonly eligibility: CharacterEligibilityService,
+    @Inject(CharacterLegacyAdminService) private readonly legacy: CharacterLegacyAdminService,
     @Inject(CharacterPurgeService) private readonly purger: CharacterPurgeService,
   ) {}
   /** 3.25（G1-2）：角色资格人工标注（预设与用户自建角色都可用）。 */
@@ -100,6 +104,46 @@ export class CharacterAdminController {
     @Body(new ContractPipe(A.update.body!)) body: AdminCharacterUpdate,
   ) {
     return this.service.update(me.userId, p.characterId, body);
+  }
+  /** 旧卡详情：旧字段 + 世界书 + 示例 + 未识别字段 + 修改记录（详情按需读，列表不传正文）。 */
+  @Get(':characterId/legacy')
+  @RequireAuth(A.legacyDetail.auth)
+  legacyDetail(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(A.legacyDetail.params!)) p: { characterId: string },
+  ) {
+    return this.legacy.detail(me.userId, p.characterId);
+  }
+  /** 旧卡局部保存：白名单字段合并 / 清空、世界书与示例按 id 更新删除、头像替换；保存前写完整快照。 */
+  @Patch(':characterId/legacy')
+  @RequireAuth(A.legacyUpdate.auth)
+  legacyUpdate(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(A.legacyUpdate.params!)) p: { characterId: string },
+    @Body(new ContractPipe(A.legacyUpdate.body!)) body: AdminLegacyCharacterPatch,
+  ) {
+    return this.legacy.patch(me.userId, p.characterId, body);
+  }
+  /** 某个旧卡版本快照的完整内容（查看 / 恢复确认）；只查本角色，不含签名 URL。 */
+  @Get(':characterId/legacy/revisions/:revision')
+  @RequireAuth(A.legacyRevision.auth)
+  legacyRevision(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(A.legacyRevision.params!))
+    p: { characterId: string; revision: number },
+  ) {
+    return this.legacy.revision(me.userId, p.characterId, p.revision);
+  }
+  /** 恢复旧卡到某个快照版本：需 expectedRevision + confirm=true；写新 revision 并另存恢复前快照。 */
+  @Post(':characterId/legacy/restore')
+  @HttpCode(200)
+  @RequireAuth(A.legacyRestore.auth)
+  legacyRestore(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(A.legacyRestore.params!)) p: { characterId: string },
+    @Body(new ContractPipe(A.legacyRestore.body!)) body: AdminLegacyRestoreRequest,
+  ) {
+    return this.legacy.restore(me.userId, p.characterId, body);
   }
   @Post(':characterId/publish')
   @HttpCode(200)

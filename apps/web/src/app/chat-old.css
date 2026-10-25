@@ -136,6 +136,38 @@
   color: var(--wb-color-text-link);
   font-size: var(--wb-font-size-footnote);
 }
+/* T-20261025：聊天记录顶部「加载更多消息」按钮与加载/到底提示（只新增按钮规则，不动滚动容器）。 */
+.wx-older .text-button.wx-older-button {
+  min-height: var(--wb-size-touch-target);
+  padding: 0 var(--wb-space-4);
+}
+.wx-older-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wb-space-2);
+  min-height: var(--wb-size-touch-target);
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+}
+.wx-older-spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--wb-color-border-hairline);
+  border-top-color: var(--wb-color-brand-primary);
+  border-radius: var(--wb-radius-full);
+  animation: wx-older-spin 0.8s linear infinite;
+}
+@keyframes wx-older-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wx-older-spinner {
+    animation: none;
+  }
+}
 .wx-time {
   padding: 11px 0 6px;
   color: var(--wb-color-ui-time-divider);

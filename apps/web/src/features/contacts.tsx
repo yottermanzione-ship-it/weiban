@@ -943,7 +943,7 @@ export function CharacterPage({
       )}
       {sheet === 'avatar' && contact && (
         <Sheet title="设置头像" onClose={() => setSheet(null)} closeLabel="取消">
-          <ContactAvatarEditor characterId={characterId} titled={false} />
+          <ContactAvatarEditor characterId={characterId} titled={false} prominentPicker />
         </Sheet>
       )}
       {sheet === 'intro' && data && (

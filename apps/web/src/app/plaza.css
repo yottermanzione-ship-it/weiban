@@ -21,32 +21,43 @@
   font-weight: 600;
   box-shadow: inset 0 -2px 0 var(--wb-color-brand-primary);
 }
-/* ---------- 角色广场（/plaza）顶部两个 tab：照表情商店 .sticker-store-tabs 的做法 ---------- */
-/* 顶栏三段改成「返回 / tab / 右侧图标」：tab 紧跟返回箭头左对齐，右侧有没有图标都不动它。 */
+/* ---------- 角色广场（/plaza）顶部两个 tab：等宽填满返回箭头与个人入口之间的区域 ---------- */
+/* 顶栏三段：「返回 / 两个 tab / 个人入口」。右侧入口位常驻同宽，切 tab 时 tab 与下划线都不移位。 */
 .role-plaza-hub .nav-bar {
   grid-template-columns: auto minmax(0, 1fr) auto;
 }
 .role-plaza-hub .nav-bar-title {
-  justify-items: start;
+  justify-items: stretch;
+}
+/* NavBar 会把 title 包一层 h1（shell.css 给了 max-width: 60vw），这里放开，两个 tab 才能真正填满 */
+.role-plaza-hub .nav-bar-title h1 {
+  width: 100%;
+  max-width: 100%;
+}
+.role-plaza-hub .nav-bar-side.end {
+  min-width: var(--wb-size-touch-target);
 }
 .role-plaza-tabs {
   display: flex;
-  align-items: center;
-  gap: var(--wb-space-5);
+  align-items: stretch;
+  width: 100%;
   height: var(--wb-size-nav-bar);
 }
 .role-plaza-hub .role-plaza-tabs > button {
   position: relative;
-  align-self: stretch;
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
   min-height: 0;
-  padding: 0 2px;
+  padding: 0;
   appearance: none;
   border: 0;
   border-radius: 0;
   box-shadow: none;
   background: transparent;
   color: var(--wb-color-text-secondary);
-  white-space: nowrap;
   font-family: inherit;
   font-size: inherit;
 }
@@ -54,26 +65,80 @@
   color: var(--wb-color-text-primary);
   font-weight: var(--wb-font-weight-semibold);
 }
-.role-plaza-tabs > button[aria-selected='true']::after {
+/* 下划线跟文字同宽、离文字 4px，不再贴着顶栏底边 */
+.role-plaza-tab-label {
+  position: relative;
+  display: block;
+  padding-bottom: var(--wb-space-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.role-plaza-tabs > button[aria-selected='true'] .role-plaza-tab-label::after {
   position: absolute;
-  right: 2px;
+  right: 0;
   bottom: 0;
-  left: 2px;
+  left: 0;
   height: 2px;
+  border-radius: 1px;
   background: currentColor;
   content: '';
 }
 
-.plaza-filter {
-  position: sticky;
-  top: 0;
-  z-index: var(--wb-z-index-sticky);
+/* ---------- 角色广场整页：顶栏和搜索固定，列表占满剩余高度，页面上只有列表一个滚动区 ---------- */
+.role-plaza-hub {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.role-plaza-hub > .nav-bar {
+  flex: none;
+}
+.role-plaza-hub .plaza-tab-page {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+.role-plaza-hub .plaza-tab-page > .search-strip {
+  flex: none;
+}
+/* 空态 / 加载中 / 报错占住列表区域，自己可滚（联网候选可能比一屏长），不撑破整页 */
+.role-plaza-hub .plaza-tab-page > .plaza-tab-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* 列表：占满剩余空间，自身就是唯一滚动区；行高仍由内容决定，不造占位角色 */
+.role-plaza-hub .plaza-tab-page > .virtual-list {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+}
+/* ---------- 列表最后一行：加载更多 / 正在读取 / 失败重试 / 没有更多（在列表内部，不另飘一个按钮） ---------- */
+.plaza-list-end {
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--wb-space-3);
-  padding: var(--wb-space-2) 0;
-  background: var(--wb-color-bg-page);
+  min-height: 56px;
+  margin: 0;
+  padding: var(--wb-space-3) var(--wb-space-4);
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+  text-align: center;
+}
+.plaza-list-end .spinner {
+  margin: 0;
+}
+.plaza-list-end .text-button {
+  min-height: var(--wb-size-touch-target);
+  padding: 0 var(--wb-space-3);
+}
+.plaza-list-end-done {
+  color: var(--wb-color-text-tertiary);
 }
 /* ---------- 广场筛选：胶囊按钮 + 按钮正下方的卡片菜单（不用浏览器原生下拉） ---------- */
 .pop-select {

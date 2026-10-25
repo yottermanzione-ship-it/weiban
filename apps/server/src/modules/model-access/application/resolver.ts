@@ -112,7 +112,10 @@ export class ModelResolver implements AdultModelReadPort {
     role: ModelRole,
     characterId: string | null,
     options: { purpose?: ModelPurpose; scenario?: ModelScenario } = {},
-  ): Promise<{ facts: ModelFacts; source: 'override' | 'user' | 'platform_default' } | null> {
+  ): Promise<{
+    facts: ModelFacts;
+    source: 'override' | 'user' | 'fixed' | 'platform_default';
+  } | null> {
     if (role === 'adult_check') {
       const checker = await this.catalog.internalModel('adult_check');
       return checker ? { facts: checker, source: 'platform_default' } : null;
@@ -120,6 +123,8 @@ export class ModelResolver implements AdultModelReadPort {
     const scenario = scenarioFor(role, options.purpose ?? 'chat_reply', options.scenario);
     const picked = await this.scenarios.pick(userId, scenario, characterId);
     if (picked) return picked;
+    // 3.28：private 只有平台固定模型这一个来源；未配置就是不可用，绝不拿推荐模型兜底。
+    if (scenario === 'private') return null;
     if (options.purpose?.startsWith('admin_')) {
       const recommended = await this.catalog.recommendedModel(scenario);
       if (recommended) return { facts: recommended, source: 'platform_default' };
@@ -176,10 +181,11 @@ export class ModelResolver implements AdultModelReadPort {
       if (input.purpose !== 'behavior_planning') return { ok: false, error: 'bad_request' };
       picked = { facts: await this.catalog.fact(input.modelKeyOverride) };
     } else if (input.purpose === 'behavior_planning') {
-      // 规划模型只认平台内部模型「行为规划」。未配置时明确失败（not_configured），
-      // 调用方（planner）收到失败后回落规则版：不调模型、不扣费。
-      const planner = await this.catalog.internalModel('planner');
-      picked = planner ? { facts: planner } : null;
+      // 3.29：规划/组织回复跟随用户自己的 chat 场景（角色覆盖按既有规则）；私密传 adult 用固定私密。
+      // 后台 internal.planner 不再参与用户规划；未配置用户 chat 时返回 not_configured，由 planner 回落规则版。
+      picked = await this.pick(input.userId, input.modelRole, input.characterId ?? null, {
+        purpose: input.purpose,
+      });
     } else {
       picked = await this.pick(input.userId, input.modelRole, input.characterId ?? null, {
         purpose: input.purpose,

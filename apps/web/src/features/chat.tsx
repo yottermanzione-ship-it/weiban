@@ -40,6 +40,7 @@ import { useCharacterProfile } from '../data/character-profile.js';
 import { useUpdates } from '../data/updates.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { VirtualList } from './virtual-list.js';
+import { HistoryLoadRow, useHistoryPager } from './chat-history.js';
 import { HomeScreenGuide } from './home-screen-guide.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { UserAvatar } from './user-avatar.js';
@@ -190,6 +191,8 @@ function systemText(code: string, params: Record<string, string | number | boole
     case 'scenario_mode_changed':
       if (params.reason === 'adult_mode_unavailable') return '私密预设已不可用，已回到日常聊天';
       return `已切换到 ${presetNames[p('mode')] ?? '日常聊天'}`;
+    case 'scenario_mode_unavailable':
+      return '私密模型暂时不可用，请手动切换到其他模式';
     case 'scenario_mode_switched':
       if (params.reason === 'member_not_eligible') return '有新成员加入，群聊已回到日常聊天';
       return `已切换到 ${presetNames[p('mode')] ?? '日常聊天'}`;
@@ -580,8 +583,6 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   });
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
-  const [older, setOlder] = useState(true);
-  const [loadingOlder, setLoadingOlder] = useState(false);
   const [quoteId, setQuoteId] = useState<string | null>(null);
   const [atBottom, setAtBottom] = useState(true);
   const [visible, setVisible] = useState(document.visibilityState === 'visible');
@@ -624,6 +625,11 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const preset = useCurrentPreset(presetTarget);
   // 3.28（H2）：私密模式只开放文字和图片——不能语音通话、不能按住说话（语音输入）。
   const privateMode = !group && preset.mode === 'adult';
+  const platformPrivate = useRemote(
+    ModelAccessEndpoints.privateModel,
+    { networkOnly: true },
+    privateMode,
+  );
   useEffect(() => {
     if (privateMode) setMode('text');
   }, [privateMode]);
@@ -651,6 +657,11 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const { older: loadOlder } = chat;
+  // T-20261025：只有用户点「加载更多消息」才取上一批；普通上滑到顶不再自动请求。
+  const history = useHistoryPager(() => {
+    const oldest = messagesRef.current[0]?.seq;
+    return oldest === undefined ? Promise.resolve(false) : chat.older(id, oldest);
+  });
   // 搜索结果 / 收藏定位（search.md 第 4 节）：向前补读直到目标消息出现，停在距顶部 1/3 处并闪一下。
   useEffect(() => {
     if (!targetSeq) return;
@@ -1140,7 +1151,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   }
 
   const rows: Row[] = [];
-  if (older && messages.length > 0) rows.push({ kind: 'older', key: '__older__' });
+  // 顶部一直保留这一行：还有更早记录时是按钮，取到最早一条后改成「没有更多消息」。
+  if (messages.length > 0) rows.push({ kind: 'older', key: '__older__' });
   let previousAt: string | undefined;
   for (const message of messages) {
     const divider = needsDivider(previousAt, message.createdAt)
@@ -1170,34 +1182,9 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     </SelfNudgeAvatar>
   );
 
-  const olderRequest = useRef(false);
-  function fetchOlder() {
-    if (!older || olderRequest.current || !messages.length) return;
-    olderRequest.current = true;
-    setLoadingOlder(true);
-    void chat
-      .older(id, messages[0]!.seq)
-      .then(setOlder)
-      .catch((e) => setError(friendlyError(e)))
-      .finally(() => {
-        olderRequest.current = false;
-        setLoadingOlder(false);
-      });
-  }
   function renderRow(row: Row) {
     if (row.kind === 'older')
-      return (
-        <div className="wx-older">
-          <button
-            type="button"
-            className="text-button"
-            disabled={loadingOlder}
-            onClick={fetchOlder}
-          >
-            {loadingOlder ? '正在读取…' : '查看更早的消息'}
-          </button>
-        </div>
-      );
+      return <HistoryLoadRow state={history.state} onLoad={history.loadMore} />;
     if (row.kind === 'pending') {
       const item = pending[row.index];
       if (!item) return null;
@@ -1539,6 +1526,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         <ChatHeading
           name={selecting ? `已选择 ${chosen.length} 条` : <Name conversation={conversation} />}
           characterId={selecting ? undefined : role?.refId}
+          mode={selecting ? undefined : preset.mode}
           active={
             !selecting &&
             !!role &&
@@ -1575,6 +1563,11 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         </p>
       )}
       {!chat.online && <p className="notice-bar">网络暂不可用，消息保存在本机，联网后继续发送</p>}
+      {privateMode && platformPrivate.data && !platformPrivate.data.model?.available && (
+        <p className="notice-bar" role="status">
+          私密模型暂时不可用，当前消息仍保留在私密范围。请在「+ › 情景预设」里手动切换到其他模式。
+        </p>
+      )}
       {status.data && !status.data.available && !modelGate.needsSetup && (
         <p className="notice-bar">
           {status.data.reason === 'insufficient_balance'
@@ -1624,7 +1617,6 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           estimate={64}
           bottom
           onBottom={setAtBottom}
-          onStart={fetchOlder}
           anchorItem={(row) => row.kind === 'message'}
           scrollTo={scrollTarget}
           rowClassName={(row) =>

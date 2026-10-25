@@ -8,7 +8,6 @@ import {
   CachedPicture,
   recallCharacterAvatar,
   rememberCharacterAvatar,
-  useMediaUrl,
 } from './avatar-cache.js';
 import { useCharacterProfile } from '../data/character-profile.js';
 type AvatarRole = Pick<CharacterSummary, 'characterId' | 'name' | 'avatar'>;
@@ -152,7 +151,7 @@ function AvatarPicture({
   return (
     <CachedPicture
       mediaId={mediaId}
-      url={useMediaUrl(mediaId, hintUrl)}
+      hintUrl={hintUrl}
       width={size}
       height={size}
     />

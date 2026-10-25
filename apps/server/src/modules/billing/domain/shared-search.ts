@@ -1,5 +1,20 @@
 /** Integer micro-yuan only. 1 point = 10000 micros, 0.01 point = 100 micros. */
 export const SHARED_SEARCH_PURPOSE = 'weibo_shared_search';
+
+/**
+ * 3.29：结算前把成员收敛到「重核后仍合格」的集合。
+ * 不传 eligible = 沿用旧行为；传空数组 = 本次不向任何用户收款（平台承担），
+ * 绝不把剩余用户的费用集中压给某一个残留成员。
+ */
+export function eligibleMembers<T extends { user_id: string }>(
+  members: readonly T[],
+  eligibleUserIds?: readonly string[],
+): T[] {
+  if (!eligibleUserIds) return [...members];
+  const allowed = new Set(eligibleUserIds);
+  return members.filter((member) => allowed.has(member.user_id));
+}
+
 export function sharedSlice(total: number, count: number, ordinal: number, offset = 0): number {
   if (
     !Number.isSafeInteger(total) ||

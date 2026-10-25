@@ -40,6 +40,8 @@ export const ModuleName = z.enum([
   'client_logs',
   // 3.42（微信 / 微博接入，真实 iLink / OpenIM 协议）
   'channels',
+  // 10-25：年度回忆（每年 12-31 22:00 生成，PRO+ 权益）
+  'recap',
 ]);
 export type ModuleName = z.infer<typeof ModuleName>;
 

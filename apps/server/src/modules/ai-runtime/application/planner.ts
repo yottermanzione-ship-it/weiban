@@ -634,8 +634,8 @@ export class PlannerService {
       conversationId: req.conversationId ?? undefined,
       purpose: 'behavior_planning',
       billingOwner: 'user',
-      modelRole: 'background',
-      ...(config.modelKey ? { modelKeyOverride: config.modelKey } : {}),
+      // 3.29：规划跟随用户自己的 chat 场景（成人会话用平台固定 private）；不再用后台 planner 模型。
+      modelRole: req.adult ? 'adult' : 'chat',
       countAsBackground: req.path === 'proactive',
       ecologyTask: req.path === 'proactive',
       responseFormat: 'json',
@@ -770,8 +770,8 @@ export class PlannerService {
       userId: req.userId,
       purpose: 'behavior_planning',
       billingOwner: 'user',
-      modelRole: 'background',
-      ...(config.modelKey ? { modelKeyOverride: config.modelKey } : {}),
+      // 3.29：规划跟随用户自己的 chat 场景（成人会话用平台固定 private）；不再用后台 planner 模型。
+      modelRole: req.adult ? 'adult' : 'chat',
       countAsBackground: req.path === 'proactive',
       ecologyTask: req.path === 'proactive',
       responseFormat: 'json',
@@ -968,8 +968,10 @@ export class PlannerService {
       for (const r of rows)
         map.set(r.decisionType, {
           decisionType: r.decisionType as PlanningDecisionType,
-          implementation: r.implementation as Implementation,
-          modelKey: r.modelKey,
+          // 3.29：旧的 jev 配置映射为「规则 + 用户文本模型」；模型键不再由后台指定。
+          implementation:
+            r.implementation === 'jev' ? 'rules_model' : (r.implementation as Implementation),
+          modelKey: null,
           confidenceThreshold: r.confidenceThreshold,
           evalReportId: r.evalReportId,
           updatedBy: r.updatedBy,
@@ -1012,18 +1014,16 @@ export class PlannerService {
   ) {
     this.configCache = null;
     const old = await this.config(type);
-    // PLAN-03 第 2 条：切换实现必须附评测报告编号。
+    // 3.29：不再接受后台指定规划模型；jev 旧值归一为 rules_model（用用户 chat 模型），
+    // 模型键一律不保存/不读取。切换实现仍保留评测报告要求。
     if (body.implementation !== old.implementation && !body.evalReportId)
       throw new AppError('bad_request', '切换实现需要填写评测报告编号');
-    if (body.implementation === 'jev' && type === 'play_slot')
-      throw new AppError('bad_request', '玩法时机不能使用境外实现');
-    if (body.implementation === 'jev' && !body.modelKey)
-      throw new AppError('bad_request', '境外实现需要指定模型');
     const now = this.clock.now();
     const values = {
       decisionType: type,
-      implementation: body.implementation,
-      modelKey: body.implementation === 'rules' ? null : (body.modelKey ?? null),
+      implementation:
+        body.implementation === 'jev' ? ('rules_model' as const) : body.implementation,
+      modelKey: null,
       confidenceThreshold: Math.max(0.3, Math.min(0.9, body.confidenceThreshold)),
       evalReportId: body.evalReportId ?? old.evalReportId,
       updatedBy: adminId,

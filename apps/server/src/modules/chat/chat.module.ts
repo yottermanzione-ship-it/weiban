@@ -18,6 +18,7 @@ import { ChatSearchService } from './application/search.js';
 import { ChatSearchController } from './http/search.controller.js';
 import { ChatChargeService } from './application/charges.js';
 import { ChatChargeController } from './http/charges.controller.js';
+import { ChatRecapService } from './application/recap-stats.js';
 import {
   CHAT_ADMIN_PORT,
   CHAT_PARTICIPANT_PORT,
@@ -26,6 +27,7 @@ import {
   CHAT_USER_PORT,
   CHAT_GROUP_ADMIN_PORT,
   CHAT_GROUP_READ_PORT,
+  CHAT_RECAP_READ_PORT,
 } from './tokens.js';
 @Module({
   imports: [IdentityModule, RealtimeModule, MediaModule],
@@ -49,6 +51,7 @@ import {
     ChatLifecycle,
     ChatGroupService,
     ChatActionService,
+    ChatRecapService,
     { provide: CHAT_GROUP_ADMIN_PORT, useExisting: ChatGroupService },
     { provide: CHAT_GROUP_READ_PORT, useExisting: ChatGroupService },
     { provide: CHAT_ADMIN_PORT, useExisting: ChatAdminService },
@@ -56,6 +59,7 @@ import {
     { provide: CHAT_READ_PORT, useExisting: ChatReadService },
     { provide: CHAT_NOTIFICATION_READ_PORT, useExisting: ChatReadService },
     { provide: CHAT_USER_PORT, useExisting: ChatUserService },
+    { provide: CHAT_RECAP_READ_PORT, useExisting: ChatRecapService },
   ],
   exports: [
     CHAT_ADMIN_PORT,
@@ -65,6 +69,7 @@ import {
     CHAT_NOTIFICATION_READ_PORT,
     CHAT_GROUP_ADMIN_PORT,
     CHAT_GROUP_READ_PORT,
+    CHAT_RECAP_READ_PORT,
   ],
 })
 export class ChatModule {}

@@ -17,6 +17,7 @@ import { ChatSettingsPage } from '../features/chat-settings.js';
 import { ChatBackgroundPage } from '../features/chat-background.js';
 import { ContactsPage, DiscoverPage, CharacterPage, RolePlazaPage } from '../features/contacts.js';
 import { ComingSoonPage, useBack } from '../features/shell-kit.js';
+import { RecapAutoShow } from '../features/recap.js';
 import { MiniAppFrame, MiniAppsHomePage, miniAppFor } from '../features/miniapps.js';
 import {
   AboutPage,
@@ -501,6 +502,7 @@ function Shell() {
         {showTabs && <TabBar hidden={false} />}
         <AchievementWatcher />
         {!firstProfile && <ReleaseCenter />}
+        {!firstProfile && <RecapAutoShow />}
         <ToastHost />
         {!firstProfile && !onboarding && (
           <EcologyInsufficientNotice

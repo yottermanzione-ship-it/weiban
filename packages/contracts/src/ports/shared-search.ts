@@ -8,6 +8,8 @@ export interface SharedSearchBillingPort {
   settle(
     groupId: string,
     usageRecordId: string,
+    /** 3.29：结算前重核的当前合格用户；省略=沿用旧行为（仅账户状态过滤）。 */
+    eligibleUserIds?: readonly string[],
   ): Promise<{ collectedMicros: number; userCharges: Record<string, number> }>;
   cancel(groupId: string): Promise<void>;
 }
@@ -18,6 +20,11 @@ export interface SharedWebSearchPort {
     userIds: string[];
     query: string;
     key: string;
+    /**
+     * 3.29：结算前重核资格。调用方用检索开始时记下的 {userId,epoch} 调
+     * WeiboSyncService.recheckParticipants，返回现在仍合格的 userId；不传则不过滤。
+     */
+    eligibleUserIds?: () => Promise<readonly string[]>;
   }): Promise<
     | {
         ok: true;

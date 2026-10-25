@@ -31,7 +31,15 @@ import { useUpdates } from '../data/updates.js';
 import { prepareImage, uploadMedia } from '../data/upload.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { OldIcon } from './old-icons.js';
-import { PlazaAvatar, PlazaTab, authorName, timeText, usePlazaBadge } from './plaza.js';
+import {
+  PagedVirtualList,
+  PlazaAvatar,
+  PlazaTab,
+  authorName,
+  timeText,
+  usePlazaBadge,
+  type PageMore,
+} from './plaza.js';
 import {
   EmptyState,
   GroupHeader,
@@ -40,10 +48,7 @@ import {
   MenuRow,
   NavBar,
   NavIcon,
-  PopSelect,
-  type PopSelectOption,
 } from './shell-kit.js';
-import { VirtualList } from './virtual-list.js';
 import { Dialog, showToast } from './toast.js';
 
 const code = (error: unknown) => (error instanceof ApiFailure ? error.code : '');
@@ -127,7 +132,7 @@ export function RolePlazaHubPage() {
               aria-selected={tab === 'custom'}
               onClick={() => choose('custom')}
             >
-              自定义角色
+              <span className="role-plaza-tab-label">自定义角色</span>
             </button>
             <button
               type="button"
@@ -135,7 +140,7 @@ export function RolePlazaHubPage() {
               aria-selected={tab === 'official'}
               onClick={() => choose('official')}
             >
-              微伴角色
+              <span className="role-plaza-tab-label">微伴角色</span>
             </button>
           </span>
         }
@@ -156,45 +161,54 @@ export function RolePlazaHubPage() {
   );
 }
 
-type OfficialSort = 'hot' | 'most_liked' | 'default';
-
-const OFFICIAL_SORT_OPTIONS: PopSelectOption[] = [
-  { value: 'hot', label: '热门' },
-  { value: 'most_liked', label: '点赞最多' },
-  { value: 'default', label: '默认顺序' },
-];
-
 function OfficialList() {
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
-  const [sort, setSort] = useState<OfficialSort>('hot');
-  const [categoryId, setCategoryId] = useState('');
-  const categories = useRemote(CharacterEndpoints.listCategories);
   const [items, setItems] = useState<PlazaOfficialCard[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [more, setMore] = useState<PageMore>('idle');
+  /** 换搜索时让在途的旧请求作废；「加载更多」同一时间只放一批，连点不会拉两批。 */
+  const generation = useRef(0);
+  const moreInFlight = useRef(false);
   const load = useCallback(
     async (after?: string) => {
-      setState('loading');
+      if (after) {
+        if (moreInFlight.current) return;
+        moreInFlight.current = true;
+        setMore('loading');
+      } else {
+        // 换搜索 / 重试：上一页的游标与在途状态作废，免得旧「加载更多」接到新结果后面。
+        setState('loading');
+        setMore('idle');
+        setCursor(null);
+      }
+      const gen = after ? generation.current : ++generation.current;
       try {
         const page = await api.call(PlazaOfficialEndpoints.list, {
           query: {
             q: search || undefined,
-            categoryId: categoryId || undefined,
-            sort,
+            // 角色广场只看「被用户添加的人数」：服务端在整份候选集上排好再分页，前端不再重排。
+            sort: 'added',
             cursor: after,
             limit: 20,
           },
           networkOnly: true,
         });
+        if (gen !== generation.current) return;
         setItems((prev) => (after ? [...prev, ...page.items] : page.items));
         setCursor(page.nextCursor);
-        setState('ready');
+        if (after) setMore('idle');
+        else setState('ready');
       } catch {
-        setState('error');
+        if (gen !== generation.current) return;
+        if (after) setMore('error');
+        else setState('error');
+      } finally {
+        if (after) moreInFlight.current = false;
       }
     },
-    [search, sort, categoryId],
+    [search],
   );
   useEffect(() => {
     void load();
@@ -214,7 +228,7 @@ function OfficialList() {
     }
   };
   return (
-    <section aria-label="微伴角色">
+    <section aria-label="微伴角色" className="plaza-tab-page">
       <form
         className="search-strip"
         role="search"
@@ -243,60 +257,45 @@ function OfficialList() {
           搜索
         </button>
       </form>
-      <div className="plaza-filter">
-        <PopSelect
-          label="排序"
-          value={sort}
-          options={OFFICIAL_SORT_OPTIONS}
-          onChange={(next) => setSort(next as OfficialSort)}
-        />
-        <PopSelect
-          label="分类"
-          value={categoryId}
-          options={[
-            { value: '', label: '全部分类' },
-            ...(categories.data?.items ?? []).map((c) => ({ value: c.categoryId, label: c.name })),
-          ]}
-          onChange={setCategoryId}
-        />
-      </div>
-      {state === 'loading' && items.length === 0 && (
-        <p role="status" className="empty">
-          正在读取角色…
-        </p>
-      )}
-      {state === 'error' && items.length === 0 && (
-        <div className="empty">
-          <p>加载失败</p>
-          <button type="button" onClick={() => void load()}>
-            重试
-          </button>
+      {items.length === 0 && (
+        <div className="plaza-tab-body">
+          {state === 'loading' && (
+            <p role="status" className="empty">
+              正在读取角色…
+            </p>
+          )}
+          {state === 'error' && (
+            <div className="empty">
+              <p>加载失败</p>
+              <button type="button" onClick={() => void load()}>
+                重试
+              </button>
+            </div>
+          )}
+          {state === 'ready' && (
+            <>
+              <EmptyState
+                icon="wechat/search"
+                title={search ? `没有找到「${search}」` : '还没有角色'}
+              />
+              {search && <WebCharacterSearch key={search} query={search} />}
+            </>
+          )}
         </div>
       )}
-      {state === 'ready' && items.length === 0 && (
-        <>
-          <EmptyState
-            icon="wechat/search"
-            title={search ? `没有找到「${search}」` : '还没有角色'}
-          />
-          {search && <WebCharacterSearch key={search} query={search} />}
-        </>
-      )}
       {items.length > 0 && (
-        <VirtualList
+        <PagedVirtualList
           items={items}
           itemKey={(card) => card.character.characterId}
           estimate={76}
           label="微伴角色列表"
           render={(card) => <OfficialRow card={card} onLike={() => void toggleLike(card)} />}
+          more={more}
+          hasMore={!!cursor}
+          onLoadMore={() => {
+            if (cursor) void load(cursor);
+          }}
         />
-      )}
-      {cursor && (
-        <div className="pager-row">
-          <button type="button" disabled={state === 'loading'} onClick={() => void load(cursor)}>
-            {state === 'loading' ? '正在读取…' : '加载更多'}
-          </button>
-        </div>
       )}
     </section>
   );
@@ -304,6 +303,12 @@ function OfficialList() {
 
 function OfficialRow({ card, onLike }: { card: PlazaOfficialCard; onLike(): void }) {
   const role = card.character;
+  // 点赞 / 评论能力保留，但不再参与排序；为 0 的计数不再堆在行里（「0赞0评」看不出信息）。
+  const meta = [
+    card.likeCount > 0 ? `赞 ${card.likeCount}` : '',
+    card.commentCount > 0 ? `评论 ${card.commentCount}` : '',
+    role.added ? '已添加' : '',
+  ].filter(Boolean);
   return (
     <div className="official-row">
       <Link to={`/plaza/official/${role.characterId}`} className="official-row-main">
@@ -311,10 +316,7 @@ function OfficialRow({ card, onLike }: { card: PlazaOfficialCard; onLike(): void
         <span className="official-row-text">
           <span className="official-row-name">{role.name}</span>
           <small>{role.tagline}</small>
-          <small className="official-row-meta">
-            赞 {card.likeCount} · 评论 {card.commentCount}
-            {role.added ? ' · 已添加' : ''}
-          </small>
+          {meta.length > 0 && <small className="official-row-meta">{meta.join(' · ')}</small>}
         </span>
       </Link>
       <button

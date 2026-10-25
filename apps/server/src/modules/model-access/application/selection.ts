@@ -9,7 +9,7 @@
  */
 import { Inject, Injectable } from '@nestjs/common';
 import type { ModelNotificationReadPort, Tx, ModelSelection } from '@weiban/contracts';
-import { asDbTx, DATABASE, type Database } from '../../../platform/index.js';
+import { AppError, asDbTx, DATABASE, type Database } from '../../../platform/index.js';
 import { CatalogService } from './catalog.js';
 import { ScenarioService } from './scenarios.js';
 import { refState, type ModelRefStateOut } from './selection-state.js';
@@ -59,24 +59,31 @@ export class SelectionService implements ModelNotificationReadPort {
 
   async getSelection(userId: string): Promise<ModelSelection> {
     const raw = await this.raw(userId);
+    // 3.28：adult 不再是用户选择，统一读平台固定私密模型。
+    const fixedKey = (await this.catalog.modelUses()).fixed?.private ?? null;
     const facts = await this.catalog.facts(
-      [raw.chat, raw.adult].filter((k): k is string => k !== null),
+      [raw.chat, fixedKey].filter((k): k is string => k !== null),
     );
     const state = (key: string | null) => {
       if (key === null) return null;
       const f = facts.get(key);
       return f ? refState(f) : null;
     };
-    return { chat: state(raw.chat), background: null, adult: state(raw.adult) };
+    return { chat: state(raw.chat), background: null, adult: state(fixedKey) };
   }
 
   async updateSelection(
     userId: string,
     body: Partial<Record<Field, { modelKey: string } | null>>,
   ): Promise<ModelSelection> {
+    // 3.28：私密模型由平台固定；旧客户端的 adult 写入一律拒绝。
+    if (body.adult !== undefined)
+      throw new AppError('model_not_allowed', '私密模型由平台统一提供，不能自行选择或修改', {
+        status: 422,
+        details: { field: 'adult' },
+      });
     await this.scenarios.updateConfig(userId, {
       ...(body.chat !== undefined ? { chat: body.chat } : {}),
-      ...(body.adult !== undefined ? { private: body.adult } : {}),
     });
     return this.getSelection(userId);
   }

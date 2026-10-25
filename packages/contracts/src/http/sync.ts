@@ -174,6 +174,8 @@ export const DataSection = z.enum([
   'role_requests',
   /** 3.8：反馈 / 投诉有回复或状态变化（itemId = ticketId），重新拉 GET /support/tickets。 */
   'support',
+  /** 10-25：年度回忆已生成（itemId = null），重新拉 GET /me/recap/pending。 */
+  'recap',
 ]);
 export type DataSection = z.infer<typeof DataSection>;
 

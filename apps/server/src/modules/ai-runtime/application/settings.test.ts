@@ -198,28 +198,29 @@ it('已经是日常时再次进入聊天不再写设置、不再发系统提示'
   expect(digests.enqueue).not.toHaveBeenCalled();
 });
 
-it('真正的回落只保留一条提示，幂等键不随写入时间变化', async () => {
+it('固定私密模型不可用时保留私密范围，只提示一次，不写 daily 也不发 normal', async () => {
   const t = setup({
     scenarioMode: 'adult',
     adultModel: { available: false, reason: 'not_configured' },
   });
   const first = await t.service.get(userId, characterId);
-  expect(first.scenarioMode).toBe('daily');
-  expect(t.settingWrites).toHaveLength(1);
+  expect(first.scenarioMode).toBe('adult');
+  expect(t.settingWrites).toHaveLength(0);
+  expect(t.chat.setContentScope).not.toHaveBeenCalled();
+  expect(t.digests.enqueue).not.toHaveBeenCalled();
   expect(t.posted.size).toBe(1);
+  const message = [...t.posted.values()][0]!;
+  expect(message.code).toBe('scenario_mode_unavailable');
+  expect(message.params).toMatchObject({ mode: 'adult' });
 
-  // 模拟设置行又被写成 adult（例如另一台设备），且写入时间已经变化。
-  t.row.scenarioMode = 'adult';
-  t.row.updatedAt = new Date('2026-10-25T02:13:00.000Z');
+  // 再次进入聊天仍然保留 adult；同一幂等键只产生一条可见提示，不重复发 normal。
   t.clock.advance(60_000);
   const second = await t.service.get(userId, characterId);
-  expect(second.scenarioMode).toBe('daily');
-
+  expect(second.scenarioMode).toBe('adult');
+  expect(t.settingWrites).toHaveLength(0);
+  expect(t.chat.setContentScope).not.toHaveBeenCalled();
+  expect(t.digests.enqueue).not.toHaveBeenCalled();
+  expect(t.posted.size).toBe(1);
   expect(t.attempts).toHaveLength(2);
   expect(t.attempts[0]?.idempotencyKey).toBe(t.attempts[1]?.idempotencyKey);
-  // 同一用户、同一角色、同一原因只产生一条可见提示（真实 chat 按幂等键去重）。
-  expect(t.posted.size).toBe(1);
-  expect(t.digests.enqueue).toHaveBeenCalledTimes(2);
-  const digestKeys = t.digests.enqueue.mock.calls.map((call) => call[1].eventKey);
-  expect(digestKeys[0]).toBe(digestKeys[1]);
 });

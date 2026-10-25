@@ -109,7 +109,12 @@ export class ScenarioService {
     userId: string,
     scenario: ModelScenario,
     characterId: string | null,
-  ): Promise<{ facts: ModelFacts; source: 'override' | 'user' } | null> {
+  ): Promise<{ facts: ModelFacts; source: 'override' | 'user' | 'fixed' } | null> {
+    // 3.28：私密模型由平台固定，用户/角色旧的 private 选择一律不读（唯一闸门）。
+    if (scenario === 'private') {
+      const facts = await this.catalog.fixedPrivateFacts();
+      return facts ? { facts, source: 'fixed' } : null;
+    }
     const selected = await this.selectedKey(userId, scenario, characterId);
     if (!selected) return null;
     if (scenario === 'voice_call') {
@@ -215,16 +220,21 @@ export class ScenarioService {
   async getConfig(userId: string): Promise<ScenarioConfig> {
     const raw = await this.raw(userId);
     const uses = await this.catalog.modelUses();
-    const facts = await this.catalog.facts([...raw.values()], { detail: true });
+    const fixedKey = uses.fixed?.private ?? null;
+    const keys = [...raw.values(), ...(fixedKey ? [fixedKey] : [])];
+    const facts = await this.catalog.facts(keys, { detail: true });
     const voiceCallPlan = raw.has('voice_call') ? await this.voiceCallPlan(userId, null) : null;
     return {
       scenarios: ALL_SCENARIOS.map((scenario) => {
-        const key = raw.get(scenario);
+        const isPrivate = scenario === 'private';
+        // 3.28：private 只读平台固定模型；旧用户选择不再出现（历史行仍留在库里）。
+        const key = isPrivate ? fixedKey : raw.get(scenario);
         const f = key ? facts.get(key) : undefined;
         return {
           scenario,
           selection: this.stateOf(f, scenario === 'voice_call' ? voiceCallPlan : null),
-          recommendedModelKey: uses.recommended[scenario] ?? null,
+          recommendedModelKey: isPrivate ? null : (uses.recommended[scenario] ?? null),
+          ...(isPrivate && fixedKey ? { fixedByAdmin: true } : {}),
         };
       }),
       needsSetup: !raw.has('chat'),
@@ -234,9 +244,9 @@ export class ScenarioService {
   async getCharacter(userId: string, characterId: string): Promise<CharacterScenarioConfig> {
     const overrides = await this.rawOverrides(userId, characterId);
     const raw = await this.raw(userId);
-    const facts = await this.catalog.facts([...overrides.values(), ...raw.values()], {
-      detail: true,
-    });
+    const fixedKey = (await this.catalog.modelUses()).fixed?.private ?? null;
+    const keys = [...overrides.values(), ...raw.values(), ...(fixedKey ? [fixedKey] : [])];
+    const facts = await this.catalog.facts(keys, { detail: true });
     const ownVoiceCall = overrides.has('voice_call');
     const globalVoiceCall = raw.has('voice_call');
     const ownPlan = ownVoiceCall ? await this.voiceCallPlan(userId, characterId) : null;
@@ -244,8 +254,10 @@ export class ScenarioService {
     return {
       characterId,
       scenarios: ALL_SCENARIOS.map((scenario) => {
-        const own = overrides.get(scenario);
-        const effective = own ?? raw.get(scenario);
+        const isPrivate = scenario === 'private';
+        // 3.28：private 不可按角色单独设置；selection 恒为 null，effective 是平台固定模型。
+        const own = isPrivate ? undefined : overrides.get(scenario);
+        const effective = isPrivate ? (fixedKey ?? undefined) : (own ?? raw.get(scenario));
         const ownFacts = own ? facts.get(own) : undefined;
         const effectiveFacts = effective ? facts.get(effective) : undefined;
         const effectivePlan = scenario === 'voice_call' ? (own ? ownPlan : globalPlan) : null;
@@ -278,6 +290,11 @@ export class ScenarioService {
   }
 
   async updateConfig(userId: string, refs: ScenarioRefs): Promise<ScenarioConfig> {
+    if (refs.private !== undefined)
+      throw new AppError('model_not_allowed', '私密模型由平台统一提供，不能自行选择或修改', {
+        status: 422,
+        details: { field: 'private' },
+      });
     if (refs.image_generation != null)
       throw new AppError('bad_request', '发照片模型配置已取消；角色只分享表情或公开图片', {
         status: 422,
@@ -319,6 +336,11 @@ export class ScenarioService {
     characterId: string,
     refs: ScenarioRefs,
   ): Promise<CharacterScenarioConfig> {
+    if (refs.private !== undefined)
+      throw new AppError('model_not_allowed', '私密模型由平台统一提供，不能按角色单独设置', {
+        status: 422,
+        details: { field: 'private' },
+      });
     if (refs.image_generation != null)
       throw new AppError('bad_request', '发照片模型配置已取消；角色只分享表情或公开图片', {
         status: 422,

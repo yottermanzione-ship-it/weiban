@@ -21,6 +21,7 @@ import type {
   ModelScenario,
   ModelUnavailableDetail,
   PlatformInternalUse,
+  PrivateModelInfo,
   SystemMessageMode,
   UpstreamStatus,
 } from '@weiban/contracts';
@@ -213,7 +214,11 @@ export class CatalogService {
       ...recommended
     } = parsed.data.recommended;
     const { adult_check: _adultCheck, ...internal } = parsed.data.internal;
-    return { recommended, internal };
+    return {
+      recommended,
+      internal,
+      ...(parsed.data.fixed ? { fixed: parsed.data.fixed } : {}),
+    };
   }
 
   /**
@@ -228,6 +233,7 @@ export class CatalogService {
     const next: ModelScenarioSettings = {
       recommended: { ...current.recommended },
       internal: { ...current.internal },
+      ...(current.fixed ? { fixed: { ...current.fixed } } : {}),
     };
     for (const [scenario, key] of Object.entries(input.recommended) as [
       ModelScenario,
@@ -265,6 +271,19 @@ export class CatalogService {
           });
       }
       next.internal[use] = key;
+    }
+    // 3.28：固定私密模型（用户不可选）。未传 = 保持原值；null = 管理员主动清空（不会被自动初始化复活）。
+    if (input.fixed?.private !== undefined) {
+      const key = input.fixed.private;
+      if (key !== null) {
+        const f = await this.fact(key);
+        if (!f.entry?.enabled || f.entry.deletedAt || !f.entry.scenarios.includes('private'))
+          throw new AppError('bad_request', `固定私密模型 ${key} 未启用或没有勾选用于私密模式`, {
+            status: 422,
+            details: { field: 'fixed.private' },
+          });
+      }
+      next.fixed = { private: key };
     }
     await this.database.transaction(async (tx) => {
       const now = this.clock.now();
@@ -414,6 +433,96 @@ export class CatalogService {
   private async enabledFact(key: string): Promise<ModelFacts | null> {
     const f = await this.fact(key);
     return f.entry?.enabled ? f : null;
+  }
+
+  /**
+   * 3.28：平台固定的私密模型（唯一来源 `model_uses.fixed.private`）。
+   * 配置了就有目录事实（即使当前不可用，由解析方报 model_unavailable）；未配置返回 null。
+   * 用户/角色的旧 private 选择不再参与这里。
+   */
+  async fixedPrivateFacts(): Promise<ModelFacts | null> {
+    const key = (await this.modelUses()).fixed?.private ?? null;
+    return key ? this.fact(key) : null;
+  }
+
+  /**
+   * 3.28：用户端只读的固定私密模型。倍率与用户模型目录同一套算法（后台手填优先，其次自动），
+   * 并**已乘上**进行中的限时折扣，`discountRate` 只给文案（不要再乘一次）。
+   */
+  async privateModel(): Promise<PrivateModelInfo | null> {
+    const key = (await this.modelUses()).fixed?.private ?? null;
+    if (!key) return null;
+    const facts = await this.facts([key], { detail: true });
+    const f = facts.get(key);
+    const entry = f?.entry ?? null;
+    const display = await this.display?.forModels([key]);
+    const d = display?.get(key);
+    const base =
+      d?.displayMultiplierManual ?? entry?.displayMultiplier ?? d?.displayMultiplier ?? null;
+    const discountRate = d?.discount?.rate ?? null;
+    const displayMultiplier =
+      base === null ? null : Math.round(base * (discountRate ?? 1) * 100) / 100;
+    const detail = f?.detail ?? null;
+    const available = !!entry && entry.enabled && !entry.deletedAt && detail === null;
+    return {
+      modelKey: key,
+      displayName: entry?.displayName ?? key,
+      displayMultiplier,
+      discountRate,
+      available,
+    };
+  }
+
+  /**
+   * 3.28：**一次性**初始化固定私密模型（显式操作，不自动复活）。
+   * 仅当存储的 `model_uses` 里从来没有 `fixed` 字段、且当前推荐私密模型有效时，把它复制过来；
+   * 已有 `fixed`（包括 `{ private: null }` 主动清空）一律 409。写审计。
+   */
+  async initializeFixedPrivateModel(operatorUserId: string): Promise<ModelScenarioSettings> {
+    const [row] = await this.database.db
+      .select()
+      .from(modelAccessSettings)
+      .where(eq(modelAccessSettings.key, MODEL_USES_KEY));
+    const raw: Record<string, unknown> =
+      row?.value && typeof row.value === 'object' && !Array.isArray(row.value)
+        ? (row.value as Record<string, unknown>)
+        : {};
+    if (Object.prototype.hasOwnProperty.call(raw, 'fixed'))
+      throw new AppError(
+        'conflict',
+        '固定私密模型已经初始化过（fixed:null 表示管理员主动清空，不会自动复活）',
+        { status: 409 },
+      );
+    const current = await this.modelUses();
+    const key = current.recommended.private ?? null;
+    if (!key)
+      throw new AppError(
+        'bad_request',
+        '当前没有推荐私密模型可复制，请在后台直接选择固定私密模型',
+        {
+          status: 422,
+        },
+      );
+    const f = await this.fact(key);
+    if (!f.entry?.enabled || f.entry.deletedAt || !f.entry.scenarios.includes('private'))
+      throw new AppError('bad_request', `推荐私密模型 ${key} 未启用或没有勾选用于私密模式`, {
+        status: 422,
+      });
+    const next = await this.setModelUses(operatorUserId, {
+      recommended: {},
+      internal: {},
+      fixed: { private: key },
+    });
+    await this.audit.record({
+      module: 'model_access',
+      action: 'private_model.initialized',
+      actorType: 'admin',
+      actorId: operatorUserId,
+      targetType: 'model_settings',
+      targetId: null,
+      details: { fixedPrivate: key, copiedFrom: 'recommended.private' },
+    });
+    return next;
   }
 
   // ---------- 管理后台 ----------

@@ -49,6 +49,8 @@ export * from './http/status.js';
 export * from './http/client-logs.js';
 // 3.42：设置 › 插件 › 微信 / 微博接入（外部渠道绑定与网关回调）
 export * from './http/channels.js';
+// 10-25：年度回忆（PRO+ 权益，每年 12-31 22:00 服务端生成；只读待展示端点 + 已读确认）
+export * from './http/recap.js';
 
 // WebSocket 帧
 export * from './ws.js';

@@ -5,6 +5,8 @@ export const CHAT_USER_PORT = Symbol('weiban.chat.user-port');
 export const CHAT_NOTIFICATION_READ_PORT = Symbol('weiban.chat.notification-read-port');
 export const CHAT_GROUP_READ_PORT = Symbol('weiban.chat.group-read-port');
 export const CHAT_GROUP_ADMIN_PORT = Symbol('weiban.chat.group-admin-port');
+/** 10-25：年度回忆用的只读聚合端口（只给数字/日期，不给正文）。 */
+export const CHAT_RECAP_READ_PORT = Symbol('weiban.chat.recap-read-port');
 /**
  * 群聊需要的通讯录与名字查询（T-063）。chat 与 contacts / characters 同层且被它们 import，不能反向 import，
  * 由装配入口（app.module.ts）绑定实现（同 CHARACTER_CONTACT_ACCESS 的做法），chat 以可选注入使用。

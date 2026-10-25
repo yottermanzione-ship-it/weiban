@@ -17,6 +17,7 @@ import { PostpaidSettingsService } from './postpaid-settings.js';
 import { ReservationService } from './reservations.js';
 import { applyDiscount, priceUsageCeiling } from '../domain/rules.js';
 import {
+  eligibleMembers,
   roundedSharedCharge,
   sharedSlice,
   SHARED_SEARCH_PURPOSE,
@@ -152,7 +153,7 @@ export class SharedSearchBilling implements SharedSearchBillingPort {
       [id],
     );
   }
-  async settle(id: string, usageRecordId: string) {
+  async settle(id: string, usageRecordId: string, eligibleUserIds?: readonly string[]) {
     return this.db.transaction(async (tx) => {
       const before = (
         await tx.query<Call>('SELECT * FROM billing.shared_search_calls WHERE id=$1', [id])
@@ -210,7 +211,8 @@ export class SharedSearchBilling implements SharedSearchBillingPort {
         )
       ).rows;
       const active: typeof raw = [];
-      for (const m of raw)
+      // 3.29：资格重核后的 allowed 集合；空数组时 users 为空，本次不向任何用户收款。
+      for (const m of eligibleMembers(raw, eligibleUserIds))
         if ((await this.identities.getAccountStatus(m.user_id, tx)) === 'active') active.push(m);
       const users: { account: AccountRow; ordinal: number }[] = [];
       for (const m of active)

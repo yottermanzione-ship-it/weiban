@@ -110,6 +110,7 @@ import {
 import { SupportModule } from './modules/support/index.js';
 import { ClientLogsModule } from './modules/client-logs/index.js';
 import { ChannelsModule } from './modules/channels/index.js';
+import { RecapModule } from './modules/recap/index.js';
 import {
   PlazaModule,
   PLAZA_CHARACTERS,
@@ -479,6 +480,7 @@ export class AppModule {
         SupportModule,
         ClientLogsModule,
         ChannelsModule,
+        RecapModule,
       ],
     };
   }

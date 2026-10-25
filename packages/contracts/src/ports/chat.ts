@@ -179,6 +179,62 @@ export interface ChatGroupAdminPort {
   ): Promise<void>;
 }
 
+/**
+ * 年度回忆（10-25）用的只读聚合。提供方 chat，调用方 recap。
+ *
+ * 只返回数字、日期、会话 / 角色 id：**不返回任何消息正文**，也不把 adult 内容交给调用方。
+ * 可见口径与 ChatRead 一致（只要用户此刻真的能看到那条消息）：排除系统提示、已撤回、私密范围、
+ * 本人隐藏、本人已清空、health / quirk_draft 标签；不按「归档」排除，因为归档会话用户仍能打开读。
+ */
+export interface ChatRecapWindow {
+  /** 含头不含尾（UTC ISO）。 */
+  fromIso: string;
+  toIso: string;
+}
+
+/** 夜间候选：按夜间时间轴排序，交给调用方决定「最深的一晚」。 */
+export interface ChatRecapNightCandidate {
+  /** 真实发送日期（北京日期）。 */
+  date: string;
+  /** 真实发送时刻 HH:mm（北京时间）。 */
+  time: string;
+  /** 夜间时间轴上的分钟数：22:00 = 0，23:59 = 119，次日 00:00 = 120，次日 03:15 = 315。 */
+  nightOffsetMinutes: number;
+  conversationId: string;
+  characterId: string | null;
+  /** 真实发送时刻（用于同分排序）。 */
+  atIso: string;
+}
+
+export interface ChatRecapAggregates {
+  totalMessages: number;
+  userMessages: number;
+  characterMessages: number;
+  groupMessages: number;
+  directMessages: number;
+  characterCount: number;
+  activeDays: number;
+  monthlyUserMessages: Array<{ month: number; count: number }>;
+  topCharacters: Array<{ characterId: string; userMessages: number; lastMessageAt: string }>;
+  busiestDays: Array<{ date: string; userMessages: number; totalMessages: number }>;
+  /** 夜间候选（最多 10 条，已按夜间时间轴降序）；没有夜间消息时为空数组。 */
+  nightCandidates: ChatRecapNightCandidate[];
+  nightCount: number;
+  /** 有「你」发言的北京日期（YYYY-MM-DD，升序，最多 366 个）。 */
+  activeDates: string[];
+  /** 其中从旧版迁移来的消息条数（旧站 created_at 可能是 UTC；缺真实时间的记录不能当精确日期）。 */
+  migratedMessages: number;
+}
+
+export interface ChatRecapReadPort {
+  /** 窗口内有可见消息的候选用户（按 user id 升序分页），供年度批量生成使用。 */
+  recapCandidates(
+    input: ChatRecapWindow & { afterUserId?: string; limit: number },
+  ): Promise<{ userIds: string[] }>;
+  /** 某个用户在窗口内的可见消息聚合。 */
+  recapAggregates(userId: string, window: ChatRecapWindow): Promise<ChatRecapAggregates>;
+}
+
 /** 提供方 chat；组合根把 WS 与 HTTP 连接到同一用户发送处理器。 */
 export interface ChatUserPort {
   sendMessage(

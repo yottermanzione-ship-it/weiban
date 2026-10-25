@@ -833,10 +833,44 @@ export const weiboItems = aiRuntimeSchema.table(
     content: text('content').notNull(),
     publishedOn: text('published_on').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+    /**
+     * 该帖图片素材的采集状态（0142）：null = 还没试过；fetching = 采集中；ready = 已有 media；
+     * none = 页面确实没有图；unavailable = 公开获取失败（被微博访客/反爬拦截、坏页面等，只发文字）。
+     */
+    mediaState: text('media_state'),
+    /** 上次采集时间：用于冷却，避免每次发圈都重抓同一个被拦截的页面。 */
+    mediaAttemptedAt: timestamp('media_attempted_at', { withTimezone: true, mode: 'date' }),
   },
   (t) => [
     unique('weibo_items_character_source_key').on(t.characterId, t.sourceKey),
     unique('weibo_items_character_content_key').on(t.characterId, t.contentKey),
+    check(
+      'weibo_items_media_state',
+      sql`${t.mediaState} IS NULL OR ${t.mediaState} IN ('fetching','ready','none','unavailable')`,
+    ),
+  ],
+);
+
+/**
+ * 微博条目 → 已转存的平台公共图片（0142）。owner 为空、purpose = weibo_material，
+ * 只由服务器写入；image_key 是图片地址摘要，跨条目共享同一张图、跨用户不重复下载。
+ */
+export const weiboItemMedia = aiRuntimeSchema.table(
+  'weibo_item_media',
+  {
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => weiboItems.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    imageKey: text('image_key').notNull(),
+    mediaId: uuid('media_id').notNull(),
+    sourceUrl: text('source_url').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.itemId, t.position] }),
+    unique('weibo_item_media_item_key').on(t.itemId, t.imageKey),
+    index('weibo_item_media_image_key_idx').on(t.imageKey),
   ],
 );
 export const weiboDeliveries = aiRuntimeSchema.table(
