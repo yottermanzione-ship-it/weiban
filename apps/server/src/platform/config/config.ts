@@ -15,6 +15,24 @@ const booleanFlag = z
   .optional()
   .transform((value) => value === '1' || value === 'true');
 
+/** 逗号分隔的用户 UUID 列表：去空白、转小写、去重，最多 50 个；非法 UUID 直接拒绝启动。 */
+const userIdList = z
+  .string()
+  .optional()
+  .transform((value) =>
+    String(value ?? '')
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter((item) => item.length > 0),
+  )
+  .refine(
+    (ids) =>
+      ids.every((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)),
+    '必须是逗号分隔的用户 UUID',
+  )
+  .refine((ids) => ids.length <= 50, '最多 50 个用户')
+  .transform((ids) => [...new Set(ids)]);
+
 export const EnvSchema = z.object({
   /** 可选推送凭据文件；不配置时通道明确不可用，不生成虚假生产密钥。 */
   PUSH_CREDENTIALS_FILE: z.string().min(1).optional(),
@@ -123,24 +141,36 @@ export const EnvSchema = z.object({
       (value) => value === undefined || value.startsWith('wss://'),
       '微博长连必须是 wss:// 地址',
     ),
+  /**
+   * 内测白名单（3.42，2026-10-25）：只有列在这里的用户才能发起绑定、被 worker 轮询 / 收发。
+   * 逗号分隔的用户 UUID；**空 = 谁都不行**（默认空，普通用户继续「未开放」）。
+   * 服务端在每个入口都校验（绑定、扫码状态、worker 轮询、入站投递），不是只在前端隐藏。
+   */
+  CHANNEL_WECHAT_ALLOWED_USER_IDS: userIdList,
+  CHANNEL_WEIBO_ALLOWED_USER_IDS: userIdList,
 });
+
 
 /** 开发 / 测试环境没配置平台每日上限时的取值：20 元。生产环境必须显式配置。 */
 export const DEV_PLATFORM_DAILY_CAP_MICROS = 20_000_000;
 
-/** 微信接入的服务器侧配置：只有一个开关和服务节点（bot_token 来自扫码，加密存库）。 */
+/** 微信接入的服务器侧配置：开关、服务节点与内测白名单（bot_token 来自扫码，加密存库）。 */
 export interface WechatChannelConfig {
   /** 运维显式打开后才允许用户发起绑定；默认 false。 */
   readonly enabled: boolean;
   /** iLink 服务节点，只允许官方 HTTPS 节点；默认 https://ilinkai.weixin.qq.com。 */
   readonly ilinkBaseUrl: string;
+  /** 内测白名单；空数组 = 谁都不行（普通用户继续「未开放」）。 */
+  readonly allowedUserIds: readonly string[];
 }
 
-/** 微博接入的服务器侧配置：AppID / AppSecret 由用户本人填并加密存库，这里只有开关和端点。 */
+/** 微博接入的服务器侧配置：AppID / AppSecret 由用户本人填并加密存库，这里只有开关、端点与白名单。 */
 export interface WeiboChannelConfig {
   readonly enabled: boolean;
   readonly tokenEndpoint: string | null;
   readonly wsEndpoint: string | null;
+  /** 内测白名单；空数组 = 谁都不行。 */
+  readonly allowedUserIds: readonly string[];
 }
 
 export interface AppConfig {
@@ -268,11 +298,13 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       wechat: {
         enabled: e.CHANNEL_WECHAT_ENABLED,
         ilinkBaseUrl: e.CHANNEL_WECHAT_ILINK_BASE_URL ?? 'https://ilinkai.weixin.qq.com',
+        allowedUserIds: e.CHANNEL_WECHAT_ALLOWED_USER_IDS ?? [],
       },
       weibo: {
         enabled: e.CHANNEL_WEIBO_ENABLED,
         tokenEndpoint: e.CHANNEL_WEIBO_TOKEN_ENDPOINT ?? null,
         wsEndpoint: e.CHANNEL_WEIBO_WS_ENDPOINT ?? null,
+        allowedUserIds: e.CHANNEL_WEIBO_ALLOWED_USER_IDS ?? [],
       },
     },
     billing: {

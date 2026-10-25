@@ -27,7 +27,7 @@ import {
 } from '../../../platform/index.js';
 import { IDENTITY_MEMBERSHIP_READ_PORT } from '../../identity/index.js';
 import { ChannelBridge } from './channel-bridge.js';
-import { channelRuntimeConfig } from './channel-config.js';
+import { channelRuntimeConfig, isChannelUserAllowed } from './channel-config.js';
 import { ChannelStore, type BindingRow } from './channel-store.js';
 import { ChannelsService } from './channels.service.js';
 import {
@@ -113,6 +113,8 @@ export class WechatRuntime implements OnApplicationShutdown {
     }
     const alive = new Set<string>();
     for (const binding of rows) {
+      // 内测白名单：不在名单里的（含以前绑过、现在被撤下白名单的）一律不轮询。
+      if (!isChannelUserAllowed(this.config, 'wechat', binding.user_id)) continue;
       if (!binding.bot_token_sealed) continue;
       alive.add(binding.id);
       if (!this.loops.has(binding.id)) this.startLoop(binding.id, binding.generation);
@@ -152,6 +154,11 @@ export class WechatRuntime implements OnApplicationShutdown {
       if (!binding || binding.status !== 'active' || binding.generation !== generation) return;
       const cfg = channelRuntimeConfig(this.config, 'wechat');
       if (cfg.integration !== 'live') return;
+      // 每轮都复核白名单：运行中撤下白名单，下一轮就停（不等到进程重启）。
+      if (!isChannelUserAllowed(this.config, 'wechat', binding.user_id)) {
+        await this.store.touchPollError(bindingId, '内测白名单已关闭，暂停接收微信消息', this.clock.now());
+        return;
+      }
       // 会员到期就停轮询（页面仍可解绑）；恢复后下一轮 reconcile 会重新起循环。
       if (!(await this.membership.isProPlus(binding.user_id))) {
         await this.store.touchPollError(

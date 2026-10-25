@@ -22,7 +22,7 @@ import {
   type Logger,
 } from '../../../platform/index.js';
 import { ChannelBridge } from './channel-bridge.js';
-import { channelRuntimeConfig } from './channel-config.js';
+import { channelRuntimeConfig, isChannelUserAllowed } from './channel-config.js';
 import { ChannelStore, type BindingRow } from './channel-store.js';
 import { ChannelsService } from './channels.service.js';
 import {
@@ -67,6 +67,7 @@ export class WeiboRuntime implements OnApplicationShutdown {
     const rows = await this.store.activeBindings('weibo', 200).catch(() => [] as BindingRow[]);
     const alive = new Set<string>();
     for (const binding of rows) {
+      if (!isChannelUserAllowed(this.config, 'weibo', binding.user_id)) continue;
       if (!binding.weibo_app_id_sealed || !binding.weibo_app_secret_sealed) continue;
       alive.add(binding.id);
       if (!this.connections.has(binding.id)) this.connect(binding);
@@ -105,6 +106,10 @@ export class WeiboRuntime implements OnApplicationShutdown {
     if (connection.stop || this.stopping) return;
     const cfg = channelRuntimeConfig(this.config, 'weibo');
     if (cfg.integration !== 'live') return;
+    if (!isChannelUserAllowed(this.config, 'weibo', connection.binding.user_id)) {
+      connection.stop = true;
+      return;
+    }
     let credentials: { appId: string; appSecret: string };
     try {
       credentials = await this.channels.weiboSecret(connection.binding);
