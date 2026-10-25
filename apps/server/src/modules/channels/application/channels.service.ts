@@ -101,8 +101,9 @@ export class ChannelsService {
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
   ) {}
 
-  private runtime(channel: ChannelId): ChannelRuntimeConfig {
-    return channelRuntimeConfig(this.config, channel);
+  /** 传 userId 时按「这个用户」判定（内测白名单）；worker 侧的判定用 isChannelUserAllowed。 */
+  private runtime(channel: ChannelId, userId?: string): ChannelRuntimeConfig {
+    return channelRuntimeConfig(this.config, channel, userId);
   }
 
   /** 依赖没配 / 没开通时一律 422，绝不冒称可用。 */
@@ -146,7 +147,7 @@ export class ChannelsService {
     for (const channel of CHANNEL_ORDER) {
       const binding = byChannel.get(channel) ?? null;
       const attempt = channel === 'wechat' ? await this.pendingAttempt(userId, channel, now) : null;
-      items.push(this.toState(channel, binding, attempt));
+      items.push(this.toState(channel, binding, attempt, userId));
     }
     return { items, characters };
   }
@@ -156,7 +157,7 @@ export class ChannelsService {
       this.store.bindingOf(userId, channel),
       channel === 'wechat' ? this.pendingAttempt(userId, channel, this.clock.now()) : null,
     ]);
-    return this.toState(channel, binding, attempt);
+    return this.toState(channel, binding, attempt, userId);
   }
 
   private async pendingAttempt(
@@ -176,8 +177,9 @@ export class ChannelsService {
     channel: ChannelId,
     binding: BindingRow | null,
     attempt: AttemptRow | null,
+    userId: string,
   ): ChannelState {
-    const cfg = this.runtime(channel);
+    const cfg = this.runtime(channel, userId);
     const active = binding?.status === 'active';
     const pending = !active && Boolean(attempt);
     const status: ChannelState['status'] = active
@@ -252,7 +254,7 @@ export class ChannelsService {
   // ---------- 微信：扫码绑定 ----------
 
   async wechatQr(userId: string, characterId: string): Promise<WechatQrAttempt> {
-    const cfg = this.runtime('wechat');
+    const cfg = this.runtime('wechat', userId);
     this.assertLive(cfg);
     await assertChannelProPlus(this.membership, userId, 'new_qr');
     const character = await this.resolveCharacter(userId, characterId);
@@ -320,7 +322,7 @@ export class ChannelsService {
   }
 
   private async pollWechatQr(userId: string, attempt: AttemptRow): Promise<WechatQrAttempt> {
-    const cfg = this.runtime('wechat');
+    const cfg = this.runtime('wechat', userId);
     this.assertLive(cfg);
     await assertChannelProPlus(this.membership, userId, 'new_qr');
     const now = this.clock.now();
@@ -419,7 +421,7 @@ export class ChannelsService {
       return this.attemptPayload(
         { ...attempt, status: 'confirmed' },
         'confirmed',
-        this.toState('wechat', binding, null),
+        this.toState('wechat', binding, null, userId),
       );
     }
     if (upstream.confirmed || status === 'confirmed') {
@@ -466,7 +468,7 @@ export class ChannelsService {
     channel: ChannelId,
     characterId: string,
   ): Promise<ChannelState> {
-    const cfg = this.runtime(channel);
+    const cfg = this.runtime(channel, userId);
     this.assertLive(cfg);
     await assertChannelProPlus(this.membership, userId, 'switch_character');
     const binding = await this.store.bindingOf(userId, channel);
@@ -487,7 +489,7 @@ export class ChannelsService {
   }
 
   async weiboConnect(userId: string, input: WeiboConnectRequest): Promise<ChannelState> {
-    const cfg = this.runtime('weibo');
+    const cfg = this.runtime('weibo', userId);
     this.assertLive(cfg);
     await assertChannelProPlus(this.membership, userId, 'bind');
     const character = await this.resolveCharacter(userId, input.characterId);
@@ -543,7 +545,7 @@ export class ChannelsService {
       });
     });
     await this.safeSend(CHANNELS_RECONCILE_JOB, { reason: 'bind' });
-    return this.toState('weibo', binding, null);
+    return this.toState('weibo', binding, null, userId);
   }
 
   /** 解绑：幂等；清空凭据与账号，停掉后台任务。**不需要 PRO+**（会员到期也必须能解绑）。 */

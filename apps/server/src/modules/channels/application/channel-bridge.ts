@@ -20,9 +20,11 @@ import {
   type IdentityMembershipReadPort,
 } from '@weiban/contracts';
 import {
+  APP_CONFIG,
   CLOCK,
   ENVELOPE_CRYPTO,
   LOGGER,
+  type AppConfig,
   type Clock,
   type DbTx,
   type EnvelopeCrypto,
@@ -31,6 +33,7 @@ import {
 import { CHAT_READ_PORT, CHAT_USER_PORT } from '../../chat/index.js';
 import { IDENTITY_MEMBERSHIP_READ_PORT } from '../../identity/index.js';
 import { ChannelStore, type BindingRow } from './channel-store.js';
+import { channelRuntimeConfig } from './channel-config.js';
 import { isOwnPeer } from '../domain/peer.js';
 
 export interface InboundInput {
@@ -53,6 +56,7 @@ export class ChannelBridge {
     @Inject(IDENTITY_MEMBERSHIP_READ_PORT) private readonly membership: IdentityMembershipReadPort,
     @Inject(CHAT_READ_PORT) private readonly chatRead: ChatReadPort,
     @Inject(CHAT_USER_PORT) private readonly chatUser: ChatUserPort,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   /**
@@ -61,6 +65,11 @@ export class ChannelBridge {
    */
   async ingest(binding: BindingRow, input: InboundInput): Promise<IngestOutcome> {
     if (binding.status !== 'active') return 'rejected';
+    // 纵深防御：即使库里还留着绑定行，只要这个渠道对**这个用户**不是 live（开关关了、被撤下白名单、
+    // 或微博本来就没开放），就既不进聊天也不计费。
+    if (channelRuntimeConfig(this.config, binding.channel, binding.user_id).integration !== 'live') {
+      return 'rejected';
+    }
     if (!input.externalId) return 'rejected';
     const text = String(input.text ?? '')
       .trim()

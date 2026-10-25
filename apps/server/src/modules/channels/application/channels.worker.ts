@@ -133,7 +133,8 @@ export class ChannelsWorker implements OnModuleInit, UserDataOwner {
   }
 
   private async deliverOne(row: OutboundRow): Promise<void> {
-    const cfg = channelRuntimeConfig(this.config, row.channel);
+    // 出站也按「这个用户」判定：被撤下白名单、或渠道被关掉时，排队中的回复一律不发。
+    const cfg = channelRuntimeConfig(this.config, row.channel, row.user_id);
     if (cfg.integration !== 'live') {
       await this.store.finishOutbound(row.id, {
         status: 'skipped',
