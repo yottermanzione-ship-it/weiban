@@ -34,3 +34,4 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 import './app/common-fixes.css';
 import './app/edit-pages.css';
 import './app/ui-components.css';
+import './app/persona-card.css';

@@ -13,6 +13,8 @@ import { AlertDialog, Dialog, showSnackbar, showToast } from './toast.js';
 import { CountTextarea, SubPageLayer } from './edit-page.js';
 import { NavBar } from './shell-kit.js';
 import { SupplementSourceNote, VariantPublishLink } from './plaza.js';
+import { useCharacterPersona } from './character-persona.js';
+import { PersonaCard, personaHasBody } from './persona-card.js';
 
 /*
  * 我的补充设定（CHR-09，import.md 第 3 节）。契约里补充设定是一段文字，这里按行拆成「一条一条」显示和编辑。
@@ -45,6 +47,7 @@ export function SupplementPage() {
       setRevision((value) => value + 1);
   });
   const custom = profile.data?.kind === 'custom';
+  const original = useCharacterPersona(characterId);
   useEffect(() => {
     let active = true;
     void api
@@ -156,6 +159,13 @@ export function SupplementPage() {
         {!custom && <button onClick={() => setEditing({ index: -1, text: '' })}>手写一条</button>}
       </div>
       {!custom && lines.length > 0 && <VariantPublishLink characterId={characterId} />}
+      {/* U4：对照原卡——同一张人设卡，不带头部 */}
+      {!custom && original.source && personaHasBody(original.source) && (
+        <>
+          <h2 className="section-label">TA 的原设定</h2>
+          <PersonaCard source={original.source} hideHead />
+        </>
+      )}
       {!custom && lines.length > 0 && (
         <button className="danger danger-row" onClick={() => setConfirmClear(true)}>
           删除全部补充设定

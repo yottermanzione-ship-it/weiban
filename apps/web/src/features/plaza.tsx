@@ -12,6 +12,7 @@ import {
   PLAZA_COMMENT_MAX_CHARS,
   PlazaEndpoints,
   UserCustomEndpoints,
+  VoiceEndpoints,
   type PlazaAuthor,
   type PlazaComment,
   type PlazaNotice,
@@ -21,7 +22,14 @@ import {
   type PlazaWorkDetail,
   type PrivacyKind,
 } from '@weiban/contracts';
-import { ApiFailure, avatarLetters, avatarPaletteIndex } from '@weiban/client-core';
+import {
+  ApiFailure,
+  avatarLetters,
+  avatarPaletteIndex,
+  basisWord,
+  personaValue,
+} from '@weiban/client-core';
+import { PersonaCard, VoiceSampleButton } from './persona-card.js';
 import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
@@ -181,7 +189,7 @@ function KindTag({ work, highlight = false }: { work: PlazaWorkCard; highlight?:
         预设改版 · 基于 {work.basedOnPresetName ?? '预设角色'}
       </span>
     );
-  return <span className="tag neutral">{basisNames[work.basis ?? ''] ?? '自定义'}</span>;
+  return <span className="tag neutral">{basisWord(work.basis) || '自定义'}</span>;
 }
 function PageHeader({ title, right }: { title: ReactNode; right?: ReactNode }) {
   const navigate = useNavigate();
@@ -458,25 +466,55 @@ function WorkList({
   );
 }
 
+/**
+ * U4 广场列表卡片（26 号 §3.2）：头像、名字、一句话简介、2–3 个标签、热度；不放长描述。
+ * 作品列表接口不带角色标签（契约 PlazaWorkCard 无 tags），标签位先放类型词（原创 / 作品角色 / 预设改版）。
+ */
 function WorkRow({ work, search }: { work: PlazaWorkCard; search?: string }) {
   const hit = !!search && !!work.basedOnPresetName?.includes(search);
   return (
-    <Link to={`/plaza/works/${work.workId}`} className="work-row">
-      <WorkAvatar work={work} />
-      <span className="work-row-main">
-        <span className="work-row-title">
-          <span className="clamp-2">{work.name}</span>
+    <Link to={`/plaza/works/${work.workId}`} className="plaza-card">
+      <WorkAvatar work={work} size={52} />
+      <span className="plaza-card-main">
+        <span className="plaza-card-name">{work.name}</span>
+        {work.tagline && <small className="plaza-card-tagline">{work.tagline}</small>}
+        <span className="plaza-card-tags">
           <KindTag work={work} highlight={hit} />
-        </span>
-        <small className="hint">{work.tagline}</small>
-        <span className="work-row-meta">
-          {authorName(work.author)}
-          {work.adoptCount > 0 ? ` · 添加 ${work.adoptCount}` : ''}
-          {work.likeCount > 0 ? ` · 赞 ${work.likeCount}` : ''}
+          <span className="plaza-card-author">{authorName(work.author)}</span>
         </span>
       </span>
-      <span className="work-row-side">{work.adoptedByMe ? '已添加' : ''}</span>
+      <PlazaHeat
+        label="人添加"
+        count={work.adoptCount}
+        note={work.adoptedByMe ? '已添加' : undefined}
+      />
     </Link>
+  );
+}
+
+/** 列表卡片右侧的热度：数字 + 单位，为 0 时不显示数字。 */
+export function PlazaHeat({
+  count,
+  label,
+  icon,
+  note,
+}: {
+  count: number;
+  label?: string;
+  icon?: ReactNode;
+  note?: string;
+}) {
+  return (
+    <span className="plaza-card-side">
+      {count > 0 && (
+        <span className="plaza-heat">
+          {icon}
+          <b>{count}</b>
+          {label}
+        </span>
+      )}
+      {note && <small>{note}</small>}
+    </span>
   );
 }
 
@@ -593,6 +631,7 @@ export function WorkPage() {
   const [pending, setPending] = useState(false);
   const [adoptedCharacter, setAdoptedCharacter] = useState<string | null>(null);
   const { state: chat, synchronize } = useChat();
+  const voices = useRemote(VoiceEndpoints.listVoices, { networkOnly: true });
   useEffect(() => {
     let active = true;
     setState((s) => (s === 'ready' ? s : 'loading'));
@@ -753,8 +792,14 @@ export function WorkPage() {
   }
 
   const removedByAdmin = w.status === 'removed_by_admin';
+  const voiceName = w.snapshot.kind === 'custom_character' ? w.snapshot.voiceName : null;
+  const adoptedId = adoptedCharacter ?? w.myAdoptedCharacterId ?? null;
+  const adoptedContact = adoptedId ? chat.contacts.find((c) => c.characterId === adoptedId) : null;
+  const voiceSample = voiceName
+    ? voices.data?.items.find((v) => v.enabled && v.name === voiceName)?.sampleUrl
+    : null;
   return (
-    <main>
+    <main className="work-page">
       <PageHeader
         title=""
         right={
@@ -763,102 +808,127 @@ export function WorkPage() {
           </button>
         }
       />
-      <div className="work-header">
-        <WorkAvatar work={w} size={64} />
-        <h2>{w.name}</h2>
-        <KindTag work={w} />
-        <p>{w.tagline}</p>
-        {w.remixOf && (
-          <small className="hint">
-            改编自《
-            {w.remixOf.available ? (
-              <Link to={`/plaza/works/${w.remixOf.workId}`}>{w.remixOf.name}</Link>
-            ) : (
-              w.remixOf.name
-            )}
-            》· 原作者 {w.remixOf.authorNickname}
-          </small>
-        )}
-        {w.author.deleted ? (
-          <span>已注销用户</span>
-        ) : (
-          <Link to={`/plaza/authors/${w.author.authorId}`} className="role-row">
-            <PlazaAvatar
-              id={w.author.authorId}
-              name={w.author.nickname}
-              url={w.author.avatarUrl}
-              size={24}
-            />
-            {w.author.nickname} ›
-          </Link>
-        )}
-        <button className="text-button" onClick={() => setSheet('versions')}>
-          版本 {w.currentVersion} · {dateText(latest.createdAt)}更新
-        </button>
-        {w.isMine && w.status !== 'listed' && (
-          <span className="tag danger">
-            {removedByAdmin ? '被管理员下架' : w.status === 'author_banned' ? '暂不展示' : '已下架'}
-          </span>
-        )}
-      </div>
-      {w.settings.publishNote && (
-        <>
-          <h2 className="section-label">发布说明</h2>
-          <p className="panel">{w.settings.publishNote}</p>
-        </>
-      )}
-      <h2 className="section-label">你将得到的内容</h2>
-      <ContentPreview
-        snapshot={w.snapshot}
-        renderText={(_, text) => <MaskedPublic text={text} />}
-      />
-      <p className="hint">ⓘ 只复制上面这些内容；作者的聊天记录、记忆和个人资料不会出现在广场上</p>
-      <Comments work={w} onCount={(n) => setWork((p) => (p ? { ...p, commentCount: n } : p))} />
-      <div className="work-action-bar">
-        <button
-          className="like-button"
-          aria-pressed={w.likedByMe}
-          aria-label={w.likedByMe ? '取消点赞' : '点赞'}
-          onClick={() => void toggleLike()}
-        >
-          <Heart size={20} weight={w.likedByMe ? 'fill' : 'regular'} /> {w.likeCount}
-        </button>
-        <span className="like-button">
-          <ChatCircle size={20} /> {w.commentCount}
-        </span>
-        <span className="grow" />
-        {!w.isMine && w.kind === 'custom_character' && w.myAdoptedCharacterId && (
-          <AdoptedUpdateButton characterId={w.myAdoptedCharacterId} workId={workId} />
-        )}
-        {w.isMine ? (
-          <button disabled={pending} onClick={() => setSheet('menu')}>
-            管理
-          </button>
-        ) : (adoptedCharacter ?? w.myAdoptedCharacterId) ? (
-          <Link className="plain" to={`/characters/${adoptedCharacter ?? w.myAdoptedCharacterId}`}>
-            已添加 · 去聊天
-          </Link>
-        ) : (
+      {/* U4：作品详情改用人设卡（26 号 §3.2 / §4）；管理收进右上「…」，点赞评论放标题区右侧 */}
+      <PersonaCard
+        source={{ kind: 'plaza', data: { work: w } }}
+        avatar={<WorkAvatar work={w} size={64} />}
+        renderText={(text) => <MaskedPublic text={text} />}
+        headAside={
           <>
             <button
-              className={w.kind === 'preset_variant' ? '' : 'primary'}
+              type="button"
+              className={`persona-count${w.likedByMe ? ' on' : ''}`}
+              aria-pressed={w.likedByMe}
+              aria-label={w.likedByMe ? `取消点赞，${w.likeCount} 个赞` : `点赞，${w.likeCount} 个赞`}
+              onClick={() => void toggleLike()}
+            >
+              <Heart size={20} weight={w.likedByMe ? 'fill' : 'regular'} />
+              {w.likeCount}
+            </button>
+            <a className="persona-count" href="#work-comments" aria-label={`${w.commentCount} 条评论`}>
+              <ChatCircle size={20} />
+              {w.commentCount}
+            </a>
+          </>
+        }
+        headExtra={
+          <>
+            {w.author.deleted ? (
+              <span>已注销用户</span>
+            ) : (
+              <Link to={`/plaza/authors/${w.author.authorId}`} className="persona-author">
+                <PlazaAvatar
+                  id={w.author.authorId}
+                  name={w.author.nickname}
+                  url={w.author.avatarUrl}
+                  size={20}
+                />
+                {w.author.nickname}
+              </Link>
+            )}
+            <button type="button" className="persona-version" onClick={() => setSheet('versions')}>
+              版本 {w.currentVersion} · {dateText(latest.createdAt)}更新
+            </button>
+            {w.isMine && w.status !== 'listed' && (
+              <span className="tag danger">
+                {removedByAdmin ? '被管理员下架' : w.status === 'author_banned' ? '暂不展示' : '已下架'}
+              </span>
+            )}
+          </>
+        }
+        intro={
+          w.settings.publishNote ? (
+            <section className="persona-section" aria-label="作者说明">
+              <h3 className="persona-section-title">作者说明</h3>
+              <p className="persona-text">{w.settings.publishNote}</p>
+            </section>
+          ) : undefined
+        }
+        asides={{ voice: <VoiceSampleButton url={voiceSample} name="音色" /> }}
+        renders={{
+          source: (value) =>
+            w.snapshot.kind === 'preset_variant' ? (
+              <Link to={`/characters/${w.snapshot.presetCharacterId}`}>{personaValue.text(value)}</Link>
+            ) : w.remixOf?.available ? (
+              <Link to={`/plaza/works/${w.remixOf.workId}`}>{personaValue.text(value)}</Link>
+            ) : (
+              personaValue.text(value)
+            ),
+        }}
+      />
+      <p className="hint page-note">
+        {w.snapshot.kind === 'custom_character' && '添加后分类与原作品相同，之后只能改得更严格。'}
+        只复制上面这些内容；作者的聊天记录、记忆和个人资料不会出现在广场上
+      </p>
+      <div id="work-comments">
+        <Comments work={w} onCount={(n) => setWork((p) => (p ? { ...p, commentCount: n } : p))} />
+      </div>
+      {!w.isMine && (
+        <div className="work-action-bar persona-action-bar">
+          {w.kind === 'custom_character' && w.myAdoptedCharacterId && (
+            <AdoptedUpdateButton characterId={w.myAdoptedCharacterId} workId={workId} />
+          )}
+          {adoptedId ? (
+            <Link
+              className="button primary"
+              to={
+                adoptedContact?.conversationId
+                  ? `/chat/${adoptedContact.conversationId}`
+                  : `/characters/${adoptedId}`
+              }
+            >
+              {adoptedContact?.conversationId ? '发消息' : '已添加 · 等待通过'}
+            </Link>
+          ) : w.kind === 'preset_variant' ? (
+            <>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => (w.adoptedByMe ? setDialog('adopted') : void adopt())}
+              >
+                添加为新角色
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={pending}
+                onClick={() => void apply(false)}
+              >
+                {presetContact ? `应用到我的 ${presetName}` : `添加 ${presetName} 并应用`}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="primary"
               disabled={pending}
               onClick={() => (w.adoptedByMe ? setDialog('adopted') : void adopt())}
             >
-              {pending
-                ? '正在添加…'
-                : w.kind === 'preset_variant'
-                  ? '添加为新角色'
-                  : '添加为我的角色'}
+              {pending ? '正在添加…' : '添加到通讯录'}
             </button>
-            {w.kind === 'preset_variant' && (
-              <button className="primary" disabled={pending} onClick={() => void apply(false)}>
-                {presetContact ? `应用到我的 ${presetName}` : `添加 ${presetName} 并应用`}
-              </button>
-            )}
-          </>
-        )}
-      </div>
+          )}
+        </div>
+      )}
       {sheet === 'versions' && (
         <Sheet title="版本记录" onClose={() => setSheet(null)}>
           <div className="stack">

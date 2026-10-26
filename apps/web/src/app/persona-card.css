@@ -1,0 +1,450 @@
+/*
+ * 批 U4：人设卡（features/persona-card.tsx）、广场作品详情 / 微伴角色详情底栏、广场列表卡片。
+ * 全部引用令牌；板块之间 8px 灰色分组间隔（--wb-size-group-gap），板块内无边框。
+ */
+
+/* ---------- 人设卡 ---------- */
+.persona-card {
+  display: grid;
+  gap: var(--wb-size-group-gap);
+  margin: 0 calc(-1 * var(--wb-space-5)) var(--wb-size-group-gap);
+}
+.persona-head,
+.persona-section {
+  padding: var(--wb-space-5);
+  background: var(--wb-color-bg-surface);
+}
+.persona-head {
+  display: grid;
+  gap: var(--wb-space-4);
+}
+.persona-head-main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wb-space-4);
+  min-width: 0;
+}
+.persona-head-main > :first-child {
+  flex: none;
+}
+.persona-head-text {
+  display: grid;
+  flex: 1;
+  gap: var(--wb-space-1);
+  min-width: 0;
+  padding-top: 2px;
+}
+.persona-name {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--wb-font-size-title3);
+  font-weight: var(--wb-font-weight-semibold);
+  line-height: var(--wb-line-height-tight);
+}
+.persona-identity,
+.persona-line {
+  margin: 0;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-subhead);
+  line-height: var(--wb-line-height-normal);
+}
+.persona-line {
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-callout);
+}
+.persona-head-aside {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--wb-space-1);
+  margin-right: calc(-1 * var(--wb-space-2));
+}
+.persona-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 36px;
+  padding: 0 var(--wb-space-2);
+  border: 0;
+  border-radius: var(--wb-radius-md);
+  background: none;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-subhead);
+  font-variant-numeric: tabular-nums;
+}
+.persona-count:active {
+  background: var(--ui-fill-1);
+}
+.persona-count.on {
+  color: var(--wb-color-text-danger);
+}
+.persona-count.on svg,
+.persona-count.on img {
+  animation: plaza-pop var(--wb-motion-duration-base) var(--wb-motion-easing-spring);
+}
+.persona-head-extra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wb-space-2) var(--wb-space-4);
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+}
+.persona-author {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wb-space-2);
+  color: var(--wb-color-text-secondary);
+}
+.persona-version {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+}
+
+/* 标签：浅灰底小圆角，不加边框 */
+.persona-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wb-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.persona-tags li {
+  padding: 2px var(--wb-space-3);
+  border-radius: var(--wb-radius-xs);
+  background: var(--ui-fill-1);
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+  line-height: 20px;
+}
+
+/* 板块 */
+.persona-section {
+  display: grid;
+  gap: var(--wb-space-4);
+}
+.persona-section-title {
+  margin: 0;
+  font-size: var(--wb-font-size-body);
+  font-weight: var(--wb-font-weight-semibold);
+}
+.persona-sub {
+  display: grid;
+  gap: var(--wb-space-2);
+  min-width: 0;
+}
+.persona-sub-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-subhead);
+  font-weight: var(--wb-font-weight-regular);
+}
+
+/* 正文：超过 5 行折叠 */
+.persona-text {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: var(--wb-font-size-callout);
+  line-height: 1.6;
+}
+.persona-text.folded {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
+}
+.persona-more {
+  justify-self: start;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-text-action);
+  font-size: var(--wb-font-size-subhead);
+}
+
+/* 口头禅：浅色引用块，每条一行 */
+.persona-quotes {
+  display: grid;
+  gap: var(--wb-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.persona-quotes li {
+  padding: var(--wb-space-2) var(--wb-space-3);
+  border-left: 3px solid var(--ui-fill-2);
+  border-radius: 0 var(--wb-radius-xs) var(--wb-radius-xs) 0;
+  background: var(--ui-fill-1);
+  overflow-wrap: anywhere;
+  font-size: var(--wb-font-size-callout);
+}
+
+/* 示例对话：迷你聊天气泡，左 TA 右我 */
+.persona-bubbles {
+  display: grid;
+  gap: var(--wb-space-3);
+  margin: 0;
+  padding: var(--wb-space-4) var(--wb-space-3);
+  border-radius: var(--wb-radius-md);
+  background: var(--wb-color-bg-page);
+  list-style: none;
+}
+.persona-bubbles li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wb-space-2);
+}
+.persona-bubbles li.me {
+  flex-direction: row-reverse;
+}
+.persona-bubble-who {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--wb-radius-xs);
+  background: var(--ui-fill-2);
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-caption1);
+}
+.persona-bubbles li.me .persona-bubble-who {
+  background: var(--wb-color-brand-primary);
+  color: var(--ui-text-on-color);
+}
+.persona-bubble {
+  max-width: 76%;
+  padding: 7px var(--wb-space-3);
+  border-radius: var(--wb-radius-bubble);
+  background: var(--wb-color-bubble-other-bg);
+  color: var(--wb-color-bubble-other-text);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: var(--wb-font-size-callout);
+  line-height: 1.45;
+}
+.persona-bubbles li.me .persona-bubble {
+  background: var(--wb-color-bubble-self-bg);
+  color: var(--wb-color-bubble-self-text);
+}
+
+/* 键值小行：灰字标题 + 值 */
+.persona-pairs {
+  display: grid;
+  gap: var(--wb-space-3);
+  margin: 0;
+}
+.persona-pair {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-space-4);
+  min-height: 24px;
+  font-size: var(--wb-font-size-callout);
+}
+.persona-pair dt {
+  flex: none;
+  width: 4.5em;
+  color: var(--wb-color-text-secondary);
+}
+.persona-pair dd {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.persona-pair dd a {
+  color: var(--wb-color-text-link);
+}
+.persona-voice {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  min-height: 28px;
+  padding: 0 var(--wb-space-3);
+  border: 0;
+  border-radius: var(--wb-radius-full);
+  background: var(--ui-fill-1);
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-footnote);
+}
+.persona-voice.playing {
+  color: var(--ui-text-action);
+}
+
+/* 折叠条目：标题一行，点开看内容 */
+.persona-entries details + details {
+  border-top: 0.5px solid var(--wb-color-border-hairline);
+}
+.persona-entries summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--wb-font-size-callout);
+}
+.persona-entries summary::-webkit-details-marker {
+  display: none;
+}
+.persona-entries summary img,
+.persona-entries summary svg {
+  opacity: 0.5;
+  transition: transform var(--ui-motion-dialog) var(--ui-ease-out);
+}
+.persona-entries details[open] summary img,
+.persona-entries details[open] summary svg {
+  transform: rotate(90deg);
+}
+.persona-entries p {
+  margin: 0 0 var(--wb-space-4);
+  color: var(--wb-color-text-secondary);
+  white-space: pre-wrap;
+  font-size: var(--wb-font-size-subhead);
+  line-height: 1.6;
+}
+
+/* 头像横滑：认识的角色 */
+.persona-people {
+  display: flex;
+  gap: var(--wb-space-4);
+  margin: 0 calc(-1 * var(--wb-space-5));
+  padding: 0 var(--wb-space-5);
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: none;
+}
+.persona-people li {
+  display: grid;
+  flex: none;
+  justify-items: center;
+  gap: 2px;
+  width: 64px;
+  text-align: center;
+  font-size: var(--wb-font-size-caption1);
+}
+.persona-people small {
+  color: var(--wb-color-text-secondary);
+}
+
+/* ---------- 广场作品详情 / 微伴角色详情：底部通栏主按钮 ---------- */
+.persona-action-bar {
+  margin: 0 calc(-1 * var(--wb-space-5)) calc(-1 * var(--wb-space-5));
+  padding: var(--wb-space-3) var(--wb-space-5) calc(var(--wb-space-3) + env(safe-area-inset-bottom));
+  border-top: 0;
+  background: var(--wb-color-bg-surface);
+  box-shadow: 0 -0.5px 0 var(--wb-color-border-hairline);
+}
+.persona-action-bar > button,
+.persona-action-bar > a {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--wb-radius-md);
+  font-size: var(--wb-font-size-body);
+}
+.persona-action-bar > button:not(.primary) {
+  flex: 0 1 auto;
+  background: var(--ui-fill-1);
+  color: var(--ui-button-default-text);
+}
+.persona-action-bar > button.primary:disabled {
+  opacity: 1;
+  background: var(--ui-button-disabled-bg);
+  color: var(--ui-button-disabled-text);
+}
+.work-page .page-note,
+.persona-page .page-note {
+  margin: 0 0 var(--wb-space-4);
+}
+
+/* ---------- 广场列表卡片：头像、名字、一句话简介、标签、热度 ---------- */
+.plaza-card {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-space-4);
+  height: 88px;
+  padding: 0 var(--wb-space-5);
+  background: var(--wb-color-bg-surface);
+  color: var(--wb-color-text-primary);
+  box-shadow: inset 0 -0.5px 0 var(--wb-color-border-hairline);
+}
+.plaza-card:active {
+  background: var(--wb-color-bg-pressed);
+}
+.plaza-card > :first-child {
+  flex: none;
+}
+.plaza-card-main {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+}
+.plaza-card-main > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plaza-card-name {
+  font-size: var(--wb-font-size-body);
+}
+.plaza-card-tagline {
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-subhead);
+}
+.plaza-card-tags {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-space-2);
+}
+.plaza-card-tags .tag {
+  flex: none;
+  padding: 0 var(--wb-space-2);
+  border: 0;
+  border-radius: var(--wb-radius-xs);
+  font-size: var(--wb-font-size-caption1);
+  line-height: 18px;
+}
+.plaza-card-tags .tag.neutral {
+  background: var(--ui-fill-1);
+}
+.plaza-card-author {
+  overflow: hidden;
+  color: var(--wb-color-text-placeholder);
+  text-overflow: ellipsis;
+  font-size: var(--wb-font-size-caption1);
+}
+.plaza-card-side {
+  display: grid;
+  flex: none;
+  justify-items: end;
+  gap: var(--wb-space-1);
+  color: var(--wb-color-text-placeholder);
+  font-size: var(--wb-font-size-caption1);
+}
+.plaza-heat {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.plaza-heat b {
+  color: var(--wb-color-text-secondary);
+  font-weight: var(--wb-font-weight-regular);
+  font-variant-numeric: tabular-nums;
+}
