@@ -4,7 +4,9 @@
 >
 > **文件和行号**：表内“源码”链接固定到上述提交，点开可看完整仓库路径及对应代码，后续main变化不会让行号漂移。`apps/server`是服务端，`apps/web`是用户网页，`apps/admin`是后台，`packages/contracts`是接口入参/返回值校验。
 
-**范围：121项，覆盖75个源文件、211处精确行号链接。** 资格/私聊→群聊/朋友圈/生态→媒体通话→成长玩法→费用→微博/记忆→创建导入/公开共享；每项区分触发、效果、约束层和入口，后附完整源码路径索引。明确标成默认值的数字以后台实际配置为准，本文不假装重新读取了所有生产配置。
+**范围：122项，覆盖76个源文件、212处精确行号链接。** 资格/私聊→群聊/朋友圈/生态→媒体通话→成长玩法→费用→微博/记忆→创建导入/公开共享；每项区分触发、效果、约束层和入口，后附完整源码路径索引。明确标成默认值的数字以后台实际配置为准，本文不假装重新读取了所有生产配置。
+
+> 冻结点是本任务07:18发布；并行主线07:37已登记U6分享图展现更新，差异不含服务器/契约/聊天选择门禁。此处不把其他负责人的发布声明当成本人的独立验收，亦不为追随UI样式反复改动本表规则。
 
 ## 先分清五种“限制”
 
@@ -61,6 +63,7 @@
 | C08 | 私密转发隔离 | 私密源消息不能转到未开私密且不符合资格的目标；删除/清空/撤回消息不能转；系统提示不能转，转发记录暂不允许再次转发。 | 用户选择目标；权限/范围代码固定。 | [源和范围:106–175](<https://github.com/yottermanzione-ship-it/weiban/blob/78b6a574950cf3483bd94acbb979bda66824499a/apps/server/src/modules/chat/application/forward.ts#L106-L175>)；[快照种类:227–257](<https://github.com/yottermanzione-ship-it/weiban/blob/78b6a574950cf3483bd94acbb979bda66824499a/apps/server/src/modules/chat/application/forward.ts#L227-L257>) |
 | C09 | 转发数量与总容量 | 一次最多50条源消息、10个目标，正文合计≤20000字符、快照≤512KiB；目标群还要PRO+，不能借合并转发丢掉原范围/隐私标签。不是单条文字4000的同一限制。 | 代码/契约常量。 | [转发参数:504–514](<https://github.com/yottermanzione-ship-it/weiban/blob/78b6a574950cf3483bd94acbb979bda66824499a/packages/contracts/src/http/chat.ts#L504-L514>)；[写入裁剪拒绝:140–202](<https://github.com/yottermanzione-ship-it/weiban/blob/78b6a574950cf3483bd94acbb979bda66824499a/apps/server/src/modules/chat/application/forward.ts#L140-L202>) |
 | C10 | 通知不等于正文显示 | adult/health或用户关内容预览时，锁屏仅“发来一条消息”；合并多条不逐条展开，静音/免打扰可无声音。正在看同会话、试聊、草稿、群自聊未@等还可能不推送，未读与消息本身仍照常。 | 用户通知/会话静音；私密遮蔽和部分场景固定。 | [通知正文/声音:45–101](<https://github.com/yottermanzione-ship-it/weiban/blob/78b6a574950cf3483bd94acbb979bda66824499a/apps/server/src/modules/push/domain/notification-rules.ts#L45-L101>)；[不推送场景:100–120](<https://github.com/yottermanzione-ship-it/weiban/blob/78b6a574950cf3483bd94acbb979bda66824499a/apps/server/src/modules/push/application/lifecycle.ts#L100-L120>) |
+| C11 | 聊天分享图是另一个前端门槛 | 最多30条，只选正常、非系统且有内容的消息；含adult或health标签直接禁生成分享图。这个页面门槛不同于C08/C09服务端聊天转发：不要把“不能外发分享图”说成“消息不能发/收藏”。 | 用户多选→分享图；当前页面固定检查。 | [选择与禁止分享:985–993](<https://github.com/yottermanzione-ship-it/weiban/blob/78b6a574950cf3483bd94acbb979bda66824499a/apps/web/src/features/chat.tsx#L985-L993>) |
 
 ## 四、群聊
 
@@ -280,6 +283,7 @@ apps/server/src/modules/policy/domain/rules.ts
 apps/server/src/modules/push/application/lifecycle.ts
 apps/server/src/modules/push/domain/notification-rules.ts
 apps/server/src/platform/config/product-params.ts
+apps/web/src/features/chat.tsx
 packages/contracts/src/http/assets.ts
 packages/contracts/src/http/calls.ts
 packages/contracts/src/http/characters.ts
