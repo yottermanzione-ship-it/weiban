@@ -46,6 +46,8 @@
 | 滚轮选择器 | `DatePickerSheet`、`TimePickerSheet`、`OptionPickerSheet`；自己拼列用 `PickerSheet` + `WheelPicker` + `WheelColumn`；可选值传 `onClear` 出现底部「清除」 | 底部面板，顶栏「取消 / 标题 / 绿色确定」；多列滚轮，中间一行选中、上下渐隐，停手自动吸附 | 日期（生日、纪念日）、时间（提醒）、需要滑着挑的一般选项 | 浏览器原生 `<input type="date">` / `<select>` 一律不再用 |
 | 表单选择框（U2） | `DateField`、`TimeField`、`SelectField`（`wheel-picker.tsx`） | 输入框外观的按钮：显示当前值（空则灰字占位）+ 右侧小箭头；放进 `.field-row` / `.profile-field` / `.edit-input-row` 自动变成无边框、值右对齐 | 表单里原来放原生 date / time / select 的地方。`SelectField` ≤10 个选项弹 Choice Sheet，更多自动用单列滚轮；`DateField clearable` 给可选日期加「清除」 | 设置页整行选值（用 `MenuRow` + Choice Sheet） |
 | 页内二级页面（U2） | `SubPageLayer`（任意表单）、`FieldPage`（单字段 + 清除 + 字数）（`edit-page.tsx`） | 外观同二级页面外壳，但不开新路由：从右侧整页推入盖住当前页；Esc / 取消关闭 | 原来「底部表单弹层」的编辑：群聊名称、积分提醒线、记忆、心愿、纪念日、补充设定、申请添加朋友、提示音 | 要能分享链接 / 浏览器后退回来的独立页面（用路由 + `SubPage`） |
+| 返回键只关一层（U3 写法） | 打开时往地址加 `?edit=编号`（push），关闭时自己 push 的就 `navigate(-1)`、否则 replace 去掉参数；渲染时按参数决定显示哪个 `SubPageLayer`。样板：`custom-character.tsx` 的 `openRow` / `closeEditor` | 同页内二级页面 | 一页里有多个整页编辑、希望安卓返回键 / 浏览器后退只关掉编辑层（等同「取消」） | 只有一个简单弹层时不必 |
+| 字段编辑页（U3） | `LongTextPage`（大文本区 + 字数，可设最少字数）、`ListPage`（可增删条目，左红色减号、末行「添加…」）、`DialoguePage`（「我说 / TA 说」气泡，可切「按原文编辑」）、`BasisPage` / `AgePage`（`persona-editors.tsx`）；`CharacterVoicePage`（音色单选 + 试听 + >10 个出搜索，`character-voice-select.tsx`） | 都是 `SubPageLayer`：顶栏「取消 / 标题 / 完成」，编辑草稿，完成才写回 | 自建角色创建 / 编辑页各字段；用哪个由 `persona-sections.ts` 配置决定 | 单行文字（用 `FieldPage`）；日期（用滚轮） |
 | 分段 Tab（U2） | `SegmentedTabs`（`shell-kit.tsx`） | 浅灰槽里两三个等宽分段，选中段白底（外圆角 8 = 内圆角 4 + 间距 4） | 同一页内容的两种看法：角色生态「按角色 / 按动作」 | 页面顶部的一级切换（用 `TextTabs`） |
 
 ### 表单选值梯度（26 号 §2）

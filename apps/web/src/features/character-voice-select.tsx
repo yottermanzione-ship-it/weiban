@@ -128,7 +128,9 @@ export function CharacterVoicePage({
               <button
                 type="button"
                 className={`sound-play${playing === voice.voiceId ? ' playing' : ''}`}
-                aria-label={playing === voice.voiceId ? `停止试听${voice.name}` : `试听${voice.name}`}
+                aria-label={
+                  playing === voice.voiceId ? `停止试听${voice.name}` : `试听${voice.name}`
+                }
                 onClick={() => preview(voice.voiceId)}
               >
                 <OldIcon name="wechat/voice" size={20} />

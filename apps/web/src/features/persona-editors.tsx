@@ -89,9 +89,8 @@ export function ListPage({
   const list = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (focusIndex.current === null) return;
-    list.current
-      ?.querySelectorAll<HTMLInputElement>('input')
-      [focusIndex.current]?.focus();
+    const inputs = list.current?.querySelectorAll<HTMLInputElement>('input');
+    inputs?.[focusIndex.current]?.focus();
     focusIndex.current = null;
   });
   const canAdd = items.length < editor.maxItems;
@@ -178,9 +177,8 @@ export function DialoguePage({
   const list = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (focusIndex.current === null) return;
-    list.current
-      ?.querySelectorAll<HTMLTextAreaElement>('textarea')
-      [focusIndex.current]?.focus();
+    const areas = list.current?.querySelectorAll<HTMLTextAreaElement>('textarea');
+    areas?.[focusIndex.current]?.focus();
     focusIndex.current = null;
   });
   const text = raw ?? serializeDialogue(turns);
@@ -420,8 +418,7 @@ export function AgePage({
     <SubPageLayer
       title="年龄设定"
       canSave={
-        value.ageSetting !== initial.ageSetting ||
-        value.childAppearance !== initial.childAppearance
+        value.ageSetting !== initial.ageSetting || value.childAppearance !== initial.childAppearance
       }
       onCancel={onClose}
       onSave={() => onSave(value)}

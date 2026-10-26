@@ -445,7 +445,8 @@ function CustomCharacterEditor({
         body: parsed.data,
         networkOnly: true,
       });
-      if (api.owns(owner)) setTrial({ conversationId: result.conversationId, name: draft.name, owner });
+      if (api.owns(owner))
+        setTrial({ conversationId: result.conversationId, name: draft.name, owner });
     } catch (e) {
       setError(friendlyError(e));
     } finally {

@@ -102,7 +102,12 @@ export interface PersonaSection {
   subsections: PersonaSubsection[];
 }
 
-export const BASIS_OPTIONS: { value: CharacterBasis; label: string; word: string; description: string }[] = [
+export const BASIS_OPTIONS: {
+  value: CharacterBasis;
+  label: string;
+  word: string;
+  description: string;
+}[] = [
   {
     value: 'original',
     label: '原创角色',
@@ -157,7 +162,10 @@ export const PERSONA_SECTIONS: PersonaSection[] = [
         field: 'name',
         display: 'identity',
         userVisible: true,
-        create: { editor: { kind: 'line', maxLength: 32, placeholder: '角色名字' }, required: true },
+        create: {
+          editor: { kind: 'line', maxLength: 32, placeholder: '角色名字' },
+          required: true,
+        },
         admin: { tab: '资料与头像', label: '角色名字' },
       },
       {
@@ -317,7 +325,15 @@ export const PERSONA_SECTIONS: PersonaSection[] = [
         title: '边界处理',
         display: 'entries',
         userVisible: false,
-        legacyLabels: ['必须保留', '必须避免', '边界处理', '隐私问题', '绯闻问题', '行程问题', '官方立场'],
+        legacyLabels: [
+          '必须保留',
+          '必须避免',
+          '边界处理',
+          '隐私问题',
+          '绯闻问题',
+          '行程问题',
+          '官方立场',
+        ],
       },
     ],
   },
