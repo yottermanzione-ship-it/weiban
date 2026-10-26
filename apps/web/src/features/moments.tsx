@@ -588,15 +588,12 @@ function MomentsCover({
   const [top, bottom] = coverFor(name);
   const profile = useRemote(IdentityEndpoints.getProfile, {}, editable);
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
   const { assertOwner } = useChat();
   const coverId = editable ? profile.data?.momentsCoverMediaId : null;
   async function save(mediaId: string | null) {
     assertOwner();
     await api.call(IdentityEndpoints.updateProfile, { body: { momentsCoverMediaId: mediaId } });
     window.dispatchEvent(new Event('weiban:settings-updated'));
-    setError('');
     showToast(mediaId ? '已更换封面' : '已恢复默认封面', 2000, 'success');
   }
   return (
@@ -627,37 +624,22 @@ function MomentsCover({
           {avatar}
         </Link>
       </div>
+      {/* U2：换封面直接弹出 拍照 / 从相册选择 / 恢复默认封面 的 Action Sheet */}
       {open && (
-        <Sheet
-          title="换封面"
-          closeLabel="完成"
-          onClose={() => {
-            if (!busy) setOpen(false);
-          }}
-        >
-          <section className="panel stack">
-            <fieldset disabled={busy}>
-              <AvatarEditor
-                purpose="moments_cover"
-                label="封面"
-                onSaved={save}
-                onPendingChange={setBusy}
-                onRestore={
-                  coverId
-                    ? () => {
-                        setBusy(true);
-                        setError('');
-                        void save(null)
-                          .catch((e) => setError(friendlyError(e)))
-                          .finally(() => setBusy(false));
-                      }
-                    : undefined
+        <AvatarEditor
+          sheet
+          onClose={() => setOpen(false)}
+          purpose="moments_cover"
+          label="封面"
+          onSaved={save}
+          onRestore={
+            coverId
+              ? () => {
+                  void save(null).catch((e) => showToast(friendlyError(e), 2500, 'error'));
                 }
-              />
-            </fieldset>
-            {error && <p role="alert">{error}</p>}
-          </section>
-        </Sheet>
+              : undefined
+          }
+        />
       )}
     </>
   );

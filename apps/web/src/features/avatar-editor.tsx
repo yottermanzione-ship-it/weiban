@@ -5,6 +5,8 @@ import { ApiFailure } from '@weiban/client-core';
 import { useAuth } from '../app/auth.js';
 import { api } from '../data/client.js';
 import { AvatarDialog } from './avatar-dialog.js';
+import { ActionSheet } from './shell-kit.js';
+import { showToast } from './toast.js';
 import { useAvatarGesture } from './avatar-gesture.js';
 import { friendlyError } from '../data/use-remote.js';
 export function AvatarEditor({
@@ -14,6 +16,8 @@ export function AvatarEditor({
   onRestore,
   label = '头像',
   prominentPicker = false,
+  sheet = false,
+  onClose,
 }: {
   onSaved: (mediaId: string) => Promise<void>;
   purpose?: z.infer<typeof UserMediaPurpose>;
@@ -22,12 +26,24 @@ export function AvatarEditor({
   label?: string;
   /** 仅角色资料「设置头像」弹层：整行选择按钮放大居中；其它入口保持原行样式。 */
   prominentPicker?: boolean;
+  /**
+   * 2026-10-26 批 U2：直接弹出来源 Action Sheet（拍照 / 从相册选择 / 取消），不渲染「选择头像」行；
+   * 取消、选完裁剪上传、放弃裁剪后调用 onClose。点头像即换头像的入口（个人信息、群头像、朋友圈封面）用它。
+   */
+  sheet?: boolean;
+  onClose?(): void;
 }) {
   const { session } = useAuth();
   const owner = session
     ? { userId: session.user.userId, sessionId: session.session.sessionId }
     : null;
-  const [choosing, setChoosing] = useState(false);
+  const [choosing, setChoosing] = useState(sheet);
+  /** 已点「拍照 / 从相册选择」：Action Sheet 关掉不算放弃，等系统选图结果。 */
+  const picking = useRef(false);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
   const gallery = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
   const [source, setSource] = useState('');
@@ -44,6 +60,14 @@ export function AvatarEditor({
   });
   const canvas = useRef<HTMLCanvasElement>(null);
   const groupUpload = useRef<{ key: string; mediaId: string } | null>(null);
+  // 系统选图界面点了取消（浏览器支持 cancel 事件时）：直接弹出模式下整个流程结束
+  useEffect(() => {
+    if (!sheet) return;
+    const inputs = [gallery.current, camera.current];
+    const cancel = () => onCloseRef.current?.();
+    inputs.forEach((input) => input?.addEventListener('cancel', cancel));
+    return () => inputs.forEach((input) => input?.removeEventListener('cancel', cancel));
+  }, [sheet]);
   useEffect(() => {
     if (!source) return;
     let active = true;
@@ -77,13 +101,17 @@ export function AvatarEditor({
       if (active) {
         setError('图片无法读取，请重新选择');
         setSource('');
+        if (sheet) {
+          showToast('图片无法读取，请重新选择', 2500, 'warning');
+          onCloseRef.current?.();
+        }
       }
     };
     image.src = source;
     return () => {
       active = false;
     };
-  }, [source, zoom, x, y]);
+  }, [source, zoom, x, y, sheet]);
   useEffect(
     () => () => {
       if (source) URL.revokeObjectURL(source);
@@ -99,6 +127,11 @@ export function AvatarEditor({
       !MEDIA_LIMITS.imageMimeTypes.some((mime) => mime === file.type)
     ) {
       setError('请选择10MB以内的JPEG、PNG、WebP或GIF图片');
+      if (sheet) {
+        showToast('请选择10MB以内的JPEG、PNG、WebP或GIF图片', 2500, 'warning');
+        onClose?.();
+      }
+      event.target.value = '';
       return;
     }
     setChoosing(false);
@@ -134,6 +167,7 @@ export function AvatarEditor({
       await onSaved(media.mediaId);
       groupUpload.current = null;
       setSource('');
+      if (sheet) onClose?.();
     } catch (e) {
       setError(friendlyError(e));
     } finally {
@@ -141,19 +175,24 @@ export function AvatarEditor({
       onPendingChange?.(false);
     }
   }
+  const close = () => {
+    if (sheet) onClose?.();
+  };
   return (
-    <section className="stack">
-      <button
-        type="button"
-        className={`avatar-choose-row${prominentPicker ? ' avatar-choose-row-sheet' : ''}`}
-        disabled={pending}
-        onClick={() => setChoosing(true)}
-      >
-        <span>选择{label}</span>
-        <span className="avatar-choose-arrow" aria-hidden>
-          ›
-        </span>
-      </button>
+    <section className={sheet ? 'avatar-editor-sheet' : 'stack'}>
+      {!sheet && (
+        <button
+          type="button"
+          className={`avatar-choose-row${prominentPicker ? ' avatar-choose-row-sheet' : ''}`}
+          disabled={pending}
+          onClick={() => setChoosing(true)}
+        >
+          <span>选择{label}</span>
+          <span className="avatar-choose-arrow" aria-hidden>
+            ›
+          </span>
+        </button>
+      )}
       <input
         hidden
         ref={gallery}
@@ -173,53 +212,62 @@ export function AvatarEditor({
         accept={MEDIA_LIMITS.imageMimeTypes.join(',')}
         onChange={select}
       />
+      {/* 26 号 §2：头像来源用微信式 Action Sheet（拍照 / 从相册选择 / 取消），不再是带边框按钮的居中框 */}
       {choosing && (
-        <AvatarDialog label={label} onDismiss={() => setChoosing(false)}>
-          <h2>选择{label}来源</h2>
-          <button
-            type="button"
-            onClick={() => {
-              setChoosing(false);
-              gallery.current?.click();
-            }}
-          >
-            从相册选择
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setChoosing(false);
-              camera.current?.click();
-            }}
-          >
-            拍照
-          </button>
-          {onRestore && (
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => {
-                setChoosing(false);
-                onRestore();
-              }}
-            >
-              恢复默认{label}
-            </button>
-          )}
-          <button type="button" onClick={() => setChoosing(false)}>
-            取消
-          </button>
-        </AvatarDialog>
+        <ActionSheet
+          onClose={() => {
+            setChoosing(false);
+            // Action Sheet 先关闭再执行所点的项：等这一轮点击处理完，再判断是不是直接取消
+            window.setTimeout(() => {
+              if (!picking.current) close();
+              picking.current = false;
+            }, 0);
+          }}
+          items={[
+            {
+              label: '拍照',
+              onClick: () => {
+                picking.current = true;
+                camera.current?.click();
+              },
+            },
+            {
+              label: '从相册选择',
+              onClick: () => {
+                picking.current = true;
+                gallery.current?.click();
+              },
+            },
+            ...(onRestore
+              ? [
+                  {
+                    label: `恢复默认${label}`,
+                    disabled: pending,
+                    onClick: () => onRestore(),
+                  },
+                ]
+              : []),
+          ]}
+        />
       )}
+      {/* 裁剪：全屏黑底（微信），底部「取消 / 完成」 */}
       {source && (
-        <AvatarDialog label={label} crop busy={pending} onDismiss={() => setSource('')}>
+        <AvatarDialog
+          label={label}
+          crop
+          busy={pending}
+          onDismiss={() => {
+            setSource('');
+            close();
+          }}
+        >
           <h2>调整{label}</h2>
           {error && (
             <p role="alert" className="error">
               {error}
             </p>
           )}
-          <p>拖动调整位置，双指缩放；也可展开精细调整。</p>
+          <p className="avatar-crop-tip">拖动调整位置，双指缩放</p>
           <canvas
             {...gesture}
             className="avatar-crop"
@@ -229,7 +277,7 @@ export function AvatarEditor({
             aria-label={`${label}裁剪预览`}
           />
           <details>
-            <summary>精细调整（可选）</summary>
+            <summary>精细调整</summary>
             <div className="stack">
               <label>
                 缩放
@@ -269,15 +317,31 @@ export function AvatarEditor({
               </label>
             </div>
           </details>
-          <button type="button" disabled={pending} onClick={() => void save()}>
-            完成裁剪并上传
-          </button>
-          <button type="button" disabled={pending} onClick={() => setSource('')}>
-            取消
-          </button>
+          <div className="avatar-crop-bar">
+            <button
+              type="button"
+              className="avatar-crop-cancel"
+              disabled={pending}
+              onClick={() => {
+                setSource('');
+                close();
+              }}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="primary avatar-crop-done"
+              disabled={pending}
+              aria-busy={pending}
+              onClick={() => void save()}
+            >
+              {pending ? '正在上传…' : '完成'}
+            </button>
+          </div>
         </AvatarDialog>
       )}
-      {error && !source && (
+      {error && !source && !sheet && (
         <p role="alert" className="error">
           {error}
         </p>

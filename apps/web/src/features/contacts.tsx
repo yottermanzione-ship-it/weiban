@@ -941,10 +941,9 @@ export function CharacterPage({
           </div>
         </Sheet>
       )}
+      {/* U2：点头像直接弹出 拍照 / 从相册选择 / 恢复默认头像 的 Action Sheet */}
       {sheet === 'avatar' && contact && (
-        <Sheet title="设置头像" onClose={() => setSheet(null)} closeLabel="取消">
-          <ContactAvatarEditor characterId={characterId} titled={false} prominentPicker />
-        </Sheet>
+        <ContactAvatarEditor characterId={characterId} sheet onClose={() => setSheet(null)} />
       )}
       {sheet === 'intro' && data && (
         <Sheet title="简介" onClose={() => setSheet(null)}>

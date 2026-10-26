@@ -8,7 +8,7 @@ import { AvatarEditor } from './avatar-editor.js';
 import { ProfileAvatar } from './profile-avatar.js';
 import { useAuth } from '../app/auth.js';
 import { AliasRow, NudgeRow } from './profile-edit.js';
-import { Chevron, GroupHeader, MenuGroup, MenuRow, NavBar, Sheet } from './shell-kit.js';
+import { Chevron, GroupHeader, MenuGroup, MenuRow, NavBar } from './shell-kit.js';
 import { REGION_GROUPS } from '../data/regions.js';
 
 /** 首次填写页「性别」行显示的当前值（原生下拉透明铺在行上，见 pages-old.css .profile-field.picker）。 */
@@ -215,18 +215,17 @@ function OnboardingProfilePage() {
         )}
       </form>
       {editingAvatar && (
-        <Sheet title="头像" closeLabel="取消" onClose={() => setEditingAvatar(false)}>
-          <AvatarEditor
-            onSaved={async (mediaId) => {
-              await api.call(IdentityEndpoints.updateProfile, {
-                body: { avatarMediaId: mediaId },
-              });
-              remote.refresh();
-              setMessage('头像已保存');
-              setEditingAvatar(false);
-            }}
-          />
-        </Sheet>
+        <AvatarEditor
+          sheet
+          onClose={() => setEditingAvatar(false)}
+          onSaved={async (mediaId) => {
+            await api.call(IdentityEndpoints.updateProfile, {
+              body: { avatarMediaId: mediaId },
+            });
+            remote.refresh();
+            setMessage('头像已保存');
+          }}
+        />
       )}
     </main>
   );
@@ -240,7 +239,6 @@ function ProfileDetails() {
   const remote = useRemote(IdentityEndpoints.getProfile);
   // 10-21 G2：昵称、性别、生日、地区、个性签名、微伴号改成整页推入的二级页面（profile-edit.tsx）；头像仍用原弹层。
   const [editingAvatar, setEditingAvatar] = useState(false);
-  const [pending, setPending] = useState(false);
   const auth = useAuth();
   const genders = { female: '女', male: '男', other: '其他', unspecified: '未填写' };
   const profile = remote.data;
@@ -276,24 +274,18 @@ function ProfileDetails() {
           {remote.error}
         </p>
       )}
+      {/* U2：点头像直接弹出 拍照 / 从相册选择 / 取消（微信），选完进全屏裁剪 */}
       {editingAvatar && (
-        <Sheet
-          title="头像"
-          onClose={() => {
-            if (!pending) setEditingAvatar(false);
+        <AvatarEditor
+          sheet
+          onClose={() => setEditingAvatar(false)}
+          onSaved={async (mediaId) => {
+            await api.call(IdentityEndpoints.updateProfile, { body: { avatarMediaId: mediaId } });
+            remote.refresh();
+            await auth.refreshUser();
+            showToast('头像已保存', 1500, 'success');
           }}
-          closeLabel="取消"
-        >
-          <AvatarEditor
-            onPendingChange={setPending}
-            onSaved={async (mediaId) => {
-              await api.call(IdentityEndpoints.updateProfile, { body: { avatarMediaId: mediaId } });
-              remote.refresh();
-              await auth.refreshUser();
-              setEditingAvatar(false);
-            }}
-          />
-        </Sheet>
+        />
       )}
     </main>
   );

@@ -25,7 +25,7 @@ export {
   type ChoiceOption,
   type SheetSnap,
 } from './shell-kit.js';
-export { EditPage as SubPage, PickRow } from './edit-page.js';
+export { EditPage as SubPage, FieldPage, PickRow, SubPageLayer } from './edit-page.js';
 export {
   DateField,
   DatePickerSheet,
