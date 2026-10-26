@@ -135,6 +135,8 @@ export interface ShareRenderInput {
 
 // ---------- 画笔：dry = true 时只量尺寸不画 ----------
 
+const NO_LINE_START = '，。！？、；：）」』”’…～,.!?;:)]}%';
+
 class Painter {
   readonly pal = sharePalette();
   constructor(
@@ -152,7 +154,8 @@ class Painter {
     for (const paragraph of text.split('\n')) {
       let line = '';
       for (const ch of Array.from(paragraph)) {
-        if (line && this.width(line + ch) > max) {
+        // 句末标点不放到行首（避头点），允许略超出一点。
+        if (line && this.width(line + ch) > max && !NO_LINE_START.includes(ch)) {
           lines.push(line);
           line = ch;
         } else line += ch;
@@ -654,7 +657,7 @@ function wechatTemplate(p: Painter, input: ShareRenderInput, height: number) {
       otherBg: pal.chatOther,
       otherBorder: null,
       pictureRadius: 4,
-      textMax: 196,
+      textMax: 226,
     },
     64,
   );
@@ -682,10 +685,10 @@ function paperTemplate(p: Painter, input: ShareRenderInput, height: number) {
   const excerpt = excerptText(excerptItem);
   if (excerptItem && excerpt) {
     p.font(48, 400, pal.serif);
-    p.text('“', 18, y - 6, pal.paperQuote);
+    p.text('“', 18, y - 8, pal.paperQuote);
     p.font(20, 400, pal.serif);
     const lines = p.clamp(excerpt, W - 48, 5);
-    const top = y + 30;
+    const top = y + 20;
     lines.forEach((line, i) => p.text(line, 24, top + i * 34 + 7, pal.text));
     y = top + lines.length * 34 + 6;
     p.font(13);
