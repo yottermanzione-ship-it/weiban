@@ -89,7 +89,7 @@ import { ServiceWorkerRefresh } from './update-prompt.js';
 import { CallLinkPage, CallProvider } from '../features/call.js';
 import { MyStickersPage } from '../features/stickers.js';
 import { VoicePickerPage } from '../features/voices.js';
-import { ToastHost } from '../features/toast.js';
+import { SnackbarHost, ToastHost } from '../features/toast.js';
 import {
   AchievementWatcher,
   AchievementsPage,
@@ -283,6 +283,7 @@ function Shell() {
       <>
         <AuthPage />
         <ToastHost />
+        <SnackbarHost />
       </>
     );
   const firstProfile = !auth.session.user.profileCompleted;
@@ -504,6 +505,7 @@ function Shell() {
         {!firstProfile && <ReleaseCenter />}
         {!firstProfile && <RecapAutoShow />}
         <ToastHost />
+        <SnackbarHost />
         {!firstProfile && !onboarding && (
           <EcologyInsufficientNotice
             userId={auth.session.user.userId}

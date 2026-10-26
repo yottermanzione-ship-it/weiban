@@ -201,9 +201,9 @@ a.button.primary {
   min-height: 48px;
   padding: 0 20px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--wb-radius-md);
   background: var(--wb-color-brand-primary);
-  color: #fff;
+  color: var(--ui-text-on-color);
   font-size: var(--wb-font-size-body-small);
   font-weight: var(--wb-font-weight-semibold);
   text-decoration: none;
@@ -228,7 +228,7 @@ button.plain,
 .plain {
   border: 0;
   background: none;
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
 }
 button.danger,
 .danger-btn {
@@ -279,7 +279,7 @@ input[type='checkbox'] {
   padding: 0;
   border: 0;
   border-radius: var(--wb-radius-full);
-  background: rgba(120, 120, 128, 0.16);
+  background: var(--ui-switch-off-bg);
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
@@ -293,8 +293,8 @@ input[type='checkbox']::after {
   width: 27px;
   height: 27px;
   border-radius: var(--wb-radius-full);
-  background: #fff;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+  background: var(--ui-knob);
+  box-shadow: var(--ui-switch-knob-shadow);
   transition: transform var(--wb-motion-duration-fast) var(--wb-motion-easing-standard);
 }
 input[type='checkbox']:checked {
@@ -363,7 +363,7 @@ label.check:has(input[type='radio']) {
   background: var(--wb-color-badge-unread);
 }
 .tag {
-  border-radius: 3px;
+  border-radius: var(--wb-radius-xs);
   padding: 1px 4px;
   font-size: var(--wb-font-size-caption2);
 }
@@ -386,7 +386,7 @@ label.check:has(input[type='radio']) {
   border-radius: var(--wb-radius-xl);
   background: var(--wb-color-ui-toast-bg);
   box-shadow: var(--wb-shadow-lg);
-  color: #fff;
+  color: var(--ui-text-on-color);
   font-size: var(--wb-font-size-callout);
   font-weight: var(--wb-font-weight-medium);
   line-height: 1.36;
@@ -410,7 +410,7 @@ label.check:has(input[type='radio']) {
   place-items: center;
   width: 32px;
   height: 32px;
-  border: 2px solid #fff;
+  border: 2px solid var(--ui-text-on-color);
   border-radius: var(--wb-radius-full);
   font-size: 18px;
   font-weight: var(--wb-font-weight-semibold);
@@ -435,8 +435,8 @@ label.check:has(input[type='radio']) {
   display: grid;
   place-items: center;
   padding: 0 40px;
-  background: rgba(0, 0, 0, 0.5);
-  animation: fade-in 150ms var(--wb-motion-easing-standard);
+  background: var(--wb-color-bg-scrim);
+  animation: fade-in var(--ui-motion-dialog) var(--wb-motion-easing-standard);
 }
 .dialog {
   display: block;
@@ -449,7 +449,7 @@ label.check:has(input[type='radio']) {
   box-shadow: none;
   color: var(--wb-color-ui-popup-text);
   text-align: center;
-  animation: dialog-in 150ms var(--wb-motion-easing-standard);
+  animation: dialog-in var(--ui-motion-dialog) var(--wb-motion-easing-standard);
 }
 .dialog-body {
   display: grid;
@@ -490,7 +490,7 @@ label.check:has(input[type='radio']) {
   border-left: 0.5px solid var(--wb-color-ui-popup-line);
 }
 .dialog-actions button.confirm {
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
   font-weight: var(--wb-font-weight-medium);
 }
 .dialog-actions button.danger {

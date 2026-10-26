@@ -1,0 +1,115 @@
+/*
+ * 用户端 UI 令牌层（2026-10-26 批 U1，docs/refactor/26-ui-quality-plan.md §2 §5）。
+ *
+ * 分两层：
+ * 1. docs/design/tokens.css —— 设计负责人的全量令牌（由 tokens.json 生成，网页不手改）。
+ * 2. 本文件 —— 网页在第 1 层之上的收口与补充，只放在这里：
+ *    - 收口：圆角只留 4 / 8 / 12 三档（另有「全圆」与品牌图标形状两个例外）；
+ *    - 补充：按钮三种语气、深色底（状态页 / 下拉小程序）上的白字层级、动效时长、暗色字重降一档。
+ * 样式文件只写 var(--wb-*) / var(--ui-*)，不再写裸的圆角、颜色、字重；新增数值先加到这里。
+ * 暗色模式写法与第 1 层一致：跟随系统 + 手动指定（<html data-scheme>）两段内容相同。
+ */
+
+:root {
+  /* ---------- 圆角：只三档 4 / 8 / 12（外圆角 = 内圆角 + 间距） ---------- */
+  --wb-radius-xs: 4px; /* 小件：标签、缩略图、输入框、顶栏小按钮、头像 */
+  --wb-radius-md: 8px; /* 中件：按钮、气泡、卡片里的块 */
+  --wb-radius-lg: 12px; /* 大件：卡片、弹层、底部面板顶边 */
+  --wb-radius-full: 999px; /* 圆点、胶囊、角标 */
+  /* 第 1 层原有的 6 / 14 两档收进三档（旧样式里的引用自动跟着变；新样式不要再用这两个名字） */
+  --wb-radius-sm: var(--wb-radius-xs);
+  --wb-radius-xl: var(--wb-radius-lg);
+  --wb-radius-bubble: var(--wb-radius-md);
+  /* 例外：启动页 / 关于页的品牌图标形状，跟随图标尺寸按比例 */
+  --ui-radius-app-icon: 22%;
+
+  /* ---------- 按钮三种语气（全站不出现蓝字按钮） ---------- */
+  --ui-button-primary-bg: var(--wb-color-brand-primary); /* 主操作：绿底白字 */
+  --ui-button-primary-bg-pressed: var(--wb-color-brand-primary-pressed);
+  --ui-button-primary-text: #fff;
+  --ui-button-disabled-bg: var(--wb-color-ui-button-disabled-bg); /* 不可点：灰底灰字 */
+  --ui-button-disabled-text: var(--wb-color-ui-button-disabled-text);
+  --ui-button-danger-text: var(--wb-color-text-danger); /* 危险：只用红字 */
+  --ui-button-default-text: var(--wb-color-text-primary); /* 取消 / 普通：黑字 */
+  /* 纯文字的肯定操作（确认框「保存」、列表「加载更多」「重试」）：品牌绿字，不用链接蓝 */
+  --ui-text-action: var(--wb-color-brand-primary);
+  /* 品牌绿的描边 / 浅底（积分胶囊等） */
+  --ui-brand-line: rgba(7, 193, 96, 0.32);
+
+  /* ---------- 浅底上的浅灰层（1%–8% 灰阶分层，代替硬边框） ---------- */
+  --ui-fill-1: rgba(0, 0, 0, 0.05); /* 白底页上的浅灰按钮、按下态 */
+  --ui-fill-2: rgba(0, 0, 0, 0.08);
+  --ui-fill-3: rgba(0, 0, 0, 0.2); /* 输入框清除键圆底 */
+  --ui-text-on-bubble-secondary: rgba(0, 0, 0, 0.55); /* 绿色气泡里的次要字 */
+  --ui-switch-off-bg: rgba(120, 120, 128, 0.16);
+  --ui-switch-knob-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+  --ui-pressed-strong: #e0e0e0; /* 按住说话等需要明显按下感的块 */
+  --ui-avatar-initial: #8c8c8c; /* 头像占位首字母（令牌 #BBBBBB 在浅灰底上看不清） */
+  --ui-media-shade: linear-gradient(rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.45)); /* 图片上压字 */
+  --ui-brand-icon-shadow: 0 4px 20px rgb(0 0 0 / 8%);
+
+  /* ---------- 固定颜色（不随深浅模式变） ---------- */
+  --ui-text-on-color: #fff; /* 绿底、红角标、图片和深色底上的白字 */
+  --ui-knob: #fff; /* 开关圆钮 */
+  --ui-media-bg: #000; /* 看图黑底 */
+  --ui-splash-bg: #ededed; /* 启动页：与安卓启动图一致，固定浅色 */
+  --ui-splash-text: #181818;
+
+  /* ---------- 深色底（状态页、下拉小程序、通话、录音）上的白字与白层 ---------- */
+  --ui-on-dark-text: rgba(255, 255, 255, 0.9);
+  --ui-on-dark-text-2: rgba(255, 255, 255, 0.7);
+  --ui-on-dark-text-3: rgba(255, 255, 255, 0.5);
+  --ui-on-dark-text-4: rgba(255, 255, 255, 0.35);
+  --ui-on-dark-fill-1: rgba(255, 255, 255, 0.08);
+  --ui-on-dark-fill-2: rgba(255, 255, 255, 0.12);
+  --ui-on-dark-fill-3: rgba(255, 255, 255, 0.16);
+  --ui-on-dark-line: rgba(255, 255, 255, 0.25);
+  --ui-on-dark-hairline: rgba(255, 255, 255, 0.1);
+  --ui-on-dark-strong: rgba(255, 255, 255, 0.9); /* 深色底上的白色选中块 */
+  --ui-on-dark-strong-text: #222;
+  --ui-on-dark-danger: #ffb4b4;
+  --ui-on-dark-divider: rgba(0, 0, 0, 0.25); /* 深色浮层里按钮之间的分隔 */
+  --ui-dark-panel: rgba(40, 40, 44, 0.86);
+  --ui-dark-panel-shadow: 0 -8px 24px rgba(0, 0, 0, 0.25);
+  --ui-status-page-bg:
+    radial-gradient(120% 60% at 20% 0%, rgba(120, 128, 150, 0.55), transparent 70%),
+    linear-gradient(180deg, #5d616b 0%, #6f6a66 45%, #8a7461 100%);
+  --ui-status-page-base: #5d616b;
+
+  /* ---------- 动效 ---------- */
+  --ui-motion-route: 220ms; /* 整页推入 / 返回 */
+  --ui-motion-dialog: 150ms; /* 居中对话框出现 */
+  --ui-motion-spin: 800ms; /* 加载转圈一周 */
+  --ui-ease-out: cubic-bezier(0, 0, 0.58, 1);
+  --ui-ease-in-out: cubic-bezier(0.42, 0, 0.58, 1);
+}
+
+/*
+ * 暗色：字重降一档。界面字体 MiSans 只打包了 400 / 500 / 600 三个字形（public/assets/old-ui/fonts），
+ * 所以中粗 500→400、粗 600→500；正文 400 已是最细字形，要再细需另加 MiSans Light（约 1.6MB，未加，见交接）。
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-scheme='light']) {
+    --wb-font-weight-medium: 400;
+    --ui-pressed-strong: #2c2c2c;
+    --ui-avatar-initial: #c9c9c9;
+    --wb-font-weight-semibold: 500;
+    --ui-fill-1: rgba(255, 255, 255, 0.08);
+    --ui-fill-2: rgba(255, 255, 255, 0.1);
+    --ui-fill-3: rgba(255, 255, 255, 0.3);
+  }
+}
+:root[data-scheme='dark'] {
+  --wb-font-weight-medium: 400;
+  --ui-pressed-strong: #2c2c2c;
+  --ui-avatar-initial: #c9c9c9;
+  --wb-font-weight-semibold: 500;
+  --ui-fill-1: rgba(255, 255, 255, 0.08);
+  --ui-fill-2: rgba(255, 255, 255, 0.1);
+  --ui-fill-3: rgba(255, 255, 255, 0.3);
+}
+
+/* styles.css 的 body 用 font 简写会把字重重置成 normal，这里用更高优先级接回令牌 */
+:root body {
+  font-weight: var(--wb-font-weight-regular);
+}

@@ -3,6 +3,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import '../../../docs/design/tokens.css';
+import './app/tokens.css';
 import './app/styles.css';
 import './app/media-call.css';
 import './app/l6.css';
@@ -32,3 +33,4 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 }
 import './app/common-fixes.css';
 import './app/edit-pages.css';
+import './app/ui-components.css';

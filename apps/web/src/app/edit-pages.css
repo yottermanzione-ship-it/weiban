@@ -3,22 +3,6 @@
  * 尺寸按总经理给的微信截图（iPhone，920px 宽截图 ≈ 2.14 像素 / pt）量出来换算成 CSS 像素。
  */
 
-:root {
-  /* 白底页上的浅灰按钮（微信「修改微信号」、禁用的「确定」）：#F2F2F2 */
-  --g2-soft-button-bg: rgba(0, 0, 0, 0.05);
-  --g2-clear-icon: rgba(0, 0, 0, 0.2);
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-scheme='light']) {
-    --g2-soft-button-bg: rgba(255, 255, 255, 0.08);
-    --g2-clear-icon: rgba(255, 255, 255, 0.3);
-  }
-}
-:root[data-scheme='dark'] {
-  --g2-soft-button-bg: rgba(255, 255, 255, 0.08);
-  --g2-clear-icon: rgba(255, 255, 255, 0.3);
-}
-
 /* ---------- 全站绿色确认按钮：不可点时灰底灰字（微信），有效改动后才是绿色 ---------- */
 button.primary:disabled,
 a.button.primary.disabled {
@@ -28,9 +12,6 @@ a.button.primary.disabled {
 }
 
 /* ---------- 底部选择：对号不参与文字居中，固定在右侧 ---------- */
-.action-group button[role='menuitemradio'] {
-  position: relative;
-}
 .action-check {
   position: absolute;
   top: 50%;
@@ -83,7 +64,7 @@ main.edit-page {
   height: 34px;
   margin-right: 13px;
   padding: 0 12px;
-  border-radius: 4px;
+  border-radius: var(--wb-radius-xs);
   font-size: calc(14px * var(--wb-font-scale));
   font-weight: var(--wb-font-weight-medium);
 }
@@ -128,7 +109,7 @@ main.edit-page {
   border: 0;
   border-radius: 0;
   background: none;
-  color: var(--g2-clear-icon);
+  color: var(--ui-fill-3);
 }
 /* 多行输入：高约 80，右下角剩余字数 */
 .edit-textarea {
@@ -384,16 +365,16 @@ main.info-page {
   min-height: 50px;
   padding: 0 var(--wb-space-5);
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--wb-radius-md);
   font-size: var(--wb-font-size-body);
   font-weight: var(--wb-font-weight-medium);
 }
 .form-page-bottom button.primary:disabled {
-  background: var(--g2-soft-button-bg);
+  background: var(--ui-fill-1);
   color: var(--wb-color-ui-button-disabled-text);
 }
 .form-page-bottom .secondary-button {
-  background: var(--g2-soft-button-bg);
+  background: var(--ui-fill-1);
   color: var(--wb-color-text-primary);
 }
 .form-page-bottom .secondary-button:active {
@@ -406,7 +387,7 @@ main.info-page {
   display: block;
   width: 68px;
   height: auto;
-  border-radius: 16px;
+  border-radius: var(--ui-radius-app-icon);
   filter: grayscale(1);
   opacity: 0.18;
 }

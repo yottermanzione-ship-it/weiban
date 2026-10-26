@@ -18,7 +18,7 @@
 }
 .plaza-tabs button[aria-selected='true'] {
   color: var(--wb-color-text-primary);
-  font-weight: 600;
+  font-weight: var(--wb-font-weight-semibold);
   box-shadow: inset 0 -2px 0 var(--wb-color-brand-primary);
 }
 /* ---------- 角色广场（/plaza）顶部两个 tab：等宽填满返回箭头与个人入口之间的区域 ---------- */
@@ -80,7 +80,7 @@
   bottom: 0;
   left: 0;
   height: 2px;
-  border-radius: 1px;
+  border-radius: var(--wb-radius-full);
   background: currentColor;
   content: '';
 }
@@ -253,7 +253,7 @@
   align-items: center;
   gap: var(--wb-space-2);
   font-size: var(--wb-font-size-body);
-  font-weight: 600;
+  font-weight: var(--wb-font-weight-semibold);
 }
 .work-row-meta {
   font-size: var(--wb-font-size-caption1);
@@ -270,7 +270,7 @@
 .tag.highlight {
   color: var(--wb-color-brand-on-soft);
   background: var(--wb-color-brand-soft);
-  font-weight: 600;
+  font-weight: var(--wb-font-weight-semibold);
 }
 .tag.danger {
   color: var(--wb-color-text-danger);
@@ -285,7 +285,7 @@
   place-items: center;
   overflow: hidden;
   flex: none;
-  font-weight: 600;
+  font-weight: var(--wb-font-weight-semibold);
 }
 .plaza-avatar img {
   position: absolute;
@@ -356,7 +356,7 @@
   padding: 0;
   background: none;
   border: 0;
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
   font-size: var(--wb-font-size-caption1);
 }
 .over-limit {

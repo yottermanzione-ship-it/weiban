@@ -3,14 +3,14 @@
 .ecology-intro {
   margin: 12px 16px;
   padding: 12px 14px;
-  border-radius: 8px;
+  border-radius: var(--wb-radius-md);
   background: var(--wb-color-bg-surface);
   color: var(--wb-color-text-primary);
-  font-size: 13px;
+  font-size: var(--wb-font-size-footnote);
   line-height: 1.6;
 }
 .ecology-intro strong {
-  font-size: 14px;
+  font-size: var(--wb-font-size-subhead);
 }
 .ecology-intro p {
   margin: 6px 0 0;
@@ -28,7 +28,7 @@
 
 .ecology-badge {
   padding: 0 6px;
-  border-radius: 4px;
+  border-radius: var(--wb-radius-xs);
   background: var(--wb-color-bg-page);
   color: var(--wb-color-text-secondary);
   font-size: 11px;
@@ -46,7 +46,7 @@
 
 .ecology-points {
   color: var(--wb-color-brand-primary);
-  font-size: 12px;
+  font-size: var(--wb-font-size-caption1);
   white-space: nowrap;
 }
 
@@ -70,22 +70,22 @@
   gap: 6px 12px;
   margin-bottom: 0;
   padding: 14px var(--wb-space-5);
-  font-size: 14px;
+  font-size: var(--wb-font-size-subhead);
 }
 
 .ecology-total strong {
   color: var(--wb-color-brand-primary);
-  font-weight: 500;
+  font-weight: var(--wb-font-weight-medium);
 }
 .ecology-total small {
   flex-basis: 100%;
   color: var(--wb-color-text-secondary);
-  font-size: 12px;
+  font-size: var(--wb-font-size-caption1);
 }
 .ecology-section-note {
   margin: 0 16px 8px;
   color: var(--wb-color-text-secondary);
-  font-size: 12px;
+  font-size: var(--wb-font-size-caption1);
   line-height: 1.6;
 }
 .ecology-page .ecology-example-log .menu-row:disabled {
@@ -95,7 +95,7 @@
 .ecology-footnote {
   margin: 16px;
   color: var(--wb-color-text-secondary);
-  font-size: 12px;
+  font-size: var(--wb-font-size-caption1);
   line-height: 1.6;
 }
 
@@ -103,13 +103,13 @@
 .ecology-lead {
   margin: 12px 16px;
   color: var(--wb-color-text-secondary);
-  font-size: 13px;
+  font-size: var(--wb-font-size-footnote);
   line-height: 1.6;
 }
 
 .ecology-note {
   margin: 8px 16px;
-  font-size: 13px;
+  font-size: var(--wb-font-size-footnote);
   line-height: 1.5;
   color: var(--wb-color-text-secondary);
 }
@@ -148,19 +148,19 @@
 }
 .murmur-item time {
   color: var(--wb-color-text-secondary);
-  font-size: 12px;
+  font-size: var(--wb-font-size-caption1);
 }
 .murmur-text {
   margin: 4px 0;
   color: var(--wb-color-text-primary);
-  font-size: 15px;
+  font-size: var(--wb-font-size-callout);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
 .murmur-meta {
   margin: 0;
   color: var(--wb-color-text-secondary);
-  font-size: 12px;
+  font-size: var(--wb-font-size-caption1);
 }
 .murmur-more {
   display: block;

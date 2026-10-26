@@ -265,7 +265,7 @@
 }
 .pet-bounce {
   display: block;
-  animation: pet-bounce var(--wb-motion-duration-base) ease-out;
+  animation: pet-bounce var(--wb-motion-duration-base) var(--ui-ease-out);
 }
 @keyframes pet-bounce {
   40% {
