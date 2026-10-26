@@ -827,14 +827,19 @@ export function WorkPage() {
               <Heart size={20} weight={w.likedByMe ? 'fill' : 'regular'} />
               {w.likeCount}
             </button>
-            <a
+            <button
               className="persona-count"
-              href="#work-comments"
+              type="button"
+              onClick={() =>
+                document
+                  .getElementById('work-comments')
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }
               aria-label={`${w.commentCount} 条评论`}
             >
               <ChatCircle size={20} />
               {w.commentCount}
-            </a>
+            </button>
           </>
         }
         headExtra={

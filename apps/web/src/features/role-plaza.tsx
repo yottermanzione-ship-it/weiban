@@ -398,14 +398,19 @@ export function OfficialRolePage() {
                   />
                   {liked?.likeCount ?? 0}
                 </button>
-                <a
+                <button
                   className="persona-count"
-                  href="#official-comments"
+                  type="button"
+                  onClick={() =>
+                    document
+                      .getElementById('official-comments')
+                      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  }
                   aria-label={`${comments ?? data.commentCount} 条评论`}
                 >
                   <OldIcon name="wechat/chat" size={20} />
                   {comments ?? data.commentCount}
-                </a>
+                </button>
               </>
             }
           />
