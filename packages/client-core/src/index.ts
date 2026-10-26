@@ -6,3 +6,10 @@ export { SyncEngine } from './sync-engine.js';
 export { SyncRunner, type SyncDriverPort } from './sync-runner.js';
 export * from './sync-state.js';
 export { avatarLetters, avatarPaletteIndex, avatarForeground } from './avatar.js';
+export * from './persona-sections.js';
+export {
+  joinPersonaText,
+  splitPersonaTextWith,
+  type PersonaTextDocument,
+  type PersonaTextPart,
+} from './persona-text.js';

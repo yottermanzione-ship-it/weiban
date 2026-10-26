@@ -1,7 +1,7 @@
 /*
  * 自建角色各字段的整页编辑器（2026-10-27 批 U3）。全部是页内二级页面 SubPageLayer：
  * 顶栏「取消 / 标题 / 完成」，没改动时完成灰色；编辑的是草稿，「完成」才写回创建页，「取消」/ 返回键丢弃。
- * 用哪个编辑器、参数是多少由 persona-sections.ts 配置决定，这里只管长相和交互。
+ * 用哪个编辑器、参数是多少由人设板块配置（packages/client-core/src/persona-sections.ts）决定，这里只管长相和交互。
  */
 import { useEffect, useRef, useState } from 'react';
 import type { AgeSetting, CharacterBasis, RealPersonKind } from '@weiban/contracts';
@@ -14,7 +14,7 @@ import {
   serializeDialogue,
   type DialogueTurn,
   type PersonaEditor,
-} from './persona-sections.js';
+} from '@weiban/client-core';
 import { CheckSlot, SwitchRow } from './shell-kit.js';
 
 type Editor<K extends PersonaEditor['kind']> = Extract<PersonaEditor, { kind: K }>;

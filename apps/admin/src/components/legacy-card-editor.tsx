@@ -26,6 +26,9 @@ import {
   type AdminLegacyCharacterDetail,
   type AdminLegacyClearableField,
   type AdminLegacyFields,
+  type AdminCharacter,
+  legacyDialogueExamples,
+  legacyKnowledgeEntries,
 } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
 import { api } from '../data/client.js';
@@ -39,6 +42,7 @@ import { PersonaTextEditor } from './persona-text-editor.js';
 import { CharacterVoicePanel } from './character-voice-panel.js';
 import { CharacterWeiboEditor } from './character-weibo-editor.js';
 import { InteractionProfileEditor } from './interaction-profile-editor.js';
+import { PersonaCardPreview } from './persona-card-preview.js';
 import './legacy-card-editor.css';
 
 type LoreRow = {
@@ -108,12 +112,19 @@ function preview(value: unknown, limit = 4000): string {
     : text;
 }
 
+type PersonaPreviewCharacter = Partial<
+  Pick<AdminCharacter, 'classification' | 'tags' | 'works' | 'birthday'>
+>;
+
 export function LegacyCharacterEditor({
   characterId,
   onSaved,
+  character,
 }: {
   characterId: string;
   onSaved?: (text: string) => void;
+  /** 角色库主表字段（分类、标签、出处、生日），只给人设卡预览用。 */
+  character?: PersonaPreviewCharacter;
 }) {
   const [activeTab, setActiveTab] = useState('profile');
   const [detail, setDetail] = useState<AdminLegacyCharacterDetail | null>(null);
@@ -508,6 +519,7 @@ export function LegacyCharacterEditor({
           ],
           ['interaction', '互动风格'],
           ['voice', '声音与微博'],
+          ['preview', '人设卡预览'],
           ['records', '资格与记录'],
         ].map(([key, label]) => (
           <Button
@@ -862,6 +874,48 @@ export function LegacyCharacterEditor({
         <CharacterWeiboEditor value={fields.weibo} onChange={(weibo) => patchFields({ weibo })} />
         {activeTab === 'voice' && <CharacterVoicePanel characterId={characterId} />}
       </section>
+      <section className="legacy-tab-panel" hidden={activeTab !== 'preview'}>
+        {activeTab === 'preview' && (
+          <SectionCard
+            title="人设卡预览"
+            desc="按当前表单内容（含未保存的改动）预览；用户端人设卡与这里用同一份板块配置"
+          >
+            <PersonaCardPreview
+              source={{
+                kind: 'legacy',
+                data: {
+                  name: fields.displayName,
+                  avatarUrl: brokenAvatar ? null : avatar.url,
+                  signature: fields.signature,
+                  aliases: aliasText
+                    .split('\n')
+                    .map((item) => item.trim())
+                    .filter(Boolean),
+                  corePersona: fields.corePersona,
+                  speakingStyle: fields.speakingStyle,
+                  relationshipMode: fields.relationshipMode,
+                  lorebook: legacyKnowledgeEntries(
+                    lorebook
+                      .filter((row) => !row.deleted)
+                      .map((row) => ({ ...row.payload, id: row.id })),
+                  ),
+                  examples: legacyDialogueExamples(
+                    examples
+                      .filter((row) => !row.deleted)
+                      .map((row) => ({ ...row.payload, id: row.id, sort_order: row.sortOrder })),
+                  ),
+                  momentProfile: momentText.trim() || null,
+                  groupChat: groupText.trim() || null,
+                  classification: character?.classification ?? null,
+                  tags: character?.tags ?? [],
+                  works: character?.works ?? [],
+                  birthday: character?.birthday ?? null,
+                },
+              }}
+            />
+          </SectionCard>
+        )}
+      </section>
       <section className="legacy-tab-panel" hidden={activeTab !== 'records'}>
         <SectionCard
           title={`原始资料存档（${Object.keys(detail.preserved).length} 项）`}
@@ -952,7 +1006,7 @@ export function LegacyCharacterDrawer({
   onClose,
   onSaved,
 }: {
-  character: { characterId: string; name: string };
+  character: { characterId: string; name: string } & PersonaPreviewCharacter;
   onClose: () => void;
   onSaved: (text: string) => void;
 }) {
@@ -964,7 +1018,11 @@ export function LegacyCharacterDrawer({
       subtitle="人物文本、头像昵称、声音与微博分区管理；保存有修订记录与冲突保护"
       width={1120}
     >
-      <LegacyCharacterEditor characterId={character.characterId} onSaved={onSaved} />
+      <LegacyCharacterEditor
+        characterId={character.characterId}
+        onSaved={onSaved}
+        character={character}
+      />
     </RecordDrawer>
   );
 }

@@ -1,0 +1,70 @@
+/* 后台角色预览（批 U4）：只为本组件用。 */
+.persona-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.persona-preview-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.persona-preview-section h4 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.persona-preview-section h4 small {
+  color: #8a9099;
+  font-weight: 400;
+  font-size: 12px;
+}
+.persona-preview-section .ant-descriptions-item-label {
+  width: 140px;
+}
+.persona-preview-text {
+  margin: 0 !important;
+  white-space: pre-wrap;
+}
+.persona-preview-quotes {
+  margin: 0;
+  padding-left: 18px;
+}
+.persona-preview-bubbles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 520px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #ededed;
+}
+.persona-preview-bubbles > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.persona-preview-bubbles > div.me {
+  flex-direction: row-reverse;
+}
+.persona-preview-bubbles span {
+  flex: none;
+  color: #8a9099;
+  font-size: 12px;
+  line-height: 28px;
+}
+.persona-preview-bubbles p {
+  max-width: 76%;
+  margin: 0;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: #fff;
+  white-space: pre-wrap;
+}
+.persona-preview-bubbles .me p {
+  background: #95ec69;
+}

@@ -838,11 +838,20 @@ export function CharacterPage({
       )}
       <MenuGroup>
         {!onboarding && active && <MenuRow to={`/characters/${characterId}/cards`} label="卡册" />}
-        <MenuRow
-          label="简介"
-          subtitle={data?.intro || data?.tagline || undefined}
-          onClick={() => setSheet('intro')}
-        />
+        {/* U4：「简介」弹层 → 整页人设卡「TA 的人设」（引导页里不离开当前页，仍用弹层） */}
+        {onboarding ? (
+          <MenuRow
+            label="简介"
+            subtitle={data?.intro || data?.tagline || undefined}
+            onClick={() => setSheet('intro')}
+          />
+        ) : (
+          <MenuRow
+            label="TA 的人设"
+            subtitle={data?.tagline || data?.intro || undefined}
+            to={`/characters/${characterId}/persona`}
+          />
+        )}
         {!onboarding && active && data?.kind === 'custom' && (
           <RelationsRow characterId={characterId} />
         )}
