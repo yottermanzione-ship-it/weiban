@@ -58,6 +58,12 @@ export type TextResult =
         | 'truncated';
       retryable: boolean;
       usage?: TextUsage;
+      /**
+       * 批 EJ：截断原因（只做诊断，写进用量记录的 errorCode，不含正文）：
+       * reasoning = 上游报告了思考 token / 返回了思考内容（思考吃掉输出额度）；
+       * whitespace = 正文结尾是大段空白（JSON 模式空白刷屏）；repeat = 正文后半段高度重复（输出跑飞）。
+       */
+      truncation?: 'reasoning' | 'whitespace' | 'repeat';
     };
 export interface AdapterMessage {
   role: GenerateTextInput['messages'][number]['role'];
@@ -130,6 +136,71 @@ export function thinkingOffFields(control: ThinkingControl): Record<string, unkn
     default:
       return {};
   }
+}
+
+/**
+ * 批 EJ：要求 JSON 却因额度截断时，若正文开头已是一个完整的 JSON 对象、后面只剩空白，返回该对象文本；否则 null。
+ * 只做括号与字符串配对扫描，不记录、不外传正文。
+ */
+export function completeJsonPrefix(text: string): string | null {
+  const start = text.search(/\S/);
+  if (start < 0 || text[start] !== '{') return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]!;
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        if (text.slice(i + 1).trim()) return null;
+        const candidate = text.slice(start, i + 1);
+        try {
+          const parsed: unknown = JSON.parse(candidate);
+          return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? candidate : null;
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/** 批 EJ：截断诊断（只看长度与结构特征，不保存正文）。 */
+export function truncationKind(
+  rawText: string,
+  rawUsage: unknown,
+  message?: unknown,
+): 'reasoning' | 'whitespace' | 'repeat' | undefined {
+  const usage =
+    rawUsage && typeof rawUsage === 'object' ? (rawUsage as Record<string, unknown>) : {};
+  const details = usage.completion_tokens_details as Record<string, unknown> | undefined;
+  const reasoningTokens = details?.reasoning_tokens;
+  const m = message && typeof message === 'object' ? (message as Record<string, unknown>) : {};
+  const reasoningText = m.reasoning_content ?? m.reasoning;
+  if (
+    (typeof reasoningTokens === 'number' && reasoningTokens > 0) ||
+    (typeof reasoningText === 'string' && reasoningText.length > 0) ||
+    new RegExp(`<(?:${REASONING_TAGS})>`, 'i').test(rawText)
+  )
+    return 'reasoning';
+  const tail = rawText.slice(-400);
+  if (tail.length >= 200 && !tail.trim()) return 'whitespace';
+  if (rawText.length >= 400) {
+    const last = rawText.slice(-120);
+    const before = rawText.slice(0, -120);
+    if (last.trim().length >= 40 && before.includes(last.slice(0, 60))) return 'repeat';
+  }
+  return undefined;
 }
 
 const REASONING_TAGS = 'think|thinking|reasoning';
@@ -331,8 +402,18 @@ export class OpenAiTextAdapter implements TextAdapter {
       const usage = usageOf(payload.usage, estimateInputTokens(input.messages), rawText);
       // 空正文或 JSON 被截断：按失败处理（网关负责重试与降级），不能当成功静默返回。
       if (!text) return { ok: false, category: 'empty_output', retryable: true, usage };
-      if (choice?.finish_reason === 'length' && input.responseFormat === 'json')
-        return { ok: false, category: 'truncated', retryable: true, usage };
+      if (choice?.finish_reason === 'length' && input.responseFormat === 'json') {
+        // 批 EJ：完整 JSON 之后只剩空白（JSON 模式空白刷屏）——正文已完整，按成功返回，不再重试加钱。
+        const complete = completeJsonPrefix(text);
+        if (complete !== null) return { ok: true, text: complete, usage };
+        return {
+          ok: false,
+          category: 'truncated',
+          retryable: true,
+          usage,
+          truncation: truncationKind(rawText, payload.usage, choice?.message),
+        };
+      }
       return { ok: true, text, usage };
     } catch {
       return { ok: false, category: 'network_error', retryable: true };

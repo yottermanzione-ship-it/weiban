@@ -466,15 +466,12 @@ export class ConversationMemoryService implements OnModuleInit {
             },
           });
           if (!generated.ok) {
-            await this.deferGroup(
-              state,
-              token,
-              ['insufficient_balance', 'budget_exceeded', 'not_configured'].includes(
-                generated.error,
-              )
-                ? 86400000
-                : 3600000,
+            const wait = ['insufficient_balance', 'budget_exceeded', 'not_configured'].includes(
+              generated.error,
             );
+            // 批 EJ：模型失败（截断等）时清掉已准备的批次（generation+1 → 新幂等键），1 小时后重新准备；
+            // 否则同一 batchId 会一直回放网关缓存的失败，这批群聊记忆永远整理不了。等余额 / 配置时保留原批次。
+            await this.deferGroup(state, token, wait ? 86400000 : 3600000, !wait);
             return;
           }
           result = GroupResult.parse(JSON.parse(generated.value.text));

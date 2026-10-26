@@ -571,7 +571,12 @@ export class ModelGateway implements ModelGatewayPort {
         await this.recorder.writeReleaseSnapshot(usage.record.id, released);
         await this.recorder.finish(usage.record.id, {
           status: 'failed',
-          errorCode: sent ? answer.category : 'route_risk_blocked',
+          // 批 EJ：截断带上诊断后缀（truncated_reasoning / _whitespace / _repeat），便于后台按元数据判断原因。
+          errorCode: sent
+            ? answer.category === 'truncated' && answer.truncation
+              ? `truncated_${answer.truncation}`
+              : answer.category
+            : 'route_risk_blocked',
           ...(answer.usage ??
             (failureUsage?.estimated
               ? {
@@ -600,6 +605,13 @@ export class ModelGateway implements ModelGatewayPort {
           if (index < candidates.length) continue;
           break;
         }
+        // 批 EJ：空白刷屏 / 重复跑飞的截断，加大额度重试只会再顶满一次（生产 10-20~26 元数据：3200→4800 全部顶满），
+        // 不再加钱重试，直接按失败处理，由调用方缩小批次或延后。思考吃额度的截断仍允许一次加大重试。
+        const runaway =
+          !answer.ok &&
+          answer.category === 'truncated' &&
+          (answer.truncation === 'whitespace' || answer.truncation === 'repeat');
+        if (runaway) break;
         if (empty && !emptyRetried) {
           emptyRetried = true;
           const platformCap =

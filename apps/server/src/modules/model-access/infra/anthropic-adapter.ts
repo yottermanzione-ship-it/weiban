@@ -21,6 +21,7 @@
  * 安全：密钥只放在 x-api-key 头；不跟随重定向；任何错误只返回类别，不记录上游原文；响应最多读 2MB。
  */
 import {
+  completeJsonPrefix,
   estimateInputTokens,
   estimateTokens,
   stripReasoning,
@@ -267,8 +268,12 @@ export class AnthropicTextAdapter implements TextAdapter {
         return { ok: false, category: 'content_rejected', retryable: false, usage };
       const text = stripReasoning(rawText);
       if (!text) return { ok: false, category: 'empty_output', retryable: true, usage };
-      if (parsed.stopReason === 'max_tokens' && input.responseFormat === 'json')
+      if (parsed.stopReason === 'max_tokens' && input.responseFormat === 'json') {
+        // 批 EJ：完整 JSON 之后只剩空白时按成功返回（同 OpenAI 兼容适配器）。
+        const complete = completeJsonPrefix(stripJsonFence(text));
+        if (complete !== null) return { ok: true, text: complete, usage };
         return { ok: false, category: 'truncated', retryable: true, usage };
+      }
       return {
         ok: true,
         text: input.responseFormat === 'json' ? stripJsonFence(text) : text,
