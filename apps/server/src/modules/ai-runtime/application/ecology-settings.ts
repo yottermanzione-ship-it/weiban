@@ -56,8 +56,11 @@ import {
   ecologySettings,
 } from '../infra/db/ecology-schema.js';
 
-/** 决策调用的估算用量（报价用）：快照约 3000 token 输入。 */
-const DECISION_ESTIMATE = { inputTokens: 3500, outputTokens: 300 };
+/**
+ * 决策调用的估算用量（报价用）。批 EJ：判定模型（只有 decision 计费上限）由报价口按线路核准的
+ * decision.maxInputTokens、输出 0 计价，这里的数只在文字口径下生效；判定只收净化特征与候选题。
+ */
+const DECISION_ESTIMATE = { inputTokens: 1500, outputTokens: 0 };
 const CONFIG_CACHE_MS = 30_000;
 
 type SettingsRow = typeof ecologySettings.$inferSelect;
@@ -93,11 +96,32 @@ export class EcologySettingsService {
     return config;
   }
 
-  /** 决策模型是否可用（已配置、在目录中、有价格）。 */
+  /** 决策模型是否可用（已配置、是 Jev 类判定模型、在目录中、有价格）。 */
   async decisionModelReady(probeUserId: string): Promise<boolean> {
     const config = await this.config();
     if (!config.decisionModelKey) return false;
+    if ((await this.decisionProblem(config.decisionModelKey)) !== null) return false;
     return (await this.quoteDecision(probeUserId, config.decisionModelKey)) !== null;
+  }
+
+  /**
+   * 批 EJ：决策模型必须是能做原生判定的 Jev 类模型（线路核准了 billingBounds.decision）。
+   * 返回 null = 可用；否则返回给后台看的原因。网关不提供该检查时按不可用处理（不放行文字模型）。
+   */
+  async decisionProblem(modelKey: string): Promise<string | null> {
+    const status = await this.media.decisionModelStatus?.(modelKey).catch(() => null);
+    if (!status) return '无法确认该模型的判定能力';
+    if (status.ready) return null;
+    switch (status.reason) {
+      case 'not_decision_model':
+        return '不是判定模型（Jev 类）：线路没有核准的「决策」计费上限';
+      case 'model_not_allowed':
+        return '是成人内容模型，不能做生态判定';
+      case 'provider_unavailable':
+        return '上游暂时不可用';
+      default:
+        return '不在模型目录或已下架';
+    }
   }
 
   private async quoteDecision(userId: string, modelKey: string): Promise<number | null> {
@@ -114,16 +138,21 @@ export class EcologySettingsService {
 
   async adminOverview(adminUserId: string): Promise<EcologyAdminOverview> {
     const config = await this.config();
-    const ready = config.decisionModelKey
-      ? (await this.quoteDecision(adminUserId, config.decisionModelKey)) !== null
-      : false;
+    const problem = config.decisionModelKey
+      ? await this.decisionProblem(config.decisionModelKey)
+      : null;
+    const ready =
+      !!config.decisionModelKey &&
+      problem === null &&
+      (await this.quoteDecision(adminUserId, config.decisionModelKey)) !== null;
     const warnings: string[] = [];
     if (!config.decisionModelKey)
-      warnings.push('未配置决策模型：角色生态不会运行（不会改用用户的聊天模型）。');
-    else if (!ready)
       warnings.push(
-        `决策模型 ${config.decisionModelKey} 不在模型目录、已下架或没有价格：角色生态暂停。`,
+        '未配置决策模型：角色生态暂停，不会运行（不会改用用户的聊天模型）。请选择 Jev 类判定模型。',
       );
+    else if (problem)
+      warnings.push(`决策模型 ${config.decisionModelKey} ${problem}：角色生态暂停。`);
+    else if (!ready) warnings.push(`决策模型 ${config.decisionModelKey} 没有价格：角色生态暂停。`);
     const since = new Date(this.clock.nowMs() - 86400_000);
     const [enabled] = await this.db.db
       .select({ n: count() })
@@ -153,6 +182,8 @@ export class EcologySettingsService {
   async updateConfig(adminUserId: string, input: EcologyConfig): Promise<EcologyAdminOverview> {
     const config = parseContract(EcologyConfig, input);
     if (config.decisionModelKey) {
+      const problem = await this.decisionProblem(config.decisionModelKey);
+      if (problem) throw new AppError('bad_request', `决策模型${problem}`);
       const amount = await this.quoteDecision(adminUserId, config.decisionModelKey);
       if (amount === null)
         throw new AppError('bad_request', '决策模型不在模型目录、已下架或没有价格');
@@ -319,6 +350,7 @@ export class EcologySettingsService {
     config: EcologyConfig,
   ): Promise<number | null> {
     if (!config.decisionModelKey) return null;
+    if ((await this.decisionProblem(config.decisionModelKey)) !== null) return null;
     const decision = await this.quoteDecision(userId, config.decisionModelKey);
     if (decision === null) return null;
     const [avg] = await this.db.db

@@ -1,9 +1,8 @@
 /**
- * 3.29：生态 Gate 只做是/否、朋友圈只同步微博素材、规划跟随用户 chat 场景。
+ * 3.29：朋友圈只同步微博素材、规划跟随用户 chat 场景（生态 Jev 判定见 ecology-jev.test.ts）。
  * 只覆盖本次窄改，不重复私密固定等前批测试。
  */
 import { describe, expect, it, vi } from 'vitest';
-import { parseGateDecision } from '../domain/ecology.js';
 import { MomentsAiService } from './moments-ai.js';
 import { ModelResolver } from '../../model-access/application/resolver.js';
 import type { CatalogService } from '../../model-access/application/catalog.js';
@@ -14,23 +13,6 @@ const USER = '00000000-0000-4000-8000-000000000001';
 const CHAR = '00000000-0000-4000-8000-000000000002';
 
 const policy = { isRealPerson: false, isMinor: false, romanceAllowed: true };
-
-describe('生态 Gate：只回答是/否', () => {
-  it('解析每个候选的 do，忽略不在候选里的动作', () => {
-    const parsed = parseGateDecision(
-      '```json\n{"decisions":[{"action":"message","do":true},{"action":"voice","do":false}]}\n```',
-    );
-    expect(parsed?.decisions).toEqual([
-      { action: 'message', do: true },
-      { action: 'voice', do: false },
-    ]);
-  });
-
-  it('旧版单动作 / 带正文的格式不再被当作 Gate 结果', () => {
-    expect(parseGateDecision('{"action":"message","brief":"在干嘛","murmur":"想了想"}')).toBeNull();
-    expect(parseGateDecision('not json')).toBeNull();
-  });
-});
 
 function moments(options: {
   material?: {

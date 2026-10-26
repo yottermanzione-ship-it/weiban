@@ -8,6 +8,7 @@ import {
   ECOLOGY_ACTION_KEYS,
   EcologyAdminEndpoints,
   ModelAccessAdminEndpoints,
+  type AdminModel,
   type EcologyConfig,
   type EcologyRunRecord,
   type EcologyRunStatus,
@@ -19,6 +20,14 @@ import { FieldHelp, FormSection, Page, SectionCard, StatusTag, useToast } from '
 import { formatDateTime } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 import { UserIdentity, useUserDirectory } from './users/identity.js';
+
+/** 批 EJ：能做原生判定（Jev 类）= 目录或任一启用线路核准了「决策」计费上限（与服务器同一口径）。 */
+function isDecisionModel(m: AdminModel): boolean {
+  return (
+    !!m.billingBounds?.decision ||
+    (m.routes ?? []).some((r) => r.enabled && !!r.billingBounds?.decision)
+  );
+}
 
 const LEVELS = [
   ['occasional', '偶尔冒泡'],
@@ -155,23 +164,24 @@ function EcologyConfigTab() {
         {error && <Alert type="error" showIcon message={error} />}
         <Form<EcologyConfig> form={form} layout="vertical" style={{ maxWidth: 720 }}>
           <FormSection
-            title="决策模型（Gate）"
-            desc="唯一动作开关：只对候选动作回答是/否，不写正文、状态签名或碎碎念；正文由用户自己的场景模型执行。"
+            title="决策模型（Jev 判定）"
+            desc="Jev 只判断做不做：角色每次醒来，对每个已开启、此刻可做的动作分别回答「现在做 / 先不做」；内容（消息、朋友圈、状态签名、语音）由用户自己选的模型生成。"
           />
           <Form.Item
             name="decisionModelKey"
             extra={
               <FieldHelp>
-                不配置 = 生态不运行；不会改用用户聊天模型。按用户积分计费。Jev 只在此处配置。
+                只列出能做原生判定的模型（线路填了「决策」计费上限的 Jev 类）。不选 =
+                生态暂停；不会改用文字模型判定。判定费用按 Jev 价目从用户积分扣，一次醒来只问一次。
               </FieldHelp>
             }
           >
             <Select
               allowClear
               showSearch
-              placeholder="选择决策模型"
+              placeholder="选择 Jev 判定模型"
               options={(models.data?.items ?? [])
-                .filter((m) => !m.deletedAt)
+                .filter((m) => !m.deletedAt && isDecisionModel(m))
                 .map((m) => ({
                   value: m.modelKey,
                   label: `${m.displayName}（${m.modelKey}）`,
@@ -222,7 +232,11 @@ function EcologyConfigTab() {
             name="decisionMaxOutputTokens"
             label="决策最大输出 token"
             rules={[{ required: true }]}
-            extra={<FieldHelp>一次决策含动作说明和碎碎念，300～600 足够。</FieldHelp>}
+            extra={
+              <FieldHelp>
+                Jev 判定不使用此项（只回答做不做、不写文字）；保留只为兼容旧配置。
+              </FieldHelp>
+            }
           >
             <InputNumber min={100} max={2000} />
           </Form.Item>

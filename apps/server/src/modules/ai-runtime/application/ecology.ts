@@ -1,32 +1,38 @@
 /**
  * 角色生态 v1：统一循环（docs/product/input/2026-10-18-gm-ecology-vision.md；17 号；说明见 docs/ai/ecology-v1.md）。
  *
- * 定时唤醒 → 组装统一快照（聊天、记忆、朋友圈及评论、日子、TA 今天的生活、关系阶段、当前时间、积分）
- * → 决策模型从「已开启且此刻合适的动作工具」里挑一个或不动 → 执行（复用现有模块）
- * → 同一次调用产出一两句第一人称碎碎念（加密存储，只有用户本人能看）。
+ * 批 EJ（docs/ai/2026-10-23-ecology-native-decision-spec.md §四、ADR-20261024）：
+ * 定时唤醒 → 程序预筛「已开启、此刻可做、用户对应模型可用」的候选（固定 ID）
+ * → 一次原生判定请求（ModelGatewayMediaPort.decide，后台选的 Jev）批量问每个候选做不做
+ * → 低把握 / 超时 / 陌生 ID 一律不做，程序排互斥与过度打扰 → 用户自己选的模型逐项执行 → 成功才记「已做」。
+ * Jev 只收净化后的数字 / 布尔特征和固定题干，不收聊天、记忆、人设或私密原文；不写任何内容。
  *
- * - 决策模型由后台配置；未配置时不运行，不回退用户聊天模型。
+ * - 决策模型由后台配置且必须是 Jev 类判定模型；未配置时不运行，不回退文字模型判定。
  * - 每次唤醒和动作都走网关的积分冻结 / 结算（ecologyTask = true，不透支）；积分不足静默暂停，
  *   下次打开 App 的一次提示由 billing 记录（16 号 §8）。
  * - 说到做到（17 号 §7）：碎碎念只在动作真的执行成功时保留，失败改成中性一句；用户在聊天里让角色做的动作
  *   （发朋友圈、拍一拍、改状态、改签名）不受生态开关限制，PRO+ + 积分够就执行。
  */
-import { ROMANCE_TITLE_STAGE, stageLabel } from '../domain/relationship-stage.js';
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { ROMANCE_TITLE_STAGE } from '../domain/relationship-stage.js';
+import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, gte, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import {
   Id,
+  type AdultModelReadPort,
   type CharacterReadPort,
   type ChatReadPort,
   type ContactsReadPort,
+  type DecideOutput,
   type EcologyActionKey,
   type EcologyCharacterProfile,
   type EcologyMurmur,
   type EcologyRunRecord,
   type EcologyRunStatus,
+  type GenerateError,
   type HolidayEventPort,
   type IdentityMembershipReadPort,
   type IdentityReadPort,
+  type ModelGatewayMediaPort,
   type ModelGatewayPort,
   type MomentsPost,
   type MomentsReadPort,
@@ -52,25 +58,35 @@ import { CHAT_READ_PORT } from '../../chat/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { GROWTH_SERVICE, type GrowthService } from '../../growth/index.js';
 import { IDENTITY_MEMBERSHIP_READ_PORT, IDENTITY_READ_PORT } from '../../identity/index.js';
-import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
+import {
+  ADULT_MODEL_READ_PORT,
+  MODEL_GATEWAY_MEDIA_PORT,
+  MODEL_GATEWAY_PORT,
+} from '../../model-access/index.js';
 import { MOMENTS_READ_PORT } from '../../moments/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import {
   ACTION_DEF,
+  JEV_OPTIONS,
+  TEXT_MODEL_ACTIONS,
   detectUserRequest,
+  interpretJevAnswers,
+  jevPrompt,
   microsToPoints,
-  parseGateDecision,
+  resolveEcologyConflicts,
   wakeSlots,
 } from '../domain/ecology.js';
 import { healthPrivate } from '../domain/memory.js';
+import { outputAllowed } from '../domain/reply-rules.js';
+import { scrubSummary } from './planner.js';
 import { ecologyProfiles, ecologyRuns } from '../infra/db/ecology-schema.js';
 import { simulationStates, userChatActivity } from '../infra/db/schema.js';
 import { EcologySettingsService } from './ecology-settings.js';
 import { GroupChatService } from './group-chat.js';
 import { MediaAiService } from './media-ai.js';
 import { MemoryService } from './memory.js';
-import { BrainContextService, brainMessages } from './brain.js';
+import { CompanionSettingsService } from './settings.js';
 import { SharedEpisodesService } from './shared-episodes.js';
 import { MomentsAiService } from './moments-ai.js';
 import {
@@ -81,10 +97,7 @@ import {
 } from './proactive-scheduler.js';
 import { SimulationService } from './simulation.js';
 import { SocialService } from './social.js';
-import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
-import { captionForMemory, captionSnapshot } from '../domain/image-caption.js';
 import { WeiboSyncService } from './weibo.js';
-import { snapshotText } from './content-text.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 import { characterView, rolePersonaSpeechText } from './character-view.js';
 
@@ -119,8 +132,10 @@ const CHAT_ACTIONS: ReadonlySet<EcologyActionKey> = new Set([
   'play_wish',
 ]);
 
-/** 3.29：每轮最多执行几个动作。候选全部交给 Gate 评估；这里只防一轮刷屏。 */
+/** 3.29：每轮最多执行几个动作。候选全部交给 Jev 评估；这里只防一轮刷屏。 */
 const MAX_ACTIONS_PER_WAKE = 2;
+/** 批 EJ：一次判定最多等多久（网关 decide 自身上限也是 10 秒）；超时就不做，不重试。 */
+const JEV_TIMEOUT_MS = 10_000;
 
 /**
  * 3.29：动作正文由用户自己的场景模型生成；这里只给生成器一句**程序侧**的任务说明。
@@ -147,9 +162,19 @@ interface ActionResult {
   reason?: string;
 }
 
+/** 批 EJ：发给 Jev 的情境，只允许数字 / 布尔 / null（不含任何原文）。 */
+export type JevState = Record<string, number | boolean | null>;
+
 interface Snapshot {
-  prefix: string;
-  text: string;
+  /** 净化后的判定特征（白名单字段，见 buildSnapshot）。 */
+  features: JevState;
+  /**
+   * 净化后的对话现状（总经理 10-26：Jev 要基于语境判断）：最近几条日常范围消息要点（每条截短、隐私词替换、
+   * 健康内容剔除）、未回复情况、今天做过什么。私密范围原文、人设、记忆正文不进。
+   */
+  summary: string;
+  /** 余额不足：不向 Jev 付费询问，直接暂停（欠费即停）。 */
+  balanceInsufficient: boolean;
   /**
    * H2（总经理 10-21 C14）：该角色正处于私密模式（会话内容范围 adult 且有资格）。
    * 期间生态的模型调用一律走该用户的私密模型；不发语音、不去群里说话（私密模式只开放文字与图片、仅单角色）。
@@ -189,12 +214,14 @@ export class EcologyService {
     @Inject(POLICY_PORT) private readonly policy: PolicyPort,
     @Inject(CHAT_READ_PORT) private readonly chat: ChatReadPort,
     @Inject(MODEL_GATEWAY_PORT) private readonly gateway: ModelGatewayPort,
+    @Inject(MODEL_GATEWAY_MEDIA_PORT) private readonly media: ModelGatewayMediaPort,
+    @Inject(ADULT_MODEL_READ_PORT) private readonly adultModels: AdultModelReadPort,
     @Inject(BILLING_READ_PORT) private readonly billing: BillingReadPort,
     @Inject(GROWTH_SERVICE) private readonly growth: GrowthService,
     @Inject(HOLIDAY_EVENT_PORT) private readonly holidays: HolidayEventPort,
     @Inject(MOMENTS_READ_PORT) private readonly moments: MomentsReadPort,
     @Inject(MemoryService) private readonly memory: MemoryService,
-    @Inject(BrainContextService) private readonly brain: BrainContextService,
+    @Inject(CompanionSettingsService) private readonly companion: CompanionSettingsService,
     @Inject(SharedEpisodesService) private readonly episodes: SharedEpisodesService,
     @Inject(SimulationService) private readonly simulation: SimulationService,
     @Inject(SocialService) private readonly social: SocialService,
@@ -203,8 +230,6 @@ export class EcologyService {
     @Inject(MediaAiService) private readonly mediaAi: MediaAiService,
     @Inject(GroupChatService) private readonly groups: GroupChatService,
     @Inject(WeiboSyncService) private readonly weibo: WeiboSyncService,
-    /** H3：图片描述存档。 */
-    @Optional() @Inject(ImageCaptionStore) private readonly captions?: ImageCaptionStore,
   ) {}
 
   // =========================================================================
@@ -353,139 +378,190 @@ export class EcologyService {
   // 一次唤醒
   // =========================================================================
   /**
-   * 3.29：一次唤醒只调一次 Gate（Jev），对**全部候选动作**逐项回答 yes/no；
-   * 不生成正文 / 状态签名 / 碎碎念 / 长规划。执行最多 MAX_ACTIONS_PER_WAKE 个动作，
-   * 真正内容由各动作对应的用户场景模型完成。
+   * 批 EJ：一次唤醒最多一次原生判定（Jev）请求，对全部候选逐项问 act / defer（允许多项通过）。
+   * Jev 不写正文、状态签名或碎碎念；通过的动作由程序排冲突后，交给用户自己选的模型逐项执行。
+   * 低把握、超时、陌生 ID、网关失败一律不做；不重试、不回落到文字模型判定。
    */
   private async executeWake(run: RunRow): Promise<void> {
     const started = this.clock.nowMs();
-    const { userId, characterId } = run;
+    const { userId } = run;
     const config = await this.settings.config();
     if (!config.decisionModelKey)
       return this.finish(run.id, { status: 'skipped', outcome: 'model_not_configured' });
+    if ((await this.settings.decisionProblem(config.decisionModelKey)) !== null)
+      return this.finish(run.id, { status: 'skipped', outcome: 'model_not_decision' });
     const snapshot = await this.buildSnapshot(run);
     if (!snapshot)
       return this.finish(run.id, { status: 'skipped', outcome: 'context_unavailable' });
-    if (!snapshot.tools.length) {
-      return this.finish(run.id, {
+    // 欠费即停：余额不足时不向 Jev 付费询问。
+    if (snapshot.balanceInsufficient) {
+      await this.settings.pause(userId, 'insufficient_balance');
+      return this.finish(run.id, { status: 'paused', outcome: 'insufficient_balance' });
+    }
+    const idle = (outcome: string, extra: { modelKey?: string; chargedMicros?: number } = {}) =>
+      this.finish(run.id, {
         status: 'idle',
-        outcome: 'no_action',
+        outcome,
         actionKey: null,
         actionSummary: '看了看手机，没做什么',
         chargedMicros: 0,
-        latencyMs: this.clock.nowMs() - started,
-      });
-    }
-    const result = await this.gateway.generateText({
-      userId,
-      characterId,
-      // Gate 永远是后台配置的 Jev（唯一决策模型）；不做用户 chat 兜底，也不带私密原文。
-      purpose: 'behavior_planning',
-      modelRole: 'background',
-      modelKeyOverride: config.decisionModelKey,
-      billingOwner: 'user',
-      countAsBackground: true,
-      ecologyTask: true,
-      responseFormat: 'json',
-      maxOutputTokens: config.decisionMaxOutputTokens,
-      temperature: 0.2,
-      idempotencyKey: `eco:${run.id}:gate`,
-      meta: {
-        promptTemplateVersion: 'ecology-v3-gate',
-        stablePrefixChars: snapshot.prefix.length,
-      },
-      messages: [
-        { role: 'system', content: snapshot.prefix },
-        { role: 'system', content: DECISION_SYSTEM },
-        { role: 'user', content: snapshot.text },
-      ],
-    });
-    if (!result.ok) {
-      if (result.error === 'insufficient_balance' || result.error === 'budget_exceeded') {
-        if (result.error === 'insufficient_balance')
-          await this.settings.pause(userId, 'insufficient_balance');
-        return this.finish(run.id, { status: 'paused', outcome: result.error });
-      }
-      return this.finish(run.id, { status: 'failed', outcome: `model_${result.error}` });
-    }
-    let charged = result.value.chargedMicros;
-    const gate = parseGateDecision(result.value.text);
-    if (!gate)
-      return this.finish(run.id, {
-        status: 'failed',
-        outcome: 'bad_output',
-        modelKey: result.value.modelKey,
-        chargedMicros: charged,
-        latencyMs: this.clock.nowMs() - started,
-      });
-    const approved = snapshot.tools
-      .filter((action) =>
-        gate.decisions.some((decision) => decision.action === action && decision.do === true),
-      )
-      .slice(0, MAX_ACTIONS_PER_WAKE);
-    if (!approved.length) {
-      return this.finish(run.id, {
-        status: 'idle',
-        outcome: 'no_action',
-        actionKey: null,
-        actionSummary: '看了看手机，没做什么',
-        modelKey: result.value.modelKey,
-        chargedMicros: charged,
-        // Gate 不再写碎碎念；这里不伪造第一人称内容。
+        // Jev 不写碎碎念；这里不伪造第一人称内容。
         murmur: null,
         latencyMs: this.clock.nowMs() - started,
+        ...extra,
+      });
+    // 无候选不调用 Jev（不花钱问空问题）。
+    if (!snapshot.tools.length) return idle('no_action');
+    const candidates = snapshot.tools.slice(0, 20);
+    const asked = await this.askJev(
+      run,
+      config.decisionModelKey,
+      { features: snapshot.features, summary: snapshot.summary },
+      candidates,
+    );
+    if (!asked.ok) {
+      if (asked.error === 'insufficient_balance' || asked.error === 'budget_exceeded') {
+        if (asked.error === 'insufficient_balance')
+          await this.settings.pause(userId, 'insufficient_balance');
+        return this.finish(run.id, { status: 'paused', outcome: asked.error });
+      }
+      // 超时也可能已被供应商处理：实际费用以网关结算为准，这里不宣称免费，也不重试。
+      return this.finish(run.id, {
+        status: 'failed',
+        outcome: asked.error === 'timeout' ? 'jev_timeout' : `jev_${asked.error}`,
+        modelKey: config.decisionModelKey,
+        latencyMs: this.clock.nowMs() - started,
       });
     }
-    const done: Array<{ action: EcologyActionKey; result: ActionResult }> = [];
-    for (const action of approved) {
-      const outcome = await this.perform(run, action, snapshot).catch(
-        (error: unknown): ActionResult => ({
-          ok: false,
-          chargedMicros: error instanceof ProactiveChargeError ? error.chargedMicros : 0,
-          reason: error instanceof Error ? error.message : 'error',
-        }),
+    let charged = asked.chargedMicros;
+    const verdict = interpretJevAnswers(candidates, asked.answers);
+    const { selected, dropped } = resolveEcologyConflicts(verdict.approved, MAX_ACTIONS_PER_WAKE);
+    const trace = jevTrace(verdict, dropped);
+    if (!selected.length)
+      return idle(
+        `${verdict.lowConfidence.length ? 'jev_low_confidence' : verdict.invalid.length ? 'jev_invalid' : 'jev_declined'}${trace}`,
+        { modelKey: asked.modelKey, chargedMicros: charged },
       );
+    const done: Array<{ action: EcologyActionKey; result: ActionResult }> = [];
+    for (const action of selected) {
+      // 每项执行前再核对：生态仍开着、动作没被关掉、平台仍开放。
+      const recheck = await this.stillAllowed(userId, action);
+      const outcome: ActionResult = recheck
+        ? { ok: false, chargedMicros: 0, reason: recheck }
+        : await this.perform(run, action, snapshot).catch((error: unknown): ActionResult => ({
+            ok: false,
+            chargedMicros: error instanceof ProactiveChargeError ? error.chargedMicros : 0,
+            reason: error instanceof Error ? error.message : 'error',
+          }));
       charged += outcome.chargedMicros;
       done.push({ action, result: outcome });
-      if (!outcome.ok && /insufficient_balance/.test(outcome.reason ?? ''))
+      if (!outcome.ok && /insufficient_balance/.test(outcome.reason ?? '')) {
         await this.settings.pause(userId, 'insufficient_balance');
+        break;
+      }
     }
     if (
-      approved.length === 1 &&
-      approved[0] === 'weibo_sync' &&
-      done[0]?.result.reason === 'no_new_public_posts'
+      done.length === 1 &&
+      done[0]!.action === 'weibo_sync' &&
+      done[0]!.result.reason === 'no_new_public_posts'
     )
       return this.finish(run.id, {
         status: 'idle',
-        outcome: 'no_new_public_posts',
+        outcome: `no_new_public_posts${trace}`,
         actionKey: 'weibo_sync',
         actionSummary: '看了看微博，暂时没有新动态',
-        modelKey: result.value.modelKey,
+        modelKey: asked.modelKey,
         chargedMicros: charged,
         murmur: null,
         latencyMs: this.clock.nowMs() - started,
       });
     const succeeded = done.filter((item) => item.result.ok);
+    // 成功才说做了：没做成的写「没做成」，不假装成功。
     const summaries = done.map(({ action, result: r }) => {
       const def = ACTION_DEF.get(action)!;
       return r.ok ? def.summary : `${def.label}没做成`;
     });
     await this.finish(run.id, {
       status: succeeded.length ? 'done' : 'failed',
-      outcome: succeeded.length
-        ? 'sent'
-        : `executor_failed:${done.map((item) => item.result.reason ?? 'unknown').join(',')}`.slice(
-            0,
-            200,
-          ),
+      outcome: `${
+        succeeded.length
+          ? 'sent'
+          : `executor_failed:${done.map((item) => item.result.reason ?? 'unknown').join(',')}`
+      }${trace}`,
       // 多个动作时单条 actionKey 会误导；用 null，动作明细在 actionSummary。
-      actionKey: approved.length === 1 ? approved[0] : null,
+      actionKey: done.length === 1 ? done[0]!.action : null,
       actionSummary: summaries.join('；').slice(0, 500),
-      modelKey: result.value.modelKey,
+      modelKey: asked.modelKey,
       chargedMicros: charged,
       murmur: null,
       latencyMs: this.clock.nowMs() - started,
     });
+  }
+
+  /**
+   * 原生判定：同一情境的全部候选一次请求（每题固定 ID = 动作名、选项 act / defer）。
+   * 计费由网关按 Jev 价目记一条用量（用户付、计入后台额度、生态任务不透支）；同一次唤醒幂等键固定，重放不重复扣费。
+   */
+  private async askJev(
+    run: RunRow,
+    modelKey: string,
+    state: { features: JevState; summary: string },
+    candidates: readonly EcologyActionKey[],
+  ): Promise<
+    | {
+        ok: true;
+        answers: DecideOutput['answers'];
+        chargedMicros: number;
+        modelKey: string;
+      }
+    | { ok: false; error: GenerateError | 'timeout' }
+  > {
+    const deadline = this.clock.nowMs() + JEV_TIMEOUT_MS;
+    const call = this.media
+      .decide({
+        userId: run.userId,
+        characterId: run.characterId,
+        purpose: 'behavior_planning',
+        billingOwner: 'user',
+        countAsBackground: true,
+        ecologyTask: true,
+        modelKey,
+        state,
+        questions: candidates.map((action) => ({
+          questionId: action,
+          kind: 'choice' as const,
+          prompt: jevPrompt(action),
+          options: [...JEV_OPTIONS],
+        })),
+        deadlineAt: new Date(deadline).toISOString(),
+        idempotencyKey: `eco:${run.id}:jev`,
+      })
+      .catch(() => ({ ok: false as const, error: 'provider_unavailable' as const }));
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<{ ok: false; error: 'timeout' }>((resolve) => {
+      timer = setTimeout(() => resolve({ ok: false, error: 'timeout' }), JEV_TIMEOUT_MS + 1_000);
+    });
+    try {
+      const result = await Promise.race([call, timeout]);
+      if (!result.ok) return result;
+      return {
+        ok: true,
+        answers: result.value.answers,
+        chargedMicros: result.value.chargedMicros,
+        modelKey: result.value.modelKey,
+      };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  /** 执行前复核；返回 null = 可以执行，否则返回不执行的原因。 */
+  private async stillAllowed(userId: string, action: EcologyActionKey): Promise<string | null> {
+    if (!(await this.settings.isActive(userId))) return 'ecology_inactive';
+    const row = await this.settings.row(userId);
+    if (row?.disabledActions?.includes(action)) return 'action_disabled';
+    if (await this.settings.actionAvailable(action)) return 'action_unavailable';
+    return null;
   }
 
   /** 执行一个动作（复用现有模块）。Gate 只决定做不做，内容参数由程序/用户场景模型决定。 */
@@ -598,6 +674,8 @@ export class EcologyService {
           action: 'reply',
           replyToCommentId: comment.commentId,
           ecologyRunId: run.id,
+          // H2：私密模式期间用该用户的私密模型写回复（输出仍按日常范围检查）。
+          ...(snapshot.privateMode ? { privateConversationId: snapshot.conversationId } : {}),
         });
         return r.ok
           ? { ok: true, chargedMicros: r.chargedMicros }
@@ -606,7 +684,13 @@ export class EcologyService {
       case 'status':
       case 'signature': {
         // 3.29：状态/签名由用户自己的 chat 场景模型写，不用 Gate 输出的 text。
-        const generated = await this.generateProfileText(userId, characterId, action);
+        const generated = await this.generateProfileText(
+          userId,
+          characterId,
+          action,
+          undefined,
+          snapshot.privateMode ? snapshot.conversationId : undefined,
+        );
         if (!generated) return { ok: false, chargedMicros: 0, reason: 'no_text' };
         await this.saveProfileText(userId, characterId, action, generated.text);
         return { ok: true, chargedMicros: generated.chargedMicros };
@@ -631,14 +715,16 @@ export class EcologyService {
   }
 
   /**
-   * 3.29：用**用户自己的 chat 场景模型**写状态/签名；Gate（Jev）不再输出 text。
-   * 返回 null = 用户没配 chat 模型 / 生成失败 / 内容不安全，不做任何替换模型。
+   * 3.29：用**用户自己的 chat 场景模型**写状态/签名；Jev 不输出 text。
+   * 批 EJ：角色处于私密模式（生态发起）时按 H2 用该用户的私密模型写（传私聊会话，输出仍按日常范围过滤）。
+   * 返回 null = 用户没配对应模型 / 生成失败 / 内容不安全，不做任何替换模型。
    */
   private async generateProfileText(
     userId: string,
     characterId: string,
     action: 'status' | 'signature',
     hint?: string,
+    privateConversationId?: string,
   ): Promise<{ text: string; chargedMicros: number } | null> {
     const role = await this.characters.getForRuntime(userId, characterId);
     if (!role) return null;
@@ -647,7 +733,15 @@ export class EcologyService {
       characterId,
       purpose: 'behavior_planning',
       billingOwner: 'user',
-      modelRole: 'chat',
+      ...(privateConversationId
+        ? {
+            modelRole: 'adult' as const,
+            conversationId: privateConversationId,
+            countAsBackground: true,
+            ecologyTask: true,
+            meta: { scenarioMode: 'adult' as const },
+          }
+        : { modelRole: 'chat' as const }),
       responseFormat: 'text',
       maxOutputTokens: 60,
       idempotencyKey: `eco:profile:${userId}:${characterId}:${action}:${this.clock.nowMs()}`,
@@ -669,6 +763,9 @@ export class EcologyService {
       .replace(/^["「『]|["」』]$/g, '')
       .slice(0, action === 'status' ? 12 : 30);
     if (!text || healthPrivate(text)) return null;
+    // 状态 / 签名是日常范围可见的资料：私密模型写的也按日常范围检查，不放行成人用词。
+    const policy = await this.policy.getCharacterPolicy(userId, characterId).catch(() => null);
+    if (!policy || !outputAllowed(text, policy, false)) return null;
     return { text, chargedMicros: r.value.chargedMicros };
   }
 
@@ -701,6 +798,10 @@ export class EcologyService {
   // =========================================================================
   // 统一快照
   // =========================================================================
+  /**
+   * 批 EJ：组装判定所需的**结构化特征**与候选。只读日常范围；不再拼聊天 / 记忆 / 朋友圈原文
+   * （Jev 只收白名单数字与布尔值）。目标（朋友圈评论、群）由程序记下，执行时使用，不交给 Jev。
+   */
   private async buildSnapshot(run: RunRow): Promise<Snapshot | null> {
     const { userId, characterId } = run;
     const [profile, role, policy, contact] = await Promise.all([
@@ -712,35 +813,20 @@ export class EcologyService {
     if (!profile || !role || !policy || !contact?.conversationId) return null;
     const conversation = await this.chat.getConversation(contact.conversationId).catch(() => null);
     const privateMode = conversation?.contentScope === 'adult' && policy.adultModeEligible;
-    // Decision inputs remain normal-scope, even when H2 routes them to the private model.
-    const brain = await this.brain.build(userId, characterId, 'normal', '', {
-      compact: true,
-      excludeHealth: true,
-    });
-    if (!brain) return null;
-    const prefix = brainMessages(brain, privateMode ? 'adult' : 'background')[0]!.content;
     const config = await this.settings.config();
     const userRow = await this.settings.row(userId);
     const disabled = new Set(userRow?.disabledActions ?? []);
     const now = this.clock.now();
     const nowMs = now.getTime();
     const local = localParts(now, profile.timeZone);
-    const weekday = '日一二三四五六'[new Date(`${local.date}T12:00:00Z`).getUTCDay()];
+    const weekday = new Date(`${local.date}T12:00:00Z`).getUTCDay();
     const level = await this.growth
       .getFamiliarity(userId, characterId)
       .then((f) => f.level)
       .catch(() => 1);
-    const lines: string[] = [];
     const targets: Snapshot['targets'] = new Map();
 
-    lines.push(
-      `【现在】对方当地时间 ${local.date} 周${weekday} ${String(local.hour).padStart(2, '0')}:${String(local.minute).padStart(2, '0')}（${profile.timeZone}）`,
-    );
-    lines.push(
-      `【你们】好感度：${stageLabel(level)}（粉丝 → 朋友 → 亲密好友 → 暧昧 → 恋人 → 伴侣，越往后越亲密）；${policy.romanceAllowed && !policy.isMinor ? '' : '不涉及恋爱暧昧；'}对方称呼：${profile.nickname ?? '对方'}`,
-    );
-
-    // 聊天：最近 12 条；你发了还没回的条数；对方最近活跃。
+    // 聊天：只数条数和时间（日常范围），不读正文给判定。
     const history = await this.chat
       .readMessages({ conversationId: contact.conversationId, scopes: ['normal'], limit: 30 })
       .catch(() => []);
@@ -752,30 +838,6 @@ export class EcologyService {
     }
     const lastUser = [...visible].reverse().find((m) => m.senderKind === 'user');
     const sinceUserMs = lastUser ? nowMs - Date.parse(lastUser.createdAt) : Infinity;
-    // H3：图片 / 用户自己的表情用描述存档（日常范围）。
-    const chatCaptions =
-      (await this.captions
-        ?.forMessages(userId, visible.slice(-12), ['normal'])
-        .catch(() => null)) ?? NO_CAPTIONS;
-    const chatLines = visible.slice(-12).map((m) => {
-      const who = m.senderKind === 'user' ? '对方' : '你';
-      const body =
-        m.content?.type === 'text'
-          ? m.content.text.slice(0, 120)
-          : m.content?.type === 'voice'
-            ? `[语音]${m.content.transcript?.slice(0, 80) ?? ''}`
-            : (m.content?.type === 'image' && chatCaptions.has(m.content.mediaId)) ||
-                (m.content?.type === 'sticker' &&
-                  !m.content.description &&
-                  chatCaptions.has(m.content.mediaId))
-              ? snapshotText(m.content, chatCaptions).slice(0, 160)
-              : `[${m.content?.type ?? '消息'}]`;
-      return `${who}（${ago(nowMs - Date.parse(m.createdAt))}）：${body}`;
-    });
-    lines.push(`【最近聊天】${chatLines.length ? `\n${chatLines.join('\n')}` : '还没怎么聊过'}`);
-    lines.push(
-      `对方上次找你：${lastUser ? ago(sinceUserMs) : '很久以前'}；你发了对方还没回的消息：${unanswered} 条`,
-    );
     const [activity] = await this.db.db
       .select({ at: sql<Date>`max(${userChatActivity.lastAt})` })
       .from(userChatActivity)
@@ -789,55 +851,38 @@ export class EcologyService {
       );
     const absenceMs = state ? nowMs - state.at.getTime() : 0;
 
-    // 记忆（日常范围、不含健康隐私）。
+    // 记忆：只看有没有可跟进的约定（日常范围、不含健康隐私）。
     const memories = await this.memory
       .list(userId, characterId, { limit: 60 })
       .then((r) => r.items)
       .catch(() => []);
-    const usable = memories.filter(
-      (m) => m.scope === 'normal' && m.status === 'current' && !healthPrivate(m.content),
+    const followUps = memories.filter(
+      (m) =>
+        m.scope === 'normal' &&
+        m.status === 'current' &&
+        m.category === 'commitment' &&
+        !healthPrivate(m.content),
     );
-    const followUps = usable.filter((m) => m.category === 'commitment');
 
     // 日子：节日、生日、纪念日。
-    const special: string[] = [];
+    let specialDay = false;
     const holidays = await this.holidays.getUpcomingForUser(userId, 1).catch(() => []);
     for (const h of holidays)
       // 3.27（H1）：恋爱节日只对好感度到「恋人」阶段的角色（不再看手选的关系类型）。
-      if (h.daysAhead === 0 && (!h.romantic || level >= ROMANCE_TITLE_STAGE))
-        special.push(`今天是${h.name}`);
-    if (profile.birthday && profile.birthday.slice(5) === local.date.slice(5))
-      special.push('今天是对方生日');
+      if (h.daysAhead === 0 && (!h.romantic || level >= ROMANCE_TITLE_STAGE)) specialDay = true;
+    if (profile.birthday && profile.birthday.slice(5) === local.date.slice(5)) specialDay = true;
     const known = await this.growth.getDaysKnown(userId, characterId).catch(() => null);
     for (const a of known?.anniversaries ?? [])
-      if (a.nextOccurrence === local.date) special.push(`今天是你们的纪念日「${a.label}」`);
-    if (known) special.push(`你们认识第 ${known.daysKnown} 天`);
-    lines.push(`【日子】${special.join('；') || '普通的一天'}`);
+      if (a.nextOccurrence === local.date) specialDay = true;
 
-    // TA 今天的生活（推演）。
-    const events = await this.simulation
-      .getDailyEvents(userId, characterId, local.date)
-      .catch(() => []);
-    if (events.length)
-      lines.push(
-        `【你今天的生活】\n${events
-          .slice(0, 5)
-          .map((e) => `- ${e.summary}`)
-          .join('\n')}`,
-      );
-
-    // 朋友圈。
+    // 朋友圈：只记目标编号与数量。
     const since = new Date(nowMs - 7 * 86400_000).toISOString();
     const mine = await this.moments.listCharacterPosts(userId, characterId, since).catch(() => []);
     const userPosts = await this.moments
       .listUserPostsVisibleTo(userId, characterId, since)
       .catch(() => [] as MomentsPost[]);
-    const momentLines: string[] = [];
     let c = 0;
     for (const p of mine.slice(0, 3)) {
-      momentLines.push(
-        `你的动态（${ago(nowMs - Date.parse(p.createdAt))}）：${p.text.slice(0, 80)}`,
-      );
       const replied = new Set(
         p.comments
           .filter((x) => x.author.kind === 'character' && x.author.refId === characterId)
@@ -846,11 +891,7 @@ export class EcologyService {
       for (const cm of p.comments.slice(-5)) {
         if (cm.author.kind === 'character' && cm.author.refId === characterId) continue;
         if (replied.has(cm.commentId)) continue;
-        const key = `C${++c}`;
-        targets.set(key, { postId: p.postId, commentId: cm.commentId });
-        momentLines.push(
-          `  ${key} 还没回的评论（${cm.author.kind === 'user' ? '对方' : '朋友'}）：${cm.text.slice(0, 60)}`,
-        );
+        targets.set(`C${++c}`, { postId: p.postId, commentId: cm.commentId });
       }
     }
     let u = 0;
@@ -859,25 +900,7 @@ export class EcologyService {
         p.likes.some((l) => l.kind === 'character' && l.refId === characterId) ||
         p.comments.some((x) => x.author.kind === 'character' && x.author.refId === characterId);
       if (interacted) continue;
-      const key = `U${++u}`;
-      targets.set(key, { postId: p.postId });
-      const pics =
-        (await this.captions
-          ?.load(
-            userId,
-            p.images.map((i) => i.mediaId),
-            ['normal'],
-          )
-          .catch(() => null)) ?? NO_CAPTIONS;
-      const picText = p.images
-        .map((i) => pics.get(i.mediaId))
-        .filter((c) => !!c && captionForMemory(c))
-        .map((c) => captionSnapshot(c!))
-        .join(' ')
-        .slice(0, 160);
-      momentLines.push(
-        `${key} 对方的动态（${ago(nowMs - Date.parse(p.createdAt))}，你还没互动）：${p.text.slice(0, 80) || (picText ? '' : '（图片）')}${picText ? ` ${picText}` : ''}`,
-      );
+      targets.set(`U${++u}`, { postId: p.postId });
     }
     let pc = 0;
     const related = await this.social
@@ -890,66 +913,55 @@ export class EcologyService {
       const p = posts[0];
       if (!p) continue;
       if (p.likes.some((l) => l.kind === 'character' && l.refId === characterId)) continue;
-      const key = `P${++pc}`;
-      targets.set(key, { postId: p.postId });
-      momentLines.push(`${key} 朋友的动态：${p.text.slice(0, 60)}`);
+      targets.set(`P${++pc}`, { postId: p.postId });
     }
-    if (momentLines.length) lines.push(`【朋友圈】\n${momentLines.join('\n')}`);
 
     // 群。
     const groups = await this.groups.ecologyGroups(userId, characterId).catch(() => []);
     groups.slice(0, 3).forEach((g, i) => {
       targets.set(`G${i + 1}`, { conversationId: g.conversationId });
     });
-    if (groups.length)
-      lines.push(
-        `【你在的群】${groups
-          .slice(0, 3)
-          .map((g, i) => `G${i + 1} ${g.title}`)
-          .join('；')}`,
-      );
 
-    // 你的状态与签名、今天已经做过的。
+    // 资料与今天已经做过的次数。
     const [ep] = await this.db.db
       .select()
       .from(ecologyProfiles)
       .where(and(eq(ecologyProfiles.userId, userId), eq(ecologyProfiles.characterId, characterId)));
-    if (ep?.statusText || ep?.signature)
-      lines.push(`【你的资料】状态：${ep?.statusText ?? '无'}；签名：${ep?.signature ?? '无'}`);
     const today = await this.db.db
-      .select({
-        summary: ecologyRuns.actionSummary,
-        at: ecologyRuns.createdAt,
-        action: ecologyRuns.actionKey,
-      })
+      .select({ action: ecologyRuns.actionKey, summary: ecologyRuns.actionSummary })
       .from(ecologyRuns)
       .where(
         and(
           eq(ecologyRuns.userId, userId),
           eq(ecologyRuns.characterId, characterId),
           eq(ecologyRuns.localDate, local.date),
-          inArray(ecologyRuns.status, ['done', 'idle']),
+          eq(ecologyRuns.status, 'done'),
         ),
       )
       .orderBy(desc(ecologyRuns.createdAt))
-      .limit(10);
-    if (today.length)
-      lines.push(
-        `【你今天已经做过】${today.map((t) => `${ago(nowMs - t.at.getTime())}${t.summary ?? ''}`).join('；')}`,
-      );
+      .limit(20);
     const spend = await this.billing.getSpendStatus(userId).catch(() => null);
-    lines.push(
-      `【对方的积分】${spend && spend.availableMicros > 2_000_000 ? '充足' : '偏少（尽量少做花钱的事）'}`,
-    );
 
-    // 可用工具：开着、平台可执行、此刻合适。
+    // 执行侧模型是否可用（角色覆盖优先，其次用户场景；私密模式用私密模型）。缺了就不进候选，不换模型。
+    const textReady = privateMode
+      ? await this.adultModels
+          .getAdultModelStatus(userId, characterId)
+          .then((s) => s.available)
+          .catch(() => false)
+      : await this.gateway
+          .getModelStatus(userId, characterId)
+          // 余额另外判断（欠费即停）；这里只看模型是否选了、是否可用。
+          .then((s) => s.available || s.reason === 'insufficient_balance')
+          .catch(() => false);
+
+    // 可用工具：开着、平台可执行、此刻合适、对应模型可用。
     const chatBlocked = unanswered >= UNANSWERED_LIMIT || sinceUserMs < BUSY_MS;
     const lateNight = local.hour >= 23 || local.hour < 4;
     const tools: EcologyActionKey[] = [];
     const stickers = await this.mediaAi.hasStickers(characterId).catch(() => false);
     const works = (await this.mediaAi.listShareableWorks(characterId).catch(() => [])).length > 0;
     const signatureRecent =
-      ep?.signatureUpdatedAt && nowMs - ep.signatureUpdatedAt.getTime() < 3 * 86400_000;
+      !!ep?.signatureUpdatedAt && nowMs - ep.signatureUpdatedAt.getTime() < 3 * 86400_000;
     const weiboReady = await this.weibo.offer(userId, characterId).catch(() => false);
     // 3.29：moment_post 只同步已存在的微博原文/素材；没有素材就不提供该候选（不 AI 编）。
     const momentMaterial = await this.momentsAi
@@ -965,7 +977,8 @@ export class EcologyService {
       if (CHAT_ACTIONS.has(def.key) && chatBlocked) continue;
       // H2：私密模式只开放文字与图片（不发语音），且仅单角色（不去群里说话）。
       if (privateMode && (def.key === 'voice' || def.key === 'group_talk')) continue;
-      const ok = (() => {
+      if (TEXT_MODEL_ACTIONS.has(def.key) && !textReady) continue;
+      const ok = await (async () => {
         switch (def.key) {
           case 'weibo_sync':
             return weiboReady;
@@ -974,6 +987,9 @@ export class EcologyService {
           case 'photo':
             // 3.29：只发该条微博已审核图片；没有图就不提供，不 AI 生图/不用风景图。
             return Boolean(weiboPhoto);
+          case 'voice':
+            // 文字由用户文字模型写、声音由用户语音消息模型合成；音色与所选模型不兼容就不提供。
+            return this.voiceReady(userId, characterId);
           case 'greeting':
             return (local.hour >= 6 && local.hour < 10) || local.hour >= 21 || local.hour < 1;
           case 'care_late_night':
@@ -981,7 +997,7 @@ export class EcologyService {
           case 'care_absence':
             return absenceMs >= ABSENCE_MS;
           case 'care_anniversary':
-            return special.some((s) => s.startsWith('今天是'));
+            return specialDay;
           case 'care_follow_up':
             return followUps.length > 0;
           case 'sticker':
@@ -1004,24 +1020,55 @@ export class EcologyService {
       })();
       if (ok) tools.push(def.key);
     }
-    lines.push(
-      `【这次可以做的】（对每个动作只回答 do=true/false；不要写正文、状态签名或碎碎念）\n${tools
-        .map((k) => `- ${k}：${ACTION_DEF.get(k)!.tool}`)
-        .join('\n')}`,
-    );
-    if (CHAT_ACTIONS.has('message') && chatBlocked)
-      lines.push(
-        sinceUserMs < BUSY_MS
-          ? '（对方正在和你聊天，这次不主动发私聊消息。）'
-          : '（你发的消息对方还没回，这次不再发私聊消息，别纠缠。）',
-      );
-    if (level < 3)
-      lines.push(
-        '（好感度还不到「亲密好友」：发消息要有具体内容，不要「在干嘛」「想你了」这类空话。）',
-      );
+    const features: JevState = {
+      localHour: local.hour,
+      weekday,
+      lateNight,
+      specialDay,
+      familiarityLevel: level,
+      minutesSinceLastUserMsg: Number.isFinite(sinceUserMs)
+        ? Math.min(525_600, Math.round(sinceUserMs / 60_000))
+        : null,
+      unansweredCount: unanswered,
+      userActiveInApp30m: lastAppMs < 30 * 60_000,
+      daysSinceLastChat: Math.min(365, Math.floor(absenceMs / 86400_000)),
+      pendingFollowUp: followUps.length > 0,
+      pendingCommentReplies: c,
+      userPostsToInteract: u,
+      friendPostsToInteract: pc,
+      sharedGroups: Math.min(3, groups.length),
+      weiboLeadAvailable: weiboReady,
+      signatureChangedRecently: signatureRecent,
+      actionsDoneToday: today.length,
+      chatActionsDoneToday: today.filter(
+        (t) => !!t.action && CHAT_ACTIONS.has(t.action as EcologyActionKey),
+      ).length,
+      pointsLow: !(spend && spend.availableMicros > 2_000_000),
+      candidateCount: tools.length,
+    };
+    const summary = jevSummary({
+      local,
+      weekday,
+      recent: visible.slice(-6).flatMap((m) => {
+        const raw =
+          m.content?.type === 'text'
+            ? m.content.text
+            : m.content?.type === 'voice'
+              ? (m.content.transcript ?? '')
+              : '';
+        if (!raw.trim() || healthPrivate(raw) || m.labels?.includes('health')) return [];
+        return [
+          { who: m.senderKind === 'user' ? ('user' as const) : ('character' as const), text: raw },
+        ];
+      }),
+      unanswered,
+      sinceUserMs,
+      doneToday: today.flatMap((t) => (t.summary ? [t.summary] : [])),
+    });
     return {
-      text: lines.join('\n'),
-      prefix,
+      features,
+      summary,
+      balanceInsufficient: spend?.insufficient === true,
       privateMode,
       conversationId: contact.conversationId,
       tools,
@@ -1029,6 +1076,18 @@ export class EcologyService {
       hasFollowUps: followUps.length > 0,
       weiboPhoto,
     };
+  }
+
+  /** 语音候选预检：陪伴设置里的音色（没有就用角色默认）必须和用户为语音消息选的模型一致。 */
+  private async voiceReady(userId: string, characterId: string): Promise<boolean> {
+    if (!this.media.speechSynthesisReady) return false;
+    if (!(await this.media.isServiceEnabled('speech_synthesis').catch(() => false))) return false;
+    const settings = await this.companion.get(userId, characterId).catch(() => null);
+    const voiceId = await this.mediaAi
+      .resolveVoice(characterId, settings?.voiceId ?? null)
+      .catch(() => null);
+    if (!voiceId) return false;
+    return this.media.speechSynthesisReady({ userId, characterId, voiceId }).catch(() => false);
   }
 
   // =========================================================================
@@ -1243,23 +1302,64 @@ export class EcologyService {
   }
 }
 
-const DECISION_SYSTEM = `你是「这次要不要做」的决定器，只做选择，不写任何正文。
-规则：
-- 对「这次可以做的」里的每一个动作，分别回答 do=true 或 do=false；只能使用给出的动作名。
-- 像真人一样克制：大多数时候只有一两个 true，其余 false；深夜一般不打扰（除非催睡觉）。
-- 不涉及未成年人的恋爱或性内容；真人角色不编造本人公开声明。
-- 不写聊天内容、状态、签名、碎碎念、理由或长规划；执行时由角色自己的模板/模型完成内容。
-只输出一个 JSON 对象，不要别的文字：
-{"decisions":[{"action":"<动作名>","do":true},{"action":"<动作名>","do":false}]}`;
+/**
+ * 批 EJ：给 Jev 的对话现状文字（净化后）。只用日常范围消息：每条最多 60 字、隐私词与第三方称呼替换、
+ * 健康内容在调用方已剔除；整体最多 600 字。不含人设、记忆正文或私密范围内容。
+ */
+export function jevSummary(input: {
+  local: { hour: number; minute: number };
+  weekday: number;
+  recent: Array<{ who: 'user' | 'character'; text: string }>;
+  unanswered: number;
+  sinceUserMs: number;
+  doneToday: string[];
+}): string {
+  const clock = `${String(input.local.hour).padStart(2, '0')}:${String(input.local.minute).padStart(2, '0')}`;
+  const lines = [`现在是对方当地时间周${'日一二三四五六'[input.weekday] ?? ''} ${clock}。`];
+  const minutes = Number.isFinite(input.sinceUserMs)
+    ? Math.round(input.sinceUserMs / 60_000)
+    : null;
+  lines.push(
+    minutes === null
+      ? '对方很久没来聊天。'
+      : `对方上次发消息在 ${minutes < 60 ? `${minutes} 分钟` : `${Math.round(minutes / 60)} 小时`}前；角色发了还没被回的消息 ${input.unanswered} 条。`,
+  );
+  if (input.recent.length)
+    lines.push(
+      `最近对话要点：${input.recent
+        .map(
+          (m) =>
+            `${m.who === 'user' ? '对方' : '角色'}：${scrubSummary(m.text.replace(/\s+/g, ' ').slice(0, 60), true)}`,
+        )
+        .join(' / ')}`,
+    );
+  lines.push(
+    input.doneToday.length
+      ? `角色今天已经做过：${input.doneToday.slice(0, 5).join('；')}。`
+      : '角色今天还没主动做过什么。',
+  );
+  return lines.join('\n').slice(0, 600);
+}
 
-function ago(ms: number): string {
-  if (!Number.isFinite(ms)) return '很久以前';
-  const m = Math.max(0, Math.round(ms / 60_000));
-  if (m < 1) return '刚刚';
-  if (m < 60) return `${m} 分钟前`;
-  const h = Math.round(m / 60);
-  if (h < 48) return `${h} 小时前`;
-  return `${Math.round(h / 24)} 天前`;
+/**
+ * 后台运行记录用的判定摘要（只有动作名和把握值，不含任何内容）：
+ * 例 ` | ok=message:0.82 low=voice def=nudge drop=sticker unk=1`。
+ */
+export function jevTrace(
+  verdict: ReturnType<typeof interpretJevAnswers>,
+  dropped: readonly EcologyActionKey[],
+): string {
+  const parts = [
+    verdict.approved.length
+      ? `ok=${verdict.approved.map((a) => `${a.action}:${a.confidence.toFixed(2)}`).join(',')}`
+      : '',
+    verdict.lowConfidence.length ? `low=${verdict.lowConfidence.join(',')}` : '',
+    verdict.declined.length ? `def=${verdict.declined.join(',')}` : '',
+    verdict.invalid.length ? `bad=${verdict.invalid.join(',')}` : '',
+    dropped.length ? `drop=${dropped.join(',')}` : '',
+    verdict.unknownIds ? `unk=${verdict.unknownIds}` : '',
+  ].filter(Boolean);
+  return parts.length ? ` | ${parts.join(' ')}` : '';
 }
 
 function mondayOf(localDate: string): string {

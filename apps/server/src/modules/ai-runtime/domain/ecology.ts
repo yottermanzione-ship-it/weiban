@@ -1,9 +1,8 @@
 /**
- * 角色生态 v1 的纯规则：动作清单、四档默认次数、默认平台参数、当天唤醒时刻、决策输出解析。
+ * 角色生态 v1 的纯规则：动作清单、四档默认次数、默认平台参数、当天唤醒时刻、Jev 判定解读与冲突排除。
  * 唯一定义处：用户可见的设置与动作清单见 docs/refactor/17-ecology-settings.md；本文件只是代码里的取值。
  * 说明见 docs/ai/ecology-v1.md。
  */
-import { z } from 'zod';
 import {
   ECOLOGY_ACTION_KEYS,
   type EcologyActionGroup,
@@ -336,33 +335,198 @@ export function averageWakes(range: { min: number; max: number }): number {
   return (range.min + range.max) / 2;
 }
 
-/**
- * 3.29：生态 Gate（Jev）只回答「每个候选动作做不做」，不写正文 / 状态签名 / 碎碎念 / 长规划。
- * 输出尽量短：每个候选一行 `{action, do}`；没有列出的动作一律视为不做。
- */
-export const EcologyGateDecision = z.object({
-  decisions: z
-    .array(
-      z.object({
-        action: z.string().max(40),
-        do: z.boolean(),
-      }),
-    )
-    .max(40),
-});
-export type EcologyGateDecision = z.infer<typeof EcologyGateDecision>;
+// ===========================================================================
+// 批 EJ：Jev 原生判定（docs/ai/2026-10-23-ecology-native-decision-spec.md §四）
+// ===========================================================================
 
-/** 从模型输出里取 JSON（容忍 ```json 包裹和前后多余文字）。 */
-export function parseGateDecision(raw: string): EcologyGateDecision | null {
-  const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  if (start < 0 || end <= start) return null;
-  try {
-    const parsed = EcologyGateDecision.safeParse(JSON.parse(raw.slice(start, end + 1)));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
+/** 低于此把握不做（沿用 planner 默认门槛 0.55，不为提高触发率而下调）。 */
+export const ECOLOGY_JEV_MIN_CONFIDENCE = 0.55;
+/** 每个候选的固定选项：act = 现在适合做；defer = 不适合、会打扰或不确定（等下一次正常唤醒再看）。 */
+export const JEV_OPTIONS = ['act', 'defer'] as const;
+
+/**
+ * 执行时需要用户自己选的文字模型（角色覆盖优先，其次场景设置；私密模式用私密模型）的动作。
+ * 缺模型就不进候选，不换别的模型。拍一拍、点赞、转发已同步的微博素材、微博同步不需要写手。
+ */
+export const TEXT_MODEL_ACTIONS: ReadonlySet<EcologyActionKey> = new Set([
+  'message',
+  'greeting',
+  'voice',
+  'photo',
+  'sticker',
+  'share_link',
+  'care_anniversary',
+  'care_absence',
+  'care_late_night',
+  'care_follow_up',
+  'play_wish',
+  'moment_reply',
+  'status',
+  'signature',
+  'group_talk',
+]);
+
+/** 给 Jev 的每题补充说明（固定程序文字，不含任何用户或角色原文）。 */
+const JEV_HINT: Partial<Record<EcologyActionKey, string>> = {
+  weibo_sync: '看 state.features.weiboLeadAvailable：有新公开线索时才适合；没有必要就不做。',
+  message: '主动发一条有具体内容的私聊消息。对方刚聊过或有未回复消息时克制。',
+  greeting: '只在早上或睡前合适。',
+  voice: '用一两句语音代替文字。对方可能不方便听时不做。',
+  photo: '分享角色微博里的一张公开图片。',
+  sticker: '发一个表情包。',
+  nudge: '轻轻拍一拍对方，不说话。',
+  share_link: '分享自己作品库里的一首歌或链接。',
+  moment_post: '把已同步的公开微博转到私人朋友圈。',
+  moment_interact: '给对方最近的朋友圈点赞。',
+  moment_reply: '回复自己朋友圈下还没回的评论。',
+  moment_peer: '给认识的其他角色的朋友圈点赞。',
+  status: '更新自己的状态，偶尔才做。',
+  signature: '改个性签名，很少才做。',
+  care_anniversary: '今天是特别的日子时表达心意。',
+  care_absence: '对方很久没来时问候一句，不制造愧疚。',
+  care_late_night: '对方深夜还活跃时催对方早点睡。',
+  care_follow_up: '跟进对方之前提过的事。',
+  play_wish: '提议一起完成一个小心愿（每周最多一次）。',
+  group_talk: '在共同的群里起一个话头。',
+};
+
+/** 每个候选的判定题干：只问做不做，不让 Jev 写内容。 */
+export function jevPrompt(action: EcologyActionKey): string {
+  const label = ACTION_DEF.get(action)?.label ?? action;
+  return `陪伴应用里的角色此刻是否适合「${label}」？${JEV_HINT[action] ?? ''}依据 state.summary 的对话现状和 state.features 中的时间、活跃情况、未回复条数、今天已做过的次数独立判断这一项（与其他题互不影响）；像真人一样克制，深夜一般不打扰。act 表示现在适合做；defer 表示不适合、会打扰或不确定。`;
+}
+
+export interface JevVerdict {
+  approved: Array<{ action: EcologyActionKey; confidence: number }>;
+  /** 选了 act 但把握不足（不做）。 */
+  lowConfidence: EcologyActionKey[];
+  /** 明确 defer。 */
+  declined: EcologyActionKey[];
+  /** 返回里不认识的题号个数（忽略，不做任何事）。 */
+  unknownIds: number;
+  /** 重复题号 / 选项不合法 / 把握值不合法 / 缺答案：一律不做。 */
+  invalid: EcologyActionKey[];
+}
+
+/**
+ * 解读 Jev 的批量答案。每个候选独立：只有选 act 且把握 ≥ 门槛才算通过；
+ * 陌生 ID 忽略、重复 ID / 缺答案 / 非法值都不做，绝不用概率抽签或规则补批。
+ */
+export function interpretJevAnswers(
+  candidates: readonly EcologyActionKey[],
+  answers: ReadonlyArray<{ questionId: string; choice: string; confidence: number }>,
+  threshold = ECOLOGY_JEV_MIN_CONFIDENCE,
+): JevVerdict {
+  const verdict: JevVerdict = {
+    approved: [],
+    lowConfidence: [],
+    declined: [],
+    unknownIds: 0,
+    invalid: [],
+  };
+  const known = new Set<string>(candidates);
+  const seen = new Map<string, number>();
+  for (const a of answers) {
+    if (!known.has(a.questionId)) verdict.unknownIds++;
+    else seen.set(a.questionId, (seen.get(a.questionId) ?? 0) + 1);
   }
+  for (const action of candidates) {
+    const matches = answers.filter((a) => a.questionId === action);
+    const answer = matches[0];
+    if (!answer || matches.length !== 1) {
+      verdict.invalid.push(action);
+      continue;
+    }
+    if (
+      !(JEV_OPTIONS as readonly string[]).includes(answer.choice) ||
+      typeof answer.confidence !== 'number' ||
+      !Number.isFinite(answer.confidence) ||
+      answer.confidence < 0 ||
+      answer.confidence > 1
+    ) {
+      verdict.invalid.push(action);
+      continue;
+    }
+    if (answer.choice === 'defer') verdict.declined.push(action);
+    else if (answer.confidence < threshold) verdict.lowConfidence.push(action);
+    else verdict.approved.push({ action, confidence: answer.confidence });
+  }
+  return verdict;
+}
+
+/** 同一轮最多一个「给对方发聊天」的动作（拍一拍也算），避免连发打扰。 */
+const CHAT_FAMILY: ReadonlySet<EcologyActionKey> = new Set([
+  'message',
+  'greeting',
+  'voice',
+  'photo',
+  'sticker',
+  'nudge',
+  'share_link',
+  'care_anniversary',
+  'care_absence',
+  'care_late_night',
+  'care_follow_up',
+  'play_wish',
+]);
+/** 互斥组：组内同一轮只做一个。 */
+const EXCLUSIVE_GROUPS: ReadonlyArray<ReadonlySet<EcologyActionKey>> = [
+  CHAT_FAMILY,
+  new Set(['status', 'signature']),
+  // 微博同步本身会推到私人朋友圈，和「转发已同步素材」重复。
+  new Set(['weibo_sync', 'moment_post']),
+];
+/** 把握相同时的先后（关怀与特别日子优先，拍一拍最后）。 */
+const PRIORITY: readonly EcologyActionKey[] = [
+  'care_anniversary',
+  'care_follow_up',
+  'care_late_night',
+  'care_absence',
+  'greeting',
+  'message',
+  'voice',
+  'share_link',
+  'photo',
+  'play_wish',
+  'sticker',
+  'nudge',
+  'moment_reply',
+  'moment_interact',
+  'moment_peer',
+  'weibo_sync',
+  'moment_post',
+  'group_talk',
+  'status',
+  'signature',
+];
+
+/**
+ * 程序排冲突：按把握从高到低取，互斥组内只留一个，同一动作不重复，总数不超过 max。
+ * 返回被选中的动作与因冲突放弃的动作。
+ */
+export function resolveEcologyConflicts(
+  approved: ReadonlyArray<{ action: EcologyActionKey; confidence: number }>,
+  max: number,
+): { selected: EcologyActionKey[]; dropped: EcologyActionKey[] } {
+  const rank = (a: EcologyActionKey) => {
+    const i = PRIORITY.indexOf(a);
+    return i < 0 ? PRIORITY.length : i;
+  };
+  const ordered = [...approved].sort(
+    (x, y) => y.confidence - x.confidence || rank(x.action) - rank(y.action),
+  );
+  const selected: EcologyActionKey[] = [];
+  const dropped: EcologyActionKey[] = [];
+  for (const { action } of ordered) {
+    const clash =
+      selected.includes(action) ||
+      selected.length >= max ||
+      EXCLUSIVE_GROUPS.some((group) => group.has(action) && selected.some((s) => group.has(s)));
+    if (clash) {
+      if (!dropped.includes(action) && !selected.includes(action)) dropped.push(action);
+    } else selected.push(action);
+  }
+  return { selected, dropped };
 }
 
 /** 1 积分 = 10000 微元，保留 2 位小数。 */
