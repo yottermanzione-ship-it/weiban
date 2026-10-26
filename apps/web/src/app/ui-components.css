@@ -211,6 +211,74 @@
   font-weight: var(--wb-font-weight-medium);
 }
 
+/* 滚轮面板底部「清除」（可选值） */
+.picker-sheet-clear {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-top: 0.5px solid var(--wb-color-border-hairline);
+  border-radius: 0;
+  background: none;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-body);
+}
+
+/* ---------- 表单选择框（DateField / TimeField / SelectField，替代原生 date / time / select） ---------- */
+.picker-field {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--wb-size-touch-target);
+  padding: 10px var(--wb-space-4);
+  border: 0.5px solid var(--wb-color-border-hairline);
+  border-radius: var(--wb-radius-xs);
+  background: var(--wb-color-bg-input-field);
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-body);
+  font-weight: var(--wb-font-weight-regular);
+  text-align: left;
+}
+.picker-field.empty .picker-field-text {
+  color: var(--wb-color-text-placeholder);
+}
+.picker-field-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.picker-field-caret {
+  flex: none;
+  color: var(--wb-color-text-tertiary);
+}
+.picker-field:disabled {
+  color: var(--wb-color-text-tertiary);
+}
+/* 白色通栏行里（field-row / 资料行）：无边框透明，值右对齐 */
+.field-row .picker-field,
+.profile-field .picker-field {
+  flex: 1;
+  width: auto;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.field-row .picker-field {
+  font-size: var(--wb-font-size-body-small);
+}
+.profile-field .picker-field {
+  padding: 0;
+}
+.field-row .picker-field-text,
+.profile-field .picker-field-text {
+  text-align: right;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .snackbar,
   .sheet-panel.nudge-a,

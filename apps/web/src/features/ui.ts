@@ -27,7 +27,11 @@ export {
 } from './shell-kit.js';
 export { EditPage as SubPage, PickRow } from './edit-page.js';
 export {
+  DateField,
   DatePickerSheet,
+  SelectField,
+  TimeField,
+  type SelectOption,
   OptionPickerSheet,
   PickerSheet,
   TimePickerSheet,
