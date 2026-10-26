@@ -713,3 +713,10 @@ main.info-page {
 .sound-play.playing {
   color: var(--wb-color-brand-primary);
 }
+/* 保存 / 试聊失败：页面内红字，紧贴底部按钮上方 */
+.persona-error {
+  margin: var(--wb-space-4) 0 0;
+  color: var(--wb-color-text-danger);
+  font-size: var(--wb-font-size-subhead);
+  text-align: center;
+}

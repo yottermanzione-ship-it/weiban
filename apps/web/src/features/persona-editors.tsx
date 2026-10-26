@@ -283,11 +283,14 @@ export function DialoguePage({
           </div>
         </div>
       )}
-      <p className={`edit-hint dialogue-count${tooLong ? ' over' : ''}`}>
-        {tooLong
-          ? `超出 ${text.length - editor.maxLength} 字，删减一些再保存`
-          : `${text.length} / ${editor.maxLength}`}
-      </p>
+      {/* 按原文编辑时文本区右下角已有剩余字数，这里只在气泡模式显示 */}
+      {raw === null && (
+        <p className={`edit-hint dialogue-count${tooLong ? ' over' : ''}`}>
+          {tooLong
+            ? `超出 ${text.length - editor.maxLength} 字，删减一些再保存`
+            : `${text.length} / ${editor.maxLength}`}
+        </p>
+      )}
     </SubPageLayer>
   );
 }

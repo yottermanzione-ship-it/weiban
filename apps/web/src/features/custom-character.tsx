@@ -677,7 +677,7 @@ function CustomCharacterEditor({
         </MenuGroup>
       )}
       {error && (
-        <p role="alert" className="error page-note">
+        <p role="alert" className="persona-error">
           {error}
         </p>
       )}
