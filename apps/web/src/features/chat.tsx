@@ -1660,7 +1660,12 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         </Dialog>
       )}
       {picking && (
-        <Sheet title="选择提醒的人" onClose={() => setPicking(false)} closeLabel="取消">
+        <Sheet
+          title="选择提醒的人"
+          onClose={() => setPicking(false)}
+          closeLabel="取消"
+          snaps={['half', 'full']}
+        >
           <MenuGroup>
             {members.map((member) => (
               <MenuRow
