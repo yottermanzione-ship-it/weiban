@@ -1024,7 +1024,8 @@ label.profile-field.multiline {
   padding: 12px 0;
   border-bottom: 0.5px solid var(--wb-color-border-hairline);
 }
-.moment-card-detail .moment-comment button {
+.moment-card-detail .moment-comment button,
+.moment-card-detail .moment-comment .moment-actor-name {
   font-size: var(--wb-font-size-callout);
   line-height: 1.35;
 }
@@ -1192,9 +1193,18 @@ label.profile-field.multiline {
   font-size: var(--wb-font-size-subhead);
   text-align: left;
 }
-.moment-comment b {
+.moment-comment b,
+.moment-actor-name {
   color: var(--wb-color-text-link);
   font-weight: var(--wb-font-weight-regular);
+}
+.moment-comment .moment-actor-name {
+  font-size: var(--wb-font-size-subhead);
+}
+.moment-comment-text {
+  display: inline;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .moment-all {
   display: block;

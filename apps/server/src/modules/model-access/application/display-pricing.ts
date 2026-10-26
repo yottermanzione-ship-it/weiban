@@ -29,6 +29,8 @@ import {
 import { defaultReplyMicros, weightedPrice, type ModelTextPrices } from '../domain/rules.js';
 import { modelAccessSettings, modelCatalog, usageRecords } from '../infra/db/schema.js';
 import { MODEL_PRICE_SOURCE, MODEL_RATE_PORT, type ModelPriceSource } from '../tokens.js';
+import type { VoiceCallPipeline } from '../domain/voice-call-pipeline.js';
+import { VOICE_CALL_MINUTE_USAGE } from './voice-call-composite.js';
 
 export const DISPLAY_BASE_KEY = 'display_multiplier_base';
 const BASE_KEY = DISPLAY_BASE_KEY;
@@ -88,6 +90,24 @@ export class DisplayPricingService {
     const points = quoted ? round2(microsToPoints(quoted.amountMicros)) : null;
     this.mediaQuotes.set(cacheKey, { at: nowMs, points });
     return points;
+  }
+
+  /** 三组件用当前售价及各自折扣独立报价；只读估算，不冻结或扣除积分。 */
+  async voiceCallPointsPerMinute(pipeline: VoiceCallPipeline): Promise<number | null> {
+    const quotes = this.quotes;
+    if (!quotes) return null;
+    const results = await Promise.all([
+      quotes.quote(pipeline.asrModelKey, VOICE_CALL_MINUTE_USAGE.asr),
+      quotes.quote(pipeline.textModelKey, VOICE_CALL_MINUTE_USAGE.text),
+      quotes.quote(pipeline.ttsModelKey, VOICE_CALL_MINUTE_USAGE.tts),
+    ]).catch(() => null);
+    if (!results) return null;
+    let amountMicros = 0;
+    for (const quote of results) {
+      if (!quote) return null;
+      amountMicros += quote.amountMicros;
+    }
+    return round2(microsToPoints(amountMicros));
   }
 
   async getSettings(): Promise<DisplayMultiplierSettings> {

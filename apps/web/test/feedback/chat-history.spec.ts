@@ -1,5 +1,24 @@
 import { expect, test, type Page } from '@playwright/test';
 
+test('空历史页推进扫描游标，一次点击继续读到更早可见消息而不是反复空转', async ({ page }) => {
+  await openChat(page);
+  await page.evaluate(() => {
+    (window as unknown as { historyHarness: { emptyNext: boolean } }).historyHarness.emptyNext =
+      true;
+  });
+  await scrollToTop(page);
+  await page.getByRole('button', { name: '加载更多消息' }).click();
+  await expect(page.getByText('消息 50', { exact: true })).toBeVisible({ timeout: 7000 });
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { historyHarness: { calls: number[] } }).historyHarness.calls,
+    ),
+  ).toEqual([101, 51]);
+  await expect(page.getByText('已加载 50 条更早消息，继续向上滑动查看')).toBeVisible();
+  await scrollToTop(page);
+  await expect(page.getByText('没有更多消息')).toBeVisible();
+});
+
 const fixture = '/test/browser-fixtures/chat-history.html';
 const list = '.wx-chat-body .virtual-list';
 

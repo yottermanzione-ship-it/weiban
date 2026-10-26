@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 4.1. Regenerate: pnpm android:generate
+// Contract 4.2. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "4.1"
+const val CONTRACT_VERSION: String = "4.2"
 
 @Serializable
 data class AccountAlias(
@@ -7339,6 +7339,7 @@ data class ModelInfo(
     @SerialName("available") val `available`: Boolean,
     @SerialName("unavailableDetail") val `unavailableDetail`: String? = null,
     @SerialName("pointsPerReply") val `pointsPerReply`: Double? = null,
+    @SerialName("pointsPerMinute") val `pointsPerMinute`: Double? = null,
     @SerialName("pointsPerReplyBasis") val `pointsPerReplyBasis`: String? = null,
     @SerialName("displayMultiplier") val `displayMultiplier`: Double? = null,
     @SerialName("scenarios") val `scenarios`: List<String>? = null,

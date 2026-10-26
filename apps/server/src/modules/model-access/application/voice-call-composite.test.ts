@@ -155,17 +155,17 @@ describe('voice-call component availability', () => {
 });
 
 describe('voice-call minute blend display multiplier', () => {
-  it('prices one minute as ASR 1 min + 68 TTS chars + 6 text turns, relative to the base model', () => {
+  it('prices one minute as ASR 1 min + 54 TTS chars + 5 text turns, relative to the base model', () => {
     const prices = {
       asrPerMinuteMicros: 10_800,
       ttsPer10kCharsMicros: 1_820_000,
       text: textPrices,
       base: basePrices,
     };
-    // 10,800 + 1,820,000×68/10,000 + 6×4,400 = 49,576 micros ≈ 4.96 积分 / 分钟
-    expect(voiceCallMinuteMicros(prices)).toBe(49_576);
-    // 基准模型 6 轮标准回复 = 6×30,400 = 182,400 micros
-    expect(voiceCallDisplayMultiplier(prices)).toBe(0.27);
+    // 10,800 + 1,820,000×54/10,000 + 5×4,400 = 42,628 micros ≈ 4.26 积分 / 分钟
+    expect(voiceCallMinuteMicros(prices)).toBe(42_628);
+    // 基准模型同口径5轮 = 5×30,400 = 152,000 micros
+    expect(voiceCallDisplayMultiplier(prices)).toBe(0.28);
   });
 
   it('returns null instead of inventing a multiplier when any price is missing', () => {
@@ -291,7 +291,7 @@ describe('catalog composite display multiplier', () => {
       rates: { getActiveServiceRates: async () => serviceRates },
       prices: { textPrices: async () => prices },
     });
-    await expect(catalog.voiceCallCompositeDisplayMultiplier()).resolves.toBe(0.27);
+    await expect(catalog.voiceCallCompositeDisplayMultiplier()).resolves.toBe(0.28);
 
     Object.assign(catalog, {
       rates: { getActiveServiceRates: async () => new Map([...serviceRates].slice(0, 1)) },

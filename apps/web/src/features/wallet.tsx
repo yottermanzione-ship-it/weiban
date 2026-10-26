@@ -30,6 +30,7 @@ import {
 import { Dialog } from './toast.js';
 import { formatPoints, pointsText, signedPoints, yuanText } from './points.js';
 import { ModelPriceLine } from './models.js';
+import { isUserPriceModel } from './model-prices.js';
 
 function dateKey(iso: string) {
   const d = new Date(iso);
@@ -433,7 +434,7 @@ export { multiplierText } from './points.js';
 
 export function PricesPage() {
   const models = useRemote(ModelAccessEndpoints.listModels);
-  const items = models.data?.items ?? [];
+  const items = (models.data?.items ?? []).filter(isUserPriceModel);
   const chat = items.filter((m) => !m.capabilities.includes('adult_content'));
   const adult = items.filter((m) => m.capabilities.includes('adult_content'));
   const section = (title: string, list: ModelInfo[]) =>
@@ -462,6 +463,11 @@ export function PricesPage() {
       <NavBar title="AI 模型价格" fallback="/wallet" />
       {section('聊天模型', chat)}
       {section('私密模式模型', adult)}
+      {items.some((model) => model.scenarios?.includes('voice_call')) && (
+        <p className="hint page-note">
+          通话为每分钟估算；实际按语音识别、文本和合成用量结算，不按固定分钟价扣费。
+        </p>
+      )}
       {models.error && (
         <p role="alert" className="notice-bar">
           {models.error}

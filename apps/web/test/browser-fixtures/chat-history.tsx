@@ -124,7 +124,7 @@ const state = {
 };
 
 const calls: number[] = [];
-const harness = { calls, failNext: false };
+const harness = { calls, failNext: false, emptyNext: false };
 Object.assign(window, { historyHarness: harness });
 
 // 聊天驱动会连 WebSocket；夹具用只读空壳替身，避免真实连接与重连噪音。
@@ -170,6 +170,19 @@ void (async () => {
           throw new Error('history fixture failure');
         }
         await new Promise((resolve) => window.setTimeout(resolve, 500));
+        if (harness.emptyNext) {
+          harness.emptyNext = false;
+          page++;
+          return {
+            items: [],
+            hasMore: true,
+            coverage: {
+              fromSeq: 51,
+              throughSeq: 100,
+              excludedRanges: [{ fromSeq: 51, throughSeq: 100, reason: 'hidden' }],
+            },
+          };
+        }
         return olderPages[page++] ?? { items: [], hasMore: false };
       }
       if (endpoint === SyncEndpoints.getState) return { latestUpdateSeq: state.lastUpdateSeq };

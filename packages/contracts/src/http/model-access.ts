@@ -236,6 +236,8 @@ export const ModelInfo = z.object({
    * 用户端价目表只显示这个数；当前价目表没有该模型的 token 价格时为 null。
    */
   pointsPerReply: z.number().nonnegative().nullable().optional(),
+  /** 4.2：通话约每分钟积分，按当前组件售价/折扣及用量假设估算；只展示，不是按分钟固定扣费。 */
+  pointsPerMinute: z.number().nonnegative().nullable().optional(),
   /**
    * 3.17（会员 v5，16 号 §2）：pointsPerReply 的来源。recent_7d = 最近 7 天该模型聊天回复的平均实扣；
    * default = 数据不足，按默认假设（发给模型约 1 万 token、八成命中缓存、回复约 200 token）和当前售价估算。

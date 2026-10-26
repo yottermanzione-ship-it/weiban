@@ -7,7 +7,7 @@
  * - 组合关系存在 `model_access.settings.voice_call_pipeline`（读时严格校验，非法 = 未配置）；
  *   运行时拆成识别 / 文本 / 合成三个组件，任一组件停用、删除或上游不可用 → 整通电话不可用并给出原因，
  *   不静默换成别的模型。
- * - 展示倍率按旧版实测的每分钟用量折算（识别 1 分钟 + 合成约 68 字 + 文本约 6 轮），
+ * - 展示倍率按旧版实测的每分钟用量折算（识别 1 分钟 + 合成约 54 字 + 文本约 5 轮），
  *   与基准模型的同一分钟口径相比；任何一项价格缺失都返回 null，不编造。
  */
 import type {
@@ -17,7 +17,11 @@ import type {
   UpstreamStatus,
 } from '@weiban/contracts';
 import { parseVoiceCallPipeline, type VoiceCallPipeline } from '../domain/voice-call-pipeline.js';
-import { defaultReplyMicros, type ModelTextPrices } from '../domain/rules.js';
+import {
+  DEFAULT_REPLY_ASSUMPTION,
+  defaultReplyMicros,
+  type ModelTextPrices,
+} from '../domain/rules.js';
 import type { ModelFacts } from './catalog.js';
 
 /** 组合模型在目录里的固定模型键。 */
@@ -30,13 +34,26 @@ export const VOICE_CALL_PIPELINE_SETTING_KEY = 'voice_call_pipeline';
 export const DEFAULT_DISPLAY_BASE_MODEL_KEY = 'openai/gpt-6.1-sol';
 
 /**
- * 旧版实测口径：202 秒一通约 22 轮，即每分钟约 6 轮、合成 68 字、识别 1 分钟
- * （ADR 第 4 条：ASR 1.08 积分 + TTS 约 1.24 积分 + 文本约 6 轮 token ≈ 每分钟 3 积分）。
+ * 2026-10-26旧库只读汇总：91通级联通话、17278秒，角色1424轮/15489字，
+ * 每分钟4.945轮/53.787字，取约5轮/54字。ASR保守按整分钟；文本token没有旧站实测，
+ * 仍明确采用现有默认回复用量假设。只用于展示，不参与实际结算。
  */
 export const VOICE_CALL_MINUTE_BLEND = {
   asrMinutes: 1,
-  ttsChars: 68,
-  textTurns: 6,
+  ttsChars: 54,
+  textTurns: 5,
+} as const;
+
+/** 报价端口用量；缓存与未缓存输入分开，不将旧站通话次数当成已扣积分。 */
+export const VOICE_CALL_MINUTE_USAGE = {
+  asr: { asrSeconds: 60 * VOICE_CALL_MINUTE_BLEND.asrMinutes },
+  tts: { ttsChars: VOICE_CALL_MINUTE_BLEND.ttsChars },
+  text: {
+    inputTokens: DEFAULT_REPLY_ASSUMPTION.inputTokens * VOICE_CALL_MINUTE_BLEND.textTurns,
+    cachedInputTokens:
+      DEFAULT_REPLY_ASSUMPTION.cachedInputTokens * VOICE_CALL_MINUTE_BLEND.textTurns,
+    outputTokens: DEFAULT_REPLY_ASSUMPTION.outputTokens * VOICE_CALL_MINUTE_BLEND.textTurns,
+  },
 } as const;
 
 export type VoiceCallComponent = 'asr' | 'text' | 'tts';
@@ -187,7 +204,7 @@ export interface VoiceCallBlendPrices {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
- * 一分钟通话的混合成本（微元）：识别 1 分钟 + 合成 68 字 + 文本 6 轮（按标准回复假设）。
+ * 一分钟通话的混合成本（微元）：识别 1 分钟 + 合成 54 字 + 文本 5 轮（按标准回复假设）。
  * 任一项价格缺失返回 null。
  */
 export function voiceCallMinuteMicros(prices: VoiceCallBlendPrices): number | null {
@@ -200,7 +217,7 @@ export function voiceCallMinuteMicros(prices: VoiceCallBlendPrices): number | nu
 }
 
 /**
- * 相对基准模型的展示倍率：组合模型一分钟混合成本 ÷ 基准模型同样 6 轮回复的成本。
+ * 相对基准模型的展示倍率：组合模型一分钟混合成本 ÷ 基准模型同样 5 轮回复的成本。
  * 任一价格缺失（含基准模型）返回 null，不写死、不外推。
  */
 export function voiceCallDisplayMultiplier(prices: VoiceCallBlendPrices): number | null {

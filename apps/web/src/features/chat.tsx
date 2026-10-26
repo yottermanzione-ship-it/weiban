@@ -657,11 +657,29 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const { older: loadOlder } = chat;
-  // T-20261025：只有用户点「加载更多消息」才取上一批；普通上滑到顶不再自动请求。
-  const history = useHistoryPager(() => {
+  const requestedHistory = useRef<number | null>(null);
+  // 只在点击时读历史；保留当前阅读位置，并明确提示新记录已加在上方。
+  const history = useHistoryPager(async () => {
     const oldest = messagesRef.current[0]?.seq;
-    return oldest === undefined ? Promise.resolve(false) : chat.older(id, oldest);
+    if (oldest === undefined) return false;
+    requestedHistory.current = oldest;
+    try {
+      return await chat.older(id, oldest);
+    } catch (error) {
+      requestedHistory.current = null;
+      throw error;
+    }
   });
+  const oldestVisibleSeq = messages[0]?.seq;
+  useEffect(() => {
+    const before = requestedHistory.current;
+    if (before === null) return;
+    const added = messagesRef.current.filter((message) => message.seq < before).length;
+    if (added > 0) {
+      requestedHistory.current = null;
+      showToast(`已加载 ${added} 条更早消息，继续向上滑动查看`, 2500, 'info');
+    } else if (history.state === 'done') requestedHistory.current = null;
+  }, [oldestVisibleSeq, messages.length, history.state]);
   // 搜索结果 / 收藏定位（search.md 第 4 节）：向前补读直到目标消息出现，停在距顶部 1/3 处并闪一下。
   useEffect(() => {
     if (!targetSeq) return;

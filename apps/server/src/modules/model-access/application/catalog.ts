@@ -398,7 +398,7 @@ export class CatalogService {
   }
 
   /**
-   * 组合模型的展示倍率：每分钟约 3 积分的混合口径（识别 1 分钟 + 合成约 68 字 + 文本约 6 轮），
+   * 组合模型的展示倍率按分钟混合口径（识别 1 分钟 + 合成约 54 字 + 文本约 5 轮），
    * 相对基准模型（默认 openai/gpt-6.1-sol，后台可另设）的同一分钟口径。任何一项价格缺失 = null。
    */
   async voiceCallCompositeDisplayMultiplier(): Promise<number | null> {
@@ -843,10 +843,14 @@ export class CatalogService {
     };
     // 组合通话模型自身没有上游 / token 价：倍率由三组件价格折算，可用性由三组件共同决定。
     const compositeVisible = visible.some((r) => isVoiceCallComposite(r.entry));
+    const callPipeline = compositeVisible ? await this.voiceCallPipeline() : null;
     const voiceCall = compositeVisible
       ? {
           displayMultiplier: await this.voiceCallCompositeDisplayMultiplier(),
           availability: await this.voiceCallAvailability(),
+          pointsPerMinute: callPipeline
+            ? ((await this.display?.voiceCallPointsPerMinute(callPipeline)) ?? null)
+            : null,
         }
       : null;
     // 榜单名次只从有效快照匹配（手动指定优先，否则用模型显示名 / 上游模型名），未匹配为 null，
@@ -892,6 +896,7 @@ export class CatalogService {
         vendorName: entry.vendorName,
         priceTier: priceTier(prices.get(entry.modelKey)),
         pointsPerReply: perReply(entry.modelKey),
+        ...(composite ? { pointsPerMinute: voiceCall?.pointsPerMinute ?? null } : {}),
         ...(d
           ? {
               pointsPerReplyBasis: d.pointsPerReplyBasis,

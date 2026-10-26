@@ -56,10 +56,26 @@ export function ModelPriceLine({
 }: {
   model: Pick<
     ModelInfo,
-    'pointsPerReply' | 'displayMultiplier' | 'discount' | 'pointsPerUse' | 'pointsPerReplyBasis'
+    | 'pointsPerReply'
+    | 'pointsPerMinute'
+    | 'displayMultiplier'
+    | 'discount'
+    | 'pointsPerUse'
+    | 'pointsPerReplyBasis'
   > & { scenarios?: ModelInfo['scenarios'] };
   scenario?: ModelScenario;
 }) {
+  const callPrice =
+    scenario === 'voice_call' ||
+    (!scenario && model.scenarios?.includes('voice_call') && !model.scenarios.includes('chat'));
+  if (callPrice)
+    return (
+      <>
+        {model.pointsPerMinute != null
+          ? `约每分钟 ${formatPoints(model.pointsPerMinute)} 积分`
+          : '分钟价格待估算'}
+      </>
+    );
   // 没指定场景的非文字模型（语音、图片）：按它的第一个场景显示「约每次」。
   scenario ??=
     model.pointsPerReply == null

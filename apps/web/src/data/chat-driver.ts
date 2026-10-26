@@ -47,6 +47,7 @@ export class ChatDriver {
   private lifetime = new AbortController();
   private readonly owner;
   private readonly key: string;
+  private readonly historyPositions = new Map<string, { before: number; cursor: number }>();
   constructor(
     private readonly api: ApiClient,
     private readonly store: IndexedLocalStore,
@@ -145,16 +146,45 @@ export class ChatDriver {
       void this.runner?.dispatch({ type: 'inspect', conversationId }).catch(() => {});
   }
   async older(id: string, beforeSeq: number): Promise<boolean> {
-    if (!this.runner || this.stopped) throw new Error('聊天尚未准备好');
-    const page = await this.api.call(ChatEndpoints.listMessages, {
-      params: { conversationId: id },
-      query: { beforeSeq, limit: 50 },
-      networkOnly: true,
-      signal: this.lifetime.signal,
-    });
-    if (this.stopped) return false;
-    await this.runner.history(id, beforeSeq, page);
-    return page.hasMore;
+    const runner = this.runner;
+    if (!runner || !runner.active || this.stopped || !this.api.owns(this.owner))
+      throw new Error('聊天尚未准备好');
+    const saved = this.historyPositions.get(id);
+    let cursor = saved?.before === beforeSeq ? saved.cursor : beforeSeq;
+    const cleared =
+      runner.state.conversations.find((item) => item.conversationId === id)?.state
+        .clearedThroughSeq ?? 0;
+    for (let attempt = 0; attempt < 20 && cursor > cleared + 1; attempt++) {
+      const page = await this.api.call(ChatEndpoints.listMessages, {
+        params: { conversationId: id },
+        query: { beforeSeq: cursor, limit: 50 },
+        networkOnly: true,
+        signal: this.lifetime.signal,
+      });
+      if (this.stopped || this.runner !== runner || !this.api.owns(this.owner))
+        throw new Error('聊天会话已改变');
+      await runner.history(id, cursor, page);
+      if (!runner.active) throw new Error('聊天未保存，请检查本机存储后重试');
+      const next = page.coverage?.fromSeq ?? Math.min(cursor, ...page.items.map((m) => m.seq));
+      const more = page.hasMore && next > cleared + 1;
+      // 空页也有扫描范围：继续往前，不能永远拿最早可见消息作为同一个游标重复请求。
+      this.historyPositions.set(id, { before: beforeSeq, cursor: next });
+      const visible = runner.state.messages.some(
+        (message) => message.conversationId === id && message.seq < beforeSeq,
+      );
+      if (visible || !more) {
+        this.historyPositions.delete(id);
+        return more;
+      }
+      if (!Number.isSafeInteger(next) || next <= 0 || next >= cursor)
+        throw new Error('历史读取没有前进，请重试');
+      cursor = next;
+    }
+    if (cursor <= cleared + 1) {
+      this.historyPositions.delete(id);
+      return false;
+    }
+    throw new Error('较早记录仍在读取，请点击重试继续');
   }
   async clearHistory(id: string): Promise<void> {
     const runner = this.runner;
