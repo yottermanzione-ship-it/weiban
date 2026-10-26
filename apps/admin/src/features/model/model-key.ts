@@ -1,13 +1,14 @@
 /**
  * 模型键「厂商/模型名」的生成与校验。
- * 规则以契约为准：packages/contracts/src/http/model-access.ts ModelKey。
+ * 规则以契约为准：packages/contracts/src/http/model-access.ts CanonicalModelKey。
+ * 3.27：后台新增 / 修改模型只允许规范键，所以这里也用 CanonicalModelKey（不是带历史键例外的 ModelKey）。
  */
-import { ModelKey } from '@weiban/contracts';
+import { CanonicalModelKey } from '@weiban/contracts';
 
 export { MODEL_KEY_HINT } from '../../data/issues.js';
 
 export function isValidModelKey(value: string): boolean {
-  return ModelKey.safeParse(value).success;
+  return CanonicalModelKey.safeParse(value).success;
 }
 
 /** 中文厂商名 / 常见别名 → 英文小写标识。 */

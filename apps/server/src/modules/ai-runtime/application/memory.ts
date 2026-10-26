@@ -59,7 +59,6 @@ import {
   nextWindowStart,
   pickResident,
   renderStableMemory,
-  type WindowLimits,
   type WindowTurn,
 } from '../domain/memory-window.js';
 import { sinceDay, tierFingerprint, type ResolvedMemoryTier } from '../domain/memory-tier.js';
@@ -717,7 +716,7 @@ export class MemoryService {
     characterId: string,
     scope: 'normal' | 'adult',
     query: string,
-    window?: { turns: WindowTurn[]; limits?: WindowLimits },
+    window?: { turns: WindowTurn[] },
     opts: { uncapped?: boolean; brain?: boolean } = {},
   ) {
     const job = await this.guard(userId, characterId);
@@ -942,7 +941,6 @@ export class MemoryService {
               turns: window.turns,
               segments,
               cursorSeq: state.cursorSeq,
-              ...(window.limits ? { limits: window.limits } : {}),
             })
           : null;
         if (moved !== null) {

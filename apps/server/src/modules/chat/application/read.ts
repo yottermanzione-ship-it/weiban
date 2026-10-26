@@ -1,5 +1,18 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gt, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  lt,
+  notExists,
+  notInArray,
+  or,
+  sql,
+} from 'drizzle-orm';
 import {
   ContentScope,
   Id,
@@ -22,11 +35,17 @@ import {
 } from '../../../platform/index.js';
 import {
   conversations,
+  hiddenMessages,
   messages,
   participants,
   userConversationStates,
 } from '../infra/db/schema.js';
-import { ChatStore, PRIVATE_MESSAGE_PREVIEW, type ConversationRow } from './store.js';
+import {
+  ChatStore,
+  PRIVATE_MESSAGE_PREVIEW,
+  type ConversationRow,
+  type MessageView,
+} from './store.js';
 
 @Injectable()
 export class ChatReadService implements ChatReadPort {
@@ -243,6 +262,8 @@ export class ChatReadService implements ChatReadPort {
     return this.db.transaction(async (tx) => {
       const row = await this.store.load(tx, conversationId, userId);
       const view = await this.store.view(tx, row, userId);
+      if (query.beforeSeq !== undefined)
+        return this.visibleHistory(tx, row, view, userId, query.beforeSeq, query.limit);
       const after = query.afterSeq;
       const before = query.beforeSeq;
       if (
@@ -298,6 +319,65 @@ export class ChatReadService implements ChatReadPort {
         coverage: { fromSeq: from, throughSeq: through, excludedRanges },
       });
     });
+  }
+  /** 手动历史按可见消息取一批；隐藏区间只扫描序号，不解密或恢复隐藏正文。 */
+  private async visibleHistory(
+    tx: DbTx,
+    row: ConversationRow,
+    view: MessageView,
+    userId: string,
+    before: number,
+    limit: number,
+  ): Promise<MessagePage> {
+    const floor = view.state.clearedThroughSeq;
+    const through = Math.min(row.lastSeq, before - 1);
+    if (through <= floor)
+      return MessagePage.parse({
+        items: [],
+        hasMore: false,
+        coverage: { fromSeq: 0, throughSeq: 0, excludedRanges: [] },
+      });
+    const candidates = await tx.db
+      .select()
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversationId, row.id),
+          gt(messages.seq, floor),
+          lt(messages.seq, through + 1),
+          notExists(
+            tx.db
+              .select({ id: hiddenMessages.messageId })
+              .from(hiddenMessages)
+              .where(
+                and(eq(hiddenMessages.userId, userId), eq(hiddenMessages.messageId, messages.id)),
+              ),
+          ),
+        ),
+      )
+      .orderBy(desc(messages.seq))
+      .limit(limit + 1);
+    const hasMore = candidates.length > limit;
+    const selected = candidates.slice(0, limit).reverse();
+    const from = hasMore ? selected[0]!.seq : floor + 1;
+    const scanned = await tx.db
+      .select({ id: messages.id, seq: messages.seq })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversationId, row.id),
+          gt(messages.seq, from - 1),
+          lt(messages.seq, through + 1),
+        ),
+      )
+      .orderBy(asc(messages.seq));
+    if (scanned.length !== through - from + 1)
+      throw new AppError('internal_error', '消息记录不完整');
+    const items: Message[] = [];
+    for (const message of selected) items.push(await this.store.message(tx, row, message, view));
+    // 手动历史用最老可见消息作下一页游标，不推进afterSeq同步边界。
+    // 契约允许不带coverage：不能把上千隐藏seq塞进最多200的同步覆盖证明。
+    return MessagePage.parse({ items, hasMore });
   }
   async stateForUser(tx: DbTx, userId: string, conversationId: string) {
     const [state] = await tx.db

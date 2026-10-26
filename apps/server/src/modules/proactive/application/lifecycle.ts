@@ -2,10 +2,12 @@ import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import type { ChatReadPort, ContactsReadPort } from '@weiban/contracts';
 import { and, eq, count } from 'drizzle-orm';
 import {
+  CHARACTER_PURGE_REGISTRY,
   DATABASE,
   EVENT_BUS,
   JOB_QUEUE,
   USER_DATA_REGISTRY,
+  type CharacterPurgeRegistry,
   type Database,
   type DbTx,
   type EventBus,
@@ -26,6 +28,7 @@ export class ProactiveLifecycle implements OnModuleInit {
     @Inject(EVENT_BUS) private readonly bus: EventBus,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
+    @Inject(CHARACTER_PURGE_REGISTRY) private readonly purgeRegistry: CharacterPurgeRegistry,
     @Inject(ProactiveGuards) private readonly guards: ProactiveGuards,
     @Inject(DailyEventService) private readonly events: DailyEventService,
     @Inject(ProactiveMessageService) private readonly messages: ProactiveMessageService,
@@ -37,6 +40,10 @@ export class ProactiveLifecycle implements OnModuleInit {
       module: 'proactive',
       purgeUser: (id) => this.purgeUser(id),
       countUserData: (id) => this.countUserData(id),
+    });
+    this.purgeRegistry.register({
+      module: 'proactive',
+      purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
     });
     await this.jobs.work('proactive.prune_daily_events', async () => {
       await this.events.pruneOldEvents();
@@ -95,6 +102,23 @@ export class ProactiveLifecycle implements OnModuleInit {
     }
     return total;
   }
+  /** 后台彻底删除角色：所有用户下该角色的日报、发送账本、待回复。 */
+  private async purgeCharacter(tx: DbTx, characterId: string): Promise<void> {
+    await tx.query('DELETE FROM proactive.daily_events WHERE character_id = $1', [characterId]);
+    // 别的角色的日报里「当天和谁在一起」也指向这个角色：日报属于用户自己的记录，保留正文，
+    // 只清掉已不存在的同行角色引用（with_character_id 可空），不留下悬空 id。
+    await tx.query(
+      'UPDATE proactive.daily_events SET with_character_id = NULL WHERE with_character_id = $1',
+      [characterId],
+    );
+    await tx.query('DELETE FROM proactive.proactive_sent_log WHERE character_id = $1', [
+      characterId,
+    ]);
+    await tx.query('DELETE FROM proactive.proactive_pending_reply WHERE character_id = $1', [
+      characterId,
+    ]);
+  }
+
   private async purge(tx: DbTx, userId: string, characterId?: string): Promise<number> {
     let total = 0;
     for (const table of [dailyEvents, proactivePendingReply, proactiveSentLog]) {

@@ -1,9 +1,13 @@
 /*
  * 3.17 会员 v5（docs/refactor/16-membership-v5.md §3、§5、§6）：PRO+ 价格与权益对照页。
  * - 现阶段没有在线支付：显示价格，点「开通」提示联系管理员（由后台「会员与订单」替用户开通，开通即送积分）。
- * - 权益对照是星野式两列 Free / PRO+ 逐行打勾，需要积分的项标「需积分」。
+ * - 权益对照是星野式两列 Free / PRO+ 逐行打勾。
  * - 总经理 10-19 明确：不放任何诱导开通的文案（不渲染「还差 N」「立即开通享…」之类），只如实列出两档区别。
  * - 记忆数字读批 B 的记忆分档参数（MemoryTierEndpoints.plans，后台「系统 › 记忆分档」可调）；读不到时按 16 号 §5.3 默认显示。
+ * - 10-25（会员 v6）：角色制作免费次数不再「终身 + 每周」叠加——免费用户终身 N 次、PRO+ 每周 N 次，
+ *   数字都读 RoleRequestEndpoints.getConfig（后台「制作申请 › 价格与开关」）；用完后按 pointsCost 积分/次。
+ * - 10-25（会员 v6.1）：按总经理要求只改显示——去掉「需积分」小标签和表格下方两段规则说明；
+ *   积分计费、免费次数、试用与会员权限都没变。
  */
 import { useState } from 'react';
 import {
@@ -48,8 +52,6 @@ interface Row {
   label: string;
   free: Cell;
   pro: Cell;
-  /** 这项使用时按积分扣费。 */
-  points?: boolean;
 }
 
 function CellView({ value }: { value: Cell }) {
@@ -83,59 +85,50 @@ export function MembershipPage() {
   const tiers = useRemote(MemoryTierEndpoints.plans);
   const mf = tiers.data?.free ?? DEFAULT_FREE;
   const mp = tiers.data?.proPlus ?? DEFAULT_PRO;
-  const trialDays = tiers.data?.newUserTrialDays ?? 7;
   const [picked, setPicked] = useState<MembershipPlan | null>(null);
   const data = offer.data;
   const member = data?.membership ?? membership.data;
   const pro = member?.tier === 'pro_plus';
   const rc = roleConfig.data;
   const life = rc?.lifetimeFreeCount ?? 3;
-  const weekly = rc?.proPlusWeeklyFreeCount ?? 2;
-  const fee = rc?.pointsCost ?? 200;
-  const bonus = (data?.plans ?? [])
-    .map((p) => `${p.name} ${formatPoints(p.bonusPoints)}`)
-    .join(' / ');
+  const weekly = rc?.proPlusWeeklyFreeCount ?? 3;
 
   const rows: Row[] = [
-    { label: '和角色聊天（可选任意模型）', free: true, pro: true, points: true },
-    { label: '群聊、语音消息、电话', free: true, pro: true, points: true },
-    { label: '切换模型、私密模式', free: true, pro: true, points: true },
-    { label: '开通即送积分（永久有效）', free: false, pro: bonus || true },
+    { label: '角色聊天', free: true, pro: true },
+    { label: '群聊', free: false, pro: true },
+    { label: '语音通话', free: true, pro: true },
+    { label: '切换模型', free: true, pro: true },
     {
-      label: '常驻记忆（每次都记得的重要事）',
+      label: '常驻记忆',
       free: `${mf.residentLimit} 条`,
       pro: `${mp.residentLimit} 条`,
     },
     {
-      label: '记忆库容量（每个角色）',
+      label: '记忆库容量 /角色',
       free: mf.libraryLimit === null ? '不限' : `${mf.libraryLimit} 条`,
       pro: mp.libraryLimit === null ? '不限' : `${mp.libraryLimit} 条`,
     },
     {
       label: '聊天摘要',
       free: days(mf.summaryDays, '全部'),
-      pro: days(mp.summaryDays, '全部 + 年度回忆'),
+      // 「年度回忆」后端只留了上下文口子、暂无数据来源（memory-window annual 传空）。
+      pro: days(mp.summaryDays, '长期、年度回忆'),
     },
     {
-      label: '每次按话题回想',
+      label: '按话题回忆往事',
       free: `${mf.retrieveLimit} 条`,
       pro: `${mp.retrieveLimit} 条`,
     },
-    {
-      label: '翻聊天记录（提到旧事时）',
-      free: days(mf.recallDays, '全部'),
-      pro: days(mp.recallDays, '全部'),
-    },
-    { label: '长上下文模式（可选）', free: false, pro: true, points: true },
-    { label: '角色生态（含私人朋友圈）', free: false, pro: true, points: true },
-    { label: '接入 QQ / 微信', free: false, pro: true, points: true },
+    { label: '角色生态', free: false, pro: true },
+    { label: '接入 QQ / 微信', free: false, pro: true },
     { label: '好感度加成', free: false, pro: true },
     // 3.25（G1-7）：从未充值且非会员的账号，好感度最高到「亲密好友」；充值或开通会员后解除。
-    { label: '好感度最高阶段', free: '亲密好友（充值后解除）', pro: '伴侣' },
+    { label: '好感度最高阶段', free: '亲密好友', pro: '伴侣' },
     {
-      label: `申请官方制作角色（免费次数用完后 ${fee} 积分/次）`,
-      free: `终身 ${life} 次`,
-      pro: `终身 ${life} 次 + 每周 ${weekly} 次`,
+      // 10-25（会员 v6）：免费列就是终身 N 次；PRO+ 只看本周 N 次，不再叠加终身次数。
+      label: '角色制作',
+      free: `${life} 次`,
+      pro: `每周 ${weekly} 次`,
     },
   ];
 
@@ -192,7 +185,6 @@ export function MembershipPage() {
           <div className="benefit-row" role="row" key={row.label}>
             <span role="cell" className="benefit-label">
               {row.label}
-              {row.points && <em className="benefit-points">需积分</em>}
             </span>
             <span role="cell">
               <CellView value={row.free} />
@@ -203,11 +195,6 @@ export function MembershipPage() {
           </div>
         ))}
       </div>
-      <p className="hint page-note">
-        所有 AI 回复按积分计费，开通即送积分。扣费按实际用量（1 元 = 100
-        积分），会员与免费用户单价相同。
-        {trialDays > 0 ? `新用户注册后前 ${trialDays} 天按 PRO+ 的记忆范围体验。` : ''}
-      </p>
 
       {(offer.error || roleConfig.error) && (
         <p role="alert" className="notice-bar">

@@ -19,8 +19,41 @@ describe('WB-Card 1.0 严格契约与草稿', () => {
   it('未完成草稿可保存，不能当作完整卡片用于上架或运行时', () => {
     const draft = { cardSchemaVersion: 1, data: { persona: { summary: '待补齐' } } };
     expect(DraftCharacterCard.safeParse(draft).success).toBe(true);
+    expect(
+      DraftCharacterCard.safeParse({
+        cardSchemaVersion: 1,
+        data: { persona: { emotionalTone: '克制' } },
+      }).success,
+    ).toBe(true);
     expect(CharacterCard.safeParse(draft).success).toBe(false);
     expect(DraftCharacterCard.safeParse({ cardSchemaVersion: 0, data: {} }).success).toBe(false);
+  });
+  it('3.39 旧卡承接字段可选，旧列名与心跳等未映射结构仍不能混入严格卡', () => {
+    const card = CharacterCard.parse(samples[0]!.card);
+    const data = {
+      ...card.data,
+      persona: { ...card.data.persona, emotionalTone: '温暖克制，被戳中心事会沉默一会儿' },
+      social: {
+        ...card.data.social,
+        moments: { ...card.data.social.moments, topics: ['画画', '海'] },
+      },
+    };
+    expect(CharacterCard.safeParse({ ...card, data }).success).toBe(true);
+    expect(
+      CharacterCard.safeParse({
+        ...card,
+        data: { ...card.data, persona: { ...card.data.persona, emotional_tone: '旧列名' } },
+      }).success,
+    ).toBe(false);
+    expect(
+      CharacterCard.safeParse({
+        ...card,
+        data: {
+          ...card.data,
+          social: { ...card.data.social, heartbeat: { enabled: true, rules: ['别制造愧疚感'] } },
+        },
+      }).success,
+    ).toBe(false);
   });
   it('未知版本、分类覆盖、系统提示词、克隆参数不能进入可执行规则字段', () => {
     const parsed = CharacterCard.parse(samples[0]!.card);

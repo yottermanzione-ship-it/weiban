@@ -8,33 +8,29 @@
 import { useEffect, useState } from 'react';
 import { Alert, Button, Select } from 'antd';
 import {
-  EcologyAdminEndpoints,
   ModelAccessAdminEndpoints,
   type AdminModel,
   type ModelScenario,
   type ModelScenarioSettings,
-  type PlatformInternalUse,
 } from '@weiban/contracts';
 import { api } from '../../data/client.js';
 import { errorText, useRemote } from '../../data/hooks.js';
 import { HelpTip, SectionCard, useToast } from '../../ui/page.js';
 import { SCENARIO_LABELS } from './shared.js';
 
-/** 3.25：成人内容检查（adult_check）不再使用，不在后台显示。 */
-type InternalUse = Exclude<PlatformInternalUse, 'adult_check'> | 'ecology_decision';
+/**
+ * 3.29：这里只保留平台内部的安全/小V/平台内容/联网搜索，以及场景推荐。
+ * 生态 Gate（Jev）在「角色生态」页唯一配置；行为规划跟随用户自己的 chat 模型，不再后台选模型。
+ */
+type InternalUse = 'safety' | 'small_v' | 'platform_content' | 'web_search';
 const INTERNAL_LABELS: Record<InternalUse, { label: string; help: string }> = {
   safety: { label: '安全检查', help: '安全关怀识别与次日跟进，平台付费。' },
   small_v: { label: '小V 答疑', help: '用户问小V 时用，平台付费。' },
-  ecology_decision: {
-    label: '角色生态决策',
-    help: '角色「想一想」下一步做什么；按用户积分计费，用户不可选。不配置 = 生态不运行。',
-  },
   platform_content: {
     label: '平台内容生成',
-    help: '官方角色公共朋友圈、搜索候选等平台承担的生成。',
+    help: '官方角色公共朋友圈等平台承担的生成；用户自己的微博同步朋友圈不经过它。',
   },
-  planner: { label: '行为规划', help: '后台规划角色行为；不配置时回落规则版，不调模型。' },
-  web_search: { label: '联网搜索', help: '平台提供的联网搜索服务。' },
+  web_search: { label: '联网搜索', help: '平台提供的联网搜索服务（需搜索类上游）。' },
 };
 
 const SCENARIO_ORDER: ModelScenario[] = [
@@ -42,15 +38,11 @@ const SCENARIO_ORDER: ModelScenario[] = [
   'voice_message',
   'speech_recognition',
   'voice_call',
-  'image_generation',
-  'private',
 ];
 const INTERNAL_ORDER: InternalUse[] = [
   'safety',
   'small_v',
-  'ecology_decision',
   'platform_content',
-  'planner',
   // 3.25：成人内容检查不再使用（私密模式不调用检查模型）
   'web_search',
 ];
@@ -58,18 +50,13 @@ const INTERNAL_ORDER: InternalUse[] = [
 export function ScenarioSettingsCard({ models }: { models: AdminModel[] }) {
   const toast = useToast();
   const remote = useRemote(ModelAccessAdminEndpoints.getScenarioSettings);
-  const ecology = useRemote(EcologyAdminEndpoints.getOverview);
   const [draft, setDraft] = useState<ModelScenarioSettings>({ recommended: {}, internal: {} });
-  const [decision, setDecision] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (remote.data) setDraft(remote.data);
   }, [remote.data]);
-  useEffect(() => {
-    if (ecology.data) setDecision(ecology.data.config.decisionModelKey);
-  }, [ecology.data]);
 
   const enabled = models.filter((m) => m.enabled);
   const optionsFor = (scenario: ModelScenario) =>
@@ -87,13 +74,8 @@ export function ScenarioSettingsCard({ models }: { models: AdminModel[] }) {
     setError('');
     try {
       await api.call(ModelAccessAdminEndpoints.updateScenarioSettings, { body: draft });
-      if (ecology.data && decision !== ecology.data.config.decisionModelKey)
-        await api.call(EcologyAdminEndpoints.updateConfig, {
-          body: { ...ecology.data.config, decisionModelKey: decision },
-        });
       toast.success('已保存场景推荐与平台内部模型');
       remote.refresh();
-      ecology.refresh();
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -139,6 +121,22 @@ export function ScenarioSettingsCard({ models }: { models: AdminModel[] }) {
               />
             </div>
           ))}
+          {/* 3.28：私密模型只有这一处来源；推荐里的 private 已移除，避免两个私密开关。 */}
+          <div className="scenario-settings-row" key="fixed-private">
+            <span className="scenario-settings-label">
+              固定私密模型
+              <HelpTip text="私密模式统一使用这个模型，用户不可选；不配置 = 私密模式暂不可用。改这里不会动其它场景的推荐。" />
+            </span>
+            <Select
+              allowClear
+              showSearch
+              style={{ flex: 1, minWidth: 0 }}
+              placeholder="未指定（私密模式不可用）"
+              value={draft.fixed?.private ?? undefined}
+              options={optionsFor('private')}
+              onChange={(v?: string) => setDraft((d) => ({ ...d, fixed: { private: v ?? null } }))}
+            />
+          </div>
         </div>
         <div>
           <div className="scenario-settings-title">
@@ -156,12 +154,10 @@ export function ScenarioSettingsCard({ models }: { models: AdminModel[] }) {
                 showSearch
                 style={{ flex: 1, minWidth: 0 }}
                 placeholder="未指定"
-                value={(use === 'ecology_decision' ? decision : draft.internal[use]) ?? undefined}
+                value={draft.internal[use] ?? undefined}
                 options={internalOptions(use)}
                 onChange={(v?: string) =>
-                  use === 'ecology_decision'
-                    ? setDecision(v ?? null)
-                    : setDraft((d) => ({ ...d, internal: { ...d.internal, [use]: v ?? null } }))
+                  setDraft((d) => ({ ...d, internal: { ...d.internal, [use]: v ?? null } }))
                 }
               />
             </div>

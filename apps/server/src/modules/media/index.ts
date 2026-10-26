@@ -1,5 +1,27 @@
 export { MediaModule } from './media.module.js';
 export {
+  StickerAssetImporter,
+  StickerImportError,
+  StickerImportManifest,
+  readStickerImportManifest,
+  stickerImportErrorCode,
+} from './application/sticker-asset-importer.js';
+export { createStickerAssetImporter } from './application/sticker-import-runtime.js';
+/** 旧卡头像 / 音色导入：维护 CLI 用的最小装配与通用安全读文件工具。 */
+export { createImportMediaService } from './application/import-runtime.js';
+/** 安全出站抓取（SSRF/DNS/重定向/超时/字节上限）：ai-runtime 的微博素材采集复用。 */
+export { LinkPreviewService } from './application/link-preview.js';
+export { assertNoLinks, readCheckedFile } from './application/sticker-asset-importer.js';
+export type { MediaService } from './application/media.js';
+export {
+  MediaVoiceImportService,
+  createMediaVoiceImportService,
+  legacyVoiceId,
+  type RegisterVoiceInput,
+  type RegisterVoiceResult,
+  type VoiceCatalogEntry,
+} from './application/voice-import.js';
+export {
   MEDIA_READ_PORT,
   MEDIA_SYSTEM_PORT,
   MEDIA_TRANSCRIPT_PORT,

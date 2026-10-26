@@ -1,20 +1,23 @@
-# 香港服务器“仅 IP、无 HTTPS”试运行：复用生产镜像与 compose.yml，只覆盖访问地址和端口。
-# 用户端：公网 http://<服务器IP>（80）。管理后台：只绑定服务器 127.0.0.1:8081，经 SSH 隧道访问。
-# 有域名后改回生产 Caddy（WEB_DOMAIN/ADMIN_DOMAIN 填域名、开放 443），去掉本文件。
+# 香港服务器：兼容原 IP 试运行和双域名 HTTPS，复用现有生产镜像。
+# IP 模式可沿用 :80 / :8081；域名模式显式设置 WEB_DOMAIN / ADMIN_DOMAIN / MEDIA_PUBLIC_BASE_URL。
+# 同名 override 供发布与每日备份共用，避免备份恢复应用时把 HTTPS 媒体地址改回 HTTP。
+# 公网仅发布网站 80/443；旧后台 8081 继续只绑定回环地址，不能代替管理员鉴权。
 services:
   migrate:
     environment:
       ALLOW_IP_HTTP: '1'
-      MEDIA_PUBLIC_BASE_URL: http://${WEB_HOST:?Set server IP}
+      MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-http://${WEB_HOST:?Set public web host}}
   app:
     environment:
       ALLOW_IP_HTTP: '1'
-      MEDIA_PUBLIC_BASE_URL: http://${WEB_HOST:?Set server IP}
+      MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-http://${WEB_HOST:?Set public web host}}
   caddy:
     environment:
-      WEB_DOMAIN: ':80'
-      ADMIN_DOMAIN: ':8081'
-      ADMIN_PUBLIC_ORIGIN: ${ADMIN_PUBLIC_ORIGIN:?Set tunnel admin origin}
+      WEB_DOMAIN: ${WEB_DOMAIN:-:80}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-:8081}
+      ADMIN_PUBLIC_ORIGIN: ${ADMIN_PUBLIC_ORIGIN:?Set public or tunnel admin origin}
     ports: !override
       - '80:80'
+      - '443:443'
+      - '443:443/udp'
       - '127.0.0.1:8081:8081'

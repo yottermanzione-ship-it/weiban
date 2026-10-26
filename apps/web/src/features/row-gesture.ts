@@ -143,7 +143,12 @@ export function useRowGesture(
       const touch = event.touches[0];
       if (!touch || kind === 'idle' || kind === 'scroll') return;
       if (move(touch.clientX, touch.clientY)) {
-        if (event.cancelable) event.preventDefault();
+        /*
+         * 不再 preventDefault：行的横向平移早被 .swipe-host 的 touch-action: pan-y 关掉了，
+         * 浏览器本来就不会横滑；而这个监听是「非被动」的代价很大——只要有它，浏览器就得把
+         * 整段会话列表的触摸滚动降级到主线程，每个 touchmove 都等 JS，手指跟手一卡一卡。
+         * 竖向滚动从没在这里被拦过，所以去掉默认行为拦截不改变任何滚动结果。
+         */
         event.stopPropagation();
       }
     };
@@ -201,7 +206,8 @@ export function useRowGesture(
     };
     const onDragStart = (event: DragEvent) => event.preventDefault();
     el.addEventListener('touchstart', onTouchStart, { passive: true });
-    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    // 被动：左滑靠 touch-action / transform 实现，不需要拦默认行为；见 onTouchMove 的说明。
+    el.addEventListener('touchmove', onTouchMove, { passive: true });
     el.addEventListener('touchend', onTouchEnd);
     el.addEventListener('touchcancel', onTouchCancel);
     el.addEventListener('pointerdown', onPointerDown);

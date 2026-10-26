@@ -63,7 +63,7 @@ export function MePage() {
         <MenuRow to="/moments" icon="wechat/picture" tint="blue" label="朋友圈" />
         <ComingSoonRow id="channels" />
         <ComingSoonRow id="cards" />
-        <MenuRow to="/me/stickers" icon="wechat/smile" tint="gold" label="表情" />
+        <MenuRow to="/sticker-store" icon="wechat/smile" tint="gold" label="表情" />
       </MenuGroup>
       <MenuGroup>
         <MenuRow
@@ -107,7 +107,6 @@ export function ServicesPage() {
           dot={lowBalance}
           value={wallet.data ? pointsText(wallet.data.balancePoints) : '—'}
         />
-        <MenuRow to="/wallet/recharge" icon="wechat/transfer" tint="gold" label="充值" />
         <MenuRow
           to="/membership"
           icon="wechat/star"

@@ -1,11 +1,22 @@
 /**
  * 用户模型榜单来源（10-20 从「系统设置」移到「模型管理」页顶部）。
- * 3.24（试用反馈第二轮 F2 第 6 条）：榜单自动获取——服务器每天抓一次来源链接（也可「立即刷新」），
- * 按各模型的「榜单对应名称」匹配名次，用户端按相对顺序重新编号 1..N；抓不到时保留上次结果并写明原因，
- * 可改用「粘贴导入」（从榜单网页整表复制，或上传 CSV）。
+ * 3.24（试用反馈第二轮 F2 第 6 条）：榜单自动获取——服务器每六小时同步官方数据集（也可「立即刷新」），
+ * 按模型自己的名字（显示名 / 上游模型名）匹配名次，用户端按相对顺序重新编号 1..N；抓不到时保留上次结果并写明原因，
+ * 可改用「粘贴导入」（从榜单网页整表复制，或上传 CSV）。3.37：没匹配上的模型在这里手动指定例外（带相似候选）。
  */
-import { useEffect, useState } from 'react';
-import { Alert, Button, Collapse, DatePicker, Form, Input, Space, Tag, Upload } from 'antd';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Alert,
+  AutoComplete,
+  Button,
+  Collapse,
+  DatePicker,
+  Form,
+  Input,
+  Space,
+  Tag,
+  Upload,
+} from 'antd';
 import { ReloadOutlined, UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { ModelAccessAdminEndpoints, type LeaderboardSnapshotStatus } from '@weiban/contracts';
@@ -32,6 +43,13 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
   const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const pollRun = useRef(0);
+  useEffect(
+    () => () => {
+      pollRun.current += 1;
+    },
+    [],
+  );
   const [pasting, setPasting] = useState(false);
   const [error, setError] = useState('');
   const current = status ?? statusRemote.data ?? null;
@@ -59,6 +77,7 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
         },
       });
       toast.success('已保存，用户端排行榜会显示新的来源');
+      setStatus(null);
       remote.refresh();
       statusRemote.refresh();
     } catch (e) {
@@ -69,11 +88,26 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
   }
 
   async function refreshNow() {
+    const run = ++pollRun.current;
     setRefreshing(true);
     setError('');
     try {
-      const next = await api.call(ModelAccessAdminEndpoints.refreshLeaderboard);
-      setStatus(next);
+      const initial = await api.call(ModelAccessAdminEndpoints.refreshLeaderboard);
+      setStatus(initial);
+      toast.info('已提交后台同步；完整分页可能需要数分钟，请勿重复刷新。');
+      let next = initial;
+      const started = Date.now();
+      while (run === pollRun.current && Date.now() - started < 600_000) {
+        await new Promise((resolve) => window.setTimeout(resolve, 5_000));
+        if (run !== pollRun.current) return;
+        next = await api.call(ModelAccessAdminEndpoints.getLeaderboardStatus);
+        setStatus(next);
+        if (next.lastAttemptAt !== initial.lastAttemptAt) break;
+      }
+      if (next.lastAttemptAt === initial.lastAttemptAt) {
+        toast.warning('同步尚未返回新结果，请稍后查看状态；当前有效榜单不受影响。');
+        return;
+      }
       if (next.lastError) toast.warning('这次没抓到，已保留上次的榜单');
       else toast.success(`已更新榜单，共 ${next.snapshot?.entries ?? 0} 条`);
       onChanged?.();
@@ -91,11 +125,11 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
         remote.data
           ? `用户端显示「来源：${remote.data.label}${
               current?.snapshot
-                ? ` · ${dayjs(current.snapshot.fetchedAt).format('YYYY-MM-DD')}`
+                ? ` · ${current.snapshot.publishedAt ?? '发布日期未知'}`
                 : remote.data.asOf
                   ? ` · ${remote.data.asOf}`
                   : ''
-            }」；名次按各模型的「榜单对应名称」自动匹配，用户端按相对顺序显示 1、2、3…`
+            }」；名次默认按模型自己的名字自动匹配，用户端按相对顺序显示 1、2、3…`
           : '还没配置：用户端排行榜不显示来源行'
       }
       extra={
@@ -138,7 +172,7 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
         <Form.Item
           label="参考日期"
           extra={
-            <FieldHelp>没有自动获取 / 导入的榜单时显示这个日期；有了就显示榜单更新日期。</FieldHelp>
+            <FieldHelp>仅供手动来源备注；官方发布日期由数据集提供，不用抓取日期代替。</FieldHelp>
           }
         >
           <Form.Item name="asOf" noStyle>
@@ -153,13 +187,16 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
             { type: 'url', message: '要以 https:// 开头' },
           ]}
           extra={
-            <FieldHelp>只支持 Arena 官方 https 链接；服务器每天 4:20 自动抓取一次。</FieldHelp>
+            <FieldHelp>
+              只支持 Arena 官方 https 链接；服务器每六小时完整分页同步官方 Dataset Viewer 的 Overall
+              数据。
+            </FieldHelp>
           }
         >
           <Input />
         </Form.Item>
       </Form>
-      {current && <SnapshotStatus status={current} />}
+      {current && <SnapshotStatus status={current} onStatus={setStatus} onChanged={onChanged} />}
       {pasting && (
         <PasteDrawer
           onClose={() => setPasting(false)}
@@ -175,19 +212,28 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
   );
 }
 
-function SnapshotStatus({ status }: { status: LeaderboardSnapshotStatus }) {
+function SnapshotStatus({
+  status,
+  onStatus,
+  onChanged,
+}: {
+  status: LeaderboardSnapshotStatus;
+  onStatus?: (next: LeaderboardSnapshotStatus) => void;
+  onChanged?: () => void;
+}) {
   return (
     <div className="leaderboard-status">
       <div>
         <strong>自动获取：</strong>
         {status.snapshot ? (
           <span>
-            当前榜单更新于 {fmt(status.snapshot.fetchedAt)}（
-            {status.snapshot.method === 'fetch' ? '服务器抓取' : '粘贴导入'}，
-            {status.snapshot.entries} 条）
+            官方发布日期 {status.snapshot.publishedAt ?? '未知'}；抓取于{' '}
+            {fmt(status.snapshot.fetchedAt)}（
+            {status.snapshot.method === 'fetch' ? '官方数据集' : '管理员手工导入（非自动官方同步）'}
+            ，{status.snapshot.entries} 条）
           </span>
         ) : (
-          <span>还没有榜单数据（用户端按手填名次显示）</span>
+          <span>还没有有效榜单数据（用户端显示暂无排名）</span>
         )}
       </div>
       {status.lastError && (
@@ -215,22 +261,101 @@ function SnapshotStatus({ status }: { status: LeaderboardSnapshotStatus }) {
                     {m.relativeRank}. {m.displayName}（原榜第 {m.rank} 名 · {m.arenaModelName}）
                   </Tag>
                 ))}
-                {status.unmatched.map((m) => (
-                  <Tag key={m.modelKey}>
-                    {m.displayName}
-                    {m.arenaModelName
-                      ? `（榜单里没有「${m.arenaModelName}」）`
-                      : '（没填榜单对应名称）'}
-                  </Tag>
-                ))}
-                <div className="field-help" style={{ marginTop: 6 }}>
-                  没匹配上的模型在用户端排行榜里排在后面、不显示名次；在模型抽屉里改「榜单对应名称」即可。
-                </div>
+                {status.unmatched.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <div className="field-help" style={{ marginBottom: 6 }}>
+                      没匹配上的模型在用户端排在后面、显示「暂无排名」。默认按模型名自动匹配， 只有
+                      Flash /
+                      Pro、带日期版本这类例外才需要在这里手动指定；下面是按相似度算出的候选，
+                      确认后才保存。
+                    </div>
+                    {status.unmatched.map((m) => (
+                      <UnmatchedRow
+                        key={m.modelKey}
+                        item={m}
+                        onStatus={onStatus}
+                        onChanged={onChanged}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             ),
           },
         ]}
       />
+    </div>
+  );
+}
+
+function UnmatchedRow({
+  item,
+  onStatus,
+  onChanged,
+}: {
+  item: LeaderboardSnapshotStatus['unmatched'][number];
+  onStatus?: (next: LeaderboardSnapshotStatus) => void;
+  onChanged?: () => void;
+}) {
+  const toast = useToast();
+  const [value, setValue] = useState(item.arenaModelName ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => setValue(item.arenaModelName ?? ''), [item.arenaModelName]);
+  const options = (item.suggestions ?? []).map((s) => ({
+    value: s.name,
+    label: `${s.name}（原榜第 ${s.rank} 名 · 相似 ${Math.round(s.score * 100)}%）`,
+  }));
+  async function save(next: string | null) {
+    setSaving(true);
+    setError('');
+    try {
+      const status = await api.call(ModelAccessAdminEndpoints.updateArenaName, {
+        params: { modelKey: item.modelKey },
+        body: { arenaModelName: next },
+      });
+      onStatus?.(status);
+      onChanged?.();
+      toast.success(next ? '已保存榜单匹配' : '已改为自动匹配');
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 8,
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        marginBottom: 8,
+      }}
+    >
+      <span style={{ minWidth: 180 }}>{item.displayName}</span>
+      <AutoComplete
+        value={value}
+        options={options}
+        onChange={(v) => setValue(v ?? '')}
+        placeholder="输入或选择榜单上的模型名"
+        style={{ width: 360 }}
+        allowClear
+      />
+      <Button
+        type="primary"
+        size="small"
+        loading={saving}
+        onClick={() => void save(value.trim() || null)}
+      >
+        保存匹配
+      </Button>
+      {item.arenaModelName && (
+        <Button size="small" disabled={saving} onClick={() => void save(null)}>
+          恢复自动
+        </Button>
+      )}
+      {error && <span style={{ color: '#cf1322' }}>{error}</span>}
     </div>
   );
 }
@@ -267,7 +392,7 @@ function PasteDrawer({
       open
       onClose={onClose}
       title="粘贴导入榜单"
-      subtitle="服务器抓不到榜单网站时用它：导入后立即按「榜单对应名称」匹配名次"
+      subtitle="服务器抓不到榜单网站时用它：导入后立即按模型名匹配名次"
       width={620}
       footer={
         <DrawerActions

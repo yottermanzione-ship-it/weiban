@@ -418,6 +418,11 @@ export const UserConversationState = z.object({
   readSeq: z.number().int().nonnegative(),
   /** 用户手动「标为未读」；进入会话或标记已读后自动清除。 */
   markedUnread: z.boolean(),
+  /**
+   * 3.41：本人给这个会话单独设置的聊天背景（media.purpose = chat_background，只有本人能读）。
+   * null / 旧响应不带 = 默认背景；只影响本人、只影响这个会话，清除即恢复默认。
+   */
+  backgroundMediaId: Id.nullable().optional(),
 });
 export type UserConversationState = z.infer<typeof UserConversationState>;
 
@@ -490,6 +495,8 @@ export const UpdateConversationStateRequest = z.object({
   pinned: z.boolean().optional(),
   muted: z.boolean().optional(),
   hidden: z.boolean().optional(),
+  /** 3.41：设置 / 清除这个会话的聊天背景；null = 恢复默认。必须是本人上传的 chat_background 媒体。 */
+  backgroundMediaId: Id.nullable().optional(),
 });
 
 // ---------- 接口 ----------
@@ -605,7 +612,8 @@ export const ChatEndpoints = {
     body: SendMessageRequest,
     response: MessageAck,
     summary:
-      '发送消息（WebSocket 不可用时的等价路径）。同一 clientMsgId 重复提交返回同一条消息（幂等）',
+      '发送消息（WebSocket 不可用时的等价路径）。同一 clientMsgId 重复提交返回同一条消息（幂等）；' +
+      '10-25：在群聊里发新消息是 PRO+ 权益，非 PRO+ 返回 403 membership_required（查看历史不受限）',
   }),
   recallMessage: defineEndpoint({
     method: 'POST',
@@ -647,7 +655,7 @@ export const ChatEndpoints = {
     params: ConversationParams,
     body: UpdateConversationStateRequest,
     response: UserConversationState,
-    summary: '置顶、免打扰、从列表删除',
+    summary: '置顶、免打扰、从列表删除、当前会话聊天背景（backgroundMediaId，null = 恢复默认）',
   }),
   clearHistory: defineEndpoint({
     method: 'POST',

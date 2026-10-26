@@ -37,6 +37,7 @@ import {
 import { z } from 'zod';
 import {
   AppError,
+  CHARACTER_PURGE_REGISTRY,
   CLOCK,
   DATABASE,
   ENVELOPE_CRYPTO,
@@ -46,6 +47,7 @@ import {
   USER_DATA_REGISTRY,
   newId,
   parseContract,
+  type CharacterPurgeRegistry,
   type Clock,
   type Database,
   type DbTx,
@@ -107,6 +109,7 @@ export class ImporterService implements OnModuleInit {
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(LOGGER) private readonly logger: Logger,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
+    @Inject(CHARACTER_PURGE_REGISTRY) private readonly purgeRegistry: CharacterPurgeRegistry,
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
     @Inject(BILLING_READ_PORT) private readonly billing: BillingReadPort,
     @Inject(MEDIA_SYSTEM_PORT) private readonly media: MediaSystemPort,
@@ -120,6 +123,10 @@ export class ImporterService implements OnModuleInit {
       module: 'importer',
       purgeUser: (userId) => this.purgeUser(userId),
       countUserData: (userId) => this.countUserData(userId),
+    });
+    this.purgeRegistry.register({
+      module: 'importer',
+      purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
     });
     await this.jobs.work<{ jobId: string }>(IMPORTER_DETECT_JOB, (job) =>
       this.detect(job.data.jobId),
@@ -978,6 +985,14 @@ export class ImporterService implements OnModuleInit {
       type: 'data.changed',
       data: { section: 'imports', characterId: null, itemId },
     });
+  }
+
+  /** 后台彻底删除角色：导入任务历史保留，只清掉目标角色引用。 */
+  private async purgeCharacter(tx: DbTx, characterId: string): Promise<void> {
+    await tx.db
+      .update(importJobs)
+      .set({ targetCharacterId: null })
+      .where(eq(importJobs.targetCharacterId, characterId));
   }
 
   private async purgeUser(userId: string): Promise<number> {

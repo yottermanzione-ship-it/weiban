@@ -16,7 +16,8 @@ compose=(docker compose --env-file "$ENV_FILE" -p "${WEIBAN_COMPOSE_PROJECT:-wei
 mkdir -p -- "$BACKUP_ROOT"
 bundle=$(mktemp -d "$BACKUP_ROOT/weiban-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")
 was_running=$("${compose[@]}" ps --status running -q app)
-resume() { if [[ -n "$was_running" ]]; then "${compose[@]}" up -d --wait --no-build app >/dev/null; fi; }
+# 只恢复本次暂停的既有容器，不重新解析配置、重建依赖或回退已生效的域名环境。
+resume() { if [[ -n "$was_running" ]]; then "${compose[@]}" start --wait app >/dev/null; fi; }
 trap resume EXIT
 "${compose[@]}" stop app >/dev/null
 "${compose[@]}" exec -T postgres pg_dump -U weiban -d weiban --format=custom | age -R "$RECIPIENT_FILE" > "$bundle/database.dump.age.partial"

@@ -48,7 +48,7 @@ const ConversationUpdated = z.object({
   data: z.object({ conversation: Conversation }),
 });
 
-/** 当前用户的个人状态变化：已读、置顶、免打扰、隐藏、清空、标为未读。 */
+/** 当前用户的个人状态变化：已读、置顶、免打扰、隐藏、清空、标为未读、聊天背景（3.41）。 */
 const ConversationStateUpdated = z.object({
   type: z.literal('conversation.state_updated'),
   data: z.object({
@@ -174,6 +174,8 @@ export const DataSection = z.enum([
   'role_requests',
   /** 3.8：反馈 / 投诉有回复或状态变化（itemId = ticketId），重新拉 GET /support/tickets。 */
   'support',
+  /** 10-25：年度回忆已生成（itemId = null），重新拉 GET /me/recap/pending。 */
+  'recap',
 ]);
 export type DataSection = z.infer<typeof DataSection>;
 

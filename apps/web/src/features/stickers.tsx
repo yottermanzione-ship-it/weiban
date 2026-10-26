@@ -5,7 +5,7 @@ import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import { useUpdates } from '../data/updates.js';
 import { uploadMedia } from '../data/upload.js';
-import { MenuGroup, MenuRow, NavBar, Sheet } from './shell-kit.js';
+import { NavBar, Sheet } from './shell-kit.js';
 import { showToast } from './toast.js';
 
 /** 我 › 表情（me-and-services.md 1.5；MED-01 第 3 条）：4 列网格、从相册添加、整理（移到最前 / 删除）。 */
@@ -85,8 +85,8 @@ export function MyStickersPage() {
   return (
     <main>
       <NavBar
-        title="我添加的表情"
-        fallback="/me"
+        title="添加的单个表情"
+        fallback="/sticker-store"
         right={
           <button
             className="text-button text-action"
@@ -100,9 +100,6 @@ export function MyStickersPage() {
           </button>
         }
       />
-      <MenuGroup>
-        <MenuRow to="/sticker-store" label="表情商店与我的表情包" />
-      </MenuGroup>
       {remote.loading && !remote.data && (
         <p role="status" className="empty">
           正在读取…

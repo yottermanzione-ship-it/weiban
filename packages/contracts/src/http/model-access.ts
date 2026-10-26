@@ -19,6 +19,7 @@
  * （平台内部模型 adult_check 不再使用）；模型「暂时无法使用」的具体原因只给后台看，用户端接口不再带。
  */
 import { z } from 'zod';
+import { ServicePriceUnit } from '../price-unit.js';
 import {
   API_PREFIX,
   Id,
@@ -30,6 +31,7 @@ import {
   tolerantEnum,
 } from '../common.js';
 import { BillingOwner, ModelPurpose } from '../ports/model-gateway.js';
+import { AdminUserLabel } from './admin-users.js';
 
 // ---------- 模型目录 ----------
 export const ModelLeaderboardSource = z.object({
@@ -43,14 +45,67 @@ export const ModelLeaderboardSource = z.object({
 });
 export const ModelLeaderboardInfo = z.object({
   source: ModelLeaderboardSource.nullable(),
+  fetchedAt: Timestamp.nullable().optional(),
+  method: z.enum(['fetch', 'paste']).nullable().optional(),
+  lastError: z.string().max(300).nullable().optional(),
   popular: z.array(z.object({ modelKey: z.string(), users: z.number().int().nonnegative() })),
 });
 
-/** 平台内的模型键，例 "deepseek/deepseek-v4-pro"。用户选择、价目表、用量都用它。 */
-export const ModelKey = z
+/**
+ * 平台内的模型键**规范格式**，例 "deepseek/deepseek-v4-pro"：小写「出品方/模型名」。
+ * 新增 / 修改模型的写入契约只接受它（`AdminCatalogEntryWrite` / `AdminModelWrite`）。
+ */
+export const CanonicalModelKey = z
   .string()
   .regex(/^[a-z0-9][a-z0-9._-]{0,47}\/[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/);
+export type CanonicalModelKey = z.infer<typeof CanonicalModelKey>;
+
+/**
+ * 3.27：生产 `model_access.model_catalog` 里唯一一条真实存在、没有厂商前缀的旧键
+ * （百炼 TTS；enabled = true、scenarios 含 voice_message，所以用户端要能读到它、也要能选它）。
+ * 公开契约**只额外承认这一条字面量**，不是「裸键放行」；其它没有 "厂商/模型名" 的键仍然不合法。
+ */
+export const LEGACY_MODEL_KEY = 'qwen-audio-3.0-tts-plus' as const;
+
+/**
+ * 平台内的模型键，例 "deepseek/deepseek-v4-pro"。用户选择、价目表、用量都用它。
+ * 3.27：规范格式之外，只额外接受上面那一条真实历史键（`LEGACY_MODEL_KEY`）；
+ * 后台新增 / 修改模型用的写入契约仍只接受 `CanonicalModelKey`。
+ */
+export const ModelKey = z.union([CanonicalModelKey, z.literal(LEGACY_MODEL_KEY)]);
 export type ModelKey = z.infer<typeof ModelKey>;
+
+/**
+ * 3.27：**后台读取**用的模型键。只放宽后台响应（`AdminCatalogEntry` / `AdminModel` /
+ * `AdminUsageRecord`，以及 3.43 的 `AdminUsageOverview.recentErrors[].modelKey`），
+ * 用户端只额外承认一条真实历史键（见 `ModelKey` / `LEGACY_MODEL_KEY`），写入（`*Write`）仍用
+ * `CanonicalModelKey`，不要把宽校验扩散到公开契约。
+ *
+ * 生产 `model_access.model_catalog` 里真实存在两类通不过规范 `CanonicalModelKey` 正则的键：
+ * 1. 软删除行：0117 迁移在删除时把 `model_key` 改成「原键#deleted:<随机>」腾出原键，
+ *    原键存 `original_model_key`；该列为空时后台读到的就是带后缀的键
+ *    （例 openai/gpt-6.1-sol#deleted:01a159b9、google/gemini-3.8-flash#deleted:01a159b9）；
+ * 2. 早期没有「出品方/模型名」前缀的旧键（没有 "/"，例 qwen-audio-3.0-tts-plus）。
+ * 两种前缀都可能被软删除，所以后缀单独放一条规则。
+ *
+ * 后台「调用记录」也用同一套规则（`AdminUsageRecord`，明细 / 导出 / 详情是同一个类型）：
+ * `model_access.usage_records` 里仍有旧键（例 qwen-audio-3.0-tts-plus），而客户端对响应整包解析，
+ * 一行不合格整页明细就空白。
+ */
+export const AdminModelKey = z.union([
+  ModelKey,
+  /** 软删除键：原键（带厂商前缀）+ `#deleted:<随机>`。 */
+  z
+    .string()
+    .regex(
+      /^[a-z0-9][a-z0-9._-]{0,47}\/[A-Za-z0-9][A-Za-z0-9._:-]{0,79}#deleted:[0-9A-Za-z-]{1,64}$/,
+    ),
+  /** 早期没有厂商前缀的旧键。 */
+  z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/),
+  /** 没有厂商前缀的旧键被软删除。 */
+  z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}#deleted:[0-9A-Za-z-]{1,64}$/),
+]);
+export type AdminModelKey = z.infer<typeof AdminModelKey>;
 
 /**
  * 模型能力。adult_content = 无审查 / 允许成人内容的模型：只能用于有成人资格的角色
@@ -79,7 +134,7 @@ export const PriceTier = z.enum(['cheap', 'medium', 'expensive']);
  * - voice_message 语音消息（角色发语音的合成；角色音色绑定了具体语音模型时以音色为准）；
  * - speech_recognition 语音识别（用户语音转文字，含通话里听用户）；
  * - voice_call 语音通话（通话中对话用的文本模型）；
- * - image_generation 发照片 / 自拍（图片生成）；
+ * - image_generation 已停用的发照片配置，仅保留旧客户端解析；自主发图不调用生图；
  * - private 私密模式聊天（原「成人模式模型」）。
  */
 export const ModelScenario = z.enum([
@@ -170,6 +225,8 @@ export const ModelInfo = z.object({
    * （原榜第 1、3、4、9 名 → 1、2、3、4），不显示原始名次；没上榜为 null。
    */
   leaderboardRank: z.number().int().positive().nullable(),
+  /** 与上一份有效快照按当前模型集合比较，正数为上升；无可比数据为 null。 */
+  leaderboardChange: z.number().int().nullable().optional(),
   /** 当前是否可用（上游故障时为 false，下架的模型不出现在列表中）。 */
   available: z.boolean(),
   /** 3.24：不可用的具体原因。3.25 起用户端接口不再带（只后台可见）。 */
@@ -179,6 +236,8 @@ export const ModelInfo = z.object({
    * 用户端价目表只显示这个数；当前价目表没有该模型的 token 价格时为 null。
    */
   pointsPerReply: z.number().nonnegative().nullable().optional(),
+  /** 4.2：通话约每分钟积分，按当前组件售价/折扣及用量假设估算；只展示，不是按分钟固定扣费。 */
+  pointsPerMinute: z.number().nonnegative().nullable().optional(),
   /**
    * 3.17（会员 v5，16 号 §2）：pointsPerReply 的来源。recent_7d = 最近 7 天该模型聊天回复的平均实扣；
    * default = 数据不足，按默认假设（发给模型约 1 万 token、八成命中缓存、回复约 200 token）和当前售价估算。
@@ -215,6 +274,24 @@ export const ModelInfo = z.object({
     .optional(),
 });
 export type ModelInfo = z.infer<typeof ModelInfo>;
+
+/**
+ * 3.28：平台固定的私密模型（用户不可选，只读展示）。
+ * - `displayMultiplier` 是**已含进行中折扣**的实际展示倍率；`discountRate` 只用于文案，
+ *   **不要再乘一次**（否则会重复打折）。
+ * - `available=false` 表示此刻不能进私密模式（模型停用 / 线路或价格有问题）；没有配置时整个 `model` 为 null。
+ */
+export const PrivateModelInfo = z.object({
+  modelKey: ModelKey,
+  displayName: z.string(),
+  /** 实际展示倍率（已含折扣）；价格算不出时为 null。 */
+  displayMultiplier: z.number().nonnegative().nullable(),
+  /** 进行中的限时折扣系数（0.5 = 5 折），仅用于文案；已包含在上面的倍率里。 */
+  discountRate: z.number().positive().lte(1).nullable(),
+  /** 此刻能否用于私密模式。 */
+  available: z.boolean(),
+});
+export type PrivateModelInfo = z.infer<typeof PrivateModelInfo>;
 
 // ---------- 用户的模型选择 ----------
 
@@ -308,6 +385,11 @@ export const ScenarioSelection = z.object({
   selection: ModelRefState.nullable(),
   /** 后台为该场景指定的推荐模型（只用于「一键选推荐」，不是兜底默认）；未指定为 null。 */
   recommendedModelKey: ModelKey.nullable(),
+  /**
+   * 3.28：该场景的模型由平台固定（目前只有 private），用户不能改；`selection` 是平台配置的结果。
+   * 普通场景不带这个字段。
+   */
+  fixedByAdmin: z.boolean().optional(),
 });
 
 export const ScenarioConfig = z.object({
@@ -391,6 +473,18 @@ export const ModelAccessEndpoints = {
     auth: 'user',
     response: ScenarioConfig,
     summary: '3.22：按场景的模型配置（含后台推荐模型、是否需要首次引导）',
+  }),
+  /**
+   * 3.28：平台固定私密模型（用户只读）。稳定 200：未配置时 `{ model: null }`，不用 204，
+   * 免得客户端把空 body 当 JSON 解析失败。`displayMultiplier` 已含进行中的折扣。
+   */
+  privateModel: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/model/private-model`,
+    auth: 'user',
+    response: z.object({ model: PrivateModelInfo.nullable() }),
+    summary:
+      '3.28：平台固定私密模型（用户不可选）；未配置时 model=null；倍率已含折扣，不要再乘 discountRate',
   }),
   updateScenarioConfig: defineEndpoint({
     method: 'PATCH',
@@ -640,7 +734,11 @@ export const RouteBillingBounds = z
 export type RouteBillingBounds = z.infer<typeof RouteBillingBounds>;
 
 export const AdminCatalogEntry = z.object({
-  modelKey: ModelKey,
+  /**
+   * 3.27：后台读取放宽（软删除键 `原键#deleted:<随机>`、没有厂商前缀的旧键），
+   * 见 `AdminModelKey`；写入仍严格用 `CanonicalModelKey`（`AdminCatalogEntryWrite`）。
+   */
+  modelKey: AdminModelKey,
   displayName: z.string().min(1).max(60),
   vendorName: z.string().min(1).max(40),
   upstreamId: Id,
@@ -695,7 +793,15 @@ export const AdminCatalogEntry = z.object({
 });
 export type AdminCatalogEntry = z.infer<typeof AdminCatalogEntry>;
 
-export const AdminCatalogEntryWrite = AdminCatalogEntry.omit({ updatedAt: true, deletedAt: true });
+/**
+ * 3.27：写入仍只接受 `CanonicalModelKey`（必须有「小写厂商/模型名」）。宽校验只给后台**读取**
+ * （`AdminCatalogEntry` / `AdminModel`），公开的 `ModelKey` 也只额外承认 `LEGACY_MODEL_KEY` 一条，
+ * 免得新增 / 修改模型时能写入 `#deleted:` 或任意没有厂商前缀的键。
+ */
+export const AdminCatalogEntryWrite = AdminCatalogEntry.omit({
+  updatedAt: true,
+  deletedAt: true,
+}).extend({ modelKey: CanonicalModelKey });
 
 /**
  * v3.4：模型路由——这个模型可以走哪些上游账号（按优先级、权重调度，失败自动切换到下一个）。
@@ -733,8 +839,33 @@ export const ModelRates = z.object({
 });
 export type ModelRates = z.infer<typeof ModelRates>;
 
-/** v3.3：后台「模型」页的一行 = 目录条目 + 当前生效价目表里的倍率。 */
+/** 3.36：非 token 单价，金额为元 / 该单位。 */
+export const ModelServiceRateWrite = z.strictObject({
+  unit: ServicePriceUnit,
+  price: z.number().nonnegative().max(100_000),
+  cost: z.number().nonnegative().max(100_000).nullable().optional(),
+});
+export type ModelServiceRateWrite = z.infer<typeof ModelServiceRateWrite>;
+export const ModelServiceRate = ModelServiceRateWrite.extend({
+  hasTimeBands: z.boolean().optional(),
+});
+export type ModelServiceRate = z.infer<typeof ModelServiceRate>;
+const ServiceRatesWrite = z
+  .array(ModelServiceRateWrite)
+  .min(1)
+  .max(5)
+  .refine(
+    (rates) => new Set(rates.map((r) => r.unit)).size === rates.length,
+    '同一计价单位不能重复',
+  );
+
+/**
+ * v3.3：后台「模型」页的一行 = 目录条目 + 当前生效价目表里的倍率。
+ * 3.27：`modelKey` 跟 `AdminCatalogEntry` 一样放宽（真实目录里有软删除键、没有厂商前缀的旧键），
+ * 用户端接口不受影响。
+ */
 export const AdminModel = AdminCatalogEntry.extend({
+  serviceRates: z.array(ModelServiceRate).max(5).optional(),
   /** 售价倍率（用户被扣的钱）；当前生效价目表里没有该模型的 token 价格时为 null（例：语音、图片模型）。 */
   rates: ModelRates.nullable(),
   /** 成本倍率（上游收平台的钱，对账用）；默认与售价相同（个人测试阶段加价系数 1.00）。 */
@@ -780,8 +911,10 @@ export type AdminModel = z.infer<typeof AdminModel>;
 export const USAGE_MISSING_ALERT_STREAK = 5;
 
 export const AdminModelWrite = AdminCatalogEntryWrite.extend({
+  /** 3.36：省略不改；只替换传入单位（含分时价）为全天价，其他单位完整保留。 */
+  serviceRates: ServiceRatesWrite.optional(),
   /**
-   * 售价倍率。传 null = 不改价目表（语音、图片等非 token 计价的模型在「价目表版本」高级页维护）。
+   * 售价倍率。传 null = 不改 token 价格（语音、搜索等非 token 计价通过 serviceRates 维护）。
    * 与当前价格不同时，后端复制当前生效价目表、替换这个模型的输入 / 输出 / 缓存三项价格，生成新版本并立即发布。
    */
   rates: ModelRates.nullable(),
@@ -825,6 +958,17 @@ export const ModelScenarioSettings = z.object({
       web_search: ModelKey.nullable(),
     })
     .partial(),
+  /**
+   * 3.28：平台**固定**的场景模型（用户不可选、运行时无条件使用）。目前只有 `private`。
+   * 与 `recommended` 完全分开：推荐只影响「一键选推荐 / 管理员调用兜底」，固定才是私密模式的实际来源。
+   * 字段不存在 = 从未初始化；`{ private: null }` = 管理员主动清空（不会被自动初始化复活）。
+   */
+  fixed: z
+    .object({
+      private: ModelKey.nullable(),
+    })
+    .partial()
+    .optional(),
 });
 export type ModelScenarioSettings = z.infer<typeof ModelScenarioSettings>;
 
@@ -881,6 +1025,9 @@ export const LeaderboardSnapshotStatus = z.object({
       /** fetch = 服务器自动抓取；paste = 后台粘贴 / 上传导入。 */
       method: z.enum(['fetch', 'paste']),
       entries: z.number().int().nonnegative(),
+      publishedAt: LocalDate.nullable().optional(),
+      sourceUrl: z.url().nullable().optional(),
+      totalRows: z.number().int().nonnegative().nullable().optional(),
     })
     .nullable(),
   /** 最近一次抓取 / 导入尝试的时间与失败原因（成功时 lastError 为 null）。 */
@@ -896,15 +1043,33 @@ export const LeaderboardSnapshotStatus = z.object({
       relativeRank: z.number().int().positive(),
     }),
   ),
-  /** 启用的模型里没匹配上的（没填榜单对应名称时 arenaModelName 为 null）：用户端不显示名次、排在后面。 */
+  /**
+   * 启用的模型里没匹配上的（没手动指定时 arenaModelName 为 null）：用户端不显示名次、排在后面。
+   * 3.36：附带按名称相似度算出的候选（最多 3 条），供后台「榜单匹配」手动纠错；不会自动套用。
+   */
   unmatched: z.array(
     z.object({
       modelKey: ModelKey,
       displayName: z.string(),
       arenaModelName: z.string().nullable(),
+      suggestions: z
+        .array(
+          z.object({
+            name: z.string(),
+            rank: z.number().int().positive(),
+            score: z.number().min(0).max(1),
+          }),
+        )
+        .optional(),
     }),
   ),
 });
+
+/** 3.36：后台「榜单匹配」手动指定 / 清除某个模型的榜单对应名称（null = 改为默认按模型名自动匹配）。 */
+export const UpdateArenaNameRequest = z.object({
+  arenaModelName: z.string().trim().min(1).max(120).nullable(),
+});
+export type UpdateArenaNameRequest = z.infer<typeof UpdateArenaNameRequest>;
 export type LeaderboardSnapshotStatus = z.infer<typeof LeaderboardSnapshotStatus>;
 
 /** 3.24：粘贴导入榜单：从网页复制的表格文本或 CSV（含「名次 / 模型名」），最多 1MB。 */
@@ -1019,6 +1184,19 @@ export const ModelAccessAdminEndpoints = {
     response: ModelScenarioSettings,
     summary: '3.22：修改场景推荐模型与平台内部模型（只改传了的键，写审计）',
   }),
+  /**
+   * 3.28：一次性初始化固定私密模型——仅当 `fixed` 字段从未存在、且当前推荐私密模型有效时，
+   * 把它复制到 `fixed.private` 并写审计；`fixed:null` 表示管理员主动清空，不会自动复活。
+   * 不连接生产数据、不批量回填用户选择。
+   */
+  initializeFixedPrivateModel: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/model/private-model/initialize`,
+    auth: 'admin',
+    response: ModelScenarioSettings,
+    summary:
+      '3.28：一次性初始化固定私密模型（仅当 fixed 从未存在时，复制当前推荐私密模型；已初始化或已主动清空时 409）',
+  }),
   getDisplayMultiplierSettings: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/admin/model/display-multiplier`,
@@ -1055,6 +1233,16 @@ export const ModelAccessAdminEndpoints = {
     auth: 'admin',
     response: LeaderboardSnapshotStatus,
     summary: '3.24：自动获取的榜单状态（快照时间、失败原因、匹配 / 未匹配的模型）',
+  }),
+  updateArenaName: defineEndpoint({
+    method: 'PUT',
+    path: `${API_PREFIX}/admin/model/leaderboard/match/:modelKey`,
+    auth: 'admin',
+    params: z.object({ modelKey: z.string() }),
+    body: UpdateArenaNameRequest,
+    response: LeaderboardSnapshotStatus,
+    summary:
+      '3.36：后台「榜单匹配」手动指定 / 清除某个模型的榜单对应名称（null = 改回默认按模型名自动匹配），写审计',
   }),
   refreshLeaderboard: defineEndpoint({
     method: 'POST',
@@ -1334,6 +1522,11 @@ export const AdminUsageSummary = z.object({
   totals: AdminUsageTotals,
   /** 分组行数超过 limit 被截断。 */
   truncated: z.boolean(),
+  /**
+   * groupBy 含 user 时：用户 ID → 身份（昵称优先，其次登录名）。一次批量查询，不逐行查库；
+   * 已注销的账号不出现在这里，界面按「已注销账号」显示。
+   */
+  userLabels: z.record(z.string(), AdminUserLabel).default({}),
 });
 export type AdminUsageSummary = z.infer<typeof AdminUsageSummary>;
 
@@ -1345,12 +1538,20 @@ export const AdminUsageRecord = z.object({
   createdAt: Timestamp,
   /** 发起调用的用户；平台账户的调用为发起操作的管理员。 */
   userId: Id,
+  /** 用户昵称与登录名（后台展示用，优先昵称）；账号已注销为 null。 */
+  nickname: z.string().nullable().default(null),
+  username: z.string().nullable().default(null),
   characterId: Id.nullable(),
   conversationKind: z.enum(['direct', 'group']).nullable(),
   /** 不认识的用途解析为 'unsupported'。 */
   purpose: tolerantEnum(ModelPurpose),
   billingOwner: BillingOwner,
-  modelKey: ModelKey,
+  /**
+   * 3.27：后台读取放宽（软删除键 `原键#deleted:<随机>`、没有厂商前缀的旧键），与模型目录同规则，
+   * 见 `AdminModelKey`。`model_access.usage_records` 里有不符合公开正则的历史键，
+   * 用严格的 `ModelKey` 会让整页明细一行都解析不出来。
+   */
+  modelKey: AdminModelKey,
   upstreamId: Id,
   inputTokens: z.number().int().nonnegative(),
   cachedInputTokens: z.number().int().nonnegative(),
@@ -1398,7 +1599,12 @@ export const AdminUsageOverview = z.object({
   recentErrors: z.array(
     z.object({
       upstreamId: Id,
-      modelKey: ModelKey,
+      /**
+       * 3.43：后台只读历史，键同样放宽（软删除键 / 没有厂商前缀的旧键），与 `AdminUsageRecord` 一致，
+       * 见 `AdminModelKey`。这里用严格的 `ModelKey` 会让整包概览解析失败、看板所有数字都不显示。
+       * 请求体里的 `modelKeys` 筛选用 `ModelKey`（规范键 + `LEGACY_MODEL_KEY` 这一条历史键），能筛到旧键的调用记录。
+       */
+      modelKey: AdminModelKey,
       errorCode: z.string().max(64),
       count: z.number().int().positive(),
       lastAt: Timestamp,

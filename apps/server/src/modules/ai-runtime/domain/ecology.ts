@@ -28,7 +28,7 @@ export interface EcologyActionDef {
   tool: string;
   mode: EcologyExecMode;
   /** 需要的平台服务；未开通时不可用。 */
-  needs?: 'speech_synthesis' | 'image_generation' | 'web_search';
+  needs?: 'speech_synthesis' | 'web_search';
   /** reserved 时的说明。 */
   reservedReason?: string;
   /** 碎碎念下方灰字「做了什么」。 */
@@ -73,11 +73,10 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
   {
     key: 'photo',
     group: 'chat',
-    label: '发照片 / 自拍',
-    tool: '拍一张 TA 视角的照片发给对方（景物、食物、身边的东西），配一句话。brief 写照片内容和想说的话。',
+    label: '分享图片',
+    tool: '分享这张角色微博里的一张公开图片，配一句话；不得声称是刚拍的照片或自拍。',
     mode: 'decision',
-    needs: 'image_generation',
-    summary: '给你发了张照片',
+    summary: '给你分享了张图片',
   },
   {
     key: 'sticker',
@@ -337,23 +336,29 @@ export function averageWakes(range: { min: number; max: number }): number {
   return (range.min + range.max) / 2;
 }
 
-/** 决策模型输出。 */
-export const EcologyDecision = z.object({
-  action: z.string().max(40),
-  brief: z.string().max(500).optional().default(''),
-  target: z.union([z.string().max(10), z.number().int()]).optional(),
-  text: z.string().max(80).optional(),
-  murmur: z.string().min(1).max(200),
+/**
+ * 3.29：生态 Gate（Jev）只回答「每个候选动作做不做」，不写正文 / 状态签名 / 碎碎念 / 长规划。
+ * 输出尽量短：每个候选一行 `{action, do}`；没有列出的动作一律视为不做。
+ */
+export const EcologyGateDecision = z.object({
+  decisions: z
+    .array(
+      z.object({
+        action: z.string().max(40),
+        do: z.boolean(),
+      }),
+    )
+    .max(40),
 });
-export type EcologyDecision = z.infer<typeof EcologyDecision>;
+export type EcologyGateDecision = z.infer<typeof EcologyGateDecision>;
 
 /** 从模型输出里取 JSON（容忍 ```json 包裹和前后多余文字）。 */
-export function parseDecision(raw: string): EcologyDecision | null {
+export function parseGateDecision(raw: string): EcologyGateDecision | null {
   const start = raw.indexOf('{');
   const end = raw.lastIndexOf('}');
   if (start < 0 || end <= start) return null;
   try {
-    const parsed = EcologyDecision.safeParse(JSON.parse(raw.slice(start, end + 1)));
+    const parsed = EcologyGateDecision.safeParse(JSON.parse(raw.slice(start, end + 1)));
     return parsed.success ? parsed.data : null;
   } catch {
     return null;

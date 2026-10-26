@@ -36,8 +36,8 @@ import { INITIAL_MODES, modeOption, SELECTABLE_MODES } from '../domain/persona.j
 import { ReplyPlanStore } from './plan-store.js';
 import { invalidateReplyPlans } from './invalidate.js';
 import { companionSettings } from '../infra/db/schema.js';
-import { MemoryTierService } from './memory-tier.js';
 import { PrivateDigestService } from './private-digest.js';
+import { characterView, roleAdminAllowlist } from './character-view.js';
 @Injectable()
 export class CompanionSettingsService {
   constructor(
@@ -52,7 +52,6 @@ export class CompanionSettingsService {
     @Inject(ADULT_MODEL_READ_PORT) private readonly adultModels: AdultModelReadPort,
     @Inject(ReplyPlanStore) private readonly plans: ReplyPlanStore,
     @Inject(MEDIA_ASSET_READ_PORT) private readonly assets: MediaAssetReadPort,
-    @Inject(MemoryTierService) private readonly tiers: MemoryTierService,
     /** H2：切出私密模式时登记「干净整理」（测试里可不注入）。 */
     @Optional() @Inject(PrivateDigestService) private readonly digests?: PrivateDigestService,
   ) {}
@@ -101,8 +100,6 @@ export class CompanionSettingsService {
       proactiveCalls: row?.proactiveCalls ?? false,
       dailyLife: row?.dailyLife ?? true,
       voiceId: row?.voiceId ?? null,
-      // v5 批 B：长上下文只认该角色自己的设置行，不从全局默认继承。
-      longContext: characterId !== null && !!specific?.longContext,
       updatedAt: (row?.updatedAt ?? this.clock.now()).toISOString(),
       inheritsDefaults: characterId !== null && !specific,
     };
@@ -115,7 +112,7 @@ export class CompanionSettingsService {
       userId,
       characterId,
       candidates: SELECTABLE_MODES,
-      adminAllowlist: role.card.data.modes.adminAllowlist,
+      adminAllowlist: roleAdminAllowlist(characterView(role)),
     });
     return {
       items: SELECTABLE_MODES.filter((mode) => allowed.some((m) => m.modeId === mode.modeId)).map(
@@ -141,9 +138,14 @@ export class CompanionSettingsService {
         throw new AppError('not_found', '好友不存在');
       const value = await this.load(tx, userId, characterId);
       const mode = value.scenarioMode ?? 'daily';
-      const missing =
-        mode === 'adult' && adult && !adult.available && adult.reason !== 'provider_unavailable';
-      if (characterId && (missing || !allowed?.items.some((m) => m.id === mode))) {
+      const adultModelUnavailable = mode === 'adult' && !!adult && !adult.available;
+      const modeAllowed = allowed?.items.some((m) => m.id === mode) ?? false;
+      // 只有「角色不再允许该模式」才自动回落。私密模型没配置 / 暂不可用时保留私密范围：
+      // 若静默改成 daily，之后的敏感输入会落进 normal，所以改为提示用户自己切换。
+      if (characterId && mode !== 'daily' && !modeAllowed) {
+        const reason = mode === 'adult' ? 'adult_mode_unavailable' : 'scenario_mode_unavailable';
+        // 同一用户、同一角色、同一原因只登记 / 提示一次；幂等键不能带会随写入变化的 updatedAt。
+        const fallbackKey = `mode-unavailable:${userId}:${characterId}:${reason}`;
         value.scenarioMode = 'daily';
         if (!value.inheritsDefaults)
           await tx.db
@@ -156,13 +158,13 @@ export class CompanionSettingsService {
               ),
             );
         if (contact?.conversationId) {
-          // H2：私密模型不可用导致的自动切回也算一次切出（同一次回落键相同，只登记一次）。
+          // H2：私密模型不可用导致的自动切回也算一次切出（同一个回落键只登记一次）。
           if (mode === 'adult' && characterId)
             await this.digests?.enqueue(tx, {
               userId,
               characterId,
               conversationId: contact.conversationId,
-              eventKey: `mode-unavailable:${Date.parse(value.updatedAt)}`,
+              eventKey: fallbackKey,
             });
           await this.chat.setContentScope(
             { conversationId: contact.conversationId, scope: 'normal' },
@@ -174,15 +176,29 @@ export class CompanionSettingsService {
               code: 'scenario_mode_changed',
               params: {
                 mode: 'daily',
-                reason: mode === 'adult' ? 'adult_mode_unavailable' : 'scenario_mode_unavailable',
+                reason,
               },
-              idempotencyKey: `mode-unavailable:${userId}:${characterId}:${Date.parse(value.updatedAt)}`,
+              idempotencyKey: fallbackKey,
             });
         }
         // An ineligible inherited default is an effective fallback, not a persisted setting change.
         // Invalidating here would cancel the very reply whose context is being built on every retry.
         if (!value.inheritsDefaults)
           await invalidateReplyPlans(tx, this.plans, userId, characterId);
+      } else if (
+        characterId &&
+        mode === 'adult' &&
+        adultModelUnavailable &&
+        !value.inheritsDefaults
+      ) {
+        // 平台固定私密模型没配置 / 暂不可用：保留私密设置与消息范围，只提示一次，让用户主动切换。
+        if (contact?.conversationId)
+          await this.chat.postSystemMessage(tx, {
+            conversationId: contact.conversationId,
+            code: 'scenario_mode_unavailable',
+            params: { mode: 'adult', reason: 'adult_model_unavailable' },
+            idempotencyKey: `private-model-unavailable:${userId}:${characterId}`,
+          });
       }
       return value;
     });
@@ -217,9 +233,6 @@ export class CompanionSettingsService {
       const voice = await this.assets.getVoice(patch.voiceId);
       if (!voice || !voice.enabled) throw new AppError('bad_request', '音色不存在或已停用');
     }
-    // v5 批 B：长上下文模式 PRO+ 专属、只对单个角色（全局默认传了忽略）。
-    if (patch.longContext === true && characterId && !(await this.tiers.isProPlus(userId)))
-      throw new AppError('forbidden', '长上下文模式需要 PRO+ 会员');
     const activeContacts = characterId ? [] : await this.contacts.listActiveContacts(userId);
     return this.db.transaction(async (tx) => {
       await this.lock(tx, userId);
@@ -239,7 +252,6 @@ export class CompanionSettingsService {
         proactiveCalls: patch.proactiveCalls ?? old.proactiveCalls ?? false,
         dailyLife: patch.dailyLife ?? old.dailyLife ?? true,
         voiceId: patch.voiceId === undefined ? (old.voiceId ?? null) : patch.voiceId,
-        longContext: characterId ? (patch.longContext ?? old.longContext ?? false) : false,
         updatedAt: this.clock.now(),
       };
       if (characterId && patch.scenarioMode && patch.scenarioMode !== old.scenarioMode) {

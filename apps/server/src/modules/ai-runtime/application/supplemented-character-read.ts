@@ -41,6 +41,12 @@ export class SupplementedCharacterRead implements CharacterReadPort {
 
   getProfiles: CharacterReadPort['getProfiles'] = (userId, characterIds) =>
     this.inner.getProfiles(userId, characterIds);
+
+  /** 旧卡角色的世界书 / 示例对话原样转给运行时；内层没实现时返回空。 */
+  getLegacyContext: NonNullable<CharacterReadPort['getLegacyContext']> = (characterId) =>
+    this.inner.getLegacyContext
+      ? this.inner.getLegacyContext(characterId)
+      : Promise.resolve({ lorebook: [], examples: [] });
 }
 
 /** 放进人设提示的「我的补充设定」块；冲突时以公开资料为准（CHR-09 第 2 条）。没有为空串。 */

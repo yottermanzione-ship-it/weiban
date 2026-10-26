@@ -173,7 +173,7 @@ export class CharacterPlazaService
     const plain = await this.crypto.open(
       row.ownerId!,
       `character:${row.id}:draft:${row.revision}`,
-      row.draftCiphertext,
+      row.draftCiphertext!,
       tx,
     );
     try {

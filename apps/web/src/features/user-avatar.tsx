@@ -1,7 +1,7 @@
 import type { Profile } from '@weiban/contracts';
 import { avatarLetters } from '@weiban/client-core';
 import { useAuth } from '../app/auth.js';
-import { CachedPicture, recallMyAvatar, rememberMyAvatar, useMediaUrl } from './avatar-cache.js';
+import { CachedPicture, recallMyAvatar, rememberMyAvatar } from './avatar-cache.js';
 export function UserAvatar({
   profile,
   size = 40,
@@ -18,7 +18,6 @@ export function UserAvatar({
   if (profile) rememberMyAvatar(userId, profile.avatarMediaId ?? null);
   // F1-6：资料未读到前先用本次打开里记住的头像；都没有时只画底色，不先闪昵称缩写。
   const mediaId = profile ? (profile.avatarMediaId ?? null) : recallMyAvatar(userId);
-  const url = useMediaUrl(mediaId);
   const letters = profile ? avatarLetters(profile.nickname ?? '我') : '';
   return (
     <span
@@ -35,7 +34,10 @@ export function UserAvatar({
       {!mediaId && <span aria-hidden="true">{letters}</span>}
       {mediaId && (
         <CachedPicture
-          url={url}
+          key={mediaId}
+          mediaId={mediaId}
+          width={size}
+          height={size}
           className={imageClassName}
           fallback={<span aria-hidden="true">{letters}</span>}
         />

@@ -60,9 +60,8 @@ import {
   ACTION_DEF,
   detectUserRequest,
   microsToPoints,
-  parseDecision,
+  parseGateDecision,
   wakeSlots,
-  type EcologyDecision,
 } from '../domain/ecology.js';
 import { healthPrivate } from '../domain/memory.js';
 import { ecologyProfiles, ecologyRuns } from '../infra/db/ecology-schema.js';
@@ -76,6 +75,7 @@ import { SharedEpisodesService } from './shared-episodes.js';
 import { MomentsAiService } from './moments-ai.js';
 import {
   PLAY_WISH_PROPOSE_SOURCE,
+  ProactiveChargeError,
   ProactiveSchedulerService,
   localParts,
 } from './proactive-scheduler.js';
@@ -86,6 +86,7 @@ import { captionForMemory, captionSnapshot } from '../domain/image-caption.js';
 import { WeiboSyncService } from './weibo.js';
 import { snapshotText } from './content-text.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
+import { characterView, rolePersonaSpeechText } from './character-view.js';
 
 export const ECOLOGY_TICK_JOB = 'ai.ecology_tick';
 export const ECOLOGY_USER_JOB = 'ai.ecology_user';
@@ -118,6 +119,28 @@ const CHAT_ACTIONS: ReadonlySet<EcologyActionKey> = new Set([
   'play_wish',
 ]);
 
+/** 3.29：每轮最多执行几个动作。候选全部交给 Gate 评估；这里只防一轮刷屏。 */
+const MAX_ACTIONS_PER_WAKE = 2;
+
+/**
+ * 3.29：动作正文由用户自己的场景模型生成；这里只给生成器一句**程序侧**的任务说明。
+ * Gate（Jev）不再提供 brief/target/text，避免它越权写正文。
+ */
+const ACTION_BRIEF: Partial<Record<EcologyActionKey, string>> = {
+  message: '主动给对方发一条私聊消息，结合你们最近的聊天和今天的情况，说一件具体的小事。',
+  greeting: '跟对方道早安或晚安，结合今天的具体情况，不要用套话。',
+  voice: '用一两句口语的话给对方发一条语音消息。',
+  sticker: '发一个表情包，配一句很短的话。',
+  share_link: '分享一个合适的作品链接，配一句为什么想分享。',
+  care_anniversary: '今天是特别的日子，发一条表达心意的消息。',
+  care_absence: '对方很久没来聊天，问候一句，不制造愧疚、不追问。',
+  care_late_night: '对方深夜还活跃，催对方早点睡。',
+  care_follow_up: '跟进对方之前提过的事，问问结果怎么样。',
+  play_wish: '提议和对方一起完成一个小心愿。',
+  moment_reply: '回复这条朋友圈评论，语气自然、简短。',
+  group_talk: '主动在群里起一个自然的话头，结合最近聊天。',
+};
+
 interface ActionResult {
   ok: boolean;
   chargedMicros: number;
@@ -137,6 +160,8 @@ interface Snapshot {
   tools: EcologyActionKey[];
   targets: Map<string, { postId?: string; commentId?: string; conversationId?: string }>;
   hasFollowUps: boolean;
+  /** 3.29：这条微博已有可消费的图片；photo 用它走既有聊天媒体路径，不生图。 */
+  weiboPhoto: { mediaId: string; updateId: string } | null;
 }
 
 type RunRow = typeof ecologyRuns.$inferSelect;
@@ -327,6 +352,11 @@ export class EcologyService {
   // =========================================================================
   // 一次唤醒
   // =========================================================================
+  /**
+   * 3.29：一次唤醒只调一次 Gate（Jev），对**全部候选动作**逐项回答 yes/no；
+   * 不生成正文 / 状态签名 / 碎碎念 / 长规划。执行最多 MAX_ACTIONS_PER_WAKE 个动作，
+   * 真正内容由各动作对应的用户场景模型完成。
+   */
   private async executeWake(run: RunRow): Promise<void> {
     const started = this.clock.nowMs();
     const { userId, characterId } = run;
@@ -336,34 +366,33 @@ export class EcologyService {
     const snapshot = await this.buildSnapshot(run);
     if (!snapshot)
       return this.finish(run.id, { status: 'skipped', outcome: 'context_unavailable' });
+    if (!snapshot.tools.length) {
+      return this.finish(run.id, {
+        status: 'idle',
+        outcome: 'no_action',
+        actionKey: null,
+        actionSummary: '看了看手机，没做什么',
+        chargedMicros: 0,
+        latencyMs: this.clock.nowMs() - started,
+      });
+    }
     const result = await this.gateway.generateText({
       userId,
       characterId,
-      // H2：私密模式期间决策也交给该用户的私密模型（行为规划模型不能是私密模型，所以改用 proactive 用途）。
-      ...(snapshot.privateMode
-        ? {
-            purpose: 'proactive' as const,
-            modelRole: 'adult' as const,
-            conversationId: snapshot.conversationId,
-          }
-        : {
-            purpose: 'behavior_planning' as const,
-            modelRole: 'background' as const,
-            modelKeyOverride: config.decisionModelKey,
-          }),
+      // Gate 永远是后台配置的 Jev（唯一决策模型）；不做用户 chat 兜底，也不带私密原文。
+      purpose: 'behavior_planning',
+      modelRole: 'background',
+      modelKeyOverride: config.decisionModelKey,
       billingOwner: 'user',
       countAsBackground: true,
       ecologyTask: true,
       responseFormat: 'json',
       maxOutputTokens: config.decisionMaxOutputTokens,
-      temperature: 0.8,
-      idempotencyKey: `eco:${run.id}:decide`,
+      temperature: 0.2,
+      idempotencyKey: `eco:${run.id}:gate`,
       meta: {
-        promptTemplateVersion: 'ecology-v2-brain',
+        promptTemplateVersion: 'ecology-v3-gate',
         stablePrefixChars: snapshot.prefix.length,
-        ...(snapshot.privateMode
-          ? { scenarioMode: 'adult', conversationKind: 'direct' as const }
-          : {}),
       },
       messages: [
         { role: 'system', content: snapshot.prefix },
@@ -380,8 +409,8 @@ export class EcologyService {
       return this.finish(run.id, { status: 'failed', outcome: `model_${result.error}` });
     }
     let charged = result.value.chargedMicros;
-    const decision = parseDecision(result.value.text);
-    if (!decision)
+    const gate = parseGateDecision(result.value.text);
+    if (!gate)
       return this.finish(run.id, {
         status: 'failed',
         outcome: 'bad_output',
@@ -389,75 +418,88 @@ export class EcologyService {
         chargedMicros: charged,
         latencyMs: this.clock.nowMs() - started,
       });
-    const action = decision.action as EcologyActionKey;
-    const murmur = cleanMurmur(decision.murmur);
-    if (action === ('none' as EcologyActionKey) || !snapshot.tools.includes(action)) {
+    const approved = snapshot.tools
+      .filter((action) =>
+        gate.decisions.some((decision) => decision.action === action && decision.do === true),
+      )
+      .slice(0, MAX_ACTIONS_PER_WAKE);
+    if (!approved.length) {
       return this.finish(run.id, {
         status: 'idle',
-        outcome:
-          action === ('none' as EcologyActionKey)
-            ? 'no_action'
-            : `tool_not_offered:${String(decision.action).slice(0, 40)}`,
+        outcome: 'no_action',
         actionKey: null,
         actionSummary: '看了看手机，没做什么',
         modelKey: result.value.modelKey,
         chargedMicros: charged,
-        murmur: murmur ? { userId, text: murmur } : null,
+        // Gate 不再写碎碎念；这里不伪造第一人称内容。
+        murmur: null,
         latencyMs: this.clock.nowMs() - started,
       });
     }
-    const done = await this.perform(run, action, decision, snapshot).catch(
-      (error: unknown): ActionResult => ({
-        ok: false,
-        chargedMicros: 0,
-        reason: error instanceof Error ? error.message : 'error',
-      }),
-    );
-    charged += done.chargedMicros;
-    if (action === 'weibo_sync' && done.reason === 'no_new_public_posts')
+    const done: Array<{ action: EcologyActionKey; result: ActionResult }> = [];
+    for (const action of approved) {
+      const outcome = await this.perform(run, action, snapshot).catch(
+        (error: unknown): ActionResult => ({
+          ok: false,
+          chargedMicros: error instanceof ProactiveChargeError ? error.chargedMicros : 0,
+          reason: error instanceof Error ? error.message : 'error',
+        }),
+      );
+      charged += outcome.chargedMicros;
+      done.push({ action, result: outcome });
+      if (!outcome.ok && /insufficient_balance/.test(outcome.reason ?? ''))
+        await this.settings.pause(userId, 'insufficient_balance');
+    }
+    if (
+      approved.length === 1 &&
+      approved[0] === 'weibo_sync' &&
+      done[0]?.result.reason === 'no_new_public_posts'
+    )
       return this.finish(run.id, {
         status: 'idle',
         outcome: 'no_new_public_posts',
-        actionKey: action,
+        actionKey: 'weibo_sync',
         actionSummary: '看了看微博，暂时没有新动态',
         modelKey: result.value.modelKey,
         chargedMicros: charged,
-        murmur: { userId, text: '看了看微博，暂时没看到新的公开动态。' },
+        murmur: null,
         latencyMs: this.clock.nowMs() - started,
       });
-    if (!done.ok && /insufficient_balance/.test(done.reason ?? ''))
-      await this.settings.pause(userId, 'insufficient_balance');
-    const def = ACTION_DEF.get(action)!;
+    const succeeded = done.filter((item) => item.result.ok);
+    const summaries = done.map(({ action, result: r }) => {
+      const def = ACTION_DEF.get(action)!;
+      return r.ok ? def.summary : `${def.label}没做成`;
+    });
     await this.finish(run.id, {
-      status: done.ok ? 'done' : 'failed',
-      outcome: done.ok ? 'sent' : `executor_failed:${done.reason ?? 'unknown'}`,
-      actionKey: action,
-      actionSummary: done.ok ? def.summary : '想做点什么，没做成',
+      status: succeeded.length ? 'done' : 'failed',
+      outcome: succeeded.length
+        ? 'sent'
+        : `executor_failed:${done.map((item) => item.result.reason ?? 'unknown').join(',')}`.slice(
+            0,
+            200,
+          ),
+      // 多个动作时单条 actionKey 会误导；用 null，动作明细在 actionSummary。
+      actionKey: approved.length === 1 ? approved[0] : null,
+      actionSummary: summaries.join('；').slice(0, 500),
       modelKey: result.value.modelKey,
       chargedMicros: charged,
-      // 说到做到：没做成时不保留可能声称「已经做了」的碎碎念。
-      murmur: { userId, text: done.ok && murmur ? murmur : '想了想，还是算了。' },
+      murmur: null,
       latencyMs: this.clock.nowMs() - started,
     });
   }
 
-  /** 执行一个动作（复用现有模块）。 */
+  /** 执行一个动作（复用现有模块）。Gate 只决定做不做，内容参数由程序/用户场景模型决定。 */
   private async perform(
     run: RunRow,
     action: EcologyActionKey,
-    decision: EcologyDecision,
     snapshot: Snapshot,
   ): Promise<ActionResult> {
     const { userId, characterId } = run;
-    const brief = (decision.brief || decision.murmur).slice(0, 500);
-    const target =
-      decision.target !== undefined
-        ? snapshot.targets.get(String(decision.target).toUpperCase())
-        : undefined;
-    const viaChat = async (
-      extra: 'voice' | 'photo' | 'sticker' | 'link' | null,
-      greeting = false,
-    ) => {
+    // Gate 不写正文；这里只给用户场景模型一句程序侧说明，target 由程序从快照里选。
+    const brief = (ACTION_BRIEF[action] ?? ACTION_DEF.get(action)?.tool ?? '').slice(0, 500);
+    const targetWith = (field: 'postId' | 'commentId' | 'conversationId') =>
+      [...snapshot.targets.values()].find((target) => target[field]);
+    const viaChat = async (extra: 'voice' | 'sticker' | 'link' | null, greeting = false) => {
       const r = await this.proactive.sendEcology({
         userId,
         characterId,
@@ -467,7 +509,7 @@ export class EcologyService {
       });
       return r.ok
         ? { ok: true, chargedMicros: r.chargedMicros }
-        : { ok: false, chargedMicros: 0, reason: r.reason };
+        : { ok: false, chargedMicros: r.chargedMicros ?? 0, reason: r.reason };
     };
     switch (action) {
       case 'weibo_sync':
@@ -482,8 +524,21 @@ export class EcologyService {
         return viaChat(null, true);
       case 'voice':
         return viaChat('voice');
-      case 'photo':
-        return viaChat('photo');
+      case 'photo': {
+        // 3.29：只投递该条微博已审核的图片，走既有聊天媒体路径；不生图、不扣图片生成费。
+        if (!snapshot.weiboPhoto) return { ok: false, chargedMicros: 0, reason: 'no_material' };
+        const r = await this.proactive.sendEcology({
+          userId,
+          characterId,
+          runId: run.id,
+          brief,
+          extras: { extra: 'photo', photoMediaId: snapshot.weiboPhoto.mediaId },
+          dedupeKey: `weibo-photo:${snapshot.weiboPhoto.updateId}:${userId}`,
+        });
+        return r.ok
+          ? { ok: true, chargedMicros: r.chargedMicros }
+          : { ok: false, chargedMicros: r.chargedMicros ?? 0, reason: r.reason };
+      }
       case 'sticker':
         return viaChat('sticker');
       case 'share_link':
@@ -510,45 +565,39 @@ export class EcologyService {
           : { ok: false, chargedMicros: 0, reason: r.reason };
       }
       case 'moment_post': {
-        const r = await this.momentsAi.postForEcology({
-          userId,
-          characterId,
-          runId: run.id,
-          brief,
-          ...(snapshot.privateMode ? { privateConversationId: snapshot.conversationId } : {}),
-        });
+        const r = await this.momentsAi.postForEcology({ userId, characterId, runId: run.id });
         return r.ok
           ? { ok: true, chargedMicros: r.chargedMicros }
           : { ok: false, chargedMicros: 0, reason: r.reason };
       }
       case 'moment_interact':
       case 'moment_peer': {
-        if (!target?.postId) return { ok: false, chargedMicros: 0, reason: 'no_target' };
-        const like = /^\s*like\s*$/i.test(decision.brief ?? '');
+        const post = targetWith('postId');
+        if (!post?.postId) return { ok: false, chargedMicros: 0, reason: 'no_target' };
+        // 点赞不生成文字、不调模型；评论留给用户场景模型，这里先按点赞执行。
         const r = await this.momentsAi.reactForEcology({
           userId,
-          postId: target.postId,
+          postId: post.postId,
           characterId,
-          action: like ? 'like' : 'comment',
+          action: 'like',
           like: true,
           ecologyRunId: run.id,
-          ...(snapshot.privateMode ? { privateConversationId: snapshot.conversationId } : {}),
         });
         return r.ok
           ? { ok: true, chargedMicros: r.chargedMicros }
           : { ok: false, chargedMicros: 0, reason: r.reason };
       }
       case 'moment_reply': {
-        if (!target?.postId || !target.commentId)
+        const comment = targetWith('commentId');
+        if (!comment?.postId || !comment.commentId)
           return { ok: false, chargedMicros: 0, reason: 'no_target' };
         const r = await this.momentsAi.reactForEcology({
           userId,
-          postId: target.postId,
+          postId: comment.postId,
           characterId,
           action: 'reply',
-          replyToCommentId: target.commentId,
+          replyToCommentId: comment.commentId,
           ecologyRunId: run.id,
-          ...(snapshot.privateMode ? { privateConversationId: snapshot.conversationId } : {}),
         });
         return r.ok
           ? { ok: true, chargedMicros: r.chargedMicros }
@@ -556,17 +605,19 @@ export class EcologyService {
       }
       case 'status':
       case 'signature': {
-        const text = (decision.text ?? '').trim().slice(0, action === 'status' ? 12 : 30);
-        if (!text || healthPrivate(text)) return { ok: false, chargedMicros: 0, reason: 'no_text' };
-        await this.saveProfileText(userId, characterId, action, text);
-        return { ok: true, chargedMicros: 0 };
+        // 3.29：状态/签名由用户自己的 chat 场景模型写，不用 Gate 输出的 text。
+        const generated = await this.generateProfileText(userId, characterId, action);
+        if (!generated) return { ok: false, chargedMicros: 0, reason: 'no_text' };
+        await this.saveProfileText(userId, characterId, action, generated.text);
+        return { ok: true, chargedMicros: generated.chargedMicros };
       }
       case 'group_talk': {
-        if (!target?.conversationId) return { ok: false, chargedMicros: 0, reason: 'no_target' };
+        const group = targetWith('conversationId');
+        if (!group?.conversationId) return { ok: false, chargedMicros: 0, reason: 'no_target' };
         const r = await this.groups.startTopicForEcology({
           userId,
           characterId,
-          conversationId: target.conversationId,
+          conversationId: group.conversationId,
           topic: brief,
         });
         // 群里各条消息的费用记在消息上，这里拿不到合计。
@@ -577,6 +628,48 @@ export class EcologyService {
       default:
         return { ok: false, chargedMicros: 0, reason: 'not_implemented' };
     }
+  }
+
+  /**
+   * 3.29：用**用户自己的 chat 场景模型**写状态/签名；Gate（Jev）不再输出 text。
+   * 返回 null = 用户没配 chat 模型 / 生成失败 / 内容不安全，不做任何替换模型。
+   */
+  private async generateProfileText(
+    userId: string,
+    characterId: string,
+    action: 'status' | 'signature',
+    hint?: string,
+  ): Promise<{ text: string; chargedMicros: number } | null> {
+    const role = await this.characters.getForRuntime(userId, characterId);
+    if (!role) return null;
+    const r = await this.gateway.generateText({
+      userId,
+      characterId,
+      purpose: 'behavior_planning',
+      billingOwner: 'user',
+      modelRole: 'chat',
+      responseFormat: 'text',
+      maxOutputTokens: 60,
+      idempotencyKey: `eco:profile:${userId}:${characterId}:${action}:${this.clock.nowMs()}`,
+      messages: [
+        {
+          role: 'system',
+          content: `你是「${role.profile.name}」，人设：${
+            role.card
+              ? JSON.stringify(role.card.data.persona).slice(0, 1500)
+              : rolePersonaSpeechText(characterView(role), 1500)
+          }。只输出${action === 'status' ? '一个不超过 12 个字的状态（例「在听歌」）' : '一句不超过 30 个字的个性签名'}，不加引号。`,
+        },
+        ...(hint ? [{ role: 'user' as const, content: hint.slice(0, 200) }] : []),
+      ],
+    });
+    if (!r.ok) return null;
+    const text = r.value.text
+      .trim()
+      .replace(/^["「『]|["」』]$/g, '')
+      .slice(0, action === 'status' ? 12 : 30);
+    if (!text || healthPrivate(text)) return null;
+    return { text, chargedMicros: r.value.chargedMicros };
   }
 
   private async saveProfileText(
@@ -858,6 +951,13 @@ export class EcologyService {
     const signatureRecent =
       ep?.signatureUpdatedAt && nowMs - ep.signatureUpdatedAt.getTime() < 3 * 86400_000;
     const weiboReady = await this.weibo.offer(userId, characterId).catch(() => false);
+    // 3.29：moment_post 只同步已存在的微博原文/素材；没有素材就不提供该候选（不 AI 编）。
+    const momentMaterial = await this.momentsAi
+      .hasWeiboMaterial(userId, characterId)
+      .catch(() => false);
+    const weiboPhoto = await this.momentsAi
+      .weiboPhotoForEcology(userId, characterId)
+      .catch(() => null);
     for (const def of ACTION_DEF.values()) {
       if (def.mode !== 'decision') continue;
       if (disabled.has(def.key)) continue;
@@ -869,6 +969,11 @@ export class EcologyService {
         switch (def.key) {
           case 'weibo_sync':
             return weiboReady;
+          case 'moment_post':
+            return momentMaterial;
+          case 'photo':
+            // 3.29：只发该条微博已审核图片；没有图就不提供，不 AI 生图/不用风景图。
+            return Boolean(weiboPhoto);
           case 'greeting':
             return (local.hour >= 6 && local.hour < 10) || local.hour >= 21 || local.hour < 1;
           case 'care_late_night':
@@ -900,7 +1005,7 @@ export class EcologyService {
       if (ok) tools.push(def.key);
     }
     lines.push(
-      `【这次可以做的】（也可以什么都不做：action 填 none）\n${tools
+      `【这次可以做的】（对每个动作只回答 do=true/false；不要写正文、状态签名或碎碎念）\n${tools
         .map((k) => `- ${k}：${ACTION_DEF.get(k)!.tool}`)
         .join('\n')}`,
     );
@@ -922,6 +1027,7 @@ export class EcologyService {
       tools,
       targets,
       hasFollowUps: followUps.length > 0,
+      weiboPhoto,
     };
   }
 
@@ -967,7 +1073,6 @@ export class EcologyService {
         userId: job.userId,
         characterId: job.characterId,
         runId: run.id,
-        brief: `对方在聊天里让你发一条朋友圈，对方的原话：「${job.text}」。写一条符合你们刚才聊天的朋友圈。`,
       });
       result = r.ok
         ? { ok: true, chargedMicros: r.chargedMicros }
@@ -978,7 +1083,7 @@ export class EcologyService {
         ? { ok: true, chargedMicros: 0 }
         : { ok: false, chargedMicros: 0, reason: r.reason };
     } else if (job.action === 'status' || job.action === 'signature') {
-      result = await this.requestProfileText(run, job);
+      result = await this.requestProfileText(job);
     } else result = { ok: false, chargedMicros: 0, reason: 'not_supported' };
     const def = ACTION_DEF.get(job.action)!;
     await this.finish(run.id, {
@@ -991,45 +1096,22 @@ export class EcologyService {
     });
   }
 
-  /** 改状态 / 签名：用决策模型写一句（没配置决策模型则做不了）。 */
-  private async requestProfileText(run: RunRow, job: EcologyRequestJob): Promise<ActionResult> {
-    const config = await this.settings.config();
-    if (!config.decisionModelKey)
-      return { ok: false, chargedMicros: 0, reason: 'model_not_configured' };
-    const role = await this.characters.getForRuntime(job.userId, job.characterId);
-    if (!role) return { ok: false, chargedMicros: 0, reason: 'context_unavailable' };
-    const r = await this.gateway.generateText({
-      userId: job.userId,
-      characterId: job.characterId,
-      purpose: 'behavior_planning',
-      billingOwner: 'user',
-      modelRole: 'background',
-      modelKeyOverride: config.decisionModelKey,
-      responseFormat: 'text',
-      maxOutputTokens: 60,
-      idempotencyKey: `eco:${run.id}:text`,
-      messages: [
-        {
-          role: 'system',
-          content: `你是「${role.profile.name}」，人设：${JSON.stringify(role.card.data.persona).slice(0, 1500)}。只输出${job.action === 'status' ? '一个不超过 12 个字的状态（例「在听歌」）' : '一句不超过 30 个字的个性签名'}，不加引号。`,
-        },
-        { role: 'user', content: `对方的原话：「${job.text}」` },
-      ],
-    });
-    if (!r.ok) return { ok: false, chargedMicros: 0, reason: `model_${r.error}` };
-    const text = r.value.text
-      .trim()
-      .replace(/^["「『]|["」』]$/g, '')
-      .slice(0, job.action === 'status' ? 12 : 30);
-    if (!text || healthPrivate(text))
-      return { ok: false, chargedMicros: r.value.chargedMicros, reason: 'no_text' };
+  /** 改状态 / 签名：用用户自己的 chat 场景模型写一句（不用 Gate/Jev 文本）。 */
+  private async requestProfileText(job: EcologyRequestJob): Promise<ActionResult> {
+    const generated = await this.generateProfileText(
+      job.userId,
+      job.characterId,
+      job.action as 'status' | 'signature',
+      `对方在聊天里让你改${job.action === 'status' ? '状态' : '签名'}，对方的原话：「${job.text}」`,
+    );
+    if (!generated) return { ok: false, chargedMicros: 0, reason: 'model_unavailable_or_unsafe' };
     await this.saveProfileText(
       job.userId,
       job.characterId,
       job.action as 'status' | 'signature',
-      text,
+      generated.text,
     );
-    return { ok: true, chargedMicros: r.value.chargedMicros };
+    return { ok: true, chargedMicros: generated.chargedMicros };
   }
 
   // =========================================================================
@@ -1161,22 +1243,14 @@ export class EcologyService {
   }
 }
 
-const DECISION_SYSTEM = `你在扮演一个真实的人。现在你「醒来想一想」：看看你和对方的近况，决定此刻要不要做点什么。
-规则（平台规则优先于角色设定）：
-- 像真人一样克制：大多数时候做一件小事或什么都不做；不刷屏，不纠缠，不制造愧疚，不威胁；深夜一般不打扰对方（除非是催对方睡觉）。
-- 只能从「这次可以做的」里挑一个 action，或填 none。做不到的事不要写进碎碎念里假装做了。
+const DECISION_SYSTEM = `你是「这次要不要做」的决定器，只做选择，不写任何正文。
+规则：
+- 对「这次可以做的」里的每一个动作，分别回答 do=true 或 do=false；只能使用给出的动作名。
+- 像真人一样克制：大多数时候只有一两个 true，其余 false；深夜一般不打扰（除非催睡觉）。
 - 不涉及未成年人的恋爱或性内容；真人角色不编造本人公开声明。
-- murmur：一两句第一人称碎碎念，像私人日记，写此刻的想法、心情或打算（例「她说今天要加班，晚点再找她吧。」）；不提系统、积分、工具、编号。
+- 不写聊天内容、状态、签名、碎碎念、理由或长规划；执行时由角色自己的模板/模型完成内容。
 只输出一个 JSON 对象，不要别的文字：
-{"action":"<动作名或 none>","brief":"给执行的说明：想说 / 想写的具体内容（不超过 100 字）","target":"<需要时填编号，如 U1、C1、P1、G1>","text":"<status / signature 才填>","murmur":"<碎碎念>"}`;
-
-function cleanMurmur(text: string): string {
-  return text
-    .replace(/\b(U|C|P|G)\d+\b/g, '')
-    .replace(/积分|工具|action|JSON/gi, '')
-    .trim()
-    .slice(0, 200);
-}
+{"decisions":[{"action":"<动作名>","do":true},{"action":"<动作名>","do":false}]}`;
 
 function ago(ms: number): string {
   if (!Number.isFinite(ms)) return '很久以前';

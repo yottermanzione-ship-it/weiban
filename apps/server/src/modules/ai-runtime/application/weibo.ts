@@ -25,6 +25,7 @@ import { MOMENTS_CHARACTER_PORT } from '../../moments/index.js';
 import { BILLING_READ_PORT } from '../../billing/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
+import { characterView, roleWeiboMarker } from './character-view.js';
 import { EcologySettingsService } from './ecology-settings.js';
 import { localDate } from '../../../platform/time/local-time.js';
 import {
@@ -73,7 +74,8 @@ export class WeiboSyncService implements OnModuleInit {
   }
   private async role(userId: string, characterId: string) {
     const role = await this.characters.getForRuntime(userId, characterId);
-    const marker = role?.card.data.profileExtra.weibo;
+    // 旧卡没有新卡的微博标记，按没有处理（旧卡身份字段不猜微博）。
+    const marker = role ? roleWeiboMarker(characterView(role)) : null;
     if (
       !role ||
       role.profile.kind !== 'preset' ||
@@ -110,6 +112,20 @@ export class WeiboSyncService implements OnModuleInit {
       if (epoch) result.push({ userId, epoch: epoch.version });
     }
     return result;
+  }
+  /**
+   * 共享联网检索「结算前重核资格」（给 billing 的 shared-search 用）：
+   * 传回检索当时记下的 {userId, epoch}，返回现在仍然符合条件的同一批。
+   * 资格 = 生态里仍启用微博同步、余额不欠、与该角色的关系 epoch 未变；刚关掉生态或删了角色的人不会仍被收款。
+   */
+  async recheckParticipants(
+    characterId: string,
+    expected: readonly { userId: string; epoch: string }[],
+  ): Promise<{ userId: string; epoch: string }[]> {
+    const current = new Map(
+      (await this.participants(characterId)).map((row) => [row.userId, row.epoch]),
+    );
+    return expected.filter((row) => current.get(row.userId) === row.epoch);
   }
   private async claim(characterId: string) {
     return this.db.transaction(async (tx) => {
@@ -164,6 +180,8 @@ export class WeiboSyncService implements OnModuleInit {
       userIds: recipients.map((r) => r.userId),
       query: `site:weibo.com "${marker.nickname.replace(/["\\]/gu, '')}" 微博 after:${new Date(this.clock.nowMs() - 7 * 86400000).toISOString().slice(0, 10)}`,
       key: claim.key,
+      eligibleUserIds: async () =>
+        (await this.recheckParticipants(characterId, recipients)).map((r) => r.userId),
     });
     if (!result.ok) {
       await this.db.query(

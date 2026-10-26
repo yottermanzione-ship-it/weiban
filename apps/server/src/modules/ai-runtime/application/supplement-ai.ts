@@ -21,6 +21,7 @@ import {
   type CharacterSupplementConflictsWritePort,
   type PersonaUpdateSummarizerPort,
   type ModelGatewayPort,
+  type WeibanCardData,
 } from '@weiban/contracts';
 import {
   EVENT_BUS,
@@ -37,6 +38,7 @@ import {
 import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { parseJsonObject } from './import-ai.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
+import { characterView } from './character-view.js';
 
 export const SUPPLEMENT_CONFLICT_JOB = 'ai.supplement_conflicts';
 const PROMPT_VERSION = 'supplement-conflict-v1';
@@ -45,8 +47,8 @@ type Conflict = z.infer<typeof SupplementConflict>;
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 
 /** 公开资料摘要（只取会和补充设定冲突的事实类字段）。 */
-export function publicFacts(card: CharacterCard, name: string) {
-  const d = card.data;
+export function publicFacts(data: WeibanCardData, name: string) {
+  const d = data;
   return {
     name,
     summary: d.persona.summary,
@@ -61,6 +63,25 @@ export function publicFacts(card: CharacterCard, name: string) {
       .filter((e) => e.confidence === 'verified' || e.confidence === 'fictionCanon' || e.constant)
       .slice(0, 80)
       .map((e) => `${e.title}：${e.content}`),
+  };
+}
+
+/** 运行时角色 → 公开资料摘要。旧卡角色直接读旧字段（core_persona / identity_*）。 */
+export function publicFactsForRole(
+  role: NonNullable<Awaited<ReturnType<CharacterReadPort['getForRuntime']>>>,
+  name: string,
+) {
+  const view = characterView(role);
+  if (view.card) return publicFacts(view.card, name);
+  return {
+    name,
+    summary: view.legacy?.corePersona.slice(0, 600) ?? '',
+    background: view.legacy?.soulPersonality.slice(0, 600) ?? '',
+    occupation: null,
+    gender: view.legacy?.identityGender ?? null,
+    ageDisplay: null,
+    works: [] as string[],
+    facts: [] as string[],
   };
 }
 
@@ -130,7 +151,7 @@ export class SupplementConflictService implements OnModuleInit {
         {
           role: 'user',
           content: JSON.stringify({
-            publicFacts: publicFacts(role.card, role.profile.name),
+            publicFacts: publicFactsForRole(role, role.profile.name),
             supplement: text.slice(0, 5000),
           }).slice(0, 30_000),
         },

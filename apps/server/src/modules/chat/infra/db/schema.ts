@@ -137,6 +137,11 @@ export const userConversationStates = chatSchema.table(
     clearedThroughSeq: seq('cleared_through_seq').notNull().default(0),
     readSeq: seq('read_seq').notNull().default(0),
     markedUnread: boolean('marked_unread').notNull().default(false),
+    /**
+     * 3.41：本人给这个会话单独设置的聊天背景（media.purpose = chat_background）；null = 默认背景。
+     * 需要一条新迁移（0138）加列，见交接报告。
+     */
+    backgroundMediaId: uuid('background_media_id'),
   },
   (t) => [
     primaryKey({ columns: [t.conversationId, t.userId] }),

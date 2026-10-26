@@ -2,12 +2,15 @@ import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { and, count, eq, lte, or } from 'drizzle-orm';
 import {
   CLOCK,
+  CHARACTER_PURGE_REGISTRY,
   DATABASE,
   EVENT_BUS,
   JOB_QUEUE,
   USER_DATA_REGISTRY,
+  type CharacterPurgeRegistry,
   type Clock,
   type Database,
+  type DbTx,
   type EventBus,
   type JobQueue,
   type UserDataRegistry,
@@ -28,6 +31,7 @@ export class ContactsLifecycle implements OnModuleInit {
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(EVENT_BUS) private readonly bus: EventBus,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
+    @Inject(CHARACTER_PURGE_REGISTRY) private readonly purgeRegistry: CharacterPurgeRegistry,
     @Inject(ContactsCommands) private readonly commands: ContactsCommands,
     @Inject(ContactCardRecommendationService)
     private readonly recommendations: ContactCardRecommendationService,
@@ -37,6 +41,11 @@ export class ContactsLifecycle implements OnModuleInit {
       module: 'contacts',
       purgeUser: (id) => this.purgeUser(id),
       countUserData: (id) => this.countUserData(id),
+    });
+    this.purgeRegistry.register({
+      module: 'contacts',
+      count: (characterId, tx) => this.countCharacterData(characterId, tx),
+      purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
     });
     await this.jobs.work<ContactJob>(ACCEPT_CONTACT_JOB, (job) => this.commands.accept(job.data), {
       pollingIntervalSeconds: 0.5,
@@ -87,6 +96,28 @@ export class ContactsLifecycle implements OnModuleInit {
       else await this.commands.purgeExpired(data);
     }
   }
+  /** 后台彻底删除预设角色：联系人、名片推荐、推荐人引用都属于 contacts。 */
+  async countCharacterData(characterId: string, tx?: DbTx): Promise<{ contacts: number }> {
+    const { rows } = await (tx ?? this.db).query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM contacts.contacts WHERE character_id = $1',
+      [characterId],
+    );
+    return { contacts: rows[0]?.n ?? 0 };
+  }
+
+  async purgeCharacter(tx: DbTx, characterId: string): Promise<void> {
+    await tx.query('DELETE FROM contacts.card_dismissals WHERE character_id = $1', [characterId]);
+    await tx.query(
+      'DELETE FROM contacts.card_recommendations WHERE character_id = $1 OR recommender_character_id = $1',
+      [characterId],
+    );
+    await tx.query(
+      'UPDATE contacts.contacts SET referrer_character_id = NULL WHERE referrer_character_id = $1',
+      [characterId],
+    );
+    await tx.query('DELETE FROM contacts.contacts WHERE character_id = $1', [characterId]);
+  }
+
   async purgeUser(userId: string): Promise<number> {
     const ledger = await this.recommendations.purgeUser(userId);
     return (

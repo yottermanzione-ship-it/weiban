@@ -10,6 +10,7 @@ import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
   AdminLedgerEntry,
+  AdminModel,
   AdminPriceVersion,
   ApiError,
   AuthResponse,
@@ -38,6 +39,7 @@ import {
 import {
   BillingLifecycle,
   BillingTestQueries,
+  ModelRateService,
   ReconciliationService,
   ReservationService,
   SIGNUP_BONUS_REASON,
@@ -266,6 +268,240 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       .expect(200);
     return created.priceVersionId;
   }
+
+  // ---------- 3.36 服务单位单价（真实 DB；无上游请求） ----------
+
+  describe('服务单位单价', () => {
+    it('模型合并 HTTP 接口可上架只有按次价格的搜索服务，无需 token 三价', async () => {
+      const modelKey = 'test/deepseek-service';
+      const upstreamId = '019f7f00-0000-7000-8000-000000000131';
+      const billingBounds = {
+        format: 'billing-bounds-v1',
+        search: { maxResults: 5, billableCalls: 1 },
+      };
+      try {
+        const response = await request(baseUrl)
+          .put(`/api/v1/admin/model/models/${encodeURIComponent(modelKey)}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            modelKey,
+            displayName: 'DeepSeek 搜索测试',
+            vendorName: 'DeepSeek',
+            upstreamId,
+            upstreamModelId: 'deepseek-search',
+            capabilities: ['web_search'],
+            tags: [],
+            leaderboardRank: null,
+            sortOrder: 0,
+            defaultFor: [],
+            scenarios: [],
+            enabled: true,
+            billingBounds,
+            rates: null,
+            serviceRates: [{ unit: 'search_call', price: 0.005, cost: 0.004 }],
+            routes: [
+              {
+                upstreamId,
+                upstreamModelId: 'deepseek-search',
+                priority: 1,
+                weight: 100,
+                enabled: true,
+                billingBounds,
+              },
+            ],
+          })
+          .expect(200);
+        const saved = AdminModel.parse(response.body);
+        expect(saved.enabled).toBe(true);
+        expect(saved.rates).toBeNull();
+        expect(saved.serviceRates).toEqual([
+          { unit: 'search_call', price: 0.005, cost: 0.004, hasTimeBands: false },
+        ]);
+        expect(saved.routes?.[0]?.billingBounds?.search).toEqual({
+          maxResults: 5,
+          billableCalls: 1,
+        });
+        const rows = await withClient(
+          async (c) =>
+            (
+              await c.query<{ unit: string }>(
+                `SELECT i.unit FROM billing.price_items i JOIN billing.price_versions v ON v.id=i.price_version_id WHERE v.status='active' AND i.model_key=$1`,
+                [modelKey],
+              )
+            ).rows,
+        );
+        expect(rows).toEqual([{ unit: 'search_call' }]);
+      } finally {
+        await publishPrices();
+      }
+    });
+    async function adminId() {
+      return withClient(
+        async (c) =>
+          (
+            await c.query<{ id: string }>(
+              `SELECT id FROM identity.users WHERE username = 'billing_boss'`,
+            )
+          ).rows[0]!.id,
+      );
+    }
+    it('按 unit 替换分时价，保留 token / 其它单位 / 其它模型；重复提交不发布且写审计', async () => {
+      const operatorUserId = await adminId();
+      const svc = app.get(ModelRateService);
+      const baseItems = [
+        {
+          modelKey: MODEL,
+          unit: 'input_tokens_per_million',
+          priceMicros: 2 * YUAN,
+          costMicros: YUAN,
+          band: null,
+        },
+        {
+          modelKey: MODEL,
+          unit: 'output_tokens_per_million',
+          priceMicros: 8 * YUAN,
+          costMicros: 4 * YUAN,
+          band: null,
+        },
+        { modelKey: MODEL, unit: 'tts_10k_chars', priceMicros: 3000, costMicros: 2000, band: null },
+        { modelKey: MODEL, unit: 'search_call', priceMicros: 6000, costMicros: 4000, band: null },
+        {
+          modelKey: MODEL,
+          unit: 'search_call',
+          priceMicros: 7000,
+          costMicros: 5000,
+          band: { name: '峰', weekdays: [1, 2, 3, 4, 5], start: '09:00', end: '12:00' },
+        },
+        {
+          modelKey: 'other/search',
+          unit: 'search_call',
+          priceMicros: 9000,
+          costMicros: 8000,
+          band: null,
+        },
+      ];
+      const draft = AdminPriceVersion.parse(
+        (
+          await http()
+            .post('/api/v1/admin/billing/price-versions', adminToken)
+            .send({ versionLabel: 'service-base', note: null, items: baseItems })
+            .expect(201)
+        ).body,
+      );
+      await http()
+        .post(`/api/v1/admin/billing/price-versions/${draft.priceVersionId}/activate`, adminToken)
+        .send({ effectiveFrom: null })
+        .expect(200);
+      expect(
+        (await svc.getActiveServiceRates([MODEL])).get(MODEL)?.find((r) => r.unit === 'search_call')
+          ?.hasTimeBands,
+      ).toBe(true);
+      const input = {
+        operatorUserId,
+        modelKey: MODEL,
+        rates: [{ unit: 'search_call' as const, priceMicros: 5000, costMicros: 3000 }],
+      };
+      const first = await svc.publishModelServiceRates(input);
+      expect(first.published).toBe(true);
+      const actual = await withClient(
+        async (c) =>
+          (
+            await c.query(
+              `SELECT model_key, unit, band, price_micros::float8, cost_micros::float8 FROM billing.price_items WHERE price_version_id=$1`,
+              [first.priceVersionId],
+            )
+          ).rows,
+      );
+      expect(actual).toHaveLength(5);
+      expect(actual).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            model_key: MODEL,
+            unit: 'input_tokens_per_million',
+            price_micros: 2 * YUAN,
+          }),
+          expect.objectContaining({ model_key: MODEL, unit: 'tts_10k_chars', price_micros: 3000 }),
+          expect.objectContaining({
+            model_key: 'other/search',
+            unit: 'search_call',
+            price_micros: 9000,
+          }),
+          expect.objectContaining({
+            model_key: MODEL,
+            unit: 'search_call',
+            band: null,
+            price_micros: 5000,
+            cost_micros: 3000,
+          }),
+        ]),
+      );
+      expect(await svc.publishModelServiceRates(input)).toEqual({
+        priceVersionId: first.priceVersionId,
+        published: false,
+      });
+      const audit = await withClient(
+        async (c) =>
+          (
+            await c.query(
+              `SELECT details FROM platform.audit_log WHERE action='price_version.service_rates_published' AND target_id=$1`,
+              [first.priceVersionId],
+            )
+          ).rows,
+      );
+      expect(audit).toHaveLength(1);
+      expect(audit[0]?.details.replacedTimeBands).toBe(true);
+      await publishPrices(); // 恢复其他测试的首版价格。
+    });
+    it('空 active 版本时并发服务价 / token 价发布仍保留全部价格', async () => {
+      const operatorUserId = await adminId();
+      const svc = app.get(ModelRateService);
+      await withClient((c) =>
+        c.query(
+          `UPDATE billing.price_versions SET status='retired', retired_at=now() WHERE status='active'`,
+        ),
+      );
+      await Promise.all([
+        svc.publishModelServiceRates({
+          operatorUserId,
+          modelKey: 'deepseek/search',
+          rates: [{ unit: 'search_call', priceMicros: 5000, costMicros: 5000 }],
+        }),
+        svc.publishModelServiceRates({
+          operatorUserId,
+          modelKey: 'other/speech',
+          rates: [{ unit: 'asr_minute', priceMicros: 9000, costMicros: 7000 }],
+        }),
+        svc.publishModelTokenRates({
+          operatorUserId,
+          modelKey: MODEL,
+          price: {
+            inputPerMillionMicros: 2 * YUAN,
+            outputPerMillionMicros: 8 * YUAN,
+            cachedInputPerMillionMicros: YUAN,
+          },
+          cost: {
+            inputPerMillionMicros: YUAN,
+            outputPerMillionMicros: 4 * YUAN,
+            cachedInputPerMillionMicros: YUAN,
+          },
+        }),
+      ]);
+      expect((await svc.getActiveServiceRates(['deepseek/search', 'other/speech'])).size).toBe(2);
+      expect((await svc.getActiveTokenRates([MODEL])).has(MODEL)).toBe(true);
+      const active = await withClient(
+        async (c) =>
+          (await c.query(`SELECT id FROM billing.price_versions WHERE status='active'`)).rows,
+      );
+      expect(active).toHaveLength(1);
+      // CatalogService 启用检查读取此端口：纯 search_call 价格也必须算已定价，不要求 token 行。
+      const priced = await app
+        .get<BillingChargeQueryPort>(BILLING_CHARGE_QUERY_PORT)
+        .listActivePricedModelKeys();
+      expect(priced).toEqual(expect.arrayContaining(['deepseek/search', 'other/speech', MODEL]));
+      expect((await svc.getActiveTokenRates(['deepseek/search'])).size).toBe(0);
+      await publishPrices();
+    });
+  });
 
   // ---------- 价目表 ----------
 

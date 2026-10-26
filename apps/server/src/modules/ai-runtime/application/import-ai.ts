@@ -28,6 +28,7 @@ import {
 import { AppError, CLOCK, LOGGER, type Clock, type Logger } from '../../../platform/index.js';
 import { MODEL_GATEWAY_PORT, MODEL_QUOTE_PORT } from '../../model-access/index.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
+import { characterView } from './character-view.js';
 
 export const IMPORT_PROMPT_VERSION = 'import-v1';
 /** 第 12 节第 3 条：每块约 1.2 万字，最多 4 块并行。 */
@@ -721,6 +722,7 @@ export class ImportAiService implements ImportAnalyzerPort {
   ): Promise<PortResult<ImportResult, AnalyzeError>> {
     const role = await this.characters.getForRuntime(input.userId, characterId);
     if (!role) return { ok: false, error: 'model_unavailable' };
+    const view = characterView(role);
     const extracted = await this.extractChunks(input, chunks);
     if (!extracted.ok) return extracted;
     const parts = extracted.value;
@@ -757,16 +759,28 @@ export class ImportAiService implements ImportAnalyzerPort {
         {
           role: 'user',
           content: JSON.stringify({
-            publicSummary: role.card.data.persona.summary,
-            publicProfile: role.card.data.profileExtra,
-            publicFacts: role.card.data.knowledge.entries
-              .filter(
-                (entry) =>
-                  entry.constant ||
-                  entry.confidence === 'verified' ||
-                  entry.confidence === 'fictionCanon',
-              )
-              .slice(0, 80),
+            publicSummary: view.card
+              ? view.card.persona.summary
+              : (view.legacy?.corePersona.slice(0, 600) ?? ''),
+            publicProfile: view.card
+              ? view.card.profileExtra
+              : view.legacy
+                ? {
+                    aliases: view.legacy.aliases,
+                    signature: view.legacy.signature,
+                    gender: view.legacy.identityGender,
+                  }
+                : {},
+            publicFacts: view.card
+              ? view.card.knowledge.entries
+                  .filter(
+                    (entry) =>
+                      entry.constant ||
+                      entry.confidence === 'verified' ||
+                      entry.confidence === 'fictionCanon',
+                  )
+                  .slice(0, 80)
+              : [],
             clues,
           }).slice(0, 20_000),
         },

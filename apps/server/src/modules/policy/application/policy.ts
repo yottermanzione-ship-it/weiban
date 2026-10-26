@@ -37,7 +37,9 @@ export class PolicyService implements PolicyPort {
       publicStatementGuard: d.publicStatementGuard,
       shareImageLabel: c.basis === 'real_person' ? 'not_real_person' : null,
       voiceCloneAllowed: false,
-      recognitionAllowlist: runtime.card.data.recognition.selfEnabled ? [characterId] : [],
+      // 旧卡角色没有新卡的识图认人配置，默认不认领公开图片。
+      recognitionAllowlist:
+        runtime.card?.data.recognition.selfEnabled === true ? [characterId] : [],
     };
   }
   private async decision(
@@ -67,12 +69,14 @@ export class PolicyService implements PolicyPort {
   ): Promise<ScenarioModeTraits[]> {
     const p = await this.getCharacterPolicy(input.userId, input.characterId);
     if (!p) return [];
+    // 空白名单 = 未设置（旧卡没有 modes.adminAllowlist，自定义卡默认也写成 []），表示不限制；
+    // 只有非空列表才是管理员真的关掉了某些模式，任何情况下都不能绕开下面的资格判断。
+    const allowlist = input.adminAllowlist ?? [];
     return input.candidates.filter(
       (m) =>
-        (!input.adminAllowlist ||
-          input.adminAllowlist.includes(m.modeId) ||
-          (m.allowlistFallback !== undefined &&
-            input.adminAllowlist.includes(m.allowlistFallback))) &&
+        (allowlist.length === 0 ||
+          allowlist.includes(m.modeId) ||
+          (m.allowlistFallback !== undefined && allowlist.includes(m.allowlistFallback))) &&
         (!m.containsAdultContent || p.adultModeEligible) &&
         (!m.containsRomance || p.romanceAllowed),
     );

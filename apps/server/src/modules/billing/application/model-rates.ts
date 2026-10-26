@@ -7,8 +7,11 @@
  * 生成新版本并立即发布——冻结仍引用价目表版本，扣费、对账规则都不变（billing.md 第 4 节）。
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { PRICE_PUBLISH_LOCK_SQL } from './price-publishing.js';
 import type {
+  ActiveModelServiceRate,
   ActiveModelTokenRates,
+  ServicePriceUnit,
   BillingModelRatePort,
   ModelDiscountSetting,
   ModelTokenPrices,
@@ -130,6 +133,7 @@ export class ModelRateService implements BillingModelRatePort {
     checkPrices(input.cost);
     return this.database.transaction(async (tx) => {
       // 所有发布（含 PriceService.activate）都先锁当前生效版本，串行切换
+      await tx.query(PRICE_PUBLISH_LOCK_SQL);
       const { rows: locked } = await tx.query<{ id: string }>(
         `SELECT id FROM billing.price_versions WHERE status = 'active' FOR UPDATE`,
       );
@@ -264,6 +268,165 @@ export class ModelRateService implements BillingModelRatePort {
     });
   }
 
+  /** 3.36：非 token 全天基价；每个单位单独保留分时标志。 */
+  async getActiveServiceRates(
+    modelKeys: readonly string[],
+  ): Promise<Map<string, ActiveModelServiceRate[]>> {
+    const out = new Map<string, ActiveModelServiceRate[]>();
+    const keys = [...new Set(modelKeys)];
+    if (!keys.length) return out;
+    const [version] = await this.database.db
+      .select({ id: priceVersions.id })
+      .from(priceVersions)
+      .where(eq(priceVersions.status, 'active'));
+    if (!version) return out;
+    const rows = await this.database.db
+      .select()
+      .from(priceItems)
+      .where(
+        and(
+          eq(priceItems.priceVersionId, version.id),
+          inArray(priceItems.modelKey, keys),
+          inArray(priceItems.unit, [
+            'image',
+            'tts_10k_chars',
+            'asr_minute',
+            'realtime_minute',
+            'search_call',
+          ]),
+        ),
+      );
+    for (const row of rows.filter((r) => r.band === null)) {
+      const rates = out.get(row.modelKey) ?? [];
+      rates.push({
+        unit: row.unit as ServicePriceUnit,
+        priceMicros: row.priceMicros,
+        costMicros: row.costMicros,
+        hasTimeBands: rows.some(
+          (r) => r.modelKey === row.modelKey && r.unit === row.unit && r.band !== null,
+        ),
+      });
+      out.set(row.modelKey, rates);
+    }
+    return out;
+  }
+
+  async publishModelServiceRates(input: {
+    operatorUserId: string;
+    modelKey: string;
+    rates: { unit: ServicePriceUnit; priceMicros: number; costMicros: number }[];
+  }): Promise<{ priceVersionId: string; published: boolean }> {
+    const allowed = ['image', 'tts_10k_chars', 'asr_minute', 'realtime_minute', 'search_call'];
+    if (
+      input.rates.length < 1 ||
+      input.rates.length > 5 ||
+      new Set(input.rates.map((r) => r.unit)).size !== input.rates.length ||
+      input.rates.some(
+        (r) =>
+          !allowed.includes(r.unit) ||
+          [r.priceMicros, r.costMicros].some(
+            (v) => !Number.isSafeInteger(v) || v < 0 || v > 100_000_000_000,
+          ),
+      )
+    )
+      throw new AppError('bad_request', '服务单价必须为不重复的非 token 单位和非负整数微元');
+    return this.database.transaction(async (tx) => {
+      // 不能仅锁 active 行：初次发布不存在该行，并发发布仍须串行。
+      await tx.query(PRICE_PUBLISH_LOCK_SQL);
+      const { rows: locked } = await tx.query<{ id: string }>(
+        `SELECT id FROM billing.price_versions WHERE status = 'active' FOR UPDATE`,
+      );
+      const activeId = locked[0]?.id ?? null;
+      const current: Row[] = activeId
+        ? await tx.db
+            .select()
+            .from(priceItems)
+            .where(eq(priceItems.priceVersionId, activeId))
+            .orderBy(asc(priceItems.sortOrder))
+        : [];
+      const mine = current.filter(
+        (r) => r.modelKey === input.modelKey && input.rates.some((rate) => rate.unit === r.unit),
+      );
+      if (
+        activeId &&
+        mine.length === input.rates.length &&
+        input.rates.every((rate) =>
+          mine.some(
+            (r) =>
+              r.unit === rate.unit &&
+              r.band === null &&
+              r.priceMicros === rate.priceMicros &&
+              r.costMicros === rate.costMicros,
+          ),
+        )
+      )
+        return { priceVersionId: activeId, published: false };
+      const items: PriceRow[] = [
+        ...current
+          .filter((r) => !mine.includes(r))
+          .map((r) => ({
+            modelKey: r.modelKey,
+            unit: r.unit as PriceUnit,
+            band: r.band as PriceBand | null,
+            priceMicros: r.priceMicros,
+            costMicros: r.costMicros,
+          })),
+        ...input.rates.map((r) => ({ ...r, modelKey: input.modelKey, band: null })),
+      ];
+      const problems = validatePriceItems(items);
+      if (problems.length)
+        throw new AppError('bad_request', '价目表内容不正确', {
+          details: { issues: problems.map((message) => ({ path: 'serviceRates', message })) },
+        });
+      const now = this.clock.now();
+      const id = newId();
+      await tx.db.insert(priceVersions).values({
+        id,
+        versionLabel: `service-${now.toISOString().replace(/\D/g, '')}`.slice(0, 32),
+        status: 'draft',
+        effectiveFrom: null,
+        note: `服务单价：${input.modelKey}`.slice(0, 200),
+        createdAt: now,
+        createdBy: input.operatorUserId,
+      });
+      await tx.db.insert(priceItems).values(
+        items.map((item, index) => ({
+          ...item,
+          id: newId(),
+          priceVersionId: id,
+          sortOrder: index,
+        })),
+      );
+      if (activeId)
+        await tx.db
+          .update(priceVersions)
+          .set({ status: 'retired', retiredAt: now })
+          .where(eq(priceVersions.id, activeId));
+      await tx.db
+        .update(priceVersions)
+        .set({ status: 'active', effectiveFrom: now })
+        .where(eq(priceVersions.id, id));
+      await this.audit.record(
+        {
+          module: 'billing',
+          action: 'price_version.service_rates_published',
+          actorType: 'admin',
+          actorId: input.operatorUserId,
+          targetType: 'price_version',
+          targetId: id,
+          details: {
+            modelKey: input.modelKey,
+            replaced: activeId,
+            rates: input.rates,
+            replacedTimeBands: mine.some((r) => r.band !== null),
+          },
+        },
+        tx,
+      );
+      return { priceVersionId: id, published: true };
+    });
+  }
+
   // ---------- 3.23 删除模型 ----------
 
   async modelPriceFootprint(
@@ -299,6 +462,7 @@ export class ModelRateService implements BillingModelRatePort {
     if (keys.length === 0) return { priceVersionId: null, pricedModels: 0, discounts: 0 };
     return this.database.transaction(async (tx) => {
       // 与其他发布一样先锁当前生效版本，串行切换
+      await tx.query(PRICE_PUBLISH_LOCK_SQL);
       const { rows: locked } = await tx.query<{ id: string }>(
         `SELECT id FROM billing.price_versions WHERE status = 'active' FOR UPDATE`,
       );

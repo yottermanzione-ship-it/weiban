@@ -1,4 +1,6 @@
 export { AiRuntimeModule } from './ai-runtime.module.js';
+/** 运维脚本用它查看/配置生态决策模型（走服务层校验，不绕过价格与目录检查）。 */
+export { EcologySettingsService } from './application/ecology-settings.js';
 export {
   AI_CALL_AGENT_PORT,
   AI_TRIAL_CLEANUP_PORT,

@@ -21,11 +21,24 @@ export type { WebSearchProvider } from './application/web-search.js';
 export { MODEL_GATEWAY_MEDIA_PORT } from './tokens.js';
 export { MODEL_QUOTE_PORT } from './tokens.js';
 /** 本机运维脚本（cli/setup-local-model.ts）以管理员身份走服务层登记目录、读上游。 */
-export { CatalogService } from './application/catalog.js';
+export { CatalogService, type ModelFacts } from './application/catalog.js';
 export { UpstreamService } from './application/upstreams.js';
+/** 组合通话模型运维脚本（cli/voice-call-pipeline.ts）：组合标记、固定模型键与设置结构校验。 */
+export {
+  isVoiceCallComposite,
+  VOICE_CALL_CASCADE_MODEL_KEY,
+  VOICE_CALL_PIPELINE_TAG,
+} from './application/voice-call-composite.js';
+export { parseVoiceCallPipeline, type VoiceCallPipeline } from './domain/voice-call-pipeline.js';
+/** Private maintenance CLI; no HTTP endpoint and no supplier probing. */
+export { LegacyUpstreamImportService } from './application/legacy-upstream-import.js';
+export { LegacyImportReceiver } from './application/legacy-receiver.js';
+export { LegacyImportError } from './domain/legacy-import.js';
 /** v3.6：请求结构对比工具（ai-runtime/tools/prompt-compare.ts）用的估算与前缀缓存模拟（纯函数）。 */
 export { estimateTokens } from './infra/text-adapter.js';
 export { simulatePrefixCache } from './domain/prefix-cache.js';
 /** Bounded synthetic operations probe; never changes runtime configuration. */
 export { evaluateConfiguredDecisions } from './application/decision-evaluation.js';
 export { SHARED_WEB_SEARCH_PORT } from './tokens.js';
+/** 旧卡音色导入 CLI：只读当前可用的语音消息模型键。 */
+export { listVoiceMessageModelKeys } from './application/voice-model-registry.js';

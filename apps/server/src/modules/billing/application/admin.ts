@@ -133,8 +133,8 @@ export class BillingAdminService {
         ORDER BY a.balance_micros, a.id
         LIMIT 500`,
     );
-    const usernames = rows.length
-      ? await this.directory.getUsernames(rows.map((r) => r.user_id))
+    const labels = rows.length
+      ? await this.directory.getUserLabels(rows.map((r) => r.user_id))
       : {};
     const totalDebtMicros = Number(totals[0]?.total ?? 0);
     return {
@@ -145,7 +145,8 @@ export class BillingAdminService {
         const balance = Number(r.balance);
         return {
           userId: r.user_id,
-          username: usernames[r.user_id] ?? '',
+          username: labels[r.user_id]?.username ?? '',
+          nickname: labels[r.user_id]?.nickname ?? null,
           balanceMicros: balance,
           balancePoints: microsToPoints(balance),
           debtMicros: -balance,

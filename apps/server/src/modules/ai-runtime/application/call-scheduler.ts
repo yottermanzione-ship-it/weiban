@@ -41,6 +41,7 @@ import { callAttempts, proactivePlans, userChatActivity } from '../infra/db/sche
 import { QuietStateService } from './quiet-state.js';
 import { PlannerService } from './planner.js';
 import { CompanionSettingsService } from './settings.js';
+import { characterView, rolePersonaSpeechText } from './character-view.js';
 
 /** P-10 原文：每角色每 7 天最多 1 次；全部角色每 7 天最多 3 次；要求熟悉度 L3 及以上。 */
 export const P10_CALLS = { perCharacter: 1, total: 3, windowMs: 7 * 86_400_000, minLevel: 3 };
@@ -260,7 +261,7 @@ export class CallSchedulerService {
           },
           {
             role: 'system',
-            content: `角色资料：${JSON.stringify({ persona: role.card.data.persona, speech: role.card.data.speech }).slice(0, 6000)}`,
+            content: `角色资料：${rolePersonaSpeechText(characterView(role), 6000)}`,
           },
         ],
       });

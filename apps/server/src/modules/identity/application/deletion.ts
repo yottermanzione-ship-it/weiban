@@ -37,7 +37,7 @@ import {
   type UserDataRegistry,
 } from '../../../platform/index.js';
 import { throttleKey } from '../domain/rules.js';
-import { deletionProgress, loginThrottle, users } from '../infra/db/schema.js';
+import { deletionProgress, loginThrottle, profiles, users } from '../infra/db/schema.js';
 import { hashUserId } from './user-hash.js';
 
 const IDENTITY: Events.ModuleName = 'identity';
@@ -121,8 +121,11 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
       .from(users)
       .where(eq(users.status, 'deleting'))
       .orderBy(asc(users.deletionRequestedAt), asc(users.id));
+    // 后台展示「这是谁」：昵称一次批量取回，不逐行查库。
+    const nicknames = await this.nicknamesOf(rows.map((u) => u.id));
     const result: PendingAccountDeletion[] = [];
-    for (const user of rows) result.push(await this.progressOf(this.database.db, user));
+    for (const user of rows)
+      result.push(await this.progressOf(this.database.db, user, nicknames[user.id] ?? null));
     return result;
   }
 
@@ -169,15 +172,34 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
         },
         tx,
       );
-      const snapshot = await this.progressOf(tx.db, { ...user, deletionRetriggeredAt: now });
+      const snapshot = await this.progressOf(
+        tx.db,
+        { ...user, deletionRetriggeredAt: now },
+        (await this.nicknamesOf([userId], tx.db))[userId] ?? null,
+      );
       if (pending.length === 0) await this.tryFinalize(tx, userId);
       return snapshot;
     });
   }
 
+  /** 昵称：一次批量查 identity.profiles，只用于后台展示（不存进别的表）。 */
+  private async nicknamesOf(
+    userIds: readonly string[],
+    db: Database['db'] = this.database.db,
+  ): Promise<Record<string, string | null>> {
+    const ids = [...new Set(userIds)];
+    if (!ids.length) return {};
+    const rows = await db
+      .select({ userId: profiles.userId, nickname: profiles.nickname })
+      .from(profiles)
+      .where(inArray(profiles.userId, ids));
+    return Object.fromEntries(rows.map((row) => [row.userId, row.nickname ?? null]));
+  }
+
   private async progressOf(
     db: Database['db'],
     user: typeof users.$inferSelect,
+    nickname: string | null,
   ): Promise<PendingAccountDeletion> {
     const reported = await db
       .select()
@@ -193,6 +215,7 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
     return {
       userId: user.id,
       username: user.currentAlias ?? user.username,
+      nickname,
       requestedAt: (user.deletionRequestedAt ?? user.updatedAt).toISOString(),
       lastRetriggeredAt: user.deletionRetriggeredAt?.toISOString() ?? null,
       modules: modules.map((module) => {

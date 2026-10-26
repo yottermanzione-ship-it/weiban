@@ -4,9 +4,11 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { and, count, eq } from 'drizzle-orm';
 import {
+  CHARACTER_PURGE_REGISTRY,
   DATABASE,
   EVENT_BUS,
   USER_DATA_REGISTRY,
+  type CharacterPurgeRegistry,
   type Database,
   type DbTx,
   type EventBus,
@@ -20,6 +22,7 @@ export class HealthLifecycle implements OnModuleInit {
     @Inject(DATABASE) private readonly db: Database,
     @Inject(EVENT_BUS) private readonly bus: EventBus,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
+    @Inject(CHARACTER_PURGE_REGISTRY) private readonly purgeRegistry: CharacterPurgeRegistry,
   ) {}
 
   onModuleInit(): void {
@@ -27,6 +30,10 @@ export class HealthLifecycle implements OnModuleInit {
       module: 'health',
       purgeUser: (id) => this.purgeUser(id),
       countUserData: (id) => this.countUserData(id),
+    });
+    this.purgeRegistry.register({
+      module: 'health',
+      purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
     });
     // 角色被删除（软删除或彻底删除）：授权自动撤销；30 天内恢复也不自动恢复授权（PLAY-01 边界情况）。
     this.bus.subscribe({
@@ -39,6 +46,11 @@ export class HealthLifecycle implements OnModuleInit {
       eventType: 'contacts.contact_purged',
       handle: (event, tx) => this.revoke(tx, event.payload.userId, event.payload.characterId),
     });
+  }
+
+  /** 后台彻底删除角色：撤销该角色在所有用户下的经期日记授权。 */
+  private async purgeCharacter(tx: DbTx, characterId: string): Promise<void> {
+    await tx.db.delete(grants).where(eq(grants.characterId, characterId));
   }
 
   private async revoke(tx: DbTx, userId: string, characterId: string): Promise<void> {

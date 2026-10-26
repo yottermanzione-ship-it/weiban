@@ -9,6 +9,7 @@
  * v1.3（T-026）：SettleInput / ReleaseInput 新增可选 upstreamId；新增只读端口 BillingChargeQueryPort
  * （按用量记录 ID 查扣费、按北京日期列出扣费、列出当前价目表有价格的模型键）。
  */
+import type { ServicePriceUnit } from '../price-unit.js';
 import type { ModelPurpose } from './model-gateway.js';
 import type { PortResult, Tx } from './common.js';
 
@@ -312,7 +313,24 @@ export interface ActiveModelTokenRates {
  * 3.3：模型倍率端口。提供方 billing；调用方**只有 model-access**（后台「模型」页一次保存目录与倍率；
  * 模型列表推算价格档位、约每条积分）。价目表仍归 billing（版本、冻结引用价目表版本都不变）。
  */
+export interface ActiveModelServiceRate {
+  unit: ServicePriceUnit;
+  priceMicros: number;
+  costMicros: number;
+  hasTimeBands: boolean;
+}
+
 export interface BillingModelRatePort {
+  /** 3.36：各单位全天基价与分时标记；无服务价的模型不在结果中。 */
+  getActiveServiceRates?(
+    modelKeys: readonly string[],
+  ): Promise<Map<string, ActiveModelServiceRate[]>>;
+  /** 只替换传入单位的全部分时/全天行，复制并发布完整价目表；相同不发版。金额为安全整数微元。 */
+  publishModelServiceRates?(input: {
+    operatorUserId: string;
+    modelKey: string;
+    rates: { unit: ServicePriceUnit; priceMicros: number; costMicros: number }[];
+  }): Promise<{ priceVersionId: string; published: boolean }>;
   /** 当前生效价目表里这些模型的 token 全天价；没有价格的模型不在结果里。 */
   getActiveTokenRates(modelKeys: readonly string[]): Promise<Map<string, ActiveModelTokenRates>>;
   /**

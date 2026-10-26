@@ -36,6 +36,12 @@ export interface IdentityAccountStatusPort {
   isBanned?(userId: string, transaction?: Tx): Promise<boolean>;
 }
 
+/** 后台展示用的账号身份：昵称优先，其次登录名；都为空时调用方显示用户 ID 短码。 */
+export interface IdentityUserLabel {
+  nickname: string | null;
+  username: string | null;
+}
+
 /**
  * v1.3（T-026）：账号目录端口。提供方：identity；任何模块可用。
  * 同 IdentityAccountStatusPort，单独成接口，新增它不影响已有实现。
@@ -48,6 +54,13 @@ export interface IdentityDirectoryPort {
    * 调用方**不得**把用户名存进自己的表（避免复制别的模块的数据、注销时漏删）。
    */
   getUsernames(userIds: readonly string[]): Promise<Record<string, string>>;
+  /**
+   * 按用户 ID 批量取「昵称 + 登录名」（管理后台展示「这是谁」用；一次最多 500 个 ID，超过抛异常）。
+   * 昵称来自 identity.profiles.nickname，没有时界面退回登录名，两者都没有才显示用户 ID 短码。
+   * 返回「用户 ID → 身份标签」；不存在（已删除或从未存在）的 ID 不出现在结果里，调用方按「已注销」显示。
+   * 与 getUsernames 一样只用于展示，调用方**不得**存进自己的表。
+   */
+  getUserLabels(userIds: readonly string[]): Promise<Record<string, IdentityUserLabel>>;
   /** 当前所有管理员（role = admin、账号 active）的用户 ID。push 给管理员发提醒时用（billing.md 8.4 节）。 */
   listAdminUserIds(tx?: Tx): Promise<string[]>;
 }
@@ -80,7 +93,7 @@ export interface UserStatusReadPort {
 export interface IdentityMembershipReadPort {
   getMembership(userId: string, tx?: Tx): Promise<import('../http/membership.js').Membership>;
   /**
-   * 3.17（会员 v5，16 号文档 §3）：统一「是否 PRO+」判断。记忆分档、长上下文、角色生态、
+   * 3.17（会员 v5，16 号文档 §3）：统一「是否 PRO+」判断。记忆分档、角色生态、
    * QQ/微信接入、申请制作周次数等各模块只调这一个，不各自读会员表。
    * 按服务端 Clock 判断有效期；账号不存在或已停用返回 false（不抛错），后台任务可直接调用。
    */

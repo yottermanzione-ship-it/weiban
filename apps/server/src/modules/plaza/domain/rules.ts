@@ -142,6 +142,20 @@ export function encodeOffset(offset: number): string {
   return Buffer.from(`o:${offset}`, 'utf8').toString('base64url');
 }
 
+/**
+ * 角色广场「添加热度」排序：添加人数多的在前；人数相同保持传入的稳定次序（调用方给的是角色 id 升序）。
+ * 在整份候选集上排完再分页，翻页不会重复或漏项；点赞、评论、下载都不参与。
+ */
+export function orderByAddCount(
+  ids: readonly string[],
+  counts: ReadonlyMap<string, number>,
+): string[] {
+  return ids
+    .map((id, index) => ({ id, index, n: counts.get(id) ?? 0 }))
+    .sort((a, b) => b.n - a.n || a.index - b.index)
+    .map((row) => row.id);
+}
+
 export function decodeOffset(cursor: string | undefined): number {
   if (!cursor) return 0;
   const raw = Buffer.from(cursor, 'base64url').toString('utf8');

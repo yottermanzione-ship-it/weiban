@@ -1,4 +1,4 @@
-import type { MediaObject, MediaPurpose } from '../http/media.js';
+import type { LinkPreview, MediaObject, MediaPurpose } from '../http/media.js';
 import type { Tx } from './common.js';
 
 /** media 提供：验证头像归属及取得短期访问链接。不存在/无权访问时统一 not_found。 */
@@ -57,7 +57,15 @@ export interface MediaAssetReadPort {
     modelKey: string;
     enabled: boolean;
     careFallbackMediaId: string | null;
+    /** Internal-only: encrypted reference sample and migration provenance. */
+    sampleMediaId?: string | null;
+    tags?: string[];
   } | null>;
+  /**
+   * 按供应商音色键找已启用的媒体音色。旧卡角色的 voice_json / qwen_voice_id 存的是供应商
+   * 音色 id，不是 media.voices 的主键；音色解析先按主键找，找不到再按这个键找。
+   */
+  findEnabledVoiceByProviderKey?(providerVoiceKey: string): Promise<{ voiceId: string } | null>;
   listCardTemplates(
     kind: string,
     portraitFreeOnly: boolean,
@@ -68,6 +76,8 @@ export interface MediaAssetReadPort {
 
 /** 3.0：链接预览与可访问性检查（MED-05）。提供方 media。 */
 export interface LinkPreviewPort {
+  /** 安全抓取网页封面并转存为本人 chat_image；复用同名 HTTP 设施及其 SSRF、大小、转码与限流保护。 */
+  previewForUser?(userId: string, url: string): Promise<LinkPreview>;
   preview(url: string): Promise<{
     reachable: boolean;
     title: string | null;

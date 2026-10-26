@@ -29,6 +29,8 @@ import {
 import { defaultReplyMicros, weightedPrice, type ModelTextPrices } from '../domain/rules.js';
 import { modelAccessSettings, modelCatalog, usageRecords } from '../infra/db/schema.js';
 import { MODEL_PRICE_SOURCE, MODEL_RATE_PORT, type ModelPriceSource } from '../tokens.js';
+import type { VoiceCallPipeline } from '../domain/voice-call-pipeline.js';
+import { VOICE_CALL_MINUTE_BLEND, VOICE_CALL_MINUTE_USAGE } from './voice-call-composite.js';
 
 export const DISPLAY_BASE_KEY = 'display_multiplier_base';
 const BASE_KEY = DISPLAY_BASE_KEY;
@@ -88,6 +90,32 @@ export class DisplayPricingService {
     const points = quoted ? round2(microsToPoints(quoted.amountMicros)) : null;
     this.mediaQuotes.set(cacheKey, { at: nowMs, points });
     return points;
+  }
+
+  /** 媒体用现价报价；文本按缓存假设估算，不误用把缓存折成原价的冻结上限。 */
+  async voiceCallPointsPerMinute(pipeline: VoiceCallPipeline): Promise<number | null> {
+    const quotes = this.quotes;
+    if (!quotes) return null;
+    const results = await Promise.all([
+      quotes.quote(pipeline.asrModelKey, VOICE_CALL_MINUTE_USAGE.asr),
+      quotes.quote(pipeline.ttsModelKey, VOICE_CALL_MINUTE_USAGE.tts),
+      this.prices.textPrices([pipeline.textModelKey]),
+      this.rates?.getModelDiscounts([pipeline.textModelKey]) ?? Promise.resolve(new Map()),
+    ]).catch(() => null);
+    if (!results) return null;
+    const [asr, tts, prices, discounts] = results;
+    const text = prices.get(pipeline.textModelKey);
+    if (!asr || !tts || !text) return null;
+    const discount = discounts.get(pipeline.textModelKey);
+    const now = this.clock.nowMs();
+    const rate =
+      discount && Date.parse(discount.startsAt) <= now && now < Date.parse(discount.endsAt)
+        ? discount.rate
+        : 1;
+    const textMicros = Math.ceil(
+      defaultReplyMicros(text) * VOICE_CALL_MINUTE_BLEND.textTurns * rate,
+    );
+    return round2(microsToPoints(asr.amountMicros + tts.amountMicros + textMicros));
   }
 
   async getSettings(): Promise<DisplayMultiplierSettings> {

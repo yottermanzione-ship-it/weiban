@@ -8,8 +8,17 @@ import { AvatarEditor } from './avatar-editor.js';
 import { ProfileAvatar } from './profile-avatar.js';
 import { useAuth } from '../app/auth.js';
 import { AliasRow, NudgeRow } from './profile-edit.js';
-import { GroupHeader, MenuGroup, MenuRow, NavBar, Sheet } from './shell-kit.js';
+import { Chevron, GroupHeader, MenuGroup, MenuRow, NavBar, Sheet } from './shell-kit.js';
 import { REGION_GROUPS } from '../data/regions.js';
+
+/** 首次填写页「性别」行显示的当前值（原生下拉透明铺在行上，见 pages-old.css .profile-field.picker）。 */
+const GENDER_LABELS: Record<string, string> = {
+  unspecified: '不填写',
+  female: '女',
+  male: '男',
+  other: '其他',
+};
+
 function OnboardingProfilePage() {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -25,6 +34,8 @@ function OnboardingProfilePage() {
   const [loaded, setLoaded] = useState(false);
   const [message, setMessage] = useState('');
   const [pending, setPending] = useState(false);
+  // 头像和「我 › 个人信息」一样走同一套弹层（10-25：首次填写页对齐资料页，不再在页面上单开一块头像区）。
+  const [editingAvatar, setEditingAvatar] = useState(false);
   useEffect(() => {
     if (remote.data) {
       setForm({
@@ -100,23 +111,14 @@ function OnboardingProfilePage() {
         }
       />
       <form id="profile-form" className="profile-form" onSubmit={(e) => void submit(e)}>
-        <div className="avatar-block">
-          <ProfileAvatar profile={remote.data} />
-          <span className="hint">头像会显示在聊天和朋友圈里</span>
-        </div>
-        <MenuGroup className="avatar-editor-group">
-          <AvatarEditor
-            onSaved={async (mediaId) => {
-              await api.call(IdentityEndpoints.updateProfile, {
-                body: { avatarMediaId: mediaId },
-              });
-              remote.refresh();
-              setMessage('头像已保存');
-            }}
+        <MenuGroup>
+          {/* 头像行照「我 › 个人信息」：左「头像」，右 40 圆角方形头像 + 箭头，点开同一套编辑弹层 */}
+          <MenuRow
+            label="头像"
+            right={<ProfileAvatar profile={remote.data} size={40} />}
+            onClick={() => setEditingAvatar(true)}
           />
-        </MenuGroup>
-        <div className="field-rows">
-          <label className="field-row">
+          <label className="menu-row profile-field">
             <span>昵称</span>
             <input
               disabled={!loaded}
@@ -127,10 +129,10 @@ function OnboardingProfilePage() {
               placeholder="TA 会这样称呼你"
             />
           </label>
-        </div>
+        </MenuGroup>
         <GroupHeader>{firstUse ? '补充更多资料（可选）' : '更多资料'}</GroupHeader>
-        <div className="field-rows">
-          <label className="field-row">
+        <MenuGroup>
+          <label className="menu-row profile-field with-caret">
             <span>生日</span>
             <input
               disabled={!loaded}
@@ -138,9 +140,14 @@ function OnboardingProfilePage() {
               value={form.birthday}
               onChange={(e) => setForm({ ...form, birthday: e.target.value })}
             />
+            <Chevron />
           </label>
-          <label className="field-row">
+          <label className="menu-row profile-field picker">
             <span>性别</span>
+            <span className="profile-field-value" aria-hidden="true">
+              {GENDER_LABELS[form.gender] ?? '不填写'}
+            </span>
+            <Chevron />
             <select
               disabled={!loaded}
               value={form.gender}
@@ -152,8 +159,12 @@ function OnboardingProfilePage() {
               <option value="other">其他</option>
             </select>
           </label>
-          <label className="field-row">
+          <label className="menu-row profile-field picker">
             <span>地区</span>
+            <span className="profile-field-value" aria-hidden="true">
+              {form.city || '不填写'}
+            </span>
+            <Chevron />
             <select
               disabled={!loaded}
               value={form.city}
@@ -174,33 +185,49 @@ function OnboardingProfilePage() {
               ))}
             </select>
           </label>
-          <label className="field-row top">
+          <label className="menu-row profile-field multiline">
             <span>关于我</span>
-            <textarea
-              disabled={!loaded}
-              value={form.about}
-              onChange={(e) => setForm({ ...form, about: e.target.value })}
-              maxLength={500}
-              rows={3}
-              placeholder="说说你自己"
-            />
-            <small className="field-count">{form.about.length}/500</small>
+            <span className="profile-field-body">
+              <textarea
+                disabled={!loaded}
+                value={form.about}
+                onChange={(e) => setForm({ ...form, about: e.target.value })}
+                maxLength={500}
+                rows={3}
+                placeholder="说说你自己"
+              />
+              <small className="profile-field-count">{form.about.length}/500</small>
+            </span>
           </label>
-        </div>
-        <p className="hint page-note">这些信息所有角色都会知道。</p>
+        </MenuGroup>
+        <p className="profile-note">这些信息所有角色都会知道。</p>
         {firstUse && (
-          <div className="page-bottom">
+          <div className="profile-submit-bar">
             <button className="primary full" disabled={!loaded || pending || remote.loading}>
               下一步
             </button>
           </div>
         )}
         {(message || remote.error) && (
-          <p role="status" className="hint page-note center">
+          <p role="status" className="profile-note center">
             {message || remote.error}
           </p>
         )}
       </form>
+      {editingAvatar && (
+        <Sheet title="头像" closeLabel="取消" onClose={() => setEditingAvatar(false)}>
+          <AvatarEditor
+            onSaved={async (mediaId) => {
+              await api.call(IdentityEndpoints.updateProfile, {
+                body: { avatarMediaId: mediaId },
+              });
+              remote.refresh();
+              setMessage('头像已保存');
+              setEditingAvatar(false);
+            }}
+          />
+        </Sheet>
+      )}
     </main>
   );
 }

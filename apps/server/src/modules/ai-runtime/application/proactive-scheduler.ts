@@ -153,10 +153,24 @@ export interface EcologySendExtras {
   greeting?: boolean;
   /** 照片内容（默认用 brief）。 */
   scene?: string;
+  /** 3.29：已审核的微博图片媒体 ID；有它时只走既有媒体发送，不生图。 */
+  photoMediaId?: string;
+}
+
+/** 已发生实扣后记录失败：仅用于内部把费用带回生态结果，不再次扣款。 */
+export class ProactiveChargeError extends Error {
+  constructor(
+    reason: string,
+    readonly chargedMicros: number,
+    cause: unknown,
+  ) {
+    super(reason, { cause });
+  }
 }
 
 export type SendOutcome =
-  { ok: true; chargedMicros: number; messageId: string | null } | { ok: false; reason: string };
+  | { ok: true; chargedMicros: number; messageId: string | null }
+  | { ok: false; reason: string; chargedMicros?: number };
 
 /** 经期关怀计划来源前缀（同 health-care CARE_PLAN_PREFIX；不 import 以免循环）。 */
 const CARE_SOURCE_PREFIX = 'care:';
@@ -393,6 +407,8 @@ export class ProactiveSchedulerService {
     brief: string;
     extras: EcologySendExtras;
     sourceRef?: string;
+    /** 3.29：同一来源（如 weibo:updateId）只发一次；不改变 sourceRef/reason。 */
+    dedupeKey?: string;
   }): Promise<SendOutcome> {
     const profile = await this.identity.getProfile(input.userId);
     if (!profile) return { ok: false, reason: 'no_profile' };
@@ -409,6 +425,8 @@ export class ProactiveSchedulerService {
     const contact = await this.contacts.getActiveContact(input.userId, input.characterId);
     if (!contact?.conversationId) return { ok: false, reason: 'contact_inactive' };
     const sourceRef = (input.sourceRef ?? `ecology:${input.runId}`).slice(0, 200);
+    // 同一张微博图片/同一个来源只排一次；不影响 sourceRef 的既有语义。
+    const topicKey = (input.dedupeKey ?? sourceRef).slice(0, 200);
     const [plan] = await this.db.db
       .insert(proactivePlans)
       .values({
@@ -417,7 +435,7 @@ export class ProactiveSchedulerService {
         characterId: input.characterId,
         reason: input.sourceRef ? 'interactive_play' : 'ecology',
         sourceRef,
-        topicKey: sourceRef,
+        topicKey,
         brief: input.brief.slice(0, 2000),
         localDate: local.date,
         isHoliday: false,
@@ -1009,7 +1027,7 @@ export class ProactiveSchedulerService {
       ruleReason: rule ? '规则版配图' : '规则版只发文字',
       conservative: 'text',
       question:
-        '角色主动分享一件日常小事，要不要配一张 TA 视角的照片（keep_image）还是只发文字（text）？',
+        '角色主动分享一件日常小事，要不要配一张素材库图片（keep_image）还是只发文字（text）？不得声称是自己刚拍的照片。',
       features: { localHour: ctx.localHour, reasonKind: plan.reason },
       path: 'proactive',
       idempotencyKey: `photo:${plan.id}`,
@@ -1176,7 +1194,7 @@ export class ProactiveSchedulerService {
             ),
             {
               role: 'system',
-              content: `你在微伴里以角色口吻主动给用户发私聊消息。平台规则优先于角色卡。只输出聊天纯文本，短句、口语、可以换行分成 1–3 条气泡；不输出JSON或括号动作；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。${eco && level >= 3 ? '「在干嘛」「想你了」这类没有具体内容的话可以偶尔说，但别总这样。' : '不要用「在干嘛」「想你了」这类没有内容的开场。'}${eco?.greeting ? '这次是早安或晚安：结合今天的具体情况说，别用套话。' : '不说早安晚安套话。'}不做情感操纵：不制造愧疚、不说一直在等、不追问、不威胁。`,
+              content: `你在微伴里以角色口吻主动给用户发私聊消息。只输出聊天纯文本，短句、口语、可以换行分成 1–3 条气泡；不输出JSON或括号动作；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。${eco && level >= 3 ? '「在干嘛」「想你了」这类没有具体内容的话可以偶尔说，但别总这样。' : '不要用「在干嘛」「想你了」这类没有内容的开场。'}${eco?.greeting ? '这次是早安或晚安：结合今天的具体情况说，别用套话。' : '不说早安晚安套话。'}不做情感操纵：不制造愧疚、不说一直在等、不追问、不威胁。`,
             },
             {
               role: 'system',
@@ -1246,27 +1264,18 @@ ${careNote}`
       voice = v.content;
       charged += v.chargedMicros;
     } else if (eco?.extra === 'photo') {
-      const image = await this.images
-        .generate({
-          userId: ctx.userId,
-          characterId: plan.characterId,
-          conversationId: conversation.conversationId,
-          scene: (eco.scene ?? plan.brief).slice(0, 300),
-          use: 'chat',
-          idempotencyKey: `proactive:${plan.id}`,
-          countAsBackground: true,
-          ecologyTask: true,
-        })
-        .catch(() => null);
-      if (!image) return this.fail(plan, 'photo_unavailable');
+      // 3.29：生态照片只投递已审核的微博图片，走既有媒体发送；不生图、不搜索、不扣图片模型费。
+      if (!eco.photoMediaId) return this.fail(plan, 'photo_unavailable', charged);
+      const media = await this.mediaRead.getMedia(ctx.userId, eco.photoMediaId).catch(() => null);
+      if (!media) return this.fail(plan, 'photo_unavailable', charged);
       link = {
         type: 'image',
-        mediaId: image.mediaId,
-        width: image.width,
-        height: image.height,
-        sizeBytes: image.sizeBytes,
+        mediaId: media.mediaId,
+        width: media.width ?? null,
+        height: media.height ?? null,
+        sizeBytes: media.sizeBytes,
       };
-      charged += image.chargedMicros ?? 0;
+      bubbles.push('分享一张微博图片。');
     } else if (eco?.extra === 'sticker') {
       link = await this.mediaAi
         .pickStickerForEcology(plan.characterId, bubbles.join(''), plan.id)
@@ -1345,6 +1354,8 @@ ${careNote}`
           sizeBytes: image.sizeBytes,
         };
     }
+    // 首条消息展示本次实际总费用（文字及已结算搜索/语音），不是再次向网关扣款。
+    charge.chargedMicros = charged;
     try {
       const sent = await this.db.transaction(async (tx) => {
         await tx.query(
@@ -1468,7 +1479,7 @@ ${careNote}`
         );
         return firstId;
       });
-      if (!sent) return this.fail(plan, 'relationship_changed');
+      if (!sent) return this.fail(plan, 'relationship_changed', charged);
       if (petPhoto && link?.type === 'image')
         await this.album
           ?.addCharacterPhoto({
@@ -1483,13 +1494,18 @@ ${careNote}`
       return this.fail(
         plan,
         `send_rejected:${error instanceof Error ? error.message : 'unknown'}`.slice(0, 200),
+        charged,
       );
     }
   }
 
-  private async fail(plan: Plan, reason: string): Promise<SendOutcome> {
-    await this.drop(plan, reason);
-    return { ok: false, reason };
+  private async fail(plan: Plan, reason: string, chargedMicros = 0): Promise<SendOutcome> {
+    try {
+      await this.drop(plan, reason);
+    } catch (error) {
+      throw new ProactiveChargeError(reason, chargedMicros, error);
+    }
+    return { ok: false, reason, chargedMicros };
   }
 
   private async inActiveWindow(ctx: UserContext): Promise<boolean> {

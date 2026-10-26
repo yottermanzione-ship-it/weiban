@@ -11,6 +11,7 @@ import { RecordDrawer } from '../ui/drawer.js';
 import { TicketRuntimeLogs } from './client-logs.js';
 import { FieldHelp, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
+import { UserIdentity, userDisplayName } from './users/identity.js';
 
 const STATUS_LABELS: Record<string, string> = {
   open: '待处理',
@@ -59,8 +60,14 @@ export function SupportAdminPage() {
   const columns: ProColumns<AdminSupportTicket>[] = [
     {
       title: '用户',
-      width: 130,
-      render: (_, row) => row.username ?? '已注销',
+      width: 150,
+      render: (_, row) => (
+        <UserIdentity
+          userId={row.userId}
+          label={{ nickname: row.nickname, username: row.username }}
+          deleted={!row.username}
+        />
+      ),
     },
     {
       title: '类型',
@@ -228,7 +235,7 @@ function TicketDrawer({
       onClose={onClose}
       title={
         ticket
-          ? `${ticket.kind === 'complaint' ? '投诉' : '反馈'} · ${ticket.username ?? '已注销'}`
+          ? `${ticket.kind === 'complaint' ? '投诉' : '反馈'} · ${userDisplayName(ticket.userId, { nickname: ticket.nickname, username: ticket.username }, !ticket.username)}`
           : '工单'
       }
       subtitle={ticket ? formatDateTime(ticket.createdAt) : undefined}

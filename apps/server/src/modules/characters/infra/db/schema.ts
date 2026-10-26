@@ -46,7 +46,18 @@ export const characters = charactersSchema.table(
       .notNull()
       .default(true),
     everPrivatePerson: boolean('ever_private_person').notNull().default(false),
-    draftCiphertext: bytea('draft_ciphertext').notNull(),
+    draftCiphertext: bytea('draft_ciphertext'),
+    /**
+     * 迁移 0136：旧库 characters_v2 的一整行 JSON。**旧卡就是运行格式**——有它就是旧卡角色，
+     * 运行时直接读旧字段（core_persona / soul_* / style_* / knowledge_json / voice_json …），
+     * 不转 WeibanCardData；此时 draft_ciphertext 可以为空。新卡角色为 null。
+     */
+    legacyCard: jsonb('legacy_card').$type<Record<string, unknown> | null>(),
+    /**
+     * 迁移 0137：旧卡角色头像（media.objects.id，purpose=character_avatar）。
+     * 旧站头像是 AI 模仿图，总经理 2026-10-24 确认可直接导入；新卡头像仍在 card.avatar。
+     */
+    avatarMediaId: uuid('avatar_media_id'),
     publishedCiphertext: bytea('published_ciphertext'),
     publishedRevision: integer('published_revision'),
     revision: integer('revision').notNull().default(1),
@@ -86,22 +97,22 @@ export const characters = charactersSchema.table(
     index('characters_plaza_idx').on(t.status, t.categoryId),
   ],
 );
-/** 3.25（迁移 0121）：角色资格人工标注的修改记录（谁、何时、原因）。 */
-export const eligibilityChanges = charactersSchema.table(
-  'eligibility_changes',
-  {
-    id: uuid('id').primaryKey(),
-    characterId: uuid('character_id')
-      .notNull()
-      .references(() => characters.id, { onDelete: 'cascade' }),
-    operatorUserId: uuid('operator_user_id'),
-    reason: text('reason').notNull(),
-    beforeOverride: jsonb('before_override').$type<EligibilityOverride | null>(),
-    afterOverride: jsonb('after_override').$type<EligibilityOverride | null>(),
-    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
-  },
-  (t) => [index('eligibility_changes_character_idx').on(t.characterId, t.createdAt)],
-);
+/** 3.25（迁移 0121）：角色资格人工标注的修改记录（谁、何时、原因）。 */ export const eligibilityChanges =
+  charactersSchema.table(
+    'eligibility_changes',
+    {
+      id: uuid('id').primaryKey(),
+      characterId: uuid('character_id')
+        .notNull()
+        .references(() => characters.id, { onDelete: 'cascade' }),
+      operatorUserId: uuid('operator_user_id'),
+      reason: text('reason').notNull(),
+      beforeOverride: jsonb('before_override').$type<EligibilityOverride | null>(),
+      afterOverride: jsonb('after_override').$type<EligibilityOverride | null>(),
+      createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+    },
+    (t) => [index('eligibility_changes_character_idx').on(t.characterId, t.createdAt)],
+  );
 export const trialSessions = charactersSchema.table('trial_sessions', {
   conversationId: uuid('conversation_id').primaryKey(),
   characterId: uuid('character_id')
@@ -303,4 +314,72 @@ export const personaUpdateSeen = charactersSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.characterId] })],
+);
+
+/**
+ * 迁移 0136：旧库 character_lorebook_entries 的原样落点。新库没有世界书表，最接近的落法是
+ * 按角色挂接的旧卡附属表；`payload` 存旧库一整行，运行时就地解析 trigger_keys_json / content。
+ */
+export const legacyLorebookEntries = charactersSchema.table(
+  'legacy_lorebook_entries',
+  {
+    id: text('id').primaryKey(),
+    characterId: uuid('character_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+    importedAt: timestamp('imported_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [index('legacy_lorebook_character_idx').on(t.characterId)],
+);
+
+/** 迁移 0136：旧库 character_example_dialogues 的原样落点；sort_order 单独成列便于稳定取前几条。 */
+export const legacyExampleDialogues = charactersSchema.table(
+  'legacy_example_dialogues',
+  {
+    id: text('id').primaryKey(),
+    characterId: uuid('character_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    importedAt: timestamp('imported_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [index('legacy_examples_character_idx').on(t.characterId, t.sortOrder)],
+);
+
+/**
+ * 迁移 0143：旧卡保存 / 恢复前的完整快照。**不经 platform.audit_log 的通用脱敏**，长字母数字、URL、
+ * 未识别旧字段都按原样保存；只存头像的 media id 与展示参数，不存短效签名 URL。
+ * 不存上架状态与资格标注：恢复不还原这两项，也不改角色 ID / 联系人 / 消息。
+ */
+export const legacyCharacterRevisions = charactersSchema.table(
+  'legacy_character_revisions',
+  {
+    characterId: uuid('character_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    source: text('source').$type<'save' | 'restore'>().notNull(),
+    operatorUserId: uuid('operator_user_id'),
+    note: text('note'),
+    name: text('name').notNull(),
+    searchText: text('search_text').notNull(),
+    aliases: jsonb('aliases').$type<string[]>().notNull(),
+    signature: text('signature').notNull(),
+    legacyCard: jsonb('legacy_card').$type<Record<string, unknown>>().notNull(),
+    avatarMediaId: uuid('avatar_media_id'),
+    avatarDisplay: jsonb('avatar_display').$type<Record<string, unknown>>().notNull(),
+    lorebook: jsonb('lorebook')
+      .$type<Array<{ id: string; payload: Record<string, unknown> }>>()
+      .notNull(),
+    examples: jsonb('examples')
+      .$type<Array<{ id: string; payload: Record<string, unknown>; sortOrder: number }>>()
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.characterId, t.revision] }),
+    index('legacy_character_revisions_created_idx').on(t.characterId, t.createdAt),
+  ],
 );

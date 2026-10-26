@@ -13,12 +13,15 @@ export function AvatarEditor({
   onPendingChange,
   onRestore,
   label = '头像',
+  prominentPicker = false,
 }: {
   onSaved: (mediaId: string) => Promise<void>;
   purpose?: z.infer<typeof UserMediaPurpose>;
   onPendingChange?: (pending: boolean) => void;
   onRestore?: () => void;
   label?: string;
+  /** 仅角色资料「设置头像」弹层：整行选择按钮放大居中；其它入口保持原行样式。 */
+  prominentPicker?: boolean;
 }) {
   const { session } = useAuth();
   const owner = session
@@ -142,7 +145,7 @@ export function AvatarEditor({
     <section className="stack">
       <button
         type="button"
-        className="avatar-choose-row"
+        className={`avatar-choose-row${prominentPicker ? ' avatar-choose-row-sheet' : ''}`}
         disabled={pending}
         onClick={() => setChoosing(true)}
       >

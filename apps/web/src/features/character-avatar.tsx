@@ -1,13 +1,19 @@
+import { memo } from 'react';
 import { Flower, Heart, Moon, MusicNote, Star } from './old-icons.js';
 import type { CharacterSummary } from '@weiban/contracts';
 import { avatarForeground, avatarLetters, avatarPaletteIndex } from '@weiban/client-core';
 import { useAuth } from '../app/auth.js';
 import { useChat } from '../app/chat.js';
-import { CachedPicture, useMediaUrl } from './avatar-cache.js';
+import {
+  CachedPicture,
+  recallCharacterAvatar,
+  rememberCharacterAvatar,
+} from './avatar-cache.js';
 import { useCharacterProfile } from '../data/character-profile.js';
 type AvatarRole = Pick<CharacterSummary, 'characterId' | 'name' | 'avatar'>;
 const patterns = { star: Star, heart: Heart, note: MusicNote, moon: Moon, flower: Flower };
-export function CharacterAvatar({
+/** 列表头像每帧都会被父组件重渲染一次；memo 后滚动时图片子树不再重渲染。 */
+export const CharacterAvatar = memo(function CharacterAvatar({
   id,
   profile,
   size = 48,
@@ -42,7 +48,7 @@ export function CharacterAvatar({
       radius={radius}
     />
   );
-}
+});
 function RequestedAvatar({
   id,
   privateId,
@@ -89,6 +95,13 @@ function Artwork({
   const color = supplied ? avatarForeground(supplied) : `var(--wb-support-${palette}-on)`;
   const pattern = display?.avatarPattern ?? 'star';
   const Icon = !role || pattern === 'none' ? null : patterns[pattern];
+  // 资料还没读到时先用上次这个角色的头像：不先退回文字占位，图也能从缓存直接出。
+  // 有资料时以资料为准（image 为 null 就是真没有图片，不能拿旧缓存顶上）。
+  const pictureId =
+    privateId ?? role?.avatar.image?.mediaId ?? (role ? undefined : recallCharacterAvatar(id));
+  const hintUrl = role?.avatar.image?.mediaId === pictureId ? role?.avatar.image?.url : undefined;
+  if (role || privateId)
+    rememberCharacterAvatar(id, privateId ?? role?.avatar.image?.mediaId ?? null);
   return (
     <span
       className="character-avatar"
@@ -119,14 +132,28 @@ function Artwork({
           }}
         />
       )}
-      {privateId ? (
-        <PrivatePicture mediaId={privateId} />
-      ) : role?.avatar.image ? (
-        <CachedPicture url={role.avatar.image.url} />
+      {pictureId ? (
+        // 资料里的 image.url 每次取资料都可能换一个签名，直接用会让浏览器重下图片；按 mediaId 复用。
+        <AvatarPicture key={pictureId} mediaId={pictureId} hintUrl={hintUrl} size={size} />
       ) : null}
     </span>
   );
 }
-function PrivatePicture({ mediaId }: { mediaId: string }) {
-  return <CachedPicture url={useMediaUrl(mediaId)} />;
+function AvatarPicture({
+  mediaId,
+  hintUrl,
+  size,
+}: {
+  mediaId: string;
+  hintUrl?: string;
+  size: number;
+}) {
+  return (
+    <CachedPicture
+      mediaId={mediaId}
+      hintUrl={hintUrl}
+      width={size}
+      height={size}
+    />
+  );
 }

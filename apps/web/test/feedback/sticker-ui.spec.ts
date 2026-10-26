@@ -1,0 +1,85 @@
+import { expect, test } from '@playwright/test';
+const fixture = '/test/browser-fixtures/sticker-ui.html';
+test('表情面板默认emoji、个人单图、角色专属及系列依次显示且无搜索', async ({ page }) => {
+  await page.goto(fixture);
+  const tabs = page.getByRole('tab');
+  await expect(tabs.first()).toHaveAttribute('aria-label', '通用 emoji');
+  await expect(tabs.nth(1)).toHaveAttribute('aria-label', '添加的单个表情');
+  await expect(tabs.nth(2)).toHaveAttribute('aria-label', '明星专属表情');
+  await expect(tabs.nth(3)).toHaveAttribute('aria-label', '测试系列');
+  await expect(page.locator('.wx-sticker input')).toHaveCount(0);
+  const draft = page.getByRole('textbox', { name: '消息草稿' });
+  await draft.fill('前后');
+  await draft.evaluate((el) => (el as HTMLTextAreaElement).setSelectionRange(1, 1));
+  await page.getByRole('button', { name: '开心', exact: true }).click();
+  await expect(draft).toHaveValue('前😀后');
+  await draft.fill('前👨‍👩‍👧‍👦');
+  await page.getByRole('button', { name: '删除上一个字符' }).click();
+  await expect(draft).toHaveValue('前');
+  await draft.fill('❤️');
+  await page.getByRole('button', { name: '删除上一个字符' }).click();
+  await expect(draft).toHaveValue('');
+  await page.getByRole('tab', { name: '添加的单个表情', exact: true }).click();
+  await expect(page.getByRole('button', { name: '发送个人表情' })).toBeVisible();
+  await page.getByRole('tab', { name: '明星专属表情', exact: true }).click();
+  await expect(page.getByRole('button', { name: '当前角色专属图' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '其他角色专属图' })).toHaveCount(0);
+  await page.getByRole('tab', { name: '测试系列', exact: true }).click();
+  await page.getByRole('button', { name: '系列表情', exact: true }).click();
+  await expect(page.getByRole('status')).toHaveText('系列表情');
+  await page.screenshot({ path: 'apps/web/test-results/sticker-panel-series.png' });
+});
+test('精选表情只挑少量可爱向系列，更多表情仍是全部', async ({ page }) => {
+  await page.goto(`${fixture}?page=store-curated`);
+  // 「猫咪」在精选名单里，「测试系列」「角色专属包」不是。
+  await expect(page.locator('.sticker-store-row')).toHaveCount(1);
+  await expect(page.locator('.sticker-store-row')).toContainText('猫咪');
+  await page.getByRole('tab', { name: '更多表情' }).click();
+  await expect(page.locator('.sticker-store-tile')).toHaveCount(3);
+  // 搜索走全量，精选之外的系列也能搜到。
+  await page.getByRole('tab', { name: '精选表情' }).click();
+  await page.getByRole('searchbox', { name: '搜索表情包' }).fill('测试');
+  await expect(page.locator('.sticker-store-row')).toHaveCount(1);
+  await expect(page.locator('.sticker-store-row')).toContainText('测试系列');
+});
+
+test('表情商店保留搜索、切换网格，管理单表情和系列只用一个列表', async ({ page }) => {
+  await page.goto(`${fixture}?page=store`);
+  await expect(page.getByRole('tab', { name: '精选表情' })).toBeVisible();
+  await expect(page.getByRole('searchbox', { name: '搜索表情包' })).toBeVisible();
+  const featured = page.getByRole('tab', { name: '精选表情' });
+  await expect(featured).toHaveCSS('border-top-width', '0px');
+  await expect(featured).toHaveCSS('border-bottom-width', '0px');
+  await expect(featured).toHaveCSS('border-radius', '0px');
+  expect(await featured.evaluate((el) => getComputedStyle(el, '::after').height)).toBe('2px');
+  const more = page.getByRole('button', { name: '我的表情', exact: true });
+  await expect(more).toHaveCSS('color', 'rgb(17, 17, 17)');
+  await expect(more.locator('svg')).toHaveAttribute('width', '20');
+  await expect(more.locator('circle')).toHaveCount(3);
+  await expect(page.locator('.sticker-store-row')).toHaveCount(2);
+  // 只保留顶部两个带下划线的页签；推荐横幅与「精选/更多表情」小标题都已去掉。
+  await expect(page.locator('.sticker-store-heading')).toHaveCount(0);
+  await expect(page.locator('.sticker-store-banners')).toHaveCount(0);
+  await expect(page.getByText('精选', { exact: true })).toHaveCount(0);
+  await page.screenshot({ path: 'apps/web/test-results/sticker-store-header-fixed.png' });
+  await page.getByRole('tab', { name: '更多表情' }).click();
+  await expect(page.locator('.sticker-store-tile')).toHaveCount(2);
+  await page.getByRole('searchbox', { name: '搜索表情包' }).fill('测试系列');
+  await expect(page.locator('.sticker-store-tile')).toHaveCount(1);
+  await page.getByRole('button', { name: '我的表情', exact: true }).click();
+  await expect(page.locator('.menu-group')).toHaveCount(1);
+  await expect(page.locator('.menu-group')).toContainText('添加的单个表情');
+  await expect(page.locator('.menu-group')).toContainText('测试系列');
+  await expect(page.getByText('隐私设置', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('我的自拍表情', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '排序', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /上移/ })).toHaveCount(0);
+  await page.getByRole('button', { name: '移除测试系列', exact: true }).click();
+  await expect(page.getByRole('button', { name: '移除测试系列', exact: true })).toHaveCount(0);
+  await page.screenshot({ path: 'apps/web/test-results/sticker-manage-unified.png' });
+  // 「我的表情」是独立路由：返回后应回到表情商店，而不是退回「我」页签。
+  await expect(page.getByText('添加的单个表情', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '返回' }).click();
+  await expect(page.getByRole('tab', { name: '精选表情' })).toBeVisible();
+  await expect(page.getByText('添加的单个表情', { exact: true })).toHaveCount(0);
+});

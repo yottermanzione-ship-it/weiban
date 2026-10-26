@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, countDistinct, eq, inArray, ne } from 'drizzle-orm';
 import {
   type Tx,
   Contact,
@@ -63,6 +63,23 @@ export class ContactsReadService implements ContactsReadPort {
       .where(and(eq(contacts.characterId, characterId), eq(contacts.status, 'active')))
       .limit(1);
     return !!row;
+  }
+  /**
+   * 角色广场「添加热度」：每个角色被多少位用户加进了通讯录。
+   * 口径：contacts 每个用户每个角色只有一行（唯一索引），所以按 userId 去重 = 一行一人；
+   * 只算未删除的关系（status <> deleted），重复添加 / 重试不会多算，删除后不再计入。
+   */
+  async countContactUsers(characterIds: string[]): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    const ids = [...new Set(characterIds)].slice(0, 1000);
+    if (!ids.length) return counts;
+    const rows = await this.db.db
+      .select({ id: contacts.characterId, n: countDistinct(contacts.userId) })
+      .from(contacts)
+      .where(and(inArray(contacts.characterId, ids), ne(contacts.status, 'deleted')))
+      .groupBy(contacts.characterId);
+    for (const row of rows) counts.set(row.id, row.n);
+    return counts;
   }
   async getActiveContactEpoch(
     userId: string,

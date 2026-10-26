@@ -8,7 +8,7 @@
  *   （含平台账户调用）；「平台吸收」= absorbed 合计。只统计已结束（succeeded / failed）的调用。
  *   token：inputTokens 是**未命中缓存**的输入，与 billing 计价一致；totalTokens = 未命中 + 命中 + 输出。
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
   ADMIN_USAGE_EXPORT_MAX_ROWS,
   microsToPoints,
@@ -20,6 +20,8 @@ import {
   type AdminUsageTotals,
   type BillingOwner,
   type GenerateTextInput,
+  type IdentityDirectoryPort,
+  type IdentityUserLabel,
   type ModelPurpose,
 } from '@weiban/contracts';
 import { and, desc, eq, gte, inArray, isNull, lt, like, ne, or, sql, type SQL } from 'drizzle-orm';
@@ -33,6 +35,7 @@ import {
   type Clock,
   type Database,
 } from '../../../platform/index.js';
+import { IDENTITY_DIRECTORY_PORT } from '../../identity/index.js';
 import { USAGE_DAY_TIME_ZONE, decodeCursor, encodeCursor } from '../domain/rules.js';
 import { upstreams, usageRecords, generationAttempts } from '../infra/db/schema.js';
 
@@ -429,13 +432,19 @@ function toTotals(r: TotalsRow | undefined): AdminUsageTotals {
   };
 }
 
-export function toAdminRecord(row: UsageRow): AdminUsageRecord {
+export function toAdminRecord(
+  row: UsageRow,
+  labels: Record<string, IdentityUserLabel> = {},
+): AdminUsageRecord {
+  const label = labels[row.userId];
   return {
     costKnown: row.costKnown,
     uncertainCostMicros: row.uncertainCostMicros,
     usageRecordId: row.id,
     createdAt: row.createdAt.toISOString(),
     userId: row.userId,
+    nickname: label?.nickname ?? null,
+    username: label?.username ?? null,
     characterId: row.characterId,
     conversationKind: (row.conversationKind as 'direct' | 'group' | null) ?? null,
     purpose: row.purpose as ModelPurpose,
@@ -470,7 +479,28 @@ export class AdminUsageService {
     @Inject(DATABASE) private readonly database: Database,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Optional()
+    @Inject(IDENTITY_DIRECTORY_PORT)
+    private readonly directory?: IdentityDirectoryPort,
   ) {}
+
+  /**
+   * 后台展示「这是谁」：一次批量取昵称 + 登录名（端口一次最多 500 个 ID，这里分批）。
+   * 取不到（账号已注销）就不出现在结果里，界面自行退回用户 ID 短码；查询失败不影响用量数据。
+   */
+  private async labelsOf(userIds: Iterable<string>): Promise<Record<string, IdentityUserLabel>> {
+    const ids = [...new Set(userIds)].filter(Boolean);
+    if (!ids.length || !this.directory) return {};
+    const out: Record<string, IdentityUserLabel> = {};
+    try {
+      for (let i = 0; i < ids.length; i += 500) {
+        Object.assign(out, await this.directory.getUserLabels(ids.slice(i, i + 500)));
+      }
+    } catch {
+      return {};
+    }
+    return out;
+  }
 
   async summary(req: {
     filter: AdminUsageFilter;
@@ -503,10 +533,14 @@ export class AdminUsageService {
       keys: req.groupBy.map((_, i) => String(r[`k${i}`] ?? '')),
       ...toTotals(r),
     }));
+    // 按用户分组时补昵称 / 登录名：一次批量查询，不逐行查库。
+    const userDim = req.groupBy.indexOf('user');
+    const userIds = userDim < 0 ? [] : rows.map((r) => r.keys[userDim] ?? '');
     return {
       rows,
       totals: toTotals(totals.rows[0]),
       truncated: grouped.rows.length > req.limit,
+      userLabels: await this.labelsOf(userIds),
     };
   }
 
@@ -532,9 +566,10 @@ export class AdminUsageService {
       .orderBy(desc(usageRecords.createdAt), desc(usageRecords.id))
       .limit(req.limit + 1);
     const page = rows.slice(0, req.limit);
+    const labels = await this.labelsOf(page.map((r) => r.userId));
     const last = page[page.length - 1];
     return {
-      items: page.map(toAdminRecord),
+      items: page.map((row) => toAdminRecord(row, labels)),
       nextCursor: rows.length > req.limit && last ? encodeCursor(last.createdAt, last.id) : null,
     };
   }
@@ -628,7 +663,9 @@ export class AdminUsageService {
       .orderBy(desc(usageRecords.createdAt), desc(usageRecords.id))
       .limit(ADMIN_USAGE_EXPORT_MAX_ROWS + 1);
     const truncated = rows.length > ADMIN_USAGE_EXPORT_MAX_ROWS;
-    const items = rows.slice(0, ADMIN_USAGE_EXPORT_MAX_ROWS).map(toAdminRecord);
+    const page = rows.slice(0, ADMIN_USAGE_EXPORT_MAX_ROWS);
+    const labels = await this.labelsOf(page.map((r) => r.userId));
+    const items = page.map((row) => toAdminRecord(row, labels));
     await this.audit.record({
       module: 'model_access',
       action: 'usage.exported',

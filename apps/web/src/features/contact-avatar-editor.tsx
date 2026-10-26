@@ -7,10 +7,13 @@ import { AvatarEditor } from './avatar-editor.js';
 export function ContactAvatarEditor({
   characterId,
   titled = true,
+  prominentPicker = false,
 }: {
   characterId: string;
   /** 弹层标题已是「设置头像」时不再重复小标题。 */
   titled?: boolean;
+  /** 角色资料「设置头像」弹层：把整行选择头像放大居中；备注头像页保持原样。 */
+  prominentPicker?: boolean;
 }) {
   const { state, assertOwner, synchronize } = useChat();
   const contact = state.contacts.find((item) => item.characterId === characterId);
@@ -42,10 +45,10 @@ export function ContactAvatarEditor({
   return (
     <section className="panel stack" aria-label="设置角色头像">
       {titled && <h2>设置头像</h2>}
-      <p>上传的头像只有你自己能看到，其他人看到的角色头像不会改变</p>
       <fieldset disabled={pending}>
         <AvatarEditor
           purpose="contact_avatar"
+          prominentPicker={prominentPicker}
           onSaved={update}
           onPendingChange={setPending}
           onRestore={contact.customAvatarMediaId ? () => void restore() : undefined}

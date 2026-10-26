@@ -4,7 +4,9 @@
  * 与 generateText 相同的「闸门 → 冻结 → 调用 → 结算 / 解冻 → 用量记录」流程，计价单位：
  * 语音合成 ttsChars（tts_10k_chars）、语音识别 asrSeconds（asr_minute）、图片 images（image）、搜索 searchCalls（search_call）。
  * 3.22：语音合成 / 语音识别 / 图片生成按用户的场景配置（语音消息 / 语音识别 / 发照片，角色单独设置优先）解析，
- * 未配置返回 not_configured；联网搜索用后台指定的平台内部模型。角色音色绑定了具体语音模型且该模型可用时以音色为准。
+ * 未配置返回 not_configured；联网搜索用后台指定的平台内部模型。音色必须绑定用户实际选择的语音模型，不兼容时拒绝，不静默换模型。
+ * ADR-20261024：通话（实时识别 / 流式合成）在 `voice_call` 选到组合模型 `voice/cascade-call` 时改用
+ * `voice_call_pipeline` 里的识别 / 合成组件；组合模型自身不调用上游，组件停用或删除时整通电话不可用。
  *
  * 幂等：非流式调用复用 GenerationCache（同一用户 + 幂等键 24 小时内返回第一次的结果，不再扣费）。
  * 流式调用（实时识别、流式合成）每段 / 每次独立记账，幂等键由调用方保证唯一。
@@ -63,8 +65,10 @@ import { GenerationCache, requestHash, type GenerationRow } from './generation-c
 import { UpstreamService } from './upstreams.js';
 import { UsageRecorder } from './usage.js';
 import { unavailableReason } from '../domain/rules.js';
+import { voiceCallFailureError } from './voice-call-composite.js';
 import { BillingBoundsService, boundsEvidence, reserveErrorToGenerate } from './billing-bounds.js';
 import { pcmWavSeconds, roundAsr } from '../domain/media-billing-bounds.js';
+import { probeAudioSeconds } from '../infra/audio-duration.js';
 import { WebToolsStore } from './web-tools-store.js';
 import { privateSearchText, publicWebUrl } from '../domain/web-search.js';
 import { decisionQuestions } from '../infra/jev-adapter.js';
@@ -97,7 +101,14 @@ interface Charge {
 
 type CallOutcome<T> =
   | { ok: true; value: T; actual: UsageQuantities; actualKnown?: boolean }
-  | { ok: false; category: MediaFailure; actual?: UsageQuantities; localRateLimit?: boolean };
+  | {
+      ok: false;
+      category: MediaFailure;
+      actual?: UsageQuantities;
+      reportedUsage?: UsageQuantities;
+      localRateLimit?: boolean;
+      zeroCost?: boolean;
+    };
 
 type PendingMediaResult = {
   ok: true;
@@ -190,37 +201,55 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     return this.cached('tts', input, async () => {
       const voice = await this.assets.getVoice(input.voiceId);
       if (!voice || !voice.enabled) return { ok: false, error: 'bad_request' };
-      const model = await this.resolve('speech_synthesis', voice.modelKey, input);
+      const model = await this.resolve(
+        'speech_synthesis',
+        voice.modelKey,
+        input,
+        undefined,
+        voice.tags?.includes('legacy') === true,
+      );
       if (!model.ok) return model;
+      const providerVoice = await this.providerVoice(voice);
+      if (providerVoice === null) return { ok: false, error: 'bad_request' };
       const chars = this.ttsUnits(model.value, text);
       if (chars === null) return { ok: false, error: 'model_unavailable' };
-      return this.run(input, model.value, { ttsChars: chars }, async (target, adapter) => {
-        const result = await adapter.synthesize(target, {
-          text,
-          voice: voice.providerVoiceKey,
-          format: input.format === 'pcm16_24k' ? 'wav' : input.format,
-        });
-        if (!result.ok) return result;
-        let bytes = result.value.bytes;
-        let mimeType = result.value.mimeType;
-        if (mimeType === 'audio/L16') {
-          bytes = wavFromPcm(bytes, 24000);
-          mimeType = 'audio/wav';
-        }
-        const durationMs = Math.max(1, Math.min(300_000, result.value.durationMs));
-        const saved = await this.media.putObject({
-          ownerUserId: input.userId,
-          purpose: 'generated_voice',
-          bytes,
-          mimeType,
-          durationMs,
-        });
-        return {
-          ok: true,
-          value: { mediaId: saved.mediaId, durationMs },
-          actual: { ttsChars: chars },
-        };
-      });
+      return this.run(
+        input,
+        model.value,
+        { ttsChars: this.ttsEstimate(model.value, text, chars) },
+        async (target, adapter) => {
+          const result = await adapter.synthesize(target, {
+            text,
+            voice: providerVoice,
+            format: input.format === 'pcm16_24k' ? 'wav' : input.format,
+          });
+          if (!result.ok) return result;
+          let bytes = result.value.bytes;
+          let mimeType = result.value.mimeType;
+          if (mimeType === 'audio/L16') {
+            bytes = wavFromPcm(bytes, 24000);
+            mimeType = 'audio/wav';
+          }
+          const durationMs = Math.max(1, Math.min(300_000, result.value.durationMs));
+          const saved = await this.media
+            .putObject({
+              ownerUserId: input.userId,
+              purpose: 'generated_voice',
+              bytes,
+              mimeType,
+              durationMs,
+            })
+            .catch(() => null);
+          if (!saved)
+            return { ok: false, category: 'provider_error', reportedUsage: result.reportedUsage };
+          return {
+            ok: true,
+            value: { mediaId: saved.mediaId, durationMs },
+            actual: { ttsChars: result.reportedUsage?.ttsChars ?? chars },
+            actualKnown: result.reportedUsage?.ttsChars !== undefined,
+          };
+        },
+      );
     });
   }
 
@@ -238,7 +267,12 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         .getMedia(input.ownerUserId, input.mediaId)
         .catch(() => null);
       const file = await this.media.readBytes(input.mediaId);
-      const duration = pcmWavSeconds(file.bytes);
+      // 浏览器录音是 webm/mp4，旧版会把原文件直接交给识别；这里用容器真实时长做冻结估算，
+      // 不再因为缺少 WAV 头而拒绝识别（结算仍以供应商上报秒数为准）。
+      const duration =
+        pcmWavSeconds(file.bytes) ??
+        (await probeAudioSeconds(file.bytes)) ??
+        (info?.durationMs ? info.durationMs / 1000 : null);
       const profile = model.value.billingBounds.asr;
       if (!info || duration === null || !profile || duration > profile.maxSeconds)
         return { ok: false, error: 'model_unavailable' };
@@ -246,7 +280,18 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       return this.run(input, model.value, { asrSeconds: seconds }, async (target, adapter) => {
         const result = await adapter.transcribe(target, file);
         if (!result.ok) return result;
-        return { ok: true, value: { text: result.value.text }, actual: { asrSeconds: seconds } };
+        const measured = result.value.asrSeconds;
+        if (measured !== undefined && (!Number.isFinite(measured) || measured < 0))
+          return { ok: false, category: 'provider_error' };
+        return {
+          ok: true,
+          value: { text: result.value.text },
+          actual: {
+            asrSeconds:
+              measured === undefined ? seconds : roundAsr(measured, profile.billingStepSeconds),
+          },
+          actualKnown: measured !== undefined,
+        };
       });
     });
   }
@@ -531,7 +576,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     input: MediaCallBase & { sampleRate: 16000 },
   ): Promise<PortResult<RealtimeAsrSession, GenerateError>> {
     if (!(await this.precheck(input))) return { ok: false, error: 'bad_request' };
-    const model = await this.resolve('speech_recognition', null, input);
+    const model = await this.resolve('speech_recognition', null, input, 'asr');
     if (!model.ok) return model;
     const profile = model.value.billingBounds.asr!;
     const first = await this.reserve(
@@ -556,11 +601,24 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     if (!text || !(await this.precheck(input))) return { ok: false, error: 'bad_request' };
     const voice = await this.assets.getVoice(input.voiceId);
     if (!voice || !voice.enabled) return { ok: false, error: 'bad_request' };
-    const model = await this.resolve('speech_synthesis', voice.modelKey, input);
+    const model = await this.resolve(
+      'speech_synthesis',
+      voice.modelKey,
+      input,
+      'tts',
+      voice.tags?.includes('legacy') === true,
+    );
     if (!model.ok) return model;
+    const providerVoice = await this.providerVoice(voice);
+    if (providerVoice === null) return { ok: false, error: 'bad_request' };
     const chars = this.ttsUnits(model.value, text);
     if (chars === null) return { ok: false, error: 'model_unavailable' };
-    const charge = await this.reserve(input, model.value, { ttsChars: chars }, 0);
+    const charge = await this.reserve(
+      input,
+      model.value,
+      { ttsChars: this.ttsEstimate(model.value, text, chars) },
+      0,
+    );
     if (!charge.ok) return charge;
     if (!(await this.beginCharge(charge.value))) {
       await this.fail(charge.value, 'provider_error');
@@ -568,34 +626,35 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     }
     const controller = new AbortController();
     const started = await this.withTarget(model.value, (target, adapter) =>
-      adapter.synthesizeStream(target, { text, voice: voice.providerVoiceKey }, controller.signal),
+      adapter.synthesizeStream(target, { text, voice: providerVoice }, controller.signal),
     ).catch((): MediaAdapterResult<AsyncIterable<Uint8Array>> => ({
       ok: false,
       category: 'provider_error',
     }));
     if (!started.ok) {
-      await this.fail(charge.value, started.category);
+      await this.fail(
+        charge.value,
+        started.category,
+        started.zeroCost ? { ttsChars: 0 } : started.reportedUsage,
+      );
       return { ok: false, error: this.mapError(started.category) };
     }
     let settle!: (v: PortResult<MediaCallResult, GenerateError>) => void;
     const done = new Promise<PortResult<MediaCallResult, GenerateError>>((r) => (settle = r));
     let finishing: Promise<void> | null = null;
     let delivered = false;
+    const actualChars = started.reportedUsage?.ttsChars ?? chars;
+    const usageReported = started.reportedUsage?.ttsChars !== undefined;
     const finish = () =>
       (finishing ??= (async () => {
-        // 打断或未自然读完没有供应商实际用量，不能拿音频字节经验折算收费。
+        // Native whole-utterance synthesis may already have reported all billable units.
+        // Playback cancellation cannot erase those units or estimate them from delivered bytes.
         if (completed && !controller.signal.aborted && !delivered) {
-          await this.fail(charge.value, 'provider_error', { ttsChars: chars });
+          await this.fail(charge.value, 'provider_error', started.reportedUsage);
           settle({ ok: false, error: 'provider_unavailable' });
           return;
         }
-        settle(
-          await this.succeed(
-            charge.value,
-            { ttsChars: chars },
-            completed && !controller.signal.aborted,
-          ),
-        );
+        settle(await this.succeed(charge.value, { ttsChars: actualChars }, usageReported));
       })());
     const source = started.value;
     let completed = false;
@@ -664,6 +723,32 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
   }
 
   /** 可用于某场景的代表模型：推荐模型优先，否则任一启用且标注该场景的模型。 */
+  /** MiMo uses the stored reference bytes on each request, never a persistent clone id. */
+  private async providerVoice(
+    voice: NonNullable<Awaited<ReturnType<MediaAssetReadPort['getVoice']>>>,
+  ): Promise<string | null> {
+    if (!voice.providerVoiceKey.startsWith('mimo-reference:')) return voice.providerVoiceKey;
+    const sampleId = voice.providerVoiceKey.slice('mimo-reference:'.length);
+    if (
+      !Id.safeParse(sampleId).success ||
+      sampleId !== voice.sampleMediaId ||
+      !voice.modelKey?.startsWith('xiaomi/mimo-')
+    )
+      return null;
+    try {
+      const sample = await this.media.readBytes(sampleId);
+      if (
+        !['audio/mpeg', 'audio/wav'].includes(sample.mimeType) ||
+        sample.bytes.length === 0 ||
+        sample.bytes.length > 7 * 1024 * 1024
+      )
+        return null;
+      return `data:${sample.mimeType};base64,${Buffer.from(sample.bytes).toString('base64')}`;
+    } catch {
+      return null;
+    }
+  }
+
   private async anyScenarioModel(scenario: ModelScenario): Promise<ModelFacts | null> {
     const recommended = await this.catalog.recommendedModel(scenario);
     if (recommended) return recommended;
@@ -672,30 +757,55 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
   }
 
   /**
-   * 3.22：按场景配置解析媒体模型（同一处给执行与冻结用）。语音合成时角色音色绑定的模型可用就以音色为准
-   * （音色代号只在它自己的模型上有效），但用户必须已配置「语音消息」场景（未配置 = 不可用）。
+   * 按场景配置解析媒体模型（执行与计费共用）。音色代号仅在其登记的模型上有效；
+   * 与用户/角色实际选择不一致或缺少绑定时拒绝，绝不偷偷跨模型或跨供应商。
+   * `callComponent` 只由通话的实时识别 / 流式合成传入：`voice_call` 选到组合模型时改用
+   * `voice_call_pipeline` 的对应组件，组件不可用直接返回原因，不退回普通场景。
    */
   private async resolve(
     service: Service,
     preferredModelKey: string | null,
     base: MediaCallBase,
+    callComponent?: 'asr' | 'tts',
+    legacyVoice = false,
   ): Promise<PortResult<Resolved, GenerateError>> {
     let picked: ModelFacts | null;
     if (service === 'web_search') picked = await this.catalog.internalModel('web_search');
     else {
-      const scenario = SERVICE_SCENARIO[service];
-      picked =
-        (await this.scenarios?.pick(base.userId, scenario, base.characterId ?? null))?.facts ??
-        null;
-      if (!picked && base.purpose.startsWith('admin_'))
-        picked = await this.catalog.recommendedModel(scenario);
+      const plan =
+        callComponent && this.scenarios
+          ? await this.scenarios.voiceCallPlan(base.userId, base.characterId ?? null)
+          : null;
+      if (plan?.kind === 'unavailable')
+        return { ok: false, error: voiceCallFailureError(plan.failure) };
+      if (plan?.kind === 'composite' && callComponent) picked = plan.components[callComponent];
+      else {
+        const scenario = SERVICE_SCENARIO[service];
+        picked =
+          (await this.scenarios?.pick(base.userId, scenario, base.characterId ?? null))?.facts ??
+          null;
+        if (!picked && base.purpose.startsWith('admin_'))
+          picked = await this.catalog.recommendedModel(scenario);
+      }
+    }
+    // Migrated character voices carry their own supplier/model identity. Use exactly that
+    // registered model (and its billing rates), never send a Qwen key to MiMo or vice versa.
+    // Ordinary manually selected voices retain the strict scenario-matching behavior below.
+    if (service === 'speech_synthesis' && legacyVoice && preferredModelKey) {
+      const legacy = await this.catalog.fact(preferredModelKey);
+      if (
+        !legacy.entry?.capabilities.includes('voice_output') ||
+        !legacy.entry.scenarios.includes('voice_message')
+      )
+        return { ok: false, error: 'model_unavailable' };
+      picked = legacy;
     }
     if (!picked) return { ok: false, error: 'not_configured' };
-    let facts: ModelFacts = picked;
-    if (preferredModelKey && preferredModelKey !== picked.modelKey) {
-      const preferred = await this.catalog.fact(preferredModelKey);
-      if (unavailableReason(preferred.entry, preferred.upstreamStatus) === null) facts = preferred;
-    }
+    // A provider voice is scoped to its registered model. Never silently replace the user's
+    // scenario/character selection (including for calls), nor send its key to another provider.
+    if (service === 'speech_synthesis' && preferredModelKey !== picked.modelKey)
+      return { ok: false, error: 'model_unavailable' };
+    const facts: ModelFacts = picked;
     const reason = unavailableReason(facts.entry, facts.upstreamStatus);
     if (reason === 'model_removed' || !facts.entry)
       return { ok: false, error: 'model_unavailable' };
@@ -955,7 +1065,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
   async transcribePcm(
     model: Resolved,
     pcm: Uint8Array,
-  ): Promise<MediaAdapterResult<{ text: string }>> {
+  ): Promise<MediaAdapterResult<{ text: string; asrSeconds?: number }>> {
     const file = { bytes: wavFromPcm(pcm, 16000), mimeType: 'audio/wav' };
     return this.withTarget(model, (target, adapter) => adapter.transcribe(target, file));
   }
@@ -970,13 +1080,18 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     const charge = await this.reserve(base, model, estimate, 0);
     if (!charge.ok) return charge;
     const generation = this.activeGenerations.get(base);
-    if (generation)
+    if (generation) {
       await this.cache.attach(
         generation.id,
         charge.value.usageRecordId,
         charge.value.holdId,
         model.upstreamId,
       );
+      // 结算缓存恢复时必须与本次冻结一致；只写数据库会让内存里的行仍是 null，
+      // 导致真实媒体调用在供应商成功后被“媒体结算缓存关联不一致”错误拒绝。
+      generation.usageRecordId = charge.value.usageRecordId;
+      generation.holdId = charge.value.holdId;
+    }
     if (!(await this.beginCharge(charge.value))) {
       await this.fail(charge.value, 'provider_error');
       return { ok: false, error: 'model_unavailable' };
@@ -988,7 +1103,10 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       outcome = { ok: false, category: 'provider_error' };
     }
     if (!outcome.ok) {
-      await this.fail(charge.value, outcome.category, outcome.actual, !outcome.localRateLimit);
+      const actual = outcome.zeroCost
+        ? Object.fromEntries(Object.keys(estimate).map((unit) => [unit, 0]))
+        : (outcome.reportedUsage ?? outcome.actual);
+      await this.fail(charge.value, outcome.category, actual, !outcome.localRateLimit);
       return { ok: false, error: this.mapError(outcome.category) };
     }
     if (generation) {
@@ -1080,6 +1198,14 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     });
   }
 
+  private ttsEstimate(model: Resolved, text: string, units: number): number {
+    // Qwen Plus can count a Chinese character as more than one billable unit.
+    // UTF-8 length is a conservative input ceiling here, never the settled supplier quantity.
+    return /^qwen-audio-[\d.]+-tts/iu.test(model.upstreamModelId)
+      ? Math.max(units, Buffer.byteLength(text, 'utf8'))
+      : units;
+  }
+
   private ttsUnits(model: Resolved, text: string): number | null {
     const profile = model.billingBounds.tts;
     if (!profile || Buffer.byteLength(text, 'utf8') > profile.maxTextBytes) return null;
@@ -1156,6 +1282,7 @@ class RealtimeAsr implements RealtimeAsrSession {
   private readonly queue: Array<{ text: string; final: boolean }> = [];
   private wake: (() => void) | null = null;
   private ended = false;
+  private failed = false;
   private chargedMicros = 0;
   private lastUsageId: string;
   constructor(
@@ -1181,6 +1308,7 @@ class RealtimeAsr implements RealtimeAsrSession {
           await this.accept(data.slice(offset, offset + 3200));
       })
       .catch(() => {
+        this.failed = true;
         this.emit(null);
       });
   }
@@ -1191,7 +1319,10 @@ class RealtimeAsr implements RealtimeAsrSession {
         yield next;
         continue;
       }
-      if (this.ended) return;
+      if (this.ended) {
+        if (this.failed) throw new Error('ASR_SESSION_FAILED');
+        return;
+      }
       await new Promise<void>((resolve) => (this.wake = resolve));
     }
   }
@@ -1258,18 +1389,40 @@ class RealtimeAsr implements RealtimeAsrSession {
     this.lastUsageId = charge.usageRecordId;
     if (!(await this.gateway.beginCharge(charge))) {
       await this.gateway.cancelCharge(charge);
+      this.failed = true;
       this.emit(null);
       return;
     }
     const result = await this.gateway.transcribePcm(this.model, pcm).catch(() => null);
     if (!result?.ok) {
-      await this.gateway.fail(charge, result?.category ?? 'provider_error');
+      await this.gateway.fail(
+        charge,
+        result?.category ?? 'provider_error',
+        result && !result.ok && result.zeroCost ? { asrSeconds: 0 } : undefined,
+      );
+      this.failed = true;
       this.emit(null);
       return;
     }
-    const done = await this.gateway.succeed(charge, actual);
-    if (done.ok) this.chargedMicros += done.value.chargedMicros;
-    if (result.value.text.trim()) this.emit({ text: result.value.text.trim(), final: true });
+    const measured = result.value.asrSeconds;
+    const done = await this.gateway.succeed(
+      charge,
+      {
+        asrSeconds:
+          measured === undefined
+            ? actual.asrSeconds
+            : roundAsr(measured, profile.billingStepSeconds),
+      },
+      measured !== undefined,
+    );
+    if (!done.ok) {
+      this.failed = true;
+      this.emit(null);
+      return;
+    }
+    this.chargedMicros += done.value.chargedMicros;
+    if (!this.closed && result.value.text.trim())
+      this.emit({ text: result.value.text.trim(), final: true });
   }
   private async finish(): Promise<MediaCallResult> {
     this.closed = true;

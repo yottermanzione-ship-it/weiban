@@ -14,6 +14,7 @@ import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
 import { FieldHelp, FormSection, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime, formatPoints, formatYuan } from '../ui/format.js';
+import { UserIdentity } from './users/identity.js';
 
 type Settings = z.infer<typeof PostpaidSettings>;
 type SettingsValues = Omit<Settings, 'updatedAt'>;
@@ -30,10 +31,11 @@ export function PostpaidPanel() {
       title: '用户',
       dataIndex: 'username',
       render: (_, row) => (
-        <div className="cell-main">
-          <span className="cell-title">{row.username || '（已注销）'}</span>
-          <span className="cell-sub mono">{row.userId}</span>
-        </div>
+        <UserIdentity
+          userId={row.userId}
+          label={{ nickname: row.nickname, username: row.username || null }}
+          deleted={!row.username}
+        />
       ),
     },
     {

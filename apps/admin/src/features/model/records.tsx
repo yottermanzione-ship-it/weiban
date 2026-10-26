@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, DatePicker, Input, Select, Space, Tag } from 'antd';
+import { Alert, Button, DatePicker, Input, Select, Space, Tag, Typography } from 'antd';
 import { DownloadOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import {
@@ -15,12 +15,14 @@ import { DataTable, type ProColumns } from '../../ui/table.js';
 import { RecordDrawer } from '../../ui/drawer.js';
 import { StatusTag, useToast } from '../../ui/page.js';
 import { formatDateTime, formatInt, formatYuan, pointsOf } from '../../ui/format.js';
+import { UserIdentity, shortUserId, userDisplayName } from '../users/identity.js';
 import {
   ERROR_LABELS,
   PURPOSE_LABELS,
   fromLocalInput,
   modelLabel,
   rangeOf,
+  stripDeletedSuffix,
   toLocalInput,
 } from './shared.js';
 
@@ -91,7 +93,11 @@ export function RecordsTab({
     const u = upstreams.find((x) => x.upstreamId === id);
     return u ? (u.deletedAt ? `${u.name}（已删除）` : u.name) : '未知账号';
   };
-  const modelName = (key: string) => modelLabel(models, key);
+  /**
+   * 3.27：历史调用记录的模型键可能带 `#deleted:<随机>` 后缀或没有厂商前缀（契约已放宽，见 AdminModelKey）。
+   * 显示名去掉后缀；完整键留在副行 / 详情里供核对，不因为键不规范丢掉整行。
+   */
+  const modelName = (key: string) => stripDeletedSuffix(modelLabel(models, key));
 
   async function exportCsv() {
     setError('');
@@ -121,7 +127,8 @@ export function RecordsTab({
       const lines = r.items.map((x) =>
         [
           formatDateTime(x.createdAt),
-          x.userId,
+          // 导出仍以用户 ID 为准，同时带上昵称 / 登录名，人看得懂也能和账本对上。
+          `${userDisplayName(x.userId, { nickname: x.nickname, username: x.username })} (${x.userId})`,
           x.characterId ?? '',
           PURPOSE_LABELS[x.purpose] ?? x.purpose,
           x.modelKey,
@@ -169,18 +176,23 @@ export function RecordsTab({
     },
     {
       title: '模型',
-      width: 150,
+      width: 190,
       render: (_, r) => (
         <div className="cell-main">
-          <span>{modelName(r.modelKey)}</span>
-          <span className="cell-sub">{upstreamName(r.upstreamId)}</span>
+          {/* 3.27：显示名去掉 `#deleted:` 后缀；副行保留完整键 + 线路，方便和账本核对。 */}
+          <span className="cell-title">{modelName(r.modelKey)}</span>
+          <span className="cell-sub">
+            <span className="mono">{r.modelKey}</span> · {upstreamName(r.upstreamId)}
+          </span>
         </div>
       ),
     },
     {
       title: '用户',
-      width: 120,
-      render: (_, r) => <span className="mono cell-sub">{r.userId.slice(0, 10)}…</span>,
+      width: 140,
+      render: (_, r) => (
+        <UserIdentity userId={r.userId} label={{ nickname: r.nickname, username: r.username }} />
+      ),
     },
     {
       title: '输入 / 输出 token',
@@ -373,15 +385,32 @@ export function RecordsTab({
               <span>
                 {modelName(detail.modelKey)} · {upstreamName(detail.upstreamId)}
               </span>
+              {/* 3.27：详情保留完整模型键（显示名去掉了 `#deleted:` 后缀）。 */}
+              <span className="cell-sub mono">{detail.modelKey}</span>
             </div>
             <div>
               <span className="detail-label">实际模型名</span>
               <span className="mono">{detail.upstreamModelId ?? '—'}</span>
             </div>
             <div>
-              <span className="detail-label">用户 / 角色</span>
+              <span className="detail-label">用户</span>
+              <span>
+                {userDisplayName(detail.userId, {
+                  nickname: detail.nickname,
+                  username: detail.username,
+                })}{' '}
+                <Typography.Text
+                  type="secondary"
+                  copyable={{ text: detail.userId }}
+                  className="mono"
+                >
+                  {shortUserId(detail.userId)}
+                </Typography.Text>
+              </span>
+            </div>
+            <div>
+              <span className="detail-label">角色</span>
               <span className="mono">
-                {detail.userId.slice(0, 12)}… /{' '}
                 {detail.characterId ? `${detail.characterId.slice(0, 8)}…` : '—'}
               </span>
             </div>

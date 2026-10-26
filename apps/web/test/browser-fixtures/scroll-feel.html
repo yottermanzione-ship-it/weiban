@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>滚动手感夹具（会话列表 / 可变行高消息）</title>
+    <style>
+      /* 夹具自己的容器：让虚拟列表有确定高度，只补布局，不覆盖应用样式。 */
+      .chat-fixture {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        background: var(--wb-color-bg-page, #ededed);
+      }
+      .fixture-row {
+        display: flex;
+        padding: 6px 8px;
+      }
+      .fixture-bubble {
+        max-width: 72%;
+        padding: 8px 10px;
+        border-radius: 6px;
+        background: var(--wb-color-bg-surface, #fff);
+        font-size: 15px;
+        line-height: 1.35;
+        word-break: break-word;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./scroll-feel.tsx"></script>
+  </body>
+</html>

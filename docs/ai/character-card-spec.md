@@ -136,6 +136,7 @@
 | `summary` | string | 是 | 人设总述（身份 + 经历概要 + 当下状态），200–600 字 | 见示例 | P | ● |
 | `background` | string | 否 | 更细的经历；只写公开资料或作品设定 | — | P | |
 | `personality` | string | 是 | 性格（写具体行为而非堆形容词：「被夸会先否认再偷偷开心」） | — | P | ● |
+| `emotionalTone` | string | 否 | 情绪基调（旧 SoulSpec `soul.emotional_tone`）：长期底色，如「温暖克制，低落时不外放」 | — | P | ● |
 | `values` | string | 否 | 价值观与态度 | 「把粉丝当朋友，不爱说场面话」 | P | ● |
 | `likes` / `dislikes` | string[] | 否 | 喜好与厌恶 | `["火锅","猫"]` | P | |
 | `personaTags` | enum[] | 是 | 人设标签，**受控词表**（驱动人设小巧思与语气差异，CHAT-07/08、SIM-08）：`tsundere` 傲娇、`aloof` 高冷、`shy` 害羞、`gentle` 温柔、`sharpTongue` 毒舌、`cheerful` 元气、`calm` 沉稳、`playful` 爱玩闹、`airhead` 迷糊、`mature` 成熟；1–3 个 | `["cheerful","playful"]` | P、S | ● |
@@ -205,7 +206,7 @@ MEM-06「聊到相关话题时调出」。**公开动态（SIM-03）不在这里
 | `exampleMode` | `pinned` / `situational` / `off` | 示例对话保留策略，默认 `pinned` | 常驻开头；`situational` 另在结尾按情境补 1 条 |
 | `exampleCount` | int 0～12 | 常驻示例条数，默认 6 | — |
 
-三段文字运行时一律包成「角色作者的写作要求」，后面紧跟「与平台规则冲突时以平台规则为准」，输出仍过平台守卫；它们只能调风格，不能替换平台守则（见 9.2）。
+三段文字运行时作为「角色作者的写作要求」原样拼入，不再追加任何平台规则护栏；安全边界由 `policy` 与模型层拦截，输出仍过平台守卫。它们只能调风格，不能替换主提示。
 
 ### 5.5 `simulation` 推演素材（SIM-01、SIM-02）
 
@@ -228,6 +229,7 @@ MEM-06「聊到相关话题时调出」。**公开动态（SIM-03）不在这里
 | `groupStyle` | string | 否 | 群聊风格 | 「爱接梗」 | P | ● |
 | `moments.frequencyPerWeek` | [int, int] | 是 | 朋友圈周频率区间（受 P-16） | `[2, 4]` | S | |
 | `moments.tone` | string | 是 | 文风 | 「短句 + emoji，常对粉丝名说话」 | P | ● |
+| `moments.topics` | string[] | 否 | 常写主题（旧 `moment_profile_json.topics`），最多 20 条 | 「画画」「海」 | P | |
 | `moments.imageSubjects` | string[] | 否 | 常配图内容（真人只能是景物、食物、物品） | 「火锅」「天空」 | P、S | |
 | `moments.commentStyle` | string | 否 | 评论别人朋友圈的风格 | 「爱回哈哈哈」 | P | ● |
 | `stickerPacks` | string[] | 否 | 偏好的表情包子集（表情包库 ID，ADM-04） | `["pack_cute_cat"]` | S | |
@@ -394,8 +396,8 @@ AI 需要：`{updateId, characterId, content, dateFrom, dateTo, sourceUrls[], st
 
 | 酒馆 | 微伴 | 为什么 |
 |---|---|---|
-| `system_prompt`（卡片可替换全局系统提示词） | 1.1 改为 `prompting.systemNote`：**追加**在平台守则与角色资料之后，不能替换平台守则 | 卡片能改系统提示词就能绕过硬性边界；追加 + 包装 + 输出守卫后只剩风格作用 |
-| `post_history_instructions`（常被用作「越狱」指令） | 1.1 改为 `prompting.postHistoryInstructions`：放在请求最末尾，同样包装并声明平台规则优先 | 总经理 2026-10-14 要求学习酒馆的人设保持手段；包装后保留其「离回答最近、最管用」的长处 |
+| `system_prompt`（卡片可替换全局系统提示词） | 1.1 改为 `prompting.systemNote`：**追加**在角色资料之后，不能替换主提示 | 卡片能改系统提示词就能绕过硬性边界；追加 + 输出守卫后只剩风格作用 |
+| `post_history_instructions`（常被用作「越狱」指令） | 1.1 改为 `prompting.postHistoryInstructions`：放在请求最末尾，同样只调风格 | 总经理 2026-10-14 要求学习酒馆的人设保持手段；保留其「离回答最近、最管用」的长处 |
 | `scenario`（剧本场景） | 降级为 `persona.worldNote`，只写世界观 | 微伴的场景永远是「微信里聊天」 |
 | 世界书的插入位置、深度、概率、粘滞等参数 | 删除，由运行时统一决定；1.1 起保留扫描深度、预算、递归开关三项可选设置 | 管理员不需要学这些；统一组装更可控、可测试、缓存友好 |
 | `extensions.depth_prompt`（角色笔记） | 1.1 新增 `prompting.characterNote` | 固定深度的短提示，长对话里防人设走样 |
@@ -420,7 +422,7 @@ AI 需要：`{updateId, characterId, content, dateFrom, dateTo, sourceUrls[], st
 | `first_mes`、`alternate_greetings` | 基础信息 `fallbackGreetings` | 直接（超过 200 字的截断并提示） |
 | `group_only_greetings`（V3） | 丢弃 | 微伴群聊没有开场白概念 |
 | `mes_example` | `examples` | 按 `<START>` 分段，`{{user}}:` / `{{char}}:` 拆成轮次，场景默认 `daily` |
-| `system_prompt`、`post_history_instructions`、`extensions.depth_prompt` | 1.1 起映射到 `prompting.systemNote` / `postHistoryInstructions` / `characterNote`（原文同时存 `admin.extensions.stRaw`） | 运行时包装、平台规则优先；导入界面提示「这些只影响说话风格」（导入器尚未实现，按此映射） |
+| `system_prompt`、`post_history_instructions`、`extensions.depth_prompt` | 1.1 起映射到 `prompting.systemNote` / `postHistoryInstructions` / `characterNote`（原文同时存 `admin.extensions.stRaw`） | 运行时原样拼入、只调风格；安全边界由 `policy` 与模型层执行；导入界面提示「这些只影响说话风格」（导入器尚未实现，按此映射） |
 | `character_book.entries` | `knowledge.entries` | 取 `keys`、`secondary_keys`、`selective`、`content`、`constant`、`priority`（无则用 `insertion_order`）；`enabled = false` 的跳过；位置、深度、V3 装饰器丢弃；可信度 `userSource` |
 | `tags` | 基础信息 `tags`；能对上受控词表的（如「傲娇」「tsundere」）同时填入 `persona.personaTags` | 用户可调整 |
 | `creator_notes` | `admin.creatorNotes` | 仍然不进提示词 |
@@ -783,4 +785,5 @@ AI 需要：`{updateId, characterId, content, dateFrom, dateTo, sourceUrls[], st
 | 1.0 | 2026-10-04 | 首版；按架构契约（`characters.ts`、`character-card.ts`）将分类与基础信息移出卡片，字段统一 camelCase | ai-lead |
 | 1.0.1 | 2026-10-04 | T-013：字段结构不变。更新「真人」定义说明（3.1）、3.2 第 3、4 条状态、3.4 形象图与无审查模型两行、`fallbackGreetings` 触发条件（去掉「未配置模型」）、示例说明（林夏予为假设分类；成人模式样本移至 `samples/`） | ai-lead |
 | 1.0.2 | 2026-10-05 | T-022：字段结构不变。按契约 1.1 更新 3.2 第 3 条（`classical_art_only` 已完成）与 3.4 历史人物形象一格（自定义历史人物按 `forbidden`）；`safetyStyle.careFallbackText` 同时用于没钱 / 模型故障时的安全兜底消息（`runtime-overview.md` 9.1.2） | ai-lead |
-| 1.1 | 2026-10-14 | 聊天链路改造：新增 5.4.1 `prompting`（系统补充、后置指令、角色笔记、示例保留策略）与世界书可选设置；9.2、9.3 对应修改（原「删除 system_prompt / post_history」改为包装后追加）。依据 `docs/refactor/09-chat-pipeline.md` 第 7 节 | ai-lead |
+| 1.1 | 2026-10-14 | 聊天链路改造：新增 5.4.1 `prompting`（系统补充、后置指令、角色笔记、示例保留策略）与世界书可选设置；9.2、9.3 对应修改（原「删除 system_prompt / post_history」改为追加）。依据 `docs/refactor/09-chat-pipeline.md` 第 7 节 | ai-lead |
+| 1.2 | 2026-10-24 | 契约 3.39：`persona` 新增可选 `emotionalTone`（旧 `soul.emotional_tone`），`social.moments` 新增可选 `topics`（旧 `moment_profile_json.topics`）；删除提示词里的作者护栏（`AUTHOR_GUARD`），安全边界由 `policy` 与模型层执行。仅新增可选字段，不新增接口 | Codex |

@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 3.34. Regenerate: pnpm android:generate
+// Contract 4.2. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "3.34"
+const val CONTRACT_VERSION: String = "4.2"
 
 @Serializable
 data class AccountAlias(
@@ -195,7 +195,7 @@ data class AdminAnnouncement(
 
 @Serializable
 data class AdminCatalogEntry(
-    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("modelKey") val `modelKey`: AdminModelKey,
     @SerialName("displayName") val `displayName`: String,
     @SerialName("vendorName") val `vendorName`: String,
     @SerialName("upstreamId") val `upstreamId`: Id,
@@ -216,7 +216,7 @@ data class AdminCatalogEntry(
 
 @Serializable
 data class AdminCatalogEntryWrite(
-    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("modelKey") val `modelKey`: CanonicalModelKey,
     @SerialName("displayName") val `displayName`: String,
     @SerialName("vendorName") val `vendorName`: String,
     @SerialName("upstreamId") val `upstreamId`: Id,
@@ -235,7 +235,7 @@ data class AdminCatalogEntryWrite(
 
 @Serializable
 data class AdminCatalogEntryWriteInput(
-    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("modelKey") val `modelKey`: CanonicalModelKey,
     @SerialName("displayName") val `displayName`: String,
     @SerialName("vendorName") val `vendorName`: String,
     @SerialName("upstreamId") val `upstreamId`: Id,
@@ -271,6 +271,8 @@ data class AdminCharacter(
     @SerialName("card") val `card`: DraftCharacterCard,
     @SerialName("personaVersion") val `personaVersion`: Long,
     @SerialName("publishChecks") val `publishChecks`: AdminCharacterPublishChecks,
+    @SerialName("format") val `format`: CharacterCardFormat? = null,
+    @SerialName("revision") val `revision`: Long? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
 )
 
@@ -283,6 +285,29 @@ data class AdminCharacterEligibility(
     @SerialName("override") val `override`: CharacterEligibilityFacts?,
     @SerialName("effective") val `effective`: CharacterClassification,
     @SerialName("history") val `history`: List<CharacterEligibilityChange>,
+)
+
+@Serializable
+data class AdminCharacterPurgeCounts(
+    @SerialName("contacts") val `contacts`: Long,
+    @SerialName("conversations") val `conversations`: Long,
+    @SerialName("messages") val `messages`: Long,
+    @SerialName("moments") val `moments`: Long,
+)
+
+@Serializable
+data class AdminCharacterPurgeImpact(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("status") val `status`: CharacterPublishStatus,
+    @SerialName("counts") val `counts`: AdminCharacterPurgeCounts,
+)
+
+@Serializable
+data class AdminCharacterPurgeResult(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("purgedAt") val `purgedAt`: Timestamp,
+    @SerialName("counts") val `counts`: AdminCharacterPurgeCounts,
 )
 
 @Serializable
@@ -389,11 +414,151 @@ data class AdminLedgerEntry(
     @SerialName("safetyOverdraft") val `safetyOverdraft`: Boolean,
 )
 
+@Serializable
+data class AdminLegacyCharacterDetail(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("status") val `status`: CharacterPublishStatus,
+    @SerialName("revision") val `revision`: Long,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("name") val `name`: String,
+    @SerialName("avatar") val `avatar`: CharacterAvatar,
+    @SerialName("fields") val `fields`: AdminLegacyFields,
+    @SerialName("preserved") val `preserved`: Map<String, JsonElement>,
+    @SerialName("lorebook") val `lorebook`: List<AdminLegacyLorebookEntry>,
+    @SerialName("examples") val `examples`: List<AdminLegacyDialogueExample>,
+    @SerialName("history") val `history`: List<AdminLegacyRevision>,
+)
+
+@Serializable
+data class AdminLegacyCharacterPatch(
+    @SerialName("expectedRevision") val `expectedRevision`: Long,
+    @SerialName("fields") val `fields`: AdminLegacyCharacterPatchFields? = null,
+    @SerialName("clear") val `clear`: List<AdminLegacyClearableField>? = null,
+    @SerialName("lorebook") val `lorebook`: AdminLegacyLorebookPatch? = null,
+    @SerialName("examples") val `examples`: AdminLegacyExamplesPatch? = null,
+    @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+    @SerialName("note") val `note`: String? = null,
+)
+
+@Serializable
+data class AdminLegacyCharacterPatchInput(
+    @SerialName("expectedRevision") val `expectedRevision`: Long,
+    @SerialName("fields") val `fields`: AdminLegacyCharacterPatchInputFields? = null,
+    @SerialName("clear") val `clear`: List<AdminLegacyClearableField>? = null,
+    @SerialName("lorebook") val `lorebook`: AdminLegacyLorebookPatchInput? = null,
+    @SerialName("examples") val `examples`: AdminLegacyExamplesPatchInput? = null,
+    @SerialName("avatarMediaId") val `avatarMediaId`: Id? = null,
+    @SerialName("note") val `note`: String? = null,
+)
+
+typealias AdminLegacyClearableField = String
+
+@Serializable
+data class AdminLegacyDialogueExample(
+    @SerialName("id") val `id`: String,
+    @SerialName("sortOrder") val `sortOrder`: Long,
+    @SerialName("payload") val `payload`: Map<String, JsonElement>,
+)
+
+@Serializable
+data class AdminLegacyExamplesPatch(
+    @SerialName("upsert") val `upsert`: List<AdminLegacyExamplesPatchUpsertItem>? = null,
+    @SerialName("delete") val `delete`: List<String>? = null,
+)
+
+@Serializable
+data class AdminLegacyExamplesPatchInput(
+    @SerialName("upsert") val `upsert`: List<AdminLegacyExamplesPatchInputUpsertItem>? = null,
+    @SerialName("delete") val `delete`: List<String>? = null,
+)
+
+@Serializable
+data class AdminLegacyFields(
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("nickname") val `nickname`: String,
+    @SerialName("aliases") val `aliases`: List<String>,
+    @SerialName("signature") val `signature`: String,
+    @SerialName("corePersona") val `corePersona`: String,
+    @SerialName("speakingStyle") val `speakingStyle`: String,
+    @SerialName("relationshipMode") val `relationshipMode`: String,
+    @SerialName("momentProfile") val `momentProfile`: SharedSchema1?,
+    @SerialName("groupChat") val `groupChat`: SharedSchema2?,
+    @SerialName("openingMessages") val `openingMessages`: List<String>,
+)
+
+@Serializable
+data class AdminLegacyLorebookEntry(
+    @SerialName("id") val `id`: String,
+    @SerialName("payload") val `payload`: Map<String, JsonElement>,
+)
+
+@Serializable
+data class AdminLegacyLorebookPatch(
+    @SerialName("upsert") val `upsert`: List<AdminLegacyLorebookPatchUpsertItem>? = null,
+    @SerialName("delete") val `delete`: List<String>? = null,
+)
+
+@Serializable
+data class AdminLegacyLorebookPatchInput(
+    @SerialName("upsert") val `upsert`: List<AdminLegacyLorebookPatchInputUpsertItem>? = null,
+    @SerialName("delete") val `delete`: List<String>? = null,
+)
+
+@Serializable
+data class AdminLegacyRestoreRequest(
+    @SerialName("revision") val `revision`: Long,
+    @SerialName("expectedRevision") val `expectedRevision`: Long,
+    @EncodeDefault
+    @SerialName("confirm") val `confirm`: Boolean = true,
+    @SerialName("note") val `note`: String? = null,
+)
+
+@Serializable
+data class AdminLegacyRestoreRequestInput(
+    @SerialName("revision") val `revision`: Long,
+    @SerialName("expectedRevision") val `expectedRevision`: Long,
+    @EncodeDefault
+    @SerialName("confirm") val `confirm`: Boolean = true,
+    @SerialName("note") val `note`: String? = null,
+)
+
+@Serializable
+data class AdminLegacyRevision(
+    @SerialName("revision") val `revision`: Long,
+    @SerialName("at") val `at`: Timestamp,
+    @SerialName("source") val `source`: String,
+    @SerialName("operatorUserId") val `operatorUserId`: Id?,
+    @SerialName("operatorName") val `operatorName`: String,
+    @SerialName("name") val `name`: String,
+    @SerialName("aliases") val `aliases`: List<String>,
+    @SerialName("signature") val `signature`: String,
+    @SerialName("changedFields") val `changedFields`: List<String>,
+    @SerialName("note") val `note`: String?,
+)
+
+@Serializable
+data class AdminLegacySnapshot(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("revision") val `revision`: Long,
+    @SerialName("at") val `at`: Timestamp,
+    @SerialName("source") val `source`: String,
+    @SerialName("operatorUserId") val `operatorUserId`: Id?,
+    @SerialName("operatorName") val `operatorName`: String,
+    @SerialName("note") val `note`: String?,
+    @SerialName("name") val `name`: String,
+    @SerialName("aliases") val `aliases`: List<String>,
+    @SerialName("signature") val `signature`: String,
+    @SerialName("fields") val `fields`: AdminLegacyFields,
+    @SerialName("avatar") val `avatar`: AdminLegacySnapshotAvatar,
+    @SerialName("lorebook") val `lorebook`: List<AdminLegacyLorebookEntry>,
+    @SerialName("examples") val `examples`: List<AdminLegacyDialogueExample>,
+)
+
 typealias AdminMediaPurpose = String
 
 @Serializable
 data class AdminModel(
-    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("modelKey") val `modelKey`: AdminModelKey,
     @SerialName("displayName") val `displayName`: String,
     @SerialName("vendorName") val `vendorName`: String,
     @SerialName("upstreamId") val `upstreamId`: Id,
@@ -410,6 +575,7 @@ data class AdminModel(
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
     @SerialName("deletedAt") val `deletedAt`: Timestamp? = null,
+    @SerialName("serviceRates") val `serviceRates`: List<ModelServiceRate>? = null,
     @SerialName("rates") val `rates`: ModelRates?,
     @SerialName("costRates") val `costRates`: ModelRates?,
     @SerialName("hasTimeBands") val `hasTimeBands`: Boolean,
@@ -424,9 +590,11 @@ data class AdminModel(
     @SerialName("usageMissing") val `usageMissing`: List<AdminModelUsageMissingItem>? = null,
 )
 
+typealias AdminModelKey = JsonElement
+
 @Serializable
 data class AdminModelWrite(
-    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("modelKey") val `modelKey`: CanonicalModelKey,
     @SerialName("displayName") val `displayName`: String,
     @SerialName("vendorName") val `vendorName`: String,
     @SerialName("upstreamId") val `upstreamId`: Id,
@@ -441,6 +609,7 @@ data class AdminModelWrite(
     @SerialName("scenarios") val `scenarios`: List<ModelScenario>? = null,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
+    @SerialName("serviceRates") val `serviceRates`: List<ModelServiceRateWrite>? = null,
     @SerialName("rates") val `rates`: ModelRates?,
     @SerialName("costRates") val `costRates`: ModelRates? = null,
     @SerialName("routes") val `routes`: List<ModelRoute>? = null,
@@ -450,7 +619,7 @@ data class AdminModelWrite(
 
 @Serializable
 data class AdminModelWriteInput(
-    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("modelKey") val `modelKey`: CanonicalModelKey,
     @SerialName("displayName") val `displayName`: String,
     @SerialName("vendorName") val `vendorName`: String,
     @SerialName("upstreamId") val `upstreamId`: Id,
@@ -465,6 +634,7 @@ data class AdminModelWriteInput(
     @SerialName("scenarios") val `scenarios`: List<ModelScenario>? = null,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBoundsInput? = null,
+    @SerialName("serviceRates") val `serviceRates`: List<ModelServiceRateWrite>? = null,
     @SerialName("rates") val `rates`: ModelRatesInput?,
     @SerialName("costRates") val `costRates`: ModelRatesInput? = null,
     @SerialName("routes") val `routes`: List<ModelRouteInput>? = null,
@@ -486,6 +656,8 @@ data class AdminPlazaOfficialComment(
 data class AdminPlazaReport(
     @SerialName("reportId") val `reportId`: Id,
     @SerialName("reporterUserId") val `reporterUserId`: Id,
+    @SerialName("nickname") val `nickname`: String?,
+    @SerialName("username") val `username`: String?,
     @SerialName("target") val `target`: AdminPlazaReportTarget,
     @SerialName("reason") val `reason`: String,
     @SerialName("note") val `note`: String?,
@@ -613,6 +785,7 @@ data class AdminRoleRequest(
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
     @SerialName("userId") val `userId`: Id,
     @SerialName("username") val `username`: String?,
+    @SerialName("nickname") val `nickname`: String?,
     @SerialName("handledBy") val `handledBy`: Id?,
     @SerialName("history") val `history`: List<AdminRoleRequestHistoryItem>,
 )
@@ -701,6 +874,7 @@ data class AdminSupportTicket(
     @SerialName("resolvedAt") val `resolvedAt`: Timestamp?,
     @SerialName("userId") val `userId`: Id,
     @SerialName("username") val `username`: String?,
+    @SerialName("nickname") val `nickname`: String?,
     @SerialName("handledBy") val `handledBy`: Id?,
 )
 
@@ -775,11 +949,13 @@ data class AdminUsageRecord(
     @SerialName("usageRecordId") val `usageRecordId`: Id,
     @SerialName("createdAt") val `createdAt`: Timestamp,
     @SerialName("userId") val `userId`: Id,
+    @SerialName("nickname") val `nickname`: String?,
+    @SerialName("username") val `username`: String?,
     @SerialName("characterId") val `characterId`: Id?,
     @SerialName("conversationKind") val `conversationKind`: String?,
     @SerialName("purpose") val `purpose`: String,
     @SerialName("billingOwner") val `billingOwner`: BillingOwner,
-    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("modelKey") val `modelKey`: AdminModelKey,
     @SerialName("upstreamId") val `upstreamId`: Id,
     @SerialName("inputTokens") val `inputTokens`: Long,
     @SerialName("cachedInputTokens") val `cachedInputTokens`: Long,
@@ -807,6 +983,7 @@ data class AdminUsageSummary(
     @SerialName("rows") val `rows`: List<AdminUsageSummaryRow>,
     @SerialName("totals") val `totals`: AdminUsageTotals,
     @SerialName("truncated") val `truncated`: Boolean,
+    @SerialName("userLabels") val `userLabels`: Map<String, AdminUserLabel>,
 )
 
 @Serializable
@@ -875,6 +1052,12 @@ data class AdminUserBan(
     @SerialName("bannedAt") val `bannedAt`: Timestamp,
     @SerialName("reason") val `reason`: String,
     @SerialName("operatorUserId") val `operatorUserId`: Id?,
+)
+
+@Serializable
+data class AdminUserLabel(
+    @SerialName("nickname") val `nickname`: String?,
+    @SerialName("username") val `username`: String?,
 )
 
 @Serializable
@@ -1067,6 +1250,19 @@ data class AnnouncementWrite(
 )
 
 @Serializable
+data class AnnualRecap(
+    @SerialName("recapId") val `recapId`: Id,
+    @SerialName("year") val `year`: Long,
+    @SerialName("generatedAt") val `generatedAt`: Timestamp,
+    @SerialName("windowStart") val `windowStart`: Timestamp,
+    @SerialName("windowEnd") val `windowEnd`: Timestamp,
+    @SerialName("cutoffNote") val `cutoffNote`: String,
+    @SerialName("lines") val `lines`: List<String>,
+    @SerialName("caveat") val `caveat`: String?,
+    @SerialName("stats") val `stats`: RecapStats,
+)
+
+@Serializable
 data class ApiError(
     @SerialName("error") val `error`: ApiErrorError,
 )
@@ -1255,6 +1451,7 @@ data class BillingDebtSummary(
 data class BillingDebtor(
     @SerialName("userId") val `userId`: Id,
     @SerialName("username") val `username`: String,
+    @SerialName("nickname") val `nickname`: String?,
     @SerialName("balanceMicros") val `balanceMicros`: MoneyMicros,
     @SerialName("balancePoints") val `balancePoints`: Points,
     @SerialName("debtMicros") val `debtMicros`: PositiveMoneyMicros,
@@ -1492,6 +1689,8 @@ data class CallStreamTicket(
 
 typealias CallUnavailableReason = String
 
+typealias CanonicalModelKey = String
+
 @Serializable
 data class CardAdmin(
     @SerialName("creatorNotes") val `creatorNotes`: String? = null,
@@ -1570,6 +1769,7 @@ data class CardPersona(
     @SerialName("background") val `background`: String? = null,
     @SerialName("personality") val `personality`: String,
     @SerialName("values") val `values`: String? = null,
+    @SerialName("emotionalTone") val `emotionalTone`: String? = null,
     @SerialName("likes") val `likes`: List<String>? = null,
     @SerialName("dislikes") val `dislikes`: List<String>? = null,
     @SerialName("personaTags") val `personaTags`: List<PersonaTag>,
@@ -1718,8 +1918,84 @@ data class CardTemplateWriteInput(
     @SerialName("enabled") val `enabled`: Boolean,
 )
 
+typealias ChannelBindingStatus = String
+
+@Serializable
+data class ChannelCharacter(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("name") val `name`: String,
+)
+
+@Serializable
+data class ChannelCharacterRequest(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class ChannelCharacterRequestInput(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class ChannelEndpointsListResponse(
+    @SerialName("items") val `items`: List<ChannelState>,
+    @SerialName("characters") val `characters`: List<ChannelCharacter>,
+)
+
+@Serializable
+data class ChannelEndpointsSetCharacterParams(
+    @SerialName("channel") val `channel`: ChannelId,
+)
+
+@Serializable
+data class ChannelEndpointsWechatQrStatusParams(
+    @SerialName("attemptId") val `attemptId`: Id,
+)
+
+typealias ChannelId = String
+
+typealias ChannelIntegrationStatus = String
+
+@Serializable
+data class ChannelState(
+    @SerialName("channel") val `channel`: String,
+    @SerialName("name") val `name`: String,
+    @SerialName("description") val `description`: String,
+    @SerialName("status") val `status`: String,
+    @SerialName("integration") val `integration`: String,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("characterName") val `characterName`: String?,
+    @SerialName("accountName") val `accountName`: String?,
+    @SerialName("accountMasked") val `accountMasked`: String?,
+    @SerialName("boundAt") val `boundAt`: Timestamp?,
+    @SerialName("lastEventAt") val `lastEventAt`: Timestamp?,
+    @SerialName("lastError") val `lastError`: String?,
+    @SerialName("pendingExpiresAt") val `pendingExpiresAt`: Timestamp?,
+)
+
 @Serializable
 data class CharacterAdminEndpointsGetEligibilityParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class CharacterAdminEndpointsLegacyDetailParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class CharacterAdminEndpointsLegacyRestoreParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class CharacterAdminEndpointsLegacyRevisionParams(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("revision") val `revision`: Long,
+)
+
+@Serializable
+data class CharacterAdminEndpointsLegacyUpdateParams(
     @SerialName("characterId") val `characterId`: Id,
 )
 
@@ -1736,6 +2012,22 @@ data class CharacterAdminEndpointsListResponse(
 
 @Serializable
 data class CharacterAdminEndpointsPublishParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class CharacterAdminEndpointsPurgeParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class CharacterAdminEndpointsPurgeQuery(
+    @EncodeDefault
+    @SerialName("purge") val `purge`: String = "true",
+)
+
+@Serializable
+data class CharacterAdminEndpointsPurgeImpactParams(
     @SerialName("characterId") val `characterId`: Id,
 )
 
@@ -1786,6 +2078,8 @@ data class CharacterCard(
     @SerialName("cardSchemaVersion") val `cardSchemaVersion`: Long = 1,
     @SerialName("data") val `data`: WeibanCardData,
 )
+
+typealias CharacterCardFormat = String
 
 @Serializable
 data class CharacterCategory(
@@ -2103,14 +2397,6 @@ data class ChatSearchEndpointsSearchConversationResponse(
 )
 
 @Serializable
-data class ChatWindowLimits(
-    @SerialName("keepTurns") val `keepTurns`: Long,
-    @SerialName("triggerTurns") val `triggerTurns`: Long,
-    @SerialName("maxTurns") val `maxTurns`: Long,
-    @SerialName("triggerChars") val `triggerChars`: Long,
-)
-
-@Serializable
 data class ClientAuthFrame(
     @EncodeDefault
     @SerialName("v") val `v`: Long = 1,
@@ -2198,7 +2484,7 @@ data class ClientFullSyncSnapshot(
     @SerialName("conversations") val `conversations`: List<Conversation>,
     @SerialName("messages") val `messages`: List<Message>,
     @SerialName("contacts") val `contacts`: List<Contact>,
-    @SerialName("settings") val `settings`: Map<String, SharedSchema1>,
+    @SerialName("settings") val `settings`: Map<String, SharedSchema3>,
     @SerialName("coverages") val `coverages`: List<ClientFullSyncSnapshotCoveragesItem>,
 )
 
@@ -2686,7 +2972,7 @@ data class ClientSyncState(
     @SerialName("excluded") val `excluded`: List<ClientSyncStateExcludedItem>,
     @SerialName("scannedThrough") val `scannedThrough`: Map<String, Long>,
     @SerialName("pendingUpdates") val `pendingUpdates`: List<UserUpdate>,
-    @SerialName("settings") val `settings`: Map<String, SharedSchema2>,
+    @SerialName("settings") val `settings`: Map<String, SharedSchema4>,
 )
 
 @Serializable
@@ -2719,7 +3005,6 @@ data class CompanionEndpointsGetForCharacterResponse(
     @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
     @SerialName("voiceId") val `voiceId`: Id? = null,
-    @SerialName("longContext") val `longContext`: Boolean? = null,
 )
 
 @Serializable
@@ -2749,7 +3034,6 @@ data class CompanionSettings(
     @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
     @SerialName("voiceId") val `voiceId`: Id? = null,
-    @SerialName("longContext") val `longContext`: Boolean? = null,
 )
 
 typealias ComplaintReason = String
@@ -6283,10 +6567,12 @@ data class LockedCard(
     @SerialName("condition") val `condition`: String,
 )
 
+typealias LoginPassword = String
+
 @Serializable
 data class LoginRequest(
     @SerialName("username") val `username`: Username,
-    @SerialName("password") val `password`: Password,
+    @SerialName("password") val `password`: LoginPassword,
     @SerialName("device") val `device`: DeviceInfo,
     @SerialName("kind") val `kind`: SessionKind,
 )
@@ -6294,7 +6580,7 @@ data class LoginRequest(
 @Serializable
 data class LoginRequestInput(
     @SerialName("username") val `username`: Username,
-    @SerialName("password") val `password`: Password,
+    @SerialName("password") val `password`: LoginPassword,
     @SerialName("device") val `device`: DeviceInfoInput,
     @SerialName("kind") val `kind`: SessionKind? = null,
 )
@@ -6560,7 +6846,6 @@ data class MemoryTierConfig(
     @SerialName("recallTopK") val `recallTopK`: Long,
     @SerialName("groupMemoryMessageThreshold") val `groupMemoryMessageThreshold`: Long? = null,
     @SerialName("groupMemoryIdleMinutes") val `groupMemoryIdleMinutes`: Long? = null,
-    @SerialName("longContext") val `longContext`: ChatWindowLimits,
 )
 
 @Serializable
@@ -6571,7 +6856,6 @@ data class MemoryTierEndpointsAdminGetResponse(
     @SerialName("recallTopK") val `recallTopK`: Long,
     @SerialName("groupMemoryMessageThreshold") val `groupMemoryMessageThreshold`: Long? = null,
     @SerialName("groupMemoryIdleMinutes") val `groupMemoryIdleMinutes`: Long? = null,
-    @SerialName("longContext") val `longContext`: ChatWindowLimits,
     @SerialName("updatedAt") val `updatedAt`: Timestamp?,
 )
 
@@ -6583,7 +6867,6 @@ data class MemoryTierEndpointsAdminUpdateResponse(
     @SerialName("recallTopK") val `recallTopK`: Long,
     @SerialName("groupMemoryMessageThreshold") val `groupMemoryMessageThreshold`: Long? = null,
     @SerialName("groupMemoryIdleMinutes") val `groupMemoryIdleMinutes`: Long? = null,
-    @SerialName("longContext") val `longContext`: ChatWindowLimits,
     @SerialName("updatedAt") val `updatedAt`: Timestamp?,
 )
 
@@ -6603,7 +6886,6 @@ data class MemoryTierStatus(
     @SerialName("trialEndsAt") val `trialEndsAt`: Timestamp?,
     @SerialName("limits") val `limits`: MemoryTierLimits,
     @SerialName("libraryCount") val `libraryCount`: Long,
-    @SerialName("longContext") val `longContext`: MemoryTierStatusLongContext,
 )
 
 typealias MemoryVisibility = String
@@ -6904,6 +7186,11 @@ data class ModelAccessAdminEndpointsTestUpstreamParams(
 )
 
 @Serializable
+data class ModelAccessAdminEndpointsUpdateArenaNameParams(
+    @SerialName("modelKey") val `modelKey`: String,
+)
+
+@Serializable
 data class ModelAccessAdminEndpointsUpdateUpstreamParams(
     @SerialName("upstreamId") val `upstreamId`: Id,
 )
@@ -6982,6 +7269,11 @@ data class ModelAccessEndpointsListModelsResponse(
 )
 
 @Serializable
+data class ModelAccessEndpointsPrivateModelResponse(
+    @SerialName("model") val `model`: PrivateModelInfo?,
+)
+
+@Serializable
 data class ModelAccessEndpointsSetCharacterOverrideBody(
     @SerialName("chat") val `chat`: ModelRefInput?,
 )
@@ -7043,9 +7335,11 @@ data class ModelInfo(
     @SerialName("capabilities") val `capabilities`: List<String>,
     @SerialName("tags") val `tags`: List<String>,
     @SerialName("leaderboardRank") val `leaderboardRank`: Long?,
+    @SerialName("leaderboardChange") val `leaderboardChange`: Long? = null,
     @SerialName("available") val `available`: Boolean,
     @SerialName("unavailableDetail") val `unavailableDetail`: String? = null,
     @SerialName("pointsPerReply") val `pointsPerReply`: Double? = null,
+    @SerialName("pointsPerMinute") val `pointsPerMinute`: Double? = null,
     @SerialName("pointsPerReplyBasis") val `pointsPerReplyBasis`: String? = null,
     @SerialName("displayMultiplier") val `displayMultiplier`: Double? = null,
     @SerialName("scenarios") val `scenarios`: List<String>? = null,
@@ -7058,6 +7352,9 @@ typealias ModelKey = String
 @Serializable
 data class ModelLeaderboardInfo(
     @SerialName("source") val `source`: ModelLeaderboardSource?,
+    @SerialName("fetchedAt") val `fetchedAt`: Timestamp? = null,
+    @SerialName("method") val `method`: String? = null,
+    @SerialName("lastError") val `lastError`: String? = null,
     @SerialName("popular") val `popular`: List<ModelLeaderboardInfoPopularItem>,
 )
 
@@ -7141,12 +7438,14 @@ typealias ModelScenario = String
 data class ModelScenarioSettings(
     @SerialName("recommended") val `recommended`: ModelScenarioSettingsRecommended,
     @SerialName("internal") val `internal`: ModelScenarioSettingsInternal,
+    @SerialName("fixed") val `fixed`: ModelScenarioSettingsFixed? = null,
 )
 
 @Serializable
 data class ModelScenarioSettingsInput(
     @SerialName("recommended") val `recommended`: ModelScenarioSettingsInputRecommended,
     @SerialName("internal") val `internal`: ModelScenarioSettingsInputInternal,
+    @SerialName("fixed") val `fixed`: ModelScenarioSettingsInputFixed? = null,
 )
 
 @Serializable
@@ -7154,6 +7453,21 @@ data class ModelSelection(
     @SerialName("chat") val `chat`: ModelRefState?,
     @SerialName("background") val `background`: ModelRefState?,
     @SerialName("adult") val `adult`: ModelRefState?,
+)
+
+@Serializable
+data class ModelServiceRate(
+    @SerialName("unit") val `unit`: ServicePriceUnit,
+    @SerialName("price") val `price`: Double,
+    @SerialName("cost") val `cost`: Double? = null,
+    @SerialName("hasTimeBands") val `hasTimeBands`: Boolean? = null,
+)
+
+@Serializable
+data class ModelServiceRateWrite(
+    @SerialName("unit") val `unit`: ServicePriceUnit,
+    @SerialName("price") val `price`: Double,
+    @SerialName("cost") val `cost`: Double? = null,
 )
 
 @Serializable
@@ -7483,6 +7797,7 @@ typealias Password = String
 data class PendingAccountDeletion(
     @SerialName("userId") val `userId`: Id,
     @SerialName("username") val `username`: String,
+    @SerialName("nickname") val `nickname`: String?,
     @SerialName("requestedAt") val `requestedAt`: Timestamp,
     @SerialName("lastRetriggeredAt") val `lastRetriggeredAt`: Timestamp?,
     @SerialName("modules") val `modules`: List<AccountDeletionModuleProgress>,
@@ -8429,6 +8744,15 @@ data class PrivacySpan(
     @SerialName("kinds") val `kinds`: List<String>,
 )
 
+@Serializable
+data class PrivateModelInfo(
+    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("displayMultiplier") val `displayMultiplier`: Double?,
+    @SerialName("discountRate") val `discountRate`: Double?,
+    @SerialName("available") val `available`: Boolean,
+)
+
 typealias ProactiveFrequency = String
 
 @Serializable
@@ -8587,6 +8911,37 @@ data class QuoteRef(
 )
 
 typealias RealPersonKind = String
+
+@Serializable
+data class RecapEndpointsPendingResponse(
+    @SerialName("recap") val `recap`: AnnualRecap?,
+)
+
+@Serializable
+data class RecapNightMessage(
+    @SerialName("date") val `date`: LocalDate,
+    @SerialName("time") val `time`: String,
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("characterId") val `characterId`: Id?,
+)
+
+@Serializable
+data class RecapStats(
+    @SerialName("totalMessages") val `totalMessages`: Long,
+    @SerialName("userMessages") val `userMessages`: Long,
+    @SerialName("characterMessages") val `characterMessages`: Long,
+    @SerialName("groupMessages") val `groupMessages`: Long,
+    @SerialName("directMessages") val `directMessages`: Long,
+    @SerialName("characterCount") val `characterCount`: Long,
+    @SerialName("activeDays") val `activeDays`: Long,
+    @SerialName("monthlyUserMessages") val `monthlyUserMessages`: List<RecapStatsMonthlyUserMessagesItem>,
+    @SerialName("topCharacters") val `topCharacters`: List<RecapStatsTopCharactersItem>,
+    @SerialName("busiestDays") val `busiestDays`: List<RecapStatsBusiestDaysItem>,
+    @SerialName("latestNight") val `latestNight`: RecapNightMessage?,
+    @SerialName("nightCount") val `nightCount`: Long,
+    @SerialName("streak") val `streak`: RecapStatsStreak?,
+    @SerialName("migratedMessages") val `migratedMessages`: Long,
+)
 
 typealias ReceivedAppTheme = String
 
@@ -9470,6 +9825,7 @@ data class ScenarioSelection(
     @SerialName("scenario") val `scenario`: String,
     @SerialName("selection") val `selection`: ModelRefState?,
     @SerialName("recommendedModelKey") val `recommendedModelKey`: ModelKey?,
+    @SerialName("fixedByAdmin") val `fixedByAdmin`: Boolean? = null,
 )
 
 @Serializable
@@ -9809,6 +10165,8 @@ data class ServerUpdateFrame(
     @SerialName("ref") val `ref`: String? = null,
     @SerialName("data") val `data`: UserUpdate,
 )
+
+typealias ServicePriceUnit = String
 
 typealias SessionKind = String
 
@@ -10339,6 +10697,16 @@ data class UpdateAnniversaryRequestInput(
 )
 
 @Serializable
+data class UpdateArenaNameRequest(
+    @SerialName("arenaModelName") val `arenaModelName`: String?,
+)
+
+@Serializable
+data class UpdateArenaNameRequestInput(
+    @SerialName("arenaModelName") val `arenaModelName`: String?,
+)
+
+@Serializable
 data class UpdateAuthorizationRequest(
     @SerialName("authorizedCharacterIds") val `authorizedCharacterIds`: List<Id>,
 )
@@ -10371,7 +10739,6 @@ data class UpdateCompanionSettingsRequest(
     @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
     @SerialName("voiceId") val `voiceId`: Id? = null,
-    @SerialName("longContext") val `longContext`: Boolean? = null,
 )
 
 @Serializable
@@ -10385,7 +10752,6 @@ data class UpdateCompanionSettingsRequestInput(
     @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
     @SerialName("voiceId") val `voiceId`: Id? = null,
-    @SerialName("longContext") val `longContext`: Boolean? = null,
 )
 
 @Serializable
@@ -10409,6 +10775,7 @@ data class UpdateConversationStateRequest(
     @SerialName("pinned") val `pinned`: Boolean? = null,
     @SerialName("muted") val `muted`: Boolean? = null,
     @SerialName("hidden") val `hidden`: Boolean? = null,
+    @SerialName("backgroundMediaId") val `backgroundMediaId`: Id? = null,
 )
 
 @Serializable
@@ -10416,6 +10783,7 @@ data class UpdateConversationStateRequestInput(
     @SerialName("pinned") val `pinned`: Boolean? = null,
     @SerialName("muted") val `muted`: Boolean? = null,
     @SerialName("hidden") val `hidden`: Boolean? = null,
+    @SerialName("backgroundMediaId") val `backgroundMediaId`: Id? = null,
 )
 
 @Serializable
@@ -10722,6 +11090,7 @@ data class UserConversationState(
     @SerialName("clearedThroughSeq") val `clearedThroughSeq`: Long,
     @SerialName("readSeq") val `readSeq`: Long,
     @SerialName("markedUnread") val `markedUnread`: Boolean,
+    @SerialName("backgroundMediaId") val `backgroundMediaId`: Id? = null,
 )
 
 @Serializable
@@ -11669,6 +12038,30 @@ data class WebSearchHit(
 )
 
 @Serializable
+data class WechatQrAttempt(
+    @SerialName("attemptId") val `attemptId`: Id,
+    @SerialName("status") val `status`: String,
+    @SerialName("bindUrl") val `bindUrl`: String,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("characterName") val `characterName`: String,
+    @SerialName("expiresAt") val `expiresAt`: Timestamp,
+    @SerialName("lastError") val `lastError`: String?,
+    @SerialName("binding") val `binding`: ChannelState? = null,
+)
+
+@Serializable
+data class WechatQrRequest(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class WechatQrRequestInput(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+typealias WechatQrStatus = String
+
+@Serializable
 data class WeibanCardData(
     @SerialName("persona") val `persona`: CardPersona,
     @SerialName("speech") val `speech`: CardSpeech,
@@ -11683,6 +12076,20 @@ data class WeibanCardData(
     @SerialName("profileExtra") val `profileExtra`: CardProfileExtra,
     @SerialName("admin") val `admin`: CardAdmin,
     @SerialName("prompting") val `prompting`: CardPrompting? = null,
+)
+
+@Serializable
+data class WeiboConnectRequest(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("appId") val `appId`: String,
+    @SerialName("appSecret") val `appSecret`: String,
+)
+
+@Serializable
+data class WeiboConnectRequestInput(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("appId") val `appId`: String,
+    @SerialName("appSecret") val `appSecret`: String,
 )
 
 @Serializable
@@ -11850,6 +12257,10 @@ typealias SharedSchema1 = JsonElement
 
 typealias SharedSchema2 = JsonElement
 
+typealias SharedSchema3 = JsonElement
+
+typealias SharedSchema4 = JsonElement
+
 @Serializable
 data class AchievementProgress(
     @SerialName("current") val `current`: Long,
@@ -11893,6 +12304,66 @@ data class AdminCharacterPublishChecks(
     @SerialName("personaStabilityPassed") val `personaStabilityPassed`: Boolean,
     @SerialName("hardBoundaryCasesPassed") val `hardBoundaryCasesPassed`: Boolean,
     @SerialName("hasFallbackGreeting") val `hasFallbackGreeting`: Boolean,
+)
+
+@Serializable
+data class AdminLegacyCharacterPatchFields(
+    @SerialName("displayName") val `displayName`: String? = null,
+    @SerialName("nickname") val `nickname`: String? = null,
+    @SerialName("aliases") val `aliases`: List<String>? = null,
+    @SerialName("signature") val `signature`: String? = null,
+    @SerialName("corePersona") val `corePersona`: String? = null,
+    @SerialName("speakingStyle") val `speakingStyle`: String? = null,
+    @SerialName("relationshipMode") val `relationshipMode`: String? = null,
+    @SerialName("momentProfile") val `momentProfile`: SharedSchema1? = null,
+    @SerialName("groupChat") val `groupChat`: SharedSchema2? = null,
+    @SerialName("openingMessages") val `openingMessages`: List<String>? = null,
+)
+
+@Serializable
+data class AdminLegacyCharacterPatchInputFields(
+    @SerialName("displayName") val `displayName`: String? = null,
+    @SerialName("nickname") val `nickname`: String? = null,
+    @SerialName("aliases") val `aliases`: List<String>? = null,
+    @SerialName("signature") val `signature`: String? = null,
+    @SerialName("corePersona") val `corePersona`: String? = null,
+    @SerialName("speakingStyle") val `speakingStyle`: String? = null,
+    @SerialName("relationshipMode") val `relationshipMode`: String? = null,
+    @SerialName("momentProfile") val `momentProfile`: SharedSchema1? = null,
+    @SerialName("groupChat") val `groupChat`: SharedSchema2? = null,
+    @SerialName("openingMessages") val `openingMessages`: List<String>? = null,
+)
+
+@Serializable
+data class AdminLegacyExamplesPatchUpsertItem(
+    @SerialName("id") val `id`: String? = null,
+    @SerialName("payload") val `payload`: Map<String, JsonElement>,
+    @SerialName("sortOrder") val `sortOrder`: Long? = null,
+)
+
+@Serializable
+data class AdminLegacyExamplesPatchInputUpsertItem(
+    @SerialName("id") val `id`: String? = null,
+    @SerialName("payload") val `payload`: Map<String, JsonElement>,
+    @SerialName("sortOrder") val `sortOrder`: Long? = null,
+)
+
+@Serializable
+data class AdminLegacyLorebookPatchUpsertItem(
+    @SerialName("id") val `id`: String? = null,
+    @SerialName("payload") val `payload`: Map<String, JsonElement>,
+)
+
+@Serializable
+data class AdminLegacyLorebookPatchInputUpsertItem(
+    @SerialName("id") val `id`: String? = null,
+    @SerialName("payload") val `payload`: Map<String, JsonElement>,
+)
+
+@Serializable
+data class AdminLegacySnapshotAvatar(
+    @SerialName("mediaId") val `mediaId`: Id?,
+    @SerialName("display") val `display`: CharacterDisplay,
 )
 
 @Serializable
@@ -11943,7 +12414,7 @@ data class AdminUsageOverviewAccounts(
 @Serializable
 data class AdminUsageOverviewRecentErrorsItem(
     @SerialName("upstreamId") val `upstreamId`: Id,
-    @SerialName("modelKey") val `modelKey`: ModelKey,
+    @SerialName("modelKey") val `modelKey`: AdminModelKey,
     @SerialName("errorCode") val `errorCode`: String,
     @SerialName("count") val `count`: Long,
     @SerialName("lastAt") val `lastAt`: Timestamp,
@@ -12104,6 +12575,7 @@ data class CardRecognitionSelfPublicImagesItem(
 data class CardSocialMoments(
     @SerialName("frequencyPerWeek") val `frequencyPerWeek`: List<JsonElement>,
     @SerialName("tone") val `tone`: String,
+    @SerialName("topics") val `topics`: List<String>? = null,
     @SerialName("imageSubjects") val `imageSubjects`: List<String>? = null,
     @SerialName("commentStyle") val `commentStyle`: String? = null,
 )
@@ -12183,6 +12655,8 @@ data class ClientLogAdminEndpointsGetResponseDaysItem(
 @Serializable
 data class ClientLogAdminEndpointsGetResponseUsersItem(
     @SerialName("userId") val `userId`: Id,
+    @SerialName("nickname") val `nickname`: String?,
+    @SerialName("username") val `username`: String?,
     @SerialName("lastSeenAt") val `lastSeenAt`: Timestamp,
 )
 
@@ -13419,6 +13893,9 @@ data class LeaderboardSnapshotStatusSnapshot(
     @SerialName("fetchedAt") val `fetchedAt`: Timestamp,
     @SerialName("method") val `method`: String,
     @SerialName("entries") val `entries`: Long,
+    @SerialName("publishedAt") val `publishedAt`: LocalDate? = null,
+    @SerialName("sourceUrl") val `sourceUrl`: String? = null,
+    @SerialName("totalRows") val `totalRows`: Long? = null,
 )
 
 @Serializable
@@ -13435,14 +13912,7 @@ data class LeaderboardSnapshotStatusUnmatchedItem(
     @SerialName("modelKey") val `modelKey`: ModelKey,
     @SerialName("displayName") val `displayName`: String,
     @SerialName("arenaModelName") val `arenaModelName`: String?,
-)
-
-@Serializable
-data class MemoryTierStatusLongContext(
-    @SerialName("available") val `available`: Boolean,
-    @SerialName("enabled") val `enabled`: Boolean,
-    @SerialName("pointsPerMessage") val `pointsPerMessage`: Double?,
-    @SerialName("normalPointsPerMessage") val `normalPointsPerMessage`: Double?,
+    @SerialName("suggestions") val `suggestions`: List<LeaderboardSnapshotStatusUnmatchedItemSuggestionsItem>? = null,
 )
 
 @Serializable
@@ -13527,6 +13997,11 @@ data class ModelScenarioSettingsInternal(
 )
 
 @Serializable
+data class ModelScenarioSettingsFixed(
+    @SerialName("private") val `private`: ModelKey? = null,
+)
+
+@Serializable
 data class ModelScenarioSettingsInputRecommended(
     @SerialName("chat") val `chat`: ModelKey? = null,
     @SerialName("vision") val `vision`: ModelKey? = null,
@@ -13545,6 +14020,11 @@ data class ModelScenarioSettingsInputInternal(
     @SerialName("planner") val `planner`: ModelKey? = null,
     @SerialName("adult_check") val `adult_check`: ModelKey? = null,
     @SerialName("web_search") val `web_search`: ModelKey? = null,
+)
+
+@Serializable
+data class ModelScenarioSettingsInputFixed(
+    @SerialName("private") val `private`: ModelKey? = null,
 )
 
 @Serializable
@@ -13650,6 +14130,34 @@ data class ProtocolVectorStepsItem(
 data class ProtocolVectorExpected(
     @SerialName("state") val `state`: ClientSyncState,
     @SerialName("effects") val `effects`: List<ClientSyncEffect>,
+)
+
+@Serializable
+data class RecapStatsMonthlyUserMessagesItem(
+    @SerialName("month") val `month`: Long,
+    @SerialName("count") val `count`: Long,
+)
+
+@Serializable
+data class RecapStatsTopCharactersItem(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("userMessages") val `userMessages`: Long,
+    @SerialName("lastMessageAt") val `lastMessageAt`: Timestamp,
+)
+
+@Serializable
+data class RecapStatsBusiestDaysItem(
+    @SerialName("date") val `date`: LocalDate,
+    @SerialName("userMessages") val `userMessages`: Long,
+    @SerialName("totalMessages") val `totalMessages`: Long,
+)
+
+@Serializable
+data class RecapStatsStreak(
+    @SerialName("days") val `days`: Long,
+    @SerialName("from") val `from`: LocalDate,
+    @SerialName("to") val `to`: LocalDate,
 )
 
 typealias ReceivedMessageContentSystemParamsValue = JsonElement
@@ -14321,6 +14829,7 @@ data class DraftCharacterCardDataPersona(
     @SerialName("background") val `background`: String? = null,
     @SerialName("personality") val `personality`: String? = null,
     @SerialName("values") val `values`: String? = null,
+    @SerialName("emotionalTone") val `emotionalTone`: String? = null,
     @SerialName("likes") val `likes`: List<String>? = null,
     @SerialName("dislikes") val `dislikes`: List<String>? = null,
     @SerialName("personaTags") val `personaTags`: List<PersonaTag>? = null,
@@ -14462,6 +14971,13 @@ data class EventsUserRegisteredPayloadSignupBonus(
 )
 
 @Serializable
+data class LeaderboardSnapshotStatusUnmatchedItemSuggestionsItem(
+    @SerialName("name") val `name`: String,
+    @SerialName("rank") val `rank`: Long,
+    @SerialName("score") val `score`: Double,
+)
+
+@Serializable
 data class PetSpeciesAdminEndpointsUpdateSpeciesBodyAppearancesItemImageMediaIds(
     @SerialName("baby") val `baby`: Id,
     @SerialName("junior") val `junior`: Id,
@@ -14501,6 +15017,7 @@ data class DraftCharacterCardDataSpeechEmojiHabit(
 data class DraftCharacterCardDataSocialMoments(
     @SerialName("frequencyPerWeek") val `frequencyPerWeek`: List<JsonElement>,
     @SerialName("tone") val `tone`: String,
+    @SerialName("topics") val `topics`: List<String>? = null,
     @SerialName("imageSubjects") val `imageSubjects`: List<String>? = null,
     @SerialName("commentStyle") val `commentStyle`: String? = null,
 )

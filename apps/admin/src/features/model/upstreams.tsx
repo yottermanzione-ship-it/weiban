@@ -66,10 +66,16 @@ import { useFormFeedback } from '../../data/form-feedback.js';
 export function UpstreamsTab({
   upstreams,
   models,
+  loading = false,
+  loadError = '',
   refresh,
 }: {
   upstreams: Upstream[];
   models: AdminModel[];
+  /** 3.27：列表还在读取；读的过程中不能显示成「还没有上游账号」。 */
+  loading?: boolean;
+  /** 3.27：列表接口失败的原因（原先只显示操作错误，请求失败会被当成空列表）。 */
+  loadError?: string;
   refresh: () => void;
 }) {
   const toast = useToast();
@@ -438,7 +444,8 @@ export function UpstreamsTab({
         rowKey="upstreamId"
         columns={columns}
         data={list}
-        error={error}
+        loading={loading}
+        error={error || loadError}
         onRefresh={refresh}
         onRowClick={(u) => setDetail(u)}
         selectedKeys={selected}
@@ -503,12 +510,22 @@ export function UpstreamsTab({
             <Button onClick={() => void test(list.map((u) => u.upstreamId))}>测试全部</Button>
           </>
         }
-        emptyTitle="还没有上游账号"
-        emptyHint="点右上角「添加上游账号」，填入服务商给的 API 密钥；系统会先测试连通，通了才保存。"
+        emptyTitle={
+          loadError ? '上游账号没加载出来' : loading ? '正在读取上游账号…' : '还没有上游账号'
+        }
+        emptyHint={
+          loadError
+            ? '原因见上方红条；点「刷新」重试。'
+            : loading
+              ? undefined
+              : '点右上角「添加上游账号」，填入服务商给的 API 密钥；系统会先测试连通，通了才保存。'
+        }
         emptyAction={
-          <Button type="primary" onClick={() => setEditing('new')}>
-            添加第一条
-          </Button>
+          loading || loadError ? undefined : (
+            <Button type="primary" onClick={() => setEditing('new')}>
+              添加第一条
+            </Button>
+          )
         }
       />
       {editing && (

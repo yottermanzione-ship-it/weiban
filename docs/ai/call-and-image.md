@@ -1,5 +1,9 @@
 # 角色发图、语音通话、主动来电与「不方便」静默（T-072）
 
+> 2026-10-22 晚新增图片讨论边界：角色自主网上找图由独立 `CHARACTER_PUBLIC_PICTURE_SEARCH_ENABLED` 开关控制，默认关闭，待需求讨论，不因填了搜索密钥而自动开启。原 P3 用户输入图片的公开作品检索与识图保留；自主表情的真实现状及缺口见[专项澄清](2026-10-22-decision-and-sticker-clarification.md)。供应商语音升级只是[本轮研究](../refactor/2026-10-22-voice-provider-integration.md)，不代表 3.1/Omni 已接通。
+>
+> 2026-10-22 角色发图规则已变更：不再调用生图或付费人脸复检；明确分享动作复用安全公开网页封面转存与库图，卡片/宠物/朋友圈只用库图。下方生成流程与费用为历史设计，已被[本轮接口与安全说明](../architecture/2026-10-22-character-picture-contract-change.md)覆盖；语音与通话说明不受影响。
+
 > 负责人：AI 系统负责人 · 2026-10-10 · 依据：任务卡 T-072、PRD MED-02/06/07、P-09/P-10/P-31/P-33/P-45、MDL-10、MEM-04、ADR-0025。
 > 多媒体网关能力见 `media-understanding.md`（T-071）。
 

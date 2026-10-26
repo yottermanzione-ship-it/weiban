@@ -45,6 +45,10 @@ export const SERVER_MODULES = {
   // 3.8（总对照表 Q9、Q10）：帮助与反馈、投诉、插件入口。只依赖底层（media、push、realtime、identity）。
   support: { layer: 'middle', schema: 'support' },
   'client-logs': { layer: 'middle', schema: 'client_logs' },
+  // 3.42：设置 › 插件 › 微信 / 微博接入（外部渠道绑定 + 网关回调）。只依赖平台内核。
+  channels: { layer: 'middle', schema: 'channels' },
+  // 10-25：年度回忆（PRO+ 权益，每年 12-31 22:00 生成）。只经端口读 chat / identity / characters / push。
+  recap: { layer: 'middle', schema: 'recap' },
 };
 
 /**

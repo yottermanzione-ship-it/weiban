@@ -1,4 +1,4 @@
-import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import {
   ClientLogBatch,
@@ -9,6 +9,8 @@ import {
   clientLogRoute,
   type ClientLogsPort,
   type IdentityAccountStatusPort,
+  type IdentityDirectoryPort,
+  type IdentityUserLabel,
   type Tx,
 } from '@weiban/contracts';
 import {
@@ -31,7 +33,7 @@ import {
   type AuditLog,
 } from '../../../platform/index.js';
 import { redactString } from '../../../platform/logging/sanitize.js';
-import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
+import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_DIRECTORY_PORT } from '../../identity/index.js';
 
 type GroupRow = {
   fingerprint: string;
@@ -128,7 +130,21 @@ export class ClientLogsService implements OnModuleInit, ClientLogsPort {
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(IDENTITY_ACCOUNT_STATUS_PORT) private readonly identity: IdentityAccountStatusPort,
+    @Optional()
+    @Inject(IDENTITY_DIRECTORY_PORT)
+    private readonly directory?: IdentityDirectoryPort,
   ) {}
+
+  /** 后台展示「这是谁」：一次批量取昵称 + 登录名，取不到不影响报错信息本身。 */
+  private async userLabels(userIds: string[]): Promise<Record<string, IdentityUserLabel>> {
+    const ids = [...new Set(userIds)];
+    if (!ids.length || !this.directory) return {};
+    try {
+      return await this.directory.getUserLabels(ids);
+    } catch {
+      return {};
+    }
+  }
   async onModuleInit() {
     this.registry.register({
       module: 'client_logs',
@@ -458,12 +474,15 @@ export class ClientLogsService implements OnModuleInit, ClientLogsPort {
       'SELECT user_id,last_seen_at FROM client_logs.group_users WHERE fingerprint=$1 ORDER BY last_seen_at DESC LIMIT 100',
       [fp],
     );
+    const labels = await this.userLabels(users.rows.map((u) => u.user_id));
     return {
       issue,
       samples: samples.rows.map(sample),
       days: days.rows.map((d) => ({ day: d.day, count: Number(d.count) })),
       users: users.rows.map((u) => ({
         userId: u.user_id,
+        nickname: labels[u.user_id]?.nickname ?? null,
+        username: labels[u.user_id]?.username ?? null,
         lastSeenAt: u.last_seen_at.toISOString(),
       })),
     };

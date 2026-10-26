@@ -17,7 +17,8 @@ import {
 } from '@weiban/contracts';
 import { z } from 'zod';
 import { AppError, newId, parseContract, type DbTx } from '../../../platform/index.js';
-import { decodeOffset, encodeOffset } from '../domain/rules.js';
+import { CONTACTS_CHARACTER_STATS, type ContactsCharacterStats } from '../../contacts/index.js';
+import { decodeOffset, encodeOffset, orderByAddCount } from '../domain/rules.js';
 import {
   authorProfiles,
   officialComments,
@@ -46,6 +47,9 @@ export class PlazaOfficialService {
   constructor(
     @Inject(PlazaStore) private readonly store: PlazaStore,
     @Optional() @Inject(PLAZA_CHARACTERS) private readonly characters?: PlazaCharacters,
+    @Optional()
+    @Inject(CONTACTS_CHARACTER_STATS)
+    private readonly contactStats?: ContactsCharacterStats,
   ) {}
 
   private get db() {
@@ -100,6 +104,15 @@ export class PlazaOfficialService {
     return new Set(rows.map((r) => r.id));
   }
 
+  /**
+   * 「添加热度」：有多少位用户把这个角色加进了通讯录（去重、未删除）。
+   * 跨模块只走 contacts 的只读统计端口，不直接读 contacts 表；端口缺失时退回角色库稳定次序。
+   */
+  private async addCounts(ids: string[]): Promise<Map<string, number>> {
+    if (!ids.length || !this.contactStats) return new Map();
+    return this.contactStats.countContactUsers(ids);
+  }
+
   // ---------- 浏览 ----------
 
   async list(viewerId: string, input: unknown) {
@@ -107,16 +120,20 @@ export class PlazaOfficialService {
     const port = this.port();
     const ids = await port.listOfficialIds({ q: q.q, categoryId: q.categoryId });
     const { likes, comments } = await this.stats(ids);
-    if (q.sort !== 'default') {
+    // 排序在整份候选集上完成再按 offset 分页：搜索、翻页口径一致，不会只重排当前一页。
+    let ordered = ids;
+    if (q.sort === 'added') {
+      ordered = orderByAddCount(ids, await this.addCounts(ids));
+    } else if (q.sort !== 'default') {
       const score = (id: string) =>
         q.sort === 'most_liked'
           ? (likes.get(id) ?? 0)
           : (likes.get(id) ?? 0) + 2 * (comments.get(id) ?? 0);
       const order = new Map(ids.map((id, i) => [id, i]));
-      ids.sort((a, b) => score(b) - score(a) || order.get(a)! - order.get(b)!);
+      ordered = [...ids].sort((a, b) => score(b) - score(a) || order.get(a)! - order.get(b)!);
     }
     const offset = decodeOffset(q.cursor);
-    const pageIds = ids.slice(offset, offset + q.limit);
+    const pageIds = ordered.slice(offset, offset + q.limit);
     const [cards, liked] = await Promise.all([
       port.getOfficialCards(viewerId, pageIds),
       this.likedBy(viewerId, pageIds),
@@ -129,7 +146,7 @@ export class PlazaOfficialService {
     }));
     return {
       items,
-      nextCursor: ids.length > offset + q.limit ? encodeOffset(offset + q.limit) : null,
+      nextCursor: ordered.length > offset + q.limit ? encodeOffset(offset + q.limit) : null,
     };
   }
 

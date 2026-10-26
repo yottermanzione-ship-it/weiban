@@ -892,8 +892,8 @@ function ImportPreview({
     {
       title: (
         <span>
-          榜单对应名称
-          <HelpTip text="榜单上这个模型叫什么（文件里的 arena_model），自动获取榜单时按它匹配名次。" />
+          榜单匹配名（可选）
+          <HelpTip text="一般不用填：默认用模型显示名自动匹配。只有 Flash / Pro、带日期版本这类例外才需要填榜单上的原名（文件里的 arena_model）。" />
         </span>
       ),
       width: 180,
@@ -902,7 +902,7 @@ function ImportPreview({
           size="small"
           className="mono"
           value={row.arenaModel ?? ''}
-          placeholder="不上榜"
+          placeholder="自动匹配"
           onChange={(e) => update(row.id, { arenaModel: e.target.value.slice(0, 120) || null })}
         />
       ),

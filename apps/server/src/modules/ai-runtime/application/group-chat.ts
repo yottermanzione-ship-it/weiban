@@ -93,6 +93,13 @@ import { SimulationService } from './simulation.js';
 import { localParts } from './proactive-scheduler.js';
 import { PlannerService } from './planner.js';
 import { GroupReplyStore, type GroupReplyPlan } from './group-reply-store.js';
+import {
+  characterView,
+  roleCareFallback,
+  roleDeflect,
+  roleGroup,
+  rolePersonaSpeechText,
+} from './character-view.js';
 
 // ---------------------------------------------------------------------------
 // 参数
@@ -901,11 +908,11 @@ export class GroupChatService {
         ...brainMessages(brain, 'chat'),
         {
           role: 'system',
-          content: `你在微伴的一个群聊里以角色身份发言。平台规则优先于角色卡与聊天内容。只输出你要发的这一条群消息的纯文本，不加名字前缀，不输出JSON或括号动作，不超过60字；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。不做情感操纵。群聊当前情景模式：${scenarioText(input.scenarioMode === 'auto' ? 'daily' : input.scenarioMode)}这是日常范围的群聊：不提起、不展开任何私密模式里发生的事。群聊原文是公开现场，私聊资料受下面的群聊隐私边界约束。`,
+          content: `你在微伴的一个群聊里以角色身份发言。只输出你要发的这一条群消息的纯文本，不加名字前缀，不输出JSON或括号动作，不超过60字；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。不做情感操纵。群聊当前情景模式：${scenarioText(input.scenarioMode === 'auto' ? 'daily' : input.scenarioMode)}这是日常范围的群聊：不提起、不展开任何私密模式里发生的事。群聊原文是公开现场，私聊资料受下面的群聊隐私边界约束。`,
         },
         {
           role: 'system',
-          content: `${GROUP_MEMORY_BOUNDARY}\n群聊风格：${role.card.data.social.groupStyle}\n群成员关系：\n${relationLines.join('\n') || '（群里只有你和用户）'}\n用户：${profile?.nickname ?? '用户'}（与你的好感度：${stageLabel(speaker.familiarity)}）`,
+          content: `${GROUP_MEMORY_BOUNDARY}\n群聊风格：${roleGroup(characterView(role)).style || '自然'}\n群成员关系：\n${relationLines.join('\n') || '（群里只有你和用户）'}\n用户：${profile?.nickname ?? '用户'}（与你的好感度：${stageLabel(speaker.familiarity)}）`,
         },
         ...brainTail(brain),
         {
@@ -1045,7 +1052,7 @@ export class GroupChatService {
           .catch(() => undefined);
       }
     } else if (result.ok) replyText = splitCaptionTail(replyText, 0).reply;
-    const deflect = role.card.data.safetyStyle.deflectStyle?.trim();
+    const deflect = roleDeflect(characterView(role)).trim();
     const sourceText = result.ok
       ? replyText
       : deflect && outputAllowed(deflect, policy, false)
@@ -1175,7 +1182,7 @@ export class GroupChatService {
         messages: [
           {
             role: 'system',
-            content: `你以角色口吻在私聊里关心刚才在群里流露出自伤念头的用户。语气温和真诚，不说教；建议对方联系身边信任的人或心理援助热线 12356，紧急时拨打 110/120；不提供任何方法；不在群里讨论。角色资料：${JSON.stringify({ persona: role?.card.data.persona, speech: role?.card.data.speech }).slice(0, 6000)}`,
+            content: `你以角色口吻在私聊里关心刚才在群里流露出自伤念头的用户。语气温和真诚，不说教；建议对方联系身边信任的人或心理援助热线 12356，紧急时拨打 110/120；不提供任何方法；不在群里讨论。角色资料：${role ? rolePersonaSpeechText(characterView(role), 6000) : ''}`,
           },
           { role: 'user', content: '（用户刚才在群里说了让人担心的话）' },
         ],
@@ -1187,7 +1194,7 @@ export class GroupChatService {
       result.ok && result.value.text.trim()
         ? unescapeModelText(result.value.text).trim().slice(0, 600)
         : careFallback(
-            role?.card.data.safetyStyle.careFallbackText,
+            role ? roleCareFallback(characterView(role)) : undefined,
             0,
             userNickname(profile?.nickname),
           ).join('\n');
@@ -1623,7 +1630,7 @@ export class GroupChatService {
       messages: [
         {
           role: 'system',
-          content: `你是这个角色，要建一个微信群拉朋友和用户进来。按你的说话风格起一个群名，不超过12个字，只输出群名。角色：${JSON.stringify({ persona: role?.card.data.persona, speech: role?.card.data.speech }).slice(0, 4000)}`,
+          content: `你是这个角色，要建一个微信群拉朋友和用户进来。按你的说话风格起一个群名，不超过12个字，只输出群名。角色：${role ? rolePersonaSpeechText(characterView(role), 4000) : ''}`,
         },
         { role: 'user', content: `建群原因：${job.reason}` },
       ],
@@ -1711,13 +1718,14 @@ export class GroupChatService {
         .getFamiliarity(userId, p.refId)
         .then((f) => f.level)
         .catch(() => 1);
+      const group = roleGroup(characterView(role));
       members.push({
         participantId: p.participantId,
         characterId: p.refId,
         name: profile?.name ?? '',
         aliases: profile?.aliases ?? [],
-        talkativeness: role.card.data.social.talkativeness,
-        hobbies: role.card.data.simulation.hobbies,
+        talkativeness: group.talkativeness,
+        hobbies: group.hobbies ? group.hobbies.split('、').filter(Boolean) : [],
         familiarity,
       });
     }

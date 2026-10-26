@@ -300,10 +300,14 @@ export class MediaAssetService
     return pack!;
   }
 
-  async createPack(adminId: string, input: unknown): Promise<StickerPack> {
+  async createPack(
+    adminId: string,
+    input: unknown,
+    importIdentity?: { id: string; provenance: Record<string, unknown> },
+  ): Promise<StickerPack> {
     const body = parseContract(StickerPackWrite, input);
     if (body.coverStickerId) throw new AppError('bad_request', '请先添加本包表情后再设置封面');
-    const id = newId();
+    const id = importIdentity?.id ?? newId();
     const at = this.clock.now();
     await this.database.transaction(async (tx) => {
       await tx.db.insert(stickerPacks).values({
@@ -321,6 +325,7 @@ export class MediaAssetService
       });
       await this.auditAdmin(tx, adminId, 'sticker_pack.created', 'sticker_pack', id, {
         name: body.name,
+        ...(importIdentity ? { import: importIdentity.provenance } : {}),
       });
     });
     return this.onePack(adminId, id);
@@ -378,6 +383,7 @@ export class MediaAssetService
     adminId: string,
     packId: string,
     input: unknown,
+    importIdentity?: { id: string; provenance: Record<string, unknown> },
   ): Promise<LibrarySticker> {
     const body = parseContract(StickerAdminEndpoints.addSticker.body!, input) as {
       mediaId: string;
@@ -389,7 +395,7 @@ export class MediaAssetService
     const media = await this.media.findReady(body.mediaId);
     if (!media || media.purpose !== 'sticker_library')
       throw new AppError('bad_request', '请先以 sticker_library 用途上传表情图片');
-    const id = newId();
+    const id = importIdentity?.id ?? newId();
     await this.database.transaction(async (tx) => {
       const [pack] = await tx.db.select().from(stickerPacks).where(eq(stickerPacks.id, packId));
       if (!pack) throw new AppError('not_found', '表情包分类不存在');
@@ -416,6 +422,7 @@ export class MediaAssetService
         packId,
         mediaId: body.mediaId,
         confirmNoRealPersonPortrait: true,
+        ...(importIdentity ? { import: importIdentity.provenance } : {}),
       });
     });
     return {
@@ -870,6 +877,8 @@ export class MediaAssetService
     modelKey: string;
     enabled: boolean;
     careFallbackMediaId: string | null;
+    sampleMediaId?: string | null;
+    tags?: string[];
   } | null> {
     const [row] = await this.database.db.select().from(voices).where(eq(voices.id, voiceId));
     if (!row) return null;
@@ -880,7 +889,21 @@ export class MediaAssetService
       modelKey: row.modelKey,
       enabled: row.enabled,
       careFallbackMediaId: row.careFallbackMediaId,
+      sampleMediaId: row.sampleMediaId,
+      tags: row.tags,
     };
+  }
+
+  /** 旧卡音色：按供应商音色键找一条已启用的 media.voices（voice_json / qwen_voice_id 存的是供应商 id）。 */
+  async findEnabledVoiceByProviderKey(
+    providerVoiceKey: string,
+  ): Promise<{ voiceId: string } | null> {
+    const [row] = await this.database.db
+      .select({ voiceId: voices.id })
+      .from(voices)
+      .where(and(eq(voices.providerVoiceKey, providerVoiceKey), eq(voices.enabled, true)))
+      .limit(1);
+    return row ?? null;
   }
 
   async listCardTemplates(

@@ -6,6 +6,8 @@ import {
   UpdateConversationStateRequest,
   UserConversationState,
   type ChatUserPort,
+  type IdentityMembershipReadPort,
+  type MediaSystemPort,
   type Message,
   type SyncPort,
 } from '@weiban/contracts';
@@ -21,6 +23,8 @@ import {
   type Outbox,
 } from '../../../platform/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
+import { MEDIA_SYSTEM_PORT } from '../../media/index.js';
+import { IDENTITY_MEMBERSHIP_READ_PORT } from '../../identity/index.js';
 import {
   conversations,
   hiddenMessages,
@@ -30,6 +34,7 @@ import {
 } from '../infra/db/schema.js';
 import { ChatStore } from './store.js';
 import { ChatWriteService } from './write.js';
+import { assertGroupChatEligible } from './group-access.js';
 
 @Injectable()
 export class ChatUserService implements ChatUserPort {
@@ -40,6 +45,9 @@ export class ChatUserService implements ChatUserPort {
     @Inject(ChatWriteService) private readonly writer: ChatWriteService,
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
     @Inject(OUTBOX) private readonly outbox: Outbox,
+    @Inject(MEDIA_SYSTEM_PORT) private readonly media: MediaSystemPort,
+    @Inject(IDENTITY_MEMBERSHIP_READ_PORT)
+    private readonly membership: IdentityMembershipReadPort,
   ) {}
   async sendMessage(
     userId: string,
@@ -49,6 +57,9 @@ export class ChatUserService implements ChatUserPort {
     const body = parseContract(SendMessageRequest, input);
     const result = await this.db.transaction(async (tx) => {
       const row = await this.store.load(tx, conversationId, userId);
+      // 10-25：群聊发言是 PRO+ 权益（403 membership_required）。历史消息仍可读，用户仍能打开这个群。
+      if (row.type === 'group')
+        await assertGroupChatEligible(this.membership, userId, 'send_group_message', tx);
       const [sender] = await tx.db
         .select()
         .from(participants)
@@ -160,6 +171,14 @@ export class ChatUserService implements ChatUserPort {
     return this.db.transaction(async (tx) => {
       const row = await this.store.load(tx, conversationId, userId);
       const view = await this.store.view(tx, row, userId);
+      // 3.41：只能挂本人上传、用途为 chat_background 的图；null 表示恢复默认。
+      if (
+        patch.backgroundMediaId !== undefined &&
+        patch.backgroundMediaId !== null &&
+        patch.backgroundMediaId !== (view.state.backgroundMediaId ?? null) &&
+        !(await this.media.canUse(userId, patch.backgroundMediaId, ['chat_background']))
+      )
+        throw new AppError('bad_request', '请上传本人的聊天背景图片');
       if (
         !Object.entries(patch).some(
           ([key, value]) => view.state[key as keyof UserConversationState] !== value,

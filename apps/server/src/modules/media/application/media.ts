@@ -1,7 +1,7 @@
 import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
-import { and, count, eq, inArray, isNotNull, lt, or } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm';
 import {
   MEDIA_LIMITS,
   MediaPurpose as MediaPurposeSchema,
@@ -17,6 +17,7 @@ import {
 import {
   APP_CONFIG,
   AUDIT_LOG,
+  CHARACTER_PURGE_REGISTRY,
   CLOCK,
   JOB_QUEUE,
   DATABASE,
@@ -28,6 +29,7 @@ import {
   newId,
   type AppConfig,
   type AuditLog,
+  type CharacterPurgeRegistry,
   type Clock,
   type JobQueue,
   type Database,
@@ -46,6 +48,7 @@ import {
 } from '../tokens.js';
 import type { ObjectStorage } from '../infra/storage.js';
 import { isBuiltinKey, renderBuiltinSvg } from './builtin-art.js';
+import { stickerImportId } from './sticker-import-id.js';
 type Row = typeof objects.$inferSelect;
 
 /** 素材库用途：所有者为空（平台），所有登录用户可读，只能管理员上传。 */
@@ -119,12 +122,17 @@ export class MediaService
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
+    @Inject(CHARACTER_PURGE_REGISTRY) private readonly purgeRegistry: CharacterPurgeRegistry,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(MEDIA_ACCOUNT_STATUS) private readonly accounts: MediaAccountStatus,
     @Optional() @Inject(MEDIA_SYNC) private readonly sync: MediaSync | null = null,
   ) {}
   async onModuleInit(): Promise<void> {
     this.registry.register(this);
+    this.purgeRegistry.register({
+      module: 'media',
+      purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
+    });
     await this.jobs.work('media.recover_uploads', () => this.recoverUploads());
     await this.jobs.schedule('media.recover_uploads', '*/10 * * * *');
     await this.jobs.work('media.lifecycle', () => this.runLifecycle());
@@ -132,6 +140,16 @@ export class MediaService
   }
 
   // ---------- 生命周期 ----------
+
+  /** 后台彻底删除角色：从素材库「指定角色」的表情包数组里移除该角色（无外键，JSONB 映射）。 */
+  private async purgeCharacter(tx: DbTx, characterId: string): Promise<void> {
+    await tx.query(
+      `UPDATE media.sticker_packs
+          SET character_ids = character_ids - $1::text
+        WHERE jsonb_exists(character_ids, $1)`,
+      [characterId],
+    );
+  }
 
   /** 回收超过 10 分钟仍是 pending 的上传（上传中途崩溃）。 */
   async recoverUploads(): Promise<void> {
@@ -216,6 +234,70 @@ export class MediaService
     return this.toMedia(row, userId);
   }
 
+  /** Maintenance-only preview: exactly the upload decoder, without DB/storage/crypto writes. */
+  async inspectLibraryImage(file: { buffer: Buffer; mimetype: string }): Promise<{
+    mediaId: string;
+    contentHash: string;
+  }> {
+    const processed = await this.processImage(file.buffer, file.mimetype);
+    try {
+      const contentHash = createHash('sha256').update(processed.body).digest('hex');
+      return { mediaId: stickerImportId('media', contentHash), contentHash };
+    } finally {
+      processed.body.fill(0);
+      processed.thumb?.fill(0);
+    }
+  }
+
+  /** Called only by the controlled importer after active-admin and review checks. */
+  async importLibraryImage(
+    adminId: string,
+    file: { buffer: Buffer; mimetype: string },
+    provenance: Record<string, unknown>,
+  ): Promise<{ mediaId: string; created: boolean }> {
+    const processed = await this.processImage(file.buffer, file.mimetype);
+    try {
+      const contentHash = createHash('sha256').update(processed.body).digest('hex');
+      const id = stickerImportId('media', contentHash);
+      const [existing] = await this.database.db.select().from(objects).where(eq(objects.id, id));
+      if (existing) {
+        if (
+          existing.state !== 'ready' ||
+          existing.ownerId !== null ||
+          existing.purpose !== 'sticker_library' ||
+          existing.contentHash !== contentHash
+        )
+          throw new AppError('conflict', '导入媒体ID已有非就绪或不匹配记录；保留进度，先人工核查');
+        return { mediaId: id, created: false };
+      }
+      // Also reuse pre-existing platform library images with the same decoded bytes.
+      const [same] = await this.database.db
+        .select()
+        .from(objects)
+        .where(
+          and(
+            eq(objects.purpose, 'sticker_library'),
+            eq(objects.state, 'ready'),
+            isNull(objects.ownerId),
+            eq(objects.contentHash, contentHash),
+          ),
+        );
+      if (same?.ownerId === null) return { mediaId: same.id, created: false };
+      const row = await this.store({
+        id,
+        ownerId: null,
+        purpose: 'sticker_library',
+        processed,
+        transcriptStatus: null,
+        importAudit: { adminId, provenance },
+      });
+      return { mediaId: row.id, created: true };
+    } finally {
+      processed.body.fill(0);
+      processed.thumb?.fill(0);
+    }
+  }
+
   private processAudio(
     purpose: string,
     file: { buffer: Buffer; mimetype: string },
@@ -292,6 +374,9 @@ export class MediaService
 
   /** 先登记 pending，写入加密对象（含缩略图），最后置 ready；失败清理。 */
   private async store(input: {
+    /** Internal import identity only; never accepted from an HTTP request. */
+    id?: string;
+    importAudit?: { adminId: string; provenance: Record<string, unknown> };
     ownerId: string | null;
     purpose: string;
     processed: Processed;
@@ -299,7 +384,7 @@ export class MediaService
     expiresAt?: Date | null;
   }): Promise<Row> {
     const { processed } = input;
-    const id = newId();
+    const id = input.id ?? newId();
     const storageKey = `${id}.sealed`;
     const thumbStorageKey = processed.thumb ? `${newId()}.sealed` : null;
     const keyOwner = input.ownerId ?? PLATFORM_KEY_OWNER;
@@ -350,6 +435,24 @@ export class MediaService
           if (thumbStorageKey) await this.storage.delete(thumbStorageKey);
           throw new AppError('not_found', '媒体已删除');
         }
+        if (input.importAudit)
+          await this.audit.record(
+            {
+              module: 'media',
+              action: 'asset.uploaded',
+              actorType: 'admin',
+              actorId: input.importAudit.adminId,
+              targetType: 'media',
+              targetId: id,
+              details: {
+                purpose: input.purpose,
+                mimeType: ready.mimeType,
+                sizeBytes: ready.sizeBytes,
+                import: input.importAudit.provenance,
+              },
+            },
+            tx,
+          );
         return ready;
       });
     } catch (error) {
@@ -404,8 +507,10 @@ export class MediaService
   async toMedia(row: Row, userId: string): Promise<MediaObject> {
     const expires = new Date(this.clock.nowMs() + LINK_TTL_MS);
     const url = await this.linkFor(row, userId, 'o', expires);
-    const isImage = row.mimeType.startsWith('image/');
-    const thumbnailUrl = !isImage
+    const hasPreview =
+      row.mimeType.startsWith('image/') ||
+      (row.mimeType === 'video/mp4' && Boolean(row.thumbStorageKey));
+    const thumbnailUrl = !hasPreview
       ? null
       : row.thumbStorageKey
         ? await this.linkFor(row, userId, 't', expires)
@@ -552,6 +657,100 @@ export class MediaService
   }): Promise<MediaObject> {
     const row = await this.copyRow(input.mediaId, input.ownerUserId, input.purpose);
     return this.toMedia(row, input.ownerUserId ?? PLATFORM_KEY_OWNER);
+  }
+
+  /** Offline migration only: deterministic identity, existing image/audio checks, owner-bound encryption. */
+  async importLegacyObject(input: {
+    id: string;
+    adminId: string;
+    ownerUserId: string;
+    purpose: MediaPurpose;
+    bytes: Uint8Array;
+    mimeType: string;
+    durationMs?: number;
+    /** Legacy image rows sometimes contain MP4; verified by ffprobe in the offline importer only. */
+    legacyVideo?: { width: number; height: number; durationMs: number; posterPng: Uint8Array };
+  }): Promise<{ mediaId: string; created: boolean }> {
+    if (
+      !/^[0-9a-f-]{36}$/i.test(input.id) ||
+      ![
+        'chat_image',
+        'chat_voice',
+        'generated_voice',
+        'user_sticker',
+        'moments_image',
+        'user_avatar',
+        'group_avatar',
+      ].includes(input.purpose)
+    )
+      throw new AppError('bad_request', '不支持的旧媒体导入身份或用途');
+    const [existing] = await this.database.db
+      .select()
+      .from(objects)
+      .where(eq(objects.id, input.id));
+    if (existing) {
+      if (
+        existing.ownerId !== input.ownerUserId ||
+        existing.purpose !== input.purpose ||
+        existing.state !== 'ready'
+      )
+        throw new AppError('conflict', '旧媒体导入ID与现有记录不符');
+      return { mediaId: existing.id, created: false };
+    }
+    const buffer = Buffer.from(input.bytes);
+    let processed: Processed;
+    if (input.legacyVideo) {
+      const video = input.legacyVideo;
+      if (
+        input.purpose !== 'chat_image' ||
+        input.mimeType !== 'video/mp4' ||
+        buffer.length > MEDIA_LIMITS.imageMaxBytes ||
+        buffer.length < 16 ||
+        buffer.toString('ascii', 4, 8) !== 'ftyp' ||
+        !Number.isInteger(video.width) ||
+        !Number.isInteger(video.height) ||
+        video.width < 1 ||
+        video.height < 1 ||
+        video.width * video.height > 40000000 ||
+        !Number.isInteger(video.durationMs) ||
+        video.durationMs < 1 ||
+        video.durationMs > LONG_AUDIO_MAX_MS
+      )
+        throw new AppError('bad_request', '旧视频格式或尺寸不符合要求');
+      const poster = await this.processImage(Buffer.from(video.posterPng), 'image/png');
+      const thumb = poster.thumb ?? poster.body;
+      if (poster.thumb) poster.body.fill(0);
+      processed = {
+        body: buffer,
+        mimeType: 'video/mp4',
+        width: video.width,
+        height: video.height,
+        thumb,
+        durationMs: video.durationMs,
+      };
+    } else {
+      processed = isAudioPurpose(input.purpose)
+        ? this.processAudio(
+            'generated_voice',
+            { buffer, mimetype: input.mimeType },
+            input.durationMs ?? null,
+          )
+        : await this.processImage(buffer, input.mimeType);
+    }
+    try {
+      const row = await this.store({
+        id: input.id,
+        ownerId: input.ownerUserId,
+        purpose: input.purpose,
+        processed,
+        transcriptStatus: null,
+        importAudit: { adminId: input.adminId, provenance: { legacyMigration: true } },
+      });
+      return { mediaId: row.id, created: true };
+    } finally {
+      processed.body.fill(0);
+      processed.thumb?.fill(0);
+    }
   }
 
   /** 复制对象（重新加密到新所有者），保留宽高、时长、缩略图与内容摘要。 */

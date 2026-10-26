@@ -4,6 +4,7 @@
  * 发布新版本时原生效版本自动停用。
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { PRICE_PUBLISH_LOCK_SQL } from './price-publishing.js';
 import type { PriceTable, PriceUnit } from '@weiban/contracts';
 import { AdminPriceVersion, microsToPoints } from '@weiban/contracts';
 import { and, asc, desc, eq } from 'drizzle-orm';
@@ -214,6 +215,7 @@ export class PriceService {
       });
     }
     return this.database.transaction(async (tx) => {
+      await tx.query(PRICE_PUBLISH_LOCK_SQL);
       const version = await this.lockVersion(tx, priceVersionId);
       if (version.status === 'active') return this.load(tx, priceVersionId);
       if (version.status === 'retired') {

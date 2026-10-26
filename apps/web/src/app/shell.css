@@ -998,8 +998,8 @@ main > button.danger-row {
 /* ---------- 会话列表（4.2） ---------- */
 .chat-list-page {
   position: relative;
-  /* 下拉时列表上方露出的是小程序面板的深色底 */
-  background: var(--wb-color-ui-pull-panel-bg);
+  /* 未达到阈值时，空白与标题、安全区保持连续同色。 */
+  background: var(--wb-color-bg-nav-bar);
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -1029,8 +1029,8 @@ main > button.danger-row {
   flex: none;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  height: var(--wb-size-nav-bar);
-  padding: 0 var(--wb-space-2);
+  height: calc(var(--wb-size-nav-bar) + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) var(--wb-space-2) 0;
   background: var(--wb-color-bg-nav-bar);
 }
 .chat-list-head h1 {
@@ -1047,8 +1047,15 @@ main > button.danger-row {
   min-height: 0;
 }
 .pull-list {
-  position: absolute;
-  inset: 0;
+  /*
+   * 占页面 flex 列的内容区，而不是绝对定位铺满整个 padding box：
+   * .chat-list-page 的 padding-bottom 已经扣掉标签栏（56 + 1 + 安全区），
+   * 绝对定位的 inset: 0 会连这段 padding 一起盖住，虚拟列表底边落到屏幕最下沿，
+   * 滚到底时最后一行被固定标签栏压掉（10-25 反馈）。这里只留一次底边距，不重复叠加。
+   */
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   /* 和小程序面板同层、排在它后面：下拉时列表盖在面板上，面板从列表上方露出来 */
   z-index: calc(var(--wb-z-index-tab-bar) - 1);
   display: flex;
@@ -1057,6 +1064,7 @@ main > button.danger-row {
   /* 位移由脚本里的弹簧逐帧推进，不能再加 CSS 过渡（会把跟手拖慢） */
   will-change: transform;
   overscroll-behavior-y: contain;
+  user-select: none;
 }
 .pull-list.lifted {
   overflow: hidden;
@@ -1151,10 +1159,15 @@ main > button.danger-row {
   position: relative;
   z-index: 1;
   transition: transform var(--wb-motion-duration-swipe) ease-out;
-  will-change: transform;
 }
+/*
+ * will-change 只在真正拖动 / 已滑开的那一行挂：常驻会给列表里每个挂载行都建一个合成层
+ * （虚拟列表上下各留 1200 像素缓冲，实际有几十行），白占 GPU 内存、每帧多一层合成，
+ * 手指滚动时更容易掉帧。松手后的 180ms 过渡由 transform 过渡自己触发合成，不需要常驻。
+ */
 .swipe-track.dragging {
   transition: none;
+  will-change: transform;
 }
 .swipe-actions {
   position: absolute;
@@ -1415,17 +1428,9 @@ main > button.danger-row {
   height: var(--wb-size-mini-app-icon);
   border-radius: var(--wb-radius-lg);
 }
-.miniapp-recent {
-  display: flex;
-  gap: var(--wb-space-6);
-  overflow-x: auto;
-  padding: var(--wb-space-4) var(--wb-space-5);
-  margin: 0 calc(-1 * var(--wb-space-5));
-  background: var(--wb-color-bg-surface);
-}
-.miniapp-recent .miniapp-cell {
-  flex: 0 0 56px;
-}
+/* 最近使用与「我的小程序」共用 .miniapp-card > .miniapp-grid 的几何：
+   4 列等宽、96 行高、0 间距、左右各 16 内边距都由上面那组规则提供，这里不再单独定义，
+   避免两段网格再次各写一套而错位。.miniapp-recent 只作标记类。 */
 .miniapp-card {
   margin: 0 calc(-1 * var(--wb-space-5)) var(--wb-size-group-gap);
   padding: var(--wb-space-2) 0;

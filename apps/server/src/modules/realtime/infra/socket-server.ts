@@ -197,8 +197,8 @@ export class SocketServer implements OnApplicationBootstrap, OnModuleDestroy {
         c.ws.close(WsCloseCode.unauthenticated, 'Authentication required');
         return;
       }
-      // 3.x 增量契约保留 2.x 帧格式；两个客户端世代均可鉴权。
-      const version = /^(?:2|3)\.\d+(?:\.\d+)?$/.exec(frame.data.contractVersion);
+      // 4.0 移除的是设置接口字段，WebSocket v1 帧未变；2.x–4.x 均可鉴权。
+      const version = /^(?:2|3|4)\.\d+(?:\.\d+)?$/.exec(frame.data.contractVersion);
       if (!version) {
         c.ws.close(WsCloseCode.clientTooOld, 'Unsupported contract');
         return;

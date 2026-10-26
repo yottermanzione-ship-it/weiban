@@ -14,8 +14,10 @@ import { ConversationListPage } from '../features/conversation-list.js';
 import { ConversationPage } from '../features/chat.js';
 import { MemoriesPage } from '../features/memories.js';
 import { ChatSettingsPage } from '../features/chat-settings.js';
+import { ChatBackgroundPage } from '../features/chat-background.js';
 import { ContactsPage, DiscoverPage, CharacterPage, RolePlazaPage } from '../features/contacts.js';
 import { ComingSoonPage, useBack } from '../features/shell-kit.js';
+import { RecapAutoShow } from '../features/recap.js';
 import { MiniAppFrame, MiniAppsHomePage, miniAppFor } from '../features/miniapps.js';
 import {
   AboutPage,
@@ -152,11 +154,14 @@ const ownHeader = [
   /^\/(coming-soon|miniapps|discover\/plaza)(\/|$)/,
   /^\/(services|settings)$/,
   /^\/settings\/(about|announcements|release-notes)$/,
-  /^\/characters\/[^/]+\/model$/,
+  // 含「某场景用哪个模型」子页：它自己也挂了 NavBar，漏登记会出现两条返回箭头
+  /^\/characters\/[^/]+\/model(\/[^/]+)?$/,
   // 旧版界面（06-old-ui-spec）改用 NavBar 的页面
   /^\/settings\/(security|privacy|general)$/,
   /^\/services\/proactive$/,
   /^\/services\/ecology$/,
+  // 10-25：好感度总览自带 NavBar；漏登记时通用顶栏会再画一条返回箭头（截图的「两个 <」）
+  /^\/services\/familiarity$/,
   /^\/characters\/[^/]+$/,
   /^\/characters\/custom(\/|$)/,
   /^\/profile(\/|$)/,
@@ -390,6 +395,7 @@ function Shell() {
                 <Route path="/chat" element={<ConversationListPage />} />
                 <Route path="/chat/:conversationId" element={<ConversationPage />} />
                 <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />
+                <Route path="/chat/:conversationId/background" element={<ChatBackgroundPage />} />
                 <Route path="/characters/:characterId/memories" element={<MemoriesPage />} />
                 <Route path="/characters/:characterId/timeline" element={<TimelinePage />} />
                 <Route path="/characters/:characterId/murmurs" element={<MurmursPage />} />
@@ -415,6 +421,7 @@ function Shell() {
                   element={<AnniversariesPage />}
                 />
                 <Route path="/sticker-store" element={<StickerStorePage />} />
+                <Route path="/sticker-store/mine" element={<StickerStorePage />} />
                 <Route path="/sticker-store/:packId" element={<StickerStoreDetailPage />} />
                 <Route path="/support" element={<SupportPage />} />
                 <Route path="/support/new" element={<SupportCreatePage />} />
@@ -495,6 +502,7 @@ function Shell() {
         {showTabs && <TabBar hidden={false} />}
         <AchievementWatcher />
         {!firstProfile && <ReleaseCenter />}
+        {!firstProfile && <RecapAutoShow />}
         <ToastHost />
         {!firstProfile && !onboarding && (
           <EcologyInsufficientNotice

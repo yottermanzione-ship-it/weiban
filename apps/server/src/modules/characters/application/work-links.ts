@@ -29,6 +29,7 @@ import {
 } from '../../../platform/index.js';
 import { LINK_PREVIEW_PORT, MEDIA_ASSET_READ_PORT } from '../../media/index.js';
 import { characters, defaultVoices, workLinks } from '../infra/db/schema.js';
+import { parseLegacyCard } from '../domain/legacy-card.js';
 
 type Row = typeof workLinks.$inferSelect;
 
@@ -330,7 +331,14 @@ export class CharacterWorkLinkService
       .select()
       .from(defaultVoices)
       .where(eq(defaultVoices.characterId, characterId));
-    return row?.voiceId ?? null;
+    if (row?.voiceId) return row.voiceId;
+    // 旧卡角色：直接读 voice_json / qwen_voice_id；媒体侧再按 provider_voice_key 找已登记音色。
+    const [character] = await this.database.db
+      .select({ legacyCard: characters.legacyCard })
+      .from(characters)
+      .where(eq(characters.id, characterId));
+    const legacy = character?.legacyCard ? parseLegacyCard(character.legacyCard) : null;
+    return legacy?.voiceIds[0] ?? null;
   }
 
   /** 给 media 的音色名称检查（MEDIA_REAL_PERSON_NAMES，由装配入口绑定）：已录入的真人预设角色姓名。 */

@@ -12,7 +12,6 @@ import {
   PLAZA_COMMENT_MAX_CHARS,
   PlazaEndpoints,
   UserCustomEndpoints,
-  type CharacterBasis,
   type PlazaAuthor,
   type PlazaComment,
   type PlazaNotice,
@@ -212,17 +211,16 @@ export function usePlazaBadge() {
 
 // ---------- 广场分页（PLZ-01） ----------
 
-/** embedded：放进「角色广场」两个 tab 页里，「我发布的」入口移到页面标题栏。 */
+/**
+ * embedded：放进「角色广场」两个 tab 页里，「我发布的」入口移到页面标题栏。
+ * 2026-10-25：排序 / 类型 / 分类筛选按用户要求删除；搜索保留，结果固定按「被用户添加的次数」排热度（服务端排序）。
+ */
 export function PlazaTab({ embedded = false }: { embedded?: boolean } = {}) {
   const badge = usePlazaBadge();
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
-  const [sort, setSort] = useState<'hot' | 'latest' | 'most_liked'>('hot');
-  const [kind, setKind] = useState<'' | 'custom_character' | 'preset_variant'>('');
-  const [basis, setBasis] = useState<'' | CharacterBasis>('');
-  const filters = { search, sort, kind, basis };
   return (
-    <section aria-label="自定义角色">
+    <section aria-label="自定义角色" className="plaza-tab-page">
       {!embedded && (
         <div className="page-header">
           <span />
@@ -263,93 +261,160 @@ export function PlazaTab({ embedded = false }: { embedded?: boolean } = {}) {
           搜索
         </button>
       </form>
-      <div className="plaza-filter">
-        <select
-          aria-label="排序"
-          value={sort}
-          onChange={(e) => setSort(e.target.value as typeof sort)}
-        >
-          <option value="hot">热门</option>
-          <option value="latest">最新发布</option>
-          <option value="most_liked">点赞最多</option>
-        </select>
-        <select
-          aria-label="类型"
-          value={kind}
-          onChange={(e) => {
-            const next = e.target.value as typeof kind;
-            setKind(next);
-            if (next === 'preset_variant') setBasis('');
-          }}
-        >
-          <option value="">全部类型</option>
-          <option value="custom_character">自定义角色</option>
-          <option value="preset_variant">预设改版</option>
-        </select>
-        <select
-          aria-label="分类"
-          value={basis}
-          disabled={kind === 'preset_variant'}
-          onChange={(e) => setBasis(e.target.value as typeof basis)}
-        >
-          <option value="">全部分类</option>
-          <option value="original">原创</option>
-          <option value="fictional">虚构</option>
-          <option value="real_person">真人</option>
-        </select>
-      </div>
-      <WorkList key={JSON.stringify(filters)} {...filters} />
+      <WorkList search={search} sort="added" />
     </section>
   );
+}
+
+// ---------- 列表末尾的手动分页行 ----------
+
+/** 下一批的加载状态：idle = 可以点，loading = 在途，error = 失败可重试。 */
+export type PageMore = 'idle' | 'loading' | 'error';
+
+const LIST_END_KEY = 'plaza-list-end-row';
+
+type PagedRow<T> = { key: string; item: T | null };
+
+/**
+ * 虚拟列表 + 末尾「加载更多」行：只有用户点才取下一批，不会触底自动连拉。
+ * 公共 VirtualList 的 API 不动（其他负责人在改），这里把末尾行当成列表最后一项交给它渲染，
+ * 于是滚动区仍然只有一个、按钮也留在列表内部。
+ */
+export function PagedVirtualList<T>({
+  items,
+  itemKey,
+  estimate,
+  label,
+  render,
+  more,
+  hasMore,
+  onLoadMore,
+}: {
+  items: T[];
+  itemKey(item: T): string;
+  estimate: number;
+  label: string;
+  render(item: T): ReactNode;
+  more: PageMore;
+  hasMore: boolean;
+  onLoadMore(): void;
+}) {
+  const rows: PagedRow<T>[] = items.map((item) => ({ key: itemKey(item), item }));
+  if (items.length) rows.push({ key: LIST_END_KEY, item: null });
+  return (
+    <VirtualList
+      items={rows}
+      itemKey={(row) => row.key}
+      estimate={estimate}
+      label={label}
+      render={(row) =>
+        row.item ? (
+          render(row.item)
+        ) : (
+          <ListEndRow more={more} hasMore={hasMore} onLoadMore={onLoadMore} />
+        )
+      }
+    />
+  );
+}
+
+/** 列表最后一行：加载更多 / 正在读取 / 失败重试 / 没有更多。 */
+export function ListEndRow({
+  more,
+  hasMore,
+  onLoadMore,
+}: {
+  more: PageMore;
+  hasMore: boolean;
+  onLoadMore(): void;
+}) {
+  if (more === 'loading')
+    return (
+      <p className="plaza-list-end" role="status">
+        <span className="spinner" aria-hidden="true" />
+        正在读取…
+      </p>
+    );
+  if (more === 'error')
+    return (
+      <div className="plaza-list-end">
+        <button type="button" className="text-button" onClick={onLoadMore}>
+          没读出来，点这里重试
+        </button>
+      </div>
+    );
+  if (hasMore)
+    return (
+      <div className="plaza-list-end">
+        <button type="button" className="text-button" onClick={onLoadMore}>
+          加载更多
+        </button>
+      </div>
+    );
+  return <p className="plaza-list-end plaza-list-end-done">没有更多了</p>;
 }
 
 function WorkList({
   search,
   sort,
-  kind,
-  basis,
   authorId,
 }: {
   search?: string;
-  sort?: 'hot' | 'latest' | 'most_liked';
-  kind?: string;
-  basis?: string;
+  sort?: 'hot' | 'latest' | 'most_liked' | 'added';
   authorId?: string;
 }) {
   const [items, setItems] = useState<PlazaWorkCard[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [more, setMore] = useState<PageMore>('idle');
+  /** 换搜索 / 换排序时让在途的旧请求作废；「加载更多」同一时间只放一批，连点不会拉两批。 */
+  const generation = useRef(0);
+  const moreInFlight = useRef(false);
   const load = useCallback(
     async (after?: string) => {
-      setState('loading');
+      if (after) {
+        if (moreInFlight.current) return;
+        moreInFlight.current = true;
+        setMore('loading');
+      } else {
+        // 换搜索 / 重试：上一页的游标与在途状态作废，免得旧「加载更多」接到新结果后面。
+        setState('loading');
+        setMore('idle');
+        setCursor(null);
+      }
+      const gen = after ? generation.current : ++generation.current;
       try {
         const page = await api.call(PlazaEndpoints.listWorks, {
           query: {
             q: search || undefined,
             sort: sort ?? 'latest',
-            kind: (kind || undefined) as 'custom_character' | 'preset_variant' | undefined,
-            basis: (basis || undefined) as CharacterBasis | undefined,
             authorId,
             cursor: after,
             limit: 20,
           },
           networkOnly: true,
         });
+        if (gen !== generation.current) return;
         setItems((prev) => (after ? [...prev, ...page.items] : page.items));
         setCursor(page.nextCursor);
-        setState('ready');
+        if (after) setMore('idle');
+        else setState('ready');
       } catch {
-        setState('error');
+        if (gen !== generation.current) return;
+        if (after) setMore('error');
+        else setState('error');
+      } finally {
+        if (after) moreInFlight.current = false;
       }
     },
-    [search, sort, kind, basis, authorId],
+    [search, sort, authorId],
   );
   useEffect(() => {
     void load();
   }, [load]);
   if (state === 'loading' && items.length === 0)
     return (
-      <div aria-busy="true" role="status" aria-label="正在读取作品">
+      <div className="plaza-tab-body" aria-busy="true" role="status" aria-label="正在读取作品">
         {Array.from({ length: authorId ? 3 : 6 }, (_, i) => (
           <div key={i} className="skeleton-row" style={{ height: 88, marginBottom: 4 }} />
         ))}
@@ -357,14 +422,16 @@ function WorkList({
     );
   if (state === 'error' && items.length === 0)
     return (
-      <div className="empty">
-        <p>加载失败</p>
-        <button onClick={() => void load()}>重试</button>
+      <div className="plaza-tab-body">
+        <div className="empty">
+          <p>加载失败</p>
+          <button onClick={() => void load()}>重试</button>
+        </div>
       </div>
     );
   if (items.length === 0)
     return (
-      <>
+      <div className="plaza-tab-body">
         <p className="empty">
           {authorId
             ? 'TA 还没有公开的作品'
@@ -373,23 +440,21 @@ function WorkList({
               : '还没有人发布角色 · 在和自己的角色聊天时，可以从「聊天信息」发布到这里'}
         </p>
         {!authorId && search && <WebCharacterSearch key={search} query={search} />}
-      </>
+      </div>
     );
   return (
-    <>
-      <VirtualList
-        items={items}
-        itemKey={(w) => w.workId}
-        estimate={88}
-        label="人设广场作品"
-        render={(work) => <WorkRow work={work} search={search} />}
-      />
-      {cursor && (
-        <button disabled={state === 'loading'} onClick={() => void load(cursor)}>
-          {state === 'loading' ? '正在读取…' : '加载更多'}
-        </button>
-      )}
-    </>
+    <PagedVirtualList
+      items={items}
+      itemKey={(w) => w.workId}
+      estimate={88}
+      label="人设广场作品"
+      render={(work) => <WorkRow work={work} search={search} />}
+      more={more}
+      hasMore={!!cursor}
+      onLoadMore={() => {
+        if (cursor) void load(cursor);
+      }}
+    />
   );
 }
 
@@ -405,7 +470,9 @@ function WorkRow({ work, search }: { work: PlazaWorkCard; search?: string }) {
         </span>
         <small className="hint">{work.tagline}</small>
         <span className="work-row-meta">
-          {authorName(work.author)} · 赞 {work.likeCount} · 添加 {work.adoptCount}
+          {authorName(work.author)}
+          {work.adoptCount > 0 ? ` · 添加 ${work.adoptCount}` : ''}
+          {work.likeCount > 0 ? ` · 赞 ${work.likeCount}` : ''}
         </span>
       </span>
       <span className="work-row-side">{work.adoptedByMe ? '已添加' : ''}</span>

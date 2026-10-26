@@ -2,6 +2,11 @@ import { MemoryService } from './application/memory.js';
 import { PrivateDigestService } from './application/private-digest.js';
 import { ImageCaptionStore } from './application/image-captions.js';
 import { ImagePublicSearch } from './application/image-public-search.js';
+import {
+  MomentSceneryService,
+  fetchScenery,
+  MOMENT_SCENERY_FETCHER,
+} from './application/moment-scenery.js';
 import { PetAiService } from './application/pet-ai.js';
 import { CardLineService, MomentCardService } from './application/moment-cards.js';
 import { MOMENTS_PET_READ_PORT } from './application/moments-ai.js';
@@ -84,6 +89,8 @@ import { PlannerAdminController } from './http/planner-admin.controller.js';
 import { EcologySettingsService } from './application/ecology-settings.js';
 import { EcologyService } from './application/ecology.js';
 import { WeiboSyncService } from './application/weibo.js';
+import { WeiboMaterialService, WeiboMediaStore } from './application/weibo-material-service.js';
+import { WEIBO_MOMENT_MATERIAL_PORT } from './application/weibo-material.js';
 import { EcologyAdminController, EcologyController } from './http/ecology.controller.js';
 import {
   SupplementConflictService,
@@ -109,6 +116,10 @@ import {
   ],
   providers: [
     WeiboSyncService,
+    // 微博公开素材的图片链路：采集（只认该帖自己的公开页面）→ 媒体服务转存为平台公共图 → 按用户稳定选图。
+    WeiboMediaStore,
+    WeiboMaterialService,
+    { provide: WEIBO_MOMENT_MATERIAL_PORT, useExisting: WeiboMaterialService },
     { provide: AI_TRIAL_CLEANUP_PORT, useExisting: ReplyPlanStore },
     // T-090：行为规划决策层。
     PlannerService,
@@ -139,7 +150,10 @@ import {
     // H3：图片描述存档。
     ImageCaptionStore,
     ImagePublicSearch,
-    // v5 批 B：记忆分档与长上下文。
+    // 朋友圈随机风景图（沿用旧版参数：约 22% 带图，同内容同图）。
+    MomentSceneryService,
+    { provide: MOMENT_SCENERY_FETCHER, useValue: fetchScenery },
+    // v5 批 B：记忆分档。
     BrainContextService,
     SharedEpisodesService,
     ConversationMemoryService,

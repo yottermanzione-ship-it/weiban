@@ -4,7 +4,14 @@
  */
 export { PlatformModule, type PlatformOptions } from './platform.module.js';
 
-export { APP_CONFIG, loadConfig, ConfigError, type AppConfig } from './config/config.js';
+export {
+  APP_CONFIG,
+  loadConfig,
+  ConfigError,
+  type AppConfig,
+  type WechatChannelConfig,
+  type WeiboChannelConfig,
+} from './config/config.js';
 export * from './config/product-params.js';
 
 export { CLOCK, SystemClock, TestClock, type Clock } from './clock/clock.js';
@@ -18,6 +25,12 @@ export { EVENT_INBOX, EventInbox, type InboxResult } from './events/inbox.js';
 export { EVENT_DISPATCHER, EventDispatcher } from './events/dispatcher.js';
 
 export { USER_DATA_REGISTRY, UserDataRegistry } from './deletion/user-data-registry.js';
+export {
+  CHARACTER_PURGE_REGISTRY,
+  CharacterPurgeRegistry,
+  type CharacterPurgeContributor,
+  type CharacterPurgeCounts,
+} from './deletion/character-purge-registry.js';
 
 export {
   JOB_QUEUE,

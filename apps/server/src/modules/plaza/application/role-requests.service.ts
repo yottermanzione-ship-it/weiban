@@ -6,8 +6,10 @@
  *   加到该用户通讯录（幂等键 = requestId）；通讯录已满等失败时仍标记完成，addedToContacts = false，用户自己点「添加」。
  * - 每次状态变化：写 history、置 user_unseen、发 data.changed(role_requests)，并推送一条 system 通知（deepLink /role-requests/{id}）。
  *   推送失败不影响状态变化（推送在事务提交后发，失败只记日志）。
- * - 3.17（会员 v5，16 号 §6）：免费用户终身 3 次；PRO+ 终身 3 次 + 会员期间每周 2 次（北京时间周一 0 点重置、不累积，
- *   先用每周的）；次数与价格后台可调。拒绝 / 撤回的申请不再占次数（按状态计数，即「退还次数」）。
+ * - 3.17（会员 v5，16 号 §6）：免费用户终身 3 次；PRO+ 每周免费次数（北京时间周一 0 点重置、不累积）；
+ *   次数与价格后台可调。拒绝 / 撤回的申请不再占次数（按状态计数，即「退还次数」）。
+ * - 10-25（会员 v6）：PRO+ 改为**每周 3 次**，不再「终身 3 + 每周 2」叠加（规则见 domain/role-request-quota.ts）。
+ *   PRO+ 的周计数统计本周所有计入的免费申请（含升级前用掉的终身名额），所以同一自然周最多 3 次免费。
  * - 3.15：成功提交前算免费次数；免费不冻结，超额按配置价格（默认 200），与申请同事务经BillingServiceFeePort冻结（可用积分不足 → 422 insufficient_balance，
  *   不建申请）；完成时扣除（pointsCharged = pointsCost），被拒或撤回时退回。扣除 / 退回在状态变化提交后调用，
  *   失败只记日志，由每 10 分钟的清扫（PlazaLifecycle）补做，所以钱不会卡在冻结里。
@@ -21,6 +23,7 @@ import {
   type AdminRoleRequest,
   type ContactsWritePort,
   type IdentityDirectoryPort,
+  type IdentityUserLabel,
   type MediaReadPort,
   type MediaSystemPort,
   type BillingServiceFeePort,
@@ -35,10 +38,6 @@ import {
 import { z } from 'zod';
 import {
   AUDIT_LOG,
-  localDate,
-  localParts,
-  addDays,
-  startOfLocalDay,
   AppError,
   newId,
   parseContract,
@@ -52,6 +51,7 @@ import { MEDIA_READ_PORT, MEDIA_SYSTEM_PORT } from '../../media/index.js';
 import { PUSH_PORT } from '../../push/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
 import { decodeOffset, encodeOffset } from '../domain/rules.js';
+import { computeRoleRequestQuota, quotaWeekWindow } from '../domain/role-request-quota.js';
 import {
   plazaSettings,
   roleRequests,
@@ -68,7 +68,7 @@ const DEFAULT_CONFIG: RoleRequestConfig = {
   pointsCost: 200,
   maxOpenPerUser: 3,
   lifetimeFreeCount: 3,
-  proPlusWeeklyFreeCount: 2,
+  proPlusWeeklyFreeCount: 3,
 };
 /** 拒绝 / 撤回的申请退还免费次数：计数时只算这些状态。 */
 const QUOTA_COUNTED_STATUSES: RoleRequestStatusValue[] = ['pending', 'in_progress', 'completed'];
@@ -167,19 +167,15 @@ export class RoleRequestService {
     return (await this.quotaWithKind(userId, tx)).quota;
   }
 
-  /** 3.17：算两类免费次数，并给出下一次提交占哪一类（null = 收费）。 */
+  /** 10-25：算当前档位的免费次数（免费 = 终身，PRO+ = 本周），并给出下一次提交占哪一类（null = 收费）。 */
   private async quotaWithKind(
     userId: string,
     tx?: DbTx,
   ): Promise<{ quota: RoleRequestQuota; nextKind: 'weekly' | 'lifetime' | null }> {
     const member = await this.membership.getMembership(userId, tx);
     const config = await this.getConfig();
-    const now = new Date(member.checkedAt),
-      zone = 'Asia/Shanghai' as const,
-      date = localDate(now, zone);
-    const weekStartDate = addDays(date, 1 - localParts(now, zone).weekday);
-    const start = startOfLocalDay(weekStartDate, zone),
-      end = startOfLocalDay(addDays(weekStartDate, 7), zone);
+    const pro = member.tier === 'pro_plus';
+    const window = quotaWeekWindow(new Date(member.checkedAt));
     const db = tx?.db ?? this.db.db;
     const counted = and(
       eq(roleRequests.userId, userId),
@@ -190,43 +186,35 @@ export class RoleRequestService {
       .select({ n: count() })
       .from(roleRequests)
       .where(and(counted, sql`coalesce(${roleRequests.freeQuotaKind}, 'lifetime') = 'lifetime'`));
-    const [week] = await db
-      .select({ n: count() })
-      .from(roleRequests)
-      .where(
-        and(
-          counted,
-          eq(roleRequests.freeQuotaKind, 'weekly'),
-          gte(roleRequests.createdAt, start),
-          lt(roleRequests.createdAt, end),
-        ),
-      );
-    const pro = member.tier === 'pro_plus';
-    const lifetimeLimit = config.lifetimeFreeCount,
-      lifetimeUsed = life?.n ?? 0,
-      weeklyLimit = pro ? config.proPlusWeeklyFreeCount : 0,
-      weeklyUsed = pro ? (week?.n ?? 0) : 0;
-    const weeklyLeft = Math.max(0, weeklyLimit - weeklyUsed),
-      lifetimeLeft = Math.max(0, lifetimeLimit - lifetimeUsed);
-    const nextKind = weeklyLeft > 0 ? 'weekly' : lifetimeLeft > 0 ? 'lifetime' : null;
-    return {
-      nextKind,
-      quota: {
-        quotedAt: member.checkedAt,
+    // 免费用户没有每周次数，不必查本周计数。
+    // PRO+ 的周额度统计本周**所有**计入的免费申请，不区分 lifetime / weekly：否则「本周先用完终身的 3 次、
+    // 升级 PRO+ 后再拿每周 3 次」会在同一自然周叠加成 6 次，违背「每周 3 次、不再叠加」。
+    let weeklyUsed = 0;
+    if (pro) {
+      const [week] = await db
+        .select({ n: count() })
+        .from(roleRequests)
+        .where(
+          and(
+            counted,
+            gte(roleRequests.createdAt, window.start),
+            lt(roleRequests.createdAt, window.end),
+          ),
+        );
+      weeklyUsed = week?.n ?? 0;
+    }
+    return computeRoleRequestQuota(
+      {
         tier: member.tier,
-        limit: lifetimeLimit + weeklyLimit,
-        used: Math.min(lifetimeUsed, lifetimeLimit) + Math.min(weeklyUsed, weeklyLimit),
-        remaining: weeklyLeft + lifetimeLeft,
-        nextPointsCost: nextKind ? 0 : config.pointsCost,
-        lifetimeLimit,
-        lifetimeUsed,
-        weeklyLimit,
+        lifetimeUsed: life?.n ?? 0,
         weeklyUsed,
-        periodStart: start.toISOString(),
-        periodEnd: end.toISOString(),
-        timeZone: zone,
+        lifetimeFreeCount: config.lifetimeFreeCount,
+        proPlusWeeklyFreeCount: config.proPlusWeeklyFreeCount,
+        pointsCost: config.pointsCost,
+        quotedAt: member.checkedAt,
       },
-    };
+      window,
+    );
   }
   async userConfig(userId: string) {
     return { ...(await this.getConfig()), quota: await this.quota(userId) };
@@ -417,9 +405,9 @@ export class RoleRequestService {
       .select({ n: count() })
       .from(roleRequests)
       .where(eq(roleRequests.status, 'pending'));
-    const names = await this.usernames(page.map((r) => r.userId));
+    const labels = await this.labels(page.map((r) => r.userId));
     return {
-      items: await Promise.all(page.map((r) => this.toAdminDto(r, names))),
+      items: await Promise.all(page.map((r) => this.toAdminDto(r, labels))),
       nextCursor: rows.length > q.limit ? encodeOffset(offset + q.limit) : null,
       pendingCount: pending?.n ?? 0,
     };
@@ -427,7 +415,7 @@ export class RoleRequestService {
 
   async adminGet(requestId: string): Promise<AdminRoleRequest> {
     const row = await this.find(requestId);
-    return this.toAdminDto(row, await this.usernames([row.userId]));
+    return this.toAdminDto(row, await this.labels([row.userId]));
   }
 
   async accept(adminId: string, requestId: string, input: unknown): Promise<AdminRoleRequest> {
@@ -667,7 +655,7 @@ export class RoleRequestService {
     });
     if (notify) await this.pushStatus(notify);
     const settled = await this.syncFee(row);
-    return this.toAdminDto(settled, await this.usernames([settled.userId]));
+    return this.toAdminDto(settled, await this.labels([settled.userId]));
   }
 
   private async transition(
@@ -731,11 +719,12 @@ export class RoleRequestService {
     }
   }
 
-  private async usernames(userIds: string[]): Promise<Record<string, string>> {
+  /** 后台展示「这是谁」：一次批量取昵称 + 登录名，取不到不影响申请本身。 */
+  private async labels(userIds: string[]): Promise<Record<string, IdentityUserLabel>> {
     const ids = [...new Set(userIds)];
     if (!ids.length || !this.directory) return {};
     try {
-      return await this.directory.getUsernames(ids);
+      return await this.directory.getUserLabels(ids);
     } catch {
       return {};
     }
@@ -778,12 +767,13 @@ export class RoleRequestService {
 
   private async toAdminDto(
     row: RoleRequestRow,
-    names: Record<string, string>,
+    labels: Record<string, IdentityUserLabel>,
   ): Promise<AdminRoleRequest> {
     return {
       ...(await this.toDto(row)),
       userId: row.userId,
-      username: names[row.userId] ?? null,
+      username: labels[row.userId]?.username ?? null,
+      nickname: labels[row.userId]?.nickname ?? null,
       handledBy: row.handledBy,
       history: row.history.map((h) => ({ status: h.status, message: h.message, at: h.at })),
     };

@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ReactNode,
+} from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   IdentityEndpoints,
@@ -190,7 +198,20 @@ function ActorAvatar({
   );
 }
 
-function MomentCommentRow({
+/** 名字是独立资料入口，不能与评论正文共用回复按钮。 */
+export function MomentActorName({ actor, actors }: { actor: MomentsActor; actors: ActorNames }) {
+  return (
+    <Link
+      className="moment-actor-name"
+      to={actor.kind === 'character' ? `/characters/${actor.refId}` : '/me/moments'}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {actors.name(actor)}
+    </Link>
+  );
+}
+
+export function MomentCommentRow({
   comment,
   actors,
   pending,
@@ -208,13 +229,21 @@ function MomentCommentRow({
   });
   return (
     <p className="moment-comment">
-      <button type="button" {...press} disabled={pending} onClick={onReply}>
-        <b>{actors.name(comment.author)}</b>
-        {comment.replyTo && (
-          <>
-            回复<b>{actors.name(comment.replyTo)}</b>
-          </>
-        )}
+      <MomentActorName actor={comment.author} actors={actors} />
+      {comment.replyTo && (
+        <>
+          回复
+          <MomentActorName actor={comment.replyTo} actors={actors} />
+        </>
+      )}
+      <button
+        type="button"
+        className="moment-comment-text"
+        aria-label={`回复${actors.name(comment.author)}的评论`}
+        {...press}
+        disabled={pending}
+        onClick={onReply}
+      >
         ：{comment.text}
       </button>
     </p>
@@ -403,7 +432,14 @@ export function MomentCard({
             {post.likes.length > 0 && (
               <p className="moment-likes">
                 <OldIcon name="wechat/like" size={14} />
-                <span>{post.likes.map((a) => actors.name(a)).join('、')}</span>
+                <span>
+                  {post.likes.map((actor, index) => (
+                    <Fragment key={`${actor.kind}:${actor.refId}`}>
+                      {index > 0 && '、'}
+                      <MomentActorName actor={actor} actors={actors} />
+                    </Fragment>
+                  ))}
+                </span>
               </p>
             )}
             {visibleComments.map((c) => (

@@ -14,6 +14,10 @@ import type { WebSearchResultItem } from '@weiban/contracts';
 import { SystemClock } from '../../../platform/index.js';
 import { jevDecide } from './jev-adapter.js';
 import { deepseekSearch, deepseekFetch, type SearchRequestGate } from './deepseek-tools.js';
+import { downloadDashscopeAudio } from './dashscope-audio.js';
+import { acquireNativeOpusEncoder } from './native-opus.js';
+import { isMimoAsrModel, mimoAsr } from './mimo-asr.js';
+import { isNativeAsrModel, nativeAsr } from './native-asr.js';
 
 export type MediaFailure =
   | 'network_error'
@@ -24,9 +28,17 @@ export type MediaFailure =
   | 'content_rejected'
   | 'bad_request';
 
+/** Only quantities explicitly reported by the supplier; preserve them even after local failure. */
+export type ReportedMediaUsage = { ttsChars?: number; asrSeconds?: number };
 export type MediaAdapterResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; category: MediaFailure; zeroCost?: boolean; localRateLimit?: boolean };
+  | { ok: true; value: T; reportedUsage?: ReportedMediaUsage }
+  | {
+      ok: false;
+      category: MediaFailure;
+      zeroCost?: boolean;
+      localRateLimit?: boolean;
+      reportedUsage?: ReportedMediaUsage;
+    };
 
 export interface MediaTarget {
   kind: string;
@@ -80,7 +92,7 @@ export interface MediaAdapter {
   transcribe(
     t: MediaTarget,
     input: { bytes: Uint8Array; mimeType: string },
-  ): Promise<MediaAdapterResult<{ text: string }>>;
+  ): Promise<MediaAdapterResult<{ text: string; asrSeconds?: number }>>;
   generateImage(
     t: MediaTarget,
     input: { prompt: string; size: string },
@@ -293,7 +305,7 @@ export class OpenAiCompatibleMediaAdapter implements MediaAdapter {
   async transcribe(
     t: MediaTarget,
     input: { bytes: Uint8Array; mimeType: string },
-  ): Promise<MediaAdapterResult<{ text: string }>> {
+  ): Promise<MediaAdapterResult<{ text: string; asrSeconds?: number }>> {
     try {
       const form = new FormData();
       const ext = input.mimeType.split('/')[1]?.split(';')[0] ?? 'ogg';
@@ -314,9 +326,17 @@ export class OpenAiCompatibleMediaAdapter implements MediaAdapter {
       if (!response.ok) return { ok: false, category: await errorOf(response) };
       const bytes = await readLimited(response);
       if (!bytes) return { ok: false, category: 'provider_error' };
-      const payload = JSON.parse(Buffer.from(bytes).toString('utf8')) as { text?: unknown };
+      const payload = JSON.parse(Buffer.from(bytes).toString('utf8')) as {
+        text?: unknown;
+        usage?: { seconds?: unknown };
+      };
       if (typeof payload.text !== 'string') return { ok: false, category: 'provider_error' };
-      return { ok: true, value: { text: payload.text.slice(0, 4000) } };
+      const seconds = payload.usage?.seconds;
+      const reported = typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0;
+      return {
+        ok: true,
+        value: { text: payload.text.slice(0, 4000), ...(reported ? { asrSeconds: seconds } : {}) },
+      };
     } catch {
       return { ok: false, category: 'network_error' };
     }
@@ -411,6 +431,332 @@ export class OpenAiCompatibleMediaAdapter implements MediaAdapter {
 }
 
 /** 开发 / 测试用假上游：确定性输出，不发网络请求。 */
+/** MiMo 语音合成模型名（`mimo-v2.5-tts`、`mimo-v2.5-tts-voiceclone` 等）。 */
+const MIMO_TTS_MODEL = /^mimo-[a-z0-9.]*-tts/i;
+
+export function isMimoChatAudioModel(model: string): boolean {
+  return MIMO_TTS_MODEL.test(model.trim());
+}
+
+/** 从 24kHz 单声道 16 位 WAV 里取出 PCM；格式不符返回 null（不做隐式重采样）。 */
+export function pcmFromWav(bytes: Uint8Array, sampleRate: number): Uint8Array | null {
+  const view = Buffer.from(bytes);
+  if (view.length < 44 || view.toString('ascii', 0, 4) !== 'RIFF') return null;
+  if (view.toString('ascii', 8, 12) !== 'WAVE') return null;
+  let offset = 12;
+  let fmt: { format: number; channels: number; rate: number; bits: number } | null = null;
+  let data: Buffer | null = null;
+  while (offset + 8 <= view.length) {
+    const id = view.toString('ascii', offset, offset + 4);
+    const size = view.readUInt32LE(offset + 4);
+    const body = offset + 8;
+    if (body + size > view.length) break;
+    if (id === 'fmt ' && size >= 16) {
+      fmt = {
+        format: view.readUInt16LE(body),
+        channels: view.readUInt16LE(body + 2),
+        rate: view.readUInt32LE(body + 4),
+        bits: view.readUInt16LE(body + 14),
+      };
+    } else if (id === 'data') {
+      data = view.subarray(body, body + size);
+    }
+    offset = body + size + (size % 2);
+  }
+  if (!fmt || !data) return null;
+  if (fmt.format !== 1 || fmt.bits !== 16 || fmt.channels !== 1 || fmt.rate !== sampleRate)
+    return null;
+  return new Uint8Array(data);
+}
+
+/** Repair only documented completed-stream length sentinels, never arbitrary corrupt WAV lengths. */
+export function normalizeDashscopeWav(bytes: Uint8Array): Uint8Array | null {
+  const view = Buffer.from(bytes);
+  if (
+    view.length < 44 ||
+    view.toString('ascii', 0, 4) !== 'RIFF' ||
+    view.toString('ascii', 8, 12) !== 'WAVE'
+  )
+    return null;
+  const sentinel = (n: number) => n === 0x7fffffbf || n === 0x7fffffff;
+  const riff = view.readUInt32LE(4);
+  const streaming = sentinel(riff);
+  if (!streaming && riff !== view.length - 8) return null;
+  if (streaming) view.writeUInt32LE(view.length - 8, 4);
+  let foundData = false;
+  for (let offset = 12; offset + 8 <= view.length;) {
+    let size = view.readUInt32LE(offset + 4);
+    const body = offset + 8;
+    if (view.toString('ascii', offset, offset + 4) === 'data') {
+      if (foundData) return null;
+      foundData = true;
+      if (sentinel(size) || (streaming && size === riff - (body - 8))) {
+        // 部分供应商按流式 RIFF 总长减去前置 chunk 开销写 data 长度：
+        // 实测 0x7fffffbf / 0x7fffff9b。只在已识别 RIFF 哨兵且两者精确相符时修复。
+        // DashScope 完成后的文件可能只有 data 长度是流式哨兵、RIFF 长度已正确；
+        // 旧版同样按实际字节修正，否则会把可用音频判成损坏。
+        size = view.length - body;
+        view.writeUInt32LE(size, offset + 4);
+      }
+    }
+    if (body + size > view.length) return null;
+    offset = body + size + (size % 2);
+    if (offset > view.length) return null;
+  }
+  const pcm = pcmFromWav(view, 24000);
+  return foundData && pcm && pcm.length > 0 && pcm.length % 2 === 0 ? view : null;
+}
+
+function ttsReceipt(payload: Record<string, unknown>): { reportedUsage?: ReportedMediaUsage } {
+  const chars = (payload.usage as { characters?: unknown } | undefined)?.characters;
+  return typeof chars === 'number' && Number.isSafeInteger(chars) && chars >= 0
+    ? { reportedUsage: { ttsChars: chars } }
+    : {};
+}
+
+/**
+ * MiMo 原生语音合成：走 `/chat/completions` 的 `audio` 字段（旧项目核实过的协议），
+ * 不是 OpenAI 的 `/audio/speech`。返回的是 base64 音频，需自行解码。
+ *
+ * 本函数仅提供WAV/PCM；wrapper在预先取得编码租约后把PCM交给真实Opus编码器，
+ * 不把WAV当作OGG。PCM只接受24kHz单声道16位，其余格式不静默重采样。
+ */
+async function mimoSynthesize(
+  t: MediaTarget,
+  input: { text: string; voice: string; format: 'ogg_opus' | 'pcm16_24k' | 'wav' },
+  signal?: AbortSignal,
+): Promise<MediaAdapterResult<{ bytes: Uint8Array; mimeType: string; durationMs: number }>> {
+  if (signal?.aborted) return { ok: false, category: 'bad_request', zeroCost: true };
+  if (input.format === 'ogg_opus') return { ok: false, category: 'bad_request' };
+  try {
+    const response = await fetch(url(t.baseUrl, '/chat/completions'), {
+      method: 'POST',
+      redirect: 'manual',
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)])
+        : AbortSignal.timeout(TIMEOUT_MS),
+      headers: {
+        'api-key': t.apiKey,
+        Authorization: `Bearer ${t.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: t.model,
+        messages: [
+          { role: 'user', content: '用自然、口语化的语气朗读下一条内容，不要添加任何额外说明。' },
+          { role: 'assistant', content: input.text },
+        ],
+        audio: { format: 'wav', voice: input.voice },
+      }),
+    });
+    if (!response.ok) return { ok: false, category: await errorOf(response) };
+    const bytes = await readLimited(response);
+    if (!bytes) return { ok: false, category: 'provider_error' };
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(Buffer.from(bytes).toString('utf8')) as Record<string, unknown>;
+    } catch {
+      return { ok: false, category: 'provider_error' };
+    }
+    const choices = payload.choices as Array<{ message?: { audio?: unknown } }> | undefined;
+    const audio = (choices?.[0]?.message?.audio ?? payload.audio) as
+      { data?: unknown; duration_seconds?: unknown; duration?: unknown } | undefined;
+    const base64 = typeof audio?.data === 'string' ? audio.data.trim() : '';
+    if (!base64 || base64.length > MAX_RESPONSE_BYTES * 2)
+      return { ok: false, category: 'provider_error' };
+    const decoded = Buffer.from(base64, 'base64');
+    if (decoded.length < 44 || decoded.length > MAX_RESPONSE_BYTES)
+      return { ok: false, category: 'provider_error' };
+    const seconds = Number(audio?.duration_seconds ?? audio?.duration);
+    const durationMs =
+      Number.isFinite(seconds) && seconds > 0
+        ? Math.round(seconds * 1000)
+        : estimateSpeechMs(input.text);
+    if (input.format === 'pcm16_24k') {
+      const pcm = pcmFromWav(decoded, 24_000);
+      if (!pcm) return { ok: false, category: 'bad_request' };
+      return {
+        ok: true,
+        value: { bytes: pcm, mimeType: 'audio/L16', durationMs: Math.round(pcm.length / 48) },
+      };
+    }
+    return {
+      ok: true,
+      value: { bytes: new Uint8Array(decoded), mimeType: 'audio/wav', durationMs },
+    };
+  } catch {
+    return { ok: false, category: 'network_error' };
+  }
+}
+
+/**
+ * 通义语音合成模型（`qwen-audio-3.0-tts-plus`、`qwen-audio-3.1-tts-flash` 等）。
+ * 只有 `qwen-audio-3.0-tts-flash` 及其它未核实的 flash 型号仍按退役拒绝；
+ * 不能因为名字里带 `tts-flash` 就把 3.1 一起关掉。
+ */
+export function isDashscopeTtsTarget(t: MediaTarget): boolean {
+  const model = t.model.trim().toLowerCase();
+  return (
+    t.kind === 'dashscope' &&
+    /^qwen-audio-[\d.]+-tts/u.test(model) &&
+    (!/tts-flash/u.test(model) || model === 'qwen-audio-3.1-tts-flash')
+  );
+}
+
+/**
+ * 通义百炼原生语音合成：`POST {baseUrl}/services/audio/tts/SpeechSynthesizer`，
+ * 返回 `output.audio.url` 再下载音频（旧项目核实过的协议）。3.0 Flash 已退役，
+ * 3.1 Flash 沿用同一原生协议（请求显式带 24kHz）。
+ */
+async function dashscopeSynthesize(
+  t: MediaTarget,
+  input: { text: string; voice: string; format: 'ogg_opus' | 'pcm16_24k' | 'wav' },
+  signal?: AbortSignal,
+): Promise<MediaAdapterResult<{ bytes: Uint8Array; mimeType: string; durationMs: number }>> {
+  if (signal?.aborted) return { ok: false, category: 'bad_request', zeroCost: true };
+  if (input.format === 'ogg_opus') return { ok: false, category: 'bad_request' };
+  let reported: { reportedUsage?: ReportedMediaUsage } = {};
+  try {
+    const response = await fetch(url(t.baseUrl, '/services/audio/tts/SpeechSynthesizer'), {
+      method: 'POST',
+      redirect: 'manual',
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)])
+        : AbortSignal.timeout(TIMEOUT_MS),
+      headers: { Authorization: `Bearer ${t.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: t.model,
+        input: { text: input.text, voice: input.voice, format: 'wav', sample_rate: 24000 },
+      }),
+    });
+    if (!response.ok) return { ok: false, category: await errorOf(response) };
+    const payloadBytes = await readLimited(response);
+    if (!payloadBytes) return { ok: false, category: 'provider_error' };
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(Buffer.from(payloadBytes).toString('utf8')) as Record<string, unknown>;
+    } catch {
+      return { ok: false, category: 'provider_error' };
+    }
+    reported = ttsReceipt(payload);
+    const output = payload.output as { audio?: { url?: unknown } } | undefined;
+    const audioUrl = typeof output?.audio?.url === 'string' ? output.audio.url.trim() : '';
+    let audio: Uint8Array;
+    try {
+      audio = await downloadDashscopeAudio(audioUrl);
+    } catch {
+      // The synthesis POST may already be billable; never report zeroCost or forward the signed URL.
+      // A CDN 401/403 is not proof that the provider API key is invalid.
+      return { ok: false, category: 'provider_error', ...reported };
+    }
+    const normalized = normalizeDashscopeWav(audio);
+    if (!normalized) return { ok: false, category: 'provider_error', ...reported };
+    const pcm = pcmFromWav(normalized, 24_000)!;
+    const durationMs = Math.round(pcm.length / 48);
+    return {
+      ok: true,
+      value:
+        input.format === 'pcm16_24k'
+          ? { bytes: pcm, mimeType: 'audio/L16', durationMs }
+          : { bytes: normalized, mimeType: 'audio/wav', durationMs },
+      ...reported,
+    };
+  } catch {
+    return { ok: false, category: 'network_error', ...reported };
+  }
+}
+
+/**
+ * 给多媒体适配器加上 MiMo 原生语音合成；其余能力（识别、生图、搜索、决策）原样委托。
+ * 只按模型名分流，避免把 OpenAI 兼容线路误当成 MiMo。
+ */
+export function withMimoChatAudio(inner: MediaAdapter): MediaAdapter {
+  const native = (t: MediaTarget) => isMimoChatAudioModel(t.model) || isDashscopeTtsTarget(t);
+  /** 百炼已退役的 tts-flash 既不走原生协议，也不能落到 OpenAI 兼容接口上去试。 */
+  const retired = (t: MediaTarget) =>
+    t.kind === 'dashscope' && /tts-flash/iu.test(t.model) && !isDashscopeTtsTarget(t)
+      ? ({ ok: false, category: 'bad_request' } as const)
+      : null;
+  return {
+    decide: (t, i) => inner.decide(t, i),
+    synthesize: async (t, i) => {
+      const blocked = retired(t);
+      if (blocked) return blocked;
+      if (native(t) && i.format === 'ogg_opus') {
+        // Reserve the bounded encoder before any potentially billable provider request.
+        const acquired = await acquireNativeOpusEncoder();
+        if (!acquired.ok)
+          return acquired.reason === 'busy'
+            ? { ok: false, category: 'rate_limited', zeroCost: true, localRateLimit: true }
+            : { ok: false, category: 'bad_request', zeroCost: true };
+        let reported: { reportedUsage?: ReportedMediaUsage } = {};
+        try {
+          const pcm = isMimoChatAudioModel(t.model)
+            ? await mimoSynthesize(t, { ...i, format: 'pcm16_24k' })
+            : await dashscopeSynthesize(t, { ...i, format: 'pcm16_24k' });
+          if (!pcm.ok) return pcm;
+          if (pcm.reportedUsage) reported = { reportedUsage: pcm.reportedUsage };
+          const bytes = await acquired.lease.encode(pcm.value.bytes);
+          return {
+            ok: true,
+            value: { bytes, mimeType: 'audio/ogg', durationMs: pcm.value.durationMs },
+            ...reported,
+          };
+        } catch {
+          // Already reported supplier units survive a local encoder failure.
+          return { ok: false, category: 'provider_error', ...reported };
+        } finally {
+          acquired.lease.release();
+        }
+      }
+      return isMimoChatAudioModel(t.model)
+        ? mimoSynthesize(t, i)
+        : isDashscopeTtsTarget(t)
+          ? dashscopeSynthesize(t, i)
+          : inner.synthesize(t, i);
+    },
+    synthesizeStream: async (t, i, signal) => {
+      if (signal.aborted) return { ok: false, category: 'bad_request', zeroCost: true };
+      const blocked = retired(t);
+      if (blocked) return blocked;
+      if (!native(t)) return inner.synthesizeStream(t, i, signal);
+      const result = isMimoChatAudioModel(t.model)
+        ? await mimoSynthesize(t, { text: i.text, voice: i.voice, format: 'pcm16_24k' }, signal)
+        : await dashscopeSynthesize(
+            t,
+            { text: i.text, voice: i.voice, format: 'pcm16_24k' },
+            signal,
+          );
+      if (!result.ok) return result;
+      const pcm = result.value.bytes;
+      async function* chunks(): AsyncIterable<Uint8Array> {
+        for (let offset = 0; offset < pcm.length; offset += 4096) {
+          if (signal.aborted) return;
+          yield pcm.subarray(offset, Math.min(pcm.length, offset + 4096));
+        }
+      }
+      return {
+        ok: true,
+        value: chunks(),
+        ...(result.reportedUsage ? { reportedUsage: result.reportedUsage } : {}),
+      };
+    },
+    transcribe: (t, i) =>
+      // MiMo 走旧版 Chat-Completions 内联音频协议；DashScope 走原生 JSON；
+      // 其余模型（含 SiliconFlow 两条）保持 OpenAI 兼容 multipart 路径。
+      isMimoAsrModel(t.model)
+        ? mimoAsr(t, i)
+        : isNativeAsrModel(t.model)
+          ? nativeAsr(t, i)
+          : inner.transcribe(t, i),
+    generateImage: (t, i) => inner.generateImage(t, i),
+    search: (t, i) => inner.search(t, i),
+    ...(inner.fetchPage
+      ? { fetchPage: (t: MediaTarget, i: { url: string }) => inner.fetchPage!(t, i) }
+      : {}),
+  };
+}
+
 export class FakeMediaAdapter implements MediaAdapter {
   /** 假 Jev：确定性地给第一个选项 0.7，其余平分。 */
   async decide(

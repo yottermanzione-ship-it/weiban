@@ -1,5 +1,5 @@
 import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
-import { and, count, desc, eq, gt, ilike, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, ilike, inArray, sql, type SQL } from 'drizzle-orm';
 import {
   CharacterCard,
   CharacterSummary,
@@ -8,9 +8,11 @@ import {
   type AdminCharacter,
   type AdminCharacterUpdate,
   type CharacterReadPort,
+  type LegacyRuntimeContext,
   type Tx,
   type CharacterForRuntime,
   type CharacterClassification,
+  type CharacterDisplay,
   type CharacterProfile,
   type MediaReadPort,
   type PersonaUpdateSummarizerPort,
@@ -43,8 +45,16 @@ import { deriveClassification, classificationCanChange } from '../../policy/inde
 import { childFeaturesIn } from '../domain/child-features.js';
 import { customToAdminWrite, type CustomCharacterPayload } from '../domain/custom-card.js';
 import {
+  EMPTY_LEGACY_CONTEXT,
+  legacyRuntimeContext,
+  parseLegacyCard,
+  type LegacyCharacterCard,
+} from '../domain/legacy-card.js';
+import {
   categories,
   characters,
+  legacyExampleDialogues,
+  legacyLorebookEntries,
   personaVersions,
   relations,
   trialSessions,
@@ -57,6 +67,19 @@ import {
 import type { CharacterEvaluator } from './evaluator.js';
 import { CharacterSupplementService } from './supplements.js';
 type Row = typeof characters.$inferSelect;
+/** 旧卡名字直接进新库 name（≤32）；旧卡原文仍留在 legacy_card，不改。 */
+function legacyName(legacy: LegacyCharacterCard): string {
+  return (legacy.displayName || legacy.nickname || '未命名角色').slice(0, 32);
+}
+/** 旧卡头像的默认绘制参数；有导入头像时图片优先。 */
+export function legacyAvatarDisplay(): CharacterDisplay {
+  return { supportColors: [], avatarText: null, avatarPattern: 'none', themeColor: null };
+}
+/** 旧卡 identity_* 里的生日；不是 YYYY-MM-DD 就当没有。 */
+function legacyBirthday(legacy: LegacyCharacterCard): string | null {
+  const text = legacy.identityBirthday.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/u.test(text) ? text : null;
+}
 const initialCategories = [
   ['celebrity', '明星'],
   ['fictional', '虚构角色'],
@@ -188,6 +211,8 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
   } | null> {
     const [row] = await this.database.db.select().from(characters).where(eq(characters.id, id));
     if (!row || row.kind !== 'preset' || row.status !== 'published') return null;
+    // 旧卡角色没有 WeibanCardData，不能按新卡复制。
+    if (this.legacyOf(row)) return null;
     return { row, body: await this.decode(row, true), classification: this.classify(row) };
   }
   /** 自定义角色（含广场复制品）的存储 payload（T-088）。 */
@@ -195,7 +220,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     const plain = await this.crypto.open(
       row.ownerId!,
       `character:${row.id}:draft:${row.revision}`,
-      row.draftCiphertext,
+      row.draftCiphertext!,
       tx,
     );
     try {
@@ -203,6 +228,88 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     } finally {
       plain.fill(0);
     }
+  }
+  /** 旧卡角色（characters_v2 整行）；没有 legacy_card 返回 null。旧卡就是运行格式，不转新卡。 */
+  private legacyOf(row: Row): LegacyCharacterCard | null {
+    return row.legacyCard ? parseLegacyCard(row.legacyCard) : null;
+  }
+  /** 旧卡头像：只有导入 CLI 写过 avatar_media_id 才有图；读取失败按无图处理。 */
+  private async legacyAvatar(userId: string, row: Row): Promise<CharacterProfile['avatar']> {
+    const display = legacyAvatarDisplay();
+    if (!row.avatarMediaId) return { image: null, display };
+    try {
+      const media = await this.media.getMedia(userId, row.avatarMediaId);
+      return { image: { mediaId: media.mediaId, url: media.url }, display };
+    } catch {
+      return { image: null, display };
+    }
+  }
+  /** 旧卡角色的资料页数据：名字 / 别名 / 签名 / 分类按旧字段，不要求新卡。 */
+  private async legacyProfile(userId: string, row: Row, legacy: LegacyCharacterCard) {
+    const c = this.classify(row);
+    return {
+      characterId: row.id,
+      kind: 'preset' as const,
+      name: legacyName(legacy),
+      aliases: legacy.aliases,
+      works: [],
+      avatar: await this.legacyAvatar(userId, row),
+      tagline: legacy.signature.slice(0, 60),
+      tags: [],
+      categoryId: row.categoryId,
+      basis: c.basis,
+      added: (await this.contacts?.hasContact(userId, row.id)) ?? false,
+      intro: (legacy.corePersona || legacy.signature).slice(0, 1000),
+      birthday: legacyBirthday(legacy),
+      fanName: null,
+      classification: c,
+      showPublicSourceNotice: c.basis === 'real_person',
+      personaVersion: row.personaVersion,
+      personaUpdatedUnseen: false,
+    };
+  }
+  /**
+   * 旧卡角色的后台列表展示。旧卡没有 WeibanCardData，`card` 用空草稿占位（DraftCharacterCard
+   * 允许 data 为空），不改旧卡原文；这类角色不走后台的新卡编辑 / 发布流程。
+   */
+  private async legacyAdmin(
+    userId: string,
+    row: Row,
+    legacy: LegacyCharacterCard,
+  ): Promise<AdminCharacter> {
+    const c = this.classify(row);
+    const greetings = legacy.openingMessages
+      .map((text) => text.slice(0, 200))
+      .filter(Boolean)
+      .slice(0, 3);
+    return {
+      characterId: row.id,
+      status: row.status as AdminCharacter['status'],
+      name: legacyName(legacy),
+      aliases: legacy.aliases,
+      works: [],
+      tagline: legacy.signature.slice(0, 60),
+      intro: (legacy.corePersona || legacy.signature).slice(0, 1000),
+      tags: [],
+      categoryId: row.categoryId,
+      avatar: await this.legacyAvatar(userId, row),
+      birthday: legacyBirthday(legacy),
+      fanName: null,
+      classification: c,
+      fallbackGreetings: greetings,
+      card: { cardSchemaVersion: 1, data: {} },
+      personaVersion: row.personaVersion,
+      /** 旧卡没有 WB-Card 数据：后台按旧字段查看/保存（CharacterLegacyAdminService），不走新卡编辑器。 */
+      format: 'legacy' as const,
+      revision: row.revision,
+      publishChecks: {
+        requiredFieldsComplete: false,
+        personaStabilityPassed: false,
+        hardBoundaryCasesPassed: false,
+        hasFallbackGreeting: greetings.length > 0,
+      },
+      updatedAt: row.updatedAt.toISOString(),
+    };
   }
   private async row(id: string): Promise<Row> {
     const [row] = await this.database.db.select().from(characters).where(eq(characters.id, id));
@@ -620,6 +727,8 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     return Promise.all(rows.map((r) => this.admin(adminId, r)));
   }
   private async admin(userId: string, row: Row): Promise<AdminCharacter> {
+    const legacy = this.legacyOf(row);
+    if (legacy) return this.legacyAdmin(userId, row, legacy);
     const body = await this.decode(row);
     return {
       ...body,
@@ -628,6 +737,8 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       avatar: await this.avatar(userId, body),
       classification: this.classify(row),
       personaVersion: row.personaVersion,
+      format: 'wbcard' as const,
+      revision: row.revision,
       publishChecks: {
         requiredFieldsComplete: row.checks.requiredFieldsComplete,
         hasFallbackGreeting: row.checks.hasFallbackGreeting,
@@ -679,6 +790,9 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
             ((await this.contacts?.hasContact(userId, row.id)) ?? false));
   }
   private async profile(userId: string, row: Row): Promise<CharacterProfile> {
+    // 旧卡就是运行格式：有 legacy_card 就直接按旧字段出资料，不需要 WeibanCardData。
+    const legacy = this.legacyOf(row);
+    if (legacy) return this.legacyProfile(userId, row, legacy);
     const body = await this.decode(row, row.kind === 'preset');
     const c = this.classify(row);
     return {
@@ -731,22 +845,66 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
   async getForRuntime(userId: string, id: string): Promise<CharacterForRuntime | null> {
     const [row] = await this.database.db.select().from(characters).where(eq(characters.id, id));
     if (!row || !(await this.visible(userId, row))) return null;
-    const body = await this.decode(row, row.kind === 'preset');
-    const card = CharacterCard.safeParse(body.card);
-    if (!card.success) return null;
     // 3.1（B7 遗留）：这位用户应用的预设改版若检出儿童特征，运行时分类按更严处理（不写回预设角色）。
     const variantChild =
       row.kind === 'preset' && !row.childFeaturesDetected && this.supplements
         ? await this.supplements.variantChildFeaturesDetected(userId, row.id)
         : false;
+    const classification = this.classify(
+      variantChild ? { ...row, childFeaturesDetected: true } : row,
+    );
+    // 旧卡就是运行格式：直接给旧卡整行，运行时读旧字段；这时没有 WeibanCardData。
+    const legacy = this.legacyOf(row);
+    if (legacy) {
+      return {
+        profile: await this.legacyProfile(userId, row, legacy),
+        classification,
+        card: null,
+        legacyCard: row.legacyCard,
+        personaVersion: row.personaVersion,
+        fallbackGreetings: legacy.openingMessages
+          .map((text) => text.slice(0, 200))
+          .filter(Boolean)
+          .slice(0, 3),
+        userSupplement: null,
+      };
+    }
+    const body = await this.decode(row, row.kind === 'preset');
+    const card = CharacterCard.safeParse(body.card);
+    if (!card.success) return null;
     return {
       profile: await this.profile(userId, row),
-      classification: this.classify(variantChild ? { ...row, childFeaturesDetected: true } : row),
+      classification,
       card: card.data,
+      legacyCard: null,
       personaVersion: row.personaVersion,
       fallbackGreetings: body.fallbackGreetings,
       userSupplement: null,
     };
+  }
+  /**
+   * 旧卡角色的世界书与示例对话（旧库两张附属表，原样 payload）。
+   * 没有 legacy_card 时返回空数组；运行时只在有旧卡时调用。
+   */
+  async getLegacyContext(characterId: string): Promise<LegacyRuntimeContext> {
+    const [row] = await this.database.db
+      .select({ legacyCard: characters.legacyCard })
+      .from(characters)
+      .where(eq(characters.id, characterId));
+    if (!row?.legacyCard) return EMPTY_LEGACY_CONTEXT;
+    const lorebook = await this.database.db
+      .select({ payload: legacyLorebookEntries.payload })
+      .from(legacyLorebookEntries)
+      .where(eq(legacyLorebookEntries.characterId, characterId));
+    const examples = await this.database.db
+      .select({ payload: legacyExampleDialogues.payload })
+      .from(legacyExampleDialogues)
+      .where(eq(legacyExampleDialogues.characterId, characterId))
+      .orderBy(asc(legacyExampleDialogues.sortOrder), asc(legacyExampleDialogues.id));
+    return legacyRuntimeContext(
+      lorebook.map((entry) => entry.payload),
+      examples.map((entry) => entry.payload),
+    );
   }
   async canAdd(userId: string, id: string, transaction?: Tx): Promise<boolean> {
     const db = transaction ? asDbTx(transaction).db : this.database.db;
@@ -790,6 +948,8 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
         : !['published', 'unpublished'].includes(row.status))
     )
       return null;
+    const legacy = this.legacyOf(row);
+    if (legacy) return legacy.displayName || legacy.nickname || null;
     return (await this.decode(row, row.kind === 'preset', tx)).name;
   }
   async purgeUser(userId: string): Promise<number> {

@@ -28,3 +28,16 @@ export { GatewayMaintenance } from './application/gateway-maintenance.js';
 export { ScenarioService } from './application/scenarios.js';
 export { ModelGatewayMedia } from './application/media-gateway.js';
 export { WebToolsStore } from './application/web-tools-store.js';
+
+export { ALL_SCENARIOS, type LeaderboardSnapshot } from './application/catalog.js';
+export { LeaderboardService, REFRESH_LEADERBOARD_JOB } from './application/leaderboard.js';
+export { fetchArenaDataset, type ArenaDataset } from './infra/arena-dataset.js';
+export {
+  bestArenaEntries,
+  bestArenaRanks,
+  normalizeArenaName,
+  relativeRanks,
+  parseLeaderboard,
+  suggestArenaNames,
+  type ArenaSuggestion,
+} from './domain/leaderboard.js';

@@ -7,6 +7,7 @@ export {
   CHAT_USER_PORT,
   CHAT_GROUP_READ_PORT,
   CHAT_GROUP_ADMIN_PORT,
+  CHAT_RECAP_READ_PORT,
   CHAT_GROUP_DIRECTORY,
   type ChatGroupDirectory,
 } from './tokens.js';

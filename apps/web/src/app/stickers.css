@@ -1,0 +1,216 @@
+.wx-emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+  padding: 12px;
+}
+.wx-emoji-cell {
+  display: grid;
+  min-width: 0;
+  min-height: 38px;
+  padding: 2px;
+  place-items: center;
+  border: 0;
+  background: none;
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+  font-size: 30px;
+  line-height: 1.2;
+}
+.wx-emoji-actions {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 6px 14px;
+}
+.wx-emoji-actions button {
+  min-height: 34px;
+  min-width: 58px;
+  border: 0;
+  border-radius: var(--wb-radius-sm);
+}
+.sticker-store-tabs {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 100%;
+}
+.sticker-store-page .sticker-store-tabs > button {
+  position: relative;
+  align-self: stretch;
+  min-height: 42px;
+  padding: 0 2px;
+  appearance: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--wb-color-text-secondary);
+  white-space: nowrap;
+  font-size: inherit;
+}
+.sticker-store-page .sticker-store-tabs > button[aria-selected='true'] {
+  color: var(--wb-color-text-primary);
+  font-weight: 600;
+}
+.sticker-store-tabs > button[aria-selected='true']::after {
+  position: absolute;
+  right: 2px;
+  bottom: 0;
+  left: 2px;
+  height: 2px;
+  background: currentColor;
+  content: '';
+}
+.sticker-store-page .sticker-store-more {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  color: #111;
+  letter-spacing: normal;
+}
+.sticker-store-search {
+  margin: 10px 8px;
+}
+.sticker-store-search input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--wb-color-bg-surface);
+  color: var(--wb-color-text-primary);
+  text-align: center;
+}
+.sticker-store-banners {
+  display: flex;
+  gap: 10px;
+  padding: 0 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+}
+.sticker-store-banner {
+  display: flex;
+  flex: 0 0 84%;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  min-height: 150px;
+  padding: 16px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--wb-color-brand-soft);
+  color: var(--wb-color-text-primary);
+  scroll-snap-align: start;
+  text-decoration: none;
+}
+.sticker-store-banner img {
+  width: 55%;
+  height: 140px;
+  object-fit: contain;
+}
+.sticker-store-banner strong {
+  max-width: 42%;
+  overflow-wrap: anywhere;
+}
+.sticker-store-heading {
+  margin: 16px 14px 12px;
+  font-size: 17px;
+}
+.sticker-store-list,
+.sticker-store-tiles {
+  margin: 0 8px 16px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--wb-color-bg-surface);
+}
+.sticker-store-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 78px;
+  padding: 12px;
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
+}
+.sticker-store-row:last-child {
+  border-bottom: 0;
+}
+.sticker-store-row-detail {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.sticker-store-row-detail img {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 6px;
+}
+.sticker-store-row-detail span {
+  overflow-wrap: anywhere;
+}
+.sticker-store-row > button,
+.sticker-manage-actions button {
+  flex: none;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--wb-color-bg-page);
+  color: var(--wb-color-text-primary);
+}
+.sticker-store-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px 14px;
+  padding: 14px;
+}
+.sticker-store-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--wb-color-text-secondary);
+  text-align: center;
+  text-decoration: none;
+}
+.sticker-store-tile img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+  border: 0.5px solid var(--wb-color-border-hairline);
+  border-radius: 10px;
+}
+.sticker-store-tile span {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.sticker-manage-heart {
+  width: 40px;
+  font-size: 30px;
+  text-align: center;
+}
+.sticker-manage-row {
+  display: flex;
+  align-items: center;
+}
+.sticker-manage-row > .menu-row {
+  flex: 1;
+  min-width: 0;
+}
+.sticker-manage-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  padding-right: 12px;
+}

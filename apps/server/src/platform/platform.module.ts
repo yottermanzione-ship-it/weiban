@@ -25,6 +25,10 @@ import { APP_CONFIG, type AppConfig } from './config/config.js';
 import { loadKekRing } from './crypto/kek-ring.js';
 import { ENVELOPE_CRYPTO, EnvelopeCrypto, type KekRing } from './crypto/envelope.js';
 import { DATABASE, Database } from './db/database.js';
+import {
+  CHARACTER_PURGE_REGISTRY,
+  CharacterPurgeRegistry,
+} from './deletion/character-purge-registry.js';
 import { USER_DATA_REGISTRY, UserDataRegistry } from './deletion/user-data-registry.js';
 import { EVENT_DISPATCHER, EventDispatcher } from './events/dispatcher.js';
 import { EVENT_BUS, EventBus } from './events/event-bus.js';
@@ -133,6 +137,7 @@ export class PlatformModule implements NestModule {
         },
         { provide: EVENT_BUS, useValue: new EventBus() },
         { provide: USER_DATA_REGISTRY, useValue: new UserDataRegistry() },
+        { provide: CHARACTER_PURGE_REGISTRY, useValue: new CharacterPurgeRegistry() },
         {
           provide: EVENT_INBOX,
           useFactory: (db: Database, clock: Clock) => new EventInbox(db, clock),
@@ -209,6 +214,7 @@ export class PlatformModule implements NestModule {
         DATABASE,
         EVENT_BUS,
         USER_DATA_REGISTRY,
+        CHARACTER_PURGE_REGISTRY,
         EVENT_INBOX,
         OUTBOX,
         EVENT_DISPATCHER,

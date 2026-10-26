@@ -1,4 +1,5 @@
 import { ChatHeading } from './chat-heading.js';
+import { editEmoji } from './emoji-edit.js';
 /*
  * 私聊 / 群聊页（docs/refactor/06-old-ui-spec.md 4.4）：返回键 + 未读药丸、一句一个气泡（每条带头像和尖角）、
  * 时间条（间隔 > 5 分钟）、气泡长按深色菜单、输入栏（语音 / 输入框 / 表情 / ＋ 或发送）、按住说话、
@@ -20,6 +21,7 @@ import {
   ChatActionEndpoints,
   ChatEndpoints,
   IdentityEndpoints,
+  MembershipEndpoints,
   CharacterEndpoints,
   ModelAccessEndpoints,
   MediaExtraEndpoints,
@@ -38,9 +40,11 @@ import { useCharacterProfile } from '../data/character-profile.js';
 import { useUpdates } from '../data/updates.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { VirtualList } from './virtual-list.js';
+import { HistoryLoadRow, useHistoryPager } from './chat-history.js';
 import { HomeScreenGuide } from './home-screen-guide.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { UserAvatar } from './user-avatar.js';
+import { useMediaUrl } from './avatar-cache.js';
 import { WhileAwayCard, useWhileAway } from './while-away.js';
 import {
   CallRecordBubble,
@@ -85,6 +89,7 @@ import {
   MenuRow,
   showComingSoon,
   useLongPress,
+  useMenuScrim,
 } from './shell-kit.js';
 
 function BubblePress({
@@ -186,6 +191,8 @@ function systemText(code: string, params: Record<string, string | number | boole
     case 'scenario_mode_changed':
       if (params.reason === 'adult_mode_unavailable') return '私密预设已不可用，已回到日常聊天';
       return `已切换到 ${presetNames[p('mode')] ?? '日常聊天'}`;
+    case 'scenario_mode_unavailable':
+      return '私密模型暂时不可用，请手动切换到其他模式';
     case 'scenario_mode_switched':
       if (params.reason === 'member_not_eligible') return '有新成员加入，群聊已回到日常聊天';
       return `已切换到 ${presetNames[p('mode')] ?? '日常聊天'}`;
@@ -433,8 +440,9 @@ function BubbleMenu({
   }, [onClose]);
   const rows: BubbleMenuItem[][] = [];
   for (let i = 0; i < items.length; i += 3) rows.push(items.slice(i, i + 3));
+  const scrim = useMenuScrim(onClose);
   return (
-    <div className="pop-scrim" onClick={onClose} onContextMenu={(e) => e.preventDefault()}>
+    <div className="pop-scrim" {...scrim}>
       <div
         ref={ref}
         className={`bubble-menu ${place.below ? 'below' : ''}`}
@@ -517,6 +525,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const id = conversation.conversationId;
   const group = conversation.type === 'group';
   const userProfile = useRemote(IdentityEndpoints.getProfile);
+  // 3.41：当前会话自己的聊天背景（media.purpose = chat_background）；没设置就不发请求。
+  const backgroundUrl = useMediaUrl(conversation.state.backgroundMediaId);
   // F1-3：设置里可关掉「已读 / 已送达」（本机偏好；设置页是另一路由，回来时重新挂载即生效）。
   const [readReceipt] = useState(getReadReceiptVisible);
   const members = groupMembers(conversation);
@@ -544,6 +554,10 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   });
   // 3.22：文本聊天模型还没配置时弹出首次引导，配置好之前不能发消息。
   const modelGate = useModelSetupGate(() => status.refresh());
+  // 10-25（会员 v6）：群聊只对 PRO+ 开放。免费用户可以打开旧群、看历史消息，但不能在群里发新消息；
+  // 服务端在发送入口按同一条规则返回 403 membership_required，这里只提前引导，不作为唯一防线。
+  const membership = useRemote(MembershipEndpoints.get);
+  const groupLocked = group && membership.data?.tier === 'free';
   const location = useLocation();
   const prefill = (location.state as { prefill?: string } | null)?.prefill;
   const [text, setText] = useState(prefill ?? '');
@@ -569,8 +583,6 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   });
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
-  const [older, setOlder] = useState(true);
-  const [loadingOlder, setLoadingOlder] = useState(false);
   const [quoteId, setQuoteId] = useState<string | null>(null);
   const [atBottom, setAtBottom] = useState(true);
   const [visible, setVisible] = useState(document.visibilityState === 'visible');
@@ -613,6 +625,11 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const preset = useCurrentPreset(presetTarget);
   // 3.28（H2）：私密模式只开放文字和图片——不能语音通话、不能按住说话（语音输入）。
   const privateMode = !group && preset.mode === 'adult';
+  const platformPrivate = useRemote(
+    ModelAccessEndpoints.privateModel,
+    { networkOnly: true },
+    privateMode,
+  );
   useEffect(() => {
     if (privateMode) setMode('text');
   }, [privateMode]);
@@ -640,6 +657,29 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const { older: loadOlder } = chat;
+  const requestedHistory = useRef<number | null>(null);
+  // 只在点击时读历史；保留当前阅读位置，并明确提示新记录已加在上方。
+  const history = useHistoryPager(async () => {
+    const oldest = messagesRef.current[0]?.seq;
+    if (oldest === undefined) return false;
+    requestedHistory.current = oldest;
+    try {
+      return await chat.older(id, oldest);
+    } catch (error) {
+      requestedHistory.current = null;
+      throw error;
+    }
+  });
+  const oldestVisibleSeq = messages[0]?.seq;
+  useEffect(() => {
+    const before = requestedHistory.current;
+    if (before === null) return;
+    const added = messagesRef.current.filter((message) => message.seq < before).length;
+    if (added > 0) {
+      requestedHistory.current = null;
+      showToast(`已加载 ${added} 条更早消息，继续向上滑动查看`, 2500, 'info');
+    } else if (history.state === 'done') requestedHistory.current = null;
+  }, [oldestVisibleSeq, messages.length, history.state]);
   // 搜索结果 / 收藏定位（search.md 第 4 节）：向前补读直到目标消息出现，停在距顶部 1/3 处并闪一下。
   useEffect(() => {
     if (!targetSeq) return;
@@ -908,9 +948,28 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     setMode('text');
     input.current?.focus();
   }
+  function changeEmoji(value?: string) {
+    if (sending) return;
+    const edited = editEmoji(
+      text,
+      input.current?.selectionStart ?? text.length,
+      input.current?.selectionEnd ?? text.length,
+      value,
+    );
+    if (edited.value.length > 4000) {
+      showToast('消息已达到字数上限');
+      return;
+    }
+    setText(edited.value);
+    requestAnimationFrame(() => input.current?.setSelectionRange(edited.cursor, edited.cursor));
+  }
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     if (!text.trim() || sending) return;
+    if (groupLocked) {
+      showToast('群聊是 PRO+ 会员权益，开通后才能发消息', 3000, 'info');
+      return;
+    }
     if (modelGate.block()) return;
     setSending(true);
     setError('');
@@ -1110,7 +1169,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   }
 
   const rows: Row[] = [];
-  if (older && messages.length > 0) rows.push({ kind: 'older', key: '__older__' });
+  // 顶部一直保留这一行：还有更早记录时是按钮，取到最早一条后改成「没有更多消息」。
+  if (messages.length > 0) rows.push({ kind: 'older', key: '__older__' });
   let previousAt: string | undefined;
   for (const message of messages) {
     const divider = needsDivider(previousAt, message.createdAt)
@@ -1140,34 +1200,9 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     </SelfNudgeAvatar>
   );
 
-  const olderRequest = useRef(false);
-  function fetchOlder() {
-    if (!older || olderRequest.current || !messages.length) return;
-    olderRequest.current = true;
-    setLoadingOlder(true);
-    void chat
-      .older(id, messages[0]!.seq)
-      .then(setOlder)
-      .catch((e) => setError(friendlyError(e)))
-      .finally(() => {
-        olderRequest.current = false;
-        setLoadingOlder(false);
-      });
-  }
   function renderRow(row: Row) {
     if (row.kind === 'older')
-      return (
-        <div className="wx-older">
-          <button
-            type="button"
-            className="text-button"
-            disabled={loadingOlder}
-            onClick={fetchOlder}
-          >
-            {loadingOlder ? '正在读取…' : '查看更早的消息'}
-          </button>
-        </div>
-      );
+      return <HistoryLoadRow state={history.state} onLoad={history.loadMore} />;
     if (row.kind === 'pending') {
       const item = pending[row.index];
       if (!item) return null;
@@ -1509,6 +1544,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         <ChatHeading
           name={selecting ? `已选择 ${chosen.length} 条` : <Name conversation={conversation} />}
           characterId={selecting ? undefined : role?.refId}
+          mode={selecting ? undefined : preset.mode}
           active={
             !selecting &&
             !!role &&
@@ -1545,6 +1581,11 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         </p>
       )}
       {!chat.online && <p className="notice-bar">网络暂不可用，消息保存在本机，联网后继续发送</p>}
+      {privateMode && platformPrivate.data && !platformPrivate.data.model?.available && (
+        <p className="notice-bar" role="status">
+          私密模型暂时不可用，当前消息仍保留在私密范围。请在「+ › 情景预设」里手动切换到其他模式。
+        </p>
+      )}
       {status.data && !status.data.available && !modelGate.needsSetup && (
         <p className="notice-bar">
           {status.data.reason === 'insufficient_balance'
@@ -1564,12 +1605,6 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           </Link>
         </p>
       )}
-      {group && typingNames.length > 0 && status.data?.available && (
-        <p
-          className="wx-typing"
-          role="status"
-        >{`${typingNames.filter(Boolean).join('、')} 正在输入...`}</p>
-      )}
       {(error || chat.error) && (
         <p role="alert" className="notice-bar">
           {error || chat.error}
@@ -1588,6 +1623,11 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         />
       )}
       <div className="wx-chat-body" onClick={() => panel !== 'none' && setPanel('none')}>
+        {backgroundUrl && (
+          <div className="wx-chat-bg" aria-hidden>
+            <img src={backgroundUrl} alt="" />
+          </div>
+        )}
         <VirtualList
           items={rows}
           itemKey={(row) => row.key}
@@ -1595,7 +1635,6 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           estimate={64}
           bottom
           onBottom={setAtBottom}
-          onStart={fetchOlder}
           anchorItem={(row) => row.kind === 'message'}
           scrollTo={scrollTarget}
           rowClassName={(row) =>
@@ -1694,6 +1733,11 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
             <OldIcon name="wechat/delete" size={24} />
             删除
           </button>
+        </div>
+      ) : groupLocked ? (
+        <div className="wx-input-bar wx-group-locked" role="status">
+          <span>群聊是 PRO+ 会员权益，开通后可以在群里发消息；历史消息仍可查看。</span>
+          <Link to="/membership">去开通 ›</Link>
         </div>
       ) : (
         <form className="wx-input-bar" onSubmit={(event) => void submit(event)}>
@@ -1808,8 +1852,13 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           </button>
         </div>
       )}
-      {panel === 'sticker' && !selecting && (
+      {panel === 'sticker' && !selecting && !groupLocked && (
         <StickerPanel
+          onEmoji={changeEmoji}
+          onErase={() => changeEmoji()}
+          onSend={() => void submit()}
+          canSend={!sending && !!text.trim()}
+          characterIds={members.map((member) => member.refId)}
           onPick={(sticker) =>
             void chat
               .sendContent(id, { type: 'sticker', ...sticker })
@@ -1817,7 +1866,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           }
         />
       )}
-      {panel === 'plus' && !selecting && (
+      {panel === 'plus' && !selecting && !groupLocked && (
         <PlusPanel page={plusPage} onPage={setPlusPage} cells={plusCells} />
       )}
       {avatarMenu && (
@@ -1825,7 +1874,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           title={displayName(avatarMenu.refId)}
           onClose={() => setAvatarMenu(null)}
           items={[
-            { label: '拍一拍', onClick: () => nudge(avatarMenu) },
+            // 拍一拍也是一条群消息：免费用户在群里不能发，先不给入口。
+            ...(groupLocked ? [] : [{ label: '拍一拍', onClick: () => nudge(avatarMenu) }]),
             ...(group
               ? [
                   {

@@ -56,6 +56,7 @@ import {
   UNAVAILABLE_DETAIL_LABELS,
   UPSTREAM_STATE_LABELS,
   VISION_REQUIRED_SCENARIOS,
+  modelDisplayName,
   toWrite,
   upstreamState,
 } from './shared.js';
@@ -78,6 +79,15 @@ import {
 } from './models-dev.js';
 import { ImportModelsButton } from './import.js';
 import { useDeleteModels } from './delete-models.js';
+import {
+  SERVICE_UNIT_LABELS,
+  ServicePriceFields,
+  SearchBoundsFields,
+  isSearchKind,
+  isSearchOnlyBounds,
+  searchFormToBounds,
+  type ServicePriceDraft,
+} from './service-pricing.js';
 
 /** 3.22：按场景筛选（模型「可用于哪些场景」）。 */
 type UseFilter = 'all' | ModelScenario;
@@ -132,13 +142,31 @@ function lacksVision(scenarios: readonly string[] | undefined, capabilities: rea
 
 export function ModelsTab({
   models,
+  deletedModels = [],
   upstreams,
+  loading = false,
+  loadError = '',
+  upstreamsError = '',
+  invalidModels = [],
   refresh,
   onDeleted,
 }: {
-  /** 只传未删除的模型（已删除的只给调用记录显示名字用）。 */
+  /** 只传未删除的模型（编辑、上架 / 下架、批量删除都只作用于它们）。 */
   models: AdminModel[];
+  /**
+   * 3.27：已删除（软删）的模型。真实目录里有软删除行，现在按契约也能读出来了：
+   * 排在列表最后、标「已删除」，只供核对历史（不能编辑 / 上架 / 再删除）。
+   */
+  deletedModels?: AdminModel[];
   upstreams: Upstream[];
+  /** 3.27：列表还在读取。读的过程中不能把「还没有结果」当成「没有模型」。 */
+  loading?: boolean;
+  /** 3.27：列表接口失败的原因（非 2xx、响应不符合契约、超时都会走到这里）。有值时只报错 + 重试，不显示空状态。 */
+  loadError?: string;
+  /** 3.27：上游账号列表失败。空状态让管理员先加线路，线路没读出来时要说明白，免得重复添加。 */
+  upstreamsError?: string;
+  /** 3.27：响应里不符合契约、因此没能展示的行（模型键 + 第一个不符合的字段）。 */
+  invalidModels?: Array<{ modelKey: string; message: string }>;
   refresh: () => void;
   /** 3.23：删除模型后通知外层（场景推荐 / 平台内部模型卡片重新读取）。 */
   onDeleted?: () => void;
@@ -168,14 +196,24 @@ export function ModelsTab({
   const upstreamName = (id: string) =>
     upstreams.find((u) => u.upstreamId === id)?.name ?? '未知账号';
 
+  const matchesQuery = (m: AdminModel) => {
+    const q = query.trim();
+    return !q || modelDisplayName(m).includes(q) || m.modelKey.includes(q);
+  };
   const list = models
     .filter((m) => matchesUse(m, use))
     .filter((m) => status === 'all' || (status === 'on' ? m.enabled : !m.enabled))
-    .filter(
-      (m) =>
-        !query.trim() || m.displayName.includes(query.trim()) || m.modelKey.includes(query.trim()),
-    )
+    .filter(matchesQuery)
     .sort((a, b) => a.sortOrder - b.sortOrder);
+  // 3.27：已删除的行照旧排在最后。它们恒为停用，所以「已上架」筛选里不出现。
+  const deletedList =
+    status === 'on'
+      ? []
+      : deletedModels
+          .filter((m) => matchesUse(m, use))
+          .filter(matchesQuery)
+          .sort((a, b) => a.sortOrder - b.sortOrder);
+  const tableRows = [...list, ...deletedList];
 
   async function setEnabled(m: AdminModel, enabled: boolean) {
     setError('');
@@ -198,7 +236,11 @@ export function ModelsTab({
       width: 210,
       render: (_, m) => (
         <div className="cell-main">
-          <span className="cell-title">{m.displayName}</span>
+          <span className="cell-title">
+            {/* 3.27：显示名去掉 `#deleted:` 后缀；副行照原样显示完整模型键，方便核对。 */}
+            {modelDisplayName(m)}
+            {m.deletedAt && <StatusTag tone="default">已删除</StatusTag>}
+          </span>
           <span className="cell-sub">
             {m.vendorName} · <span className="mono">{m.modelKey}</span>
           </span>
@@ -214,6 +256,17 @@ export function ModelsTab({
       ),
       width: 190,
       render: (_, m) => {
+        // 3.27：已删除的行只显示「已删除」，不再按停用线路 / 计费上限给出误导性的原因。
+        if (m.deletedAt) {
+          return (
+            <div className="cell-main model-status">
+              <span>
+                <StatusTag tone="default">已删除</StatusTag>
+              </span>
+              <span className="cell-sub">历史记录仍显示模型名，不能重新上架</span>
+            </div>
+          );
+        }
         // 3.24：具体原因来自服务器（availability）；旧服务器不带时按线路计费上限判断
         const detail =
           m.availability?.detail ??
@@ -312,13 +365,13 @@ export function ModelsTab({
     {
       title: (
         <span>
-          售价（元/百万 token）
-          <HelpTip text="每百万 token 的人民币价格；1 元 = 100 积分。输入 / 输出 / 缓存命中输入。" />
+          售价 / 计费单位
+          <HelpTip text="文本按每百万 token；服务按显示的每次/万字/分钟/张计价。1 元 = 100 积分。" />
         </span>
       ),
       width: 170,
       render: (_, m) =>
-        m.rates ? (
+        m.rates && !isSearchKind(upstreams.find((u) => u.upstreamId === m.upstreamId)?.kind) ? (
           <span className="cell-main">
             <span>
               入 {m.rates.input.toFixed(2)} · 出 {m.rates.output.toFixed(2)}
@@ -334,7 +387,17 @@ export function ModelsTab({
             </span>
           </span>
         ) : (
-          <span className="cell-sub">非 token 计价</span>
+          <span className="cell-main">
+            {m.serviceRates?.length ? (
+              m.serviceRates.map((r) => (
+                <span className="cell-sub" key={r.unit}>
+                  {SERVICE_UNIT_LABELS[r.unit]}：{r.price} 元{r.hasTimeBands ? ' · 分时价' : ''}
+                </span>
+              ))
+            ) : (
+              <span className="cell-sub">暂无单价</span>
+            )}
+          </span>
         ),
     },
     {
@@ -394,47 +457,78 @@ export function ModelsTab({
       title: '操作',
       width: 140,
       fixed: 'right',
-      render: (_, m) => (
-        <Space size={4}>
-          <Button
-            type="link"
-            size="small"
-            onClick={(e) => {
-              e.stopPropagation();
-              openEditor(m);
-            }}
-          >
-            编辑
-          </Button>
-          {m.enabled ? (
+      // 3.27：已删除的行没有可操作的动作（再编辑 / 上架 / 删除都没有意义，接口也不接受这些键）。
+      render: (_, m) =>
+        m.deletedAt ? (
+          <span className="cell-sub">已删除，仅供核对</span>
+        ) : (
+          <Space size={4}>
             <Button
               type="link"
               size="small"
-              danger
-              onClick={() =>
-                confirm({
-                  title: `下架「${m.displayName}」？`,
-                  content:
-                    '下架后，选了这个模型的场景会显示「暂不可用」，用户需要重新选择（不会自动换成别的模型）。',
-                  okText: '下架',
-                  onOk: () => setEnabled(m, false),
-                })
-              }
+              onClick={(e) => {
+                e.stopPropagation();
+                openEditor(m);
+              }}
             >
-              下架
+              编辑
             </Button>
-          ) : (
-            <Button type="link" size="small" onClick={() => void setEnabled(m, true)}>
-              上架
+            {m.enabled ? (
+              <Button
+                type="link"
+                size="small"
+                danger
+                onClick={() =>
+                  confirm({
+                    title: `下架「${modelDisplayName(m)}」？`,
+                    content:
+                      '下架后，选了这个模型的场景会显示「暂不可用」，用户需要重新选择（不会自动换成别的模型）。',
+                    okText: '下架',
+                    onOk: () => setEnabled(m, false),
+                  })
+                }
+              >
+                下架
+              </Button>
+            ) : (
+              <Button type="link" size="small" onClick={() => void setEnabled(m, true)}>
+                上架
+              </Button>
+            )}
+            <Button type="link" size="small" danger onClick={() => void askDelete([m])}>
+              删除
             </Button>
-          )}
-          <Button type="link" size="small" danger onClick={() => void askDelete([m])}>
-            删除
-          </Button>
-        </Space>
-      ),
+          </Space>
+        ),
     },
   ];
+
+  /**
+   * 3.27：空状态只在「接口成功返回、确实一个模型都没有」时出现。
+   * 读取中 / 读取失败 / 只是筛选没匹配到，都不能说「还没有模型」。
+   */
+  const emptyState = loadError
+    ? {
+        emptyTitle: '模型列表没加载出来',
+        emptyHint: '原因见上方红条；点「刷新」重试。一直失败请把这条错误交给开发。',
+      }
+    : loading
+      ? { emptyTitle: '正在读取模型…' }
+      : models.length > 0 || deletedModels.length > 0
+        ? {
+            emptyTitle: '没有符合筛选的模型',
+            emptyHint: '模型是有的，只是当前的搜索词 / 场景 / 状态没匹配到；换个条件试试。',
+          }
+        : {
+            emptyTitle: '还没有模型',
+            emptyHint:
+              '先在「上游账号」里添加一条线路，再点「添加模型」，填上模型名和每百万 token 的价格。',
+            emptyAction: (
+              <Button type="primary" onClick={() => openEditor('new')}>
+                添加第一个模型
+              </Button>
+            ),
+          };
 
   return (
     <div className="tab-body">
@@ -457,13 +551,50 @@ export function ModelsTab({
       </div>
       <ModelsDevBar />
       <MultiplierBase key={deleteVersion} models={models} onSaved={refresh} />
+      {upstreamsError && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="上游账号列表没加载出来"
+          description={`${upstreamsError}（线路名称会显示「未知账号」，先点「刷新」重试再添加模型）`}
+        />
+      )}
+      {invalidModels.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={`有 ${invalidModels.length} 个模型的数据不符合契约，暂时没有列出来`}
+          description={
+            <>
+              {invalidModels.slice(0, 5).map((item) => (
+                <div key={item.modelKey} className="cell-sub">
+                  <span className="mono">{item.modelKey}</span>：{item.message}
+                </div>
+              ))}
+              {invalidModels.length > 5 && (
+                <div className="cell-sub">
+                  还有 {invalidModels.length - 5} 个，修好这些再看下一条。
+                </div>
+              )}
+            </>
+          }
+        />
+      )}
       <DataTable<AdminModel>
-        rowKey="modelKey"
+        // 3.27：已删除行给的是删除前的原键，同键可能重新添加过、也可能删过不止一次，行键要带上删除时间区分。
+        rowKey={(m) => (m.deletedAt ? `${m.modelKey}#deleted@${m.deletedAt}` : m.modelKey)}
         columns={columns}
-        data={list}
-        error={error}
+        data={tableRows}
+        loading={loading}
+        error={error || loadError}
         onRefresh={refresh}
-        onRowClick={(m) => openEditor(m)}
+        // 3.27：已删除的行只能看，点开编辑没有意义（写入接口也不接受软删除键）。
+        onRowClick={(m) => {
+          if (!m.deletedAt) openEditor(m);
+        }}
+        rowSelectable={(m) => !m.deletedAt}
         selectedKeys={selected}
         onSelectionChange={(keys) => setSelected(keys)}
         batchActions={(rows) => (
@@ -513,13 +644,9 @@ export function ModelsTab({
             />
           </>
         }
-        emptyTitle="还没有模型"
-        emptyHint="先在「上游账号」里添加一条线路，再点「添加模型」，填上模型名和每百万 token 的价格。"
-        emptyAction={
-          <Button type="primary" onClick={() => openEditor('new')}>
-            添加第一个模型
-          </Button>
-        }
+        emptyTitle={emptyState.emptyTitle}
+        emptyHint={emptyState.emptyHint}
+        emptyAction={emptyState.emptyAction}
       />
       {editing && (
         <ModelWizard
@@ -616,6 +743,8 @@ interface ModelFormValues {
   discountOn?: boolean;
   discountRate?: number | null;
   discountRange?: [dayjs.Dayjs, dayjs.Dayjs] | null;
+  billingMode?: 'token' | 'service';
+  serviceRates?: ServicePriceDraft[];
   priceInput?: number | null;
   priceOutput?: number | null;
   priceCache?: number | null;
@@ -623,7 +752,6 @@ interface ModelFormValues {
   costOutput?: number | null;
   costCache?: number | null;
   displayMultiplierManual?: number | null;
-  arenaModelName?: string | null;
   priceCacheWrite5m?: number | null;
   priceCacheWrite1h?: number | null;
   costCacheWrite5m?: number | null;
@@ -641,7 +769,7 @@ function routeDraftOf(
   ctx: { vision: boolean },
 ): RouteDraft {
   const bounds = route.billingBounds ?? null;
-  const json = bounds != null && !isTextOnlyBounds(bounds);
+  const json = bounds != null && !isTextOnlyBounds(bounds) && !isSearchOnlyBounds(bounds);
   return {
     upstreamId: route.upstreamId,
     upstreamModelId: route.upstreamModelId,
@@ -661,7 +789,7 @@ function needsBounds(route: RouteDraft): boolean {
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 type AdminModelDiscount = NonNullable<AdminModel['discount']>;
 
-function ModelWizard({
+export function ModelWizard({
   model,
   existingKeys,
   upstreams,
@@ -686,6 +814,7 @@ function ModelWizard({
         if (routes[index]?.boundsMode === 'json') return ['routes', index, 'billingBoundsDraft'];
         const [a, b] = rest;
         if (a === 'text' && typeof b === 'string') return ['routes', index, 'bounds', b];
+        if (a === 'search') return ['routes', index, 'bounds', 'searchMaxResults'];
         return ['routes', index, 'bounds', 'contextTokens'];
       };
       const [head, second, third] = path;
@@ -724,7 +853,13 @@ function ModelWizard({
           routeDraftOf(
             {
               upstreamId: model?.upstreamId ?? upstreams[0]?.upstreamId ?? '',
-              upstreamModelId: model?.upstreamModelId ?? '',
+              upstreamModelId:
+                model?.upstreamModelId ??
+                (isSearchKind(upstreams[0]?.kind)
+                  ? upstreams[0]?.kind === 'deepseek_search'
+                    ? 'deepseek-search'
+                    : 'bocha-search'
+                  : ''),
               weight: 100,
               enabled: true,
               billingBounds: model?.billingBounds ?? null,
@@ -733,6 +868,10 @@ function ModelWizard({
           ),
         ];
   });
+
+  const initialSearch = isSearchKind(
+    upstreams.find((u) => u.upstreamId === initialRoutes[0]?.upstreamId)?.kind,
+  );
 
   useEffect(() => {
     if (!focusBounds) return;
@@ -751,6 +890,15 @@ function ModelWizard({
 
   async function loadUpstreamModels(upstreamId: string) {
     if (!upstreamId) return;
+    const kind = upstreams.find((u) => u.upstreamId === upstreamId)?.kind;
+    if (isSearchKind(kind)) {
+      setUpstreamModels({
+        id: upstreamId,
+        items: [kind === 'deepseek_search' ? 'deepseek-search' : 'bocha-search'],
+        error: '',
+      });
+      return;
+    }
     setUpstreamModels({ id: upstreamId, items: null, error: '' });
     try {
       const r = await api.call(ModelAccessAdminEndpoints.listUpstreamModels, {
@@ -779,7 +927,14 @@ function ModelWizard({
       return;
     }
     setConfirmVision(false);
-    if (model?.hasTimeBands && !force && values.priceInput != null) {
+    if (
+      !force &&
+      ((values.billingMode !== 'service' && model?.hasTimeBands && values.priceInput != null) ||
+        (values.billingMode === 'service' &&
+          values.serviceRates?.some((r) =>
+            model?.serviceRates?.some((old) => old.unit === r.unit && old.hasTimeBands),
+          )))
+    ) {
       setConfirmBands(true);
       return;
     }
@@ -801,7 +956,11 @@ function ModelWizard({
           }
         }
       } else {
-        billingBounds = formToBounds(route.bounds, route.origin);
+        const kind = upstreams.find((u) => u.upstreamId === route.upstreamId)?.kind;
+        billingBounds =
+          isSearchKind(kind) || isSearchOnlyBounds(route.origin)
+            ? searchFormToBounds(route.bounds.searchMaxResults, route.bounds.resume, route.origin)
+            : formToBounds(route.bounds, route.origin);
       }
       routes.push({
         upstreamId: route.upstreamId,
@@ -855,27 +1014,40 @@ function ModelWizard({
             .filter(Boolean)
             .slice(0, 10),
           leaderboardRank: values.leaderboardRank ?? null,
-          arenaModelName: values.arenaModelName?.trim() || null,
           sortOrder: values.sortOrder ?? model?.sortOrder ?? 0,
           defaultFor: [],
           scenarios: values.scenarios,
           enabled: model ? model.enabled : true,
           ...(discount !== undefined ? { discount } : {}),
-          rates: ratesOf(
-            values.priceInput,
-            values.priceOutput,
-            values.priceCache,
-            values.priceCacheWrite5m,
-            values.priceCacheWrite1h,
-          ),
+          ...(values.billingMode === 'service'
+            ? {
+                serviceRates: values.serviceRates?.map((r) => ({
+                  unit: r.unit,
+                  price: r.price!,
+                  cost: r.cost ?? null,
+                })),
+              }
+            : {}),
+          rates:
+            values.billingMode === 'service'
+              ? null
+              : ratesOf(
+                  values.priceInput,
+                  values.priceOutput,
+                  values.priceCache,
+                  values.priceCacheWrite5m,
+                  values.priceCacheWrite1h,
+                ),
           costRates:
-            ratesOf(
-              values.costInput,
-              values.costOutput,
-              values.costCache,
-              values.costCacheWrite5m,
-              values.costCacheWrite1h,
-            ) ?? undefined,
+            values.billingMode === 'service'
+              ? undefined
+              : (ratesOf(
+                  values.costInput,
+                  values.costOutput,
+                  values.costCache,
+                  values.costCacheWrite5m,
+                  values.costCacheWrite1h,
+                ) ?? undefined),
           displayMultiplierManual: values.displayMultiplierManual ?? null,
           routes,
         },
@@ -894,7 +1066,26 @@ function ModelWizard({
     const routes = (form.getFieldValue('routes') as RouteDraft[] | undefined) ?? [];
     const vendor = (form.getFieldValue('vendorName') as string | undefined) ?? '';
     const changedRoutes = (changed.routes ?? []) as Array<Partial<RouteDraft> | undefined>;
-    if (changedRoutes[0]?.upstreamId) void loadUpstreamModels(changedRoutes[0].upstreamId);
+    if (changedRoutes[0]?.upstreamId) {
+      void loadUpstreamModels(changedRoutes[0].upstreamId);
+      const kind = upstreams.find((u) => u.upstreamId === changedRoutes[0]?.upstreamId)?.kind;
+      if (isSearchKind(kind)) {
+        form.setFieldValue('billingMode', 'service');
+        if (!(form.getFieldValue('serviceRates') as unknown[] | undefined)?.length)
+          form.setFieldValue('serviceRates', [{ unit: 'search_call', price: null, cost: null }]);
+        if (!model) {
+          form.setFieldValue('capabilities', ['web_search']);
+          form.setFieldValue('scenarios', []);
+          if (!form.getFieldValue(['routes', 0, 'upstreamModelId']))
+            form.setFieldValue(
+              ['routes', 0, 'upstreamModelId'],
+              kind === 'deepseek_search' ? 'deepseek-search' : 'bocha-search',
+            );
+          if (!form.getFieldValue('vendorName'))
+            form.setFieldValue('vendorName', kind === 'deepseek_search' ? 'DeepSeek' : '博查');
+        }
+      }
+    }
 
     if (!model && ('vendorName' in changed || changedRoutes[0]?.upstreamModelId !== undefined)) {
       form.setFieldValue(
@@ -915,12 +1106,16 @@ function ModelWizard({
     });
   }
 
+  const billingMode = Form.useWatch('billingMode', form) as 'token' | 'service' | undefined;
   const firstUpstream = Form.useWatch(['routes', 0, 'upstreamId'], form);
   const firstModelName = Form.useWatch(['routes', 0, 'upstreamModelId'], form) as
     string | undefined;
   const vendorWatch = Form.useWatch('vendorName', form) as string | undefined;
   const keyWatch = Form.useWatch('modelKey', form) as string | undefined;
-  const devMatch = useModelsDevMatch(firstModelName, vendorWatch);
+  const devMatch = useModelsDevMatch(
+    billingMode === 'service' ? undefined : firstModelName,
+    vendorWatch,
+  );
 
   /**
    * 3.26（G3-1）：把 models.dev 的官方数据填进表单。
@@ -998,10 +1193,10 @@ function ModelWizard({
 
   // 新建模型：匹配到就自动预填（编辑已有模型不自动改，点按钮才填）
   useEffect(() => {
-    if (model || devMatch.kind !== 'found') return;
+    if (model || billingMode === 'service' || devMatch.kind !== 'found') return;
     applyMatch(devMatch.match, 'auto');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [devMatch]);
+  }, [devMatch, billingMode]);
   const devApplied =
     devMatch.kind === 'found' &&
     autoApplied === devMatch.match.providerId + '/' + devMatch.match.modelId;
@@ -1031,19 +1226,36 @@ function ModelWizard({
         layout="vertical"
         initialValues={{
           modelKey: model?.modelKey ?? '',
-          displayName: model?.displayName ?? '',
-          vendorName: model?.vendorName ?? '',
+          displayName: model?.displayName ?? (initialSearch ? '联网搜索' : ''),
+          vendorName:
+            model?.vendorName ??
+            (initialSearch
+              ? upstreams.find((u) => u.upstreamId === initialRoutes[0]?.upstreamId)?.kind ===
+                'deepseek_search'
+                ? 'DeepSeek'
+                : '博查'
+              : ''),
           tags: model?.tags.join('，') ?? '',
           sortOrder: model?.sortOrder ?? 0,
           leaderboardRank: model?.leaderboardRank ?? null,
-          capabilities: model?.capabilities ?? [],
-          scenarios: model?.scenarios ?? ['chat', 'voice_call', 'private'],
+          capabilities: model?.capabilities ?? (initialSearch ? ['web_search'] : []),
+          scenarios: model?.scenarios ?? (initialSearch ? [] : ['chat', 'voice_call', 'private']),
           routes: initialRoutes,
           discountOn: !!model?.discount,
           discountRate: model?.discount?.rate ?? 0.5,
           discountRange: model?.discount
             ? [dayjs(model.discount.startsAt), dayjs(model.discount.endsAt)]
             : null,
+          billingMode: initialSearch
+            ? 'service'
+            : model?.rates
+              ? 'token'
+              : model?.serviceRates?.length
+                ? 'service'
+                : 'token',
+          serviceRates: model?.serviceRates?.length
+            ? model.serviceRates.map((r) => ({ ...r }))
+            : [{ unit: 'search_call', price: null, cost: null }],
           priceInput: model?.rates?.input ?? null,
           priceOutput: model?.rates?.output ?? null,
           priceCache: model?.rates?.cache ?? null,
@@ -1055,7 +1267,6 @@ function ModelWizard({
           costCacheWrite5m: model?.costRates?.cacheWrite5m ?? null,
           costCacheWrite1h: model?.costRates?.cacheWrite1h ?? null,
           displayMultiplierManual: model?.displayMultiplierManual ?? null,
-          arenaModelName: model?.arenaModelName ?? null,
         }}
         onValuesChange={onValuesChange}
       >
@@ -1153,7 +1364,12 @@ function ModelWizard({
                       <Checkbox>启用这条线路</Checkbox>
                     </Form.Item>
                   </div>
-                  <RouteBoundsEditor form={form} name={field.name} index={index} />
+                  <RouteBoundsEditor
+                    form={form}
+                    name={field.name}
+                    index={index}
+                    upstreams={upstreams}
+                  />
                 </div>
               ))}
               <Button
@@ -1187,11 +1403,13 @@ function ModelWizard({
           )}
         </Form.List>
 
-        <ModelsDevPanel
-          state={devMatch}
-          autoApplied={devApplied}
-          onApply={(match) => applyMatch(match, 'manual')}
-        />
+        {billingMode !== 'service' && (
+          <ModelsDevPanel
+            state={devMatch}
+            autoApplied={devApplied}
+            onApply={(match) => applyMatch(match, 'manual')}
+          />
+        )}
         <FormSection title="② 显示与用途" />
         <div className="form-two">
           <Form.Item
@@ -1271,30 +1489,11 @@ function ModelWizard({
         </div>
         <div className="form-two">
           <Form.Item
-            name="arenaModelName"
-            label="榜单对应名称"
-            rules={[{ max: 120, message: '最多 120 个字符' }]}
-            extra={
-              <FieldHelp>
-                榜单上这个模型叫什么（例
-                claude-opus-4-8），自动获取榜单时按它匹配名次（不区分大小写）。
-                {model?.arenaModelName
-                  ? model.arenaRank != null
-                    ? ` 当前匹配到原榜第 ${model.arenaRank} 名。`
-                    : ' 当前榜单里没找到这个名字。'
-                  : ''}
-              </FieldHelp>
-            }
-          >
-            <Input maxLength={120} placeholder="例：claude-opus-4-8" />
-          </Form.Item>
-          <Form.Item
             name="leaderboardRank"
-            label="手填榜单名次（可不填）"
+            label="历史手填名次（不参与排名）"
             extra={
               <FieldHelp>
-                自动获取的榜单匹配不到时才用它（原榜名次）。用户端只显示相对顺序
-                1、2、3…，不显示原始名次；都没有 = 不上榜。
+                此字段只保留旧配置，不再参与用户排名。没有有效官方/手工导入匹配时显示「暂无排名」。
               </FieldHelp>
             }
           >
@@ -1303,112 +1502,137 @@ function ModelWizard({
               max={9999}
               precision={0}
               style={{ width: '100%' }}
-              placeholder="不上榜"
+              placeholder="旧字段已停用"
+              disabled
             />
           </Form.Item>
         </div>
 
-        <FormSection title="③ 价格" desc="每百万 token 的人民币价格，1 元 = 100 积分" />
-        <div className="form-three">
-          <Form.Item
-            name="priceInput"
-            label="输入（元）"
-            extra={<FieldHelp>没命中缓存时，每百万 token 收多少。</FieldHelp>}
-          >
-            <InputNumber
-              min={0}
-              max={100_000}
-              step={0.01}
-              style={{ width: '100%' }}
-              placeholder="0"
-            />
-          </Form.Item>
-          <Form.Item
-            name="priceOutput"
-            label="输出（元）"
-            extra={<FieldHelp>模型写出来的内容，每百万 token 收多少。</FieldHelp>}
-          >
-            <InputNumber
-              min={0}
-              max={100_000}
-              step={0.01}
-              style={{ width: '100%' }}
-              placeholder="0"
-            />
-          </Form.Item>
-          <Form.Item
-            name="priceCache"
-            label="缓存命中（元）"
-            extra={<FieldHelp>命中缓存时便宜很多，一般填输入价的 1/10。</FieldHelp>}
-          >
-            <InputNumber
-              min={0}
-              max={100_000}
-              step={0.01}
-              style={{ width: '100%' }}
-              placeholder="0"
-            />
-          </Form.Item>
-        </div>
-        <div className="form-two">
-          <Form.Item
-            name="priceCacheWrite5m"
-            label="缓存写入 · 5 分钟（元，可不填）"
-            extra={
-              <FieldHelp>
-                上游报告「缓存写入」时按它收（Claude 一般是输入价的 1.25 倍）；不填 = 按输入价。只有
-                Anthropic 协议的线路会报告缓存写入。
-              </FieldHelp>
-            }
-          >
-            <InputNumber
-              min={0}
-              max={100_000}
-              step={0.01}
-              style={{ width: '100%' }}
-              placeholder="同输入价"
-            />
-          </Form.Item>
-          <Form.Item
-            name="priceCacheWrite1h"
-            label="缓存写入 · 1 小时（元，可不填）"
-            extra={
-              <FieldHelp>
-                1 小时缓存的写入价（Claude 一般是输入价的 2 倍）；不填 = 按输入价。
-              </FieldHelp>
-            }
-          >
-            <InputNumber
-              min={0}
-              max={100_000}
-              step={0.01}
-              style={{ width: '100%' }}
-              placeholder="同输入价"
-            />
-          </Form.Item>
-        </div>
+        <FormSection
+          title="③ 价格"
+          desc="1 元 = 100 积分；按实际计费单位填写，不把搜索次数当作 token"
+        />
         <Form.Item
-          name="displayMultiplierManual"
-          label="展示倍率（可不填）"
-          extra={
-            <FieldHelp>
-              用户看到的「×倍率」，只展示、不参与扣费。不填 = 按基准模型自动算
-              {model?.displayMultiplier != null
-                ? `（当前 ×${model.displayMultiplier.toFixed(2)}）`
-                : ''}
-              。
-            </FieldHelp>
-          }
+          name="billingMode"
+          label="本次编辑计价类型"
+          extra={<FieldHelp>切换只编辑所选类别，不删除模型已有的其他单位价格。</FieldHelp>}
         >
-          <InputNumber
-            min={0}
-            max={1000}
-            step={0.01}
-            precision={2}
-            style={{ width: 160 }}
-            placeholder="自动"
+          <Select
+            options={[
+              { value: 'token', label: 'Token 单价（文本聊天）' },
+              { value: 'service', label: '服务单价（次 / 万字 / 分钟 / 张）' },
+            ]}
           />
         </Form.Item>
+        {billingMode === 'service' && <ServicePriceFields />}
+        <div hidden={billingMode === 'service'}>
+          <div className="form-three">
+            <Form.Item
+              name="priceInput"
+              label="输入（元）"
+              extra={<FieldHelp>没命中缓存时，每百万 token 收多少。</FieldHelp>}
+            >
+              <InputNumber
+                min={0}
+                max={100_000}
+                step={0.01}
+                style={{ width: '100%' }}
+                placeholder="0"
+              />
+            </Form.Item>
+            <Form.Item
+              name="priceOutput"
+              label="输出（元）"
+              extra={<FieldHelp>模型写出来的内容，每百万 token 收多少。</FieldHelp>}
+            >
+              <InputNumber
+                min={0}
+                max={100_000}
+                step={0.01}
+                style={{ width: '100%' }}
+                placeholder="0"
+              />
+            </Form.Item>
+            <Form.Item
+              name="priceCache"
+              label="缓存命中（元）"
+              extra={<FieldHelp>命中缓存时便宜很多，一般填输入价的 1/10。</FieldHelp>}
+            >
+              <InputNumber
+                min={0}
+                max={100_000}
+                step={0.01}
+                style={{ width: '100%' }}
+                placeholder="0"
+              />
+            </Form.Item>
+          </div>
+          <div className="form-two">
+            <Form.Item
+              name="priceCacheWrite5m"
+              label="缓存写入 · 5 分钟（元，可不填）"
+              extra={
+                <FieldHelp>
+                  上游报告「缓存写入」时按它收（Claude 一般是输入价的 1.25 倍）；不填 =
+                  按输入价。只有 Anthropic 协议的线路会报告缓存写入。
+                </FieldHelp>
+              }
+            >
+              <InputNumber
+                min={0}
+                max={100_000}
+                step={0.01}
+                style={{ width: '100%' }}
+                placeholder="同输入价"
+              />
+            </Form.Item>
+            <Form.Item
+              name="priceCacheWrite1h"
+              label="缓存写入 · 1 小时（元，可不填）"
+              extra={
+                <FieldHelp>
+                  1 小时缓存的写入价（Claude 一般是输入价的 2 倍）；不填 = 按输入价。
+                </FieldHelp>
+              }
+            >
+              <InputNumber
+                min={0}
+                max={100_000}
+                step={0.01}
+                style={{ width: '100%' }}
+                placeholder="同输入价"
+              />
+            </Form.Item>
+          </div>
+          <Form.Item
+            name="displayMultiplierManual"
+            label="展示倍率（可不填）"
+            extra={
+              <FieldHelp>
+                用户看到的「×倍率」，只展示、不参与扣费。不填 / 点「改为自动」后保存 =
+                按基准模型自动算
+                {model?.displayMultiplier != null
+                  ? `（当前 ×${model.displayMultiplier.toFixed(2)}）`
+                  : ''}
+                。
+              </FieldHelp>
+            }
+          >
+            <Space.Compact>
+              <InputNumber
+                min={0}
+                max={1000}
+                step={0.01}
+                precision={2}
+                style={{ width: 160 }}
+                placeholder="自动"
+              />
+              <Button onClick={() => form.setFieldValue('displayMultiplierManual', null)}>
+                改为自动
+              </Button>
+            </Space.Compact>
+          </Form.Item>
+        </div>
         <FormSection
           title="④ 限时折扣（可不设）"
           desc="生效期间按「售价 × 折扣」扣费，成本不变；到期自动恢复原价。用户端显示「消耗倍率 ×1.0（划掉）×0.5 · 限时 5 折」"
@@ -1439,53 +1663,55 @@ function ModelWizard({
             />
           </Form.Item>
         </div>
-        <div className="field-note">
+        <div className="field-note" hidden={billingMode === 'service'}>
           {model?.pointsPerReply != null
             ? `用户端显示约每条 ${formatPoints(model.pointsPerReply * 10_000)} 积分（有最近 7 天数据时按平均实扣，否则按约 1 万 token 输入、八成命中缓存、200 token 输出估算）；扣费按实际用量。`
             : '保存后系统会算一个「每条回复约多少积分」的参考值。'}
         </div>
-        <Collapse
-          ghost
-          size="small"
-          items={[
-            {
-              key: 'cost',
-              label: '成本价（对账用，不填 = 和售价相同）',
-              forceRender: true,
-              children: (
-                <div className="form-three">
-                  <Form.Item name="costInput" label="成本 · 输入">
-                    <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} />
-                  </Form.Item>
-                  <Form.Item name="costOutput" label="成本 · 输出">
-                    <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} />
-                  </Form.Item>
-                  <Form.Item name="costCache" label="成本 · 缓存">
-                    <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} />
-                  </Form.Item>
-                  <Form.Item name="costCacheWrite5m" label="成本 · 缓存写入 5 分钟">
-                    <InputNumber
-                      min={0}
-                      max={100_000}
-                      step={0.01}
-                      style={{ width: '100%' }}
-                      placeholder="同售价"
-                    />
-                  </Form.Item>
-                  <Form.Item name="costCacheWrite1h" label="成本 · 缓存写入 1 小时">
-                    <InputNumber
-                      min={0}
-                      max={100_000}
-                      step={0.01}
-                      style={{ width: '100%' }}
-                      placeholder="同售价"
-                    />
-                  </Form.Item>
-                </div>
-              ),
-            },
-          ]}
-        />
+        <div hidden={billingMode === 'service'}>
+          <Collapse
+            ghost
+            size="small"
+            items={[
+              {
+                key: 'cost',
+                label: '成本价（对账用，不填 = 和售价相同）',
+                forceRender: true,
+                children: (
+                  <div className="form-three">
+                    <Form.Item name="costInput" label="成本 · 输入">
+                      <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item name="costOutput" label="成本 · 输出">
+                      <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item name="costCache" label="成本 · 缓存">
+                      <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item name="costCacheWrite5m" label="成本 · 缓存写入 5 分钟">
+                      <InputNumber
+                        min={0}
+                        max={100_000}
+                        step={0.01}
+                        style={{ width: '100%' }}
+                        placeholder="同售价"
+                      />
+                    </Form.Item>
+                    <Form.Item name="costCacheWrite1h" label="成本 · 缓存写入 1 小时">
+                      <InputNumber
+                        min={0}
+                        max={100_000}
+                        step={0.01}
+                        style={{ width: '100%' }}
+                        placeholder="同售价"
+                      />
+                    </Form.Item>
+                  </div>
+                ),
+              },
+            ]}
+          />
+        </div>
         <Collapse
           ghost
           size="small"
@@ -1534,7 +1760,7 @@ function ModelWizard({
           type="warning"
           showIcon
           message="这个模型现在有分时价"
-          description="按倍率保存后会变成全天统一价。"
+          description="仅本次编辑的计费单位将改为全天统一价，未提交单位与其他模型价格保留。"
           action={
             <Space>
               <Button size="small" onClick={() => setConfirmBands(false)}>
@@ -1572,18 +1798,32 @@ function RouteBoundsEditor({
   form,
   name,
   index,
+  upstreams,
 }: {
   form: FormInstance<ModelFormValues>;
   name: number;
   index: number;
+  upstreams: Upstream[];
 }) {
+  const routeUpstream = Form.useWatch(['routes', name, 'upstreamId'], form) as string | undefined;
   const mode =
     (Form.useWatch(['routes', name, 'boundsMode'], form) as RouteDraft['boundsMode'] | undefined) ??
     'form';
   const bounds = Form.useWatch(['routes', name, 'bounds'], form) as BoundsFormValues | undefined;
   const origin = (form.getFieldValue(['routes', name]) as RouteDraft | undefined)?.origin ?? null;
+  const search =
+    isSearchKind(upstreams.find((u) => u.upstreamId === routeUpstream)?.kind) ||
+    isSearchOnlyBounds(origin);
   const preview =
-    mode === 'form' && bounds ? JSON.stringify(formToBounds(bounds, origin), null, 2) : '';
+    mode === 'form' && bounds
+      ? JSON.stringify(
+          search
+            ? searchFormToBounds(bounds.searchMaxResults, bounds.resume, origin)
+            : formToBounds(bounds, origin),
+          null,
+          2,
+        )
+      : '';
   const [openKeys, setOpenKeys] = useState<string[]>(mode === 'json' ? ['json'] : []);
 
   function switchMode(json: boolean) {
@@ -1592,7 +1832,13 @@ function RouteBoundsEditor({
       if (!route.billingBoundsDraft?.trim())
         form.setFieldValue(
           ['routes', name, 'billingBoundsDraft'],
-          JSON.stringify(formToBounds(route.bounds, route.origin), null, 2),
+          JSON.stringify(
+            search
+              ? searchFormToBounds(route.bounds.searchMaxResults, route.bounds.resume, route.origin)
+              : formToBounds(route.bounds, route.origin),
+            null,
+            2,
+          ),
         );
       form.setFieldValue(['routes', name, 'boundsMode'], 'json');
       setOpenKeys(['json']);
@@ -1601,7 +1847,7 @@ function RouteBoundsEditor({
     // 切回表单：JSON 是普通文字模型的格式时，把数字带回表单。
     try {
       const parsed = RouteBillingBounds.safeParse(JSON.parse(route.billingBoundsDraft || 'null'));
-      if (parsed.success && isTextOnlyBounds(parsed.data))
+      if (parsed.success && (isTextOnlyBounds(parsed.data) || isSearchOnlyBounds(parsed.data)))
         form.setFieldValue(
           ['routes', name, 'bounds'],
           boundsToForm(parsed.data, { vision: false }),
@@ -1616,7 +1862,13 @@ function RouteBoundsEditor({
     <div className="route-bounds" id={`route-bounds-${index}`}>
       <div className="route-bounds-head">
         <span>计费上限</span>
-        <HelpTip text="系统按这里的「上下文长度 / 最大输出」先预扣积分，回复完按实际用量多退少补。没有计费上限的线路，调用前会被拒绝（角色不回消息）。" />
+        <HelpTip
+          text={
+            search
+              ? '搜索每次最多预留一次调用费用，结果条数不是计费次数；没有搜索上限时调用会被拒绝。'
+              : '系统按上下文长度/最大输出预留费用，结束按实际用量结算；没有上限时调用会被拒绝。'
+          }
+        />
       </div>
       {!origin && (
         <Alert
@@ -1639,7 +1891,11 @@ function RouteBoundsEditor({
         <Input />
       </Form.Item>
       {mode === 'form' ? (
-        <BoundsFields name={name} paused={Boolean(origin?.pauseReason)} />
+        search ? (
+          <SearchBoundsFields name={name} paused={Boolean(origin?.pauseReason)} />
+        ) : (
+          <BoundsFields name={name} paused={Boolean(origin?.pauseReason)} />
+        )
       ) : (
         <div className="field-note" style={{ marginBottom: 12 }}>
           这条线路正在使用下方「高级」里的 JSON 作为计费上限。

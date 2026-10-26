@@ -2,7 +2,7 @@
  * 角色库：官方角色的列表与人设编辑。上架前需要通过三项检查。
  * 人设内容仍由 WB-Card schema 驱动（components/card-editor），只换了外观。
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Button, Checkbox, DatePicker, Input, Select, Space, Upload } from 'antd';
 import { PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -15,15 +15,29 @@ import {
   MediaAdminEndpoints,
   RealPersonKind,
   type AdminCharacter,
+  type AdminCharacterPurgeImpact,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
+import { ApiFailure } from '@weiban/client-core';
 import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
 import { Page, SectionCard, StatusTag, useDangerConfirm, useToast } from '../ui/page.js';
+import {
+  BatchBar,
+  BatchFailureAlert,
+  BatchOperationModal,
+  type BatchFailure,
+} from '../ui/batch-operation.js';
 import { formatDateTime } from '../ui/format.js';
 import { CardEditor } from '../components/card-editor.js';
-import { EligibilityCard, EligibilityLookupDrawer } from './character-eligibility.js';
+import { LegacyCharacterDrawer } from '../components/legacy-card-editor.js';
+import { EligibilityCard, EligibilityLookupDrawer, factsText } from './character-eligibility.js';
+import {
+  applyEligibilityPatch,
+  canConfirmPurge,
+  type EligibilityBatchPatch,
+} from './batch-helpers.js';
 
 const STATUS_LABELS: Record<string, string> = {
   draft: '草稿',
@@ -44,6 +58,44 @@ const REAL_PERSON_LABELS: Record<string, string> = {
   historical: '历史人物',
   private_person: '身边真人',
 };
+
+type BatchKind = 'publish' | 'unpublish' | 'eligibility' | 'purge';
+
+interface EligibilityForm {
+  basis: '' | CharacterBasis;
+  realPersonKind: '' | RealPersonKind;
+  ageSetting: '' | AgeSetting;
+  childAppearance: '' | 'true' | 'false';
+  childFeaturesDetected: '' | 'true' | 'false';
+  reason: string;
+}
+
+const EMPTY_ELIGIBILITY_FORM: EligibilityForm = {
+  basis: '',
+  realPersonKind: '',
+  ageSetting: '',
+  childAppearance: '',
+  childFeaturesDetected: '',
+  reason: '',
+};
+
+function eligibilityPatchOf(form: EligibilityForm): EligibilityBatchPatch {
+  const patch: EligibilityBatchPatch = {};
+  if (form.basis) {
+    patch.basis = form.basis;
+    patch.realPersonKind =
+      form.basis === 'real_person'
+        ? form.realPersonKind
+          ? RealPersonKind.parse(form.realPersonKind)
+          : undefined
+        : null;
+  }
+  if (form.ageSetting) patch.ageSetting = AgeSetting.parse(form.ageSetting);
+  if (form.childAppearance) patch.childAppearance = form.childAppearance === 'true';
+  if (form.childFeaturesDetected)
+    patch.childFeaturesDetected = form.childFeaturesDetected === 'true';
+  return patch;
+}
 
 function blank(): AdminCharacterWrite {
   return {
@@ -103,6 +155,20 @@ export function CharactersPage() {
   const [editing, setEditing] = useState<AdminCharacter | 'new' | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [lookup, setLookup] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [failures, setFailures] = useState<BatchFailure[]>([]);
+  const [batch, setBatch] = useState<{ kind: BatchKind; rows: AdminCharacter[] } | null>(null);
+  const [eligibilityForm, setEligibilityForm] = useState<EligibilityForm>(EMPTY_ELIGIBILITY_FORM);
+  const [purgeImpacts, setPurgeImpacts] = useState<Record<string, AdminCharacterPurgeImpact>>({});
+  const [purgeImpactErrors, setPurgeImpactErrors] = useState<Record<string, string>>({});
+  const [purgeImpactLoading, setPurgeImpactLoading] = useState(false);
+  const [purgeAcknowledged, setPurgeAcknowledged] = useState(false);
+  const [purgeConfirmText, setPurgeConfirmText] = useState('');
+
+  // 选择只对当前页 / 当前筛选有效：换关键词或状态时清空。
+  useEffect(() => {
+    setSelected([]);
+  }, [query, status]);
 
   const rows = (list.data?.items ?? []).filter(
     (row) =>
@@ -110,6 +176,146 @@ export function CharactersPage() {
       (!query.trim() ||
         `${row.name} ${row.aliases.join(' ')} ${row.works.join(' ')}`.includes(query.trim())),
   );
+  const selectedRows = rows.filter((row) => selected.includes(row.characterId));
+
+  function openBatch(kind: BatchKind) {
+    if (!selectedRows.length) return;
+    setEligibilityForm(EMPTY_ELIGIBILITY_FORM);
+    setPurgeImpacts({});
+    setPurgeImpactErrors({});
+    setPurgeAcknowledged(false);
+    setPurgeConfirmText('');
+    setBatch({ kind, rows: [...selectedRows] });
+  }
+
+  // 彻底删除必须先查每个角色的影响面；查询失败的角色不允许确认。
+  useEffect(() => {
+    if (batch?.kind !== 'purge') return;
+    let active = true;
+    setPurgeImpactLoading(true);
+    setPurgeImpacts({});
+    setPurgeImpactErrors({});
+    void Promise.all(
+      batch.rows.map(async (row) => {
+        try {
+          const impact = await api.call(CharacterAdminEndpoints.purgeImpact, {
+            params: { characterId: row.characterId },
+          });
+          return { characterId: row.characterId, impact } as const;
+        } catch (error) {
+          return { characterId: row.characterId, error: errorText(error) } as const;
+        }
+      }),
+    ).then((results) => {
+      if (!active) return;
+      const impacts: Record<string, AdminCharacterPurgeImpact> = {};
+      const errors: Record<string, string> = {};
+      for (const result of results) {
+        if ('impact' in result && result.impact) impacts[result.characterId] = result.impact;
+        else errors[result.characterId] = result.error;
+      }
+      setPurgeImpacts(impacts);
+      setPurgeImpactErrors(errors);
+      setPurgeImpactLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [batch]);
+
+  const eligibilityPatch = eligibilityPatchOf(eligibilityForm);
+  const eligibilityHasChange =
+    eligibilityForm.basis !== '' ||
+    eligibilityForm.ageSetting !== '' ||
+    eligibilityForm.childAppearance !== '' ||
+    eligibilityForm.childFeaturesDetected !== '';
+
+  async function runBatch(row: AdminCharacter): Promise<string> {
+    if (!batch) return '';
+    if (batch.kind === 'purge') {
+      const result = await api.call(CharacterAdminEndpoints.purge, {
+        params: { characterId: row.characterId },
+        query: { purge: 'true' },
+      });
+      const { contacts, conversations, messages, moments } = result.counts;
+      return `已彻底删除：联系人 ${contacts}、会话 ${conversations}、消息 ${messages}、朋友圈 ${moments}`;
+    }
+    if (batch.kind === 'publish') {
+      // 旧卡没有 WB-Card 密文，后台不能重新上架；保持原发布状态，不假装成功。
+      if (row.format === 'legacy')
+        throw new ApiFailure(
+          'bad_request',
+          '旧卡不支持在后台重新上架（旧卡保持原有发布状态）',
+          422,
+        );
+      await api.call(CharacterAdminEndpoints.publish, {
+        params: { characterId: row.characterId },
+      });
+      return '已上架';
+    }
+    if (batch.kind === 'unpublish') {
+      if (row.status === 'unpublished') return '本来就是已下架';
+      await api.call(CharacterAdminEndpoints.unpublish, {
+        params: { characterId: row.characterId },
+      });
+      return '已下架（软删）';
+    }
+    const current = await api.call(CharacterAdminEndpoints.getEligibility, {
+      params: { characterId: row.characterId },
+    });
+    const override = applyEligibilityPatch(current.override ?? current.auto, eligibilityPatch);
+    await api.call(CharacterAdminEndpoints.setEligibility, {
+      params: { characterId: row.characterId },
+      body: { override, reason: eligibilityForm.reason.trim() },
+    });
+    return `已标注：${factsText(override)}`;
+  }
+
+  const batchTitle =
+    batch?.kind === 'publish'
+      ? `上架选中的 ${batch.rows.length} 个角色？`
+      : batch?.kind === 'unpublish'
+        ? `下架选中的 ${batch.rows.length} 个角色？`
+        : batch?.kind === 'purge'
+          ? `彻底删除选中的 ${batch.rows.length} 个角色？`
+          : `批量修改 ${batch?.rows.length ?? 0} 个角色的资格标注？`;
+  const batchIntro =
+    batch?.kind === 'publish' ? (
+      <>
+        将影响 {batch.rows.length}{' '}
+        项。只会上架已通过检查的角色；没通过检查或人设未检测的会失败并逐条列出，
+        不会自动改人设或跳过检查。
+      </>
+    ) : batch?.kind === 'unpublish' ? (
+      <>
+        将影响 {batch.rows.length}{' '}
+        项。下架是软删：角色从广场和用户端选择列表消失，已添加为好友的用户不受影响，
+        数据保留，随时可以重新上架；如果确实要真正删除，请用「批量彻底删除」。
+      </>
+    ) : batch?.kind === 'purge' ? (
+      <>
+        将永久删除 {batch.rows.length} 个角色及其关联数据，<strong>不可恢复</strong>
+        。下面逐项列出影响面，请核对后勾选并输入确认文字。
+      </>
+    ) : (
+      <>
+        将影响 {batch?.rows.length ?? 0}{' '}
+        项。会逐条读取每个角色当前的事实（人工标注优先，没有就按自动结果），
+        只覆盖下面选择的字段，其余保持不变；原因会写进每个角色的修改记录。
+      </>
+    );
+  const purgeImpactReady =
+    batch?.kind === 'purge' &&
+    !purgeImpactLoading &&
+    batch.rows.every((row) => purgeImpacts[row.characterId]) &&
+    Object.keys(purgeImpactErrors).length === 0;
+  const purgeConfirmReady =
+    batch?.kind === 'purge' &&
+    canConfirmPurge(
+      batch.rows.map((row) => row.name),
+      purgeAcknowledged,
+      purgeConfirmText,
+    );
 
   async function togglePublish(row: AdminCharacter) {
     const publish = row.status !== 'published';
@@ -179,6 +385,9 @@ export function CharactersPage() {
       title: '上架检查',
       width: 230,
       render: (_, row) => {
+        // 旧卡没有 WB-Card，不适用「必填结构 / 人设稳定 / 边界检测」；显示旧格式说明，不假装缺 12 项。
+        if (row.format === 'legacy')
+          return <StatusTag tone="default">旧卡 · 旧字段运行，不适用 WB-Card 检查</StatusTag>;
         const checks = [
           ['结构', row.publishChecks.requiredFieldsComplete],
           ['稳定', row.publishChecks.personaStabilityPassed],
@@ -211,15 +420,29 @@ export function CharactersPage() {
           <Button type="link" size="small" onClick={() => setEditing(row)}>
             编辑
           </Button>
-          <Button
-            type="link"
-            size="small"
-            danger={row.status === 'published'}
-            loading={busy === row.characterId}
-            onClick={() => void togglePublish(row)}
-          >
-            {row.status === 'published' ? '下架' : '上架'}
-          </Button>
+          {row.format === 'legacy' ? (
+            row.status === 'published' ? (
+              <Button
+                type="link"
+                size="small"
+                danger
+                loading={busy === row.characterId}
+                onClick={() => void togglePublish(row)}
+              >
+                下架
+              </Button>
+            ) : null
+          ) : (
+            <Button
+              type="link"
+              size="small"
+              danger={row.status === 'published'}
+              loading={busy === row.characterId}
+              onClick={() => void togglePublish(row)}
+            >
+              {row.status === 'published' ? '下架' : '上架'}
+            </Button>
+          )}
         </Space>
       ),
     },
@@ -228,7 +451,7 @@ export function CharactersPage() {
   return (
     <Page
       title="角色库"
-      desc="官方角色。上架前要过「必填结构 / 人设稳定 / 边界检测」三项检查；点一行编辑人设。"
+      desc="官方角色。上架前要过「必填结构 / 人设稳定 / 边界检测」三项检查；点一行编辑人设。勾选后可批量上架 / 下架（软删）、批量彻底删除（硬删，不可恢复）或批量修改资格标注。"
       extra={
         <Space>
           <Button onClick={() => list.refresh()}>刷新</Button>
@@ -239,6 +462,9 @@ export function CharactersPage() {
         </Space>
       }
     >
+      {failures.length > 0 && (
+        <BatchFailureAlert failures={failures} onDismiss={() => setFailures([])} />
+      )}
       <DataTable<AdminCharacter>
         rowKey="characterId"
         columns={columns}
@@ -247,6 +473,54 @@ export function CharactersPage() {
         error={list.error}
         onRefresh={list.refresh}
         onRowClick={(row) => setEditing(row)}
+        selectedKeys={selected}
+        onSelectionChange={(keys) => setSelected(keys.map(String))}
+        preserveSelection={false}
+        selectionHint="表头勾选只覆盖当前页；换页或改筛选会清空"
+        onPageChange={() => setSelected([])}
+        batchActions={() => (
+          <BatchBar count={selectedRows.length}>
+            <Button
+              size="small"
+              disabled={!selectedRows.length}
+              onClick={() => openBatch('publish')}
+            >
+              批量上架
+            </Button>
+            <Button
+              size="small"
+              danger
+              disabled={!selectedRows.length}
+              onClick={() => openBatch('unpublish')}
+            >
+              批量下架（软删）
+            </Button>
+            <Button
+              size="small"
+              danger
+              type="primary"
+              disabled={!selectedRows.length}
+              onClick={() => openBatch('purge')}
+            >
+              批量彻底删除（硬删）
+            </Button>
+            <Button
+              size="small"
+              disabled={!selectedRows.length}
+              onClick={() => openBatch('eligibility')}
+            >
+              批量改资格
+            </Button>
+            <Button
+              size="small"
+              type="text"
+              disabled={!selectedRows.length}
+              onClick={() => setSelected([])}
+            >
+              清空选择
+            </Button>
+          </BatchBar>
+        )}
         filters={
           <>
             <Input.Search
@@ -275,16 +549,246 @@ export function CharactersPage() {
           </Button>
         }
       />
+      {batch && (
+        <BatchOperationModal
+          title={batchTitle}
+          intro={batchIntro}
+          targets={batch.rows}
+          keyOf={(row) => row.characterId}
+          labelOf={(row) => `${row.name}（${STATUS_LABELS[row.status] ?? row.status}）`}
+          confirmText={
+            batch.kind === 'publish'
+              ? '批量上架'
+              : batch.kind === 'unpublish'
+                ? '批量下架'
+                : batch.kind === 'purge'
+                  ? '彻底删除'
+                  : '批量保存'
+          }
+          danger={batch.kind === 'unpublish' || batch.kind === 'purge'}
+          confirmDisabled={
+            batch.kind === 'purge'
+              ? !purgeImpactReady || !purgeConfirmReady
+              : batch.kind === 'eligibility' &&
+                (!eligibilityHasChange || eligibilityForm.reason.trim().length < 2)
+          }
+          run={runBatch}
+          onCancel={() => setBatch(null)}
+          onFinished={(failed) => {
+            setFailures(failed);
+            setSelected(failed.map((item) => item.key));
+            setBatch(null);
+            list.refresh();
+          }}
+        >
+          {batch.kind === 'purge' && (
+            <>
+              <Alert
+                type="error"
+                showIcon
+                message="彻底删除不可恢复"
+                description="角色、联系人、私聊会话与消息、朋友圈等关联数据会被物理删除；财务流水和客服记录按合规要求保留历史引用。"
+              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {batch.rows.map((row) => {
+                  const impact = purgeImpacts[row.characterId];
+                  const error = purgeImpactErrors[row.characterId];
+                  return (
+                    <div
+                      key={row.characterId}
+                      style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}
+                    >
+                      <strong>{row.name}</strong>
+                      {error ? (
+                        <span className="cell-sub" style={{ color: '#cf1322' }}>
+                          影响面查询失败：{error}
+                        </span>
+                      ) : impact ? (
+                        <span>
+                          将删除：联系人 {impact.counts.contacts}、会话{' '}
+                          {impact.counts.conversations}、消息 {impact.counts.messages}、朋友圈{' '}
+                          {impact.counts.moments}
+                        </span>
+                      ) : (
+                        <span className="cell-sub">正在计算影响面…</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <Checkbox
+                checked={purgeAcknowledged}
+                onChange={(e) => setPurgeAcknowledged(e.target.checked)}
+              >
+                我已了解此操作不可恢复，确认彻底删除
+              </Checkbox>
+              <div className="field-line">
+                <span className="field-label">
+                  确认文字
+                  <span className="field-label-hint">
+                    {batch.rows.length === 1
+                      ? `输入角色名「${batch.rows[0]?.name ?? ''}」或「彻底删除」`
+                      : '批量删除请输入「彻底删除」'}
+                  </span>
+                </span>
+                <Input
+                  value={purgeConfirmText}
+                  placeholder={batch.rows.length === 1 ? (batch.rows[0]?.name ?? '') : '彻底删除'}
+                  onChange={(e) => setPurgeConfirmText(e.target.value)}
+                  disabled={purgeImpactLoading}
+                />
+              </div>
+            </>
+          )}
+          {batch.kind === 'eligibility' && (
+            <>
+              <div className="form-two">
+                <div className="field-line">
+                  <span className="field-label">
+                    角色原型
+                    <span className="field-label-hint">只改选中的字段</span>
+                  </span>
+                  <Select
+                    style={{ width: '100%' }}
+                    value={eligibilityForm.basis}
+                    onChange={(value) =>
+                      setEligibilityForm((current) => ({
+                        ...current,
+                        basis: value as EligibilityForm['basis'],
+                        realPersonKind: value === 'real_person' ? current.realPersonKind : '',
+                      }))
+                    }
+                    options={[
+                      { value: '', label: '保持不变' },
+                      ...CharacterBasis.options.map((value) => ({
+                        value,
+                        label: BASIS_LABELS[value] ?? value,
+                      })),
+                    ]}
+                  />
+                </div>
+                {eligibilityForm.basis === 'real_person' && (
+                  <div className="field-line">
+                    <span className="field-label">真人类型</span>
+                    <Select
+                      style={{ width: '100%' }}
+                      value={eligibilityForm.realPersonKind}
+                      onChange={(value) =>
+                        setEligibilityForm((current) => ({
+                          ...current,
+                          realPersonKind: value as EligibilityForm['realPersonKind'],
+                        }))
+                      }
+                      options={[
+                        { value: '', label: '保留原类型（没有则公众人物）' },
+                        ...RealPersonKind.options.map((value) => ({
+                          value,
+                          label: REAL_PERSON_LABELS[value] ?? value,
+                        })),
+                      ]}
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="form-three">
+                <div className="field-line">
+                  <span className="field-label">年龄设定</span>
+                  <Select
+                    style={{ width: '100%' }}
+                    value={eligibilityForm.ageSetting}
+                    onChange={(value) =>
+                      setEligibilityForm((current) => ({
+                        ...current,
+                        ageSetting: value as EligibilityForm['ageSetting'],
+                      }))
+                    }
+                    options={[
+                      { value: '', label: '保持不变' },
+                      { value: 'adult', label: '成年' },
+                      { value: 'minor', label: '未成年' },
+                    ]}
+                  />
+                </div>
+                <div className="field-line">
+                  <span className="field-label">儿童外貌</span>
+                  <Select
+                    style={{ width: '100%' }}
+                    value={eligibilityForm.childAppearance}
+                    onChange={(value) =>
+                      setEligibilityForm((current) => ({
+                        ...current,
+                        childAppearance: value as EligibilityForm['childAppearance'],
+                      }))
+                    }
+                    options={[
+                      { value: '', label: '保持不变' },
+                      { value: 'true', label: '是' },
+                      { value: 'false', label: '否' },
+                    ]}
+                  />
+                </div>
+                <div className="field-line">
+                  <span className="field-label">检出儿童特征</span>
+                  <Select
+                    style={{ width: '100%' }}
+                    value={eligibilityForm.childFeaturesDetected}
+                    onChange={(value) =>
+                      setEligibilityForm((current) => ({
+                        ...current,
+                        childFeaturesDetected: value as EligibilityForm['childFeaturesDetected'],
+                      }))
+                    }
+                    options={[
+                      { value: '', label: '保持不变' },
+                      { value: 'true', label: '是' },
+                      { value: 'false', label: '否' },
+                    ]}
+                  />
+                </div>
+              </div>
+              <div className="field-line">
+                <span className="field-label">
+                  修改原因
+                  <span className="field-label-hint">
+                    必填，至少 2 个字，会写进每个角色的修改记录
+                  </span>
+                </span>
+                <Input.TextArea
+                  rows={2}
+                  maxLength={200}
+                  showCount
+                  value={eligibilityForm.reason}
+                  placeholder="例：人设写明 25 岁上班族，AI 误判为未成年 / 儿童特征"
+                  onChange={(e) =>
+                    setEligibilityForm((current) => ({ ...current, reason: e.target.value }))
+                  }
+                />
+              </div>
+            </>
+          )}
+        </BatchOperationModal>
+      )}
       {lookup && <EligibilityLookupDrawer onClose={() => setLookup(false)} />}
-      {editing && (
-        <CharacterDrawer
-          character={editing === 'new' ? null : editing}
+      {editing && editing !== 'new' && editing.format === 'legacy' ? (
+        <LegacyCharacterDrawer
+          character={editing}
           onClose={() => setEditing(null)}
           onSaved={(text) => {
             toast.success(text);
             list.refresh();
           }}
         />
+      ) : (
+        editing && (
+          <CharacterDrawer
+            character={editing === 'new' ? null : editing}
+            onClose={() => setEditing(null)}
+            onSaved={(text) => {
+              toast.success(text);
+              list.refresh();
+            }}
+          />
+        )
       )}
     </Page>
   );

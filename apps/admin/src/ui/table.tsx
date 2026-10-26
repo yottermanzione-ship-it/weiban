@@ -43,6 +43,14 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   onRowClick?: (row: T) => void;
   selectedKeys?: Key[];
   onSelectionChange?: (keys: Key[], rows: T[]) => void;
+  /** 多选是否跨页保留（默认 true）。批量操作要求「只作用于当前页」时传 false。 */
+  preserveSelection?: boolean;
+  /** 某些行不允许勾选（例如管理员账号、注销中的账号）。 */
+  rowSelectable?: (row: T) => boolean;
+  /** 勾选提示，传了以后表格上方会显示「已选择 N 项」+ 这句说明。 */
+  selectionHint?: string;
+  /** 翻页 / 改每页条数时回调，用于清空只作用于当前页的选择。 */
+  onPageChange?: (page: number, pageSize: number) => void;
   batchActions?: (rows: T[]) => ReactNode;
   emptyTitle?: ReactNode;
   emptyHint?: ReactNode;
@@ -68,6 +76,10 @@ export function DataTable<T extends Record<string, unknown>>({
   onRowClick,
   selectedKeys,
   onSelectionChange,
+  preserveSelection = true,
+  rowSelectable,
+  selectionHint,
+  onPageChange,
   batchActions,
   emptyTitle,
   emptyHint,
@@ -112,6 +124,7 @@ export function DataTable<T extends Record<string, unknown>>({
                 pageSizeOptions: [10, 20, 50, 100],
                 showTotal: (total) => `共 ${total} 条`,
                 size: 'default',
+                onChange: onPageChange,
               }
         }
         locale={{
@@ -122,8 +135,21 @@ export function DataTable<T extends Record<string, unknown>>({
             ? {
                 selectedRowKeys: selectedKeys,
                 onChange: (keys, rows) => onSelectionChange(keys, rows),
-                preserveSelectedRowKeys: true,
+                preserveSelectedRowKeys: preserveSelection,
+                getCheckboxProps: rowSelectable
+                  ? (record) => ({ disabled: !rowSelectable(record) })
+                  : undefined,
               }
+            : { preserveSelectedRowKeys: false }
+        }
+        tableAlertRender={
+          onSelectionChange && selectionHint
+            ? ({ selectedRowKeys }) => (
+                <Space size={8} wrap>
+                  <span>已选择 {selectedRowKeys.length} 项</span>
+                  <span className="cell-sub">{selectionHint}</span>
+                </Space>
+              )
             : undefined
         }
         tableAlertOptionRender={

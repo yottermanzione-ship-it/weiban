@@ -2,7 +2,7 @@
  * 记忆分档（v5 批 B，docs/refactor/16-membership-v5.md §5.3/§5.4）。纯函数与默认值。
  * 参数后台可调（MemoryTierEndpoints.adminUpdate），这里只是没配置时的默认。
  */
-import { MemoryTierConfig, type ChatWindowLimits, type MemoryTierLimits } from '@weiban/contracts';
+import { MemoryTierConfig, type MemoryTierLimits } from '@weiban/contracts';
 
 export const DEFAULT_MEMORY_TIER_CONFIG: MemoryTierConfig = {
   free: { residentLimit: 3, libraryLimit: 30, summaryDays: 7, retrieveLimit: 3, recallDays: 7 },
@@ -17,39 +17,29 @@ export const DEFAULT_MEMORY_TIER_CONFIG: MemoryTierConfig = {
   recallTopK: 3,
   groupMemoryMessageThreshold: 20,
   groupMemoryIdleMinutes: 10,
-  // 约 10 万 token：平时 1.6 万字 ≈ 1.1 万 token，按字数放大约 9 倍；轮数同理放大。
-  longContext: { keepTurns: 120, triggerTurns: 300, maxTurns: 500, triggerChars: 145_000 },
 };
 
 /** 读库里的配置：缺字段 / 旧格式按默认补齐，坏数据整份回落默认，不让一次误填拖垮回复。 */
 export function normalizeTierConfig(raw: unknown): MemoryTierConfig {
   if (!raw || typeof raw !== 'object') return DEFAULT_MEMORY_TIER_CONFIG;
-  const r = raw as Partial<Record<keyof MemoryTierConfig, unknown>>;
+  // 2026-10-25：「长上下文模式」下线，旧配置里残留的 longContext 不再参与，读库时丢弃
+  // （strict 校验遇到不认识的字段会整份回落默认，等于丢掉所有已配置的档位）。
+  const { longContext: _legacyLongContext, ...rest } = raw as Record<string, unknown>;
+  const r = rest as Partial<Record<keyof MemoryTierConfig, unknown>>;
   const merged = {
     ...DEFAULT_MEMORY_TIER_CONFIG,
     ...r,
     free: { ...DEFAULT_MEMORY_TIER_CONFIG.free, ...(r.free as object | undefined) },
     proPlus: { ...DEFAULT_MEMORY_TIER_CONFIG.proPlus, ...(r.proPlus as object | undefined) },
-    longContext: {
-      ...DEFAULT_MEMORY_TIER_CONFIG.longContext,
-      ...(r.longContext as object | undefined),
-    },
   };
   const parsed = MemoryTierConfig.safeParse(merged);
   return parsed.success ? parsed.data : DEFAULT_MEMORY_TIER_CONFIG;
 }
 
-/** 窗口参数要自洽：保留轮数 < 触发轮数 ≤ 强制轮数。 */
-export function windowProblem(w: ChatWindowLimits): string | null {
-  if (w.keepTurns >= w.triggerTurns) return '保留轮数要小于触发轮数';
-  if (w.triggerTurns > w.maxTurns) return '触发轮数不能大于强制前移轮数';
-  return null;
-}
-
 export interface ResolvedMemoryTier {
   tier: 'free' | 'pro_plus';
   basis: 'member' | 'new_user' | 'free';
-  /** 是否 PRO+ 会员（长上下文等会员专属能力只认这个，新用户体验不算）。 */
+  /** 是否 PRO+ 会员（会员专属能力只认这个，新用户体验不算）。 */
   member: boolean;
   trialEndsAt: string | null;
   limits: MemoryTierLimits;

@@ -10,7 +10,7 @@
 import type { ModelImageRef } from '@weiban/contracts';
 
 export interface PromptSection {
-  /** 区块标题；为空时不加标题行（例如平台守则正文自带说明）。 */
+  /** 区块标题；为空时不加标题行（例如通用规则正文自带说明）。 */
   title: string;
   text: string;
 }

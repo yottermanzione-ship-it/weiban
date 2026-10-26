@@ -8,6 +8,7 @@ import {
   type ForwardSnapshotContent,
   type MessageContent,
   type IdentityReadPort,
+  type IdentityMembershipReadPort,
   type MediaTranscriptPort,
 } from '@weiban/contracts';
 import {
@@ -18,12 +19,13 @@ import {
   type Database,
   type Clock,
 } from '../../../platform/index.js';
-import { IDENTITY_READ_PORT } from '../../identity/index.js';
+import { IDENTITY_MEMBERSHIP_READ_PORT, IDENTITY_READ_PORT } from '../../identity/index.js';
 import { MEDIA_TRANSCRIPT_PORT } from '../../media/index.js';
 import { CHAT_GROUP_DIRECTORY, type ChatGroupDirectory } from '../tokens.js';
 import { forwardReceipts, messages, participants } from '../infra/db/schema.js';
 import { ChatStore, type MessageRow, type ConversationRow } from './store.js';
 import { ChatWriteService } from './write.js';
+import { assertGroupChatEligible } from './group-access.js';
 
 /** UUID-based keys retain existing user-message deduplication and sync/outbox semantics. */
 function forwardMessageId(requestId: string, targetId: string, index: number): string {
@@ -39,6 +41,8 @@ export class ChatForwardService {
     @Inject(ChatStore) private readonly store: ChatStore,
     @Inject(ChatWriteService) private readonly writer: ChatWriteService,
     @Inject(IDENTITY_READ_PORT) private readonly identity: IdentityReadPort,
+    @Inject(IDENTITY_MEMBERSHIP_READ_PORT)
+    private readonly membership: IdentityMembershipReadPort,
     @Inject(MEDIA_TRANSCRIPT_PORT) private readonly transcripts: MediaTranscriptPort,
     @Optional() @Inject(CHAT_GROUP_DIRECTORY) private readonly directory?: ChatGroupDirectory,
   ) {}
@@ -115,6 +119,9 @@ export class ChatForwardService {
           );
           if (!sender || !members.some((p) => p.kind === 'user' && p.refId === userId && !p.leftAt))
             throw new AppError('not_conversation_member', '不在此会话中');
+          // 10-25：转发进群等于在群里发新消息，同样要求 PRO+（403 membership_required）。
+          if (target.type === 'group')
+            await assertGroupChatEligible(this.membership, userId, 'send_group_message', tx);
           const sourceMessages = await tx.db
             .select()
             .from(messages)

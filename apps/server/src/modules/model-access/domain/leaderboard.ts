@@ -5,21 +5,116 @@
  * 1. 服务器抓到的榜单网页：先找页面内嵌的 JSON（Next.js 数据、脚本里的对象数组），再找 HTML 表格；
  * 2. 后台粘贴的网页表格文本（浏览器复制出来是制表符分隔，或一格一行）；
  * 3. 后台上传 / 粘贴的 CSV（表头含「rank / 名次」与「model / 模型」列）。
- * 解析结果 = 模型名 → 原榜名次（同名取最好的名次）。匹配按「榜单对应名称」规范化后完全相同（不区分大小写、
- * 合并空白），不做模糊匹配，避免张冠李戴；匹配不到的模型在后台列出。
+ * 解析结果 = 模型名 → 原榜名次（同名取最好的名次）。匹配按名称规范化后完全相同（不区分大小写、
+ * 连字符/下划线/斜杠统一成空格、去掉明确思考档），不做模糊匹配，避免张冠李戴；匹配不到的模型在后台列出。
+ * 后台可以用「榜单匹配」手动指定例外（例 Arena 只有带日期版本），默认用模型显示名匹配，不需要管理员逐条填。
  */
 
 export interface LeaderboardEntry {
   name: string;
   rank: number;
+  organization?: string;
+  rating?: number;
+  ratingLower?: number;
+  ratingUpper?: number;
+  voteCount?: number;
+  publishedAt?: string;
 }
 
 /** 最多保留的条目数（够覆盖整张榜）。 */
 export const LEADERBOARD_MAX_ENTRIES = 2000;
 
-/** 匹配用的规范化：去首尾空白、合并空白、小写。 */
+/** Strip explicit thinking effort/budget only; preserve all date/version/Pro/Flash tokens. */
 export function normalizeArenaName(name: string): string {
-  return name.trim().replace(/\s+/g, ' ').toLowerCase();
+  const level = '(?:off|on|none|minimal|low|medium|high|xhigh|max|instant)';
+  const effort = new RegExp(
+    `^(?:(?:thinking|reasoning)(?:\\s*[:=-]?\\s*(?:${level}|\\d+[km](?:\\s*tokens)?))?|non[- ](?:thinking|reasoning)|${level})$`,
+    'i',
+  );
+  return (
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .replace(/\(([^()]*)\)\s*$/, (original, content: string) => {
+        const tokens = content.split(',').map((part) => part.trim());
+        if (!tokens.some((token) => effort.test(token))) return original;
+        const keep = tokens.filter(
+          (token) => !effort.test(token) && !/^\d+[km](?:\s*tokens)?$/i.test(token),
+        );
+        return keep.length ? `(${keep.join(', ')})` : '';
+      })
+      .replace(
+        new RegExp(
+          `(?:[-_ ](?:non[-_ ](?:thinking|reasoning)|thinking|reasoning))(?:[-_ ]${level})?(?=\\s*(?:\\([^()]*\\))?$)`,
+          'i',
+        ),
+        '',
+      )
+      // 上游 ID 的思考档常用纯后缀：gpt-6.1-sol-max、gemini-4-argon-high、claude-opus-5.5-xhigh。
+      // 只去掉明确的档位词；Pro / Flash / 日期等型号词保留。
+      .replace(new RegExp(`(?:[-_ ]${level})$`, 'i'), '')
+      // 后台填的是上游 ID（gemini-4-argon-high），Arena 返回展示名（Gemini 4 Argon (High)）：
+      // 只把连字符 / 下划线 / 斜杠统一成空格，点保留，避免把 4.5 和 4.8 之类的版本号改坏。
+      .replace(/[-_/]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
+}
+
+/** 同名（去思考档后）只保留最好的名次，同时留下榜单上的展示名，供后台手动匹配提示。 */
+export function bestArenaEntries(
+  entries: readonly LeaderboardEntry[],
+): Map<string, { name: string; rank: number }> {
+  const result = new Map<string, { name: string; rank: number }>();
+  for (const entry of entries) {
+    const key = normalizeArenaName(entry.name);
+    const previous = result.get(key);
+    if (!previous || entry.rank < previous.rank)
+      result.set(key, { name: entry.name, rank: entry.rank });
+  }
+  return result;
+}
+
+/** Keep raw entries intact; collapse ONLY when building the matching index. */
+export function bestArenaRanks(entries: readonly LeaderboardEntry[]): Map<string, number> {
+  return new Map([...bestArenaEntries(entries)].map(([key, value]) => [key, value.rank]));
+}
+
+export interface ArenaSuggestion {
+  /** 榜单上的原始展示名（例 DeepSeek-V4.1-Flash-20260910 (Max)）。 */
+  name: string;
+  rank: number;
+  /** 0–1，越高越像；只用于排序，不自动采用。 */
+  score: number;
+}
+
+/**
+ * 给后台「榜单匹配」用：按名称词重合度找最像的几条（不自动套用，管理员确认后才保存）。
+ * 这样 Flash / Pro、带日期版本这类差异不会被静默合并。
+ */
+export function suggestArenaNames(
+  query: string,
+  entries: readonly LeaderboardEntry[],
+  limit = 5,
+): ArenaSuggestion[] {
+  const target = normalizeArenaName(query);
+  if (!target) return [];
+  const targetTokens = new Set(target.split(' ').filter(Boolean));
+  const out: ArenaSuggestion[] = [];
+  for (const { name, rank } of bestArenaEntries(entries).values()) {
+    const key = normalizeArenaName(name);
+    if (!key) continue;
+    const tokens = new Set(key.split(' ').filter(Boolean));
+    let common = 0;
+    for (const token of targetTokens) if (tokens.has(token)) common++;
+    const dice = (2 * common) / (targetTokens.size + tokens.size);
+    const prefix = key.startsWith(target) || target.startsWith(key) ? 0.2 : 0;
+    const contains = key.includes(target) ? 0.1 : 0;
+    const score = Math.min(1, dice + prefix + contains);
+    if (score >= 0.2) out.push({ name, rank, score: Math.round(score * 100) / 100 });
+  }
+  return out.sort((a, b) => b.score - a.score || a.rank - b.rank).slice(0, limit);
 }
 
 const RANK_KEYS = ['rank', 'rank_ub', 'rankub', 'ranking', 'position', 'place', '名次', '排名'];
@@ -61,7 +156,7 @@ function rankOf(raw: unknown): number | null {
 
 function add(map: Map<string, LeaderboardEntry>, name: string | null, rank: number | null) {
   if (!name || rank === null) return;
-  const key = normalizeArenaName(name);
+  const key = name.trim().replace(/\s+/g, ' ').toLowerCase();
   const old = map.get(key);
   if (!old || rank < old.rank) map.set(key, { name, rank });
 }

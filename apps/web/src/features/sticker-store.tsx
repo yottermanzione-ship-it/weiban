@@ -1,11 +1,45 @@
-import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import '../app/stickers.css';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { StickerStoreEndpoints as E } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import { useUpdates } from '../data/updates.js';
 import { StickerPreview } from './stickers.js';
 import { MenuGroup, MenuRow, NavBar } from './shell-kit.js';
+import { PackCover } from './pack-cover.js';
+import { readStoreSnapshot, saveStoreSnapshot, type CachedPack } from './sticker-cache.js';
+
+/**
+ * 「精选表情」只放少量可爱向系列；其余全部留在「更多表情」。
+ * 按名字挑选，找不到对应系列时退回按商店顺序的前几个，避免整页空白。
+ */
+const FEATURED_NAMES = [
+  '猫咪',
+  '猫咪日常',
+  '仓鼠',
+  '小猪',
+  '开心鸭',
+  '开心鸭日常',
+  '沙雕企鹅',
+  '狗狗',
+  '全是心心',
+  '鹦鹉',
+  '皮卡丘',
+  '哆啦A梦',
+];
+function pickFeatured<T extends { name: string }>(items: T[]): T[] {
+  const picked: T[] = [];
+  const seen = new Set<string>();
+  for (const name of FEATURED_NAMES) {
+    const found = items.find((p) => p.name === name);
+    if (found && !seen.has(found.name)) {
+      seen.add(found.name);
+      picked.push(found);
+    }
+  }
+  return picked.length ? picked : items.slice(0, 8);
+}
 function useStoreRefresh(refresh: () => void) {
   useUpdates((u) => {
     if (u.type === 'data.changed' && (u.data as { section?: string })?.section === 'stickers')
@@ -15,18 +49,32 @@ function useStoreRefresh(refresh: () => void) {
 export function StickerStorePage() {
   const store = useRemote(E.listPacks, { networkOnly: true });
   const mine = useRemote(E.listAdded, { networkOnly: true });
-  const [manage, setManage] = useState(false),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
+  // 进页面先用上次的列表快照顶上，网络请求在后台刷新；封面另按版本缓存在本地。
+  const [snapshot, setSnapshot] = useState<CachedPack[] | null>(() => readStoreSnapshot());
+  useEffect(() => {
+    if (store.data) {
+      setSnapshot(store.data.items);
+      saveStoreSnapshot(store.data.items);
+    }
+  }, [store.data]);
+  // 「我的表情」是独立路由：系统返回手势/返回键才能回到商店，而不是退回「我」页签。
+  const location = useLocation();
+  const navigate = useNavigate();
+  const manage = location.pathname.replace(/\/+$/, '').endsWith('/sticker-store/mine');
+  const [tab, setTab] = useState<'featured' | 'more'>('featured');
+  const [query, setQuery] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   useStoreRefresh(() => {
     store.refresh();
     mine.refresh();
   });
-  async function remove(packId: string) {
+  async function change(packId: string, remove = false) {
     setBusy(true);
     setError('');
     try {
-      await api.call(E.removePack, { params: { packId } });
+      if (remove) await api.call(E.removePack, { params: { packId } });
+      else await api.call(E.addPack, { params: { packId } });
       mine.refresh();
       store.refresh();
     } catch (e) {
@@ -35,34 +83,57 @@ export function StickerStorePage() {
       setBusy(false);
     }
   }
-  async function move(index: number) {
-    const ids = mine.data?.items.map((p) => p.packId) ?? [];
-    [ids[index - 1], ids[index]] = [ids[index]!, ids[index - 1]!];
-    setBusy(true);
-    setError('');
-    try {
-      await api.call(E.reorderMyPacks, { body: { packIds: ids } });
-      mine.refresh();
-    } catch (e) {
-      setError(friendlyError(e));
-    } finally {
-      setBusy(false);
-    }
-  }
   const list = manage ? mine : store;
+  const needle = query.trim().toLocaleLowerCase();
+  const all = store.data?.items ?? snapshot ?? [];
+  const matched = all.filter(
+    (p) => !needle || `${p.name} ${p.intro}`.toLocaleLowerCase().includes(needle),
+  );
+  // 精选页签只展示少量可爱向系列；搜索时按全量搜，避免搜不到精选之外的包。
+  const shown = tab === 'featured' && !needle ? pickFeatured(matched) : matched;
   return (
-    <main>
+    <main className="sticker-store-page">
       <NavBar
-        title={manage ? '我的表情包' : '表情商店'}
-        fallback="/me/stickers"
+        title={
+          manage ? (
+            '我的表情'
+          ) : (
+            <span className="sticker-store-tabs" role="tablist" aria-label="表情商店分类">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'featured'}
+                onClick={() => setTab('featured')}
+              >
+                精选表情
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'more'}
+                onClick={() => setTab('more')}
+              >
+                更多表情
+              </button>
+            </span>
+          )
+        }
+        fallback={manage ? '/sticker-store' : '/me'}
         right={
-          <button
-            className="text-button text-action"
-            onClick={() => setManage(!manage)}
-            disabled={busy}
-          >
-            {manage ? '商店' : '整理'}
-          </button>
+          !manage && (
+            <button
+              type="button"
+              className="nav-bar-icon sticker-store-more"
+              aria-label="我的表情"
+              onClick={() => navigate('/sticker-store/mine')}
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+                <circle cx="4" cy="10" r="1.6" fill="currentColor" />
+                <circle cx="10" cy="10" r="1.6" fill="currentColor" />
+                <circle cx="16" cy="10" r="1.6" fill="currentColor" />
+              </svg>
+            </button>
+          )
         }
       />
       {(error || list.error) && (
@@ -71,7 +142,7 @@ export function StickerStorePage() {
         </p>
       )}
       {list.error && (
-        <button className="text-button full" onClick={list.refresh}>
+        <button type="button" className="text-button full" onClick={list.refresh}>
           重试
         </button>
       )}
@@ -80,43 +151,97 @@ export function StickerStorePage() {
           正在读取…
         </p>
       )}
-      <MenuGroup>
-        {list.data?.items.map((p, i) => (
-          <div key={p.packId}>
-            <MenuRow
-              to={p.enabled ? '/sticker-store/' + p.packId : undefined}
-              label={p.name}
-              leading={
-                p.coverUrl ? (
-                  <img className="sticker-pack-cover" src={p.coverUrl} alt="" />
-                ) : undefined
-              }
-              subtitle={
-                p.enabled
-                  ? `${p.stickerCount} 个表情${p.intro ? ` · ${p.intro}` : ''}`
-                  : '已停用，可移除'
-              }
-              value={p.added ? '已添加' : '免费'}
-            />
-            {manage && (
-              <div className="actions">
-                <button disabled={busy || i === 0} onClick={() => void move(i)}>
-                  上移
-                </button>
-                <button disabled={busy || p.builtIn} onClick={() => void remove(p.packId)}>
-                  移除
+      {manage ? (
+        <MenuGroup>
+          <MenuRow
+            to="/me/stickers"
+            label="添加的单个表情"
+            leading={
+              <span className="sticker-manage-heart" aria-hidden>
+                ♡
+              </span>
+            }
+          />
+          {mine.data?.items.map((p) => (
+            <div key={p.packId} className="sticker-manage-row">
+              <MenuRow
+                to={p.enabled ? '/sticker-store/' + p.packId : undefined}
+                label={p.name}
+                chevron={false}
+                leading={
+                  p.coverUrl ? (
+                    <PackCover
+                      packId={p.packId}
+                      url={p.coverUrl}
+                      updatedAt={p.updatedAt}
+                      className="sticker-pack-cover"
+                    />
+                  ) : undefined
+                }
+                subtitle={p.enabled ? undefined : '已停用，可移除'}
+              />
+              <div className="sticker-manage-actions">
+                <button
+                  type="button"
+                  disabled={busy || p.builtIn}
+                  aria-label={`移除${p.name}`}
+                  onClick={() => void change(p.packId, true)}
+                >
+                  {p.builtIn ? '默认' : '移除'}
                 </button>
               </div>
-            )}
+            </div>
+          ))}
+        </MenuGroup>
+      ) : (
+        <>
+          <div className="sticker-store-search">
+            <input
+              type="search"
+              aria-label="搜索表情包"
+              placeholder="搜索"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
           </div>
-        ))}
-      </MenuGroup>
-      {list.data && !list.data.items.length && (
-        <p className="empty">{manage ? '尚未添加表情包' : '暂无上架表情包'}</p>
+          {tab === 'featured' ? (
+            <div className="sticker-store-list">
+              {shown.map((p) => (
+                <div className="sticker-store-row" key={p.packId}>
+                  <Link to={'/sticker-store/' + p.packId} className="sticker-store-row-detail">
+                    <PackCover packId={p.packId} url={p.coverUrl} updatedAt={p.updatedAt} />
+                    <span>{p.name}</span>
+                  </Link>
+                  <button
+                    type="button"
+                    disabled={busy || p.added}
+                    aria-label={`${p.added ? '已添加' : '添加'}${p.name}`}
+                    onClick={() => void change(p.packId)}
+                  >
+                    {p.added ? '已添加' : '添加'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="sticker-store-tiles">
+              {shown.map((p) => (
+                <Link
+                  key={p.packId}
+                  to={'/sticker-store/' + p.packId}
+                  className="sticker-store-tile"
+                >
+                  <PackCover packId={p.packId} url={p.coverUrl} updatedAt={p.updatedAt} />
+                  <span>{p.name}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+          {(store.data || snapshot) && !shown.length && (
+            <p className="empty">{needle ? '没有找到相关表情包' : '暂无上架表情包'}</p>
+          )}
+        </>
       )}
-      <MenuGroup>
-        <MenuRow to="/me/stickers" label="管理单个表情" />
-      </MenuGroup>
     </main>
   );
 }

@@ -1,21 +1,32 @@
 /*
  * 情景预设（docs/refactor/02 第 5 节）：聊天「+」面板与私聊副标题打开同一个弹层。
- * 顺序、资格、说明都以服务器 listModes 为准（section = private 放底部「私密」一栏；没资格的不返回）。
+ * 顺序、资格、说明都以服务器 listModes 为准；私密与普通预设使用同一种行样式（没资格的不返回）。
  */
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { OldIcon } from './old-icons.js';
 import {
   CompanionEndpoints,
   GroupCompanionEndpoints,
-  ModelAccessEndpoints,
   type ScenarioMode,
   type ScenarioModeOption,
 } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
+import { useAuth } from '../app/auth.js';
 import { api } from '../data/client.js';
+import {
+  loadPlatformPrivateModel,
+  type PlatformPrivateModel,
+} from '../data/platform-private-model.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
-import { GroupHeader, IconTile, MenuGroup, MenuRow, Sheet, type Tint } from './shell-kit.js';
+import {
+  getLastNormalMode,
+  isNormalScenarioMode,
+  rememberLastNormalMode,
+  scenarioTargetKey,
+  useScenarioBadgeVisible,
+} from '../data/scenario-prefs.js';
+import { multiplierText } from './points.js';
+import { IconTile, MenuGroup, MenuRow, Sheet, SwitchRow, type Tint } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 
 export type ScenarioTarget =
@@ -39,12 +50,58 @@ const presetLook: Record<string, { icon: string; tint: Tint }> = {
   treehole: { icon: 'wechat/note', tint: 'purple' },
   tsundere: { icon: 'wechat/chat', tint: 'gold' },
   cheer: { icon: 'wechat/star', tint: 'blue' },
-  adult: { icon: 'wechat/info', tint: 'gray' },
+  adult: { icon: 'wechat/chat_pair', tint: 'purple' },
 };
 /** 私聊副标题：日常聊天不显示；成人内容显示「私密」。 */
 export function presetSubtitle(mode: string | undefined): string | null {
   if (!mode || mode === 'daily') return null;
   return presetNames[mode] ?? null;
+}
+
+function discountText(rate: number) {
+  const tenth = Math.round(rate * 100) / 10;
+  return `限时 ${Number.isInteger(tenth) ? tenth.toFixed(0) : tenth.toFixed(1)} 折`;
+}
+
+/** private-model 的 displayMultiplier 已经含折扣；discountRate 只用于「限时几折」文案。 */
+function actualMultiplier(model: PlatformPrivateModel): string | null {
+  if (model.displayMultiplier == null) return null;
+  return multiplierText({ displayMultiplier: model.displayMultiplier }) || null;
+}
+
+/**
+ * 私密模式确认框（纯展示）。
+ * 模型信息由上层按平台权威源解析后传入；这里不读取用户/角色自己的 adult 选择，也不给选模型入口。
+ */
+export function PrivateModeConfirmDialog({
+  model,
+  onCancel,
+  onConfirm,
+}: {
+  model: PlatformPrivateModel;
+  onCancel(): void;
+  onConfirm(): void;
+}) {
+  const multiplier = actualMultiplier(model);
+  const discount =
+    model.discountRate != null && model.discountRate < 1 ? discountText(model.discountRate) : null;
+  return (
+    <Dialog
+      title="开启私密模式"
+      actions={[
+        { label: '取消', onClick: onCancel },
+        { label: '开启', primary: true, onClick: onConfirm },
+      ]}
+    >
+      <p className="hint">
+        {`将切换到平台统一的私密模型「${model.displayName || '私密模型'}」`}
+        {multiplier
+          ? `，当前实际倍率 ${multiplier}${discount ? `（${discount}）` : ''}，可能增加积分消耗。`
+          : '，当前倍率暂时读不到，实际按所选模型用量扣费。'}
+      </p>
+      <p className="hint">私密模式仅支持文字和图片聊天。</p>
+    </Dialog>
+  );
 }
 
 /** 当前预设（私聊读陪伴设置，群聊读群设置）。 */
@@ -73,15 +130,20 @@ export function useCurrentPreset(target: ScenarioTarget | null) {
 export function ScenarioSheet({
   target,
   current,
+  privateModel,
   onClose,
   onChanged,
 }: {
   target: ScenarioTarget;
   current: string | undefined;
+  /**
+   * 平台固定私密模型信息（由权威源解析后传入）。undefined = 让本组件走默认读取器；
+   * null = 暂不可用。普通用户/角色自己的 adult 选择永远不会从这里或默认读取器回退。
+   */
+  privateModel?: PlatformPrivateModel | null;
   onClose(): void;
   onChanged(mode: ScenarioMode): void;
 }) {
-  const navigate = useNavigate();
   const characterModes = useRemote(
     CompanionEndpoints.listModes,
     {
@@ -97,15 +159,16 @@ export function ScenarioSheet({
     target.kind === 'group',
   );
   const modes = target.kind === 'group' ? groupModes : characterModes;
+  const { session } = useAuth();
+  const userId = session?.user.userId;
+  const [badgeVisible, setBadgeVisible] = useScenarioBadgeVisible();
   const [pending, setPending] = useState(false);
-  const [prompt, setPrompt] = useState<'model' | 'intro' | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [prompt, setPrompt] = useState<
+    'not-configured' | 'unavailable' | 'unreadable' | 'intro' | null
+  >(null);
+  const [quote, setQuote] = useState<PlatformPrivateModel | null>(null);
   const items = modes.data?.items ?? [];
-  const presets = items.filter(
-    (m) => (m.section ?? (m.id === 'adult' ? 'private' : 'preset')) === 'preset',
-  );
-  const privates = items.filter(
-    (m) => (m.section ?? (m.id === 'adult' ? 'private' : 'preset')) === 'private',
-  );
 
   async function apply(id: ScenarioMode) {
     setPending(true);
@@ -123,7 +186,7 @@ export function ScenarioSheet({
       onChanged(id);
       onClose();
     } catch (e) {
-      if (e instanceof ApiFailure && e.code === 'adult_model_missing') setPrompt('model');
+      if (e instanceof ApiFailure && e.code === 'adult_model_missing') setPrompt('unavailable');
       else if (e instanceof ApiFailure && e.code === 'adult_mode_not_eligible')
         showToast('群里有成员不能使用这个预设');
       else if (e instanceof ApiFailure && e.code === 'romance_not_allowed')
@@ -133,29 +196,57 @@ export function ScenarioSheet({
       setPending(false);
     }
   }
+
+  /** 退出私密：回到上次普通模式；没有记录或已不可用时用自动，再退到第一个可用普通模式。 */
+  async function exitPrivate() {
+    const key = scenarioTargetKey(target);
+    const allowed = items.filter((m) => m.id !== 'adult').map((m) => m.id);
+    const last = getLastNormalMode(userId, key);
+    const next: ScenarioMode =
+      last && allowed.includes(last)
+        ? last
+        : allowed.includes('auto')
+          ? 'auto'
+          : ((allowed[0] as ScenarioMode | undefined) ?? 'auto');
+    await apply(next);
+  }
+
+  function enterPrivate() {
+    if (current && current !== 'adult' && isNormalScenarioMode(current))
+      rememberLastNormalMode(userId, scenarioTargetKey(target), current);
+    setPrompt(null);
+    void apply('adult');
+  }
+
   async function choose(option: ScenarioModeOption) {
+    if (pending || checking) return;
     if (option.id === current) {
+      // 再点已选私密 = 关闭并恢复上一次普通模式；普通模式重复点只关闭，不重复保存。
+      if (option.id === 'adult') return exitPrivate();
       onClose();
       return;
     }
     if (option.id !== 'adult') return apply(option.id);
+    setChecking(true);
     try {
-      // 3.22：私密模式用「私密模式」场景的模型（这个角色单独指定的优先）。
-      if (target.kind === 'character') {
-        const own = await api.call(ModelAccessEndpoints.getCharacterScenarios, {
-          params: { characterId: target.characterId },
-        });
-        if (!own.scenarios.find((s) => s.scenario === 'private')?.effective)
-          return setPrompt('model');
-      } else {
-        const mine = await api.call(ModelAccessEndpoints.getScenarioConfig);
-        if (!mine.scenarios.find((s) => s.scenario === 'private')?.selection)
-          return setPrompt('model');
+      // 平台固定模型：优先用上层按权威源解析好的结果；否则读 private-model 只读接口。
+      const next = privateModel !== undefined ? privateModel : await loadPlatformPrivateModel();
+      if (!next) {
+        setPrompt('not-configured');
+        return;
       }
+      if (!next.available) {
+        setPrompt('unavailable');
+        return;
+      }
+      setQuote(next);
+      setPrompt('intro');
     } catch {
-      // 读不到时交给服务器判断
+      // 读不到权威配置时明确不可用，不退回用户/角色自己的成人模型。
+      setPrompt('unreadable');
+    } finally {
+      setChecking(false);
     }
-    return setPrompt('intro');
   }
   const row = (option: ScenarioModeOption) => {
     const look = presetLook[option.id] ?? presetLook.daily!;
@@ -163,14 +254,16 @@ export function ScenarioSheet({
     return (
       <MenuRow
         key={option.id}
-        disabled={pending}
+        disabled={pending || checking}
         chevron={false}
         onClick={() => void choose(option)}
         label={
           <>
             <IconTile icon={look.icon} tint={look.tint} size="md" />
             <span className="row-name">
-              {option.name || presetNames[option.id]}
+              {option.id === 'adult'
+                ? '私密模式'
+                : option.name || presetNames[option.id] || option.id}
               {option.recommended && <span className="mini-tag">推荐</span>}
             </span>
           </>
@@ -191,65 +284,46 @@ export function ScenarioSheet({
           <button onClick={modes.refresh}>重试</button>
         </div>
       )}
-      <MenuGroup className="preset-list">{presets.map((option) => row(option))}</MenuGroup>
-      {privates.length > 0 && (
-        <>
-          <GroupHeader>私密模式</GroupHeader>
-          <MenuGroup>
-            {privates.map((option) => (
-              <MenuRow
-                key={option.id}
-                disabled={pending}
-                label="私密模式"
-                value={option.id === current ? '已开启' : '未开启'}
-                onClick={() => void choose(option)}
-              />
-            ))}
-          </MenuGroup>
-        </>
-      )}
-      {prompt === 'model' && (
+      {/* 私密和普通预设同一张列表、同一种行样式（图标 / 标题 / 副标题 / 选中勾）。 */}
+      <MenuGroup className="preset-list">{items.map((option) => row(option))}</MenuGroup>
+      <MenuGroup className="scenario-display-pref">
+        <SwitchRow
+          label="显示情景模式"
+          subtitle="在聊天顶部昵称旁显示当前模式"
+          checked={badgeVisible}
+          onChange={setBadgeVisible}
+        />
+      </MenuGroup>
+      {prompt === 'not-configured' && (
         <Dialog
-          title="暂时无法开启私密模式"
-          actions={[
-            { label: '知道了', onClick: () => setPrompt(null) },
-            {
-              label: '去选模型',
-              primary: true,
-              onClick: () => {
-                setPrompt(null);
-                navigate('/models/scenario/private');
-              },
-            },
-          ]}
+          title="私密模式暂不可用"
+          actions={[{ label: '知道了', onClick: () => setPrompt(null) }]}
         >
-          <p className="hint">还没选「私密模式」用的模型，选好后才能开启。</p>
+          <p className="hint">平台还没有配置固定的私密模型，暂时不能开启。</p>
         </Dialog>
       )}
-      {prompt === 'intro' && (
+      {prompt === 'unavailable' && (
         <Dialog
-          title="开启私密模式"
-          actions={[
-            { label: '取消', onClick: () => setPrompt(null) },
-            {
-              label: '开启',
-              primary: true,
-              onClick: () => {
-                setPrompt(null);
-                void apply('adult');
-              },
-            },
-          ]}
+          title="私密模式暂不可用"
+          actions={[{ label: '知道了', onClick: () => setPrompt(null) }]}
         >
-          <p className="hint">
-            开启后将切换到付费模型，按实际用量消耗积分。这里的内容只留在你和 TA
-            之间：不会出现在朋友圈、其他角色那里、分享图和推送里。
-          </p>
-          <p className="hint">
-            私密模式只支持文字和图片：不能语音通话、发语音，TA 也不发语音。切回其他模式时，TA
-            会把这段经历整理成一份不含露骨描写的简短记忆，用于日常聊天（按实际用量消耗少量积分）。
-          </p>
+          <p className="hint">平台固定的私密模型暂时不可用，稍后再试。</p>
         </Dialog>
+      )}
+      {prompt === 'unreadable' && (
+        <Dialog
+          title="私密模式暂不可用"
+          actions={[{ label: '知道了', onClick: () => setPrompt(null) }]}
+        >
+          <p className="hint">暂时读不到平台的私密模型配置，稍后再试。</p>
+        </Dialog>
+      )}
+      {prompt === 'intro' && quote && (
+        <PrivateModeConfirmDialog
+          model={quote}
+          onCancel={() => setPrompt(null)}
+          onConfirm={enterPrivate}
+        />
       )}
     </Sheet>
   );

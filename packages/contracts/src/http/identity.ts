@@ -29,6 +29,12 @@ export const Username = z
 /** 密码 8–128 位（2026-10-12 总经理调整：原最短 10 位）。 */
 export const Password = z.string().min(8).max(128);
 
+/**
+ * 登录时只校验“非空即可”：旧版微伴允许 6 位密码，迁移过来的账号在登录时不能再被长度规则挡住。
+ * 新密码（注册、修改密码）仍必须满足上面的 Password。
+ */
+export const LoginPassword = z.string().min(1).max(128);
+
 export const UserRole = z.enum(['user', 'admin']);
 export type UserRole = z.infer<typeof UserRole>;
 
@@ -71,7 +77,7 @@ export const RegisterRequest = z.object({
 
 export const LoginRequest = z.object({
   username: Username,
-  password: Password,
+  password: LoginPassword,
   device: DeviceInfo,
   /** app：手机 / 网页用户端；admin：管理后台（仅管理员可用，12 小时过期）。 */
   kind: SessionKind.default('app'),
@@ -338,6 +344,8 @@ export type AccountDeletionModuleProgress = z.infer<typeof AccountDeletionModule
 export const PendingAccountDeletion = z.object({
   userId: Id,
   username: z.string(),
+  /** 昵称（identity.profiles.nickname）；没填资料为 null。 */
+  nickname: z.string().nullable().default(null),
   requestedAt: Timestamp,
   /** 管理员最近一次手动重新触发的时间；没有触发过为 null。 */
   lastRetriggeredAt: Timestamp.nullable(),

@@ -21,3 +21,90 @@ export {
 } from './tokens.js';
 export { seedPresetCharacters, type PresetSeedResult } from './application/preset-seed.js';
 export { WEIBO_PUBLICATION_PORT } from './tokens.js';
+export {
+  EMPTY_LEGACY_CONTEXT,
+  LegacyCharacterCard,
+  legacyDialogueExamples,
+  legacyKnowledgeEntries,
+  legacyRuntimeContext,
+  parseLegacyCard,
+  type LegacyCardRow,
+  type LegacyDialogueExample,
+  type LegacyGroupProfile,
+  type LegacyKnowledgeEntry,
+  type LegacyMomentProfile,
+} from './domain/legacy-card.js';
+export {
+  buildLegacyImportPlan,
+  legacyClassification,
+  legacyCategoryId,
+  legacyImportReport,
+  LEGACY_FIELD_LIMITS,
+  type LegacyImportExisting,
+  type LegacyImportInput,
+  type LegacyImportIssue,
+  type LegacyImportKind,
+  type LegacyImportPlan,
+  type LegacyCharacterPlan,
+  type LegacyRowPlan,
+} from './domain/legacy-import.js';
+export {
+  applyLegacyImportPlan,
+  readLegacyImportExisting,
+  type LegacyImportProgress,
+} from './application/legacy-import-apply.js';
+export {
+  AVATAR_ISSUE_CODES,
+  AVATAR_MAX_BYTES,
+  AVATAR_MIME_TYPES,
+  LegacyAvatarManifest,
+  allowedHostsOf,
+  countAvatarInspection,
+  emptyAvatarCounts,
+  inspectAvatarFile,
+  inspectAvatarSource,
+  inspectAvatarUrl,
+  parseAvatarSource,
+  planAvatarSources,
+  sniffAvatarMime,
+  type AvatarImportCounts,
+  type AvatarImportIssue,
+  type AvatarInspection,
+  type AvatarInspectionCode,
+  type AvatarIssueCode,
+  type AvatarMimeType,
+  type AvatarPlan,
+  type AvatarPlanEntry,
+  type AvatarPlanItem,
+  type AvatarSource,
+} from './domain/legacy-avatar-import.js';
+export {
+  applyAvatarImports,
+  readAvatarCharacters,
+  type AvatarApplyInput,
+  type AvatarApplyResult,
+  type AvatarCharacterRow,
+  type AvatarMediaWriter,
+} from './application/legacy-avatar-apply.js';
+export {
+  LegacyVoiceImportInput,
+  classifyVoiceKey,
+  normalizeVoiceInput,
+  planLegacyVoices,
+  resolveSamplePath,
+  voiceCandidatesOf,
+  voiceKeyId,
+  type LegacyVoiceBinding,
+  type LegacyVoiceCandidate,
+  type LegacyVoiceCharacter,
+  type LegacyVoiceImportInput as LegacyVoiceImportInputType,
+  type LegacyVoiceSource,
+  type VoiceExisting,
+  type VoiceImportCounts,
+  type VoiceImportIssue,
+  type VoiceImportPlan,
+  type VoiceIssueCode,
+  type VoicePlanItem,
+} from './domain/legacy-voice-import.js';
+export { bindDefaultVoice, type VoiceBindResult } from './application/legacy-voice-bind.js';
+export { readVoiceExisting } from './application/legacy-voice-existing.js';

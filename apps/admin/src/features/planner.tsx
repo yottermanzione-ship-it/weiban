@@ -17,17 +17,14 @@ import {
 } from 'antd';
 import type { Dayjs } from 'dayjs';
 import type { z } from 'zod';
-import {
-  ModelAccessAdminEndpoints,
-  PlannerAdminEndpoints,
-  PlanningDecisionRecord,
-} from '@weiban/contracts';
+import { PlannerAdminEndpoints, PlanningDecisionRecord } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
 import { FieldHelp, FormSection, Page, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime, formatPercent } from '../ui/format.js';
+import { shortUserId, userDisplayName, useUserDirectory } from './users/identity.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 
 type Decision = z.infer<typeof PlanningDecisionRecord>;
@@ -46,8 +43,8 @@ type DecisionType = (typeof DECISION_TYPES)[number][0];
 
 const IMPL_NAMES: Record<string, string> = {
   rules: '纯规则',
-  rules_model: '规则 + 便宜模型',
-  jev: 'Jev',
+  rules_model: '规则 + 用户文本模型',
+  jev: '旧 Jev（已弃用，按用户文本模型执行）',
 };
 
 const FALLBACK_NAMES: Record<string, string> = {
@@ -87,7 +84,6 @@ export function PlannerPage() {
 function PlannerConfig() {
   const toast = useToast();
   const config = useRemote(PlannerAdminEndpoints.getConfig);
-  const models = useRemote(ModelAccessAdminEndpoints.listModels);
   const [editing, setEditing] = useState<DecisionType | null>(null);
 
   const entryOf = (type: string) => config.data?.items.find((i) => i.decisionType === type);
@@ -100,17 +96,12 @@ function PlannerConfig() {
     },
     {
       title: '当前实现',
-      width: 160,
+      width: 200,
       render: (_, entry) => (
         <StatusTag tone={entry.implementation === 'rules' ? 'default' : 'processing'}>
           {IMPL_NAMES[entry.implementation] ?? entry.implementation}
         </StatusTag>
       ),
-    },
-    {
-      title: '模型',
-      width: 180,
-      render: (_, entry) => entry.modelKey ?? '—',
     },
     {
       title: '置信度门槛',
@@ -194,12 +185,6 @@ function PlannerConfig() {
         <PlannerDrawer
           type={editing}
           entry={entryOf(editing)}
-          models={(models.data?.items ?? [])
-            .filter((m) => !m.deletedAt)
-            .map((m) => ({
-              value: m.modelKey,
-              label: `${m.displayName}（${m.modelKey}）`,
-            }))}
           onClose={() => setEditing(null)}
           onSaved={(label) => {
             setEditing(null);
@@ -213,8 +198,7 @@ function PlannerConfig() {
 }
 
 interface PlannerForm {
-  implementation: 'rules' | 'rules_model' | 'jev';
-  modelKey?: string;
+  implementation: 'rules' | 'rules_model';
   confidenceThreshold: number;
   evalReportId?: string;
 }
@@ -222,18 +206,15 @@ interface PlannerForm {
 function PlannerDrawer({
   type,
   entry,
-  models,
   onClose,
   onSaved,
 }: {
   type: DecisionType;
   entry?: {
     implementation: string;
-    modelKey: string | null;
     confidenceThreshold: number;
     evalReportId: string | null;
   };
-  models: Array<{ value: string; label: string }>;
   onClose: () => void;
   onSaved: (label: string) => void;
 }) {
@@ -243,7 +224,11 @@ function PlannerDrawer({
   const [error, setError] = useState('');
   const implementation = Form.useWatch('implementation', form) ?? 'rules';
   const label = typeName(type);
-  const initial = (entry?.implementation ?? 'rules') as PlannerForm['implementation'];
+  const initial = (
+    entry?.implementation === 'rules_model' || entry?.implementation === 'rules'
+      ? entry.implementation
+      : 'rules'
+  ) as PlannerForm['implementation'];
   const switching = implementation !== initial;
 
   async function save() {
@@ -256,7 +241,8 @@ function PlannerDrawer({
         params: { decisionType: type },
         body: {
           implementation: values.implementation,
-          modelKey: values.implementation === 'rules' ? null : (values.modelKey ?? '').trim(),
+          // 3.29：规划跟随用户自己的 chat 模型；后台不再保存模型键。
+          modelKey: null,
           confidenceThreshold: Math.round(values.confidenceThreshold * 100) / 100,
           evalReportId: values.evalReportId?.trim() || null,
         },
@@ -286,7 +272,6 @@ function PlannerDrawer({
         layout="vertical"
         initialValues={{
           implementation: initial,
-          modelKey: entry?.modelKey ?? undefined,
           confidenceThreshold: entry?.confidenceThreshold ?? 0.55,
           evalReportId: entry?.evalReportId ?? '',
         }}
@@ -294,26 +279,17 @@ function PlannerDrawer({
         <FormSection title="实现方式" />
         <Form.Item
           name="implementation"
-          extra={<FieldHelp>接模型更自然，但每次判断都会产生费用。</FieldHelp>}
+          extra={
+            <FieldHelp>
+              接模型时使用**用户自己的文本聊天模型**（角色覆盖按现有规则），不再由后台选模型；每次判断仍会计费。
+            </FieldHelp>
+          }
         >
           <Radio.Group>
             <Radio value="rules">纯规则</Radio>
-            <Radio value="rules_model">规则 + 便宜模型</Radio>
-            <Radio value="jev" disabled={type === 'play_slot'}>
-              Jev
-            </Radio>
+            <Radio value="rules_model">规则 + 用户文本模型</Radio>
           </Radio.Group>
         </Form.Item>
-        {implementation !== 'rules' && (
-          <Form.Item
-            name="modelKey"
-            label="用哪个模型"
-            rules={[{ required: true, message: '选择模型' }]}
-            extra={<FieldHelp>从「模型管理」里已上架的模型中选择。</FieldHelp>}
-          >
-            <Select showSearch options={models} placeholder="选择模型" />
-          </Form.Item>
-        )}
         <Form.Item
           name="confidenceThreshold"
           label="置信度门槛"
@@ -350,6 +326,8 @@ interface DecisionFilters {
 }
 
 function PlannerDecisions() {
+  // 决策记录接口只返回 userId（ai-runtime 提供），这里用后台账号目录一次批量补昵称。
+  const directory = useUserDirectory();
   const [filters, setFilters] = useState<DecisionFilters>({ userId: '', characterId: '' });
   const [applied, setApplied] = useState<DecisionFilters>({ userId: '', characterId: '' });
   const [items, setItems] = useState<Decision[]>([]);
@@ -537,10 +515,20 @@ function PlannerDecisions() {
               <span>{detail.options.join(' / ') || '—'}</span>
             </div>
             <div>
-              <span className="detail-label">用户 / 角色</span>
-              <span className="mono">
-                {detail.userId.slice(0, 12)}… / {detail.characterId?.slice(0, 8) ?? '—'}
+              <span className="detail-label">用户</span>
+              <span title={detail.userId}>
+                {userDisplayName(detail.userId, directory.byId.get(detail.userId))}
+                {directory.byId.has(detail.userId) && (
+                  <>
+                    {' '}
+                    <span className="cell-sub mono">{shortUserId(detail.userId)}</span>
+                  </>
+                )}
               </span>
+            </div>
+            <div>
+              <span className="detail-label">角色</span>
+              <span className="mono">{detail.characterId?.slice(0, 8) ?? '—'}</span>
             </div>
           </div>
           <div className="detail-muted">理由：{detail.reason || '—'}</div>

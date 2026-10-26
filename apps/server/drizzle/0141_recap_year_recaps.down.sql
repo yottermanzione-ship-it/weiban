@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS recap.year_recaps;
+DROP SCHEMA IF EXISTS recap;

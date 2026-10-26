@@ -44,8 +44,9 @@ export const ChatGroupEndpoints = {
     body: CreateGroupRequest,
     response: Conversation,
     summary:
-      '发起群聊（SOC-03 第 1 条），成功 201；超过 P-21 返回 422 limit_reached。群里写系统提示 group_created；' +
-      '发出 chat.conversation_created 与 chat.group_members_changed',
+      '发起群聊（SOC-03 第 1 条），成功 201；超过 P-21 返回 422 limit_reached；' +
+      '10-25：群聊是 PRO+ 权益，非 PRO+ 返回 403 membership_required（details.benefit = group_chat）。' +
+      '群里写系统提示 group_created；发出 chat.conversation_created 与 chat.group_members_changed',
   }),
   renameGroup: defineEndpoint({
     method: 'PATCH',

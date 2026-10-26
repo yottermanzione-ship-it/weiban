@@ -79,18 +79,22 @@ export const RoleRequestConfig = z.object({
   enabled: z.boolean(),
   /** 3.17：免费次数用完后每次的价格（积分，后台可调，默认 200）；提交冻结、完成扣、拒绝 / 撤回退回。 */
   pointsCost: z.number().int().nonnegative().max(1_000_000),
-  /** 3.17：每个用户终身免费次数（免费用户与 PRO+ 都有），默认 3。 */
+  /** 3.17：每个用户的终身免费次数（免费用户口径），默认 3。PRO+ 不再叠加这一份（见 proPlusWeeklyFreeCount）。 */
   lifetimeFreeCount: z.number().int().min(0).max(100).default(3),
-  /** 3.17：PRO+ 会员期间每周额外免费次数（北京时间周一 0 点重置，不累积），默认 2。 */
-  proPlusWeeklyFreeCount: z.number().int().min(0).max(100).default(2),
+  /**
+   * 3.17 / 10-25：PRO+ 每周免费次数（北京时间周一 0 点重置，不累积），默认 3。
+   * PRO+ 只按每周次数算，不再「终身 + 每周」叠加；免费用户该值为 0（不生效）。
+   */
+  proPlusWeeklyFreeCount: z.number().int().min(0).max(100).default(3),
   /** 同一用户同时未完成（pending + in_progress）的申请上限。 */
   maxOpenPerUser: z.number().int().min(1).max(50),
 });
 export type RoleRequestConfig = z.infer<typeof RoleRequestConfig>;
 
 /**
- * 3.17（会员 v5，16 号 §6）：免费用户终身 N 次；PRO+ 终身 N 次 + 会员期间每周 M 次（先用每周的）。
- * limit / used / remaining 是两类合计；拒绝或撤回的申请不占次数。
+ * 3.17（会员 v5，16 号 §6）/ 10-25（会员 v6）：免费用户终身 N 次；PRO+ 每周 M 次（北京时间周一 0 点重置）。
+ * limit / used / remaining 是**当前档位真正生效的那一类**额度：免费 = 终身，PRO+ = 本周（不再叠加）；
+ * lifetime* / weekly* 分别给出两类原始计数。拒绝或撤回的申请不占次数。
  */
 export const RoleRequestQuota = z.object({
   quotedAt: Timestamp,
@@ -133,7 +137,8 @@ export const RoleRequestEndpoints = {
     path: `${API_PREFIX}/role-requests/config`,
     auth: 'user',
     response: RoleRequestConfig.extend({ quota: RoleRequestQuota }),
-    summary: '3.17：终身免费次数 + PRO+ 每周免费次数与本次报价（北京时间周一 0 点重置）',
+    summary:
+      '3.17 / 10-25：免费次数与本次报价。免费用户终身 3 次；PRO+ 每周 3 次（北京时间周一 0 点重置，不叠加终身次数）',
   }),
   create: defineEndpoint({
     method: 'POST',
@@ -144,6 +149,7 @@ export const RoleRequestEndpoints = {
     summary:
       '3.5：提交角色制作申请（clientRequestId 幂等）。未开放 403 forbidden；未完成申请达上限 409 conflict；' +
       '3.8：可用积分不足 422 insufficient_balance（details.pointsCost），成功时冻结 pointsCost 积分；' +
+      '10-25：免费次数用完（免费用户终身 3 次 / PRO+ 每周 3 次）后本次没有免费名额，按 pointsCost 收费；' +
       '参考图不是本人上传的 role_request_image 时 400 bad_request',
   }),
   listMine: defineEndpoint({
@@ -192,6 +198,8 @@ export const AdminRoleRequest = RoleRequest.extend({
   userId: Id,
   /** 申请人用户名（登录名，后台展示用）；账号已注销为 null。 */
   username: z.string().nullable(),
+  /** 申请人昵称；没填资料或账号已注销为 null。 */
+  nickname: z.string().nullable().default(null),
   /** 处理的管理员（接单后）。 */
   handledBy: Id.nullable(),
   /** 历次留言与状态变化（最早在前）。 */

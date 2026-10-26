@@ -19,6 +19,7 @@ import {
 } from '@weiban/contracts';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { hash as bcryptHash } from '@node-rs/bcrypt';
 import { AppModule } from '../src/app.module.js';
 import { configureHttpApp } from '../src/main.js';
 import { CommandError, IdentityCommands } from '../src/modules/identity/index.js';
@@ -198,6 +199,25 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
   function errorCode(res: { body: unknown }): string {
     return ApiError.parse(res.body).error.code;
   }
+
+  it('迁移兼容：旧版 bcrypt 密码能登录，登录成功后自动升级为 argon2id', async () => {
+    const username = newUsername();
+    await register(username);
+    // 模拟从旧版微伴迁移过来的账号：库里是 bcrypt 哈希。
+    const legacy = await bcryptHash(PASSWORD, { cost: 4, version: '2a' });
+    await database.query('UPDATE identity.users SET password_hash=$2 WHERE username=$1', [
+      username,
+      legacy,
+    ]);
+    await login(username).expect(200);
+    const { rows } = await database.query<{ password_hash: string }>(
+      'SELECT password_hash FROM identity.users WHERE username=$1',
+      [username],
+    );
+    expect(rows[0]!.password_hash).toMatch(/^\$argon2id\$/);
+    // 升级后同一个密码仍然可以登录。
+    await login(username).expect(200);
+  });
 
   async function outbox(type: string, userId: string) {
     return withClient(async (client) => {

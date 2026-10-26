@@ -1,5 +1,6 @@
 import type { PortResult, Tx } from './common.js';
 import type { CharacterCard } from '../character-card.js';
+import type { LegacyDialogueExample, LegacyKnowledgeEntry } from '../legacy-character-card.js';
 import type {
   CharacterClassification,
   CharacterClassificationInput,
@@ -18,13 +19,28 @@ export interface CharacterNameReadPort {
   getDisplayName(userId: string, characterId: string, tx?: Tx): Promise<string | null>;
 }
 
+/** 旧卡角色的世界书与示例对话（旧库两张附属表）。没有旧卡时两个数组都为空。 */
+export interface LegacyRuntimeContext {
+  lorebook: LegacyKnowledgeEntry[];
+  examples: LegacyDialogueExample[];
+}
+
 /** AI 运行时生成回复所需的角色数据。 */
 export interface CharacterForRuntime {
   profile: CharacterProfile;
   classification: CharacterClassification;
-  card: CharacterCard;
+  /**
+   * 新卡（WB-Card）角色为卡片正文；旧卡角色为 null。
+   * 旧卡角色不转新卡，运行时直接读 `legacyCard` 的旧字段。
+   */
+  card: CharacterCard | null;
+  /**
+   * 旧卡整行（旧库 characters_v2 的 JSON）。非 null 表示这是旧卡角色，**旧卡就是运行格式**；
+   * 新卡角色为 null。
+   */
+  legacyCard: Record<string, unknown> | null;
   personaVersion: number;
-  /** 备用开场白（未配置模型时用，CHR-03 第 6 条）。 */
+  /** 备用开场白（未配置模型时用，CHR-03 第 6 条）。旧卡角色取 opening_messages_json。 */
   fallbackGreetings: string[];
   /** 当前用户的「我的补充设定」（CHR-09，L6 前为 null）。只是自由文本，永不参与硬性边界判定。 */
   userSupplement: string | null;
@@ -34,6 +50,11 @@ export interface CharacterForRuntime {
 export interface CharacterReadPort {
   /** 用户视角的角色数据：预设角色对所有人可读；自定义角色只有创建者可读，否则返回 null。 */
   getForRuntime(userId: string, characterId: string): Promise<CharacterForRuntime | null>;
+  /**
+   * 旧卡角色（有 legacy_card）的世界书与示例对话，直接来自旧库两张附属表。
+   * 没有旧卡或没有数据时返回空数组。可选：测试桩可以不实现。
+   */
+  getLegacyContext?(characterId: string): Promise<LegacyRuntimeContext>;
   /** 可选事务用于资格闸门：锁定当前分类，与消息/模式写入共享同一提交。 */
   getClassification(characterId: string, tx?: Tx): Promise<CharacterClassification | null>;
   /** 添加资格：上架预设或本人可用自定义角色；可共享调用方事务并锁定角色行。 */

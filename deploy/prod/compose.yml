@@ -33,12 +33,24 @@ services:
       PORT: 3000
       HTTP_TRUST_PROXY: '1'
       IMAGE_PUBLIC_SEARCH_ENABLED: ${IMAGE_PUBLIC_SEARCH_ENABLED:-0}
+      CHARACTER_PUBLIC_PICTURE_SEARCH_ENABLED: ${CHARACTER_PUBLIC_PICTURE_SEARCH_ENABLED:-0}
       DATABASE_URL_FILE: /run/secrets/database_url
       PLATFORM_KEK_FILE: /run/secrets/kek
       PLATFORM_KEK_VERSION: ${PLATFORM_KEK_VERSION:-1}
       BILLING_PLATFORM_DAILY_CAP_MICROS: ${BILLING_PLATFORM_DAILY_CAP_MICROS:?Set platform cost limit in micros}
       MEDIA_DISK_ROOT: /app/.data/media
       MEDIA_PUBLIC_BASE_URL: https://${WEB_HOST:?Set public web hostname}
+      # 外部渠道接入（微信 iLink / 微博 OpenIM，契约 3.42）。compose 是显式白名单，
+      # 不在这里传的变量容器里根本看不到。默认全关：不打开时页面显示「未联调」，
+      # worker 不连微信也不连微博、不发送任何东西。
+      # *ALLOWED_USER_IDS 是内测白名单（逗号分隔用户 UUID）；留空 = 谁都不能用。
+      CHANNEL_WECHAT_ENABLED: ${CHANNEL_WECHAT_ENABLED:-0}
+      CHANNEL_WECHAT_ALLOWED_USER_IDS: ${CHANNEL_WECHAT_ALLOWED_USER_IDS:-}
+      CHANNEL_WECHAT_ILINK_BASE_URL: ${CHANNEL_WECHAT_ILINK_BASE_URL:-https://ilinkai.weixin.qq.com}
+      CHANNEL_WEIBO_ENABLED: ${CHANNEL_WEIBO_ENABLED:-0}
+      CHANNEL_WEIBO_ALLOWED_USER_IDS: ${CHANNEL_WEIBO_ALLOWED_USER_IDS:-}
+      CHANNEL_WEIBO_TOKEN_ENDPOINT: ${CHANNEL_WEIBO_TOKEN_ENDPOINT:-https://open-im.api.weibo.com/open/auth/ws_token}
+      CHANNEL_WEIBO_WS_ENDPOINT: ${CHANNEL_WEIBO_WS_ENDPOINT:-wss://open-im.api.weibo.com/ws/stream}
     secrets: [database_url, kek]
     depends_on:
       postgres:

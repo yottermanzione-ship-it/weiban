@@ -11,14 +11,17 @@
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type {
+  ActiveModelServiceRate,
   AdminCatalogEntry,
   AdminModel,
+  BillingModelRatePort,
   ModelCapability,
   ModelInfo,
   ModelRoute,
   ModelScenario,
   ModelUnavailableDetail,
   PlatformInternalUse,
+  PrivateModelInfo,
   SystemMessageMode,
   UpstreamStatus,
 } from '@weiban/contracts';
@@ -43,13 +46,17 @@ import {
   type Outbox,
 } from '../../../platform/index.js';
 import {
-  beijingDay,
   hasAdultContent,
   priceTier,
   standardReplyMicros,
   unavailableReason,
 } from '../domain/rules.js';
-import { normalizeArenaName, relativeRanks } from '../domain/leaderboard.js';
+import {
+  normalizeArenaName,
+  bestArenaRanks,
+  relativeRanks,
+  type LeaderboardEntry,
+} from '../domain/leaderboard.js';
 import {
   modelCatalog,
   modelRoutes,
@@ -60,11 +67,25 @@ import {
 import {
   MODEL_ACCESS_CHARGE_QUERY,
   MODEL_PRICE_SOURCE,
+  MODEL_RATE_PORT,
   type ChargeQuery,
   type ModelPriceSource,
 } from '../tokens.js';
 import { DisplayPricingService } from './display-pricing.js';
 import { ChargeQueryUnavailableError } from './defaults.js';
+import { parseVoiceCallPipeline, type VoiceCallPipeline } from '../domain/voice-call-pipeline.js';
+import {
+  checkVoiceCallComponents,
+  DEFAULT_DISPLAY_BASE_MODEL_KEY,
+  isVoiceCallComposite,
+  readVoiceCallPipelineValue,
+  serviceRatePrice,
+  VOICE_CALL_CASCADE_MODEL_KEY,
+  VOICE_CALL_PIPELINE_SETTING_KEY,
+  voiceCallDisplayMultiplier,
+  voiceCallFailureDetail,
+  type VoiceCallAvailability,
+} from './voice-call-composite.js';
 
 type CatalogRow = typeof modelCatalog.$inferSelect;
 type CatalogWrite = z.infer<typeof AdminCatalogEntryWrite>;
@@ -74,14 +95,13 @@ export const MODEL_USES_KEY = 'model_uses';
 export const LEADERBOARD_SNAPSHOT_KEY = 'leaderboard_snapshot';
 /**
  * 用户可配置的场景。3.24 起去掉「图片识别」（vision）：图片随文本聊天（私密模式下随私密模式）模型发送，
- * 契约里的 vision 取值只为旧客户端保留，服务器不再返回、忽略写入。
+ * 契约里的 vision 取值只为旧客户端保留。2026-10-22 起 image_generation 也不再是用户场景，角色分享图片不生图。
  */
 export const ALL_SCENARIOS: readonly ModelScenario[] = [
   'chat',
   'voice_message',
   'speech_recognition',
   'voice_call',
-  'image_generation',
   'private',
 ];
 /** 文本类场景：用文本模型（按 token 计价，约每条回复）。 */
@@ -94,7 +114,10 @@ export interface LeaderboardSnapshot {
   fetchedAt: string | null;
   method: 'fetch' | 'paste' | null;
   sourceUrl: string | null;
-  entries: Array<{ name: string; rank: number }>;
+  entries: LeaderboardEntry[];
+  publishedAt?: string | null;
+  totalRows?: number | null;
+  previousEntries?: LeaderboardEntry[];
   lastAttemptAt: string | null;
   lastError: string | null;
 }
@@ -149,6 +172,18 @@ export function toAdminEntry(row: CatalogRow): AdminCatalogEntry {
   };
 }
 
+/**
+ * 启用目录条目时是否必须先在价目表里有它的 token 价（契约 1.3）。
+ * 组合通话模型（`voice/cascade-call` + `pipeline:call`）自身不调用上游、没有 token 单价，
+ * 费用由三个组件按真实调用分别计费，所以豁免；其余条目（含没有组合标签的同名条目）照旧要求价格。
+ */
+export function requiresCatalogPrice(entry: {
+  modelKey: string;
+  tags: readonly string[];
+}): boolean {
+  return !isVoiceCallComposite(entry);
+}
+
 @Injectable()
 export class CatalogService {
   constructor(
@@ -159,6 +194,8 @@ export class CatalogService {
     @Inject(MODEL_PRICE_SOURCE) private readonly prices: ModelPriceSource,
     @Inject(MODEL_ACCESS_CHARGE_QUERY) private readonly charges: ChargeQuery,
     @Optional() @Inject(DisplayPricingService) private readonly display?: DisplayPricingService,
+    // ADR-20261024：组合通话模型的展示倍率需要语音 / 识别的服务单价（billing 价目表）。
+    @Optional() @Inject(MODEL_RATE_PORT) private readonly rates?: BillingModelRatePort,
   ) {}
 
   // ---------- 3.22 场景推荐模型 / 平台内部模型 ----------
@@ -171,9 +208,17 @@ export class CatalogService {
     const parsed = ModelScenarioSettings.safeParse(row?.value);
     if (!parsed.success) return { recommended: {}, internal: {} };
     // 3.24：图片识别场景已去掉；3.25：成人内容检查模型不再使用
-    const { vision: _vision, ...recommended } = parsed.data.recommended;
+    const {
+      vision: _vision,
+      image_generation: _imageGeneration,
+      ...recommended
+    } = parsed.data.recommended;
     const { adult_check: _adultCheck, ...internal } = parsed.data.internal;
-    return { recommended, internal };
+    return {
+      recommended,
+      internal,
+      ...(parsed.data.fixed ? { fixed: parsed.data.fixed } : {}),
+    };
   }
 
   /**
@@ -188,13 +233,14 @@ export class CatalogService {
     const next: ModelScenarioSettings = {
       recommended: { ...current.recommended },
       internal: { ...current.internal },
+      ...(current.fixed ? { fixed: { ...current.fixed } } : {}),
     };
     for (const [scenario, key] of Object.entries(input.recommended) as [
       ModelScenario,
       string | null | undefined,
     ][]) {
       // 3.24：图片识别场景已去掉，忽略写入
-      if (key === undefined || scenario === 'vision') continue;
+      if (key === undefined || !ALL_SCENARIOS.includes(scenario)) continue;
       if (key !== null) {
         const f = await this.fact(key);
         if (!f.entry?.enabled || !f.entry.scenarios.includes(scenario))
@@ -226,6 +272,19 @@ export class CatalogService {
       }
       next.internal[use] = key;
     }
+    // 3.28：固定私密模型（用户不可选）。未传 = 保持原值；null = 管理员主动清空（不会被自动初始化复活）。
+    if (input.fixed?.private !== undefined) {
+      const key = input.fixed.private;
+      if (key !== null) {
+        const f = await this.fact(key);
+        if (!f.entry?.enabled || f.entry.deletedAt || !f.entry.scenarios.includes('private'))
+          throw new AppError('bad_request', `固定私密模型 ${key} 未启用或没有勾选用于私密模式`, {
+            status: 422,
+            details: { field: 'fixed.private' },
+          });
+      }
+      next.fixed = { private: key };
+    }
     await this.database.transaction(async (tx) => {
       const now = this.clock.now();
       await tx.db
@@ -251,6 +310,114 @@ export class CatalogService {
     return next;
   }
 
+  // ---------- 组合通话模型（ADR-20261024） ----------
+
+  /** 读 `model_access.settings.voice_call_pipeline`；严格校验，非法（含未知字段 / 重复组件）= 未配置。 */
+  async voiceCallPipeline(): Promise<VoiceCallPipeline | null> {
+    const [row] = await this.database.db
+      .select()
+      .from(modelAccessSettings)
+      .where(eq(modelAccessSettings.key, VOICE_CALL_PIPELINE_SETTING_KEY));
+    return readVoiceCallPipelineValue(row?.value);
+  }
+
+  /**
+   * 保存组合关系。只校验结构（三个不同且合法的模型键），不要求组件此刻已上架：
+   * 允许先配关系、再逐个上模型；运行时逐项判断并给出不可用原因。
+   */
+  async setVoiceCallPipeline(operatorUserId: string, raw: unknown): Promise<VoiceCallPipeline> {
+    const parsed = parseVoiceCallPipeline(raw);
+    if (!parsed.ok)
+      throw new AppError(
+        'bad_request',
+        parsed.error === 'pipeline_duplicate_components'
+          ? '识别、文本、合成不能选同一个模型'
+          : '语音通话组合模型设置格式不正确：需要 asrModelKey / textModelKey / ttsModelKey 三个合法模型键',
+        { status: 422, details: { field: VOICE_CALL_PIPELINE_SETTING_KEY, error: parsed.error } },
+      );
+    if (
+      [parsed.value.asrModelKey, parsed.value.textModelKey, parsed.value.ttsModelKey].includes(
+        VOICE_CALL_CASCADE_MODEL_KEY,
+      )
+    )
+      throw new AppError('bad_request', '组合模型不能把自己作为组件', { status: 422 });
+    const before = await this.voiceCallPipeline();
+    await this.database.transaction(async (tx) => {
+      const now = this.clock.now();
+      await tx.db
+        .insert(modelAccessSettings)
+        .values({
+          key: VOICE_CALL_PIPELINE_SETTING_KEY,
+          value: parsed.value,
+          updatedAt: now,
+          updatedBy: operatorUserId,
+        })
+        .onConflictDoUpdate({
+          target: modelAccessSettings.key,
+          set: { value: parsed.value, updatedAt: now, updatedBy: operatorUserId },
+        });
+      await this.audit.record(
+        {
+          module: 'model_access',
+          action: 'voice_call_pipeline.updated',
+          actorType: 'admin',
+          actorId: operatorUserId,
+          targetType: 'model_access_settings',
+          targetId: null,
+          details: { before, after: parsed.value },
+        },
+        tx,
+      );
+    });
+    return parsed.value;
+  }
+
+  /** 目录里的组合模型条目（固定模型键 + `pipeline:call` 标签）；没有为 null。 */
+  async voiceCallCompositeFact(): Promise<ModelFacts | null> {
+    const facts = await this.fact(VOICE_CALL_CASCADE_MODEL_KEY);
+    return isVoiceCallComposite(facts.entry) ? facts : null;
+  }
+
+  /** 组合模型的平台级可用性：三个组件都启用且上游正常才算可用（与某个用户是否选它无关）。 */
+  async voiceCallAvailability(): Promise<VoiceCallAvailability> {
+    const pipeline = await this.voiceCallPipeline();
+    if (!pipeline) return { available: false, failure: { reason: 'pipeline_unconfigured' } };
+    const facts = await this.facts([
+      pipeline.asrModelKey,
+      pipeline.textModelKey,
+      pipeline.ttsModelKey,
+    ]);
+    const checked = checkVoiceCallComponents(pipeline, {
+      asr: facts.get(pipeline.asrModelKey),
+      text: facts.get(pipeline.textModelKey),
+      tts: facts.get(pipeline.ttsModelKey),
+    });
+    return checked.ok
+      ? { available: true, pipeline }
+      : { available: false, failure: checked.failure };
+  }
+
+  /**
+   * 组合模型的展示倍率按分钟混合口径（识别 1 分钟 + 合成约 54 字 + 文本约 5 轮），
+   * 相对基准模型（默认 openai/gpt-6.1-sol，后台可另设）的同一分钟口径。任何一项价格缺失 = null。
+   */
+  async voiceCallCompositeDisplayMultiplier(): Promise<number | null> {
+    const pipeline = await this.voiceCallPipeline();
+    if (!pipeline) return null;
+    const settings = (await this.display?.getSettings()) ?? { baseModelKey: null };
+    const baseModelKey = settings.baseModelKey ?? DEFAULT_DISPLAY_BASE_MODEL_KEY;
+    const serviceRates: ReadonlyMap<string, readonly ActiveModelServiceRate[]> =
+      (await this.rates?.getActiveServiceRates?.([pipeline.asrModelKey, pipeline.ttsModelKey])) ??
+      new Map();
+    const prices = await this.prices.textPrices([pipeline.textModelKey, baseModelKey]);
+    return voiceCallDisplayMultiplier({
+      asrPerMinuteMicros: serviceRatePrice(serviceRates, pipeline.asrModelKey, 'asr_minute'),
+      ttsPer10kCharsMicros: serviceRatePrice(serviceRates, pipeline.ttsModelKey, 'tts_10k_chars'),
+      text: prices.get(pipeline.textModelKey),
+      base: prices.get(baseModelKey),
+    });
+  }
+
   /** 场景推荐模型（只用于「一键选推荐」与管理员自己的 admin_* 调用；只算启用的）。 */
   async recommendedModel(scenario: ModelScenario): Promise<ModelFacts | null> {
     const key = (await this.modelUses()).recommended[scenario];
@@ -268,6 +435,96 @@ export class CatalogService {
     return f.entry?.enabled ? f : null;
   }
 
+  /**
+   * 3.28：平台固定的私密模型（唯一来源 `model_uses.fixed.private`）。
+   * 配置了就有目录事实（即使当前不可用，由解析方报 model_unavailable）；未配置返回 null。
+   * 用户/角色的旧 private 选择不再参与这里。
+   */
+  async fixedPrivateFacts(): Promise<ModelFacts | null> {
+    const key = (await this.modelUses()).fixed?.private ?? null;
+    return key ? this.fact(key) : null;
+  }
+
+  /**
+   * 3.28：用户端只读的固定私密模型。倍率与用户模型目录同一套算法（后台手填优先，其次自动），
+   * 并**已乘上**进行中的限时折扣，`discountRate` 只给文案（不要再乘一次）。
+   */
+  async privateModel(): Promise<PrivateModelInfo | null> {
+    const key = (await this.modelUses()).fixed?.private ?? null;
+    if (!key) return null;
+    const facts = await this.facts([key], { detail: true });
+    const f = facts.get(key);
+    const entry = f?.entry ?? null;
+    const display = await this.display?.forModels([key]);
+    const d = display?.get(key);
+    const base =
+      d?.displayMultiplierManual ?? entry?.displayMultiplier ?? d?.displayMultiplier ?? null;
+    const discountRate = d?.discount?.rate ?? null;
+    const displayMultiplier =
+      base === null ? null : Math.round(base * (discountRate ?? 1) * 100) / 100;
+    const detail = f?.detail ?? null;
+    const available = !!entry && entry.enabled && !entry.deletedAt && detail === null;
+    return {
+      modelKey: key,
+      displayName: entry?.displayName ?? key,
+      displayMultiplier,
+      discountRate,
+      available,
+    };
+  }
+
+  /**
+   * 3.28：**一次性**初始化固定私密模型（显式操作，不自动复活）。
+   * 仅当存储的 `model_uses` 里从来没有 `fixed` 字段、且当前推荐私密模型有效时，把它复制过来；
+   * 已有 `fixed`（包括 `{ private: null }` 主动清空）一律 409。写审计。
+   */
+  async initializeFixedPrivateModel(operatorUserId: string): Promise<ModelScenarioSettings> {
+    const [row] = await this.database.db
+      .select()
+      .from(modelAccessSettings)
+      .where(eq(modelAccessSettings.key, MODEL_USES_KEY));
+    const raw: Record<string, unknown> =
+      row?.value && typeof row.value === 'object' && !Array.isArray(row.value)
+        ? (row.value as Record<string, unknown>)
+        : {};
+    if (Object.prototype.hasOwnProperty.call(raw, 'fixed'))
+      throw new AppError(
+        'conflict',
+        '固定私密模型已经初始化过（fixed:null 表示管理员主动清空，不会自动复活）',
+        { status: 409 },
+      );
+    const current = await this.modelUses();
+    const key = current.recommended.private ?? null;
+    if (!key)
+      throw new AppError(
+        'bad_request',
+        '当前没有推荐私密模型可复制，请在后台直接选择固定私密模型',
+        {
+          status: 422,
+        },
+      );
+    const f = await this.fact(key);
+    if (!f.entry?.enabled || f.entry.deletedAt || !f.entry.scenarios.includes('private'))
+      throw new AppError('bad_request', `推荐私密模型 ${key} 未启用或没有勾选用于私密模式`, {
+        status: 422,
+      });
+    const next = await this.setModelUses(operatorUserId, {
+      recommended: {},
+      internal: {},
+      fixed: { private: key },
+    });
+    await this.audit.record({
+      module: 'model_access',
+      action: 'private_model.initialized',
+      actorType: 'admin',
+      actorId: operatorUserId,
+      targetType: 'model_settings',
+      targetId: null,
+      details: { fixedPrivate: key, copiedFrom: 'recommended.private' },
+    });
+    return next;
+  }
+
   // ---------- 管理后台 ----------
   async leaderboardSource() {
     const [row] = await this.database.db
@@ -275,7 +532,9 @@ export class CatalogService {
       .from(modelAccessSettings)
       .where(eq(modelAccessSettings.key, 'leaderboard_source'));
     const source = ModelLeaderboardSource.safeParse(row?.value);
-    return source.success ? source.data : null;
+    return source.success
+      ? source.data
+      : { label: 'Arena', url: 'https://arena.ai/leaderboard/chat/text', asOf: null };
   }
   async setLeaderboardSource(operatorUserId: string, input: unknown) {
     const source = ModelLeaderboardSource.parse(input);
@@ -324,29 +583,67 @@ export class CatalogService {
               !!e && typeof e.name === 'string' && Number.isInteger(e.rank) && e.rank > 0,
           )
         : [],
+      publishedAt: typeof value.publishedAt === 'string' ? value.publishedAt : null,
+      totalRows: typeof value.totalRows === 'number' ? value.totalRows : null,
+      previousEntries: Array.isArray(value.previousEntries)
+        ? value.previousEntries.filter(
+            (e) => e && typeof e.name === 'string' && Number.isInteger(e.rank) && e.rank > 0,
+          )
+        : [],
       lastAttemptAt: typeof value.lastAttemptAt === 'string' ? value.lastAttemptAt : null,
       lastError: typeof value.lastError === 'string' ? value.lastError : null,
     };
   }
 
-  /** 3.24：按榜单对应名称查原榜名次（规范化后完全相同才算匹配）。 */
-  async arenaRanks(): Promise<{ rankOf(name: string | null | undefined): number | null }> {
+  /**
+   * 3.24：查原榜名次。默认用模型自己的名字（显示名 → 上游模型名）匹配，不再要求管理员逐条填
+   * 「榜单对应名称」；只有后台手动指定的例外（arenaModelName）才优先。
+   */
+  async arenaRanks(): Promise<{
+    rankOf(name: string | null | undefined): number | null;
+    rankOfEntry(entry: {
+      arenaModelName?: string | null;
+      displayName: string;
+      upstreamModelId: string;
+    }): number | null;
+    previousRankOf(name: string | null | undefined): number | null;
+    previousRankOfEntry(entry: {
+      arenaModelName?: string | null;
+      displayName: string;
+      upstreamModelId: string;
+    }): number | null;
+  }> {
     const snapshot = await this.leaderboardSnapshot();
-    const byName = new Map(
-      (snapshot?.entries ?? []).map((e) => [normalizeArenaName(e.name), e.rank] as const),
-    );
-    return {
-      rankOf: (name) => (name ? (byName.get(normalizeArenaName(name)) ?? null) : null),
-    };
+    const byName = bestArenaRanks(snapshot?.entries ?? []);
+    const previous = bestArenaRanks(snapshot?.previousEntries ?? []);
+    const rankOf = (name: string | null | undefined) =>
+      name ? (byName.get(normalizeArenaName(name)) ?? null) : null;
+    const previousRankOf = (name: string | null | undefined) =>
+      name ? (previous.get(normalizeArenaName(name)) ?? null) : null;
+    const rankOfEntry = (entry: {
+      arenaModelName?: string | null;
+      displayName: string;
+      upstreamModelId: string;
+    }) =>
+      rankOf(entry.arenaModelName) ?? rankOf(entry.displayName) ?? rankOf(entry.upstreamModelId);
+    const previousRankOfEntry = (entry: {
+      arenaModelName?: string | null;
+      displayName: string;
+      upstreamModelId: string;
+    }) =>
+      previousRankOf(entry.arenaModelName) ??
+      previousRankOf(entry.displayName) ??
+      previousRankOf(entry.upstreamModelId);
+    return { rankOf, rankOfEntry, previousRankOf, previousRankOfEntry };
   }
 
   async leaderboardInfo() {
     const configured = await this.leaderboardSource();
-    // 3.24：有自动获取 / 导入的榜单时，参考日期 = 快照日期（北京时间）
+    // 官方发布日期与抓取时间分开，不以抓取日期冒充榜单日期。
     const snapshot = configured ? await this.leaderboardSnapshot() : null;
     const source =
       configured && snapshot?.fetchedAt && snapshot.entries.length
-        ? { ...configured, asOf: beijingDay(new Date(snapshot.fetchedAt)) }
+        ? { ...configured, asOf: snapshot.publishedAt ?? null }
         : configured;
     const popular = await this.database.db
       .select({
@@ -356,7 +653,13 @@ export class CatalogService {
       .from(scenarioSelections)
       .where(eq(scenarioSelections.scenario, 'chat'))
       .groupBy(scenarioSelections.modelKey);
-    return { source, popular };
+    return {
+      source,
+      popular,
+      fetchedAt: snapshot?.fetchedAt ?? null,
+      method: snapshot?.method ?? null,
+      lastError: snapshot?.lastError ?? null,
+    };
   }
 
   /** 后台目录（含停用的；3.23 起也含已删除的，deletedAt 非空，排在最后）。 */
@@ -386,7 +689,9 @@ export class CatalogService {
     // 3.24：「图片识别」场景已去掉（旧后台传了也忽略）；文本聊天 / 私密模式模型缺识图能力只在后台提示，不拒绝保存。
     const scenarios = body.scenarios?.filter((s) => s !== 'vision');
 
-    if (body.enabled) await this.requirePrice(body.modelKey);
+    // 组合通话模型自身不调用上游、没有 token 单价（三组件各自计费），启用时不要求自己的价格。
+    if (body.enabled && requiresCatalogPrice({ modelKey: body.modelKey, tags }))
+      await this.requirePrice(body.modelKey);
 
     return this.database.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock($1)', [CATALOG_LOCK_KEY]);
@@ -536,41 +841,83 @@ export class CatalogService {
       const p = prices.get(key);
       return p ? Math.round(standardReplyMicros(p) / 100) / 100 : null;
     };
-    // 3.24：不可用的具体原因；榜单名次 = 自动获取的榜单按榜单对应名称匹配（没有时用手填名次），
-    // 在本次返回的列表里按相对顺序重新编号 1..N（不显示原榜名次）。
+    // 组合通话模型自身没有上游 / token 价：倍率由三组件价格折算，可用性由三组件共同决定。
+    const compositeVisible = visible.some((r) => isVoiceCallComposite(r.entry));
+    const callPipeline = compositeVisible ? await this.voiceCallPipeline() : null;
+    const voiceCall = compositeVisible
+      ? {
+          displayMultiplier: await this.voiceCallCompositeDisplayMultiplier(),
+          availability: await this.voiceCallAvailability(),
+          pointsPerMinute: callPipeline
+            ? ((await this.display?.voiceCallPointsPerMinute(callPipeline)) ?? null)
+            : null,
+        }
+      : null;
+    // 榜单名次只从有效快照匹配（手动指定优先，否则用模型显示名 / 上游模型名），未匹配为 null，
+    // 不再用旧手填名次兜底；在本次返回的列表里按相对顺序重新编号 1..N（不显示原榜名次）。
     const details = await this.availabilityDetails(visible.map((r) => r.entry.modelKey));
     const arena = await this.arenaRanks();
     const relative = relativeRanks(
       visible.map(({ entry }) => ({
         key: entry.modelKey,
-        rank: arena.rankOf(entry.arenaModelName) ?? entry.leaderboardRank,
+        rank: arena.rankOfEntry(entry),
       })),
     );
-    return visible.map(({ entry, upstreamStatus }) => ({
-      modelKey: entry.modelKey,
-      displayName: entry.displayName,
-      vendorName: entry.vendorName,
-      priceTier: priceTier(prices.get(entry.modelKey)),
-      pointsPerReply: perReply(entry.modelKey),
-      ...(display?.get(entry.modelKey)
-        ? {
-            pointsPerReplyBasis: display.get(entry.modelKey)!.pointsPerReplyBasis,
-            displayMultiplier: display.get(entry.modelKey)!.displayMultiplier,
-            discount: display.get(entry.modelKey)!.discount,
-            pointsPerUse: display.get(entry.modelKey)!.pointsPerUse,
-          }
-        : {}),
-      scenarios: (entry.scenarios as ModelScenario[]).filter((s) => s !== 'vision'),
-      capabilities: entry.capabilities as ModelCapability[],
-      tags: entry.tags,
-      leaderboardRank: relative.get(entry.modelKey) ?? null,
-      ...(() => {
-        const reason = unavailableReason(entry, (upstreamStatus as UpstreamStatus | null) ?? null);
-        const detail =
-          details.get(entry.modelKey) ?? (reason === 'model_removed' ? 'model_removed' : null);
-        return { available: reason === null && !detail, unavailableDetail: detail };
-      })(),
-    }));
+    const previous = relativeRanks(
+      visible.map(({ entry }) => ({
+        key: entry.modelKey,
+        rank: arena.previousRankOfEntry(entry),
+      })),
+    );
+    return visible.map(({ entry, upstreamStatus }) => {
+      const composite = isVoiceCallComposite(entry);
+      const d = display?.get(entry.modelKey);
+      // 后台手填倍率优先；组合模型没有自己的 token 价，自动值来自三组件分钟口径。
+      const manualMultiplier = d?.displayMultiplierManual ?? entry.displayMultiplier ?? null;
+      const displayMultiplier =
+        manualMultiplier ??
+        (composite ? (voiceCall?.displayMultiplier ?? null) : (d?.displayMultiplier ?? null));
+      const reason = unavailableReason(entry, (upstreamStatus as UpstreamStatus | null) ?? null);
+      const detail =
+        details.get(entry.modelKey) ?? (reason === 'model_removed' ? 'model_removed' : null);
+      const availability = composite
+        ? voiceCall
+          ? voiceCall.availability.available
+            ? { available: true, unavailableDetail: null }
+            : {
+                available: false,
+                unavailableDetail: voiceCallFailureDetail(voiceCall.availability.failure),
+              }
+          : { available: false, unavailableDetail: 'no_route' as const }
+        : { available: reason === null && !detail, unavailableDetail: detail };
+      return {
+        modelKey: entry.modelKey,
+        displayName: entry.displayName,
+        vendorName: entry.vendorName,
+        priceTier: priceTier(prices.get(entry.modelKey)),
+        pointsPerReply: perReply(entry.modelKey),
+        ...(composite ? { pointsPerMinute: voiceCall?.pointsPerMinute ?? null } : {}),
+        ...(d
+          ? {
+              pointsPerReplyBasis: d.pointsPerReplyBasis,
+              displayMultiplier,
+              discount: d.discount,
+              pointsPerUse: d.pointsPerUse,
+            }
+          : composite
+            ? { displayMultiplier }
+            : {}),
+        scenarios: (entry.scenarios as ModelScenario[]).filter((s) => ALL_SCENARIOS.includes(s)),
+        capabilities: entry.capabilities as ModelCapability[],
+        tags: entry.tags,
+        leaderboardRank: relative.get(entry.modelKey) ?? null,
+        leaderboardChange:
+          relative.has(entry.modelKey) && previous.has(entry.modelKey)
+            ? previous.get(entry.modelKey)! - relative.get(entry.modelKey)!
+            : null,
+        ...availability,
+      };
+    });
   }
 
   /**
@@ -916,6 +1263,7 @@ export class CatalogService {
   /**
    * 契约 1.3：保存为启用时，当前生效价目表必须有这个模型的价格，否则 422 model_unavailable
    * （billing.md 4.1、ADR-0017 第 1 条）。计费查询端口未接入时 503，不放行。
+   * 组合通话模型例外，见 requiresCatalogPrice。
    */
   private async requirePrice(modelKey: string): Promise<void> {
     let priced: string[];

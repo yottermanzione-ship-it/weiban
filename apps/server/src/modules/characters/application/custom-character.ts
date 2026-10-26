@@ -252,7 +252,7 @@ export class CustomCharacterService {
     const rawPlain = await this.crypto.open(
       userId,
       `character:${characterId}:draft:${current.revision}`,
-      current.draftCiphertext,
+      current.draftCiphertext!,
     );
     let existing: CustomCharacterPayload;
     try {
@@ -429,7 +429,7 @@ export class CustomCharacterService {
     const rawPlain = await this.crypto.open(
       userId,
       `character:${characterId}:draft:${row.revision}`,
-      row.draftCiphertext,
+      row.draftCiphertext!,
     );
     let payload: CustomCharacterPayload;
     try {

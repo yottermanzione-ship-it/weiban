@@ -71,6 +71,7 @@ export class ModelDeletionService {
 
   /** 删除前预览：将要清理的引用（只读）。 */
   async preview(modelKeys: readonly string[]): Promise<ModelDeletionImpact> {
+    await this.assertNotFixedPrivate(modelKeys);
     const counted = await this.count(this.database.db, modelKeys);
     const footprint = await this.rates.modelPriceFootprint(modelKeys);
     return {
@@ -80,10 +81,29 @@ export class ModelDeletionService {
     };
   }
 
+  /**
+   * 3.28：平台固定的私密模型不能直接删——删了会让全站私密模式突然不可用；
+   * 先要求管理员换一个固定私密模型，再删旧模型。
+   */
+  private async assertNotFixedPrivate(
+    modelKeys: readonly string[],
+    db: Executor = this.database.db,
+  ): Promise<void> {
+    const fixed = (await this.modelUses(db)).fixed?.private ?? null;
+    if (!fixed || !modelKeys.includes(fixed)) return;
+    throw new AppError(
+      'conflict',
+      `这是平台固定的私密模型（${fixed}），不能删除；请先在后台「固定私密模型」里换一个再删`,
+      { status: 409, details: { fixedPrivate: fixed } },
+    );
+  }
+
   async delete(adminId: string, modelKeys: readonly string[]): Promise<ModelDeletionImpact> {
     const keys = [...new Set(modelKeys)];
+    await this.assertNotFixedPrivate(keys);
     const counted = await this.database.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock($1)', [CATALOG_LOCK_KEY]);
+      await this.assertNotFixedPrivate(keys, tx.db);
       await tx.db
         .select({ modelKey: modelCatalog.modelKey })
         .from(modelCatalog)

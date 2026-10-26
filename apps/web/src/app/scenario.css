@@ -1,0 +1,39 @@
+/*
+ * 情景模式专用：聊天头部模式徽标与昵称省略。
+ * 只新增这两类规则，不改滚动容器 / 会话列表的既有样式。
+ */
+.scenario-mode-badge {
+  flex: none;
+  max-width: 6em;
+  overflow: hidden;
+  padding: 1px 6px;
+  border-radius: var(--wb-radius-full);
+  background: var(--wb-color-bg-surface);
+  box-shadow: 0 0 0 0.5px var(--wb-color-border-hairline);
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-caption2);
+  font-weight: var(--wb-font-weight-medium);
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scenario-mode-badge.private {
+  color: var(--wb-color-brand-accent);
+}
+
+/* 徽标出现后标题行改成 flex：长昵称只压缩昵称本身，不挤掉右侧按钮。 */
+.wx-chat-title h1 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  gap: 4px;
+}
+
+.wx-chat-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

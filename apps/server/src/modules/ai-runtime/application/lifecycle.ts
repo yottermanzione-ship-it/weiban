@@ -2,9 +2,12 @@ import { Inject, Injectable, type OnModuleInit, type OnApplicationBootstrap } fr
 import { and, eq, inArray } from 'drizzle-orm';
 import { type ChatReadPort, type ContactsReadPort } from '@weiban/contracts';
 import {
+  CHARACTER_PURGE_REGISTRY,
   EVENT_BUS,
   JOB_QUEUE,
   USER_DATA_REGISTRY,
+  type CharacterPurgeRegistry,
+  type DbTx,
   type EventBus,
   type JobQueue,
   type UserDataRegistry,
@@ -108,6 +111,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     @Inject(EVENT_BUS) readonly bus: EventBus,
     @Inject(JOB_QUEUE) readonly jobs: JobQueue,
     @Inject(USER_DATA_REGISTRY) readonly registry: UserDataRegistry,
+    @Inject(CHARACTER_PURGE_REGISTRY) readonly purgeRegistry: CharacterPurgeRegistry,
     @Inject(CHAT_READ_PORT) readonly chat: ChatReadPort,
     @Inject(CONTACTS_READ_PORT) readonly contacts: ContactsReadPort,
     @Inject(MediaAiService) readonly mediaAi: MediaAiService,
@@ -130,6 +134,10 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       module: 'ai_runtime',
       purgeUser: (id) => this.store.purgeUser(id),
       countUserData: (id) => this.store.countUserData(id),
+    });
+    this.purgeRegistry.register({
+      module: 'ai_runtime',
+      purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
     });
     await this.jobs.work<{ planId: string }>(
       GENERATE_REPLY_JOB,
@@ -813,5 +821,63 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         await this.jobs.send('ai.recover_replies', {}, { tx, retryLimit: 10, retryBackoff: true });
       },
     });
+  }
+
+  /** 后台彻底删除角色：清空 ai_runtime 中按 character_id 归属的运行时数据。 */
+  private async purgeCharacter(tx: DbTx, characterId: string): Promise<void> {
+    for (const table of [
+      'adult_boundary_states',
+      'call_attempts',
+      'call_memory_jobs',
+      'character_self_reports',
+      'companion_settings',
+      'daily_events',
+      'ecology_character_settings',
+      'ecology_profiles',
+      'ecology_runs',
+      'group_invites',
+      'memories',
+      'memory_states',
+      'moment_card_attempts',
+      'moments_plans',
+      'mood_states',
+      'pending_anniversary_letters',
+      'pet_proposals',
+      'private_digests',
+      'proactive_plans',
+      'public_moment_drafts',
+      'quirk_actions',
+      'reply_plans',
+      'shared_episode_months',
+      'shared_episode_states',
+      'shared_episodes',
+      'simulation_states',
+      'weibo_items',
+      'weibo_sync_states',
+    ]) {
+      const column = table === 'group_invites' ? 'inviter_character_id' : 'character_id';
+      await tx.query(`DELETE FROM ai_runtime.${table} WHERE ${column} = $1`, [characterId]);
+    }
+    await tx.query(
+      'DELETE FROM ai_runtime.card_referrals WHERE character_id = $1 OR referrer_character_id = $1',
+      [characterId],
+    );
+    await tx.query(
+      'DELETE FROM ai_runtime.joint_events WHERE character_a_id = $1 OR character_b_id = $1',
+      [characterId],
+    );
+    // 用户级 / 历史记录保留：只去掉角色引用。
+    await tx.query(
+      'UPDATE ai_runtime.health_care_ledger SET character_id = NULL WHERE character_id = $1',
+      [characterId],
+    );
+    await tx.query(
+      'UPDATE ai_runtime.planning_decisions SET character_id = NULL WHERE character_id = $1',
+      [characterId],
+    );
+    await tx.query(
+      'UPDATE ai_runtime.group_self_chats SET starter_character_id = NULL WHERE starter_character_id = $1',
+      [characterId],
+    );
   }
 }

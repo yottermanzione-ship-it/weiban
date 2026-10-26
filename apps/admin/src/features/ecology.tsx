@@ -18,6 +18,7 @@ import { DataTable, type ProColumns } from '../ui/table.js';
 import { FieldHelp, FormSection, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
+import { UserIdentity, useUserDirectory } from './users/identity.js';
 
 const LEVELS = [
   ['occasional', '偶尔冒泡'],
@@ -154,13 +155,15 @@ function EcologyConfigTab() {
         {error && <Alert type="error" showIcon message={error} />}
         <Form<EcologyConfig> form={form} layout="vertical" style={{ maxWidth: 720 }}>
           <FormSection
-            title="决策模型"
-            desc="角色「想一想」用哪个模型；建议选便宜、会输出 JSON 的模型。"
+            title="决策模型（Gate）"
+            desc="唯一动作开关：只对候选动作回答是/否，不写正文、状态签名或碎碎念；正文由用户自己的场景模型执行。"
           />
           <Form.Item
             name="decisionModelKey"
             extra={
-              <FieldHelp>不配置 = 生态不运行，不会改用用户的聊天模型。按用户积分计费。</FieldHelp>
+              <FieldHelp>
+                不配置 = 生态不运行；不会改用用户聊天模型。按用户积分计费。Jev 只在此处配置。
+              </FieldHelp>
             }
           >
             <Select
@@ -230,6 +233,8 @@ function EcologyConfigTab() {
 }
 
 function EcologyRunsTab() {
+  // 运行记录接口只返回 userId（ai-runtime 提供），这里用后台账号目录一次批量补昵称。
+  const directory = useUserDirectory();
   const [userId, setUserId] = useState('');
   const [status, setStatus] = useState<EcologyRunStatus | undefined>();
   const [applied, setApplied] = useState<{ userId: string; status?: EcologyRunStatus }>({
@@ -271,8 +276,15 @@ function EcologyRunsTab() {
     { title: '时间', width: 150, render: (_, r) => formatDateTime(r.scheduledAt) },
     {
       title: '用户',
-      width: 120,
-      render: (_, r) => <span className="cell-sub">{r.userId.slice(0, 8)}</span>,
+      width: 150,
+      render: (_, r) => (
+        <UserIdentity
+          compact
+          userId={r.userId}
+          label={directory.byId.get(r.userId)}
+          deleted={!directory.loading && !directory.error && !directory.byId.has(r.userId)}
+        />
+      ),
     },
     {
       title: '角色',

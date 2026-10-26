@@ -10,8 +10,12 @@ import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { and, count, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { MediaSystemPort } from '@weiban/contracts';
 import {
+  AppError,
+  CHARACTER_PURGE_REGISTRY,
   JOB_QUEUE,
   USER_DATA_REGISTRY,
+  type CharacterPurgeRegistry,
+  type DbTx,
   type JobQueue,
   type UserDataRegistry,
 } from '../../../platform/index.js';
@@ -45,6 +49,7 @@ export class PlazaLifecycle implements OnModuleInit {
     @Inject(PlazaService) private readonly plaza: PlazaService,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
+    @Inject(CHARACTER_PURGE_REGISTRY) private readonly purgeRegistry: CharacterPurgeRegistry,
     @Inject(MEDIA_SYSTEM_PORT) private readonly media: MediaSystemPort,
     @Inject(RoleRequestService) private readonly roleRequests: RoleRequestService,
   ) {}
@@ -55,12 +60,58 @@ export class PlazaLifecycle implements OnModuleInit {
       purgeUser: (userId) => this.purgeUser(userId),
       countUserData: (userId) => this.countUserData(userId),
     });
+    this.purgeRegistry.register({
+      module: 'plaza',
+      assertAllowed: (characterId) => this.assertCharacterPurgeAllowed(characterId),
+      purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
+    });
     await this.jobs.work(PLAZA_DRAFT_SWEEP_JOB, () => this.sweepDrafts());
     await this.jobs.schedule(PLAZA_DRAFT_SWEEP_JOB, '23 * * * *');
     await this.jobs.work(PLAZA_ROLE_REQUEST_FEE_SWEEP_JOB, async () => {
       await this.roleRequests.sweepFees();
     });
     await this.jobs.schedule(PLAZA_ROLE_REQUEST_FEE_SWEEP_JOB, '*/10 * * * *');
+  }
+
+  /**
+   * 用户已发布的「预设改版」作品脱离预设角色后无法继续应用，不静默删除用户作品：
+   * 有引用时拒绝彻底删除，提示管理员先在角色广场处理。
+   */
+  async assertCharacterPurgeAllowed(characterId: string): Promise<void> {
+    const [row] = await this.store.db.db
+      .select({ n: count() })
+      .from(works)
+      .where(and(eq(works.kind, 'preset_variant'), eq(works.sourceCharacterId, characterId)));
+    const blockingWorks = row?.n ?? 0;
+    if (blockingWorks > 0)
+      throw new AppError(
+        'conflict',
+        `还有 ${blockingWorks} 个用户发布的预设改版作品基于这个角色，彻底删除会让这些作品无法继续使用。请先在「角色广场」下架或删除这些作品，再回来彻底删除。`,
+        { details: { blockingWorks } },
+      );
+  }
+
+  /** 后台彻底删除角色：官方点赞 / 评论、应用记录、制作申请、发布草稿。作品由上面的检查保护。 */
+  private async purgeCharacter(tx: DbTx, characterId: string): Promise<void> {
+    await tx.query('DELETE FROM plaza.official_likes WHERE character_id = $1', [characterId]);
+    await tx.query(
+      `UPDATE plaza.official_comments
+          SET reply_to_comment_id = NULL
+        WHERE reply_to_comment_id IN (
+          SELECT id FROM plaza.official_comments WHERE character_id = $1
+        )`,
+      [characterId],
+    );
+    await tx.query('DELETE FROM plaza.official_comments WHERE character_id = $1', [characterId]);
+    await tx.query('DELETE FROM plaza.adoptions WHERE character_id = $1', [characterId]);
+    await tx.query('UPDATE plaza.role_requests SET character_id = NULL WHERE character_id = $1', [
+      characterId,
+    ]);
+    await tx.query(
+      `DELETE FROM plaza.publish_drafts
+        WHERE source->>'presetCharacterId' = $1 OR source->>'characterId' = $1`,
+      [characterId],
+    );
   }
 
   async sweepDrafts(): Promise<void> {

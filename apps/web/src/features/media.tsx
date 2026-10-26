@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { memo, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
   ImageBroken,
   LinkSimple,
@@ -22,7 +21,8 @@ import {
 } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
 import { api } from '../data/client.js';
-import { useRemote, friendlyError } from '../data/use-remote.js';
+import { friendlyError } from '../data/use-remote.js';
+import { CachedImage, forgetPicture, useMediaLink } from './avatar-cache.js';
 import { useUpdates } from '../data/updates.js';
 import { showToast } from './toast.js';
 
@@ -49,22 +49,35 @@ function boxSize(width: number | null, height: number | null, max = 150, min = 8
   };
 }
 
-export function MediaImg({
+export const MediaImg = memo(function MediaImg({
   mediaId,
   thumbnail = true,
   alt = '',
   className,
+  cache = true,
 }: {
   mediaId: string;
   thumbnail?: boolean;
   alt?: string;
   className?: string;
+  /** 大图查看器传 false：不把原图字节留在内存里。 */
+  cache?: boolean;
 }) {
-  const media = useRemote(MediaEndpoints.getMedia, { params: { mediaId } });
+  // 链接按 mediaId 缓存（有效期 5 分钟），重挂载不再重新取链接、也不再换一个签名。
+  // 原图（可能是旧版 MP4）在链接没带 mimeType 时先取一次元信息，别把视频当图片画。
+  const { link, error, reload } = useMediaLink(mediaId, undefined, {
+    networkOnly: false,
+    needMetadata: !thumbnail,
+  });
   const [broken, setBroken] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const url = thumbnail ? (media.data?.thumbnailUrl ?? media.data?.url) : media.data?.url;
-  if (broken || (media.error && !media.data))
+  const [attempt, setAttempt] = useState(0);
+  const variant = thumbnail ? 't' : 'o';
+  const mediaKey = `${variant}:${mediaId}`;
+  const url = thumbnail ? (link?.thumbnailUrl ?? link?.url) : link?.url;
+  // 缩略图一定是图；只有原图才需要先确认类型（hint / 旧缓存可能没有 mimeType）。
+  const kindUnknown = !thumbnail && Boolean(url) && !link?.mimeType;
+  const legacyVideo = !thumbnail && link?.mimeType === 'video/mp4';
+  if (broken || (error && (!url || kindUnknown)))
     return (
       <button
         type="button"
@@ -72,8 +85,10 @@ export function MediaImg({
         aria-label="图片损坏，点击重新加载"
         onClick={(event) => {
           event.stopPropagation();
+          forgetPicture(mediaKey);
           setBroken(false);
-          media.refresh();
+          setAttempt((value) => value + 1);
+          reload();
         }}
       >
         <ImageBroken size={24} aria-hidden />
@@ -81,20 +96,38 @@ export function MediaImg({
     );
   return (
     <span className={`media-frame ${className ?? ''}`}>
-      {url && (
-        <img
-          src={url}
-          alt={alt}
-          loading="lazy"
-          decoding="async"
-          className={loaded ? 'loaded' : ''}
-          onLoad={() => setLoaded(true)}
-          onError={() => setBroken(true)}
-        />
-      )}
+      {url &&
+        !kindUnknown &&
+        (legacyVideo ? (
+          <video
+            src={url}
+            poster={link?.thumbnailUrl ?? undefined}
+            controls
+            playsInline
+            preload="metadata"
+            aria-label="旧视频"
+            style={{ maxWidth: '90vw', maxHeight: '80vh', objectFit: 'contain' }}
+            onClick={(event) => event.stopPropagation()}
+            onTouchStart={(event) => event.stopPropagation()}
+            onTouchEnd={(event) => event.stopPropagation()}
+            onError={() => setBroken(true)}
+          />
+        ) : (
+          <CachedImage
+            key={`${mediaKey}:${attempt}`}
+            mediaKey={mediaKey}
+            url={url}
+            alt={alt}
+            fade
+            // 缩略图第一次出现可以慢慢加载；大图和表情立刻取。
+            eager={!thumbnail}
+            cache={cache}
+            onBroken={() => setBroken(true)}
+          />
+        ))}
     </span>
   );
-}
+});
 
 export function ImageBubble({
   content,
@@ -272,7 +305,13 @@ export function ImageViewer({
           setMenu(true);
         }}
       >
-        <MediaImg key={mediaId} mediaId={mediaId} thumbnail={false} className="viewer-image" />
+        <MediaImg
+          key={mediaId}
+          mediaId={mediaId}
+          thumbnail={false}
+          className="viewer-image"
+          cache={false}
+        />
       </div>
       {current > 0 && (
         <button
@@ -576,6 +615,38 @@ export function useTranscript(mediaId: string, enabled: boolean) {
   return value;
 }
 
+/**
+ * 旧版语音波纹（Flutter `_VoiceWavePainter`）：22×18，x=18% 处一个实心圆点，
+ * 再画半径 4.5 / 8.7 / 12.9 的三段同心圆弧，线宽 1.8、圆头，
+ * 从 -0.75 弧度起顺时针跨 1.5 弧度。
+ */
+const VOICE_WAVE_ARCS = [4.5, 8.7, 12.9].map((radius) => {
+  const cx = 22 * 0.18;
+  const cy = 18 / 2;
+  const dx = radius * Math.cos(0.75);
+  const dy = radius * Math.sin(0.75);
+  const x = (cx + dx).toFixed(2);
+  return {
+    radius,
+    path: `M ${x} ${(cy - dy).toFixed(2)} A ${radius} ${radius} 0 0 1 ${x} ${(cy + dy).toFixed(2)}`,
+  };
+});
+
+function VoiceWaveIcon() {
+  return (
+    <span className="wx-voice-wave" aria-hidden>
+      <svg viewBox="0 0 22 18" width="22" height="18" focusable="false">
+        <circle cx="3.96" cy="9" r="1.6" fill="currentColor" />
+        <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          {VOICE_WAVE_ARCS.map(({ radius, path }, index) => (
+            <path key={radius} className={`wx-voice-arc wx-voice-arc-${index + 1}`} d={path} />
+          ))}
+        </g>
+      </svg>
+    </span>
+  );
+}
+
 export function VoiceBubble({
   message,
   next,
@@ -595,6 +666,7 @@ export function VoiceBubble({
   const seconds = Math.max(1, Math.round(content.durationMs / 1000));
   // 宽 = 86 + 秒数（1–30 截断）× 4，最小 108、最大 220（4.4.5）。
   const width = Math.max(108, Math.min(220, 86 + Math.min(30, seconds) * 4));
+  const label = failed ? '重试' : `${seconds}''`;
   const text = content.transcript
     ? content.transcript
     : transcript?.status === 'ready'
@@ -607,16 +679,20 @@ export function VoiceBubble({
           type="button"
           className={`wx-bubble wx-voice ${mine ? 'mine' : ''} ${playing ? 'playing' : ''} ${failed ? 'failed' : ''}`}
           style={{ width }}
-          aria-label={`语音 ${seconds} 秒，${playing ? '暂停' : '播放'}`}
+          aria-label={`语音 ${seconds} 秒，${failed ? '重试' : playing ? '暂停' : '播放'}`}
           onClick={() => void player.play(message, next)}
         >
-          <span className="wx-voice-wave" aria-hidden>
-            <i />
-            <i />
-            <i />
-          </span>
-          <span className="wx-voice-len numeric">{seconds}&apos;&apos;</span>
-          {failed && <span className="wx-voice-retry">重试</span>}
+          {mine ? (
+            <>
+              <span className="wx-voice-len numeric">{label}</span>
+              <VoiceWaveIcon />
+            </>
+          ) : (
+            <>
+              <VoiceWaveIcon />
+              <span className="wx-voice-len numeric">{label}</span>
+            </>
+          )}
         </button>
         {unplayed && <span className="red-dot voice-dot" aria-label="未播放" />}
       </span>
@@ -777,138 +853,5 @@ export function HoldToTalk({
   );
 }
 
-// ---------- 表情面板（4.4.11） ----------
-
-export function StickerPanel({
-  onPick,
-}: {
-  onPick(sticker: {
-    stickerId: string;
-    source: 'library' | 'user';
-    mediaId: string;
-    description: string | null;
-  }): void;
-}) {
-  const packs = useRemote(StickerEndpoints.listPacks);
-  const mine = useRemote(StickerEndpoints.listMyStickers);
-  const [tab, setTab] = useState<string>('preset');
-  useUpdates((update) => {
-    if (
-      update.type === 'data.changed' &&
-      (update.data as { section?: string } | undefined)?.section === 'stickers'
-    ) {
-      mine.refresh();
-      packs.refresh();
-    }
-  });
-  const firstPack =
-    packs.data?.items.find((p) => p.name === '微伴预设表情') ?? packs.data?.items[0];
-  const activeTab = tab === 'preset' ? (firstPack?.packId ?? 'mine') : tab;
-  const showingMine = activeTab === 'mine';
-  const selectedRemote = showingMine ? mine : packs;
-  const pack = packs.data?.items.find((p) => p.packId === activeTab);
-  const builtIn = ['wechat/heart', 'wechat/star'];
-  return (
-    <div className="wx-sticker">
-      <div className="wx-sticker-tabs" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-label="我添加的表情"
-          aria-selected={activeTab === 'mine'}
-          onClick={() => setTab('mine')}
-        >
-          <OldIcon name="wechat/smile" size={22} />
-        </button>
-        {packs.data?.items.map((p, index) => (
-          <button
-            key={p.packId}
-            type="button"
-            role="tab"
-            aria-label={p.name}
-            aria-selected={activeTab === p.packId}
-            onClick={() => setTab(p.packId)}
-          >
-            {p.stickers[0] && index >= builtIn.length ? (
-              <img src={p.stickers[0].url} alt="" loading="lazy" decoding="async" />
-            ) : (
-              <OldIcon name={builtIn[index] ?? 'wechat/star'} size={20} />
-            )}
-          </button>
-        ))}
-        <Link className="wx-sticker-tab-link" to="/sticker-store" aria-label="表情商店">
-          <OldIcon name="wechat/add" size={20} />
-        </Link>
-        <Link className="wx-sticker-tab-link end" to="/me/stickers" aria-label="我添加的表情">
-          <OldIcon name="wechat/more" size={20} />
-        </Link>
-      </div>
-      <div className="wx-sticker-body">
-        {showingMine && <p className="wx-sticker-caption">添加的单个表情</p>}
-        <div className="wx-sticker-grid">
-          {showingMine && (
-            <Link className="wx-sticker-cell add" to="/me/stickers" aria-label="添加表情">
-              <OldIcon name="wechat/add" size={28} />
-            </Link>
-          )}
-          {showingMine &&
-            mine.data?.items.map((s) => (
-              <button
-                key={s.stickerId}
-                type="button"
-                className="wx-sticker-cell"
-                onClick={() =>
-                  onPick({
-                    stickerId: s.stickerId,
-                    source: 'user',
-                    mediaId: s.mediaId,
-                    description: null,
-                  })
-                }
-              >
-                <img src={s.url} alt="表情" loading="lazy" decoding="async" />
-              </button>
-            ))}
-          {pack?.stickers.map((s) => (
-            <button
-              key={s.stickerId}
-              type="button"
-              className="wx-sticker-cell"
-              aria-label={s.description}
-              onClick={() =>
-                onPick({
-                  stickerId: s.stickerId,
-                  source: 'library',
-                  mediaId: s.mediaId,
-                  description: s.description,
-                })
-              }
-            >
-              <img src={s.url} alt={s.description} loading="lazy" decoding="async" />
-            </button>
-          ))}
-        </div>
-        {selectedRemote.loading && !selectedRemote.data && (
-          <p className="wx-sticker-caption center" role="status">
-            加载中…
-          </p>
-        )}
-        {(packs.error || (showingMine && mine.error)) && (
-          <div className="hint center" role="alert">
-            <p>{packs.error ? '表情包加载失败' : '个人表情加载失败'}</p>
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => {
-                if (packs.error) packs.refresh();
-                if (mine.error) mine.refresh();
-              }}
-            >
-              重试
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+// 表情面板与消息媒体共用原导出入口。
+export { StickerPanel } from './sticker-panel.js';
