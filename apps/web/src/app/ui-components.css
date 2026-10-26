@@ -307,6 +307,25 @@
 .sound-play:active {
   background: var(--ui-fill-1);
 }
+/* 对话框里的输入（注销输密码） */
+.dialog .dialog-form {
+  display: grid;
+  gap: var(--wb-space-3);
+  margin-top: var(--wb-space-2);
+  text-align: left;
+}
+.dialog .dialog-form input {
+  width: 100%;
+}
+/* 角色试聊面板 */
+.trial-sheet {
+  padding: var(--wb-space-4) var(--wb-space-5) calc(env(safe-area-inset-bottom) + var(--wb-space-4));
+}
+.trial-sheet .trial-messages {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+}
 /* 对话框里的说明清单 */
 .dialog .dialog-list {
   margin: 0;
