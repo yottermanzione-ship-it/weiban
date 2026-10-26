@@ -48,6 +48,7 @@ import {
   Sheet,
 } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
+import { SubPageLayer } from './edit-page.js';
 
 /** 拼音首字母分组：用中文排序规则和每个字母的边界字比较（浏览器自带，不引第三方库）。 */
 const letterBounds = '阿八嚓哒妸发旮哈讥咔垃痳拏噢妑七呥扨它穵夕丫帀'.split('');
@@ -837,11 +838,20 @@ export function CharacterPage({
       )}
       <MenuGroup>
         {!onboarding && active && <MenuRow to={`/characters/${characterId}/cards`} label="卡册" />}
-        <MenuRow
-          label="简介"
-          subtitle={data?.intro || data?.tagline || undefined}
-          onClick={() => setSheet('intro')}
-        />
+        {/* U4：「简介」弹层 → 整页人设卡「TA 的人设」（引导页里不离开当前页，仍用弹层） */}
+        {onboarding ? (
+          <MenuRow
+            label="简介"
+            subtitle={data?.intro || data?.tagline || undefined}
+            onClick={() => setSheet('intro')}
+          />
+        ) : (
+          <MenuRow
+            label="TA 的人设"
+            subtitle={data?.tagline || data?.intro || undefined}
+            to={`/characters/${characterId}/persona`}
+          />
+        )}
         {!onboarding && active && data?.kind === 'custom' && (
           <RelationsRow characterId={characterId} />
         )}
@@ -913,38 +923,36 @@ export function CharacterPage({
       {data?.showPublicSourceNotice && (
         <p className="hint page-note">本角色根据公开资料创作，不代表本人</p>
       )}
+      {/* U2：申请添加朋友改整页二级页面（微信同款），右上「发送」 */}
       {sheet === 'greet' && (
-        <Sheet
+        <SubPageLayer
           title="申请添加朋友"
-          onClose={() => setSheet(null)}
-          closeLabel="取消"
-          action={
-            <button
-              type="button"
-              className="small-primary primary"
-              disabled={pending}
-              onClick={() => void add()}
-            >
-              发送
-            </button>
-          }
+          doneLabel="发送"
+          canSave
+          pending={pending}
+          onSave={() => void add()}
+          onCancel={() => setSheet(null)}
         >
-          <div className="field-sheet">
-            <p className="hint">发送添加朋友申请</p>
+          <h2 className="edit-section">发送添加朋友申请</h2>
+          <div className="edit-input-row">
             <input
               ref={greetInput}
+              aria-label="发送添加朋友申请"
               value={greeting}
               maxLength={50}
               placeholder="打个招呼吧"
+              disabled={pending}
               onChange={(event) => setGreeting(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing && !pending) void add();
+              }}
             />
           </div>
-        </Sheet>
+        </SubPageLayer>
       )}
+      {/* U2：点头像直接弹出 拍照 / 从相册选择 / 恢复默认头像 的 Action Sheet */}
       {sheet === 'avatar' && contact && (
-        <Sheet title="设置头像" onClose={() => setSheet(null)} closeLabel="取消">
-          <ContactAvatarEditor characterId={characterId} titled={false} prominentPicker />
-        </Sheet>
+        <ContactAvatarEditor characterId={characterId} sheet onClose={() => setSheet(null)} />
       )}
       {sheet === 'intro' && data && (
         <Sheet title="简介" onClose={() => setSheet(null)}>
@@ -983,7 +991,7 @@ export function CharacterPage({
           title="恢复好友"
           actions={[
             { label: '重新认识', onClick: () => void add('fresh') },
-            { label: '恢复旧记录', primary: true, onClick: () => void add('restore') },
+            { label: '恢复旧记录', tone: 'primary', onClick: () => void add('restore') },
           ]}
         >
           <p>之前删除过这位角色，选择恢复旧记录或重新认识</p>

@@ -12,6 +12,7 @@ import {
   PLAZA_COMMENT_MAX_CHARS,
   PlazaEndpoints,
   UserCustomEndpoints,
+  VoiceEndpoints,
   type PlazaAuthor,
   type PlazaComment,
   type PlazaNotice,
@@ -21,7 +22,14 @@ import {
   type PlazaWorkDetail,
   type PrivacyKind,
 } from '@weiban/contracts';
-import { ApiFailure, avatarLetters, avatarPaletteIndex } from '@weiban/client-core';
+import {
+  ApiFailure,
+  avatarLetters,
+  avatarPaletteIndex,
+  basisWord,
+  personaValue,
+} from '@weiban/client-core';
+import { PersonaCard, VoiceSampleButton } from './persona-card.js';
 import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
@@ -29,8 +37,8 @@ import { useUpdates } from '../data/updates.js';
 import { uploadMedia, prepareImage } from '../data/upload.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { VirtualList } from './virtual-list.js';
-import { Dialog, showToast } from './toast.js';
-import { Sheet } from './shell-kit.js';
+import { AlertDialog, Dialog, showSnackbar, showToast } from './toast.js';
+import { ActionSheet, Sheet } from './shell-kit.js';
 
 /*
  * 人设广场（PLZ-01～PLZ-07；设计 persona-plaza.md；契约 PlazaEndpoints）。
@@ -181,7 +189,7 @@ function KindTag({ work, highlight = false }: { work: PlazaWorkCard; highlight?:
         预设改版 · 基于 {work.basedOnPresetName ?? '预设角色'}
       </span>
     );
-  return <span className="tag neutral">{basisNames[work.basis ?? ''] ?? '自定义'}</span>;
+  return <span className="tag neutral">{basisWord(work.basis) || '自定义'}</span>;
 }
 function PageHeader({ title, right }: { title: ReactNode; right?: ReactNode }) {
   const navigate = useNavigate();
@@ -458,25 +466,55 @@ function WorkList({
   );
 }
 
+/**
+ * U4 广场列表卡片（26 号 §3.2）：头像、名字、一句话简介、2–3 个标签、热度；不放长描述。
+ * 作品列表接口不带角色标签（契约 PlazaWorkCard 无 tags），标签位先放类型词（原创 / 作品角色 / 预设改版）。
+ */
 function WorkRow({ work, search }: { work: PlazaWorkCard; search?: string }) {
   const hit = !!search && !!work.basedOnPresetName?.includes(search);
   return (
-    <Link to={`/plaza/works/${work.workId}`} className="work-row">
-      <WorkAvatar work={work} />
-      <span className="work-row-main">
-        <span className="work-row-title">
-          <span className="clamp-2">{work.name}</span>
+    <Link to={`/plaza/works/${work.workId}`} className="plaza-card">
+      <WorkAvatar work={work} size={52} />
+      <span className="plaza-card-main">
+        <span className="plaza-card-name">{work.name}</span>
+        {work.tagline && <small className="plaza-card-tagline">{work.tagline}</small>}
+        <span className="plaza-card-tags">
           <KindTag work={work} highlight={hit} />
-        </span>
-        <small className="hint">{work.tagline}</small>
-        <span className="work-row-meta">
-          {authorName(work.author)}
-          {work.adoptCount > 0 ? ` · 添加 ${work.adoptCount}` : ''}
-          {work.likeCount > 0 ? ` · 赞 ${work.likeCount}` : ''}
+          <span className="plaza-card-author">{authorName(work.author)}</span>
         </span>
       </span>
-      <span className="work-row-side">{work.adoptedByMe ? '已添加' : ''}</span>
+      <PlazaHeat
+        label="人添加"
+        count={work.adoptCount}
+        note={work.adoptedByMe ? '已添加' : undefined}
+      />
     </Link>
+  );
+}
+
+/** 列表卡片右侧的热度：数字 + 单位，为 0 时不显示数字。 */
+export function PlazaHeat({
+  count,
+  label,
+  icon,
+  note,
+}: {
+  count: number;
+  label?: string;
+  icon?: ReactNode;
+  note?: string;
+}) {
+  return (
+    <span className="plaza-card-side">
+      {count > 0 && (
+        <span className="plaza-heat">
+          {icon}
+          <b>{count}</b>
+          {label}
+        </span>
+      )}
+      {note && <small>{note}</small>}
+    </span>
   );
 }
 
@@ -593,6 +631,7 @@ export function WorkPage() {
   const [pending, setPending] = useState(false);
   const [adoptedCharacter, setAdoptedCharacter] = useState<string | null>(null);
   const { state: chat, synchronize } = useChat();
+  const voices = useRemote(VoiceEndpoints.listVoices, { networkOnly: true });
   useEffect(() => {
     let active = true;
     setState((s) => (s === 'ready' ? s : 'loading'));
@@ -714,14 +753,18 @@ export function WorkPage() {
         );
         showToast(open ? '已开启评论' : '已关闭评论');
       } else if (action === 'unlist') {
+        // U2：下架可撤销（重新上架接口）——不再二次确认，底部撤销条
         setWork(await api.call(PlazaEndpoints.unlistWork, { params: { workId } }));
-        showToast('已下架');
+        showSnackbar({
+          text: '已下架，广场上看不到这个作品了',
+          onAction: () => manage('relist'),
+        });
       } else if (action === 'relist') {
         setWork(await api.call(PlazaEndpoints.relistWork, { params: { workId } }));
         showToast('已重新上架');
       } else {
         await api.call(PlazaEndpoints.deleteWork, { params: { workId } });
-        showToast('已删除');
+        showToast('已删除作品');
         navigate('/plaza/me', { replace: true });
       }
     } catch (e) {
@@ -749,8 +792,14 @@ export function WorkPage() {
   }
 
   const removedByAdmin = w.status === 'removed_by_admin';
+  const voiceName = w.snapshot.kind === 'custom_character' ? w.snapshot.voiceName : null;
+  const adoptedId = adoptedCharacter ?? w.myAdoptedCharacterId ?? null;
+  const adoptedContact = adoptedId ? chat.contacts.find((c) => c.characterId === adoptedId) : null;
+  const voiceSample = voiceName
+    ? voices.data?.items.find((v) => v.enabled && v.name === voiceName)?.sampleUrl
+    : null;
   return (
-    <main>
+    <main className="work-page">
       <PageHeader
         title=""
         right={
@@ -759,102 +808,144 @@ export function WorkPage() {
           </button>
         }
       />
-      <div className="work-header">
-        <WorkAvatar work={w} size={64} />
-        <h2>{w.name}</h2>
-        <KindTag work={w} />
-        <p>{w.tagline}</p>
-        {w.remixOf && (
-          <small className="hint">
-            改编自《
-            {w.remixOf.available ? (
-              <Link to={`/plaza/works/${w.remixOf.workId}`}>{w.remixOf.name}</Link>
-            ) : (
-              w.remixOf.name
-            )}
-            》· 原作者 {w.remixOf.authorNickname}
-          </small>
-        )}
-        {w.author.deleted ? (
-          <span>已注销用户</span>
-        ) : (
-          <Link to={`/plaza/authors/${w.author.authorId}`} className="role-row">
-            <PlazaAvatar
-              id={w.author.authorId}
-              name={w.author.nickname}
-              url={w.author.avatarUrl}
-              size={24}
-            />
-            {w.author.nickname} ›
-          </Link>
-        )}
-        <button className="text-button" onClick={() => setSheet('versions')}>
-          版本 {w.currentVersion} · {dateText(latest.createdAt)}更新
-        </button>
-        {w.isMine && w.status !== 'listed' && (
-          <span className="tag danger">
-            {removedByAdmin ? '被管理员下架' : w.status === 'author_banned' ? '暂不展示' : '已下架'}
-          </span>
-        )}
-      </div>
-      {w.settings.publishNote && (
-        <>
-          <h2 className="section-label">发布说明</h2>
-          <p className="panel">{w.settings.publishNote}</p>
-        </>
-      )}
-      <h2 className="section-label">你将得到的内容</h2>
-      <ContentPreview
-        snapshot={w.snapshot}
-        renderText={(_, text) => <MaskedPublic text={text} />}
-      />
-      <p className="hint">ⓘ 只复制上面这些内容；作者的聊天记录、记忆和个人资料不会出现在广场上</p>
-      <Comments work={w} onCount={(n) => setWork((p) => (p ? { ...p, commentCount: n } : p))} />
-      <div className="work-action-bar">
-        <button
-          className="like-button"
-          aria-pressed={w.likedByMe}
-          aria-label={w.likedByMe ? '取消点赞' : '点赞'}
-          onClick={() => void toggleLike()}
-        >
-          <Heart size={20} weight={w.likedByMe ? 'fill' : 'regular'} /> {w.likeCount}
-        </button>
-        <span className="like-button">
-          <ChatCircle size={20} /> {w.commentCount}
-        </span>
-        <span className="grow" />
-        {!w.isMine && w.kind === 'custom_character' && w.myAdoptedCharacterId && (
-          <AdoptedUpdateButton characterId={w.myAdoptedCharacterId} workId={workId} />
-        )}
-        {w.isMine ? (
-          <button disabled={pending} onClick={() => setSheet('menu')}>
-            管理
-          </button>
-        ) : (adoptedCharacter ?? w.myAdoptedCharacterId) ? (
-          <Link className="plain" to={`/characters/${adoptedCharacter ?? w.myAdoptedCharacterId}`}>
-            已添加 · 去聊天
-          </Link>
-        ) : (
+      {/* U4：作品详情改用人设卡（26 号 §3.2 / §4）；管理收进右上「…」，点赞评论放标题区右侧 */}
+      <PersonaCard
+        source={{ kind: 'plaza', data: { work: w } }}
+        avatar={<WorkAvatar work={w} size={64} />}
+        renderText={(text) => <MaskedPublic text={text} />}
+        headAside={
           <>
             <button
-              className={w.kind === 'preset_variant' ? '' : 'primary'}
+              type="button"
+              className={`persona-count${w.likedByMe ? ' on' : ''}`}
+              aria-pressed={w.likedByMe}
+              aria-label={
+                w.likedByMe ? `取消点赞，${w.likeCount} 个赞` : `点赞，${w.likeCount} 个赞`
+              }
+              onClick={() => void toggleLike()}
+            >
+              <Heart size={20} weight={w.likedByMe ? 'fill' : 'regular'} />
+              {w.likeCount}
+            </button>
+            <button
+              className="persona-count"
+              type="button"
+              onClick={() =>
+                document
+                  .getElementById('work-comments')
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }
+              aria-label={`${w.commentCount} 条评论`}
+            >
+              <ChatCircle size={20} />
+              {w.commentCount}
+            </button>
+          </>
+        }
+        headExtra={
+          <>
+            {w.author.deleted ? (
+              <span>已注销用户</span>
+            ) : (
+              <Link to={`/plaza/authors/${w.author.authorId}`} className="persona-author">
+                <PlazaAvatar
+                  id={w.author.authorId}
+                  name={w.author.nickname}
+                  url={w.author.avatarUrl}
+                  size={20}
+                />
+                {w.author.nickname}
+              </Link>
+            )}
+            <button type="button" className="persona-version" onClick={() => setSheet('versions')}>
+              版本 {w.currentVersion} · {dateText(latest.createdAt)}更新
+            </button>
+            {w.isMine && w.status !== 'listed' && (
+              <span className="tag danger">
+                {removedByAdmin
+                  ? '被管理员下架'
+                  : w.status === 'author_banned'
+                    ? '暂不展示'
+                    : '已下架'}
+              </span>
+            )}
+          </>
+        }
+        intro={
+          w.settings.publishNote ? (
+            <section className="persona-section" aria-label="作者说明">
+              <h3 className="persona-section-title">作者说明</h3>
+              <p className="persona-text">{w.settings.publishNote}</p>
+            </section>
+          ) : undefined
+        }
+        asides={{ voice: <VoiceSampleButton url={voiceSample} name="音色" /> }}
+        renders={{
+          source: (value) =>
+            w.snapshot.kind === 'preset_variant' ? (
+              <Link to={`/characters/${w.snapshot.presetCharacterId}`}>
+                {personaValue.text(value)}
+              </Link>
+            ) : w.remixOf?.available ? (
+              <Link to={`/plaza/works/${w.remixOf.workId}`}>{personaValue.text(value)}</Link>
+            ) : (
+              personaValue.text(value)
+            ),
+        }}
+      />
+      <p className="hint page-note">
+        {w.snapshot.kind === 'custom_character' && '添加后分类与原作品相同，之后只能改得更严格。'}
+        只复制上面这些内容；作者的聊天记录、记忆和个人资料不会出现在广场上
+      </p>
+      <div id="work-comments">
+        <Comments work={w} onCount={(n) => setWork((p) => (p ? { ...p, commentCount: n } : p))} />
+      </div>
+      {!w.isMine && (
+        <div className="work-action-bar persona-action-bar">
+          {w.kind === 'custom_character' && w.myAdoptedCharacterId && (
+            <AdoptedUpdateButton characterId={w.myAdoptedCharacterId} workId={workId} />
+          )}
+          {adoptedId ? (
+            <Link
+              className="button primary"
+              to={
+                adoptedContact?.conversationId
+                  ? `/chat/${adoptedContact.conversationId}`
+                  : `/characters/${adoptedId}`
+              }
+            >
+              {adoptedContact?.conversationId ? '发消息' : '已添加 · 等待通过'}
+            </Link>
+          ) : w.kind === 'preset_variant' ? (
+            <>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => (w.adoptedByMe ? setDialog('adopted') : void adopt())}
+              >
+                添加为新角色
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={pending}
+                onClick={() => void apply(false)}
+              >
+                {presetContact ? `应用到我的 ${presetName}` : `添加 ${presetName} 并应用`}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="primary"
               disabled={pending}
               onClick={() => (w.adoptedByMe ? setDialog('adopted') : void adopt())}
             >
-              {pending
-                ? '正在添加…'
-                : w.kind === 'preset_variant'
-                  ? '添加为新角色'
-                  : '添加为我的角色'}
+              {pending ? '正在添加…' : '添加到通讯录'}
             </button>
-            {w.kind === 'preset_variant' && (
-              <button className="primary" disabled={pending} onClick={() => void apply(false)}>
-                {presetContact ? `应用到我的 ${presetName}` : `添加 ${presetName} 并应用`}
-              </button>
-            )}
-          </>
-        )}
-      </div>
+          )}
+        </div>
+      )}
       {sheet === 'versions' && (
         <Sheet title="版本记录" onClose={() => setSheet(null)}>
           <div className="stack">
@@ -871,46 +962,47 @@ export function WorkPage() {
           </div>
         </Sheet>
       )}
+      {/* U2：更多操作从「弹层里一列带边框按钮」改微信式 Action Sheet；点了先关面板，确认框不叠在面板上 */}
       {sheet === 'menu' && (
-        <Sheet title="更多操作" closeLabel="取消" onClose={() => setSheet(null)}>
-          <div className="stack">
-            {w.isMine ? (
-              <>
-                {!removedByAdmin && (
-                  <button onClick={() => void publishNewVersion()}>发布新版本</button>
-                )}
-                <button onClick={() => void manage('comments')}>
-                  {w.settings.commentsOpen ? '关闭评论' : '开启评论'}
-                </button>
-                {w.status === 'listed' && <button onClick={() => setDialog('unlist')}>下架</button>}
-                {w.status === 'unlisted_by_author' && (
-                  <button onClick={() => void manage('relist')}>重新上架</button>
-                )}
-                <button className="danger" onClick={() => setDialog('delete')}>
-                  删除作品
-                </button>
-              </>
-            ) : reportedTargets.has(`work:${workId}`) ? (
-              <button disabled>已举报</button>
-            ) : (
-              <Link className="plain" to={`/plaza/report?work=${workId}`}>
-                举报
-              </Link>
-            )}
-            {!w.isMine && (
-              <Link className="plain" to={`/support/new?targetType=plaza_work&targetId=${workId}`}>
-                向官方投诉
-              </Link>
-            )}
-          </div>
-        </Sheet>
+        <ActionSheet
+          onClose={() => setSheet(null)}
+          items={
+            w.isMine
+              ? [
+                  ...(!removedByAdmin
+                    ? [{ label: '发布新版本', onClick: () => void publishNewVersion() }]
+                    : []),
+                  {
+                    label: w.settings.commentsOpen ? '关闭评论' : '开启评论',
+                    onClick: () => void manage('comments'),
+                  },
+                  ...(w.status === 'listed'
+                    ? [{ label: '下架', onClick: () => void manage('unlist') }]
+                    : []),
+                  ...(w.status === 'unlisted_by_author'
+                    ? [{ label: '重新上架', onClick: () => void manage('relist') }]
+                    : []),
+                  { label: '删除作品', danger: true, onClick: () => setDialog('delete') },
+                ]
+              : [
+                  reportedTargets.has(`work:${workId}`)
+                    ? { label: '已举报', disabled: true, onClick: () => undefined }
+                    : { label: '举报', onClick: () => navigate(`/plaza/report?work=${workId}`) },
+                  {
+                    label: '向官方投诉',
+                    onClick: () =>
+                      navigate(`/support/new?targetType=plaza_work&targetId=${workId}`),
+                  },
+                ]
+          }
+        />
       )}
       {dialog === 'adopted' && (
         <Dialog
           title="你已添加过这个角色"
           actions={[
             { label: '取消', onClick: () => setDialog(null) },
-            { label: '再添加一份', primary: true, onClick: () => void adopt() },
+            { label: '再添加一份', tone: 'primary', onClick: () => void adopt() },
           ]}
         />
       )}
@@ -919,38 +1011,29 @@ export function WorkPage() {
           title="替换补充设定？"
           actions={[
             { label: '取消', onClick: () => setDialog(null) },
-            { label: '替换', primary: true, onClick: () => void apply(true) },
+            { label: '替换补充设定', tone: 'primary', onClick: () => void apply(true) },
           ]}
         >
           <p>将替换你现有的补充设定。你们的聊天记录、记忆和好感度都不会变</p>
         </Dialog>
       )}
       {dialog === 'full' && (
-        <Dialog title="通讯录已满" actions={[{ label: '知道了', onClick: () => setDialog(null) }]}>
+        <Dialog
+          title="通讯录已满"
+          actions={[{ label: '知道了', tone: 'primary', onClick: () => setDialog(null) }]}
+        >
           <p>通讯录已满 50 个角色，先删除一些再添加吧</p>
         </Dialog>
       )}
-      {dialog === 'unlist' && (
-        <Dialog
-          title="下架作品？"
-          actions={[
-            { label: '取消', onClick: () => setDialog(null) },
-            { label: '下架', primary: true, onClick: () => void manage('unlist') },
-          ]}
-        >
-          <p>下架后，广场上看不到这个作品，已经添加的人不受影响</p>
-        </Dialog>
-      )}
       {dialog === 'delete' && (
-        <Dialog
+        <AlertDialog
           title="删除作品？"
-          actions={[
-            { label: '取消', onClick: () => setDialog(null) },
-            { label: '删除', primary: true, onClick: () => void manage('delete') },
-          ]}
-        >
-          <p>作品和它的点赞、评论都会删除，不能恢复。已经添加的人不受影响</p>
-        </Dialog>
+          message="作品和它的点赞、评论都会删除，不能恢复。已经添加的人不受影响。"
+          confirmLabel="删除作品"
+          pending={pending}
+          onCancel={() => setDialog(null)}
+          onConfirm={() => void manage('delete')}
+        />
       )}
     </main>
   );
@@ -1855,7 +1938,7 @@ export function PublishPage() {
               { label: '取消', onClick: () => setConfirmKeep(null) },
               {
                 label: '这不是我的私人信息',
-                primary: true,
+                tone: 'primary',
                 onClick: () => {
                   setKept((prev) => [...prev, keepTarget.spanId]);
                   setConfirmKeep(null);
@@ -1872,17 +1955,19 @@ export function PublishPage() {
             </p>
           </Dialog>
         )}
+        {/* U2：只读说明改居中说明框（审计 #36） */}
         {neverSheet && (
-          <Sheet title="哪些内容不会发布" closeLabel="知道了" onClose={() => setNeverSheet(false)}>
-            <div className="stack">
-              <strong>这些内容永远不会发布</strong>
-              <ul>
-                {neverPublished.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          </Sheet>
+          <Dialog
+            title="这些内容永远不会发布"
+            onDismiss={() => setNeverSheet(false)}
+            actions={[{ label: '知道了', tone: 'primary', onClick: () => setNeverSheet(false) }]}
+          >
+            <ul className="dialog-list">
+              {neverPublished.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </Dialog>
         )}
       </main>
     );
@@ -2081,39 +2166,34 @@ function NewVersionSheet({
   }
   return (
     <>
-      <Sheet
-        title="作者发布了新版本"
-        closeDisabled={pending}
-        onClose={() => {
-          if (!pending) onClose(false);
-        }}
-      >
-        <div className="stack">
-          <strong>版本 {version}</strong>
-          {note && <p className="hint">更新说明：{note}</p>}
-          <small className="hint">你们的聊天记录、记忆、好感度都不会变</small>
-          <button className="primary" disabled={pending} onClick={() => void decide('update')}>
-            更新到版本 {version}
-          </button>
-          <button className="text-button" disabled={pending} onClick={() => void decide('dismiss')}>
-            暂不更新
-          </button>
-        </div>
-      </Sheet>
-      {overwrite && (
+      {/* U2：新版本提示改居中确认框（审计 #37） */}
+      {!overwrite && (
         <Dialog
-          title="你对 TA 的修改会被覆盖"
+          title={`作者发布了版本 ${version}`}
           actions={[
-            { label: '取消', onClick: () => setOverwrite(false) },
+            { label: '暂不更新', disabled: pending, onClick: () => void decide('dismiss') },
             {
-              label: '仍然更新',
-              primary: true,
-              onClick: () => {
-                setOverwrite(false);
-                void decide('update', true);
-              },
+              label: '更新',
+              tone: 'primary',
+              busy: pending,
+              onClick: () => void decide('update'),
             },
           ]}
+        >
+          {note && <p>更新说明：{note}</p>}
+          <p className="hint">你们的聊天记录、记忆、好感度都不会变</p>
+        </Dialog>
+      )}
+      {overwrite && (
+        <AlertDialog
+          title="你对 TA 的修改会被覆盖"
+          message="更新后，你改过的人设内容会换成作者的新版本，不能恢复。"
+          confirmLabel="仍然更新"
+          onCancel={() => setOverwrite(false)}
+          onConfirm={() => {
+            setOverwrite(false);
+            void decide('update', true);
+          }}
         />
       )}
     </>

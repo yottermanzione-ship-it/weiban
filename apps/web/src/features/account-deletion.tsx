@@ -7,6 +7,7 @@ import { pointsText } from './points.js';
 import { useAuth } from '../app/auth.js';
 import { api } from '../data/client.js';
 import { useRemote } from '../data/use-remote.js';
+import { Dialog } from './toast.js';
 
 /*
  * 注销账号（ACC-06；设计 account-deletion.md）：说明页 → 输入密码 → 完成页。
@@ -144,52 +145,53 @@ export function AccountDeletionPage() {
       <button className="danger danger-row" onClick={() => setDialog(true)}>
         注销账号
       </button>
+      {/* U2（V01）：手写壳换成公共对话框——标题、正文、底部两个等宽按钮；点蒙层不关 */}
       {dialog && (
-        <div className="dialog-scrim">
+        <Dialog
+          title="输入密码确认注销"
+          actions={[
+            {
+              label: '取消',
+              disabled: pending,
+              onClick: () => {
+                setDialog(false);
+                setError('');
+                setPassword('');
+              },
+            },
+            {
+              label: pending ? '正在注销…' : '注销账号',
+              tone: 'danger',
+              disabled: !password || lockedUntil > 0,
+              busy: pending,
+              onClick: () => void submit(),
+            },
+          ]}
+        >
           <form
-            className="dialog"
-            role="dialog"
-            aria-label="输入密码确认注销"
+            className="dialog-form"
             onSubmit={(e) => {
               e.preventDefault();
-              void submit();
+              if (password && !pending && lockedUntil <= 0) void submit();
             }}
           >
-            <strong>输入密码确认注销</strong>
             <p className="hint">注销后无法恢复。</p>
-            <label>
-              密码
-              <input
-                ref={input}
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </label>
+            <input
+              ref={input}
+              type="password"
+              aria-label="密码"
+              placeholder="登录密码"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
             {error && (
               <small role="alert" className="error">
                 {error}
               </small>
             )}
-            <div className="button-row">
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => {
-                  setDialog(false);
-                  setError('');
-                  setPassword('');
-                }}
-              >
-                取消
-              </button>
-              <button className="danger" disabled={!password || pending || lockedUntil > 0}>
-                {pending ? '正在注销…' : '注销'}
-              </button>
-            </div>
           </form>
-        </div>
+        </Dialog>
       )}
     </main>
   );

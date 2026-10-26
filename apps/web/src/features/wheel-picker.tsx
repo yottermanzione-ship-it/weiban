@@ -14,7 +14,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Sheet } from './shell-kit.js';
+import { ChoiceSheet, Sheet } from './shell-kit.js';
 
 /** 每行高度与可见行数（选中行在正中）。改这里要同步 ui-components.css 的 --wheel-row。 */
 const ROW = 48;
@@ -122,6 +122,8 @@ export function PickerSheet({
   onConfirm,
   confirmLabel = '确定',
   confirmDisabled = false,
+  onClear,
+  clearLabel = '清除',
   children,
 }: {
   title: string;
@@ -129,6 +131,9 @@ export function PickerSheet({
   onConfirm(): void;
   confirmLabel?: string;
   confirmDisabled?: boolean;
+  /** 可选值（如「结束日期」）：面板底部出现一行「清除」，点了把值清空并关闭。 */
+  onClear?(): void;
+  clearLabel?: string;
   children: ReactNode;
 }) {
   return (
@@ -148,6 +153,11 @@ export function PickerSheet({
       }
     >
       <div className="picker-sheet-body">{children}</div>
+      {onClear && (
+        <button type="button" className="picker-sheet-clear" onClick={onClear}>
+          {clearLabel}
+        </button>
+      )}
     </Sheet>
   );
 }
@@ -169,6 +179,8 @@ export function DatePickerSheet({
   max,
   onConfirm,
   onCancel,
+  onClear,
+  clearLabel,
 }: {
   title: string;
   value: string | null;
@@ -176,6 +188,8 @@ export function DatePickerSheet({
   max?: string;
   onConfirm(value: string): void;
   onCancel(): void;
+  onClear?(): void;
+  clearLabel?: string;
 }) {
   const today = new Date();
   const lo = parseDate(min) ?? { y: 1900, m: 1, d: 1 };
@@ -184,7 +198,17 @@ export function DatePickerSheet({
     m: today.getMonth() + 1,
     d: today.getDate(),
   };
-  const start = parseDate(value) ?? { y: Math.min(hi.y, Math.max(lo.y, 2000)), m: 1, d: 1 };
+  // 没有值时：范围跨度大（生日）从 2000 年起；近期范围（提醒、纪念日、搜索）从今天起
+  const near = lo.y > 2000 || hi.y < 2000 || hi.y - lo.y < 30;
+  const start =
+    parseDate(value) ??
+    (near
+      ? {
+          y: Math.min(hi.y, Math.max(lo.y, today.getFullYear())),
+          m: today.getMonth() + 1,
+          d: today.getDate(),
+        }
+      : { y: 2000, m: 1, d: 1 });
   const [y, setY] = useState(start.y);
   const [mo, setMo] = useState(start.m);
   const [d, setD] = useState(start.d);
@@ -204,6 +228,8 @@ export function DatePickerSheet({
     <PickerSheet
       title={title}
       onCancel={onCancel}
+      onClear={onClear}
+      clearLabel={clearLabel}
       onConfirm={() => onConfirm(`${y}-${pad(month)}-${pad(day)}`)}
     >
       <WheelPicker>
@@ -283,5 +309,218 @@ export function OptionPickerSheet<T extends string | number>({
         )}
       </WheelPicker>
     </PickerSheet>
+  );
+}
+
+// ---------- 表单里的选择框（替代浏览器原生 date / time / select，2026-10-26 批 U2） ----------
+
+/** 输入框外观的触发按钮：显示当前值（空则灰字占位），右侧小箭头；点开对应的选择面板。 */
+function PickerTrigger({
+  text,
+  placeholder,
+  disabled,
+  className,
+  label,
+  onOpen,
+}: {
+  text: string | null | undefined;
+  placeholder: string;
+  disabled?: boolean;
+  className?: string;
+  label?: string;
+  onOpen(): void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`picker-field ${text ? '' : 'empty'} ${className ?? ''}`}
+      aria-haspopup="dialog"
+      aria-label={label ? `${label}：${text || placeholder}` : undefined}
+      disabled={disabled}
+      onClick={onOpen}
+    >
+      <span className="picker-field-text">{text || placeholder}</span>
+      <svg className="picker-field-caret" width="8" height="14" viewBox="0 0 8 14" aria-hidden>
+        <path d="M1 1l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      </svg>
+    </button>
+  );
+}
+
+/** 日期选择框（值 YYYY-MM-DD，空串表示未选）：点开日期滚轮；clearable 时面板底部有「清除」。 */
+export function DateField({
+  value,
+  onChange,
+  title,
+  label,
+  min,
+  max,
+  placeholder = '请选择',
+  disabled,
+  className,
+  clearable = false,
+  clearLabel,
+}: {
+  value: string;
+  onChange(value: string): void;
+  title: string;
+  label?: string;
+  min?: string;
+  max?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+  clearable?: boolean;
+  clearLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const d = parseDate(value);
+  const text = d ? `${d.y}年${d.m}月${d.d}日` : value;
+  return (
+    <>
+      <PickerTrigger
+        text={text}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={className}
+        label={label ?? title}
+        onOpen={() => setOpen(true)}
+      />
+      {open && (
+        <DatePickerSheet
+          title={title}
+          value={value || null}
+          min={min}
+          max={max}
+          clearLabel={clearLabel}
+          onCancel={() => setOpen(false)}
+          onClear={
+            clearable && value
+              ? () => {
+                  setOpen(false);
+                  onChange('');
+                }
+              : undefined
+          }
+          onConfirm={(next) => {
+            setOpen(false);
+            if (next !== value) onChange(next);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+/** 时间选择框（值 HH:mm）：点开时间滚轮。 */
+export function TimeField({
+  value,
+  onChange,
+  title,
+  label,
+  placeholder = '请选择',
+  minuteStep,
+  disabled,
+  className,
+}: {
+  value: string;
+  onChange(value: string): void;
+  title: string;
+  label?: string;
+  placeholder?: string;
+  minuteStep?: number;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <PickerTrigger
+        text={value}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={className}
+        label={label ?? title}
+        onOpen={() => setOpen(true)}
+      />
+      {open && (
+        <TimePickerSheet
+          title={title}
+          value={value || null}
+          minuteStep={minuteStep}
+          onCancel={() => setOpen(false)}
+          onConfirm={(next) => {
+            setOpen(false);
+            if (next !== value) onChange(next);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+export interface SelectOption<T extends string | number> {
+  value: T;
+  label: string;
+  disabled?: boolean;
+}
+
+/**
+ * 选项选择框（替代原生 select）：≤10 个选项点开 Choice Sheet（点一项即选中），
+ * 更多时用单列滚轮 OptionPickerSheet。
+ */
+export function SelectField<T extends string | number>({
+  value,
+  options,
+  onChange,
+  title,
+  label,
+  placeholder = '请选择',
+  disabled,
+  className,
+}: {
+  value: T;
+  options: SelectOption<T>[];
+  onChange(value: T): void;
+  title: string;
+  label?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = options.find((option) => option.value === value);
+  return (
+    <>
+      <PickerTrigger
+        text={current?.label}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={className}
+        label={label ?? title}
+        onOpen={() => setOpen(true)}
+      />
+      {open &&
+        (options.length <= 10 ? (
+          <ChoiceSheet
+            title={title}
+            options={options}
+            value={value}
+            onClose={() => setOpen(false)}
+            onChange={onChange}
+          />
+        ) : (
+          <OptionPickerSheet
+            title={title}
+            options={options.filter((option) => !option.disabled)}
+            value={current ? value : null}
+            onCancel={() => setOpen(false)}
+            onConfirm={(next) => {
+              setOpen(false);
+              if (next !== value) onChange(next);
+            }}
+          />
+        ))}
+    </>
   );
 }

@@ -19,18 +19,16 @@ import { Name, groupMembers } from './chat.js';
 import { OldIcon } from './old-icons.js';
 import { listTime } from './time-format.js';
 import {
-  ActionSheet,
   CheckCircle,
   EmptyState,
   MenuGroup,
   MenuRow,
   NavBar,
   SwitchRow,
-  Sheet,
   SyncPendingState,
 } from './shell-kit.js';
-import { Dialog } from './toast.js';
-import { FieldSheet } from './chat-settings.js';
+import { AlertDialog, showSnackbar, showToast } from './toast.js';
+import { FieldPage } from './edit-page.js';
 import { AvatarEditor } from './avatar-editor.js';
 import { MediaImg } from './media.js';
 
@@ -331,8 +329,7 @@ export function GroupSettingsPage() {
   const [removing, setRemoving] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
-  const [avatarBusy, setAvatarBusy] = useState(false);
-  const [avatarError, setAvatarError] = useState('');
+
   const [title, setTitle] = useState('');
   const [confirm, setConfirm] = useState<'clear' | 'dissolve' | null>(null);
   const [pending, setPending] = useState(false);
@@ -382,7 +379,7 @@ export function GroupSettingsPage() {
       assertOwner();
       await operation();
       await synchronize();
-      setMessage(done);
+      if (done) setMessage(done);
       after?.();
     } catch (e) {
       setError(groupError(e));
@@ -397,18 +394,13 @@ export function GroupSettingsPage() {
       body: { mediaId },
     });
     await synchronize();
-    setAvatarError('');
     setMessage(mediaId ? '已设置群头像' : '已恢复成员拼图');
   }
   async function restoreAvatar() {
-    setAvatarBusy(true);
-    setAvatarError('');
     try {
       await updateAvatar(null);
     } catch (e) {
-      setAvatarError(groupError(e));
-    } finally {
-      setAvatarBusy(false);
+      showToast(groupError(e), 2500, 'error');
     }
   }
   return (
@@ -423,12 +415,26 @@ export function GroupSettingsPage() {
                 aria-label={`移出${nameOf(m.refId)}`}
                 disabled={pending}
                 onClick={() =>
+                  // U2：移出成员可撤销——不再确认，底部撤销条「撤销」用拉人进群接口把 TA 加回来
                   void change(
                     () =>
                       api.call(ChatGroupEndpoints.removeMember, {
                         params: { conversationId, characterId: m.refId },
                       }),
-                    `已将 ${nameOf(m.refId)} 移出群聊`,
+                    '',
+                    () =>
+                      showSnackbar({
+                        text: `已将 ${nameOf(m.refId)} 移出群聊`,
+                        onAction: () =>
+                          change(
+                            () =>
+                              api.call(ChatGroupEndpoints.addMembers, {
+                                params: { conversationId },
+                                body: { characterIds: [m.refId] },
+                              }),
+                            `已把 ${nameOf(m.refId)} 加回群聊`,
+                          ),
+                      }),
                   )
                 }
               >
@@ -583,7 +589,7 @@ export function GroupSettingsPage() {
         />
       </MenuGroup>
       {renaming && (
-        <FieldSheet
+        <FieldPage
           title="群聊名称"
           initial={title}
           maxLength={16}
@@ -603,68 +609,51 @@ export function GroupSettingsPage() {
           }
         />
       )}
+      {/* U2：群头像直接弹出 拍照 / 从相册选择 / 恢复成员拼图 的 Action Sheet，选完进全屏裁剪 */}
       {avatarOpen && (
-        <Sheet
-          title="群头像"
-          onClose={() => {
-            if (!avatarBusy) setAvatarOpen(false);
-          }}
-          closeLabel="完成"
-        >
-          <section className="panel stack">
-            <GroupAvatar
-              ids={members.map((m) => m.refId)}
-              mediaId={conversation.group?.avatarMediaId}
-              size={96}
-            />
-            <fieldset disabled={avatarBusy}>
-              <AvatarEditor
-                purpose="group_avatar"
-                onSaved={updateAvatar}
-                onPendingChange={setAvatarBusy}
-                onRestore={
-                  conversation.group?.avatarMediaId ? () => void restoreAvatar() : undefined
-                }
-              />
-            </fieldset>
-            {avatarError && <p role="alert">{avatarError}</p>}
-          </section>
-        </Sheet>
+        <AvatarEditor
+          sheet
+          onClose={() => setAvatarOpen(false)}
+          purpose="group_avatar"
+          label="群头像"
+          onSaved={updateAvatar}
+          onRestore={conversation.group?.avatarMediaId ? () => void restoreAvatar() : undefined}
+        />
       )}
       {confirm === 'clear' && (
-        <ActionSheet
+        <AlertDialog
           title="清空这个群的聊天记录？"
-          onClose={() => setConfirm(null)}
-          items={[
-            {
-              label: '清空聊天记录',
-              danger: true,
-              onClick: () => void change(() => clearHistory(conversationId), '已清空'),
-            },
-          ]}
+          message="清空后不能恢复。"
+          confirmLabel="清空聊天记录"
+          pending={pending}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() =>
+            void change(
+              () => clearHistory(conversationId),
+              '已清空',
+              () => setConfirm(null),
+            )
+          }
         />
       )}
       {confirm === 'dissolve' && (
-        <Dialog
-          actions={[
-            { label: '取消', onClick: () => setConfirm(null) },
-            {
-              label: '删除并退出',
-              danger: true,
-              onClick: () =>
-                void change(
-                  () => api.call(ChatGroupEndpoints.dissolveGroup, { params: { conversationId } }),
-                  '已退出',
-                  () => {
-                    setConfirm(null);
-                    navigate('/chat', { replace: true });
-                  },
-                ),
-            },
-          ]}
-        >
-          <p>删除并退出后，这个群会解散，聊天记录也会删除</p>
-        </Dialog>
+        <AlertDialog
+          title="删除并退出群聊？"
+          message="这个群会解散，聊天记录也会删除，不能恢复。"
+          confirmLabel="删除并退出"
+          pending={pending}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() =>
+            void change(
+              () => api.call(ChatGroupEndpoints.dissolveGroup, { params: { conversationId } }),
+              '已退出',
+              () => {
+                setConfirm(null);
+                navigate('/chat', { replace: true });
+              },
+            )
+          }
+        />
       )}
     </main>
   );

@@ -14,6 +14,7 @@ import { friendlyError, useRemote } from '../data/use-remote.js';
 import { useUpdates } from '../data/updates.js';
 import { uploadMedia, prepareImage } from '../data/upload.js';
 import { NavBar, MenuGroup, MenuRow } from './shell-kit.js';
+import { SelectField } from './wheel-picker.js';
 export const feedbackLabels: Record<Category, string> = {
   bug: '功能异常',
   suggestion: '产品建议',
@@ -168,32 +169,27 @@ export function SupportCreatePage() {
         {complaint ? (
           <label>
             原因
-            <select
+            <SelectField<Reason>
+              title="原因"
               disabled={busy}
               value={reason}
-              onChange={(e) => setReason(e.target.value as Reason)}
-            >
-              {ComplaintReason.options.map((v) => (
-                <option key={v} value={v}>
-                  {reasonLabels[v]}
-                </option>
-              ))}
-            </select>
+              onChange={setReason}
+              options={ComplaintReason.options.map((v) => ({ value: v, label: reasonLabels[v] }))}
+            />
           </label>
         ) : (
           <label>
             类型
-            <select
+            <SelectField<Category>
+              title="类型"
               disabled={busy}
               value={category}
-              onChange={(e) => setCategory(e.target.value as Category)}
-            >
-              {FeedbackCategory.options.map((v) => (
-                <option key={v} value={v}>
-                  {feedbackLabels[v]}
-                </option>
-              ))}
-            </select>
+              onChange={setCategory}
+              options={FeedbackCategory.options.map((v) => ({
+                value: v,
+                label: feedbackLabels[v],
+              }))}
+            />
           </label>
         )}
         <label>

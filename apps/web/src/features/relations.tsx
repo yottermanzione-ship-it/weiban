@@ -13,6 +13,8 @@ import { friendlyError, useRemote } from '../data/use-remote.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { NavBar } from './shell-kit.js';
+import { AlertDialog } from './toast.js';
+import { SelectField } from './wheel-picker.js';
 
 /*
  * TA 认识的人（SOC-01 第 3 条；social-l4.md 第 6 节）：只在用户自己的自定义角色之间设置关系，双向生效。
@@ -209,17 +211,16 @@ export function RelationsPage() {
         >
           <label>
             对方
-            <select
+            <SelectField<string>
+              title="对方"
               disabled={!!editing.relation}
               value={editing.otherId}
-              onChange={(e) => setEditing({ ...editing, otherId: e.target.value })}
-            >
-              {(editing.relation ? [editing.otherId] : candidates).map((id) => (
-                <option key={id} value={id}>
-                  {nameOf(id)}
-                </option>
-              ))}
-            </select>
+              options={(editing.relation ? [editing.otherId] : candidates).map((id) => ({
+                value: id,
+                label: nameOf(id),
+              }))}
+              onChange={(otherId) => setEditing({ ...editing, otherId })}
+            />
           </label>
           <h3 className="group-label">关系类型</h3>
           <div className="chips">
@@ -290,24 +291,22 @@ export function RelationsPage() {
           )}
         </form>
       )}
+      {/* U2：页面内嵌确认块 → Alert Dialog（审计 #44） */}
       {confirmDelete && editing?.relation && (
-        <div role="dialog" aria-label="删除关系" className="panel">
-          <p>删除后，TA 们不会再在群聊、朋友圈互动，也不会再互相提起；以前的聊天记录会保留</p>
-          <button
-            className="danger"
-            disabled={pending}
-            onClick={() =>
-              void run(() =>
-                api.call(UserRelationEndpoints.deleteMyRelation, {
-                  params: { relationId: editing.relation!.relationId },
-                }),
-              )
-            }
-          >
-            删除
-          </button>
-          <button onClick={() => setConfirmDelete(false)}>取消</button>
-        </div>
+        <AlertDialog
+          title="删除这段关系？"
+          message="删除后，TA 们不会再在群聊、朋友圈互动，也不会再互相提起；以前的聊天记录会保留。"
+          confirmLabel="删除关系"
+          pending={pending}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() =>
+            void run(() =>
+              api.call(UserRelationEndpoints.deleteMyRelation, {
+                params: { relationId: editing.relation!.relationId },
+              }),
+            )
+          }
+        />
       )}
       {error && <p role="alert">{error}</p>}
     </main>

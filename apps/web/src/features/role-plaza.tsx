@@ -30,10 +30,12 @@ import { friendlyError, useRemote } from '../data/use-remote.js';
 import { useUpdates } from '../data/updates.js';
 import { prepareImage, uploadMedia } from '../data/upload.js';
 import { CharacterAvatar } from './character-avatar.js';
+import { PersonaCard } from './persona-card.js';
 import { OldIcon } from './old-icons.js';
 import {
   PagedVirtualList,
   PlazaAvatar,
+  PlazaHeat,
   PlazaTab,
   authorName,
   timeText,
@@ -49,7 +51,8 @@ import {
   NavBar,
   NavIcon,
 } from './shell-kit.js';
-import { Dialog, showToast } from './toast.js';
+import { AlertDialog, showToast } from './toast.js';
+import { SelectField } from './wheel-picker.js';
 
 const code = (error: unknown) => (error instanceof ApiFailure ? error.code : '');
 const chars = (text: string) => Array.from(text).length;
@@ -213,20 +216,6 @@ function OfficialList() {
   useEffect(() => {
     void load();
   }, [load]);
-  const toggleLike = async (card: PlazaOfficialCard) => {
-    const id = card.character.characterId;
-    try {
-      const result = await api.call(
-        card.likedByMe ? PlazaOfficialEndpoints.unlike : PlazaOfficialEndpoints.like,
-        { params: { characterId: id } },
-      );
-      setItems((prev) =>
-        prev.map((item) => (item.character.characterId === id ? { ...item, ...result } : item)),
-      );
-    } catch (e) {
-      showToast(friendlyError(e));
-    }
-  };
   return (
     <section aria-label="微伴角色" className="plaza-tab-page">
       <form
@@ -287,9 +276,9 @@ function OfficialList() {
         <PagedVirtualList
           items={items}
           itemKey={(card) => card.character.characterId}
-          estimate={76}
+          estimate={88}
           label="微伴角色列表"
-          render={(card) => <OfficialRow card={card} onLike={() => void toggleLike(card)} />}
+          render={(card) => <OfficialRow card={card} />}
           more={more}
           hasMore={!!cursor}
           onLoadMore={() => {
@@ -301,34 +290,35 @@ function OfficialList() {
   );
 }
 
-function OfficialRow({ card, onLike }: { card: PlazaOfficialCard; onLike(): void }) {
+/**
+ * U4 广场列表卡片：头像、名字、一句话简介、2–3 个标签、热度（点赞数）；不放长描述。
+ * 行内点赞按钮去掉（点赞在详情页标题区右侧），整行点进详情。
+ */
+function OfficialRow({ card }: { card: PlazaOfficialCard }) {
   const role = card.character;
-  // 点赞 / 评论能力保留，但不再参与排序；为 0 的计数不再堆在行里（「0赞0评」看不出信息）。
-  const meta = [
-    card.likeCount > 0 ? `赞 ${card.likeCount}` : '',
-    card.commentCount > 0 ? `评论 ${card.commentCount}` : '',
-    role.added ? '已添加' : '',
-  ].filter(Boolean);
+  const tags = role.tags.slice(0, 3);
   return (
-    <div className="official-row">
-      <Link to={`/plaza/official/${role.characterId}`} className="official-row-main">
-        <CharacterAvatar id={role.characterId} profile={role} size={48} />
-        <span className="official-row-text">
-          <span className="official-row-name">{role.name}</span>
-          <small>{role.tagline}</small>
-          {meta.length > 0 && <small className="official-row-meta">{meta.join(' · ')}</small>}
-        </span>
-      </Link>
-      <button
-        type="button"
-        className={`like-toggle ${card.likedByMe ? 'on' : ''}`}
-        aria-pressed={card.likedByMe}
-        aria-label={card.likedByMe ? '取消点赞' : '点赞'}
-        onClick={onLike}
-      >
-        <OldIcon name={card.likedByMe ? 'wechat/like_filled' : 'wechat/like'} size={20} />
-      </button>
-    </div>
+    <Link to={`/plaza/official/${role.characterId}`} className="plaza-card">
+      <CharacterAvatar id={role.characterId} profile={role} size={52} />
+      <span className="plaza-card-main">
+        <span className="plaza-card-name">{role.name}</span>
+        {role.tagline && <small className="plaza-card-tagline">{role.tagline}</small>}
+        {tags.length > 0 && (
+          <span className="plaza-card-tags">
+            {tags.map((tag) => (
+              <span key={tag} className="tag neutral">
+                {tag}
+              </span>
+            ))}
+          </span>
+        )}
+      </span>
+      <PlazaHeat
+        count={card.likeCount}
+        icon={<OldIcon name="wechat/like" size={14} />}
+        note={role.added ? '已添加' : undefined}
+      />
+    </Link>
   );
 }
 
@@ -377,85 +367,83 @@ export function OfficialRolePage() {
         </p>
       ) : (
         <>
-          <div className="profile-head">
-            <CharacterAvatar id={characterId} profile={data.character} size={64} radius={8} />
-            <div className="profile-head-text">
-              <h2>
-                <span>{data.character.name}</span>
-              </h2>
-              {data.character.tagline && <p>{data.character.tagline}</p>}
-              {data.character.works.length > 0 && <p>出处：{data.character.works.join('、')}</p>}
-            </div>
-          </div>
-          <GroupHeader>基本人设</GroupHeader>
-          <MenuGroup>
-            <div className="persona-block">
-              {data.persona.summary && (
-                <p>
-                  <strong>简介</strong>
-                  {data.persona.summary}
-                </p>
-              )}
-              {data.persona.personality && (
-                <p>
-                  <strong>性格</strong>
-                  {data.persona.personality}
-                </p>
-              )}
-              {data.persona.speechStyle && (
-                <p>
-                  <strong>说话方式</strong>
-                  {data.persona.speechStyle}
-                </p>
-              )}
-              {data.persona.catchphrases.length > 0 && (
-                <p>
-                  <strong>口头禅</strong>
-                  {data.persona.catchphrases.map((c) => `「${c}」`).join(' ')}
-                </p>
-              )}
-              {!data.persona.summary && !data.persona.personality && (
-                <p className="hint">{data.character.intro || '暂无介绍'}</p>
-              )}
-            </div>
-          </MenuGroup>
-          <MenuGroup className="action-rows">
-            <button
-              type="button"
-              className={`profile-action ${liked?.likedByMe ? 'liked' : ''}`}
-              aria-pressed={liked?.likedByMe}
-              onClick={() => void toggleLike()}
-            >
-              <OldIcon name={liked?.likedByMe ? 'wechat/like_filled' : 'wechat/like'} size={20} />
-              {liked?.likedByMe ? '已赞' : '赞'} {liked?.likeCount ?? 0}
-            </button>
-            {contact?.conversationId ? (
-              <Link className="profile-action" to={`/chat/${contact.conversationId}`}>
-                <OldIcon name="wechat/chat" size={20} />
-                发消息
-              </Link>
-            ) : contact?.status === 'pending' ? (
-              <span className="profile-action pending">等待通过…</span>
-            ) : (
-              <button
-                type="button"
-                className="profile-action"
-                onClick={() => navigate(`/characters/${characterId}?add=1`)}
-              >
-                <OldIcon name="wechat/add" size={20} />
-                添加到通讯录
-              </button>
-            )}
-          </MenuGroup>
+          {/* U4：微伴角色详情改用人设卡；点赞、评论放标题区右侧，底部通栏绿色主按钮 */}
+          <PersonaCard
+            source={{
+              kind: 'profile',
+              data: {
+                profile: { ...data.character, avatarUrl: data.character.avatar.image?.url ?? null },
+                official: data.persona,
+              },
+            }}
+            avatar={
+              <CharacterAvatar id={characterId} profile={data.character} size={64} radius={8} />
+            }
+            headAside={
+              <>
+                <button
+                  type="button"
+                  className={`persona-count${liked?.likedByMe ? ' on' : ''}`}
+                  aria-pressed={liked?.likedByMe}
+                  aria-label={
+                    liked?.likedByMe
+                      ? `取消点赞，${liked.likeCount} 个赞`
+                      : `点赞，${liked?.likeCount ?? 0} 个赞`
+                  }
+                  onClick={() => void toggleLike()}
+                >
+                  <OldIcon
+                    name={liked?.likedByMe ? 'wechat/like_filled' : 'wechat/like'}
+                    size={20}
+                  />
+                  {liked?.likeCount ?? 0}
+                </button>
+                <button
+                  className="persona-count"
+                  type="button"
+                  onClick={() =>
+                    document
+                      .getElementById('official-comments')
+                      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  }
+                  aria-label={`${comments ?? data.commentCount} 条评论`}
+                >
+                  <OldIcon name="wechat/chat" size={20} />
+                  {comments ?? data.commentCount}
+                </button>
+              </>
+            }
+          />
           {data.character.showPublicSourceNotice && (
             <p className="hint page-note">本角色根据公开资料创作，不代表本人</p>
           )}
-          <OfficialComments
-            key={characterId}
-            characterId={characterId}
-            count={comments ?? data.commentCount}
-            onCount={setComments}
-          />
+          <div id="official-comments">
+            <OfficialComments
+              key={characterId}
+              characterId={characterId}
+              count={comments ?? data.commentCount}
+              onCount={setComments}
+            />
+          </div>
+          <div className="work-action-bar persona-action-bar">
+            {contact?.conversationId ? (
+              <Link className="button primary" to={`/chat/${contact.conversationId}`}>
+                发消息
+              </Link>
+            ) : contact?.status === 'pending' ? (
+              <button type="button" className="primary" disabled>
+                等待通过…
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="primary"
+                onClick={() => navigate(`/characters/${characterId}?add=1`)}
+              >
+                添加到通讯录
+              </button>
+            )}
+          </div>
         </>
       )}
     </main>
@@ -972,23 +960,30 @@ export function RoleRequestFormPage() {
           <summary>补充资料（选填）</summary>
           <label>
             类型
-            <select value={basis} onChange={(e) => setBasis(e.target.value as '' | CharacterBasis)}>
-              <option value="">不确定</option>
-              <option value="real_person">真人</option>
-              <option value="fictional">虚构角色（动漫、游戏、影视…）</option>
-              <option value="original">原创</option>
-            </select>
+            <SelectField<'' | CharacterBasis>
+              title="类型"
+              value={basis}
+              onChange={setBasis}
+              options={[
+                { value: '', label: '不确定' },
+                { value: 'real_person', label: '真人' },
+                { value: 'fictional', label: '虚构角色（动漫、游戏、影视…）' },
+                { value: 'original', label: '原创' },
+              ]}
+            />
           </label>
           <label>
             分类
-            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-              <option value="">不选</option>
-              {categories.data?.items.map((c) => (
-                <option key={c.categoryId} value={c.categoryId}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            <SelectField<string>
+              title="分类"
+              value={categoryId}
+              onChange={setCategoryId}
+              options={[
+                { value: '', label: '不选' },
+                ...(categories.data?.items.map((c) => ({ value: c.categoryId, label: c.name })) ??
+                  []),
+              ]}
+            />
           </label>
           <label>
             出处 / 作品
@@ -1271,14 +1266,14 @@ export function RoleRequestDetailPage() {
         </>
       )}
       {confirm && (
-        <Dialog
-          actions={[
-            { label: '取消', onClick: () => setConfirm(false) },
-            { label: '撤回', danger: true, onClick: () => void cancel() },
-          ]}
-        >
-          <p>撤回这条申请？</p>
-        </Dialog>
+        <AlertDialog
+          title="撤回这条申请？"
+          message="撤回后不能恢复，想要的话需要重新提交。"
+          confirmLabel="撤回申请"
+          pending={cancelling}
+          onCancel={() => setConfirm(false)}
+          onConfirm={() => void cancel()}
+        />
       )}
     </main>
   );

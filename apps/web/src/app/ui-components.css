@@ -211,7 +211,224 @@
   font-weight: var(--wb-font-weight-medium);
 }
 
+/* ---------- 分段 Tab SegmentedTabs ---------- */
+.segmented-tabs {
+  display: flex;
+  gap: var(--wb-space-2);
+  margin: var(--wb-space-4) var(--wb-space-5) var(--wb-space-2);
+  padding: var(--wb-space-2); /* 外圆角 8 = 内圆角 4 + 间距 4 */
+  border-radius: var(--wb-radius-md);
+  background: var(--ui-fill-2);
+}
+.segmented-tabs > button {
+  flex: 1;
+  min-height: 30px;
+  padding: 0 var(--wb-space-3);
+  border: 0;
+  border-radius: var(--wb-radius-xs);
+  background: none;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-subhead);
+}
+.segmented-tabs > button[aria-selected='true'] {
+  background: var(--wb-color-bg-surface);
+  color: var(--wb-color-text-primary);
+  font-weight: var(--wb-font-weight-medium);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* ---------- 页内二级页面 SubPageLayer：整页从右侧推入，盖住当前页 ---------- */
+.subpage-layer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--wb-z-index-sheet);
+  display: flex;
+  justify-content: center;
+  overflow-y: auto;
+  background: var(--wb-color-bg-page);
+  animation: subpage-in var(--ui-motion-route) var(--ui-ease-out);
+}
+.subpage-layer > main.edit-page {
+  width: 100%;
+  max-width: var(--wb-size-content-max-width);
+}
+@keyframes subpage-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+/* 提示音二级页面：名称 …… 试听 ✓（试听、对号各占固定列，行行对齐） */
+.sound-list {
+  margin-top: var(--wb-space-4);
+  background: var(--wb-color-bg-surface);
+}
+.sound-row {
+  position: relative;
+}
+.sound-row + .sound-row .sound-pick::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: var(--wb-space-5);
+  border-top: 0.5px solid var(--wb-color-border-hairline);
+}
+.sound-pick {
+  gap: var(--wb-space-3);
+}
+.sound-pick > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.sound-play-slot {
+  flex: none;
+  width: 40px;
+}
+.sound-play {
+  position: absolute;
+  top: 50%;
+  /* 页边距 16 + 对号列 22 + 间距 */
+  right: calc(var(--wb-space-5) + 22px + var(--wb-space-3));
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--wb-radius-full);
+  background: none;
+  color: var(--wb-color-text-secondary);
+  transform: translateY(-50%);
+}
+.sound-play:active {
+  background: var(--ui-fill-1);
+}
+/* 对话框里的输入（注销输密码） */
+.dialog .dialog-form {
+  display: grid;
+  gap: var(--wb-space-3);
+  margin-top: var(--wb-space-2);
+  text-align: left;
+}
+.dialog .dialog-form input {
+  width: 100%;
+}
+/* 角色试聊面板 */
+.trial-sheet {
+  padding: var(--wb-space-4) var(--wb-space-5) calc(env(safe-area-inset-bottom) + var(--wb-space-4));
+}
+.trial-sheet .trial-messages {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+}
+/* 对话框里的说明清单 */
+.dialog .dialog-list {
+  margin: 0;
+  padding-left: 1.2em;
+  text-align: left;
+  line-height: 1.6;
+}
+/* 二级页面底部的红字危险行（删除这条设定 / 删除心愿） */
+.subpage-layer .subpage-danger {
+  margin-top: var(--wb-space-6);
+}
+/* 二级页面里的普通表单：留出页边距 */
+.subpage-form {
+  padding: var(--wb-space-5);
+}
+.field-page-hint {
+  display: flex;
+  gap: var(--wb-space-3);
+}
+.field-page-count {
+  margin-left: auto;
+  color: var(--wb-color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 滚轮面板底部「清除」（可选值） */
+.picker-sheet-clear {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-top: 0.5px solid var(--wb-color-border-hairline);
+  border-radius: 0;
+  background: none;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-body);
+}
+
+/* ---------- 表单选择框（DateField / TimeField / SelectField，替代原生 date / time / select） ---------- */
+.picker-field {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--wb-size-touch-target);
+  padding: 10px var(--wb-space-4);
+  border: 0.5px solid var(--wb-color-border-hairline);
+  border-radius: var(--wb-radius-xs);
+  background: var(--wb-color-bg-input-field);
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-body);
+  font-weight: var(--wb-font-weight-regular);
+  text-align: left;
+}
+.picker-field.empty .picker-field-text {
+  color: var(--wb-color-text-placeholder);
+}
+.picker-field-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.picker-field-caret {
+  flex: none;
+  color: var(--wb-color-text-tertiary);
+}
+.picker-field:disabled {
+  color: var(--wb-color-text-tertiary);
+}
+/* 白色通栏行里（field-row / 资料行）：无边框透明，值右对齐 */
+.field-row .picker-field,
+.profile-field .picker-field {
+  flex: 1;
+  width: auto;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.field-row .picker-field {
+  font-size: var(--wb-font-size-body-small);
+}
+.profile-field .picker-field {
+  padding: 0;
+}
+.edit-input-row .picker-field {
+  flex: 1;
+  min-height: 56px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.field-row .picker-field-text,
+.profile-field .picker-field-text {
+  text-align: right;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .subpage-layer,
   .snackbar,
   .sheet-panel.nudge-a,
   .sheet-panel.nudge-b {

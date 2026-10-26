@@ -15,7 +15,7 @@ import { friendlyError, useRemote } from '../data/use-remote.js';
 import { CharacterName } from './chat.js';
 import { KindIcon } from './while-away.js';
 import { EmptyState, NavBar } from './shell-kit.js';
-import { Dialog } from './toast.js';
+import { AlertDialog } from './toast.js';
 import { useAuth } from '../app/auth.js';
 
 /** 页面内部统一的条目形状：优先来自时间线列表接口（契约 3.0），服务器未提供时退回日常事件接口。 */
@@ -321,21 +321,19 @@ export function TimelinePage() {
       {!done && <div ref={sentinel} className="timeline-sentinel" aria-hidden />}
       {items.length > 0 && loading && <p role="status">正在读取…</p>}
       {removing && (
-        <Dialog
+        <AlertDialog
           title="删除这段共同经历？"
-          actions={[
-            { label: '取消', disabled: removingBusy, onClick: () => setRemoving(null) },
-            {
-              label: removingBusy ? '正在删除…' : '删除并忘记',
-              danger: true,
-              disabled: removingBusy,
-              onClick: () => void removeEpisode(),
-            },
-          ]}
-        >
-          <p>TA 将不再通过共同经历想起这件事，旧任务也不会重新写回。</p>
-          {removeError && <p role="alert">{removeError}</p>}
-        </Dialog>
+          message={
+            <>
+              <p>TA 将不再通过共同经历想起这件事，旧任务也不会重新写回。</p>
+              {removeError && <p role="alert">{removeError}</p>}
+            </>
+          }
+          confirmLabel="删除并忘记"
+          pending={removingBusy}
+          onCancel={() => setRemoving(null)}
+          onConfirm={() => void removeEpisode()}
+        />
       )}
     </main>
   );

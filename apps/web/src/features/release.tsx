@@ -99,7 +99,7 @@ export function ReleaseCenter() {
       actions={[
         {
           label: '知道了',
-          primary: true,
+          tone: 'primary',
           onClick: () => {
             void markAnnouncementsRead([popup.item.announcementId]);
             dismiss();

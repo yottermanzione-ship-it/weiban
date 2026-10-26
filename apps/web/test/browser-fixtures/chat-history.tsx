@@ -152,8 +152,8 @@ void (async () => {
   );
   // 历史分页：从当前最老一条往前取 PAGE_SIZE 条；两批后到最早一条。
   const olderPages: MessagePage[] = [
-    { items: range(51, 100), hasMore: true },
-    { items: range(1, 50), hasMore: false },
+    { items: range(PAGE_SIZE + 1, PAGE_SIZE * 2), hasMore: true },
+    { items: range(1, PAGE_SIZE), hasMore: false },
   ];
   let page = 0;
   Object.assign(api, {

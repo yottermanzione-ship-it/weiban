@@ -204,7 +204,7 @@ export function MembershipPage() {
       {picked && data && (
         <Dialog
           title={`开通 PRO+ ${picked.name}`}
-          actions={[{ label: '知道了', primary: true, onClick: () => setPicked(null) }]}
+          actions={[{ label: '知道了', tone: 'primary', onClick: () => setPicked(null) }]}
         >
           <p>{data.contactHint || '暂未开放在线支付，请联系管理员开通'}</p>
           <p className="hint">管理员开通后，赠送积分会自动到账。</p>

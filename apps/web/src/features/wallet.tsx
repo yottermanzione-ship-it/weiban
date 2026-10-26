@@ -220,7 +220,7 @@ export function RechargePage() {
         </p>
       )}
       {contact && (
-        <Dialog actions={[{ label: '知道了', primary: true, onClick: () => setContact(null) }]}>
+        <Dialog actions={[{ label: '知道了', tone: 'primary', onClick: () => setContact(null) }]}>
           {contact.points != null && <p>充值金额对应 {pointsText(contact.points)}</p>}
           <p>{contact.hint}</p>
           <p className="hint">尚未支付或到账</p>

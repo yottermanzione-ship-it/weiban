@@ -593,7 +593,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       {dialog === 'iphone' && (
         <Dialog
           title="iPhone 网页版暂不支持语音通话"
-          actions={[{ label: '知道了', primary: true, onClick: () => setDialog(null) }]}
+          actions={[{ label: '知道了', tone: 'primary', onClick: () => setDialog(null) }]}
         >
           <p className="hint">
             请把 iPhone 升级到 iOS 16.4 或更高版本，并用 Safari 或主屏幕上的微伴打开
@@ -603,7 +603,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       {dialog === 'browser' && (
         <Dialog
           title="当前浏览器暂不支持语音通话"
-          actions={[{ label: '知道了', primary: true, onClick: () => setDialog(null) }]}
+          actions={[{ label: '知道了', tone: 'primary', onClick: () => setDialog(null) }]}
         />
       )}
       {dialog === 'balance' && (
@@ -613,7 +613,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             { label: '取消', onClick: () => setDialog(null) },
             {
               label: '去充值',
-              primary: true,
+              tone: 'primary',
               onClick: () => {
                 setDialog(null);
                 navigate('/wallet/recharge');
@@ -625,7 +625,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       {dialog === 'mic' && (
         <Dialog
           title="需要麦克风权限才能通话"
-          actions={[{ label: '知道了', primary: true, onClick: () => setDialog(null) }]}
+          actions={[{ label: '知道了', tone: 'primary', onClick: () => setDialog(null) }]}
         >
           <p className="hint">请在浏览器地址栏左侧的网站设置里允许麦克风</p>
         </Dialog>

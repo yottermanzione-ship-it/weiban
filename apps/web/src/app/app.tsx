@@ -106,6 +106,7 @@ import {
 import { ShareEditorPage } from '../features/share.js';
 import { ImportListPage, ImportPage } from '../features/import.js';
 import { SupplementPage } from '../features/supplement.js';
+import { CharacterPersonaPage } from '../features/character-persona.js';
 import { AccountDeletionPage } from '../features/account-deletion.js';
 import { AdoptPage, PetPage, PetWithPage, PetsPage } from '../features/pets.js';
 import {
@@ -444,6 +445,7 @@ function Shell() {
                 <Route path="/imports/new" element={<ImportPage />} />
                 <Route path="/imports/:jobId" element={<ImportPage />} />
                 <Route path="/characters/:characterId/supplement" element={<SupplementPage />} />
+                <Route path="/characters/:characterId/persona" element={<CharacterPersonaPage />} />
                 <Route path="/settings/delete-account" element={<AccountDeletionPage />} />
                 <Route path="/services/pets" element={<PetsPage />} />
                 <Route path="/pets/adopt" element={<AdoptPage />} />

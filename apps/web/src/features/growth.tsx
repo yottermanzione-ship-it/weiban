@@ -9,7 +9,10 @@ import {
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
-import { NavBar, Sheet } from './shell-kit.js';
+import { NavBar } from './shell-kit.js';
+import { SubPageLayer } from './edit-page.js';
+import { showSnackbar } from './toast.js';
+import { DateField } from './wheel-picker.js';
 
 /**
  * 好感度六阶段名称（3.25 改回旧版说法：粉丝 → 朋友 → 亲密好友 → 暧昧 → 恋人 → 伴侣，名称来自契约）与图标。
@@ -150,7 +153,28 @@ export function AnniversariesPage() {
   const [adding, setAdding] = useState(false);
   const [label, setLabel] = useState('');
   const [date, setDate] = useState('');
-  const [removing, setRemoving] = useState<Anniversary | null>(null);
+  // U2：删除纪念日可撤销——直接删，底部撤销条「撤销」用添加纪念日接口按原名称、日期加回来
+  function remove(item: Anniversary) {
+    void run(
+      () =>
+        api.call(GrowthEndpoints.removeAnniversary, {
+          params: { characterId, anniversaryId: item.id },
+        }),
+      () =>
+        showSnackbar({
+          text: `已删除纪念日「${item.label}」`,
+          onAction: () =>
+            run(
+              () =>
+                api.call(GrowthEndpoints.addAnniversary, {
+                  params: { characterId },
+                  body: { label: item.label, date: item.date },
+                }),
+              () => undefined,
+            ),
+        }),
+    );
+  }
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const systems = days.data?.anniversaries.filter((item) => item.kind === 'system') ?? [];
@@ -172,8 +196,8 @@ export function AnniversariesPage() {
       setPending(false);
     }
   }
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function submit(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     if (pending || !label.trim() || !date) return;
     void run(
       () =>
@@ -233,7 +257,7 @@ export function AnniversariesPage() {
                     disabled={pending}
                     onClick={() => {
                       setError('');
-                      setRemoving(item);
+                      remove(item);
                     }}
                   >
                     删除
@@ -257,9 +281,16 @@ export function AnniversariesPage() {
           <p className="hint">纪念日当天，TA 会记得给你发消息。</p>
         </>
       )}
+      {/* U2：添加纪念日改整页二级页面，日期用滚轮 */}
       {adding && (
-        <Sheet title="添加纪念日" onClose={() => setAdding(false)} closeDisabled={pending}>
-          <form className="field-sheet stack" onSubmit={submit}>
+        <SubPageLayer
+          title="添加纪念日"
+          canSave={!!label.trim() && !!date}
+          pending={pending}
+          onCancel={() => setAdding(false)}
+          onSave={() => submit()}
+        >
+          <form className="stack subpage-form" onSubmit={submit}>
             <label>
               名称
               <input
@@ -273,52 +304,19 @@ export function AnniversariesPage() {
             </label>
             <label>
               日期
-              <input
-                name="date"
-                type="date"
-                required
+              <DateField
+                title="纪念日日期"
                 value={date}
                 disabled={pending}
-                onChange={(e) => setDate(e.target.value)}
+                max={`${new Date().getFullYear() + 10}-12-31`}
+                onChange={setDate}
               />
             </label>
             {error && <p role="alert">{error}</p>}
-            <button className="primary" disabled={pending || !label.trim() || !date}>
-              {pending ? '正在保存…' : '完成'}
-            </button>
-            <button type="button" disabled={pending} onClick={() => setAdding(false)}>
-              取消
-            </button>
           </form>
-        </Sheet>
+        </SubPageLayer>
       )}
-      {removing && (
-        <Sheet title="删除纪念日" onClose={() => setRemoving(null)} closeDisabled={pending}>
-          <div className="field-sheet stack">
-            <p>删除后 TA 不会再在这天特别找你</p>
-            {error && <p role="alert">{error}</p>}
-            <button
-              className="danger"
-              disabled={pending}
-              onClick={() =>
-                void run(
-                  () =>
-                    api.call(GrowthEndpoints.removeAnniversary, {
-                      params: { characterId, anniversaryId: removing.id },
-                    }),
-                  () => setRemoving(null),
-                )
-              }
-            >
-              {pending ? '正在删除…' : '删除纪念日'}
-            </button>
-            <button disabled={pending} onClick={() => setRemoving(null)}>
-              取消
-            </button>
-          </div>
-        </Sheet>
-      )}
-      {error && !adding && !removing && <p role="alert">{error}</p>}
+      {error && !adding && <p role="alert">{error}</p>}
     </main>
   );
 }

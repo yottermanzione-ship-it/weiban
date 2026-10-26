@@ -30,7 +30,7 @@ import { CharacterAvatar } from './character-avatar.js';
 import { UserAvatar } from './user-avatar.js';
 import { AvatarEditor } from './avatar-editor.js';
 import { MediaImg } from './media.js';
-import { showToast, Dialog } from './toast.js';
+import { AlertDialog, showToast, Dialog } from './toast.js';
 import { OldIcon } from './old-icons.js';
 import {
   ActionSheet,
@@ -467,6 +467,7 @@ export function MomentCard({
             title={replying ? `回复${actors.name(replying.author)}` : '评论'}
             closeLabel="取消"
             closeDisabled={pending}
+            keepOnScrim={!!text.trim()}
             half
             onClose={() => {
               if (!pending) {
@@ -515,24 +516,19 @@ export function MomentCard({
         {error && <small role="alert">{error}</small>}
       </div>
       {confirmDelete && onDeleted && (
-        <Dialog
-          actions={[
-            { label: '取消', onClick: () => setConfirmDelete(false) },
-            {
-              label: '删除',
-              danger: true,
-              onClick: () => {
-                setConfirmDelete(false);
-                void api
-                  .call(MomentsEndpoints.deletePost, { params: { postId: post.postId } })
-                  .then(onDeleted)
-                  .catch((e) => setError(friendlyError(e)));
-              },
-            },
-          ]}
-        >
-          <p>删除这条朋友圈？</p>
-        </Dialog>
+        <AlertDialog
+          title="删除这条朋友圈？"
+          message="删除后不能恢复，点赞和评论也会一起删除。"
+          confirmLabel="删除"
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() => {
+            setConfirmDelete(false);
+            void api
+              .call(MomentsEndpoints.deletePost, { params: { postId: post.postId } })
+              .then(onDeleted)
+              .catch((e) => setError(friendlyError(e)));
+          }}
+        />
       )}
       {commentMenu && (
         <ActionSheet
@@ -588,15 +584,12 @@ function MomentsCover({
   const [top, bottom] = coverFor(name);
   const profile = useRemote(IdentityEndpoints.getProfile, {}, editable);
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
   const { assertOwner } = useChat();
   const coverId = editable ? profile.data?.momentsCoverMediaId : null;
   async function save(mediaId: string | null) {
     assertOwner();
     await api.call(IdentityEndpoints.updateProfile, { body: { momentsCoverMediaId: mediaId } });
     window.dispatchEvent(new Event('weiban:settings-updated'));
-    setError('');
     showToast(mediaId ? '已更换封面' : '已恢复默认封面', 2000, 'success');
   }
   return (
@@ -627,37 +620,22 @@ function MomentsCover({
           {avatar}
         </Link>
       </div>
+      {/* U2：换封面直接弹出 拍照 / 从相册选择 / 恢复默认封面 的 Action Sheet */}
       {open && (
-        <Sheet
-          title="换封面"
-          closeLabel="完成"
-          onClose={() => {
-            if (!busy) setOpen(false);
-          }}
-        >
-          <section className="panel stack">
-            <fieldset disabled={busy}>
-              <AvatarEditor
-                purpose="moments_cover"
-                label="封面"
-                onSaved={save}
-                onPendingChange={setBusy}
-                onRestore={
-                  coverId
-                    ? () => {
-                        setBusy(true);
-                        setError('');
-                        void save(null)
-                          .catch((e) => setError(friendlyError(e)))
-                          .finally(() => setBusy(false));
-                      }
-                    : undefined
+        <AvatarEditor
+          sheet
+          onClose={() => setOpen(false)}
+          purpose="moments_cover"
+          label="封面"
+          onSaved={save}
+          onRestore={
+            coverId
+              ? () => {
+                  void save(null).catch((e) => showToast(friendlyError(e), 2500, 'error'));
                 }
-              />
-            </fieldset>
-            {error && <p role="alert">{error}</p>}
-          </section>
-        </Sheet>
+              : undefined
+          }
+        />
       )}
     </>
   );
