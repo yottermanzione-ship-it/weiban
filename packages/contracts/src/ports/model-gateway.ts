@@ -402,6 +402,26 @@ export interface ModelGatewayMediaPort {
   ): Promise<PortResult<StreamingTtsResult, GenerateError>>;
   /** 行为规划决策（CR-18）。 */
   decide(input: DecideInput): Promise<PortResult<DecideOutput, GenerateError>>;
+  /**
+   * 4.3（批 EJ）：只读判断某模型能否做原生判定（Jev 类）。判定能力 = 后台为它的线路核准了
+   * `billingBounds.decision`（与 decide 实际执行同一来源），不看 capabilities。不调上游、不扣费。
+   * 旧实现可不提供；调用方缺少时按「不可用」处理。
+   */
+  decisionModelStatus?(modelKey: string): Promise<{
+    ready: boolean;
+    reason:
+      'not_decision_model' | 'model_removed' | 'provider_unavailable' | 'model_not_allowed' | null;
+  }>;
+  /**
+   * 4.3（批 EJ）：只读预检「用这个音色给该用户发语音消息」此刻能否执行：平台开通、音色启用、
+   * 音色登记的模型就是用户（角色覆盖优先）为语音消息场景选的模型、线路有计费上限。
+   * 与 synthesizeSpeech 同一解析口径，不偷换模型；不调上游、不扣费。旧实现可不提供。
+   */
+  speechSynthesisReady?(input: {
+    userId: string;
+    characterId: string;
+    voiceId: string;
+  }): Promise<boolean>;
   /** P3：可信服务器能力。只允许计数 / 布尔值，绝不接收图、OCR、描述或聊天原文；平台承担决策费用。 */
   decidePublicImage?(input: {
     userId: string;

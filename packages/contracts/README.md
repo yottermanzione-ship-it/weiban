@@ -95,6 +95,11 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 4.3（2026-10-26，批 EJ：生态主循环接入原生判定）
+
+- `ModelGatewayMediaPort` 新增两个**可选**只读方法：`decisionModelStatus(modelKey)`（判定能力以线路核准的 `billingBounds.decision` 为唯一来源，后台「生态决策模型」只允许选它）、`speechSynthesisReady({userId, characterId, voiceId})`（与 `synthesizeSpeech` 同一解析口径预检语音动作，缺模型/音色不兼容就不把语音放进生态候选，不换模型）。
+- 理由：ai-runtime 只能经契约端口读取模型事实；原有 `ModelQuotePort.quote` 对文字模型同样报价成功，无法区分 Jev 类与文字模型。均为新增可选方法，不改 HTTP、事件和 Android 数据结构，按规则升次版本；Android 生成产物只同步版本号。
+
 ### 4.2（2026-10-26，通话分钟估价）
 
 - `ModelInfo.pointsPerMinute`新增可选只读分钟估价（可为null），保持pointsPerReply/pointsPerUse旧含义，不改变计费或结算请求；缺少价格时不把0或每条价格冒充分钟价。

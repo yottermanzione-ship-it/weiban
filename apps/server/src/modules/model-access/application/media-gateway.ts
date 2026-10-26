@@ -431,6 +431,64 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     return this.decision(input, false);
   }
 
+  /**
+   * 4.3（批 EJ）：能否做原生判定。与 decision() 同一口径：目录在、未下架、上游可用、非成人模型、
+   * 主线路有核准的 billingBounds.decision。capabilities 不参与（Jev 目录条目的 capabilities 本来为空）。
+   */
+  async decisionModelStatus(modelKey: string): Promise<{
+    ready: boolean;
+    reason:
+      'not_decision_model' | 'model_removed' | 'provider_unavailable' | 'model_not_allowed' | null;
+  }> {
+    const facts = await this.catalog.fact(modelKey);
+    const reason = unavailableReason(facts.entry, facts.upstreamStatus);
+    if (!facts.entry || reason === 'model_removed')
+      return { ready: false, reason: 'model_removed' };
+    if (facts.entry.capabilities.includes('adult_content'))
+      return { ready: false, reason: 'model_not_allowed' };
+    const bounds = await this.bounds?.get(
+      facts.entry.modelKey,
+      facts.entry.upstreamId,
+      facts.entry.upstreamModelId,
+    );
+    if (!bounds?.decision) return { ready: false, reason: 'not_decision_model' };
+    if (reason === 'provider_unavailable') return { ready: false, reason: 'provider_unavailable' };
+    return { ready: true, reason: null };
+  }
+
+  /** 4.3（批 EJ）：语音动作预检，与 synthesizeSpeech 同一解析（音色登记模型必须等于用户所选），不调上游。 */
+  async speechSynthesisReady(input: {
+    userId: string;
+    characterId: string;
+    voiceId: string;
+  }): Promise<boolean> {
+    if (!Id.safeParse(input.voiceId).success) return false;
+    const voice = await this.assets.getVoice(input.voiceId).catch(() => null);
+    if (!voice || !voice.enabled) return false;
+    const model = await this.resolve(
+      'speech_synthesis',
+      voice.modelKey,
+      {
+        userId: input.userId,
+        characterId: input.characterId,
+        purpose: 'voice',
+        billingOwner: 'user',
+        idempotencyKey: `tts-ready:${input.userId}:${input.characterId}`,
+      },
+      undefined,
+      voice.tags?.includes('legacy') === true,
+    );
+    if (!model.ok) return false;
+    // 预检不读参考音频字节；只核对与 providerVoice 相同的登记关系，真正合成时再完整校验。
+    if (!voice.providerVoiceKey.startsWith('mimo-reference:')) return true;
+    const sampleId = voice.providerVoiceKey.slice('mimo-reference:'.length);
+    return (
+      Id.safeParse(sampleId).success &&
+      sampleId === voice.sampleMediaId &&
+      !!voice.modelKey?.startsWith('xiaomi/mimo-')
+    );
+  }
+
   async decidePublicImage(input: {
     userId: string;
     idempotencyKey: string;
