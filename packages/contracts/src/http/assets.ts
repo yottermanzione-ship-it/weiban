@@ -258,7 +258,8 @@ export const StickerAdminEndpoints = {
 /** 非克隆的平台预置音色。名称不得含任何已录入真人角色的姓名（保存时检查，422 bad_request）。 */
 export const Voice = z.object({
   voiceId: Id,
-  name: z.string().min(1).max(20),
+  /** 读取兼容历史导入长名称；新建/编辑仍由 AdminVoiceWrite 限为20字符。 */
+  name: z.string().min(1).max(80),
   /** 气质标签，例「温柔」「少年感」。 */
   tags: z.array(z.string().max(10)).max(8),
   /** 试听音频（purpose = voice_sample）：管理员上传或平台账户预先生成一次，用户试听不调用模型、不扣余额。 */
@@ -283,7 +284,7 @@ export const AdminVoiceWrite = AdminVoice.omit({
   voiceId: true,
   sampleUrl: true,
   updatedAt: true,
-});
+}).extend({ name: z.string().min(1).max(20) });
 
 export const VoiceEndpoints = {
   listVoices: defineEndpoint({

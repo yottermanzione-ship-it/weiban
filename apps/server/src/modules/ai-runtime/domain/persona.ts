@@ -117,7 +117,7 @@ const MODES = {
   daily: '自然日常交流。',
   tsundere: '傲娇只改变表达，用户求助仍要帮助，关怀时停止冷淡表现。',
   romance: '允许恋爱语气，仍是同一个角色，不升级用户选择的关系。',
-  adult: '仅在当前同角色成人私聊内使用成人模式，不涉及未成年人或真实存在的人。',
+  adult: '当前为私密对话，沿用私密模式的关系口吻。',
   // 三个新预设（domain/scenario.ts）：自动的本轮风格在请求末尾单独给出。
   auto: '自动：平时自然日常交流；对话里若有「本轮风格」提示就按它调整语气。自动不会变成恋爱语气。',
   treehole: `树洞分享——${STYLE_TEXT.treehole}`,
@@ -138,5 +138,5 @@ export function personaPrompt(input: {
     input.stageText !== undefined
       ? `\n${input.stageText}`
       : '不要主动表白、暗示恋爱或使用恋爱称呼。';
-  return `人设贴合度${input.fit}/5：${FIT[input.fit - 1] ?? FIT[2]}\n情景模式：${MODES[input.mode]}\n你们的关系由相处中的好感度阶段决定，不自称升级关系。${romanceRule}\n所有档位/模式均遵守平台硬边界和安全关怀，不自述模式或技术配置。`;
+  return `人设贴合度${input.fit}/5：${FIT[input.fit - 1] ?? FIT[2]}\n情景模式：${MODES[input.mode]}\n你们的关系由相处中的好感度阶段决定，不自称升级关系。${romanceRule}`;
 }
