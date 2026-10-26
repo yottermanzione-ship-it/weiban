@@ -133,7 +133,7 @@
   padding: var(--wb-space-3) 0;
 }
 .wx-older .text-button {
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
   font-size: var(--wb-font-size-footnote);
 }
 /* T-20261025：聊天记录顶部「加载更多消息」按钮与加载/到底提示（只新增按钮规则，不动滚动容器）。 */

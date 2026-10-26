@@ -228,7 +228,7 @@ button.plain,
 .plain {
   border: 0;
   background: none;
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
 }
 button.danger,
 .danger-btn {
@@ -490,7 +490,7 @@ label.check:has(input[type='radio']) {
   border-left: 0.5px solid var(--wb-color-ui-popup-line);
 }
 .dialog-actions button.confirm {
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
   font-weight: var(--wb-font-weight-medium);
 }
 .dialog-actions button.danger {

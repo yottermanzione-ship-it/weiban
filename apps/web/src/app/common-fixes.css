@@ -171,7 +171,7 @@ select {
   padding: 0 8px;
   border: 0;
   background: none;
-  color: var(--wb-color-text-link);
+  color: var(--ui-button-default-text);
   font-size: var(--wb-font-size-body);
   line-height: 1;
 }

@@ -356,7 +356,7 @@
   padding: 0;
   background: none;
   border: 0;
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
   font-size: var(--wb-font-size-caption1);
 }
 .over-limit {

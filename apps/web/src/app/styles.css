@@ -55,7 +55,7 @@ button.plain,
 .plain {
   background: none;
   border: 0;
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
   text-align: center;
 }
 .full {
@@ -586,7 +586,7 @@ button.text-button {
   border: 0;
   min-height: auto;
   padding: var(--wb-space-1) 0;
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
 }
 .text-button.danger,
 button.danger {

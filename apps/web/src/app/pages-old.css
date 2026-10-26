@@ -658,7 +658,7 @@ label.profile-field.multiline {
   border: 0;
   border-radius: 0;
   background: var(--wb-color-bg-surface);
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
   font-size: var(--wb-font-size-body);
   font-weight: var(--wb-font-weight-medium);
 }
@@ -1010,7 +1010,7 @@ label.profile-field.multiline {
   border: 0;
   border-radius: 0;
   background: none;
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
   font-size: var(--wb-font-size-callout);
 }
 .moment-detail-actions button + button {
@@ -1096,7 +1096,7 @@ label.profile-field.multiline {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--wb-color-text-link);
+  color: var(--ui-button-danger-text);
   font-size: var(--wb-font-size-caption1);
 }
 .moment-more-host {
@@ -1526,7 +1526,7 @@ label.profile-field.multiline {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
   font-size: var(--wb-font-size-subhead);
 }
 .wx-auth-error {
@@ -1585,7 +1585,7 @@ button.primary.wx-auth-submit {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
   font-size: var(--wb-font-size-footnote);
 }
 .wx-auth-foot i {
@@ -2239,7 +2239,7 @@ button.primary.wx-auth-submit {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
   font-size: var(--wb-font-size-body);
 }
 .wx-search-scopes button:not(:nth-child(3n + 1))::before {
@@ -2318,7 +2318,7 @@ button.primary.wx-auth-submit {
   border: 0;
   border-radius: 0;
   background: none;
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
   font-size: var(--wb-font-size-subhead);
 }
 .wx-search-more .menu-caret {
