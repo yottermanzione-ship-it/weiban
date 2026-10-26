@@ -5,12 +5,16 @@ import { api } from '../data/client.js';
 import { errorText } from '../data/hooks.js';
 import { adminMediaUrl } from '../data/media-url.js';
 import { FieldHelp, SectionCard } from '../ui/page.js';
+import { loadCharacterVoiceState } from './character-voice-state.js';
 
 /** 复用音色库/默认音色接口；不创建音色、不调用克隆或收费试听。 */
 export function CharacterVoicePanel({ characterId }: { characterId: string }) {
   const [voices, setVoices] = useState<AdminVoice[]>([]);
   const [voiceId, setVoiceId] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [boundName, setBoundName] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const [reload, setReload] = useState(0);
   const [loading, setLoading] = useState(true),
     [saving, setSaving] = useState(false);
   const [error, setError] = useState(''),
@@ -19,19 +23,36 @@ export function CharacterVoicePanel({ characterId }: { characterId: string }) {
     let active = true;
     setLoading(true);
     setError('');
-    Promise.all([
-      api.call(VoiceAdminEndpoints.listVoices),
-      api.call(WorkLinkAdminEndpoints.getDefaultVoice, { params: { characterId } }),
-    ])
-      .then(([list, current]) => {
-        if (active) {
-          setVoices(list.items);
-          setVoiceId(current.voiceId);
-          setSaved(current.voiceId);
+    setNotice('');
+    setReady(false);
+    setVoices([]);
+    setVoiceId(null);
+    setSaved(null);
+    setBoundName(null);
+    loadCharacterVoiceState(
+      () => api.call(VoiceAdminEndpoints.listVoices),
+      () => api.call(WorkLinkAdminEndpoints.getDefaultVoice, { params: { characterId } }),
+    )
+      .then((state) => {
+        if (!active) return;
+        setVoices(state.voices);
+        if (state.binding) {
+          setVoiceId(state.binding.voiceId);
+          setSaved(state.binding.voiceId);
+          setBoundName(state.binding.voiceName);
         }
+        setReady(state.ready);
+        setError(
+          [
+            state.catalogError && `音色目录读取失败：${errorText(state.catalogError.cause)}`,
+            state.bindingError && `角色默认音色读取失败：${errorText(state.bindingError.cause)}`,
+          ]
+            .filter(Boolean)
+            .join('；'),
+        );
       })
       .catch((e) => {
-        if (active) setError(errorText(e));
+        if (active) setError(`音色资料读取失败：${errorText(e)}`);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -39,9 +60,10 @@ export function CharacterVoicePanel({ characterId }: { characterId: string }) {
     return () => {
       active = false;
     };
-  }, [characterId]);
+  }, [characterId, reload]);
   const selected = useMemo(() => voices.find((v) => v.voiceId === voiceId), [voices, voiceId]);
   async function save() {
+    if (!ready) return;
     setSaving(true);
     setError('');
     setNotice('');
@@ -63,7 +85,18 @@ export function CharacterVoicePanel({ characterId }: { characterId: string }) {
       title="声音与音色"
       desc="与人物文本分开管理；选择已入库音色，不重新克隆、不批量生成声音"
     >
-      {error && <Alert type="error" showIcon message={error} />}
+      {error && (
+        <Alert
+          type="error"
+          showIcon
+          message={error}
+          action={
+            <Button onClick={() => setReload((n) => n + 1)} disabled={loading}>
+              重试
+            </Button>
+          }
+        />
+      )}
       {notice && <Alert type="success" showIcon message={notice} />}
       <label className="field-line">
         <span className="field-label">角色默认音色</span>
@@ -73,26 +106,43 @@ export function CharacterVoicePanel({ characterId }: { characterId: string }) {
           optionFilterProp="label"
           allowClear
           loading={loading}
-          disabled={loading || saving}
+          disabled={loading || saving || !ready}
           style={{ width: '100%' }}
-          placeholder="未指定，沿用现有回退设置"
+          placeholder={
+            loading
+              ? '读取音色资料…'
+              : ready
+                ? '未指定，沿用现有回退设置'
+                : '音色资料未完整读取，请重试'
+          }
           value={voiceId ?? undefined}
           onChange={(v) => {
             setVoiceId(v ?? null);
             setNotice('');
           }}
-          options={voices.map((v) => ({
-            value: v.voiceId,
-            label: `${v.name} · ${v.modelKey}${v.enabled ? '' : '（已停用）'}`,
-            disabled: !v.enabled,
-          }))}
+          options={[
+            ...(voiceId && !selected
+              ? [
+                  {
+                    value: voiceId,
+                    label: `${boundName ?? '已绑定音色'}（目录未读到此条）`,
+                    disabled: true,
+                  },
+                ]
+              : []),
+            ...voices.map((v) => ({
+              value: v.voiceId,
+              label: `${v.name} · ${v.modelKey}${v.enabled ? '' : '（已停用）'}`,
+              disabled: !v.enabled,
+            })),
+          ]}
         />
       </label>
       {voiceId && !selected && !loading && (
         <Alert
           type="warning"
           showIcon
-          message="当前绑定音色未在可用目录中找到，请核对后再选择；不会自动替换。"
+          message={`当前已绑定：${boundName ?? '已有音色'}。目录中暂未读到对应条目，不代表没有绑定；不会自动替换。`}
         />
       )}
       {selected && (
@@ -120,7 +170,7 @@ export function CharacterVoicePanel({ characterId }: { characterId: string }) {
             setVoiceId(null);
             setNotice('');
           }}
-          disabled={loading || saving || voiceId === null}
+          disabled={loading || saving || !ready || voiceId === null}
         >
           清除默认选择
         </Button>
@@ -128,7 +178,7 @@ export function CharacterVoicePanel({ characterId }: { characterId: string }) {
           type="primary"
           onClick={() => void save()}
           loading={saving}
-          disabled={loading || voiceId === saved}
+          disabled={loading || !ready || voiceId === saved}
         >
           保存音色设置
         </Button>
