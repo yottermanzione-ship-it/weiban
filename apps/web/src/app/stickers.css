@@ -51,7 +51,7 @@
 }
 .sticker-store-page .sticker-store-tabs > button[aria-selected='true'] {
   color: var(--wb-color-text-primary);
-  font-weight: 600;
+  font-weight: var(--wb-font-weight-semibold);
 }
 .sticker-store-tabs > button[aria-selected='true']::after {
   position: absolute;
@@ -68,7 +68,7 @@
   border-radius: 0;
   box-shadow: none;
   background: transparent;
-  color: #111;
+  color: var(--wb-color-text-primary);
   letter-spacing: normal;
 }
 .sticker-store-search {
@@ -80,7 +80,7 @@
   min-height: 40px;
   padding: 8px 14px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--wb-radius-md);
   background: var(--wb-color-bg-surface);
   color: var(--wb-color-text-primary);
   text-align: center;
@@ -102,7 +102,7 @@
   min-height: 150px;
   padding: 16px;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: var(--wb-radius-lg);
   background: var(--wb-color-brand-soft);
   color: var(--wb-color-text-primary);
   scroll-snap-align: start;
@@ -119,13 +119,13 @@
 }
 .sticker-store-heading {
   margin: 16px 14px 12px;
-  font-size: 17px;
+  font-size: var(--wb-font-size-body);
 }
 .sticker-store-list,
 .sticker-store-tiles {
   margin: 0 8px 16px;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: var(--wb-radius-lg);
   background: var(--wb-color-bg-surface);
 }
 .sticker-store-row {
@@ -153,7 +153,7 @@
   width: 56px;
   height: 56px;
   object-fit: contain;
-  border-radius: 6px;
+  border-radius: var(--wb-radius-xs);
 }
 .sticker-store-row-detail span {
   overflow-wrap: anywhere;
@@ -164,7 +164,7 @@
   min-height: 32px;
   padding: 4px 12px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--wb-radius-xs);
   background: var(--wb-color-bg-page);
   color: var(--wb-color-text-primary);
 }
@@ -189,10 +189,10 @@
   aspect-ratio: 1;
   object-fit: contain;
   border: 0.5px solid var(--wb-color-border-hairline);
-  border-radius: 10px;
+  border-radius: var(--wb-radius-md);
 }
 .sticker-store-tile span {
-  font-size: 13px;
+  font-size: var(--wb-font-size-footnote);
   overflow-wrap: anywhere;
 }
 .sticker-manage-heart {

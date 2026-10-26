@@ -11,6 +11,10 @@ import { useRef, useState, type ReactNode } from 'react';
 import { OldIcon } from './old-icons.js';
 import { BackArrow, NavBar, useBack } from './shell-kit.js';
 
+/**
+ * 二级页面外壳（26 号 §2）：整页推入，顶栏「取消 / 标题 / 完成」，完成键没改动或必填为空时灰底灰字不可点，
+ * 有效改动后变绿。长内容、复杂编辑（资料编辑、自建角色各字段、长文本）都用它，不用底部弹层。
+ */
 export function EditPage({
   title,
   canSave,
@@ -19,6 +23,9 @@ export function EditPage({
   fallback,
   children,
   className,
+  doneLabel = '完成',
+  cancelLabel = '取消',
+  onCancel,
 }: {
   title: string;
   /** 有有效改动且必填不为空时才为 true。 */
@@ -28,6 +35,11 @@ export function EditPage({
   fallback: string;
   children: ReactNode;
   className?: string;
+  /** 右上角主按钮文字，默认「完成」；发布类可写「发表」「发送」。 */
+  doneLabel?: string;
+  cancelLabel?: string;
+  /** 自定义取消（如先问是否保留草稿）；不传则返回上一页。 */
+  onCancel?(): void;
 }) {
   const back = useBack(fallback);
   return (
@@ -35,8 +47,13 @@ export function EditPage({
       <NavBar
         title={title}
         left={
-          <button type="button" className="edit-cancel" disabled={pending} onClick={back}>
-            取消
+          <button
+            type="button"
+            className="edit-cancel"
+            disabled={pending}
+            onClick={onCancel ?? back}
+          >
+            {cancelLabel}
           </button>
         }
         right={
@@ -47,7 +64,7 @@ export function EditPage({
             aria-busy={pending}
             onClick={onSave}
           >
-            完成
+            {doneLabel}
           </button>
         }
       />

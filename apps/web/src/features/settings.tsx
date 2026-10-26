@@ -36,6 +36,7 @@ import {
 } from './message-sound.js';
 import {
   CheckSlot,
+  ChoiceSheet as SharedChoiceSheet,
   ComingSoonRow,
   GroupHeader,
   MenuGroup,
@@ -54,7 +55,11 @@ const schemeNames: Record<Scheme, string> = {
 };
 const sounds = noticeSounds;
 
-/** 单选列表弹层：每项 56，文字左对齐，选中项右侧绿色 ✓（固定列，没选中也占位，试听喇叭因此对齐）。 */
+/**
+ * 设置里的单选：没有行尾按钮时直接用公共 Choice Sheet（shell-kit，26 号 §2）；
+ * 带行尾按钮（提示音的试听喇叭）时暂用列表弹层：每项 56，文字左对齐，右侧固定列绿色 ✓。
+ * 后者待 U2 按 sheet-audit 第 13 / 14 项改成二级页面后删掉。
+ */
 export function ChoiceSheet<T extends string | number>({
   title,
   value,
@@ -70,6 +75,16 @@ export function ChoiceSheet<T extends string | number>({
   onClose(): void;
   extra?: (value: T) => ReactNode;
 }) {
+  if (!extra)
+    return (
+      <SharedChoiceSheet
+        title={title}
+        value={value}
+        options={options}
+        onChange={onPick}
+        onClose={onClose}
+      />
+    );
   return (
     <Sheet title={title} onClose={onClose} closeLabel="取消">
       <MenuGroup>

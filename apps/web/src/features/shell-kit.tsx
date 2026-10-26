@@ -445,9 +445,19 @@ export function useEscape(onClose: () => void) {
   }, [onClose]);
 }
 
+/** 底部面板可吸附的档位：半屏 / 全屏（全屏留出顶部一条，看得出是浮层）。 */
+export type SheetSnap = 'half' | 'full';
+const SNAP_RATIO: Record<SheetSnap, number> = { half: 0.5, full: 0.92 };
+/** 下拉超过最低一档这么多像素才算「拖下去关闭」。 */
+const SHEET_CLOSE_DRAG = 80;
+
 /**
- * 底部弹层（规格 5 表）：白底、顶部圆角 12、无把手；标题栏高 56：左「取消」/ 中标题 / 右操作。
- * 从底部升起（只动 transform）。点遮罩或 Esc 关闭。
+ * 底部面板 Bottom Sheet（规格 5 表；26 号 §2）：白底、顶部圆角 12；标题栏高 56：左「取消」/ 中标题 / 右操作。
+ * 从底部升起。默认点蒙层或 Esc 关闭。
+ * - keepOnScrim：面板里有已填写的内容时传 true——点蒙层不关闭（面板轻轻一顿提示），拖下去也只回弹，
+ *   只有点「取消」/ Esc 才关，已填内容不会因误触丢失。
+ * - snaps：传两档（如 ['half', 'full']）即可拖拽：顶部出现把手，拖动标题栏 / 把手，松手吸附到最近一档；
+ *   从最低一档再往下拖超过 80px 关闭（keepOnScrim 时回弹）。
  */
 export function Sheet({
   title,
@@ -458,6 +468,8 @@ export function Sheet({
   half = false,
   fullScreen = false,
   closeDisabled = false,
+  keepOnScrim = false,
+  snaps,
 }: {
   title?: ReactNode;
   onClose(): void;
@@ -467,26 +479,43 @@ export function Sheet({
   half?: boolean;
   fullScreen?: boolean;
   closeDisabled?: boolean;
+  keepOnScrim?: boolean;
+  snaps?: SheetSnap[];
 }) {
   useEscape(() => {
     if (!closeDisabled) onClose();
   });
   const closeIcon = closeLabel === '✕' || closeLabel === '关闭';
+  const panel = useRef<HTMLDivElement>(null);
+  const [nudge, setNudge] = useState(0);
+  const drag = useSheetDrag(snaps, panel, () => {
+    if (keepOnScrim || closeDisabled) return false;
+    onClose();
+    return true;
+  });
   return (
     <div
       className="sheet-scrim"
       onClick={() => {
-        if (!closeDisabled) onClose();
+        if (closeDisabled) return;
+        if (keepOnScrim) setNudge((n) => n + 1);
+        else onClose();
       }}
     >
       <div
-        className={`sheet-panel shell-sheet ${half ? 'half' : ''} ${fullScreen ? 'fullscreen' : ''}`}
+        ref={panel}
+        className={`sheet-panel shell-sheet ${half ? 'half' : ''} ${fullScreen ? 'fullscreen' : ''} ${
+          drag.enabled ? 'draggable' : ''
+        } ${drag.dragging ? 'dragging' : ''} ${nudge % 2 ? 'nudge-a' : nudge ? 'nudge-b' : ''}`}
+        style={drag.style}
         role="dialog"
+        aria-modal="true"
         aria-label={typeof title === 'string' ? title : undefined}
         onClick={(event) => event.stopPropagation()}
       >
+        {drag.enabled && <div className="sheet-grabber" aria-hidden {...drag.handlers} />}
         {title != null && (
-          <header className="sheet-head">
+          <header className="sheet-head" {...(drag.enabled ? drag.handlers : {})}>
             <span className="sheet-head-side">
               {!closeIcon && (
                 <button
@@ -524,9 +553,11 @@ export function Sheet({
 
 export interface ActionItem {
   label: ReactNode;
+  /** 危险操作红字（删除、清空）。 */
   danger?: boolean;
   /** 单选列表里的当前项：右侧固定位置显示绿色对号，不参与文字居中（10-21 G2）。 */
   checked?: boolean;
+  disabled?: boolean;
   onClick(): void;
 }
 
@@ -545,51 +576,166 @@ export function CheckSlot({ checked, size = 20 }: { checked: boolean; size?: num
   );
 }
 
-/** 底部操作列表（规格 3.10）。 */
+/**
+ * 底部动作面板 Action Sheet（规格 3.10；26 号 §2）：微信式白底通栏按钮、无边框，
+ * 顶部可选一行灰字说明，底部隔一条灰缝的独立「取消」；危险操作红字。点蒙层 / Esc / 取消关闭。
+ * 一组操作（更多、长按菜单的手机版、头像来源）用它；从几个值里选一个用 ChoiceSheet。
+ */
 export function ActionSheet({
   items,
   onClose,
   title,
+  cancelLabel = '取消',
 }: {
   items: ActionItem[];
   onClose(): void;
+  /** 顶部灰字说明，如「删除后不可恢复」。 */
   title?: ReactNode;
+  cancelLabel?: string;
 }) {
   useEscape(onClose);
+  const radio = items.some((item) => item.checked !== undefined);
   return (
     <div className="sheet-scrim action-scrim" onClick={onClose}>
-      <div className="action-sheet" role="menu" onClick={(event) => event.stopPropagation()}>
-        <div className="action-group">
+      <div
+        className="action-sheet"
+        role={radio ? 'dialog' : 'menu'}
+        aria-modal="true"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="action-group" role={radio ? 'radiogroup' : undefined}>
           {title && <p className="action-title">{title}</p>}
           {items.map((item, index) => (
             <button
               key={index}
               type="button"
-              role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
+              role={item.checked === undefined ? 'menuitem' : 'radio'}
               aria-checked={item.checked}
-              className={item.danger ? 'danger' : ''}
+              className={`${item.danger ? 'danger' : ''} ${item.checked !== undefined ? 'choice' : ''}`}
+              disabled={item.disabled}
               onClick={() => {
                 onClose();
                 item.onClick();
               }}
             >
               {item.label}
-              {item.checked && (
+              {item.checked !== undefined && (
                 <span className="action-check" aria-hidden>
-                  <OldIcon name="wechat/check" size={20} className="ink-brand" />
+                  <CheckSlot checked={item.checked} />
                 </span>
               )}
             </button>
           ))}
         </div>
-        <div className="action-group">
+        <div className="action-group action-cancel">
           <button type="button" onClick={onClose}>
-            取消
+            {cancelLabel}
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+export interface ChoiceOption<T extends string | number> {
+  value: T;
+  label: ReactNode;
+  disabled?: boolean;
+}
+
+/**
+ * 底部单选 Choice Sheet（26 号 §2）：外观同 Action Sheet，选中项右侧固定列绿色对号，
+ * 对号不参与文字居中；点一项即选中并关闭。适合 5–10 个值（≤5 个用页面里的整行单选 PickRow，
+ * 日期 / 时间用滚轮选择器）。
+ */
+export function ChoiceSheet<T extends string | number>({
+  title,
+  options,
+  value,
+  onChange,
+  onClose,
+}: {
+  title?: ReactNode;
+  options: ChoiceOption<T>[];
+  value: T | null | undefined;
+  onChange(value: T): void;
+  onClose(): void;
+}) {
+  return (
+    <ActionSheet
+      title={title}
+      onClose={onClose}
+      items={options.map((option) => ({
+        label: option.label,
+        checked: option.value === value,
+        disabled: option.disabled,
+        onClick: () => {
+          if (option.value !== value) onChange(option.value);
+        },
+      }))}
+    />
+  );
+}
+
+/**
+ * Bottom Sheet 拖拽吸附：只在传了 snaps 时启用。拖动时直接改高度（跟手、无过渡），
+ * 松手后按最近一档设高度并带过渡。
+ */
+function useSheetDrag(
+  snaps: SheetSnap[] | undefined,
+  panel: { current: HTMLDivElement | null },
+  tryClose: () => boolean,
+) {
+  const enabled = !!snaps && snaps.length > 0;
+  const [snap, setSnap] = useState<SheetSnap | null>(snaps?.[0] ?? null);
+  const [height, setHeight] = useState<number | null>(null);
+  const start = useRef<{ y: number; h: number; id: number } | null>(null);
+  if (!enabled) return { enabled, dragging: false, style: undefined, handlers: {} };
+  const heights = () => snaps!.map((s) => ({ s, h: SNAP_RATIO[s] * window.innerHeight }));
+  const handlers = {
+    onPointerDown(event: ReactPointerEvent<HTMLElement>) {
+      if ((event.target as HTMLElement).closest('button,a,input,textarea,select')) return;
+      const el = panel.current;
+      if (!el) return;
+      start.current = {
+        y: event.clientY,
+        h: el.getBoundingClientRect().height,
+        id: event.pointerId,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    onPointerMove(event: ReactPointerEvent<HTMLElement>) {
+      const from = start.current;
+      if (!from || from.id !== event.pointerId) return;
+      const max = SNAP_RATIO.full * window.innerHeight;
+      setHeight(Math.max(0, Math.min(max, from.h - (event.clientY - from.y))));
+    },
+    onPointerUp(event: ReactPointerEvent<HTMLElement>) {
+      const from = start.current;
+      if (!from || from.id !== event.pointerId) return;
+      start.current = null;
+      const h = from.h - (event.clientY - from.y);
+      const list = heights();
+      const lowest = Math.min(...list.map((x) => x.h));
+      setHeight(null);
+      if (h < lowest - SHEET_CLOSE_DRAG && tryClose()) return;
+      const nearest = list.reduce((a, b) => (Math.abs(b.h - h) < Math.abs(a.h - h) ? b : a));
+      setSnap(nearest.s);
+    },
+    onPointerCancel() {
+      start.current = null;
+      setHeight(null);
+    },
+  };
+  return {
+    enabled,
+    dragging: height !== null,
+    style: {
+      height: height !== null ? `${height}px` : `${SNAP_RATIO[snap ?? 'half'] * 100}dvh`,
+      maxHeight: 'none',
+    },
+    handlers,
+  };
 }
 
 /** 浅色长按菜单（规格 3.7）：在手指位置弹出，宽 168，每项 52；不压暗背景。 */

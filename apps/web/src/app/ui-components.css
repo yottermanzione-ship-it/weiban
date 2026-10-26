@@ -1,0 +1,223 @@
+/*
+ * 公共组件样式（2026-10-26 批 U1；组件说明 docs/web/ui-components.md）。最后加载，覆盖早期同名样式。
+ * 只用令牌：docs/design/tokens.css + app/tokens.css。
+ */
+
+/* ---------- Action Sheet / Choice Sheet：微信式白底通栏，底部隔灰缝的独立「取消」 ---------- */
+.action-sheet {
+  overflow: hidden;
+  padding: 0;
+  border-radius: var(--wb-radius-lg) var(--wb-radius-lg) 0 0;
+  background: var(--wb-color-bg-page);
+}
+.action-group {
+  border-radius: 0;
+}
+.action-group + .action-group {
+  margin-top: var(--wb-space-3);
+}
+.action-cancel {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.action-group button:active {
+  background: var(--wb-color-bg-pressed);
+}
+.action-group button:disabled {
+  opacity: 1;
+  color: var(--wb-color-text-tertiary);
+}
+/* 单选：左右各留出对号列宽度，文字仍在整行正中，对号固定在右列 */
+.action-group button.choice {
+  position: relative;
+  padding: 0 calc(var(--wb-space-5) * 2 + 20px);
+}
+
+/* ---------- Dialog / Alert Dialog ---------- */
+.dialog-actions button.danger {
+  font-weight: var(--wb-font-weight-medium);
+}
+.dialog-actions button:disabled {
+  opacity: 1;
+  color: var(--wb-color-text-tertiary);
+}
+.dialog-actions button[aria-busy='true'] {
+  color: var(--wb-color-text-tertiary);
+}
+
+/* ---------- Snackbar：底部撤销条 ---------- */
+.snackbar {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom) + var(--wb-size-tab-bar) + var(--wb-space-3));
+  left: 50%;
+  z-index: var(--wb-z-index-toast);
+  display: flex;
+  align-items: center;
+  gap: var(--wb-space-4);
+  width: min(
+    calc(100vw - var(--wb-space-8)),
+    calc(var(--wb-size-content-max-width) - var(--wb-space-8))
+  );
+  min-height: 48px;
+  padding: 0 var(--wb-space-2) 0 var(--wb-space-5);
+  border-radius: var(--wb-radius-md);
+  background: var(--wb-color-ui-toast-bg);
+  box-shadow: var(--wb-shadow-md);
+  color: var(--ui-text-on-color);
+  font-size: var(--wb-font-size-subhead);
+  line-height: 1.4;
+  transform: translateX(-50%);
+  animation: snackbar-in var(--wb-motion-duration-fast) var(--wb-motion-easing-decelerate);
+}
+.snackbar-text {
+  flex: 1;
+  min-width: 0;
+  padding: var(--wb-space-3) 0;
+}
+.snackbar-action {
+  flex: none;
+  min-height: 40px;
+  padding: 0 var(--wb-space-4);
+  border: 0;
+  border-radius: var(--wb-radius-xs);
+  background: none;
+  color: var(--wb-color-brand-primary);
+  font-size: var(--wb-font-size-subhead);
+  font-weight: var(--wb-font-weight-medium);
+}
+.snackbar-action:active {
+  background: var(--ui-on-dark-fill-2);
+}
+@keyframes snackbar-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+}
+
+/* ---------- Inline Alert：输入框下红字 ---------- */
+.inline-alert {
+  margin: var(--wb-space-2) var(--wb-space-5) 0;
+  color: var(--wb-color-text-danger);
+  font-size: var(--wb-font-size-footnote);
+  line-height: 1.4;
+}
+
+/* ---------- Bottom Sheet：分档吸附、把手、点蒙层不丢内容时的轻顿 ---------- */
+.sheet-panel.draggable {
+  transition: height var(--wb-motion-duration-base) var(--wb-motion-easing-standard);
+}
+.sheet-panel.dragging {
+  transition: none;
+  user-select: none;
+}
+.sheet-grabber {
+  display: grid;
+  flex: none;
+  place-items: center;
+  height: 20px;
+  touch-action: none;
+  cursor: grab;
+}
+.sheet-grabber::before {
+  content: '';
+  width: 36px;
+  height: 4px;
+  border-radius: var(--wb-radius-full);
+  background: var(--wb-color-border-strong);
+}
+.sheet-panel.draggable .sheet-head {
+  height: 44px;
+  touch-action: none;
+}
+.sheet-panel.nudge-a {
+  animation: sheet-nudge-a var(--wb-motion-duration-base) var(--wb-motion-easing-spring);
+}
+.sheet-panel.nudge-b {
+  animation: sheet-nudge-b var(--wb-motion-duration-base) var(--wb-motion-easing-spring);
+}
+@keyframes sheet-nudge-a {
+  40% {
+    transform: translateY(-8px);
+  }
+}
+@keyframes sheet-nudge-b {
+  40% {
+    transform: translateY(-8px);
+  }
+}
+/* 底部面板顶栏右侧的绿色小按钮（滚轮选择器「确定」等）：与二级页面「完成」同尺寸 */
+.sheet-head .primary.sheet-confirm {
+  min-width: 54px;
+  min-height: 34px;
+  height: 34px;
+  margin-right: var(--wb-space-2);
+  padding: 0 var(--wb-space-4);
+  border-radius: var(--wb-radius-xs);
+  font-size: var(--wb-font-size-subhead);
+  font-weight: var(--wb-font-weight-medium);
+}
+
+/* ---------- 微信式滚轮选择器 ---------- */
+.picker-sheet-body {
+  padding: var(--wb-space-3) var(--wb-space-5) var(--wb-space-6);
+}
+.wheel-picker {
+  --wheel-row: 48px;
+  position: relative;
+  display: flex;
+}
+.wheel-band {
+  position: absolute;
+  top: calc(50% - var(--wheel-row) / 2);
+  right: 0;
+  left: 0;
+  height: var(--wheel-row);
+  border-top: 0.5px solid var(--wb-color-border-hairline);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
+  pointer-events: none;
+}
+.wheel-column {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  padding: calc(var(--wheel-row) * 2) 0;
+  outline: none;
+  overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to bottom, transparent, black 38%, black 62%, transparent);
+}
+.wheel-column::-webkit-scrollbar {
+  display: none;
+}
+.wheel-column:focus-visible {
+  background: var(--ui-fill-1);
+  border-radius: var(--wb-radius-md);
+}
+.wheel-item {
+  display: grid;
+  place-items: center;
+  height: var(--wheel-row);
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-body);
+  font-variant-numeric: tabular-nums;
+  scroll-snap-align: center;
+  cursor: pointer;
+  user-select: none;
+}
+.wheel-item.on {
+  color: var(--wb-color-text-primary);
+  font-weight: var(--wb-font-weight-medium);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .snackbar,
+  .sheet-panel.nudge-a,
+  .sheet-panel.nudge-b {
+    animation: none;
+  }
+  .sheet-panel.draggable {
+    transition: none;
+  }
+}

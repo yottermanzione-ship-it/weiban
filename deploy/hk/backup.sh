@@ -8,7 +8,7 @@ SRC=${WEIBAN_SRC:-/srv/weiban/src}
 ENV_FILE=${WEIBAN_DEPLOY_ENV:-/srv/weiban/runtime.env}
 RECIPIENT_FILE=${BACKUP_AGE_RECIPIENT_FILE:-/srv/weiban/keys/backup-recipient.txt}
 BACKUP_ROOT=${1:-/srv/weiban/backups}
-KEEP=${KEEP:-7}
+KEEP=${KEEP:-2}
 command -v age >/dev/null
 [[ -s "$RECIPIENT_FILE" ]] || { echo '缺少 age 公钥接收者文件' >&2; exit 1; }
 compose=(docker compose --env-file "$ENV_FILE" -p "${WEIBAN_COMPOSE_PROJECT:-weiban-prod}"
