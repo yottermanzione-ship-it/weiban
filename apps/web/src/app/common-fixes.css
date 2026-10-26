@@ -93,7 +93,7 @@ select {
   padding: 0 8px;
   border: 0;
   background: var(--wb-color-bg-surface);
-  border-radius: 8px;
+  border-radius: var(--wb-radius-md);
   color: var(--wb-color-ui-search-placeholder);
   cursor: text;
 }
@@ -199,13 +199,13 @@ select {
 .role-skeleton i {
   width: 40px;
   height: 40px;
-  border-radius: 6px;
+  border-radius: var(--wb-radius-xs);
   background: var(--wb-color-bg-page);
 }
 .role-skeleton span {
   width: 55%;
   height: 14px;
-  border-radius: 4px;
+  border-radius: var(--wb-radius-xs);
   background: var(--wb-color-bg-page);
 }
 .route-frame,
@@ -230,16 +230,16 @@ select {
 .route-enter-right {
   position: relative;
   z-index: 2;
-  animation: route-enter-right 220ms ease-out;
+  animation: route-enter-right var(--ui-motion-route) var(--ui-ease-out);
 }
 .route-enter-left {
-  animation: route-enter-left 220ms ease-out;
+  animation: route-enter-left var(--ui-motion-route) var(--ui-ease-out);
 }
 .route-exit-right {
-  animation: route-exit-right 220ms ease-out forwards;
+  animation: route-exit-right var(--ui-motion-route) var(--ui-ease-out) forwards;
 }
 .route-exit-left {
-  animation: route-exit-left 220ms ease-out forwards;
+  animation: route-exit-left var(--ui-motion-route) var(--ui-ease-out) forwards;
 }
 @keyframes route-enter-right {
   from {
@@ -328,6 +328,6 @@ select {
   }
   html:has(main.status-page),
   html:has(main.status-page) body {
-    background: #5d616b;
+    background: var(--ui-status-page-base);
   }
 }

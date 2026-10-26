@@ -75,7 +75,7 @@
 }
 .play-tabs button[aria-selected='true'] {
   color: var(--wb-color-text-primary);
-  font-weight: 600;
+  font-weight: var(--wb-font-weight-semibold);
   box-shadow: inset 0 -2px 0 var(--wb-color-brand-primary);
 }
 .play-letter-row {
@@ -119,7 +119,7 @@
 }
 .primary-text {
   color: var(--wb-color-brand-primary);
-  font-weight: 600;
+  font-weight: var(--wb-font-weight-semibold);
 }
 .play-letter-actions button {
   flex: 1;
@@ -211,7 +211,7 @@
 }
 .play-timer {
   font-size: var(--wb-font-size-display);
-  font-weight: 600;
+  font-weight: var(--wb-font-weight-semibold);
   margin: 0;
 }
 .play-capsule {
