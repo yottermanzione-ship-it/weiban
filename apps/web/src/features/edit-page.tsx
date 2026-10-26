@@ -251,6 +251,7 @@ export function CountTextarea({
   label,
   placeholder,
   disabled,
+  rows = 3,
 }: {
   value: string;
   onChange(value: string): void;
@@ -258,6 +259,8 @@ export function CountTextarea({
   label: string;
   placeholder?: string;
   disabled?: boolean;
+  /** 长文本（U3 自建角色人设描述）用大文本区，默认 3 行。 */
+  rows?: number;
 }) {
   return (
     <div className="edit-textarea">
@@ -268,7 +271,7 @@ export function CountTextarea({
         placeholder={placeholder}
         disabled={disabled}
         autoFocus
-        rows={3}
+        rows={rows}
         onChange={(event) => onChange(event.target.value)}
       />
       <small aria-label={`还能输入 ${maxLength - value.length} 字`}>
