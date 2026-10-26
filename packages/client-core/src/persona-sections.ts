@@ -160,7 +160,14 @@ export interface ProfilePersonaSource {
 export interface PlazaPersonaSource {
   work: Pick<
     PlazaWorkDetail,
-    'kind' | 'name' | 'tagline' | 'basis' | 'avatarUrl' | 'basedOnPresetName' | 'snapshot' | 'remixOf'
+    | 'kind'
+    | 'name'
+    | 'tagline'
+    | 'basis'
+    | 'avatarUrl'
+    | 'basedOnPresetName'
+    | 'snapshot'
+    | 'remixOf'
   >;
 }
 
@@ -303,7 +310,11 @@ export function birthdayText(value: string | null | undefined): string {
 }
 
 const catchphrasesOf = (custom: ProfilePersonaSource['custom']) =>
-  custom?.catchphrases?.length ? custom.catchphrases : custom?.catchphrase ? [custom.catchphrase] : [];
+  custom?.catchphrases?.length
+    ? custom.catchphrases
+    : custom?.catchphrase
+      ? [custom.catchphrase]
+      : [];
 
 const worksText = (works: readonly string[] | undefined) =>
   works?.length
@@ -543,8 +554,7 @@ export const PERSONA_SECTIONS: PersonaSection[] = [
         display: 'quotes',
         userVisible: true,
         from: {
-          profile: (d) =>
-            d.custom ? catchphrasesOf(d.custom) : (d.official?.catchphrases ?? []),
+          profile: (d) => (d.custom ? catchphrasesOf(d.custom) : (d.official?.catchphrases ?? [])),
           plaza: (d) =>
             d.work.snapshot.kind === 'custom_character' ? d.work.snapshot.catchphrases : [],
         },
@@ -674,9 +684,12 @@ export const PERSONA_SECTIONS: PersonaSection[] = [
         userVisible: false,
         from: {
           legacy: (d) => {
-            const m = LegacyCharacterCard.from({ moment_profile_json: d.momentProfile })
-              ?.momentProfile;
-            return m ? [m.tone, m.topics.join('、'), m.commentStyle].filter(Boolean).join(' · ') : '';
+            const m = LegacyCharacterCard.from({
+              moment_profile_json: d.momentProfile,
+            })?.momentProfile;
+            return m
+              ? [m.tone, m.topics.join('、'), m.commentStyle].filter(Boolean).join(' · ')
+              : '';
           },
         },
         admin: { tab: '互动风格', label: '朋友圈风格' },
@@ -844,8 +857,7 @@ export interface ResolvedSection {
 
 function valueOf(source: PersonaSource, sub: PersonaSubsection): PersonaValue {
   const getter = sub.from?.[source.kind] as
-    | ((data: PersonaSources[PersonaSourceKind], sub: PersonaSubsection) => PersonaValue)
-    | undefined;
+    ((data: PersonaSources[PersonaSourceKind], sub: PersonaSubsection) => PersonaValue) | undefined;
   if (getter) return getter(source.data, sub);
   if (source.kind === 'draft' && sub.field) return source.data[sub.field] as PersonaValue;
   return null;

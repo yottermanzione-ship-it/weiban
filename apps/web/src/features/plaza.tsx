@@ -819,13 +819,19 @@ export function WorkPage() {
               type="button"
               className={`persona-count${w.likedByMe ? ' on' : ''}`}
               aria-pressed={w.likedByMe}
-              aria-label={w.likedByMe ? `取消点赞，${w.likeCount} 个赞` : `点赞，${w.likeCount} 个赞`}
+              aria-label={
+                w.likedByMe ? `取消点赞，${w.likeCount} 个赞` : `点赞，${w.likeCount} 个赞`
+              }
               onClick={() => void toggleLike()}
             >
               <Heart size={20} weight={w.likedByMe ? 'fill' : 'regular'} />
               {w.likeCount}
             </button>
-            <a className="persona-count" href="#work-comments" aria-label={`${w.commentCount} 条评论`}>
+            <a
+              className="persona-count"
+              href="#work-comments"
+              aria-label={`${w.commentCount} 条评论`}
+            >
               <ChatCircle size={20} />
               {w.commentCount}
             </a>
@@ -851,7 +857,11 @@ export function WorkPage() {
             </button>
             {w.isMine && w.status !== 'listed' && (
               <span className="tag danger">
-                {removedByAdmin ? '被管理员下架' : w.status === 'author_banned' ? '暂不展示' : '已下架'}
+                {removedByAdmin
+                  ? '被管理员下架'
+                  : w.status === 'author_banned'
+                    ? '暂不展示'
+                    : '已下架'}
               </span>
             )}
           </>
@@ -868,7 +878,9 @@ export function WorkPage() {
         renders={{
           source: (value) =>
             w.snapshot.kind === 'preset_variant' ? (
-              <Link to={`/characters/${w.snapshot.presetCharacterId}`}>{personaValue.text(value)}</Link>
+              <Link to={`/characters/${w.snapshot.presetCharacterId}`}>
+                {personaValue.text(value)}
+              </Link>
             ) : w.remixOf?.available ? (
               <Link to={`/plaza/works/${w.remixOf.workId}`}>{personaValue.text(value)}</Link>
             ) : (
