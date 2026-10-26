@@ -220,6 +220,8 @@ export function ForwardPicker({
         if (!busy) onClose();
       }}
       closeLabel="取消"
+      snaps={['half', 'full']}
+      keepOnScrim={busy}
       action={
         mode ? (
           <button

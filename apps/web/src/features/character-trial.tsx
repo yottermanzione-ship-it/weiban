@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ChatEndpoints, UserCustomEndpoints, type Message } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { friendlyError } from '../data/use-remote.js';
+import { Sheet } from './shell-kit.js';
 
 export function CharacterTrial({
   conversationId,
@@ -90,12 +91,19 @@ export function CharacterTrial({
     }
   }
   if (!owned()) return null;
+  // U2（V01）：手写居中壳换成公共 Bottom Sheet（可在半屏 / 全屏间拖动），顶栏左「结束试聊」；有未发内容时点蒙层不关
   return (
-    <div className="dialog-scrim" role="dialog" aria-modal="true" aria-label="角色试聊">
-      <section className="dialog stack">
-        <h2>和{name}试聊</h2>
+    <Sheet
+      title={`和${name}试聊`}
+      closeLabel={closing ? '正在结束…' : '结束试聊'}
+      closeDisabled={closing}
+      keepOnScrim={!!text.trim()}
+      snaps={['full', 'half']}
+      onClose={() => void close()}
+    >
+      <section className="trial-sheet stack">
         <p className="muted">关闭后不保留这次试聊；返回编辑器可继续修改或保存角色。</p>
-        <div className="stack" aria-live="polite" style={{ maxHeight: '45vh', overflowY: 'auto' }}>
+        <div className="stack trial-messages" aria-live="polite">
           {messages.map((message) => (
             <p
               key={message.messageId}
@@ -129,10 +137,7 @@ export function CharacterTrial({
             {error}
           </p>
         )}
-        <button disabled={closing} onClick={() => void close()}>
-          {closing ? '正在结束…' : '结束试聊，返回编辑'}
-        </button>
       </section>
-    </div>
+    </Sheet>
   );
 }

@@ -22,6 +22,7 @@ import {
 } from './edit-page.js';
 import { OldIcon } from './old-icons.js';
 import { MenuRow, NavBar, SyncPendingState, useBack } from './shell-kit.js';
+import { DateField } from './wheel-picker.js';
 
 const FALLBACK = '/profile';
 
@@ -194,14 +195,20 @@ function BirthdayEditor({ initial }: { initial: string }) {
       onSave={() => void save({ birthday: draft.value || null })}
       fallback={FALLBACK}
     >
-      <ClearInput
-        label="生日"
-        type="date"
-        value={draft.value}
-        autoFocus={false}
-        disabled={pending}
-        onChange={draft.setValue}
-      />
+      {/* U2：原生日期框换成微信式日期滚轮 */}
+      <div className="edit-input-row">
+        <DateField
+          title="生日"
+          label="生日"
+          value={draft.value}
+          max={today}
+          placeholder="未填写"
+          clearable
+          clearLabel="清除生日"
+          disabled={pending}
+          onChange={draft.setValue}
+        />
+      </div>
       <p className="edit-hint">
         {today && draft.value > today ? '生日不能晚于今天' : 'TA 会在你生日那天记得你'}
       </p>

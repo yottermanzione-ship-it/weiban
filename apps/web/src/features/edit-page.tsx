@@ -9,7 +9,7 @@
  */
 import { useRef, useState, type ReactNode } from 'react';
 import { OldIcon } from './old-icons.js';
-import { BackArrow, NavBar, useBack } from './shell-kit.js';
+import { BackArrow, NavBar, useBack, useEscape } from './shell-kit.js';
 
 /**
  * 二级页面外壳（26 号 §2）：整页推入，顶栏「取消 / 标题 / 完成」，完成键没改动或必填为空时灰底灰字不可点，
@@ -73,6 +73,112 @@ export function EditPage({
   );
 }
 
+/**
+ * 页内二级页面（2026-10-26 批 U2）：不新开路由、从右侧整页推入盖住当前页，外观就是 SubPage
+ * （顶栏「取消 / 标题 / 完成」，完成灰→绿）。用来替代原来的底部表单弹层（单字段编辑、记忆、心愿、纪念日等），
+ * 已填内容不会因为点蒙层丢失；Esc 等同「取消」。
+ */
+export function SubPageLayer({
+  title,
+  canSave,
+  pending = false,
+  onSave,
+  onCancel,
+  children,
+  doneLabel,
+  className,
+}: {
+  title: string;
+  canSave: boolean;
+  pending?: boolean;
+  onSave(): void;
+  onCancel(): void;
+  children: ReactNode;
+  doneLabel?: string;
+  className?: string;
+}) {
+  useEscape(() => {
+    if (!pending) onCancel();
+  });
+  return (
+    <div className="subpage-layer" role="dialog" aria-modal="true" aria-label={title}>
+      <EditPage
+        title={title}
+        canSave={canSave}
+        pending={pending}
+        onSave={onSave}
+        onCancel={onCancel}
+        fallback="/"
+        doneLabel={doneLabel}
+        className={className}
+      >
+        {children}
+      </EditPage>
+    </div>
+  );
+}
+
+/**
+ * 单字段编辑二级页面（微信「修改群聊名称」）：一行输入 + 清除按钮 + 字数，替代原 FieldSheet 底部弹层。
+ * 没改动或必填为空时「完成」灰色不可点；回车（非输入法选字）等同完成。
+ */
+export function FieldPage({
+  title,
+  initial,
+  maxLength,
+  required = false,
+  pending = false,
+  placeholder,
+  hint,
+  inputMode,
+  onClose,
+  onSave,
+}: {
+  title: string;
+  initial: string;
+  maxLength: number;
+  required?: boolean;
+  pending?: boolean;
+  placeholder?: string;
+  /** 输入框下方的灰字说明。 */
+  hint?: ReactNode;
+  inputMode?: 'numeric' | 'text';
+  onClose(): void;
+  onSave(value: string): void;
+}) {
+  const [value, setValue] = useState(initial);
+  const canSave = value.trim() !== initial.trim() && !(required && !value.trim());
+  const save = () => {
+    if (!pending && canSave) onSave(value.trim());
+  };
+  return (
+    <SubPageLayer
+      title={title}
+      canSave={canSave}
+      pending={pending}
+      onSave={save}
+      onCancel={onClose}
+    >
+      <ClearInput
+        label={title}
+        value={value}
+        onChange={setValue}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        disabled={pending}
+        inputMode={inputMode}
+        onEnter={save}
+      />
+      <p className="edit-hint field-page-hint">
+        {hint}
+        <span className="field-page-count">
+          {Array.from(value).length}/{maxLength}
+        </span>
+      </p>
+    </SubPageLayer>
+  );
+}
+
 /** 白色通栏输入行，有内容时右侧出现灰色圆形清除按钮（微信「设置名字」）。 */
 export function ClearInput({
   value,
@@ -84,6 +190,7 @@ export function ClearInput({
   disabled,
   autoFocus = true,
   onEnter,
+  inputMode,
 }: {
   value: string;
   onChange(value: string): void;
@@ -94,6 +201,7 @@ export function ClearInput({
   disabled?: boolean;
   autoFocus?: boolean;
   onEnter?(): void;
+  inputMode?: 'numeric' | 'text';
 }) {
   const input = useRef<HTMLInputElement>(null);
   return (
@@ -102,6 +210,7 @@ export function ClearInput({
         ref={input}
         aria-label={label}
         type={type}
+        inputMode={inputMode}
         value={value}
         maxLength={maxLength}
         placeholder={placeholder}

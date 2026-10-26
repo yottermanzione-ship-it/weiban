@@ -20,14 +20,19 @@ export {
   ActionSheet,
   CheckSlot,
   ChoiceSheet,
+  SegmentedTabs,
   Sheet as BottomSheet,
   type ActionItem,
   type ChoiceOption,
   type SheetSnap,
 } from './shell-kit.js';
-export { EditPage as SubPage, PickRow } from './edit-page.js';
+export { EditPage as SubPage, FieldPage, PickRow, SubPageLayer } from './edit-page.js';
 export {
+  DateField,
   DatePickerSheet,
+  SelectField,
+  TimeField,
+  type SelectOption,
   OptionPickerSheet,
   PickerSheet,
   TimePickerSheet,

@@ -1,6 +1,6 @@
 # 用户端公共 UI 组件说明
 
-> 2026-10-26 批 U1 建立（任务卡 `docs/tasks/2026-10-26-ui-quality.md`，规则来源 `docs/refactor/26-ui-quality-plan.md` §2 §5）。
+> 2026-10-26 批 U1 建立、批 U2 补充表单选择框 / 页内二级页面 / 分段 Tab 与「确认与删除」统一规则（任务卡 `docs/tasks/2026-10-26-ui-quality.md`，规则来源 `docs/refactor/26-ui-quality-plan.md` §2 §5）。
 > 新页面一律从 `apps/web/src/features/ui.ts` 引入这些组件，不再自己手写弹窗、确认块、原生日期框。
 > 组件效果图（浅色 / 深色）：`C:\wb-dev\logs\ui-u1\after\gallery\`。
 
@@ -43,16 +43,30 @@
 | Dialog 普通对话框 | `<Dialog title? actions onDismiss?>`，按钮 `tone: 'primary' \| 'danger' \| 'default'` | 白底圆角 12，标题 + 正文 + 底部两个等宽按钮；主按钮绿字 | 需要明确回答的中等内容：保存草稿？更新到新版本？ | 不可撤销的危险操作（用 Alert Dialog）；纯通知（用 Toast） |
 | Alert Dialog 危险确认 | `<AlertDialog title message? confirmLabel onConfirm onCancel pending?>` | 同 Dialog，左「取消」黑字，右主按钮红字写清后果；**点蒙层不关闭**，Esc 等同取消 | 只在**不可撤销**时：删除好友、清空聊天记录、注销、删除作品 | 能撤销的轻操作（用 Snackbar） |
 | 二级页面外壳 | `<SubPage title canSave onSave fallback doneLabel? onCancel?>`（即 `edit-page` 的 `EditPage`） | 整页推入，顶栏「取消 / 标题 / 完成」，没改动或必填为空时「完成」灰底灰字，改了才变绿 | 长内容、复杂编辑：资料编辑、自建角色各字段、长文本 | 只选一个值（Choice Sheet） |
-| 滚轮选择器 | `DatePickerSheet`、`TimePickerSheet`、`OptionPickerSheet`；自己拼列用 `PickerSheet` + `WheelPicker` + `WheelColumn` | 底部面板，顶栏「取消 / 标题 / 绿色确定」；多列滚轮，中间一行选中、上下渐隐，停手自动吸附 | 日期（生日、纪念日）、时间（提醒）、需要滑着挑的一般选项 | 浏览器原生 `<input type="date">` / `<select>` 一律不再用 |
+| 滚轮选择器 | `DatePickerSheet`、`TimePickerSheet`、`OptionPickerSheet`；自己拼列用 `PickerSheet` + `WheelPicker` + `WheelColumn`；可选值传 `onClear` 出现底部「清除」 | 底部面板，顶栏「取消 / 标题 / 绿色确定」；多列滚轮，中间一行选中、上下渐隐，停手自动吸附 | 日期（生日、纪念日）、时间（提醒）、需要滑着挑的一般选项 | 浏览器原生 `<input type="date">` / `<select>` 一律不再用 |
+| 表单选择框（U2） | `DateField`、`TimeField`、`SelectField`（`wheel-picker.tsx`） | 输入框外观的按钮：显示当前值（空则灰字占位）+ 右侧小箭头；放进 `.field-row` / `.profile-field` / `.edit-input-row` 自动变成无边框、值右对齐 | 表单里原来放原生 date / time / select 的地方。`SelectField` ≤10 个选项弹 Choice Sheet，更多自动用单列滚轮；`DateField clearable` 给可选日期加「清除」 | 设置页整行选值（用 `MenuRow` + Choice Sheet） |
+| 页内二级页面（U2） | `SubPageLayer`（任意表单）、`FieldPage`（单字段 + 清除 + 字数）（`edit-page.tsx`） | 外观同二级页面外壳，但不开新路由：从右侧整页推入盖住当前页；Esc / 取消关闭 | 原来「底部表单弹层」的编辑：群聊名称、积分提醒线、记忆、心愿、纪念日、补充设定、申请添加朋友、提示音 | 要能分享链接 / 浏览器后退回来的独立页面（用路由 + `SubPage`） |
+| 分段 Tab（U2） | `SegmentedTabs`（`shell-kit.tsx`） | 浅灰槽里两三个等宽分段，选中段白底（外圆角 8 = 内圆角 4 + 间距 4） | 同一页内容的两种看法：角色生态「按角色 / 按动作」 | 页面顶部的一级切换（用 `TextTabs`） |
 
 ### 表单选值梯度（26 号 §2）
 
 2 个选项用开关；≤5 个用页面里的整行单选 `PickRow`；5–10 个用 Choice Sheet；>10 个加搜索；日期 / 时间用滚轮选择器。
 
+### 确认与删除的统一规则（U2 落地）
+
+1. **先问能不能撤销**：能用现有接口恢复的轻操作，直接做 + `showSnackbar` 撤销，不再二次确认。两种写法：
+   - 先做后撤：做完再给撤销条，「撤销」调用反向接口（不显示该聊天 → `hidden: false`；移出群成员 → 拉人进群；下架作品 → 重新上架；删除纪念日 → 按原名称日期重新添加；删一条补充设定 → 用原整段设定重新保存）。
+   - 延迟提交：先从界面藏起来，撤销条消失（`onEnd` 的 reason 不是 `action`）才真正调删除接口，失败就放回并 Toast（取消收藏、删除心愿）。
+2. **不可撤销**（删除好友 / 角色、清空聊天记录、删除聊天、删除作品、注销、删除记忆 / 经期 / 关系 / 提醒等）一律 `AlertDialog`：标题是问句，正文写后果，右侧红字按钮写动作（「删除作品」「清空聊天记录」），点蒙层不关。
+3. **非危险的确认**（授权角色知道经期、恢复聊天记录、开启私密模式、更新到新版本）用 `Dialog`，主按钮 `tone: 'primary'` 绿字，同样写动作。纯通知用 `Dialog` 单按钮「知道了」（`tone: 'primary'`）。
+4. **叠层约定（V08）**：Action Sheet 里点了会弹确认的项，面板先关，确认框单独出现（不叠两层蒙层）；内容型 Bottom Sheet（情景预设列表）里的确认可以叠在面板上，取消后回到列表。
+5. **一组操作**（更多、发送失败、写信离开、小程序「…」、头像来源）用 Action Sheet，危险项红字；不要在 Bottom Sheet 里放一列带边框按钮。
+6. 旧写法 `primary: true` / `danger: true`（Dialog 按钮）已全部换成 `tone`；`ActionItem` 的 `danger: true` 仍是 Action Sheet 红字项的正确写法。
+
 ## 四、示例代码位置
 
 - 组件源码：`apps/web/src/features/toast.tsx`（Toast、Snackbar、Inline Alert、Dialog、Alert Dialog）、`shell-kit.tsx`（Action Sheet、Choice Sheet、Bottom Sheet）、`edit-page.tsx`（二级页面外壳、PickRow）、`wheel-picker.tsx`（滚轮）；样式 `apps/web/src/app/ui-components.css`。
-- 已在用的例子：Choice Sheet → `settings.tsx` / `account-settings.tsx` 的深色模式、字体大小；Action Sheet → `chat-settings.tsx` 人设贴合度、清空聊天记录；二级页面 → `profile-edit.tsx`；Dialog → `settings.tsx` 退出登录。
+- 已在用的例子：Choice Sheet → `settings.tsx` / `account-settings.tsx` 的深色模式、字体大小；Action Sheet → `chat-settings.tsx` 人设贴合度、`plaza.tsx` 作品更多操作、`avatar-editor.tsx` 头像来源；Alert Dialog → `chat-settings.tsx` 清空聊天记录 / 删除角色、`settings.tsx` 退出登录；Snackbar → `conversation-list.tsx` 不显示该聊天、`favorites.tsx` 取消收藏（延迟提交）；二级页面 → `profile-edit.tsx`；页内二级页面 → `memories.tsx`、`groups.tsx` 群聊名称（`FieldPage`）、`settings.tsx` 提示音；表单选择框 → `play.tsx` 提醒、`period.tsx` 周期设置；分段 Tab → `ecology.tsx`。
 - 全部组件的样板写法（含每种状态）：`C:\wb-dev\logs\ui-u1\gallery.tsx`（截图用，不进仓库）。
 
 ```tsx

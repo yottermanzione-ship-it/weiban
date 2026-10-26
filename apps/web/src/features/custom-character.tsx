@@ -18,6 +18,7 @@ import { CharacterTrial } from './character-trial.js';
 import { AvatarEditor } from './avatar-editor.js';
 import { CharacterVoiceSelect } from './character-voice-select.js';
 import { NavBar } from './shell-kit.js';
+import { DateField, SelectField } from './wheel-picker.js';
 
 const basisOptions: { value: CharacterBasis; label: string; description: string }[] = [
   {
@@ -530,7 +531,14 @@ function CustomCharacterEditor({
         </fieldset>
         <label>
           生日（可选）
-          <input type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} />
+          <DateField
+            title="生日"
+            value={birthday}
+            placeholder="不设置"
+            clearable
+            clearLabel="不设置生日"
+            onChange={setBirthday}
+          />
         </label>
         <CharacterVoiceSelect
           value={voiceId}
@@ -579,14 +587,16 @@ function CustomCharacterEditor({
           {basis === 'real_person' && (
             <label>
               真人类型
-              <select
+              <SelectField<RealPersonKind>
+                title="真人类型"
                 value={realKind}
-                onChange={(e) => setRealKind(e.target.value as RealPersonKind)}
-              >
-                <option value="private_person">身边真人</option>
-                <option value="celebrity">公众人物</option>
-                <option value="historical">历史人物</option>
-              </select>
+                onChange={setRealKind}
+                options={[
+                  { value: 'private_person', label: '身边真人' },
+                  { value: 'celebrity', label: '公众人物' },
+                  { value: 'historical', label: '历史人物' },
+                ]}
+              />
             </label>
           )}
           {imported && (

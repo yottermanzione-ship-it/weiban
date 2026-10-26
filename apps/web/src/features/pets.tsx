@@ -32,7 +32,7 @@ import { useCharacterNames } from '../data/character-names.js';
 import { prepareImage, uploadMedia } from '../data/upload.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { MediaImg } from './media.js';
-import { Dialog, showToast } from './toast.js';
+import { AlertDialog, showToast } from './toast.js';
 import { IconTile, NavBar, useEscape } from './shell-kit.js';
 
 /*
@@ -768,27 +768,24 @@ export function PetPage() {
         </button>
         {error && <p role="alert">{error}</p>}
         {confirmSendAway && (
-          <Dialog
+          <AlertDialog
             title={`送养 ${pet.name}？`}
-            actions={[
-              { label: '取消', onClick: () => setConfirmSendAway(false) },
-              {
-                label: '送养',
-                primary: true,
-                onClick: () => {
-                  setConfirmSendAway(false);
-                  void api
-                    .call(PetEndpoints.sendAway, { params: { petId } })
-                    .then(() => navigate('/services/pets', { replace: true }))
-                    .catch((e) => setError(friendlyError(e)));
-                },
-              },
-            ]}
-          >
-            <p className="hint">
-              {pet.name}会移到「回忆」里，成长记录和相册都会保留。之后可以和 {who} 再领养一只
-            </p>
-          </Dialog>
+            message={
+              <p className="hint">
+                {pet.name}会移到「回忆」里，成长记录和相册都会保留，但不能再接回来。之后可以和 {who}{' '}
+                再领养一只
+              </p>
+            }
+            confirmLabel="送养"
+            onCancel={() => setConfirmSendAway(false)}
+            onConfirm={() => {
+              setConfirmSendAway(false);
+              void api
+                .call(PetEndpoints.sendAway, { params: { petId } })
+                .then(() => navigate('/services/pets', { replace: true }))
+                .catch((e) => setError(friendlyError(e)));
+            }}
+          />
         )}
       </main>
     );

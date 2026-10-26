@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { VoiceEndpoints } from '@weiban/contracts';
 import { useRemote } from '../data/use-remote.js';
+import { SelectField } from './wheel-picker.js';
 
 /** 编辑器保存音色 ID；试听使用库内样音，不生成语音、不计费。 */
 export function CharacterVoiceSelect({
@@ -50,23 +51,19 @@ export function CharacterVoiceSelect({
     <section className="stack">
       <label>
         音色（可选）
-        <select
+        <SelectField<string>
+          title="音色"
           value={value ?? ''}
           disabled={disabled || voices.loading}
-          onChange={(e) => onChange(e.target.value || null)}
-        >
-          <option value="">默认（不指定音色）</option>
-          {value && !selected && (
-            <option value={value} disabled>
-              原音色暂不可用，可改选默认或其他音色
-            </option>
-          )}
-          {items.map((voice) => (
-            <option key={voice.voiceId} value={voice.voiceId}>
-              {voice.name}
-            </option>
-          ))}
-        </select>
+          onChange={(next) => onChange(next || null)}
+          options={[
+            { value: '', label: '默认（不指定音色）' },
+            ...(value && !selected
+              ? [{ value, label: '原音色暂不可用，可改选默认或其他音色', disabled: true }]
+              : []),
+            ...items.map((voice) => ({ value: voice.voiceId, label: voice.name })),
+          ]}
+        />
       </label>
       {voices.loading && <span role="status">正在读取音色库</span>}
       {voices.error && (

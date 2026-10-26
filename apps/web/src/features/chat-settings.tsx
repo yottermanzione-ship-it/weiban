@@ -32,7 +32,7 @@ import {
   SwitchRow,
   SyncPendingState,
 } from './shell-kit.js';
-import { Dialog, showToast } from './toast.js';
+import { AlertDialog, showToast } from './toast.js';
 
 const fitNames = ['极顺从', '顺从', '均衡', '贴合', '极贴合'];
 const frequencyNames: Record<string, string> = {
@@ -387,120 +387,63 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
           )}
         </Sheet>
       )}
+      {/* U2：清空记录、删除角色都不可撤销 → Alert Dialog（红字主按钮写清后果，点蒙层不关） */}
       {confirmation === 'clear' && (
-        <ActionSheet
-          title="只清空聊天记录显示，TA的记忆和养成数据会保留"
-          onClose={() => setConfirmation(null)}
-          items={[
-            {
-              label: '清空聊天记录',
-              danger: true,
-              onClick: () => void change(() => clearHistory(id), undefined, '已清空'),
-            },
-          ]}
+        <AlertDialog
+          title="清空聊天记录？"
+          message="只清空聊天记录显示，TA 的记忆和养成数据会保留。清空后不能恢复。"
+          confirmLabel="清空聊天记录"
+          pending={pending}
+          onCancel={() => setConfirmation(null)}
+          onConfirm={() =>
+            void change(
+              () => clearHistory(id),
+              () => setConfirmation(null),
+              '已清空',
+            )
+          }
         />
       )}
       {confirmation && confirmation !== 'clear' && (
-        <Dialog
-          title={confirmation === 'remove' ? '删除角色' : '永久删除'}
-          actions={[
-            { label: '取消', onClick: () => setConfirmation(null) },
-            {
-              label: '删除',
-              danger: true,
-              onClick: () => {
-                if (confirmation === 'purge') {
-                  setConfirmation('purgeConfirmed');
-                  return;
-                }
-                void change(
-                  () =>
-                    api.call(ContactsEndpoints.remove, {
-                      params: { characterId },
-                      query: { mode: confirmation === 'remove' ? 'soft' : 'purge' },
-                    }),
-                  () => {
-                    setConfirmation(null);
-                    navigate('/contacts');
-                  },
-                );
-              },
-            },
-          ]}
-        >
-          <p>
-            {confirmation === 'remove'
-              ? '角色和聊天将从列表移除，30天内重新添加可恢复'
+        <AlertDialog
+          title={
+            confirmation === 'remove'
+              ? '删除角色？'
               : confirmation === 'purge'
-                ? '这会永久删除聊天记录、记忆和养成数据，无法恢复'
-                : '再次确认永久删除：重新添加也无法恢复这些数据'}
-          </p>
-        </Dialog>
-      )}
-    </main>
-  );
-}
-
-/** 单个文字字段的编辑弹层（顶部「取消 / 完成」，规格 4.14）。 */
-export function FieldSheet({
-  title,
-  initial,
-  maxLength,
-  required = false,
-  pending = false,
-  placeholder,
-  onClose,
-  onSave,
-}: {
-  title: string;
-  initial: string;
-  maxLength: number;
-  required?: boolean;
-  pending?: boolean;
-  placeholder?: string;
-  onClose(): void;
-  onSave(value: string): void;
-}) {
-  const [value, setValue] = useState(initial);
-  // 10-21 G2：没改动或必填为空时「完成」灰色不可点
-  const canSave = value.trim() !== initial.trim() && !(required && !value.trim());
-  return (
-    <Sheet
-      title={title}
-      closeDisabled={pending}
-      onClose={() => {
-        if (!pending) onClose();
-      }}
-      closeLabel="取消"
-      action={
-        <button
-          type="button"
-          className="small-primary primary"
-          disabled={pending || !canSave}
-          aria-busy={pending}
-          onClick={() => onSave(value.trim())}
-        >
-          {pending ? '正在保存…' : '完成'}
-        </button>
-      }
-    >
-      <div className="field-sheet">
-        <input
-          autoFocus
-          aria-label={title}
-          disabled={pending}
-          value={value}
-          maxLength={maxLength}
-          placeholder={placeholder}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={(event) => {
-            if (!pending && event.key === 'Enter' && canSave) onSave(value.trim());
+                ? '永久删除角色和数据？'
+                : '再次确认永久删除'
+          }
+          message={
+            confirmation === 'remove'
+              ? '角色和聊天将从列表移除，30 天内重新添加可恢复。'
+              : confirmation === 'purge'
+                ? '这会永久删除聊天记录、记忆和养成数据，无法恢复。'
+                : '重新添加也无法恢复这些数据。'
+          }
+          confirmLabel={
+            confirmation === 'remove' ? '删除角色' : confirmation === 'purge' ? '继续' : '永久删除'
+          }
+          pending={pending}
+          onCancel={() => setConfirmation(null)}
+          onConfirm={() => {
+            if (confirmation === 'purge') {
+              setConfirmation('purgeConfirmed');
+              return;
+            }
+            void change(
+              () =>
+                api.call(ContactsEndpoints.remove, {
+                  params: { characterId },
+                  query: { mode: confirmation === 'remove' ? 'soft' : 'purge' },
+                }),
+              () => {
+                setConfirmation(null);
+                navigate('/contacts');
+              },
+            );
           }}
         />
-        <small>
-          {Array.from(value).length}/{maxLength}
-        </small>
-      </div>
-    </Sheet>
+      )}
+    </main>
   );
 }

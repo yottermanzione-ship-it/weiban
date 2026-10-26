@@ -478,7 +478,7 @@ export function CallRecordBubble({
             { label: '取消', onClick: () => setConfirm(false) },
             {
               label: '呼叫',
-              primary: true,
+              tone: 'primary',
               onClick: () => {
                 setConfirm(false);
                 onRedial();

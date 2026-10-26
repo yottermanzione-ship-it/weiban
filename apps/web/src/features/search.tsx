@@ -25,6 +25,7 @@ import { MediaImg as LazyMedia } from './media.js';
 import { OldIcon } from './old-icons.js';
 import { Chevron, NavBar, useBack } from './shell-kit.js';
 import { SearchField } from './search-field.js';
+import { DateField, SelectField } from './wheel-picker.js';
 
 /*
  * 聊天搜索（search.md；CHAT-12）。只搜文字内容；结果点开都定位到那条消息的上下文
@@ -595,6 +596,7 @@ export function ConversationSearchPage() {
   const [keyword, setKeyword] = useState((params.get('q') ?? '').trim());
   const [mode, setMode] = useState<QuickMode>('none');
   const [dateHint, setDateHint] = useState('');
+  const [jumpDate, setJumpDate] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const timer = window.setTimeout(() => setKeyword(input.trim().slice(0, 50)), 300);
@@ -747,17 +749,18 @@ export function ConversationSearchPage() {
       {conversation?.type === 'group' && (
         <label className="panel">
           发送者
-          <select
+          <SelectField<string>
+            title="发送者"
             value={senderParticipantId}
-            onChange={(event) => setSenderParticipantId(event.target.value)}
-          >
-            <option value="">全部成员</option>
-            {members.map((member) => (
-              <option key={member.participantId} value={member.participantId}>
-                {member.kind === 'user' ? '我' : (memberNames[member.refId] ?? '角色')}
-              </option>
-            ))}
-          </select>
+            onChange={setSenderParticipantId}
+            options={[
+              { value: '', label: '全部成员' },
+              ...members.map((member) => ({
+                value: member.participantId,
+                label: member.kind === 'user' ? '我' : (memberNames[member.refId] ?? '角色'),
+              })),
+            ]}
+          />
         </label>
       )}
       {keyword ? (
@@ -790,11 +793,14 @@ export function ConversationSearchPage() {
           {mode === 'date' && (
             <label className="stack">
               选择日期
-              <input
-                type="date"
-                onChange={(e) => {
+              <DateField
+                title="选择日期"
+                value={jumpDate}
+                max={new Date().toLocaleDateString('sv-SE')}
+                onChange={(value) => {
+                  setJumpDate(value);
                   setDateHint('');
-                  jumpToDate(e.target.value);
+                  jumpToDate(value);
                 }}
               />
               {dateHint && <small className="hint">{dateHint}</small>}

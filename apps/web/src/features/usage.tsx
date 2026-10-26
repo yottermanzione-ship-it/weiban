@@ -9,7 +9,7 @@ import { useRemote, friendlyError } from '../data/use-remote.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { GroupHeader, MenuGroup, MenuRow, NavBar, TextTabs } from './shell-kit.js';
-import { FieldSheet } from './chat-settings.js';
+import { FieldPage } from './edit-page.js';
 import { showToast } from './toast.js';
 import { formatPoints, pointsText } from './points.js';
 import { localDay } from './wallet.js';
@@ -188,8 +188,10 @@ export function UsagePage() {
         </p>
       )}
       {editing && wallet.data && (
-        <FieldSheet
-          title="积分提醒线（积分）"
+        <FieldPage
+          title="积分提醒线"
+          hint="积分低于这个数时提醒你"
+          inputMode="numeric"
           initial={String(wallet.data.lowBalanceThresholdPoints ?? '')}
           maxLength={10}
           required

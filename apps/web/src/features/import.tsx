@@ -21,7 +21,7 @@ import { friendlyError, useRemote } from '../data/use-remote.js';
 import { NavBar } from './shell-kit.js';
 import { useUpdates } from '../data/updates.js';
 import { uploadImportFile } from '../data/upload.js';
-import { Dialog, showToast } from './toast.js';
+import { AlertDialog, Dialog, showToast } from './toast.js';
 
 /*
  * 导入聊天记录生成角色（CHR-08）与导入资料生成补充设定（CHR-09）；设计 import.md。
@@ -79,7 +79,11 @@ function useImportJob(jobId: string | null) {
 
 function FormatSample({ onClose }: { onClose(): void }) {
   return (
-    <Dialog title="格式示例" actions={[{ label: '知道了', primary: true, onClick: onClose }]}>
+    <Dialog
+      title="格式示例"
+      onDismiss={onClose}
+      actions={[{ label: '知道了', tone: 'primary', onClick: onClose }]}
+    >
       <pre className="format-sample">
         {`小王 2024-05-01 20:01\n明天早点来\n阿青 2024-05-01 20:02\n好呀\n\n小王：明天早点来\n阿青：好呀\n\n[20:01] 小王: 明天早点来\n[20:02] 阿青: 好呀`}
       </pre>
@@ -588,15 +592,13 @@ export function JobStep({ job, onJob }: { job: ImportJob; onJob(job: ImportJob):
           {error && <p role="alert">{error}</p>}
           {sample && <FormatSample onClose={() => setSample(false)} />}
           {abandon && (
-            <Dialog
+            <AlertDialog
               title="放弃这次导入？"
-              actions={[
-                { label: '取消', onClick: () => setAbandon(false) },
-                { label: '放弃', primary: true, onClick: () => void cancel() },
-              ]}
-            >
-              <p className="hint">放弃后已上传的内容会被删除</p>
-            </Dialog>
+              message={<p className="hint">放弃后已上传的内容会被删除，不能恢复。</p>}
+              confirmLabel="放弃导入"
+              onCancel={() => setAbandon(false)}
+              onConfirm={() => void cancel()}
+            />
           )}
         </div>
       );
