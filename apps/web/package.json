@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
+    "@rc-component/qrcode": "1.1.3",
     "@weiban/client-core": "workspace:*",
     "@weiban/contracts": "workspace:*",
     "react": "^19.3.0",

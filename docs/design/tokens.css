@@ -279,6 +279,24 @@
   --wb-share-sticker-sub-text: var(--wb-neutral-600);
   --wb-share-sticker-ink-bg: var(--wb-neutral-ink);
   --wb-share-sticker-ink-text: #FFFFFF;
+  --wb-share-text: var(--wb-wx-ink);
+  --wb-share-text-secondary: #666666;
+  --wb-share-hairline: rgba(0, 0, 0, 0.08);
+  --wb-share-chat-bg: var(--wb-wx-page-day);
+  --wb-share-chat-bubble-mine: var(--wb-wx-bubble-mine);
+  --wb-share-chat-bubble-other: var(--wb-wx-card-day);
+  --wb-share-paper-bg: #FBF8F3;
+  --wb-share-paper-bubble-mine: var(--wb-pink-100);
+  --wb-share-paper-bubble-other: #FFFFFF;
+  --wb-share-paper-border: #EFE6E1;
+  --wb-share-paper-quote: var(--wb-pink-300);
+  --wb-share-poster-bg: #FFFFFF;
+  --wb-share-poster-badge-bg: rgba(0, 0, 0, 0.45);
+  --wb-share-poster-badge-text: #FFFFFF;
+  --wb-share-footer-bg: #FFFFFF;
+  --wb-share-qr: var(--wb-wx-ink);
+  --wb-share-me-avatar-bg: #C8C8C8;
+  --wb-share-me-avatar-text: #FFFFFF;
 
   /* ---------- 字体 ---------- */
   --wb-font-scale: 1;
