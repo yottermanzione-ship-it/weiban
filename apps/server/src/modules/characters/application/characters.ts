@@ -301,6 +301,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       personaVersion: row.personaVersion,
       /** 旧卡没有 WB-Card 数据：后台按旧字段查看/保存（CharacterLegacyAdminService），不走新卡编辑器。 */
       format: 'legacy' as const,
+      weibo: legacy.weiboProfile,
       revision: row.revision,
       publishChecks: {
         requiredFieldsComplete: false,
@@ -738,6 +739,9 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       classification: this.classify(row),
       personaVersion: row.personaVersion,
       format: 'wbcard' as const,
+      ...(body.card.data.profileExtra?.weibo
+        ? { weibo: { enabled: true, ...body.card.data.profileExtra.weibo } }
+        : {}),
       revision: row.revision,
       publishChecks: {
         requiredFieldsComplete: row.checks.requiredFieldsComplete,

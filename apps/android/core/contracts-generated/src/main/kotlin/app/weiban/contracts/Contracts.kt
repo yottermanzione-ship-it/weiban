@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 4.2. Regenerate: pnpm android:generate
+// Contract 4.3. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "4.2"
+const val CONTRACT_VERSION: String = "4.3"
 
 @Serializable
 data class AccountAlias(
@@ -272,6 +272,7 @@ data class AdminCharacter(
     @SerialName("personaVersion") val `personaVersion`: Long,
     @SerialName("publishChecks") val `publishChecks`: AdminCharacterPublishChecks,
     @SerialName("format") val `format`: CharacterCardFormat? = null,
+    @SerialName("weibo") val `weibo`: CharacterWeiboProfile? = null,
     @SerialName("revision") val `revision`: Long? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
 )
@@ -481,6 +482,7 @@ data class AdminLegacyFields(
     @SerialName("corePersona") val `corePersona`: String,
     @SerialName("speakingStyle") val `speakingStyle`: String,
     @SerialName("relationshipMode") val `relationshipMode`: String,
+    @SerialName("weibo") val `weibo`: CharacterWeiboProfile? = null,
     @SerialName("momentProfile") val `momentProfile`: SharedSchema1?,
     @SerialName("groupChat") val `groupChat`: SharedSchema2?,
     @SerialName("openingMessages") val `openingMessages`: List<String>,
@@ -2274,6 +2276,22 @@ data class CharacterSupplementEndpointsPutSupplementBody(
 @Serializable
 data class CharacterSupplementEndpointsPutSupplementParams(
     @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class CharacterWeiboProfile(
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("nickname") val `nickname`: String,
+    @SerialName("avatarUrl") val `avatarUrl`: String? = null,
+    @SerialName("userId") val `userId`: String? = null,
+)
+
+@Serializable
+data class CharacterWeiboProfileInput(
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("nickname") val `nickname`: String,
+    @SerialName("avatarUrl") val `avatarUrl`: String? = null,
+    @SerialName("userId") val `userId`: String? = null,
 )
 
 @Serializable
@@ -12315,6 +12333,7 @@ data class AdminLegacyCharacterPatchFields(
     @SerialName("corePersona") val `corePersona`: String? = null,
     @SerialName("speakingStyle") val `speakingStyle`: String? = null,
     @SerialName("relationshipMode") val `relationshipMode`: String? = null,
+    @SerialName("weibo") val `weibo`: CharacterWeiboProfile? = null,
     @SerialName("momentProfile") val `momentProfile`: SharedSchema1? = null,
     @SerialName("groupChat") val `groupChat`: SharedSchema2? = null,
     @SerialName("openingMessages") val `openingMessages`: List<String>? = null,
@@ -12329,6 +12348,7 @@ data class AdminLegacyCharacterPatchInputFields(
     @SerialName("corePersona") val `corePersona`: String? = null,
     @SerialName("speakingStyle") val `speakingStyle`: String? = null,
     @SerialName("relationshipMode") val `relationshipMode`: String? = null,
+    @SerialName("weibo") val `weibo`: CharacterWeiboProfileInput? = null,
     @SerialName("momentProfile") val `momentProfile`: SharedSchema1? = null,
     @SerialName("groupChat") val `groupChat`: SharedSchema2? = null,
     @SerialName("openingMessages") val `openingMessages`: List<String>? = null,

@@ -74,14 +74,14 @@ export class WeiboSyncService implements OnModuleInit {
   }
   private async role(userId: string, characterId: string) {
     const role = await this.characters.getForRuntime(userId, characterId);
-    // 旧卡没有新卡的微博标记，按没有处理（旧卡身份字段不猜微博）。
+    // 仅认明确微博资料；旧角色已有weibo_nickname由统一视图读取，不从角色名猜测。
     const marker = role ? roleWeiboMarker(characterView(role)) : null;
     if (
       !role ||
       role.profile.kind !== 'preset' ||
       role.classification.realPersonKind === 'private_person' ||
       !marker ||
-      new URL(marker.avatarUrl).protocol !== 'https:'
+      (marker.avatarUrl !== undefined && new URL(marker.avatarUrl).protocol !== 'https:')
     )
       return null;
     return marker;

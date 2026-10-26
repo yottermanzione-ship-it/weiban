@@ -35,6 +35,10 @@ import { FieldHelp, SectionCard } from '../ui/page.js';
 import { RecordDrawer } from '../ui/drawer.js';
 import { formatDateTime } from '../ui/format.js';
 import { EligibilityCard } from '../features/character-eligibility.js';
+import { PersonaTextEditor } from './persona-text-editor.js';
+import { CharacterVoicePanel } from './character-voice-panel.js';
+import { CharacterWeiboEditor } from './character-weibo-editor.js';
+import { InteractionProfileEditor } from './interaction-profile-editor.js';
 import './legacy-card-editor.css';
 
 type LoreRow = {
@@ -111,6 +115,7 @@ export function LegacyCharacterEditor({
   characterId: string;
   onSaved?: (text: string) => void;
 }) {
+  const [activeTab, setActiveTab] = useState('profile');
   const [detail, setDetail] = useState<AdminLegacyCharacterDetail | null>(null);
   const [fields, setFields] = useState<AdminLegacyFields | null>(null);
   const [aliasText, setAliasText] = useState('');
@@ -270,6 +275,8 @@ export function LegacyCharacterEditor({
       else patch.groupChat = group;
     }
 
+    if (JSON.stringify(fields.weibo) !== JSON.stringify(original.weibo)) patch.weibo = fields.weibo;
+
     const originalLore = new Map(detail.lorebook.map((entry) => [entry.id, entry.payload]));
     const loreUpsert: Array<{ id?: string; payload: Record<string, unknown> }> = [];
     const loreDelete: string[] = [];
@@ -353,7 +360,7 @@ export function LegacyCharacterEditor({
       });
       adopt(updated);
       setNotice(`已保存（版本 v${updated.revision}），用户端与 AI 会按新内容读取。`);
-      onSaved?.('已保存旧卡人设');
+      onSaved?.('已保存角色资料');
     } catch (e) {
       if (e instanceof JsonFieldError) setError(e.message);
       else if (e instanceof ApiFailure && e.status === 409) {
@@ -432,7 +439,7 @@ export function LegacyCharacterEditor({
           });
           adopt(updated);
           setNotice(`已恢复到 v${revision}，当前版本 v${updated.revision}。`);
-          onSaved?.(`已把旧卡恢复到 v${revision}`);
+          onSaved?.(`已恢复角色资料到 v${revision}`);
         } catch (e) {
           if (e instanceof ApiFailure && e.status === 409) {
             setConflict(true);
@@ -450,11 +457,11 @@ export function LegacyCharacterEditor({
   if (loading)
     return (
       <div className="legacy-editor-loading">
-        <span>正在读取旧卡详情…</span>
+        <span>正在读取角色资料…</span>
       </div>
     );
   if (!detail || !fields)
-    return <Alert type="error" showIcon message={error || '没有读到旧卡详情'} />;
+    return <Alert type="error" showIcon message={error || '没有读到角色资料'} />;
 
   const avatarText = detail.name.slice(0, 1) || '伴';
   return (
@@ -475,423 +482,453 @@ export function LegacyCharacterEditor({
       )}
       {notice && <Alert type="success" showIcon message={notice} />}
 
-      <SectionCard
-        title="旧卡说明"
-        desc="这张卡是旧格式（legacy_card），AI 直接读旧字段。保存只改下面的旧字段，不会生成新卡、不改分类和上架状态；旧卡不支持在后台重新上架（保持原发布状态）。"
-      >
-        <div className="legacy-meta">
-          <span>当前版本 v{detail.revision}</span>
-          <span>最近保存 {formatDateTime(detail.updatedAt)}</span>
-          <span>
-            状态 <code>{detail.status}</code>
-          </span>
-        </div>
-      </SectionCard>
+      <div className="legacy-meta">
+        <strong>{detail.name}</strong>
+        <span>资料修订 {detail.revision}</span>
+        <span>最近保存 {formatDateTime(detail.updatedAt)}</span>
+        <span>
+          {(
+            {
+              published: '已上架',
+              unpublished: '已下架',
+              draft: '草稿',
+              pending_check: '待检查',
+              disabled: '已禁用',
+            } as Record<string, string>
+          )[detail.status] ?? detail.status}
+        </span>
+      </div>
+      <nav className="legacy-section-nav" aria-label="角色资料分区">
+        {[
+          ['profile', '资料与头像'],
+          ['persona', '人设文本'],
+          [
+            'knowledge',
+            `词条与示例 (${lorebook.filter((r) => !r.deleted).length}/${examples.filter((r) => !r.deleted).length})`,
+          ],
+          ['interaction', '互动风格'],
+          ['voice', '声音与微博'],
+          ['records', '资格与记录'],
+        ].map(([key, label]) => (
+          <Button
+            key={key}
+            type={activeTab === key ? 'primary' : 'default'}
+            aria-pressed={activeTab === key}
+            onClick={() => setActiveTab(key!)}
+          >
+            {label}
+          </Button>
+        ))}
+      </nav>
 
-      <SectionCard title="头像" desc="平台角色头像；图片读取失败时退回文字头像">
-        <div className="legacy-avatar-row">
-          <div className="legacy-avatar">
-            {avatar.url && !brokenAvatar ? (
-              <img
-                src={avatar.url}
-                alt={`${detail.name}头像`}
-                onError={() => setBrokenAvatar(true)}
-              />
-            ) : (
-              <span className="legacy-avatar-fallback">{avatarText}</span>
-            )}
-          </div>
-          <div className="legacy-avatar-actions">
-            <Space wrap>
-              <Upload
-                accept="image/jpeg,image/png,image/webp"
-                showUploadList={false}
-                beforeUpload={(file) => {
-                  void uploadAvatar(file);
-                  return false;
-                }}
-              >
-                <Button icon={<UploadOutlined />} loading={uploading}>
-                  上传角色图片
+      <section className="legacy-tab-panel" hidden={activeTab !== 'profile'}>
+        <SectionCard title="头像" desc="平台角色头像；图片读取失败时退回文字头像">
+          <div className="legacy-avatar-row">
+            <div className="legacy-avatar">
+              {avatar.url && !brokenAvatar ? (
+                <img
+                  src={avatar.url}
+                  alt={`${detail.name}头像`}
+                  onError={() => setBrokenAvatar(true)}
+                />
+              ) : (
+                <span className="legacy-avatar-fallback">{avatarText}</span>
+              )}
+            </div>
+            <div className="legacy-avatar-actions">
+              <Space wrap>
+                <Upload
+                  accept="image/jpeg,image/png,image/webp"
+                  showUploadList={false}
+                  beforeUpload={(file) => {
+                    void uploadAvatar(file);
+                    return false;
+                  }}
+                >
+                  <Button icon={<UploadOutlined />} loading={uploading}>
+                    上传角色图片
+                  </Button>
+                </Upload>
+                <Button
+                  disabled={!avatar.mediaId}
+                  onClick={() => setAvatar({ mediaId: null, url: null })}
+                >
+                  恢复默认头像
                 </Button>
-              </Upload>
-              <Button
-                disabled={!avatar.mediaId}
-                onClick={() => setAvatar({ mediaId: null, url: null })}
-              >
-                恢复默认头像
-              </Button>
-            </Space>
-            <FieldHelp>
-              {avatar.mediaId
-                ? '已设置角色图片，点保存后生效。'
-                : '当前使用默认文字头像（名字首字）。'}
-            </FieldHelp>
+              </Space>
+              <FieldHelp>
+                {avatar.mediaId
+                  ? '已设置角色图片，点保存后生效。'
+                  : '当前使用默认文字头像（名字首字）。'}
+              </FieldHelp>
+            </div>
           </div>
-        </div>
-      </SectionCard>
+        </SectionCard>
 
-      <SectionCard title="基本信息" desc="名字直接用于会话列表、广场和搜索">
-        <div className="legacy-two">
+        <SectionCard title="基本信息" desc="名字直接用于会话列表、广场和搜索">
+          <div className="legacy-two">
+            <label className="field-line">
+              <span className="field-label">角色名字</span>
+              <Input
+                value={fields.displayName}
+                maxLength={32}
+                onChange={(e) => patchFields({ displayName: e.target.value })}
+              />
+            </label>
+            <label className="field-line">
+              <span className="field-label">
+                昵称
+                <span className="field-label-hint">留空 = 清空</span>
+              </span>
+              <Input
+                value={fields.nickname}
+                maxLength={32}
+                onChange={(e) => patchFields({ nickname: e.target.value })}
+              />
+            </label>
+          </div>
           <label className="field-line">
-            <span className="field-label">角色名字</span>
+            <span className="field-label">签名</span>
             <Input
-              value={fields.displayName}
-              maxLength={32}
-              onChange={(e) => patchFields({ displayName: e.target.value })}
+              value={fields.signature}
+              maxLength={200}
+              onChange={(e) => patchFields({ signature: e.target.value })}
             />
           </label>
           <label className="field-line">
             <span className="field-label">
-              昵称
-              <span className="field-label-hint">留空 = 清空</span>
+              别名
+              <span className="field-label-hint">每行一个，用于搜索和称呼</span>
             </span>
-            <Input
-              value={fields.nickname}
-              maxLength={32}
-              onChange={(e) => patchFields({ nickname: e.target.value })}
+            <Input.TextArea
+              autoSize={{ minRows: 2, maxRows: 6 }}
+              value={aliasText}
+              onChange={(e) => setAliasText(e.target.value)}
             />
           </label>
-        </div>
-        <label className="field-line">
-          <span className="field-label">签名</span>
-          <Input
-            value={fields.signature}
-            maxLength={200}
-            onChange={(e) => patchFields({ signature: e.target.value })}
-          />
-        </label>
-        <label className="field-line">
-          <span className="field-label">
-            别名
-            <span className="field-label-hint">每行一个，用于搜索和称呼</span>
-          </span>
-          <Input.TextArea
-            autoSize={{ minRows: 2, maxRows: 6 }}
-            value={aliasText}
-            onChange={(e) => setAliasText(e.target.value)}
-          />
-        </label>
-      </SectionCard>
-
-      <SectionCard title="人设与说话" desc="旧卡原文；AI 提示词直接读这几段">
-        <label className="field-line">
-          <span className="field-label">
-            核心人设
-            <span className="field-label-hint">必填，不能清空</span>
-          </span>
-          <Input.TextArea
-            autoSize={{ minRows: 6, maxRows: 16 }}
+        </SectionCard>
+      </section>
+      <section className="legacy-tab-panel" hidden={activeTab !== 'persona'}>
+        <SectionCard
+          title="人物与性格"
+          desc="当前实际生效的人物文本；完整原文与中文分段编辑是同一份内容"
+        >
+          <PersonaTextEditor
+            label="核心人设"
+            required
             value={fields.corePersona}
-            onChange={(e) => patchFields({ corePersona: e.target.value })}
+            onChange={(value) => patchFields({ corePersona: value })}
           />
-        </label>
-        <label className="field-line">
-          <span className="field-label">说话风格</span>
-          <Input.TextArea
-            autoSize={{ minRows: 4, maxRows: 14 }}
+        </SectionCard>
+        <SectionCard title="说话方式" desc="语气、句式、回复长度、表达习惯，不混入声音模型配置">
+          <PersonaTextEditor
+            label="说话风格"
             value={fields.speakingStyle}
-            onChange={(e) => patchFields({ speakingStyle: e.target.value })}
+            onChange={(value) => patchFields({ speakingStyle: value })}
           />
-        </label>
-        <label className="field-line">
-          <span className="field-label">关系设定</span>
-          <Input.TextArea
-            autoSize={{ minRows: 4, maxRows: 14 }}
+        </SectionCard>
+        <SectionCard
+          title="人设引擎 · 场景态度"
+          desc="日常、亲近、冷淡、调侃、安慰和拒绝时的态度；按当前文本中的中文标签分段"
+        >
+          <PersonaTextEditor
+            label="关系与场景态度"
             value={fields.relationshipMode}
-            onChange={(e) => patchFields({ relationshipMode: e.target.value })}
+            onChange={(value) => patchFields({ relationshipMode: value })}
           />
-        </label>
-      </SectionCard>
-
-      <SectionCard title="互动设定" desc="朋友圈 / 群聊 / 开场白；JSON 留空 = 清空该设定">
-        <label className="field-line">
-          <span className="field-label">
-            朋友圈设定（JSON）
-            <span className="field-label-hint">如 tone / topics / comment_style</span>
-          </span>
-          <Input.TextArea
-            autoSize={{ minRows: 4, maxRows: 12 }}
-            value={momentText}
-            onChange={(e) => setMomentText(e.target.value)}
-            spellCheck={false}
-          />
-        </label>
-        <label className="field-line">
-          <span className="field-label">群聊设定（JSON）</span>
-          <Input.TextArea
-            autoSize={{ minRows: 3, maxRows: 10 }}
-            value={groupText}
-            onChange={(e) => setGroupText(e.target.value)}
-            spellCheck={false}
-          />
-        </label>
-        <label className="field-line">
-          <span className="field-label">
-            备用开场白
-            <span className="field-label-hint">每行一条，最多 10 条</span>
-          </span>
-          <Input.TextArea
-            autoSize={{ minRows: 2, maxRows: 8 }}
-            value={openingText}
-            onChange={(e) => setOpeningText(e.target.value)}
-          />
-        </label>
-      </SectionCard>
-
-      <SectionCard
-        title={`世界书（${lorebook.filter((row) => !row.deleted).length} 条）`}
-        desc="只在对话提到触发词或常驻时进入提示词；保存只动本角色改动过的条目"
-        extra={
-          <Button
-            size="small"
-            onClick={() =>
-              setLorebook((current) => [
-                ...current,
-                {
-                  id: `new-${current.length + 1}`,
-                  created: true,
-                  deleted: false,
-                  payload: { ...LORE_NEW },
-                },
-              ])
-            }
-          >
-            添加条目
-          </Button>
-        }
-      >
-        {lorebook.filter((row) => !row.deleted).length === 0 && (
-          <div className="detail-muted">这张卡还没有世界书条目。</div>
-        )}
-        <div className="legacy-entries">
-          {lorebook.map((row, index) =>
-            row.deleted ? null : (
-              <div className="legacy-entry" key={row.id}>
-                <div className="legacy-entry-head">
-                  <Input
-                    value={textOf(row.payload.title)}
-                    placeholder="条目标题（可空）"
-                    onChange={(e) => updateLore(index, { title: e.target.value })}
-                  />
-                  <Popconfirm
-                    title="删除这条世界书？保存后生效"
-                    onConfirm={() =>
-                      setLorebook((current) =>
-                        current.map((item, i) => (i === index ? { ...item, deleted: true } : item)),
-                      )
-                    }
-                  >
-                    <Button danger size="small">
-                      删除
-                    </Button>
-                  </Popconfirm>
-                </div>
-                <label className="field-line">
-                  <span className="field-label">
-                    触发词
-                    <span className="field-label-hint">每行一个；留空表示只能常驻</span>
-                  </span>
-                  <Input.TextArea
-                    autoSize={{ minRows: 1, maxRows: 4 }}
-                    value={keysOf(row.payload.trigger_keys_json).join('\n')}
-                    onChange={(e) =>
-                      updateLore(index, {
-                        trigger_keys_json: JSON.stringify(
-                          e.target.value
-                            .split('\n')
-                            .map((item) => item.trim())
-                            .filter(Boolean),
-                        ),
-                      })
-                    }
-                  />
-                </label>
-                <label className="field-line">
-                  <span className="field-label">内容</span>
-                  <Input.TextArea
-                    autoSize={{ minRows: 3, maxRows: 10 }}
-                    value={textOf(row.payload.content)}
-                    onChange={(e) => updateLore(index, { content: e.target.value })}
-                  />
-                </label>
-                <Space size={16} wrap>
-                  <span className="legacy-inline">
-                    优先级
-                    <InputNumber
-                      min={0}
-                      max={1000}
-                      value={typeof row.payload.priority === 'number' ? row.payload.priority : 0}
-                      onChange={(value) => updateLore(index, { priority: value ?? 0 })}
-                    />
-                  </span>
-                  <span className="legacy-inline">
-                    常驻
-                    <Switch
-                      size="small"
-                      checked={Boolean(
-                        row.payload.constant ?? row.payload.is_constant ?? row.payload.always,
-                      )}
-                      onChange={(checked) => updateLore(index, { constant: checked })}
-                    />
-                  </span>
-                  <span className="legacy-inline">
-                    启用
-                    <Switch
-                      size="small"
-                      checked={row.payload.enabled !== false}
-                      onChange={(checked) => updateLore(index, { enabled: checked })}
-                    />
-                  </span>
-                </Space>
-              </div>
-            ),
+          <FieldHelp>
+            这些是给模型参考的人物写作要求，不是另外一套资格门禁；保存后进入后续回复上下文。
+          </FieldHelp>
+        </SectionCard>
+      </section>
+      <section className="legacy-tab-panel" hidden={activeTab !== 'interaction'}>
+        <SectionCard title="朋友圈风格" desc="人物在朋友圈的语气、主题和评论习惯">
+          <InteractionProfileEditor kind="moments" value={momentText} onChange={setMomentText} />
+        </SectionCard>
+        <SectionCard
+          title="群聊风格与开场白"
+          desc="人物在群里的说话方式；备用开场白不作为每轮聊天限制"
+        >
+          <InteractionProfileEditor kind="group" value={groupText} onChange={setGroupText} />
+          <label className="field-line">
+            <span className="field-label">
+              备用开场白
+              <span className="field-label-hint">每行一条，最多 10 条</span>
+            </span>
+            <Input.TextArea
+              autoSize={{ minRows: 2, maxRows: 8 }}
+              value={openingText}
+              onChange={(e) => setOpeningText(e.target.value)}
+            />
+          </label>
+        </SectionCard>
+      </section>
+      <section className="legacy-tab-panel" hidden={activeTab !== 'knowledge'}>
+        <SectionCard
+          title={`背景与触发词条（${lorebook.filter((row) => !row.deleted).length} 条）`}
+          desc="只在对话提到触发词或常驻时进入提示词；保存只动本角色改动过的条目"
+          extra={
+            <Button
+              size="small"
+              onClick={() =>
+                setLorebook((current) => [
+                  ...current,
+                  {
+                    id: `new-${current.length + 1}`,
+                    created: true,
+                    deleted: false,
+                    payload: { ...LORE_NEW },
+                  },
+                ])
+              }
+            >
+              添加条目
+            </Button>
+          }
+        >
+          {lorebook.filter((row) => !row.deleted).length === 0 && (
+            <div className="detail-muted">这张卡还没有世界书条目。</div>
           )}
-        </div>
-      </SectionCard>
-
-      <SectionCard
-        title={`对话示例（${examples.filter((row) => !row.deleted).length} 条）`}
-        desc="只学语气与长短；保存只动本角色改动过的条目"
-        extra={
-          <Button
-            size="small"
-            onClick={() =>
-              setExamples((current) => [
-                ...current,
-                {
-                  id: `new-${current.length + 1}`,
-                  created: true,
-                  deleted: false,
-                  sortOrder: current.filter((row) => !row.deleted).length,
-                  payload: { ...EXAMPLE_NEW },
-                },
-              ])
-            }
-          >
-            添加示例
-          </Button>
-        }
-      >
-        <div className="legacy-entries">
-          {examples.map((row, index) =>
-            row.deleted ? null : (
-              <div className="legacy-entry" key={row.id}>
-                <div className="legacy-entry-head">
-                  <Input
-                    value={textOf(row.payload.scene)}
-                    placeholder="场景（可空）"
-                    onChange={(e) => updateExample(index, { scene: e.target.value })}
-                  />
-                  <span className="legacy-inline">
-                    排序
-                    <InputNumber
-                      min={0}
-                      max={99999}
-                      value={row.sortOrder}
-                      onChange={(value) => updateExample(index, { sort_order: value ?? 0 })}
+          <div className="legacy-entries">
+            {lorebook.map((row, index) =>
+              row.deleted ? null : (
+                <div className="legacy-entry" key={row.id}>
+                  <div className="legacy-entry-head">
+                    <Input
+                      value={textOf(row.payload.title)}
+                      placeholder="条目标题（可空）"
+                      onChange={(e) => updateLore(index, { title: e.target.value })}
                     />
-                  </span>
-                  <Popconfirm
-                    title="删除这条示例？保存后生效"
-                    onConfirm={() =>
-                      setExamples((current) =>
-                        current.map((item, i) => (i === index ? { ...item, deleted: true } : item)),
-                      )
-                    }
-                  >
-                    <Button danger size="small">
-                      删除
-                    </Button>
-                  </Popconfirm>
-                </div>
-                <div className="legacy-two">
+                    <Popconfirm
+                      title="删除这条世界书？保存后生效"
+                      onConfirm={() =>
+                        setLorebook((current) =>
+                          current.map((item, i) =>
+                            i === index ? { ...item, deleted: true } : item,
+                          ),
+                        )
+                      }
+                    >
+                      <Button danger size="small">
+                        删除
+                      </Button>
+                    </Popconfirm>
+                  </div>
                   <label className="field-line">
-                    <span className="field-label">对方说</span>
+                    <span className="field-label">
+                      触发词
+                      <span className="field-label-hint">每行一个；留空表示只能常驻</span>
+                    </span>
                     <Input.TextArea
-                      autoSize={{ minRows: 2, maxRows: 6 }}
-                      value={textOf(row.payload.user_text)}
-                      onChange={(e) => updateExample(index, { user_text: e.target.value })}
+                      autoSize={{ minRows: 1, maxRows: 4 }}
+                      value={keysOf(row.payload.trigger_keys_json).join('\n')}
+                      onChange={(e) =>
+                        updateLore(index, {
+                          trigger_keys_json: JSON.stringify(
+                            e.target.value
+                              .split('\n')
+                              .map((item) => item.trim())
+                              .filter(Boolean),
+                          ),
+                        })
+                      }
                     />
                   </label>
                   <label className="field-line">
-                    <span className="field-label">角色说</span>
+                    <span className="field-label">内容</span>
                     <Input.TextArea
-                      autoSize={{ minRows: 2, maxRows: 6 }}
-                      value={textOf(row.payload.assistant_text)}
-                      onChange={(e) => updateExample(index, { assistant_text: e.target.value })}
+                      autoSize={{ minRows: 3, maxRows: 10 }}
+                      value={textOf(row.payload.content)}
+                      onChange={(e) => updateLore(index, { content: e.target.value })}
                     />
                   </label>
+                  <Space size={16} wrap>
+                    <span className="legacy-inline">
+                      优先级
+                      <InputNumber
+                        min={0}
+                        max={1000}
+                        value={typeof row.payload.priority === 'number' ? row.payload.priority : 0}
+                        onChange={(value) => updateLore(index, { priority: value ?? 0 })}
+                      />
+                    </span>
+                    <span className="legacy-inline">
+                      常驻
+                      <Switch
+                        size="small"
+                        checked={Boolean(
+                          row.payload.constant ?? row.payload.is_constant ?? row.payload.always,
+                        )}
+                        onChange={(checked) => updateLore(index, { constant: checked })}
+                      />
+                    </span>
+                    <span className="legacy-inline">
+                      启用
+                      <Switch
+                        size="small"
+                        checked={row.payload.enabled !== false}
+                        onChange={(checked) => updateLore(index, { enabled: checked })}
+                      />
+                    </span>
+                  </Space>
                 </div>
-              </div>
-            ),
-          )}
-        </div>
-      </SectionCard>
+              ),
+            )}
+          </div>
+        </SectionCard>
 
-      <SectionCard
-        title={`未识别字段（${Object.keys(detail.preserved).length} 个）`}
-        desc="旧卡里没有对应表单项的原始字段，只读保留；保存时不会改动"
-      >
-        <Collapse
-          size="small"
-          items={Object.entries(detail.preserved)
-            .sort(([a], [b]) => (a === 'raw_json' ? 1 : b === 'raw_json' ? -1 : a.localeCompare(b)))
-            .map(([key, value]) => ({
-              key,
-              label: key,
-              children: <pre className="legacy-json">{preview(value)}</pre>,
-            }))}
-        />
-      </SectionCard>
-
-      <SectionCard
-        title={`版本历史（${detail.history.length} 条）`}
-        desc="每次保存 / 恢复前都会留一份完整快照（不经审计脱敏）；可以查看内容，或恢复到某一版"
-      >
-        {detail.history.length === 0 ? (
-          <div className="detail-muted">还没有版本快照；第一次保存后就会留下。</div>
-        ) : (
+        <SectionCard
+          title={`对话示例（${examples.filter((row) => !row.deleted).length} 条）`}
+          desc="只学语气与长短；保存只动本角色改动过的条目"
+          extra={
+            <Button
+              size="small"
+              onClick={() =>
+                setExamples((current) => [
+                  ...current,
+                  {
+                    id: `new-${current.length + 1}`,
+                    created: true,
+                    deleted: false,
+                    sortOrder: current.filter((row) => !row.deleted).length,
+                    payload: { ...EXAMPLE_NEW },
+                  },
+                ])
+              }
+            >
+              添加示例
+            </Button>
+          }
+        >
+          <div className="legacy-entries">
+            {examples.map((row, index) =>
+              row.deleted ? null : (
+                <div className="legacy-entry" key={row.id}>
+                  <div className="legacy-entry-head">
+                    <Input
+                      value={textOf(row.payload.scene)}
+                      placeholder="场景（可空）"
+                      onChange={(e) => updateExample(index, { scene: e.target.value })}
+                    />
+                    <span className="legacy-inline">
+                      排序
+                      <InputNumber
+                        min={0}
+                        max={99999}
+                        value={row.sortOrder}
+                        onChange={(value) => updateExample(index, { sort_order: value ?? 0 })}
+                      />
+                    </span>
+                    <Popconfirm
+                      title="删除这条示例？保存后生效"
+                      onConfirm={() =>
+                        setExamples((current) =>
+                          current.map((item, i) =>
+                            i === index ? { ...item, deleted: true } : item,
+                          ),
+                        )
+                      }
+                    >
+                      <Button danger size="small">
+                        删除
+                      </Button>
+                    </Popconfirm>
+                  </div>
+                  <div className="legacy-two">
+                    <label className="field-line">
+                      <span className="field-label">对方说</span>
+                      <Input.TextArea
+                        autoSize={{ minRows: 2, maxRows: 6 }}
+                        value={textOf(row.payload.user_text)}
+                        onChange={(e) => updateExample(index, { user_text: e.target.value })}
+                      />
+                    </label>
+                    <label className="field-line">
+                      <span className="field-label">角色说</span>
+                      <Input.TextArea
+                        autoSize={{ minRows: 2, maxRows: 6 }}
+                        value={textOf(row.payload.assistant_text)}
+                        onChange={(e) => updateExample(index, { assistant_text: e.target.value })}
+                      />
+                    </label>
+                  </div>
+                </div>
+              ),
+            )}
+          </div>
+        </SectionCard>
+      </section>
+      <section className="legacy-tab-panel" hidden={activeTab !== 'voice'}>
+        <CharacterWeiboEditor value={fields.weibo} onChange={(weibo) => patchFields({ weibo })} />
+        {activeTab === 'voice' && <CharacterVoicePanel characterId={characterId} />}
+      </section>
+      <section className="legacy-tab-panel" hidden={activeTab !== 'records'}>
+        <SectionCard
+          title={`原始资料存档（${Object.keys(detail.preserved).length} 项）`}
+          desc="仅供核对来源；保存时完整保留。存档字段不代表全部被当前聊天读取，人设文本分区展示的才是当前有效文字"
+        >
           <Collapse
             size="small"
-            items={detail.history.map((entry) => ({
-              key: String(entry.revision),
-              label: `v${entry.revision} · ${formatDateTime(entry.at)} · ${
-                entry.operatorName || '后台'
-              } · ${entry.source === 'restore' ? '恢复前留存' : '保存前留存'} · ${
-                entry.changedFields.join('、') || '未记录字段'
-              }`,
-              children: (
-                <>
-                  <div className="detail-muted">
-                    {entry.name}
-                    {entry.note ? ` · 备注：${entry.note}` : ''}
-                  </div>
-                  <Space wrap>
-                    <Button
-                      size="small"
-                      disabled={revisionBusy !== null}
-                      onClick={() => void viewRevision(entry.revision)}
-                    >
-                      查看内容
-                    </Button>
-                    <Button
-                      size="small"
-                      danger
-                      disabled={saving || revisionBusy !== null}
-                      onClick={() => confirmRestore(entry.revision)}
-                    >
-                      恢复到此版本
-                    </Button>
-                  </Space>
-                </>
-              ),
-            }))}
+            items={Object.entries(detail.preserved)
+              .sort(([a], [b]) =>
+                a === 'raw_json' ? 1 : b === 'raw_json' ? -1 : a.localeCompare(b),
+              )
+              .map(([key, value]) => ({
+                key,
+                label: key,
+                children: <pre className="legacy-json">{preview(value)}</pre>,
+              }))}
           />
-        )}
-      </SectionCard>
+        </SectionCard>
 
-      <EligibilityCard characterId={characterId} />
+        <SectionCard
+          title={`版本历史（${detail.history.length} 条）`}
+          desc="每次保存 / 恢复前都会留一份完整快照（不经审计脱敏）；可以查看内容，或恢复到某一版"
+        >
+          {detail.history.length === 0 ? (
+            <div className="detail-muted">还没有版本快照；第一次保存后就会留下。</div>
+          ) : (
+            <Collapse
+              size="small"
+              items={detail.history.map((entry) => ({
+                key: String(entry.revision),
+                label: `v${entry.revision} · ${formatDateTime(entry.at)} · ${
+                  entry.operatorName || '后台'
+                } · ${entry.source === 'restore' ? '恢复前留存' : '保存前留存'} · ${
+                  entry.changedFields.join('、') || '未记录字段'
+                }`,
+                children: (
+                  <>
+                    <div className="detail-muted">
+                      {entry.name}
+                      {entry.note ? ` · 备注：${entry.note}` : ''}
+                    </div>
+                    <Space wrap>
+                      <Button
+                        size="small"
+                        disabled={revisionBusy !== null}
+                        onClick={() => void viewRevision(entry.revision)}
+                      >
+                        查看内容
+                      </Button>
+                      <Button
+                        size="small"
+                        danger
+                        disabled={saving || revisionBusy !== null}
+                        onClick={() => confirmRestore(entry.revision)}
+                      >
+                        恢复到此版本
+                      </Button>
+                    </Space>
+                  </>
+                ),
+              }))}
+            />
+          )}
+        </SectionCard>
+
+        <EligibilityCard characterId={characterId} />
+      </section>
 
       <div className="legacy-save-bar">
         <Input
@@ -902,7 +939,7 @@ export function LegacyCharacterEditor({
           onChange={(e) => setNote(e.target.value)}
         />
         <Button type="primary" loading={saving} onClick={() => void save()}>
-          保存
+          保存角色资料
         </Button>
       </div>
     </div>
@@ -923,9 +960,9 @@ export function LegacyCharacterDrawer({
     <RecordDrawer
       open
       onClose={onClose}
-      title={`编辑旧卡 · ${character.name}`}
-      subtitle="旧卡按旧字段保存，不生成新卡密文"
-      width={900}
+      title={`角色资料 · ${character.name}`}
+      subtitle="人物文本、头像昵称、声音与微博分区管理；保存有修订记录与冲突保护"
+      width={1120}
     >
       <LegacyCharacterEditor characterId={character.characterId} onSaved={onSaved} />
     </RecordDrawer>

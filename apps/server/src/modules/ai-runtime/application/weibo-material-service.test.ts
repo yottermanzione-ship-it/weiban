@@ -55,6 +55,7 @@ function harness(options: {
   pages?: Map<string, Fetched>;
   updates?: unknown[];
   existingMedia?: Array<StoredWeiboMedia & { itemId: string }>;
+  runtimeRole?: unknown;
 }) {
   const store = new FakeStore(
     options.item === undefined ? item() : options.item,
@@ -81,7 +82,7 @@ function harness(options: {
   const service = new WeiboMaterialService(
     store as never,
     { now: () => NOW } as never,
-    { getForRuntime: async () => role } as never,
+    { getForRuntime: async () => options.runtimeRole ?? role } as never,
     {
       putObject: async (input: {
         ownerUserId: string | null;
@@ -103,6 +104,46 @@ function harness(options: {
   );
   return { service, store, pages, fetches, puts, states };
 }
+
+it('迁入角色有核实账号ID时沿用同帖图片核验，只有昵称时不冒认图片来源', async () => {
+  const legacy = {
+    id: CHARACTER,
+    display_name: '林晚',
+    core_persona: '原创成年人物',
+    weibo_nickname: '林晚',
+  };
+  const pages = new Map([
+    [
+      PAGE_URL,
+      {
+        status: 200,
+        finalUrl: new URL(PAGE_URL),
+        contentType: 'text/html',
+        body: Buffer.from(pageHtml([])),
+      },
+    ],
+  ]);
+  const noId = harness({ runtimeRole: { card: null, legacyCard: legacy }, pages });
+  expect((await noId.service.latest('user-1', CHARACTER))?.images).toEqual([]);
+  expect(noId.fetches).toEqual([]);
+  const withId = harness({
+    runtimeRole: {
+      card: null,
+      legacyCard: {
+        ...legacy,
+        weibo_profile_json: JSON.stringify({
+          enabled: true,
+          nickname: '林晚',
+          userId: '1234567890',
+        }),
+      },
+    },
+    pages,
+  });
+  await withId.service.latest('user-1', CHARACTER);
+  expect(withId.fetches).toEqual([PAGE_URL]);
+  expect(withId.states).toEqual(['none']);
+});
 
 class FakeStore {
   items = new Map<string, WeiboItemRow>();

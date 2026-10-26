@@ -12,6 +12,7 @@ import {
   type EnvelopeCrypto,
 } from '../../../platform/index.js';
 import { characters, publicUpdates } from '../infra/db/schema.js';
+import { parseLegacyCard } from '../domain/legacy-card.js';
 /** H4-specific verified public-source import. Ordinary auto_search candidates still require review. */
 @Injectable()
 export class WeiboPublication implements WeiboPublicationPort {
@@ -34,24 +35,34 @@ export class WeiboPublication implements WeiboPublicationPort {
       role.kind !== 'preset' ||
       role.status !== 'published' ||
       (role.eligibilityOverride?.realPersonKind ?? role.realPersonKind) === 'private_person' ||
-      !role.publishedCiphertext
+      (!role.legacyCard && !role.publishedCiphertext)
     )
       throw new Error('weibo role unavailable');
-    const plain = await this.crypto.open(
-      PLATFORM_KEY_OWNER,
-      `character:${role.id}:published:${role.personaVersion}`,
-      role.publishedCiphertext,
-      tx,
-    );
-    try {
-      const body = AdminCharacterWrite.parse(JSON.parse(plain.toString('utf8')));
+    if (role.legacyCard) {
+      const marker = parseLegacyCard(role.legacyCard)?.weiboProfile;
       if (
-        body.card?.data.profileExtra?.weibo?.nickname !== input.nickname ||
-        body.card?.data.profileExtra?.weibo?.userId !== input.weiboUserId
+        !marker?.enabled ||
+        marker.nickname !== input.nickname ||
+        marker.userId !== input.weiboUserId
       )
         throw new Error('weibo marker changed');
-    } finally {
-      plain.fill(0);
+    } else {
+      const plain = await this.crypto.open(
+        PLATFORM_KEY_OWNER,
+        `character:${role.id}:published:${role.personaVersion}`,
+        role.publishedCiphertext!,
+        tx,
+      );
+      try {
+        const body = AdminCharacterWrite.parse(JSON.parse(plain.toString('utf8')));
+        if (
+          body.card?.data.profileExtra?.weibo?.nickname !== input.nickname ||
+          body.card?.data.profileExtra?.weibo?.userId !== input.weiboUserId
+        )
+          throw new Error('weibo marker changed');
+      } finally {
+        plain.fill(0);
+      }
     }
     const key = `weibo:${createHash('sha256').update(input.sourceUrl).digest('hex')}`;
     const old = (

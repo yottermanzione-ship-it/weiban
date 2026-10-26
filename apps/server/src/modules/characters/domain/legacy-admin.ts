@@ -28,6 +28,7 @@ export const LEGACY_FIELD_KEYS = {
   corePersona: 'core_persona',
   speakingStyle: 'speaking_style',
   relationshipMode: 'relationship_mode',
+  weibo: 'weibo_profile_json',
   momentProfile: 'moment_profile_json',
   groupChat: 'group_chat_json',
   openingMessages: 'opening_messages_json',
@@ -76,6 +77,7 @@ export function readLegacyAdminFields(raw: Record<string, unknown>): AdminLegacy
     corePersona: card?.corePersona ?? '',
     speakingStyle: card?.speakingStyle ?? '',
     relationshipMode: card?.relationshipMode ?? '',
+    weibo: card?.weiboProfile ?? { enabled: false, nickname: '' },
     momentProfile: jsonValue(raw.moment_profile_json),
     groupChat: jsonValue(raw.group_chat_json),
     openingMessages: card?.openingMessages ?? [],
@@ -126,6 +128,7 @@ function invalid(message: string): { ok: false; kind: 'invalid'; message: string
 function encodeField(field: LegacyAdminField, value: unknown): string | null {
   if (value === null || value === undefined) return null;
   switch (field) {
+    case 'weibo':
     case 'momentProfile':
     case 'groupChat': {
       if (typeof value === 'string') {
@@ -165,7 +168,7 @@ function snapshotField(field: LegacyAdminField, raw: Record<string, unknown>): u
     const list = field === 'aliases' ? (card?.aliases ?? []) : (card?.openingMessages ?? []);
     return list.length ? JSON.stringify(list) : null;
   }
-  if (field === 'momentProfile' || field === 'groupChat') {
+  if (field === 'weibo' || field === 'momentProfile' || field === 'groupChat') {
     const parsed = decodeJsonText(value);
     return parsed === null ? null : JSON.stringify(parsed);
   }

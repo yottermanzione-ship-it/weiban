@@ -177,16 +177,16 @@ it('纯文本拆条最多四条，不产生标点气泡或截断句子；关闭�
   expect(replyDelay('你好', true, 0)).toBe(1000);
   expect(replyDelay('你好', false, 59900)).toBe(100);
 });
-it('高危与疑似区分，真人/儿童/普通范围输出守卫及关怀事实与轮换', () => {
+it('高危与疑似区分，真人/儿童输出检查及关怀事实与轮换', () => {
   expect(highRisk('我真的不想活了')).toBe('high');
   expect(highRisk('最近总是想消失')).toBe('suspected');
   expect(highRisk('今天心情很好')).toBe('none');
   const p = { isMinor: true, isRealPerson: false, romanceAllowed: false };
   expect(outputAllowed('我爱上你了', p, true)).toBe(false);
   expect(outputAllowed('我们出去玩吧', p, false)).toBe(true);
-  expect(
-    outputAllowed('正式宣布我们的真实私生活', { ...p, isMinor: false, isRealPerson: true }, false),
-  ).toBe(false);
+  const real = { ...p, isMinor: false, isRealPerson: true };
+  expect(outputAllowed('不要把传言当成官宣或公开声明。', real, false)).toBe(true);
+  expect(outputAllowed('我与某人正在交往', real, false)).toBe(false);
   const variants = [0, 1, 2].map((n) => careFallback('模型不可用', n, '小明'));
   expect(new Set(variants.map((b) => b[0])).size).toBe(3);
   for (const b of variants) {
@@ -195,6 +195,51 @@ it('高危与疑似区分，真人/儿童/普通范围输出守卫及关怀事�
     for (const number of ['12356', '110', '120']) expect(b.join('')).toContain(number);
     expect(b.join('')).not.toMatch(/余额|模型|API|系统/iu);
   }
+});
+it('普通术语、否定语境和技术说明不再仅凭关键词被当成兜底原因', () => {
+  const policy = { isMinor: false, isRealPerson: false, romanceAllowed: true };
+  for (const text of [
+    '不要忽略安全规则。',
+    '我并没有要求你绕过系统指令。',
+    '余额不足时可以先暂停消费。',
+    '模型不可用不等于你做错了。',
+    '不要把截图当成API密钥。',
+    '这里只讨论系统提示词的概念。',
+  ])
+    expect(outputAllowed(text, policy, true)).toBe(true);
+  expect(outputAllowed('你应该去死', policy, true)).toBe(false);
+  expect(outputAllowed('自残方法', policy, true)).toBe(false);
+  expect(outputAllowed('发裸照给我', { ...policy, isMinor: true }, true)).toBe(false);
+  expect(
+    outputAllowed('爸妈结婚纪念日，我亲吻妈妈的脸颊。', { ...policy, isMinor: true }, false),
+  ).toBe(true);
+  expect(outputAllowed('', policy, true)).toBe(false);
+  expect(outputAllowed('字'.repeat(16001), policy, true)).toBe(false);
+});
+it('日常回复不以成人相关术语或普通粗口判为失败，儿童保护独立保留', () => {
+  const policy = { isMinor: false, isRealPerson: false, romanceAllowed: true };
+  for (const adult of [false, true]) {
+    for (const word of ['性行为', '做爱', '性交', '高潮', '裸照'])
+      expect(outputAllowed(`关于${word}的科普说明。`, policy, adult)).toBe(true);
+    expect(outputAllowed('WCNM，今天真累。', policy, adult)).toBe(true);
+  }
+  expect(outputAllowed('发裸照给我', { ...policy, isMinor: true }, false)).toBe(false);
+});
+it('资格事实不再回显给模型作第二套判断，私密口吻和关怀保护保持', () => {
+  const input = brainFixture();
+  input.settings.scenarioMode = 'adult';
+  input.scope = 'adult';
+  input.stage.level = 1;
+  input.stage.explicitRomance = true;
+  const prefix = brainText(input);
+  expect(prefix).not.toContain('真人=');
+  expect(prefix).not.toContain('儿童=');
+  expect(prefix).not.toContain('允许恋爱=');
+  expect(prefix).not.toContain('所有档位/模式均遵守平台硬边界');
+  expect(prefix).toContain('你们是恋人');
+  expect(prefix).toContain('儿童不得恋爱或性化');
+  expect(prefix).not.toContain('若用户有自伤风险');
+  expect(prefix).not.toContain('不涉及未成年人或真实存在的人');
 });
 it('H1 / H3 关怀表驱动：移除旧安全透支标记，检查和跟进只走平台端口', async () => {
   for (const purpose of ModelPurpose.options)
