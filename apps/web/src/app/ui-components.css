@@ -395,6 +395,14 @@
 .profile-field .picker-field {
   padding: 0;
 }
+.edit-input-row .picker-field {
+  flex: 1;
+  min-height: 56px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
 .field-row .picker-field-text,
 .profile-field .picker-field-text {
   text-align: right;

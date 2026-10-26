@@ -8,10 +8,11 @@ import { AvatarEditor } from './avatar-editor.js';
 import { ProfileAvatar } from './profile-avatar.js';
 import { useAuth } from '../app/auth.js';
 import { AliasRow, NudgeRow } from './profile-edit.js';
-import { Chevron, GroupHeader, MenuGroup, MenuRow, NavBar } from './shell-kit.js';
+import { GroupHeader, MenuGroup, MenuRow, NavBar } from './shell-kit.js';
 import { REGION_GROUPS } from '../data/regions.js';
+import { DateField, SelectField } from './wheel-picker.js';
 
-/** 首次填写页「性别」行显示的当前值（原生下拉透明铺在行上，见 pages-old.css .profile-field.picker）。 */
+/** 首次填写页「性别」选项（U2 起用 Choice Sheet 选择）。 */
 const GENDER_LABELS: Record<string, string> = {
   unspecified: '不填写',
   female: '女',
@@ -132,59 +133,48 @@ function OnboardingProfilePage() {
         </MenuGroup>
         <GroupHeader>{firstUse ? '补充更多资料（可选）' : '更多资料'}</GroupHeader>
         <MenuGroup>
-          <label className="menu-row profile-field with-caret">
+          {/* U2：原生日期框 / 下拉换成滚轮与 Choice Sheet */}
+          <div className="menu-row profile-field">
             <span>生日</span>
-            <input
-              disabled={!loaded}
-              type="date"
+            <DateField
+              title="生日"
               value={form.birthday}
-              onChange={(e) => setForm({ ...form, birthday: e.target.value })}
+              placeholder="不填写"
+              clearable
+              clearLabel="不填写"
+              disabled={!loaded}
+              onChange={(birthday) => setForm({ ...form, birthday })}
             />
-            <Chevron />
-          </label>
-          <label className="menu-row profile-field picker">
+          </div>
+          <div className="menu-row profile-field">
             <span>性别</span>
-            <span className="profile-field-value" aria-hidden="true">
-              {GENDER_LABELS[form.gender] ?? '不填写'}
-            </span>
-            <Chevron />
-            <select
-              disabled={!loaded}
+            <SelectField
+              title="性别"
               value={form.gender}
-              onChange={(e) => setForm({ ...form, gender: e.target.value })}
-            >
-              <option value="unspecified">不填写</option>
-              <option value="female">女</option>
-              <option value="male">男</option>
-              <option value="other">其他</option>
-            </select>
-          </label>
-          <label className="menu-row profile-field picker">
-            <span>地区</span>
-            <span className="profile-field-value" aria-hidden="true">
-              {form.city || '不填写'}
-            </span>
-            <Chevron />
-            <select
               disabled={!loaded}
+              options={Object.entries(GENDER_LABELS).map(([value, label]) => ({ value, label }))}
+              onChange={(gender) => setForm({ ...form, gender })}
+            />
+          </div>
+          <div className="menu-row profile-field">
+            <span>地区</span>
+            <SelectField
+              title="地区"
               value={form.city}
-              onChange={(e) => setForm({ ...form, city: e.target.value })}
-            >
-              <option value="">不填写</option>
-              {form.city && !REGION_GROUPS.some((g) => g.items.includes(form.city)) && (
-                <option value={form.city}>{form.city}</option>
-              )}
-              {REGION_GROUPS.map((group) => (
-                <optgroup key={group.label} label={group.label}>
-                  {group.items.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
+              placeholder="不填写"
+              disabled={!loaded}
+              options={[
+                { value: '', label: '不填写' },
+                ...(form.city && !REGION_GROUPS.some((g) => g.items.includes(form.city))
+                  ? [{ value: form.city, label: form.city }]
+                  : []),
+                ...REGION_GROUPS.flatMap((group) =>
+                  group.items.map((item) => ({ value: item, label: item })),
+                ),
+              ]}
+              onChange={(city) => setForm({ ...form, city })}
+            />
+          </div>
           <label className="menu-row profile-field multiline">
             <span>关于我</span>
             <span className="profile-field-body">
