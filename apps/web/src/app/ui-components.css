@@ -260,6 +260,17 @@
     transform: none;
   }
 }
+/* 对话框里的说明清单 */
+.dialog .dialog-list {
+  margin: 0;
+  padding-left: 1.2em;
+  text-align: left;
+  line-height: 1.6;
+}
+/* 二级页面底部的红字危险行（删除这条设定 / 删除心愿） */
+.subpage-layer .subpage-danger {
+  margin-top: var(--wb-space-6);
+}
 /* 二级页面里的普通表单：留出页边距 */
 .subpage-form {
   padding: var(--wb-space-5);

@@ -49,7 +49,8 @@ import {
   NavBar,
   NavIcon,
 } from './shell-kit.js';
-import { Dialog, showToast } from './toast.js';
+import { AlertDialog, showToast } from './toast.js';
+import { SelectField } from './wheel-picker.js';
 
 const code = (error: unknown) => (error instanceof ApiFailure ? error.code : '');
 const chars = (text: string) => Array.from(text).length;
@@ -972,23 +973,30 @@ export function RoleRequestFormPage() {
           <summary>补充资料（选填）</summary>
           <label>
             类型
-            <select value={basis} onChange={(e) => setBasis(e.target.value as '' | CharacterBasis)}>
-              <option value="">不确定</option>
-              <option value="real_person">真人</option>
-              <option value="fictional">虚构角色（动漫、游戏、影视…）</option>
-              <option value="original">原创</option>
-            </select>
+            <SelectField<'' | CharacterBasis>
+              title="类型"
+              value={basis}
+              onChange={setBasis}
+              options={[
+                { value: '', label: '不确定' },
+                { value: 'real_person', label: '真人' },
+                { value: 'fictional', label: '虚构角色（动漫、游戏、影视…）' },
+                { value: 'original', label: '原创' },
+              ]}
+            />
           </label>
           <label>
             分类
-            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-              <option value="">不选</option>
-              {categories.data?.items.map((c) => (
-                <option key={c.categoryId} value={c.categoryId}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            <SelectField<string>
+              title="分类"
+              value={categoryId}
+              onChange={setCategoryId}
+              options={[
+                { value: '', label: '不选' },
+                ...(categories.data?.items.map((c) => ({ value: c.categoryId, label: c.name })) ??
+                  []),
+              ]}
+            />
           </label>
           <label>
             出处 / 作品
@@ -1271,14 +1279,14 @@ export function RoleRequestDetailPage() {
         </>
       )}
       {confirm && (
-        <Dialog
-          actions={[
-            { label: '取消', onClick: () => setConfirm(false) },
-            { label: '撤回', danger: true, onClick: () => void cancel() },
-          ]}
-        >
-          <p>撤回这条申请？</p>
-        </Dialog>
+        <AlertDialog
+          title="撤回这条申请？"
+          message="撤回后不能恢复，想要的话需要重新提交。"
+          confirmLabel="撤回申请"
+          pending={cancelling}
+          onCancel={() => setConfirm(false)}
+          onConfirm={() => void cancel()}
+        />
       )}
     </main>
   );

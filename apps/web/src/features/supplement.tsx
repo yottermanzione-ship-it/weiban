@@ -9,7 +9,8 @@ import {
 import { api } from '../data/client.js';
 import { useUpdates } from '../data/updates.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
-import { Dialog, showToast } from './toast.js';
+import { AlertDialog, Dialog, showSnackbar, showToast } from './toast.js';
+import { CountTextarea, SubPageLayer } from './edit-page.js';
 import { NavBar } from './shell-kit.js';
 import { SupplementSourceNote, VariantPublishLink } from './plaza.js';
 
@@ -62,7 +63,7 @@ export function SupplementPage() {
     };
   }, [characterId, revision]);
   const lines = splitLines(data?.text ?? '');
-  async function save(next: string[]) {
+  async function save(next: string[], done: string | null = '已保存') {
     setError('');
     try {
       if (next.length === 0) {
@@ -78,10 +79,18 @@ export function SupplementPage() {
         // 冲突项由 AI 在保存后几秒内检出（T-081 交接），稍后再拉一次。
         window.setTimeout(() => setRevision((v) => v + 1), 5000);
       }
-      showToast('已保存');
+      if (done) showToast(done);
+      return true;
     } catch (e) {
       setError(friendlyError(e));
+      return false;
     }
+  }
+  // U2：删掉一条设定可撤销——立即保存，底部撤销条「撤销」用原来的整段设定再保存一次
+  async function removeLine(index: number) {
+    const before = lines;
+    if (!(await save(before.filter((_, i) => i !== index), null))) return;
+    showSnackbar({ text: '已删除这条设定', onAction: () => void save(before, '已恢复') });
   }
   const conflictOf = (line: string) =>
     data?.conflicts.find((c) => line.includes(c.supplementValue));
@@ -146,68 +155,58 @@ export function SupplementPage() {
           删除全部补充设定
         </button>
       )}
+      {/* U2：手写 / 编辑一条改整页二级页面；删除这条红字，可撤销 */}
       {editing && (
-        <Dialog
+        <SubPageLayer
           title={editing.index < 0 ? '手写一条' : '编辑设定'}
-          actions={[
-            ...(editing.index >= 0
-              ? [
-                  {
-                    label: '删除',
-                    onClick: () => {
-                      void save(lines.filter((_, i) => i !== editing.index));
-                      setEditing(null);
-                    },
-                  },
-                ]
-              : []),
-            { label: '取消', onClick: () => setEditing(null) },
-            {
-              label: '保存',
-              primary: true,
-              disabled:
-                !editing.text.trim() ||
-                (editing.index >= 0 && editing.text.trim() === lines[editing.index]?.trim()),
-              onClick: () => {
-                const text = editing.text.trim().replace(/\r?\n/g, ' ');
-                if (!text) return;
-                void save(
-                  editing.index < 0
-                    ? [...lines, text]
-                    : lines.map((l, i) => (i === editing.index ? text : l)),
-                );
-                setEditing(null);
-              },
-            },
-          ]}
+          canSave={
+            !!editing.text.trim() &&
+            !(editing.index >= 0 && editing.text.trim() === lines[editing.index]?.trim())
+          }
+          onCancel={() => setEditing(null)}
+          onSave={() => {
+            const text = editing.text.trim().replace(/\r?\n/g, ' ');
+            if (!text) return;
+            void save(
+              editing.index < 0
+                ? [...lines, text]
+                : lines.map((l, i) => (i === editing.index ? text : l)),
+            );
+            setEditing(null);
+          }}
         >
-          <textarea
-            autoFocus
-            rows={4}
-            maxLength={200}
+          <CountTextarea
+            label={editing.index < 0 ? '手写一条' : '编辑设定'}
             value={editing.text}
-            onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+            maxLength={200}
+            onChange={(text) => setEditing({ ...editing, text })}
           />
-          <small className="hint">{editing.text.length} / 200</small>
-        </Dialog>
+          {editing.index >= 0 && (
+            <button
+              type="button"
+              className="danger danger-row subpage-danger"
+              onClick={() => {
+                const index = editing.index;
+                setEditing(null);
+                void removeLine(index);
+              }}
+            >
+              删除这条设定
+            </button>
+          )}
+        </SubPageLayer>
       )}
       {confirmClear && (
-        <Dialog
+        <AlertDialog
           title="删除全部补充设定？"
-          actions={[
-            { label: '取消', onClick: () => setConfirmClear(false) },
-            {
-              label: '删除',
-              primary: true,
-              onClick: () => {
-                setConfirmClear(false);
-                void save([]);
-              },
-            },
-          ]}
-        >
-          <p className="hint">删除后，TA 会回到原本的设定</p>
-        </Dialog>
+          message={<p className="hint">删除后，TA 会回到原本的设定。</p>}
+          confirmLabel="删除全部"
+          onCancel={() => setConfirmClear(false)}
+          onConfirm={() => {
+            setConfirmClear(false);
+            void save([]);
+          }}
+        />
       )}
     </main>
   );
@@ -241,7 +240,7 @@ export function PersonaUpdateBadge({ characterId }: { characterId: string }) {
           actions={[
             {
               label: '知道了',
-              primary: true,
+              tone: 'primary',
               onClick: () => {
                 setOpen(false);
                 setSeen(true);

@@ -29,8 +29,8 @@ import { useUpdates } from '../data/updates.js';
 import { uploadMedia, prepareImage } from '../data/upload.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { VirtualList } from './virtual-list.js';
-import { Dialog, showToast } from './toast.js';
-import { Sheet } from './shell-kit.js';
+import { AlertDialog, Dialog, showSnackbar, showToast } from './toast.js';
+import { ActionSheet, Sheet } from './shell-kit.js';
 
 /*
  * 人设广场（PLZ-01～PLZ-07；设计 persona-plaza.md；契约 PlazaEndpoints）。
@@ -714,14 +714,18 @@ export function WorkPage() {
         );
         showToast(open ? '已开启评论' : '已关闭评论');
       } else if (action === 'unlist') {
+        // U2：下架可撤销（重新上架接口）——不再二次确认，底部撤销条
         setWork(await api.call(PlazaEndpoints.unlistWork, { params: { workId } }));
-        showToast('已下架');
+        showSnackbar({
+          text: '已下架，广场上看不到这个作品了',
+          onAction: () => manage('relist'),
+        });
       } else if (action === 'relist') {
         setWork(await api.call(PlazaEndpoints.relistWork, { params: { workId } }));
         showToast('已重新上架');
       } else {
         await api.call(PlazaEndpoints.deleteWork, { params: { workId } });
-        showToast('已删除');
+        showToast('已删除作品');
         navigate('/plaza/me', { replace: true });
       }
     } catch (e) {
@@ -871,46 +875,47 @@ export function WorkPage() {
           </div>
         </Sheet>
       )}
+      {/* U2：更多操作从「弹层里一列带边框按钮」改微信式 Action Sheet；点了先关面板，确认框不叠在面板上 */}
       {sheet === 'menu' && (
-        <Sheet title="更多操作" closeLabel="取消" onClose={() => setSheet(null)}>
-          <div className="stack">
-            {w.isMine ? (
-              <>
-                {!removedByAdmin && (
-                  <button onClick={() => void publishNewVersion()}>发布新版本</button>
-                )}
-                <button onClick={() => void manage('comments')}>
-                  {w.settings.commentsOpen ? '关闭评论' : '开启评论'}
-                </button>
-                {w.status === 'listed' && <button onClick={() => setDialog('unlist')}>下架</button>}
-                {w.status === 'unlisted_by_author' && (
-                  <button onClick={() => void manage('relist')}>重新上架</button>
-                )}
-                <button className="danger" onClick={() => setDialog('delete')}>
-                  删除作品
-                </button>
-              </>
-            ) : reportedTargets.has(`work:${workId}`) ? (
-              <button disabled>已举报</button>
-            ) : (
-              <Link className="plain" to={`/plaza/report?work=${workId}`}>
-                举报
-              </Link>
-            )}
-            {!w.isMine && (
-              <Link className="plain" to={`/support/new?targetType=plaza_work&targetId=${workId}`}>
-                向官方投诉
-              </Link>
-            )}
-          </div>
-        </Sheet>
+        <ActionSheet
+          onClose={() => setSheet(null)}
+          items={
+            w.isMine
+              ? [
+                  ...(!removedByAdmin
+                    ? [{ label: '发布新版本', onClick: () => void publishNewVersion() }]
+                    : []),
+                  {
+                    label: w.settings.commentsOpen ? '关闭评论' : '开启评论',
+                    onClick: () => void manage('comments'),
+                  },
+                  ...(w.status === 'listed'
+                    ? [{ label: '下架', onClick: () => void manage('unlist') }]
+                    : []),
+                  ...(w.status === 'unlisted_by_author'
+                    ? [{ label: '重新上架', onClick: () => void manage('relist') }]
+                    : []),
+                  { label: '删除作品', danger: true, onClick: () => setDialog('delete') },
+                ]
+              : [
+                  reportedTargets.has(`work:${workId}`)
+                    ? { label: '已举报', disabled: true, onClick: () => undefined }
+                    : { label: '举报', onClick: () => navigate(`/plaza/report?work=${workId}`) },
+                  {
+                    label: '向官方投诉',
+                    onClick: () =>
+                      navigate(`/support/new?targetType=plaza_work&targetId=${workId}`),
+                  },
+                ]
+          }
+        />
       )}
       {dialog === 'adopted' && (
         <Dialog
           title="你已添加过这个角色"
           actions={[
             { label: '取消', onClick: () => setDialog(null) },
-            { label: '再添加一份', primary: true, onClick: () => void adopt() },
+            { label: '再添加一份', tone: 'primary', onClick: () => void adopt() },
           ]}
         />
       )}
@@ -919,38 +924,29 @@ export function WorkPage() {
           title="替换补充设定？"
           actions={[
             { label: '取消', onClick: () => setDialog(null) },
-            { label: '替换', primary: true, onClick: () => void apply(true) },
+            { label: '替换补充设定', tone: 'primary', onClick: () => void apply(true) },
           ]}
         >
           <p>将替换你现有的补充设定。你们的聊天记录、记忆和好感度都不会变</p>
         </Dialog>
       )}
       {dialog === 'full' && (
-        <Dialog title="通讯录已满" actions={[{ label: '知道了', onClick: () => setDialog(null) }]}>
+        <Dialog
+          title="通讯录已满"
+          actions={[{ label: '知道了', tone: 'primary', onClick: () => setDialog(null) }]}
+        >
           <p>通讯录已满 50 个角色，先删除一些再添加吧</p>
         </Dialog>
       )}
-      {dialog === 'unlist' && (
-        <Dialog
-          title="下架作品？"
-          actions={[
-            { label: '取消', onClick: () => setDialog(null) },
-            { label: '下架', primary: true, onClick: () => void manage('unlist') },
-          ]}
-        >
-          <p>下架后，广场上看不到这个作品，已经添加的人不受影响</p>
-        </Dialog>
-      )}
       {dialog === 'delete' && (
-        <Dialog
+        <AlertDialog
           title="删除作品？"
-          actions={[
-            { label: '取消', onClick: () => setDialog(null) },
-            { label: '删除', primary: true, onClick: () => void manage('delete') },
-          ]}
-        >
-          <p>作品和它的点赞、评论都会删除，不能恢复。已经添加的人不受影响</p>
-        </Dialog>
+          message="作品和它的点赞、评论都会删除，不能恢复。已经添加的人不受影响。"
+          confirmLabel="删除作品"
+          pending={pending}
+          onCancel={() => setDialog(null)}
+          onConfirm={() => void manage('delete')}
+        />
       )}
     </main>
   );
@@ -1855,7 +1851,7 @@ export function PublishPage() {
               { label: '取消', onClick: () => setConfirmKeep(null) },
               {
                 label: '这不是我的私人信息',
-                primary: true,
+                tone: 'primary',
                 onClick: () => {
                   setKept((prev) => [...prev, keepTarget.spanId]);
                   setConfirmKeep(null);
@@ -1872,17 +1868,19 @@ export function PublishPage() {
             </p>
           </Dialog>
         )}
+        {/* U2：只读说明改居中说明框（审计 #36） */}
         {neverSheet && (
-          <Sheet title="哪些内容不会发布" closeLabel="知道了" onClose={() => setNeverSheet(false)}>
-            <div className="stack">
-              <strong>这些内容永远不会发布</strong>
-              <ul>
-                {neverPublished.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          </Sheet>
+          <Dialog
+            title="这些内容永远不会发布"
+            onDismiss={() => setNeverSheet(false)}
+            actions={[{ label: '知道了', tone: 'primary', onClick: () => setNeverSheet(false) }]}
+          >
+            <ul className="dialog-list">
+              {neverPublished.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </Dialog>
         )}
       </main>
     );
@@ -2081,39 +2079,34 @@ function NewVersionSheet({
   }
   return (
     <>
-      <Sheet
-        title="作者发布了新版本"
-        closeDisabled={pending}
-        onClose={() => {
-          if (!pending) onClose(false);
-        }}
-      >
-        <div className="stack">
-          <strong>版本 {version}</strong>
-          {note && <p className="hint">更新说明：{note}</p>}
-          <small className="hint">你们的聊天记录、记忆、好感度都不会变</small>
-          <button className="primary" disabled={pending} onClick={() => void decide('update')}>
-            更新到版本 {version}
-          </button>
-          <button className="text-button" disabled={pending} onClick={() => void decide('dismiss')}>
-            暂不更新
-          </button>
-        </div>
-      </Sheet>
-      {overwrite && (
+      {/* U2：新版本提示改居中确认框（审计 #37） */}
+      {!overwrite && (
         <Dialog
-          title="你对 TA 的修改会被覆盖"
+          title={`作者发布了版本 ${version}`}
           actions={[
-            { label: '取消', onClick: () => setOverwrite(false) },
+            { label: '暂不更新', disabled: pending, onClick: () => void decide('dismiss') },
             {
-              label: '仍然更新',
-              primary: true,
-              onClick: () => {
-                setOverwrite(false);
-                void decide('update', true);
-              },
+              label: '更新',
+              tone: 'primary',
+              busy: pending,
+              onClick: () => void decide('update'),
             },
           ]}
+        >
+          {note && <p>更新说明：{note}</p>}
+          <p className="hint">你们的聊天记录、记忆、好感度都不会变</p>
+        </Dialog>
+      )}
+      {overwrite && (
+        <AlertDialog
+          title="你对 TA 的修改会被覆盖"
+          message="更新后，你改过的人设内容会换成作者的新版本，不能恢复。"
+          confirmLabel="仍然更新"
+          onCancel={() => setOverwrite(false)}
+          onConfirm={() => {
+            setOverwrite(false);
+            void decide('update', true);
+          }}
         />
       )}
     </>
