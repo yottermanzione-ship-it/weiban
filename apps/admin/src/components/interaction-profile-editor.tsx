@@ -34,7 +34,7 @@ export function InteractionProfileEditor({ kind, value, onChange }: Props) {
       <Input.TextArea
         aria-label={label}
         disabled={error}
-        autoSize={{ minRows: 2, maxRows: 8 }}
+        autoSize={{ minRows: 1 }}
         value={multiple ? list(get(keys)) : text(get(keys))}
         onChange={(e) =>
           set(

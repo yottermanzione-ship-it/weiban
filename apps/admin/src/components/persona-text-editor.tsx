@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Button, Input, Space } from 'antd';
 import { splitPersonaText, joinPersonaText } from './persona-text-sections.js';
-import { FieldHelp } from '../ui/page.js';
 
 /** 展示当前实际运行文字；分段编辑和完整原文是同一份内容，不藏第二份生效规则。 */
 export function PersonaTextEditor({
@@ -33,14 +32,11 @@ export function PersonaTextEditor({
           )}
         </Space>
       </div>
-      <FieldHelp>
-        这是当前实际使用的文字；保存后供后续回复使用，不替换为归档包中的另一份资料。
-      </FieldHelp>
       {!segmented ? (
         <Input.TextArea
           aria-label={label}
           value={value}
-          autoSize={{ minRows: 5, maxRows: 18 }}
+          autoSize={{ minRows: 1 }}
           onChange={(e) => onChange(e.target.value)}
         />
       ) : (
@@ -51,7 +47,7 @@ export function PersonaTextEditor({
               <Input.TextArea
                 aria-label={`${label}其他原文`}
                 value={document.leading}
-                autoSize={{ minRows: 2, maxRows: 10 }}
+                autoSize={{ minRows: 1 }}
                 onChange={(e) =>
                   onChange(joinPersonaText({ ...document, leading: e.target.value }))
                 }
@@ -64,7 +60,7 @@ export function PersonaTextEditor({
               <Input.TextArea
                 aria-label={`${label}：${part.label}`}
                 value={part.text}
-                autoSize={{ minRows: 2, maxRows: 12 }}
+                autoSize={{ minRows: 1 }}
                 onChange={(e) =>
                   onChange(
                     joinPersonaText({

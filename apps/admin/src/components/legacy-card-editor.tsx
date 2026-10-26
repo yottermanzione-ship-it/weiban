@@ -10,6 +10,7 @@ import {
   Alert,
   Button,
   Collapse,
+  Dropdown,
   Input,
   InputNumber,
   Modal,
@@ -482,33 +483,10 @@ export function LegacyCharacterEditor({
       )}
       {notice && <Alert type="success" showIcon message={notice} />}
 
-      <div className="legacy-meta">
-        <strong>{detail.name}</strong>
-        <span>资料修订 {detail.revision}</span>
-        <span>最近保存 {formatDateTime(detail.updatedAt)}</span>
-        <span>
-          {(
-            {
-              published: '已上架',
-              unpublished: '已下架',
-              draft: '草稿',
-              pending_check: '待检查',
-              disabled: '已禁用',
-            } as Record<string, string>
-          )[detail.status] ?? detail.status}
-        </span>
-      </div>
       <nav className="legacy-section-nav" aria-label="角色资料分区">
         {[
-          ['profile', '资料与头像'],
-          ['persona', '人设文本'],
-          [
-            'knowledge',
-            `词条与示例 (${lorebook.filter((r) => !r.deleted).length}/${examples.filter((r) => !r.deleted).length})`,
-          ],
-          ['interaction', '互动风格'],
-          ['voice', '声音与微博'],
-          ['records', '资格与记录'],
+          ['profile', '角色管理首页'],
+          ['persona', '人设正文'],
         ].map(([key, label]) => (
           <Button
             key={key}
@@ -519,96 +497,119 @@ export function LegacyCharacterEditor({
             {label}
           </Button>
         ))}
+        <Dropdown
+          trigger={['click']}
+          menu={{
+            items: [{ key: 'records', label: '版本记录与来源存档' }],
+            onClick: () => setActiveTab('records'),
+          }}
+        >
+          <Button className="legacy-more-button" aria-label="更多角色操作">
+            更多
+          </Button>
+        </Dropdown>
       </nav>
 
       <section className="legacy-tab-panel" hidden={activeTab !== 'profile'}>
-        <SectionCard title="头像" desc="平台角色头像；图片读取失败时退回文字头像">
-          <div className="legacy-avatar-row">
-            <div className="legacy-avatar">
-              {avatar.url && !brokenAvatar ? (
-                <img
-                  src={avatar.url}
-                  alt={`${detail.name}头像`}
-                  onError={() => setBrokenAvatar(true)}
+        <div className="legacy-home-grid">
+          <div className="legacy-home-column">
+            <SectionCard title="头像与基本资料">
+              <div className="legacy-avatar-row">
+                <div className="legacy-avatar">
+                  {avatar.url && !brokenAvatar ? (
+                    <img
+                      src={avatar.url}
+                      alt={`${detail.name}头像`}
+                      onError={() => setBrokenAvatar(true)}
+                    />
+                  ) : (
+                    <span className="legacy-avatar-fallback">{avatarText}</span>
+                  )}
+                </div>
+                <div className="legacy-avatar-actions">
+                  <Space wrap>
+                    <Upload
+                      accept="image/jpeg,image/png,image/webp"
+                      showUploadList={false}
+                      beforeUpload={(file) => {
+                        void uploadAvatar(file);
+                        return false;
+                      }}
+                    >
+                      <Button icon={<UploadOutlined />} loading={uploading}>
+                        上传角色图片
+                      </Button>
+                    </Upload>
+                    <Button
+                      disabled={!avatar.mediaId}
+                      onClick={() => setAvatar({ mediaId: null, url: null })}
+                    >
+                      恢复默认头像
+                    </Button>
+                  </Space>
+                  <FieldHelp>
+                    {avatar.mediaId
+                      ? '已设置角色图片，点保存后生效。'
+                      : '当前使用默认文字头像（名字首字）。'}
+                  </FieldHelp>
+                </div>
+              </div>
+              <div className="legacy-two">
+                <label className="field-line">
+                  <span className="field-label">角色名字</span>
+                  <Input
+                    value={fields.displayName}
+                    maxLength={32}
+                    onChange={(e) => patchFields({ displayName: e.target.value })}
+                  />
+                </label>
+                <label className="field-line">
+                  <span className="field-label">
+                    昵称
+                    <span className="field-label-hint">留空 = 清空</span>
+                  </span>
+                  <Input
+                    value={fields.nickname}
+                    maxLength={32}
+                    onChange={(e) => patchFields({ nickname: e.target.value })}
+                  />
+                </label>
+              </div>
+              <label className="field-line">
+                <span className="field-label">签名</span>
+                <Input
+                  value={fields.signature}
+                  maxLength={200}
+                  onChange={(e) => patchFields({ signature: e.target.value })}
                 />
-              ) : (
-                <span className="legacy-avatar-fallback">{avatarText}</span>
-              )}
-            </div>
-            <div className="legacy-avatar-actions">
-              <Space wrap>
-                <Upload
-                  accept="image/jpeg,image/png,image/webp"
-                  showUploadList={false}
-                  beforeUpload={(file) => {
-                    void uploadAvatar(file);
-                    return false;
-                  }}
-                >
-                  <Button icon={<UploadOutlined />} loading={uploading}>
-                    上传角色图片
-                  </Button>
-                </Upload>
-                <Button
-                  disabled={!avatar.mediaId}
-                  onClick={() => setAvatar({ mediaId: null, url: null })}
-                >
-                  恢复默认头像
-                </Button>
-              </Space>
-              <FieldHelp>
-                {avatar.mediaId
-                  ? '已设置角色图片，点保存后生效。'
-                  : '当前使用默认文字头像（名字首字）。'}
-              </FieldHelp>
-            </div>
+              </label>
+              <label className="field-line">
+                <span className="field-label">
+                  别名
+                  <span className="field-label-hint">每行一个，用于搜索和称呼</span>
+                </span>
+                <Input.TextArea
+                  autoSize={{ minRows: 1 }}
+                  value={aliasText}
+                  onChange={(e) => setAliasText(e.target.value)}
+                />
+              </label>
+            </SectionCard>
+            <EligibilityCard characterId={characterId} />
           </div>
-        </SectionCard>
-
-        <SectionCard title="基本信息" desc="名字直接用于会话列表、广场和搜索">
-          <div className="legacy-two">
-            <label className="field-line">
-              <span className="field-label">角色名字</span>
-              <Input
-                value={fields.displayName}
-                maxLength={32}
-                onChange={(e) => patchFields({ displayName: e.target.value })}
-              />
-            </label>
-            <label className="field-line">
-              <span className="field-label">
-                昵称
-                <span className="field-label-hint">留空 = 清空</span>
-              </span>
-              <Input
-                value={fields.nickname}
-                maxLength={32}
-                onChange={(e) => patchFields({ nickname: e.target.value })}
-              />
-            </label>
+          <div className="legacy-home-column">
+            <CharacterVoicePanel characterId={characterId} />
+            <CharacterWeiboEditor
+              value={fields.weibo}
+              onChange={(weibo) => patchFields({ weibo })}
+            />
           </div>
-          <label className="field-line">
-            <span className="field-label">签名</span>
-            <Input
-              value={fields.signature}
-              maxLength={200}
-              onChange={(e) => patchFields({ signature: e.target.value })}
-            />
-          </label>
-          <label className="field-line">
-            <span className="field-label">
-              别名
-              <span className="field-label-hint">每行一个，用于搜索和称呼</span>
-            </span>
-            <Input.TextArea
-              autoSize={{ minRows: 2, maxRows: 6 }}
-              value={aliasText}
-              onChange={(e) => setAliasText(e.target.value)}
-            />
-          </label>
-        </SectionCard>
+        </div>
       </section>
-      <section className="legacy-tab-panel" hidden={activeTab !== 'persona'}>
+      <section
+        className="legacy-tab-panel legacy-persona-document"
+        hidden={activeTab !== 'persona'}
+      >
         <SectionCard
           title="人物与性格"
           desc="当前实际生效的人物文本；完整原文与中文分段编辑是同一份内容"
@@ -641,7 +642,10 @@ export function LegacyCharacterEditor({
           </FieldHelp>
         </SectionCard>
       </section>
-      <section className="legacy-tab-panel" hidden={activeTab !== 'interaction'}>
+      <section
+        className="legacy-tab-panel legacy-persona-document"
+        hidden={activeTab !== 'persona'}
+      >
         <SectionCard title="朋友圈风格" desc="人物在朋友圈的语气、主题和评论习惯">
           <InteractionProfileEditor kind="moments" value={momentText} onChange={setMomentText} />
         </SectionCard>
@@ -656,14 +660,17 @@ export function LegacyCharacterEditor({
               <span className="field-label-hint">每行一条，最多 10 条</span>
             </span>
             <Input.TextArea
-              autoSize={{ minRows: 2, maxRows: 8 }}
+              autoSize={{ minRows: 1 }}
               value={openingText}
               onChange={(e) => setOpeningText(e.target.value)}
             />
           </label>
         </SectionCard>
       </section>
-      <section className="legacy-tab-panel" hidden={activeTab !== 'knowledge'}>
+      <section
+        className="legacy-tab-panel legacy-persona-document"
+        hidden={activeTab !== 'persona'}
+      >
         <SectionCard
           title={`背景与触发词条（${lorebook.filter((row) => !row.deleted).length} 条）`}
           desc="只在对话提到触发词或常驻时进入提示词；保存只动本角色改动过的条目"
@@ -695,8 +702,11 @@ export function LegacyCharacterEditor({
                 <div className="legacy-entry" key={row.id}>
                   <div className="legacy-entry-head">
                     <Input
+                      className="legacy-entry-title"
+                      variant="borderless"
+                      aria-label={`词条标题 ${index + 1}`}
                       value={textOf(row.payload.title)}
-                      placeholder="条目标题（可空）"
+                      placeholder="词条小标题"
                       onChange={(e) => updateLore(index, { title: e.target.value })}
                     />
                     <Popconfirm
@@ -714,63 +724,75 @@ export function LegacyCharacterEditor({
                       </Button>
                     </Popconfirm>
                   </div>
-                  <label className="field-line">
-                    <span className="field-label">
-                      触发词
-                      <span className="field-label-hint">每行一个；留空表示只能常驻</span>
-                    </span>
+                  <label className="field-line legacy-entry-body">
                     <Input.TextArea
-                      autoSize={{ minRows: 1, maxRows: 4 }}
-                      value={keysOf(row.payload.trigger_keys_json).join('\n')}
-                      onChange={(e) =>
-                        updateLore(index, {
-                          trigger_keys_json: JSON.stringify(
-                            e.target.value
-                              .split('\n')
-                              .map((item) => item.trim())
-                              .filter(Boolean),
-                          ),
-                        })
-                      }
-                    />
-                  </label>
-                  <label className="field-line">
-                    <span className="field-label">内容</span>
-                    <Input.TextArea
-                      autoSize={{ minRows: 3, maxRows: 10 }}
+                      aria-label={`词条正文 ${index + 1}`}
+                      autoSize={{ minRows: 1 }}
                       value={textOf(row.payload.content)}
                       onChange={(e) => updateLore(index, { content: e.target.value })}
                     />
                   </label>
-                  <Space size={16} wrap>
-                    <span className="legacy-inline">
-                      优先级
-                      <InputNumber
-                        min={0}
-                        max={1000}
-                        value={typeof row.payload.priority === 'number' ? row.payload.priority : 0}
-                        onChange={(value) => updateLore(index, { priority: value ?? 0 })}
+                  <details className="legacy-entry-options">
+                    <summary>
+                      {Boolean(
+                        row.payload.constant ?? row.payload.is_constant ?? row.payload.always,
+                      )
+                        ? '常驻词条'
+                        : `触发：${keysOf(row.payload.trigger_keys_json).join('、') || '尚未设置'}`}{' '}
+                      · 设置
+                    </summary>
+                    <label className="field-line">
+                      <span className="field-label">
+                        触发词
+                        <span className="field-label-hint">每行一个；留空表示只能常驻</span>
+                      </span>
+                      <Input.TextArea
+                        autoSize={{ minRows: 1, maxRows: 4 }}
+                        value={keysOf(row.payload.trigger_keys_json).join('\n')}
+                        onChange={(e) =>
+                          updateLore(index, {
+                            trigger_keys_json: JSON.stringify(
+                              e.target.value
+                                .split('\n')
+                                .map((item) => item.trim())
+                                .filter(Boolean),
+                            ),
+                          })
+                        }
                       />
-                    </span>
-                    <span className="legacy-inline">
-                      常驻
-                      <Switch
-                        size="small"
-                        checked={Boolean(
-                          row.payload.constant ?? row.payload.is_constant ?? row.payload.always,
-                        )}
-                        onChange={(checked) => updateLore(index, { constant: checked })}
-                      />
-                    </span>
-                    <span className="legacy-inline">
-                      启用
-                      <Switch
-                        size="small"
-                        checked={row.payload.enabled !== false}
-                        onChange={(checked) => updateLore(index, { enabled: checked })}
-                      />
-                    </span>
-                  </Space>
+                    </label>
+                    <Space size={16} wrap>
+                      <span className="legacy-inline">
+                        优先级
+                        <InputNumber
+                          min={0}
+                          max={1000}
+                          value={
+                            typeof row.payload.priority === 'number' ? row.payload.priority : 0
+                          }
+                          onChange={(value) => updateLore(index, { priority: value ?? 0 })}
+                        />
+                      </span>
+                      <span className="legacy-inline">
+                        常驻
+                        <Switch
+                          size="small"
+                          checked={Boolean(
+                            row.payload.constant ?? row.payload.is_constant ?? row.payload.always,
+                          )}
+                          onChange={(checked) => updateLore(index, { constant: checked })}
+                        />
+                      </span>
+                      <span className="legacy-inline">
+                        启用
+                        <Switch
+                          size="small"
+                          checked={row.payload.enabled !== false}
+                          onChange={(checked) => updateLore(index, { enabled: checked })}
+                        />
+                      </span>
+                    </Space>
+                  </details>
                 </div>
               ),
             )}
@@ -806,8 +828,11 @@ export function LegacyCharacterEditor({
                 <div className="legacy-entry" key={row.id}>
                   <div className="legacy-entry-head">
                     <Input
+                      className="legacy-entry-title"
+                      variant="borderless"
+                      aria-label={`示例场景 ${index + 1}`}
                       value={textOf(row.payload.scene)}
-                      placeholder="场景（可空）"
+                      placeholder="示例场景"
                       onChange={(e) => updateExample(index, { scene: e.target.value })}
                     />
                     <span className="legacy-inline">
@@ -834,11 +859,11 @@ export function LegacyCharacterEditor({
                       </Button>
                     </Popconfirm>
                   </div>
-                  <div className="legacy-two">
+                  <div className="legacy-dialogue">
                     <label className="field-line">
                       <span className="field-label">对方说</span>
                       <Input.TextArea
-                        autoSize={{ minRows: 2, maxRows: 6 }}
+                        autoSize={{ minRows: 1 }}
                         value={textOf(row.payload.user_text)}
                         onChange={(e) => updateExample(index, { user_text: e.target.value })}
                       />
@@ -846,7 +871,7 @@ export function LegacyCharacterEditor({
                     <label className="field-line">
                       <span className="field-label">角色说</span>
                       <Input.TextArea
-                        autoSize={{ minRows: 2, maxRows: 6 }}
+                        autoSize={{ minRows: 1 }}
                         value={textOf(row.payload.assistant_text)}
                         onChange={(e) => updateExample(index, { assistant_text: e.target.value })}
                       />
@@ -857,10 +882,6 @@ export function LegacyCharacterEditor({
             )}
           </div>
         </SectionCard>
-      </section>
-      <section className="legacy-tab-panel" hidden={activeTab !== 'voice'}>
-        <CharacterWeiboEditor value={fields.weibo} onChange={(weibo) => patchFields({ weibo })} />
-        {activeTab === 'voice' && <CharacterVoicePanel characterId={characterId} />}
       </section>
       <section className="legacy-tab-panel" hidden={activeTab !== 'records'}>
         <SectionCard
@@ -926,8 +947,6 @@ export function LegacyCharacterEditor({
             />
           )}
         </SectionCard>
-
-        <EligibilityCard characterId={characterId} />
       </section>
 
       <div className="legacy-save-bar">
@@ -961,7 +980,7 @@ export function LegacyCharacterDrawer({
       open
       onClose={onClose}
       title={`角色资料 · ${character.name}`}
-      subtitle="人物文本、头像昵称、声音与微博分区管理；保存有修订记录与冲突保护"
+      subtitle="首页管理头像、昵称、声线、微博与资格；人设正文集中编辑角色细节"
       width={1120}
     >
       <LegacyCharacterEditor characterId={character.characterId} onSaved={onSaved} />

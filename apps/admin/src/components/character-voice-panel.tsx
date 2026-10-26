@@ -81,10 +81,7 @@ export function CharacterVoicePanel({ characterId }: { characterId: string }) {
     }
   }
   return (
-    <SectionCard
-      title="声音与音色"
-      desc="与人物文本分开管理；选择已入库音色，不重新克隆、不批量生成声音"
-    >
+    <SectionCard title="声音与音色" desc="选择已有声线；独立保存，不自动克隆或合成">
       {error && (
         <Alert
           type="error"
