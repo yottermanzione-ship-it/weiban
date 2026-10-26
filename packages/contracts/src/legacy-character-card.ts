@@ -9,6 +9,8 @@
  * 都要读同一份旧格式；服务器模块边界 R1 不允许跨模块引用 domain 内部文件。
  */
 
+import { z } from 'zod';
+
 /** `characters_v2` 的一整行。保留全部旧列，不认识的列也原样带着。 */
 export type LegacyCardRow = Record<string, unknown>;
 
@@ -190,6 +192,30 @@ export class LegacyCharacterCard {
 
   get signature(): string {
     return this.text('signature', 'bio', 'sign');
+  }
+
+  /** 明确的微博资料；已有微博昵称直接视为有标记，显式关闭优先。不拿角色头像冒充微博头像。 */
+  get weiboProfile(): { enabled: boolean; nickname: string; avatarUrl?: string; userId?: string } {
+    const saved = recordOf(this.json('weibo_profile_json'));
+    const nickname = textOf(saved?.nickname ?? this.row.weibo_nickname).slice(0, 80);
+    const enabled =
+      nickname.length > 0 && (saved?.enabled === undefined ? true : boolOf(saved.enabled));
+    const rawAvatar = textOf(saved?.avatarUrl ?? this.row.weibo_avatar_url);
+    const parsedAvatar = z.string().url().max(2000).safeParse(rawAvatar);
+    // contracts 的公共类型检查不依赖 DOM/Node URL；使用已有Zod校验并排除凭据地址。
+    const avatarUrl =
+      parsedAvatar.success &&
+      /^https:\/\//u.test(rawAvatar) &&
+      !/^https:\/\/[^/]*@/u.test(rawAvatar)
+        ? parsedAvatar.data
+        : undefined;
+    const rawId = textOf(saved?.userId ?? pick(this.row, ['weibo_user_id', 'weibo_uid']));
+    return {
+      enabled,
+      nickname,
+      ...(avatarUrl ? { avatarUrl } : {}),
+      ...(/^\d{5,20}$/u.test(rawId) ? { userId: rawId } : {}),
+    };
   }
 
   get identityType(): string {

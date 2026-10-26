@@ -129,7 +129,11 @@ export function rolePersonaSpeechText(view: CharacterView, max = 6000): string {
   return view.legacy ? legacyPersonaSpeechText(view.legacy, max) : '';
 }
 
-/** 微博标记；旧卡没有，按 null 处理。 */
-export function roleWeiboMarker(view: CharacterView) {
-  return view.card?.profileExtra.weibo ?? null;
+/** 明确的微博资料；迁入角色已有微博昵称也能参与，显式关闭优先。 */
+export function roleWeiboMarker(
+  view: CharacterView,
+): { nickname: string; avatarUrl?: string; userId?: string } | null {
+  if (view.card) return view.card.profileExtra.weibo ?? null;
+  const profile = view.legacy?.weiboProfile;
+  return profile?.enabled && profile.nickname ? profile : null;
 }

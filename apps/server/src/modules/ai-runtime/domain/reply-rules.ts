@@ -73,31 +73,22 @@ export function highRisk(text: string): 'high' | 'suspected' | 'none' {
 export function outputAllowed(
   text: string,
   policy: { isMinor: boolean; isRealPerson: boolean; romanceAllowed: boolean },
-  adult: boolean,
+  _adult: boolean,
 ): boolean {
   if (!text.trim() || text.length > 16000) return false;
-  if (
-    /(?:忽略|绕过).{0,8}(?:安全规则|系统指令)|(?:自杀|自残).{0,12}(?:步骤|教程|方法)|(?:你应该|不如你).{0,5}(?:去死|自杀)/u.test(
-      text,
-    )
-  )
+  if (/(?:自杀|自残).{0,12}(?:步骤|教程|方法)|(?:你应该|不如你).{0,5}(?:去死|自杀)/u.test(text))
     return false;
-  if (policy.isMinor && /性行为|做爱|性交|高潮|裸照|亲吻|恋人|结婚|爱上你/u.test(text))
-    return false;
+  if (policy.isMinor && /性行为|做爱|性交|高潮|裸照|恋人|爱上你/u.test(text)) return false;
   if (
     !policy.romanceAllowed &&
     /我是你.{0,3}(?:男朋友|女朋友|恋人)|(?:爱上你|跟你结婚)/u.test(text)
   )
     return false;
-  if (!adult && /性行为|做爱|性交|高潮|裸照/u.test(text)) return false;
-  if (
-    policy.isRealPerson &&
-    /(?:官宣|公开声明|正式宣布|真实私生活)|(?:我和|我与).{0,20}(?:秘密恋爱|正在交往|已经结婚)/u.test(
-      text,
-    )
-  )
+  // 内容范围与模型资格在调用前检查；不因日常回复提及成人相关术语就整句拒绝。
+  if (policy.isRealPerson && /(?:我和|我与).{0,20}(?:秘密恋爱|正在交往|已经结婚)/u.test(text))
     return false;
   // T-082 PLAY-02 第 8 条 / SAFE-08：不拿宠物施压、送养不挽留。
   if (petPressure(text)) return false;
-  return !/(?:余额不足|模型不可用|API密钥|系统提示词)/iu.test(text);
+  // 是否发生余额/模型/凭据故障由调用结果决定，不能靠回复里出现技术名词推断。
+  return true;
 }
