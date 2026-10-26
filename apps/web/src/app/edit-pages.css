@@ -12,9 +12,6 @@ a.button.primary.disabled {
 }
 
 /* ---------- 底部选择：对号不参与文字居中，固定在右侧 ---------- */
-.action-group button[role='menuitemradio'] {
-  position: relative;
-}
 .action-check {
   position: absolute;
   top: 50%;
