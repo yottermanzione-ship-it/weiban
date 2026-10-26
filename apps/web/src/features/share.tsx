@@ -12,7 +12,6 @@ import {
   ShareRejectedDetails,
   ShareSource as ShareSourceSchema,
   type ShareImageData,
-  type ShareTemplate,
 } from '@weiban/contracts';
 import {
   ApiFailure,
@@ -24,14 +23,19 @@ import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
 import { friendlyError } from '../data/use-remote.js';
 import {
-  cardStyleOverflow,
+  SHARE_STYLES,
+  defaultExcerpt,
+  excerptCandidates,
   exportShareImage,
   loadImage,
-  lookup,
   renderShareImage,
+  sharePalette,
+  styleFromTemplate,
+  templateForStyle,
   type ShareRenderCard,
   type ShareRenderItem,
   type SharePerson,
+  type ShareStyle,
 } from './share-render.js';
 import { showToast } from './toast.js';
 import { EmptyState, NavBar } from './shell-kit.js';
@@ -39,7 +43,8 @@ import { EmptyState, NavBar } from './shell-kit.js';
 /*
  * 分享图编辑页（share-templates.md 第 5、7 节；EXP-01、EXP-02）。
  * 四个入口（聊天多选、收藏、朋友圈、卡片）都跳到 /share，带上 ShareSource。
- * 服务器 prepare 决定能放进图里的内容和贴纸文案（含真人 → 「非本人」），成人模式 / 健康消息由服务器拒绝。
+ * 服务器 prepare 决定能放进图里的内容和品牌栏文案（含真人 → 「非本人，请谨慎识别」），成人模式 / 健康消息由服务器拒绝。
+ * v3：三套模板 A 微信原样 / B 柔和信纸 / C 卡片海报（C 只用于卡片）；契约仍是 v2 四个值，读写映射见 share-render.ts。
  */
 
 export type ShareSource = z.infer<typeof ShareSourceSchema>;
@@ -50,12 +55,70 @@ export function openShare(navigate: NavigateFunction, source: ShareSource) {
   navigate('/share', { state: { source } });
 }
 
-const templates: Array<[ShareTemplate, string]> = [
-  ['pink_filter', '粉色滤镜'],
-  ['chat_original', '聊天原样'],
-  ['simple_white', '简洁白底'],
-  ['card_style', '卡片风'],
-];
+const CARD_ONLY_TEXT = '卡片分享使用卡片海报，保留卡面与编号';
+const POSTER_ONLY_CARD_TEXT = '卡片海报只用于卡片，聊天和朋友圈请用微信原样或柔和信纸';
+
+/** 模板缩略图（示意，不是实绘）：A 灰底白 / 绿气泡；B 暖白底 + 摘录线 + 粉气泡；C 卡面 + 文字行。 */
+function TemplateThumb({ style }: { style: ShareStyle }) {
+  const pal = sharePalette();
+  const footer = (
+    <>
+      <rect x="0" y="74" width="64" height="12" fill={pal.footerBg} />
+      <rect x="5" y="77" width="6" height="6" rx="1.5" fill={pal.logo} />
+      <rect x="14" y="79" width="20" height="2" rx="1" fill={pal.secondary} />
+      <rect x="52" y="76" width="8" height="8" fill={pal.qr} />
+    </>
+  );
+  if (style === 'wechat')
+    return (
+      <svg viewBox="0 0 64 86" aria-hidden>
+        <rect width="64" height="86" fill={pal.chatBg} />
+        <rect x="22" y="5" width="20" height="3" rx="1.5" fill={pal.text} />
+        <rect x="4" y="16" width="7" height="7" rx="1" fill={pal.meAvatarBg} />
+        <rect x="14" y="16" width="30" height="8" rx="1.5" fill={pal.chatOther} />
+        <rect x="53" y="30" width="7" height="7" rx="1" fill={pal.meAvatarBg} />
+        <rect x="26" y="30" width="24" height="8" rx="1.5" fill={pal.chatMine} />
+        <rect x="4" y="44" width="7" height="7" rx="1" fill={pal.meAvatarBg} />
+        <rect x="14" y="44" width="36" height="14" rx="1.5" fill={pal.chatOther} />
+        {footer}
+      </svg>
+    );
+  if (style === 'paper')
+    return (
+      <svg viewBox="0 0 64 86" aria-hidden>
+        <rect width="64" height="86" fill={pal.paperBg} />
+        <rect x="5" y="5" width="9" height="9" rx="2" fill={pal.meAvatarBg} />
+        <rect x="17" y="6" width="18" height="3" rx="1.5" fill={pal.text} />
+        <rect x="17" y="11" width="24" height="2" rx="1" fill={pal.secondary} />
+        <rect x="5" y="20" width="52" height="3" rx="1.5" fill={pal.text} />
+        <rect x="5" y="26" width="38" height="3" rx="1.5" fill={pal.text} />
+        <rect x="5" y="34" width="54" height="0.6" fill={pal.paperBorder} />
+        <rect
+          x="5"
+          y="40"
+          width="30"
+          height="8"
+          rx="3"
+          fill={pal.paperOther}
+          stroke={pal.paperBorder}
+          strokeWidth="0.6"
+        />
+        <rect x="29" y="52" width="30" height="8" rx="3" fill={pal.paperMine} />
+        {footer}
+      </svg>
+    );
+  return (
+    <svg viewBox="0 0 64 86" aria-hidden>
+      <rect width="64" height="86" fill={pal.posterBg} />
+      <rect x="4" y="4" width="56" height="42" rx="3" fill={pal.paperMine} />
+      <rect x="7" y="7" width="12" height="4" rx="2" fill={pal.badgeBg} />
+      <rect x="6" y="51" width="26" height="4" rx="2" fill={pal.text} />
+      <rect x="6" y="59" width="50" height="2.5" rx="1.2" fill={pal.secondary} />
+      <rect x="6" y="64" width="40" height="2.5" rx="1.2" fill={pal.secondary} />
+      {footer}
+    </svg>
+  );
+}
 
 function isIos() {
   return (
@@ -99,10 +162,10 @@ export function ShareEditorPage() {
   const sourceKey = JSON.stringify(source ?? null);
   const [data, setData] = useState<ShareImageData>();
   const [error, setError] = useState('');
-  const [template, setTemplate] = useState<ShareTemplate>(
-    source?.kind === 'card' ? 'card_style' : 'pink_filter',
-  );
-  const [defaultTemplate, setDefaultTemplate] = useState<ShareTemplate | null>(null);
+  const [style, setStyle] = useState<ShareStyle>(source?.kind === 'card' ? 'poster' : 'wechat');
+  const [defaultStyle, setDefaultStyle] = useState<ShareStyle | null>(null);
+  const [excerpt, setExcerpt] = useState<number | null>(null);
+  const [logo, setLogo] = useState<HTMLImageElement | null>(null);
   const [showMe, setShowMe] = useState(false);
   const [showTime, setShowTime] = useState(true);
   const [showDays, setShowDays] = useState(true);
@@ -161,8 +224,10 @@ export function ShareEditorPage() {
       .call(ShareEndpoints.getPreferences)
       .then((prefs) => {
         if (!active) return;
-        setDefaultTemplate(prefs.defaultTemplate);
-        if (request.kind !== 'card') setTemplate(prefs.defaultTemplate);
+        // 旧偏好按 v3 映射（pink_filter 初始值 → A）；C 只用于卡片，其他入口回落到 A。
+        const preferred = styleFromTemplate(prefs.defaultTemplate);
+        setDefaultStyle(preferred);
+        if (request.kind !== 'card') setStyle(preferred === 'poster' ? 'wechat' : preferred);
       })
       .catch(() => {});
     return () => {
@@ -207,11 +272,13 @@ export function ShareEditorPage() {
           };
         }),
       );
+      // v2 这里查 theme.pink.light（粉主题已删）得到 "undefined"：与「聊天原样」黑底同一原因。
+      const pal = sharePalette();
       const anonymousMe: SharePerson = {
         name: '我',
         letters: '我',
-        background: lookup('theme.pink.light.color.bg.userAvatar'),
-        foreground: lookup('theme.pink.light.color.text.userAvatar'),
+        background: pal.meAvatarBg,
+        foreground: pal.meAvatarText,
         image: null,
       };
       let me = anonymousMe;
@@ -286,7 +353,12 @@ export function ShareEditorPage() {
         conversation?.type === 'group' && conversation.title
           ? conversation.title
           : data.characterIds.map((id) => people[id]?.name ?? '角色').join('、') || '微伴';
-      if (active) setAssets({ people, me, anonymousMe, items, card, daysKnown, title, missing });
+      const brand = await loadImage(`${import.meta.env.BASE_URL}assets/old-ui/brand/icon.png`);
+      if (active) {
+        setLogo(brand);
+        setExcerpt(defaultExcerpt(items));
+        setAssets({ people, me, anonymousMe, items, card, daysKnown, title, missing });
+      }
     })();
     return () => {
       active = false;
@@ -294,7 +366,14 @@ export function ShareEditorPage() {
   }, [data, sourceKey]);
 
   const group = (data?.characterIds.length ?? 0) > 1;
-  const overflow = useMemo(() => (assets ? cardStyleOverflow(assets.items) : false), [assets]);
+  const candidates = useMemo(() => (assets ? excerptCandidates(assets.items) : []), [assets]);
+  function nextExcerpt() {
+    if (candidates.length < 2) return;
+    const at = excerpt === null ? -1 : candidates.indexOf(excerpt);
+    setExcerpt(candidates[(at + 1) % candidates.length] ?? null);
+  }
+  const excerptItem = excerpt === null ? undefined : assets?.items[excerpt];
+  const excerptPreview = excerptItem?.content.type === 'text' ? excerptItem.content.text : '';
 
   // 3. 绘制预览；旧预览保留到新图出来。
   useEffect(() => {
@@ -306,7 +385,7 @@ export function ShareEditorPage() {
       void (async () => {
         try {
           const canvas = renderShareImage({
-            template,
+            style,
             label: data.label,
             items: assets.items,
             people: assets.people,
@@ -315,7 +394,9 @@ export function ShareEditorPage() {
             group,
             daysKnown: showDays ? assets.daysKnown : null,
             showTime,
-            card: template === 'card_style' ? assets.card : null,
+            card: style === 'poster' ? assets.card : null,
+            excerpt,
+            logo,
           });
           const blob = await exportShareImage(canvas);
           if (!active) return;
@@ -334,7 +415,7 @@ export function ShareEditorPage() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [assets, data, template, showMe, showTime, showDays, group, retry]);
+  }, [assets, data, style, excerpt, logo, showMe, showTime, showDays, group, retry]);
   useEffect(
     () => () => {
       setPreview((old) => {
@@ -348,7 +429,9 @@ export function ShareEditorPage() {
   function report() {
     if (reported.current) return;
     reported.current = true;
-    void api.call(ShareEndpoints.recordGenerated, { body: { template } }).catch(() => {});
+    void api
+      .call(ShareEndpoints.recordGenerated, { body: { template: templateForStyle(style) } })
+      .catch(() => {});
   }
   function fileName() {
     const ext = preview?.blob.type === 'image/jpeg' ? 'jpg' : 'png';
@@ -390,8 +473,10 @@ export function ShareEditorPage() {
   function toggleDefault(on: boolean) {
     if (!on) return;
     void api
-      .call(ShareEndpoints.updatePreferences, { body: { defaultTemplate: template } })
-      .then((prefs) => setDefaultTemplate(prefs.defaultTemplate))
+      .call(ShareEndpoints.updatePreferences, {
+        body: { defaultTemplate: templateForStyle(style) },
+      })
+      .then((prefs) => setDefaultStyle(styleFromTemplate(prefs.defaultTemplate)))
       .catch((e) => showToast(friendlyError(e)));
   }
 
@@ -449,45 +534,57 @@ export function ShareEditorPage() {
       </div>
       {assets && assets.missing > 0 && <p className="hint">有 {assets.missing} 张图片没加载出来</p>}
       <div className="template-list" role="radiogroup" aria-label="模板">
-        {templates.map(([key, label]) => {
-          const cardOnly = source.kind === 'card' && key !== 'card_style';
-          const disabled = cardOnly || (key === 'card_style' && source.kind === 'moments_post');
+        {SHARE_STYLES.map(({ id: key, label }) => {
+          const cardOnly = source.kind === 'card' && key !== 'poster';
+          const disabled = cardOnly || (key === 'poster' && source.kind !== 'card');
           return (
             <button
               key={key}
+              type="button"
               role="radio"
-              aria-checked={template === key}
+              aria-checked={style === key}
               aria-disabled={disabled}
               className={`template-option ${disabled ? 'disabled' : ''}`}
               onClick={() => {
-                if (cardOnly) showToast('卡片分享使用卡片风，保留卡面与编号');
-                else if (disabled) showToast('这条内容不适合卡片风');
-                else setTemplate(key);
+                if (cardOnly) showToast(CARD_ONLY_TEXT);
+                else if (disabled) showToast(POSTER_ONLY_CARD_TEXT);
+                else setStyle(key);
               }}
             >
-              <span className={`template-thumb thumb-${key}`} aria-hidden />
+              <span className="template-thumb">
+                <TemplateThumb style={key} />
+              </span>
               <small>{label}</small>
             </button>
           );
         })}
       </div>
-      {source.kind === 'card' && <p className="hint">卡片分享使用卡片风，保留卡面与编号</p>}
-      {template === 'card_style' && !assets?.card && overflow && (
-        <p className="hint">内容太多，建议用其他模板</p>
+      {source.kind === 'card' && <p className="hint">{CARD_ONLY_TEXT}</p>}
+      {style === 'paper' && excerptPreview && (
+        <div className="panel share-excerpt">
+          <p className="share-excerpt-text">摘录：{excerptPreview}</p>
+          {candidates.length > 1 && (
+            <button type="button" className="text-button text-action" onClick={nextExcerpt}>
+              换一句
+            </button>
+          )}
+        </div>
       )}
       <div className="panel rows share-options">
         <label className="switch-row">
           显示我的头像和昵称
           <input type="checkbox" checked={showMe} onChange={(e) => setShowMe(e.target.checked)} />
         </label>
-        <label className="switch-row">
-          显示时间
-          <input
-            type="checkbox"
-            checked={showTime}
-            onChange={(e) => setShowTime(e.target.checked)}
-          />
-        </label>
+        {style !== 'poster' && (
+          <label className="switch-row">
+            显示时间
+            <input
+              type="checkbox"
+              checked={showTime}
+              onChange={(e) => setShowTime(e.target.checked)}
+            />
+          </label>
+        )}
         {data && data.characterIds.length === 1 && (
           <label className="switch-row">
             显示「认识第 N 天」
@@ -507,7 +604,7 @@ export function ShareEditorPage() {
           设为默认模板
           <input
             type="checkbox"
-            checked={defaultTemplate === template}
+            checked={defaultStyle === style}
             onChange={(e) => toggleDefault(e.target.checked)}
           />
         </label>

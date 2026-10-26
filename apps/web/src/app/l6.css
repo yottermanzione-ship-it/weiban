@@ -530,24 +530,37 @@ mark.keyword {
   display: block;
   width: 64px;
   height: 86px;
-  border-radius: var(--wb-radius-sm);
-  border: 2px solid transparent;
+  overflow: hidden;
+  border-radius: var(--wb-radius-xs);
+  border: 2px solid var(--wb-color-border-hairline);
+}
+.template-thumb svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 .template-option[aria-checked='true'] .template-thumb {
   border-color: var(--wb-color-brand-primary);
 }
-.thumb-pink_filter {
-  background: linear-gradient(var(--wb-pink-50), var(--wb-pink-100), var(--wb-lilac-100));
+/* B 柔和信纸：摘录句预览 + 「换一句」（share-templates.md v3 第 5 节） */
+.share-excerpt {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-space-3);
+  padding: var(--wb-space-3) var(--wb-space-5);
 }
-.thumb-chat_original {
-  background: var(--wb-pink-50);
+.share-excerpt-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
 }
-.thumb-simple_white {
-  background: var(--wb-gray-0);
-  border-color: var(--wb-color-border-hairline);
-}
-.thumb-card_style {
-  background: var(--wb-pink-100);
+.share-excerpt > button {
+  flex: none;
 }
 .switch-row {
   display: flex;

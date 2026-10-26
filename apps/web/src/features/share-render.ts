@@ -302,7 +302,10 @@ function pictureSize(item: ShareRenderItem, longSide: number) {
   const height =
     (item.content.type === 'image' && item.content.height) || item.image?.naturalHeight || 3;
   const scale = longSide / Math.max(width, height);
-  return { w: Math.max(40, Math.round(width * scale)), h: Math.max(40, Math.round(height * scale)) };
+  return {
+    w: Math.max(40, Math.round(width * scale)),
+    h: Math.max(40, Math.round(height * scale)),
+  };
 }
 
 function dateText(iso: string) {
@@ -503,7 +506,13 @@ function voiceBubble(
   }
   p.font(15);
   const label = `${sec}″`;
-  p.text(label, mine ? iconX - 16 : iconX + 16, top + PAD_Y + 3, p.pal.text, mine ? 'right' : 'left');
+  p.text(
+    label,
+    mine ? iconX - 16 : iconX + 16,
+    top + PAD_Y + 3,
+    p.pal.text,
+    mine ? 'right' : 'left',
+  );
   let height = h;
   if (content.transcript) {
     // 转写文字：气泡下方同色小框（微信「转文字」样式）。
@@ -773,7 +782,9 @@ function drawLogo(p: Painter, x: number, y: number, size: number, logo: HTMLImag
 }
 
 /** 品牌栏第二行：含真人固定「非本人，请谨慎识别」；否则单聊「和 X 认识第 N 天」；群聊 / 无天数省略。 */
-export function footerRelation(input: Pick<ShareRenderInput, 'label' | 'group' | 'daysKnown' | 'title'>) {
+export function footerRelation(
+  input: Pick<ShareRenderInput, 'label' | 'group' | 'daysKnown' | 'title'>,
+) {
   if (input.label === 'weiban_not_real_person') return '非本人，请谨慎识别';
   if (!input.group && input.daysKnown) return `和 ${input.title} 认识第 ${input.daysKnown} 天`;
   return null;
@@ -845,7 +856,9 @@ export function renderShareImage(input: ShareRenderInput): HTMLCanvasElement {
   const content = Math.ceil(layout(new Painter(measure, true), input, 0));
   // 品牌栏接在内容下方，不压任何内容；A / B 最小 480 高，C 随内容。
   const height =
-    input.style === 'poster' ? content + FOOTER_HEIGHT : Math.max(MIN_HEIGHT, content + FOOTER_HEIGHT);
+    input.style === 'poster'
+      ? content + FOOTER_HEIGHT
+      : Math.max(MIN_HEIGHT, content + FOOTER_HEIGHT);
   const canvas = document.createElement('canvas');
   canvas.width = W * SHARE_SCALE;
   canvas.height = height * SHARE_SCALE;
