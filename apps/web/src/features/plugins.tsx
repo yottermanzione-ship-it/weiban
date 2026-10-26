@@ -8,7 +8,7 @@ import {
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { friendlyError } from '../data/use-remote.js';
-import { Dialog, showToast } from './toast.js';
+import { AlertDialog, showToast } from './toast.js';
 import { GroupHeader, MenuGroup, MenuRow, NavBar, Sheet, showComingSoon } from './shell-kit.js';
 import { encodeQr } from './qr-code.js';
 
@@ -450,15 +450,13 @@ function ChannelSheet({
         )}
       </div>
       {confirming && (
-        <Dialog
+        <AlertDialog
           title="解除绑定？"
-          actions={[
-            { label: '取消', onClick: () => setConfirming(false) },
-            { label: '解除', danger: true, onClick: () => void unbind() },
-          ]}
-        >
-          解除后微伴不再接收和回复这个{channelLabel}的消息，之后可以重新绑定。
-        </Dialog>
+          message={`解除后微伴不再接收和回复这个${channelLabel}的消息，之后需要重新填写凭据才能绑定。`}
+          confirmLabel="解除绑定"
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => void unbind()}
+        />
       )}
     </Sheet>
   );

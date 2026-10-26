@@ -17,11 +17,12 @@ import {
   MenuGroup,
   MenuRow,
   GroupHeader,
-  Sheet,
   EmptyState,
   SyncPendingState,
 } from './shell-kit.js';
-import { Dialog } from './toast.js';
+import { AlertDialog } from './toast.js';
+import { SubPageLayer } from './edit-page.js';
+import { SelectField } from './wheel-picker.js';
 const categories = {
   basic: '关于我',
   preference: '偏好',
@@ -204,34 +205,31 @@ export function MemoriesPage() {
           }
         />
       )}
+      {/* U2：删除记忆不可撤销 → Alert Dialog */}
       {removing && (
-        <Dialog
-          title="删除记忆"
-          actions={[
-            {
-              label: '取消',
-              onClick: () => {
-                if (!busy) setRemoving(null);
-              },
-            },
-            {
-              label: busy ? '正在删除…' : '删除',
-              danger: true,
-              onClick: () => {
-                if (!busy)
-                  void change(() =>
-                    api.call(MemoryEndpoints.remove, {
-                      networkOnly: true,
-                      params: { characterId, memoryId: removing.memoryId },
-                    }),
-                  );
-              },
-            },
-          ]}
-        >
-          <p>确认让 TA 忘记这条？旧消息不会再被用来记下它。</p>
-          {error && <p role="alert">{error}</p>}
-        </Dialog>
+        <AlertDialog
+          title="删除这条记忆？"
+          message={
+            <>
+              <p>TA 会忘记这条，旧消息不会再被用来记下它。</p>
+              {error && <p role="alert">{error}</p>}
+            </>
+          }
+          confirmLabel="删除记忆"
+          pending={busy}
+          onCancel={() => {
+            if (!busy) setRemoving(null);
+          }}
+          onConfirm={() => {
+            if (!busy)
+              void change(() =>
+                api.call(MemoryEndpoints.remove, {
+                  networkOnly: true,
+                  params: { characterId, memoryId: removing.memoryId },
+                }),
+              );
+          }}
+        />
       )}
     </main>
   );
@@ -296,28 +294,23 @@ function MemorySheet({
   const [category, setCategory] = useState<MemoryEntry['category']>(entry?.category ?? 'basic');
   const [status, setStatus] = useState<MemoryEntry['status']>(entry?.status ?? 'current');
   const [id, setId] = useState(() => crypto.randomUUID());
+  // 10-21 G2：编辑已有记忆时没改动，「完成」保持灰色
+  const canSave =
+    !!content.trim() &&
+    !(
+      !!entry &&
+      content.trim() === entry.content.trim() &&
+      category === entry.category &&
+      status === entry.status
+    );
+  // U2：添加 / 编辑记忆改整页二级页面（顶栏 取消 / 标题 / 完成），不再是底部弹层
   return (
-    <Sheet
+    <SubPageLayer
       title={entry ? '编辑记忆' : '添加记忆'}
-      closeLabel="取消"
-      onClose={onClose}
-      action={
-        <button
-          className="small-primary primary"
-          disabled={
-            busy ||
-            !content.trim() ||
-            // 10-21 G2：编辑已有记忆时没改动，「完成」保持灰色
-            (!!entry &&
-              content.trim() === entry.content.trim() &&
-              category === entry.category &&
-              status === entry.status)
-          }
-          onClick={() => onSave(content.trim(), category, status, id)}
-        >
-          {busy ? '保存中…' : '完成'}
-        </button>
-      }
+      canSave={canSave}
+      pending={busy}
+      onCancel={onClose}
+      onSave={() => onSave(content.trim(), category, status, id)}
     >
       <form
         className="memory-form"
@@ -342,30 +335,36 @@ function MemorySheet({
           {!entry ? (
             <label>
               分类
-              <select
-                aria-label="分类"
+              <SelectField
+                title="分类"
                 value={category}
-                onChange={(e) => setCategory(e.target.value as MemoryEntry['category'])}
-              >
-                {Object.entries(categories).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+                options={Object.entries(categories).map(([value, label]) => ({
+                  value: value as MemoryEntry['category'],
+                  label,
+                }))}
+                onChange={(value) => {
+                  setCategory(value);
+                  setId(crypto.randomUUID());
+                }}
+              />
             </label>
           ) : (
             <>
               <p className="hint">{categories[entry.category]}</p>
               <label>
                 状态
-                <select
+                <SelectField
+                  title="状态"
                   value={status}
-                  onChange={(e) => setStatus(e.target.value as MemoryEntry['status'])}
-                >
-                  <option value="current">现在</option>
-                  <option value="past">过去</option>
-                </select>
+                  options={[
+                    { value: 'current', label: '现在' },
+                    { value: 'past', label: '过去' },
+                  ]}
+                  onChange={(value) => {
+                    setStatus(value);
+                    setId(crypto.randomUUID());
+                  }}
+                />
               </label>
               <button type="button" className="danger danger-row" onClick={onDelete}>
                 删除这条记忆
@@ -375,6 +374,6 @@ function MemorySheet({
           {error && <p role="alert">{error}</p>}
         </fieldset>
       </form>
-    </Sheet>
+    </SubPageLayer>
   );
 }

@@ -260,6 +260,10 @@
     transform: none;
   }
 }
+/* 二级页面里的普通表单：留出页边距 */
+.subpage-form {
+  padding: var(--wb-space-5);
+}
 .field-page-hint {
   display: flex;
   gap: var(--wb-space-3);

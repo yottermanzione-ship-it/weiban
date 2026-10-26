@@ -30,7 +30,7 @@ import { CharacterAvatar } from './character-avatar.js';
 import { UserAvatar } from './user-avatar.js';
 import { AvatarEditor } from './avatar-editor.js';
 import { MediaImg } from './media.js';
-import { showToast, Dialog } from './toast.js';
+import { AlertDialog, showToast, Dialog } from './toast.js';
 import { OldIcon } from './old-icons.js';
 import {
   ActionSheet,
@@ -467,6 +467,7 @@ export function MomentCard({
             title={replying ? `回复${actors.name(replying.author)}` : '评论'}
             closeLabel="取消"
             closeDisabled={pending}
+            keepOnScrim={!!text.trim()}
             half
             onClose={() => {
               if (!pending) {
@@ -515,24 +516,19 @@ export function MomentCard({
         {error && <small role="alert">{error}</small>}
       </div>
       {confirmDelete && onDeleted && (
-        <Dialog
-          actions={[
-            { label: '取消', onClick: () => setConfirmDelete(false) },
-            {
-              label: '删除',
-              danger: true,
-              onClick: () => {
-                setConfirmDelete(false);
-                void api
-                  .call(MomentsEndpoints.deletePost, { params: { postId: post.postId } })
-                  .then(onDeleted)
-                  .catch((e) => setError(friendlyError(e)));
-              },
-            },
-          ]}
-        >
-          <p>删除这条朋友圈？</p>
-        </Dialog>
+        <AlertDialog
+          title="删除这条朋友圈？"
+          message="删除后不能恢复，点赞和评论也会一起删除。"
+          confirmLabel="删除"
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() => {
+            setConfirmDelete(false);
+            void api
+              .call(MomentsEndpoints.deletePost, { params: { postId: post.postId } })
+              .then(onDeleted)
+              .catch((e) => setError(friendlyError(e)));
+          }}
+        />
       )}
       {commentMenu && (
         <ActionSheet
