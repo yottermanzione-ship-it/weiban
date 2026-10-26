@@ -106,6 +106,11 @@ export interface GenerateTextInput {
   temperature?: number;
   /** 要求模型输出 JSON 时提供（网关不解释 schema，只透传给支持的上游）。 */
   responseFormat?: 'text' | 'json';
+  /**
+   * 4.3（批 EJ）：只对 responseFormat = json 有效。正文 JSON 因额度用完没写完时，不按失败处理、也不加大额度重试，
+   * 而是返回已写出的部分正文并标 truncated = true（照常计费），由调用方抢救完整条目、拆小批重试。
+   */
+  partialJsonOnTruncation?: boolean;
   /** 幂等键：同一键在 24 小时内重复调用，返回第一次的结果，不再冻结、不再扣费。 */
   idempotencyKey: string;
   /**
@@ -160,8 +165,12 @@ export interface GenerateTextOutput {
     cacheWrite5mTokens?: number;
     cacheWrite1hTokens?: number;
     outputTokens: number;
+    /** 4.3：其中的思考 token（上游报告或按思考内容估算；未知为 undefined）。outputTokens 已包含它，照常计费。 */
+    reasoningTokens?: number;
     estimated: boolean;
   };
+  /** 4.3（批 EJ）：partialJsonOnTruncation 时正文 JSON 没写完（text 为已写出的部分）。 */
+  truncated?: boolean;
   /** 本次从账户扣的金额（微元）。 */
   chargedMicros: number;
   latencyMs: number;

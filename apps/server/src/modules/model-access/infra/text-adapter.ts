@@ -20,6 +20,11 @@ export interface TextUsage {
   cacheWrite5mTokens?: number;
   cacheWrite1hTokens?: number;
   outputTokens: number;
+  /**
+   * 批 EJ：outputTokens 中的思考 token（上游 completion_tokens_details.reasoning_tokens；没报时按思考内容长度估算）。
+   * 只用于分开计量与诊断，计费仍按 outputTokens 全额（思考照常由付费方承担）。undefined = 未知 / 没有思考。
+   */
+  reasoningTokens?: number;
   estimated: boolean;
 }
 
@@ -64,6 +69,8 @@ export type TextResult =
        * whitespace = 正文结尾是大段空白（JSON 模式空白刷屏）；repeat = 正文后半段高度重复（输出跑飞）。
        */
       truncation?: 'reasoning' | 'whitespace' | 'repeat';
+      /** 批 EJ：JSON 正文没写完时已写出的部分（不落日志；只在调用方要求抢救时由网关交回）。 */
+      partialText?: string;
     };
 export interface AdapterMessage {
   role: GenerateTextInput['messages'][number]['role'];
@@ -105,8 +112,13 @@ export interface TextAdapter {
     responseFormat?: 'text' | 'json';
     idempotencyKey: string;
     timeoutMs: number;
-    /** 思考开关：off = 按厂商发关闭思考的字段（默认）；default = 不发，用模型默认。 */
-    thinking?: 'off' | 'default';
+    /**
+     * 思考开关：off = 按厂商发关闭思考的字段（默认）；default = 不发，用模型默认；
+     * on = 批 EJ 后台任务保留思考，并按 thinkingBudget 单独给思考预算（maxOutputTokens 已是正文 + 思考的总额）。
+     */
+    thinking?: 'off' | 'default' | 'on';
+    /** thinking = on 时的思考预算（token）；支持原生预算参数的上游照发，不支持的只靠放大总上限。 */
+    thinkingBudget?: number;
   }): Promise<TextResult>;
 }
 
@@ -203,6 +215,23 @@ export function truncationKind(
   return undefined;
 }
 
+/**
+ * 批 EJ：保留思考时的厂商字段。有原生预算参数的照发（Qwen thinking_budget、OpenRouter reasoning.max_tokens）；
+ * DeepSeek 与认不出的中转没有预算参数：不发任何字段（不再关思考），只靠网关放大总输出上限。
+ * Anthropic 原生协议在 anthropic-adapter.ts 用 thinking.budget_tokens。
+ */
+export function thinkingOnFields(control: ThinkingControl, budget: number): Record<string, unknown> {
+  const tokens = Math.max(1, Math.round(budget));
+  switch (control) {
+    case 'qwen':
+      return { enable_thinking: true, thinking_budget: tokens };
+    case 'openrouter':
+      return { reasoning: { max_tokens: tokens } };
+    default:
+      return {};
+  }
+}
+
 const REASONING_TAGS = 'think|thinking|reasoning';
 /**
  * 剥掉混进正文的思考内容（旧版 reply_content.js 的做法）：成对的 <think>…</think>、
@@ -248,6 +277,18 @@ export function estimateInputTokens(
       (m.images?.length ?? 0) * ESTIMATED_IMAGE_TOKENS,
     0,
   );
+}
+
+/** 批 EJ：上游报告的思考 token；没报时按返回的思考内容估算；都没有返回 undefined。 */
+export function reasoningTokensOf(raw: unknown, reasoningText?: unknown): number | undefined {
+  const object = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const details = object.completion_tokens_details as Record<string, unknown> | undefined;
+  const reported = details?.reasoning_tokens;
+  if (typeof reported === 'number' && Number.isSafeInteger(reported) && reported >= 0)
+    return reported;
+  if (typeof reasoningText === 'string' && reasoningText.length)
+    return estimateTokens(reasoningText);
+  return undefined;
 }
 
 function usageOf(raw: unknown, inputEstimate: number, output: string): TextUsage {
@@ -303,10 +344,13 @@ export class RoutingTextAdapter implements TextAdapter {
 
 export class OpenAiTextAdapter implements TextAdapter {
   async generate(input: Parameters<TextAdapter['generate']>[0]): Promise<TextResult> {
+    const control = thinkingControlFor(input.baseUrl, input.model);
     const extra =
       input.thinking === 'default'
         ? {}
-        : thinkingOffFields(thinkingControlFor(input.baseUrl, input.model));
+        : input.thinking === 'on'
+          ? thinkingOnFields(control, input.thinkingBudget ?? 0)
+          : thinkingOffFields(control);
     // 每次generate恰好一次HTTP；所有重试必须由网关另建attempt并预留风险。
     return this.once(input, extra);
   }
@@ -382,7 +426,15 @@ export class OpenAiTextAdapter implements TextAdapter {
       if (!response.ok) return { ok: false, category: 'bad_request', retryable: false };
       const choice = (
         payload.choices as
-          | { message?: { content?: unknown; refusal?: unknown }; finish_reason?: string }[]
+          | {
+              message?: {
+                content?: unknown;
+                refusal?: unknown;
+                reasoning_content?: unknown;
+                reasoning?: unknown;
+              };
+              finish_reason?: string;
+            }[]
           | undefined
       )?.[0];
       if (choice?.finish_reason === 'content_filter' || choice?.message?.refusal)
@@ -399,20 +451,29 @@ export class OpenAiTextAdapter implements TextAdapter {
         return { ok: false, category: 'provider_error', retryable: true };
       const rawText = typeof raw === 'string' ? raw : '';
       const text = stripReasoning(rawText);
-      const usage = usageOf(payload.usage, estimateInputTokens(input.messages), rawText);
-      // 空正文或 JSON 被截断：按失败处理（网关负责重试与降级），不能当成功静默返回。
+      const baseUsage = usageOf(payload.usage, estimateInputTokens(input.messages), rawText);
+      // 批 EJ：思考 token 单独计量（计费仍按总输出）。
+      const reasoningTokens = reasoningTokensOf(
+        payload.usage,
+        choice?.message?.reasoning_content ?? choice?.message?.reasoning,
+      );
+      const usage: TextUsage =
+        reasoningTokens === undefined ? baseUsage : { ...baseUsage, reasoningTokens };
+      // 空正文：按失败处理（网关负责重试与降级），不能当成功静默返回。
       if (!text) return { ok: false, category: 'empty_output', retryable: true, usage };
-      if (choice?.finish_reason === 'length' && input.responseFormat === 'json') {
-        // 批 EJ：完整 JSON 之后只剩空白（JSON 模式空白刷屏）——正文已完整，按成功返回，不再重试加钱。
+      if (input.responseFormat === 'json') {
+        // 批 EJ：截断只看正文——正文已是完整 JSON（后面只剩空白）就算成功，不看总 token 是否顶格。
         const complete = completeJsonPrefix(text);
         if (complete !== null) return { ok: true, text: complete, usage };
-        return {
-          ok: false,
-          category: 'truncated',
-          retryable: true,
-          usage,
-          truncation: truncationKind(rawText, payload.usage, choice?.message),
-        };
+        if (choice?.finish_reason === 'length')
+          return {
+            ok: false,
+            category: 'truncated',
+            retryable: true,
+            usage,
+            truncation: truncationKind(rawText, payload.usage, choice?.message),
+            partialText: text,
+          };
       }
       return { ok: true, text, usage };
     } catch {
