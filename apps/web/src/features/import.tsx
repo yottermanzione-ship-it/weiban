@@ -18,7 +18,7 @@ import type { z } from 'zod';
 import type { RecognizedDialogueLine } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
-import { NavBar } from './shell-kit.js';
+import { MenuRow, NavBar } from './shell-kit.js';
 import { useUpdates } from '../data/updates.js';
 import { uploadImportFile } from '../data/upload.js';
 import { AlertDialog, Dialog, showToast } from './toast.js';
@@ -868,17 +868,25 @@ export function useActiveImports() {
   return (jobs.data?.items ?? []).filter((j) => j.status !== 'cancelled');
 }
 
-/** 「创建自己的角色」页顶部的「进行中的导入」行。 */
-export function ActiveImportsRow() {
+/**
+ * 「创建角色」页底部的「从聊天记录导入 ›」行（2026-10-27 批 U3：原顶部两行合成一行）。
+ * 有进行中的导入时行右侧显示进度（「正在生成 45%」「2 个进行中」），点进进行中的导入列表；否则直接去导入。
+ */
+export function ImportEntryRow() {
   const active = useActiveImports().filter((j) => j.kind === 'new_character');
-  if (active.length === 0) return null;
+  const first = active[0];
+  const progress =
+    active.length > 1
+      ? `${active.length} 个进行中`
+      : first
+        ? `${statusText[first.status] ?? '处理中'}${first.status === 'analyzing' && first.progress > 0 ? ` ${first.progress}%` : ''}`
+        : undefined;
   return (
-    <Link className="panel row-link" to="/imports">
-      <span>
-        进行中的导入 · {active.length > 1 ? `${active.length} 个` : statusText[active[0]!.status]}
-      </span>
-      <small>›</small>
-    </Link>
+    <MenuRow
+      label="从聊天记录导入"
+      value={progress}
+      to={active.length ? '/imports' : '/imports/new'}
+    />
   );
 }
 
