@@ -152,7 +152,13 @@ export function FieldPage({
     if (!pending && canSave) onSave(value.trim());
   };
   return (
-    <SubPageLayer title={title} canSave={canSave} pending={pending} onSave={save} onCancel={onClose}>
+    <SubPageLayer
+      title={title}
+      canSave={canSave}
+      pending={pending}
+      onSave={save}
+      onCancel={onClose}
+    >
       <ClearInput
         label={title}
         value={value}

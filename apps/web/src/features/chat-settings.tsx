@@ -396,7 +396,11 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
           pending={pending}
           onCancel={() => setConfirmation(null)}
           onConfirm={() =>
-            void change(() => clearHistory(id), () => setConfirmation(null), '已清空')
+            void change(
+              () => clearHistory(id),
+              () => setConfirmation(null),
+              '已清空',
+            )
           }
         />
       )}
@@ -417,11 +421,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
                 : '重新添加也无法恢复这些数据。'
           }
           confirmLabel={
-            confirmation === 'remove'
-              ? '删除角色'
-              : confirmation === 'purge'
-                ? '继续'
-                : '永久删除'
+            confirmation === 'remove' ? '删除角色' : confirmation === 'purge' ? '继续' : '永久删除'
           }
           pending={pending}
           onCancel={() => setConfirmation(null)}

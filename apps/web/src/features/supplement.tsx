@@ -89,7 +89,13 @@ export function SupplementPage() {
   // U2：删掉一条设定可撤销——立即保存，底部撤销条「撤销」用原来的整段设定再保存一次
   async function removeLine(index: number) {
     const before = lines;
-    if (!(await save(before.filter((_, i) => i !== index), null))) return;
+    if (
+      !(await save(
+        before.filter((_, i) => i !== index),
+        null,
+      ))
+    )
+      return;
     showSnackbar({ text: '已删除这条设定', onAction: () => void save(before, '已恢复') });
   }
   const conflictOf = (line: string) =>

@@ -628,7 +628,11 @@ export function GroupSettingsPage() {
           pending={pending}
           onCancel={() => setConfirm(null)}
           onConfirm={() =>
-            void change(() => clearHistory(conversationId), '已清空', () => setConfirm(null))
+            void change(
+              () => clearHistory(conversationId),
+              '已清空',
+              () => setConfirm(null),
+            )
           }
         />
       )}

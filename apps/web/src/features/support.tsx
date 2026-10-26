@@ -185,7 +185,10 @@ export function SupportCreatePage() {
               disabled={busy}
               value={category}
               onChange={setCategory}
-              options={FeedbackCategory.options.map((v) => ({ value: v, label: feedbackLabels[v] }))}
+              options={FeedbackCategory.options.map((v) => ({
+                value: v,
+                label: feedbackLabels[v],
+              }))}
             />
           </label>
         )}

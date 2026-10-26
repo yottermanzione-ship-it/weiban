@@ -245,7 +245,6 @@ export function FavoritesPage() {
           {pending ? '正在读取…' : '加载更多'}
         </button>
       )}
-
     </main>
   );
 }

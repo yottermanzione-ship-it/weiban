@@ -935,8 +935,7 @@ export function CharacterPage({
               disabled={pending}
               onChange={(event) => setGreeting(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.nativeEvent.isComposing && !pending)
-                  void add();
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing && !pending) void add();
               }}
             />
           </div>
