@@ -211,6 +211,32 @@
   font-weight: var(--wb-font-weight-medium);
 }
 
+/* ---------- 分段 Tab SegmentedTabs ---------- */
+.segmented-tabs {
+  display: flex;
+  gap: var(--wb-space-2);
+  margin: var(--wb-space-4) var(--wb-space-5) var(--wb-space-2);
+  padding: var(--wb-space-2); /* 外圆角 8 = 内圆角 4 + 间距 4 */
+  border-radius: var(--wb-radius-md);
+  background: var(--ui-fill-2);
+}
+.segmented-tabs > button {
+  flex: 1;
+  min-height: 30px;
+  padding: 0 var(--wb-space-3);
+  border: 0;
+  border-radius: var(--wb-radius-xs);
+  background: none;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-subhead);
+}
+.segmented-tabs > button[aria-selected='true'] {
+  background: var(--wb-color-bg-surface);
+  color: var(--wb-color-text-primary);
+  font-weight: var(--wb-font-weight-medium);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
 /* ---------- 页内二级页面 SubPageLayer：整页从右侧推入，盖住当前页 ---------- */
 .subpage-layer {
   position: fixed;

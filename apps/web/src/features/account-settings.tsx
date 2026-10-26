@@ -19,7 +19,8 @@ import {
 import { OldIcon } from './old-icons.js';
 import { GroupHeader, MenuGroup, MenuRow, NavBar, SwitchRow } from './shell-kit.js';
 import { ChoiceSheet } from './settings.js';
-import { Dialog, showToast } from './toast.js';
+import { AlertDialog, showToast } from './toast.js';
+import { TimeField } from './wheel-picker.js';
 
 // ---------- 账号与安全 ----------
 
@@ -105,22 +106,17 @@ export function AccountSecurityPage() {
         <MenuRow to="/settings/delete-account" label="注销账号" danger />
       </MenuGroup>
       {revoking && (
-        <Dialog
-          actions={[
-            { label: '取消', onClick: () => setRevoking(null) },
-            {
-              label: '下线',
-              danger: true,
-              onClick: () => {
-                const id = revoking;
-                setRevoking(null);
-                void revokeSession(id);
-              },
-            },
-          ]}
-        >
-          <p>让这台设备退出登录？</p>
-        </Dialog>
+        <AlertDialog
+          title="让这台设备下线？"
+          message="这台设备会退出登录，需要重新登录才能使用。"
+          confirmLabel="下线"
+          onCancel={() => setRevoking(null)}
+          onConfirm={() => {
+            const id = revoking;
+            setRevoking(null);
+            void revokeSession(id);
+          }}
+        />
       )}
     </main>
   );
@@ -345,26 +341,33 @@ export function ProactiveSettingsPage() {
             />
             {dnd.enabled && (
               <>
-                <label className="field-row">
+                {/* U2：原生时间框换成微信式时间滚轮，选完即保存 */}
+                <div className="field-row">
                   <span>开始</span>
-                  <input
-                    type="time"
+                  <TimeField
+                    title="免打扰开始时间"
                     value={dnd.start}
                     disabled={pending}
-                    onChange={(e) => setDnd({ ...dnd, start: e.target.value })}
-                    onBlur={() => void save({ doNotDisturb: dnd })}
+                    onChange={(start) => {
+                      const next = { ...dnd, start };
+                      setDnd(next);
+                      void save({ doNotDisturb: next });
+                    }}
                   />
-                </label>
-                <label className="field-row">
+                </div>
+                <div className="field-row">
                   <span>结束</span>
-                  <input
-                    type="time"
+                  <TimeField
+                    title="免打扰结束时间"
                     value={dnd.end}
                     disabled={pending}
-                    onChange={(e) => setDnd({ ...dnd, end: e.target.value })}
-                    onBlur={() => void save({ doNotDisturb: dnd })}
+                    onChange={(end) => {
+                      const next = { ...dnd, end };
+                      setDnd(next);
+                      void save({ doNotDisturb: next });
+                    }}
                   />
-                </label>
+                </div>
               </>
             )}
           </MenuGroup>

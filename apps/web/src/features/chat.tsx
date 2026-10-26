@@ -1654,7 +1654,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
       {micDenied && (
         <Dialog
           title="需要麦克风权限才能发语音"
-          actions={[{ label: '知道了', primary: true, onClick: () => setMicDenied(false) }]}
+          actions={[{ label: '知道了', tone: 'primary', onClick: () => setMicDenied(false) }]}
         >
           <p className="hint">请在浏览器地址栏左侧的网站设置里允许麦克风</p>
         </Dialog>
@@ -1961,28 +1961,16 @@ function UploadFailed({ onRetry, onDrop }: { onRetry(): void; onDrop(): void }) 
       >
         !
       </button>
+      {/* U2：发送失败的消息——操作列表（重发 / 红字删除），微信同款 */}
       {open && (
-        <Dialog
-          actions={[
-            {
-              label: '删除',
-              onClick: () => {
-                setOpen(false);
-                onDrop();
-              },
-            },
-            {
-              label: '重发',
-              primary: true,
-              onClick: () => {
-                setOpen(false);
-                onRetry();
-              },
-            },
+        <ActionSheet
+          title="这条消息没有发出去"
+          onClose={() => setOpen(false)}
+          items={[
+            { label: '重发', onClick: onRetry },
+            { label: '删除', danger: true, onClick: onDrop },
           ]}
-        >
-          <p>重发该消息？</p>
-        </Dialog>
+        />
       )}
     </>
   );

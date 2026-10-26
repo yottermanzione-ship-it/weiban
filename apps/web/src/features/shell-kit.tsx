@@ -405,6 +405,38 @@ export function EmptyState({
   );
 }
 
+/**
+ * 分段 Tab（2026-10-26 批 U2）：浅灰底槽里两三个等宽分段，选中段白底；用于同一页内容的两种看法
+ * （角色生态「按角色 / 按动作」）。和 TextTabs（顶部一排文字 + 绿色短线）区分：分段 Tab 放在内容中间。
+ */
+export function SegmentedTabs<T extends string>({
+  items,
+  value,
+  onChange,
+  label,
+}: {
+  items: Array<{ value: T; label: string }>;
+  value: T;
+  onChange(value: T): void;
+  label?: string;
+}) {
+  return (
+    <div className="segmented-tabs" role="tablist" aria-label={label}>
+      {items.map((item) => (
+        <button
+          key={item.value}
+          type="button"
+          role="tab"
+          aria-selected={item.value === value}
+          onClick={() => onChange(item.value)}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** 一排文字切换（规格 5 表）：选中 15 / 500 + 下方 2 高绿色短线。 */
 export function TextTabs<T extends string>({
   items,

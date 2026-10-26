@@ -17,7 +17,15 @@ import { api } from '../data/client.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { CharacterAvatar } from './character-avatar.js';
-import { CheckCircle, GroupHeader, MenuGroup, MenuRow, NavBar, SwitchRow } from './shell-kit.js';
+import {
+  CheckCircle,
+  GroupHeader,
+  MenuGroup,
+  MenuRow,
+  NavBar,
+  SegmentedTabs,
+  SwitchRow,
+} from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 
 const GROUP_NAMES: Record<EcologyActionGroup, string> = {
@@ -30,6 +38,17 @@ const GROUP_NAMES: Record<EcologyActionGroup, string> = {
 };
 const GROUP_ORDER: EcologyActionGroup[] = ['chat', 'moments', 'life', 'care', 'play', 'group'];
 
+/** 总经理 10-26：角色多了会把动作开关挤到看不见 → 「按角色 / 按动作」分段 Tab 各占一页。 */
+type EcologyTab = 'characters' | 'actions';
+const TAB_KEY = 'weiban:ecology-tab';
+function readTab(): EcologyTab {
+  try {
+    return sessionStorage.getItem(TAB_KEY) === 'actions' ? 'actions' : 'characters';
+  } catch {
+    return 'characters';
+  }
+}
+
 function points(n: number | null | undefined): string {
   if (n === null || n === undefined) return '暂无法估算';
   return `约 ${n < 10 ? n.toFixed(1).replace(/\.0$/, '') : Math.round(n)} 积分`;
@@ -40,6 +59,15 @@ export function EcologyPage() {
   const [local, setLocal] = useState<EcologySettings | null>(null);
   const [busy, setBusy] = useState(false);
   const [intro, setIntro] = useState(false);
+  const [tab, setTabState] = useState<EcologyTab>(readTab);
+  const setTab = (next: EcologyTab) => {
+    setTabState(next);
+    try {
+      sessionStorage.setItem(TAB_KEY, next);
+    } catch {
+      // 隐私模式等读写不了存储时，只是不记住上次的 Tab
+    }
+  };
   const data = local ?? remote.data ?? null;
   const { state } = useChat();
   const characterIds = data?.characters.map((c) => c.characterId) ?? [];
@@ -150,47 +178,71 @@ export function EcologyPage() {
                 <small>实际按角色做了什么扣积分；角色什么也不做时只花「想一想」的一点点。</small>
               </MenuGroup>
 
-              <GroupHeader>谁参与</GroupHeader>
-              <MenuGroup>
-                {data.characters.length === 0 && (
-                  <MenuRow label="还没有好友角色" chevron={false} disabled />
-                )}
-                {data.characters.map((c) => (
-                  <div key={c.characterId} className="ecology-character">
-                    <CharacterAvatar id={c.characterId} size={36} />
-                    <SwitchRow
-                      label={nameOf(c.characterId)}
-                      checked={c.enabled}
-                      onChange={(v) => void setCharacter(c.characterId, v)}
-                    />
-                  </div>
-                ))}
-              </MenuGroup>
-
-              {GROUP_ORDER.map((group) => {
-                const actions = data.actions.filter((a) => a.group === group);
-                if (!actions.length) return null;
-                return (
-                  <section key={group}>
-                    <GroupHeader>{GROUP_NAMES[group]}</GroupHeader>
-                    <MenuGroup>
-                      {actions.map((a) => (
+              <SegmentedTabs
+                label="开关分类"
+                value={tab}
+                onChange={setTab}
+                items={[
+                  {
+                    value: 'characters',
+                    label: `按角色${data.characters.length ? ` · ${data.characters.filter((c) => c.enabled).length}/${data.characters.length}` : ''}`,
+                  },
+                  { value: 'actions', label: '按动作' },
+                ]}
+              />
+              {tab === 'characters' && (
+                <section role="tabpanel" aria-label="按角色">
+                  <GroupHeader>哪些角色参与</GroupHeader>
+                  <MenuGroup>
+                    {data.characters.length === 0 && (
+                      <MenuRow label="还没有好友角色" chevron={false} disabled />
+                    )}
+                    {data.characters.map((c) => (
+                      <div key={c.characterId} className="ecology-character">
+                        <CharacterAvatar id={c.characterId} size={36} />
                         <SwitchRow
-                          key={a.key}
-                          ariaLabel={a.label}
-                          label={a.label}
-                          subtitle={a.available ? undefined : (a.unavailableReason ?? '即将上线')}
-                          checked={a.available && a.enabled}
-                          disabled={busy || !a.available}
-                          onChange={(enabled) =>
-                            void patch({ actions: [{ key: a.key as EcologyActionKey, enabled }] })
-                          }
+                          label={nameOf(c.characterId)}
+                          checked={c.enabled}
+                          onChange={(v) => void setCharacter(c.characterId, v)}
                         />
-                      ))}
-                    </MenuGroup>
-                  </section>
-                );
-              })}
+                      </div>
+                    ))}
+                  </MenuGroup>
+                </section>
+              )}
+
+              {tab === 'actions' && (
+                <section role="tabpanel" aria-label="按动作">
+                  {GROUP_ORDER.map((group) => {
+                    const actions = data.actions.filter((a) => a.group === group);
+                    if (!actions.length) return null;
+                    return (
+                      <section key={group}>
+                        <GroupHeader>{GROUP_NAMES[group]}</GroupHeader>
+                        <MenuGroup>
+                          {actions.map((a) => (
+                            <SwitchRow
+                              key={a.key}
+                              ariaLabel={a.label}
+                              label={a.label}
+                              subtitle={
+                                a.available ? undefined : (a.unavailableReason ?? '即将上线')
+                              }
+                              checked={a.available && a.enabled}
+                              disabled={busy || !a.available}
+                              onChange={(enabled) =>
+                                void patch({
+                                  actions: [{ key: a.key as EcologyActionKey, enabled }],
+                                })
+                              }
+                            />
+                          ))}
+                        </MenuGroup>
+                      </section>
+                    );
+                  })}
+                </section>
+              )}
               <p className="ecology-footnote">
                 每次角色「想一想」都会写一两句碎碎念，在角色资料页「TA
                 的碎碎念」里能看到，附带这次做了什么、花了多少积分。 你在聊天里让 TA
@@ -206,8 +258,8 @@ export function EcologyPage() {
           actions={[
             { label: '取消', onClick: () => setIntro(false) },
             {
-              label: '打开',
-              primary: true,
+              label: '打开角色生态',
+              tone: 'primary',
               onClick: () => {
                 setIntro(false);
                 void patch({ enabled: true, introSeen: true });

@@ -20,6 +20,7 @@ export {
   ActionSheet,
   CheckSlot,
   ChoiceSheet,
+  SegmentedTabs,
   Sheet as BottomSheet,
   type ActionItem,
   type ChoiceOption,

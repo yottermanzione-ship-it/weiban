@@ -40,7 +40,11 @@ export function HistoryRecoveryRow() {
                 if (!pending) setOpen(false);
               },
             },
-            { label: pending ? '恢复中…' : '恢复', primary: true, onClick: () => void restore() },
+            {
+              label: pending ? '恢复中…' : '恢复聊天记录',
+              tone: 'primary',
+              onClick: () => void restore(),
+            },
           ]}
         >
           <p>恢复聊天记录？</p>
