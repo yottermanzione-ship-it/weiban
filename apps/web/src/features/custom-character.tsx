@@ -1,7 +1,7 @@
 /*
  * 自建角色创建 / 编辑页（2026-10-27 批 U3：资料卡 + 二级编辑页，26 号 §3.2）。
  * - 首屏：大头像（点了直接弹拍照 / 从相册选择）、名字、角色分类、年龄设定、标签；
- * - 其余按 persona-sections.ts 的板块分组成白色行，行右侧是摘要（已写 N 字、N 条、N 组…），点进整页编辑器；
+ * - 其余按人设板块配置（@weiban/client-core persona-sections.ts）的板块分组成白色行，行右侧是摘要（已写 N 字、N 条、N 组…），点进整页编辑器；
  * - 必填不用星号：没填完底部「创建角色」灰色，没填的行右侧灰字「未填写」；
  * - 二级页面挂在地址参数 ?edit=子板块编号 上：安卓返回键 / 浏览器后退只关掉这一层（等同取消）。
  * 行的分组、顺序、编辑器类型都由配置决定；加字段见 docs/handoffs/2026-10-27-ui-u3.md。
@@ -36,7 +36,7 @@ import {
   findSubsection,
   type PersonaDraft,
   type PersonaSubsection,
-} from './persona-sections.js';
+} from '@weiban/client-core';
 import { AgePage, BasisPage, DialoguePage, ListPage, LongTextPage } from './persona-editors.js';
 import { MenuGroup, MenuRow, NavBar } from './shell-kit.js';
 import { showToast } from './toast.js';
