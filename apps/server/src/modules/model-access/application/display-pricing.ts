@@ -31,6 +31,7 @@ import { modelAccessSettings, modelCatalog, usageRecords } from '../infra/db/sch
 import { MODEL_PRICE_SOURCE, MODEL_RATE_PORT, type ModelPriceSource } from '../tokens.js';
 import type { VoiceCallPipeline } from '../domain/voice-call-pipeline.js';
 import { VOICE_CALL_MINUTE_BLEND, VOICE_CALL_MINUTE_USAGE } from './voice-call-composite.js';
+import { REALTIME_MINUTE_USAGE } from './realtime-call.js';
 
 export const DISPLAY_BASE_KEY = 'display_multiplier_base';
 const BASE_KEY = DISPLAY_BASE_KEY;
@@ -93,6 +94,19 @@ export class DisplayPricingService {
   }
 
   /** 媒体用现价报价；文本按缓存假设估算，不误用把缓存折成原价的冻结上限。 */
+  /** 批 V：实时语音 / Omni 通话「约每分钟积分」= 分钟用量假设按价目表（含限时折扣）报价；只展示，扣费按供应商每次回应的实际用量。 */
+  async realtimePointsPerMinute(modelKey: string): Promise<number | null> {
+    if (!this.quotes) return null;
+    const cacheKey = modelKey + '|realtime_minute';
+    const hit = this.mediaQuotes.get(cacheKey);
+    const nowMs = this.clock.nowMs();
+    if (hit && nowMs - hit.at < CACHE_MS) return hit.points;
+    const quoted = await this.quotes.quote(modelKey, REALTIME_MINUTE_USAGE).catch(() => null);
+    const points = quoted ? round2(microsToPoints(quoted.amountMicros)) : null;
+    this.mediaQuotes.set(cacheKey, { at: nowMs, points });
+    return points;
+  }
+
   async voiceCallPointsPerMinute(pipeline: VoiceCallPipeline): Promise<number | null> {
     const quotes = this.quotes;
     if (!quotes) return null;

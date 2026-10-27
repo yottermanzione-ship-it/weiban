@@ -293,6 +293,8 @@ export class ModelRateService implements BillingModelRatePort {
             'asr_minute',
             'realtime_minute',
             'search_call',
+            'audio_input_tokens_per_million',
+            'audio_output_tokens_per_million',
           ]),
         ),
       );
@@ -316,10 +318,18 @@ export class ModelRateService implements BillingModelRatePort {
     modelKey: string;
     rates: { unit: ServicePriceUnit; priceMicros: number; costMicros: number }[];
   }): Promise<{ priceVersionId: string; published: boolean }> {
-    const allowed = ['image', 'tts_10k_chars', 'asr_minute', 'realtime_minute', 'search_call'];
+    const allowed = [
+      'image',
+      'tts_10k_chars',
+      'asr_minute',
+      'realtime_minute',
+      'search_call',
+      'audio_input_tokens_per_million',
+      'audio_output_tokens_per_million',
+    ];
     if (
       input.rates.length < 1 ||
-      input.rates.length > 5 ||
+      input.rates.length > allowed.length ||
       new Set(input.rates.map((r) => r.unit)).size !== input.rates.length ||
       input.rates.some(
         (r) =>

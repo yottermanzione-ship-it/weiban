@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 4.4. Regenerate: pnpm android:generate
+// Contract 4.5. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "4.4"
+const val CONTRACT_VERSION: String = "4.5"
 
 @Serializable
 data class AccountAlias(
@@ -9768,6 +9768,7 @@ data class RouteBillingBounds(
     @SerialName("image") val `image`: RouteBillingBoundsImage? = null,
     @SerialName("search") val `search`: RouteBillingBoundsSearch? = null,
     @SerialName("decision") val `decision`: RouteBillingBoundsDecision? = null,
+    @SerialName("realtime") val `realtime`: RouteBillingBoundsRealtime? = null,
 )
 
 @Serializable
@@ -9784,6 +9785,7 @@ data class RouteBillingBoundsInput(
     @SerialName("image") val `image`: RouteBillingBoundsInputImage? = null,
     @SerialName("search") val `search`: RouteBillingBoundsInputSearch? = null,
     @SerialName("decision") val `decision`: RouteBillingBoundsInputDecision? = null,
+    @SerialName("realtime") val `realtime`: RouteBillingBoundsInputRealtime? = null,
 )
 
 @Serializable
@@ -14368,6 +14370,13 @@ data class RouteBillingBoundsDecision(
 )
 
 @Serializable
+data class RouteBillingBoundsRealtime(
+    @SerialName("maxSessionSeconds") val `maxSessionSeconds`: Long,
+    @SerialName("maxResponseOutputTokens") val `maxResponseOutputTokens`: Long,
+    @SerialName("contextTokens") val `contextTokens`: Long,
+)
+
+@Serializable
 data class RouteBillingBoundsInputText(
     @SerialName("contextTokens") val `contextTokens`: Long,
     @SerialName("maxOutputTokens") val `maxOutputTokens`: Long,
@@ -14408,6 +14417,13 @@ data class RouteBillingBoundsInputSearch(
 @Serializable
 data class RouteBillingBoundsInputDecision(
     @SerialName("maxInputTokens") val `maxInputTokens`: Long,
+)
+
+@Serializable
+data class RouteBillingBoundsInputRealtime(
+    @SerialName("maxSessionSeconds") val `maxSessionSeconds`: Long,
+    @SerialName("maxResponseOutputTokens") val `maxResponseOutputTokens`: Long,
+    @SerialName("contextTokens") val `contextTokens`: Long,
 )
 
 @Serializable

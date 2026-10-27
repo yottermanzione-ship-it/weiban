@@ -46,6 +46,19 @@ function discountText(rate: number) {
 }
 
 /**
+ * 批 V：「语音通话」选项的通话方式。级联 = 识别 → 文字模型 → 合成三段；实时 / Omni = 一个端到端模型直接听和说。
+ * 标签由后台登记（pipeline:call / pipeline:rt），Omni 按模型名区分。
+ */
+export function callModeLabel(
+  model: Partial<Pick<ModelInfo, 'tags' | 'modelKey' | 'displayName'>>,
+): '级联' | '实时' | 'Omni' | null {
+  const tags = model.tags ?? [];
+  if (tags.includes('pipeline:call')) return '级联';
+  if (!tags.includes('pipeline:rt')) return null;
+  return /omni/i.test(`${model.modelKey ?? ''} ${model.displayName ?? ''}`) ? 'Omni' : '实时';
+}
+
+/**
  * 模型行副标题（10-20 统一格式）：「消耗倍率 ×1.1 · 约每条 5.35 积分」；
  * 3.22 限时折扣：「消耗倍率 ~~×1.0~~ ×0.5 · 限时 5 折 · 约每条 …」（约每条已是折后数）。
  * scenario 传了时按该场景「约每次」估算（语音消息约 100 字、语音识别约 15 秒、发照片 1 张）。
@@ -62,7 +75,8 @@ export function ModelPriceLine({
     | 'discount'
     | 'pointsPerUse'
     | 'pointsPerReplyBasis'
-  > & { scenarios?: ModelInfo['scenarios'] };
+  > &
+    Partial<Pick<ModelInfo, 'scenarios' | 'tags' | 'modelKey' | 'displayName'>>;
   scenario?: ModelScenario;
 }) {
   const callPrice =
@@ -71,6 +85,7 @@ export function ModelPriceLine({
   if (callPrice)
     return (
       <>
+        {callModeLabel(model) && `${callModeLabel(model)} · `}
         {model.pointsPerMinute != null
           ? `约每分钟 ${formatPoints(model.pointsPerMinute)} 积分`
           : '分钟价格待估算'}

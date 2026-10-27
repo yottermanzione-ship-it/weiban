@@ -86,6 +86,7 @@ import {
   voiceCallFailureDetail,
   type VoiceCallAvailability,
 } from './voice-call-composite.js';
+import { isRealtimeCallEntry } from './realtime-call.js';
 
 type CatalogRow = typeof modelCatalog.$inferSelect;
 type CatalogWrite = z.infer<typeof AdminCatalogEntryWrite>;
@@ -869,14 +870,27 @@ export class CatalogService {
         rank: arena.previousRankOfEntry(entry),
       })),
     );
+    // 批 V：实时语音 / Omni 通话模型按分钟展示（分钟用量假设 × 价目表），不显示按文字 token 推出的「约每条」与倍率。
+    const realtimeMinute = new Map<string, number | null>();
+    for (const { entry } of visible)
+      if (isRealtimeCallEntry(entry))
+        realtimeMinute.set(
+          entry.modelKey,
+          (await this.display?.realtimePointsPerMinute(entry.modelKey)) ?? null,
+        );
     return visible.map(({ entry, upstreamStatus }) => {
       const composite = isVoiceCallComposite(entry);
+      const realtime = realtimeMinute.has(entry.modelKey);
       const d = display?.get(entry.modelKey);
       // 后台手填倍率优先；组合模型没有自己的 token 价，自动值来自三组件分钟口径。
       const manualMultiplier = d?.displayMultiplierManual ?? entry.displayMultiplier ?? null;
       const displayMultiplier =
         manualMultiplier ??
-        (composite ? (voiceCall?.displayMultiplier ?? null) : (d?.displayMultiplier ?? null));
+        (composite
+          ? (voiceCall?.displayMultiplier ?? null)
+          : realtime
+            ? null
+            : (d?.displayMultiplier ?? null));
       const reason = unavailableReason(entry, (upstreamStatus as UpstreamStatus | null) ?? null);
       const detail =
         details.get(entry.modelKey) ?? (reason === 'model_removed' ? 'model_removed' : null);
@@ -895,8 +909,9 @@ export class CatalogService {
         displayName: entry.displayName,
         vendorName: entry.vendorName,
         priceTier: priceTier(prices.get(entry.modelKey)),
-        pointsPerReply: perReply(entry.modelKey),
+        pointsPerReply: realtime ? null : perReply(entry.modelKey),
         ...(composite ? { pointsPerMinute: voiceCall?.pointsPerMinute ?? null } : {}),
+        ...(realtime ? { pointsPerMinute: realtimeMinute.get(entry.modelKey) ?? null } : {}),
         ...(d
           ? {
               pointsPerReplyBasis: d.pointsPerReplyBasis,

@@ -244,6 +244,23 @@ export const scenarioSelections = modelAccessSchema.table(
   ],
 );
 
+/**
+ * 0145（批 V）：实时语音 / Omni 通话的角色音色（供应商复刻音色只在登记它的模型 / 账号上有效）。
+ * 没有行 = 用该模型的默认系统音色（settings.realtime_call_voices）。
+ */
+export const realtimeVoiceBindings = modelAccessSchema.table(
+  'realtime_voice_bindings',
+  {
+    characterId: uuid('character_id').notNull(),
+    modelKey: text('model_key').notNull(),
+    providerVoiceKey: text('provider_voice_key').notNull(),
+    source: text('source').notNull(),
+    createdAt: tz('created_at').notNull(),
+    updatedAt: tz('updated_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.characterId, t.modelKey] })],
+);
+
 /** 3.22（0115）：角色逐场景单独设置（没有行 = 跟随场景设置）。 */
 export const characterScenarioOverrides = modelAccessSchema.table(
   'character_scenario_overrides',

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DisplayPricingService } from './display-pricing.js';
 import { VOICE_CALL_MINUTE_USAGE } from './voice-call-composite.js';
+import { REALTIME_MINUTE_USAGE } from './realtime-call.js';
 const pipeline = { asrModelKey: 'asr/x', textModelKey: 'text/x', ttsModelKey: 'tts/x' };
 const textPrice = {
   inputPerMillionMicros: 2160000,
@@ -57,5 +58,25 @@ describe('call minute estimate is not conservative freezing', () => {
         throw new Error('unpriced');
       }).voiceCallPointsPerMinute(pipeline),
     ).toBeNull();
+  });
+});
+
+describe('批 V：实时语音 / Omni 约每分钟积分', () => {
+  it('按分钟用量假设一次报价（分模态 token），缓存 10 分钟；没价格不编数', async () => {
+    const quote = vi.fn(async () => ({ amountMicros: 246_870 }));
+    const s = service(quote);
+    Object.assign(s, { mediaQuotes: new Map() });
+    expect(await s.realtimePointsPerMinute('qwen/rt')).toBe(24.69);
+    expect(await s.realtimePointsPerMinute('qwen/rt')).toBe(24.69);
+    expect(quote).toHaveBeenCalledTimes(1);
+    expect(quote).toHaveBeenCalledWith('qwen/rt', REALTIME_MINUTE_USAGE);
+    expect(REALTIME_MINUTE_USAGE).toMatchObject({
+      audioInputTokens: expect.any(Number),
+      audioOutputTokens: expect.any(Number),
+    });
+    const none = service(async () => null);
+    Object.assign(none, { mediaQuotes: new Map() });
+    expect(await none.realtimePointsPerMinute('qwen/rt')).toBeNull();
+    expect(await service().realtimePointsPerMinute('qwen/rt')).toBeNull();
   });
 });

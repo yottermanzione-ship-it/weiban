@@ -18,6 +18,12 @@ import { downloadDashscopeAudio } from './dashscope-audio.js';
 import { acquireNativeOpusEncoder } from './native-opus.js';
 import { isMimoAsrModel, mimoAsr } from './mimo-asr.js';
 import { isNativeAsrModel, nativeAsr } from './native-asr.js';
+import {
+  openDashscopeRealtime,
+  openFakeRealtime,
+  type RealtimeConnection,
+  type RealtimeSessionConfig,
+} from './dashscope-realtime.js';
 
 export type MediaFailure =
   | 'network_error'
@@ -111,6 +117,11 @@ export interface MediaAdapter {
     t: MediaTarget,
     input: { url: string },
   ): Promise<MediaAdapterResult<{ title: string; content: string }>>;
+  /** 批 V：实时语音 / Omni 会话（服务端 WebSocket 中转）。就绪后返回连接；密钥只在握手时使用。 */
+  openRealtime?(
+    t: MediaTarget,
+    config: RealtimeSessionConfig,
+  ): Promise<MediaAdapterResult<RealtimeConnection>>;
 }
 
 const MAX_RESPONSE_BYTES = 12_000_000;
@@ -208,6 +219,9 @@ export class OpenAiCompatibleMediaAdapter implements MediaAdapter {
   constructor(private readonly searchGate?: SearchRequestGate) {}
   fetchPage(t: MediaTarget, input: { url: string }) {
     return deepseekFetch(t, input.url, this.searchGate);
+  }
+  openRealtime(t: MediaTarget, config: RealtimeSessionConfig) {
+    return openDashscopeRealtime(t, config);
   }
   /** Verified System One / Decisions request; shared relay accounts keep their existing protocol. */
   decide(
@@ -754,6 +768,11 @@ export function withMimoChatAudio(inner: MediaAdapter): MediaAdapter {
     ...(inner.fetchPage
       ? { fetchPage: (t: MediaTarget, i: { url: string }) => inner.fetchPage!(t, i) }
       : {}),
+    ...(inner.openRealtime
+      ? {
+          openRealtime: (t: MediaTarget, c: RealtimeSessionConfig) => inner.openRealtime!(t, c),
+        }
+      : {}),
   };
 }
 
@@ -855,6 +874,13 @@ export class FakeMediaAdapter implements MediaAdapter {
   async search(): Promise<MediaAdapterResult<{ hits: SearchHit[] }>> {
     // 假上游搜不到结果：调用方按「搜不到就不说具体信息」处理。
     return { ok: true, value: { hits: [] } };
+  }
+
+  async openRealtime(
+    _t: MediaTarget,
+    config: RealtimeSessionConfig,
+  ): Promise<MediaAdapterResult<RealtimeConnection>> {
+    return { ok: true, value: openFakeRealtime(config) };
   }
 }
 

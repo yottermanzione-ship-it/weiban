@@ -195,11 +195,23 @@ export class ModelAdminService {
         asr_minute: 'voice_input',
         realtime_minute: 'voice_output',
         image: 'image_generation',
+        // 4.5：实时语音 / Omni 双向通话模型同时听和说
+        audio_input_tokens_per_million: 'voice_input',
+        audio_output_tokens_per_million: 'voice_output',
       } as const;
+      const duplex = [
+        'realtime_minute',
+        'audio_input_tokens_per_million',
+        'audio_output_tokens_per_million',
+      ];
       for (const rate of serviceRates) {
         if (
           !body.capabilities.includes(capability[rate.unit]) ||
-          (rate.unit === 'realtime_minute' && !body.capabilities.includes('voice_input'))
+          (duplex.includes(rate.unit) &&
+            !(
+              body.capabilities.includes('voice_input') &&
+              body.capabilities.includes('voice_output')
+            ))
         )
           throw new AppError('bad_request', `服务计价单位 ${rate.unit} 与模型能力不匹配`);
       }

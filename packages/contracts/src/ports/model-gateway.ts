@@ -350,6 +350,58 @@ export interface RealtimeAsrSession {
   close(): Promise<MediaCallResult>;
 }
 
+/** 4.5：通话链路。 */
+export type VoiceCallRoute =
+  | { kind: 'cascade' }
+  | { kind: 'realtime'; modelKey: string }
+  | { kind: 'unavailable'; error: GenerateError };
+
+/** 4.5：打开实时语音 / Omni 会话。instructions = 角色人设、记忆、边界与通话规则（只在服务端拼好发给供应商）。 */
+export interface OpenRealtimeVoiceInput extends MediaCallBase {
+  characterId: string;
+  instructions: string;
+  /** 上行 PCM16 单声道采样率（与级联通话相同）。 */
+  sampleRate: 16000;
+}
+
+/**
+ * 4.5：实时语音 / Omni 会话事件（网关已把供应商协议翻译成平台事件，不含密钥、地址或上游原文）。
+ * - user_speech_started：供应商判断用户开口（用于打断角色正在说的话）；
+ * - user_transcript：用户这一句的转写（供摘要 / 安全检查）；
+ * - audio：角色声音，PCM16 小端单声道 24 kHz；
+ * - assistant_text：角色这次回应的文字（final = false 为累计中的部分，final = true 为整句）；
+ * - response_done：一次回应结束（interrupted = 被打断 / 取消）；
+ * - ended：会话被网关结束（余额不足以继续、到达单通上限、供应商故障）。
+ */
+export type RealtimeVoiceEvent =
+  | { kind: 'user_speech_started' }
+  | { kind: 'user_transcript'; text: string }
+  | { kind: 'response_started' }
+  | { kind: 'audio'; chunk: Uint8Array }
+  | { kind: 'assistant_text'; text: string; final: boolean }
+  | { kind: 'response_done'; interrupted: boolean }
+  | { kind: 'ended'; reason: 'insufficient_balance' | 'time_limit' | 'failed' };
+
+/**
+ * 4.5：实时语音 / Omni 通话会话。每次回应按供应商报告的文字 / 音频 token 单独结算；
+ * 网关只转发说话段（静音不上传、不计费），挂断时结算或释放所有冻结。
+ */
+export interface RealtimeVoiceSession {
+  readonly modelKey: string;
+  readonly outputSampleRate: 24000;
+  /** 上行用户声音（PCM16 16 kHz）。 */
+  pushAudio(chunk: Uint8Array): void;
+  /** 让角色主动说一段（接通开场、提醒、道别）；instructions 只对这一次回应生效。 */
+  respond(input?: { instructions?: string }): void;
+  /** 打断角色当前的回应（客户端 barge_in）。已产生的用量照常结算。 */
+  interrupt(): void;
+  /** 更新会话级指令（例如安全关怀开启后）。 */
+  updateInstructions(instructions: string): void;
+  events(): AsyncIterable<RealtimeVoiceEvent>;
+  /** 结束会话并结算；可重复调用。 */
+  close(): Promise<MediaCallResult>;
+}
+
 /** 流式语音合成（通话中角色说话）。abort 用于打断（MED-06 第 2 条），只结算已合成的字数。 */
 export interface StreamingTtsResult {
   audio: AsyncIterable<Uint8Array>;
@@ -406,6 +458,15 @@ export interface ModelGatewayMediaPort {
   openRealtimeAsr(
     input: MediaCallBase & { sampleRate: 16000 },
   ): Promise<PortResult<RealtimeAsrSession, GenerateError>>;
+  /**
+   * 4.5：这通电话走哪条链路（按用户 / 角色的「语音通话」选择）。cascade = 识别 → 文字 → 合成；
+   * realtime = 实时语音 / Omni 端到端模型（服务端中转）。不调上游、不扣费。旧实现可不提供，调用方按 cascade 处理。
+   */
+  voiceCallRoute?(input: { userId: string; characterId: string }): Promise<VoiceCallRoute>;
+  /** 4.5：打开实时语音 / Omni 通话会话（密钥只在服务端；按供应商每次回应的 token 用量结算）。旧实现可不提供。 */
+  openRealtimeVoice?(
+    input: OpenRealtimeVoiceInput,
+  ): Promise<PortResult<RealtimeVoiceSession, GenerateError>>;
   streamSpeech(
     input: Omit<SynthesizeSpeechInput, 'format'> & { format: 'pcm16_24k' },
   ): Promise<PortResult<StreamingTtsResult, GenerateError>>;
