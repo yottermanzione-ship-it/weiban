@@ -1,7 +1,7 @@
 import { MiddleEllipsis } from './middle-ellipsis.js';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { BookOpen, CaretLeft, CaretRight, Warning } from './old-icons.js';
+import { BookOpen, CaretLeft, Warning } from './old-icons.js';
 import {
   CharacterEndpoints,
   CharacterSupplementEndpoints,
@@ -19,7 +19,7 @@ import type { z } from 'zod';
 import type { RecognizedDialogueLine } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
-import { MenuRow, NavBar } from './shell-kit.js';
+import { EmptyState, MenuGroup, MenuRow, NavBar } from './shell-kit.js';
 import { useUpdates } from '../data/updates.js';
 import { uploadImportFile } from '../data/upload.js';
 import { AlertDialog, Dialog, showToast } from './toast.js';
@@ -235,34 +235,32 @@ function NewImport({
             ? '把你收集的采访、语录导入进来，让这里的 TA 更像 TA。'
             : '从聊天记录里读懂 TA 的说话方式，生成一个像 TA 的角色草稿。'}
         </p>
-        <button className="entry-card" onClick={() => setSource('text')}>
-          <strong>粘贴文字</strong>
-          <CaretRight />
-        </button>
-        <button className="entry-card" onClick={() => setSource('file')}>
-          <strong>上传文件</strong>
-          <small className="hint">{supplement ? '.txt' : '.txt / .csv'}</small>
-          <CaretRight />
-        </button>
-        {!supplement && (
-          <button
-            className="entry-card"
-            disabled={model.data?.visionAvailable === false}
-            onClick={() => setSource('screenshots')}
-          >
-            <strong>上传聊天截图</strong>
-            <small className="hint">
-              {model.data?.visionAvailable === false
-                ? '当前模型不能识图，请先更换模型'
-                : '最多 30 张'}
-            </small>
-            <CaretRight />
-          </button>
-        )}
-        <p className="inline-tip">
-          微伴不直接读取微信数据。可以先用第三方工具把聊天记录导出成文字或 csv。
+        {/* U7：三种方式是标准白色通栏列表行，箭头贴右；说明放页面底部灰色小字 */}
+        <MenuGroup>
+          <MenuRow label="粘贴文字" onClick={() => setSource('text')} />
+          <MenuRow
+            label="上传文件"
+            value={supplement ? '.txt' : '.txt / .csv'}
+            onClick={() => setSource('file')}
+          />
+          {!supplement && (
+            <MenuRow
+              label="上传聊天截图"
+              value={
+                model.data?.visionAvailable === false
+                  ? '当前模型不能识图，请先更换模型'
+                  : '最多 30 张'
+              }
+              disabled={model.data?.visionAvailable === false}
+              onClick={() => setSource('screenshots')}
+            />
+          )}
+        </MenuGroup>
+        <p className="ui-foot-note">
+          微伴不直接读取微信数据，可以先用第三方工具把聊天记录导出成文字或 csv。
+          <br />
+          聊天记录里有其他人的信息，请只导入你有权使用的内容。
         </p>
-        <p className="inline-tip">聊天记录里有其他人的信息，请只导入你有权使用的内容。</p>
       </div>
     );
   return (
@@ -898,24 +896,37 @@ export function ImportListPage() {
   return (
     <main>
       <NavBar title="进行中的导入" fallback="/me" />
-      <Link className="primary button" to="/imports/new">
-        导入聊天记录
-      </Link>
-      {jobs.length === 0 && <p className="empty">没有进行中的导入</p>}
-      <div className="panel rows">
-        {jobs.map((job) => (
-          <Link key={job.jobId} to={`/imports/${job.jobId}`}>
-            <span className="overview-name">
-              {job.kind === 'supplement' ? '补充设定' : (job.selectedSpeaker ?? '聊天记录')}
-              <small className="hint">
-                {statusText[job.status] ?? '处理中'} ·{' '}
-                {new Date(job.createdAt).toLocaleDateString('zh-CN')}
-              </small>
-            </span>
-            <CaretRight />
-          </Link>
-        ))}
-      </div>
+      {/* U7：空状态居中说明 + 下方主按钮；有任务时列表下方一个通栏主按钮，文字居中 */}
+      {jobs.length === 0 ? (
+        <EmptyState
+          icon="wechat/chat"
+          title="没有进行中的导入"
+          desc="导入和 TA 的聊天记录，生成一个像 TA 的角色"
+          action={
+            <Link className="button primary ui-block-button" to="/imports/new">
+              导入聊天记录
+            </Link>
+          }
+        />
+      ) : (
+        <>
+          <MenuGroup>
+            {jobs.map((job) => (
+              <MenuRow
+                key={job.jobId}
+                to={`/imports/${job.jobId}`}
+                label={job.kind === 'supplement' ? '补充设定' : (job.selectedSpeaker ?? '聊天记录')}
+                subtitle={`${statusText[job.status] ?? '处理中'} · ${new Date(job.createdAt).toLocaleDateString('zh-CN')}`}
+              />
+            ))}
+          </MenuGroup>
+          <div className="page-bottom">
+            <Link className="button primary ui-block-button" to="/imports/new">
+              导入新的聊天记录
+            </Link>
+          </div>
+        </>
+      )}
     </main>
   );
 }

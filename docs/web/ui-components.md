@@ -1,6 +1,6 @@
 # 用户端公共 UI 组件说明
 
-> 2026-10-26 批 U1 建立、批 U2 补充表单选择框 / 页内二级页面 / 分段 Tab 与「确认与删除」统一规则，批 U5 补充看图 / 只读整页 / 贴键盘输入条 / 返回键只关一层 / 质感细节规则（任务卡 `docs/tasks/2026-10-26-ui-quality.md`，规则来源 `docs/refactor/26-ui-quality-plan.md` §2 §5）。
+> 2026-10-26 批 U1 建立、批 U2 补充表单选择框 / 页内二级页面 / 分段 Tab 与「确认与删除」统一规则，批 U5 补充看图 / 只读整页 / 贴键盘输入条 / 返回键只关一层 / 质感细节规则，批 U7 补充页签不加粗 / 通栏 / 白底页 / 名字与表情对齐（任务卡 `docs/tasks/2026-10-26-ui-quality.md`，规则来源 `docs/refactor/26-ui-quality-plan.md` §2 §5）。
 > 新页面一律从 `apps/web/src/features/ui.ts` 引入这些组件，不再自己手写弹窗、确认块、原生日期框。
 > 组件效果图（浅色 / 深色）：`C:\wb-dev\logs\ui-u1\after\gallery\`。
 
@@ -52,13 +52,23 @@
 | 页内二级页面（U2） | `SubPageLayer`（任意表单）、`FieldPage`（单字段 + 清除 + 字数）（`edit-page.tsx`） | 外观同二级页面外壳，但不开新路由：从右侧整页推入盖住当前页；Esc / 取消关闭 | 原来「底部表单弹层」的编辑：群聊名称、积分提醒线、记忆、心愿、纪念日、补充设定、申请添加朋友、提示音 | 要能分享链接 / 浏览器后退回来的独立页面（用路由 + `SubPage`） |
 | 返回键只关一层（U3 写法） | 打开时往地址加 `?edit=编号`（push），关闭时自己 push 的就 `navigate(-1)`、否则 replace 去掉参数；渲染时按参数决定显示哪个 `SubPageLayer`。样板：`custom-character.tsx` 的 `openRow` / `closeEditor` | 同页内二级页面 | 一页里有多个整页编辑、希望安卓返回键 / 浏览器后退只关掉编辑层（等同「取消」） | 只有一个简单弹层时不必 |
 | 字段编辑页（U3） | `LongTextPage`（大文本区 + 字数，可设最少字数）、`ListPage`（可增删条目，左红色减号、末行「添加…」）、`DialoguePage`（「我说 / TA 说」气泡，可切「按原文编辑」）、`BasisPage` / `AgePage`（`persona-editors.tsx`）；`CharacterVoicePage`（音色单选 + 试听 + >10 个出搜索，`character-voice-select.tsx`） | 都是 `SubPageLayer`：顶栏「取消 / 标题 / 完成」，编辑草稿，完成才写回 | 自建角色创建 / 编辑页各字段；用哪个由人设板块配置（`packages/client-core/src/persona-sections.ts`）决定 | 单行文字（用 `FieldPage`）；日期（用滚轮） |
-| 分段 Tab（U2） | `SegmentedTabs`（`shell-kit.tsx`） | 浅灰槽里两三个等宽分段，选中段白底（外圆角 8 = 内圆角 4 + 间距 4） | 同一页内容的两种看法：角色生态「按角色 / 按动作」 | 页面顶部的一级切换（用 `TextTabs`） |
+| 分段 Tab（U2，U7 改样子） | `SegmentedTabs`（`shell-kit.tsx`） | 左右通栏白底、两三个等宽页签；选中只变深色 + 绿色短下划线，字重不变 | 同一页内容的两种看法：角色生态「按角色 / 按动作」 | 页面顶部的一级切换（用 `TextTabs`） |
 | 人设卡（U4） | `<PersonaCard source hideHead? avatar? headAside? headExtra? intro? asides? renders? renderText?>`（`persona-card.tsx`）；数据形状用 `{ kind: 'draft' \| 'profile' \| 'plaza' \| 'legacy', data }`，角色资料可直接用 `useCharacterPersona(id)`（`character-persona.tsx`） | 头部（头像、名字、一句身份、一句话介绍、标签，右侧可放点赞评论）+ 按配置分组的白色板块，板块间 8px 灰缝、板块内无边框；正文超 5 行折叠「展开」，口头禅浅色引用块，示例对话迷你气泡（左 TA 右我），生日 / 音色 / 来源是灰字键值小行，空子板块整块不显示 | 展示一个角色的人设：广场作品详情、微伴角色详情、资料页「TA 的人设」、补充设定对照原卡。后台预览用 `PersonaCardPreview`（`apps/admin`） | 编辑人设（用创建页 + 字段编辑页）；**不要在页面里自己拼人设字段**，新字段加到配置里 |
 | 全屏看图 Lightbox（U5） | `<Lightbox items index onClose menu? hint?>`（`lightbox.tsx`）；聊天里用 `ImageViewer`（`media.tsx`，内部就是 Lightbox） | 黑底全屏、左右滑切换、双指缩放 / 双击放大、下滑关闭（跟手）、单击关闭；右上「…」出 Action Sheet；挂到 body | 图片、聊天记录里的图、收藏里的图 | 不要再用底部弹层看图 |
 | 只读整页 PushLayer（U5） | `<PushLayer title onClose right?>`（`edit-page.tsx`） | 从右侧整页推入，顶栏返回箭头 + 标题，挂到 body | 看内容不编辑、又不值得开路由的整页：聊天记录详情 | 要编辑（用 `SubPageLayer`）；要能分享链接（用路由） |
 | 贴键盘输入条（U5） | `<KeyboardBar onDismiss label?>`（`keyboard-bar.tsx`） | 底部一条输入栏贴在键盘上方，页面不被盖住；点输入条以外收起，草稿由调用方保留 | 一句话回复：朋友圈评论 / 回复 | 多字段表单（用 `SubPageLayer`） |
 | 中间省略 MiddleEllipsis（U5） | `<MiddleEllipsis text>`（`middle-ellipsis.tsx`） | 「很长的文件名…备份副本.txt」，省略号在中间，最后几个字和扩展名始终可见 | 文件名、导出名 | 普通文字（末尾省略即可） |
 | 返回键只关一层（U5 通用） | `useLayerHistory(onBack)`（`layer-history.ts`）；`SubPageLayer`、`PushLayer`、`Lightbox` 已内置 | 浮层打开时往浏览器历史压一条同地址记录；安卓返回键 / 浏览器后退只关最上面一层（等同取消）；用界面按钮关掉时自动退掉那条记录，同一拍关多层合并成一次后退 | 页内浮层默认就有，不用额外写 | 页面自己已经用地址参数管二级页（自建角色 `?edit=`）时，用 `<LayerHistoryContext.Provider value={false}>` 包住，免得压两次 |
+
+### 页签、通栏与对齐（U7）
+
+1. **页签选中不加粗**：`TextTabs`、`SegmentedTabs`、我发布的 / 卡册（`.plaza-tabs`）、信箱（`.play-tabs`）、角色广场顶栏、表情商店，选中只换颜色 + 下划线，字重与未选中相同，切换时文字宽度不跳。
+2. **左右拉齐，不要浮块**：页签条、白色列表、页面级提示条（`.inline-tip` / `.notice-bar` 作为页面直接子元素时）、卡册卡片区都左右通栏；旧式 `.rows` 列表行的行尾箭头统一灰色、贴最右。
+3. **说明文字**：页面底部说明用灰色小字 `.ui-foot-note`，不用彩色提示框。
+4. **块状主按钮**：链接做主按钮用 `className="button primary ui-block-button"`（文字上下左右居中；放在 `EmptyState` 里自动收窄到最小 184px）。
+5. **整页白底页面**（欢迎 / 登录 / 注册、`FormPage`、`InfoPage`）调用 `useWhiteSurface()`（`data/display-prefs.ts`）：`html` / `body` 和 `theme-color` 一起变白，iPhone 顶部安全区不露灰；离开自动切回灰色。底色规则仍集中在 `common-fixes.css` 的 F1-9 段。
+6. **名字 + 状态表情 / 图标**：表情用 `1.05em`（随名字字号）+ 行高 1 + inline-flex 居中，上下边与汉字墨迹对齐；行内图标按钮（星标）用 `align-self: center`，不再用 `margin-top` 微调。
+7. **会话列表顶部提示条**：可关闭（右侧 ×）；只有本机真写不进时才出现「重新打开」，触发条件见 `docs/handoffs/2026-10-27-ui-u7.md`。
 
 ### 输入与浮层的细节规则（U5）
 

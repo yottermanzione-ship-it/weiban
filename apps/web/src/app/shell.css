@@ -534,7 +534,6 @@ main > button.danger-row {
 }
 .text-tabs button[aria-selected='true'] {
   color: var(--wb-color-text-primary);
-  font-weight: var(--wb-font-weight-medium);
 }
 .text-tabs button[aria-selected='true']::after {
   content: '';

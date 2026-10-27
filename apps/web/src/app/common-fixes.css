@@ -316,6 +316,8 @@ select {
 /*
  * F1-9：手机宽度下外壳占满屏幕，body 底色只在状态栏区域（iPhone Safari 取它着色）和回弹时露出来，
  * 统一成页面底色，与标题栏同色；宽屏仍保留外框底色。「我」页、设个状态页顶部不是灰底，按页面顶部颜色。
+ * U7：登录 / 注册 / 单字段表单页 / 说明页这类整页白底的页面挂载时写 html[data-surface=white]（display-prefs.ts
+ * 的 useWhiteSurface，同时把 theme-color 改白），这里一起变白；离开即恢复灰色。
  */
 @media (max-width: 640px) {
   html,
@@ -323,7 +325,9 @@ select {
     background: var(--wb-color-bg-page);
   }
   html:has(main.me-page),
-  html:has(main.me-page) body {
+  html:has(main.me-page) body,
+  html[data-surface='white'],
+  html[data-surface='white'] body {
     background: var(--wb-color-bg-surface);
   }
   html:has(main.status-page),

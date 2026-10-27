@@ -1481,33 +1481,36 @@ export function MyWorksPage() {
               还没有发布过作品 · 在和自己的角色聊天时，打开「聊天信息」就能发布
             </p>
           )}
-          <div className="panel">
-            {works.data?.items.map((w) => (
-              <button
-                key={w.workId}
-                className="work-row"
-                onClick={() => navigate(`/plaza/works/${w.workId}`)}
-              >
-                <WorkAvatar work={w} />
-                <span className="work-row-main">
-                  <span className="work-row-title">
-                    {w.name}
-                    {(w.unreadCount ?? 0) > 0 && (
-                      <span className="red-dot" aria-label={`${w.unreadCount} 条未读`} />
-                    )}
-                    <span className={w.status === 'listed' ? 'tag success' : 'tag danger'}>
-                      {statusNames[w.status] ?? '未知状态'}
+          {/* U7：没有作品时不渲染空白容器（曾经是空状态下的一条白色横条） */}
+          {!!works.data?.items.length && (
+            <div className="panel">
+              {works.data.items.map((w) => (
+                <button
+                  key={w.workId}
+                  className="work-row"
+                  onClick={() => navigate(`/plaza/works/${w.workId}`)}
+                >
+                  <WorkAvatar work={w} />
+                  <span className="work-row-main">
+                    <span className="work-row-title">
+                      {w.name}
+                      {(w.unreadCount ?? 0) > 0 && (
+                        <span className="red-dot" aria-label={`${w.unreadCount} 条未读`} />
+                      )}
+                      <span className={w.status === 'listed' ? 'tag success' : 'tag danger'}>
+                        {statusNames[w.status] ?? '未知状态'}
+                      </span>
                     </span>
+                    <span className="work-row-meta">
+                      版本 {w.currentVersion} · 赞 {w.likeCount} · 添加 {w.adoptCount}
+                    </span>
+                    {w.removedReason && <span className="hint">下架原因：{w.removedReason}</span>}
                   </span>
-                  <span className="work-row-meta">
-                    版本 {w.currentVersion} · 赞 {w.likeCount} · 添加 {w.adoptCount}
-                  </span>
-                  {w.removedReason && <span className="hint">下架原因：{w.removedReason}</span>}
-                </span>
-                <span />
-              </button>
-            ))}
-          </div>
+                  <span />
+                </button>
+              ))}
+            </div>
+          )}
         </>
       ) : (
         <Notices />
