@@ -167,7 +167,7 @@ test('惯性滑动中新行量高：不把列表拽回上一个 scroll 事件的
     });
     new MutationObserver((records) => {
       for (const record of records)
-        for (const node of record.addedNodes)
+        for (const node of Array.from(record.addedNodes))
           if (node instanceof Element && node.matches('[data-row-key]')) drift.observe(node);
     }).observe(track, { childList: true });
     proto.set!.call(el, 2400);
