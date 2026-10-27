@@ -596,14 +596,15 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       await grant(user.userId, YUAN).expect(201);
       const input = reserveInput(user.userId, { characterId: uuid() });
       const hold = await reserveOk(input);
-      expect(hold).toMatchObject({ amountMicros: 10_000, usedSafetyOverdraft: false });
+      // 3.27（H1 先用后扣）：用户付费调用不再冻结积分，冻结记录金额为 0、钱包不占用
+      expect(hold).toMatchObject({ amountMicros: 0, usedSafetyOverdraft: false });
       expect(await reserveOk(input)).toEqual(hold); // 幂等
       expect(await wallet(user.token)).toMatchObject({
-        heldMicros: 10_000,
-        availableMicros: 990_000,
+        heldMicros: 0,
+        availableMicros: YUAN,
       });
 
-      // 实际少于冻结：退回多冻的部分
+      // 按实际用量扣
       const usageRecordId = uuid();
       const settleInput = {
         holdId: hold.holdId,
@@ -646,7 +647,8 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       const user = await newUser();
       await grant(user.userId, YUAN).expect(201);
       const hold = await reserveOk(reserveInput(user.userId));
-      expect(await port.release({ holdId: hold.holdId, reason: 'call_failed' })).toEqual({
+      // 解冻结果多了成本核算字段（costKnown 等），这里只核对吸收金额
+      expect(await port.release({ holdId: hold.holdId, reason: 'call_failed' })).toMatchObject({
         absorbedCostMicros: 0,
       });
       expect(await wallet(user.token)).toMatchObject({ balanceMicros: YUAN, heldMicros: 0 });
@@ -669,7 +671,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       expect(Number(platform?.balance_micros)).toBe(before - 1400);
       const absorbed = (await q.platformLedger()).filter((e) => e.absorbed);
       expect(absorbed.at(-1)).toMatchObject({ type: 'charge', amount_micros: '-1400' });
-      // 已解冻的不能再结算
+      // 已解冻（且解冻时已关联用量记录）的不能再用另一条用量结算；迟到的同一条用量可补结（3.x 迟到结算）
       await expect(
         port.settle({
           holdId: hold2.holdId,
@@ -677,7 +679,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
           actual: SMALL,
           startedAt: clock.now().toISOString(),
         }),
-      ).rejects.toThrow(/已解冻/);
+      ).rejects.toThrow(/旧解冻已关联其它用量/);
     });
 
     it('冻结过期：定时清理释放额度、归还平台预算；过期后才来的结算照常扣一次', async () => {
@@ -702,21 +704,42 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
   // ---------- 并发（Q-007） ----------
 
   describe('并发', () => {
-    it('同一用户 20 个请求同时冻结：只有余额够的 5 个成功，余额不会被扣成负数', async () => {
+    // 3.27（H1 先用后扣）：不再按余额冻结；改由「同一用户同时进行的付费调用上限」（默认 3）防止一起扣成大额负数。
+    it('同一用户 20 个请求同时开始：不冻结余额，同时在途的付费调用最多 3 个，其余 concurrency_limited', async () => {
       const user = await newUser();
       await grant(user.userId, 50_000).expect(201);
+      // 后台用途满了直接拒绝、不排队等待（前台会最多等 10 秒）
       const results = await Promise.all(
-        Array.from({ length: 20 }, () => port.estimateAndReserve(reserveInput(user.userId))),
+        Array.from({ length: 20 }, () =>
+          port.estimateAndReserve(reserveInput(user.userId, { purpose: 'memory' })),
+        ),
       );
-      expect(results.filter((r) => r.ok)).toHaveLength(5);
+      const ok = results.filter((r) => r.ok);
+      expect(ok).toHaveLength(3);
       expect(
-        results.filter((r) => !r.ok).every((r) => !r.ok && r.error === 'insufficient_balance'),
+        results.filter((r) => !r.ok).every((r) => !r.ok && r.error === 'concurrency_limited'),
       ).toBe(true);
-      const w = await wallet(user.token);
-      expect(w).toMatchObject({ balanceMicros: 50_000, heldMicros: 50_000, availableMicros: 0 });
+      expect(await wallet(user.token)).toMatchObject({
+        balanceMicros: 50_000,
+        heldMicros: 0,
+        availableMicros: 50_000,
+      });
+      for (const r of ok)
+        if (r.ok)
+          await port.settle({
+            holdId: r.value.holdId,
+            usageRecordId: uuid(),
+            actual: SMALL,
+            startedAt: clock.now().toISOString(),
+          });
+      expect((await wallet(user.token)).balanceMicros).toBe(20_000);
+      // 结算后空位释放，可以继续调用
+      const next = await reserveOk(reserveInput(user.userId));
+      await port.release({ holdId: next.holdId, reason: 'cancelled' });
     });
 
-    it('平台每日上限：多个用户同时冻结，预留 + 已结算永远不超过上限', async () => {
+    // ADR-0032 v3.3：平台每日上限只约束平台账户（管理员侧任务）；用户付费调用不占平台预算。
+    it('平台每日上限：平台账户同时冻结，预留 + 已结算永远不超过上限；用户调用不占平台预算', async () => {
       // 拨到新的一天（北京时间），预先把这一天的上限设小：每次冻结预留成本 5,000，上限 32,000 → 最多 6 个
       await setClock('2026-10-06T12:00:00.000Z');
       await withClient((c) =>
@@ -725,13 +748,14 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
            VALUES ('2026-10-06', 32000, 0, 0)`,
         ),
       );
-      const users = await Promise.all(Array.from({ length: 10 }, () => newUser()));
-      for (const u of users) await grant(u.userId, YUAN).expect(201);
       const results = await Promise.all(
-        users.flatMap((u) => [
-          port.estimateAndReserve(reserveInput(u.userId)),
-          port.estimateAndReserve(reserveInput(u.userId)),
-        ]),
+        Array.from({ length: 20 }, () =>
+          port.estimateAndReserve({
+            ...reserveInput('unused'),
+            account: { kind: 'platform' },
+            purpose: 'admin_eval',
+          }),
+        ),
       );
       const ok = results.filter((r) => r.ok);
       expect(ok).toHaveLength(6);
@@ -740,9 +764,12 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       ).toBe(true);
       const budget = await q.platformBudget('2026-10-06');
       expect(Number(budget?.reserved_cost_micros)).toBe(30_000);
-      // 被拒的用户钱包没有被冻结
-      const held = await Promise.all(users.map(async (u) => (await wallet(u.token)).heldMicros));
-      expect(held.reduce((a, b) => a + b, 0)).toBe(60_000);
+      // 用户的付费调用照常可用，也不改平台预留
+      const user = await newUser();
+      await grant(user.userId, YUAN).expect(201);
+      const userHold = await reserveOk(reserveInput(user.userId));
+      expect(Number((await q.platformBudget('2026-10-06'))?.reserved_cost_micros)).toBe(30_000);
+      await port.release({ holdId: userHold.holdId, reason: 'cancelled' });
       // 结算后预留转为已结算；解冻归还预留
       for (const r of ok.slice(0, 3)) {
         if (r.ok) {
@@ -775,25 +802,30 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
   // ---------- 余额事件（Q-008） ----------
 
   describe('余额事件', () => {
-    it('可用余额为正但不够一次冻结 → 被拒；加余额后发 balance_restored(topped_up_after_rejection)', async () => {
+    // 3.27（H1 先用后扣）：可用余额 > 0 就能调用，不再有「余额为正但不够一次冻结」；被拒只发生在余额 ≤ 0，
+    // 所以充值后的事件是 crossed_zero（topped_up_after_rejection 只在余额仍为正却被拒时出现，现已不会发生）。
+    it('可用余额 ≤ 0 → 被拒并标记 insufficient；加余额转正发 balance_restored(crossed_zero) 并清除标记', async () => {
       await setClock('2026-10-07T12:00:00.000Z');
+      const small = await newUser();
+      await grant(small.userId, 5000).expect(201); // 0.005 元，不够一次估价 0.01 元，也照样能调用
+      const allowed = await reserveOk(reserveInput(small.userId));
+      await port.release({ holdId: allowed.holdId, reason: 'cancelled' });
+
       const user = await newUser();
-      await grant(user.userId, 5000).expect(201); // 0.005 元，一次冻结要 0.01 元
       await dispatchAll();
       const restoredBefore = (await events('billing.balance_restored', user.userId)).length;
       const r = await port.estimateAndReserve(reserveInput(user.userId));
       expect(r).toMatchObject({ ok: false, error: 'insufficient_balance' });
       expect(await read.getSpendStatus(user.userId)).toMatchObject({
-        availableMicros: 5000,
-        depleted: false,
+        availableMicros: 0,
         insufficient: true,
       });
       await grant(user.userId, 100_000).expect(201);
       const restored = await events('billing.balance_restored', user.userId);
       expect(restored).toHaveLength(restoredBefore + 1);
       expect(restored.at(-1)).toMatchObject({
-        trigger: 'topped_up_after_rejection',
-        availableMicros: 105_000,
+        trigger: 'crossed_zero',
+        availableMicros: 100_000,
       });
       expect((await read.getSpendStatus(user.userId)).insufficient).toBe(false);
       // 解冻不发 balance_restored
@@ -838,53 +870,26 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
     });
   });
 
-  // ---------- 安全优先透支（billing.md 6.6 第 8 条） ----------
+  // ---------- 安全优先透支已取消（3.27 H1「先用后扣、可欠一次」取代） ----------
+  // 原「安全优先透支」4 条用例改为验证现行规则：safetyOverdraft 标志不再给任何用途透支资格；
+  // 余额为正时可以把余额扣成负数（欠一次），之后一切付费调用被拒，充值转正后恢复。
 
-  describe('安全优先透支', () => {
-    /** 估算 100,000 输出 token：冻结 0.8 元。 */
+  describe('先用后扣（取代安全优先透支）', () => {
+    /** 估算 100,000 输出 token：售价 0.8 元。 */
     const BIG = { outputTokens: 100_000 };
 
-    it('余额 0 时带透支的 chat_reply 冻结成功、流水为负且带标记、写审计；不带时被拒', async () => {
+    it('余额 0 时带 safetyOverdraft 的聊天 / 安全用途同样被拒，不写流水', async () => {
       const user = await newUser();
-      const plain = await port.estimateAndReserve(reserveInput(user.userId, { estimate: BIG }));
-      expect(plain).toMatchObject({ ok: false, error: 'insufficient_balance' });
-      const hold = await reserveOk(
-        reserveInput(user.userId, { estimate: BIG, safetyOverdraft: true }),
-      );
-      expect(hold).toMatchObject({ amountMicros: 800_000, usedSafetyOverdraft: true });
-      await port.settle({
-        holdId: hold.holdId,
-        usageRecordId: uuid(),
-        actual: BIG,
-        startedAt: clock.now().toISOString(),
-      });
-      const ledger = await q.ledgerOf(user.userId);
-      expect(ledger.at(-1)).toMatchObject({
-        type: 'charge',
-        amount_micros: '-800000',
-        balance_after_micros: '-800000',
-        safety_overdraft: true,
-      });
-      const admin = (
-        await http()
-          .get(`/api/v1/admin/billing/accounts/${user.userId}/ledger`, adminToken)
-          .expect(200)
-      ).body.items.map((e: unknown) => AdminLedgerEntry.parse(e));
-      expect(admin[0]).toMatchObject({ safetyOverdraft: true, category: 'chat' });
-      const audit = await withClient(
-        async (c) =>
-          (
-            await c.query(
-              `SELECT details FROM platform.audit_log WHERE action = 'safety_overdraft.used' AND target_id = $1`,
-              [user.userId],
-            )
-          ).rows,
-      );
-      expect(audit).toHaveLength(1);
-      expect(audit[0]?.details).toMatchObject({ holdId: hold.holdId, amountMicros: 800_000 });
+      for (const purpose of ['chat_reply', 'safety_check', 'safety_followup'] as const) {
+        const r = await port.estimateAndReserve(
+          reserveInput(user.userId, { purpose, estimate: BIG, safetyOverdraft: true }),
+        );
+        expect(r).toMatchObject({ ok: false, error: 'insufficient_balance' });
+      }
+      expect(await q.ledgerOf(user.userId)).toHaveLength(0);
     });
 
-    it('后台用途（proactive、memory）带透支：billing 按普通冻结处理 → 余额不足被拒（网关负责返回 bad_request）', async () => {
+    it('后台用途与平台账户带 safetyOverdraft：同样按普通规则处理，平台冻结不标透支', async () => {
       const user = await newUser();
       for (const purpose of ['proactive', 'memory'] as const) {
         const r = await port.estimateAndReserve(
@@ -892,59 +897,41 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         );
         expect(r).toMatchObject({ ok: false, error: 'insufficient_balance' });
       }
-      // 平台账户也不能透支（平台账户本来就不查余额，但不会被标记为透支）
       const p = await reserveOk({
+        ...reserveInput('unused'),
         account: { kind: 'platform' },
         purpose: 'admin_eval',
-        modelKey: MODEL,
-        estimate: SMALL,
-        idempotencyKey: key(),
         safetyOverdraft: true,
       });
       expect(p.usedSafetyOverdraft).toBe(false);
       await port.release({ holdId: p.holdId, reason: 'cancelled' });
     });
 
-    it('透支到上限后再次被拒；加余额先抵扣，可用余额转正时发 balance_restored', async () => {
+    it('余额为正可欠一次：按实际用量扣成负数后再调用被拒；充值先抵扣，转正时发 balance_restored', async () => {
       const user = await newUser();
-      const a = await reserveOk(
-        reserveInput(user.userId, { estimate: BIG, safetyOverdraft: true }),
-      );
-      const b = await reserveOk(
-        reserveInput(user.userId, {
-          purpose: 'safety_followup',
-          estimate: BIG,
-          safetyOverdraft: true,
-        }),
-      );
-      // 第三次：0 − 2.4 元 < −2 元
+      await grant(user.userId, 10_000).expect(201);
+      const a = await reserveOk(reserveInput(user.userId, { estimate: BIG }));
+      await port.settle({
+        holdId: a.holdId,
+        usageRecordId: uuid(),
+        actual: BIG,
+        startedAt: clock.now().toISOString(),
+      });
+      expect((await wallet(user.token)).balanceMicros).toBe(-790_000);
       const c = await port.estimateAndReserve(
-        reserveInput(user.userId, {
-          purpose: 'safety_check',
-          estimate: BIG,
-          safetyOverdraft: true,
-        }),
+        reserveInput(user.userId, { purpose: 'safety_check', estimate: BIG }),
       );
       expect(c).toMatchObject({ ok: false, error: 'insufficient_balance' });
-      for (const h of [a, b]) {
-        await port.settle({
-          holdId: h.holdId,
-          usageRecordId: uuid(),
-          actual: BIG,
-          startedAt: clock.now().toISOString(),
-        });
-      }
-      expect((await wallet(user.token)).balanceMicros).toBe(-1_600_000);
       await grant(user.userId, 3 * YUAN).expect(201);
-      expect((await wallet(user.token)).balanceMicros).toBe(1_400_000);
+      expect((await wallet(user.token)).balanceMicros).toBe(2_210_000);
       const restored = await events('billing.balance_restored', user.userId);
       expect(restored.at(-1)).toMatchObject({
         trigger: 'crossed_zero',
-        availableMicros: 1_400_000,
+        availableMicros: 2_210_000,
       });
     });
 
-    it('平台每日上限已满时，透支冻结同样被拒（budget_exceeded）', async () => {
+    it('平台每日上限已满时：平台账户冻结被拒（budget_exceeded），用户付费调用不受影响', async () => {
       await setClock('2026-10-08T12:00:00.000Z');
       await withClient((c) =>
         c.query(
@@ -952,12 +939,17 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
            VALUES ('2026-10-08', 1000, 1000, 0)`,
         ),
       );
+      const platform = await port.estimateAndReserve({
+        ...reserveInput('unused'),
+        account: { kind: 'platform' },
+        purpose: 'admin_eval',
+      });
+      expect(platform).toMatchObject({ ok: false, error: 'budget_exceeded' });
       const user = await newUser();
-      const r = await port.estimateAndReserve(
-        reserveInput(user.userId, { estimate: BIG, safetyOverdraft: true }),
-      );
-      expect(r).toMatchObject({ ok: false, error: 'budget_exceeded' });
+      await grant(user.userId, YUAN).expect(201);
+      const hold = await reserveOk(reserveInput(user.userId, { estimate: BIG }));
       expect((await wallet(user.token)).heldMicros).toBe(0);
+      await port.release({ holdId: hold.holdId, reason: 'cancelled' });
       await setClock('2026-10-09T12:00:00.000Z');
     });
   });
@@ -985,11 +977,16 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         reserveInput(user.userId, { purpose: 'behavior_planning', countAsBackground: true }),
       ),
     ).toMatchObject({ ok: false, error: 'budget_exceeded' });
-    await reserveOk(reserveInput(user.userId, { purpose: 'behavior_planning' }));
-    await reserveOk(reserveInput(user.userId, { purpose: 'chat_reply' }));
-    await reserveOk(
-      reserveInput(user.userId, { purpose: 'safety_followup', countAsBackground: true }),
-    );
+    // 3.27：同一用户同时在途的付费调用最多 3 个，不计后台额度的调用逐个做完（解冻）再发下一个
+    for (const extra of [
+      { purpose: 'behavior_planning' },
+      { purpose: 'chat_reply' },
+      { purpose: 'safety_followup', countAsBackground: true },
+    ] as const) {
+      const h = await reserveOk(reserveInput(user.userId, extra));
+      await port.release({ holdId: h.holdId, reason: 'cancelled' });
+    }
+    // 进行中的后台调用（memory，先用后扣按预估 10,000 计）占用今天的后台额度
     expect((await wallet(user.token)).backgroundBudget.spentTodayMicros).toBe(10_000);
     expect((await read.getSpendStatus(user.userId)).backgroundRemainingTodayMicros).toBe(5_000);
     await http()
@@ -1118,17 +1115,18 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         .expect(200)
     ).body;
     expect(summary.totalMicros).toBe(30_000);
+    // 积分制（1 元 = 100 积分）：汇总行多了 points 字段，10,000 微元 = 1 积分
     expect(summary.rows).toEqual([
-      { key: 'background', amountMicros: 10_000, calls: 1 },
-      { key: 'chat', amountMicros: 10_000, calls: 1 },
-      { key: 'planning', amountMicros: 10_000, calls: 1 },
+      { key: 'background', amountMicros: 10_000, points: 1, calls: 1 },
+      { key: 'chat', amountMicros: 10_000, points: 1, calls: 1 },
+      { key: 'planning', amountMicros: 10_000, points: 1, calls: 1 },
     ]);
     const byDay = (
       await http()
         .get(`/api/v1/billing/usage-summary?from=${today}&to=${today}&groupBy=day`, user.token)
         .expect(200)
     ).body;
-    expect(byDay.rows).toEqual([{ key: today, amountMicros: 30_000, calls: 3 }]);
+    expect(byDay.rows).toEqual([{ key: today, amountMicros: 30_000, points: 3, calls: 3 }]);
     await http().get('/api/v1/billing/ledger?cursor=garbage', user.token).expect(400);
   });
 

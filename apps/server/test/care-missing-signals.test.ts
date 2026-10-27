@@ -197,7 +197,9 @@ describeDb('关怀漏识别：真实HTTP/PG/事件/加密/回复链，网关受�
         const result = await scenario(input);
         expect(result.plan?.status).toBe('done');
         expect(result.characterText).toMatch(/12356|110|120/);
-        expect(result.calls.at(-1)?.safetyPriority).toBe(true);
+        // c4773a3：安全检查改走可信平台端口（平台付费），普通高危聊天不再带 safetyPriority 借透支；
+        // 网关全挂时由规则模板兜底发热线，这里只要求兜底送达、且没有调用偷偷带上透支标记。
+        expect(result.calls.every((call) => !call.safetyPriority)).toBe(true);
       });
     }
     it(`夸张作业对照在${error}下不借安全透支`, async () => {

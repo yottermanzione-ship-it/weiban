@@ -181,7 +181,12 @@ export class ChatReadService implements ChatReadPort {
             query.afterSeq === undefined ? undefined : gt(messages.seq, query.afterSeq),
             query.beforeSeq === undefined ? undefined : lt(messages.seq, query.beforeSeq),
             excludeLabels.length
-              ? sql`NOT coalesce(${messages.labels} && ${excludeLabels}::text[], false)`
+              ? // drizzle 会把 JS 数组展开成 ($1, $2) 元组，直接 ::text[] 会报「cannot cast type record to text[]」；
+                // 逐个绑定参数再拼成 ARRAY[...]。
+                sql`NOT coalesce(${messages.labels} && ARRAY[${sql.join(
+                  excludeLabels.map((label) => sql`${label}`),
+                  sql`, `,
+                )}]::text[], false)`
               : undefined,
             excludeIds.length ? notInArray(messages.id, excludeIds) : undefined,
             types?.length
