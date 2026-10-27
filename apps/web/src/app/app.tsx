@@ -85,7 +85,6 @@ import {
 } from '../features/moments.js';
 import { NewFriendsPage, useNewFriendsDot } from '../features/new-friends.js';
 import { RelationsPage } from '../features/relations.js';
-import { ServiceWorkerRefresh } from './update-prompt.js';
 import { CallLinkPage, CallProvider } from '../features/call.js';
 import { MyStickersPage } from '../features/stickers.js';
 import { VoicePickerPage } from '../features/voices.js';
@@ -524,7 +523,6 @@ export function App() {
   const bootDone = useCallback(() => setBooting(false), []);
   return (
     <AuthProvider>
-      <ServiceWorkerRefresh />
       <ChatProvider>
         <Shell />
         {booting && <BootSplash onDone={bootDone} />}

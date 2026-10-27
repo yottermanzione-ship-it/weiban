@@ -78,10 +78,19 @@ export function finishBoot(immediate = false): void {
     document.documentElement.removeAttribute('data-boot');
     document.body.removeAttribute('bgcolor');
     refreshThemeColor();
-    if (!root) return;
-    // 淡出意味着启动完成：立即退出无障碍状态区，不能在延迟移除时与 toast 状态重复。
-    root.setAttribute('aria-hidden', 'true');
-    root.classList.add('boot-out');
-    window.setTimeout(() => root.remove(), FADE_MS);
+    if (root) dismiss(root);
   }, wait);
+}
+
+/**
+ * 淡出并移除启动层。淡出一开始（此时已不挡点击）就不再是「状态」区域：读屏不再播报，
+ * 也不和页面里的提示（同为 role=status，如「头像已保存」）混在一起；淡出结束一定移除。
+ */
+function dismiss(root: HTMLElement) {
+  root.removeAttribute('role');
+  root.removeAttribute('aria-label');
+  root.setAttribute('aria-hidden', 'true');
+  root.inert = true;
+  root.classList.add('boot-out');
+  window.setTimeout(() => root.remove(), FADE_MS);
 }

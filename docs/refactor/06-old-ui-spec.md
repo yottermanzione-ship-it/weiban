@@ -1082,7 +1082,7 @@
 | 音色选择（`voices.tsx`、`character-voice-select.tsx`） | 资料页「音色切换」弹层 | 小改 | 单选列表 |
 | 我添加的表情（`stickers.tsx`） | 表情面板管理 | 小改 | MenuRow 列表 + 长按菜单 |
 | 分享图编辑（`share.tsx`） | 无 | 保留 | 只换顶栏、按钮 |
-| 关于 / 公告 / 更新说明（`release.tsx`）、更新提示（`app/update-prompt.tsx`） | `about_legal_pages.dart`、`app_update_service.dart` | 小改 | 设置页式列表；更新提示用确认框 |
+| 关于 / 公告 / 更新说明（`release.tsx`）、更新接管（`app/sw-update.ts`，U8 起在渲染前完成，原 `update-prompt.tsx` 已删除） | `about_legal_pages.dart`、`app_update_service.dart` | 小改 | 设置页式列表；更新提示用确认框 |
 | 轻提示（`toast.tsx`） | `app_toast.dart` | 重做 | 3.11 |
 | 「你不在时」（`while-away.tsx`）、角色试聊（`character-trial.tsx`）、主屏引导（`home-screen-guide.tsx`） | 无 | 小改 | 5.4 |
 | 敬请期待 `ComingSoonPage`（`shell-kit.tsx`） | 旧版轻提示「XX敬请期待」 | 小改 | 改为轻提示，不跳页 |
