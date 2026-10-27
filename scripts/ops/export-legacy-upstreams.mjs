@@ -86,6 +86,7 @@ function small(value, max = 200) {
   if (
     typeof value !== 'string' ||
     value.length > max ||
+    // eslint-disable-next-line no-control-regex -- 有意拒绝控制字符
     /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)
   )
     fail('METADATA_INVALID');

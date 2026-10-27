@@ -1,3 +1,4 @@
+/* eslint-disable weiban/module-boundaries -- 单元测试直接构造其他模块内部服务（既有技术债，见 status 技术债） */
 /**
  * 3.29 两个缺口的最小用例：
  * 1) 共享检索结算前重核：caller 传 eligibleUserIds 回调，settle 只收仍合格的人；

@@ -456,6 +456,7 @@ export class CharacterLegacyAdminService {
       .limit(HISTORY_LIMIT);
     const changedBy = new Map<number, string[]>();
     const audit = await this.database.query<{ details: Record<string, unknown> | null }>(
+      // eslint-disable-next-line weiban/own-schema-only -- 只读审计日志取修改人（既有技术债，应改走 platform 审计端口）
       `SELECT details
          FROM platform.audit_log
         WHERE module = 'characters'
