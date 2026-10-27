@@ -220,7 +220,10 @@ export function truncationKind(
  * DeepSeek 与认不出的中转没有预算参数：不发任何字段（不再关思考），只靠网关放大总输出上限。
  * Anthropic 原生协议在 anthropic-adapter.ts 用 thinking.budget_tokens。
  */
-export function thinkingOnFields(control: ThinkingControl, budget: number): Record<string, unknown> {
+export function thinkingOnFields(
+  control: ThinkingControl,
+  budget: number,
+): Record<string, unknown> {
   const tokens = Math.max(1, Math.round(budget));
   switch (control) {
     case 'qwen':
