@@ -65,7 +65,11 @@ export function useCharacterNames(ids: string[]) {
       active = false;
     };
   }, [signature, userId, sessionId, ownerKey]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- signature 已涵盖 ids 的内容
-  const seeded = useMemo(() => memoryNames(JSON.parse(signature) as string[]), [signature, ownerKey]);
+  const seeded = useMemo(
+    () => memoryNames(JSON.parse(signature) as string[]),
+    // signature 已涵盖 ids 的内容；ownerKey 换账号时重新从内存取。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [signature, ownerKey],
+  );
   return state.ownerKey === ownerKey ? { ...seeded, ...state.names } : seeded;
 }

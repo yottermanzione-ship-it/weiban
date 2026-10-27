@@ -187,7 +187,7 @@ function usePostList(
       busy.current = false;
       setLoading(false);
     }
-  }, [cursor, fetchPage]);
+  }, [cursor, fetchPage, scoped]);
   useEffect(() => {
     if (cursor === undefined && items.length === 0 && !error) void load();
   }, [cursor, items.length, error, load]);

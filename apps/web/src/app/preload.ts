@@ -217,7 +217,12 @@ async function preloadStickerStore(step: (fraction: number) => void): Promise<vo
     saveStoreSnapshot(items);
   }
   const covers = items.filter((item) => item.coverUrl).slice(0, STICKER_COVERS);
-  await pool(covers, PARALLEL, (item) => preloadCover(item.packId, item.updatedAt, item.coverUrl), step);
+  await pool(
+    covers,
+    PARALLEL,
+    (item) => preloadCover(item.packId, item.updatedAt, item.coverUrl),
+    step,
+  );
 }
 
 /**
@@ -322,9 +327,7 @@ export async function preloadForBoot({
     return job;
   };
   track('fonts', 1, false, loadFonts);
-  track('icons', 1, false, (step) =>
-    pool(ICONS, 8, (name) => decodeImage(iconUrl(name)), step),
-  );
+  track('icons', 1, false, (step) => pool(ICONS, 8, (name) => decodeImage(iconUrl(name)), step));
   if (owner) {
     const chat = track('chat', 3, true, () => chatReady);
     const cache = track('cache', 2, true, async (step) => {

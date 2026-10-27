@@ -112,7 +112,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (active) {
           setOnline(value);
           // 自动恢复的提示在连上后消失；需要重新打开的提示保留。
-          if (value) setRawError((previous) => (previous.fatal ? previous : { text: '', fatal: false, closed: false }));
+          if (value)
+            setRawError((previous) =>
+              previous.fatal ? previous : { text: '', fatal: false, closed: false },
+            );
         }
       },
       error: (value, kind) => {

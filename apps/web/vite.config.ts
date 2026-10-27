@@ -86,7 +86,8 @@ export default defineConfig({
       transformIndexHtml: {
         order: 'post',
         handler(html) {
-          const main = /[ \t]*<link rel="stylesheet"[^>]*href="\/assets\/index-[^"]+\.css"[^>]*>\r?\n?/;
+          const main =
+            /[ \t]*<link rel="stylesheet"[^>]*href="\/assets\/index-[^"]+\.css"[^>]*>\r?\n?/;
           const link = html.match(main)?.[0];
           let out = link ? html.replace(link, '') : html;
           if (link)
@@ -134,11 +135,7 @@ export default defineConfig({
         // 旧版素材的字体子集（4.8MB）与提示音不进预缓存，按需加载（HTTP 长缓存）。
         // U8：启动页 logo、图标、标签栏图进预缓存：离线也能打开启动页，切页时图标不再现取。
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        globIgnores: [
-          'assets/old-ui/fonts/**',
-          'assets/old-ui/audio/**',
-          'assets/old-ui/brand/**',
-        ],
+        globIgnores: ['assets/old-ui/fonts/**', 'assets/old-ui/audio/**', 'assets/old-ui/brand/**'],
         additionalManifestEntries: precacheOldUi.map((url) => ({
           url: `/${url}`,
           revision: createHash('sha256')
