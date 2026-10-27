@@ -91,7 +91,8 @@ async function main() {
   };
   fs.writeFileSync(REPORT, JSON.stringify(report, null, 2));
   process.stdout.write(
-    JSON.stringify({ ...report, perOwner: perOwner.length, firstOwners: perOwner.slice(0, 5) }) + '\n',
+    JSON.stringify({ ...report, perOwner: perOwner.length, firstOwners: perOwner.slice(0, 5) }) +
+      '\n',
   );
 }
 

@@ -68,7 +68,11 @@ export function ForwardedRecordBubble({
         <small>聊天记录 · {content.items.length} 条</small>
       </button>
       {open && (
-        <PushLayer title={content.title} onClose={() => setOpen(false)} className="forward-record-page">
+        <PushLayer
+          title={content.title}
+          onClose={() => setOpen(false)}
+          className="forward-record-page"
+        >
           <div className="wx-forward-record">
             {content.items.map((i, n) => (
               <article key={n}>

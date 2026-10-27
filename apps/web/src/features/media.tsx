@@ -1,11 +1,5 @@
 import { memo, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import {
-  ImageBroken,
-  LinkSimple,
-  MusicNotes,
-  VideoCamera,
-  OldIcon,
-} from './old-icons.js';
+import { ImageBroken, LinkSimple, MusicNotes, VideoCamera, OldIcon } from './old-icons.js';
 import { Lightbox } from './lightbox.js';
 import { Dialog } from './toast.js';
 import {

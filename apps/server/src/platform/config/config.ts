@@ -150,7 +150,6 @@ export const EnvSchema = z.object({
   CHANNEL_WEIBO_ALLOWED_USER_IDS: userIdList,
 });
 
-
 /** 开发 / 测试环境没配置平台每日上限时的取值：20 元。生产环境必须显式配置。 */
 export const DEV_PLATFORM_DAILY_CAP_MICROS = 20_000_000;
 

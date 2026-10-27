@@ -10,42 +10,460 @@ import { loadKekRing } from '../../apps/server/src/platform/crypto/kek-ring.ts';
 import { EnvelopeCrypto } from '../../apps/server/src/platform/crypto/envelope.ts';
 import { SystemClock } from '../../apps/server/src/platform/clock/clock.ts';
 import { AuditLog } from '../../apps/server/src/platform/audit/audit-log.ts';
-import { MemoryPayload, healthPrivate } from '../../apps/server/src/modules/ai-runtime/domain/memory.ts';
-import { embed, toVectorLiteral } from '../../apps/server/src/modules/ai-runtime/domain/vector-embed.ts';
+import {
+  MemoryPayload,
+  healthPrivate,
+} from '../../apps/server/src/modules/ai-runtime/domain/memory.ts';
+import {
+  embed,
+  toVectorLiteral,
+} from '../../apps/server/src/modules/ai-runtime/domain/vector-embed.ts';
 import { createMediaVoiceImportService } from '../../apps/server/src/modules/media/application/voice-import.ts';
 import { legacyId, legacyTime, legacyNameIndex, splitLegacyText } from './legacy-content-rules.mjs';
 const args = new Map();
-for (let i=2;i<process.argv.length;i++){const key=process.argv[i];if(!['--input','--report','--operator-id'].includes(key)||!process.argv[i+1])throw new Error('ARGUMENT_INVALID');args.set(key,process.argv[++i]);}
-for(const key of ['--input','--report','--operator-id'])if(!args.has(key))throw new Error('REQUIRED_ARGUMENT_MISSING');
-const config=loadConfig(),clock=new SystemClock(),ring=loadKekRing(config),db=new Database({url:config.database.url,poolMax:1}),crypto=new EnvelopeCrypto(db,clock,ring),audit=new AuditLog(db,clock),OP=args.get('--operator-id');
-const stats={memories:0,pastMemories:0,summaries:0,customizations:0,relationships:0,voicePreferences:0,mimoVoicesCreated:0,memberships:0,encodingRecovered:0,healthEntriesArchivedOnly:0,unmappedArchivedOnly:0};const issues=[];
-async function dataset(){const data=new Map();const lines=readline.createInterface({input:fs.createReadStream(args.get('--input')).pipe(createGunzip()),crlfDelay:Infinity});for await(const line of lines){if(!line)continue;const {table,row}=JSON.parse(line);if(!data.has(table))data.set(table,[]);data.get(table).push(row);}return data;}
-function restore(row,field){if(row._legacy_invalid_utf8?.[field]){const result=new TextDecoder('gb18030',{fatal:true}).decode(Buffer.from(row._legacy_invalid_utf8[field],'base64'));stats.encodingRecovered++;return result.replaceAll('\u0000','');}return String(row[field]??'').replaceAll('\u0000','');}
-async function main(){
- if(!(await db.query("SELECT 1 FROM identity.users WHERE id=$1 AND role='admin' AND status='active'",[OP])).rows.length)throw new Error('ACTIVE_ADMIN_REQUIRED');
- const data=await dataset(),capturedAt=data.get('_snapshot')[0].capturedAt;
- const users=new Set((await db.query("SELECT id FROM identity.users WHERE status='active'")).rows.map(r=>r.id));
- const chars=(await db.query('SELECT id,name,kind,owner_id,legacy_card FROM characters.characters')).rows,byId=new Map(chars.map(c=>[c.id,c])),globalName=legacyNameIndex(chars.filter(c=>c.kind==='preset'));
- const personal=new Map(chars.filter(c=>c.owner_id).map(c=>[c.owner_id+'\0'+c.name,c.id]));
- const convos=new Map((await db.query("SELECT id,owner_user_id,character_id,last_seq FROM chat.conversations WHERE type='direct'")).rows.map(c=>[c.owner_user_id+'\0'+c.character_id,c]));
- function identity(row){const key=String(row.user_key??''),split=key.indexOf('::'),owner=String(row.owner_user_id||(split>=0?key.slice(0,split):key)).trim().toLowerCase(),name=split>=0?key.slice(split+2):row.persona_name;if(!users.has(owner))return null;let cid=row.subject_character_id;if(!byId.has(cid))cid=globalName(name)??personal.get(owner+'\0'+name);const c=byId.get(cid);if(!c||c.owner_id&&c.owner_id!==owner)return null;return {owner,cid};}
- function named(owner,name){if(!users.has(owner))return null;const cid=globalName(name)??personal.get(owner+'\0'+name);return cid?{owner,cid}:null;}
- async function conversation(owner,cid){const key=owner+'\0'+cid;if(convos.has(key))return convos.get(key);const id=legacyId('direct-conversation',owner,cid),system=legacyId('system-participant',id);
- await db.transaction(async tx=>{await tx.query("INSERT INTO chat.conversations(id,owner_user_id,type,character_id,system_participant_id,content_scope,last_seq,archived_at,created_at,updated_at) VALUES($1,$2,'direct',$3,$4,'normal',0,$5,$5,$5) ON CONFLICT DO NOTHING",[id,owner,cid,system,capturedAt]);for(const [kind,ref]of [['user',owner],['character',cid]])await tx.query('INSERT INTO chat.participants(id,conversation_id,kind,ref_id,joined_at,read_seq) VALUES($1,$2,$3,$4,$5,0) ON CONFLICT DO NOTHING',[legacyId('participant',id,kind,ref),id,kind,ref,capturedAt]);await tx.query('INSERT INTO chat.user_conversation_states(conversation_id,user_id,pinned,muted,hidden,read_seq,cleared_through_seq,marked_unread) VALUES($1,$2,false,false,true,0,0,false) ON CONFLICT DO NOTHING',[id,owner]);});const c={id,owner_user_id:owner,character_id:cid,last_seq:0};convos.set(key,c);return c;}
- const categories={'偏好':'preference','底线':'preference','关系进展':'people','称呼':'basic','稳定事实':'basic','事实':'basic','瞬间':'episode','约定':'commitment','职业':'status','现状':'status','学业':'status','纠正':'basic'};
- const grouped=new Map();
- for(const row of data.get('user_memories')??[]){const who=identity(row);if(!who){stats.unmappedArchivedOnly++;issues.push({table:'user_memories',id:row.id,reason:'owner_or_character_unavailable'});continue;}const text=restore(row,'content').trim();if(!text)continue;if(healthPrivate(text)){stats.healthEntriesArchivedOnly++;continue;}const context=await conversation(who.owner,who.cid);const category=categories[row.mem_type]??'basic';for(const [part,content]of splitLegacyText(text,1000).entries()){const id=legacyId('memory',String(row.id),part),enabled=Boolean(row.enabled),cross=row.visibility==='cross';const payload=MemoryPayload.parse({category,content,status:enabled?'current':'past',importance:Math.max(1,Math.min(10,Math.round((Number(row.confidence)||0.5)*10))),dueAt:null,visibility:cross?'default':'only_this_character',sharingClass:cross&&row.mem_type==='称呼'?'basic':'never',sourceMessageIds:[],createdBy:/manual|用户|手动/i.test(String(row.source))?'user_manual':'extracted'});if(!grouped.has(who.owner))grouped.set(who.owner,[]);grouped.get(who.owner).push({id,who,context,payload,row,enabled});}}
- for(const [owner,rows]of grouped){for(let start=0;start<rows.length;start+=100){const batch=rows.slice(start,start+100);await db.transaction(async tx=>{const sealed=await crypto.sealMany(owner,batch.map(m=>({aad:`ai:memory:${m.id}`,plaintext:JSON.stringify(m.payload)})),tx);for(const [i,m]of batch.entries()){const at=legacyTime(m.row.created_at,capturedAt);const r=await tx.query("INSERT INTO ai_runtime.memories(id,user_id,character_id,conversation_id,client_id,origin,scope,ciphertext,embedding,created_at,updated_at) VALUES($1,$2,$3,$4,$1,'private_chat','normal',$5,$6::vector,$7,$7) ON CONFLICT DO NOTHING",[m.id,owner,m.who.cid,m.context.id,sealed[i],toVectorLiteral(embed(m.payload.content)),at]);stats.memories+=r.rowCount;if(!m.enabled)stats.pastMemories+=r.rowCount;}});}}
- const seqs=new Map((await db.query('SELECT id,seq FROM chat.messages')).rows.map(r=>[r.id,Number(r.seq)]));
- const oldCoverage=new Map();for(const m of data.get('chat_history')??[]){const who=named(m.user_id,m.persona_name);if(!who)continue;const seq=seqs.get(legacyId('message','chat_history',String(m.id),0));if(!seq)continue;const key=who.owner+'\0'+who.cid;if(!oldCoverage.has(key))oldCoverage.set(key,[]);oldCoverage.get(key).push({id:Number(m.id),seq});}
- for(const row of data.get('conversation_summaries')??[]){const who=identity(row);if(!who){stats.unmappedArchivedOnly++;issues.push({table:'conversation_summaries',id:row.id,reason:'owner_or_character_unavailable'});continue;}let text;try{text=restore(row,'summary_text');}catch{issues.push({table:'conversation_summaries',id:row.id,reason:'encoding_unrecoverable_archived'});continue;}text=text.split('\n').filter(t=>!healthPrivate(t)).join('\n').trim();if(!text)continue;if(text.length>4000)throw new Error('LEGACY_SUMMARY_TOO_LONG');const c=await conversation(who.owner,who.cid),id=legacyId('memory-state',who.owner,who.cid,c.id),coverage=oldCoverage.get(who.owner+'\0'+who.cid)??[];const cursor=coverage.reduce((n,m)=>m.id<=Number(row.covered_until_id)?Math.max(n,m.seq):n,0);const sealed=await crypto.seal(who.owner,`ai:summary:${id}`,JSON.stringify({normal:text,adult:''}));const r=await db.query('INSERT INTO ai_runtime.memory_states(id,user_id,character_id,conversation_id,revision,pending_count,barrier_seq,cursor_seq,window_start_seq,summary_ciphertext,updated_at) VALUES($1,$2,$3,$4,0,0,0,$5,0,$6,$7) ON CONFLICT DO NOTHING',[id,who.owner,who.cid,c.id,cursor,sealed,legacyTime(row.updated_at,capturedAt)]);stats.summaries+=r.rowCount;}
- for(const row of data.get('persona_customizations')??[]){if(row.state!=='customized')continue;const who=named(row.user_id,row.persona_name);if(!who){stats.unmappedArchivedOnly++;continue;}let patch;try{patch=JSON.parse(row.patch_json);}catch{issues.push({table:'persona_customizations',id:legacyId('customization',row.user_id,row.persona_name),reason:'invalid_patch_archived'});continue;}const text=String(patch.raw_persona??'').replaceAll('\u0000','').trim();if(!text)continue;if(text.length>5000)throw new Error('LEGACY_SUPPLEMENT_TOO_LONG');const sealed=await crypto.seal(who.owner,`characters:supplement:${who.owner}:${who.cid}`,text);const r=await db.query("INSERT INTO characters.user_supplements(user_id,character_id,text_ciphertext,conflicts,updated_at) VALUES($1,$2,$3,'[]'::jsonb,$4) ON CONFLICT DO NOTHING",[who.owner,who.cid,sealed,legacyTime(row.updated_at,capturedAt)]);stats.customizations+=r.rowCount;}
- const stages=['粉丝','朋友','亲密好友','暧昧','恋人','伴侣'],oldThresholds=[100,220,400,620,820,1100];const setting=(await db.query("SELECT value FROM growth.settings WHERE key='familiarity_stages'")).rows[0]?.value;const thresholds=setting?.thresholds??[0,100,400,500,600,700];
- for(const row of data.get('relationship_states')??[]){const who=named(row.user_id,row.persona_name);if(!who){stats.unmappedArchivedOnly++;continue;}const index=Math.max(0,stages.indexOf(row.stage)),level=index+1;const ratio=index===5?0:Math.max(0,Math.min(0.999999,(Number(row.score)-oldThresholds[index])/(oldThresholds[index+1]-oldThresholds[index])));const points=Math.floor(thresholds[index]+(index===5?0:ratio*(thresholds[index+1]-thresholds[index])));const at=legacyTime(row.updated_at,capturedAt),day=/^\d{4}-\d\d-\d\d$/.test(String(row.day_key))?row.day_key:capturedAt.slice(0,10);const r=await db.query('INSERT INTO growth.familiarity(id,user_id,character_id,total_points,level,daily_points,daily_points_date,romance_paused,preferred_title,updated_at) VALUES($1,$2,$3,$4,$5,0,$6,$7,$8,$9) ON CONFLICT DO NOTHING',[legacyId('familiarity',who.owner,who.cid),who.owner,who.cid,points,level,day,Boolean(row.romance_paused),row.preferred_partner_title||null,at]);stats.relationships+=r.rowCount;}
- const voiceImport=createMediaVoiceImportService(db,clock);const defaults=new Map((await db.query('SELECT b.character_id,v.id,v.model_key,v.sample_media_id FROM characters.default_voices b JOIN media.voices v ON v.id=b.voice_id')).rows.map(r=>[r.character_id,r]));
- for(const row of data.get('user_character_voice_styles')??[]){const who=named(row.user_id,row.persona_name);if(!who)continue;const current=defaults.get(who.cid);if(!current)continue;let voiceId=current.id;if(row.style==='vivid'&&current.sample_media_id){const voice=await voiceImport.ensureVoice({modelKey:'xiaomi/mimo-v2.5-tts-voiceclone',providerVoiceKey:`mimo-reference:${current.sample_media_id}`,name:`${row.persona_name} - MiMo Clone`,tags:['legacy','clone'],enabled:true});if(voice.created)stats.mimoVoicesCreated++;voiceId=voice.id;await db.query('UPDATE media.voices SET sample_media_id=$2 WHERE id=$1 AND sample_media_id IS NULL',[voiceId,current.sample_media_id]);}const r=await db.query("INSERT INTO ai_runtime.companion_settings(id,user_id,character_id,instant_reply,split_bubbles,proactive_messages,proactive_calls,daily_life,voice_id,updated_at) VALUES($1,$2,$3,true,true,false,false,false,$4,$5) ON CONFLICT(user_id,character_id) DO UPDATE SET voice_id=EXCLUDED.voice_id WHERE ai_runtime.companion_settings.voice_id IS NULL",[legacyId('companion-settings',who.owner,who.cid),who.owner,who.cid,voiceId,legacyTime(row.updated_at,capturedAt)]);stats.voicePreferences+=r.rowCount;}
- // Original expiry only: no new payment order, bonus points, renewal or charge is fabricated.
- for(const row of data.get('app_users')??[]){if(!users.has(row.id)||!['plus','pro','pro_plus','vip'].includes(String(row.membership_level).toLowerCase())||!row.membership_expire_at)continue;const until=legacyTime(row.membership_expire_at,'1970-01-01T00:00:00Z');if(until==='1970-01-01T00:00:00.000Z')continue;const r=await db.query('INSERT INTO identity.memberships(user_id,pro_plus_until,granted_by,updated_at) VALUES($1,$2,$3,$4) ON CONFLICT(user_id) DO UPDATE SET pro_plus_until=EXCLUDED.pro_plus_until,granted_by=EXCLUDED.granted_by,updated_at=EXCLUDED.updated_at WHERE identity.memberships.pro_plus_until IS NULL OR identity.memberships.pro_plus_until<EXCLUDED.pro_plus_until',[row.id,until,OP,capturedAt]);stats.memberships+=r.rowCount;if(r.rowCount)await db.query('INSERT INTO identity.membership_changes(id,user_id,previous_until,new_until,operator_user_id,reason,created_at) VALUES($1,$2,NULL,$3,$4,$5,$6) ON CONFLICT DO NOTHING',[legacyId('membership-migration',row.id),row.id,until,OP,'legacy_import: original membership expiry preserved; no new payment or bonus',capturedAt]);}
- const result={ok:true,capturedAt,stats,issues};fs.writeFileSync(args.get('--report'),JSON.stringify(result,null,2),{mode:0o600});await audit.record({module:'importer',action:'legacy_content_extras.imported',actorType:'admin',actorId:OP,targetType:'legacy_content_snapshot',details:stats});process.stdout.write(JSON.stringify({...result,issues:issues.length})+'\n');
+for (let i = 2; i < process.argv.length; i++) {
+  const key = process.argv[i];
+  if (!['--input', '--report', '--operator-id'].includes(key) || !process.argv[i + 1])
+    throw new Error('ARGUMENT_INVALID');
+  args.set(key, process.argv[++i]);
 }
-main().catch(error=>{process.stdout.write(JSON.stringify({ok:false,code:error.code??(String(error.message).match(/^[A-Z0-9_]+$/)?error.message:'LEGACY_EXTRAS_IMPORT_FAILED')})+'\n');process.exitCode=1;}).finally(async()=>{await db.close();for(const key of ring?.keys.values()??[])key.fill(0);});
+for (const key of ['--input', '--report', '--operator-id'])
+  if (!args.has(key)) throw new Error('REQUIRED_ARGUMENT_MISSING');
+const config = loadConfig(),
+  clock = new SystemClock(),
+  ring = loadKekRing(config),
+  db = new Database({ url: config.database.url, poolMax: 1 }),
+  crypto = new EnvelopeCrypto(db, clock, ring),
+  audit = new AuditLog(db, clock),
+  OP = args.get('--operator-id');
+const stats = {
+  memories: 0,
+  pastMemories: 0,
+  summaries: 0,
+  customizations: 0,
+  relationships: 0,
+  voicePreferences: 0,
+  mimoVoicesCreated: 0,
+  memberships: 0,
+  encodingRecovered: 0,
+  healthEntriesArchivedOnly: 0,
+  unmappedArchivedOnly: 0,
+};
+const issues = [];
+async function dataset() {
+  const data = new Map();
+  const lines = readline.createInterface({
+    input: fs.createReadStream(args.get('--input')).pipe(createGunzip()),
+    crlfDelay: Infinity,
+  });
+  for await (const line of lines) {
+    if (!line) continue;
+    const { table, row } = JSON.parse(line);
+    if (!data.has(table)) data.set(table, []);
+    data.get(table).push(row);
+  }
+  return data;
+}
+function restore(row, field) {
+  if (row._legacy_invalid_utf8?.[field]) {
+    const result = new TextDecoder('gb18030', { fatal: true }).decode(
+      Buffer.from(row._legacy_invalid_utf8[field], 'base64'),
+    );
+    stats.encodingRecovered++;
+    return result.replaceAll('\u0000', '');
+  }
+  return String(row[field] ?? '').replaceAll('\u0000', '');
+}
+async function main() {
+  if (
+    !(
+      await db.query(
+        "SELECT 1 FROM identity.users WHERE id=$1 AND role='admin' AND status='active'",
+        [OP],
+      )
+    ).rows.length
+  )
+    throw new Error('ACTIVE_ADMIN_REQUIRED');
+  const data = await dataset(),
+    capturedAt = data.get('_snapshot')[0].capturedAt;
+  const users = new Set(
+    (await db.query("SELECT id FROM identity.users WHERE status='active'")).rows.map((r) => r.id),
+  );
+  const chars = (
+      await db.query('SELECT id,name,kind,owner_id,legacy_card FROM characters.characters')
+    ).rows,
+    byId = new Map(chars.map((c) => [c.id, c])),
+    globalName = legacyNameIndex(chars.filter((c) => c.kind === 'preset'));
+  const personal = new Map(
+    chars.filter((c) => c.owner_id).map((c) => [c.owner_id + '\0' + c.name, c.id]),
+  );
+  const convos = new Map(
+    (
+      await db.query(
+        "SELECT id,owner_user_id,character_id,last_seq FROM chat.conversations WHERE type='direct'",
+      )
+    ).rows.map((c) => [c.owner_user_id + '\0' + c.character_id, c]),
+  );
+  function identity(row) {
+    const key = String(row.user_key ?? ''),
+      split = key.indexOf('::'),
+      owner = String(row.owner_user_id || (split >= 0 ? key.slice(0, split) : key))
+        .trim()
+        .toLowerCase(),
+      name = split >= 0 ? key.slice(split + 2) : row.persona_name;
+    if (!users.has(owner)) return null;
+    let cid = row.subject_character_id;
+    if (!byId.has(cid)) cid = globalName(name) ?? personal.get(owner + '\0' + name);
+    const c = byId.get(cid);
+    if (!c || (c.owner_id && c.owner_id !== owner)) return null;
+    return { owner, cid };
+  }
+  function named(owner, name) {
+    if (!users.has(owner)) return null;
+    const cid = globalName(name) ?? personal.get(owner + '\0' + name);
+    return cid ? { owner, cid } : null;
+  }
+  async function conversation(owner, cid) {
+    const key = owner + '\0' + cid;
+    if (convos.has(key)) return convos.get(key);
+    const id = legacyId('direct-conversation', owner, cid),
+      system = legacyId('system-participant', id);
+    await db.transaction(async (tx) => {
+      await tx.query(
+        "INSERT INTO chat.conversations(id,owner_user_id,type,character_id,system_participant_id,content_scope,last_seq,archived_at,created_at,updated_at) VALUES($1,$2,'direct',$3,$4,'normal',0,$5,$5,$5) ON CONFLICT DO NOTHING",
+        [id, owner, cid, system, capturedAt],
+      );
+      for (const [kind, ref] of [
+        ['user', owner],
+        ['character', cid],
+      ])
+        await tx.query(
+          'INSERT INTO chat.participants(id,conversation_id,kind,ref_id,joined_at,read_seq) VALUES($1,$2,$3,$4,$5,0) ON CONFLICT DO NOTHING',
+          [legacyId('participant', id, kind, ref), id, kind, ref, capturedAt],
+        );
+      await tx.query(
+        'INSERT INTO chat.user_conversation_states(conversation_id,user_id,pinned,muted,hidden,read_seq,cleared_through_seq,marked_unread) VALUES($1,$2,false,false,true,0,0,false) ON CONFLICT DO NOTHING',
+        [id, owner],
+      );
+    });
+    const c = { id, owner_user_id: owner, character_id: cid, last_seq: 0 };
+    convos.set(key, c);
+    return c;
+  }
+  const categories = {
+    偏好: 'preference',
+    底线: 'preference',
+    关系进展: 'people',
+    称呼: 'basic',
+    稳定事实: 'basic',
+    事实: 'basic',
+    瞬间: 'episode',
+    约定: 'commitment',
+    职业: 'status',
+    现状: 'status',
+    学业: 'status',
+    纠正: 'basic',
+  };
+  const grouped = new Map();
+  for (const row of data.get('user_memories') ?? []) {
+    const who = identity(row);
+    if (!who) {
+      stats.unmappedArchivedOnly++;
+      issues.push({ table: 'user_memories', id: row.id, reason: 'owner_or_character_unavailable' });
+      continue;
+    }
+    const text = restore(row, 'content').trim();
+    if (!text) continue;
+    if (healthPrivate(text)) {
+      stats.healthEntriesArchivedOnly++;
+      continue;
+    }
+    const context = await conversation(who.owner, who.cid);
+    const category = categories[row.mem_type] ?? 'basic';
+    for (const [part, content] of splitLegacyText(text, 1000).entries()) {
+      const id = legacyId('memory', String(row.id), part),
+        enabled = Boolean(row.enabled),
+        cross = row.visibility === 'cross';
+      const payload = MemoryPayload.parse({
+        category,
+        content,
+        status: enabled ? 'current' : 'past',
+        importance: Math.max(1, Math.min(10, Math.round((Number(row.confidence) || 0.5) * 10))),
+        dueAt: null,
+        visibility: cross ? 'default' : 'only_this_character',
+        sharingClass: cross && row.mem_type === '称呼' ? 'basic' : 'never',
+        sourceMessageIds: [],
+        createdBy: /manual|用户|手动/i.test(String(row.source)) ? 'user_manual' : 'extracted',
+      });
+      if (!grouped.has(who.owner)) grouped.set(who.owner, []);
+      grouped.get(who.owner).push({ id, who, context, payload, row, enabled });
+    }
+  }
+  for (const [owner, rows] of grouped) {
+    for (let start = 0; start < rows.length; start += 100) {
+      const batch = rows.slice(start, start + 100);
+      await db.transaction(async (tx) => {
+        const sealed = await crypto.sealMany(
+          owner,
+          batch.map((m) => ({ aad: `ai:memory:${m.id}`, plaintext: JSON.stringify(m.payload) })),
+          tx,
+        );
+        for (const [i, m] of batch.entries()) {
+          const at = legacyTime(m.row.created_at, capturedAt);
+          const r = await tx.query(
+            "INSERT INTO ai_runtime.memories(id,user_id,character_id,conversation_id,client_id,origin,scope,ciphertext,embedding,created_at,updated_at) VALUES($1,$2,$3,$4,$1,'private_chat','normal',$5,$6::vector,$7,$7) ON CONFLICT DO NOTHING",
+            [
+              m.id,
+              owner,
+              m.who.cid,
+              m.context.id,
+              sealed[i],
+              toVectorLiteral(embed(m.payload.content)),
+              at,
+            ],
+          );
+          stats.memories += r.rowCount;
+          if (!m.enabled) stats.pastMemories += r.rowCount;
+        }
+      });
+    }
+  }
+  const seqs = new Map(
+    (await db.query('SELECT id,seq FROM chat.messages')).rows.map((r) => [r.id, Number(r.seq)]),
+  );
+  const oldCoverage = new Map();
+  for (const m of data.get('chat_history') ?? []) {
+    const who = named(m.user_id, m.persona_name);
+    if (!who) continue;
+    const seq = seqs.get(legacyId('message', 'chat_history', String(m.id), 0));
+    if (!seq) continue;
+    const key = who.owner + '\0' + who.cid;
+    if (!oldCoverage.has(key)) oldCoverage.set(key, []);
+    oldCoverage.get(key).push({ id: Number(m.id), seq });
+  }
+  for (const row of data.get('conversation_summaries') ?? []) {
+    const who = identity(row);
+    if (!who) {
+      stats.unmappedArchivedOnly++;
+      issues.push({
+        table: 'conversation_summaries',
+        id: row.id,
+        reason: 'owner_or_character_unavailable',
+      });
+      continue;
+    }
+    let text;
+    try {
+      text = restore(row, 'summary_text');
+    } catch {
+      issues.push({
+        table: 'conversation_summaries',
+        id: row.id,
+        reason: 'encoding_unrecoverable_archived',
+      });
+      continue;
+    }
+    text = text
+      .split('\n')
+      .filter((t) => !healthPrivate(t))
+      .join('\n')
+      .trim();
+    if (!text) continue;
+    if (text.length > 4000) throw new Error('LEGACY_SUMMARY_TOO_LONG');
+    const c = await conversation(who.owner, who.cid),
+      id = legacyId('memory-state', who.owner, who.cid, c.id),
+      coverage = oldCoverage.get(who.owner + '\0' + who.cid) ?? [];
+    const cursor = coverage.reduce(
+      (n, m) => (m.id <= Number(row.covered_until_id) ? Math.max(n, m.seq) : n),
+      0,
+    );
+    const sealed = await crypto.seal(
+      who.owner,
+      `ai:summary:${id}`,
+      JSON.stringify({ normal: text, adult: '' }),
+    );
+    const r = await db.query(
+      'INSERT INTO ai_runtime.memory_states(id,user_id,character_id,conversation_id,revision,pending_count,barrier_seq,cursor_seq,window_start_seq,summary_ciphertext,updated_at) VALUES($1,$2,$3,$4,0,0,0,$5,0,$6,$7) ON CONFLICT DO NOTHING',
+      [id, who.owner, who.cid, c.id, cursor, sealed, legacyTime(row.updated_at, capturedAt)],
+    );
+    stats.summaries += r.rowCount;
+  }
+  for (const row of data.get('persona_customizations') ?? []) {
+    if (row.state !== 'customized') continue;
+    const who = named(row.user_id, row.persona_name);
+    if (!who) {
+      stats.unmappedArchivedOnly++;
+      continue;
+    }
+    let patch;
+    try {
+      patch = JSON.parse(row.patch_json);
+    } catch {
+      issues.push({
+        table: 'persona_customizations',
+        id: legacyId('customization', row.user_id, row.persona_name),
+        reason: 'invalid_patch_archived',
+      });
+      continue;
+    }
+    const text = String(patch.raw_persona ?? '')
+      .replaceAll('\u0000', '')
+      .trim();
+    if (!text) continue;
+    if (text.length > 5000) throw new Error('LEGACY_SUPPLEMENT_TOO_LONG');
+    const sealed = await crypto.seal(
+      who.owner,
+      `characters:supplement:${who.owner}:${who.cid}`,
+      text,
+    );
+    const r = await db.query(
+      "INSERT INTO characters.user_supplements(user_id,character_id,text_ciphertext,conflicts,updated_at) VALUES($1,$2,$3,'[]'::jsonb,$4) ON CONFLICT DO NOTHING",
+      [who.owner, who.cid, sealed, legacyTime(row.updated_at, capturedAt)],
+    );
+    stats.customizations += r.rowCount;
+  }
+  const stages = ['粉丝', '朋友', '亲密好友', '暧昧', '恋人', '伴侣'],
+    oldThresholds = [100, 220, 400, 620, 820, 1100];
+  const setting = (
+    await db.query("SELECT value FROM growth.settings WHERE key='familiarity_stages'")
+  ).rows[0]?.value;
+  const thresholds = setting?.thresholds ?? [0, 100, 400, 500, 600, 700];
+  for (const row of data.get('relationship_states') ?? []) {
+    const who = named(row.user_id, row.persona_name);
+    if (!who) {
+      stats.unmappedArchivedOnly++;
+      continue;
+    }
+    const index = Math.max(0, stages.indexOf(row.stage)),
+      level = index + 1;
+    const ratio =
+      index === 5
+        ? 0
+        : Math.max(
+            0,
+            Math.min(
+              0.999999,
+              (Number(row.score) - oldThresholds[index]) /
+                (oldThresholds[index + 1] - oldThresholds[index]),
+            ),
+          );
+    const points = Math.floor(
+      thresholds[index] + (index === 5 ? 0 : ratio * (thresholds[index + 1] - thresholds[index])),
+    );
+    const at = legacyTime(row.updated_at, capturedAt),
+      day = /^\d{4}-\d\d-\d\d$/.test(String(row.day_key)) ? row.day_key : capturedAt.slice(0, 10);
+    const r = await db.query(
+      'INSERT INTO growth.familiarity(id,user_id,character_id,total_points,level,daily_points,daily_points_date,romance_paused,preferred_title,updated_at) VALUES($1,$2,$3,$4,$5,0,$6,$7,$8,$9) ON CONFLICT DO NOTHING',
+      [
+        legacyId('familiarity', who.owner, who.cid),
+        who.owner,
+        who.cid,
+        points,
+        level,
+        day,
+        Boolean(row.romance_paused),
+        row.preferred_partner_title || null,
+        at,
+      ],
+    );
+    stats.relationships += r.rowCount;
+  }
+  const voiceImport = createMediaVoiceImportService(db, clock);
+  const defaults = new Map(
+    (
+      await db.query(
+        'SELECT b.character_id,v.id,v.model_key,v.sample_media_id FROM characters.default_voices b JOIN media.voices v ON v.id=b.voice_id',
+      )
+    ).rows.map((r) => [r.character_id, r]),
+  );
+  for (const row of data.get('user_character_voice_styles') ?? []) {
+    const who = named(row.user_id, row.persona_name);
+    if (!who) continue;
+    const current = defaults.get(who.cid);
+    if (!current) continue;
+    let voiceId = current.id;
+    if (row.style === 'vivid' && current.sample_media_id) {
+      const voice = await voiceImport.ensureVoice({
+        modelKey: 'xiaomi/mimo-v2.5-tts-voiceclone',
+        providerVoiceKey: `mimo-reference:${current.sample_media_id}`,
+        name: `${row.persona_name} - MiMo Clone`,
+        tags: ['legacy', 'clone'],
+        enabled: true,
+      });
+      if (voice.created) stats.mimoVoicesCreated++;
+      voiceId = voice.id;
+      await db.query(
+        'UPDATE media.voices SET sample_media_id=$2 WHERE id=$1 AND sample_media_id IS NULL',
+        [voiceId, current.sample_media_id],
+      );
+    }
+    const r = await db.query(
+      'INSERT INTO ai_runtime.companion_settings(id,user_id,character_id,instant_reply,split_bubbles,proactive_messages,proactive_calls,daily_life,voice_id,updated_at) VALUES($1,$2,$3,true,true,false,false,false,$4,$5) ON CONFLICT(user_id,character_id) DO UPDATE SET voice_id=EXCLUDED.voice_id WHERE ai_runtime.companion_settings.voice_id IS NULL',
+      [
+        legacyId('companion-settings', who.owner, who.cid),
+        who.owner,
+        who.cid,
+        voiceId,
+        legacyTime(row.updated_at, capturedAt),
+      ],
+    );
+    stats.voicePreferences += r.rowCount;
+  }
+  // Original expiry only: no new payment order, bonus points, renewal or charge is fabricated.
+  for (const row of data.get('app_users') ?? []) {
+    if (
+      !users.has(row.id) ||
+      !['plus', 'pro', 'pro_plus', 'vip'].includes(String(row.membership_level).toLowerCase()) ||
+      !row.membership_expire_at
+    )
+      continue;
+    const until = legacyTime(row.membership_expire_at, '1970-01-01T00:00:00Z');
+    if (until === '1970-01-01T00:00:00.000Z') continue;
+    const r = await db.query(
+      'INSERT INTO identity.memberships(user_id,pro_plus_until,granted_by,updated_at) VALUES($1,$2,$3,$4) ON CONFLICT(user_id) DO UPDATE SET pro_plus_until=EXCLUDED.pro_plus_until,granted_by=EXCLUDED.granted_by,updated_at=EXCLUDED.updated_at WHERE identity.memberships.pro_plus_until IS NULL OR identity.memberships.pro_plus_until<EXCLUDED.pro_plus_until',
+      [row.id, until, OP, capturedAt],
+    );
+    stats.memberships += r.rowCount;
+    if (r.rowCount)
+      await db.query(
+        'INSERT INTO identity.membership_changes(id,user_id,previous_until,new_until,operator_user_id,reason,created_at) VALUES($1,$2,NULL,$3,$4,$5,$6) ON CONFLICT DO NOTHING',
+        [
+          legacyId('membership-migration', row.id),
+          row.id,
+          until,
+          OP,
+          'legacy_import: original membership expiry preserved; no new payment or bonus',
+          capturedAt,
+        ],
+      );
+  }
+  const result = { ok: true, capturedAt, stats, issues };
+  fs.writeFileSync(args.get('--report'), JSON.stringify(result, null, 2), { mode: 0o600 });
+  await audit.record({
+    module: 'importer',
+    action: 'legacy_content_extras.imported',
+    actorType: 'admin',
+    actorId: OP,
+    targetType: 'legacy_content_snapshot',
+    details: stats,
+  });
+  process.stdout.write(JSON.stringify({ ...result, issues: issues.length }) + '\n');
+}
+main()
+  .catch((error) => {
+    process.stdout.write(
+      JSON.stringify({
+        ok: false,
+        code:
+          error.code ??
+          (String(error.message).match(/^[A-Z0-9_]+$/)
+            ? error.message
+            : 'LEGACY_EXTRAS_IMPORT_FAILED'),
+      }) + '\n',
+    );
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await db.close();
+    for (const key of ring?.keys.values() ?? []) key.fill(0);
+  });

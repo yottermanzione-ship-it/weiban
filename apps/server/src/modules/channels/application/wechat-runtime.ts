@@ -156,7 +156,11 @@ export class WechatRuntime implements OnApplicationShutdown {
       if (cfg.integration !== 'live') return;
       // 每轮都复核白名单：运行中撤下白名单，下一轮就停（不等到进程重启）。
       if (!isChannelUserAllowed(this.config, 'wechat', binding.user_id)) {
-        await this.store.touchPollError(bindingId, '内测白名单已关闭，暂停接收微信消息', this.clock.now());
+        await this.store.touchPollError(
+          bindingId,
+          '内测白名单已关闭，暂停接收微信消息',
+          this.clock.now(),
+        );
         return;
       }
       // 会员到期就停轮询（页面仍可解绑）；恢复后下一轮 reconcile 会重新起循环。

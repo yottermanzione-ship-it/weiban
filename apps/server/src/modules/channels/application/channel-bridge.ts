@@ -67,7 +67,9 @@ export class ChannelBridge {
     if (binding.status !== 'active') return 'rejected';
     // 纵深防御：即使库里还留着绑定行，只要这个渠道对**这个用户**不是 live（开关关了、被撤下白名单、
     // 或微博本来就没开放），就既不进聊天也不计费。
-    if (channelRuntimeConfig(this.config, binding.channel, binding.user_id).integration !== 'live') {
+    if (
+      channelRuntimeConfig(this.config, binding.channel, binding.user_id).integration !== 'live'
+    ) {
       return 'rejected';
     }
     if (!input.externalId) return 'rejected';
