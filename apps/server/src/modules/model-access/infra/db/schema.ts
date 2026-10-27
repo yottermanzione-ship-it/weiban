@@ -247,6 +247,7 @@ export const scenarioSelections = modelAccessSchema.table(
 /**
  * 0145（批 V）：实时语音 / Omni 通话的角色音色（供应商复刻音色只在登记它的模型 / 账号上有效）。
  * 没有行 = 用该模型的默认系统音色（settings.realtime_call_voices）。
+ * source：legacy（旧站迁入）/ admin（管理员登记）/ clone（0146，V2 接通前按需复刻）。
  */
 export const realtimeVoiceBindings = modelAccessSchema.table(
   'realtime_voice_bindings',

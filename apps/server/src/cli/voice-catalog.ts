@@ -7,19 +7,21 @@
  *   node dist/voice-catalog.js --apply --operator-id <管理员 UUID> --realtime-upstream <UUID> \
  *     [--enable-realtime] [--enable-unverified] [--tts-flash-cost 1.4] [--realtime-voice Cherry] \
  *     [--omni-model <百炼型号> --omni-cost 文字入,音频入,文字出,音频出 [--omni-voice <音色>]]
+ *   node dist/voice-catalog.js --fix-omni [--apply --operator-id <管理员 UUID>]   # V2：只改 Omni 显示名 / 补默认音色
  *
- * 上游账号：TeleSpeech / MiMo ASR / 3.1 TTS Flash 不给就沿用 sensevoice / MiMo TTS / 百炼 TTS Plus 所在账号；
- * 实时 / Omni 必须用 --realtime-upstream 指定迁入的私有 workspace 账号（kind 必须是 dashscope）。
+ * 上游账号：TeleSpeech / MiMo ASR / 3.1 TTS Flash / 实时 / Omni 不给就沿用 sensevoice / MiMo TTS / 百炼 TTS Plus
+ * 所在账号；V2 起实时通话全部走公共百炼账号（--realtime-upstream 可显式指定，kind 必须是 dashscope）。
  * 价格与默认启用规则见 voice-catalog-options.ts 顶部。
  */
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import type { AdminModel, Upstream } from '@weiban/contracts';
+import { AdminModelWrite, type AdminModel, type Upstream } from '@weiban/contracts';
 import { AppModule } from '../app.module.js';
 import { isActiveMaintenanceAdmin } from '../modules/identity/index.js';
 import {
   CatalogService,
   ModelAdminService,
+  REALTIME_VOICE_CLONE_COST_YUAN,
   RealtimeVoiceStore,
   UpstreamService,
 } from '../modules/model-access/index.js';
@@ -29,6 +31,7 @@ import { createLogger, DATABASE, loadConfig, type Database } from '../platform/i
 import {
   completeWrite,
   parseVoiceCatalogCommand,
+  planOmniFix,
   planVoiceCatalog,
   type PlannedEntry,
   type VoiceCatalogCommand,
@@ -81,7 +84,7 @@ function resolveUpstream(
     return {
       problem: planned.upstream.reference
         ? `没有 --${planned.upstream.flag}-upstream，也找不到参考条目 ${planned.upstream.reference}`
-        : `需要 --${planned.upstream.flag}-upstream（迁入的私有 workspace 账号）`,
+        : `需要 --${planned.upstream.flag}-upstream（百炼账号 UUID）`,
     };
   const upstream = upstreams.find((u) => u.upstreamId === id);
   if (!upstream) return { problem: `上游账号 ${id} 不存在或已删除` };
@@ -93,6 +96,56 @@ function resolveUpstream(
   if (planned.item === 'qwen-tts-flash' && upstream.kind !== 'dashscope')
     return { problem: `千问 TTS 账号必须是百炼（dashscope），当前是 ${upstream.kind}` };
   return { upstreamId: id };
+}
+
+/**
+ * V2 --fix-omni：现有 Omni 实时条目改成带版本的显示名、补已核实的默认音色。只改显示名（rates = null 不改价格，
+ * 不传 serviceRates 不改服务单价，其余字段原样写回），经 ModelAdminService.upsert 写审计 catalog.updated；
+ * 默认音色经 RealtimeVoiceStore.setDefault 写审计 realtime_voice.default_set。默认只预演。
+ */
+async function fixOmni(
+  command: VoiceCatalogCommand,
+  app: Awaited<ReturnType<typeof NestFactory.createApplicationContext>>,
+  models: readonly AdminModel[],
+  defaults: Readonly<Record<string, string>>,
+) {
+  const fixes = planOmniFix(models, defaults);
+  if (command.kind !== 'apply') {
+    out({ ok: true, dryRun: true, fixes });
+    return;
+  }
+  const database = app.get<Database>(DATABASE, { strict: false });
+  if (!(await isActiveMaintenanceAdmin(database, command.operatorId!)))
+    throw new VoiceCatalogCliError(
+      'ACTIVE_ADMIN_REQUIRED',
+      '--operator-id 必须是启用状态的管理员用户 ID（写审计用）',
+    );
+  const admin = app.get(ModelAdminService, { strict: false });
+  const voices = app.get(RealtimeVoiceStore, { strict: false });
+  const done: unknown[] = [];
+  for (const fix of fixes) {
+    const current = models.find((m) => m.modelKey === fix.modelKey && !m.deletedAt);
+    if (!current) continue;
+    if (fix.rename) {
+      // 只改显示名：rates = null（不改 token 价），服务单价 / 路由 / 展示倍率 / 折扣都不传（= 不改）；
+      // AdminModelWrite 丢弃读出的 updatedAt、可用性等只读字段。
+      const body = AdminModelWrite.parse({
+        ...current,
+        displayName: fix.rename.to,
+        rates: null,
+        costRates: undefined,
+        serviceRates: undefined,
+        routes: undefined,
+        displayMultiplierManual: undefined,
+        discount: undefined,
+      });
+      await admin.upsert(command.operatorId!, fix.modelKey, body);
+    }
+    if (fix.defaultVoice)
+      await voices.setDefault(command.operatorId!, fix.modelKey, fix.defaultVoice);
+    done.push(fix);
+  }
+  out({ ok: true, fixed: done });
 }
 
 async function run(
@@ -126,7 +179,29 @@ async function run(
         })),
       ),
       skipped,
+      // V2：目录里全部实时 / Omni 条目的音色情况（clone 条数 × 0.01 元 ≈ 平台已承担的复刻费）。
+      realtime: await Promise.all(
+        models
+          .filter((m) => !m.deletedAt && m.tags.includes('pipeline:rt'))
+          .map(async (m) => {
+            const bySource = await voices.countBySource(m.modelKey);
+            return {
+              modelKey: m.modelKey,
+              displayName: m.displayName,
+              enabled: m.enabled,
+              defaultVoice: defaults[m.modelKey] ?? null,
+              characterVoices: bySource,
+              clonePlatformCostYuan:
+                Math.round((bySource.clone ?? 0) * REALTIME_VOICE_CLONE_COST_YUAN * 100) / 100,
+            };
+          }),
+      ),
     });
+    return;
+  }
+
+  if (command.fixOmni) {
+    await fixOmni(command, app, models, defaults);
     return;
   }
 

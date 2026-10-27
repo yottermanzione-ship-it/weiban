@@ -13,6 +13,12 @@ import type { RealtimeUsage } from '../infra/dashscope-realtime.js';
 export const REALTIME_CALL_TAG = 'pipeline:rt';
 /** model_access.settings：{ [modelKey]: 默认系统音色代号 }（没有角色专属音色时使用）。 */
 export const REALTIME_CALL_VOICES_SETTING_KEY = 'realtime_call_voices';
+/**
+ * V2：按需复刻一个实时音色的成本（元）。Omni 官方 0.01 元 / 个、失败不计费；Realtime Plus（voice-enrollment）官方页
+ * 没写复刻价，按同价保守记。现阶段由平台承担并写审计（计价单位待契约变更，见
+ * docs/architecture/2026-10-28-voice-clone-billing-contract-change.md），批准后改为按成本 × 1.3 向用户结算。
+ */
+export const REALTIME_VOICE_CLONE_COST_YUAN = 0.01;
 
 export interface RealtimeCatalogEntry {
   tags: readonly string[];

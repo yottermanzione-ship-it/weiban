@@ -1,47 +1,55 @@
 #!/usr/bin/env node
 /**
- * 批 V：从旧服务器只读导出「私有 workspace 8d1b5e3b」实时语音账号与它下面的实时复刻音色绑定。
+ * V2（2026-10-28）：从旧服务器只读导出「公共百炼账号」下 Omni 3.5 Plus 实时端点的复刻音色绑定。
  * 由总负责人在本机执行（需要旧服 SSH 私钥）；脚本本身不含任何凭据。默认只打印将执行的步骤，加 --run 才连接旧服。
  *
- * 三步（都只读旧库；旧服不落任何文件）：
- *   1. discover：列出 8d1b5e3b 开头的旧端点（id / 场景 / 厂商 / 型号 / 启用 / 基址；不读 api_key）。
- *   2. bindings：导出该账号下实时型号的 character_voice_bindings（角色 / 端点 / 型号 / 音色代号 / 状态；音色代号不是凭据）。
- *   3. account：沿用 ADR-20261023 通道，用新服 prepare 产生的接收方公开证书在旧服内存里加密导出账号，本机只拿到密文。
+ * 背景（10-28 生产实查）：旧库 402 条实时绑定分属三个账号——私有 workspace 供应商 cb9de005（端点 eb3630dd…，213 条）、
+ * 私有 workspace 供应商 8d1b5e3b「156语音」（端点 6b29cca6…，15 条）、公共百炼供应商 8eed4824（端点 0975357a…，
+ * qwen3.5-omni-plus-realtime，174 条）。复刻音色只在创建它的账号可用，新站公共百炼上游就是 8eed4824 这个账号，
+ * 所以只迁后者；两个私有 workspace 一律拒绝。批 V 里「8d1b5e3b 是端点前缀」的前提是错的（它是供应商 ID），已删除。
+ * 也不再导出任何账号：新站已有同一个公共百炼账号，旧版私有 workspace 不迁。
+ *
+ * 两步（都只读旧库、不读 api_key；旧服不落任何文件）：
+ *   1. discover：列出旧库全部实时端点（端点 ID / 型号 / 启用 / 供应商 ID 与名称 / 基址 / 绑定条数），标出可迁的那条（allowed）。
+ *   2. bindings：只导出 --endpoint-id 指定的那一个端点下的 Omni 3.5 Plus 绑定；查询本身还要求端点属于公共供应商，
+ *      拿回的每一行再逐条核对端点、供应商、型号，有一行不对就不写文件。
  *
  *   node scripts/ops/export-realtime-workspace.mjs discover --ssh-key <私钥路径> --out-dir <本机空目录> [--run]
- *   node scripts/ops/export-realtime-workspace.mjs bindings --ssh-key <私钥路径> --out-dir <本机空目录> [--run]
- *   node scripts/ops/export-realtime-workspace.mjs account --ssh-key <私钥路径> --out-dir <本机空目录> \
- *     --endpoint-id <discover 得到的完整 ID> --receiver-cert <receiver.crt> --receiver-sha256 <64 位十六进制> [--run]
+ *   node scripts/ops/export-realtime-workspace.mjs bindings --ssh-key <私钥路径> --out-dir <本机空目录> \
+ *     --endpoint-id <discover 里 allowed = true 的完整端点 ID> [--run]
  *
- * 安全边界：只接受 8d1b5e3b 开头的端点；156 开头的私有 workspace 一律拒绝。输出文件只新建不覆盖；
- * 旧服的 stderr 只保留白名单字段（与 2026-10-24 语音账号导出相同），其余诊断一律抑制，避免误打印秘密。
+ * 输出文件只新建不覆盖；音色代号不是凭据。
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-export const ALLOWED_PREFIX = '8d1b5e3b';
-export const FORBIDDEN_PREFIX = '156';
+/** 公共百炼供应商（与新站上游 2fed2a60 同一账号）。 */
+export const PUBLIC_PROVIDER_PREFIX = '8eed4824';
+export const OMNI_MODEL = 'qwen3.5-omni-plus-realtime';
+/** 私有 workspace 的供应商 / 端点 ID 前缀，以及最早约定不迁的 156 前缀。 */
+export const FORBIDDEN_PREFIXES = ['cb9de005', '8d1b5e3b', 'eb3630dd', '6b29cca6', '156'];
 const DEFAULT_HOST = 'ubuntu@152.136.111.51';
 const OLD_DB = '/opt/weiban-server/weiban.db';
-const RECEIPT_KEYS = [
-  'ok',
-  'code',
-  'dryRun',
-  'databaseReadOnly',
-  'accounts',
-  'endpoints',
-  'envCredentials',
-  'ciphertextBytes',
-  'ciphertextSha256',
-];
+/** 端点 ID 只允许这些字符（会写进只读 SQL，不能有引号）。 */
+const ENDPOINT_ID = /^[A-Za-z0-9_.:-]{8,128}$/;
+
+export function forbidden(id) {
+  const value = String(id ?? '')
+    .trim()
+    .toLowerCase();
+  return FORBIDDEN_PREFIXES.some((prefix) => value.startsWith(prefix));
+}
 
 export function parseArgs(argv) {
   const [step, ...rest] = argv;
-  if (!['discover', 'bindings', 'account'].includes(step))
-    throw new Error('第一个参数必须是 discover / bindings / account');
+  if (step === 'account')
+    throw new Error(
+      'V2 起不再导出账号：实时通话全部走新站已有的公共百炼账号，旧版私有 workspace 不迁',
+    );
+  if (!['discover', 'bindings'].includes(step))
+    throw new Error('第一个参数必须是 discover / bindings');
   const options = { step, run: false, host: DEFAULT_HOST };
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
@@ -54,9 +62,6 @@ export function parseArgs(argv) {
       '--out-dir': 'outDir',
       '--host': 'host',
       '--endpoint-id': 'endpointId',
-      '--receiver-cert': 'receiverCert',
-      '--receiver-sha256': 'receiverSha256',
-      '--exporter': 'exporter',
     }[arg];
     if (!name || rest[i + 1] === undefined || rest[i + 1].startsWith('--'))
       throw new Error(`无法识别的参数：${arg}`);
@@ -64,29 +69,62 @@ export function parseArgs(argv) {
   }
   if (!options.sshKey || !options.outDir) throw new Error('需要 --ssh-key 与 --out-dir');
   if (!/^[A-Za-z0-9_.-]+@[A-Za-z0-9.-]+$/.test(options.host)) throw new Error('--host 格式不对');
-  if (step === 'account') {
-    const id = String(options.endpointId ?? '').toLowerCase();
-    if (!/^[A-Za-z0-9_.:-]{8,128}$/.test(id)) throw new Error('需要 --endpoint-id（完整端点 ID）');
-    if (id.startsWith(FORBIDDEN_PREFIX)) throw new Error('156 开头的私有 workspace 不迁移');
-    if (!id.startsWith(ALLOWED_PREFIX)) throw new Error(`只迁 ${ALLOWED_PREFIX} 开头的端点`);
-    if (!options.receiverCert || !/^[0-9a-f]{64}$/.test(options.receiverSha256 ?? ''))
-      throw new Error('需要 --receiver-cert 与 64 位小写十六进制 --receiver-sha256');
+  if (step === 'bindings') {
+    const id = String(options.endpointId ?? '').trim();
+    if (!ENDPOINT_ID.test(id))
+      throw new Error('需要 --endpoint-id（discover 输出里的完整端点 ID）');
+    if (forbidden(id)) throw new Error('私有 workspace（cb9de005 / 8d1b5e3b / 156）的端点不迁移');
+    options.endpointId = id;
   }
   return options;
 }
 
-/** 只读查询（经 stdin 交给 sqlite3，不拼进远端 shell 命令）。前缀是常量，不接受外部输入。 */
+/** 只读：全部实时端点及其供应商（不读 api_key）。经 stdin 交给 sqlite3，不拼进远端 shell 命令。 */
 export function discoverSql() {
-  return `SELECT e.id, e.scene, CASE WHEN e.provider_id<>'' THEN p.vendor ELSE e.vendor END AS vendor,
-  e.model, e.enabled, e.provider_id,
-  CASE WHEN e.provider_id<>'' THEN p.base_url ELSE e.base_url END AS base_url
+  return `SELECT e.id, e.scene, e.model, e.enabled, e.provider_id,
+  CASE WHEN e.provider_id<>'' THEN p.name ELSE '' END AS provider_name,
+  CASE WHEN e.provider_id<>'' THEN p.vendor ELSE e.vendor END AS vendor,
+  CASE WHEN e.provider_id<>'' THEN p.base_url ELSE e.base_url END AS base_url,
+  (SELECT count(*) FROM character_voice_bindings b WHERE b.endpoint_id = e.id) AS bindings
   FROM ai_endpoints e LEFT JOIN ai_providers p ON p.id = e.provider_id
-  WHERE e.id LIKE '${ALLOWED_PREFIX}%' ORDER BY e.scene, e.id;`;
+  WHERE e.model LIKE '%realtime%' ORDER BY e.model, e.id;`;
 }
 
-export function bindingsSql() {
-  return `SELECT character_id, endpoint_id, model, voice_id, status FROM character_voice_bindings
-  WHERE endpoint_id LIKE '${ALLOWED_PREFIX}%' AND model LIKE '%realtime%' ORDER BY character_id, model;`;
+/** 只读：指定端点的 Omni 3.5 Plus 绑定，查询本身要求端点型号相同且属于公共供应商。 */
+export function bindingsSql(endpointId) {
+  if (!ENDPOINT_ID.test(endpointId) || forbidden(endpointId)) throw new Error('端点 ID 不合法');
+  return `SELECT b.character_id, b.endpoint_id, e.provider_id, b.model, b.voice_id, b.status
+  FROM character_voice_bindings b JOIN ai_endpoints e ON e.id = b.endpoint_id
+  WHERE b.endpoint_id = '${endpointId}' AND b.model = '${OMNI_MODEL}' AND e.model = '${OMNI_MODEL}'
+  AND e.provider_id LIKE '${PUBLIC_PROVIDER_PREFIX}%' ORDER BY b.character_id;`;
+}
+
+/** discover 的每个端点能不能迁：只有公共供应商下的 Omni 3.5 Plus 实时端点可以。 */
+export function classifyEndpoint(row) {
+  const provider = String(row.provider_id ?? '').toLowerCase();
+  if (forbidden(row.id) || forbidden(provider))
+    return { allowed: false, reason: '私有 workspace，不迁' };
+  if (!provider.startsWith(PUBLIC_PROVIDER_PREFIX))
+    return { allowed: false, reason: '不是公共百炼供应商' };
+  if (row.model !== OMNI_MODEL) return { allowed: false, reason: `型号不是 ${OMNI_MODEL}` };
+  return { allowed: true, reason: null };
+}
+
+/** 逐行核对 bindings 查询结果；有一行不属于指定端点 / 公共供应商 / Omni 3.5 Plus 就整体拒绝。 */
+export function checkBindingRows(rows, endpointId) {
+  if (!Array.isArray(rows)) return { ok: false, code: 'BINDINGS_INVALID' };
+  for (const row of rows) {
+    const provider = String(row?.provider_id ?? '').toLowerCase();
+    if (
+      row?.endpoint_id !== endpointId ||
+      row?.model !== OMNI_MODEL ||
+      forbidden(row?.endpoint_id) ||
+      forbidden(provider) ||
+      !provider.startsWith(PUBLIC_PROVIDER_PREFIX)
+    )
+      return { ok: false, code: 'BINDINGS_SCOPE_VIOLATION' };
+  }
+  return { ok: true, rows };
 }
 
 /** 基址只保留协议、主机与路径（去掉账号、查询串），防止误打印嵌在 URL 里的东西。 */
@@ -99,7 +137,7 @@ export function safeBaseUrl(value) {
   }
 }
 
-function ssh(options, remoteCommand, input, stdout = 'pipe') {
+function ssh(options, remoteCommand, input) {
   return spawnSync(
     'ssh',
     [
@@ -116,7 +154,7 @@ function ssh(options, remoteCommand, input, stdout = 'pipe') {
     ],
     {
       input,
-      stdio: ['pipe', stdout, 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 120_000,
       maxBuffer: 32 * 1024 * 1024,
       windowsHide: true,
@@ -139,17 +177,14 @@ function discover(options) {
   const rows = JSON.parse(result.stdout.toString('utf8') || '[]').map((row) => ({
     id: row.id,
     scene: row.scene,
-    vendor: row.vendor,
     model: row.model,
     enabled: row.enabled,
     providerId: row.provider_id || null,
+    providerName: row.provider_name || null,
+    vendor: row.vendor,
     baseUrl: safeBaseUrl(row.base_url),
-    // 新服 import-legacy-upstreams --prepare 的 scope.json 条目（与导出器的账号来源 ID 规则一致）。
-    scopeEntry: {
-      sourceId: row.provider_id ? `provider:${row.provider_id}` : `endpoint:${row.id}`,
-      vendor: row.vendor,
-      baseUrl: safeBaseUrl(row.base_url),
-    },
+    bindings: row.bindings,
+    ...classifyEndpoint(row),
   }));
   const file = newFile(options.outDir, 'realtime-endpoints.json');
   fs.writeFileSync(file, JSON.stringify(rows, null, 2), { flag: 'wx' });
@@ -157,97 +192,36 @@ function discover(options) {
 }
 
 function bindings(options) {
-  if (!options.run) return { plan: `ssh ${options.host} '${SQLITE}' <<< "${bindingsSql()}"` };
-  const result = ssh(options, SQLITE, bindingsSql());
+  const sql = bindingsSql(options.endpointId);
+  if (!options.run) return { plan: `ssh ${options.host} '${SQLITE}' <<< "${sql}"` };
+  const result = ssh(options, SQLITE, sql);
   if (result.status !== 0) return { ok: false, code: 'BINDINGS_FAILED' };
-  const rows = JSON.parse(result.stdout.toString('utf8') || '[]');
-  const file = newFile(options.outDir, 'realtime-bindings.json');
-  fs.writeFileSync(file, JSON.stringify({ version: 1, bindings: rows }), { flag: 'wx' });
-  const byModel = {};
-  for (const row of rows)
-    byModel[`${row.model}|${row.status}`] = (byModel[`${row.model}|${row.status}`] ?? 0) + 1;
-  return { ok: true, rows: rows.length, byModelAndStatus: byModel, file };
-}
-
-function account(options) {
-  const certificate = fs.readFileSync(options.receiverCert);
-  if (certificate.includes(Buffer.from('PRIVATE KEY'))) throw new Error('只能给公开证书');
-  const fingerprint = createHash('sha256').update(certificate).digest('hex');
-  if (fingerprint !== options.receiverSha256)
-    throw new Error('证书指纹与 --receiver-sha256 不一致');
-  const exporter =
-    options.exporter ??
-    path.join(path.dirname(fileURLToPath(import.meta.url)), 'export-legacy-upstreams.mjs');
-  const source = fs.readFileSync(exporter);
-  const plan = {
-    endpointId: options.endpointId,
-    recipientSha256: fingerprint,
-    exporterSha256: createHash('sha256').update(source).digest('hex'),
-    output: path.join(options.outDir, 'realtime-account.cms'),
-  };
-  if (!options.run) return { plan };
-  // 与 2026-10-24 语音账号导出相同：证书放进旧服内存文件（memfd），导出器经 stdin 运行，旧服不落文件。
-  const python = `import os,base64,subprocess,sys
-fd=os.memfd_create('weiban-public-recipient',0)
-try:
- os.write(fd,base64.b64decode('${certificate.toString('base64')}'))
- cert='/proc/'+str(os.getpid())+'/fd/'+str(fd)
- args=['node','--input-type=module','-','--db','${OLD_DB}','--sqlite-module','/opt/weiban-server/node_modules/better-sqlite3','--endpoint-ids','${options.endpointId}','--legacy-env-file','/opt/weiban-server/.env','--recipient-cert',cert,'--recipient-sha256','${fingerprint}','--output','-']
- r=subprocess.run(args,input=base64.b64decode('${source.toString('base64')}'),stdout=sys.stdout.buffer,stderr=sys.stderr.buffer,pass_fds=(fd,),cwd='/opt/weiban-server',check=False)
- sys.exit(r.returncode)
-finally:
- os.close(fd)
-`;
-  const packet = newFile(options.outDir, 'realtime-account.cms');
-  const fd = fs.openSync(packet, 'wx');
-  let result;
-  try {
-    result = ssh(options, "sudo -n sh -c 'ulimit -c 0; exec python3 -'", python, fd);
-  } finally {
-    fs.closeSync(fd);
-  }
-  const diagnostics = [];
-  for (const line of (result.stderr?.toString('utf8') ?? '').split(/\r?\n/).filter(Boolean)) {
-    try {
-      const value = JSON.parse(line);
-      if (Object.keys(value).some((key) => !RECEIPT_KEYS.includes(key))) throw new Error();
-      diagnostics.push(value);
-    } catch {
-      diagnostics.push({ ok: false, code: 'EXPORT_DIAGNOSTIC_SUPPRESSED' });
-    }
-  }
-  const bytes = fs.readFileSync(packet);
-  const receipt = {
-    ok: result.status === 0,
-    exitCode: result.status,
-    endpointId: options.endpointId,
-    encryptedPacketBytes: bytes.length,
-    ciphertextSha256: createHash('sha256').update(bytes).digest('hex'),
-    recipientSha256: fingerprint,
-    privateKeyDownloaded: false,
-    plaintextExported: false,
-    oldServerFilesWritten: false,
-    result: diagnostics,
-  };
-  fs.writeFileSync(
-    newFile(options.outDir, 'export-receipt.json'),
-    JSON.stringify(receipt, null, 2),
-    {
-      flag: 'wx',
-    },
+  const checked = checkBindingRows(
+    JSON.parse(result.stdout.toString('utf8') || '[]'),
+    options.endpointId,
   );
-  return receipt;
+  if (!checked.ok) return checked;
+  const file = newFile(options.outDir, 'realtime-bindings.json');
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      version: 2,
+      endpointId: options.endpointId,
+      providerPrefix: PUBLIC_PROVIDER_PREFIX,
+      model: OMNI_MODEL,
+      bindings: checked.rows,
+    }),
+    { flag: 'wx' },
+  );
+  const byStatus = {};
+  for (const row of checked.rows) byStatus[row.status] = (byStatus[row.status] ?? 0) + 1;
+  return { ok: true, rows: checked.rows.length, byStatus, file };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const options = parseArgs(process.argv.slice(2));
-    const output =
-      options.step === 'discover'
-        ? discover(options)
-        : options.step === 'bindings'
-          ? bindings(options)
-          : account(options);
+    const output = options.step === 'discover' ? discover(options) : bindings(options);
     console.log(JSON.stringify({ step: options.step, dryRun: !options.run, ...output }, null, 2));
     if (output.ok === false) process.exitCode = 1;
   } catch (error) {

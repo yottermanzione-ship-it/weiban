@@ -9,6 +9,10 @@
  * - 千问 Audio 3.0 Realtime Plus：官方分模态 token 成本 文字入 5 / 音频入 40 / 文字出 40 / 音频出 150 元/百万；
  *   缓存命中价未核实，按文字输入价计（不打折）。
  * - Omni 实时：价格未核实，必须由运维用 --omni-cost 明确给出四个成本价，否则不登记。
+ *
+ * V2（2026-10-28）：实时通话全部走新站已有的公共百炼账号（不迁旧版私有 workspace）。实时 / Omni 不给
+ * --realtime-upstream 时沿用千问 TTS 所在的百炼账号；Omni 显示名带版本（「千问 Omni 3.5 Plus 实时通话」）；
+ * --fix-omni 只改现有 Omni 条目的显示名并补已核实的默认音色，不动价格与启用状态。
  */
 import { AdminModelWrite, type RouteBillingBounds } from '@weiban/contracts';
 import type { z } from 'zod';
@@ -31,15 +35,45 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const VOICE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u;
 const MODEL_ID = /^[a-z0-9][a-z0-9._-]{0,79}$/u;
 
-/** 没有给出上游账号时，沿用这些已在生产启用的条目所在账号。实时 / Omni 必须显式给（私有 workspace 账号）。 */
+/**
+ * 没有给出上游账号时，沿用这些已在生产启用的条目所在账号。V2：实时 / Omni 也沿用千问 TTS 所在的公共百炼账号
+ * （生产 2fed2a60 Alibaba Bailian，旧站 174 条 Omni 复刻音色就在这个账号下）。
+ */
 export const UPSTREAM_REFERENCE: Partial<Record<VoiceCatalogItem, string>> = {
   telespeech: 'siliconflow/sensevoice-small',
   'mimo-asr': 'xiaomi/mimo-v2.5-tts',
   'qwen-tts-flash': 'qwen-audio-3.0-tts-plus',
+  'qwen-realtime': 'qwen-audio-3.0-tts-plus',
+  omni: 'qwen-audio-3.0-tts-plus',
 };
+
+/**
+ * 已按官方音色列表核实的 Omni 实时默认音色（没给 --omni-voice 时用）。
+ * https://help.aliyun.com/zh/model-studio/omni-voice-list ：Qwen3.5-Omni-Realtime 与 Qwen3.8-Omni 系列默认都是 Tina。
+ */
+export const OMNI_VERIFIED_DEFAULT_VOICES: Readonly<Record<string, string>> = {
+  'qwen3.5-omni-plus-realtime': 'Tina',
+  'qwen3.8-omni-flash-realtime': 'Tina',
+};
+
+/** Omni 实时显示名带版本与档位，例 qwen3.5-omni-plus-realtime → 「千问 Omni 3.5 Plus 实时通话」。 */
+export function omniDisplayName(model: string): string {
+  const m = /^qwen(\d+(?:\.\d+)?)-omni-([a-z]+)-realtime/u.exec(model.trim().toLowerCase());
+  if (!m) return `千问 Omni 实时通话（${model}）`.slice(0, 60);
+  const tier = m[2]!.charAt(0).toUpperCase() + m[2]!.slice(1);
+  return `千问 Omni ${m[1]} ${tier} 实时通话`;
+}
+
+/** 目录里的 Omni 实时条目键（qwen/<百炼型号>）→ 百炼型号；不是返回 null。 */
+export function omniModelOfKey(modelKey: string): string | null {
+  const m = /^qwen\/(qwen[\d.]+-omni-[a-z]+-realtime[a-z0-9._-]*)$/u.exec(modelKey);
+  return m ? m[1]! : null;
+}
 
 export interface VoiceCatalogCommand {
   kind: 'show' | 'plan' | 'apply';
+  /** V2：只修现有 Omni 条目的显示名与默认音色（不动价格、启用状态）。 */
+  fixOmni: boolean;
   operatorId: string | null;
   only: ReadonlySet<VoiceCatalogItem>;
   upstreams: Partial<Record<'siliconflow' | 'mimo' | 'dashscope' | 'realtime', string>>;
@@ -92,6 +126,7 @@ export function parseVoiceCatalogCommand(argv: readonly string[]): Parsed<VoiceC
     'omni-model',
     'omni-cost',
     'omni-voice',
+    'fix-omni',
   ]);
   for (const key of [...flags, ...values.keys()])
     if (!known.has(key)) return fail('BAD_ARGUMENT', `未知参数 --${key}`);
@@ -139,7 +174,7 @@ export function parseVoiceCatalogCommand(argv: readonly string[]): Parsed<VoiceC
         'OMNI_PRICE_REQUIRED',
         '--omni-cost 必须给 4 个已核实的成本价：文字入,音频入,文字出,音频出（元 / 百万 token）',
       );
-    const voice = values.get('omni-voice') ?? null;
+    const voice = values.get('omni-voice') ?? OMNI_VERIFIED_DEFAULT_VOICES[omniModel] ?? null;
     if (voice !== null && !VOICE.test(voice))
       return fail('BAD_ARGUMENT', '--omni-voice 不是合法音色代号');
     omni = { model: omniModel, cost: cost as [number, number, number, number], voice };
@@ -148,6 +183,7 @@ export function parseVoiceCatalogCommand(argv: readonly string[]): Parsed<VoiceC
     ok: true,
     command: {
       kind,
+      fixOmni: flags.has('fix-omni'),
       operatorId,
       only,
       upstreams,
@@ -319,10 +355,11 @@ export function planVoiceCatalog(command: VoiceCatalogCommand): {
         cost: [5, 40, 40, 150],
       }),
       enable: command.enableRealtime,
-      upstream: { flag: 'realtime', reference: null },
+      upstream: { flag: 'realtime', reference: UPSTREAM_REFERENCE['qwen-realtime']! },
       defaultVoice: command.realtimeVoice,
       notes: [
         '缓存命中价未核实，按文字输入价计',
+        '公共百炼账号能否调用 qwen-audio-3.0-realtime-plus 未核实，由真实冒烟确认',
         command.enableRealtime
           ? '已按 --enable-realtime 启用'
           : '登记为停用：真实冒烟通过后在后台启用（或重跑加 --enable-realtime）',
@@ -341,11 +378,11 @@ export function planVoiceCatalog(command: VoiceCatalogCommand): {
         write: realtimeWrite({
           modelKey: `qwen/${command.omni.model}`,
           upstreamModelId: command.omni.model,
-          displayName: '千问 Omni 实时通话',
+          displayName: omniDisplayName(command.omni.model),
           cost: command.omni.cost,
         }),
         enable: command.enableRealtime,
-        upstream: { flag: 'realtime', reference: null },
+        upstream: { flag: 'realtime', reference: UPSTREAM_REFERENCE.omni! },
         defaultVoice: command.omni.voice,
         notes: [
           '价格来自 --omni-cost（运维核实）',
@@ -354,6 +391,35 @@ export function planVoiceCatalog(command: VoiceCatalogCommand): {
       });
   }
   return { entries, skipped };
+}
+
+export interface OmniFix {
+  modelKey: string;
+  /** 要改的显示名（null = 已经带版本，不改）。 */
+  rename: { from: string; to: string } | null;
+  /** 要补的默认音色（null = 已有默认或没有已核实的值，不改）。 */
+  defaultVoice: string | null;
+}
+
+/**
+ * V2 --fix-omni：现有 Omni 实时条目（未删除）里，显示名不带版本的改成带版本；没有默认音色且有已核实值的补上。
+ * 价格、启用状态、上游账号都不动。
+ */
+export function planOmniFix(
+  models: ReadonlyArray<{ modelKey: string; displayName: string; deletedAt?: string | null }>,
+  defaults: Readonly<Record<string, string>>,
+): OmniFix[] {
+  const fixes: OmniFix[] = [];
+  for (const model of models) {
+    if (model.deletedAt) continue;
+    const omni = omniModelOfKey(model.modelKey);
+    if (!omni) continue;
+    const name = omniDisplayName(omni);
+    const voice = defaults[model.modelKey] ? null : (OMNI_VERIFIED_DEFAULT_VOICES[omni] ?? null);
+    const rename = model.displayName === name ? null : { from: model.displayName, to: name };
+    if (rename || voice) fixes.push({ modelKey: model.modelKey, rename, defaultVoice: voice });
+  }
+  return fixes;
 }
 
 /** 补全为可提交的 AdminModelWrite（保留现有条目的排序、名次；已启用的不关掉）。 */
@@ -379,25 +445,39 @@ export function completeWrite(
 
 // ---------- 旧站实时音色绑定迁入 ----------
 
+/**
+ * V2（2026-10-28 生产实查）：旧库 402 条实时绑定分属三个账号。只有公共百炼供应商 8eed4824 下的
+ * qwen3.5-omni-plus-realtime 端点（0975357a…，174 条）与新站公共百炼上游是同一账号，复刻音色可以直接用；
+ * 两个私有 workspace 供应商（cb9de005「DashScope Beijing Workspace」、8d1b5e3b「156语音」）及其端点
+ * （eb3630dd…、6b29cca6…）的音色在公共账号上无效，一律拒绝。
+ */
+export const LEGACY_PUBLIC_PROVIDER_PREFIX = '8eed4824';
+export const LEGACY_OMNI_MODEL = 'qwen3.5-omni-plus-realtime';
+export const LEGACY_OMNI_MODEL_KEY = `qwen/${LEGACY_OMNI_MODEL}`;
+/** 私有 workspace 的供应商 ID / 端点 ID 前缀，以及最早约定不迁的 156 前缀。 */
+export const FORBIDDEN_LEGACY_PREFIXES = ['cb9de005', '8d1b5e3b', 'eb3630dd', '6b29cca6', '156'];
+
+export function forbiddenLegacyId(id: string): boolean {
+  const value = id.trim().toLowerCase();
+  return FORBIDDEN_LEGACY_PREFIXES.some((prefix) => value.startsWith(prefix));
+}
+
 export interface LegacyRealtimeVoiceCommand {
   input: string;
   apply: boolean;
   operatorId: string | null;
-  /** 只迁这个旧账号（端点 ID 前缀，至少 8 位）下的绑定；复刻音色只在登记它的 workspace 有效。 */
-  endpointPrefix: string;
-  /** 旧型号 → 新目录模型键。 */
+  /** 只迁这一个旧端点（完整 ID，由 export-realtime-workspace.mjs discover 列出）下的绑定。 */
+  endpointId: string;
+  /** 旧型号 → 新目录模型键。默认只有 Omni 3.5 Plus。 */
   modelMap: ReadonlyMap<string, string>;
 }
-
-/** 不迁移的另一个私有 workspace（总负责人明确不用）。 */
-export const FORBIDDEN_ENDPOINT_PREFIX = '156';
 
 export function parseLegacyRealtimeVoiceCommand(
   argv: readonly string[],
 ): Parsed<LegacyRealtimeVoiceCommand> {
   const { flags, values, bad } = splitArgs(argv);
   if (bad) return fail('BAD_ARGUMENT', `无法识别的参数：${bad}`);
-  const known = new Set(['input', 'apply', 'operator-id', 'endpoint-prefix', 'map']);
+  const known = new Set(['input', 'apply', 'operator-id', 'endpoint-id', 'map']);
   for (const key of [...flags, ...values.keys()])
     if (!known.has(key)) return fail('BAD_ARGUMENT', `未知参数 --${key}`);
   const input = values.get('input');
@@ -407,14 +487,15 @@ export function parseLegacyRealtimeVoiceCommand(
   if (operatorId !== null && !UUID.test(operatorId))
     return fail('BAD_ARGUMENT', '--operator-id 必须是管理员用户 UUID');
   if (apply && !operatorId) return fail('OPERATOR_REQUIRED', '--apply 需要 --operator-id');
-  const endpointPrefix = (values.get('endpoint-prefix') ?? '').toLowerCase();
-  if (!/^[0-9a-z-]{8,64}$/u.test(endpointPrefix))
-    return fail('BAD_ARGUMENT', '--endpoint-prefix 至少 8 位（例 8d1b5e3b）');
-  if (endpointPrefix.startsWith(FORBIDDEN_ENDPOINT_PREFIX))
-    return fail('ENDPOINT_FORBIDDEN', '156 开头的私有 workspace 不迁移');
-  const modelMap = new Map<string, string>([
-    [REALTIME_PLUS_UPSTREAM_MODEL, REALTIME_PLUS_MODEL_KEY],
-  ]);
+  const endpointId = (values.get('endpoint-id') ?? '').trim().toLowerCase();
+  if (!/^[0-9a-z][0-9a-z_.:-]{7,127}$/u.test(endpointId))
+    return fail(
+      'BAD_ARGUMENT',
+      '需要 --endpoint-id <旧端点完整 ID>（discover 输出里 allowed = true 的那条）',
+    );
+  if (forbiddenLegacyId(endpointId))
+    return fail('ENDPOINT_FORBIDDEN', '私有 workspace（cb9de005 / 8d1b5e3b / 156）的端点不迁移');
+  const modelMap = new Map<string, string>([[LEGACY_OMNI_MODEL, LEGACY_OMNI_MODEL_KEY]]);
   const map = values.get('map');
   if (map)
     for (const pair of map.split(',')) {
@@ -428,13 +509,19 @@ export function parseLegacyRealtimeVoiceCommand(
         return fail('BAD_ARGUMENT', '--map 形如 旧型号=新模型键[,旧型号=新模型键]');
       modelMap.set(from, to);
     }
-  return { ok: true, command: { input, apply, operatorId, endpointPrefix, modelMap } };
+  return { ok: true, command: { input, apply, operatorId, endpointId, modelMap } };
 }
 
 export interface LegacyRealtimeBindingPlan {
   rows: Array<{ characterId: string; modelKey: string; providerVoiceKey: string }>;
   skipped: Record<
-    'other_endpoint' | 'not_realtime' | 'unmapped_model' | 'not_ready' | 'invalid' | 'duplicate',
+    | 'other_endpoint'
+    | 'private_account'
+    | 'not_realtime'
+    | 'unmapped_model'
+    | 'not_ready'
+    | 'invalid'
+    | 'duplicate',
     number
   >;
   byModel: Record<string, number>;
@@ -449,12 +536,13 @@ const text = (row: Record<string, unknown>, keys: string[]) => {
 };
 
 /**
- * 旧库 character_voice_bindings 行 → 新库 realtime_voice_bindings 行。只取：指定账号、实时型号、
- * 状态 ready、音色代号合法、角色 ID 是 UUID；同一 (角色, 模型) 只取第一条。
+ * 旧库 character_voice_bindings 行 → 新库 realtime_voice_bindings 行。只取：指定端点（完整 ID 相等）、
+ * 不属于私有 workspace（导出里带 provider_id 时还必须是公共供应商）、实时型号、状态 ready、音色代号合法、
+ * 角色 ID 是 UUID；同一 (角色, 模型) 只取第一条。
  */
 export function planLegacyRealtimeBindings(
   raw: unknown,
-  command: Pick<LegacyRealtimeVoiceCommand, 'endpointPrefix' | 'modelMap'>,
+  command: Pick<LegacyRealtimeVoiceCommand, 'endpointId' | 'modelMap'>,
 ): LegacyRealtimeBindingPlan {
   const list = Array.isArray(raw)
     ? raw
@@ -465,6 +553,7 @@ export function planLegacyRealtimeBindings(
     rows: [],
     skipped: {
       other_endpoint: 0,
+      private_account: 0,
       not_realtime: 0,
       unmapped_model: 0,
       not_ready: 0,
@@ -477,11 +566,20 @@ export function planLegacyRealtimeBindings(
   for (const item of list) {
     const row = (typeof item === 'object' && item !== null ? item : {}) as Record<string, unknown>;
     const endpoint = text(row, ['endpoint_id', 'endpointId']).toLowerCase();
+    const provider = text(row, ['provider_id', 'providerId']).toLowerCase();
     const model = text(row, ['model']).toLowerCase();
     const characterId = text(row, ['character_id', 'characterId']).toLowerCase();
     const voice = text(row, ['voice_id', 'voiceId']);
     const status = text(row, ['status']).toLowerCase();
-    if (!endpoint.startsWith(command.endpointPrefix)) {
+    if (
+      forbiddenLegacyId(endpoint) ||
+      forbiddenLegacyId(provider) ||
+      (provider && !provider.startsWith(LEGACY_PUBLIC_PROVIDER_PREFIX))
+    ) {
+      plan.skipped.private_account++;
+      continue;
+    }
+    if (endpoint !== command.endpointId) {
       plan.skipped.other_endpoint++;
       continue;
     }

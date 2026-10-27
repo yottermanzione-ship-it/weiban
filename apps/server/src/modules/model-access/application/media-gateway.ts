@@ -60,7 +60,11 @@ import {
   type MediaFailure,
   type MediaTarget,
 } from '../infra/media-adapter.js';
-import { MEDIA_ADAPTER } from '../tokens.js';
+import {
+  MEDIA_ADAPTER,
+  MODEL_ACCESS_CHARACTER_VOICE,
+  type ModelAccessCharacterVoice,
+} from '../tokens.js';
 import { CatalogService, type ModelFacts } from './catalog.js';
 import { ScenarioService } from './scenarios.js';
 import type { ModelScenario } from '@weiban/contracts';
@@ -76,9 +80,24 @@ import { WebToolsStore } from './web-tools-store.js';
 import { privateSearchText, publicWebUrl } from '../domain/web-search.js';
 import { decisionQuestions } from '../infra/jev-adapter.js';
 import type { RealtimeConnection } from '../infra/dashscope-realtime.js';
-import { realtimeResponseEstimate } from './realtime-call.js';
+import { realtimeResponseEstimate, REALTIME_VOICE_CLONE_COST_YUAN } from './realtime-call.js';
 import { RealtimeVoice } from './realtime-voice-session.js';
 import { RealtimeVoiceStore } from './realtime-voices.js';
+import {
+  RealtimeVoiceCloner,
+  type RealtimeCloneSample,
+  type RealtimeVoiceChoice,
+} from './realtime-voice-clone.js';
+import { realtimeCloneProtocol } from '../infra/dashscope-voice-clone.js';
+import { prepareCloneSample } from '../infra/realtime-clone-sample.js';
+
+/** V2：拨打前的实时通话音色检查结果（calls 据此给出明确提示，不进入「接通后才失败」）。 */
+export type RealtimeCallVoiceCheck =
+  { ok: true } | { ok: false; reason: 'no_voice' | 'clone_failed' };
+
+/** 复刻样本的容器格式：迁入样本是 MP3 / WAV；其余常见音频交给 ffmpeg 识别。 */
+const CLONE_SAMPLE_TYPES = ['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a'];
+const MAX_CLONE_SAMPLE_BYTES = 20 * 1024 * 1024;
 
 type Service = 'speech_synthesis' | 'speech_recognition' | 'image_generation' | 'web_search';
 const SERVICE_SCENARIO: Record<Exclude<Service, 'web_search'>, ModelScenario> = {
@@ -161,7 +180,13 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     @Optional() @Inject(BillingBoundsService) private readonly bounds?: BillingBoundsService,
     @Optional() @Inject(ScenarioService) private readonly scenarios?: ScenarioService,
     @Optional() @Inject(RealtimeVoiceStore) private readonly realtimeVoices?: RealtimeVoiceStore,
+    @Optional()
+    @Inject(MODEL_ACCESS_CHARACTER_VOICE)
+    private readonly characterVoice?: ModelAccessCharacterVoice,
   ) {}
+
+  /** V2：按需复刻（单进程内同一角色 + 模型只复刻一次）；首次使用时创建。 */
+  private voiceCloner?: RealtimeVoiceCloner<Resolved>;
 
   // ---------- 服务开通 ----------
 
@@ -695,8 +720,10 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       const upstream = await this.upstreams.get(model.value.upstreamId);
       if (upstream.kind !== 'dashscope') return { ok: false, error: 'model_unavailable' };
     }
-    const voice = await this.realtimeVoices?.voiceFor(input.characterId, model.value.modelKey);
-    if (!voice) return { ok: false, error: 'not_configured' };
+    // V2：先定音色（已有绑定 → 按需复刻，最多等 20 秒 → 模型默认音色），再冻结第一段费用；等待与失败都不留冻结。
+    const choice = await this.realtimeVoiceChoice(input.characterId, model.value, 'call');
+    if (!choice.voice) return { ok: false, error: 'not_configured' };
+    const voice = choice.voice;
     const estimate = realtimeResponseEstimate(bounds, instructions.length);
     const first = await this.reserve(input, model.value, estimate, 0);
     if (!first.ok) return first;
@@ -760,6 +787,105 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         billingBounds,
       },
     };
+  }
+
+  /**
+   * V2：拨打 / 来电前检查这通实时电话有没有声音可用（不调实时模型、不扣用户费用）。
+   * 不走实时链路、或线路本身不可用（由接通时原有路径报告）都放行。有默认音色时立即放行、复刻在后台进行；
+   * 没有默认音色时等复刻结果（最多 20 秒），失败就拒绝，由 calls 给出明确提示。
+   */
+  async realtimeCallVoiceCheck(input: {
+    userId: string;
+    characterId: string;
+  }): Promise<RealtimeCallVoiceCheck> {
+    if (!this.scenarios || !Id.safeParse(input.characterId).success) return { ok: true };
+    const plan = await this.scenarios.voiceCallPlan(input.userId, input.characterId);
+    if (plan?.kind !== 'realtime') return { ok: true };
+    const model = await this.resolveRealtime(plan.facts);
+    if (!model.ok) return { ok: true };
+    const choice = await this.realtimeVoiceChoice(input.characterId, model.value, 'precheck');
+    return choice.voice !== null ? { ok: true } : { ok: false, reason: choice.reason };
+  }
+
+  private async realtimeVoiceChoice(
+    characterId: string,
+    model: Resolved,
+    mode: 'call' | 'precheck',
+  ): Promise<RealtimeVoiceChoice> {
+    const store = this.realtimeVoices;
+    if (!store) return { voice: null, reason: 'no_voice' };
+    this.voiceCloner ??= new RealtimeVoiceCloner<Resolved>({
+      binding: (c, m) => store.binding(c, m),
+      defaultVoice: async (m) => (await store.defaults())[m] ?? null,
+      sample: (c) => this.realtimeCloneSample(c),
+      clone: (m, i) => this.cloneRealtimeVoice(m, i),
+      save: (c, m, voice, sample) =>
+        store.saveClone({
+          characterId: c,
+          modelKey: m,
+          providerVoiceKey: voice,
+          sampleMediaId: sample.sampleMediaId,
+          costYuan: REALTIME_VOICE_CLONE_COST_YUAN,
+        }),
+      nowMs: () => this.clock.nowMs(),
+    });
+    return this.voiceCloner.choose(characterId, model, mode);
+  }
+
+  /** 角色自己的声音样本：默认音色（旧卡按供应商音色键找到媒体音色）登记的参考音频；必须仍启用。 */
+  private async realtimeCloneSample(characterId: string): Promise<RealtimeCloneSample | null> {
+    const id = await this.characterVoice?.getDefaultVoiceId(characterId).catch(() => null);
+    if (!id) return null;
+    let voice = Id.safeParse(id).success ? await this.assets.getVoice(id).catch(() => null) : null;
+    if (!voice && this.assets.findEnabledVoiceByProviderKey) {
+      const found = await this.assets.findEnabledVoiceByProviderKey(id).catch(() => null);
+      voice = found ? await this.assets.getVoice(found.voiceId).catch(() => null) : null;
+    }
+    const sampleMediaId = voice?.sampleMediaId ?? null;
+    if (!voice?.enabled || !sampleMediaId || !Id.safeParse(sampleMediaId).success) return null;
+    const file = await this.media.readBytes(sampleMediaId).catch(() => null);
+    if (
+      !file ||
+      !CLONE_SAMPLE_TYPES.includes(file.mimeType) ||
+      file.bytes.length === 0 ||
+      file.bytes.length > MAX_CLONE_SAMPLE_BYTES
+    )
+      return null;
+    return { bytes: file.bytes, mimeType: file.mimeType, sampleMediaId };
+  }
+
+  /** 转码裁剪后调供应商复刻（假上游不转码、不联网）。只用目录登记的上游账号，不换账号。 */
+  private async cloneRealtimeVoice(
+    model: Resolved,
+    input: { characterId: string; sample: RealtimeCloneSample },
+  ): Promise<MediaAdapterResult<{ voice: string }>> {
+    const protocol = realtimeCloneProtocol(model.upstreamModelId);
+    if (!model.fake) {
+      if (!protocol) return { ok: false, category: 'bad_request', zeroCost: true };
+      const upstream = await this.upstreams.get(model.upstreamId);
+      if (upstream.kind !== 'dashscope')
+        return { ok: false, category: 'bad_request', zeroCost: true };
+    }
+    let sample = { bytes: input.sample.bytes, mimeType: input.sample.mimeType };
+    if (!model.fake) {
+      const prepared = await prepareCloneSample(sample, protocol === 'voice-enrollment');
+      if (!prepared.ok)
+        return {
+          ok: false,
+          category: prepared.reason === 'busy' ? 'rate_limited' : 'bad_request',
+          zeroCost: true,
+          ...(prepared.reason === 'busy' ? { localRateLimit: true } : {}),
+        };
+      sample = prepared.sample;
+    }
+    return this.withTarget(model, async (target, adapter) =>
+      adapter.cloneRealtimeVoice
+        ? adapter.cloneRealtimeVoice(target, { characterId: input.characterId, sample })
+        : ({ ok: false, category: 'bad_request', zeroCost: true } as const),
+    ).catch((): MediaAdapterResult<{ voice: string }> => ({
+      ok: false,
+      category: 'network_error',
+    }));
   }
 
   async streamSpeech(

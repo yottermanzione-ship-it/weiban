@@ -1,15 +1,15 @@
 /**
- * 批 V：旧站实时通话复刻音色迁入（operator-only）。把旧库 character_voice_bindings 里「私有 workspace 8d1b5e3b
- * 账号 + 实时型号 + ready」的绑定写进 model_access.realtime_voice_bindings（只插入没有的，不覆盖管理员改过的）。
+ * 批 V / V2：旧站实时通话复刻音色迁入（operator-only）。把旧库 character_voice_bindings 里「公共百炼供应商 8eed4824
+ * 下的 Omni 3.5 Plus 实时端点 + ready」的绑定写进 model_access.realtime_voice_bindings（只插入没有的，不覆盖已有的）。
  *
- *   node dist/import-legacy-realtime-voices.js --input /abs/realtime-bindings.json --endpoint-prefix 8d1b5e3b
- *   node dist/import-legacy-realtime-voices.js --input /abs/realtime-bindings.json --endpoint-prefix 8d1b5e3b \
- *     --apply --operator-id <管理员 UUID> [--map qwen3.5-omni-plus-realtime=qwen/qwen3.5-omni-plus-realtime]
+ *   node dist/import-legacy-realtime-voices.js --input /abs/realtime-bindings.json --endpoint-id <旧端点完整 ID>
+ *   node dist/import-legacy-realtime-voices.js --input /abs/realtime-bindings.json --endpoint-id <旧端点完整 ID> \
+ *     --apply --operator-id <管理员 UUID>
  *
- * 输入：旧库 character_voice_bindings 行的 JSON 数组（或 { bindings: [...] }），字段 character_id / endpoint_id /
- * model / voice_id / status。导出命令见 docs/handoffs/2026-10-26-voice-complete.md。
- * 默认只预演；复刻音色只在登记它的 workspace 有效，所以只认指定账号，156 开头的 workspace 直接拒绝。
- * 目标模型必须已在目录里（先跑 voice-catalog）；角色必须已在新库里。
+ * 输入：scripts/ops/export-realtime-workspace.mjs bindings 的输出（{ bindings: [...] }，字段 character_id / endpoint_id /
+ * provider_id / model / voice_id / status）。默认 qwen3.5-omni-plus-realtime → qwen/qwen3.5-omni-plus-realtime。
+ * 默认只预演；复刻音色只在创建它的账号有效：私有 workspace（cb9de005 / 8d1b5e3b 及其端点、156）一律拒绝，
+ * 行里带 provider_id 时还必须是公共供应商。目标模型必须已在目录里（先跑 voice-catalog）；角色必须已在新库里。
  */
 import 'reflect-metadata';
 import fs from 'node:fs';
@@ -77,6 +77,7 @@ async function main(): Promise<void> {
     const present = new Set(found.map((r) => r.id));
     const rows = plan.rows.filter((r) => present.has(r.characterId) && registered.has(r.modelKey));
     const report = {
+      endpointId: command.endpointId,
       offered: plan.rows.length,
       importable: rows.length,
       characterMissing: plan.rows.filter((r) => !present.has(r.characterId)).length,

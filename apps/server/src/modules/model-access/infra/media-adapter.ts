@@ -24,6 +24,7 @@ import {
   type RealtimeConnection,
   type RealtimeSessionConfig,
 } from './dashscope-realtime.js';
+import { cloneDashscopeRealtimeVoice, type CloneSampleFile } from './dashscope-voice-clone.js';
 
 export type MediaFailure =
   | 'network_error'
@@ -122,6 +123,11 @@ export interface MediaAdapter {
     t: MediaTarget,
     config: RealtimeSessionConfig,
   ): Promise<MediaAdapterResult<RealtimeConnection>>;
+  /** V2：用角色声音样本复刻一个只给 t.model 用的实时通话音色（样本已转码裁剪）。 */
+  cloneRealtimeVoice?(
+    t: MediaTarget,
+    input: { characterId: string; sample: CloneSampleFile },
+  ): Promise<MediaAdapterResult<{ voice: string }>>;
 }
 
 const MAX_RESPONSE_BYTES = 12_000_000;
@@ -222,6 +228,9 @@ export class OpenAiCompatibleMediaAdapter implements MediaAdapter {
   }
   openRealtime(t: MediaTarget, config: RealtimeSessionConfig) {
     return openDashscopeRealtime(t, config);
+  }
+  cloneRealtimeVoice(t: MediaTarget, input: { characterId: string; sample: CloneSampleFile }) {
+    return cloneDashscopeRealtimeVoice(t, input);
   }
   /** Verified System One / Decisions request; shared relay accounts keep their existing protocol. */
   decide(
@@ -773,6 +782,14 @@ export function withMimoChatAudio(inner: MediaAdapter): MediaAdapter {
           openRealtime: (t: MediaTarget, c: RealtimeSessionConfig) => inner.openRealtime!(t, c),
         }
       : {}),
+    ...(inner.cloneRealtimeVoice
+      ? {
+          cloneRealtimeVoice: (
+            t: MediaTarget,
+            i: { characterId: string; sample: CloneSampleFile },
+          ) => inner.cloneRealtimeVoice!(t, i),
+        }
+      : {}),
   };
 }
 
@@ -881,6 +898,16 @@ export class FakeMediaAdapter implements MediaAdapter {
     config: RealtimeSessionConfig,
   ): Promise<MediaAdapterResult<RealtimeConnection>> {
     return { ok: true, value: openFakeRealtime(config) };
+  }
+
+  /** 假复刻：按角色与模型给出确定的音色代号，不联网、不收费。 */
+  async cloneRealtimeVoice(
+    t: MediaTarget,
+    input: { characterId: string; sample: CloneSampleFile },
+  ): Promise<MediaAdapterResult<{ voice: string }>> {
+    if (!input.sample.bytes.length) return { ok: false, category: 'bad_request', zeroCost: true };
+    const tag = Buffer.from(`${t.model}|${input.characterId}`).toString('hex').slice(-16);
+    return { ok: true, value: { voice: `fake-rt-${tag}` } };
   }
 }
 

@@ -60,6 +60,7 @@ import {
   CHARACTER_PLAZA_PORT,
   CHARACTER_PLAZA_ORIGIN_STATUS,
   CHARACTER_PERSONA_SUMMARIZER,
+  CHARACTER_VOICE_READ_PORT,
   type CharacterPlazaOriginStatus,
 } from './modules/characters/index.js';
 import { HealthModule } from './modules/health/index.js';
@@ -78,6 +79,9 @@ import {
   ModelAccessModule,
   MODEL_NOTIFICATION_READ_PORT,
   MODEL_GATEWAY_MEDIA_PORT,
+  MODEL_ACCESS_CHARACTER_VOICE,
+  type ModelAccessCharacterVoice,
+  type RealtimeCallVoiceCheck,
 } from './modules/model-access/index.js';
 import {
   GrowthModule,
@@ -131,16 +135,53 @@ import { PlatformModule, type PlatformOptions } from './platform/index.js';
     {
       provide: CALL_SERVICE_STATUS,
       inject: [MODEL_GATEWAY_MEDIA_PORT],
-      useFactory: (media: ModelGatewayMediaPort): CallServiceStatus => ({
+      useFactory: (
+        media: ModelGatewayMediaPort & {
+          realtimeCallVoiceCheck?(input: {
+            userId: string;
+            characterId: string;
+          }): Promise<RealtimeCallVoiceCheck>;
+        },
+      ): CallServiceStatus => ({
         isVoiceCallEnabled: async () =>
           (await media.isServiceEnabled('speech_recognition')) &&
           (await media.isServiceEnabled('speech_synthesis')),
+        // V2：实时语音 / Omni 电话拨打前确认有声音可用（没有就给明确提示，不接通后才失败）。
+        voiceCallBlocker: async (userId, characterId) => {
+          const check = await media.realtimeCallVoiceCheck?.({ userId, characterId });
+          if (!check || check.ok) return null;
+          return check.reason === 'no_voice'
+            ? '这个角色还没有能用于实时通话的声音，可以在「模型」设置的「语音通话」里换一个通话模型再打'
+            : '这个角色的实时通话声音还没准备好，请稍后再试，或在「模型」设置的「语音通话」里换一个通话模型';
+        },
       }),
     },
   ],
   exports: [ModelAccessModule, CALL_SERVICE_STATUS],
 })
 class GatewayCompositionModule {}
+
+/**
+ * V2（2026-10-28）：model-access（中层）按需复刻实时通话音色时要读角色的默认音色；characters 依赖 model-access，
+ * 不能反向 import，由这里经 ModuleRef 延迟绑定到 CHARACTER_VOICE_READ_PORT。
+ */
+@Global()
+@Module({
+  providers: [
+    {
+      provide: MODEL_ACCESS_CHARACTER_VOICE,
+      inject: [ModuleRef],
+      useFactory: (ref: ModuleRef): ModelAccessCharacterVoice => ({
+        getDefaultVoiceId: (characterId) =>
+          ref
+            .get<ModelAccessCharacterVoice>(CHARACTER_VOICE_READ_PORT, { strict: false })
+            .getDefaultVoiceId(characterId),
+      }),
+    },
+  ],
+  exports: [MODEL_ACCESS_CHARACTER_VOICE],
+})
+class ModelAccessCompositionModule {}
 
 /**
  * T-072：calls 的角色一侧（CallAgentPort）由 ai-runtime 实现，calls 不能 import ai-runtime，由这里绑定。
@@ -452,6 +493,7 @@ export class AppModule {
         PushCompositionModule,
         ChatGroupDirectoryCompositionModule,
         MediaCompositionModule,
+        ModelAccessCompositionModule,
         PushModule,
         AiRuntimeModule,
         BillingModule,

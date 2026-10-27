@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   completeWrite,
+  LEGACY_OMNI_MODEL_KEY,
+  omniDisplayName,
   parseLegacyRealtimeVoiceCommand,
   parseVoiceCatalogCommand,
   planLegacyRealtimeBindings,
+  planOmniFix,
   planVoiceCatalog,
   REALTIME_PLUS_MODEL_KEY,
+  UPSTREAM_REFERENCE,
 } from './voice-catalog-options.js';
 
 const ADMIN = '11111111-1111-4111-8111-111111111111';
@@ -87,7 +91,7 @@ describe('voice-catalog 条目与价格（售价 = 成本 × 1.3）', () => {
     expect(e.write.billingBounds).toMatchObject({ realtime: { maxSessionSeconds: 3600 } });
     expect(e.enable).toBe(false);
     expect(e.defaultVoice).toBe('Cherry');
-    expect(e.upstream.reference).toBeNull();
+    expect(e.upstream.reference).toBe(UPSTREAM_REFERENCE['qwen-tts-flash']);
   });
 
   it('补全写入：通过契约校验；已启用的条目不会被关掉，保留排序', () => {
@@ -103,75 +107,123 @@ describe('voice-catalog 条目与价格（售价 = 成本 × 1.3）', () => {
   });
 });
 
-describe('旧站实时音色绑定', () => {
-  it('只迁指定账号的实时 ready 绑定；拒绝 156 workspace', () => {
+describe('V2：Omni 显示名带版本、默认音色、--fix-omni', () => {
+  it('登记 Omni 时显示名带版本，已核实默认音色 Tina；实时 / Omni 默认用公共百炼账号', () => {
+    expect(omniDisplayName('qwen3.5-omni-plus-realtime')).toBe('千问 Omni 3.5 Plus 实时通话');
+    expect(omniDisplayName('qwen3.8-omni-flash-realtime')).toBe('千问 Omni 3.8 Flash 实时通话');
+    const { entries } = planVoiceCatalog(
+      command(['--omni-model', 'qwen3.8-omni-flash-realtime', '--omni-cost', '1,2,3,4']),
+    );
+    const omni = entries.find((e) => e.item === 'omni')!;
+    expect(omni.write.displayName).toBe('千问 Omni 3.8 Flash 实时通话');
+    expect(omni.defaultVoice).toBe('Tina');
+    expect(omni.upstream.reference).toBe(UPSTREAM_REFERENCE['qwen-tts-flash']);
+    const rt = entries.find((e) => e.item === 'qwen-realtime')!;
+    expect(rt.upstream.reference).toBe(UPSTREAM_REFERENCE['qwen-tts-flash']);
+    expect(rt.notes.join('\n')).toContain(
+      '公共百炼账号能否调用 qwen-audio-3.0-realtime-plus 未核实',
+    );
     expect(
-      parseLegacyRealtimeVoiceCommand(['--input', '/x.json', '--endpoint-prefix', '156abcdef']),
-    ).toMatchObject({ ok: false, code: 'ENDPOINT_FORBIDDEN' });
+      planVoiceCatalog(
+        command([
+          '--omni-model',
+          'qwen3.5-omni-plus-realtime',
+          '--omni-cost',
+          '1,2,3,4',
+          '--omni-voice',
+          'Cindy',
+        ]),
+      ).entries.find((e) => e.item === 'omni')!.defaultVoice,
+    ).toBe('Cindy');
+  });
+
+  it('--fix-omni 只改不带版本的 Omni 显示名、只补没有的默认音色', () => {
+    expect(command(['--fix-omni']).fixOmni).toBe(true);
+    const fixes = planOmniFix(
+      [
+        { modelKey: 'qwen/qwen3.5-omni-plus-realtime', displayName: '千问 Omni 实时通话' },
+        { modelKey: 'qwen/qwen3.8-omni-flash-realtime', displayName: '千问 Omni 实时通话' },
+        { modelKey: REALTIME_PLUS_MODEL_KEY, displayName: '千问实时语音通话' },
+        {
+          modelKey: 'qwen/qwen3.5-omni-flash-realtime',
+          displayName: '千问 Omni 3.5 Flash 实时通话',
+        },
+        {
+          modelKey: 'qwen/qwen3.5-omni-plus-realtime#deleted:x',
+          displayName: 'x',
+          deletedAt: '2026-10-28T00:00:00Z',
+        },
+      ],
+      { 'qwen/qwen3.8-omni-flash-realtime': 'Tina' },
+    );
+    expect(fixes).toEqual([
+      {
+        modelKey: 'qwen/qwen3.5-omni-plus-realtime',
+        rename: { from: '千问 Omni 实时通话', to: '千问 Omni 3.5 Plus 实时通话' },
+        defaultVoice: 'Tina',
+      },
+      {
+        modelKey: 'qwen/qwen3.8-omni-flash-realtime',
+        rename: { from: '千问 Omni 实时通话', to: '千问 Omni 3.8 Flash 实时通话' },
+        defaultVoice: null,
+      },
+    ]);
+  });
+});
+
+describe('旧站实时音色绑定（V2：只迁公共百炼账号的 Omni 3.5 Plus 端点）', () => {
+  const PUBLIC_ENDPOINT = '0975357a-1111-4111-8111-111111111111';
+  const PUBLIC_PROVIDER = '8eed4824-2222-4222-8222-222222222222';
+
+  it('必须给完整端点 ID；两个私有 workspace 的供应商 / 端点与 156 一律拒绝', () => {
+    for (const id of [
+      'cb9de005-aaaa',
+      '8d1b5e3b-aaaa',
+      'eb3630dd-aaaa',
+      '6b29cca6-aaaa',
+      '156abcdef',
+    ])
+      expect(
+        parseLegacyRealtimeVoiceCommand(['--input', '/x.json', '--endpoint-id', id]),
+      ).toMatchObject({ ok: false, code: 'ENDPOINT_FORBIDDEN' });
     expect(
-      parseLegacyRealtimeVoiceCommand(['--input', '/x.json', '--endpoint-prefix', '8d1b']),
-    ).toMatchObject({
-      ok: false,
-    });
+      parseLegacyRealtimeVoiceCommand(['--input', '/x.json', '--endpoint-prefix', '0975357a']),
+    ).toMatchObject({ ok: false });
+    expect(
+      parseLegacyRealtimeVoiceCommand(['--input', '/x.json', '--endpoint-id', '0975']),
+    ).toMatchObject({ ok: false });
+  });
+
+  it('174 条这类绑定默认映射到 qwen/qwen3.5-omni-plus-realtime；越界行逐条跳过', () => {
     const parsed = parseLegacyRealtimeVoiceCommand([
       '--input',
       '/x.json',
-      '--endpoint-prefix',
-      '8d1b5e3b',
+      '--endpoint-id',
+      PUBLIC_ENDPOINT,
     ]);
     if (!parsed.ok) throw new Error(parsed.message);
+    const row = {
+      character_id: ROLE,
+      endpoint_id: PUBLIC_ENDPOINT,
+      provider_id: PUBLIC_PROVIDER,
+      model: 'qwen3.5-omni-plus-realtime',
+      voice_id: 'qwen-tts-vc-wb_abc-voice-2025',
+      status: 'ready',
+    };
     const plan = planLegacyRealtimeBindings(
       {
+        version: 2,
         bindings: [
-          {
-            character_id: ROLE,
-            endpoint_id: '8d1b5e3b-aaaa',
-            model: 'qwen-audio-3.0-realtime-plus',
-            voice_id: 'qwen-audio-3.0-realtime-plus-vc-x',
-            status: 'ready',
-          },
-          {
-            character_id: ROLE,
-            endpoint_id: '8d1b5e3b-aaaa',
-            model: 'qwen-audio-3.0-realtime-plus',
-            voice_id: 'dup',
-            status: 'ready',
-          },
-          {
-            character_id: ROLE,
-            endpoint_id: '156ffff',
-            model: 'qwen-audio-3.0-realtime-plus',
-            voice_id: 'v',
-            status: 'ready',
-          },
-          {
-            character_id: ROLE,
-            endpoint_id: '8d1b5e3b-aaaa',
-            model: 'qwen-audio-3.0-tts-plus',
-            voice_id: 'v',
-            status: 'ready',
-          },
-          {
-            character_id: ROLE,
-            endpoint_id: '8d1b5e3b-aaaa',
-            model: 'qwen3.5-omni-plus-realtime',
-            voice_id: 'v',
-            status: 'ready',
-          },
-          {
-            character_id: ROLE,
-            endpoint_id: '8d1b5e3b-aaaa',
-            model: 'qwen-audio-3.0-realtime-plus',
-            voice_id: 'v',
-            status: 'pending',
-          },
-          {
-            character_id: 'not-a-uuid',
-            endpoint_id: '8d1b5e3b-aaaa',
-            model: 'qwen-audio-3.0-realtime-plus',
-            voice_id: 'v',
-            status: 'ready',
-          },
+          row,
+          { ...row, voice_id: 'dup' },
+          { ...row, endpoint_id: '6b29cca6-aaaa', provider_id: '8d1b5e3b-aaaa' },
+          { ...row, provider_id: 'cb9de005-aaaa' },
+          { ...row, provider_id: '99999999-aaaa' },
+          { ...row, endpoint_id: '0975357a-other' },
+          { ...row, model: 'qwen-audio-3.0-tts-plus' },
+          { ...row, model: 'qwen-audio-3.0-realtime-plus' },
+          { ...row, status: 'pending' },
+          { ...row, character_id: 'not-a-uuid' },
         ],
       },
       parsed.command,
@@ -179,12 +231,15 @@ describe('旧站实时音色绑定', () => {
     expect(plan.rows).toEqual([
       {
         characterId: ROLE,
-        modelKey: REALTIME_PLUS_MODEL_KEY,
-        providerVoiceKey: 'qwen-audio-3.0-realtime-plus-vc-x',
+        modelKey: LEGACY_OMNI_MODEL_KEY,
+        providerVoiceKey: 'qwen-tts-vc-wb_abc-voice-2025',
       },
     ]);
+    expect(LEGACY_OMNI_MODEL_KEY).toBe('qwen/qwen3.5-omni-plus-realtime');
+    expect(plan.byModel).toEqual({ [LEGACY_OMNI_MODEL_KEY]: 1 });
     expect(plan.skipped).toEqual({
       other_endpoint: 1,
+      private_account: 3,
       not_realtime: 1,
       unmapped_model: 1,
       not_ready: 1,
