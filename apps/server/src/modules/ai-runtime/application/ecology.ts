@@ -940,6 +940,16 @@ export class EcologyService {
       )
       .orderBy(desc(ecologyRuns.createdAt))
       .limit(20);
+    const [lastProactive] = await this.db.db
+      .select({ at: sql<Date | null>`max(${ecologyRuns.finishedAt})` })
+      .from(ecologyRuns)
+      .where(
+        and(
+          eq(ecologyRuns.userId, userId),
+          eq(ecologyRuns.characterId, characterId),
+          eq(ecologyRuns.status, 'done'),
+        ),
+      );
     const spend = await this.billing.getSpendStatus(userId).catch(() => null);
 
     // 执行侧模型是否可用（角色覆盖优先，其次用户场景；私密模式用私密模型）。缺了就不进候选，不换模型。
@@ -1064,6 +1074,8 @@ export class EcologyService {
       unanswered,
       sinceUserMs,
       doneToday: today.flatMap((t) => (t.summary ? [t.summary] : [])),
+      sinceProactiveMs: lastProactive?.at ? nowMs - new Date(lastProactive.at).getTime() : Infinity,
+      userActiveRecently: lastAppMs < 30 * 60_000,
     });
     return {
       features,
@@ -1313,7 +1325,13 @@ export function jevSummary(input: {
   unanswered: number;
   sinceUserMs: number;
   doneToday: string[];
+  /** 距角色上次主动（生态成功做过动作）多久；没有记录为 Infinity / 不传。 */
+  sinceProactiveMs?: number;
+  /** 对方 30 分钟内在用应用。 */
+  userActiveRecently?: boolean;
 }): string {
+  const ago = (m: number) =>
+    m < 60 ? `${m} 分钟` : m < 2880 ? `${Math.round(m / 60)} 小时` : `${Math.round(m / 1440)} 天`;
   const clock = `${String(input.local.hour).padStart(2, '0')}:${String(input.local.minute).padStart(2, '0')}`;
   const lines = [`现在是对方当地时间周${'日一二三四五六'[input.weekday] ?? ''} ${clock}。`];
   const minutes = Number.isFinite(input.sinceUserMs)
@@ -1322,7 +1340,19 @@ export function jevSummary(input: {
   lines.push(
     minutes === null
       ? '对方很久没来聊天。'
-      : `对方上次发消息在 ${minutes < 60 ? `${minutes} 分钟` : `${Math.round(minutes / 60)} 小时`}前；角色发了还没被回的消息 ${input.unanswered} 条。`,
+      : `对方上次发消息在 ${ago(minutes)}前；角色发了还没被回的消息 ${input.unanswered} 条。`,
+  );
+  // 对方状态（程序推断，不读对方任何原文）：刚在聊 / 在用应用却没回（可能在忙或暂时不想回）/ 不在应用里。
+  if (minutes !== null && minutes < 5) lines.push('对方刚刚还在聊天。');
+  else if (input.unanswered > 0 && input.userActiveRecently)
+    lines.push('对方最近在用应用，但还没回角色的消息（可能在忙或暂时不想回）。');
+  else if (input.userActiveRecently === false) lines.push('对方最近半小时不在应用里。');
+  const proactive =
+    input.sinceProactiveMs !== undefined && Number.isFinite(input.sinceProactiveMs)
+      ? Math.round(input.sinceProactiveMs / 60_000)
+      : null;
+  lines.push(
+    proactive === null ? '角色最近没有主动找过对方。' : `角色上次主动是 ${ago(proactive)}前。`,
   );
   if (input.recent.length)
     lines.push(

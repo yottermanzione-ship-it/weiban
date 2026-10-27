@@ -74,6 +74,22 @@ export function supportsEffort(model: string): boolean {
   return version >= 5;
 }
 
+/**
+ * 批 EJ：后台整理任务保留思考。支持 effort 的新模型用自适应思考（由模型自己决定想多少，总上限已含思考预算）；
+ * 旧模型用 budget_tokens（至少 1024，且必须小于 max_tokens；放不下就不开思考，保证正文额度）。
+ */
+export function anthropicThinkingOn(
+  model: string,
+  maxTokens: number,
+  budget: number,
+): Record<string, unknown> {
+  // Opus 4.5 支持 effort 但还没有自适应思考，按旧方式给预算。
+  if (supportsEffort(model) && !/claude-opus-4[-.]5(?!\d)/i.test(model))
+    return { thinking: { type: 'adaptive' } };
+  const tokens = Math.max(1024, Math.round(budget));
+  return tokens < maxTokens ? { thinking: { type: 'enabled', budget_tokens: tokens } } : {};
+}
+
 function imageBlock(url: string): Block | null {
   const data = /^data:([^;,]+);base64,(.+)$/s.exec(url);
   if (data) {
@@ -228,9 +244,11 @@ export class AnthropicTextAdapter implements TextAdapter {
       ...(request.system.length ? { system: request.system } : {}),
       messages: request.messages,
       stream: true,
-      ...(input.thinking !== 'default' && supportsEffort(input.model)
-        ? { output_config: { effort: 'low' } }
-        : {}),
+      ...(input.thinking === 'on'
+        ? anthropicThinkingOn(input.model, input.maxOutputTokens, input.thinkingBudget ?? 0)
+        : input.thinking !== 'default' && supportsEffort(input.model)
+          ? { output_config: { effort: 'low' } }
+          : {}),
     };
     const inputEstimate = estimateInputTokens(input.messages);
     try {
@@ -272,7 +290,13 @@ export class AnthropicTextAdapter implements TextAdapter {
         // 批 EJ：完整 JSON 之后只剩空白时按成功返回（同 OpenAI 兼容适配器）。
         const complete = completeJsonPrefix(stripJsonFence(text));
         if (complete !== null) return { ok: true, text: complete, usage };
-        return { ok: false, category: 'truncated', retryable: true, usage };
+        return {
+          ok: false,
+          category: 'truncated',
+          retryable: true,
+          usage,
+          partialText: stripJsonFence(text),
+        };
       }
       return {
         ok: true,

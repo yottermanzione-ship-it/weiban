@@ -50,6 +50,8 @@ import {
   sharingClass,
   relevance,
   memoryShareable,
+  salvageOperations,
+  type ExtractedOperation,
   type MemorySharingLevel,
 } from '../domain/memory.js';
 import { embed, toVectorLiteral, VECTOR_DIM } from '../domain/vector-embed.js';
@@ -73,13 +75,13 @@ export interface MemoryJob {
   epoch: string;
   urgent?: boolean;
   /**
-   * 批 EJ：批次缩小级别（0 = 默认 100 条 / 2 万字；每级减半，最多 3 级）。整理失败（截断等）后按更小批次重试，
-   * 不重复用同一批同一幂等键回放失败、也不丢弃这批消息。
+   * 批 EJ：批次缩小级别（0 = 默认 100 条 / 2 万字；1 = 减半）。整理失败（截断且救不出条目等）后按小一半的批次
+   * 重试一次（新幂等键），再失败延后 1 小时，不无限重试刷钱、也不丢弃这批消息。
    */
   shrink?: number;
 }
-/** 批 EJ：记忆整理批次最多缩小几级、最小几条。 */
-const MAX_MEMORY_SHRINK = 3;
+/** 批 EJ：记忆整理批次最多缩小几级（总经理 10-27：拆小批只重试一次）、最小几条。 */
+const MAX_MEMORY_SHRINK = 1;
 const MIN_MEMORY_BATCH = 12;
 export function memoryShrink(level: unknown): number {
   return typeof level === 'number' && Number.isInteger(level)
@@ -90,6 +92,18 @@ export function memoryShrink(level: unknown): number {
  * 批 EJ：输出上限按本批条数给（每条消息约 24 token 余量 + 摘要），最多 3200。
  * 生产元数据显示失败调用都是顶满上限的「跑飞」，单纯调大上限只会多花钱，所以配合缩小批次与完整 JSON 识别。
  */
+/** 批 EJ：给记忆整理看的已有记忆（只留去重 / 更正需要的字段）。 */
+export function compactMemories(items: readonly MemoryEntry[]) {
+  return items.map((m) => ({
+    memoryId: m.memoryId,
+    content: m.content,
+    category: m.category,
+    status: m.status,
+    importance: m.importance,
+    ...(m.dueAt ? { dueAt: m.dueAt } : {}),
+    ...(m.createdBy === 'user_manual' ? { manual: true } : {}),
+  }));
+}
 export function memoryOutputTokens(sourceCount: number): number {
   return Math.min(3200, 1000 + 24 * Math.max(0, sourceCount));
 }
@@ -1367,7 +1381,7 @@ export class MemoryService {
     const shrink = memoryShrink(job.shrink);
     const maxMessages = Math.max(MIN_MEMORY_BATCH, 100 >> shrink);
     const maxChars = 20000 >> shrink;
-    const history: typeof availableHistory = [];
+    let history: typeof availableHistory = [];
     let sourceChars = 0;
     for (const message of sameScope) {
       const size = textOf(message).length;
@@ -1397,7 +1411,7 @@ export class MemoryService {
         !m.labels?.includes('quirk_draft'),
     );
     const sourceMap = new Map(sources.map((m) => [m.messageId, m]));
-    const lastSeq = history.at(-1)!.seq;
+    let lastSeq = history.at(-1)!.seq;
     const own = await this.context(
       job.userId,
       job.characterId,
@@ -1406,6 +1420,15 @@ export class MemoryService {
       undefined,
       { uncapped: true },
     );
+    // 批 EJ：失败后拆小一半重试一次（新幂等键，很快），已是小批仍失败就延后 1 小时，不无限重试。
+    const retrySmaller = async (code: string): Promise<void> => {
+      if (shrink < MAX_MEMORY_SHRINK) {
+        await this.defer({ ...job, shrink: shrink + 1 }, state, 60_000);
+        return;
+      }
+      await this.defer(job, state, 3600000);
+      throw new Error(code);
+    };
     const result = sources.length
       ? await this.gateway.generateText({
           userId: job.userId,
@@ -1422,6 +1445,8 @@ export class MemoryService {
             promptTemplateVersion: 'memory-v1',
           },
           responseFormat: 'json',
+          // 批 EJ：正文没写完时交回已写部分，下面只收已完整的条目。
+          partialJsonOnTruncation: true,
           maxOutputTokens: memoryOutputTokens(sources.length),
           idempotencyKey: `memory:${state.id}:${state.revision}:${state.cursorSeq}:${lastSeq}:${state.retryAfter?.getTime() ?? 0}:s${shrink}`,
           messages: [
@@ -1433,7 +1458,9 @@ export class MemoryService {
             {
               role: 'user',
               content: JSON.stringify({
-                memories: own.items,
+                // 批 EJ：已有记忆只带去重需要的字段（原来整条对象含最多 100 个来源消息 ID、knownBy、时间戳，
+                // 12 条可达数万字符，按私密模型等高价模型计费时是整理成本的主要可省部分）。
+                memories: compactMemories(own.items),
                 messages: sources.map((m) => ({
                   id: m.messageId,
                   scope: m.scope,
@@ -1450,16 +1477,26 @@ export class MemoryService {
         await this.defer(job, state, 86400000);
         return;
       }
-      // 批 EJ：截断 / 失败的批次不丢：先按更小批次很快重试（新幂等键），缩到最小仍失败再延后 1 小时。
-      if (shrink < MAX_MEMORY_SHRINK) {
-        await this.defer({ ...job, shrink: shrink + 1 }, state, 60_000);
-        return;
-      }
-      await this.defer(job, state, 3600000);
-      throw new Error(`memory_generation_${result.error}`);
+      return retrySmaller(`memory_generation_${result.error}`);
+    }
+    // 批 EJ：正文没写完——先救已完整的条目入库；游标只推进到这些条目引用的最后一条消息，
+    // 后面的消息留给下一批（不重复整理、也不丢）。一条都救不出就拆小批重试一次，再不行延后。
+    let salvaged: ExtractedOperation[] | null = null;
+    if (result?.ok && result.value.truncated) {
+      const ops = salvageOperations(result.value.text).filter((op) =>
+        op.sourceMessageIds.every((id) => sourceMap.has(id)),
+      );
+      if (!ops.length) return retrySmaller('memory_generation_truncated');
+      const cutoff = Math.max(
+        ...ops.flatMap((op) => op.sourceMessageIds.map((id) => sourceMap.get(id)!.seq)),
+      );
+      history = history.filter((m) => m.seq <= cutoff);
+      lastSeq = cutoff;
+      salvaged = ops;
     }
     let raw: unknown = { operations: [] };
-    if (result?.ok) {
+    if (salvaged) raw = { operations: salvaged };
+    else if (result?.ok) {
       try {
         raw = JSON.parse(result.value.text);
       } catch {
@@ -1468,14 +1505,7 @@ export class MemoryService {
       }
     }
     const parsed = ExtractedMemory.safeParse(raw);
-    if (!parsed.success) {
-      if (shrink < MAX_MEMORY_SHRINK) {
-        await this.defer({ ...job, shrink: shrink + 1 }, state, 60_000);
-        return;
-      }
-      await this.defer(job, state, 3600000);
-      throw new Error('memory_invalid_output');
-    }
+    if (!parsed.success) return retrySmaller('memory_invalid_output');
     const extracted = parsed.data;
     for (const operation of extracted.operations) {
       const invalid = !operation.sourceMessageIds.every((id) => sourceMap.has(id))

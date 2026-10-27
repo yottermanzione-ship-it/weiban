@@ -75,6 +75,8 @@ export interface FinishUsageInput {
   cacheWrite5mTokens?: number;
   cacheWrite1hTokens?: number;
   outputTokens: number;
+  /** 批 EJ：其中的思考 token（未知不传）。 */
+  reasoningTokens?: number;
   estimated: boolean;
   latencyMs: number;
   ttftMs?: number | null;
@@ -273,6 +275,7 @@ export class UsageRecorder {
         cacheWrite5mTokens: f.cacheWrite5mTokens ?? 0,
         cacheWrite1hTokens: f.cacheWrite1hTokens ?? 0,
         outputTokens: f.outputTokens,
+        reasoningTokens: f.reasoningTokens ?? null,
         estimated: f.estimated,
         latencyMs: f.latencyMs,
         ttftMs: f.ttftMs ?? null,

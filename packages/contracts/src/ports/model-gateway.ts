@@ -107,7 +107,7 @@ export interface GenerateTextInput {
   /** 要求模型输出 JSON 时提供（网关不解释 schema，只透传给支持的上游）。 */
   responseFormat?: 'text' | 'json';
   /**
-   * 4.3（批 EJ）：只对 responseFormat = json 有效。正文 JSON 因额度用完没写完时，不按失败处理、也不加大额度重试，
+   * 4.4（批 EJ）：只对 responseFormat = json 有效。正文 JSON 因额度用完没写完时，不按失败处理、也不加大额度重试，
    * 而是返回已写出的部分正文并标 truncated = true（照常计费），由调用方抢救完整条目、拆小批重试。
    */
   partialJsonOnTruncation?: boolean;
@@ -165,11 +165,11 @@ export interface GenerateTextOutput {
     cacheWrite5mTokens?: number;
     cacheWrite1hTokens?: number;
     outputTokens: number;
-    /** 4.3：其中的思考 token（上游报告或按思考内容估算；未知为 undefined）。outputTokens 已包含它，照常计费。 */
+    /** 4.4：其中的思考 token（上游报告或按思考内容估算；未知为 undefined）。outputTokens 已包含它，照常计费。 */
     reasoningTokens?: number;
     estimated: boolean;
   };
-  /** 4.3（批 EJ）：partialJsonOnTruncation 时正文 JSON 没写完（text 为已写出的部分）。 */
+  /** 4.4（批 EJ）：partialJsonOnTruncation 时正文 JSON 没写完（text 为已写出的部分）。 */
   truncated?: boolean;
   /** 本次从账户扣的金额（微元）。 */
   chargedMicros: number;
@@ -412,7 +412,7 @@ export interface ModelGatewayMediaPort {
   /** 行为规划决策（CR-18）。 */
   decide(input: DecideInput): Promise<PortResult<DecideOutput, GenerateError>>;
   /**
-   * 4.3（批 EJ）：只读判断某模型能否做原生判定（Jev 类）。判定能力 = 后台为它的线路核准了
+   * 4.4（批 EJ）：只读判断某模型能否做原生判定（Jev 类）。判定能力 = 后台为它的线路核准了
    * `billingBounds.decision`（与 decide 实际执行同一来源），不看 capabilities。不调上游、不扣费。
    * 旧实现可不提供；调用方缺少时按「不可用」处理。
    */
@@ -422,7 +422,7 @@ export interface ModelGatewayMediaPort {
       'not_decision_model' | 'model_removed' | 'provider_unavailable' | 'model_not_allowed' | null;
   }>;
   /**
-   * 4.3（批 EJ）：只读预检「用这个音色给该用户发语音消息」此刻能否执行：平台开通、音色启用、
+   * 4.4（批 EJ）：只读预检「用这个音色给该用户发语音消息」此刻能否执行：平台开通、音色启用、
    * 音色登记的模型就是用户（角色覆盖优先）为语音消息场景选的模型、线路有计费上限。
    * 与 synthesizeSpeech 同一解析口径，不偷换模型；不调上游、不扣费。旧实现可不提供。
    */

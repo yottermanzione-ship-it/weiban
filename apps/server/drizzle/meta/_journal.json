@@ -926,6 +926,13 @@
       "when": 1799338700000,
       "tag": "0143_legacy_character_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1799338800000,
+      "tag": "0144_usage_reasoning_tokens",
+      "breakpoints": true
     }
   ]
 }

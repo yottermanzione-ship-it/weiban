@@ -312,6 +312,8 @@ export const usageRecords = modelAccessSchema.table(
     cacheWrite5mTokens: integer('cache_write_5m_tokens').notNull().default(0),
     cacheWrite1hTokens: integer('cache_write_1h_tokens').notNull().default(0),
     outputTokens: integer('output_tokens').notNull(),
+    /** 批 EJ（0144）：outputTokens 中的思考 token；未知为 null。只用于计量与诊断，计费仍按 outputTokens。 */
+    reasoningTokens: integer('reasoning_tokens'),
     /** 上游没返回用量、按估算规则得出（runtime-overview.md 2.5）。 */
     estimated: boolean('estimated').notNull(),
     latencyMs: integer('latency_ms').notNull(),

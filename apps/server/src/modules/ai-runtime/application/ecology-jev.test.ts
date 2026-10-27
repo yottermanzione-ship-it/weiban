@@ -384,5 +384,33 @@ describe('给 Jev 的对话现状摘要', () => {
     expect(text).toContain('今天已经做过：给你发了条消息');
     expect(text).not.toContain('王老师');
     expect(text.length).toBeLessThanOrEqual(600);
+    expect(text).toContain('角色最近没有主动找过对方');
+  });
+
+  it('写出上次主动多久前，以及对方在用应用却没回（可能在忙）', () => {
+    const text = jevSummary({
+      local: { hour: 15, minute: 0 },
+      weekday: 3,
+      recent: [],
+      unanswered: 1,
+      sinceUserMs: 3 * 3600_000,
+      doneToday: [],
+      sinceProactiveMs: 26 * 3600_000,
+      userActiveRecently: true,
+    });
+    expect(text).toContain('角色上次主动是 26 小时前');
+    expect(text).toContain('可能在忙或暂时不想回');
+    const idle = jevSummary({
+      local: { hour: 15, minute: 0 },
+      weekday: 3,
+      recent: [],
+      unanswered: 0,
+      sinceUserMs: 4 * 86400_000,
+      doneToday: [],
+      sinceProactiveMs: 3 * 86400_000,
+      userActiveRecently: false,
+    });
+    expect(idle).toContain('角色上次主动是 3 天前');
+    expect(idle).toContain('最近半小时不在应用里');
   });
 });

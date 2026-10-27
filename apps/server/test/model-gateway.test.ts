@@ -107,6 +107,25 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
         prompt_tokens_details: { cached_tokens: 30 },
         completion_tokens: 20,
       };
+      if (mode === 'truncated') {
+        // 批 EJ：正文 JSON 写到一半额度用完（含思考 token 报告）。
+        res.writeHead(200, { 'Content-Type': 'application/json' }).end(
+          JSON.stringify({
+            choices: [
+              {
+                finish_reason: 'length',
+                message: { content: '{"operations":[{"action":"NOOP","content":"甲"},{"act' },
+              },
+            ],
+            usage: {
+              ...usage,
+              completion_tokens: 900,
+              completion_tokens_details: { reasoning_tokens: 300 },
+            },
+          }),
+        );
+        return;
+      }
       if (mode === 'blocked') {
         res.writeHead(200).end(
           JSON.stringify({
@@ -412,6 +431,41 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
 
   // ADM-08 验收标准第 3 条：本页「用户扣费」合计 = 余额明细中扣费类记录合计（同一口径）。
   // 这里用真实网关 + 真实 billing：跑几次成功与失败调用，再同时用两个口径求和比较。
+  it('批 EJ：后台整理开思考且另加预算；要求抢救时截断交回已写部分、只调一次、照常计费并单独记思考 token', async () => {
+    mode = 'truncated';
+    const result = await gateway.generateText(
+      input({
+        purpose: 'memory',
+        modelRole: 'background',
+        countAsBackground: true,
+        responseFormat: 'json',
+        partialJsonOnTruncation: true,
+        maxOutputTokens: 1000,
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.truncated).toBe(true);
+    expect(result.value.text.startsWith('{"operations":[')).toBe(true);
+    expect(result.value.usage.reasoningTokens).toBe(300);
+    expect(result.value.chargedMicros).toBeGreaterThan(0);
+    expect(calls).toBe(1);
+    const sent = requests[0]!;
+    expect(Number(sent.max_tokens ?? sent.max_completion_tokens)).toBeGreaterThan(1000);
+    const rows = await db.query<{ reasoning_tokens: number | null }>(
+      `SELECT reasoning_tokens FROM model_access.usage_records WHERE user_id = $1 AND error_code = 'truncated_partial'`,
+      [user],
+    );
+    expect(rows.rows.map((r) => r.reasoning_tokens)).toEqual([300]);
+
+    // 不要求抢救的调用：截断仍按失败处理（不交回半截正文）。
+    calls = 0;
+    const plain = await gateway.generateText(
+      input({ purpose: 'memory', modelRole: 'background', responseFormat: 'json' }),
+    );
+    expect(plain.ok).toBe(false);
+  });
+
   it('ADM-08 口径核对：用量页用户扣费合计 = 余额明细扣费合计', async () => {
     const usage = app.get(AdminUsageService);
     const from = new Date(clock.nowMs() - 60_000).toISOString();

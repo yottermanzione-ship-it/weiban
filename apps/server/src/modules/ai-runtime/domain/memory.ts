@@ -27,6 +27,51 @@ export const ExtractedMemory = z.strictObject({
     .max(20),
   summary: z.string().max(2000).optional(),
 });
+export type ExtractedOperation = z.infer<typeof ExtractedMemory>['operations'][number];
+
+/**
+ * 批 EJ：从没写完的记忆整理 JSON 里救出已经完整的 operations 条目（逐条校验，不合格的丢弃）。
+ * 只认 `"operations": [` 之后、在顶层闭合的对象；写到一半的最后一条、summary 一律不要。
+ * 不解释任何聊天内容，也不把正文写进日志。
+ */
+export function salvageOperations(partial: string): ExtractedOperation[] {
+  const key = /"operations"\s*:\s*\[/u.exec(partial);
+  if (!key) return [];
+  const item = ExtractedMemory.shape.operations.element;
+  const out: ExtractedOperation[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  for (let i = key.index + key[0].length; i < partial.length && out.length < 20; i++) {
+    const ch = partial[i]!;
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{' || ch === '[') {
+      if (depth === 0 && ch === '{') start = i;
+      depth++;
+    } else if (ch === '}' || ch === ']') {
+      if (depth === 0) break; // operations 数组本身结束
+      depth--;
+      if (depth === 0 && ch === '}' && start >= 0) {
+        try {
+          const parsed = item.safeParse(JSON.parse(partial.slice(start, i + 1)));
+          if (parsed.success) out.push(parsed.data);
+        } catch {
+          // 单条坏掉就跳过这一条
+        }
+        start = -1;
+      }
+    }
+  }
+  return out;
+}
+
 /** 经期健康数据不能进入角色长期记忆或摘要。 */
 export function healthPrivate(text: string): boolean {
   return /月经|生理期|经期|来姨妈|姨妈来了|排卵|痛经|menstrual|menstruation/iu.test(text);

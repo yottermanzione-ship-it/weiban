@@ -28,7 +28,7 @@ const INTERNAL_LABELS: Record<InternalUse, { label: string; help: string }> = {
   small_v: { label: '小V 答疑', help: '用户问小V 时用，平台付费。' },
   platform_content: {
     label: '平台内容生成',
-    help: '官方角色公共朋友圈等平台承担的生成；用户自己的微博同步朋友圈不经过它。',
+    help: '官方角色公共朋友圈（平台承担）。不选＝公共朋友圈关闭（功能保留，选回模型即恢复）；用户自己的微博同步朋友圈、生态私人朋友圈不经过它。',
   },
   web_search: { label: '联网搜索', help: '平台提供的联网搜索服务（需搜索类上游）。' },
 };

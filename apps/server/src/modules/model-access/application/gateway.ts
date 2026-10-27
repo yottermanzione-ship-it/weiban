@@ -71,6 +71,17 @@ type GatewayInternal = {
   trustedPlatform?: boolean;
 };
 
+/**
+ * 批 EJ（总经理 10-27 澄清第 9 条）：记忆整理、推演这类后台整理任务保留思考，但思考不占正文额度——
+ * 正文仍按调用方给的 maxOutputTokens，思考另给一份预算（发给上游的总上限 = 正文 + 思考，计费上限同步加上）。
+ * 思考 token 照常计费（outputTokens 含思考），另在用量记录 reasoning_tokens 单独记下。
+ */
+const THINKING_KEPT_PURPOSES: readonly GenerateTextInput['purpose'][] = ['memory', 'simulation'];
+export function thinkingBudgetFor(purpose: GenerateTextInput['purpose'], body: number): number {
+  if (!THINKING_KEPT_PURPOSES.includes(purpose)) return 0;
+  return Math.min(2048, Math.max(1024, Math.round(body)));
+}
+
 const DEFAULT_TOKENS: Partial<Record<GenerateTextInput['purpose'], number>> = {
   chat_reply: 600,
   proactive: 400,
@@ -276,7 +287,13 @@ export class ModelGateway implements ModelGatewayPort {
         ];
     }
     const requested = input.maxOutputTokens ?? DEFAULT_TOKENS[input.purpose] ?? 8000;
-    const verified = await this.bounds?.text(model.modelKey, candidates, imageCount, requested);
+    const verified = await this.bounds?.text(
+      model.modelKey,
+      candidates,
+      imageCount,
+      requested,
+      thinkingBudgetFor(input.purpose, requested),
+    );
     if (!verified) {
       const result: CachedResult = { ok: false, error: 'model_unavailable' };
       await this.cache.save(row, result, 'complete');
@@ -370,6 +387,8 @@ export class ModelGateway implements ModelGatewayPort {
       ),
     ).toISOString();
     const budgetMs = Math.max(0, Date.parse(deadlineAt) - this.clock.nowMs());
+    // 批 EJ：后台整理任务的思考预算（另加在正文之上；其余用途为 0 = 照旧关思考）。
+    const thinkingBudget = thinkingBudgetFor(input.purpose, maximum);
     let outputBudget = maximum,
       emptyRetried = false,
       index = 0;
@@ -426,7 +445,7 @@ export class ModelGateway implements ModelGatewayPort {
             ),
             outputTokens: Math.min(
               ceiling.usage.outputTokens ?? Number.MAX_SAFE_INTEGER,
-              outputBudget,
+              outputBudget + thinkingBudget,
             ),
           },
           ceiling,
@@ -496,7 +515,7 @@ export class ModelGateway implements ModelGatewayPort {
                     model: route.upstreamModelId,
                     messages: textProtocolOf(route.kind) === 'anthropic' ? baseWire : wire,
                     maxOutputTokens: Math.min(
-                      outputBudget,
+                      outputBudget + thinkingBudget,
                       route.billingBounds.text!.maxOutputTokens,
                     ),
                     outputParameter: route.billingBounds.text!.outputParameter,
@@ -504,7 +523,9 @@ export class ModelGateway implements ModelGatewayPort {
                     responseFormat: input.responseFormat,
                     idempotencyKey: key,
                     timeoutMs: Math.min(20000, remaining),
-                    thinking: 'off',
+                    ...(thinkingBudget > 0
+                      ? { thinking: 'on' as const, thinkingBudget }
+                      : { thinking: 'off' as const }),
                   }),
                 );
           } catch {
@@ -529,11 +550,24 @@ export class ModelGateway implements ModelGatewayPort {
             known ? 'reported' : 'missing',
           ).catch(() => undefined);
         const latencyMs = Math.round(performance.now() - wallStart);
+        // 批 EJ：调用方要求抢救时，正文 JSON 没写完就交回已写出的部分（照常计费），不加大额度重试；
+        // 由调用方只取其中已完整的条目、其余拆小批或延后。
+        const partial =
+          !answer.ok &&
+          answer.category === 'truncated' &&
+          input.partialJsonOnTruncation === true &&
+          input.responseFormat === 'json' &&
+          !!answer.partialText &&
+          !!answer.usage
+            ? { text: answer.partialText, usage: answer.usage }
+            : null;
+        if (partial) answer = { ok: true, text: partial.text, usage: partial.usage };
         if (answer.ok) {
           const result: CachedResult = {
             ok: true,
             value: {
               text: answer.text,
+              ...(partial ? { truncated: true } : {}),
               modelKey: model.modelKey,
               ...(model.usedVisionDefault ? { usedVisionDefault: true } : {}),
               usage: answer.usage,
@@ -546,6 +580,7 @@ export class ModelGateway implements ModelGatewayPort {
           await this.cache.save(row, result, 'result');
           await this.recorder.finish(usage.record.id, {
             status: 'succeeded',
+            ...(partial ? { errorCode: 'truncated_partial' } : {}),
             ...answer.usage,
             latencyMs,
             ttftMs: answer.ttftMs ?? null,
