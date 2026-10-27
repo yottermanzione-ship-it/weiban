@@ -28,7 +28,10 @@ export function ChatHeading({
     <span className="wx-chat-title" aria-live="polite" aria-atomic="true">
       <h1>
         {showTyping ? (
-          '对方正在输入...'
+          <>
+            对方正在输入
+            <TypingDots />
+          </>
         ) : (
           <>
             <span className="wx-chat-name">{name}</span>
@@ -39,6 +42,20 @@ export function ChatHeading({
           </>
         )}
       </h1>
+    </span>
+  );
+}
+
+/**
+ * 「正在输入」三点（U5）：全站同一节奏——三个点依次轻跳，一轮 --wb-motion-duration-typing-cycle（1.2 秒）。
+ * 读屏只读「对方正在输入」，点本身不读。
+ */
+export function TypingDots() {
+  return (
+    <span className="typing-dots" aria-hidden>
+      <i />
+      <i />
+      <i />
     </span>
   );
 }

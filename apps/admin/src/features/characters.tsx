@@ -3,7 +3,7 @@
  * 人设内容仍由 WB-Card schema 驱动（components/card-editor），只换了外观。
  */
 import { useEffect, useState } from 'react';
-import { Alert, Button, Checkbox, DatePicker, Input, Select, Space, Upload } from 'antd';
+import { Alert, Avatar, Button, Checkbox, DatePicker, Input, Select, Space, Upload } from 'antd';
 import { PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
@@ -20,6 +20,7 @@ import {
 import { api } from '../data/client.js';
 import { ApiFailure } from '@weiban/client-core';
 import { errorText, useRemote } from '../data/hooks.js';
+import { adminMediaUrl } from '../data/media-url.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
 import { Page, SectionCard, StatusTag, useDangerConfirm, useToast } from '../ui/page.js';
@@ -32,6 +33,7 @@ import {
 import { formatDateTime } from '../ui/format.js';
 import { CardEditor } from '../components/card-editor.js';
 import { LegacyCharacterDrawer } from '../components/legacy-card-editor.js';
+import { CharacterVoicePanel } from '../components/character-voice-panel.js';
 import { EligibilityCard, EligibilityLookupDrawer, factsText } from './character-eligibility.js';
 import {
   applyEligibilityPatch,
@@ -349,12 +351,22 @@ export function CharactersPage() {
     {
       title: '角色',
       fixed: 'left',
-      width: 240,
+      width: 340,
       render: (_, row) => (
-        <div className="cell-main">
-          <span className="cell-title">{row.name}</span>
-          <span className="cell-sub">{row.tagline || '—'}</span>
-        </div>
+        <Space align="start" size={12}>
+          <Avatar
+            shape="square"
+            size={48}
+            src={row.avatar.image ? adminMediaUrl(row.avatar.image.url) : undefined}
+            style={{ flexShrink: 0, borderRadius: 12 }}
+          >
+            {row.name.slice(0, 1)}
+          </Avatar>
+          <div className="cell-main">
+            <span className="cell-title">{row.name}</span>
+            <span className="cell-sub">{row.tagline || '暂无简介'}</span>
+          </div>
+        </Space>
       ),
     },
     {
@@ -377,17 +389,38 @@ export function CharactersPage() {
       ),
     },
     {
-      title: '人设版本',
-      width: 90,
-      render: (_, row) => `v${row.personaVersion}`,
+      title: '微博资料',
+      width: 160,
+      render: (_, row) =>
+        row.weibo?.enabled ? (
+          <div className="cell-main">
+            <StatusTag tone="success">有微博</StatusTag>
+            <span className="cell-sub">
+              {row.weibo.nickname}
+              {row.weibo.userId ? '' : ' · 账号ID待补'}
+            </span>
+          </div>
+        ) : (
+          <span className="detail-muted">未标记微博</span>
+        ),
     },
     {
-      title: '上架检查',
-      width: 230,
+      title: '人物资料',
+      width: 200,
       render: (_, row) => {
-        // 旧卡没有 WB-Card，不适用「必填结构 / 人设稳定 / 边界检测」；显示旧格式说明，不假装缺 12 项。
+        // 概览只说明实际资料，不把兼容格式或未执行的检查包装成运营状态。
         if (row.format === 'legacy')
-          return <StatusTag tone="default">旧卡 · 旧字段运行，不适用 WB-Card 检查</StatusTag>;
+          return (
+            <Space direction="vertical" size={4}>
+              <StatusTag tone={row.intro.trim() ? 'success' : 'warning'}>
+                {row.intro.trim() ? '人设文字已配置' : '人设待补充'}
+              </StatusTag>
+              <span className="detail-muted">
+                资料修订 {row.revision ?? row.personaVersion} · 开场白{' '}
+                {row.fallbackGreetings.length} 条
+              </span>
+            </Space>
+          );
         const checks = [
           ['结构', row.publishChecks.requiredFieldsComplete],
           ['稳定', row.publishChecks.personaStabilityPassed],
@@ -451,7 +484,7 @@ export function CharactersPage() {
   return (
     <Page
       title="角色库"
-      desc="官方角色。上架前要过「必填结构 / 人设稳定 / 边界检测」三项检查；点一行编辑人设。勾选后可批量上架 / 下架（软删）、批量彻底删除（硬删，不可恢复）或批量修改资格标注。"
+      desc="统一管理官方角色：点一行编辑人物文本、头像昵称、声音和微博资料；资格标注独立管理，修改记录可查看和恢复。勾选后可执行批量操作。"
       extra={
         <Space>
           <Button onClick={() => list.refresh()}>刷新</Button>
@@ -1126,9 +1159,13 @@ function CharacterDrawer({
         </div>
       </SectionCard>
 
-      <SectionCard title="人设卡" desc="内容很多，按板块填；只有必填项完整才能上架">
+      <SectionCard
+        title="人物文本与场景态度"
+        desc="按人物、说话方式、背景与示例等分区编辑；声音单独管理"
+      >
         <CardEditor card={draft.card} onChange={(card) => patch({ card })} />
       </SectionCard>
+      {character && <CharacterVoicePanel characterId={character.characterId} />}
       <div className="detail-muted">
         上架前系统会自动检查：必填结构、人设稳定、边界检测、备用开场白。
       </div>

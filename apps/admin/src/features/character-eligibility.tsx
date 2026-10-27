@@ -201,7 +201,7 @@ export function EligibilityCard({ characterId }: { characterId: string }) {
               <span className="field-label-hint">必填，会记在修改记录里</span>
             </span>
             <Input.TextArea
-              autoSize={{ minRows: 2, maxRows: 4 }}
+              autoSize={{ minRows: 1 }}
               maxLength={200}
               showCount
               value={reason}
@@ -240,24 +240,27 @@ export function EligibilityCard({ characterId }: { characterId: string }) {
         </div>
       )}
 
-      <Table
-        style={{ marginTop: 12 }}
-        size="small"
-        rowKey={(row) => `${row.at}-${row.reason}`}
-        rowSelection={{ preserveSelectedRowKeys: false }}
-        pagination={false}
-        dataSource={data.history}
-        locale={{ emptyText: '还没有人工修改过' }}
-        columns={[
-          { title: '时间', width: 150, render: (_, row) => formatDateTime(row.at) },
-          { title: '操作人', width: 110, render: (_, row) => row.operatorName || '—' },
-          {
-            title: '改成',
-            render: (_, row) => (row.after ? factsText(row.after) : '清除人工标注'),
-          },
-          { title: '原因', dataIndex: 'reason' },
-        ]}
-      />
+      <details className="legacy-history-details">
+        <summary>更多：资格修改记录（{data.history.length}）</summary>
+        <Table
+          style={{ marginTop: 12 }}
+          size="small"
+          rowKey={(row) => `${row.at}-${row.reason}`}
+          rowSelection={{ preserveSelectedRowKeys: false }}
+          pagination={false}
+          dataSource={data.history}
+          locale={{ emptyText: '还没有人工修改过' }}
+          columns={[
+            { title: '时间', width: 150, render: (_, row) => formatDateTime(row.at) },
+            { title: '操作人', width: 110, render: (_, row) => row.operatorName || '—' },
+            {
+              title: '改成',
+              render: (_, row) => (row.after ? factsText(row.after) : '清除人工标注'),
+            },
+            { title: '原因', dataIndex: 'reason' },
+          ]}
+        />
+      </details>
     </SectionCard>
   );
 }

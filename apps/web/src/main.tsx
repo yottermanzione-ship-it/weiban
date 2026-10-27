@@ -3,6 +3,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import '../../../docs/design/tokens.css';
+import './app/tokens.css';
 import './app/styles.css';
 import './app/media-call.css';
 import './app/l6.css';
@@ -17,7 +18,9 @@ import './app/ecology.css';
 import { App } from './app/app.js';
 import { RuntimeErrorBoundary } from './app/runtime-error-boundary.js';
 import { applyDisplayPrefs } from './data/display-prefs.js';
+import { installImeEnterGuard } from './features/ime.js';
 applyDisplayPrefs();
+installImeEnterGuard();
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
@@ -32,3 +35,5 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 }
 import './app/common-fixes.css';
 import './app/edit-pages.css';
+import './app/ui-components.css';
+import './app/persona-card.css';

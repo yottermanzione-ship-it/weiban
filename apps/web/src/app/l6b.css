@@ -145,11 +145,15 @@
   font-size: var(--wb-font-size-title3);
   font-weight: var(--wb-font-weight-semibold);
 }
-.deletion-list {
-  margin: 0;
+/* U2（V05）：.panel 的内边距会盖掉这里，提高优先级；条目之间留出阅读间距 */
+ul.panel.deletion-list {
+  margin-top: 0;
   padding: var(--wb-space-4) var(--wb-space-5) var(--wb-space-4) var(--wb-space-8);
   font-size: var(--wb-font-size-subhead);
   line-height: var(--wb-line-height-relaxed);
+}
+ul.panel.deletion-list > li + li {
+  margin-top: var(--wb-space-2);
 }
 .numeric {
   font-family: var(--wb-font-family-numeric);
@@ -265,7 +269,7 @@
 }
 .pet-bounce {
   display: block;
-  animation: pet-bounce var(--wb-motion-duration-base) ease-out;
+  animation: pet-bounce var(--wb-motion-duration-base) var(--ui-ease-out);
 }
 @keyframes pet-bounce {
   40% {

@@ -15,8 +15,9 @@ import { CharacterAvatar } from './character-avatar.js';
 import { UserAvatar } from './user-avatar.js';
 import { CallRecordBubble, ImageBubble, LinkCardBubble, MediaImg, StickerBubble } from './media.js';
 import { shareText } from './share-render.js';
-import { EmptyState, NavBar, Sheet } from './shell-kit.js';
-import { Dialog, showToast } from './toast.js';
+import { Lightbox } from './lightbox.js';
+import { EmptyState, NavBar } from './shell-kit.js';
+import { showSnackbar, showToast } from './toast.js';
 
 function FavoriteVoice({ mediaId, transcript }: { mediaId: string; transcript?: string | null }) {
   const media = useRemote(MediaEndpoints.getMedia, { params: { mediaId } });
@@ -81,16 +82,21 @@ function FavoriteContent({ favorite }: { favorite: Favorite }) {
     </div>
   );
 }
+/** U5：点图片用全屏看图 Lightbox（原来是底部弹层）；同一条收藏里的多张图可左右切换。 */
 function FavoriteImage({
   mediaId,
   width = null,
   height = null,
+  gallery,
 }: {
   mediaId: string;
   width?: number | null;
   height?: number | null;
+  /** 同一条收藏里的全部图片（含自己），看图时可左右滑。 */
+  gallery?: string[];
 }) {
   const [open, setOpen] = useState(false);
+  const list = gallery && gallery.includes(mediaId) ? gallery : [mediaId];
   return (
     <>
       <ImageBubble
@@ -98,11 +104,11 @@ function FavoriteImage({
         onOpen={() => setOpen(true)}
       />
       {open && (
-        <Sheet title="查看图片" closeLabel="返回" onClose={() => setOpen(false)}>
-          <div className="favorite-image-sheet">
-            <MediaImg mediaId={mediaId} thumbnail={false} />
-          </div>
-        </Sheet>
+        <Lightbox
+          items={list.map((id, i) => ({ mediaId: id, key: id + ':' + i }))}
+          index={list.indexOf(mediaId)}
+          onClose={() => setOpen(false)}
+        />
       )}
     </>
   );
@@ -114,7 +120,7 @@ function FavoriteBody({ favorite }: { favorite: Favorite }) {
       {favorite.extraImages.length > 0 && (
         <div className="favorite-extra-images">
           {favorite.extraImages.map((id, i) => (
-            <FavoriteImage key={id + ':' + i} mediaId={id} />
+            <FavoriteImage key={id + ':' + i} mediaId={id} gallery={favorite.extraImages} />
           ))}
         </div>
       )}
@@ -130,7 +136,8 @@ export function FavoritesPage() {
   const [cursor, setCursor] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
-  const [removing, setRemoving] = useState<Favorite | null>(null);
+  /** U2：取消收藏可撤销——先从列表藏起来，撤销条消失后才真正删除。 */
+  const [hidden, setHidden] = useState<string[]>([]);
   useEffect(() => {
     if (remote.data) {
       setExtra([]);
@@ -145,7 +152,8 @@ export function FavoritesPage() {
       remote.refresh();
   });
   const items = [...(remote.data?.items ?? []), ...extra].filter(
-    (f, i, all) => all.findIndex((x) => x.favoriteId === f.favoriteId) === i,
+    (f, i, all) =>
+      all.findIndex((x) => x.favoriteId === f.favoriteId) === i && !hidden.includes(f.favoriteId),
   );
   const names = useCharacterNames(items.flatMap((f) => (f.characterId ? [f.characterId] : [])));
   async function more() {
@@ -169,22 +177,26 @@ export function FavoritesPage() {
       setPending(false);
     }
   }
-  async function remove() {
-    if (!removing || pending) return;
-    setPending(true);
-    setError('');
+  const unhide = (id: string) => setHidden((old) => old.filter((x) => x !== id));
+  async function commitRemove(id: string) {
     try {
-      await api.call(LibraryEndpoints.removeFavorite, {
-        params: { favoriteId: removing.favoriteId },
-      });
-      setRemoving(null);
+      await api.call(LibraryEndpoints.removeFavorite, { params: { favoriteId: id } });
       remote.refresh();
-      showToast('已取消收藏', 2000, 'success');
     } catch (e) {
-      setError(friendlyError(e));
-    } finally {
-      setPending(false);
+      unhide(id);
+      showToast(friendlyError(e), 2500, 'error');
     }
+  }
+  function remove(favorite: Favorite) {
+    const id = favorite.favoriteId;
+    setHidden((old) => [...old, id]);
+    showSnackbar({
+      text: '已取消收藏',
+      onAction: () => unhide(id),
+      onEnd: (reason) => {
+        if (reason !== 'action') void commitRemove(id);
+      },
+    });
   }
   return (
     <main>
@@ -213,7 +225,7 @@ export function FavoritesPage() {
             disabled={pending}
             onClick={() => {
               setError('');
-              setRemoving(f);
+              remove(f);
             }}
           >
             取消收藏
@@ -238,30 +250,6 @@ export function FavoritesPage() {
         <button className="text-button full" disabled={pending} onClick={() => void more()}>
           {pending ? '正在读取…' : '加载更多'}
         </button>
-      )}
-      {removing && (
-        <Dialog
-          actions={[
-            {
-              label: '取消',
-              onClick: () => {
-                if (!pending) setRemoving(null);
-              },
-            },
-            {
-              label: pending ? '正在取消…' : '取消收藏',
-              danger: true,
-              onClick: () => void remove(),
-            },
-          ]}
-        >
-          <p>取消这条收藏？</p>
-          {error && (
-            <p role="alert" className="error">
-              {error}
-            </p>
-          )}
-        </Dialog>
       )}
     </main>
   );

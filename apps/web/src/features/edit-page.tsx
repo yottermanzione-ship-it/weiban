@@ -7,10 +7,17 @@
  * - InfoPage：白底，左上返回、大图标、标题、说明、底部灰色按钮（微信「微信号」页）。
  * 这些页面都是独立路由，进入 / 返回沿用 RouteMotion 的整页推入转场。
  */
+import { isImeEnter } from './ime.js';
 import { useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { OldIcon } from './old-icons.js';
-import { BackArrow, NavBar, useBack } from './shell-kit.js';
+import { useLayerHistory } from './layer-history.js';
+import { BackArrow, NavBar, useBack, useEscape } from './shell-kit.js';
 
+/**
+ * 二级页面外壳（26 号 §2）：整页推入，顶栏「取消 / 标题 / 完成」，完成键没改动或必填为空时灰底灰字不可点，
+ * 有效改动后变绿。长内容、复杂编辑（资料编辑、自建角色各字段、长文本）都用它，不用底部弹层。
+ */
 export function EditPage({
   title,
   canSave,
@@ -19,6 +26,9 @@ export function EditPage({
   fallback,
   children,
   className,
+  doneLabel = '完成',
+  cancelLabel = '取消',
+  onCancel,
 }: {
   title: string;
   /** 有有效改动且必填不为空时才为 true。 */
@@ -28,6 +38,11 @@ export function EditPage({
   fallback: string;
   children: ReactNode;
   className?: string;
+  /** 右上角主按钮文字，默认「完成」；发布类可写「发表」「发送」。 */
+  doneLabel?: string;
+  cancelLabel?: string;
+  /** 自定义取消（如先问是否保留草稿）；不传则返回上一页。 */
+  onCancel?(): void;
 }) {
   const back = useBack(fallback);
   return (
@@ -35,8 +50,13 @@ export function EditPage({
       <NavBar
         title={title}
         left={
-          <button type="button" className="edit-cancel" disabled={pending} onClick={back}>
-            取消
+          <button
+            type="button"
+            className="edit-cancel"
+            disabled={pending}
+            onClick={onCancel ?? back}
+          >
+            {cancelLabel}
           </button>
         }
         right={
@@ -47,12 +67,158 @@ export function EditPage({
             aria-busy={pending}
             onClick={onSave}
           >
-            完成
+            {doneLabel}
           </button>
         }
       />
       {children}
     </main>
+  );
+}
+
+/**
+ * 页内二级页面（2026-10-26 批 U2）：不新开路由、从右侧整页推入盖住当前页，外观就是 SubPage
+ * （顶栏「取消 / 标题 / 完成」，完成灰→绿）。用来替代原来的底部表单弹层（单字段编辑、记忆、心愿、纪念日等），
+ * 已填内容不会因为点蒙层丢失；Esc 等同「取消」。
+ */
+export function SubPageLayer({
+  title,
+  canSave,
+  pending = false,
+  onSave,
+  onCancel,
+  children,
+  doneLabel,
+  className,
+}: {
+  title: string;
+  canSave: boolean;
+  pending?: boolean;
+  onSave(): void;
+  onCancel(): void;
+  children: ReactNode;
+  doneLabel?: string;
+  className?: string;
+}) {
+  useEscape(() => {
+    if (!pending) onCancel();
+  });
+  // U5：进浏览器历史，安卓返回键 / 浏览器后退只关这一层（等同「取消」）。
+  useLayerHistory(() => {
+    if (!pending) onCancel();
+  });
+  return (
+    <div className="subpage-layer" role="dialog" aria-modal="true" aria-label={title}>
+      <EditPage
+        title={title}
+        canSave={canSave}
+        pending={pending}
+        onSave={onSave}
+        onCancel={onCancel}
+        fallback="/"
+        doneLabel={doneLabel}
+        className={className}
+      >
+        {children}
+      </EditPage>
+    </div>
+  );
+}
+
+/**
+ * 页内只读整页（2026-10-27 批 U5）：外观同普通二级页面——从右侧整页推入、顶栏返回箭头 + 标题，
+ * 用来看内容而不是编辑（聊天记录详情）。和 SubPageLayer 一样进浏览器历史，返回键只关这一层。
+ */
+export function PushLayer({
+  title,
+  onClose,
+  right,
+  children,
+  className,
+}: {
+  title: ReactNode;
+  onClose(): void;
+  right?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  useEscape(onClose);
+  useLayerHistory(onClose);
+  // 挂到 body：常从消息气泡里打开（聊天记录卡片），不能被消息列表的层叠上下文压在顶部浮条下面。
+  return createPortal(
+    <div
+      className="subpage-layer"
+      role="dialog"
+      aria-modal="true"
+      aria-label={typeof title === 'string' ? title : undefined}
+    >
+      <main className={`edit-page push-layer ${className ?? ''}`}>
+        <NavBar title={title} onBack={onClose} right={right} />
+        {children}
+      </main>
+    </div>,
+    document.body,
+  );
+}
+
+/**
+ * 单字段编辑二级页面（微信「修改群聊名称」）：一行输入 + 清除按钮 + 字数，替代原 FieldSheet 底部弹层。
+ * 没改动或必填为空时「完成」灰色不可点；回车（非输入法选字）等同完成。
+ */
+export function FieldPage({
+  title,
+  initial,
+  maxLength,
+  required = false,
+  pending = false,
+  placeholder,
+  hint,
+  inputMode,
+  onClose,
+  onSave,
+}: {
+  title: string;
+  initial: string;
+  maxLength: number;
+  required?: boolean;
+  pending?: boolean;
+  placeholder?: string;
+  /** 输入框下方的灰字说明。 */
+  hint?: ReactNode;
+  inputMode?: 'numeric' | 'text';
+  onClose(): void;
+  onSave(value: string): void;
+}) {
+  const [value, setValue] = useState(initial);
+  const canSave = value.trim() !== initial.trim() && !(required && !value.trim());
+  const save = () => {
+    if (!pending && canSave) onSave(value.trim());
+  };
+  return (
+    <SubPageLayer
+      title={title}
+      canSave={canSave}
+      pending={pending}
+      onSave={save}
+      onCancel={onClose}
+    >
+      <ClearInput
+        label={title}
+        value={value}
+        onChange={setValue}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        disabled={pending}
+        inputMode={inputMode}
+        onEnter={save}
+      />
+      <p className="edit-hint field-page-hint">
+        {hint}
+        <span className="field-page-count">
+          {Array.from(value).length}/{maxLength}
+        </span>
+      </p>
+    </SubPageLayer>
   );
 }
 
@@ -67,6 +233,7 @@ export function ClearInput({
   disabled,
   autoFocus = true,
   onEnter,
+  inputMode,
 }: {
   value: string;
   onChange(value: string): void;
@@ -77,6 +244,7 @@ export function ClearInput({
   disabled?: boolean;
   autoFocus?: boolean;
   onEnter?(): void;
+  inputMode?: 'numeric' | 'text';
 }) {
   const input = useRef<HTMLInputElement>(null);
   return (
@@ -85,6 +253,7 @@ export function ClearInput({
         ref={input}
         aria-label={label}
         type={type}
+        inputMode={inputMode}
         value={value}
         maxLength={maxLength}
         placeholder={placeholder}
@@ -92,7 +261,7 @@ export function ClearInput({
         autoFocus={autoFocus}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.nativeEvent.isComposing) onEnter?.();
+          if (event.key === 'Enter' && !isImeEnter(event)) onEnter?.();
         }}
       />
       {value !== '' && !disabled && (
@@ -125,6 +294,7 @@ export function CountTextarea({
   label,
   placeholder,
   disabled,
+  rows = 3,
 }: {
   value: string;
   onChange(value: string): void;
@@ -132,6 +302,8 @@ export function CountTextarea({
   label: string;
   placeholder?: string;
   disabled?: boolean;
+  /** 长文本（U3 自建角色人设描述）用大文本区，默认 3 行。 */
+  rows?: number;
 }) {
   return (
     <div className="edit-textarea">
@@ -142,7 +314,7 @@ export function CountTextarea({
         placeholder={placeholder}
         disabled={disabled}
         autoFocus
-        rows={3}
+        rows={rows}
         onChange={(event) => onChange(event.target.value)}
       />
       <small aria-label={`还能输入 ${maxLength - value.length} 字`}>
@@ -211,8 +383,7 @@ export function FormPage({
           autoFocus
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.nativeEvent.isComposing && canSubmit && !pending)
-              onSubmit();
+            if (event.key === 'Enter' && !isImeEnter(event) && canSubmit && !pending) onSubmit();
           }}
         />
       </div>

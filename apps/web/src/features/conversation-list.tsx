@@ -23,7 +23,7 @@ import { CharacterAvatar } from './character-avatar.js';
 import { GroupAvatar } from './groups.js';
 import { OldIcon } from './old-icons.js';
 import { LongPressMenu, PopMenu, showComingSoon, type ActionItem } from './shell-kit.js';
-import { Dialog, showToast } from './toast.js';
+import { AlertDialog, showSnackbar, showToast } from './toast.js';
 import { PullMiniApps } from './pull-panel.js';
 import { useRowGesture } from './row-gesture.js';
 import { listTime } from './time-format.js';
@@ -292,13 +292,23 @@ export function ConversationListPage() {
       params: { conversationId: item.conversationId },
       body: { readSeq: item.lastSeq },
     });
-  const hide = (item: Conversation) =>
-    act(
-      () => patch(item, { hidden: true }),
-      item.type === 'group'
-        ? '已不显示该聊天，可在 通讯录 › 群聊 找回'
-        : '已不显示该聊天，有新消息时会重新出现',
-    );
+  // U2：不显示该聊天可撤销——直接隐藏，底部撤销条「撤销」把它放回列表
+  async function hide(item: Conversation) {
+    try {
+      await patch(item, { hidden: true });
+      await synchronize();
+    } catch (e) {
+      showToast(friendlyError(e));
+      return;
+    }
+    showSnackbar({
+      text:
+        item.type === 'group'
+          ? '已不显示该聊天，可在 通讯录 › 群聊 找回'
+          : '已不显示该聊天，有新消息时会重新出现',
+      onAction: () => act(() => patch(item, { hidden: false })),
+    });
+  }
   const hasUnread = (item: Conversation) => item.unreadCount > 0 || item.state.markedUnread;
   const menuItems = (item: Conversation): ActionItem[] => [
     {
@@ -413,26 +423,22 @@ export function ConversationListPage() {
           onClose={() => setTarget(null)}
         />
       )}
+      {/* U2：删除聊天会清空记录，不可撤销 → Alert Dialog */}
       {deleting && (
-        <Dialog
-          actions={[
-            { label: '取消', onClick: () => setDeleting(null) },
-            {
-              label: '删除',
-              danger: true,
-              onClick: () => {
-                const item = deleting;
-                setDeleting(null);
-                void act(async () => {
-                  await clearHistory(item.conversationId);
-                  await patch(item, { hidden: true });
-                });
-              },
-            },
-          ]}
-        >
-          <p>删除该聊天？TA 的记忆和养成数据会保留</p>
-        </Dialog>
+        <AlertDialog
+          title="删除该聊天？"
+          message="聊天记录会清空，不能恢复；TA 的记忆和养成数据会保留。"
+          confirmLabel="删除聊天"
+          onCancel={() => setDeleting(null)}
+          onConfirm={() => {
+            const item = deleting;
+            setDeleting(null);
+            void act(async () => {
+              await clearHistory(item.conversationId);
+              await patch(item, { hidden: true });
+            });
+          }}
+        />
       )}
     </main>
   );

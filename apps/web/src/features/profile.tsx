@@ -7,11 +7,11 @@ import { api } from '../data/client.js';
 import { AvatarEditor } from './avatar-editor.js';
 import { ProfileAvatar } from './profile-avatar.js';
 import { useAuth } from '../app/auth.js';
-import { AliasRow, NudgeRow } from './profile-edit.js';
-import { Chevron, GroupHeader, MenuGroup, MenuRow, NavBar, Sheet } from './shell-kit.js';
-import { REGION_GROUPS } from '../data/regions.js';
+import { AliasRow, NudgeRow, RegionPickerLayer } from './profile-edit.js';
+import { GroupHeader, MenuGroup, MenuRow, NavBar } from './shell-kit.js';
+import { DateField, PickerTrigger, SelectField } from './wheel-picker.js';
 
-/** 首次填写页「性别」行显示的当前值（原生下拉透明铺在行上，见 pages-old.css .profile-field.picker）。 */
+/** 首次填写页「性别」选项（U2 起用 Choice Sheet 选择）。 */
 const GENDER_LABELS: Record<string, string> = {
   unspecified: '不填写',
   female: '女',
@@ -36,6 +36,7 @@ function OnboardingProfilePage() {
   const [pending, setPending] = useState(false);
   // 头像和「我 › 个人信息」一样走同一套弹层（10-25：首次填写页对齐资料页，不再在页面上单开一块头像区）。
   const [editingAvatar, setEditingAvatar] = useState(false);
+  const [regionOpen, setRegionOpen] = useState(false);
   useEffect(() => {
     if (remote.data) {
       setForm({
@@ -132,59 +133,40 @@ function OnboardingProfilePage() {
         </MenuGroup>
         <GroupHeader>{firstUse ? '补充更多资料（可选）' : '更多资料'}</GroupHeader>
         <MenuGroup>
-          <label className="menu-row profile-field with-caret">
+          {/* U2：原生日期框 / 下拉换成滚轮与 Choice Sheet */}
+          <div className="menu-row profile-field">
             <span>生日</span>
-            <input
-              disabled={!loaded}
-              type="date"
+            <DateField
+              title="生日"
               value={form.birthday}
-              onChange={(e) => setForm({ ...form, birthday: e.target.value })}
+              placeholder="不填写"
+              clearable
+              clearLabel="不填写"
+              disabled={!loaded}
+              onChange={(birthday) => setForm({ ...form, birthday })}
             />
-            <Chevron />
-          </label>
-          <label className="menu-row profile-field picker">
+          </div>
+          <div className="menu-row profile-field">
             <span>性别</span>
-            <span className="profile-field-value" aria-hidden="true">
-              {GENDER_LABELS[form.gender] ?? '不填写'}
-            </span>
-            <Chevron />
-            <select
-              disabled={!loaded}
+            <SelectField
+              title="性别"
               value={form.gender}
-              onChange={(e) => setForm({ ...form, gender: e.target.value })}
-            >
-              <option value="unspecified">不填写</option>
-              <option value="female">女</option>
-              <option value="male">男</option>
-              <option value="other">其他</option>
-            </select>
-          </label>
-          <label className="menu-row profile-field picker">
-            <span>地区</span>
-            <span className="profile-field-value" aria-hidden="true">
-              {form.city || '不填写'}
-            </span>
-            <Chevron />
-            <select
               disabled={!loaded}
-              value={form.city}
-              onChange={(e) => setForm({ ...form, city: e.target.value })}
-            >
-              <option value="">不填写</option>
-              {form.city && !REGION_GROUPS.some((g) => g.items.includes(form.city)) && (
-                <option value={form.city}>{form.city}</option>
-              )}
-              {REGION_GROUPS.map((group) => (
-                <optgroup key={group.label} label={group.label}>
-                  {group.items.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
+              options={Object.entries(GENDER_LABELS).map(([value, label]) => ({ value, label }))}
+              onChange={(gender) => setForm({ ...form, gender })}
+            />
+          </div>
+          <div className="menu-row profile-field">
+            <span>地区</span>
+            {/* U5：和资料页同一个地区页（定位 + 省份分组），原来是 30 多项的单列滚轮 */}
+            <PickerTrigger
+              text={form.city}
+              placeholder="不填写"
+              label="地区"
+              disabled={!loaded}
+              onOpen={() => setRegionOpen(true)}
+            />
+          </div>
           <label className="menu-row profile-field multiline">
             <span>关于我</span>
             <span className="profile-field-body">
@@ -214,19 +196,25 @@ function OnboardingProfilePage() {
           </p>
         )}
       </form>
+      {regionOpen && (
+        <RegionPickerLayer
+          value={form.city}
+          onPick={(city) => setForm((value) => ({ ...value, city }))}
+          onClose={() => setRegionOpen(false)}
+        />
+      )}
       {editingAvatar && (
-        <Sheet title="头像" closeLabel="取消" onClose={() => setEditingAvatar(false)}>
-          <AvatarEditor
-            onSaved={async (mediaId) => {
-              await api.call(IdentityEndpoints.updateProfile, {
-                body: { avatarMediaId: mediaId },
-              });
-              remote.refresh();
-              setMessage('头像已保存');
-              setEditingAvatar(false);
-            }}
-          />
-        </Sheet>
+        <AvatarEditor
+          sheet
+          onClose={() => setEditingAvatar(false)}
+          onSaved={async (mediaId) => {
+            await api.call(IdentityEndpoints.updateProfile, {
+              body: { avatarMediaId: mediaId },
+            });
+            remote.refresh();
+            setMessage('头像已保存');
+          }}
+        />
       )}
     </main>
   );
@@ -240,7 +228,6 @@ function ProfileDetails() {
   const remote = useRemote(IdentityEndpoints.getProfile);
   // 10-21 G2：昵称、性别、生日、地区、个性签名、微伴号改成整页推入的二级页面（profile-edit.tsx）；头像仍用原弹层。
   const [editingAvatar, setEditingAvatar] = useState(false);
-  const [pending, setPending] = useState(false);
   const auth = useAuth();
   const genders = { female: '女', male: '男', other: '其他', unspecified: '未填写' };
   const profile = remote.data;
@@ -276,24 +263,18 @@ function ProfileDetails() {
           {remote.error}
         </p>
       )}
+      {/* U2：点头像直接弹出 拍照 / 从相册选择 / 取消（微信），选完进全屏裁剪 */}
       {editingAvatar && (
-        <Sheet
-          title="头像"
-          onClose={() => {
-            if (!pending) setEditingAvatar(false);
+        <AvatarEditor
+          sheet
+          onClose={() => setEditingAvatar(false)}
+          onSaved={async (mediaId) => {
+            await api.call(IdentityEndpoints.updateProfile, { body: { avatarMediaId: mediaId } });
+            remote.refresh();
+            await auth.refreshUser();
+            showToast('头像已保存', 1500, 'success');
           }}
-          closeLabel="取消"
-        >
-          <AvatarEditor
-            onPendingChange={setPending}
-            onSaved={async (mediaId) => {
-              await api.call(IdentityEndpoints.updateProfile, { body: { avatarMediaId: mediaId } });
-              remote.refresh();
-              await auth.refreshUser();
-              setEditingAvatar(false);
-            }}
-          />
-        </Sheet>
+        />
       )}
     </main>
   );

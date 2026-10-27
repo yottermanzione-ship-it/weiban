@@ -90,7 +90,7 @@ export function PrivateModeConfirmDialog({
       title="开启私密模式"
       actions={[
         { label: '取消', onClick: onCancel },
-        { label: '开启', primary: true, onClick: onConfirm },
+        { label: '开启私密模式', tone: 'primary', onClick: onConfirm },
       ]}
     >
       <p className="hint">
@@ -297,7 +297,7 @@ export function ScenarioSheet({
       {prompt === 'not-configured' && (
         <Dialog
           title="私密模式暂不可用"
-          actions={[{ label: '知道了', onClick: () => setPrompt(null) }]}
+          actions={[{ label: '知道了', tone: 'primary', onClick: () => setPrompt(null) }]}
         >
           <p className="hint">平台还没有配置固定的私密模型，暂时不能开启。</p>
         </Dialog>
@@ -305,7 +305,7 @@ export function ScenarioSheet({
       {prompt === 'unavailable' && (
         <Dialog
           title="私密模式暂不可用"
-          actions={[{ label: '知道了', onClick: () => setPrompt(null) }]}
+          actions={[{ label: '知道了', tone: 'primary', onClick: () => setPrompt(null) }]}
         >
           <p className="hint">平台固定的私密模型暂时不可用，稍后再试。</p>
         </Dialog>
@@ -313,7 +313,7 @@ export function ScenarioSheet({
       {prompt === 'unreadable' && (
         <Dialog
           title="私密模式暂不可用"
-          actions={[{ label: '知道了', onClick: () => setPrompt(null) }]}
+          actions={[{ label: '知道了', tone: 'primary', onClick: () => setPrompt(null) }]}
         >
           <p className="hint">暂时读不到平台的私密模型配置，稍后再试。</p>
         </Dialog>

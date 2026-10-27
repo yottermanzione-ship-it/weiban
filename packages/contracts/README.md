@@ -95,10 +95,18 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
-### 4.3（2026-10-26，批 EJ：生态主循环接入原生判定）
+### 4.4（2026-10-27，批 EJ：生态主循环接入原生判定）
 
 - `ModelGatewayMediaPort` 新增两个**可选**只读方法：`decisionModelStatus(modelKey)`（判定能力以线路核准的 `billingBounds.decision` 为唯一来源，后台「生态决策模型」只允许选它）、`speechSynthesisReady({userId, characterId, voiceId})`（与 `synthesizeSpeech` 同一解析口径预检语音动作，缺模型/音色不兼容就不把语音放进生态候选，不换模型）。
-- 理由：ai-runtime 只能经契约端口读取模型事实；原有 `ModelQuotePort.quote` 对文字模型同样报价成功，无法区分 Jev 类与文字模型。均为新增可选方法，不改 HTTP、事件和 Android 数据结构，按规则升次版本；Android 生成产物只同步版本号。
+- 理由：ai-runtime 只能经契约端口读取模型事实；原有 `ModelQuotePort.quote` 对文字模型同样报价成功，无法区分 Jev 类与文字模型。均为新增可选方法，不改 HTTP、事件和 Android 数据结构，按规则升次版本（主线 4.3 已被微博资料兼容占用，故为 4.4）；Android 生成产物只同步版本号。
+
+### 4.3（2026-10-26，角色管理微博资料兼容）
+
+- 2026-10-27读取兼容修补：`Voice`/`AdminVoice.name`响应接受最长80字符历史名称，完整保留已有值；`AdminVoiceWrite`新建/编辑仍1～20字符，供应商代号上限不改。不新增接口/字段/协议版本，修复既存历史数据让整份音色目录校验失败；依据见[窄申请](../../docs/architecture/2026-10-27-voice-read-compat.md)。
+
+- `AdminLegacyFields.weibo`、`AdminCharacter.weibo`新增可选微博资料块：显式启用、昵称、可选HTTPS来源头像和数字账号ID；不改变旧字段含义、不更改用户聊天请求。
+- 迁入角色明确保存的微博昵称可参与原有同步；没有账号ID不冒充图片来源已核实，关闭标记优先。新卡已有微博结构保持不变。
+- 复用现有头像、音色库与默认音色接口，人物文字无损分段编辑不新增角色格式；同步生成Android协议常量但不代表交付新APK。
 
 ### 4.2（2026-10-26，通话分钟估价）
 

@@ -8,7 +8,7 @@ SRC=${WEIBAN_SRC:-/srv/weiban/src}
 ENV_FILE=${WEIBAN_DEPLOY_ENV:-/srv/weiban/runtime.env}
 RECIPIENT_FILE=${BACKUP_AGE_RECIPIENT_FILE:-/srv/weiban/keys/backup-recipient.txt}
 BACKUP_ROOT=${1:-/srv/weiban/backups}
-KEEP=${KEEP:-7}
+KEEP=${KEEP:-2}
 command -v age >/dev/null
 [[ -s "$RECIPIENT_FILE" ]] || { echo '缺少 age 公钥接收者文件' >&2; exit 1; }
 compose=(docker compose --env-file "$ENV_FILE" -p "${WEIBAN_COMPOSE_PROJECT:-weiban-prod}"
@@ -17,7 +17,18 @@ mkdir -p -- "$BACKUP_ROOT"
 bundle=$(mktemp -d "$BACKUP_ROOT/weiban-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")
 was_running=$("${compose[@]}" ps --status running -q app)
 # 只恢复本次暂停的既有容器，不重新解析配置、重建依赖或回退已生效的域名环境。
-resume() { if [[ -n "$was_running" ]]; then "${compose[@]}" start --wait app >/dev/null; fi; }
+# 直接启动原容器，不经 compose start（它会连带重跑 migrate 依赖；发布后若残留旧 migrate 容器会因迁移目录不符失败，
+# 2026-10-27 因此停站约 3 分钟）。
+resume() {
+  [[ -n "$was_running" ]] || return 0
+  docker start $was_running >/dev/null
+  for _ in $(seq 1 60); do
+    [[ "$(docker inspect -f '{{.State.Health.Status}}' $was_running)" == healthy ]] && return 0
+    sleep 2
+  done
+  echo "应用容器未在 120 秒内恢复健康" >&2
+  return 1
+}
 trap resume EXIT
 "${compose[@]}" stop app >/dev/null
 "${compose[@]}" exec -T postgres pg_dump -U weiban -d weiban --format=custom | age -R "$RECIPIENT_FILE" > "$bundle/database.dump.age.partial"

@@ -10,6 +10,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { OldIcon, OldImage } from './old-icons.js';
 import {
+  ActionSheet,
   GroupHeader,
   IconTile,
   LongPressMenu,
@@ -537,23 +538,8 @@ function MoreSheet({
   items: ActionItem[];
   onClose(): void;
 }) {
-  return (
-    <Sheet title={title} onClose={onClose} closeLabel="取消">
-      <MenuGroup>
-        {items.map((item, index) => (
-          <MenuRow
-            key={index}
-            label={item.label}
-            chevron={false}
-            onClick={() => {
-              onClose();
-              item.onClick();
-            }}
-          />
-        ))}
-      </MenuGroup>
-    </Sheet>
-  );
+  // U2（审计 #32）：小程序右上「…」改微信式 Action Sheet
+  return <ActionSheet title={title} items={items} onClose={onClose} />;
 }
 
 // ---------- 和 TA 一起用 ----------

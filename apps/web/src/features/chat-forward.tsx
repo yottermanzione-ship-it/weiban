@@ -22,6 +22,7 @@ import {
 } from './media.js';
 import { friendlyError } from '../data/use-remote.js';
 import { SearchField } from './search-field.js';
+import { PushLayer } from './edit-page.js';
 
 export function forwardPreview(c: ForwardSnapshotContent): string {
   switch (c.type) {
@@ -67,7 +68,7 @@ export function ForwardedRecordBubble({
         <small>聊天记录 · {content.items.length} 条</small>
       </button>
       {open && (
-        <Sheet title={content.title} onClose={() => setOpen(false)} closeLabel="返回" fullScreen>
+        <PushLayer title={content.title} onClose={() => setOpen(false)} className="forward-record-page">
           <div className="wx-forward-record">
             {content.items.map((i, n) => (
               <article key={n}>
@@ -110,7 +111,7 @@ export function ForwardedRecordBubble({
               </article>
             ))}
           </div>
-        </Sheet>
+        </PushLayer>
       )}
       {image !== null && (
         <ImageViewer
@@ -220,6 +221,8 @@ export function ForwardPicker({
         if (!busy) onClose();
       }}
       closeLabel="取消"
+      snaps={['half', 'full']}
+      keepOnScrim={busy}
       action={
         mode ? (
           <button

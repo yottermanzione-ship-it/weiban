@@ -4,11 +4,7 @@ import type { CharacterSummary } from '@weiban/contracts';
 import { avatarForeground, avatarLetters, avatarPaletteIndex } from '@weiban/client-core';
 import { useAuth } from '../app/auth.js';
 import { useChat } from '../app/chat.js';
-import {
-  CachedPicture,
-  recallCharacterAvatar,
-  rememberCharacterAvatar,
-} from './avatar-cache.js';
+import { CachedPicture, recallCharacterAvatar, rememberCharacterAvatar } from './avatar-cache.js';
 import { useCharacterProfile } from '../data/character-profile.js';
 type AvatarRole = Pick<CharacterSummary, 'characterId' | 'name' | 'avatar'>;
 const patterns = { star: Star, heart: Heart, note: MusicNote, moon: Moon, flower: Flower };
@@ -114,7 +110,7 @@ function Artwork({
         background,
         color,
         fontSize: size * (Array.from(letters).length === 1 ? 0.44 : 0.34),
-        fontWeight: 600,
+        fontWeight: 'var(--wb-font-weight-semibold)',
       }}
     >
       <span aria-hidden="true">{letters}</span>
@@ -148,12 +144,5 @@ function AvatarPicture({
   hintUrl?: string;
   size: number;
 }) {
-  return (
-    <CachedPicture
-      mediaId={mediaId}
-      hintUrl={hintUrl}
-      width={size}
-      height={size}
-    />
-  );
+  return <CachedPicture mediaId={mediaId} hintUrl={hintUrl} width={size} height={size} />;
 }

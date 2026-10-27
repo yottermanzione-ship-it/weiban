@@ -66,6 +66,48 @@ describe('旧卡详情字段', () => {
   });
 });
 
+describe('微博资料兼容', () => {
+  it('已有微博昵称直接标记，不从名字或平台头像猜账号', () => {
+    expect(readLegacyAdminFields(RAW).weibo).toEqual({ enabled: true, nickname: '云飞' });
+    expect(readLegacyAdminFields({ ...RAW, weibo_nickname: '' }).weibo).toEqual({
+      enabled: false,
+      nickname: '',
+    });
+  });
+  it('显式关闭优先于原昵称，保存只写新资料块且保留原文', () => {
+    const result = plan({ fields: { weibo: { enabled: false, nickname: '云飞' } } });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(readLegacyAdminFields(result.value.next).weibo?.enabled).toBe(false);
+    expect(result.value.next.weibo_nickname).toBe('云飞');
+    expect(result.value.next.raw_json).toBe(RAW.raw_json);
+    expect(result.value.changedFields).toEqual(['weibo']);
+  });
+  it('启用需要昵称，来源头像需HTTPS，账号需数字；不要求伪造头像', () => {
+    expect(() => patchOf({ fields: { weibo: { enabled: true, nickname: '' } } })).toThrow();
+    expect(() =>
+      patchOf({
+        fields: {
+          weibo: { enabled: true, nickname: '云飞', avatarUrl: 'http://example.test/a.png' },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      patchOf({ fields: { weibo: { enabled: true, nickname: '云飞', userId: 'not-id' } } }),
+    ).toThrow();
+    const result = plan({
+      fields: { weibo: { enabled: true, nickname: '云飞', userId: '1234567890' } },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok)
+      expect(readLegacyAdminFields(result.value.next).weibo).toEqual({
+        enabled: true,
+        nickname: '云飞',
+        userId: '1234567890',
+      });
+  });
+});
+
 describe('旧卡局部保存', () => {
   it('只合并提交的字段，未提交字段与未识别字段原样保留', () => {
     const result = plan({ fields: { speakingStyle: '新说话风格' } });

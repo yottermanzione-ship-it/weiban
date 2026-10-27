@@ -89,7 +89,7 @@ import { ServiceWorkerRefresh } from './update-prompt.js';
 import { CallLinkPage, CallProvider } from '../features/call.js';
 import { MyStickersPage } from '../features/stickers.js';
 import { VoicePickerPage } from '../features/voices.js';
-import { ToastHost } from '../features/toast.js';
+import { SnackbarHost, ToastHost } from '../features/toast.js';
 import {
   AchievementWatcher,
   AchievementsPage,
@@ -106,6 +106,7 @@ import {
 import { ShareEditorPage } from '../features/share.js';
 import { ImportListPage, ImportPage } from '../features/import.js';
 import { SupplementPage } from '../features/supplement.js';
+import { CharacterPersonaPage } from '../features/character-persona.js';
 import { AccountDeletionPage } from '../features/account-deletion.js';
 import { AdoptPage, PetPage, PetWithPage, PetsPage } from '../features/pets.js';
 import {
@@ -283,6 +284,7 @@ function Shell() {
       <>
         <AuthPage />
         <ToastHost />
+        <SnackbarHost />
       </>
     );
   const firstProfile = !auth.session.user.profileCompleted;
@@ -443,6 +445,7 @@ function Shell() {
                 <Route path="/imports/new" element={<ImportPage />} />
                 <Route path="/imports/:jobId" element={<ImportPage />} />
                 <Route path="/characters/:characterId/supplement" element={<SupplementPage />} />
+                <Route path="/characters/:characterId/persona" element={<CharacterPersonaPage />} />
                 <Route path="/settings/delete-account" element={<AccountDeletionPage />} />
                 <Route path="/services/pets" element={<PetsPage />} />
                 <Route path="/pets/adopt" element={<AdoptPage />} />
@@ -504,6 +507,7 @@ function Shell() {
         {!firstProfile && <ReleaseCenter />}
         {!firstProfile && <RecapAutoShow />}
         <ToastHost />
+        <SnackbarHost />
         {!firstProfile && !onboarding && (
           <EcologyInsufficientNotice
             userId={auth.session.user.userId}

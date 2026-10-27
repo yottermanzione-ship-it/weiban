@@ -649,7 +649,7 @@ export function ModelSetupGuide({
         { label: '自己选', onClick: () => navigate('/models') },
         {
           label: pending ? '配置中…' : '一键选推荐',
-          primary: true,
+          tone: 'primary',
           onClick: () => void recommend(),
         },
       ]}

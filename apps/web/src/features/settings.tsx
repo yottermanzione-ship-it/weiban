@@ -5,7 +5,7 @@ import { HistoryRecoveryRow } from './history-recovery.js';
  * 选择类（深色模式、字体大小、提示音）用单列单选弹层，选中项右侧绿色 ✓。
  * 深色模式、字体大小、提示音是每台设备自己的设置（PRD SVC-01），存本机。粉色主题已删除（tokens v3）。
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { IdentityEndpoints } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
 import { HomeScreenGuide } from './home-screen-guide.js';
@@ -36,16 +36,17 @@ import {
 } from './message-sound.js';
 import {
   CheckSlot,
+  ChoiceSheet as SharedChoiceSheet,
   ComingSoonRow,
   GroupHeader,
   MenuGroup,
   MenuRow,
   NavBar,
-  Sheet,
   SwitchRow,
 } from './shell-kit.js';
 import { useAnnouncementUnread } from './release.js';
-import { Dialog, showToast } from './toast.js';
+import { AlertDialog, showToast } from './toast.js';
+import { SubPageLayer } from './edit-page.js';
 
 const schemeNames: Record<Scheme, string> = {
   system: '跟随系统',
@@ -54,44 +55,86 @@ const schemeNames: Record<Scheme, string> = {
 };
 const sounds = noticeSounds;
 
-/** 单选列表弹层：每项 56，文字左对齐，选中项右侧绿色 ✓（固定列，没选中也占位，试听喇叭因此对齐）。 */
+/** 设置里的单选：公共 Choice Sheet（shell-kit，26 号 §2）。 */
 export function ChoiceSheet<T extends string | number>({
   title,
   value,
   options,
   onPick,
   onClose,
-  extra,
 }: {
   title: string;
   value: T;
   options: Array<{ value: T; label: string }>;
   onPick(value: T): void;
   onClose(): void;
-  extra?: (value: T) => ReactNode;
 }) {
   return (
-    <Sheet title={title} onClose={onClose} closeLabel="取消">
-      <MenuGroup>
-        {options.map((option) => (
-          <MenuRow
-            key={String(option.value)}
-            label={option.label}
-            chevron={false}
-            right={
-              <span className="choice-right">
-                {extra?.(option.value)}
-                <CheckSlot checked={option.value === value} />
-              </span>
-            }
-            onClick={() => {
-              onPick(option.value);
-              onClose();
-            }}
-          />
+    <SharedChoiceSheet
+      title={title}
+      value={value}
+      options={options}
+      onChange={onPick}
+      onClose={onClose}
+    />
+  );
+}
+
+/**
+ * 提示音（U2，sheet-audit 第 13 项）：整页二级页面。每行「名称 …… 试听 ✓」：试听按钮和对号各占固定一列，
+ * 所有行上下对齐；试听按钮和整行选择是两个并列按钮（不再按钮套按钮）。点一行即试听并选中，「完成」才保存。
+ */
+function SoundPage({
+  value,
+  onSave,
+  onClose,
+}: {
+  value: string;
+  onSave(value: string): void;
+  onClose(): void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const preview = (sound: string) =>
+    void previewNoticeSound(sound).catch(() => showToast('当前浏览器无法试听'));
+  return (
+    <SubPageLayer
+      title="提示音"
+      canSave={draft !== value}
+      onCancel={onClose}
+      onSave={() => {
+        onSave(draft);
+        onClose();
+      }}
+    >
+      <div className="sound-list" role="radiogroup" aria-label="提示音">
+        {sounds.map((s) => (
+          <div key={s.value} className="sound-row">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={draft === s.value}
+              className="pick-row sound-pick"
+              onClick={() => {
+                setDraft(s.value);
+                preview(s.value);
+              }}
+            >
+              <span>{s.label}</span>
+              <span className="sound-play-slot" aria-hidden />
+              <CheckSlot checked={draft === s.value} size={22} />
+            </button>
+            <button
+              type="button"
+              className="sound-play"
+              aria-label={`试听${s.label}`}
+              onClick={() => preview(s.value)}
+            >
+              <OldIcon name="wechat/voice" size={20} />
+            </button>
+          </div>
         ))}
-      </MenuGroup>
-    </Sheet>
+      </div>
+    </SubPageLayer>
   );
 }
 
@@ -274,46 +317,26 @@ export function SettingsPage() {
         />
       )}
       {choice === 'sound' && (
-        <ChoiceSheet
-          title="提示音"
+        <SoundPage
           value={sound}
-          options={sounds.map((s) => ({ value: s.value as string, label: s.label }))}
-          onPick={(value) => {
-            setNoticeSound(value);
-            setSound(value);
+          onSave={(value) => {
+            setNoticeSound(value as typeof sound);
+            setSound(value as typeof sound);
           }}
-          extra={(value) => (
-            <button
-              type="button"
-              className="nav-bar-icon"
-              aria-label="试听"
-              onClick={(event) => {
-                event.stopPropagation();
-                void previewNoticeSound(value).catch(() => showToast('当前浏览器无法试听'));
-              }}
-            >
-              <OldIcon name="wechat/voice" size={20} />
-            </button>
-          )}
           onClose={() => setChoice(null)}
         />
       )}
       {logout && (
-        <Dialog
-          actions={[
-            { label: '取消', onClick: () => setLogout(false) },
-            {
-              label: '退出',
-              danger: true,
-              onClick: () => {
-                setLogout(false);
-                void auth.logout().catch(() => {});
-              },
-            },
-          ]}
-        >
-          <p>退出后不会删除任何数据，下次登录仍可使用</p>
-        </Dialog>
+        <AlertDialog
+          title="退出登录？"
+          message="退出后不会删除任何数据，下次登录仍可使用。"
+          confirmLabel="退出登录"
+          onCancel={() => setLogout(false)}
+          onConfirm={() => {
+            setLogout(false);
+            void auth.logout().catch(() => {});
+          }}
+        />
       )}
     </main>
   );

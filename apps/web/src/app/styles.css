@@ -26,7 +26,7 @@ a {
 }
 button {
   cursor: pointer;
-  border: 1px solid var(--wb-color-border-strong);
+  border: 0;
   border-radius: var(--wb-radius-sm);
   background: var(--wb-color-bg-surface);
   color: var(--wb-color-text-primary);
@@ -55,7 +55,7 @@ button.plain,
 .plain {
   background: none;
   border: 0;
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
   text-align: center;
 }
 .full {
@@ -157,7 +157,7 @@ textarea {
   align-items: center;
   padding: var(--wb-space-5);
   min-height: var(--wb-size-setting-row);
-  border-bottom: 1px solid var(--wb-color-border-hairline);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
 }
 .rows > a > svg:last-child {
   margin-left: auto;
@@ -228,7 +228,7 @@ textarea {
   max-width: var(--wb-size-content-max-width);
   display: flex;
   background: var(--wb-color-bg-tab-bar);
-  border-top: 1px solid var(--wb-color-border-hairline);
+  border-top: 0.5px solid var(--wb-color-border-hairline);
   padding-bottom: env(safe-area-inset-bottom);
 }
 .tabbar a {
@@ -291,13 +291,68 @@ textarea {
 .avatar-crop-dialog::backdrop {
   background: var(--wb-color-bg-scrim);
 }
+/* 头像裁剪（U2）：全屏黑底，裁剪框居中，底部「取消 / 完成」（微信） */
 .avatar-crop-dialog {
-  padding: var(--wb-space-5);
-  background: var(--wb-color-overlay-viewer);
-  color: var(--wb-color-text-on-brand);
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  padding: calc(env(safe-area-inset-top) + var(--wb-space-5)) var(--wb-space-5) 0;
+  border-radius: 0;
+  background: var(--ui-media-bg);
+  color: var(--ui-on-dark-text);
+}
+.avatar-crop-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--wb-space-4);
+}
+.avatar-crop-dialog > h2 {
+  margin: 0;
+  font-size: var(--wb-font-size-body);
+  font-weight: var(--wb-font-weight-medium);
+}
+.avatar-crop-dialog .avatar-crop {
+  margin: auto 0;
+}
+.avatar-crop-tip {
+  margin: 0;
+  color: var(--ui-on-dark-text-2);
+  font-size: var(--wb-font-size-footnote);
+}
+.avatar-crop-dialog details {
+  width: 100%;
+  max-width: var(--wb-size-content-max-width);
+  color: var(--ui-on-dark-text-2);
+  font-size: var(--wb-font-size-footnote);
 }
 .avatar-crop-dialog label {
-  color: var(--wb-color-text-on-brand);
+  color: var(--ui-on-dark-text);
+}
+.avatar-crop-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: calc(100% + var(--wb-space-5) * 2);
+  margin: 0 calc(var(--wb-space-5) * -1);
+  padding: var(--wb-space-4) var(--wb-space-5) calc(env(safe-area-inset-bottom) + var(--wb-space-4));
+}
+.avatar-crop-dialog .avatar-crop-cancel {
+  min-height: 36px;
+  padding: 0 var(--wb-space-2);
+  border: 0;
+  background: none;
+  color: var(--ui-on-dark-text);
+  font-size: var(--wb-font-size-body);
+}
+.avatar-crop-dialog .primary.avatar-crop-done {
+  min-width: 64px;
+  min-height: 34px;
+  padding: 0 var(--wb-space-4);
+  border: 0;
+  border-radius: var(--wb-radius-xs);
 }
 
 .user-avatar {
@@ -319,7 +374,7 @@ textarea {
   padding: var(--wb-space-3);
   border-radius: var(--wb-radius-md);
   background: var(--wb-color-bg-elevated);
-  border: 1px solid var(--wb-color-border-strong);
+  box-shadow: var(--ui-float-shadow);
 }
 .chat-list-page,
 .conversation-page {
@@ -342,7 +397,7 @@ textarea {
   align-items: center;
   gap: var(--wb-space-3);
   padding: var(--wb-space-3);
-  border-bottom: 1px solid var(--wb-color-border-hairline);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
   background: var(--wb-color-bg-surface);
 }
 .conversation-row.pinned {
@@ -556,7 +611,7 @@ textarea {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: opacity var(--wb-motion-duration-fast) ease-out;
+  transition: opacity var(--wb-motion-duration-fast) var(--ui-ease-out);
 }
 
 .pending-message {
@@ -573,12 +628,6 @@ textarea {
   align-items: end;
 }
 
-.avatar-crop-dialog button {
-  background: transparent;
-  color: var(--wb-color-text-on-brand);
-  border-color: var(--wb-color-text-on-brand);
-}
-
 /* ---------- L3：你不在时、时间线、熟悉度、纪念日（T-056） ---------- */
 .text-button,
 button.text-button {
@@ -586,7 +635,7 @@ button.text-button {
   border: 0;
   min-height: auto;
   padding: var(--wb-space-1) 0;
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
 }
 .text-button.danger,
 button.danger {
@@ -608,7 +657,7 @@ button.danger {
 .group-label {
   font-size: var(--wb-font-size-footnote);
   color: var(--wb-color-text-secondary);
-  font-weight: normal;
+  font-weight: var(--wb-font-weight-regular);
   margin: var(--wb-space-5) 0 var(--wb-space-2);
 }
 .tag {
@@ -870,9 +919,9 @@ a.button {
   justify-content: center;
   min-height: var(--wb-size-touch-target);
   padding: var(--wb-space-3) var(--wb-space-5);
-  border: 1px solid var(--wb-color-border-strong);
+  border: 0;
   border-radius: var(--wb-radius-sm);
-  background: var(--wb-color-bg-surface);
+  background: var(--ui-fill-1);
 }
 a.button.primary {
   background: var(--wb-color-brand-primary);
@@ -1053,7 +1102,6 @@ a.button.primary {
   padding: var(--wb-space-3) var(--wb-space-4);
   border-radius: var(--wb-radius-md);
   background: var(--wb-color-bg-surface);
-  border: 1px solid var(--wb-color-border-hairline);
 }
 .contact-card span {
   display: flex;
@@ -1063,7 +1111,6 @@ a.button.primary {
   padding: var(--wb-space-4);
   border-radius: var(--wb-radius-md);
   background: var(--wb-color-bg-surface);
-  border: 1px solid var(--wb-color-border-hairline);
 }
 .mention-sheet {
   position: fixed;
@@ -1163,7 +1210,7 @@ a.button.primary {
   display: flex;
   flex-direction: column;
   padding: var(--wb-space-2) 0;
-  border-bottom: 1px solid var(--wb-color-border-hairline);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
 }
 .moments-page {
   display: flex;
@@ -1189,7 +1236,7 @@ a.button.primary {
   display: flex;
   gap: var(--wb-space-3);
   padding: var(--wb-space-4) var(--wb-space-3);
-  border-bottom: 1px solid var(--wb-color-border-hairline);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
   background: var(--wb-color-bg-surface);
 }
 .moment-body {

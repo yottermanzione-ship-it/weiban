@@ -19,6 +19,8 @@ import { friendlyError, useRemote } from '../data/use-remote.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { NavBar } from './shell-kit.js';
+import { AlertDialog, Dialog } from './toast.js';
+import { SelectField } from './wheel-picker.js';
 
 /*
  * 经期日记（PLAY-01，设计见 docs/design/pages/period-diary.md）。
@@ -612,14 +614,16 @@ export function PeriodDayPage() {
           {error && <p role="alert">{error}</p>}
         </div>
       )}
+      {/* U2：页面内嵌确认块 → Alert Dialog（审计 #40） */}
       {leaving && (
-        <div role="dialog" aria-label="放弃修改" className="panel">
-          <p>放弃这次修改？</p>
-          <button className="danger" onClick={() => navigate(back)}>
-            放弃
-          </button>
-          <button onClick={() => setLeaving(false)}>取消</button>
-        </div>
+        <AlertDialog
+          title="放弃这次修改？"
+          message="改动不会保存。"
+          confirmLabel="放弃修改"
+          cancelLabel="继续编辑"
+          onCancel={() => setLeaving(false)}
+          onConfirm={() => navigate(back)}
+        />
       )}
     </main>
   );
@@ -672,31 +676,32 @@ export function PeriodHistoryPage() {
           );
         })}
       </div>
+      {/* U2：审计 #41 */}
       {removing && (
-        <div role="dialog" aria-label="删除经期" className="panel">
-          <p>删除这次经期的全部记录？</p>
-          <button
-            className="danger"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              setError('');
-              void api
-                .call(HealthEndpoints.deleteCycle, { params: { cycleId: removing.cycleId } })
-                .then(() => {
-                  setRemoving(null);
-                  data.refresh();
-                })
-                .catch((e) => setError(friendlyError(e)))
-                .finally(() => setBusy(false));
-            }}
-          >
-            删除
-          </button>
-          <button disabled={busy} onClick={() => setRemoving(null)}>
-            取消
-          </button>
-        </div>
+        <AlertDialog
+          title="删除这次经期？"
+          message={
+            <>
+              <p>这次经期的全部记录都会删除，不能恢复。</p>
+              {error && <p role="alert">{error}</p>}
+            </>
+          }
+          confirmLabel="删除经期"
+          pending={busy}
+          onCancel={() => setRemoving(null)}
+          onConfirm={() => {
+            setBusy(true);
+            setError('');
+            void api
+              .call(HealthEndpoints.deleteCycle, { params: { cycleId: removing.cycleId } })
+              .then(() => {
+                setRemoving(null);
+                data.refresh();
+              })
+              .catch((e) => setError(friendlyError(e)))
+              .finally(() => setBusy(false));
+          }}
+        />
       )}
       {error && <p role="alert">{error}</p>}
     </main>
@@ -781,27 +786,27 @@ export function PeriodAuthorizationPage() {
         </>
       )}
       <p className="hint">群聊里不会提起；未授权的角色和人设广场都拿不到这些记录。</p>
+      {/* U2：授权不是危险操作 → 普通对话框，主按钮绿字（审计 #42） */}
       {asking && (
-        <div role="dialog" aria-label="确认授权" className="panel">
-          <p>
-            <strong>让 {nameOf(asking)} 知道？</strong>
-          </p>
+        <Dialog
+          title={`让 ${nameOf(asking)} 知道？`}
+          onDismiss={() => setAsking(null)}
+          actions={[
+            { label: '取消', disabled: busy, onClick: () => setAsking(null) },
+            {
+              label: '让 TA 知道',
+              tone: 'primary',
+              disabled: busy,
+              onClick: () => {
+                const id = asking;
+                setAsking(null);
+                void save([...current, id], `${nameOf(id)} 会知道`);
+              },
+            },
+          ]}
+        >
           <p>TA 会知道你的经期状态，并可能在合适的时候关心你</p>
-          <button disabled={busy} onClick={() => setAsking(null)}>
-            取消
-          </button>
-          <button
-            className="primary"
-            disabled={busy}
-            onClick={() => {
-              const id = asking;
-              setAsking(null);
-              void save([...current, id], `${nameOf(id)} 会知道`);
-            }}
-          >
-            让 TA 知道
-          </button>
-        </div>
+        </Dialog>
       )}
       {message && <p role="status">{message}</p>}
       {error && <p role="alert">{error}</p>}
@@ -849,33 +854,32 @@ export function PeriodSettingsPage() {
       )}
       {current && (
         <div className="panel stack">
+          {/* U2：原生下拉换成滚轮（选项多于 10 个） */}
           <label>
             平时的周期长度
-            <select
+            <SelectField<number>
+              title="平时的周期长度"
               disabled={busy}
               value={current.cycleLengthDays}
-              onChange={(event) => void update({ cycleLengthDays: Number(event.target.value) })}
-            >
-              {Array.from({ length: 46 }, (_, i) => i + 15).map((n) => (
-                <option key={n} value={n}>
-                  {n} 天
-                </option>
-              ))}
-            </select>
+              options={Array.from({ length: 46 }, (_, i) => i + 15).map((n) => ({
+                value: n,
+                label: `${n} 天`,
+              }))}
+              onChange={(cycleLengthDays) => void update({ cycleLengthDays })}
+            />
           </label>
           <label>
             平时经期天数
-            <select
+            <SelectField<number>
+              title="平时经期天数"
               disabled={busy}
               value={current.periodLengthDays}
-              onChange={(event) => void update({ periodLengthDays: Number(event.target.value) })}
-            >
-              {Array.from({ length: 15 }, (_, i) => i + 1).map((n) => (
-                <option key={n} value={n}>
-                  {n} 天
-                </option>
-              ))}
-            </select>
+              options={Array.from({ length: 15 }, (_, i) => i + 1).map((n) => ({
+                value: n,
+                label: `${n} 天`,
+              }))}
+              onChange={(periodLengthDays) => void update({ periodLengthDays })}
+            />
           </label>
           <small>记录不足 2 个周期时，用这里的数字预测</small>
         </div>
@@ -883,34 +887,32 @@ export function PeriodSettingsPage() {
       <button className="danger danger-row" disabled={busy} onClick={() => setConfirming(true)}>
         清空经期日记
       </button>
+      {/* U2：审计 #43 */}
       {confirming && (
-        <div role="dialog" aria-label="清空经期日记" className="panel">
-          <p>
-            <strong>清空经期日记？</strong>
-          </p>
-          <p>所有记录都会删除，不能恢复。授权的角色也会立即不再知道</p>
-          <button disabled={busy} onClick={() => setConfirming(false)}>
-            取消
-          </button>
-          <button
-            className="danger"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              setError('');
-              void api
-                .call(HealthEndpoints.clearAll, { body: { confirm: 'CLEAR' } })
-                .then(() => {
-                  setSeen(false);
-                  navigate('/services/period', { replace: true });
-                })
-                .catch((e) => setError(friendlyError(e)))
-                .finally(() => setBusy(false));
-            }}
-          >
-            清空
-          </button>
-        </div>
+        <AlertDialog
+          title="清空经期日记？"
+          message={
+            <>
+              <p>所有记录都会删除，不能恢复。授权的角色也会立即不再知道。</p>
+              {error && <p role="alert">{error}</p>}
+            </>
+          }
+          confirmLabel="清空经期日记"
+          pending={busy}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => {
+            setBusy(true);
+            setError('');
+            void api
+              .call(HealthEndpoints.clearAll, { body: { confirm: 'CLEAR' } })
+              .then(() => {
+                setSeen(false);
+                navigate('/services/period', { replace: true });
+              })
+              .catch((e) => setError(friendlyError(e)))
+              .finally(() => setBusy(false));
+          }}
+        />
       )}
       {message && <p role="status">{message}</p>}
       {error && <p role="alert">{error}</p>}

@@ -133,7 +133,7 @@
   padding: var(--wb-space-3) 0;
 }
 .wx-older .text-button {
-  color: var(--wb-color-text-link);
+  color: var(--ui-text-action);
   font-size: var(--wb-font-size-footnote);
 }
 /* T-20261025：聊天记录顶部「加载更多消息」按钮与加载/到底提示（只新增按钮规则，不动滚动容器）。 */
@@ -156,7 +156,7 @@
   border: 2px solid var(--wb-color-border-hairline);
   border-top-color: var(--wb-color-brand-primary);
   border-radius: var(--wb-radius-full);
-  animation: wx-older-spin 0.8s linear infinite;
+  animation: wx-older-spin var(--ui-motion-spin) linear infinite;
 }
 @keyframes wx-older-spin {
   to {
@@ -284,7 +284,7 @@
   flex: none;
   width: 48px;
   height: 48px;
-  border-radius: 4px;
+  border-radius: var(--wb-radius-xs);
   background: var(--wb-color-bg-skeleton);
 }
 .conversation-skeleton-row .skeleton-line {
@@ -360,7 +360,7 @@
   -webkit-line-clamp: 2;
 }
 .wx-bubble.mine .wx-quote span {
-  color: rgba(0, 0, 0, 0.55);
+  color: var(--ui-text-on-bubble-secondary);
 }
 
 /* 语音（4.4.5；图标与布局对齐旧版 Flutter _VoiceWavePainter） */
@@ -597,7 +597,7 @@
   opacity: 0;
   animation:
     wx-show 0s 2s forwards,
-    wx-spin 800ms linear infinite;
+    wx-spin var(--ui-motion-spin) linear infinite;
 }
 @keyframes wx-show {
   to {
@@ -620,7 +620,7 @@
   border: 0;
   border-radius: var(--wb-radius-full);
   background: var(--wb-color-text-danger);
-  color: #fff;
+  color: var(--ui-text-on-color);
   font-size: var(--wb-font-size-caption1);
   font-weight: var(--wb-font-weight-bold);
   line-height: 1;
@@ -638,7 +638,7 @@
 .wx-quote-bar > i {
   width: 3px;
   height: 30px;
-  border-radius: 2px;
+  border-radius: var(--wb-radius-full);
   background: var(--wb-color-brand-primary);
 }
 .wx-quote-bar > span {
@@ -731,7 +731,7 @@
   border: 0;
   border-radius: var(--wb-radius-sm);
   background: var(--wb-color-brand-primary);
-  color: #fff;
+  color: var(--ui-text-on-color);
   font-size: var(--wb-font-size-callout);
 }
 .wx-send:disabled {
@@ -755,7 +755,7 @@
   -webkit-touch-callout: none;
 }
 .wx-hold.active {
-  background: #e0e0e0;
+  background: var(--ui-pressed-strong);
   color: var(--wb-color-brand-primary);
 }
 .wx-record {
@@ -775,7 +775,7 @@
   place-items: center;
   width: 210px;
   height: 86px;
-  border-radius: 22px;
+  border-radius: var(--wb-radius-lg);
   background: var(--wb-color-ui-record-bubble);
   box-shadow: var(--wb-shadow-record);
   transition: background-color var(--wb-motion-duration-fast);
@@ -788,7 +788,7 @@
   width: 24px;
   height: 24px;
   margin-left: -12px;
-  border-radius: 4px;
+  border-radius: var(--wb-radius-xs);
   background: inherit;
   transform: rotate(45deg);
 }
@@ -807,10 +807,10 @@
 .wx-record-wave i {
   width: 3.3px;
   height: 100%;
-  border-radius: 2px;
+  border-radius: var(--wb-radius-full);
   background: var(--wb-color-ui-record-wave);
   transform: scaleY(0.25);
-  animation: wx-record-wave var(--wb-motion-duration-record-wave) ease-in-out infinite;
+  animation: wx-record-wave var(--wb-motion-duration-record-wave) var(--ui-ease-in-out) infinite;
 }
 @keyframes wx-record-wave {
   50% {
@@ -819,7 +819,7 @@
 }
 .wx-record-hint {
   margin-top: 24px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--ui-on-dark-text-2);
   font-size: var(--wb-font-size-subhead);
   font-weight: var(--wb-font-weight-medium);
 }
@@ -974,7 +974,7 @@
   min-height: 0;
   padding: 6px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--wb-radius-md);
   background: none;
 }
 .wx-sticker-cell img {
@@ -1015,7 +1015,7 @@
   border: 0;
   border-radius: 0;
   background: none;
-  color: #fff;
+  color: var(--ui-text-on-color);
   font-size: var(--wb-font-size-caption1);
 }
 .bubble-menu button + button::before {
@@ -1071,28 +1071,28 @@
   width: min(260px, 68vw);
   padding: 14px 14px 8px;
   border: 0;
-  border-radius: 5px;
-  background: #fff;
-  color: #191919;
+  border-radius: var(--wb-radius-xs);
+  background: var(--wb-color-bg-surface);
+  color: var(--wb-color-text-primary);
   text-align: left;
-  font-size: 14px;
+  font-size: var(--wb-font-size-subhead);
 }
 .wx-forward-card strong {
-  font-size: 16px;
-  font-weight: 500;
+  font-size: var(--wb-font-size-body-small);
+  font-weight: var(--wb-font-weight-medium);
 }
 .wx-forward-card > span {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  color: #888;
+  color: var(--wb-color-text-secondary);
 }
 .wx-forward-card small {
   margin-top: 5px;
   padding-top: 7px;
-  border-top: 1px solid #eee;
-  color: #999;
-  font-size: 11px;
+  border-top: 0.5px solid var(--wb-color-border-hairline);
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-caption2);
 }
 .wx-forward-record {
   min-height: 65vh;
@@ -1102,7 +1102,7 @@
 }
 .wx-forward-record article {
   padding: 18px 0;
-  border-bottom: 1px solid var(--wb-color-border-hairline);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
 }
 .wx-forward-record article > header {
   display: flex;
@@ -1110,11 +1110,11 @@
   gap: 12px;
   margin-bottom: 10px;
   color: var(--wb-color-text-secondary);
-  font-size: 13px;
+  font-size: var(--wb-font-size-footnote);
   text-align: left;
 }
 .wx-forward-record article > header strong {
-  font-weight: 400;
+  font-weight: var(--wb-font-weight-regular);
 }
 .wx-forward-record p {
   margin: 0;
@@ -1128,22 +1128,22 @@
   padding: 8px 16px 24px;
 }
 .wx-forward-summary {
-  color: #888;
-  font-size: 13px;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
 }
 .wx-forward-picker > input {
   box-sizing: border-box;
   width: 100%;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--wb-radius-md);
   padding: 10px 12px;
-  background: #f2f2f2;
-  font-size: 16px;
+  background: var(--ui-fill-1);
+  font-size: var(--wb-font-size-body-small);
 }
 .wx-forward-tabs {
   display: flex;
   margin-top: 14px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
 }
 .wx-forward-tabs button {
   flex: 1;
@@ -1151,12 +1151,12 @@
   border-radius: 0;
   background: none;
   padding: 12px 4px;
-  font-size: 15px;
-  color: #888;
+  font-size: var(--wb-font-size-callout);
+  color: var(--wb-color-text-secondary);
 }
 .wx-forward-tabs button[aria-pressed='true'] {
-  color: #07a457;
-  border-bottom: 2px solid #07a457;
+  color: var(--wb-color-brand-primary);
+  border-bottom: 2px solid var(--wb-color-brand-primary);
 }
 .wx-forward-targets > button {
   display: flex;
@@ -1166,10 +1166,10 @@
   padding: 12px 0;
   background: none;
   border: 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
   text-align: left;
-  font-size: 16px;
-  color: #191919;
+  font-size: var(--wb-font-size-body-small);
+  color: var(--wb-color-text-primary);
 }
 .wx-forward-targets > button:disabled {
   opacity: 0.65;
@@ -1179,12 +1179,12 @@
   place-items: center;
   width: 40px;
   height: 40px;
-  border-radius: 5px;
-  background: #ddd;
+  border-radius: var(--wb-radius-xs);
+  background: var(--wb-color-bg-skeleton);
 }
 .wx-forward-error {
-  color: #c43d36;
-  font-size: 14px;
+  color: var(--wb-color-text-danger);
+  font-size: var(--wb-font-size-subhead);
 }
 /* 多选工具栏（4.4.7） */
 .wx-select-bar {
@@ -1220,7 +1220,7 @@
 
 /* 看图 */
 .image-viewer {
-  background: #000;
+  background: var(--ui-media-bg);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1235,7 +1235,7 @@
   width: 240px;
   background: var(--wb-color-bg-surface);
   color: var(--wb-color-text-primary);
-  border-radius: 10px;
+  border-radius: var(--wb-radius-md);
 }
 .bubble-menu-row {
   display: grid;
@@ -1267,10 +1267,10 @@
   margin: 6px 0 0;
   padding: 8px 10px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--wb-radius-xs);
   background: var(--wb-color-bubble-quote-bg);
   color: var(--wb-color-text-secondary);
-  font-size: 14px;
+  font-size: var(--wb-font-size-subhead);
   line-height: 1.4;
 }
 .wx-msg-row.mine .wx-quote {
@@ -1284,20 +1284,20 @@
 .wx-quote-bar {
   margin: 0 56px 8px;
   padding: 7px 10px;
-  border-radius: 5px;
+  border-radius: var(--wb-radius-xs);
   background: var(--wb-color-bubble-quote-bg);
   color: var(--wb-color-text-secondary);
 }
 .wx-quote-bar b {
   color: inherit;
-  font-weight: 400;
-  font-size: 14px;
+  font-weight: var(--wb-font-weight-regular);
+  font-size: var(--wb-font-size-subhead);
 }
 .wx-quote-bar b::after {
   content: '：';
 }
 .wx-quote-bar b + span {
-  font-size: 14px;
+  font-size: var(--wb-font-size-subhead);
   color: inherit;
 }
 .wx-wish-result {
@@ -1306,10 +1306,10 @@
   justify-content: center;
   min-height: 38px;
   width: 100%;
-  border-radius: 5px;
+  border-radius: var(--wb-radius-xs);
   background: var(--wb-color-bg-page);
   color: var(--wb-color-text-secondary);
-  font-size: 15px;
+  font-size: var(--wb-font-size-callout);
 }
 
 /* 气泡内引用：浅色引文条，跟在正文上方 */
@@ -1317,16 +1317,16 @@
   display: block;
   margin-bottom: 4px;
   padding: 4px 8px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.06);
+  border-radius: var(--wb-radius-xs);
+  background: var(--ui-fill-1);
   color: var(--wb-color-text-secondary);
-  font-size: 13px;
+  font-size: var(--wb-font-size-footnote);
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 .wx-bubble.mine .wx-quote-inline {
-  background: rgba(0, 0, 0, 0.08);
-  color: rgba(0, 0, 0, 0.55);
+  background: var(--ui-fill-2);
+  color: var(--ui-text-on-bubble-secondary);
 }
 
 /* 3.28（H2）：私密模式只开放文字和图片——语音输入、语音通话入口置灰（仍可点，点了说明原因）。 */

@@ -1,0 +1,49 @@
+/*
+ * 用户端公共 UI 组件统一入口（2026-10-26 批 U1）。名称与何时用见 docs/web/ui-components.md；
+ * 新页面从这里引入，不再各自手写弹窗 / 确认块 / 原生日期框。
+ */
+export {
+  AlertDialog,
+  Dialog,
+  InlineAlert,
+  showSnackbar,
+  showToast,
+  SNACKBAR_MS,
+  TOAST_MS,
+  type ButtonTone,
+  type DialogAction,
+  type SnackbarEnd,
+  type SnackbarOptions,
+  type ToastKind,
+} from './toast.js';
+export {
+  ActionSheet,
+  CheckSlot,
+  ChoiceSheet,
+  SegmentedTabs,
+  Sheet as BottomSheet,
+  type ActionItem,
+  type ChoiceOption,
+  type SheetSnap,
+} from './shell-kit.js';
+export { EditPage as SubPage, FieldPage, PickRow, PushLayer, SubPageLayer } from './edit-page.js';
+// 2026-10-27 批 U5
+export { Lightbox, type LightboxItem } from './lightbox.js';
+export { KeyboardBar } from './keyboard-bar.js';
+export { MiddleEllipsis } from './middle-ellipsis.js';
+export { LayerHistoryContext, useLayerHistory } from './layer-history.js';
+export { isImeEnter } from './ime.js';
+export { TypingDots } from './chat-heading.js';
+export {
+  DateField,
+  DatePickerSheet,
+  SelectField,
+  TimeField,
+  type SelectOption,
+  OptionPickerSheet,
+  PickerSheet,
+  TimePickerSheet,
+  WheelColumn,
+  WheelPicker,
+  type WheelItem,
+} from './wheel-picker.js';

@@ -52,7 +52,7 @@ export function RecapAutoShow() {
   return (
     <Dialog
       title={`${recap.year} 年度回忆`}
-      actions={[{ label: '收下', primary: true, onClick: close }]}
+      actions={[{ label: '收下', tone: 'primary', onClick: close }]}
     >
       <div style={{ maxHeight: '52vh', overflowY: 'auto', textAlign: 'left' }}>
         {recap.lines.map((line, index) => (

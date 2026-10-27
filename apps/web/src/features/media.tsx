@@ -4,12 +4,9 @@ import {
   LinkSimple,
   MusicNotes,
   VideoCamera,
-  X,
-  CaretLeft,
-  CaretRight,
   OldIcon,
 } from './old-icons.js';
-import { ActionSheet } from './shell-kit.js';
+import { Lightbox } from './lightbox.js';
 import { Dialog } from './toast.js';
 import {
   LibraryEndpoints,
@@ -245,7 +242,7 @@ export async function addFavorite(message: Message) {
   }
 }
 
-/** 全屏图片查看（C 15.2）：会话内所有图片左右切换。 */
+/** 全屏图片查看（C 15.2）：会话内所有图片左右切换；U5 起外壳是通用 Lightbox（缩放、下滑关闭、返回键只关看图）。 */
 export function ImageViewer({
   images,
   index,
@@ -257,106 +254,42 @@ export function ImageViewer({
   onClose(): void;
   onDelete?(message: Message): void;
 }) {
-  const [current, setCurrent] = useState(index);
-  const [menu, setMenu] = useState(false);
-  const message = images[current];
-  const touch = useRef<number | null>(null);
-  useEffect(() => {
-    const key = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-      if (event.key === 'ArrowLeft') setCurrent((v) => Math.max(0, v - 1));
-      if (event.key === 'ArrowRight') setCurrent((v) => Math.min(images.length - 1, v + 1));
-    };
-    window.addEventListener('keydown', key);
-    return () => window.removeEventListener('keydown', key);
-  }, [images.length, onClose]);
-  if (!message || message.content?.type !== 'image') return null;
-  const mediaId = message.content.mediaId;
+  const shown = images.filter((m) => m.content?.type === 'image');
+  const start = Math.max(0, shown.indexOf(images[index]!));
   return (
-    <div
-      className="image-viewer"
-      role="dialog"
-      aria-label="查看图片"
-      onTouchStart={(e) => (touch.current = e.touches[0]?.clientX ?? null)}
-      onTouchEnd={(e) => {
-        const start = touch.current;
-        const end = e.changedTouches[0]?.clientX;
-        if (start === null || end === undefined) return;
-        if (end - start > 60) setCurrent((v) => Math.max(0, v - 1));
-        if (start - end > 60) setCurrent((v) => Math.min(images.length - 1, v + 1));
-      }}
-    >
-      <header>
-        <button className="viewer-button" aria-label="关闭" onClick={onClose}>
-          <X size={24} />
-        </button>
-        <span>
-          {current + 1} / {images.length}
-        </span>
-        <button className="viewer-button" aria-label="更多" onClick={() => setMenu((v) => !v)}>
-          <OldIcon name="wechat/more" size={24} />
-        </button>
-      </header>
-      <div
-        className="viewer-stage"
-        onClick={onClose}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          setMenu(true);
-        }}
-      >
-        <MediaImg
-          key={mediaId}
-          mediaId={mediaId}
-          thumbnail={false}
-          className="viewer-image"
-          cache={false}
-        />
-      </div>
-      {current > 0 && (
-        <button
-          className="viewer-button viewer-prev"
-          aria-label="上一张"
-          onClick={() => setCurrent(current - 1)}
-        >
-          <CaretLeft size={24} />
-        </button>
-      )}
-      {current < images.length - 1 && (
-        <button
-          className="viewer-button viewer-next"
-          aria-label="下一张"
-          onClick={() => setCurrent(current + 1)}
-        >
-          <CaretRight size={24} />
-        </button>
-      )}
-      {isIPhone() && <p className="viewer-hint">长按图片保存</p>}
-      {menu && (
-        <ActionSheet
-          onClose={() => setMenu(false)}
-          items={[
-            ...(!isIPhone() ? [{ label: '保存图片', onClick: () => void saveImage(mediaId) }] : []),
-            { label: '收藏', onClick: () => void addFavorite(message) },
-            ...(canAddToStickers(message)
-              ? [{ label: '添加到表情', onClick: () => void addToStickers(message) }]
-              : []),
-            ...(onDelete
-              ? [
-                  {
-                    label: '删除',
-                    danger: true,
-                    onClick: () => {
-                      onDelete(message);
-                      onClose();
-                    },
+    <Lightbox
+      items={shown.map((m) => ({
+        mediaId: m.content?.type === 'image' ? m.content.mediaId : '',
+        key: m.messageId,
+      }))}
+      index={start}
+      onClose={onClose}
+      hint={isIPhone() ? '长按图片保存' : undefined}
+      menu={(_item, i) => {
+        const message = shown[i];
+        if (!message || message.content?.type !== 'image') return [];
+        const mediaId = message.content.mediaId;
+        return [
+          ...(!isIPhone() ? [{ label: '保存图片', onClick: () => void saveImage(mediaId) }] : []),
+          { label: '收藏', onClick: () => void addFavorite(message) },
+          ...(canAddToStickers(message)
+            ? [{ label: '添加到表情', onClick: () => void addToStickers(message) }]
+            : []),
+          ...(onDelete
+            ? [
+                {
+                  label: '删除',
+                  danger: true,
+                  onClick: () => {
+                    onDelete(message);
+                    onClose();
                   },
-                ]
-              : []),
-          ]}
-        />
-      )}
-    </div>
+                },
+              ]
+            : []),
+        ];
+      }}
+    />
   );
 }
 
@@ -478,7 +411,7 @@ export function CallRecordBubble({
             { label: '取消', onClick: () => setConfirm(false) },
             {
               label: '呼叫',
-              primary: true,
+              tone: 'primary',
               onClick: () => {
                 setConfirm(false);
                 onRedial();

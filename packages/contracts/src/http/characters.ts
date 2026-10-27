@@ -353,6 +353,25 @@ export const UserCustomEndpoints = {
 export const CharacterCardFormat = z.enum(['wbcard', 'legacy']);
 export type CharacterCardFormat = z.infer<typeof CharacterCardFormat>;
 
+/** 管理端微博资料。昵称是明确标记，不表示已核验身份；头像/账号可后补。 */
+export const CharacterWeiboProfile = z
+  .object({
+    enabled: z.boolean(),
+    nickname: z.string().trim().max(80),
+    avatarUrl: z
+      .string()
+      .url()
+      .max(2000)
+      .refine((value) => /^https:\/\//u.test(value), '微博头像须为 HTTPS')
+      .optional(),
+    userId: z
+      .string()
+      .regex(/^\d{5,20}$/u)
+      .optional(),
+  })
+  .refine((value) => !value.enabled || value.nickname.length > 0, '启用微博标记需要填写微博昵称');
+export type CharacterWeiboProfile = z.infer<typeof CharacterWeiboProfile>;
+
 export const AdminCharacter = z.object({
   characterId: Id,
   status: CharacterPublishStatus,
@@ -383,6 +402,8 @@ export const AdminCharacter = z.object({
    * 旧卡详情与保存走 `CharacterAdminEndpoints.legacyDetail` / `legacyUpdate`。
    */
   format: CharacterCardFormat.optional(),
+  /** 明确的微博资料标记；不从角色姓名猜测，不代表账号已核验。 */
+  weibo: CharacterWeiboProfile.optional(),
   /** 当前修订号（乐观并发）；旧卡保存作为 `expectedRevision`，不一致返回 409。 */
   revision: z.number().int().positive().optional(),
   updatedAt: Timestamp,
@@ -438,6 +459,8 @@ export const AdminLegacyFields = z.object({
   corePersona: z.string().min(1).max(8000),
   speakingStyle: z.string().max(4000),
   relationshipMode: z.string().max(4000),
+  /** 可选增量；省略保持原值，enabled=false显式关闭但保留已填资料。 */
+  weibo: CharacterWeiboProfile.optional(),
   /** 朋友圈设定（旧卡 `moment_profile_json`）；null = 没有，保存时清空该键。 */
   momentProfile: z.json().nullable(),
   /** 群聊设定（旧卡 `group_chat_json`）；null = 没有，保存时清空该键。 */

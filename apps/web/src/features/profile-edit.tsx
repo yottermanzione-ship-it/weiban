@@ -18,10 +18,12 @@ import {
   FormPage,
   InfoPage,
   PickRow,
+  SubPageLayer,
   useDraft,
 } from './edit-page.js';
 import { OldIcon } from './old-icons.js';
 import { MenuRow, NavBar, SyncPendingState, useBack } from './shell-kit.js';
+import { DateField } from './wheel-picker.js';
 
 const FALLBACK = '/profile';
 
@@ -194,14 +196,20 @@ function BirthdayEditor({ initial }: { initial: string }) {
       onSave={() => void save({ birthday: draft.value || null })}
       fallback={FALLBACK}
     >
-      <ClearInput
-        label="生日"
-        type="date"
-        value={draft.value}
-        autoFocus={false}
-        disabled={pending}
-        onChange={draft.setValue}
-      />
+      {/* U2：原生日期框换成微信式日期滚轮 */}
+      <div className="edit-input-row">
+        <DateField
+          title="生日"
+          label="生日"
+          value={draft.value}
+          max={today}
+          placeholder="未填写"
+          clearable
+          clearLabel="清除生日"
+          disabled={pending}
+          onChange={draft.setValue}
+        />
+      </div>
       <p className="edit-hint">
         {today && draft.value > today ? '生日不能晚于今天' : 'TA 会在你生日那天记得你'}
       </p>
@@ -226,10 +234,9 @@ export function ProfileRegionPage() {
     </WithProfile>
   );
 }
-function RegionEditor({ initial }: { initial: string }) {
-  const [picked, setPicked] = useState('');
+/** 定位到的地区（资料页地区二级页与首次填写资料共用，U5 抽出）。 */
+function useRegionLocate() {
   const [locate, setLocate] = useState<Locate>({ state: 'idle' });
-  const { pending, error, save } = useProfileSave();
   function start() {
     if (!('geolocation' in navigator)) return setLocate({ state: 'failed' });
     setLocate({ state: 'locating' });
@@ -265,6 +272,13 @@ function RegionEditor({ initial }: { initial: string }) {
           : locate.state === 'failed'
             ? '无法获取位置，请在下方选择'
             : '点击获取当前位置';
+  return { locate, start, locateText };
+}
+
+function RegionEditor({ initial }: { initial: string }) {
+  const [picked, setPicked] = useState('');
+  const { locate, start, locateText } = useRegionLocate();
+  const { pending, error, save } = useProfileSave();
   return (
     <EditPage
       title="设置地区"
@@ -337,6 +351,106 @@ function RegionGroupList({ index, current }: { index: number; current: string })
       </div>
       <ErrorLine error={error} />
     </main>
+  );
+}
+
+/**
+ * 首次填写资料用的地区选择（U5，接 U2 遗留 3）：和「我 › 个人信息 › 地区」同一套页面——定位 + 省份分组，
+ * 点分组再进一层选具体地区。因为首次填写页的表单还没保存，这里不直接写服务器，而是把选中的地区交回表单；
+ * 两层都是页内二级页面（进浏览器历史，返回键一层一层关）。
+ */
+export function RegionPickerLayer({
+  value,
+  onPick,
+  onClose,
+}: {
+  value: string;
+  onPick(city: string): void;
+  onClose(): void;
+}) {
+  const [picked, setPicked] = useState('');
+  const [group, setGroup] = useState<number | null>(null);
+  const { locate, start, locateText } = useRegionLocate();
+  const groupData = group === null ? undefined : REGION_GROUPS[group];
+  return (
+    <>
+      <SubPageLayer
+        title="设置地区"
+        canSave={picked !== '' && picked !== value}
+        onSave={() => {
+          onPick(picked);
+          onClose();
+        }}
+        onCancel={onClose}
+      >
+        <h2 className="edit-section">定位到的位置</h2>
+        <div className="edit-group">
+          <button
+            type="button"
+            className={`region-locate ${locate.state === 'found' ? '' : 'muted'}`}
+            disabled={locate.state === 'locating'}
+            onClick={() => (locate.state === 'found' ? setPicked(locate.region) : start())}
+          >
+            <span className="region-pin">
+              <OldIcon name="wechat/location" size={22} />
+            </span>
+            <span className="region-text">{locateText}</span>
+            {locate.state === 'found' && picked === locate.region && (
+              <OldIcon name="wechat/check" size={22} className="ink-brand" />
+            )}
+          </button>
+        </div>
+        <h2 className="edit-section">全部</h2>
+        <div className="edit-group region-list">
+          {value && (
+            <MenuRow
+              label={value}
+              chevron={false}
+              right={<span className="menu-value">已选地区</span>}
+            />
+          )}
+          {REGION_GROUPS.map((item, index) => (
+            <MenuRow key={item.label} label={item.label} onClick={() => setGroup(index)} />
+          ))}
+        </div>
+        {value && (
+          <div className="edit-group">
+            <MenuRow
+              label="不填写地区"
+              chevron={false}
+              onClick={() => {
+                onPick('');
+                onClose();
+              }}
+            />
+          </div>
+        )}
+      </SubPageLayer>
+      {groupData && (
+        <SubPageLayer
+          title={groupData.label}
+          canSave={false}
+          onSave={() => {}}
+          onCancel={() => setGroup(null)}
+          className="region-group-layer"
+        >
+          <div className="edit-group region-list first" role="radiogroup" aria-label="地区">
+            {groupData.items.map((item) => (
+              <PickRow
+                key={item}
+                label={item}
+                checked={item === value}
+                onClick={() => {
+                  onPick(item);
+                  setGroup(null);
+                  onClose();
+                }}
+              />
+            ))}
+          </div>
+        </SubPageLayer>
+      )}
+    </>
   );
 }
 

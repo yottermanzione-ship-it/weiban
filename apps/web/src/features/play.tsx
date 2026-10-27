@@ -34,8 +34,10 @@ import { useUpdates } from '../data/updates.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { openShare } from './share.js';
-import { EmptyState, NavBar, Sheet } from './shell-kit.js';
-import { Dialog, showToast } from './toast.js';
+import { ActionSheet, EmptyState, NavBar, Sheet } from './shell-kit.js';
+import { AlertDialog, showSnackbar, showToast } from './toast.js';
+import { SubPageLayer } from './edit-page.js';
+import { DateField, SelectField, TimeField } from './wheel-picker.js';
 
 /*
  * 五个玩法（PLAY-03～PLAY-07；设计 play.md；契约 http/play.ts）。
@@ -547,14 +549,33 @@ function CharacterWishlist({ characterId }: { characterId: string }) {
       return null;
     }
   }
-  async function remove(item: WishlistItem) {
-    try {
-      await api.call(WishlistEndpoints.deleteItem, { params: { itemId: item.itemId } });
-      setItems((prev) => (prev ?? []).filter((i) => i.itemId !== item.itemId));
-      setEditing(null);
-    } catch (e) {
-      showToast(friendlyError(e));
-    }
+  // U2：删除心愿可撤销——先从清单拿掉，底部撤销条 5 秒内可放回，消失后才真正删除
+  function remove(item: WishlistItem) {
+    const before = items ?? [];
+    const index = before.findIndex((i) => i.itemId === item.itemId);
+    const putBack = () =>
+      setItems((prev) => {
+        const list = prev ?? [];
+        if (list.some((i) => i.itemId === item.itemId)) return list;
+        const next = [...list];
+        next.splice(Math.max(0, Math.min(index, next.length)), 0, item);
+        return next;
+      });
+    setItems((prev) => (prev ?? []).filter((i) => i.itemId !== item.itemId));
+    setEditing(null);
+    showSnackbar({
+      text: '已删除心愿',
+      onAction: putBack,
+      onEnd: (reason) => {
+        if (reason === 'action') return;
+        void api
+          .call(WishlistEndpoints.deleteItem, { params: { itemId: item.itemId } })
+          .catch((e) => {
+            putBack();
+            showToast(friendlyError(e));
+          });
+      },
+    });
   }
   const row = (item: WishlistItem) => (
     <div key={item.itemId} className="play-wish">
@@ -674,7 +695,7 @@ function CharacterWishlist({ characterId }: { characterId: string }) {
             const next = await update(editing, body);
             if (next) setEditing(null);
           }}
-          onDelete={() => void remove(editing)}
+          onDelete={() => remove(editing)}
         />
       )}
     </main>
@@ -705,60 +726,46 @@ function WishSheet({
       setSaving(false);
     }
   }
+  const changed = text.trim() !== item.text || date !== (item.dueDate ?? '');
+  // U2：编辑心愿改整页二级页面；日期用滚轮（面板底部「清除日期」代替原「取消日期」按钮）
   return (
-    <Sheet
+    <SubPageLayer
       title="编辑心愿"
-      closeLabel="取消"
-      closeDisabled={saving}
-      onClose={() => {
-        if (!saving) onClose();
-      }}
+      canSave={changed && !!text.trim() && !tooLong}
+      pending={saving}
+      onCancel={onClose}
+      onSave={() =>
+        void save({
+          ...(text.trim() !== item.text ? { text: text.trim() } : {}),
+          ...(date !== (item.dueDate ?? '') ? { dueDate: date || null } : {}),
+        })
+      }
     >
-      <div className="stack">
+      <div className="stack subpage-form">
         <label>
           心愿
           <input disabled={saving} value={text} onChange={(e) => setText(e.target.value)} />
         </label>
         <label>
           定个日期
-          <input
-            type="date"
-            disabled={saving}
+          <DateField
+            title="定个日期"
             value={date}
             min={todayLocal()}
-            onChange={(e) => setDate(e.target.value)}
+            max={`${new Date().getFullYear() + 10}-12-31`}
+            placeholder="不定日期"
+            clearable
+            clearLabel="清除日期"
+            disabled={saving}
+            onChange={setDate}
           />
         </label>
         {date && <small className="hint">定了日期，TA 到时会来问你</small>}
-        {item.dueDate && (
-          <button
-            className="text-button"
-            disabled={saving}
-            onClick={() => void save({ dueDate: null })}
-          >
-            取消日期
-          </button>
-        )}
-        <div className="button-row">
-          <button
-            className="primary full"
-            disabled={saving || !text.trim() || tooLong}
-            aria-busy={saving}
-            onClick={() =>
-              void save({
-                ...(text.trim() !== item.text ? { text: text.trim() } : {}),
-                ...(date !== (item.dueDate ?? '') ? { dueDate: date || null } : {}),
-              })
-            }
-          >
-            {saving ? '正在保存…' : '保存'}
-          </button>
-        </div>
         <button className="danger danger-row" disabled={saving} onClick={onDelete}>
-          删除
+          删除心愿
         </button>
       </div>
-    </Sheet>
+    </SubPageLayer>
   );
 }
 
@@ -1076,30 +1083,19 @@ export function WriteLetterPage() {
           ? 'TA 今天已经回过一封信了，这封的回信会晚一些到'
           : `回信会在 ${PLAY_LIMITS.letterReplyDelayMinHours}–${PLAY_LIMITS.letterReplyDelayMaxHours} 小时后寄到`}
       </p>
+      {/* U2：离开写信页改微信式 Action Sheet（保存草稿 / 红字不保存 / 继续写） */}
       {leaving && (
-        <Sheet
-          title="离开写信页"
-          closeLabel="继续写"
-          closeDisabled={pending}
+        <ActionSheet
+          title="要保存这封信的草稿吗？"
+          cancelLabel="继续写"
           onClose={() => {
             if (!pending) setLeaving(false);
           }}
-        >
-          <div className="stack">
-            <p>要保存这封信的草稿吗？</p>
-            <button
-              className="primary"
-              disabled={pending}
-              aria-busy={pending}
-              onClick={() => void saveDraft()}
-            >
-              {pending ? '正在保存…' : '保存草稿'}
-            </button>
-            <button disabled={pending} onClick={() => navigate(-1)}>
-              不保存
-            </button>
-          </div>
-        </Sheet>
+          items={[
+            { label: '保存草稿', disabled: pending, onClick: () => void saveDraft() },
+            { label: '不保存', danger: true, disabled: pending, onClick: () => navigate(-1) },
+          ]}
+        />
       )}
     </main>
   );
@@ -1339,12 +1335,13 @@ export function FocusPage() {
           </button>
         )}
         {confirmEnd && (
-          <Dialog
-            title="结束这次专注？"
-            actions={[
-              { label: '取消', onClick: () => setConfirmEnd(false) },
-              { label: '结束', primary: true, onClick: () => void end() },
-            ]}
+          <AlertDialog
+            title="提前结束这次专注？"
+            message="结束后这次专注不能继续。"
+            confirmLabel="结束专注"
+            pending={pending}
+            onCancel={() => setConfirmEnd(false)}
+            onConfirm={() => void end()}
           />
         )}
       </main>
@@ -1716,27 +1713,34 @@ function ReminderForm({ reminder, onDone }: { reminder?: Reminder; onDone(): voi
         </div>
       </div>
       <div className="panel stack">
+        {/* U2：原生时间 / 下拉 / 日期框换成滚轮与 Choice Sheet */}
         <label>
           时间
-          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+          <TimeField title="提醒时间" value={time} onChange={setTime} />
         </label>
         <label>
           重复
-          <select value={kind} onChange={(e) => setKind(e.target.value as ReminderRepeat['kind'])}>
-            <option value="once">不重复</option>
-            <option value="daily">每天</option>
-            <option value="workdays">工作日</option>
-            <option value="weekly">自定义</option>
-          </select>
+          <SelectField<ReminderRepeat['kind']>
+            title="重复"
+            value={kind}
+            onChange={setKind}
+            options={[
+              { value: 'once', label: '不重复' },
+              { value: 'daily', label: '每天' },
+              { value: 'workdays', label: '工作日' },
+              { value: 'weekly', label: '自定义' },
+            ]}
+          />
         </label>
         {kind === 'once' && (
           <label>
             日期
-            <input
-              type="date"
+            <DateField
+              title="提醒日期"
               value={date}
               min={todayLocal()}
-              onChange={(e) => setDate(e.target.value)}
+              max={`${new Date().getFullYear() + 5}-12-31`}
+              onChange={setDate}
             />
           </label>
         )}
@@ -1816,12 +1820,13 @@ function ReminderForm({ reminder, onDone }: { reminder?: Reminder; onDone(): voi
         </button>
       )}
       {confirmDelete && (
-        <Dialog
+        <AlertDialog
           title="删除这条提醒？"
-          actions={[
-            { label: '取消', onClick: () => setConfirmDelete(false) },
-            { label: '删除', primary: true, onClick: () => void remove() },
-          ]}
+          message="删除后不能恢复。"
+          confirmLabel="删除提醒"
+          pending={pending}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() => void remove()}
         />
       )}
     </main>
