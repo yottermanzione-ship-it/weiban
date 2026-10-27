@@ -393,7 +393,7 @@ const JEV_HINT: Partial<Record<EcologyActionKey, string>> = {
 /** 每个候选的判定题干：只问做不做，不让 Jev 写内容。 */
 export function jevPrompt(action: EcologyActionKey): string {
   const label = ACTION_DEF.get(action)?.label ?? action;
-  return `陪伴应用里的角色此刻是否适合「${label}」？${JEV_HINT[action] ?? ''}依据 state.summary 的对话现状和 state.features 中的时间、活跃情况、未回复条数、今天已做过的次数独立判断这一项（与其他题互不影响）；像真人一样克制，深夜一般不打扰。act 表示现在适合做；defer 表示不适合、会打扰或不确定。`;
+  return `陪伴应用里的角色此刻是否适合「${label}」？${JEV_HINT[action] ?? ''}依据 state.summary 的对话现状和 state.features 中的时间、活跃情况、未回复条数、今天已做过的次数独立判断这一项（与其他题互不影响）；state.features.userActivityLevel 是用户主动选择的活跃程度（1 偶尔冒泡、2 时常出现、3 常伴左右、4 形影不离），这次唤醒本身就是按用户期望安排的主动机会：档位越高越应该主动，3、4 档时只要不会明显打扰（深夜、对方刚说要忙或已有多条未回复）就倾向 act；1 档时更克制。act 表示现在适合做；defer 表示会打扰或明显不合时宜。`;
 }
 
 export interface JevVerdict {

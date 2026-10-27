@@ -69,6 +69,7 @@ import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import {
   ACTION_DEF,
   JEV_OPTIONS,
+  LEVEL_ORDER,
   TEXT_MODEL_ACTIONS,
   detectUserRequest,
   interpretJevAnswers,
@@ -1031,6 +1032,10 @@ export class EcologyService {
       if (ok) tools.push(def.key);
     }
     const features: JevState = {
+      // 10-27：用户在生态设置里选的活跃程度（1 偶尔冒泡 … 4 形影不离），Jev 据此决定主动的力度。
+      userActivityLevel:
+        LEVEL_ORDER.indexOf((userRow?.activityLevel ?? 'often') as (typeof LEVEL_ORDER)[number]) +
+        1,
       localHour: local.hour,
       weekday,
       lateNight,

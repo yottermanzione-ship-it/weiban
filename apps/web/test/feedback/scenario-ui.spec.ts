@@ -28,7 +28,7 @@ test('私密按普通模式展示；平台固定模型未提供时提示暂不�
 
   const privateRow = sheet.getByRole('button', { name: /私密模式/ });
   await expect(privateRow).toBeVisible();
-  await expect(privateRow).toContainText('只在你们俩之间');
+  await expect(privateRow).toContainText('不可描述的情景');
   await expect(privateRow.locator('.icon-tile')).toHaveCount(1);
   await expect(sheet.locator('.menu-row .ink-brand')).toHaveCount(1);
 
