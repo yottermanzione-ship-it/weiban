@@ -19,6 +19,10 @@ interface ChatContextValue {
   state: LocalSyncState;
   online: boolean;
   error: string;
+  /** 同步已停止、需要重新打开微伴（本机写不进去、版本过旧）。 */
+  errorFatal: boolean;
+  /** 关掉顶部提示条；同一条提示不再出现，直到出现新的问题。 */
+  dismissError(): void;
   typing: Record<string, number>;
   focus(id: string | null): void;
   send(id: string, text: string, quoteMessageId?: string, mentions?: string[]): Promise<void>;
@@ -40,7 +44,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     state: freshSyncState(),
   });
   const [rawOnline, setOnline] = useState(false);
-  const [rawError, setError] = useState('');
+  const [rawError, setRawError] = useState<{ text: string; fatal: boolean; closed: boolean }>({
+    text: '',
+    fatal: false,
+    closed: false,
+  });
+  const setError = (text: string, fatal = false) =>
+    setRawError((previous) =>
+      previous.text === text && previous.fatal === fatal
+        ? previous
+        : { text, fatal, closed: false },
+    );
   const [rawTyping, setTyping] = useState<Record<string, number>>({});
   const userId = session?.user.userId;
   const sessionId = session?.session.sessionId;
@@ -48,7 +62,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const owned = view.owner === ownerKey;
   const state = owned ? view.state : freshSyncState();
   const online = owned && rawOnline;
-  const error = owned ? rawError : '';
+  const error = owned && !rawError.closed ? rawError.text : '';
+  const errorFatal = owned && rawError.fatal;
+  const dismissError = useCallback(
+    () => setRawError((previous) => ({ ...previous, closed: true })),
+    [],
+  );
   const typing = owned ? rawTyping : {};
   useEffect(() => {
     if (!session) return;
@@ -64,11 +83,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       connection: (value) => {
         if (active) {
           setOnline(value);
-          if (value) setError('');
+          // 自动恢复的提示在连上后消失；需要重新打开的提示保留。
+          if (value) setRawError((previous) => (previous.fatal ? previous : { text: '', fatal: false, closed: false }));
         }
       },
-      error: (value) => {
-        if (active) setError(value);
+      error: (value, kind) => {
+        if (active) setError(value, kind === 'fatal');
       },
       typing: (id, participantId, value) => {
         if (active)
@@ -88,7 +108,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     window.addEventListener('weiban:before-update', beforeUpdate);
     window.addEventListener('weiban:update-failed', updateFailed);
     void instance.start().catch(() => {
-      if (active) setError('本机聊天数据无法读取，请稍后重新打开');
+      if (active) setError('本机聊天数据无法读取，请重新打开微伴', true);
     });
     const timer = window.setInterval(() => {
       setTyping((previous) => {
@@ -155,6 +175,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         state,
         online,
         error,
+        errorFatal,
+        dismissError,
         typing,
         focus,
         send: async (id, text, quoteMessageId, mentions) => {

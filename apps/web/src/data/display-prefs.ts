@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 /*
  * 每台设备自己的显示设置（深色模式、字体大小，PRD SVC-01：不跟账号同步），存本机。
  * 深色模式写 <html data-scheme>，字体大小写 --wb-font-scale（docs/design/tokens.css 头注）。
@@ -60,15 +61,38 @@ export function applyDisplayPrefs() {
   syncThemeColor(scheme);
 }
 /**
- * F1-9：浏览器状态栏 / 地址栏颜色（theme-color）跟随顶栏底色（令牌 --wb-color-bg-nav-bar：浅色 #EDEDED、深色 #202020）。
+ * 页面底色：默认灰底（微信式列表页）；登录、注册这类整页白底的页面切成白色，
+ * 让 iPhone 顶部安全区 / 状态栏和页面连成一片（U7，总经理 47 号截图）。离开白底页切回灰色。
+ */
+export type PageSurface = 'page' | 'white';
+let surface: PageSurface = 'page';
+export function setPageSurface(value: PageSurface) {
+  surface = value;
+  const root = document.documentElement;
+  if (value === 'white') root.dataset.surface = 'white';
+  else delete root.dataset.surface;
+  syncThemeColor(getScheme());
+}
+/** 整页白底的页面调用：挂载时切白，离开时切回灰色。 */
+export function useWhiteSurface() {
+  useEffect(() => {
+    setPageSurface('white');
+    return () => setPageSurface('page');
+  }, []);
+}
+/**
+ * F1-9：浏览器状态栏 / 地址栏颜色（theme-color）跟随顶栏底色（令牌 --wb-color-bg-nav-bar：浅色 #EDEDED、深色 #202020）；
+ * 白底页跟随卡片白（--wb-color-bg-surface：浅色 #FFFFFF、深色 #191919）。
  * index.html 按系统深浅各放一个；手动选了深色 / 浅色时两个都改成所选的颜色。
  */
 function syncThemeColor(scheme: Scheme) {
+  const white = surface === 'white';
   document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
     const dark =
       scheme === 'dark' ||
       (scheme === 'system' && (meta.getAttribute('media') ?? '').includes('dark'));
-    meta.setAttribute('content', dark ? '#202020' : '#EDEDED');
+    const light = white ? '#FFFFFF' : '#EDEDED';
+    meta.setAttribute('content', dark ? (white ? '#191919' : '#202020') : light);
   });
 }
 export function setScheme(value: Scheme) {

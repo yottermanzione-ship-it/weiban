@@ -1,6 +1,12 @@
 import { expect, it, vi } from 'vitest';
 import type { ClientSyncOperation } from '@weiban/contracts';
-import { SyncRunner, freshSyncState, type SyncDriverPort, type SyncEffect } from '../src/index.js';
+import {
+  LocalSaveError,
+  SyncRunner,
+  freshSyncState,
+  type SyncDriverPort,
+  type SyncEffect,
+} from '../src/index.js';
 const id = '11111111-1111-4111-8111-111111111111';
 const send: ClientSyncOperation = {
   type: 'enqueue',
@@ -59,9 +65,11 @@ it('落库失败回滚游标与待发状态，归属失效或停止后没有网�
       failed,
     }),
   );
-  await expect(runner.dispatch(send)).rejects.toThrow('disk full');
+  await expect(runner.dispatch(send)).rejects.toBeInstanceOf(LocalSaveError);
   expect(runner.state).toEqual(freshSyncState());
   expect(failed).toHaveBeenCalledOnce();
+  expect(failed.mock.calls[0]![0]).toBeInstanceOf(LocalSaveError);
+  expect(runner.active).toBe(false);
   expect(execute).not.toHaveBeenCalled();
   const invalid = new SyncRunner(freshSyncState(), port({ save: async () => false, execute }));
   await invalid.dispatch({ type: 'reconnect', latestUpdateSeq: 0, now: 0 });
@@ -124,5 +132,56 @@ it('断线会中止旧补拉；迟到结果不能污染重连的新一轮状态'
   expect(failed).not.toHaveBeenCalled();
   releases[1]!([{ type: 'rebuild.state', latestUpdateSeq: 20 }]);
   await vi.waitFor(() => expect(signals).toHaveLength(3));
+  runner.stop();
+});
+// U7：「本机保存失败」误报——轮询读到的服务器序号在排队期间被实时推送超过，曾被当成服务器倒退并停掉同步。
+const unknownUpdate = (updateSeq: number) => ({
+  updateSeq,
+  occurredAt: '2026-10-27T00:00:00.000Z',
+  type: 'future.update.type',
+  data: {},
+});
+it('排队期间推送已前进：过时的服务器序号不算倒退，同步不停止', async () => {
+  const failed = vi.fn();
+  const runner = new SyncRunner(
+    { ...freshSyncState(), initialized: true, lastUpdateSeq: 5 },
+    port({ failed }),
+  );
+  await runner.reconnect(5, 5, 0);
+  await runner.dispatch({ type: 'update', update: unknownUpdate(6) as never });
+  expect(runner.lastUpdateSeq).toBe(6);
+  await runner.reconnect(5, 5, 1);
+  expect(runner.active).toBe(true);
+  expect(failed).not.toHaveBeenCalled();
+  // 读数低于请求发出时的本机游标，才是真正的倒退：报错但不当成本机保存失败。
+  await expect(runner.reconnect(3, 6, 2)).rejects.toThrow('服务器更新序号不能倒退');
+  expect(runner.active).toBe(true);
+  expect(failed).toHaveBeenCalledOnce();
+  expect(failed.mock.calls[0]![0]).not.toBeInstanceOf(LocalSaveError);
+  runner.stop();
+});
+it('回放网络结果时数据出错：回滚、只上报一次、同步保持可重试', async () => {
+  const failed = vi.fn();
+  const runner = new SyncRunner(
+    { ...freshSyncState(), initialized: true, lastUpdateSeq: 5 },
+    port({
+      failed,
+      // 补拉页游标不前进，引擎会拒绝。
+      execute: async () => [
+        {
+          type: 'updates.page',
+          page: { items: [], hasMore: true, latestUpdateSeq: 9 },
+          now: 0,
+        } as never,
+      ],
+    }),
+  );
+  await runner.reconnect(9, 5, 0);
+  await vi.waitFor(() => expect(failed).toHaveBeenCalled());
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(failed).toHaveBeenCalledOnce();
+  expect(failed.mock.calls[0]![0]).not.toBeInstanceOf(LocalSaveError);
+  expect(runner.active).toBe(true);
+  expect(runner.lastUpdateSeq).toBe(5);
   runner.stop();
 });

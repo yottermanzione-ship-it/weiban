@@ -4,7 +4,9 @@
   justify-content: center;
   gap: var(--wb-space-8);
   border-bottom: 0.5px solid var(--wb-color-border-hairline);
-  margin-bottom: var(--wb-space-3);
+  /* U7：通栏白底，发丝线左右贴边，不再是缩进的浮块 */
+  margin: 0 calc(-1 * var(--wb-space-5)) var(--wb-space-3);
+  background: var(--wb-color-bg-surface);
 }
 .plaza-tabs button {
   background: none;
@@ -18,7 +20,6 @@
 }
 .plaza-tabs button[aria-selected='true'] {
   color: var(--wb-color-text-primary);
-  font-weight: var(--wb-font-weight-semibold);
   box-shadow: inset 0 -2px 0 var(--wb-color-brand-primary);
 }
 /* ---------- 角色广场（/plaza）顶部两个 tab：等宽填满返回箭头与个人入口之间的区域 ---------- */
@@ -63,7 +64,6 @@
 }
 .role-plaza-hub .role-plaza-tabs > button[aria-selected='true'] {
   color: var(--wb-color-text-primary);
-  font-weight: var(--wb-font-weight-semibold);
 }
 /* 下划线跟文字同宽、离文字 4px，不再贴着顶栏底边 */
 .role-plaza-tab-label {

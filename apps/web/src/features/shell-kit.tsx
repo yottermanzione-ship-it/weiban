@@ -406,8 +406,8 @@ export function EmptyState({
 }
 
 /**
- * 分段 Tab（2026-10-26 批 U2）：浅灰底槽里两三个等宽分段，选中段白底；用于同一页内容的两种看法
- * （角色生态「按角色 / 按动作」）。和 TextTabs（顶部一排文字 + 绿色短线）区分：分段 Tab 放在内容中间。
+ * 分段 Tab（U2 建立，U7 改样子）：左右通栏白底、两三个等宽页签，选中只变深色 + 绿色短下划线、字重不变；
+ * 用于同一页内容的两种看法（角色生态「按角色 / 按动作」）。和 TextTabs（顶部一排靠左的文字页签）区分：这里等宽平分。
  */
 export function SegmentedTabs<T extends string>({
   items,
@@ -437,7 +437,7 @@ export function SegmentedTabs<T extends string>({
   );
 }
 
-/** 一排文字切换（规格 5 表）：选中 15 / 500 + 下方 2 高绿色短线。 */
+/** 一排文字切换（规格 5 表）：选中只变深色 + 下方 2 高绿色短线，字重不变（U7：切换时文字宽度不跳）。 */
 export function TextTabs<T extends string>({
   items,
   value,

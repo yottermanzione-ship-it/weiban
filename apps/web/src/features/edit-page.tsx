@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom';
 import { OldIcon } from './old-icons.js';
 import { useLayerHistory } from './layer-history.js';
 import { BackArrow, NavBar, useBack, useEscape } from './shell-kit.js';
+import { useWhiteSurface } from '../data/display-prefs.js';
 
 /**
  * 二级页面外壳（26 号 §2）：整页推入，顶栏「取消 / 标题 / 完成」，完成键没改动或必填为空时灰底灰字不可点，
@@ -356,6 +357,7 @@ export function FormPage({
   children?: ReactNode;
 }) {
   const back = useBack(fallback);
+  useWhiteSurface();
   return (
     <main className="form-page">
       <header className="form-page-bar">
@@ -425,6 +427,7 @@ export function InfoPage({
   children?: ReactNode;
 }) {
   const back = useBack(fallback);
+  useWhiteSurface();
   return (
     <main className="info-page">
       <header className="form-page-bar">

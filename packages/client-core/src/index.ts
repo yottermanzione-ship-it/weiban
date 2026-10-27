@@ -3,7 +3,7 @@ export { IndexedLocalStore, type LocalStore, type StoreOwner } from './local-sto
 export { formatMoney, yuanToMicros } from './money.js';
 
 export { SyncEngine } from './sync-engine.js';
-export { SyncRunner, type SyncDriverPort } from './sync-runner.js';
+export { SyncRunner, LocalSaveError, type SyncDriverPort } from './sync-runner.js';
 export * from './sync-state.js';
 export { avatarLetters, avatarPaletteIndex, avatarForeground } from './avatar.js';
 export * from './persona-sections.js';
